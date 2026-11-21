@@ -238,39 +238,30 @@ func TypeFromBinaryOp(op Op, lhst, rhst Type, lhsConst, rhsConst constant.Value)
 		return Type{}, false
 	}
 
+	if op == MatrixMul {
+		if lhst.IsMatrix() && rhst.IsMatrix() && lhst.MatrixCols() == rhst.MatrixRows() {
+			return Type{Main: MatrixOf(rhst.MatrixCols(), lhst.MatrixRows())}, true
+		}
+		if lhst.IsMatrix() && rhst.Main == Float {
+			return lhst, true
+		}
+		if lhst.IsMatrix() && rhst.IsFloatVector() && lhst.MatrixCols() == rhst.VectorElementCount() {
+			return Type{Main: VectorOf(Float, lhst.MatrixRows())}, true
+		}
+		if lhst.Main == Float && rhst.IsMatrix() {
+			return rhst, true
+		}
+		if lhst.IsFloatVector() && rhst.IsMatrix() && lhst.VectorElementCount() == rhst.MatrixRows() {
+			return Type{Main: VectorOf(Float, rhst.MatrixCols())}, true
+		}
+		return Type{}, false
+	}
+
 	if lhst.Equal(&rhst) {
 		if lhst.Main == None {
 			return rhst, true
 		}
 		return lhst, true
-	}
-
-	if op == MatrixMul {
-		if lhst.IsMatrix() && rhst.Main == Float {
-			return lhst, true
-		}
-		if lhst.Main == Mat2 && rhst.Main == Vec2 {
-			return rhst, true
-		}
-		if lhst.Main == Mat3 && rhst.Main == Vec3 {
-			return rhst, true
-		}
-		if lhst.Main == Mat4 && rhst.Main == Vec4 {
-			return rhst, true
-		}
-		if lhst.Main == Float && rhst.IsMatrix() {
-			return rhst, true
-		}
-		if lhst.Main == Vec2 && rhst.Main == Mat2 {
-			return lhst, true
-		}
-		if lhst.Main == Vec3 && rhst.Main == Mat3 {
-			return lhst, true
-		}
-		if lhst.Main == Vec4 && rhst.Main == Mat4 {
-			return lhst, true
-		}
-		return Type{}, false
 	}
 
 	if op == Div {

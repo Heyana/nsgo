@@ -54,6 +54,9 @@ func Fragment(p *shaderir.Program, name string, o Options) string {
 	for i := 0; i < lib.TextureCount; i++ {
 		lines = append(lines, fmt.Sprintf("uniform sampler2D T%d;", i))
 	}
+	for i, t := range lib.Privates {
+		lines = append(lines, fmt.Sprintf("%s;", c.varDecl(lib, &t, fmt.Sprintf("P%d", i))))
+	}
 	if o.FlipRows != "" {
 		lines = append(lines, fmt.Sprintf("uniform ivec4 %s;", o.FlipRows), "",
 			"ivec2 flipRows(ivec2 p, int h) {",

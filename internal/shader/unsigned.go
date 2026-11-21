@@ -31,6 +31,8 @@ func (e blockEnv) LocalType(index int) shaderir.Type {
 
 func (e blockEnv) UniformType(index int) shaderir.Type { return e.cs.ir.Uniforms[index] }
 
+func (e blockEnv) PrivateType(index int) shaderir.Type { return e.cs.ir.Privates[index] }
+
 func (e blockEnv) FuncReturn(index int) shaderir.Type { return e.cs.funcs[index].ir.Return }
 
 // typeConsts marks the expressions of stmts, statements of block b in a

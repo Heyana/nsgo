@@ -40,6 +40,15 @@ type compileContext struct {
 	library bool
 }
 
+func (c *compileContext) registerStructs(p *shaderir.Program, t *shaderir.Type) {
+	switch t.Main {
+	case shaderir.Array:
+		c.registerStructs(p, &t.Sub[0])
+	case shaderir.Struct:
+		c.structName(p, t)
+	}
+}
+
 func (c *compileContext) structName(p *shaderir.Program, t *shaderir.Type) string {
 	if t.Main != shaderir.Struct {
 		panic("hlsl: the given type at structName must be a struct")
@@ -47,6 +56,9 @@ func (c *compileContext) structName(p *shaderir.Program, t *shaderir.Type) strin
 	s := t.String()
 	if n, ok := c.structNames[s]; ok {
 		return n
+	}
+	for i := range t.Sub {
+		c.registerStructs(p, &t.Sub[i])
 	}
 	n := fmt.Sprintf("S%d", len(c.structNames))
 	if c.structNames == nil {
@@ -153,6 +165,13 @@ func Compile(p *shaderir.Program) (vertexShader, pixelShader, vertexPrelude, pix
 			lines = append(lines, "")
 			for i := 0; i < p.TextureCount; i++ {
 				lines = append(lines, fmt.Sprintf("Texture2D T%[1]d : register(t%[1]d);", i))
+			}
+		}
+
+		if len(p.Privates) > 0 {
+			lines = append(lines, "")
+			for i, t := range p.Privates {
+				lines = append(lines, fmt.Sprintf("static %s;", c.varDecl(p, &t, fmt.Sprintf("P%d", i))))
 			}
 		}
 		return lines
@@ -279,6 +298,9 @@ func (c *compileContext) typ(p *shaderir.Program, t *shaderir.Type) (string, str
 	switch t.Main {
 	case shaderir.None:
 		return "void", ""
+	case shaderir.Array:
+		t0, t1 := c.typ(p, &t.Sub[0])
+		return t0, fmt.Sprintf("[%d]", t.Length) + t1
 	case shaderir.Struct:
 		return c.structName(p, t), ""
 	default:
@@ -293,7 +315,7 @@ func (c *compileContext) varDecl(p *shaderir.Program, t *shaderir.Type, varname 
 	case shaderir.Struct:
 		return fmt.Sprintf("%s %s", c.structName(p, t), varname)
 	default:
-		t0, t1 := typeString(t)
+		t0, t1 := c.typ(p, t)
 		return fmt.Sprintf("%s %s%s", t0, varname, t1)
 	}
 }
@@ -308,17 +330,19 @@ func (c *compileContext) varInit(p *shaderir.Program, t *shaderir.Type) string {
 		for i := 0; i < t.Length; i++ {
 			es = append(es, init)
 		}
-		t0, t1 := typeString(t)
+		t0, t1 := c.typ(p, t)
 		return fmt.Sprintf("%s%s(%s)", t0, t1, strings.Join(es, ", "))
 	case shaderir.Struct:
-		panic("not implemented")
+		return fmt.Sprintf("(%s)0", c.structName(p, t))
 	case shaderir.Bool:
 		return "false"
 	case shaderir.Int, shaderir.IVec2, shaderir.IVec3, shaderir.IVec4:
 		return "0"
 	case shaderir.Uint, shaderir.UVec2, shaderir.UVec3, shaderir.UVec4:
 		return "0u"
-	case shaderir.Float, shaderir.Vec2, shaderir.Vec3, shaderir.Vec4, shaderir.Mat2, shaderir.Mat3, shaderir.Mat4:
+	case shaderir.Float, shaderir.Vec2, shaderir.Vec3, shaderir.Vec4,
+		shaderir.Mat2, shaderir.Mat3, shaderir.Mat4,
+		shaderir.Mat2x3, shaderir.Mat2x4, shaderir.Mat3x2, shaderir.Mat3x4, shaderir.Mat4x2, shaderir.Mat4x3:
 		return "0.0"
 	default:
 		t0, t1 := c.typ(p, t)
@@ -415,6 +439,17 @@ func (c *compileContext) localVariableName(p *shaderir.Program, topBlock *shader
 	}
 }
 
+func (c *compileContext) initVarAt(p *shaderir.Program, t *shaderir.Type, name, idt string) []string {
+	if t.Main == shaderir.Array {
+		var lines []string
+		for i := 0; i < t.Length; i++ {
+			lines = append(lines, c.initVarAt(p, &t.Sub[0], fmt.Sprintf("%s[%d]", name, i), idt)...)
+		}
+		return lines
+	}
+	return []string{fmt.Sprintf("%s%s = %s;", idt, name, c.varInit(p, t))}
+}
+
 func (c *compileContext) initVariable(p *shaderir.Program, topBlock, block *shaderir.Block, index int, decl bool, level int) []string {
 	idt := strings.Repeat("\t", level+1)
 	name := c.localVariableName(p, topBlock, index)
@@ -426,10 +461,7 @@ func (c *compileContext) initVariable(p *shaderir.Program, topBlock, block *shad
 		if decl {
 			lines = append(lines, fmt.Sprintf("%s%s;", idt, c.varDecl(p, &t, name)))
 		}
-		init := c.varInit(p, &t.Sub[0])
-		for i := 0; i < t.Length; i++ {
-			lines = append(lines, fmt.Sprintf("%s%s[%d] = %s;", idt, name, i, init))
-		}
+		lines = append(lines, c.initVarAt(p, &t, name, idt)...)
 	case shaderir.None:
 		// The type is None e.g., when the variable is a for-loop counter.
 	default:
@@ -459,6 +491,8 @@ func (c *compileContext) block(p *shaderir.Program, topBlock, block *shaderir.Bl
 			return numberLiteral(e.Const, e.Unsigned)
 		case shaderir.UniformVariable:
 			return fmt.Sprintf("U%d", e.Index)
+		case shaderir.PrivateVariable:
+			return fmt.Sprintf("P%d", e.Index)
 		case shaderir.TextureVariable:
 			return fmt.Sprintf("T%d", e.Index)
 		case shaderir.LocalVariable:
@@ -577,6 +611,14 @@ func (c *compileContext) block(p *shaderir.Program, topBlock, block *shaderir.Bl
 			rhs := s.Exprs[1]
 			if lhs.Type == shaderir.LocalVariable {
 				if t := p.LocalVariableType(topBlock, block, lhs.Index); t.Main == shaderir.Array {
+					for i := 0; i < t.Length; i++ {
+						lines = append(lines, fmt.Sprintf("%[1]s%[2]s[%[3]d] = %[4]s[%[3]d];", idt, expr(&lhs), i, expr(&rhs)))
+					}
+					continue
+				}
+			}
+			if lhs.Type == shaderir.PrivateVariable {
+				if t := p.Privates[lhs.Index]; t.Main == shaderir.Array {
 					for i := 0; i < t.Length; i++ {
 						lines = append(lines, fmt.Sprintf("%[1]s%[2]s[%[3]d] = %[4]s[%[3]d];", idt, expr(&lhs), i, expr(&rhs)))
 					}

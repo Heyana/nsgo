@@ -1,6 +1,9 @@
 package wgsl
 
 import (
+	"go/constant"
+	"math"
+	"math/bits"
 	"sync"
 
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
@@ -25,7 +28,7 @@ func initBuiltins() {
 	builtinFuncs := map[string]builtinFunc{
 		"select": selectFunc, "all": allAny(true), "any": allAny(false),
 		"length": floatScalar(shaderir.Length, 1), "distance": floatScalar(shaderir.Distance, 2), "dot": floatScalar(shaderir.Dot, 2),
-		"cross": crossFunc, "transpose": transposeFunc,
+		"cross": crossFunc, "transpose": transposeFunc, "determinant": determinantFunc,
 		"min": numeric(shaderir.Min, 2, false), "max": numeric(shaderir.Max, 2, false), "clamp": numeric(shaderir.Clamp, 3, false),
 		"abs": numeric(shaderir.Abs, 1, false), "sign": numeric(shaderir.Sign, 1, true),
 		"atan2": floats(shaderir.Atan2, 2), "pow": floats(shaderir.Pow, 2), "step": floats(shaderir.Step, 2),
@@ -35,6 +38,32 @@ func initBuiltins() {
 		"degrees": scaled(57.29577951308232), "radians": scaled(0.017453292519943295),
 		"ldexp": ldexpFunc,
 		"asinh": lowered("asinh"), "acosh": lowered("acosh"), "atanh": lowered("atanh"),
+		"countLeadingZeros":  bitUnary("countLeadingZeros", "__wgsl_clz_u32", false),
+		"countOneBits":       bitUnary("countOneBits", "__wgsl_popcnt_u32", false),
+		"countTrailingZeros": bitUnary("countTrailingZeros", "__wgsl_ctz_u32", false),
+		"firstLeadingBit":    bitUnary("firstLeadingBit", "__wgsl_flb_u32", true),
+		"firstTrailingBit":   bitUnary("firstTrailingBit", "__wgsl_ftb_u32", false),
+		"reverseBits":        bitUnary("reverseBits", "__wgsl_rev_u32", false),
+		"extractBits":        extractBitsFunc,
+		"insertBits":         insertBitsFunc,
+		"pack4x8snorm":       packFunc("pack4x8snorm", vec(kF32, 4), "__wgsl_pack4x8snorm"),
+		"pack4x8unorm":       packFunc("pack4x8unorm", vec(kF32, 4), "__wgsl_pack4x8unorm"),
+		"pack2x16snorm":      packFunc("pack2x16snorm", vec(kF32, 2), "__wgsl_pack2x16snorm"),
+		"pack2x16unorm":      packFunc("pack2x16unorm", vec(kF32, 2), "__wgsl_pack2x16unorm"),
+		"pack2x16float":      packFunc("pack2x16float", vec(kF32, 2), "__wgsl_pack2x16float"),
+		"pack4xI8":           packFunc("pack4xI8", vec(kI32, 4), "__wgsl_pack4xI8"),
+		"pack4xU8":           packFunc("pack4xU8", vec(kU32, 4), "__wgsl_pack4xU8"),
+		"pack4xI8Clamp":      packFunc("pack4xI8Clamp", vec(kI32, 4), "__wgsl_pack4xI8Clamp"),
+		"pack4xU8Clamp":      packFunc("pack4xU8Clamp", vec(kU32, 4), "__wgsl_pack4xU8Clamp"),
+		"unpack4x8snorm":     unpackFunc("unpack4x8snorm", vec(kF32, 4), "__wgsl_unpack4x8snorm"),
+		"unpack4x8unorm":     unpackFunc("unpack4x8unorm", vec(kF32, 4), "__wgsl_unpack4x8unorm"),
+		"unpack2x16snorm":    unpackFunc("unpack2x16snorm", vec(kF32, 2), "__wgsl_unpack2x16snorm"),
+		"unpack2x16unorm":    unpackFunc("unpack2x16unorm", vec(kF32, 2), "__wgsl_unpack2x16unorm"),
+		"unpack2x16float":    unpackFunc("unpack2x16float", vec(kF32, 2), "__wgsl_unpack2x16float"),
+		"unpack4xI8":         unpackFunc("unpack4xI8", vec(kI32, 4), "__wgsl_unpack4xI8"),
+		"unpack4xU8":         unpackFunc("unpack4xU8", vec(kU32, 4), "__wgsl_unpack4xU8"),
+		"modf":               modfFunc,
+		"frexp":              frexpFunc,
 	}
 	for name, f := range map[string]shaderir.BuiltinFunc{
 		"sin": shaderir.Sin, "cos": shaderir.Cos, "tan": shaderir.Tan, "asin": shaderir.Asin, "acos": shaderir.Acos,
@@ -156,6 +185,9 @@ func selectFunc(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
 	cond := args[2]
 	vals := args[:2]
 	t := c.common(vals, pos, false)
+	if !t.isScalar() && t.k != kVec {
+		fail(pos, "select takes scalars or vectors, not a %s", t)
+	}
 	switch {
 	case cond.t.k == kBool:
 		if cond.c != nil {
@@ -216,10 +248,21 @@ func crossFunc(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
 
 func transposeFunc(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
 	arity(args, 1, pos, "transpose")
-	if args[0].t.k != kMat {
-		fail(pos, "transpose takes a matrix, not a %s", args[0].t)
+	m := args[0].t
+	if m.k != kMat {
+		fail(pos, "transpose takes a matrix, not a %s", m)
 	}
-	return callOf(c, shaderir.Transpose, args[0].t, args)
+	res := ty{k: kMat, elem: m.elem, n: m.rows, rows: m.n}
+	return callOf(c, shaderir.Transpose, res, args)
+}
+
+func determinantFunc(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
+	arity(args, 1, pos, "determinant")
+	m := args[0].t
+	if m.k != kMat || m.n != m.rows {
+		fail(pos, "determinant takes a square matrix, not a %s", m)
+	}
+	return callOf(c, shaderir.Determinant, tF32, args)
 }
 
 // splat widens a scalar to t, a vector, as the languages that need one
@@ -336,4 +379,537 @@ func lowered(name string) builtinFunc {
 		q := bin(shaderir.Div, bin(shaderir.Add, c.ir(one), xi), bin(shaderir.Sub, c.ir(one), xi))
 		return value{t: t, e: bin(shaderir.ComponentWiseMul, builtinCall(shaderir.Log, t, q), floatNumber(0.5))}
 	}
+}
+
+func (c *checker) callHelper(name string, pos int, args ...shaderir.Expr) value {
+	sym := c.global.names[name]
+	if sym == nil || sym.kind != symFn {
+		fail(pos, "internal error: helper %s not found", name)
+	}
+	f := sym.fn
+	if c.cur == nil {
+		fail(pos, "the expression is not a constant")
+	}
+	c.cur.info.calls = append(c.cur.info.calls, f)
+	exprs := append([]shaderir.Expr{{Type: shaderir.FunctionExpr, Index: f.index}}, args...)
+	return value{t: f.ret, e: mk(shaderir.Expr{Type: shaderir.Call, Exprs: exprs}, f.ret)}
+}
+
+func constUint32(v constant.Value, k kind) uint32 {
+	if k == kU32 {
+		u, _ := constant.Uint64Val(constant.ToInt(v))
+		return uint32(u)
+	}
+	i, _ := constant.Int64Val(constant.ToInt(v))
+	return uint32(int32(i))
+}
+
+func makeIntConst(u uint32, k kind) constant.Value {
+	if k == kU32 {
+		return constant.MakeUint64(uint64(u))
+	}
+	return constant.MakeInt64(int64(int32(u)))
+}
+
+func evalBitUnary(name string, u uint32, signed bool) uint32 {
+	switch name {
+	case "countLeadingZeros":
+		return uint32(bits.LeadingZeros32(u))
+	case "countOneBits":
+		return uint32(bits.OnesCount32(u))
+	case "countTrailingZeros":
+		return uint32(bits.TrailingZeros32(u))
+	case "reverseBits":
+		return bits.Reverse32(u)
+	case "firstTrailingBit":
+		if u == 0 {
+			return 0xFFFFFFFF
+		}
+		return uint32(bits.TrailingZeros32(u))
+	case "firstLeadingBit":
+		if signed {
+			x := int32(u)
+			y := u
+			if x < 0 {
+				y = ^y
+			}
+			if y == 0 {
+				return 0xFFFFFFFF
+			}
+			return 31 - uint32(bits.LeadingZeros32(y))
+		}
+		if u == 0 {
+			return 0xFFFFFFFF
+		}
+		return 31 - uint32(bits.LeadingZeros32(u))
+	}
+	return 0
+}
+
+func bitUnary(name, u32Helper string, signedDiffers bool) builtinFunc {
+	return func(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
+		arity(args, 1, pos, name)
+		v := c.concrete(args[0], pos)
+		t := v.t
+		s := t.scalar()
+		if (s != kI32 && s != kU32) || (!t.isScalar() && t.k != kVec) {
+			fail(pos, "%s takes i32, u32 or vectors of them, not a %s", name, t)
+		}
+		signed := s == kI32
+		if v.c != nil {
+			r := evalBitUnary(name, constUint32(v.c, s), signed)
+			return value{t: t, c: makeIntConst(r, s)}
+		}
+		if v.comps != nil {
+			comps := make([]constant.Value, len(v.comps))
+			for i, comp := range v.comps {
+				r := evalBitUnary(name, constUint32(comp, s), signed)
+				comps[i] = makeIntConst(r, s)
+			}
+			return c.vectorOfConstants(t, comps, pos)
+		}
+		applyScalar := func(arg shaderir.Expr) shaderir.Expr {
+			if signed && signedDiffers {
+				return c.callHelper("__wgsl_flb_i32", pos, arg).e
+			}
+			if signed {
+				arg = builtinCall(shaderir.UintF, tU32, arg)
+			}
+			r := c.callHelper(u32Helper, pos, arg).e
+			if signed {
+				r = builtinCall(shaderir.IntF, tI32, r)
+			}
+			return r
+		}
+		if t.isScalar() {
+			return value{t: t, e: applyScalar(c.ir(v))}
+		}
+		v = c.reuse(v, out)
+		comps := make([]shaderir.Expr, t.n)
+		for i := range t.n {
+			comps[i] = applyScalar(component(c.ir(v), i, t))
+		}
+		return value{t: t, e: builtinCall(vecFunc(t), t, comps...)}
+	}
+}
+
+func evalExtractBits(u, offset, count uint32, signed bool) uint32 {
+	o := min(offset, 32)
+	cnt := min(count, 32-o)
+	if cnt == 0 {
+		return 0
+	}
+	r := (u << (32 - (o + cnt))) >> (32 - cnt)
+	if signed {
+		signBit := uint32(1) << (cnt - 1)
+		r = (r ^ signBit) - signBit
+	}
+	return r
+}
+
+func extractBitsFunc(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
+	arity(args, 3, pos, "extractBits")
+	v := c.concrete(args[0], pos)
+	t := v.t
+	s := t.scalar()
+	if (s != kI32 && s != kU32) || (!t.isScalar() && t.k != kVec) {
+		fail(pos, "extractBits takes i32, u32 or vectors of them, not a %s", t)
+	}
+	off := c.convert(args[1], tU32, pos)
+	cnt := c.convert(args[2], tU32, pos)
+	signed := s == kI32
+	if off.c != nil && cnt.c != nil {
+		ou, cu := constUint32(off.c, kU32), constUint32(cnt.c, kU32)
+		if v.c != nil {
+			r := evalExtractBits(constUint32(v.c, s), ou, cu, signed)
+			return value{t: t, c: makeIntConst(r, s)}
+		}
+		if v.comps != nil {
+			comps := make([]constant.Value, len(v.comps))
+			for i, comp := range v.comps {
+				r := evalExtractBits(constUint32(comp, s), ou, cu, signed)
+				comps[i] = makeIntConst(r, s)
+			}
+			return c.vectorOfConstants(t, comps, pos)
+		}
+	}
+	helper := "__wgsl_extract_u32"
+	if signed {
+		helper = "__wgsl_extract_i32"
+	}
+	if t.isScalar() {
+		return c.callHelper(helper, pos, c.ir(v), c.ir(off), c.ir(cnt))
+	}
+	v = c.reuse(v, out)
+	off = c.reuse(off, out)
+	cnt = c.reuse(cnt, out)
+	comps := make([]shaderir.Expr, t.n)
+	for i := range t.n {
+		comps[i] = c.callHelper(helper, pos, component(c.ir(v), i, t), c.ir(off), c.ir(cnt)).e
+	}
+	return value{t: t, e: builtinCall(vecFunc(t), t, comps...)}
+}
+
+func evalInsertBits(e, nb, offset, count uint32) uint32 {
+	o := min(offset, 32)
+	cnt := min(count, 32-o)
+	if cnt == 0 {
+		return e
+	}
+	if cnt == 32 {
+		return nb
+	}
+	mask := ((uint32(1) << cnt) - 1) << o
+	return (e &^ mask) | ((nb << o) & mask)
+}
+
+func insertBitsFunc(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
+	arity(args, 4, pos, "insertBits")
+	t := c.common(args[:2], pos, false)
+	s := t.scalar()
+	if (s != kI32 && s != kU32) || (!t.isScalar() && t.k != kVec) {
+		fail(pos, "insertBits takes i32, u32 or vectors of them, not a %s", t)
+	}
+	e, nb := args[0], args[1]
+	off := c.convert(args[2], tU32, pos)
+	cnt := c.convert(args[3], tU32, pos)
+	signed := s == kI32
+	if off.c != nil && cnt.c != nil {
+		ou, cu := constUint32(off.c, kU32), constUint32(cnt.c, kU32)
+		if e.c != nil && nb.c != nil {
+			r := evalInsertBits(constUint32(e.c, s), constUint32(nb.c, s), ou, cu)
+			return value{t: t, c: makeIntConst(r, s)}
+		}
+		if e.comps != nil && nb.comps != nil {
+			comps := make([]constant.Value, len(e.comps))
+			for i := range e.comps {
+				r := evalInsertBits(constUint32(e.comps[i], s), constUint32(nb.comps[i], s), ou, cu)
+				comps[i] = makeIntConst(r, s)
+			}
+			return c.vectorOfConstants(t, comps, pos)
+		}
+	}
+	applyScalar := func(ae, anb, aoff, acnt shaderir.Expr) shaderir.Expr {
+		if signed {
+			ae = builtinCall(shaderir.UintF, tU32, ae)
+			anb = builtinCall(shaderir.UintF, tU32, anb)
+		}
+		r := c.callHelper("__wgsl_insert_u32", pos, ae, anb, aoff, acnt).e
+		if signed {
+			r = builtinCall(shaderir.IntF, tI32, r)
+		}
+		return r
+	}
+	if t.isScalar() {
+		return value{t: t, e: applyScalar(c.ir(e), c.ir(nb), c.ir(off), c.ir(cnt))}
+	}
+	e = c.reuse(e, out)
+	nb = c.reuse(nb, out)
+	off = c.reuse(off, out)
+	cnt = c.reuse(cnt, out)
+	comps := make([]shaderir.Expr, t.n)
+	for i := range t.n {
+		comps[i] = applyScalar(component(c.ir(e), i, t), component(c.ir(nb), i, t), c.ir(off), c.ir(cnt))
+	}
+	return value{t: t, e: builtinCall(vecFunc(t), t, comps...)}
+}
+
+func f32ToF16(x float32) uint32 {
+	bits := math.Float32bits(x)
+	sign := (bits >> 16) & 0x8000
+	exp := (bits >> 23) & 0xFF
+	mant := bits & 0x7FFFFF
+	if exp == 255 {
+		if mant != 0 {
+			return sign | 0x7E00 | (mant >> 13)
+		}
+		return sign | 0x7C00
+	}
+	if exp > 142 {
+		return sign | 0x7C00
+	}
+	if exp >= 113 {
+		hExp := (exp - 112) << 10
+		hMant := mant >> 13
+		rem := mant & 0x1FFF
+		h := hExp | hMant
+		if rem > 0x1000 || (rem == 0x1000 && (hMant&1) != 0) {
+			h++
+		}
+		return sign | h
+	}
+	if exp >= 103 {
+		fullMant := 0x800000 | mant
+		shift := 126 - exp
+		hMant := fullMant >> shift
+		half := uint32(1) << (shift - 1)
+		rem := fullMant & ((uint32(1) << shift) - 1)
+		if rem > half || (rem == half && (hMant&1) != 0) {
+			hMant++
+		}
+		return sign | hMant
+	}
+	if exp == 102 && mant != 0 {
+		return sign | 1
+	}
+	return sign
+}
+
+func f16ToF32(h uint32) float32 {
+	sign := (h & 0x8000) << 16
+	exp := (h >> 10) & 0x1F
+	mant := h & 0x3FF
+	if exp == 0 {
+		if mant == 0 {
+			return math.Float32frombits(sign)
+		}
+		f := float32(mant) * 5.960464477539063e-08
+		if sign != 0 {
+			return -f
+		}
+		return f
+	}
+	if exp == 31 {
+		if mant == 0 {
+			return math.Float32frombits(sign | 0x7F800000)
+		}
+		return math.Float32frombits(sign | 0x7FC00000 | (mant << 13))
+	}
+	return math.Float32frombits(sign | ((exp + 112) << 23) | (mant << 13))
+}
+
+func evalPack(name string, comps []constant.Value, elem kind) uint32 {
+	fAt := func(i int) float64 {
+		v, _ := constant.Float64Val(constant.ToFloat(comps[i]))
+		return v
+	}
+	clampF := func(v, lo, hi float64) float64 {
+		return math.Max(lo, math.Min(hi, v))
+	}
+	switch name {
+	case "pack4x8snorm":
+		var r uint32
+		for i := range 4 {
+			q := int32(math.RoundToEven(clampF(fAt(i), -1, 1) * 127))
+			r |= (uint32(q) & 0xFF) << (8 * uint(i))
+		}
+		return r
+	case "pack4x8unorm":
+		var r uint32
+		for i := range 4 {
+			q := uint32(math.RoundToEven(clampF(fAt(i), 0, 1) * 255))
+			r |= (q & 0xFF) << (8 * uint(i))
+		}
+		return r
+	case "pack2x16snorm":
+		var r uint32
+		for i := range 2 {
+			q := int32(math.RoundToEven(clampF(fAt(i), -1, 1) * 32767))
+			r |= (uint32(q) & 0xFFFF) << (16 * uint(i))
+		}
+		return r
+	case "pack2x16unorm":
+		var r uint32
+		for i := range 2 {
+			q := uint32(math.RoundToEven(clampF(fAt(i), 0, 1) * 65535))
+			r |= (q & 0xFFFF) << (16 * uint(i))
+		}
+		return r
+	case "pack2x16float":
+		return f32ToF16(float32(fAt(0))) | (f32ToF16(float32(fAt(1))) << 16)
+	case "pack4xI8", "pack4xU8":
+		var r uint32
+		for i := range 4 {
+			r |= (constUint32(comps[i], elem) & 0xFF) << (8 * uint(i))
+		}
+		return r
+	case "pack4xI8Clamp":
+		var r uint32
+		for i := range 4 {
+			v := int32(constUint32(comps[i], kI32))
+			v = max(-128, min(127, v))
+			r |= (uint32(v) & 0xFF) << (8 * uint(i))
+		}
+		return r
+	case "pack4xU8Clamp":
+		var r uint32
+		for i := range 4 {
+			v := min(uint32(255), constUint32(comps[i], kU32))
+			r |= (v & 0xFF) << (8 * uint(i))
+		}
+		return r
+	}
+	return 0
+}
+
+func packFunc(name string, argTy ty, helper string) builtinFunc {
+	return func(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
+		arity(args, 1, pos, name)
+		v := c.convert(args[0], argTy, pos)
+		if v.comps != nil {
+			r := evalPack(name, v.comps, argTy.elem)
+			return value{t: tU32, c: constant.MakeUint64(uint64(r))}
+		}
+		return c.callHelper(helper, pos, c.ir(v))
+	}
+}
+
+func evalUnpack(name string, e uint32) []constant.Value {
+	sign8 := func(b uint32) int32 { return int32(((b & 0xFF) ^ 0x80) - 0x80) }
+	sign16 := func(h uint32) int32 { return int32(((h & 0xFFFF) ^ 0x8000) - 0x8000) }
+	switch name {
+	case "unpack4x8snorm":
+		out := make([]constant.Value, 4)
+		for i := range 4 {
+			f := math.Max(float64(sign8(e>>(8*uint(i))))/127.0, -1.0)
+			out[i] = constant.MakeFloat64(f)
+		}
+		return out
+	case "unpack4x8unorm":
+		out := make([]constant.Value, 4)
+		for i := range 4 {
+			out[i] = constant.MakeFloat64(float64((e>>(8*uint(i)))&0xFF) / 255.0)
+		}
+		return out
+	case "unpack2x16snorm":
+		return []constant.Value{
+			constant.MakeFloat64(math.Max(float64(sign16(e))/32767.0, -1.0)),
+			constant.MakeFloat64(math.Max(float64(sign16(e>>16))/32767.0, -1.0)),
+		}
+	case "unpack2x16unorm":
+		return []constant.Value{
+			constant.MakeFloat64(float64(e&0xFFFF) / 65535.0),
+			constant.MakeFloat64(float64((e>>16)&0xFFFF) / 65535.0),
+		}
+	case "unpack2x16float":
+		return []constant.Value{
+			constant.MakeFloat64(float64(f16ToF32(e & 0xFFFF))),
+			constant.MakeFloat64(float64(f16ToF32((e >> 16) & 0xFFFF))),
+		}
+	case "unpack4xI8":
+		out := make([]constant.Value, 4)
+		for i := range 4 {
+			out[i] = constant.MakeInt64(int64(sign8(e >> (8 * uint(i)))))
+		}
+		return out
+	case "unpack4xU8":
+		out := make([]constant.Value, 4)
+		for i := range 4 {
+			out[i] = constant.MakeUint64(uint64((e >> (8 * uint(i))) & 0xFF))
+		}
+		return out
+	}
+	return nil
+}
+
+func unpackFunc(name string, retTy ty, helper string) builtinFunc {
+	return func(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
+		arity(args, 1, pos, name)
+		v := c.convert(args[0], tU32, pos)
+		if v.c != nil {
+			comps := evalUnpack(name, constUint32(v.c, kU32))
+			return c.vectorOfConstants(retTy, comps, pos)
+		}
+		return c.callHelper(helper, pos, c.ir(v))
+	}
+}
+
+func (c *checker) materializeConst(v value, out *[]shaderir.Stmt) value {
+	if v.fields == nil {
+		return v
+	}
+	fields := make([]value, len(v.fields))
+	for i, f := range v.fields {
+		fields[i] = c.materializeConst(f, out)
+	}
+	return c.foldStruct(v.t, fields, out)
+}
+
+func (c *checker) foldStruct(resTy ty, fields []value, out *[]shaderir.Stmt) value {
+	if c.cur == nil {
+		return value{t: resTy, fields: fields}
+	}
+	idx := c.newLocal(resTy)
+	s := local(idx, resTy)
+	for i, v := range fields {
+		field := mk(shaderir.Expr{Type: shaderir.FieldSelector, Exprs: []shaderir.Expr{s, {Type: shaderir.StructMember, Index: i}}}, resTy.st.fields[i].t)
+		*out = append(*out, assign(field, c.ir(v)))
+	}
+	return value{t: resTy, e: s, fields: fields}
+}
+
+func modfFunc(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
+	arity(args, 1, pos, "modf")
+	t := c.common(args, pos, true)
+	if t.scalar() != kF32 || (t.k != kF32 && t.k != kVec) {
+		fail(pos, "modf takes f32 or vectors of it, not a %s", t)
+	}
+	v := args[0]
+	suffix := "f32"
+	if t.k == kVec {
+		suffix = [...]string{2: "vec2_f32", 3: "vec3_f32", 4: "vec4_f32"}[t.n]
+	}
+	resTy := c.global.names["__modf_result_"+suffix].t
+	if v.c != nil {
+		f, _ := constant.Float64Val(constant.ToFloat(v.c))
+		w := math.Trunc(f)
+		return c.foldStruct(resTy, []value{
+			{t: tF32, c: constant.MakeFloat64(f - w)},
+			{t: tF32, c: constant.MakeFloat64(w)},
+		}, out)
+	}
+	if v.comps != nil {
+		fr := make([]constant.Value, len(v.comps))
+		wh := make([]constant.Value, len(v.comps))
+		for i, comp := range v.comps {
+			f, _ := constant.Float64Val(constant.ToFloat(comp))
+			w := math.Trunc(f)
+			fr[i] = constant.MakeFloat64(f - w)
+			wh[i] = constant.MakeFloat64(w)
+		}
+		return c.foldStruct(resTy, []value{
+			c.vectorOfConstants(t, fr, pos),
+			c.vectorOfConstants(t, wh, pos),
+		}, out)
+	}
+	return c.callHelper("__wgsl_modf_"+suffix, pos, c.ir(v))
+}
+
+func frexpFunc(c *checker, args []value, pos int, out *[]shaderir.Stmt) value {
+	arity(args, 1, pos, "frexp")
+	t := c.common(args, pos, true)
+	if t.scalar() != kF32 || (t.k != kF32 && t.k != kVec) {
+		fail(pos, "frexp takes f32 or vectors of it, not a %s", t)
+	}
+	v := args[0]
+	suffix := "f32"
+	expTy := tI32
+	if t.k == kVec {
+		suffix = [...]string{2: "vec2_f32", 3: "vec3_f32", 4: "vec4_f32"}[t.n]
+		expTy = vec(kI32, t.n)
+	}
+	resTy := c.global.names["__frexp_result_"+suffix].t
+	if v.c != nil {
+		f, _ := constant.Float64Val(constant.ToFloat(v.c))
+		fr, exp := math.Frexp(float64(float32(f)))
+		return c.foldStruct(resTy, []value{
+			{t: tF32, c: constant.MakeFloat64(fr)},
+			{t: tI32, c: constant.MakeInt64(int64(exp))},
+		}, out)
+	}
+	if v.comps != nil {
+		fr := make([]constant.Value, len(v.comps))
+		ex := make([]constant.Value, len(v.comps))
+		for i, comp := range v.comps {
+			f, _ := constant.Float64Val(constant.ToFloat(comp))
+			frac, exp := math.Frexp(float64(float32(f)))
+			fr[i] = constant.MakeFloat64(frac)
+			ex[i] = constant.MakeInt64(int64(exp))
+		}
+		return c.foldStruct(resTy, []value{
+			c.vectorOfConstants(t, fr, pos),
+			c.vectorOfConstants(expTy, ex, pos),
+		}, out)
+	}
+	return c.callHelper("__wgsl_frexp_"+suffix, pos, c.ir(v))
 }

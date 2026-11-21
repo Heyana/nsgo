@@ -33,6 +33,13 @@ func Fragment(p *shaderir.Program, name string) string {
 		}
 		lines = append(lines, "};")
 	}
+	if len(lib.Privates) > 0 {
+		lines = append(lines, "", "struct Privates {")
+		for i, pv := range lib.Privates {
+			lines = append(lines, fmt.Sprintf("\t%s;", c.varDecl(lib, &pv, fmt.Sprintf("P%d", i), false)))
+		}
+		lines = append(lines, "};")
+	}
 	lines = append(lines, "")
 	for _, f := range funcs {
 		lines = append(lines, c.function(lib, f, true)...)
@@ -50,6 +57,9 @@ func Fragment(p *shaderir.Program, name string) string {
 	for i := 0; i < lib.TextureCount; i++ {
 		params, args = append(params, fmt.Sprintf("texture2d<float> T%d", i)), append(args, fmt.Sprintf("T%d", i))
 	}
+	if len(lib.Privates) > 0 {
+		args = append(args, "privates")
+	}
 	for i, t := range entry.InParams {
 		n := "position"
 		if i > 0 {
@@ -57,8 +67,11 @@ func Fragment(p *shaderir.Program, name string) string {
 		}
 		params, args = append(params, c.varDecl(lib, &t, n, false)), append(args, n)
 	}
-	lines = append(lines, "",
-		fmt.Sprintf("float4 %s(%s) {", name, strings.Join(params, ", ")),
+	lines = append(lines, "", fmt.Sprintf("float4 %s(%s) {", name, strings.Join(params, ", ")))
+	if len(lib.Privates) > 0 {
+		lines = append(lines, "\tPrivates privates = {};")
+	}
+	lines = append(lines,
 		fmt.Sprintf("\treturn F%d(%s);", entry.Index, strings.Join(args, ", ")),
 		"}")
 

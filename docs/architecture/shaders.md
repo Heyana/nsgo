@@ -14,10 +14,11 @@ The WGSL front end is NSGo's own, not naga: a lexer, a parser and a checker that
 - `vec<bool>` is a float vector of 0 and 1 in the IR, which has no boolean vectors; component-wise comparisons, `select`, `any` and `all` work on it.
 - A `for` loop over a counter the body does not assign, to a bound by a constant step, is the IR's loop; `while`, `loop` with `continuing` and `break if`, and other `for` loops are a loop only `break` ends, with a one-pass loop around a body whose `continue` must still run `continuing`. A `switch` is an `if` chain, in a one-pass loop when a case breaks.
 - Dynamic indices are clamped into range, as WGSL's runtimes read them. Float `%` truncates, as WGSL's does.
-- The built-ins (`wgsl.go`) are WGSL themselves, compiled after the app's source with two intrinsics: a picture's texel and its size. A picture is read between its pixels from four texel reads, so no backend needs a sampler.
-- Not supported yet: `var<private>`, structs other than `Uniforms`, non-square matrices, `f16`, pointers and the bit-counting, packing and `modf`/`frexp` built-ins.
+- The built-ins (`wgsl.go`) are WGSL themselves, compiled after the app's source with two intrinsics: a picture's texel and its size. A picture is read between its pixels from four texel reads, so no backend needs a sampler. The bit-counting (`countLeadingZeros`, `countOneBits`, `countTrailingZeros`, `firstLeadingBit`, `firstTrailingBit`, `reverseBits`, `extractBits`, `insertBits`), packing/unpacking (`pack4x8snorm`, `pack4x8unorm`, `pack2x16snorm`, `pack2x16unorm`, `pack2x16float`, `pack4xI8`, `pack4xU8`, `pack4xI8Clamp`, `pack4xU8Clamp` and their `unpack*` counterparts), and `modf`/`frexp` built-ins (with their synthetic `.fract`/`.whole` and `.fract`/`.exp` result structs) lower to WGSL helper functions compiled only when reached, and fold on constant arguments.
+- `var<private>` module-scope globals initialize in a helper called before `__nsh_fragment`, emitted as module globals in GLSL, `static` globals in HLSL and a `Privates` struct passed by `thread` reference in MSL. User-defined `struct` types (including nested structs, structs with arrays and type aliases) emit in dependency order across all three writers. Non-square float matrices (`mat2x3` through `mat4x3`) support construction, indexing, multiplication, `transpose` and uniform layout.
+- Not supported yet: `f16` and pointers.
 
-The IR gained what WGSL needs and Kage does not name: `trunc`, `roundEven`, `sinh`, `cosh`, `tanh` and the float bitcasts, which the writers map to their languages (MSL's `as_type` through overloads in its prelude).
+The IR gained what WGSL needs and Kage does not name: `Privates` / `PrivateVariable`, non-square matrix types (`Mat2x3` through `Mat4x3`) and constructors, `determinant`, `trunc`, `roundEven`, `sinh`, `cosh`, `tanh` and the float bitcasts, which the writers map to their languages (MSL's `as_type` through overloads in its prelude).
 
 ## Uniforms
 

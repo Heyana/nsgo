@@ -18,7 +18,7 @@ func (p *Program) LaneTypes() []BasicType {
 				walk(&t.Sub[0])
 			}
 		case t.IsMatrix():
-			for range t.MatrixSize() * t.MatrixSize() {
+			for range t.MatrixCols() * t.MatrixRows() {
 				out = append(out, Float)
 			}
 		default:

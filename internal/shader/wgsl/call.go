@@ -12,13 +12,25 @@ import (
 // a built-in function. asStmt allows a function without a result.
 func (c *checker) call(x *callExpr, out *[]shaderir.Stmt, asStmt bool) value {
 	name := x.fn.name
+	if strings.HasPrefix(name, "__") && x.fn.pos < c.user {
+		fail(x.at(), "%s is not declared", name)
+	}
 	if sym := c.scope.lookup(name); sym != nil {
 		switch sym.kind {
 		case symFn:
 			return c.callFn(sym.fn, x, out)
 		case symType:
+			if sym.alias != nil {
+				c.resolveAlias(sym)
+			}
+			if sym.t.k == kStruct {
+				c.resolveStruct(sym.t.st)
+			}
 			if sym.t.k == kNone {
 				fail(x.at(), "a shader constructs no %s", name)
+			}
+			if x.fn.args != nil {
+				fail(x.at(), "%s takes no template", name)
 			}
 			return c.construct(sym.t, x, out)
 		}
@@ -74,6 +86,9 @@ func (c *checker) call(x *callExpr, out *[]shaderir.Stmt, asStmt bool) value {
 }
 
 func (c *checker) callFn(f *fnInfo, x *callExpr, out *[]shaderir.Stmt) value {
+	if c.inInit {
+		fail(x.at(), "a var<private> initializer must be a constant expression")
+	}
 	if len(x.args) != len(f.params) {
 		fail(x.at(), "%s takes %d arguments, not %d", f.decl.name, len(f.params), len(x.args))
 	}
@@ -126,7 +141,10 @@ func (c *checker) construct(t ty, x *callExpr, out *[]shaderir.Stmt) value {
 	case kArray:
 		return c.arrayOf(&t, x, out)
 	case kStruct:
-		return c.structConstruct(t, x, out)
+		if c.pipeline {
+			return c.structConstruct(t, x, out)
+		}
+		return c.structOf(t, x, out)
 	}
 	// A scalar: its zero, or a conversion.
 	if len(x.args) == 0 {
@@ -391,8 +409,41 @@ func (c *checker) convertVector(a value, t ty, pos int, out *[]shaderir.Stmt) va
 	return value{t: t, e: builtinCall(vecFunc(t), t, c.ir(a))}
 }
 
+func matFunc(t ty) shaderir.BuiltinFunc {
+	switch t.n {
+	case 2:
+		switch t.rows {
+		case 2:
+			return shaderir.Mat2F
+		case 3:
+			return shaderir.Mat2x3F
+		case 4:
+			return shaderir.Mat2x4F
+		}
+	case 3:
+		switch t.rows {
+		case 2:
+			return shaderir.Mat3x2F
+		case 3:
+			return shaderir.Mat3F
+		case 4:
+			return shaderir.Mat3x4F
+		}
+	case 4:
+		switch t.rows {
+		case 2:
+			return shaderir.Mat4x2F
+		case 3:
+			return shaderir.Mat4x3F
+		case 4:
+			return shaderir.Mat4F
+		}
+	}
+	return ""
+}
+
 func (c *checker) matrix(t ty, x *callExpr, out *[]shaderir.Stmt) value {
-	f := [...]shaderir.BuiltinFunc{2: shaderir.Mat2F, 3: shaderir.Mat3F, 4: shaderir.Mat4F}[t.n]
+	f := matFunc(t)
 	var args []shaderir.Expr
 	switch {
 	case len(x.args) == 0:
@@ -418,6 +469,84 @@ func (c *checker) matrix(t ty, x *callExpr, out *[]shaderir.Stmt) value {
 		fail(x.at(), "a %s takes %d columns or %d components", t, t.n, t.n*t.rows)
 	}
 	return value{t: t, e: builtinCall(f, t, args...)}
+}
+
+// zeroValue returns a constant zero value for scalar, vector, or struct types,
+// if representable as a compile-time constant.
+func zeroValue(t ty) (value, bool) {
+	switch {
+	case t.isScalar():
+		return value{t: t, c: zeroOf(t.k)}, true
+	case t.k == kVec && t.elem != kBool:
+		comps := make([]constant.Value, t.n)
+		for i := range comps {
+			comps[i] = zeroOf(t.elem)
+		}
+		return value{t: t, comps: comps}, true
+	case t.k == kStruct:
+		fields := make([]value, len(t.st.fields))
+		for i, f := range t.st.fields {
+			v, ok := zeroValue(f.t)
+			if !ok {
+				return value{}, false
+			}
+			fields[i] = v
+		}
+		return value{t: t, fields: fields}, true
+	}
+	return value{}, false
+}
+
+// structOf constructs a struct value, either as a compile-time constant or
+// in a local variable assigned field by field.
+func (c *checker) structOf(t ty, x *callExpr, out *[]shaderir.Stmt) value {
+	c.resolveStruct(t.st)
+	fields := t.st.fields
+	if len(x.args) != 0 && len(x.args) != len(fields) {
+		fail(x.at(), "struct %s takes %d members, not %d", t.st.name, len(fields), len(x.args))
+	}
+	var vals []value
+	allConst := true
+	if len(x.args) == 0 {
+		if zv, ok := zeroValue(t); ok {
+			vals = zv.fields
+		} else {
+			allConst = false
+		}
+	} else {
+		vals = make([]value, len(fields))
+		for i, a := range x.args {
+			v := c.convert(c.expr(a, out), fields[i].t, a.at())
+			vals[i] = v
+			if v.c == nil && v.comps == nil && v.fields == nil {
+				allConst = false
+			}
+		}
+	}
+	if c.cur == nil {
+		if !allConst {
+			fail(x.at(), "the expression is not a constant")
+		}
+		return value{t: t, fields: vals}
+	}
+	idx := c.newLocal(t)
+	s := local(idx, t)
+	if len(x.args) == 0 {
+		*out = append(*out, shaderir.Stmt{Type: shaderir.Init, InitIndex: idx})
+	} else {
+		for i, v := range vals {
+			if fields[i].t.k == kArray {
+				v = c.reuse(v, out)
+			}
+			field := mk(shaderir.Expr{Type: shaderir.FieldSelector, Exprs: []shaderir.Expr{s, {Type: shaderir.StructMember, Index: i}}}, fields[i].t)
+			*out = append(*out, assign(field, c.ir(v)))
+		}
+	}
+	var cf []value
+	if allConst {
+		cf = vals
+	}
+	return value{t: t, e: s, fields: cf}
 }
 
 // arrayOf constructs an array in a local, element by element.
@@ -476,11 +605,36 @@ func (c *checker) bitcast(x *callExpr, out *[]shaderir.Stmt) value {
 	}
 	from, to := v.t.scalar(), t.scalar()
 	ok := func(k kind) bool { return k == kI32 || k == kU32 || k == kF32 }
-	if !ok(from) || !ok(to) || n(v.t) != n(t) || v.t.k == kArray || t.k == kArray || v.t.k == kMat || t.k == kMat {
+	if !ok(from) || !ok(to) || n(v.t) != n(t) || v.t.k == kArray || t.k == kArray || v.t.k == kMat || t.k == kMat || v.t.k == kStruct || t.k == kStruct {
 		fail(x.at(), "cannot bitcast a %s to a %s", v.t, t)
 	}
 	if from == to {
+		if v.c != nil || v.comps != nil {
+			return v
+		}
 		return value{t: t, e: c.ir(v)}
+	}
+	if v.c != nil {
+		var bits uint32
+		switch from {
+		case kF32:
+			f, _ := constant.Float64Val(v.c)
+			bits = math.Float32bits(float32(f))
+		case kI32:
+			i, _ := constant.Int64Val(v.c)
+			bits = uint32(int32(i))
+		case kU32:
+			u, _ := constant.Uint64Val(v.c)
+			bits = uint32(u)
+		}
+		switch to {
+		case kF32:
+			return value{t: t, c: constant.MakeFloat64(float64(math.Float32frombits(bits)))}
+		case kI32:
+			return value{t: t, c: constant.MakeInt64(int64(int32(bits)))}
+		case kU32:
+			return value{t: t, c: constant.MakeUint64(uint64(bits))}
+		}
 	}
 	var f shaderir.BuiltinFunc
 	switch {

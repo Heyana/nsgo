@@ -170,7 +170,15 @@ func (t Type) DwordCount() int {
 	case Array:
 		return t.Length * t.Sub[0].DwordCount()
 	case Struct:
-		return t.SizeBytes() / 4
+		n := 0
+		for _, sub := range t.Sub {
+			c := sub.DwordCount()
+			if c < 0 {
+				return -1
+			}
+			n += c
+		}
+		return n
 	default:
 		return -1
 	}
@@ -389,7 +397,6 @@ const (
 	UVec2
 	UVec3
 	UVec4
-
 	// Added by NSGo for 3D GPU pipelines (docs/architecture/gpu.md).
 	Mat2x3
 	Mat2x4

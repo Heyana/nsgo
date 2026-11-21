@@ -39,6 +39,9 @@ func Fragment(p *shaderir.Program, name string, cbuffer, texture int) string {
 	for i := 0; i < lib.TextureCount; i++ {
 		lines = append(lines, fmt.Sprintf("Texture2D T%d : register(t%d);", i, texture+i))
 	}
+	for i, t := range lib.Privates {
+		lines = append(lines, fmt.Sprintf("static %s;", c.varDecl(lib, &t, fmt.Sprintf("P%d", i))))
+	}
 	lines = append(lines, "")
 	for _, f := range funcs {
 		lines = append(lines, c.function(lib, f, true)...)

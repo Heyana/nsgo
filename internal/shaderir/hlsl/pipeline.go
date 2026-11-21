@@ -171,6 +171,18 @@ func (w *pipeWriter) typeStr(t shaderir.Type) string {
 		return "Texture2DArray"
 	case shaderir.TextureMultisampled2D:
 		return "Texture2DMS<float4>"
+	case shaderir.Mat2x3:
+		return "float3x2"
+	case shaderir.Mat2x4:
+		return "float4x2"
+	case shaderir.Mat3x2:
+		return "float2x3"
+	case shaderir.Mat3x4:
+		return "float4x3"
+	case shaderir.Mat4x2:
+		return "float2x4"
+	case shaderir.Mat4x3:
+		return "float3x4"
 	default:
 		return basicTypeString(t.Main)
 	}

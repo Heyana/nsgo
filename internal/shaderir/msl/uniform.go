@@ -51,11 +51,12 @@ func typeLanes(t *shaderir.Type) []int {
 				walk(&t.Sub[0], base+i*stride)
 			}
 		case t.IsMatrix():
-			n := t.MatrixSize()
-			col := shaderir.Type{Main: shaderir.VectorOf(shaderir.Float, n)}
-			_, a := sizeAlign(&col)
-			for c := range n {
-				walk(&col, base+c*roundUp(4*n, a))
+			cols, rows := t.MatrixCols(), t.MatrixRows()
+			col := shaderir.Type{Main: shaderir.VectorOf(shaderir.Float, rows)}
+			s, a := sizeAlign(&col)
+			stride := roundUp(s, a)
+			for c := range cols {
+				walk(&col, base+c*stride)
 			}
 		case t.Main == shaderir.Bool:
 			out = append(out, base)
@@ -86,6 +87,16 @@ func sizeAlign(t *shaderir.Type) (size, align int) {
 	case shaderir.Mat3:
 		return 48, 16
 	case shaderir.Mat4:
+		return 64, 16
+	case shaderir.Mat2x3, shaderir.Mat2x4:
+		return 32, 16
+	case shaderir.Mat3x2:
+		return 24, 8
+	case shaderir.Mat3x4:
+		return 48, 16
+	case shaderir.Mat4x2:
+		return 32, 8
+	case shaderir.Mat4x3:
 		return 64, 16
 	case shaderir.Array:
 		s, a := sizeAlign(&t.Sub[0])

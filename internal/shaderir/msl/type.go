@@ -179,6 +179,18 @@ func builtinFuncString(f shaderir.BuiltinFunc) string {
 		return "float3x3"
 	case shaderir.Mat4F:
 		return "float4x4"
+	case shaderir.Mat2x3F:
+		return "float2x3"
+	case shaderir.Mat2x4F:
+		return "float2x4"
+	case shaderir.Mat3x2F:
+		return "float3x2"
+	case shaderir.Mat3x4F:
+		return "float3x4"
+	case shaderir.Mat4x2F:
+		return "float4x2"
+	case shaderir.Mat4x3F:
+		return "float4x3"
 	case shaderir.Inversesqrt:
 		return "rsqrt"
 	case shaderir.TexelAt:

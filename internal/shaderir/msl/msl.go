@@ -54,6 +54,15 @@ func (c *compileContext) isVertexFunc(index int) bool {
 	return ok
 }
 
+func (c *compileContext) registerStructs(p *shaderir.Program, t *shaderir.Type) {
+	switch t.Main {
+	case shaderir.Array:
+		c.registerStructs(p, &t.Sub[0])
+	case shaderir.Struct:
+		c.structName(p, t)
+	}
+}
+
 func (c *compileContext) structName(p *shaderir.Program, t *shaderir.Type) string {
 	if t.Main != shaderir.Struct {
 		panic("msl: the given type at structName must be a struct")
@@ -61,6 +70,9 @@ func (c *compileContext) structName(p *shaderir.Program, t *shaderir.Type) strin
 	s := t.String()
 	if n, ok := c.structNames[s]; ok {
 		return n
+	}
+	for i := range t.Sub {
+		c.registerStructs(p, &t.Sub[i])
 	}
 	n := fmt.Sprintf("S%d", len(c.structNames))
 	c.structNames[s] = n
@@ -149,6 +161,15 @@ func Compile(p *shaderir.Program) (shader string) {
 		lines = append(lines, "};")
 	}
 
+	if len(p.Privates) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "struct Privates {")
+		for i, pv := range p.Privates {
+			lines = append(lines, fmt.Sprintf("\t%s;", c.varDecl(p, &pv, fmt.Sprintf("P%d", i), false)))
+		}
+		lines = append(lines, "};")
+	}
+
 	// The entry functions refer to Attributes and Varyings even when these have no members.
 	if len(p.Attributes) > 0 || hasVertex {
 		lines = append(lines, "")
@@ -198,6 +219,9 @@ func Compile(p *shaderir.Program) (shader string) {
 		}
 		lines[len(lines)-1] += ") {"
 		lines = append(lines, fmt.Sprintf("\tVaryings %s = {};", vertexOut))
+		if len(p.Privates) > 0 {
+			lines = append(lines, "\tPrivates privates = {};")
+		}
 		for i, a := range p.Attributes {
 			if !c.assignedAttributes[i] {
 				continue
@@ -227,6 +251,9 @@ func Compile(p *shaderir.Program) (shader string) {
 		lines[len(lines)-1] += ","
 		lines = append(lines, "\tbool front_facing [[front_facing]]")
 		lines[len(lines)-1] += ") {"
+		if len(p.Privates) > 0 {
+			lines = append(lines, "\tPrivates privates = {};")
+		}
 		lines = append(lines, c.block(p, p.FragmentFunc.Block, p.FragmentFunc.Block, 0)...)
 		lines = append(lines, "}")
 	}
@@ -259,6 +286,8 @@ func (c *compileContext) typ(p *shaderir.Program, t *shaderir.Type) string {
 	switch t.Main {
 	case shaderir.None:
 		return "void"
+	case shaderir.Array:
+		return fmt.Sprintf("array<%s, %d>", c.typ(p, &t.Sub[0]), t.Length)
 	case shaderir.Struct:
 		return c.structName(p, t)
 	default:
@@ -270,8 +299,8 @@ func (c *compileContext) varDecl(p *shaderir.Program, t *shaderir.Type, varname 
 	switch t.Main {
 	case shaderir.None:
 		return "?(none)"
-	case shaderir.Struct:
-		s := c.structName(p, t)
+	case shaderir.Array, shaderir.Struct:
+		s := c.typ(p, t)
 		if ref {
 			s += "&"
 		}
@@ -299,7 +328,8 @@ func (c *compileContext) varInit(p *shaderir.Program, t *shaderir.Type) string {
 	case shaderir.Float, shaderir.Vec2, shaderir.Vec3, shaderir.Vec4,
 		shaderir.IVec2, shaderir.IVec3, shaderir.IVec4,
 		shaderir.UVec2, shaderir.UVec3, shaderir.UVec4,
-		shaderir.Mat2, shaderir.Mat3, shaderir.Mat4:
+		shaderir.Mat2, shaderir.Mat3, shaderir.Mat4,
+		shaderir.Mat2x3, shaderir.Mat2x4, shaderir.Mat3x2, shaderir.Mat3x4, shaderir.Mat4x2, shaderir.Mat4x3:
 		return fmt.Sprintf("%s(0)", basicTypeString(t.Main))
 	default:
 		t := c.typ(p, t)
@@ -319,6 +349,9 @@ func (c *compileContext) function(p *shaderir.Program, f *shaderir.Func, prototy
 	}
 	if !c.isVertexFunc(f.Index) {
 		args = append(args, "bool front_facing")
+	}
+	if len(p.Privates) > 0 {
+		args = append(args, "thread Privates& privates")
 	}
 
 	var idx int
@@ -457,6 +490,8 @@ func (c *compileContext) block(p *shaderir.Program, topBlock, block *shaderir.Bl
 			return numberLiteral(e.Const, e.Unsigned)
 		case shaderir.UniformVariable:
 			return fmt.Sprintf("uniforms.U%d", e.Index)
+		case shaderir.PrivateVariable:
+			return fmt.Sprintf("privates.P%d", e.Index)
 		case shaderir.TextureVariable:
 			return fmt.Sprintf("T%d", e.Index)
 		case shaderir.LocalVariable:
@@ -505,6 +540,9 @@ func (c *compileContext) block(p *shaderir.Program, topBlock, block *shaderir.Bl
 				}
 				if !c.isVertexFunc(callee.Index) {
 					args = append(args, "front_facing")
+				}
+				if len(p.Privates) > 0 {
+					args = append(args, "privates")
 				}
 			}
 			for _, exp := range e.Exprs[1:] {

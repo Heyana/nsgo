@@ -141,6 +141,89 @@ fn shade(uv: vec2f) -> vec4f { return vec4f(uv.x, 0.0, 1.0, uniforms.alpha); }`)
 	}
 }
 
+// TestWGSLRestDraws executes var<private>, user structs, non-square matrices,
+// bit-counting, packing/unpacking, modf and frexp on Metal and checks the
+// computed values against exact expected results.
+func TestWGSLRestDraws(t *testing.T) {
+	if !loadMetal() {
+		t.Skip("no Metal device")
+	}
+	src := `
+struct Uniforms {
+	bits: u32,
+	sval: i32,
+	fval: f32,
+}
+struct Accum {
+	sum: f32,
+	ok: bool,
+}
+var<private> g_state: Accum = Accum(0.25, true);
+fn bump(delta: f32) {
+	g_state.sum += delta;
+}
+fn shade(uv: vec2f) -> vec4f {
+	// 1. var<private> + struct: 0.25 + 0.25 = 0.5
+	bump(0.25);
+	var r = 0.0;
+	if (g_state.ok && abs(g_state.sum - 0.5) < 1e-4) {
+		r += 0.25;
+	}
+	// 2. Non-square matrices: mat2x3 * vec2 -> vec3, transpose(mat2x3) -> mat3x2
+	let m23 = mat2x3f(vec3f(1.0, 2.0, 3.0), vec3f(4.0, 5.0, 6.0));
+	let v3 = m23 * vec2f(2.0, 3.0); // (14, 19, 24)
+	let m32 = transpose(m23);
+	let v2 = m32 * vec3f(1.0, 0.0, 1.0); // (4, 10)
+	if (abs(v3.x - 14.0) < 1e-3 && abs(v3.y - 19.0) < 1e-3 && abs(v3.z - 24.0) < 1e-3 &&
+		abs(v2.x - 4.0) < 1e-3 && abs(v2.y - 10.0) < 1e-3) {
+		r += 0.25;
+	}
+	// 3. Bit-counting (runtime uniforms so not constant-folded):
+	// bits = 0x00F01230u: clz=8, popcnt=8, ctz=4, flb=23, ftb=4, rev=0x0C480F00u
+	// extractBits(bits, 4u, 8u) = 0x23u, insertBits(bits, 0xABu, 8u, 8u) = 0x00F0AB30u
+	// sval = -12i (0xFFFFFFF4): flb(-12i)=3i, extractBits(-12i, 0u, 4u)=4i, extractBits(-12i, 2u, 4u)=-3i
+	let u = uniforms.bits;
+	let s = uniforms.sval;
+	var g = 0.0;
+	if (countLeadingZeros(u) == 8u && countOneBits(u) == 8u && countTrailingZeros(u) == 4u &&
+		firstLeadingBit(u) == 23u && firstTrailingBit(u) == 4u && reverseBits(u) == 0x0C480F00u &&
+		extractBits(u, 4u, 8u) == 0x23u && insertBits(u, 0xABu, 8u, 8u) == 0x00F0AB30u &&
+		firstLeadingBit(s) == 3i && extractBits(s, 0u, 4u) == 4i && extractBits(s, 2u, 4u) == -3i) {
+		g = 1.0;
+	}
+	// 4. Packing & unpacking round-trips + modf & frexp (runtime uniform fval = -3.25)
+	let p8u = unpack4x8unorm(pack4x8unorm(vec4f(0.0, 1.0, 0.0, 1.0)));
+	let p8s = unpack4x8snorm(pack4x8snorm(vec4f(-1.0, 0.0, 1.0, -1.0)));
+	let p16u = unpack2x16unorm(pack2x16unorm(vec2f(0.0, 1.0)));
+	let p16s = unpack2x16snorm(pack2x16snorm(vec2f(-1.0, 1.0)));
+	let p16f = unpack2x16float(pack2x16float(vec2f(uniforms.fval, 1.5)));
+	let mf = modf(uniforms.fval);
+	let fx = frexp(uniforms.fval);
+	var b = 0.0;
+	if (abs(p8u.y - 1.0) < 1e-3 && abs(p8s.x + 1.0) < 1e-3 && abs(p8s.z - 1.0) < 1e-3 &&
+		abs(p16u.y - 1.0) < 1e-3 && abs(p16s.x + 1.0) < 1e-3 &&
+		abs(p16f.x - uniforms.fval) < 1e-3 && abs(p16f.y - 1.5) < 1e-3 &&
+		abs(mf.whole + 3.0) < 1e-4 && abs(mf.fract + 0.25) < 1e-4 &&
+		abs(fx.fract + 0.8125) < 1e-4 && fx.exp == 2i) {
+		b = 1.0;
+	}
+	return vec4f(r * 2.0, g, b, 1.0);
+}
+`
+	p, err := wgsl.Compile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Bridge lanes (rectSize.x, rectSize.y, scale), built-ins (time, progress, overflow), then uniforms (bits, sval, fval).
+	lanes := []float64{4, 4, 1, 0, 0, 0, float64(0x00F01230), -12, -3.25}
+	pix := drawMetal(t, p.IR, lanes, nil, 4, 4)
+	px := pix[(1*4+1)*4:]
+	// BGRA: expect B=255 (pack/unpack/modf/frexp), G=255 (bit-counting), R=255 (privates+structs+matrices), A=255.
+	if px[0] != 255 || px[1] != 255 || px[2] != 255 || px[3] != 255 {
+		t.Errorf("pixel BGRA = %v, want [255 255 255 255]", px[:4])
+	}
+}
+
 // TestPictureTakesLayers pictures a layer tree as it shows, top row
 // first, with the overflow around it and its mask lifted.
 func TestPictureTakesLayers(t *testing.T) {

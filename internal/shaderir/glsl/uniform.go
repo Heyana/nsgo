@@ -23,9 +23,9 @@ func UniformLanes(p *shaderir.Program) (lanes []int, size int) {
 				walk(&t.Sub[0], base+i*stride)
 			}
 		case t.IsMatrix():
-			n := t.MatrixSize()
-			for col := range n {
-				for row := range n {
+			cols, rows := t.MatrixCols(), t.MatrixRows()
+			for col := range cols {
+				for row := range rows {
 					lanes = append(lanes, base+col*16+row*4)
 				}
 			}
@@ -55,8 +55,9 @@ func std140(t *shaderir.Type) (size, align int) {
 		return 12, 16
 	case shaderir.Vec4, shaderir.IVec4, shaderir.UVec4:
 		return 16, 16
-	case shaderir.Mat2, shaderir.Mat3, shaderir.Mat4:
-		return t.MatrixSize() * 16, 16
+	case shaderir.Mat2, shaderir.Mat3, shaderir.Mat4,
+		shaderir.Mat2x3, shaderir.Mat2x4, shaderir.Mat3x2, shaderir.Mat3x4, shaderir.Mat4x2, shaderir.Mat4x3:
+		return t.MatrixCols() * 16, 16
 	case shaderir.Array:
 		s, _ := std140(&t.Sub[0])
 		return t.Length * roundUp(s, 16), 16

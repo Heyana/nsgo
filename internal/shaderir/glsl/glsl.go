@@ -115,6 +115,15 @@ type compileContext struct {
 	flipRows string
 }
 
+func (c *compileContext) registerStructs(p *shaderir.Program, t *shaderir.Type) {
+	switch t.Main {
+	case shaderir.Array:
+		c.registerStructs(p, &t.Sub[0])
+	case shaderir.Struct:
+		c.structName(p, t)
+	}
+}
+
 func (c *compileContext) structName(p *shaderir.Program, t *shaderir.Type) string {
 	if t.Main != shaderir.Struct {
 		panic("glsl: the given type at structName must be a struct")
@@ -122,6 +131,9 @@ func (c *compileContext) structName(p *shaderir.Program, t *shaderir.Type) strin
 	s := t.String()
 	if n, ok := c.structNames[s]; ok {
 		return n
+	}
+	for i := range t.Sub {
+		c.registerStructs(p, &t.Sub[i])
 	}
 	n := fmt.Sprintf("S%d", len(c.structNames))
 	c.structNames[s] = n
@@ -149,10 +161,13 @@ func Compile(p *shaderir.Program, version GLSLVersion, projectionMatrixUniformIn
 	{
 		vslines = append(vslines, strings.Split(VertexPrelude(version), "\n")...)
 		vslines = append(vslines, "", "{{.Structs}}")
-		if len(p.Uniforms) > 0 || p.TextureCount > 0 || len(p.Attributes) > 0 || len(p.Varyings) > 0 {
+		if len(p.Uniforms) > 0 || len(p.Privates) > 0 || p.TextureCount > 0 || len(p.Attributes) > 0 || len(p.Varyings) > 0 {
 			vslines = append(vslines, "")
 			for i, t := range p.Uniforms {
 				vslines = append(vslines, fmt.Sprintf("uniform %s;", c.varDecl(p, &t, fmt.Sprintf("U%d", i))))
+			}
+			for i, t := range p.Privates {
+				vslines = append(vslines, fmt.Sprintf("%s;", c.varDecl(p, &t, fmt.Sprintf("P%d", i))))
 			}
 			for i := 0; i < p.TextureCount; i++ {
 				vslines = append(vslines, fmt.Sprintf("uniform sampler2D T%d;", i))
@@ -202,7 +217,8 @@ func Compile(p *shaderir.Program, version GLSLVersion, projectionMatrixUniformIn
 			switch t.Sub[0].Main {
 			case shaderir.Vec2, shaderir.Vec3, shaderir.Vec4, shaderir.IVec2, shaderir.IVec3, shaderir.IVec4:
 				str += ".x"
-			case shaderir.Mat2, shaderir.Mat3, shaderir.Mat4:
+			case shaderir.Mat2, shaderir.Mat3, shaderir.Mat4,
+				shaderir.Mat2x3, shaderir.Mat2x4, shaderir.Mat3x2, shaderir.Mat3x4, shaderir.Mat4x2, shaderir.Mat4x3:
 				str += "[0][0]"
 			}
 			str = "float(" + str + ")"
@@ -243,10 +259,13 @@ func Compile(p *shaderir.Program, version GLSLVersion, projectionMatrixUniformIn
 	{
 		fslines = append(fslines, strings.Split(FragmentPrelude(version), "\n")...)
 		fslines = append(fslines, "", "{{.Structs}}")
-		if len(p.Uniforms) > 0 || p.TextureCount > 0 || len(p.Varyings) > 0 {
+		if len(p.Uniforms) > 0 || len(p.Privates) > 0 || p.TextureCount > 0 || len(p.Varyings) > 0 {
 			fslines = append(fslines, "")
 			for i, t := range p.Uniforms {
 				fslines = append(fslines, fmt.Sprintf("uniform %s;", c.varDecl(p, &t, fmt.Sprintf("U%d", i))))
+			}
+			for i, t := range p.Privates {
+				fslines = append(fslines, fmt.Sprintf("%s;", c.varDecl(p, &t, fmt.Sprintf("P%d", i))))
 			}
 			for i := 0; i < p.TextureCount; i++ {
 				fslines = append(fslines, fmt.Sprintf("uniform sampler2D T%d;", i))
@@ -322,6 +341,9 @@ func (c *compileContext) typ(p *shaderir.Program, t *shaderir.Type) (string, str
 	switch t.Main {
 	case shaderir.None:
 		return "void", ""
+	case shaderir.Array:
+		t0, t1 := c.typ(p, &t.Sub[0])
+		return t0 + t1, fmt.Sprintf("[%d]", t.Length)
 	case shaderir.Struct:
 		return c.structName(p, t), ""
 	default:
@@ -336,7 +358,7 @@ func (c *compileContext) varDecl(p *shaderir.Program, t *shaderir.Type, varname 
 	case shaderir.Struct:
 		return fmt.Sprintf("%s %s", c.structName(p, t), varname)
 	default:
-		t0, t1 := typeString(t)
+		t0, t1 := c.typ(p, t)
 		return fmt.Sprintf("%s %s%s", t0, varname, t1)
 	}
 }
@@ -351,10 +373,14 @@ func (c *compileContext) varInit(p *shaderir.Program, t *shaderir.Type) string {
 		for i := 0; i < t.Length; i++ {
 			es = append(es, init)
 		}
-		t0, t1 := typeString(t)
+		t0, t1 := c.typ(p, t)
 		return fmt.Sprintf("%s%s(%s)", t0, t1, strings.Join(es, ", "))
 	case shaderir.Struct:
-		panic("not implemented")
+		es := make([]string, 0, len(t.Sub))
+		for i := range t.Sub {
+			es = append(es, c.varInit(p, &t.Sub[i]))
+		}
+		return fmt.Sprintf("%s(%s)", c.structName(p, t), strings.Join(es, ", "))
 	case shaderir.Bool:
 		return "false"
 	case shaderir.Int:
@@ -364,7 +390,8 @@ func (c *compileContext) varInit(p *shaderir.Program, t *shaderir.Type) string {
 	case shaderir.Float, shaderir.Vec2, shaderir.Vec3, shaderir.Vec4,
 		shaderir.IVec2, shaderir.IVec3, shaderir.IVec4,
 		shaderir.UVec2, shaderir.UVec3, shaderir.UVec4,
-		shaderir.Mat2, shaderir.Mat3, shaderir.Mat4:
+		shaderir.Mat2, shaderir.Mat3, shaderir.Mat4,
+		shaderir.Mat2x3, shaderir.Mat2x4, shaderir.Mat3x2, shaderir.Mat3x4, shaderir.Mat4x2, shaderir.Mat4x3:
 		return fmt.Sprintf("%s(0)", basicTypeString(t.Main))
 	default:
 		t0, t1 := c.typ(p, t)
@@ -532,6 +559,8 @@ func (c *compileContext) block(p *shaderir.Program, topBlock, block *shaderir.Bl
 			return numberLiteral(e.Const, e.Unsigned)
 		case shaderir.UniformVariable:
 			return fmt.Sprintf("U%d", e.Index)
+		case shaderir.PrivateVariable:
+			return fmt.Sprintf("P%d", e.Index)
 		case shaderir.TextureVariable:
 			return fmt.Sprintf("T%d", e.Index)
 		case shaderir.LocalVariable:
@@ -631,6 +660,14 @@ func (c *compileContext) block(p *shaderir.Program, topBlock, block *shaderir.Bl
 			rhs := s.Exprs[1]
 			if lhs.Type == shaderir.LocalVariable {
 				if t := p.LocalVariableType(topBlock, block, lhs.Index); t.Main == shaderir.Array {
+					for i := 0; i < t.Length; i++ {
+						lines = append(lines, fmt.Sprintf("%[1]s%[2]s[%[3]d] = %[4]s[%[3]d];", idt, expr(&lhs), i, expr(&rhs)))
+					}
+					continue
+				}
+			}
+			if lhs.Type == shaderir.PrivateVariable {
+				if t := p.Privates[lhs.Index]; t.Main == shaderir.Array {
 					for i := 0; i < t.Length; i++ {
 						lines = append(lines, fmt.Sprintf("%[1]s%[2]s[%[3]d] = %[4]s[%[3]d];", idt, expr(&lhs), i, expr(&rhs)))
 					}

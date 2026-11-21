@@ -39,19 +39,22 @@ type structField struct {
 }
 
 type structType struct {
-	name   string
-	fields []structField
+	name    string
+	fields  []structField
+	decl    *structDecl
+	state   int // 0=unvisited, 1=resolving, 2=resolved
+	builtin bool
 }
 
 // ty is a WGSL type. The IR has no boolean vectors, so a vec<bool> is a
 // float vector of 0 and 1 there (see boolVector).
 type ty struct {
 	k    kind
-	elem kind // a vector's or a matrix's scalar
-	n    int  // a vector's components, a matrix's columns, an array's length
-	rows int  // a matrix's rows
-	arr  *ty  // an array's element
-	st   *structType
+	elem kind        // a vector's or a matrix's scalar
+	n    int         // a vector's components, a matrix's columns, an array's length
+	rows int         // a matrix's rows
+	arr  *ty         // an array's element
+	st   *structType // a struct's definition
 }
 
 var (
@@ -111,7 +114,7 @@ func (t ty) concrete() ty {
 }
 
 func (t ty) equal(u ty) bool {
-	if t.k != u.k || t.elem != u.elem || t.n != u.n || t.rows != u.rows {
+	if t.k != u.k || t.elem != u.elem || t.n != u.n || t.rows != u.rows || t.st != u.st {
 		return false
 	}
 	if t.k == kArray {
@@ -286,8 +289,20 @@ func lookupBuiltinType(name string) (ty, bool) {
 		return vec(kU32, 4), true
 	case "mat2x2f":
 		return ty{k: kMat, elem: kF32, n: 2, rows: 2}, true
+	case "mat2x3f":
+		return ty{k: kMat, elem: kF32, n: 2, rows: 3}, true
+	case "mat2x4f":
+		return ty{k: kMat, elem: kF32, n: 2, rows: 4}, true
+	case "mat3x2f":
+		return ty{k: kMat, elem: kF32, n: 3, rows: 2}, true
 	case "mat3x3f":
 		return ty{k: kMat, elem: kF32, n: 3, rows: 3}, true
+	case "mat3x4f":
+		return ty{k: kMat, elem: kF32, n: 3, rows: 4}, true
+	case "mat4x2f":
+		return ty{k: kMat, elem: kF32, n: 4, rows: 2}, true
+	case "mat4x3f":
+		return ty{k: kMat, elem: kF32, n: 4, rows: 3}, true
 	case "mat4x4f":
 		return ty{k: kMat, elem: kF32, n: 4, rows: 4}, true
 	}

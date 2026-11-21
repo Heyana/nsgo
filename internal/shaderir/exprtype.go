@@ -8,6 +8,7 @@ import "go/constant"
 type TypeEnv interface {
 	LocalType(index int) Type
 	UniformType(index int) Type
+	PrivateType(index int) Type
 	FuncReturn(index int) Type
 }
 
@@ -59,6 +60,8 @@ func TypeOf(e *Expr, env TypeEnv) Type {
 			return *e.StructType
 		}
 		return Type{}
+	case PrivateVariable:
+		return env.PrivateType(e.Index)
 	case TextureVariable:
 		return Type{Main: Texture}
 	case LocalVariable:
@@ -162,7 +165,7 @@ func callType(e *Expr, env TypeEnv) Type {
 		return Type{Main: Int}
 	case UintF:
 		return Type{Main: Uint}
-	case FloatF, Length, Distance, Dot:
+	case FloatF, Length, Distance, Dot, Determinant:
 		return Type{Main: Float}
 	case Vec2F:
 		return Type{Main: Vec2}
@@ -197,6 +200,25 @@ func callType(e *Expr, env TypeEnv) Type {
 		return Type{Main: Mat3}
 	case Mat4F:
 		return Type{Main: Mat4}
+	case Mat2x3F:
+		return Type{Main: Mat2x3}
+	case Mat2x4F:
+		return Type{Main: Mat2x4}
+	case Mat3x2F:
+		return Type{Main: Mat3x2}
+	case Mat3x4F:
+		return Type{Main: Mat3x4}
+	case Mat4x2F:
+		return Type{Main: Mat4x2}
+	case Mat4x3F:
+		return Type{Main: Mat4x3}
+	case Transpose:
+		if len(args) > 0 {
+			m := TypeOf(&args[0], env)
+			if m.IsMatrix() {
+				return Type{Main: MatrixOf(m.MatrixRows(), m.MatrixCols())}
+			}
+		}
 	case Step:
 		return TypeOf(&args[1], env)
 	case Smoothstep:

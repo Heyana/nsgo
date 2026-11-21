@@ -29,6 +29,8 @@ type checker struct {
 	// declared is whether the source declares struct Uniforms.
 	declared bool
 	members  []Uniform
+	// inInit is true while evaluating module-scope var<private> initializers.
+	inInit bool
 }
 
 type uniformInfo struct {
@@ -46,6 +48,7 @@ const (
 	symBuiltin // nsh, uniforms
 	symBinding // @group/@binding var in pipeline mode
 	symExpr    // custom IR expression (e.g. stage built-in input)
+	symPrivate
 )
 
 type symbol struct {
@@ -57,10 +60,13 @@ type symbol struct {
 	mutable bool
 	// val is a const's value, or nil for one written again where it is
 	// used (init, read in the module's scope).
-	val  *value
-	init expr
-	fn   *fnInfo
-	name string
+	val       *value
+	init      expr
+	alias     *aliasDecl
+	constDecl *declStmt
+	state     int // 0=unvisited, 1=resolving, 2=resolved
+	fn        *fnInfo
+	name      string
 }
 
 type scope struct {
@@ -169,6 +175,10 @@ func local(idx int, t ty) shaderir.Expr {
 	return mk(shaderir.Expr{Type: shaderir.LocalVariable, Index: idx}, t)
 }
 
+func privateVar(idx int, t ty) shaderir.Expr {
+	return mk(shaderir.Expr{Type: shaderir.PrivateVariable, Index: idx}, t)
+}
+
 func assign(lhs, rhs shaderir.Expr) shaderir.Stmt {
 	return shaderir.Stmt{Type: shaderir.Assign, Exprs: []shaderir.Expr{lhs, rhs}}
 }
@@ -192,30 +202,41 @@ func (c *checker) check() {
 	p.Uniforms = []shaderir.Type{{Main: shaderir.Vec2}, {Main: shaderir.Float}}
 	p.Varyings = []shaderir.Type{{Main: shaderir.Vec2}}
 
+	// Pass 1: register all module-scope declarations so they may reference
+	// one another in any order.
+	var privSyms []*symbol
+	var constSyms []*symbol
 	for _, a := range c.m.aliases {
-		c.declare(a.name, a.pos, &symbol{kind: symType, t: c.resolveType(a.typ)})
+		c.declare(a.name, a.pos, &symbol{kind: symType, alias: a})
 	}
 	for _, s := range c.m.structs {
-		if s.name != "Uniforms" {
-			fail(s.pos, "a shader declares no struct but Uniforms")
+		if s.name == "Uniforms" {
+			c.declared = true
+			c.declare(s.name, s.pos, &symbol{kind: symType})
+			continue
 		}
-		c.declared = true
-		c.declare(s.name, s.pos, &symbol{kind: symType})
+		st := &structType{name: s.name, decl: s, builtin: s.pos >= c.user}
+		c.declare(s.name, s.pos, &symbol{kind: symType, t: ty{k: kStruct, st: st}})
 	}
 	for _, g := range c.m.globals {
 		switch {
 		case g.kind == "var" && g.space == "private":
-			fail(g.pos, "var<private> is not supported yet: declare the variable in the function")
+			sym := &symbol{kind: symPrivate, constDecl: g}
+			c.declare(g.name, g.pos, sym)
+			privSyms = append(privSyms, sym)
 		case g.kind == "var":
 			if g.space == "uniform" || g.space == "storage" || g.space == "workgroup" || g.space == "" {
 				fail(g.pos, "a shader declares no resources: it reads nsh and uniforms")
 			}
 			fail(g.pos, "the address space %s is not WGSL's", g.space)
+		default:
+			if g.init == nil {
+				fail(g.pos, "the const %s has no value", g.name)
+			}
+			sym := &symbol{kind: symConst, constDecl: g}
+			c.declare(g.name, g.pos, sym)
+			constSyms = append(constSyms, sym)
 		}
-		if g.init == nil {
-			fail(g.pos, "the const %s has no value", g.name)
-		}
-		c.declare(g.name, g.pos, c.constSymbol(g))
 	}
 	for _, f := range c.m.fns {
 		for _, a := range f.attrs {
@@ -225,6 +246,27 @@ func (c *checker) check() {
 			}
 		}
 		info := &fnInfo{decl: f, index: len(c.fns)}
+		c.fns = append(c.fns, info)
+		c.declare(f.name, f.pos, &symbol{kind: symFn, fn: info})
+	}
+
+	// Pass 2: resolve aliases, structs, uniforms, consts, function signatures,
+	// and var<private> globals.
+	for _, a := range c.m.aliases {
+		c.resolveAlias(c.global.names[a.name])
+	}
+	for _, s := range c.m.structs {
+		if s.name == "Uniforms" {
+			continue
+		}
+		c.resolveStruct(c.global.names[s.name].t.st)
+	}
+	c.uniformsOf()
+	for _, sym := range constSyms {
+		c.resolveConst(sym)
+	}
+	for _, info := range c.fns {
+		f := info.decl
 		for _, prm := range f.params {
 			t := c.resolveType(prm.typ)
 			if t.k == kArray {
@@ -238,11 +280,9 @@ func (c *checker) check() {
 				fail(f.ret.pos, "a function returns no arrays")
 			}
 		}
-		c.fns = append(c.fns, info)
-		c.declare(f.name, f.pos, &symbol{kind: symFn, fn: info})
 	}
+	initPriv, initCalls := c.initPrivates(privSyms)
 
-	c.uniformsOf()
 	for _, a := range c.m.asserts {
 		v := c.constant(a.x)
 		if v.t.k != kBool {
@@ -261,22 +301,167 @@ func (c *checker) check() {
 		fail(d.decl.pos, "shade must be fn shade(uv: vec2f) -> vec4f")
 	}
 
+	// Compile all user functions (so errors in unused user functions are still
+	// reported), __nsh_fragment, and only the built-in helpers they reach.
+	compiled := map[*fnInfo]bool{}
+	var queue []*fnInfo
+	enqueue := func(f *fnInfo) {
+		if !compiled[f] {
+			compiled[f] = true
+			queue = append(queue, f)
+		}
+	}
 	for _, f := range c.fns {
+		if f.decl.pos < c.user || f.decl.name == "__nsh_fragment" {
+			enqueue(f)
+		}
+	}
+	for _, f := range initCalls {
+		enqueue(f)
+	}
+	for len(queue) > 0 {
+		f := queue[0]
+		queue = queue[1:]
 		p.Funcs = append(p.Funcs, c.function(f))
+		for _, g := range f.calls {
+			enqueue(g)
+		}
+	}
+	if initPriv != nil {
+		p.Funcs = append(p.Funcs, *initPriv)
 	}
 	c.recursion()
 
 	entry := c.global.names["__nsh_fragment"].fn
+	var stmts []shaderir.Stmt
+	if initPriv != nil {
+		stmts = append(stmts, shaderir.Stmt{
+			Type: shaderir.ExprStmt,
+			Exprs: []shaderir.Expr{{
+				Type:  shaderir.Call,
+				Exprs: []shaderir.Expr{{Type: shaderir.FunctionExpr, Index: initPriv.Index}},
+			}},
+		})
+	}
+	stmts = append(stmts, shaderir.Stmt{Type: shaderir.Return, Exprs: []shaderir.Expr{{
+		Type: shaderir.Call,
+		Exprs: []shaderir.Expr{
+			{Type: shaderir.FunctionExpr, Index: entry.index},
+			{Type: shaderir.LocalVariable, Index: 1},
+		},
+	}}})
 	p.FragmentFunc.Block = &shaderir.Block{
 		LocalVarIndexOffset: 1 + len(p.Varyings),
-		Stmts: []shaderir.Stmt{{Type: shaderir.Return, Exprs: []shaderir.Expr{{
-			Type: shaderir.Call,
-			Exprs: []shaderir.Expr{
-				{Type: shaderir.FunctionExpr, Index: entry.index},
-				{Type: shaderir.LocalVariable, Index: 1},
-			},
-		}}}},
+		Stmts:               stmts,
 	}
+}
+
+func (c *checker) resolveAlias(sym *symbol) {
+	if sym.alias == nil || sym.state == 2 {
+		return
+	}
+	if sym.state == 1 {
+		fail(sym.alias.pos, "alias %s refers to itself", sym.name)
+	}
+	sym.state = 1
+	sym.t = c.resolveType(sym.alias.typ)
+	sym.state = 2
+}
+
+func (c *checker) resolveStruct(st *structType) {
+	if st == nil || st.decl == nil || st.state == 2 {
+		return
+	}
+	if st.state == 1 {
+		fail(st.decl.pos, "struct %s contains itself", st.name)
+	}
+	st.state = 1
+	if len(st.decl.members) == 0 {
+		fail(st.decl.pos, "struct %s has no members", st.name)
+	}
+	seen := map[string]bool{}
+	for _, m := range st.decl.members {
+		if seen[m.name] {
+			fail(m.pos, "struct %s has member %s twice", st.name, m.name)
+		}
+		seen[m.name] = true
+		t := c.resolveType(m.typ)
+		st.fields = append(st.fields, structField{name: m.name, t: t})
+	}
+	st.state = 2
+}
+
+func (c *checker) resolveConst(sym *symbol) {
+	if sym.constDecl == nil || sym.state == 2 {
+		return
+	}
+	if sym.state == 1 {
+		fail(sym.constDecl.pos, "const %s refers to itself", sym.name)
+	}
+	sym.state = 1
+	resolved := c.constSymbol(sym.constDecl)
+	sym.t = resolved.t
+	sym.val = resolved.val
+	sym.init = resolved.init
+	sym.state = 2
+}
+
+func (c *checker) initPrivates(syms []*symbol) (*shaderir.Func, []*fnInfo) {
+	if len(syms) == 0 {
+		return nil, nil
+	}
+	info := &fnInfo{index: len(c.fns)}
+	top := &shaderir.Block{}
+	c.cur = &fnState{info: info, top: top}
+	c.inInit = true
+	defer func() {
+		c.inInit = false
+		c.cur = nil
+	}()
+	p := c.prog
+	for _, sym := range syms {
+		g := sym.constDecl
+		var t ty
+		var v value
+		if g.init != nil {
+			v = c.expr(g.init, &top.Stmts)
+		}
+		switch {
+		case g.typ != nil:
+			t = c.resolveType(g.typ)
+			if g.init != nil {
+				v = c.convert(v, t, g.init.at())
+			}
+		case g.init != nil:
+			v = c.concrete(v, g.init.at())
+			t = v.t
+		default:
+			fail(g.pos, "var %s has neither a type nor a value", g.name)
+		}
+		if t.k == kNone {
+			fail(g.pos, "var %s has no value", g.name)
+		}
+		pIdx := len(p.Privates)
+		p.Privates = append(p.Privates, t.ir())
+		sym.t = t
+		sym.local = pIdx
+		sym.mutable = true
+		sym.state = 2
+		if g.init != nil {
+			if t.k == kArray {
+				v = c.reuse(v, &top.Stmts)
+			}
+			top.Stmts = append(top.Stmts, assign(privateVar(pIdx, t), c.ir(v)))
+		} else {
+			z := c.newLocal(t)
+			top.Stmts = append(top.Stmts, assign(privateVar(pIdx, t), local(z, t)))
+		}
+	}
+	for _, b := range c.cur.blocks {
+		b.LocalVarIndexOffset = len(top.LocalVars)
+	}
+	fn := &shaderir.Func{Index: info.index, Block: top}
+	return fn, info.calls
 }
 
 // uniformsOf declares nsh and uniforms: the IR's uniforms after the
@@ -298,7 +483,10 @@ func (c *checker) uniformsOf() {
 	c.global.names["uniforms"] = &symbol{kind: symBuiltin, name: "uniforms"}
 	var s *structDecl
 	for _, d := range c.m.structs {
-		s = d
+		if d.name == "Uniforms" {
+			s = d
+			break
+		}
 	}
 	offset := 0
 	for _, mb := range s.members {
@@ -354,21 +542,35 @@ func (c *checker) constant(e expr) value {
 	defer func() { c.cur = saved }()
 	var out []shaderir.Stmt
 	v := c.expr(e, &out)
-	if v.c == nil && v.comps == nil {
+	if v.c == nil && v.comps == nil && v.fields == nil {
 		fail(e.at(), "the expression is not a constant")
 	}
 	return v
 }
 
 func (c *checker) resolveType(t *typeExpr) ty {
+	if strings.HasPrefix(t.name, "__") && t.pos < c.user {
+		fail(t.pos, "%s is not a type", t.name)
+	}
 	if bt, ok := lookupBuiltinType(t.name); ok {
 		if t.args != nil {
 			fail(t.pos, "%s takes no template", t.name)
 		}
 		return bt
 	}
-	if sym := c.scope.lookup(t.name); sym != nil && sym.kind == symType && sym.t.k != kNone {
-		return sym.t
+	if sym := c.scope.lookup(t.name); sym != nil && sym.kind == symType {
+		if sym.alias != nil {
+			c.resolveAlias(sym)
+		}
+		if sym.t.k == kStruct {
+			c.resolveStruct(sym.t.st)
+		}
+		if sym.t.k != kNone {
+			if t.args != nil {
+				fail(t.pos, "%s takes no template", t.name)
+			}
+			return sym.t
+		}
 	}
 	switch t.name {
 	case "vec2", "vec3", "vec4":
@@ -432,9 +634,6 @@ func (c *checker) resolveType(t *typeExpr) ty {
 		return ty{k: kTextureMultisampled2D}
 	}
 	if shape, ok := matShapes[t.name]; ok {
-		if !c.pipeline && shape[0] != shape[1] {
-			fail(t.pos, "only square matrices are supported")
-		}
 		if !strings.HasSuffix(t.name, "f") {
 			if len(t.args) != 1 || !c.templateType(t.args[0], t.pos).equal(tF32) {
 				fail(t.pos, "a matrix holds f32")
@@ -762,6 +961,9 @@ func (c *checker) decl(s *declStmt, out *[]shaderir.Stmt) {
 		}
 		idx := c.newLocal(t)
 		if s.init != nil {
+			if t.k == kArray {
+				v = c.reuse(v, out)
+			}
 			*out = append(*out, assign(local(idx, t), c.ir(v)))
 		} else {
 			*out = append(*out, shaderir.Stmt{Type: shaderir.Init, InitIndex: idx})
@@ -789,6 +991,9 @@ func (c *checker) assign(s *assignStmt, out *[]shaderir.Stmt) {
 		}
 	}
 	rhs = c.convert(rhs, lhs.t, s.rhs.at())
+	if lhs.t.k == kArray {
+		rhs = c.reuse(rhs, out)
+	}
 	r := c.ir(rhs)
 	if lhs.fb {
 		r = selectNumber(r, 1, 0)

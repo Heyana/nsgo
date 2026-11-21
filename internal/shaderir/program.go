@@ -61,6 +61,7 @@ func ParseSourceID(str string) (SourceID, error) {
 type Program struct {
 	UniformNames []string
 	Uniforms     []Type
+	Privates     []Type
 	TextureCount int
 	Attributes   []Type
 	Varyings     []Type
@@ -192,11 +193,11 @@ const (
 	Call
 	FieldSelector
 	Index
-
 	// Added by NSGo for 3D GPU pipelines (docs/architecture/gpu.md).
 	BindingVariable
 	BuiltinInput
 	StructConstruct
+	PrivateVariable
 )
 
 type Op int
@@ -363,7 +364,6 @@ const (
 	FloatBitsToUint BuiltinFunc = "floatBitsToUint"
 	IntBitsToFloat  BuiltinFunc = "intBitsToFloat"
 	UintBitsToFloat BuiltinFunc = "uintBitsToFloat"
-
 	// Added by NSGo for 3D GPU pipelines (docs/architecture/gpu.md).
 	TextureSample             BuiltinFunc = "textureSample"
 	TextureSampleLevel        BuiltinFunc = "textureSampleLevel"
@@ -373,6 +373,15 @@ const (
 	TextureSampleCompareLevel BuiltinFunc = "textureSampleCompareLevel"
 	TextureLoad               BuiltinFunc = "textureLoad"
 	TextureDimensions         BuiltinFunc = "textureDimensions"
+
+	// Added by NSGo for WGSL non-square matrices and determinant.
+	Mat2x3F     BuiltinFunc = "mat2x3"
+	Mat2x4F     BuiltinFunc = "mat2x4"
+	Mat3x2F     BuiltinFunc = "mat3x2"
+	Mat3x4F     BuiltinFunc = "mat3x4"
+	Mat4x2F     BuiltinFunc = "mat4x2"
+	Mat4x3F     BuiltinFunc = "mat4x3"
+	Determinant BuiltinFunc = "determinant"
 )
 
 func ParseBuiltinFunc(str string) (BuiltinFunc, bool) {

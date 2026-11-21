@@ -10,12 +10,14 @@ import (
 )
 
 // value is an expression checked: its type, and a constant (c, a scalar;
-// comps, an abstract vector's components) or its IR.
+// comps, an abstract vector's components; fields, a constant struct's members)
+// or its IR.
 type value struct {
-	t     ty
-	c     constant.Value
-	comps []constant.Value
-	e     shaderir.Expr
+	t      ty
+	c      constant.Value
+	comps  []constant.Value
+	fields []value
+	e      shaderir.Expr
 	// ref is a variable's, or a part of it, which mutable ones assign.
 	ref, mutable bool
 	// fb is a bool held as a float of 0 or 1: a part of a vec<bool>.
@@ -172,7 +174,7 @@ func (c *checker) convert(v value, t ty, pos int) value {
 		if t.elem == kBool {
 			fail(pos, "cannot use a %s as a %s", v.t, t)
 		}
-		return value{t: t, e: builtinCall(vecFunc(t), t, args...)}
+		return value{t: t, comps: comps, e: builtinCall(vecFunc(t), t, args...)}
 	}
 	fail(pos, "cannot use a %s as a %s", v.t, t)
 	return value{}
@@ -260,6 +262,9 @@ func checkedInt(x constant.Value, t ty, pos int) value {
 }
 
 func (c *checker) ident(x *identExpr, out *[]shaderir.Stmt) value {
+	if strings.HasPrefix(x.name, "__") && x.pos < c.user {
+		fail(x.pos, "%s is not declared", x.name)
+	}
 	sym := c.scope.lookup(x.name)
 	if sym == nil {
 		switch x.name {
@@ -275,8 +280,20 @@ func (c *checker) ident(x *identExpr, out *[]shaderir.Stmt) value {
 		return value{t: sym.t, e: mk(shaderir.Expr{Type: shaderir.BindingVariable, Index: sym.binding}, sym.t)}
 	case symExpr:
 		return value{t: sym.t, e: sym.expr}
+	case symPrivate:
+		if c.inInit {
+			fail(x.pos, "a var<private> initializer must be a constant expression")
+		}
+		if c.cur == nil {
+			fail(x.pos, "the expression is not a constant")
+		}
+		return value{t: sym.t, e: privateVar(sym.local, sym.t), ref: true, mutable: sym.mutable}
 	case symConst:
+		c.resolveConst(sym)
 		if sym.val != nil {
+			if sym.val.fields != nil && c.cur != nil {
+				return c.materializeConst(*sym.val, out)
+			}
 			return *sym.val
 		}
 		saved := c.scope
@@ -304,7 +321,7 @@ func (c *checker) unary(x *unaryExpr, out *[]shaderir.Stmt) value {
 	switch x.op {
 	case "-":
 		s := t.scalar()
-		if !isNumeric(s) || s == kU32 || t.k == kArray {
+		if !isNumeric(s) || s == kU32 || t.k == kArray || t.k == kStruct {
 			fail(x.pos, "- takes a signed number, not a %s", t)
 		}
 		if v.c != nil {
@@ -313,7 +330,7 @@ func (c *checker) unary(x *unaryExpr, out *[]shaderir.Stmt) value {
 		if v.comps != nil {
 			comps := make([]constant.Value, len(v.comps))
 			for i, y := range v.comps {
-				comps[i] = constant.UnaryOp(token.SUB, y, 0)
+				comps[i] = c.foldUnary(token.SUB, y, ty{k: t.elem}, x.pos)
 			}
 			return value{t: t, comps: comps}
 		}
@@ -330,7 +347,7 @@ func (c *checker) unary(x *unaryExpr, out *[]shaderir.Stmt) value {
 		}
 		fail(x.pos, "! takes a bool, not a %s", t)
 	case "~":
-		if !isInt(t.scalar()) || t.k == kArray {
+		if !isInt(t.scalar()) || t.k == kArray || t.k == kStruct {
 			fail(x.pos, "~ takes an integer, not a %s", t)
 		}
 		if v.c != nil {
@@ -378,7 +395,18 @@ func (c *checker) binary(x *binaryExpr, out *[]shaderir.Stmt) value {
 			}
 			return value{t: tBool, c: constant.MakeBool(constant.BoolVal(a.c) || constant.BoolVal(b.c))}
 		}
-		*out = append(*out, pre...) // pure: only locals the right side reads
+		if len(pre) > 0 {
+			tmp := c.newLocal(tBool)
+			*out = append(*out, assign(local(tmp, tBool), c.ir(a)))
+			cond := local(tmp, tBool)
+			if x.op == "||" {
+				cond = not(cond)
+			}
+			then := c.newBlock()
+			then.Stmts = append(pre, assign(local(tmp, tBool), c.ir(b)))
+			*out = append(*out, shaderir.Stmt{Type: shaderir.If, Exprs: []shaderir.Expr{cond}, Blocks: []*shaderir.Block{then}})
+			return value{t: tBool, e: local(tmp, tBool)}
+		}
 		op := shaderir.AndAnd
 		if x.op == "||" {
 			op = shaderir.OrOr
@@ -436,7 +464,7 @@ func (c *checker) arith(op string, a, b value, pos int, out *[]shaderir.Stmt) va
 	}
 	a, b = c.unify(a, b, pos)
 	s := a.t.scalar()
-	if !isNumeric(s) || a.t.k == kArray || b.t.k == kArray {
+	if !isNumeric(s) || a.t.k == kArray || b.t.k == kArray || a.t.k == kStruct || b.t.k == kStruct {
 		fail(pos, "%s takes numbers, not a %s and a %s", op, a.t, b.t)
 	}
 	if a.c != nil && b.c != nil {
@@ -467,20 +495,22 @@ func (c *checker) arith(op string, a, b value, pos int, out *[]shaderir.Stmt) va
 	default:
 		fail(pos, "%s takes operands of one type, not a %s and a %s", op, a.t, b.t)
 	}
-	if op == "%" && isFloat(s) {
-		// WGSL's remainder truncates: x - y * trunc(x / y).
+	if op == "%" {
 		a, b = c.reuse(a, out), c.reuse(b, out)
-		q := mk(shaderir.Expr{Type: shaderir.Binary, Op: shaderir.Div, Exprs: []shaderir.Expr{c.ir(a), c.ir(b)}}, t)
-		tq := builtinCall(shaderir.Trunc, t, q)
-		m := mk(shaderir.Expr{Type: shaderir.Binary, Op: shaderir.ComponentWiseMul, Exprs: []shaderir.Expr{c.ir(b), tq}}, t)
-		return value{t: t, e: mk(shaderir.Expr{Type: shaderir.Binary, Op: shaderir.Sub, Exprs: []shaderir.Expr{c.ir(a), m}}, t)}
+		if isFloat(s) {
+			// WGSL's remainder truncates: x - y * trunc(x / y).
+			q := mk(shaderir.Expr{Type: shaderir.Binary, Op: shaderir.Div, Exprs: []shaderir.Expr{c.ir(a), c.ir(b)}}, t)
+			tq := builtinCall(shaderir.Trunc, t, q)
+			m := mk(shaderir.Expr{Type: shaderir.Binary, Op: shaderir.ComponentWiseMul, Exprs: []shaderir.Expr{c.ir(b), tq}}, t)
+			return value{t: t, e: mk(shaderir.Expr{Type: shaderir.Binary, Op: shaderir.Sub, Exprs: []shaderir.Expr{c.ir(a), m}}, t)}
+		}
 	}
 	return value{t: t, e: mk(shaderir.Expr{Type: shaderir.Binary, Op: irop, Exprs: []shaderir.Expr{c.ir(a), c.ir(b)}}, t)}
 }
 
 func (c *checker) matrixResult(op string, a, b ty, pos int) ty {
 	switch {
-	case a.k == kMat && b.k == kMat && a.equal(b) && (op == "+" || op == "-"):
+	case (op == "+" || op == "-") && a.k == kMat && b.k == kMat && a.equal(b):
 		return a
 	case op == "*" && a.k == kMat && b.k == kMat && a.n == b.rows:
 		return ty{k: kMat, elem: kF32, n: b.n, rows: a.rows}
@@ -538,10 +568,10 @@ func (c *checker) fold(op token.Token, x, y constant.Value, t ty, pos int) const
 
 func (c *checker) bitwise(op string, a, b value, pos int, out *[]shaderir.Stmt) value {
 	if op == "<<" || op == ">>" {
-		if !isInt(a.t.scalar()) || a.t.k == kArray {
+		if !isInt(a.t.scalar()) || a.t.k == kArray || a.t.k == kStruct {
 			fail(pos, "%s takes an integer, not a %s", op, a.t)
 		}
-		if b.t.scalar() != kU32 && b.t.scalar() != kAbsInt || b.t.k == kArray {
+		if b.t.scalar() != kU32 && b.t.scalar() != kAbsInt || b.t.k == kArray || b.t.k == kStruct {
 			fail(pos, "%s shifts by a u32, not a %s", op, b.t)
 		}
 		if b.t.k == kAbsInt {
@@ -594,7 +624,7 @@ func (c *checker) bitwise(op string, a, b value, pos int, out *[]shaderir.Stmt) 
 		}
 		d := mk(shaderir.Expr{Type: shaderir.Binary, Op: shaderir.Sub, Exprs: []shaderir.Expr{x, y}}, t)
 		return value{t: t, e: builtinCall(shaderir.Abs, t, d)}
-	case isInt(t.scalar()) && t.k != kArray:
+	case isInt(t.scalar()) && t.k != kArray && t.k != kStruct:
 		tok := map[string]token.Token{"&": token.AND, "|": token.OR, "^": token.XOR}[op]
 		if a.c != nil && b.c != nil {
 			return value{t: t, c: constant.BinaryOp(a.c, tok, b.c)}
@@ -618,7 +648,7 @@ var compareOps = map[string]struct {
 func (c *checker) compare(op string, a, b value, pos int, out *[]shaderir.Stmt) value {
 	o := compareOps[op]
 	a, b = c.unify(a, b, pos)
-	if !a.t.equal(b.t) || a.t.k == kArray || a.t.k == kMat {
+	if !a.t.equal(b.t) || a.t.k == kArray || a.t.k == kMat || a.t.k == kStruct {
 		fail(pos, "%s compares values of one type, not a %s and a %s", op, a.t, b.t)
 	}
 	if (a.t.k == kBool || a.t.boolVector()) && op != "==" && op != "!=" {
@@ -663,12 +693,12 @@ func (c *checker) member(x *memberExpr, out *[]shaderir.Stmt) value {
 	}
 	v := c.expr(x.x, out)
 	if v.t.k == kStruct && v.t.st != nil {
-		for idx, f := range v.t.st.fields {
+		for i, f := range v.t.st.fields {
 			if f.name == x.name {
-				e := mk(shaderir.Expr{
-					Type:  shaderir.FieldSelector,
-					Exprs: []shaderir.Expr{c.ir(v), {Type: shaderir.StructMember, Index: idx}},
-				}, f.t)
+				if v.fields != nil && (c.cur == nil || (!v.ref && (v.fields[i].c != nil || v.fields[i].comps != nil))) {
+					return v.fields[i]
+				}
+				e := mk(shaderir.Expr{Type: shaderir.FieldSelector, Exprs: []shaderir.Expr{c.ir(v), {Type: shaderir.StructMember, Index: i}}}, f.t)
 				return value{t: f.t, e: e, ref: v.ref, mutable: v.mutable}
 			}
 		}
@@ -722,6 +752,9 @@ func (c *checker) member(x *memberExpr, out *[]shaderir.Stmt) value {
 // builtinMember reads nsh's members and the uniforms. The view's box is
 // the surface's size less the overflow on each side.
 func (c *checker) builtinMember(name string, x *memberExpr) value {
+	if c.inInit {
+		fail(x.pos, "a var<private> initializer must be a constant expression")
+	}
 	uniform := func(i int, t ty) shaderir.Expr {
 		return mk(shaderir.Expr{Type: shaderir.UniformVariable, Index: i}, t)
 	}

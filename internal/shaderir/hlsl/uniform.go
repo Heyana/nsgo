@@ -70,32 +70,21 @@ func UniformVariableOffsetsInDwords(program *shaderir.Program) []int {
 			}
 			offsetsInDwords = append(offsetsInDwords, headInDwords)
 			headInDwords += 4
-		case shaderir.Mat2:
-			// For matrices, each column is aligned to the boundary.
+		case shaderir.Mat2, shaderir.Mat3, shaderir.Mat4,
+			shaderir.Mat2x3, shaderir.Mat2x4, shaderir.Mat3x2, shaderir.Mat3x4, shaderir.Mat4x2, shaderir.Mat4x3:
+			// In HLSL cbuffers (column_major by default), a floatCxR has R columns of C dwords each,
+			// each column starting on a 4-dword register boundary.
 			headInDwords = align(headInDwords)
 			offsetsInDwords = append(offsetsInDwords, headInDwords)
-			headInDwords += 6
-		case shaderir.Mat3:
-			headInDwords = align(headInDwords)
-			offsetsInDwords = append(offsetsInDwords, headInDwords)
-			headInDwords += 11
-		case shaderir.Mat4:
-			headInDwords = align(headInDwords)
-			offsetsInDwords = append(offsetsInDwords, headInDwords)
-			headInDwords += 16
+			headInDwords += (u.MatrixRows()-1)*UniformVariableBoundaryInDwords + u.MatrixCols()
 		case shaderir.Array:
 			// Each array is 16-byte aligned.
 			// TODO: What if the array has 2 or more dimensions?
 			headInDwords = align(headInDwords)
 			offsetsInDwords = append(offsetsInDwords, headInDwords)
 			n := u.Sub[0].DwordCount()
-			switch u.Sub[0].Main {
-			case shaderir.Mat2:
-				n = 6
-			case shaderir.Mat3:
-				n = 11
-			case shaderir.Mat4:
-				n = 16
+			if u.Sub[0].IsMatrix() {
+				n = (u.Sub[0].MatrixRows()-1)*UniformVariableBoundaryInDwords + u.Sub[0].MatrixCols()
 			}
 			// Kage rejects a zero-length array, but even if one reaches here, the head must not
 			// move backwards.
@@ -128,20 +117,17 @@ func UniformLanes(p *shaderir.Program) (lanes []int, size int) {
 		switch {
 		case t.Main == shaderir.Array:
 			stride := t.Sub[0].DwordCount()
-			switch t.Sub[0].Main {
-			case shaderir.Mat2:
-				stride = 8
-			case shaderir.Mat3:
-				stride = 12
+			if t.Sub[0].IsMatrix() {
+				stride = t.Sub[0].MatrixRows() * 4
 			}
 			stride = (stride + 3) / 4 * 4
 			for i := range t.Length {
 				walk(&t.Sub[0], dword+i*stride)
 			}
 		case t.IsMatrix():
-			n := t.MatrixSize()
-			for col := range n {
-				for row := range n {
+			cols, rows := t.MatrixCols(), t.MatrixRows()
+			for col := range cols {
+				for row := range rows {
 					lanes = append(lanes, 4*(dword+row*4+col))
 				}
 			}
