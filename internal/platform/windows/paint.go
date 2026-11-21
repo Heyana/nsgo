@@ -741,8 +741,7 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	}
 	switch v.kind {
 	case driver.KindImage:
-		bw := p.w.borderEdges(s)
-		p.drawImage(v, s.TintColor, rectF{bw[3], bw[0], width - bw[1], height - bw[2]})
+		p.drawImage(v, s.TintColor, p.w.imageBox(s, width, height))
 	case driver.KindCanvas:
 		if v.drawing != nil {
 			p.canvas(v, width, height)

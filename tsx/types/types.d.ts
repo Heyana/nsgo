@@ -394,6 +394,8 @@ export interface ImageHostProps {
   placeholder?: string | ImageAsset;
   blurRadius?: number;
   fadeDuration?: number;
+  /** Minimum picture opacity in a painted window on macOS and Windows. Zero uses the whole view. */
+  hitTestAlpha?: number;
   alt?: string;
   onLoadStart?: () => void;
   onProgress?: (e: { loaded: number; total: number }) => void;

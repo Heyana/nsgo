@@ -14,6 +14,10 @@
 - A source that loads fades in over its placeholder for `FadeDuration`: 0 by default, as NSH's iOS, except Android's 300 ms. Windows and Linux fade on their frame clocks, even when the bytes came from the cache.
 - Videos fit with `Fit` on Windows and Android; Apple's `AVPlayerLayer` and GTK's `GtkPicture` have no natural-size fit, so `Center` there shrinks as `ScaleDown` does, and Android's video shows both as `Contain`.
 
+## Painted window hit tests
+
+On macOS and Windows, `Image.HitTestAlpha` travels with `ImageConfig`. In a painted window, a positive threshold tests the decoded alpha at the pointer after undoing the view transform and fitting the active picture or placeholder. Transparent pixels pass the hit to the rest of the view tree, including when the image listens for a press; its background and borders still count under the normal painted rule. macOS keeps one alpha byte per decoded pixel and follows Core Animation's displayed contents. With an unblurred pixel buffer it reads the core's immutable RGBA copy directly. Windows reads an alpha byte from the current BGRA frame. The hit test samples the bitmap before compositing it with the rest of the view.
+
 ## Pixel buffers
 
 `ImageSource.Pixels` is an `*image.RGBA` the app draws, premultiplied as Go's type is, with `Version` telling frames written into the same buffer apart (#107, NSH's `ImageSrc::rgba`, which takes straight RGBA it never copies: Go's own image type is what decoders hand an app, and the copy lets the app reuse one buffer). `Image` and `Canvas` show it, and `Shader` reads it, with nothing loaded or decoded, and a buffer with no pixels as no image:

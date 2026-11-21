@@ -672,6 +672,8 @@ func (r *runtime) imageProp(p *core.Image, name string, v js.Value) bool {
 		p.BlurRadius = core.Points(v.ToFloat())
 	case "fadeDuration":
 		p.FadeDuration = millis(v.ToFloat())
+	case "hitTestAlpha":
+		p.HitTestAlpha = float32(v.ToFloat())
 	case "testID":
 		p.TestID = stringOf(v)
 	case "accessibilityLabel", "alt":

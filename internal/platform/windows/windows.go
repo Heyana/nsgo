@@ -238,6 +238,7 @@ type paintStruct struct {
 
 // view is the main thread's copy of one mounted view.
 type view struct {
+	window   *window
 	id       driver.NodeID
 	kind     driver.ViewKind
 	parent   *view
@@ -1707,7 +1708,7 @@ func (w *window) create(id driver.NodeID, kind driver.ViewKind) {
 	}
 	// A new view has the default style and no props or events: the core
 	// sends them only when they differ.
-	v := &view{id: id, kind: kind, style: driver.DefaultViewStyle, born: w.batch}
+	v := &view{window: w, id: id, kind: kind, style: driver.DefaultViewStyle, born: w.batch}
 	if kind == driver.KindInput {
 		v.field = newTextInput(w, v)
 	}

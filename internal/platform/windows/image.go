@@ -297,6 +297,13 @@ func (w *window) play(v *view, s *imageSlot) {
 	})
 }
 
+func (s *imageSlot) shownFrame(tint driver.Color) int {
+	if tint&0xff != 0 || s.frame >= len(s.pic.frames) {
+		return 0
+	}
+	return s.frame
+}
+
 // bitmapOf returns the frame s shows as a Direct2D bitmap with tint
 // applied, made once per frame, tint and device; nil until the picture
 // arrives. A tinted animation shows its first frame.
@@ -304,10 +311,7 @@ func (s *imageSlot) bitmapOf(dc *comObject, tint driver.Color) *comObject {
 	if s.pic == nil {
 		return nil
 	}
-	frame := s.frame
-	if tint&0xff != 0 || frame >= len(s.pic.frames) {
-		frame = 0
-	}
+	frame := s.shownFrame(tint)
 	if s.bitmap != nil {
 		if s.tint == tint && s.generation == gfxGeneration && s.bitmapFrame == frame {
 			return s.bitmap
@@ -371,6 +375,43 @@ func (w *window) fadeIn(v *view, s *imageSlot) {
 		}
 		return true
 	})
+}
+
+func (w *window) imageBox(style *driver.ViewStyle, width, height float32) rectF {
+	bw := w.borderEdges(style)
+	return rectF{bw[3], bw[0], width - bw[1], height - bw[2]}
+}
+
+// imageHit uses the alpha of the source or placeholder at p, in the
+// same fitted rectangle and frame that drawImage uses.
+func (w *window) imageHit(v *view, size driver.Size, p driver.Point) bool {
+	style := v.shownStyle()
+	if driver.Painted(driver.KindView, style, 0, 0) {
+		return true
+	}
+	box := w.imageBox(style, float32(size.Width), float32(size.Height))
+	if box.empty() || float32(p.X) < box.left || float32(p.X) >= box.right ||
+		float32(p.Y) < box.top || float32(p.Y) >= box.bottom {
+		return false
+	}
+	s := &v.source
+	if s.pic == nil {
+		s = &v.placeholder
+	}
+	if s.pic == nil {
+		return false
+	}
+	d := w.fit(v, s, box)
+	fit := driver.Bounds{
+		Origin: driver.Point{X: driver.Points(d.left), Y: driver.Points(d.top)},
+		Size:   driver.Size{Width: driver.Points(d.right - d.left), Height: driver.Points(d.bottom - d.top)},
+	}
+	x, y, ok := driver.ImagePixelAt(fit, p, s.pic.width, s.pic.height)
+	if !ok {
+		return false
+	}
+	pix := s.pic.frames[s.shownFrame(style.TintColor)].Pix
+	return float32(pix[(y*s.pic.width+x)*4+3])/255 >= v.image.HitTestAlpha
 }
 
 // drawImage paints v in r (points): its placeholder until the source

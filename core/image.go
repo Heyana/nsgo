@@ -49,7 +49,7 @@ func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 	n.props = driver.ViewProps{Role: RoleImage, Label: v.Label, TestID: v.TestID, ElementsHidden: v.ElementsHidden}
 	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
 	n.image = &imageNode{config: driver.ImageConfig{Source: v.Source, Placeholder: v.Placeholder,
-		ResizeMode: v.ResizeMode, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration}}
+		ResizeMode: v.ResizeMode, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration, HitTestAlpha: v.hitTestAlpha()}}
 	if v.SourceFunc != nil {
 		cx.renderEffect(func() {
 			src := v.SourceFunc()
@@ -62,6 +62,13 @@ func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 			}
 		})
 	}
+}
+
+func (i Image) hitTestAlpha() float32 {
+	if i.HitTestAlpha > 0 {
+		return min(i.HitTestAlpha, 1)
+	}
+	return 0
 }
 
 // naturalSize is what an image measures without a style size.

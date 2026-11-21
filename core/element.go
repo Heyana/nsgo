@@ -794,6 +794,10 @@ type Image struct {
 	ResizeMode   ResizeMode
 	BlurRadius   Points
 	FadeDuration time.Duration // 0 is the platform's
+	// HitTestAlpha is the minimum picture opacity, from 0 to 1, at which
+	// a painted window takes the pointer on macOS and Windows. Zero
+	// counts the whole image view.
+	HitTestAlpha float32
 	Style        Style
 	StyleFunc    func() Style
 

@@ -2490,6 +2490,7 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 	case driver.KindImage:
 		v.image = apple.NewImageView(v.native.Send(selLayer))
 		v.image.Dispatch = v.report
+		v.image.AlphaChanged = func() { v.surface.pointer.tested = false }
 	case driver.KindWeb:
 		v.web = apple.NewWeb(v.native)
 		v.web.Dispatch = v.report
@@ -2731,6 +2732,11 @@ func reach(self objc.ID, cmd objc.SEL, p apple.CGPoint) objc.ID {
 		return 0
 	}
 	own, children := driver.ReachView(frame.Size, &v.props, v.overflow, v.transformedKids, local)
+	if own && v.image != nil && v.surface.pointer.mode == driver.WindowPointerPainted {
+		hit, animated := v.image.HitTest(local)
+		own = hit || driver.Painted(driver.KindView, &v.style, 0, 0)
+		v.surface.pointer.animatedImage = v.surface.pointer.animatedImage || animated
+	}
 	at := apple.CGPoint{X: float64(local.X), Y: float64(local.Y)}
 	// Test native children ourselves: AppKit clips the search to layout frames and does not undo their layer transforms.
 	var hit objc.ID

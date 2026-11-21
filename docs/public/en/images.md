@@ -21,6 +21,8 @@ core.Image{
 
 `Source` declares the size layout uses: one dimension derives the other, and an image without one is 0 by 0 until its style sizes it. `core.ImageSource{Data: data, Size: core.Size{Width: 24, Height: 24}}` shows bytes embedded with `go:embed`, and `Size` gives an SVG its intrinsic size.
 
+With [`desktop.WindowPointerPainted`](services.md), `HitTestAlpha: 0.5` lets the pointer through pixels less than half opaque on macOS and Windows. TSX sets the same threshold with `hitTestAlpha`.
+
 ## Frames the app draws
 
 `Pixels` shows an `*image.RGBA` the app draws, a video player's or an emulator's frames, with nothing encoded, loaded or decoded. Write each frame into the same buffer and bump `Version`: the view shows it with no load events and no fade, its alpha kept, and on macOS, iOS, tvOS, watchOS, Android, Windows and Linux swaps it in place with no blank frame in between. Without `Size` it measures its pixels in points.

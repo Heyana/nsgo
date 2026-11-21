@@ -263,6 +263,8 @@ Set `desktop.WindowOptions.Parent` to an open window of the app to close both wh
 desktop.OpenPanel(cx, desktop.PanelOptions{Width: 600, Height: 400, PointerEvents: desktop.WindowPointerPainted}, Pet)
 ```
 
+On macOS and Windows, an image in a painted window can set `Image.HitTestAlpha` (TSX `hitTestAlpha`) to a value above 0 and at most 1. For example, 0.5 takes the pointer on picture pixels that are at least half opaque. The threshold also applies to the image's `OnPress`. A view background or border still counts as painted. Zero uses the whole image view, as do images on Linux and videos on desktop.
+
 `desktop.OpenPanel` opens a panel such a shortcut or a tray icon shows: a borderless window above the others. A popup card draws itself on a panel with `Transparent`, which has no background, frame or shadow of its own, so the card's rounded corners and `BoxShadow` are all that shows, with room for the shadow inside the panel; `FitContent` sizes the panel to its content, up to `Width` and `Height`, before it first shows and as the content changes. `desktop.Transparent` says whether the panel draws nothing of its own now, as it does for a transparent window, where `desktop.CanMakeWindowsTransparent` only says whether a window could be: where it is false, as on Linux without a compositor, give the content a background.
 
 ```go

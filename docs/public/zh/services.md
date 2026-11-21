@@ -263,6 +263,8 @@ warning := core.Text{ContentFunc: func() string {
 desktop.OpenPanel(cx, desktop.PanelOptions{Width: 600, Height: 400, PointerEvents: desktop.WindowPointerPainted}, Pet)
 ```
 
+在 macOS 和 Windows 上，绘制区域接收指针的窗口可为图片设置 `Image.HitTestAlpha`（TSX 中为 `hitTestAlpha`），取值大于 0 且不超过 1。例如，0.5 表示图片像素的不透明度至少为一半时才接收指针。这个阈值也适用于图片的 `OnPress`，而视图的背景或边框仍算作绘制区域。设为 0 时使用整个图片视图，Linux 上的图片以及桌面平台上的视频也都按整个视图判断。
+
 `desktop.OpenPanel` 打开一个面板，供这样的快捷键或托盘图标显示：浮在其他窗口之上的无边框窗口。弹出卡片画在带 `Transparent` 的面板上，面板自己不画背景、边框和阴影，只显示卡片的圆角和 `BoxShadow`，阴影要在面板内留出空间；`FitContent` 让面板在首次显示前、以及内容变化时取内容的大小，最大到 `Width` 和 `Height`。`desktop.Transparent` 说明面板此刻是否不绘制任何自身内容，对透明窗口也一样；`desktop.CanMakeWindowsTransparent` 只说明窗口能否透明。为 false 时，例如没有合成器的 Linux，要给内容加上背景。
 
 ```go

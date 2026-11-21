@@ -27,6 +27,17 @@ func IntoView(frame Bounds, m Matrix3D, p Point) (Point, bool) {
 	return m.Unproject(Point{X: p.X - frame.Origin.X, Y: p.Y - frame.Origin.Y})
 }
 
+// ImagePixelAt maps p to the bitmap pixel in the fitted image, whose
+// first row is at the top. Points outside the fitted image miss.
+func ImagePixelAt(fit Bounds, p Point, width, height int) (x, y int, ok bool) {
+	if width <= 0 || height <= 0 || !fit.Contains(p) {
+		return 0, 0, false
+	}
+	x = int(float64(p.X-fit.Origin.X) * float64(width) / float64(fit.Size.Width))
+	y = int(float64(p.Y-fit.Origin.Y) * float64(height) / float64(fit.Size.Height))
+	return min(x, width-1), min(y, height-1), true
+}
+
 // ReachView is Reach for p in a view's viewport, its transform already undone, with the area and transformed flag ItemOverflow gave the view. A view whose children may be transformed has its children searched at any point, since a child or its animation can draw anywhere; the others keep the search to their bounds and layout area, so a hit test skips untransformed subtrees the point cannot reach. Hit slop extends only the view itself, in its own coordinates.
 func ReachView(size Size, props *ViewProps, area Bounds, transformed bool, p Point) (self, children bool) {
 	self, children = Reach(Bounds{Size: size}, props, area, p)

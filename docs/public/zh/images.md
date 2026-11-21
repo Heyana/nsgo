@@ -21,6 +21,8 @@ core.Image{
 
 `Source` 声明布局使用的尺寸：知道一边可以推出另一边，两边都不知道时图片在样式给出尺寸前是 0×0。`core.ImageSource{Data: data, Size: core.Size{Width: 24, Height: 24}}` 显示用 `go:embed` 嵌入的字节，`Size` 也给 SVG 一个固有尺寸。
 
+在 macOS 和 Windows 上，使用 [`desktop.WindowPointerPainted`](services.md) 时，`HitTestAlpha: 0.5` 让指针穿过不透明度不到一半的像素。TSX 使用 `hitTestAlpha` 设置同一阈值。
+
 ## 应用绘制的帧
 
 `Pixels` 显示应用自己绘制的 `*image.RGBA`，例如视频播放器或模拟器的帧，不经过编码、加载或解码。把每一帧写进同一个缓冲区，再增加 `Version`：视图显示新帧时不触发加载事件，也不淡入，透明度保持不变；在 macOS、iOS、tvOS、watchOS、Android、Windows 和 Linux 上原地换上新帧，中间没有空白帧。没有 `Size` 时，它按像素数以点为单位测量。

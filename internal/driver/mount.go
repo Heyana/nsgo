@@ -799,6 +799,7 @@ type ImageConfig struct {
 	ResizeMode   ResizeMode
 	BlurRadius   Points
 	FadeDuration time.Duration
+	HitTestAlpha float32
 	// Position is the style's ObjectPosition: where the fitted image sits
 	// (ResizeMode.Fit). It travels with the image, not the ViewStyle.
 	Position ObjectPosition
@@ -1382,7 +1383,7 @@ func (a ModalAnimation) Duration() time.Duration {
 // Same reports whether a and b show the same image the same way.
 func (a ImageConfig) Same(b ImageConfig) bool {
 	return a.Source.Same(b.Source) && a.Placeholder.Same(b.Placeholder) && a.ResizeMode == b.ResizeMode &&
-		a.BlurRadius == b.BlurRadius && a.FadeDuration == b.FadeDuration && a.Position == b.Position
+		a.BlurRadius == b.BlurRadius && a.FadeDuration == b.FadeDuration && a.HitTestAlpha == b.HitTestAlpha && a.Position == b.Position
 }
 
 // ObjectPosition is where an image sits in its view once its ResizeMode

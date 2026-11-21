@@ -24,6 +24,8 @@ type windowPointer struct {
 	at       apple.CGPoint
 	batch    uint64
 	tested   bool
+	// An animated image changes the alpha under a still pointer.
+	animatedImage bool
 }
 
 // setPointerEvents makes the window take the pointer as mode says, from now.
@@ -83,7 +85,7 @@ func (s *surface) stopPassTimer() {
 // passUnpainted lets the mouse through while the pointer is over nothing painted, by the hit test of the views under it. A button held keeps what the window does, so a drag that began on a view goes on to its end and one from another app passes over the window.
 func (s *surface) passUnpainted() {
 	loc := objc.Send[apple.CGPoint](s.window, sel("mouseLocationOutsideOfEventStream"))
-	if s.pointer.tested && loc == s.pointer.at && s.batch == s.pointer.batch && !s.ticking {
+	if s.pointer.tested && loc == s.pointer.at && s.batch == s.pointer.batch && !s.ticking && !s.pointer.animatedImage {
 		return
 	}
 	if !objc.Send[bool](s.window, sel("isVisible")) ||
@@ -91,6 +93,7 @@ func (s *surface) passUnpainted() {
 		return
 	}
 	s.pointer.at, s.pointer.batch, s.pointer.tested = loc, s.batch, true
+	s.pointer.animatedImage = false
 	s.ignoreMouse(!s.paintedAt(loc))
 }
 

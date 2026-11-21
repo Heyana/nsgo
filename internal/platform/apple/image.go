@@ -26,6 +26,7 @@ var (
 	cfNumberGetValue             func(num uintptr, kind int, value unsafe.Pointer) bool
 	cgImageGetWidth              func(uintptr) int
 	cgImageGetHeight             func(uintptr) int
+	cgImageGetAlphaInfo          func(uintptr) uint32
 	cgImageSourceCreateWithData  func(data, options uintptr) uintptr
 	cgImageSourceCopyProperties  func(src uintptr, i int, options uintptr) uintptr
 	cgImageSourceCreateThumbnail func(src uintptr, i int, options uintptr) uintptr
@@ -63,6 +64,7 @@ func loadImage(cf, cg uintptr) {
 	reg(&cfNumberGetValue, cf, "CFNumberGetValue")
 	reg(&cgImageGetWidth, cg, "CGImageGetWidth")
 	reg(&cgImageGetHeight, cg, "CGImageGetHeight")
+	reg(&cgImageGetAlphaInfo, cg, "CGImageGetAlphaInfo")
 	reg(&cgImageSourceCreateWithData, io, "CGImageSourceCreateWithData")
 	reg(&cgImageSourceCopyProperties, io, "CGImageSourceCopyPropertiesAtIndex")
 	reg(&cgImageSourceCreateThumbnail, io, "CGImageSourceCreateThumbnailAtIndex")
@@ -150,6 +152,7 @@ type decoded struct {
 	frames []uintptr
 	delays []float64 // seconds
 	loops  int
+	alpha  map[uintptr]imageAlpha
 }
 
 // maxFrames bounds the frames of an animated image, as NSH's iOS does.
@@ -448,6 +451,9 @@ type ImageView struct {
 	// Changed runs on the main thread after rendered content changes,
 	// including an asynchronous image load, for snapshot renderers.
 	Changed func()
+	// AlphaChanged enables picture hit testing and invalidates a cached hit
+	// when the view shows a different image.
+	AlphaChanged func()
 
 	layer, picture, mask objc.ID
 	config               driver.ImageConfig
@@ -489,6 +495,12 @@ func NewImageView(host objc.ID) *ImageView {
 func (iv *ImageView) Configure(c *driver.ImageConfig) {
 	old := iv.config
 	iv.config = *c
+	switch {
+	case !iv.testsAlpha():
+		iv.shown.alpha = nil
+	case old.HitTestAlpha == 0:
+		iv.shown.prepareAlpha()
+	}
 	if iv.load == 0 || !sameSource(old.Source, c.Source) || !sameSource(old.Placeholder, c.Placeholder) ||
 		old.BlurRadius != c.BlurRadius {
 		iv.pending, iv.quiet = true, false
@@ -566,7 +578,14 @@ func (iv *ImageView) Start(ratio float64) {
 	if src := iv.config.Source; src.Pixels != nil {
 		// A frame replaces the one shown in place: no blank, no events, no fade.
 		iv.cancel = nil
-		iv.show(pixelsImage(src, iv.request(ratio)), true, 0)
+		img := pixelsImage(src, iv.request(ratio))
+		if iv.testsAlpha() && iv.config.BlurRadius <= 0 && img.image != 0 {
+			p := src.Pixels
+			img.alpha = map[uintptr]imageAlpha{img.image: {
+				pixels: p.Pix[3:], width: p.Rect.Dx(), height: p.Rect.Dy(), row: p.Stride, step: 4,
+			}}
+		}
+		iv.show(img, true, 0)
 		return
 	}
 	if src := iv.config.Source; src.Offscreen != nil {
@@ -579,6 +598,7 @@ func (iv *ImageView) Start(ratio float64) {
 	iv.cancel = cancel
 	c := iv.config
 	r := iv.request(ratio)
+	alpha := iv.testsAlpha()
 	quiet := iv.quiet
 	iv.quiet = false
 	if !quiet {
@@ -586,7 +606,7 @@ func (iv *ImageView) Start(ratio float64) {
 		if hasSource(c.Placeholder) {
 			pr := r
 			pr.scale = uriScale(c.Placeholder.URI)
-			go iv.fetch(ctx, n, c.Placeholder, pr, false, true)
+			go iv.fetch(ctx, n, c.Placeholder, pr, false, true, alpha)
 		}
 	}
 	if !hasSource(c.Source) {
@@ -595,12 +615,12 @@ func (iv *ImageView) Start(ratio float64) {
 	if !quiet {
 		iv.Dispatch(driver.Event{Kind: driver.EventLoadStart})
 	}
-	go iv.fetch(ctx, n, c.Source, r, true, quiet)
+	go iv.fetch(ctx, n, c.Source, r, true, quiet, alpha)
 }
 
 // fetch loads and decodes src on a goroutine of its own, then shows it on
 // the main thread unless a later load replaced this one, numbered n.
-func (iv *ImageView) fetch(ctx context.Context, n int, src driver.ImageSource, r request, source, quiet bool) {
+func (iv *ImageView) fetch(ctx context.Context, n int, src driver.ImageSource, r request, source, quiet, alpha bool) {
 	var progress imageload.Progress
 	if !quiet {
 		var last time.Time
@@ -622,6 +642,9 @@ func (iv *ImageView) fetch(ctx context.Context, n int, src driver.ImageSource, r
 	var img decoded
 	if err == nil {
 		img, err = decode(ctx, data, r)
+		if err == nil && alpha {
+			img.prepareAlpha()
+		}
 	}
 	OnMain(func() {
 		if iv.load != n || (!source && iv.source) {
@@ -648,6 +671,12 @@ func (iv *ImageView) fetch(ctx context.Context, n int, src driver.ImageSource, r
 
 func (iv *ImageView) show(img decoded, source bool, fade time.Duration) {
 	iv.shown.release()
+	if iv.testsAlpha() {
+		img.prepareAlpha()
+		defer iv.AlphaChanged()
+	} else {
+		img.alpha = nil
+	}
 	iv.image, iv.shown, iv.source = img.image, img, source && img.image != 0
 	iv.reduced = img.image != 0 && float64(cgImageGetWidth(img.image)) < img.width
 	iv.render(fade)
