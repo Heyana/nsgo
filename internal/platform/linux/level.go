@@ -12,11 +12,12 @@ import (
 
 // GTK 4 dropped gtk_window_set_keep_above and has no stacking of its own, so on X11 a window's level is the window manager's _NET_WM_STATE_ABOVE or _NET_WM_STATE_BELOW, asked for with EWMH's client message through the window's X window, as its panels are placed (panel.go). A window manager forgets the state as the window is withdrawn, and GDK writes the property afresh as it maps one, so the level is asked for again each time the window maps. Wayland has no protocol for stacking a toplevel, and there the environment says so (CanSetWindowLevel).
 var (
-	x11InternAtom  func(display uintptr, name *byte, onlyIfExists int32) uintptr
-	x11LevelRoot   func(display uintptr) uintptr
-	x11SendEvent   func(display, window uintptr, propagate int32, mask int, event *x11ClientMessage) int32
-	x11LevelsReady bool
-	bindX11Levels  = sync.OnceFunc(func() {
+	x11InternAtom   func(display uintptr, name *byte, onlyIfExists int32) uintptr
+	x11LevelRoot    func(display uintptr) uintptr
+	x11QueryPointer func(display, window uintptr, root, child *uintptr, rootX, rootY, x, y *int32, mask *uint32) int32
+	x11SendEvent    func(display, window uintptr, propagate int32, mask int, event *x11ClientMessage) int32
+	x11LevelsReady  bool
+	bindX11Levels   = sync.OnceFunc(func() {
 		if bindX11Panels(); !x11PanelsReady {
 			return
 		}
@@ -28,6 +29,7 @@ var (
 		}
 		purego.RegisterLibFunc(&x11InternAtom, lib, "XInternAtom")
 		purego.RegisterLibFunc(&x11LevelRoot, lib, "XDefaultRootWindow")
+		purego.RegisterLibFunc(&x11QueryPointer, lib, "XQueryPointer")
 		purego.RegisterLibFunc(&x11SendEvent, lib, "XSendEvent")
 		x11LevelsReady = true
 	})

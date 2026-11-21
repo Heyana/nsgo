@@ -76,6 +76,25 @@ func (cx *Scope) SetWindowConstraints(c WindowConstraints) {
 // OrderFront is the core's part of desktop.OrderFront, which apps use.
 func (cx *Scope) OrderFront() { cx.window(driver.WindowCommand{Action: driver.WindowOrderFront}) }
 
+// CursorPoint is the core's part of desktop.CursorPoint, which apps use
+// to read the pointer in desktop screen coordinates.
+func (cx *Scope) CursorPoint(done func(Point, bool)) {
+	if done == nil {
+		return
+	}
+	t := cx.rt.tree
+	if t != nil && !t.reported.Simulated && !cx.denied(serviceCursorPoint, "") {
+		switch t.reported.OS {
+		case OSMacOS, OSWindows, OSLinux:
+			t.request(cx, driver.MountItem{Kind: driver.ItemCursorPoint}, func(ev driver.Event) {
+				done(ev.Point, ev.Finished)
+			})
+			return
+		}
+	}
+	done(Point{}, false)
+}
+
 // FrontmostApp is the core's part of desktop.FrontmostApp, which apps use: the application in front, read tracked, zero where the platform does not follow it (CanReadFrontmostApp) or the current owner's Access refuses AccessFrontmostApp.
 func (cx *Scope) FrontmostApp() FrontmostAppInfo {
 	if cx.denied(serviceFrontmostApp, "") {

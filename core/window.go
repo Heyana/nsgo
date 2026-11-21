@@ -942,7 +942,7 @@ func (t *Tree) surfaceEvent(ev driver.Event) bool {
 		if state <= driver.HotKeyUnsupported {
 			rt.hotKeyState(ev.Count, state)
 		}
-	case driver.EventLaunchAtLogin, driver.EventNotification, driver.EventBiometric, driver.EventPermission, driver.EventOverlayPermission, driver.EventSignInWithApple, driver.EventPurchase:
+	case driver.EventCursorPoint, driver.EventLaunchAtLogin, driver.EventNotification, driver.EventBiometric, driver.EventPermission, driver.EventOverlayPermission, driver.EventSignInWithApple, driver.EventPurchase:
 		t.answer(ev)
 	case driver.EventPurchaseUpdate:
 		if tr, ok := ev.Data.(*driver.Transaction); ok && tr != nil {

@@ -450,3 +450,40 @@ func TestMenuWhenLeavesInputsTheirKeys(t *testing.T) {
 		t.Errorf("NotInText = %v: auto leaves select all, notEditing every key", got)
 	}
 }
+
+func TestCursorPointAnswersOnceAndReportsUnsupported(t *testing.T) {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(*Scope) Node { return View{} })
+	h.tree.SetEnvironment(Environment{OS: OSWindows})
+	var got Point
+	var available bool
+	calls := 0
+	done := func(p Point, ok bool) {
+		got, available = p, ok
+		calls++
+	}
+	h.root.CursorPoint(done)
+	var id uint32
+	for _, it := range h.commit().Items {
+		if it.Kind == driver.ItemCursorPoint {
+			id = it.Count
+		}
+	}
+	if id == 0 || calls != 0 {
+		t.Fatalf("request id = %d, calls = %d", id, calls)
+	}
+	want := Point{X: -240, Y: 125}
+	answer := driver.Event{Kind: driver.EventCursorPoint, Count: id, Point: want, Finished: true}
+	h.tree.Dispatch(answer)
+	h.tree.Dispatch(answer)
+	if got != want || !available || calls != 1 {
+		t.Fatalf("got %v, available = %v, calls = %d", got, available, calls)
+	}
+	for _, env := range []Environment{{OS: OSIOS}, {OS: OSWindows, Simulated: true}} {
+		before := calls
+		h.tree.SetEnvironment(env)
+		h.root.CursorPoint(done)
+		if got != (Point{}) || available || calls != before+1 {
+			t.Fatalf("unsupported environment %+v returned %v, available = %v, calls = %d", env, got, available, calls-before)
+		}
+	}
+}

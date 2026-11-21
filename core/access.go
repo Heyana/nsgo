@@ -84,6 +84,8 @@ const (
 	AccessFrontmostApp = "frontmostApp"
 	// AccessServiceDiscovery is DNS-SD advertising and browsing by service type.
 	AccessServiceDiscovery = "serviceDiscovery"
+	// AccessCursorPoint is the pointer position outside the app's windows (desktop.CursorPoint).
+	AccessCursorPoint = "cursorPoint"
 )
 
 // AccessInput is AccessRequest.Method for a web view's trusted input, AccessMedia for the devices its pages capture, and AccessCookies for writing, listing or clearing the store every web view of the app shares, which no TSX capability grants.
@@ -175,6 +177,7 @@ const (
 	serviceWebCookies         service = "webCookies"
 	serviceFrontmostApp       service = "frontmostApp"
 	serviceDiscovery          service = "serviceDiscovery"
+	serviceCursorPoint        service = "cursorPoint"
 )
 
 // serviceRule is how core holds a kind of service to Access.
@@ -214,6 +217,7 @@ var services = map[service]serviceRule{
 	serviceWebCookies:         {permission: AccessWebView, method: AccessCookies},
 	serviceFrontmostApp:       {permission: AccessFrontmostApp},
 	serviceDiscovery:          {permission: AccessServiceDiscovery},
+	serviceCursorPoint:        {permission: AccessCursorPoint},
 }
 
 // gate is the refusal of a service of kind for resource by the running owner's Access (and cx's own when they differ), as services holds it; a kind services lacks is refused.

@@ -2204,6 +2204,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemSetLaunchAtLogin:
 			setLaunchAtLogin(it.On)
 			continue
+		case driver.ItemCursorPoint:
+			p, ok := cursorPoint()
+			s.engine.Dispatch(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: p, Finished: ok})
+			continue
 		case driver.ItemLaunchAtLogin:
 			s.engine.Dispatch(driver.Event{Kind: driver.EventLaunchAtLogin, Count: it.Count, Finished: launchesAtLogin()})
 			continue

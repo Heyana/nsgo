@@ -203,6 +203,17 @@ func Minimized(cx *core.Scope) bool { return cx.Env().Minimized() }
 // position came; zero without a window.
 func Frame(cx *core.Scope) WindowFrame { return cx.Env().WindowFrame() }
 
+// Monitors returns the displays and their bounds in desktop screen coordinates.
+func Monitors(cx *core.Scope) []core.DisplayInfo { return cx.Env().Displays() }
+
+// CursorPoint calls done with the pointer position, even outside the app's
+// windows, in the same points and coordinate space as Monitors and Window.ShowAt.
+// The bool is false when the position is unavailable, including on Wayland.
+// Poll by calling CursorPoint again when another sample is needed.
+func CursorPoint(cx *core.Scope, done func(point core.Point, available bool)) {
+	cx.CursorPoint(done)
+}
+
 // MinimizeWindow minimizes the window.
 func MinimizeWindow(cx *core.Scope) { cx.MinimizeWindow() }
 

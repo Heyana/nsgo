@@ -698,3 +698,18 @@ func (s *surface) pickScreenColor(id uint32) {
 	})
 	sampler.Send(sel("showSamplerWithSelectionHandler:"), done)
 }
+
+// cursorPoint maps AppKit's location to the same primary-screen coordinates
+// as displays and the anchor accepted by Window.ShowAt.
+func cursorPoint() (driver.Point, bool) {
+	screens := objc.ID(apple.Class("NSScreen")).Send(sel("screens"))
+	if objc.Send[uint](screens, sel("count")) == 0 {
+		return driver.Point{}, false
+	}
+	primary := objc.Send[apple.CGRect](screens.Send(sel("objectAtIndex:"), uint(0)), sel("frame"))
+	mouse := objc.Send[apple.CGPoint](objc.ID(apple.Class("NSEvent")), sel("mouseLocation"))
+	return driver.Point{
+		X: driver.Points(mouse.X - primary.Origin.X),
+		Y: driver.Points(primary.Origin.Y + primary.Size.Height - mouse.Y),
+	}, true
+}

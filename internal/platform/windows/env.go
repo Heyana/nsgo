@@ -454,3 +454,20 @@ func rightToLeft(locale string) bool {
 func (w *window) showsOwnWindow() bool {
 	return !w.embedded && !(w.primary && w.opts.Hidden) && w.kind != driver.SurfaceTrayIcon
 }
+
+// cursorPoint converts the native cursor pixels through the display that
+// contains them, rather than through the app window's current DPI.
+func cursorPoint() (driver.Point, bool) {
+	var at point
+	if ok, _, _ := getCursorPos.Call(uintptr(unsafe.Pointer(&at))); ok == 0 {
+		return driver.Point{}, false
+	}
+	bounds := rect{Left: at.X, Right: at.X + 1, Top: at.Y, Bottom: at.Y + 1}
+	monitor, _, _ := monitorFromRect.Call(uintptr(unsafe.Pointer(&bounds)), monitorDefaultNear)
+	for _, p := range monitorLayout() {
+		if p.monitor == monitor {
+			return p.point(at.X, at.Y), true
+		}
+	}
+	return driver.Point{}, false
+}

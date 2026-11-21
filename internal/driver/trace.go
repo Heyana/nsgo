@@ -127,6 +127,7 @@ var itemNames = map[ItemKind]string{
 	ItemGPU:                 "gpu",
 	ItemSavePreflightAnswer: "save-preflight-answer", ItemSaveFilePreflight: "save-file-preflight",
 	ItemSystemGestures: "system-gestures",
+	ItemCursorPoint:    "cursor-point",
 }
 
 // TraceLine is the item as traces print it: its kind, its view and what

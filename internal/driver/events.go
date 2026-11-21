@@ -291,6 +291,8 @@ const (
 	EventDiscovery
 	// EventShared reports one share received from another app (Data, []SharedItem). It names no view.
 	EventShared
+	// EventCursorPoint answers ItemCursorPoint Count. Finished reports availability, and Point is in desktop screen coordinates.
+	EventCursorPoint
 )
 
 // SharedItem is text or a file copied from an incoming share.

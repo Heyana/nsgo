@@ -400,6 +400,8 @@ const (
 	ItemDiscovery
 	// ItemSystemGestures replaces the surface's gesture deferrals with SystemGestures.
 	ItemSystemGestures
+	// ItemCursorPoint asks for the desktop pointer position and receives EventCursorPoint with the same Count.
+	ItemCursorPoint
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.

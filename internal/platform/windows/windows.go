@@ -1405,6 +1405,10 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemTrayMenu:
 			w.trayMenu(it.Tray.ID, it.Menu, it.Count)
 			continue
+		case driver.ItemCursorPoint:
+			p, ok := cursorPoint()
+			w.engine.Dispatch(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: p, Finished: ok})
+			continue
 		case driver.ItemLaunchAtLogin:
 			w.engine.Dispatch(driver.Event{Kind: driver.EventLaunchAtLogin, Count: it.Count, Finished: launchesAtLogin(w.opts.ID)})
 			continue
