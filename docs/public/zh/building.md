@@ -258,6 +258,26 @@ irm https://github.com/me/hello/releases/latest/download/install.ps1 | iex      
 
 在 macOS 上，脚本把应用从磁盘映像复制到 `/Applications`，无写权限时复制到 `~/Applications`；在 Linux 上通过 `sudo` 用 `pacman` 安装 Arch 软件包，否则用 `apt-get` 或 `dpkg` 安装 Debian 软件包；在 Windows 上静默运行安装程序，装到应用已安装的目录。安装前都会先核对校验和。`<NAME>_VERSION`（应用名的大写形式，例如 `HELLO_VERSION=1.1.0`）安装其他版本，`<NAME>_DOWNLOAD_URL` 从镜像下载。
 
+## 发布到 itch.io
+
+在 `nsgo.yaml` 中将 `itch.project` 设为 itch.io 游戏的 `owner/game` 标识。可以按构建目标在 `itch.channels` 中覆盖频道名称。默认频道为 Web 的 `html5`、macOS 的 `osx-<arch>`、Windows 的 `windows-<arch>` 和 Linux 的 `linux-<arch>`。
+
+```yaml
+itch:
+  project: example/my-game
+  channels:
+    macos_arm64: osx-arm64-beta
+```
+
+在 CI 中将 `BUTLER_API_KEY` 设为机密变量，然后构建并上传。
+
+```sh
+go tool nsgo build -channel none -installers=false -target web,macos_arm64
+go tool nsgo publish itch -target web,macos_arm64
+```
+
+如果覆盖 `-output` 或 `-version`，两条命令需使用相同的值。工具上传各目标的包目录，并将 itch.io 的版本设为构建版本。NSGo 使用 `PATH` 上的 `butler`，也可从 itch.io 下载固定版本。首次上传 Web 构建后，将 itch.io 游戏类型设为 HTML，并将上传的版本设为可在浏览器中运行。[Butler 文档](https://itch.io/docs/butler/pushing.html)
+
 ## 自动更新
 
 `updates` 让应用按所在平台和用户获取它的渠道保持最新：

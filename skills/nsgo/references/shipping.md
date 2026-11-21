@@ -59,6 +59,7 @@ On the store channel, `-target macos` and `-target macos_universal` write one un
 Android store builds require API 36 or higher. Record outstanding store questionnaires in `compliance` and declare Apple's export compliance in `apple.info` ([Store compliance](https://nsgo.dev/docs/building.md#store-compliance)).
 For Steam, upload the desktop target directories directly. Native dev with `steam.app_id` writes `steam_appid.txt` into its build and starts there. The depot output excludes that file, installers and self-updaters.
 
+
 ## Store listings
 
 Keep App Store and Google Play metadata as plain-text YAML and Markdown under `store/` (or `store.dir`): top-level `listing.yaml` (`version: 1`) and per-locale `<locale>/listing.yaml` (`version: 1`, unknown keys refused) plus optional `description.md`, `release_notes.md`, `promotional_text.md` and `screenshots/`.
@@ -70,6 +71,7 @@ go tool nsgo publish -store appstore,play                 # validate and upload 
 
 Validation runs before reading credentials or sending HTTP requests. Canonical locale directories like `zh-Hans` map to `zh-Hans` on App Store Connect and `zh-CN` on Google Play unless overridden.
 
+Publish built web and desktop packages with `go tool nsgo publish itch -target web,macos_arm64`. Set `itch.project` in `nsgo.yaml` and pass `BUTLER_API_KEY` as a CI secret ([itch.io publishing](https://nsgo.dev/docs/building.md#publish-on-itchio)).
 ## Documents
 
 On Linux, audio and video rely on the system's GStreamer plug-ins. Use `linux.depends` and `linux.recommends` to declare the codecs your app needs. [Building](https://nsgo.dev/docs/building.md).

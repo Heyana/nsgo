@@ -245,8 +245,10 @@ type project struct {
 	// Updates has the app update the way its platform does (updates.go).
 	Updates updatesConfig `yaml:"updates"`
 	Steam   steamConfig   `yaml:"steam"`
+
 	// Store names where the app's text-based store listings live (listings.go).
 	Store storeConfig `yaml:"store"`
+	Itch  itchConfig  `yaml:"itch"`
 	// Mobile is the iOS and Android targets': ExcludeResources are paths in
 	// resources/ their packages leave out, such as what only desktops run.
 	Mobile struct {

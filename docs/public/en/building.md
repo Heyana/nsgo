@@ -258,6 +258,26 @@ irm https://github.com/me/hello/releases/latest/download/install.ps1 | iex      
 
 On macOS the script copies the app from the disk image into `/Applications`, or `~/Applications` when it cannot write there; on Linux it installs the Arch package with `pacman`, else the Debian one with `apt-get` or `dpkg`, through `sudo`; on Windows it runs the installer silently, which installs where the app already is. Each checks the file against its checksum first. `<NAME>_VERSION`, the app's name in capitals, such as `HELLO_VERSION=1.1.0`, installs another release, and `<NAME>_DOWNLOAD_URL` downloads from a mirror.
 
+## Publish on itch.io
+
+Set `itch.project` to your itch.io game's `owner/game` slug in `nsgo.yaml`. To override channel names, set `itch.channels` by build target. The defaults are `html5` for web, `osx-<arch>` for macOS, `windows-<arch>` for Windows and `linux-<arch>` for Linux.
+
+```yaml
+itch:
+  project: example/my-game
+  channels:
+    macos_arm64: osx-arm64-beta
+```
+
+With `BUTLER_API_KEY` set as a secret in CI, build and upload the targets.
+
+```sh
+go tool nsgo build -channel none -installers=false -target web,macos_arm64
+go tool nsgo publish itch -target web,macos_arm64
+```
+
+Use the same `-output` and `-version` on both commands if you override them. The upload takes each target's package directory and sets its itch.io version to the build's version. NSGo uses `butler` on `PATH` or downloads a pinned copy from itch.io. After the first web upload, set the itch.io game type to HTML and mark the upload playable in the browser. [Butler documentation](https://itch.io/docs/butler/pushing.html)
+
 ## Updates
 
 `updates` has the app keep itself up to date the way its platform and the channel users get it from do:

@@ -16,6 +16,8 @@
 //	nsgo doctor                                          show which targets this machine builds and runs
 //	nsgo keygen                                          print a key pair for updates or signed packages
 //	nsgo certify -key P -apps A [-days N] [-out F]       certify a release key for apps
+//	nsgo publish itch -target web,macos_arm64 [dir]
+//	                                                      upload built packages to itch.io
 //	nsgo publish -cert C [-entry E] [-min-runtime V] [-out F] [dir | package]
 //	                                                      compile a TSX app into a signed package, or sign one again
 //	nsgo publish -store appstore|play|all [-listings DIR] [-dry-run] [-platform P] [-version V] [-track T] [dir]
@@ -192,6 +194,10 @@ func main() {
 		}
 		err = certify(o)
 	case "publish":
+		if len(args) > 0 && args[0] == "itch" {
+			err = publishItch(ctx, args[1:])
+			break
+		}
 		fs := flag.NewFlagSet("publish", flag.ExitOnError)
 		var o publishOptions
 		fs.StringVar(&o.cert, "cert", "", "the release key's certificate `file`; its secret key is NSGO_RELEASE_KEY's")
@@ -261,6 +267,7 @@ func usage() {
   nsgo doctor
   nsgo keygen
   nsgo certify -key P -apps A [-days N] [-out F]
+  nsgo publish itch -target web,macos_arm64 [dir]
   nsgo publish -cert C [-entry E] [-min-runtime V] [-extra F] [-out F] [dir | package]
   nsgo publish -store appstore|play|all [-listings DIR] [-dry-run] [-platform P] [-version V] [-track T] [dir]
   nsgo verify  [-root P,... [-revocations F,...]] package
