@@ -36,6 +36,10 @@ func TestAppDirs(t *testing.T) {
 	if _, _, logs := appDirs("windows", "a", func(k string) string { return map[string]string{"APPDATA": `C:\r`}[k] }); logs != "" {
 		t.Errorf("without LOCALAPPDATA: logs %q", logs)
 	}
+	env["NSGO_DATA_DIR"], env["NSGO_CACHE_DIR"] = "/app/files", "/app/cache"
+	if data, cache, logs := appDirs("android", "dev.app", get); data != "/app/files" || cache != "/app/cache" || logs != filepath.Join(data, "logs") {
+		t.Errorf("Android runtime paths: data %q, cache %q, logs %q", data, cache, logs)
+	}
 	env["XDG_STATE_HOME"] = "/state"
 	for id, want := range map[string]string{"dev.app": "/state/dev.app", "default": "/state/default", "": "/state/default"} {
 		if _, _, logs := appDirs("linux", id, get); logs != filepath.FromSlash(want) {

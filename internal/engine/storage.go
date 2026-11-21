@@ -18,7 +18,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// AppDirs returns app id's data, cache and logs directories on this system: Application Support, Caches and, on macOS, Logs in Library on Apple platforms, %APPDATA%, %LOCALAPPDATA% and its Logs on Windows, XDG_DATA_HOME, XDG_CACHE_HOME and XDG_STATE_HOME elsewhere, each with a directory named by id, or "default" when id names no directory. On iOS and watchOS, which have no place for logs, they go in logs in the data directory. All are "" where only the platform knows them, on Android and the web.
+// AppDirs returns app id's data, cache and logs directories on this system: Application Support, Caches and, on macOS, Logs in Library on Apple platforms, %APPDATA%, %LOCALAPPDATA% and its Logs on Windows, XDG_DATA_HOME, XDG_CACHE_HOME and XDG_STATE_HOME on Linux, each with a directory named by id, or "default" when id names no directory. Android's runtime supplies the app's data and cache directories. On iOS, watchOS and Android, logs go in the data directory. All are "" on the web.
 func AppDirs(id string) (data, cache, logs string) {
 	return appDirs(runtime.GOOS, id, os.Getenv)
 }
@@ -32,7 +32,10 @@ func appDirs(goos, id string, env func(string) string) (data, cache, logs string
 		return filepath.Join(dir, rest)
 	}
 	switch goos {
-	case "android", "js":
+	case "android":
+		data, cache = env("NSGO_DATA_DIR"), env("NSGO_CACHE_DIR")
+		return data, cache, under(data, "logs")
+	case "js":
 		return "", "", ""
 	case "darwin", "ios":
 		data, cache = under(home, "Library/Application Support"), under(home, "Library/Caches")

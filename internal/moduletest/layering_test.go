@@ -24,6 +24,7 @@ var layers = []struct {
 	// Recording reaches Android's runtime, and nsgotest's fake, through the driver's channel outside any surface, asks for its permission as the backends do, and holds iOS's audio session with the backends' videos and speech.
 	{"microphone", []string{"internal/audiosession", "internal/driver", "internal/platform/objcblock", "internal/platform/privacy"}},
 	{"internal/audiosession", nil},
+	{"internal/crashreport", nil},
 	// The automation's protocol, which the nsgo tool and the agent in a running app speak, is the standard library's JSON alone.
 	{"internal/automation", nil},
 	// Widgets take core's colors, edges and fonts, and reach WidgetKit
@@ -41,7 +42,7 @@ var layers = []struct {
 	{"internal/shaderir/", []string{"internal/shaderir"}},
 	{"internal/shader", []string{"internal/shaderir"}},
 	{"internal/shader/wgsl", []string{"internal/shaderir"}},
-	{"core", []string{"internal/devtools", "internal/driver", "internal/layout", "internal/shader", "internal/shader/wgsl", "internal/shaderir"}},
+	{"core", []string{"internal/crashreport", "internal/devtools", "internal/driver", "internal/layout", "internal/shader", "internal/shader/wgsl", "internal/shaderir"}},
 	{"internal/engine", []string{"core", "internal/driver", "internal/testhost"}},
 	{"internal/testhost", []string{"core", "internal/driver"}},
 	{"internal/platform/android/runtime", nil},
@@ -76,7 +77,7 @@ var layers = []struct {
 	{"nsgotest", []string{"core", "gamepad", "internal/automation", "internal/devtools", "internal/driver", "internal/testhost", "widget"}},
 	{"", []string{"core", "internal/backend", "internal/dev", "internal/engine"}},
 	// The backend runs the app on the platform build tags pick, with the launch flags, the dev client, restarts and, where the platform's updater keeps no schedule, update checks.
-	{"internal/backend", []string{"core", "internal/dev", "internal/engine", "internal/platform/", "internal/restart", "updater"}},
+	{"internal/backend", []string{"core", "internal/crashreport", "internal/dev", "internal/engine", "internal/platform/", "internal/restart", "updater"}},
 	// The dev client nsgo.Run starts in nsgo dev's builds; release builds link its no-op Start and Wrap alone.
 	{"internal/dev", []string{"core", "internal/engine"}},
 	{"internal/restart", []string{"internal/platform/appimage"}},

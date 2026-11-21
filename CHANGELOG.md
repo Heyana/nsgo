@@ -86,6 +86,7 @@
 - Add `apple.multiple_scenes`, which writes `UIApplicationSupportsMultipleScenes`, and show each further scene an iPad connects for it, as the user opens another window of the app, in a window of its own: a tree of the app's one engine showing the main view, with its own size, safe area, status bar and orientations, kept while UIKit disconnects the scene and ended as the system discards it (#49 by @houko).
 - Honor quit requests from Windows and Linux menus, tray icons, and window closes, and run bounded cleanup when the session ends (#1082 by @houko).
 - Schedule sound playback on the audio clock and read the output route's latency on macOS, iOS, Linux and the web (#1223 by @houko).
+- Keep native release crash reports with their originating version and build until the app acknowledges them (#1226 by @houko).
 - Acknowledge macOS logout, restart and shutdown after app cleanup and expose those requests through `desktop.QuitRequest.Forced()` (#1081 by @houko).
 - Report the system's network availability and cost through `Env.Network` and `OnNetworkChange` (#268 by @houko).
 - Add `Style` and `StyleFunc` to `ui.Sheet` for surface backgrounds, corners and padding (#1036 by @houko).

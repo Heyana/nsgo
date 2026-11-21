@@ -367,5 +367,5 @@ func (cx *Scope) DataDir() string { return cx.rt.dataDir }
 // the system may delete when space runs low; "" on the web.
 func (cx *Scope) CacheDir() string { return cx.rt.cacheDir }
 
-// LogsDir returns the directory for the app's log files, where the platform's tools look for them: ~/Library/Logs/<id> on macOS, %LOCALAPPDATA%\<id>\Logs on Windows (inside CacheDir, so an app that empties its cache must spare Logs), $XDG_STATE_HOME/<id> on Linux (~/.local/state by default), and logs in DataDir on Android, iOS and watchOS. A host's data directory and nsgotest move it with DataDir. It is "" on the web, which has none. NSGo writes nothing there: the app owns its log files.
+// LogsDir returns the directory for the app's log files, where the platform's tools look for them: ~/Library/Logs/<id> on macOS, %LOCALAPPDATA%\<id>\Logs on Windows (inside CacheDir, so an app that empties its cache must spare Logs), $XDG_STATE_HOME/<id> on Linux (~/.local/state by default), and logs in DataDir on Android, iOS and watchOS. A host's data directory and nsgotest move it with DataDir. It is "" on the web, which has none. Standalone release builds keep crash reports under crashes in this directory.
 func (cx *Scope) LogsDir() string { return cx.rt.logsDir }

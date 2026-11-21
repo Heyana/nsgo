@@ -27,6 +27,14 @@ func App(app *core.Scope) {
 
 `examples/tray` is a tray app with all of them.
 
+## Crash reports
+
+Standalone releases set the Go runtime's crash output before starting the platform. A file in `LogsDir()/crashes` starts with the platform, version and build of the crashed app, followed by the runtime's trace. The runtime also writes to standard error. Go controls the detail in its trace through `GOTRACEBACK`.
+
+Foundation's uncaught exception handler records Objective-C names, reasons and stack symbols. The Android activity's default uncaught Java exception handler records the exception and its stack. Windows records the code and address of SEH exceptions that reach its top-level filter. Exceptions Go's Windows runtime handles already go to its crash output. Each native hook passes control to the platform's earlier handler if present.
+
+`Scope.CrashReports()` lists pending reports oldest first and skips files held by a live Go process. Once an earlier file contains only its header, reading the list removes it. `CrashReport.Open()` streams the diagnostic body, and `Acknowledge()` removes the report after the app processes it. The app decides how to present or handle the report. Development builds and embedded iOS hosts keep their own process-wide handlers. Targets without a logs directory return an empty list.
+
 ## Surfaces
 
 The engine runs one graph with a tree per surface (`core.Tree`). Where the platform opens windows (`core.RootOptions.Windows`, the main window's options), the first tree is the app's own surface: it shows no view, and the platform gives it no window, or a hidden one on Windows.

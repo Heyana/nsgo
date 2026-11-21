@@ -114,6 +114,10 @@ store.SetItem("tab", "library")
 
 `store.Keys()` 列出键，`RemoveItem` 删除一个，`Clear` 清空存储。`cx.DataDir()` 和 `cx.CacheDir()` 给出应用存放键值存储放不下的文件的目录；`cx.LogsDir()` 给出平台存放日志的目录；`Scope.ProvideStorage` 给子树一个独立分区。
 
+### 崩溃报告
+
+原生发布构建将 Go 崩溃堆栈保存在 `cx.LogsDir()/crashes` 下。Apple 平台记录未捕获的 Objective-C 异常，Android 记录未捕获的 Java 异常，Windows 记录到达顶层过滤器的 SEH 异常。下次启动时调用 `cx.CrashReports()` 列出待处理报告。报告含崩溃应用的版本、构建号和平台。调用 `Open()` 读取诊断文本并关闭读取器，处理完成后调用 `Acknowledge()` 删除报告。在 goroutine 中执行这些文件操作。
+
 ## 磁盘空间
 
 `cx.DiskSpace(func(space core.DiskSpace, err error) { … })` 异步查询 `cx.DataDir()` 所在的卷，在引擎的 goroutine 上回调。`Total` 是系统报告的容量，`Available` 是应用可以用于用户请求操作的空间，`Opportunistic` 是可以用于缓存和预取的空间，单位都是字节。系统报告可按需回收的空间时，`Available` 也会计入它。平台只提供一个可用空间值时，两个字段取同一值。在 Web 上，`Total` 是浏览器估算的当前来源存储配额，`Available` 是剩余配额。服务不可用时返回 `core.ErrDiskSpaceUnavailable`。

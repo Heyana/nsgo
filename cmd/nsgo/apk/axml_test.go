@@ -14,11 +14,12 @@ import (
 // binary-searches them, and an out of order theme attribute is ignored.
 func TestEncodeManifest(t *testing.T) {
 	data, err := EncodeManifest(androidruntime.Manifest, Manifest{
-		Package:     "dev.oneo.nsgo.test",
-		Label:       "Test",
-		VersionName: "1.2.3",
-		VersionCode: 10203,
-		Icon:        []byte("png"),
+		Package:          "dev.oneo.nsgo.test",
+		Label:            "Test",
+		VersionName:      "1.2.3",
+		VersionCode:      10203,
+		CrashReportBuild: "47",
+		Icon:             []byte("png"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -48,6 +49,10 @@ func TestEncodeManifest(t *testing.T) {
 	}
 	if got, want := app.value(t, "icon"), uint32(iconResourceID); got != want {
 		t.Fatalf("icon = %#x, want %#x", got, want)
+	}
+	meta := app.child(t, "meta-data")
+	if name, value := meta.string(t, "name"), meta.string(t, "value"); name != "dev.oneo.nsgo.crash_report_build" || value != "47" {
+		t.Fatalf("crash report metadata %q = %q", name, value)
 	}
 	provider := app.child(t, "provider")
 	if got := provider.string(t, "authorities"); got != "dev.oneo.nsgo.test.nsgo.files" {

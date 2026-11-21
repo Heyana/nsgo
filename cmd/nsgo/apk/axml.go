@@ -37,6 +37,8 @@ type Manifest struct {
 	// Debuggable marks a test build, whose launch intent may name the test
 	// the runtime runs.
 	Debuggable bool
+	// CrashReportBuild enables Java crash reports with this release build number.
+	CrashReportBuild string
 	// Permissions are the permissions the app asks for beyond the
 	// runtime's, by their full names.
 	Permissions []string
@@ -281,6 +283,12 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 	}
 	if m.Debuggable {
 		setAttr(app, androidNS, "debuggable", "true")
+	}
+	if m.CrashReportBuild != "" {
+		meta := &node{name: xml.Name{Local: "meta-data"}}
+		setAttr(meta, androidNS, "name", "dev.oneo.nsgo.crash_report_build")
+		setAttr(meta, androidNS, "value", m.CrashReportBuild)
+		app.kids = append(app.kids, meta)
 	}
 	if p := child(app, "provider"); p != nil {
 		// Each app's provider needs an authority of its own.

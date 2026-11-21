@@ -104,7 +104,7 @@ var exempt = map[string][]string{
 		"SetApplicationMenu", "ExitApp", "RequestQuit", "OnQuitRequest", "OnQuit", "Quit", "Restart",
 		"SetShutdownMode", "SetMainWindow", "OnReopen", "NewTray", "RegisterHotKey", "SetDockVisible",
 		"SetLaunchAtLogin", "OnOpenFiles", "OnOpenLinks", "OnShared", "CheckForUpdates", "InstallPackage", "CanInstallPackages",
-		"OpenInstallSettings", "Store", "DataDir", "CacheDir", "LogsDir", "OpenFile", "Share", "RevealFile", "TrashFile", "KeepAwake",
+		"OpenInstallSettings", "Store", "DataDir", "CacheDir", "LogsDir", "CrashReports", "OpenFile", "Share", "RevealFile", "TrashFile", "KeepAwake",
 		"SetTaskProgress", "SetDockMenu", "AddRecentFile", "ClearRecentFiles", "LookUp", "QuickLook", "RequestReview"},
 	"app-volume capacity, exposed to Go and gated by the project's declaration on Apple": {"DiskSpace"},
 	"stopping what the code's own requests started, which asked the gate":                {"StopSpeaking"},

@@ -36,6 +36,7 @@ public class NsgoActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle state) {
+        CrashReports.install(this);
         // The manifest's theme is dark; web views take prefers-color-scheme
         // from the theme, so it follows the system's mode at launch.
         int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;

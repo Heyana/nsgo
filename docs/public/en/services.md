@@ -114,6 +114,10 @@ store.SetItem("tab", "library")
 
 `store.Keys()` lists the keys, `RemoveItem` deletes one and `Clear` empties the storage. `cx.DataDir()` and `cx.CacheDir()` give the app's folders for files the key-value storage is too small for; `cx.LogsDir()` gives the platform's directory for log files, and a `Scope.ProvideStorage` gives a subtree a partition of its own.
 
+### Crash reports
+
+Native release builds keep Go crash traces under `cx.LogsDir()/crashes`. Apple records uncaught Objective-C exceptions, Android records uncaught Java exceptions, and Windows records SEH exceptions that reach its top-level filter. List pending reports on the next launch with `cx.CrashReports()`. Each report identifies the version, build and platform that produced it. Call `Open()` to read the diagnostic text, close the reader, then call `Acknowledge()` to delete the report when the app has processed it. Run these file operations on a goroutine.
+
 ## Disk space
 
 `cx.DiskSpace(func(space core.DiskSpace, err error) { … })` queries the volume containing `cx.DataDir()` asynchronously and calls back on the engine goroutine. `Total` is the system-reported capacity, `Available` is what the app can use for a user-requested operation, and `Opportunistic` is what it can use for caches and prefetching. All three are in bytes. `Available` includes space the system reclaims on demand where it reports that figure. Platforms with a single free-space figure return it in both fields. On the web, `Total` is the browser's estimated storage quota for the origin and `Available` is the unused portion. When the service is unavailable it returns `core.ErrDiskSpaceUnavailable`.
