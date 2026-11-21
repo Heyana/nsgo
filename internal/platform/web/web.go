@@ -1497,7 +1497,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 			s.engine.Dispatch(driver.NoPackageInstaller(it.Count))
 			continue
 		case driver.ItemShare:
-			s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoShareSheet})
+			s.share(*it.Share, it.Count)
 			continue
 		case driver.ItemSaveFile:
 			s.saveFile(*it.Save, it.Count)

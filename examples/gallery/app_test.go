@@ -1110,7 +1110,7 @@ func TestSystem(t *testing.T) {
 	}
 	app.Press("role:button Share the file picked")
 	app.Find("text:Share sheet shown")
-	if r := app.Shares[0]; len(r.Files) != 1 || r.Files[0] != (core.SharedFile{Path: report, Name: "report.pdf", MIME: "application/pdf"}) ||
+	if r := app.Shares[0]; len(r.Files) != 1 || r.Files[0].Path != report || r.Files[0].Name != "report.pdf" || r.Files[0].MIME != "application/pdf" || len(r.Files[0].Data) != 0 ||
 		r.Text != "Hello from NSGo" || r.From.Size.Width == 0 {
 		t.Fatalf("share = %+v", r)
 	}

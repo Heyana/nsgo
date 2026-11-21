@@ -500,8 +500,9 @@ type window struct {
 	missing    map[string]bool
 	// drop is the window's file drop target while views take dropped
 	// files: drops holds those views.
-	drop  *dropTarget
-	drops map[*view]bool
+	drop    *dropTarget
+	drops   map[*view]bool
+	sharing *shareState
 
 	// composition is the window's while it has web views or a material
 	// behind its content, and composed the web views the last frame drew.
@@ -1386,7 +1387,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.engine.Dispatch(driver.NoPackageInstaller(it.Count))
 			continue
 		case driver.ItemShare:
-			w.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoShareSheet})
+			w.share(*it.Share, it.Count)
 			continue
 		case driver.ItemSaveFile:
 			w.saveFile(*it.Save, it.Count)
@@ -2787,6 +2788,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		w.closeCookieView()
 		w.revokeDrop()
+		w.closeShare()
 		for c := range w.hosts {
 			w.closeComponent(c)
 		}

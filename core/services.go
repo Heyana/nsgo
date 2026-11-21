@@ -718,10 +718,26 @@ func (cx *Scope) SaveFile(o SaveOptions, done func(saved bool, path string, err 
 }
 
 // resolveShared returns f as the platform hands it on, with an absolute
-// path, a name and a type, or why it cannot be: a file that is not
-// there, or not a regular file.
+// path or its bytes, a name and a type, or why it cannot be: a file with
+// neither path nor data, one that is not there, or not a regular file.
 func resolveShared(f SharedFile) (driver.SharedFile, error) {
-	return resolveOpened(f, false)
+	if f.Path != "" {
+		return resolveOpened(f, false)
+	}
+	if f.Data == nil {
+		return driver.SharedFile{}, errors.New("core: a shared file has a path or data")
+	}
+	r := driver.SharedFile{Data: f.Data, Name: f.Name, MIME: f.MIME}
+	if i := strings.LastIndexAny(r.Name, `/\`); i >= 0 {
+		r.Name = r.Name[i+1:]
+	}
+	if r.Name == "" || r.Name == "." || r.Name == ".." {
+		r.Name = "file"
+	}
+	if r.MIME == "" {
+		r.MIME = driver.MIMEForFile(r.Name)
+	}
+	return r, nil
 }
 
 // resolveOpened is resolveShared, taking a folder too when folders is
@@ -891,13 +907,17 @@ type ShareOptions struct {
 
 // Share shows the system's share sheet for what o names, for the user to
 // send it to another app: UIActivityViewController on iOS,
-// NSSharingServicePicker on macOS and an Intent.ACTION_SEND chooser on
-// Android. Files go by path or content URI, never through the
-// platform's bridge, so large ones cost nothing more. done, when not
-// nil, learns whether the sheet showed, with the error when it did not:
-// a missing file, or a platform without a share sheet (Windows, Linux
-// and the web). That it showed says nothing of what the app the user
-// chose did with what it received. On Android the files are in the
+// NSSharingServicePicker on macOS, an Intent.ACTION_SEND chooser on
+// Android, the Share UI (IDataTransferManagerInterop) on Windows, the
+// desktop portal's OpenURI chooser or the file manager on Linux, and
+// navigator.share on the web. Disk files go by path or content URI, never
+// through the platform's bridge, so large ones cost nothing more; on the
+// web, and anywhere else a file is held in memory, SharedFile.Data carries
+// its bytes. done, when not nil, learns whether the sheet showed (or on
+// the web and Linux portal, completed rather than being cancelled), with
+// the error when it did not: a missing file, or a platform or browser
+// without a share sheet. That it showed says nothing of what the app the
+// user chose did with what it received. On Android the files are in the
 // app's own storage, such as DataDir and CacheDir, and the app chosen
 // reads them through content URIs the runtime grants it, until its
 // activity finishes; the files stay the app's to keep there that long
@@ -964,7 +984,7 @@ func (cx *Scope) installPackage(f SharedFile, done func(bool, error)) {
 	if t == nil {
 		return
 	}
-	r, err := resolveShared(f)
+	r, err := resolveOpened(f, false)
 	// A backend without filesystem access can still report that installation is unavailable.
 	if err != nil && !errors.Is(err, errors.ErrUnsupported) {
 		if done != nil {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -502,7 +503,7 @@ func TestOpenFile(t *testing.T) {
 	open := func(ok bool, err error) { opened, openErr = ok, err; answered++ }
 	cx.OpenFile(SharedFile{Path: src}, open)
 	it := command(h.commit(), driver.ItemOpenFile)
-	if it == nil || *it.Open != (driver.SharedFile{Path: src, Name: "report.pdf", MIME: "application/pdf"}) {
+	if it == nil || !reflect.DeepEqual(*it.Open, driver.SharedFile{Path: src, Name: "report.pdf", MIME: "application/pdf"}) {
 		t.Fatalf("open = %+v", it)
 	}
 	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: true})
@@ -534,7 +535,7 @@ func TestOpenFile(t *testing.T) {
 	h.tree.SetEnvironment(Environment{OS: OSMacOS})
 	cx.OpenFile(SharedFile{Path: dir}, open)
 	it = command(h.commit(), driver.ItemOpenFile)
-	if it == nil || *it.Open != (driver.SharedFile{Path: dir, Name: filepath.Base(dir), MIME: "inode/directory"}) {
+	if it == nil || !reflect.DeepEqual(*it.Open, driver.SharedFile{Path: dir, Name: filepath.Base(dir), MIME: "inode/directory"}) {
 		t.Fatalf("a folder opens as %+v", it)
 	}
 }
@@ -602,20 +603,33 @@ func TestShare(t *testing.T) {
 	cx.Share(ShareOptions{Files: []SharedFile{{Path: a, Name: "Notes.txt"}, {Path: b}}, Text: "hi", Anchor: &anchor}, share)
 	it := command(h.commit(), driver.ItemShare)
 	want := []driver.SharedFile{{Path: a, Name: "Notes.txt", MIME: "text/plain"}, {Path: b, Name: "b.png", MIME: "image/png"}}
-	if it == nil || !slices.Equal(it.Share.Files, want) || it.Share.Text != "hi" || it.Share.From.Size != (Size{Width: 40, Height: 20}) {
+	if it == nil || !reflect.DeepEqual(it.Share.Files, want) || it.Share.Text != "hi" || it.Share.From.Size != (Size{Width: 40, Height: 20}) {
 		t.Fatalf("share = %+v", it.Share)
 	}
 	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: true})
 	if answered != 1 || !shown || shareErr != nil {
 		t.Fatalf("shown = %v, %v", shown, shareErr)
 	}
+	cx.Share(ShareOptions{Files: []SharedFile{{Data: []byte("hello"), Name: "../note.txt"}, {Data: []byte{}}}}, share)
+	it = command(h.commit(), driver.ItemShare)
+	wantBytes := []driver.SharedFile{
+		{Data: []byte("hello"), Name: "note.txt", MIME: "text/plain"},
+		{Data: []byte{}, Name: "file", MIME: "application/octet-stream"},
+	}
+	if it == nil || !reflect.DeepEqual(it.Share.Files, wantBytes) {
+		t.Fatalf("byte share = %+v", it)
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count})
+	if answered != 2 || shown || shareErr != nil {
+		t.Fatalf("cancelled share = %v, %v", shown, shareErr)
+	}
 	cx.Share(ShareOptions{Text: "https://example.com"}, share)
 	it = command(h.commit(), driver.ItemShare)
 	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoShareSheet})
-	if answered != 2 || shown || shareErr == nil {
+	if answered != 3 || shown || shareErr == nil {
 		t.Fatalf("a failed share answers %v, %v", shown, shareErr)
 	}
-	for _, o := range []ShareOptions{{}, {Files: []SharedFile{{Path: a}, {Path: filepath.Join(dir, "missing")}}}} {
+	for _, o := range []ShareOptions{{}, {Files: []SharedFile{{}}}, {Files: []SharedFile{{Path: a}, {Path: filepath.Join(dir, "missing")}}}} {
 		cx.Share(o, share)
 		if shareErr == nil || command(h.commit(), driver.ItemShare) != nil {
 			t.Fatalf("share %+v asked the platform, or answered %v", o, shareErr)
@@ -699,6 +713,13 @@ func TestSharedFileStage(t *testing.T) {
 	}
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Fatal("an old stage stayed")
+	}
+	dp, err := (driver.SharedFile{Data: []byte("mem"), Name: "Note.txt"}).Stage(stage)
+	if err != nil || filepath.Base(dp) != "Note.txt" {
+		t.Fatalf("staged bytes %q, %v", dp, err)
+	}
+	if b, _ := os.ReadFile(dp); string(b) != "mem" {
+		t.Fatalf("staged bytes = %q", b)
 	}
 }
 

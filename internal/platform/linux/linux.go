@@ -845,7 +845,9 @@ func (w *window) shutdown(forced bool) {
 	w.closeAudio()
 	w.closeCanvasImages()
 	w.closeHotKeys()
+
 	w.cancelColorPick()
+	w.closeShares()
 	if w.loop != 0 {
 		// The app ends with this window: every hold goes, sent before the main loop returns.
 		endAwake(awakeEndTimeout)
@@ -1042,7 +1044,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.trashFile(*it.Open, it.Count)
 			continue
 		case driver.ItemShare:
-			w.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoShareSheet})
+			w.share(*it.Share, it.Count)
 			continue
 		case driver.ItemRequestReview:
 			// Linux has no in-app store review prompt.

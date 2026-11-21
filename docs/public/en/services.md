@@ -45,7 +45,7 @@ if err := core.CheckURL(url); err == nil {
 }
 ```
 
-`cx.OpenFile` opens a file the app has in the app associated with its type, and `cx.Share` shows the system's share sheet for files, text or both. A `core.SharedFile` is a path, with the name and type the other app sees. On desktops, `desktop.RevealFile` shows a file or folder selected in Finder, Explorer or the file manager, and `desktop.TrashFile` moves it to the Trash or Recycle Bin; it never deletes permanently, answering `core.ErrNoTrash` and leaving the item in place where the volume has no trash or the trash would not keep it, such as a file larger than the Recycle Bin.
+`cx.OpenFile` opens a file the app has in the app associated with its type, and `cx.Share` shows the system's share sheet for files, text or both across macOS, iOS, Android, Windows, Linux (through the desktop portal or file manager) and the web (`navigator.share`). A `core.SharedFile` is a path on disk — or, for `Share` on the web and anywhere a file is held in memory, its `Data` bytes — with the name and type the other app sees. On desktops, `desktop.RevealFile` shows a file or folder selected in Finder, Explorer or the file manager, and `desktop.TrashFile` moves it to the Trash or Recycle Bin; it never deletes permanently, answering `core.ErrNoTrash` and leaving the item in place where the volume has no trash or the trash would not keep it, such as a file larger than the Recycle Bin.
 
 ```go
 cx.Share(core.ShareOptions{

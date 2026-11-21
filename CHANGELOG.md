@@ -13,6 +13,7 @@
 - Fall back to estimated text sizes on Android when a runtime text request fails or times out (#173 by @houko).
 - Report the character's UTF-8 byte offset on Android text long presses so `Span.OnLongPress` fires on Android as on the other backends (#1602).
 - Measure text on Linux in fractional Pango units (`pango_layout_get_size`) instead of whole points so the core rounds up to device pixels at HiDPI scales (#1603).
+- Implement `Scope.Share` on Windows (`IDataTransferManagerInterop` with `StorageFile`s), Linux (desktop portal `OpenURI` chooser and `FileManager1` fallback) and the web (`navigator.share` with `canShare`), and add `SharedFile.Data` for sharing in-memory files (#1567).
 - Relaunch iOS simulator dev builds after replacing only the executable when the bundle's resources and configuration stay the same (#661 by @houko).
 - Advertise and browse local DNS-SD services through Bonjour on macOS and iOS (#430 by @houko).
 - Keep `base/datatable.DataTable` header sort controls above the trailing resize handle's touch slop on phones, place right-pinned column headers at their region's origin, and run the TSX gallery's `TestDataTableSorts` on phones as well (#1551).

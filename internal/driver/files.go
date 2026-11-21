@@ -210,6 +210,9 @@ func (r SaveRequest) Stage(dir string) (string, error) {
 type SharedFile struct {
 	// Path is where it is on disk, absolute once the core resolved it.
 	Path string
+	// Data holds the file's bytes for Share when it is not on disk, such as
+	// on the web; Path takes precedence when set.
+	Data []byte
 	// Name is the file name the other app sees, Path's own unless the app
 	// gave another; the core fills it in.
 	Name string
@@ -249,11 +252,19 @@ const ShareStageAge = time.Hour
 
 // Stage returns a path to f under its Name, for platforms that hand
 // files on by path and show a file's own name: Path itself when its name
-// is Name, else a link to it, or a copy where the system allows none, in
-// a new directory under dir. Directories a stage made over ShareStageAge
-// ago go first.
+// is Name, else a link to it, or a copy of Path or Data where the system
+// allows none, in a new directory under dir. Directories a stage made
+// over ShareStageAge ago go first.
 func (f SharedFile) Stage(dir string) (string, error) {
-	if filepath.Base(f.Path) == f.Name {
+	name := f.Name
+	if name == "" {
+		if f.Path != "" {
+			name = filepath.Base(f.Path)
+		} else {
+			name = "file"
+		}
+	}
+	if f.Path != "" && filepath.Base(f.Path) == name {
 		return f.Path, nil
 	}
 	if entries, err := os.ReadDir(dir); err == nil {
@@ -263,7 +274,7 @@ func (f SharedFile) Stage(dir string) (string, error) {
 			}
 		}
 	}
-	return SaveRequest{Name: f.Name, Path: f.Path}.Stage(dir)
+	return SaveRequest{Name: name, Path: f.Path, Data: f.Data}.Stage(dir)
 }
 
 // FinishFiles returns files as the app gets them: at most r.Limit, each

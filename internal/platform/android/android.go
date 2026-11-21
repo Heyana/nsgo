@@ -531,30 +531,53 @@ func readFiles(data string) []driver.File {
 	return files
 }
 
-// stage writes the data of the batch's saves that have no file to the
-// cache, for Java to copy from. A save that cannot be written fails at
-// once, and Java, seeing no path, leaves it.
+// stage writes the data of the batch's saves and byte-backed shares that
+// have no file on disk to the cache, for Java to read. A save that cannot
+// be written fails at once, and Java, seeing no path, leaves it.
 func (s *surface) stage(id uint32, b *driver.MountBatch) {
 	for i := range b.Items {
 		it := &b.Items[i]
-		if it.Kind != driver.ItemSaveFile || it.Save.Path != "" {
-			continue
-		}
-		r := *it.Save
-		path, err := r.Stage(filepath.Join(os.Getenv("NSGO_CACHE_DIR"), "nsgo-save"))
-		if err != nil {
-			ev := driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: err.Error()}
-			go s.dispatchTo(id, ev)
-		} else {
-			r.Path = path
-			s.smu.Lock()
-			if s.staged == nil {
-				s.staged = map[uint64]string{}
+		switch it.Kind {
+		case driver.ItemSaveFile:
+			if it.Save.Path != "" {
+				continue
 			}
-			s.staged[answerKey(id, it.Count)] = filepath.Dir(path)
-			s.smu.Unlock()
+			r := *it.Save
+			path, err := r.Stage(filepath.Join(os.Getenv("NSGO_CACHE_DIR"), "nsgo-save"))
+			if err != nil {
+				ev := driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: err.Error()}
+				go s.dispatchTo(id, ev)
+			} else {
+				r.Path = path
+				s.smu.Lock()
+				if s.staged == nil {
+					s.staged = map[uint64]string{}
+				}
+				s.staged[answerKey(id, it.Count)] = filepath.Dir(path)
+				s.smu.Unlock()
+			}
+			it.Save = &r
+		case driver.ItemShare:
+			r := *it.Share
+			var files []driver.SharedFile
+			for j, f := range r.Files {
+				if f.Path != "" {
+					continue
+				}
+				if files == nil {
+					files = append([]driver.SharedFile(nil), r.Files...)
+				}
+				path, err := f.Stage(filepath.Join(os.Getenv("NSGO_CACHE_DIR"), "nsgo-share"))
+				if err != nil {
+					continue
+				}
+				files[j].Path = path
+			}
+			if files != nil {
+				r.Files = files
+				it.Share = &r
+			}
 		}
-		it.Save = &r
 	}
 }
 
