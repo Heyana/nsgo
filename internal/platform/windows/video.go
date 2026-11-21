@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -651,21 +652,15 @@ func mediaErrorText(code uint16, hr int32) string {
 
 // mfStarted reports whether Media Foundation started, which it does once
 // for the process and never shuts down.
-var mfStarted = func() func() error {
-	var err error
-	done := false
-	return func() error {
-		if !done {
-			done = true
-			if e := mfStartup.Find(); e != nil {
-				err = e
-			} else if hr, _, _ := mfStartup.Call(mfVersion, mfStartupFull); failed(hr) {
-				err = hresultError("Media Foundation could not start", hr)
-			}
-		}
+var mfStarted = sync.OnceValue(func() error {
+	if err := mfStartup.Find(); err != nil {
 		return err
 	}
-}()
+	if hr, _, _ := mfStartup.Call(mfVersion, mfStartupFull); failed(hr) {
+		return hresultError("Media Foundation could not start", hr)
+	}
+	return nil
+})
 
 // The device manager media engines decode with: the main thread's
 // Direct3D device, its reset token, and the device generation it holds.
@@ -728,6 +723,10 @@ func newMediaEngine(w *window, id driver.NodeID, serial uint64) (*comObject, err
 	attributes.call(attributesSetUnknown, uintptr(unsafe.Pointer(&mfMediaEngineDXGIManager)), manager.ptr())
 	attributes.call(attributesSetUnknown, uintptr(unsafe.Pointer(&mfMediaEngineCallback)), notify.ptr())
 	attributes.call(attributesSetUINT32, uintptr(unsafe.Pointer(&mfMediaEngineOutputFormat)), dxgiFormatBGRA)
+	return createMediaEngine(0, attributes)
+}
+
+func createMediaEngine(flags uintptr, attributes *comObject) (*comObject, error) {
 	var factory *comObject
 	if hr, _, _ := coCreateInstance.Call(uintptr(unsafe.Pointer(&clsidMediaEngineClassFactory)), 0, clsctxInprocServer,
 		uintptr(unsafe.Pointer(&iidMediaEngineClassFactory)), uintptr(unsafe.Pointer(&factory))); failed(hr) || factory == nil {
@@ -735,7 +734,7 @@ func newMediaEngine(w *window, id driver.NodeID, serial uint64) (*comObject, err
 	}
 	defer factory.release()
 	var engine *comObject
-	if hr := factory.call(factoryCreateInstance, 0, attributes.ptr(), uintptr(unsafe.Pointer(&engine))); failed(hr) || engine == nil {
+	if hr := factory.call(factoryCreateInstance, flags, attributes.ptr(), uintptr(unsafe.Pointer(&engine))); failed(hr) || engine == nil {
 		return nil, hresultError("no media engine", hr)
 	}
 	return engine, nil

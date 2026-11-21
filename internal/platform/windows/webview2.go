@@ -25,6 +25,7 @@ import (
 var (
 	ole32             = syscall.NewLazyDLL("ole32.dll")
 	coInitializeEx    = ole32.NewProc("CoInitializeEx")
+	coUninitialize    = ole32.NewProc("CoUninitialize")
 	coTaskMemFree     = ole32.NewProc("CoTaskMemFree")
 	shlwapi           = syscall.NewLazyDLL("shlwapi.dll")
 	shCreateMemStream = shlwapi.NewProc("SHCreateMemStream")

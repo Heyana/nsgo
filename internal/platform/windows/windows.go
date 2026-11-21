@@ -402,6 +402,7 @@ type window struct {
 	skipChar    bool
 	skipSysChar bool
 	engine      *engine.Engine
+	audio       *windowAudio
 	batches     queue.Batches
 	// applying is set while batches are applied; resized is the commit
 	// at a size resize stopped waiting for, until it lands.
@@ -767,6 +768,7 @@ func Run(app engine.App, opts Options) {
 	for {
 		r, _, _ := getMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
 		if int32(r) <= 0 {
+			w.closeAudio()
 			unwatchFrontmost()
 			stopWinSparkle()
 			if !w.sessionEnding {
@@ -1475,6 +1477,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemReleaseImage:
 			w.releaseCanvasImage(it.Value)
+			continue
+		case driver.ItemAudio:
+			w.audioCommand(it.Count, it.Audio)
 			continue
 		case driver.ItemKeymap:
 			started := it.HeldKeys && !w.heldKeys
@@ -2778,6 +2783,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.closeCustomCursors()
 		w.stopPower()
 		w.releasePointer(false)
+		w.closeAudio()
 		w.closeCanvasImages()
 		w.removeTrays()
 		w.unregisterHotKeys()

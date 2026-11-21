@@ -1,6 +1,6 @@
 # Audio playback
 
-NSGo ports NSH 0.5.0's audio design (`nsh/docs/dev/audio-design.md`) for issue #36. The `audio` package uses `Sound` for short sounds and `Player` for long audio. macOS, iOS, Linux and the web have backends, and `nsgotest` provides a fake. The [roadmap](../roadmap.md#services-and-components-since-040) tracks the remaining backends. Read both designs before extending audio.
+NSGo ports NSH 0.5.0's audio design (`nsh/docs/dev/audio-design.md`) for issue #36. The `audio` package uses `Sound` for short sounds and `Player` for long audio. macOS, iOS, Windows, Linux and the web have backends, and `nsgotest` provides a fake. The [roadmap](../roadmap.md#services-and-components-since-040) tracks the remaining backends. Read both designs before extending audio.
 
 ## The API
 
@@ -123,6 +123,8 @@ On the web, short sounds fetch through the browser and cap the encoded body befo
 
 The web updates each voice's GainNode and AudioBufferSourceNode playback rate, and reports its ended event, explicit stop, eviction or a refused output resume.
 
+Windows uses a single Media Foundation decoding thread for sounds. It passes interleaved float PCM to XAudio2, keeping the first two channels of a multichannel source. A surface opens the default mastering voice on its first `Play` and reuses compatible source voices. `Voice.Pan` scales the front left and front right rows of a voice's default output matrix by `driver.AudioPanGains`; a mono output takes no pan. It destroys the oldest voice when all 32 are still playing. Players open an audio-only Media Foundation engine on preload or play, streaming URLs directly and wrapping bytes in a native memory stream. Each end starts the next lap when looping, so the engine can report every lap to `core`. A native test times the first samples processed by XAudio2 on a warm output. Measuring when those samples become audible requires a Windows playback device.
+
 In five headless Chrome 158 runs on macOS arm64, a preloaded WAV cue requested on the first trusted click produced its first observed nonzero Web Audio sample in 9–46 ms, with a median of 10 ms (2026-11-21). The test reads an analyser in the browser's audio graph. Speaker output adds device latency.
 
 A sound is read by the backend's image reader (`imageload`, with its cache and limits; the browser on the web) and only decoded natively; a player's source goes to the native player as a video's does, which streams it. Formats are the platform decoders': WAV, AAC (`.m4a`) and MP3 decode everywhere and are the ones to ship; FLAC, Opus and Vorbis decode only where the platform does, and fail with `Decode` elsewhere. No Go decoder is added, as NSH adds none.
@@ -143,7 +145,7 @@ Each stage is one reviewable change, in NSH's order:
 
 1. The `audio` package with its rule in `layering_test.go`, `core`'s part, the protocol's requests and events, `Env.CanPlayAudio`, `AccessAudio` and the `audio` capability, and `nsgotest`'s fake: it records the sounds loaded and played and each player's commands, answers a load with a duration the test sets, advances progress only on the test's clock, and can fail a load with `Decode` and a play with `NotAllowed`, so tests assert on what an action played without sleeping. Built (2026-11-15).
 2. `internal/audiosession`, with videos, speech and `microphone` moved onto it. Built, not yet run on a device (2026-11-15).
-3. macOS, iOS, Linux, the web, Windows and Android, each with format and error tests. macOS, iOS, Linux and the web are implemented. The Linux native tests pass with GTK and a PulseAudio virtual output. iOS device verification remains open.
+3. macOS, iOS, Linux, the web, Windows and Android, each with format and error tests. macOS, iOS, Windows, Linux and the web are implemented. Windows' audible latency is unmeasured. The Linux native tests pass with GTK and a PulseAudio virtual output. iOS device verification remains open.
 4. The gallery: a sound for each kind of moment and a player demo of both levels.
 
 Issue #36 closes, and the roadmap's row with it, when a WAV and an MP3 play as sounds and through a player on macOS, iOS, Windows, Linux, Android and the web, and a FLAC either plays or fails with `Decode`; a sound plays overlapping and starts within a frame; `OnProgress` never goes back but with a seek or a loop, and a seek while paused shows the new position on `Play`; `Close` on a playing player stops it, and ten open and close cycles leave no handle behind (on macOS, no audio device stays open); on an iPhone, a sound during a playing video neither pauses nor stops it, a recording and `StartSpeech` keep working through a sound, and the Ring/Silent switch silences sounds; and the gallery's demos are in.

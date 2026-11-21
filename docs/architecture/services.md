@@ -2,7 +2,7 @@
 
 Services are what the platform does for the app outside its views: alerts, the clipboard, opening links, the photo picker, taking a photo, file and folder picks and saves, opening and sharing the app's files, installing packages on Android, speech recognition, speaking text, biometrics, secrets, disk space, Sign in with Apple, in-app purchases, sign-in sessions, notifications and the badge, the system's permissions, keeping the computer awake, haptics, the app's lifecycle, the appearance, keyboard shortcuts, the status bar, the desktop window and quitting. Read this before changing one, in `core` or in a backend; [application and windows](application.md) covers the windows, tray icons and global shortcuts an app opens. A service goes to the platform of the window the code asking is in.
 
-Audio playback is the `audio` package, whose engine part `core` carries as a service through the batch ([audio playback](audio.md)). macOS, iOS and the web play it so far; elsewhere an app plays sound only through a `Video`.
+Audio playback is the `audio` package, whose engine part `core` carries as a service through the batch ([audio playback](audio.md)). macOS, iOS, Windows, Linux and the web play it so far; elsewhere an app plays sound only through a `Video`.
 
 Remote push is designed separately in [Remote push](remote-push.md); it is not implemented by the local notification service described below.
 

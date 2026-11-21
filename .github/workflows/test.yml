@@ -455,6 +455,8 @@ jobs:
         run: go tool nsgo test -run '^(TestPixelFramesShowEachFrame|TestAnimatedGIFAndSVGImagesDraw)$' ./internal/platform/windows
       - name: Test Windows last-window close and session end
         run: go tool nsgo test -run '^TestWindows(LastWindowAsksBeforeQuitting|SessionEndForcesQuit)$' ./internal/platform/windows
+      - name: Test Windows audio
+        run: go tool nsgo test -trace -run '^TestWindowsAudio' ./internal/platform/windows
       - name: Test Windows menu visibility after Alt shortcuts
         run: go tool nsgo test -run '^TestConsumedAltChordKeepsMenusClosed$' ./internal/platform/windows
       - name: Test pointer lock preserves the process's Raw Input registration

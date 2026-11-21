@@ -22,7 +22,6 @@ var (
 	clsidCUIAutomation                    = parseGUID("ff48dba4-60ef-4201-aa87-54103eef594e")
 	iidUIAutomation                       = parseGUID("30cbe57d-d9d0-452a-ab13-7ac5ac4825ee")
 	iidUIAutomationPropertyChangedHandler = parseGUID("40cd37d4-c756-4b0c-8c6f-bddfeeb13b50")
-	coUninitialize                        = ole32.NewProc("CoUninitialize")
 )
 
 const (
