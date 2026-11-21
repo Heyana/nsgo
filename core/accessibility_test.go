@@ -163,6 +163,7 @@ func TestAccessibilityTextFollowsSignalsOnTheSameViews(t *testing.T) {
 			Icon{TestID: "icon", LabelFunc: text.Get},
 			SVGView{TestID: "svg", LabelFunc: text.Get},
 			Shader{TestID: "shader", LabelFunc: text.Get},
+			GPUView{TestID: "gpu", LabelFunc: text.Get},
 			Overlay{TestID: "overlay", LabelFunc: text.Get},
 			Modal{TestID: "modal", LabelFunc: text.Get},
 			Native{TestID: "native", LabelFunc: text.Get},
@@ -173,7 +174,7 @@ func TestAccessibilityTextFollowsSignalsOnTheSameViews(t *testing.T) {
 	})
 	h.tree.SetEnvironment(Environment{OS: OSMacOS})
 	props := propsOf(h.commit())
-	labels := []string{"scroll", "image", "icon", "svg", "shader", "overlay", "modal", "native", "switch", "web", "video"}
+	labels := []string{"scroll", "image", "icon", "svg", "shader", "gpu", "overlay", "modal", "native", "switch", "web", "video"}
 	ids := map[string]NodeID{}
 	for _, id := range labels {
 		ids[id] = h.find(id).id
@@ -190,7 +191,7 @@ func TestAccessibilityTextFollowsSignalsOnTheSameViews(t *testing.T) {
 	if !props[ids["image"]].ElementsHidden {
 		t.Error("a label exposed an image whose elements are hidden")
 	}
-	for _, id := range []string{"icon", "svg", "shader"} {
+	for _, id := range []string{"icon", "svg", "shader", "gpu"} {
 		if props[ids[id]].Role != RoleImage {
 			t.Errorf("the named %s did not have the image role", id)
 		}
@@ -224,7 +225,7 @@ func TestAccessibilityTextFollowsSignalsOnTheSameViews(t *testing.T) {
 
 	text.Set("")
 	props = propsOf(h.commit())
-	for _, id := range []string{"icon", "svg", "shader"} {
+	for _, id := range []string{"icon", "svg", "shader", "gpu"} {
 		if p, ok := props[ids[id]]; !ok || p.Role != RoleNone || p.Label != "" {
 			t.Errorf("the %s is decorative again, got %+v", id, p)
 		}

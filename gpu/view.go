@@ -41,6 +41,7 @@ type ViewProps struct {
 	OnLayout  func(core.Bounds)
 	Ref       *core.Ref
 	Label     string
+	LabelFunc func() string
 	TestID    string
 }
 
@@ -138,6 +139,7 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 		OnLayout:    props.OnLayout,
 		Ref:         props.Ref,
 		Label:       props.Label,
+		LabelFunc:   props.LabelFunc,
 		TestID:      props.TestID,
 		OnMount: func(s *core.GPUSurface) {
 			surf = s

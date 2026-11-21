@@ -82,6 +82,7 @@ type GPUView struct {
 	OnLayout  func(Bounds)
 	Ref       *Ref
 	Label     string
+	LabelFunc func() string
 	TestID    string
 }
 
@@ -106,11 +107,8 @@ func (t *Tree) mountGPU(cx *Scope, parent *node, v GPUView) {
 	}
 	t.setRef(n, v.Ref)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	role := RoleNone
-	if v.Label != "" {
-		role = RoleImage
-	}
-	n.props = driver.ViewProps{Role: role, Label: v.Label, TestID: v.TestID}
+	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
+	t.bindIllustrationLabel(cx, n, v.LabelFunc)
 
 	samples := v.SampleCount
 	if samples <= 0 {

@@ -97,8 +97,7 @@ func (t *Tree) bindAccessibilityText(cx *Scope, n *node, dst *string, text func(
 	}
 }
 
-// bindIllustrationLabel makes a labeled icon or shader an image and lets
-// an unlabeled one remain decorative.
+// bindIllustrationLabel makes a labeled icon, shader or GPU view an image and lets an unlabeled one remain decorative.
 func (t *Tree) bindIllustrationLabel(cx *Scope, n *node, text func() string) {
 	set := func(label string) {
 		n.props.Label, n.props.Role = label, RoleNone
