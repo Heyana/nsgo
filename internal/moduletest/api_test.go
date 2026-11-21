@@ -156,6 +156,11 @@ func TestPublicAPINamesNoInternalType(t *testing.T) {
 			switch typ := typ.(type) {
 			case *types.Named:
 				obj := typ.Obj()
+				if obj.Exported() && obj.Pkg() != nil && obj.Pkg().Path() == modulePath+"/internal/driver" &&
+					!allowedPublicDriverType(obj.Name()) {
+					t.Errorf("%s reaches driver.%s through %s, which is outside the public driver allowlist", pkg.Path(), obj.Name(), from)
+					return
+				}
 				if obj.Pkg() == nil || !strings.HasPrefix(obj.Pkg().Path(), modulePath) {
 					return
 				}

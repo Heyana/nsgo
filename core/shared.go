@@ -395,31 +395,15 @@ type (
 	OSVersion = driver.OSVersion
 	// PickFormat says which formats picked images come in.
 	PickFormat = driver.PickFormat
-	// PickRequest is a pick as the platform carries it out, PickOptions
-	// resolved.
-	PickRequest = driver.PickRequest
-	// PickEncoding is what a platform does with one picked image.
-	PickEncoding = driver.PickEncoding
 	// PickedFile is an image the user picked: its name, type, bytes, size
 	// in pixels and modification time.
 	PickedFile = driver.PickedFile
-	// ScanRequest is a scan as the platform carries it out, ScanOptions resolved, which nsgotest.App.ScanCode answers.
-	ScanRequest = driver.ScanRequest
 	// File is a file the user picked: its name, type, size, modification
 	// time and where it is on disk.
 	File = driver.File
-	// FilesRequest is a file pick as the platform carries it out,
-	// PickFilesOptions resolved.
-	FilesRequest = driver.FilesRequest
 	// Directory is a folder the user picked, read as an fs.FS: its name,
 	// and where it is on disk where it has a path.
 	Directory = driver.Directory
-	// DirectoriesRequest is a folder pick as the platform carries it out,
-	// PickDirectoriesOptions resolved.
-	DirectoriesRequest = driver.DirectoriesRequest
-	// SaveRequest is a save as the platform carries it out, SaveOptions
-	// resolved.
-	SaveRequest = driver.SaveRequest
 	// SharedFile is a file on disk the app hands another app, with
 	// OpenFile or Share: its path, and the name the other app sees and
 	// its type, which Path's name and extension say when empty.

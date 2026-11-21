@@ -280,32 +280,33 @@ type App struct {
 	UpdateChecks []bool
 	Update       func(background bool) core.UpdateCheck
 	// Picks are the photo picks the app asked for, oldest first. PickImages answers each with the files the user picks; with none the user cancels. It answers headless and under `nsgo test -target` macos, windows and linux, in place of the system's picker; on the other targets the system's picker shows and PickImages is not asked.
-	Picks      []driver.PickRequest
-	PickImages func(r driver.PickRequest) []driver.PickedFile
+	Picks      []ImagePick
+	PickImages func(r ImagePick) []core.PickedFile
 	// Photos are the photos the app asked to take, oldest first, where the environment says Camera. TakePhoto answers each with the photo the user takes, or with why it failed; with none the user cancels. It answers headless and under `nsgo test -target` through the test host, without opening a system camera.
-	Photos    []driver.PickRequest
-	TakePhoto func(r driver.PickRequest) (*driver.PickedFile, error)
+	Photos    []ImagePick
+	TakePhoto func(r ImagePick) (*core.PickedFile, error)
 	// Scans are the codes the app asked to scan, oldest first, where the environment says ScanCode. ScanCode answers each with the code the camera reads, or with why it failed; with none the user closes the scanner. It answers headless and on every target, in place of the camera.
-	Scans    []driver.ScanRequest
-	ScanCode func(r driver.ScanRequest) (*driver.ScannedCode, error)
+	Scans    []CodeScan
+	ScanCode func(r CodeScan) (*core.ScannedCode, error)
 	// PickScreenColor answers Scope.PickScreenColor with the color the user
 	// samples; without it, or with false, the user cancels.
 	PickScreenColor func() (driver.Color, bool)
 	// FilePicks are the file picks the app asked for, oldest first.
 	// PickFiles answers each with the files the user picks; with none
 	// the user cancels.
-	FilePicks []driver.FilesRequest
-	PickFiles func(r driver.FilesRequest) []driver.File
+	FilePicks []FilePick
+	PickFiles func(r FilePick) []core.File
 	// DirectoryPicks are the folder picks the app asked for, oldest
 	// first. PickDirectories answers each with the folders the user
 	// picks; with none the user cancels.
-	DirectoryPicks  []driver.DirectoriesRequest
-	PickDirectories func(r driver.DirectoriesRequest) []driver.Directory
+	DirectoryPicks  []DirectoryPick
+	PickDirectories func(r DirectoryPick) []core.Directory
 	// Saves are the saves the app asked for, oldest first. SaveFile
 	// answers each with the path the user saves to, where the file is
+
 	// written after any preflight check. An absent answer or "" cancels.
-	Saves            []driver.SaveRequest
-	SaveFile         func(r driver.SaveRequest) string
+	Saves            []FileSave
+	SaveFile         func(r FileSave) string
 	saveDestinations map[saveKey]saveDestination
 	// OpenedFiles are the files the app opened in other apps, oldest
 	// first. OpenFile answers whether an app opens each; every one does

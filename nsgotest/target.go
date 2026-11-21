@@ -293,7 +293,7 @@ func (a *App) targetOptions(t *target) testhost.Options {
 		a.postTest(func() {
 			var files []driver.PickedFile
 			if a.PickImages != nil {
-				files = a.PickImages(r)
+				files = a.PickImages(imagePick(r))
 			}
 			done(files)
 		})
@@ -301,12 +301,13 @@ func (a *App) targetOptions(t *target) testhost.Options {
 	// The test sets TakePhoto after Start, so the answer reads it as each request comes, on the test's goroutine; without one the user cancels, as headless.
 	takePhoto := func(r driver.PickRequest, done func(*driver.PickedFile, error)) {
 		a.postTest(func() {
-			a.Photos = append(a.Photos, r)
+			pick := imagePick(r)
+			a.Photos = append(a.Photos, pick)
 			if a.TakePhoto == nil {
 				done(nil, nil)
 				return
 			}
-			photo, err := a.TakePhoto(r)
+			photo, err := a.TakePhoto(pick)
 			done(photo, err)
 		})
 	}
@@ -316,7 +317,7 @@ func (a *App) targetOptions(t *target) testhost.Options {
 			var code *driver.ScannedCode
 			var err error
 			if a.ScanCode != nil {
-				code, err = a.ScanCode(r)
+				code, err = a.ScanCode(codeScan(r))
 			}
 			done(code, err)
 		})

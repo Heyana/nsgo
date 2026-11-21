@@ -69,7 +69,7 @@ func TestPickImagesAnswersTheApp(t *testing.T) {
 	skipOtherTargets(t)
 	app := nsgotest.Start(t, pickApp)
 	called := 0
-	app.PickImages = func(core.PickRequest) []core.PickedFile {
+	app.PickImages = func(nsgotest.ImagePick) []core.PickedFile {
 		called++
 		return []core.PickedFile{{Name: "a.png", MIME: "image/png", Data: []byte("png")}}
 	}
@@ -92,7 +92,7 @@ func TestPickImagesWithoutAnAnswerCancels(t *testing.T) {
 func TestTakePhotoAnswersTheApp(t *testing.T) {
 	app := nsgotest.Start(t, cameraApp, nsgotest.Environment(core.Environment{Camera: true}))
 	called := 0
-	app.TakePhoto = func(core.PickRequest) (*core.PickedFile, error) {
+	app.TakePhoto = func(nsgotest.ImagePick) (*core.PickedFile, error) {
 		called++
 		return &core.PickedFile{Name: "capture.jpg", MIME: "image/jpeg", Data: []byte("jpeg")}, nil
 	}
@@ -136,7 +136,7 @@ func TestScanCodeAnswersTheApp(t *testing.T) {
 	app := nsgotest.Start(t, scanApp, nsgotest.Environment(core.Environment{ScanCode: true}))
 	app.Press("id:scan")
 	app.WaitFor("text:closed", 5*time.Second)
-	app.ScanCode = func(core.ScanRequest) (*core.ScannedCode, error) {
+	app.ScanCode = func(nsgotest.CodeScan) (*core.ScannedCode, error) {
 		return &core.ScannedCode{Kind: core.CodeQR, Text: "myapp://pair"}, nil
 	}
 	app.Press("id:scan")

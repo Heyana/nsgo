@@ -16,13 +16,14 @@ type saveDestination struct {
 }
 
 func (a *App) chooseSaveDestination(it driver.MountItem) {
-	a.Saves = append(a.Saves, *it.Save)
+	save := fileSave(*it.Save)
+	a.Saves = append(a.Saves, save)
 	if a.target != nil {
 		return
 	}
 	path := ""
 	if a.SaveFile != nil {
-		path = a.SaveFile(*it.Save)
+		path = a.SaveFile(save)
 	}
 	switch {
 	case path == "":

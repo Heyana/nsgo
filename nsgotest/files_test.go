@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -31,7 +30,7 @@ func TestSaveFilePreflight(t *testing.T) {
 				scope = cx
 				return core.View{}
 			})
-			app.SaveFile = func(r driver.SaveRequest) string {
+			app.SaveFile = func(r nsgotest.FileSave) string {
 				if !r.Preflight {
 					t.Error("the save request did not ask for a preflight check")
 				}
@@ -89,7 +88,7 @@ func TestSaveFilePreflightCancellationAndWriteFailure(t *testing.T) {
 				scope = cx
 				return core.View{}
 			})
-			app.SaveFile = func(driver.SaveRequest) string { return path }
+			app.SaveFile = func(nsgotest.FileSave) string { return path }
 			checks, completions := 0, 0
 			app.Post(func() {
 				scope.SaveFile(core.SaveOptions{

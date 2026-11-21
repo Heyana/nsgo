@@ -1077,7 +1077,7 @@ func TestSystem(t *testing.T) {
 	dir := t.TempDir()
 	report := filepath.Join(dir, "report.pdf")
 	os.WriteFile(report, []byte("%PDF-1.7 report"), 0o644)
-	app.PickFiles = func(r core.FilesRequest) []core.File { return []core.File{{Path: report}} }
+	app.PickFiles = func(r nsgotest.FilePick) []core.File { return []core.File{{Path: report}} }
 	app.Press("role:button PDFs and images")
 	if r := app.FilePicks[0]; r.Limit != core.MaxPicked || !slices.Equal(r.Types, []string{"application/pdf", "image/*"}) {
 		t.Fatalf("pick = %+v", r)
@@ -1085,7 +1085,7 @@ func TestSystem(t *testing.T) {
 	if got := app.Find("id:picked-file-0").Text; got != "report.pdf · application/pdf · 0 KB" {
 		t.Fatalf("picked file = %q", got)
 	}
-	app.PickDirectories = func(core.DirectoriesRequest) []core.Directory { return []core.Directory{{Path: dir}} }
+	app.PickDirectories = func(nsgotest.DirectoryPick) []core.Directory { return []core.Directory{{Path: dir}} }
 	app.Press("role:button Pick a folder")
 	app.WaitFor("text:"+filepath.Base(dir)+" · 1 item", 5*time.Second)
 	if app.DirectoryPicks[0].Limit != 1 {
@@ -1093,7 +1093,7 @@ func TestSystem(t *testing.T) {
 	}
 	// A folder without a path, as Android and the web pick, reads
 	// through its FS.
-	app.PickDirectories = func(core.DirectoriesRequest) []core.Directory {
+	app.PickDirectories = func(nsgotest.DirectoryPick) []core.Directory {
 		return []core.Directory{{Name: "Music", FS: fstest.MapFS{"a.flac": {}, "b/c.flac": {}}}}
 	}
 	app.Press("role:button Pick a folder")
@@ -1102,7 +1102,7 @@ func TestSystem(t *testing.T) {
 	app.Press("role:button Pick a folder")
 	app.Find("text:No folder picked")
 	saved := filepath.Join(dir, "copy.pdf")
-	app.SaveFile = func(core.SaveRequest) string { return saved }
+	app.SaveFile = func(nsgotest.FileSave) string { return saved }
 	app.Press("role:button Save the file picked")
 	app.Find("text:Saved report.pdf")
 	if b, _ := os.ReadFile(saved); string(b) != "%PDF-1.7 report" {

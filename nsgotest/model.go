@@ -774,10 +774,11 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemPermission:
 			a.permission(&it)
 		case driver.ItemPickImages:
-			a.Picks = append(a.Picks, *it.Pick)
+			pick := imagePick(*it.Pick)
+			a.Picks = append(a.Picks, pick)
 			var files []driver.PickedFile
 			if a.target == nil && a.PickImages != nil {
-				files = a.PickImages(*it.Pick)
+				files = a.PickImages(pick)
 			}
 			if a.target == nil {
 				a.post(driver.Event{Kind: driver.EventPick, Count: it.Count, Data: files})
@@ -787,10 +788,11 @@ func (a *App) apply(b *driver.MountBatch) {
 				// The target observer routes this request through testhost.Options.TakePhoto.
 				continue
 			}
-			a.Photos = append(a.Photos, *it.Pick)
+			pick := imagePick(*it.Pick)
+			a.Photos = append(a.Photos, pick)
 			ev := driver.Event{Kind: driver.EventPick, Count: it.Count}
 			if a.TakePhoto != nil {
-				photo, err := a.TakePhoto(*it.Pick)
+				photo, err := a.TakePhoto(pick)
 				switch {
 				case err != nil:
 					ev.Text = err.Error()
@@ -800,14 +802,15 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 			a.post(ev)
 		case driver.ItemScanCode:
-			a.Scans = append(a.Scans, *it.Scan)
+			scan := codeScan(*it.Scan)
+			a.Scans = append(a.Scans, scan)
 			if a.target != nil {
 				// The target's engine asks targetOptions' ScanCode.
 				break
 			}
 			ev := driver.Event{Kind: driver.EventPick, Count: it.Count}
 			if a.ScanCode != nil {
-				code, err := a.ScanCode(*it.Scan)
+				code, err := a.ScanCode(scan)
 				switch {
 				case err != nil:
 					ev.Text = err.Error()
@@ -817,17 +820,19 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 			a.post(ev)
 		case driver.ItemPickFiles:
-			a.FilePicks = append(a.FilePicks, *it.Files)
+			pick := filePick(*it.Files)
+			a.FilePicks = append(a.FilePicks, pick)
 			var files []driver.File
 			if a.PickFiles != nil {
-				files = a.PickFiles(*it.Files)
+				files = a.PickFiles(pick)
 			}
 			a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Data: files})
 		case driver.ItemPickDirectories:
-			a.DirectoryPicks = append(a.DirectoryPicks, *it.Directories)
+			pick := directoryPick(*it.Directories)
+			a.DirectoryPicks = append(a.DirectoryPicks, pick)
 			var dirs []driver.Directory
 			if a.PickDirectories != nil {
-				dirs = a.PickDirectories(*it.Directories)
+				dirs = a.PickDirectories(pick)
 			}
 			a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Data: dirs})
 		case driver.ItemPickScreenColor:
@@ -839,6 +844,7 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 			a.post(ev)
 		case driver.ItemSaveFile:
+
 			a.chooseSaveDestination(it)
 		case driver.ItemSavePreflightAnswer:
 			a.answerSavePreflight(it)

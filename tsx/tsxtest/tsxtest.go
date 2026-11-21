@@ -823,7 +823,7 @@ func (r *runner) app(a *nsgotest.App, tb *appTB, env driver.Environment, net *ne
 			a.PickImages = nil
 			return nil
 		}
-		a.PickImages = func(p driver.PickRequest) []driver.PickedFile {
+		a.PickImages = func(p nsgotest.ImagePick) []driver.PickedFile {
 			res, err := h(goja.Undefined(), r.vm.ToValue(pick(p)))
 			if err != nil {
 				panic(err)
@@ -917,7 +917,7 @@ func dialog(d driver.AlertConfig) map[string]any {
 }
 
 // pick is a Pick as a test reads it.
-func pick(p driver.PickRequest) map[string]any {
+func pick(p nsgotest.ImagePick) map[string]any {
 	o := map[string]any{"multiple": p.Limit != 1, "limit": p.Limit, "maxDimension": nil, "quality": nil, "format": "compatible"}
 	if p.MaxDimension > 0 {
 		o["maxDimension"] = p.MaxDimension

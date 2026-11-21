@@ -2,6 +2,8 @@ package nsgotest
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -1038,6 +1040,33 @@ func TestPicksRecordTheirHints(t *testing.T) {
 	}
 	if d := app.DirectoryPicks[0]; d.Title != "导入资料库" || d.Button != "导入" || d.Start != "/library" || d.Limit != 1 {
 		t.Errorf("folder pick %+v lost its hints", d)
+	}
+}
+
+func TestFileSaveRecordsRequestBytes(t *testing.T) {
+	if Target() != "" {
+		t.Skip("checks the headless model")
+	}
+	data := []byte("original")
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{TestID: "save", Style: core.Style{Height: core.Pt(20)}, OnPress: func(core.PressEvent) {
+			cx.SaveFile(core.SaveOptions{Name: "report.txt", Data: data}, nil)
+		}}
+	})
+	path := filepath.Join(t.TempDir(), "report.txt")
+	app.SaveFile = func(r FileSave) string {
+		if r.Name != "report.txt" || r.MIME != "text/plain" || string(r.Data) != "original" {
+			t.Fatalf("save request = %+v", r)
+		}
+		return path
+	}
+	app.Press("id:save")
+	copy(data, "modified")
+	if len(app.Saves) != 1 || string(app.Saves[0].Data) != "original" {
+		t.Fatalf("recorded saves = %+v", app.Saves)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "original" {
+		t.Fatalf("read saved file = %q, %v", got, err)
 	}
 }
 

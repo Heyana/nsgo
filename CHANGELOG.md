@@ -101,6 +101,7 @@
 - Move the native field's selection with `nsgotest`'s `App.Select` under `-target` on macOS, Windows, Linux and the web, so the next edit acts on the selected range (#772 by @houko).
 - Let `nsgotest` press a text field directly and report the focus a press moves when the step returns on macOS, Windows and Linux (#1083 by @houko).
 - Record widget timelines and Live Activity changes in `nsgotest` (#745 by @houko).
+- Give `nsgotest` picker, camera, scanner and save hooks their own request records (#181 by @houko).
 - Add `Scope.Tween` and TSX's `Animated.tween`, which step a number for what an animated value cannot reach, such as a figure counting up in a text; an `nsgotest` step waits for its end and reduced motion shows the end at once (#336 by @houko).
 - Add vertical span background insets in Go and TSX for marker bands that follow wrapped text (#966 by @houko).
 - Give `nsgotest` its own speech, keep-awake, Apple sign-in and purchase records (#181 by @houko).

@@ -1,6 +1,6 @@
 # Core
 
-`core` turns Go components into one `MountBatch` per commit. Components run once; signals drive bindings, regions rebuild only what changed, and the commit lays the tree out and sends the differences. The mount protocol, the events and the values `core` shares with backends live in `internal/driver`; `core` aliases those its app API reaches in `shared.go`, and `TestPublicAPINamesNoInternalType` fails when one is missing.
+`core` turns Go components into one `MountBatch` per commit. Components run once; signals drive bindings, regions rebuild only what changed, and the commit lays the tree out and sends the differences. The mount protocol, the events and the values `core` shares with backends live in `internal/driver`; `core` aliases those its app API reaches in `shared.go`, and `TestPublicAPINamesNoInternalType` checks both the aliases and the explicit list of driver types allowed in a public API.
 
 Read this before changing `core`, `internal/engine` or the mount protocol a backend implements; [text](text.md), [scrolling and lists](scrolling.md), [interaction](interaction.md) and [services](services.md) cover those parts of `core`.
 

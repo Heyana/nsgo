@@ -80,7 +80,7 @@ if desktop.CanQuickLook(cx) {
 
 `cx.PickImages` shows the system's photo picker and answers with `core.PickedFile`s, whose bytes, name, type and pixel size the app reads. `cx.TakePhoto` shows the camera where the platform has one; `cx.Env().CanTakePhoto` says whether it does. `cx.ScanCode` shows the camera full screen and answers with the first code it reads, a QR code unless `ScanOptions.Kinds` asks for others, or nil when the user closes it; `cx.Env().CanScanCode` says whether the platform has a scanner: iOS and Android devices so far. It needs `NSCameraUsageDescription` on iOS, as `TakePhoto` does, and `CAMERA` in `android.permissions` on Android, which reads every kind but PDF417; a code's text is untrusted input.
 
-In tests, `nsgotest.App.PickImages`, `nsgotest.App.TakePhoto` and `nsgotest.App.ScanCode` answer picks, camera requests and code scans in place of system UI, headless and under `nsgo test -target`; `nsgotest.Environment(core.Environment{Camera: true, ScanCode: true})` gives a target without a camera one.
+In tests, `nsgotest.App.PickImages`, `nsgotest.App.TakePhoto` and `nsgotest.App.ScanCode` receive `nsgotest.ImagePick` records for picks and captures and `nsgotest.CodeScan` records for scans, and answer in place of system UI. The hooks work headless and under supported `nsgo test -target` hosts. `nsgotest.Environment(core.Environment{Camera: true, ScanCode: true})` gives a target without a camera one.
 
 ```go
 cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.PickedFile) {
@@ -92,10 +92,12 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 `cx.PickFiles` picks files of any type, `cx.PickDirectories` picks folders as an `fs.FS`, and `cx.SaveFile` saves a file or bytes through the system's save dialog. Both pickers take a `Title`, a `Button` label and a `Start` folder, and `PickFilesOptions.TypesName` names the type menu, so an app can show them in its own language; these are hints, which macOS, Windows and Linux follow, iOS only for `Start`, and Android and the web not at all. `cx.PickScreenColor` picks a color anywhere on the screen where the platform allows it.
 
+
 Set `core.SaveOptions.Start` to an existing absolute folder to open the save dialog there on macOS, Windows, Linux and iOS. With an empty or unusable hint, or on other targets, the system chooses the folder.
 
 Set `core.SaveOptions.Accept` to validate the chosen destination before writing. It runs on the engine's goroutine. Returning an error completes the save with `saved == false`, the destination and that error. The desktop dialog closes when the user chooses a destination. Android lets the user choose a folder and supplies a tree URI with the requested file name as its `name` query parameter. It creates the document after approval and reports the new document's URI on success. The platform abandons the write if the check does not answer within five seconds. iOS and HarmonyOS report an error for saves requiring a check. The web has no destination path and uses its ordinary save flow.
 
+In headless tests, `App.PickFiles`, `App.PickDirectories` and `App.SaveFile` receive `nsgotest.FilePick`, `nsgotest.DirectoryPick` and `nsgotest.FileSave` records. The same records are in `app.FilePicks`, `app.DirectoryPicks` and `app.Saves`.
 ## Storage
 
 `cx.Storage()` is the app's key-value storage, kept on the device and shared by every graph of the app. Reads are synchronous and read inside a computation subscribe it to changes; `SetItem` returns a `core.StorageFullError` past the quota (`core.StorageQuota`, 5 MiB by default). It is a plain file any program of the user's can read, so keep tokens and passwords in [secrets](#secrets) instead.
