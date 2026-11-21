@@ -111,7 +111,7 @@ func (m *mounter) mount(b *driver.MountBatch) {
 	}
 	if b.LayoutAnimation != nil && b.LayoutAnimation.Update != nil {
 		u := b.LayoutAnimation.Update
-		m.o.op("la", 0).num(float64(u.Duration.Milliseconds())).num(float64(u.Curve))
+		m.o.op("la", 0).num(float64((u.End() - u.Delay).Milliseconds())).num(float64(u.Curve))
 	}
 	for i := range b.Items {
 		m.item(b, &b.Items[i])

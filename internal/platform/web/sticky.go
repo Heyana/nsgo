@@ -68,6 +68,10 @@ func (s *surface) setSticky(v *view, cells []driver.StickyCell) {
 				cell.layoutAnim.Call("cancel")
 				cell.layoutAnim = js.Undefined()
 			}
+			if cell.layoutMotion != nil {
+				delete(s.layoutMotions, cell)
+				cell.layoutMotion = nil
+			}
 			track := s.element("div")
 			track.Get("classList").Call("add", "nsgo-track")
 			host := cell.el.Get("parentNode")

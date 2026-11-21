@@ -64,10 +64,16 @@ core.View{Style: core.Style{
 }}
 ```
 
-`TransitionLayout` moves and resizes a view from where it shows when its own style gives it a new frame. A layout animation animates a whole commit instead, as React Native's `LayoutAnimation` does: `cx.AnimateLayout(core.LayoutEaseInEaseOutPreset)` animates the next batch's moves, insertions and removals, and the presets cover easing, linear and spring.
+`TransitionLayout` moves and resizes a view from where it shows when its own style gives it a new frame. A layout animation animates a whole commit instead, as React Native's `LayoutAnimation` does: `cx.AnimateLayout(core.LayoutEaseInEaseOutPreset)` animates the next batch's moves, insertions and removals, and the presets cover easing, linear and spring. A `LayoutSpring` transition takes `Response` (the spring's undamped natural period) and `DampingRatio` (`< 1` underdamped, `1` critically damped, `> 1` overdamped), runs until it settles rather than for a fixed duration, and carries its position and velocity into a new target when retargeted mid-flight.
 
 ```go
-cx.AnimateLayout(core.LayoutEaseInEaseOutPreset)
+cx.AnimateLayout(core.LayoutAnimation{
+	Update: &core.LayoutTransition{
+		Curve:        core.LayoutSpring,
+		Response:     280 * time.Millisecond,
+		DampingRatio: 0.85,
+	},
+})
 open.Set(!open.Get())
 ```
 

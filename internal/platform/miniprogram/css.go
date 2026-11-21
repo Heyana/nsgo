@@ -172,6 +172,7 @@ func layoutTransitionCSS(tr *driver.LayoutTransition) string {
 	case driver.LayoutBezier:
 		easing = webstyle.Easing(tr.Bezier)
 	}
-	timing := fmt.Sprintf(" %gms %s %gms", float64(tr.Duration)/1e6, easing, float64(tr.Delay)/1e6)
+	dur := tr.End() - tr.Delay
+	timing := fmt.Sprintf(" %gms %s %gms", float64(dur)/1e6, easing, float64(tr.Delay)/1e6)
 	return "left" + timing + ",top" + timing + ",width" + timing + ",height" + timing
 }

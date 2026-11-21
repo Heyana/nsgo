@@ -817,11 +817,13 @@ func (r *runtime) layoutAnimation(v js.Value) core.LayoutAnimation {
 			return nil
 		}
 		return &core.LayoutTransition{
-			Curve:    layoutCurves[p.str("type", "easeInEaseOut")],
-			Damping:  float32(p.float("springDamping", 0)),
-			Property: layoutProperties[p.str("property", "opacity")],
-			Duration: millis(p.float("duration", duration)),
-			Delay:    millis(p.float("delay", 0)),
+			Curve:        layoutCurves[p.str("type", "easeInEaseOut")],
+			Response:     millis(p.float("response", 0)),
+			DampingRatio: p.float("dampingRatio", 0),
+			Damping:      float32(p.float("springDamping", 0)),
+			Property:     layoutProperties[p.str("property", "opacity")],
+			Duration:     millis(p.float("duration", duration)),
+			Delay:        millis(p.float("delay", 0)),
 		}
 	}
 	return core.LayoutAnimation{Create: phase("create"), Update: phase("update"), Delete: phase("delete")}
@@ -851,10 +853,18 @@ func (r *runtime) layoutPreset(duration float64, kind, property string) *js.Obje
 func (r *runtime) layoutAnimationModule() js.Value {
 	m := r.vm.NewObject()
 	_ = m.Set("configureNext", r.function(func(call js.FunctionCall) js.Value {
-		r.cx.AnimateLayout(r.layoutAnimation(arg(call, 0)))
+		anim := r.layoutAnimation(arg(call, 0))
+		r.cx.AnimateLayout(anim)
 		if end := arg(call, 1); isFunction(end) {
-			d := r.options(arg(call, 0)).float("duration", 0)
-			r.cx.AfterFunc(millis(d), func() { r.call(end) })
+			d := millis(r.options(arg(call, 0)).float("duration", 0))
+			for _, p := range []*core.LayoutTransition{anim.Create, anim.Update, anim.Delete} {
+				if p != nil {
+					if e := p.End(); e > d {
+						d = e
+					}
+				}
+			}
+			r.cx.AfterFunc(d, func() { r.call(end) })
 		}
 		return js.Undefined()
 	}))

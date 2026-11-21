@@ -582,7 +582,7 @@ export interface EasingModule extends EasingCurves {
 export declare const Easing: EasingModule;
 export type LayoutAnimationType = "easeInEaseOut" | "spring" | "linear" | "easeIn" | "easeOut" | "keyboard";
 export type LayoutAnimationProperty = "opacity" | "scaleXY" | "scale";
-export interface LayoutAnimationAnimation { type?: LayoutAnimationType; property?: LayoutAnimationProperty; duration?: number; delay?: number; springDamping?: number }
+export interface LayoutAnimationAnimation { type?: LayoutAnimationType; property?: LayoutAnimationProperty; duration?: number; delay?: number; springDamping?: number; response?: number; dampingRatio?: number }
 export interface LayoutAnimationConfig { duration: number; create?: LayoutAnimationAnimation; update?: LayoutAnimationAnimation; delete?: LayoutAnimationAnimation }
 export type LayoutAnimationTypes = { readonly [K in LayoutAnimationType]: K };
 export interface LayoutAnimationProperties { readonly opacity: "opacity"; readonly scaleXY: "scaleXY" }

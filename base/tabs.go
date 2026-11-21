@@ -44,7 +44,7 @@ func (t Tab) Render(cx *core.Scope) core.Node {
 
 // tabsIndicator is how a tab list's indicator moves to another tab:
 // gpui-component's tab bar's, a little springy.
-var tabsIndicator = core.LayoutTransition{Curve: core.LayoutSpring, Damping: 0.85, Duration: 362 * time.Millisecond}
+var tabsIndicator = core.LayoutTransition{Curve: core.LayoutSpring, Response: 280 * time.Millisecond, DampingRatio: 0.85}
 
 // Tabs is the tab list around a set of Tabs, which assistive technology
 // hears as one list and the keyboard focus as one Tab stop: the selected

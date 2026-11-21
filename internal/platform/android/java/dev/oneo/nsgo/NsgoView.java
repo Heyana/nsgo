@@ -4326,13 +4326,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 continue;
             }
             if (n.motion != null) {
-                long elapsed = now - n.motionStart;
-                if (n.motion.done(elapsed)) {
-                    n.motion = null;
-                    place(n, n.to);
-                } else {
-                    place(n, LayoutTransition.lerp(n.from, n.to, n.motion.at(elapsed)));
-                }
+                boolean finished = n.motion.step(now);
+                place(n, n.motion.shown.clone());
+                if (finished) n.motion = null;
             }
             if (n.appear != null) {
                 if (n.appear.done(now - n.appearStart)) n.appear = null;
@@ -4375,7 +4371,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * Update, else with the item's own transition when it has one.
      */
     private void setFrame(Node n, float[] f, LayoutTransition own) {
-        float[] target = n.motion != null ? n.to : n.frame;
+        float[] target = n.motion != null ? n.motion.target : n.frame;
         if (target != null && Arrays.equals(target, f)) return;
         LayoutTransition motion = own;
         long start = System.nanoTime();
@@ -4384,10 +4380,16 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             start = batchTime;
         }
         if (motion != null && n.frame != null && n != accessoryShown) {
-            n.from = n.frame.clone();
-            n.to = f;
-            n.motion = motion;
-            n.motionStart = start;
+            if (n.motion != null) {
+                n.motion.retarget(f, motion, start);
+            } else {
+                n.motion = LayoutTransition.Motion.start(n.frame, f, motion, start);
+            }
+            if (n.motion.done) {
+                place(n, f);
+                n.motion = null;
+                return;
+            }
             moving.add(n);
             startTicking();
             return;
@@ -4419,12 +4421,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 old.view.getWidth() / density, old.view.getHeight() / density};
         old.view.setVisibility(View.INVISIBLE);
         n.appear = null;
-        n.from = from;
-        n.to = n.frame;
-        n.motion = layoutUpdate;
-        n.motionStart = batchTime;
+        n.motion = LayoutTransition.Motion.start(from, n.frame, layoutUpdate, batchTime);
         place(n, from);
         paint(n);
+        if (n.motion.done) {
+            n.motion = null;
+            return;
+        }
         moving.add(n);
         startTicking();
     }
@@ -7406,10 +7409,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         boolean stickyBound;
         float shift;
         boolean shiftAcross;
-        /** A layout animation's move: from and to, its phase and when it began. */
-        float[] from, to;
-        LayoutTransition motion;
-        long motionStart;
+        /** A layout animation's frame motion, preserving spring velocity across retargets. */
+        LayoutTransition.Motion motion;
         /** A layout animation's appearance, and when it began. */
         LayoutTransition appear;
         long appearStart;

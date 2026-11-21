@@ -734,8 +734,8 @@ func (v *view) report(e driver.Event) {
 
 // shownFrame is where v shows now: mid layout animation or its own.
 func (v *view) shownFrame() driver.Bounds {
-	if v.moving != nil {
-		return v.moving.shown
+	if v.moving != nil && v.moving.move != nil {
+		return v.moving.move.Shown()
 	}
 	return v.frame
 }

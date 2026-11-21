@@ -22,10 +22,9 @@ var selTick = sel("nsgoTick:")
 // motion is a view's part of a layout animation: its frame moving, or
 // the view appearing.
 type motion struct {
-	from, to driver.Bounds
-	frame    *driver.LayoutTransition
-	appear   *driver.LayoutTransition
-	start    time.Duration
+	frame       *driver.LayoutMotion
+	appear      *driver.LayoutTransition
+	appearStart time.Duration
 }
 
 // ghost is a view a layout animation removes, left in place while it
@@ -300,7 +299,7 @@ func (v *view) restyleAt(transition bool, now time.Duration) {
 		vs.Transition = driver.Transition{}
 	}
 	if m := v.surface.motions[v]; m != nil && m.appear != nil {
-		p, _ := m.appear.At(now - m.start)
+		p, _ := m.appear.At(now - m.appearStart)
 		if m.appear.Property == driver.LayoutScale {
 			sx, sy := vs.Transform.Scales()
 			vs.Transform.ScaleX, vs.Transform.ScaleY = sx*float32(p), sy*float32(p)
@@ -353,7 +352,7 @@ func (s *surface) setFrame(v *view, it *driver.MountItem, lb *layoutBatch) {
 	m := s.motions[v]
 	target := v.frame
 	if m != nil && m.frame != nil {
-		target = m.to
+		target = m.frame.Target()
 	}
 	if f == target && v.framed {
 		return
@@ -367,7 +366,12 @@ func (s *surface) setFrame(v *view, it *driver.MountItem, lb *layoutBatch) {
 			m = &motion{}
 			s.motions[v] = m
 		}
-		m.from, m.to, m.frame, m.start = v.frame, f, tr, s.layoutStart(tr)
+		if m.frame != nil {
+			m.frame.Retarget(f, *tr, s.clock())
+		} else {
+			lm := driver.StartLayoutMotion(v.frame, f, *tr, s.layoutStart(tr))
+			m.frame = &lm
+		}
 		s.startTicking()
 		return
 	}
@@ -450,7 +454,7 @@ func (s *surface) appear(v *view, lb *layoutBatch, parent driver.NodeID) {
 		m = &motion{}
 		s.motions[v] = m
 	}
-	m.appear, m.start = lb.anim.Create, s.clock()
+	m.appear, m.appearStart = lb.anim.Create, s.clock()
 	s.startTicking()
 }
 
@@ -478,7 +482,8 @@ func (s *surface) match(v, old *view, lb *layoutBatch) {
 	}
 	to := v.frame
 	m.appear = nil
-	m.from, m.to, m.frame, m.start = from, to, lb.anim.Update, s.layoutStart(lb.anim.Update)
+	lm := driver.StartLayoutMotion(from, to, *lb.anim.Update, s.layoutStart(lb.anim.Update))
+	m.frame = &lm
 	v.place(from)
 	v.restyle()
 	s.startTicking()
@@ -528,17 +533,16 @@ func (s *surface) stepMotions(now time.Duration) {
 		}
 		done := true
 		if m.frame != nil {
-			p, end := m.frame.At(now - m.start)
-			v.place(driver.LerpBounds(m.from, m.to, p))
+			shown, end := m.frame.Step(now)
+			v.place(shown)
 			if end {
-				v.place(m.to)
 				m.frame = nil
 			} else {
 				done = false
 			}
 		}
 		if m.appear != nil {
-			if _, end := m.appear.At(now - m.start); end {
+			if _, end := m.appear.At(now - m.appearStart); end {
 				m.appear = nil
 			} else {
 				done = false

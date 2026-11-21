@@ -61,10 +61,16 @@ core.View{Style: core.Style{
 }}
 ```
 
-`TransitionLayout` 在视图自己的样式给出新框架时，从它当前显示的位置移动和改变大小。布局动画则动画整个提交，像 React Native 的 `LayoutAnimation`：`cx.AnimateLayout(core.LayoutEaseInEaseOutPreset)` 动画下一批的移动、插入和删除，预设覆盖缓动、线性和弹簧。
+`TransitionLayout` 在视图自己的样式给出新框架时，从它当前显示的位置移动和改变大小。布局动画则动画整个提交，像 React Native 的 `LayoutAnimation`：`cx.AnimateLayout(core.LayoutEaseInEaseOutPreset)` 动画下一批的移动、插入和删除，预设覆盖缓动、线性和弹簧。`LayoutSpring` 过渡接受 `Response`（弹簧的自然周期）和 `DampingRatio`（`< 1` 欠阻尼、`1` 临界阻尼、`> 1` 过阻尼），按物理运动直到静止而非按固定时长截断；在中途收到新目标时，会保留上一帧的位置和速度平滑衔接。
 
 ```go
-cx.AnimateLayout(core.LayoutEaseInEaseOutPreset)
+cx.AnimateLayout(core.LayoutAnimation{
+	Update: &core.LayoutTransition{
+		Curve:        core.LayoutSpring,
+		Response:     280 * time.Millisecond,
+		DampingRatio: 0.85,
+	},
+})
 open.Set(!open.Get())
 ```
 

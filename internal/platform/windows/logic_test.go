@@ -1208,7 +1208,7 @@ func TestLayoutAnimationKeepsRemovedViewsDrawnApartFromTheirIDs(t *testing.T) {
 		t.Fatal("the old view does not go out")
 	case fresh.fading == nil || fresh.fading.out:
 		t.Fatal("the new view does not come in")
-	case mover.moving == nil || mover.moving.from.Origin.Y != 100 || frameOf(mover).Origin.Y != 100 || mover.frame.Origin.Y != 40:
+	case mover.moving == nil || mover.moving.motion.From().Origin.Y != 100 || frameOf(mover).Origin.Y != 100 || mover.frame.Origin.Y != 40:
 		t.Fatalf("the moved view moves from %v to %v", frameOf(mover), mover.frame)
 	}
 	w.finishLeaving(old)
@@ -1242,7 +1242,7 @@ func TestFrameTransitionMovesOnlyItsView(t *testing.T) {
 	own := driver.Transition{Duration: time.Second, Easing: driver.EaseOut}.Layout()
 	w.apply(&driver.MountBatch{Root: 1, Items: []driver.MountItem{frame(2, 200, own), frame(3, 200, nil)}})
 	switch {
-	case bar.moving == nil || bar.moving.tr != *own || frameOf(bar).Size.Width != 20 || bar.frame.Size.Width != 200:
+	case bar.moving == nil || bar.moving.motion.Transition() != *own || frameOf(bar).Size.Width != 20 || bar.frame.Size.Width != 200:
 		t.Fatalf("the bar moves %+v from %v", bar.moving, frameOf(bar))
 	case other.moving != nil || frameOf(other).Size.Width != 200:
 		t.Fatal("a frame without a transition animated")
@@ -1250,7 +1250,7 @@ func TestFrameTransitionMovesOnlyItsView(t *testing.T) {
 	update := &driver.LayoutTransition{Duration: 2 * time.Second}
 	w.apply(&driver.MountBatch{Root: 1, LayoutAnimation: &driver.LayoutAnimation{Update: update},
 		Items: []driver.MountItem{frame(2, 100, own)}})
-	if bar.moving == nil || bar.moving.tr != *update {
+	if bar.moving == nil || bar.moving.motion.Transition() != *update {
 		t.Fatalf("the batch's Update did not win: %+v", bar.moving)
 	}
 }

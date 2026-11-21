@@ -29,7 +29,7 @@ const (
 )
 
 // carouselIndicator is the pagination indicator's travel, as Tabs'.
-var carouselIndicator = core.LayoutTransition{Curve: core.LayoutSpring, Damping: 0.85, Duration: 362 * time.Millisecond}
+var carouselIndicator = core.LayoutTransition{Curve: core.LayoutSpring, Response: 280 * time.Millisecond, DampingRatio: 0.85}
 
 // carouselSlide is a slide of the content, as it registered.
 type carouselSlide struct {

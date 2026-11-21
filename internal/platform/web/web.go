@@ -202,11 +202,12 @@ type surface struct {
 	// pointerCSS is whether pointerCSS was added to the page.
 	pointerCSS bool
 
-	animator    *driver.Animator
-	batch       uint64
-	transitions map[*view]bool
-	frame       js.Func // the animation frame callback
-	ticking     bool
+	animator      *driver.Animator
+	batch         uint64
+	transitions   map[*view]bool
+	layoutMotions map[*view]bool
+	frame         js.Func // the animation frame callback
+	ticking       bool
 	// frameWanted is set while the app waits for a display frame.
 	frameWanted bool
 	// perf measures the engine when a test asks (nsgo test -fps).
@@ -320,15 +321,16 @@ type view struct {
 	style driver.ViewStyle
 	// keyframes is the keyframe animation the Web Animations in running
 	// play.
-	keyframes  driver.KeyframeAnimation
-	running    []js.Value
-	animated   driver.AnimatedValues
-	styleTr    *driver.StyleTransition
-	styled     bool
-	born       uint64
-	framed     bool
-	layoutAnim js.Value
-	appearAnim js.Value
+	keyframes    driver.KeyframeAnimation
+	running      []js.Value
+	animated     driver.AnimatedValues
+	styleTr      *driver.StyleTransition
+	styled       bool
+	born         uint64
+	framed       bool
+	layoutAnim   js.Value
+	layoutMotion *driver.LayoutMotion
+	appearAnim   js.Value
 
 	component      driver.NativeComponent // a native view's
 	componentTried bool
@@ -1739,6 +1741,10 @@ func (s *surface) mount(b *driver.MountBatch) {
 				v.video.release()
 			}
 			s.setOutside(v, false)
+			if v.layoutMotion != nil {
+				delete(s.layoutMotions, v)
+				v.layoutMotion = nil
+			}
 			v.listeners.release()
 			v.stopKeyframes()
 			if v.input != nil {
@@ -1753,13 +1759,14 @@ func (s *surface) mount(b *driver.MountBatch) {
 			case v.track.Truthy():
 				s.dom.flush()
 				s.placeTrack(v)
-			case s.dom.ok && lb == nil && it.Transition == nil:
+			case s.dom.ok && lb == nil && it.Transition == nil && v.layoutMotion == nil:
 				s.dom.frame(opFrame, v.id, it.Frame, v.placed, !v.placedOK)
 				v.placed, v.placedOK = it.Frame, true
 			default:
 				s.dom.flush()
-				s.moveFrame(v, it, lb)
-				v.place(it.Frame)
+				if !s.moveFrame(v, it, lb) {
+					v.place(it.Frame)
+				}
 			}
 			v.framed = true
 			if v.size != it.Frame.Size {

@@ -42,10 +42,7 @@ type transition struct {
 // moving is a view's frame animating to the one it was given, as a
 // LayoutAnimation's Update moves it.
 type moving struct {
-	from  driver.Bounds
-	start time.Time // when the batch came
-	tr    driver.LayoutTransition
-	shown driver.Bounds // at the last frame
+	motion driver.LayoutMotion
 }
 
 // fading is a view appearing or going, as a LayoutAnimation's Create and
@@ -84,10 +81,18 @@ func (w *window) layoutBatch(b *driver.MountBatch) *layoutBatch {
 	return &layoutBatch{anim: b.LayoutAnimation, now: time.Now(), created: map[*view]bool{}}
 }
 
+// clockAt returns t relative to w's epoch, initializing epoch if zero (tests).
+func (w *window) clockAt(t time.Time) time.Duration {
+	if w.epoch.IsZero() {
+		w.epoch = t
+	}
+	return t.Sub(w.epoch)
+}
+
 // frameOf returns the frame v is drawn in now: mid animation, or its own.
 func frameOf(v *view) driver.Bounds {
 	if v.moving != nil {
-		return v.moving.shown
+		return v.moving.motion.Shown()
 	}
 	return v.frame
 }
@@ -97,6 +102,10 @@ func frameOf(v *view) driver.Bounds {
 // before the batch.
 func (w *window) setFrame(v *view, it *driver.MountItem, lb *layoutBatch) {
 	old := frameOf(v)
+	target := v.frame
+	if v.moving != nil {
+		target = v.moving.motion.Target()
+	}
 	f := it.Frame
 	v.laid = f
 	f.Origin.X += v.shift.X
@@ -106,11 +115,27 @@ func (w *window) setFrame(v *view, it *driver.MountItem, lb *layoutBatch) {
 	if lb != nil && lb.anim.Update != nil && !lb.created[v] {
 		tr, start = lb.anim.Update, lb.now
 	}
-	if tr == nil || old == (driver.Bounds{}) || old == f {
+	if tr == nil || old == (driver.Bounds{}) {
 		v.moving = nil
 		return
 	}
-	v.moving = &moving{from: old, start: start, tr: *tr, shown: old}
+	if v.moving != nil && f == target {
+		return
+	}
+	now := w.clockAt(start)
+	if v.moving != nil {
+		v.moving.motion.Retarget(f, *tr, now)
+		if v.moving.motion.Done() {
+			v.moving = nil
+			return
+		}
+		w.animate(v)
+		return
+	}
+	if old == f {
+		return
+	}
+	v.moving = &moving{motion: driver.StartLayoutMotion(old, f, *tr, now)}
 	w.animate(v)
 }
 
@@ -157,7 +182,7 @@ func (w *window) match(v, old *view, lb *layoutBatch) {
 	lb.matched[v] = true
 	w.redrawView(old)
 	old.style.Hidden = true
-	v.moving = &moving{from: from, start: lb.now, tr: *lb.anim.Update, shown: from}
+	v.moving = &moving{motion: driver.StartLayoutMotion(from, v.frame, *lb.anim.Update, w.clockAt(lb.now))}
 	w.animate(v)
 }
 
@@ -456,9 +481,7 @@ func (w *window) tick() {
 		}
 		w.redrawView(v)
 		if mv := v.moving; mv != nil {
-			p, done := mv.tr.At(now.Sub(mv.start))
-			mv.shown = driver.LerpBounds(mv.from, v.frame, p)
-			if done {
+			if _, done := mv.motion.Step(w.clockAt(now)); done {
 				v.moving = nil
 			}
 		}

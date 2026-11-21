@@ -40,7 +40,8 @@ func (s *surface) tick(stamp time.Duration) {
 	s.animator.Step(stamp)
 	s.applyAnimatedAt(stamp)
 	s.stepTransitions(stamp)
-	if s.animator.Running() || len(s.transitions) > 0 {
+	s.stepLayoutMotions(stamp)
+	if s.animator.Running() || len(s.transitions) > 0 || len(s.layoutMotions) > 0 {
 		s.staleEffects()
 		s.requestGlassPaint()
 	}
@@ -53,7 +54,7 @@ func (s *surface) tick(stamp time.Duration) {
 			s.engine.FrameAt(driver.DisplayTime(stamp, time.Duration(now()*float64(time.Millisecond))))
 		}
 	}
-	if s.animator.Running() || len(s.transitions) > 0 || s.frameWanted || s.geometryAnimating() {
+	if s.animator.Running() || len(s.transitions) > 0 || len(s.layoutMotions) > 0 || s.frameWanted || s.geometryAnimating() {
 		s.startTicking()
 	}
 }
@@ -120,6 +121,21 @@ func (s *surface) writeAnimatedStyle(v *view, at time.Duration) {
 	v.css().set(inline)
 }
 
+func (s *surface) stepLayoutMotions(stamp time.Duration) {
+	for v := range s.layoutMotions {
+		if v.layoutMotion == nil {
+			delete(s.layoutMotions, v)
+			continue
+		}
+		shown, done := v.layoutMotion.Step(stamp)
+		v.place(shown)
+		if done {
+			v.layoutMotion = nil
+			delete(s.layoutMotions, v)
+		}
+	}
+}
+
 // applyAnimated writes the animated values that changed.
 func (s *surface) applyAnimated() { s.applyAnimatedAt(s.clock()) }
 
@@ -167,30 +183,89 @@ func timing(tr *driver.LayoutTransition) map[string]any {
 			easing = fmt.Sprintf("cubic-bezier(%g, %g, %g, %g)", c.X1, c.Y1, c.X2, c.Y2)
 		}
 	case driver.LayoutSpring:
+		dur := tr.End() - tr.Delay
+		if dur <= 0 {
+			dur = time.Millisecond
+		}
 		curve := *tr
-		curve.Delay, curve.Duration = 0, time.Second
-		var pts []string
-		for i := range 41 {
-			p, _ := curve.At(time.Duration(i) * time.Second / 40)
+		curve.Delay = 0
+		const steps = 60
+		pts := make([]string, 0, steps+1)
+		for i := range steps + 1 {
+			p, _ := curve.At(time.Duration(float64(dur) * float64(i) / steps))
 			pts = append(pts, fmt.Sprintf("%.4f", p))
 		}
 		easing = "linear(" + strings.Join(pts, ", ") + ")"
+		return map[string]any{"duration": float64(dur) / 1e6, "delay": float64(tr.Delay) / 1e6,
+			"easing": easing, "fill": "backwards"}
 	}
 	return map[string]any{"duration": float64(tr.Duration) / 1e6, "delay": float64(tr.Delay) / 1e6,
 		"easing": easing, "fill": "backwards"}
 }
 
+func (s *surface) computedBounds(v *view) driver.Bounds {
+	cs := js.Global().Call("getComputedStyle", v.el)
+	parse := func(prop string) driver.Points {
+		return driver.Points(js.Global().Call("parseFloat", cs.Get(prop)).Float())
+	}
+	return driver.Bounds{
+		Origin: driver.Point{X: parse("left"), Y: parse("top")},
+		Size:   driver.Size{Width: max(parse("width"), 0), Height: max(parse("height"), 0)},
+	}
+}
+
 // moveFrame animates v from where it shows to the item's frame, when the
-// batch animates layout or the item carries a transition.
-func (s *surface) moveFrame(v *view, it *driver.MountItem, lb *layoutBatch) {
+// batch animates layout or the item carries a transition. It reports whether
+// it placed v's frame itself (for physics springs driven on rAF).
+func (s *surface) moveFrame(v *view, it *driver.MountItem, lb *layoutBatch) bool {
 	tr := it.Transition
 	if lb != nil && lb.anim.Update != nil && !lb.created[v.id] {
 		tr = lb.anim.Update
 	}
 	if tr == nil || !v.framed {
-		return
+		if v.layoutMotion != nil {
+			delete(s.layoutMotions, v)
+			v.layoutMotion = nil
+		}
+		return false
 	}
 	f := it.Frame
+	if tr.Curve == driver.LayoutSpring {
+		if v.layoutAnim.Truthy() {
+			v.layoutAnim.Call("cancel")
+			v.layoutAnim = js.Undefined()
+		}
+		stamp := time.Duration(now() * float64(time.Millisecond))
+		if v.layoutMotion != nil {
+			if f == v.layoutMotion.Target() {
+				return true
+			}
+			v.layoutMotion.Retarget(f, *tr, stamp)
+		} else {
+			from := s.computedBounds(v)
+			if from == f {
+				return false
+			}
+			lm := driver.StartLayoutMotion(from, f, *tr, stamp)
+			v.layoutMotion = &lm
+		}
+		v.place(v.layoutMotion.Shown())
+		if v.layoutMotion.Done() {
+			delete(s.layoutMotions, v)
+			v.layoutMotion = nil
+			return true
+		}
+		if s.layoutMotions == nil {
+			s.layoutMotions = map[*view]bool{}
+		}
+		s.layoutMotions[v] = true
+		s.startTicking()
+		return true
+	}
+	if v.layoutMotion != nil {
+		delete(s.layoutMotions, v)
+		v.layoutMotion = nil
+	}
 	// Where it shows: mid animation, the computed style's.
 	cs := js.Global().Call("getComputedStyle", v.el)
 	from := map[string]any{"left": cs.Get("left").String(), "top": cs.Get("top").String(),
@@ -200,6 +275,7 @@ func (s *surface) moveFrame(v *view, it *driver.MountItem, lb *layoutBatch) {
 	}
 	to := map[string]any{"left": webstyle.Px(f.Origin.X), "top": webstyle.Px(f.Origin.Y), "width": webstyle.Px(f.Size.Width), "height": webstyle.Px(f.Size.Height)}
 	v.layoutAnim = v.el.Call("animate", []any{from, to}, timing(tr))
+	return false
 }
 
 // appear animates a view the batch created into view.
@@ -228,16 +304,37 @@ func (s *surface) match(v, old *view, lb *layoutBatch) {
 		v.appearAnim.Call("cancel")
 		v.appearAnim = js.Undefined()
 	}
-	was, now := old.el.Call("getBoundingClientRect"), v.el.Call("getBoundingClientRect")
+	was, cur := old.el.Call("getBoundingClientRect"), v.el.Call("getBoundingClientRect")
 	f := v.frame
-	dx := driver.Points(was.Get("left").Float() - now.Get("left").Float())
-	dy := driver.Points(was.Get("top").Float() - now.Get("top").Float())
+	dx := driver.Points(was.Get("left").Float() - cur.Get("left").Float())
+	dy := driver.Points(was.Get("top").Float() - cur.Get("top").Float())
 	from := map[string]any{"left": webstyle.Px(f.Origin.X + dx), "top": webstyle.Px(f.Origin.Y + dy),
 		"width": webstyle.Px(driver.Points(was.Get("width").Float())), "height": webstyle.Px(driver.Points(was.Get("height").Float()))}
 	to := map[string]any{"left": webstyle.Px(f.Origin.X), "top": webstyle.Px(f.Origin.Y), "width": webstyle.Px(f.Size.Width), "height": webstyle.Px(f.Size.Height)}
 	setStyle(old.el, map[string]string{"visibility": "hidden"})
 	if v.layoutAnim.Truthy() {
 		v.layoutAnim.Call("cancel")
+		v.layoutAnim = js.Undefined()
+	}
+	if lb.anim.Update.Curve == driver.LayoutSpring {
+		fromBounds := driver.Bounds{
+			Origin: driver.Point{X: f.Origin.X + dx, Y: f.Origin.Y + dy},
+			Size:   driver.Size{Width: driver.Points(was.Get("width").Float()), Height: driver.Points(was.Get("height").Float())},
+		}
+		stamp := time.Duration(now() * float64(time.Millisecond))
+		lm := driver.StartLayoutMotion(fromBounds, f, *lb.anim.Update, stamp)
+		v.layoutMotion = &lm
+		v.place(fromBounds)
+		if !v.layoutMotion.Done() {
+			if s.layoutMotions == nil {
+				s.layoutMotions = map[*view]bool{}
+			}
+			s.layoutMotions[v] = true
+			s.startTicking()
+		} else {
+			v.layoutMotion = nil
+		}
+		return
 	}
 	v.layoutAnim = v.el.Call("animate", []any{from, to}, timing(lb.anim.Update))
 }

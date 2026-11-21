@@ -107,6 +107,8 @@ func writeLayoutTransition(w *writer, tr *driver.LayoutTransition) {
 	w.byte(byte(tr.Property))
 	w.u64(uint64(tr.Duration))
 	w.u64(uint64(tr.Delay))
+	w.u64(uint64(tr.Response))
+	w.f64(tr.DampingRatio)
 }
 
 // writeKeyframes writes the steps that Keyframes.read loads and eases between.

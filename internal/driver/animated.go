@@ -305,7 +305,20 @@ type LayoutAnimation struct {
 // LayoutTransition is how one kind of change animates.
 type LayoutTransition struct {
 	Curve LayoutCurve
-	// Damping is LayoutSpring's damping ratio, from 0 to 1.
+	// Response is LayoutSpring's undamped natural period, as gpui-base's
+	// Spring: stiffness k = (2π/Response)², mass 1. When Curve is
+	// LayoutSpring, the spring runs by its physics until it settles rather
+	// than for Duration. When Response is 0 and Duration is positive,
+	// Response is derived from Duration and the damping ratio so
+	// duration-based spring configs settle in about that time; when both
+	// are 0, Response defaults to 500 ms.
+	Response time.Duration
+	// DampingRatio is LayoutSpring's damping ratio (ζ): < 1 underdamped
+	// (overshoots), 1 critically damped, > 1 overdamped. When 0, Damping is
+	// used if positive, else 1 (critically damped).
+	DampingRatio float64
+	// Damping is LayoutSpring's damping ratio when DampingRatio is 0, kept
+	// for React Native-style spring configs.
 	Damping float32
 	// Bezier is LayoutBezier's curve.
 	Bezier Curve
@@ -323,7 +336,8 @@ const (
 	LayoutEaseIn
 	LayoutEaseOut
 	LayoutEaseInEaseOut
-	// LayoutSpring springs with Damping, settling within the duration.
+	// LayoutSpring springs by its physics (Response and DampingRatio),
+	// running until it settles rather than for a duration.
 	LayoutSpring
 	// LayoutKeyboard is the software keyboard's own curve, timed from
 	// when the keyboard started to move where the platform knows it.
@@ -347,8 +361,21 @@ const (
 )
 
 // At returns the transition's progress at elapsed time since the change,
-// and whether it is done. A spring may overshoot 1.
+// and whether it is done. A spring may overshoot 1 and runs until it settles
+// rather than stopping at Duration.
 func (tr *LayoutTransition) At(elapsed time.Duration) (float64, bool) {
+	if tr.Curve == LayoutSpring {
+		if elapsed <= tr.Delay {
+			return 0, false
+		}
+		respSec, zeta := tr.springParams()
+		w0 := 2 * math.Pi / respSec
+		y, _, settled := evalSpring1D(-1, 0, w0, zeta, (elapsed - tr.Delay).Seconds(), springUnitSettleEps)
+		if settled {
+			return 1, true
+		}
+		return 1 + y, false
+	}
 	x := 1.0
 	if tr.Duration > 0 {
 		x = float64(elapsed-tr.Delay) / float64(tr.Duration)
@@ -366,8 +393,6 @@ func (tr *LayoutTransition) At(elapsed time.Duration) (float64, bool) {
 		return EaseOut.At(x), false
 	case LayoutEaseInEaseOut:
 		return EaseInOut.At(x), false
-	case LayoutSpring:
-		return layoutSpring(float64(tr.Damping), x), false
 	case LayoutKeyboard:
 		return KeyboardCurve.At(x), false
 	case LayoutBezier:
@@ -376,23 +401,13 @@ func (tr *LayoutTransition) At(elapsed time.Duration) (float64, bool) {
 	return x, false
 }
 
-// End is when the transition is done.
-func (tr *LayoutTransition) End() time.Duration { return tr.Delay + tr.Duration }
-
-// layoutSpring is a damped spring from 0 to 1 at x, the fraction of the
-// duration, stiff enough to settle by the end, as UIKit fits
-// usingSpringWithDamping into a duration (NSH's transition.rs).
-func layoutSpring(damping, x float64) float64 {
-	const settle = 6.907755 // ln(1000): the envelope falls to 1/1000
-	zeta := min(max(damping, 0.05), 1)
-	if zeta > 0.999 {
-		w := 9.233
-		return 1 - (1+w*x)*math.Exp(-w*x)
+// End is when the transition is done: Delay + Duration for timed curves,
+// or Delay plus the unit-step settling time for LayoutSpring.
+func (tr *LayoutTransition) End() time.Duration {
+	if tr.Curve == LayoutSpring {
+		return tr.Delay + tr.springSettleDuration()
 	}
-	w := settle / zeta
-	wd := w * math.Sqrt(1-zeta*zeta)
-	env := math.Exp(-zeta * w * x)
-	return 1 - env*(math.Cos(wd*x)+zeta*w/wd*math.Sin(wd*x))
+	return tr.Delay + tr.Duration
 }
 
 // RubberBand resists x past lo and hi as a scroll view's edge resists a

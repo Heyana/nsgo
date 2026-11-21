@@ -20,10 +20,13 @@ type View struct {
 	Parent   *View
 	Children []*View
 	Frame    driver.Bounds
-	Style    driver.ViewStyle
-	Props    driver.ViewProps
-	Events   driver.EventMask
-	Text     string // a text view's text or a field's value
+	// ShownFrame is the frame the view shows now: mid layout transition or
+	// layout animation, or Frame when none is running.
+	ShownFrame driver.Bounds
+	Style      driver.ViewStyle
+	Props      driver.ViewProps
+	Events     driver.EventMask
+	Text       string // a text view's text or a field's value
 	// TextStyle and Spans are a text view's resolved style and its
 	// spans', which SpanStyle reads.
 	TextStyle driver.TextStyle
@@ -103,8 +106,10 @@ type View struct {
 	// shows each of its drawing's nodes as a child, which selectors find
 	// by its label (label: and text:), test ID and role, and which presses
 	// at its center.
-	Node *driver.CanvasNode
-	anim *driver.Animator
+	Node   *driver.CanvasNode
+	anim   *driver.Animator
+	framed bool
+	motion *driver.LayoutMotion
 }
 
 // clamp keeps a scroll view's offset within its content and insets, as
@@ -204,11 +209,21 @@ var webCommandKinds = map[driver.WebCommand]WebCommandKind{
 	driver.WebLoad:             WebLoad,
 }
 
-// animate steps the animator to the clock and records the values it
-// moved.
+// animate steps the animator and any running layout motions to the clock and
+// records the values they moved.
 func (a *App) animate() {
+	now := a.Clock.Now().Sub(a.start)
 	if a.anim.Running() {
-		a.anim.Step(a.Clock.Now().Sub(a.start))
+		a.anim.Step(now)
+	}
+	for _, v := range a.views {
+		if v.motion != nil {
+			shown, done := v.motion.Step(now)
+			v.ShownFrame = shown
+			if done {
+				v.motion = nil
+			}
+		}
 	}
 	a.anim.Changed(func(id driver.NodeID, vals driver.AnimatedValues) {
 		if v := a.views[id]; v != nil {
@@ -506,6 +521,9 @@ func (a *App) apply(b *driver.MountBatch) {
 	if b.LayoutAnimation != nil {
 		a.LayoutAnimation = b.LayoutAnimation
 	}
+	reduceMotion := a.env != nil && a.env.ReduceMotion
+	now := a.Clock.Now().Sub(a.start)
+	var created map[driver.NodeID]bool
 	var resized []*View
 	var gpuConfigured []*View
 	var modalInserted []*View
@@ -521,6 +539,10 @@ func (a *App) apply(b *driver.MountBatch) {
 		switch it.Kind {
 		case driver.ItemCreate:
 			a.views[it.ID] = &View{ID: it.ID, Kind: viewKind(it.View), Style: driver.DefaultViewStyle, anim: a.anim}
+			if created == nil {
+				created = map[driver.NodeID]bool{}
+			}
+			created[it.ID] = true
 		case driver.ItemDelete:
 			if v != nil {
 				if v.Kind == KindModal {
@@ -560,9 +582,65 @@ func (a *App) apply(b *driver.MountBatch) {
 				screensChanged = true
 			}
 		case driver.ItemFrame:
+			target := v.Frame
+			if v.motion != nil {
+				target = v.motion.Target()
+			}
 			v.Frame = it.Frame
+			tr := it.Transition
+			if b.LayoutAnimation != nil && b.LayoutAnimation.Update != nil && !created[it.ID] {
+				tr = b.LayoutAnimation.Update
+			}
+			if reduceMotion {
+				tr = nil
+			}
+			switch {
+			case tr != nil && v.framed:
+				if it.Frame != target {
+					if v.motion != nil {
+						v.motion.Retarget(it.Frame, *tr, now)
+					} else {
+						m := driver.StartLayoutMotion(v.ShownFrame, it.Frame, *tr, now)
+						v.motion = &m
+					}
+					v.ShownFrame = v.motion.Shown()
+					if v.motion.Done() {
+						v.motion = nil
+					}
+				}
+			default:
+				v.motion = nil
+				v.ShownFrame = it.Frame
+			}
+			v.framed = true
 			resized = append(resized, v)
 			screensChanged = true
+		case driver.ItemMatch:
+			if !reduceMotion && b.LayoutAnimation != nil && b.LayoutAnimation.Update != nil {
+				if old := a.views[it.Before]; old != nil && v.Parent != nil && old.Parent != nil {
+					shownAt := func(x *View) driver.Bounds {
+						f := x.ShownFrame
+						for p := x.Parent; p != nil; p = p.Parent {
+							f.Origin.X += p.ShownFrame.Origin.X - p.Offset.X
+							f.Origin.Y += p.ShownFrame.Origin.Y - p.Offset.Y
+						}
+						return f
+					}
+					was, in := shownAt(old), shownAt(v.Parent)
+					in.Origin.X -= v.Parent.Offset.X
+					in.Origin.Y -= v.Parent.Offset.Y
+					from := driver.Bounds{
+						Origin: driver.Point{X: was.Origin.X - in.Origin.X, Y: was.Origin.Y - in.Origin.Y},
+						Size:   was.Size,
+					}
+					m := driver.StartLayoutMotion(from, v.Frame, *b.LayoutAnimation.Update, now)
+					v.motion = &m
+					v.ShownFrame = m.Shown()
+					if v.motion.Done() {
+						v.motion = nil
+					}
+				}
+			}
 		case driver.ItemViewStyle:
 			v.Style = *it.ViewStyle
 		case driver.ItemViewProps:

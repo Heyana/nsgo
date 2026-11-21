@@ -31,10 +31,7 @@ type transition struct {
 // motion is a view's part of a layout animation: its frame moving, and
 // it coming in.
 type motion struct {
-	move      *driver.LayoutTransition
-	moveStart time.Time
-	from      driver.Bounds
-	shown     driver.Bounds
+	move *driver.LayoutMotion
 
 	fade      *driver.LayoutTransition
 	fadeStart time.Time
@@ -91,6 +88,10 @@ func (s *surface) setStyle(v *view, st *driver.ViewStyle) {
 // animation when v was there before.
 func (s *surface) setFrame(v *view, frame driver.Bounds, lb *layoutBatch) {
 	old := v.shownFrame()
+	target := v.frame
+	if v.moving != nil && v.moving.move != nil {
+		target = v.moving.move.Target()
+	}
 	v.frame = frame
 	s.touched(v)
 	if v.kind == driver.KindInput {
@@ -99,15 +100,31 @@ func (s *surface) setFrame(v *view, frame driver.Bounds, lb *layoutBatch) {
 	if v.image != nil {
 		v.image.Layout(apple.CGSize{Width: float64(frame.Size.Width), Height: float64(frame.Size.Height)})
 	}
-	if lb == nil || lb.anim.Update == nil || lb.created[v.id] || v.kind == driver.KindModal || old == frame {
+	if lb == nil || lb.anim.Update == nil || lb.created[v.id] || v.kind == driver.KindModal {
 		if m := v.moving; m != nil {
 			m.move = nil
 			s.dropMotion(v)
 		}
 		return
 	}
+	now := time.Since(s.epoch)
+	if v.moving != nil && v.moving.move != nil {
+		if frame == target {
+			return
+		}
+		v.moving.move.Retarget(frame, *lb.anim.Update, now)
+		if v.moving.move.Done() {
+			v.moving.move = nil
+			s.dropMotion(v)
+		}
+		return
+	}
+	if old == frame {
+		return
+	}
 	m := s.motionOf(v)
-	m.move, m.moveStart, m.from, m.shown = lb.anim.Update, time.Now(), old, old
+	lm := driver.StartLayoutMotion(old, frame, *lb.anim.Update, now)
+	m.move = &lm
 }
 
 // appear brings v in with the batch's Create when the batch made it and
@@ -147,13 +164,14 @@ func (s *surface) match(v, old *view, lb *layoutBatch) {
 	s.touched(old)
 	m := s.motionOf(v)
 	m.fade, m.part = nil, 1
-	m.move, m.moveStart, m.from, m.shown = lb.anim.Update, time.Now(), from, from
+	lm := driver.StartLayoutMotion(from, v.frame, *lb.anim.Update, time.Since(s.epoch))
+	m.move = &lm
 	s.touched(v)
 }
 
 func (s *surface) motionOf(v *view) *motion {
 	if v.moving == nil {
-		v.moving = &motion{part: 1, shown: v.frame}
+		v.moving = &motion{part: 1}
 	}
 	s.motions[v] = true
 	s.tick(true)
@@ -194,11 +212,8 @@ func (s *surface) stepMotions() {
 		}
 		if m := v.moving; m != nil {
 			if m.move != nil {
-				p, done := m.move.At(now.Sub(m.moveStart))
-				if done {
+				if _, done := m.move.Step(now.Sub(s.epoch)); done {
 					m.move = nil
-				} else {
-					m.shown = driver.LerpBounds(m.from, v.frame, p)
 				}
 			}
 			if m.fade != nil {

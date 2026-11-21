@@ -6,18 +6,20 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// revealTime is how long a reveal takes: as long as gpui-component's
-// critically damped spring with a 180 ms response takes to settle.
-const revealTime = 265 * time.Millisecond
+// revealResponse is gpui-component's critically damped reveal spring's
+// response.
+const revealResponse = 180 * time.Millisecond
 
 // revealTransition springs the frames a reveal moves, critically damped,
 // as a height should not overshoot.
-var revealTransition = core.LayoutTransition{Curve: core.LayoutSpring, Damping: 1, Duration: revealTime}
+var revealTransition = core.LayoutTransition{Curve: core.LayoutSpring, Response: revealResponse, DampingRatio: 1}
 
-// revealFor is how long revealing height takes: revealTime, longer for a
-// taller height, as it travels further, up to twice as long.
-func revealFor(height core.Points) time.Duration {
-	return min(revealTime+time.Duration(height)*time.Millisecond/4, 2*revealTime)
+// revealSpringFor returns the reveal spring for height: revealResponse,
+// slower for a taller height as it travels further, up to twice as long.
+func revealSpringFor(height core.Points) core.LayoutTransition {
+	tr := revealTransition
+	tr.Response = min(revealResponse+time.Duration(height)*time.Millisecond/6, 2*revealResponse)
+	return tr
 }
 
 // Collapsible is a region whose Content expands and collapses: a "show
@@ -95,8 +97,7 @@ func (c Collapsible) reveal(cx *core.Scope, open func() bool) (shown, mounted fu
 	animated := func() bool { return is(c.Reveal) && !env.ReduceMotion() }
 	show := func(on bool) {
 		if animated() {
-			spring := revealTransition
-			spring.Duration = revealFor(height)
+			spring := revealSpringFor(height)
 			cx.AnimateLayout(core.LayoutAnimation{Update: &spring})
 		}
 		isShown.Set(on)
@@ -121,7 +122,8 @@ func (c Collapsible) reveal(cx *core.Scope, open func() bool) (shown, mounted fu
 				show(true)
 			case animated():
 				show(false)
-				stop = cx.AfterFunc(revealFor(height), func() { isMounted.Set(false) })
+				spring := revealSpringFor(height)
+				stop = cx.AfterFunc(spring.End(), func() { isMounted.Set(false) })
 			default:
 				show(false)
 				isMounted.Set(false)
@@ -167,7 +169,7 @@ func followOpen(cx *core.Scope, open, reveal func() bool) func() bool {
 				mounted.Set(now)
 				return
 			}
-			stop = cx.AfterFunc(revealTime, func() { mounted.Set(false) })
+			stop = cx.AfterFunc(revealTransition.End(), func() { mounted.Set(false) })
 		})
 	})
 	return mounted.Get

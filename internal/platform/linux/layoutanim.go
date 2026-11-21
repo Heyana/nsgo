@@ -15,10 +15,8 @@ import (
 // leaving multiply its opacity or scale it about its center, over its
 // style.
 type layoutAnim struct {
-	move      *driver.LayoutTransition // nil while the frame stands
+	move      *driver.LayoutMotion // nil while the frame stands
 	moveStart time.Time
-	from      driver.Bounds
-	shown     driver.Bounds
 
 	fade       *driver.LayoutTransition // nil once the view is in
 	fadeStart  time.Time
@@ -46,7 +44,7 @@ func (w *window) newLayoutBatch(b *driver.MountBatch) *layoutBatch {
 // shownFrame is the frame v is drawn at: mid animation, or its own.
 func (v *view) shownFrame() driver.Bounds {
 	if l := v.layout; l != nil && l.move != nil {
-		return l.shown
+		return l.move.Shown()
 	}
 	return v.frame
 }
@@ -94,7 +92,8 @@ func (w *window) present(v *view) {
 		l := w.layoutOf(v)
 		from := v.frame
 		from.Origin.Y += max(v.frame.Size.Height, 1)
-		l.move, l.moveStart, l.from, l.shown, l.presenting = &modalSlide, now, from, from, true
+		lm := driver.StartLayoutMotion(from, v.frame, modalSlide, w.monotonic(now))
+		l.move, l.moveStart, l.presenting = &lm, now, true
 	case driver.ModalFade:
 		l := w.layoutOf(v)
 		l.fade, l.fadeStart, l.out, l.shownPart, l.presenting = &modalFade, now, false, 0, true
@@ -116,6 +115,10 @@ func animatesLayout(v *view) bool { return v.kind != driver.KindModal }
 // item's own transition, else at once.
 func (w *window) framed(v *view, it *driver.MountItem, lb *layoutBatch) {
 	old := v.shownFrame()
+	target := v.frame
+	if v.layout != nil && v.layout.move != nil {
+		target = v.layout.move.Target()
+	}
 	frame := it.Frame
 	v.laid = frame
 	frame.Origin.X += v.shift.X
@@ -125,15 +128,30 @@ func (w *window) framed(v *view, it *driver.MountItem, lb *layoutBatch) {
 	if lb != nil && lb.anim.Update != nil && !lb.created[v.id] {
 		tr, start = lb.anim.Update, lb.at
 	}
-	if tr == nil || !animatesLayout(v) || old == frame {
+	if tr == nil || !animatesLayout(v) {
 		if v.layout != nil && v.layout.move != nil {
 			v.layout.move = nil
 			w.dropLayout(v)
 		}
 		return
 	}
+	if v.layout != nil && v.layout.move != nil {
+		if frame == target {
+			return
+		}
+		v.layout.move.Retarget(frame, *tr, w.monotonic(start))
+		if v.layout.move.Done() {
+			v.layout.move = nil
+			w.dropLayout(v)
+		}
+		return
+	}
+	if old == frame {
+		return
+	}
 	l := w.layoutOf(v)
-	l.move, l.moveStart, l.from, l.shown = tr, start, old, old
+	lm := driver.StartLayoutMotion(old, frame, *tr, w.monotonic(start))
+	l.move, l.moveStart = &lm, start
 }
 
 // inserted starts v appearing when the commit made it and inserted it
@@ -176,7 +194,8 @@ func (w *window) match(v, old *view, lb *layoutBatch) {
 	w.showWidget(old)
 	w.moved(old)
 	l := w.layoutOf(v)
-	l.move, l.moveStart, l.from, l.shown = lb.anim.Update, lb.at, from, from
+	lm := driver.StartLayoutMotion(from, v.frame, *lb.anim.Update, w.monotonic(lb.at))
+	l.move = &lm
 	if v.widget != 0 {
 		gtkWidgetQueueAllocate(v.widget)
 	}
@@ -271,12 +290,10 @@ func (w *window) stepLayout(now time.Time) bool {
 			continue
 		}
 		if l.move != nil {
-			p, done := l.move.At(now.Sub(l.moveStart))
-			old := l.shown
+			old := l.move.Shown()
+			_, done := l.move.Step(w.monotonic(now))
 			if done {
 				l.move = nil
-			} else {
-				l.shown = driver.LerpBounds(l.from, v.frame, p)
 			}
 			if v.shownFrame().Size != old.Size && v.widget != 0 {
 				gtkWidgetQueueAllocate(v.widget)
@@ -286,7 +303,7 @@ func (w *window) stepLayout(now time.Time) bool {
 			p, done := l.fade.At(now.Sub(l.fadeStart))
 			if l.out {
 				l.shownPart = 1 - p
-				if now.Sub(l.fadeStart) >= l.fade.End() {
+				if done {
 					w.bury(v)
 					continue
 				}

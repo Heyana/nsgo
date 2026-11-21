@@ -104,7 +104,7 @@ func TestModalSlidesIn(t *testing.T) {
 		if shown.Origin.Y != rest.Origin.Y+rest.Size.Height {
 			t.Errorf("the modal starts at %v, want below %v", shown, rest)
 		}
-		start, duration := modal.layout.moveStart, modal.layout.move.Duration
+		start, duration := modal.layout.moveStart, modalSlide.Duration
 		if !w.stepLayout(start.Add(duration / 2)) {
 			t.Error("the modal stopped moving before its midpoint")
 		}
