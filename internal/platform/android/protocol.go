@@ -471,6 +471,9 @@ const capExtendedMessages = 1
 // capDiscoverServices is the third capability byte's bit for a runtime that runs DNS-SD through NsdManager on extDiscovery messages (Protocol.CAP_DISCOVER_SERVICES).
 const capDiscoverServices = 32
 
+// capAudio is the third capability byte's bit for a runtime that plays sounds and players (Protocol.CAP_AUDIO): one built before Audio.java reads as having no audio.
+const capAudio = 2
+
 // readEnvironmentCapabilities reads the environment as readEnvironment does, with the third capability byte, which says what the runtime itself can do (cap* bits) rather than the device, so it stays out of driver.Environment.
 func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	env := driver.Environment{
@@ -540,13 +543,14 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 		env.LocaleSettings.MeasurementSystem = r.str()
 		env.LocaleSettings.TemperatureUnit = r.str()
 		env.LocaleSettings.Region = r.str()
-		// The second capability byte's bits are all taken too; a third follows the locale settings, at the end of the message, so a runtime built before it, which ends here, reads as having none of them. Its bits: capExtendedMessages.
+		// The second capability byte's bits are all taken too; a third follows the locale settings, at the end of the message, so a runtime built before it, which ends here, reads as having none of them. Its bits: capExtendedMessages, capAudio and capDiscoverServices.
 		if len(r.buf) > 0 {
 			third = r.byte()
 		}
 	}
 	// Discovery travels in extended messages, so it needs both bits.
 	env.DiscoverServices = third&capDiscoverServices != 0 && third&capExtendedMessages != 0
+	env.Audio = third&capAudio != 0
 	return env, third
 }
 

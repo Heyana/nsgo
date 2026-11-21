@@ -56,6 +56,8 @@ final class Protocol {
     /** Whether Go writes extended messages of this kind: each EXT_* constant has its case. */
     static boolean isExtended(int kind) {
         switch (kind) {
+            case EXT_AUDIO_FILE:
+                return true;
             case EXT_DISCOVERY:
             case EXT_SURFACE_RESET:
                 return true;
@@ -114,8 +116,12 @@ final class Protocol {
     static final int EXTENDED = 31;
     /** The environment's third capability byte's bit for a runtime that reads EXTENDED messages (capExtendedMessages in protocol.go): Go sends none to a runtime without it, which would refuse them as a corrupt pipe. */
     static final int CAP_EXTENDED_MESSAGES = 1;
+    /** The third capability byte's bit for a runtime that plays sounds and players (Audio.java), capAudio in protocol.go. */
+    static final int CAP_AUDIO = 2;
 
     // Extended kinds, the first byte of an EXTENDED message, kept in sync with android.go's ext* constants: each is EXT_NAME = n with n from 1 up, and has its case in isExtended.
+    /** A staged audio file, or a failure: surface, object, path, error code and message (audio.go, Audio.file). */
+    static final int EXT_AUDIO_FILE = 2;
     /** Starts or stops DNS-SD on a surface (Discovery): surface, request count, then a DISCOVERY_* operation and its service. */
     static final int EXT_DISCOVERY = 10;
     static final int DISCOVERY_ADVERTISE = 1;
@@ -185,6 +191,9 @@ final class Protocol {
     static final int ASSET_DONE = 1;
     static final int ASSET_MISSING = 2;
     static final int ASSET_FAILED = 3;
+
+    /** A sound or player report (Audio.java, audio.go). */
+    static final int AUDIO_REPORT = 33;
 
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;
@@ -334,6 +343,7 @@ final class Protocol {
     static final int ITEM_PERMISSION = 90;
     static final int ITEM_KEEP_AWAKE = 93;
     static final int ITEM_RELEASE_AWAKE = 94;
+    static final int ITEM_AUDIO = 96;
     static final int ITEM_SPEAK = 102;
     static final int ITEM_SENSOR = 103;
     static final int ITEM_ORIENTATION = 111;

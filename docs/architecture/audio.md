@@ -1,6 +1,6 @@
 # Audio playback
 
-NSGo ports NSH 0.5.0's audio design (`nsh/docs/dev/audio-design.md`) for issue #36. The `audio` package uses `Sound` for short sounds and `Player` for long audio. macOS, iOS, Windows, Linux and the web have backends, and `nsgotest` provides a fake. The [roadmap](../roadmap.md#services-and-components-since-040) tracks the remaining backends. Read both designs before extending audio.
+NSGo ports NSH 0.5.0's audio design (`nsh/docs/dev/audio-design.md`) for issue #36. The `audio` package uses `Sound` for short sounds and `Player` for long audio. macOS, iOS, Windows, Linux, Android and the web have backends, and `nsgotest` provides a fake. The [roadmap](../roadmap.md#services-and-components-since-040) tracks the remaining backends. Read both designs before extending audio.
 
 ## The API
 
@@ -99,7 +99,7 @@ Each engine starts its audio objects with its first load or player, so an app th
 | macOS, iOS | One `AVAudioEngine` per surface, with a buffer scheduled on an `AVAudioPlayerNode` for each voice (`setPan:` on the voice mixer for `Voice.Pan`) | `AVQueuePlayer` with no layer, with `AVPlayerLooper` for a finite track on macOS 14 and iOS 17 or later |
 | Windows | One `XAudio2` engine per engine, a source voice per playback over its mastering voice (output channel matrix via `driver.AudioPanGains` for `Voice.Pan`); Media Foundation's source reader decodes at load, on one decoding thread for the process | Media Foundation's media engine, as `Video`'s, with no video output |
 | Linux | GStreamer through purego: decoded once (`decodebin` into 48 kHz stereo floats, cut at the cap), played by one live pipeline per engine with an `appsrc` and `audiopanorama` (`panorama` for `Voice.Pan`) per playback into an `audiomixer` | `GtkMediaFile`, as `Video`'s; GTK's streams have no rate, so `SetRate` does nothing there |
-| Android | One `SoundPool` per engine with 32 streams (left/right volume via `driver.AudioPanGains` for `Voice.Pan`), its duration read with `MediaExtractor` | `MediaPlayer`, as `Video`'s, with its focus handling; both in the Java runtime, with `classes.dex` and `classes.jar` rebuilt |
+| Android | One `SoundPool` per engine with 32 streams (left/right volume via `driver.AudioPanGains` for `Voice.Pan`), its duration read with `MediaExtractor` | `MediaPlayer` with its own media looper and transient audio focus for playback sessions |
 | Web | One `AudioContext` per engine for output after a trusted user gesture. An offline context decodes with `decodeAudioData`, and an `AudioBufferSourceNode` (`loop` for `Voice.Loop`) and `StereoPannerNode` (`pan.value` for `Voice.Pan`) play each voice | An `HTMLAudioElement`, as `Video`'s `<video>`, with the element's `loop` for a whole-track loop |
 | Mini programs, tvOS, watchOS | Not in the first stages: `Env.CanPlayAudio` is false and calls fail with `Unavailable` until each gets a roadmap row of its own | The same |
 
@@ -125,7 +125,11 @@ Windows uses a single Media Foundation decoding thread for sounds. It passes int
 
 In five headless Chrome 158 runs on macOS arm64, a preloaded WAV cue requested on the first trusted click produced its first observed nonzero Web Audio sample in 9–46 ms, with a median of 10 ms (2026-11-21). The test reads an analyser in the browser's audio graph. Speaker output adds device latency.
 
-A sound is read by the backend's image reader (`imageload`, with its cache and limits; the browser on the web) and only decoded natively; a player's source goes to the native player as a video's does, which streams it. Formats are the platform decoders': WAV, AAC (`.m4a`) and MP3 decode everywhere and are the ones to ship; FLAC, Opus and Vorbis decode only where the platform does, and fail with `Decode` elsewhere. No Go decoder is added, as NSH adds none.
+On Android, the Java runtime reads each sound into a seekable file on a worker, stopping at the encoded-size limit. `MediaExtractor` supplies its duration, sample rate and channel count. The runtime checks the duration and estimated decoded size before passing the source to `SoundPool`, which decodes into 16-bit PCM. Android reports `QuotaExceeded` for sounds above the pool's 1 MiB per-sample limit. The first sound load creates the pool, shared by the engine's views. Each `MediaPlayer` streams its source on the media looper. Byte sources and data URLs arrive as staged files. A player reports the newest native seek completion and counts each loop restart. It pauses when its view is hidden or a playback session loses audio focus.
+
+On a Pixel 3 XL running Android 12, the first play of a loaded 100 ms tone took 231 ms from the Go `Play` call to acoustic onset. Twelve plays about 700 ms apart afterward took 48–59 ms, with a 56 ms median. The device's built-in microphone detected the tone in 5 ms windows. The probe used the microphone's monotonic sample timestamp on the same clock as the Go call, so the interval includes the speaker-to-microphone path.
+
+The Apple backends read sounds through `imageload`. All backends use native decoders. WAV, AAC (`.m4a`) and MP3 are the portable formats. FLAC, Opus and Vorbis decode where the platform supports them and otherwise return `Decode`.
 
 ## NSH's design and this one
 
@@ -143,7 +147,7 @@ Each stage is one reviewable change, in NSH's order:
 
 1. The `audio` package with its rule in `layering_test.go`, `core`'s part, the protocol's requests and events, `Env.CanPlayAudio`, `AccessAudio` and the `audio` capability, and `nsgotest`'s fake: it records the sounds loaded and played and each player's commands, answers a load with a duration the test sets, advances progress only on the test's clock, and can fail a load with `Decode` and a play with `NotAllowed`, so tests assert on what an action played without sleeping. Built (2026-11-15).
 2. `internal/audiosession`, with videos, speech and `microphone` moved onto it. Built, not yet run on a device (2026-11-15).
-3. macOS, iOS, Linux, the web, Windows and Android, each with format and error tests. macOS, iOS, Windows, Linux and the web are implemented. Windows' audible latency is unmeasured. The Linux native tests pass with GTK and a PulseAudio virtual output. iOS device verification remains open.
+3. macOS, iOS, Linux, the web, Windows and Android, each with format and error tests. macOS, iOS, Windows, Linux, the web and Android are implemented. Windows' audible latency is unmeasured. The Linux native tests pass with GTK and a PulseAudio virtual output, and the Android ones on a Pixel 3 XL. iOS device verification remains open.
 4. The gallery: a sound for each kind of moment and a player demo of both levels.
 
 Issue #36 closes, and the roadmap's row with it, when a WAV and an MP3 play as sounds and through a player on macOS, iOS, Windows, Linux, Android and the web, and a FLAC either plays or fails with `Decode`; a sound plays overlapping and starts within a frame; `OnProgress` never goes back but with a seek or a loop, and a seek while paused shows the new position on `Play`; `Close` on a playing player stops it, and ten open and close cycles leave no handle behind (on macOS, no audio device stays open); on an iPhone, a sound during a playing video neither pauses nor stops it, a recording and `StartSpeech` keep working through a sound, and the Ring/Silent switch silences sounds; and the gallery's demos are in.

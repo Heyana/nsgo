@@ -137,10 +137,14 @@ const (
 	msgDiscoveryReply = 40
 	// msgAssetReply is one chunk or the final result of an extAssetRead.
 	msgAssetReply = 29
+	// msgAudioReport is a sound or player's status (audio.go).
+	msgAudioReport = 33
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
 const (
+	// extAudioFile supplies a file staged for a sound or player (audio.go): surface, object, path, error code and message.
+	extAudioFile = 2
 	// extAssetRead reads a bundled file through the APK's AssetManager for assets.go: its request ID and the path under assets/.
 	extAssetRead = 9
 	// extDiscovery starts or stops an NSD operation on a surface (discovery.go, Discovery.java).
@@ -180,6 +184,7 @@ type surface struct {
 	ratio atomic.Uint32 // the pixel ratio's float32 bits, for rasterizing SVG
 
 	canvasRequests canvasRequests // mounts and cache misses, on separate goroutines
+	audioFiles     audioFiles     // the byte sources staged for the runtime
 
 	// On the engine goroutine.
 	// main is the activity's view, the first surface; requests is the last image request number, across surfaces.
@@ -307,6 +312,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 				s.engine.Close()
 			}
 			s.canvasRequests.close()
+			s.audioFiles.close()
 			s.closeNatives()
 			return
 		}
@@ -462,6 +468,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			readGamepad(&r)
 		case msgPhysicalKey:
 			s.physicalKey(&r)
+		case msgAudioReport:
+			s.audioReport(&r)
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {
@@ -1089,6 +1097,7 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 		first, requests, natives, frames, canvases = false, nil, nil, nil, nil
 	}
 	s.releasePrograms()
+	s.stageAudio(v.id, b)
 	for _, l := range loads {
 		go s.load(l)
 	}
@@ -1582,6 +1591,8 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			w.str(r.Voice)
 			w.float(r.Rate)
 			w.float(r.Pitch)
+		case driver.ItemAudio:
+			writeAudio(w, it.Count, it.Audio)
 		case driver.ItemBiometricAvailability:
 			w.u32(it.Count)
 		case driver.ItemBiometricAuthenticate:

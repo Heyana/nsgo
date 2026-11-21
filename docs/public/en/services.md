@@ -392,6 +392,10 @@ Set `audio.Voice.Loop` to repeat a sound playback until `Stop` or `Close`. For s
 
 On macOS 14 and iOS 17 or later, a finite track uses the native queue to prepare each repetition before the current one ends. Earlier Apple versions seek to the loop start when the current pass ends. On Linux and the web, a loop with a start seeks back to it at the end, with a short gap.
 
+## Audio playback
+
+Use `audio.LoadSound` for short cues that can overlap and `audio.NewPlayer` for streamed audio with playback controls. macOS, iOS and Android support WAV, AAC (`.m4a`) and MP3. Use `cx.Env().CanPlayAudio` to detect playback support. Android pauses a player when its view leaves the screen and limits each decoded sound to 1 MiB.
+
 ## Biometrics
 
 `cx.BiometricAvailability` reports whether Face ID, Touch ID or a device fingerprint is enrolled; Android does not say which kind is enrolled, so there it reports a fingerprint when one is enrolled and otherwise face when the device has face hardware. `cx.AuthenticateBiometric` asks the system to confirm the user with a reason, which must not be empty, and reports success, failure, cancellation or unavailability. It does not choose a passcode fallback for the app.

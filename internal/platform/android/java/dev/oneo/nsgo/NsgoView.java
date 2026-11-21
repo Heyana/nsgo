@@ -156,6 +156,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * The first view, which the engine serves, for an overlay's view: null for the first view itself. The first view receives every message and hands an overlay's batches and images on to its view, whose events name its surface.
      */
     private final NsgoView primary;
+    // The first view owns the engine's sounds and players, including its overlays'.
+    private Audio audio;
     /** The surface this view shows, 0 for the first view's, else an overlay's (driver.SurfaceOverlay). */
     private final int surface;
     final CanvasImages<CanvasNode.Picture> canvasImages = new CanvasImages<>(this::requestCanvasImage, p -> p.bitmap.recycle(), ui::post);
@@ -531,8 +533,24 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     @Override
+    public void onVisibilityAggregated(boolean visible) {
+        super.onVisibilityAggregated(visible);
+        if (!visible) pauseAudio();
+    }
+
+    private boolean audioVisible() {
+        return isAttachedToWindow() && isShown() && getWindowVisibility() == View.VISIBLE;
+    }
+
+    private void pauseAudio() {
+        Audio shared = (primary == null ? this : primary).audio;
+        if (shared != null) shared.pauseSurface(surface);
+    }
+
+    @Override
     protected void onDetachedFromWindow() {
         releasePhysicalKeys();
+        pauseAudio();
         releaseEnvironment();
         // An app waiting for the folds starts as the view leaves its window, as it would have without them.
         releaseStart();
@@ -582,6 +600,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         attached = false;
         attachment.detach();
         updateGestureRects();
+        pauseAudio();
         unregisterBack();
         write(Protocol.SURFACE, java.nio.ByteBuffer.allocate(13).putInt(surface)
                 .put((byte) Protocol.SURFACE_DETACH).putLong(0).array());
@@ -841,6 +860,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * Lets go of what serves the app's process once it ends or the view stops, on the UI thread: the network callback, the decoders, back and the native components, as an ended app sends no deletes. It runs again harmlessly.
      */
     private void release() {
+        if (audio != null) { audio.close(); audio = null; }
         measuring = false;
         if (perfPanel != null) {
             getOverlay().remove(perfPanel);
@@ -884,6 +904,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         gestureRects = Collections.emptyList();
         updateGestureRects();
         clearDisplayHolds();
+        if (primary.audio != null) primary.audio.closeSurface(surface);
         canvasImages.close();
         decoder.shutdownNow();
         files.shutdownNow();
@@ -1094,6 +1115,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 });
                 break;
             }
+            case Protocol.EXT_AUDIO_FILE: {
+                int from = message.readInt(), id = message.readInt();
+                String path = Protocol.readString(message);
+                String code = Protocol.readString(message), reason = Protocol.readString(message);
+                ui.post(() -> { if (audio != null) audio.file(from, id, path, code, reason); });
+                break;
+            }
             case Protocol.EXT_ASSET_READ: {
                 long id = message.readLong();
                 String path = Protocol.readString(message);
@@ -1248,8 +1276,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             LocalePrefs.read(formatLocale, hostLocale != null ? null : locale,
                     android.text.format.DateFormat.is24HourFormat(getContext()),
                     measurementSystem(formatLocale)).write(d);
-            // The second capability byte's bits are taken too: a third ends the payload, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads: Protocol.CAP_EXTENDED_MESSAGES and Protocol.CAP_DISCOVER_SERVICES.
-            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_DISCOVER_SERVICES;
+            // The second capability byte's bits are taken too: a third ends the payload, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, and Protocol.CAP_DISCOVER_SERVICES.
+            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES;
             d.writeByte(third);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
@@ -3278,6 +3306,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 String text = Protocol.readString(in), lang = Protocol.readString(in), voice = Protocol.readString(in);
                 float rate = in.readFloat(), pitch = in.readFloat();
                 Speaker.handle(this, count, command, text, lang, voice, rate, pitch);
+                break;
+            }
+            case Protocol.ITEM_AUDIO: {
+                NsgoView first = primary == null ? this : primary;
+                if (first.audio == null) first.audio = new Audio(first.getContext(), first::write);
+                first.audio.command(surface, audioVisible(), in);
                 break;
             }
             case Protocol.ITEM_BIOMETRIC_AUTHENTICATE: {
