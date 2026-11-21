@@ -39,17 +39,18 @@ page := core.Scroll{
 
 ```go
 core.List{
-	Count:         func() int { return len(items) },
-	Key:           func(i int) any { return items[i].ID },
+	Count:         func() int { return len(items.Get()) },
+	Key:           func(i int) any { return items.Get()[i].ID },
 	EstimatedSize: 56,
 	Row: func(cx *core.Scope, r core.ListRow) core.Node {
-		item := items[r.Index()]
 		return core.View{Style: core.Style{Padding: core.All(12)}, Children: []core.Node{
-			core.Text{Content: item.Title},
+			core.Text{ContentFunc: func() string { return items.Get()[r.Index()].Title }},
 		}}
 	},
 }
 ```
+
+`Row` runs once per recycled cell and updates `r.Index()` when that cell is reused for another row, so read `r.Index()` and item signals inside reactive functions (`ContentFunc`, `StyleFunc`, `NewMemo`) rather than capturing a one-time value while building the row. Idle cells are parked so their computations wait until the cell is bound to a live row again.
 
 `Header`, `Footer`, `Empty` and `Separator` hold the content around and between rows. `NumColumns` places rows side by side, `Gap` and `ColumnGap` separate them, and `Horizontal` scrolls across. `StickyHeaderIndices` pins those rows to the start of the viewport until the next one pushes them out, and `StickyHeaderOffset` keeps a header above them clear.
 

@@ -39,17 +39,18 @@ page := core.Scroll{
 
 ```go
 core.List{
-	Count:         func() int { return len(items) },
-	Key:           func(i int) any { return items[i].ID },
+	Count:         func() int { return len(items.Get()) },
+	Key:           func(i int) any { return items.Get()[i].ID },
 	EstimatedSize: 56,
 	Row: func(cx *core.Scope, r core.ListRow) core.Node {
-		item := items[r.Index()]
 		return core.View{Style: core.Style{Padding: core.All(12)}, Children: []core.Node{
-			core.Text{Content: item.Title},
+			core.Text{ContentFunc: func() string { return items.Get()[r.Index()].Title }},
 		}}
 	},
 }
 ```
+
+`Row` 对每个复用的单元格只运行一次，复用到另一行时会更新 `r.Index()`，因此应在响应式函数（`ContentFunc`、`StyleFunc`、`NewMemo`）里读取 `r.Index()` 和条目 signal，而不要在构建行组件时读成静态值。空闲单元格的作用域会被挂起（park），其中的计算会等到单元格重新绑定到有效行时再运行。
 
 `Header`、`Footer`、`Empty` 和 `Separator` 放置在列表首尾和行之间。`NumColumns` 让行并排，`Gap` 和 `ColumnGap` 设置间距，`Horizontal` 横向滚动。`StickyHeaderIndices` 把这些行固定在视口起点，直到下一行把它们推走，`StickyHeaderOffset` 让它们上方的内容保持可见。
 
