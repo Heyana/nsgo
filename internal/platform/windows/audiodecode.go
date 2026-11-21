@@ -5,6 +5,7 @@ package windows
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"runtime"
 	"sync"
@@ -172,13 +173,9 @@ func decodeWindowsSound(data []byte, name string, limit time.Duration) (decodedS
 	if err := setSoundFormat(reader); err != nil {
 		return pcm, event, err
 	}
-	format, err := getSoundFormat(reader)
-	if err != nil {
-		return pcm, event, err
-	}
-	pcm.format = soundFormat{channels: min(format.channels, 2), rate: format.rate}
-	frameBytes := int(pcm.format.channels) * 4
-	maxBytes := int(limit*time.Duration(format.rate)/time.Second) * frameBytes
+	var format soundFormat
+	var frameBytes, maxBytes int
+	readFormat := true
 	for {
 		var flags uint32
 		var sample *comObject
@@ -191,14 +188,26 @@ func decodeWindowsSound(data []byte, name string, limit time.Duration) (decodedS
 			sample.release()
 			return decodedSound{}, event, errors.New("the audio decoder could not read the next sample")
 		}
-		if flags&mfReaderFormatChanged != 0 {
-			actual, err := getSoundFormat(reader)
-			if err != nil || actual != format {
-				sample.release()
-				return decodedSound{}, event, errors.New("the sound's format changed while decoding")
-			}
-		}
+		readFormat = readFormat || flags&mfReaderFormatChanged != 0
 		if sample != nil {
+			if readFormat {
+				// Some decoders, including AAC, negotiate their actual
+				// output when the reader asks for the first sample.
+				actual, err := getSoundFormat(reader)
+				if err != nil {
+					sample.release()
+					return decodedSound{}, event, err
+				}
+				if len(pcm.data) != 0 && actual != format {
+					sample.release()
+					return decodedSound{}, event, fmt.Errorf("the sound changed from %d channels at %d Hz to %d channels at %d Hz", format.channels, format.rate, actual.channels, actual.rate)
+				}
+				format = actual
+				pcm.format = soundFormat{channels: min(actual.channels, 2), rate: actual.rate}
+				frameBytes = int(pcm.format.channels) * 4
+				maxBytes = int(limit*time.Duration(actual.rate)/time.Second) * frameBytes
+				readFormat = false
+			}
 			cut, err := pcm.appendSample(sample, int(format.channels)*4, maxBytes)
 			sample.release()
 			if err != nil {
