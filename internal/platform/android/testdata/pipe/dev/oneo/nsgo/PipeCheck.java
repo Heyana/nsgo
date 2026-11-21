@@ -81,11 +81,11 @@ public final class PipeCheck {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         // Consecutive frames preserve their boundaries and every current kind.
 
-        for (int kind = 1; kind <= Protocol.TEXT_REPLY; kind++) bytes.write(frame(kind, payload.length, payload));
+        for (int kind = 1; kind <= Protocol.TEXT_REQUEST; kind++) bytes.write(frame(kind, payload.length, payload));
         bytes.write(frame(13, 0, new byte[0]));
         DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()));
 
-        for (int kind = 1; kind <= Protocol.TEXT_REPLY; kind++) {
+        for (int kind = 1; kind <= Protocol.TEXT_REQUEST; kind++) {
             Protocol.Message message = Protocol.readMessage(in);
             check(message != null && message.kind == kind && Arrays.equals(message.payload, payload), "changed valid frame " + kind);
         }
@@ -95,7 +95,7 @@ public final class PipeCheck {
             refused(text.getBytes(StandardCharsets.UTF_8), "unexpected message kind");
         }
 
-        for (int kind : new int[]{0, Protocol.TEXT_REPLY + 1, 255}) refused(frame(kind, 0, new byte[0]), "unexpected message kind");
+        for (int kind : new int[]{0, Protocol.TEXT_REQUEST + 1, 255}) refused(frame(kind, 0, new byte[0]), "unexpected message kind");
         for (int length : new int[]{64 * 1024 * 1024 + 1, Integer.MAX_VALUE, -1, Integer.MIN_VALUE}) {
             refused(frame(1, length, new byte[0]), "message length");
         }
