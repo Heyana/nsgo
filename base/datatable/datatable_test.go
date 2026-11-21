@@ -553,3 +553,96 @@ func TestDataTableColumnFixedAtTheRight(t *testing.T) {
 		t.Errorf("a press on the right column selected %v", pressed)
 	}
 }
+
+// A sortable column's sort control takes a tap at its center on a phone,
+// where the adjacent resize handle's touch slop extends left from the
+// trailing edge; the handle itself still resizes from its band, and on a
+// non-sortable column from its slop too.
+func TestDataTableSortControlTakesATapOnPhones(t *testing.T) {
+	var (
+		ref     datatable.Ref
+		sorts   []datatable.Sort
+		sel     []datatable.Selection
+		resized []string
+	)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		sort := core.NewSignal(cx, datatable.Sort{Key: "symbol"})
+		return datatable.DataTable{
+			TestID: "table", Ref: &ref, NoRowHeader: true,
+			Columns: func() []datatable.Column {
+				return []datatable.Column{
+					{Key: "symbol", Title: "Symbol", Width: 96, Sortable: true, Fixed: true},
+					{Key: "price", Title: "Price", Width: 96, Sortable: true, Align: datatable.AlignEndColumn},
+					{Key: "plain", Title: "Plain", Width: 96},
+					{Key: "volume", Title: "Volume", Width: 110, Sortable: true, Align: datatable.AlignEndColumn},
+					{Key: "total", Title: "Total", Width: 96, Sortable: true, FixedRight: true},
+				}
+			},
+			RowCount:          func() int { return 20 },
+			Text:              func(row, col int) string { return fmt.Sprintf("R%dC%d", row, col) },
+			Sort:              sort.Get,
+			OnSortChange:      func(s datatable.Sort) { sort.Set(s); sorts = append(sorts, s) },
+			OnSelectionChange: func(s datatable.Selection) { sel = append(sel, s) },
+			OnColumnResize:    func(key string, w core.Points) { resized = append(resized, fmt.Sprint(key, " ", w)) },
+			Style:             core.Style{Width: core.Pt(356), Height: core.Pt(300)},
+		}
+	}, nsgotest.Size(390, 844), nsgotest.Environment(core.Environment{OS: core.OSIOS, Idiom: core.IdiomPhone}))
+
+	tapCenter := func(selector string) {
+		v := app.Find(selector)
+		app.PressAt(selector, core.Point{X: v.Frame.Size.Width / 2, Y: v.Frame.Size.Height / 2})
+	}
+
+	// Pinned left column: center and trailing edge of the 20pt sort button
+	// must sort, not hit the resize handle's touch slop.
+	tapCenter("id:sort:symbol")
+	if len(sorts) != 1 || sorts[0] != (datatable.Sort{Key: "symbol", Descending: true}) {
+		t.Fatalf("after tapping pinned sort button: sorts = %v, want [{symbol true}]", sorts)
+	}
+	symSort := app.Find("id:sort:symbol")
+	app.PressAt("id:sort:symbol", core.Point{X: symSort.Frame.Size.Width - 1, Y: symSort.Frame.Size.Height / 2})
+	if len(sorts) != 2 || sorts[1] != (datatable.Sort{}) {
+		t.Fatalf("after tapping trailing edge of pinned sort button: sorts = %v, want unsorted", sorts)
+	}
+
+	// Scrolling column: center of its sort button must sort too.
+	tapCenter("id:sort:price")
+	if len(sorts) != 3 || sorts[2] != (datatable.Sort{Key: "price", Descending: false}) {
+		t.Fatalf("after tapping scrolling sort button: sorts = %v, want price ascending", sorts)
+	}
+
+	// Right-pinned column: center of its sort button must sort.
+	tapCenter("id:sort:total")
+	if len(sorts) != 4 || sorts[3] != (datatable.Sort{Key: "total", Descending: false}) {
+		t.Fatalf("after tapping right-pinned sort button: sorts = %v, want total ascending", sorts)
+	}
+
+	// After horizontal scroll, the newly revealed scrolling column's sort button must sort.
+	ref.ScrollToColumn("volume", false)
+	app.Settle()
+	tapCenter("id:sort:volume")
+	if len(sorts) != 5 || sorts[4] != (datatable.Sort{Key: "volume", Descending: false}) {
+		t.Fatalf("after scrolling and tapping volume sort button: sorts = %v, want volume ascending", sorts)
+	}
+
+	// Tapping the title text still hits the header cell and selects the column.
+	app.PressAt("text:Symbol", core.Point{X: 10, Y: 8})
+	if len(sel) == 0 || sel[len(sel)-1] != (datatable.Selection{Row: -1, Column: 0}) {
+		t.Fatalf("tapping header label selected %v, want column 0", sel)
+	}
+
+	// On a non-sortable column, a tap inside the resize handle's 10pt touch
+	// slop passes through the label to the handle rather than selecting the column.
+	selBefore := len(sel)
+	plainHeader := app.Find("text:Plain").Parent.Parent
+	app.PressAt("id:resize:plain", core.Point{X: -5, Y: plainHeader.Frame.Size.Height / 2})
+	if len(sel) != selBefore {
+		t.Fatalf("tapping non-sortable resize handle touch slop selected %v", sel[selBefore:])
+	}
+
+	// The resize handle itself still accepts drags on sortable columns.
+	app.Drag("id:resize:symbol", core.Point{X: 20})
+	if len(resized) == 0 || resized[len(resized)-1] != "symbol 116" {
+		t.Fatalf("dragging sortable column resize handle: resized = %v, want symbol 116", resized)
+	}
+}

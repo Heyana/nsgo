@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nsgo-dev/nsgo/base/internal/parts"
 	"github.com/nsgo-dev/nsgo/base/internal/window"
 	"github.com/nsgo-dev/nsgo/core"
 )
@@ -1482,6 +1483,9 @@ func (t *dataTable) fit(def int) float32 {
 	widest := t.cx.MeasureText(column.title(), font).Width
 	if column.Sortable {
 		widest += sortWidth
+	}
+	if t.resizable(def) {
+		widest += float32(parts.HandleBand)
 	}
 	t.cx.Untrack(func() {
 		for row := max(vs-fitRows, 0); row < min(ve+fitRows, rows); row++ {

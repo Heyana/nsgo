@@ -243,3 +243,116 @@ func TestInterpolateDragPath(t *testing.T) {
 		t.Fatalf("interpolated path = %+v", pts)
 	}
 }
+
+// TestDataTableHeaderHitTestOnPhone mirrors iOS hitTest's ReachView traversal
+// over a DataTable titleCell whose HeaderContent (BoxNone, ZIndex 2, keeping
+// clear of the 3pt resize band) sits above ResizeHandle (ZIndex 1, 10pt touch
+// slop): taps on the sort button land on it, taps in the 3pt band or a
+// non-sortable column's touch slop reach the resize handle, and taps on the
+// title reach the header cell.
+func TestDataTableHeaderHitTestOnPhone(t *testing.T) {
+	type hitNode struct {
+		name      string
+		frame     driver.Bounds
+		props     driver.ViewProps
+		pressable bool
+		children  []*hitNode
+	}
+	var hitTest func(n *hitNode, p driver.Point) []*hitNode
+	hitTest = func(n *hitNode, p driver.Point) []*hitNode {
+		own, kids := driver.ReachView(n.frame.Size, &n.props, driver.Bounds{}, false, p)
+		if !own && !kids {
+			return nil
+		}
+		if kids {
+			for i := len(n.children) - 1; i >= 0; i-- {
+				c := n.children[i]
+				local := driver.Point{X: p.X - c.frame.Origin.X, Y: p.Y - c.frame.Origin.Y}
+				if chain := hitTest(c, local); chain != nil {
+					return append(chain, n)
+				}
+			}
+		}
+		if own {
+			return []*hitNode{n}
+		}
+		return nil
+	}
+
+	makeHeader := func(sortable bool) *hitNode {
+		handle := &hitNode{
+			name:      "resize",
+			frame:     driver.Bounds{Origin: driver.Point{X: 93, Y: 0}, Size: driver.Size{Width: 3, Height: 32}},
+			props:     driver.ViewProps{HitSlop: driver.Edges{Left: 10, Right: 10}},
+			pressable: true,
+		}
+		contentKids := []*hitNode{
+			{
+				name:  "label",
+				frame: driver.Bounds{Origin: driver.Point{X: 0, Y: 6}, Size: driver.Size{Width: 93, Height: 20}},
+				props: driver.ViewProps{PointerEvents: driver.PointerEventsNone},
+			},
+		}
+		if sortable {
+			contentKids[0].frame.Size.Width = 73
+			contentKids = append(contentKids, &hitNode{
+				name:      "sort",
+				frame:     driver.Bounds{Origin: driver.Point{X: 73, Y: 6}, Size: driver.Size{Width: 20, Height: 20}},
+				pressable: true,
+				children: []*hitNode{{
+					name:  "chevrons",
+					frame: driver.Bounds{Origin: driver.Point{X: 4, Y: 4}, Size: driver.Size{Width: 12, Height: 12}},
+					props: driver.ViewProps{PointerEvents: driver.PointerEventsNone},
+				}},
+			})
+		}
+		content := &hitNode{
+			name:     "header-content",
+			frame:    driver.Bounds{Origin: driver.Point{X: 0, Y: 0}, Size: driver.Size{Width: 93, Height: 32}},
+			props:    driver.ViewProps{PointerEvents: driver.PointerEventsBoxNone},
+			children: contentKids,
+		}
+		return &hitNode{
+			name:      "title-cell",
+			frame:     driver.Bounds{Size: driver.Size{Width: 96, Height: 32}},
+			pressable: true,
+			// Native child order by ZIndex: ResizeHandle (1) below HeaderContent (2).
+			children: []*hitNode{handle, content},
+		}
+	}
+
+	resolve := func(root *hitNode, p driver.Point) string {
+		chain := hitTest(root, p)
+		nodes := make([]deviceHitNode, len(chain))
+		for i, n := range chain {
+			nodes[i] = deviceHitNode{index: i, isNSGoView: true, pressable: n.pressable}
+		}
+		got := resolveDevicePress(nodes, false, driver.Modifiers{})
+		if got.kind != devicePressView || got.index < 0 {
+			return ""
+		}
+		return chain[got.index].name
+	}
+
+	sortable := makeHeader(true)
+	if got := resolve(sortable, driver.Point{X: 83, Y: 16}); got != "sort" {
+		t.Fatalf("sort button center hit %q, want sort", got)
+	}
+	if got := resolve(sortable, driver.Point{X: 92, Y: 16}); got != "sort" {
+		t.Fatalf("sort button trailing edge hit %q, want sort", got)
+	}
+	if got := resolve(sortable, driver.Point{X: 94.5, Y: 16}); got != "resize" {
+		t.Fatalf("resize handle band hit %q, want resize", got)
+	}
+	if got := resolve(sortable, driver.Point{X: 30, Y: 16}); got != "title-cell" {
+		t.Fatalf("header label hit %q, want title-cell", got)
+	}
+
+	plain := makeHeader(false)
+	if got := resolve(plain, driver.Point{X: 88, Y: 16}); got != "resize" {
+		t.Fatalf("non-sortable handle touch slop hit %q, want resize", got)
+	}
+	if got := resolve(plain, driver.Point{X: 30, Y: 16}); got != "title-cell" {
+		t.Fatalf("non-sortable header label hit %q, want title-cell", got)
+	}
+}

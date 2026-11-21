@@ -167,14 +167,31 @@ func TestCommand(t *testing.T) {
 }
 
 func TestDataTableSorts(t *testing.T) {
-	app := startDesktop(t)
-	app.Press("id:nav-DataTable")
-	app.WaitFor("id:demo-DataTable", 5*time.Second)
+	app := open(t, "DataTable")
 	has(t, app, "T0000")
 	// The pinned column's header shows on any screen.
 	app.Press("id:sort:symbol")
 	if got := app.Find("id:table-sort").Text; got != "symbol descending" {
 		t.Errorf("the sort reads %q", got)
+	}
+}
+
+// TestDataTableSortsPhone taps the pinned and scrolling sort buttons at their
+// centers on a phone, where each column's resize handle carries touch slop.
+func TestDataTableSortsPhone(t *testing.T) {
+	app := nsgotest.Start(t, Root, nsgotest.Size(390, 844), nsgotest.Environment(core.Environment{OS: core.OSIOS, Idiom: core.IdiomPhone}))
+	app.Press("id:nav-DataTable")
+	app.WaitFor("id:demo-DataTable", 5*time.Second)
+	has(t, app, "T0000")
+	sym := app.Find("id:sort:symbol")
+	app.PressAt("id:sort:symbol", core.Point{X: sym.Frame.Size.Width / 2, Y: sym.Frame.Size.Height / 2})
+	if got := app.Find("id:table-sort").Text; got != "symbol descending" {
+		t.Errorf("pinned sort reads %q", got)
+	}
+	price := app.Find("id:sort:price")
+	app.PressAt("id:sort:price", core.Point{X: price.Frame.Size.Width / 2, Y: price.Frame.Size.Height / 2})
+	if got := app.Find("id:table-sort").Text; got != "price ascending" {
+		t.Errorf("scrolling sort reads %q", got)
 	}
 }
 

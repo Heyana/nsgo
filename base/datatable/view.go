@@ -1068,7 +1068,13 @@ func (t *dataTable) headerRegion(which tableRegion, w tableWindows) core.Node {
 			Children: []core.Node{core.View{
 				StyleFunc: func() core.Style {
 					s := core.Style{Position: core.Absolute, Top: z, Bottom: z, Left: z}
-					if which == regionScroll {
+					switch which {
+					case regionFixed:
+						s.Width = px(t.sizes.Get().fixed)
+					case regionRight:
+						s.Width = px(t.sizes.Get().right)
+					case regionScroll:
+						s.Width = px(w.span.Get())
 						s.Left = px(t.scrollOrigin(w))
 						s.Animated = &core.AnimatedStyle{TranslateX: t.follow.shiftX.Get()}
 					}
@@ -1170,20 +1176,34 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 			align = core.TextAlignEnd
 		}
 		// The title takes the room the sort button leaves, aligned as the
-		// column's cells.
-		label = core.Text{Content: col.title(), MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: px(0), TextAlign: align}}
+		// column's cells, and passes hits through to the header cell or
+		// the resize handle's touch slop.
+		label = core.Text{Content: col.title(), MaxLines: 1, PointerEvents: core.PointerEventsNone,
+			Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: px(0), TextAlign: align}}
 	}
 	content := []core.Node{label}
 	if col.Sortable {
 		content = append(content, t.sortButton(def, sorted))
 	}
+	resizable := t.resizable(def)
+	// Above the resize handle (ZIndex 1) so the sort button and any custom
+	// header controls take taps even where the handle's touch slop reaches
+	// left, while keeping clear of the handle's own band and passing empty
+	// space through to the handle and the header cell.
 	children := []core.Node{core.View{
-		Class:     t.p.Classes.HeaderContent,
-		Style:     core.Style{FlexGrow: 1, Direction: core.Row, AlignItems: core.AlignCenter, MinWidth: px(0)},
-		StyleFunc: func() core.Style { return t.styles().HeaderContent },
-		Children:  content,
+		Class:         t.p.Classes.HeaderContent,
+		PointerEvents: core.PointerEventsBoxNone,
+		Style:         core.Style{FlexGrow: 1, Direction: core.Row, AlignItems: core.AlignCenter, MinWidth: px(0), ZIndex: 2},
+		StyleFunc: func() core.Style {
+			s := t.styles().HeaderContent
+			if resizable && s.Margin.Right < parts.HandleBand {
+				s.Margin.Right = parts.HandleBand
+			}
+			return s
+		},
+		Children: content,
 	}}
-	if t.resizable(def) {
+	if resizable {
 		children = append(children, base.ResizeHandle{
 			Axis: base.Horizontal, Edge: base.HandleTrailing, TestID: "resize:" + col.Key,
 			OnDragStart: func() { t.resizeStart(def) },
@@ -1220,10 +1240,7 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 			}
 			levels := t.headerLevels()
 			h := t.headerRowHeightNow()
-			origin := 0.0
-			if which == regionScroll {
-				origin = c.startOf(w.colOrigin.Get())
-			}
+			origin := t.regionOrigin(which, w)
 			st := core.Style{Position: core.Absolute, Top: px(h * float32(levels-1)), Height: px(h),
 				Left: px(c.start(c.displayOf(def)) - origin), Width: px(c.width(def)), Direction: core.Row,
 				AlignItems: core.AlignCenter, Overflow: core.Hidden, JustifyContent: justify(col.Align)}
@@ -1280,7 +1297,7 @@ func (t *dataTable) sortButton(def int, sorted *core.Memo[Sort]) core.Node {
 		Class:     t.p.Classes.SortIndicator,
 		StyleFunc: func() core.Style { return t.styles().SortIndicator },
 		OnPress:   func(core.PressEvent) { t.sortNext(def) },
-		Children: []core.Node{core.View{Style: core.Style{Width: px(12), Height: px(12)}, Children: []core.Node{
+		Children: []core.Node{core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Width: px(12), Height: px(12)}, Children: []core.Node{
 			chevron([6]float32{7, 9, 12, 4, 17, 9}, false, t.p.Classes.SortAscending,
 				func() core.Style { return t.styles().SortAscending }),
 			chevron([6]float32{7, 15, 12, 20, 17, 15}, true, t.p.Classes.SortDescending,
