@@ -83,6 +83,9 @@ final class Protocol {
     /** The requesting surface, the request's count and the app's data directory. */
     static final int DISK_SPACE = 23;
 
+    /** Starts frame sampling (with or without a visible panel), or updates the panel. */
+    static final int PERF_PANEL = 24;
+
     /** A correlated text request: request ID and operation. */
     static final int TEXT_REQUEST = 26;
 
@@ -131,6 +134,8 @@ final class Protocol {
 
     /** Answers TEXT_REQUEST with its request ID, its operation, and the reply bytes or an error. */
     static final int TEXT_REPLY = 27;
+    /** Frame timestamp, display period, app UI work in nanoseconds, and whether the app changed. */
+    static final int PERF_FRAME = 28;
 
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;

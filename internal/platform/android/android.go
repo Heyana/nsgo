@@ -82,7 +82,10 @@ const (
 
 	msgPixelFrame = 22
 	// msgDiskSpace asks what the app can allocate on the volume containing its data directory.
-	msgDiskSpace   = 23
+	msgDiskSpace = 23
+	// This slot is inside the prior runtime's accepted range. A stale
+	// prebuilt runtime can ignore the optional monitor and keep running.
+	msgPerfPanel   = 24
 	msgTextRequest = 26
 
 	// Java to Go.
@@ -121,6 +124,7 @@ const (
 	// msgDiskSpaceReply answers msgDiskSpace, with byte counts or the reason it failed.
 	msgDiskSpaceReply = 25
 	msgTextReply      = 27
+	msgPerfFrame      = 28 // a monitored Choreographer frame and UI work since the previous frame
 )
 
 // The parts of an image view's request msgImage carries.
@@ -146,8 +150,8 @@ type surface struct {
 	// frameWanted is set while the app waits for a display frame, from
 	// its request until the runtime's answer.
 	frameWanted atomic.Bool
-	// perf measures the engine when a test asks (nsgo test -fps).
-	perf *engine.PerfMonitor
+	// perf measures the surface when an app or test asks (-fps).
+	perf *performance
 
 	ratio atomic.Uint32 // the pixel ratio's float32 bits, for rasterizing SVG
 
@@ -192,6 +196,8 @@ type Options struct {
 	Fonts []string
 	// Appearance is the appearance the app starts in.
 	Appearance driver.Appearance
+	// Perf shows the performance monitor (--nsgo-fps).
+	Perf bool
 	// Updates is how the app updates (updates.go).
 	Updates updates.Config
 }
@@ -268,10 +274,12 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 				<-s.started
 				break
 			}
-			s.startEngine(app, size, g, opts.Appearance, nil)
+			s.startEngine(app, size, g, opts, nil)
 		case msgFrame:
 			s.frameWanted.Store(false)
 			s.engine.FrameAt(frameTime(&r))
+		case msgPerfFrame:
+			s.perfFrame(&r)
 		case msgResize:
 			size, g, env := readResize(&r)
 			if env == nil || env.Equal(s.env) {
@@ -423,8 +431,8 @@ func init() {
 }
 
 // startEngine starts app's engine at size with the fold geometry g measured at it; test, when set, is what a test host opens it with.
-func (s *surface) startEngine(app engine.App, size driver.Size, g driver.Geometry, appearance driver.Appearance, test *testOpen) {
-	eopts := engine.Options{Size: size, Geometry: g, Environment: s.env, Appearance: appearance, Host: s.hostOptions(),
+func (s *surface) startEngine(app engine.App, size driver.Size, g driver.Geometry, opts Options, test *testOpen) {
+	eopts := engine.Options{Size: size, Geometry: g, Environment: s.env, Appearance: opts.Appearance, Host: s.hostOptions(),
 		Secrets: keystore{s}}
 	// The runtime passes the app's own files and cache directories.
 	data, logs := os.Getenv("NSGO_DATA_DIR"), ""
@@ -436,10 +444,14 @@ func (s *surface) startEngine(app engine.App, size driver.Size, g driver.Geometr
 		eopts.UseTest(test.options, &test.pin)
 		// A phone's screen is what it is.
 		eopts.Size, eopts.Geometry = size, g
-		if test.options.FPS {
-			s.perf = engine.NewPerfMonitor()
-			eopts.Perf = s.perf
+	}
+	if opts.Perf || test != nil && test.options.FPS {
+		s.perf = &performance{monitor: engine.NewPerfMonitor()}
+		eopts.Perf = s.perf.monitor
+		if test == nil {
+			s.perf.showPanel = true
 		}
+		s.send(msgPerfPanel, func(w *writer) { w.flags(s.perf.showPanel) })
 	}
 	imageload.HTTP = s.httpGet
 	imageload.UseDiskCache(eopts.CacheDir)
@@ -618,7 +630,14 @@ func useDNS() {
 }
 
 func (s *surface) requestText(kind byte, body func(*writer)) ([]byte, bool) {
+	var start time.Time
+	if s.perf != nil {
+		start = time.Now()
+	}
 	id, reply := s.textRPC.call(kind, textTimeout, body)
+	if !start.IsZero() {
+		s.perf.monitor.RecordTextRoundTrip(time.Since(start))
+	}
 	if reply.err != nil {
 		log.Printf("android text %s %d: %v", textOperation(kind), id, reply.err)
 		return nil, false

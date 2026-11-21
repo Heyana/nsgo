@@ -142,6 +142,8 @@ type PerfSnapshot struct {
 	App Stat
 	// Core is the core's work per commit.
 	Core Stat
+	// TextRoundTrip is the cost of a request to the native text engine, where measured.
+	TextRoundTrip *Stat
 	// Items is the mean mount items per commit.
 	Items float32
 	// Latency is how long batches waited between the engine handing them
@@ -203,6 +205,7 @@ type perfInner struct {
 	// Commits not counted after the monitor is installed.
 	commitWarmup int
 	latencies    []time.Duration
+	text         []time.Duration
 	// Engine wake-ups: when they ended, and how long they were busy.
 	busy    []busy
 	process ProcessSample
@@ -289,6 +292,13 @@ func (m *PerfMonitor) RecordLatency(latency time.Duration) {
 	if m.inner.frameWarmup == 0 {
 		m.inner.latencies = push(m.inner.latencies, latency)
 	}
+}
+
+// RecordTextRoundTrip measures a request to a text engine across a process boundary.
+func (m *PerfMonitor) RecordTextRoundTrip(cost time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inner.text = push(m.inner.text, cost)
 }
 
 // RecordCommit records an engine wake-up that committed.
@@ -416,6 +426,11 @@ func (m *PerfMonitor) Snapshot() PerfSnapshot {
 	for i, f := range inner.frames {
 		frames[i] = f.cost
 	}
+	var text *Stat
+	if len(inner.text) > 0 {
+		stat := statOf(inner.text)
+		text = &stat
+	}
 	process := inner.process
 	return PerfSnapshot{
 		FPS:           fps,
@@ -428,6 +443,7 @@ func (m *PerfMonitor) Snapshot() PerfSnapshot {
 		Commits:       float32(commits),
 		App:           statOf(appSamples),
 		Core:          statOf(coreSamples),
+		TextRoundTrip: text,
 		Items:         items,
 		Latency:       statOf(inner.latencies),
 		EngineBusy:    float32(busyTime) / float32(perfRateWindow) * 100,
@@ -455,7 +471,7 @@ func (s PerfSnapshot) Readings() string {
 	if s.Process.Memory != nil {
 		memory = fmt.Sprintf("%.0f MB", float64(*s.Process.Memory)/1e6)
 	}
-	return fmt.Sprintf("%4.0f FPS   max %.0f · %s\n"+
+	line := fmt.Sprintf("%4.0f FPS   max %.0f · %s\n"+
 		"TICK %s  gap %.1f\n"+
 		"MAIN %s  drop %.0f%%\n"+
 		"APP  %s  %.0f/s\n"+
@@ -469,6 +485,10 @@ func (s PerfSnapshot) Readings() string {
 		statText(s.Core), s.Items,
 		statText(s.Latency), s.EngineBusy,
 		percent(s.Process.CPU), percent(s.Process.GPU), memory)
+	if s.TextRoundTrip != nil {
+		line += "\nTEXT " + statText(*s.TextRoundTrip)
+	}
+	return line
 }
 
 func statText(s Stat) string {
@@ -485,6 +505,9 @@ func (s PerfSnapshot) String() string {
 	line := fmt.Sprintf("fps %.0f (max %.0f) frame %s p95 %s dropped %.0f%% commits %.0f/s app %s core %s items %.0f latency %s engine %.0f%% passes %.0f/s",
 		s.FPS, s.MaxFPS, ms(s.Frame.Mean), ms(s.Frame.P95), s.Dropped*100, s.Commits, ms(s.App.Mean), ms(s.Core.Mean),
 		s.Items, ms(s.Latency.Mean), s.EngineBusy, s.Passes)
+	if s.TextRoundTrip != nil {
+		line += fmt.Sprintf(" text round trip %s p95 %s", ms(s.TextRoundTrip.Mean), ms(s.TextRoundTrip.P95))
+	}
 	if c := s.Process.CPU; c != nil {
 		line += fmt.Sprintf(" cpu %.0f%%", *c)
 	}

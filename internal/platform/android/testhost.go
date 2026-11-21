@@ -55,7 +55,7 @@ func (h *host) Open(app func(cx *core.Scope) core.Node, o testhost.Options) (tes
 	}
 	t := &testSurface{s: h.s, test: h.test, replies: map[uint32]chan agentReply{}}
 	h.s.testReply = t.reply
-	h.s.startEngine(app, size, h.test.geometry, 0, h.test)
+	h.s.startEngine(app, size, h.test.geometry, Options{}, h.test)
 	return t, nil
 }
 

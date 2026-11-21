@@ -178,7 +178,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps` 在 macOS、iOS、Windows 和 Linux 上于应用上方显示性能监视器：运行时帧和提交的开销。开发构建带有开发客户端；测量时请加 `-release`，它与 `nsgo build` 的构建方式相同。
+`-fps` 在 macOS、iOS、Windows、Linux 和 Android 上于应用上方显示性能监视器。它测量帧和提交的开销，Android 还显示原生文本请求的往返耗时。开发构建带有开发客户端；测量时请加 `-release`，它与 `nsgo build` 的构建方式相同。
 
 ## 语言与外观
 
@@ -212,7 +212,7 @@ claude mcp add nsgo -- go tool nsgo mcp
 
 | 参数 | 作用 |
 | --- | --- |
-| `--nsgo-fps` | 在 macOS、iOS、Windows 和 Linux 上显示性能监视器 |
+| `--nsgo-fps` | 在 macOS、iOS、Windows、Linux 和 Android 上显示性能监视器 |
 | `--nsgo-lang=zh-Hans` | 以某个语言区域启动应用，也可以是伪语言区域 |
 | `--nsgo-appearance=dark` | 以 `light`、`dark` 或跟随系统（`system`）的外观启动应用 |
 | `--nsgo-os=ios` | 让 Web 构建以 `macos`、`windows`、`linux`、`ios` 或 `android` 运行，`web` 表示按本身运行 |

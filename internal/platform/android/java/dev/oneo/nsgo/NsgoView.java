@@ -261,6 +261,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             event(Protocol.EVENT_ANIMATION, 0, id, 0, 0, "", 0, 0, 0, 0, 0, 0, value, null, 0, 0, false, "",
                     finished));
     private final Choreographer.FrameCallback tick = this::tick;
+    private boolean measuring;
+    private long perfWork;
+    private boolean perfDirty;
+    private PerfPanel perfPanel;
     /** A new node's style and props, as the first batch encoded them (startDefault). */
     private byte[] defaultStyle, defaultProps;
     private boolean ticking, frameWanted;
@@ -478,6 +482,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
         if (gamepads == null) gamepads = new Gamepads(getContext(), payload -> write(Protocol.GAMEPAD, payload));
         gamepads.start(ui);
+        if (measuring) startTicking();
     }
 
     /** The app's lifecycle follows the window's focus and visibility; coming back to the front answers the overlay permission requests the setting held. */
@@ -495,6 +500,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     protected void onWindowVisibilityChanged(int visibility) {
         super.onWindowVisibilityChanged(visibility);
         environment();
+        if (measuring && visibility == View.VISIBLE) startTicking();
         if (primary != null) primary.overlays.visibility(this, visibility);
     }
 
@@ -764,6 +770,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * Lets go of what serves the app's process once it ends or the view stops, on the UI thread: the network callback, the decoders, back and the native components, as an ended app sends no deletes. It runs again harmlessly.
      */
     private void release() {
+        measuring = false;
+        if (perfPanel != null) {
+            getOverlay().remove(perfPanel);
+            perfPanel = null;
+        }
         if (sensors != null) { sensors.close(); sensors = null; }
         if (network != null) {
             getContext().getSystemService(ConnectivityManager.class).unregisterNetworkCallback(network);
@@ -929,6 +940,17 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                         frameWanted = true;
                         startTicking();
                     });
+                    break;
+                case Protocol.PERF_PANEL:
+                    if (payload.length == 1) {
+                        boolean show = message.readBoolean();
+                        ui.post(() -> startPerf(show));
+                    } else {
+                        PerfPanel.Reading reading = PerfPanel.read(message);
+                        ui.post(() -> {
+                            if (perfPanel != null) perfPanel.update(reading, getWidth(), safeTop, safeLeft, safeRight, density);
+                        });
+                    }
                     break;
                 case Protocol.TEXT_REQUEST:
                     text(message);
@@ -2582,6 +2604,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     /** Applies a batch of this view's surface, whose ID comes first. */
     private void mount(byte[] batch, SparseArray<Map<String, PixelFrame>> pixels) {
+        long begin = measuring ? System.nanoTime() : 0;
         if (!mounted && primary == null) {
             // The engine runs: a press that started the app goes to it.
             mounted = true;
@@ -2643,6 +2666,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (animator.running()) startTicking();
         // The selection keeps to its texts, and goes with its area.
         if (selection != null) post(this::refreshSelection);
+        if (measuring) {
+            perfWork += System.nanoTime() - begin;
+            perfDirty = true;
+        }
     }
 
     /**
@@ -3336,6 +3363,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             Node n = nodes.get(id);
             if (n == null) return;
             n.values = values.set != 0 ? values : null;
+            if (measuring) perfDirty = true;
             if (n.view instanceof TextNode) {
                 ((TextNode) n.view).setTint(values.has(Animator.PROP_TEXT_COLOR) ? Text.argb(values.textColor) : 0);
             }
@@ -3351,7 +3379,28 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             if (n.canvas != null) n.canvas.patch(c.nums, c.colors);
             if (n.shader != null) n.shader.patch(c.nums);
             if (n.bound != null && n.embedded != null) n.embedded.animate(n.bound, c.nums, c.colors);
+            if (measuring) perfDirty = true;
         });
+    }
+
+    private void startPerf(boolean show) {
+        measuring = true;
+        if (show && perfPanel == null) {
+            perfPanel = new PerfPanel();
+            getOverlay().add(perfPanel);
+        }
+        if (isAttachedToWindow() && getWindowVisibility() == View.VISIBLE) startTicking();
+    }
+
+    private void sampleFrame(long frameTime, long begin, boolean changed) {
+        android.view.Display display = getDisplay();
+        float hz = display == null ? 0 : display.getRefreshRate();
+        long period = hz > 0 ? (long) (1_000_000_000.0 / hz) : 0;
+        write(Protocol.PERF_FRAME, java.nio.ByteBuffer.allocate(25)
+                .putLong(frameTime).putLong(period).putLong(perfWork + System.nanoTime() - begin)
+                .put((byte) (perfDirty || changed ? 1 : 0)).array());
+        perfWork = 0;
+        perfDirty = false;
     }
 
     private void startTicking() {
@@ -3371,7 +3420,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             // The frame's vsync time, on System.nanoTime's clock, for RequestAnimationFrame's time.
             write(Protocol.FRAME, java.nio.ByteBuffer.allocate(8).putLong(now).array());
         }
-        if (animator.running()) animator.step(now);
+        long begin = measuring ? System.nanoTime() : 0;
+        boolean animating = animator.running();
+        boolean changed = measuring && (!moving.isEmpty() || !ghosts.isEmpty());
+        if (animating) animator.step(now);
         applyAnimated();
         boolean more = animator.running();
         for (Node n : new ArrayList<>(moving)) {
@@ -3413,6 +3465,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
         }
         more |= !ghosts.isEmpty();
+        if (measuring && isAttachedToWindow() && getWindowVisibility() == View.VISIBLE) {
+            sampleFrame(now, begin, changed);
+            more = true;
+        }
         if (more) startTicking();
     }
 

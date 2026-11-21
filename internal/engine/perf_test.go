@@ -36,6 +36,25 @@ func TestReadingsOfEmptySnapshot(t *testing.T) {
 	}
 }
 
+func TestTextRoundTripReadingsUseRecentRequests(t *testing.T) {
+	monitor := NewPerfMonitor()
+	if got := monitor.Snapshot().TextRoundTrip; got != nil {
+		t.Fatalf("unmeasured text round trip = %+v", got)
+	}
+	monitor.RecordTextRoundTrip(time.Second)
+	for range perfCapacity {
+		monitor.RecordTextRoundTrip(2 * time.Millisecond)
+	}
+	got := monitor.Snapshot()
+	if got.TextRoundTrip == nil || got.TextRoundTrip.Mean != 2*time.Millisecond || got.TextRoundTrip.P95 != 2*time.Millisecond {
+		t.Fatalf("text round trip = %+v", got.TextRoundTrip)
+	}
+	if !strings.Contains(got.Readings(), "TEXT   2.00  p95   2.00") ||
+		!strings.Contains(got.String(), "text round trip 2.00ms p95 2.00ms") {
+		t.Fatalf("text timings missing from panel or log: %q, %q", got.Readings(), got.String())
+	}
+}
+
 func TestFramesAreRefreshesThatChangedSomething(t *testing.T) {
 	monitor := NewPerfMonitor()
 	start := time.Now()

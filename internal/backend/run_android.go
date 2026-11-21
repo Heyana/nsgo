@@ -13,5 +13,5 @@ func run(root engine.App, app func(*core.Scope), o Options) {
 	updates.Store = android.InstalledBy()
 	root, app = withUpdateChecks(root, app, updates, false)
 	android.Run(rootOf(root, app), android.Options{Components: o.Components, Fonts: o.Fonts, Appearance: o.Appearance,
-		Updates: updates})
+		Perf: o.Monitor, Updates: updates})
 }

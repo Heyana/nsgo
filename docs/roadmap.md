@@ -189,7 +189,7 @@ What NSGo's issue [#49](https://github.com/nsgo-dev/nsgo/issues/49) asks for fol
 An `NsgoEngine` a host keeps runs the app on while its one `NsgoView` is detached ([embedding](architecture/embedding.md)). Issue #12 also needs a fresh Activity's view to show a running engine and several surfaces to share one process before recording, floating windows or push delivery can depend on it; the design and staged protocol work are in [Android engine and view lifetime](architecture/android-lifecycle.md).
 | Android engine and view lifetime | #12, [Android engine and view lifetime](architecture/android-lifecycle.md), [#1378](https://github.com/nsgo-dev/nsgo/issues/1378) | A host retains one `NsgoEngine` in its Application or foreground service, Activities attach and detach `NsgoView` surfaces without killing the Go process, two surfaces share one process with independent trees, and explicit engine destruction closes the process once |
 
-The remaining Android text work for [#173](https://github.com/nsgo-dev/nsgo/issues/173) is to move the text caches to `NsgoEngine` by surface, let text traffic pass bulk payloads on the transport, and show text round-trip time in the Android development performance panel.
+The remaining Android text work for [#173](https://github.com/nsgo-dev/nsgo/issues/173) is to move the text caches to `NsgoEngine` by surface and let text traffic pass bulk payloads on the transport.
 
 ## Games
 

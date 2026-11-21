@@ -17,7 +17,7 @@ The performance monitor measures what a surface's frames and commits cost while 
 
 ## The panel
 
-Any build shows one when started with `--nsgo-fps` (`internal/backend/flags.go`), and `nsgo dev -fps` starts it so; `nsgo.Run` turns the flag into the backend's monitor, and embedded views and target tests have none. Without the flag nothing is installed, so a build costs the same with the monitor's code as without it; with it, the frame clock runs every refresh, so measure with and read CPU without it. macOS, iOS, Windows and Linux show one; Android and the web accept the option and ignore it.
+Any build shows one when started with `--nsgo-fps` (`internal/backend/flags.go`), and `nsgo dev -fps` starts it so; `nsgo.Run` turns the flag into the backend's monitor, and embedded views and target tests have none. Without the flag nothing is installed, so a build costs the same with the monitor's code as without it; with it, the frame clock runs every refresh, so measure with and read CPU without it. macOS, iOS, Windows, Linux and Android show one. The web accepts the option and ignores it.
 
 The panel sits at the top right of the surface (below the safe area on iOS), lets the pointer through, and is redrawn every 500 ms; on macOS it fades out while the pointer is over it. Its sizes, colors and trace are `engine`'s (`perfpanel.go`), and `internal/platform/perfhud` reads the process' CPU and memory for every backend:
 
@@ -27,6 +27,7 @@ The panel sits at the top right of the surface (below the safe area on iOS), let
 - `APP` and `CORE` are the app's and the core's time per commit, commits per second and mount items per commit.
 - `HOP` is how long batches waited between the threads, and how busy the engine goroutine was.
 - `CPU` is percent of one core, `GPU` this process' share (macOS only), `MEM` its physical footprint (Apple), working set (Windows) or resident set (Linux).
+- On Android, `TEXT` reports the mean and 95th percentile of the last 120 native text request round trips, including queue time.
 - The trace is the last 120 frames' main-thread cost against one refresh (the line): green within half of it, amber within it, red over.
 
 While a monitor measures, the frame clock runs on every refresh, so an idle app still reports the display's tick rate. Its `FPS` reads low when the app is idle; that is not slowness. Measure release builds: a debug build's text and layout costs are not the app's.
@@ -40,6 +41,7 @@ A backend calls `RecordWork` around its main-thread work, `Vsync` from its frame
 | macOS, iOS | The display link, at its period | Batches, ticks and input |
 | Windows | Each `DwmFlush`, at DWM's composition rate (`DwmGetCompositionTimingInfo`) | Batches, ticks and drawing a frame, less `Present`, which waits for the display |
 | Linux | A tick callback of the surface's frame clock, at its refresh interval | Batches, ticks, and each frame from the clock's `layout` signal to `after-paint` |
+| Android | The primary view's Choreographer callback, while its window is visible | Batch application and animation steps, reported to the Go process |
 
 Apple platforms read memory with `proc_pid_rusage`'s physical footprint; macOS reads GPU time from the `accumulatedGPUTime` of the process' accelerator clients in the IO registry (`internal/platform/apple/perf.go`), through purego.
 
