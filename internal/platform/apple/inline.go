@@ -119,18 +119,27 @@ func decorations(t *driver.AttributedText, toUTF16 []int) []decoration {
 		style      driver.TextStyle
 		background driver.TextBackground
 	}
+	hasHidden := t.HasHidden()
 	var runs []run
-	if len(t.Spans) == 0 {
-		runs = append(runs, run{0, len(t.Text), t.Style, driver.TextBackground{}})
-	}
+	at := 0
 	for _, sp := range t.Spans {
-		runs = append(runs, run{sp.Start, sp.End, sp.Style, sp.Background})
+		start, end := min(max(sp.Start, at), len(t.Text)), min(max(sp.End, at), len(t.Text))
+		if start > at {
+			runs = append(runs, run{at, start, t.Style, driver.TextBackground{}})
+		}
+		if !sp.Hidden && end > start {
+			runs = append(runs, run{start, end, sp.Style, sp.Background})
+		}
+		at = max(at, end)
+	}
+	if at < len(t.Text) {
+		runs = append(runs, run{at, len(t.Text), t.Style, driver.TextBackground{}})
 	}
 	var out []decoration
 	for _, r := range runs {
 		start, end := min(max(r.start, 0), len(t.Text)), min(max(r.end, 0), len(t.Text))
 		strike := r.style.Decoration&driver.TextDecorationLineThrough != 0
-		under := r.style.Decoration&driver.TextDecorationUnderline != 0 && drawsUnderline(r.style)
+		under := r.style.Decoration&driver.TextDecorationUnderline != 0 && (hasHidden || drawsUnderline(r.style))
 		if end <= start || (!strike && !under && r.background.Color == 0) {
 			continue
 		}

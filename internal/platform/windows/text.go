@@ -443,6 +443,7 @@ type textRun struct {
 	start, end uint32
 	style      driver.TextStyle
 	bg         driver.TextBackground
+	hidden     bool
 }
 
 // textAttachment is an attachment's place and extents, in points.
@@ -466,6 +467,7 @@ type preparedText struct {
 	maxLines    int
 	ellipsize   driver.EllipsizeMode
 	shadow      driver.TextShadow
+	hasHidden   bool
 	// cut is the text, kept when it ellipsizes at its head or middle,
 	// which DirectWrite's trimming cannot: Layout cuts it, its last line's
 	// rest when it has several (rest).
@@ -480,7 +482,7 @@ type preparedText struct {
 
 // Prepare implements core.TextEngine on the engine goroutine.
 func (w *window) Prepare(t *driver.AttributedText) driver.PreparedText {
-	pt := &preparedText{w: w, style: t.Style, maxLines: t.MaxLines, ellipsize: t.Ellipsize, shadow: t.Shadow}
+	pt := &preparedText{w: w, style: t.Style, maxLines: t.MaxLines, ellipsize: t.Ellipsize, shadow: t.Shadow, hasHidden: t.HasHidden()}
 	if t.Ellipsize == driver.EllipsizeHead || t.Ellipsize == driver.EllipsizeMiddle {
 		switch {
 		case t.MaxLines == 1 && !strings.ContainsAny(t.Text, "\n\r"):
@@ -495,13 +497,14 @@ func (w *window) Prepare(t *driver.AttributedText) driver.PreparedText {
 		start, end int
 		style      driver.TextStyle
 		bg         driver.TextBackground
+		hidden     bool
 	}
 	var rawRuns []rawRun
 	var keepAllRanges [][2]int
 	at := 0
-	addRaw := func(start, end int, style driver.TextStyle, bg driver.TextBackground) {
+	addRaw := func(start, end int, style driver.TextStyle, bg driver.TextBackground, hidden bool) {
 		if end > start {
-			rawRuns = append(rawRuns, rawRun{start, end, style, bg})
+			rawRuns = append(rawRuns, rawRun{start, end, style, bg, hidden})
 			if driver.KeepAllWords(style.Font.Language) {
 				for _, r := range driver.KeepAllWordRanges(t.Text[start:end]) {
 					keepAllRanges = append(keepAllRanges, [2]int{start + r[0], start + r[1]})
@@ -511,11 +514,11 @@ func (w *window) Prepare(t *driver.AttributedText) driver.PreparedText {
 	}
 	for _, sp := range t.Spans {
 		start, end := min(max(sp.Start, at), len(t.Text)), min(max(sp.End, at), len(t.Text))
-		addRaw(at, start, t.Style, driver.TextBackground{})
-		addRaw(start, end, sp.Style, sp.Background)
+		addRaw(at, start, t.Style, driver.TextBackground{}, false)
+		addRaw(start, end, sp.Style, sp.Background, sp.Hidden)
 		at = max(at, end)
 	}
-	addRaw(at, len(t.Text), t.Style, driver.TextBackground{})
+	addRaw(at, len(t.Text), t.Style, driver.TextBackground{}, false)
 	pt.units, pt.offsets, pt.origUTF16 = encodeKeepAllText(t.Text, keepAllRanges)
 	pt.keepAll = len(keepAllRanges) > 0
 	// unit returns the UTF-16 offset of byte offset b.
@@ -532,7 +535,7 @@ func (w *window) Prepare(t *driver.AttributedText) driver.PreparedText {
 		return uint32(lo)
 	}
 	for _, r := range rawRuns {
-		pt.runs = append(pt.runs, textRun{unit(r.start), unit(r.end), r.style, r.bg})
+		pt.runs = append(pt.runs, textRun{unit(r.start), unit(r.end), r.style, r.bg, r.hidden})
 	}
 	for _, a := range t.Attachments {
 		if a.Offset < 0 || a.Offset >= len(t.Text) {
@@ -845,7 +848,7 @@ func (pt *preparedText) Layout(size driver.Size) driver.TextLayout {
 		return l
 	}
 	l := &textLayout{color: pt.style.Color, offsets: pt.offsets, origUTF16: pt.origUTF16, attachments: make([]attachmentBox, len(pt.attachments)),
-		shadow: pt.shadow, runs: pt.runs, style: pt.style}
+		shadow: pt.shadow, hasHidden: pt.hasHidden, runs: pt.runs, style: pt.style}
 	layout := pt.build()
 	if layout == nil {
 		return l
@@ -899,6 +902,10 @@ func (pt *preparedText) Layout(size driver.Size) driver.TextLayout {
 	}
 	thin := float32(1 / pt.w.scale)
 	for _, r := range pt.runs {
+		if r.hidden {
+			l.hidden = append(l.hidden, textRange{r.start, r.end - r.start})
+			continue
+		}
 		if visible(r.style.Color) && r.style.Color != l.color {
 			l.colors = append(l.colors, colorRange{r.start, r.end - r.start, r.style.Color})
 		}
@@ -958,6 +965,9 @@ func (pt *preparedText) Layout(size driver.Size) driver.TextLayout {
 				line(m.strike, m.strikeThickness)
 			}
 		}
+	}
+	for _, h := range l.hidden {
+		layout.callRange(layoutSetDrawingEffect, 0, h.start, h.length, hiddenEffectObj.ptr())
 	}
 	return l
 }
@@ -1055,6 +1065,8 @@ type textLayout struct {
 	lines       []lineBox
 	groups      []lineGroup
 	colors      []colorRange
+	hidden      []textRange
+	hasHidden   bool
 	backgrounds []backgroundBox
 	decorations []decoration
 	attachments []attachmentBox
@@ -1241,7 +1253,13 @@ func (l *textLayout) draw(p *painter, x, y float32) {
 			first, last := l.lines[g.from], l.lines[g.to-1]
 			p.pushClipRect(rectF{-unbounded, y + first.top, unbounded, y + last.top + last.height})
 		}
-		p.dc.callPoint(rtDrawTextLayout, x, y+g.shift, l.layout.ptr(), p.solid(l.color).ptr(), d2dDrawTextEnableColorFont)
+		if l.hasHidden {
+			ctx := textDrawContext{dc: p.dc, defaultBrush: p.solid(l.color), scale: float32(p.scale), colorFont: true}
+			l.layout.callF(layoutDraw, 0b1100, uintptr(unsafe.Pointer(&ctx)), textRendererObj.ptr(), f32(x), f32(y+g.shift))
+			runtime.KeepAlive(&ctx)
+		} else {
+			p.dc.callPoint(rtDrawTextLayout, x, y+g.shift, l.layout.ptr(), p.solid(l.color).ptr(), d2dDrawTextEnableColorFont)
+		}
 		if clip {
 			p.pop()
 		}
@@ -1277,7 +1295,13 @@ func (l *textLayout) drawShadow(p *painter, x, y float32) {
 		bake.call(rtCreateSolidColorBrush, uintptr(unsafe.Pointer(&col)), 0, uintptr(unsafe.Pointer(&brush)))
 		if brush != nil {
 			for _, g := range l.groups {
-				bake.callPoint(rtDrawTextLayout, 0, g.shift, l.layout.ptr(), brush.ptr(), d2dDrawTextEnableColorFont)
+				if l.hasHidden {
+					ctx := textDrawContext{dc: bake, defaultBrush: brush, scale: float32(p.scale), shadow: true}
+					l.layout.callF(layoutDraw, 0b1100, uintptr(unsafe.Pointer(&ctx)), textRendererObj.ptr(), f32(0), f32(g.shift))
+					runtime.KeepAlive(&ctx)
+				} else {
+					bake.callPoint(rtDrawTextLayout, 0, g.shift, l.layout.ptr(), brush.ptr(), d2dDrawTextEnableColorFont)
+				}
 			}
 			brush.release()
 		}

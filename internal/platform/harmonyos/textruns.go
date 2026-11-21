@@ -64,7 +64,9 @@ func textRunsJSON(t *driver.TextContent) string {
 			f.Family = base.Family
 		}
 		c := r.Style.Color
-		if c == 0 {
+		if r.Hidden {
+			c = 0
+		} else if c == 0 {
 			c = t.Style.Color
 		}
 		run := textRun{T: drawnText(r.Text), C: webstyle.Color(c), S: float32(f.Size),

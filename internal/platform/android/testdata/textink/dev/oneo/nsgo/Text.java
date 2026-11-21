@@ -41,6 +41,21 @@ final class Text {
         }
     }
 
+    static final class DrawnLine {
+        final android.text.StaticLayout layout;
+        final float dx, dy;
+
+        DrawnLine(android.text.StaticLayout layout, float dx, float dy) {
+            this.layout = layout;
+            this.dx = dx;
+            this.dy = dy;
+        }
+    }
+
+    static DrawnLine[] drawLines(android.text.StaticLayout layout, int clipLines) {
+        return null;
+    }
+
     static int utf8Length(CharSequence s, int end) {
         return end;
     }

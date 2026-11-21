@@ -285,6 +285,7 @@ var (
 	pangoLayoutGetContext          func(uintptr) uintptr
 	pangoContextSetBaseDir         func(uintptr, int32)
 	pangoLayoutSetText             func(uintptr, *byte, int32)
+	pangoLayoutGetText             func(uintptr) uintptr
 	pangoLayoutSetWidth            func(uintptr, int32)
 	pangoLayoutSetHeight           func(uintptr, int32)
 	pangoLayoutSetWrap             func(uintptr, int32)
@@ -320,6 +321,7 @@ var (
 	pangoAttrWeightNew             func(int32) uintptr
 	pangoAttrStyleNew              func(int32) uintptr
 	pangoAttrForegroundNew         func(uint16, uint16, uint16) uintptr
+	pangoAttrForegroundAlphaNew    func(uint16) uintptr
 	pangoAttrLetterSpacingNew      func(int32) uintptr
 	pangoAttrLineHeightNew         func(int32) uintptr
 	pangoAttrLineHeightAbsoluteNew func(int32) uintptr
@@ -348,6 +350,7 @@ var (
 	pangoLayoutLineGetXRanges      func(uintptr, int32, int32, *uintptr, *int32)
 	pangoCairoCreateLayout         func(uintptr) uintptr
 	pangoCairoShowLayout           func(uintptr, uintptr)
+	pangoCairoShowGlyphItem        func(uintptr, uintptr, uintptr)
 	pangoCairoUpdateLayout         func(uintptr, uintptr)
 
 	// Cairo.
@@ -688,6 +691,7 @@ func bind() {
 	purego.RegisterLibFunc(&pangoLayoutGetContext, pangoLib, "pango_layout_get_context")
 	purego.RegisterLibFunc(&pangoContextSetBaseDir, pangoLib, "pango_context_set_base_dir")
 	purego.RegisterLibFunc(&pangoLayoutSetText, pangoLib, "pango_layout_set_text")
+	purego.RegisterLibFunc(&pangoLayoutGetText, pangoLib, "pango_layout_get_text")
 	purego.RegisterLibFunc(&pangoLayoutSetWidth, pangoLib, "pango_layout_set_width")
 	purego.RegisterLibFunc(&pangoLayoutSetHeight, pangoLib, "pango_layout_set_height")
 	purego.RegisterLibFunc(&pangoLayoutSetWrap, pangoLib, "pango_layout_set_wrap")
@@ -725,6 +729,7 @@ func bind() {
 	purego.RegisterLibFunc(&pangoAttrWeightNew, pangoLib, "pango_attr_weight_new")
 	purego.RegisterLibFunc(&pangoAttrStyleNew, pangoLib, "pango_attr_style_new")
 	purego.RegisterLibFunc(&pangoAttrForegroundNew, pangoLib, "pango_attr_foreground_new")
+	purego.RegisterLibFunc(&pangoAttrForegroundAlphaNew, pangoLib, "pango_attr_foreground_alpha_new")
 	purego.RegisterLibFunc(&pangoAttrLetterSpacingNew, pangoLib, "pango_attr_letter_spacing_new")
 	purego.RegisterLibFunc(&pangoAttrLineHeightNew, pangoLib, "pango_attr_line_height_new")
 	purego.RegisterLibFunc(&pangoAttrLineHeightAbsoluteNew, pangoLib, "pango_attr_line_height_new_absolute")
@@ -753,6 +758,7 @@ func bind() {
 	purego.RegisterLibFunc(&pangoLayoutLineGetXRanges, pangoLib, "pango_layout_line_get_x_ranges")
 	purego.RegisterLibFunc(&pangoCairoCreateLayout, pangocairoLib, "pango_cairo_create_layout")
 	purego.RegisterLibFunc(&pangoCairoShowLayout, pangocairoLib, "pango_cairo_show_layout")
+	purego.RegisterLibFunc(&pangoCairoShowGlyphItem, pangocairoLib, "pango_cairo_show_glyph_item")
 	purego.RegisterLibFunc(&pangoCairoUpdateLayout, pangocairoLib, "pango_cairo_update_layout")
 
 	// Cairo.

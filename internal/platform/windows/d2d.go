@@ -80,6 +80,7 @@ const (
 	rtDrawBitmap            = 26
 	rtDrawText              = 27
 	rtDrawTextLayout        = 28
+	rtDrawGlyphRun          = 29
 	rtSetTransform          = 30
 	rtSetAntialiasMode      = 32
 	rtGetAntialiasMode      = 33
@@ -136,6 +137,11 @@ const (
 	// IDWriteFactory2
 	dw2GetSystemFontFallback     = 26
 	dw2CreateFontFallbackBuilder = 27
+	dw2TranslateColorGlyphRun    = 28
+
+	// IDWriteColorGlyphRunEnumerator
+	colorEnumMoveNext      = 3
+	colorEnumGetCurrentRun = 4
 
 	// IDWriteTypography
 	typographyAddFontFeature = 3
@@ -225,6 +231,7 @@ const (
 	d2dErrRecreateTarget = 0x8899000C
 	dxgiErrDeviceRemoved = 0x887A0005
 	dxgiErrDeviceReset   = 0x887A0007
+	dwriteErrNoColor     = 0x8898500C
 
 	dwFactoryShared      = 0
 	dwStretchNormal      = 5
@@ -372,3 +379,13 @@ type inlineMetrics struct {
 
 // overhangMetrics is DWRITE_OVERHANG_METRICS.
 type overhangMetrics struct{ left, top, right, bottom float32 }
+
+// colorGlyphRun is DWRITE_COLOR_GLYPH_RUN.
+type colorGlyphRun struct {
+	glyphRun            glyphRun
+	glyphRunDescription uintptr
+	baselineOriginX     float32
+	baselineOriginY     float32
+	runColor            colorF
+	paletteIndex        uint16
+}

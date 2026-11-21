@@ -118,6 +118,7 @@ type runStyle struct {
 	size          driver.Points
 	lineHeight    driver.Points
 	letterSpacing driver.Points
+	hidden        bool
 }
 
 func newRunStyle(t driver.TextStyle) runStyle {
@@ -231,6 +232,7 @@ func (e *TextEngine) Prepare(t *driver.AttributedText) driver.PreparedText {
 	spanStyle := make([]int, len(t.Spans))
 	for k, sp := range t.Spans {
 		st := newRunStyle(sp.Style)
+		st.hidden = sp.Hidden
 		spanStyle[k] = len(p.styles)
 		for i := range p.styles {
 			if p.styles[i] == st {
@@ -558,6 +560,10 @@ func (p *prepared) Layout(size driver.Size) driver.TextLayout {
 				continue
 			}
 			p.backgrounds(l, sg, st, i, cx, y+base, x+ln.trimmed)
+			if st.hidden {
+				cx += sg.width
+				continue
+			}
 			text := ellipsis
 			if sg.start >= 0 {
 				text = p.t.Text[sg.start:sg.end]
@@ -754,6 +760,10 @@ func (p *prepared) truncateTail(ln *line, maxWidth driver.Points) {
 		end = kept[n-1].end
 	} else if len(rest) > 0 {
 		ellStyle = rest[0].style
+	}
+	if p.styles[ellStyle].hidden {
+		// A hidden span's ellipsis would be hidden too; it takes the text's own style.
+		ellStyle = 0
 	}
 	ew := p.e.width(&p.styles[ellStyle], ellipsis)
 	// The ellipsis is a segment of its own, a run the text does not hold, ending where the text was cut so a span's background reaches it.

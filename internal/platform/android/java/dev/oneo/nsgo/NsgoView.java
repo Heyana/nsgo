@@ -2081,6 +2081,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 Text.Shadow shadow = new Text.Shadow(in, density);
                 style.readDecoration(in, density);
                 for (Text.Span span : spans) span.style.readDecoration(in, density);
+                // Each span's hidden flag comes last, so a runtime that predates it reads the rest unchanged; with none sent, every span is visible.
+                for (Text.Span span : spans) {
+                    if (in.available() > 0) span.hidden = Protocol.flag(in.readUnsignedByte(), 0);
+                }
                 prepared.put(id, new Text.Prepared(text, style, maxLines, ellipsize, shadow, spans, attachments));
                 break;
             }

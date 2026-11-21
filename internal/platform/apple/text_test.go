@@ -351,3 +351,114 @@ func TestLayoutsHitTestTheirCharacters(t *testing.T) {
 		t.Fatalf("a layout released unread answered %+v", c)
 	}
 }
+
+func TestHiddenSpansSkipped(t *testing.T) {
+	black := driver.RGB(0x000000)
+	red := driver.RGB(0xff0000)
+	base := driver.TextStyle{Font: driver.Font{Family: "Menlo", Size: 20, Weight: 400}, Color: black}
+
+	// 1. A hidden span keeps its layout advance while skipping glyphs,
+	//    decorations, background and shadow, and visible spans around it
+	//    stay at the exact same positions.
+	text := "AAA   BBB   CCC"
+	shown := &driver.AttributedText{
+		Text:  text,
+		Style: base,
+		Spans: []driver.TextSpan{
+			{Start: 0, End: 6, Style: base},
+			{Start: 6, End: 9, Style: base},
+			{Start: 9, End: len(text), Style: base},
+		},
+	}
+	hiddenStyle := base
+	hiddenStyle.Decoration = driver.TextDecorationUnderline | driver.TextDecorationLineThrough
+	hiddenStyle.DecorationColor = red
+	withHidden := &driver.AttributedText{
+		Text:  text,
+		Style: base,
+		Spans: []driver.TextSpan{
+			{Start: 0, End: 6, Style: base},
+			{Start: 6, End: 9, Style: hiddenStyle, Hidden: true, Background: driver.TextBackground{Color: red}},
+			{Start: 9, End: len(text), Style: base},
+		},
+	}
+	ps := TextEngine{}.Prepare(shown)
+	defer ps.Release()
+	ph := TextEngine{}.Prepare(withHidden)
+	defer ph.Release()
+	sizeS, sizeH := ps.Measure(driver.Auto), ph.Measure(driver.Auto)
+	if sizeS != sizeH {
+		t.Fatalf("measured size changed: visible %v, hidden %v", sizeS, sizeH)
+	}
+	canvas := driver.Size{Width: 240, Height: 40}
+	imgS, layS := renderWith(t, ps, canvas)
+	imgH, layH := renderWith(t, ph, canvas)
+	caretStartS, _ := layS.CaretRect(driver.Caret{Offset: 6})
+	caretEndS, _ := layS.CaretRect(driver.Caret{Offset: 9})
+	caretEndH, _ := layH.CaretRect(driver.Caret{Offset: 9})
+	if caretEndS.Origin.X != caretEndH.Origin.X {
+		t.Fatalf("trailing span x = %v, want %v", caretEndH.Origin.X, caretEndS.Origin.X)
+	}
+	midRect := image.Rect(int(caretStartS.Origin.X)+1, 0, int(caretEndS.Origin.X)-1, int(canvas.Height))
+	if d, _ := inked(imgS, midRect); d < 20 {
+		t.Fatalf("control visible middle span drew only %d dark pixels", d)
+	}
+	if d, r := inked(imgH, midRect); d != 0 || r != 0 {
+		t.Errorf("hidden middle span drew %d dark and %d red pixels", d, r)
+	}
+	// Visible left and right spans still draw.
+	leftRect := image.Rect(0, 0, int(caretStartS.Origin.X)-2, int(canvas.Height))
+	rightRect := image.Rect(int(caretEndS.Origin.X)+2, 0, int(canvas.Width), int(canvas.Height))
+	if d, _ := inked(imgH, leftRect); d < 20 {
+		t.Errorf("left visible span drew only %d dark pixels", d)
+	}
+	if d, _ := inked(imgH, rightRect); d < 20 {
+		t.Errorf("right visible span drew only %d dark pixels", d)
+	}
+
+	// 2. Hidden color emoji, decorations and shadow draw nothing at all.
+	allHidden := &driver.AttributedText{
+		Text:   "😀 Hide",
+		Style:  base,
+		Shadow: driver.TextShadow{Color: black, Offset: driver.Point{X: 3, Y: 3}, Radius: 2},
+		Spans: []driver.TextSpan{{
+			Start: 0, End: len("😀 Hide"), Hidden: true,
+			Style: driver.TextStyle{
+				Font:            base.Font,
+				Color:           black,
+				Decoration:      driver.TextDecorationUnderline | driver.TextDecorationLineThrough,
+				DecorationStyle: driver.DecorationWavy,
+				DecorationColor: red,
+			},
+			Background: driver.TextBackground{Color: red},
+		}},
+	}
+	imgAll, _ := render(t, allHidden, driver.Size{Width: 160, Height: 48})
+	if d, r := inked(imgAll, imgAll.Rect); d != 0 || r != 0 {
+		t.Errorf("all-hidden emoji+deco+shadow drew %d dark and %d red pixels", d, r)
+	}
+
+	// 3. Visible span keeps its solid underline and shadow alongside a hidden span.
+	underlined := base
+	underlined.Decoration = driver.TextDecorationUnderline
+	underlined.DecorationColor = red
+	mixed := &driver.AttributedText{
+		Text:   "Show     Hide",
+		Style:  base,
+		Shadow: driver.TextShadow{Color: black, Offset: driver.Point{X: 2, Y: 2}},
+		Spans: []driver.TextSpan{
+			{Start: 0, End: 4, Style: underlined},
+			{Start: 4, End: 9, Style: base},
+			{Start: 9, End: 13, Style: underlined, Hidden: true},
+		},
+	}
+	imgMix, layMix := render(t, mixed, driver.Size{Width: 220, Height: 48})
+	showEnd, _ := layMix.CaretRect(driver.Caret{Offset: 4})
+	hideStart, _ := layMix.CaretRect(driver.Caret{Offset: 9})
+	if _, r := inked(imgMix, image.Rect(0, 0, int(showEnd.Origin.X)+4, 48)); r < 10 {
+		t.Errorf("visible span alongside hidden span drew only %d red underline pixels", r)
+	}
+	if d, r := inked(imgMix, image.Rect(int(hideStart.Origin.X), 0, 220, 48)); d != 0 || r != 0 {
+		t.Errorf("hidden span with underline and shadow drew %d dark and %d red pixels", d, r)
+	}
+}

@@ -12,6 +12,7 @@ import android.graphics.fonts.SystemFonts;
 import android.os.Build;
 import android.text.Layout;
 import android.text.SpannableString;
+import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.StaticLayout;
 import android.text.TextDirectionHeuristic;
@@ -471,15 +472,19 @@ final class Text {
             return flags;
         }
 
-        TextPaint paint() {
-            TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        void applyMetrics(TextPaint paint, Typeface typeface) {
             paint.setTextSize(size);
-            paint.setTypeface(typeface());
-            paint.setColor(color);
+            paint.setTypeface(typeface);
             paint.setLetterSpacing(letterSpacingEm());
             paint.setFontFeatureSettings(features);
-            paint.setFlags(paintFlags(paint.getFlags()));
             if (locale != null) paint.setTextLocale(locale);
+        }
+
+        TextPaint paint() {
+            TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+            applyMetrics(paint, typeface());
+            paint.setColor(color);
+            paint.setFlags(paintFlags(paint.getFlags()));
             return paint;
         }
 
@@ -527,6 +532,8 @@ final class Text {
         final int background;
         final float radius;
         final BackgroundInset top, bottom;
+        /** Whether the span is hidden in place, which TEXT_PREPARE sends after the decorations, one byte per span; false from a Go side that predates it. */
+        boolean hidden;
 
         Span(DataInputStream in, float density) throws IOException {
             start = in.readInt();
@@ -638,6 +645,10 @@ final class Text {
                 for (Span span : spans) {
                     int start = offsets.index(span.start), end = offsets.index(span.end);
                     if (start >= end) continue;
+                    if (span.hidden) {
+                        spanned.setSpan(new Hidden(span.style), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        continue;
+                    }
                     spanned.setSpan(new Run(span.style), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     if (span.style.drawsDecoration()) {
                         spanned.setSpan(span.style.decoration(measure), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -757,11 +768,7 @@ final class Text {
 
         @Override
         public void updateMeasureState(TextPaint paint) {
-            paint.setTextSize(style.size);
-            paint.setTypeface(typeface);
-            paint.setLetterSpacing(style.letterSpacingEm());
-            paint.setFontFeatureSettings(style.features);
-            if (style.locale != null) paint.setTextLocale(style.locale);
+            style.applyMetrics(paint, typeface);
         }
 
         @Override
@@ -770,6 +777,170 @@ final class Text {
             paint.setColor(style.color);
             paint.setFlags(style.paintFlags(paint.getFlags()));
         }
+    }
+
+    /**
+     * Marks a hidden span in the laid-out text: measured in its own font metrics so wrapping, alignment and hit testing match visible text, skipped as TextNode draws (drawLines), and left out of copies.
+     */
+    static final class Hidden extends MetricAffectingSpan {
+        final Style style;
+        final Typeface typeface;
+
+        Hidden(Style style) {
+            this.style = style;
+            this.typeface = style.typeface();
+        }
+
+        @Override
+        public void updateMeasureState(TextPaint paint) {
+            style.applyMetrics(paint, typeface);
+        }
+
+        @Override
+        public void updateDrawState(TextPaint paint) {
+            updateMeasureState(paint);
+        }
+    }
+
+    /**
+     * A ReplacementSpan that reserves a hidden span's advance and font metrics on one laid-out line and draws nothing — skipping glyphs, color emoji, decoration lines and shadows alike.
+     */
+    static final class BlankSpan extends ReplacementSpan {
+        private final Style style;
+        private final Typeface typeface;
+
+        BlankSpan(Style style, Typeface typeface) {
+            this.style = style;
+            this.typeface = typeface;
+        }
+
+        @Override
+        public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+            TextPaint work = new TextPaint(paint);
+            style.applyMetrics(work, typeface);
+            if (fm != null) work.getFontMetricsInt(fm);
+            return Math.round(work.measureText(text, start, end));
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas canvas, CharSequence text, int start, int end, float x, int top,
+                int y, int bottom, Paint paint) {}
+    }
+
+    /** One line of a layout containing hidden spans, drawn at (dx, dy) with hidden runs skipped. */
+    static final class DrawnLine {
+        final StaticLayout layout;
+        final float dx, dy;
+
+        DrawnLine(StaticLayout layout, float dx, float dy) {
+            this.layout = layout;
+            this.dx = dx;
+            this.dy = dy;
+        }
+    }
+
+    /** Reports whether layout contains any hidden spans. */
+    static boolean hasHidden(Layout layout) {
+        if (layout == null) return false;
+        CharSequence text = layout.getText();
+        return text instanceof Spanned && ((Spanned) text).getSpans(0, text.length(), Hidden.class).length > 0;
+    }
+
+    /**
+     * Builds per-line draw layouts for a StaticLayout containing hidden spans, replacing each hidden slice on each line with a BlankSpan so glyphs, color emoji, decorations and shadows are skipped while keeping exact line breaks, alignment and advances. Returns null when layout has no hidden spans.
+     */
+    static DrawnLine[] drawLines(StaticLayout layout, int clipLines) {
+        if (!hasHidden(layout)) return null;
+        CharSequence text = layout.getText();
+        Spanned spanned = (Spanned) text;
+        int lines = layout.getLineCount();
+        if (clipLines > 0) lines = Math.min(lines, clipLines);
+        List<DrawnLine> out = new ArrayList<>(lines);
+        TextPaint paint = layout.getPaint();
+        for (int i = 0; i < lines; i++) {
+            int lineStart = layout.getLineStart(i), lineEnd = layout.getLineEnd(i);
+            while (lineEnd > lineStart) {
+                char c = text.charAt(lineEnd - 1);
+                if (c != '\n' && c != '\r') break;
+                lineEnd--;
+            }
+            if (lineEnd <= lineStart) continue;
+            int ellCount = layout.getEllipsisCount(i);
+            int ellStart = ellCount > 0 ? lineStart + layout.getEllipsisStart(i) : -1;
+            int ellEnd = ellCount > 0 ? Math.min(lineEnd, ellStart + ellCount) : -1;
+            SpannableStringBuilder lineText = new SpannableStringBuilder();
+            boolean anyVisible = false;
+            if (ellCount > 0 && ellStart >= lineStart && ellStart <= lineEnd) {
+                if (appendLineSlice(lineText, text, spanned, lineStart, ellStart)) anyVisible = true;
+                lineText.append('\u2026');
+                anyVisible = true;
+                if (appendLineSlice(lineText, text, spanned, ellEnd, lineEnd)) anyVisible = true;
+            } else {
+                anyVisible = appendLineSlice(lineText, text, spanned, lineStart, lineEnd);
+            }
+            if (!anyVisible || lineText.length() == 0) continue;
+            int width = Math.max(layout.getWidth(), (int) Math.ceil(Layout.getDesiredWidth(lineText, paint)) + 16);
+            TextDirectionHeuristic dir = layout.getParagraphDirection(i) < 0
+                    ? TextDirectionHeuristics.RTL : TextDirectionHeuristics.LTR;
+            StaticLayout lineLayout = StaticLayout.Builder.obtain(lineText, 0, lineText.length(), paint, Math.max(width, 1))
+                    .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                    .setTextDirection(dir)
+                    .setIncludePad(false)
+                    .setMaxLines(1)
+                    .build();
+            float dx = layout.getLineLeft(i) - lineLayout.getLineLeft(0);
+            float dy = layout.getLineBaseline(i) - lineLayout.getLineBaseline(0);
+            out.add(new DrawnLine(lineLayout, dx, dy));
+        }
+        return out.toArray(new DrawnLine[0]);
+    }
+
+    /**
+     * Appends text[from..to) into dst, copying Run and Placeholder spans and replacing Hidden spans (outside Placeholders) with BlankSpans. Returns true if any character in the slice is visible.
+     */
+    private static boolean appendLineSlice(SpannableStringBuilder dst, CharSequence text, Spanned spanned,
+            int from, int to) {
+        if (from >= to) return false;
+        int base = dst.length();
+        dst.append(text, from, to);
+        for (Run run : spanned.getSpans(from, to, Run.class)) {
+            int s = Math.max(from, spanned.getSpanStart(run)), e = Math.min(to, spanned.getSpanEnd(run));
+            if (e > s) dst.setSpan(run, base + s - from, base + e - from, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        Placeholder[] placeholders = spanned.getSpans(from, to, Placeholder.class);
+        Arrays.sort(placeholders, (a, b) -> spanned.getSpanStart(a) - spanned.getSpanStart(b));
+        for (Placeholder p : placeholders) {
+            int s = Math.max(from, spanned.getSpanStart(p)), e = Math.min(to, spanned.getSpanEnd(p));
+            if (e > s) dst.setSpan(p, base + s - from, base + e - from, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        Hidden[] hidden = spanned.getSpans(from, to, Hidden.class);
+        Arrays.sort(hidden, (a, b) -> spanned.getSpanStart(a) - spanned.getSpanStart(b));
+        int covered = 0;
+        int prevEnd = from;
+        for (Hidden h : hidden) {
+            int hs = Math.max(from, spanned.getSpanStart(h)), he = Math.min(to, spanned.getSpanEnd(h));
+            if (he <= hs) continue;
+            int at = hs;
+            for (Placeholder p : placeholders) {
+                int ps = Math.max(from, spanned.getSpanStart(p)), pe = Math.min(to, spanned.getSpanEnd(p));
+                if (pe <= at || ps >= he) continue;
+                if (ps > at) {
+                    dst.setSpan(new BlankSpan(h.style, h.typeface), base + at - from, base + ps - from,
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+                at = Math.max(at, pe);
+            }
+            if (at < he) {
+                dst.setSpan(new BlankSpan(h.style, h.typeface), base + at - from, base + he - from,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (hs > prevEnd) prevEnd = hs;
+            if (he > prevEnd) {
+                covered += he - prevEnd;
+                prevEnd = he;
+            }
+        }
+        return covered < to - from;
     }
 
     /**

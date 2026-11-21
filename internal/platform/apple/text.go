@@ -68,6 +68,7 @@ var (
 	ctRunGetStatus              func(run uintptr) uint32
 	ctRunGetAttributes          func(run uintptr) uintptr
 	ctRunGetTypographicBounds   func(run uintptr, loc, length int, ascent, descent, leading *float64) float64
+	ctRunDraw                   func(run, ctx uintptr, loc, length int)
 	ctFontGetCapHeight          func(uintptr) float64
 	cgContextSetShadowWithColor func(ctx uintptr, offset CGSize, blur float64, color uintptr)
 	cgContextClipToRect         func(ctx uintptr, r CGRect)
@@ -76,6 +77,7 @@ var (
 	attrTraits, attrWeight, attrSymbolic, attrUnderlineColor    uintptr
 	attrFeatureSettings, attrFeatureTag, attrFeatureValue       uintptr
 	attrCascadeList, attrFamilyName, attrWidth, attrLanguage    uintptr
+	attrHidden, hiddenAttrVal                                   uintptr
 
 	ctFontDescriptorCreateWithAttrs func(attrs uintptr) uintptr
 	ctFontDescriptorCopyAttr        func(desc, attr uintptr) uintptr
@@ -140,6 +142,7 @@ func loadText(cf, cg uintptr) {
 	reg(&ctRunGetStatus, ct, "CTRunGetStatus")
 	reg(&ctRunGetAttributes, ct, "CTRunGetAttributes")
 	reg(&ctRunGetTypographicBounds, ct, "CTRunGetTypographicBounds")
+	reg(&ctRunDraw, ct, "CTRunDraw")
 	reg(&ctFontGetCapHeight, ct, "CTFontGetCapHeight")
 	reg(&cgContextSetShadowWithColor, cg, "CGContextSetShadowWithColor")
 	reg(&cgContextClipToRect, cg, "CGContextClipToRect")
@@ -159,6 +162,8 @@ func loadText(cf, cg uintptr) {
 	attrLanguage = constant(ct, "kCTLanguageAttributeName")
 	attrFeatureTag = constant(ct, "kCTFontOpenTypeFeatureTag")
 	attrFeatureValue = constant(ct, "kCTFontOpenTypeFeatureValue")
+	attrHidden = CFString("NSGoHidden")
+	hiddenAttrVal = int32Number(1)
 	reg(&ctFontDescriptorCreateWithAttrs, ct, "CTFontDescriptorCreateWithAttributes")
 	reg(&ctFontDescriptorCopyAttr, ct, "CTFontDescriptorCopyAttribute")
 	reg(&ctFontCreateCopyWithAttrs, ct, "CTFontCreateCopyWithAttributes")
@@ -423,11 +428,11 @@ func LanguageAttr() objc.ID { return objc.ID(attrLanguage) }
 // font, color, letter spacing and underline, plus extra keys and values.
 // An underline CoreText cannot draw is drawn from the lines instead. The caller releases
 // it.
-func runAttributes(st driver.TextStyle, keys, values []uintptr) uintptr {
+func runAttributes(st driver.TextStyle, keys, values []uintptr, noUnderline bool) uintptr {
 	font := Font(st.Font)
 	color := CGColor(st.Color)
 	var line int32
-	if st.Decoration&driver.TextDecorationUnderline != 0 && !drawsUnderline(st) {
+	if !noUnderline && st.Decoration&driver.TextDecorationUnderline != 0 && !drawsUnderline(st) {
 		switch st.DecorationStyle {
 		case driver.DecorationDouble:
 			line = underlineDouble
@@ -499,6 +504,8 @@ type attrsKey struct {
 	st              driver.TextStyle
 	withAttachments bool
 	paragraph       bool
+	hidden          bool
+	noUnderline     bool
 }
 
 // attrsCacheLimit bounds the cache. A screen has a handful of styles.
@@ -575,7 +582,10 @@ func buildAttributes(k attrsKey) uintptr {
 		para := ctParagraphStyleCreate(unsafe.Pointer(&settings[0]), uintptr(len(settings)))
 		keys, values, owned = append(keys, attrParagraph), append(values, para), append(owned, para)
 	}
-	attrs := runAttributes(k.st, keys, values)
+	if k.hidden {
+		keys, values = append(keys, attrHidden), append(values, hiddenAttrVal)
+	}
+	attrs := runAttributes(k.st, keys, values, k.noUnderline || k.hidden)
 	for _, ref := range owned {
 		Release(ref)
 	}
@@ -585,7 +595,8 @@ func buildAttributes(k attrsKey) uintptr {
 // attributed returns a new CFAttributedString of t, its spans styled over
 // its style. The caller releases it.
 func attributed(t *driver.AttributedText, toUTF16 []int, fonts []driver.FontExtent) uintptr {
-	attrs := textAttributes(t.Style, len(t.Attachments) > 0)
+	hasHidden := t.HasHidden()
+	attrs := attributes(attrsKey{st: t.Style, withAttachments: len(t.Attachments) > 0, paragraph: true, noUnderline: hasHidden})
 	str := CFString(t.Text)
 	out := cfAttributedStringCreate(0, str, attrs)
 	Release(str)
@@ -600,7 +611,7 @@ func attributed(t *driver.AttributedText, toUTF16 []int, fonts []driver.FontExte
 		if end <= start {
 			continue
 		}
-		a := spanAttributes(sp.Style)
+		a := attributes(attrsKey{st: sp.Style, hidden: sp.Hidden, noUnderline: hasHidden})
 		r := cfRange{Location: toUTF16[start], Length: toUTF16[end] - toUTF16[start]}
 		cfAttributedStringSetAttrs(m, r.Location, r.Length, a, false)
 		Release(a)
@@ -614,7 +625,7 @@ func attributed(t *driver.AttributedText, toUTF16 []int, fonts []driver.FontExte
 		d := runDelegate(extent{above: float64(above), below: float64(below), width: float64(at.Size.Width)})
 		st := placeholderStyle(t, at.Offset)
 		st.Color = 0
-		a := runAttributes(st, []uintptr{attrRunDelegate}, []uintptr{d})
+		a := runAttributes(st, []uintptr{attrRunDelegate}, []uintptr{d}, true)
 		r := cfRange{Location: toUTF16[at.Offset], Length: toUTF16[at.Offset+len(string(driver.AttachmentRune))] - toUTF16[at.Offset]}
 		cfAttributedStringSetAttrs(m, r.Location, r.Length, a, false)
 		Release(a)
@@ -661,8 +672,8 @@ func (TextEngine) Prepare(t *driver.AttributedText) driver.PreparedText {
 			strut.maxLineHeight = float64(t.Style.LineHeight)
 		}
 	}
-	p := &prepared{str: str, maxLines: t.MaxLines, ellipsize: t.Ellipsize,
-		shadow: t.Shadow, strut: strut, text: t.Text, toUTF8: toUTF8,
+	p := &prepared{str: str, style: t.Style, maxLines: t.MaxLines, ellipsize: t.Ellipsize,
+		shadow: t.Shadow, strut: strut, hasHidden: t.HasHidden(), text: t.Text, toUTF8: toUTF8,
 		toUTF16: toUTF16, decos: decorations(t, toUTF16), atts: t.Attachments, fonts: fonts}
 	p.oneLine = oneLineFast && isASCIILine(t.Text) && len(t.Attachments) == 0 && len(p.decos) == 0 && t.Style.LineHeight == 0 &&
 		!strings.ContainsAny(t.Text, "\n\r\t\v\f\u0085\u2028\u2029")
@@ -692,10 +703,12 @@ type prepared struct {
 	// fs is made when first needed: a text on one line never needs it
 	// (oneLine).
 	str, fs     uintptr
+	style       driver.TextStyle
 	maxLines    int
 	ellipsize   driver.EllipsizeMode
 	shadow      driver.TextShadow
 	strut       strutSpec
+	hasHidden   bool
 	emptyHeight float64
 	text        string
 	toUTF8      []int // byte offsets of UTF-16 offsets
@@ -897,7 +910,7 @@ func (p *prepared) Layout(size driver.Size) driver.TextLayout {
 }
 
 func (p *prepared) layout(size driver.Size) *Layout {
-	l := &Layout{height: float64(size.Height), text: p.text, toUTF8: p.toUTF8, shadow: p.shadow, strut: p.strut}
+	l := &Layout{height: float64(size.Height), text: p.text, toUTF8: p.toUTF8, shadow: p.shadow, strut: p.strut, hasHidden: p.hasHidden}
 	if p.emptyHeight > 0 {
 		return l
 	}
@@ -945,7 +958,7 @@ func (p *prepared) layout(size driver.Size) *Layout {
 		case driver.EllipsizeMiddle:
 			kind = truncateMiddle
 		}
-		token := ellipsisToken(rest)
+		token := ellipsisToken(rest, p.style, p.hasHidden)
 		l.truncated = ctLineCreateTruncatedLine(line, float64(size.Width), kind, token)
 		Release(token)
 		Release(line)
@@ -973,11 +986,17 @@ const (
 	truncateMiddle = 2
 )
 
-// ellipsisToken returns a line of "…" in the attributes str starts with.
-func ellipsisToken(str uintptr) uintptr {
+// ellipsisToken returns a line of "…" in the attributes str starts with, falling back to base when str starts in a hidden span.
+func ellipsisToken(str uintptr, base driver.TextStyle, noUnderline bool) uintptr {
 	text := CFString("…")
 	defer Release(text)
-	ellipsis := cfAttributedStringCreate(0, text, cfAttributedStringAttrsAt(str, 0, nil))
+	attrs := cfAttributedStringAttrsAt(str, 0, nil)
+	if cfDictionaryGetValue(attrs, attrHidden) != 0 {
+		a := attributes(attrsKey{st: base, noUnderline: noUnderline})
+		defer Release(a)
+		attrs = a
+	}
+	ellipsis := cfAttributedStringCreate(0, text, attrs)
 	defer Release(ellipsis)
 	return ctLineCreateWithAttrString(ellipsis)
 }
@@ -1016,7 +1035,8 @@ type Layout struct {
 	// clip is the width a clipped last line is cut at, 0 for none.
 	clip float64
 	// shadow is drawn behind the glyphs and their lines.
-	shadow driver.TextShadow
+	shadow    driver.TextShadow
+	hasHidden bool
 
 	text   string
 	toUTF8 []int
@@ -1440,6 +1460,10 @@ func (l *Layout) drawGlyphs(ctx uintptr, viewHeight float64, box CGRect) {
 	// CoreText draws bottom-up; flip the view's top-down coordinates.
 	cgContextTranslateCTM(ctx, 0, viewHeight)
 	cgContextScaleCTM(ctx, 1, -1)
+	if l.hasHidden {
+		l.drawVisibleRuns(ctx, viewHeight, box)
+		return
+	}
 	if frame := l.laid(); frame != 0 {
 		if !l.strutted {
 			cgContextTranslateCTM(ctx, box.Origin.X, viewHeight-box.Origin.Y-l.height-1)
@@ -1467,6 +1491,31 @@ func (l *Layout) drawGlyphs(ctx uintptr, viewHeight float64, box CGRect) {
 		}
 		cgContextSetTextPosition(ctx, box.Origin.X+o.X, top-o.Y)
 		ctLineDraw(line, ctx)
+		if line == l.truncated && l.clip > 0 {
+			cgContextRestoreGState(ctx)
+		}
+	}
+}
+
+// drawVisibleRuns draws l line by line and run by run, skipping runs marked hidden so their glyphs, color emoji and shadow are never drawn.
+func (l *Layout) drawVisibleRuns(ctx uintptr, viewHeight float64, box CGRect) {
+	lines, baselines, _ := l.placed()
+	top := viewHeight - box.Origin.Y
+	for i, line := range lines {
+		o := baselines[i]
+		if line == l.truncated && l.clip > 0 {
+			cgContextSaveGState(ctx)
+			cgContextClipToRect(ctx, Rect(box.Origin.X, -tall, l.clip, 2*tall))
+		}
+		runs := ctLineGetGlyphRuns(line)
+		for k := range cfArrayGetCount(runs) {
+			run := cfArrayGetValueAtIndex(runs, k)
+			if cfDictionaryGetValue(ctRunGetAttributes(run), attrHidden) != 0 {
+				continue
+			}
+			cgContextSetTextPosition(ctx, box.Origin.X+o.X, top-o.Y)
+			ctRunDraw(run, ctx, 0, 0)
+		}
 		if line == l.truncated && l.clip > 0 {
 			cgContextRestoreGState(ctx)
 		}

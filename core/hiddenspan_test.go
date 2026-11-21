@@ -16,20 +16,20 @@ func TestHiddenSpansKeepTheirPlace(t *testing.T) {
 	pressed := 0
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		shown = core.NewSignal(cx, false)
-		return core.Text{TestID: "reply", Spans: []core.Span{
+		return core.Text{TestID: "reply", Style: core.Style{Color: core.RGB(0x112233)}, Spans: []core.Span{
 			{Content: "Hello "},
 			{Content: "world", OnPress: func(core.PressEvent) { pressed++ }, StyleFunc: func() core.Style {
 				if shown.Get() {
-					return core.Style{}
+					return core.Style{TextDecoration: core.TextDecorationUnderline}
 				}
-				return core.Style{Visibility: core.VisibilityHidden, Background: core.RGB(0xff0000)}
+				return core.Style{Visibility: core.VisibilityHidden, Background: core.RGB(0xff0000), TextDecoration: core.TextDecorationUnderline}
 			}},
 		}}
 	}, nsgotest.Size(300, 100))
 	v := app.Find("id:reply")
 	frame := v.Frame
 	sp := v.Spans[1]
-	if !sp.Hidden || sp.Link || sp.Background.Color != 0 || sp.Style.Color&0xff != 0 {
+	if !sp.Hidden || sp.Link || sp.Background.Color != 0 || sp.Style.Color != core.RGB(0x112233) {
 		t.Fatalf("hidden span %+v", sp)
 	}
 	if v.Props.Label != "Hello " {

@@ -727,3 +727,83 @@ func TestTextInkDrawsPastItsBox(t *testing.T) {
 		t.Error("OverflowHidden text drew pixels past its box")
 	}
 }
+
+func TestHiddenSpansSkipped(t *testing.T) {
+	src := textSource{
+		text: "Hello world end",
+		spans: []driver.TextSpan{
+			{Start: 0, End: 6},
+			{Start: 6, End: 11, Hidden: true},
+			{Start: 11, End: 15},
+		},
+	}
+	if !src.hasHidden() || src.isHidden(5) || !src.isHidden(6) || !src.isHidden(10) || src.isHidden(11) {
+		t.Fatalf("hidden span range check failed for %+v", src.spans)
+	}
+	if err := openLibs(); err != nil {
+		t.Skip(err)
+	}
+	w := &window{}
+	red := driver.RGB(0xff0000)
+	deco := textStyle
+	deco.Decoration = driver.TextDecorationUnderline | driver.TextDecorationLineThrough
+	deco.DecorationColor = red
+	text := "AAA   BBB   CCC"
+	shown := &driver.AttributedText{
+		Text:  text,
+		Style: textStyle,
+		Spans: []driver.TextSpan{
+			{Start: 0, End: 6, Style: deco},
+			{Start: 6, End: 9, Style: deco},
+			{Start: 9, End: len(text), Style: textStyle},
+		},
+	}
+	hidden := &driver.AttributedText{
+		Text:  text,
+		Style: textStyle,
+		Spans: []driver.TextSpan{
+			{Start: 0, End: 6, Style: deco},
+			{Start: 6, End: 9, Style: deco, Hidden: true, Background: driver.TextBackground{Color: red}},
+			{Start: 9, End: len(text), Style: textStyle},
+		},
+	}
+	ls := layoutText(t, w, shown, 400)
+	lh := layoutText(t, w, hidden, 400)
+	if ls.width != lh.width || ls.height != lh.height {
+		t.Fatalf("layout size changed: visible %vx%v, hidden %vx%v", ls.width, ls.height, lh.width, lh.height)
+	}
+	if len(lh.under) != 0 {
+		t.Errorf("hidden span placed %d background boxes", len(lh.under))
+	}
+	if len(lh.over) != 2 {
+		t.Errorf("decorations = %d, want 2 (visible span underline and strikethrough only)", len(lh.over))
+	}
+	startC, _ := ls.CaretRect(driver.Caret{Offset: 6})
+	endC, _ := ls.CaretRect(driver.Caret{Offset: 9})
+	endH, _ := lh.CaretRect(driver.Caret{Offset: 9})
+	if endC.Origin.X != endH.Origin.X {
+		t.Fatalf("trailing span caret x = %v, want %v", endH.Origin.X, endC.Origin.X)
+	}
+	width, height := int(ls.width)+16, int(ls.height)+8
+	data, stride := drawText(t, lh, width, height)
+	inkIn := func(x0, x1 int) int {
+		n := 0
+		for x := max(0, x0); x < min(width, x1); x++ {
+			for y := 0; y < height; y++ {
+				if pixelAt(data, stride, x, y)[3] > 0x20 {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	if n := inkIn(int(startC.Origin.X)+1, int(endC.Origin.X)-1); n != 0 {
+		t.Errorf("hidden middle span drew %d pixels", n)
+	}
+	if n := inkIn(0, int(startC.Origin.X)-1); n < 20 {
+		t.Errorf("left visible span drew only %d pixels", n)
+	}
+	if n := inkIn(int(endC.Origin.X)+1, width); n < 20 {
+		t.Errorf("right visible span drew only %d pixels", n)
+	}
+}

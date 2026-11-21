@@ -5,6 +5,7 @@ package linux
 import (
 	"math"
 	"slices"
+	"structs"
 	"unicode/utf8"
 	"unsafe"
 
@@ -125,6 +126,53 @@ func (s *textSource) styleAt(i int) driver.TextStyle {
 	return s.style
 }
 
+// hasHidden reports whether any span of s is hidden.
+func (s *textSource) hasHidden() bool {
+	for _, sp := range s.spans {
+		if sp.Hidden {
+			return true
+		}
+	}
+	return false
+}
+
+// isHidden reports whether byte offset i falls inside a hidden span of s.
+func (s *textSource) isHidden(i int) bool {
+	for _, sp := range s.spans {
+		if sp.Hidden && sp.Start <= i && i < sp.End {
+			return true
+		}
+	}
+	return false
+}
+
+// isAttachment reports whether a run at byte offset i of length n is an attachment placeholder.
+func (s *textSource) isAttachment(i, n int) bool {
+	if n != placeholderLen {
+		return false
+	}
+	for _, at := range s.atts {
+		if at.Offset == i {
+			return true
+		}
+	}
+	return false
+}
+
+// pangoAnalysis and pangoItem match PangoAnalysis and PangoItem in <pango/pango-item.h>.
+type pangoAnalysis struct {
+	_                             structs.HostLayout
+	shapeEngine, langEngine, font uintptr
+	level, gravity, flags, script uint8
+	language, extraAttrs          uintptr
+}
+
+type pangoItem struct {
+	_                        structs.HostLayout
+	offset, length, numChars int32
+	analysis                 pangoAnalysis
+}
+
 // measureContext returns the Pango context the engine thread measures
 // with, made on first use from a font map of its own. It is never the
 // default context, which belongs to the main thread.
@@ -183,7 +231,7 @@ func (w *window) fontExtent(f driver.Font, ui string) driver.FontExtent {
 	}
 	l := pangoLayoutNew(w.measureContext(false))
 	attrs := pangoAttrListNew()
-	addStyle(attrs, "x", 0, 1, driver.TextStyle{Font: f}, ui, nil, false)
+	addStyle(attrs, "x", 0, 1, driver.TextStyle{Font: f}, ui, nil, false, false)
 	pangoLayoutSetAttributes(l, attrs)
 	pangoAttrListUnref(attrs)
 	pangoLayoutSetText(l, cstr("x"), 1)
@@ -298,9 +346,19 @@ func textAttributes(text string, s *textSource) uintptr {
 	}
 	list := pangoAttrListNew()
 	baseKeepAll := driver.KeepAllWords(s.style.Font.Language)
-	addStyle(list, text, 0, len(text), s.style, s.ui, holes, false)
+	hasHidden := s.hasHidden()
+	addStyle(list, text, 0, len(text), s.style, s.ui, holes, false, hasHidden)
 	for _, sp := range s.spans {
-		addStyle(list, text, sp.Start, sp.End, sp.Style, s.ui, holes, baseKeepAll)
+		addStyle(list, text, sp.Start, sp.End, sp.Style, s.ui, holes, baseKeepAll, hasHidden)
+		if sp.Hidden {
+			// Split PangoLayoutRun at hidden span boundaries without altering layout.
+			start, end := min(max(sp.Start, 0), len(text)), min(max(sp.End, 0), len(text))
+			if end > start {
+				attr := pangoAttrForegroundAlphaNew(1)
+				setAttributeRange(attr, uint32(start), uint32(end))
+				pangoAttrListInsert(list, attr)
+			}
+		}
 	}
 	for i, at := range s.atts {
 		if at.Offset < 0 || at.Offset+placeholderLen > len(text) {
@@ -323,8 +381,8 @@ func textAttributes(text string, s *textSource) uintptr {
 	return list
 }
 
-// addStyle adds s's font, its system families in the UI font ui, and its color, spacing and decoration over start:end, clipped to text bytes. Its line height leaves out holes, which are in order.
-func addStyle(list uintptr, text string, start, end int, s driver.TextStyle, ui string, holes [][2]int, undoKeepAll bool) {
+// addStyle adds s's font, its system families in the UI font ui, and its color, spacing and decoration over start:end, clipped to text bytes. Its line height leaves out holes, which are in order. With skipDecorations, as for a text with hidden spans, Pango gets no underline or strikethrough and draw paints them itself, leaving out the hidden spans'.
+func addStyle(list uintptr, text string, start, end int, s driver.TextStyle, ui string, holes [][2]int, undoKeepAll, skipDecorations bool) {
 	start, end = min(max(start, 0), len(text)), min(max(end, 0), len(text))
 	if end <= start {
 		return
@@ -380,8 +438,8 @@ func addStyle(list uintptr, text string, start, end int, s driver.TextStyle, ui 
 		}
 	}
 	// Pango draws no dotted or dashed lines, no thickness and no offset,
-	// and strikes through solid: placeDecorations draws those lines.
-	if s.Decoration&driver.TextDecorationUnderline != 0 && !drawsUnderline(s) {
+	// and strikes through solid: placeDecorations draws those lines (and every visible line when the text has hidden spans).
+	if !skipDecorations && s.Decoration&driver.TextDecorationUnderline != 0 && !drawsUnderline(s) {
 		line := int32(pangoUnderlineSingle)
 		switch s.DecorationStyle {
 		case driver.DecorationDouble:
@@ -394,7 +452,7 @@ func addStyle(list uintptr, text string, start, end int, s driver.TextStyle, ui 
 			add(pangoAttrUnderlineColorNew(rgb16(s.DecorationColor)))
 		}
 	}
-	if s.Decoration&driver.TextDecorationLineThrough != 0 && !drawsStrike(s) {
+	if !skipDecorations && s.Decoration&driver.TextDecorationLineThrough != 0 && !drawsStrike(s) {
 		add(pangoAttrStrikethroughNew(1))
 		if s.DecorationColor != 0 {
 			add(pangoAttrStrikethroughColorNew(rgb16(s.DecorationColor)))
@@ -644,7 +702,7 @@ func (w *window) capHeight(f driver.Font, ui string) driver.Points {
 	}
 	l := pangoLayoutNew(w.measureContext(false))
 	attrs := pangoAttrListNew()
-	addStyle(attrs, "H", 0, 1, driver.TextStyle{Font: f}, ui, nil, false)
+	addStyle(attrs, "H", 0, 1, driver.TextStyle{Font: f}, ui, nil, false, false)
 	pangoLayoutSetAttributes(l, attrs)
 	pangoAttrListUnref(attrs)
 	pangoLayoutSetText(l, cstr("H"), 1)
@@ -664,7 +722,7 @@ func blank(c byte) bool { return c == ' ' || c == '\n' || c == '\r' || c == '\t'
 func (p *preparedText) placeBackgrounds(l *textLayout) {
 	has := false
 	for _, sp := range p.spans {
-		has = has || sp.Background.Color&0xff != 0
+		has = has || !sp.Hidden && sp.Background.Color&0xff != 0
 	}
 	if !has || p.text == "" {
 		return
@@ -678,7 +736,7 @@ func (p *preparedText) placeBackgrounds(l *textLayout) {
 		baseline := fromPango(pangoLayoutIterGetBaseline(iter))
 		for _, sp := range p.spans {
 			bg := sp.Background
-			if bg.Color&0xff == 0 {
+			if sp.Hidden || bg.Color&0xff == 0 {
 				continue
 			}
 			a, b := max(sp.Start, from), min(sp.End, to, len(p.text))
@@ -752,23 +810,32 @@ type decorationLine struct {
 }
 
 // placeDecorations puts the underlines and strikethroughs Pango cannot
-// draw on each line their runs reach.
+// draw on each line their runs reach, and every visible span's lines when the text has hidden spans.
 func (p *preparedText) placeDecorations(l *textLayout) {
 	type run struct {
 		start, end int
 		style      driver.TextStyle
 	}
+	hasHidden := p.hasHidden()
 	var runs []run
-	if len(p.spans) == 0 {
-		runs = append(runs, run{0, len(p.text), p.style})
-	}
+	at := 0
 	for _, sp := range p.spans {
-		runs = append(runs, run{sp.Start, sp.End, sp.Style})
+		start, end := min(max(sp.Start, at), len(p.text)), min(max(sp.End, at), len(p.text))
+		if start > at {
+			runs = append(runs, run{at, start, p.style})
+		}
+		if !sp.Hidden && end > start {
+			runs = append(runs, run{start, end, sp.Style})
+		}
+		at = max(at, end)
+	}
+	if at < len(p.text) {
+		runs = append(runs, run{at, len(p.text), p.style})
 	}
 	runs = slices.DeleteFunc(runs, func(r run) bool {
 		d := r.style.Decoration
-		return !(d&driver.TextDecorationUnderline != 0 && drawsUnderline(r.style) ||
-			d&driver.TextDecorationLineThrough != 0 && drawsStrike(r.style))
+		return !(d&driver.TextDecorationUnderline != 0 && (hasHidden || drawsUnderline(r.style)) ||
+			d&driver.TextDecorationLineThrough != 0 && (hasHidden || drawsStrike(r.style)))
 	})
 	if len(runs) == 0 || p.text == "" {
 		return
@@ -801,14 +868,14 @@ func (p *preparedText) placeDecorations(l *textLayout) {
 				}
 				return float64(max(font, 1))
 			}
-			if st.Decoration&driver.TextDecorationUnderline != 0 && drawsUnderline(st) {
+			if st.Decoration&driver.TextDecorationUnderline != 0 && (hasHidden || drawsUnderline(st)) {
 				top := baseline - float64(m.underline)
 				if off, ok := st.UnderlineOffset.Points(); ok {
 					top = baseline + float64(off)
 				}
 				placed = append(placed, decorationLine{y: top, t: thick(m.underlineThickness), color: color, style: st.DecorationStyle})
 			}
-			if st.Decoration&driver.TextDecorationLineThrough != 0 && drawsStrike(st) {
+			if st.Decoration&driver.TextDecorationLineThrough != 0 && (hasHidden || drawsStrike(st)) {
 				t := thick(m.strikeThickness)
 				// The font's line stays centered where it was.
 				top := baseline - float64(m.strike) + float64(max(m.strikeThickness, 1))/2 - t/2
@@ -1020,18 +1087,29 @@ func (l *textLayout) snapshot(snap uintptr, x, y driver.Points) {
 	if clip {
 		gtkSnapshotPushClip(snap, &grapheneRect{float32(x), float32(y), float32(l.width), float32(l.height)})
 	}
-	gtkSnapshotSave(snap)
-	gtkSnapshotTranslate(snap, &graphenePoint{float32(x), float32(y)})
-	// Every span sets its color; this is what none would.
-	black := gdkRGBA{a: 1}
-	gtkSnapshotAppendLayout(snap, l.layout, &black)
-	gtkSnapshotRestore(snap)
-	if bounds, ok := l.decorationBounds(x, y); ok {
+	if l.hasHidden() {
+		// Draw visible runs and decorations through Cairo, skipping hidden runs so their glyphs, color emoji and shadow are never drawn.
+		bounds := l.contentBounds(float32(x), float32(y), float32(l.width), float32(l.height))
 		cr := gtkSnapshotAppendCairo(snap, &bounds)
+		l.drawRuns(cr, x, y)
 		for _, d := range l.over {
 			d.draw(cr, float64(x), float64(y))
 		}
 		cairoDestroy(cr)
+	} else {
+		gtkSnapshotSave(snap)
+		gtkSnapshotTranslate(snap, &graphenePoint{float32(x), float32(y)})
+		// Every span sets its color; this is what none would.
+		black := gdkRGBA{a: 1}
+		gtkSnapshotAppendLayout(snap, l.layout, &black)
+		gtkSnapshotRestore(snap)
+		if bounds, ok := l.decorationBounds(x, y); ok {
+			cr := gtkSnapshotAppendCairo(snap, &bounds)
+			for _, d := range l.over {
+				d.draw(cr, float64(x), float64(y))
+			}
+			cairoDestroy(cr)
+		}
 	}
 	if clip {
 		gtkSnapshotPop(snap)
@@ -1069,13 +1147,52 @@ func (l *textLayout) draw(cr uintptr, x, y driver.Points) {
 		cairoRectangle(cr, float64(x), float64(y), float64(l.width), float64(l.height))
 		cairoClip(cr)
 	}
-	cairoMoveTo(cr, float64(x), float64(y))
-	pangoCairoShowLayout(cr, l.layout)
+	if l.hasHidden() {
+		l.drawRuns(cr, x, y)
+	} else {
+		cairoMoveTo(cr, float64(x), float64(y))
+		pangoCairoShowLayout(cr, l.layout)
+	}
 	for _, d := range l.over {
 		d.draw(cr, float64(x), float64(y))
 	}
 	if clip {
 		cairoRestore(cr)
+	}
+}
+
+// drawRuns draws l's visible glyph runs into cr, skipping hidden runs and attachment placeholders so their glyphs, color emoji and shadow are not drawn.
+func (l *textLayout) drawRuns(cr uintptr, x, y driver.Points) {
+	if l.text == "" {
+		return
+	}
+	cText := pangoLayoutGetText(l.layout)
+	iter := pangoLayoutGetIter(l.layout)
+	defer pangoLayoutIterFree(iter)
+	const isEllipsis = 1 << 2 // PANGO_ANALYSIS_FLAG_IS_ELLIPSIS
+	for {
+		if run := pangoLayoutIterGetRun(iter); run != 0 {
+			item := *(**pangoItem)(cPointer(run))
+			offset, length := int(item.offset), int(item.length)
+			ellipsis := item.analysis.flags&isEllipsis != 0
+			if ellipsis || (!l.isHidden(offset) && !l.isAttachment(offset, length)) {
+				var logical pangoRectangle
+				pangoLayoutIterGetRunExtents(iter, nil, &logical)
+				baseline := pangoLayoutIterGetBaseline(iter)
+				color := l.style.Color
+				if !ellipsis {
+					color = l.styleAt(offset).Color
+				}
+				cairoSave(cr)
+				setColor(cr, color)
+				cairoMoveTo(cr, float64(x)+float64(fromPango(logical.X)), float64(y)+float64(fromPango(baseline)))
+				pangoCairoShowGlyphItem(cr, cText, run)
+				cairoRestore(cr)
+			}
+		}
+		if pangoLayoutIterNextRun(iter) == 0 {
+			break
+		}
 	}
 }
 

@@ -822,41 +822,7 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 	}
 	_, p.ready = s.requestText(textPrepare, func(w *writer) {
 		w.u32(p.id)
-		w.str(t.Text)
-		writeStyle(w, &t.Style)
-		w.u32(uint32(t.MaxLines))
-		w.u32(uint32(len(t.Spans)))
-		for _, sp := range t.Spans {
-			w.u32(uint32(sp.Start)) // UTF-8 offsets; Java converts them
-			w.u32(uint32(sp.End))
-			writeStyle(w, &sp.Style)
-			w.u32(uint32(sp.Background.Color)) // 0: none
-			w.points(sp.Background.Radius)
-			writeBackgroundInset(w, sp.Background.Top)
-			writeBackgroundInset(w, sp.Background.Bottom)
-		}
-		// Java sizes each placeholder and places it in its line as
-		// core.TextAttachment.Ascent and Extent say.
-		w.u32(uint32(len(t.Attachments)))
-		for _, a := range t.Attachments {
-			w.u32(uint32(a.Offset))
-			w.points(a.Size.Width)
-			w.points(a.Size.Height)
-			w.byte(byte(a.Align))
-			w.points(a.Descent)
-		}
-		// Where the line limit cuts, the shadow, then the decorations'
-		// styles, colors, thicknesses and underline offsets (NaN: the
-		// font's) of the text and each span.
-		w.byte(byte(t.Ellipsize))
-		w.u32(uint32(t.Shadow.Color)) // 0: none
-		w.points(t.Shadow.Offset.X)
-		w.points(t.Shadow.Offset.Y)
-		w.points(t.Shadow.Radius)
-		writeDecoration(w, &t.Style)
-		for _, sp := range t.Spans {
-			writeDecoration(w, &sp.Style)
-		}
+		writeTextPrepare(w, t)
 	})
 	return p
 }
@@ -2111,31 +2077,6 @@ func writeDecor(w *writer, v *driver.ViewStyle) {
 		w.u32(uint32(sh.Color))
 	}
 	writeKeyframes(w, v.Animation)
-}
-
-// writeBackgroundInset writes either points or a fraction of the box's height.
-func writeBackgroundInset(w *writer, inset driver.Length) {
-	if percent, ok := inset.Percent(); ok {
-		w.byte(1)
-		w.float(percent / 100)
-		return
-	}
-	points, _ := inset.Points()
-	w.byte(0)
-	w.points(points)
-}
-
-// writeDecoration writes how a text style's decoration lines are drawn,
-// which Text.Style.readDecoration reads.
-func writeDecoration(w *writer, t *driver.TextStyle) {
-	w.byte(byte(t.DecorationStyle))
-	w.u32(uint32(t.DecorationColor))
-	w.points(t.DecorationThickness)
-	offset := driver.Auto
-	if o, ok := t.UnderlineOffset.Points(); ok {
-		offset = o
-	}
-	w.points(offset)
 }
 
 // writeViewStyle writes a view's style as NsgoView.style reads it.

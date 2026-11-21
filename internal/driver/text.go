@@ -39,12 +39,7 @@ type TextSpan struct {
 	// Link marks a span with a press handler: a press on it reports
 	// EventPress with Index set to a byte offset inside it.
 	Link bool
-	// Hidden hides the span in place, as CSS's visibility: hidden on an
-	// inline element: its characters lay out as visible ones, but
-	// nothing of them is drawn, they take no press, and copies and screen
-	// readers leave them out. It changes no line. The core draws it in a
-	// transparent color with no background, so an engine that does not
-	// skip it draws nothing.
+	// Hidden hides the span in place, as CSS's visibility: hidden on an inline element: its characters lay out as visible ones, but each engine skips its glyphs, decoration lines and shadow as it draws, they take no press, and copies and screen readers leave them out. It changes no line.
 	Hidden bool
 	// Background is drawn behind the span's characters: a box per line between the font's ascent and descent, behind the selection and glyphs.
 	Background TextBackground

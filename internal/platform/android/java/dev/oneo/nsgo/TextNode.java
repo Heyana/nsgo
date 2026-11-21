@@ -28,6 +28,8 @@ class TextNode extends FrameLayout {
     private static final PorterDuffXfermode TINT_MODE = new PorterDuffXfermode(PorterDuff.Mode.SRC_IN);
 
     private StaticLayout layout;
+    /** Per-line draw layouts with hidden spans skipped, or null when the text has none. */
+    private Text.DrawnLine[] drawnLines;
     private int x, y;
     /** The lines a clipped text shows, 0 for all. */
     private int clipLines;
@@ -107,6 +109,7 @@ class TextNode extends FrameLayout {
     void setLayout(StaticLayout layout, int x, int y, int clipLines, Text.Shadow shadow) {
         boolean hadOverflow = overflows;
         this.layout = layout;
+        this.drawnLines = Text.drawLines(layout, clipLines);
         this.x = x;
         this.y = y;
         this.clipLines = clipLines;
@@ -307,7 +310,16 @@ class TextNode extends FrameLayout {
                 layout.getSelectionPath(selStart, Math.min(selEnd, layout.getText().length()), selection);
                 canvas.drawPath(selection, selectionPaint);
             }
-            layout.draw(canvas);
+            if (drawnLines != null) {
+                for (Text.DrawnLine dl : drawnLines) {
+                    canvas.save();
+                    canvas.translate(dl.dx, dl.dy);
+                    dl.layout.draw(canvas);
+                    canvas.restore();
+                }
+            } else {
+                layout.draw(canvas);
+            }
             drawDecorations(canvas);
             canvas.restore();
             if (tinted >= 0) {

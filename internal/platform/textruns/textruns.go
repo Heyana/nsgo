@@ -19,6 +19,7 @@ type Run struct {
 	Text       string
 	Style      driver.TextStyle
 	Link       bool
+	Hidden     bool
 	Background driver.TextBackground
 }
 
@@ -41,7 +42,7 @@ func Split(in Input) []Run {
 		}
 		out = append(out, Run{
 			Start: start, End: end, Text: in.Text[start:end],
-			Style: sp.Style, Link: sp.Link, Background: sp.Background,
+			Style: sp.Style, Link: sp.Link, Hidden: sp.Hidden, Background: sp.Background,
 		})
 		at = end
 	}

@@ -36,10 +36,6 @@ func (t *Tree) Commit() *driver.MountBatch { return t.commit(false) }
 // Go's collector paid for on the page's thread.
 func (t *Tree) CommitShared() *driver.MountBatch { return t.commit(true) }
 
-// hiddenInk is a hidden span's color: transparent, and not 0, which
-// some engines read as none set.
-const hiddenInk = driver.Color(0xffffff00)
-
 func (t *Tree) commit(shared bool) *driver.MountBatch {
 	t.rt.check()
 	if !t.changed {
@@ -518,9 +514,8 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 							Top: sp.style.BackgroundInsetTop, Bottom: sp.style.BackgroundInsetBottom,
 						}}
 					if sp.style.Visibility == VisibilityHidden {
-						// In place: laid out, drawn as nothing, no link.
+						// In place: laid out, skipped as the engine draws, no link.
 						span.Hidden, span.Link, span.Background = true, false, driver.TextBackground{}
-						span.Style.Color, span.Style.DecorationColor = hiddenInk, hiddenInk
 					}
 					at.Spans = append(at.Spans, span)
 				}
