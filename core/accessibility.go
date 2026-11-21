@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -38,6 +39,7 @@ type a11y struct {
 	expandable      func() bool
 	hidden          func() bool
 	actions         []AccessibilityAction
+	actionsFunc     func() []AccessibilityAction
 	accessible      bool
 	important       Importance
 }
@@ -52,8 +54,15 @@ func (t *Tree) bindAccessibility(cx *Scope, n *node, a a11y) {
 	case a.accessible || a.important == ImportantYes:
 		p.Accessible = AccessibleYes
 	}
-	if len(a.actions) > 0 {
-		p.Actions = &a.actions
+	switch {
+	case a.actionsFunc == nil:
+		t.updateAccessibilityActions(n, a.actions)
+	case cx == nil:
+		t.updateAccessibilityActions(n, a.actionsFunc())
+	default:
+		cx.renderEffect(func() {
+			t.updateAccessibilityActions(n, a.actionsFunc())
+		})
 	}
 	t.bindAccessibilityText(cx, n, &p.Label, a.labelFunc)
 	t.bindAccessibilityText(cx, n, &p.Hint, a.hintFunc)
@@ -83,6 +92,19 @@ func (t *Tree) bindAccessibility(cx *Scope, n *node, a a11y) {
 			t.touch(n)
 		})
 	}
+}
+
+// updateAccessibilityActions publishes a stable snapshot for the backend.
+func (t *Tree) updateAccessibilityActions(n *node, actions []AccessibilityAction) {
+	if slices.Equal(n.props.ActionList(), actions) {
+		return
+	}
+	n.props.Actions = nil
+	if len(actions) > 0 {
+		snapshot := slices.Clone(actions)
+		n.props.Actions = &snapshot
+	}
+	t.touch(n)
 }
 
 // bindAccessibilityText updates a spoken name, hint or description on the same view.

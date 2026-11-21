@@ -237,8 +237,9 @@ type View struct {
 	// on the element: the standard ones (ActionActivate, ActionIncrement,
 	// ...) through the screen reader's own gestures, others in its
 	// actions menu. OnAccessibilityAction receives their names.
-	AccessibilityActions  []AccessibilityAction
-	OnAccessibilityAction func(name string)
+	AccessibilityActions     []AccessibilityAction
+	AccessibilityActionsFunc func() []AccessibilityAction
+	OnAccessibilityAction    func(name string)
 	// Accessible makes the view one element: its descendants are not
 	// exposed separately, and without a label it reads their text.
 	Accessible                bool
@@ -493,9 +494,10 @@ type Input struct {
 	KeyboardTypeFunc func() KeyboardType
 	// AccessibilityValue, AccessibilityActions and OnAccessibilityAction
 	// are as a View's, for a field that is a spin button.
-	AccessibilityValue    func() AccessibilityValue
-	AccessibilityActions  []AccessibilityAction
-	OnAccessibilityAction func(name string)
+	AccessibilityValue       func() AccessibilityValue
+	AccessibilityActions     []AccessibilityAction
+	AccessibilityActionsFunc func() []AccessibilityAction
+	OnAccessibilityAction    func(name string)
 	// Expanded is a View's, for a field that opens a list.
 	Expanded func() bool
 	TestID   string

@@ -5120,12 +5120,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         n.now = in.readFloat();
         n.valueText = Protocol.readString(in);
         int actions = in.readInt();
-        n.actionNames = new String[actions];
-        n.actionLabels = new String[actions];
+        String[] actionNames = new String[actions], actionLabels = new String[actions];
         for (int i = 0; i < actions; i++) {
-            n.actionNames[i] = Protocol.readString(in);
-            n.actionLabels[i] = Protocol.readString(in);
+            actionNames[i] = Protocol.readString(in);
+            actionLabels[i] = Protocol.readString(in);
         }
+        n.setActions(actionNames, actionLabels);
         n.pointerEvents = in.readUnsignedByte();
         n.slop = new float[] {in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat()};
         n.delayLongPress = in.readInt();
@@ -5224,10 +5224,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         return 0x1f000000;
     }
 
-    /** The standard action a TalkBack action is, if any. */
+    /** The current name of a TalkBack action, if any. */
     private static String actionName(Node n, int action) {
-        if (action >= CUSTOM_ACTION && action < CUSTOM_ACTION + n.actionNames.length) {
-            return n.actionNames[action - CUSTOM_ACTION];
+        if (action >= CUSTOM_ACTION) {
+            for (int i = 0; i < n.actionIDs.length; i++) {
+                if (n.actionIDs[i] == action) return n.actionNames[i];
+            }
+            return null;
         }
         switch (action) {
             case AccessibilityNodeInfo.ACTION_CLICK: return "activate";
@@ -5360,9 +5363,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             info.setLongClickable(true);
         }
         for (int i = 0; i < n.actionNames.length; i++) {
-            if (isStandardAction(n.actionNames[i])) continue;
+            if (n.actionIDs[i] == 0) continue;
             String label = n.actionLabels[i].isEmpty() ? n.actionNames[i] : n.actionLabels[i];
-            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(CUSTOM_ACTION + i, label));
+            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(n.actionIDs[i], label));
         }
     }
 
@@ -6030,6 +6033,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         int accessibleMode, liveRegion;
         float min, max, now;
         String[] actionNames = new String[0], actionLabels = new String[0];
+        int[] actionIDs = new int[0];
+        int nextCustomAction = CUSTOM_ACTION;
         /** The pan's activation offsets in points, as in core.PanActivation; 0 is unset. */
         float activeX, activeY, failX, failY;
         /** Where its touch went down, in it and its root view in points, with the modifier bits and clicks. */
@@ -6086,6 +6091,33 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
 
         /** Whether the node offers the accessibility action name. */
+        /**
+         * A custom action keeps its ID when its label or position changes.
+         * TalkBack can still send an ID from a menu it got before an update.
+         */
+        void setActions(String[] names, String[] labels) {
+            if (Arrays.equals(actionNames, names)) {
+                actionLabels = labels;
+                return;
+            }
+            int[] ids = new int[names.length];
+            boolean[] reused = new boolean[actionNames.length];
+            for (int i = 0; i < names.length; i++) {
+                if (isStandardAction(names[i])) continue;
+                for (int old = 0; old < actionNames.length; old++) {
+                    if (!reused[old] && actionNames[old].equals(names[i])) {
+                        ids[i] = actionIDs[old];
+                        reused[old] = true;
+                        break;
+                    }
+                }
+                if (ids[i] == 0) ids[i] = nextCustomAction++;
+            }
+            actionNames = names;
+            actionLabels = labels;
+            actionIDs = ids;
+        }
+
         boolean offers(String name) {
             for (String a : actionNames) {
                 if (a.equals(name)) return true;

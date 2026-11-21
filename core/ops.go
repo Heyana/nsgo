@@ -177,7 +177,7 @@ func (t *Tree) setView(n *node, v View) {
 		class = joinClasses(class, v.ClassFunc())
 	}
 	t.setClasses(n, class)
-	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions, accessible: v.Accessible,
+	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
 	p := &n.props
 	p.Label = readText(v.Label, v.LabelFunc)
@@ -365,7 +365,7 @@ func (t *Tree) setInput(n *node, v Input) {
 	n.h.focus, n.h.blur = t.inputSourced(v)
 	n.props = driver.ViewProps{Role: cmpOr(v.Role, RoleTextField), Label: v.Label, Description: v.AccessibilityDescription,
 		TestID: v.TestID, Invalid: read(v.Invalid)}
-	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions})
+	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc})
 	p := &n.props
 	if v.LabelFunc != nil {
 		p.Label = v.LabelFunc()

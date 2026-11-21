@@ -282,8 +282,9 @@ func TestInputElementAccessibilityMatchesMountedInput(t *testing.T) {
 			AccessibilityActions: []AccessibilityAction{{Name: "clear", Label: "Clear"}}}},
 		{"functions", Input{
 			LabelFunc: func() string { return "Country" }, AccessibilityDescriptionFunc: func() string { return "Choose a country" },
-			AccessibilityValue: func() AccessibilityValue { return AccessibilityValue{Text: "Japan"} },
-			Expanded:           func() bool { return true }}},
+			AccessibilityValue:       func() AccessibilityValue { return AccessibilityValue{Text: "Japan"} },
+			AccessibilityActionsFunc: func() []AccessibilityAction { return []AccessibilityAction{{Name: "clear", Label: "Clear"}} },
+			Expanded:                 func() bool { return true }}},
 		{"empty-functions", Input{
 			LabelFunc: func() string { return "" }, AccessibilityDescriptionFunc: func() string { return "" },
 			Expanded: func() bool { return false }}},
@@ -459,6 +460,56 @@ func TestAccessibilityActionsAndFocus(t *testing.T) {
 	}
 	if !driver.IsStandardAction(ActionMagicTap) || driver.IsStandardAction("reset") {
 		t.Error("IsStandardAction")
+	}
+}
+
+func TestAccessibilityActionsFollowLocaleInPlace(t *testing.T) {
+	var scope *Scope
+	var show *Signal[bool]
+	var got []string
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
+		scope, show = cx, NewSignal(cx, true)
+		dynamic := func() []AccessibilityAction {
+			if !show.Get() {
+				return nil
+			}
+			if cx.Env().Locale() == "fr" {
+				return []AccessibilityAction{{Name: "remove", Label: "Supprimer"}}
+			}
+			return []AccessibilityAction{{Name: "remove", Label: "Remove"}}
+		}
+		run := func(name string) { got = append(got, name) }
+		return View{Children: []Node{
+			View{TestID: "card", AccessibilityActionsFunc: dynamic, OnAccessibilityAction: run},
+			Input{TestID: "field", AccessibilityActionsFunc: dynamic, OnAccessibilityAction: run},
+		}}
+	})
+	h.commit()
+	card, field := h.find("card"), h.find("field")
+	scope.SetLocale("fr")
+	b := h.commit()
+	if k := kinds(b); k[driver.ItemCreate] != 0 || h.find("card") != card || h.find("field") != field {
+		t.Fatalf("translating actions remounted an element: %v", k)
+	}
+	updates := propsOf(b)
+	for _, n := range []*node{card, field} {
+		p := updates[n.id]
+		if actions := p.ActionList(); !slices.Equal(actions, []AccessibilityAction{{Name: "remove", Label: "Supprimer"}}) {
+			t.Fatalf("updated actions = %v", actions)
+		}
+		h.tree.Dispatch(driver.Event{Kind: driver.EventAccessibilityAction, ID: n.id, Text: "remove"})
+	}
+	show.Set(false)
+	updates = propsOf(h.commit())
+	for _, n := range []*node{card, field} {
+		p, changed := updates[n.id]
+		if !changed || p.Actions != nil {
+			t.Fatalf("the actions were not cleared: update %t, actions %v", changed, p.ActionList())
+		}
+		h.tree.Dispatch(driver.Event{Kind: driver.EventAccessibilityAction, ID: n.id, Text: "remove"})
+	}
+	if !slices.Equal(got, []string{"remove", "remove"}) {
+		t.Fatalf("handled actions = %v, want only the two that were still present", got)
 	}
 }
 

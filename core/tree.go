@@ -1741,7 +1741,7 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setViewParts(n, v)
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, hintFunc: v.HintFunc, descriptionFunc: v.AccessibilityDescriptionFunc, value: v.AccessibilityValue, expanded: v.Expanded, expandable: v.Expandable,
-		hidden: v.AccessibilityElementsHidden, actions: v.AccessibilityActions, accessible: v.Accessible,
+		hidden: v.AccessibilityElementsHidden, actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
 	t.bindBool(cx, n, v.Disabled, &n.props.Disabled)
 	if v.Follow != nil {
@@ -2073,7 +2073,7 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	n.props = driver.ViewProps{Role: cmpOr(v.Role, RoleTextField), Label: v.Label, Description: v.AccessibilityDescription, TestID: v.TestID}
 	t.bindBool(cx, n, v.Invalid, &n.props.Invalid)
 	n.h.action = v.OnAccessibilityAction
-	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, descriptionFunc: v.AccessibilityDescriptionFunc, value: v.AccessibilityValue, actions: v.AccessibilityActions, expanded: v.Expanded})
+	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, descriptionFunc: v.AccessibilityDescriptionFunc, value: v.AccessibilityValue, actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc, expanded: v.Expanded})
 	t.setRef(n, v.Ref)
 	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus, accessory: v.InputAccessoryViewID,
 		selection: v.OnSelectionChange, keyPress: v.OnKeyPress, composition: v.OnCompositionChange,
@@ -2470,7 +2470,7 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		}
 		press(h.longPress)
 	case driver.EventAccessibilityAction:
-		if h.action != nil && !n.labelProps().Disabled {
+		if p := n.labelProps(); h.action != nil && !p.Disabled && p.HasAction(ev.Text) {
 			t.within(n.owner, func() { h.action(ev.Text) })
 		}
 	case driver.EventPressDown:

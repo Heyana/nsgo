@@ -46,7 +46,7 @@ return core.View{Children: []core.Node{
 
 ## Actions
 
-`AccessibilityActions` lists what the screen reader offers on an element: the standard actions (`core.ActionActivate`, `ActionIncrement`, `ActionDecrement`, `ActionEscape`, `ActionMagicTap`) and the app's own, each with a `Name` and a `Label`. `OnAccessibilityAction` receives the name.
+`AccessibilityActions` lists what the screen reader offers on an element: the standard actions (`core.ActionActivate`, `ActionIncrement`, `ActionDecrement`, `ActionEscape`, `ActionMagicTap`) and the app's own, each with a `Name` and a `Label`. `OnAccessibilityAction` receives the name. Use `AccessibilityActionsFunc` on `core.View` or `core.Input` to change the available actions or translate their labels while the element stays mounted.
 
 ```go
 core.View{

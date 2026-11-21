@@ -185,6 +185,7 @@
 - Retry transient Android screen-state adb failures and stop target runs once with a device-lost error when the device stays unreachable (#718 by @houko).
 - Make non-editing menu roles with `OnSelect` run the callback instead of the standard role on macOS, Windows and Linux, matching headless tests (#723 by @houko).
 - Keep selectable table and tree rows exposed as selection items while unselected, with Windows' SelectionItem pattern and the web's `aria-selected="false"` (#735 by @houko).
+- Bind changing accessibility action labels and availability on mounted views and inputs (#145 by @houko).
 - Add `MultiSelectable` accessibility state for multi-row `DataTable` selection, exposing `aria-multiselectable`, UI Automation Selection and GTK multiselectable state (#734 by @houko).
 - Start Android and iPhone target test deadlines at the test host's start mark and report a separate launch timeout when the host does not start (#729 by @houko).
 - Restart Linux apps launched from an AppImage through the outer image path, remounting it after the old FUSE mount exits (#732 by @houko).

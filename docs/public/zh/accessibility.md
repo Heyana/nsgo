@@ -46,7 +46,7 @@ return core.View{Children: []core.Node{
 
 ## 操作
 
-`AccessibilityActions` 列出屏幕阅读器在元素上提供的操作：标准操作（`core.ActionActivate`、`ActionIncrement`、`ActionDecrement`、`ActionEscape`、`ActionMagicTap`）和应用自己的操作，每个都有 `Name` 和 `Label`。`OnAccessibilityAction` 接收名称。
+`AccessibilityActions` 列出屏幕阅读器在元素上提供的操作：标准操作（`core.ActionActivate`、`ActionIncrement`、`ActionDecrement`、`ActionEscape`、`ActionMagicTap`）和应用自己的操作，每个都有 `Name` 和 `Label`。`OnAccessibilityAction` 接收名称。可在 `core.View` 或 `core.Input` 上使用 `AccessibilityActionsFunc`，更新可用操作或翻译操作标签，原元素保持挂载。
 
 ```go
 core.View{
