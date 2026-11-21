@@ -145,6 +145,8 @@ A background PNG with a twin twice its size, such as `DMGBackground@2x.png`, sta
 | Linux | `<name>-<version>-linux-<arch>.tar.gz` with the app's AppStream metadata, and `flatpak/<id>.yml`, the manifest Flathub builds the Flatpak from, which downloads those archives from the release on GNOME's runtime |
 | Android | `<name>-<version>-android-<arch>.aab`, an App Bundle for Google Play signed with `sign.keystore`, the upload key |
 
+`-target macos` selects both macOS architectures on the store channel and writes one `<name>-<version>-macos-universal.pkg`, as does `-target macos_universal`. Select `-target android_arm64,android_x64` for one `<name>-<version>-android-universal.aab` containing `arm64-v8a` and `x86_64`. The x86_64 slice requires an Android NDK.
+
 ```yaml
 macos:
   category: public.app-category.productivity  # LSApplicationCategoryType, which the Mac App Store requires

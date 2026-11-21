@@ -105,7 +105,7 @@ Packages import only downward, which `internal/moduletest/layering_test.go` chec
 
 `nsgo` is the only build entry point; it shells out to `go` and Xcode's tools ([tool](docs/architecture/tool.md)).
 
-- Targets name an OS and an architecture (`macos_arm64`, `windows_x64`), so each package holds one binary.
+- Targets name an OS and an architecture (`macos_arm64`, `windows_x64`). Universal macOS apps and dual-ABI Android App Bundles combine their architecture builds in one package.
 - A TSX app's bundles are compiled ahead into its package, so packages ship no compiler.
 - A package's catalogs compile to Go committed beside them, so apps parse no catalog and `go build` needs no tool.
 - Desktop installers are written in Go where they can be: Linux packages and disk images' layouts, with `hdiutil` for the image; the Windows installer alone takes another tool, NSIS's `makensis`, and without it the package keeps the script ([installers](docs/architecture/tool.md#installers)).

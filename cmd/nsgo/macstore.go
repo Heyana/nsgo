@@ -34,6 +34,15 @@ func (p *project) sandboxEntitlements() map[string]any {
 	return ents
 }
 
+// releaseMacStorePackage packages the signed app and gathers it for release.
+func releaseMacStorePackage(ctx context.Context, p *project, app, dir, arch string) error {
+	pkg, err := buildMacStorePackage(ctx, p, app, dir, arch)
+	if err != nil {
+		return err
+	}
+	return p.releaseAssets(pkg)
+}
+
 // buildMacStorePackage signs app for the Mac App Store and writes its
 // installer package into dir, returning the package's path.
 func buildMacStorePackage(ctx context.Context, p *project, app, dir, arch string) (string, error) {

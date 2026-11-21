@@ -36,7 +36,8 @@ func TestWriteBundle(t *testing.T) {
 		TargetSDK:   35,
 	}, []File{
 		{Name: "classes.dex", Data: []byte("dex")},
-		{Name: "lib/arm64-v8a/libnsgo.so", Data: []byte("go")},
+		{Name: "lib/arm64-v8a/libnsgo.so", Data: []byte("arm64")},
+		{Name: "lib/x86_64/libnsgo.so", Data: []byte("amd64")},
 		{Name: "assets/a.txt", Data: []byte("a")},
 	}, key)
 	if err != nil {
@@ -54,9 +55,17 @@ func TestWriteBundle(t *testing.T) {
 		names = append(names, f.Name)
 	}
 	want := "META-INF/MANIFEST.MF,META-INF/NSGO.SF,META-INF/NSGO.RSA,base/manifest/AndroidManifest.xml,base/dex/classes.dex," +
-		"base/lib/arm64-v8a/libnsgo.so,base/assets/a.txt,base/res/mipmap-xxxhdpi-v4/ic_launcher.png,base/resources.pb,BundleConfig.pb"
+		"base/lib/arm64-v8a/libnsgo.so,base/lib/x86_64/libnsgo.so,base/assets/a.txt,base/res/mipmap-xxxhdpi-v4/ic_launcher.png," +
+		"base/native.pb,base/resources.pb,BundleConfig.pb"
 	if got := strings.Join(names, ","); got != want {
 		t.Fatalf("the bundle holds %s", got)
+	}
+
+	// NativeLibraries names the two directories with arm64-v8a and x86_64 targeting.
+	const native = "\x0a\x15\x0a\x0dlib/arm64-v8a\x12\x04\x0a\x02\x08\x03" +
+		"\x0a\x12\x0a\x0alib/x86_64\x12\x04\x0a\x02\x08\x05"
+	if got := files["base/native.pb"]; !bytes.Equal(got, []byte(native)) {
+		t.Errorf("native.pb = %x, want %x", got, native)
 	}
 
 	// The manifest's strings, the target SDK among them, and the

@@ -76,19 +76,26 @@ func buildAndroidBinary(ctx context.Context, p *project, tmp, goarch string) ([]
 // links arm64 without cgo; amd64 needs the NDK's clang, as Go supports no
 // other external linker for it.
 func buildAndroidAPK(ctx context.Context, p *project, dir, goarch string) (string, error) {
-	return buildAndroidPackage(ctx, p, dir, goarch, ".apk", apk.Write)
+	return buildAndroidPackage(ctx, p, dir, ".apk", apk.Write, goarch)
 }
 
-// buildAndroidAAB writes <dir>/<name>.aab for one architecture, the
-// Android App Bundle Google Play takes, signed with the upload key.
-func buildAndroidAAB(ctx context.Context, p *project, dir, goarch string) (string, error) {
-	return buildAndroidPackage(ctx, p, dir, goarch, ".aab", apk.WriteBundle)
+// buildAndroidAAB writes one signed Android App Bundle for the selected ABIs.
+func buildAndroidAAB(ctx context.Context, p *project, dir string, goarches ...string) (string, error) {
+	return buildAndroidPackage(ctx, p, dir, ".aab", apk.WriteBundle, goarches...)
 }
 
-// buildAndroidPackage writes <dir>/<name><ext> for one architecture with
-// write, apk.Write or apk.WriteBundle.
-func buildAndroidPackage(ctx context.Context, p *project, dir, goarch, ext string,
-	write func(io.Writer, []byte, apk.Manifest, []apk.File, *apk.Key) error) (string, error) {
+func releaseAndroidBundle(ctx context.Context, p *project, dir, target string, goarches ...string) error {
+	aab, err := buildAndroidAAB(ctx, p, dir, goarches...)
+	if err != nil {
+		return err
+	}
+	return p.releaseCopy(aab, p.releaseName(target, ".aab"))
+}
+
+// buildAndroidPackage combines the selected executables with one copy of the
+// runtime, manifest and resources, then signs the resulting APK or App Bundle.
+func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
+	write func(io.Writer, []byte, apk.Manifest, []apk.File, *apk.Key) error, goarches ...string) (string, error) {
 	classes, err := androidClassFiles(p)
 	if err != nil {
 		return "", err
@@ -98,9 +105,24 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, goarch, ext strin
 		return "", err
 	}
 	defer os.RemoveAll(tmp)
-	app, abi, err := buildAndroidBinary(ctx, p, tmp, goarch)
-	if err != nil {
-		return "", err
+	files := []apk.File{{Name: "classes.dex", Data: androidruntime.ClassesDex}}
+	files = append(files, classes...)
+	var libraries []string
+	for _, goarch := range goarches {
+		app, abi, err := buildAndroidBinary(ctx, p, tmp, goarch)
+		if err != nil {
+			return "", err
+		}
+		files = append(files, apk.File{Name: "lib/" + abi + "/libnsgo.so", Data: app})
+		required, err := androidLibraries(ctx, p, goarch, app)
+		if err != nil {
+			return "", err
+		}
+		for _, library := range required {
+			if !slices.Contains(libraries, library) {
+				libraries = append(libraries, library)
+			}
+		}
 	}
 	if ext == ".aab" {
 		stage(ctx, "packaging the App Bundle")
@@ -111,11 +133,7 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, goarch, ext strin
 	if err != nil {
 		return "", err
 	}
-	files := []apk.File{
-		{Name: "classes.dex", Data: androidruntime.ClassesDex},
-		{Name: "lib/" + abi + "/libnsgo.so", Data: app},
-	}
-	files = append(files, classes...)
+
 	// Resources go in the APK's assets, where the app reads them.
 	err = walkMobileResources(p, func(rel string, data []byte) error {
 		files = append(files, apk.File{Name: "assets/" + rel, Data: data})
@@ -146,10 +164,6 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, goarch, ext strin
 	}
 	defer f.Close()
 	names, err := p.appNames()
-	if err != nil {
-		return "", err
-	}
-	libraries, err := androidLibraries(ctx, p, goarch, app)
 	if err != nil {
 		return "", err
 	}

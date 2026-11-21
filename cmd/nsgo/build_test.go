@@ -112,6 +112,26 @@ func TestExpandTargetsBareOSDropsDuplicates(t *testing.T) {
 	}
 }
 
+func TestUniversalStoreTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		in, want []string
+	}{
+		{"both", []string{"macos_x64", "ios", "android_arm64", "windows_arm64", "macos_arm64", "android_x64"},
+			[]string{"macos_universal", "ios", "android_universal", "windows_arm64"}},
+		{"single", []string{"macos_x64", "android_x64", "windows_arm64", "windows_x64"},
+			[]string{"macos_x64", "android_x64", "windows_arm64", "windows_x64"}},
+		{"explicit", []string{"macos_arm64", "macos_universal", "linux_arm64", "android_arm64"},
+			[]string{"macos_universal", "linux_arm64", "android_arm64"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := universalStoreTargets(tc.in); !slices.Equal(got, tc.want) {
+				t.Fatalf("store targets %v = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestLoadExpandsAllTargets(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "nsgo.yaml"), []byte("name: Test\nbuild:\n  targets: [all]\n"), 0o644); err != nil {

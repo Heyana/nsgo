@@ -145,6 +145,8 @@ windows:
 | Linux | 带应用 AppStream 元数据的 `<name>-<version>-linux-<arch>.tar.gz`，以及 `flatpak/<id>.yml`：Flathub 据此构建 Flatpak 的清单，在 GNOME 运行时上从 Release 下载这些归档 |
 | Android | 用于 Google Play 的 App Bundle `<name>-<version>-android-<arch>.aab`，用上传密钥 `sign.keystore` 签名 |
 
+在商店渠道，`-target macos` 选择两种 macOS 架构，和 `-target macos_universal` 一样，生成一份 `<name>-<version>-macos-universal.pkg`。使用 `-target android_arm64,android_x64` 生成一份包含 `arm64-v8a` 和 `x86_64` 的 `<name>-<version>-android-universal.aab`。构建 x86_64 需要 Android NDK。
+
 ```yaml
 macos:
   category: public.app-category.productivity  # LSApplicationCategoryType，Mac App Store 要求填写

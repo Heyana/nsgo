@@ -41,6 +41,8 @@ func buildAll(ctx context.Context, p *project) error {
 		if buildTargets, err = embedOnly(buildTargets); err != nil {
 			return err
 		}
+	} else if p.channel() == channelStore {
+		buildTargets = universalStoreTargets(buildTargets)
 	}
 	// A library for a host app takes the host's target API.
 	if warning := androidTargetWarning(p, buildTargets); warning != "" && !p.Build.embed {
@@ -55,7 +57,7 @@ func buildAll(ctx context.Context, p *project) error {
 	if p.Build.all {
 		// Say what all left out that the build does not add.
 		var out []string
-		if !slices.Contains(buildTargets, "android_x64") {
+		if !slices.Contains(buildTargets, "android_x64") && !slices.Contains(buildTargets, "android_universal") {
 			out = append(out, "android_x64, which needs an NDK")
 		}
 		if !slices.ContainsFunc(buildTargets, func(t string) bool { return strings.HasPrefix(t, "miniprogram_") }) {
@@ -353,6 +355,31 @@ func goAndXcodeTargets() []string {
 	return out
 }
 
+// universalStoreTargets replaces the architectures of each combined store
+// package in place in the build order, keeping the other targets in order.
+func universalStoreTargets(targets []string) []string {
+	mac := slices.Contains(targets, "macos_universal") ||
+		slices.Contains(targets, "macos_arm64") && slices.Contains(targets, "macos_x64")
+	android := slices.Contains(targets, "android_arm64") && slices.Contains(targets, "android_x64")
+	var out []string
+	for _, target := range targets {
+		switch target {
+		case "macos_arm64", "macos_x64":
+			if mac {
+				target = "macos_universal"
+			}
+		case "android_arm64", "android_x64":
+			if android {
+				target = "android_universal"
+			}
+		}
+		if !slices.Contains(out, target) {
+			out = append(out, target)
+		}
+	}
+	return out
+}
+
 func buildTarget(ctx context.Context, p *project, target, dir string) error {
 	_, arch, _ := strings.Cut(target, "_")
 	if p.Build.embed {
@@ -370,9 +397,6 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 	}
 	switch target {
 	case "macos_universal":
-		if p.channel() == channelStore {
-			return errors.New("macos_universal cannot build a Mac App Store package")
-		}
 		return buildMacUniversal(ctx, p, dir)
 	case "macos_arm64", "macos_x64":
 		app, err := buildMacApp(ctx, p, dir, goArch(arch))
@@ -383,11 +407,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 			if !p.installers() {
 				return nil
 			}
-			pkg, err := buildMacStorePackage(ctx, p, app, dir, arch)
-			if err != nil {
-				return err
-			}
-			return p.releaseAssets(pkg)
+			return releaseMacStorePackage(ctx, p, app, dir, arch)
 		}
 		if err := signMacApp(ctx, p, app); err != nil {
 			return err
@@ -509,13 +529,11 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 			return err
 		}
 		return p.releaseInstaller(target, deb)
+	case "android_universal":
+		return releaseAndroidBundle(ctx, p, dir, target, "arm64", "amd64")
 	case "android_arm64", "android_x64":
 		if p.channel() == channelStore {
-			aab, err := buildAndroidAAB(ctx, p, dir, goArch(arch))
-			if err != nil {
-				return err
-			}
-			return p.releaseCopy(aab, p.releaseName(target, ".aab"))
+			return releaseAndroidBundle(ctx, p, dir, target, goArch(arch))
 		}
 		apk, err := buildAndroidAPK(ctx, p, dir, goArch(arch))
 		if err != nil {
@@ -558,6 +576,12 @@ func buildMacUniversal(ctx context.Context, p *project, dir string) error {
 	}
 	if err := lipoMacBinaries(ctx, app, x64); err != nil {
 		return err
+	}
+	if p.channel() == channelStore {
+		if !p.installers() {
+			return signUniversalAdHoc(ctx, p, app)
+		}
+		return releaseMacStorePackage(ctx, p, app, dir, "universal")
 	}
 	if p.updates() {
 		if err := rewriteUniversalFeed(p, app); err != nil {

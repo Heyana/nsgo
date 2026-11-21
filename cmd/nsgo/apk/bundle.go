@@ -61,6 +61,9 @@ func WriteBundle(w io.Writer, template []byte, m Manifest, files []File, key *Ke
 		}
 		all = append(all, File{Name: "base/" + networkSecurityFile, Data: pbBytes(nil, 1, policy)})
 	}
+	if native := bundleNativeLibraries(files); len(native) != 0 {
+		all = append(all, File{Name: "base/native.pb", Data: native})
+	}
 	all = append(all,
 		File{Name: "base/resources.pb", Data: resourcesProto(m)},
 		File{Name: "BundleConfig.pb", Data: bundleConfig()})
@@ -86,6 +89,39 @@ func bundlePath(name string) (string, bool) {
 		return "base/" + name, true
 	}
 	return "", false
+}
+
+// bundleNativeLibraries encodes the base module's native.pb (bundletool's
+// NativeLibraries), so each ABI's executable goes into its own split APK.
+func bundleNativeLibraries(files []File) []byte {
+	var abis []string
+	for _, file := range files {
+		rest, ok := strings.CutPrefix(file.Name, "lib/")
+		if !ok {
+			continue
+		}
+		abi, _, ok := strings.Cut(rest, "/")
+		if ok && !slices.Contains(abis, abi) {
+			abis = append(abis, abi)
+		}
+	}
+	slices.Sort(abis)
+	// Abi.AbiAlias values from bundletool's targeting.proto.
+	aliases := map[string]uint64{
+		"armeabi": 1, "armeabi-v7a": 2, "arm64-v8a": 3, "x86": 4,
+		"x86_64": 5, "mips": 6, "mips64": 7, "riscv64": 8,
+	}
+	var out []byte
+	for _, abi := range abis {
+		alias, ok := aliases[abi]
+		if !ok {
+			continue
+		}
+		targeting := pbBytes(nil, 1, pbVarint(nil, 1, alias))
+		dir := pbString(nil, 1, "lib/"+abi)
+		out = pbBytes(out, 1, pbBytes(dir, 2, targeting))
+	}
+	return out
 }
 
 // bundleConfig is BundleConfig.pb: the bundletool version, and native

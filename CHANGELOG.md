@@ -21,6 +21,7 @@
 - Advance the clock during headless Go test waits so animations started by asynchronous replies can finish (#1642 by @houko).
 - Run the shared JavaScript API and TSX runtime suites in Chromium CI with browser DevTools reporting TSX source lines (#185 by @houko).
 - Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support (#1227 by @houko).
+- Build one universal Mac App Store package or dual-ABI Android App Bundle when both platform architectures are selected (#1231 by @houko).
 - Record window and share requests as `nsgotest.WindowRequest` and `nsgotest.Share`, with window action constants in `nsgotest` (#181 by @houko).
 - Keep a read-only input's text selectable and copyable on macOS and iOS, the latter with no keyboard, stop edits at once in a macOS field made read-only while it is edited, and make `Readonly` and `Disabled` stop edits on HarmonyOS, which ignored them.
 - Keep macOS presses inside a Liquid Glass view, such as `chat.EffortPicker`'s panel, reaching the app after the first, as AppKit swallowed the release of a press it passed up through the glass.
