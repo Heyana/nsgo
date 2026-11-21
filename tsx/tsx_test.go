@@ -202,9 +202,11 @@ func TestAppInfo(t *testing.T) {
 	app := run(t, `import { appInfo, mount, Text } from "nsgo";
 const info = appInfo();
 mount(() => <Text>{[info.id, info.version, info.build, info.development].join(" ")}</Text>);`)
-	// go test builds the app without the tool: no identity, in development.
-	if texts := app.Texts(); !slices.Equal(texts, []string{"   true"}) {
-		t.Errorf("texts %q", texts)
+	// The target runner links an app identity into the test binary.
+	info := core.App()
+	want := info.ID + " " + info.Version + " " + info.Build + " true"
+	if texts := app.Texts(); !slices.Equal(texts, []string{want}) {
+		t.Errorf("texts %q, want %q", texts, want)
 	}
 }
 

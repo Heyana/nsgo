@@ -356,7 +356,7 @@ export function surface() {
 	var plugin *tsx.Plugin
 	var loadErr error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true})
 		return core.View{}
 	})
 	if loadErr != nil {
@@ -398,7 +398,7 @@ mount(() => <View><Input testID="plugin-field" /><Text testID="plugin-log">{() =
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		cx.OnKey("mod+s", func() { host = append(host, "save") })
 		cx.OnBackPress(func() bool { host = append(host, "back"); return true })
-		return core.View{Children: []core.Node{core.Input{TestID: "host-field"}, tsx.View{Package: p}}}
+		return core.View{Children: []core.Node{core.Input{TestID: "host-field"}, tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}}}
 	})
 	app.Focus("id:host-field")
 	app.Key("mod+s")
@@ -435,7 +435,7 @@ mount(() => <View>
 		var plugin func(cx *core.Scope) core.Node
 		if sandboxed {
 			p := verified(t, source, pkg.Capabilities{})
-			plugin = tsx.View{Package: p}.Render
+			plugin = tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render
 		} else {
 			code, err := bundler.Compile(fstest.MapFS{"App.tsx": {Data: []byte(source)}}, "App.tsx")
 			if err != nil {
@@ -494,7 +494,7 @@ mount(() => <View testID="plugin-root">
 		name := map[bool]string{true: "sandboxed", false: "not sandboxed"}[sandboxed]
 		var plugin func(cx *core.Scope) core.Node
 		if sandboxed {
-			plugin = tsx.View{Package: verified(t, source, pkg.Capabilities{})}.Render
+			plugin = tsx.View{Package: verified(t, source, pkg.Capabilities{}), Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render
 		} else {
 			code, err := bundler.Compile(fstest.MapFS{"App.tsx": {Data: []byte(source)}}, "App.tsx")
 			if err != nil {
@@ -546,7 +546,7 @@ mount(() => <NavStack state={nav}>{(route) => <NavPage title={route}>
 	<Text testID="open" onPress={() => open.set(true)}>Open</Text>
 	<Dialog open={open()} statusBar={hide() ? { hidden: true } : undefined}><Text testID="hide" onPress={() => hide.set(true)}>Hide</Text></Dialog>
 </NavPage>}</NavStack>);`
-	app := nsgotest.Start(t, tsx.View{Package: verified(t, source, pkg.Capabilities{})}.Render)
+	app := nsgotest.Start(t, tsx.View{Package: verified(t, source, pkg.Capabilities{}), Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render)
 	app.Press("id:open")
 	app.Settle()
 	refusals := func() int { return strings.Count(logged.String(), `"statusBar" capability`) }
@@ -568,7 +568,7 @@ mount(() => <View testID="plugin-root" onPress={() => {}} style={{ height: 300 }
 		name := map[bool]string{true: "sandboxed", false: "not sandboxed"}[sandboxed]
 		var plugin func(cx *core.Scope) core.Node
 		if sandboxed {
-			plugin = tsx.View{Package: verified(t, source, pkg.Capabilities{})}.Render
+			plugin = tsx.View{Package: verified(t, source, pkg.Capabilities{}), Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render
 		} else {
 			code, err := bundler.Compile(fstest.MapFS{"App.tsx": {Data: []byte(source)}}, "App.tsx")
 			if err != nil {
@@ -885,6 +885,9 @@ func TestPluginCallTotalStopsYieldingWork(t *testing.T) {
 
 // TestPluginCallTotalCutsATimerQuietly holds CallTotal, cutting JS a timer runs for the call, to failing the call alone, not the app as a panic past the call.
 func TestPluginCallTotalCutsATimerQuietly(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("the page's engine cannot interrupt a running timer callback")
+	}
 	p := verified(t, `export function spin() {
 	return new Promise(() => setTimeout(() => { for (;;) {} }, 0));
 }`, pkg.Capabilities{})
@@ -1009,7 +1012,9 @@ export function counts() { return [n]; }`, 300*time.Millisecond, time.Second)
 	}
 }
 
-// TestPluginCallTotalStopsTimeoutChains holds a setTimeout chain that sets itself again, whether the call starts it or a continuation of the call after an await, to the call's deadline, while a short delay within it still works.
+// TestPluginCallTotalStopsTimeoutChains holds a self-renewing timeout
+// chain to the call's deadline. Goja also tracks which call owns a
+// chain started after await.
 func TestPluginCallTotalStopsTimeoutChains(t *testing.T) {
 	app, plugin := deadlinePlugin(t, `let a = 0, b = 0, late = 0;
 export function chain() { setTimeout(function tick() { a++; setTimeout(tick, 1); }, 1); return 1; }
@@ -1024,12 +1029,15 @@ export function counts() { return [a, b, late]; }`, time.Second, 300*time.Millis
 	if _, err := callPlugin(t, app, plugin, "chain"); err != nil {
 		t.Fatal(err)
 	}
-	if v, err := callPlugin(t, app, plugin, "after"); err != nil || number(v) != 2 {
-		t.Fatalf("after = %v, %v, want 2 after its short delay", v, err)
+	tracksContinuation := runtime.GOOS != "js"
+	if tracksContinuation {
+		if v, err := callPlugin(t, app, plugin, "after"); err != nil || number(v) != 2 {
+			t.Fatalf("after = %v, %v, want 2 after its short delay", v, err)
+		}
 	}
-	runUntil(app, start, 150*time.Millisecond)
-	if c := counts(t, app, plugin); c[0] == 0 || c[1] == 0 || c[2] != 1 {
-		t.Fatalf("counts within the deadline = %v, want both chains running and the late timer run", c)
+	app.Advance(25 * time.Millisecond)
+	if c := counts(t, app, plugin); c[0] == 0 || tracksContinuation && (c[1] == 0 || c[2] != 1) {
+		t.Fatalf("counts within the deadline = %v, promise contexts tracked = %v", c, tracksContinuation)
 	}
 	runUntil(app, start, 450*time.Millisecond)
 	before := counts(t, app, plugin)
@@ -1041,6 +1049,9 @@ export function counts() { return [a, b, late]; }`, time.Second, 300*time.Millis
 
 // TestPluginCallTotalStopsPromiseChains holds a chain of microtasks, which never yields the call into JS, and a chain of promises a timer settles, both left running by calls that returned, to their calls' deadlines, and the plugin to answering after.
 func TestPluginCallTotalStopsPromiseChains(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("the page's engine cannot interrupt a running microtask chain")
+	}
 	app, plugin := deadlinePlugin(t, `let m = 0, n = 0;
 export function micro() { (async () => { for (;;) { m++; await null; } })(); return 1; }
 export function timed() { (async () => { for (;;) { n++; await new Promise(resolve => setTimeout(resolve, 1)); } })(); return 1; }

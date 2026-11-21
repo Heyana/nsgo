@@ -163,8 +163,10 @@ jobs:
         run: go tool nsgo test -target web ./internal/testhost/testdata/keys
       - name: Test browser backend
         run: go tool nsgo test -target web ./internal/platform/web
-      - name: Test browser TSX selectors and hardening
-        run: go tool nsgo test -target web -run '^(TestRelationalClassesFromTSX|TestSandboxHardensTypedArrays)$' ./tsx
+      - name: Test the shared JavaScript API in Chromium
+        run: go tool nsgo test -target web ./tsx/internal/js
+      - name: Test the TSX runtime in Chromium
+        run: go tool nsgo test -target web ./tsx
       - name: Test browser radio and tab focus
         run: go tool nsgo test -target web -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
       - name: Test browser package trust persistence

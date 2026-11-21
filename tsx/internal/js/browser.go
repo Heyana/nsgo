@@ -501,19 +501,23 @@ func (r *Runtime) mapStack(stack string) string {
 		return stack
 	}
 	return position.ReplaceAllStringFunc(stack, func(at string) string {
-		m := position.FindStringSubmatch(at)
-		sm := r.maps[m[1]]
-		if sm == nil {
-			return at
-		}
-		line, _ := strconv.Atoi(m[2])
-		col, _ := strconv.Atoi(m[3])
-		src, _, l, c, ok := sm.Source(line, col-1)
-		if !ok {
-			return at
-		}
-		return fmt.Sprintf("%s:%d:%d", src, l, c+1)
+		file, line, column := r.sourcePosition(position.FindStringSubmatch(at))
+		return fmt.Sprintf("%s:%d:%d", file, line, column)
 	})
+}
+
+// sourcePosition takes the captures from position and resolves their
+// source map when one covers the frame.
+func (r *Runtime) sourcePosition(frame []string) (file string, line, column int) {
+	file = frame[1]
+	line, _ = strconv.Atoi(frame[2])
+	column, _ = strconv.Atoi(frame[3])
+	if sm := r.maps[file]; sm != nil {
+		if src, _, l, c, ok := sm.Source(line, column-1); ok {
+			return src, l, c + 1
+		}
+	}
+	return file, line, column
 }
 
 // RunScript runs a script in the realm's global scope: the page's copy of
@@ -535,6 +539,9 @@ func (r *Runtime) RunString(src string) (Value, error) { return r.runSource("<ev
 // runSource evaluates src in the realm's global scope, named name in
 // stacks.
 func (r *Runtime) runSource(name, src string) (Value, error) {
+	if _, known := r.maps[name]; !known {
+		r.maps[name] = nil
+	}
 	if i := strings.LastIndex(src, inlineMap); i >= 0 {
 		data, _, _ := strings.Cut(src[i+len(inlineMap):], "\n")
 		if b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(data)); err == nil {
@@ -743,17 +750,24 @@ func numberString(f float64) string {
 	return mant + "e" + string(sign) + exp
 }
 
+// TrackCallers captures the caller at the JavaScript bridge, before
+// the browser's stack limit fills with WebAssembly frames.
+func TrackCallers(r *Runtime) { r.h.obj.Call("trackCallers") }
+
 // Caller is the line of JS code r runs now, through the source maps the code carries, as file and line; ok is false while r runs none.
 func Caller(r *Runtime) (file string, line int, ok bool) {
-	stack := r.mapStack(r.global.Get("Error").New().Get("stack").String())
-	for _, l := range strings.Split(stack, "\n") {
-		m := position.FindStringSubmatch(l)
-		if m == nil || strings.Contains(m[1], "wasm") {
+	stack := r.h.obj.Call("callerStack")
+	if stack.Type() != sjs.TypeString {
+		return "", 0, false
+	}
+	for _, frame := range strings.Split(stack.String(), "\n") {
+		m := position.FindStringSubmatch(frame)
+		if m == nil {
 			continue
 		}
-		n, err := strconv.Atoi(m[2])
-		if err == nil {
-			return m[1], n, true
+		if _, known := r.maps[m[1]]; known {
+			file, line, _ := r.sourcePosition(m)
+			return file, line, true
 		}
 	}
 	return "", 0, false

@@ -205,6 +205,7 @@ func newRuntime(cx *core.Scope) *runtime {
 	r.base = "asset:/"
 	r.installWeb()
 	if devtools.Enabled {
+		js.TrackCallers(r.vm)
 		scripts.add(r)
 		cx.Cleanup(func() { scripts.remove(r) })
 	}

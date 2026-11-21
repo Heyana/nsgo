@@ -1,7 +1,6 @@
 package tsx
 
 import (
-	"os"
 	"regexp"
 	"slices"
 	"testing"
@@ -11,7 +10,7 @@ import (
 
 // TestMenuRolesMatchTheTypes holds the menu roles TSX reads to the MenuRole type desktop.d.ts declares, and to every role core has.
 func TestMenuRolesMatchTheTypes(t *testing.T) {
-	src, err := os.ReadFile("types/desktop.d.ts")
+	src, err := typesFS.ReadFile("types/desktop.d.ts")
 	if err != nil {
 		t.Fatal(err)
 	}

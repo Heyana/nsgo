@@ -3,7 +3,8 @@
   const THROW = { throw: true }, MISSING = { missing: true };
   const goKey = Symbol("nsgo.go"), panicKey = Symbol("nsgo.panic");
   const reg = new FinalizationRegistry((id) => release(id));
-  let thrown;
+  const IntrinsicError = Error;
+  let thrown, caller;
   const fn = (id) => {
     const f = function (...a) {
       const r = dispatch(id, this, new.target, ...a);
@@ -27,6 +28,15 @@
   return {
     throw: THROW, missing: MISSING, goKey, panicKey,
     setThrown: (e) => { thrown = e; },
+    trackCallers: () => {
+      const call = dispatch;
+      dispatch = (...a) => {
+        const previous = caller;
+        caller = new IntrinsicError();
+        try { return call(...a); } finally { caller = previous; }
+      };
+    },
+    callerStack: () => caller?.stack,
     fn, ctor,
     get: (o, k) => (k in o ? o[k] : MISSING),
     call: (f, t, ...a) => Reflect.apply(f, t, a),

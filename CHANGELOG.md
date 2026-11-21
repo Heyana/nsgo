@@ -18,6 +18,7 @@
 - Restore web builds with pixel-backed custom cursors (#1206 by @houko).
 - Free a closed macOS window's views, shaders' Metal layers among them, once its frame clock had run, as an animation or a scroll does, where each window opened and closed leaked them.
 - Advance the clock during headless Go test waits so animations started by asynchronous replies can finish (#1642 by @houko).
+- Run the shared JavaScript API and TSX runtime suites in Chromium CI with browser DevTools reporting TSX source lines (#185 by @houko).
 - Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support (#1227 by @houko).
 - Record window and share requests as `nsgotest.WindowRequest` and `nsgotest.Share`, with window action constants in `nsgotest` (#181 by @houko).
 - Keep a read-only input's text selectable and copyable on macOS and iOS, the latter with no keyboard, stop edits at once in a macOS field made read-only while it is edited, and make `Readonly` and `Disabled` stop edits on HarmonyOS, which ignored them.
