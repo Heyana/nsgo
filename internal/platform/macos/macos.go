@@ -976,6 +976,8 @@ func (s *surface) close() {
 	s.sensors.Close()
 	delete(surfaces, s)
 	s.stopTicking()
+	// The run loop holds the link, which holds the surface's view as its target, and so the whole tree.
+	invalidate(&s.link)
 	s.stopPassTimer()
 	for _, stop := range s.stops {
 		stop()

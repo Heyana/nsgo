@@ -89,7 +89,7 @@ func validatePaste(self objc.ID, cmd objc.SEL, item objc.ID) bool {
 }
 
 // setWindowDelegate gives s's own window the delegate that ends the app
-// with it.
+// with it, which destroy releases.
 func (s *surface) setWindowDelegate() {
 	d := objc.ID(classWindowDelegate).Send(selAlloc).Send(sel("init"))
 	s.window.Send(selSetDelegate, d)

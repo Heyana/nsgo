@@ -368,7 +368,12 @@ func (s *surface) destroy() {
 	}
 	if window != 0 {
 		s.closePopup()
+		// The window does not retain its delegate (setWindowDelegate).
+		d := window.Send(sel("delegate"))
 		window.Send(selSetDelegate, objc.ID(0))
+		if d != 0 {
+			d.Send(selRelease)
+		}
 		window.Send(sel("orderOut:"), objc.ID(0))
 	}
 	s.close()
