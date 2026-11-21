@@ -14,13 +14,13 @@ import (
 // skillPackages are the packages the skill names by their last element.
 var skillPackages = map[string]string{
 	"nsgo": "", "core": "core", "base": "base", "ui": "ui", "mobile": "mobile", "desktop": "desktop",
-	"nsgotest": "nsgotest", "tsx": "tsx", "compiler": "tsx/compiler", "updater": "updater",
+	"gamepad": "gamepad", "nsgotest": "nsgotest", "tsx": "tsx", "compiler": "tsx/compiler", "updater": "updater",
 }
 
 var (
 	skillName     = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	skillLink     = regexp.MustCompile(`\]\(([^)#\s]+)(#[^)]*)?\)`)
-	skillIdent    = regexp.MustCompile(`\b(nsgo|core|base|ui|mobile|desktop|nsgotest|tsx|compiler|updater)\.([A-Z]\w*)(?:\.([A-Z]\w*))?`)
+	skillIdent    = regexp.MustCompile(`\b(nsgo|core|base|ui|mobile|desktop|gamepad|nsgotest|tsx|compiler|updater)\.([A-Z]\w*)(?:\.([A-Z]\w*))?`)
 	skillMethod   = regexp.MustCompile("(?:`|\\b)(cx|app)\\.([A-Z]\\w*)\\(")
 	skillPackage  = regexp.MustCompile("`((?:base|ui|tsx|icons)/[a-z]+)`")
 	skillReceiver = map[string][2]string{"cx": {"core", "Scope"}, "app": {"nsgotest", "App"}}

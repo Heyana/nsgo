@@ -42,6 +42,7 @@ nsgo
 │   │   └── internal/                    What they share
 │   ├── mobile                           What only phones have
 │   ├── audio                            Sounds and players, on core's part
+│   ├── gamepad                          Game controllers in the W3C Standard Gamepad layout
 │   ├── desktop                          What only desktops have
 │   │   └── locales                      Its menus' and permission guide's words, which backends read
 │   ├── updater                          Updating the app the platform's way
@@ -142,6 +143,7 @@ A line means "imports". `internal/moduletest/layering_test.go` checks the graph 
 - The root starts the dev client (`internal/dev`), which imports `internal/devtools` and `internal/driver` only in dev builds, to write `-trace`'s batches and DevTools' commits, its catalog `internal/dev/locales`, of `core` and `i18n` alone, for its failure overlay's words, and `nsgotest` only in `nsgo dev -automation`'s (`internal/dev/automation.go`, the `nsgodev` and `nsgoautomation` tags), whose agent `nsgotest` and the tool reach through `internal/automation`, which imports nothing of NSGo's; `TestLayering` lists that build too, and `TestMinimalAppLinks` fails a release app that links `testing`, `nsgotest` or the protocol.
 - `audio` imports only `core`, as `mobile` does: `core` does the engine's part, so its sounds and players reach the platform through the batch.
 - `nsgotest` imports `widget` for the timeline and activity values its test backend records. `internal/driver` holds the process-wide hook without importing `widget`.
+- `gamepad` imports `core`, `internal/driver` and `internal/platform/objcblock`, reaching GameController on Apple, XInput on Windows, evdev on Linux, `navigator.getGamepads` on the web, and `internal/driver`'s bridge on Android and in `nsgotest`.
 - `i18n` imports only `core` and `internal/cldr`; `base`'s packages import it for their catalogs, as `ui/chat/locales` does for its own.
 - `updater` imports only `core` and its catalogs; `internal/backend` imports it, to check as the app starts where the platform's updater keeps no schedule.
 - `ui` imports `base`, `core`, `mobile`, `desktop` and the icons; `base` never imports it.

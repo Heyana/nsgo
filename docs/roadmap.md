@@ -184,7 +184,7 @@ The [games plan (#1047)](https://github.com/nsgo-dev/nsgo/issues/1047) targets m
 
 | Item | Reference | Done when |
 | --- | --- | --- |
-| Gamepads | [#1049](https://github.com/nsgo-dev/nsgo/issues/1049) | Games read controller buttons and axes on each target that supports controllers |
+| Gamepads | [#1049](https://github.com/nsgo-dev/nsgo/issues/1049) | Games read controller buttons and axes on macOS, iOS, Windows, Linux, Android and the web through package `gamepad` (`Pads`, `State`) and `core.Env.SupportsGamepads`; so far `gamepad`, `core`, `nsgotest`'s fake controllers, and all platform backends (GameController via purego, XInput via syscall, pure-Go evdev, Web Gamepad API, and Android's Go + Java runtime sources) build and pass headless tests, while hardware controller verification on each OS and rebuilding Android's prebuilt `classes.dex` (`internal/platform/android/runtime/build.sh`) remain |
 | Audio | [#1050](https://github.com/nsgo-dev/nsgo/issues/1050), [#1128](https://github.com/nsgo-dev/nsgo/issues/1128) | `audio.Sound` (including `Voice.Pan`) and `audio.Player` play on Windows, Linux, Android and the web as they do on macOS and iOS |
 | Pixel buffers | [#1051](https://github.com/nsgo-dev/nsgo/issues/1051) | A buffer rewritten at 60 fps draws without blank frames on Android and the web, and Android canvases draw the same buffers |
 | Batched sprites | [#1053](https://github.com/nsgo-dev/nsgo/issues/1053) | `Drawing.DrawAtlas` matches the equivalent individual draws by pixel comparison, with timings before and after batching |

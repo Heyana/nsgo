@@ -122,6 +122,8 @@ const (
 	msgCanvasRequest = 22
 	// msgScanReport is what the code scanner reports: a frame of the camera, its close or its failure (scan.go).
 	msgScanReport = 23
+	// msgGamepad reports a game controller connecting, disconnecting or changing buttons and axes (gamepad.go).
+	msgGamepad = 24
 )
 
 // The parts of an image view's request msgImage carries.
@@ -225,7 +227,7 @@ func connect(opts Options) *surface {
 		lines:    make(chan []driver.TextLine, 1),
 		carets:   make(chan driver.CaretLayout, 1),
 		started:  make(chan struct{}),
-		env:      driver.Environment{OS: driver.OSAndroid, HasWebView: true, ScheduledNotifications: true},
+		env:      driver.Environment{OS: driver.OSAndroid, HasWebView: true, ScheduledNotifications: true, Gamepads: true},
 		main:     treeView{images: map[driver.NodeID]*imageView{}},
 		overlays: map[uint32]*overlay{},
 
@@ -441,6 +443,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.webCookiesSet(&r)
 		case msgScanReport:
 			s.scanReport(&r)
+		case msgGamepad:
+			readGamepad(&r)
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {

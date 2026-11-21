@@ -494,6 +494,8 @@ type App struct {
 	heldButtons map[driver.MouseButton]heldMouseButton
 	// mouseClicks tracks per-button consecutive click counts for MouseDown / MouseUp.
 	mouseClicks map[driver.MouseButton]mouseClickState
+	// gamepads is the per-app synthetic gamepad source for headless tests (gamepad.go).
+	gamepads *fakeGamepads
 
 	// blocked is set while the touch responder keeps native drags from
 	// starting (ItemBlockNative).
@@ -652,11 +654,14 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		HotKeys: true,
 		Windows: windows,
 	})
+	a.gamepads = newFakeGamepads()
+	unbindGamepads := driver.BindGamepadSource(a.root, a.gamepads)
 	t.Cleanup(func() {
 		// Keys KeyDown and buttons MouseDown still hold go with the app; on a target they come up through the platform (target.releaseHeld).
 		a.held = nil
 		a.heldButtons = nil
 		a.root.Dispose()
+		unbindGamepads()
 	})
 	a.seed()
 	a.start = a.Clock.Now()

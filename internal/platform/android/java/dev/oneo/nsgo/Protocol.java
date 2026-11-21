@@ -117,6 +117,13 @@ final class Protocol {
     static final int CANVAS_REQUEST = 22;
     /** What the code scanner reports: the surface, the request's count and a SCAN_FRAME with the frame's width, height and luminance, a SCAN_CLOSED, or a SCAN_FAILED with why (scan.go). */
     static final int SCAN_REPORT = 23;
+    /** Game controller connect, disconnect or button/axis state (gamepad.go, Gamepads). */
+    static final int GAMEPAD = 24;
+
+    // What a GAMEPAD message reports, as gamepad.go has them.
+    static final int GAMEPAD_CONNECT = 0;
+    static final int GAMEPAD_DISCONNECT = 1;
+    static final int GAMEPAD_STATE = 2;
 
     /** Writes a message's part after its head. */
     interface Body {

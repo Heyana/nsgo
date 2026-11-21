@@ -38,6 +38,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `i18n`, `*/locales`, `internal/cldr` | — | The language the app shows, and what the code `nsgo` writes from a package's catalogs runs on, formatting by CLDR's data; `base`'s own catalogs ([languages](docs/architecture/languages.md)) |
 | `icons/lucide`, `tools/lucidegen` | — (NSH loads SVG as images) | The bundled Lucide pack, an accessor per icon, and its generator ([icons](docs/architecture/icons.md)) |
 | `audio` | `nsh`'s `Sound` and `AudioPlayer` | Sounds decoded once and played overlapping, and players of long audio, on core's part; macOS and iOS play them so far ([audio playback](docs/architecture/audio.md)) |
+| `gamepad` | — | Connected game controllers (`Pads`) and per-frame button and axis readings (`State`) in the W3C Standard Gamepad layout on macOS, iOS, Windows, Linux, Android and the web |
 | `microphone` | — | Recording the default input on macOS and iOS, and WAV files on Android in the runtime's foreground service ([Android recording](docs/architecture/android-recording.md)), reporting `ErrUnsupported` elsewhere |
 | `internal/audiosession` | — | iOS's one `AVAudioSession`, set by the highest level its holders ask for: videos, speech, `microphone` and audio's players and sounds ([sessions](docs/architecture/audio.md#sessions)) |
 | `updater`, `updater/locales` | `nsh/updater` | Updating the app the way its platform and channel do: Sparkle, WinSparkle, the appcast `nsgo build` signs, or the App Store ([updates](docs/architecture/updates.md)) |

@@ -427,7 +427,7 @@ func newWindow(opts Options, embedded bool) *window {
 		appID:   opts.ID,
 
 		actionRefs: map[uintptr]menuRef{},
-		env:        driver.Environment{OS: driver.OSLinux, Idiom: driver.IdiomDesktop, CustomCursor: true},
+		env:        driver.Environment{OS: driver.OSLinux, Idiom: driver.IdiomDesktop, CustomCursor: true, Gamepads: true},
 		components: opts.Components,
 		epoch:      time.Now(),
 		embedded:   embedded,

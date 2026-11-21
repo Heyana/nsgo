@@ -56,6 +56,9 @@ func (cx *Scope) RunFrameAt(at time.Time) {
 		at = rt.frameAt
 	}
 	rt.frameAt = at
+	rt.frameSeq++
+	rt.inFrame = true
+	defer func() { rt.inFrame = false }()
 	for _, cb := range waiting {
 		// A callback whose owner is gone does not run, and the frame that
 		// was asked for it takes it away.
@@ -64,6 +67,17 @@ func (cx *Scope) RunFrameAt(at time.Time) {
 		}
 		rt.run(cb.owner, func() { cb.fn(at) })
 	}
+}
+
+// FrameState returns the root scope of cx's graph, the display frame sequence
+// number, and whether RunFrameAt is currently executing: the core's part of
+// package gamepad's per-frame snapshot, which apps reach through gamepad.Pads
+// and gamepad.State.
+func FrameState(cx *Scope) (root *Scope, seq uint64, inFrame bool) {
+	if cx == nil || cx.rt == nil {
+		return nil, 0, false
+	}
+	return cx.rt.root, cx.rt.frameSeq, cx.rt.inFrame
 }
 
 // wantFrame asks the host for a display frame unless one is on its way.

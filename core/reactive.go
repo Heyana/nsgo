@@ -157,10 +157,12 @@ type runtime struct {
 	clock            Clock
 	report           func(error)
 
-	// The callbacks waiting for the next display frame, whether the host has been asked for it, and the last frame's time, which the next never precedes.
+	// The callbacks waiting for the next display frame, whether the host has been asked for it, the last frame's time (which the next never precedes), and the frame sequence and active flag read by package gamepad.
 	frames         []*frameCallback
 	frameRequested bool
 	frameAt        time.Time
+	frameSeq       uint64
+	inFrame        bool
 	requestFrame   func()
 	env            *Env
 	tree           *Tree

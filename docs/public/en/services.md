@@ -519,6 +519,23 @@ audio.LoadSound(cx, audio.Source{URI: "asset:sounds/click.wav"}, func(click *aud
 
 `audio.Voice` sets per-playback `Volume` (0 to 1, 0 as 1), `Rate` (0.5 to 2, 0 as 1) and `Pan` (-1 full left to 1 full right, 0 centered); values outside those ranges are clamped and NaN takes the default. `Sound.Stop` stops all playbacks of the sound and `Close` frees it, as its owning scope does when disposed. `Player` supports `Play`, `Preload`, `Pause`, `Seek`, `SetVolume`, `SetRate`, `SetLoop` and `Close`. macOS and iOS play audio today; Windows, Linux, Android and the web still report `CanPlayAudio` false.
 
+## Gamepads
+
+Package `gamepad` reads connected game controllers in the W3C Standard Gamepad layout (`ButtonSouth`/`ButtonA` through `ButtonHome`, `AxisLeftX`/`AxisLeftY`/`AxisRightX`/`AxisRightY`). `cx.Env().SupportsGamepads()` reports whether the target supports controllers (macOS, iOS, Windows, Linux, Android and browsers with the Gamepad API).
+
+`gamepad.Pads(cx)` is a tracked reactive read that rerenders scopes when controllers connect or disconnect without rerendering on button or stick changes. Inside a `RequestAnimationFrame` loop, `gamepad.State(cx, id)` returns the controller's buttons (`[0, 1]`, with `Pad.Pressed` true at `>= 0.5`) and axes (`[-1, 1]`, negative left/up and positive right/down) snapshotted once per display frame.
+
+```go
+var loop func(time.Time)
+loop = func(time.Time) {
+	if pad, ok := gamepad.State(cx, 0); ok {
+		move(pad.Axes[gamepad.AxisLeftX], pad.Axes[gamepad.AxisLeftY], pad.Pressed(gamepad.ButtonA))
+	}
+	cx.RequestAnimationFrame(loop)
+}
+cx.RequestAnimationFrame(loop)
+```
+
 ## Next
 
 - [Notifications](notifications.md): permission, badges and presses.

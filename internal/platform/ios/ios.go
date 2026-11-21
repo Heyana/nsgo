@@ -809,6 +809,7 @@ func (s *surface) environment() driver.Environment {
 		Speech:           apple.SpeechAvailable(),
 		Speak:            apple.SpeakAvailable(),
 		Audio:            idiom != driver.IdiomTV && apple.AudioAvailable(), // none on tvOS in the first stages (docs/architecture/audio.md)
+		Gamepads:         true,
 		Camera:           cameraAvailable(),
 		ScanCode:         cameraAvailable() && idiom != driver.IdiomTV,
 		CanSendInput:     false,

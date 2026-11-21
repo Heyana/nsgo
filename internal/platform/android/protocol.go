@@ -431,6 +431,7 @@ func readEnvironment(r *reader) driver.Environment {
 
 		// The runtime's alarms show them, its receiver setting them again after a reboot.
 		ScheduledNotifications: true,
+		Gamepads:               true,
 	}
 	flags := r.byte()
 	env.Dark = flags&1 != 0

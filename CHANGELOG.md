@@ -12,6 +12,7 @@
 - Add `ui.ProgressRing.StartAngle` and `CounterClockwise` to start the arc anywhere and run it, or an indeterminate ring's turn, counterclockwise.
 - Add `View.OnMouseDown`, `View.OnMouseUp`, `core.MouseButtonEvent`, `core.MouseButtonsDown`, `core.MouseButtonHeld`, and `MouseDown`/`MouseUp`/`BlurWindow` steps in nsgotest for all five mouse buttons with focus-loss clearing on macOS, Windows, Linux and the web (#1207).
 - Add `core.OffscreenImage` (`cx.NewOffscreenImage`), rendering a `core.Drawing` once into a retained offscreen image cached by `(ID, Version)` across Apple, Windows, Linux, web and `nsgotest` and re-rendered only on `Invalidate`, `Resize` or font changes (#1210).
+- Add package `gamepad` (`Pads`, `State`, W3C Standard Gamepad button and axis constants), `core.Env.SupportsGamepads`, platform backends on macOS, iOS, Windows, Linux, Android and the web, and `nsgotest` fake gamepad helpers (`ConnectGamepad`, `DisconnectGamepad`, `SetGamepadButton`, `SetGamepadAxis`) (#1049).
 - Add `ui/editor`, `base/editor`'s code editor in ui's colors and code type, following the theme, with the app's styles merged over it part by part.
 - Highlight every row of a soft-wrapped line in `base/editor`'s selections and matches, whose rows before the last showed nothing.
 - Draw `ui.Button`'s primary, secondary and ghost variants without a rim, and fill the secondary one with the text's color at a low opacity instead of an opaque gray.

@@ -24,7 +24,7 @@ type Env struct {
 	dark, reduce, reader    *Signal[bool]
 	contrast                *Signal[bool]
 	screenColor, speech     *Signal[bool]
-	audio, speak            *Signal[bool]
+	audio, speak, gamepads  *Signal[bool]
 	camera                  *Signal[bool]
 	scanCode                *Signal[bool]
 	canSendInput            *Signal[bool]
@@ -105,6 +105,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		speech:           NewSignal(cx, false),
 		audio:            NewSignal(cx, false),
 		speak:            NewSignal(cx, false),
+		gamepads:         NewSignal(cx, false),
 		camera:           NewSignal(cx, false),
 		scanCode:         NewSignal(cx, false),
 		canSendInput:     NewSignal(cx, false),
@@ -225,6 +226,7 @@ func (e *Env) set(v Environment) {
 	e.speech.Set(v.Speech)
 	e.audio.Set(v.Audio)
 	e.speak.Set(v.Speak)
+	e.gamepads.Set(v.Gamepads)
 	e.camera.Set(v.Camera)
 	e.scanCode.Set(v.ScanCode)
 	e.canSendInput.Set(v.CanSendInput)
@@ -373,6 +375,9 @@ func (e *Env) CanPlayAudio() bool { return e.audio.Get() }
 
 // CanSpeak reports whether Scope.Speak speaks text here: macOS, iOS, tvOS, Android, Windows, the web where the browser has speechSynthesis, and Linux where speech-dispatcher is installed. Elsewhere an utterance fails with SpeakUnavailable without asking the platform.
 func (e *Env) CanSpeak() bool { return e.speak.Get() }
+
+// SupportsGamepads reports whether package gamepad reads game controllers here: macOS, iOS, Windows, Linux, Android and the web.
+func (e *Env) SupportsGamepads() bool { return e.gamepads.Get() }
 
 // CanTakePhoto reports whether Scope.TakePhoto shows a camera here: iOS
 // and Android devices with one, and browsers on touch screens.

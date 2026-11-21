@@ -174,6 +174,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private final Runnable startUnheld = this::releaseStart;
     private static final long FOLDS_WAIT_MS = 300, FOLDS_WAIT_LONGEST_MS = 3000;
     private Sensors sensors;
+    private Gamepads gamepads;
     private boolean ownsEngine;
     private boolean attached;
     /** Whether the app's process runs on, off screen, for its overlays over other apps or its background location streams alone, its activity ended (keepOffScreen); and whether the app quit, which keeps nothing. */
@@ -451,6 +452,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             // The folds may have changed while the view was out of a window, and the report the library sends as it registers reaches no view.
             if (folds != null) foldsChanged();
         }
+        if (gamepads == null) gamepads = new Gamepads(getContext(), payload -> write(Protocol.GAMEPAD, payload));
+        gamepads.start(ui);
     }
 
     /** The app's lifecycle follows the window's focus and visibility; coming back to the front answers the overlay permission requests the setting held. */
@@ -484,6 +487,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (folds != null) {
             folds.stop(foldsReported);
             folds = null;
+        }
+        if (gamepads != null) {
+            gamepads.stop();
+            gamepads = null;
         }
         foldsPending = false;
         if (!ownsEngine && primary == null) detachFromEngine();
@@ -4000,9 +4007,16 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        if (gamepads != null && gamepads.onKeyEvent(e)) return true;
         // A key the window delivers is the keyboard's input. An IME's action or committed Return, which a field offers to keyBinding, leaves the modality, as a software Return does on iOS.
         if (e.getAction() == KeyEvent.ACTION_DOWN && !KeyEvent.isModifierKey(e.getKeyCode())) modality(Protocol.MODALITY_KEYBOARD);
         return keyBinding(e) || super.dispatchKeyEvent(e);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent e) {
+        if (gamepads != null && gamepads.onGenericMotionEvent(e)) return true;
+        return super.dispatchGenericMotionEvent(e);
     }
 
     /** The one matcher for hardware keys and Return delivered through an IME. */

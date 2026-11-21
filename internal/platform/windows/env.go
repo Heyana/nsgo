@@ -101,6 +101,7 @@ func (w *window) environment() driver.Environment {
 		WindowFrame:      w.windowFrame(),
 		Lifecycle:        w.lifecycle(),
 		Speak:            speakAvailable(),
+		Gamepads:         true,
 		FrontmostApp:     frontmostApp(),
 
 		// Only a window opened transparent has the composition that shows what is behind it (look.go); a transparent panel's is its own.
