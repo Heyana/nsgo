@@ -403,6 +403,7 @@ func Run(app engine.App, opts Options) {
 	if links := engine.LaunchLinks(); len(links) > 0 {
 		w.engine.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: links})
 	}
+	registerLiveWindow(w)
 	defer w.stop()
 	w.run()
 }
@@ -576,6 +577,7 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 		child.testID = cfg.ID
 		opts.test.windows[cfg.ID] = child
 	}
+	registerLiveWindow(child)
 	size := driver.Size{Width: opts.Width, Height: opts.Height}
 	child.engine.Resize(size, driver.Geometry{})
 	child.engine.SetEnvironment(child.env)
@@ -949,6 +951,7 @@ func (w *window) shutdown(forced bool) {
 	w.closeAudio()
 	w.discovery.close()
 	w.releasePointer(false)
+	unregisterLiveWindow(w)
 	w.watchMonitorSurface(0)
 	w.closeCanvasImages()
 	w.closeHotKeys()

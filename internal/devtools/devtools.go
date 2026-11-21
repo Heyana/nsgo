@@ -19,8 +19,8 @@ var ScriptSite func() (file string, line int, ok bool)
 
 // Agent is nsgo dev -automation's agent, package nsgotest's, which keeps a model of each surface as a test keeps one of the app it opened, and answers the automation's requests with them. The builds with the nsgoautomation tag link it.
 type Agent interface {
-	// Registered hears each surface core registers, on its graph goroutine and before the surface commits its first batch, so following it (Surface.Follow) hears every batch.
-	Registered(s Surface)
+	// Registered hears each surface on its graph goroutine before its first batch. listed reports whether it shows views or holds app-level services alone.
+	Registered(s Surface, listed bool)
 	// Unregistered hears that s went, as its window closed, on its graph goroutine.
 	Unregistered(s Surface)
 	// Do answers a request of package internal/automation's protocol, JSON in and out, from any goroutine.
@@ -164,7 +164,7 @@ func Register(s Surface, listed bool) {
 	surfaces = append(surfaces, registered{s, listed})
 	mu.Unlock()
 	if a := Automation; a != nil {
-		a.Registered(s)
+		a.Registered(s, listed)
 	}
 }
 

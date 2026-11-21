@@ -26,7 +26,7 @@ type fakeFollower struct {
 func (f *fakeFollower) Batch(b *driver.MountBatch) { f.batches = append(f.batches, b) }
 func (f *fakeFollower) Event(ev driver.Event)      { f.events = append(f.events, ev) }
 
-func (a *fakeAgent) Registered(s devtools.Surface) {
+func (a *fakeAgent) Registered(s devtools.Surface, _ bool) {
 	a.registered = append(a.registered, s)
 	f := &fakeFollower{}
 	a.follows[s] = f

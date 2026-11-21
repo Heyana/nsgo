@@ -376,10 +376,19 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 				}
 				continue
 			}
+			if goos == "linux" && target == "native" {
+				continue
+			}
 			if err := automationTargetError(target, goos, false); err == nil {
 				t.Errorf("%s %s unexpectedly allowed", goos, target)
 			}
 		}
+	}
+	if err := automationTargetError("native", "linux", false); err != nil {
+		t.Errorf("linux native: %v", err)
+	}
+	if err := automationTargetError("native", "linux", true); err == nil || !strings.Contains(err.Error(), "-release") {
+		t.Errorf("linux native -release: %v", err)
 	}
 	for _, goos := range []string{"darwin", "linux", "windows"} {
 		if err := automationTargetError("android", goos, false); err != nil {

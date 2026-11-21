@@ -65,6 +65,8 @@ type followed struct {
 	// seq is when the agent first heard of this surface, for deterministic oldest-first ordering across graphs.
 	seq uint64
 	app *App
+	// listed reports whether the initial surface displays views of its own.
+	listed bool
 	// opened is set for a window, a panel or a tray icon's view the app opened, of kind and title.
 	opened bool
 	kind   driver.SurfaceKind
@@ -205,10 +207,11 @@ func (g *agent) serve(id uint32, a *App, title string) {
 func (g *agent) close() { close(g.stop) }
 
 // Registered implements devtools.Agent: the agent follows every surface of every graph in the process, from before the surface's first batch.
-func (g *agent) Registered(s devtools.Surface) {
+func (g *agent) Registered(s devtools.Surface, listed bool) {
 	key := surfaceKey{graph: s.Graph(), id: uint32(s.ID())}
 	g.mu.Lock()
 	f := g.follow(key)
+	f.listed = listed
 	g.mu.Unlock()
 	s.Follow(f)
 }
@@ -452,7 +455,7 @@ func (f *followed) windowKind() (string, driver.Size) {
 		return "panel", size
 	case f.opened && f.kind == driver.SurfaceScene:
 		return "scene", size
-	case !f.opened && !f.opensSurfaces && (size.Width > 0 && size.Height > 0 || f.hasWinID && !f.own && f.lost() != ""):
+	case !f.opened && f.listed && !f.opensSurfaces && (size.Width > 0 && size.Height > 0 || f.hasWinID && !f.own && f.lost() != ""):
 		// Where the platform opens no windows of the app's, or in an embedded view (NewView), the surface shows views directly; keep a lost model listed so requests to it report why it stopped following instead of no_window.
 		return "app", size
 	default:

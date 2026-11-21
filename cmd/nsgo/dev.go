@@ -320,13 +320,18 @@ func automationTargetError(target, goos string, release bool) error {
 	if goos == "windows" && target == "native" {
 		return nil
 	}
-	if goos == "darwin" {
+	switch goos {
+	case "darwin":
 		switch target {
 		case "native", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
 			return nil
 		}
+	case "linux":
+		if target == "native" {
+			return nil
+		}
 	}
-	return errors.New("-automation drives macOS, Windows, Android and Apple devices and simulators so far: use -target android, run it on Windows with -target native, or on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
+	return errors.New("-automation drives macOS, Windows, Linux, Android and Apple devices and simulators so far: use -target android, run it on Windows or Linux with -target native, or on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
 }
 
 // checkDevAutomation reports why nsgo dev -automation cannot drive target on goos, or nil when it can.

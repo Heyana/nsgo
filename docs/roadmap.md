@@ -434,11 +434,10 @@ What NSGo's own [#57](https://github.com/nsgo-dev/nsgo/issues/57) asks for, whic
 
 ## Automation
 
-What `nsgo dev -automation` and `nsgo mcp` lack beyond macOS and Windows ([tool](architecture/tool.md#automation)). NSH has no counterpart; MyGo's `plugins/automation` is the reference.
+What `nsgo dev -automation` and `nsgo mcp` still lack ([tool](architecture/tool.md#automation)). NSH has no counterpart; MyGo's `plugins/automation` is the reference.
 
 | Item | Reference | Done when |
 | --- | --- | --- |
-| Linux | `linux/testhost.go`, [#1425](https://github.com/nsgo-dev/nsgo/issues/1425) | Its `testSurface` builds with `nsgoautomation` too and a live surface wraps the app's window as surface 0, and the end-to-end test passes under xvfb in a `go tool nsgo test` run someone starts by hand or dispatches |
 | The web | `web/testhost.go`, `cdp.go`, [#1424](https://github.com/nsgo-dev/nsgo/issues/1424) | `nsgo dev -target web -automation` opens its own browser over the DevTools protocol, installs the `nsgoTest` binding and passes the token in the page's query |
 | Mini programs | `internal/backend/run_miniprogram.go`, [#1431](https://github.com/nsgo-dev/nsgo/issues/1431) | `nsgo dev -automation` on a mini-program target drives the app in its developer tool's simulator, with the token in the build as `devServer` is, where it now refuses those targets |
 

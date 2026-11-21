@@ -270,7 +270,7 @@ func register(g *agent, id int) *fakeSurface {
 // registerGraph has g follow a surface numbered id on graph.
 func registerGraph(g *agent, graph, id int) *fakeSurface {
 	s := &fakeSurface{graph: graph, id: id}
-	g.Registered(s)
+	g.Registered(s, true)
 	return s
 }
 
@@ -392,6 +392,8 @@ func TestAgentFollowsTheRegistry(t *testing.T) {
 		root := core.NewRoot(core.RootOptions{CheckCommits: !automationBuild, Windows: &core.WindowOptions{Width: 300, Height: 200}})
 		t.Cleanup(root.Dispose)
 		app := core.NewTree(root, core.ApproxTextEngine{})
+		// Linux lays out the app-level surface at a nonzero size even when hidden.
+		app.Resize(driver.Size{Width: 480, Height: 640}, driver.Geometry{})
 		app.Mount(core.AppRoot(func(cx *core.Scope) {
 			cx.OpenWindow(core.WindowOptions{Title: title, Width: 300, Height: 200}, func(cx *core.Scope) core.Node { return core.Text{Content: text} })
 		}))

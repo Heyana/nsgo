@@ -64,14 +64,14 @@ func checkHost(ctx context.Context, p *project, jobs int) error {
 		return err
 	}
 	s.done("vetted", "")
-	// The dev client builds only into nsgo dev's builds, which take the nsgodev tag, and on macOS, Windows and Android -automation's agent with nsgoautomation too, so NSGo's own repository vets them as they build them.
+	// The dev client builds only into nsgo dev's builds, which take the nsgodev tag, and the automation agent with nsgoautomation, so NSGo's own repository vets them as they build them.
 	if path, err := importPathOf(p.Dir); err == nil && path == nsgoModule {
 		s = begin("vetting the dev client")
 		if err := goToolWithTags(ctx, p, nil, []string{"nsgodev"}, vetArgs(jobs, ".", "./internal/dev")...); err != nil {
 			s.fail()
 			return err
 		}
-		if err := goToolWithTags(ctx, p, []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}, []string{"nsgodev", "nsgoautomation"}, vetArgs(jobs, ".", "./internal/dev", "./nsgotest", "./internal/platform/macos")...); err != nil {
+		if err := vetAutomation(ctx, p, []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}, jobs, "macos"); err != nil {
 			s.fail()
 			return err
 		}
@@ -83,9 +83,20 @@ func checkHost(ctx context.Context, p *project, jobs int) error {
 			s.fail()
 			return err
 		}
+		if runtime.GOOS == "linux" {
+			if err := vetAutomation(ctx, p, nil, jobs, "linux"); err != nil {
+				s.fail()
+				return err
+			}
+		}
 		s.done("vetted the dev client", "")
 	}
 	return nil
+}
+
+// vetAutomation checks the tagged agent and the platform surface it drives.
+func vetAutomation(ctx context.Context, p *project, env []string, jobs int, platform string) error {
+	return goToolWithTags(ctx, p, env, []string{"nsgodev", "nsgoautomation"}, vetArgs(jobs, ".", "./internal/dev", "./nsgotest", "./internal/platform/"+platform)...)
 }
 
 // vetArgs is go vet's arguments for patterns, with -p jobs when jobs is above 0.
@@ -296,7 +307,7 @@ func targetSupportsAutomation(name string) bool {
 		return true
 	}
 	switch name {
-	case "macos_arm64", "macos_x64", "macos_universal", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
+	case "macos_arm64", "macos_x64", "macos_universal", "linux_arm64", "linux_x64", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
 		return true
 	}
 	return false
