@@ -1027,6 +1027,16 @@ func (w *window) saveDialog(name, start string, preflight *saveDialogPreflight) 
 	}
 	setDialogFolder(dialog, start)
 	if preflight != nil {
+		customize := dialog.query(&iidFileDialogCustomize)
+		if customize == nil {
+			return "", fmt.Errorf("%s", driver.NoSavePreflight)
+		}
+		defer customize.release()
+		if hr := customize.call(fileDialogAddText, saveRefusalControl, uintptr(unsafe.Pointer(wide("")))); failed(hr) {
+			return "", hresultError("save dialog refusal text", hr)
+		}
+		customize.call(fileDialogSetState, saveRefusalControl, 0)
+		preflight.customize = customize
 		events := &fileDialogEvents{vtbl: &fileDialogEventsVtbl, fileOK: preflight.fileOK}
 		var cookie uint32
 		if hr := dialog.call(fileDialogAdvise, uintptr(unsafe.Pointer(events)), uintptr(unsafe.Pointer(&cookie))); failed(hr) {

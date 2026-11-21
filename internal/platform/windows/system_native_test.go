@@ -561,15 +561,6 @@ func TestSaveDialogStartsInFolder(t *testing.T) {
 	}
 	postMessageW.Call(dlg, wmCommand, idOK, 0)
 	chosen(refused)
-	warning := waitForWindow(t, "report.txt", done)
-	if warning == 0 {
-		return
-	}
-	defer postMessageW.Call(warning, wmClose, 0, 0)
-	const gwOwner = 4
-	if owner, _, _ := getWindowProc.Call(warning, gwOwner); owner != dlg {
-		t.Errorf("warning was not owned by the save dialog")
-	}
 	if _, err := os.Stat(refused); !os.IsNotExist(err) {
 		t.Fatalf("refusing %q touched the path: %v", refused, err)
 	}
@@ -578,42 +569,31 @@ func TestSaveDialogStartsInFolder(t *testing.T) {
 		t.Fatalf("a refusal completed the save before the dialog closed: %s", got)
 	default:
 	}
-	// FindWindow can see the message box as its controls are created.
-	// Wait for its real OK button and for the box to be shown.
-	isWindowVisible := user32.NewProc("IsWindowVisible")
-	var okButton uintptr
-	for deadline := time.Now().Add(5 * time.Second); ; {
-		okButton, _, _ = getDlgItem.Call(warning, idOK)
-		if visible, _, _ := isWindowVisible.Call(warning); okButton != 0 && visible != 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the rejection warning did not show its OK control: title %q, button %v", windowText(warning), okButton)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	const bmClick = 0x00F5
-	postMessageW.Call(okButton, bmClick, 0, 0)
-	isWindow := user32.NewProc("IsWindow")
-	for deadline := time.Now().Add(5 * time.Second); ; {
-		if open, _, _ := isWindow.Call(warning); open == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the rejection warning did not dismiss")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	// Reuse the original filename control. Querying the focus again
-	// after the warning closes can find a different control.
+	// Reuse the original filename control after the denial. The dialog
+	// returns from OnFileOk while the engine's answer is in flight.
 	const wmSetText = 0x000C
 	name := filepath.Base(path)
 	sendMessage.Call(field, wmSetText, 0, uintptr(unsafe.Pointer(wide(name))))
 	if got := windowText(field); got != name {
 		t.Fatalf("the save dialog's name field now reads %q, want %q", got, name)
 	}
-	postMessageW.Call(dlg, wmCommand, idOK, 0)
-	chosen(path)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.After(5 * time.Second)
+retry:
+	for {
+		postMessageW.Call(dlg, wmCommand, idOK, 0)
+		select {
+		case actual := <-choices:
+			if !strings.EqualFold(actual, path) {
+				t.Fatalf("the retry chose %q, want %q", actual, path)
+			}
+			break retry
+		case <-ticker.C:
+		case <-deadline:
+			t.Fatalf("the native dialog did not submit the retry for %q", path)
+		}
+	}
 	select {
 	case got := <-status:
 		if want := fmt.Sprintf("true %q <nil> (2 attempts)", path); !strings.EqualFold(got, want) {
