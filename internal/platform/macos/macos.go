@@ -2870,7 +2870,12 @@ func mouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
 	}
 	if v == nil || !v.pressable() {
 		if v == nil || v.surface.pan == nil {
-			apple.Super(self, cmd, event)
+			// The press goes up to the view around, ours handed it on directly: AppKit's own mouseDown: on a view holding Liquid Glass tracks the mouse until it goes up, so the mouseUp would reach no view and the touch it started would never end.
+			if up := self.Send(sel("nextResponder")); v != nil && views[up] != nil {
+				up.Send(cmd, event)
+			} else {
+				apple.Super(self, cmd, event)
+			}
 		}
 		return
 	}
