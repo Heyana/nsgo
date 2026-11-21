@@ -86,7 +86,7 @@ func TestSoundsLoadOnceAndPlay(t *testing.T) {
 
 	// Playbacks overlap, each a command in the turn's batch, the voice clamped with 0 as 1 for Volume and Rate and 0 centered for Pan.
 	sounds[0].Play(SoundVoice{})
-	sounds[1].Play(SoundVoice{Volume: 0.5, Rate: 1.2, Pan: -0.5})
+	sounds[1].Play(SoundVoice{Volume: 0.5, Rate: 1.2, Pan: -0.5, Loop: true})
 	sounds[2].Play(SoundVoice{Volume: 3, Rate: 9, Pan: 2})
 	sounds[2].Play(SoundVoice{Volume: -1, Rate: 0.1, Pan: -2})
 	sounds[2].Play(SoundVoice{Pan: float32(math.NaN())})
@@ -98,11 +98,11 @@ func TestSoundsLoadOnceAndPlay(t *testing.T) {
 		if it.Count != id || it.Audio.Command != driver.AudioPlay {
 			t.Fatalf("play = %d %v", it.Count, it.Audio.Command)
 		}
-		voices = append(voices, SoundVoice{Volume: it.Audio.Volume, Rate: it.Audio.Rate, Pan: it.Audio.Pan})
+		voices = append(voices, SoundVoice{Volume: it.Audio.Volume, Rate: it.Audio.Rate, Pan: it.Audio.Pan, Loop: it.Audio.Loop})
 	}
 	want := []SoundVoice{
 		{Volume: 1, Rate: 1, Pan: 0},
-		{Volume: 0.5, Rate: 1.2, Pan: -0.5},
+		{Volume: 0.5, Rate: 1.2, Pan: -0.5, Loop: true},
 		{Volume: 1, Rate: 2, Pan: 1},
 		{Volume: 0, Rate: 0.5, Pan: -1},
 		{Volume: 1, Rate: 1, Pan: 0},

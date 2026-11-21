@@ -30,10 +30,12 @@ type AudioPlayer struct {
 	Position, Duration time.Duration
 	Volume, Rate       float32
 	Loop               bool
-	Loaded             bool
-	Playing            bool
-	Closed             bool
-	id                 uint32
+	// LoopStart is where playback returns after its first pass.
+	LoopStart time.Duration
+	Loaded    bool
+	Playing   bool
+	Closed    bool
+	id        uint32
 	// interval is the time between its progress reports and since the time since the last.
 	interval, since time.Duration
 	seeks, laps     uint32
@@ -79,7 +81,7 @@ func (a *App) audio(id uint32, r driver.AudioRequest) {
 		s := a.Sounds[i]
 		switch r.Command {
 		case driver.AudioPlay:
-			s.Plays = append(s.Plays, core.SoundVoice{Volume: r.Volume, Rate: r.Rate, Pan: r.Pan, StartAt: r.StartAt})
+			s.Plays = append(s.Plays, core.SoundVoice{Volume: r.Volume, Rate: r.Rate, Pan: r.Pan, StartAt: r.StartAt, Loop: r.Loop})
 		case driver.AudioStop:
 			s.Stops++
 		default:
@@ -88,7 +90,7 @@ func (a *App) audio(id uint32, r driver.AudioRequest) {
 		return
 	case driver.AudioOpen:
 		a.Players = append(a.Players, &AudioPlayer{Source: core.AudioSource{URI: r.Source.URI, Data: r.Source.Data}, Session: r.Session,
-			Position: r.Position, Volume: r.Volume, Rate: r.Rate, Loop: r.Loop, interval: r.ProgressInterval, id: id})
+			Position: r.Position, Volume: r.Volume, Rate: r.Rate, Loop: r.Loop, LoopStart: r.LoopStart, interval: r.ProgressInterval, id: id})
 	}
 	i := slices.IndexFunc(a.Players, func(p *AudioPlayer) bool { return p.id == id })
 	if i < 0 {
@@ -179,8 +181,11 @@ func (a *App) playAudio(d time.Duration) {
 				report(driver.AudioEnded)
 				continue
 			}
-			p.laps += uint32(p.Position / p.Duration)
-			p.Position %= p.Duration
+			start := driver.AudioLoopStart(p.LoopStart, p.Duration)
+			repeat := p.Duration - start
+			excess := p.Position - p.Duration
+			p.laps += 1 + uint32(excess/repeat)
+			p.Position = start + excess%repeat
 		}
 		if p.since += d; p.since >= p.interval {
 			p.since %= p.interval

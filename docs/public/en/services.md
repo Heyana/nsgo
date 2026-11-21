@@ -363,6 +363,12 @@ cx.Speak("Guten Morgen", core.Voice{Lang: "de-DE", Rate: 0.8}, func(stopped bool
 
 `Rate` and `Pitch` run from 0.5 to 2, 1 being the voice's own. `cx.Voices("ja", ...)` lists the voices installed for a language, so the app can ask the user to install one it lacks or let them pick one, whose `ID` goes in `core.Voice`. Browsers speak only after the user has pressed something on the page, and fail with `core.SpeakNotAllowed` before. A TSX package's Go components speak only with the `text_to_speech` capability.
 
+## Looping audio
+
+Set `audio.Voice.Loop` to repeat a sound playback until `Stop` or `Close`. For streamed music, set `audio.PlayerOptions.LoopStart` and call `SetLoop(true)`. The first pass includes the intro. Later passes start at the offset. A zero offset repeats the full track.
+
+On macOS 14 and iOS 17 or later, a finite track uses the native queue to prepare each repetition before the current one ends. Earlier Apple versions seek to the loop start when the current pass ends. On the web, a full-track loop is seamless, and a loop with a start seeks back to it at the end, with a short gap.
+
 ## Biometrics
 
 `cx.BiometricAvailability` reports whether Face ID, Touch ID or a device fingerprint is enrolled; Android does not say which kind is enrolled, so there it reports a fingerprint when one is enrolled and otherwise face when the device has face hardware. `cx.AuthenticateBiometric` asks the system to confirm the user with a reason, which must not be empty, and reports success, failure, cancellation or unavailability. It does not choose a passcode fallback for the app.

@@ -23,6 +23,8 @@ type SoundVoice struct {
 	Volume, Rate, Pan float32
 	// StartAt schedules this playback on the clock returned by audio.Now. A zero or past time plays as soon as possible.
 	StartAt time.Time
+	// Loop repeats this playback until the sound stops or closes.
+	Loop bool
 }
 
 // AudioError is why a sound or a player failed, named as NSH's codes, which follow the web's MediaError: the core's part of audio.Error, which apps use. A failure that says more is one wrapped with the platform's words, which errors.Is and errors.As find.
@@ -108,6 +110,8 @@ func (s AudioPlayerState) String() string {
 
 // AudioPlayerOptions are an AudioPlayer's: the core's part of audio.PlayerOptions, which apps use. Its callbacks run on the engine's goroutine, in a later turn than what caused them.
 type AudioPlayerOptions struct {
+	// LoopStart is where playback returns when looping is enabled. The first pass starts normally. Zero loops the full track.
+	LoopStart time.Duration
 	// OnLoad runs once the player knows its duration, 0 for a stream without one.
 	OnLoad func(duration time.Duration)
 	// OnProgress receives the position and the duration every ProgressInterval while the player plays, and once more as it pauses or ends. The position goes back only with a seek or a loop starting over.
@@ -392,7 +396,7 @@ func (s *Sound) Play(v SoundVoice) {
 	if s.closed {
 		return
 	}
-	s.buffer.key.tree.sendAudio(s.buffer.id, driver.AudioRequest{Command: driver.AudioPlay, Volume: audioVolume(v.Volume), Rate: audioRate(v.Rate), Pan: audioPan(v.Pan), StartAt: v.StartAt})
+	s.buffer.key.tree.sendAudio(s.buffer.id, driver.AudioRequest{Command: driver.AudioPlay, Volume: audioVolume(v.Volume), Rate: audioRate(v.Rate), Pan: audioPan(v.Pan), StartAt: v.StartAt, Loop: v.Loop})
 }
 
 // Stop stops every playback of the sound's source.
@@ -514,7 +518,7 @@ func (p *AudioPlayer) open() {
 	p.opened = true
 	p.rt.audioState().players[p.id] = p
 	p.tree.sendAudio(p.id, driver.AudioRequest{Command: driver.AudioOpen, Source: driver.ImageSource{URI: p.src.URI, Data: p.src.Data},
-		Volume: p.volume, Rate: p.rate, Loop: p.loop, Session: p.opts.AudioSession, ProgressInterval: p.opts.ProgressInterval,
+		Volume: p.volume, Rate: p.rate, Loop: p.loop, LoopStart: max(0, p.opts.LoopStart), Session: p.opts.AudioSession, ProgressInterval: p.opts.ProgressInterval,
 		Position: p.position})
 }
 
@@ -611,7 +615,7 @@ func (p *AudioPlayer) SetVolume(v float32) { p.set(audioVolume(v), p.rate, p.loo
 // SetRate sets the playback speed, from 0.5 to 2; 0 is 1, as Video's, and other values are clamped.
 func (p *AudioPlayer) SetRate(r float32) { p.set(p.volume, audioRate(r), p.loop) }
 
-// SetLoop has the player start over at its end, with no OnEnd.
+// SetLoop repeats playback from the configured LoopStart at the end, with no OnEnd.
 func (p *AudioPlayer) SetLoop(loop bool) { p.set(p.volume, p.rate, loop) }
 
 func (p *AudioPlayer) set(volume, rate float32, loop bool) {

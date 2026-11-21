@@ -478,6 +478,12 @@ cx.Speak("おはようございます", core.Voice{Lang: "ja-JP", Rate: 0.8}, fu
 
 `Rate` 和 `Pitch` 的范围是 0.5 到 2，1 为语音本身的语速和音高。`cx.Voices("ja", ...)` 列出某种语言已安装的语音，应用可以提示用户安装缺少的语音，或让用户挑选，把选中语音的 `ID` 填进 `core.Voice`。浏览器要等用户在页面上按过某个控件后才会朗读，在此之前返回 `core.SpeakNotAllowed`。TSX 包里的 Go 组件需要 `text_to_speech` 能力才能朗读。
 
+## 循环播放音频
+
+设置 `audio.Voice.Loop` 可让单次音效持续重复，直到调用 `Stop` 或 `Close`。音乐可设置 `audio.PlayerOptions.LoopStart`，再调用 `SetLoop(true)`。第一遍包含前奏，之后从指定位置重复。偏移量为零时重复整条音轨。
+
+在 macOS 14 和 iOS 17 或更新版本上，时长已知的音轨使用原生队列，在当前一遍结束前准备下一遍。更早的 Apple 系统在当前一遍结束时跳到循环起点。在 Web 上，整条音轨的循环是无缝的；带起点的循环在结尾跳回起点，会有短暂间隙。
+
 ## 生物识别
 
 `cx.BiometricAvailability` 回答设备是否录入了面容 ID、触控 ID 或指纹；Android 不说明录入的是哪一种，所以在 Android 上录入了指纹时回答指纹，否则在设备有面部识别硬件时回答面部。`cx.AuthenticateBiometric` 带着一个不能为空的原因请系统确认用户身份，回答成功、失败、取消或不可用。它不会替应用选择密码作为后备方式。

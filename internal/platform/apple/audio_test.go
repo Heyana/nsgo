@@ -404,6 +404,78 @@ func TestStoppingAScheduledSoundLetsTheEngineIdle(t *testing.T) {
 	t.Fatal("the engine kept running after the scheduled sound stopped")
 }
 
+func TestALoopingSoundRendersAMinuteContinuously(t *testing.T) {
+	ta := newTestAudio(t)
+	const rate = 44100
+	data := wavOf(250*time.Millisecond, rate, 1)
+	for i := range (len(data) - 44) / 2 {
+		sample := int16(8192 * math.Sin(2*math.Pi*400*float64(i)/rate))
+		binary.LittleEndian.PutUint16(data[44+i*2:], uint16(sample))
+	}
+	ta.send(1, driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{Data: data},
+		MaxBytes: driver.MaxSoundBytes, MaxDuration: driver.MaxSoundDuration})
+	ta.wait(1, driver.AudioLoaded, 5*time.Second, nil)
+
+	onMain(func() {
+		const block = 2048
+		engine := objc.ID(Class("AVAudioEngine")).Send(sel("alloc")).Send(sel("init"))
+		ta.audio.engine = engine
+		format := ta.audio.sounds[1].format
+		voice := newVoice(engine, format)
+		if voice == nil {
+			t.Error("could not attach the test voice")
+			return
+		}
+		ta.audio.voices = append(ta.audio.voices, voice)
+		var nsErr objc.ID
+		if !objc.Send[bool](engine, sel("enableManualRenderingMode:format:maximumFrameCount:error:"), 0, format, uint32(block), unsafe.Pointer(&nsErr)) {
+			t.Error(describeError(nsErr, "could not start offline audio rendering"))
+			return
+		}
+		ta.audio.Handle(1, &driver.AudioRequest{Command: driver.AudioPlay, Volume: 1, Rate: 1, Loop: true})
+		pcm := objc.ID(Class("AVAudioPCMBuffer")).Send(sel("alloc")).Send(sel("initWithPCMFormat:frameCapacity:"), format, uint32(block))
+		defer pcm.Send(sel("release"))
+
+		// Ignore the engine's initial output latency, then inspect an entire minute of 400 Hz audio, including every loop boundary.
+		var prior, maxStep, peak float64
+		var rendered, silence, longestSilence int
+		for rendered < rate*61 {
+			if status := objc.Send[int](engine, sel("renderOffline:toBuffer:error:"), uint32(block), pcm, unsafe.Pointer(&nsErr)); status != 0 {
+				t.Errorf("offline render returned %d: %s", status, describeError(nsErr, "render failed"))
+				return
+			}
+			count := int(objc.Send[uint32](pcm, sel("frameLength")))
+			channels := objc.Send[**float32](pcm, sel("floatChannelData"))
+			if count == 0 || channels == nil || *channels == nil {
+				t.Error("the engine rendered no PCM frames")
+				return
+			}
+			for _, value := range unsafe.Slice(*channels, count) {
+				rendered++
+				sample := float64(value)
+				if rendered > rate {
+					peak = max(peak, math.Abs(sample))
+					maxStep = max(maxStep, math.Abs(sample-prior))
+					if math.Abs(sample) < 0.0001 {
+						silence++
+						longestSilence = max(longestSilence, silence)
+					} else {
+						silence = 0
+					}
+				}
+				prior = sample
+			}
+		}
+		if peak < 0.1 || longestSilence > rate/1000 || maxStep > 0.06 {
+			t.Errorf("looped PCM peak %g, longest near-silence %d frames, largest sample step %g", peak, longestSilence, maxStep)
+		}
+		ta.audio.Handle(1, &driver.AudioRequest{Command: driver.AudioStop})
+		if voice.active(time.Now()) {
+			t.Error("the looping voice is still active after Stop")
+		}
+	})
+}
+
 func TestASoundFailsAsTheDesignSays(t *testing.T) {
 	ta := newTestAudio(t)
 	path := filepath.Join(t.TempDir(), "click.wav")
@@ -518,6 +590,64 @@ func TestAPlayerLoopsSeeksAndPauses(t *testing.T) {
 	})
 	ta.send(1, driver.AudioRequest{Command: driver.AudioClose})
 	ta.quiet(1, 200*time.Millisecond)
+}
+
+func TestAPlayerQueuesLoopsAfterTheIntro(t *testing.T) {
+	ta := newTestAudio(t)
+	const start = 300 * time.Millisecond
+	ta.send(1, driver.AudioRequest{Command: driver.AudioOpen, Source: driver.ImageSource{Data: wav(750 * time.Millisecond)},
+		Loop: true, LoopStart: start, Volume: 0.01, Rate: 1, ProgressInterval: 20 * time.Millisecond})
+	ta.send(1, driver.AudioRequest{Command: driver.AudioResume})
+	ta.wait(1, driver.AudioPlaying, 5*time.Second, nil)
+	var native, available bool
+	onMain(func() {
+		class := objc.ID(Class("AVPlayerLooper"))
+		init := sel("initWithPlayer:templateItem:timeRange:existingItemsOrdering:")
+		available = objc.Send[bool](class, sel("instancesRespondToSelector:"), init)
+		native = ta.audio.players[1].looper != 0
+	})
+	if available && !native {
+		t.Fatal("the player did not queue its loop")
+	}
+	intro, repeated := false, false
+	for deadline := time.Now().Add(4 * time.Second); !repeated && time.Now().Before(deadline); {
+		e := ta.wait(1, driver.AudioProgress, time.Second, nil)
+		intro = intro || e.Laps == 0 && e.Position < start
+		repeated = e.Laps > 0 && e.Position >= start
+	}
+	if !intro || !repeated {
+		t.Fatalf("heard intro %v and repeated range %v", intro, repeated)
+	}
+
+	ta.send(1, driver.AudioRequest{Command: driver.AudioSeek, Position: 100 * time.Millisecond})
+	var seekLap uint32
+	for {
+		e := ta.wait(1, driver.AudioProgress, time.Second, nil)
+		if e.Seeks == 1 {
+			if e.Position != 100*time.Millisecond {
+				t.Fatalf("seek into the intro returned %+v", e)
+			}
+			seekLap = e.Laps
+			break
+		}
+	}
+	var introAgain bool
+	for deadline := time.Now().Add(4 * time.Second); time.Now().Before(deadline); {
+		e := ta.wait(1, driver.AudioProgress, 3*time.Second, func(event driver.AudioEvent) {
+			if event.Phase == driver.AudioPaused || event.Phase == driver.AudioFailure {
+				t.Fatalf("the player stopped after seeking: %+v", event)
+			}
+		})
+		introAgain = introAgain || e.Seeks == 1 && e.Position > 100*time.Millisecond && e.Position < start
+		if introAgain && e.Laps > seekLap {
+			break
+		}
+	}
+	if !introAgain {
+		t.Fatal("the native queue did not return to the intro after seeking")
+	}
+	ta.send(1, driver.AudioRequest{Command: driver.AudioSet, Volume: 0.01, Rate: 1})
+	ta.wait(1, driver.AudioEnded, 3*time.Second, nil)
 }
 
 func TestAPlayerSeeksBeforeItLoads(t *testing.T) {

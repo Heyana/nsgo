@@ -62,7 +62,10 @@ type soundVoice struct {
 	// sound is the one it plays, 0 for none, and until when.
 	sound          uint32
 	started, until time.Time
+	loop           bool
 }
+
+func (v *soundVoice) active(now time.Time) bool { return v.loop || v.until.After(now) }
 
 // idleGrace is how long the engine keeps the output open after the last playback ends, so that the next sound starts at once.
 const idleGrace = 2 * time.Second
@@ -124,7 +127,7 @@ func (a *Audio) Handle(id uint32, r *driver.AudioRequest) {
 			old.close()
 		}
 		a.players[id] = &audioPlayer{audio: a, id: id, src: r.Source, volume: r.Volume, rate: r.Rate, loop: r.Loop,
-			session: r.Session, interval: max(r.ProgressInterval, 16*time.Millisecond), position: r.Position}
+			session: r.Session, interval: max(r.ProgressInterval, 16*time.Millisecond), position: r.Position, loopStart: r.LoopStart}
 	case driver.AudioClose:
 		if p := a.players[id]; p != nil {
 			delete(a.players, id)
@@ -529,7 +532,7 @@ func (a *Audio) voiceFor(engine objc.ID, s *decodedSound, now time.Time) *soundV
 	same := func(v *soundVoice) bool { return objc.Send[bool](v.format, sel("isEqual:"), s.format) }
 	var free *soundVoice
 	for _, v := range a.voices {
-		if !v.until.After(now) {
+		if !v.active(now) {
 			if same(v) {
 				return v
 			}
@@ -562,7 +565,7 @@ func (a *Audio) voiceFor(engine objc.ID, s *decodedSound, now time.Time) *soundV
 	return v
 }
 
-// play starts a playback of sound id on the voice voiceFor gives.
+// play starts a playback of sound id at the request's volume, rate, pan and loop, on the voice voiceFor gives.
 func (a *Audio) play(id uint32, r *driver.AudioRequest) {
 	s := a.sounds[id]
 	if s == nil {
@@ -588,8 +591,12 @@ func (a *Audio) play(id uint32, r *driver.AudioRequest) {
 		// A reused node is still playing after its last buffer finishes. Stop resets its timeline so the next playAtTime takes effect.
 		v.player.Send(sel("stop"))
 	}
-	const interrupts = 2 // AVAudioPlayerNodeBufferInterrupts: the buffer replaces what the node played
-	v.player.Send(sel("scheduleBuffer:atTime:options:completionHandler:"), s.buffer, objc.ID(0), uint(interrupts), objc.ID(0))
+	const loops, interrupts = 1, 2 // AVAudioPlayerNodeBufferOptions
+	options := uint(interrupts)
+	if r.Loop {
+		options |= loops
+	}
+	v.player.Send(sel("scheduleBuffer:atTime:options:completionHandler:"), s.buffer, objc.ID(0), options, objc.ID(0))
 	start := time.Now()
 	if at != 0 {
 		v.player.Send(sel("playAtTime:"), at)
@@ -597,7 +604,7 @@ func (a *Audio) play(id uint32, r *driver.AudioRequest) {
 	} else {
 		v.player.Send(sel("play"))
 	}
-	v.sound, v.started = id, now
+	v.sound, v.started, v.loop = id, now, r.Loop
 	v.until = start.Add(time.Duration(float64(s.duration) / float64(max(r.Rate, 0.01))))
 	a.idleLater()
 }
@@ -609,7 +616,7 @@ func (a *Audio) stop(id uint32) {
 	for _, v := range a.voices {
 		if v.sound == id {
 			v.player.Send(sel("stop"))
-			v.sound, v.until = 0, now
+			v.sound, v.until, v.loop = 0, now, false
 			stopped = true
 		}
 	}
@@ -642,6 +649,12 @@ func (a *Audio) letSoundsGo() {
 func (a *Audio) idleLater() {
 	last := time.Now()
 	for _, v := range a.voices {
+		if v.loop {
+			if a.idle != nil {
+				a.idle.Stop()
+			}
+			return
+		}
 		if v.until.After(last) {
 			last = v.until
 		}
@@ -661,7 +674,7 @@ func (a *Audio) idleNow() {
 	}
 	now := time.Now()
 	for _, v := range a.voices {
-		if v.until.Add(idleGrace).After(now) {
+		if v.loop || v.until.Add(idleGrace).After(now) {
 			a.idleLater()
 			return
 		}
@@ -700,6 +713,12 @@ type audioPlayer struct {
 	// remote says its source is an http(s) URL, whose failures are network errors.
 	remote      bool
 	seeks, laps uint32
+	looper      objc.ID
+	intro       objc.ID
+	loopStart   time.Duration
+	loopBase    uint32
+	seekSerial  uint64
+	seeking     bool
 	// release lets go of the audio session it holds while it plays, nil while it holds none.
 	release func()
 }
@@ -744,11 +763,13 @@ func (p *audioPlayer) apply(r *driver.AudioRequest) {
 		p.ended = false
 		p.position = max(r.Position, 0)
 		if p.loaded {
-			p.seek(p.position)
-			p.report(p.progress(p.position))
+			position := p.position
+			p.report(p.progress(position))
+			p.seek(position)
 		}
 	case driver.AudioSet:
-		p.volume, p.rate, p.loop = r.Volume, r.Rate, r.Loop
+		p.volume, p.rate = r.Volume, r.Rate
+		p.setLoop(r.Loop)
 		if p.player != 0 {
 			p.player.Send(sel("setVolume:"), p.volume)
 			if p.playing {
@@ -769,6 +790,7 @@ func (p *audioPlayer) retry() {
 
 // progress is an AudioProgress at position.
 func (p *audioPlayer) progress(position time.Duration) driver.AudioEvent {
+	p.countNativeLoops()
 	d := p.duration()
 	if d > 0 {
 		position = min(position, d)
@@ -852,7 +874,7 @@ func resolvePlayerSource(src driver.ImageSource) (path string, temp bool, code, 
 	return path, false, "", ""
 }
 
-// make makes the AVPlayer of a URL or a file path, at the player's volume, and watches its load, time and end.
+// make opens the first item of the queue and watches its load, time and end.
 func (p *audioPlayer) make(rawURL, path string) {
 	var u objc.ID
 	options := objc.ID(0)
@@ -872,18 +894,25 @@ func (p *audioPlayer) make(rawURL, path string) {
 	}
 	asset := objc.ID(Class("AVURLAsset")).Send(sel("URLAssetWithURL:options:"), u, options)
 	p.item = objc.ID(Class("AVPlayerItem")).Send(sel("playerItemWithAsset:"), asset).Send(sel("retain"))
-	p.player = objc.ID(Class("AVPlayer")).Send(sel("playerWithPlayerItem:"), p.item).Send(sel("retain"))
+	p.openQueue(p.item)
+	p.poll(p.generation, 0)
+}
+
+func (p *audioPlayer) openQueue(intro objc.ID) {
+	p.intro = intro.Send(sel("retain"))
+	items := objc.ID(Class("NSArray")).Send(sel("arrayWithObject:"), intro)
+	p.player = objc.ID(Class("AVQueuePlayer")).Send(sel("queuePlayerWithItems:"), items).Send(sel("retain"))
+	p.player.Send(sel("setActionAtItemEnd:"), playerPauseAtEnd)
 	p.player.Send(sel("setVolume:"), p.volume)
 	p.observe()
-	p.poll(p.generation, 0)
 }
 
 // observe watches the player's time every interval, as it starts and stops and as its time jumps, its rate, and its item's end and failure.
 func (p *audioPlayer) observe() {
-	player := p.player
+	player, generation := p.player, p.generation
 	// The block's CMTime argument is left out: the player's current time is the same, and purego callbacks take no structs.
 	tick := objcblock.New(func(objc.Block) {
-		if p.player == player {
+		if p.generation == generation && p.player == player {
 			p.tick()
 		}
 	})
@@ -894,7 +923,7 @@ func (p *audioPlayer) observe() {
 	queue := objc.ID(Class("NSOperationQueue")).Send(selMainQueue)
 	watch := func(name string, object objc.ID, fn func(note objc.ID)) {
 		block := objcblock.New(func(_ objc.Block, note objc.ID) {
-			if p.player == player {
+			if p.generation == generation && p.player == player {
 				fn(note)
 			}
 		})
@@ -906,8 +935,15 @@ func (p *audioPlayer) observe() {
 			token.Send(sel("release"))
 		})
 	}
-	watch("AVPlayerItemDidPlayToEndTimeNotification", p.item, func(objc.ID) { p.reachedEnd() })
-	watch("AVPlayerItemFailedToPlayToEndTimeNotification", p.item, func(note objc.ID) {
+	watch("AVPlayerItemDidPlayToEndTimeNotification", 0, func(note objc.ID) {
+		if note.Send(sel("object")) == p.intro {
+			p.reachedEnd()
+		}
+	})
+	watch("AVPlayerItemFailedToPlayToEndTimeNotification", 0, func(note objc.ID) {
+		if note.Send(sel("object")) != p.player.Send(sel("currentItem")) {
+			return
+		}
 		var nsErr objc.ID
 		if info := note.Send(sel("userInfo")); info != 0 {
 			nsErr = info.Send(selObjectForKey, avName("AVPlayerItemFailedToPlayToEndTimeErrorKey"))
@@ -960,9 +996,15 @@ func (p *audioPlayer) now() time.Duration {
 // check reports the load, once, applying the seek asked for before it and starting a play that waited for it; a failure, once; and buffering changes.
 func (p *audioPlayer) check() {
 	const ready, failed = 1, 2 // AVPlayerItemStatus
-	switch objc.Send[int](p.item, sel("status")) {
+	item := p.item
+	if p.loaded {
+		if current := p.player.Send(sel("currentItem")); current != 0 {
+			item = current
+		}
+	}
+	switch objc.Send[int](item, sel("status")) {
 	case failed:
-		p.fail(p.failure(), describeError(p.item.Send(sel("error")), "the audio failed to load"))
+		p.fail(p.failure(), describeError(item.Send(sel("error")), "the audio failed to load"))
 		return
 	case ready:
 		if p.loaded {
@@ -970,6 +1012,7 @@ func (p *audioPlayer) check() {
 		}
 		p.loaded = true
 		d := p.duration()
+		p.prepareNativeLoop()
 		if p.position > 0 {
 			if d > 0 {
 				p.position = min(p.position, d)
@@ -981,6 +1024,10 @@ func (p *audioPlayer) check() {
 			p.start()
 		}
 	}
+	if p.looper != 0 && objc.Send[int](p.looper, sel("status")) == failed {
+		p.fail(p.failure(), describeError(p.looper.Send(sel("error")), "the audio failed to loop"))
+		return
+	}
 	const waitingToPlay = 1 // AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
 	waiting := p.playing && objc.Send[int](p.player, sel("timeControlStatus")) == waitingToPlay
 	if p.buffering != waiting {
@@ -991,9 +1038,30 @@ func (p *audioPlayer) check() {
 
 // seek moves the player to position exactly, in nanoseconds rather than cmTimeOf's 600ths of a second, which could land a load after a failure before the position the core has.
 func (p *audioPlayer) seek(position time.Duration) {
+	if p.looper != 0 && p.player.Send(sel("currentItem")) != p.intro && position < driver.AudioLoopStart(p.loopStart, p.duration()) {
+		p.resetLoopQueue(position)
+		return
+	}
+	p.seekTime(position, false)
+}
+
+func (p *audioPlayer) seekTime(position time.Duration, resume bool) {
+	p.seekSerial++
+	serial, player := p.seekSerial, p.player
+	p.seeking = true
+	done := objcblock.New(func(_ objc.Block, _ bool) {
+		OnMain(func() {
+			if p.player == player && p.seekSerial == serial {
+				p.seeking = false
+				if resume && p.playing && !p.failed {
+					player.Send(sel("setRate:"), p.rate)
+				}
+			}
+		})
+	})
 	zero := cmTimeOf(0)
-	at := cmTime{Value: position.Nanoseconds(), Timescale: int32(time.Second), Flags: 1}
-	p.player.Send(sel("seekToTime:toleranceBefore:toleranceAfter:"), at, zero, zero)
+	player.Send(sel("seekToTime:toleranceBefore:toleranceAfter:completionHandler:"), exactAudioTime(position), zero, zero, done)
+	done.Release()
 }
 
 // start plays the loaded player from where it is, from the start after it ended, holding the session while it plays.
@@ -1032,7 +1100,7 @@ func (p *audioPlayer) paused() {
 // tick reports where the playing player is, or that the system paused it: an interruption, a lost route, an output gone.
 func (p *audioPlayer) tick() {
 	p.check()
-	if !p.playing || p.failed {
+	if !p.playing || p.failed || p.seeking {
 		return
 	}
 	if objc.Send[float32](p.player, sel("rate")) == 0 {
@@ -1044,6 +1112,10 @@ func (p *audioPlayer) tick() {
 
 // stopped reports that the playing player stopped with no command asking, a system pause, unless it is at its end, which its notification reports.
 func (p *audioPlayer) stopped() {
+	const waitingToPlay = 1 // AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
+	if p.seeking || objc.Send[int](p.player, sel("timeControlStatus")) == waitingToPlay {
+		return
+	}
 	at, d := p.now(), p.duration()
 	if d > 0 && at >= d-50*time.Millisecond {
 		// Should no notification come, it paused just before its end.
@@ -1060,16 +1132,17 @@ func (p *audioPlayer) stopped() {
 	p.paused()
 }
 
-// reachedEnd starts the player over when it loops, counting the lap, else reports its end.
+// reachedEnd reports the end, with a seek for streams or systems where the native queue could not be prepared.
 func (p *audioPlayer) reachedEnd() {
-	if !p.playing {
+	if !p.playing || p.looper != 0 || p.seeking {
 		return
 	}
 	if p.loop {
+		start := driver.AudioLoopStart(p.loopStart, p.duration())
 		p.laps++
-		p.seek(0)
+		p.seek(start)
 		p.player.Send(sel("setRate:"), p.rate)
-		p.report(p.progress(0))
+		p.report(p.progress(start))
 		return
 	}
 	p.playing, p.ended = false, true
@@ -1107,22 +1180,10 @@ func (p *audioPlayer) letGo() {
 // close stops the player and stops observing it, removing the file it played; it may be made again.
 func (p *audioPlayer) close() {
 	p.generation++
-	p.opening, p.playing, p.wantsPlay, p.buffering = false, false, false, false
+	p.seekSerial++
+	p.opening, p.playing, p.wantsPlay, p.buffering, p.seeking = false, false, false, false, false
 	p.letGo()
-	if p.player != 0 && p.timeToken != 0 {
-		p.player.Send(sel("removeTimeObserver:"), p.timeToken)
-		p.timeToken.Send(sel("release"))
-	}
-	p.timeToken = 0
-	for _, stop := range p.stops {
-		stop()
-	}
-	p.stops = nil
-	if p.player != 0 {
-		p.player.Send(sel("pause"))
-		p.player.Send(sel("release"))
-		p.player = 0
-	}
+	p.closeQueue()
 	if p.item != 0 {
 		p.item.Send(sel("release"))
 		p.item = 0
@@ -1130,5 +1191,29 @@ func (p *audioPlayer) close() {
 	if p.file != "" {
 		os.Remove(p.file)
 		p.file = ""
+	}
+}
+
+// closeQueue releases playback and notifications while retaining the asset item and file for a rebuild, seek or final close.
+func (p *audioPlayer) closeQueue() {
+	player := p.player
+	p.player = 0
+	if player != 0 && p.timeToken != 0 {
+		player.Send(sel("removeTimeObserver:"), p.timeToken)
+		p.timeToken.Send(sel("release"))
+	}
+	p.timeToken = 0
+	for _, stop := range p.stops {
+		stop()
+	}
+	p.stops = nil
+	if player != 0 {
+		player.Send(sel("pause"))
+		p.releaseNativeLoop()
+		player.Send(sel("release"))
+	}
+	if p.intro != 0 {
+		p.intro.Send(sel("release"))
+		p.intro = 0
 	}
 }

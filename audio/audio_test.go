@@ -34,7 +34,7 @@ func TestASoundPlaysOnATap(t *testing.T) {
 		})
 		return core.View{TestID: "pad", Class: "size-12", OnPress: func(core.PressEvent) {
 			click.Play(audio.Voice{})
-			click.Play(audio.Voice{Volume: 0.5, Rate: 1.2})
+			click.Play(audio.Voice{Volume: 0.5, Rate: 1.2, Loop: true})
 		}}
 	}, playsAudio, func(a *nsgotest.App) {
 		a.AudioDurations = map[string]time.Duration{"asset:sounds/click.wav": 80 * time.Millisecond, "asset:sounds/long.wav": time.Minute}
@@ -47,7 +47,7 @@ func TestASoundPlaysOnATap(t *testing.T) {
 		t.Fatalf("%d sounds decoded", len(app.Sounds))
 	}
 	s := app.Sounds[0]
-	if s.Source.URI != "asset:sounds/click.wav" || !slices.Equal(s.Plays, []audio.Voice{{Volume: 1, Rate: 1}, {Volume: 0.5, Rate: 1.2}}) {
+	if s.Source.URI != "asset:sounds/click.wav" || !slices.Equal(s.Plays, []audio.Voice{{Volume: 1, Rate: 1}, {Volume: 0.5, Rate: 1.2, Loop: true}}) {
 		t.Fatalf("plays %+v", s)
 	}
 	if !app.Sounds[1].Unloaded {
@@ -159,6 +159,40 @@ func TestAPlayerPlaysOnTheClock(t *testing.T) {
 	app.Settle()
 	if !p.Closed || p.Playing {
 		t.Fatalf("closed player %+v", p)
+	}
+}
+
+func TestAPlayerLoopsFromAfterItsIntro(t *testing.T) {
+	const start = 400 * time.Millisecond
+	var player *audio.Player
+	ends := 0
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		player = audio.NewPlayer(cx, audio.Source{URI: "asset:music.wav"}, audio.PlayerOptions{
+			LoopStart: start,
+			OnEnd:     func() { ends++ },
+		})
+		player.SetLoop(true)
+		player.Play(nil)
+		return core.View{}
+	}, playsAudio, func(a *nsgotest.App) {
+		a.AudioDurations = map[string]time.Duration{"asset:music.wav": time.Second}
+	})
+	if p := app.Players[0]; !p.Loop || p.LoopStart != start || p.Position != 0 {
+		t.Fatalf("initial player = %+v", p)
+	}
+	app.Advance(300 * time.Millisecond)
+	if got := player.Position(); got <= 0 || got >= start {
+		t.Fatalf("the first pass skipped its intro, progress %s", got)
+	}
+	app.Advance(2 * time.Second)
+	const repeatedPosition = 500 * time.Millisecond
+	if got := app.Players[0].Position; got < repeatedPosition-time.Millisecond || got > repeatedPosition+time.Millisecond || ends != 0 {
+		t.Fatalf("after two loops, position %s and %d ends", got, ends)
+	}
+	player.SetLoop(false)
+	app.Advance(510 * time.Millisecond)
+	if player.State() != audio.PlayerEnded || ends != 1 {
+		t.Fatalf("after disabling loop, state %v and %d ends", player.State(), ends)
 	}
 }
 
