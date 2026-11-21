@@ -569,11 +569,20 @@ func TestSaveDialogStartsInFolder(t *testing.T) {
 		t.Fatalf("a refusal completed the save before the dialog closed: %s", got)
 	default:
 	}
-	// Reuse the original filename control after the denial. The dialog
-	// returns from OnFileOk while the engine's answer is in flight.
-	const wmSetText = 0x000C
+	// Edit the filename after the first OnFileOk has returned. Typing
+	// through the real edit control lets the shell observe the change.
+	if child, _, _ := findWindowExW.Call(field, 0, uintptr(unsafe.Pointer(wide("Edit"))), 0); child != 0 {
+		field = child
+	}
 	name := filepath.Base(path)
-	sendMessage.Call(field, wmSetText, 0, uintptr(unsafe.Pointer(wide(name))))
+	onMain(t, hwnd, func(*window) {
+		const emSetSel = 0x00B1
+		setFocus.Call(field)
+		sendMessage.Call(field, emSetSel, 0, ^uintptr(0))
+		for _, character := range utf16.Encode([]rune(name)) {
+			sendMessage.Call(field, wmChar, uintptr(character), 1)
+		}
+	})
 	if got := windowText(field); got != name {
 		t.Fatalf("the save dialog's name field now reads %q, want %q", got, name)
 	}
