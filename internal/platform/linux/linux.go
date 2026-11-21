@@ -221,6 +221,7 @@ type window struct {
 	cursorText   *view         // the text whose widget shows a span's cursor
 	down         driver.Event  // the last press: modifiers and click count
 	lastClick    *view         // the view the last left press hit, for click counting
+	clickSkip    int           // how many of GTK's count of the last left press came before lastClick's first
 	paste        *pasting      // the paste whose clipboard is being read
 	pointerIn    bool          // the pointer is over the surface, at lastPointer
 	hovered      hover.Tracker // the views under it that follow hovers

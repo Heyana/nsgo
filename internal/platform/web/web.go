@@ -84,25 +84,24 @@ func cssFamily(family string) string {
 // milliseconds.
 const longPressDelay = 500
 
-// clicks counts consecutive presses, which pointer events do not: one
-// within 500 ms and 4 points of the last is its next click, as browsers
-// count a mouse's.
+// clicks counts consecutive presses, which pointer events do not: one of the same view within 500 ms and 4 points of the last is its next click, as browsers count a mouse's. A press of another view, such as one a press just put where the last was, starts a new count (#1034).
 type clicks struct {
-	at   driver.Point
-	last time.Time
-	n    int
+	at     driver.Point
+	target *view
+	last   time.Time
+	n      int
 }
 
-// down returns the count of a press at p, in surface points.
-func (c *clicks) down(p driver.Point) int {
+// down returns the count of a press of v at p, in surface points.
+func (c *clicks) down(p driver.Point, v *view) int {
 	now := time.Now()
 	dx, dy := p.X-c.at.X, p.Y-c.at.Y
-	if c.n > 0 && now.Sub(c.last) <= 500*time.Millisecond && dx*dx+dy*dy <= 16 {
+	if c.n > 0 && v == c.target && now.Sub(c.last) <= 500*time.Millisecond && dx*dx+dy*dy <= 16 {
 		c.n++
 	} else {
 		c.n = 1
 	}
-	c.at, c.last = p, now
+	c.at, c.target, c.last = p, v, now
 	return c.n
 }
 
@@ -2645,7 +2644,7 @@ func (s *surface) pointerDown(e js.Value) {
 	}
 	s.press.view = v
 	s.press.at = s.pointer(v, driver.EventPressDown, e)
-	s.press.at.Count = uint32(s.clicks.down(s.press.at.Page))
+	s.press.at.Count = uint32(s.clicks.down(s.press.at.Page, v))
 	// A long press on a text's span is the span's.
 	s.press.at.Index = s.textIndex(v, e)
 	s.pressed(v, driver.EventPressDown)

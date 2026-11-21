@@ -364,3 +364,64 @@ func TestKeysComeUpWhereTheyWentDown(t *testing.T) {
 	w.onLoop(t, func() { keyReleasedCallback(0, 'c', 54, 0, w.handle) })
 	waitForTitle(t, w, title+"|"+ups+"|")
 }
+
+// TestClicksRestartOnAReplacedView presses where a pressed view has just been replaced, with GTK's count of the surface's presses going on (#1034). The new view takes the press as a first click and counts its own quick presses from there, as GTK's count of the surface does not restart when the views drawn in it change.
+func TestClicksRestartOnAReplacedView(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	app := func(cx *core.Scope) core.Node {
+		replaced, log := core.NewSignal(cx, false), core.NewSignal(cx, "")
+		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("clicks|%t|%s", replaced.Get(), log.Get())) })
+		pressed := func(name string) func(core.PressEvent) {
+			return func(e core.PressEvent) {
+				log.Update(func(s string) string { return s + fmt.Sprintf(" %s%d", name, e.Clicks) })
+				replaced.Set(true)
+			}
+		}
+		style := core.Style{Width: driver.Pt(100), Height: driver.Pt(60)}
+		page := core.Show{When: replaced.Get,
+			Then: func(*core.Scope) core.Node {
+				return core.View{TestID: "second", Style: style, OnPress: pressed("second")}
+			},
+			Else: func(*core.Scope) core.Node {
+				return core.View{TestID: "first", Style: style, OnPress: pressed("first")}
+			}}
+		return core.View{Style: core.Style{Width: driver.Pt(200), Height: driver.Pt(100)}, Children: []core.Node{page}}
+	}
+	w := startTestWindow(t, app, Options{Title: "clicks|start", Width: 200, Height: 100})
+	waitForTitle(t, w, "clicks|false|")
+	at := driver.Point{X: 50, Y: 30}
+	under := func() *view {
+		var v *view
+		w.onLoop(t, func() {
+			if root := w.view(w.root); root != nil {
+				v = hit(root, at, func(v *view) bool { return v.events.Has(driver.EventPress) })
+			}
+		})
+		return v
+	}
+	first := under()
+	if first == nil {
+		t.Fatal("no pressable view under the press")
+	}
+	want := ""
+	for n, name := range []string{"first", "second", "second", "second"} {
+		w.onLoop(t, func() {
+			w.pointerDown(at, 1, 0, 0, n+1)
+			w.pointerUp(at)
+		})
+		clicks := n + 1
+		if n > 0 {
+			clicks = n
+		}
+		want += fmt.Sprintf(" %s%d", name, clicks)
+		waitForTitle(t, w, "clicks|true|"+want)
+		// The engine mounts the second view after the title changes; press it only once it is there.
+		for deadline := time.Now().Add(10 * time.Second); under() == first; time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatal("the pressed view was not replaced")
+			}
+		}
+	}
+}

@@ -126,10 +126,15 @@ func (w *window) pointerDown(at driver.Point, button uint32, device uintptr, sta
 				return v.kind == driver.KindInput || v.events.Has(driver.EventPress) || v.events.Has(driver.EventLongPress) || v.events.Has(driver.EventPressDown) || v.events.Has(driver.EventPressUp)
 			})
 		}
-		if clicks > 1 && target != w.lastClick {
-			clicks = 1
+		// GTK counts presses on the surface, which stays when the views drawn in it are replaced, so a press of another view than the last starts a new count there and that view's following presses count from it, as on macOS (#1034).
+		switch {
+		case clicks < 2:
+			w.clickSkip = 0
+		case target != w.lastClick:
+			w.clickSkip = clicks - 1
 		}
 		w.lastClick = target
+		clicks -= w.clickSkip
 	}
 	w.down = driver.Event{Modifiers: modifiers(state), Count: uint32(max(clicks, 1)), Page: at}
 	// On X11 the released GTK 4 gives a touch's events the core pointer as their device, whose source is the mouse, so a touch is also known by its event's type.

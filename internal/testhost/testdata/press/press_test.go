@@ -41,6 +41,30 @@ func TestPressesCountConsecutiveClicks(t *testing.T) {
 	}
 }
 
+// A quick press where a pressed view has just been replaced is the new view's first click, and the new view counts its own quick presses from there (#1034).
+func TestPressesOfAReplacedViewCountFromOne(t *testing.T) {
+	desktopPointer(t)
+	var got []int
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		replaced := core.NewSignal(cx, false)
+		style := core.Style{Width: core.Pt(100), Height: core.Pt(60)}
+		return core.Show{When: replaced.Get,
+			Then: func(*core.Scope) core.Node {
+				return core.View{TestID: "second", Style: style, OnPress: func(e core.PressEvent) { got = append(got, e.Clicks) }}
+			},
+			Else: func(*core.Scope) core.Node {
+				return core.View{TestID: "first", Style: style, OnPress: func(e core.PressEvent) { got = append(got, e.Clicks); replaced.Set(true) }}
+			}}
+	}, nsgotest.Size(300, 300))
+	app.Press("first")
+	app.WaitFor("second", time.Second)
+	app.Press("second")
+	app.Press("second")
+	if len(got) != 3 || got[0] != 1 || got[1] != 1 || got[2] != 2 {
+		t.Fatalf("press counts = %v, want [1 1 2]", got)
+	}
+}
+
 func desktopPointer(t *testing.T) {
 	t.Helper()
 	if target := nsgotest.Target(); target != "" && target != "macos" && target != "linux" && target != "windows" && target != "web" {
