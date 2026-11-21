@@ -15,8 +15,7 @@ type ShellTab struct {
 	Icon func() *core.SVG
 	// SystemIcon is the platform's name for the tab's icon on iOS and Android, as mobile.TabBarItem's Icon.
 	SystemIcon string
-	// Badge follows the indicator at the tab's icon corner. The zero
-	// value clears it.
+	// Badge is the mark at the tab's icon corner, or beside a text-only tab's label, on the system and drawn bars. The zero value clears it.
 	Badge func() mobile.TabBadge
 	// Content is the section, such as a base.Nav's stack of pages. It is
 	// built when the tab is first selected and kept while others show.

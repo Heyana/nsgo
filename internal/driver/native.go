@@ -19,8 +19,7 @@ type TabBadge struct {
 	Text string `json:"text,omitempty"`
 }
 
-// TabBadges is the tab bar's independently updated badge prop. Language
-// is the app's language, for the platform's badge announcements.
+// TabBadges is the tab bar's independently updated badge prop. Language is the app's language, for the platform's badge announcements.
 type TabBadges struct {
 	Items    []TabBadge
 	Language string

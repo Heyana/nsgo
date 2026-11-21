@@ -1842,8 +1842,7 @@ func (v *View) localPoint(p driver.Point) driver.Point {
 	return local
 }
 
-// TabBadge returns the badge of a tab in a native tab bar, by index.
-// An absent tab or badge returns the zero value.
+// TabBadge returns the badge of a tab in a native tab bar, by index. An absent tab or badge returns the zero value.
 func (v *View) TabBadge(index int) core.TabBadge {
 	badges, _ := v.NativeProps["badges"].(driver.TabBadges)
 	if index < 0 || index >= len(badges.Items) {

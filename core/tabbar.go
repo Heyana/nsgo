@@ -70,8 +70,7 @@ type TabBar struct {
 	TestID    string
 }
 
-// TabBadge is the mark at a tab's icon corner. Text takes precedence
-// over Dot; the zero value clears the badge. Apps name it mobile.TabBadge.
+// TabBadge is the mark at a tab's icon corner. Text takes precedence over Dot; the zero value clears the badge. Apps name it mobile.TabBadge.
 type TabBadge = driver.TabBadge
 
 // TabBarItem is one tab of a TabBar. Apps name it mobile.TabBarItem.
