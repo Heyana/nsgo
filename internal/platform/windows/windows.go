@@ -1271,6 +1271,9 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemOpenURL:
 			w.openURL(it.Value, it.Count)
 			continue
+		case driver.ItemCursorPoint:
+			w.engine.Dispatch(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: cursorPoint()})
+			continue
 		case driver.ItemSensor:
 			if it.Sensor.Command != driver.SensorStop {
 				w.engine.Dispatch(driver.NoSensor(it))

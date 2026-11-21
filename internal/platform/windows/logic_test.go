@@ -1524,3 +1524,64 @@ func TestPixelsReplaceThePictureInPlace(t *testing.T) {
 		t.Fatal("same-sized pixel frames did not reuse the upload buffer")
 	}
 }
+
+// TestCursorPointOnMixedScaleMonitors checks that a screen pixel on any
+// monitor converts through that monitor's placement and scale into Env.Displays
+// points, including on boundary pixels between mixed-scale displays.
+func TestCursorPointOnMixedScaleMonitors(t *testing.T) {
+	monitor := func(id uintptr, r rect, primary bool) foundMonitor {
+		m := foundMonitor{monitor: id, info: monitorInfoEx{Monitor: r, Work: r}}
+		if primary {
+			m.info.Flags = 1
+		}
+		return m
+	}
+	all := []foundMonitor{
+		monitor(1, rect{0, 0, 1920, 1080}, true),
+		monitor(2, rect{1920, 0, 1920 + 3840, 2160}, false),
+	}
+	placements := layoutMonitors(all, []float64{1, 2})
+	if got := cursorPointOn(placements, point{X: 1919, Y: 100}, 1); got != (driver.Point{X: 1919, Y: 100}) {
+		t.Errorf("primary edge = %+v, want {1919 100}", got)
+	}
+	if got := cursorPointOn(placements, point{X: 2120, Y: 200}, 2); got != (driver.Point{X: 2020, Y: 100}) {
+		t.Errorf("200%% monitor = %+v, want {2020 100}", got)
+	}
+	if got := cursorPointOn(placements, point{X: 10, Y: 20}, 99); got != (driver.Point{X: 10, Y: 20}) {
+		t.Errorf("unknown monitor fallback = %+v, want {10 20}", got)
+	}
+}
+
+// TestClipboardMarkerFilteringAndDwordDecode checks that short or empty
+// CanIncludeInClipboardHistory payloads decode safely without assuming 4 bytes,
+// that non-zero values drop the marker regardless of case, and that zero keeps it.
+func TestClipboardMarkerFilteringAndDwordDecode(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		raw  []byte
+		want uint32
+	}{
+		{"empty", nil, 0},
+		{"one-byte zero", []byte{0}, 0},
+		{"one-byte one", []byte{1}, 1},
+		{"dword zero", []byte{0, 0, 0, 0}, 0},
+		{"dword one", []byte{1, 0, 0, 0}, 1},
+		{"dword oversized", []byte{2, 0, 0, 0, 99}, 2},
+	} {
+		if got := decodeClipboardDword(c.raw); got != c.want {
+			t.Errorf("%s: decodeClipboardDword(%v) = %d, want %d", c.name, c.raw, got, c.want)
+		}
+	}
+	if keepClipboardFormat("", func() uint32 { t.Fatal("readDword called for empty name"); return 0 }) {
+		t.Error("empty format name was kept")
+	}
+	if keepClipboardFormat("canincludeinclipboardhistory", func() uint32 { return 1 }) {
+		t.Error("CanIncludeInClipboardHistory=1 was kept (case-insensitive)")
+	}
+	if !keepClipboardFormat("CanIncludeInClipboardHistory", func() uint32 { return 0 }) {
+		t.Error("CanIncludeInClipboardHistory=0 was dropped")
+	}
+	if !keepClipboardFormat("Clipboard Viewer Ignore", func() uint32 { t.Fatal("readDword called for non-history marker"); return 0 }) {
+		t.Error("Clipboard Viewer Ignore was dropped")
+	}
+}

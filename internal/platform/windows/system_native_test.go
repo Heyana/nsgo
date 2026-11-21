@@ -142,6 +142,50 @@ func TestServicesReachTheSystem(t *testing.T) {
 	}
 	cx.Post(func() { cx.SetClipboard("") })
 
+	// Change count grows on copy, and registered privacy markers are reported
+	// while CanIncludeInClipboardHistory=1 is filtered out.
+	countBefore := ask(func(say func(string)) {
+		cx.ClipboardChangeCount(func(n int) { say(fmt.Sprint(n)) })
+	})
+	regFmt := func(name string) uintptr {
+		f, _, _ := registerClipboardFormatW.Call(uintptr(unsafe.Pointer(wide(name))))
+		return f
+	}
+	onMain(t, hwnd, func(w *window) {
+		openClipboard.Call(w.hwnd)
+		emptyClipboard.Call()
+		closeClipboard.Call()
+		putClipboard(w.hwnd, regFmt("Clipboard Viewer Ignore"), []byte{1})
+		putClipboard(w.hwnd, regFmt("CanIncludeInClipboardHistory"), []byte{1, 0, 0, 0})
+	})
+	countAfter := ask(func(say func(string)) {
+		cx.ClipboardChangeCount(func(n int) { say(fmt.Sprint(n)) })
+	})
+	if countBefore == countAfter {
+		t.Errorf("ClipboardChangeCount stayed %s across copy", countBefore)
+	}
+	if got := ask(func(say func(string)) {
+		cx.ClipboardTypes(func(types []string) { say(strings.Join(types, ",")) })
+	}); !strings.Contains(got, "Clipboard Viewer Ignore") || strings.Contains(got, "CanIncludeInClipboardHistory") {
+		t.Errorf("ClipboardTypes = %q", got)
+	}
+	onMain(t, hwnd, func(w *window) {
+		openClipboard.Call(w.hwnd)
+		emptyClipboard.Call()
+		closeClipboard.Call()
+		putClipboard(w.hwnd, regFmt("CanIncludeInClipboardHistory"), []byte{0, 0, 0, 0})
+	})
+	if got := ask(func(say func(string)) {
+		cx.ClipboardTypes(func(types []string) { say(strings.Join(types, ",")) })
+	}); !strings.Contains(got, "CanIncludeInClipboardHistory") {
+		t.Errorf("ClipboardTypes(0) = %q, want CanIncludeInClipboardHistory", got)
+	}
+	if got := ask(func(say func(string)) {
+		cx.CursorPoint(func(p core.Point) { say(fmt.Sprintf("%v", p)) })
+	}); got == "" {
+		t.Error("CursorPoint did not answer")
+	}
+
 	if got := ask(func(say func(string)) {
 		cx.OpenURL("nsgo-unhandled-scheme-7f3:x", func(ok bool) { say(fmt.Sprint(ok)) })
 	}); got != "false" {
