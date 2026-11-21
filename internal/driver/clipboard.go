@@ -1,10 +1,12 @@
 package driver
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf16"
 )
 
 // ClipboardItem is one native clipboard item, in the order its formats are offered.
@@ -72,6 +74,8 @@ func (c *MemoryClipboard) setItems(items []ClipboardItem) {
 			switch rep.Type {
 			case "public.utf8-plain-text", "text/plain", "text/plain;charset=utf-8":
 				c.Text = string(rep.Data)
+			case "CF_UNICODETEXT":
+				c.Text = windowsClipboardText(rep.Data)
 			case "public.png", "image/png", "PNG":
 				c.Image = rep.Data
 			case "public.file-url":
@@ -80,6 +84,20 @@ func (c *MemoryClipboard) setItems(items []ClipboardItem) {
 		}
 	}
 	c.ChangeCount++
+}
+
+// windowsClipboardText decodes the nul-terminated UTF-16LE format Win32 uses.
+func windowsClipboardText(data []byte) string {
+	var units []uint16
+	for len(data) >= 2 {
+		unit := binary.LittleEndian.Uint16(data)
+		if unit == 0 {
+			break
+		}
+		units = append(units, unit)
+		data = data[2:]
+	}
+	return string(utf16.Decode(units))
 }
 
 func (c *MemoryClipboard) snapshot() []ClipboardItem {

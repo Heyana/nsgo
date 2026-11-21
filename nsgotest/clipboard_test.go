@@ -1,12 +1,35 @@
 package nsgotest
 
 import (
+	"encoding/binary"
 	"reflect"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/nsgo-dev/nsgo/core"
 )
+
+func TestClipboardReadsRestoredWindowsText(t *testing.T) {
+	const text = "copy 東京 😀"
+	var data []byte
+	for _, unit := range utf16.Encode([]rune(text + "\x00padding")) {
+		data = binary.LittleEndian.AppendUint16(data, unit)
+	}
+	app := Start(t, func(cx *core.Scope) core.Node {
+		got := core.NewSignal(cx, "")
+		cx.WriteClipboardItems([]core.ClipboardItem{{Representations: []core.ClipboardRepresentation{
+			{Type: "CF_UNICODETEXT", Data: data},
+		}}}, func(err error) {
+			if err != nil {
+				t.Error(err)
+			}
+			cx.ReadClipboard(got.Set)
+		})
+		return core.Text{ContentFunc: got.Get}
+	})
+	app.Find("text:" + text)
+}
 
 func TestClipboardSaveOverwriteRestore(t *testing.T) {
 	start := []core.ClipboardItem{
