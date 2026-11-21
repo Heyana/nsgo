@@ -24,6 +24,8 @@ type widget struct {
 // project is an app's nsgo.yaml and where it lives.
 type project struct {
 	Dir string `yaml:"-"`
+	// resourceDir replaces Dir's resources directory for a generated preview host.
+	resourceDir string
 	// Release strips symbols and debug information for the smallest
 	// binaries; nsgo build sets it, nsgo dev does not.
 	Release bool `yaml:"-"`

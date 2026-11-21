@@ -1,0 +1,172 @@
+// Written by nsgo dev -preview.
+package main
+
+import (
+	"log"
+	"slices"
+
+	"github.com/nsgo-dev/nsgo"
+	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/ui"
+	components /*%printf "%q" .ImportPath%*/
+	/*%if .AppCatalog%*/_ /*%printf "%q" .AppCatalog%*//*%end%*/
+)
+
+type fixture struct {
+	name string
+	view func(*core.Scope) core.Node
+}
+
+var previews = []fixture{
+	/*%range .Names%*/{ /*%printf "%q" .%*/, components./*%.%*/ },
+	/*%end%*/
+}
+
+var languages = []string{ /*%range .Languages%*//*%printf "%q" .%*/,/*%end%*/ }
+
+const themeSource = /*%printf "%q" .Theme%*/
+const initialLocale = /*%printf "%q" .InitialLocale%*/
+
+type settings struct {
+	Selected                        []string
+	Locale, Theme, Mode, Size, Flow string
+}
+
+func main() {
+	var theme *core.Theme
+	if themeSource != "" {
+		var err error
+		theme, err = core.ParseTheme([]byte(themeSource))
+		if err != nil {
+			log.Printf("preview theme: %v", err)
+		}
+	}
+	nsgo.Run(func(cx *core.Scope) core.Node { return root(cx, theme) }, nsgo.WindowSize(960, 720))
+}
+
+func root(cx *core.Scope, theme *core.Theme) core.Node {
+	defaults := settings{Selected: []string{previews[0].name}, Locale: initialLocale, Size: "medium"}
+	if theme != nil {
+		defaults.Theme = "app"
+	}
+	prefs := core.NewPersisted(cx, "component-previews", defaults, core.PersistOptions{})
+	cx.Untrack(func() {
+		saved := prefs.Get().Selected
+		if len(saved) != 0 && !slices.ContainsFunc(previews, func(p fixture) bool { return slices.Contains(saved, p.name) }) {
+			if err := prefs.Update(func(s settings) settings { s.Selected = defaults.Selected; return s }); err != nil {
+				log.Printf("save preview selection: %v", err)
+			}
+		}
+	})
+	cx.Effect(func() { cx.SetLocale(prefs.Get().Locale) })
+	update := func(change func(*settings)) {
+		if err := prefs.Update(func(s settings) settings {
+			change(&s)
+			return s
+		}); err != nil {
+			log.Printf("save preview settings: %v", err)
+		}
+	}
+
+	locale := []ui.Option[string]{{Value: "", Label: "System"}}
+	for _, lang := range languages {
+		locale = append(locale, ui.Option[string]{Value: lang, Label: lang})
+	}
+	if initialLocale != "" && !slices.Contains(languages, initialLocale) {
+		locale = append(locale, ui.Option[string]{Value: initialLocale, Label: initialLocale})
+	}
+	themes := []ui.Option[string]{{Value: "", Label: "Default"}}
+	if theme != nil {
+		themes = append(themes, ui.Option[string]{Value: "app", Label: "App theme"})
+	}
+	picker := func(label string, entries []ui.Option[string], get func(settings) string, set func(*settings, string)) core.Node {
+		return core.View{Style: core.Style{Gap: 4}, Children: []core.Node{
+			core.Text{Content: label},
+			ui.Select[string]{Label: label, Options: entries, Style: core.Style{Width: core.Pt(135)},
+				Value: func() string { return get(prefs.Get()) },
+				OnChange: func(value string) { update(func(s *settings) { set(s, value) }) }},
+		}}
+	}
+	controls := []core.Node{
+		picker("Locale", locale, func(s settings) string { return s.Locale }, func(s *settings, v string) { s.Locale = v }),
+		picker("Theme", themes, func(s settings) string { return s.Theme }, func(s *settings, v string) { s.Theme = v }),
+		picker("Appearance", []ui.Option[string]{{Value: "", Label: "System"}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"}},
+			func(s settings) string { return s.Mode }, func(s *settings, v string) { s.Mode = v }),
+		picker("Size", []ui.Option[string]{{Value: "small", Label: "320 × 240"}, {Value: "medium", Label: "480 × 320"}, {Value: "large", Label: "680 × 420"}},
+			func(s settings) string { return s.Size }, func(s *settings, v string) { s.Size = v }),
+		picker("Direction", []ui.Option[string]{{Value: "", Label: "Locale"}, {Value: "ltr", Label: "Left to right"}, {Value: "rtl", Label: "Right to left"}},
+			func(s settings) string { return s.Flow }, func(s *settings, v string) { s.Flow = v }),
+	}
+	toggles := make([]core.Node, 0, len(previews))
+	for _, preview := range previews {
+		toggles = append(toggles, ui.Checkbox{
+			Text: preview.name,
+			Checked: func() bool { return slices.Contains(prefs.Get().Selected, preview.name) },
+			OnChange: func(checked bool) {
+				update(func(s *settings) {
+					names := slices.Clone(s.Selected)
+					if checked {
+						names = append(names, preview.name)
+					} else {
+						names = slices.DeleteFunc(names, func(name string) bool { return name == preview.name })
+					}
+					s.Selected = names
+				})
+			},
+		})
+	}
+	colors := ui.ColorsOf(cx)
+	row := core.Style{Direction: core.Row, Wrap: core.Wrap, Gap: 12, AlignItems: core.AlignCenter}
+	return core.View{Style: core.Style{FlexGrow: 1, PaddingEnv: core.EnvAll(core.EnvSafeArea)},
+		StyleFunc: func() core.Style { return core.Style{Background: colors.Background(), Color: colors.Text()} },
+		Children: []core.Node{
+			core.Scroll{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+				core.View{Style: core.Style{Padding: core.All(16), Gap: 12}, Children: []core.Node{
+					core.View{Style: row, Children: controls},
+					core.View{Style: row, Children: toggles},
+					core.Dynamic(func(cx *core.Scope) core.Node { return stages(cx, prefs.Get(), theme) }),
+				}},
+			}},
+		},
+	}
+}
+
+func stages(cx *core.Scope, s settings, theme *core.Theme) core.Node {
+	switch s.Mode {
+	case "light":
+		cx.SetSubtreeAppearance(core.AppearanceLight)
+	case "dark":
+		cx.SetSubtreeAppearance(core.AppearanceDark)
+	default:
+		cx.SetSubtreeAppearance(core.AppearanceSystem)
+	}
+	if s.Theme == "app" {
+		cx.SetTheme(theme)
+	} else {
+		cx.SetTheme(nil)
+	}
+	style := core.Style{Width: core.Pt(480), Height: core.Pt(320), MaxWidth: core.Pct(100), Overflow: core.Hidden}
+	switch s.Size {
+	case "small":
+		style.Width, style.Height = core.Pt(320), core.Pt(240)
+	case "large":
+		style.Width, style.Height = core.Pt(680), core.Pt(420)
+	}
+	switch s.Flow {
+	case "ltr":
+		style.LayoutDirection = core.DirectionLTR
+	case "rtl":
+		style.LayoutDirection = core.DirectionRTL
+	}
+	colors := ui.ColorsOf(cx)
+	cards := make([]core.Node, 0, len(s.Selected))
+	for _, preview := range previews {
+		if !slices.Contains(s.Selected, preview.name) {
+			continue
+		}
+		cards = append(cards, core.View{Style: style, StyleFunc: func() core.Style {
+			return core.Style{Background: colors.Background(), Color: colors.Text(), BorderColor: colors.Border(), BorderWidth: 1}
+		}, Children: []core.Node{core.Func(preview.view)}})
+	}
+	return core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, Gap: 12}, Children: cards}
+}

@@ -2,7 +2,7 @@
 //
 //	nsgo init  [-template go|tsx|mixed|module[@version]] [-name N] [-module M] [dir]
 //	                                                      write a new app
-//	nsgo dev   [-target T] [-hot-reload=false] [-trace] [-automation] [-limits[=L]] [flags] [dir]
+//	nsgo dev   [-target T] [-hot-reload=false] [-trace] [-automation] [-limits[=L]] [-preview PKG] [flags] [dir]
 //	                                                      run the app and rebuild it on changes
 //	nsgo mcp   [dev flags] [dir]                         serve MCP on standard input and output to drive the
 //	                                                      app nsgo dev -automation runs, started if none does
@@ -57,7 +57,12 @@ func main() {
 	case "dev":
 		fs := flag.NewFlagSet("dev", flag.ExitOnError)
 		f := bindDevFlags(fs)
+		preview := fs.String("preview", "", "preview an importable Go component package from this `directory`")
 		if err = parseCommand(fs, args, 1); err != nil {
+			break
+		}
+		if *preview != "" {
+			err = devPreview(ctx, f, *preview, fs.Arg(0))
 			break
 		}
 		var p *project

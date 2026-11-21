@@ -38,7 +38,7 @@ func copyWalked(p *project, root string, walk func(*project, func(string, []byte
 			return err
 		}
 		mode := fs.FileMode(0o644)
-		if info, err := os.Stat(filepath.Join(p.Dir, resourcesDir, rel)); err == nil && info.Mode()&0o111 != 0 {
+		if info, err := os.Stat(filepath.Join(p.resourceRoot(), rel)); err == nil && info.Mode()&0o111 != 0 {
 			mode = 0o755
 		}
 		if err := os.WriteFile(out, data, mode); err != nil {
@@ -62,10 +62,17 @@ func walkMobileResources(p *project, f func(rel string, data []byte) error) erro
 	})
 }
 
+func (p *project) resourceRoot() string {
+	if p.resourceDir != "" {
+		return p.resourceDir
+	}
+	return filepath.Join(p.Dir, resourcesDir)
+}
+
 // walkResources calls f with each file under the app's resources
 // directory, by its slash-separated path inside it.
 func walkResources(p *project, f func(rel string, data []byte) error) error {
-	src := filepath.Join(p.Dir, resourcesDir)
+	src := p.resourceRoot()
 	if _, err := os.Stat(src); os.IsNotExist(err) {
 		return nil
 	}
