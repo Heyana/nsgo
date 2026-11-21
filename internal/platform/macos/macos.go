@@ -259,6 +259,7 @@ type surface struct {
 	views            []*view            // index is NodeID
 	movers           map[*view]struct{} // views following mouse moves
 	inside           map[*view]struct{} // views whose tracking areas hold the mouse
+	webOver          *view              // web view under the pointer, left when covered and nudged when uncovered
 	root             driver.NodeID      // the root view's, which the batches name
 	// mouse is finger 0 of the views' touches; touched is the last NSEvent reported, which AppKit passes up the views.
 	mouse finger.Fingers
@@ -1512,7 +1513,7 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 		// The hovers the move reports and the cursor follow where the
 		// content shows.
 		s.commitPending()
-		s.pick(objc.Send[apple.CGPoint](event, selLocationInWindow), true)
+		s.pick(objc.Send[apple.CGPoint](event, selLocationInWindow), true, true)
 	case typeScrollWheel:
 		if len(s.armed) > 0 && s.wheelStarts(event) {
 			s.commitPending()
@@ -1558,7 +1559,7 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 		s.dragMoved(event)
 	case typeLeftUp:
 		s.mouseButtonUp(driver.MouseButtonLeft, event)
-		s.pick(objc.Send[apple.CGPoint](event, selLocationInWindow), true)
+		s.pick(objc.Send[apple.CGPoint](event, selLocationInWindow), true, false)
 		if s.releaseScrolls() || s.selectUp() {
 			return 0
 		}
@@ -2670,6 +2671,9 @@ func (s *surface) delete(v *view, kept bool) {
 		v.image.Close()
 	}
 	if v.web != nil {
+		if s.webOver == v {
+			s.webOver = nil
+		}
 		delete(views, v.web.View())
 		v.web.Close()
 	}
@@ -3186,8 +3190,9 @@ func cursorUpdate(self objc.ID, _ objc.SEL, _ objc.ID) {
 // pick follows what is under the mouse at loc, a point of the window:
 // the views hovered and the cursor. AppKit's tracking areas and cursor
 // rects would find a view through the overlays above it; the hit test
-// does not.
-func (s *surface) pick(loc apple.CGPoint, always bool) {
+// does not. moving is true when AppKit is about to deliver the mouse
+// move itself.
+func (s *surface) pick(loc apple.CGPoint, always, moving bool) {
 	up := s.native.Send(selSuperview)
 	if s.window == 0 || up == 0 {
 		return
@@ -3204,7 +3209,119 @@ func (s *surface) pick(loc apple.CGPoint, always bool) {
 		}
 		v.over = !v.over
 	}
+	s.pickWeb(hit, up, loc, always, moving)
 	s.updateCursor(hit, up, loc, always)
+}
+
+// webViewAt returns the KindWeb view whose WKWebView holds hit, or nil.
+func webViewAt(hit, up objc.ID) *view {
+	for n := hit; n != 0 && n != up; n = n.Send(selSuperview) {
+		if v := views[n]; v != nil && v.kind == driver.KindWeb && v.native != n && v.web != nil {
+			return v
+		}
+	}
+	return nil
+}
+
+// pickWeb keeps a WKWebView's hover and cursor aligned with overlays above
+// it. WebKit's tracking area observer already drops moves when the window's
+// hit test lands on a sibling overlay, but AppKit sends no mouseExited:
+// while the pointer stays inside the web view's frame, leaving :hover set
+// when an overlay covers it, and sends no mouseMoved: when an overlay
+// closes under a resting pointer, leaving the overlay's cursor until the
+// pointer moves.
+func (s *surface) pickWeb(hit, up objc.ID, loc apple.CGPoint, always, moving bool) {
+	web := webViewAt(hit, up)
+	prev := s.webOver
+	if web == prev {
+		return
+	}
+	s.webOver = web
+	if prev != nil {
+		s.leaveWeb(prev)
+	}
+	if web != nil && (moving || always || objc.Send[uint](objc.ID(apple.Class("NSEvent")), sel("pressedMouseButtons")) == 0) {
+		s.enterWeb(web, loc, !moving)
+	}
+}
+
+// leaveWeb sends a synthetic exit outside v's WKWebView to its tracking area
+// owners so the page clears :hover when an overlay covers it.
+func (s *surface) leaveWeb(v *view) {
+	if v.web == nil {
+		return
+	}
+	w := v.web.View()
+	if w == 0 || w.Send(selWindow) != s.window {
+		return
+	}
+	outside := objc.Send[apple.CGPoint](w, sel("convertPoint:toView:"), apple.CGPoint{X: -1, Y: -1}, objc.ID(0))
+	ev := objc.ID(apple.Class("NSEvent")).Send(
+		sel("enterExitEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:trackingNumber:userData:"),
+		uint(9), outside, uint(0), uptime(), objc.Send[int](s.window, sel("windowNumber")), objc.ID(0), 0, 0, uintptr(0))
+	const enteredAndExited = 0x01
+	sendWebTracking(w, enteredAndExited, sel("mouseExited:"), ev)
+}
+
+// enterWeb tells v's WKWebView tracking area owners that the pointer entered
+// at loc (for when the pointer crossed off a covering overlay without leaving
+// the web view's frame) and, if sendMove, also sends a move so a still
+// pointer uncovered by a closing overlay restores :hover and its cursor.
+func (s *surface) enterWeb(v *view, loc apple.CGPoint, sendMove bool) {
+	if v.web == nil {
+		return
+	}
+	w := v.web.View()
+	if w == 0 || w.Send(selWindow) != s.window {
+		return
+	}
+	winNum := objc.Send[int](s.window, sel("windowNumber"))
+	nsEvent := objc.ID(apple.Class("NSEvent"))
+	enterEv := nsEvent.Send(
+		sel("enterExitEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:trackingNumber:userData:"),
+		uint(8), loc, uint(0), uptime(), winNum, objc.ID(0), 0, 0, uintptr(0))
+	const enteredAndExited, mouseMovedOpt = 0x01, 0x02
+	sendWebTracking(w, enteredAndExited, sel("mouseEntered:"), enterEv)
+	if sendMove {
+		moveEv := nsEvent.Send(
+			sel("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
+			uint(evMoved), loc, uint(0), uptime(), winNum, objc.ID(0), 0, 0, float32(0))
+		sendWebTracking(w, mouseMovedOpt, sel("mouseMoved:"), moveEv)
+	}
+}
+
+// sendWebTracking delivers ev to each distinct owner of w's tracking areas
+// carrying opt that responds to cmd.
+func sendWebTracking(w objc.ID, opt uint, cmd objc.SEL, ev objc.ID) {
+	areas := w.Send(sel("trackingAreas"))
+	n := objc.Send[uint](areas, selCount)
+	var seen [4]objc.ID
+	seenN := 0
+	for i := uint(0); i < n; i++ {
+		a := areas.Send(sel("objectAtIndex:"), i)
+		if objc.Send[uint](a, sel("options"))&opt == 0 {
+			continue
+		}
+		owner := a.Send(sel("owner"))
+		if owner == 0 || !objc.Send[bool](owner, sel("respondsToSelector:"), cmd) {
+			continue
+		}
+		dup := false
+		for j := range seenN {
+			if seen[j] == owner {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		if seenN < len(seen) {
+			seen[seenN] = owner
+			seenN++
+		}
+		owner.Send(cmd, ev)
+	}
 }
 
 // repickDelay is how long after a scroll's last step the views hovered
@@ -3261,7 +3378,7 @@ func (s *surface) pickHere() {
 		if s.testPointer != nil {
 			at = *s.testPointer
 		}
-		s.pick(at, false)
+		s.pick(at, false, false)
 	}
 }
 
