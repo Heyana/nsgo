@@ -232,6 +232,8 @@ type project struct {
 	// Updates has the app update the way its platform does (updates.go).
 	Updates updatesConfig `yaml:"updates"`
 	Steam   steamConfig   `yaml:"steam"`
+	// Store names where the app's text-based store listings live (listings.go).
+	Store storeConfig `yaml:"store"`
 	// Mobile is the iOS and Android targets': ExcludeResources are paths in
 	// resources/ their packages leave out, such as what only desktops run.
 	Mobile struct {
@@ -421,6 +423,9 @@ func load(dir string) (*project, error) {
 		p.I18n.Dir = "locales"
 	}
 	p.I18n.Dir = p.resolve(p.I18n.Dir)
+	if p.Store.Dir != "" {
+		p.Store.Dir = p.resolve(p.Store.Dir)
+	}
 	if p.I18n.Source == "" {
 		p.I18n.Source = "en"
 	}

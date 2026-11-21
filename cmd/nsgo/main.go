@@ -18,6 +18,8 @@
 //	nsgo certify -key P -apps A [-days N] [-out F]       certify a release key for apps
 //	nsgo publish -cert C [-entry E] [-min-runtime V] [-out F] [dir | package]
 //	                                                      compile a TSX app into a signed package, or sign one again
+//	nsgo publish -store appstore|play|all [-listings DIR] [-dry-run] [-platform P] [-version V] [-track T] [dir]
+//	                                                      validate and upload store listings from YAML and Markdown files
 //	nsgo verify  [-root P,... [-revocations F,...]] package
 //	                                                      check a package and print what it holds
 //	nsgo revoke  -sequence N [-days N] [-keys IDs] [-packages H,...] -out F
@@ -192,10 +194,16 @@ func main() {
 		fs.StringVar(&o.minRuntime, "min-runtime", "", "the oldest runtime `version` the package runs on (default: this tool's)")
 		fs.StringVar(&o.extra, "extra", "", "opaque metadata `file` to sign into the package")
 		fs.StringVar(&o.out, "out", "", "the package's `file` (default: build.output's <name>-<version>.nsgopkg)")
+		fs.StringVar(&o.store, "store", "", "upload store listings to comma-separated `stores`: appstore, play or all")
+		fs.StringVar(&o.listings, "listings", "", "the store listings `directory` holding listing.yaml and locale subdirectories (default: nsgo.yaml's store.dir, else store)")
+		fs.BoolVar(&o.dryRun, "dry-run", false, "parse and validate store listings without uploading")
+		fs.StringVar(&o.platform, "platform", "", "the App Store Connect `platform`: ios, macos, tvos or visionos (default: listing.yaml's app_store.platform, else ios)")
+		fs.StringVar(&o.version, "version", "", "the App Store Connect app `version` string (default: listing.yaml's app_store.version, else nsgo.yaml's version)")
+		fs.StringVar(&o.track, "track", "", "the Google Play `track` to update release notes on (default: listing.yaml's google_play.track)")
 		if err = parseCommand(fs, args, 1); err != nil {
 			break
 		}
-		err = publish(o, fs.Arg(0))
+		err = publishWithContext(ctx, o, fs.Arg(0))
 	case "verify":
 		fs := flag.NewFlagSet("verify", flag.ExitOnError)
 		var o verifyOptions
@@ -249,6 +257,7 @@ func usage() {
   nsgo keygen
   nsgo certify -key P -apps A [-days N] [-out F]
   nsgo publish -cert C [-entry E] [-min-runtime V] [-extra F] [-out F] [dir | package]
+  nsgo publish -store appstore|play|all [-listings DIR] [-dry-run] [-platform P] [-version V] [-track T] [dir]
   nsgo verify  [-root P,... [-revocations F,...]] package
   nsgo revoke  -sequence N [-days N] [-keys IDs] [-packages H,...] -out F
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
@@ -80,13 +81,53 @@ func certify(o certifyOptions) error {
 
 type publishOptions struct {
 	cert, entry, minRuntime, out, extra string
+
+	// Store listing upload options.
+	store    string
+	listings string
+	dryRun   bool
+	platform string
+	version  string
+	track    string
+
+	// Injectable API clients for testing store uploads.
+	appStoreClient   *appStoreClient
+	googlePlayClient *googlePlayClient
+}
+
+func (o publishOptions) isStoreListingPublish() bool {
+	return o.store != "" || o.listings != "" || o.dryRun || o.platform != "" || o.version != "" || o.track != ""
 }
 
 // publish compiles the app in dir and signs it with NSGO_RELEASE_KEY's
-// key, or signs the package at path again.
+// key, signs the package at path again, or validates and uploads store
+// listings to App Store Connect and Google Play.
 func publish(o publishOptions, path string) error {
+	return publishWithContext(context.Background(), o, path)
+}
+
+func publishWithContext(ctx context.Context, o publishOptions, path string) error {
+	if o.isStoreListingPublish() {
+		if o.cert != "" || o.entry != "" || o.minRuntime != "" || o.out != "" || o.extra != "" {
+			return errors.New("publish: store listing flags (-store, -listings, -dry-run, -platform, -version, -track) cannot be combined with TSX package flags (-cert, -entry, -min-runtime, -extra, -out)")
+		}
+		targets, err := parseStoreTargets(o.store)
+		if err != nil {
+			return err
+		}
+		return publishStoreListings(ctx, storePublishOptions{
+			stores:           targets,
+			listingsDir:      o.listings,
+			dryRun:           o.dryRun,
+			platform:         o.platform,
+			version:          o.version,
+			track:            o.track,
+			appStoreClient:   o.appStoreClient,
+			googlePlayClient: o.googlePlayClient,
+		}, path)
+	}
 	if o.cert == "" {
-		return errors.New("publish: -cert is required")
+		return errors.New("publish: -cert is required for signed TSX packages, or pass -store / -listings / -dry-run to publish store listings")
 	}
 	key, err := envSecretKey("NSGO_RELEASE_KEY")
 	if err != nil {

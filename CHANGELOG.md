@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Add text-based YAML and Markdown store listings with pre-upload validation and App Store Connect and Google Play upload support in `nsgo publish -store` (#1564).
 - Restore web builds with pixel-backed custom cursors (#1206 by @houko).
 - Free a closed macOS window's views, shaders' Metal layers among them, once its frame clock had run, as an animation or a scroll does, where each window opened and closed leaked them.
 - Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support (#1227 by @houko).

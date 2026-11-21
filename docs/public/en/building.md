@@ -76,6 +76,7 @@ build:
 # linux: { depends: { deb: [gstreamer1.0-plugins-good], arch: [gst-plugins-good] }, recommends: { deb: [gstreamer1.0-libav], arch: ["gst-libav: H.264 and AAC video"] } }  # packages the .deb and Arch package also depend on and recommend, after GTK 4 and WebKitGTK 6, each as dpkg or pacman writes it
 # release: { github: me/hello }  # the GitHub repository the install scripts and updates install from, else the Git remote origin's; tag_prefix: v by default
 # updates: { key: <public key> }  # how the app updates, by platform and channel: see Updates
+# store: { dir: store }           # store listings directory (YAML and Markdown per language)
 # miniprogram: { appid: { wechat: wx0123456789abcdef, alipay: "2021000000000000" }, custom_navigation: false }  # the mini programs'
 ```
 
@@ -161,6 +162,38 @@ On macOS, a scroll view's edge effects (`Scroll.EdgeEffects`) and a backdrop `Bl
 Every Apple bundle `build` writes, the app, its widget extension, App Clip and Apple Watch app, and a `-dynamic` `-embed` framework, carries a privacy manifest, `PrivacyInfo.xcprivacy`, declaring the required-reason APIs NSGo and Go's runtime use: user defaults (`CA92.1`), file timestamps (`C617.1`) and system boot time (`35F9.1`). `apple.privacy` adds the app's own: `accessed_apis`, each category's reasons, `tracking`, `tracking_domains` and `collected_data`, entries of `NSPrivacyCollectedDataTypes` as Apple names them; a `PrivacyInfo.xcprivacy` in `resources/` is merged with them rather than replaced.
 
 The Info.plist of each iOS, tvOS and watchOS bundle `build` writes for devices, the app's, its widget extension's and App Clip's, carries the SDK and Xcode `DT` keys App Store Connect checks, read from the Xcode that builds it, and `UIRequiredDeviceCapabilities: [arm64]`; simulator bundles leave them out, and a key `apple.info` sets keeps its value. `apple.multiple_scenes: true` sets `UIApplicationSupportsMultipleScenes` in an iOS app's scene manifest, which is false by default: on an iPad the user can then open more than one window of the app, and each shows the app's main view anew, with state of its own and the app's shared signals and storage, until the user closes it.
+
+## Store listings
+
+Store metadata (titles, subtitles, descriptions, keywords, release notes, URLs, screenshots and previews) lives in the repository as plain-text YAML and Markdown under `store/` (or `store.dir` in `nsgo.yaml`):
+
+```text
+store/
+  listing.yaml              # version: 1, default_locale, app_store and google_play settings
+  en-US/
+    listing.yaml            # version: 1, title, subtitle, short_description, keywords, URLs, media
+    description.md          # full description (optional file in place of YAML description)
+    release_notes.md        # what's new (optional file in place of YAML release_notes)
+    promotional_text.md     # App Store promotional text (optional file)
+    screenshots/
+  zh-Hans/
+    listing.yaml
+    description.md
+    release_notes.md
+    screenshots/
+```
+
+Both `listing.yaml` files require `version: 1` and refuse unknown keys. Canonical locale directories such as `zh-Hans` map automatically to each store's code (`zh-Hans` on App Store Connect, `zh-CN` on Google Play) unless overridden per store with `app_store.locale` or `google_play.locale`.
+
+```sh
+go tool nsgo publish -store all -dry-run                  # validate lengths, locales and media without uploading
+go tool nsgo publish -store appstore,play                 # validate and upload to App Store Connect and Google Play
+go tool nsgo publish -store play -track production        # also update release notes on the named Play track
+```
+
+Validation runs before reading credentials or making any HTTP request, checking required fields, locale codes, URL schemes, media files and counts (up to 10 screenshots and 3 previews per App Store display type; up to 8 screenshots per Google Play image type), and character limits (App Store: title 30, subtitle 30, keywords 100, promotional text 170, description 4000, release notes 4000; Google Play: title 30, short description 80, description 4000, release notes 500).
+
+Upload credentials come from the environment alone: `NSGO_APP_STORE_KEY`, `NSGO_APP_STORE_KEY_ID` and `NSGO_APP_STORE_ISSUER` (falling back to the notarization key `NSGO_NOTARY_KEY`, `NSGO_NOTARY_KEY_ID` and `NSGO_NOTARY_ISSUER`) for App Store Connect, and `NSGO_PLAY_SERVICE_ACCOUNT` (service-account JSON file path or JSON text) for Google Play.
 
 ## Steam depots
 

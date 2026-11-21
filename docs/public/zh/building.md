@@ -76,6 +76,7 @@ build:
 # linux: { depends: { deb: [gstreamer1.0-plugins-good], arch: [gst-plugins-good] }, recommends: { deb: [gstreamer1.0-libav], arch: ["gst-libav: H.264 and AAC video"] } }  # .deb 和 Arch 软件包在 GTK 4 和 WebKitGTK 6 之外还依赖和推荐的包，按 dpkg 或 pacman 的写法填写
 # release: { github: me/hello }  # 安装脚本和自动更新从其 Releases 安装的 GitHub 仓库，省略时取 Git 远程 origin 的；tag_prefix 默认为 v
 # updates: { key: <公钥> }  # 应用按平台和渠道更新的方式，见“自动更新”
+# store: { dir: store }     # 商店列表目录（按语言存放的 YAML 和 Markdown）
 # miniprogram: { appid: { wechat: wx0123456789abcdef, alipay: "2021000000000000" }, custom_navigation: false }  # 小程序的设置
 ```
 
@@ -161,6 +162,38 @@ sign:
 `build` 写出的每个 Apple 包，即应用、它的小组件扩展、App Clip 和 Apple Watch 应用，以及 `-dynamic` 的 `-embed` 框架，都带有隐私清单 `PrivacyInfo.xcprivacy`，声明 NSGo 和 Go 运行时用到的需要理由的 API：用户默认设置（`CA92.1`）、文件时间戳（`C617.1`）和系统启动时间（`35F9.1`）。`apple.privacy` 添加应用自己的声明：`accessed_apis` 给出每个类别的理由，另有 `tracking`、`tracking_domains` 和 `collected_data`，后者的条目按 Apple 的命名写成 `NSPrivacyCollectedDataTypes` 的条目；`resources/` 中的 `PrivacyInfo.xcprivacy` 会与这些声明合并，而不是被替换。
 
 iOS、tvOS 和 watchOS 的设备构建会在应用及其扩展中写入 App Store Connect 检查的 SDK 与 Xcode 元数据，并加入 `UIRequiredDeviceCapabilities: [arm64]`。模拟器构建不会写入这些仅设备条目；`apple.info` 中显式设置的值优先。`apple.multiple_scenes: true` 会在 iOS 应用的场景清单中将 `UIApplicationSupportsMultipleScenes` 设为 true，默认值为 false：此后用户可以在 iPad 上打开 App 的多个窗口，每个窗口都重新显示 App 的主视图，拥有各自的状态，同时共享 App 的信号和存储，直到用户关闭该窗口。
+
+## 商店列表
+
+商店元数据（标题、副标题、简介、完整描述、关键词、更新说明、链接、截图和预览视频）以纯文本 YAML 和 Markdown 存放在仓库的 `store/` 目录中（可在 `nsgo.yaml` 中用 `store.dir` 修改）：
+
+```text
+store/
+  listing.yaml              # version: 1、default_locale、app_store 与 google_play 设置
+  en-US/
+    listing.yaml            # version: 1、title、subtitle、short_description、keywords、URL 与媒体路径
+    description.md          # 完整描述（可选文件，代替 YAML 中的 description）
+    release_notes.md        # 更新说明（可选文件，代替 YAML 中的 release_notes）
+    promotional_text.md     # App Store 宣传文本（可选文件）
+    screenshots/
+  zh-Hans/
+    listing.yaml
+    description.md
+    release_notes.md
+    screenshots/
+```
+
+顶层和各语言的 `listing.yaml` 都必须包含 `version: 1` 并拒绝未知字段。规范的语言目录名（例如 `zh-Hans`）会自动映射到各商店的语言代码（App Store Connect 使用 `zh-Hans`，Google Play 使用 `zh-CN`），也可用 `app_store.locale` 或 `google_play.locale` 单独覆盖。
+
+```sh
+go tool nsgo publish -store all -dry-run                  # 仅校验字数限制、语言与媒体文件，不上传
+go tool nsgo publish -store appstore,play                 # 校验并上传至 App Store Connect 与 Google Play
+go tool nsgo publish -store play -track production        # 同时更新指定 Google Play 轨道的发布说明
+```
+
+校验会在读取凭据或发起任何 HTTP 请求之前完成，检查必填项、语言代码、URL 协议、媒体文件及数量（App Store 每种显示类型最多 10 张截图、3 段预览；Google Play 每种图片类型最多 8 张截图）以及字符上限（App Store：标题 30、副标题 30、关键词 100、宣传文本 170、描述 4000、更新说明 4000；Google Play：标题 30、简短描述 80、完整描述 4000、更新说明 500）。
+
+上传凭据仅从环境变量读取：App Store Connect 读取 `NSGO_APP_STORE_KEY`、`NSGO_APP_STORE_KEY_ID` 和 `NSGO_APP_STORE_ISSUER`（未设置时回退到公证密钥 `NSGO_NOTARY_KEY`、`NSGO_NOTARY_KEY_ID` 和 `NSGO_NOTARY_ISSUER`）；Google Play 读取 `NSGO_PLAY_SERVICE_ACCOUNT`（服务账号 JSON 文件路径或 JSON 文本）。
 
 ## Steam depot
 

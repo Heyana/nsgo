@@ -44,6 +44,7 @@ func TestCommandsRefuseTrailingArguments(t *testing.T) {
 		{[]string{"init", "missing-app", "-name", "Name"}, "go tool nsgo init -name"},
 		{[]string{"i18n", "missing-app", "-source", "en"}, "go tool nsgo i18n -source"},
 		{[]string{"publish", "missing-app", "-entry", "App.tsx"}, "go tool nsgo publish -entry"},
+		{[]string{"publish", "missing-app", "-store", "all"}, "go tool nsgo publish -store"},
 		{[]string{"verify", "missing-app", "-root", "key"}, "go tool nsgo verify -root"},
 		{[]string{"build", "first", "second"}, "takes one path"},
 		{[]string{"dev", "first", "second"}, "takes one path"},

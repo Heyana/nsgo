@@ -35,6 +35,7 @@ build:
 # apple: { info: { NSCameraUsageDescription: Scans receipts. } }
 # release: { github: me/hello }
 # updates: { key: <public key from nsgo keygen> }
+# store: { dir: store }       # YAML and Markdown store listings per language
 # steam: { app_id: 480 }      # use your Steamworks App ID for native dev
 ```
 
@@ -55,6 +56,17 @@ Packages land in `dist/<name>-<version>-<target>`, and everything to hand out in
 
 For Steam, upload the desktop target directories directly. Native dev with `steam.app_id` writes `steam_appid.txt` into its build and starts there. The depot output excludes that file, installers and self-updaters.
 
+## Store listings
+
+Keep App Store and Google Play metadata as plain-text YAML and Markdown under `store/` (or `store.dir`): top-level `listing.yaml` (`version: 1`) and per-locale `<locale>/listing.yaml` (`version: 1`, unknown keys refused) plus optional `description.md`, `release_notes.md`, `promotional_text.md` and `screenshots/`.
+
+```sh
+go tool nsgo publish -store all -dry-run                  # validate lengths, required fields, locales and media
+go tool nsgo publish -store appstore,play                 # validate and upload to App Store Connect and Google Play
+```
+
+Validation runs before reading credentials or sending HTTP requests. Canonical locale directories like `zh-Hans` map to `zh-Hans` on App Store Connect and `zh-CN` on Google Play unless overridden.
+
 ## Documents
 
 Declare `file_types` in `nsgo.yaml` and handle paths with `desktop.OnOpenFiles`. macOS, Windows (NSIS/MSIX) and Linux packages register them; Windows retains the user's default handler. Linux infers common extensions from a fixed table and defines unknown app-owned types as `application/x-<type id>`; set `mime: [video/mp4]` to reference existing types, especially for unknown imported extensions. AppImage needs desktop integration to install the bundled entry and any custom MIME definitions.
@@ -63,7 +75,7 @@ Declare `url_schemes: [myapp]` for the app's own links and handle them with `des
 
 ## Secrets
 
-Never commit secret keys or passwords. The tool reads them from the environment: `NSGO_UPDATES_KEY` for update feeds, `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD` for Android keystores, `NSGO_CERTIFICATE_PASSWORD` for a Windows code signing certificate, `NSGO_NOTARY_KEY`, `NSGO_NOTARY_KEY_ID` and `NSGO_NOTARY_ISSUER` for notarizing in CI, `NSGO_ROOT_KEY` and `NSGO_RELEASE_KEY` for signed TSX packages. Public keys belong in `nsgo.yaml` and the app's code.
+Never commit secret keys or passwords. The tool reads them from the environment: `NSGO_UPDATES_KEY` for update feeds, `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD` for Android keystores, `NSGO_CERTIFICATE_PASSWORD` for a Windows code signing certificate, `NSGO_NOTARY_KEY`, `NSGO_NOTARY_KEY_ID` and `NSGO_NOTARY_ISSUER` for notarizing in CI, `NSGO_APP_STORE_KEY`, `NSGO_APP_STORE_KEY_ID` and `NSGO_APP_STORE_ISSUER` (falling back to the notary key) for App Store Connect listings, `NSGO_PLAY_SERVICE_ACCOUNT` for Google Play listings, and `NSGO_ROOT_KEY` and `NSGO_RELEASE_KEY` for signed TSX packages. Public keys belong in `nsgo.yaml` and the app's code.
 
 For an adaptive Android launcher icon, set `icon.android.foreground` and `background` (a PNG or a `"#RRGGBB"` color), and `monochrome` for Android 13's themed icons: square 432 px layers with the logo inside the center 264 px, which every launcher mask keeps ([Building](https://nsgo.dev/docs/building.md)).
 
