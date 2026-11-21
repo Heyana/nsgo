@@ -910,7 +910,7 @@ func buildMacApp(ctx context.Context, p *project, dir, arch string) (string, err
 		return "", err
 	}
 	extra := icon + "\n" + names + "\n" + p.fileTypesPlist() + "\n" + p.urlSchemesPlist() + "\n" + p.widgetPlist(false) + "\n" + p.sparklePlist("macos_"+goArchName(arch))
-	if game := p.gamePlist(true); game != "" {
+	if game := p.gamePlist(true, false); game != "" {
 		extra += "\n" + game
 	}
 	if err := writePlist(filepath.Join(app, "Contents", "Info.plist"), p, macPlist, extra); err != nil {

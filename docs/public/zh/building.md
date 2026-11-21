@@ -115,7 +115,7 @@ android:
 
 在 `nsgo.yaml` 中设置 `game: true` 将应用声明为游戏。Android 将应用归为游戏并使用系统的游戏模式优化。macOS 和 iOS 启用游戏模式支持，macOS 的默认分类为游戏，Linux 在桌面入口中加入 `Game` 分类。显式设置的 `macos.category` 或 `apple.info` 中的游戏模式键优先。
 
-应用支持物理手柄时，设置 `gamepad: true`。Android 将手柄和触摸屏声明为可选。macOS、iOS 和 tvOS 声明 Extended Gamepad 配置，`apple.info` 中的手柄键优先。
+应用支持物理手柄时，设置 `gamepad: true`。Android 将手柄和触摸屏声明为可选。macOS、iOS 和 tvOS 声明 Extended Gamepad 配置，tvOS 还声明 Siri Remote 的 Micro Gamepad 配置，`apple.info` 中的手柄键优先。
 
 ## 安装程序
 

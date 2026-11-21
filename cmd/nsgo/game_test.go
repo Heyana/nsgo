@@ -26,14 +26,15 @@ func TestGamePackageMetadata(t *testing.T) {
 		name  string
 		plist *template.Template
 		mode  bool
+		micro bool
 	}{
-		{"macOS", macPlist, true},
-		{"iOS", iosPlist, true},
-		{"tvOS", tvosPlist, false},
+		{"macOS", macPlist, true, false},
+		{"iOS", iosPlist, true, false},
+		{"tvOS", tvosPlist, false, true},
 	} {
 		t.Run(target.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "Info.plist")
-			if err := writePlist(path, p, target.plist, p.gamePlist(target.mode)); err != nil {
+			if err := writePlist(path, p, target.plist, p.gamePlist(target.mode, target.micro)); err != nil {
 				t.Fatal(err)
 			}
 			data, err := os.ReadFile(path)
@@ -45,6 +46,9 @@ func TestGamePackageMetadata(t *testing.T) {
 				if !strings.Contains(got, key) {
 					t.Errorf("Info.plist lacks %s", key)
 				}
+			}
+			if strings.Contains(got, "MicroGamepad") != target.micro {
+				t.Errorf("Info.plist has unexpected presence of MicroGamepad")
 			}
 			for _, key := range []string{"GCSupportsGameMode", "LSSupportsGameMode"} {
 				if strings.Contains(got, key) != target.mode {
@@ -58,11 +62,11 @@ func TestGamePackageMetadata(t *testing.T) {
 	}
 	p.MacOS.Category = "public.app-category.action-games"
 	p.Apple.Info = map[string]any{"LSSupportsGameMode": false}
-	if p.MacOSCategory() != p.MacOS.Category || strings.Contains(p.gamePlist(true), "LSSupportsGameMode") {
+	if p.MacOSCategory() != p.MacOS.Category || strings.Contains(p.gamePlist(true, true), "LSSupportsGameMode") {
 		t.Fatal("explicit Apple settings did not take precedence")
 	}
 	p = &project{}
-	if p.MacOSCategory() != "" || p.gamePlist(true) != "" || len(p.linuxCategories()) != 0 {
+	if p.MacOSCategory() != "" || p.gamePlist(true, true) != "" || len(p.linuxCategories()) != 0 {
 		t.Errorf("an unclassified app has game metadata")
 	}
 }

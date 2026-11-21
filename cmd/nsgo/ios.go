@@ -211,7 +211,7 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 		return "", err
 	}
 	extra += "\n" + buildInfo
-	if game := p.gamePlist(sys == iOS); game != "" {
+	if game := p.gamePlist(sys == iOS, sys == tvOS); game != "" {
 		extra += "\n" + game
 	}
 	if widgets {

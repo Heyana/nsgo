@@ -94,8 +94,7 @@ func (m Manifest) xmlResources() []xmlResource {
 }
 
 func gameModeConfig() *node {
-	// Default attributes let the OS apply Game Mode interventions. An
-	// app must implement its own optimizations to opt into managing them.
+	// Default attributes let the OS apply Game Mode interventions. An app must implement its own optimizations to opt into managing them.
 	return &node{name: xml.Name{Local: "game-mode-config"}}
 }
 
