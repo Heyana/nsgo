@@ -210,6 +210,7 @@ func MinimizeWindow(cx *core.Scope) { cx.MinimizeWindow() }
 func ToggleMaximize(cx *core.Scope) { cx.ToggleMaximize() }
 
 // ToggleFullScreen enters or leaves full screen.
+// On the web, call it from a press handler. Browser refusals go to the log.
 func ToggleFullScreen(cx *core.Scope) { cx.ToggleFullScreen() }
 
 // CloseWindow closes the window as its close button does: the window's

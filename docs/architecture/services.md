@@ -367,6 +367,8 @@ A playing `Video` keeps the display on only on iOS, where `AVPlayer`'s `prevents
 
 iOS's controllers use the request after the topmost modal's `IOS.SupportedOrientations`. From iOS 16, the scene requests geometry in that mask and restores its pre-request orientation on release when the normal policy permits it. Android's launcher activity applies the mask through `setRequestedOrientation` and restores its previous setting. Android accepts single directions, both directions of one axis and the full set. For other sets, it locks to an allowed direction. These commands target the standalone application's interface.
 
+The web applies `ItemOrientation` through `screen.orientation.lock`. A `ToggleFullScreen` request calls the browser in the press's commit and applies the current orientation mask after entering full screen. The browser accepts one direction, either axis or all directions. For other sets, NSGo chooses an allowed direction, preferring the one already shown. Releasing the last request or leaving full screen unlocks the screen. Missing APIs and rejected requests are logged with the operation that failed.
+
 ## The device
 
 `Env.DeviceName` is the name the user gave the device, as the system's settings show it, and `Env.DeviceModel` its hardware model, so an app that pairs devices can tell two of a kind apart. Each is empty where the platform does not give it, and `nsgotest.Environment` sets both, also under `nsgo test -target`. The name is read with the rest of the environment, so a rename reaches the app at its next refresh; the model is read once.

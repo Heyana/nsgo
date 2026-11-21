@@ -142,6 +142,7 @@ type surface struct {
 	touch        fingers
 	covers       []covered // what the modals made inert, oldest first
 	history      history
+	screen       browserScreen
 	// whole is set when the app fills the page; an app in an element of
 	// it takes the page's keys only after a press in it, pressedIn, or
 	// while the focus is in it, as another app on the page has them
@@ -1529,6 +1530,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemHistory:
 			s.setHistory(int(it.Count))
 			continue
+		case driver.ItemOrientation:
+			s.setOrientation(driver.Orientation(it.Count))
+			continue
 		case driver.ItemWindow:
 			s.windowCommand(it.Window)
 			continue
@@ -2632,29 +2636,11 @@ func (s *surface) pressed(v *view, kind driver.EventKind) {
 func (s *surface) windowCommand(c *driver.WindowCommand) {
 	switch c.Action {
 	case driver.WindowToggleFullScreen:
-		if s.doc.Get("fullscreenElement").Truthy() || s.doc.Get("webkitFullscreenElement").Truthy() {
-			call(s.doc, "exitFullscreen", "webkitExitFullscreen")
-		} else {
-			call(s.doc.Get("documentElement"), "requestFullscreen", "webkitRequestFullscreen")
-		}
+		s.toggleBrowserFullscreen()
 	case driver.WindowClose:
 		js.Global().Call("close")
 	case driver.WindowDestroy:
 		s.closeAudio()
-	}
-}
-
-// call calls the first of methods el has, ignoring a promise's rejection,
-// such as a browser refusing full screen without a user gesture.
-func call(el js.Value, methods ...string) {
-	for _, m := range methods {
-		if el.Get(m).Type() != js.TypeFunction {
-			continue
-		}
-		if r := el.Call(m); r.Type() == js.TypeObject && r.Get("catch").Type() == js.TypeFunction {
-			r.Call("catch", ignore)
-		}
-		return
 	}
 }
 
@@ -2689,6 +2675,9 @@ func (s *surface) listen() {
 	ls.on(s.host, "contextmenu", s.contextMenu)
 	ls.on(s.doc, "copy", s.copySelection)
 	ls.on(s.doc, "keydown", s.escape)
+	ls.on(s.doc, "fullscreenchange", s.screenChanged)
+	ls.on(s.doc, "webkitfullscreenchange", s.screenChanged)
+	ls.on(s.doc, "webkitfullscreenerror", s.screenFailed)
 	s.listenModifiers(&ls)
 	s.listenGestures(&ls)
 	s.listenTouches(&ls)

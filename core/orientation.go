@@ -20,11 +20,12 @@ func (r *orientationRequests) current() Orientation {
 	return r.live[len(r.live)-1].mask
 }
 
-// RequestOrientation asks iOS and Android to show the app in one of the given
-// interface orientations while the current scope lives. The newest live request
-// wins. When none remains, the system applies the app's usual orientation policy.
-// A zero mask makes no request. On iOS a presented modal's SupportedOrientations
-// takes precedence. Other targets ignore the request.
+// RequestOrientation asks iOS, Android or the browser to show the app in one
+// of the given interface orientations while the current scope lives. The newest
+// live request wins. When none remains, the system applies its usual orientation
+// policy. A zero mask makes no request. On iOS a presented modal's
+// SupportedOrientations takes precedence. On the web, enter full screen from a
+// press to let the browser lock orientation. Refusals go to the browser log.
 func (cx *Scope) RequestOrientation(mask Orientation) {
 	mask &= OrientationPortrait | OrientationPortraitUpsideDown | OrientationLandscape
 	owner := cx.current()

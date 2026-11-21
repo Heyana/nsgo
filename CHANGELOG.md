@@ -28,7 +28,7 @@
 - Slide the title of `ui.SidebarShell`'s content with the content until it meets the sidebar's toggle, where it jumped as the sidebar hid or showed, and add `examples/shell` of the inset shell.
 - Keep desktop frame callbacks running by choosing a visible driving window deterministically (#1159 by @houko).
 - Add `Scope.RequestReview` for App Store rating prompts on macOS and iOS and Google Play prompts in Android hosts that include Play In-App Review (#1246 by @houko).
-- Add `Scope.RequestOrientation`, which shows an iOS or Android phone's interface in the given orientations while the scope lives, the newest live request winning and the app's own policy coming back once none is left, and `nsgotest.App.Orientation`, which reports the mask in effect (#1136 by @houko).
+- Add scoped `Scope.RequestOrientation` for iOS, Android and the browser, with `nsgotest.App.Orientation` for tests and browser refusal logging for full screen and orientation locks (#1136 and #1568 by @houko).
 - Update web image views with each pixel buffer version in place (#1099 by @houko).
 - Add pixel buffers to WeChat mini program images and mini program canvas drawings (#1101 by @houko).
 - Let `nsgo init -template` generate an app from a Go module's template (#1125 by @houko).
