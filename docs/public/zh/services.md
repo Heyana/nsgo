@@ -261,6 +261,8 @@ cx.OnQuit(func(ctx context.Context) { saveDraft(ctx) })
 
 `cx.Env().DeviceName()` 是用户给设备起的名字，`cx.Env().DeviceModel()` 是它的硬件型号，例如 `Mac15,7`、`iPhone15,2` 或 `Google Pixel 8`，应用可以据此区分两台配对的设备。macOS、Android、Windows 和 Linux 两者都提供；iOS 提供型号，名字只提供给拥有 Apple 用户自定义设备名权限（user-assigned device name entitlement）的应用；Web 两者都不提供。测试可用 `nsgotest.Environment` 设置它们。
 
+`cx.Env().ThermalState()` 在 Apple 平台和 Android API 29 及以上报告 `core.ThermalNominal`、`ThermalFair`、`ThermalSerious` 或 `ThermalCritical`。`cx.Env().LowPowerMode()` 在 Apple 平台、Android、Windows 和运行 power-profiles-daemon 的 Linux 会话中报告 `core.LowPowerOn` 或 `LowPowerOff`。系统不提供值时，分别返回 `ThermalUnknown` 和 `LowPowerUnknown`。两者各自响应变化，应用可以在运行时调整负载。测试可以通过 `nsgotest.Environment` 或 `app.SetEnvironment` 设置 `core.Environment` 的 `ThermalState` 和 `LowPowerMode`。
+
 `desktop.SetWindowLevel` 让窗口浮在其他窗口之上；`desktop.SetWindowWorkspaces(cx, desktop.WindowWorkspacesAll)` 或 `WindowOptions.Workspaces` 让它出现在每个工作区，桌宠、HUD、计时器都是这样：macOS 上出现在每个空间（Space）和其他应用的全屏空间之上，不参与 Cmd-` 切换；Linux 上出现在 X11 窗口管理器的每个虚拟桌面。Windows 和 Wayland 上它留在打开时所在的那个。`desktop.CanSetWindowWorkspaces` 说明它是否生效：macOS 上以及支持 `_NET_WM_DESKTOP` 的 X11 窗口管理器下为 true。主窗口在自己的内容里调用 `desktop.SetWindowWorkspaces` 即可出现在每个工作区。测试中 `nsgotest.App.Window` 列出这些请求，`nsgotest.Environment` 可以设置 `CanSetWindowWorkspaces`。
 
 `desktop.RegisterHotKey` 绑定全局快捷键，无论哪个应用在前台都生效，支持 macOS、Linux，以及用 `nsgo.Run(App)` 运行的 Windows 应用。它返回的句柄的 `State` 说明系统是否接受了它：系统答复前是 `HotKeyPending`，之后是 `HotKeyRegistered`；组合键已被其他注册占用时是 `HotKeyTaken`；按键或平台不支持全局快捷键时是 `HotKeyUnsupported`。快捷键录制器据此可以请用户换一个组合。在 macOS 上，只有应用自己已注册、或其他应用以独占方式注册的组合键才算被占用。在 Wayland 上由合成器请用户绑定快捷键，用户绑定后才是已注册；用户或合成器没有绑定的是已占用。测试中用 `nsgotest.HotKeyTaken` 和 `nsgotest.HotKeyUnsupported` 让组合键这样答复。

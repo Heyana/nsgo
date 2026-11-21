@@ -162,6 +162,10 @@ type (
 	Pointer = driver.Pointer
 	// Lifecycle is whether the app is in use: Env.Lifecycle.
 	Lifecycle = driver.Lifecycle
+	// ThermalState is the thermal pressure the system reports.
+	ThermalState = driver.ThermalState
+	// LowPowerMode is the system's energy-saving setting.
+	LowPowerMode = driver.LowPowerMode
 	// Geometry is how a fold or hinge divides a surface: Env.Geometry.
 	Geometry = driver.Geometry
 	// Region is a part of a surface an app can lay out in.
@@ -455,6 +459,16 @@ const (
 	LifecycleActive     = driver.LifecycleActive
 	LifecycleInactive   = driver.LifecycleInactive
 	LifecycleBackground = driver.LifecycleBackground
+
+	ThermalUnknown  = driver.ThermalUnknown
+	ThermalNominal  = driver.ThermalNominal
+	ThermalFair     = driver.ThermalFair
+	ThermalSerious  = driver.ThermalSerious
+	ThermalCritical = driver.ThermalCritical
+
+	LowPowerUnknown = driver.LowPowerUnknown
+	LowPowerOff     = driver.LowPowerOff
+	LowPowerOn      = driver.LowPowerOn
 )
 
 const (

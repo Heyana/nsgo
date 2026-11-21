@@ -708,6 +708,7 @@ func (w *window) createWindow(opts Options) {
 // setupSettings rereads the environment whenever GTK's settings or the
 // app's lifecycle change.
 func (w *window) setupSettings() {
+	followPowerProfiles()
 	gSignalConnect(w.surface, "map", cbMapped, w.handle)
 	gSignalConnect(w.surface, "unmap", cbMapped, w.handle)
 	if settings := gtkSettingsGetDefault(); settings != 0 {

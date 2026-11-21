@@ -100,6 +100,7 @@ func (w *window) environment() driver.Environment {
 		Minimized:        isIconicWindow(w.owner()),
 		WindowFrame:      w.windowFrame(),
 		Lifecycle:        w.lifecycle(),
+		LowPowerMode:     lowPowerMode(),
 		Speak:            speakAvailable(),
 		Gamepads:         true,
 		FrontmostApp:     frontmostApp(),

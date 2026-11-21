@@ -471,6 +471,22 @@ func readEnvironment(r *reader) driver.Environment {
 	// The toolbar's heights, without and with a large title.
 	env.HeaderHeight, env.LargeHeaderHeight = r.points(), r.points()
 	env.OSVersion.Major = int(r.u32()) // the API level
+	switch r.byte() {
+	case 1: // none
+		env.ThermalState = driver.ThermalNominal
+	case 2, 3: // light, moderate
+		env.ThermalState = driver.ThermalFair
+	case 4: // severe
+		env.ThermalState = driver.ThermalSerious
+	case 5, 6, 7: // critical, emergency, shutdown
+		env.ThermalState = driver.ThermalCritical
+	}
+	switch r.byte() {
+	case 1:
+		env.LowPowerMode = driver.LowPowerOff
+	case 2:
+		env.LowPowerMode = driver.LowPowerOn
+	}
 	return env
 }
 

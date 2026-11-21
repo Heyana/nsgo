@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// A report that changes only the window's frame, maximized state, lifecycle or title bar commits without a full round, and a tree that reads none of them sends nothing.
+// A report that changes only fields read through Env signals commits without a full round, and a tree that reads none of them sends nothing.
 func TestWindowEnvironmentReportsStayIncremental(t *testing.T) {
 	h := newHost(t, Size{Width: 200, Height: 100}, func(*Scope) Node {
 		return View{TestID: "static"}
@@ -17,6 +17,8 @@ func TestWindowEnvironmentReportsStayIncremental(t *testing.T) {
 		{Maximized: true},
 		{Lifecycle: LifecycleBackground},
 		{TitleBar: Edges{Top: 24}},
+		{ThermalState: ThermalFair},
+		{LowPowerMode: LowPowerOn},
 	} {
 		h.tree.SetEnvironment(env)
 		if h.tree.full {

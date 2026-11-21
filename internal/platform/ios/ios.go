@@ -788,6 +788,7 @@ func (s *surface) environment() driver.Environment {
 	const dark = 2
 	locale, rtl := apple.Locale()
 	deviceName, deviceModel := deviceIdentity()
+	thermal, lowPower := apple.ProcessPower()
 	env := driver.Environment{
 		DeviceName:  deviceName,
 		DeviceModel: deviceModel,
@@ -821,6 +822,8 @@ func (s *surface) environment() driver.Environment {
 		CanRequestReview: !onTV() && apple.ReviewAvailable(),
 		VerticalBarEdge:  verticalBarEdge(traits),
 		Lifecycle:        appLifecycle(),
+		ThermalState:     thermal,
+		LowPowerMode:     lowPower,
 		AppClip:          appClip(),
 		OpenedURL:        openedURL,
 
@@ -885,6 +888,7 @@ func (s *surface) refresh() {
 func (s *surface) observe() {
 	center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
 	refresh := func(objc.ID) { s.refresh() }
+	s.stops = append(s.stops, apple.ObserveProcessPower(s.refresh))
 	on := func(name objc.ID, fn func(objc.ID)) { s.stops = append(s.stops, apple.Observe(center, name, fn)) }
 	for _, name := range []string{"UIContentSizeCategoryDidChangeNotification",
 		"UIAccessibilityReduceMotionStatusDidChangeNotification", "UIAccessibilityDarkerSystemColorsStatusDidChangeNotification",

@@ -318,6 +318,17 @@ It departs from MyGo where Go apps differ: answers come to callbacks on the engi
 
 `nsgotest` keeps each status (`Permissions`) and what a request makes of one not asked (`PermissionAnswers`), both made by `Start`, the settings opened (`PermissionSettings`) and the guide showing (`Guide`), which `GrantPermission` and `CloseGuide` end.
 
+## Thermal state and low-power mode
+
+`Env.ThermalState` and `Env.LowPowerMode` read separate signals from the platform's environment. A change reaches its readers without resolving the whole tree. `nsgotest` pins both on headless and native targets.
+
+- Apple reads the two `NSProcessInfo` properties and follows Foundation's thermal and power state notifications on the main thread.
+- Android reads `PowerManager` from the view. Battery Saver broadcasts and API 29's thermal status listener refresh its environment. Android's light and moderate thermal levels map to fair, severe to serious, and critical through shutdown to critical.
+- Windows reads the battery saver flag from `GetSystemPowerStatus` and follows `GUID_POWER_SAVING_STATUS` notifications on each engine's window.
+- Linux follows the D-Bus `ActiveProfile` of power-profiles-daemon, using the legacy endpoint where needed. Power saver reports on, and balanced and performance report off.
+
+Unreported states are unknown, including thermal pressure on Windows and Linux and both reads on the web, HarmonyOS and mini programs.
+
 ## Keeping the system awake
 
 `KeepAwake` takes a hold until the returned `release` function runs or its scope is disposed, and releasing twice is harmless. `KeepAwakeOptions.Display` keeps the display on as well; a computer-only hold keeps the computer from idle sleep and lets the display sleep. Windows, Linux and iOS count every surface's holds together and give holds of one kind one power request, inhibitor or setting, given the reason of the hold that made it where the platform takes one; macOS gives each surface's holds of one kind one IOKit assertion. A backend ends a surface's holds as the surface closes, since its tree's last releases never reach the platform. As the app quits, Linux ends every hold and waits up to two seconds for the releases to reach the session bus, since the process exits before its queue would send them, and elsewhere the system ends the rest. `nsgotest.App.Awake` lists the holds the app keeps, each with its ID, `AwakeHolds` every one it took and `AwakeReleases` the IDs it released, without changing the test machine's power state.

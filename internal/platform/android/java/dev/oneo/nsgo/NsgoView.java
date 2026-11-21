@@ -4,11 +4,14 @@ import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.UiModeManager;
+import android.content.BroadcastReceiver;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
@@ -35,6 +38,7 @@ import android.os.storage.StorageManager;
 import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
@@ -192,6 +196,15 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     // The environment, on the UI thread: the insets in pixels and what was last sent.
     private final AccessibilityManager accessibility;
     private final UiModeManager uiMode;
+    private final PowerManager power;
+    private final BroadcastReceiver powerMode = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            environment();
+        }
+    };
+    // The thermal listener is an Object so versions before API 29 never resolve its class.
+    private Object thermalListener;
     private final AccessibilityManager.TouchExplorationStateChangeListener screenReader = on -> environment();
     /** The UiModeManager.ContrastChangeListener on API 34 and later: an Object, so older Androids, which have no such class, never resolve it. */
     private Object contrast;
@@ -347,6 +360,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         ime = context.getSystemService(InputMethodManager.class);
         accessibility = context.getSystemService(AccessibilityManager.class);
         uiMode = context.getSystemService(UiModeManager.class);
+        power = context.getSystemService(PowerManager.class);
         gestures = new Gestures(context);
         setOnApplyWindowInsetsListener((v, insets) -> {
             insets(insets);
@@ -441,6 +455,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         // Embedded hosts may already have a focused sibling; keep it there.
         if (getRootView().findFocus() == null) requestFocus();
         accessibility.addTouchExplorationStateChangeListener(screenReader);
+        listenPower();
         if (Build.VERSION.SDK_INT >= 34 && uiMode != null && contrast == null) listenContrast();
         getContext().getContentResolver().registerContentObserver(
                 Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, motion);
@@ -482,6 +497,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         // An app waiting for the folds starts as the view leaves its window, as it would have without them.
         releaseStart();
         accessibility.removeTouchExplorationStateChangeListener(screenReader);
+        stopPower();
         if (contrast != null) stopContrast();
         getContext().getContentResolver().unregisterContentObserver(motion);
         unregisterBack();
@@ -1048,10 +1064,33 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             d.writeFloat(Header.BAR);
             d.writeFloat(Header.LARGE_BAR);
             d.writeInt(Build.VERSION.SDK_INT);
+            d.writeByte(power != null && Build.VERSION.SDK_INT >= 29 ? power.getCurrentThermalStatus() + 1 : 0);
+            d.writeByte(power == null ? 0 : power.isPowerSaveMode() ? 2 : 1);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
         return bytes.toByteArray();
+    }
+
+    private void listenPower() {
+        if (power == null) return;
+        // This receiver subscribes only to a system broadcast.
+        getContext().registerReceiver(powerMode, new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED));
+        if (Build.VERSION.SDK_INT >= 29) {
+            PowerManager.OnThermalStatusChangedListener listener = state -> environment();
+            power.addThermalStatusListener(getContext().getMainExecutor(), listener);
+            thermalListener = listener;
+        }
+        environment();
+    }
+
+    private void stopPower() {
+        if (power == null) return;
+        getContext().unregisterReceiver(powerMode);
+        if (Build.VERSION.SDK_INT >= 29 && thermalListener != null) {
+            power.removeThermalStatusListener((PowerManager.OnThermalStatusChangedListener) thermalListener);
+            thermalListener = null;
+        }
     }
 
     /** The appearance the app forces, as driver.Appearance; 0 follows the system's. */

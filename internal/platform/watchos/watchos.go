@@ -199,6 +199,15 @@ func newSurface(root engine.App, opts Options) *surface {
 // runHost hands the host the bridge and runs its app on this thread.
 func runHost() {
 	apple.RegisterFonts(s.opts.Fonts)
+	apple.ObserveProcessPower(func() {
+		thermal, lowPower := apple.ProcessPower()
+		if thermal != s.env.ThermalState || lowPower != s.env.LowPowerMode {
+			s.env.ThermalState, s.env.LowPowerMode = thermal, lowPower
+			if s.engine != nil {
+				s.engine.SetEnvironment(s.env)
+			}
+		}
+	})
 	sym := func(name string) uintptr {
 		addr, err := purego.Dlsym(purego.RTLD_DEFAULT, name)
 		if err != nil {
@@ -272,6 +281,7 @@ func (s *surface) start(test *testOpen) {
 // environment is what the host told of the surface, with the system's.
 func (s *surface) environment(scale float64, safe driver.Edges, flags uint32) driver.Environment {
 	locale, rtl := apple.Locale()
+	thermal, lowPower := apple.ProcessPower()
 	steps := int(flags>>8) - 128
 	env := driver.Environment{
 		SafeArea:         safe,
@@ -288,6 +298,8 @@ func (s *surface) environment(scale float64, safe driver.Edges, flags uint32) dr
 		OSVersion:        osVersion(),
 		Idiom:            driver.IdiomWatch,
 		Lifecycle:        s.env.Lifecycle,
+		ThermalState:     thermal,
+		LowPowerMode:     lowPower,
 	}
 	return env
 }

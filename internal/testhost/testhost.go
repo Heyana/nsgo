@@ -198,13 +198,14 @@ func Current() Host { return host }
 // PostToTest queues fn on the goroutine of the test running app, an *nsgotest.App, to run as its next step or wait settles, also on a target, where nsgotest.App.Post runs fn on the engine's goroutine: tsx/tsxtest runs its test VM's work there, as the VM is the test's. nsgotest sets it.
 var PostToTest func(app any, fn func())
 
-// Pin applies what a test set in pin over env, as the platform reports it: the appearance, reduced motion, increased contrast, the login launch reason, the application in front and whether the platform follows it, the camera and code scanner capabilities, and the locale, text size, device name and device model when set. The rest, such as the OS, the idiom and the safe area, stays the platform's.
+// Pin applies what a test set in pin over env, as the platform reports it: the appearance, reduced motion, increased contrast, the login launch reason, the application in front and whether the platform follows it, the camera and code scanner capabilities, thermal state and low-power mode, and the locale, text size, device name and device model when set. The rest, such as the OS, the idiom and the safe area, stays the platform's.
 func Pin(env driver.Environment, pin *driver.Environment) driver.Environment {
 	if pin == nil {
 		return env
 	}
 	env.Dark, env.ReduceMotion, env.IncreaseContrast = pin.Dark, pin.ReduceMotion, pin.IncreaseContrast
 	env.Camera, env.ScanCode = pin.Camera, pin.ScanCode
+	env.ThermalState, env.LowPowerMode = pin.ThermalState, pin.LowPowerMode
 	env.LaunchedAtLogin, env.FrontmostApp, env.CanReadFrontmostApp = pin.LaunchedAtLogin, pin.FrontmostApp, pin.CanReadFrontmostApp
 	if pin.Locale != "" {
 		env.Locale = pin.Locale

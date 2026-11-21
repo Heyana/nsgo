@@ -1162,6 +1162,7 @@ func (s *surface) environment() driver.Environment {
 	ws := objc.ID(apple.Class("NSWorkspace")).Send(sel("sharedWorkspace"))
 	deviceName, deviceModel := deviceIdentity()
 	locale, rtl := apple.Locale()
+	thermal, lowPower := apple.ProcessPower()
 	appearance := apple.GoString(s.native.Send(sel("effectiveAppearance")).Send(sel("name")))
 	return driver.Environment{
 		DeviceName:       deviceName,
@@ -1197,6 +1198,8 @@ func (s *surface) environment() driver.Environment {
 		Minimized:        s.window != 0 && objc.Send[bool](s.window, sel("isMiniaturized")),
 		WindowFrame:      s.windowFrame(),
 		Lifecycle:        s.lifecycle(),
+		ThermalState:     thermal,
+		LowPowerMode:     lowPower,
 		LaunchedAtLogin:  s.opts.LaunchedAtLogin,
 		FrontmostApp:     frontmostApp(),
 
@@ -1389,6 +1392,7 @@ func observeApp() {
 		apple.Global(appKitPath, "NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification"), refresh)
 	center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
 	apple.Observe(center, apple.Global(foundation, "NSCurrentLocaleDidChangeNotification"), refresh)
+	apple.ObserveProcessPower(func() { refresh(0) })
 	for _, name := range []string{"NSApplicationDidBecomeActiveNotification", "NSApplicationDidResignActiveNotification",
 		"NSApplicationDidHideNotification", "NSApplicationDidUnhideNotification",
 		"NSApplicationDidChangeOcclusionStateNotification", "NSApplicationDidChangeScreenParametersNotification"} {

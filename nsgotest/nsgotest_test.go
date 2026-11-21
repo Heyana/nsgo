@@ -429,6 +429,29 @@ func TestEnvironmentReportsMinimized(t *testing.T) {
 	}
 }
 
+func TestEnvironmentReportsPowerChangesIndependently(t *testing.T) {
+	var thermal []core.ThermalState
+	var lowPower []core.LowPowerMode
+	env := core.Environment{ThermalState: core.ThermalNominal, LowPowerMode: core.LowPowerOff}
+	app := Start(t, func(cx *core.Scope) core.Node {
+		cx.Effect(func() { thermal = append(thermal, cx.Env().ThermalState()) })
+		cx.Effect(func() { lowPower = append(lowPower, cx.Env().LowPowerMode()) })
+		return core.View{}
+	}, Environment(env))
+
+	env.LowPowerMode = core.LowPowerOn
+	app.SetEnvironment(env)
+	env.ThermalState = core.ThermalSerious
+	app.SetEnvironment(env)
+	app.SetEnvironment(env)
+	if !slices.Equal(thermal, []core.ThermalState{core.ThermalNominal, core.ThermalSerious}) {
+		t.Errorf("thermal states %v", thermal)
+	}
+	if !slices.Equal(lowPower, []core.LowPowerMode{core.LowPowerOff, core.LowPowerOn}) {
+		t.Errorf("low-power modes %v", lowPower)
+	}
+}
+
 // TestHotKeyRegistrationAnswers: the headless platform registers an app's global shortcuts, answers a combination the app holds already as taken, and those HotKeyTaken and HotKeyUnsupported list as they say, so a test sees what the app shows for each.
 func TestHotKeyRegistrationAnswers(t *testing.T) {
 	if Target() != "" {
