@@ -67,6 +67,12 @@ func TestSandboxMemoryCountsWhatCallsKeep(t *testing.T) {
 	stoppedAtMemory(t, *failed)
 }
 
+func TestSandboxMemoryCountsBlobCopies(t *testing.T) {
+	app, failed := memoryApp(t, `const bytes = new TextEncoder().encode("界".repeat(4000)); kept.push(new Blob([bytes, bytes]));`, 48<<10)
+	app.Press("id:go")
+	stoppedAtMemory(t, *failed)
+}
+
 var hostSink [][]byte
 
 // TestSandboxMemoryIgnoresTheHostsAllocations does not stop a bundle that allocates nothing while the host allocates past its Limits.Memory, here 256 MiB 50 ms into a call of a few hundred milliseconds.

@@ -81,6 +81,7 @@ func main() { nsgo.Run(Root) }
 - In a native sandbox `JSON.stringify`, `JSON.parse` with a reviver, `Array.prototype.join`, `toString`, `toLocaleString` and `flat` throw a catchable `RangeError` past 1,000 levels, counted across nested calls, instead of hanging or overflowing the host's Go stack.
 - A native sandbox uses 1,000 frames with `DefaultLimits` and caps `Limits.Stack` at 10,000. Nonpositive Go values use the cap.
 - Native functions calling each other (built-in getters, `toString`/`valueOf`, `RegExp` `exec` dispatch, `Reflect.apply`/`construct`, bound-function and proxy chains) count against `Limits.Stack` and throw a catchable `RangeError`, and exporting a plugin value nested deeper fails with a `RangeError`, through NSGo's goja fork `github.com/nsgo-dev/goja`, which apps get with NSGo without a `replace` of their own.
+- `Limits.Memory` budgets metered native storage, including array copies and spread, string concatenation and replacement, and typed-array buffers. The browser uses its own heap. [TSX apps](https://nsgo.dev/docs/tsx.md)
 - Register a getter's nonzero default with `tsx.Default("Max", float64(100))` so forwarded undefined props keep that default as they change.
 
 ## Layout and styles

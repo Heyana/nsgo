@@ -11,13 +11,20 @@ import (
 	"strconv"
 	"sync"
 	"unicode/utf16"
+	"unicode/utf8"
 	"weak"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/tsx/internal/js"
 )
 
-// A sandbox's memory budget (Limits.Memory). goja allocates from Go's heap, which the host and every other runtime share, so a sample of that heap cannot tell what one bundle holds, and one allocation can take more than the system has before any sample sees it. Instead the built-ins that allocate by a size the bundle gives them, a length, a count or a length's worth of elements, are replaced by ones that check the budget before they call the original, so that what would not fit is never allocated, and charge what the original made until the Go collector frees it. What the original reads its size from, a length, an argument list or the parts of a string it joins, is read once, here, and handed to it as read, as a value, a copy or a proxy that answers the length, so that a getter, a proxy or a valueOf cannot have it allocate more than was checked. The bundle's other allocations, its objects, closures, the arrays it builds, copies, concatenates, flattens or spreads, the strings it concatenates or replaces into and the copies the web APIs make, are not counted: goja gives no hook for them. Those made in JS cost the bundle time as they grow, which Limits.Call bounds per call, but the built-ins that copy what the bundle holds do so at the speed of memory, so a bundle that doubles an array or a string a few dozen times, or flattens or concatenates many references to one, still takes as much as it likes: Memory stops runaway allocations of the built-ins it holds, not a bundle written to exhaust memory.
+// A native sandbox budgets persistent storage from the built-ins wrapped here
+// and goja's metered array and string allocations. They check each new backing
+// store before allocating and charge its storage until Go finds it unreachable.
+// Ropes reserve their maximum flattened UTF-16 size while they remain live.
+// This does not count the whole heap: ordinary objects and closures, stack
+// storage, small allocations, and unmetered intrinsics and host API objects
+// can still grow outside the budget. The browser keeps its own heap.
 
 // memory is what the built-ins hold for a sandbox.
 type memory struct {
@@ -159,7 +166,9 @@ func (r *runtime) limitMemory(limit int64) {
 			r.checkMemory(mul(to-from, valueSize))
 		}
 		r.callOrig(orig, this, []js.Value{call.Argument(0), start, end})
-		hold(r, o, mul(to, valueSize))
+		if !r.vm.ChargeArray(o) {
+			hold(r, o, mul(to, valueSize))
+		}
 		return o
 	})
 	// sort copies the elements of what is not an array into a list first.
@@ -204,6 +213,7 @@ func (r *runtime) limitMemory(limit int64) {
 	r.wrap(object(g, "Function", "prototype"), "apply", arguments(1))
 	r.wrap(object(g, "Reflect"), "apply", arguments(2))
 	r.wrap(object(g, "Reflect"), "construct", arguments(1))
+	r.vm.SetAllocationHooks(r.checkMemory, func(start *byte, bytes int64) { hold(r, start, bytes) })
 }
 
 // object is the object at path from o.
@@ -758,10 +768,43 @@ func (r *runtime) holdString(v js.Value) js.Value {
 
 // holdArray charges the values of v, an array a built-in made, and returns it.
 func (r *runtime) holdArray(v js.Value) js.Value {
-	if o, ok := v.(*js.Object); ok {
+	if o, ok := v.(*js.Object); ok && !r.vm.ChargeArray(o) {
 		hold(r, o, mul(r.lengthOf(o), valueSize))
 	}
 	return v
+}
+
+// encodeUTF8 counts bytes from the immutable string before allocating the
+// ArrayBuffer. Reading its runes twice avoids a temporary Go string copy.
+func (r *runtime) encodeUTF8(v js.Value) js.Value {
+	if r.sandbox == nil || r.sandbox.memory == nil {
+		return r.vm.ToValue(r.vm.NewArrayBuffer([]byte(v.String())))
+	}
+	s := v.ToString().(js.String)
+	var size int64
+	reader := s.Reader()
+	for {
+		ch, count, _ := reader.ReadRune()
+		if count == 0 {
+			break
+		}
+		n := utf8.RuneLen(ch)
+		if n < 0 {
+			n = 3 // UTF-8 replacement rune for an unpaired surrogate.
+		}
+		size += int64(n)
+	}
+	r.checkMemory(size)
+	bytes := make([]byte, 0, size)
+	reader = s.Reader()
+	for {
+		ch, count, _ := reader.ReadRune()
+		if count == 0 {
+			break
+		}
+		bytes = utf8.AppendRune(bytes, ch)
+	}
+	return r.holdBytes(r.vm.ToValue(r.vm.NewArrayBuffer(bytes)))
 }
 
 // lengthOf is o's length as JS's ToLength reads it.

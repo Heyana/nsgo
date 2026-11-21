@@ -96,7 +96,7 @@ func (r *runtime) webNatives() *js.Object {
 		return r.vm.ToValue(r.millis(r.cx.Now()))
 	})
 	set("utf8Encode", func(call js.FunctionCall) js.Value {
-		return r.vm.ToValue(r.vm.NewArrayBuffer([]byte(arg(call, 0).String())))
+		return r.encodeUTF8(arg(call, 0))
 	})
 	set("utf8Decode", func(call js.FunctionCall) js.Value {
 		b := r.bytes(arg(call, 0))

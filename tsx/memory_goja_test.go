@@ -5,6 +5,7 @@ package tsx
 import (
 	"errors"
 	goruntime "runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,6 +98,63 @@ func TestMemoryStopsWhatWouldNotFit(t *testing.T) {
 		if used := r.used(); used > 1<<20 {
 			t.Errorf("%s: holds %d bytes", src, used)
 		}
+	}
+}
+
+func TestMemoryMetersArrayAndStringStorage(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		code string
+	}{
+		{"concat", `items.concat(items)`},
+		{"flat", `[items, items].flat()`},
+		{"slice", `rows.slice()`},
+		{"spread", `[...rows]`},
+		{"addition", `text + text`},
+		{"template", "`${text}${text}`"},
+		{"replace", `"aa".replace(/a/g, text)`},
+		{"replaceAll", `"aa".replaceAll("a", text)`},
+		{"utf8", `encode(text)`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const limit = 16 << 10
+			r := limited(limit)
+			if err := r.vm.Set("items", r.vm.NewArray(make([]any, 600)...)); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.vm.Set("rows", r.vm.NewArray(make([]any, 1200)...)); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.vm.Set("text", strings.Repeat("界", limit/2)); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.vm.Set("encode", func(call js.FunctionCall) js.Value { return r.encodeUTF8(call.Argument(0)) }); err != nil {
+				t.Fatal(err)
+			}
+			_, err := r.vm.RunString(`try { ` + test.code + ` } catch (_) {}`)
+			var interrupted *js.InterruptedError
+			var quota *core.Error
+			if !errors.As(err, &interrupted) || !errors.As(r.stoppedErr(), &quota) || quota.Code != core.CodeQuotaExceeded || quota.Resource != "memory" {
+				t.Fatalf("operation returned %v and stopped with %v, want the memory quota", err, r.stoppedErr())
+			}
+			if used := r.used(); used > limit {
+				t.Fatalf("metered usage %d exceeds %d", used, limit)
+			}
+		})
+	}
+}
+
+func TestMemoryMeteredUTF8PreservesUnpairedSurrogateReplacement(t *testing.T) {
+	r := limited(16 << 10)
+	if err := r.vm.Set("encode", func(call js.FunctionCall) js.Value { return r.encodeUTF8(call.Argument(0)) }); err != nil {
+		t.Fatal(err)
+	}
+	v, err := r.vm.RunString(`encode("a\ud800é")`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(r.bytesOf(v)); got != "a�é" {
+		t.Fatalf("encoded %q, want %q", got, "a�é")
 	}
 }
 

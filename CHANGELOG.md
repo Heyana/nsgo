@@ -109,6 +109,7 @@
 - Restart Windows, Linux and web click counts when a quick click reaches a view that replaced the one pressed before, and count that view's quick clicks from there (#1034 by @houko).
 - Deliver F10 and Alt-key `OnKeyDown` events and bindings to focused Windows embedded views while preserving the host's unhandled window commands (#1133 by @houko).
 - Add tinted and danger `ui.Button` variants, label typography and busy messages (#1073 by @houko).
+- Count array copies, spread, string concatenation and replacement, and encoder buffers against native TSX memory limits (#1060 by @houko).
 - Keep an iOS app's engine, state and screens when UIKit disconnects its scene and connects a new one while the process lives, showing the running app in the new window rather than starting a second engine over it (#1030 by @houko).
 - Apply the iPad software keyboard inset only to the scene where the user is typing (#1160 by @houko).
 - Let a `core.Shader`'s `Images` take an `ImageSource` with `Pixels`, copied once per `Version` and written into a texture each backend keeps, with no upload while the version stays, so a shader can filter a frame the app writes (#1052 by @houko).

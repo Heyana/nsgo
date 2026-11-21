@@ -44,7 +44,12 @@ type Limits struct {
 	// Storage is the most bytes its partition of the app's storage may
 	// hold (Sandbox.Storage).
 	Storage int
-	// Memory is the most bytes the built-ins that allocate by a size may hold for the bundle at once on goja, as ArrayBuffer, the typed arrays, String.prototype.repeat, Array.prototype.join and fill, and JSON.stringify do (memory_goja.go): each checks before it allocates, what it made is charged until it is collected, and past it, once the Go collector has run, the bundle stops. What the rest of the bundle's JS makes, its objects, closures and arrays and strings it builds, copies, concatenates or spreads, is not counted, nor anything on the web, whose page's engine keeps its own heap, so a bundle written to exhaust memory still can. Zero leaves it unlimited; DefaultLimits holds 64 MiB.
+	// Memory limits metered allocation on goja, including buffers, large array
+	// stores and strings built by concatenation or replacement. Checks precede
+	// allocation and collected stores release their charge. It does not cap the
+	// whole heap: ordinary objects, closures, small allocations and other
+	// unmetered storage can still grow, and it does not apply in the browser.
+	// Zero leaves it unlimited; DefaultLimits holds 64 MiB.
 	Memory int
 }
 
