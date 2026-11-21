@@ -95,6 +95,7 @@ nsgo
 │
 └── Build time, outside the layers
     ├── cmd/nsgo                         The nsgo tool
+    ├── tools/changelog                  Folds changelog.d into CHANGELOG.md for a release
     ├── tools/lucidegen                  Generates icons/lucide
     └── tools/libghostty                 Builds libghostty-vt and its themes
 ```

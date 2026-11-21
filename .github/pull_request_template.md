@@ -33,5 +33,5 @@
 ## Checklist
 
 - [ ] The title is a Conventional Commit, such as `fix(linux): keep the caret after a paste`; a squash merge uses it as the commit subject.
-- [ ] Docs whose facts change are updated, and `CHANGELOG.md`'s `Unreleased` has a line for a capability users can see.
+- [ ] Docs whose facts change are updated, and a capability users can see has a line in a [`changelog.d/`](../changelog.d/README.md) fragment, not in `CHANGELOG.md`.
 - [ ] New third-party code, assets and dependencies name their source and license.

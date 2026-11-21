@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes a GitHub release when a version tag is pushed. A maintainer decides the version: they turn CHANGELOG.md's `## [Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` above a fresh `## [Unreleased]`, merge that to main, then push the tag vX.Y.Z on main's commit. This workflow refuses a tag that is not on main or has no changelog section, runs test.yml, publishes the section as the release's notes (a prerelease for a version with a suffix such as -rc.1) and asks the Go module proxy for the version so pkg.go.dev lists it.
+# Publishes a GitHub release when a version tag is pushed. A maintainer decides the version: `go run ./tools/changelog release X.Y.Z` folds changelog.d's fragments into CHANGELOG.md and turns its `## [Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` above a fresh `## [Unreleased]`; they merge that to main, then push the tag vX.Y.Z on main's commit. This workflow refuses a tag that is not on main, has fragments left uncollected or has no changelog section, runs test.yml, publishes the section as the release's notes (a prerelease for a version with a suffix such as -rc.1) and asks the Go module proxy for the version so pkg.go.dev lists it.
 
 on:
   push:
@@ -31,6 +31,15 @@ jobs:
           set -euo pipefail
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "::error::$GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main. Tag a commit of main."
+            exit 1
+          fi
+      - name: Check every fragment was collected
+        run: |
+          set -euo pipefail
+          # The notes come from CHANGELOG.md alone, so a fragment left in changelog.d would be missing from them.
+          left=$(find changelog.d -maxdepth 1 -type f -name '*.md' ! -name README.md -printf '%f ')
+          if [ -n "$left" ]; then
+            echo "::error::changelog.d still holds ${left}Run go run ./tools/changelog release ${GITHUB_REF_NAME#v} on main before tagging."
             exit 1
           fi
       - name: Extract the changelog section
