@@ -96,3 +96,10 @@ func (s *surface) canvasFrame(src driver.ImageSource) *canvasImage {
 	s.canvasFrames = append(s.canvasFrames, canvasFrame{src.Pixels, im})
 	return im
 }
+
+// pixelsURL returns a data URL of a PNG of p's pixels, which the browser encodes.
+func pixelsURL(p *goimage.RGBA) string {
+	el := js.Global().Get("document").Call("createElement", "canvas")
+	newPixelCanvas(el).put(p, 0)
+	return el.Call("toDataURL", "image/png").String()
+}
