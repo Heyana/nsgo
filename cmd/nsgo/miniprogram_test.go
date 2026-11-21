@@ -61,12 +61,9 @@ func TestMiniProgramSessionReopensOnlyWeChat(t *testing.T) {
 	}
 }
 
-// runTree runs the runtime's tree.js on goja and returns a function that
-// applies a batch of operations (JSON) and returns the page's setData
-// object as JSON.
-func runTree(t *testing.T) func(ops string) string {
+func runMiniProgramModule(t *testing.T, name string) *goja.Runtime {
 	t.Helper()
-	src, err := miniprogramRuntime.ReadFile("miniprogram/common/nsgo/tree.js")
+	src, err := miniprogramRuntime.ReadFile("miniprogram/common/nsgo/" + name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +73,15 @@ func runTree(t *testing.T) func(ops string) string {
 	if _, err := vm.RunString(string(src)); err != nil {
 		t.Fatal(err)
 	}
+	return vm
+}
+
+// runTree runs the runtime's tree.js on goja and returns a function that
+// applies a batch of operations (JSON) and returns the page's setData
+// object as JSON.
+func runTree(t *testing.T) func(ops string) string {
+	t.Helper()
+	vm := runMiniProgramModule(t, "tree.js")
 	if _, err := vm.RunString(`const tree = new module.exports.Tree()
 function apply(ops) { tree.add(JSON.parse(ops)); return JSON.stringify(tree.take()) }`); err != nil {
 		t.Fatal(err)
@@ -231,16 +237,7 @@ func TestMiniProgramPlatforms(t *testing.T) {
 // object, written in JavaScript, and returns the VM with api, the result.
 func runAPI(t *testing.T, platform, global string) *goja.Runtime {
 	t.Helper()
-	src, err := miniprogramRuntime.ReadFile("miniprogram/common/nsgo/api.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	vm := goja.New()
-	module := vm.NewObject()
-	vm.Set("module", module)
-	if _, err := vm.RunString(string(src)); err != nil {
-		t.Fatal(err)
-	}
+	vm := runMiniProgramModule(t, "api.js")
 	if _, err := vm.RunString("const base = " + global + "\nconst api = module.exports.apiOf('" + platform + "', base)"); err != nil {
 		t.Fatal(err)
 	}
@@ -292,5 +289,50 @@ func TestMiniProgramAPIChoosesImages(t *testing.T) {
 	vm = runAPI(t, "wechat", `{ chooseMedia() {} }`)
 	if v, _ := vm.RunString("api === base"); !v.ToBoolean() {
 		t.Error("WeChat's APIs are not its own")
+	}
+}
+
+func TestMiniProgramPixelFramesKeepTheirCanvas(t *testing.T) {
+	vm := runMiniProgramModule(t, "pixels.js")
+	const script = `
+function equal(got, want) {
+  if (got !== want) throw new Error("got " + got + ", want " + want);
+}
+const pixels = module.exports;
+const painted = [];
+let allocations = 0;
+const ctx = {
+  createImageData(width, height) {
+    allocations++;
+    return { width, height, data: new Uint8ClampedArray(width * height * 4) };
+  },
+  putImageData(data) { painted.push(data.data.join()); },
+};
+const canvas = { getContext: () => ctx };
+const bytes = pixels.buffer(42, 4);
+bytes.set([128, 0, 0, 128]);
+pixels.show(42, 1, 1);
+equal(painted.length, 0);
+equal(pixels.attach(42, canvas), true);
+equal(painted[0], "255,0,0,128");
+equal(pixels.buffer(42, 4), bytes);
+bytes.set([0, 255, 0, 255]);
+pixels.show(42, 1, 1);
+equal(painted[1], "0,255,0,255");
+equal(allocations, 1);
+// Two source changes in one setData turn can leave the mounted canvas intact.
+pixels.release(42);
+pixels.buffer(42, 4).set([0, 0, 255, 255]);
+pixels.show(42, 1, 1);
+equal(painted[2], "0,0,255,255");
+equal(allocations, 1);
+pixels.detach(42, canvas);
+pixels.show(42, 1, 1);
+equal(painted.length, 3);
+equal(pixels.offscreen({ createOffscreenCanvas: () => canvas }, bytes, 1, 1), canvas);
+equal(painted[3], "0,255,0,255");
+`
+	if _, err := vm.RunString(script); err != nil {
+		t.Fatal(err)
 	}
 }

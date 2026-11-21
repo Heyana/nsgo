@@ -1,6 +1,7 @@
 package miniprogram
 
 import (
+	"image"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -29,7 +30,8 @@ import (
 //	sc id config             a scroll view's: {h, hide, rf, rt}
 //	ss id w h                a scroll view's content size
 //	so id x y animated       scroll to an offset
-//	im id src mode           an image's source and mode
+//	im id src mode           an encoded image's source and mode
+//	px id css                a pixel image's fitted canvas, or "" to clear it
 //	fd id config             a text field's configuration
 //	iv id text               a text field's value
 //	fo id focused            focus or blur a text field
@@ -59,6 +61,9 @@ type host interface {
 	service(it *driver.MountItem)
 	// imageURL is what an <image> loads for src.
 	imageURL(src driver.ImageSource) string
+	supportsPixelImages() bool
+	// imagePixels writes a version into an image view, or releases it for nil.
+	imagePixels(id driver.NodeID, pixels *image.RGBA)
 	// paint draws a canvas's ops at size points, its pixel ratio's
 	// pixels, and returns the picture as a URL; "" while an image it
 	// draws loads, which paints it again (repaint).
@@ -95,9 +100,11 @@ type view struct {
 	edits uint32
 	value string
 	// A canvas's drawing.
-	drawing *driver.Drawing
-	modal   driver.ModalAnimation
-	shown   bool // a modal was presented
+	drawing    *driver.Drawing
+	pixelImage *driver.ImageConfig
+	pixelCSS   string
+	modal      driver.ModalAnimation
+	shown      bool // a modal was presented
 }
 
 // border returns the width of each side of v's border.
@@ -258,6 +265,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		m.detach(v)
 		m.o.op("r", v.id)
 	case driver.ItemDelete:
+		if v.pixelImage != nil {
+			m.h.imagePixels(v.id, nil)
+		}
 		m.detach(v)
 		for _, c := range v.children {
 			c.parent = nil
@@ -291,6 +301,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 			if v.kind == driver.KindCanvas {
 				m.paint(v)
 			}
+			if v.pixelImage != nil {
+				m.placePixelImage(v)
+			}
 		}
 	case driver.ItemViewStyle:
 		old := v.border()
@@ -305,6 +318,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 			}
 			if v.kind == driver.KindCanvas {
 				m.paint(v)
+			}
+			if v.pixelImage != nil {
+				m.placePixelImage(v)
 			}
 		}
 		if v.style.Animation != anim {
@@ -374,6 +390,22 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		v.sticky = it.Sticky
 		m.stick(v)
 	case driver.ItemImage:
+		if it.Image.Source.Pixels != nil && m.h.supportsPixelImages() {
+			if v.pixelImage == nil || v.pixelImage.Source.Pixels != it.Image.Source.Pixels {
+				m.h.imagePixels(v.id, it.Image.Source.Pixels)
+			}
+			if v.pixelImage == nil {
+				m.o.op("im", v.id).str("").str("")
+			}
+			v.pixelImage = it.Image
+			m.placePixelImage(v)
+			break
+		}
+		if v.pixelImage != nil {
+			v.pixelImage, v.pixelCSS = nil, ""
+			m.h.imagePixels(v.id, nil)
+			m.o.op("px", v.id).str("")
+		}
 		mode := "aspectFill"
 		switch it.Image.ResizeMode {
 		case driver.Contain, driver.ScaleDown:
@@ -400,6 +432,29 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		v.modal = it.Modal.Animation
 	default:
 		m.h.service(it)
+	}
+}
+
+// placePixelImage keeps the buffer at its fitted rectangle as its box changes.
+func (m *mounter) placePixelImage(v *view) {
+	c := v.pixelImage
+	natural := c.Source.Size
+	if natural.Width <= 0 || natural.Height <= 0 {
+		b := c.Source.Pixels.Rect
+		natural = driver.Size{Width: driver.Points(b.Dx()), Height: driver.Points(b.Dy())}
+	}
+	border := v.border()
+	box := driver.Size{Width: max(0, v.frame.Size.Width-border.Left-border.Right),
+		Height: max(0, v.frame.Size.Height-border.Top-border.Bottom)}
+	fit := c.ResizeMode.Fit(natural, box, c.Position)
+	css := "left:" + webstyle.Px(fit.Origin.X) + ";top:" + webstyle.Px(fit.Origin.Y) +
+		";width:" + webstyle.Px(fit.Size.Width) + ";height:" + webstyle.Px(fit.Size.Height)
+	if c.BlurRadius > 0 {
+		css += ";filter:blur(" + webstyle.Px(c.BlurRadius) + ")"
+	}
+	if css != v.pixelCSS {
+		v.pixelCSS = css
+		m.o.op("px", v.id).str(css)
 	}
 }
 

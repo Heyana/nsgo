@@ -18,7 +18,9 @@
 package miniprogram
 
 import (
+	"image"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -49,8 +51,11 @@ type surface struct {
 	started time.Time
 	// canvas is the offscreen canvas drawings are drawn on, one at a
 	// time, and images what they draw, by source.
-	canvas js.Value
-	images map[string]*canvasImage
+	canvas      js.Value
+	images      map[string]*canvasImage
+	pixelImages bool
+	pixelFrames []canvasPixelFrame
+	pixelCount  int
 	// files are images of bytes written for <image> to load, by key.
 	files map[string]string
 	// appearance is the one the app forces, AppearanceSystem for none.
@@ -63,7 +68,8 @@ func Run(app engine.App, opts Options) {
 	g := js.Global()
 	bridge := g.Get("nsgoMP")
 	s := &surface{bridge: bridge, api: bridge.Get("api"), started: time.Now(),
-		images: map[string]*canvasImage{}, files: map[string]string{}}
+		images: map[string]*canvasImage{}, files: map[string]string{},
+		pixelImages: bridge.Get("pixelImages").Truthy()}
 	s.text = NewTextEngine(measurer{s.bridge})
 	s.m = newMounter(s)
 	s.m.frame = func() { s.engine.Frame() }
@@ -288,8 +294,8 @@ func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size)
 	p.Font = canvasFont
 	p.Image = func(src driver.ImageSource) (js.Value, float64, bool) {
 		if src.Pixels != nil {
-			// Mini programs show no pixels yet: loading them as an <image> of their key would keep one for each version, never loading.
-			return js.Undefined(), 1, false
+			canvas := s.canvasPixelFrame(src.Pixels)
+			return canvas, 1, canvas.Truthy()
 		}
 		im := s.canvasImage(src, id)
 		if !im.loaded {
@@ -305,6 +311,49 @@ func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size)
 		return ""
 	}
 	return c.Call("toDataURL", "image/png").String()
+}
+
+func (s *surface) supportsPixelImages() bool { return s.pixelImages }
+
+func (s *surface) imagePixels(id driver.NodeID, pixels *image.RGBA) {
+	if pixels == nil {
+		s.bridge.Call("releasePixels", int(id))
+		return
+	}
+	bytes := s.bridge.Call("pixelBuffer", int(id), len(pixels.Pix))
+	js.CopyBytesToJS(bytes, pixels.Pix)
+	s.bridge.Call("showPixels", int(id), pixels.Rect.Dx(), pixels.Rect.Dy())
+}
+
+type canvasPixelFrame struct {
+	pixels *image.RGBA
+	canvas js.Value
+}
+
+// canvasPixelFrame keeps the recent raw frames that canvases draw, bounded
+// by count and area as on the web.
+func (s *surface) canvasPixelFrame(pixels *image.RGBA) js.Value {
+	for i, frame := range s.pixelFrames {
+		if frame.pixels == pixels {
+			copy(s.pixelFrames[i:], s.pixelFrames[i+1:])
+			s.pixelFrames[len(s.pixelFrames)-1] = frame
+			return frame.canvas
+		}
+	}
+	w, h := pixels.Rect.Dx(), pixels.Rect.Dy()
+	bytes := js.Global().Get("Uint8Array").New(len(pixels.Pix))
+	js.CopyBytesToJS(bytes, pixels.Pix)
+	canvas := s.bridge.Call("pixelCanvas", bytes, w, h)
+	if !canvas.Truthy() {
+		return canvas
+	}
+	for len(s.pixelFrames) > 0 && (len(s.pixelFrames) >= 8 || s.pixelCount+w*h > 1<<23) {
+		s.pixelCount -= len(s.pixelFrames[0].pixels.Pix) / 4
+		s.pixelFrames = slices.Delete(s.pixelFrames, 0, 1)
+	}
+	s.pixelCount += w * h
+	s.pixelFrames = append(s.pixelFrames, canvasPixelFrame{pixels, canvas})
+	return canvas
 }
 
 // canvasImage is an image canvases draw, loaded once.

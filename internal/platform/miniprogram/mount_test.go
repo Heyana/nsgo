@@ -2,6 +2,8 @@ package miniprogram
 
 import (
 	"encoding/json"
+	"image"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,10 +13,12 @@ import (
 
 // fakeHost records what the mounter hands the mini program.
 type fakeHost struct {
-	batches  [][]any
-	events   []driver.Event
-	services []driver.ItemKind
-	ticks    int
+	batches     [][]any
+	events      []driver.Event
+	services    []driver.ItemKind
+	ticks       int
+	pixelImages bool
+	pixelFrames []*image.RGBA
 }
 
 func (h *fakeHost) submit(ops []byte) {
@@ -27,6 +31,11 @@ func (h *fakeHost) submit(ops []byte) {
 func (h *fakeHost) dispatch(ev driver.Event)           { h.events = append(h.events, ev) }
 func (h *fakeHost) service(it *driver.MountItem)       { h.services = append(h.services, it.Kind) }
 func (h *fakeHost) imageURL(driver.ImageSource) string { return "img" }
+func (h *fakeHost) supportsPixelImages() bool          { return h.pixelImages }
+func (h *fakeHost) imagePixels(_ driver.NodeID, pixels *image.RGBA) {
+	h.pixelFrames = append(h.pixelFrames, pixels)
+}
+
 func (h *fakeHost) paint(driver.NodeID, []driver.DrawOp, driver.Size) string {
 	return "data:image/png;base64,"
 }
@@ -226,5 +235,37 @@ func TestStringsAreJSON(t *testing.T) {
 		if s != string([]byte{0xff}) && back != s {
 			t.Fatalf("%q came back %q", s, back)
 		}
+	}
+}
+
+func TestPixelImagesSendFramesOutsideTheTree(t *testing.T) {
+	h := &fakeHost{pixelImages: true}
+	m := newMounter(h)
+	first := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	second := image.NewRGBA(first.Rect)
+	config := driver.ImageConfig{Source: driver.ImageSource{Pixels: first}, ResizeMode: driver.Center}
+	m.mount(&driver.MountBatch{Root: 1, Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 1, View: driver.KindImage},
+		frame(1, 0, 0, 10, 5),
+		{Kind: driver.ItemImage, ID: 1, Image: &config},
+	}})
+	update := config
+	update.Source = driver.ImageSource{Pixels: second, Version: 1}
+	apply := func(c *driver.ImageConfig) {
+		m.mount(&driver.MountBatch{Items: []driver.MountItem{
+			{Kind: driver.ItemImage, ID: 1, Image: c},
+		}})
+	}
+	apply(&update)
+	apply(&update)
+	if got, want := h.pixelFrames, []*image.RGBA{first, second}; !slices.Equal(got, want) {
+		t.Fatalf("uploaded %v, want each distinct copy once", got)
+	}
+	if got := h.ops("px"); len(got) != 1 || !strings.Contains(got[0], "left:4px;top:2px;width:2px;height:1px") {
+		t.Fatalf("pixel canvas placements = %v", got)
+	}
+	apply(&driver.ImageConfig{Source: driver.ImageSource{URI: "img.png"}})
+	if got := h.ops("px"); len(got) != 2 || got[1] != `[1,""]` || len(h.pixelFrames) != 3 || h.pixelFrames[2] != nil {
+		t.Fatalf("replaced pixel canvas not released: placements %v, frames %v", got, h.pixelFrames)
 	}
 }

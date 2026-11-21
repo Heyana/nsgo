@@ -4,6 +4,8 @@
 // the page as nsgo events, [name, id, ...], which bubble across the
 // components' boundaries (composed) to the page's one listener.
 
+const pixels = require('../../nsgo/pixels.js')
+
 // The phases of a touch event, as Go numbers them.
 const PHASES = { touchstart: 0, touchmove: 1, touchend: 2, touchcancel: 3 }
 
@@ -16,14 +18,45 @@ Component({
     'node.ka': function (ka) {
       this.keyframes(ka)
     },
+    'node.px': function () {
+      if (this.pixelReady) this.bindPixels()
+    },
   },
   lifetimes: {
+    ready() {
+      this.pixelReady = true
+      this.bindPixels()
+    },
     detached() {
+      this.pixelReady = false
+      this.unbindPixels()
       this.running = null
       if (this.scrollTimer) clearTimeout(this.scrollTimer)
     },
   },
   methods: {
+    bindPixels() {
+      const { id, px } = this.data.node || {}
+      if (px && this.pixelBinding && this.pixelBinding.id === id) return
+      this.unbindPixels()
+      if (!px || !this.createSelectorQuery) return
+      const binding = { id }
+      this.pixelBinding = binding
+      this.createSelectorQuery()
+        .select('#pixels')
+        .fields({ node: true })
+        .exec(results => {
+          if (this.pixelBinding !== binding) return
+          const canvas = results && results[0] && results[0].node
+          if (canvas && pixels.attach(id, canvas)) binding.canvas = canvas
+          else this.pixelBinding = null
+        })
+    },
+    unbindPixels() {
+      const binding = this.pixelBinding
+      if (binding && binding.canvas) pixels.detach(binding.id, binding.canvas)
+      this.pixelBinding = null
+    },
     send(...detail) {
       this.triggerEvent('nsgo', detail, { bubbles: true, composed: true })
     },

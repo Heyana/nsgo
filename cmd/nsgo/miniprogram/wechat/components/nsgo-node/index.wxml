@@ -98,6 +98,9 @@
   bindtouchend="{{node.tf ? 'onTouch' : ''}}"
   bindtouchcancel="{{node.tf ? 'onTouch' : ''}}"
 >
+  <view wx:if="{{node.px}}" class="fill pixel-clip">
+    <canvas id="pixels" class="pixel-canvas" type="2d" style="{{node.px}}" />
+  </view>
   <image
     wx:if="{{node.k === 'image' && node.im}}"
     class="fill"

@@ -15,6 +15,7 @@
 'use strict'
 
 const { Tree } = require('./tree.js')
+const pixels = require('./pixels.js')
 const goExec = require('./wasm_exec.js')
 const config = require('./config.js')
 const { globalOf, apiOf } = require('./api.js')
@@ -267,6 +268,11 @@ function start(page, host = mpHost()) {
     event: null,
     // The platform's APIs, as WeChat's (api.js).
     api: host.api,
+    pixelImages: config.platform === 'wechat' && typeof host.api.createSelectorQuery === 'function',
+    pixelBuffer: pixels.buffer,
+    showPixels: pixels.show,
+    releasePixels: pixels.release,
+    pixelCanvas: (bytes, width, height) => pixels.offscreen(host.api, bytes, width, height),
     ready: () => ready(),
     device: () => host.device(),
     measure: (font, text) => host.measure(font, text),
@@ -316,6 +322,7 @@ function start(page, host = mpHost()) {
         },
         stop() {
           stopped = true
+          pixels.clear()
           if (frameTimer != null) host.clearTimeout(frameTimer)
         },
       }
