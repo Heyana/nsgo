@@ -65,6 +65,8 @@ final class Protocol {
                 return true;
             case EXT_FRAME_RATE:
                 return true;
+            case EXT_GAME_SERVICES:
+                return true;
             default:
                 return false;
         }
@@ -140,6 +142,8 @@ final class Protocol {
 
     /** Reads a bundled file: its request ID and the path under assets/. */
     static final int EXT_ASSET_READ = 9;
+    /** A JSON command for package gameservices to the Play Games Services hook (NsgoView answers it unavailable when the runtime has none). */
+    static final int EXT_GAME_SERVICES = 8;
 
     // Java to Go.
     static final int START = 1;
@@ -197,6 +201,8 @@ final class Protocol {
     static final int ASSET_DONE = 1;
     static final int ASSET_MISSING = 2;
     static final int ASSET_FAILED = 3;
+    /** What the Play Games Services hook reports: JSON (driver.ReportGameServices). */
+    static final int GAME_SERVICES_REPORT = 31;
 
     /** A sound or player report (Audio.java, audio.go). */
     static final int AUDIO_REPORT = 33;

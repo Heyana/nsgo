@@ -577,6 +577,8 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	if more&8 != 0 {
 		env.Network = &driver.Network{Online: more&16 != 0, Expensive: more&32 != 0}
 	}
+	// Play Games Services available through the runtime reflection hook.
+	env.CanUseGameServices = more&64 != 0
 	env.Idiom = driver.Idiom(r.byte())
 	env.Locale = r.str()
 	env.DeviceName = r.str()

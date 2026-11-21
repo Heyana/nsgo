@@ -31,6 +31,8 @@ var layers = []struct {
 	// through the files and the library the tool's extension shares, and
 	// Android's runtime through the driver's Live Updates.
 	{"widget", []string{"core", "internal/driver"}},
+	// Platform game services reach GameKit through purego and objcblock on Apple platforms, Android's runtime through the driver's game services channel, and nsgotest's per-app fake through core.
+	{"gameservices", []string{"core", "internal/driver", "internal/platform/objcblock"}},
 	{"internal/woff", nil},
 	{"internal/mimeinfo", nil},
 	{"internal/appstartup", nil},
@@ -118,7 +120,7 @@ var layers = []struct {
 	{"tsx/", []string{"core", "base/", "mobile", "desktop", "internal/devtools", "tsx", "tsx/bundler", "tsx/internal/js", "tsx/pkg", "tsx/websrc"}},
 	// Apps use the public packages only, and the hosts that embed an
 	// example app its package.
-	{"examples/", []string{"", "audio", "core", "base/", "ui/", "gpu", "mobile", "desktop", "desktop/locales", "gamepad", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},
+	{"examples/", []string{"", "audio", "core", "base/", "ui/", "gpu", "mobile", "desktop", "desktop/locales", "gamepad", "gameservices", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},
 	// The nsgo tool links no component or runtime, so changing them does
 	// not build it again; it writes TSX declarations by running the app.
 	{"cmd/", []string{"core", "cmd/", "internal/automation", "internal/appstartup", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},

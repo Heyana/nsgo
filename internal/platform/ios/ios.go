@@ -854,6 +854,7 @@ func (s *surface) environment() driver.Environment {
 		gpu:           apple.GPUSupported(),
 	})
 	env.HapticPatterns = idiom != driver.IdiomTV && hapticPatternsAvailable()
+	env.CanUseGameServices = apple.GameServicesAvailable()
 	env.HeaderHeight, env.LargeHeaderHeight = s.headers[0], s.headers[1]
 	return env
 }

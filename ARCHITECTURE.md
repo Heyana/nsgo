@@ -44,6 +44,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `internal/audiosession` | — | iOS's one `AVAudioSession`, set by the highest level its holders ask for: videos, speech, `microphone` and audio's players and sounds ([sessions](docs/architecture/audio.md#sessions)) |
 | `updater`, `updater/locales` | `nsh/updater` | Updating the app the way its platform and channel do: Sparkle, WinSparkle, the appcast `nsgo build` signs, or the App Store ([updates](docs/architecture/updates.md)) |
 | `widget` | — | Timelines of views that macOS and iOS widgets show, drawn by a SwiftUI extension the tool compiles, and Live Activities, which the extension draws on iOS and Android's runtime posts as Live Updates ([widgets](docs/architecture/tool.md#widgets)) |
+| `gameservices` | — | Provider-neutral platform game services: player sign-in, achievements, leaderboards and native Game Center / Play Games UI overlays, via `purego` GameKit on macOS/iOS/tvOS and Android's runtime bridge, reporting `ErrUnsupported` elsewhere ([game services](docs/architecture/gameservices.md)) |
 | `nsgotest` | `nsh-testing` | App tests, headless or on a platform, and the agent `nsgo dev -automation` drives a running app through ([testing](docs/architecture/testing.md)) |
 | `internal/automation` | — (MyGo's `plugins/automation`) | The requests the nsgo tool sends a running dev build's agent ([automation](docs/architecture/tool.md#automation)) |
 | `internal/testhost` | `nsh-testing`'s agent | A backend's test host for `nsgotest`: the main thread, native input, screenshots |
@@ -161,6 +162,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Application and windows](docs/architecture/application.md) | `nsgo.Run`, the windows, panels and tray icons an app opens, global shortcuts or shutdown |
 | [Hosted views](docs/architecture/native-views.md) | `WebView`, `Video` or `Native` components |
 | [Audio playback](docs/architecture/audio.md) | The `audio` package, its native players and audio-session sharing |
+| [Game services](docs/architecture/gameservices.md) | The `gameservices` package, GameKit / Play Games hooks and `nsgotest`'s fake |
 | [Images](docs/architecture/images.md) | How backends load, cache, decode or play images |
 | [Canvas](docs/architecture/canvas.md) | `Canvas`, `Drawing` or a backend's canvas player |
 | [Animation](docs/architecture/animation.md) | Animated values, layout animations or a backend's frame clock |

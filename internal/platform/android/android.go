@@ -139,6 +139,8 @@ const (
 	msgAssetReply = 29
 	// msgAudioReport is a sound or player's status (audio.go).
 	msgAudioReport = 33
+	// msgGameServicesReport is what the runtime's Play Games Services hook reports, JSON (driver.ReportGameServices).
+	msgGameServicesReport = 31
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
@@ -147,6 +149,8 @@ const (
 	extFrameRate = 1
 	// extAudioFile supplies a file staged for a sound or player (audio.go): surface, object, path, error code and message.
 	extAudioFile = 2
+	// extGameServices is a JSON command for package gameservices to the runtime's Play Games Services hook, from driver.SendGameServices.
+	extGameServices = 8
 	// extAssetRead reads a bundled file through the APK's AssetManager for assets.go: its request ID and the path under assets/.
 	extAssetRead = 9
 	// extDiscovery starts or stops an NSD operation on a surface (discovery.go, Discovery.java).
@@ -296,6 +300,13 @@ func connect(opts Options) *surface {
 			w.float(highFreq)
 			w.u32(uint32(ms))
 		})
+	})
+	driver.ConnectGameServices(func(msg []byte) {
+		err := s.sendExtended(extGameServices, func(w *writer) { w.buf = append(w.buf, msg...) })
+		// A runtime that reads no extended messages has no game services: the command's caller hears it is unavailable rather than waiting for a report that never comes.
+		if errors.Is(err, errNoExtendedMessages) {
+			driver.ReportGameServices(gameServicesUnavailable(msg))
+		}
 	})
 	return s
 }
@@ -479,6 +490,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.physicalKey(&r)
 		case msgAudioReport:
 			s.audioReport(&r)
+		case msgGameServicesReport:
+			driver.ReportGameServices(slices.Clone(payload))
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {
@@ -1377,6 +1390,20 @@ func imageScale(uri string) float32 {
 // send writes one message whose payload body writes, or none and an error when the payload is longer than Java reads, as an image's or a font's bytes can be.
 func (s *surface) send(kind byte, body func(w *writer)) error {
 	return s.sendBefore(kind, time.Time{}, body)
+}
+
+// gameServicesUnavailable is the report the runtime's hook gives a command it cannot run: the result of command's request ID, with the error "unavailable". A command without an ID gets a report no request waits for.
+func gameServicesUnavailable(command []byte) []byte {
+	var c struct {
+		ID uint64 `json:"id"`
+	}
+	_ = json.Unmarshal(command, &c)
+	report, _ := json.Marshal(struct {
+		Type  string `json:"type"`
+		ID    uint64 `json:"id"`
+		Error string `json:"error"`
+	}{"result", c.ID, "unavailable"})
+	return report
 }
 
 // errNoExtendedMessages is sendExtended's error for a runtime that does not read msgExtended messages, built before them; the caller does without the message.

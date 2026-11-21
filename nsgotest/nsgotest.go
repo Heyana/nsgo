@@ -276,6 +276,8 @@ type App struct {
 	// microphone is MicrophoneInput's fake recorder.
 	microphone *Microphone
 	widgets    *widgetServices
+	// gameServices is this app's isolated in-memory fake for package gameservices.
+	gameServices *fakeGameServices
 	// OpenedURLs are the URLs the app opened, oldest first. OpenURL
 	// answers whether each opens; every one does when it is nil.
 	OpenedURLs []string
@@ -603,6 +605,7 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		Secrets:           &core.MemorySecrets{},
 		KeptImages:        map[string]int{},
 		diskSpace:         driver.DiskSpaceResult{Err: core.ErrDiskSpaceUnavailable},
+		gameServices:      newFakeGameServices(),
 	}
 	for _, o := range opts {
 		o(a)
@@ -707,11 +710,12 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		Storage:   a.store,
 		ReadAsset: assetReader(),
 		DataDir:   data, CacheDir: cache, LogsDir: logs,
-		Secrets: a.Secrets,
-		Updater: a.updater,
-		Host:    a.host,
-		HotKeys: true,
-		Windows: windows,
+		Secrets:      a.Secrets,
+		GameServices: a.gameServices,
+		Updater:      a.updater,
+		Host:         a.host,
+		HotKeys:      true,
+		Windows:      windows,
 	})
 	a.gamepads = newFakeGamepads()
 	unbindGamepads := driver.BindGamepadSource(a.root, a.gamepads)

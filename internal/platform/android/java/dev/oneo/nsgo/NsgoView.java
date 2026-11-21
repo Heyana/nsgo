@@ -1177,6 +1177,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 });
                 break;
             }
+            case Protocol.EXT_GAME_SERVICES:
+                gameServicesUnavailable(payload);
+                break;
             default:
                 Log.w(TAG, "unknown extended message " + kind);
         }
@@ -4674,6 +4677,23 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             throw new AssertionError(impossible);
         }
         write(Protocol.COOKIES_SET, bytes.toByteArray());
+    }
+
+    /** Answers an EXT_GAME_SERVICES command, whose JSON follows the kind byte in payload: this runtime has no Play Games Services hook, so a command's request hears that game services are unavailable rather than waiting for a report. */
+    private void gameServicesUnavailable(byte[] payload) {
+        long id = 0;
+        try {
+            id = new JSONObject(new String(payload, 1, payload.length - 1, java.nio.charset.StandardCharsets.UTF_8)).optLong("id");
+        } catch (JSONException e) {
+            Log.w(TAG, "invalid game services message from app");
+        }
+        if (id == 0) return;
+        try {
+            JSONObject report = new JSONObject().put("type", "result").put("id", id).put("error", "unavailable");
+            write(Protocol.GAME_SERVICES_REPORT, report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (JSONException impossible) {
+            throw new AssertionError(impossible);
+        }
     }
 
     /** Takes a RECORDING message, on the engine's reader thread: a stop and the app's taking of an earlier recording go to the service at once, a start and an authorize to the UI thread. */
