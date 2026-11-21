@@ -52,9 +52,9 @@ var unsupportedItems = map[string]string{
 		ItemRequestReview ItemSavePreflightAnswer ItemDiscovery ItemSystemGestures ItemHapticPattern ItemEditMenu`,
 	// The core answers these before the platform sees them: it resolves a
 	// path with os.Stat, which js/wasm does not implement, answers the
-	// install family itself off Android, and sends no audio where the
-	// environment says none.
-	"answered by the core": `ItemAudio ItemRevealFile ItemTrashFile`,
+	// install family itself off Android, and sends no audio or clipboard
+	// representation writes where the environment says none.
+	"answered by the core": `ItemAudio ItemRevealFile ItemTrashFile ItemSetClipboardItems`,
 }
 
 // unsupportedEvents are the events no HarmonyOS code reads or dispatches.
