@@ -401,7 +401,7 @@ func adopt(root, base, kind, name string) error {
 	if err := os.WriteFile(path, []byte(rest), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("moved %d bullets to %s/%s and restored %s to %s's; check the type, then commit both\n", len(added), fragmentDir, file, changelogFile, base)
+	fmt.Printf("moved %d bullets to %s/%s and restored %s to %s's; check the type, then fold both into the commit that added the bullets (git commit --amend on a one-commit branch) so a rebase stops replaying that edit\n", len(added), fragmentDir, file, changelogFile, base)
 	return nil
 }
 
