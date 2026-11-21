@@ -137,10 +137,7 @@ func (w *window) scrollBy(v *view, d driver.Point) {
 // setSticky replaces scroll view v's sticky cells; cells no longer
 // sticky go back to their frames.
 func (w *window) setSticky(v *view, cells []driver.StickyCell) {
-	v.sticky.Unpin(w.placeSticky)
-	v.sticky = cells
-	w.stickyBound.Update(v, v.id, v.sticky)
-	w.pinSticky(v)
+	w.stickyBound.Replace(v, v.id, &v.sticky, cells, w.placeSticky, w.pinSticky)
 }
 
 func (w *window) pinSticky(v *view) {

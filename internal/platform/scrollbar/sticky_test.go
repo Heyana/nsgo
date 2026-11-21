@@ -25,7 +25,7 @@ func TestStickyCellsFollowTheirAxisAndBoundInset(t *testing.T) {
 	if got[1] != (driver.Point{Y: 13}) || got[2] != (driver.Point{Y: -20}) {
 		t.Fatalf("vertical shifts = %v, want 13 and -20", got)
 	}
-	cells.Unpin(place)
+	cells.unpin(place)
 	if got[1] != (driver.Point{}) || got[2] != (driver.Point{}) {
 		t.Fatalf("unpin shifts = %v, want both zero", got)
 	}
@@ -37,8 +37,8 @@ func TestStickyBindingsDropRemovedAndReplacedViews(t *testing.T) {
 	cells := StickyCells{{Cell: 11, Node: 2}}
 
 	var bound StickyBindings[*int]
-	bound.Update(stale, id, cells)
-	bound.Update(current, id, cells)
+	bound.update(stale, id, cells)
+	bound.update(current, id, cells)
 	lookup := func(driver.NodeID) *int { return current }
 	var pinned []*int
 	pin := func(v *int) { pinned = append(pinned, v) }
@@ -46,9 +46,31 @@ func TestStickyBindingsDropRemovedAndReplacedViews(t *testing.T) {
 	if len(pinned) != 1 || pinned[0] != current || len(bound) != 1 {
 		t.Fatalf("repin kept a replaced view: %d pins, %d tracked", len(pinned), len(bound))
 	}
-	bound.Update(current, id, StickyCells{{Cell: 11}})
+	bound.update(current, id, StickyCells{{Cell: 11}})
 	bound.Repin(lookup, pin)
 	if len(pinned) != 1 || len(bound) != 0 {
 		t.Fatalf("repin kept a view whose inset is static: %d pins, %d tracked", len(pinned), len(bound))
+	}
+}
+
+func TestReplacingStickyCellsRestoresAndPinsInOrder(t *testing.T) {
+	view := new(int)
+	var bound StickyBindings[*int]
+	current := StickyCells{{Cell: 15}}
+	next := StickyCells{{Cell: 16, Node: 3}}
+	var restored, pinned bool
+	bound.Replace(view, 14, &current, next, func(id driver.NodeID, shift driver.Point) {
+		if id != 15 || shift != (driver.Point{}) {
+			t.Errorf("restored cell %d at %v, want old cell 15 at its frame", id, shift)
+		}
+		restored = true
+	}, func(v *int) {
+		pinned = true
+		if !restored || v != view || len(current) != 1 || current[0] != next[0] || bound[v] != 14 {
+			t.Errorf("pin did not receive the replacement cells and binding after the old cell was restored")
+		}
+	})
+	if !pinned {
+		t.Fatal("replacement cells were not pinned")
 	}
 }

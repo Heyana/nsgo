@@ -146,7 +146,7 @@ type scrollState struct {
 	// applied counts the core's ItemScrollTo and ItemScrollBy items,
 	// reported with each offset; sticky are its sticky cells.
 	applied uint32
-	sticky  []driver.StickyCell
+	sticky  scrollbar.StickyCells
 }
 
 // indicatorLook is how the indicator shows.
@@ -980,71 +980,38 @@ func (v *view) wheelDelta(dx, dy driver.Points) driver.Points {
 	return dy
 }
 
-// pinSticky moves the scroll view's sticky cells for its offset, within their signed travel through driver.StickyShift.
 func (v *view) pinSticky() {
-	if len(v.sc.sticky) == 0 {
-		return
-	}
-	at := v.pos()
-	for _, c := range v.sc.sticky {
-		if int(c.Cell) < len(v.surface.views) {
-			if cv := v.surface.views[c.Cell]; cv != nil {
-				cv.stick(v.surface.animator.StickyShift(c, at), v.sc.config.Horizontal)
-			}
-		}
-	}
+	v.sc.sticky.Pin(v.sc.at, v.sc.config.Horizontal, v.surface.animator, v.surface.placeSticky)
 }
 
-// setSticky replaces the scroll view's sticky cells; cells no longer
-// sticky go back to their frames.
 func (v *view) setSticky(cells []driver.StickyCell) {
-	for _, c := range v.sc.sticky {
-		if int(c.Cell) < len(v.surface.views) {
-			if cv := v.surface.views[c.Cell]; cv != nil {
-				cv.stick(0, false)
-			}
-		}
-	}
-	v.sc.sticky = cells
-	bound := false
-	for _, c := range cells {
-		bound = bound || c.Node != 0
-	}
-	if bound {
-		if v.surface.stickyBound == nil {
-			v.surface.stickyBound = map[*view]bool{}
-		}
-		v.surface.stickyBound[v] = true
-	} else {
-		delete(v.surface.stickyBound, v)
-	}
-	v.pinSticky()
+	v.surface.stickyBound.Replace(v, v.id, &v.sc.sticky, cells, v.surface.placeSticky, (*view).pinSticky)
 }
 
-// repinBound pins again the sticky cells whose insets follow animated
-// values, which may have moved.
 func (s *surface) repinBound() {
-	for v := range s.stickyBound {
-		if v.sc != nil && s.views[v.id] == v {
-			v.pinSticky()
-		} else {
-			delete(s.stickyBound, v)
+	s.stickyBound.Repin(func(id driver.NodeID) *view {
+		if v := s.viewOf(id); v != nil && v.sc != nil {
+			return v
 		}
-	}
+		return nil
+	}, (*view).pinSticky)
 }
 
-// stick moves a sticky cell d along its list from its frame.
-func (v *view) stick(d driver.Points, horizontal bool) {
-	shift := driver.Point{Y: d}
-	if horizontal {
-		shift = driver.Point{X: d}
-	}
-	if shift != v.shift {
+func (s *surface) placeSticky(id driver.NodeID, shift driver.Point) {
+	if v := s.viewOf(id); v != nil && shift != v.shift {
 		v.shift = shift
 		if v.framed {
 			v.place(v.frame)
 		}
 	}
+}
+
+// viewOf returns the view occupying id.
+func (s *surface) viewOf(id driver.NodeID) *view {
+	if int(id) < len(s.views) {
+		return s.views[id]
+	}
+	return nil
 }
 
 // The trackpad and the mouse wheel.

@@ -5,8 +5,7 @@ import "github.com/nsgo-dev/nsgo/internal/driver"
 // StickyCells holds the cells pinned by one scroll view.
 type StickyCells []driver.StickyCell
 
-// Unpin restores the cells to their layout positions.
-func (cells StickyCells) Unpin(place func(driver.NodeID, driver.Point)) {
+func (cells StickyCells) unpin(place func(driver.NodeID, driver.Point)) {
 	for _, cell := range cells {
 		place(cell.Cell, driver.Point{})
 	}
@@ -27,8 +26,15 @@ func (cells StickyCells) Pin(offset driver.Point, horizontal bool, animator *dri
 // animated. Tracking the view as well as its ID detects replacement views.
 type StickyBindings[V comparable] map[V]driver.NodeID
 
-// Update tracks v if any of its cells has a bound inset.
-func (bound *StickyBindings[V]) Update(v V, id driver.NodeID, cells StickyCells) {
+// Replace restores the previous cells, tracks the new bindings and pins the new cells.
+func (bound *StickyBindings[V]) Replace(v V, id driver.NodeID, current *StickyCells, cells StickyCells, place func(driver.NodeID, driver.Point), pin func(V)) {
+	current.unpin(place)
+	*current = cells
+	bound.update(v, id, cells)
+	pin(v)
+}
+
+func (bound *StickyBindings[V]) update(v V, id driver.NodeID, cells StickyCells) {
 	for _, cell := range cells {
 		if cell.Node != 0 {
 			if *bound == nil {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
+	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 )
 
 // How scroll views scroll, as NSH's iOS backend does: UIScrollView's own
@@ -41,7 +42,7 @@ type scrollState struct {
 	// applied counts the core's ItemScrollTo and ItemScrollBy items,
 	// reported with each offset; sticky are its sticky cells.
 	applied uint32
-	sticky  []driver.StickyCell
+	sticky  scrollbar.StickyCells
 }
 
 // scrollBy moves the offset by d unclamped, which UIKit's drag and glide
@@ -52,63 +53,27 @@ func (v *view) scrollBy(d driver.Point) {
 	v.native.Send(sel("setContentOffset:"), apple.CGPoint{X: o.X + float64(d.X), Y: o.Y + float64(d.Y)})
 }
 
-// pinSticky moves the scroll view's sticky cells for its offset, within their signed travel through driver.StickyShift.
 func (v *view) pinSticky() {
 	o := objc.Send[apple.CGPoint](v.native, selContentOffset)
-	at := driver.Points(o.Y)
-	if v.sc.config.Horizontal {
-		at = driver.Points(o.X)
-	}
-	for _, c := range v.sc.sticky {
-		if cv := v.surface.viewOf(c.Cell); cv != nil {
-			cv.stick(v.surface.animator.StickyShift(c, at), v.sc.config.Horizontal)
-		}
-	}
+	at := driver.Point{X: driver.Points(o.X), Y: driver.Points(o.Y)}
+	v.sc.sticky.Pin(at, v.sc.config.Horizontal, v.surface.animator, v.surface.placeSticky)
 }
 
-// setSticky replaces the scroll view's sticky cells; cells no longer
-// sticky go back to their frames.
 func (v *view) setSticky(cells []driver.StickyCell) {
-	for _, c := range v.sc.sticky {
-		if cv := v.surface.viewOf(c.Cell); cv != nil {
-			cv.stick(0, false)
-		}
-	}
-	v.sc.sticky = cells
-	bound := false
-	for _, c := range cells {
-		bound = bound || c.Node != 0
-	}
-	if bound {
-		if v.surface.stickyBound == nil {
-			v.surface.stickyBound = map[*view]bool{}
-		}
-		v.surface.stickyBound[v] = true
-	} else {
-		delete(v.surface.stickyBound, v)
-	}
-	v.pinSticky()
+	v.surface.stickyBound.Replace(v, v.id, &v.sc.sticky, cells, v.surface.placeSticky, (*view).pinSticky)
 }
 
-// repinBound pins again the sticky cells whose insets follow animated
-// values, which may have moved.
 func (s *surface) repinBound() {
-	for v := range s.stickyBound {
-		if v.sc != nil && s.views[v.id] == v {
-			v.pinSticky()
-		} else {
-			delete(s.stickyBound, v)
+	s.stickyBound.Repin(func(id driver.NodeID) *view {
+		if v := s.viewOf(id); v != nil && v.sc != nil {
+			return v
 		}
-	}
+		return nil
+	}, (*view).pinSticky)
 }
 
-// stick moves a sticky cell d along its list from its frame.
-func (v *view) stick(d driver.Points, horizontal bool) {
-	shift := driver.Point{Y: d}
-	if horizontal {
-		shift = driver.Point{X: d}
-	}
-	if shift != v.shift {
+func (s *surface) placeSticky(id driver.NodeID, shift driver.Point) {
+	if v := s.viewOf(id); v != nil && shift != v.shift {
 		v.shift = shift
 		if v.framed {
 			v.place(v.frame)

@@ -23,6 +23,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/loopback"
 	"github.com/nsgo-dev/nsgo/internal/platform/objcblock"
 	"github.com/nsgo-dev/nsgo/internal/platform/queue"
+	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
@@ -210,7 +211,7 @@ type surface struct {
 	batch uint64 // batches applied
 	// stickyBound are the scroll views with sticky cells whose insets
 	// follow animated values.
-	stickyBound map[*view]bool
+	stickyBound scrollbar.StickyBindings[*view]
 	native      objc.ID
 	// sharing is the share picker shown last, kept while it shows.
 	sharing objc.ID
