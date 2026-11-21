@@ -48,12 +48,13 @@ func TestVideoResourceRedirectKeepsOnlyThePlayerRangeAcrossOrigins(t *testing.T)
 		"Cookie":        "session=sample",
 		"Range":         "bytes=0-0",
 	}))
-	resp, length, err := resource.response(context.Background(), videoResourceRange{offset: 3, length: 3})
+	defer resource.close()
+	body, _, length, err := resource.response(context.Background(), videoResourceRange{offset: 3, length: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	defer body.Close()
+	data, err := io.ReadAll(body)
 	if err != nil || length != 10 || string(data) != "345" {
 		t.Errorf("length = %d, range body = %q, error = %v", length, data, err)
 	}

@@ -3,7 +3,7 @@
 package linux
 
 import (
-	"net/http"
+	"net/textproto"
 	"runtime"
 	"strings"
 	"sync"
@@ -89,7 +89,7 @@ func videoSourceSetup(pipeline, source, key uintptr) {
 		if !httpguts.ValidHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(value) {
 			continue
 		}
-		switch name = http.CanonicalHeaderKey(name); name {
+		switch name = textproto.CanonicalMIMEHeaderKey(name); name {
 		case "Range", "Accept-Encoding":
 			// GStreamer controls byte ranges and must receive the original bytes.
 		case "Cookie":

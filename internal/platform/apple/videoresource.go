@@ -9,23 +9,21 @@ import (
 	"io"
 	"math"
 	"mime"
-	"net/http"
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// A videoResource supplies the byte ranges AVFoundation needs for a remote
-// file with app-supplied headers. The loader and requests belong to the
-// main queue. Each HTTP transfer runs off that queue.
+// A videoResource supplies the byte ranges AVFoundation needs for a remote file with app-supplied headers. The loader and requests belong to the main queue. Each transfer runs in the resource's URLSession, the system's HTTP client, so no app links Go's (TestMinimalAppLinks).
 type videoResource struct {
 	source   *url.URL
-	headers  http.Header
-	client   http.Client
+	headers  [][2]string
+	session  objc.ID
 	delegate objc.ID
 	loader   objc.ID
 	requests map[objc.ID]context.CancelFunc
@@ -37,37 +35,49 @@ var (
 )
 
 func newVideoResource(source *url.URL, fields *driver.VideoHeaders) *videoResource {
-	r := &videoResource{
-		source: source, headers: make(http.Header), requests: make(map[objc.ID]context.CancelFunc),
-	}
+	r := &videoResource{source: source, requests: make(map[objc.ID]context.CancelFunc)}
 	for name, value := range fields.All {
-		r.headers.Set(name, value)
+		// The transfer sets its own byte range and encoding.
+		if !strings.EqualFold(name, "Range") && !strings.EqualFold(name, "Accept-Encoding") {
+			r.headers = append(r.headers, [2]string{name, value})
+		}
 	}
-	r.client.CheckRedirect = r.redirect
+	withPool(func() {
+		config := objc.ID(Class("NSURLSessionConfiguration")).Send(sel("ephemeralSessionConfiguration"))
+		config.Send(sel("setURLCache:"), objc.ID(0))
+		config.Send(sel("setRequestCachePolicy:"), uint(1)) // NSURLRequestReloadIgnoringLocalCacheData
+		// Only the app's headers carry cookies.
+		config.Send(sel("setHTTPCookieStorage:"), objc.ID(0))
+		config.Send(sel("setHTTPShouldSetCookies:"), false)
+		// A nil queue is a serial one the session makes.
+		r.session = objc.ID(Class("NSURLSession")).Send(sel("sessionWithConfiguration:delegate:delegateQueue:"),
+			config, videoTransferDelegate(), objc.ID(0)).Send(sel("retain"))
+	})
 	return r
 }
 
-func (r *videoResource) redirect(req *http.Request, via []*http.Request) error {
-	if len(via) >= 10 {
-		return errors.New("too many media redirects")
+// redirect prepares a redirected request: the app's headers go only to the source's origin, and a Referer, which may carry an access token, nowhere else.
+func (t *videoTransfer) redirect(proposed objc.ID) objc.ID {
+	t.redirects++
+	if t.redirects > 10 {
+		return 0 // The redirect response arrives as the response, and fails.
 	}
-	sameOrigin := sameVideoOrigin(r.source, req.URL)
+	req := proposed.Send(sel("mutableCopy")).Send(sel("autorelease"))
+	target, err := url.Parse(GoString(req.Send(sel("URL")).Send(sel("absoluteString"))))
+	sameOrigin := err == nil && sameVideoOrigin(t.resource.source, target)
 	if !sameOrigin {
-		// The URL used to generate Referer may contain an access token.
-		req.Header.Del("Referer")
+		req.Send(sel("setValue:forHTTPHeaderField:"), objc.ID(0), NSString("Referer"))
 	}
-	for name, values := range r.headers {
-		if name == "Range" || name == "Accept-Encoding" {
-			continue
-		}
+	for _, h := range t.resource.headers {
 		if sameOrigin {
-			// net/http generates its own Referer for redirects.
-			req.Header[name] = values
+			req.Send(sel("setValue:forHTTPHeaderField:"), NSString(h[1]), NSString(h[0]))
 		} else {
-			req.Header.Del(name)
+			req.Send(sel("setValue:forHTTPHeaderField:"), objc.ID(0), NSString(h[0]))
 		}
 	}
-	return nil
+	req.Send(sel("setValue:forHTTPHeaderField:"), NSString("identity"), NSString("Accept-Encoding"))
+	req.Send(sel("setValue:forHTTPHeaderField:"), NSString(t.byteRange), NSString("Range"))
+	return req
 }
 
 func sameVideoOrigin(a, b *url.URL) bool {
@@ -131,6 +141,8 @@ func (r *videoResource) close() {
 	r.loader.Send(sel("setDelegate:queue:"), objc.ID(0), objc.ID(0))
 	r.loader.Send(sel("release"))
 	r.delegate.Send(sel("release"))
+	r.session.Send(sel("invalidateAndCancel"))
+	r.session.Send(sel("release"))
 }
 
 func cancelVideoResourceRequest(self objc.ID, _ objc.SEL, _ objc.ID, request objc.ID) {
@@ -189,58 +201,213 @@ func startVideoResourceRequest(self objc.ID, _ objc.SEL, _ objc.ID, request objc
 	return true
 }
 
-// response opens the requested range as an HTTP stream. A 200 response is
-// also usable from offset zero, with seeking left to AVFoundation.
-func (r *videoResource) response(ctx context.Context, span videoResourceRange) (*http.Response, int64, error) {
+// A videoTransfer is one byte range's data task. Its delegate's callbacks arrive in order on the session's queue, and each chunk waits there until the reader takes it, so a slow player holds back the download.
+type videoTransfer struct {
+	resource  *videoResource
+	ctx       context.Context
+	task      objc.ID
+	byteRange string
+	redirects int // on the session's queue
+
+	head    chan videoResponseHead
+	data    chan []byte
+	done    chan error
+	stop    chan struct{}
+	stopped sync.Once
+
+	pending []byte
+	err     error
+}
+
+type videoResponseHead struct {
+	status        int
+	contentRange  string
+	contentType   string
+	contentLength int64
+}
+
+var videoTransfers struct {
+	sync.Mutex
+	byTask   map[objc.ID]*videoTransfer
+	delegate objc.ID
+}
+
+func videoTransferOf(task objc.ID) *videoTransfer {
+	videoTransfers.Lock()
+	defer videoTransfers.Unlock()
+	return videoTransfers.byTask[task]
+}
+
+// videoTransferDelegate is the sessions' delegate, which finds each task's transfer.
+func videoTransferDelegate() objc.ID {
+	videoTransfers.Lock()
+	defer videoTransfers.Unlock()
+	if videoTransfers.delegate != 0 {
+		return videoTransfers.delegate
+	}
+	videoTransfers.byTask = map[objc.ID]*videoTransfer{}
+	class := RegisterClass("NsgoVideoTransferDelegate", Class("NSObject"),
+		[]*objc.Protocol{objc.GetProtocol("NSURLSessionDataDelegate")}, []objc.MethodDef{
+			{Cmd: sel("URLSession:task:willPerformHTTPRedirection:newRequest:completionHandler:"),
+				Fn: func(_ objc.ID, _ objc.SEL, _, task, _, proposed, handler objc.ID) {
+					var next objc.ID
+					if t := videoTransferOf(task); t != nil {
+						next = t.redirect(proposed)
+					}
+					CallBlock(handler, uintptr(next))
+				}},
+			{Cmd: sel("URLSession:dataTask:didReceiveResponse:completionHandler:"),
+				Fn: func(_ objc.ID, _ objc.SEL, _, task, response, handler objc.ID) {
+					const cancel, allow = 0, 1 // NSURLSessionResponseDisposition
+					t := videoTransferOf(task)
+					if t == nil {
+						CallBlock(handler, cancel)
+						return
+					}
+					field := func(name string) string {
+						return GoString(response.Send(sel("valueForHTTPHeaderField:"), NSString(name)))
+					}
+					t.head <- videoResponseHead{
+						status: objc.Send[int](response, sel("statusCode")), contentRange: field("Content-Range"),
+						contentType: field("Content-Type"), contentLength: objc.Send[int64](response, sel("expectedContentLength")),
+					}
+					CallBlock(handler, allow)
+				}},
+			{Cmd: sel("URLSession:dataTask:didReceiveData:"), Fn: func(_ objc.ID, _ objc.SEL, _, task, data objc.ID) {
+				if t := videoTransferOf(task); t != nil {
+					select {
+					case t.data <- Bytes(data):
+					case <-t.stop:
+					}
+				}
+			}},
+			{Cmd: sel("URLSession:task:didCompleteWithError:"), Fn: func(_ objc.ID, _ objc.SEL, _, task, failure objc.ID) {
+				videoTransfers.Lock()
+				t := videoTransfers.byTask[task]
+				delete(videoTransfers.byTask, task)
+				videoTransfers.Unlock()
+				if t == nil {
+					return
+				}
+				var err error
+				if failure != 0 {
+					err = errors.New(GoString(failure.Send(sel("localizedDescription"))))
+				}
+				t.done <- err
+			}},
+		})
+	videoTransfers.delegate = objc.ID(class).Send(sel("new"))
+	return videoTransfers.delegate
+}
+
+// response opens the requested range as an HTTP stream. A 200 response is also usable from offset zero, with seeking left to AVFoundation.
+func (r *videoResource) response(ctx context.Context, span videoResourceRange) (*videoTransfer, videoResponseHead, int64, error) {
 	if span.offset < 0 || span.length < 0 || !span.toEnd && span.length > math.MaxInt64-span.offset {
-		return nil, 0, errors.New("invalid media byte range")
+		return nil, videoResponseHead{}, 0, errors.New("invalid media byte range")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.source.String(), nil)
-	if err != nil {
-		return nil, 0, errors.New("invalid media URL")
+	t := &videoTransfer{
+		resource: r, ctx: ctx, byteRange: fmt.Sprintf("bytes=%d-", span.offset),
+		head: make(chan videoResponseHead, 1), data: make(chan []byte), done: make(chan error, 1), stop: make(chan struct{}),
 	}
-	req.Header = r.headers.Clone()
-	req.Header.Set("Accept-Encoding", "identity")
-	header := fmt.Sprintf("bytes=%d-", span.offset)
 	if !span.toEnd && span.length > 0 {
-		header += fmt.Sprint(span.offset + span.length - 1)
+		t.byteRange += fmt.Sprint(span.offset + span.length - 1)
 	}
-	req.Header.Set("Range", header)
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return nil, 0, errors.New("cannot request media bytes")
+	withPool(func() {
+		u := objc.ID(Class("NSURL")).Send(sel("URLWithString:"), NSString(r.source.String()))
+		if u == 0 {
+			return
+		}
+		req := objc.ID(Class("NSMutableURLRequest")).Send(sel("requestWithURL:"), u)
+		for _, h := range r.headers {
+			req.Send(sel("setValue:forHTTPHeaderField:"), NSString(h[1]), NSString(h[0]))
+		}
+		req.Send(sel("setValue:forHTTPHeaderField:"), NSString("identity"), NSString("Accept-Encoding"))
+		req.Send(sel("setValue:forHTTPHeaderField:"), NSString(t.byteRange), NSString("Range"))
+		t.task = r.session.Send(sel("dataTaskWithRequest:"), req).Send(sel("retain"))
+		if t.task == 0 {
+			return
+		}
+		videoTransfers.Lock()
+		videoTransfers.byTask[t.task] = t
+		videoTransfers.Unlock()
+		t.task.Send(sel("resume"))
+	})
+	if t.task == 0 {
+		return nil, videoResponseHead{}, 0, errors.New("invalid media URL")
+	}
+	var head videoResponseHead
+	select {
+	case head = <-t.head:
+	case <-t.done:
+		t.Close()
+		return nil, head, 0, errors.New("cannot request media bytes")
+	case <-ctx.Done():
+		t.Close()
+		return nil, head, 0, ctx.Err()
 	}
 	var length int64
-	switch resp.StatusCode {
-	case http.StatusPartialContent:
+	switch head.status {
+	case 206:
 		var first, last int64
-		n, err := fmt.Sscanf(resp.Header.Get("Content-Range"), "bytes %d-%d/%d", &first, &last, &length)
+		n, err := fmt.Sscanf(head.contentRange, "bytes %d-%d/%d", &first, &last, &length)
 		if err == nil && n == 3 && first == span.offset && last >= first && last < length {
-			return resp, length, nil
+			return t, head, length, nil
 		}
-	case http.StatusOK:
-		if span.offset == 0 && resp.ContentLength >= 0 {
-			return resp, resp.ContentLength, nil
+	case 200:
+		if span.offset == 0 && head.contentLength >= 0 {
+			return t, head, head.contentLength, nil
 		}
 	}
-	resp.Body.Close()
-	return nil, 0, fmt.Errorf("cannot read media byte range from HTTP %d", resp.StatusCode)
+	t.Close()
+	return nil, head, 0, fmt.Errorf("cannot read media byte range from HTTP %d", head.status)
+}
+
+// Read reads the response's body.
+func (t *videoTransfer) Read(p []byte) (int, error) {
+	for len(t.pending) == 0 {
+		if t.err != nil {
+			return 0, t.err
+		}
+		select {
+		case t.pending = <-t.data:
+		case err := <-t.done:
+			t.err = err
+			if err == nil {
+				t.err = io.EOF
+			}
+		case <-t.ctx.Done():
+			t.err = t.ctx.Err()
+		}
+	}
+	n := copy(p, t.pending)
+	t.pending = t.pending[n:]
+	return n, nil
+}
+
+// Close cancels the task if it is still running.
+func (t *videoTransfer) Close() error {
+	t.stopped.Do(func() {
+		close(t.stop)
+		t.task.Send(sel("cancel"))
+		t.task.Send(sel("release"))
+	})
+	return nil
 }
 
 func (r *videoResource) load(ctx context.Context, span videoResourceRange, info, data objc.ID) error {
-	resp, length, err := r.response(ctx, span)
+	body, head, length, err := r.response(ctx, span)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer body.Close()
 	if info != 0 {
-		contentType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+		contentType, _, _ := mime.ParseMediaType(head.contentType)
 		if !onVideoResourceMain(ctx, func() {
 			if kind := mediaResourceType(contentType, path.Ext(r.source.Path)); kind != 0 {
 				info.Send(sel("setContentType:"), kind)
 			}
 			info.Send(sel("setContentLength:"), length)
-			info.Send(sel("setByteRangeAccessSupported:"), resp.StatusCode == http.StatusPartialContent)
+			info.Send(sel("setByteRangeAccessSupported:"), head.status == 206)
 		}) {
 			return ctx.Err()
 		}
@@ -255,7 +422,7 @@ func (r *videoResource) load(ctx context.Context, span videoResourceRange, info,
 	}
 	buf := make([]byte, 64<<10)
 	for remaining > 0 {
-		n, err := io.ReadFull(resp.Body, buf[:min(int64(len(buf)), remaining)])
+		n, err := io.ReadFull(body, buf[:min(int64(len(buf)), remaining)])
 		if err != nil {
 			return errors.New("media response ended before the requested byte range")
 		}
