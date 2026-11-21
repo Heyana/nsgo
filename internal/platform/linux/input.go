@@ -118,6 +118,19 @@ func (w *window) pointerDown(at driver.Point, button uint32, device uintptr, sta
 	// Test input enters here without GTK's legacy controller. A press after a key must still report pointer input and hide focus rings.
 	w.engine.InputModality(driver.ModalityPointer)
 	w.lastPointer, w.pressConsumed, w.windowMove = at, false, nil
+	if button == 1 && !isTouch(device) {
+		root := w.view(w.root)
+		var target *view
+		if root != nil {
+			target = hit(root, at, func(v *view) bool {
+				return v.kind == driver.KindInput || v.events.Has(driver.EventPress) || v.events.Has(driver.EventLongPress) || v.events.Has(driver.EventPressDown) || v.events.Has(driver.EventPressUp)
+			})
+		}
+		if clicks > 1 && target != w.lastClick {
+			clicks = 1
+		}
+		w.lastClick = target
+	}
 	w.down = driver.Event{Modifiers: modifiers(state), Count: uint32(max(clicks, 1)), Page: at}
 	// On X11 the released GTK 4 gives a touch's events the core pointer as their device, whose source is the mouse, so a touch is also known by its event's type.
 	touch := button == 1 && (isTouch(device) || w.currentEvent != 0 && gdkEventGetEventType(w.currentEvent) == gdkTouchBegin)

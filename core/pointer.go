@@ -25,7 +25,7 @@ type PressEvent struct {
 	// its modal.
 	PagePosition Point
 	Modifiers    Modifiers
-	// Clicks counts consecutive clicks at the same place: 1 for a click,
+	// Clicks counts consecutive clicks on the same view at the same place: 1 for a click,
 	// 2 for a double click.
 	Clicks int
 	// Keyboard is set when the last input was a key, as Return or Space

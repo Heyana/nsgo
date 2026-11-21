@@ -548,9 +548,10 @@ type window struct {
 	surrogate          uint16
 	// The last press, for counting double and triple clicks.
 	clicks struct {
-		time  uint32
-		at    point
-		count int
+		time   uint32
+		at     point
+		count  int
+		target *view
 	}
 	down driver.Event // the left button's last press: modifiers and count
 	// fingers are the views' touches: the mouse as finger 0, a touchscreen's from 1 (touch.go).

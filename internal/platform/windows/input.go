@@ -1182,13 +1182,19 @@ func (w *window) countClicks(lParam uintptr) int {
 	cy, _, _ := getSystemMetrics.Call(smCyClick)
 	p := point{int32(int16(lParam & 0xffff)), int32(int16(lParam >> 16 & 0xffff))}
 	c := &w.clicks
+	var target *view
+	if root := w.view(w.root); root != nil {
+		target = hit(root, w.point(p.X, p.Y), func(v *view) bool {
+			return v.field != nil || v.kind == driver.KindInput || v.events.Has(driver.EventPress) || v.events.Has(driver.EventLongPress) || v.events.Has(driver.EventPressDown) || v.events.Has(driver.EventPressUp)
+		})
+	}
 	near := abs32(p.X-c.at.X) <= int32(cx)/2 && abs32(p.Y-c.at.Y) <= int32(cy)/2
-	if near && c.count > 0 && uint32(t)-c.time <= uint32(maxMs) {
+	if near && target == c.target && c.count > 0 && uint32(t)-c.time <= uint32(maxMs) {
 		c.count++
 	} else {
 		c.count = 1
 	}
-	c.time, c.at = uint32(t), p
+	c.time, c.at, c.target = uint32(t), p, target
 	return c.count
 }
 
