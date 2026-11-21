@@ -89,8 +89,7 @@ func TestWebAudioMutePersistsAcrossNavigation(t *testing.T) {
 	check(false, func(c *driver.WebConfig) { c.Muted = false })
 }
 
-// The page's reply identifies the new document even if its title arrives
-// after the platform's load notification.
+// The page's reply identifies the new document even if its title arrives after the platform's load notification.
 func webMutePage(name string) core.WebSource {
 	return core.WebHTML("<script>window.nsgo.postMessage('"+name+"')</script>", "")
 }
