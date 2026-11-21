@@ -23,6 +23,7 @@ type webAudioPlayer struct {
 	volume, rate                                            float32
 	interval                                                time.Duration
 	position, duration                                      time.Duration
+	loopStart                                               time.Duration
 	seeks, laps                                             uint32
 	generation                                              uint64
 	loop, loaded, wanted, playing, buffering, ended, failed bool
@@ -73,12 +74,16 @@ func (p *webAudioPlayer) preload() bool {
 	p.listen("loadedmetadata", func() {
 		p.loaded = true
 		p.duration = mediaTime(el.Get("duration"))
+		p.settings()
 		if p.position > 0 || p.seeks != 0 {
 			p.applyPosition(p.position)
 		}
 		p.report(driver.AudioOpened)
 	})
-	p.listen("durationchange", func() { p.duration = mediaTime(el.Get("duration")) })
+	p.listen("durationchange", func() {
+		p.duration = mediaTime(el.Get("duration"))
+		p.settings()
+	})
 	p.listen("canplay", func() { p.buffer(false) })
 	p.listen("waiting", func() { p.buffer(p.wanted) })
 	p.listen("playing", func() {
@@ -94,7 +99,11 @@ func (p *webAudioPlayer) preload() bool {
 	})
 	p.listen("seeked", p.progress)
 	p.listen("ended", func() {
-		if !el.Get("ended").Bool() || p.loop {
+		if !el.Get("ended").Bool() {
+			return
+		}
+		if p.loop {
+			p.loopAgain()
 			return
 		}
 		p.stopTimer()
@@ -132,8 +141,31 @@ func (p *webAudioPlayer) settings() {
 	if p.el.Truthy() {
 		p.el.Set("volume", p.volume)
 		p.el.Set("playbackRate", p.rate)
-		p.el.Set("loop", p.loop)
+		// The element's own loop is seamless but always restarts at 0, so a loop that starts later restarts from the ended event.
+		p.el.Set("loop", p.loop && p.loopFrom() == 0)
 	}
+}
+
+// loopFrom is where a looping player starts over: LoopStart inside a known duration, else 0.
+func (p *webAudioPlayer) loopFrom() time.Duration {
+	return driver.AudioLoopStart(p.loopStart, p.duration)
+}
+
+// loopAgain starts a looping player over at its loop start after the element ended, counting the lap. play goes first, since on an ended element it seeks to 0, which the later seek replaces.
+func (p *webAudioPlayer) loopAgain() {
+	start := p.loopFrom()
+	p.laps++
+	p.position = start
+	if p.wanted {
+		run := p.generation
+		then(p.el.Call("play"), func(js.Value) {}, func(e js.Value) {
+			if run == p.generation && p.wanted {
+				p.fail(driver.AudioFailed, jsError(e).Error())
+			}
+		})
+	}
+	p.el.Set("currentTime", start.Seconds())
+	p.report(driver.AudioProgress)
 }
 
 func (p *webAudioPlayer) resume() {

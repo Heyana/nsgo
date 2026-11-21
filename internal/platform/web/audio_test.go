@@ -115,7 +115,7 @@ func TestWebAudioSounds(t *testing.T) {
 		t.Fatalf("sound beyond the duration limit: %+v", e)
 	}
 
-	a.play(1, 1, 1, 0, time.Time{})
+	a.play(1, 1, 1, 0, time.Time{}, false)
 	if a.output.Truthy() || len(a.voices) != 0 {
 		t.Fatal("sound opened the playback output before a gesture")
 	}
@@ -123,7 +123,7 @@ func TestWebAudioSounds(t *testing.T) {
 	var analyser js.Value
 	pressAudio(t, doc, a, func() {
 		started = time.Now()
-		a.play(1, 0.8, 1, 0, time.Time{})
+		a.play(1, 0.8, 1, 0, time.Time{}, false)
 		if len(a.voices) == 1 {
 			analyser = a.output.Call("createAnalyser")
 			analyser.Set("fftSize", 256)
@@ -147,10 +147,25 @@ func TestWebAudioSounds(t *testing.T) {
 	analyser.Call("disconnect")
 	a.stop(1)
 
-	a.play(2, 1, 1, 0, time.Time{})
+	// A looping voice outlives its 600 ms buffer until its sound stops.
+	a.play(1, 0.5, 2, 0, time.Time{}, true)
+	looping := a.voices[len(a.voices)-1]
+	if !looping.source.Get("loop").Bool() {
+		t.Fatal("a looping voice played its buffer once")
+	}
+	time.Sleep(700 * time.Millisecond)
+	if !slices.Contains(a.voices, looping) {
+		t.Fatal("a looping voice ended on its own")
+	}
+	a.stop(1)
+	if len(a.voices) != 0 {
+		t.Fatal("stopping the sound kept its looping voice")
+	}
+
+	a.play(2, 1, 1, 0, time.Time{}, false)
 	oldest := a.voices[0]
 	for range driver.MaxSoundVoices {
-		a.play(1, 0.5, 1.2, -0.5, time.Time{})
+		a.play(1, 0.5, 1.2, -0.5, time.Time{}, false)
 	}
 	if panner := a.voices[len(a.voices)-1].panner; !panner.Truthy() || math.Abs(panner.Get("pan").Get("value").Float()+0.5) > 1e-6 {
 		t.Fatal("a panned voice played without its stereo panner")
@@ -158,7 +173,7 @@ func TestWebAudioSounds(t *testing.T) {
 	if len(a.voices) != driver.MaxSoundVoices || a.voices[0] == oldest {
 		t.Fatal("the oldest voice survived the overlap limit")
 	}
-	a.play(2, 1, 1, 0, time.Time{})
+	a.play(2, 1, 1, 0, time.Time{}, false)
 	a.stop(1)
 	if len(a.voices) != 1 || a.voices[0].sound != 2 {
 		t.Fatal("stopping one sound interrupted a different sound")
@@ -229,11 +244,11 @@ func TestWebAudioSchedulesStarts(t *testing.T) {
 	defer process.Release()
 	tap.Set("onaudioprocess", process)
 	first := time.Now().Add(300 * time.Millisecond)
-	a.play(2, 1, 1, 0, first)
+	a.play(2, 1, 1, 0, first, false)
 	a.voices[len(a.voices)-1].gain.Call("connect", tap)
 	// The second voice is scheduled in a later turn, after the context's clock moved on.
 	time.Sleep(70 * time.Millisecond)
-	a.play(2, 1, 1, 0, first.Add(500*time.Millisecond))
+	a.play(2, 1, 1, 0, first.Add(500*time.Millisecond), false)
 	a.voices[len(a.voices)-1].gain.Call("connect", tap)
 	audioWait(t, "two scheduled starts", func() bool { return len(onsets) >= 2 })
 	if gap := onsets[1] - onsets[0]; math.Abs(gap-0.5) > 0.001 {
@@ -304,6 +319,37 @@ func TestWebAudioPlayer(t *testing.T) {
 	if p.el.Truthy() || p.timer.Truthy() || p.objectURL != "" || a.output.Truthy() {
 		t.Fatal("closing left player resources")
 	}
+
+	// A loop with a start plays its intro once and then repeats from LoopStart, never ending.
+	const loopStart = 400 * time.Millisecond
+	reports = nil
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioOpen, Volume: 0.25, Rate: 2, Loop: true, LoopStart: loopStart,
+		ProgressInterval: 20 * time.Millisecond, Source: driver.ImageSource{Data: audioWAV(700 * time.Millisecond)}})
+	p = a.players[1]
+	send(driver.AudioPreload)
+	wait(driver.AudioOpened, nil)
+	if p.el.Get("loop").Bool() {
+		t.Fatal("a loop with a start used the element's loop, which restarts at 0")
+	}
+	pressAudio(t, doc, a, func() { send(driver.AudioResume) })
+	wait(driver.AudioPlaying, nil)
+	wait(driver.AudioProgress, func(e driver.AudioEvent) bool { return e.Laps == 1 && e.Position == loopStart })
+	wait(driver.AudioProgress, func(e driver.AudioEvent) bool { return e.Laps == 2 })
+	lapped := false
+	for _, e := range reports {
+		if e.Phase == driver.AudioEnded {
+			t.Fatal("a player looping from its start emitted an end event")
+		}
+		if e.Phase == driver.AudioProgress && e.Laps > 0 {
+			lapped = true
+		}
+		if lapped && e.Phase == driver.AudioProgress && e.Position < loopStart-50*time.Millisecond {
+			t.Fatalf("a repeat went back into the intro: %+v", e)
+		}
+	}
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioSet, Volume: 0.25, Rate: 2})
+	wait(driver.AudioEnded, nil)
+	send(driver.AudioClose)
 
 	for _, data := range [][]byte{aacTone, mp3Tone, []byte("not audio")} {
 		reports = nil

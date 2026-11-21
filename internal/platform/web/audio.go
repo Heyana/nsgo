@@ -85,7 +85,7 @@ func (a *webAudio) handle(id uint32, r *driver.AudioRequest) {
 	case driver.AudioLoad:
 		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
 	case driver.AudioPlay:
-		a.play(id, r.Volume, r.Rate, r.Pan, r.StartAt)
+		a.play(id, r.Volume, r.Rate, r.Pan, r.StartAt, r.Loop)
 	case driver.AudioReadLatency:
 		a.report(id, driver.AudioEvent{Phase: driver.AudioLatency, Latency: a.outputLatency()})
 	case driver.AudioStop:
@@ -95,7 +95,7 @@ func (a *webAudio) handle(id uint32, r *driver.AudioRequest) {
 	case driver.AudioOpen:
 		a.closePlayer(id)
 		a.players[id] = &webAudioPlayer{audio: a, id: id, source: r.Source,
-			volume: r.Volume, rate: r.Rate, loop: r.Loop, interval: r.ProgressInterval, position: r.Position}
+			volume: r.Volume, rate: r.Rate, loop: r.Loop, loopStart: r.LoopStart, interval: r.ProgressInterval, position: r.Position}
 	case driver.AudioClose:
 		a.closePlayer(id)
 	default:
@@ -248,7 +248,7 @@ func audioBytes(data []byte) js.Value {
 	return bytes
 }
 
-func (a *webAudio) play(id uint32, volume, rate, pan float32, startAt time.Time) {
+func (a *webAudio) play(id uint32, volume, rate, pan float32, startAt time.Time, loop bool) {
 	sound := a.sounds[id]
 	if sound == nil || !sound.buffer.Truthy() || !a.activated {
 		return
@@ -262,6 +262,8 @@ func (a *webAudio) play(id uint32, volume, rate, pan float32, startAt time.Time)
 	}
 	source, gain := a.output.Call("createBufferSource"), a.output.Call("createGain")
 	source.Set("buffer", sound.buffer)
+	// A looping source repeats the whole decoded buffer and fires onended only once stopped.
+	source.Set("loop", loop)
 	source.Get("playbackRate").Set("value", rate)
 	gain.Get("gain").Set("value", volume)
 	source.Call("connect", gain)
