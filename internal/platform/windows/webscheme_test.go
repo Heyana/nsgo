@@ -40,7 +40,7 @@ func TestWebSchemeRequestAnswers(t *testing.T) {
 	}
 	if os.Getenv("NSGO_TEST_WEBVIEW2_PROCESS") != t.Name() {
 		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
-		cmd.Env = append(os.Environ(), "NSGO_TEST_WEBVIEW2_PROCESS="+t.Name(), "LOCALAPPDATA="+t.TempDir())
+		cmd.Env = append(os.Environ(), "NSGO_TEST_WEBVIEW2_PROCESS="+t.Name(), "LOCALAPPDATA="+webView2TestProfile(t))
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("%v\n%s", err, out)
 		}

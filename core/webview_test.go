@@ -348,12 +348,22 @@ func TestJSString(t *testing.T) {
 
 func TestWebWindowRequestsUseThePagesNavigationPolicy(t *testing.T) {
 	var requests []WebWindowRequest
-	var failure error
+	var refused []string
 	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		cx.ProvideAccess(hostsAccess{hosts: []string{"allowed.example"}})
+		if err := cx.ServeSchemeRequest("nsgo-popup", func(*WebSchemeRequest) *WebSchemeResponse { return nil }); err != nil {
+			t.Fatal(err)
+		}
 		return WebView{TestID: "web",
 			OnOpenWindow: func(r WebWindowRequest) { requests = append(requests, r) },
-			OnError:      func(err error) { failure = err },
+			OnError: func(err error) {
+				e, ok := err.(*WebError)
+				if !ok {
+					t.Errorf("refused request returned %v, want a web error", err)
+					return
+				}
+				refused = append(refused, e.URL)
+			},
 		}
 	})
 	batch := h.commit()
@@ -374,17 +384,20 @@ func TestWebWindowRequestsUseThePagesNavigationPolicy(t *testing.T) {
 	if config == nil || !mask.Has(driver.EventWebOpenWindow) {
 		t.Fatalf("web config = %+v, event mask = %b", config, mask)
 	}
-	allow := WebWindowRequest{URL: "https://allowed.example/path", UserInitiated: true}
-	const denied = "https://denied.example/path"
-	for _, request := range []WebWindowRequest{allow, {URL: denied}} {
+	allowed := []WebWindowRequest{
+		{URL: "https://allowed.example/path", UserInitiated: true},
+		{URL: "nsgo-popup://main/path"},
+	}
+	denied := []string{"https://denied.example/path", "other-popup://main/path"}
+	for _, request := range append(allowed, WebWindowRequest{URL: denied[0]}, WebWindowRequest{URL: denied[1]}) {
 		ev := config.OpenWindowEvent(request)
 		ev.ID = id
 		h.tree.Dispatch(ev)
 	}
-	if len(requests) != 1 || requests[0] != allow {
-		t.Fatalf("web window requests = %v, want %v", requests, allow)
+	if !slices.Equal(requests, allowed) {
+		t.Errorf("web window requests = %v, want %v", requests, allowed)
 	}
-	if e, ok := failure.(*WebError); !ok || e.URL != denied {
-		t.Fatalf("refused URL should reach OnError, got %v", failure)
+	if !slices.Equal(refused, denied) {
+		t.Errorf("refused URLs = %v, want %v", refused, denied)
 	}
 }

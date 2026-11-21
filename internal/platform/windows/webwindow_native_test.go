@@ -53,20 +53,7 @@ func TestWebView2WindowRequests(t *testing.T) {
 				return
 			}
 			cmd := exec.Command(os.Args[0], "-test.run=^TestWebView2WindowRequests$/^"+c.name+"$", "-test.v")
-			profile, err := os.MkdirTemp("", "nsgo-webview2-popup-")
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() {
-				for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(100 * time.Millisecond) {
-					if err := os.RemoveAll(profile); err == nil {
-						return
-					} else if time.Now().After(deadline) {
-						t.Logf("WebView2 test profile cleanup: %v", err)
-						return
-					}
-				}
-			})
+			profile := webView2TestProfile(t)
 			cmd.Env = append(os.Environ(), "NSGO_POPUP_TEST_PROCESS="+t.Name(), "WEBVIEW2_USER_DATA_FOLDER="+profile)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -77,6 +64,26 @@ func TestWebView2WindowRequests(t *testing.T) {
 			}
 		})
 	}
+}
+
+func webView2TestProfile(t *testing.T) string {
+	t.Helper()
+	profile, err := os.MkdirTemp("", "nsgo-webview2-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// WebView2's browser processes can still be closing when the test process exits.
+	t.Cleanup(func() {
+		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+			if err := os.RemoveAll(profile); err == nil {
+				return
+			} else if time.Now().After(deadline) {
+				t.Logf("WebView2 test profile cleanup: %v", err)
+				return
+			}
+		}
+	})
+	return profile
 }
 
 func testWebView2Popup(t *testing.T, listen bool) {
