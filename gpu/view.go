@@ -26,18 +26,35 @@ type ViewProps struct {
 	// ready, and again after recovery from device loss.
 	OnReady func(dev *Device)
 	// OnFrame, when set, runs on every display frame via RequestAnimationFrame
-	// once the device is ready, submitting commands off-commit with zero UI
-	// view-tree commits per frame.
+	// once the device is ready and not suspended, submitting commands off-commit
+	// with zero UI view-tree commits per frame.
 	OnFrame func(frame *Frame)
 	// OnResize runs when the drawable size in physical pixels changes.
 	OnResize func(width, height int)
 	// OnDeviceLost runs if the underlying GPU context or device is lost; all
-	// handles from the previous Device are invalidated.
+	// non-retained handles from the previous Device are invalidated.
 	OnDeviceLost func(DeviceLostEvent)
+	// OnDeviceRestored runs on the engine goroutine after a lost device or
+	// surface is recreated, receiving the fresh ready *Device after any
+	// retained resources have been automatically restored.
+	OnDeviceRestored func(dev *Device)
+	// OnSuspend runs when the app or surface enters the background and GPU
+	// frame submission is automatically paused.
+	OnSuspend func()
+	// OnResume runs when the app or surface returns to the active state and
+	// GPU frame submission resumes.
+	OnResume func()
 	// OnError reports asynchronous GPU validation, unsupported, or OOM errors.
 	OnError func(Error)
 	// OnPassTimings runs on the engine goroutine when per-pass GPU timing measurements complete for a submitted frame.
 	OnPassTimings func([]PassTiming)
+
+	// RetainResources, when true, opts every resource created on this view's
+	// Device into automatic recreation after device or surface loss.
+	RetainResources bool
+	// PipelineCache, when set, attaches a persistent pipeline cache to every
+	// Device created by this view (including restored devices).
+	PipelineCache *PipelineCache
 
 	Class     string
 	Style     core.Style
@@ -87,8 +104,12 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 	var (
 		surf      *core.GPUSurface
 		activeDev *Device
+		lastDev   *Device
 		stopFrame func()
 		lastAt    time.Time
+		suspended bool
+		everReady bool
+		wasLost   bool
 	)
 
 	stopLoop := func() {
@@ -100,13 +121,13 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 
 	startLoop := func(dev *Device) {
 		stopLoop()
-		if props.OnFrame == nil || dev == nil {
+		if props.OnFrame == nil || dev == nil || suspended || !dev.alive() {
 			return
 		}
 		lastAt = time.Time{}
 		var tick func(at time.Time)
 		tick = func(at time.Time) {
-			if activeDev != dev || !dev.alive() || cx.Disposed() {
+			if activeDev != dev || !dev.alive() || suspended || dev.IsSuspended() || cx.Disposed() {
 				return
 			}
 			f := dev.BeginFrame(at)
@@ -116,12 +137,44 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 			lastAt = at
 			props.OnFrame(f)
 			dev.EndFrame(f)
-			if activeDev == dev && dev.alive() && !cx.Disposed() {
+			if activeDev == dev && dev.alive() && !suspended && !dev.IsSuspended() && !cx.Disposed() {
 				stopFrame = cx.RequestAnimationFrame(tick)
 			}
 		}
 		stopFrame = cx.RequestAnimationFrame(tick)
 	}
+
+	// Gate GPU frame submission on app/window lifecycle so backgrounded apps
+	// (especially iOS Metal and Android Activity pause) never submit GPU work.
+	cx.Effect(func() {
+		lc := cx.Env().Lifecycle()
+		if lc == core.LifecycleBackground {
+			if !suspended {
+				suspended = true
+				stopLoop()
+				if activeDev != nil {
+					activeDev.setSuspended(true)
+				}
+				if props.OnSuspend != nil {
+					props.OnSuspend()
+				}
+			}
+			return
+		}
+		if lc == core.LifecycleActive && suspended {
+			suspended = false
+			if activeDev != nil {
+				activeDev.setSuspended(false)
+				activeDev.flushOpsOnly()
+			}
+			if props.OnResume != nil {
+				props.OnResume()
+			}
+			if activeDev != nil && activeDev.alive() {
+				startLoop(activeDev)
+			}
+		}
+	})
 
 	cx.Cleanup(func() {
 		stopLoop()
@@ -129,6 +182,7 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 			activeDev.invalidate(LostDestroyed, "view unmounted")
 			activeDev = nil
 		}
+		lastDev = nil
 	})
 
 	return core.GPUView{
@@ -156,8 +210,11 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 			}
 			switch ev.Kind {
 			case driver.GPUEventDeviceReady:
+				restoring := wasLost || everReady
+				prevDev := lastDev
 				if activeDev != nil {
 					activeDev.invalidate(LostReset, "device recreated")
+					prevDev = activeDev
 				}
 				fif := ev.FramesInFlight
 				if fif == 0 {
@@ -175,13 +232,29 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 					featuresFromDriver(ev.Features),
 					compressedFormatsFromDriver(ev.Features),
 				)
+				dev.retainResources = props.RetainResources
+				dev.cache = props.PipelineCache
+				if suspended {
+					dev.setSuspended(true)
+				}
 				activeDev = dev
+				lastDev = dev
+				everReady = true
+				wasLost = false
+				if restoring && prevDev != nil {
+					dev.restoreRetainedFrom(prevDev)
+				}
 				if props.OnReady != nil {
 					props.OnReady(dev)
 				}
-				// Flush any setup resource creations/uploads even if OnReady didn't submit a draw yet.
-				dev.flushOpsOnly()
-				startLoop(dev)
+				if restoring && props.OnDeviceRestored != nil {
+					props.OnDeviceRestored(dev)
+				}
+				// Flush setup/restored resource ops and start rendering only when active.
+				if !suspended {
+					dev.flushOpsOnly()
+					startLoop(dev)
+				}
 
 			case driver.GPUEventResize:
 				if activeDev != nil && activeDev.generation == ev.Generation {
@@ -194,7 +267,9 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 
 			case driver.GPUEventDeviceLost:
 				stopLoop()
+				wasLost = true
 				if activeDev != nil && (ev.Generation == 0 || activeDev.generation == ev.Generation) {
+					lastDev = activeDev
 					activeDev.invalidate(DeviceLostReason(ev.LostReason), ev.Message)
 					activeDev = nil
 				}

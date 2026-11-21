@@ -35,6 +35,8 @@ type gpuViewState struct {
 	generation uint32
 	ready      bool
 	lost       bool
+	overrideW  int
+	overrideH  int
 	soft       *driver.GPUSoftwareDevice
 	frames     []GPUFrameRecord
 }
@@ -275,6 +277,14 @@ func (a *App) GPUReadPixels(selector string) (*image.RGBA, error) {
 // matching selector and settles the app.
 func (a *App) TriggerGPUDeviceLost(selector string, reason GPUDeviceLostReason, message string) {
 	a.t.Helper()
+	a.TriggerGPUDeviceLostWithReason(selector, reason, message)
+}
+
+// TriggerGPUDeviceLostWithReason simulates a GPU device, WebGL/WebGPU context,
+// or Android surface loss with an explicit reason on the KindGPU view matching
+// selector and settles the app.
+func (a *App) TriggerGPUDeviceLostWithReason(selector string, reason GPUDeviceLostReason, message string) {
+	a.t.Helper()
 	v := a.Find(selector)
 	st := a.gpuViews[v.ID]
 	if st == nil {
@@ -296,7 +306,8 @@ func (a *App) TriggerGPUDeviceLost(selector string, reason GPUDeviceLostReason, 
 }
 
 // RestoreGPUDevice simulates GPU device recreation after a device loss on the
-// KindGPU view matching selector, bumping its generation and invoking OnReady.
+// KindGPU view matching selector, bumping its generation and invoking OnReady
+// and OnDeviceRestored.
 func (a *App) RestoreGPUDevice(selector string) {
 	a.t.Helper()
 	v := a.Find(selector)
@@ -305,6 +316,9 @@ func (a *App) RestoreGPUDevice(selector string) {
 		a.t.Fatalf("nsgotest: view %q is not an active GPU view", selector)
 	}
 	w, h := a.gpuPixelSize(v)
+	if st.overrideW > 0 && st.overrideH > 0 {
+		w, h = st.overrideW, st.overrideH
+	}
 	st.lost = false
 	st.ready = true
 	st.generation++
@@ -324,4 +338,31 @@ func (a *App) RestoreGPUDevice(selector string) {
 		},
 	})
 	a.Settle()
+}
+
+// TriggerGPUSurfaceRotation simulates an Android surface destruction and
+// recreation across orientation change on the KindGPU view matching selector.
+// If width or height is <= 0, the current surface width and height are swapped.
+func (a *App) TriggerGPUSurfaceRotation(selector string, width, height int) {
+	a.t.Helper()
+	v := a.Find(selector)
+	owner := a
+	if a.owner != nil {
+		owner = a.owner
+	}
+	st := owner.gpuViews[v.ID]
+	if st == nil {
+		a.t.Fatalf("nsgotest: view %q is not an active GPU view", selector)
+	}
+	curW, curH := owner.gpuPixelSize(v)
+	if st.soft != nil {
+		curW, curH = st.soft.Size()
+	}
+	if width <= 0 || height <= 0 {
+		width, height = curH, curW
+	}
+	a.TriggerGPUDeviceLostWithReason(selector, GPULostSurfaceDestroyed, "surface destroyed for rotation")
+	st.overrideW = width
+	st.overrideH = height
+	a.RestoreGPUDevice(selector)
 }

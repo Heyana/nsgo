@@ -407,7 +407,30 @@ const (
 	GPULostReset
 	GPULostDestroyed
 	GPULostOutOfMemory
+	GPULostDeviceRemoved
+	GPULostContextLost
+	GPULostSurfaceDestroyed
 )
+
+// String returns a human-readable name for r.
+func (r GPUDeviceLostReason) String() string {
+	switch r {
+	case GPULostReset:
+		return "reset"
+	case GPULostDestroyed:
+		return "destroyed"
+	case GPULostOutOfMemory:
+		return "out_of_memory"
+	case GPULostDeviceRemoved:
+		return "device_removed"
+	case GPULostContextLost:
+		return "context_lost"
+	case GPULostSurfaceDestroyed:
+		return "surface_destroyed"
+	default:
+		return "unknown"
+	}
+}
 
 // GPUErrorCode classifies a GPU validation or runtime error.
 type GPUErrorCode uint8
@@ -690,17 +713,70 @@ type GPUColorTargetState struct {
 	WriteMask GPUColorWriteMask
 }
 
+// GPUPipelineBindingSlot records a compiled target shader resource binding slot
+// (Metal buffer/texture/sampler slot or HLSL b/t/s register).
+type GPUPipelineBindingSlot struct {
+	Group   uint32 `json:"group"`
+	Binding uint32 `json:"binding"`
+	Kind    uint8  `json:"kind"`
+	Slot    uint32 `json:"slot"`
+}
+
+// GPUPipelineUniformBlock records a compiled GLSL uniform block slot.
+type GPUPipelineUniformBlock struct {
+	Group     uint32 `json:"group"`
+	Binding   uint32 `json:"binding"`
+	BlockName string `json:"block_name"`
+	Slot      uint32 `json:"slot"`
+}
+
+// GPUPipelineSamplerPair records a synthesized GLSL combined sampler pair.
+type GPUPipelineSamplerPair struct {
+	Name           string `json:"name"`
+	Unit           uint32 `json:"unit"`
+	TextureGroup   uint32 `json:"texture_group"`
+	TextureBinding uint32 `json:"texture_binding"`
+	SamplerGroup   uint32 `json:"sampler_group"`
+	SamplerBinding uint32 `json:"sampler_binding"`
+}
+
+// GPUPipelineArtifacts holds precompiled portable target shader sources and
+// binding tables persisted by gpu.PipelineCache so backends skip recompilation
+// across launches and avoid first-draw hitches.
+type GPUPipelineArtifacts struct {
+	MSLSource          string                    `json:"msl_source,omitempty"`
+	MSLVertexEntry     string                    `json:"msl_vertex_entry,omitempty"`
+	MSLFragmentEntry   string                    `json:"msl_fragment_entry,omitempty"`
+	MSLSlots           []GPUPipelineBindingSlot  `json:"msl_slots,omitempty"`
+	HLSLVertexSource   string                    `json:"hlsl_vertex_source,omitempty"`
+	HLSLPixelSource    string                    `json:"hlsl_pixel_source,omitempty"`
+	HLSLVertexEntry    string                    `json:"hlsl_vertex_entry,omitempty"`
+	HLSLPixelEntry     string                    `json:"hlsl_pixel_entry,omitempty"`
+	HLSLRegisters      []GPUPipelineBindingSlot  `json:"hlsl_registers,omitempty"`
+	GLSLVertexSource   string                    `json:"glsl_vertex_source,omitempty"`
+	GLSLFragmentSource string                    `json:"glsl_fragment_source,omitempty"`
+	GLSLUniformBlocks  []GPUPipelineUniformBlock `json:"glsl_uniform_blocks,omitempty"`
+	GLSLSamplerPairs   []GPUPipelineSamplerPair  `json:"glsl_sampler_pairs,omitempty"`
+	GLESVertexSource   string                    `json:"gles_vertex_source,omitempty"`
+	GLESFragmentSource string                    `json:"gles_fragment_source,omitempty"`
+	GLESUniformBlocks  []GPUPipelineUniformBlock `json:"gles_uniform_blocks,omitempty"`
+	GLESSamplerPairs   []GPUPipelineSamplerPair  `json:"gles_sampler_pairs,omitempty"`
+	WGSLSource         string                    `json:"wgsl_source,omitempty"`
+}
+
 // GPUPipelineDesc describes an immutable render pipeline.
 type GPUPipelineDesc struct {
-	Label         string
-	Vertex        GPUShaderStage
-	Fragment      GPUShaderStage
-	Layouts       []GPUID
-	VertexBuffers []GPUVertexBufferLayout
-	Primitive     GPUPrimitiveState
-	DepthStencil  *GPUDepthStencilState
-	Targets       []GPUColorTargetState
-	SampleCount   int
+	Label           string
+	Vertex          GPUShaderStage
+	Fragment        GPUShaderStage
+	Layouts         []GPUID
+	VertexBuffers   []GPUVertexBufferLayout
+	Primitive       GPUPrimitiveState
+	DepthStencil    *GPUDepthStencilState
+	Targets         []GPUColorTargetState
+	SampleCount     int
+	CacheKey        string
+	CachedArtifacts *GPUPipelineArtifacts
 }
 
 // GPUTextureCopy identifies a subresource and origin within a GPU texture.

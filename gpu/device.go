@@ -25,7 +25,11 @@ type Device struct {
 	submitFn   func(driver.GPUFrame)
 	scope      *core.Scope
 	generation uint32
-	lost       bool
+	lost       atomic.Bool
+	suspended  atomic.Bool
+
+	retainResources bool
+	cache           *PipelineCache
 
 	limits            Limits
 	features          Features
@@ -46,10 +50,19 @@ type Device struct {
 	fences  map[uint64]*FrameFence
 
 	ringBuffers      map[*RingBuffer]struct{}
+	opMu             sync.Mutex
 	pendingOps       []driver.GPUResourceOp
 	readbacks        map[uint64]func(rgba []byte, err error)
 	lastPassTimings  []PassTiming
 	timestampQueries map[driver.GPUID]*TimestampQuery
+
+	// Retained resource lists for opt-in automatic recreation after device loss.
+	retainedBuffers    []*Buffer
+	retainedTextures   []*Texture
+	retainedSamplers   []*Sampler
+	retainedLayouts    []*BindGroupLayout
+	retainedBindGroups []*BindGroup
+	retainedPipelines  []*Pipeline
 }
 
 func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, fmt TextureFormat, framesInFlight int, lim Limits, feat Features, compressed []TextureFormat) *Device {
@@ -89,7 +102,7 @@ func (d *Device) nextID() driver.GPUID {
 }
 
 func (d *Device) alive() bool {
-	if d == nil || d.lost {
+	if d == nil || d.lost.Load() {
 		return false
 	}
 	if d.surf != nil && d.surf.Disposed() {
@@ -98,17 +111,28 @@ func (d *Device) alive() bool {
 	return true
 }
 
-func (d *Device) invalidate(reason DeviceLostReason, msg string) {
-	if d == nil || d.lost {
+func (d *Device) setSuspended(v bool) {
+	if d == nil {
 		return
 	}
-	d.lost = true
+	d.suspended.Store(v)
+}
+
+func (d *Device) invalidate(reason DeviceLostReason, msg string) {
+	if d == nil || !d.lost.CompareAndSwap(false, true) {
+		return
+	}
+	d.opMu.Lock()
 	d.pendingOps = nil
 	d.lastPassTimings = nil
 	for id, q := range d.timestampQueries {
 		delete(d.timestampQueries, id)
 		q.closed = true
 	}
+	rbs := d.readbacks
+	d.readbacks = map[uint64]func([]byte, error){}
+	d.opMu.Unlock()
+
 	d.inFrame = false
 	if d.activeFence != nil {
 		d.activeFence.signal()
@@ -128,8 +152,7 @@ func (d *Device) invalidate(reason DeviceLostReason, msg string) {
 		f.signal()
 	}
 	err := Error{Code: ErrDeviceLost, Message: msg}
-	for id, fn := range d.readbacks {
-		delete(d.readbacks, id)
+	for _, fn := range rbs {
 		if fn != nil {
 			fn(nil, err)
 		}
@@ -203,12 +226,13 @@ func (d *Device) completeReadback(id uint64, pixels []byte, errMsg string) {
 	if d == nil {
 		return
 	}
+	d.opMu.Lock()
 	fn, ok := d.readbacks[id]
-	if !ok {
-		return
+	if ok {
+		delete(d.readbacks, id)
 	}
-	delete(d.readbacks, id)
-	if fn == nil {
+	d.opMu.Unlock()
+	if !ok || fn == nil {
 		return
 	}
 	if errMsg != "" {
@@ -222,15 +246,33 @@ func (d *Device) enqueueOp(op driver.GPUResourceOp) {
 	if !d.alive() {
 		return
 	}
+	d.opMu.Lock()
 	d.pendingOps = append(d.pendingOps, op)
+	d.opMu.Unlock()
+}
+
+func (d *Device) hasPendingOps() bool {
+	if d == nil {
+		return false
+	}
+	d.opMu.Lock()
+	n := len(d.pendingOps)
+	d.opMu.Unlock()
+	return n > 0
 }
 
 func (d *Device) flushOpsOnly() {
-	if !d.alive() || len(d.pendingOps) == 0 {
+	if !d.alive() || d.suspended.Load() {
+		return
+	}
+	d.opMu.Lock()
+	if len(d.pendingOps) == 0 {
+		d.opMu.Unlock()
 		return
 	}
 	ops := d.pendingOps
 	d.pendingOps = nil
+	d.opMu.Unlock()
 	d.dispatchFrame(driver.GPUFrame{
 		Generation: d.generation,
 		Ops:        ops,
@@ -238,7 +280,7 @@ func (d *Device) flushOpsOnly() {
 }
 
 func (d *Device) dispatchFrame(f driver.GPUFrame) {
-	if !d.alive() {
+	if !d.alive() || d.suspended.Load() {
 		return
 	}
 	if d.submitFn != nil {
@@ -371,19 +413,75 @@ func (d *Device) WaitIdle() {
 	}
 }
 
+// Epoch returns the device epoch counter (alias of Generation, incremented on
+// every device loss and surface recreation).
+func (d *Device) Epoch() uint32 { return d.generation }
+
+// IsLost reports whether this Device has been invalidated by device/context loss
+// or view disposal.
+func (d *Device) IsLost() bool { return d == nil || d.lost.Load() }
+
+// IsSuspended reports whether GPU frame submission is currently paused because
+// the owning app or surface is in the background.
+func (d *Device) IsSuspended() bool { return d != nil && d.suspended.Load() }
+
+// SetPipelineCache attaches a PipelineCache to d so CreatePipeline,
+// CreatePipelineAsync, and PrecompilePipelines reuse compiled artifacts across
+// launches and device restores.
+func (d *Device) SetPipelineCache(cache *PipelineCache) {
+	if d == nil {
+		return
+	}
+	d.cache = cache
+}
+
+// PipelineCache returns the PipelineCache attached to d, or nil.
+func (d *Device) PipelineCache() *PipelineCache {
+	if d == nil {
+		return nil
+	}
+	return d.cache
+}
+
+// CacheStats returns the hit/miss/compilation counters of the attached
+// PipelineCache, or a zero PipelineCacheStats if no cache is attached.
+func (d *Device) CacheStats() PipelineCacheStats {
+	if d == nil || d.cache == nil {
+		return PipelineCacheStats{}
+	}
+	return d.cache.CacheStats()
+}
+
 // --- Retained GPU resources ---
 
 // Buffer is a retained GPU vertex, index, uniform, or storage buffer.
 type Buffer struct {
-	dev    *Device
-	id     driver.GPUID
-	size   uint64
-	usage  BufferUsage
-	closed bool
+	dev      *Device
+	id       driver.GPUID
+	epoch    uint32
+	label    string
+	size     uint64
+	usage    BufferUsage
+	retained bool
+	shadow   []byte
+	closed   bool
 }
 
 // ID returns the buffer's process-unique numeric handle.
 func (b *Buffer) ID() uint64 { return uint64(b.id) }
+
+// Epoch returns the device epoch this buffer currently belongs to.
+func (b *Buffer) Epoch() uint32 {
+	if b == nil {
+		return 0
+	}
+	return b.epoch
+}
+
+// Valid reports whether b is open and bound to a live device at its current epoch.
+func (b *Buffer) Valid() bool {
+	return b != nil && !b.closed && b.dev != nil && b.dev.alive() && b.epoch == b.dev.generation
+}
 
 // Size returns the buffer's byte length.
 func (b *Buffer) Size() uint64 { return b.size }
@@ -397,22 +495,45 @@ func (b *Buffer) Close() error {
 		return nil
 	}
 	b.closed = true
-	if b.dev != nil && b.dev.alive() {
+	b.shadow = nil
+	if b.dev != nil && b.dev.alive() && b.epoch == b.dev.generation {
 		b.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyBuffer, ID: b.id})
 	}
 	return nil
 }
 
+type retainedTextureWrite struct {
+	dst    TextureCopy
+	layout DataLayout
+	data   []byte
+}
+
 // Texture is a retained GPU 2D, cube, array, or depth texture.
 type Texture struct {
-	dev    *Device
-	id     driver.GPUID
-	desc   TextureDesc
-	closed bool
+	dev          *Device
+	id           driver.GPUID
+	epoch        uint32
+	desc         TextureDesc
+	retained     bool
+	shadowWrites []retainedTextureWrite
+	closed       bool
 }
 
 // ID returns the texture's numeric handle.
 func (t *Texture) ID() uint64 { return uint64(t.id) }
+
+// Epoch returns the device epoch this texture currently belongs to.
+func (t *Texture) Epoch() uint32 {
+	if t == nil {
+		return 0
+	}
+	return t.epoch
+}
+
+// Valid reports whether t is open and bound to a live device at its current epoch.
+func (t *Texture) Valid() bool {
+	return t != nil && !t.closed && t.dev != nil && t.dev.alive() && t.epoch == t.dev.generation
+}
 
 // Desc returns the texture's descriptor.
 func (t *Texture) Desc() TextureDesc { return t.desc }
@@ -423,7 +544,8 @@ func (t *Texture) Close() error {
 		return nil
 	}
 	t.closed = true
-	if t.dev != nil && t.dev.alive() {
+	t.shadowWrites = nil
+	if t.dev != nil && t.dev.alive() && t.epoch == t.dev.generation {
 		t.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyTexture, ID: t.id})
 	}
 	return nil
@@ -436,6 +558,25 @@ type RenderTarget struct {
 	Width  uint32
 	Height uint32
 	closed bool
+}
+
+// Epoch returns the device epoch of the render target's color attachment.
+func (rt *RenderTarget) Epoch() uint32 {
+	if rt == nil || rt.Color == nil {
+		return 0
+	}
+	return rt.Color.Epoch()
+}
+
+// Valid reports whether rt is open and its underlying textures are valid.
+func (rt *RenderTarget) Valid() bool {
+	if rt == nil || rt.closed || rt.Color == nil || !rt.Color.Valid() {
+		return false
+	}
+	if rt.Depth != nil && !rt.Depth.Valid() {
+		return false
+	}
+	return true
 }
 
 // Close releases the render target's color and depth textures.
@@ -455,10 +596,12 @@ func (rt *RenderTarget) Close() error {
 
 // Sampler is a retained GPU texture sampler.
 type Sampler struct {
-	dev    *Device
-	id     driver.GPUID
-	desc   SamplerDesc
-	closed bool
+	dev      *Device
+	id       driver.GPUID
+	epoch    uint32
+	desc     SamplerDesc
+	retained bool
+	closed   bool
 }
 
 // ID returns the sampler's numeric handle.
@@ -467,13 +610,26 @@ func (s *Sampler) ID() uint64 { return uint64(s.id) }
 // Desc returns the sampler's descriptor.
 func (s *Sampler) Desc() SamplerDesc { return s.desc }
 
+// Epoch returns the device epoch this sampler currently belongs to.
+func (s *Sampler) Epoch() uint32 {
+	if s == nil {
+		return 0
+	}
+	return s.epoch
+}
+
+// Valid reports whether s is open and bound to a live device at its current epoch.
+func (s *Sampler) Valid() bool {
+	return s != nil && !s.closed && s.dev != nil && s.dev.alive() && s.epoch == s.dev.generation
+}
+
 // Close releases the sampler immediately.
 func (s *Sampler) Close() error {
 	if s == nil || s.closed {
 		return nil
 	}
 	s.closed = true
-	if s.dev != nil && s.dev.alive() {
+	if s.dev != nil && s.dev.alive() && s.epoch == s.dev.generation {
 		s.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroySampler, ID: s.id})
 	}
 	return nil
@@ -481,14 +637,29 @@ func (s *Sampler) Close() error {
 
 // BindGroupLayout describes the resource schema of a BindGroup slot.
 type BindGroupLayout struct {
-	dev     *Device
-	id      driver.GPUID
-	entries []BindGroupLayoutEntry
-	closed  bool
+	dev      *Device
+	id       driver.GPUID
+	epoch    uint32
+	entries  []BindGroupLayoutEntry
+	retained bool
+	closed   bool
 }
 
 // ID returns the layout's numeric handle.
 func (l *BindGroupLayout) ID() uint64 { return uint64(l.id) }
+
+// Epoch returns the device epoch this layout currently belongs to.
+func (l *BindGroupLayout) Epoch() uint32 {
+	if l == nil {
+		return 0
+	}
+	return l.epoch
+}
+
+// Valid reports whether l is open and bound to a live device at its current epoch.
+func (l *BindGroupLayout) Valid() bool {
+	return l != nil && !l.closed && l.dev != nil && l.dev.alive() && l.epoch == l.dev.generation
+}
 
 // Close releases the bind group layout immediately.
 func (l *BindGroupLayout) Close() error {
@@ -496,7 +667,7 @@ func (l *BindGroupLayout) Close() error {
 		return nil
 	}
 	l.closed = true
-	if l.dev != nil && l.dev.alive() {
+	if l.dev != nil && l.dev.alive() && l.epoch == l.dev.generation {
 		l.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyBindGroupLayout, ID: l.id})
 	}
 	return nil
@@ -504,14 +675,30 @@ func (l *BindGroupLayout) Close() error {
 
 // BindGroup binds buffers, textures, and samplers for one shader @group(G).
 type BindGroup struct {
-	dev    *Device
-	id     driver.GPUID
-	layout *BindGroupLayout
-	closed bool
+	dev      *Device
+	id       driver.GPUID
+	epoch    uint32
+	layout   *BindGroupLayout
+	entries  []BindGroupEntry
+	retained bool
+	closed   bool
 }
 
 // ID returns the bind group's numeric handle.
 func (g *BindGroup) ID() uint64 { return uint64(g.id) }
+
+// Epoch returns the device epoch this bind group currently belongs to.
+func (g *BindGroup) Epoch() uint32 {
+	if g == nil {
+		return 0
+	}
+	return g.epoch
+}
+
+// Valid reports whether g is open and bound to a live device at its current epoch.
+func (g *BindGroup) Valid() bool {
+	return g != nil && !g.closed && g.dev != nil && g.dev.alive() && g.epoch == g.dev.generation
+}
 
 // Close releases the bind group immediately.
 func (g *BindGroup) Close() error {
@@ -519,7 +706,7 @@ func (g *BindGroup) Close() error {
 		return nil
 	}
 	g.closed = true
-	if g.dev != nil && g.dev.alive() {
+	if g.dev != nil && g.dev.alive() && g.epoch == g.dev.generation {
 		g.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyBindGroup, ID: g.id})
 	}
 	return nil
@@ -527,14 +714,72 @@ func (g *BindGroup) Close() error {
 
 // Pipeline is an immutable vertex+fragment GPU render pipeline.
 type Pipeline struct {
-	dev    *Device
-	id     driver.GPUID
-	desc   PipelineDesc
-	closed bool
+	dev        *Device
+	id         driver.GPUID
+	epoch      uint32
+	desc       PipelineDesc
+	cacheKey   string
+	retained   bool
+	ready      atomic.Bool
+	done       chan struct{}
+	compileErr error
+	closed     bool
 }
 
 // ID returns the pipeline's numeric handle.
 func (p *Pipeline) ID() uint64 { return uint64(p.id) }
+
+// Epoch returns the device epoch this pipeline currently belongs to.
+func (p *Pipeline) Epoch() uint32 {
+	if p == nil {
+		return 0
+	}
+	return p.epoch
+}
+
+// Valid reports whether p is open and bound to a live device at its current epoch.
+func (p *Pipeline) Valid() bool {
+	return p != nil && !p.closed && p.dev != nil && p.dev.alive() && p.epoch == p.dev.generation
+}
+
+// Ready reports whether p has finished compiling (for asynchronous precompilation)
+// and is valid for binding in a RenderPass.
+func (p *Pipeline) Ready() bool {
+	return p.Valid() && p.ready.Load()
+}
+
+// CacheKey returns the deterministic pipeline cache key computed from the
+// pipeline's shaders and render state.
+func (p *Pipeline) CacheKey() string {
+	if p == nil {
+		return ""
+	}
+	return p.cacheKey
+}
+
+// Err returns the asynchronous compilation error, if any, once Done is closed.
+func (p *Pipeline) Err() error {
+	if p == nil {
+		return nil
+	}
+	select {
+	case <-p.done:
+		return p.compileErr
+	default:
+		return nil
+	}
+}
+
+// Done returns a channel that closes when asynchronous pipeline compilation
+// completes (or is already closed for synchronously created pipelines).
+func (p *Pipeline) Done() <-chan struct{} {
+	if p == nil {
+		ch := make(chan struct{})
+		close(ch)
+		return ch
+	}
+	return p.done
+}
 
 // Close releases the pipeline immediately.
 func (p *Pipeline) Close() error {
@@ -542,7 +787,8 @@ func (p *Pipeline) Close() error {
 		return nil
 	}
 	p.closed = true
-	if p.dev != nil && p.dev.alive() {
+	p.ready.Store(false)
+	if p.dev != nil && p.dev.alive() && p.epoch == p.dev.generation {
 		p.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyPipeline, ID: p.id})
 	}
 	return nil
@@ -640,14 +886,33 @@ func (d *Device) CreateBuffer(cx *core.Scope, desc BufferDesc) (*Buffer, error) 
 		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("buffer size %d exceeds limit %d", size, d.limits.MaxBufferSize)}
 	}
 	id := d.nextID()
+	dataCopy := slices.Clone(desc.Data)
 	dd := driver.GPUBufferDesc{
 		Label: debugLabel(desc.Label),
 		Size:  size,
 		Usage: driver.GPUBufferUsage(desc.Usage),
-		Data:  slices.Clone(desc.Data),
+		Data:  dataCopy,
 	}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBuffer, ID: id, Buffer: &dd})
-	buf := &Buffer{dev: d, id: id, size: size, usage: desc.Usage}
+	retained := desc.Retained || d.retainResources
+	var shadow []byte
+	if retained {
+		shadow = make([]byte, size)
+		copy(shadow, desc.Data)
+	}
+	buf := &Buffer{
+		dev:      d,
+		id:       id,
+		epoch:    d.generation,
+		label:    desc.Label,
+		size:     size,
+		usage:    desc.Usage,
+		retained: retained,
+		shadow:   shadow,
+	}
+	if retained {
+		d.retainedBuffers = append(d.retainedBuffers, buf)
+	}
 	d.bindCleanup(cx, func() { _ = buf.Close() })
 	return buf, nil
 }
@@ -712,7 +977,11 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 		Usage:       driver.GPUTextureUsage(desc.Usage),
 	}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateTexture, ID: id, Texture: &dd})
-	tex := &Texture{dev: d, id: id, desc: desc}
+	retained := desc.Retained || d.retainResources
+	tex := &Texture{dev: d, id: id, epoch: d.generation, desc: desc, retained: retained}
+	if retained {
+		d.retainedTextures = append(d.retainedTextures, tex)
+	}
 	d.bindCleanup(cx, func() { _ = tex.Close() })
 	return tex, nil
 }
@@ -768,6 +1037,7 @@ func (d *Device) CreateRenderTarget(cx *core.Scope, desc RenderTargetDesc) (*Ren
 			SampleCount: desc.SampleCount,
 			Format:      desc.ColorFormat,
 			Usage:       TextureRenderAttachment | TextureSampled | TextureCopySrc,
+			Retained:    desc.Retained,
 		})
 		if err != nil {
 			return nil, err
@@ -790,6 +1060,7 @@ func (d *Device) CreateRenderTarget(cx *core.Scope, desc RenderTargetDesc) (*Ren
 			SampleCount: desc.SampleCount,
 			Format:      desc.DepthFormat,
 			Usage:       TextureRenderAttachment | TextureSampled | TextureCopySrc,
+			Retained:    desc.Retained,
 		})
 		if err != nil {
 			if colorTex != nil {
@@ -821,7 +1092,11 @@ func (d *Device) CreateSampler(cx *core.Scope, desc SamplerDesc) (*Sampler, erro
 		MaxAnisotropy: desc.MaxAnisotropy,
 	}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateSampler, ID: id, Sampler: &dd})
-	s := &Sampler{dev: d, id: id, desc: desc}
+	retained := desc.Retained || d.retainResources
+	s := &Sampler{dev: d, id: id, epoch: d.generation, desc: desc, retained: retained}
+	if retained {
+		d.retainedSamplers = append(d.retainedSamplers, s)
+	}
 	d.bindCleanup(cx, func() { _ = s.Close() })
 	return s, nil
 }
@@ -861,7 +1136,14 @@ func (d *Device) CreateBindGroupLayoutDesc(cx *core.Scope, desc BindGroupLayoutD
 	id := d.nextID()
 	dd := driver.GPUBindGroupLayoutDesc{Label: debugLabel(desc.Label), Entries: dEntries}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBindGroupLayout, ID: id, BindGroupLayout: &dd})
-	l := &BindGroupLayout{dev: d, id: id, entries: slices.Clone(entries)}
+	l := &BindGroupLayout{
+		dev:      d,
+		id:       id,
+		epoch:    d.generation,
+		entries:  slices.Clone(entries),
+		retained: d.retainResources,
+	}
+	d.retainedLayouts = append(d.retainedLayouts, l)
 	d.bindCleanup(cx, func() { _ = l.Close() })
 	return l, nil
 }
@@ -972,27 +1254,34 @@ func (d *Device) CreateBindGroupDesc(cx *core.Scope, desc BindGroupDesc) (*BindG
 	}
 	dd := driver.GPUBindGroupDesc{Label: debugLabel(desc.Label), Layout: layoutID, Entries: dEntries}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBindGroup, ID: id, BindGroup: &dd})
-	bg := &BindGroup{dev: d, id: id, layout: layout}
+	bg := &BindGroup{
+		dev:      d,
+		id:       id,
+		epoch:    d.generation,
+		layout:   layout,
+		entries:  slices.Clone(entries),
+		retained: d.retainResources,
+	}
+	d.retainedBindGroups = append(d.retainedBindGroups, bg)
 	d.bindCleanup(cx, func() { _ = bg.Close() })
 	return bg, nil
 }
 
-// CreatePipeline compiles and validates an immutable render pipeline scoped to cx.
-func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, error) {
+func (d *Device) preparePipelineDesc(desc PipelineDesc) (driver.GPUPipelineDesc, string, error) {
 	if !d.alive() {
-		return nil, Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
+		return driver.GPUPipelineDesc{}, "", Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
 	}
 	if desc.Vertex.Module == nil || !desc.Vertex.Module.HasVertexEntry(desc.Vertex.EntryPoint) {
-		return nil, Error{Code: ErrInvalidDescriptor, Message: "pipeline requires a valid Vertex shader stage"}
+		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "pipeline requires a valid Vertex shader stage"}
 	}
 	if desc.Fragment.Module != nil && !desc.Fragment.Module.HasFragmentEntry(desc.Fragment.EntryPoint) {
-		return nil, Error{Code: ErrInvalidDescriptor, Message: "pipeline Fragment entry point not found in module"}
+		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "pipeline Fragment entry point not found in module"}
 	}
 	if d.limits.MaxVertexBuffers > 0 && uint32(len(desc.VertexBuffers)) > d.limits.MaxVertexBuffers {
-		return nil, Error{Code: ErrInvalidDescriptor, Message: "too many vertex buffers in pipeline"}
+		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "too many vertex buffers in pipeline"}
 	}
 	if d.limits.MaxBindGroups > 0 && uint32(len(desc.Layouts)) > d.limits.MaxBindGroups {
-		return nil, Error{Code: ErrInvalidDescriptor, Message: "too many bind group layouts in pipeline"}
+		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "too many bind group layouts in pipeline"}
 	}
 	var totalAttrs uint32
 	dVBs := make([]driver.GPUVertexBufferLayout, len(desc.VertexBuffers))
@@ -1011,10 +1300,10 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 		for j, a := range vb.Attributes {
 			sz := driver.GPUVertexFormat(a.Format).ByteSize()
 			if sz == 0 {
-				return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("invalid vertex attribute format %d", a.Format)}
+				return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("invalid vertex attribute format %d", a.Format)}
 			}
 			if vb.Stride > 0 && a.Offset+sz > vb.Stride {
-				return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("vertex attribute at location %d exceeds buffer stride %d", a.Location, vb.Stride)}
+				return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("vertex attribute at location %d exceeds buffer stride %d", a.Location, vb.Stride)}
 			}
 			attrs[j] = driver.GPUVertexAttribute{
 				Format:   driver.GPUVertexFormat(a.Format),
@@ -1031,13 +1320,13 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 		}
 	}
 	if d.limits.MaxVertexAttributes > 0 && totalAttrs > d.limits.MaxVertexAttributes {
-		return nil, Error{Code: ErrInvalidDescriptor, Message: "too many vertex attributes in pipeline"}
+		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "too many vertex attributes in pipeline"}
 	}
 
 	layoutIDs := make([]driver.GPUID, len(desc.Layouts))
 	for i, l := range desc.Layouts {
-		if l == nil || l.closed || l.dev != d {
-			return nil, Error{Code: ErrInvalidDescriptor, Message: "pipeline BindGroupLayout is nil or invalid"}
+		if l == nil || !l.Valid() || l.dev != d {
+			return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "pipeline BindGroupLayout is nil or invalid"}
 		}
 		layoutIDs[i] = l.id
 	}
@@ -1077,7 +1366,7 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 	var dDS *driver.GPUDepthStencilState
 	if desc.DepthStencil != nil {
 		if desc.DepthStencil.Format != FormatUndefined && !desc.DepthStencil.Format.IsDepth() {
-			return nil, Error{Code: ErrInvalidDescriptor, Message: "DepthStencil.Format must be a depth format"}
+			return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "DepthStencil.Format must be a depth format"}
 		}
 		cmp := desc.DepthStencil.DepthCompare
 		if cmp == CompareUndefined {
@@ -1121,11 +1410,405 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 		Targets:      dTargets,
 		SampleCount:  max(desc.SampleCount, 1),
 	}
+	key := computePipelineCacheKey(desc, dd)
+	dd.CacheKey = key
+	return dd, key, nil
+}
+
+// CreatePipeline compiles and validates an immutable render pipeline scoped to cx.
+// When a PipelineCache is attached to d, compiled target shader artifacts are
+// reused across launches without recompilation.
+func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, error) {
+	dd, key, err := d.preparePipelineDesc(desc)
+	if err != nil {
+		return nil, err
+	}
+	if d.cache != nil {
+		art, err := compileOrLoadPipelineArtifacts(d.cache, key, dd)
+		if err != nil {
+			return nil, err
+		}
+		dd.CachedArtifacts = art
+	}
 	id := d.nextID()
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreatePipeline, ID: id, Pipeline: &dd})
-	p := &Pipeline{dev: d, id: id, desc: desc}
+	done := make(chan struct{})
+	close(done)
+	retained := desc.Retained || d.retainResources
+	p := &Pipeline{
+		dev:      d,
+		id:       id,
+		epoch:    d.generation,
+		desc:     desc,
+		cacheKey: key,
+		retained: retained,
+		done:     done,
+	}
+	p.ready.Store(true)
+	if retained {
+		d.retainedPipelines = append(d.retainedPipelines, p)
+	}
 	d.bindCleanup(cx, func() { _ = p.Close() })
 	return p, nil
+}
+
+// CreatePipelineAsync validates desc synchronously and compiles target shader
+// artifacts asynchronously off the engine goroutine without blocking frames.
+// The returned *Pipeline starts with Ready() == false and flips to Ready() == true
+// once compilation finishes and the pipeline is submitted to the backend; onReady
+// then runs on the engine goroutine (or synchronously on a standalone renderer).
+func (d *Device) CreatePipelineAsync(cx *core.Scope, desc PipelineDesc, onReady func(*Pipeline, error)) *Pipeline {
+	postScope := cx
+	if postScope == nil {
+		postScope = d.scope
+	}
+	dd, key, err := d.preparePipelineDesc(desc)
+	if err != nil {
+		if onReady != nil {
+			if postScope != nil {
+				postScope.Post(func() { onReady(nil, err) })
+			} else {
+				onReady(nil, err)
+			}
+		}
+		return nil
+	}
+	id := d.nextID()
+	retained := desc.Retained || d.retainResources
+	p := &Pipeline{
+		dev:      d,
+		id:       id,
+		epoch:    d.generation,
+		desc:     desc,
+		cacheKey: key,
+		retained: retained,
+		done:     make(chan struct{}),
+	}
+	if retained {
+		d.retainedPipelines = append(d.retainedPipelines, p)
+	}
+	d.bindCleanup(cx, func() { _ = p.Close() })
+
+	cache := d.cache
+	gen := d.generation
+	go func() {
+		art, compileErr := compileOrLoadPipelineArtifacts(cache, key, dd)
+		finish := func() {
+			if p.closed || !d.alive() || gen != d.generation {
+				errOut := compileErr
+				if errOut == nil {
+					errOut = Error{Code: ErrDeviceLost, Message: "device was lost or pipeline closed during compilation"}
+				}
+				p.compileErr = errOut
+				if onReady != nil {
+					onReady(nil, errOut)
+				}
+				close(p.done)
+				return
+			}
+			if compileErr != nil {
+				p.compileErr = compileErr
+				if onReady != nil {
+					onReady(nil, compileErr)
+				}
+				close(p.done)
+				return
+			}
+			dd.CachedArtifacts = art
+			d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreatePipeline, ID: p.id, Pipeline: &dd})
+			d.flushOpsOnly()
+			p.ready.Store(true)
+			if onReady != nil {
+				onReady(p, nil)
+			}
+			close(p.done)
+		}
+		if postScope != nil {
+			postScope.Post(finish)
+		} else {
+			finish()
+		}
+	}()
+	return p
+}
+
+// PrecompilePipelines compiles a batch of pipelines asynchronously ahead of
+// first draw without blocking the engine goroutine. It returns the handles in
+// descriptor order immediately; onDone fires once all pipelines have finished
+// compiling (with the first error encountered, if any).
+func (d *Device) PrecompilePipelines(cx *core.Scope, descs []PipelineDesc, onDone func([]*Pipeline, error)) []*Pipeline {
+	postScope := cx
+	if postScope == nil {
+		postScope = d.scope
+	}
+	if len(descs) == 0 {
+		if onDone != nil {
+			if postScope != nil {
+				postScope.Post(func() { onDone(nil, nil) })
+			} else {
+				onDone(nil, nil)
+			}
+		}
+		return nil
+	}
+	pipes := make([]*Pipeline, len(descs))
+	var (
+		mu        sync.Mutex
+		firstErr  error
+		remaining atomic.Int64
+	)
+	remaining.Store(int64(len(descs)))
+	for i, desc := range descs {
+		idx := i
+		pipes[idx] = d.CreatePipelineAsync(cx, desc, func(p *Pipeline, err error) {
+			mu.Lock()
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			if p != nil {
+				pipes[idx] = p
+			}
+			errSnap := firstErr
+			mu.Unlock()
+			if remaining.Add(-1) == 0 && onDone != nil {
+				onDone(slices.Clone(pipes), errSnap)
+			}
+		})
+	}
+	return pipes
+}
+
+// restoreRetainedFrom recreates all open retained resources from a previous lost
+// Device onto d in dependency order (buffers -> textures -> samplers ->
+// bind group layouts -> bind groups -> pipelines) so apps opting into retention
+// continue rendering seamlessly after device or surface restoration.
+func (d *Device) restoreRetainedFrom(prev *Device) {
+	if d == nil || prev == nil || !d.alive() {
+		return
+	}
+	restoredBufs := map[*Buffer]bool{}
+	for _, b := range prev.retainedBuffers {
+		if b == nil || b.closed || !b.retained {
+			continue
+		}
+		id := d.nextID()
+		dd := driver.GPUBufferDesc{
+			Label: b.label,
+			Size:  b.size,
+			Usage: driver.GPUBufferUsage(b.usage),
+			Data:  slices.Clone(b.shadow),
+		}
+		d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBuffer, ID: id, Buffer: &dd})
+		b.dev = d
+		b.id = id
+		b.epoch = d.generation
+		d.retainedBuffers = append(d.retainedBuffers, b)
+		restoredBufs[b] = true
+	}
+
+	restoredTexs := map[*Texture]bool{}
+	for _, t := range prev.retainedTextures {
+		if t == nil || t.closed || !t.retained {
+			continue
+		}
+		id := d.nextID()
+		dd := driver.GPUTextureDesc{
+			Label:       t.desc.Label,
+			Dimension:   driver.GPUTextureDimension(t.desc.Dimension),
+			Width:       t.desc.Width,
+			Height:      t.desc.Height,
+			Layers:      t.desc.Layers,
+			MipLevels:   t.desc.MipLevels,
+			SampleCount: t.desc.SampleCount,
+			Format:      driver.GPUTextureFormat(t.desc.Format),
+			Usage:       driver.GPUTextureUsage(t.desc.Usage),
+		}
+		d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateTexture, ID: id, Texture: &dd})
+		for _, w := range t.shadowWrites {
+			d.enqueueOp(driver.GPUResourceOp{
+				Kind: driver.GPUOpWriteTexture,
+				ID:   id,
+				Data: slices.Clone(w.data),
+				TextureDst: driver.GPUTextureCopy{
+					Texture:    id,
+					MipLevel:   w.dst.MipLevel,
+					ArrayLayer: w.dst.ArrayLayer,
+					OriginX:    w.dst.OriginX,
+					OriginY:    w.dst.OriginY,
+				},
+				DataLayout: driver.GPUDataLayout{
+					Offset:       w.layout.Offset,
+					BytesPerRow:  w.layout.BytesPerRow,
+					RowsPerImage: w.layout.RowsPerImage,
+				},
+			})
+		}
+		t.dev = d
+		t.id = id
+		t.epoch = d.generation
+		d.retainedTextures = append(d.retainedTextures, t)
+		restoredTexs[t] = true
+	}
+
+	restoredSamps := map[*Sampler]bool{}
+	for _, s := range prev.retainedSamplers {
+		if s == nil || s.closed || !s.retained {
+			continue
+		}
+		id := d.nextID()
+		dd := driver.GPUSamplerDesc{
+			MinFilter:     driver.GPUFilterMode(s.desc.MinFilter),
+			MagFilter:     driver.GPUFilterMode(s.desc.MagFilter),
+			MipmapFilter:  driver.GPUFilterMode(s.desc.MipmapFilter),
+			AddressU:      driver.GPUAddressMode(s.desc.AddressU),
+			AddressV:      driver.GPUAddressMode(s.desc.AddressV),
+			AddressW:      driver.GPUAddressMode(s.desc.AddressW),
+			Compare:       driver.GPUCompareFunc(s.desc.Compare),
+			MaxAnisotropy: s.desc.MaxAnisotropy,
+		}
+		d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateSampler, ID: id, Sampler: &dd})
+		s.dev = d
+		s.id = id
+		s.epoch = d.generation
+		d.retainedSamplers = append(d.retainedSamplers, s)
+		restoredSamps[s] = true
+	}
+
+	// Determine which BindGroupLayouts are needed by retained bind groups or pipelines.
+	neededLayouts := map[*BindGroupLayout]bool{}
+	for _, p := range prev.retainedPipelines {
+		if p == nil || p.closed || !p.retained {
+			continue
+		}
+		for _, l := range p.desc.Layouts {
+			if l != nil && !l.closed {
+				neededLayouts[l] = true
+			}
+		}
+	}
+	canRestoreBG := func(bg *BindGroup) bool {
+		if bg == nil || bg.closed {
+			return false
+		}
+		if len(bg.entries) == 0 {
+			return bg.retained || d.retainResources
+		}
+		hasBound := false
+		for _, e := range bg.entries {
+			if e.Buffer != nil {
+				hasBound = true
+				if !restoredBufs[e.Buffer] {
+					return false
+				}
+			}
+			if e.Texture != nil {
+				hasBound = true
+				if !restoredTexs[e.Texture] {
+					return false
+				}
+			}
+			if e.Sampler != nil {
+				hasBound = true
+				if !restoredSamps[e.Sampler] {
+					return false
+				}
+			}
+		}
+		return hasBound || bg.retained || d.retainResources
+	}
+	for _, bg := range prev.retainedBindGroups {
+		if canRestoreBG(bg) && bg.layout != nil && !bg.layout.closed {
+			neededLayouts[bg.layout] = true
+		}
+	}
+
+	restoredLayouts := map[*BindGroupLayout]bool{}
+	for _, l := range prev.retainedLayouts {
+		if l == nil || l.closed || (!l.retained && !d.retainResources && !neededLayouts[l]) {
+			continue
+		}
+		dEntries := make([]driver.GPUBindGroupLayoutEntry, len(l.entries))
+		for i, e := range l.entries {
+			vis := e.Visibility
+			if vis == 0 {
+				vis = StageAll
+			}
+			dEntries[i] = driver.GPUBindGroupLayoutEntry{
+				Binding:          e.Binding,
+				Visibility:       driver.GPUShaderStageFlags(vis),
+				Type:             driver.GPUBindingType(e.Type),
+				HasDynamicOffset: e.HasDynamicOffset,
+			}
+		}
+		id := d.nextID()
+		dd := driver.GPUBindGroupLayoutDesc{Entries: dEntries}
+		d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBindGroupLayout, ID: id, BindGroupLayout: &dd})
+		l.dev = d
+		l.id = id
+		l.epoch = d.generation
+		d.retainedLayouts = append(d.retainedLayouts, l)
+		restoredLayouts[l] = true
+	}
+
+	for _, bg := range prev.retainedBindGroups {
+		if !canRestoreBG(bg) {
+			continue
+		}
+		if bg.layout != nil && !restoredLayouts[bg.layout] {
+			continue
+		}
+		dEntries := make([]driver.GPUBindGroupEntry, len(bg.entries))
+		for i, e := range bg.entries {
+			de := driver.GPUBindGroupEntry{Binding: e.Binding, Offset: e.Offset, Size: e.Size}
+			if e.Buffer != nil {
+				de.Buffer = e.Buffer.id
+				if de.Size == 0 {
+					de.Size = e.Buffer.size - e.Offset
+				}
+			}
+			if e.Texture != nil {
+				de.Texture = e.Texture.id
+			}
+			if e.Sampler != nil {
+				de.Sampler = e.Sampler.id
+			}
+			dEntries[i] = de
+		}
+		var layoutID driver.GPUID
+		if bg.layout != nil {
+			layoutID = bg.layout.id
+		}
+		id := d.nextID()
+		dd := driver.GPUBindGroupDesc{Layout: layoutID, Entries: dEntries}
+		d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBindGroup, ID: id, BindGroup: &dd})
+		bg.dev = d
+		bg.id = id
+		bg.epoch = d.generation
+		d.retainedBindGroups = append(d.retainedBindGroups, bg)
+	}
+
+	for _, p := range prev.retainedPipelines {
+		if p == nil || p.closed || !p.retained || !p.ready.Load() {
+			continue
+		}
+		dd, key, err := d.preparePipelineDesc(p.desc)
+		if err != nil {
+			continue
+		}
+		if d.cache != nil {
+			if art, err := compileOrLoadPipelineArtifacts(d.cache, key, dd); err == nil {
+				dd.CachedArtifacts = art
+			}
+		}
+		id := d.nextID()
+		d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreatePipeline, ID: id, Pipeline: &dd})
+		p.dev = d
+		p.id = id
+		p.epoch = d.generation
+		p.cacheKey = key
+		p.ready.Store(true)
+		d.retainedPipelines = append(d.retainedPipelines, p)
+	}
 }
 
 // --- Data uploads ---
@@ -1133,11 +1816,14 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 // WriteBuffer copies data into buf starting at byte offset. Data is cloned
 // before returning so callers may immediately reuse the slice.
 func (d *Device) WriteBuffer(buf *Buffer, offset uint64, data []byte) {
-	if !d.alive() || buf == nil || buf.closed || buf.dev != d || len(data) == 0 {
+	if !d.alive() || buf == nil || !buf.Valid() || buf.dev != d || len(data) == 0 {
 		return
 	}
 	if offset+uint64(len(data)) > buf.size {
 		return
+	}
+	if buf.retained && uint64(len(buf.shadow)) >= offset+uint64(len(data)) {
+		copy(buf.shadow[offset:], data)
 	}
 	d.enqueueOp(driver.GPUResourceOp{
 		Kind:   driver.GPUOpWriteBuffer,
@@ -1149,13 +1835,36 @@ func (d *Device) WriteBuffer(buf *Buffer, offset uint64, data []byte) {
 
 // WriteTexture copies raw texel bytes into dst according to layout.
 func (d *Device) WriteTexture(tex *Texture, dst TextureCopy, data []byte, layout DataLayout) {
-	if !d.alive() || tex == nil || tex.closed || tex.dev != d || len(data) == 0 {
+	if !d.alive() || tex == nil || !tex.Valid() || tex.dev != d || len(data) == 0 {
 		return
+	}
+	cloned := slices.Clone(data)
+	if tex.retained {
+		// Replace any earlier write to the exact same subresource/origin to bound memory.
+		replaced := false
+		for i := range tex.shadowWrites {
+			w := &tex.shadowWrites[i]
+			if w.dst.MipLevel == dst.MipLevel && w.dst.ArrayLayer == dst.ArrayLayer &&
+				w.dst.OriginX == dst.OriginX && w.dst.OriginY == dst.OriginY &&
+				len(w.data) == len(cloned) {
+				w.layout = layout
+				w.data = slices.Clone(cloned)
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			tex.shadowWrites = append(tex.shadowWrites, retainedTextureWrite{
+				dst:    dst,
+				layout: layout,
+				data:   slices.Clone(cloned),
+			})
+		}
 	}
 	d.enqueueOp(driver.GPUResourceOp{
 		Kind: driver.GPUOpWriteTexture,
 		ID:   tex.id,
-		Data: slices.Clone(data),
+		Data: cloned,
 		TextureDst: driver.GPUTextureCopy{
 			Texture:    tex.id,
 			MipLevel:   dst.MipLevel,
@@ -1192,6 +1901,7 @@ func (d *Device) WriteTextureRGBA(tex *Texture, mipLevel, arrayLayer uint32, img
 // CommandBuffer is an immutable batch of recorded copy commands and render passes.
 type CommandBuffer struct {
 	dev      *Device
+	epoch    uint32
 	copies   []driver.GPUCopyOp
 	passes   []driver.GPUPass
 	debugOps []driver.GPUDebugOp
@@ -1200,6 +1910,7 @@ type CommandBuffer struct {
 // Encoder records render passes and copy commands for one Device.Submit call.
 type Encoder struct {
 	dev      *Device
+	epoch    uint32
 	copies   []driver.GPUCopyOp
 	passes   []driver.GPUPass
 	debugOps []driver.GPUDebugOp
@@ -1208,7 +1919,11 @@ type Encoder struct {
 
 // BeginEncoder starts recording a new CommandBuffer.
 func (d *Device) BeginEncoder() *Encoder {
-	return &Encoder{dev: d}
+	var epoch uint32
+	if d != nil {
+		epoch = d.generation
+	}
+	return &Encoder{dev: d, epoch: epoch}
 }
 
 // PushDebugGroup begins a nested debug group in GPU captures (Metal/RenderDoc/WebGPU). It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
@@ -1222,6 +1937,7 @@ func (e *Encoder) InsertDebugMarker(label string) { e.insertDebugMarker(label) }
 
 // BeginRenderPass starts a render pass on e. Call RenderPass.End when done.
 func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
+	invalid := e == nil || e.finished || e.dev == nil || !e.dev.alive() || e.epoch != e.dev.generation
 	var cas []driver.GPUColorAttachment
 	if len(desc.ColorAttachments) == 0 && desc.DepthStencil == nil {
 		cas = []driver.GPUColorAttachment{{
@@ -1233,10 +1949,18 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 		for i, ca := range desc.ColorAttachments {
 			var tid, rid driver.GPUID
 			if ca.Texture != nil {
-				tid = ca.Texture.id
+				if !ca.Texture.Valid() || ca.Texture.dev != e.dev || ca.Texture.epoch != e.epoch {
+					invalid = true
+				} else {
+					tid = ca.Texture.id
+				}
 			}
 			if ca.ResolveTarget != nil {
-				rid = ca.ResolveTarget.id
+				if !ca.ResolveTarget.Valid() || ca.ResolveTarget.dev != e.dev || ca.ResolveTarget.epoch != e.epoch {
+					invalid = true
+				} else {
+					rid = ca.ResolveTarget.id
+				}
 			}
 			cas[i] = driver.GPUColorAttachment{
 				Texture:       tid,
@@ -1253,7 +1977,11 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 	if desc.DepthStencil != nil {
 		var tid driver.GPUID
 		if desc.DepthStencil.Texture != nil {
-			tid = desc.DepthStencil.Texture.id
+			if !desc.DepthStencil.Texture.Valid() || desc.DepthStencil.Texture.dev != e.dev || desc.DepthStencil.Texture.epoch != e.epoch {
+				invalid = true
+			} else {
+				tid = desc.DepthStencil.Texture.id
+			}
 		}
 		ds = &driver.GPUDepthStencilAttachment{
 			Texture:        tid,
@@ -1277,7 +2005,8 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 		}
 	}
 	return &RenderPass{
-		enc: e,
+		enc:     e,
+		invalid: invalid,
 		pass: driver.GPUPass{
 			Label:            debugLabel(desc.Label),
 			TimingLabel:      timingLabel,
@@ -1290,7 +2019,10 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 
 // CopyBufferToBuffer records a buffer-to-buffer copy.
 func (e *Encoder) CopyBufferToBuffer(src *Buffer, srcOffset uint64, dst *Buffer, dstOffset, size uint64) {
-	if e.finished || src == nil || dst == nil || size == 0 {
+	if e == nil || e.finished || e.dev == nil || !e.dev.alive() || size == 0 {
+		return
+	}
+	if !src.Valid() || !dst.Valid() || src.dev != e.dev || dst.dev != e.dev || src.epoch != e.epoch || dst.epoch != e.epoch {
 		return
 	}
 	e.copies = append(e.copies, driver.GPUCopyOp{
@@ -1305,7 +2037,10 @@ func (e *Encoder) CopyBufferToBuffer(src *Buffer, srcOffset uint64, dst *Buffer,
 
 // CopyBufferToTexture records a buffer-to-texture copy.
 func (e *Encoder) CopyBufferToTexture(src BufferCopy, dst TextureCopy, width, height, layers uint32) {
-	if e.finished || src.Buffer == nil || dst.Texture == nil {
+	if e == nil || e.finished || e.dev == nil || !e.dev.alive() {
+		return
+	}
+	if !src.Buffer.Valid() || !dst.Texture.Valid() || src.Buffer.dev != e.dev || dst.Texture.dev != e.dev || src.Buffer.epoch != e.epoch || dst.Texture.epoch != e.epoch {
 		return
 	}
 	e.copies = append(e.copies, driver.GPUCopyOp{
@@ -1332,7 +2067,10 @@ func (e *Encoder) CopyBufferToTexture(src BufferCopy, dst TextureCopy, width, he
 
 // CopyTextureToTexture records a texture-to-texture copy.
 func (e *Encoder) CopyTextureToTexture(src, dst TextureCopy, width, height, layers uint32) {
-	if e.finished || src.Texture == nil || dst.Texture == nil {
+	if e == nil || e.finished || e.dev == nil || !e.dev.alive() {
+		return
+	}
+	if !src.Texture.Valid() || !dst.Texture.Valid() || src.Texture.dev != e.dev || dst.Texture.dev != e.dev || src.Texture.epoch != e.epoch || dst.Texture.epoch != e.epoch {
 		return
 	}
 	e.copies = append(e.copies, driver.GPUCopyOp{
@@ -1362,14 +2100,16 @@ func (e *Encoder) CopyTextureToTexture(src, dst TextureCopy, width, height, laye
 // Finish seals the encoder into an immutable CommandBuffer.
 func (e *Encoder) Finish() *CommandBuffer {
 	e.finished = true
-	return &CommandBuffer{dev: e.dev, copies: e.copies, passes: e.passes, debugOps: e.debugOps}
+	return &CommandBuffer{dev: e.dev, epoch: e.epoch, copies: e.copies, passes: e.passes, debugOps: e.debugOps}
 }
 
 // RenderPass records drawing state and draw calls for one render pass.
 type RenderPass struct {
-	enc   *Encoder
-	pass  driver.GPUPass
-	ended bool
+	enc       *Encoder
+	pass      driver.GPUPass
+	ended     bool
+	invalid   bool
+	pipeValid bool
 }
 
 // PushDebugGroup begins a nested debug group inside this render pass. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
@@ -1383,7 +2123,7 @@ func (p *RenderPass) InsertDebugMarker(label string) { p.insertDebugMarker(label
 
 // ClearColor configures color attachment 0 to clear to c at pass start.
 func (p *RenderPass) ClearColor(c core.Color) {
-	if p.ended || len(p.pass.ColorAttachments) == 0 {
+	if p.ended || p.invalid || len(p.pass.ColorAttachments) == 0 {
 		return
 	}
 	p.pass.ColorAttachments[0].LoadOp = driver.GPULoadClear
@@ -1392,7 +2132,7 @@ func (p *RenderPass) ClearColor(c core.Color) {
 
 // ClearDepth configures the depth attachment to clear to depth at pass start.
 func (p *RenderPass) ClearDepth(depth float32) {
-	if p.ended {
+	if p.ended || p.invalid {
 		return
 	}
 	if p.pass.DepthStencil == nil {
@@ -1406,7 +2146,7 @@ func (p *RenderPass) ClearDepth(depth float32) {
 
 // SetViewport sets the rasterizer viewport rectangle and depth range.
 func (p *RenderPass) SetViewport(x, y, width, height, minDepth, maxDepth float32) {
-	if p.ended {
+	if p.ended || p.invalid {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1417,7 +2157,7 @@ func (p *RenderPass) SetViewport(x, y, width, height, minDepth, maxDepth float32
 
 // SetScissor restricts rendering to the given pixel scissor rectangle.
 func (p *RenderPass) SetScissor(x, y, width, height int32) {
-	if p.ended {
+	if p.ended || p.invalid {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1426,11 +2166,18 @@ func (p *RenderPass) SetScissor(x, y, width, height int32) {
 	})
 }
 
-// SetPipeline binds the active render pipeline.
+// SetPipeline binds the active render pipeline. Stale handles from a lost
+// device or pipelines still compiling asynchronously are safely ignored, and
+// subsequent draws are skipped until a valid ready pipeline is bound.
 func (p *RenderPass) SetPipeline(pipe *Pipeline) {
-	if p.ended || pipe == nil || pipe.closed {
+	if p.ended || p.invalid {
 		return
 	}
+	if pipe == nil || !pipe.Ready() || p.enc == nil || pipe.dev != p.enc.dev || pipe.epoch != p.enc.epoch {
+		p.pipeValid = false
+		return
+	}
+	p.pipeValid = true
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
 		Kind: driver.GPUCmdSetPipeline,
 		ID:   pipe.id,
@@ -1439,7 +2186,7 @@ func (p *RenderPass) SetPipeline(pipe *Pipeline) {
 
 // SetBindGroup binds group to @group(slot) with optional dynamic offsets.
 func (p *RenderPass) SetBindGroup(slot uint32, group *BindGroup, dynamicOffsets ...uint32) {
-	if p.ended || group == nil || group.closed {
+	if p.ended || p.invalid || group == nil || !group.Valid() || p.enc == nil || group.dev != p.enc.dev || group.epoch != p.enc.epoch {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1452,7 +2199,7 @@ func (p *RenderPass) SetBindGroup(slot uint32, group *BindGroup, dynamicOffsets 
 
 // SetVertexBuffer binds buf to vertex buffer slot starting at byte offset.
 func (p *RenderPass) SetVertexBuffer(slot uint32, buf *Buffer, offset uint64) {
-	if p.ended || buf == nil || buf.closed {
+	if p.ended || p.invalid || buf == nil || !buf.Valid() || p.enc == nil || buf.dev != p.enc.dev || buf.epoch != p.enc.epoch {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1465,7 +2212,7 @@ func (p *RenderPass) SetVertexBuffer(slot uint32, buf *Buffer, offset uint64) {
 
 // SetIndexBuffer binds buf as the active index buffer.
 func (p *RenderPass) SetIndexBuffer(buf *Buffer, format IndexFormat, offset uint64) {
-	if p.ended || buf == nil || buf.closed {
+	if p.ended || p.invalid || buf == nil || !buf.Valid() || p.enc == nil || buf.dev != p.enc.dev || buf.epoch != p.enc.epoch {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1478,7 +2225,7 @@ func (p *RenderPass) SetIndexBuffer(buf *Buffer, format IndexFormat, offset uint
 
 // SetStencilReference sets the stencil reference value.
 func (p *RenderPass) SetStencilReference(ref uint32) {
-	if p.ended {
+	if p.ended || p.invalid {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1489,7 +2236,7 @@ func (p *RenderPass) SetStencilReference(ref uint32) {
 
 // SetBlendConstant sets the constant blend color.
 func (p *RenderPass) SetBlendConstant(r, g, b, a float32) {
-	if p.ended {
+	if p.ended || p.invalid {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1500,7 +2247,7 @@ func (p *RenderPass) SetBlendConstant(r, g, b, a float32) {
 
 // Draw draws vertexCount non-indexed vertices starting at firstVertex.
 func (p *RenderPass) Draw(vertexCount, firstVertex uint32) {
-	if p.ended {
+	if p.ended || p.invalid || !p.pipeValid {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1511,7 +2258,7 @@ func (p *RenderPass) Draw(vertexCount, firstVertex uint32) {
 
 // DrawIndexed draws indexCount indexed vertices.
 func (p *RenderPass) DrawIndexed(indexCount, firstIndex uint32, baseVertex int32) {
-	if p.ended {
+	if p.ended || p.invalid || !p.pipeValid {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1522,7 +2269,7 @@ func (p *RenderPass) DrawIndexed(indexCount, firstIndex uint32, baseVertex int32
 
 // DrawInstanced draws instanceCount instances of vertexCount vertices.
 func (p *RenderPass) DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance uint32) {
-	if p.ended {
+	if p.ended || p.invalid || !p.pipeValid {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1533,7 +2280,7 @@ func (p *RenderPass) DrawInstanced(vertexCount, instanceCount, firstVertex, firs
 
 // DrawIndexedInstanced draws instanceCount instances of indexCount indexed vertices.
 func (p *RenderPass) DrawIndexedInstanced(indexCount, instanceCount, firstIndex uint32, baseVertex int32, firstInstance uint32) {
-	if p.ended {
+	if p.ended || p.invalid || !p.pipeValid {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -1548,15 +2295,16 @@ func (p *RenderPass) End() {
 		return
 	}
 	p.ended = true
-	if p.enc != nil && !p.enc.finished {
+	if !p.invalid && p.enc != nil && !p.enc.finished {
 		p.enc.passes = append(p.enc.passes, p.pass)
 	}
 }
 
 // Submit hands pending resource ops, flushed ring-buffer slices, and cmds
 // directly to the platform backend off-commit (zero UI view-tree commits per frame).
+// Submissions are suppressed while the device is lost or suspended (app in background).
 func (d *Device) Submit(cmds ...*CommandBuffer) {
-	if !d.alive() {
+	if !d.alive() || d.suspended.Load() {
 		if d != nil && d.inFrame {
 			if d.activeFence != nil {
 				d.activeFence.signal()
@@ -1585,17 +2333,21 @@ func (d *Device) Submit(cmds ...*CommandBuffer) {
 	}
 	d.flushRingBuffers(frameSlot)
 
+	d.opMu.Lock()
+	ops := d.pendingOps
+	d.pendingOps = nil
+	d.opMu.Unlock()
+
 	frame := driver.GPUFrame{
 		Generation: d.generation,
 		FrameIndex: frameIdx,
 		FrameSlot:  frameSlot,
 		FenceID:    fence.id,
-		Ops:        d.pendingOps,
+		Ops:        ops,
 		Present:    len(cmds) > 0,
 	}
-	d.pendingOps = nil
 	for _, cb := range cmds {
-		if cb == nil {
+		if cb == nil || cb.dev != d || cb.epoch != d.generation {
 			continue
 		}
 		passOffset := len(frame.Passes)
@@ -1630,15 +2382,16 @@ func (d *Device) ReadTexture(tex *Texture, region TextureRegion, fn func(rgba []
 		}
 		return
 	}
-	if tex == nil || tex.closed || tex.dev != d {
+	if tex == nil || !tex.Valid() || tex.dev != d {
 		if fn != nil {
 			fn(nil, Error{Code: ErrInvalidDescriptor, Message: "ReadTexture requires a live Texture"})
 		}
 		return
 	}
 	rid := readbackIDGen.Add(1)
+	d.opMu.Lock()
 	d.readbacks[rid] = fn
-	d.enqueueOp(driver.GPUResourceOp{
+	d.pendingOps = append(d.pendingOps, driver.GPUResourceOp{
 		Kind:       driver.GPUOpReadTexture,
 		ID:         tex.id,
 		ReadbackID: rid,
@@ -1651,6 +2404,7 @@ func (d *Device) ReadTexture(tex *Texture, region TextureRegion, fn func(rgba []
 			Height:     region.Height,
 		},
 	})
+	d.opMu.Unlock()
 	d.flushOpsOnly()
 }
 
@@ -1664,12 +2418,14 @@ func (d *Device) ReadSurface(fn func(rgba []byte, err error)) {
 		return
 	}
 	rid := readbackIDGen.Add(1)
+	d.opMu.Lock()
 	d.readbacks[rid] = fn
-	d.enqueueOp(driver.GPUResourceOp{
+	d.pendingOps = append(d.pendingOps, driver.GPUResourceOp{
 		Kind:            driver.GPUOpReadTexture,
 		ReadbackID:      rid,
 		ReadbackSurface: true,
 	})
+	d.opMu.Unlock()
 	d.flushOpsOnly()
 }
 

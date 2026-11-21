@@ -182,8 +182,11 @@ const (
 )
 
 const (
-	GPULostUnknown     = driver.GPULostUnknown
-	GPULostReset       = driver.GPULostReset
-	GPULostDestroyed   = driver.GPULostDestroyed
-	GPULostOutOfMemory = driver.GPULostOutOfMemory
+	GPULostUnknown          = driver.GPULostUnknown
+	GPULostReset            = driver.GPULostReset
+	GPULostDestroyed        = driver.GPULostDestroyed
+	GPULostOutOfMemory      = driver.GPULostOutOfMemory
+	GPULostDeviceRemoved    = driver.GPULostDeviceRemoved
+	GPULostContextLost      = driver.GPULostContextLost
+	GPULostSurfaceDestroyed = driver.GPULostSurfaceDestroyed
 )

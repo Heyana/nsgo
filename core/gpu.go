@@ -49,6 +49,8 @@ func (s *GPUSurface) Disposed() bool {
 
 // Submit sends an off-commit driver.GPUFrame directly to the platform backend
 // without marking the shadow tree dirty or producing a MountBatch.
+// Frames are dropped while the owning surface is in LifecycleBackground so
+// platforms like iOS (Metal) never receive background GPU work.
 func (s *GPUSurface) Submit(frame any) {
 	f, ok := frame.(driver.GPUFrame)
 	if !ok {
@@ -56,6 +58,13 @@ func (s *GPUSurface) Submit(frame any) {
 	}
 	if s == nil || s.disposed || s.tree == nil || s.tree.gpuSubmit == nil {
 		// A frame no backend will run is done, so a FrameFence waiting on it is released.
+		if f.OnComplete != nil {
+			f.OnComplete()
+		}
+		return
+	}
+	if s.tree.root != nil && s.tree.root.Env().lifecycle.GetUntracked() == LifecycleBackground {
+		// No backend runs GPU work in the background, so the frame is dropped as done and a FrameFence waiting on it is released.
 		if f.OnComplete != nil {
 			f.OnComplete()
 		}

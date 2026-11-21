@@ -97,7 +97,7 @@ var layers = []struct {
 	{"audio", []string{"core"}},
 	// Gamepads reach GameController on Apple (with objcblock), XInput on Windows, evdev on Linux, navigator.getGamepads on the web, and the driver's bridge on Android and nsgotest.
 	{"gamepad", []string{"core", "internal/driver", "internal/platform/objcblock"}},
-	{"gpu", []string{"core", "internal/driver", "internal/shader", "internal/shader/wgsl", "internal/shaderir"}},
+	{"gpu", []string{"core", "internal/driver", "internal/shader", "internal/shader/wgsl", "internal/shaderir/"}},
 	{"desktop/locales", []string{"core", "i18n"}},
 	{"desktop", []string{"core"}},
 	{"updater/locales", []string{"core", "i18n"}},

@@ -38,10 +38,11 @@ const (
 
 // BufferDesc configures Device.CreateBuffer.
 type BufferDesc struct {
-	Label string
-	Size  uint64
-	Usage BufferUsage
-	Data  []byte // optional initial contents; copied before CreateBuffer returns
+	Label    string
+	Size     uint64
+	Usage    BufferUsage
+	Data     []byte // optional initial contents; copied before CreateBuffer returns
+	Retained bool   // opt in to automatic recreation with latest data after device loss
 }
 
 // RingBufferDesc configures Device.CreateRingBuffer.
@@ -161,6 +162,7 @@ type TextureDesc struct {
 	SampleCount int    // 0 or 1; 4 for MSAA render attachments
 	Format      TextureFormat
 	Usage       TextureUsage
+	Retained    bool // opt in to automatic recreation with latest writes after device loss
 }
 
 // RenderTargetDesc configures Device.CreateRenderTarget.
@@ -178,7 +180,8 @@ type RenderTargetDesc struct {
 	Height      uint32
 	ColorFormat TextureFormat
 	DepthFormat TextureFormat
-	SampleCount int // 0 or 1
+	SampleCount int  // 0 or 1
+	Retained    bool // opt in to automatic recreation after device loss
 }
 
 // FilterMode selects texture minification, magnification, or mipmap filtering.
@@ -224,6 +227,7 @@ type SamplerDesc struct {
 	AddressW      AddressMode
 	Compare       CompareFunc
 	MaxAnisotropy uint16
+	Retained      bool // opt in to automatic recreation after device loss
 }
 
 // ShaderDesc configures CompileShader.
@@ -453,7 +457,7 @@ type ShaderStage struct {
 	EntryPoint string
 }
 
-// PipelineDesc configures Device.CreatePipeline.
+// PipelineDesc configures Device.CreatePipeline and Device.CreatePipelineAsync.
 type PipelineDesc struct {
 	Label         string
 	Vertex        ShaderStage
@@ -464,6 +468,7 @@ type PipelineDesc struct {
 	DepthStencil  *DepthStencilState
 	Targets       []ColorTargetState
 	SampleCount   int
+	Retained      bool // opt in to automatic recreation after device loss
 }
 
 // LoadOp selects how an attachment is initialized at the start of a RenderPass.
@@ -648,11 +653,27 @@ func compressedFormatsFromFeatures(f Features) []TextureFormat {
 type DeviceLostReason uint8
 
 const (
-	LostUnknown     DeviceLostReason = DeviceLostReason(driver.GPULostUnknown)
-	LostReset       DeviceLostReason = DeviceLostReason(driver.GPULostReset)
-	LostDestroyed   DeviceLostReason = DeviceLostReason(driver.GPULostDestroyed)
-	LostOutOfMemory DeviceLostReason = DeviceLostReason(driver.GPULostOutOfMemory)
+	LostUnknown          DeviceLostReason = DeviceLostReason(driver.GPULostUnknown)
+	LostReset            DeviceLostReason = DeviceLostReason(driver.GPULostReset)
+	LostDestroyed        DeviceLostReason = DeviceLostReason(driver.GPULostDestroyed)
+	LostOutOfMemory      DeviceLostReason = DeviceLostReason(driver.GPULostOutOfMemory)
+	LostDeviceRemoved    DeviceLostReason = DeviceLostReason(driver.GPULostDeviceRemoved)
+	LostContextLost      DeviceLostReason = DeviceLostReason(driver.GPULostContextLost)
+	LostSurfaceDestroyed DeviceLostReason = DeviceLostReason(driver.GPULostSurfaceDestroyed)
+
+	ReasonUnknown          = LostUnknown
+	ReasonReset            = LostReset
+	ReasonDestroyed        = LostDestroyed
+	ReasonOutOfMemory      = LostOutOfMemory
+	ReasonDeviceRemoved    = LostDeviceRemoved
+	ReasonContextLost      = LostContextLost
+	ReasonSurfaceDestroyed = LostSurfaceDestroyed
 )
+
+// String returns a human-readable name for r.
+func (r DeviceLostReason) String() string {
+	return driver.GPUDeviceLostReason(r).String()
+}
 
 // DeviceLostEvent is delivered to ViewProps.OnDeviceLost.
 type DeviceLostEvent struct {

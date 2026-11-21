@@ -10,6 +10,7 @@ import (
 // SoftwareRenderer hosts a standalone, deterministic pure-Go software 3D GPU
 // device for headless unit tests and offscreen rendering without a UI window.
 type SoftwareRenderer struct {
+	mu   sync.Mutex
 	soft *driver.GPUSoftwareDevice
 	dev  *Device
 	mu   sync.Mutex
@@ -67,12 +68,14 @@ func newSoftwareRenderer(width, height int, depthFormat TextureFormat, features 
 		}
 	})
 	dev.submitFn = func(frame driver.GPUFrame) {
+		r.mu.Lock()
 		rbs, err := soft.Submit(frame)
 		if err != nil {
 			r.mu.Lock()
 			r.err = err
 			r.mu.Unlock()
 		}
+		r.mu.Unlock()
 		for _, rb := range rbs {
 			dev.completeReadback(rb.ID, rb.Pixels, rb.Err)
 		}
@@ -120,17 +123,24 @@ func (r *SoftwareRenderer) Close() {
 
 // Resize updates the software swapchain size in pixels.
 func (r *SoftwareRenderer) Resize(width, height int) {
+	r.mu.Lock()
 	r.soft.Resize(width, height)
-	r.dev.width, r.dev.height = r.soft.Size()
+	w, h := r.soft.Size()
+	r.mu.Unlock()
+	r.dev.width, r.dev.height = w, h
 }
 
 // Image returns an independent RGBA snapshot of the rendered swapchain surface.
 func (r *SoftwareRenderer) Image() *image.RGBA {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.soft.SurfaceImage()
 }
 
 // FrameCount returns how many GPU frames have been submitted.
 func (r *SoftwareRenderer) FrameCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return len(r.soft.Frames())
 }
 
