@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"maps"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -640,11 +639,7 @@ func webSchemeCallback(request, _ uintptr) {
 	// the page's fetch's, and its content type is the response's
 	// Content-Type header, else what the URL and body imply.
 	response := webkitURISchemeResponseNew(stream, int64(len(body)))
-	text := http.StatusText(int(status))
-	if text == "" {
-		text = "OK"
-	}
-	webkitURISchemeResponseSetStatus(response, status, cstr(text))
+	webkitURISchemeResponseSetStatus(response, status, nil) // WebKit supplies the standard reason phrase.
 	contentType := resp.Header("Content-Type")
 	if contentType == "" {
 		contentType = driver.WebMIME(u.Path, body)

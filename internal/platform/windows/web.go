@@ -50,7 +50,6 @@ package windows
 import (
 	"cmp"
 	"maps"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1010,8 +1009,8 @@ func (wv *webView) respondResource(args *comObject, response *driver.WebSchemeRe
 	}
 	s := *(**comObject)(unsafe.Pointer(&stream))
 	defer s.release()
-	text := http.StatusText(int(status))
-	if text == "" {
+	text := ""
+	if status == 200 {
 		text = "OK"
 	}
 	headers := map[string]string{}
