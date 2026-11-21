@@ -39,11 +39,13 @@ On Android, each new copy is a separate pipe message, subject to the pipe's 64 M
 
 On a Pixel 3 XL running Android 12, a 960 × 540 image view rewrote 2,073,600 bytes per callback at 59–60 fps. An eight-second screen recording contained 477 consecutive version markers with their expected colors. After warm-up, across four 120-frame samples spanning the recording, writing each frame's header and bytes to the pipe took a median of 5.07–5.29 ms and a 95th percentile of 6.20–6.71 ms. These times cover the Go writes to the pipe, excluding the engine's copy, Java's bitmap update and rendering.
 
-`Scope.ImageSize` answers a pixel source at once with its buffer's size, and `PrefetchImage` with success, without asking the platform.
+`Scope.ImageSize` answers a pixel source at once with its buffer's size, `PrefetchImage` with success, and `KeepImage` with a no-op release, without asking the platform.
 
-## Size and prefetch
+## Size, prefetch and keeping
 
 `Scope.ImageSize` and `Scope.PrefetchImage` are NSH's `Image.getSize` and `Image.prefetch`: `ItemImageInfo` carries the source, its `asset:` variant picked as for views, and the platform answers with `EventImageInfo`. The backends that load in Go call `imageload.Info`, so the bytes stay in `imageload`'s 32 MiB cache for the views that show them next, and read the size from the header (`imagedecode.Size`; ImageIO on Apple). Android answers in its Go process. The web loads an `<img>` outside the page and keeps the bytes in the browser's cache. The size is the one `OnLoad` reports.
+
+`Scope.KeepImage` pins an encoded source's resolved `ImageSource.Key` in the backend's canvas and shader image cache (`ItemKeepImage` / `ItemReleaseImage`) so atlases and long-lived textures stay out of the 64-source unkept LRU bound until the returned `release` runs or the owning scope disposes ([canvas players](canvas.md#players)).
 
 `imageload` turns a `file:` URL into a path by the rules `core.FileFromURL` uses (`driver.FileURLPath`): on Windows `file:///C:/...` keeps its drive letter and `file://server/share/...` becomes a UNC path; elsewhere the path is the URL's decoded path, and a host other than `localhost` fails rather than read a local file of the same path.
 

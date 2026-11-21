@@ -780,6 +780,14 @@ func (p *player) image(op *driver.DrawOp) {
 // process at their full size, by ImageSource.Key; main thread only.
 var canvasImages = map[string]*loadedImage{}
 
+// canvasKept counts active pins per ImageSource.Key across all surfaces, and
+// canvasKeptByOwner tracks each surface's pins so closing a surface releases
+// only its own; main thread only.
+var (
+	canvasKept        = map[string]int{}
+	canvasKeptByOwner = map[any]map[string]int{}
+)
+
 // loadedImage is an image canvases draw, or one loading.
 type loadedImage struct {
 	image         uintptr
@@ -798,13 +806,114 @@ var (
 	canvasPassPosted bool
 )
 
-// maxCanvasImages bounds the images kept, loaded or failed, and is exceeded only by loads under way, which are never evicted; the least recently drawn go first, but never one the pass of drawing under way drew, so a pass drawing more keeps them all until a later pass draws others.
+// maxCanvasImages bounds the unkept images kept, loaded or failed, and is exceeded only by loads under way, which are never evicted; the least recently drawn go first, but never one kept via KeepCanvasImage or drawn by the pass under way, so a pass drawing more keeps them all until a later pass draws others.
 const maxCanvasImages = 64
 
 // endCanvasPass ends the pass of drawing that used the images so far: they may be evicted from now on.
 func endCanvasPass() {
 	canvasPassPosted = false
 	canvasPass = canvasImageUse
+}
+
+// KeepCanvasImage pins key in the canvas image cache on behalf of owner so it
+// is never evicted while kept; main thread only.
+func KeepCanvasImage(owner any, key string) {
+	if key == "" {
+		return
+	}
+	canvasKept[key]++
+	if owner != nil {
+		m := canvasKeptByOwner[owner]
+		if m == nil {
+			m = map[string]int{}
+			canvasKeptByOwner[owner] = m
+		}
+		m[key]++
+	}
+}
+
+// ReleaseCanvasImage releases one pin of key held by owner, trimming excess
+// unkept entries once key is no longer pinned; main thread only.
+func ReleaseCanvasImage(owner any, key string) {
+	if key == "" {
+		return
+	}
+	if owner != nil {
+		m := canvasKeptByOwner[owner]
+		if m == nil || m[key] == 0 {
+			return
+		}
+		if m[key]--; m[key] == 0 {
+			delete(m, key)
+			if len(m) == 0 {
+				delete(canvasKeptByOwner, owner)
+			}
+		}
+	} else if canvasKept[key] == 0 {
+		return
+	}
+	if canvasKept[key] <= 1 {
+		delete(canvasKept, key)
+	} else {
+		canvasKept[key]--
+	}
+	evictCanvasImages(0)
+}
+
+// ReleaseCanvasImages releases every pin held by owner as its surface closes;
+// main thread only.
+func ReleaseCanvasImages(owner any) {
+	if owner == nil {
+		return
+	}
+	m := canvasKeptByOwner[owner]
+	if len(m) == 0 {
+		return
+	}
+	delete(canvasKeptByOwner, owner)
+	for key, n := range m {
+		if canvasKept[key] <= n {
+			delete(canvasKept, key)
+		} else {
+			canvasKept[key] -= n
+		}
+	}
+	evictCanvasImages(0)
+}
+
+func unkeptCanvasImages() int {
+	n := 0
+	for k := range canvasImages {
+		if canvasKept[k] == 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// evictCanvasImages evicts the least recently drawn unkept entries until
+// unkept+reserve <= maxCanvasImages, never evicting loads under way or entries
+// drawn by the current pass.
+func evictCanvasImages(reserve int) {
+	unkept := unkeptCanvasImages()
+	for unkept+reserve > maxCanvasImages {
+		var oldest string
+		var at uint64 = math.MaxUint64
+		for k, im := range canvasImages {
+			// A kept image stays out of eviction; a load under way stays too: cancelling it would leave what waits for it, a canvas or a shader that draws only when its images arrive, without the image until it draws again, and canvases drawn in passes of their own would then cancel each other's loads forever.
+			if canvasKept[k] == 0 && im.cancel == nil && im.used < at {
+				oldest, at = k, im.used
+			}
+		}
+		if at > canvasPass {
+			// Every unkept image loaded was drawn by the pass under way, or none has loaded: evicting one would load it again at the next pass, forever.
+			break
+		}
+		Release(canvasImages[oldest].image)
+		canvasImages[oldest].image = 0
+		delete(canvasImages, oldest)
+		unkept--
+	}
 }
 
 // canvasImage returns src's image, or nil while it loads, and has the
@@ -827,23 +936,11 @@ func canvasImage(src driver.ImageSource, host CanvasHost) *loadedImage {
 		}
 		return im
 	}
-	for len(canvasImages) >= maxCanvasImages {
-		var oldest string
-		var at uint64 = math.MaxUint64
-		for k, im := range canvasImages {
-			// A load under way stays: cancelling it would leave what waits for it, a canvas or a shader that draws only when its images arrive, without the image until it draws again, and canvases drawn in passes of their own would then cancel each other's loads forever.
-			if im.cancel == nil && im.used < at {
-				oldest, at = k, im.used
-			}
-		}
-		if at > canvasPass {
-			// Every image loaded was drawn by the pass under way, or none has loaded: evicting one would load it again at the next pass, forever.
-			break
-		}
-		Release(canvasImages[oldest].image)
-		canvasImages[oldest].image = 0
-		delete(canvasImages, oldest)
+	reserve := 0
+	if canvasKept[key] == 0 {
+		reserve = 1
 	}
+	evictCanvasImages(reserve)
 	ctx, cancel := context.WithCancel(context.Background())
 	im := &loadedImage{used: canvasImageUse, waiting: map[any]func(){}, cancel: cancel}
 	if host.Redraw != nil {

@@ -43,6 +43,7 @@ var gated = map[string]service{
 	"PostHost":                      serviceHost,
 	"ImageSize":                     serviceImage,
 	"PrefetchImage":                 serviceImage,
+	"KeepImage":                     serviceImage,
 	"SetClipboard":                  serviceClipboard,
 	"SetClipboardImage":             serviceClipboard,
 	"ReadClipboard":                 serviceClipboard,

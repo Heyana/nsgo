@@ -16,7 +16,11 @@ import (
 func isolatedCanvasImages(t *testing.T) {
 	t.Helper()
 	saved := canvasImages
+	savedKept := canvasKept
+	savedByOwner := canvasKeptByOwner
 	canvasImages = map[string]*loadedImage{}
+	canvasKept = map[string]int{}
+	canvasKeptByOwner = map[any]map[string]int{}
 	t.Cleanup(func() {
 		for key, im := range canvasImages {
 			if im.cancel != nil {
@@ -27,6 +31,8 @@ func isolatedCanvasImages(t *testing.T) {
 			delete(canvasImages, key)
 		}
 		canvasImages = saved
+		canvasKept = savedKept
+		canvasKeptByOwner = savedByOwner
 		runMain()
 	})
 }
@@ -245,5 +251,88 @@ func TestCanvasImageCacheCanvasesDrawnApartLoadSlowImages(t *testing.T) {
 	}
 	if draws > 3+len(sources) {
 		t.Fatalf("%d draws for %d images", draws, len(sources))
+	}
+}
+
+func TestCanvasImageCacheKeepPinsOutOfBudget(t *testing.T) {
+	isolatedCanvasImages(t)
+	runMain()
+	load := func(src driver.ImageSource) *loadedImage {
+		t.Helper()
+		canvasImage(src, CanvasHost{Ratio: 1})
+		im := canvasImages[src.Key()]
+		for deadline := time.Now().Add(5 * time.Second); im.cancel != nil; {
+			runMain()
+			if time.Now().After(deadline) {
+				t.Fatal("image load timed out")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if im.image == 0 {
+			t.Fatal("no decoded image")
+		}
+		endCanvasPass()
+		return im
+	}
+
+	sources := canvastest.CacheSources(200)
+	atlas := sources[0]
+	ownerA, ownerB := new(int), new(int)
+
+	// Keep the same atlas twice across two owners before drawing it.
+	KeepCanvasImage(ownerA, atlas.Key())
+	KeepCanvasImage(ownerB, atlas.Key())
+	atlasIm := load(atlas)
+
+	// Draw 100 other unkept images: atlas stays cached while unkept entries stay bounded at maxCanvasImages.
+	for i := 1; i <= 100; i++ {
+		load(sources[i])
+		if unkept := unkeptCanvasImages(); unkept > maxCanvasImages {
+			t.Fatalf("%d unkept images, want <= %d", unkept, maxCanvasImages)
+		}
+	}
+	if canvasImages[atlas.Key()] != atlasIm || atlasIm.image == 0 {
+		t.Fatal("kept atlas was evicted")
+	}
+
+	// Closing ownerA releases only ownerA's pin; ownerB's pin still protects atlas.
+	ReleaseCanvasImages(ownerA)
+	load(sources[101])
+	if canvasImages[atlas.Key()] != atlasIm || atlasIm.image == 0 {
+		t.Fatal("atlas evicted while second owner still kept it")
+	}
+
+	// Releasing ownerB's pin trims the oldest unkept entry (atlas) immediately.
+	ReleaseCanvasImage(ownerB, atlas.Key())
+	// Releasing again is a safe no-op.
+	ReleaseCanvasImage(ownerB, atlas.Key())
+	if canvasImages[atlas.Key()] != nil || atlasIm.image != 0 {
+		t.Fatal("released old atlas was not evicted and freed")
+	}
+	if len(canvasImages) != maxCanvasImages {
+		t.Fatalf("%d cached after release, want %d", len(canvasImages), maxCanvasImages)
+	}
+
+	// Keeping more than maxCanvasImages sources works cleanly and does not starve the unkept budget.
+	keptMany := sources[102 : 102+maxCanvasImages+10]
+	keptSlots := make([]*loadedImage, len(keptMany))
+	for i, src := range keptMany {
+		KeepCanvasImage(ownerA, src.Key())
+		keptSlots[i] = load(src)
+	}
+	for i := 1; i <= maxCanvasImages+5; i++ {
+		load(sources[i])
+		if unkept := unkeptCanvasImages(); unkept > maxCanvasImages {
+			t.Fatalf("%d unkept images with %d kept, want <= %d", unkept, len(keptMany), maxCanvasImages)
+		}
+	}
+	for i, src := range keptMany {
+		if canvasImages[src.Key()] != keptSlots[i] || keptSlots[i].image == 0 {
+			t.Fatalf("kept source %d was evicted", i)
+		}
+	}
+	ReleaseCanvasImages(ownerA)
+	if len(canvasImages) != maxCanvasImages {
+		t.Fatalf("%d cached after releasing %d kept images, want %d", len(canvasImages), len(keptMany), maxCanvasImages)
 	}
 }

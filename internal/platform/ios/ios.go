@@ -1253,6 +1253,14 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemImageInfo:
 			apple.ImageInfo(it, s.engine.Dispatch)
 			continue
+		case driver.ItemKeepImage:
+			if !s.closed {
+				apple.KeepCanvasImage(s, it.Value)
+			}
+			continue
+		case driver.ItemReleaseImage:
+			apple.ReleaseCanvasImage(s, it.Value)
+			continue
 		case driver.ItemAnnounce:
 			uiAccessibilityPost(announcement, apple.NSString(it.Value))
 			continue

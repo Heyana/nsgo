@@ -130,6 +130,50 @@ public final class CanvasImagesCheck {
         check(cache.unavailable("removed-source", removed), "obsolete source response lost");
         draw(cache, "removed-source");
         check(requests.get("removed-source") != removed, "remounted source stuck pending");
+
+        // Kept images stay out of the 64-source eviction budget, are refcounted, and become evictable on release.
+        cache.keep("atlas");
+        cache.keep("atlas");
+        check(draw(cache, "atlas") == null, "kept atlas should load on first draw");
+        Picture atlas = new Picture();
+        check(cache.complete("atlas", requests.get("atlas"), atlas), "kept atlas failed to complete");
+        for (int i = 0; i < 100; i++) {
+            String key = "flood-" + i;
+            draw(cache, key);
+            cache.complete(key, requests.get(key), new Picture());
+            check(cache.size() <= 65, "unkept cache exceeded budget with one kept atlas");
+        }
+        check(!atlas.freed && cache.ready("atlas"), "kept atlas was evicted");
+        cache.release("atlas");
+        draw(cache, "flood-extra");
+        cache.complete("flood-extra", requests.get("flood-extra"), new Picture());
+        check(!atlas.freed && cache.ready("atlas"), "atlas evicted while second pin remained");
+        cache.release("atlas");
+        cache.release("atlas");
+        check(atlas.freed && !cache.ready("atlas"), "released old atlas was not evicted");
+        check(cache.size() == 64, "cache did not trim to 64 after release");
+
+        // Keeping more than 64 sources does not starve or crash eviction.
+        List<Picture> manyKept = new ArrayList<>();
+        for (int i = 0; i < 74; i++) {
+            String key = "many-kept-" + i;
+            cache.keep(key);
+            draw(cache, key);
+            Picture pic = new Picture();
+            manyKept.add(pic);
+            cache.complete(key, requests.get(key), pic);
+        }
+        for (int i = 0; i < 70; i++) {
+            String key = "after-many-" + i;
+            draw(cache, key);
+            cache.complete(key, requests.get(key), new Picture());
+        }
+        for (int i = 0; i < 74; i++) {
+            check(!manyKept.get(i).freed && cache.ready("many-kept-" + i), "kept source " + i + " evicted");
+        }
+        for (int i = 0; i < 74; i++) cache.release("many-kept-" + i);
+        check(cache.size() == 64, "cache did not trim after releasing 74 kept images");
+
         CanvasImages<Picture> other = new CanvasImages<>((k, g, c) -> {}, Picture::free, posted::add);
         draw(other, "same");
         Picture isolated = new Picture();

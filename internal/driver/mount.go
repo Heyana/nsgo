@@ -372,6 +372,12 @@ const (
 	ItemQuickLook
 	// ItemOrientation asks the app to use the Orientation mask in Count, or the platform default when zero.
 	ItemOrientation
+	// ItemKeepImage pins the canvas image cache entry named by Value
+	// (ImageSource.Key) so it stays out of LRU eviction while kept;
+	// ItemReleaseImage releases one pin of Value, letting it be evicted once
+	// its count reaches zero.
+	ItemKeepImage
+	ItemReleaseImage
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.

@@ -437,9 +437,22 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         Integer t = textures.get(key);
         if (t != null) return t;
         if (bitmap == null) return 0;
-        if (textures.size() == CanvasImages.LIMIT) {
-            String oldest = textures.keySet().iterator().next();
+        int unkept = 0;
+        for (String k : textures.keySet()) {
+            if (!pictures.isKept(k)) unkept++;
+        }
+        int reserve = pictures.isKept(key) ? 0 : 1;
+        while (unkept + reserve > CanvasImages.LIMIT) {
+            String oldest = null;
+            for (String k : textures.keySet()) {
+                if (!pictures.isKept(k)) {
+                    oldest = k;
+                    break;
+                }
+            }
+            if (oldest == null) break;
             GLES30.glDeleteTextures(1, new int[] {textures.remove(oldest)}, 0);
+            unkept--;
         }
         int[] id = new int[1];
         GLES30.glGenTextures(1, id, 0);

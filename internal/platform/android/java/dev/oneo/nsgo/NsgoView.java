@@ -2709,6 +2709,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 animator.bindCanvas(n.id, n.shader.boundNodes);
                 applyAnimated();
                 break;
+            case Protocol.ITEM_KEEP_IMAGE:
+                canvasImages.keep(Protocol.readString(in));
+                break;
+            case Protocol.ITEM_RELEASE_IMAGE:
+                canvasImages.release(Protocol.readString(in));
+                break;
             case Protocol.ITEM_SET_CLIPBOARD:
                 clipboard().setPrimaryClip(ClipData.newPlainText("", Protocol.readString(in)));
                 break;

@@ -211,6 +211,12 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 	v.Drawing = d
 	a.anim.BindCanvas(v.ID, d.Slots)
 	v.Ops = slices.Clone(a.anim.CanvasOps(v.ID, d))
+	pass := a.canvasImageUse
+	for i := range d.Ops {
+		if op := &d.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil {
+			a.touchCanvasImage(*op.Image, pass)
+		}
+	}
 	kept := v.Children[:0]
 	for _, c := range v.Children {
 		if c.Node == nil {
@@ -549,6 +555,10 @@ func (a *App) apply(b *driver.MountBatch) {
 			if sh := it.Shader; sh != nil {
 				v.Shader = &Shader{Role: sh.Role, WGSL: sh.Program != nil && sh.Program.WGSL, Lanes: sh.Lanes, Nodes: sh.Nodes,
 					Pictures: sh.Pictures, Overflow: sh.Overflow, Running: sh.Running, Backwards: sh.Backwards}
+				pass := a.canvasImageUse
+				for _, src := range sh.Images {
+					a.touchCanvasImage(src, pass)
+				}
 			}
 		case driver.ItemShaderTransition:
 			v.ShaderStarts++
@@ -826,6 +836,10 @@ func (a *App) apply(b *driver.MountBatch) {
 				ev.Text = "nsgotest: no image at " + it.Image.Source.URI
 			}
 			a.post(ev)
+		case driver.ItemKeepImage:
+			a.keepCanvasImage(it.Value)
+		case driver.ItemReleaseImage:
+			a.releaseCanvasImage(it.Value)
 		case driver.ItemKeymap:
 			a.keyBindings = slices.Clone(it.Keys)
 			a.heldKeys = it.HeldKeys
@@ -1411,5 +1425,92 @@ func (a *App) commandPiP(v *View, command uint32) {
 		a.postPiP(v)
 	case driver.PictureInPictureRestored:
 		v.PiPRestores++
+	}
+}
+
+const maxCanvasImages = 64
+
+// KeptImage reports whether src is currently pinned via core.Scope.KeepImage.
+func (a *App) KeptImage(src core.ImageSource) bool {
+	return a.KeptImages[src.Key()] > 0
+}
+
+// CanvasImageCached reports whether src is currently held in the model's
+// canvas image cache (kept or within the 64-source unkept LRU bound).
+func (a *App) CanvasImageCached(src core.ImageSource) bool {
+	_, ok := a.canvasImages[src.Key()]
+	return ok
+}
+
+func (a *App) keepCanvasImage(key string) {
+	if key == "" {
+		return
+	}
+	if a.KeptImages == nil {
+		a.KeptImages = map[string]int{}
+	}
+	a.KeptImages[key]++
+}
+
+func (a *App) releaseCanvasImage(key string) {
+	if key == "" {
+		return
+	}
+	n := a.KeptImages[key]
+	if n <= 0 {
+		return
+	}
+	if n == 1 {
+		delete(a.KeptImages, key)
+	} else {
+		a.KeptImages[key] = n - 1
+	}
+	a.evictCanvasImages(0, a.canvasImageUse)
+}
+
+func (a *App) touchCanvasImage(src driver.ImageSource, pass uint64) {
+	if src.Pixels != nil || src.Empty() {
+		return
+	}
+	key := src.Key()
+	if key == "" {
+		return
+	}
+	a.canvasImageUse++
+	if a.canvasImages == nil {
+		a.canvasImages = map[string]uint64{}
+	}
+	if _, ok := a.canvasImages[key]; ok {
+		a.canvasImages[key] = a.canvasImageUse
+		return
+	}
+	reserve := 0
+	if a.KeptImages[key] == 0 {
+		reserve = 1
+	}
+	a.evictCanvasImages(reserve, pass)
+	a.canvasImages[key] = a.canvasImageUse
+}
+
+func (a *App) evictCanvasImages(reserve int, pass uint64) {
+	unkept := 0
+	for k := range a.canvasImages {
+		if a.KeptImages[k] == 0 {
+			unkept++
+		}
+	}
+	for unkept+reserve > maxCanvasImages {
+		var oldest string
+		var at uint64 = math.MaxUint64
+		for k, used := range a.canvasImages {
+			if a.KeptImages[k] == 0 && used < at {
+				oldest, at = k, used
+			}
+		}
+		if at > pass {
+			break
+		}
+		delete(a.canvasImages, oldest)
+		unkept--
 	}
 }

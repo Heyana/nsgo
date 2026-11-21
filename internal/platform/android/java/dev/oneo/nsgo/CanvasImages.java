@@ -1,11 +1,12 @@
 package dev.oneo.nsgo;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 
 /**
- * One surface's bounded canvas cache, including failed entries, which loads under way exceed, as they are never evicted. The least recently drawn go first, but never one the pass of drawing under way drew: a pass drawing more than the limit keeps them all, as evicting one would request it again at the next pass, forever.
+ * One surface's bounded canvas cache, including failed entries, which loads under way and kept images exceed, as they are never evicted. The least recently drawn unkept entries go first, but never one the pass of drawing under way drew: a pass drawing more than the limit keeps them all, as evicting one would request it again at the next pass, forever.
  */
 final class CanvasImages<T> {
     static final int LIMIT = 64;
@@ -46,6 +47,7 @@ final class CanvasImages<T> {
     }
 
     private final LinkedHashMap<String, Entry> entries = new LinkedHashMap<>(LIMIT, .75f, true);
+    private final Map<String, Integer> kept = new HashMap<>();
     private final Requester requester;
     private final Consumer<T> dispose;
     private final Consumer<Runnable> later;
@@ -67,6 +69,48 @@ final class CanvasImages<T> {
         pass = use;
     }
 
+    synchronized void keep(String key) {
+        if (closed || key == null || key.isEmpty()) return;
+        kept.merge(key, 1, Integer::sum);
+    }
+
+    synchronized void release(String key) {
+        if (closed || key == null || key.isEmpty()) return;
+        Integer count = kept.get(key);
+        if (count == null) return;
+        if (count <= 1) kept.remove(key);
+        else kept.put(key, count - 1);
+        evict(0);
+    }
+
+    synchronized boolean isKept(String key) { return kept.containsKey(key); }
+
+    private int unkeptSize() {
+        int n = 0;
+        for (String key : entries.keySet()) {
+            if (!kept.containsKey(key)) n++;
+        }
+        return n;
+    }
+
+    private void evict(int reserve) {
+        int unkept = unkeptSize();
+        while (unkept + reserve > LIMIT) {
+            // A kept image stays out of eviction; a load under way stays too: cancelling it would leave what waits for it, a canvas or a shader that draws only when its images arrive, without the image until it draws again.
+            Map.Entry<String, Entry> oldest = null;
+            for (Map.Entry<String, Entry> item : entries.entrySet()) {
+                if (!kept.containsKey(item.getKey()) && !item.getValue().pending) {
+                    oldest = item;
+                    break;
+                }
+            }
+            if (oldest == null || oldest.getValue().used > pass) break;
+            entries.remove(oldest.getKey());
+            retire(oldest.getKey(), oldest.getValue());
+            unkept--;
+        }
+    }
+
     synchronized Lease acquire(String key) {
         if (closed) return null;
         use++;
@@ -76,19 +120,7 @@ final class CanvasImages<T> {
         }
         Entry entry = entries.get(key);
         if (entry == null) {
-            while (entries.size() >= LIMIT) {
-                // A load under way stays: cancelling it would leave what waits for it, a canvas or a shader that draws only when its images arrive, without the image until it draws again.
-                Map.Entry<String, Entry> oldest = null;
-                for (Map.Entry<String, Entry> item : entries.entrySet()) {
-                    if (!item.getValue().pending) {
-                        oldest = item;
-                        break;
-                    }
-                }
-                if (oldest == null || oldest.getValue().used > pass) break;
-                entries.remove(oldest.getKey());
-                retire(oldest.getKey(), oldest.getValue());
-            }
+            evict(kept.containsKey(key) ? 0 : 1);
             entry = new Entry(++generation);
             entries.put(key, entry);
             requester.request(key, entry.generation, false);
@@ -133,6 +165,7 @@ final class CanvasImages<T> {
         closed = true;
         for (Map.Entry<String, Entry> item : entries.entrySet()) retire(item.getKey(), item.getValue());
         entries.clear();
+        kept.clear();
     }
 
     synchronized int size() { return entries.size(); }

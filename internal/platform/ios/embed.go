@@ -308,6 +308,7 @@ func (s *surface) close() {
 		engine.SyncStorage()
 	}
 	s.releaseAllAwake()
+	apple.ReleaseCanvasImages(s)
 	if s.audio != nil {
 		s.audio.Close()
 		s.audio = nil

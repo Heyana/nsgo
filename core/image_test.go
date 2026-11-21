@@ -383,3 +383,97 @@ func TestCanvasDrawsNoEmptyBuffer(t *testing.T) {
 	}
 	t.Fatal("no canvas was sent")
 }
+
+func TestKeepImageLifecycleAndScales(t *testing.T) {
+	var root *Scope
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
+		root = cx
+		return View{}
+	})
+	h.commit()
+	h.tree.SetEnvironment(Environment{PixelRatio: 2})
+
+	// Empty and Pixels sources are no-ops.
+	root.KeepImage(ImageSource{})()
+	root.KeepImage(ImageSource{Pixels: image.NewRGBA(image.Rect(0, 0, 2, 2))})()
+	if b := h.commit(); command(b, driver.ItemKeepImage) != nil || command(b, driver.ItemReleaseImage) != nil {
+		t.Fatalf("empty/pixels sources sent keep commands: %+v", b.Items)
+	}
+
+	// Scaled asset resolves its key at the screen's pixel ratio, and release is idempotent.
+	src := ImageSource{URI: "asset:/atlas.png", Scales: ScalesOf(1, 2)}
+	release := root.KeepImage(src)
+	it := command(h.commit(), driver.ItemKeepImage)
+	if it == nil || it.Value != "asset:/atlas@2x.png" {
+		t.Fatalf("keep = %+v, want asset:/atlas@2x.png", it)
+	}
+	release()
+	release()
+	h.drain()
+	if it = command(h.commit(), driver.ItemReleaseImage); it == nil || it.Value != "asset:/atlas@2x.png" {
+		t.Fatalf("release = %+v, want asset:/atlas@2x.png", it)
+	}
+	if command(h.commit(), driver.ItemReleaseImage) != nil {
+		t.Fatal("release was sent twice")
+	}
+
+	// Disposing a scope releases its pin, and releasing right before dispose sends only one release.
+	child := root.Child()
+	dataSrc := ImageSource{Data: []byte("atlas-bytes")}
+	wantKey := dataSrc.Key()
+	relChild := child.KeepImage(dataSrc)
+	if it = command(h.commit(), driver.ItemKeepImage); it == nil || it.Value != wantKey {
+		t.Fatalf("data keep = %+v, want %q", it, wantKey)
+	}
+	relChild()
+	child.Dispose()
+	h.drain()
+	b := h.commit()
+	var releases []string
+	for _, item := range b.Items {
+		if item.Kind == driver.ItemReleaseImage {
+			releases = append(releases, item.Value)
+		}
+	}
+	if !slices.Equal(releases, []string{wantKey}) {
+		t.Fatalf("releases = %q, want [%q]", releases, wantKey)
+	}
+	relChild()
+	h.drain()
+	if command(h.commit(), driver.ItemReleaseImage) != nil {
+		t.Fatal("release after dispose sent a second release")
+	}
+
+	// Two scopes keeping the same source each emit their own keep and release.
+	a, c2 := root.Child(), root.Child()
+	a.KeepImage(Src("https://x/sheet.png"))
+	c2.KeepImage(Src("https://x/sheet.png"))
+	b = h.commit()
+	var keeps []string
+	for _, item := range b.Items {
+		if item.Kind == driver.ItemKeepImage {
+			keeps = append(keeps, item.Value)
+		}
+	}
+	if !slices.Equal(keeps, []string{"https://x/sheet.png", "https://x/sheet.png"}) {
+		t.Fatalf("keeps = %q, want two pins", keeps)
+	}
+	a.Dispose()
+	if it = command(h.commit(), driver.ItemReleaseImage); it == nil || it.Value != "https://x/sheet.png" {
+		t.Fatalf("first dispose release = %+v", it)
+	}
+	c2.Dispose()
+	if it = command(h.commit(), driver.ItemReleaseImage); it == nil || it.Value != "https://x/sheet.png" {
+		t.Fatalf("second dispose release = %+v", it)
+	}
+
+	// Restricted code without AccessNetwork cannot pin a remote URI.
+	held := root.Child()
+	held.Run(func() {
+		held.ProvideAccess(allows(func(AccessRequest) bool { return false }))
+		held.KeepImage(Src("https://x/blocked.png"))
+	})
+	if it = command(h.commit(), driver.ItemKeepImage); it != nil {
+		t.Fatalf("denied remote source emitted %+v", it)
+	}
+}

@@ -43,7 +43,7 @@ var unsupportedItems = map[string]string{
 	// Services main added after this target, which no HarmonyOS kit answers here yet.
 	"services added since": `ItemAuthSession ItemPurchase ItemSensor ItemSpeak
 		ItemWebCookies ItemLookUp ItemPictureInPicture ItemPictureInPictureCommand
-		ItemScanCode ItemOrientation`,
+		ItemScanCode ItemOrientation ItemKeepImage ItemReleaseImage`,
 	// The core answers these before the platform sees them: it resolves a
 	// path with os.Stat, which js/wasm does not implement, answers the
 	// install family itself off Android, and sends no audio where the

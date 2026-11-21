@@ -57,7 +57,7 @@ core.Image{Source: core.ImageSource{
 }}
 ```
 
-`Placeholder` shows a source while the picture loads, and `FadeDuration` fades the loaded picture in over it; 0 lets the platform choose, and a nanosecond shows it at once. `OnLoadStart`, `OnProgress`, `OnLoad`, `OnError` and `OnLoadEnd` follow the load. `cx.ImageSize` reads a source's size in pixels without showing it, and `cx.PrefetchImage` downloads one into the cache. Native backends keep remote images in a disk cache of their own.
+`Placeholder` shows a source while the picture loads, and `FadeDuration` fades the loaded picture in over it; 0 lets the platform choose, and a nanosecond shows it at once. `OnLoadStart`, `OnProgress`, `OnLoad`, `OnError` and `OnLoadEnd` follow the load. `cx.ImageSize` reads a source's size in pixels without showing it, `cx.PrefetchImage` downloads one into the cache, and `cx.KeepImage` pins an atlas or texture out of the 64-source canvas cache until its returned `release` runs or its scope disposes. Native backends keep remote images in a disk cache of their own.
 
 ## Animated and vector images
 

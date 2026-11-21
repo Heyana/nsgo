@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -120,6 +121,51 @@ func (cx *Scope) PrefetchImage(src ImageSource, done func(ok bool)) {
 			done(err == nil)
 		}
 	})
+}
+
+// KeepImage pins src in the platform's canvas image cache so it is not evicted
+// while kept, until release is called or the current scope is disposed.
+// Keeping the same source more than once requires each release before it may
+// be evicted again. Releasing more than once is safe. Empty and Pixels sources
+// are not cached by key and return a no-op release.
+func (cx *Scope) KeepImage(src ImageSource) (release func()) {
+	owner := cx.current()
+	t := owner.tree()
+	if t == nil || owner.disposed || src.Pixels != nil || src.Empty() {
+		return func() {}
+	}
+	if len(src.Data) == 0 {
+		if err := cx.gate(serviceImage, src.URI); err != nil {
+			return func() {}
+		}
+	}
+	key := t.pickScale(src).Key()
+	if key == "" {
+		return func() {}
+	}
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemKeepImage, Value: key})
+	t.changed = true
+	var done atomic.Bool
+	releaseNow := func() {
+		if t := owner.tree(); t != nil {
+			t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemReleaseImage, Value: key})
+			t.changed = true
+		}
+	}
+	// The posted release marks the pin done only as it runs: Post drops it when the owner is disposed first, and the cleanup then releases the pin instead.
+	release = func() {
+		owner.Post(func() {
+			if done.CompareAndSwap(false, true) {
+				releaseNow()
+			}
+		})
+	}
+	owner.addCleanup(func() {
+		if done.CompareAndSwap(false, true) {
+			releaseNow()
+		}
+	})
+	return release
 }
 
 type imageInfoWait struct {

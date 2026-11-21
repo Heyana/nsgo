@@ -33,7 +33,7 @@ d.SetFillGradient(core.CanvasLinear(0, 0, float32(size.Width), 0,
 
 ## Text, images and parts
 
-`MeasureText`, `TextMetrics` and `SetTextAlign` lay text out on the platform's text engine, so labels use the same fonts as the rest of the app. `DrawImage`, `DrawImageIn` and `DrawImageFrom` draw pictures, and `OnPress` can test the last drawing with `IsPointInPath` and `IsPointInStroke`.
+`MeasureText`, `TextMetrics` and `SetTextAlign` lay text out on the platform's text engine, so labels use the same fonts as the rest of the app. `DrawImage`, `DrawImageIn` and `DrawImageFrom` draw pictures, and `OnPress` can test the last drawing with `IsPointInPath` and `IsPointInStroke`. Native backends cache the 64 most recently drawn unkept canvas image sources; call `release := cx.KeepImage(src)` to pin sprite atlases or long-lived textures out of that eviction bound until `release()` runs or `cx` disposes.
 
 `Drawing.Node` names a part of a drawing, such as a chart's bar or a map's region, with bounds, a role, a label and a selected state. Assistive technology reads those parts as the canvas's children, and tests find them by label, text or test ID; a press on one is a press at its center.
 

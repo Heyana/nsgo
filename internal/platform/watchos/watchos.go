@@ -452,6 +452,12 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemImageInfo:
 			apple.ImageInfo(it, s.engine.Dispatch)
 			continue
+		case driver.ItemKeepImage:
+			apple.KeepCanvasImage(s, it.Value)
+			continue
+		case driver.ItemReleaseImage:
+			apple.ReleaseCanvasImage(s, it.Value)
+			continue
 		case driver.ItemOpenURL:
 			s.openURL(it.Value, it.Count)
 			continue

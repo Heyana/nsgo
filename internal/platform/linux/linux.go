@@ -190,6 +190,7 @@ type window struct {
 	// canvasImages are the images canvases draw, and canvasWaiting the
 	// canvases to draw again when one loads.
 	canvasImages   canvasImages
+	canvasKept     map[string]int
 	canvasWaiting  map[string][]*view
 	canvasImageUse uint64
 	// canvasPass is canvasImageUse when the last frame ended: images used since then are the current frame's, which eviction keeps; canvasPassPosted says an endCanvasPass is posted.
@@ -1072,6 +1073,12 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemImageInfo:
 			w.imageInfo(it)
+			continue
+		case driver.ItemKeepImage:
+			w.keepCanvasImage(it.Value)
+			continue
+		case driver.ItemReleaseImage:
+			w.releaseCanvasImage(it.Value)
 			continue
 		case driver.ItemKeymap:
 			w.setKeymap(it.Keys)

@@ -183,3 +183,80 @@ func TestCanvasImageCacheKeepsAWidePaint(t *testing.T) {
 		}
 	}
 }
+
+func TestCanvasImageCacheKeepPinsOutOfBudget(t *testing.T) {
+	if _, err := devices(); err != nil {
+		t.Skip(err)
+	}
+	w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
+	defer w.closeCanvasImages()
+	load := func(src driver.ImageSource) *imageSlot {
+		t.Helper()
+		s := w.canvasImage(src)
+		for deadline := time.Now().Add(5 * time.Second); s.load != nil; {
+			w.runTasks()
+			if time.Now().After(deadline) {
+				t.Fatal("image load timed out")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if s.pic == nil {
+			t.Fatal("no decoded image")
+		}
+		w.endCanvasPass()
+		return s
+	}
+
+	sources := canvastest.CacheSources(200)
+	atlas := sources[0]
+	w.keepCanvasImage(atlas.Key())
+	w.keepCanvasImage(atlas.Key())
+	atlasSlot := load(atlas)
+
+	for i := 1; i <= 100; i++ {
+		load(sources[i])
+		if unkept := w.unkeptCanvasImages(); unkept > maxCanvasImages {
+			t.Fatalf("%d unkept images, want <= %d", unkept, maxCanvasImages)
+		}
+	}
+	if w.canvasImages[atlas.Key()] != atlasSlot || atlasSlot.pic == nil {
+		t.Fatal("kept atlas was evicted")
+	}
+	w.releaseCanvasImage(atlas.Key())
+	load(sources[101])
+	if w.canvasImages[atlas.Key()] != atlasSlot || atlasSlot.pic == nil {
+		t.Fatal("atlas evicted while second pin remained")
+	}
+	w.releaseCanvasImage(atlas.Key())
+	w.releaseCanvasImage(atlas.Key())
+	if w.canvasImages[atlas.Key()] != nil || atlasSlot.pic != nil {
+		t.Fatal("released old atlas was not evicted and freed")
+	}
+	if len(w.canvasImages) != maxCanvasImages {
+		t.Fatalf("%d cached after release, want %d", len(w.canvasImages), maxCanvasImages)
+	}
+
+	keptMany := sources[102 : 102+maxCanvasImages+10]
+	keptSlots := make([]*imageSlot, len(keptMany))
+	for i, src := range keptMany {
+		w.keepCanvasImage(src.Key())
+		keptSlots[i] = load(src)
+	}
+	for i := 1; i <= maxCanvasImages+5; i++ {
+		load(sources[i])
+		if unkept := w.unkeptCanvasImages(); unkept > maxCanvasImages {
+			t.Fatalf("%d unkept images with %d kept, want <= %d", unkept, len(keptMany), maxCanvasImages)
+		}
+	}
+	for i, src := range keptMany {
+		if w.canvasImages[src.Key()] != keptSlots[i] || keptSlots[i].pic == nil {
+			t.Fatalf("kept source %d was evicted", i)
+		}
+	}
+	for _, src := range keptMany {
+		w.releaseCanvasImage(src.Key())
+	}
+	if len(w.canvasImages) != maxCanvasImages {
+		t.Fatalf("%d cached after releasing %d kept images, want %d", len(w.canvasImages), len(keptMany), maxCanvasImages)
+	}
+}

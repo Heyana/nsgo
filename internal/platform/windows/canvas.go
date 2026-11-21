@@ -1026,22 +1026,11 @@ func (w *window) canvasImage(src driver.ImageSource) *imageSlot {
 	if w.canvasImages == nil {
 		w.canvasImages = map[string]*imageSlot{}
 	}
-	for len(w.canvasImages) >= maxCanvasImages {
-		var oldest string
-		var at uint64 = math.MaxUint64
-		for key, slot := range w.canvasImages {
-			// A load under way stays: cancelling it would leave the canvases drawing it without the image until they paint again.
-			if slot.load == nil && slot.used < at {
-				oldest, at = key, slot.used
-			}
-		}
-		if at > w.canvasPass {
-			// Every image loaded was drawn by the paint under way, or none has loaded: evicting one would load it again at the next paint, forever.
-			break
-		}
-		w.canvasImages[oldest].reset(driver.ImageSource{})
-		delete(w.canvasImages, oldest)
+	reserve := 0
+	if w.canvasKept[key] == 0 {
+		reserve = 1
 	}
+	w.evictCanvasImages(reserve)
 	s := &imageSlot{src: src, used: w.canvasImageUse}
 	w.canvasImages[key] = s
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1081,8 +1070,65 @@ func (w *window) canvasImage(src driver.ImageSource) *imageSlot {
 	return s
 }
 
-// maxCanvasImages bounds the encoded sources a window's canvases keep, loaded or failed, and is exceeded only by loads under way, which are never evicted; the least recently drawn go first, but never one the paint under way drew, so a paint drawing more keeps them all until a later paint draws others.
+// maxCanvasImages bounds the unkept encoded sources a window's canvases keep, loaded or failed, and is exceeded only by loads under way, which are never evicted; the least recently drawn go first, but never one kept via keepCanvasImage or drawn by the paint under way, so a paint drawing more keeps them all until a later paint draws others.
 const maxCanvasImages = 64
+
+func (w *window) keepCanvasImage(key string) {
+	if w.canvasClosed || key == "" {
+		return
+	}
+	if w.canvasKept == nil {
+		w.canvasKept = map[string]int{}
+	}
+	w.canvasKept[key]++
+}
+
+func (w *window) releaseCanvasImage(key string) {
+	if w.canvasClosed || key == "" {
+		return
+	}
+	n := w.canvasKept[key]
+	if n <= 0 {
+		return
+	}
+	if n == 1 {
+		delete(w.canvasKept, key)
+	} else {
+		w.canvasKept[key] = n - 1
+	}
+	w.evictCanvasImages(0)
+}
+
+func (w *window) unkeptCanvasImages() int {
+	n := 0
+	for key := range w.canvasImages {
+		if w.canvasKept[key] == 0 {
+			n++
+		}
+	}
+	return n
+}
+
+func (w *window) evictCanvasImages(reserve int) {
+	unkept := w.unkeptCanvasImages()
+	for unkept+reserve > maxCanvasImages {
+		var oldest string
+		var at uint64 = math.MaxUint64
+		for key, slot := range w.canvasImages {
+			// A kept image stays out of eviction; a load under way stays too: cancelling it would leave the canvases drawing it without the image until they paint again.
+			if w.canvasKept[key] == 0 && slot.load == nil && slot.used < at {
+				oldest, at = key, slot.used
+			}
+		}
+		if at > w.canvasPass {
+			// Every unkept image loaded was drawn by the paint under way, or none has loaded: evicting one would load it again at the next paint, forever.
+			break
+		}
+		w.canvasImages[oldest].reset(driver.ImageSource{})
+		delete(w.canvasImages, oldest)
+		unkept--
+	}
+}
 
 // endCanvasPass ends the paint that drew the images used so far: they may be evicted from now on.
 func (w *window) endCanvasPass() {
@@ -1101,6 +1147,7 @@ func (w *window) closeCanvasImages() {
 		s.reset(driver.ImageSource{})
 		delete(w.canvasImages, key)
 	}
+	clear(w.canvasKept)
 }
 
 // maxCanvasFrames and maxCanvasFramePixels bound the pictures a window keeps of the pixels its canvases draw, by count and by their pixels together (8 Mi, four 1920x1080 frames): a stream's older versions are never drawn again.

@@ -121,6 +121,7 @@ var itemNames = map[ItemKind]string{
 	ItemAudio:        "audio", ItemAuthSession: "auth-session", ItemSpeak: "speak",
 	ItemSignInWithApple: "sign-in-with-apple", ItemAppleCredentialState: "apple-credential-state",
 	ItemPurchase: "purchase", ItemWebCookies: "web-cookies", ItemLookUp: "look-up", ItemQuickLook: "quick-look",
+	ItemKeepImage: "keep-image", ItemReleaseImage: "release-image",
 }
 
 // TraceLine is the item as traces print it: its kind, its view and what
@@ -146,7 +147,7 @@ func (it *MountItem) TraceLine() string {
 	case ItemText:
 		fmt.Fprintf(&b, " %q", it.Text.Text)
 	case ItemInputValue, ItemTitle, ItemAnnounce, ItemAccessibilityLabel,
-		ItemSetClipboard, ItemOpenURL, ItemInputSource:
+		ItemSetClipboard, ItemOpenURL, ItemInputSource, ItemKeepImage, ItemReleaseImage:
 		fmt.Fprintf(&b, " %q", it.Value)
 	case ItemViewProps:
 		if p := it.ViewProps; p.TestID != "" || p.Label != "" {

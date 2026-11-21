@@ -928,6 +928,65 @@ func TestAwakeHoldsNameWhatEachReleaseEnds(t *testing.T) {
 	}
 }
 
+func TestKeepImagePreventsEvictionAndReleasesOnDispose(t *testing.T) {
+	atlas := core.Src("asset:/atlas.png")
+	var current *core.Signal[core.ImageSource]
+	var showHolder *core.Signal[bool]
+	var releaseMain func()
+	app := Start(t, func(cx *core.Scope) core.Node {
+		current = core.NewSignalFunc(cx, atlas, nil)
+		showHolder = core.NewSignal(cx, true)
+		releaseMain = cx.KeepImage(atlas)
+		return core.View{Children: []core.Node{
+			core.Show{When: showHolder.Get, Then: func(cx *core.Scope) core.Node {
+				// Second scope pins the same atlas; disposing it leaves the root's pin intact.
+				cx.KeepImage(atlas)
+				return core.View{}
+			}},
+			core.Canvas{
+				Style: core.Style{Width: core.Pt(64), Height: core.Pt(64)},
+				Draw: func(d *core.Drawing, _ core.Size) {
+					d.DrawImageIn(current.Get(), 0, 0, 64, 64)
+				},
+			},
+		}}
+	})
+	if !app.KeptImage(atlas) || app.KeptImages[atlas.Key()] != 2 {
+		t.Fatalf("kept = %v, want refcount 2", app.KeptImages)
+	}
+	if !app.CanvasImageCached(atlas) {
+		t.Fatal("atlas was not cached after initial draw")
+	}
+
+	// Draw 100 other unique sources across separate commits.
+	for i := range 100 {
+		src := core.ImageSource{Data: []byte(fmt.Sprintf("frame-%d", i))}
+		app.Post(func() { current.Set(src) })
+		app.Settle()
+	}
+	if !app.KeptImage(atlas) || !app.CanvasImageCached(atlas) {
+		t.Fatal("kept atlas was evicted after drawing 100 other images")
+	}
+
+	// Disposing the child scope drops refcount from 2 to 1; atlas stays pinned and cached.
+	app.Post(func() { showHolder.Set(false) })
+	app.Settle()
+	if !app.KeptImage(atlas) || app.KeptImages[atlas.Key()] != 1 || !app.CanvasImageCached(atlas) {
+		t.Fatalf("after child dispose: kept=%v cached=%v", app.KeptImages, app.CanvasImageCached(atlas))
+	}
+
+	// Calling release twice is safe and unpins + evicts the old atlas cleanly.
+	releaseMain()
+	releaseMain()
+	app.Settle()
+	if app.KeptImage(atlas) || len(app.KeptImages) != 0 {
+		t.Fatalf("atlas still kept after release: %v", app.KeptImages)
+	}
+	if app.CanvasImageCached(atlas) {
+		t.Fatal("released old atlas was not evicted from cache")
+	}
+}
+
 // TestPicksRecordTheirHints checks that a test sees the title, button label, type name and starting folder an app asked its pickers for.
 func TestPicksRecordTheirHints(t *testing.T) {
 	var files, dirs int
