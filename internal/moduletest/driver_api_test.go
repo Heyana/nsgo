@@ -66,14 +66,11 @@ func allowedPublicDriverType(name string) bool {
 	// Protocol types still exported by the existing API. Move callers
 	// to app-facing types as these entries are removed (#181).
 	case
-		"AppleSignInRequest", "Event", "EventKind", "EventMask",
-		"ImageConfig", "InputConfig", "KeepAwake", "MenuEntry",
-		"ModalConfig", "PictureInPictureConfig", "PurchaseCommand", "PurchaseRequest",
-		"ScreenConfig", "ScrollConfig", "ShareRequest", "SpeechCommand",
-		"SpeechRequest", "StatusBarConfig", "StickyCell", "StorageChange",
-		"StorageOp", "SurfaceConfig", "SurfaceKind", "TouchGeometry",
-		"VideoConfig", "ViewKind", "ViewProps", "ViewStyle",
-		"WebCommand", "WebConfig", "WindowAction", "WindowCommand":
+		"Event", "EventKind", "EventMask", "ImageConfig",
+		"InputConfig", "ModalConfig", "PictureInPictureConfig", "ScreenConfig",
+		"ScrollConfig", "StickyCell", "StorageChange", "StorageOp",
+		"SurfaceKind", "TouchGeometry", "VideoConfig", "ViewKind",
+		"ViewProps", "ViewStyle", "WebCommand", "WebConfig":
 		return true
 	}
 	return false

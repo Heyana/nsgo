@@ -102,14 +102,8 @@ var runtimeAPI = map[string]bool{
 	"core.Tree": true, "core.NewTree": true, "core.ApproxTextEngine": true, "core.NewStore": true,
 }
 
-// protocolOnly lists driver types that have no place in the public API.
-var protocolOnly = map[string]bool{
-	"ShareRequest": true, "WindowAction": true, "WindowCommand": true,
-}
-
-// TestPublicAPINamesNoInternalType keeps protocol-only types out of
-// public APIs and checks that any other reachable internal type has an
-// alias in core or in the public package.
+// TestPublicAPINamesNoInternalType checks the driver allowlist and requires
+// other reachable internal types to have an alias in the public API.
 func TestPublicAPINamesNoInternalType(t *testing.T) {
 	if testing.Short() {
 		t.Skip("lists and loads every public package")
@@ -162,10 +156,6 @@ func TestPublicAPINamesNoInternalType(t *testing.T) {
 					return
 				}
 				if obj.Pkg() == nil || !strings.HasPrefix(obj.Pkg().Path(), modulePath) {
-					return
-				}
-				if obj.Pkg().Path() == modulePath+"/internal/driver" && protocolOnly[obj.Name()] {
-					t.Errorf("%s reaches the protocol type driver.%s through %s", pkg.Path(), obj.Name(), from)
 					return
 				}
 				if internal(obj.Pkg()) && obj.Exported() && !named[obj] {
