@@ -61,8 +61,9 @@ type WebView struct {
 
 	// OnLoadStart, OnLoad and OnNavigationStateChange receive the page's
 	// state as it starts loading, finishes and navigates.
-	OnLoadStart             func(WebNavigation)
-	OnLoad                  func(WebNavigation)
+	OnLoadStart func(WebNavigation)
+	OnLoad      func(WebNavigation)
+	// OnNavigationStateChange also reports same-document history and title changes on macOS, iOS and Linux.
 	OnNavigationStateChange func(WebNavigation)
 	// OnOpenWindow receives a page's new-window request on macOS, iOS,
 	// Windows and Linux. It may load the URL in this view or open it

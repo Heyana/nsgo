@@ -20,7 +20,7 @@ core.View{
 
 `core.WebView` shows web content; an empty `WebSource` loads `about:blank` and reports the usual load and navigation events. Set `SourceFunc` to an empty source or call `Ref.Load(core.WebSource{})` to clear the previous page. Set `InjectedJavaScriptBeforeContentFunc` when the script before the page's own scripts follows a signal: when it changes, the view loads its source again with the new script, in place of the page it shows, even one the user or `Ref.Load` navigated to. Set `UserAgentSuffix` (TSX `userAgentSuffix`) to add a token, such as `Version/26.0 Safari/605.1.15`, after the platform's own user agent, or after `UserAgent` when that is set; on macOS and iOS a suffix to the platform's own takes effect only as the view is first made, and HarmonyOS and the web keep their own user agent. Attach a `core.Ref` to call `Reload`, `GoBack` and `GoForward`. On native targets these commands keep the app's own HTML and data sources exempt from `core.AccessWebSchemes`; pages that create new navigations still follow the access policy.
 
-On Linux, `OnNavigationStateChange` also reports same-document URL, history and title changes.
+On macOS, iOS and Linux, `OnNavigationStateChange` also reports same-document URL, history and title changes.
 
 In TSX, a change of `injectedJavaScriptBeforeContentLoaded` loads the source again with the new script in the same web view, as `InjectedJavaScriptBeforeContentFunc` does; a change of `injectedJavaScript` makes a new web view, which loads the source anew, as a change of `userAgent`, `userAgentSuffix` or `mobile` does.
 

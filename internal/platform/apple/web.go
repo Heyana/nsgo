@@ -39,9 +39,12 @@ type Web struct {
 	ownPage       bool                          // the document last committed came from the app
 	ownHistory    map[objc.ID]*driver.WebSource // retained native app-created entries
 	pageSource    driver.WebSource              // the app source reload replays, including HTML bytes
-	htmlStart     *driver.WebSource             // initial HTML if WebKit omitted its history entry
-	htmlAnchor    objc.ID                       // retained first native entry after that HTML
-	htmlShown     bool                          // initial HTML is shown in place of its anchor
+	loading       objc.ID                       // the main-frame navigation whose start the delegate reported
+	lastState     driver.WebNavigation
+	stateQueued   bool
+	htmlStart     *driver.WebSource // initial HTML if WebKit omitted its history entry
+	htmlAnchor    objc.ID           // retained first native entry after that HTML
+	htmlShown     bool              // initial HTML is shown in place of its anchor
 	made          bool
 }
 
@@ -53,6 +56,8 @@ var (
 
 // messageHandler is the name pages post to, as window.webkit.messageHandlers.nsgo.
 const messageHandler = "nsgo"
+
+var webStateKeys = [...]string{"URL", "title", "canGoBack", "canGoForward"}
 
 var bridge = driver.WebBridge("function (d) { window.webkit.messageHandlers." + messageHandler + ".postMessage(d); }")
 
@@ -68,15 +73,11 @@ func loadWebKit() {
 	if _, err := purego.Dlopen("/System/Library/Frameworks/WebKit.framework/WebKit", purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil {
 		panic(err)
 	}
-	nav := func(name string, loading bool, kinds ...driver.EventKind) objc.MethodDef {
-		return objc.MethodDef{Cmd: sel(name), Fn: func(self objc.ID, _ objc.SEL, web, _ objc.ID) {
-			if w := webHandlers[self]; w != nil {
-				w.navigated(loading, kinds...)
-			}
-		}}
-	}
-	failed := func(self objc.ID, _ objc.SEL, _, _, err objc.ID) {
+	failed := func(self objc.ID, _ objc.SEL, _, navigation, err objc.ID) {
 		if w := webHandlers[self]; w != nil {
+			if w.loading == navigation {
+				w.loading = 0
+			}
 			domain := GoString(err.Send(sel("domain")))
 			code := objc.Send[int](err, sel("code"))
 			// WebKit reports an intentional stop or policy interruption as a failed navigation. They are control flow, not page errors.
@@ -101,8 +102,20 @@ func loadWebKit() {
 	}
 	classWebHandler = RegisterClass("NsgoWebHandler", Class("NSObject"), protocols,
 		[]objc.MethodDef{
-			nav("webView:didStartProvisionalNavigation:", true, driver.EventLoadStart, driver.EventNavigationStateChange),
-			nav("webView:didFinishNavigation:", false, driver.EventLoad, driver.EventNavigationStateChange),
+			{Cmd: sel("webView:didStartProvisionalNavigation:"), Fn: func(self objc.ID, _ objc.SEL, _, navigation objc.ID) {
+				if w := webHandlers[self]; w != nil {
+					w.loading = navigation
+					w.reportNavigation(w.navigation(true), driver.EventLoadStart, driver.EventNavigationStateChange)
+				}
+			}},
+			{Cmd: sel("webView:didFinishNavigation:"), Fn: func(self objc.ID, _ objc.SEL, _, navigation objc.ID) {
+				if w := webHandlers[self]; w != nil {
+					if w.loading == navigation {
+						w.loading = 0
+					}
+					w.reportNavigation(w.navigation(false), driver.EventLoad, driver.EventNavigationStateChange)
+				}
+			}},
 			{Cmd: sel("webView:didCommitNavigation:"), Fn: func(self objc.ID, _ objc.SEL, _, _ objc.ID) {
 				if w := webHandlers[self]; w != nil {
 					w.committed()
@@ -110,6 +123,11 @@ func loadWebKit() {
 			}},
 			{Cmd: sel("webView:didFailNavigation:withError:"), Fn: failed},
 			{Cmd: sel("webView:didFailProvisionalNavigation:withError:"), Fn: failed},
+			{Cmd: sel("observeValueForKeyPath:ofObject:change:context:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID, web objc.ID, _ objc.ID, _ uintptr) {
+				if w := webHandlers[self]; w != nil && w.web == web {
+					w.queueStateChange()
+				}
+			}},
 			{Cmd: sel("userContentController:didReceiveScriptMessage:"), Fn: func(self objc.ID, _ objc.SEL, _, message objc.ID) {
 				if w := webHandlers[self]; w != nil {
 					body := message.Send(sel("body"))
@@ -464,6 +482,9 @@ func (w *Web) make() {
 	config.Send(sel("release"))
 	w.web.Send(sel("setNavigationDelegate:"), w.handler)
 	w.web.Send(sel("setUIDelegate:"), w.handler)
+	for _, key := range webStateKeys {
+		w.web.Send(sel("addObserver:forKeyPath:options:context:"), w.handler, NSString(key), uint(0), uintptr(0))
+	}
 	const flexibleSize = 2 | 16 // width and height, in AppKit and UIKit alike
 	w.web.Send(sel("setAutoresizingMask:"), uint(flexibleSize))
 	// WebKit paints white otherwise; on macOS a page without a
@@ -655,8 +676,8 @@ func nsURL(s string) objc.ID {
 	return objc.ID(Class("NSURL")).Send(sel("URLWithString:"), NSString(s))
 }
 
-// navigated reports the page's state as kinds.
-func (w *Web) navigated(loading bool, kinds ...driver.EventKind) {
+// navigation reads the WebKit state the app presents.
+func (w *Web) navigation(loading bool) driver.WebNavigation {
 	nav := driver.WebNavigation{
 		URL:          GoString(w.web.Send(sel("URL")).Send(sel("absoluteString"))),
 		Title:        GoString(w.web.Send(sel("title"))),
@@ -671,10 +692,34 @@ func (w *Web) navigated(loading bool, kinds ...driver.EventKind) {
 			nav.CanGoBack = true
 		}
 	}
-	for _, k := range kinds {
+	return nav
+}
+
+func (w *Web) reportNavigation(nav driver.WebNavigation, kinds ...driver.EventKind) {
+	w.lastState = nav
+	for _, kind := range kinds {
 		n := nav
-		w.Dispatch(driver.Event{Kind: k, Navigation: &n})
+		w.Dispatch(driver.Event{Kind: kind, Navigation: &n})
 	}
+}
+
+// queueStateChange reads the URL, title and history together after a WebKit
+// update. A full load reports its state through the navigation delegate.
+func (w *Web) queueStateChange() {
+	if w.stateQueued {
+		return
+	}
+	w.stateQueued = true
+	OnMain(func() {
+		w.stateQueued = false
+		if w.web == 0 || w.loading != 0 || objc.Send[bool](w.web, sel("isLoading")) {
+			return
+		}
+		nav := w.navigation(false)
+		if nav != w.lastState {
+			w.reportNavigation(nav, driver.EventNavigationStateChange)
+		}
+	})
 }
 
 // Command does c, with value for messages and scripts.
@@ -744,6 +789,9 @@ func (w *Web) Close() {
 }
 
 func (w *Web) close() {
+	for _, key := range webStateKeys {
+		w.web.Send(sel("removeObserver:forKeyPath:context:"), w.handler, NSString(key), uintptr(0))
+	}
 	w.web.Send(sel("stopLoading"))
 	w.web.Send(sel("setNavigationDelegate:"), objc.ID(0))
 	w.web.Send(sel("setUIDelegate:"), objc.ID(0))

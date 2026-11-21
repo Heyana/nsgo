@@ -68,7 +68,7 @@
 - Report every finger of a Windows or Linux touchscreen to `View.OnTouch` and the touch responder with an ID from 1 that stays while it is down, on X11 and Wayland too, as on iOS, Android and the web; the mouse stays finger 0, and a touch no longer also reports it (#1056 by @houko).
 - Add `WebView.UserAgentSuffix`, and `userAgentSuffix` in TSX, to append to the platform's own user agent or to `UserAgent` on macOS, iOS, Android, Windows and Linux (#114 by @houko).
 - Show a WebView placeholder with an AppArmor diagnostic on Linux when bubblewrap cannot start WebKitGTK's sandbox (#1029 by @houko).
-- Report same-document URL, history and title changes from `WebView` on Linux (#113 by @houko).
+- Report same-document URL, history and title changes from `WebView` on macOS, iOS and Linux (#113 by @houko).
 - Play short sounds and streamed audio on the web through `audio.Sound` and `audio.Player` (#1098 by @houko).
 - Honor `core.Video.Rate` on Linux for seekable streams when GstPlay and its pitch filter are available (#110 by @houko).
 - Honor every family in a Windows `FontFamily` list when DirectWrite falls back for missing characters (#668 by @houko).
