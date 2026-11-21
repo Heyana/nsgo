@@ -140,7 +140,7 @@ final class Protocol {
     /** Frame timestamp, display period, app UI work in nanoseconds, and whether the app changed. */
     static final int PERF_FRAME = 28;
     /** A hardware key: surface, view, scan code, Android key code, flags and name. */
-    static final int PHYSICAL_KEY = 29;
+    static final int PHYSICAL_KEY = 30;
 
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;

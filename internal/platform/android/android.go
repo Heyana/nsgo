@@ -130,7 +130,7 @@ const (
 	msgTextReply      = 27
 	msgPerfFrame      = 28 // a monitored Choreographer frame and UI work since the previous frame
 	// msgPhysicalKey reports a hardware key and its scan code (keycodes.go).
-	msgPhysicalKey = 29
+	msgPhysicalKey = 30
 )
 
 // The parts of an image view's request msgImage carries.
