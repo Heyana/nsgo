@@ -412,9 +412,10 @@ On Windows and Linux, a firmware placeholder such as `To Be Filled By O.E.M.` or
 | macOS | `NSScreen.screens`, converted from AppKit's bottom-left coordinates | `NSLocale` and its calendar and date format preferences |
 | Windows | `EnumDisplayMonitors`, monitor work areas and per-monitor DPI | `GetLocaleInfoEx` for first weekday, hour cycle and measurement |
 | Linux | GDK's monitor model; X11 work areas, the whole monitor on Wayland, which reports none | the session's locale categories and GTK settings |
-| iOS, Android, Web | no desktop displays | platform or browser locale settings where available |
+| iOS, Web | no desktop displays | platform or browser locale settings where available |
+| Android | no desktop displays | format locale's Unicode extensions (`fw`, `mu`, `ms`), `Calendar`, `LocaleData` and `DateFormat.is24HourFormat` |
 
-`LocaleSettings` reports `FirstDayOfWeek`, `HourCycle` and `MeasurementSystem` independently of `Env.Locale`, so a localized app can follow the user's calendar, clock and measurement choices. A zero field means the platform did not report that choice.
+`LocaleSettings` reports `FirstDayOfWeek`, `HourCycle`, `MeasurementSystem` and `TemperatureUnit` independently of `Env.Locale`, so a localized app can follow the user's calendar, clock, measurement and temperature choices. A zero field means the platform did not report that choice.
 
 ## The application in front
 

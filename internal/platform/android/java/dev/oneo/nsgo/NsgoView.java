@@ -464,6 +464,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (Build.VERSION.SDK_INT >= 34 && uiMode != null && contrast == null) listenContrast();
         getContext().getContentResolver().registerContentObserver(
                 Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, motion);
+        getContext().getContentResolver().registerContentObserver(
+                Settings.System.getUriFor(Settings.System.TIME_12_24), false, motion);
         if (primary != null) return;
         // Back goes to the app only while it can answer, so not on a detached view or an ended engine.
         boolean answers = attached || engine == null || engine.canStart();
@@ -1075,13 +1077,22 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             d.writeFloat(Header.BAR);
             d.writeFloat(Header.LARGE_BAR);
             d.writeInt(Build.VERSION.SDK_INT);
+
             d.writeByte(power != null && Build.VERSION.SDK_INT >= 29 ? power.getCurrentThermalStatus() + 1 : 0);
             d.writeByte(power == null ? 0 : power.isPowerSaveMode() ? 2 : 1);
+            java.util.Locale formatLocale = hostLocale != null ? hostLocale
+                    : java.util.Locale.getDefault(java.util.Locale.Category.FORMAT);
+            if (formatLocale == null) formatLocale = java.util.Locale.getDefault();
+            if (formatLocale == null) formatLocale = locale;
+            LocalePrefs.read(formatLocale, hostLocale != null ? null : locale,
+                    android.text.format.DateFormat.is24HourFormat(getContext()),
+                    measurementSystem(formatLocale)).write(d);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
         return bytes.toByteArray();
     }
+
 
     private void listenPower() {
         if (power == null) return;
@@ -1102,6 +1113,22 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             power.removeThermalStatusListener((PowerManager.OnThermalStatusChangedListener) thermalListener);
             thermalListener = null;
         }
+    }
+
+    /** ICU's measurement system for formatLocale when it names a region, else "". */
+    private static String measurementSystem(java.util.Locale formatLocale) {
+        if (Build.VERSION.SDK_INT < 28 || formatLocale == null || formatLocale.getCountry().isEmpty()) {
+            return "";
+        }
+        try {
+            android.icu.util.LocaleData.MeasurementSystem ms =
+                    android.icu.util.LocaleData.getMeasurementSystem(android.icu.util.ULocale.forLocale(formatLocale));
+            if (android.icu.util.LocaleData.MeasurementSystem.US.equals(ms)) return "us";
+            if (android.icu.util.LocaleData.MeasurementSystem.UK.equals(ms)) return "uk";
+            if (android.icu.util.LocaleData.MeasurementSystem.SI.equals(ms)) return "metric";
+        } catch (Throwable ignored) {
+        }
+        return "";
     }
 
     /** The appearance the app forces, as driver.Appearance; 0 follows the system's. */

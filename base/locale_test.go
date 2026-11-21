@@ -14,7 +14,7 @@ func TestRegionalFollowsTheUser(t *testing.T) {
 	var got []i18n.RegionalSettings
 	for _, env := range []core.Environment{
 		{Locale: "en-US"},
-		{Locale: "en-US", LocaleSettings: core.LocaleSettings{FirstDayOfWeek: 1, HourCycle: "h23", MeasurementSystem: "metric"}},
+		{Locale: "en-US", LocaleSettings: core.LocaleSettings{FirstDayOfWeek: 1, HourCycle: "h23", MeasurementSystem: "metric", TemperatureUnit: "celsius"}},
 		{Locale: "en-US", LocaleSettings: core.LocaleSettings{Region: "DE"}},
 	} {
 		nsgotest.Start(t, func(cx *core.Scope) core.Node {
@@ -23,9 +23,9 @@ func TestRegionalFollowsTheUser(t *testing.T) {
 		}, nsgotest.Environment(env))
 	}
 	want := []i18n.RegionalSettings{
-		{FirstDayOfWeek: 7, HourCycle: "h12", MeasurementSystem: "us"},
-		{FirstDayOfWeek: 1, HourCycle: "h23", MeasurementSystem: "metric"},
-		{FirstDayOfWeek: 1, HourCycle: "h23", MeasurementSystem: "metric"},
+		{FirstDayOfWeek: 7, HourCycle: "h12", MeasurementSystem: "us", TemperatureUnit: "fahrenheit"},
+		{FirstDayOfWeek: 1, HourCycle: "h23", MeasurementSystem: "metric", TemperatureUnit: "celsius"},
+		{FirstDayOfWeek: 1, HourCycle: "h23", MeasurementSystem: "metric", TemperatureUnit: "celsius"},
 	}
 	for i := range want {
 		if got[i] != want[i] {

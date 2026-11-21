@@ -10,12 +10,13 @@ func TestRegionalOf(t *testing.T) {
 		locale string
 		want   Regional
 	}{
-		{"en-US", Regional{7, "h12", "us"}},
-		{"en-GB", Regional{1, "h23", "uk"}},
-		{"de-DE", Regional{1, "h23", "metric"}},
-		{"ar-EG", Regional{6, "h12", "metric"}},
-		{"en-US-u-fw-mon-hc-h23-ms-metric", Regional{1, "h23", "metric"}},
-		{"zh", Regional{7, "h23", "metric"}},
+		{"en-US", Regional{7, "h12", "us", "fahrenheit"}},
+		{"en-GB", Regional{1, "h23", "uk", "celsius"}},
+		{"de-DE", Regional{1, "h23", "metric", "celsius"}},
+		{"ar-EG", Regional{6, "h12", "metric", "celsius"}},
+		{"en-US-u-fw-mon-hc-h23-ms-metric-mu-celsius", Regional{1, "h23", "metric", "celsius"}},
+		{"de-DE-u-mu-fahrenhe", Regional{1, "h23", "metric", "fahrenheit"}},
+		{"zh", Regional{7, "h23", "metric", "celsius"}},
 	} {
 		if got := RegionalOf(c.locale); got != c.want {
 			t.Errorf("RegionalOf(%q) = %+v, want %+v", c.locale, got, c.want)

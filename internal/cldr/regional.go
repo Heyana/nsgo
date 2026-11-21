@@ -9,21 +9,23 @@ import (
 // Regional is how a locale's region reads weeks, times and measures,
 // as CLDR 48's supplemental data has it, Intl's names for its values:
 // FirstDayOfWeek 1 for Monday to 7 for Sunday (ISO 8601), HourCycle
-// "h11", "h12", "h23" or "h24", MeasurementSystem "metric", "us" or "uk".
+// "h11", "h12", "h23" or "h24", MeasurementSystem "metric", "us" or
+// "uk", TemperatureUnit "celsius" or "fahrenheit".
 type Regional struct {
 	FirstDayOfWeek    int
 	HourCycle         string
 	MeasurementSystem string
+	TemperatureUnit   string
 }
 
 // RegionalOf is locale's regional preferences: what its Unicode extension
-// sets (-u-fw-, -u-hc-, -u-ms-), else its region's, likely or given, else
-// its language's hours.
+// sets (-u-fw-, -u-hc-, -u-ms-, -u-mu-), else its region's, likely or
+// given, else its language's hours.
 func RegionalOf(locale string) Regional {
 	t, _ := language.Parse(strings.ReplaceAll(locale, "_", "-"))
 	region, _ := t.Region()
 	r := Regional{FirstDayOfWeek: firstDayOf(region.String()), HourCycle: cycleOf(hourLetter(dataAt(find(locale)))),
-		MeasurementSystem: measurementOf(region.String())}
+		MeasurementSystem: measurementOf(region.String()), TemperatureUnit: temperatureOf(region.String())}
 	if fw := weekdays[t.TypeForKey("fw")]; fw > 0 {
 		r.FirstDayOfWeek = fw
 	}
@@ -37,6 +39,12 @@ func RegionalOf(locale string) Regional {
 		r.MeasurementSystem = "us"
 	case "uksystem":
 		r.MeasurementSystem = "uk"
+	}
+	switch t.TypeForKey("mu") {
+	case "celsius":
+		r.TemperatureUnit = "celsius"
+	case "fahrenhe":
+		r.TemperatureUnit = "fahrenheit"
 	}
 	return r
 }
@@ -75,6 +83,15 @@ func measurementOf(region string) string {
 		return "uk"
 	}
 	return "metric"
+}
+
+// temperatureOf is CLDR's temperature unit preference of region.
+func temperatureOf(region string) string {
+	switch region {
+	case "US", "BS", "BZ", "KY", "PW", "PR", "AS", "GU", "MP", "VI", "UM":
+		return "fahrenheit"
+	}
+	return "celsius"
 }
 
 // cycleOf is the hour cycle of an hour letter.

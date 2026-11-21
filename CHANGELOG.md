@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Report Android's regional preferences in `Env.LocaleSettings` and `i18n.Regional` — first day of the week, temperature unit (`TemperatureUnit`), 12/24-hour clock from `DateFormat.is24HourFormat` and measurement system — from the format locale's Unicode extensions and ICU data (#1591).
 - Expose a multiline input's current placeholder on its native editor on iOS (`UITextView` `accessibilityHint` while empty) and Linux (`GtkTextView` `GTK_ACCESSIBLE_PROPERTY_PLACEHOLDER`), following updates and clearing while keeping the visual placeholder label out of VoiceOver and AT-SPI (#1595).
 - Expose `AXInvalid` (`"true"`/`"false"`) on macOS accessible views, input editors and switches and post `AXInvalidStatusChanged` when validation state changes (#1592).
 - Add `mobile.DeferSystemGestures` for scoped iOS edge deferral and Android touch exclusion rectangles (#1218 by @houko).

@@ -32,7 +32,7 @@ runs the app in a pseudo locale that shows untranslated and cut text. Any build 
 
 ## Weeks, times and measures
 
-`i18n.Regional(cx)` says how the user reads weeks, times and measures, apart from the language: the day weeks start on, 12- or 24-hour time and the measurement system, as they set them on the platform, else as their region does. Calendars and date pickers start their weeks there and time fields show those hours unless the app sets `FirstDayOfWeek` or `HourCycle`, and the times a catalog's messages write follow the user's hours.
+`i18n.Regional(cx)` says how the user reads weeks, times and measures, apart from the language: the day weeks start on, 12- or 24-hour time, the measurement system and the temperature unit, as they set them on the platform, else as their region does. Calendars and date pickers start their weeks there and time fields show those hours unless the app sets `FirstDayOfWeek` or `HourCycle`, and the times a catalog's messages write follow the user's hours.
 
 ## NSGo's own words
 

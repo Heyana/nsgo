@@ -141,7 +141,8 @@ func FormatDate(lang string, t time.Time, o DateOptions) string { return cldr.Fo
 
 // RegionalSettings are how weeks, times and measures read, in Intl's
 // names: FirstDayOfWeek 1 for Monday to 7 for Sunday, HourCycle "h11",
-// "h12", "h23" or "h24", MeasurementSystem "metric", "us" or "uk".
+// "h12", "h23" or "h24", MeasurementSystem "metric", "us" or "uk",
+// TemperatureUnit "celsius" or "fahrenheit".
 type RegionalSettings = cldr.Regional
 
 // Regional returns how the user reads weeks, times and measures under
@@ -168,6 +169,9 @@ func Regional(cx *core.Scope) RegionalSettings {
 	}
 	if s.MeasurementSystem != "" {
 		r.MeasurementSystem = s.MeasurementSystem
+	}
+	if s.TemperatureUnit != "" {
+		r.TemperatureUnit = s.TemperatureUnit
 	}
 	return r
 }

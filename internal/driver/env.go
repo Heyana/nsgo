@@ -184,14 +184,16 @@ const (
 // LocaleSettings are the regional preferences the user set, in Intl's
 // names: FirstDayOfWeek 1 for Monday to 7 for Sunday (ISO 8601),
 // HourCycle "h11", "h12", "h23" or "h24", MeasurementSystem "metric",
-// "us" or "uk"; zero where the platform does not say, which Region
-// decides, else the locale's region (i18n.Regional). Region is the region
-// whose formats the user chose apart from the language, such as Linux's
-// LC_TIME, an ISO 3166 code.
+// "us" or "uk", TemperatureUnit "celsius" or "fahrenheit"; zero where
+// the platform does not say, which Region decides, else the locale's
+// region (i18n.Regional). Region is the region whose formats the user
+// chose apart from the language, such as Linux's LC_TIME, an ISO 3166
+// code.
 type LocaleSettings struct {
 	FirstDayOfWeek    int
 	HourCycle         string
 	MeasurementSystem string
+	TemperatureUnit   string
 	Region            string
 }
 
