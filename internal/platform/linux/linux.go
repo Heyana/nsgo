@@ -175,6 +175,7 @@ type window struct {
 	appID       string
 	keys        []driver.KeyBinding
 	hotKeys     *globalHotKeys
+	colorPick   *portalColorPick
 	held        map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
 	heldKeys    bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
 	heldMouse   bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
@@ -844,6 +845,7 @@ func (w *window) shutdown(forced bool) {
 	w.closeAudio()
 	w.closeCanvasImages()
 	w.closeHotKeys()
+	w.cancelColorPick()
 	if w.loop != 0 {
 		// The app ends with this window: every hold goes, sent before the main loop returns.
 		endAwake(awakeEndTimeout)
@@ -1026,6 +1028,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemPickDirectories:
 			w.pickDirectories(*it.Directories, it.Count)
+			continue
+		case driver.ItemPickScreenColor:
+			w.pickScreenColor(it.Count)
 			continue
 		case driver.ItemOpenFile:
 			w.openFile(*it.Open, it.Count)

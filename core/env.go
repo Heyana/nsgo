@@ -388,7 +388,8 @@ func (e *Env) IncreaseContrast() bool { return e.contrast.Get() }
 func (e *Env) ScreenReader() bool { return e.reader.Get() }
 
 // CanPickScreenColor reports whether Scope.PickScreenColor works here:
-// macOS and browsers with an EyeDropper.
+// macOS, Windows, Linux where the desktop Screenshot portal is available,
+// and browsers with an EyeDropper.
 func (e *Env) CanPickScreenColor() bool { return e.screenColor.Get() }
 
 // CanRecognizeSpeech reports whether Scope.StartSpeech recognizes speech

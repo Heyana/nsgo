@@ -419,6 +419,7 @@ type window struct {
 	// shader (effect.go).
 	effects       map[*view]bool
 	customCursors *customCursorCache
+	colorPicker   *winColorPicker
 	env           driver.Environment // the last reported
 	alerts        []driver.AlertConfig
 	alerting      bool
@@ -1368,6 +1369,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemPickDirectories:
 			w.pickDirectories(*it.Directories, it.Count)
+			continue
+		case driver.ItemPickScreenColor:
+			w.pickScreenColor(it.Count)
 			continue
 		case driver.ItemOpenFile:
 			w.openFile(*it.Open, it.Count)
@@ -2765,6 +2769,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return r
 		}
 	case wmDestroy:
+		w.cancelColorPicker()
 		w.closeCustomCursors()
 		w.stopPower()
 		w.closeCanvasImages()

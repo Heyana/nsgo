@@ -88,6 +88,7 @@ var (
 	cbNotificationClosed    uintptr
 	cbGlobalHotKeyResponse  uintptr
 	cbGlobalHotKeyActivated uintptr
+	cbColorPickResponse     uintptr
 	cbX11HotKeyEvent        uintptr
 	cbFrontmostEvent        uintptr
 	cbSecretPrompt          uintptr
@@ -180,6 +181,7 @@ func init() {
 	cbNotificationClosed = newCallback(notificationClosedCallback)
 	cbGlobalHotKeyResponse = newCallback(globalHotKeyResponse)
 	cbGlobalHotKeyActivated = newCallback(globalHotKeyActivated)
+	cbColorPickResponse = newCallback(colorPickResponse)
 	cbX11HotKeyEvent = newCallback(x11HotKeyEvent)
 	cbFrontmostEvent = newCallback(frontmostEvent)
 	cbSecretPrompt = newCallback(secretPromptCompleted)

@@ -90,6 +90,7 @@ func (w *window) environment() driver.Environment {
 		FontScale:        fontScale,
 		ReduceMotion:     reduce,
 		IncreaseContrast: contrast,
+		ScreenColor:      w.screenColorAvailable(),
 		RTL:              systemDirection() == gtkTextDirRTL || rightToLeft(locale),
 		PixelRatio:       float32(scale),
 		Locale:           locale,

@@ -84,6 +84,7 @@ func (w *window) environment() driver.Environment {
 		ReduceMotion:     !systemFlag(spiGetClientAreaAnimation, true),
 		IncreaseContrast: highContrastEnabled(),
 		ScreenReader:     systemFlag(spiGetScreenReader, false),
+		ScreenColor:      true,
 		RTL:              rightToLeft(locale),
 		PixelRatio:       float32(w.scale),
 		Locale:           locale,
