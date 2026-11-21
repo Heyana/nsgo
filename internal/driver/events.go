@@ -293,6 +293,10 @@ const (
 	EventShared
 	// EventCursorPoint answers ItemCursorPoint Count. Finished reports availability, and Point is in desktop screen coordinates.
 	EventCursorPoint
+	// EventPointerDelta carries a PointerDelta from the lock numbered Count.
+	EventPointerDelta
+	// EventPointerUnlocked says the lock numbered Count was released or refused.
+	EventPointerUnlocked
 )
 
 // SharedItem is text or a file copied from an incoming share.

@@ -97,6 +97,7 @@ func (w *window) environment() driver.Environment {
 		LocaleSettings:   localeSettings(),
 		Displays:         displays(),
 		OS:               driver.OSLinux,
+		CanLockPointer:   w.canLockPointer(),
 		HasWebView:       true,
 		OSVersion:        osVersion(),
 		Idiom:            driver.IdiomDesktop,
@@ -361,6 +362,9 @@ func mappedCallback(widget, data uintptr) {
 			}
 		}
 	}
+	if !w.canHoldPointer() {
+		w.releasePointer(true)
+	}
 	w.updateEnvironment()
 	if !w.primary {
 		updateAppSurface()
@@ -372,6 +376,9 @@ func mappedCallback(widget, data uintptr) {
 func activityCallback(object, pspec, data uintptr) {
 	windowHandles.Range(func(_, v any) bool {
 		if w := v.(*window); !w.closing {
+			if lockedPointer.owner == w && !w.canHoldPointer() {
+				w.releasePointer(true)
+			}
 			active := w.win != 0 && gtkWindowIsActive(w.win) != 0
 			if active {
 				w.focused = true

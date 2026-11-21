@@ -611,10 +611,14 @@ func (t *testSurface) Screenshot() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// Animating counts transitions, layout animations and animated values
-// that end.
+func (t *testSurface) PointerDelta(dx, dy float64) {
+	t.onMain(func() { t.w.pointerMotion(dx, dy) })
+}
+
 func (t *testSurface) Sync() { t.w.engine.Sync() }
 
+// Animating counts transitions, layout animations and animated values
+// that end.
 func (t *testSurface) Animating() bool {
 	var busy bool
 	t.onMain(func() {

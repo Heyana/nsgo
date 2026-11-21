@@ -290,6 +290,9 @@ func heldName(vk uintptr) (name string, modifier bool) {
 
 // keyDown offers a key going down to the focused view that hears keys (View.OnKeyDown), before the keymap and the view's own keys, and reports whether it consumed the key. A modifier alone is reported but never consumed: no binding takes one, and the window follows the modifiers through its messages. Where no view that hears keys has the focus and the surface asked for held keys, the down is reported asynchronously with ID 0 and consumes nothing. Either way the window records the key with the view and the name it reported, the first time the key is seen going down, even as an auto-repeat (a key held as the window got the keyboard), so its up reaches the same view (keyUp); a recorded key going down again without repeating lost its up, which it reports first. Keys typed while a text field or a page has the focus are neither reported nor recorded; an input method composing sends VK_PROCESSKEY, which has no name.
 func (w *window) keyDown(vk, lParam uintptr) bool {
+	if w.escapePointer(vk) {
+		return true
+	}
 	if w.engine == nil {
 		return false
 	}

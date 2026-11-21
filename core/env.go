@@ -31,6 +31,7 @@ type Env struct {
 	scanCode                *Signal[bool]
 	discoverServices        *Signal[bool]
 	canSendInput            *Signal[bool]
+	canLockPointer          *Signal[bool]
 	canLookUp               *Signal[bool]
 	canQuickLook            *Signal[bool]
 	level, place            *Signal[bool]
@@ -118,6 +119,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		scanCode:         NewSignal(cx, false),
 		discoverServices: NewSignal(cx, false),
 		canSendInput:     NewSignal(cx, false),
+		canLockPointer:   NewSignal(cx, false),
 		canLookUp:        NewSignal(cx, false),
 		canQuickLook:     NewSignal(cx, false),
 		level:            NewSignal(cx, false),
@@ -245,6 +247,7 @@ func (e *Env) set(v Environment) {
 	e.scanCode.Set(v.ScanCode)
 	e.discoverServices.Set(v.DiscoverServices)
 	e.canSendInput.Set(v.CanSendInput)
+	e.canLockPointer.Set(v.CanLockPointer)
 	e.canLookUp.Set(v.CanLookUp)
 	e.canQuickLook.Set(v.CanQuickLook)
 	e.level.Set(v.CanSetWindowLevel)
@@ -425,6 +428,9 @@ func (e *Env) CanDiscoverServices() bool { return e.discoverServices.Get() }
 // trusted input here. macOS supports this through AppKit; other backends
 // currently drop it.
 func (e *Env) CanSendInput() bool { return e.canSendInput.Get() }
+
+// CanLockPointer reports whether the surface supports Ref.LockPointer.
+func (e *Env) CanLockPointer() bool { return e.canLockPointer.Get() }
 
 // CanLookUp reports whether desktop.LookUp can show the system dictionary panel.
 func (e *Env) CanLookUp() bool { return e.canLookUp.Get() }

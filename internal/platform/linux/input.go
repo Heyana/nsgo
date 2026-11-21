@@ -236,7 +236,7 @@ func (w *window) pointerUp(at driver.Point) {
 
 func motionCallback(controller uintptr, x, y float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil {
+	if w == nil || lockedPointer.owner == w {
 		return
 	}
 	var state uint32
@@ -560,6 +560,10 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 	w := windowOf(data)
 	if w == nil {
 		return 0
+	}
+	if keyval == gdkEscape && lockedPointer.owner == w {
+		w.releasePointer(true)
+		return 1
 	}
 	// GTK reports no auto-repeats: a key pressed again before it was released repeats.
 	_, repeat := w.held[keycode]

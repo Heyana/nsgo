@@ -38,6 +38,12 @@ Presses, the mouse and secondary clicks carry where they happened, as NSH's `Pre
 - The web counts clicks itself, since pointer events carry none: 500 ms and 4 points apart at most. Moves are mouse `pointermove`s.
 - iOS reads the touch's `tapCount` and the event's `modifierFlags`, and hovers with a `UIHoverGestureRecognizer` (a pointer or a hovering Pencil). Android reports a mouse's moves from `setOnHoverListener` and its coming and going with no position, and no button with either ([roadmap](../roadmap.md#finish-the-existing-platforms)). It reads `MotionEvent`'s meta state, counts every press as one click, and sends the page position and keys after the rest of an event.
 
+## Pointer lock
+
+`Ref.LockPointer` requests pointer capture for a mounted view on a surface that reports `Env.CanLockPointer`. The owner receives `View.OnPointerDelta` with relative motion in platform input units, positive to the right and down. Motion from one lock carries its request number so it cannot reach a replacement. An explicit unlock, Escape, a window losing focus, or the view leaving the screen clears the lock. A refused request clears the pending lock and can be retried.
+
+macOS disconnects the Quartz cursor from the mouse and reads AppKit's motion deltas. Windows clips and hides the cursor and reads Raw Input. Both restore the starting pointer position when they release it. GTK uses an XInput2 raw motion stream with a one-pixel X11 pointer grab or the Wayland constraint and relative motion extensions when the compositor offers them. The web asks the browser for pointer lock from a user gesture and reads `movementX` and `movementY`. `nsgotest.App.PointerDelta` sends a delta through the active lock without moving the hardware pointer.
+
 ## Keyboard focus
 
 Desktop web views report focus and blur for the page and its descendants: macOS observes its host window's `firstResponder`, Windows follows WebView2's focus events, and Linux uses a GTK focus controller. Core tracks these events beside inputs, so confined bindings and bindings yielding to text-sensitive menu shortcuts follow page focus too.

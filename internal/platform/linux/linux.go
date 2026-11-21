@@ -869,6 +869,7 @@ func (w *window) shutdown(forced bool) {
 	w.unwatchSession()
 	w.closeAudio()
 	w.discovery.close()
+	w.releasePointer(false)
 	w.closeCanvasImages()
 	w.closeHotKeys()
 
@@ -971,6 +972,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			if lb != nil {
 				lb.created[it.ID] = true
 			}
+			continue
+		case driver.ItemPointerLock:
+			w.setPointerLock(it)
 			continue
 		case driver.ItemAnimation:
 			w.animations(it.Animation)

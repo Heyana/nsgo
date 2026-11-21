@@ -179,6 +179,11 @@ type QuitSurface interface {
 	RequestQuit(id uint32, forced bool)
 }
 
+// PointerLockSurface sends device motion through the surface's active lock.
+type PointerLockSurface interface {
+	PointerDelta(dx, dy float64)
+}
+
 var host Host
 
 // ErrNoMenu is a platform's answer to a menu step where it shows no

@@ -287,6 +287,7 @@ func (t *Tree) commitRound() {
 	t.emitPictureInPictures()
 	t.emitAccessories()
 	t.emitHeaderViews()
+	t.checkPointerLock()
 	t.makeCommanded()
 	t.emit(t.view)
 	t.syncPaced()

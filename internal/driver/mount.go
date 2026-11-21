@@ -402,6 +402,9 @@ const (
 	ItemSystemGestures
 	// ItemCursorPoint asks for the desktop pointer position and receives EventCursorPoint with the same Count.
 	ItemCursorPoint
+	// ItemPointerLock captures relative motion for ID, numbered Count.
+	// On requests a lock. A false On releases the matching request.
+	ItemPointerLock
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.

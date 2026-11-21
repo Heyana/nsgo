@@ -76,6 +76,8 @@ func TestMain(m *testing.M) {
 
 `nsgotest.LiveActivities(true)` 记录实时活动的开始、更新、提醒和结束。`app.LiveActivities()` 按开始顺序返回活动，包含内容变化和最终内容。`nsgotest.LiveActivities(false)` 让开始活动的调用返回 `widget.ErrActivitiesDisabled`。这些选项在测试期间接管相应的进程级服务，在原生目标上也一样。调用这些服务的测试应按顺序运行。
 
+应用锁定指针后，`app.PointerDelta(dx, dy)` 向锁定的视图发送相对位移。无头测试用 `nsgotest.Environment(core.Environment{CanLockPointer: true})` 启用此功能。无头测试和目标测试都可用 Escape 解锁。
+
 ## 运行测试
 
 ```sh

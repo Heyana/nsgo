@@ -922,6 +922,10 @@ func (a *App) press(key string) {
 	key = a.withHeld(key)
 	k := driver.NormalizeKey(key)
 	a.inputBy(driver.ModalityKeyboard)
+	if (k == "escape" || strings.HasSuffix(k, "+escape")) && a.unlockPointer() {
+		a.done()
+		return
+	}
 	names := a.keyNames(k)
 	parts := strings.Split(k, "+")
 	_, repeat := a.held[a.keyName(parts[len(parts)-1])]

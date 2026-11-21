@@ -215,10 +215,12 @@ func (t *testSurface) Screenshot() ([]byte, error) {
 	return base64.StdEncoding.DecodeString(b64)
 }
 
-// Animating counts the page's own finite animations too: transitions
-// and a screen sliding in.
+func (t *testSurface) PointerDelta(dx, dy float64) { t.s.pointerMotion(dx, dy) }
+
 func (t *testSurface) Sync() { t.s.engine.Sync() }
 
+// Animating counts the page's own finite animations too: transitions
+// and a screen sliding in.
 func (t *testSurface) Animating() bool {
 	if t.s.animator.Ending() {
 		return true

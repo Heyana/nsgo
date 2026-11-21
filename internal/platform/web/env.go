@@ -162,7 +162,8 @@ func (s *surface) environment() driver.Environment {
 		Gamepads:    g.Get("navigator").Get("getGamepads").Type() == js.TypeFunction,
 		Audio:       webAudioAvailable(),
 		// AudioBufferSourceNode.start(when) schedules on the output context's clock.
-		AudioSchedule: webAudioAvailable(),
+		AudioSchedule:  webAudioAvailable(),
+		CanLockPointer: webCanLockPointer(s.doc),
 		// Browsers on touch screens open the camera for an input's capture.
 		Camera: w.pointerCoarse.Get("matches").Bool(),
 		SafeArea: driver.Edges{

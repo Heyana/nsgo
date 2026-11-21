@@ -437,6 +437,7 @@ func (a *App) closed(surface *core.Tree) {
 	}
 	if surface == a.tree {
 		a.SystemGestures = core.SystemGestureOptions{}
+		a.pointerLock = driver.PointerLock{}
 		a.views, a.rootID, a.tree, a.main, a.Keymap, a.keyBindings, a.heldKeys, a.heldMouse = map[driver.NodeID]*View{}, 0, a.appTree, nil, nil, nil, false, false
 	}
 	// A key or mouse button held stays held, but its up has no window to go to.
@@ -680,6 +681,8 @@ func (a *App) apply(b *driver.MountBatch) {
 					b.Pull = op.Node
 				}
 			}
+		case driver.ItemPointerLock:
+			a.setPointerLock(it)
 		case driver.ItemFocus, driver.ItemBlur:
 			if a.target != nil && a.target.reportsNativeFocus() {
 				continue

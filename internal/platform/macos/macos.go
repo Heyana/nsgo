@@ -760,7 +760,11 @@ func surfaceMoved(self objc.ID, cmd objc.SEL) {
 		return
 	}
 	s := v.surface
-	s.window = self.Send(selWindow)
+	window := self.Send(selWindow)
+	if s.window != window {
+		s.releasePointer(true)
+	}
+	s.window = window
 	if s.engine != nil {
 		s.observeWebFocus()
 	}
@@ -991,6 +995,7 @@ func (s *surface) close() {
 	if s.scanner != nil {
 		s.scanner.finish(nil, "")
 	}
+	s.releasePointer(false)
 	if dockMenu.target == s {
 		clearDockMenu()
 	}
@@ -1188,6 +1193,7 @@ func (s *surface) environment() driver.Environment {
 		Gamepads:         true,
 		AudioSchedule:    apple.AudioAvailable(),
 		CanSendInput:     true,
+		CanLockPointer:   true,
 		HasWebView:       true,
 		SignInWithApple:  apple.AppleSignInAvailable(),
 		Purchases:        apple.PurchasesAvailable(),
@@ -1289,6 +1295,9 @@ func (s *surface) backingScale() float32 {
 func (s *surface) refresh() {
 	if s == nil || s.engine == nil {
 		return
+	}
+	if lockedPointer.owner == s && !s.canHoldPointer() {
+		s.releasePointer(true)
 	}
 	s.layoutTrafficLights()
 	env := s.environment()
@@ -1441,7 +1450,20 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 		return event
 	}
 	const typeLeftDown, typeLeftUp, typeRightDown, typeRightUp, typeMouseMoved, typeLeftDragged, typeRightDragged, typeKeyDown, typeKeyUp, typeFlagsChanged, typeScrollWheel, typeOtherDown, typeOtherUp, typeOtherDragged = 1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 22, 25, 26, 27
-	switch objc.Send[uint](event, sel("type")) {
+	kind := objc.Send[uint](event, sel("type"))
+	if lockedPointer.owner == s {
+		switch kind {
+		case typeMouseMoved, typeLeftDragged, typeRightDragged, typeOtherDragged:
+			s.pointerMotion(objc.Send[float64](event, sel("deltaX")), objc.Send[float64](event, sel("deltaY")))
+			return 0
+		case typeKeyDown:
+			if keyName(event) == "escape" {
+				s.releasePointer(true)
+				return 0
+			}
+		}
+	}
+	switch kind {
 	case typeFlagsChanged:
 		s.modifiersChanged(event)
 		s.modifierKey(event)
@@ -2095,6 +2117,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemOpenURL:
 			s.openURL(it.Value, it.Count)
+			continue
+		case driver.ItemPointerLock:
+			s.pointerLock(it)
 			continue
 		case driver.ItemLookUp:
 			s.lookUp(it.Value, it.Frame)

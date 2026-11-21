@@ -38,7 +38,7 @@ var unsupportedItems = map[string]string{
 	"desktop only": `ItemDock ItemMenu ItemPopupMenu ItemLaunchAtLogin
 		ItemSetLaunchAtLogin ItemOpenSurface ItemQuit ItemTray ItemTrayMenu
 		ItemWindow ItemHotKeys ItemQuitResponse ItemDockMenu ItemRecentFile
-		ItemQuickLook ItemCursorPoint`,
+		ItemQuickLook ItemCursorPoint ItemPointerLock`,
 	"Apple only":        `ItemAppleCredentialState ItemSignInWithApple`,
 	"Android wire only": `ItemSaveFilePreflight`,
 	// Services main added after this target, which no HarmonyOS kit answers here yet.
@@ -59,7 +59,8 @@ var unsupportedItems = map[string]string{
 var unsupportedEvents = map[string]string{
 	"pointers, gestures and drops": `EventMouseEnter EventMouseLeave EventMouseMove EventMouseUp
 		EventPan EventPinch EventRotation EventWheel EventPressOutside
-		EventContextMenu EventFileDragEnter EventFileDragLeave EventFileDrop`,
+		EventContextMenu EventFileDragEnter EventFileDragLeave EventFileDrop
+		EventPointerDelta EventPointerUnlocked`,
 	"keyboard, text and selection": `EventKeyPress EventKeyUp EventCompositionChange
 		EventCaretMove EventPaste EventAccessibilityAction`,
 	"loading, media and animation": `EventLoadEnd EventDownload EventNative

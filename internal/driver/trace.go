@@ -120,7 +120,7 @@ var itemNames = map[ItemKind]string{
 	ItemTaskProgress: "task-progress",
 	ItemAudio:        "audio", ItemAuthSession: "auth-session", ItemSpeak: "speak",
 	ItemSignInWithApple: "sign-in-with-apple", ItemAppleCredentialState: "apple-credential-state",
-	ItemPurchase: "purchase", ItemWebCookies: "web-cookies", ItemLookUp: "look-up", ItemQuickLook: "quick-look",
+	ItemPurchase: "purchase", ItemWebCookies: "web-cookies", ItemLookUp: "look-up", ItemQuickLook: "quick-look", ItemPointerLock: "pointer-lock",
 	ItemKeepImage: "keep-image", ItemReleaseImage: "release-image",
 	ItemReleaseOffscreen:    "release-offscreen",
 	ItemRequestReview:       "request-review",

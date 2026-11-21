@@ -225,6 +225,7 @@ type OffscreenSurface struct {
 // runs when it settles.
 type App struct {
 	touchGeometry driver.TouchTracker
+	pointerLock   driver.PointerLock
 	// LocationCache is the last fix the platform keeps, which Locate takes when its MaxAge allows; the location and motion permissions are in Permissions, and the fixes and samples come from FeedLocation and FeedMotion.
 	LocationCache     *core.LocationFix
 	sensorRuns        map[uint32]*sensorRun

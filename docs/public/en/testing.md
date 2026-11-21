@@ -50,6 +50,8 @@ A surface's `Press`, `Type`, `Key`, `Find` and `Query` act in its own window whi
 
 `app.PressWith("id:row", core.Modifiers{Shift: true})` holds modifiers for one press; `PressAtWith(selector, core.Point{X: 20, Y: 10}, mods)` presses a point in the view. `Shift`, `Control`, `Alt` and `Platform` (Command on Apple, the Windows/Super key elsewhere) reach `OnPressDown`, `OnPressUp` and `OnPress`, headless and through native target input. Native platform conventions still apply: Chrome on macOS turns Control-click into a context menu. A later `Press` or `PressAt` has no modifiers. watchOS rejects modified presses because it has no keyboard modifier input.
 
+After the app locks the pointer, `app.PointerDelta(dx, dy)` sends relative motion to the locked view. Headless tests enable it with `nsgotest.Environment(core.Environment{CanLockPointer: true})`. Escape releases the lock in both headless and target tests.
+
 A press can name a text field directly. Headless and on macOS, Windows and Linux, read `app.Find("id:field").Focused` immediately after the press, including when the pressed view's handler focuses the field.
 
 `app.SelectTab("id:tabs", 1)` selects the second item of a mounted `mobile.TabBar`. It works headless with an iOS or Android `Environment` and uses the native tab bar on iOS and Android targets. The index starts at zero and must match an existing item.
