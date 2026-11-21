@@ -11,4 +11,7 @@ public class Paint {
     public void setPathEffect(PathEffect effect) {}
     public void setStyle(Style style) {}
     public void setStrokeWidth(float width) {}
+    public Xfermode setXfermode(Xfermode xfermode) { return xfermode; }
+    public void setShadowLayer(float radius, float dx, float dy, int shadowColor) {}
+    public void clearShadowLayer() {}
 }
