@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// SavePreflights holds a desktop surface's pending save decisions. The
-// background worker waits for the engine, leaving the UI thread free.
+// SavePreflights holds a desktop surface's pending save decisions and
+// delivers engine answers to the waiting dialog or save worker.
 type SavePreflights struct {
 	pending sync.Map // savePreflightKey -> chan MountItem
 }
@@ -25,9 +25,9 @@ func (p *SavePreflights) Save(r SaveRequest, id uint32, path string, dispatch fu
 	dispatch(SaveResult(r, id, path))
 }
 
-// Check asks the engine about one candidate on a background goroutine. A
-// dialog that can retry numbers its attempts from one. A one-shot chooser
-// uses zero.
+// Check asks the engine about one candidate and waits up to the decision
+// deadline. A dialog that can retry numbers its attempts from one. A
+// one-shot chooser uses zero.
 func (p *SavePreflights) Check(id, attempt uint32, path string, dispatch func(Event)) (approved bool, reason string) {
 	key := savePreflightKey{id, attempt}
 	reply := make(chan MountItem, 1)

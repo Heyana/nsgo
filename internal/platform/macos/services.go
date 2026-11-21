@@ -365,14 +365,33 @@ func savePanel(r driver.SaveRequest) objc.ID {
 func (s *surface) saveFile(r driver.SaveRequest, id uint32) {
 	panel := savePanel(r)
 	panel.Send(sel("retain"))
+	var preflight *savePanelPreflight
+	var delegate objc.ID
+	if r.Preflight {
+		preflight = &savePanelPreflight{s: s, id: id}
+		delegate = preflight.delegate(panel)
+	}
 	done := objcblock.New(func(_ objc.Block, response int) {
 		defer panel.Send(selRelease)
+		if delegate != 0 {
+			panel.Send(selSetDelegate, objc.ID(0))
+			delete(savePanelDelegates, delegate)
+			delegate.Send(selRelease)
+		}
 		if response != 1 {
-			s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id})
+			ev := driver.Event{Kind: driver.EventFiles, Count: id}
+			if preflight != nil && preflight.refusal.Data != nil {
+				ev = preflight.refusal
+			}
+			s.engine.Dispatch(ev)
 			return
 		}
 		path := apple.GoString(panel.Send(sel("URL")).Send(sel("path")))
-		go s.saves.Save(r, id, path, s.engine.Dispatch)
+		if preflight != nil && path != "" && path == preflight.approved {
+			go func() { s.engine.Dispatch(driver.SaveResult(r, id, path)) }()
+		} else {
+			go s.saves.Save(r, id, path, s.engine.Dispatch)
+		}
 	})
 	panel.Send(sel("beginSheetModalForWindow:completionHandler:"), s.window, done)
 	done.Release()

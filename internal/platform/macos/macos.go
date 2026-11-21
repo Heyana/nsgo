@@ -190,9 +190,10 @@ type view struct {
 }
 
 type surface struct {
-	sensors   apple.Sensors
-	saves     driver.SavePreflights
-	discovery apple.Discovery
+	sensors      apple.Sensors
+	saves        driver.SavePreflights
+	checkingSave atomic.Bool
+	discovery    apple.Discovery
 
 	// openFrame is the frame the window opened at, until its first batch,
 	// whose title bar would change it.
@@ -1981,6 +1982,16 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 
 // Mount implements engine.Platform.
 func (s *surface) Mount(b *driver.MountBatch) {
+	// AppKit waits for its save delegate on the main thread. Deliver its
+	// decision here so the delegate can return before that thread applies
+	// the batch.
+	if s.checkingSave.Load() {
+		for i := range b.Items {
+			if it := &b.Items[i]; it.Kind == driver.ItemSavePreflightAnswer {
+				s.saves.Answer(*it)
+			}
+		}
+	}
 	if s.batches.Push(b) {
 		s.native.Send(selPerformOnMain, selApply, objc.ID(0), false)
 	}
