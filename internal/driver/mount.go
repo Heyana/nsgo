@@ -418,6 +418,8 @@ const (
 	ItemSetClipboardItems
 	// ItemNowPlaying replaces the app's publication (NowPlaying), or clears it when nil.
 	ItemNowPlaying
+	// ItemCapture requests a PNG of ID, or of the surface for zero. EventFiles answers Count with the bytes.
+	ItemCapture
 )
 
 // EditAction is an editing action of an input's touch edit menu (ItemEditMenu, EventEditAction).

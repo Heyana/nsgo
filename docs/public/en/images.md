@@ -50,6 +50,12 @@ NSGo copies the pixels when the commit that carries a new `Version` runs, so the
 
 Apple platforms, Android, Windows, Linux and the web update pixel images directly, and WeChat mini programs use a 2D canvas. HarmonyOS makes a `PixelMap` of each version, checked on a device, and its copies cross a string bridge, so large buffers rewritten every frame run well below 60 fps there ([pixel buffers](https://github.com/nsgo-dev/nsgo/blob/main/docs/architecture/images.md#pixel-buffers)).
 
+## Capture a view
+
+Call `cx.Capture(&ref, done)` with a mounted view's `core.Ref`, or `cx.Capture(nil, done)` for the current surface. The callback receives PNG bytes at the surface's pixel scale or an error on the engine goroutine. Use `core.ImageSource{Data: png}` to display the result. To share it, write the bytes to a `.png` file in the app's cache directory and pass its path in `core.ShareOptions.Files`. [Sharing files](services.md#opening-links-and-files)
+
+Capture takes the visible surface pixels within the view's bounds. It is available on macOS, iOS, tvOS, Windows, Linux, Android and the web. Android captures the activity's window. Web capture paints the app's DOM into a canvas, including NSGo shader output, and omits embedded frames, images it cannot read and some CSS effects.
+
 ## Resources and scales
 
 Files under `resources/` ship with the app. `core.Src("asset:images/cover.png")` loads one, and `Scales: core.ScalesOf(1, 2, 3)` picks `cover.png`, `cover@2x.png` or `cover@3x.png` for the screen's pixel ratio.

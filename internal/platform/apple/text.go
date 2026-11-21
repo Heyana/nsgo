@@ -22,7 +22,6 @@ var (
 	cfAttributedStringLength    func(uintptr) int
 	cfAttributedStringSubstr    func(alloc, str uintptr, loc, length int) uintptr
 	cfAttributedStringAttrsAt   func(str uintptr, loc int, effective *cfRange) uintptr
-	cfRetain                    func(uintptr) uintptr
 	cfArrayGetCount             func(uintptr) int
 	cfArrayGetValueAtIndex      func(arr uintptr, i int) uintptr
 	cgPathCreateWithRect        func(rect CGRect, transform uintptr) uintptr
@@ -96,7 +95,6 @@ func loadText(cf, cg uintptr) {
 	reg(&cfAttributedStringLength, cf, "CFAttributedStringGetLength")
 	reg(&cfAttributedStringSubstr, cf, "CFAttributedStringCreateWithSubstring")
 	reg(&cfAttributedStringAttrsAt, cf, "CFAttributedStringGetAttributes")
-	registerSyscall(&cfRetain, cf, "CFRetain")
 	reg(&cfArrayGetCount, cf, "CFArrayGetCount")
 	reg(&cfArrayGetValueAtIndex, cf, "CFArrayGetValueAtIndex")
 	reg(&cgPathCreateWithRect, cg, "CGPathCreateWithRect")

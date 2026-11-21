@@ -338,6 +338,9 @@ final class Protocol {
     /** Surface, applied commit version, and native border boxes in points. */
     static final int GEOMETRY_REPORT = 38;
 
+    /** Answers ITEM_CAPTURE with its surface and count, an error ("" for none) and the PNG. */
+    static final int CAPTURE_REPLY = 39;
+
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;
     // PREPARE's base style flag for a trailing surface ID.
@@ -530,6 +533,7 @@ final class Protocol {
     static final int ITEM_SYSTEM_GESTURES = 121;
     static final int ITEM_HAPTIC_PATTERN = 124;
     static final int ITEM_EDIT_MENU = 126;
+    static final int ITEM_CAPTURE = 132;
 
     // Bitmask carried in ITEM_EDIT_MENU and EVENT_EDIT_ACTION, as driver.EditAction.
     static final int EDIT_CUT = 1;

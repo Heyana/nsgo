@@ -177,10 +177,12 @@ func (s *surface) paintPicture(pic *fxPicture, host *view, ov float64, backdrop 
 // its origin; stop ends the painting where it comes, as a backdrop ends at
 // its view.
 type painter struct {
-	ctx     js.Value
-	x0, y0  float64
-	stop    js.Value
-	stopped bool
+	ctx            js.Value
+	x0, y0         float64
+	stop           js.Value
+	stopped        bool
+	includeEffects bool
+	pictures       js.Value // loaded NSGo image layers, when capturing
 }
 
 func (p *painter) node(n js.Value, alpha float64) {
@@ -200,7 +202,7 @@ func (p *painter) element(el js.Value, alpha float64) {
 		p.stopped = true
 		return
 	}
-	if el.Get("classList").Call("contains", "nsgo-fx-out").Bool() {
+	if !p.includeEffects && el.Get("classList").Call("contains", "nsgo-fx-out").Bool() {
 		return
 	}
 	cs := js.Global().Call("getComputedStyle", el)
@@ -242,6 +244,18 @@ func (p *painter) element(el js.Value, alpha float64) {
 		}
 	case "INPUT", "TEXTAREA":
 		p.fieldText(el, cs, x, y, w, h)
+	}
+	if !p.pictures.IsUndefined() {
+		if img := p.pictures.Call("get", el); img.Truthy() {
+			size := strings.Fields(cs.Get("backgroundSize").String())
+			position := strings.Fields(cs.Get("backgroundPosition").String())
+			if len(size) == 2 && len(position) == 2 {
+				p.box(x, y, w, h, radius)
+				ctx.Call("clip")
+				ctx.Call("drawImage", img, x+parseNumber(position[0], 0), y+parseNumber(position[1], 0),
+					parseNumber(size[0], w), parseNumber(size[1], h))
+			}
+		}
 	}
 	if o := cs.Get("overflow").String(); o != "visible" && o != "" {
 		p.box(x, y, w, h, radius)
@@ -361,7 +375,8 @@ func sameOrigin(img js.Value) bool {
 	if strings.HasPrefix(src, "data:") || strings.HasPrefix(src, "blob:") || img.Get("crossOrigin").Truthy() {
 		return true
 	}
-	return strings.HasPrefix(src, js.Global().Get("location").Get("origin").String())
+	origin := js.Global().Get("location").Get("origin").String()
+	return strings.HasPrefix(src, origin+"/")
 }
 
 // drawEffects paints what changed of the effects that show and draws

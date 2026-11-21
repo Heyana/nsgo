@@ -48,6 +48,21 @@ On a Pixel 3 XL running Android 12, a 960 × 540 image view rewrote 2,073,600 by
 
 `Scope.ImageSize` answers a pixel source at once with its buffer's size, `PrefetchImage` with success, and `KeepImage` with a no-op release, without asking the platform.
 
+## Capturing a surface
+
+`Scope.Capture` asks the backend for one PNG of its surface or the visible part of that surface within a mounted `Ref`'s bounds, in device pixels. `ItemCapture` carries the node ID or zero for the surface. The backend answers through `EventFiles`, and the engine runs the callback once under the same ownership rules as other service requests. A scope held to `Access` or confined to an embedded view cannot capture the host's pixels. `ImageSource.Data` accepts the PNG directly, and a file written with those bytes can go to `Scope.Share`.
+
+| Target | Capture |
+| --- | --- |
+| macOS | ScreenCaptureKit enumerates this process’s windows and captures the owning window without the pointer or its shadow, then crops to the surface or view. Older systems use `CGWindowListCreateImage` with the owning window ID. |
+| iOS and tvOS | UIKit draws the owning window into a `UIGraphicsImageRenderer` clipped to the surface or view. |
+| Windows | Windows Graphics Capture targets the app's window, including its DirectComposition layers, and copies a frame to a CPU-readable texture on a worker. Embedded child windows use `PrintWindow`. |
+| Linux | A GTK widget paintable and the surface's GSK renderer render the region to a `GdkTexture`. |
+| Android | `PixelCopy` copies the region from the activity window. The Java runtime encodes it and returns the PNG over the pipe. |
+| Web | The DOM painter used by shader effects paints into a canvas after the surface redraws its shaders in the same animation callback. Canvas, shader output, readable images and ordinary fields render. Embedded frames, unreadable images and CSS effects outside the painter's coverage are omitted. |
+
+PNG encoding runs on a worker or via the browser's asynchronous `toBlob`. The platform thread still computes geometry and, on some backends, paints or copies the frame.
+
 ## Size, prefetch and keeping
 
 `Scope.ImageSize` and `Scope.PrefetchImage` are NSH's `Image.getSize` and `Image.prefetch`: `ItemImageInfo` carries the source, its `asset:` variant picked as for views, and the platform answers with `EventImageInfo`. The backends that load in Go call `imageload.Info`, so the bytes stay in `imageload`'s 32 MiB cache for the views that show them next, and read the size from the header (`imagedecode.Size`; ImageIO on Apple). Android answers in its Go process. The web loads an `<img>` outside the page and keeps the bytes in the browser's cache. The size is the one `OnLoad` reports.

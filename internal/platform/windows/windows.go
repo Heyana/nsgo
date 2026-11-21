@@ -1502,6 +1502,9 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemQuickLook:
 			w.quickLook(it.QuickLook)
 			continue
+		case driver.ItemCapture:
+			w.capture(it.ID, it.Count)
+			continue
 		case driver.ItemShare:
 			w.share(*it.Share, it.Count)
 			continue

@@ -3,11 +3,9 @@
 package windows
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"image"
-	"image/png"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,27 +34,16 @@ var (
 )
 
 var (
-	hostSendMessage       = user32.NewProc("SendMessageW")
-	hostGetKeyboardState  = user32.NewProc("GetKeyboardState")
-	hostSetKeyboardState  = user32.NewProc("SetKeyboardState")
-	hostGetDC             = user32.NewProc("GetDC")
-	hostReleaseDC         = user32.NewProc("ReleaseDC")
-	hostPrintWindow       = user32.NewProc("PrintWindow")
-	hostCreateDC          = gdi32.NewProc("CreateCompatibleDC")
-	hostCreateBitmap      = gdi32.NewProc("CreateCompatibleBitmap")
-	hostDeleteDC          = gdi32.NewProc("DeleteDC")
-	hostSelectObject      = gdi32.NewProc("SelectObject")
-	hostGetDIBits         = gdi32.NewProc("GetDIBits")
-	hostDeleteObject      = gdi32.NewProc("DeleteObject")
-	hostGetClientRectProc = user32.NewProc("GetClientRect")
+	hostSendMessage      = user32.NewProc("SendMessageW")
+	hostGetKeyboardState = user32.NewProc("GetKeyboardState")
+	hostSetKeyboardState = user32.NewProc("SetKeyboardState")
 )
 
 const (
-	hostMouseLeave  = 0x02A3
-	hostLButtonUp   = 0x0202
-	hostRButtonUp   = 0x0205
-	hostKeyUp       = 0x0101
-	pwRenderContent = 1 | 2
+	hostMouseLeave = 0x02A3
+	hostLButtonUp  = 0x0202
+	hostRButtonUp  = 0x0205
+	hostKeyUp      = 0x0101
 )
 
 // onMain runs fn on the window's thread and waits for it.
@@ -560,52 +547,12 @@ func (t *testSurface) Answer(id uint32, index int) error {
 // Screenshot copies the window's client area as it composed it.
 func (t *testSurface) Screenshot() ([]byte, error) {
 	var img *image.RGBA
-	t.onMain(func() {
-		hwnd := t.w.hwnd
-		var client rect
-		hostGetClientRectProc.Call(hwnd, uintptr(unsafe.Pointer(&client)))
-		width, height := client.Right, client.Bottom
-		if width <= 0 || height <= 0 {
-			return
-		}
-		dc, _, _ := hostGetDC.Call(hwnd)
-		defer hostReleaseDC.Call(hwnd, dc)
-		mem, _, _ := hostCreateDC.Call(dc)
-		defer hostDeleteDC.Call(mem)
-		bmp, _, _ := hostCreateBitmap.Call(dc, uintptr(width), uintptr(height))
-		defer hostDeleteObject.Call(bmp)
-		old, _, _ := hostSelectObject.Call(mem, bmp)
-		hostPrintWindow.Call(hwnd, mem, pwRenderContent)
-		hostSelectObject.Call(mem, old)
-		pix := make([]byte, int(width)*int(height)*4)
-		type bitmapHeader struct {
-			Size                         uint32
-			Width, Height                int32
-			Planes, BitCount             uint16
-			Compression, SizeImage       uint32
-			XPelsPerMeter, YPelsPerMeter int32
-			ClrUsed, ClrImportant        uint32
-			Colors                       [1]uint32
-		}
-		info := bitmapHeader{Width: width, Height: -height, Planes: 1, BitCount: 32}
-		info.Size = uint32(unsafe.Sizeof(info)) - 4
-		if n, _, _ := hostGetDIBits.Call(mem, bmp, 0, uintptr(height), uintptr(unsafe.Pointer(&pix[0])),
-			uintptr(unsafe.Pointer(&info)), 0); n == 0 {
-			return
-		}
-		img = image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
-		for i := 0; i < len(pix); i += 4 {
-			img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = pix[i+2], pix[i+1], pix[i], 0xff
-		}
-	})
-	if img == nil {
-		return nil, errors.New("Windows could not copy the window's pixels")
-	}
-	var b bytes.Buffer
-	if err := png.Encode(&b, img); err != nil {
+	var err error
+	t.onMain(func() { img, err = captureClient(t.w.hwnd) })
+	if err != nil {
 		return nil, err
 	}
-	return b.Bytes(), nil
+	return encodeCapture(img, nil)
 }
 
 func (t *testSurface) PointerDelta(dx, dy float64) {

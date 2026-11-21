@@ -586,6 +586,8 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		m.s.dispatch(driver.Event{Kind: driver.EventNotification, Count: it.Count, Index: int(driver.NotificationsDenied)})
 	case driver.ItemShowNotification:
 		m.s.dispatch(driver.Event{Kind: driver.EventNotification, Count: it.Count, Finished: false})
+	case driver.ItemCapture:
+		m.s.dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoCapture})
 	case driver.ItemShare:
 		// The SDK has no share sheet, so the app hears that rather than
 		// waiting for an answer that never comes.

@@ -55,6 +55,7 @@ const utf8Encoding = 0x08000100
 
 var (
 	cfRelease               func(uintptr)
+	cfRetain                func(uintptr) uintptr
 	cfStringCreateWithBytes func(alloc uintptr, bytes *byte, n int, encoding uint32, bom bool) uintptr
 	cfDictionaryCreate      func(alloc uintptr, keys, values *uintptr, n int, keyCB, valueCB uintptr) uintptr
 	cfNumberCreate          func(alloc uintptr, kind int, value unsafe.Pointer) uintptr
@@ -115,6 +116,7 @@ func init() {
 	cf := load("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
 	cg := load("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
 	registerSyscall(&cfRelease, cf, "CFRelease")
+	registerSyscall(&cfRetain, cf, "CFRetain")
 	purego.RegisterLibFunc(&cfStringCreateWithBytes, cf, "CFStringCreateWithBytes")
 	purego.RegisterLibFunc(&cfDictionaryCreate, cf, "CFDictionaryCreate")
 	purego.RegisterLibFunc(&cfNumberCreate, cf, "CFNumberCreate")
@@ -133,6 +135,14 @@ func init() {
 	purego.RegisterLibFunc(&caCurrentMediaTime, qc, "CACurrentMediaTime")
 	purego.RegisterLibFunc(&msgSendFloat64, load("/usr/lib/libobjc.A.dylib"), "objc_msgSend")
 	loadTimeZone()
+}
+
+// Retain keeps a CoreFoundation object alive past the caller's ownership.
+func Retain(ref uintptr) uintptr {
+	if ref == 0 {
+		return 0
+	}
+	return cfRetain(ref)
 }
 
 // Release calls CFRelease on a CoreFoundation object.

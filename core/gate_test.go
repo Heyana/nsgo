@@ -123,11 +123,12 @@ var exempt = map[string][]string{
 		"SetLaunchAtLogin", "OnOpenFiles", "OnOpenLinks", "OnShared", "CheckForUpdates", "UpdateActive", "InstallPackage", "CanInstallPackages",
 		"OpenInstallSettings", "Store", "DataDir", "CacheDir", "LogsDir", "CrashReports", "OpenFile", "Share", "RevealFile", "TrashFile", "KeepAwake",
 		"SetTaskProgress", "SetDockMenu", "AddRecentFile", "ClearRecentFiles", "LookUp", "QuickLook", "RequestReview", "ShowAppClipOverlay"},
-	"app-volume capacity, exposed to Go and gated by the project's declaration on Apple": {"DiskSpace"},
-	"engine configuration reserved for unrestricted Go scopes":                           {"SetSoundLimits"},
-	"app media controls outside a view":                                                  {"ClearNowPlaying", "OnMediaCommand"},
-	"stopping what the code's own requests started, which asked the gate":                {"StopSpeaking"},
-	"bundled resources provided by the app to trusted Go code":                           {"ReadAsset"},
+	"app-volume capacity, exposed to Go and gated by the project's declaration on Apple":   {"DiskSpace"},
+	"engine configuration reserved for unrestricted Go scopes":                             {"SetSoundLimits"},
+	"app media controls outside a view":                                                    {"ClearNowPlaying", "OnMediaCommand"},
+	"stopping what the code's own requests started, which asked the gate":                  {"StopSpeaking"},
+	"bundled resources provided by the app to trusted Go code":                             {"ReadAsset"},
+	"capturing the surface, which an owner held to Access or confined is refused outright": {"Capture"},
 }
 
 // TestServicesGoThroughTheGate holds every exported Scope method to a listing: a gated one must reach gate or denied with its service, through the Scope methods and functions it calls, and an exempt one must not. A new method fails until it is listed, so a service that reaches the platform cannot skip the gate unnoticed.

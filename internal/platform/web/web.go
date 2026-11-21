@@ -1580,6 +1580,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemInstallPackage:
 			s.engine.Dispatch(driver.NoPackageInstaller(it.Count))
 			continue
+		case driver.ItemCapture:
+			s.capture(it.ID, it.Count)
+			continue
 		case driver.ItemShare:
 			s.share(*it.Share, it.Count)
 			continue

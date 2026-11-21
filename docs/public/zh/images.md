@@ -50,6 +50,12 @@ NSGo 在带着新 `Version` 的提交运行时复制像素，所以应用可以�
 
 Apple 平台、Android、Windows、Linux 和 Web 直接更新像素图片，微信小程序使用 2D 画布。HarmonyOS 为每个版本生成 `PixelMap`，已在设备上验证；它的副本经字符串桥传递，因此每帧改写的大缓冲区在那里远低于 60 fps（[像素缓冲区](https://github.com/nsgo-dev/nsgo/blob/main/docs/architecture/images.md#pixel-buffers)）。
 
+## 截取视图
+
+用已挂载视图的 `core.Ref` 调用 `cx.Capture(&ref, done)`，传入 `nil` 则截取当前表面。回调在引擎 goroutine 中收到按表面像素比例生成的 PNG 字节或错误。用 `core.ImageSource{Data: png}` 显示结果。要分享截图，可把字节写成应用缓存目录中的 `.png` 文件，再把路径传给 `core.ShareOptions.Files`。[分享文件](services.md#打开链接与文件)
+
+截图取视图边界内可见的表面像素。macOS、iOS、tvOS、Windows、Linux、Android 和 Web 支持截图。Android 截取活动窗口。Web 将应用 DOM 绘制到画布中，包含 NSGo 着色器的输出，省略嵌入的框架、无法读取的图片和部分 CSS 效果。
+
 ## 资源与像素密度
 
 `resources/` 下的文件随应用一起发布。`core.Src("asset:images/cover.png")` 加载其中一个，`Scales: core.ScalesOf(1, 2, 3)` 按屏幕像素比选择 `cover.png`、`cover@2x.png` 或 `cover@3x.png`。

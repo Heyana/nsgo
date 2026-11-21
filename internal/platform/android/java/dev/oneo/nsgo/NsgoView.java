@@ -2311,6 +2311,23 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         });
     }
 
+    private void capture(int count, View target) {
+        Activity activity = activity();
+        SurfaceCapture.take(primary == null && activity != null ? activity.getWindow() : null, this, target, (png, error) -> {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            try {
+                out.writeInt(surface);
+                out.writeInt(count);
+                Protocol.writeString(out, error);
+                if (png != null) out.write(png);
+                write(Protocol.CAPTURE_REPLY, bytes.toByteArray());
+            } catch (IOException impossible) {
+                throw new AssertionError(impossible);
+            }
+        });
+    }
+
     void write(int kind, byte[] payload) {
         if (engine != null) engine.write(kind, payload);
     }
@@ -4053,6 +4070,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 Context context = activity() != null ? activity() : getContext();
                 boolean opened = Services.installSettings(context);
                 event(Protocol.EVENT_FILES, 0, count, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, "", opened);
+                break;
+            }
+            case Protocol.ITEM_CAPTURE: {
+                int count = in.readInt();
+                boolean whole = Protocol.flag(in.readUnsignedByte(), 0);
+                capture(count, whole ? this : n != null ? n.view : null);
                 break;
             }
             case Protocol.ITEM_SHARE: {

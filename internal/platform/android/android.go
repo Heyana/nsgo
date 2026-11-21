@@ -150,6 +150,8 @@ const (
 	msgGeometryReport = 38 // displayed border boxes of one native surface
 	// msgAudioOutputReport answers an extAudioOutput message, pulls the next PCM block or reports an interruption (audiooutput.go, AudioOutput.java).
 	msgAudioOutputReport = 37
+	// msgCaptureReply is a capture result answering ItemCapture: surface, count, error and PNG (capture.go, SurfaceCapture.java).
+	msgCaptureReply = 39
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
@@ -552,6 +554,9 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.secretReply(&r)
 		case msgFetched:
 			s.fetched(&r)
+		case msgCaptureReply:
+			surface, count, failure := r.u32(), r.u32(), r.str()
+			s.dispatchTo(surface, driver.Event{Kind: driver.EventFiles, Count: count, Text: failure, Data: r.buf})
 		case msgTestReply:
 			if s.testReply != nil {
 				s.testReply(&r)
@@ -1872,6 +1877,9 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			w.str(it.Open.Name)
 		case driver.ItemCanInstallPackages, driver.ItemInstallSettings:
 			w.u32(it.Count)
+		case driver.ItemCapture:
+			w.u32(it.Count)
+			w.flags(it.ID == 0)
 		case driver.ItemShare:
 			// The text, then each file as ItemOpenFile's.
 			w.u32(it.Count)
