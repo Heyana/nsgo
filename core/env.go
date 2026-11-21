@@ -52,6 +52,7 @@ type Env struct {
 	os             *Signal[OS]
 	version        *Signal[OSVersion]
 	idiom          *Signal[Idiom]
+	pointer        *Signal[Pointer]
 	lifecycle      *Signal[Lifecycle]
 	appClip        *Signal[bool]
 	openedURL      *Signal[string]
@@ -134,6 +135,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		os:               NewSignal(cx, OS("")),
 		version:          NewSignal(cx, OSVersion{}),
 		idiom:            NewSignal(cx, IdiomPhone),
+		pointer:          NewSignal(cx, PointerCoarse),
 		lifecycle:        NewSignal(cx, LifecycleActive),
 		appClip:          NewSignal(cx, false),
 		openedURL:        NewSignal(cx, ""),
@@ -259,6 +261,7 @@ func (e *Env) set(v Environment) {
 	e.version.Set(v.OSVersion)
 	e.appleKeys.Set(!v.Simulated && (v.OS == OSMacOS || v.OS == OSIOS) || v.AppleKeyboard)
 	e.idiom.Set(v.Idiom)
+	e.pointer.Set(pointerOf(v))
 	e.lifecycle.Set(v.Lifecycle)
 	e.appClip.Set(v.AppClip)
 	e.openedURL.Set(v.OpenedURL)
@@ -576,6 +579,27 @@ func (e *Env) OSVersion() OSVersion { return e.version.Get() }
 
 // Idiom returns the kind of device.
 func (e *Env) Idiom() Idiom { return e.idiom.Get() }
+
+// Pointer returns the precision of the primary pointing device, matching CSS's
+// pointer media feature (PointerFine, PointerCoarse or PointerNone): what the
+// platform reports directly, as the web's pointer media query does, else
+// derived from Idiom (fine on desktops and Macs, none on TVs, coarse on touch
+// devices).
+func (e *Env) Pointer() Pointer { return e.pointer.Get() }
+
+func pointerOf(v Environment) Pointer {
+	if v.Pointer != PointerUnspecified {
+		return v.Pointer
+	}
+	switch v.Idiom {
+	case IdiomDesktop, IdiomMac:
+		return PointerFine
+	case IdiomTV:
+		return PointerNone
+	default:
+		return PointerCoarse
+	}
+}
 
 // Lifecycle returns whether the app is in use: active, inactive (shown without the focus) or in the background. On desktops it is the window's the scope is in, a minimized or covered window's in the background while the others show, and the app's own scope's is every window's together.
 func (e *Env) Lifecycle() Lifecycle { return e.lifecycle.Get() }

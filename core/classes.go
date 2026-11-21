@@ -164,7 +164,7 @@ func (t *Tree) classEnv(n *node) classEnv {
 	e := o.Env()
 	pal := o.Palette()
 	return classEnv{dark: o.Dark(), window: e.Window(), rtl: e.RTL(), reduce: e.ReduceMotion(), contrast: e.IncreaseContrast(), os: e.OS(),
-		palette: &pal, tw: o.Theme().tailwind(), theme: o.Theme(), hostColors: e.tokens.Get()}
+		pointer: e.Pointer(), palette: &pal, tw: o.Theme().tailwind(), theme: o.Theme(), hostColors: e.tokens.Get()}
 }
 
 // resolveClasses resolves n's classes for their environment and n's place among its siblings, as its parent's last child walk found it.

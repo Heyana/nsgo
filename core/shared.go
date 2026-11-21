@@ -158,6 +158,8 @@ type (
 	GradientStop = driver.GradientStop
 	// Idiom is the kind of device, which decides how components present.
 	Idiom = driver.Idiom
+	// Pointer is the precision of the primary pointing device, matching CSS's pointer media feature: Env.Pointer.
+	Pointer = driver.Pointer
 	// Lifecycle is whether the app is in use: Env.Lifecycle.
 	Lifecycle = driver.Lifecycle
 	// Geometry is how a fold or hinge divides a surface: Env.Geometry.
@@ -434,6 +436,13 @@ const (
 	IdiomMac     = driver.IdiomMac
 	IdiomTV      = driver.IdiomTV
 	IdiomWatch   = driver.IdiomWatch
+)
+
+const (
+	PointerUnspecified = driver.PointerUnspecified
+	PointerFine        = driver.PointerFine
+	PointerCoarse      = driver.PointerCoarse
+	PointerNone        = driver.PointerNone
 )
 
 const (

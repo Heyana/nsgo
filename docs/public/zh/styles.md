@@ -60,7 +60,7 @@ core.View{
 core.View{Class: "flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"}
 ```
 
-类名合并在样式之下，因此样式字段优先。`ClassFunc` 让类名跟随变化，状态变体（`hover:bg-zinc-100`、`checked:opacity-100`）会成为样式的状态。`group` 和 `group-hover:` 让子元素跟随父元素的状态，`first:` 和 `last:` 跟随子元素的位置，`aria-checked:`、`data-open:` 和 `focus-within:` 跟随控件展示的状态。
+类名合并在样式之下，因此样式字段优先。`ClassFunc` 让类名跟随变化，状态变体（`hover:bg-zinc-100`、`checked:opacity-100`）会成为样式的状态。`group` 和 `group-hover:` 让子元素跟随父元素的状态，`first:` 和 `last:` 跟随子元素的位置，`aria-checked:`、`data-open:` 和 `focus-within:` 跟随控件展示的状态。`pointer-fine:` 和 `pointer-coarse:` 按鼠标或触屏为子树设置样式，与 CSS 的 `pointer` 媒体特性一致，通过 `cx.Env().Pointer()` 读取（Web 端跟随浏览器的 `pointer` 媒体查询，桌面与 Mac 上为 fine，手机、平板与手表上为 coarse，TV 上两者都不匹配），并可与 `dark:`、`hover:` 等其他变体组合，由应用的类名显式选择，而非由 `core` 隐式更改。
 
 用 `peer` 标记控件，就能让后面的同级元素跟随它的状态：例如复选框设置 `Class: "peer"`，后面的标签设置 `Class: "peer-checked:text-accent peer-disabled:opacity-50"`。peer 只影响同一父元素下排在它后面的同级元素（`Show` 和 `Each` 里的也算），不影响前面的同级元素，也不影响它内部的元素。`peer/field` 配合 `peer-checked/field:` 区分命名的标记，`peer-data-invalid:` 跟随控件的布尔 `invalid` 数据状态。标记和状态的变化都会响应式更新。标记本身不会让元素成为 Tab 焦点或接收点按，所以 `peer-active:` 只跟随本身接收点按的 peer，例如按钮。
 

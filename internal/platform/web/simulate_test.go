@@ -9,26 +9,27 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// A simulated OS replaces the browser's, with its idiom; the web, or none, is not simulated.
+// A simulated OS replaces the browser's, with its idiom and pointer; the web, or none, is not simulated.
 func TestSimulate(t *testing.T) {
 	for _, tc := range []struct {
 		os        driver.OS
 		want      driver.OS
 		idiom     driver.Idiom
+		pointer   driver.Pointer
 		simulated bool
 	}{
-		{driver.OSIOS, driver.OSIOS, driver.IdiomPhone, true},
-		{driver.OSAndroid, driver.OSAndroid, driver.IdiomPhone, true},
-		{driver.OSMacOS, driver.OSMacOS, driver.IdiomDesktop, true},
-		{driver.OSWindows, driver.OSWindows, driver.IdiomDesktop, true},
-		{driver.OSLinux, driver.OSLinux, driver.IdiomDesktop, true},
-		{driver.OSWeb, driver.OSWeb, driver.IdiomTablet, false},
-		{"", driver.OSWeb, driver.IdiomTablet, false},
+		{driver.OSIOS, driver.OSIOS, driver.IdiomPhone, driver.PointerCoarse, true},
+		{driver.OSAndroid, driver.OSAndroid, driver.IdiomPhone, driver.PointerCoarse, true},
+		{driver.OSMacOS, driver.OSMacOS, driver.IdiomDesktop, driver.PointerFine, true},
+		{driver.OSWindows, driver.OSWindows, driver.IdiomDesktop, driver.PointerFine, true},
+		{driver.OSLinux, driver.OSLinux, driver.IdiomDesktop, driver.PointerFine, true},
+		{driver.OSWeb, driver.OSWeb, driver.IdiomTablet, driver.PointerFine, false},
+		{"", driver.OSWeb, driver.IdiomTablet, driver.PointerFine, false},
 	} {
-		env := driver.Environment{OS: driver.OSWeb, Idiom: driver.IdiomTablet}
+		env := driver.Environment{OS: driver.OSWeb, Idiom: driver.IdiomTablet, Pointer: driver.PointerFine}
 		simulate(&env, tc.os)
-		if env.OS != tc.want || env.Idiom != tc.idiom || env.Simulated != tc.simulated {
-			t.Errorf("%q: OS %q, idiom %v, simulated %v", tc.os, env.OS, env.Idiom, env.Simulated)
+		if env.OS != tc.want || env.Idiom != tc.idiom || env.Pointer != tc.pointer || env.Simulated != tc.simulated {
+			t.Errorf("%q: OS %q, idiom %v, pointer %v, simulated %v", tc.os, env.OS, env.Idiom, env.Pointer, env.Simulated)
 		}
 	}
 }

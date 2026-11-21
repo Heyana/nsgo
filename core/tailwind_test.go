@@ -252,6 +252,76 @@ func TestContrastMoreFollowsTheEnvironment(t *testing.T) {
 	}
 }
 
+func TestPointerVariantsFollowEnvironment(t *testing.T) {
+	iconSVG := MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><path d="M0 0H24V24H0Z"/></svg>`))
+	h := newHost(t, Size{Width: 390, Height: 844}, func(cx *Scope) Node {
+		return View{Class: "pointer-coarse:[&_svg]:size-6 pointer-fine:[&_svg]:size-4 [&_svg]:size-5", Children: []Node{
+			View{TestID: "box", Class: "h-10 p-3 pointer-coarse:h-12 pointer-coarse:p-4 pointer-fine:h-8 pointer-fine:p-2 dark:pointer-fine:bg-black"},
+			View{TestID: "plain", Class: "h-10 p-3"},
+			Text{TestID: "label", Spans: []Span{{Content: "Tap", Class: "text-base pointer-coarse:text-lg pointer-fine:text-sm"}}},
+			Icon{TestID: "glyph", SVG: iconSVG},
+		}}
+	})
+	h.commit()
+
+	check := func(name string, boxH, boxPad, spanSize, iconSize Points, bg Color) {
+		t.Helper()
+		box := h.find("box")
+		if box.style.Height != Pt(boxH) || box.style.Padding.Top != boxPad || box.style.Background != bg {
+			t.Errorf("%s: box height=%v pad=%v bg=%#x, want %v %v %#x", name, box.style.Height, box.style.Padding.Top, box.style.Background, Pt(boxH), boxPad, bg)
+		}
+		if plain := h.find("plain"); plain.style.Height != Pt(40) || plain.style.Padding.Top != 12 {
+			t.Errorf("%s: plain view without pointer classes changed: height=%v pad=%v", name, plain.style.Height, plain.style.Padding.Top)
+		}
+		if got := h.find("label").text.spans[0].style.FontSize; got != spanSize {
+			t.Errorf("%s: span size=%v, want %v", name, got, spanSize)
+		}
+		if got := h.find("glyph").style.Width; got != Pt(iconSize) {
+			t.Errorf("%s: icon size=%v, want %v", name, got, Pt(iconSize))
+		}
+	}
+
+	// Default headless environment is IdiomPhone -> coarse pointer.
+	check("default phone", 48, 16, 18, 24, 0)
+
+	// Desktop and Mac idioms resolve pointer-fine: and compose with dark:.
+	h.tree.SetEnvironment(driver.Environment{OS: OSMacOS, Idiom: IdiomDesktop, Dark: true})
+	h.commit()
+	check("desktop dark", 32, 8, 14, 16, RGB(0))
+
+	h.tree.SetEnvironment(driver.Environment{OS: OSIOS, Idiom: IdiomMac})
+	h.commit()
+	check("mac idiom", 32, 8, 14, 16, 0)
+
+	// Tablet and watch idioms resolve pointer-coarse:.
+	for _, tc := range []struct {
+		name  string
+		idiom Idiom
+	}{{"tablet", IdiomTablet}, {"watch", IdiomWatch}} {
+		h.tree.SetEnvironment(driver.Environment{OS: OSIOS, Idiom: tc.idiom})
+		h.commit()
+		check(tc.name, 48, 16, 18, 24, 0)
+	}
+
+	// TV has no pointer (PointerNone): neither pointer-fine: nor pointer-coarse: applies.
+	h.tree.SetEnvironment(driver.Environment{OS: OSIOS, Idiom: IdiomTV})
+	h.commit()
+	check("tv", 40, 12, 16, 20, 0)
+
+	// Explicit Pointer overrides Idiom (e.g. narrow desktop browser with IdiomPhone + PointerFine).
+	h.tree.SetEnvironment(driver.Environment{OS: OSWeb, Idiom: IdiomPhone, Pointer: PointerFine})
+	h.commit()
+	check("web narrow fine", 32, 8, 14, 16, 0)
+
+	h.tree.SetEnvironment(driver.Environment{OS: OSWindows, Idiom: IdiomDesktop, Pointer: PointerCoarse})
+	h.commit()
+	check("desktop touch override", 48, 16, 18, 24, 0)
+
+	h.tree.SetEnvironment(driver.Environment{OS: OSWeb, Idiom: IdiomDesktop, Pointer: PointerNone})
+	h.commit()
+	check("explicit none", 40, 12, 16, 20, 0)
+}
+
 func TestClassFuncFollowsClassAndChanges(t *testing.T) {
 	var on *Signal[bool]
 	h := newHost(t, Size{Width: 390, Height: 844}, func(cx *Scope) Node {

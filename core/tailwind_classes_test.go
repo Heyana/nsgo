@@ -15,7 +15,7 @@ import (
 // design tokens these tests theme with.
 func twEnv() classEnv {
 	pal := DefaultTheme().Light
-	return classEnv{window: Size{Width: 390, Height: 844}, os: OSIOS, palette: &pal, tw: defaultTailwind}
+	return classEnv{window: Size{Width: 390, Height: 844}, os: OSIOS, pointer: PointerCoarse, palette: &pal, tw: defaultTailwind}
 }
 
 func twDark() classEnv {
@@ -475,7 +475,7 @@ func TestGridUtilitiesFollowTailwindCSS(t *testing.T) {
 }
 
 func TestVariants(t *testing.T) {
-	l := defaultTailwind.parse("bg-white dark:bg-black contrast-more:bg-black motion-safe:p-1 motion-reduce:p-2 md:p-8 hover:opacity-80 group-active:scale-95 ios:pt-1 android:pt-2 rtl:ml-2")
+	l := defaultTailwind.parse("bg-white dark:bg-black contrast-more:bg-black motion-safe:p-1 motion-reduce:p-2 md:p-8 hover:opacity-80 group-active:scale-95 pointer-fine:p-2 pointer-coarse:p-4 ios:pt-1 android:pt-2 rtl:ml-2")
 	if len(l.unknown) > 0 || !l.env {
 		t.Errorf("unknown %q, env %v", l.unknown, l.env)
 	}
@@ -502,6 +502,72 @@ func TestVariants(t *testing.T) {
 	want(t, "web:", styled(t, "pt-1 ios:pt-3 web:pt-5", web).Padding.Top, 20)
 	s := styled(t, "w-screen h-screen")
 	want(t, "screen", [2]Length{s.Width, s.Height}, [2]Length{Pt(390), Pt(844)})
+}
+
+func TestPointerVariants(t *testing.T) {
+	for _, class := range []string{"pointer-fine:p-2", "pointer-coarse:p-4"} {
+		l := defaultTailwind.parse(class)
+		if len(l.unknown) > 0 || !l.env {
+			t.Errorf("%q: unknown=%q env=%v", class, l.unknown, l.env)
+		}
+	}
+	if u := UnknownClasses("pointer-fine:p-2 pointer-coarse:p-4 pointer-medium:p-4"); !slices.Equal(u, []string{"pointer-medium:p-4"}) {
+		t.Errorf("UnknownClasses = %q", u)
+	}
+
+	coarse := twEnv()
+	fine := twEnv()
+	fine.pointer = PointerFine
+	none := twEnv()
+	none.pointer = PointerNone
+
+	// Pointer variants override plain utilities regardless of order, and neither matches PointerNone.
+	want(t, "coarse", styled(t, "pointer-coarse:p-6 p-4 pointer-fine:p-2", coarse).Padding.Top, 24)
+	want(t, "fine", styled(t, "pointer-fine:p-2 p-4 pointer-coarse:p-6", fine).Padding.Top, 8)
+	want(t, "none", styled(t, "p-4 pointer-coarse:p-6 pointer-fine:p-2", none).Padding.Top, 16)
+
+	// Contradictory pointer variants parse cleanly and never match.
+	want(t, "contradictory coarse", styled(t, "p-4 pointer-fine:pointer-coarse:p-8", coarse).Padding.Top, 16)
+	want(t, "contradictory fine", styled(t, "p-4 pointer-fine:pointer-coarse:p-8", fine).Padding.Top, 16)
+	want(t, "contradictory none", styled(t, "p-4 pointer-fine:pointer-coarse:p-8", none).Padding.Top, 16)
+
+	// Tailwind 4 orders pointer-coarse: and pointer-fine: after dark:, and NSGo orders platform overrides after them.
+	darkCoarse := twDark()
+	want(t, "pointer-coarse after dark", styled(t, "pointer-coarse:bg-white dark:bg-black", darkCoarse).Background, RGB(0xffffff))
+	darkFine := twDark()
+	darkFine.pointer = PointerFine
+	want(t, "pointer-fine after dark", styled(t, "pointer-fine:bg-white dark:bg-black", darkFine).Background, RGB(0xffffff))
+	want(t, "ios after pointer-fine", styled(t, "ios:p-6 pointer-fine:p-2", fine).Padding.Top, 24)
+
+	// Composition with appearance, state, breakpoint and group variants in either order.
+	want(t, "dark:pointer-coarse on", styled(t, "bg-white dark:pointer-coarse:bg-black", darkCoarse).Background, RGB(0))
+	want(t, "dark:pointer-coarse off on fine", styled(t, "bg-white dark:pointer-coarse:bg-black", darkFine).Background, RGB(0xffffff))
+	want(t, "pointer-coarse:dark on", styled(t, "bg-white pointer-coarse:dark:bg-black", darkCoarse).Background, RGB(0))
+	want(t, "pointer-coarse:dark off in light", styled(t, "bg-white pointer-coarse:dark:bg-black", coarse).Background, RGB(0xffffff))
+
+	hFine := styled(t, "hover:opacity-50 pointer-fine:hover:opacity-80", fine)
+	if hFine.Hover == nil || hFine.Hover.Opacity != Alpha(0.8) {
+		t.Errorf("pointer-fine:hover on fine: %+v", hFine.Hover)
+	}
+	hFineRev := styled(t, "hover:opacity-50 hover:pointer-fine:opacity-80", fine)
+	if hFineRev.Hover == nil || hFineRev.Hover.Opacity != Alpha(0.8) {
+		t.Errorf("hover:pointer-fine on fine: %+v", hFineRev.Hover)
+	}
+	hCoarse := styled(t, "hover:opacity-50 pointer-fine:hover:opacity-80", coarse)
+	if hCoarse.Hover == nil || hCoarse.Hover.Opacity != Alpha(0.5) {
+		t.Errorf("pointer-fine:hover on coarse: %+v", hCoarse.Hover)
+	}
+
+	gFine := styled(t, "group-hover/row:opacity-80 pointer-fine:group-hover/row:opacity-50", fine)
+	if gFine.GroupStyle == nil || gFine.GroupStyle.Hover == nil || gFine.GroupStyle.Hover.Opacity != Alpha(0.5) {
+		t.Errorf("pointer-fine:group-hover on fine: %+v", gFine.GroupStyle)
+	}
+
+	wideFine := twWide(1024)
+	wideFine.pointer = PointerFine
+	want(t, "md:pointer-fine wide fine", styled(t, "p-1 md:pointer-fine:p-5", wideFine).Padding.Top, 20)
+	want(t, "md:pointer-fine narrow fine", styled(t, "p-1 md:pointer-fine:p-5", fine).Padding.Top, 4)
+	want(t, "md:pointer-fine wide coarse", styled(t, "p-1 md:pointer-fine:p-5", twWide(1024)).Padding.Top, 4)
 }
 
 func TestCheckedVariants(t *testing.T) {

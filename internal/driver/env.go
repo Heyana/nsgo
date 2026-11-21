@@ -105,6 +105,8 @@ type Environment struct {
 	// as Major, and zero on the web.
 	OSVersion OSVersion
 	Idiom     Idiom
+	// Pointer is the precision of the primary pointing device when the platform reports it directly (such as CSS's pointer media query on the web); zero derives it from Idiom.
+	Pointer Pointer
 	// Simulated is whether OS and Idiom are ones the platform imitates rather than runs on, as a web build does for --nsgo-os, or whose native parts it lacks, as a mini program on its device's OS: the app's own views take that OS's paths, while its native components, system header, menus and window functions are absent.
 	Simulated bool
 	// AppleKeyboard says a browser or a mini program runs on an Apple platform, where "mod" is Command as on macOS and iOS.
@@ -224,6 +226,22 @@ const (
 	IdiomTV
 	// IdiomWatch is a watch: Apple Watch.
 	IdiomWatch
+)
+
+// Pointer is the precision of the device's primary pointing device, matching
+// CSS's pointer media feature (fine, coarse or none). The zero value derives
+// it from Idiom.
+type Pointer uint8
+
+const (
+	// PointerUnspecified derives the pointer precision from Idiom.
+	PointerUnspecified Pointer = iota
+	// PointerFine is an accurate pointing device, such as a mouse or trackpad.
+	PointerFine
+	// PointerCoarse is a limited-accuracy pointing device, such as a finger on a touchscreen.
+	PointerCoarse
+	// PointerNone is a device with no primary pointing device, such as a TV remote.
+	PointerNone
 )
 
 // OSVersion is an operating system's version.

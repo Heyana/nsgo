@@ -14,9 +14,9 @@ import (
 // watch is what the page's environment is read from. The page cannot
 // tell whether a screen reader runs, so ScreenReader stays false.
 type watch struct {
-	dark, reduce, contrast, desktop js.Value // media query lists
-	resolution                      js.Value // matches ratio only
-	ratio                           float64
+	dark, reduce, contrast, desktop, pointerFine, pointerCoarse js.Value // media query lists
+	resolution                                                  js.Value // matches ratio only
+	ratio                                                       float64
 	// probe is padded by the safe area and as wide as the root font size.
 	probe   js.Value
 	changed js.Func
@@ -47,6 +47,8 @@ func (s *surface) watchStart(page bool) {
 	w.reduce = g.Call("matchMedia", "(prefers-reduced-motion: reduce)")
 	w.contrast = g.Call("matchMedia", "(prefers-contrast: more), (forced-colors: active)")
 	w.desktop = g.Call("matchMedia", "(hover: hover) and (pointer: fine) and (min-width: 600px)")
+	w.pointerFine = g.Call("matchMedia", "(pointer: fine)")
+	w.pointerCoarse = g.Call("matchMedia", "(pointer: coarse)")
 	w.probe = s.doc.Call("createElement", "div")
 	setStyle(w.probe, map[string]string{
 		"position": "fixed", "left": "0", "top": "0", "visibility": "hidden", "pointer-events": "none",
@@ -65,7 +67,7 @@ func (s *surface) watchChanges() {
 		s.updateEnv()
 		return nil
 	})
-	for _, q := range []js.Value{w.dark, w.reduce, w.contrast, w.desktop} {
+	for _, q := range []js.Value{w.dark, w.reduce, w.contrast, w.desktop, w.pointerFine, w.pointerCoarse} {
 		q.Call("addEventListener", "change", w.changed)
 	}
 	s.watchRatio(g.Get("devicePixelRatio").Float())
@@ -159,7 +161,7 @@ func (s *surface) environment() driver.Environment {
 		Gamepads:    g.Get("navigator").Get("getGamepads").Type() == js.TypeFunction,
 		Audio:       webAudioAvailable(),
 		// Browsers on touch screens open the camera for an input's capture.
-		Camera: g.Call("matchMedia", "(pointer: coarse)").Get("matches").Bool(),
+		Camera: w.pointerCoarse.Get("matches").Bool(),
 		SafeArea: driver.Edges{
 			Top: length("paddingTop"), Right: length("paddingRight"),
 			Bottom: length("paddingBottom"), Left: length("paddingLeft"),
@@ -177,6 +179,14 @@ func (s *surface) environment() driver.Environment {
 	}
 	if w.desktop.Get("matches").Bool() {
 		env.Idiom = driver.IdiomDesktop
+	}
+	switch {
+	case w.pointerFine.Get("matches").Bool():
+		env.Pointer = driver.PointerFine
+	case w.pointerCoarse.Get("matches").Bool():
+		env.Pointer = driver.PointerCoarse
+	default:
+		env.Pointer = driver.PointerNone
 	}
 	simulate(&env, s.simulate)
 	switch {
@@ -205,9 +215,10 @@ func simulate(env *driver.Environment, os driver.OS) {
 	if os == "" || os == driver.OSWeb {
 		return
 	}
-	env.OS, env.Simulated, env.Idiom = os, true, driver.IdiomDesktop
+	env.OS, env.Simulated, env.Idiom, env.Pointer = os, true, driver.IdiomDesktop, driver.PointerFine
 	if os == driver.OSIOS || os == driver.OSAndroid {
 		env.Idiom = driver.IdiomPhone
+		env.Pointer = driver.PointerCoarse
 		env.CustomCursor = false
 	}
 }

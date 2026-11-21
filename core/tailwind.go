@@ -63,6 +63,12 @@ const (
 	positionOnly
 )
 
+// Pointer media feature conditions: pointer-fine:, pointer-coarse:.
+const (
+	condPointerFine uint8 = 1 << iota
+	condPointerCoarse
+)
+
 // tri is a condition on a boolean: either, true or false.
 type tri int8
 
@@ -79,6 +85,7 @@ type classCond struct {
 	dark, landscape, rtl, reduceMotion, increaseContrast tri
 	minWidth, maxWidth                                   Points // 0: none
 	platform                                             OS     // "": any
+	pointer                                              uint8  // condPointer* bitmask; 0: any
 	states, notStates                                    uint16
 	data                                                 string // data-*:'s name
 	group                                                *classGroup
@@ -179,6 +186,8 @@ const (
 	rankLTR           = 62
 	rankRTL           = 63
 	rankDark          = 64
+	rankPointerCoarse = 65
+	rankPointerFine   = 66
 	rankIOS           = 70
 	rankAndroid       = 71
 	rankWeb           = 72
@@ -514,8 +523,8 @@ type classList struct {
 	class  string
 	rules  []classRule
 	// env is set when the rules depend on the environment: the
-	// appearance, the window, the direction, the platform, the motion
-	// setting or the theme's colors.
+	// appearance, the window, the direction, the platform, the pointer,
+	// the motion or contrast setting or the theme's colors.
 	env bool
 	// positional is set when they depend on the node's place among its
 	// siblings.
@@ -543,6 +552,7 @@ type classEnv struct {
 	rtl            bool
 	reduce         bool
 	os             OS
+	pointer        Pointer
 	position       uint8
 	palette        *Palette
 	tw             *tailwindTheme
@@ -750,7 +760,7 @@ func (t *tailwindTheme) parseToken(l *classList, token string) bool {
 		}
 	}
 	l.env = l.env || env || cond.dark != either || cond.landscape != either || cond.rtl != either ||
-		cond.reduceMotion != either || cond.increaseContrast != either || cond.minWidth != 0 || cond.maxWidth != 0 || cond.platform != ""
+		cond.reduceMotion != either || cond.increaseContrast != either || cond.minWidth != 0 || cond.maxWidth != 0 || cond.platform != "" || cond.pointer != 0
 	l.positional = l.positional || cond.position != 0
 	l.peerDependent = l.peerDependent || len(cond.peers) > 0
 	l.spacing = l.spacing || strings.HasPrefix(strings.TrimPrefix(utility, "-"), "space-")
@@ -846,6 +856,12 @@ func (t *tailwindTheme) variant(v string, c *classCond) (classKey, bool) {
 	case "dark":
 		c.dark = yes
 		return key(rankDark)
+	case "pointer-coarse":
+		c.pointer |= condPointerCoarse
+		return key(rankPointerCoarse)
+	case "pointer-fine":
+		c.pointer |= condPointerFine
+		return key(rankPointerFine)
 	case "ios":
 		c.platform = OSIOS
 		return key(rankIOS)
@@ -1014,7 +1030,21 @@ func (c *classCond) matches(env *classEnv) bool {
 	return c.dark.holds(env.dark) && c.rtl.holds(env.rtl) && c.reduceMotion.holds(env.reduce) && c.increaseContrast.holds(env.contrast) &&
 		c.landscape.holds(w.Width > w.Height) && (c.minWidth == 0 || w.Width >= c.minWidth) &&
 		(c.maxWidth == 0 || w.Width < c.maxWidth) && (c.platform == "" || c.platform == env.os) &&
-		(c.position == 0 || env.position&c.position != 0)
+		c.matchesPointer(env.pointer) && (c.position == 0 || env.position&c.position != 0)
+}
+
+func (c *classCond) matchesPointer(p Pointer) bool {
+	switch c.pointer {
+	case 0:
+		return true
+	case condPointerFine:
+		return p == PointerFine
+	case condPointerCoarse:
+		return p == PointerCoarse
+	default:
+		// Contradictory pointer variants (e.g. pointer-fine:pointer-coarse:).
+		return false
+	}
 }
 
 // resolve returns the style the classes give a node in env, the styles

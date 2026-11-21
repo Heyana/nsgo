@@ -95,7 +95,7 @@ core.View{Style: core.Style{
 core.View{Class: "flex flex-col gap-3 p-4 md:flex-row md:gap-6 dark:bg-zinc-900 rtl:flex-row-reverse"}
 ```
 
-`sm:`、`md:`、`lg:`、`xl:` 和 `2xl:` 分别从 40、48、64、80 和 96 rem 宽开始生效，`max-md:` 在某个断点以下生效。`portrait:`、`dark:`、`rtl:`、`motion-reduce:`、`contrast-more:`、`ios:`、`android:` 和 `web:` 跟随环境。类名合并在 `Style` 之下，状态类名（`hover:`）会成为状态样式，两者可以混用。
+`sm:`、`md:`、`lg:`、`xl:` 和 `2xl:` 分别从 40、48、64、80 和 96 rem 宽开始生效，`max-md:` 在某个断点以下生效。`portrait:`、`dark:`、`rtl:`、`motion-reduce:`、`contrast-more:`、`pointer-fine:`、`pointer-coarse:`、`ios:`、`android:` 和 `web:` 跟随环境。类名合并在 `Style` 之下，状态类名（`hover:`）会成为状态样式，两者可以混用。
 
 ## 下一步
 

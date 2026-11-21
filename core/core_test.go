@@ -1094,6 +1094,7 @@ func TestEnvironment(t *testing.T) {
 	var states []Lifecycle
 	var minimized []bool
 	var login []bool
+	var pointers []Pointer
 	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		cx.Effect(func() { states = append(states, cx.Env().Lifecycle()) })
 		cx.Effect(func() { widths = append(widths, cx.Env().Window().Width) })
@@ -1102,6 +1103,7 @@ func TestEnvironment(t *testing.T) {
 		cx.Effect(func() { materials = append(materials, cx.Env().WindowMaterial()) })
 		cx.Effect(func() { minimized = append(minimized, cx.Env().Minimized()) })
 		cx.Effect(func() { login = append(login, cx.Env().LaunchedAtLogin()) })
+		cx.Effect(func() { pointers = append(pointers, cx.Env().Pointer()) })
 		return Text{Content: "Aa", Style: Style{FontSize: 10}, TestID: "text"}
 	})
 	h.commit()
@@ -1133,6 +1135,16 @@ func TestEnvironment(t *testing.T) {
 	h.commit()
 	if !slices.Equal(login, []bool{false, true}) {
 		t.Fatalf("launched at login %v", login)
+	}
+	h.tree.SetEnvironment(Environment{Idiom: IdiomDesktop})
+	h.tree.SetEnvironment(Environment{Idiom: IdiomMac}) // still PointerFine: no runs
+	h.commit()
+	h.tree.SetEnvironment(Environment{Idiom: IdiomTV})
+	h.commit()
+	h.tree.SetEnvironment(Environment{Idiom: IdiomDesktop, Pointer: PointerCoarse})
+	h.commit()
+	if !slices.Equal(pointers, []Pointer{PointerCoarse, PointerFine, PointerNone, PointerCoarse}) {
+		t.Fatalf("pointers %v", pointers)
 	}
 }
 
