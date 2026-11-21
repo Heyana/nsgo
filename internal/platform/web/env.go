@@ -106,6 +106,7 @@ func (s *surface) watchChanges() {
 	g.Call("addEventListener", "pagehide", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		s.releaseKeys(driver.Modifiers{}, true)
 		s.releaseMouseButtons()
+		s.stopHapticPattern()
 		if args[0].Get("persisted").Bool() {
 			s.engine.Hide()
 		} else {
@@ -141,6 +142,9 @@ func (s *surface) updateEnv() {
 		s.watchRatio(ratio)
 	}
 	if env := s.environment(); !env.Equal(s.env) {
+		if env.Lifecycle == driver.LifecycleBackground || !env.HapticPatterns {
+			s.stopHapticPattern()
+		}
 		repaint := env.PixelRatio != s.env.PixelRatio
 		s.env = env
 		s.engine.SetEnvironment(env)
@@ -176,6 +180,7 @@ func (s *surface) environment() driver.Environment {
 		AudioSchedule:         webAudioAvailable(),
 		CanLockPointer:        webCanLockPointer(s.doc),
 		AudioPlaybackControls: webAudioAvailable(),
+		HapticPatterns:        hapticPatternsAvailable(g.Get("navigator")),
 		// Browsers on touch screens open the camera for an input's capture.
 		Camera: w.pointerCoarse.Get("matches").Bool(),
 		SafeArea: driver.Edges{

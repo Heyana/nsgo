@@ -64,6 +64,8 @@ type Environment struct {
 	AudioSchedule bool
 	// AudioPlaybackControls says sound playbacks can be addressed and report when they end.
 	AudioPlaybackControls bool
+	// HapticPatterns reports support for playing timed haptic events.
+	HapticPatterns bool
 	// Camera says ItemTakePhoto shows a camera here.
 	Camera bool
 	// ScanCode says ItemScanCode shows a camera that reads codes here.

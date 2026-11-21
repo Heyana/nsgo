@@ -1582,6 +1582,16 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		case driver.ItemKeepAwake:
 			w.u32(it.Count)
 			w.flags(it.Awake != nil && it.Awake.Display)
+		case driver.ItemHapticPattern:
+			var waveform []driver.HapticSegment
+			if it.HapticPattern != nil {
+				waveform = driver.HapticWaveform(*it.HapticPattern)
+			}
+			w.u32(uint32(len(waveform)))
+			for _, segment := range waveform {
+				w.u64(uint64(segment.Milliseconds))
+				w.byte(segment.Amplitude)
+			}
 		case driver.ItemSpeak:
 			r := it.Speak
 			w.u32(it.Count)

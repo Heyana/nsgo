@@ -1543,6 +1543,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemAnnounce:
 			s.announce(it.Value)
 			continue
+		case driver.ItemHapticPattern:
+			s.playHapticPattern(it.HapticPattern)
+			continue
 		case driver.ItemKeymap:
 			s.setKeymap(it.Keys, it.HeldKeys, it.HeldMouseButtons)
 			continue

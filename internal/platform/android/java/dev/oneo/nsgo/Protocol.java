@@ -131,6 +131,8 @@ final class Protocol {
     static final int CAP_DISCOVER_SERVICES = 32;
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
+    /** The environment's third capability byte's bit for a device that plays timed vibration patterns (capHapticPatterns in protocol.go). */
+    static final int CAP_HAPTIC_PATTERNS = 16;
 
     /** Reads a bundled file: its request ID and the path under assets/. */
     static final int EXT_ASSET_READ = 9;
@@ -360,6 +362,7 @@ final class Protocol {
     static final int ITEM_SAVE_PREFLIGHT_ANSWER = 117;
     static final int ITEM_SAVE_FILE_PREFLIGHT = 118;
     static final int ITEM_SYSTEM_GESTURES = 121;
+    static final int ITEM_HAPTIC_PATTERN = 124;
 
     // What EVENT_OVERLAY_PERMISSION answers ITEM_OVERLAY_PERMISSION with, and why an overlay ends, as the driver's.
     static final int OVERLAY_DENIED = 0;

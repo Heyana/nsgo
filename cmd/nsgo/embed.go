@@ -424,6 +424,7 @@ func aarManifest(overlay bool, libraries []string) string {
     <uses-sdk android:minSdkVersion="28" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />` + perms + `
     <queries>
         <intent>

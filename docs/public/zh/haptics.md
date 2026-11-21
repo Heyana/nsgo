@@ -1,6 +1,6 @@
 ---
 title: 触感反馈
-description: 值变化、元素碰撞或任务结束时，在用户手指下播放反馈。
+description: 播放预设触感反馈或定时的脉冲序列。
 group: 平台功能
 order: 46
 ---
@@ -12,6 +12,22 @@ order: 46
 ```go
 mobile.PlayHaptic(cx, mobile.HapticSelection)
 ```
+
+## 播放序列
+
+`cx.Env().CanPlayHapticPattern()` 报告是否支持定时触感反馈。序列由脉冲组成，`At` 是相对于序列开始的时间。`Duration` 为零时播放瞬态脉冲，正值表示持续播放，最长 30 秒。`Intensity` 和 `Sharpness` 的范围是 0 到 1。新序列会替换上一个序列，传入空序列可停止播放。应用进入后台时，序列也会停止。
+
+```go
+mobile.PlayHapticPattern(cx, mobile.HapticPattern{
+    {Intensity: 0.25, Sharpness: 0.4},
+    {At: 100 * time.Millisecond, Intensity: 0.55, Sharpness: 0.6},
+    {At: 200 * time.Millisecond, Intensity: 1, Sharpness: 0.8},
+})
+```
+
+iOS 在支持的硬件上通过 Core Haptics 播放事件。Android 按时间播放，振动器支持振幅控制时也使用强度。支持 `navigator.vibrate` 的 Android 浏览器会在用户交互后按启停时间播放。Android 和 Web 将瞬态播放为 20 毫秒的脉冲，锐度由 iOS 支持。不支持的平台不执行播放。
+
+测试通过 `nsgotest.Environment` 设置 `HapticPatterns: true`，并读取 `app.HapticPatterns`。取消播放会在播放记录中留下一条 nil。
 
 ## 何时播放
 

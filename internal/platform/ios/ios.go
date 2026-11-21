@@ -849,6 +849,7 @@ func (s *surface) environment() driver.Environment {
 		notifications: apple.NotificationsAvailable(),
 		gpu:           apple.GPUSupported(),
 	})
+	env.HapticPatterns = idiom != driver.IdiomTV && hapticPatternsAvailable()
 	env.HeaderHeight, env.LargeHeaderHeight = s.headers[0], s.headers[1]
 	return env
 }
@@ -920,6 +921,9 @@ func (s *surface) observe() {
 			if name == "UIApplicationWillResignActiveNotification" {
 				// The keys held come up for the app: UIKit may end their presses elsewhere, or not at all.
 				s.releaseKeys()
+			}
+			if state == driver.LifecycleBackground {
+				s.stopHapticPattern()
 			}
 			// Players pause as the app leaves the foreground, as NSH's do.
 			if state == driver.LifecycleBackground && s.audio != nil {
@@ -1236,6 +1240,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if !s.closed {
 				s.setSystemGestureEdges(it.SystemGestures.IOSEdges)
 			}
+			continue
+		case driver.ItemHapticPattern:
+			s.playHapticPattern(it.HapticPattern)
 			continue
 		case driver.ItemKeepAwake:
 			if it.Awake != nil && !s.closed {

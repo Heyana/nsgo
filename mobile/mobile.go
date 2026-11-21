@@ -77,6 +77,16 @@ func Immersive(cx *core.Scope, on bool) {
 	cx.SetStatusBar(core.StatusBarSetting{Immersive: toggle})
 }
 
+// HapticEvent is one event in a HapticPattern.
+type HapticEvent = core.HapticEvent
+
+// HapticPattern is a sequence of timed pulses.
+type HapticPattern = core.HapticPattern
+
+// PlayHapticPattern plays pattern in place of the current one. An empty
+// pattern stops playback. Env.CanPlayHapticPattern reports support.
+func PlayHapticPattern(cx *core.Scope, pattern HapticPattern) { cx.PlayHapticPattern(pattern) }
+
 // IsAvailable reports whether the app runs on iOS or Android, where this package's components show; a watch, which reports iOS, and a web build that runs as one (core.Env.Simulated) do not.
 func IsAvailable(cx *core.Scope) bool {
 	os := cx.Env().OS()

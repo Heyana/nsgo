@@ -474,6 +474,9 @@ const capDiscoverServices = 32
 // capAudio is the third capability byte's bit for a runtime that plays sounds and players (Protocol.CAP_AUDIO): one built before Audio.java reads as having no audio.
 const capAudio = 2
 
+// capHapticPatterns is the third capability byte's bit for a device and runtime that play timed vibration patterns on ItemHapticPattern (Protocol.CAP_HAPTIC_PATTERNS).
+const capHapticPatterns = 16
+
 // readEnvironmentCapabilities reads the environment as readEnvironment does, with the third capability byte, which says what the runtime itself can do (cap* bits) rather than the device, so it stays out of driver.Environment.
 func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	env := driver.Environment{
@@ -552,6 +555,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	env.DiscoverServices = third&capDiscoverServices != 0 && third&capExtendedMessages != 0
 	env.Audio = third&capAudio != 0
 	env.AudioPlaybackControls = env.Audio
+	env.HapticPatterns = third&capHapticPatterns != 0
 	return env, third
 }
 

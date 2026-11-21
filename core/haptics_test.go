@@ -3,9 +3,51 @@ package core
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
+
+func TestHapticPatternReplacesAndStopsInBackground(t *testing.T) {
+	var scope *Scope
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
+		scope = cx
+		return View{}
+	})
+	env := Environment{OS: OSAndroid, HapticPatterns: true}
+	h.tree.SetEnvironment(env)
+	h.commit()
+	commands := func() []*driver.HapticPattern {
+		var patterns []*driver.HapticPattern
+		for _, item := range h.commit().Items {
+			if item.Kind == driver.ItemHapticPattern {
+				patterns = append(patterns, item.HapticPattern)
+			}
+		}
+		return patterns
+	}
+	first := HapticPattern{{Intensity: .25, Sharpness: -1}, {At: -1, Intensity: 1}}
+	scope.PlayHapticPattern(first)
+	first[0].Intensity = .75
+	if got := commands(); len(got) != 1 || got[0] == nil || !slices.Equal(*got[0], HapticPattern{{Intensity: .25}}) {
+		t.Fatalf("first haptic pattern = %v", got)
+	}
+	second := HapticPattern{{At: 100 * time.Millisecond, Duration: 40 * time.Millisecond, Intensity: 1}}
+	scope.PlayHapticPattern(second)
+	if got := commands(); len(got) != 1 || got[0] == nil || !slices.Equal(*got[0], second) {
+		t.Fatalf("replacement haptic pattern = %v", got)
+	}
+	env.Lifecycle = LifecycleBackground
+	h.tree.SetEnvironment(env)
+	if got := commands(); len(got) != 1 || got[0] != nil {
+		t.Fatalf("background requires one cancellation: %v", got)
+	}
+	scope.PlayHapticPattern(second)
+	h.tree.SetEnvironment(env)
+	if got := commands(); len(got) != 0 {
+		t.Fatalf("background must stay silent: %v", got)
+	}
+}
 
 func TestHapticsPlayOnPhonesAlone(t *testing.T) {
 	played := func(env Environment, hs ...Haptic) []uint32 {

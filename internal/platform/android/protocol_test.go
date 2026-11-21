@@ -482,6 +482,28 @@ func TestReadEnvironmentSeparatesSpeechFromAudio(t *testing.T) {
 	}
 }
 
+func TestReadEnvironmentHapticPatternsUseIndependentFlag(t *testing.T) {
+	// Timed haptics take the third capability byte's capHapticPatterns bit, apart from the second byte's network bits and the runtime's other capabilities.
+	for _, third := range []byte{0, capExtendedMessages, capHapticPatterns, capHapticPatterns | capDiscoverServices, 255 &^ capHapticPatterns} {
+		var w writer
+		writeBaseEnvironment(&w, "en-US")
+		w.buf[7*4+1] = 8 | 16 | 32
+		w.byte(1)
+		w.str("h23")
+		w.str("metric")
+		w.str("celsius")
+		w.str("US")
+		w.byte(third)
+		env, _ := readEnvironmentCapabilities(&reader{w.buf})
+		if want := third&capHapticPatterns != 0; env.HapticPatterns != want {
+			t.Errorf("third capability byte %d: HapticPatterns = %v, want %v", third, env.HapticPatterns, want)
+		}
+		if env.Network == nil || !env.Network.Online || !env.Network.Expensive {
+			t.Errorf("third capability byte %d: Network = %+v, want online and expensive", third, env.Network)
+		}
+	}
+}
+
 // TestReadEnvironmentMapsPowerState: NsgoView writes PowerManager's thermal status plus one, 0 before API 29, and the power-save mode as 0 unknown, 1 off or 2 on.
 func TestReadEnvironmentMapsPowerState(t *testing.T) {
 	for _, c := range []struct {

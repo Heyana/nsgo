@@ -395,6 +395,8 @@ type App struct {
 	AwakeReleases []uint32
 	// SystemGestures is the main surface's current system gesture request.
 	SystemGestures core.SystemGestureOptions
+	// HapticPatterns lists the timed haptics the app played. A nil entry is a cancellation.
+	HapticPatterns []core.HapticPattern
 	// OverlayPermission is what the platform answers whether the app may show overlays over other apps with (mobile.OverlayPermission), denied at first, as Android's special access is. A request while denied opens the setting, which OverlaySettings counts, and makes it OverlayAnswer, which the test sets to OverlayGranted for a user who grants it. Overlay is the overlay the app opened last, kept once it closed; RevokeOverlayPermission takes the grant away.
 	OverlayPermission core.OverlayPermission
 	OverlayAnswer     core.OverlayPermission

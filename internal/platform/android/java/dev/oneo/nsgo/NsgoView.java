@@ -222,6 +222,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     };
     // The thermal listener is an Object so versions before API 29 never resolve its class.
     private Object thermalListener;
+    private final HapticPatterns hapticPatterns;
     private final AccessibilityManager.TouchExplorationStateChangeListener screenReader = on -> environment();
     /** The UiModeManager.ContrastChangeListener on API 34 and later: an Object, so older Androids, which have no such class, never resolve it. */
     private Object contrast;
@@ -389,6 +390,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         accessibility = context.getSystemService(AccessibilityManager.class);
         uiMode = context.getSystemService(UiModeManager.class);
         power = context.getSystemService(PowerManager.class);
+        hapticPatterns = new HapticPatterns(context);
         gestures = new Gestures(context);
         setOnApplyWindowInsetsListener((v, insets) -> {
             insets(insets);
@@ -527,6 +529,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     @Override
     protected void onWindowVisibilityChanged(int visibility) {
         super.onWindowVisibilityChanged(visibility);
+        if (visibility != View.VISIBLE && hapticPatterns != null) hapticPatterns.stop();
         environment();
         if (measuring && visibility == View.VISIBLE) startTicking();
         if (primary != null) primary.overlays.visibility(this, visibility);
@@ -551,6 +554,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     protected void onDetachedFromWindow() {
         releasePhysicalKeys();
         pauseAudio();
+        hapticPatterns.stop();
         releaseEnvironment();
         // An app waiting for the folds starts as the view leaves its window, as it would have without them.
         releaseStart();
@@ -848,6 +852,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * Ends the app's process and destroys its native components. On a view showing a host-owned engine it only detaches the view, as NsgoEngine.destroy ends that engine.
      */
     public void stop() {
+        hapticPatterns.stop();
         if (engine != null && !ownsEngine) {
             detachFromEngine();
             return;
@@ -1277,7 +1282,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     android.text.format.DateFormat.is24HourFormat(getContext()),
                     measurementSystem(formatLocale)).write(d);
             // The second capability byte's bits are taken too: a third ends the payload, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, and Protocol.CAP_DISCOVER_SERVICES.
-            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES;
+            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES | (hapticPatterns.available ? Protocol.CAP_HAPTIC_PATTERNS : 0);
             d.writeByte(third);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
@@ -3254,6 +3259,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
             case Protocol.ITEM_RELEASE_AWAKE:
                 if (displayHolds.remove(in.readInt()) && displayHolds.isEmpty()) setKeepScreenOn(false);
+                break;
+            case Protocol.ITEM_HAPTIC_PATTERN:
+                hapticPatterns.apply(in, getWindowVisibility() == View.VISIBLE);
                 break;
             case Protocol.ITEM_SENSOR: {
                 if (sensors == null) sensors = new Sensors(getContext(), this::activity, engine, this::keeperEnded);

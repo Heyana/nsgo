@@ -29,6 +29,7 @@ type Env struct {
 	audio, speak, gamepads  *Signal[bool]
 	gpu                     *Signal[bool]
 	audioSchedule           *Signal[bool]
+	hapticPatterns          *Signal[bool]
 	camera                  *Signal[bool]
 	scanCode                *Signal[bool]
 	discoverServices        *Signal[bool]
@@ -115,6 +116,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		speech:           NewSignal(cx, false),
 		audio:            NewSignal(cx, false),
 		audioSchedule:    NewSignal(cx, false),
+		hapticPatterns:   NewSignal(cx, false),
 		speak:            NewSignal(cx, false),
 		gamepads:         NewSignal(cx, false),
 		gpu:              NewSignal(cx, false),
@@ -248,6 +250,7 @@ func (e *Env) set(v Environment) {
 	e.speech.Set(v.Speech)
 	e.audio.Set(v.Audio)
 	e.audioSchedule.Set(v.Audio && v.AudioSchedule)
+	e.hapticPatterns.Set(v.HapticPatterns)
 	e.speak.Set(v.Speak)
 	e.gamepads.Set(v.Gamepads)
 	e.gpu.Set(v.GPU)
@@ -415,6 +418,9 @@ func (e *Env) CanPlayAudio() bool { return e.audio.Get() }
 
 // CanScheduleAudio reports whether the platform schedules audio.Sound playback at a requested time.
 func (e *Env) CanScheduleAudio() bool { return e.audioSchedule.Get() }
+
+// CanPlayHapticPattern reports whether the platform can play timed haptics.
+func (e *Env) CanPlayHapticPattern() bool { return e.hapticPatterns.Get() }
 
 // CanSpeak reports whether Scope.Speak speaks text here: macOS, iOS, tvOS, Android, Windows, the web where the browser has speechSynthesis, and Linux where speech-dispatcher is installed. Elsewhere an utterance fails with SpeakUnavailable without asking the platform.
 func (e *Env) CanSpeak() bool { return e.speak.Get() }

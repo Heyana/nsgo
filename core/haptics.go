@@ -1,6 +1,11 @@
 package core
 
-import "github.com/nsgo-dev/nsgo/internal/driver"
+import (
+	"math"
+	"time"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
+)
 
 // Haptic is feedback the device plays under the user's finger: the
 // core's part of mobile.Haptic, which apps use.
@@ -38,4 +43,46 @@ func (cx *Scope) PlayHaptic(h Haptic) {
 		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemHaptic, Count: uint32(h)})
 		t.changed = true
 	}
+}
+
+// HapticEvent is the core's part of mobile.HapticEvent.
+type HapticEvent = driver.HapticEvent
+
+// HapticPattern is the core's part of mobile.HapticPattern.
+type HapticPattern = driver.HapticPattern
+
+// PlayHapticPattern is the core's part of mobile.PlayHapticPattern. A
+// new pattern replaces one already playing. An empty pattern stops it.
+func (cx *Scope) PlayHapticPattern(pattern HapticPattern) {
+	env := cx.Env()
+	if !env.hapticPatterns.GetUntracked() || env.lifecycle.GetUntracked() == LifecycleBackground {
+		return
+	}
+	t := cx.tree()
+	if t == nil {
+		return
+	}
+	if len(pattern) == 0 {
+		t.setHapticPattern(nil)
+		return
+	}
+	pulses := make(HapticPattern, 0, len(pattern))
+	for _, pulse := range pattern {
+		if pulse.At < 0 || pulse.Duration < 0 || math.IsNaN(float64(pulse.Intensity)) || math.IsNaN(float64(pulse.Sharpness)) {
+			continue
+		}
+		pulse.Duration = min(pulse.Duration, 30*time.Second)
+		pulse.Intensity = min(1, max(0, pulse.Intensity))
+		pulse.Sharpness = min(1, max(0, pulse.Sharpness))
+		pulses = append(pulses, pulse)
+	}
+	if len(pulses) > 0 {
+		t.setHapticPattern(&pulses)
+	}
+}
+
+func (t *Tree) setHapticPattern(pattern *HapticPattern) {
+	t.hapticActive = pattern != nil
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemHapticPattern, HapticPattern: pattern})
+	t.changed = true
 }

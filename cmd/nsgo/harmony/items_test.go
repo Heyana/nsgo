@@ -47,7 +47,7 @@ var unsupportedItems = map[string]string{
 
 		ItemScanCode ItemOrientation ItemKeepImage ItemReleaseImage ItemReleaseOffscreen
 
-		ItemRequestReview ItemSavePreflightAnswer ItemDiscovery ItemSystemGestures`,
+		ItemRequestReview ItemSavePreflightAnswer ItemDiscovery ItemSystemGestures ItemHapticPattern`,
 	// The core answers these before the platform sees them: it resolves a
 	// path with os.Stat, which js/wasm does not implement, answers the
 	// install family itself off Android, and sends no audio where the

@@ -93,7 +93,7 @@ var exempt = map[string][]string{
 	"Access itself, Confine, and what ProvideHost, ProvideStorage and ProvideSecrets scope to the owner": {"ProvideAccess", "CheckAccess",
 		"ProvideHost", "HasHost", "HostParams", "OnHostEvent", "ProvideStorage", "Storage", "ProvideSecrets", "Confine"},
 	"the view the code shows and the user's input to it, which no capability holds": {"StartAnimation", "AnimateLayout",
-		"MeasureText", "NewOffscreenImage", "RequestAnimationFrame", "RunFrame", "RunFrameAt", "Animate", "Tween", "PlayHaptic", "DeferSystemGestures", "OnKey", "OnKeyWith", "OnBackPress",
+		"MeasureText", "NewOffscreenImage", "RequestAnimationFrame", "RunFrame", "RunFrameAt", "Animate", "Tween", "PlayHaptic", "PlayHapticPattern", "DeferSystemGestures", "OnKey", "OnKeyWith", "OnBackPress",
 		"SetTitle", "DismissKeyboard", "Announce", "SetScrollbars", "WatchScroll", "PopupMenu", "ShowAlert", "RegisterFont",
 		"SetTheme", "SetSubtreeAppearance", "SetAppearance", "SetLocale", "SelectInputSource", "RestoreInputSource",
 		"ServeScheme", "ServeSchemeRequest"},

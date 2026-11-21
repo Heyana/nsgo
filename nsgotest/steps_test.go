@@ -1307,3 +1307,25 @@ func TestMouseButtonsDownHearsButtonsWithoutViewHandlers(t *testing.T) {
 		t.Fatalf("held=%q with middle up", held)
 	}
 }
+
+func TestHapticPatternsRecordPlaybackAndCancellation(t *testing.T) {
+	if Target() != "" {
+		t.Skip("uses a synthetic lifecycle")
+	}
+	first, second := core.HapticPattern{{Intensity: .25}}, core.HapticPattern{{Intensity: 1}}
+	env := core.Environment{OS: core.OSAndroid, HapticPatterns: true}
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{Children: []core.Node{
+			core.Text{TestID: "first", Content: "First", OnPress: func(core.PressEvent) { cx.PlayHapticPattern(first) }},
+			core.Text{TestID: "second", Content: "Second", OnPress: func(core.PressEvent) { cx.PlayHapticPattern(second) }},
+		}}
+	}, Environment(env))
+	app.Press("id:first")
+	app.Press("id:second")
+	env.Lifecycle = core.LifecycleBackground
+	app.SetEnvironment(env)
+	got := app.HapticPatterns
+	if len(got) != 3 || !slices.Equal(got[0], first) || !slices.Equal(got[1], second) || got[2] != nil {
+		t.Errorf("haptics seen by the test = %v, want %v, %v, and a cancellation", got, first, second)
+	}
+}

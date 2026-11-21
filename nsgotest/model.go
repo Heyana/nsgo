@@ -764,6 +764,12 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemSystemGestures:
 			a.SystemGestures = *it.SystemGestures
 			a.SystemGestures.AndroidRects = slices.Clone(it.SystemGestures.AndroidRects)
+		case driver.ItemHapticPattern:
+			var pattern core.HapticPattern
+			if it.HapticPattern != nil {
+				pattern = slices.Clone(*it.HapticPattern)
+			}
+			a.HapticPatterns = append(a.HapticPatterns, pattern)
 		case driver.ItemKeepAwake:
 			if it.Awake != nil {
 				hold := AwakeHold{ID: it.Count, Reason: it.Awake.Reason, Display: it.Awake.Display}

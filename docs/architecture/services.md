@@ -395,6 +395,10 @@ A playing `Video` keeps the display on only on iOS, where `AVPlayer`'s `prevents
 
 `mobile.PlayHaptic`, NSH's `Haptics`, plays a selection, an impact of five weights or a task's outcome: UIKit's feedback generators on iOS, and on Android the view's nearest `HapticFeedbackConstants`, `CONFIRM`, `REJECT` and `SEGMENT_TICK` where its API has them, as the user's touch feedback setting allows. The core sends nothing elsewhere.
 
+`mobile.PlayHapticPattern` sends a sequence of relative events to the platform while the surface is in the foreground and `Env.CanPlayHapticPattern` is true. Core Haptics takes their intensity, sharpness and duration. The Android and web backends turn the sequence into intervals and take the strongest intensity during overlaps. Android supplies amplitudes to `VibrationEffect` where its vibrator supports them and uses on/off timings elsewhere. Android browsers with `navigator.vibrate` take the on/off timings.
+
+The Android runtime and embedding manifest declare `VIBRATE`, a normal permission. An empty pattern cancels playback, and a new one replaces it. The core sends a cancellation when the surface moves to the background or loses support. Native backends stop their own pattern on backgrounding, and the page also stops it when hidden. Each backend keeps the current pattern's owner so closing a surface whose playback was replaced leaves the replacement playing. `nsgotest.App.HapticPatterns` records requests and cancellations.
+
 ## The app's lifecycle
 
 `Env.Lifecycle`, NSH's `lifecycle()`, says whether the app is in use: `active`, `inactive` (shown without the focus) or `background` (none of it shows). Each backend reports it with the environment, as it changes. On desktops it is the window's: a scope in a window's content reads that window's, so a minimized or covered window turns background while the others stay as they are, and a scope of an embedded view reads its host window's. The app's own scope, which `nsgo.Run(App)` runs in no window, reads them all together: background only while none of the app's windows shows.
