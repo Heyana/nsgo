@@ -81,8 +81,6 @@ type (
 	ViewStyle = driver.ViewStyle
 	// CustomCursor describes an image-based pointer cursor on desktops and the web.
 	CustomCursor = driver.CustomCursor
-	// WebCommandKind is what ItemWebCommand asks a web view to do.
-	WebCommandKind = driver.WebCommand
 	// WebConfig is everything a web view loads and allows (ItemWeb).
 	WebConfig = driver.WebConfig
 	// WebSource is what a web view shows: a URL or HTML.
@@ -202,14 +200,4 @@ const (
 	GPULostReset       = driver.GPULostReset
 	GPULostDestroyed   = driver.GPULostDestroyed
 	GPULostOutOfMemory = driver.GPULostOutOfMemory
-)
-
-const (
-	WebReload           = driver.WebReload
-	WebGoBack           = driver.WebGoBack
-	WebGoForward        = driver.WebGoForward
-	WebStopLoading      = driver.WebStopLoading
-	WebPostMessage      = driver.WebPostMessage
-	WebInjectJavaScript = driver.WebInjectJavaScript
-	WebLoad             = driver.WebLoad
 )

@@ -165,11 +165,38 @@ type NativeCommand struct {
 	Args any
 }
 
-// WebCommand is a command a web view received, with its message or script in Value and any structured argument in Data (such as WebLoad's WebSource).
+// WebCommandKind identifies an action recorded in View.WebCommands.
+type WebCommandKind uint8
+
+const (
+	WebReload WebCommandKind = iota + 1
+	WebGoBack
+	WebGoForward
+	WebStopLoading
+	WebPostMessage
+	WebInjectJavaScript
+	WebSendInput
+	WebLoad
+)
+
+// WebCommand records what the app asked a web view to do. Value is a
+// message or script. WebLoad's Data is a *core.WebSource and WebSendInput's
+// is a *core.WebInput.
 type WebCommand struct {
-	Command driver.WebCommand
+	Command WebCommandKind
 	Value   string
 	Data    any
+}
+
+var webCommandKinds = map[driver.WebCommand]WebCommandKind{
+	driver.WebReload:           WebReload,
+	driver.WebGoBack:           WebGoBack,
+	driver.WebGoForward:        WebGoForward,
+	driver.WebStopLoading:      WebStopLoading,
+	driver.WebPostMessage:      WebPostMessage,
+	driver.WebInjectJavaScript: WebInjectJavaScript,
+	driver.WebSendInput:        WebSendInput,
+	driver.WebLoad:             WebLoad,
 }
 
 // animate steps the animator to the clock and records the values it
@@ -559,7 +586,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemWeb:
 			v.Web = *it.Web
 		case driver.ItemWebCommand:
-			v.WebCommands = append(v.WebCommands, WebCommand{Command: it.WebCommand, Value: it.Value, Data: it.Data})
+			v.WebCommands = append(v.WebCommands, WebCommand{Command: webCommandKinds[it.WebCommand], Value: it.Value, Data: it.Data})
 		case driver.ItemVideo:
 			enabled := v.Video.PictureInPicture
 			v.Video = *it.Video

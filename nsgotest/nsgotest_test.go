@@ -615,6 +615,51 @@ func TestNavigateReportsToHiddenMountedWebView(t *testing.T) {
 	}
 }
 
+func TestWebCommandsRecordAppActions(t *testing.T) {
+	if Target() != "" {
+		t.Skip("inspects headless command records")
+	}
+	ref := &core.Ref{}
+	app := Start(t, func(*core.Scope) core.Node {
+		return core.WebView{TestID: "web", Ref: ref, Source: core.WebHTML("<p>Home</p>", ""), Style: core.Style{Height: core.Pt(100)}}
+	}, Environment(core.Environment{CanSendInput: true}))
+	source := core.WebSrc("https://example.com/next")
+	input := core.WebClick(10, 20)
+	app.Post(func() {
+		ref.Reload()
+		ref.GoBack()
+		ref.GoForward()
+		ref.StopLoading()
+		ref.PostMessage("hello")
+		ref.InjectJavaScript("document.title")
+		ref.SendInput(input)
+		ref.Load(source)
+	})
+	app.Settle()
+	commands := app.Find("id:web").WebCommands
+	want := []WebCommandKind{
+		WebReload, WebGoBack, WebGoForward, WebStopLoading,
+		WebPostMessage, WebInjectJavaScript, WebSendInput, WebLoad,
+	}
+	if len(commands) != len(want) {
+		t.Fatalf("recorded %d commands, want %d", len(commands), len(want))
+	}
+	for i, kind := range want {
+		if got := commands[i].Command; got != kind {
+			t.Fatalf("command %d = %v, want %v", i, got, kind)
+		}
+	}
+	if commands[4].Value != "hello" || commands[5].Value != "document.title" {
+		t.Fatalf("message and script were not recorded: %v", commands)
+	}
+	if got, ok := commands[6].Data.(*core.WebInput); !ok || *got != input {
+		t.Fatalf("web input = %v, want %v", got, input)
+	}
+	if got, ok := commands[7].Data.(*core.WebSource); !ok || *got != source {
+		t.Fatalf("load source = %v, want %v", got, source)
+	}
+}
+
 // The model records reveals and trashes, answers them as the test says, and passes core.ErrNoTrash on as itself.
 func TestRevealAndTrashAnswerAsTheTestSays(t *testing.T) {
 	if runtime.GOOS == "js" {

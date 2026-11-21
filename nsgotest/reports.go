@@ -619,7 +619,7 @@ func (a *App) AnswerScript(selector, result, errText string) {
 	for i := v.answered; i < len(v.WebCommands); i++ {
 		c := v.WebCommands[i]
 		at := strings.Index(c.Value, "nsgo-evaluate:")
-		if c.Command != driver.WebInjectJavaScript || at < 0 {
+		if c.Command != WebInjectJavaScript || at < 0 {
 			continue
 		}
 		end := strings.IndexByte(c.Value[at+len("nsgo-evaluate:"):], ':')
