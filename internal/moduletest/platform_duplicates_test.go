@@ -19,8 +19,8 @@ import (
 const platformDir = "internal/platform"
 
 type platformFunction struct {
-	file, backend string
-	line          int
+	file, backend, name string
+	line                int
 }
 
 type platformFunctions map[string][]platformFunction
@@ -67,24 +67,48 @@ func TestPlatformFunctionDuplicates(t *testing.T) {
 		}
 	}
 
-	var diagnostics []string
-	for body, functions := range after {
-		old := map[string]bool{}
-		for _, fn := range before[body] {
-			old[fn.backend] = true
+	for _, detail := range newPlatformDuplicates(before, after) {
+		t.Error(detail)
+	}
+}
+
+// newPlatformDuplicates compares declaration pairs. Two backends that
+// already shared an exact copy can edit that pair without adding another.
+func newPlatformDuplicates(before, after platformFunctions) []string {
+	type declaration struct{ dir, name string }
+	id := func(f platformFunction) declaration { return declaration{path.Dir(f.file), f.name} }
+	previous := map[declaration]map[string]bool{}
+	for body, functions := range before {
+		for _, f := range functions {
+			key := id(f)
+			if previous[key] == nil {
+				previous[key] = map[string]bool{}
+			}
+			previous[key][body] = true
 		}
+	}
+	hadDuplicate := func(first, second platformFunction) bool {
+		firstBodies, secondBodies := previous[id(first)], previous[id(second)]
+		for body := range firstBodies {
+			if secondBodies[body] {
+				return true
+			}
+		}
+		return false
+	}
+
+	var diagnostics []string
+	for _, functions := range after {
 		for i, first := range functions {
 			for _, second := range functions[i+1:] {
-				if first.backend != second.backend && !(old[first.backend] && old[second.backend]) {
+				if first.backend != second.backend && !hadDuplicate(first, second) {
 					diagnostics = append(diagnostics, fmt.Sprintf("%s:%d duplicates %s:%d", first.file, first.line, second.file, second.line))
 				}
 			}
 		}
 	}
 	slices.Sort(diagnostics)
-	for _, detail := range diagnostics {
-		t.Error(detail)
-	}
+	return diagnostics
 }
 
 func platformBackend(file string) string {
@@ -120,11 +144,19 @@ func readPlatformFunctions(t *testing.T, file, backend string, source []byte) pl
 		line := fset.Position(fn.Pos()).Line
 		fn.Doc = nil
 		var formatted bytes.Buffer
+		name := fn.Name.Name
+		if fn.Recv != nil {
+			if err := printer.Fprint(&formatted, fset, fn.Recv.List[0].Type); err != nil {
+				t.Fatal(err)
+			}
+			name = formatted.String() + "." + name
+			formatted.Reset()
+		}
 		if err := printer.Fprint(&formatted, fset, fn); err != nil {
 			t.Fatal(err)
 		}
 		key := formatted.String()
-		functions[key] = append(functions[key], platformFunction{file: file, backend: backend, line: line})
+		functions[key] = append(functions[key], platformFunction{file: file, backend: backend, name: name, line: line})
 	}
 	return functions
 }
@@ -156,4 +188,37 @@ func platformGit(t *testing.T, args ...string) []byte {
 		t.Fatalf("git %v: %v\n%s", args, err, output)
 	}
 	return output
+}
+
+func TestPlatformDuplicateChanges(t *testing.T) {
+	const (
+		first   = "internal/platform/linux/scroll.go"
+		second  = "internal/platform/windows/scroll.go"
+		third   = "internal/platform/web/scroll.go"
+		oldCode = "package backend\nfunc (w *window) scroll() { start(); stop() }"
+		newCode = "package backend\nfunc (w *window) scroll() { settle(); report() }"
+	)
+	read := func(file, code string) platformFunctions {
+		return readPlatformFunctions(t, file, platformBackend(file), []byte(code))
+	}
+	before := read(first, oldCode)
+	before.add(read(second, oldCode))
+	after := read(first, newCode)
+	after.add(read("internal/platform/windows/animate.go", newCode))
+	if got := newPlatformDuplicates(before, after); len(got) != 0 {
+		t.Fatalf("editing and moving an existing pair reported %v", got)
+	}
+	after.add(read(third, newCode))
+	if got := newPlatformDuplicates(before, after); len(got) != 2 {
+		t.Fatalf("a third copy made %v, want two new pairs", got)
+	}
+
+	differentReceiver := "package backend\nfunc (w *other) scroll() { start(); stop() }"
+	before = read(first, oldCode)
+	before.add(read(second, differentReceiver))
+	after = read(first, newCode)
+	after.add(read(second, newCode))
+	if got := newPlatformDuplicates(before, after); len(got) != 1 {
+		t.Fatalf("a new pair of methods reported %v, want one duplicate", got)
+	}
 }
