@@ -456,11 +456,21 @@ type App struct {
 	// ImageSizes are the pixel sizes of the images the model's platform
 	// loads, by URI, which answer Scope.ImageSize; others fail to load.
 	ImageSizes map[string]driver.Size
+	// ImageBytes are the encoded byte sizes of URI images the model's platform
+	// loads, by URI or ImageSource.Key, used when modeling SetImageCacheLimit.
+	// Inline ImageSource.Data sources automatically count len(Data) bytes.
+	ImageBytes map[string]int64
+	// ImageCacheLimit is the encoded image cache memory budget last set with
+	// core.Scope.SetImageCacheLimit, defaulting to core.DefaultImageCacheLimit.
+	ImageCacheLimit int64
 	// KeptImages maps each ImageSource.Key currently pinned with Scope.KeepImage
 	// to its active pin count.
 	KeptImages map[string]int
-	// canvasImages models the 64-source unkept canvas image cache by key.
-	canvasImages   map[string]uint64
+	// imageCache models the byte-bounded encoded image LRU cache by key.
+	imageCache map[string]imageCacheEntry
+	imageUse   uint64
+	// canvasImages models the 64-source and byte-bounded unkept canvas image cache by key.
+	canvasImages   map[string]imageCacheEntry
 	canvasImageUse uint64
 	// tree is the surface steps act on and the model shows: the app's only one, or with a desktop environment its main window (main) once it opened. appTree is the app's own surface with a desktop environment, which opens the windows, nil without one; surfaces are the windows that have opened, and clear the windows and panels that are transparent, opened so or made so by SetWindowTransparent, which report it as a compositing desktop does (surfaceEnv).
 	// Secondary surface models share this app's graph and clock. owner is
@@ -614,6 +624,7 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		Permissions:       map[core.Permission]core.PermissionStatus{},
 		PermissionAnswers: map[core.Permission]core.PermissionStatus{},
 		Secrets:           &core.MemorySecrets{},
+		ImageCacheLimit:   core.DefaultImageCacheLimit,
 		KeptImages:        map[string]int{},
 		diskSpace:         driver.DiskSpaceResult{Err: core.ErrDiskSpaceUnavailable},
 		gameServices:      newFakeGameServices(),

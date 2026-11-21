@@ -477,3 +477,44 @@ func TestKeepImageLifecycleAndScales(t *testing.T) {
 		t.Fatalf("denied remote source emitted %+v", it)
 	}
 }
+
+func TestSetImageCacheLimitClampsAndEmits(t *testing.T) {
+	var root *Scope
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
+		root = cx
+		return View{}
+	})
+	h.commit()
+
+	if DefaultImageCacheLimit != 32<<20 {
+		t.Fatalf("DefaultImageCacheLimit = %d, want %d", DefaultImageCacheLimit, 32<<20)
+	}
+
+	root.SetImageCacheLimit(8 << 20)
+	it := command(h.commit(), driver.ItemImageCacheLimit)
+	if it == nil || it.Bytes != 8<<20 {
+		t.Fatalf("limit command = %+v, want %d", it, 8<<20)
+	}
+
+	// Negative limits clamp to 0.
+	root.SetImageCacheLimit(-512)
+	it = command(h.commit(), driver.ItemImageCacheLimit)
+	if it == nil || it.Bytes != 0 {
+		t.Fatalf("negative limit command = %+v, want 0", it)
+	}
+
+	// Zero limit emits 0.
+	root.SetImageCacheLimit(0)
+	it = command(h.commit(), driver.ItemImageCacheLimit)
+	if it == nil || it.Bytes != 0 {
+		t.Fatalf("zero limit command = %+v, want 0", it)
+	}
+
+	// Disposed scope with no tree is a safe no-op.
+	child := root.Child()
+	child.Dispose()
+	child.SetImageCacheLimit(1024)
+	if it = command(h.commit(), driver.ItemImageCacheLimit); it != nil {
+		t.Fatalf("disposed scope emitted %+v", it)
+	}
+}

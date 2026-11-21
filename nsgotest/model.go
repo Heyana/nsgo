@@ -694,8 +694,15 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.post(driver.Event{Kind: driver.EventScroll, ID: id, Point: at, Value: z})
 		case driver.ItemImage:
 			v.Image = *it.Image
-			if it.Image != nil && it.Image.Source.Offscreen != nil {
-				a.recordOffscreen(it.Image.Source.Offscreen, nil)
+			if it.Image != nil {
+				if it.Image.Source.Offscreen != nil {
+					a.recordOffscreen(it.Image.Source.Offscreen, nil)
+				} else {
+					a.touchEncodedImage(it.Image.Source)
+				}
+				if !it.Image.Placeholder.Empty() {
+					a.touchEncodedImage(it.Image.Placeholder)
+				}
 			}
 		case driver.ItemWeb:
 			v.Web = *it.Web
@@ -1091,6 +1098,10 @@ func (a *App) apply(b *driver.MountBatch) {
 			ev := driver.Event{Kind: driver.EventImageInfo, Count: it.Count}
 			if size, ok := a.ImageSizes[it.Image.Source.URI]; ok {
 				ev.Size = size
+				a.touchEncodedImage(it.Image.Source)
+			} else if len(it.Image.Source.Data) > 0 {
+				a.touchEncodedImage(it.Image.Source)
+				ev.Text = "nsgotest: no image at " + it.Image.Source.URI
 			} else {
 				ev.Text = "nsgotest: no image at " + it.Image.Source.URI
 			}
@@ -1099,6 +1110,8 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.keepCanvasImage(it.Value)
 		case driver.ItemReleaseImage:
 			a.releaseCanvasImage(it.Value)
+		case driver.ItemImageCacheLimit:
+			a.setImageCacheLimit(it.Bytes)
 		case driver.ItemKeymap:
 			a.keyBindings = slices.Clone(it.Keys)
 			a.heldKeys = it.HeldKeys
@@ -1932,16 +1945,82 @@ func (a *App) commandPiP(v *View, command uint32) {
 
 const maxCanvasImages = 64
 
+type imageCacheEntry struct {
+	used  uint64
+	bytes int64
+}
+
 // KeptImage reports whether src is currently pinned via core.Scope.KeepImage.
 func (a *App) KeptImage(src core.ImageSource) bool {
 	return a.KeptImages[src.Key()] > 0
 }
 
+// ImageCached reports whether src is currently held in the model's encoded
+// image cache (kept or within the byte budget set by SetImageCacheLimit).
+func (a *App) ImageCached(src core.ImageSource) bool {
+	_, ok := a.imageCache[src.Key()]
+	return ok
+}
+
+// ImageCacheBytes returns the total encoded bytes currently held in the
+// model's encoded image cache, including kept entries.
+func (a *App) ImageCacheBytes() int64 {
+	var total int64
+	for _, e := range a.imageCache {
+		total += e.bytes
+	}
+	return total
+}
+
+// UnkeptImageCacheBytes returns the unkept encoded bytes currently held in the
+// model's encoded image cache.
+func (a *App) UnkeptImageCacheBytes() int64 {
+	var total int64
+	for k, e := range a.imageCache {
+		if a.KeptImages[k] == 0 {
+			total += e.bytes
+		}
+	}
+	return total
+}
+
 // CanvasImageCached reports whether src is currently held in the model's
-// canvas image cache (kept or within the 64-source unkept LRU bound).
+// canvas image cache (kept or within the 64-source and byte LRU bounds).
 func (a *App) CanvasImageCached(src core.ImageSource) bool {
 	_, ok := a.canvasImages[src.Key()]
 	return ok
+}
+
+// CanvasImageCacheBytes returns the total encoded bytes currently held in the
+// model's canvas image cache, including kept entries.
+func (a *App) CanvasImageCacheBytes() int64 {
+	var total int64
+	for _, e := range a.canvasImages {
+		total += e.bytes
+	}
+	return total
+}
+
+func (a *App) sourceBytes(src driver.ImageSource) int64 {
+	if len(src.Data) > 0 {
+		return int64(len(src.Data))
+	}
+	if n, ok := a.ImageBytes[src.Key()]; ok && n > 0 {
+		return n
+	}
+	if n, ok := a.ImageBytes[src.URI]; ok && n > 0 {
+		return n
+	}
+	return 0
+}
+
+func (a *App) setImageCacheLimit(maxBytes int64) {
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	a.ImageCacheLimit = maxBytes
+	a.evictEncodedImages()
+	a.evictCanvasImages(0, a.canvasImageUse)
 }
 
 func (a *App) keepCanvasImage(key string) {
@@ -1967,51 +2046,108 @@ func (a *App) releaseCanvasImage(key string) {
 	} else {
 		a.KeptImages[key] = n - 1
 	}
+	a.evictEncodedImages()
 	a.evictCanvasImages(0, a.canvasImageUse)
 }
 
-func (a *App) touchCanvasImage(src driver.ImageSource, pass uint64) {
-	if src.Pixels != nil || src.Empty() {
+func (a *App) touchEncodedImage(src driver.ImageSource) {
+	if src.Pixels != nil || src.Offscreen != nil || src.Empty() {
 		return
 	}
 	key := src.Key()
 	if key == "" {
 		return
 	}
+	bytes := a.sourceBytes(src)
+	a.imageUse++
+	if a.imageCache == nil {
+		a.imageCache = map[string]imageCacheEntry{}
+	}
+	kept := a.KeptImages[key] > 0
+	if !kept && (a.ImageCacheLimit == 0 || bytes > a.ImageCacheLimit) {
+		delete(a.imageCache, key)
+		a.evictEncodedImages()
+		return
+	}
+	a.imageCache[key] = imageCacheEntry{used: a.imageUse, bytes: bytes}
+	a.evictEncodedImages()
+}
+
+func (a *App) evictEncodedImages() {
+	unkeptBytes := a.UnkeptImageCacheBytes()
+	for unkeptBytes > a.ImageCacheLimit || a.ImageCacheLimit == 0 {
+		var oldest string
+		var at uint64 = math.MaxUint64
+		for k, e := range a.imageCache {
+			if a.KeptImages[k] == 0 && e.used < at {
+				oldest, at = k, e.used
+			}
+		}
+		if oldest == "" {
+			break
+		}
+		unkeptBytes -= a.imageCache[oldest].bytes
+		delete(a.imageCache, oldest)
+	}
+}
+
+func (a *App) touchCanvasImage(src driver.ImageSource, pass uint64) {
+	if src.Pixels != nil || src.Offscreen != nil || src.Empty() {
+		return
+	}
+	a.touchEncodedImage(src)
+	key := src.Key()
+	if key == "" {
+		return
+	}
+	bytes := a.sourceBytes(src)
 	a.canvasImageUse++
 	if a.canvasImages == nil {
-		a.canvasImages = map[string]uint64{}
+		a.canvasImages = map[string]imageCacheEntry{}
 	}
-	if _, ok := a.canvasImages[key]; ok {
-		a.canvasImages[key] = a.canvasImageUse
+	if e, ok := a.canvasImages[key]; ok {
+		e.used = a.canvasImageUse
+		if bytes > 0 {
+			e.bytes = bytes
+		}
+		a.canvasImages[key] = e
+		return
+	}
+	kept := a.KeptImages[key] > 0
+	if !kept && (a.ImageCacheLimit == 0 || bytes > a.ImageCacheLimit) {
+		a.evictCanvasImages(0, pass)
 		return
 	}
 	reserve := 0
-	if a.KeptImages[key] == 0 {
+	if !kept {
 		reserve = 1
 	}
 	a.evictCanvasImages(reserve, pass)
-	a.canvasImages[key] = a.canvasImageUse
+	a.canvasImages[key] = imageCacheEntry{used: a.canvasImageUse, bytes: bytes}
+	a.evictCanvasImages(0, pass)
 }
 
 func (a *App) evictCanvasImages(reserve int, pass uint64) {
 	unkept := 0
-	for k := range a.canvasImages {
+	var unkeptBytes int64
+	for k, e := range a.canvasImages {
 		if a.KeptImages[k] == 0 {
 			unkept++
+			unkeptBytes += e.bytes
 		}
 	}
-	for unkept+reserve > maxCanvasImages {
+	for unkept+reserve > maxCanvasImages || unkeptBytes > a.ImageCacheLimit || (a.ImageCacheLimit == 0 && unkept > 0) {
 		var oldest string
 		var at uint64 = math.MaxUint64
-		for k, used := range a.canvasImages {
-			if a.KeptImages[k] == 0 && used < at {
-				oldest, at = k, used
+		for k, e := range a.canvasImages {
+			if a.KeptImages[k] == 0 && e.used < at {
+				oldest, at = k, e.used
 			}
 		}
 		if at > pass {
 			break
 		}
+		unkeptBytes -= a.canvasImages[oldest].bytes
 		delete(a.canvasImages, oldest)
 		unkept--
 	}

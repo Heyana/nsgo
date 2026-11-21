@@ -126,9 +126,10 @@ var itemNames = map[ItemKind]string{
 	ItemRequestReview:       "request-review",
 	ItemGPU:                 "gpu",
 	ItemSavePreflightAnswer: "save-preflight-answer", ItemSaveFilePreflight: "save-file-preflight",
-	ItemSystemGestures: "system-gestures",
-	ItemCursorPoint:    "cursor-point",
-	ItemEditMenu:       "edit-menu",
+	ItemSystemGestures:  "system-gestures",
+	ItemCursorPoint:     "cursor-point",
+	ItemEditMenu:        "edit-menu",
+	ItemImageCacheLimit: "image-cache-limit",
 }
 
 // TraceLine is the item as traces print it: its kind, its view and what
@@ -176,6 +177,8 @@ func (it *MountItem) TraceLine() string {
 		fmt.Fprintf(&b, " %d %s %q", it.Count, it.Speak.Command, it.Speak.Text)
 	case ItemPurchase:
 		fmt.Fprintf(&b, " %d %s", it.Count, it.Purchase.Command)
+	case ItemImageCacheLimit:
+		fmt.Fprintf(&b, " %d", it.Bytes)
 	}
 	return b.String()
 }

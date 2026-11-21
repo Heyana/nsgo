@@ -104,13 +104,14 @@ func newAgent() *agent {
 // newLiveApp returns a model of a running app's surface, which the agent feeds: target mode with no surface of a test's, alerts left to whoever answers them, and no clock of its own but the system's.
 func newLiveApp(tb testing.TB) *App {
 	a := &App{
-		t:             tb,
-		Clock:         core.NewManualClock(time.Now()),
-		views:         map[driver.NodeID]*View{},
-		edits:         map[driver.NodeID]uint32{},
-		anim:          driver.NewAnimator(func(driver.Event) {}),
-		pendingAlerts: true,
-		stepName:      "automation",
+		t:               tb,
+		Clock:           core.NewManualClock(time.Now()),
+		views:           map[driver.NodeID]*View{},
+		edits:           map[driver.NodeID]uint32{},
+		anim:            driver.NewAnimator(func(driver.Event) {}),
+		pendingAlerts:   true,
+		stepName:        "automation",
+		ImageCacheLimit: core.DefaultImageCacheLimit,
 	}
 	a.target = &target{a: a, live: true, surface: noSurface{}}
 	return a

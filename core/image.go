@@ -146,6 +146,31 @@ func (cx *Scope) PrefetchImage(src ImageSource, done func(ok bool)) {
 	})
 }
 
+// DefaultImageCacheLimit is the default maximum number of encoded image bytes
+// kept in memory (32 MiB).
+const DefaultImageCacheLimit int64 = driver.DefaultImageCacheLimit
+
+// SetImageCacheLimit sets the maximum number of encoded image bytes kept in
+// memory across the platform's image caches. Negative values are clamped to
+// zero, which evicts all unkept cached entries and prevents caching new unkept
+// entries until a positive limit is set. Images pinned with KeepImage stay out
+// of eviction until released.
+func (cx *Scope) SetImageCacheLimit(maxBytes int64) {
+	owner := cx.current()
+	t := owner.tree()
+	if t == nil || owner.disposed {
+		return
+	}
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	t.commands = append(t.commands, driver.MountItem{
+		Kind:  driver.ItemImageCacheLimit,
+		Bytes: maxBytes,
+	})
+	t.changed = true
+}
+
 // KeepImage pins src in the platform's canvas image cache so it is not evicted
 // while kept, until release is called or the current scope is disposed.
 // Keeping the same source more than once requires each release before it may

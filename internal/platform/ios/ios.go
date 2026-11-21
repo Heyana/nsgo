@@ -1393,6 +1393,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemReleaseImage:
 			apple.ReleaseCanvasImage(s, it.Value)
 			continue
+		case driver.ItemImageCacheLimit:
+			apple.SetImageCacheLimit(it.Bytes)
+			continue
 		case driver.ItemAnnounce:
 			uiAccessibilityPost(announcement, apple.NSString(it.Value))
 			continue

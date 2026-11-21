@@ -1096,6 +1096,98 @@ func TestKeepImagePreventsEvictionAndReleasesOnDispose(t *testing.T) {
 	}
 }
 
+func TestSetImageCacheLimitEnforcesByteBudgetLRUAndKeepPins(t *testing.T) {
+	makeData := func(tag byte, size int) core.ImageSource {
+		b := make([]byte, size)
+		b[0] = tag
+		return core.ImageSource{Data: b}
+	}
+	imgA := makeData('A', 100)
+	imgB := makeData('B', 100)
+	imgC := makeData('C', 100)
+	pinned := makeData('P', 250)
+
+	var current *core.Signal[core.ImageSource]
+	var rootScope *core.Scope
+	var releasePinned func()
+	app := Start(t, func(cx *core.Scope) core.Node {
+		rootScope = cx
+		current = core.NewSignalFunc(cx, imgA, nil)
+		releasePinned = cx.KeepImage(pinned)
+		return core.Canvas{
+			Style: core.Style{Width: core.Pt(64), Height: core.Pt(64)},
+			Draw: func(d *core.Drawing, _ core.Size) {
+				d.DrawImageIn(current.Get(), 0, 0, 64, 64)
+			},
+		}
+	})
+
+	if app.ImageCacheLimit != core.DefaultImageCacheLimit {
+		t.Fatalf("default ImageCacheLimit = %d, want %d", app.ImageCacheLimit, core.DefaultImageCacheLimit)
+	}
+
+	// Set budget to 200 bytes (fits two 100B unkept images, plus the 250B pinned image).
+	app.Post(func() {
+		rootScope.SetImageCacheLimit(200)
+		current.Set(pinned)
+	})
+	app.Settle()
+	if app.ImageCacheLimit != 200 {
+		t.Fatalf("ImageCacheLimit = %d, want 200", app.ImageCacheLimit)
+	}
+	if !app.ImageCached(pinned) || !app.CanvasImageCached(pinned) {
+		t.Fatal("pinned image larger than unkept budget was not cached")
+	}
+
+	// Draw B, touch A so B becomes LRU, then draw C -> B is evicted, A, C, and pinned remain.
+	app.Post(func() { current.Set(imgB) })
+	app.Settle()
+	app.Post(func() { current.Set(imgA) })
+	app.Settle()
+	app.Post(func() { current.Set(imgC) })
+	app.Settle()
+
+	if app.ImageCached(imgB) || app.CanvasImageCached(imgB) {
+		t.Fatal("LRU image B was not evicted under 200B budget")
+	}
+	if !app.ImageCached(imgA) || !app.ImageCached(imgC) || !app.ImageCached(pinned) {
+		t.Fatalf("unexpected cache state: A=%v C=%v pinned=%v", app.ImageCached(imgA), app.ImageCached(imgC), app.ImageCached(pinned))
+	}
+	if app.UnkeptImageCacheBytes() != 200 || app.ImageCacheBytes() != 450 {
+		t.Fatalf("cache bytes: unkept=%d total=%d, want 200 and 450", app.UnkeptImageCacheBytes(), app.ImageCacheBytes())
+	}
+
+	// Shrinking budget to 100B immediately evicts LRU unkept image A.
+	app.Post(func() { rootScope.SetImageCacheLimit(100) })
+	app.Settle()
+	if app.ImageCached(imgA) || app.CanvasImageCached(imgA) {
+		t.Fatal("shrinking budget did not evict LRU image A")
+	}
+	if !app.ImageCached(imgC) || !app.ImageCached(pinned) {
+		t.Fatal("shrinking budget evicted MRU C or pinned image")
+	}
+
+	// Negative budget clamps to 0 and evicts all unkept entries while keeping pinned entries.
+	app.Post(func() { rootScope.SetImageCacheLimit(-1) })
+	app.Settle()
+	if app.ImageCacheLimit != 0 {
+		t.Fatalf("negative limit = %d, want 0", app.ImageCacheLimit)
+	}
+	if app.ImageCached(imgC) || app.CanvasImageCached(imgC) || app.UnkeptImageCacheBytes() != 0 {
+		t.Fatalf("zero budget left unkept entries cached: C=%v unkept=%d", app.ImageCached(imgC), app.UnkeptImageCacheBytes())
+	}
+	if !app.ImageCached(pinned) || !app.CanvasImageCached(pinned) {
+		t.Fatal("zero budget evicted pinned image")
+	}
+
+	// Releasing the pin trims pinned immediately at zero budget.
+	releasePinned()
+	app.Settle()
+	if app.ImageCached(pinned) || app.CanvasImageCached(pinned) || app.ImageCacheBytes() != 0 {
+		t.Fatalf("released pinned image stayed at zero limit: cached=%v bytes=%d", app.ImageCached(pinned), app.ImageCacheBytes())
+	}
+}
+
 // TestPicksRecordTheirHints checks that a test sees the title, button label, type name and starting folder an app asked its pickers for.
 func TestPicksRecordTheirHints(t *testing.T) {
 	var files, dirs int

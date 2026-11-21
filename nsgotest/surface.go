@@ -142,6 +142,7 @@ func (a *App) openSurface(config SurfaceConfig, t *core.Tree, main bool) *Surfac
 		model = &App{
 			t: a.t, owner: a, Clock: a.Clock, tree: t, root: a.root, env: a.env, start: a.start,
 			views: map[driver.NodeID]*View{}, edits: map[driver.NodeID]uint32{},
+			ImageCacheLimit: a.ImageCacheLimit,
 		}
 		model.anim = driver.NewAnimator(func(ev driver.Event) { a.postTo(t, ev) })
 	}

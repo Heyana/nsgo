@@ -42,6 +42,9 @@ type canvasOp struct {
 	CO   int       `json:"co,omitempty"`
 	D    []float32 `json:"d,omitempty"`
 	Img  string    `json:"img,omitempty"`
+	// ImgKey is ImageSource.Key when the drawing embeds bytes, so KeepImage
+	// pins match inline byte sources as well as URIs.
+	ImgKey string `json:"imgk,omitempty"`
 	// ImgData is the image's bytes, base64, when the drawing embeds them.
 	ImgData string `json:"imgd,omitempty"`
 	// Nearest is whether the image is drawn with smoothing off, each source pixel a hard-edged block (driver.ImageSamplingNearest).
@@ -120,6 +123,7 @@ func canvasJSON(ops []driver.DrawOp) string {
 				c.Nearest = o.Sampling == driver.ImageSamplingNearest
 				c.Img = o.Image.URI
 				if len(o.Image.Data) > 0 {
+					c.ImgKey = o.Image.Key()
 					c.ImgData = base64.StdEncoding.EncodeToString(o.Image.Data)
 				}
 			}

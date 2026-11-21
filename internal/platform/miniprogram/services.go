@@ -102,6 +102,12 @@ func (s *surface) service(it *driver.MountItem) {
 		}
 	case driver.ItemImageInfo:
 		s.imageInfo(it)
+	case driver.ItemKeepImage:
+		s.images.keep(it.Value)
+	case driver.ItemReleaseImage:
+		s.images.release(it.Value)
+	case driver.ItemImageCacheLimit:
+		s.images.setLimit(it.Bytes)
 	case driver.ItemAppearance:
 		s.appearance = it.Appearance
 		s.navigationColors()

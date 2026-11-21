@@ -516,6 +516,12 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 			}
 			m.s.bridge.Call("imageinfo", int(it.Count), uri, data)
 		}
+	case driver.ItemKeepImage:
+		m.o.op("ik", 0).str(it.Value)
+	case driver.ItemReleaseImage:
+		m.o.op("ir", 0).str(it.Value)
+	case driver.ItemImageCacheLimit:
+		m.o.op("il", 0).num(float64(max(it.Bytes, 0)))
 	case driver.ItemSelection:
 		m.o.op("sel", it.ID).num(float64(it.Selection.Start)).num(float64(it.Selection.End))
 	case driver.ItemFocus:

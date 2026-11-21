@@ -61,7 +61,7 @@ core.Image{Source: core.ImageSource{
 }}
 ```
 
-`Placeholder` 在图片加载时显示另一个来源，`FadeDuration` 让加载好的图片在其上淡入；0 由平台决定，纳秒则立即显示。`OnLoadStart`、`OnProgress`、`OnLoad`、`OnError` 和 `OnLoadEnd` 跟随加载过程。`cx.ImageSize` 不显示图片就能读取它的像素尺寸，`cx.PrefetchImage` 把它下载到缓存。原生后端会把远程图片保存在磁盘缓存中。
+`Placeholder` 在图片加载时显示另一个来源，`FadeDuration` 让加载好的图片在其上淡入；0 由平台决定，纳秒则立即显示。`OnLoadStart`、`OnProgress`、`OnLoad`、`OnError` 和 `OnLoadEnd` 跟随加载过程。`cx.ImageSize` 不显示图片就能读取它的像素尺寸，`cx.PrefetchImage` 把它下载到缓存，`cx.SetImageCacheLimit` 设置内存中保留的编码图片字节上限（默认 `core.DefaultImageCacheLimit`，32 MiB；负值会钳制为 0），`cx.KeepImage` 在返回的 `release` 调用或作用域销毁前把图集或纹理固定在缓存中免受淘汰。原生后端会把远程图片保存在磁盘缓存中。
 
 ## 动图与矢量图
 

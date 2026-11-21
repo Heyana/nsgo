@@ -99,7 +99,7 @@ var exempt = map[string][]string{
 		"MeasureText", "NewOffscreenImage", "SetPreferredFrameRate", "RequestAnimationFrame", "RunFrame", "RunFrameAt", "Animate", "Tween", "PlayHaptic", "PlayHapticPattern", "DeferSystemGestures", "OnKey", "OnKeyWith", "OnBackPress",
 		"SetTitle", "DismissKeyboard", "Announce", "SetScrollbars", "WatchScroll", "PopupMenu", "ShowAlert", "RegisterFont",
 		"SetTheme", "SetSubtreeAppearance", "SetAppearance", "SetLocale", "SelectInputSource", "RestoreInputSource",
-		"ServeScheme", "ServeSchemeRequest"},
+		"ServeScheme", "ServeSchemeRequest", "SetImageCacheLimit"},
 	"the app's windows, menus, lifecycle and hand-offs to the system, which no capability holds": {"AppURL", "SetAppURL", "OnAppURLChange", "SetTitleBar",
 		"MinimizeWindow", "ToggleMaximize", "ToggleFullScreen", "SetFullScreen", "CloseWindow", "SetWindowFrame", "SetWindowLevel",
 		"SetWindowWorkspaces", "SetWindowConstraints", "OrderFront", "SetMenuBar", "SetWindowControls", "SetWindowMaterial", "SetWindowTransparent",

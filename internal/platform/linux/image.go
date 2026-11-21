@@ -38,6 +38,7 @@ type picture struct {
 // keeps for it.
 type imageSlot struct {
 	used            uint64 // the last canvas draw that used this slot
+	bytes           int64  // encoded image bytes
 	src             driver.ImageSource
 	load            *imageLoad
 	pic             *picture

@@ -157,3 +157,124 @@ func TestInfoKeepsTheBytesForViews(t *testing.T) {
 		t.Fatalf("Info of no source = %+v, want an error", ev)
 	}
 }
+
+func isolatedCache(t *testing.T) {
+	t.Helper()
+	mu.Lock()
+	saved := cache
+	cache = newLRU(driver.DefaultImageCacheLimit)
+	mu.Unlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		cache = saved
+		mu.Unlock()
+	})
+}
+
+func TestCacheBudgetLRUKeepAndClamping(t *testing.T) {
+	isolatedCache(t)
+	savedHTTP := HTTP
+	defer func() { HTTP = savedHTTP }()
+
+	fetches := map[string]int{}
+	var fetchMu sync.Mutex
+	payloads := map[string][]byte{
+		"https://example.invalid/a.png": make([]byte, 100),
+		"https://example.invalid/b.png": make([]byte, 100),
+		"https://example.invalid/c.png": make([]byte, 100),
+		"https://example.invalid/big":   make([]byte, 300),
+	}
+	HTTP = func(ctx context.Context, url string, header Header, progress Progress) (*Response, error) {
+		fetchMu.Lock()
+		fetches[url]++
+		fetchMu.Unlock()
+		return &Response{Status: 200, Body: payloads[url]}, nil
+	}
+	load := func(u string) {
+		t.Helper()
+		if _, err := Load(context.Background(), core.Src(u), nil); err != nil {
+			t.Fatalf("Load(%s): %v", u, err)
+		}
+	}
+
+	if got := CacheLimit(); got != driver.DefaultImageCacheLimit {
+		t.Fatalf("default CacheLimit = %d, want %d", got, driver.DefaultImageCacheLimit)
+	}
+
+	// Budget 250 bytes: holds 2 x 100B images, evicts LRU on the 3rd.
+	SetCacheLimit(250)
+	load("https://example.invalid/a.png")
+	load("https://example.invalid/b.png")
+	// Touch a.png so b.png becomes LRU.
+	load("https://example.invalid/a.png")
+	if fetches["https://example.invalid/a.png"] != 1 {
+		t.Fatalf("a.png fetched %d times, want 1", fetches["https://example.invalid/a.png"])
+	}
+	load("https://example.invalid/c.png")
+	if got := UnkeptCacheSize(); got != 200 {
+		t.Fatalf("UnkeptCacheSize = %d, want 200", got)
+	}
+	// a.png and c.png should be cached; b.png should have been evicted.
+	load("https://example.invalid/a.png")
+	load("https://example.invalid/c.png")
+	if fetches["https://example.invalid/a.png"] != 1 || fetches["https://example.invalid/c.png"] != 1 {
+		t.Fatalf("MRU entries were evicted: fetches=%v", fetches)
+	}
+	load("https://example.invalid/b.png")
+	if fetches["https://example.invalid/b.png"] != 2 {
+		t.Fatalf("LRU entry b.png was not evicted: fetches=%v", fetches)
+	}
+
+	// Unkept entry larger than budget is not cached.
+	load("https://example.invalid/big")
+	load("https://example.invalid/big")
+	if fetches["https://example.invalid/big"] != 2 {
+		t.Fatalf("oversized unkept entry was cached: fetches=%v", fetches)
+	}
+
+	// Keep pins entries out of budget even when larger than the limit.
+	ownerA, ownerB := new(int), new(int)
+	Keep(ownerA, "https://example.invalid/big")
+	Keep(ownerB, "https://example.invalid/big")
+	load("https://example.invalid/big")
+	load("https://example.invalid/big")
+	if fetches["https://example.invalid/big"] != 3 {
+		t.Fatalf("kept big entry was not cached: fetches=%v", fetches)
+	}
+	if CacheSize() != UnkeptCacheSize()+300 {
+		t.Fatalf("CacheSize=%d UnkeptCacheSize=%d, want diff 300", CacheSize(), UnkeptCacheSize())
+	}
+
+	// Lowering the budget immediately evicts unkept entries down to the new budget while keeping pinned entries.
+	SetCacheLimit(100)
+	if UnkeptCacheSize() != 100 || CacheSize() != 400 {
+		t.Fatalf("after shrinking to 100: unkept=%d total=%d", UnkeptCacheSize(), CacheSize())
+	}
+
+	// Negative budget clamps to 0, evicting all unkept entries while keeping pinned entries.
+	SetCacheLimit(-42)
+	if CacheLimit() != 0 {
+		t.Fatalf("negative limit = %d, want 0", CacheLimit())
+	}
+	if UnkeptCacheSize() != 0 || CacheSize() != 300 {
+		t.Fatalf("after zero limit: unkept=%d total=%d", UnkeptCacheSize(), CacheSize())
+	}
+
+	// Zero budget prevents caching new unkept entries.
+	beforeA := fetches["https://example.invalid/a.png"]
+	load("https://example.invalid/a.png")
+	load("https://example.invalid/a.png")
+	if fetches["https://example.invalid/a.png"] != beforeA+2 {
+		t.Fatalf("zero budget cached unkept entry: fetches=%v", fetches)
+	}
+
+	// Releasing ownerA leaves ownerB's pin intact; releasing ownerB trims big immediately.
+	ReleaseOwner(ownerA)
+	if CacheSize() != 300 {
+		t.Fatalf("big evicted while ownerB still kept it: total=%d", CacheSize())
+	}
+	Release(ownerB, "https://example.invalid/big")
+	if CacheSize() != 0 || UnkeptCacheSize() != 0 {
+		t.Fatalf("released big not trimmed at limit 0: total=%d unkept=%d", CacheSize(), UnkeptCacheSize())
+	}
+}

@@ -103,10 +103,10 @@ type shaderView struct {
 	dirty               bool
 	lanes               []float64
 	buf                 []byte
-	// images are the images' textures, by ImageSource.Key; pictures what
-	// a WGSL program reads instead, an effect's (effect.go).
-	images   map[string]*d3dImage
-	bound    []string // the keys of the images the drawing under way reads
+	// images are the images' textures, bounded by count and byte budget, by
+	// ImageSource.Key; pictures what a WGSL program reads instead, an effect's (effect.go).
+	images   shaderTextureCache[*d3dImage]
+	bound    []string // keys read by the current draw
 	pictures [4]*pictureTex
 	// pixels are the textures of the images that are pixels, by their place in Images: kept while their size stays and updated in place with each copy the core sends.
 	pixels [4]*pixelImage
@@ -130,10 +130,7 @@ func (sv *shaderView) release() {
 		return
 	}
 	releaseAll(&sv.bitmap, &sv.rtv, &sv.target)
-	for _, im := range sv.images {
-		releaseAll(&im.srv, &im.tex)
-	}
-	sv.images = nil
+	sv.images.clear()
 	for i, im := range sv.pixels {
 		if im != nil {
 			releaseAll(&im.srv, &im.tex)
@@ -359,10 +356,9 @@ func (sv *shaderView) render(p *painter, prog *d3dProgram, width, height float32
 		}
 	}
 	// So do images the view no longer reads, such as an offscreen canvas's earlier versions.
-	for key, im := range sv.images {
+	for key := range sv.images.entries {
 		if !slices.Contains(sv.bound, key) {
-			releaseAll(&im.srv, &im.tex)
-			delete(sv.images, key)
+			sv.images.delete(key)
 		}
 	}
 	if cap(sv.buf) < prog.size {
@@ -395,6 +391,7 @@ func (sv *shaderView) render(p *painter, prog *d3dProgram, width, height float32
 		clear := make([]uintptr, len(srvs))
 		ctx.call(ctxPSSetShaderResources, 0, uintptr(len(clear)), uintptr(unsafe.Pointer(&clear[0])))
 	}
+	sv.images.endPass(w.isCanvasImageKept)
 }
 
 // pixelImage returns the texture of image i, the core's copy px of the app's pixels (premultiplied RGBA, top row first, as shaders read them): written into the texture the image had with UpdateSubresource when its size and device are the same, and not at all when it holds px already; nil when Direct3D cannot make one.
@@ -434,10 +431,24 @@ func (sv *shaderView) pixelImage(g *gfx, ctx *comObject, i int, px *image.RGBA) 
 // image returns src's texture for the view, loading the image the first
 // time; nil until it has loaded, when the view draws again.
 func (sv *shaderView) image(w *window, g *gfx, src driver.ImageSource) *d3dImage {
+	if sv.images.release == nil {
+		sv.images.release = func(im *d3dImage) {
+			if im != nil {
+				releaseAll(&im.srv, &im.tex)
+			}
+		}
+	}
+	if !sv.images.limitSet {
+		sv.images.limit = w.canvasImageBytesLimit()
+		sv.images.limitSet = true
+	}
 	key := src.Key()
 	sv.bound = append(sv.bound, key)
-	if im := sv.images[key]; im != nil && im.generation == gfxGeneration {
-		return im
+	if im, ok := sv.images.get(key); ok {
+		if im != nil && im.generation == gfxGeneration {
+			return im
+		}
+		sv.images.delete(key)
 	}
 	s := w.canvasImage(src)
 	if s == nil || s.pic == nil {
@@ -460,9 +471,7 @@ func (sv *shaderView) image(w *window, g *gfx, src driver.ImageSource) *d3dImage
 		im.tex.release()
 		return nil
 	}
-	if sv.images == nil {
-		sv.images = map[string]*d3dImage{}
-	}
-	sv.images[key] = im
+	bytes := int64(pic.width) * int64(pic.height) * 4
+	sv.images.put(key, im, bytes, w.isCanvasImageKept)
 	return im
 }

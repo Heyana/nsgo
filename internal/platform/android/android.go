@@ -1186,10 +1186,18 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 	for _, l := range loads {
 		go s.load(l)
 	}
-	// Go loads the images Java shows, so it answers ImageSize too.
+	// Go loads the images Java shows, so it answers ImageSize and enforces
+	// imageload's encoded-byte budget and KeepImage pins too.
 	for i := range b.Items {
-		if it := b.Items[i]; it.Kind == driver.ItemImageInfo {
+		switch it := b.Items[i]; it.Kind {
+		case driver.ItemImageInfo:
 			go s.dispatchTo(v.id, imageload.Info(&it, imagedecode.Size))
+		case driver.ItemImageCacheLimit:
+			imageload.SetCacheLimit(it.Bytes)
+		case driver.ItemKeepImage:
+			imageload.Keep(v.id, it.Value)
+		case driver.ItemReleaseImage:
+			imageload.Release(v.id, it.Value)
 		}
 	}
 }

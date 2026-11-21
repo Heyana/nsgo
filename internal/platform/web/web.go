@@ -175,8 +175,9 @@ type surface struct {
 	watch          watch
 	env            driver.Environment // as last sent
 	gestures       gestures
-	// canvasImages are the images canvases draw, by ImageSource.Key.
-	canvasImages map[string]*canvasImage
+	// canvasImages are the images canvases draw, bounded by count and byte
+	// budget, by ImageSource.Key.
+	canvasImages boundedImageCache[*canvasImage]
 	meshCanvas   js.Value
 	// slicedCanvases are the canvases past the bitmap budget whose visible part is drawn and updated as scrolling or panning moves them.
 	slicedCanvases map[*view]bool
@@ -1590,6 +1591,15 @@ func (s *surface) mount(b *driver.MountBatch) {
 			continue
 		case driver.ItemImageInfo:
 			s.imageInfo(it)
+			continue
+		case driver.ItemKeepImage:
+			s.keepCanvasImage(it.Value)
+			continue
+		case driver.ItemReleaseImage:
+			s.releaseCanvasImage(it.Value)
+			continue
+		case driver.ItemImageCacheLimit:
+			s.setImageCacheLimit(it.Bytes)
 			continue
 		case driver.ItemAnnounce:
 			s.announce(it.Value)

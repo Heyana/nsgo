@@ -835,6 +835,7 @@ type loadedImage struct {
 	image           uintptr
 	width, height   float64 // pixels
 	points          driver.Size
+	bytes           int64  // encoded image bytes
 	meshPixels      []byte // BGRA, fetched only when a mesh uses the image
 	failed          bool
 	waiting         map[any]func()
@@ -873,13 +874,27 @@ func tintedImage(image uintptr, tint driver.Color) uintptr {
 
 // canvasImageUse counts the images drawn; canvasPass is its value when the last pass of drawing ended, so images used since are the current pass's, which eviction keeps; canvasPassPosted says an endCanvasPass is posted.
 var (
-	canvasImageUse   uint64
-	canvasPass       uint64
-	canvasPassPosted bool
+	canvasImageUse        uint64
+	canvasPass            uint64
+	canvasPassPosted      bool
+	canvasImageBytesLimit int64 = driver.DefaultImageCacheLimit
 )
 
 // maxCanvasImages bounds the unkept images kept, loaded or failed, and is exceeded only by loads under way, which are never evicted; the least recently drawn go first, but never one kept via KeepCanvasImage or drawn by the pass under way, so a pass drawing more keeps them all until a later pass draws others.
 const maxCanvasImages = 64
+
+// SetImageCacheLimit sets the encoded image byte budget for both imageload's
+// shared byte cache and Apple's canvas image cache, clamping negative values
+// to zero and evicting excess unkept entries immediately; main thread only.
+func SetImageCacheLimit(maxBytes int64) {
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	imageload.SetCacheLimit(maxBytes)
+	canvasImageBytesLimit = maxBytes
+	canvasPass = canvasImageUse
+	evictCanvasImages(0)
+}
 
 // endCanvasPass ends the pass of drawing that used the images so far: they may be evicted from now on.
 func endCanvasPass() {
@@ -887,12 +902,13 @@ func endCanvasPass() {
 	canvasPass = canvasImageUse
 }
 
-// KeepCanvasImage pins key in the canvas image cache on behalf of owner so it
-// is never evicted while kept; main thread only.
+// KeepCanvasImage pins key in the canvas and encoded image caches on behalf of
+// owner so it is never evicted while kept; main thread only.
 func KeepCanvasImage(owner any, key string) {
 	if key == "" {
 		return
 	}
+	imageload.Keep(owner, key)
 	canvasKept[key]++
 	if owner != nil {
 		m := canvasKeptByOwner[owner]
@@ -910,6 +926,7 @@ func ReleaseCanvasImage(owner any, key string) {
 	if key == "" {
 		return
 	}
+	imageload.Release(owner, key)
 	if owner != nil {
 		m := canvasKeptByOwner[owner]
 		if m == nil || m[key] == 0 {
@@ -938,6 +955,7 @@ func ReleaseCanvasImages(owner any) {
 	if owner == nil {
 		return
 	}
+	imageload.ReleaseOwner(owner)
 	m := canvasKeptByOwner[owner]
 	if len(m) == 0 {
 		return
@@ -954,21 +972,26 @@ func ReleaseCanvasImages(owner any) {
 }
 
 func unkeptCanvasImages() int {
-	n := 0
-	for k := range canvasImages {
-		if canvasKept[k] == 0 {
-			n++
-		}
-	}
+	n, _ := unkeptCanvasStats()
 	return n
 }
 
+func unkeptCanvasStats() (count int, bytes int64) {
+	for k, im := range canvasImages {
+		if canvasKept[k] == 0 {
+			count++
+			bytes += im.bytes
+		}
+	}
+	return count, bytes
+}
+
 // evictCanvasImages evicts the least recently drawn unkept entries until
-// unkept+reserve <= maxCanvasImages, never evicting loads under way or entries
-// drawn by the current pass.
+// unkept+reserve <= maxCanvasImages and unkeptBytes <= canvasImageBytesLimit,
+// never evicting loads under way or entries drawn by the current pass.
 func evictCanvasImages(reserve int) {
-	unkept := unkeptCanvasImages()
-	for unkept+reserve > maxCanvasImages {
+	unkept, unkeptBytes := unkeptCanvasStats()
+	for unkept+reserve > maxCanvasImages || unkeptBytes > canvasImageBytesLimit || (canvasImageBytesLimit == 0 && unkept > 0) {
 		var oldest string
 		var at uint64 = math.MaxUint64
 		for k, im := range canvasImages {
@@ -981,7 +1004,9 @@ func evictCanvasImages(reserve int) {
 			// Every unkept image loaded was drawn by the pass under way, or none has loaded: evicting one would load it again at the next pass, forever.
 			break
 		}
-		canvasImages[oldest].release()
+		old := canvasImages[oldest]
+		unkeptBytes -= old.bytes
+		old.release()
 		delete(canvasImages, oldest)
 		unkept--
 	}
@@ -1036,7 +1061,7 @@ func canvasImage(src driver.ImageSource, host CanvasHost) *loadedImage {
 				im.failed = true
 				log.Printf("nsgo: canvas: image %s: %v", key, err)
 			} else {
-				im.image, im.width, im.height, im.points = d.image, d.width, d.height, d.points
+				im.image, im.width, im.height, im.points, im.bytes = d.image, d.width, d.height, d.points, int64(len(data))
 				for _, f := range d.frames[min(len(d.frames), 1):] {
 					Release(f)
 				}
@@ -1045,6 +1070,9 @@ func canvasImage(src driver.ImageSource, host CanvasHost) *loadedImage {
 			im.waiting = nil
 			for _, fn := range waiting {
 				fn()
+			}
+			if _, unkeptBytes := unkeptCanvasStats(); unkeptBytes > canvasImageBytesLimit {
+				evictCanvasImages(0)
 			}
 		})
 	}()

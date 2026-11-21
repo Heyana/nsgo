@@ -46,7 +46,7 @@ var unsupportedItems = map[string]string{
 	"services added since": `ItemAuthSession ItemPurchase ItemSensor ItemSpeak
 		ItemWebCookies ItemLookUp ItemPictureInPicture ItemPictureInPictureCommand
 
-		ItemScanCode ItemOrientation ItemKeepImage ItemReleaseImage ItemReleaseOffscreen
+		ItemScanCode ItemOrientation ItemReleaseOffscreen
 
 		ItemRequestReview ItemSavePreflightAnswer ItemDiscovery ItemSystemGestures ItemHapticPattern ItemEditMenu`,
 	// The core answers these before the platform sees them: it resolves a

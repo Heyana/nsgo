@@ -786,7 +786,11 @@ func (w *window) canvasImage(src driver.ImageSource, v *view) *imageSlot {
 				return
 			}
 			s.pic = pic
+			s.bytes = int64(len(data))
 			w.redrawWaiting(waiting)
+			if _, unkeptBytes := w.unkeptCanvasStats(); unkeptBytes > w.canvasImageBytesLimit() {
+				w.evictCanvasImages(0)
+			}
 		})
 	}()
 	return s
@@ -808,6 +812,30 @@ func (w *window) redrawWaiting(waiting []*view) {
 
 // maxCanvasImages bounds the unkept encoded sources a window's canvases keep, loaded or failed, and is exceeded only by loads under way, which are never evicted; the least recently drawn go first, but never one kept via keepCanvasImage or drawn by the frame under way, so a frame drawing more keeps them all until a later frame draws others.
 const maxCanvasImages = 64
+
+func (w *window) isCanvasImageKept(key string) bool { return w.canvasKept[key] > 0 }
+
+func (w *window) canvasImageBytesLimit() int64 {
+	if !w.canvasImageLimitSet {
+		return driver.DefaultImageCacheLimit
+	}
+	return w.canvasImageLimit
+}
+
+func (w *window) setCanvasImageCacheLimit(maxBytes int64) {
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	w.canvasImageLimit = maxBytes
+	w.canvasImageLimitSet = true
+	w.canvasPass = w.canvasImageUse
+	w.evictCanvasImages(0)
+	for _, v := range w.views {
+		if v != nil && v.shader != nil {
+			v.shader.trimTextures(w, true, maxBytes)
+		}
+	}
+}
 
 func (w *window) keepCanvasImage(key string) {
 	if w.canvasClosed || key == "" {
@@ -833,21 +861,32 @@ func (w *window) releaseCanvasImage(key string) {
 		w.canvasKept[key] = n - 1
 	}
 	w.evictCanvasImages(0)
+	for _, v := range w.views {
+		if v != nil && v.shader != nil {
+			v.shader.trimTextures(w, false, 0)
+		}
+	}
 }
 
 func (w *window) unkeptCanvasImages() int {
-	n := 0
-	for key := range w.canvasImages {
-		if w.canvasKept[key] == 0 {
-			n++
-		}
-	}
+	n, _ := w.unkeptCanvasStats()
 	return n
 }
 
+func (w *window) unkeptCanvasStats() (count int, bytes int64) {
+	for key, slot := range w.canvasImages {
+		if w.canvasKept[key] == 0 {
+			count++
+			bytes += slot.bytes
+		}
+	}
+	return count, bytes
+}
+
 func (w *window) evictCanvasImages(reserve int) {
-	unkept := w.unkeptCanvasImages()
-	for unkept+reserve > maxCanvasImages {
+	limit := w.canvasImageBytesLimit()
+	unkept, unkeptBytes := w.unkeptCanvasStats()
+	for unkept+reserve > maxCanvasImages || unkeptBytes > limit || (limit == 0 && unkept > 0) {
 		var oldest string
 		var at uint64 = math.MaxUint64
 		for key, slot := range w.canvasImages {
@@ -860,7 +899,9 @@ func (w *window) evictCanvasImages(reserve int) {
 			// Every unkept image loaded was drawn by the frame under way, or none has loaded: evicting one would load it again at the next frame, forever.
 			break
 		}
-		w.canvasImages[oldest].reset(driver.ImageSource{})
+		old := w.canvasImages[oldest]
+		unkeptBytes -= old.bytes
+		old.reset(driver.ImageSource{})
 		delete(w.canvasImages, oldest)
 		unkept--
 	}
@@ -874,6 +915,7 @@ func (w *window) endCanvasPass() {
 
 func (w *window) closeCanvasImages() {
 	w.canvasClosed = true
+	imageload.ReleaseOwner(w)
 	w.closeOffscreen()
 	for _, s := range w.canvasFrames {
 		s.reset(driver.ImageSource{})

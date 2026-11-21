@@ -35,9 +35,9 @@ type glShader struct {
 	buf     []byte
 	bytes   js.Value // a Uint8Array as large as buf
 	failed  bool
-	// textures are the images' textures in this context, by
-	// ImageSource.Key, and textureCount how many the program reads.
-	textures     map[string]glTexture
+	// textures are the images' textures in this context, bounded by count and
+	// byte budget, by ImageSource.Key, and textureCount how many the program reads.
+	textures     boundedImageCache[glTexture]
 	textureCount int
 	// pixels are the textures of the images that are pixels, by their place in Images: kept while their size stays and updated in place with each copy the core sends.
 	pixels [4]pixelTexture
@@ -95,8 +95,20 @@ func (s *surface) setShader(v *view, sh *driver.Shader) {
 // and v draws again once it loads.
 func (s *surface) texture(v *view, src driver.ImageSource) (glTexture, bool) {
 	g := v.gl
+	if g.textures.onEvict == nil {
+		g.textures.onEvict = func(t glTexture) {
+			if !g.gl.IsNull() && !t.tex.IsUndefined() {
+				g.gl.Call("deleteTexture", t.tex)
+			}
+		}
+		g.textures.externalKept = s.canvasImages.isKept
+	}
+	if !g.textures.limitSet {
+		g.textures.limit = s.canvasImages.effectiveLimit()
+		g.textures.limitSet = true
+	}
 	key := src.Key()
-	if t, ok := g.textures[key]; ok {
+	if t, ok := g.textures.get(key); ok {
 		return t, true
 	}
 	im := s.loadImage(src, v)
@@ -115,10 +127,8 @@ func (s *surface) texture(v *view, src driver.ImageSource) (glTexture, bool) {
 	for _, p := range []string{"TEXTURE_WRAP_S", "TEXTURE_WRAP_T"} {
 		gl.Call("texParameteri", gl.Get("TEXTURE_2D"), gl.Get(p), gl.Get("CLAMP_TO_EDGE"))
 	}
-	if g.textures == nil {
-		g.textures = map[string]glTexture{}
-	}
-	g.textures[key] = t
+	bytes := int64(t.w) * int64(t.h) * 4
+	g.textures.put(key, t, bytes)
 	return t, true
 }
 
@@ -225,6 +235,8 @@ func (s *surface) drawShader(v *view) {
 			g.pixels[i] = pixelTexture{}
 		}
 	}
+	g.textures.endPass()
+	s.canvasImages.endPass()
 	s.requestGlassPaint()
 }
 
@@ -348,6 +360,7 @@ func (g *glShader) release() {
 	if g.gl.IsNull() {
 		return
 	}
+	g.textures.clear()
 	if lose := g.gl.Call("getExtension", "WEBGL_lose_context"); !lose.IsNull() {
 		lose.Call("loseContext")
 	}

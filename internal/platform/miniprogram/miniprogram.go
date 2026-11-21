@@ -50,9 +50,9 @@ type surface struct {
 	env     driver.Environment
 	started time.Time
 	// canvas is the offscreen canvas drawings are drawn on, one at a
-	// time, and images what they draw, by source.
+	// time, and images what they draw, bounded by count and byte budget.
 	canvas      js.Value
-	images      map[string]*canvasImage
+	images      canvasImageCache[*canvasImage]
 	pixelImages bool
 	pixelFrames []canvasPixelFrame
 	pixelCount  int
@@ -68,8 +68,9 @@ func Run(app engine.App, opts Options) {
 	g := js.Global()
 	bridge := g.Get("nsgoMP")
 	s := &surface{bridge: bridge, api: bridge.Get("api"), started: time.Now(),
-		images: map[string]*canvasImage{}, files: map[string]string{},
+		files:       map[string]string{},
 		pixelImages: bridge.Get("pixelImages").Truthy()}
+	s.images.onEvict = func(im *canvasImage) { im.release() }
 	s.text = NewTextEngine(measurer{s.bridge})
 	s.m = newMounter(s)
 	s.m.frame = func() { s.engine.Frame() }
@@ -302,6 +303,7 @@ func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size)
 	for i := range ops {
 		p.Play(&ops[i])
 	}
+	s.images.endPass()
 	if waiting {
 		return ""
 	}
@@ -351,35 +353,79 @@ func (s *surface) canvasPixelFrame(pixels *image.RGBA) js.Value {
 	return canvas
 }
 
-// canvasImage is an image canvases draw, loaded once.
+// canvasImage is an image canvases draw, cached within the surface's count and
+// byte bounds.
 type canvasImage struct {
 	img            js.Value
 	loaded, failed bool
+	onload         js.Func
+	onerror        js.Func
+}
+
+func (im *canvasImage) release() {
+	if im == nil {
+		return
+	}
+	if !im.onload.Value.IsUndefined() {
+		im.onload.Release()
+		im.onload = js.Func{}
+	}
+	if !im.onerror.Value.IsUndefined() {
+		im.onerror.Release()
+		im.onerror = js.Func{}
+	}
+	if im.img.Truthy() {
+		im.img.Set("onload", js.Null())
+		im.img.Set("onerror", js.Null())
+		im.img.Set("src", "")
+	}
 }
 
 // canvasImage returns src's image, loading it the first time; the
 // canvases waiting for it paint again once it loads.
 func (s *surface) canvasImage(src driver.ImageSource, id driver.NodeID) *canvasImage {
+	if s.images.onEvict == nil {
+		s.images.onEvict = func(im *canvasImage) { im.release() }
+	}
 	key := src.Key()
-	if im := s.images[key]; im != nil {
+	if im, ok := s.images.get(key); ok {
 		return im
 	}
 	if !s.canvas.Truthy() {
 		s.canvas = s.api.Call("createOffscreenCanvas", map[string]any{"type": "2d", "width": 1, "height": 1})
 	}
 	im := &canvasImage{img: s.canvas.Call("createImage")}
-	s.images[key] = im
-	var onload, onerror js.Func
+	encodedBytes := int64(len(src.Data))
+	s.images.addPending(key, im, encodedBytes)
 	done := func(ok bool) {
-		onload.Release()
-		onerror.Release()
+		if !im.onload.Value.IsUndefined() {
+			im.onload.Release()
+			im.onload = js.Func{}
+		}
+		if !im.onerror.Value.IsUndefined() {
+			im.onerror.Release()
+			im.onerror = js.Func{}
+		}
+		cur, exists := s.images.peek(key)
+		if !exists || cur != im {
+			return
+		}
 		im.loaded, im.failed = ok, !ok
 		s.m.repaintWaiting()
+		bytes := encodedBytes
+		if ok && bytes == 0 {
+			w := int64(im.img.Get("width").Float())
+			h := int64(im.img.Get("height").Float())
+			if w > 0 && h > 0 {
+				bytes = w * h * 4
+			}
+		}
+		s.images.complete(key, bytes)
 	}
-	onload = js.FuncOf(func(js.Value, []js.Value) any { done(true); return nil })
-	onerror = js.FuncOf(func(js.Value, []js.Value) any { done(false); return nil })
-	im.img.Set("onload", onload)
-	im.img.Set("onerror", onerror)
+	im.onload = js.FuncOf(func(js.Value, []js.Value) any { done(true); return nil })
+	im.onerror = js.FuncOf(func(js.Value, []js.Value) any { done(false); return nil })
+	im.img.Set("onload", im.onload)
+	im.img.Set("onerror", im.onerror)
 	im.img.Set("src", s.imageURL(src))
 	return im
 }

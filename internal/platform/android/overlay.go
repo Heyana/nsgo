@@ -9,6 +9,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/engine"
+	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
 )
 
 // Overlays over other apps (driver.SurfaceOverlay, mobile.OpenOverlay) show in windows of WindowManager's, each an NsgoView of its own that the activity's view, the first surface, hands its batches, images and events on to by the surface's ID. Go keeps an overlay from the ItemOpenSurface that opens it, attaches its tree as Java first reports the window's size, frame and environment (msgSurface), and ends it as Java reports it refused or removed. Text, fonts, shader programs and the host channel stay the process's, which the first view serves.
@@ -109,6 +110,7 @@ func (s *surface) forget(o *overlay) {
 	s.releasePrograms()
 	s.canvasRequests.closeSurface(o.view.id)
 	s.audioFiles.closeSurface(o.view.id)
+	imageload.ReleaseOwner(o.view.id)
 	s.closeSurfaceNatives(o.view.id)
 }
 

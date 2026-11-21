@@ -10,6 +10,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/canvastest"
+	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload/imageloadtest"
 )
 
@@ -18,10 +19,17 @@ func isolatedCanvasImages(t *testing.T) {
 	saved := canvasImages
 	savedKept := canvasKept
 	savedByOwner := canvasKeptByOwner
+	savedLimit := canvasImageBytesLimit
+	savedLoadLimit := imageload.CacheLimit()
 	canvasImages = map[string]*loadedImage{}
 	canvasKept = map[string]int{}
 	canvasKeptByOwner = map[any]map[string]int{}
+	canvasImageBytesLimit = driver.DefaultImageCacheLimit
+	imageload.SetCacheLimit(driver.DefaultImageCacheLimit)
 	t.Cleanup(func() {
+		for owner := range canvasKeptByOwner {
+			imageload.ReleaseOwner(owner)
+		}
 		for key, im := range canvasImages {
 			if im.cancel != nil {
 				im.cancel()
@@ -33,6 +41,8 @@ func isolatedCanvasImages(t *testing.T) {
 		canvasImages = saved
 		canvasKept = savedKept
 		canvasKeptByOwner = savedByOwner
+		canvasImageBytesLimit = savedLimit
+		imageload.SetCacheLimit(savedLoadLimit)
 		runMain()
 	})
 }
@@ -334,5 +344,72 @@ func TestCanvasImageCacheKeepPinsOutOfBudget(t *testing.T) {
 	ReleaseCanvasImages(ownerA)
 	if len(canvasImages) != maxCanvasImages {
 		t.Fatalf("%d cached after releasing %d kept images, want %d", len(canvasImages), len(keptMany), maxCanvasImages)
+	}
+}
+
+func TestCanvasImageCacheByteBudgetAndReconfiguration(t *testing.T) {
+	isolatedCanvasImages(t)
+	runMain()
+	load := func(src driver.ImageSource) *loadedImage {
+		t.Helper()
+		canvasImage(src, CanvasHost{Ratio: 1})
+		im := canvasImages[src.Key()]
+		for deadline := time.Now().Add(5 * time.Second); im.cancel != nil; {
+			runMain()
+			if time.Now().After(deadline) {
+				t.Fatal("image load timed out")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if im.image == 0 {
+			t.Fatal("no decoded image")
+		}
+		endCanvasPass()
+		return im
+	}
+
+	sources := canvastest.CacheSources(5)
+	oneSize := int64(len(sources[0].Data))
+	// Allow only 2 unkept images by byte budget.
+	SetImageCacheLimit(2*oneSize + 1)
+	if imageload.CacheLimit() != 2*oneSize+1 {
+		t.Fatalf("imageload limit = %d, want %d", imageload.CacheLimit(), 2*oneSize+1)
+	}
+
+	owner := new(int)
+	KeepCanvasImage(owner, sources[0].Key())
+	pinned := load(sources[0])
+	a := load(sources[1])
+	b := load(sources[2])
+	// Touch a so b is LRU, then load c.
+	canvasImage(sources[1], CanvasHost{Ratio: 1})
+	endCanvasPass()
+	c := load(sources[3])
+
+	if canvasImages[sources[0].Key()] != pinned || pinned.image == 0 {
+		t.Fatal("pinned image was evicted under byte budget")
+	}
+	if canvasImages[sources[2].Key()] != nil || b.image != 0 {
+		t.Fatal("LRU unkept image was not evicted under byte budget")
+	}
+	if canvasImages[sources[1].Key()] != a || canvasImages[sources[3].Key()] != c {
+		t.Fatal("MRU unkept images were evicted")
+	}
+
+	// Reconfiguring to a negative limit clamps to 0 and evicts all unkept entries immediately while keeping pinned ones.
+	SetImageCacheLimit(-10)
+	if imageload.CacheLimit() != 0 || canvasImageBytesLimit != 0 {
+		t.Fatalf("negative limit not clamped: imageload=%d canvas=%d", imageload.CacheLimit(), canvasImageBytesLimit)
+	}
+	if canvasImages[sources[0].Key()] != pinned || pinned.image == 0 {
+		t.Fatal("pinned image was evicted at zero limit")
+	}
+	if len(canvasImages) != 1 || a.image != 0 || c.image != 0 {
+		t.Fatalf("unkept entries remained after zero limit: len=%d", len(canvasImages))
+	}
+
+	ReleaseCanvasImages(owner)
+	if len(canvasImages) != 0 || pinned.image != 0 {
+		t.Fatalf("released pinned image remained at zero limit: len=%d", len(canvasImages))
 	}
 }

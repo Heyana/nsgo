@@ -162,6 +162,7 @@ interface TextRun {
 
 interface CanvasOp {
   k: number;
+  imgk?: string;
   imgd?: string;
   x?: number;
   y?: number;
@@ -560,6 +561,12 @@ class Tree {
       } else if (code === 'la') {
         this.layoutMs = o[2] as number;
         this.layoutCurve = o[3] as number;
+      } else if (code === 'ik') {
+        canvasImageCache.keep(o[2] as string);
+      } else if (code === 'ir') {
+        canvasImageCache.release(o[2] as string);
+      } else if (code === 'il') {
+        canvasImageCache.setLimit(o[2] as number);
       } else if (code === 'sticky') {
         this.sticky.set(id, JSON.parse(o[2] as string) as StickyCell[]);
         this.geometry = true;
@@ -2201,16 +2208,170 @@ struct NodeImageView {
 
 // CanvasView replays a canvas's drawing into ArkUI's Canvas. The engine
 // sends the whole drawing again when it changes, and the canvas redraws.
+interface CanvasImageEntry {
+  pm?: image.PixelMap;
+  bytes: number;
+  used: number;
+  pending: boolean;
+  failed: boolean;
+}
+
+// CanvasImageCache bounds decoded canvas PixelMaps across the page by both
+// count (64 unkept entries) and encoded-byte budget (default 32 MiB), keeping
+// pinned (KeepImage) entries, in-flight decodes, and entries used in the
+// current paint pass out of eviction.
+class CanvasImageCache {
+  private static readonly MAX_ENTRIES: number = 64;
+  private entries: Map<string, CanvasImageEntry> = new Map();
+  private kept: Map<string, number> = new Map();
+  private limitBytes: number = 32 * 1024 * 1024;
+  private use: number = 0;
+  private pass: number = 0;
+
+  keep(key: string): void {
+    if (key === '') {
+      return;
+    }
+    this.kept.set(key, (this.kept.get(key) ?? 0) + 1);
+  }
+
+  release(key: string): void {
+    if (key === '') {
+      return;
+    }
+    const n = this.kept.get(key) ?? 0;
+    if (n <= 0) {
+      return;
+    }
+    if (n === 1) {
+      this.kept.delete(key);
+    } else {
+      this.kept.set(key, n - 1);
+    }
+    this.pass = this.use;
+    this.evict(0);
+  }
+
+  setLimit(maxBytes: number): void {
+    this.limitBytes = maxBytes < 0 ? 0 : maxBytes;
+    this.pass = this.use;
+    this.evict(0);
+  }
+
+  endPass(): void {
+    this.pass = this.use;
+    if (this.limitBytes === 0) {
+      this.evict(0);
+    }
+  }
+
+  isKept(key: string): boolean {
+    return (this.kept.get(key) ?? 0) > 0;
+  }
+
+  get(key: string): image.PixelMap | undefined {
+    const e = this.entries.get(key);
+    if (e === undefined) {
+      return undefined;
+    }
+    this.use++;
+    e.used = this.use;
+    return e.pm;
+  }
+
+  has(key: string): boolean {
+    return this.entries.has(key);
+  }
+
+  addPending(key: string): void {
+    this.use++;
+    const reserve = this.isKept(key) ? 0 : 1;
+    this.evict(reserve);
+    this.entries.set(key, { bytes: 0, used: this.use, pending: true, failed: false });
+  }
+
+  complete(key: string, pm: image.PixelMap, bytes: number): void {
+    const e = this.entries.get(key);
+    if (e === undefined) {
+      pm.release();
+      return;
+    }
+    e.pm = pm;
+    e.bytes = bytes < 0 ? 0 : bytes;
+    e.pending = false;
+    e.failed = false;
+    if (this.unkeptBytes() > this.limitBytes || this.limitBytes === 0) {
+      this.evict(0);
+    }
+  }
+
+  fail(key: string): void {
+    const e = this.entries.get(key);
+    if (e === undefined) {
+      return;
+    }
+    e.pending = false;
+    e.failed = true;
+    if (this.limitBytes === 0) {
+      this.evict(0);
+    }
+  }
+
+  private unkeptCount(): number {
+    let n = 0;
+    this.entries.forEach((_e, k) => {
+      if (!this.isKept(k)) {
+        n++;
+      }
+    });
+    return n;
+  }
+
+  private unkeptBytes(): number {
+    let total = 0;
+    this.entries.forEach((e, k) => {
+      if (!this.isKept(k)) {
+        total += e.bytes;
+      }
+    });
+    return total;
+  }
+
+  private evict(reserve: number): void {
+    let unkept = this.unkeptCount();
+    let bytes = this.unkeptBytes();
+    while (unkept + reserve > CanvasImageCache.MAX_ENTRIES || bytes > this.limitBytes || (this.limitBytes === 0 && unkept > 0)) {
+      let oldestKey = '';
+      let oldestUse = Number.MAX_SAFE_INTEGER;
+      this.entries.forEach((e, k) => {
+        if (!this.isKept(k) && !e.pending && e.used < oldestUse) {
+          oldestKey = k;
+          oldestUse = e.used;
+        }
+      });
+      if (oldestKey === '' || oldestUse > this.pass) {
+        break;
+      }
+      const old = this.entries.get(oldestKey);
+      if (old !== undefined) {
+        if (old.pm !== undefined) {
+          old.pm.release();
+        }
+        bytes -= old.bytes;
+      }
+      this.entries.delete(oldestKey);
+      unkept--;
+    }
+  }
+}
+
+const canvasImageCache: CanvasImageCache = new CanvasImageCache();
+
 @Component
 struct CanvasView {
   @Prop @Watch('paint') drawing: string = '';
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
   private ready: boolean = false;
-  // images are the pictures drawings draw, decoded once; a repaint runs
-  // when one arrives.
-  private images: Map<string, image.PixelMap> = new Map();
-  private loading: Set<string> = new Set();
-  private missing: Set<string> = new Set();
 
   aboutToAppear(): void {
   }
@@ -2253,15 +2414,16 @@ struct CanvasView {
 
   // loadImage decodes an image op once; a repaint draws it when it comes.
   private loadImage(key: string, uri: string, data: string): void {
-    if (this.loading.has(key) || this.missing.has(key)) {
+    if (canvasImageCache.has(key)) {
       return;
     }
     if (data === '' && !uri.startsWith('asset:')) {
-      this.missing.add(key);
+      canvasImageCache.addPending(key);
+      canvasImageCache.fail(key);
       console.warn('NSGO harmony: canvas image ' + uri + ' is not drawn: a URL is not loaded here');
       return;
     }
-    this.loading.add(key);
+    canvasImageCache.addPending(key);
     this.decodeImage(key, uri, data);
   }
 
@@ -2276,13 +2438,12 @@ struct CanvasView {
         bytes = ctx.resourceManager.getRawFileContentSync('web/resources/' + rel);
       }
       const source = image.createImageSource(bytes.buffer as ArrayBuffer);
-      this.images.set(key, await source.createPixelMap());
+      const pm = await source.createPixelMap();
       source.release();
-      this.loading.delete(key);
+      canvasImageCache.complete(key, pm, bytes.byteLength);
       this.paint();
     } catch (e) {
-      this.loading.delete(key);
-      this.missing.add(key);
+      canvasImageCache.fail(key);
       console.error('NSGO harmony: canvas image failed: ' + e);
     }
   }
@@ -2474,11 +2635,11 @@ struct CanvasView {
         case 37: {
           const uri = o.img ?? '';
           const data = o.imgd ?? '';
-          const key = data !== '' ? data : uri;
+          const key = o.imgk ?? (data !== '' ? data : uri);
           if (key === '') {
             break;
           }
-          const pm = this.images.get(key);
+          const pm = canvasImageCache.get(key);
           if (pm === undefined) {
             this.loadImage(key, uri, data);
             break;
@@ -2488,6 +2649,7 @@ struct CanvasView {
         }
       }
     }
+    canvasImageCache.endPass();
   }
 
   build() {

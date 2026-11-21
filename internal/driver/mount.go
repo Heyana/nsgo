@@ -408,6 +408,9 @@ const (
 	ItemPageHead
 	// ItemEditMenu opens or closes the platform's touch edit menu on input ID (UIEditMenuInteraction on iOS, a floating ActionMode on Android), anchored clear of Frame in the surface's points and offering the EditAction bits in Count; Count 0 closes any edit menu open on the input. Choosing Cut, Copy or Select All reports EventEditAction on ID with that action in Count; Paste runs the input's own paste (EventPaste).
 	ItemEditMenu
+	// ItemImageCacheLimit sets the maximum number of encoded image bytes kept in
+	// memory (Bytes). Negative values are clamped to zero by the core.
+	ItemImageCacheLimit
 )
 
 // EditAction is an editing action of an input's touch edit menu (ItemEditMenu, EventEditAction).
@@ -429,6 +432,10 @@ type PageHead struct {
 	Title, Description       string
 	HasTitle, HasDescription bool
 }
+
+// DefaultImageCacheLimit is the default maximum number of encoded image bytes
+// kept in memory by the image cache (32 MiB).
+const DefaultImageCacheLimit int64 = 32 << 20
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.
 type AppleSignInRequest struct {
@@ -668,6 +675,8 @@ type MountItem struct {
 	On               bool
 	// OffscreenID is the resource ID of an ItemReleaseOffscreen.
 	OffscreenID uint64
+	// Bytes is ItemImageCacheLimit's memory budget in bytes.
+	Bytes int64
 }
 
 // QuickLookRequest is an ItemQuickLook's files, regular files the core checked, and the index of the one shown first, within them.

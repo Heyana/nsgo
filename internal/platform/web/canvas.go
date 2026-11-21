@@ -108,6 +108,7 @@ func (s *surface) paint(v *view) {
 			p.Play(&ops[i])
 		}
 	}
+	s.canvasImages.endPass()
 	s.setCanvasExact(v)
 	s.requestGlassPaint()
 }
@@ -428,11 +429,17 @@ func (s *surface) refreshCanvasScale(root js.Value) {
 	}
 }
 
-// canvasImage is an image canvases draw, loaded once for the surface.
+// canvasImage is an image canvases draw, cached for the surface within its
+// count and byte bounds.
 type canvasImage struct {
 	img         js.Value
+	url         string
+	object      bool
 	density     float64
 	loaded      bool
+	failed      bool
+	onload      js.Func
+	onerror     js.Func
 	waiting     map[*view]bool
 	texture     canvasmesh.Texture
 	readTexture bool
@@ -444,6 +451,50 @@ func (s *surface) scratchCanvas(width, height int) js.Value {
 	c.Set("width", width)
 	c.Set("height", height)
 	return c
+}
+
+func (im *canvasImage) release() {
+	if im == nil {
+		return
+	}
+	if !im.onload.Value.IsUndefined() {
+		im.onload.Release()
+		im.onload = js.Func{}
+	}
+	if !im.onerror.Value.IsUndefined() {
+		im.onerror.Release()
+		im.onerror = js.Func{}
+	}
+	if im.img.Truthy() {
+		im.img.Call("removeAttribute", "src")
+	}
+	if im.object && im.url != "" {
+		js.Global().Get("URL").Call("revokeObjectURL", im.url)
+		im.url, im.object = "", false
+	}
+	im.waiting = nil
+}
+
+func (s *surface) keepCanvasImage(key string) {
+	s.canvasImages.keep(key)
+}
+
+func (s *surface) releaseCanvasImage(key string) {
+	s.canvasImages.release(key)
+	for _, v := range s.views {
+		if v != nil && v.gl != nil {
+			v.gl.textures.trim()
+		}
+	}
+}
+
+func (s *surface) setImageCacheLimit(maxBytes int64) {
+	s.canvasImages.setLimit(maxBytes)
+	for _, v := range s.views {
+		if v != nil && v.gl != nil {
+			v.gl.textures.setLimit(maxBytes)
+		}
+	}
 }
 
 // loadImage returns src's image, loading it the first time, and has v
@@ -461,53 +512,76 @@ func (s *surface) loadCanvasImage(src driver.ImageSource, v *view, readable bool
 	if src.Pixels != nil {
 		return s.canvasFrame(src)
 	}
+	if s.canvasImages.onEvict == nil {
+		s.canvasImages.onEvict = func(im *canvasImage) { im.release() }
+	}
 	key := src.Key()
-	// A cross-origin image can draw without CORS. Tinting needs access to
-	// its pixels, so the anonymous request has a separate cache entry.
+	// A cross-origin image can draw without CORS. Tinting needs access to its pixels, so the anonymous request has a separate cache entry.
 	cors := readable && len(src.Data) == 0 && (strings.HasPrefix(src.URI, "https:") ||
 		strings.HasPrefix(src.URI, "http:") || strings.HasPrefix(src.URI, "//"))
 	if cors {
 		key = "cors:" + key
 	}
-	im := s.canvasImages[key]
-	if im == nil {
-		if s.canvasImages == nil {
-			s.canvasImages = map[string]*canvasImage{}
+	im, ok := s.canvasImages.get(key)
+	if !ok {
+		url, object := imageURL(src)
+		im = &canvasImage{
+			img:     js.Global().Get("Image").New(),
+			url:     url,
+			object:  object,
+			density: float64(src.Density()),
+			waiting: map[*view]bool{},
 		}
-		im = &canvasImage{img: js.Global().Get("Image").New(), density: float64(src.Density()),
-			waiting: map[*view]bool{}}
-		s.canvasImages[key] = im
-		var done js.Func
-		done = js.FuncOf(func(_ js.Value, args []js.Value) any {
-			im.img.Set("onload", js.Null())
-			im.img.Set("onerror", js.Null())
-			done.Release()
+		encodedBytes := int64(len(src.Data))
+		s.canvasImages.addPending(key, im, encodedBytes)
+		finish := func(loaded bool) {
+			if !im.onload.Value.IsUndefined() {
+				im.onload.Release()
+				im.onload = js.Func{}
+			}
+			if !im.onerror.Value.IsUndefined() {
+				im.onerror.Release()
+				im.onerror = js.Func{}
+			}
+			cur, ok := s.canvasImages.peek(key)
+			if !ok || cur != im {
+				return
+			}
+			im.loaded = loaded
+			im.failed = !loaded
 			waiting := im.waiting
 			im.waiting = nil
-			if args[0].Get("type").String() != "load" {
-				return nil
-			}
-			im.loaded = true
-			for v := range waiting {
-				switch {
-				case s.view(v.id) != v:
-				case v.kind == driver.KindShader:
-					s.shadeLater(v)
-				default:
-					s.paint(v)
+			if loaded {
+				for w := range waiting {
+					switch {
+					case s.view(w.id) != w:
+					case w.kind == driver.KindShader:
+						s.shadeLater(w)
+					default:
+						s.paint(w)
+					}
 				}
 			}
-			return nil
-		})
-		im.img.Set("onload", done)
-		im.img.Set("onerror", done)
+			bytes := encodedBytes
+			if loaded && bytes == 0 {
+				nw := int64(im.img.Get("naturalWidth").Float())
+				nh := int64(im.img.Get("naturalHeight").Float())
+				if nw > 0 && nh > 0 {
+					bytes = nw * nh * 4
+				}
+			}
+			s.canvasImages.complete(key, bytes)
+		}
+		im.onload = js.FuncOf(func(js.Value, []js.Value) any { finish(true); return nil })
+		im.onerror = js.FuncOf(func(js.Value, []js.Value) any { finish(false); return nil })
+		im.img.Call("addEventListener", "load", im.onload)
+		im.img.Call("addEventListener", "error", im.onerror)
 		if cors {
 			im.img.Set("crossOrigin", "anonymous")
 		}
-		url, _ := imageURL(src)
 		im.img.Set("src", url)
 	}
-	if !im.loaded && im.waiting != nil {
+	if !im.loaded && !im.failed && im.waiting != nil {
 		im.waiting[v] = true
 	}
 	return im

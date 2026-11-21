@@ -42,11 +42,11 @@ type glShaderView struct {
 	count   int // the images the program reads
 	lanes   []float64
 	buf     []byte
-	// textures are the images' textures, by ImageSource.Key, with their
-	// sizes in pixels; pictures what a WGSL program reads instead, an
-	// effect's (effect.go).
-	textures map[string]glTexture
-	bound    []string // the keys of the images the drawing under way reads
+	// textures are the images' textures, bounded by count and byte budget, by
+	// ImageSource.Key, with their sizes in pixels; pictures what a WGSL
+	// program reads instead, an effect's (effect.go).
+	textures glTextureCache[glTexture]
+	bound    []string // keys read by the current draw
 	pictures [4]*glPicture
 	// pixels are the textures of the images that are pixels, by their place in Images: kept while their size stays and updated in place with each copy the core sends.
 	pixels [4]pixelTexture
@@ -314,9 +314,7 @@ func (g *glShaderView) deleteGL() {
 	if g.vao != 0 {
 		glDeleteVertexArrays(1, &g.vao)
 	}
-	for _, t := range g.textures {
-		glDeleteTextures(1, &t.id)
-	}
+	g.textures.clear()
 	for _, pic := range g.pictures {
 		if pic != nil && pic.tex != 0 {
 			glDeleteTextures(1, &pic.tex)
@@ -329,7 +327,7 @@ func (g *glShaderView) deleteGL() {
 		}
 		g.pixels[i] = pixelTexture{}
 	}
-	g.prog, g.ubo, g.vao, g.program, g.textures = 0, 0, 0, nil, nil
+	g.prog, g.ubo, g.vao, g.program = 0, 0, 0, nil
 }
 
 // drawShader draws v's program in its area's context, made current.
@@ -385,10 +383,10 @@ func (w *window) drawGL(g *glShaderView, id driver.NodeID, context uintptr) {
 		}
 	}
 	// So do images the view no longer reads, such as an offscreen canvas's earlier versions.
-	for key, t := range g.textures {
+	for key, e := range g.textures.entries {
 		if !slices.Contains(g.bound, key) {
-			glDeleteTextures(1, &t.id)
-			delete(g.textures, key)
+			g.textures.release(e.value)
+			delete(g.textures.entries, key)
 		}
 	}
 	clear(g.buf)
@@ -406,6 +404,44 @@ func (w *window) drawGL(g *glShaderView, id driver.NodeID, context uintptr) {
 	glClear(glColorBuffer)
 	glBindVertexArray(g.vao)
 	glDrawArrays(glTriangles, 0, 3)
+	g.textures.endPass(w.isCanvasImageKept)
+}
+
+func (g *glShaderView) initTextures(w *window) {
+	if g.textures.release == nil {
+		g.textures.release = func(t glTexture) {
+			if t.id != 0 {
+				id := t.id
+				glDeleteTextures(1, &id)
+			}
+		}
+	}
+	if !g.textures.limitSet {
+		g.textures.limit = w.canvasImageBytesLimit()
+		g.textures.limitSet = true
+	}
+}
+
+// trimTextures updates the GL texture cache limit or trims newly unpinned
+// textures with the area's GL context made current.
+func (g *glShaderView) trimTextures(w *window, setLimit bool, maxBytes int64) {
+	if g.prog == 0 || g.area == 0 || gtkGLAreaGetError(g.area) != 0 {
+		if setLimit {
+			if maxBytes < 0 {
+				maxBytes = 0
+			}
+			g.textures.limit = maxBytes
+			g.textures.limitSet = true
+		}
+		return
+	}
+	g.initTextures(w)
+	gtkGLAreaMakeCurrent(g.area)
+	if setLimit {
+		g.textures.setLimit(maxBytes, w.isCanvasImageKept)
+	} else {
+		g.textures.trim(w.isCanvasImageKept)
+	}
 }
 
 // shaderTexture returns image src's texture in v's context, loading the
@@ -413,9 +449,10 @@ func (w *window) drawGL(g *glShaderView, id driver.NodeID, context uintptr) {
 // it loads and the area draws again.
 func (w *window) shaderTexture(v *view, src driver.ImageSource) glTexture {
 	g := v.shader
+	g.initTextures(w)
 	key := src.Key()
 	g.bound = append(g.bound, key)
-	if t, ok := g.textures[key]; ok {
+	if t, ok := g.textures.get(key); ok {
 		return t
 	}
 	s := w.canvasImage(src, v)
@@ -437,10 +474,8 @@ func (w *window) shaderTexture(v *view, src driver.ImageSource) glTexture {
 	glTexParameteri(glTexture2D, glMagFilter, glNearest)
 	glTexParameteri(glTexture2D, glWrapS, glClampToEdge)
 	glTexParameteri(glTexture2D, glWrapT, glClampToEdge)
-	if g.textures == nil {
-		g.textures = map[string]glTexture{}
-	}
-	g.textures[key] = t
+	bytes := int64(pic.width) * int64(pic.height) * 4
+	g.textures.put(key, t, bytes, w.isCanvasImageKept)
 	return t
 }
 
