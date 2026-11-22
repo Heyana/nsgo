@@ -30,7 +30,7 @@ final class Audio {
             PLAYBACK_SET = 12, PLAYBACK_STOP = 13;
     // The driver's AudioPhase.
     static final int LOADED = 0, OPENED = 1, PLAYING = 2, PAUSED = 3, PROGRESS = 4,
-            BUFFER = 5, ENDED = 6, FAILURE = 7;
+            BUFFER = 5, ENDED = 6, FAILURE = 7, PLAYBACK_ENDED = 9;
     private static final int MAX_VOICES = 32;
     /** SoundPool truncates decoded 16-bit PCM after 1 MiB. */
     private static final long MAX_SAMPLE_BYTES = 1L << 20;
@@ -54,12 +54,26 @@ final class Audio {
     private static final class Voice {
         final Sound sound;
         final int stream, playback;
-        final long until;
-        Voice(Sound sound, int playback, int stream, long until) {
+        final float left, right;
+        long changed;
+        double remaining;
+        float rate;
+        Runnable completion;
+
+        Voice(Sound sound, int playback, int stream, float left, float right, float rate, long now) {
             this.sound = sound;
             this.playback = playback;
             this.stream = stream;
-            this.until = until;
+            this.left = left;
+            this.right = right;
+            this.rate = rate;
+            this.changed = now;
+            this.remaining = sound.duration * 1000.0;
+        }
+
+        void advance(long now) {
+            remaining = Math.max(0, remaining - Math.max(0, now - changed) * (double) rate);
+            changed = now;
         }
     }
 
@@ -92,8 +106,8 @@ final class Audio {
                 break;
             }
             case PLAY: {
-                float left = in.readFloat(), right = in.readFloat(), rate = in.readFloat();
-                play(sounds.get(id), playback, left, right, rate);
+                float volume = in.readFloat(), left = in.readFloat(), right = in.readFloat(), rate = in.readFloat();
+                play(sounds.get(id), playback, volume, left, right, rate);
                 break;
             }
             case PLAYBACK_SET:
@@ -273,24 +287,64 @@ final class Audio {
         failure(sound.owner, sound.id, code, message);
     }
 
-    private void play(Sound sound, int playback, float left, float right, float rate) {
+    private void play(Sound sound, int playback, float volume, float left, float right, float rate) {
         if (sound == null || !sound.loaded) return;
         long now = SystemClock.elapsedRealtimeNanos();
-        for (int i = voices.size() - 1; i >= 0; i--) { Voice voice = voices.get(i); if (voice.until <= now) { voices.remove(i); if (voice.playback != 0) report(voice.sound.owner, voice.sound.id, ENDED, voice.sound.duration, 0, 0, 0, 0, false, "", "", voice.playback); } }
-        if (voices.size() == MAX_VOICES) { Voice old = voices.remove(0); pool.stop(old.stream); if (old.playback != 0) report(old.sound.owner, old.sound.id, ENDED, old.sound.duration, 0, 0, 0, 0, false, "", "", old.playback); }
-        int stream = pool.play(sound.sample, left, right, 1, 0, rate);
-        if (stream != 0) voices.add(new Voice(sound, playback, stream, now + (long) (sound.duration * 1000 / (double) rate)));
-        else if (playback != 0) report(sound.owner, sound.id, ENDED, 0, 0, 0, 0, 0, false, "", "", playback);
+        for (int i = voices.size() - 1; i >= 0; i--) {
+            Voice voice = voices.get(i);
+            voice.advance(now);
+            if (voice.remaining == 0) finishVoice(voice, false);
+        }
+        if (voices.size() == MAX_VOICES) finishVoice(voices.get(0), true);
+        int stream = pool.play(sound.sample, volume * left, volume * right, 1, 0, rate);
+        if (stream != 0) {
+            Voice voice = new Voice(sound, playback, stream, left, right, rate, now);
+            voice.completion = () -> finishVoice(voice, false);
+            voices.add(voice);
+            scheduleVoice(voice);
+        } else if (playback != 0) {
+            report(sound.owner, sound.id, PLAYBACK_ENDED, 0, 0, 0, 0, 0, false, "", "", playback);
+        }
+    }
+
+    // SoundPool has no stream completion callback. Schedule one from the
+    // decoded duration, adjusting the remaining source time after rate changes.
+    private void scheduleVoice(Voice voice) {
+        ui.removeCallbacks(voice.completion);
+        long delay = (long) Math.ceil(voice.remaining / voice.rate / 1000000);
+        ui.postDelayed(voice.completion, delay);
+    }
+
+    private void finishVoice(Voice voice, boolean stop) {
+        if (!voices.remove(voice)) return;
+        ui.removeCallbacks(voice.completion);
+        if (stop) pool.stop(voice.stream);
+        if (voice.playback != 0) {
+            report(voice.sound.owner, voice.sound.id, PLAYBACK_ENDED,
+                    voice.sound.duration, 0, 0, 0, 0, false, "", "", voice.playback);
+        }
     }
 
     private void setPlayback(int id, int playback, float volume, float rate) {
         for (Voice voice : voices) if (voice.sound.id == id && voice.playback == playback) {
-            pool.setVolume(voice.stream, volume, volume); pool.setRate(voice.stream, rate); return;
+            voice.advance(SystemClock.elapsedRealtimeNanos());
+            if (voice.remaining == 0) {
+                finishVoice(voice, false);
+                return;
+            }
+            pool.setVolume(voice.stream, volume * voice.left, volume * voice.right);
+            pool.setRate(voice.stream, rate);
+            voice.rate = rate;
+            scheduleVoice(voice);
+            return;
         }
     }
 
     private void stopPlayback(int id, int playback) {
-        for (int i = voices.size() - 1; i >= 0; i--) { Voice voice = voices.get(i); if (voice.sound.id == id && voice.playback == playback) { pool.stop(voice.stream); voices.remove(i); report(voice.sound.owner, id, ENDED, 0, 0, 0, 0, 0, false, "", "", playback); return; } }
+        for (Voice voice : voices) if (voice.sound.id == id && voice.playback == playback) {
+            finishVoice(voice, true);
+            return;
+        }
     }
 
     private void stop(Sound sound) {
@@ -298,9 +352,7 @@ final class Audio {
         for (int i = voices.size() - 1; i >= 0; i--) {
             Voice voice = voices.get(i);
             if (voice.sound != sound) continue;
-            pool.stop(voice.stream);
-            voices.remove(i);
-            if (voice.playback != 0) report(voice.sound.owner, voice.sound.id, ENDED, voice.sound.duration, 0, 0, 0, 0, false, "", "", voice.playback);
+            finishVoice(voice, true);
         }
     }
 

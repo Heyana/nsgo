@@ -146,6 +146,70 @@ func TestNativeAndroidSound(t *testing.T) {
 	}
 }
 
+func TestNativeAndroidPlaybackControls(t *testing.T) {
+	app, cx := startAudioTest(t)
+	loaded := make(chan *core.Sound, 1)
+	failed := make(chan error, 1)
+	step := func(fn func()) { app.Post(fn); app.Settle() }
+	step(func() {
+		cx.LoadSound(core.AudioSource{Data: silentAudioWAV(1200 * time.Millisecond)}, func(sound *core.Sound, err error) {
+			if err != nil {
+				failed <- err
+				return
+			}
+			loaded <- sound
+		})
+	})
+	var sound *core.Sound
+	select {
+	case sound = <-loaded:
+	case err := <-failed:
+		t.Fatal(err)
+	case <-time.After(6 * time.Second):
+		t.Fatal("the sound did not load")
+	}
+	ended := func(playback *core.Playback) bool {
+		var value bool
+		step(func() { value = playback.Ended() })
+		return value
+	}
+	var voice *core.Playback
+	// No later Play should be needed to deliver natural completion. Changing
+	// the initial slow rate must also move the original expiry earlier.
+	step(func() {
+		voice = sound.Play(core.SoundVoice{Muted: true, Pan: -1, Rate: .5})
+		voice.SetVolume(.2)
+		voice.SetRate(2)
+	})
+	app.WaitUntil(1500*time.Millisecond, func() bool { return ended(voice) })
+	// Slowing an active stream must retain the source position and move its
+	// expiry later than the 600 ms it would take at its initial rate.
+	step(func() { voice = sound.Play(core.SoundVoice{Muted: true, Rate: 2}) })
+	time.Sleep(100 * time.Millisecond)
+	step(func() { voice.SetRate(.5) })
+	time.Sleep(750 * time.Millisecond)
+	if ended(voice) {
+		t.Fatal("the slowed playback ended at its original expiry")
+	}
+	app.WaitUntil(3*time.Second, func() bool { return ended(voice) })
+	// The 33rd live stream retires the oldest independently of sound.Stop.
+	voices := make([]*core.Playback, driver.MaxSoundVoices+1)
+	step(func() {
+		for i := range voices {
+			voices[i] = sound.Play(core.SoundVoice{Muted: true, Rate: .5})
+		}
+	})
+	app.WaitUntil(time.Second, func() bool { return ended(voices[0]) })
+	if ended(voices[1]) {
+		t.Fatal("evicting the oldest stream also ended its successor")
+	}
+	step(voices[1].Stop)
+	if !ended(voices[1]) || ended(voices[2]) {
+		t.Fatal("stopping one handle changed a sibling playback")
+	}
+	step(sound.Close)
+}
+
 func TestNativeAndroidPlayer(t *testing.T) {
 	app, cx := startAudioTest(t)
 	for _, format := range nativeAudioSources(t) {

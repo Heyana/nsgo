@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
@@ -26,6 +27,31 @@ func TestAndroidPipeRejectsCorruptFrames(t *testing.T) {
 
 func TestAndroidProcessReportsExit(t *testing.T) {
 	runJavaEngineCheck(t, "ProcessExitCheck")
+}
+
+func TestJavaAudioPhasesMatchDriver(t *testing.T) {
+	testhost.RequireSource(t)
+	data, err := os.ReadFile("java/dev/oneo/nsgo/Audio.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]driver.AudioPhase{
+		"LOADED": driver.AudioLoaded, "OPENED": driver.AudioOpened,
+		"PLAYING": driver.AudioPlaying, "PAUSED": driver.AudioPaused,
+		"PROGRESS": driver.AudioProgress, "BUFFER": driver.AudioBuffer,
+		"ENDED": driver.AudioEnded, "FAILURE": driver.AudioFailure,
+		"PLAYBACK_ENDED": driver.AudioPlaybackEnded,
+	} {
+		match := regexp.MustCompile(`\b` + name + ` = (\d+)`).FindSubmatch(data)
+		if match == nil {
+			t.Errorf("Audio.java has no %s phase", name)
+			continue
+		}
+		got, _ := strconv.Atoi(string(match[1]))
+		if driver.AudioPhase(got) != want {
+			t.Errorf("Audio.java %s = %d, driver = %d", name, got, want)
+		}
+	}
 }
 
 func runJavaEngineCheck(t *testing.T, check string) {

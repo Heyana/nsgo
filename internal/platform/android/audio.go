@@ -29,8 +29,10 @@ func writeAudio(w *writer, id uint32, r *driver.AudioRequest) {
 	case driver.AudioPlay:
 		// SoundPool takes a volume per channel, so the pan splits the voice's volume between them.
 		left, right := driver.AudioPanGains(r.Pan)
-		w.float(r.Volume * left)
-		w.float(r.Volume * right)
+		// Keep the gains separate so changing a muted voice's volume preserves its pan.
+		w.float(r.Volume)
+		w.float(left)
+		w.float(right)
 		w.float(r.Rate)
 	case driver.AudioPlaybackSet:
 		w.float(r.Volume)
