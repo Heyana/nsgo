@@ -14,36 +14,23 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// WASAPI vtable indexes, from mmdeviceapi.h and audioclient.h. IAudioClient.Initialize takes two REFERENCE_TIME words, so this file builds only where an int64 is one argument word.
+// WASAPI vtable indexes and flags the loopback capture needs beyond those audiooutput.go declares, from audioclient.h. IAudioClient.Initialize takes two REFERENCE_TIME words, so this file builds only where an int64 is one argument word.
 const (
-	mmGetDefaultAudioEndpoint = 4
-	mmActivate                = 3
-	acInitialize              = 3
-	acGetMixFormat            = 8
-	acGetDevicePeriod         = 9
-	acStart                   = 10
-	acStop                    = 11
-	acGetService              = 14
-	ccGetBuffer               = 3
-	ccReleaseBuffer           = 4
-	ccGetNextPacketSize       = 5
+	acGetMixFormat      = 8
+	acGetDevicePeriod   = 9
+	ccGetBuffer         = 3
+	ccReleaseBuffer     = 4
+	ccGetNextPacketSize = 5
 
 	audclntStreamFlagsLoopback       = 0x00020000
 	audclntBufferFlagsDiscontinuity  = 0x1
 	audclntBufferFlagsSilent         = 0x2
 	audclntBufferFlagsTimestampError = 0x4
-	clsctxAll                        = 0x17
 )
 
 var (
-	clsidMMDeviceEnumerator = parseGUID("BCDE0395-E52F-467C-8E3D-C4579291692E")
-	iidIMMDeviceEnumerator  = parseGUID("A95664D2-9614-4F35-A746-DE8DB63617E6")
-	iidIAudioClient         = parseGUID("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2")
-	iidIAudioCaptureClient  = parseGUID("C8ADBD64-E71E-48A0-A4DE-185C395CD317")
-	ksdataformatFloat       = parseGUID("00000003-0000-0010-8000-00AA00389B71")
-
-	queryPerformanceCounter   = kernel32.NewProc("QueryPerformanceCounter")
-	queryPerformanceFrequency = kernel32.NewProc("QueryPerformanceFrequency")
+	iidIAudioCaptureClient = parseGUID("C8ADBD64-E71E-48A0-A4DE-185C395CD317")
+	ksdataformatFloat      = parseGUID("00000003-0000-0010-8000-00AA00389B71")
 )
 
 // loopbackCapture records what the default render endpoint's engine mixes, timestamped on the QPC clock.
@@ -69,16 +56,16 @@ type sound struct {
 func openLoopbackCapture(t *testing.T) *loopbackCapture {
 	t.Helper()
 	var enumerator, device, client, capture *comObject
-	if hr, _, _ := coCreateInstance.Call(uintptr(unsafe.Pointer(&clsidMMDeviceEnumerator)), 0, clsctxAll, uintptr(unsafe.Pointer(&iidIMMDeviceEnumerator)), uintptr(unsafe.Pointer(&enumerator))); failed(hr) || enumerator == nil {
+	if hr, _, _ := coCreateInstance.Call(uintptr(unsafe.Pointer(&clsidMMDeviceEnumerator)), 0, clsctxAll, uintptr(unsafe.Pointer(&iidMMDeviceEnumerator)), uintptr(unsafe.Pointer(&enumerator))); failed(hr) || enumerator == nil {
 		t.Skip(hresultError("cannot create the audio device enumerator", hr))
 	}
 	defer enumerator.release()
 	const eRender, eConsole = 0, 0
-	if hr := enumerator.call(mmGetDefaultAudioEndpoint, eRender, eConsole, uintptr(unsafe.Pointer(&device))); failed(hr) || device == nil {
+	if hr := enumerator.call(mmEnumGetDefaultAudioEndpoint, eRender, eConsole, uintptr(unsafe.Pointer(&device))); failed(hr) || device == nil {
 		t.Skip(hresultError("no default render endpoint for loopback capture", hr))
 	}
 	defer device.release()
-	if hr := device.call(mmActivate, uintptr(unsafe.Pointer(&iidIAudioClient)), clsctxAll, 0, uintptr(unsafe.Pointer(&client))); failed(hr) || client == nil {
+	if hr := device.call(mmDeviceActivate, uintptr(unsafe.Pointer(&iidAudioClient)), clsctxAll, 0, uintptr(unsafe.Pointer(&client))); failed(hr) || client == nil {
 		t.Fatal(hresultError("cannot activate the endpoint's audio client", hr))
 	}
 	var format unsafe.Pointer
@@ -140,8 +127,8 @@ func (c *loopbackCapture) close() {
 // qpc100ns reads the QPC clock in WASAPI's 100 ns units.
 func qpc100ns() int64 {
 	var counter, frequency int64
-	queryPerformanceCounter.Call(uintptr(unsafe.Pointer(&counter)))
-	queryPerformanceFrequency.Call(uintptr(unsafe.Pointer(&frequency)))
+	wasapiQueryPerformanceCounter.Call(uintptr(unsafe.Pointer(&counter)))
+	wasapiQueryPerformanceFrequency.Call(uintptr(unsafe.Pointer(&frequency)))
 	return int64(float64(counter) * 1e7 / float64(frequency))
 }
 
