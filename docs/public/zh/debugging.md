@@ -88,6 +88,16 @@ go tool nsgo dev -target web -preview ./components
 
 运行前，`go tool nsgo check` 会检查应用并对它的 TSX 做类型检查；加上 `-target all` 则改为为每个目标检查，这样在 Mac 上也能检查到其他平台构建标签下的代码。
 
+### Apple 应用包的日志
+
+在 macOS、iOS、tvOS 和 watchOS 上，默认 Go 日志器会写入 Apple 统一日志，包括 `log.Print`、NSGo 诊断和 TSX 控制台输出。在 Console 中，以运行应用的包标识符筛选 subsystem，以 `nsgo` 筛选 category。macOS 也可以查询日志存储：
+
+```sh
+log show --last 10m --predicate 'subsystem == "dev.example.hello"'
+```
+
+记录使用 default 日志类型，保留原有的警告或错误前缀。日志文本为公开内容，请勿写入凭据或其他秘密。长消息会拆为多条记录。开发时仍可在终端查看输出；自定义日志 writer 或 `slog` handler 自行管理输出。
+
 ### Linux 网页视图
 
 Ubuntu 24.04 及更新版本可通过 AppArmor 限制非特权用户的命名空间。bubblewrap 无法启动 WebKitGTK 沙箱时，NSGo 会记录错误并显示占位内容。一些 WebKitGTK 版本遇到这种情况时会在打开第一个网页视图时以 `SIGTRAP` 退出。[Ubuntu AppArmor 文档](https://documentation.ubuntu.com/security/security-features/privilege-restriction/apparmor/)

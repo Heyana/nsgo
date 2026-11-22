@@ -60,6 +60,7 @@ nsgo
 │   │   ├── web                          WebAssembly and the DOM
 │   │   ├── miniprogram                  WebAssembly in a WeChat, QQ, Alipay or Douyin mini program
 │   │   ├── apple                        Shared by macOS and iOS
+│   │   ├── applelog                     Process diagnostics in Apple’s unified log
 │   │   ├── privacy                      Shared permissions of macOS and iOS, which microphone shares too
 │   │   ├── webstyle, canvas2d           Shared CSS and 2D canvas player of the web and mini programs
 │   │   ├── field, hover, finger         Shared input

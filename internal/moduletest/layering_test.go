@@ -46,6 +46,7 @@ var layers = []struct {
 	{"internal/engine", []string{"core", "internal/driver", "internal/testhost"}},
 	{"internal/testhost", []string{"core", "internal/driver"}},
 	{"internal/platform/android/runtime", nil},
+	{"internal/platform/applelog", nil},
 	{"internal/platform/apple", append([]string{"internal/driver"}, platformShared...)},
 	{"internal/platform/canvas2d", []string{"internal/driver", "internal/platform/canvasmesh", "internal/platform/webstyle"}},
 	{"internal/platform/canvasmesh", []string{"internal/driver"}},

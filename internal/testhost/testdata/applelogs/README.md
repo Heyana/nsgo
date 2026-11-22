@@ -1,0 +1,5 @@
+# Packaged Apple logs
+
+Build with `go tool nsgo build -target macos_arm64 -output /tmp/applelogs internal/testhost/testdata/applelogs`, then open the resulting `AppleLogs.app` with `open -n <path> --args --nsgo-lang`. This uses Launch Services without capturing stderr. The report in the app’s temporary directory, `applelogs1348.txt`, confirms whether stderr is `/dev/null` and whether this process’s unified log decodes its warning, error and malformed launch flag. The entries use the configured bundle ID and `nsgo` category.
+
+For a connected iPhone, build the same fixture with `-target ios -profile <development-profile>`, install the app with `xcrun devicectl device install app --device <device> <app>`, and launch `dev.nsgo.test.applelogs1348` with `-- --nsgo-lang`, without `--console`. Copy only `Documents/applelogs1348.txt` from this app’s data container with `devicectl device copy from`. A successful report contains `stderr /dev/null: true`, `PASS`, readable Chinese, literal percent-format tokens and the escaped NUL. The fixture reads only its own process’s log store. Uninstall this fixture afterward.

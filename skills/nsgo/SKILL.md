@@ -140,6 +140,8 @@ Test an app as a user uses it with `nsgotest`, finding views by text, role, labe
 
 ## Debugging
 
+On Apple targets, the default Go logger writes public unified-log entries under the running bundle ID and category `nsgo`, including packaged launches without a terminal. Keep secrets out of logs; custom writers and `slog` handlers own their output. [Packaged logs](https://nsgo.dev/docs/debugging.md#packaged-apple-apps-logs)
+
 Run `go tool nsgo dev -target native -debug` with Delve on `PATH` to attach a debugger to a desktop app. Reconnect to the printed loopback address after a Go rebuild. [Running and debugging](https://nsgo.dev/docs/debugging.md#go-debugger)
 
 `go tool nsgo dev -devtools` opens DevTools (elements, signals, a commit profiler and a test recorder); `-highlight` outlines what each commit changes, `-trace` prints each commit with the lines whose writes caused it, `-layout` outlines every box and `-release -fps` measures frame and commit cost, including native text round trips on Android. On macOS and Apple devices and simulators (`-target ios`, `tvos`, `watchos`, `ios_simulator`, `tvos_simulator`, `watchos_simulator`), `go tool nsgo mcp` lets an agent drive the running app over MCP (`claude mcp add nsgo -- go tool nsgo mcp`): list windows, outline views, press, type, scroll and take screenshots. Use it to check a change on screen instead of assuming it renders. On macOS and Windows a native Go rebuild restores the main window’s last regular frame during the same dev session. Windows also restores full screen. Command/Control+R reloads from every open window and remains available after an app function's main view closes.

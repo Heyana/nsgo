@@ -8,6 +8,16 @@ Remote push is designed separately in [Remote push](remote-push.md); it is not i
 
 Location and motion are scoped fixes and bounded streams on Apple and Android, under the system's [permissions](#permissions); [location and motion](location-motion.md) defines caching, units, lifecycle, background declarations and unavailable targets.
 
+## Packaged Apple apps’ logs
+
+`internal/backend` installs `internal/platform/applelog` before it parses launch flags. The default Go logger, and default `slog` handler through it, write to Apple’s unified log under the running main bundle’s identifier and category `nsgo`, including when Finder, the Dock or the Home screen supplies no useful stderr. An unbundled process uses its executable’s name. An app’s custom log writer or `slog` handler remains its own.
+
+The helper loads libSystem, Foundation and CoreFoundation through purego, with no C or Swift shim. `_os_log_impl` needs a formatter registered in a loaded image’s `__oslogstring` section; Go’s string literals lack that metadata and produce UUID compose failures. The helper finds a canonical one-string formatter in Foundation’s loaded Mach-O sections and encodes a public string argument with Clang’s OSLog buffer layout. If the libraries or formatter are unavailable, installation leaves stderr alone. Messages are public: apps must keep secrets out of their diagnostics.
+
+The standard Go logger has no severity or target metadata, so every record uses the stored default log type and keeps its original prefixes, rather than guessing severity from its text as a substitute for NSH’s structured logger. Records escape NUL, repair invalid UTF-8 for the native string, and split at line or UTF-8 boundaries within 960 bytes. A terminal, file or pipe also receives the original bytes; Xcode’s unified-log console suppresses duplicate stderr unless `OS_ACTIVITY_MODE=disable`, while development builds always keep stderr. iOS, tvOS and watchOS share this installation with macOS; other targets keep their existing logging paths.
+
+On 2026-11-22, a packaged macOS app opened through Launch Services and a signed iPhone XR app launched without console capture both stored readable warning and error text, Unicode, literal formatting tokens, escaped NUL and a pre-`main` launch-flag diagnostic under their bundle ID. The iPhone fixture queried only its own process’s `OSLogStore`. tvOS, watchOS and Intel macOS were vetted but not run. `internal/testhost/testdata/applelogs` keeps the fixture and reproduction steps; `applelog` tests buffer splitting, stderr policy, setup failure and live macOS decoding.
+
 ## Requests and answers
 
 A service is a command item in the batch. One that answers, such as a clipboard read, an opened URL or a pick, carries a number in `Count` and comes back as an event with it.

@@ -88,6 +88,16 @@ A failed build shows over the running app, with buttons to copy the error and to
 
 Before running, `go tool nsgo check` vets the app and type-checks its TSX; `-target all` vets it for every target, so code behind another platform's build tags is checked from a Mac too.
 
+### Packaged Apple apps’ logs
+
+On macOS, iOS, tvOS and watchOS, the default Go logger writes to Apple’s unified log, including `log.Print`, NSGo diagnostics and TSX console output. In Console, filter by the running app’s bundle identifier as the subsystem and `nsgo` as the category. On macOS you can also query the store:
+
+```sh
+log show --last 10m --predicate 'subsystem == "dev.example.hello"'
+```
+
+Records use the default log type and retain their warning or error prefixes. Their text is public, so keep credentials and other secrets out of logs. Long messages become several entries. Terminal output remains available during development; a custom log writer or `slog` handler controls its own output.
+
 ### Linux web views
 
 Ubuntu 24.04 and later can restrict unprivileged user namespaces through AppArmor. When bubblewrap cannot start WebKitGTK's sandbox, NSGo logs the error and shows a placeholder. Some WebKitGTK versions otherwise exit with `SIGTRAP` while opening the first web view. [Ubuntu AppArmor documentation](https://documentation.ubuntu.com/security/security-features/privilege-restriction/apparmor/)

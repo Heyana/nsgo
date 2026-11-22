@@ -348,6 +348,8 @@ jobs:
           done
       - name: Test main-thread failure propagation
         run: go tool nsgo test -run '^TestOnMainExitPropagation$' ./internal/platform/macos -- -race
+      - name: Test public unified-log diagnostics
+        run: go tool nsgo test -env NSGO_TEST_UNIFIED_LOG=1 ./internal/platform/applelog
       - name: Test macOS backend
         run: go tool nsgo test ./internal/platform/macos
       - name: Test native input isolation

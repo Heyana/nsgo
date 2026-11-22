@@ -1,0 +1,7 @@
+name: AppleLogs
+id: dev.nsgo.test.applelogs1348
+version: 0.1.0
+updates:
+  channel: none
+build:
+  installers: false
