@@ -722,6 +722,7 @@ func readEvent(r *reader) (uint32, driver.Event, string) {
 	}
 	mods := r.byte()
 	ev.Modifiers = driver.Modifiers{Control: mods&1 != 0, Alt: mods&2 != 0, Shift: mods&4 != 0, Platform: mods&8 != 0}
+	ev.Button = driver.MouseButton(r.byte())
 	if ev.Kind == driver.EventError && ev.Navigation != nil && data != "" {
 		// A web view's platform failure carries its domain in data and its code in index.
 		ev.Data, ev.Index, data = &driver.WebFailure{Domain: data, Code: ev.Index}, 0, ""

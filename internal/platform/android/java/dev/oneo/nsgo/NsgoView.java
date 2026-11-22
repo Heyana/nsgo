@@ -282,6 +282,33 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private boolean statusBarHidden, immersive, wasImmersive;
     /** The pan, pinch and rotation of the touch in progress, on the UI thread. */
     private final Gestures gestures;
+    /** Mouse hover and button-down move tracker, on the UI thread. */
+    private final Mouse mouse = new Mouse(new Mouse.Host() {
+        @Override
+        public void hitTest(float x, float y, List<Integer> under) {
+            mouseHitTest(x, y, under);
+        }
+
+        @Override
+        public void report(int id, int kind, float x, float y, int mods, int button) {
+            reportMouse(id, kind, x, y, mods, button);
+        }
+
+        @Override
+        public boolean contains(float x, float y) {
+            return x >= 0 && y >= 0 && x < getWidth() && y < getHeight();
+        }
+
+        @Override
+        public boolean hasListeners() {
+            return listensMouse();
+        }
+    });
+    private boolean hoverRefreshPending;
+    private final Runnable hoverRefresh = () -> {
+        hoverRefreshPending = false;
+        mouse.refresh();
+    };
     /** The view the root node shows in, among the accessory bar. */
     private View rootView;
     private final Set<ShaderEffect> effects = new LinkedHashSet<>();
@@ -606,6 +633,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             gamepads = null;
         }
         foldsPending = false;
+        removeCallbacks(hoverRefresh);
+        hoverRefreshPending = false;
+        mouse.reset();
         if (!ownsEngine && primary == null) detachFromEngine();
         super.onDetachedFromWindow();
     }
@@ -931,6 +961,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         recordingStarts.clear();
         recordingAsks.clear();
         attached = false;
+        removeCallbacks(hoverRefresh);
+        hoverRefreshPending = false;
+        mouse.reset();
         gestureRects = Collections.emptyList();
         updateGestureRects();
         keptOffScreen = false;
@@ -952,6 +985,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      */
     void releaseOverlay() {
         discovery.closeSurface(surface);
+        removeCallbacks(hoverRefresh);
+        hoverRefreshPending = false;
+        mouse.reset();
         gestureRects = Collections.emptyList();
         updateGestureRects();
         clearDisplayHolds();
@@ -2287,20 +2323,28 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Sends an event to the engine: its kind, node, count, point, text, size and index, then a gesture's phase, velocity and value, then a web view's navigation: flags of whether there is one, loading, canGoBack and canGoForward, and if there is, its URL and title; then a video's time and duration in milliseconds and whether it buffers; then a native view's callback arguments or a download as JSON, the URL of a message's page, or a web error's domain (with its code in index), and whether an animation finished; then a pointer's position in its root view, a pan's position in its view, and the modifier keys (modifiers' bits).
+     * Sends an event to the engine: its kind, node, count, point, text, size and index, then a gesture's phase, velocity and value, then a web view's navigation: flags of whether there is one, loading, canGoBack and canGoForward, and if there is, its URL and title; then a video's time and duration in milliseconds and whether it buffers; then a native view's callback arguments or a download as JSON, the URL of a message's page, or a web error's domain (with its code in index), and whether an animation finished; then a pointer's position in its root view, a pan's position in its view, the modifier keys (modifiers' bits) and the held mouse button (Protocol.MOUSE_BUTTON_*).
      */
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
             int index, int phase, float vx, float vy, float value, WebNode.Navigation nav,
             long time, long duration, boolean buffering, String data, boolean finished,
             float pageX, float pageY, int mods) {
         event(kind, id, count, x, y, text, width, height, index, phase, vx, vy, value, nav, time, duration, buffering,
-                data, finished, pageX, pageY, 0, 0, mods);
+                data, finished, pageX, pageY, 0, 0, mods, Protocol.MOUSE_BUTTON_NONE);
     }
 
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
             int index, int phase, float vx, float vy, float value, WebNode.Navigation nav,
             long time, long duration, boolean buffering, String data, boolean finished,
             float pageX, float pageY, float positionX, float positionY, int mods) {
+        event(kind, id, count, x, y, text, width, height, index, phase, vx, vy, value, nav, time, duration, buffering,
+                data, finished, pageX, pageY, positionX, positionY, mods, Protocol.MOUSE_BUTTON_NONE);
+    }
+
+    private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
+            int index, int phase, float vx, float vy, float value, WebNode.Navigation nav,
+            long time, long duration, boolean buffering, String data, boolean finished,
+            float pageX, float pageY, float positionX, float positionY, int mods, int button) {
         // Deleting native widgets must not blur or edit their live Go nodes.
         if (primary == null && id != 0 && (clearingNativeTree || !attachment.permits(attachment.token()))) return;
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -2338,6 +2382,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             d.writeFloat(positionX);
             d.writeFloat(positionY);
             d.writeByte(mods);
+            d.writeByte(button);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -2449,10 +2494,33 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         return new float[] {(e.getRawX() - at[0]) / density, (e.getRawY() - at[1]) / density};
     }
 
+    /** Where surface pixel point (x, y) is in the root view v is in, the modal around it or this surface, in points. */
+    private float[] pageAt(View v, float x, float y) {
+        for (View p = v; p != null && p != this; p = p.getParent() instanceof View ? (View) p.getParent() : null) {
+            if (p instanceof Layer) {
+                float[] local = touchPoint(p, x, y);
+                if (local != null) return new float[] {local[0] / density, local[1] / density};
+                break;
+            }
+        }
+        return new float[] {x / density, y / density};
+    }
+
+    /** Sends a mouse enter, leave or move about node id at surface pixel point (x, y) if it listens for kind. */
+    private void reportMouse(int id, int kind, float x, float y, int mods, int button) {
+        Node n = nodes.get(id);
+        if (n == null || !n.has(kind)) return;
+        float[] local = touchPoint(n.view, x, y);
+        float lx = local != null ? local[0] / density : 0;
+        float ly = local != null ? local[1] / density : 0;
+        float[] pg = pageAt(n.view, x, y);
+        event(kind, n.id, 0, lx, ly, "", 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, "", false,
+                pg[0], pg[1], 0, 0, mods, button);
+    }
+
     /** The bits core.Modifiers is sent as: control, alt, shift and meta (the platform key). */
     private static int modifiers(int meta) {
-        return ((meta & KeyEvent.META_CTRL_ON) != 0 ? 1 : 0) | ((meta & KeyEvent.META_ALT_ON) != 0 ? 2 : 0)
-                | ((meta & KeyEvent.META_SHIFT_ON) != 0 ? 4 : 0) | ((meta & KeyEvent.META_META_ON) != 0 ? 8 : 0);
+        return Mouse.modifiers(meta);
     }
 
     private int px(float points) {
@@ -2599,6 +2667,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         backCallback = null;
     }
 
+    @Override
+    protected boolean dispatchHoverEvent(MotionEvent e) {
+        boolean mouseHandled = mouse.hover(e);
+        boolean handled = super.dispatchHoverEvent(e);
+        return handled || mouseHandled;
+    }
+
     /**
      * Sees each touch before the views below: a touch starting reports
      * presses outside overlays and collects the gesture views under it as
@@ -2609,6 +2684,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     public boolean dispatchTouchEvent(MotionEvent e) {
         boolean down = e.getActionMasked() == MotionEvent.ACTION_DOWN;
         if (down) modality(Protocol.MODALITY_POINTER);
+        boolean mouseHandled = mouse.touch(e);
         if (selectTouch(e)) return true;
         touches(e);
         if (down) {
@@ -2622,7 +2698,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         // While a node listens, the surface keeps the fingers though no
         // view took the down: a responder that claims on a move, as a
         // toast's swipe, hears the moves only then.
-        return handled || touching;
+        return handled || touching || mouseHandled;
     }
 
     /**
@@ -2920,6 +2996,65 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         return false;
     }
 
+    private boolean listensMouse() {
+        for (int i = 0; i < nodes.size(); i++) {
+            if (Mouse.follows(nodes.valueAt(i).events)) return true;
+        }
+        return false;
+    }
+
+    /** The frontmost visible modal Layer under v that participates in pointer events, or null if none is shown. */
+    private Layer topModal(View v) {
+        if (v == null || v.getVisibility() != VISIBLE) return null;
+        Node n = byView.get(v);
+        if (n != null && n.pointerEvents == Protocol.POINTER_EVENTS_NONE) return null;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = g.getChildCount() - 1; i >= 0; i--) {
+                Layer m = topModal(g.getChildAt(i));
+                if (m != null) return m;
+            }
+        }
+        return v instanceof Layer ? (Layer) v : null;
+    }
+
+    /** Appends the mouse-following node IDs along the frontmost pointer path at surface pixels (x, y), outermost first. */
+    private void mouseHitTest(float x, float y, List<Integer> under) {
+        Layer modal = topModal(this);
+        if (modal != null) {
+            float[] p = touchPoint(modal, x, y);
+            if (p != null) mouseViewsAt(modal, p[0], p[1], under);
+            return;
+        }
+        mouseViewsAt(this, x, y, under);
+    }
+
+    /** Walks the frontmost pointer path under view at local pixels (x, y), respecting PointerEvents, transforms, clipping, opacity and modal layers. */
+    private boolean mouseViewsAt(View view, float x, float y, List<Integer> out) {
+        if (view.getVisibility() != VISIBLE) return false;
+        if (!(view instanceof Layer) && view.getAlpha() <= 0f) return false;
+        Node n = byView.get(view);
+        int pe = n != null ? n.pointerEvents : 0;
+        if (n != null && pe == Protocol.POINTER_EVENTS_NONE) return false;
+        boolean self = Mouse.reachSelf(n != null, pe, x, y, view.getWidth(), view.getHeight(),
+                n != null ? n.slop : null, density);
+        if (self && Mouse.follows(n.events)) out.add(n.id);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            boolean clips = group.getClipChildren() || view.getClipToOutline();
+            if (Mouse.reachChildren(n != null, pe, clips, x, y, view.getWidth(), view.getHeight())) {
+                for (int i = group.getChildCount() - 1; i >= 0; i--) {
+                    View child = group.getChildAt(i);
+                    float[] p = intoChild(group, child, x, y);
+                    if (p == null) continue;
+                    if (mouseViewsAt(child, p[0], p[1], out)) return true;
+                }
+            }
+        }
+        boolean inside = x >= 0 && y >= 0 && x < view.getWidth() && y < view.getHeight();
+        return self || (view instanceof Layer && inside);
+    }
+
     /** Reports a touch starting outside a node that listens for one, at its point in points. */
     private void pressOutside(MotionEvent e) {
         int x = Math.round(e.getRawX()), y = Math.round(e.getRawY());
@@ -3018,6 +3153,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (animator.running()) startTicking();
         // The selection keeps to its texts, and goes with its area.
         if (selection != null) post(this::refreshSelection);
+        // Views that moved, appeared, hid or opened a modal under a resting pointer.
+        if (mouse.inside() && !hoverRefreshPending) {
+            hoverRefreshPending = true;
+            post(hoverRefresh);
+        }
         if (measuring) {
             perfWork += System.nanoTime() - begin;
             perfDirty = true;
@@ -3088,6 +3228,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 if (n.laid != 0) shown.remove(n.laid);
                 outside.remove(n);
                 moving.remove(n);
+                mouse.forget(n.id);
                 animator.forget(n.id);
                 if (n == focusedInput) focusedInput = null;
                 if (n == accessoryShown) {
@@ -4907,6 +5048,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
         if (gamepads != null && gamepads.onKeyEvent(e)) return true;
+        mouse.keyEvent(e);
         // A key the window delivers is the keyboard's input. An IME's action or committed Return, which a field offers to keyBinding, leaves the modality, as a software Return does on iOS.
         if (e.getAction() == KeyEvent.ACTION_DOWN && !KeyEvent.isModifierKey(e.getKeyCode())) modality(Protocol.MODALITY_KEYBOARD);
         physicalKey(e);
@@ -5745,8 +5887,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         boolean press = n.has(Protocol.EVENT_PRESS);
         boolean longPress = n.has(Protocol.EVENT_LONG_PRESS);
         boolean downUp = n.has(Protocol.EVENT_PRESS_DOWN) || n.has(Protocol.EVENT_PRESS_UP);
-        boolean hover = n.has(Protocol.EVENT_HOVER_IN) || n.has(Protocol.EVENT_HOVER_OUT)
-                || n.has(Protocol.EVENT_HOVER_MOVE);
+        if (!Mouse.follows(mask)) mouse.forget(n.id);
         // A text view's press and long press carry the byte offset of the
         // character under them, for its spans; every press where its touch
         // went down.
@@ -5800,17 +5941,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 } else if (action == MotionEvent.ACTION_CANCEL || n.longFired) {
                     pressDone(n);
                 }
-            }
-            return false;
-        } : null);
-        view.setOnHoverListener(hover ? (v, e) -> {
-            int action = e.getActionMasked();
-            if (action == MotionEvent.ACTION_HOVER_ENTER) {
-                report(n, Protocol.EVENT_HOVER_IN);
-            } else if (action == MotionEvent.ACTION_HOVER_MOVE) {
-                report(n, Protocol.EVENT_HOVER_MOVE, e);
-            } else if (action == MotionEvent.ACTION_HOVER_EXIT) {
-                report(n, Protocol.EVENT_HOVER_OUT);
             }
             return false;
         } : null);

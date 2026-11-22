@@ -120,7 +120,7 @@ func driverProtocolConstants(t *testing.T) *types.Package {
 // Match only Java's declarations: Android need not implement every driver kind.
 func javaProtocolKindErrors(source string, pkg *types.Package) []string {
 	var problems []string
-	declarations := regexp.MustCompile(`\bstatic\s+final\s+int\s+((?:ITEM|EVENT|ROLE|KEY_USE|ORIENTATION)_[A-Z0-9_]+)\s*=\s*([^;]+);`).FindAllStringSubmatch(source, -1)
+	declarations := regexp.MustCompile(`\bstatic\s+final\s+int\s+((?:ITEM|EVENT|ROLE|KEY_USE|ORIENTATION|MOUSE_BUTTON)_[A-Z0-9_]+)\s*=\s*([^;]+);`).FindAllStringSubmatch(source, -1)
 	if len(declarations) == 0 {
 		return []string{"Protocol.java has no driver constant declarations"}
 	}
@@ -662,6 +662,7 @@ func TestReadEventLongPressIndex(t *testing.T) {
 		w.points(0)
 		w.points(0)
 		w.byte(mods)
+		w.byte(0) // button
 		return w.buf
 	}
 	for _, want := range []int{-1, 0, 5, 14} {
@@ -883,5 +884,136 @@ func TestReadEventSelectionChange(t *testing.T) {
 	wantCall := `event(Protocol.EVENT_SELECTION_CHANGE, n.id, 0, x / density, y / density, text, width / density, height / density, 0)`
 	if !strings.Contains(string(java), wantCall) {
 		t.Errorf("NsgoView.java missing %q", wantCall)
+	}
+}
+
+// TestReadEventMouse checks that msgEvent decodes EventMouseEnter, EventMouseLeave
+// and EventMouseMove with local Point, Page, Modifiers and held MouseButton (#1553).
+func TestReadEventMouse(t *testing.T) {
+	encode := func(surface uint32, kind driver.EventKind, id driver.NodeID, pt, page driver.Point, mods byte, button byte, includeButton bool) []byte {
+		var w writer
+		w.u32(surface)
+		w.byte(byte(kind))
+		w.u32(uint32(id))
+		w.u32(0) // count
+		w.points(pt.X)
+		w.points(pt.Y)
+		w.str("") // text
+		w.points(0)
+		w.points(0)
+		w.u32(0)  // index
+		w.byte(0) // phase
+		w.points(0)
+		w.points(0)
+		w.float(0) // value
+		w.byte(0)  // no navigation
+		w.u64(0)   // time
+		w.u64(0)   // duration
+		w.byte(0)  // buffering
+		w.str("")  // data
+		w.byte(0)  // finished
+		w.points(page.X)
+		w.points(page.Y)
+		w.points(0)
+		w.points(0)
+		w.byte(mods)
+		if includeButton {
+			w.byte(button)
+		}
+		return w.buf
+	}
+	cases := []struct {
+		name    string
+		surface uint32
+		kind    driver.EventKind
+		id      driver.NodeID
+		pt      driver.Point
+		page    driver.Point
+		mods    byte
+		wantMod driver.Modifiers
+		button  driver.MouseButton
+	}{
+		{
+			name:    "enter with shift",
+			surface: 0,
+			kind:    driver.EventMouseEnter,
+			id:      7,
+			pt:      driver.Point{X: 12.5, Y: 8.25},
+			page:    driver.Point{X: 112.5, Y: 58.25},
+			mods:    4,
+			wantMod: driver.Modifiers{Shift: true},
+			button:  driver.MouseButtonNone,
+		},
+		{
+			name:    "move dragging left with ctrl+platform",
+			surface: 0,
+			kind:    driver.EventMouseMove,
+			id:      9,
+			pt:      driver.Point{X: 30, Y: 40},
+			page:    driver.Point{X: 130, Y: 90},
+			mods:    1 | 8,
+			wantMod: driver.Modifiers{Control: true, Platform: true},
+			button:  driver.MouseButtonLeft,
+		},
+		{
+			name:    "leave outside with right button and alt",
+			surface: 2,
+			kind:    driver.EventMouseLeave,
+			id:      11,
+			pt:      driver.Point{X: -4.5, Y: 102},
+			page:    driver.Point{X: 95.5, Y: 152},
+			mods:    2,
+			wantMod: driver.Modifiers{Alt: true},
+			button:  driver.MouseButtonRight,
+		},
+		{
+			name:    "move middle button",
+			surface: 0,
+			kind:    driver.EventMouseMove,
+			id:      12,
+			pt:      driver.Point{X: 1, Y: 2},
+			page:    driver.Point{X: 3, Y: 4},
+			mods:    1 | 2 | 4 | 8,
+			wantMod: driver.Modifiers{Control: true, Alt: true, Shift: true, Platform: true},
+			button:  driver.MouseButtonMiddle,
+		},
+		{
+			name:    "move back button",
+			surface: 0,
+			kind:    driver.EventMouseMove,
+			id:      13,
+			pt:      driver.Point{X: 5, Y: 6},
+			page:    driver.Point{X: 15, Y: 16},
+			button:  driver.MouseButtonBack,
+		},
+		{
+			name:    "move forward button",
+			surface: 0,
+			kind:    driver.EventMouseMove,
+			id:      14,
+			pt:      driver.Point{X: 7, Y: 8},
+			page:    driver.Point{X: 17, Y: 18},
+			button:  driver.MouseButtonForward,
+		},
+	}
+	for _, tc := range cases {
+		raw := encode(tc.surface, tc.kind, tc.id, tc.pt, tc.page, tc.mods, byte(tc.button), true)
+		r := reader{raw}
+		from, ev, data := readEvent(&r)
+		if len(r.buf) != 0 || data != "" || from != tc.surface {
+			t.Fatalf("%s: from=%d data=%q left=%d", tc.name, from, data, len(r.buf))
+		}
+		if ev.Kind != tc.kind || ev.ID != tc.id || ev.Point != tc.pt || ev.Page != tc.page ||
+			ev.Modifiers != tc.wantMod || ev.Button != tc.button {
+			t.Errorf("%s: decoded %+v, want kind=%v id=%d pt=%+v page=%+v mods=%+v button=%v",
+				tc.name, ev, tc.kind, tc.id, tc.pt, tc.page, tc.wantMod, tc.button)
+		}
+	}
+	// Legacy payload without a trailing button byte decodes Button as MouseButtonNone.
+	legacy := encode(0, driver.EventMouseMove, 5, driver.Point{X: 2, Y: 3}, driver.Point{X: 2, Y: 3}, 1, 0, false)
+	r := reader{legacy}
+	_, ev, _ := readEvent(&r)
+	if ev.Button != driver.MouseButtonNone || !ev.Modifiers.Control || len(r.buf) != 0 {
+		t.Errorf("legacy event decoded %+v, left=%d", ev, len(r.buf))
 	}
 }

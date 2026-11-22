@@ -528,6 +528,14 @@ final class Protocol {
     static final int POINTER_EVENTS_BOX_NONE = 2;
     static final int POINTER_EVENTS_BOX_ONLY = 3;
 
+    // driver.MouseButton; 0 is none.
+    static final int MOUSE_BUTTON_NONE = 0;
+    static final int MOUSE_BUTTON_LEFT = 1;
+    static final int MOUSE_BUTTON_RIGHT = 2;
+    static final int MOUSE_BUTTON_MIDDLE = 3;
+    static final int MOUSE_BUTTON_BACK = 4;
+    static final int MOUSE_BUTTON_FORWARD = 5;
+
     // Web view commands, as in core/webview.go.
     static final int WEB_RELOAD = 1;
     static final int WEB_GO_BACK = 2;
