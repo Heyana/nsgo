@@ -231,6 +231,28 @@ final class TestAgent {
             case "select-tab":
                 view.selectTestTab(op.getInt("id"), op.getInt("index"));
                 break;
+            case "recreate-activity":
+                activity().recreate();
+                break;
+            case "recording-probe": {
+                int descriptors = 0;
+                String directory = new java.io.File(view.getContext().getFilesDir(), "recordings").getCanonicalPath() + "/";
+                java.io.File[] fds = new java.io.File("/proc/self/fd").listFiles();
+                if (fds != null) for (java.io.File fd : fds) {
+                    try {
+                        if (fd.getCanonicalPath().startsWith(directory)) descriptors++;
+                    } catch (IOException ignored) {}
+                }
+                boolean notification = false;
+                android.app.NotificationManager notifications = view.getContext().getSystemService(android.app.NotificationManager.class);
+                for (android.service.notification.StatusBarNotification n : notifications.getActiveNotifications()) {
+                    if ("nsgo.recording".equals(n.getNotification().getChannelId())) notification = true;
+                }
+                view.testReply(id, "", new JSONObject().put("notification", notification)
+                        .put("descriptors", descriptors).put("pssKB", android.os.Debug.getPss())
+                        .put("visible", activity().getWindow().getDecorView().getWindowVisibility() == View.VISIBLE).toString());
+                return;
+            }
             case "screenshot":
                 view.testReply(id, "", screenshot());
                 return;

@@ -1,3 +1,3 @@
 ### Fixed
 
-- Keep Android WAV recordings running when the launcher Activity is recreated (#38 by @houko).
+- Keep Android WAV recordings and completion reports alive through Activity recreation and finalize failed partial writes as playable WAV files (#38 by @houko).

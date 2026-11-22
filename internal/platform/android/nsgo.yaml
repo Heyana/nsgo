@@ -1,0 +1,6 @@
+name: Android Backend Tests
+id: dev.nsgo.tests.android
+version: 0.1.0
+
+android:
+  recording: true

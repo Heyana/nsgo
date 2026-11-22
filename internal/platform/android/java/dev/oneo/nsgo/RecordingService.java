@@ -26,6 +26,7 @@ import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -54,6 +55,8 @@ public final class RecordingService extends Service {
     private static Recorder current;
     private static RecordingService service;
     private static NsgoEngine heir;
+    /** Keep owners until their senders have delivered every terminal report. */
+    private static final IdentityHashMap<NsgoEngine, Integer> reporting = new IdentityHashMap<>();
     // The service's last start, which it stops with so that a start made since keeps it.
     private int lastStart;
 
@@ -170,9 +173,9 @@ public final class RecordingService extends Service {
         }
     }
 
-    /** An active recording keeps its owner running when its activity goes away. */
+    /** A recording and its pending terminal reports keep their owner running when its activity goes away. */
     static synchronized boolean active(NsgoEngine owner) {
-        return current != null && current.owner == owner;
+        return current != null && current.owner == owner || reporting.containsKey(owner);
     }
 
     /** Stops owner's recording id; nothing if it ended already. */
@@ -594,6 +597,8 @@ public final class RecordingService extends Service {
             }
             String failure = "";
             try {
+                // A failed write may have written only part of its PCM block. Keep only the complete blocks counted in data.
+                file.setLength(44 + data);
                 file.seek(0);
                 file.write(header(rate, channels, data));
                 file.getFD().sync();
@@ -655,6 +660,9 @@ public final class RecordingService extends Service {
 
         Sender(NsgoEngine owner) {
             this.owner = owner;
+            synchronized (RecordingService.class) {
+                reporting.put(owner, reporting.getOrDefault(owner, 0) + 1);
+            }
             Thread t = new Thread(this, "nsgo-recording-send");
             t.setDaemon(true);
             t.start();
@@ -687,6 +695,11 @@ public final class RecordingService extends Service {
             try {
                 sendReports();
             } finally {
+                synchronized (RecordingService.class) {
+                    int remaining = reporting.get(owner) - 1;
+                    if (remaining == 0) reporting.remove(owner);
+                    else reporting.put(owner, remaining);
+                }
                 owner.recordingEnded();
             }
         }
