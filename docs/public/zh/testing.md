@@ -50,6 +50,8 @@ func TestMain(m *testing.M) {
 
 `app.PressWith("id:row", core.Modifiers{Shift: true})` 为一次点击按住修饰键；`PressAtWith(selector, core.Point{X: 20, Y: 10}, mods)` 点击视图中的指定点。`Shift`、`Control`、`Alt` 和 `Platform`（Apple 上为 Command，其他平台为 Windows/Super 键）会通过无头模型和目标的原生输入传给 `OnPressDown`、`OnPressUp` 和 `OnPress`。仍遵循平台的原生约定：例如 macOS 上的 Chrome 会将 Control-click 转为上下文菜单。之后的 `Press` 或 `PressAt` 不带修饰键。watchOS 没有键盘修饰键输入，因此会拒绝带修饰键的点击。
 
+`PressAt` 的坐标是指定视图的视口内的点。无头模型和目标平台的测试模型在寻找点击目标、判断可见性和计算滚动范围时，都会计入滚动内容的缩放，包括嵌套缩放和小于 1 的比例。视图的 `Bounds()` 仍与 `Ref.Bounds` 一样，报告变换前的布局框。
+
 点击可以直接指定文本框。在无头测试以及 macOS、Windows 和 Linux 上，可以在点击返回后立即读取 `app.Find("id:field").Focused`，包括点击处理函数聚焦文本框的情况。
 
 `app.SelectTab("id:tabs", 1)` 选择已挂载的 `mobile.TabBar` 的第二项。无界面测试使用 iOS 或 Android 的 `Environment`，iOS 和 Android 目标使用原生标签栏。索引从零开始，必须对应现有选项。

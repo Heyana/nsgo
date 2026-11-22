@@ -52,6 +52,8 @@ Use `app.Post(func() { signal.Set(value) })` from a test or stubbed worker to qu
 
 `PressWith(selector, core.Modifiers{Shift: true})` and `PressAtWith(selector, at, mods)` hold `Shift`, `Control`, `Alt` or `Platform` for that press only, including its down and up events. Plain presses carry no modifiers. These steps use native input on a target; watchOS rejects modified presses.
 
+`PressAt` takes viewport points. Pointer picks, visibility and scroll limits include nested and fractional scroll content zoom; `Bounds()` remains the layout frame before transforms.
+
 A press can name a text field directly. Read `app.Find("id:field").Focused` after the step on macOS, Windows, Linux or headless, including when a press handler focuses the field.
 
 Use `app.SelectTab("id:tabs", 1)` to choose the second item of a mounted `mobile.TabBar`. It works headless with an iOS or Android `Environment` and drives the native tab bar on iOS and Android targets.

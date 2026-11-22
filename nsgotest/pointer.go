@@ -316,9 +316,9 @@ func (a *App) canScroll(v *View, t driver.Point) bool {
 func (v *View) scrollEnd() driver.Points {
 	in := v.Scroll.Behavior.ContentInset
 	if v.Scroll.Horizontal {
-		return max(v.Content.Width-v.Frame.Size.Width, 0) + in.Right
+		return max(v.Content.Width*v.contentScale()-v.Frame.Size.Width, 0) + in.Right
 	}
-	return max(v.Content.Height-v.Frame.Size.Height, 0) + in.Bottom
+	return max(v.Content.Height*v.contentScale()-v.Frame.Size.Height, 0) + in.Bottom
 }
 
 func (a *App) pan(f *finger, phase driver.GesturePhase, t driver.Point) {
@@ -728,9 +728,10 @@ func (a *App) reveal(v *View) driver.Point {
 				continue
 			}
 			off := p.Offset
-			if p.Scroll.Horizontal {
+			if p.Scroll.Horizontal || p.Scroll.Zooms() {
 				off.X += local.X - p.Frame.Size.Width/2
-			} else {
+			}
+			if !p.Scroll.Horizontal || p.Scroll.Zooms() {
 				off.Y += local.Y - p.Frame.Size.Height/2
 			}
 			if off = p.clamp(off); off != p.Offset {

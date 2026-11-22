@@ -323,7 +323,7 @@ func (a *App) viewAt(p driver.Point, ok func(*View) bool) *View {
 		}
 		self, children := driver.ReachView(v.Frame.Size, &v.Props, driver.Bounds{}, !s.Clip && v.Kind != KindScroll, local)
 		if children {
-			inner := driver.Point{X: local.X + v.Offset.X, Y: local.Y + v.Offset.Y}
+			inner := v.intoContent(local)
 			for i := len(v.Children) - 1; i >= 0; i-- {
 				if hit := visit(v.Children[i], inner); hit != nil {
 					return hit

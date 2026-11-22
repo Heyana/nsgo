@@ -106,8 +106,8 @@ type View struct {
 // platforms do.
 func (v *View) clamp(p driver.Point) driver.Point {
 	in := v.Scroll.Behavior.ContentInset
-	p.X = min(max(p.X, -in.Left), max(v.Content.Width-v.Frame.Size.Width, 0)+in.Right)
-	p.Y = min(max(p.Y, -in.Top), max(v.Content.Height-v.Frame.Size.Height, 0)+in.Bottom)
+	p.X = min(max(p.X, -in.Left), max(v.Content.Width*v.contentScale()-v.Frame.Size.Width, 0)+in.Right)
+	p.Y = min(max(p.Y, -in.Top), max(v.Content.Height*v.contentScale()-v.Frame.Size.Height, 0)+in.Bottom)
 	return p
 }
 
@@ -1456,8 +1456,17 @@ func (v *View) pointerMatrix() driver.Matrix3D {
 	m := s.Matrix(v.Frame.Size)
 	if p := v.Parent; p != nil {
 		ps := p.Animated.Apply(p.Style)
-		at := driver.Point{X: v.Frame.Origin.X - p.Offset.X, Y: v.Frame.Origin.Y - p.Offset.Y}
-		m = driver.ChildPerspective(ps.ChildPerspective, p.Frame.Size, at).Mul(m)
+		z := p.contentScale()
+		at := driver.Point{X: v.Frame.Origin.X*z - p.Offset.X, Y: v.Frame.Origin.Y*z - p.Offset.Y}
+		perspective := driver.ChildPerspective(ps.ChildPerspective, p.Frame.Size, at)
+		if z != 1 && ps.ChildPerspective > 0 {
+			// Parent perspective is in viewport points, after content zoom.
+			scale, inverse := driver.Identity3D, driver.Identity3D
+			scale[0], scale[5] = float64(z), float64(z)
+			inverse[0], inverse[5] = 1/float64(z), 1/float64(z)
+			perspective = inverse.Mul(perspective).Mul(scale)
+		}
+		m = perspective.Mul(m)
 	}
 	return m
 }
@@ -1470,8 +1479,7 @@ func (v *View) pagePoint(p driver.Point) driver.Point {
 func (v *View) localPoint(p driver.Point) driver.Point {
 	if parent := v.Parent; parent != nil {
 		p = parent.localPoint(p)
-		p.X += parent.Offset.X
-		p.Y += parent.Offset.Y
+		p = parent.intoContent(p)
 	}
 	local, ok := driver.IntoView(v.Frame, v.pointerMatrix(), p)
 	if !ok {
@@ -1504,15 +1512,46 @@ func (v *View) within(o *View) bool {
 	return false
 }
 
-func (v *View) pageMatrix() driver.Matrix3D {
-	x, y := v.Frame.Origin.X, v.Frame.Origin.Y
-	if parent := v.Parent; parent != nil {
-		x -= parent.Offset.X
-		y -= parent.Offset.Y
+// contentScale maps scroll content points to viewport points. Unset scales
+// and views other than scroll views keep their layout coordinates.
+func (v *View) contentScale() driver.Points {
+	if v.Kind == KindScroll && v.ZoomScale > 0 {
+		return driver.Points(v.ZoomScale)
 	}
-	m := driver.Translate3D(float64(x), float64(y), 0).Mul(v.pointerMatrix())
+	return 1
+}
+
+func (v *View) intoContent(p driver.Point) driver.Point {
+	z := v.contentScale()
+	return driver.Point{X: (p.X + v.Offset.X) / z, Y: (p.Y + v.Offset.Y) / z}
+}
+
+func (v *View) contentMatrix() driver.Matrix3D {
+	m := driver.Identity3D
+	m[0], m[5] = float64(v.contentScale()), float64(v.contentScale())
+	m[12], m[13] = -float64(v.Offset.X), -float64(v.Offset.Y)
+	return m
+}
+
+// zoomedFrame is the viewport geometry for revealing a view, including
+// ancestor content zoom while leaving style transforms aside. Bounds keeps
+// the layout geometry Ref.Bounds reports.
+func (v *View) zoomedFrame() driver.Bounds {
+	b := v.Frame
+	for p := v.Parent; p != nil; p = p.Parent {
+		z := p.contentScale()
+		b.Origin.X = b.Origin.X*z + p.Frame.Origin.X - p.Offset.X
+		b.Origin.Y = b.Origin.Y*z + p.Frame.Origin.Y - p.Offset.Y
+		b.Size.Width *= z
+		b.Size.Height *= z
+	}
+	return b
+}
+
+func (v *View) pageMatrix() driver.Matrix3D {
+	m := driver.Translate3D(float64(v.Frame.Origin.X), float64(v.Frame.Origin.Y), 0).Mul(v.pointerMatrix())
 	if parent := v.Parent; parent != nil {
-		m = parent.pageMatrix().Mul(m)
+		m = parent.pageMatrix().Mul(parent.contentMatrix()).Mul(m)
 	}
 	return m
 }

@@ -195,17 +195,19 @@ func (a *App) shownWith(unsized bool) []*View {
 		// The surface the platform gives, which a phone fixes.
 		window.area.Size = r.Frame.Size
 	}
-	var visit func(v *View, origin driver.Point, c clip, placed bool)
-	visit = func(v *View, origin driver.Point, c clip, placed bool) {
+	var visit func(v *View, origin driver.Point, scale driver.Points, c clip, placed bool)
+	visit = func(v *View, origin driver.Point, scale driver.Points, c clip, placed bool) {
 		if v.Style.Hidden {
 			return
 		}
 		if v.Kind == KindModal {
-			origin, c, placed = driver.Point{}, window, true
+			origin, scale, c, placed = driver.Point{}, 1, window, true
 		}
 		b := v.Frame
-		b.Origin.X += origin.X
-		b.Origin.Y += origin.Y
+		b.Origin.X = b.Origin.X*scale + origin.X
+		b.Origin.Y = b.Origin.Y*scale + origin.Y
+		b.Size.Width *= scale
+		b.Size.Height *= scale
 		if placed || b.Size.Width > 0 && b.Size.Height > 0 && c.shows(b) {
 			out = append(out, v)
 		} else if unsized && (v.Kind == KindImage || v.Kind == KindNative) && c.shows(driver.Bounds{Origin: b.Origin, Size: driver.Size{Width: max(b.Size.Width, 1), Height: max(b.Size.Height, 1)}}) {
@@ -213,10 +215,12 @@ func (a *App) shownWith(unsized bool) []*View {
 		}
 		inner := c
 		content := b.Origin
+		childScale := scale
 		switch {
 		case v.Kind == KindScroll:
-			content.X -= v.Offset.X
-			content.Y -= v.Offset.Y
+			content.X -= v.Offset.X * scale
+			content.Y -= v.Offset.Y * scale
+			childScale *= v.contentScale()
 			switch {
 			case v.Scroll.Behavior.NoScroll:
 				inner = c.within(b)
@@ -236,11 +240,11 @@ func (a *App) shownWith(unsized bool) []*View {
 			inner = c.within(b)
 		}
 		for _, k := range v.Children {
-			visit(k, content, inner, false)
+			visit(k, content, childScale, inner, false)
 		}
 	}
 	if r := a.views[a.rootID]; r != nil {
-		visit(r, driver.Point{}, window, false)
+		visit(r, driver.Point{}, 1, window, false)
 	}
 	// The views the platform places itself: the header views of the
 	// screens shown and the bar above the keyboard of the focused field.
@@ -258,7 +262,7 @@ func (a *App) shownWith(unsized bool) []*View {
 		}
 		for _, id := range extra {
 			if r := a.views[id]; id != 0 && r != nil && r.Parent == nil && !shownSet[r] {
-				visit(r, driver.Point{}, clip{all: true}, true)
+				visit(r, driver.Point{}, 1, clip{all: true}, true)
 			}
 		}
 	}

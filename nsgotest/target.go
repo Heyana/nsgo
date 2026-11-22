@@ -651,7 +651,7 @@ func (t *target) reveal(v *View) driver.Point {
 		var box driver.Bounds
 		for p := v.Parent; p != nil; p = p.Parent {
 			if p.Kind == KindScroll && !p.Scroll.Behavior.NoScroll {
-				b := p.surfaceFrame()
+				b := p.zoomedFrame()
 				if at.X < b.Origin.X || at.Y < b.Origin.Y || at.X >= b.Origin.X+b.Size.Width || at.Y >= b.Origin.Y+b.Size.Height {
 					hider, box = p, b
 					break
@@ -664,7 +664,9 @@ func (t *target) reveal(v *View) driver.Point {
 		mid := driver.Point{X: box.Origin.X + box.Size.Width/2, Y: box.Origin.Y + box.Size.Height/2}
 		d := driver.Point{X: at.X - mid.X, Y: at.Y - mid.Y}
 		limit := func(v, size driver.Points) driver.Points { return min(max(v, -size*0.8), size*0.8) }
-		if hider.Scroll.Horizontal {
+		if hider.Scroll.Zooms() {
+			d = driver.Point{X: limit(d.X, box.Size.Width), Y: limit(d.Y, box.Size.Height)}
+		} else if hider.Scroll.Horizontal {
 			d = driver.Point{X: limit(d.X, box.Size.Width)}
 		} else {
 			d = driver.Point{Y: limit(d.Y, box.Size.Height)}
