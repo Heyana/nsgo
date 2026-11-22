@@ -64,3 +64,12 @@ A secondary click opens an unstyled `base.ContextMenu` with localized Copy, Past
 Set `RightClickAction` to `RightClickPaste`, `RightClickCopy`, `RightClickCopyOrPaste` (copy a selection, otherwise paste), or `RightClickIgnore`. Ignore leaves the event for an enclosing app menu; use it when supplying a styled `ui.ContextMenu` that calls the ref's actions.
 
 Import `tsx/terminal` to register `<Terminal>` in `nsgo/base`. Its reactive `keybinds` and `rightClickAction` props update the view while keeping the session. Action values use Ghostty names such as `increase_font_size` and `copy_to_clipboard`; right-click values are `context-menu`, `paste`, `copy`, `copy-or-paste` and `ignore`. The menu styling props use the Go names in lower camel case.
+
+## Mouse reports
+
+Programs that enable mouse tracking receive the requested presses, releases, drags and hover, encoded by libghostty-vt in their selected protocol. Shift bypasses click and drag capture for selection. `View.MouseReporting` is an optional reactive `func() bool`, true when nil; return false to keep mouse selection and native scrollback scrolling even while a program asks for capture. A program's right click takes priority over an enclosing context menu while reporting is enabled.
+
+On the alternate screen, with alternate scroll mode enabled and no mouse tracking requested, vertical wheel input becomes cursor keys, following normal or application cursor-key mode. `MouseScrollMultiplier{Precision: 1, Discrete: 3}` sets the default report counts for touchpads and wheels; zero uses those defaults, and positive values are clamped to 0.01–10,000. Fractional input accumulates until a complete step is available. The normal scrollback keeps the platform's native scrolling and inertia.
+
+Import `tsx/terminal` to register `<Terminal>` in `nsgo/base`. Its `mouseReporting` prop defaults to true; `mouseScrollPrecision` and `mouseScrollDiscrete` set the multipliers.
+

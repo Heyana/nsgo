@@ -44,6 +44,9 @@ type Terminal struct {
 	MinimumContrast                         func() float64
 	AutoFocus                               bool
 	Transparent                             bool
+	MouseReporting                          func() bool
+	MouseScrollPrecision                    func() float64
+	MouseScrollDiscrete                     func() float64
 	Keybinds                                func() []terminal.Keybind
 	RightClickAction                        func() terminal.RightClickAction
 	MenuClass                               string
@@ -186,7 +189,9 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 			Padding:   terminal.Padding{X: core.Points(num(p.PaddingX)), Y: core.Points(num(p.PaddingY))},
 			AutoFocus: p.AutoFocus, AllowClipboardRead: p.AllowClipboardRead != nil && p.AllowClipboardRead(), AllowClipboardWrite: p.AllowClipboardWrite != nil && p.AllowClipboardWrite(), Transparent: p.Transparent,
 			Keybinds: keybinds, RightClickAction: rightClick,
-			MenuClass: p.MenuClass, MenuStyle: p.MenuStyle, MenuItemClass: p.MenuItemClass, MenuItemStyle: p.MenuItemStyle,
+			MouseReporting:        p.MouseReporting,
+			MouseScrollMultiplier: terminal.MouseScrollMultiplier{Precision: num(p.MouseScrollPrecision), Discrete: num(p.MouseScrollDiscrete)},
+			MenuClass:             p.MenuClass, MenuStyle: p.MenuStyle, MenuItemClass: p.MenuItemClass, MenuItemStyle: p.MenuItemStyle,
 			Class: p.Class, Style: p.Style, Label: p.Label, TestID: p.TestID,
 			OnFocus: p.OnFocus, OnBlur: p.OnBlur, OnSizeChange: p.OnSizeChange, Ref: &ref.view,
 			KeyBarKeys: p.KeyBarKeys, NoKeyBar: p.NoKeyBar != nil && p.NoKeyBar(),
@@ -198,6 +203,7 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 
 func init() {
 	tsx.Register("nsgo/base", map[string]core.Node{"Terminal": Terminal{}},
+		tsx.Default("MouseReporting", true),
 		tsx.Enum(map[string]terminal.Action{
 			"copy_to_clipboard": terminal.CopyToClipboard, "paste_from_clipboard": terminal.PasteFromClipboard,
 			"select_all": terminal.SelectAll, "clear_screen": terminal.ClearScreen,

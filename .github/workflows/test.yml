@@ -494,6 +494,15 @@ jobs:
         run: go tool nsgo test ./internal/platform/macos
       - name: Test native input isolation
         run: go tool nsgo test -target macos ./testdata/inputisolation
+      - name: Test terminal mouse routing
+        run: go tool nsgo test -target macos -run '^(TestViewReportsRequestedMouseEvents|TestMouseReportingPreferenceRestoresSelection|TestMousePixelProtocolUsesRenderedCoordinates|TestShiftKeepsSelectionWhileMouseReportsEnabled|TestTerminalNativeMouseAndTouchpad)$' -screenshots "$RUNNER_TEMP/terminal-mouse-screenshots" ./base/terminal
+      - name: Keep terminal input screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: terminal-mouse-macos
+          path: ${{ runner.temp }}/terminal-mouse-screenshots
+          if-no-files-found: warn
       - name: Test macOS DevTools presentation bounds
         run: go tool nsgo test -target macos -timeout 1m ./testdata/devtools-geometry
       - name: Test keyboard activation

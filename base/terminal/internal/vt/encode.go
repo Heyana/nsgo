@@ -235,6 +235,10 @@ const (
 type MouseEncoder struct {
 	h, ev uintptr
 	buf   [64]byte
+	// Both setting geometry and syncing terminal modes reset Ghostty's last-cell cache, even if unchanged. Preserve it between events.
+	terminal uintptr
+	version  uint64
+	size     mouseEncoderSize
 }
 
 // NewMouseEncoder makes a mouse encoder.
@@ -267,13 +271,19 @@ func (m *MouseEncoder) Free() {
 // Sync takes the terminal's mouse modes, the geometry of the screen in
 // pixels, and whether a button is held.
 func (m *MouseEncoder) Sync(t *Terminal, width, height, cellWidth, cellHeight, padLeft, padTop int, pressed bool) {
-	call(fnMouseEncoderSetoptFromTerminal, m.h, t.h)
+	if t.h != m.terminal || t.modeVersion != m.version {
+		call(fnMouseEncoderSetoptFromTerminal, m.h, t.h)
+		m.terminal, m.version = t.h, t.modeVersion
+	}
 	s := mouseEncoderSize{
 		size: unsafe.Sizeof(mouseEncoderSize{}), screenWidth: uint32(max(width, 1)), screenHeight: uint32(max(height, 1)),
 		cellWidth: uint32(max(cellWidth, 1)), cellHeight: uint32(max(cellHeight, 1)),
 		paddingTop: uint32(max(padTop, 0)), paddingLeft: uint32(max(padLeft, 0)),
 	}
-	call(fnMouseEncoderSetopt, m.h, 2, uintptr(unsafe.Pointer(&s)))
+	if s != m.size {
+		call(fnMouseEncoderSetopt, m.h, 2, uintptr(unsafe.Pointer(&s)))
+		m.size = s
+	}
 	call(fnMouseEncoderSetopt, m.h, 3, uintptr(unsafe.Pointer(&pressed)))
 }
 

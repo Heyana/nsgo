@@ -2921,7 +2921,11 @@ func (v *view) pressed(kind driver.EventKind) {
 
 // report sends e about v if v listens for its kind.
 func (v *view) report(e driver.Event) {
-	if v.events.Has(e.Kind) {
+	kind := e.Kind
+	if kind == driver.EventMouseUp {
+		kind = driver.EventMouseDown // one mask bit subscribes to both
+	}
+	if v.events.Has(kind) {
 		e.ID = v.id
 		// Values bound to the gesture move before it is reported, so they
 		// are drawn in the frame that shows the move.
