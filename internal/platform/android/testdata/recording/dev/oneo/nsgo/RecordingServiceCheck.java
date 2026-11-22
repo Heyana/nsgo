@@ -261,9 +261,7 @@ public final class RecordingServiceCheck {
         RecordingService.stop(owner, 1);
         Path file = owner.recordings().toPath().resolve("blocked.wav");
         await(() -> Files.exists(file), "blocked terminal report stalled file completion");
-        // Rename happens before report releases the capture. Starting in that
-        // interval returns busy synchronously, which this blocked test pipe
-        // cannot answer until after the second capture has ended.
+        // Rename happens before report releases the capture. Starting in that interval returns busy synchronously, which this blocked test pipe cannot answer until after the second capture has ended.
         await(() -> {
             synchronized (RecordingService.class) {
                 try { return current.get(null) == null; }
