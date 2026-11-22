@@ -55,7 +55,9 @@ final class AtlasMesh {
         float[] texels = new float[positions.length];
         int[] colors = new int[VERTICES * capacity];
         short[] indices = indices(capacity);
-        Paint paint = new Paint(nearest ? 0 : Paint.FILTER_BITMAP_FLAG);
+        // Paint's constructors add FILTER_BITMAP_FLAG to the flags they take, so nearest sampling clears it explicitly.
+        Paint paint = new Paint();
+        paint.setFilterBitmap(!nearest);
         paint.setShader(new BitmapShader(picture.bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
 
         for (int first = 0; first < count; first += capacity) {
