@@ -36,11 +36,9 @@ type wheelGesture struct {
 	held bool
 	// owned is set once a scroll view of this surface took the gesture.
 	owned bool
-	// passed is set once a delta found no scroll view to take the gesture,
-	// so the rest of it goes to the host around an embedded surface.
+	// passed is set once a delta found no scroll view to take the gesture, so the rest of it goes to the host around an embedded surface.
 	passed bool
-	// began keeps a zero-delta phaseBegan event until the first delta
-	// decides whether the surface or its host takes the gesture.
+	// began keeps a zero-delta phaseBegan event until the first delta decides whether the surface or its host takes the gesture.
 	began objc.ID
 }
 
@@ -56,9 +54,7 @@ type wheels struct {
 	gesture *wheelGesture
 	// momentum is the view the system's momentum after a gesture goes to.
 	momentum *view
-	// momentumSwallowed is set when a gesture the surface took ended in a
-	// snap, spring back or unmounted view, so the system's momentum for
-	// that gesture is dropped rather than passed on to an enclosing host.
+	// momentumSwallowed is set when a gesture the surface took ended in a snap, spring back or unmounted view, so the system's momentum for that gesture is dropped rather than passed on to an enclosing host.
 	momentumSwallowed bool
 	// latch is the view mouse wheel notches go to while they come within
 	// wheelLatch of last along the same axis and the pointer is over it.
@@ -96,8 +92,7 @@ func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
 	}
 }
 
-// forwardScroll passes a scroll event this surface did not take up the
-// responder chain past its root view, so an enclosing host view scrolls.
+// forwardScroll passes a scroll event this surface did not take up the responder chain past its root view, so an enclosing host view scrolls.
 func (s *surface) forwardScroll(cmd objc.SEL, event objc.ID) {
 	if s.native == 0 {
 		return
@@ -107,11 +102,7 @@ func (s *surface) forwardScroll(cmd objc.SEL, event objc.ID) {
 	}
 }
 
-// hostScrolls reports whether a responder enclosing an embedded surface
-// scrolls along the horizontal or vertical axis: an enclosing NSScrollView
-// whose document overflows its visible area along that axis, an enclosing
-// NSGo scroll view along that axis, or a custom host responder overriding
-// scrollWheel:.
+// hostScrolls reports whether a responder enclosing an embedded surface scrolls along the horizontal or vertical axis: an enclosing NSScrollView whose document overflows its visible area along that axis, an enclosing NSGo scroll view along that axis, or a custom host responder overriding scrollWheel:.
 func (s *surface) hostScrolls(horizontal bool) bool {
 	if !s.embedded || s.native == 0 {
 		return false
@@ -243,10 +234,7 @@ func (s *surface) scrollTarget(dx, dy driver.Points) *view {
 	return nil
 }
 
-// gestureTarget returns the view a trackpad gesture by (dx, dy) moves:
-// scrollTarget's, else, at the edges, the innermost along the gesture
-// that bounces, which stretches as on macOS unless an enclosing host
-// view scrolls along that axis.
+// gestureTarget returns the view a trackpad gesture by (dx, dy) moves: scrollTarget's, else, at the edges, the innermost along the gesture that bounces, which stretches as on macOS unless an enclosing host view scrolls along that axis.
 func (s *surface) gestureTarget(dx, dy driver.Points) *view {
 	if v := s.scrollTarget(dx, dy); v != nil {
 		return v
@@ -286,8 +274,7 @@ func (s *surface) wheelStep(dx, dy driver.Points, at time.Duration) bool {
 	return true
 }
 
-// gestureEvent follows a trackpad gesture's event in phase, and reports
-// whether the surface took it.
+// gestureEvent follows a trackpad gesture's event in phase, and reports whether the surface took it.
 func (s *surface) gestureEvent(event objc.ID, phase uint, dx, dy driver.Points, at time.Duration) bool {
 	w := &s.wheels
 	if phase&phaseMayBegin != 0 {
@@ -361,15 +348,12 @@ func (s *surface) gestureEvent(event objc.ID, phase uint, dx, dy driver.Points, 
 					saved := g.began
 					g.began = 0
 					if s.native.Send(sel("enclosingScrollView")) != 0 {
-						// Post this first delta event at the front of NSApp's queue so an
-						// enclosing NSScrollView's tracking loop (entered from saved) sees
-						// it in order before later phaseChanged and phaseEnded events.
+						// Post this first delta event at the front of NSApp's queue so an enclosing NSScrollView's tracking loop (entered from saved) sees it in order before later phaseChanged and phaseEnded events.
 						app := nsApp()
 						app.Send(sel("postEvent:atStart:"), event, true)
 						s.forwardScroll(sel("scrollWheel:"), saved)
 						saved.Send(selRelease)
-						// If a responder ahead of NSScrollView handled saved without
-						// entering a tracking loop, dequeue event back and forward it now.
+						// If a responder ahead of NSScrollView handled saved without entering a tracking loop, dequeue event back and forward it now.
 						const scrollWheelMask = uint64(1 << 22)
 						mode := apple.NSString("kCFRunLoopDefaultMode")
 						past := objc.ID(apple.Class("NSDate")).Send(sel("distantPast"))
@@ -420,8 +404,7 @@ func (s *surface) gestureEvent(event objc.ID, phase uint, dx, dy driver.Points, 
 			}
 			return true
 		}
-		// A held gesture in an embedded view forwarded phaseMayBegin to the
-		// host too, so pass the matching phaseCancelled on as well.
+		// A held gesture in an embedded view forwarded phaseMayBegin to the host too, so pass the matching phaseCancelled on as well.
 		return !(s.embedded && held)
 	}
 	return true
@@ -447,8 +430,7 @@ func (s *surface) endGesture(released bool) *view {
 	return g.view
 }
 
-// momentumEvent follows the system's momentum after a gesture, which goes
-// to the gesture's view, and reports whether the surface took it.
+// momentumEvent follows the system's momentum after a gesture, which goes to the gesture's view, and reports whether the surface took it.
 func (s *surface) momentumEvent(phase uint, dx, dy driver.Points, at time.Duration) bool {
 	w := &s.wheels
 	if w.momentumSwallowed {

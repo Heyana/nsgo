@@ -89,9 +89,7 @@ func TestEmbeddedViewCloseIsIdempotent(t *testing.T) {
 	}
 }
 
-// embeddedScrollFixture mounts an embedded NSGo view inside a real AppKit
-// NSScrollView in an NSWindow, with a plain region, a scrollable vertical
-// Scroll, a scrollable horizontal Scroll and a non-overflowing Scroll.
+// embeddedScrollFixture mounts an embedded NSGo view inside a real AppKit NSScrollView in an NSWindow, with a plain region, a scrollable vertical Scroll, a scrollable horizontal Scroll and a non-overflowing Scroll.
 type embeddedScrollFixture struct {
 	window     objc.ID
 	hostScroll objc.ID
@@ -167,8 +165,7 @@ func newEmbeddedScrollFixture(t *testing.T) *embeddedScrollFixture {
 		f.hostDoc.Send(selAddSubview, native)
 		f.window.Send(sel("setContentView:"), f.hostScroll)
 		f.window.Send(sel("layoutIfNeeded"))
-		// Prime NSApplication's event queue once so queued scroll events are
-		// not discarded on the very first nextEventMatchingMask: call.
+		// Prime NSApplication's event queue once so queued scroll events are not discarded on the very first nextEventMatchingMask: call.
 		appObj := objc.ID(apple.Class("NSApplication")).Send(sel("sharedApplication"))
 		past := objc.ID(apple.Class("NSDate")).Send(sel("distantPast"))
 		appObj.Send(sel("nextEventMatchingMask:untilDate:inMode:dequeue:"), ^uint64(0), past, apple.NSString("kCFRunLoopDefaultMode"), true)
@@ -239,8 +236,7 @@ func (f *embeddedScrollFixture) screenPointInEmbedded(x, y float64) (apple.CGPoi
 	return winPt, apple.CGPoint{X: sp.X, Y: h - sp.Y}
 }
 
-// makeScrollEvent builds a synthetic scroll wheel NSEvent at (x, y) inside the
-// embedded view.
+// makeScrollEvent builds a synthetic scroll wheel NSEvent at (x, y) inside the embedded view.
 func (f *embeddedScrollFixture) makeScrollEvent(x, y float64, dx, dy int32, continuous bool, phase, momentum int64) objc.ID {
 	const unitPixel, unitLine = 0, 1
 	const fieldContinuous, fieldScrollPhase, fieldMomentumPhase = 88, 99, 123
@@ -264,9 +260,7 @@ func (f *embeddedScrollFixture) makeScrollEvent(x, y float64, dx, dy int32, cont
 	return objc.ID(apple.Class("NSEvent")).Send(sel("eventWithCGEvent:"), ev)
 }
 
-// sendScroll dispatches a synthetic scroll wheel NSEvent through the surface's
-// event monitor (filterEvent) and then to the hit view's scrollWheel:, matching
-// AppKit's real delivery order.
+// sendScroll dispatches a synthetic scroll wheel NSEvent through the surface's event monitor (filterEvent) and then to the hit view's scrollWheel:, matching AppKit's real delivery order.
 func (f *embeddedScrollFixture) sendScroll(x, y float64, dx, dy int32, continuous bool, phase, momentum int64) {
 	ns := f.makeScrollEvent(x, y, dx, dy, continuous, phase, momentum)
 	f.deliverScroll(x, y, ns)
@@ -284,12 +278,9 @@ func (f *embeddedScrollFixture) deliverScroll(x, y float64, ns objc.ID) {
 	hit.Send(sel("scrollWheel:"), ns)
 }
 
-// dispatchTrackpadGesture posts a full trackpad gesture through NSApp's event
-// queue so AppKit's NSScrollView tracking loop receives phaseChanged and
-// phaseEnded just as with a real trackpad.
+// dispatchTrackpadGesture posts a full trackpad gesture through NSApp's event queue so AppKit's NSScrollView tracking loop receives phaseChanged and phaseEnded just as with a real trackpad.
 func (f *embeddedScrollFixture) dispatchTrackpadGesture(x, y float64, deltas [][2]int32, momentum [][2]int32, mayBegin bool) {
-	// CoreGraphics kCGScrollPhase* and kCGMomentumScrollPhase* values (AppKit
-	// translates these into NSEventPhase* bitmasks inside eventWithCGEvent:).
+	// CoreGraphics kCGScrollPhase* and kCGMomentumScrollPhase* values (AppKit translates these into NSEventPhase* bitmasks inside eventWithCGEvent:).
 	const cgMayBegin, cgBegan, cgChanged, cgEnded = 128, 1, 2, 4
 	const cgMomBegan, cgMomContinue, cgMomEnd = 1, 2, 3
 	app := objc.ID(apple.Class("NSApplication")).Send(sel("sharedApplication"))
@@ -335,9 +326,7 @@ func (f *embeddedScrollFixture) dispatchTrackpadGesture(x, y float64, deltas [][
 	objc.ID(apple.Class("NSRunLoop")).Send(sel("mainRunLoop")).Send(sel("runUntilDate:"), until)
 }
 
-// TestEmbeddedScrollMouseWheelPassthrough verifies that mouse wheel events an
-// embedded macOS view cannot consume pass up to an enclosing AppKit NSScrollView,
-// while events an inner scroll view can take stay inside the embedded view.
+// TestEmbeddedScrollMouseWheelPassthrough verifies that mouse wheel events an embedded macOS view cannot consume pass up to an enclosing AppKit NSScrollView, while events an inner scroll view can take stay inside the embedded view.
 func TestEmbeddedScrollMouseWheelPassthrough(t *testing.T) {
 	f := newEmbeddedScrollFixture(t)
 
@@ -433,8 +422,7 @@ func TestEmbeddedScrollMouseWheelPassthrough(t *testing.T) {
 	})
 }
 
-// TestEmbeddedScrollTrackpadPassthrough verifies trackpad gestures and momentum
-// inside an embedded macOS view hosted in an AppKit NSScrollView.
+// TestEmbeddedScrollTrackpadPassthrough verifies trackpad gestures and momentum inside an embedded macOS view hosted in an AppKit NSScrollView.
 func TestEmbeddedScrollTrackpadPassthrough(t *testing.T) {
 	f := newEmbeddedScrollFixture(t)
 
@@ -523,8 +511,7 @@ func TestEmbeddedScrollTrackpadPassthrough(t *testing.T) {
 			f.setHostY(200)
 			f.vScroll.scrollTo(driver.Point{Y: 0}, false)
 			f.vScroll.sc.resampled.Reset()
-			// Begin upward (host scrolls up), then reverse downward in the same gesture:
-			// inner scroll must stay locked out until the gesture ends.
+			// Begin upward (host scrolls up), then reverse downward in the same gesture: inner scroll must stay locked out until the gesture ends.
 			f.dispatchTrackpadGesture(150, 175, [][2]int32{{0, 30}, {0, -20}}, nil, false)
 			f.vScroll.showGoal()
 			if got := f.vScroll.pos(); got != 0 {
@@ -538,8 +525,7 @@ func TestEmbeddedScrollTrackpadPassthrough(t *testing.T) {
 			f.setHostY(200)
 			f.vScroll.scrollTo(driver.Point{Y: 10}, false)
 			f.vScroll.sc.resampled.Reset()
-			// Pull upward from y=10 past y=0 so inner enters spring-back on release,
-			// then send momentum events for that same flick.
+			// Pull upward from y=10 past y=0 so inner enters spring-back on release, then send momentum events for that same flick.
 			f.dispatchTrackpadGesture(150, 175, [][2]int32{{0, 30}, {0, 30}}, [][2]int32{{0, 20}, {0, 15}}, false)
 			f.vScroll.showGoal()
 			if got := f.hostY(); got != 200 {
@@ -588,11 +574,7 @@ func customScrollHostClass() objc.Class {
 	return classCustomScrollHost
 }
 
-// TestEmbeddedScrollCustomHostResponderAndMomentum checks exact phase and
-// momentum forwarding order to a custom macOS host responder, including
-// replaying zero-delta phaseBegan before the first forwarded phaseChanged,
-// swallowing inner spring-back momentum, and clearing stale momentum on a new
-// gesture.
+// TestEmbeddedScrollCustomHostResponderAndMomentum checks exact phase and momentum forwarding order to a custom macOS host responder, including replaying zero-delta phaseBegan before the first forwarded phaseChanged, swallowing inner spring-back momentum, and clearing stale momentum on a new gesture.
 func TestEmbeddedScrollCustomHostResponderAndMomentum(t *testing.T) {
 	var window, host objc.ID
 	var viewHandle *View
@@ -682,8 +664,7 @@ func TestEmbeddedScrollCustomHostResponderAndMomentum(t *testing.T) {
 		return objc.ID(apple.Class("NSEvent")).Send(sel("eventWithCGEvent:"), ev)
 	}
 
-	// deliver simulates both the window's local event monitor (wheelContinues
-	// check + stale momentum clearing) and responder chain scrollWheel: delivery.
+	// deliver simulates both the window's local event monitor (wheelContinues check + stale momentum clearing) and responder chain scrollWheel: delivery.
 	deliver := func(ev objc.ID) {
 		phase, mom := objc.Send[uint](ev, sel("phase")), objc.Send[uint](ev, sel("momentumPhase"))
 		if mom == 0 && phase&(phaseBegan|phaseMayBegin) != 0 {
@@ -773,8 +754,7 @@ func TestEmbeddedScrollCustomHostResponderAndMomentum(t *testing.T) {
 	})
 }
 
-// TestEmbeddedScrollInNonScrollingHostStillBounces checks that an embedded view
-// inside a plain non-scrolling host NSWindow keeps rubber-banding at edges.
+// TestEmbeddedScrollInNonScrollingHostStillBounces checks that an embedded view inside a plain non-scrolling host NSWindow keeps rubber-banding at edges.
 func TestEmbeddedScrollInNonScrollingHostStillBounces(t *testing.T) {
 	onMain(func() {
 		loadAppKit()
@@ -812,8 +792,7 @@ func TestEmbeddedScrollInNonScrollingHostStillBounces(t *testing.T) {
 	})
 }
 
-// TestStandaloneScrollStillBouncesAtEdge checks that non-embedded standalone
-// windows keep rubber-banding at scroll boundaries.
+// TestStandaloneScrollStillBouncesAtEdge checks that non-embedded standalone windows keep rubber-banding at scroll boundaries.
 func TestStandaloneScrollStillBouncesAtEdge(t *testing.T) {
 	onMain(func() {
 		loadAppKit()
