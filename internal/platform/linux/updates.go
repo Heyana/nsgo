@@ -69,13 +69,17 @@ func selfUpdatable(ctx context.Context, download string) bool {
 	return cmd.Run() == nil
 }
 
+// configureUpdates probes package ownership only in builds with a self-updater.
+func configureUpdates(c updates.Config) updates.Config { return updates.LinuxConfig(c) }
+
 // checkForUpdates reads the appcast off the main thread and answers with
 // what it found.
 func (w *window) checkForUpdates(id uint32) {
 	c := updateConfig
 	updates.Answer(id, func(ctx context.Context) driver.Update {
 		u := updates.Find(ctx, c)
-		if u.Download != "" && !selfUpdatable(ctx, u.Download) {
+		// Ownership was resolved at launch, before any appcast request.
+		if c.PageOnly {
 			u.Download = ""
 		}
 		return u

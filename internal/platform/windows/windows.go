@@ -742,6 +742,7 @@ func Run(app engine.App, opts Options) {
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
 	size := w.point(client.Right, client.Bottom)
+	prepareWinSparkle(opts.Updates, hwnd)
 	w.startEngine(app, opts, driver.Size{Width: size.X, Height: size.Y})
 	if single != nil {
 		single.setDelivery(func(args launch) { w.post(func() { w.launched(args) }) })
@@ -930,6 +931,7 @@ var classRegistered bool
 func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	eopts := engine.Options{
 		ReadAsset:      imageload.ReadAsset,
+		Updater:        winSparkleStatus(),
 		Size:           size,
 		Environment:    w.env,
 		NetworkWatcher: networkWatcher{},
@@ -1402,7 +1404,11 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.releaseOffscreen(it.OffscreenID)
 			continue
 		case driver.ItemCheckForUpdates:
-			w.checkForUpdates(it.On, it.Count)
+			if it.UpdatePreference != nil {
+				w.setUpdatePreference(it.UpdatePreference)
+			} else {
+				w.checkForUpdates(it.On, it.Count)
+			}
 			continue
 		case driver.ItemPointerLock:
 			w.setPointerLock(it)

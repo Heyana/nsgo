@@ -30,3 +30,6 @@ openPage:
   message: "Open Page"
   description: The button of the alert saying the newer version could not be installed, which opens its page in a browser.
 ok: "OK"
+updateDevelopment: "This is a development build. It does not update itself."
+updateChannel: "This build is updated through its distribution channel, not this app."
+updateStore: "{store} installed this app and manages its updates."

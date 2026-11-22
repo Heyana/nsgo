@@ -364,7 +364,8 @@ func Run(app engine.App, opts Options) {
 		}
 		defer instance.close()
 	}
-	updateConfig = opts.Updates
+	updateConfig = configureUpdates(opts.Updates)
+	opts.Updates = updateConfig
 	w, err := start(app, opts)
 	if err != nil {
 		panic("nsgo: " + err.Error())
@@ -462,6 +463,7 @@ func newWindow(opts Options, embedded bool) *window {
 func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	eopts := engine.Options{
 		ReadAsset:      imageload.ReadAsset,
+		Updater:        opts.Updates.State(false),
 		Size:           size,
 		Environment:    w.env,
 		NetworkWatcher: networkWatcher{},

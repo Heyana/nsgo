@@ -37,7 +37,9 @@ type WindowHost interface {
 type Options struct {
 	// CheckCommits enables full-layout diagnostics for this app only.
 	CheckCommits bool
-	Size         driver.Size
+	// Updater is the test's updater snapshot, not the installed app's updater.
+	Updater core.UpdaterState
+	Size    driver.Size
 	// Windows runs the app with the windowless surface that opens its windows.
 	Windows bool
 	// Environment pins what the test sets over what the platform reports

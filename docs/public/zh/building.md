@@ -312,6 +312,7 @@ updates:
   # channel: store                    # direct、store、steam 或 none；有 key 时默认 direct，没有时为 none
   # feed: https://example.com/hello/  # appcast 和安装程序所在的地址；默认为 GitHub 上最新的 Release
   # automatic: false                  # 只在要求时检查；默认为 true
+  # automatic_downloads: true          # 仅 macOS 的 Sparkle 自动下载；默认为 false
 ```
 
 `nsgo keygen` 打印一对密钥，不写任何文件：把公钥填进 `updates.key` 并提交；私钥不要放进仓库，存进密码管理器，并在构建发布的地方设为 `NSGO_UPDATES_KEY`，例如 GitHub Actions 的 secret。每次 direct 构建都用私钥签名安装程序，并在旁边写出 `appcast-<目标>.xml`：一个 [Sparkle](https://sparkle-project.org) 格式的更新源，应用从 `feed` 下读取它，把 appcast 和安装程序一起上传即可。没有私钥时，`build` 不写 macOS 和 Windows 的 appcast，因为它们只安装签过名的安装程序；Linux 和 Android 应用读到未签名的 appcast 时，打开该 Release 的页面，不安装其中的软件包。
@@ -341,6 +342,10 @@ updates:
 ### 在应用中检查
 
 `updater.Check(cx)` 如同“检查更新…”菜单项，检查并显示结果；`updater.CheckInBackground(cx)` 只在有新版本时提示，`updater.CheckDaily(cx)` 也是如此，但每天至多检查一次。`automatic` 开启时，Linux、Android 和 iOS 上的应用在启动时和用户回到应用时这样检查；检查失败（例如离线）时，一小时后再试。开发构建从不更新。 在 Steam 构建中，这三个函数不会触发更新检查。
+
+`updater.CapabilityOf(cx)` 无需网络请求即可说明此副本由谁更新：`ManagedSelf`、`ManagedPage`、`ManagedDevelopment`、`ManagedChannel`、`ManagedStore`（`Store` 给出商店名称），或 `ManagedUnavailable`。开发版本、禁用的渠道和商店安装会显示各自的原因；只有更新源错误、已打包的更新组件加载失败等实际故障才设置 `core.UpdateCheck.Err`。
+
+在绑定中读取 `updater.Status(cx)`，即可跟踪 `Capability`、`AutomaticChecks`、`AutomaticDownloads`、`Available`、`Notes` 和 `LastCheck`。`updater.SetAutomaticChecks(cx, on)` 保存用户的选择，并在运行时改变每日检查；Sparkle 和 WinSparkle 使用各自的设置，Linux、Android 和 iOS 使用私有存储分区。`updater.SetAutomaticDownloads(cx, on)` 仅支持 macOS，初始值来自 `updates.automatic_downloads`；其他平台报告 false 并忽略该设置。不支持更新或由外部分发渠道管理的版本将两个设置都报告为 false。WinSparkle 在发现更新的回调后读取 appcast，取得状态所需的版本说明，安装仍由 WinSparkle 决定。Linux 在启动时确认 Debian 软件包是否拥有可执行文件，因此 AppImage 和解压副本在第一次检查之前就能报告 `ManagedPage`。
 
 ## 登录时启动
 

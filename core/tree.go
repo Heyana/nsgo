@@ -2381,7 +2381,21 @@ func (t *Tree) Dispatch(ev driver.Event) {
 	case driver.EventAlert:
 		t.answerAlert(ev.Count, ev.Index)
 		return
-	case driver.EventClipboard, driver.EventOpenURL, driver.EventPick, driver.EventFiles, driver.EventUpdate, driver.EventWebCookies, driver.EventDiskSpace:
+	case driver.EventUpdate:
+		if state, ok := ev.Data.(*driver.UpdaterState); ok && state != nil {
+			t.rt.updater.Set(updaterState(*state))
+			return
+		}
+		if update, ok := ev.Data.(*driver.Update); ok && update != nil {
+			state := t.rt.updater.GetUntracked()
+			if update.Err == "" && !ev.Finished {
+				state.Available, state.Notes = update.Version, update.Notes
+			}
+			t.rt.updater.Set(state)
+		}
+		t.answer(ev)
+		return
+	case driver.EventClipboard, driver.EventOpenURL, driver.EventPick, driver.EventFiles, driver.EventWebCookies, driver.EventDiskSpace:
 		t.answer(ev)
 		return
 	case driver.EventSavePreflight:

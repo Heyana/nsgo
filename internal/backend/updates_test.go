@@ -10,6 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/platform/updates"
 	"github.com/nsgo-dev/nsgo/nsgotest"
+	"github.com/nsgo-dev/nsgo/updater"
 )
 
 // automaticUpdates turns nsgo.yaml's updates.automatic on for a test and
@@ -19,7 +20,9 @@ func automaticUpdates(t *testing.T) func(*core.Scope) {
 	was := updateAutomatic
 	updateAutomatic = "1"
 	t.Cleanup(func() { updateAutomatic = was })
-	root, app := withUpdateChecks(func(cx *core.Scope) core.Node { return core.Text{Content: "hello"} }, nil, updateConfig(), true)
+	c := updateConfig()
+	c.Development = false
+	root, app := withUpdateChecks(func(cx *core.Scope) core.Node { return core.Text{Content: "hello"} }, nil, c, true)
 	if root != nil || app == nil {
 		t.Fatal("automatic updates run no app function")
 	}
@@ -78,5 +81,23 @@ func TestAutomaticUpdatesWaitForTheUser(t *testing.T) {
 	a.SetEnvironment(core.Environment{})
 	if !slices.Equal(a.UpdateChecks, []bool{true}) {
 		t.Errorf("checks %v, want one as the app becomes active", a.UpdateChecks)
+	}
+}
+
+func TestAutomaticUpdatesCanEnableAnOffDefault(t *testing.T) {
+	view := func(cx *core.Scope) core.Node {
+		return core.Text{Content: "enable", OnPress: func(core.PressEvent) { updater.SetAutomaticChecks(cx, true) }}
+	}
+	root, app := withUpdateChecks(view, nil, updates.Config{Channel: "direct", Feed: "https://example.invalid/feed"}, false)
+	if root != nil || app == nil {
+		t.Fatal("off default removed the runtime scheduler")
+	}
+	a := nsgotest.StartApp(t, app, nsgotest.UpdaterState(core.UpdaterState{Managed: core.UpdaterSelf, AutomaticChecks: false}))
+	if len(a.UpdateChecks) != 0 {
+		t.Fatal("off default checked on launch")
+	}
+	a.Press("text:enable")
+	if !slices.Equal(a.UpdateChecks, []bool{true}) {
+		t.Fatalf("enabling did not start a background check: %v", a.UpdateChecks)
 	}
 }

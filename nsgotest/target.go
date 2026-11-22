@@ -326,6 +326,7 @@ func (a *App) targetOptions(t *target) testhost.Options {
 	}
 	return testhost.Options{
 		CheckCommits: !automationBuild && !a.measure,
+		Updater:      a.updater,
 		Size:         size, Windows: t.windowed, Environment: a.env, Storage: a.store, Secrets: a.Secrets, Host: a.host, Clock: clock,
 		FPS:        os.Getenv("NSGO_TEST_FPS") != "",
 		Observe:    t.observe,

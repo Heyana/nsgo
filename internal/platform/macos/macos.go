@@ -24,6 +24,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/objcblock"
 	"github.com/nsgo-dev/nsgo/internal/platform/queue"
 	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
+	"github.com/nsgo-dev/nsgo/internal/platform/updates"
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
@@ -40,6 +41,8 @@ type Options struct {
 	Hidden bool
 	// ID names the app's directories and storage (engine.AppDirs).
 	ID string
+	// Updates is the build's update channel and defaults.
+	Updates updates.Config
 	// Components are the native components Native elements name.
 	Components driver.NativeComponents
 	// Material is the material behind the app's views, where they draw
@@ -697,7 +700,7 @@ func Run(app engine.App, opts Options) {
 		opts.LaunchedAtLogin = login
 		s = startOwn(app, opts)
 	})
-	startSparkle()
+	startSparkle(opts.Updates)
 	if sparkleEnabled && sparkle != 0 {
 		// The default menu was made before Sparkle ran, without Check for Updates….
 		rebuildDefaultMenu(defaultLanguage)
@@ -989,7 +992,7 @@ func (s *surface) start(app engine.App, opts Options) {
 		s.perf = monitor
 	}
 	size := objc.Send[apple.CGRect](s.native, selBounds).Size
-	eopts := engine.Options{ReadAsset: imageload.ReadAsset, Size: driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)},
+	eopts := engine.Options{Updater: sparkleStatus(), ReadAsset: imageload.ReadAsset, Size: driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)},
 		Environment: s.env, NetworkWatcher: apple.NetworkWatcher{}, Perf: monitor, Thread: apple.RaiseThread, Appearance: opts.Appearance, Host: opts.Host,
 		Secrets: apple.Keychain{}}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
@@ -2173,7 +2176,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 			quickLook(it.QuickLook)
 			continue
 		case driver.ItemCheckForUpdates:
-			s.checkForUpdates(it.On, it.Count)
+			if it.UpdatePreference != nil {
+				s.setUpdatePreference(it.UpdatePreference)
+			} else {
+				s.checkForUpdates(it.On, it.Count)
+			}
 			continue
 		case driver.ItemNotificationPermission, driver.ItemShowNotification, driver.ItemCloseNotification, driver.ItemBadge, driver.ItemTaskProgress,
 			driver.ItemBiometricAvailability, driver.ItemBiometricAuthenticate:

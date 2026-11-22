@@ -9,7 +9,7 @@ NSH's `nsh/updater` downloads, verifies and swaps in the next version itself. NS
 `CheckForUpdates` is the core's part of `updater.Check` and `CheckInBackground`: `ItemCheckForUpdates`, in the background when `On`, which the platform answers with `EventUpdate` ([services](services.md#requests-and-answers)).
 
 - Where the platform's updater shows what it found in windows of its own, Sparkle's or WinSparkle's, the answer is `Finished` and `updater` shows nothing.
-- Elsewhere it carries a `driver.Update`: a newer version and its page, none, or why the check failed. `updater` says it in an alert in its catalog's words and opens the page with `OpenURL`.
+- Elsewhere it carries a `driver.Update`: its typed management reason and store, a newer version and its page, none, or why the check failed. `updater` says it in an alert in its catalog's words and opens the page with `OpenURL`.
 - On Linux and Android the answer also names the newer version's package when it is signed with the app's key and, on Linux, dpkg owns the running executable. Choosing Update then runs `core.InstallUpdateInBackground` under the app's root scope, so it outlives the scope that asked: it downloads the package within ten minutes, checks its length, SHA-256 and Ed25519 signature, stages it in the cache's `nsgo.updater`, and hands it to Linux's package manager and restarts once it succeeds, or opens Android's package installer. A failure says so in an alert that offers the page. Update chosen again while one runs is ignored, so a second run does not discard the package of the first, and a check that finds the app up to date meanwhile leaves it too. The staged package is removed once installed on Linux, and on Android by the next download or a check that finds the app up to date, as the installer reads it after it starts.
 - Web, mini programs and watchOS never answer: a page loads its newest version, and a watch app follows its iPhone app.
 
@@ -20,11 +20,30 @@ NSH's `nsh/updater` downloads, verifies and swaps in the next version itself. NS
 | Linux, Android | `internal/platform/updates` reads the target's appcast with the backend's HTTP client, verifies the package's SHA-256 and Ed25519 signature, then `updater` stages it and hands it to the platform installer |
 | iOS | The App Store's lookup by the bundle's ID in the locale's country, against `CFBundleShortVersionString` |
 
+## State and preferences
+
+`updater.CapabilityOf(cx)` synchronously reports who updates this copy, without network I/O. The build retains its channel even when it carries no updater. `core.UpdateCheck.Managed` and `Store` carry the same reason; development, disabled-channel and store-managed checks have no `Err` and show that reason rather than a transient-failure message. A configured Sparkle framework or WinSparkle DLL that fails to load still answers with an `Err`.
+
+| Managed | Copies |
+| --- | --- |
+| `ManagedSelf` | Direct macOS, Windows and Android builds; Linux where dpkg owns the executable |
+| `ManagedPage` | iOS App Store builds; direct Linux copies outside the Debian package, including AppImages, tarballs and Arch installs |
+| `ManagedDevelopment` | `nsgo dev`, `nsgo test` and plain Go builds |
+| `ManagedChannel` | `none`, Steam, and non-iOS `store` builds |
+| `ManagedStore` | Android store installers, Flatpak, Snap and TestFlight; `Store` names them |
+| `ManagedUnavailable` | Targets with no updater, or a configured native updater that failed to load |
+
+Linux probes package ownership once at launch, before the first feed request, against the Debian package its generated appcast offers. An ownership probe that fails or exceeds two seconds gives the release's page.
+
+`updater.Status(cx)` is a tracked read of `Capability`, `AutomaticChecks`, `AutomaticDownloads`, `Available`, `Notes` and `LastCheck`. It tracks native found/not-found notifications, check times and preferences across windows. Sparkle supplies version metadata through its delegate. WinSparkle's public callbacks carry no version, so a found callback reads the configured appcast for status metadata; WinSparkle alone chooses and installs its update. A failed metadata read retains the last successful metadata.
+
+`SetAutomaticChecks(cx, on)` persists the user's choice in Sparkle or WinSparkle, or in the private `nsgo.updater` partition on Linux, Android and iOS. Their daily scheduler follows changes at runtime, including enabling a build whose default is off. The saved choice wins over `updates.automatic`; `LastCheck` stores the actual check time separately from the retry schedule. `SetAutomaticDownloads(cx, on)` changes Sparkle's persisted setting on macOS; `updates.automatic_downloads` supplies its first-install default, false unless set. Other platforms report false and ignore that setter. Unavailable, development, disabled-channel and store-managed builds report both preferences false.
+
 ## Schedule
 
-While `updates.automatic` is on, Sparkle and WinSparkle check daily on their own schedule, where the user's choice in their settings wins over `nsgo.yaml`'s.
+While `updates.automatic` is on, Sparkle and WinSparkle check daily on their own schedule, where the user's choice in their settings wins over `nsgo.yaml`'s. Apps read and change that same choice through `Status` and `SetAutomaticChecks`.
 
-Linux, Android and iOS have no such schedule, so `nsgo.Run` calls `updater.CheckDaily` as the app starts and whenever it becomes active again, since a phone's app stays in memory for days. It checks in the background unless one ran within the day, so *Later* lasts the day across restarts, and tries a failed check again an hour later. The time lives in a storage partition of its own (`nsgo.updater`), which the app's `Storage` neither lists nor clears.
+Linux, Android and iOS have no such schedule, so `nsgo.Run` calls `updater.CheckDaily` as the app starts and whenever it becomes active again, since a phone's app stays in memory for days. The persisted runtime preference, defaulting to `updates.automatic`, decides whether it checks. It checks in the background unless one ran within the day, so *Later* lasts the day across restarts, and tries a failed check again an hour later. The time lives in a storage partition of its own (`nsgo.updater`), which the app's `Storage` neither lists nor clears.
 
 ## Channels
 
@@ -62,7 +81,7 @@ Linux cannot tell a distribution's package from a downloaded one, so its package
 - The direct channel reads `releases/latest/download/` by default, so every release must carry the appcast of each target it updates: a target a release leaves out answers 404 until one carries it again.
 - WinSparkle saves `updates.automatic` as the user's choice on the first start, so a later change in `nsgo.yaml` reaches only new installs.
 - Linux asks `OnQuitRequest` before restarting after its package manager finishes. Cancellation keeps the current process running; a deferred answer can finish saving first. The package is already installed on disk. On Windows, WinSparkle waits on its worker thread for the same decision, leaving the app's main thread free; denial prevents installer launch, and cleanup releases an unanswered callback before joining the updater's workers. The approved shutdown bypasses a second close request, so a tray or window-close handler cannot strand an installer beside the old process.
-- The Linux appcast offers the release's Debian package, which the app installs through `pkexec dpkg` only where dpkg owns its executable; an install from the Arch package or the AppImage, or one outside any package, gets the release's page, as the backend asks `dpkg-query` and `pacman` before offering the package. Android hands its APK to the system installer, which asks the user and keeps store installs out of the direct channel.
+- The Linux appcast offers the release's Debian package, which the app installs through `pkexec dpkg` only where dpkg owns its executable; an install from the Arch package or the AppImage, or one outside any package, gets the release's page, as the backend resolves Debian-package ownership once at launch before any appcast request. Android hands its APK to the system installer, which asks the user and keeps store installs out of the direct channel.
 - `updater.Install` sends the staged path with `ItemInstallPackage`. Linux replies after its package manager finishes, and Android replies when the system installer starts. Backends without a package installer reply that the service is unavailable. Headless tests can record paths in `App.Installs` and return errors through `App.InstallPackage`.
 - A package downloads whole into memory, through the backend's HTTP client that images use, before it is verified and staged; on Android one larger than the Java heap allows fails its download, and the app offers the release's page, rather than crashing ([roadmap](../roadmap.md#updates)).
 

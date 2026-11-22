@@ -6,8 +6,8 @@ import (
 	"golang.org/x/net/html"
 )
 
-// notesText is an appcast item's description, HTML as nsgo build writes it from -release-notes' Markdown, as the plain text the updater's prompt shows: a line for each paragraph, heading and list item, list items behind "• ", runs of spaces made one and blank lines between blocks dropped.
-func notesText(description string) string {
+// NotesText is an appcast item's description, HTML as nsgo build writes it from -release-notes' Markdown, as the plain text the updater's prompt shows: a line for each paragraph, heading and list item, list items behind "• ", runs of spaces made one and blank lines between blocks dropped.
+func NotesText(description string) string {
 	z := html.NewTokenizer(strings.NewReader(description))
 	var lines []string
 	var line strings.Builder

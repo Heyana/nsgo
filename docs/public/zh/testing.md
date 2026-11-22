@@ -80,6 +80,8 @@ func TestMain(m *testing.M) {
 
 无头 GPU 测试可用 `app.Surface("title:Inspector").GPUReadPixels("id:viewport")` 读取对应窗口的软件 GPU 像素。`Surface.TriggerGPUDeviceLost` 和 `Surface.RestoreGPUDevice` 模拟该窗口的设备丢失与恢复，并使用该窗口的像素比例。即使不同窗口中的视图 ID 相同，设备和回读回调也各自独立；`app.GPUFrames()` 记录整个应用的提交。这些辅助方法作用于无头软件 GPU 模型。
 
+`nsgotest.UpdaterState(core.UpdaterState{...})` 可在第一次渲染前设置更新器的能力和偏好，适用于无窗口测试及原生目标。通过 `app.Update` 提供每次检查的结果；偏好变更由测试模型处理，不访问更新源。
+
 ## 小组件和实时活动
 
 `nsgotest.Widgets(true)` 记录应用通过 `widget.Update` 发布的内容。用 `app.Widgets()` 读取每类小组件的最新时间线。条目没有指定日期时，使用应用的墙钟时间。`nsgotest.Widgets(false)` 让 `widget.Available()` 返回 false，并让更新返回 `widget.ErrNoWidgets`。

@@ -3,12 +3,14 @@
 package windows
 
 import (
+	"context"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -24,6 +26,20 @@ import (
 var winSparkle *syscall.DLL
 
 var updateQuitOwner atomic.Pointer[updateQuit]
+var winUpdateConfig updates.Config
+var winUpdateFailure string
+var winUpdateOwner atomic.Pointer[window]
+var winUpdateFound, winUpdateNotes string
+var winUpdateGeneration uint64
+
+var updateFoundCallback = syscall.NewCallbackCDecl(func() uintptr { notifyWinSparkle(true); return 0 })
+var updateNotFoundCallback = syscall.NewCallbackCDecl(func() uintptr { notifyWinSparkle(false); return 0 })
+var updateChangedCallback = syscall.NewCallbackCDecl(func() uintptr {
+	if w := winUpdateOwner.Load(); w != nil {
+		w.post(func() { reportWinSparkle() })
+	}
+	return 0
+})
 
 // WinSparkle's callbacks, made once: it may call them from any thread.
 var (
@@ -41,9 +57,14 @@ var (
 	})
 )
 
-// startWinSparkle starts WinSparkle on c's appcast, for the app's main window hwnd, in the language lang returns, the one the mounted app shows (engine.Language), which WinSparkle takes only before win_sparkle_init. lang waits for the app's mount on the UI thread, so it is asked only once WinSparkle is about to start: an app without updates, or without WinSparkle.dll, does not wait.
-func startWinSparkle(c updates.Config, w *window, lang func() string) {
-	if c.Feed == "" {
+// prepareWinSparkle loads the bundled updater and persisted preferences before
+// the first view. startWinSparkle initializes it once the app's language is known.
+func prepareWinSparkle(c updates.Config, hwnd uintptr) {
+	winUpdateConfig = c
+	winUpdateFailure = ""
+	winUpdateFound, winUpdateNotes = "", ""
+	winUpdateOwner.Store(windows[hwnd])
+	if !c.Checks(false) {
 		return
 	}
 	exe, err := os.Executable()
@@ -52,7 +73,8 @@ func startWinSparkle(c updates.Config, w *window, lang func() string) {
 	}
 	dll, err := syscall.LoadDLL(filepath.Join(filepath.Dir(exe), "WinSparkle.dll"))
 	if err != nil {
-		log.Printf("nsgo: nsgo.yaml configures updates but WinSparkle.dll does not load: %v", err)
+		winUpdateFailure = "updates: this direct build's WinSparkle.dll could not be loaded: " + err.Error()
+		log.Printf("nsgo: %s", winUpdateFailure)
 		return
 	}
 	var keep []any
@@ -85,9 +107,6 @@ func startWinSparkle(c updates.Config, w *window, lang func() string) {
 		call("win_sparkle_set_app_build_version", wstr(c.Build))
 	}
 	// Unset, WinSparkle follows the Windows UI language; set to one it lacks, it would say English instead.
-	if name := updates.WinSparkleLanguage(lang()); name != "" {
-		call("win_sparkle_set_lang", cstr(name))
-	}
 	call("win_sparkle_set_registry_path", cstr(registry))
 	// nsgo.yaml's choice is the default; the user's, in WinSparkle's
 	// settings, stays.
@@ -100,10 +119,12 @@ func startWinSparkle(c updates.Config, w *window, lang func() string) {
 	}
 	call("win_sparkle_set_can_shutdown_callback", canShutdown)
 	call("win_sparkle_set_shutdown_request_callback", shutdownRequest)
-	winSparkle = dll
-	updateQuitOwner.Store(newUpdateQuit(w))
-	call("win_sparkle_init")
+	call("win_sparkle_set_did_find_update_callback", updateFoundCallback)
+	call("win_sparkle_set_did_not_find_update_callback", updateNotFoundCallback)
+	call("win_sparkle_set_update_dismissed_callback", updateChangedCallback)
+	call("win_sparkle_set_error_callback", updateChangedCallback)
 	runtime.KeepAlive(keep)
+	winSparkle = dll
 }
 
 // stopWinSparkle stops WinSparkle's checks and downloads as the app ends.
@@ -120,6 +141,7 @@ func stopWinSparkle() {
 		p.Call()
 	}
 	winSparkle = nil
+	winUpdateOwner.Store(nil)
 }
 
 // registryValue reports whether the current user's key path holds a value
@@ -133,18 +155,111 @@ func registryValue(path, name string) bool {
 	return syscall.RegQueryValueEx(key, wide(name), nil, nil, nil, nil) == nil
 }
 
-// checkForUpdates has WinSparkle check now and show what it finds, or in
-// the background only a newer version.
-func (w *window) checkForUpdates(background bool, id uint32) {
-	ev := driver.Event{Kind: driver.EventUpdate, Count: id, Finished: winSparkle != nil}
-	name := "win_sparkle_check_update_with_ui"
-	if background {
-		name = "win_sparkle_check_update_without_ui"
+// startWinSparkle waits until the mounted app can supply its language.
+func startWinSparkle(_ updates.Config, w *window, lang func() string) {
+	if winSparkle == nil {
+		return
+	}
+	if name := updates.WinSparkleLanguage(lang()); name != "" {
+		if proc, err := winSparkle.FindProc("win_sparkle_set_lang"); err == nil {
+			p, _ := syscall.BytePtrFromString(name)
+			proc.Call(uintptr(unsafe.Pointer(p)))
+			runtime.KeepAlive(p)
+		}
+	}
+	updateQuitOwner.Store(newUpdateQuit(w))
+	winUpdateCall("win_sparkle_init")
+	reportWinSparkle()
+}
+
+func winUpdateCall(name string, args ...uintptr) uintptr {
+	if winSparkle != nil {
+		if proc, err := winSparkle.FindProc(name); err == nil {
+			v, _, _ := proc.Call(args...)
+			return v
+		}
+	}
+	return 0
+}
+
+func winSparkleStatus() driver.UpdaterState {
+	state := winUpdateConfig.State(false)
+	state.NativePreferences = true
+	if winUpdateFailure != "" {
+		state.Managed = driver.UpdateManagedUnavailable
 	}
 	if winSparkle == nil {
-		ev.Data = &driver.Update{Err: "updates: this build has no WinSparkle: nsgo.yaml configures no updates"}
-	} else if p, err := winSparkle.FindProc(name); err == nil {
-		p.Call()
+		return state
+	}
+	state.AutomaticChecks = winUpdateCall("win_sparkle_get_automatic_check_for_updates") != 0
+	if seconds := int64(winUpdateCall("win_sparkle_get_last_check_time")); seconds > 0 {
+		state.LastCheck = time.Unix(seconds, 0)
+	}
+	state.Available, state.Notes = winUpdateFound, winUpdateNotes
+	return state
+}
+
+func reportWinSparkle() {
+	state := winSparkleStatus()
+	if w := winUpdateOwner.Load(); w != nil && w.engine != nil {
+		w.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Data: &state})
+	}
+}
+
+// WinSparkle's public callbacks have no version payload. A confirmed find reads
+// only status metadata from the configured appcast; WinSparkle still installs it.
+func notifyWinSparkle(found bool) {
+	w := winUpdateOwner.Load()
+	if w == nil {
+		return
+	}
+	w.post(func() {
+		winUpdateGeneration++
+		generation := winUpdateGeneration
+		if !found {
+			winUpdateFound, winUpdateNotes = "", ""
+			reportWinSparkle()
+			return
+		}
+		config := winUpdateConfig
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			update := updates.Find(ctx, config)
+			w.post(func() {
+				if winUpdateOwner.Load() != w || generation != winUpdateGeneration {
+					return
+				}
+				if update.Err == "" {
+					winUpdateFound, winUpdateNotes = update.Version, update.Notes
+				}
+				reportWinSparkle()
+			})
+		}()
+	})
+}
+
+func (w *window) setUpdatePreference(p *driver.UpdatePreference) {
+	if p.AutomaticChecks != nil && winSparkle != nil {
+		on := uintptr(0)
+		if *p.AutomaticChecks {
+			on = 1
+		}
+		winUpdateCall("win_sparkle_set_automatic_check_for_updates", on)
+	}
+	reportWinSparkle()
+}
+
+func (w *window) checkForUpdates(background bool, id uint32) {
+	state := winSparkleStatus()
+	update := driver.Update{App: winUpdateConfig.App, Current: winUpdateConfig.Version, Managed: state.Managed, Store: state.Store, Err: winUpdateFailure}
+	ev := driver.Event{Kind: driver.EventUpdate, Count: id, Data: &update, Finished: winSparkle != nil}
+	if winSparkle != nil {
+		name := "win_sparkle_check_update_with_ui"
+		if background {
+			name = "win_sparkle_check_update_without_ui"
+		}
+		winUpdateCall(name)
 	}
 	w.engine.Dispatch(ev)
 }

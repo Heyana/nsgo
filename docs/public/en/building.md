@@ -338,6 +338,7 @@ updates:
   # channel: store                    # direct, store, steam or none; direct by default with a key, none without
   # feed: https://example.com/hello/  # where the appcasts and installers are; by default the latest GitHub release
   # automatic: false                  # check only when asked; true by default
+  # automatic_downloads: true          # Sparkle downloads automatically; false by default, macOS only
 ```
 
 `nsgo keygen` prints a key pair and writes no file: put the public key in `updates.key` and commit it, and keep the secret one out of the repository, in a password manager and in `NSGO_UPDATES_KEY` where releases build, such as a GitHub Actions secret. Each direct build signs the installers with the secret key and writes `appcast-<target>.xml` beside them, a feed in [Sparkle](https://sparkle-project.org)'s format that the app reads under `feed`: upload the appcasts with the installers. Without the secret key, `build` writes no macOS or Windows appcast, as those install only signed installers, and Linux and Android apps reading an unsigned appcast open the release's page instead of installing its package.
@@ -367,6 +368,10 @@ Stores reject apps that update themselves, so upload a `store` build, never a di
 ### Checking from the app
 
 `updater.Check(cx)` checks as a *Check for Updates…* menu item does, and shows what it finds; `updater.CheckInBackground(cx)` shows only a newer version, and `updater.CheckDaily(cx)` does that at most once a day. While `automatic` is on, the app checks that way on Linux, Android and iOS as it starts and whenever the user comes back to it; a check that fails, as one offline does, is tried again an hour later. Development builds never update. In Steam builds, these three functions do nothing.
+
+`updater.CapabilityOf(cx)` reports how this copy updates without a network request: `ManagedSelf`, `ManagedPage`, `ManagedDevelopment`, `ManagedChannel`, `ManagedStore` (with its `Store` name), or `ManagedUnavailable`. A development build, disabled channel or store installation produces a reason-specific explanation when checked; `core.UpdateCheck.Err` is reserved for failures such as a bad feed or a bundled updater that cannot load.
+
+Read `updater.Status(cx)` inside a binding to follow `Capability`, `AutomaticChecks`, `AutomaticDownloads`, `Available`, `Notes` and `LastCheck`. `updater.SetAutomaticChecks(cx, on)` persists the user's choice and changes the daily scheduler at runtime. Sparkle and WinSparkle own their preferences; Linux, Android and iOS keep the choice in a private storage partition. `updater.SetAutomaticDownloads(cx, on)` is supported only on macOS, defaulting to `updates.automatic_downloads`; other platforms report false and ignore the setter. Unsupported and externally managed builds report both settings false. WinSparkle reports found-update metadata by reading the appcast after its found callback; it still controls installation. Linux determines Debian-package ownership at launch, so an AppImage or tarball reports `ManagedPage` before any check.
 
 ## Launch at login
 

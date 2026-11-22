@@ -118,7 +118,7 @@ func TestUpdateChannels(t *testing.T) {
 		t.Errorf("a direct Android app asks for %v, want the installer's permission", perms)
 	}
 	p.Updates.Channel = channelNone
-	if p.updatesOn() || p.updateLdflags([]string{"GOOS=ios", "GOARCH=arm64"}) != nil || p.sparklePlist("macos_arm64") != "" {
+	if p.updatesOn() || !strings.Contains(strings.Join(p.updateLdflags([]string{"GOOS=ios", "GOARCH=arm64"}), " "), "updateChannel=none") || p.sparklePlist("macos_arm64") != "" {
 		t.Error("channel none checks for updates")
 	}
 	if slices.Contains(p.androidPermissions(), install) {
@@ -264,5 +264,14 @@ func TestWriteAppcastReleaseNotes(t *testing.T) {
 	p.Updates.notes = filepath.Join(dir, "missing.md")
 	if err := p.readReleaseNotes(); err == nil {
 		t.Error("missing release notes read")
+	}
+}
+
+func TestUpdateAutomaticDownloadsDefault(t *testing.T) {
+	for _, automatic := range []string{"false", "true"} {
+		p, _ := updatingProject(t, ", automatic_downloads: "+automatic)
+		if plist := p.sparklePlist("macos_arm64"); !strings.Contains(plist, "<key>SUAutomaticallyUpdate</key><"+automatic+"/>") {
+			t.Fatalf("automatic_downloads=%s: %s", automatic, plist)
+		}
 	}
 }

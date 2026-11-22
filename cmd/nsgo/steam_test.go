@@ -40,8 +40,9 @@ func TestSteamBuildChannel(t *testing.T) {
 		if got := p.checkSteamTargets([]string{tc.target}) == nil; got != tc.wantTag {
 			t.Errorf("accept target %s = %v, want %v", tc.target, got, tc.wantTag)
 		}
-		if flags := p.updateLdflags(env); len(flags) != 0 {
-			t.Errorf("%s links update flags %v", tc.target, flags)
+		// A Steam build links only its channel, which updater.CapabilityOf reports; no feed, key or schedule.
+		if flags := p.updateLdflags(env); len(flags) != 1 || !strings.Contains(flags[0], "updateChannel=steam") {
+			t.Errorf("%s links update flags %v, want only the steam channel", tc.target, flags)
 		}
 	}
 	p.Build.embed = true

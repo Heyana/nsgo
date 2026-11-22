@@ -160,6 +160,8 @@ type Options struct {
 	Environment driver.Environment
 	// NetworkWatcher reads and follows the system route on the app's first network read.
 	NetworkWatcher driver.NetworkWatcher
+	// Updater is known before the app runs, without a network request.
+	Updater driver.UpdaterState
 	// Clock runs the app's timers; the system's when nil.
 	Clock core.Clock
 	// TransitionEnds is a test host's (testhost.Options.TransitionEnds): it takes, as the app starts, whether a view of any of its surfaces waits for its style transition to end.
@@ -519,6 +521,9 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 		Windows:        opts.Windows,
 		HotKeys:        opts.HotKeys,
 		Tray:           opts.Tray,
+		Updater: core.UpdaterState{Managed: core.UpdaterManaged(opts.Updater.Managed), Store: opts.Updater.Store,
+			NativePreferences: opts.Updater.NativePreferences, AutomaticChecks: opts.Updater.AutomaticChecks,
+			AutomaticDownloads: opts.Updater.AutomaticDownloads, Available: opts.Updater.Available, Notes: opts.Updater.Notes, LastCheck: opts.Updater.LastCheck},
 	})
 	tree := core.NewTree(root, p)
 	e.tree = tree

@@ -13,9 +13,12 @@ import (
 type UpdateCheck struct {
 	// Shown says the platform's own updater showed what it found in its
 	// windows, as Sparkle on macOS and WinSparkle on Windows do: they
-	// offer the newer version, install it and restart the app. Nothing
-	// else is set then.
+	// offer the newer version, install it and restart the app.
+	// Version metadata arrives separately through updater.Status; capability is still set.
 	Shown bool
+	// Managed and Store are updater.CapabilityOf's synchronous capability.
+	Managed UpdaterManaged
+	Store   string
 	// App and Current are the app's name and running version.
 	App, Current string
 	// Version is the newer version found, "" when Current is the newest,
@@ -97,6 +100,7 @@ func (cx *Scope) CheckForUpdates(background bool, done func(UpdateCheck)) {
 	t.request(cx, driver.MountItem{Kind: driver.ItemCheckForUpdates, On: background}, func(ev driver.Event) {
 		c := UpdateCheck{Shown: ev.Finished}
 		if u, ok := ev.Data.(*driver.Update); ok && u != nil {
+			c.Managed, c.Store = UpdaterManaged(u.Managed), u.Store
 			c.App, c.Current, c.Version, c.URL, c.Notes = u.App, u.Current, u.Version, u.URL, u.Notes
 			c.Download, c.Signature, c.SHA256, c.Key, c.Size = u.Download, u.Signature, u.SHA256, u.Key, u.Size
 			if u.Err != "" {

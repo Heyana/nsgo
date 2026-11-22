@@ -636,7 +636,9 @@ type MountItem struct {
 	// ItemCheckForUpdates checks in the background.
 	Surface *SurfaceConfig
 	Tray    *TrayConfig
-	On      bool
+	// UpdatePreference changes updater settings instead of checking its feed.
+	UpdatePreference *UpdatePreference
+	On               bool
 	// OffscreenID is the resource ID of an ItemReleaseOffscreen.
 	OffscreenID uint64
 }

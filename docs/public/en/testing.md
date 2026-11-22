@@ -82,6 +82,8 @@ Headless Linux and Android tests can check the package paths passed to the insta
 
 Headless GPU tests can use `app.Surface("title:Inspector").GPUReadPixels("id:viewport")` for a window's software GPU pixels. `Surface.TriggerGPUDeviceLost` and `Surface.RestoreGPUDevice` simulate loss and recovery in that window, using its pixel ratio. Devices and readback callbacks stay separate even when view IDs repeat across windows; `app.GPUFrames()` records submissions across the whole app. These helpers operate on the headless software GPU model.
 
+`nsgotest.UpdaterState(core.UpdaterState{...})` seeds updater capability and preferences before the first render, headless and on native targets. Set `app.Update` to supply each check result; preference changes are modeled without contacting an update feed.
+
 ## Widgets and Live Activities
 
 `nsgotest.Widgets(true)` records what the app publishes with `widget.Update`. Read the latest timeline for each kind with `app.Widgets()`. An entry with no date gets the app's wall time. Use `nsgotest.Widgets(false)` to make `widget.Available()` false and have updates return `widget.ErrNoWidgets`.

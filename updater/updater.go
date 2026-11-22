@@ -45,10 +45,6 @@ const (
 // CheckDaily keeps the time of its last check, in seconds since 1970, in
 // a partition of the app's storage, which the app's own Storage neither
 // lists nor clears.
-const (
-	schedulePartition = "nsgo.updater"
-	checkedKey        = "checked"
-)
 
 // CheckDaily checks in the background, as CheckInBackground does, unless
 // it has within the last day, so a newer version is offered once a day
@@ -58,6 +54,9 @@ const (
 // updates.automatic is on. A check that failed, as one offline does, is
 // tried again an hour later.
 func CheckDaily(cx *core.Scope) {
+	if !Status(cx).AutomaticChecks {
+		return
+	}
 	now := cx.WallTime()
 	var kept core.Storage
 	due := true
@@ -86,6 +85,9 @@ func CheckDaily(cx *core.Scope) {
 	}
 	// Kept before the answer, so a call meanwhile does not check too.
 	keep(now)
+	if err := kept.SetItem(lastCheckKey, strconv.FormatInt(now.Unix(), 10)); err != nil {
+		log.Printf("updater: %v", err)
+	}
 	check(cx, true, func(c core.UpdateCheck) {
 		if c.Err != nil {
 			// Due again after retry rather than a day.
@@ -104,9 +106,25 @@ func check(cx *core.Scope, background bool, answered func(core.UpdateCheck)) {
 		if c.Shown {
 			return
 		}
+		if s := core.UpdaterStatus(cx); !s.NativePreferences && (s.Managed == ManagedSelf || s.Managed == ManagedPage) {
+			if err := scheduleStorage(cx).SetItem(lastCheckKey, strconv.FormatInt(cx.WallTime().Unix(), 10)); err != nil {
+				log.Printf("updater: %v", err)
+			}
+		}
 		msgs := locales.For(cx)
 		ok := []core.AlertAction{{Label: msgs.Ok(), Role: core.AlertDefault}}
 		switch {
+		case c.Managed == ManagedDevelopment || c.Managed == ManagedChannel || c.Managed == ManagedStore:
+			if !background {
+				message := msgs.UpdateChannel()
+				if c.Managed == ManagedDevelopment {
+					message = msgs.UpdateDevelopment()
+				}
+				if c.Managed == ManagedStore {
+					message = msgs.UpdateStore(c.Store)
+				}
+				cx.ShowAlert(core.AlertConfig{Title: msgs.UpdateError(), Message: message, Actions: ok, Cancelable: true}, func(int) {})
+			}
 		case c.Err != nil:
 			log.Printf("updater: %v", c.Err)
 			if !background {

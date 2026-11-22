@@ -88,7 +88,7 @@ func TestFind(t *testing.T) {
 	c := Config{App: "Hello", Version: "1.1", Build: "11", Feed: "https://example.com/appcast-linux_x64.xml"}
 	got := Find(context.Background(), c)
 	// An unsigned appcast offers the release's page alone, whether or not the app has a key.
-	want := driver.Update{App: "Hello", Current: "1.1", Version: "1.2", URL: "https://example.com/hello-1.2.deb"}
+	want := driver.Update{App: "Hello", Current: "1.1", Version: "1.2", URL: "https://example.com/hello-1.2.deb", Managed: driver.UpdateManagedSelf}
 	if got != want {
 		t.Errorf("Find = %+v, want %+v", got, want)
 	}
@@ -106,8 +106,8 @@ func TestFind(t *testing.T) {
 	if got := Find(context.Background(), c); got.Version != "" {
 		t.Errorf("Find of version 13 = %+v, want none newer", got)
 	}
-	if got := Find(context.Background(), Config{}); got.Err == "" {
-		t.Error("Find without a feed found no error")
+	if got := Find(context.Background(), Config{}); got.Err != "" || got.Managed != driver.UpdateManagedChannel {
+		t.Error("Find without a feed did not report its disabled capability")
 	}
 	serve(t, 404, "")
 	if got := Find(context.Background(), c); !strings.Contains(got.Err, "404") {
@@ -121,7 +121,7 @@ func TestFindOffersOnlySignedPackages(t *testing.T) {
 	c := Config{App: "Hello", Version: "1.1", Build: "11", Feed: "https://example.com/appcast-linux_x64.xml", Key: "a2V5"}
 	got := Find(context.Background(), c)
 	want := driver.Update{App: "Hello", Current: "1.1", Version: "1.2", URL: "https://example.com/hello-1.2.deb",
-		Download: "https://example.com/hello-1.2.deb", Signature: "c2ln", SHA256: "abc", Key: "a2V5", Size: 10}
+		Download: "https://example.com/hello-1.2.deb", Signature: "c2ln", SHA256: "abc", Key: "a2V5", Size: 10, Managed: driver.UpdateManagedSelf}
 	if got != want {
 		t.Errorf("Find = %+v, want %+v", got, want)
 	}
@@ -136,7 +136,7 @@ func TestFindInAppStore(t *testing.T) {
 	asked := serve(t, 200, `{"resultCount":1,"results":[{"version":"2.0","trackViewUrl":"https://apps.apple.com/cn/app/hello/id123"}]}`)
 	c := Config{App: "Hello", ID: "com.example.hello", Version: "1.9"}
 	got := FindInAppStore(context.Background(), c, "CN")
-	want := driver.Update{App: "Hello", Current: "1.9", Version: "2.0", URL: "https://apps.apple.com/cn/app/hello/id123"}
+	want := driver.Update{App: "Hello", Current: "1.9", Version: "2.0", URL: "https://apps.apple.com/cn/app/hello/id123", Managed: driver.UpdateManagedPage}
 	if got != want {
 		t.Errorf("FindInAppStore = %+v, want %+v", got, want)
 	}
@@ -192,7 +192,7 @@ func TestStoreInstalls(t *testing.T) {
 		t.Error("an app a store installed checks")
 	}
 	for _, got := range []driver.Update{Find(context.Background(), c), FindInAppStore(context.Background(), c, "")} {
-		if got.Version != "" || !strings.Contains(got.Err, "com.android.vending installed the app") {
+		if got.Version != "" || got.Err != "" || got.Managed != driver.UpdateManagedStore || got.Store != "com.android.vending" {
 			t.Errorf("a check of an app a store installed = %+v", got)
 		}
 	}
@@ -210,8 +210,8 @@ func TestNotesText(t *testing.T) {
 		{"Plain text", "Plain text"},
 		{"<html><head><title>v2</title><style>p { color: red }</style></head><body><p>Fixes</p><script>track()</script></body></html>", "Fixes"},
 	} {
-		if got := notesText(c.html); got != c.want {
-			t.Errorf("notesText(%q) = %q, want %q", c.html, got, c.want)
+		if got := NotesText(c.html); got != c.want {
+			t.Errorf("NotesText(%q) = %q, want %q", c.html, got, c.want)
 		}
 	}
 }

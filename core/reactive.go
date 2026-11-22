@@ -103,6 +103,8 @@ type RootOptions struct {
 	}
 	// ReadAsset reads a slash-separated resource path on a worker goroutine; nil where the host cannot read bundled files.
 	ReadAsset func(context.Context, string) ([]byte, error)
+	// Updater is the initial state of package updater, supplied by the platform.
+	Updater UpdaterState
 	// DataDir, CacheDir and LogsDir are the app's directories, "" where the target has none.
 	DataDir, CacheDir, LogsDir string
 	// Host is the channel to the host app that embeds the app: its
@@ -132,6 +134,7 @@ func NewRoot(opts RootOptions) *Scope {
 	if devtools.Enabled {
 		rt.dev = newDevState()
 	}
+	rt.updater = NewSignal(rt.root, opts.Updater)
 	if opts.Host != nil {
 		rt.attachHost(opts.Host)
 	}
@@ -170,6 +173,7 @@ type runtime struct {
 	inFrame        bool
 	requestFrame   func()
 	networkWatcher driver.NetworkWatcher
+	updater        *Signal[UpdaterState]
 	env            *Env
 	tree           *Tree
 	root           *Scope

@@ -20,8 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nsgo-dev/nsgo/tsx/pkg"
 	"github.com/yuin/goldmark"
+
+	"github.com/nsgo-dev/nsgo/tsx/pkg"
 )
 
 // nsgo.yaml's updates have the app update the way its platform and the
@@ -56,6 +57,8 @@ type updatesConfig struct {
 	// WinSparkle's schedule, and as it starts elsewhere; true by default.
 	// The user's choice in Sparkle's and WinSparkle's settings wins.
 	Automatic *bool `yaml:"automatic"`
+	// AutomaticDownloads is Sparkle's first-install default; false elsewhere.
+	AutomaticDownloads bool `yaml:"automatic_downloads"`
 	// Channel is what the builds are handed out through, which build's
 	// -channel replaces: direct, store, steam or none; by default direct with a
 	// key and none without.
@@ -95,7 +98,7 @@ func (p *project) validateUpdates() error {
 		return err
 	}
 	if u.Key == "" {
-		if u.Channel == "" && (u.Feed != "" || u.Automatic != nil) {
+		if u.Channel == "" && (u.Feed != "" || u.Automatic != nil || u.AutomaticDownloads) {
 			return errors.New("updates: key holds no public key; make one with nsgo keygen, or set channel to store")
 		}
 		return nil
@@ -240,12 +243,15 @@ func envTarget(env []string) string {
 // on the direct channel its appcast and key, where the backend reads one
 // rather than Sparkle, and whether it checks on its own.
 func (p *project) updateLdflags(env []string) []string {
-	if !p.updatesOn() {
+	if p.Dev.Client {
 		return nil
 	}
 	// The backend, which nsgo.Run runs the app with, reads them.
 	const pkgPath = "github.com/nsgo-dev/nsgo/internal/backend"
-	var flags []string
+	flags := []string{fmt.Sprintf("-X %s.updateChannel=%s", pkgPath, p.channel())}
+	if !p.updatesOn() {
+		return flags
+	}
 	if feed := p.appcastURL(envTarget(env)); feed != "" && p.updates() {
 		flags = append(flags, fmt.Sprintf("-X '%s.updateFeed=%s'", pkgPath, feed),
 			fmt.Sprintf("-X %s.updateKey=%s", pkgPath, pkg.EncodePublicKey(p.Updates.public)))
@@ -267,8 +273,12 @@ func (p *project) sparklePlist(target string) string {
 	if p.updatesAutomatic() {
 		automatic = "<true/>"
 	}
-	return fmt.Sprintf("\t<key>SUFeedURL</key><string>%s</string>\n\t<key>SUPublicEDKey</key><string>%s</string>\n\t<key>SUEnableAutomaticChecks</key>%s",
-		xmlText(p.appcastURL(target)), pkg.EncodePublicKey(p.Updates.public), automatic)
+	downloads := "<false/>"
+	if p.Updates.AutomaticDownloads {
+		downloads = "<true/>"
+	}
+	return fmt.Sprintf("\t<key>SUAutomaticallyUpdate</key>%s\n\t<key>SUFeedURL</key><string>%s</string>\n\t<key>SUPublicEDKey</key><string>%s</string>\n\t<key>SUEnableAutomaticChecks</key>%s",
+		downloads, xmlText(p.appcastURL(target)), pkg.EncodePublicKey(p.Updates.public), automatic)
 }
 
 // pinned is a release of an updater nsgo bundles, by its SHA-256.

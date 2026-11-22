@@ -34,6 +34,11 @@ type Config struct {
 	// Automatic has the app check on its own: WinSparkle on its schedule,
 	// and nsgo.Run once a day as the app starts elsewhere.
 	Automatic bool
+	// Channel and Development distinguish intentionally disabled builds.
+	Channel     string
+	Development bool
+	// PageOnly means this installation cannot install the appcast package.
+	PageOnly bool
 	// Store is what installed the app and updates it in nsgo.yaml's
 	// place, as the backend finds as the app starts: Google Play or
 	// another store on Android, Flatpak or Snap on Linux, TestFlight on
@@ -44,7 +49,8 @@ type Config struct {
 // Checks reports whether the app has anything to check, appStore for iOS,
 // which asks the App Store, and elsewhere its appcast.
 func (c Config) Checks(appStore bool) bool {
-	return c.Store == "" && (appStore || c.Feed != "")
+	managed := c.State(appStore).Managed
+	return managed == driver.UpdateManagedSelf || managed == driver.UpdateManagedPage
 }
 
 // AndroidStore names the store that installed an Android app, which
@@ -62,7 +68,7 @@ func AndroidStore(installer string) string {
 
 // managed is the answer to a check of an app that Store updates.
 func (c Config) managed() driver.Update {
-	return driver.Update{App: c.App, Current: c.Version, Err: "updates: " + c.Store + " installed the app and updates it"}
+	return c.answer(false)
 }
 
 // build is the version an appcast's items are compared with.
@@ -90,12 +96,8 @@ func Answer(id uint32, find func(context.Context) driver.Update, dispatch func(d
 // Find reads c's appcast and answers with its newest item when that is
 // newer than the running build.
 func Find(ctx context.Context, c Config) driver.Update {
-	if c.Store != "" {
-		return c.managed()
-	}
-	u := driver.Update{App: c.App, Current: c.Version}
-	if c.Feed == "" {
-		u.Err = "updates: nsgo.yaml configures no updates for this build"
+	u := c.answer(false)
+	if !c.Checks(false) {
 		return u
 	}
 	body, err := get(ctx, c.Feed)
@@ -104,7 +106,7 @@ func Find(ctx context.Context, c Config) driver.Update {
 		if item, err = ParseAppcast(body); err == nil && Newer(item.Build, c.build()) {
 			u.Version, u.URL, u.Notes = item.Version, item.Link, item.Notes
 			// Only a package signed with the app's key is installed; an unsigned appcast, which a release built without NSGO_UPDATES_KEY writes, offers the release's page instead.
-			if item.Signature != "" && c.Key != "" {
+			if item.Signature != "" && c.Key != "" && !c.PageOnly {
 				u.Download, u.Signature, u.SHA256, u.Key, u.Size = item.Download, item.Signature, item.SHA256, c.Key, item.Size
 			}
 		}
@@ -120,10 +122,10 @@ func Find(ctx context.Context, c Config) driver.Update {
 // its version there when that is newer than the running one. An app the
 // store does not list there has none newer.
 func FindInAppStore(ctx context.Context, c Config, country string) driver.Update {
-	if c.Store != "" {
-		return c.managed()
+	u := c.answer(true)
+	if !c.Checks(true) {
+		return u
 	}
-	u := driver.Update{App: c.App, Current: c.Version}
 	if c.ID == "" {
 		u.Err = "updates: the app has no bundle ID"
 		return u
@@ -236,7 +238,7 @@ func ParseAppcast(data []byte) (Item, error) {
 		}
 		item.Version = first(it.ShortVersion, it.Enclosure.ShortVersion, item.Build)
 		item.Link = first(webURL(it.Link), webURL(it.Enclosure.URL))
-		item.Notes = notesText(it.Description)
+		item.Notes = NotesText(it.Description)
 		if item.Build != "" && item.Link != "" && (newest.Build == "" || Newer(item.Build, newest.Build)) {
 			newest = item
 		}

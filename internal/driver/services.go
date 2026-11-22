@@ -15,6 +15,8 @@ type Update struct {
 	Version, URL, Notes              string
 	Download, Signature, SHA256, Key string
 	Size                             int64
+	Managed                          UpdateManaged
+	Store                            string
 	Err                              string
 }
 

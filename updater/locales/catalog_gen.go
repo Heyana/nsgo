@@ -42,6 +42,7 @@ var Parameters = map[string][]string{
 	"UpdateAvailableMessage": {"app", "version", "current"},
 	"UpToDateMessage":        {"app", "version"},
 	"InstallErrorMessage":    {"app", "version"},
+	"UpdateStore":            {"store"},
 }
 
 // Translation is a language's messages another package supplies:
@@ -54,6 +55,7 @@ type Translation struct {
 	UpdateAvailableMessage func(app string, version string, current string) string
 	UpToDateMessage        func(app string, version string) string
 	InstallErrorMessage    func(app string, version string) string
+	UpdateStore            func(store string) string
 }
 
 var supplied = map[string]Translation{}
@@ -68,6 +70,8 @@ const (
 	textInstallError
 	textOpenPage
 	textOk
+	textUpdateDevelopment
+	textUpdateChannel
 	numTexts
 )
 
@@ -82,6 +86,8 @@ var keyOfText = [numTexts]string{
 	"installError",
 	"openPage",
 	"ok",
+	"updateDevelopment",
+	"updateChannel",
 }
 
 // textsEn are the messages without arguments in en.
@@ -93,7 +99,9 @@ var textsEn = i18n.NewTexts(""+
 	"Something went wrong while checking for updates. Try again later."+
 	"Can’t install the update"+
 	"Open Page"+
-	"OK",
+	"OK"+
+	"This is a development build. It does not update itself."+
+	"This build is updated through its distribution channel, not this app.",
 	[]uint16{
 		6,
 		5,
@@ -103,6 +111,8 @@ var textsEn = i18n.NewTexts(""+
 		26,
 		9,
 		2,
+		55,
+		69,
 	})
 
 // textsZhHans are the messages without arguments in zh-Hans.
@@ -114,7 +124,9 @@ var textsZhHans = i18n.NewTexts(""+
 	"检查更新时出错，请稍后再试。"+
 	"无法安装更新"+
 	"打开页面"+
-	"好",
+	"好"+
+	"这是开发版本，不会自行更新。"+
+	"此版本由其分发渠道更新，无法在应用内更新。",
 	[]uint16{
 		6,
 		6,
@@ -124,6 +136,8 @@ var textsZhHans = i18n.NewTexts(""+
 		18,
 		12,
 		3,
+		42,
+		63,
 	})
 
 // texts returns the messages without arguments in lang, nil for a
@@ -191,6 +205,9 @@ func Supply(lang string, t Translation) {
 	}
 	if t.InstallErrorMessage != nil {
 		s.InstallErrorMessage = t.InstallErrorMessage
+	}
+	if t.UpdateStore != nil {
+		s.UpdateStore = t.UpdateStore
 	}
 	supplied[lang] = s
 	Catalog.Add(lang)
@@ -374,3 +391,39 @@ func Ok(cx *core.Scope) string { return For(cx).Ok() }
 
 // Ok is the package's Ok in the language of msgs.
 func (msgs Messages) Ok() string { return msgs.text(textOk) }
+
+// UpdateDevelopment says "This is a development build. It does not update itself."
+// in the language the app shows under cx.
+func UpdateDevelopment(cx *core.Scope) string { return For(cx).UpdateDevelopment() }
+
+// UpdateDevelopment is the package's UpdateDevelopment in the language of msgs.
+func (msgs Messages) UpdateDevelopment() string { return msgs.text(textUpdateDevelopment) }
+
+// UpdateChannel says "This build is updated through its distribution channel, not this app."
+// in the language the app shows under cx.
+func UpdateChannel(cx *core.Scope) string { return For(cx).UpdateChannel() }
+
+// UpdateChannel is the package's UpdateChannel in the language of msgs.
+func (msgs Messages) UpdateChannel() string { return msgs.text(textUpdateChannel) }
+
+// UpdateStore says "{store} installed this app and manages its updates."
+// in the language the app shows under cx.
+func UpdateStore(cx *core.Scope, store string) string { return For(cx).UpdateStore(store) }
+
+// UpdateStore is the package's UpdateStore in the language of msgs.
+func (msgs Messages) UpdateStore(store string) string {
+	if i18n.IsPseudo(msgs.lang) {
+		return i18n.Pseudo(msgs.lang, Messages{lang: Source, mark: true}.UpdateStore(store))
+	}
+	for lang := msgs.lang; ; lang = i18n.Parent(lang) {
+		if f := supplied[lang].UpdateStore; f != nil {
+			return f(store)
+		}
+		switch lang {
+		case "", "en":
+			return msgs.arg(store) + " installed this app and manages its updates."
+		case "zh-Hans":
+			return "此应用由 " + store + " 安装并负责更新。"
+		}
+	}
+}

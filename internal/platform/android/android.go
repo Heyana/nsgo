@@ -494,7 +494,7 @@ func init() {
 
 // startEngine starts app's engine at size with the fold geometry g measured at it; test, when set, is what a test host opens it with.
 func (s *surface) startEngine(app engine.App, size driver.Size, g driver.Geometry, opts Options, test *testOpen) {
-	eopts := engine.Options{Size: size, Geometry: g, Environment: s.env, Appearance: opts.Appearance, Host: s.hostOptions(),
+	eopts := engine.Options{Updater: updateConfig.State(false), Size: size, Geometry: g, Environment: s.env, Appearance: opts.Appearance, Host: s.hostOptions(),
 		Secrets: keystore{s}, ReadAsset: s.readAsset}
 	eopts.SetDirs(engine.AppDirs(""))
 	if test != nil {

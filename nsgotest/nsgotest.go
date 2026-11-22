@@ -86,6 +86,9 @@ func DiskSpace(space core.DiskSpace, err error) Option {
 	return func(a *App) { a.diskSpace = driver.DiskSpaceResult{Space: space, Err: err} }
 }
 
+// UpdaterState supplies the updater snapshot before the first render.
+func UpdaterState(state core.UpdaterState) Option { return func(a *App) { a.updater = state } }
+
 // Environment starts the app in env from its first frame, as a platform reports it before the app mounts: screens have the system header where env has HeaderHeight. Under `nsgo test -target` it pins only the appearance, reduced motion, increased contrast, the login launch reason, the application in front and whether the platform follows it, camera and code scanner availability, and, when set, the locale, text size, device name, device model and vertical bar edge; the OS, the idiom, the safe area and the header heights stay the platform's, so a test of another OS's layout runs headless or on that OS's target.
 func Environment(env driver.Environment) Option {
 	env.AudioPlaybackControls = env.Audio
@@ -284,6 +287,7 @@ type App struct {
 	// platform's updater for (updater.Check), oldest first, true for one
 	// in the background. Update answers each with what the updater found;
 	// with none the app is the newest.
+	updater      core.UpdaterState
 	UpdateChecks []bool
 	Update       func(background bool) core.UpdateCheck
 	// Picks are the photo picks the app asked for, oldest first. PickImages answers each with the files the user picks; with none the user cancels. It answers headless and under `nsgo test -target` macos, windows and linux, in place of the system's picker; on the other targets the system's picker shows and PickImages is not asked.
@@ -584,6 +588,7 @@ func StartApp(t testing.TB, app func(app *core.Scope), opts ...Option) *App {
 func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.Scope), opts []Option) *App {
 	t.Helper()
 	a := &App{
+		updater:  core.UpdaterState{Managed: core.UpdaterSelf, AutomaticChecks: true},
 		t:        t,
 		size:     driver.Size{Width: 390, Height: 844},
 		Clock:    core.NewManualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
@@ -701,6 +706,7 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		ReadAsset: assetReader(),
 		DataDir:   data, CacheDir: cache, LogsDir: logs,
 		Secrets: a.Secrets,
+		Updater: a.updater,
 		Host:    a.host,
 		HotKeys: true,
 		Windows: windows,
@@ -1360,6 +1366,18 @@ func (a *App) Span(selector string) driver.TextSpan {
 // checkForUpdates records a check for a newer version and answers it as
 // Update says.
 func (a *App) checkForUpdates(it *driver.MountItem) {
+	if p := it.UpdatePreference; p != nil {
+		if p.AutomaticChecks != nil {
+			a.updater.AutomaticChecks = *p.AutomaticChecks
+		}
+		if p.AutomaticDownloads != nil {
+			a.updater.AutomaticDownloads = *p.AutomaticDownloads
+		}
+		state := driver.UpdaterState{Managed: driver.UpdateManaged(a.updater.Managed), Store: a.updater.Store, NativePreferences: a.updater.NativePreferences,
+			AutomaticChecks: a.updater.AutomaticChecks, AutomaticDownloads: a.updater.AutomaticDownloads, Available: a.updater.Available, Notes: a.updater.Notes, LastCheck: a.updater.LastCheck}
+		a.post(driver.Event{Kind: driver.EventUpdate, Data: &state})
+		return
+	}
 	a.UpdateChecks = append(a.UpdateChecks, it.On)
 	var c core.UpdateCheck
 	if a.Update != nil {
@@ -1368,7 +1386,7 @@ func (a *App) checkForUpdates(it *driver.MountItem) {
 	ev := driver.Event{Kind: driver.EventUpdate, Count: it.Count, Finished: c.Shown}
 	if !c.Shown {
 		u := &driver.Update{App: c.App, Current: c.Current, Version: c.Version, URL: c.URL, Notes: c.Notes,
-			Download: c.Download, Signature: c.Signature, SHA256: c.SHA256, Key: c.Key, Size: c.Size}
+			Download: c.Download, Signature: c.Signature, SHA256: c.SHA256, Key: c.Key, Size: c.Size, Managed: driver.UpdateManaged(c.Managed), Store: c.Store}
 		if c.Err != nil {
 			u.Err = c.Err.Error()
 		}

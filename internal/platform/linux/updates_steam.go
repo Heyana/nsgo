@@ -2,7 +2,12 @@
 
 package linux
 
-import "github.com/nsgo-dev/nsgo/internal/driver"
+import (
+	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/updates"
+)
+
+func configureUpdates(c updates.Config) updates.Config { return c }
 
 func (w *window) checkForUpdates(id uint32) {
 	w.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count: id,
