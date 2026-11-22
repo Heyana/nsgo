@@ -63,7 +63,7 @@ core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(8), Right: cor
 
 `Static` 让盒子留在流中并忽略 inset，因此其中的绝对定位子元素会去找更上层的祖先。`Overflow` 把子元素裁剪在盒子内，`DisplayNone` 把盒子移出布局。
 
-在 Windows、Linux、Web 和 Apple 上，盒子自身的外阴影和描边留在裁剪之外，与 CSS 一致；Apple 上的各类视图都是如此，包括各角半径不同或滚动内容缩放的情况。Android 会把它们和子元素一起裁掉。要保留它们，把裁剪放到内层视图上，圆角相同，并减去边框宽度：
+在 Android、Windows、Linux、Web 和 Apple 上，盒子自身的外阴影和描边留在裁剪之外，与 CSS 一致；Apple 上的各类视图都是如此，包括各角半径不同或滚动内容缩放的情况。在实体 iPhone 上验证之前，`ui.Dialog` 的 `Bare` 仍把裁剪放到内层视图上，圆角相同，并减去边框宽度，这样在所有目标上都能保留它们：
 
 ```go
 core.View{Style: core.Style{CornerRadius: 16, Shadows: []core.BoxShadow{ui.Shadow(0, 8, 24, -6, ui.Black(0.18))}},

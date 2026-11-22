@@ -27,7 +27,7 @@ import java.nio.ByteBuffer;
  * source fades in over the placeholder. Animated GIF and WebP play with
  * AnimatedImageDrawable, each node its own copy.
  */
-final class ImageNode extends FrameLayout {
+class ImageNode extends FrameLayout {
     private static final int DEFAULT_FADE = 300;
 
     private final ImageView placeholder, source;

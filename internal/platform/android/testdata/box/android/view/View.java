@@ -2,11 +2,14 @@ package android.view;
 
 import android.graphics.Paint;
 import android.graphics.RenderEffect;
+import android.graphics.drawable.Drawable;
 
 public class View {
     public static final int LAYER_TYPE_NONE = 0;
     public static final int LAYER_TYPE_HARDWARE = 2;
 
+    public Drawable getBackground() { return null; }
+    public boolean getClipToOutline() { return false; }
     public int getWidth() { return 0; }
     public int getHeight() { return 0; }
     public void setAlpha(float alpha) {}

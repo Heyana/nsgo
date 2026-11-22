@@ -3170,7 +3170,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 && x < (n.area[0] + n.area[2]) * density && y < (n.area[1] + n.area[3]) * density;
         if (view instanceof ViewGroup && (n == null || n.pointerEvents != Protocol.POINTER_EVENTS_BOX_ONLY)) {
             ViewGroup group = (ViewGroup) view;
-            if (inside || area || !group.getClipChildren() && !view.getClipToOutline()) {
+            if (inside || area || !group.getClipChildren() && !Box.clips(view)) {
                 for (int i = group.getChildCount() - 1; i >= 0; i--) {
                     View child = group.getChildAt(i);
                     float[] p = intoChild(group, child, x, y);
@@ -3302,7 +3302,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 && x < location[0] + view.getWidth() && y < location[1] + view.getHeight()) {
             return true;
         }
-        if (!(view instanceof ViewGroup) || view.getClipToOutline() || ((ViewGroup) view).getClipChildren()) {
+        if (!(view instanceof ViewGroup) || Box.clips(view) || ((ViewGroup) view).getClipChildren()) {
             return false;
         }
         ViewGroup group = (ViewGroup) view;
@@ -5984,10 +5984,25 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         Context context = getContext();
         // A scroll view leaves clipping its content to its parent, so a
         // scroll node clips it.
-        View view = kind == Protocol.KIND_TEXT ? new TextNode(context)
-                : kind == Protocol.KIND_IMAGE ? new ImageNode(context)
-                : kind == Protocol.KIND_CANVAS ? new CanvasNode(context)
-                : kind == Protocol.KIND_SCROLL ? new ScrollEdges(context, density)
+        View view = kind == Protocol.KIND_TEXT ? new TextNode(context) {
+                    @Override public void draw(Canvas canvas) {
+                        int save = Box.begin(canvas, this);
+                        super.draw(canvas);
+                        Box.end(canvas, this, save);
+                    }
+                } : kind == Protocol.KIND_IMAGE ? new ImageNode(context) {
+                    @Override public void draw(Canvas canvas) {
+                        int save = Box.begin(canvas, this);
+                        super.draw(canvas);
+                        Box.end(canvas, this, save);
+                    }
+                } : kind == Protocol.KIND_CANVAS ? new CanvasNode(context) {
+                    @Override public void draw(Canvas canvas) {
+                        int save = Box.begin(canvas, this);
+                        super.draw(canvas);
+                        Box.end(canvas, this, save);
+                    }
+                } : kind == Protocol.KIND_SCROLL ? new ScrollEdges(context, density)
                 : kind == Protocol.KIND_MODAL ? new Layer(context) : new Group(context);
         Node n = new Node(id, view);
         if (view instanceof ScrollEdges) ((ScrollEdges) view).backdropHost = backdropHost;
@@ -6260,13 +6275,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         Keyframes keyframes = Keyframes.read(in);
 
         if (n.image != null) n.image.setTint(Text.argb(tint));
-        // The outline is the background's, corners included.
-        view.setClipToOutline(Protocol.flag(flags, 0));
+        // Clipping the render node would cut off its own shadows and outline.
+        view.setClipToOutline(false);
         view.setVisibility(Protocol.flag(flags, 1) ? GONE : VISIBLE);
         if (n.background == null) {
             n.background = new Box();
             view.setBackground(n.background);
         }
+        n.background.clip = Protocol.flag(flags, 0);
         if (n.animator != null) n.animator.cancel(); // n.shown is where it stopped
         runKeyframes(n, keyframes);
         boolean fresh = n.fresh;
@@ -6693,7 +6709,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if ((flags & 4) != 0) {
             n.view.setForeground(drawable);
         } else {
-            n.view.setBackground(new LayerDrawable(new Drawable[] {box, drawable}));
+            LayerDrawable background = new LayerDrawable(new Drawable[] {box, drawable});
+            n.view.setBackground(background);
+            // Replacing the old background clears box's callback after the LayerDrawable took it. Restore it so restyles invalidate the view.
+            box.setCallback(background);
         }
     }
 
@@ -6810,7 +6829,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * its children leave, so the gestures see them, and while one of them
      * is active it takes its children's too, cancelling their presses.
      */
-    final class Group extends FrameLayout {
+    final class Group extends DecoratedGroup {
         Node node;
         ShaderEffect effect;
         private boolean picturing;
@@ -6926,8 +6945,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 if (c == null) continue;
                 boolean slop = c.slop != null && x >= -c.slop[3] * density && y >= -c.slop[0] * density
                         && x < child.getWidth() + c.slop[1] * density && y < child.getHeight() + c.slop[2] * density;
-                // Overflow: Hidden clips by the outline, leaving getClipChildren false.
-                boolean area = child instanceof ViewGroup && !((ViewGroup) child).getClipChildren() && !child.getClipToOutline()
+                // Overflow: Hidden clips the body, leaving getClipChildren false.
+                boolean area = child instanceof ViewGroup && !((ViewGroup) child).getClipChildren() && !Box.clips(child)
                         || c.area != null && x >= c.area[0] * density && y >= c.area[1] * density
                         && x < (c.area[0] + c.area[2]) * density && y < (c.area[1] + c.area[3]) * density;
                 if (!slop && !area) continue;
@@ -7516,8 +7535,22 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
     }
 
+    /** A styled container whose outer decoration stays outside its content clip. */
+    private static class DecoratedGroup extends FrameLayout {
+        DecoratedGroup(Context context) {
+            super(context);
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            int save = Box.begin(canvas, this);
+            super.draw(canvas);
+            Box.end(canvas, this, save);
+        }
+    }
+
     /** A modal's layer: it takes the touches its children leave, so none reach the views it covers. */
-    private final class Layer extends FrameLayout {
+    private final class Layer extends DecoratedGroup {
         final Object backdropState = Backdrop.createState();
         private final Backdrop.Callbacks backdropCallbacks = new Backdrop.Callbacks() {
             @Override public void superDraw(Canvas canvas) { Layer.super.draw(canvas); }

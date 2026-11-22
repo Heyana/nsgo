@@ -429,10 +429,18 @@ final class TestAgent {
         view.testReply(id, "", "");
     }
 
+    /** Reads owner's field name, declared on its class or a superclass, as NsgoView subclasses its node views to draw their decoration. */
     private static Object field(Object owner, String name) throws Exception {
-        java.lang.reflect.Field field = owner.getClass().getDeclaredField(name);
-        field.setAccessible(true);
-        return field.get(owner);
+        for (Class<?> c = owner.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                java.lang.reflect.Field field = c.getDeclaredField(name);
+                field.setAccessible(true);
+                return field.get(owner);
+            } catch (NoSuchFieldException e) {
+                // Look in the superclass.
+            }
+        }
+        throw new NoSuchFieldException(name + " in " + owner.getClass().getName());
     }
 
     /** Reads the real native tree, including while its Go graph is detached. */

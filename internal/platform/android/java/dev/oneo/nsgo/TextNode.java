@@ -24,7 +24,7 @@ import android.widget.FrameLayout;
  * children, drawn over the text where the engine placed them, and take
  * their own touches.
  */
-final class TextNode extends FrameLayout {
+class TextNode extends FrameLayout {
     private static final PorterDuffXfermode TINT_MODE = new PorterDuffXfermode(PorterDuff.Mode.SRC_IN);
 
     private StaticLayout layout;

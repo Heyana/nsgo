@@ -57,6 +57,13 @@ final class ScrollEdges extends FrameLayout {
 
     @Override
     public void draw(Canvas canvas) {
+        // Box keeps the outer shadows and outline outside the content clip.
+        int save = Box.begin(canvas, this);
+        drawContent(canvas);
+        Box.end(canvas, this, save);
+    }
+
+    private void drawContent(Canvas canvas) {
         if (backdropHost == null || !backdropHost.hasBackdropDescendant(this)) {
             super.draw(canvas);
             return;
@@ -120,6 +127,7 @@ final class ScrollEdges extends FrameLayout {
         if (hardware != null) hardware.discard();
     }
 
+    /** Keeps the node's own outer shadows and outline outside its Overflow clip, as NsgoView's other styled views do. */
     private void drawChildren(Canvas canvas) {
         super.dispatchDraw(canvas);
     }

@@ -45,7 +45,7 @@ import java.util.Map;
  * Arguments bound to animated nodes are patched into the ops each frame
  * they change. Named parts are virtual views for assistive technology.
  */
-final class CanvasNode extends View {
+class CanvasNode extends View {
     /** An image canvases draw, decoded once, with its pixels a point. */
     static final class Picture {
         final Bitmap bitmap;

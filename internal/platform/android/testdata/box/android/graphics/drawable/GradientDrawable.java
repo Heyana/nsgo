@@ -3,7 +3,7 @@ package android.graphics.drawable;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 
-public class GradientDrawable {
+public class GradientDrawable extends Drawable {
     private Rect bounds = new Rect(0, 0, 0, 0);
 
     public Rect getBounds() { return bounds; }
