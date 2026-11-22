@@ -6,9 +6,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// formulaPoint converts a canvas-local point back into Untie's reference box.
-// View draws the reference box uniformly from its em height, while Box.Hits
-// and Box.CaretStops remain in the reference coordinates.
+// formulaPoint converts a canvas-local point back into Untie's reference box. View draws the reference box uniformly from its em height, while Box.Hits and Box.CaretStops remain in the reference coordinates.
 func formulaPoint(box *untie.Box, size core.Size, p core.Point) (untie.Point, bool) {
 	if box == nil || size.Height <= 0 {
 		return untie.Point{}, false

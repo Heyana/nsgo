@@ -33,10 +33,7 @@ const (
 	HitClick
 )
 
-// HitEvent carries the Untie source part and nearest caret under a formula's
-// pointer. Diagnostics contains supplied diagnostics whose ranges cover that
-// part, so an editor can route presses, caret placement and diagnostics without
-// reproducing Untie's geometry.
+// HitEvent carries the Untie source part and nearest caret under a formula's pointer. Diagnostics contains supplied diagnostics whose ranges cover that part, so an editor can route presses, caret placement and diagnostics without reproducing Untie's geometry.
 type HitEvent struct {
 	Source      string
 	Dialect     Dialect
@@ -69,12 +66,10 @@ type View struct {
 	// ErrorStyle's color marks what failed to parse; ErrorClass and ErrorStyle style the source a formula past Untie's limits, or whose fonts did not load, shows instead.
 	ErrorClass string
 	ErrorStyle core.Style
-	// Diagnostics are source ranges an editor wants associated with the formula.
-	// HitEvent reports the entries whose ranges cover the hit part.
+	// Diagnostics are source ranges an editor wants associated with the formula; HitEvent reports the entries whose ranges cover the hit part. DiagnosticsFunc follows what it reads.
 	Diagnostics     []untie.Diagnostic
 	DiagnosticsFunc func() []untie.Diagnostic
-	// OnHit receives hover, press and click events resolved through Untie's Box.
-	// It runs on the engine goroutine.
+	// OnHit receives hover, press and click events resolved through Untie's Box. It runs on the engine goroutine.
 	OnHit  func(HitEvent)
 	TestID string
 }
