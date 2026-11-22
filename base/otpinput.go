@@ -44,6 +44,8 @@ type OtpInput struct {
 	Groups int
 	// Label is what assistive technology says for the field.
 	Label string
+	// LabelFunc binds a changing Label.
+	LabelFunc func() string
 	// OnChange receives the code the user made; a Value the app passes is
 	// never reported. OnComplete receives it once full, after OnChange.
 	OnChange, OnComplete func(value string)
@@ -263,7 +265,7 @@ func (o OtpInput) Render(cx *core.Scope) core.Node {
 			AccessibilityElementsHidden: func() bool { return true },
 			PartStates:                  func() core.PartStates { return core.PartStates{Disabled: disabled(), Invalid: is(o.Invalid)} }})
 	}
-	input := core.Input{Ref: ref, Label: o.Label, Value: field.Get, Masked: o.Masked, Disabled: o.Disabled, Invalid: o.Invalid, HideCaret: true,
+	input := core.Input{Ref: ref, Label: o.Label, LabelFunc: o.LabelFunc, Value: field.Get, Masked: o.Masked, Disabled: o.Disabled, Invalid: o.Invalid, HideCaret: true,
 		KeyboardType: core.KeyboardNumber, AutoComplete: core.AutoCompleteOneTimeCode, NoAutoCorrect: true, AutoCapitalize: core.AutoCapitalizeNone,
 		Style: core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0), Padding: core.All(0),
 			BorderWidth: 0, Background: core.Transparent, Color: core.Transparent, SelectionColor: core.Transparent},

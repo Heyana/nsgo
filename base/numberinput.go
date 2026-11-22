@@ -39,10 +39,13 @@ type NumberInput struct {
 	Placeholder func() string
 	// Label is what assistive technology says for the field.
 	Label string
+	// LabelFunc binds a changing Label.
+	LabelFunc func() string
 	// ControlsRight is read as it is made.
 	ControlsRight bool
 	// Format writes a value it did not type, the shortest text that reads
 	// back as it when nil; Parse reads the field, as a number when nil.
+	// Changes to signals Format reads refresh the shown value outside editing.
 	Format func(value float64) string
 	Parse  func(text string) (float64, bool)
 	// OnCommit leaves the field's text alone as the user types and takes
@@ -393,7 +396,7 @@ func (n NumberInput) Render(cx *core.Scope) core.Node {
 		start = finite(n.DefaultValue)
 	}
 	c.held = start
-	c.text = core.NewSignal(cx, c.textOf(start))
+	c.text = core.NewSignal(cx, core.Untracked(cx, func() string { return c.textOf(start) }))
 	if n.Value != nil {
 		cx.Effect(func() {
 			v := finite(n.Value())
@@ -401,6 +404,24 @@ func (n NumberInput) Render(cx *core.Scope) core.Node {
 		})
 	}
 	focused := core.NewSignal(cx, false)
+	if n.Format != nil {
+		// Formatting may read the locale or another signal independently of
+		// Value. Defer rewriting an active draft until editing ends; retain an
+		// invalid draft when neither its held value nor its formatting changed.
+		formatted := c.text.GetUntracked()
+		cx.Effect(func() {
+			if focused.Get() {
+				return
+			}
+			c.text.Get()
+			shown := c.textOf(c.held)
+			if shown == formatted {
+				return
+			}
+			formatted = shown
+			cx.Untrack(func() { c.text.Set(shown) })
+		})
+	}
 	nudge := func(up bool, steps float64) func() { return func() { c.nudge(up, steps) } }
 	keys := bindWhile(focused.Get, core.KeyAlways, false,
 		controlKey{"up", true, nudge(true, 1)}, controlKey{"down", true, nudge(false, 1)},
@@ -410,7 +431,7 @@ func (n NumberInput) Render(cx *core.Scope) core.Node {
 		field = new(core.Ref)
 	}
 	input := core.Input{Ref: field, Class: n.InputClass, Style: n.InputStyle, StyleFunc: n.InputStyleFunc, Value: c.text.Get, PlaceholderFunc: n.Placeholder,
-		Label: n.Label, LabelledBy: n.LabelledBy, Role: core.RoleSpinButton, NoAutoCorrect: true, Disabled: n.Disabled, Invalid: n.Invalid,
+		Label: n.Label, LabelFunc: n.LabelFunc, LabelledBy: n.LabelledBy, Role: core.RoleSpinButton, NoAutoCorrect: true, Disabled: n.Disabled, Invalid: n.Invalid,
 		ReadonlyFunc: func() bool { return is(n.Readonly) || is(n.Disabled) },
 		KeyboardTypeFunc: func() core.KeyboardType {
 			// Phones' decimal pads have no minus sign.

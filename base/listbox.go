@@ -609,8 +609,9 @@ func typeaheadKeys(active func() bool, typed func(rune)) core.Node {
 
 // listSearch are the search field's parts.
 type listSearch struct {
-	class, placeholder, label string
-	style                     core.Style
+	class, placeholder, label  string
+	placeholderFunc, labelFunc func() string
+	style                      core.Style
 	// field draws the input, the input itself when nil.
 	field func(core.Input) core.Node
 }
@@ -659,7 +660,7 @@ func (lb *listbox) content(onSheet bool, p listParts, h listHooks) []core.Node {
 	var nodes []core.Node
 	if f := p.search; f != nil {
 		nodes = append(nodes, core.Show{When: lb.searchable, Then: func(*core.Scope) core.Node {
-			return drawnField(f.field, core.Input{Value: lb.queryNow, Placeholder: f.placeholder, Label: f.label, Class: f.class, Style: f.style,
+			return drawnField(f.field, core.Input{Value: lb.queryNow, Placeholder: f.placeholder, PlaceholderFunc: f.placeholderFunc, Label: f.label, LabelFunc: f.labelFunc, Class: f.class, Style: f.style,
 				// Desktops type into it at once; a touch screen's keyboard
 				// comes when the user asks.
 				AutoFocus: !onSheet,

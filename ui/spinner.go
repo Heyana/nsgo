@@ -29,16 +29,18 @@ type Spinner struct {
 	// LineWidth is the ring's track and arc width. When 0, ProgressRing's default is used. It has no effect on SpinnerSpokes.
 	LineWidth core.Points
 	// Tint colors it, as ProgressRing's: the ring the accent when nil, the spokes the muted text.
-	Tint   func() core.Color
-	Label  string
-	TestID string
-	Style  core.Style
+	Tint  func() core.Color
+	Label string
+	// LabelFunc binds a changing Label.
+	LabelFunc func() string
+	TestID    string
+	Style     core.Style
 }
 
 // Render implements core.Node.
 func (s Spinner) Render(cx *core.Scope) core.Node {
 	if s.Variant != SpinnerSpokes {
-		return ProgressRing{Indeterminate: func() bool { return true }, Size: s.Size, LineWidth: s.LineWidth, Tint: s.Tint, Label: s.Label, TestID: s.TestID, Style: s.Style}
+		return ProgressRing{Indeterminate: func() bool { return true }, Size: s.Size, LineWidth: s.LineWidth, Tint: s.Tint, Label: s.Label, LabelFunc: s.LabelFunc, TestID: s.TestID, Style: s.Style}
 	}
 	size := s.Size
 	if size <= 0 {
@@ -54,7 +56,7 @@ func (s Spinner) Render(cx *core.Scope) core.Node {
 	if tint == nil {
 		tint = ColorsOf(cx).Muted
 	}
-	return base.Progress{TestID: s.TestID, Label: s.Label, Indeterminate: func() bool { return true }, TrackStyle: core.Style{Display: core.DisplayNone},
+	return base.Progress{TestID: s.TestID, Label: s.Label, LabelFunc: s.LabelFunc, Indeterminate: func() bool { return true }, TrackStyle: core.Style{Display: core.DisplayNone},
 		Style:     core.Style{Width: core.Pt(size), Height: core.Pt(size), FlexShrink: 0}.Merge(s.Style),
 		StyleFunc: func() core.Style { return core.Style{Animated: &core.AnimatedStyle{Rotate: turn}} },
 		Children: []core.Node{core.Icon{SVG: spokes(), Style: core.Style{Width: core.Pct(100), Height: core.Pct(100)},

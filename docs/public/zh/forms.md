@@ -79,7 +79,9 @@ ui.Select[string]{
 
 `ui.NumberInput` 带边界地步进和拖动数字，`ui.DatePicker` 和 `ui.TimeField` 编辑日期和时间，`ui.ColorPicker` 编辑颜色，`ui.TagInput` 编辑一组标签。
 
-`ui.OtpInput` 在格子中输入一次性验证码。`Size` 设置格子的默认宽度和高度，在桌面和电视上为 36 点，在触屏设备上为 44 点。`CellWidth` 和 `CellHeight` 可分别覆盖宽度和高度。`TextStyle` 设置格子的文字样式，`CornerRadius` 设置圆角，`CaretHeight` 可覆盖根据行高计算的光标高度。
+`ui.NumberInput` 和 `base.NumberInput` 的 `LabelFunc` 可更新辅助功能名称。自定义 `Format` 会在字段未编辑时跟随其读取的信号更新；切换语言会保留正在编辑的草稿，直到编辑结束。
+
+`ui.OtpInput` 在格子中输入一次性验证码。它和 `base.OtpInput` 的 `LabelFunc` 可更新名称，同时保留输入焦点和验证码。`Size` 设置格子的默认宽度和高度，在桌面和电视上为 36 点，在触屏设备上为 44 点。`CellWidth` 和 `CellHeight` 可分别覆盖宽度和高度。`TextStyle` 设置格子的文字样式，`CornerRadius` 设置圆角，`CaretHeight` 可覆盖根据行高计算的光标高度。
 
 ```go
 quantity := core.NewSignal(cx, 1.0)
@@ -93,6 +95,8 @@ ui.NumberInput{Value: quantity.Get, OnChange: quantity.Set, Min: 1, Max: 99, Ste
 `ui.FormRow` 将 `Leading` 节点或图标底板放在标题前。用 `LeadingWidth` 为自定义节点预留宽度，使下方分隔线与标题对齐。预留宽度默认为 24 点。`TileSize` 同时调整图标底板、图标和圆角的大小。`TitleStyle` 和 `DetailStyle` 可覆盖标题和详情的文字样式。`TitleMaxLines` 限制标题行数（零为不限），`MinHeight` 以点覆盖该行的最小高度，`Below` 在同一文字列内放置标题和详情下方的节点。`MinHeight` 为零时保留默认值：40 点，触屏设备上为 48 点。
 
 单选组可在 section 外包一层 `base.RadioGroup`，并为各行设置 `Role: core.RoleRadio`、`Checked` 和 `OnPress`。行通过 `base.Radio` 提供选中状态的无障碍信息、单一 Tab 停靠点和方向键选择；已选中的行再次按下时不触发操作。选中值由应用保存。
+
+`ui.FormSection.TitleFunc` 和 `FooterFunc`，以及 `ui.FormRow.TitleFunc`、`DetailFunc` 和 `LabelFunc`，可更新文字而不重建整行。说明、分组标题或页脚为空时不显示该部分；行的辅助功能名称为空时使用当前标题。可搜索的 `ui.Select` 通过 `SearchPlaceholderFunc` 和 `EmptyFunc` 更新提示，保留展开的搜索框、查询和选择。
 
 ## 校验
 

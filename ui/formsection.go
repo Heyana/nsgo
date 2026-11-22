@@ -5,9 +5,11 @@ import "github.com/nsgo-dev/nsgo/core"
 // FormSection is related rows on a rounded card, divided by hairlines from the start of the titles above them, as an inset grouped list of iOS Settings: Title above the card and Footer below it, in the muted color. Its rows are FormRow and FormField, or the app's own nodes, which pad themselves; a core.Each among them gives each of its rows a hairline of its own.
 type FormSection struct {
 	Title, Footer string
-	Children      []core.Node
-	TestID        string
-	Style         core.Style
+	// TitleFunc and FooterFunc update the optional text around the card.
+	TitleFunc, FooterFunc func() string
+	Children              []core.Node
+	TestID                string
+	Style                 core.Style
 	// CardStyle styles the rows' surface. CardStyleFunc merges over it
 	// and follows the signals it reads.
 	CardStyle     core.Style
@@ -29,12 +31,16 @@ func (s FormSection) Render(cx *core.Scope) core.Node {
 		rows = append(rows, child, s.formDivider(colors, child))
 	}
 	var nodes []core.Node
-	if s.Title != "" {
-		title := Text(s.Title, 12, Medium, colors.Muted)
-		title.Role = core.RoleHeader
-		title.Style.Padding = core.Symmetric(0, formRowPad)
-		nodes = append(nodes, title)
+	if s.Title != "" || s.TitleFunc != nil {
+		nodes = append(nodes, core.Show{When: func() bool { return textValue(s.Title, s.TitleFunc) != "" }, Then: func(*core.Scope) core.Node {
+			title := Text(s.Title, 12, Medium, colors.Muted)
+			title.ContentFunc = s.TitleFunc
+			title.Role = core.RoleHeader
+			title.Style.Padding = core.Symmetric(0, formRowPad)
+			return title
+		}})
 	}
+
 	nodes = append(nodes, core.View{Style: core.Style{CornerRadius: RadiusCard, BorderCurve: core.BorderCurveContinuous, Overflow: core.Hidden},
 		StyleFunc: func() core.Style {
 			style := core.Style{Background: Alpha(colors.Text(), 0.045)}.Merge(s.CardStyle)
@@ -43,11 +49,15 @@ func (s FormSection) Render(cx *core.Scope) core.Node {
 			}
 			return style
 		}, Children: rows})
-	if s.Footer != "" {
-		footer := Text(s.Footer, 11.5, Regular, colors.Muted)
-		footer.Style.LineHeight, footer.Style.Padding = 16, core.Symmetric(0, formRowPad)
-		nodes = append(nodes, footer)
+	if s.Footer != "" || s.FooterFunc != nil {
+		nodes = append(nodes, core.Show{When: func() bool { return textValue(s.Footer, s.FooterFunc) != "" }, Then: func(*core.Scope) core.Node {
+			footer := Text(s.Footer, 11.5, Regular, colors.Muted)
+			footer.ContentFunc = s.FooterFunc
+			footer.Style.LineHeight, footer.Style.Padding = 16, core.Symmetric(0, formRowPad)
+			return footer
+		}})
 	}
+
 	return core.View{TestID: s.TestID, Style: core.Style{Gap: 6}.Merge(s.Style), Children: nodes}
 }
 

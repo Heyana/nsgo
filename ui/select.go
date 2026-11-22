@@ -31,7 +31,10 @@ type Select[T comparable] struct {
 	// with SearchPlaceholder in it and Empty while none matches.
 	Searchable        bool
 	SearchPlaceholder string
-	Empty             string
+	// SearchPlaceholderFunc and EmptyFunc bind the search and no-results text.
+	SearchPlaceholderFunc func() string
+	Empty                 string
+	EmptyFunc             func() string
 	// OnClear, when set, shows a button in the field while an option is
 	// chosen, which asks to choose none.
 	OnClear  func()
@@ -167,15 +170,15 @@ func (s Select[T]) Render(cx *core.Scope) core.Node {
 		}}
 	if s.Searchable {
 		b.Searchable = func() bool { return true }
-		b.SearchPlaceholder, b.SearchLabel, b.SearchField = s.SearchPlaceholder, s.SearchPlaceholder, searchField
-		if b.SearchLabel == "" {
-			b.SearchLabel = locales.ListSearch(cx)
+		b.SearchPlaceholder, b.SearchPlaceholderFunc, b.SearchField = s.SearchPlaceholder, s.SearchPlaceholderFunc, searchField
+		b.SearchLabelFunc = func() string {
+			return cmp.Or(textValue(s.SearchPlaceholder, s.SearchPlaceholderFunc), locales.ListSearch(cx))
 		}
-		text := s.Empty
-		if text == "" {
-			text = locales.ListNothingFound(cx)
+		empty := emptyList(cx, "")
+		empty.ContentFunc = func() string {
+			return cmp.Or(textValue(s.Empty, s.EmptyFunc), locales.ListNothingFound(cx))
 		}
-		b.Empty = emptyList(cx, text)
+		b.Empty = empty
 	}
 	if s.OnClear != nil {
 		b.Cleanable, b.ClearButton, b.ClearButtonStyle, b.ClearButtonLabel = true, clearMark(cx), clearStyle, locales.ListClear(cx)

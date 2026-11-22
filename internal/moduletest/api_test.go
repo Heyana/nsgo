@@ -244,7 +244,7 @@ base.ColorEyeDropper.Label base.ColorField.Label base.ColorField.Placeholder bas
 base.ColorSlider.Label base.ColorSwatch.Label base.Combobox.Label base.Combobox.Placeholder
 base.Command.Label base.Command.Placeholder base.CommandEntry.Label base.CommandEntry.Description
 base.CommandItem.Label base.CommandItem.Description base.DatePicker.Label base.DatePreset.Label
-base.Link.Label base.Link.Hint base.List.Label base.NumberInput.Label base.OtpInput.Label
+base.Link.Label base.Link.Hint base.List.Label
 base.Pagination.Label base.Radio.Label base.Radio.Hint base.RadioGroup.Label base.ResizeHandle.Label
 base.Scrollbar.Label base.ScrollbarLook.Label base.SelectEntry.Title base.SelectGroup.Title
 base.SelectItem.Title base.Submenu.Label base.SuggestItem.Label base.SuggestList.Label base.Switch.Hint
@@ -255,19 +255,47 @@ base.TreeItem.Label
 ui.AccordionItem.Text ui.Avatar.Label ui.AvatarGroup.Label ui.AvatarGroupMember.Label ui.Carousel.Label
 ui.Collapsible.Text ui.ColorWell.Label ui.Combobox.Label ui.Combobox.Placeholder ui.Command.Label
 ui.Command.Placeholder ui.DatePicker.Label ui.DatePicker.Placeholder ui.DockTabLabel.Text ui.FormField.Title
-ui.FormRow.Label ui.FormRow.Title ui.FormSection.Title ui.HoldToConfirm.Hint ui.HoldToConfirm.Text
+ui.HoldToConfirm.Hint ui.HoldToConfirm.Text
 ui.Image.Label ui.ImageCompare.Label ui.Link.Label ui.Link.Text ui.List.Label ui.MenuLabel.Text
-ui.NumberInput.Label ui.OtpInput.Label ui.Pagination.Label ui.PlainShell.Title ui.ProgressRing.Label
+ui.Pagination.Label ui.PlainShell.Title
 ui.Radio.Label ui.Radio.Hint ui.Radio.Text ui.RadioGroup.Label ui.Rating.Label ui.ResizeHandle.Label
 ui.Scrollbar.Label ui.Select.Placeholder ui.Settings.Title ui.SettingsCategory.Title
 ui.SettingsCategory.Description ui.SettingsDialog.Label ui.SettingsGroup.Title ui.SettingsItem.Title
 ui.SettingsItem.Description ui.SidebarButton.Text ui.SidebarItem.Text
-ui.SidebarSection.Title ui.Skeleton.Label ui.Spinner.Label ui.Stepper.Label ui.StepperStep.Label
+ui.SidebarSection.Title ui.Skeleton.Label ui.Stepper.Label ui.StepperStep.Label
 ui.StepperStep.Description ui.Submenu.Text ui.SuggestList.Label ui.TagInput.Label
 ui.TagInput.Placeholder ui.TimeField.Label ui.ToastContent.Title ui.ToastContent.Description
 ui.ToggleButton.Label ui.ToggleButton.Text ui.ToggleGroup.Label ui.Toolbar.Label ui.ToolbarGroup.Label
 ui.Tree.Label
+
+core.Screen.HeaderBackTitle
+base.AvatarGroup.OverflowLabel base.CalendarConfig.NextLabel base.CalendarConfig.PreviousLabel
+base.Combobox.ClearButtonLabel base.Command.SearchLabel base.CommandEntry.ShortcutLabel
+base.DatePicker.ClearButtonLabel base.DatePicker.TimeFieldLabel
+base.NumberInput.IncrementLabel base.NumberInput.DecrementLabel
+base.Pagination.NextLabel base.Pagination.PreviousLabel base.ResizablePanelGroup.HandleLabel
+base.Select.ClearButtonLabel base.SuggestItem.Detail
+ui.Carousel.PreviousLabel ui.Carousel.NextLabel ui.Combobox.Empty ui.Command.SearchLabel
+ui.Command.Empty ui.Command.LoadingText ui.DatePicker.TimeLabel ui.DockArea.HandleLabel ui.DockTabLabel.CloseLabel
+ui.HoldToConfirm.ConfirmedText ui.ImageCompare.BeforeLabel ui.ImageCompare.AfterLabel ui.NavHeader.BackLabel
+ui.NumberInput.IncrementLabel ui.NumberInput.LeadingText ui.NumberInput.DecrementLabel
+ui.Pagination.PreviousLabel ui.Pagination.NextLabel ui.ResizablePanelGroup.HandleLabel
+ui.ScrollView.TopBarLabel ui.ScrollView.BottomBarLabel
+ui.Settings.SearchPlaceholder ui.Settings.EmptyText ui.Settings.SearchLabel ui.Settings.CloseLabel ui.Settings.ResultsTitle
+ui.SidebarShell.ResizeLabel ui.SidebarShell.RightResizeLabel ui.SidebarShell.ToggleLabel ui.SidebarShell.RightToggleLabel
+ui.Stepper.CompleteLabel ui.Toasts.CloseLabel ui.Tree.ToggleLabel
 `)
+
+// isTextProp also covers a part’s words, such as SearchPlaceholder and
+// IncrementLabel, so adding a prefix cannot bypass the reactive-text guard.
+func isTextProp(name string) bool {
+	for _, suffix := range []string{"Label", "Title", "Description", "Hint", "Placeholder", "Text", "Footer", "Detail", "Empty"} {
+		if strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	return false
+}
 
 // TestFuncFieldsBindTheirValue checks the type of each XFunc twin and
 // requires twins for public text props and the fields in twinned.
@@ -301,7 +329,10 @@ func TestFuncFieldsBindTheirValue(t *testing.T) {
 				fields[st.Field(i).Name()] = st.Field(i).Type()
 			}
 			if checkText {
-				for _, text := range []string{"Label", "Title", "Description", "AccessibilityDescription", "Hint", "Placeholder", "Text"} {
+				for text := range fields {
+					if !isTextProp(text) {
+						continue
+					}
 					field := pkg.Name() + "." + name + "." + text
 					if fields[text] == types.Typ[types.String] && fields[text+"Func"] == nil {
 						if !exceptions[field] {

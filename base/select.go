@@ -29,7 +29,10 @@ type Select struct {
 	// Searchable shows a field above the rows that filters them by title.
 	Searchable        func() bool
 	SearchPlaceholder string
-	SearchLabel       string
+	// SearchPlaceholderFunc and SearchLabelFunc bind the search field’s words.
+	SearchPlaceholderFunc func() string
+	SearchLabel           string
+	SearchLabelFunc       func() string
 	// Cleanable shows a button while an item is chosen, which clears the
 	// value and reports nil.
 	Cleanable bool
@@ -262,7 +265,7 @@ func (s Select) Render(cx *core.Scope) core.Node {
 		list:   part{Class: s.ListClass, Style: s.ListStyle},
 		item:   parts.Of(s.ItemClass, s.ItemStyle, s.ItemStyleFunc),
 		group:  parts.Of(s.GroupClass, s.GroupStyle, s.GroupStyleFunc),
-		search: &listSearch{class: s.SearchClass, style: s.SearchStyle, placeholder: s.SearchPlaceholder, label: s.SearchLabel, field: s.SearchField},
+		search: &listSearch{class: s.SearchClass, style: s.SearchStyle, placeholder: s.SearchPlaceholder, placeholderFunc: s.SearchPlaceholderFunc, label: s.SearchLabel, labelFunc: s.SearchLabelFunc, field: s.SearchField},
 		cover:  newDropdownCover(cx), renderItem: s.RenderItem, renderGroup: s.RenderGroup, empty: s.Empty}
 	measure := func() {
 		if b, ok := anchor.ContentBounds(); ok {

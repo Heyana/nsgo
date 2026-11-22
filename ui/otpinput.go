@@ -31,10 +31,12 @@ type OtpInput struct {
 	CaretHeight          core.Points
 	OnChange, OnComplete func(value string)
 	// Label is what assistive technology says for the field.
-	Label  string
-	Ref    *base.OtpInputRef
-	TestID string
-	Style  core.Style
+	Label string
+	// LabelFunc binds a changing Label.
+	LabelFunc func() string
+	Ref       *base.OtpInputRef
+	TestID    string
+	Style     core.Style
 }
 
 // Render implements core.Node.
@@ -61,7 +63,7 @@ func (o OtpInput) Render(cx *core.Scope) core.Node {
 	}
 	caretHeight := cmp.Or(o.CaretHeight, max(lineHeight-2, 1))
 	return base.OtpInput{Length: o.Length, Value: o.Value, DefaultValue: o.DefaultValue, Masked: o.Masked, Disabled: o.Disabled, Groups: o.Groups,
-		OnChange: o.OnChange, OnComplete: o.OnComplete, Label: o.Label, Ref: o.Ref, TestID: o.TestID,
+		OnChange: o.OnChange, OnComplete: o.OnComplete, Label: o.Label, LabelFunc: o.LabelFunc, Ref: o.Ref, TestID: o.TestID,
 		Style:      core.Style{Direction: core.Row, AlignItems: core.AlignCenter, AlignSelf: core.AlignStart, Gap: 12}.Merge(o.Style),
 		GroupStyle: core.Style{Direction: core.Row, Gap: 6},
 		CellStyle: text.Merge(core.Style{Width: core.Pt(cmp.Or(o.CellWidth, cell)), Height: core.Pt(cmp.Or(o.CellHeight, cell)),

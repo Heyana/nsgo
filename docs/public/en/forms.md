@@ -77,9 +77,9 @@ ui.Select[string]{
 }
 ```
 
-`ui.NumberInput` steps and scrubs a number with bounds, `ui.DatePicker` and `ui.TimeField` edit dates and times, `ui.ColorPicker` edits a color, and `ui.TagInput` edits a list of tags.
+`ui.NumberInput` and `base.NumberInput` accept `LabelFunc` for a changing accessible name. A custom `Format` follows the signals it reads while the field is not being edited; a language switch preserves the active draft until editing ends. `ui.NumberInput` steps and scrubs a number with bounds, `ui.DatePicker` and `ui.TimeField` edit dates and times, `ui.ColorPicker` edits a color, and `ui.TagInput` edits a list of tags.
 
-`ui.OtpInput` takes a one-time code in cells. `Size` sets the default height and width, 36 points on desktops and TVs and 44 on touch devices. `CellWidth` and `CellHeight` override either dimension independently. `TextStyle` overrides the cell typography, `CornerRadius` changes its corners, and `CaretHeight` overrides the height derived from the line height.
+`ui.OtpInput` takes a one-time code in cells. It and `base.OtpInput` accept `LabelFunc` without replacing the focused field or its code. `Size` sets the default height and width, 36 points on desktops and TVs and 44 on touch devices. `CellWidth` and `CellHeight` override either dimension independently. `TextStyle` overrides the cell typography, `CornerRadius` changes its corners, and `CaretHeight` overrides the height derived from the line height.
 
 ```go
 quantity := core.NewSignal(cx, 1.0)
@@ -93,6 +93,8 @@ ui.NumberInput{Value: quantity.Get, OnChange: quantity.Set, Min: 1, Max: 99, Ste
 `ui.FormRow` places `Leading` or an icon tile before the title. Set `LeadingWidth` to reserve space for your node and align the divider below it with the title. The slot defaults to 24 points. Set `TileSize` to scale the icon tile, glyph and corners together. `TitleStyle` and `DetailStyle` override the title and detail typography. `TitleMaxLines` caps the title (zero is unlimited), `MinHeight` overrides the row’s minimum height in points, and `Below` places a node after the title and detail in their text column. Zero `MinHeight` keeps the default: 40 points, or 48 on touch devices.
 
 For a single-choice set, wrap the section in `base.RadioGroup` and set each row’s `Role: core.RoleRadio`, `Checked` and `OnPress`. The row uses `base.Radio` for its checked and selected accessibility states, one Tab stop and arrow-key selection; pressing an already checked row does nothing. The app owns the chosen value.
+
+`ui.FormSection.TitleFunc` and `FooterFunc`, and `ui.FormRow.TitleFunc`, `DetailFunc` and `LabelFunc`, update their words without rebuilding the row. An empty detail, section title or footer removes that optional text; an empty row label uses its current title. A searchable `ui.Select` binds `SearchPlaceholderFunc` and `EmptyFunc` while keeping its open search and selection.
 
 ## Validation
 

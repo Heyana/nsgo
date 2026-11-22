@@ -29,9 +29,11 @@ type FormRow struct {
 	TileSize core.Points
 	// Leading replaces the icon. LeadingWidth is the width reserved for
 	// it in points, 24 when zero, and aligns the section's divider.
-	Leading                 core.Node
-	LeadingWidth            core.Points
-	Title, Detail           string
+	Leading       core.Node
+	LeadingWidth  core.Points
+	Title, Detail string
+	// TitleFunc and DetailFunc update text without rebuilding the row.
+	TitleFunc, DetailFunc   func() string
 	TitleStyle, DetailStyle core.Style
 	// Below follows the title and detail in their text column.
 	Below core.Node
@@ -49,8 +51,10 @@ type FormRow struct {
 	Variant  FormRowVariant
 	// Label names a pressable row for assistive technology, Title by
 	// default.
-	Label  string
-	TestID string
+	Label string
+	// LabelFunc binds an explicit accessible name; an empty name uses Title.
+	LabelFunc func() string
+	TestID    string
 }
 
 // Render implements core.Node.
@@ -77,12 +81,14 @@ func (r FormRow) Render(cx *core.Scope) core.Node {
 			CornerRadius: width / 4, BorderCurve: core.BorderCurveContinuous, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
 			StyleFunc: Filled(fill), Children: []core.Node{Icon(r.Icon, width*14/formIconTile, colors.OnAccent)}})
 	}
-	texts := []core.Node{core.Text{Content: r.Title, MaxLines: r.TitleMaxLines, Style: TypeBody.Merge(r.TitleStyle),
+	texts := []core.Node{core.Text{Content: r.Title, ContentFunc: r.TitleFunc, MaxLines: r.TitleMaxLines, Style: TypeBody.Merge(r.TitleStyle),
 		StyleFunc: func() core.Style { return core.Style{Color: cmp.Or(r.TitleStyle.Color, tint())} }}}
-	if r.Detail != "" {
-		texts = append(texts, core.Text{Content: r.Detail,
-			Style:     core.Style{FontSize: 11.5, FontWeight: Regular, LineHeight: 15}.Merge(r.DetailStyle),
-			StyleFunc: func() core.Style { return core.Style{Color: cmp.Or(r.DetailStyle.Color, colors.Muted())} }})
+	if r.Detail != "" || r.DetailFunc != nil {
+		texts = append(texts, core.Show{When: func() bool { return textValue(r.Detail, r.DetailFunc) != "" }, Then: func(*core.Scope) core.Node {
+			return core.Text{Content: r.Detail, ContentFunc: r.DetailFunc,
+				Style:     core.Style{FontSize: 11.5, FontWeight: Regular, LineHeight: 15}.Merge(r.DetailStyle),
+				StyleFunc: func() core.Style { return core.Style{Color: cmp.Or(r.DetailStyle.Color, colors.Muted())} }}
+		}})
 	}
 	if r.Below != nil {
 		texts = append(texts, r.Below)
@@ -101,11 +107,12 @@ func (r FormRow) Render(cx *core.Scope) core.Node {
 	}
 	style := core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: formRowGap, MinHeight: core.Pt(cmp.Or(r.MinHeight, formRowHeightFor(cx))),
 		Padding: core.Symmetric(6, formRowPad)}
-	label := r.Label
-	if label == "" {
-		label = r.Title
-	}
+	label, labelFunc := textBinding(r.Label, r.LabelFunc, r.Title, r.TitleFunc)
 	if r.Role == core.RoleRadio {
+		// base.Radio takes a fixed Label, so a bound name is read once as the row mounts.
+		if labelFunc != nil {
+			label = core.Untracked(cx, labelFunc)
+		}
 		style.Disabled = Dimmed()
 		return base.Radio{Label: label, TestID: r.TestID, Checked: r.Checked, Disabled: r.Disabled,
 			OnChange: func(bool) {
@@ -117,12 +124,12 @@ func (r FormRow) Render(cx *core.Scope) core.Node {
 	}
 	if r.OnPress == nil {
 		if r.Role == core.RoleNone {
-			label = ""
+			label, labelFunc = "", nil
 		}
-		return core.View{TestID: r.TestID, Role: r.Role, Label: label, Style: style, Children: children}
+		return core.View{TestID: r.TestID, Role: r.Role, Label: label, LabelFunc: labelFunc, Style: style, Children: children}
 	}
 	style.Disabled = Dimmed()
-	return base.Button{Role: r.Role, Label: label, TestID: r.TestID, Disabled: r.Disabled, OnPress: func(core.PressEvent) { r.OnPress() },
+	return base.Button{Role: r.Role, Label: label, LabelFunc: labelFunc, TestID: r.TestID, Disabled: r.Disabled, OnPress: func(core.PressEvent) { r.OnPress() },
 		Style: style,
 		StyleFunc: func() core.Style {
 			return core.Style{Active: &core.Style{Background: colors.Hover()}, FocusVisible: FocusRing(cx, -2)}

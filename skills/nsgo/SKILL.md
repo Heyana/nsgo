@@ -17,6 +17,8 @@ go list -m -f '{{.Dir}}' github.com/nsgo-dev/nsgo   # the source, docs/public/en
 
 The docs are at <https://nsgo.dev/docs/>; <https://nsgo.dev/llms.txt> lists every page as Markdown, and <https://nsgo.dev/llms-full.txt> holds them all. In the module directory, `examples/gallery` demonstrates every component, `examples/hello` is the smallest app and `examples/tsx` a TSX one; copy their structure rather than inventing one. What is missing is in `docs/roadmap.md`: check it before assuming a feature exists on a target.
 
+Bind translated control words with their `…Func` fields to keep focus and input state. Number/code inputs and spinners accept `LabelFunc`; searchable `ui.Select` has `SearchPlaceholderFunc` and `EmptyFunc`, and form rows/sections have title, detail, label and footer functions. A number input’s `Format` follows signals outside editing. [Forms](https://nsgo.dev/docs/forms.md)
+
 ## Create and run
 
 ```sh

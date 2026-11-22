@@ -29,6 +29,7 @@ type NumberInput struct {
 	Step float64
 	// Format writes the value, with as many decimals as Step has when
 	// nil; Parse reads it back, strconv.ParseFloat's when nil.
+	// Changes to signals Format reads refresh the shown value outside editing.
 	Format func(value float64) string
 	Parse  func(text string) (float64, bool)
 	// Leading is the scrub handle's icon, or LeadingText its text, such
@@ -43,9 +44,11 @@ type NumberInput struct {
 	IncrementLabel, DecrementLabel string
 	Disabled                       func() bool
 	// Label names the field for assistive technology.
-	Label  string
-	TestID string
-	Style  core.Style
+	Label string
+	// LabelFunc binds a changing Label.
+	LabelFunc func() string
+	TestID    string
+	Style     core.Style
 }
 
 // step is the value's step.
@@ -80,7 +83,7 @@ func (n NumberInput) Render(cx *core.Scope) core.Node {
 		}
 	}
 	number := func(v float64) func() *float64 { return func() *float64 { return &v } }
-	in := base.NumberInput{Ref: n.Ref, LabelledBy: n.LabelledBy, Invalid: n.Invalid, Format: format, Parse: parse, OnCommit: true, Snap: true, Step: n.step, Disabled: n.Disabled, Label: n.Label, TestID: n.TestID,
+	in := base.NumberInput{Ref: n.Ref, LabelledBy: n.LabelledBy, Invalid: n.Invalid, Format: format, Parse: parse, OnCommit: true, Snap: true, Step: n.step, Disabled: n.Disabled, Label: n.Label, LabelFunc: n.LabelFunc, TestID: n.TestID,
 		ControlsRight: true, IncrementLabel: n.IncrementLabel, DecrementLabel: n.DecrementLabel,
 		Value: func() *float64 {
 			v := 0.0

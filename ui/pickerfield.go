@@ -97,7 +97,7 @@ func searchField(in core.Input) core.Node {
 }
 
 // emptyList is what a list shows while nothing matches.
-func emptyList(cx *core.Scope, text string) core.Node {
+func emptyList(cx *core.Scope, text string) core.Text {
 	return core.Text{Content: text, Style: TypeBody.Merge(core.Style{Padding: core.All(12), TextAlign: core.TextAlignCenter}),
 		StyleFunc: Colored(ColorsOf(cx).Muted)}
 }

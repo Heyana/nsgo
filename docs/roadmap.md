@@ -89,6 +89,8 @@ NSGo's own design for [#58](https://github.com/nsgo-dev/nsgo/issues/58) ([Blueto
 
 ## Keyboard, popups and screen readers
 
+Remaining prefixed text props are explicit exceptions in `TestFuncFieldsBindTheirValue`: stepper, pagination, carousel and navigation labels, search/empty text outside `Select`, and the other listed legacy props still need bindings. The guard checks suffixes such as `SearchPlaceholder` and `IncrementLabel`, plus `Footer`, `Detail` and `Empty`, so new fields need a twin or an explicit recorded exception (#1861).
+
 What 0.5.0 changed in how the keyboard's focus, popups and assistive technology behave, which NSGo's `core` and `base` follow from 0.4.0 still ([interaction](architecture/interaction.md), [components](architecture/components.md)).
 
 | Item | NSH reference | Done when |

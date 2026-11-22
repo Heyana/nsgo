@@ -26,9 +26,11 @@ type ProgressRing struct {
 	// Tint colors the arc, the accent when nil, and the track under it, a quarter as opaque, where the theme's line would not show, such as on an accent fill.
 	Tint func() core.Color
 	// Label names the task for assistive technology.
-	Label  string
-	TestID string
-	Style  core.Style
+	Label string
+	// LabelFunc binds a changing Label.
+	LabelFunc func() string
+	TestID    string
+	Style     core.Style
 }
 
 // Render implements core.Node.
@@ -95,7 +97,7 @@ func (p ProgressRing) Render(cx *core.Scope) core.Node {
 		d.BeginPath().Arc(x, y, r, start, end, p.CounterClockwise).SetStrokeColor(arc).Stroke()
 	}
 	// The ring is drawn; base's bar is its semantics.
-	return base.Progress{TestID: p.TestID, Label: p.Label, Value: value, Indeterminate: p.Indeterminate,
+	return base.Progress{TestID: p.TestID, Label: p.Label, LabelFunc: p.LabelFunc, Value: value, Indeterminate: p.Indeterminate,
 		ValueText:  func(v float32) string { return fmt.Sprintf("%d%%", int(v+0.5)) },
 		TrackStyle: core.Style{Display: core.DisplayNone},
 		Style:      core.Style{Width: core.Pt(size), Height: core.Pt(size), FlexShrink: 0}.Merge(p.Style),
