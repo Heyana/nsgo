@@ -12,8 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
 )
 
-// GPUDebugEvent records a debug label, group, or marker observed by
-// GPUSoftwareDevice during resource creation or command execution.
+// GPUDebugEvent records a debug label, group, or marker observed by GPUSoftwareDevice during resource creation or command execution.
 type GPUDebugEvent struct {
 	Kind  string
 	Label string
@@ -125,14 +124,12 @@ func (d *GPUSoftwareDevice) Size() (int, int) { return d.width, d.height }
 // Frames returns all GPUFrames submitted to this device, oldest first.
 func (d *GPUSoftwareDevice) Frames() []GPUFrame { return d.frames }
 
-// LastPassTimings returns a copy of the pass timings measured during the most
-// recent Submit call.
+// LastPassTimings returns a copy of the pass timings measured during the most recent Submit call.
 func (d *GPUSoftwareDevice) LastPassTimings() []GPUPassTiming {
 	return slices.Clone(d.lastTimings)
 }
 
-// DebugEvents returns a copy of all debug labels, groups, and markers observed
-// by this software device.
+// DebugEvents returns a copy of all debug labels, groups, and markers observed by this software device.
 func (d *GPUSoftwareDevice) DebugEvents() []GPUDebugEvent {
 	return slices.Clone(d.debugEvents)
 }

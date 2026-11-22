@@ -52,8 +52,7 @@ func (m *ShaderModule) HasFragmentEntry(name string) bool {
 	return slices.Contains(m.fragmentEntries, name) || m.ir.FragmentEntry == name
 }
 
-// CompileShader parses, type-checks, and lowers desc.Source (WGSL) into a
-// ShaderModule, recording desc.Label in nsgodev/nsgotest builds only.
+// CompileShader parses, type-checks, and lowers desc.Source (WGSL) into a ShaderModule, recording desc.Label in nsgodev/nsgotest builds only.
 func CompileShader(desc ShaderDesc) (*ShaderModule, error) {
 	m, err := CompileWGSL(desc.Source)
 	if err != nil {

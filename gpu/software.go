@@ -20,8 +20,7 @@ func NewSoftwareRenderer(width, height int, depthFormat TextureFormat) *Software
 	return NewSoftwareRendererWithFeatures(width, height, depthFormat, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()))
 }
 
-// NewSoftwareRendererWithFeatures creates a pure-Go software 3D GPU renderer
-// with explicit device capability flags (useful for testing unsupported feature paths).
+// NewSoftwareRendererWithFeatures creates a pure-Go software 3D GPU renderer with explicit device capability flags (useful for testing unsupported feature paths).
 func NewSoftwareRendererWithFeatures(width, height int, depthFormat TextureFormat, features Features) *SoftwareRenderer {
 	cfg := driver.GPUViewConfig{
 		ColorFormat: driver.GPUFormatRGBA8Unorm,
@@ -81,8 +80,7 @@ func (r *SoftwareRenderer) PassTimings() []PassTiming {
 	return r.dev.LastPassTimings()
 }
 
-// DebugEvents returns all debug labels, groups, and markers observed by the
-// software renderer (empty in release builds where labels are stripped).
+// DebugEvents returns all debug labels, groups, and markers observed by the software renderer (empty in release builds where labels are stripped).
 func (r *SoftwareRenderer) DebugEvents() []DebugEvent {
 	raw := r.soft.DebugEvents()
 	if len(raw) == 0 {
@@ -95,8 +93,7 @@ func (r *SoftwareRenderer) DebugEvents() []DebugEvent {
 	return out
 }
 
-// ResourceLabel returns the debug label received by the software renderer for
-// resource id (always empty in release builds).
+// ResourceLabel returns the debug label received by the software renderer for resource id (always empty in release builds).
 func (r *SoftwareRenderer) ResourceLabel(id uint64) string {
 	return r.soft.ResourceLabel(driver.GPUID(id))
 }

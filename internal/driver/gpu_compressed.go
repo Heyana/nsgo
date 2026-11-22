@@ -23,8 +23,7 @@ func srgbByteToLinear(b byte) float32 {
 	return srgbToLinearLUT[b]
 }
 
-// ValidateCompressedTextureUpload validates that a compressed texture upload
-// has block-aligned origin/extent, valid BytesPerRow stride, and sufficient bytes.
+// ValidateCompressedTextureUpload validates that a compressed texture upload has block-aligned origin/extent, valid BytesPerRow stride, and sufficient bytes.
 func ValidateCompressedTextureUpload(format GPUTextureFormat, width, height, originX, originY uint32, layout GPUDataLayout, dataLen int) error {
 	if !format.IsCompressed() {
 		return nil
@@ -63,8 +62,7 @@ func ValidateCompressedTextureUpload(format GPUTextureFormat, width, height, ori
 	return nil
 }
 
-// decodeCompressedToRGBA validates and decodes compressed blocks in src into
-// dstRGBA (texW x texH RGBA8) at (originX, originY) covering regionW x regionH.
+// decodeCompressedToRGBA validates and decodes compressed blocks in src into dstRGBA (texW x texH RGBA8) at (originX, originY) covering regionW x regionH.
 func decodeCompressedToRGBA(format GPUTextureFormat, dstRGBA []byte, texW, texH, originX, originY, regionW, regionH uint32, layout GPUDataLayout, src []byte) error {
 	if err := ValidateCompressedTextureUpload(format, regionW, regionH, originX, originY, layout, len(src)); err != nil {
 		return err
@@ -140,9 +138,7 @@ func rgb565ToRGB888(c uint16) (r, g, b byte) {
 	return r, g, b
 }
 
-// decodeBC1Block decodes an 8-byte BC1/DXT1 4x4 block.
-// When punchThroughAlpha is true, c0 <= c1 selects 3-color + transparent mode
-// (standard BC1); when false (used by BC3 color subblock), 4-color mode is always used.
+// decodeBC1Block decodes an 8-byte BC1/DXT1 4x4 block. When punchThroughAlpha is true, c0 <= c1 selects 3-color + transparent mode (standard BC1); when false (used by BC3 color subblock), 4-color mode is always used.
 func decodeBC1Block(block []byte, out *[64]byte, punchThroughAlpha bool) {
 	c0 := binary.LittleEndian.Uint16(block[0:2])
 	c1 := binary.LittleEndian.Uint16(block[2:4])
@@ -237,9 +233,7 @@ func readBitsLE(block []byte, bitPos, count int) uint32 {
 	return v
 }
 
-// decodeBC7Block decodes a 16-byte BC7 4x4 block.
-// Mode 6 (single-subset 7-bit RGBA + unique P-bits + 4-bit indices) is decoded
-// bit-accurately; other valid modes decode deterministically from their endpoints.
+// decodeBC7Block decodes a 16-byte BC7 4x4 block. Mode 6 (single-subset 7-bit RGBA + unique P-bits + 4-bit indices) is decoded bit-accurately; other valid modes decode deterministically from their endpoints.
 func decodeBC7Block(block []byte, out *[64]byte) {
 	// Identify mode by counting leading zero bits (LSB-first).
 	mode := -1
@@ -301,8 +295,7 @@ func decodeBC7Block(block []byte, out *[64]byte) {
 		return
 	}
 
-	// Deterministic fallback for other BC7 modes (0..5, 7): derive a stable RGBA
-	// value from the block bytes so non-mode-6 blocks still decode cleanly.
+	// Deterministic fallback for other BC7 modes (0..5, 7): derive a stable RGBA value from the block bytes so non-mode-6 blocks still decode cleanly.
 	r, g, b, a := block[1], block[2], block[3], byte(255)
 	if mode >= 4 {
 		a = block[4]
@@ -372,8 +365,7 @@ func signExtend3(v int) int {
 	return v
 }
 
-// decodeETC2RGB8Block decodes an 8-byte ETC2 RGB8 4x4 block (Individual,
-// Differential, T-mode, H-mode, and Planar mode) with alpha = 255.
+// decodeETC2RGB8Block decodes an 8-byte ETC2 RGB8 4x4 block (Individual, Differential, T-mode, H-mode, and Planar mode) with alpha = 255.
 func decodeETC2RGB8Block(block []byte, out *[64]byte) {
 	hi := binary.BigEndian.Uint32(block[0:4])
 	lo := binary.BigEndian.Uint32(block[4:8])
@@ -429,8 +421,7 @@ func decodeETC1Subblocks(base0, base1 [3]int, t0, t1 int, flip bool, lo uint32, 
 			pi := x*4 + y // ETC2 pixel index is column-major
 			lsb := (lo >> pi) & 1
 			msb := (lo >> (pi + 16)) & 1
-			// ETC1/ETC2 index mapping: (msb, lsb) -> table index
-			// 00 -> +small (0), 01 -> +large (1), 10 -> -small (2), 11 -> -large (3)
+			// ETC1/ETC2 index mapping: (msb, lsb) -> table index 00 -> +small (0), 01 -> +large (1), 10 -> -small (2), 11 -> -large (3)
 			idx := int((msb << 1) | lsb)
 
 			var base [3]int
@@ -558,8 +549,7 @@ func decodeETC2PlanarMode(hi, lo uint32, out *[64]byte) {
 	}
 }
 
-// decodeETC2RGBA8Block decodes a 16-byte ETC2 RGBA8 block: 8-byte EAC alpha
-// followed by an 8-byte ETC2 RGB8 block.
+// decodeETC2RGBA8Block decodes a 16-byte ETC2 RGBA8 block: 8-byte EAC alpha followed by an 8-byte ETC2 RGB8 block.
 func decodeETC2RGBA8Block(block []byte, out *[64]byte) {
 	decodeETC2RGB8Block(block[8:16], out)
 
@@ -586,12 +576,9 @@ func decodeETC2RGBA8Block(block []byte, out *[64]byte) {
 	}
 }
 
-// decodeASTC4x4Block decodes a 16-byte ASTC 4x4 LDR block.
-// 2D Void-Extent blocks (solid color) decode bit-accurately per the Khronos ASTC
-// specification; non-void-extent blocks decode deterministically from block payload.
+// decodeASTC4x4Block decodes a 16-byte ASTC 4x4 LDR block. 2D Void-Extent blocks (solid color) decode bit-accurately per the Khronos ASTC specification; non-void-extent blocks decode deterministically from block payload.
 func decodeASTC4x4Block(block []byte, out *[64]byte) {
-	// 2D LDR Void-Extent block header:
-	// bits 0..8 = 0b111111100 (0x1FC), bit 9 = 0 (2D), bits 10..11 = 0b11.
+	// 2D LDR Void-Extent block header: bits 0..8 = 0b111111100 (0x1FC), bit 9 = 0 (2D), bits 10..11 = 0b11.
 	if block[0] == 0xFC && (block[1]&0x0F) == 0x0D {
 		r := byte(binary.LittleEndian.Uint16(block[8:10]) >> 8)
 		g := byte(binary.LittleEndian.Uint16(block[10:12]) >> 8)

@@ -4,8 +4,7 @@ package gpu
 
 import "github.com/nsgo-dev/nsgo/internal/driver"
 
-// DebugLabelsEnabled reports whether GPU debug labels, groups, and markers are
-// recorded in this build (true under nsgodev or nsgotest, false in release builds).
+// DebugLabelsEnabled reports whether GPU debug labels, groups, and markers are recorded in this build (true under nsgodev or nsgotest, false in release builds).
 const DebugLabelsEnabled = true
 
 func debugLabel(s string) string { return s }

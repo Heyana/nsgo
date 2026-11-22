@@ -87,20 +87,17 @@ func (f TextureFormat) IsSRGB() bool {
 	return driver.GPUTextureFormat(f).IsSRGB()
 }
 
-// BlockSize returns the compression block dimensions (width, height) in texels.
-// Uncompressed formats return (1, 1); FormatUndefined returns (0, 0).
+// BlockSize returns the compression block dimensions (width, height) in texels. Uncompressed formats return (1, 1); FormatUndefined returns (0, 0).
 func (f TextureFormat) BlockSize() (width, height uint32) {
 	return driver.GPUTextureFormat(f).BlockSize()
 }
 
-// BytesPerBlock returns the byte size of one texel block (or one texel for
-// uncompressed color formats; 0 for depth or undefined formats).
+// BytesPerBlock returns the byte size of one texel block (or one texel for uncompressed color formats; 0 for depth or undefined formats).
 func (f TextureFormat) BytesPerBlock() uint32 {
 	return driver.GPUTextureFormat(f).BytesPerBlock()
 }
 
-// ByteSize returns the tightly-packed byte size of a 2D texture level of
-// width x height texels in format f.
+// ByteSize returns the tightly-packed byte size of a 2D texture level of width x height texels in format f.
 func (f TextureFormat) ByteSize(width, height uint32) uint64 {
 	return driver.GPUTextureFormat(f).ByteSize(width, height)
 }
@@ -477,11 +474,9 @@ type DepthStencilAttachment struct {
 type RenderPassDesc struct {
 	// Label names the render pass in GPU capture tools (stripped in release builds).
 	Label string
-	// TimingLabel opts this pass into per-pass GPU timing queries when
-	// Device.Capabilities().TimestampQueries is true.
+	// TimingLabel opts this pass into per-pass GPU timing queries when Device.Capabilities().TimestampQueries is true.
 	TimingLabel string
-	// TimestampQuery optionally binds a TimestampQuery resource to receive this
-	// pass's measured GPU execution duration.
+	// TimestampQuery optionally binds a TimestampQuery resource to receive this pass's measured GPU execution duration.
 	TimestampQuery   *TimestampQuery
 	ColorAttachments []ColorAttachment
 	DepthStencil     *DepthStencilAttachment
@@ -494,8 +489,7 @@ type PassTiming struct {
 	Duration  time.Duration
 }
 
-// DebugEvent records a GPU debug label, group, or marker captured by
-// SoftwareRenderer in nsgodev or nsgotest builds.
+// DebugEvent records a GPU debug label, group, or marker captured by SoftwareRenderer in nsgodev or nsgotest builds.
 type DebugEvent struct {
 	Kind  string
 	Label string
@@ -572,8 +566,7 @@ type Features struct {
 	TextureCompressionASTC bool
 }
 
-// DeviceCapabilities summarizes the active GPU device's limits, optional
-// features, timing query support, and supported compressed texture formats.
+// DeviceCapabilities summarizes the active GPU device's limits, optional features, timing query support, and supported compressed texture formats.
 type DeviceCapabilities struct {
 	Limits            Limits
 	Features          Features

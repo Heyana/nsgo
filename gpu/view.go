@@ -32,8 +32,7 @@ type ViewProps struct {
 	OnDeviceLost func(DeviceLostEvent)
 	// OnError reports asynchronous GPU validation, unsupported, or OOM errors.
 	OnError func(Error)
-	// OnPassTimings runs on the engine goroutine when per-pass GPU timing
-	// measurements complete for a submitted frame.
+	// OnPassTimings runs on the engine goroutine when per-pass GPU timing measurements complete for a submitted frame.
 	OnPassTimings func([]PassTiming)
 
 	Class     string

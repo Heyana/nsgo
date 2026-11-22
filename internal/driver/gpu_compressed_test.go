@@ -137,8 +137,7 @@ func TestGPUTextureFormatMetadata(t *testing.T) {
 
 func TestCompressedBlockDecoders(t *testing.T) {
 	t.Run("BC1_OpaqueAndPunchThrough", func(t *testing.T) {
-		// Opaque mode: c0 = pure red (0xF800) > c1 = pure blue (0x001F).
-		// Pixel 0=idx0 (red), pixel 1=idx1 (blue), pixel 2=idx2 (2/3 red + 1/3 blue), pixel 3=idx3 (1/3 red + 2/3 blue).
+		// Opaque mode: c0 = pure red (0xF800) > c1 = pure blue (0x001F). Pixel 0=idx0 (red), pixel 1=idx1 (blue), pixel 2=idx2 (2/3 red + 1/3 blue), pixel 3=idx3 (1/3 red + 2/3 blue).
 		blk := make([]byte, 8)
 		binary.LittleEndian.PutUint16(blk[0:2], 0xF800)
 		binary.LittleEndian.PutUint16(blk[2:4], 0x001F)

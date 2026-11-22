@@ -192,8 +192,7 @@ func (d *Device) Limits() Limits { return d.limits }
 // Features returns optional features supported by the device.
 func (d *Device) Features() Features { return d.features }
 
-// Capabilities returns the device's limits, optional features, GPU timestamp
-// query support, and supported compressed texture formats.
+// Capabilities returns the device's limits, optional features, GPU timestamp query support, and supported compressed texture formats.
 func (d *Device) Capabilities() DeviceCapabilities {
 	return DeviceCapabilities{
 		Limits:            d.limits,
@@ -208,8 +207,7 @@ func (d *Device) CompressedFormats() []TextureFormat {
 	return slices.Clone(d.compressedFormats)
 }
 
-// SupportsCompressedFormat reports whether d supports uploading and sampling
-// compressed textures in format.
+// SupportsCompressedFormat reports whether d supports uploading and sampling compressed textures in format.
 func (d *Device) SupportsCompressedFormat(format TextureFormat) bool {
 	if d == nil || !format.IsCompressed() {
 		return false
@@ -416,8 +414,7 @@ func (p *Pipeline) Close() error {
 	return nil
 }
 
-// TimestampQuery collects per-pass GPU timing measurements for render passes
-// that reference it via RenderPassDesc.TimestampQuery.
+// TimestampQuery collects per-pass GPU timing measurements for render passes that reference it via RenderPassDesc.TimestampQuery.
 type TimestampQuery struct {
 	dev     *Device
 	id      driver.GPUID
@@ -467,8 +464,7 @@ func (q *TimestampQuery) Close() error {
 	return nil
 }
 
-// CreateTimestampQuery allocates a GPU timestamp query scoped to cx.
-// Returns ErrUnsupported when Device.Capabilities().TimestampQueries is false.
+// CreateTimestampQuery allocates a GPU timestamp query scoped to cx. Returns ErrUnsupported when Device.Capabilities().TimestampQueries is false.
 func (d *Device) CreateTimestampQuery(cx *core.Scope, label string) (*TimestampQuery, error) {
 	if !d.alive() {
 		return nil, Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
@@ -741,8 +737,7 @@ func (d *Device) CreateBindGroup(cx *core.Scope, layout *BindGroupLayout, entrie
 	return d.CreateBindGroupDesc(cx, BindGroupDesc{Layout: layout, Entries: entries})
 }
 
-// CreateBindGroupDesc binds resources matching desc.Layout, with an optional
-// debug label stripped in release builds, scoped to cx.
+// CreateBindGroupDesc binds resources matching desc.Layout, with an optional debug label stripped in release builds, scoped to cx.
 func (d *Device) CreateBindGroupDesc(cx *core.Scope, desc BindGroupDesc) (*BindGroup, error) {
 	if !d.alive() {
 		return nil, Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
@@ -1049,16 +1044,13 @@ func (d *Device) BeginEncoder() *Encoder {
 	return &Encoder{dev: d}
 }
 
-// PushDebugGroup begins a nested debug group in GPU captures (Metal/RenderDoc/WebGPU).
-// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+// PushDebugGroup begins a nested debug group in GPU captures (Metal/RenderDoc/WebGPU). It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
 func (e *Encoder) PushDebugGroup(label string) { e.pushDebugGroup(label) }
 
-// PopDebugGroup ends the most recent Encoder.PushDebugGroup.
-// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+// PopDebugGroup ends the most recent Encoder.PushDebugGroup. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
 func (e *Encoder) PopDebugGroup() { e.popDebugGroup() }
 
-// InsertDebugMarker inserts an instantaneous debug marker into GPU captures.
-// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+// InsertDebugMarker inserts an instantaneous debug marker into GPU captures. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
 func (e *Encoder) InsertDebugMarker(label string) { e.insertDebugMarker(label) }
 
 // BeginRenderPass starts a render pass on e. Call RenderPass.End when done.
@@ -1213,16 +1205,13 @@ type RenderPass struct {
 	ended bool
 }
 
-// PushDebugGroup begins a nested debug group inside this render pass.
-// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+// PushDebugGroup begins a nested debug group inside this render pass. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
 func (p *RenderPass) PushDebugGroup(label string) { p.pushDebugGroup(label) }
 
-// PopDebugGroup closes the most recent RenderPass.PushDebugGroup.
-// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+// PopDebugGroup closes the most recent RenderPass.PushDebugGroup. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
 func (p *RenderPass) PopDebugGroup() { p.popDebugGroup() }
 
-// InsertDebugMarker inserts an instantaneous debug marker inside this render pass.
-// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+// InsertDebugMarker inserts an instantaneous debug marker inside this render pass. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
 func (p *RenderPass) InsertDebugMarker(label string) { p.insertDebugMarker(label) }
 
 // ClearColor configures color attachment 0 to clear to c at pass start.
@@ -1502,8 +1491,7 @@ func (f *Frame) Delta() time.Duration { return f.delta }
 // Size returns the current swapchain dimensions in physical pixels.
 func (f *Frame) Size() (width, height int) { return f.dev.SurfaceSize() }
 
-// PassTimings returns the most recently completed GPU frame's per-pass timings
-// (or the current frame's timings after Submit on synchronous software devices).
+// PassTimings returns the most recently completed GPU frame's per-pass timings (or the current frame's timings after Submit on synchronous software devices).
 func (f *Frame) PassTimings() []PassTiming {
 	if f == nil || f.dev == nil {
 		return nil
@@ -1511,24 +1499,21 @@ func (f *Frame) PassTimings() []PassTiming {
 	return f.dev.LastPassTimings()
 }
 
-// PushDebugGroup begins a nested debug group on this frame's encoder.
-// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+// PushDebugGroup begins a nested debug group on this frame's encoder. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
 func (f *Frame) PushDebugGroup(label string) {
 	if f != nil && f.enc != nil {
 		f.enc.PushDebugGroup(label)
 	}
 }
 
-// PopDebugGroup closes the most recent Frame.PushDebugGroup.
-// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+// PopDebugGroup closes the most recent Frame.PushDebugGroup. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
 func (f *Frame) PopDebugGroup() {
 	if f != nil && f.enc != nil {
 		f.enc.PopDebugGroup()
 	}
 }
 
-// InsertDebugMarker inserts an instantaneous debug marker on this frame's encoder.
-// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+// InsertDebugMarker inserts an instantaneous debug marker on this frame's encoder. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
 func (f *Frame) InsertDebugMarker(label string) {
 	if f != nil && f.enc != nil {
 		f.enc.InsertDebugMarker(label)

@@ -69,8 +69,7 @@ func (f GPUTextureFormat) IsSRGB() bool {
 	}
 }
 
-// BlockSize returns the compression block dimensions (width, height) in texels.
-// Uncompressed non-undefined formats return (1, 1); undefined/unknown returns (0, 0).
+// BlockSize returns the compression block dimensions (width, height) in texels. Uncompressed non-undefined formats return (1, 1); undefined/unknown returns (0, 0).
 func (f GPUTextureFormat) BlockSize() (width, height uint32) {
 	switch f {
 	case GPUFormatBC1RGBAUnorm, GPUFormatBC1RGBAUnormSRGB,
@@ -88,8 +87,7 @@ func (f GPUTextureFormat) BlockSize() (width, height uint32) {
 	}
 }
 
-// BytesPerBlock returns the encoded byte size of one texel block.
-// For uncompressed color formats it equals BytesPerPixel; for depth/undefined it is 0.
+// BytesPerBlock returns the encoded byte size of one texel block. For uncompressed color formats it equals BytesPerPixel; for depth/undefined it is 0.
 func (f GPUTextureFormat) BytesPerBlock() uint32 {
 	switch f {
 	case GPUFormatBC1RGBAUnorm, GPUFormatBC1RGBAUnormSRGB, GPUFormatETC2RGB8Unorm:
@@ -104,8 +102,7 @@ func (f GPUTextureFormat) BytesPerBlock() uint32 {
 	}
 }
 
-// ByteSize returns the tightly-packed byte size required for a 2D image of
-// width x height texels in format f (0 for depth or undefined formats).
+// ByteSize returns the tightly-packed byte size required for a 2D image of width x height texels in format f (0 for depth or undefined formats).
 func (f GPUTextureFormat) ByteSize(width, height uint32) uint64 {
 	bw, bh := f.BlockSize()
 	bpb := f.BytesPerBlock()
@@ -117,8 +114,7 @@ func (f GPUTextureFormat) ByteSize(width, height uint32) uint64 {
 	return blocksX * blocksY * uint64(bpb)
 }
 
-// BytesPerPixel returns the texel stride in bytes for uncompressed color formats
-// (0 for compressed, depth, or undefined formats).
+// BytesPerPixel returns the texel stride in bytes for uncompressed color formats (0 for compressed, depth, or undefined formats).
 func (f GPUTextureFormat) BytesPerPixel() uint32 {
 	switch f {
 	case GPUFormatR8Unorm:
@@ -468,14 +464,11 @@ type GPUFeatures struct {
 	TextureCompressionBC   bool
 	TextureCompressionETC2 bool
 	TextureCompressionASTC bool
-	// CompressedFormats optionally enumerates the exact compressed formats
-	// supported by the device. When empty, supported formats are derived from
-	// TextureCompressionBC, TextureCompressionETC2, and TextureCompressionASTC.
+	// CompressedFormats optionally enumerates the exact compressed formats supported by the device. When empty, supported formats are derived from TextureCompressionBC, TextureCompressionETC2, and TextureCompressionASTC.
 	CompressedFormats []GPUTextureFormat
 }
 
-// DefaultSoftwareGPUFeatures returns the capabilities supported by the pure-Go
-// headless software GPU device.
+// DefaultSoftwareGPUFeatures returns the capabilities supported by the pure-Go headless software GPU device.
 func DefaultSoftwareGPUFeatures() GPUFeatures {
 	return GPUFeatures{
 		Depth32Float:           true,
@@ -486,8 +479,7 @@ func DefaultSoftwareGPUFeatures() GPUFeatures {
 	}
 }
 
-// SupportedCompressedFormats returns the deduplicated list of compressed texture
-// formats supported by f.
+// SupportedCompressedFormats returns the deduplicated list of compressed texture formats supported by f.
 func (f GPUFeatures) SupportedCompressedFormats() []GPUTextureFormat {
 	if len(f.CompressedFormats) > 0 {
 		out := make([]GPUTextureFormat, 0, len(f.CompressedFormats))
@@ -832,9 +824,7 @@ const (
 	GPUDebugInsertMarker
 )
 
-// GPUDebugOp records an encoder-level debug group boundary or marker positioned
-// relative to the frame's Passes slice (PassIndex is the pass index at which
-// the op was recorded).
+// GPUDebugOp records an encoder-level debug group boundary or marker positioned relative to the frame's Passes slice (PassIndex is the pass index at which the op was recorded).
 type GPUDebugOp struct {
 	Kind      GPUDebugOpKind
 	Label     string
