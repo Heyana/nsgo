@@ -4,7 +4,6 @@ package linux
 
 import (
 	"sync"
-	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -84,9 +83,6 @@ var bindX11WebInput = sync.OnceFunc(func() {
 	xWebInput.ready = true
 })
 
-// webInputDelivery bounds how long the X server and GTK take to deliver the events sendWebInput injects.
-const webInputDelivery = time.Second
-
 // canSendWebInput reports whether GDK draws on X11 with the XTest extension,
 // where sendWebInput can deliver trusted pointer and key input to WebKitGTK.
 func (w *window) canSendWebInput() bool {
@@ -117,9 +113,10 @@ func (w *window) sendWebInput(v *view, in driver.WebInput) {
 	if !ok {
 		return
 	}
+	if w.opts.test != nil && !prepareTestWebInput(display) {
+		return
+	}
 	gdk := gdkDisplayGetDefault()
-	// A test host ignores physical input outside its scripted steps, and XTest's events reach GTK as physical input after this returns.
-	w.inputGate.expectInjected(time.Now().Add(webInputDelivery))
 	switch in.Kind {
 	case driver.WebInputClick:
 		w.sendWebClick(v, page, gdk, display, xid, in.Point)
@@ -176,11 +173,14 @@ func (w *window) sendWebClick(v *view, page, gdk, display, xid uintptr, pt drive
 	var child uintptr
 	if root := xWebInput.defaultRoot(display); root != 0 &&
 		xWebInput.translateCoords(display, xid, root, px, py, &rx, &ry, &child) != 0 {
+		recordTestWebInput(display)
 		xWebInput.fakeMotion(display, -1, rx, ry, 0)
 	} else {
 		xWebInput.warpPointer(display, 0, xid, 0, 0, 0, 0, px, py)
 	}
+	recordTestWebInput(display)
 	xWebInput.fakeButton(display, 1, 1, 0)
+	recordTestWebInput(display)
 	xWebInput.fakeButton(display, 1, 0, 0)
 	xWebInput.sync(display, 0)
 	_ = xWebInput.errorTrapPop(gdk)
@@ -222,11 +222,15 @@ func mapWebKeyval(gdk, display uintptr, keyval uint32, allowDirect bool) (keycod
 func sendX11Key(gdk, display uintptr, keycode uint32, shift bool, shiftCode uint32) {
 	xWebInput.errorTrapPush(gdk)
 	if shift && shiftCode != 0 {
+		recordTestWebInput(display)
 		xWebInput.fakeKey(display, shiftCode, 1, 0)
 	}
+	recordTestWebInput(display)
 	xWebInput.fakeKey(display, keycode, 1, 0)
+	recordTestWebInput(display)
 	xWebInput.fakeKey(display, keycode, 0, 0)
 	if shift && shiftCode != 0 {
+		recordTestWebInput(display)
 		xWebInput.fakeKey(display, shiftCode, 0, 0)
 	}
 	xWebInput.sync(display, 0)

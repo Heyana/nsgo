@@ -92,9 +92,14 @@ func (w *window) ignoreTestInput() bool {
 	return !w.inputGate.allow(w.opts.test != nil)
 }
 
-// ignoreTestGDKEvent reports whether a capture-phase GDK event of type typ should be consumed and ignored on an isolated test window.
-func (w *window) ignoreTestGDKEvent(typ int32) bool {
-	return !w.inputGate.allowGDKEvent(w.opts.test != nil, typ)
+// ignoreTestGDKEvent reports whether a capture-phase physical GDK event
+// should be consumed on an isolated test window.
+func (w *window) ignoreTestGDKEvent(event uintptr) bool {
+	return !w.inputGate.allowGDKEvent(w.opts.test != nil, gdkEventGetEventType(event)) && !isTestWebInputEvent(event)
+}
+
+func (w *window) ignoreTestInputEvent(event uintptr) bool {
+	return w.ignoreTestInput() && !isTestWebInputEvent(event)
 }
 
 // testOpen is what a test host opens the app with: the test's options and

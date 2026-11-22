@@ -1,9 +1,6 @@
 package linux
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
 func TestInputIsolation(t *testing.T) {
 	physical := []struct {
@@ -97,16 +94,5 @@ func TestInputIsolation(t *testing.T) {
 	gate.leave()
 	if gate.allow(true) {
 		t.Error("test mode accepted callback after leave")
-	}
-
-	// Events NSGo injected itself through XTest pass until their delivery deadline, which a later, earlier deadline does not shorten.
-	gate.expectInjected(time.Now().Add(time.Hour))
-	gate.expectInjected(time.Now().Add(-time.Hour))
-	if !gate.allow(true) || !gate.allowGDKEvent(true, 2) {
-		t.Error("test mode rejected injected input before its deadline")
-	}
-	gate.injected = time.Now().Add(-time.Millisecond)
-	if gate.allow(true) || gate.allowGDKEvent(true, 2) {
-		t.Error("test mode accepted physical input after the injected input's deadline")
 	}
 }

@@ -632,7 +632,7 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 	if w == nil {
 		return 0
 	}
-	if w.ignoreTestInput() {
+	if w.ignoreTestInputEvent(gtkEventControllerGetCurrentEvent(controller)) {
 		return 1
 	}
 	if w.popover != 0 && gtkWidgetGetVisible(w.popover) != 0 {
@@ -1320,7 +1320,7 @@ func (w *window) shortcut(keyval, state uint32, repeat bool) bool {
 }
 
 func keyReleasedCallback(controller uintptr, keyval, keycode, state uint32, data uintptr) {
-	if w := windowOf(data); w != nil && !w.ignoreTestInput() {
+	if w := windowOf(data); w != nil && !w.ignoreTestInputEvent(gtkEventControllerGetCurrentEvent(controller)) {
 		w.keyUp(keycode, keyval, state)
 		w.menuBarKey(keyval, state, false, false)
 	}
@@ -1334,7 +1334,7 @@ func modifiersCallback(controller uintptr, state uint32, data uintptr) int32 {
 	if w == nil {
 		return 0
 	}
-	if w.ignoreTestInput() {
+	if w.ignoreTestInputEvent(gtkEventControllerGetCurrentEvent(controller)) {
 		return 1
 	}
 	if !w.pointerIn || state&gdkButtonsMask != 0 {
@@ -1513,7 +1513,7 @@ func shieldCallback(controller, event, data uintptr) int32 {
 	if w == nil || w.closing {
 		return 0
 	}
-	if w.ignoreTestGDKEvent(gdkEventGetEventType(event)) {
+	if w.ignoreTestGDKEvent(event) {
 		return 1
 	}
 	w.currentEvent = event

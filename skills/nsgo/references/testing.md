@@ -57,6 +57,8 @@ Use `app.Post(func() { signal.Set(value) })` from a test or stubbed worker to qu
 
 `PressAt` takes viewport points. Pointer picks, visibility and scroll limits include nested and fractional scroll content zoom; `Bounds()` remains the layout frame before transforms.
 
+For trusted events inside a native `WebView`, check `Env.CanSendInput` and call `app.Post(func() { page.SendInput(core.WebClick(12, 16)) })`. Wait for page readiness, and for acknowledged focus before `core.WebText`; Linux needs X11 and XTest. [Testing](https://nsgo.dev/docs/testing.md)
+
 A press can name a text field directly. Read `app.Find("id:field").Focused` after the step headless or on any target, including when a press handler focuses the field.
 
 `Select(selector, start, end)` uses UTF-16 offsets. On iOS, Android and HarmonyOS targets it moves the native field's range and reads it back; selection callbacks no longer skip those tests. HarmonyOS typing replaces the reported range, but its test host still lacks native clipboard keys. Desktop and web targets retain their select-all/arrow-key path.

@@ -1,22 +1,12 @@
 package linux
 
-import "time"
-
 // testInputGate isolates a Linux test host's GTK windows from physical user input: while a window is opened by nsgotest (w.opts.test != nil), physical pointer, touch, scroll, keyboard and gesture callbacks are ignored unless they run inside a scripted testSurface step. Ordinary apps and live automation leave w.opts.test nil and accept all input. Accessed only on the GTK main thread.
 type testInputGate struct {
-	depth    int
-	injected time.Time // until when the X11 events NSGo injected itself (Ref.SendInput through XTest) pass
+	depth int
 }
 
 func (g *testInputGate) enter() {
 	g.depth++
-}
-
-// expectInjected lets physical events through until until, for the X11 events NSGo injects itself through XTest: they come back from the X server as physical input after the step that sent them has returned, and the web view they are for must still get them.
-func (g *testInputGate) expectInjected(until time.Time) {
-	if until.After(g.injected) {
-		g.injected = until
-	}
 }
 
 func (g *testInputGate) leave() {
@@ -27,12 +17,12 @@ func (g *testInputGate) leave() {
 
 // allow reports whether a GTK input callback may run on a window whose test-mode isolation is isolated.
 func (g *testInputGate) allow(isolated bool) bool {
-	return !isolated || g.depth > 0 || time.Now().Before(g.injected)
+	return !isolated || g.depth > 0
 }
 
 // allowGDKEvent reports whether a GDK event of type typ may pass through the capture-phase shield on a window whose test-mode isolation is isolated.
 func (g *testInputGate) allowGDKEvent(isolated bool, typ int32) bool {
-	if g.allow(isolated) {
+	if !isolated || g.depth > 0 {
 		return true
 	}
 	return !isPhysicalGDKEvent(typ)
