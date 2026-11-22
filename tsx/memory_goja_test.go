@@ -144,6 +144,41 @@ func TestMemoryMetersArrayAndStringStorage(t *testing.T) {
 	}
 }
 
+// TestMemoryChargesAppendsForWhatTheyAdd builds strings by appending: each append is charged for what it adds, not the whole rope it makes, so a chain of appends costs what it holds; a string built past the budget still stops, and reading a rope as it grows, which flattens it, stays within it.
+func TestMemoryChargesAppendsForWhatTheyAdd(t *testing.T) {
+	r := limited(64 << 20)
+	v, err := r.vm.RunString(`let s = ""; for (let i = 0; i < 12000; i++) s += "x"; s.length`)
+	if err != nil || v.ToInteger() != 12000 {
+		t.Fatalf("12,000 appends returned %v, %v", v, err)
+	}
+	if used := r.used(); used > 2<<20 {
+		t.Fatalf("12,000 appends charged %d bytes", used)
+	}
+	for _, test := range []struct {
+		code  string
+		limit int64
+	}{
+		{`let s = ""; const c = "x".repeat(1024); for (;;) s += c;`, 64 << 20},
+		{`let s = ""; for (;;) s += "x";`, 1 << 20},
+	} {
+		r := limited(test.limit)
+		_, err := r.vm.RunString(`try { ` + test.code + ` } catch (_) {}`)
+		var interrupted *js.InterruptedError
+		var quota *core.Error
+		if !errors.As(err, &interrupted) || !errors.As(r.stoppedErr(), &quota) || quota.Resource != "memory" {
+			t.Fatalf("%s returned %v and stopped with %v, want the memory quota", test.code, err, r.stoppedErr())
+		}
+	}
+	r = limited(4 << 20)
+	v, err = r.vm.RunString(`let s = "", n = 0; for (let i = 0; i < 20000; i++) { s += "ab"; n += s.length + s.charCodeAt(i) + (s + "!").charCodeAt(0); } n`)
+	if err != nil || v.ToInteger() == 0 {
+		t.Fatalf("reading a growing rope returned %v, %v", v, err)
+	}
+	if used := r.used(); used > 4<<20 {
+		t.Fatalf("reading a growing rope charged %d bytes", used)
+	}
+}
+
 func TestMemoryMeteredUTF8PreservesUnpairedSurrogateReplacement(t *testing.T) {
 	r := limited(16 << 10)
 	if err := r.vm.Set("encode", func(call js.FunctionCall) js.Value { return r.encodeUTF8(call.Argument(0)) }); err != nil {
