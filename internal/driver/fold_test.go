@@ -120,3 +120,28 @@ func TestGeometrySerializes(t *testing.T) {
 		}
 	}
 }
+
+func TestVerticalBarEdgeStringAndEquality(t *testing.T) {
+	cases := []struct {
+		edge VerticalBarEdge
+		want string
+	}{
+		{VerticalBarUnspecified, "unspecified"},
+		{VerticalBarLeading, "leading"},
+		{VerticalBarTrailing, "trailing"},
+		{VerticalBarEdge(99), "unspecified"},
+	}
+	for _, c := range cases {
+		if got := c.edge.String(); got != c.want {
+			t.Errorf("VerticalBarEdge(%d).String() = %q, want %q", c.edge, got, c.want)
+		}
+	}
+	a := Environment{OS: OSIOS, VerticalBarEdge: VerticalBarLeading}
+	b := Environment{OS: OSIOS, VerticalBarEdge: VerticalBarTrailing}
+	if a.Equal(b) {
+		t.Error("environments with different vertical bar edges compared equal")
+	}
+	if !a.Equal(Environment{OS: OSIOS, VerticalBarEdge: VerticalBarLeading}) {
+		t.Error("identical vertical bar edge environments compared unequal")
+	}
+}

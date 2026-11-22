@@ -2,6 +2,51 @@ package core
 
 import "github.com/nsgo-dev/nsgo/internal/driver"
 
+// TabBarEdge is the edge along which a TabBar lays out its tabs. Apps name it mobile.TabBarEdge.
+type TabBarEdge uint8
+
+const (
+	// TabBarBottom is the default horizontal bottom tab bar.
+	TabBarBottom TabBarEdge = iota
+	// TabBarLeading places the tab bar vertically along the leading edge (left in LTR, right in RTL).
+	TabBarLeading
+	// TabBarTrailing places the tab bar vertically along the trailing edge (right in LTR, left in RTL).
+	TabBarTrailing
+	// TabBarAutomatic follows the edge the system chose (Env.VerticalBarEdge), falling back to TabBarBottom when it is VerticalBarUnspecified.
+	TabBarAutomatic
+)
+
+// String returns the edge's name: "bottom", "leading", "trailing" or "automatic".
+func (e TabBarEdge) String() string {
+	switch e {
+	case TabBarLeading:
+		return "leading"
+	case TabBarTrailing:
+		return "trailing"
+	case TabBarAutomatic:
+		return "automatic"
+	}
+	return "bottom"
+}
+
+// Resolve returns the concrete edge (TabBarBottom, TabBarLeading or TabBarTrailing) for env: TabBarAutomatic reads env.VerticalBarEdge when env is non-nil and falls back to TabBarBottom when unspecified.
+func (e TabBarEdge) Resolve(env *Env) TabBarEdge {
+	switch e {
+	case TabBarLeading, TabBarTrailing:
+		return e
+	case TabBarAutomatic:
+		if env != nil {
+			switch env.VerticalBarEdge() {
+			case VerticalBarLeading:
+				return TabBarLeading
+			case VerticalBarTrailing:
+				return TabBarTrailing
+			}
+		}
+	}
+	return TabBarBottom
+}
+
 // TabBar is the core's part of mobile.TabBar, which apps use: the
 // system's tab bar, a native component iOS and Android register. The
 // selected tab takes the theme's accent. Android also reads palette
@@ -13,6 +58,11 @@ type TabBar struct {
 	// none. The bar shows the user's choice at once, as the system's does.
 	Selected func() int
 	OnChange func(index int)
+	// Edge places the tab bar along the bottom (the default), the leading
+	// or trailing edge (drawn vertically), or lets the system choose via
+	// Env.VerticalBarEdge (TabBarAutomatic). EdgeFunc binds it reactively.
+	Edge     TabBarEdge
+	EdgeFunc func() TabBarEdge
 	// Label names the bar as a group for assistive technology.
 	Label     string
 	LabelFunc func() string
@@ -65,9 +115,13 @@ func (b TabBar) native(cx *Scope) Node {
 			if b.Selected != nil {
 				selected = b.Selected()
 			}
+			edge := b.Edge
+			if b.EdgeFunc != nil {
+				edge = b.EdgeFunc()
+			}
 			// Zero clears a custom color and restores the native fallback.
 			p := cx.Palette()
-			props := map[string]any{"items": list, "selectedIndex": float64(selected), "tint": float64(p.Accent),
+			props := map[string]any{"items": list, "selectedIndex": float64(selected), "edge": edge.Resolve(cx.Env()).String(), "tint": float64(p.Accent),
 				"background": float64(0), "inactive": float64(0), "indicator": float64(0), "activeContent": float64(0)}
 			if b.Label != "" || b.LabelFunc != nil {
 				props["label"] = readText(b.Label, b.LabelFunc)

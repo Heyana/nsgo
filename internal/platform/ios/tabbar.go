@@ -4,6 +4,7 @@ package ios
 
 import (
 	"slices"
+	"structs"
 
 	"github.com/ebitengine/purego/objc"
 
@@ -11,21 +12,41 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
+// directionalEdgeInsets is NSDirectionalEdgeInsets.
+type directionalEdgeInsets struct {
+	_                              structs.HostLayout
+	Top, Leading, Bottom, Trailing float64
+}
+
 // tabBar is core.TabBar's component, which the backend registers itself
-// as NSH's system_tab_bar.rs: a UITabBar whose items are the app's tabs,
-// their icons SF Symbols, reporting the user's choice as "change".
+// as NSH's system_tab_bar.rs: a UITabBar on the bottom edge, or a vertical
+// UIKit bar on the leading or trailing edge, their icons SF Symbols,
+// reporting the user's choice as "change".
 type tabBar struct {
-	cx    *driver.NativeContext
-	bar   objc.ID
-	items []objc.ID
-	icons []string
+	cx        *driver.NativeContext
+	container objc.ID
+	bar       objc.ID
+	rail      objc.ID
+	backdrop  objc.ID
+	separator objc.ID
+	stack     objc.ID
+	buttons   []objc.ID
+	items     []objc.ID
+	titles    []string
+	icons     []string
+	label     string
+	tint      driver.Color
+	edge      tabBarEdge
 	// selected is the selected tab's index, kept for props in any order.
 	selected int
 }
 
 var (
-	tabBars        = map[objc.ID]*tabBar{}
-	tabBarDelegate objc.ID
+	tabBars          = map[objc.ID]*tabBar{}
+	tabBarContainers = map[objc.ID]*tabBar{}
+	tabBarButtons    = map[objc.ID]*tabBar{}
+	tabBarDelegate   objc.ID
+	classTabBarHost  objc.Class
 )
 
 func registerTabBar() {
@@ -38,51 +59,319 @@ func registerTabBar() {
 				}
 				for i, it := range t.items {
 					if it == item {
+						t.selected = i
 						t.cx.Emit("change", float64(i))
+					}
+				}
+			}},
+			{Cmd: sel("nsgoTabBarButtonTapped:"), Fn: func(_ objc.ID, _ objc.SEL, sender objc.ID) {
+				t := tabBarButtons[sender]
+				if t == nil {
+					return
+				}
+				for i, b := range t.buttons {
+					if b == sender {
+						t.selected = i
+						t.showSelected()
+						t.cx.Emit("change", float64(i))
+						return
 					}
 				}
 			}},
 		})
 	tabBarDelegate = objc.ID(class).Send(selNew)
+	classTabBarHost = register("NsgoTabBarContainer", apple.Class("UIView"), nil, []objc.MethodDef{
+		{Cmd: sel("layoutSubviews"), Fn: func(self objc.ID, cmd objc.SEL) {
+			apple.Super(self, cmd)
+			if t := tabBarContainers[self]; t != nil {
+				t.layoutSubviews()
+			}
+		}},
+		{Cmd: sel("safeAreaInsetsDidChange"), Fn: func(self objc.ID, cmd objc.SEL) {
+			apple.Super(self, cmd)
+			if t := tabBarContainers[self]; t != nil {
+				t.measure()
+				t.layoutSubviews()
+			}
+		}},
+	})
 }
 
 func newTabBar(cx *driver.NativeContext) driver.NativeComponent {
 	if tabBarDelegate == 0 {
 		registerTabBar()
 	}
-	t := &tabBar{cx: cx, bar: objc.ID(apple.Class("UITabBar")).Send(selNew)}
+	t := &tabBar{
+		cx:        cx,
+		container: objc.ID(classTabBarHost).Send(selNew),
+		bar:       objc.ID(apple.Class("UITabBar")).Send(selNew),
+	}
 	t.bar.Send(selSetDeleg, tabBarDelegate)
+	t.container.Send(selAddSubview, t.bar)
 	tabBars[t.bar] = t
+	tabBarContainers[t.container] = t
 	t.measure()
 	return t
 }
 
-// measure asks for the system's height with the home indicator below it,
-// which a bar outside a window does not count.
-func (t *tabBar) measure() {
-	fit := objc.Send[apple.CGSize](t.bar, sel("sizeThatFits:"), apple.CGSize{Width: 390})
-	if fit.Height <= 0 {
-		fit.Height = 49
+func (t *tabBar) rtl() bool {
+	const rightToLeft = 1
+	host := t.container
+	if host == 0 {
+		host = t.bar
 	}
-	var bottom float64
-	if objc.Send[objc.ID](t.bar, sel("window")) == 0 {
-		app := objc.ID(apple.Class("UIApplication")).Send(sel("sharedApplication"))
-		if window := objc.Send[objc.ID](app, sel("keyWindow")); window != 0 {
-			bottom = objc.Send[edgeInsets](window, sel("safeAreaInsets")).Bottom
-		}
+	if host == 0 || !objc.Send[bool](host, sel("respondsToSelector:"), sel("effectiveUserInterfaceLayoutDirection")) {
+		return false
 	}
-	t.cx.SetSize(driver.Size{Height: driver.Points(float64(fit.Height) + bottom)})
+	return objc.Send[int](host, sel("effectiveUserInterfaceLayoutDirection")) == rightToLeft
 }
 
-func (t *tabBar) View() any { return t.bar }
+func (t *tabBar) safeInsets() edgeInsets {
+	host := t.container
+	if host == 0 {
+		host = t.bar
+	}
+	if host != 0 && objc.Send[objc.ID](host, sel("window")) != 0 {
+		return objc.Send[edgeInsets](host, sel("safeAreaInsets"))
+	}
+	app := objc.ID(apple.Class("UIApplication")).Send(sel("sharedApplication"))
+	if window := objc.Send[objc.ID](app, sel("keyWindow")); window != 0 {
+		return objc.Send[edgeInsets](window, sel("safeAreaInsets"))
+	}
+	return edgeInsets{}
+}
+
+// measure asks for the system's height on the bottom edge (with the home
+// indicator below it while outside a window) or the vertical bar's width on a
+// leading or trailing edge.
+func (t *tabBar) measure() {
+	if t.cx == nil {
+		return
+	}
+	in := t.safeInsets()
+	var fitHeight, bottom float64
+	if t.edge == tabBarEdgeBottom && t.bar != 0 {
+		fit := objc.Send[apple.CGSize](t.bar, sel("sizeThatFits:"), apple.CGSize{Width: 390})
+		fitHeight = fit.Height
+		if objc.Send[objc.ID](t.bar, sel("window")) == 0 {
+			bottom = in.Bottom
+		}
+	}
+	t.cx.SetSize(tabBarNaturalSize(t.edge, fitHeight, t.rtl(), in.Left, in.Right, bottom))
+}
+
+func (t *tabBar) View() any {
+	if t.container != 0 {
+		return t.container
+	}
+	return t.bar
+}
+
+func (t *tabBar) layoutSubviews() {
+	if t.container == 0 {
+		return
+	}
+	bounds := objc.Send[apple.CGRect](t.container, selBounds)
+	vertical := t.edge == tabBarEdgeLeading || t.edge == tabBarEdgeTrailing
+	if t.bar != 0 {
+		t.bar.Send(selSetHidden, vertical)
+		if !vertical {
+			t.bar.Send(selSetFrame, bounds)
+		}
+	}
+	if !vertical {
+		if t.rail != 0 {
+			t.rail.Send(selSetHidden, true)
+		}
+		return
+	}
+	t.ensureRail()
+	t.rail.Send(selSetHidden, false)
+	t.rail.Send(selSetFrame, bounds)
+	t.backdrop.Send(selSetFrame, bounds)
+	sepX := verticalBarSeparatorX(t.edge, t.rtl(), bounds.Size.Width)
+	t.separator.Send(selSetFrame, apple.Rect(sepX, 0, 1, bounds.Size.Height))
+	in := objc.Send[edgeInsets](t.container, sel("safeAreaInsets"))
+	left := in.Left + 4
+	right := in.Right + 4
+	top := in.Top + 8
+	bottom := in.Bottom + 8
+	w := max(bounds.Size.Width-left-right, 0)
+	h := max(bounds.Size.Height-top-bottom, 0)
+	t.stack.Send(selSetFrame, apple.Rect(left, top, w, h))
+}
+
+// ensureRail lazily builds the vertical bar hierarchy (Liquid Glass or system
+// chrome backdrop, hairline inner separator, and vertical UIStackView of tabs).
+func (t *tabBar) ensureRail() {
+	if t.rail != 0 || t.container == 0 {
+		return
+	}
+	t.rail = objc.ID(apple.Class("UIView")).Send(selNew)
+	t.rail.Send(selSetAccessibilityTraits, traits["TabBar"])
+	t.rail.Send(sel("setAccessibilityLabel:"), nsOrNil(t.label))
+
+	var effect objc.ID
+	if hasGlass() {
+		effect = objc.ID(apple.Class("UIGlassEffect")).Send(sel("effectWithStyle:"), 0)
+	} else {
+		const systemChromeMaterial = 10
+		effect = objc.ID(apple.Class("UIBlurEffect")).Send(sel("effectWithStyle:"), systemChromeMaterial)
+	}
+	t.backdrop = objc.ID(apple.Class("UIVisualEffectView")).Send(selAlloc).Send(sel("initWithEffect:"), effect)
+	t.rail.Send(selAddSubview, t.backdrop)
+
+	t.separator = objc.ID(apple.Class("UIView")).Send(selNew)
+	uiColorClass := objc.ID(apple.Class("UIColor"))
+	var sepColor objc.ID
+	if objc.Send[bool](uiColorClass, sel("respondsToSelector:"), sel("separatorColor")) {
+		sepColor = uiColorClass.Send(sel("separatorColor"))
+	} else {
+		sepColor = uiColorClass.Send(sel("grayColor"))
+	}
+	t.separator.Send(sel("setBackgroundColor:"), sepColor)
+	t.rail.Send(selAddSubview, t.separator)
+
+	t.stack = objc.ID(apple.Class("UIStackView")).Send(selNew)
+	const (
+		axisVertical            = 1
+		alignmentFill           = 0
+		distributionFillEqually = 1
+	)
+	t.stack.Send(sel("setAxis:"), axisVertical)
+	t.stack.Send(sel("setAlignment:"), alignmentFill)
+	t.stack.Send(sel("setDistribution:"), distributionFillEqually)
+	t.stack.Send(sel("setSpacing:"), float64(4))
+	t.rail.Send(selAddSubview, t.stack)
+
+	t.container.Send(selAddSubview, t.rail)
+	t.rebuildRailButtons()
+	t.showSelected()
+}
+
+func (t *tabBar) clearRailButtons() {
+	for _, b := range t.buttons {
+		delete(tabBarButtons, b)
+		if t.stack != 0 {
+			t.stack.Send(sel("removeArrangedSubview:"), b)
+		}
+		b.Send(selRemoveFromSuperview)
+		b.Send(selRelease)
+	}
+	t.buttons = t.buttons[:0]
+}
+
+func (t *tabBar) rebuildRailButtons() {
+	if t.stack == 0 {
+		return
+	}
+	t.clearRailButtons()
+	const touchUpInside = 1 << 6
+	for range t.icons {
+		btn := objc.ID(apple.Class("UIButton")).Send(selNew)
+		btn.Send(sel("addTarget:action:forControlEvents:"), tabBarDelegate, sel("nsgoTabBarButtonTapped:"), uint(touchUpInside))
+		t.buttons = append(t.buttons, btn)
+		tabBarButtons[btn] = t
+		t.stack.Send(sel("addArrangedSubview:"), btn)
+	}
+	t.styleRailButtons()
+}
+
+func (t *tabBar) railForeground(selected bool) objc.ID {
+	uiColorClass := objc.ID(apple.Class("UIColor"))
+	if selected {
+		if t.tint != 0 {
+			return uiColor(t.tint)
+		}
+		if objc.Send[bool](uiColorClass, sel("respondsToSelector:"), sel("tintColor")) {
+			return uiColorClass.Send(sel("tintColor"))
+		}
+		return uiColorClass.Send(sel("systemBlueColor"))
+	}
+	if objc.Send[bool](uiColorClass, sel("respondsToSelector:"), sel("secondaryLabelColor")) {
+		return uiColorClass.Send(sel("secondaryLabelColor"))
+	}
+	return uiColorClass.Send(sel("grayColor"))
+}
+
+func (t *tabBar) styleRailButtons() {
+	cfgClass := apple.Class("UIButtonConfiguration")
+	for i, btn := range t.buttons {
+		selected := i == t.selected
+		title := ""
+		if i < len(t.titles) {
+			title = t.titles[i]
+		}
+		icon := ""
+		if i < len(t.icons) {
+			icon = t.icons[i]
+		}
+		var image objc.ID
+		if icon != "" {
+			image = objc.ID(apple.Class("UIImage")).Send(sel("systemImageNamed:"), apple.NSString(icon))
+		}
+		fg := t.railForeground(selected)
+		if cfgClass != 0 && objc.Send[bool](btn, sel("respondsToSelector:"), sel("setConfiguration:")) {
+			cfg := objc.ID(cfgClass).Send(sel("plainButtonConfiguration"))
+			cfg.Send(sel("setTitle:"), apple.NSString(title))
+			cfg.Send(sel("setImage:"), image)
+			const (
+				directionalEdgeTop = 1
+				titleAlignCenter   = 2
+			)
+			cfg.Send(sel("setImagePlacement:"), uint(directionalEdgeTop))
+			cfg.Send(sel("setImagePadding:"), float64(4))
+			cfg.Send(sel("setTitleAlignment:"), titleAlignCenter)
+			cfg.Send(sel("setContentInsets:"), directionalEdgeInsets{Top: 6, Leading: 4, Bottom: 6, Trailing: 4})
+			cfg.Send(sel("setBaseForegroundColor:"), fg)
+			btn.Send(sel("setConfiguration:"), cfg)
+		} else {
+			btn.Send(sel("setTitle:forState:"), apple.NSString(title), uint(0))
+			btn.Send(sel("setImage:forState:"), image, uint(0))
+			btn.Send(sel("setTitleColor:forState:"), fg, uint(0))
+			btn.Send(sel("setTintColor:"), fg)
+		}
+		btn.Send(sel("setSelected:"), selected)
+		btn.Send(sel("setAccessibilityLabel:"), nsOrNil(title))
+		ax := traits["Button"]
+		if selected {
+			ax |= traits["Selected"]
+		}
+		btn.Send(selSetAccessibilityTraits, ax)
+	}
+}
 
 // showSelected selects the selected tab's item; one past them selects none.
 func (t *tabBar) showSelected() {
-	var item objc.ID
-	if t.selected >= 0 && t.selected < len(t.items) {
-		item = t.items[t.selected]
+	if t.bar != 0 {
+		var item objc.ID
+		if t.selected >= 0 && t.selected < len(t.items) {
+			item = t.items[t.selected]
+		}
+		t.bar.Send(sel("setSelectedItem:"), item)
 	}
-	t.bar.Send(sel("setSelectedItem:"), item)
+	if len(t.buttons) > 0 {
+		t.styleRailButtons()
+	}
+}
+
+// selectIndex selects item index as tapping it would, for tests.
+func (t *tabBar) selectIndex(index int) bool {
+	if index < 0 || index >= len(t.items) {
+		return false
+	}
+	if t.edge == tabBarEdgeBottom {
+		item := t.items[index]
+		t.bar.Send(sel("setSelectedItem:"), item)
+		t.bar.Send(sel("delegate")).Send(sel("tabBar:didSelectItem:"), t.bar, item)
+		return true
+	}
+	t.selected = index
+	t.showSelected()
+	if t.cx != nil {
+		t.cx.Emit("change", float64(index))
+	}
+	return true
 }
 
 func (t *tabBar) SetProp(name string, value any) {
@@ -92,7 +381,27 @@ func (t *tabBar) SetProp(name string, value any) {
 		t.setItems(list)
 	case "label":
 		label, _ := value.(string)
-		t.bar.Send(sel("setAccessibilityLabel:"), nsOrNil(label))
+		t.label = label
+		if t.bar != 0 {
+			t.bar.Send(sel("setAccessibilityLabel:"), nsOrNil(label))
+		}
+		if t.rail != 0 {
+			t.rail.Send(sel("setAccessibilityLabel:"), nsOrNil(label))
+		}
+	case "edge":
+		edge := parseTabBarEdge(value)
+		if edge == t.edge {
+			return
+		}
+		t.edge = edge
+		if edge == tabBarEdgeLeading || edge == tabBarEdgeTrailing {
+			t.ensureRail()
+		}
+		t.measure()
+		if t.container != 0 {
+			t.container.Send(selSetNeedsLayout)
+			t.layoutSubviews()
+		}
 	case "selectedIndex":
 		i, _ := value.(float64)
 		t.selected = int(i)
@@ -100,11 +409,18 @@ func (t *tabBar) SetProp(name string, value any) {
 	case "tint":
 		// The bar draws its selected item in its tintColor; none restores
 		// the inherited one.
+		c, _ := value.(float64)
+		t.tint = driver.Color(c)
 		tint := objc.ID(0)
-		if c, _ := value.(float64); c != 0 {
-			tint = uiColor(driver.Color(c))
+		if t.tint != 0 {
+			tint = uiColor(t.tint)
 		}
-		t.bar.Send(sel("setTintColor:"), tint)
+		if t.bar != 0 {
+			t.bar.Send(sel("setTintColor:"), tint)
+		}
+		if len(t.buttons) > 0 {
+			t.styleRailButtons()
+		}
 	}
 }
 
@@ -118,14 +434,18 @@ func (t *tabBar) setItems(list []any) {
 		icons[i], _ = tab["icon"].(string)
 	}
 	if slices.Equal(t.icons, icons) {
+		t.titles = titles
 		for i, item := range t.items {
 			if apple.GoString(item.Send(sel("title"))) != titles[i] {
 				item.Send(sel("setTitle:"), apple.NSString(titles[i]))
 			}
 		}
+		if len(t.buttons) > 0 {
+			t.styleRailButtons()
+		}
 		return
 	}
-	t.icons = icons
+	t.titles, t.icons = titles, icons
 	array := objc.ID(apple.Class("NSMutableArray")).Send(selNew)
 	t.items = t.items[:0]
 	for i, icon := range icons {
@@ -139,15 +459,39 @@ func (t *tabBar) setItems(list []any) {
 		array.Send(sel("addObject:"), item)
 		item.Send(selRelease)
 	}
-	t.bar.Send(sel("setItems:animated:"), array, false)
+	if t.bar != 0 {
+		t.bar.Send(sel("setItems:animated:"), array, false)
+	}
 	array.Send(selRelease)
+	if t.rail != 0 {
+		t.rebuildRailButtons()
+	}
 	t.showSelected()
 }
 
 func (t *tabBar) Command(string, any) {}
 
 func (t *tabBar) Close() {
+	t.clearRailButtons()
 	delete(tabBars, t.bar)
-	t.bar.Send(selSetDeleg, objc.ID(0))
-	t.bar.Send(selRelease)
+	delete(tabBarContainers, t.container)
+	if t.bar != 0 {
+		t.bar.Send(selSetDeleg, objc.ID(0))
+		t.bar.Send(selRelease)
+	}
+	if t.stack != 0 {
+		t.stack.Send(selRelease)
+	}
+	if t.separator != 0 {
+		t.separator.Send(selRelease)
+	}
+	if t.backdrop != 0 {
+		t.backdrop.Send(selRelease)
+	}
+	if t.rail != 0 {
+		t.rail.Send(selRelease)
+	}
+	if t.container != 0 {
+		t.container.Send(selRelease)
+	}
 }

@@ -58,6 +58,18 @@ func tabBarFace(p *props) core.Node {
 			return items
 		},
 		Selected: func() int { return p.int("selectedIndex") },
+		EdgeFunc: func() core.TabBarEdge {
+			switch p.str("edge") {
+			case "leading":
+				return core.TabBarLeading
+			case "trailing":
+				return core.TabBarTrailing
+			case "automatic":
+				return core.TabBarAutomatic
+			default:
+				return core.TabBarBottom
+			}
+		},
 		OnChange: func(i int) {
 			if h := p.handler("onChange"); h != nil {
 				e := r.vm.NewObject()

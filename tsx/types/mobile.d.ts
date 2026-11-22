@@ -12,7 +12,8 @@ export interface TabBarItem {
     /** An SVG document Android shows, tinted by the bar, where icon names no drawable. */
     svg?: string | null;
 }
-export interface TabBarProps { items?: TabBarItem[]; selectedIndex?: number; onChange?: (e: { index: number }) => void; style?: StyleProp<ViewStyle>; testID?: string }
+export type TabBarEdge = "bottom" | "leading" | "trailing" | "automatic";
+export interface TabBarProps { items?: TabBarItem[]; selectedIndex?: number; onChange?: (e: { index: number }) => void; edge?: TabBarEdge; style?: StyleProp<ViewStyle>; testID?: string }
 export declare function TabBar(props: TabBarProps): JSX.Element;
 export interface BackHandlerModule {
   /** Leaves the app. */

@@ -1134,13 +1134,10 @@ func (t *testSurface) SelectTab(id driver.NodeID, index int) error {
 			return
 		}
 		bar, ok := v.component.(*tabBar)
-		if !ok || index < 0 || index >= len(bar.items) {
+		if !ok || !bar.selectIndex(index) {
 			err = fmt.Errorf("view %d has no tab at index %d", id, index)
 			return
 		}
-		item := bar.items[index]
-		bar.bar.Send(sel("setSelectedItem:"), item)
-		bar.bar.Send(sel("delegate")).Send(sel("tabBar:didSelectItem:"), bar.bar, item)
 	})
 	return err
 }

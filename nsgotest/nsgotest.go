@@ -86,7 +86,7 @@ func DiskSpace(space core.DiskSpace, err error) Option {
 	return func(a *App) { a.diskSpace = driver.DiskSpaceResult{Space: space, Err: err} }
 }
 
-// Environment starts the app in env from its first frame, as a platform reports it before the app mounts: screens have the system header where env has HeaderHeight. Under `nsgo test -target` it pins only the appearance, reduced motion, increased contrast, the login launch reason, the application in front and whether the platform follows it, camera and code scanner availability, and, when set, the locale, text size, device name and device model; the OS, the idiom, the safe area and the header heights stay the platform's, so a test of another OS's layout runs headless or on that OS's target.
+// Environment starts the app in env from its first frame, as a platform reports it before the app mounts: screens have the system header where env has HeaderHeight. Under `nsgo test -target` it pins only the appearance, reduced motion, increased contrast, the login launch reason, the application in front and whether the platform follows it, camera and code scanner availability, and, when set, the locale, text size, device name, device model and vertical bar edge; the OS, the idiom, the safe area and the header heights stay the platform's, so a test of another OS's layout runs headless or on that OS's target.
 func Environment(env driver.Environment) Option {
 	return func(a *App) { a.env = &env }
 }
@@ -94,6 +94,11 @@ func Environment(env driver.Environment) Option {
 // Idiom starts a headless app with idiom, core.IdiomPhone by default, and the rest of its environment as it would be otherwise: Environment's when the test passes one, before or after Idiom, the defaults when not. IdiomDesktop has what reads Env.Desktop take its desktop path, such as hover tooltips; keyboard focus follows the environment's OS instead. App.SetEnvironment later reports its environment whole, idiom included. Under `nsgo test -target` the platform's idiom stays, as Environment's does.
 func Idiom(idiom driver.Idiom) Option {
 	return func(a *App) { a.idiom = &idiom }
+}
+
+// VerticalBarEdge starts the app with the system's preferred vertical bar edge (core.Env.VerticalBarEdge) set to edge, combining with Environment in any order. On a native target, a non-unspecified edge pins it over the platform's.
+func VerticalBarEdge(edge driver.VerticalBarEdge) Option {
+	return func(a *App) { a.verticalBarEdge = &edge }
 }
 
 // HotKeyTaken has the headless platform answer the global shortcuts of keys, in core.Scope.OnKey's form, as desktop.HotKeyTaken, so a test runs an app's path for a combination another app holds; other keys register.
@@ -502,6 +507,8 @@ type App struct {
 	env        *driver.Environment
 	// idiom is the Idiom option's, which a headless start applies over env.
 	idiom *driver.Idiom
+	// verticalBarEdge is the VerticalBarEdge option's, applied over env.
+	verticalBarEdge *driver.VerticalBarEdge
 	// keyBindings is the keymap as the platform matches it, which Key reads.
 	keyBindings []driver.KeyBinding
 	// heldKeys is whether the keymap asked for every key going down and up (driver.MountItem.HeldKeys).
@@ -617,6 +624,14 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		env.DiscoverServices = true
 		a.env = &env
 	}
+	if a.verticalBarEdge != nil {
+		env := driver.Environment{}
+		if a.env != nil {
+			env = *a.env
+		}
+		env.VerticalBarEdge = *a.verticalBarEdge
+		a.env = &env
+	}
 	if onTarget() && a.manualFrames {
 		t.Skip("nsgotest: ManualFrames steps the clock, which runs headless only")
 	}
@@ -721,6 +736,7 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 	} else {
 		env.GPU = false
 	}
+	a.env = &env
 	a.tree.SetEnvironment(env)
 	if desktop {
 		// The app's own surface runs the app's function, as on a desktop; a root view is one showing it as the main view, as nsgo.Run makes it.
@@ -1105,13 +1121,13 @@ func (a *App) setTransparent(t *core.Tree, b *driver.MountBatch) {
 // SetEnvironment reports env as a platform would and settles.
 func (a *App) SetEnvironment(env driver.Environment) {
 	a.t.Helper()
+	a.env = &env
 	if a.target != nil {
 		a.target.setEnvironment(env)
 		return
 	}
 	if a.appTree != nil {
 		// Every window shares the app's environment, and those it opens later start from it.
-		a.env = &env
 		a.own = nil
 		a.appTree.SetEnvironment(env)
 		for _, surface := range a.appTree.Surfaces() {
@@ -1123,6 +1139,28 @@ func (a *App) SetEnvironment(env driver.Environment) {
 		a.tree.SetEnvironment(env)
 	}
 	a.Settle()
+}
+
+// SetVerticalBarEdge updates only the system's preferred vertical bar edge on the current environment and settles.
+func (a *App) SetVerticalBarEdge(edge driver.VerticalBarEdge) {
+	a.t.Helper()
+	var env driver.Environment
+	if a.env != nil {
+		env = *a.env
+	}
+	env.VerticalBarEdge = edge
+	a.SetEnvironment(env)
+}
+
+// VerticalBarEdge returns the system's preferred vertical bar edge reported to the app's environment.
+func (a *App) VerticalBarEdge() driver.VerticalBarEdge {
+	if a.root != nil {
+		return a.root.Env().VerticalBarEdge()
+	}
+	if a.env != nil {
+		return a.env.VerticalBarEdge
+	}
+	return driver.VerticalBarUnspecified
 }
 
 // SetWindowEnvironment reports one window's environment changed by change, as a platform reports a window minimized, zoomed, full screen or out of sight while the app's other windows stay as they are, and settles: the window the app opened titled title, or the main window for "". The app's own surface, whose Lifecycle is every window's together, and the other windows keep the app's environment. Changes add up until SetEnvironment sets every window's again; each is applied again whenever the window's environment is reported, so change should only set fields of env. It needs a desktop environment, where the app opens windows, and runs headless only.

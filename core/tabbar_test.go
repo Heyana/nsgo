@@ -110,3 +110,65 @@ func TestTabBarSVGIsAndroidOnlyAndReactive(t *testing.T) {
 		})
 	}
 }
+
+func TestTabBarEdgeAndAutomatic(t *testing.T) {
+	if got := core.TabBarBottom.String(); got != "bottom" {
+		t.Errorf("TabBarBottom.String() = %q", got)
+	}
+	if got := core.TabBarLeading.String(); got != "leading" {
+		t.Errorf("TabBarLeading.String() = %q", got)
+	}
+	if got := core.TabBarTrailing.String(); got != "trailing" {
+		t.Errorf("TabBarTrailing.String() = %q", got)
+	}
+	if got := core.TabBarAutomatic.String(); got != "automatic" {
+		t.Errorf("TabBarAutomatic.String() = %q", got)
+	}
+	if got := core.TabBarAutomatic.Resolve(nil); got != core.TabBarBottom {
+		t.Errorf("TabBarAutomatic.Resolve(nil) = %v, want bottom", got)
+	}
+
+	var setEdge func(core.TabBarEdge)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		edge := core.NewSignal(cx, core.TabBarBottom)
+		setEdge = edge.Set
+		return core.TabBar{
+			Items:    []core.TabBarItem{{Title: "Home", Icon: "house"}, {Title: "Search", Icon: "magnifyingglass"}},
+			EdgeFunc: edge.Get,
+			Style:    core.Style{Width: core.Pt(72), Height: core.Pt(49)},
+			TestID:   "bar",
+		}
+	}, nsgotest.Environment(driver.Environment{OS: driver.OSIOS}))
+
+	propEdge := func() any { return app.Find("id:bar").NativeProps["edge"] }
+	if got := propEdge(); got != "bottom" {
+		t.Fatalf("default edge = %v, want bottom", got)
+	}
+	app.Post(func() { setEdge(core.TabBarLeading) })
+	app.Settle()
+	if got := propEdge(); got != "leading" {
+		t.Fatalf("leading edge = %v, want leading", got)
+	}
+	app.Post(func() { setEdge(core.TabBarTrailing) })
+	app.Settle()
+	if got := propEdge(); got != "trailing" {
+		t.Fatalf("trailing edge = %v, want trailing", got)
+	}
+	app.Post(func() { setEdge(core.TabBarAutomatic) })
+	app.Settle()
+	if got := propEdge(); got != "bottom" {
+		t.Fatalf("automatic with unspecified env edge = %v, want bottom", got)
+	}
+	app.SetVerticalBarEdge(core.VerticalBarTrailing)
+	if got := propEdge(); got != "trailing" {
+		t.Fatalf("automatic with trailing env edge = %v, want trailing", got)
+	}
+	app.SetVerticalBarEdge(core.VerticalBarLeading)
+	if got := propEdge(); got != "leading" {
+		t.Fatalf("automatic with leading env edge = %v, want leading", got)
+	}
+	app.SetVerticalBarEdge(core.VerticalBarUnspecified)
+	if got := propEdge(); got != "bottom" {
+		t.Fatalf("automatic restored to unspecified = %v, want bottom", got)
+	}
+}

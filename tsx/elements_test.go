@@ -79,6 +79,29 @@ mount(App);`, nsgotest.Environment(core.Environment{OS: core.OSAndroid}))
 	app.Find("text:selected 1")
 }
 
+func TestTabBarEdgeFromTSX(t *testing.T) {
+	app := run(t, `import { mount, signal, View } from "nsgo";
+import { TabBar } from "nsgo/mobile";
+function App() {
+    const selected = signal(0);
+    return <View>
+        <TabBar testID="bar" edge="automatic" style={{ width: 72, height: 49 }} selectedIndex={selected()}
+            onChange={(e) => selected.set(e.index)} items={[
+                { title: "Home", icon: "house" },
+                { title: "Search", icon: "magnifyingglass" }
+            ]} />
+    </View>;
+}
+mount(App);`, nsgotest.Environment(core.Environment{OS: core.OSIOS}), nsgotest.VerticalBarEdge(core.VerticalBarTrailing))
+	if got := app.Find("id:bar").NativeProps["edge"]; got != "trailing" {
+		t.Fatalf("TSX TabBar edge = %v, want trailing", got)
+	}
+	app.SetVerticalBarEdge(core.VerticalBarLeading)
+	if got := app.Find("id:bar").NativeProps["edge"]; got != "leading" {
+		t.Fatalf("TSX TabBar edge after update = %v, want leading", got)
+	}
+}
+
 func TestListRendersRowsWithAccessorsAndSlots(t *testing.T) {
 	app := run(t, `import { mount, signal, List, Text } from "nsgo";
 function App() {

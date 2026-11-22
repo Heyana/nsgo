@@ -1669,3 +1669,32 @@ func TestDiskSpace(t *testing.T) {
 		})
 	}
 }
+
+func TestVerticalBarEdgeOptionAndSetter(t *testing.T) {
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.Text{ContentFunc: func() string {
+			return cx.Env().VerticalBarEdge().String() + ":" + string(cx.Env().OS())
+		}, TestID: "edge"}
+	}, VerticalBarEdge(core.VerticalBarTrailing), Environment(core.Environment{OS: core.OSIOS, Dark: true}))
+
+	if got := app.VerticalBarEdge(); got != core.VerticalBarTrailing {
+		t.Fatalf("app.VerticalBarEdge() = %v, want trailing", got)
+	}
+	if got := app.Find("id:edge").Text; got != "trailing:ios" {
+		t.Fatalf("initial text = %q, want trailing:ios", got)
+	}
+	app.SetVerticalBarEdge(core.VerticalBarLeading)
+	if got := app.VerticalBarEdge(); got != core.VerticalBarLeading {
+		t.Fatalf("after SetVerticalBarEdge(leading): %v", got)
+	}
+	if got := app.Find("id:edge").Text; got != "leading:ios" {
+		t.Fatalf("updated text = %q, want leading:ios (preserving OS)", got)
+	}
+	app.SetVerticalBarEdge(core.VerticalBarUnspecified)
+	if got := app.VerticalBarEdge(); got != core.VerticalBarUnspecified {
+		t.Fatalf("after SetVerticalBarEdge(unspecified): %v", got)
+	}
+	if got := app.Find("id:edge").Text; got != "unspecified:ios" {
+		t.Fatalf("reset text = %q, want unspecified:ios", got)
+	}
+}

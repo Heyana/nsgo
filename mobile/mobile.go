@@ -12,17 +12,31 @@ type (
 	// bar on Android, each in the system's look. The app gives the tabs,
 	// says which is selected, hears the user's choice with OnChange and
 	// shows the selected tab's content; it places the bar with its style,
-	// whose height is the system's where the style leaves it open.
+	// whose height (or width on a vertical edge) is the system's where the
+	// style leaves it open. Set Edge (or EdgeFunc) to TabBarLeading or
+	// TabBarTrailing to draw the bar vertically on that edge, or
+	// TabBarAutomatic to follow the system's choice (core.Env.VerticalBarEdge).
 	// Elsewhere it takes no room and shows nothing, and the app shows its
 	// tabs with base.Tabs.
 	TabBar = core.TabBar
 	// TabBarItem is one tab of a TabBar.
 	TabBarItem = core.TabBarItem
+	// TabBarEdge is the edge along which a TabBar lays out its tabs.
+	TabBarEdge = core.TabBarEdge
 	// InputAccessoryView is a bar that rides above the software keyboard
 	// while an Input naming its ID in InputAccessoryViewID has focus. It
 	// is as wide as the surface and as tall as its content, and shows
 	// nothing where it is written.
 	InputAccessoryView = core.InputAccessoryView
+)
+
+// The edges a TabBar may sit on: the bottom by default, a vertical leading or
+// trailing edge, or following the system's choice (core.Env.VerticalBarEdge).
+const (
+	TabBarBottom    = core.TabBarBottom
+	TabBarLeading   = core.TabBarLeading
+	TabBarTrailing  = core.TabBarTrailing
+	TabBarAutomatic = core.TabBarAutomatic
 )
 
 // Haptic is feedback the device plays under the user's finger, from

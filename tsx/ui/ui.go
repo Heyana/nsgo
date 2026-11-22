@@ -159,6 +159,7 @@ var enums = []tsx.Option{
 	tsx.Enum(map[string]base.ColorFormat{"hex": base.ColorFormatHex, "rgb": base.ColorFormatRGB, "hsl": base.ColorFormatHSL,
 		"hsb": base.ColorFormatHSB, "oklch": base.ColorFormatOKLCH}),
 	tsx.Enum(map[string]core.ResizeMode{"cover": core.Cover, "contain": core.Contain, "stretch": core.Stretch, "center": core.Center}),
+	tsx.Enum(map[string]core.TabBarEdge{"bottom": core.TabBarBottom, "leading": core.TabBarLeading, "trailing": core.TabBarTrailing, "automatic": core.TabBarAutomatic}),
 	tsx.Enum(map[string]commitgraph.RefKind{"branch": commitgraph.RefBranch, "remote": commitgraph.RefRemote, "tag": commitgraph.RefTag, "head": commitgraph.RefHead}),
 	tsx.Enum(map[string]uiflow.Direction{"top-to-bottom": uiflow.TopToBottom, "left-to-right": uiflow.LeftToRight}),
 	tsx.Enum(map[string]uiflow.CardVariant{"default": uiflow.CardDefault, "accent": uiflow.CardAccent}),
@@ -286,6 +287,8 @@ type TabShell struct {
 	Tabs      []ShellTab
 	Selected  func() int
 	OnChange  func(index int)
+	Edge      core.TabBarEdge
+	EdgeFunc  func() core.TabBarEdge
 	Label     string
 	LabelFunc func() string
 	TestID    string
@@ -298,5 +301,5 @@ func (t TabShell) Render(*core.Scope) core.Node {
 		tabs[i] = ui.ShellTab{Text: tab.Text, TextFunc: tab.TextFunc, Icon: tab.Icon, SystemIcon: tab.SystemIcon, TestID: tab.TestID,
 			Content: func(*core.Scope) core.Node { return tab.Content }}
 	}
-	return ui.TabShell{Tabs: tabs, Selected: t.Selected, OnChange: t.OnChange, Label: t.Label, LabelFunc: t.LabelFunc, TestID: t.TestID}
+	return ui.TabShell{Tabs: tabs, Selected: t.Selected, OnChange: t.OnChange, Edge: t.Edge, EdgeFunc: t.EdgeFunc, Label: t.Label, LabelFunc: t.LabelFunc, TestID: t.TestID}
 }

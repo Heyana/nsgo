@@ -204,6 +204,17 @@ const (
 	VerticalBarTrailing
 )
 
+// String returns the edge's name: "unspecified", "leading" or "trailing".
+func (e VerticalBarEdge) String() string {
+	switch e {
+	case VerticalBarLeading:
+		return "leading"
+	case VerticalBarTrailing:
+		return "trailing"
+	}
+	return "unspecified"
+}
+
 // LocaleSettings are the regional preferences the user set, in Intl's
 // names: FirstDayOfWeek 1 for Monday to 7 for Sunday (ISO 8601),
 // HourCycle "h11", "h12", "h23" or "h24", MeasurementSystem "metric",

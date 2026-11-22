@@ -48,7 +48,7 @@ These checks exist:
 
 Still to come is that check on a foldable device and a fold simulator, with the gallery page the [roadmap](../roadmap.md#foldable-displays) names.
 
-An edge-adaptable tab bar, `mobile.TabBar` taking a leading or trailing edge where today it has only the system's bottom form (`core/tabbar.go`), follows as a separate [roadmap](../roadmap.md#foldable-displays) item.
+An edge-adaptable tab bar (`mobile.TabBar` and `ui.TabShell` taking `Edge` / `EdgeFunc`: `TabBarBottom`, `TabBarLeading`, `TabBarTrailing`, or `TabBarAutomatic` following `core.Env.VerticalBarEdge`) renders vertically on a leading or trailing edge, clearing that edge's safe area on drawn fallback bars and switching `internal/platform/ios/tabbar.go` between `UITabBar` and a vertical UIKit bar; iOS also subscribes to `UITraitCollection.systemTraitsAffectingVerticalBarEdge` via `registerForTraitChanges:withHandler:` when available, and `nsgotest` exposes `VerticalBarEdge` / `SetVerticalBarEdge` to test system-chosen edges.
 
 ## Decisions
 

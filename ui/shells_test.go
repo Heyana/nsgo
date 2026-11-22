@@ -10,6 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/icons/lucide"
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/mobile"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -819,5 +820,175 @@ func TestTabShellArrows(t *testing.T) {
 	app.Key("right")
 	if at.Get() != 1 {
 		t.Fatalf("Right moved to tab %d", at.Get())
+	}
+}
+
+// TestTabShellVerticalDrawnBar lays out the drawn fallback bar vertically on the leading or trailing edge (respecting RTL), clears its edge's safe area, and restores it when hidden or covered by the keyboard.
+func TestTabShellVerticalDrawnBar(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		edge           mobile.TabBarEdge
+		rtl            bool
+		barOnLeft      bool
+		wantClearLeft  bool
+		wantClearRight bool
+	}{
+		{"leading LTR", mobile.TabBarLeading, false, true, true, false},
+		{"trailing LTR", mobile.TabBarTrailing, false, false, false, true},
+		{"leading RTL", mobile.TabBarLeading, true, false, false, true},
+		{"trailing RTL", mobile.TabBarTrailing, true, true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var hidden *core.Signal[bool]
+			var sectionInsets core.Edges
+			env := core.Environment{
+				OS:       core.OSMacOS,
+				Idiom:    core.IdiomDesktop,
+				RTL:      tc.rtl,
+				SafeArea: core.Edges{Top: 20, Right: 84, Bottom: 34, Left: 44},
+			}
+			app, _ := start(t, env, func(cx *core.Scope) core.Node {
+				hidden = core.NewSignal(cx, false)
+				sel := core.NewSignal(cx, 0)
+				return TabShell{
+					Edge:      tc.edge,
+					BarHidden: hidden.Get,
+					Selected:  sel.Get,
+					OnChange:  sel.Set,
+					Tabs: []ShellTab{
+						{Text: "Home", TestID: "home-sec", Content: func(cx *core.Scope) core.Node {
+							cx.Effect(func() { sectionInsets = core.Insets(cx) })
+							return core.View{TestID: "body", Style: FillRest}
+						}},
+						{Text: "Search", Content: func(*core.Scope) core.Node { return core.View{} }},
+					},
+				}
+			})
+			bar := app.Find("id:tab-bar").Bounds()
+			body := app.Find("id:body").Bounds()
+			homeTab := app.Find("role:tab Home").Bounds()
+			searchTab := app.Find("role:tab Search").Bounds()
+			if tc.barOnLeft && bar.Origin.X >= body.Origin.X {
+				t.Fatalf("bar %v should lie left of body %v", bar, body)
+			}
+			if !tc.barOnLeft && bar.Origin.X <= body.Origin.X {
+				t.Fatalf("bar %v should lie right of body %v", bar, body)
+			}
+			if searchTab.Origin.Y <= homeTab.Origin.Y {
+				t.Fatalf("tabs should stack vertically: home %v, search %v", homeTab, searchTab)
+			}
+			want := env.SafeArea
+			if tc.wantClearLeft {
+				want.Left = 0
+			}
+			if tc.wantClearRight {
+				want.Right = 0
+			}
+			if sectionInsets != want {
+				t.Fatalf("section insets = %+v, want %+v", sectionInsets, want)
+			}
+			// Hiding the bar restores the cleared side safe area.
+			app.Post(func() { hidden.Set(true) })
+			app.Settle()
+			if sectionInsets != env.SafeArea {
+				t.Fatalf("hidden bar insets = %+v, want %+v", sectionInsets, env.SafeArea)
+			}
+		})
+	}
+}
+
+// TestTabShellAutomaticEdgeFollowsEnv switches between bottom floating and vertical leading/trailing placement as Env.VerticalBarEdge changes, keeping section state intact.
+func TestTabShellAutomaticEdgeFollowsEnv(t *testing.T) {
+	var builds int
+	var inset core.Points
+	var sectionInsets core.Edges
+	env := core.Environment{
+		OS:       core.OSIOS,
+		Idiom:    core.IdiomPhone,
+		SafeArea: core.Edges{Top: 59, Right: 84, Bottom: 34, Left: 20},
+	}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		sel := core.NewSignal(cx, 0)
+		return TabShell{
+			Edge:     mobile.TabBarAutomatic,
+			Selected: sel.Get,
+			OnChange: sel.Set,
+			Tabs: []ShellTab{
+				{Text: "Home", SystemIcon: "house", Content: func(cx *core.Scope) core.Node {
+					builds++
+					cx.Effect(func() {
+						inset = TabBarInset(cx)
+						sectionInsets = core.Insets(cx)
+					})
+					return core.View{TestID: "body", Style: FillRest}
+				}},
+				{Text: "Search", SystemIcon: "magnifyingglass", Content: func(*core.Scope) core.Node { return core.View{} }},
+			},
+		}
+	}, nsgotest.Environment(env))
+
+	if got := app.FindMounted("id:tab-bar").NativeProps["edge"]; got != "bottom" {
+		t.Fatalf("initial automatic edge = %v, want bottom", got)
+	}
+	// On bottom on iOS the system bar floats, so sections keep all safe area insets.
+	if sectionInsets != env.SafeArea {
+		t.Fatalf("bottom iOS insets = %+v, want %+v", sectionInsets, env.SafeArea)
+	}
+
+	app.SetVerticalBarEdge(core.VerticalBarTrailing)
+	if got := app.FindMounted("id:tab-bar").NativeProps["edge"]; got != "trailing" {
+		t.Fatalf("trailing automatic edge = %v, want trailing", got)
+	}
+	if inset != 0 {
+		t.Fatalf("vertical TabBarInset = %v, want 0", inset)
+	}
+	wantTrailing := env.SafeArea
+	wantTrailing.Right = 0
+	if sectionInsets != wantTrailing {
+		t.Fatalf("trailing iOS insets = %+v, want %+v", sectionInsets, wantTrailing)
+	}
+	if builds != 1 {
+		t.Fatalf("section rebuilt %d times across edge change, want 1", builds)
+	}
+
+	app.SetVerticalBarEdge(core.VerticalBarLeading)
+	if got := app.FindMounted("id:tab-bar").NativeProps["edge"]; got != "leading" {
+		t.Fatalf("leading automatic edge = %v, want leading", got)
+	}
+	wantLeading := env.SafeArea
+	wantLeading.Left = 0
+	if sectionInsets != wantLeading {
+		t.Fatalf("leading iOS insets = %+v, want %+v", sectionInsets, wantLeading)
+	}
+	if builds != 1 {
+		t.Fatalf("section rebuilt %d times across edge change, want 1", builds)
+	}
+}
+
+// TestTabShellAndroidVerticalUsesDrawnFallback keeps Android's native bottom bar on bottom while drawing a vertical bar on leading/trailing edges.
+func TestTabShellAndroidVerticalUsesDrawnFallback(t *testing.T) {
+	var setEdge func(mobile.TabBarEdge)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		edge := core.NewSignal(cx, mobile.TabBarBottom)
+		setEdge = edge.Set
+		return TabShell{
+			EdgeFunc: edge.Get,
+			Tabs: []ShellTab{
+				{Text: "Home", SystemIcon: "house", Content: func(*core.Scope) core.Node { return core.View{Style: FillRest} }},
+				{Text: "Search", SystemIcon: "magnifyingglass", Content: func(*core.Scope) core.Node { return core.View{Style: FillRest} }},
+			},
+		}
+	}, nsgotest.Environment(core.Environment{OS: core.OSAndroid, Idiom: core.IdiomPhone}))
+
+	if v := app.FindMounted("id:tab-bar"); v.Component != driver.TabBarComponent {
+		t.Fatalf("Android bottom bar component = %q, want native tab bar", v.Component)
+	}
+	app.Post(func() { setEdge(mobile.TabBarTrailing) })
+	app.Settle()
+	if v := app.FindMounted("id:tab-bar"); v.Component != "" {
+		t.Fatalf("Android trailing bar component = %q, want drawn vertical fallback", v.Component)
+	}
+	if app.Find("role:tab Search").Frame.Origin.Y <= app.Find("role:tab Home").Frame.Origin.Y {
+		t.Fatal("Android vertical fallback tabs did not stack vertically")
 	}
 }

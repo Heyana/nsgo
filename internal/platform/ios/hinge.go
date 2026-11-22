@@ -106,17 +106,36 @@ func (s *surface) watchHinge() {
 	interaction.Send(selRelease)
 }
 
+// watchVerticalBarEdge subscribes to the system traits that affect verticalBarEdge on iOS 27.1 and later, so changes reach Env.VerticalBarEdge even if UIKit skips the deprecated traitCollectionDidChange:.
+func (s *surface) watchVerticalBarEdge() {
+	tc := apple.Class("UITraitCollection")
+	if tc == 0 || !objc.Send[bool](objc.ID(tc), sel("respondsToSelector:"), sel("systemTraitsAffectingVerticalBarEdge")) ||
+		!objc.Send[bool](s.native, sel("respondsToSelector:"), sel("registerForTraitChanges:withHandler:")) {
+		return
+	}
+	traits := objc.ID(tc).Send(sel("systemTraitsAffectingVerticalBarEdge"))
+	if traits == 0 {
+		return
+	}
+	handler := objcblock.New(func(_ objc.Block, _, _ objc.ID) {
+		s.layoutChanged()
+	})
+	reg := s.native.Send(sel("registerForTraitChanges:withHandler:"), traits, handler)
+	handler.Release()
+	if reg != 0 && objc.Send[bool](s.native, sel("respondsToSelector:"), sel("unregisterForTraitChanges:")) {
+		reg.Send(sel("retain"))
+		native := s.native
+		s.stops = append(s.stops, func() {
+			native.Send(sel("unregisterForTraitChanges:"), reg)
+			reg.Send(selRelease)
+		})
+	}
+}
+
 // verticalBarEdge is the edge the system chose for a vertical bar, from the trait collection on iOS 27.1.
 func verticalBarEdge(traits objc.ID) driver.VerticalBarEdge {
 	if !objc.Send[bool](traits, sel("respondsToSelector:"), sel("verticalBarEdge")) {
 		return driver.VerticalBarUnspecified
 	}
-	const leading, trailing = 1, 2
-	switch objc.Send[int](traits, sel("verticalBarEdge")) {
-	case leading:
-		return driver.VerticalBarLeading
-	case trailing:
-		return driver.VerticalBarTrailing
-	}
-	return driver.VerticalBarUnspecified
+	return mapVerticalBarEdge(objc.Send[int](traits, sel("verticalBarEdge")))
 }
