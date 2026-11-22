@@ -221,6 +221,7 @@ Popups are placed against what their trigger holds (`Overlay.AnchorContent`), th
 - Ink fills from the view's text color (`FillFromView`), which a theme or appearance change resends without drawing again; colors the formula names stay, and errors take `ErrorStyle`'s color. A formula past Untie's limits, or whose fonts did not load, shows its source in `ErrorClass` and `ErrorStyle`.
 - The font loads on a `core.Resource`'s goroutine, as parsing it takes about 120 ms on an M-series Mac; until then a formula is an empty em square. In WebAssembly the load takes about 0.7 s and still holds the page's one thread ([roadmap](../roadmap.md#formulas)).
 - Assistive technology reads the canvas as an image labelled by Untie's structured description, spoken through `base/formula/locales` in English and Chinese, which `LabelFunc` follows as the source and the language change; the description's literal letters, digits and `\text` stay as written, and digits read as numbers. A text with hidden spans reads the label in the formula's place, never its TeX.
+- `View.OnHit` maps hover, press and click points back into Untie's `Box.At` and `NearestCaret`, carrying the source part and overlapping `Diagnostics` so an editor can place a caret or route a diagnostic without rebuilding formula geometry.
 - `RenderMath` gives `TextView` a `View` for each formula, `Display` for a block's; `TextView` places either as an attachment, whose span's `Content`, `$…$` or `$$…$$`, is what a copy takes ([TextView](textview.md#rendering)). `ui` drops `PartMathBlock`'s code type and padding for a typeset block, which takes the type around it as inline formulas do.
 
 What formulas cost an app, from a `ui.TextView` with and without `RenderMath` (2026-11-15):
@@ -245,7 +246,7 @@ go tool nsgo test -target watchos_simulator -device <owned-UUID> -env NSGO_FORMU
 | Fits or keeps a natural size in points | Em-sized by the inherited font | Formulas follow the text size as text does |
 | Its own layout cache of boxes | Em-unit paths at one reference size | One layout serves every size and engine |
 | English speech, `LocalizeLabel` for others | Untie's description spoken from catalogs | A component's words come from its catalogs |
-| Context menu copying MathML, hover hits | Copies as TeX; no hits | Left for later ([roadmap](../roadmap.md#formulas)) |
+| Context menu copying MathML | Copies as TeX; `View.OnHit` supplies source hits, carets and overlapping diagnostics | MathML clipboard support remains in the [roadmap](../roadmap.md#formulas) |
 
 ## Diagrams
 

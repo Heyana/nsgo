@@ -179,6 +179,28 @@ func TestViewSizesByFontAndReads(t *testing.T) {
 	}
 }
 
+func TestViewHitEventsCarryPartsCaretsAndDiagnostics(t *testing.T) {
+	r := newRenderer(Fonts{Math: newCMMath})
+	var events []HitEvent
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return View{TestID: "formula", Source: `x^2`, Renderer: r,
+			Diagnostics: []untie.Diagnostic{{Range: untie.Range{Start: 0, End: 1}, Message: "base"}},
+			OnHit:       func(event HitEvent) { events = append(events, event) }}
+	}, nsgotest.Size(300, 200), nsgotest.Environment(core.Environment{Idiom: core.IdiomDesktop, OS: core.OSMacOS}))
+	waitForFont(app, r, "id:formula")
+	v := app.Find("id:formula")
+	point := driver.Point{X: driver.Points(v.Frame.Size.Width / 2), Y: driver.Points(v.Frame.Size.Height / 2)}
+	app.HoverAt("id:formula", point)
+	app.PressAt("id:formula", point)
+	if len(events) < 2 {
+		t.Fatalf("events = %#v, want hover and click", events)
+	}
+	click := events[len(events)-1]
+	if click.Phase != HitClick || !click.Found || !click.HasCaret || len(click.Diagnostics) != 1 || click.Diagnostics[0].Message != "base" {
+		t.Fatalf("click event = %+v, want hit, caret and diagnostic", click)
+	}
+}
+
 // A View in a container that stretches its children keeps the size its font gives it.
 func TestViewKeepsItsSizeInAStretchingColumn(t *testing.T) {
 	r := newRenderer(Fonts{Math: newCMMath})

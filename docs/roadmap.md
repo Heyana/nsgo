@@ -242,7 +242,6 @@ What `base/formula` still lacks ([formulas](architecture/components.md#formulas)
 | Formulas as they stream | `untie/stream`, MyGo's `StreamingMath`, [#1445](https://github.com/nsgo-dev/nsgo/issues/1445) | A formula growing as a reply streams moves to its new layout, and its unfinished end shows no error marks |
 | Scripts in `\text` | Untie's `FontSetConfig.Fallbacks`, [#1446](https://github.com/nsgo-dev/nsgo/issues/1446) | CJK and other scripts in `\text{}` take the system's fonts, where they show as Untie's placeholders now |
 | Formulas in shrinking text | `text.md`, [#1447](https://github.com/nsgo-dev/nsgo/issues/1447) | A formula in a text with `AdjustsFontSizeToFit` shrinks with it |
-| Formulas in editors | Untie's `Box.Hits`, `NearestCaret`; MyGo's `hit.go`, [#1448](https://github.com/nsgo-dev/nsgo/issues/1448) | Presses, carets and diagnostics reach a formula's parts, for an editor of formulas |
 | MathML on the clipboard | MyGo's `clipboard.go`, [#1449](https://github.com/nsgo-dev/nsgo/issues/1449) | A copy of a formula also gives MathML and its source as `text/x-tex` |
 | Thin rules on whole pixels | Untie's `PixelGrid`, [#1450](https://github.com/nsgo-dev/nsgo/issues/1450) | Fraction bars and roots' rules land on whole device pixels at small sizes |
 | Loading the font on the web | `components.md` (Formulas), [#1451](https://github.com/nsgo-dev/nsgo/issues/1451) | The formula font loads without holding the page's one thread for its 0.7 s, in pieces between frames or as a smaller font |

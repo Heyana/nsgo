@@ -93,6 +93,7 @@ type layoutKey struct {
 type layout struct {
 	key layoutKey
 	em  core.EmBox
+	box *untie.Box
 	// description is what assistive technology reads, nil when the formula has none.
 	description *display.AltDescription
 	runs        []paintRun
@@ -179,6 +180,7 @@ func (r *Renderer) make(key layoutKey, draw bool) *layout {
 		l.failed = true
 		return l
 	}
+	l.box = box
 	// The canvas holds the ink that reaches past the box (Box.Overflow) too: canvases clip on the web and Linux, so a narrower canvas would cut it.
 	b := box.Bounds()
 	l.em = core.EmBox{Width: b.Width / referenceSize, Ascent: -b.Y / referenceSize, Descent: (b.Height + b.Y) / referenceSize}
