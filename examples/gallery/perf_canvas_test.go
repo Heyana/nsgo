@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"math"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -44,7 +46,8 @@ func (f *spriteFrames) latest() (int, time.Time) {
 	return f.last, f.at
 }
 
-func spriteCanvas(cx *core.Scope, count int, frames *spriteFrames) core.Node {
+// animate counts animation callbacks in the signal it returns, recording each in frames when they are measured.
+func animate(cx *core.Scope, frames *spriteFrames) *core.Signal[int] {
 	frame := core.NewSignal(cx, 0)
 	drawFrame := func(time.Time) {
 		next := frame.Get() + 1
@@ -64,6 +67,11 @@ func spriteCanvas(cx *core.Scope, count int, frames *spriteFrames) core.Node {
 		frames.pause = func() { stop() }
 		frames.single = func() { cx.RequestAnimationFrame(drawFrame) }
 	}
+	return frame
+}
+
+func spriteCanvas(cx *core.Scope, count int, frames *spriteFrames) core.Node {
+	frame := animate(cx, frames)
 	atlas := core.Src(spriteAtlasPath)
 	return core.Canvas{
 		Style:  core.Style{Width: core.Pct(100), Height: core.Pct(100), Background: core.RGB(0x152b37)},
@@ -78,6 +86,50 @@ func spriteCanvas(cx *core.Scope, count int, frames *spriteFrames) core.Node {
 				y := float32((i*97 + version*(1+i%3)) % height)
 				d.DrawImageFrom(atlas, sx, sy, spriteTile, spriteTile, x, y, spriteSize, spriteSize)
 			}
+			if frames != nil {
+				markSpriteFrame(d, size, byte(version))
+			}
+		},
+	}
+}
+
+const (
+	meshColumns, meshRows = 25, 20
+	meshTriangles         = meshColumns * meshRows * 2
+)
+
+// meshCanvas draws the atlas through one DrawVertices of 1,000 triangles covering the canvas, every vertex moving each frame, as #1211's throughput criterion asks.
+func meshCanvas(cx *core.Scope, frames *spriteFrames) core.Node {
+	frame := animate(cx, frames)
+	atlas := core.Src(spriteAtlasPath)
+	var vertices []core.CanvasVertex
+	return core.Canvas{
+		Style:  core.Style{Width: core.Pct(100), Height: core.Pct(100), Background: core.RGB(0x152b37)},
+		TestID: spriteCanvasID,
+		Draw: func(d *core.Drawing, size core.Size) {
+			version := frame.Get()
+			phase := float64(version) / 20
+			w, h := float64(size.Width), float64(size.Height)
+			at := func(column, row int) core.CanvasVertex {
+				x, y := w*float64(column)/meshColumns, h*float64(row)/meshRows
+				// The edges stay put so the mesh keeps covering the canvas.
+				if column > 0 && column < meshColumns {
+					x += 8 * math.Sin(phase+y/60)
+				}
+				if row > 0 && row < meshRows {
+					y += 8 * math.Cos(phase+x/80)
+				}
+				return core.CanvasVertex{Position: core.Point{X: core.Points(x), Y: core.Points(y)},
+					TexCoord: core.Point{X: core.Points(1024 * column / meshColumns), Y: core.Points(1024 * row / meshRows)}}
+			}
+			vertices = vertices[:0]
+			for row := range meshRows {
+				for column := range meshColumns {
+					a, c := at(column, row), at(column+1, row+1)
+					vertices = append(vertices, a, at(column+1, row), c, a, c, at(column, row+1))
+				}
+			}
+			d.DrawVertices(atlas, vertices)
 			if frames != nil {
 				markSpriteFrame(d, size, byte(version))
 			}
@@ -162,19 +214,57 @@ func TestCanvasSpriteWorkload(t *testing.T) {
 	}
 }
 
+func TestCanvasMeshWorkload(t *testing.T) {
+	if nsgotest.Target() != "" {
+		t.Skip("headless checks the recorded operations")
+	}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node { return meshCanvas(cx, nil) }, perfOptions()...)
+	check := func() []core.CanvasVertex {
+		t.Helper()
+		var meshes []core.DrawOp
+		for _, op := range app.Find("id:" + spriteCanvasID).Ops {
+			if op.Kind == core.DrawVertices {
+				meshes = append(meshes, op)
+			}
+		}
+		if len(meshes) != 1 || meshes[0].Image == nil || meshes[0].Image.URI != spriteAtlasPath {
+			t.Fatalf("drew %d meshes, want one of the atlas", len(meshes))
+		}
+		if n := len(meshes[0].Mesh.Vertices); n != meshTriangles*3 {
+			t.Fatalf("mesh has %d vertices, want %d", n, meshTriangles*3)
+		}
+		return meshes[0].Mesh.Vertices
+	}
+	before := check()
+	app.Advance(17 * time.Millisecond)
+	if slices.Equal(check(), before) {
+		t.Fatal("the mesh did not deform")
+	}
+}
+
 func TestPerfCanvasSprites1000(t *testing.T) { perfCanvasSprites(t, 1000) }
 
 func TestPerfCanvasSprites5000(t *testing.T) { perfCanvasSprites(t, 5000) }
 
 func perfCanvasSprites(t *testing.T, count int) {
+	perfCanvas(t, fmt.Sprintf("sprites=%d", count), fmt.Sprintf("Canvas %d sprites", count),
+		func(cx *core.Scope, frames *spriteFrames) core.Node { return spriteCanvas(cx, count, frames) })
+}
+
+func TestPerfCanvasMesh1000(t *testing.T) {
+	perfCanvas(t, fmt.Sprintf("mesh=%d", meshTriangles), fmt.Sprintf("Canvas %d mesh triangles", meshTriangles), meshCanvas)
+}
+
+// perfCanvas measures a canvas that marks its frames, named load in its log lines and mark in the monitor's.
+func perfCanvas(t *testing.T, load, mark string, canvas func(*core.Scope, *spriteFrames) core.Node) {
 	perfScenarios(t)
 	if nsgotest.Target() == "" {
 		t.Skip("run on a target with -fps")
 	}
 	frames := new(spriteFrames)
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node { return spriteCanvas(cx, count, frames) }, perfOptions()...)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node { return canvas(cx, frames) }, perfOptions()...)
 	app.Advance(2 * time.Second)
-	app.Mark(fmt.Sprintf("Canvas %d sprites", count))
+	app.Mark(mark)
 	first, started := frames.latest()
 	app.Advance(perfSeconds(5))
 	last, ended := frames.latest()
@@ -182,7 +272,7 @@ func perfCanvasSprites(t *testing.T, count int) {
 	if first == 0 || last <= first {
 		t.Fatal("the canvas did not receive display frames")
 	}
-	fmt.Printf("nsgo: perf sprites=%d callbacks=%d callback_fps=%.2f\n", count, last-first, float64(last-first)/ended.Sub(started).Seconds())
+	fmt.Printf("nsgo: perf %s callbacks=%d callback_fps=%.2f\n", load, last-first, float64(last-first)/ended.Sub(started).Seconds())
 	// Capture a held one-shot frame after the throughput run. Continuously
 	// invalidating a GTK widget can leave its offscreen capture empty between
 	// paints. Capture age includes the test host's PNG readback and settling.
@@ -210,14 +300,14 @@ func perfCanvasSprites(t *testing.T, count int) {
 		}
 	}
 	if !sawSprites {
-		app.Screenshot(fmt.Sprintf("perf-sprites-%d", count))
+		app.Screenshot("perf-" + strings.NewReplacer("=", "-").Replace(load))
 		t.Fatal("the atlas was not drawn")
 	}
 	if len(ages) == 0 {
 		t.Fatal("no capture contained a recorded frame marker")
 	}
 	slices.Sort(ages)
-	fmt.Printf("nsgo: perf sprites=%d captures=%d callback_to_capture_p50=%v max=%v\n", count, len(ages), ages[len(ages)/2], ages[len(ages)-1])
+	fmt.Printf("nsgo: perf %s captures=%d callback_to_capture_p50=%v max=%v\n", load, len(ages), ages[len(ages)/2], ages[len(ages)-1])
 }
 
 // Samples the area above the marker for the atlas's saturated pixels.

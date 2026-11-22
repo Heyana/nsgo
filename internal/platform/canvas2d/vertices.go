@@ -26,18 +26,28 @@ func (p *Player) vertices(op *driver.DrawOp) {
 	if len(tex.Pix) == 0 {
 		return
 	}
-	scale := p.Ratio
+	// Without rotation or skew, the raster's pixels are the canvas's, so compositing it copies them rather than resampling them.
+	dst, aligned := canvasmesh.Bounds(op, tex, p.Ratio), false
 	if p.Ctx.Get("getTransform").Type() == js.TypeFunction {
 		m := p.Ctx.Call("getTransform")
-		scale = max(math.Hypot(m.Get("a").Float(), m.Get("b").Float()), math.Hypot(m.Get("c").Float(), m.Get("d").Float()))
+		a, b, c, d := m.Get("a").Float(), m.Get("b").Float(), m.Get("c").Float(), m.Get("d").Float()
+		dst = canvasmesh.Bounds(op, tex, max(math.Hypot(a, b), math.Hypot(c, d)))
+		if b == 0 && c == 0 {
+			dst, aligned = canvasmesh.Device(op, tex, a, d, m.Get("e").Float(), m.Get("f").Float())
+		}
 	}
-	pix := canvasmesh.Raster(op, tex, scale)
-	if pix != nil {
-		c := p.MeshCanvas()
-		WritePixels(c, pix)
-		p.Ctx.Set("imageSmoothingEnabled", op.Sampling != driver.ImageSamplingNearest)
-		p.Ctx.Call("drawImage", c, float64(op.X), float64(op.Y), float64(op.W), float64(op.H))
+	if dst.Width == 0 {
+		return
 	}
+	pix := image.NewRGBA(image.Rect(0, 0, dst.Width, dst.Height))
+	dst.Pix, dst.Stride = pix.Pix, pix.Stride
+	canvasmesh.Draw(dst, op, tex)
+	c := p.MeshCanvas()
+	if !WritePixels(c, pix) {
+		return
+	}
+	p.Ctx.Set("imageSmoothingEnabled", !aligned && op.Sampling != driver.ImageSamplingNearest)
+	p.Ctx.Call("drawImage", c, dst.X, dst.Y, float64(dst.Width)/dst.ScaleX, float64(dst.Height)/dst.ScaleY)
 }
 
 // ReadTexture snapshots a native image's premultiplied pixels. Canvas
@@ -73,13 +83,15 @@ func ReadTexture(canvas, img js.Value, density float64) (tex canvasmesh.Texture)
 }
 
 // WritePixels replaces canvas with pix, converting premultiplied RGBA to
-// the straight alpha of ImageData.
-func WritePixels(canvas js.Value, pix *image.RGBA) {
+// the straight alpha of ImageData. It reports false for a context
+// without ImageData, as some mini program runtimes' are.
+func WritePixels(canvas js.Value, pix *image.RGBA) bool {
 	w, h := pix.Rect.Dx(), pix.Rect.Dy()
 	canvas.Set("width", w)
 	canvas.Set("height", h)
-	if w == 0 || h == 0 {
-		return
+	ctx := canvas.Call("getContext", "2d")
+	if w == 0 || h == 0 || ctx.Get("createImageData").Type() != js.TypeFunction || ctx.Get("putImageData").Type() != js.TypeFunction {
+		return false
 	}
 	straight := make([]byte, w*h*4)
 	for i := 0; i+3 < len(straight) && i+3 < len(pix.Pix); i += 4 {
@@ -92,8 +104,8 @@ func WritePixels(canvas js.Value, pix *image.RGBA) {
 			straight[i+c] = byte(min(uint32(pix.Pix[i+c])*255/a, 255))
 		}
 	}
-	ctx := canvas.Call("getContext", "2d")
 	data := ctx.Call("createImageData", w, h)
 	js.CopyBytesToJS(data.Get("data"), straight)
 	ctx.Call("putImageData", data, 0, 0)
+	return true
 }

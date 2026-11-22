@@ -41,16 +41,41 @@ func (p *player) vertices(op *driver.DrawOp) {
 	if len(texture.Pix) == 0 {
 		return
 	}
+	// Without rotation or skew, the raster's pixels are the context's, so compositing it copies them rather than resampling them.
 	m := cgContextGetCTM(p.ctx)
-	pix := canvasmesh.Raster(op, texture, max(math.Hypot(m.A, m.B), math.Hypot(m.C, m.D)))
-	if pix == nil {
+	dst, aligned := canvasmesh.Bounds(op, texture, max(math.Hypot(m.A, m.B), math.Hypot(m.C, m.D))), false
+	if m.B == 0 && m.C == 0 {
+		dst, aligned = canvasmesh.Device(op, texture, m.A, m.D, m.X, m.Y)
+	}
+	if dst.Width == 0 {
 		return
 	}
-	img := rgbaImage(pix.Pix, pix.Rect.Dx(), pix.Rect.Dy())
+	sampling := op.Sampling
+	if aligned {
+		sampling = driver.ImageSamplingNearest
+	}
+	// Core Animation's backing stores are BGRA, which the raster writes directly.
+	dst.Stride, dst.BGRA = dst.Width*4, true
+	dst.Pix = make([]byte, dst.Stride*dst.Height)
+	canvasmesh.Draw(dst, op, texture)
+	img := bgraImage(dst.Pix, dst.Width, dst.Height)
 	if img != 0 {
 		defer Release(img)
-		p.drawImage(img, float64(op.X), float64(op.Y), float64(op.W), float64(op.H), op.Sampling)
+		p.drawImage(img, dst.X, dst.Y, float64(dst.Width)/dst.ScaleX, float64(dst.Height)/dst.ScaleY, sampling)
 	}
+}
+
+// bgraImage makes a CGImage of premultiplied BGRA pixels, copying them.
+func bgraImage(pix []byte, w, h int) uintptr {
+	if w <= 0 || h <= 0 || len(pix) < w*h*4 {
+		return 0
+	}
+	cfData := cfDataCreate(0, &pix[0], w*h*4)
+	defer Release(cfData)
+	provider := cgDataProviderCreateWithData(cfData)
+	defer Release(provider)
+	const premultipliedFirst, byteOrder32Little = 2, 2 << 12
+	return cgImageCreate(w, h, 8, 32, w*4, srgb, premultipliedFirst|byteOrder32Little, provider, 0, true, 0)
 }
 
 func (im *loadedImage) meshTexture() canvasmesh.Texture {

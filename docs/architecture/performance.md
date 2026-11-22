@@ -160,6 +160,24 @@ On macOS the median of each second's app recording time fell from 0.21 to 0.04 m
 
 In the Ubuntu 24.04 arm64 VM, the isolated 5,000-sprite Cairo replay took 20.86 ms per drawing with individual operations and 15.81 ms with the reused pattern. End-to-end callback rates in the shared VM varied with host load and were lower in the first atlas run, at 25.54 → 10.83 for 1,000 sprites and 10.37 → 1.98 for 5,000. Linux desktop throughput needs a paired run on a dedicated machine.
 
+### Deforming mesh
+
+`TestPerfCanvasMesh1000` draws the same atlas through one `DrawVertices` of 1,000 triangles that cover the canvas, every inner vertex moving each frame, for [#1211](https://github.com/nsgo-dev/nsgo/issues/1211). `TestCanvasMeshWorkload` checks the recorded mesh headless, and `BenchmarkPlayDeformingMesh` in `internal/platform/apple` plays the same load into a BGRA context at 2× without a window.
+
+```sh
+go tool nsgo test -target macos -fps -env NSGO_GALLERY_PERF=1 -run '^TestPerfCanvasMesh1000$' ./examples/gallery
+```
+
+Readings from 2026-11-22 on macOS 27.2, M4 Pro, 120 Hz, 1200 × 800 points, before and after the rasterizer took bands on every processor and Apple composited on the device's pixels. Runs alternated on a machine whose other work kept the load average at 57–109, so they compare with each other, not with the sprite table.
+
+| Run | Callbacks/s before | After |
+| --- | ---: | ---: |
+| 1 | 27.8 | 62.5 |
+| 2 | 49.0 | 98.2 |
+| 3 | 62.8 | 114.7 |
+
+`BenchmarkPlayDeformingMesh` took 18–23 ms a frame before and 7–14 ms after at 12 processors, and 42–46 ms of CPU before and 30–34 ms after at one. Compositing the raster fell from about a quarter of the CPU profile to about 1%: drawn at its pixels as BGRA, Core Graphics copies it rather than resampling and converting it. Sampling the texture is most of what remains.
+
 ## Partial frames on Windows
 
 As NSH's, a frame draws only what changed since its back buffer was drawn and presents only what changed since the last frame (`internal/platform/windows/damage.go`):
