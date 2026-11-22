@@ -311,9 +311,7 @@ func (r *runtime) call(fn js.Value, args ...js.Value) js.Value {
 	return v
 }
 
-// callbackError reports an uncaught plugin callback outside a waiting call.
-// Nested callbacks still throw back into JavaScript, and views and hosts
-// without a handler keep core's boundary/report path.
+// callbackError reports an uncaught plugin callback outside a waiting call. Nested callbacks still throw back into JavaScript, and views and hosts without a handler keep core's boundary/report path.
 func (r *runtime) callbackError(err error) {
 	err = r.failure(err)
 	if r.onError != nil && r.depth == 0 && (r.current == nil || r.current.done == nil) {

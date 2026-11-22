@@ -140,8 +140,7 @@ func (r *runtime) installTimers() {
 		then, _ := js.AssertFunction(r.vm.ToObject(r.vm.ToValue(p)).Get("then"))
 		job, _ := then(r.vm.ToValue(p), fn)
 		if r.onError != nil {
-			// queueMicrotask reports an uncaught callback, rather than
-			// leaving the implementation promise silently rejected.
+			// queueMicrotask reports an uncaught callback, rather than leaving the implementation promise silently rejected.
 			owner := r.current
 			catch, _ := js.AssertFunction(r.vm.ToObject(job).Get("catch"))
 			_, _ = catch(job, r.function(func(call js.FunctionCall) js.Value {

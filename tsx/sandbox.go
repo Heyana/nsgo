@@ -154,10 +154,7 @@ type Sandbox struct {
 	// OnStop runs once on the engine goroutine when the runtime stops,
 	// after any waiting plugin calls fail.
 	OnStop func(error)
-	// OnError receives a plugin's uncaught callback errors outside a
-	// waiting Call, on the engine goroutine. Nil keeps core's report or
-	// boundary behavior. Load errors and Call results return to their
-	// callers; views keep their core.Catch boundary.
+	// OnError receives a plugin's uncaught callback errors outside a waiting Call, on the engine goroutine. Nil keeps core's report or boundary behavior. Load errors and Call results return to their callers; views keep their core.Catch boundary.
 	OnError func(error)
 	// Storage names its partition of the app's storage and of its secrets (core.Scope.ProvideSecrets), which no one else's code sees; "" leaves it the app's.
 	Storage string
@@ -594,9 +591,7 @@ func (r *runtime) within(budget time.Duration, fn func() error) (err error, cut 
 				r.expire(owner)
 				cut = true
 				if outsideCall && r.onError != nil {
-					// An interrupted reaction may outlive its settled call.
-					// Report after this entry unwinds, without failing a
-					// different call whose entry happened to drain its job.
+					// An interrupted reaction may outlive its settled call. Report after this entry unwinds, without failing a different call whose entry happened to drain its job.
 					r.cx.Post(func() { r.onError(ErrBudget) })
 				}
 				if inJob && r.retainPromiseJobs && owner != prev {
