@@ -74,6 +74,9 @@ func (w *window) environment() driver.Environment {
 		var width, height int32
 		gtkWindowGetDefaultSize(w.win, &width, &height)
 		frame.Width, frame.Height = driver.Points(width), driver.Points(height)
+		if position, ok := w.framePosition(); ok {
+			frame.X, frame.Y, frame.Move = position.X, position.Y, true
+		}
 	}
 	minimized := false
 	if w.surface != 0 {
@@ -118,7 +121,8 @@ func (w *window) environment() driver.Environment {
 
 		AudioPlaybackControls: loadSound(),
 
-		// GTK keeps only a window's size (setFrame), so no window is placed, and a Wayland compositor stacks its windows itself.
+		// X11 positions windows and asks its window manager for stacking; a Wayland compositor chooses both for an ordinary toplevel.
+		CanPlaceWindows:        w.canPlace(),
 		CanSetWindowLevel:      w.canSetLevel(),
 		CanSetWindowWorkspaces: w.canSetWorkspaces(),
 

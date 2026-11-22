@@ -123,6 +123,7 @@ type window struct {
 	// level is the level SetWindowLevel last asked for, which X11 asks the window manager for again as the window maps once levelWatched.
 	level        driver.WindowLevel
 	levelWatched bool
+	frameState   x11FrameState
 	// workspaces are the workspaces the app put the window on, and onAllDesktops whether it last asked the window manager for every desktop (workspaces.go).
 	workspaces    driver.WindowWorkspaces
 	onAllDesktops bool
@@ -533,7 +534,7 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 			child.setTransparent(true)
 		}
 	}
-	if cfg.Frame.Width > 0 || cfg.Frame.Height > 0 {
+	if cfg.Frame.Move || cfg.Frame.Width > 0 || cfg.Frame.Height > 0 {
 		child.setFrame(cfg.Frame)
 	}
 	child.setPointerEvents(cfg.PointerEvents)

@@ -228,7 +228,7 @@ func ToggleFullScreen(cx *core.Scope) { cx.ToggleFullScreen() }
 // OnClosing handlers may keep it, and the app ends by its shutdown mode.
 func CloseWindow(cx *core.Scope) { cx.CloseWindow() }
 
-// SetWindowFrame moves and sizes the window: f's top left corner is in points from the main screen's top left on every platform, and fields it leaves out keep their values, so a window given only a new height keeps its top edge. macOS animates the change when f asks. Linux sets the size GTK keeps for the window, and leaves its position to the window manager or compositor; CanPlaceWindows says whether the position moves the window.
+// SetWindowFrame moves and sizes the window: f's top left corner is in points from the main screen's top left on every platform, and fields it leaves out keep their values, so a window given only a new height keeps its top edge. macOS animates the change when f asks. Linux sets the size GTK keeps for the window and positions it on X11; a Wayland compositor places an ordinary toplevel itself; CanPlaceWindows says whether the position moves the window.
 func SetWindowFrame(cx *core.Scope, f WindowFrame) { cx.SetWindowFrame(f) }
 
 // SetWindowLevel puts the window at level among the others. macOS floats it at NSFloatingWindowLevel, or sinks it to the desktop's icons on every space; Windows makes it topmost, or puts it at the bottom of the z-order; Linux on X11 asks the window manager for _NET_WM_STATE_ABOVE or _NET_WM_STATE_BELOW, again each time the window shows. A Wayland compositor stacks its windows itself, and where CanSetWindowLevel is false the level does nothing.
@@ -237,7 +237,7 @@ func SetWindowLevel(cx *core.Scope, level WindowLevel) { cx.SetWindowLevel(level
 // CanSetWindowLevel reports whether SetWindowLevel stacks the scope's window: on macOS, Windows and Linux on X11, but not for a view a host embeds, the app's own scope or a tray icon's, which show in no window, a Linux panel no window manager manages, or on Wayland.
 func CanSetWindowLevel(cx *core.Scope) bool { return cx.Env().CanSetWindowLevel() }
 
-// CanPlaceWindows reports whether SetWindowFrame moves the scope's window to the position it gives: on macOS and Windows, and for an Android overlay (mobile.OpenOverlay), which it keeps on the screen, but not for a view a host embeds, the app's own scope or a tray icon's, which show in no window, or on Linux.
+// CanPlaceWindows reports whether SetWindowFrame moves the scope's window to the position it gives: on macOS, Windows and X11, and for an Android overlay (mobile.OpenOverlay), which it keeps on the screen, but not for a view a host embeds, the app's own scope or a tray icon's, which show in no window, or an ordinary Wayland toplevel.
 func CanPlaceWindows(cx *core.Scope) bool { return cx.Env().CanPlaceWindows() }
 
 // SetWindowWorkspaces shows the window on every workspace, as a desktop pet, a HUD or a timer does, or back on one, the one the user is on; WindowOptions.Workspaces opens a window so. On macOS a window on every Space also shows over other apps' full screen spaces and stays out of Cmd-` cycling, and SetWindowLevel keeps it on every Space; a level that floats keeps it above the windows there, and the desktop's level behind them, out of full screen spaces. Linux puts it on every virtual desktop on X11, where the window manager supports _NET_WM_DESKTOP. Windows, which has no public way to pin a window to every virtual desktop, and Wayland leave it on the one it opened on; CanSetWindowWorkspaces says whether it takes effect.

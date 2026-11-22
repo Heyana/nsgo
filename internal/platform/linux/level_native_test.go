@@ -12,7 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestWindowLevelAsksTheWindowManager listens on the X11 root window, as a window manager hears it, for the _NET_WM_STATE requests SetWindowLevel sends: ABOVE without BELOW for a floating window, the same again as the window maps after it hid, BELOW without ABOVE for the desktop's level and neither for the normal one. The environment says the level works on X11 and placing does not; on Wayland, which GDK may choose with DISPLAY set too, it says neither works.
+// TestWindowLevelAsksTheWindowManager listens on the X11 root window, as a window manager hears it, for the _NET_WM_STATE requests SetWindowLevel sends: ABOVE without BELOW for a floating window, the same again as the window maps after it hid, BELOW without ABOVE for the desktop's level and neither for the normal one. The environment says levels and placement work on X11; on Wayland, which GDK may choose with DISPLAY set too, it says neither works.
 func TestWindowLevelAsksTheWindowManager(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")
@@ -35,7 +35,7 @@ func TestWindowLevelAsksTheWindowManager(t *testing.T) {
 	})
 	env := make(chan [2]bool, 1)
 	cx.Post(func() { env <- [2]bool{cx.Env().CanSetWindowLevel(), cx.Env().CanPlaceWindows()} })
-	if got, want := <-env, [2]bool{xid != 0, false}; got != want {
+	if got, want := <-env, [2]bool{xid != 0, xid != 0}; got != want {
 		t.Errorf("CanSetWindowLevel, CanPlaceWindows = %v, want %v", got, want)
 	}
 	if xid == 0 {

@@ -319,6 +319,7 @@ func (w *window) allocateSurface(width, height int32) {
 	if w.limits.watched {
 		w.applyMaximumHints()
 	}
+	w.finishFrameResize()
 	size := driver.Size{Width: driver.Points(width), Height: driver.Points(height)}
 	if !w.started {
 		// The surface exists now, so its scale and direction are known.

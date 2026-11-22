@@ -296,6 +296,8 @@ warning := core.Text{ContentFunc: func() string {
 }}
 ```
 
+`desktop.SetWindowFrame` moves a window when `WindowFrame.Move` is true, using `X` and `Y` in points from the main screen's top left. Unset dimensions keep their current sizes. Check `desktop.CanPlaceWindows`: macOS, Windows and Linux on X11 support positioning; an ordinary Wayland toplevel keeps the compositor's position. `desktop.Frame` follows the native window's position on these desktops.
+
 Set `desktop.WindowOptions.Parent` to an open window of the app to close both when the parent closes. On desktops the child stays above its parent and follows it when it hides or minimizes; a child explicitly hidden stays hidden when the parent returns. On macOS it also centers over its parent when `Frame` is unset and follows it into full screen.
 
 `desktop.SetWindowPointerEvents` lets the pointer through a window to the windows below it, of any app: `WindowPointerNone` everywhere, as a heads-up display does, and `WindowPointerPainted` wherever no view draws something or hears the pointer, as around a desktop pet that still takes presses, drags and right clicks on itself; the title bar the system draws counts as nothing drawn. `WindowOptions.PointerEvents` and `PanelOptions.PointerEvents` open a window so. A `Desktop.WindowDrag` region still drags inside a pressable ancestor; a nearer pressable or editing control keeps its own input instead of dragging the window. A window that takes no pointer hears no presses, so the app gives it back from a shortcut, a tray icon or another window. Code an `Access` holds needs `core.AccessOverlay`.
