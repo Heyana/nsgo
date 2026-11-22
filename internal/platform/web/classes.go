@@ -3,6 +3,7 @@
 package web
 
 import (
+	"slices"
 	"strconv"
 	"syscall/js"
 )
@@ -21,16 +22,32 @@ import (
 // defining ownRulesAfter classes, a slot takes a rule of its own in a
 // second sheet, changed in place, which the view's deletion frees for
 // another.
+//
+// The slots and spans that show a class hold it. One no element holds
+// stays in the sheet, for a style that comes back, until keepUnused such
+// classes have gathered and another is defined, which deletes them all:
+// the sheet holds what is shown and a bounded rest.
 
-const ownRulesAfter = 16
+const (
+	ownRulesAfter = 16
+	keepUnused    = 256
+)
 
 // classSheet is a surface's classes.
 type classSheet struct {
-	sheet, own  js.Value          // the CSSStyleSheets of classes and own rules
-	rules, owns int               // the rules each holds
-	names       map[string]string // class names by CSS
-	taken       map[string]bool
-	free        []*ownRule
+	sheet, own js.Value              // the CSSStyleSheets of classes and own rules
+	rules      []*classRule          // sheet's rules, in its order
+	owns       int                   // the rules own holds
+	names      map[string]*classRule // classes by CSS
+	taken      map[string]bool
+	unused     int // the classes no element holds
+	free       []*ownRule
+}
+
+// classRule is a class of the sheet.
+type classRule struct {
+	css, name string
+	holders   int // the slots and spans holding it
 }
 
 // ownRule is a rule of one slot's own, under a class of its own.
@@ -41,11 +58,15 @@ type ownRule struct {
 
 // classSlot is a part of an element's style a class carries.
 type classSlot struct {
-	css   string // the CSS last applied
-	name  string // its class on the element, "" for none
-	count int    // the classes it has defined
+	css   string     // the CSS last applied
+	name  string     // its class on the element, "" for none
+	class *classRule // the class it holds, nil for none or an own rule
+	count int        // the classes it has defined
 	own   *ownRule
 }
+
+// spanClasses are the classes the spans an element shows hold.
+type spanClasses []*classRule
 
 // cssText builds a declaration block.
 type cssText []byte
@@ -71,16 +92,23 @@ func (s *surface) classSheet() *classSheet {
 				c.own = el.Get("sheet")
 			}
 		}
-		c.names, c.taken = map[string]string{}, map[string]bool{}
+		c.names, c.taken = map[string]*classRule{}, map[string]bool{}
 	}
 	return c
 }
 
-// class returns the class of css, and whether it inserted its rule:
-// the first time.
-func (c *classSheet) class(css string) (string, bool) {
-	if name, ok := c.names[css]; ok {
-		return name, false
+// class returns the class of css, held by one more holder, and whether
+// it inserted its rule: the first time, or after the rule was deleted.
+func (c *classSheet) class(css string) (*classRule, bool) {
+	if r, ok := c.names[css]; ok {
+		if r.holders == 0 {
+			c.unused--
+		}
+		r.holders++
+		return r, false
+	}
+	if c.unused >= keepUnused {
+		c.sweep()
 	}
 	h := uint32(2166136261)
 	for i := 0; i < len(css); i++ {
@@ -92,11 +120,45 @@ func (c *classSheet) class(css string) (string, bool) {
 	for i := 1; c.taken[name]; i++ {
 		name = "nsgo-" + hex + "-" + strconv.Itoa(i)
 	}
+	r := &classRule{css: css, name: name, holders: 1}
 	c.taken[name] = true
-	c.names[css] = name
-	c.sheet.Call("insertRule", "."+name+"."+name+"{"+css+"}", c.rules)
-	c.rules++
-	return name, true
+	c.names[css] = r
+	c.sheet.Call("insertRule", "."+name+"."+name+"{"+css+"}", len(c.rules))
+	c.rules = append(c.rules, r)
+	return r, true
+}
+
+// release lets go of r, which may be nil.
+func (c *classSheet) release(r *classRule) {
+	if r == nil {
+		return
+	}
+	if r.holders--; r.holders == 0 {
+		c.unused++
+	}
+}
+
+// sweep deletes the rules of the classes no element holds, from the last
+// so the indices of those before stay.
+func (c *classSheet) sweep() {
+	for i := len(c.rules) - 1; i >= 0; i-- {
+		if r := c.rules[i]; r.holders == 0 {
+			c.sheet.Call("deleteRule", i)
+			delete(c.names, r.css)
+			delete(c.taken, r.name)
+		}
+	}
+	c.rules = slices.DeleteFunc(c.rules, func(r *classRule) bool { return r.holders == 0 })
+	c.unused = 0
+}
+
+// releaseSpans lets go of the classes of the spans h holds.
+func (c *classSheet) releaseSpans(h *spanClasses) {
+	for _, r := range *h {
+		c.release(r)
+	}
+	clear(*h)
+	*h = (*h)[:0]
 }
 
 // ownRule returns a free rule of a slot's own.
@@ -123,8 +185,10 @@ func (s *surface) setClass(el js.Value, slot *classSlot, css cssText) {
 		slot.own.style.Set("cssText", slot.css)
 		return
 	}
+	c := s.classSheet()
+	var class *classRule
 	name := ""
-	switch c := s.classSheet(); {
+	switch {
 	case slot.css == "":
 	case slot.count >= ownRulesAfter:
 		slot.own = c.ownRule()
@@ -132,10 +196,13 @@ func (s *surface) setClass(el js.Value, slot *classSlot, css cssText) {
 		name = slot.own.name
 	default:
 		var defined bool
-		if name, defined = c.class(slot.css); defined {
+		if class, defined = c.class(slot.css); defined {
 			slot.count++
 		}
+		name = class.name
 	}
+	c.release(slot.class)
+	slot.class = class
 	if name == slot.name {
 		return
 	}
@@ -151,11 +218,25 @@ func (s *surface) setClass(el js.Value, slot *classSlot, css cssText) {
 	slot.name = name
 }
 
-// freeClass gives slot's own rule back for another slot.
+// freeClass lets go of slot's class, and gives its own rule back for
+// another slot.
 func (s *surface) freeClass(slot *classSlot) {
+	s.classes.release(slot.class)
+	slot.class = nil
 	if r := slot.own; r != nil {
 		r.style.Set("cssText", "")
 		s.classes.free = append(s.classes.free, r)
 		slot.own = nil
 	}
+}
+
+// freeClasses lets go of a deleted view's classes.
+func (s *surface) freeClasses(v *view) {
+	s.freeClass(&v.look)
+	s.freeClass(&v.feel)
+	s.freeClass(&v.textClass)
+	if v.input != nil {
+		s.freeClass(&v.input.look)
+	}
+	s.classes.releaseSpans(&v.spans)
 }

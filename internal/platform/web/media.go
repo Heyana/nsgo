@@ -5,6 +5,7 @@ package web
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"syscall/js"
 	"time"
@@ -202,17 +203,26 @@ func (s *surface) match(v, old *view, lb *layoutBatch) {
 }
 
 // vanish keeps a deleted view's element where it is while it fades or
-// shrinks away, unless a view the batch deleted around it does. It
-// reports whether it kept it.
+// shrinks away, unless a view the batch deleted around it does, and its
+// classes until it is gone. It reports whether it kept it.
 func (s *surface) vanish(v *view, lb *layoutBatch) bool {
 	if lb == nil || lb.anim.Delete == nil || !v.el.Get("parentElement").Truthy() {
 		return false
 	}
-	if v.el.Call("closest", "[data-nsgo-ghost]").Truthy() {
-		return true // it goes with its ancestor
+	if g := v.el.Call("closest", "[data-nsgo-ghost]"); g.Truthy() {
+		// It goes with its ancestor.
+		id := g.Get("dataset").Get("nsgoGhost").String()
+		s.ghosts[id] = append(s.ghosts[id], v)
+		return true
 	}
+	s.ghostID++
+	id := strconv.Itoa(s.ghostID)
+	if s.ghosts == nil {
+		s.ghosts = map[string][]*view{}
+	}
+	s.ghosts[id] = []*view{v}
 	el := v.el
-	el.Get("dataset").Set("nsgoGhost", "1")
+	el.Get("dataset").Set("nsgoGhost", id)
 	el.Set("nsgoID", js.Undefined())
 	setStyle(el, map[string]string{"pointer-events": "none"})
 	tr := lb.anim.Delete
@@ -226,6 +236,10 @@ func (s *surface) vanish(v *view, lb *layoutBatch) bool {
 	var done js.Func
 	done = js.FuncOf(func(js.Value, []js.Value) any {
 		el.Call("remove")
+		for _, v := range s.ghosts[id] {
+			s.freeClasses(v)
+		}
+		delete(s.ghosts, id)
 		done.Release()
 		return nil
 	})

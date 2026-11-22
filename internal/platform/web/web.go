@@ -119,6 +119,10 @@ type surface struct {
 	// (scrollSoon).
 	scrollsDue    []*view
 	reportScrolls js.Func
+	// ghosts are the deleted views whose elements fade away, by their
+	// faded root's data-nsgo-ghost, which ghostID numbers (vanish).
+	ghosts  map[string][]*view
+	ghostID int
 	// effects are the views with an effect, a transition or a navigation
 	// shader (effect.go); effectStyled whether their style sheet is in.
 	effects      map[*view]bool
@@ -133,6 +137,7 @@ type surface struct {
 	dom          dom           // frames and texts applied in bulk (dom.go)
 	parked       js.Value      // a hidden, inert element removed views wait in
 	measuring    *preparedText // the text measure holds
+	measureSpans spanClasses   // the classes of its spans
 	measureLang  string        // measure's lang attribute
 	metrics      js.Value      // a canvas's 2D context, for fonts' metrics
 	engine       *engine.Engine
@@ -227,6 +232,8 @@ type view struct {
 	// of the pointer and selection, and textClass inner's of its
 	// paragraph (classes.go).
 	look, feel, textClass classSlot
+	// spans are the classes of inner's spans.
+	spans spanClasses
 	// unbordered is the border of its parent its element is placed in.
 	unbordered driver.Edges
 	// para is the paragraph style textCSS last set; filled the text its
@@ -982,15 +989,16 @@ func (s *surface) paragraphStyle(t *driver.AttributedText) *paragraphStyle {
 	return ps
 }
 
-// spanClass is the class of a span of style css.
-func (s *surface) spanClass(css map[string]string) string {
+// spanClass is the class of a span of style css, nil for none, held
+// by one more holder.
+func (s *surface) spanClass(css map[string]string) *classRule {
 	c := s.sortedCSS(css)
 	s.css = c
 	if len(c) == 0 {
-		return ""
+		return nil
 	}
-	name, _ := s.classSheet().class(string(c))
-	return name
+	r, _ := s.classSheet().class(string(c))
+	return r
 }
 
 // sortedCSS is css in the order of its names, in the surface's buffer.
@@ -1086,8 +1094,9 @@ func (r *richText) appendText(doc, el js.Value, start, end int) {
 	}
 }
 
-// fill puts the text in el: as it is, or as a <span> per span carrying its byte offset, so a press can tell the character it hit. Links take keyboard focus when interactive. The caller sets el's lang; a span in another language carries its own.
-func (r *richText) fill(s *surface, el js.Value, interactive bool) {
+// fill puts the text in el: as it is, or as a <span> per span carrying its byte offset, so a press can tell the character it hit. Links take keyboard focus when interactive. The caller sets el's lang; a span in another language carries its own. held is the classes of el's spans, which fill lets go of for the new ones.
+func (r *richText) fill(s *surface, el js.Value, interactive bool, held *spanClasses) {
+	s.classes.releaseSpans(held)
 	doc := s.doc
 	if len(r.spans) == 0 && len(r.attachments) == 0 {
 		el.Set("textContent", r.text)
@@ -1101,8 +1110,9 @@ func (r *richText) fill(s *surface, el js.Value, interactive bool) {
 		}
 		e := doc.Call("createElement", "span")
 		link := sp.link && interactive
-		if c := s.spanClass(sp.style); c != "" {
-			e.Set("className", c)
+		if c := s.spanClass(sp.style); c != nil {
+			e.Set("className", c.name)
+			*held = append(*held, c)
 		}
 		if sp.cursor != driver.CursorAuto {
 			setStyle(e, map[string]string{"cursor": sp.cursor.Name()})
@@ -1277,9 +1287,10 @@ func (p *preparedText) hold() js.Value {
 			setAttr(m, "lang", p.language)
 		}
 		if p.text == "" {
+			p.s.classes.releaseSpans(&p.s.measureSpans)
 			m.Set("textContent", "​") // an empty text keeps a line's height
 		} else {
-			p.fill(p.s, m, false)
+			p.fill(p.s, m, false, &p.s.measureSpans)
 		}
 	}
 	return m
@@ -1635,13 +1646,8 @@ func (s *surface) mount(b *driver.MountBatch) {
 			if v.sc != nil {
 				s.dropGlide(v)
 			}
-			if !vanishing { // a fading element keeps its rules
-				s.freeClass(&v.look)
-				s.freeClass(&v.feel)
-				s.freeClass(&v.textClass)
-				if v.input != nil {
-					s.freeClass(&v.input.look)
-				}
+			if !vanishing { // a fading element keeps its rules until it is gone (vanish)
+				s.freeClasses(v)
 			}
 			if v.component != nil {
 				v.component.Close()
@@ -2101,6 +2107,7 @@ func (s *surface) setText(v *view, t *driver.TextContent) {
 	if l == nil {
 		s.dom.flush()
 		v.inner.Set("textContent", "")
+		s.classes.releaseSpans(&v.spans)
 		v.plain, v.filled = true, ""
 		return
 	}
@@ -2135,9 +2142,10 @@ func (s *surface) setText(v *view, t *driver.TextContent) {
 	case plain && v.plain && v.filled == l.text:
 	case plain && s.dom.ok:
 		s.dom.setText(v.id, l.text)
+		s.classes.releaseSpans(&v.spans)
 	default:
 		s.dom.flush()
-		l.fill(s, v.inner, true)
+		l.fill(s, v.inner, true, &v.spans)
 	}
 	v.plain, v.filled = plain, l.text
 }

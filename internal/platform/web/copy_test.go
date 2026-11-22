@@ -23,7 +23,7 @@ func TestCopyTakesAttachmentsCopyTexts(t *testing.T) {
 		el := doc.Call("createElement", "div")
 		el.Set("className", "nsgo-text")
 		el.Get("style").Call("setProperty", "user-select", "text")
-		s.Prepare(at).(*preparedText).fill(s, el, false)
+		s.Prepare(at).(*preparedText).fill(s, el, false, new(spanClasses))
 		s.host.Call("appendChild", el)
 		return el
 	}

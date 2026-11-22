@@ -74,7 +74,7 @@ func TestSpanCursorShowsOverItsCharacters(t *testing.T) {
 	s.Prepare(&driver.AttributedText{Text: "plain link", Style: style, Spans: []driver.TextSpan{
 		{Start: 0, End: 6, Style: style},
 		{Start: 6, End: 10, Style: style, Cursor: driver.CursorPointer},
-	}}).(*preparedText).fill(s, el, false)
+	}}).(*preparedText).fill(s, el, false, new(spanClasses))
 	s.host.Call("appendChild", el)
 	spans := el.Call("querySelectorAll", "span")
 	if spans.Length() != 2 {
