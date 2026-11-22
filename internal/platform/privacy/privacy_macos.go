@@ -78,8 +78,7 @@ func fromAEStatus(status int32) int {
 	return driver.PermissionUnknown
 }
 
-// automationStatus checks, or with ask requests, macOS Automation permission for the running app with bundleID.
-// When ask is true, AEDeterminePermissionToAutomateTarget may block while the user answers the prompt, so callers must run it off the main thread.
+// automationStatus checks, or with ask requests, macOS Automation permission for the running app with bundleID. When ask is true, AEDeterminePermissionToAutomateTarget may block while the user answers the prompt, so callers must run it off the main thread.
 func automationStatus(bundleID string, ask bool) int {
 	if bundleID == "" || !loadAE() {
 		return driver.PermissionUnknown
