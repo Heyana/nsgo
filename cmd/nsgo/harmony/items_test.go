@@ -41,6 +41,7 @@ var unsupportedItems = map[string]string{
 		ItemQuickLook ItemCursorPoint ItemPointerLock`,
 	"Apple only":        `ItemAppleCredentialState ItemSignInWithApple`,
 	"Android wire only": `ItemSaveFilePreflight`,
+	"web only":          `ItemPageHead`,
 	// Services main added after this target, which no HarmonyOS kit answers here yet.
 	"services added since": `ItemAuthSession ItemPurchase ItemSensor ItemSpeak
 		ItemWebCookies ItemLookUp ItemPictureInPicture ItemPictureInPictureCommand
