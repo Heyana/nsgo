@@ -19,7 +19,7 @@ func allowedPublicDriverType(name string) bool {
 		"CustomCursor", "DecayConfig", "Directory", "DisplayInfo",
 		"DrawArg", "DrawKind", "DrawOp", "DrawSlot", "OffscreenCanvas", "CanvasMesh", "CanvasVertex", "WebSchemeRequest", "WebSchemeResponse", "SharedItem", "DiskSpace", "VideoHeaders", "GPUDeviceLostReason", "WebWindowRequest", "SelectedRange", "WebSchemeHandler",
 		"Drawing", "EaseMode", "Easing", "EasingKind",
-		"EdgeColors", "EdgeEffect", "Edges", "Effects",
+		"EdgeColors", "EdgeEffect", "Edges", "EditAction", "Effects",
 		"EllipsizeMode", "Environment", "Extrapolate", "File",
 		"FillRule", "Filter", "FilterKind", "Font",
 		"FontExtent", "FontVariant", "FontWeight", "FrontmostAppInfo",
