@@ -56,6 +56,12 @@ type View struct {
 	SourceFunc func() string
 	Dialect    Dialect
 	Display    bool
+	// Streaming hides recoverable error and placeholder ink while Source
+	// is still arriving. SourceFunc continues to lay out each update. Set
+	// it false when the source is complete to show remaining errors;
+	// StreamingFunc follows what it reads.
+	Streaming     bool
+	StreamingFunc func() bool
 	// Renderer lays it out; nil is Default().
 	Renderer *Renderer
 	// Label is what assistive technology reads in place of what the formula says.
@@ -86,6 +92,10 @@ func (v View) Render(cx *core.Scope) core.Node {
 	source := func() string { return v.Source }
 	if v.SourceFunc != nil {
 		source = core.NewMemo(cx, v.SourceFunc).Get
+	}
+	streaming := func() bool { return v.Streaming }
+	if v.StreamingFunc != nil {
+		streaming = v.StreamingFunc
 	}
 	// The font loads on another goroutine: parsing a large one takes long enough to drop frames.
 	ready := func() (ok, failed bool) { return true, false }
@@ -167,7 +177,11 @@ func (v View) Render(cx *core.Scope) core.Node {
 					scale := float32(size.Height) / (l.em.Ascent + l.em.Descent)
 					grid := display.PixelGrid{Scale: scale, PixelRatio: cx.Env().PixelRatio()}
 					d.Scale(scale, scale)
+					hideErrors := streaming()
 					for _, run := range l.runs {
+						if hideErrors && (run.paint.Role == display.RoleError || run.paint.Role == display.RolePlaceholder) {
+							continue
+						}
 						fill(d, run.paint, v.ErrorStyle.Color)
 						run.draw(d, grid)
 					}
