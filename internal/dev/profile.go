@@ -1,4 +1,4 @@
-//go:build nsgodev
+//go:build nsgodev && !nsgominiprogram
 
 package dev
 
@@ -47,7 +47,7 @@ func receiveRuntimeProfile(server string) {
 
 func requestRuntimeProfile(url string) (runtimeProfileRequest, error) {
 	var request runtimeProfileRequest
-	var resp *http.Response
+	var resp *devtools.Response
 	var err error
 	for attempt := 0; ; attempt++ {
 		resp, err = devtools.Fetch(http.MethodGet, url, "", nil)

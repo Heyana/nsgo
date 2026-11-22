@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -105,10 +104,10 @@ func openDevChannel(server string) *devOut {
 // listenDevTools follows the server's events as the app's DevTools stream, ?devtools, for DevTools' commands under -devtools and the automation's requests under -automation, reconnecting while it runs: -automation alone takes no page's commands. A stream the server refuses, as a second app's while one answers the automation, is tried again a second later.
 func listenDevTools(server string, out *devOut) {
 	for {
-		if resp, err := devtools.Fetch(http.MethodGet, server+"/_nsgo/events?devtools", "", nil); err == nil {
+		if resp, err := devtools.Fetch("GET", server+"/_nsgo/events?devtools", "", nil); err == nil {
 			sc := bufio.NewScanner(resp.Body)
 			sc.Buffer(make([]byte, 1<<16), 16<<20)
-			for resp.StatusCode == http.StatusOK && sc.Scan() {
+			for resp.StatusCode == 200 && sc.Scan() {
 				data, ok := strings.CutPrefix(sc.Text(), "data: ")
 				if !ok {
 					continue
@@ -236,7 +235,7 @@ func (o *devOut) run() {
 		if len(body) == 0 {
 			continue
 		}
-		if resp, err := devtools.Fetch(http.MethodPost, o.server+"/_nsgo/devtools/out", "application/x-ndjson", bytes.NewReader(body)); err == nil {
+		if resp, err := devtools.Fetch("POST", o.server+"/_nsgo/devtools/out", "application/x-ndjson", bytes.NewReader(body)); err == nil {
 			resp.Body.Close()
 		}
 	}

@@ -4,7 +4,6 @@ package dev
 
 import (
 	"bufio"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -116,7 +115,7 @@ func WrapApp(app func(*core.Scope)) func(*core.Scope) {
 func reloadFunc(server string) func() {
 	return func() {
 		go func() {
-			if resp, err := devtools.Fetch(http.MethodPost, server+"/_nsgo/reload", "", nil); err == nil {
+			if resp, err := devtools.Fetch("POST", server+"/_nsgo/reload", "", nil); err == nil {
 				resp.Body.Close()
 			}
 		}()
@@ -141,7 +140,7 @@ type devFailure struct {
 // failed build's output, and its clearing.
 func listenDev(server string, report func(devFailure)) {
 	for {
-		resp, err := devtools.Fetch(http.MethodGet, server+"/_nsgo/events", "", nil)
+		resp, err := devtools.Fetch("GET", server+"/_nsgo/events", "", nil)
 		if err == nil {
 			sc := bufio.NewScanner(resp.Body)
 			sc.Buffer(make([]byte, 1<<16), 16<<20)

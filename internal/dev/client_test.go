@@ -353,3 +353,114 @@ func TestDevReloadKeySurvivesMainViewClose(t *testing.T) {
 	}
 	press("after the main view closed", 2)
 }
+
+// Wrap with -devtools, -highlight and -layout mounts DevTools' overlay and layout audit and answers DevTools commands (elements, layout) sent over the dev server's event stream.
+func TestDevWrapOverlayAndDevToolsCommands(t *testing.T) {
+	var (
+		mu         sync.Mutex
+		gotTypes   []string
+		cmdCh      = make(chan string, 8)
+		stopServer = make(chan struct{})
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-NSGo-Token") != "mp-token" {
+			http.Error(w, "no token", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/_nsgo/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, _ := w.(http.Flusher)
+			fmt.Fprint(w, "data: hello\n\n")
+			if flusher != nil {
+				flusher.Flush()
+			}
+			if !r.URL.Query().Has("devtools") {
+				select {
+				case <-stopServer:
+				case <-r.Context().Done():
+				}
+				return
+			}
+			for {
+				select {
+				case cmd := <-cmdCh:
+					fmt.Fprintf(w, "data: devtools %s\n\n", cmd)
+					if flusher != nil {
+						flusher.Flush()
+					}
+				case <-stopServer:
+					return
+				case <-r.Context().Done():
+					return
+				}
+			}
+		case "/_nsgo/devtools/out":
+			sc := bufio.NewScanner(r.Body)
+			for sc.Scan() {
+				line := sc.Text()
+				for _, typ := range []string{`"type":"elements"`, `"type":"layout"`, `"type":"surfaces"`} {
+					if strings.Contains(line, typ) {
+						mu.Lock()
+						gotTypes = append(gotTypes, typ)
+						mu.Unlock()
+					}
+				}
+			}
+		}
+	}))
+	defer func() {
+		close(stopServer)
+		server.Close()
+	}()
+
+	prevServer, prevDevtools, prevHighlight, prevLayout, prevToken := devServer, devDevtools, devHighlight, devLayout, devtools.ServerToken
+	prevStart, prevChannel := start, devChannel
+	t.Setenv("NSGO_DEV_SERVER", "")
+	devServer, devDevtools, devHighlight, devLayout, devtools.ServerToken = server.URL, "1", "1", "bounds,grid=8", "mp-token"
+	devChannel = nil
+	start = sync.OnceFunc(func() {
+		startDevTools(server.URL)
+	})
+	t.Cleanup(func() {
+		devServer, devDevtools, devHighlight, devLayout, devtools.ServerToken = prevServer, prevDevtools, prevHighlight, prevLayout, prevToken
+		start, devChannel = prevStart, prevChannel
+		engine.Trace, driver.Applied = nil, nil
+		devtools.Enabled, driver.TraceCauses = false, false
+	})
+
+	Start()
+	app := nsgotest.Start(t, Wrap(func(*core.Scope) core.Node {
+		return core.View{TestID: "content", Children: []core.Node{core.Text{Content: "Hello"}}}
+	}))
+	if !app.Exists(devtools.OverlayTestID) || !app.Exists("nsgo-layout-audit") || !app.Exists("nsgo-layout-readout") {
+		t.Fatalf("DevTools overlay or layout audit missing\n%s", app.Dump())
+	}
+
+	surfaces := devtools.Surfaces()
+	if len(surfaces) == 0 {
+		t.Fatal("surface did not register with DevTools")
+	}
+	surface := surfaces[len(surfaces)-1]
+	t.Cleanup(func() { devtools.Unregister(surface) })
+	sid := surface.ID()
+	cmdCh <- `{"op":"surfaces"}`
+	cmdCh <- fmt.Sprintf(`{"op":"elements","surface":%d}`, sid)
+	cmdCh <- fmt.Sprintf(`{"op":"watch-layout","surface":%d}`, sid)
+
+	has := func(want string) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Contains(gotTypes, want)
+	}
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		app.Settle()
+		if has(`"type":"surfaces"`) && has(`"type":"elements"`) && has(`"type":"layout"`) {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("DevTools messages received = %v, want surfaces, elements and layout", gotTypes)
+}

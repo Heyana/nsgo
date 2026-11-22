@@ -119,6 +119,28 @@ function alipay(api, my) {
       },
     }
   }
+  api.request = (o) => {
+    if (typeof my.request !== 'function') {
+      if (o && o.fail) o.fail({ errMsg: 'request is missing' })
+      return undefined
+    }
+    return my.request({
+      url: o.url,
+      method: o.method,
+      headers: o.header,
+      data: o.data,
+      dataType: o.responseType === 'arraybuffer' ? 'arraybuffer' : 'text',
+      enableChunked: !!o.enableChunked,
+      success: (r) =>
+        o.success &&
+        o.success({
+          statusCode: r && (r.statusCode != null ? r.statusCode : r.status),
+          header: (r && (r.header || r.headers)) || {},
+          data: r && r.data,
+        }),
+      fail: o.fail,
+    })
+  }
 }
 
 module.exports = { globalOf, apiOf }

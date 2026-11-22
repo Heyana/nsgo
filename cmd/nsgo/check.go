@@ -158,6 +158,13 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 					err = fmt.Errorf("automation: %w", err)
 				}
 			}
+			if err == nil && repository && strings.HasPrefix(name, "miniprogram_") {
+				// Mini programs build their own nsgodev transport without net/http.
+				err = goToolWithTags(ctx, p, env, slices.Concat(targetTags(name), []string{"nsgodev"}), vetArgs(jobs, ".", "./internal/dev", "./internal/devtools", "./internal/backend")...)
+				if err != nil {
+					err = fmt.Errorf("dev client: %w", err)
+				}
+			}
 			if err != nil {
 				s.fail()
 				outcomes[i].err = fmt.Errorf("%s: %w", name, err)

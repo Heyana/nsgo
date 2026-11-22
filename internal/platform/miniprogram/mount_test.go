@@ -294,3 +294,57 @@ func TestImageSamplingReachesTheImage(t *testing.T) {
 		t.Fatalf("pixel canvas placements = %v, want the second alone pixelated", got)
 	}
 }
+
+func TestDevToolsOverlayPointerEventsAndApplyTiming(t *testing.T) {
+	m, h := mounted()
+	var applied *driver.MountBatch
+	prev := driver.Applied
+	driver.Applied = func(b *driver.MountBatch, _ time.Duration) { applied = b }
+	t.Cleanup(func() { driver.Applied = prev })
+
+	// Mount a DevTools-style Topmost overlay (PointerEventsBoxNone) containing a layout-audit canvas (PointerEventsNone) and an interactive readout button.
+	batch := &driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 10, View: driver.KindView},
+		{Kind: driver.ItemCreate, ID: 11, View: driver.KindCanvas},
+		{Kind: driver.ItemCreate, ID: 12, View: driver.KindView},
+		{Kind: driver.ItemInsert, ID: 10, Parent: 1},
+		{Kind: driver.ItemInsert, ID: 11, Parent: 10},
+		{Kind: driver.ItemInsert, ID: 12, Parent: 10},
+		frame(10, 0, 0, 375, 600),
+		frame(11, 0, 0, 375, 600),
+		frame(12, 8, 560, 120, 32),
+		{Kind: driver.ItemViewProps, ID: 10, ViewProps: &driver.ViewProps{PointerEvents: driver.PointerEventsBoxNone}},
+		{Kind: driver.ItemViewProps, ID: 11, ViewProps: &driver.ViewProps{PointerEvents: driver.PointerEventsNone}},
+		{Kind: driver.ItemCanvas, ID: 11, Drawing: &driver.Drawing{Ops: []driver.DrawOp{{Kind: driver.DrawStroke}}}},
+		{Kind: driver.ItemEvents, ID: 12, Events: 1 << driver.EventPress},
+	}}
+	driver.Apply(batch, m.mount)
+
+	if applied != batch {
+		t.Fatalf("driver.Applied did not record the mounted batch")
+	}
+	styles := map[int]string{}
+	for _, raw := range h.ops("s") {
+		var pair []any
+		if err := json.Unmarshal([]byte(raw), &pair); err != nil {
+			t.Fatal(err)
+		}
+		styles[int(pair[0].(float64))] = pair[1].(string)
+	}
+	if !strings.Contains(styles[10], "pointer-events:none;") {
+		t.Errorf("overlay style = %q, want pointer-events:none;", styles[10])
+	}
+	if !strings.Contains(styles[11], "pointer-events:none;") {
+		t.Errorf("audit canvas style = %q, want pointer-events:none;", styles[11])
+	}
+	if !strings.Contains(styles[12], "pointer-events:auto;") {
+		t.Errorf("readout child style = %q, want pointer-events:auto;", styles[12])
+	}
+	if cv := h.ops("cv"); len(cv) == 0 || !strings.Contains(cv[len(cv)-1], "[11,") {
+		t.Errorf("audit canvas did not paint: %v", cv)
+	}
+	m.press(12, driver.EventPress, driver.Point{X: 20, Y: 570})
+	if len(h.events) != 1 || h.events[0].ID != 12 || h.events[0].Kind != driver.EventPress {
+		t.Fatalf("readout press events = %+v", h.events)
+	}
+}

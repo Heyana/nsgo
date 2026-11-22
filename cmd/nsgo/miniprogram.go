@@ -98,11 +98,11 @@ var miniprogramTags = []string{"nsgominiprogram", "nsgo_noshader"}
 // encoding/json's first implementation, which is smaller, and when it is
 // still too large for its package, again without inlining.
 func buildMiniProgram(ctx context.Context, p *project, mp miniProgramPlatform, dir string) error {
-	// Stripped always, as anything larger does not load; and without the
-	// dev client, as the logic layer makes no requests to a dev server.
-	release, client := p.Release, p.Dev.Client
-	p.Release, p.Dev.Client = true, false
-	defer func() { p.Release, p.Dev.Client = release, client }()
+	// Release builds (nsgo build, or nsgo dev -release) omit the dev client; dev builds keep it so DevTools, -highlight, -layout and -trace reach mini programs, still stripped with -s -w to fit the 2 MB package cap.
+	if p.Release && p.Dev.Client {
+		p.Dev.Client = false
+		defer func() { p.Dev.Client = true }()
+	}
 	tmp, err := os.MkdirTemp("", "nsgo-miniprogram")
 	if err != nil {
 		return err
@@ -149,10 +149,18 @@ func buildMiniProgram(ctx context.Context, p *project, mp miniProgramPlatform, d
 	return nil
 }
 
+// miniProgramLdflags returns the extra linker flags for a dev mini program module: stripped with -s -w so dev builds fit the 2 MB package cap while keeping full file paths for DevTools and core.App().Development true. Release builds are stripped already.
+func miniProgramLdflags(p *project) []string {
+	if p.Release {
+		return nil
+	}
+	return []string{"-s -w"}
+}
+
 // buildMiniProgramModule builds the module to wasm and returns it
 // compressed.
 func buildMiniProgramModule(ctx context.Context, p *project, wasm string, env, flags []string) ([]byte, error) {
-	if err := goBuildWith(ctx, p, wasm, env, buildExtra{tags: miniprogramTags, flags: flags}); err != nil {
+	if err := goBuildWith(ctx, p, wasm, env, buildExtra{tags: miniprogramTags, flags: flags}, miniProgramLdflags(p)...); err != nil {
 		return nil, err
 	}
 	data, err := os.ReadFile(wasm)
@@ -375,12 +383,25 @@ func writeFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+// configureMiniProgramDev sets p's dev server address and run token for a mini program dev build, or clears them for -release builds so they match nsgo build.
+func configureMiniProgramDev(p *project, opts devOptions) {
+	if opts.server != nil && !opts.release {
+		p.devURL, p.devToken = opts.server.url(), opts.server.token
+	} else {
+		p.devURL, p.devToken = "", ""
+	}
+	if opts.release {
+		p.Dev.Client = false
+	}
+}
+
 // miniprogramSession writes the project into the dev cache and opens it in mp's developer tool: WeChat DevTools after each successful build, as it loads a rebuild only when the project is opened again, and the other tools once, as opening again would only bring their window forward on every rebuild.
-func miniprogramSession(mp miniProgramPlatform) session {
+func miniprogramSession(mp miniProgramPlatform, opts devOptions) session {
 	dir := func(p *project) string { return p.cache("dev", "miniprogram_"+mp.name) }
 	opened := false
 	return session{
 		build: func(ctx context.Context, p *project) error {
+			configureMiniProgramDev(p, opts)
 			return buildMiniProgram(ctx, p, mp, dir(p))
 		},
 		start: func(ctx context.Context, p *project) (app, error) {

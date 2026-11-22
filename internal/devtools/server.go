@@ -3,8 +3,6 @@
 package devtools
 
 import (
-	"io"
-	"net/http"
 	"os"
 	"sync"
 )
@@ -12,7 +10,7 @@ import (
 // ServerToken is the run's token for nsgo dev's server, which the dev client sends with every request (Fetch). Token fills it.
 var ServerToken = ""
 
-// tokenEnv carries the run's token to the app: the tool sets it for the apps it starts, the simulator's through SIMCTL_CHILD_, and for targets that pass the app no environment, Android's and iPhones', the build adds a file to the app's main package that sets it as main initializes, after this package has, so that no command line, which every user of the machine may read, carries it.
+// tokenEnv carries the run's token to the app: the tool sets it for the apps it starts, the simulator's through SIMCTL_CHILD_, and for targets that pass the app no environment, Android's, iPhones' and mini programs', the build adds a file to the app's main package that sets it as main initializes, after this package has, so that no command line, which every user of the machine may read, carries it.
 const tokenEnv = "NSGO_DEV_TOKEN"
 
 var takeToken sync.Once
@@ -36,17 +34,4 @@ func Token() string {
 		}
 	})
 	return ServerToken
-}
-
-// Fetch sends nsgo dev's server a request with the run's token (Token), and body as contentType when it has one.
-func Fetch(method, url, contentType string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("X-NSGo-Token", Token())
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	return http.DefaultClient.Do(req)
 }

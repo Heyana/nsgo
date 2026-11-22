@@ -4,7 +4,6 @@ package dev
 
 import (
 	"bytes"
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -46,7 +45,7 @@ func traceTo(server string) {
 			body := bytes.Clone(pending.Bytes())
 			pending.Reset()
 			mu.Unlock()
-			if resp, err := devtools.Fetch(http.MethodPost, server+"/_nsgo/trace", "text/plain", bytes.NewReader(body)); err == nil {
+			if resp, err := devtools.Fetch("POST", server+"/_nsgo/trace", "text/plain", bytes.NewReader(body)); err == nil {
 				resp.Body.Close()
 			}
 		}

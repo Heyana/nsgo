@@ -113,6 +113,27 @@ func TestDevBuildsLink(t *testing.T) {
 			}
 		})
 	}
+	t.Run("miniprogram_release", func(t *testing.T) {
+		t.Parallel()
+		linked := linkedPackages(t, "js", "wasm", "nsgominiprogram,nsgo_noshader")
+		for _, pkg := range []string{"net/http", "github.com/nsgo-dev/nsgo/internal/dev/locales"} {
+			if linked[pkg] {
+				t.Errorf("a release mini program links %s", pkg)
+			}
+		}
+	})
+	t.Run("miniprogram_dev", func(t *testing.T) {
+		t.Parallel()
+		linked := linkedPackages(t, "js", "wasm", "nsgominiprogram,nsgo_noshader,nsgodev")
+		if !linked["github.com/nsgo-dev/nsgo/internal/dev/locales"] {
+			t.Error("a dev mini program does not link the dev client")
+		}
+		for _, pkg := range []string{"net/http", "runtime/pprof", "runtime/trace"} {
+			if linked[pkg] {
+				t.Errorf("a dev mini program links %s, past the 2 MB package budget", pkg)
+			}
+		}
+	})
 }
 
 // linkedPackages returns the packages the linker keeps in testdata/minimal for goos and goarch, built with tags, for what other packages reach: those its dependency dump has an edge into from another package's symbol. A package's own init and the tables it fills, and literals the linker shares by content, do not count.

@@ -31,7 +31,7 @@ func (o devProfileOptions) forProject(p *project, release bool) (devProfileOptio
 		return o, errors.New("-profile needs a development build. Remove -release.")
 	}
 	if _, mini := miniProgramPlatformOf(p.Dev.Target); mini {
-		return o, errors.New("-profile needs a target that connects to the dev server")
+		return o, errors.New("-profile is not available in mini programs")
 	}
 	name, ok := names[o.kind]
 	if !ok {

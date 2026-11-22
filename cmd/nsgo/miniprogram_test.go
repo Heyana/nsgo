@@ -49,7 +49,7 @@ func TestMiniProgramSessionReopensOnlyWeChat(t *testing.T) {
 	p := &project{Dir: t.TempDir()}
 	for _, target := range []string{"miniprogram_wechat", "miniprogram_alipay"} {
 		mp, _ := miniProgramPlatformOf(target)
-		s := miniprogramSession(mp)
+		s := miniprogramSession(mp, devOptions{})
 		for range 3 {
 			if _, err := s.start(t.Context(), p); err != nil {
 				t.Fatal(err)
@@ -286,6 +286,11 @@ func TestMiniProgramAlipayAPI(t *testing.T) {
 		showActionSheet(o) { o.success({ index: o.items.length - 1 }) },
 		getClipboard(o) { o.success({ text: 'copied' }) },
 		chooseImage(o) { o.success({ apFilePaths: ['a.png', 'b.png'] }) },
+		request(o) {
+			this.lastReq = o
+			o.success({ status: 201, headers: { 'X-Ok': '1' }, data: 'hello' })
+			return { aborted: false, abort() { this.aborted = true } }
+		},
 	}`)
 	for _, c := range []struct{ script, want string }{
 		{"api.setStorageSync('k', 'v'); api.getStorageSync('k')", "v"},
@@ -299,6 +304,7 @@ func TestMiniProgramAlipayAPI(t *testing.T) {
 		{"api.chooseMedia({ count: 2, success: (x) => (r = x.tempFiles.map((f) => f.tempFilePath).join()) }); r", "a.png,b.png"},
 		{"typeof api.chooseMessageFile", "undefined"},
 		{"typeof api.getStorageInfoSync", "function"},
+		{"let res; const t = api.request({ url: 'http://127.0.0.1:8080/_nsgo/events', method: 'GET', header: { 'X-NSGo-Token': 'tok' }, responseType: 'arraybuffer', enableChunked: true, success: (x) => (res = x) }); t.abort(); [base.lastReq.headers['X-NSGo-Token'], base.lastReq.dataType, base.lastReq.enableChunked, res.statusCode, res.header['X-Ok'], res.data, t.aborted].join(',')", "tok,arraybuffer,true,201,1,hello,true"},
 	} {
 		v, err := vm.RunString(c.script)
 		if err != nil {
@@ -386,4 +392,153 @@ func TestMiniProgramImageTakesItsSampling(t *testing.T) {
 			t.Errorf("%s does not bind the image's style", name)
 		}
 	}
+}
+
+func TestMiniProgramDevBuildWiring(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod":  "module mpdevprobe\n\ngo 1.26\n",
+		"main.go": "package main\nfunc main() {}\n",
+	})
+	srv, err := startDevServer("", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.close()
+
+	env := []string{"GOOS=js", "GOARCH=wasm"}
+	t.Run("dev flags reach mini program builds", func(t *testing.T) {
+		p := &project{Dir: dir, Name: "MP Probe", ID: "dev.nsgo.mpprobe", Version: "1.0.0"}
+		p.Dev.Target = "miniprogram_wechat"
+		opts := devOptions{
+			server:    srv,
+			devtools:  true,
+			highlight: true,
+			layout:    "bounds,grid=4",
+			trace:     true,
+		}
+		p.prepareDev(opts)
+		if _, err := sessionFor(p, opts); err != nil {
+			t.Fatalf("sessionFor: %v", err)
+		}
+		configureMiniProgramDev(p, opts)
+
+		cmd, done, err := goBuildCommand(t.Context(), p, filepath.Join(dir, "app.wasm"), env, buildExtra{tags: miniprogramTags}, miniProgramLdflags(p)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer done()
+
+		ti := slices.Index(cmd.Args, "-tags")
+		if ti < 0 {
+			t.Fatalf("missing -tags in %q", cmd.Args)
+		}
+		tags := strings.Split(cmd.Args[ti+1], ",")
+		for _, want := range []string{"nsgominiprogram", "nsgo_noshader", "nsgodev"} {
+			if !slices.Contains(tags, want) {
+				t.Errorf("tags %q missing %q", tags, want)
+			}
+		}
+
+		li := slices.Index(cmd.Args, "-ldflags")
+		if li < 0 {
+			t.Fatalf("missing -ldflags in %q", cmd.Args)
+		}
+		ldflags := cmd.Args[li+1]
+		for _, want := range []string{
+			"-X 'github.com/nsgo-dev/nsgo/internal/dev.devServer=" + srv.url() + "'",
+			"-X github.com/nsgo-dev/nsgo/internal/dev.devDevtools=1",
+			"-X github.com/nsgo-dev/nsgo/internal/dev.devHighlight=1",
+			"-X github.com/nsgo-dev/nsgo/internal/dev.devLayout=bounds,grid=4",
+			"-X github.com/nsgo-dev/nsgo/internal/dev.devTrace=1",
+			"-s -w",
+		} {
+			if !strings.Contains(ldflags, want) {
+				t.Errorf("ldflags %q missing %q", ldflags, want)
+			}
+		}
+		if strings.Contains(ldflags, "appRelease=1") {
+			t.Errorf("dev mini program ldflags set appRelease=1: %q", ldflags)
+		}
+		if strings.Contains(strings.Join(cmd.Args, " "), srv.token) {
+			t.Errorf("dev token leaked onto command line: %q", cmd.Args)
+		}
+
+		oi := slices.Index(cmd.Args, "-overlay")
+		if oi < 0 {
+			t.Fatalf("missing -overlay for dev token in %q", cmd.Args)
+		}
+		ovData, err := os.ReadFile(cmd.Args[oi+1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ov struct {
+			Replace map[string]string `json:"Replace"`
+		}
+		if err := json.Unmarshal(ovData, &ov); err != nil {
+			t.Fatal(err)
+		}
+		var tokenFile string
+		for dst, src := range ov.Replace {
+			if filepath.Base(dst) == "zz_nsgo_devtoken.go" {
+				tokenFile = src
+				break
+			}
+		}
+		if tokenFile == "" {
+			t.Fatalf("overlay %v missing zz_nsgo_devtoken.go", ov.Replace)
+		}
+		tokenSrc, err := os.ReadFile(tokenFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(tokenSrc), srv.token) {
+			t.Errorf("zz_nsgo_devtoken.go does not carry the run token")
+		}
+	})
+
+	t.Run("release build omits dev client and token", func(t *testing.T) {
+		p := &project{Dir: dir, Name: "MP Probe", ID: "dev.nsgo.mpprobe", Version: "1.0.0"}
+		p.Dev.Target = "miniprogram_wechat"
+		opts := devOptions{
+			server:    srv,
+			release:   true,
+			devtools:  true,
+			highlight: true,
+			layout:    "bounds",
+		}
+		p.prepareDev(opts)
+		configureMiniProgramDev(p, opts)
+
+		cmd, done, err := goBuildCommand(t.Context(), p, filepath.Join(dir, "app.wasm"), env, buildExtra{tags: miniprogramTags}, miniProgramLdflags(p)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer done()
+
+		ti := slices.Index(cmd.Args, "-tags")
+		if ti < 0 {
+			t.Fatalf("missing -tags in %q", cmd.Args)
+		}
+		tags := strings.Split(cmd.Args[ti+1], ",")
+		if slices.Contains(tags, "nsgodev") {
+			t.Errorf("release tags %q unexpectedly include nsgodev", tags)
+		}
+		li := slices.Index(cmd.Args, "-ldflags")
+		if li < 0 {
+			t.Fatalf("missing -ldflags in %q", cmd.Args)
+		}
+		ldflags := cmd.Args[li+1]
+		if !strings.Contains(ldflags, "appRelease=1") || !strings.Contains(ldflags, "-s -w") {
+			t.Errorf("release ldflags %q missing appRelease=1 or -s -w", ldflags)
+		}
+		for _, forbidden := range []string{"devServer", "devDevtools", "devHighlight", "devLayout", "devTrace"} {
+			if strings.Contains(ldflags, forbidden) {
+				t.Errorf("release ldflags %q unexpectedly include %q", ldflags, forbidden)
+			}
+		}
+		if slices.Contains(cmd.Args, "-overlay") {
+			t.Errorf("release build unexpectedly added -overlay: %q", cmd.Args)
+		}
+	})
 }

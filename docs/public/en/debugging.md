@@ -24,6 +24,7 @@ go tool nsgo dev -target ios                # on the connected iPhone, signed by
 go tool nsgo dev -target tvos_simulator     # in the Apple TV simulator
 go tool nsgo dev -target watchos_simulator  # in the Apple Watch simulator
 go tool nsgo dev -target android            # on a connected device or emulator, over adb
+go tool nsgo dev -target miniprogram_wechat # in WeChat DevTools (also _qq, _alipay, _douyin)
 ```
 
 The dev server listens on all interfaces by default. Use `-host 127.0.0.1` to keep it on loopback, including when Android connects through `adb reverse`, or name a local interface's IP address to listen only there. Use an address reachable over the LAN for dev features on physical Apple devices.
