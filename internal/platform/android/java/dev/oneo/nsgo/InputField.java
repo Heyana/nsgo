@@ -238,20 +238,20 @@ final class InputField extends EditText {
     }
 
     /**
-     * Reports the clipboard as a paste: its text, the local files it
-     * names and the bytes of the images it holds. Returns whether its
-     * text goes in.
+     * Reports the clipboard as a paste: its text, its HTML, the local
+     * files it names and the bytes of the images it holds. Returns
+     * whether its text goes in.
      */
     private boolean reportPaste() {
         android.content.ClipboardManager cm =
                 (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
         android.content.ClipData clip = cm == null ? null : cm.getPrimaryClip();
-        StringBuilder text = new StringBuilder(), data = new StringBuilder();
+        StringBuilder text = new StringBuilder(), html = new StringBuilder(), data = new StringBuilder();
         for (int i = 0; clip != null && i < clip.getItemCount(); i++) {
             android.content.ClipData.Item item = clip.getItemAt(i);
             android.net.Uri uri = item.getUri();
             if (uri != null && "file".equals(uri.getScheme())) {
-                data.append("uri\t").append(uri).append('\n');
+                Protocol.appendPasteURI(data, uri.toString());
             } else if (uri != null) {
                 String mime = getContext().getContentResolver().getType(uri);
                 if (mime != null && mime.startsWith("image/")) {
@@ -259,9 +259,7 @@ final class InputField extends EditText {
                         java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
                         byte[] buf = new byte[16384];
                         for (int n; s != null && (n = s.read(buf)) > 0; ) b.write(buf, 0, n);
-                        data.append("file\t").append(mime).append('\t')
-                                .append(android.util.Base64.encodeToString(b.toByteArray(), android.util.Base64.NO_WRAP))
-                                .append('\n');
+                        Protocol.appendPasteFile(data, mime, b.toByteArray());
                     } catch (IOException | SecurityException e) {
                         // An image the app may not read is left out.
                     }
@@ -270,7 +268,10 @@ final class InputField extends EditText {
             }
             CharSequence t = item.getText();
             if (t != null) text.append(t);
+            String h = item.getHtmlText();
+            if (h != null) html.append(h);
         }
+        Protocol.appendPasteHTML(data, html.toString());
         listener.paste(text.toString(), data.toString());
         return text.length() > 0 && !pasteReport;
     }

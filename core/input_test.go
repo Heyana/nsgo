@@ -252,9 +252,9 @@ func TestCaretAndPasteReachTheInputAndAnOverlayAnchorsToTheCaret(t *testing.T) {
 	if got := h.find("mentions").frame.Origin; got != (Point{X: 31, Y: 48}) {
 		t.Fatalf("overlay at %v, want centred under the caret, 4 points below", got)
 	}
-	h.tree.Dispatch(driver.Event{Kind: driver.EventPaste, ID: field.id, Data: &PasteEvent{Text: "hi",
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPaste, ID: field.id, Data: &PasteEvent{HTML: "<b>hi</b>", Text: "hi",
 		Files: []PastedFile{{MIME: "image/png", Data: []byte{1}}}}})
-	if len(pasted) != 1 || pasted[0].Text != "hi" || len(pasted[0].Files) != 1 {
+	if len(pasted) != 1 || pasted[0].HTML != "<b>hi</b>" || pasted[0].Text != "hi" || len(pasted[0].Files) != 1 {
 		t.Fatalf("pasted %+v", pasted)
 	}
 }

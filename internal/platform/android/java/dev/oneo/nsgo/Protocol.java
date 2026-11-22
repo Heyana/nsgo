@@ -759,4 +759,26 @@ final class Protocol {
     static boolean flag(int flags, int i) {
         return (flags & (1 << i)) != 0;
     }
+
+    /** Encodes pasted HTML as a base64 line in EventPaste's data, as Go's readPaste reads it. */
+    static void appendPasteHTML(StringBuilder data, String html) {
+        if (html == null || html.isEmpty()) return;
+        data.append("html\t")
+                .append(java.util.Base64.getEncoder().encodeToString(html.getBytes(StandardCharsets.UTF_8)))
+                .append('\n');
+    }
+
+    /** Encodes a pasted file: URI as a line in EventPaste's data. */
+    static void appendPasteURI(StringBuilder data, String uri) {
+        if (uri == null || uri.isEmpty()) return;
+        data.append("uri\t").append(uri).append('\n');
+    }
+
+    /** Encodes a pasted file's MIME type and bytes as a line in EventPaste's data. */
+    static void appendPasteFile(StringBuilder data, String mime, byte[] bytes) {
+        if (mime == null || mime.isEmpty()) return;
+        data.append("file\t").append(mime).append('\t')
+                .append(java.util.Base64.getEncoder().encodeToString(bytes == null ? new byte[0] : bytes))
+                .append('\n');
+    }
 }

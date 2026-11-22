@@ -824,13 +824,17 @@ func writeScrollConfig(w *writer, c *driver.ScrollConfig) {
 }
 
 // readPaste reads the paste an EventPaste carries in its data: lines of
-// "uri\t" and a file: URL, or "file\t", a MIME type, a tab and the
-// bytes in base64.
+// "html\t" and UTF-8 HTML in base64, "uri\t" and a file: URL, or "file\t",
+// a MIME type, a tab and the bytes in base64.
 func readPaste(text, data string) *driver.PasteEvent {
 	p := &driver.PasteEvent{Text: text}
 	for _, line := range strings.Split(data, "\n") {
 		kind, rest, _ := strings.Cut(line, "\t")
 		switch kind {
+		case "html":
+			if b, err := base64.StdEncoding.DecodeString(rest); err == nil {
+				p.HTML += string(b)
+			}
 		case "uri":
 			p.URIs = append(p.URIs, rest)
 		case "file":

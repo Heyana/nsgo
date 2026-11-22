@@ -1573,10 +1573,14 @@ func (w *window) fieldMenu(in *textInput, x, y int32) {
 	s, e := m.selection()
 	clip, _, _ := isClipboardFormatAvailable.Call(cfUnicodeText)
 	if clip == 0 && in.fs.Events.Has(driver.EventPaste) {
-		// A field that hears pastes takes images and files too.
+		// A field that hears pastes takes HTML, images and files too.
 		hdrop, _, _ := isClipboardFormatAvailable.Call(cfHDrop)
 		dib, _, _ := isClipboardFormatAvailable.Call(cfDIB)
-		clip = hdrop | dib
+		var html uintptr
+		if cf := cfHTMLFormat(); cf != 0 {
+			html, _, _ = isClipboardFormatAvailable.Call(cf)
+		}
+		clip = hdrop | dib | html
 	}
 	type item struct {
 		label   string
