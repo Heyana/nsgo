@@ -69,10 +69,7 @@ func allowedPublicDriverType(name string) bool {
 	// Protocol types still exported by the existing API. Move callers
 	// to app-facing types as these entries are removed (#181).
 	case
-		"EventKind", "EventMask", "ImageConfig",
-		"InputConfig", "ModalConfig", "PictureInPictureConfig", "ScreenConfig",
-		"ScrollConfig", "StickyCell",
-		"VideoConfig":
+		"EventKind", "EventMask":
 		return true
 	}
 	return false

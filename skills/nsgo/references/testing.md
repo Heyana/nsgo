@@ -81,6 +81,8 @@ For native headless canvas pixels on macOS, use `nsgotest.Render` on a recorded 
 
 For headless GPU checks in another window, use `Surface.GPUReadPixels`, `Surface.TriggerGPUDeviceLost` and `Surface.RestoreGPUDevice`; devices, readbacks and recovery follow that window, including its pixel ratio. `App.GPUFrames` records every window's submissions.
 
+Read mounted image, input, modal, screen, scroll, video and Picture in Picture settings through `nsgotest` records. `View.Sticky` contains `nsgotest.StickyCell` values. Image variant maps and scroll lists are snapshots.
+
 ## Tests without the network
 
 Use `app.AppleSignIn` or `app.PurchaseAnswer` when a test needs to answer Sign in with Apple or a purchase. The hooks receive `nsgotest.AppleSignInRequest` and `nsgotest.PurchaseRequest` records. [Services](https://nsgo.dev/docs/services.md)

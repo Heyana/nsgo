@@ -40,6 +40,8 @@ func TestMain(m *testing.M) {
 
 `app.Menu`、`app.DockMenu` 和 `app.PopupMenu` 提供 `nsgotest.MenuItem` 快照，其中包含标签、角色、勾选状态和子菜单项。调用对应的选择步骤并传入标签路径，即可选择菜单项。
 
+已挂载的图片、输入框、模态框、屏幕、滚动视图、视频和画中画设置使用 `nsgotest` 的配置记录。`View.Sticky` 保存 `nsgotest.StickyCell` 值。模型收到一批更新时，会复制图片变体映射和滚动相关列表。
+
 `app.Surfaces()` 列出已打开的窗口、面板和托盘视图，主窗口排在第一位，其余按打开顺序排列。`app.Surface("title:Settings")`、`app.Surface("id:settings-root")` 和 `app.Surface("index:1")` 分别按当前标题、根视图的测试 ID 和列表位置选取一个界面。选择器必须恰好匹配一个打开的界面。
 
 在 macOS、Windows 和 Linux 目标上，`app.Surface("id:palette").WindowState()` 等待应用稳定后，从 UI 线程读取原生窗口的 `Frame`、`Visible` 和 `Focused`。对比面板与原窗口的状态，可以确认显示 `NoActivate` 面板没有转移键盘焦点。无法读取原生位置时（如 Wayland），`Frame.Move` 为 false。无窗口测试和其他目标会跳过这一步，不会用应用发出的命令代替原生位置或焦点。

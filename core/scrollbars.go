@@ -223,10 +223,10 @@ func (n *node) contentBottom() Points {
 }
 
 // barRange is the bar host n's travel: the whole scroll range.
-func barRange(n *node) (*node, StickyCell, bool) {
+func barRange(n *node) (*node, stickyRange, bool) {
 	sv := n.parent
 	end := sv.scroll.main(Point{X: sv.scroll.content.Width - sv.frame.Size.Width, Y: sv.scroll.content.Height - sv.frame.Size.Height})
-	return sv, StickyCell{Cell: n.id, End: max(end, 0)}, true
+	return sv, stickyRange{Cell: n.id, End: max(end, 0)}, true
 }
 
 // scrollWatch is what Scope.WatchScroll holds.

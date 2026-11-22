@@ -75,7 +75,7 @@ func TestStickyEndRangeFollowsChanges(t *testing.T) {
 	check := func(want Points) {
 		t.Helper()
 		b := h.commit()
-		var cells []StickyCell
+		var cells []stickyRange
 		for _, it := range b.Items {
 			if it.Kind == driver.ItemStickyCells {
 				cells = it.Sticky

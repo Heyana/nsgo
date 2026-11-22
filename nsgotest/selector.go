@@ -254,7 +254,7 @@ func (a *App) shownWith(unsized bool) []*View {
 	}
 	for _, v := range append([]*View(nil), out...) {
 		var extra []driver.NodeID
-		if v.Screen != (driver.ScreenConfig{}) && !v.Screen.HeaderHidden {
+		if v.Screen != (ScreenConfig{}) && !v.Screen.HeaderHidden {
 			extra = append(extra, v.Screen.Left, v.Screen.Right, v.Screen.TitleView)
 		}
 		if v.Focused && v.Kind == KindInput {

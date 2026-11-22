@@ -3,6 +3,8 @@ package core
 import (
 	"math"
 	"slices"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 // listState is a list's bookkeeping, as NSH's ListState: item sizes, row
@@ -103,7 +105,7 @@ const pinSlack Points = 1
 
 // stickyRange is a sticky cell's travel in scroll offsets: from start it
 // moves with the offset, as far as end.
-type stickyRange = StickyCell
+type stickyRange = driver.StickyCell
 
 var nan = Points(math.NaN())
 
@@ -712,7 +714,7 @@ func (s *listState) activeSticky() (int, bool) {
 // pushes it out. In its parent's viewport it is in the view's offsets,
 // and the last one stops where its end meets the end of the list's
 // content.
-func (s *listState) stickyRange(index int, cell NodeID, size Points) StickyCell {
+func (s *listState) stickyRange(index int, cell NodeID, size Points) stickyRange {
 	start := s.itemAt(index) - s.stickyOffset
 	end := Points(math.Inf(1))
 	if k := slices.IndexFunc(s.sticky, func(i int) bool { return i > index && i < s.count }); k >= 0 {
@@ -724,7 +726,7 @@ func (s *listState) stickyRange(index int, cell NodeID, size Points) StickyCell 
 		start += s.outerStart
 		end += s.outerStart
 	}
-	return StickyCell{Cell: cell, Start: start, End: end, Node: s.stickyNode, Inset: s.stickyOffset}
+	return stickyRange{Cell: cell, Start: start, End: end, Node: s.stickyNode, Inset: s.stickyOffset}
 }
 
 // viewableItems are the items viewable under the list's viewability

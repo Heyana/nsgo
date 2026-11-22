@@ -292,7 +292,7 @@ func TestStickyHeadersArePinnedNatively(t *testing.T) {
 	})
 	list := a.Find("id:list")
 	c0, _ := cell(a, 0)
-	if i := slices.IndexFunc(list.Sticky, func(c core.StickyCell) bool { return c.Cell == c0.ID }); i < 0 ||
+	if i := slices.IndexFunc(list.Sticky, func(c nsgotest.StickyCell) bool { return c.Cell == c0.ID }); i < 0 ||
 		list.Sticky[i].Start != -20 || list.Sticky[i].End != 1430 {
 		t.Fatalf("sticky cells %+v, want row 0 from -20 to 1430", list.Sticky)
 	}

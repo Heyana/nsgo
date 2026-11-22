@@ -252,7 +252,7 @@ type listNode struct {
 	// loadAt and loadAtStart are the counts OnLoadMore and
 	// OnLoadMoreAtStart last ran for, -1 for none.
 	loadAt, loadAtStart int
-	sticky              []StickyCell
+	sticky              []stickyRange
 	// outer is the view a parent-viewport list scrolls in, depth the
 	// views between them.
 	outer *node
@@ -807,7 +807,7 @@ func (t *Tree) updateList(v *node) bool {
 		t.restick(ln, c, false)
 	}
 	sticky := st.stickyEnabled()
-	var ranges []StickyCell
+	var ranges []stickyRange
 	for i, c := range ln.byIndex {
 		c.pos.count.Set(count)
 		size := max(st.rowExtent(i), ln.main(c.node.frame.Size))
@@ -833,7 +833,7 @@ func (t *Tree) updateList(v *node) bool {
 			changed = true
 		}
 	}
-	slices.SortFunc(ranges, func(a, b StickyCell) int { return int(a.Cell) - int(b.Cell) })
+	slices.SortFunc(ranges, func(a, b stickyRange) int { return int(a.Cell) - int(b.Cell) })
 	ln.sticky = ranges
 
 	total := st.contentLen() - st.padStart - st.padEnd
@@ -1130,7 +1130,7 @@ func (t *Tree) sendSticky() {
 		}
 	}
 	// Sticky views pin in the nearest scroll view around them.
-	pinned := map[*node][]StickyCell{}
+	pinned := map[*node][]stickyRange{}
 	for n := range t.sticky {
 		if v, c, ok := pinRange(n); ok {
 			pinned[v] = append(pinned[v], c)
@@ -1150,7 +1150,7 @@ func (t *Tree) sendSticky() {
 			continue
 		}
 		sc := v.scroll
-		var cells []StickyCell
+		var cells []stickyRange
 		if v.list != nil {
 			cells = append(cells, v.list.sticky...)
 		}
@@ -1160,7 +1160,7 @@ func (t *Tree) sendSticky() {
 			}
 		}
 		if own := pinned[v]; len(own) > 0 {
-			slices.SortFunc(own, func(a, b StickyCell) int { return int(a.Cell) - int(b.Cell) })
+			slices.SortFunc(own, func(a, b stickyRange) int { return int(a.Cell) - int(b.Cell) })
 			cells = append(cells, own...)
 			t.stuckIn = append(t.stuckIn, v)
 		}
@@ -1173,12 +1173,12 @@ func (t *Tree) sendSticky() {
 }
 
 // pinRange returns the scroll view sticky view n pins in and its range of travel there: Top/Left pins to the viewport's start and Bottom/Right to its end, with movement bounded by the parent's content box.
-func pinRange(n *node) (*node, StickyCell, bool) {
+func pinRange(n *node) (*node, stickyRange, bool) {
 	if p := n.parent; p != nil && p.scroll != nil && p.scroll.barHost == n {
 		return barRange(n)
 	}
 	if n.deleted || n.hidden || n.style.Display == DisplayNone || n.hoist != nil {
-		return nil, StickyCell{}, false
+		return nil, stickyRange{}, false
 	}
 	var pos Point
 	var sv *node
@@ -1188,13 +1188,13 @@ func pinRange(n *node) (*node, StickyCell, bool) {
 			break
 		}
 		if p.hoist != nil {
-			return nil, StickyCell{}, false
+			return nil, stickyRange{}, false
 		}
 		pos.X += p.frame.Origin.X
 		pos.Y += p.frame.Origin.Y
 	}
 	if sv == nil {
-		return nil, StickyCell{}, false
+		return nil, stickyRange{}, false
 	}
 	horizontal := sv.scroll.config.Horizontal
 	main := func(p Point) Points {
@@ -1216,7 +1216,7 @@ func pinRange(n *node) (*node, StickyCell, bool) {
 	} else if at.IsAuto() {
 		at = endInset.Resolve(viewport)
 		if at.IsAuto() {
-			return nil, StickyCell{}, false
+			return nil, stickyRange{}, false
 		}
 	}
 	// The parent's content box, in the scroll view's content.
@@ -1234,10 +1234,10 @@ func pinRange(n *node) (*node, StickyCell, bool) {
 	size := main(Point{X: n.frame.Size.Width, Y: n.frame.Size.Height})
 	if trailing {
 		threshold := start + size + at - viewport
-		return sv, StickyCell{Cell: n.id, Start: threshold, End: threshold - max(start-begin, 0)}, true
+		return sv, stickyRange{Cell: n.id, Start: threshold, End: threshold - max(start-begin, 0)}, true
 	}
 	travel := max(end-start-size, 0)
-	c := StickyCell{Cell: n.id, Start: start - at, End: start - at + travel}
+	c := stickyRange{Cell: n.id, Start: start - at, End: start - at + travel}
 	if animatedInset {
 		c.Node, c.Inset = n.style.Animated.StickyInset.AnimatedNodeID(), at
 	}

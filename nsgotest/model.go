@@ -37,26 +37,26 @@ type View struct {
 	Ellipsize  driver.EllipsizeMode
 	// Hovered says the mouse is over the view, as Hover left it.
 	Hovered bool
-	Input   driver.InputConfig
+	Input   InputConfig
 	Content driver.Size  // a scroll view's content
 	Offset  driver.Point // and its offset
 	// Applied counts the ItemScrollTo and ItemScrollBy items the scroll
 	// view applied, which its reports carry; Sticky are its sticky
 	// cells.
 	Applied uint32
-	Sticky  []driver.StickyCell
+	Sticky  []StickyCell
 	// Scroll is a scroll view's configuration, and ZoomScale its zoom
 	// (0 until it zooms).
-	Scroll    driver.ScrollConfig
+	Scroll    ScrollConfig
 	ZoomScale float32
-	Image     driver.ImageConfig
+	Image     ImageConfig
 	Web       WebConfig
 	// WebCommands are what the app asked a web view to do, oldest first;
 	// answered counts those AnswerScript went past.
 	WebCommands                      []WebCommand
 	answered                         int
-	Video                            driver.VideoConfig
-	PictureInPicture                 driver.PictureInPictureConfig
+	Video                            VideoConfig
+	PictureInPicture                 PictureInPictureConfig
 	PiPState                         core.PictureInPictureState
 	PiPStarts, PiPStops, PiPRestores int
 	// Seeks are the positions the app asked a video to jump to, oldest
@@ -81,10 +81,10 @@ type View struct {
 	held      *driver.MountItem
 	// Screen is a screen's system header, sent where the environment
 	// has HeaderHeight; Modal a modal's config.
-	Screen         driver.ScreenConfig
+	Screen         ScreenConfig
 	hasScreen      bool
 	screenInsets   *driver.Edges
-	Modal          driver.ModalConfig
+	Modal          ModalConfig
 	modalInsets    *driver.Edges
 	presented      bool
 	modalDismissed bool
@@ -126,9 +126,9 @@ func (v *View) StickyShift(id driver.NodeID) driver.Points {
 	for _, c := range v.Sticky {
 		if c.Cell == id {
 			if v.Scroll.Horizontal {
-				return v.anim.StickyShift(c, v.Offset.X)
+				return v.anim.StickyShift(c.stickyCell(), v.Offset.X)
 			}
-			return v.anim.StickyShift(c, v.Offset.Y)
+			return v.anim.StickyShift(c.stickyCell(), v.Offset.Y)
 		}
 	}
 	return 0
@@ -657,7 +657,7 @@ func (a *App) apply(b *driver.MountBatch) {
 			v.Text, v.TextStyle, v.Spans, v.TextShadow = it.Text.Text, it.Text.Style, it.Text.Spans, it.Text.Shadow
 			v.MaxLines, v.Ellipsize = it.Text.MaxLines, it.Text.Ellipsize
 		case driver.ItemInput:
-			v.Input = *it.Input
+			v.Input = inputConfig(*it.Input)
 			resized = append(resized, v)
 		case driver.ItemInputValue:
 			if v.Composing != "" {
@@ -686,14 +686,14 @@ func (a *App) apply(b *driver.MountBatch) {
 			if !v.Scroll.Zooms() && it.Scroll.Zooms() || it.Scroll.ZoomScale != v.Scroll.ZoomScale {
 				v.ZoomScale = it.Scroll.ZoomScale
 			}
-			v.Scroll = *it.Scroll
+			v.Scroll = scrollConfig(*it.Scroll)
 			a.pullValue(v)
 		case driver.ItemZoomTo:
 			v.ZoomScale = it.Zoom.Scale
 			id, at, z := it.ID, v.Offset, v.ZoomScale
 			a.post(driver.Event{Kind: driver.EventScroll, ID: id, Point: at, Value: z})
 		case driver.ItemImage:
-			v.Image = *it.Image
+			v.Image = imageConfig(*it.Image)
 			if it.Image != nil {
 				if it.Image.Source.Offscreen != nil {
 					a.recordOffscreen(it.Image.Source.Offscreen, nil)
@@ -710,13 +710,13 @@ func (a *App) apply(b *driver.MountBatch) {
 			v.WebCommands = append(v.WebCommands, WebCommand{Command: webCommandKinds[it.WebCommand], Value: it.Value, Data: it.Data})
 		case driver.ItemVideo:
 			enabled := v.Video.PictureInPicture
-			v.Video = *it.Video
+			v.Video = videoConfig(*it.Video)
 			if it.Video.PictureInPicture && !enabled {
 				a.configurePiP(v)
 			}
 		case driver.ItemPictureInPicture:
 			first := v.PictureInPicture.Size == (driver.Size{})
-			v.PictureInPicture = *it.PictureInPicture
+			v.PictureInPicture = pictureInPictureConfig(*it.PictureInPicture)
 			if first {
 				a.configurePiP(v)
 			}
@@ -845,7 +845,7 @@ func (a *App) apply(b *driver.MountBatch) {
 				a.post(driver.Event{Kind: driver.EventScrollEnd, ID: id, Point: at, Count: n})
 			}
 		case driver.ItemStickyCells:
-			v.Sticky = it.Sticky
+			v.Sticky = stickyCells(it.Sticky)
 		case driver.ItemSetClipboard:
 			a.Clipboard, a.ClipboardImage, a.ClipboardFiles = it.Value, nil, nil
 		case driver.ItemSetClipboardImage:
@@ -1129,11 +1129,11 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemStatusBar:
 			a.StatusBar = StatusBarConfig{Style: it.StatusBar.Style, Hidden: it.StatusBar.Hidden, Animated: it.StatusBar.Animated}
 		case driver.ItemScreen:
-			v.Screen = *it.Screen
+			v.Screen = screenConfig(*it.Screen)
 			v.hasScreen = true
 			screensChanged = true
 		case driver.ItemModal:
-			v.Modal = *it.Modal
+			v.Modal = modalConfig(*it.Modal)
 		case driver.ItemDirection:
 			a.Language, a.LanguageForced = it.Language, it.Forced
 		case driver.ItemMenu:

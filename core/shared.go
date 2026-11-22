@@ -318,8 +318,6 @@ type (
 	SpringConfig = driver.SpringConfig
 	// StatusBarStyle is the color of a phone's status bar content.
 	StatusBarStyle = driver.StatusBarStyle
-	// StickyCell is a sticky list cell and its travel, in its scroll view's main-axis offsets: from Start it moves with the offset, as far as End (which may be infinite). End below Start pins to the viewport's end with a negative shift.
-	StickyCell = driver.StickyCell
 	// SubmitBehavior is what Return does in a text field.
 	SubmitBehavior = driver.SubmitBehavior
 	// TextAlign aligns lines of text.

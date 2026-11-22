@@ -36,17 +36,6 @@ type (
 	EventKind = driver.EventKind
 	// EventMask is a set of event kinds.
 	EventMask = driver.EventMask
-	// ImageConfig is an image view's source and look.
-	ImageConfig = driver.ImageConfig
-	// InputConfig is a text field's look and behavior.
-	InputConfig = driver.InputConfig
-	// ModalConfig is how a modal appears and goes.
-	ModalConfig = driver.ModalConfig
-	// ScreenConfig is a screen's system header, which the platform draws over
-	// the top of the screen's view, HeaderHeight tall.
-	ScreenConfig = driver.ScreenConfig
-	// ScrollConfig configures a scroll view.
-	ScrollConfig = driver.ScrollConfig
 	// ScrollEdge is a scroll view's edge effect at one of its sides: the
 	// effect, how far its bars reach and the bars.
 	ScrollEdge = driver.ScrollEdge
@@ -56,14 +45,8 @@ type (
 	TextSpan = driver.TextSpan
 	// TextBackground is what a span draws behind its characters.
 	TextBackground = driver.TextBackground
-	// VideoConfig is everything a video plays with (ItemVideo), with the
-	// defaults applied: Volume in 0 to 1, Rate above 0, a ResizeMode and
-	// ProgressInterval at least 16 milliseconds.
-	VideoConfig = driver.VideoConfig
 	// VideoHeaders is the snapshot of a video's HTTP request headers.
 	VideoHeaders = driver.VideoHeaders
-	// PictureInPictureConfig describes a detached custom session.
-	PictureInPictureConfig = driver.PictureInPictureConfig
 	// GPUDeviceLostReason describes why a simulated GPU device was lost.
 	GPUDeviceLostReason = driver.GPUDeviceLostReason
 	// CustomCursor describes an image-based pointer cursor on desktops and the web.

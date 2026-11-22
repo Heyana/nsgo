@@ -743,7 +743,7 @@ type scrollNode struct {
 	// dependents are the lists in this view's viewport; sticky the cells
 	// sent in its last ItemStickyCells.
 	dependents []*listNode
-	sticky     []StickyCell
+	sticky     []stickyRange
 	// reported is when OnScroll last ran, latest the offset it runs with
 	// next, and waiting whether a timer waits for the throttle to pass.
 	reported time.Time
