@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -18,11 +19,13 @@ var audioAvailable = sync.OnceValue(func() bool {
 
 // windowAudio owns one surface's sounds and players, on the window thread.
 type windowAudio struct {
-	w       *window
-	sounds  map[uint32]*winSound
-	loading map[uint32]context.CancelFunc
-	players map[uint32]*winAudioPlayer
-	output  *soundOutput
+	w               *window
+	sounds          map[uint32]*winSound
+	loading         map[uint32]context.CancelFunc
+	players         map[uint32]*winAudioPlayer
+	output          *soundOutput
+	voiceTimer      *time.Timer
+	voiceGeneration uint64
 }
 
 func (w *window) audioCommand(id uint32, r *driver.AudioRequest) {
@@ -37,7 +40,11 @@ func (w *window) audioCommand(id uint32, r *driver.AudioRequest) {
 	case driver.AudioLoad:
 		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
 	case driver.AudioPlay:
-		a.play(id, r.Volume, r.Rate, r.Pan)
+		a.play(id, r)
+	case driver.AudioPlaybackSet, driver.AudioPlaybackStop:
+		a.controlPlayback(id, r)
+	case driver.AudioReadLatency:
+		a.report(id, driver.AudioEvent{Phase: driver.AudioLatency})
 	case driver.AudioStop:
 		a.stop(id)
 	case driver.AudioUnload:

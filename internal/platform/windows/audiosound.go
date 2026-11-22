@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -48,13 +49,14 @@ type soundOutput struct {
 	master      *comObject
 	channels    uint32       // the mastering voice's
 	voices      []soundVoice // oldest playback first
-	initialized bool         // this output holds a COM reference to the thread's apartment
+	ended       func(sound, playback uint32)
+	initialized bool // this output holds a COM reference to the thread's apartment
 }
 
 type soundVoice struct {
-	voice  *comObject
-	format soundFormat
-	sound  uint32
+	voice           *comObject
+	format          soundFormat
+	sound, playback uint32
 	// matrix is XAudio2's default output matrix into a mastering voice of two or more channels, one row of format.channels levels per output channel, which Voice.Pan scales; nil for a mono output, which takes no pan.
 	matrix []float32
 }
@@ -152,7 +154,8 @@ func (v soundVoice) idle() bool {
 	return binary.LittleEndian.Uint32(state[pointerBytes:]) == 0
 }
 
-func (s *soundOutput) play(id uint32, sound *winSound, volume, rate, pan float32) bool {
+func (s *soundOutput) play(id uint32, sound *winSound, request *driver.AudioRequest) bool {
+	s.reap()
 	var v soundVoice
 	for i, idle := range s.voices {
 		if idle.format == sound.format && idle.idle() {
@@ -165,7 +168,7 @@ func (s *soundOutput) play(id uint32, sound *winSound, volume, rate, pan float32
 		if len(s.voices) == driver.MaxSoundVoices {
 			// Reclaim an idle voice before replacing the oldest playback.
 			i := max(0, slices.IndexFunc(s.voices, soundVoice.idle))
-			s.voices[i].voice.call(xaVoiceDestroy)
+			s.retire(s.voices[i])
 			s.voices = slices.Delete(s.voices, i, i+1)
 		}
 		v = s.newVoice(sound.format)
@@ -175,28 +178,106 @@ func (s *soundOutput) play(id uint32, sound *winSound, volume, rate, pan float32
 	}
 	voice := v.voice
 	buffer := xaBuffer{flags: xaEndOfStream, size: sound.size, data: sound.data}
-	if failed(voice.callF(xaVoiceVolume, 1, f32(volume), 0)) || failed(voice.callF(xaVoiceRate, 1, f32(rate), 0)) || failed(s.pan(v, pan)) ||
+	if failed(voice.callF(xaVoiceVolume, 1, f32(request.Volume), 0)) || failed(voice.callF(xaVoiceRate, 1, f32(request.Rate), 0)) || failed(s.pan(v, request.Pan)) ||
 		failed(voice.call(xaVoiceSubmit, uintptr(unsafe.Pointer(&buffer)), 0)) || failed(voice.call(xaVoiceStart, 0, 0)) {
 		voice.call(xaVoiceDestroy)
 		return false
 	}
-	v.sound = id
+	v.sound, v.playback = id, request.Playback
 	s.voices = append(s.voices, v)
 	return true
 }
 
-func (a *windowAudio) play(id uint32, volume, rate, pan float32) {
+// finish removes a voice's identity before reporting its completion, so a
+// reused native source cannot complete its previous playback twice.
+func (s *soundOutput) finish(v *soundVoice) {
+	sound, playback := v.sound, v.playback
+	v.sound, v.playback = 0, 0
+	if playback != 0 && s.ended != nil {
+		s.ended(sound, playback)
+	}
+}
+
+func (s *soundOutput) retire(v soundVoice) {
+	v.voice.call(xaVoiceDestroy)
+	s.finish(&v)
+}
+
+// reap observes the native queue, whose end includes any live rate changes.
+func (s *soundOutput) reap() {
+	for i := range s.voices {
+		v := &s.voices[i]
+		if v.sound != 0 && v.idle() {
+			s.finish(v)
+		}
+	}
+}
+
+func (a *windowAudio) play(id uint32, r *driver.AudioRequest) {
 	sound := a.sounds[id]
 	if sound == nil {
+		a.playbackEnded(id, r.Playback)
 		return
 	}
 	if a.output == nil {
 		a.output, _ = openSoundOutput()
+		if a.output != nil {
+			a.output.ended = a.playbackEnded
+		}
 	}
-	if a.output != nil && !a.output.play(id, sound, volume, rate, pan) {
+	if a.output == nil || !a.output.play(id, sound, r) {
 		// Device failures are silent. The next Play can reopen the default output.
 		a.closeOutput()
+		a.playbackEnded(id, r.Playback)
+		return
 	}
+	a.watchVoices()
+}
+
+func (a *windowAudio) playbackEnded(sound, playback uint32) {
+	if playback != 0 && a.w != nil && a.w.audio == a {
+		a.report(sound, driver.AudioEvent{Phase: driver.AudioPlaybackEnded, Playback: playback})
+	}
+}
+
+func (a *windowAudio) controlPlayback(id uint32, r *driver.AudioRequest) {
+	if a.output == nil || r.Playback == 0 {
+		return
+	}
+	output := a.output
+	output.reap()
+	for i, v := range output.voices {
+		if v.sound != id || v.playback != r.Playback {
+			continue
+		}
+		if r.Command == driver.AudioPlaybackStop {
+			output.retire(v)
+			output.voices = slices.Delete(output.voices, i, i+1)
+		} else if failed(v.voice.callF(xaVoiceVolume, 1, f32(r.Volume), 0)) || failed(v.voice.callF(xaVoiceRate, 1, f32(r.Rate), 0)) {
+			a.closeOutput()
+		}
+		return
+	}
+}
+
+// watchVoices runs independently of display frames: audio can finish while
+// the window is hidden. Its native state is always read on the window thread.
+func (a *windowAudio) watchVoices() {
+	output := a.output
+	if a.voiceTimer != nil || output == nil || !slices.ContainsFunc(output.voices, func(v soundVoice) bool { return v.playback != 0 }) {
+		return
+	}
+	generation := a.voiceGeneration
+	a.voiceTimer = time.AfterFunc(10*time.Millisecond, func() {
+		a.w.post(func() {
+			if a.voiceGeneration != generation || a.w.audio != a || a.output != output {
+				return
+			}
+			a.voiceTimer = nil
+			output.reap()
+			a.watchVoices()
+		})
+	})
 }
 
 func (a *windowAudio) stop(id uint32) {
@@ -205,7 +286,7 @@ func (a *windowAudio) stop(id uint32) {
 			if v.sound != id {
 				return false
 			}
-			v.voice.call(xaVoiceDestroy)
+			a.output.retire(v)
 			return true
 		})
 	}
@@ -224,9 +305,14 @@ func (a *windowAudio) unload(id uint32) {
 }
 
 func (a *windowAudio) closeOutput() {
+	a.voiceGeneration++
+	if a.voiceTimer != nil {
+		a.voiceTimer.Stop()
+		a.voiceTimer = nil
+	}
 	if a.output != nil {
 		for _, v := range a.output.voices {
-			v.voice.call(xaVoiceDestroy)
+			a.output.retire(v)
 		}
 		a.output.master.call(xaVoiceDestroy)
 		a.output.engine.release()

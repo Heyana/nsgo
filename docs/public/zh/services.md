@@ -474,7 +474,7 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 
 ## 音频播放
 
-用 `audio.LoadSound` 加载短音效，再用 `sound.Play(audio.Voice{})` 播放。多次调用可以重叠播放。在 macOS、iOS、Linux 和 Web 上，可以用返回的 `audio.Playback` 单独调整音量和倍速，或停止本次播放。播放结束、停止、超过并发上限被淘汰，或无法启动时，响应式的 `Ended()` 变为 true。无法单独控制每次播放的后端会返回一个已结束的句柄。
+用 `audio.LoadSound` 加载短音效，再用 `sound.Play(audio.Voice{})` 播放。多次调用可以重叠播放。在 macOS、iOS、Windows、Linux 和 Web 上，可以用返回的 `audio.Playback` 单独调整音量和倍速，或停止本次播放。播放结束、停止、超过并发上限被淘汰，或无法启动时，响应式的 `Ended()` 变为 true。无法单独控制每次播放的后端会返回一个已结束的句柄。
 
 用 `audio.Voice{Muted: true}` 静音启动音效，也可用 `playback.SetVolume(0)` 将正在播放的音效静音。长音频用 `audio.NewPlayer` 流式播放，`player.SetMuted(true)` 可在保持播放进度的同时静音。取消静音会恢复播放器设定的音量。`Voice.Volume` 和 `Player.SetVolume` 以零表示默认满音量。
 
