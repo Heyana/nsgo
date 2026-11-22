@@ -15,7 +15,28 @@ import (
 
 // shownNotifications are the notifications the page shows, by ID, which
 // one of the same ID and CloseNotification close.
-var shownNotifications = map[string]js.Value{}
+var shownNotifications = map[string]*shownNotification{}
+
+// shownNotification is a shown notification and the function its click
+// and its close, the user's dismissal included, call.
+type shownNotification struct {
+	note  js.Value
+	ended js.Func
+}
+
+// endNotification closes the notification of id, if the page shows one,
+// and forgets it.
+func endNotification(id string) {
+	n, ok := shownNotifications[id]
+	if !ok {
+		return
+	}
+	delete(shownNotifications, id)
+	n.note.Set("onclick", js.Null())
+	n.note.Set("onclose", js.Null())
+	n.note.Call("close")
+	n.ended.Release()
+}
 
 func (s *surface) notify(it *driver.MountItem) {
 	api := js.Global().Get("Notification")
@@ -40,10 +61,7 @@ func (s *surface) notify(it *driver.MountItem) {
 			s.engine.Dispatch(driver.Event{Kind: driver.EventNotification, Count: id})
 			return
 		}
-		if old, ok := shownNotifications[n.ID]; ok {
-			old.Set("onclick", js.Null())
-			old.Call("close")
-		}
+		endNotification(n.ID)
 		shown := func() (note js.Value, ok bool) {
 			// The constructor throws where only a service worker shows
 			// them.
@@ -52,31 +70,28 @@ func (s *surface) notify(it *driver.MountItem) {
 		}
 		note, ok := shown()
 		if ok {
-			shownNotifications[n.ID] = note
-			var click js.Func
-			click = js.FuncOf(func(js.Value, []js.Value) any {
-				js.Global().Call("focus")
-				note.Call("close")
-				delete(shownNotifications, n.ID)
-				click.Release()
-				s.engine.Dispatch(driver.Event{Kind: driver.EventNotificationPress, Text: n.ID})
+			shown := &shownNotification{note: note}
+			shown.ended = js.FuncOf(func(_ js.Value, args []js.Value) any {
+				endNotification(n.ID)
+				if args[0].Get("type").String() == "click" {
+					js.Global().Call("focus")
+					s.engine.Dispatch(driver.Event{Kind: driver.EventNotificationPress, Text: n.ID})
+				}
 				return nil
 			})
-			note.Set("onclick", click)
+			shownNotifications[n.ID] = shown
+			note.Set("onclick", shown.ended)
+			note.Set("onclose", shown.ended)
 		}
 		s.engine.Dispatch(driver.Event{Kind: driver.EventNotification, Count: id, Finished: ok})
 	case driver.ItemCloseNotification:
 		if it.Value == "" {
-			for id, note := range shownNotifications {
-				note.Call("close")
-				delete(shownNotifications, id)
+			for id := range shownNotifications {
+				endNotification(id)
 			}
 			break
 		}
-		if note, ok := shownNotifications[it.Value]; ok {
-			note.Call("close")
-			delete(shownNotifications, it.Value)
-		}
+		endNotification(it.Value)
 	case driver.ItemBadge:
 		nav := js.Global().Get("navigator")
 		switch {
