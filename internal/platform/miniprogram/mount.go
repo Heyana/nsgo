@@ -30,7 +30,7 @@ import (
 //	sc id config             a scroll view's: {h, hide, rf, rt}
 //	ss id w h                a scroll view's content size
 //	so id x y animated       scroll to an offset
-//	im id src mode           an encoded image's source and mode
+//	im id src mode css       an encoded image's source, mode and inline CSS
 //	px id css                a pixel image's fitted canvas, or "" to clear it
 //	fd id config             a text field's configuration
 //	iv id text               a text field's value
@@ -399,7 +399,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 				m.h.imagePixels(v.id, it.Image.Source.Pixels)
 			}
 			if v.pixelImage == nil {
-				m.o.op("im", v.id).str("").str("")
+				m.o.op("im", v.id).str("").str("").str("")
 			}
 			v.pixelImage = it.Image
 			m.placePixelImage(v)
@@ -423,7 +423,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		if it.Image.Source.URI != "" || len(it.Image.Source.Data) > 0 {
 			src = m.h.imageURL(it.Image.Source)
 		}
-		m.o.op("im", v.id).str(src).str(mode)
+		m.o.op("im", v.id).str(src).str(mode).str(samplingCSS(it.Image.Sampling))
 	case driver.ItemCanvas:
 		v.drawing = it.Drawing
 		var slots []driver.DrawSlot
@@ -437,6 +437,14 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 	default:
 		m.h.service(it)
 	}
+}
+
+// samplingCSS is the inline CSS that scales an image with sampling, as the web's image views do: image-rendering, which the image component's inner element and the pixel canvas inherit.
+func samplingCSS(sampling driver.ImageSampling) string {
+	if sampling == driver.ImageSamplingNearest {
+		return "image-rendering:pixelated"
+	}
+	return ""
 }
 
 // placePixelImage keeps the buffer at its fitted rectangle as its box changes.
@@ -455,6 +463,9 @@ func (m *mounter) placePixelImage(v *view) {
 		";width:" + webstyle.Px(fit.Size.Width) + ";height:" + webstyle.Px(fit.Size.Height)
 	if c.BlurRadius > 0 {
 		css += ";filter:blur(" + webstyle.Px(c.BlurRadius) + ")"
+	}
+	if s := samplingCSS(c.Sampling); s != "" {
+		css += ";" + s
 	}
 	if css != v.pixelCSS {
 		v.pixelCSS = css

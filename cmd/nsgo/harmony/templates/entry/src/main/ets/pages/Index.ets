@@ -186,6 +186,7 @@ interface CanvasOp {
   co?: number;
   d?: number[];
   img?: string;
+  n?: boolean;
 }
 
 interface CanvasGradientData {
@@ -217,6 +218,11 @@ function fitOf(fit: string): ImageFit {
       return ImageFit.ScaleDown;
   }
   return ImageFit.Cover;
+}
+
+// interpolationOf turns the engine's image sampling into ArkUI's interpolation: none for nearest neighbour, else ArkUI's default.
+function interpolationOf(nearest: boolean): ImageInterpolation {
+  return nearest ? ImageInterpolation.None : ImageInterpolation.Low;
 }
 
 class VNode {
@@ -294,10 +300,11 @@ class VNode {
   inY: number = 0;
   inW: number = -1;
   inH: number = -1;
-  // An image's URI, its fit, and the bytes it embeds, base64.
+  // An image's URI, its fit, the bytes it embeds, base64, and whether it scales with nearest-neighbour sampling.
   src: string = '';
   fit: string = 'cover';
   data: string = '';
+  nearest: boolean = false;
   // A canvas's drawing, as operations to replay.
   drawing: string = '';
   // A web view's page, whether its scripts run, and the command it waits for.
@@ -686,6 +693,7 @@ class Tree {
           v.src = o[2] as string;
           v.fit = o[3] as string;
           v.data = o[4] as string;
+          v.nearest = o[5] as boolean;
         } else if (code === 'cv') {
           v.drawing = o[2] as string;
         } else if (code === 'tr') {
@@ -2113,6 +2121,7 @@ struct NodeImageView {
   @Prop @Watch('reload') src: string = '';
   @Prop @Watch('reload') fit: string = 'cover';
   @Prop @Watch('reload') data: string = '';
+  @Prop nearest: boolean = false;
   @State pixels: image.PixelMap | undefined = undefined;
 
   aboutToAppear(): void {
@@ -2156,11 +2165,13 @@ struct NodeImageView {
     if (this.pixels !== undefined) {
       Image(this.pixels)
         .objectFit(fitOf(this.fit))
+        .interpolation(interpolationOf(this.nearest))
         .width('100%')
         .height('100%')
     } else if (this.src !== '' && !this.src.startsWith('asset:')) {
       Image(this.src)
         .objectFit(fitOf(this.fit))
+        .interpolation(interpolationOf(this.nearest))
         .width('100%')
         .height('100%')
         .onError((e: ImageError) => {
@@ -2204,10 +2215,9 @@ struct CanvasView {
     ctx.closePath();
   }
 
-  // drawImage draws an image op: at its natural size when W and H are 0,
-  // else into that rectangle, from the part X1, Y1, X2, Y2 of it when the
-  // source rectangle is given. The op is in points and the pixels are not.
+  // drawImage draws an image op: at its natural size when W and H are 0, else into that rectangle, from the part X1, Y1, X2, Y2 of it when the source rectangle is given, smoothed unless the op samples nearest. The op is in points and the pixels are not.
   private drawImage(ctx: CanvasRenderingContext2D, pm: image.PixelMap, o: CanvasOp): void {
+    ctx.imageSmoothingEnabled = !(o.n ?? false);
     const d = density();
     const size = pm.getImageInfoSync().size;
     const nw = size.width / d;
@@ -2577,7 +2587,7 @@ struct WebView {
 }
 
 @Builder function imageBuilder(v: VNode) {
-  NodeImageView({ src: v.src, fit: v.fit, data: v.data })
+  NodeImageView({ src: v.src, fit: v.fit, data: v.data, nearest: v.nearest })
 }
 
 @Builder function canvasBuilder(v: VNode) {
@@ -3348,7 +3358,7 @@ class Renderer {
     }
     const a = typeNode.getAttribute(node, 'Image');
     if (a !== undefined) {
-      a.objectFit(fitOf(v.fit));
+      a.objectFit(fitOf(v.fit)).interpolation(interpolationOf(v.nearest));
     }
   }
 

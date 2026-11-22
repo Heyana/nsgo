@@ -44,6 +44,8 @@ type canvasOp struct {
 	Img  string    `json:"img,omitempty"`
 	// ImgData is the image's bytes, base64, when the drawing embeds them.
 	ImgData string `json:"imgd,omitempty"`
+	// Nearest is whether the image is drawn with smoothing off, each source pixel a hard-edged block (driver.ImageSamplingNearest).
+	Nearest bool `json:"n,omitempty"`
 }
 
 // gradient is a canvas gradient as the host builds one: radial or linear,
@@ -91,6 +93,7 @@ func canvasJSON(ops []driver.DrawOp) string {
 			}
 		case driver.DrawImage:
 			if o.Image != nil {
+				c.Nearest = o.Sampling == driver.ImageSamplingNearest
 				c.Img = o.Image.URI
 				if len(o.Image.Data) > 0 {
 					c.ImgData = base64.StdEncoding.EncodeToString(o.Image.Data)

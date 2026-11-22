@@ -119,7 +119,7 @@ class Tree {
           break
         }
         case 'im':
-          set(id, 'im', op[2] ? { src: op[2], mode: op[3] } : null)
+          set(id, 'im', op[2] ? { src: op[2], mode: op[3], s: op[4] || '' } : null)
           break
         case 'sel':
           set(id, 'sel', [op[2], op[3]])

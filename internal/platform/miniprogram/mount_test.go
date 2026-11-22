@@ -269,3 +269,28 @@ func TestPixelImagesSendFramesOutsideTheTree(t *testing.T) {
 		t.Fatalf("replaced pixel canvas not released: placements %v, frames %v", got, h.pixelFrames)
 	}
 }
+
+// TestImageSamplingReachesTheImage checks that a nearest-sampled image view scales its pixels as blocks: an encoded image's <image> and a pixel image's canvas take image-rendering: pixelated, and smooth ones take nothing.
+func TestImageSamplingReachesTheImage(t *testing.T) {
+	h := &fakeHost{pixelImages: true}
+	m := newMounter(h)
+	apply := func(c *driver.ImageConfig) {
+		m.mount(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemImage, ID: 1, Image: c}}})
+	}
+	m.mount(&driver.MountBatch{Root: 1, Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 1, View: driver.KindImage},
+		frame(1, 0, 0, 16, 16),
+	}})
+	apply(&driver.ImageConfig{Source: driver.ImageSource{URI: "a.png"}, Sampling: driver.ImageSamplingNearest})
+	apply(&driver.ImageConfig{Source: driver.ImageSource{URI: "a.png"}})
+	if got, want := h.ops("im"), []string{`[1,"img","aspectFill","image-rendering:pixelated"]`, `[1,"img","aspectFill",""]`}; !slices.Equal(got, want) {
+		t.Fatalf("image operations = %v, want %v", got, want)
+	}
+	pixels := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	apply(&driver.ImageConfig{Source: driver.ImageSource{Pixels: pixels}, ResizeMode: driver.Stretch})
+	apply(&driver.ImageConfig{Source: driver.ImageSource{Pixels: pixels}, ResizeMode: driver.Stretch, Sampling: driver.ImageSamplingNearest})
+	got := h.ops("px")
+	if len(got) != 2 || strings.Contains(got[0], "image-rendering") || !strings.Contains(got[1], ";image-rendering:pixelated") {
+		t.Fatalf("pixel canvas placements = %v, want the second alone pixelated", got)
+	}
+}

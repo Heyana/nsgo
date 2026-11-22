@@ -198,8 +198,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		}
 		m.o.op("cv", it.ID).str(canvasJSON(ops))
 	case driver.ItemImage:
-		src, fit, data := "", "cover", ""
+		src, fit, data, nearest := "", "cover", "", false
 		if it.Image != nil {
+			nearest = it.Image.Sampling == driver.ImageSamplingNearest
 			src = it.Image.Source.URI
 			if len(it.Image.Source.Data) > 0 {
 				data = base64.StdEncoding.EncodeToString(it.Image.Source.Data)
@@ -215,7 +216,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 				fit = "none"
 			}
 		}
-		m.o.op("im", it.ID).str(src).str(fit).str(data)
+		m.o.op("im", it.ID).str(src).str(fit).str(data).boolean(nearest)
 	case driver.ItemInputValue:
 		// A value the engine computed before the user's latest edit is
 		// stale; one the field already shows is not sent again, which would

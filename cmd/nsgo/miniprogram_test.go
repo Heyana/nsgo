@@ -366,3 +366,24 @@ equal(painted[3], "0,255,0,255");
 		t.Fatal(err)
 	}
 }
+
+// TestMiniProgramImageTakesItsSampling checks that an image's inline CSS, which carries nearest-neighbour sampling, reaches the node both templates bind to the <image>'s style.
+func TestMiniProgramImageTakesItsSampling(t *testing.T) {
+	apply := runTree(t)
+	first := apply(`[["c",1,"image"],["root",1],["im",1,"a.png","aspectFill","image-rendering:pixelated"]]`)
+	if !strings.Contains(first, `"im":{"src":"a.png","mode":"aspectFill","s":"image-rendering:pixelated"}`) {
+		t.Fatalf("root = %s", first)
+	}
+	if got := apply(`[["im",1,"a.png","aspectFill",""]]`); !strings.Contains(got, `"s":""`) {
+		t.Fatalf("smooth image sends %s", got)
+	}
+	for _, name := range []string{"miniprogram/wechat/components/nsgo-node/index.wxml", "miniprogram/alipay/components/nsgo-node/index.axml"} {
+		src, err := miniprogramRuntime.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(src), `style="{{node.im.s}}"`) {
+			t.Errorf("%s does not bind the image's style", name)
+		}
+	}
+}

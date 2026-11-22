@@ -139,6 +139,7 @@
   <image
     wx:if="{{node.k === 'image' && node.im}}"
     class="fill"
+    style="{{node.im.s}}"
     src="{{node.im.src}}"
     mode="{{node.im.mode}}"
     bindload="onLoad"

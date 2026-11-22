@@ -89,3 +89,31 @@ func names(t *testing.T, path string, re *regexp.Regexp) map[string]bool {
 	}
 	return out
 }
+
+// TestCanvasOpKeysMatchHost checks that every key internal/platform/harmonyos writes into a canvas op is a field of Index.ets's CanvasOp, which the host reads: a key it does not declare, such as an image's sampling, is never applied.
+func TestCanvasOpKeysMatchHost(t *testing.T) {
+	root := filepath.Join("..", "..", "..")
+	goSrc, err := os.ReadFile(filepath.Join(root, "internal", "platform", "harmonyos", "canvas.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := os.ReadFile(filepath.Join(root, "cmd", "nsgo", "harmony", "templates", "entry", "src", "main", "ets", "pages", "Index.ets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(goSrc), "type canvasOp struct {")
+	end := strings.Index(string(goSrc)[start:], "\n}")
+	iface := regexp.MustCompile(`(?s)interface CanvasOp \{(.*?)\n\}`).FindStringSubmatch(string(host))
+	if start < 0 || end < 0 || iface == nil {
+		t.Fatal("canvasOp or CanvasOp not found: the patterns no longer match")
+	}
+	keys := regexp.MustCompile(`json:"([a-z0-9]+)`).FindAllStringSubmatch(string(goSrc)[start:start+end], -1)
+	if len(keys) == 0 {
+		t.Fatal("canvasOp has no keys: the pattern no longer matches")
+	}
+	for _, k := range keys {
+		if !regexp.MustCompile(`(?m)^\s*` + k[1] + `\??:`).MatchString(iface[1]) {
+			t.Errorf("CanvasOp does not declare %q", k[1])
+		}
+	}
+}
