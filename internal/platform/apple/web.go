@@ -817,8 +817,11 @@ func (w *Web) Close() {
 }
 
 func (w *Web) close() {
-	for _, key := range webStateKeys {
-		w.web.Send(sel("removeObserver:forKeyPath:context:"), w.handler, NSString(key), uintptr(0))
+	// make observes the view's state with its handler; a view made elsewhere, as a test's, has neither, and removing an observer never added raises.
+	if w.handler != 0 {
+		for _, key := range webStateKeys {
+			w.web.Send(sel("removeObserver:forKeyPath:context:"), w.handler, NSString(key), uintptr(0))
+		}
 	}
 	w.web.Send(sel("stopLoading"))
 	w.web.Send(sel("setNavigationDelegate:"), objc.ID(0))

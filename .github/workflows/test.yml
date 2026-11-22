@@ -34,8 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         target: ${{ fromJSON(needs.changes.outputs.apple == 'false' && '["web"]' || '["web","macos"]') }}
-    # AVPlayer plays nothing on Depot's macOS runners.
-    runs-on: ${{ matrix.target == 'macos' && 'macos-15-intel' || 'depot-ubuntu-24.04-4' }}
+    runs-on: ${{ matrix.target == 'macos' && 'depot-macos-26' || 'depot-ubuntu-24.04-4' }}
     timeout-minutes: 30
     steps:
       - name: Check out
@@ -47,6 +46,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Grant the runner the microphone
+        if: matrix.target == 'macos'
+        run: .github/scripts/grant-microphone.sh
       - name: Select Xcode with Icon Composer
         if: matrix.target == 'macos'
         run: echo "DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer" >> "$GITHUB_ENV"
@@ -321,8 +323,7 @@ jobs:
     needs: changes
     # Skips a pull request that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
     if: ${{ !cancelled() && needs.changes.outputs.apple != 'false' }}
-    # AVPlayer plays nothing on Depot's macOS runners, so the desktop backend stays on GitHub's; use its Intel pool while hosted arm64 capacity leaves jobs unallocated.
-    runs-on: macos-15-intel
+    runs-on: depot-macos-26
     timeout-minutes: 40
     steps:
       - name: Check out
@@ -334,6 +335,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Grant the runner the microphone
+        run: .github/scripts/grant-microphone.sh
       - name: Mark the job's start for crash reports
         run: touch "$RUNNER_TEMP/apple-start"
       - name: Vet
@@ -404,7 +407,6 @@ jobs:
     needs: changes
     # Runs only in the merge queue and on push, never on a pull request: the organization has one depot-macos-15 runner, and pull request runs queued ahead of merge groups made every group time out. A skipped job counts as passed, so the pull request still reaches the queue, and an Apple failure there removes it from the batch. In the queue it still skips a change that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
     if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.apple != 'false' }}
-    # Simulator packages are arm64; the Intel desktop job cannot run them.
     runs-on: depot-macos-15
     timeout-minutes: 40
     steps:
