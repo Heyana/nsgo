@@ -1929,3 +1929,191 @@ func TestBackdropTransformAndTarget(t *testing.T) {
 		t.Fatalf("explicit target = (%d, %d, %v, %v), want (64, 48, false, true)", w, h, alpha, ok)
 	}
 }
+
+func TestPreciseScrollDeliversTouchpadPhasesToOnWheel(t *testing.T) {
+	var events []driver.Event
+	eng := engine.Start(noopPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{
+		Event: func(_ uint32, ev driver.Event) { events = append(events, ev) },
+	})
+	t.Cleanup(eng.Close)
+
+	visible := driver.ViewStyle{Opacity: 1}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 300}}}
+	outerScroll := &view{
+		id: 2, kind: driver.KindScroll, parent: root, style: visible,
+		frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 300}},
+		size:  driver.Size{Width: 300, Height: 1000},
+	}
+	wheelView := &view{
+		id: 3, kind: driver.KindView, parent: outerScroll, style: visible,
+		frame:  driver.Bounds{Origin: driver.Point{X: 20, Y: 30}, Size: driver.Size{Width: 200, Height: 160}},
+		events: 1 << driver.EventWheel,
+	}
+	innerScroll := &view{
+		id: 4, kind: driver.KindScroll, parent: wheelView, style: visible,
+		frame: driver.Bounds{Origin: driver.Point{X: 10, Y: 10}, Size: driver.Size{Width: 80, Height: 80}},
+		size:  driver.Size{Width: 80, Height: 400},
+	}
+	wheelView.children = []*view{innerScroll}
+	outerScroll.children = []*view{wheelView}
+	root.children = []*view{outerScroll}
+
+	w := &window{
+		engine:   eng,
+		root:     root.id,
+		views:    []*view{nil, root, outerScroll, wheelView, innerScroll},
+		scale:    1.5,
+		animator: driver.NewAnimator(func(driver.Event) {}),
+		ticking:  true,
+	}
+
+	// Scroll over wheelView (outside innerScroll): OnWheel takes it before outerScroll,
+	// with GestureBegan -> GestureChanged* -> GestureEnded, Precise: true, and exact inverted Delta.
+	at := driver.Point{X: 150, Y: 120}
+	offsetDelta := driver.Point{X: -40, Y: -60}
+	g := w.beginPreciseScroll(at)
+	for _, step := range preciseScrollSteps(offsetDelta) {
+		w.stepPreciseScroll(&g, at, step)
+	}
+	w.endPreciseScroll(&g, at)
+
+	if outerScroll.offset != (driver.Point{}) {
+		t.Fatalf("outer scroll view moved to %v when OnWheel should have taken the gesture", outerScroll.offset)
+	}
+	if len(events) < 3 {
+		t.Fatalf("got %d wheel events, want at least 3 (began, changed..., ended): %+v", len(events), events)
+	}
+	if events[0].Kind != driver.EventWheel || events[0].ID != wheelView.id || events[0].Phase != driver.GestureBegan || !events[0].Precise || events[0].Delta != (driver.Point{}) {
+		t.Fatalf("first event = %+v, want GestureBegan with Precise:true and zero delta", events[0])
+	}
+	last := events[len(events)-1]
+	if last.Kind != driver.EventWheel || last.ID != wheelView.id || last.Phase != driver.GestureEnded || !last.Precise || last.Delta != (driver.Point{}) {
+		t.Fatalf("last event = %+v, want GestureEnded with Precise:true and zero delta", last)
+	}
+	var sum driver.Point
+	for i, ev := range events[1 : len(events)-1] {
+		if ev.Kind != driver.EventWheel || ev.ID != wheelView.id || ev.Phase != driver.GestureChanged || !ev.Precise {
+			t.Fatalf("middle event[%d] = %+v, want GestureChanged with Precise:true", i, ev)
+		}
+		if ev.Point != (driver.Point{X: 130, Y: 90}) || ev.Page != at {
+			t.Fatalf("middle event[%d] coords = (%v, %v), want ({130 90}, %v)", i, ev.Point, ev.Page, at)
+		}
+		sum.X += ev.Delta.X
+		sum.Y += ev.Delta.Y
+	}
+	if math.Abs(float64(sum.X-40)) > 1e-3 || math.Abs(float64(sum.Y-60)) > 1e-3 {
+		t.Fatalf("summed wheel delta = %v, want {40 60}", sum)
+	}
+
+	// A scroll view inside an OnWheel view takes the scroll first, leaving OnWheel silent.
+	events = nil
+	overInner := driver.Point{X: 50, Y: 60}
+	g = w.beginPreciseScroll(overInner)
+	for _, step := range preciseScrollSteps(driver.Point{Y: 72.5}) {
+		w.stepPreciseScroll(&g, overInner, step)
+	}
+	w.endPreciseScroll(&g, overInner)
+	for _, ev := range events {
+		if ev.Kind == driver.EventWheel {
+			t.Fatalf("unexpected EventWheel when scrolling inner scroll view: %+v", ev)
+		}
+	}
+	if math.Abs(float64(innerScroll.offset.Y-72.5)) > 1e-3 {
+		t.Fatalf("innerScroll.offset.Y = %v, want 72.5", innerScroll.offset.Y)
+	}
+
+	// Deleting the latched OnWheel view mid-gesture emits no further events.
+	events = nil
+	g = w.beginPreciseScroll(at)
+	wheelView.deleted = true
+	w.stepPreciseScroll(&g, at, driver.Point{Y: -10})
+	w.endPreciseScroll(&g, at)
+	if len(events) != 1 || events[0].Phase != driver.GestureBegan {
+		t.Fatalf("events after view deleted mid-gesture = %+v, want only GestureBegan", events)
+	}
+	wheelView.deleted = false
+
+	// Real mouse-wheel wheelTaken still scales by wheelNotch (99pt/notch) with GestureChanged.
+	events = nil
+	if !w.wheelTaken(at, 120, false) {
+		t.Fatal("wheelTaken returned false for real wheel notch")
+	}
+	if len(events) != 1 || events[0].Phase != driver.GestureChanged || events[0].Precise || events[0].Delta != (driver.Point{Y: wheelNotch}) {
+		t.Fatalf("real wheelTaken event = %+v, want GestureChanged Precise:false Delta:{0 %v}", events, wheelNotch)
+	}
+}
+
+func TestPreciseScrollMovesNativeScrollViewsByExactPoints(t *testing.T) {
+	eng := engine.Start(noopPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{})
+	t.Cleanup(eng.Close)
+
+	visible := driver.ViewStyle{Opacity: 1}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: driver.Bounds{Size: driver.Size{Width: 400, Height: 400}}}
+	outerV := &view{
+		id: 2, kind: driver.KindScroll, parent: root, style: visible,
+		frame: driver.Bounds{Size: driver.Size{Width: 400, Height: 400}},
+		size:  driver.Size{Width: 400, Height: 1000},
+	}
+	innerV := &view{
+		id: 3, kind: driver.KindScroll, parent: outerV, style: visible,
+		frame: driver.Bounds{Origin: driver.Point{X: 10, Y: 10}, Size: driver.Size{Width: 150, Height: 100}},
+		size:  driver.Size{Width: 150, Height: 150}, // max scroll 50
+	}
+	innerH := &view{
+		id: 4, kind: driver.KindScroll, parent: outerV, style: visible,
+		scroll: driver.ScrollConfig{Horizontal: true},
+		frame:  driver.Bounds{Origin: driver.Point{X: 10, Y: 150}, Size: driver.Size{Width: 200, Height: 100}},
+		size:   driver.Size{Width: 600, Height: 100},
+	}
+	outerV.children = []*view{innerV, innerH}
+	root.children = []*view{outerV}
+
+	w := &window{
+		engine:   eng,
+		root:     root.id,
+		views:    []*view{nil, root, outerV, innerV, innerH},
+		scale:    2,
+		animator: driver.NewAnimator(func(driver.Event) {}),
+		ticking:  true,
+	}
+
+	runScroll := func(at, delta driver.Point) {
+		g := w.beginPreciseScroll(at)
+		for _, step := range preciseScrollSteps(delta) {
+			w.stepPreciseScroll(&g, at, step)
+		}
+		w.endPreciseScroll(&g, at)
+	}
+
+	// 1. Exact vertical distance on outer scroll view.
+	runScroll(driver.Point{X: 300, Y: 300}, driver.Point{Y: 80})
+	if math.Abs(float64(outerV.offset.Y-80)) > 1e-3 {
+		t.Fatalf("outerV.offset.Y = %v, want 80", outerV.offset.Y)
+	}
+	outerV.offset = driver.Point{}
+
+	// 2. Exact horizontal distance on horizontal scroll view inside vertical scroll view.
+	runScroll(driver.Point{X: 50, Y: 180}, driver.Point{X: 65.5})
+	if math.Abs(float64(innerH.offset.X-65.5)) > 1e-3 || outerV.offset.Y != 0 {
+		t.Fatalf("after horizontal scroll: innerH=%v outerV=%v, want innerH.X=65.5 outerV.Y=0", innerH.offset, outerV.offset)
+	}
+
+	// 3. Vertical scroll over innerH scrolls outerV along the vertical axis instead.
+	runScroll(driver.Point{X: 50, Y: 180}, driver.Point{Y: 45})
+	if math.Abs(float64(outerV.offset.Y-45)) > 1e-3 || math.Abs(float64(innerH.offset.X-65.5)) > 1e-3 {
+		t.Fatalf("after vertical scroll over innerH: outerV=%v innerH=%v", outerV.offset, innerH.offset)
+	}
+	outerV.offset = driver.Point{}
+
+	// 4. Nested vertical scroll views: gesture latches innerV and stops at its edge (50) without spilling into outerV.
+	runScroll(driver.Point{X: 50, Y: 50}, driver.Point{Y: 80})
+	if math.Abs(float64(innerV.offset.Y-50)) > 1e-3 || outerV.offset.Y != 0 {
+		t.Fatalf("latched nested gesture: innerV=%v outerV=%v, want innerV.Y=50 outerV.Y=0", innerV.offset, outerV.offset)
+	}
+
+	// 5. Starting a new gesture when innerV is already at its edge scrolls outerV by the exact distance.
+	runScroll(driver.Point{X: 50, Y: 50}, driver.Point{Y: 63.25})
+	if math.Abs(float64(outerV.offset.Y-63.25)) > 1e-3 {
+		t.Fatalf("outerV after innerV at edge = %v, want 63.25", outerV.offset.Y)
+	}
+}

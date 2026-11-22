@@ -93,7 +93,7 @@ On a target, `App.CapturePNG` and `App.Capture` settle and return the platform's
 | macOS | Mouse and key `NSEvent`s posted to NSApp's queue, so monitors see them; wheels as trackpad phases to the view hit; hover through tracking-area handlers; Command edit keys as the Edit menu's actions | WindowServer composite of only the surface's window and its tracked native popup, clipped to the view's bounds; `cacheDisplayInRect:` when the window is not visible on the active Space or WindowServer gives no full image, logged once | Animator, layout motions, ghosts |
 | iOS simulator | IOHID digitizer events to `_enqueueHIDEvent:`; typing through `UIKeyboardImpl`; keys as HID keyboard events | `drawViewHierarchyInRect:` in a standard-range sRGB renderer, shared with tvOS | Finite Core Animation, gliding scroll views |
 | Web | Trusted CDP input from the tool, asked over the `nsgoTest` binding; macOS editing commands | `Page.captureScreenshot` | Animator, finite DOM animations |
-| Windows | Posted mouse and wheel messages; keys at `editKey` and `shortcut` with the thread's keyboard state | `PrintWindow` | Transitions, moves, fades |
+| Windows | Posted mouse messages; precise point-distance touchpad scroll steps to `OnWheel` and scroll views; keys at `editKey` and `shortcut` with the thread's keyboard state | `PrintWindow` | Transitions, moves, fades |
 | Linux | The backend's pointer, wheel and key callbacks, followed by the focused field's editing signals for keys the controller did not consume | Cairo offscreen | Transitions, layout animations |
 | Android | `TestAgent.java`: `MotionEvent`s and `KeyEvent`s on the UI thread, asked over the pipe | The window drawn to a bitmap | A signature of every view's place, scroll and opacity |
 

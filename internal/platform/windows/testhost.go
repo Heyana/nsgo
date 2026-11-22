@@ -78,7 +78,6 @@ var (
 	hostSelectObject      = gdi32.NewProc("SelectObject")
 	hostGetDIBits         = gdi32.NewProc("GetDIBits")
 	hostDeleteObject      = gdi32.NewProc("DeleteObject")
-	hostClientToScreen    = user32.NewProc("ClientToScreen")
 	hostGetClientRectProc = user32.NewProc("GetClientRect")
 )
 
@@ -267,34 +266,20 @@ func (t *testSurface) Drag(path []driver.Point) error {
 	return nil
 }
 
-func absPoints(v driver.Points) driver.Points {
-	if v < 0 {
-		return -v
-	}
-	return v
-}
-
-// Scroll turns the wheel, whose messages carry screen coordinates: a
-// notch is 120.
+// Scroll delivers a precise touchpad-style scroll gesture at at by delta
+// (the scroll-offset change in points, opposite to content movement): it
+// begins, moves at most 20 points every 16 ms, and ends without momentum,
+// carrying exact point distances to both native scroll views and OnWheel.
 func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
-	p := point{t.w.px(at.X), t.w.px(at.Y)}
-	hostClientToScreen.Call(t.w.hwnd, uintptr(unsafe.Pointer(&p)))
-	lParam := uintptr(uint32(uint16(p.Y))<<16 | uint32(uint16(p.X)))
-	turn := func(message uintptr, d driver.Points) {
-		n := int(absPoints(d)/20) + 1
-		for range n {
-			// The backend scrolls wheelStep a notch.
-			units := int16(-d / driver.Points(n) * 120 / wheelStep)
-			postMessageW.Call(t.w.hwnd, message, uintptr(uint32(uint16(units))<<16), lParam)
-			time.Sleep(16 * time.Millisecond)
-		}
+	steps := preciseScrollSteps(delta)
+	var g preciseScroll
+	t.onMain(func() { g = t.w.beginPreciseScroll(at) })
+	time.Sleep(16 * time.Millisecond)
+	for _, step := range steps {
+		t.onMain(func() { t.w.stepPreciseScroll(&g, at, step) })
+		time.Sleep(16 * time.Millisecond)
 	}
-	if delta.Y != 0 {
-		turn(wmMouseWheel, delta.Y)
-	}
-	if delta.X != 0 {
-		turn(wmMouseHWheel, -delta.X)
-	}
+	t.onMain(func() { t.w.endPreciseScroll(&g, at) })
 	return nil
 }
 

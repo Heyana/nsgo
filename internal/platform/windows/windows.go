@@ -195,9 +195,6 @@ const (
 	defaultFontName = "Segoe UI"
 )
 
-// wheelStep is how far one notch of a mouse wheel scrolls.
-const wheelStep driver.Points = 48
-
 type rect struct{ Left, Top, Right, Bottom int32 }
 
 func (r rect) empty() bool { return r.Right <= r.Left || r.Bottom <= r.Top }
@@ -1919,6 +1916,20 @@ func (w *window) moveOffset(v *view, offset driver.Point) {
 // for a notch: three lines of 33 points, as browsers scroll about 100.
 const wheelNotch driver.Points = 99
 
+// wheelTarget returns the innermost view with OnWheel under p unless a scroll
+// view lies inside it.
+func wheelTarget(root *view, p driver.Point) *view {
+	under, _ := viewsAt(root, p, func(v *view) bool { return v.kind == driver.KindScroll || v.events.Has(driver.EventWheel) }, nil)
+	if len(under) == 0 {
+		return nil
+	}
+	v := under[len(under)-1]
+	if v.kind == driver.KindScroll {
+		return nil
+	}
+	return v
+}
+
 // wheelTaken sends a wheel's turn of delta at p to the innermost view with
 // OnWheel under it, unless a scroll view inside it is there, and reports
 // whether one took it. A precision touchpad's scrolls are turns of less
@@ -1928,12 +1939,8 @@ func (w *window) wheelTaken(p driver.Point, delta int16, tilt bool) bool {
 	if root == nil {
 		return false
 	}
-	under, _ := viewsAt(root, p, func(v *view) bool { return v.kind == driver.KindScroll || v.events.Has(driver.EventWheel) }, nil)
-	if len(under) == 0 {
-		return false
-	}
-	v := under[len(under)-1]
-	if v.kind == driver.KindScroll {
+	v := wheelTarget(root, p)
+	if v == nil {
 		return false
 	}
 	d := driver.Points(delta) / 120 * wheelNotch
@@ -1969,6 +1976,10 @@ func (w *window) wheel(at driver.Point, notches driver.Points, tilt bool) {
 	if v == nil {
 		return
 	}
+	w.applyWheelScroll(v, to)
+}
+
+func (w *window) applyWheelScroll(v *view, to driver.Point) {
 	from := v.offset
 	w.interruptScroll(v) // the wheel takes over
 	if w.scrollTo(v, to) {
@@ -1977,35 +1988,138 @@ func (w *window) wheel(at driver.Point, notches driver.Points, tilt bool) {
 	}
 }
 
+func (v *view) scrollCandidate() scrollCandidate {
+	return scrollCandidate{
+		scroll:  v.scroll,
+		frame:   v.frame.Size,
+		content: v.size,
+		offset:  v.offset,
+	}
+}
+
+// wheelPointsTarget chooses the innermost scroll view in under that can move
+// by delta (offset change in points), returning the view, its clamped target
+// offset, and whether a lone horizontal view fell back to delta.Y.
+func wheelPointsTarget(under []*view, delta driver.Point) (*view, driver.Point, bool) {
+	if len(under) == 0 {
+		return nil, driver.Point{}, false
+	}
+	candidates := make([]scrollCandidate, len(under))
+	for i, v := range under {
+		candidates[i] = v.scrollCandidate()
+	}
+	idx, to, fallback := pickScrollCandidate(candidates, delta)
+	if idx < 0 {
+		return nil, driver.Point{}, false
+	}
+	return under[idx], to, fallback
+}
+
 // wheelTurn returns the scroll view a wheel of notches at under turns,
 // and where it goes: the innermost view along the wheel's axis that can
 // move its way, else the innermost of any axis where none is along it.
 func wheelTurn(under []*view, notches driver.Points, tilt bool) (*view, driver.Point) {
-	along := false
-	for _, v := range under {
-		along = along || v.scroll.Horizontal == tilt
+	v, to, _ := wheelPointsTarget(under, wheelNotchDelta(notches, tilt))
+	return v, to
+}
+
+// preciseScroll tracks the latched target of one precise point-distance scroll
+// gesture (GestureBegan -> GestureChanged* -> GestureEnded).
+type preciseScroll struct {
+	wheel    *view // latched OnWheel view
+	scroll   *view // latched native scroll view
+	fallback bool  // lone horizontal scroll view took a vertical delta
+	web      bool  // scrollable WebView2 under the pointer took the gesture
+}
+
+// beginPreciseScroll starts a precise touchpad-style scroll gesture at at.
+// An OnWheel view under at (not covered by a scroll view or scrollable WebView)
+// claims the gesture and receives GestureBegan with Precise set.
+func (w *window) beginPreciseScroll(at driver.Point) preciseScroll {
+	w.applyBatches()
+	if len(w.webs) > 0 && w.scale > 0 {
+		if wv, _, _ := w.webAt(w.px(at.X), w.px(at.Y)); wv != nil && !wv.applied.NoScroll {
+			return preciseScroll{web: true}
+		}
 	}
-	for i := len(under) - 1; i >= 0; i-- {
-		v := under[i]
-		if v.scroll.Behavior.NoScroll || along && v.scroll.Horizontal != tilt {
-			continue
+	root := w.view(w.root)
+	if root == nil {
+		return preciseScroll{}
+	}
+	if v := wheelTarget(root, at); v != nil {
+		w.engine.Dispatch(preciseWheelEvent(v.id, driver.GestureBegan, v.surfacePoint(at), at, driver.Point{}, modifiers()))
+		return preciseScroll{wheel: v}
+	}
+	return preciseScroll{}
+}
+
+// stepPreciseScroll delivers one precise scroll step of offset delta (positive
+// right and down) at at to the latched target of g.
+func (w *window) stepPreciseScroll(g *preciseScroll, at, delta driver.Point) {
+	if g.web {
+		px, py := w.px(at.X), w.px(at.Y)
+		if delta.Y != 0 {
+			w.hostedWheel(px, py, wheelPointsToUnits(-delta.Y), false)
 		}
-		offset := v.offset
-		switch {
-		case tilt && v.scroll.Horizontal: // a tilt right is positive
-			offset.X += notches * wheelStep
-		case tilt:
-			continue
-		case v.scroll.Horizontal: // a turn away from the user is positive
-			offset.X -= notches * wheelStep
-		default:
-			offset.Y -= notches * wheelStep
+		if delta.X != 0 {
+			w.hostedWheel(px, py, wheelPointsToUnits(delta.X), true)
 		}
-		if to := scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset); to != v.offset {
-			return v, to
+		return
+	}
+	if g.wheel != nil {
+		if !g.wheel.deleted && w.view(g.wheel.id) == g.wheel {
+			w.engine.Dispatch(preciseWheelEvent(g.wheel.id, driver.GestureChanged, g.wheel.surfacePoint(at), at, delta, modifiers()))
+		}
+		return
+	}
+	if delta.X == 0 && delta.Y == 0 {
+		return
+	}
+	root := w.view(w.root)
+	if root == nil {
+		return
+	}
+	if g.scroll == nil && delta.Y != 0 {
+		if in := w.fieldAt(at); in != nil && in.scrollDelta(delta.Y) {
+			return
 		}
 	}
-	return nil, driver.Point{}
+	var v *view
+	var to driver.Point
+	if g.scroll != nil {
+		if g.scroll.deleted || w.view(g.scroll.id) != g.scroll {
+			return
+		}
+		var ok bool
+		to, ok = scrollCandidateOffset(g.scroll.scrollCandidate(), delta, g.fallback)
+		if !ok {
+			return
+		}
+		v = g.scroll
+	} else {
+		var fallback bool
+		v, to, fallback = wheelPointsTarget(scrollsAt(root, at, nil), delta)
+		if v == nil {
+			return
+		}
+		g.scroll = v
+		g.fallback = fallback
+	}
+	w.applyWheelScroll(v, to)
+}
+
+// endPreciseScroll ends a precise scroll gesture, delivering GestureEnded to
+// a latched OnWheel view if it is still mounted.
+func (w *window) endPreciseScroll(g *preciseScroll, at driver.Point) {
+	if v := g.wheel; v != nil {
+		g.wheel = nil
+		if !v.deleted && w.view(v.id) == v {
+			w.engine.Dispatch(preciseWheelEvent(v.id, driver.GestureEnded, v.surfacePoint(at), at, driver.Point{}, modifiers()))
+		}
+	}
+	g.scroll = nil
+	g.fallback = false
+	g.web = false
 }
 
 // barDrag is the pointer dragging a scroll bar: origin is the scroll

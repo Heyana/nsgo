@@ -373,7 +373,13 @@ func (in *textInput) bar() scrollbar.Bar {
 // wheelScroll scrolls a multiline editor vertically by notches and reports
 // whether its offset changed.
 func (in *textInput) wheelScroll(notches driver.Points) bool {
-	if !in.multiline() {
+	return in.scrollDelta(-notches * wheelStep)
+}
+
+// scrollDelta scrolls a multiline editor vertically by dy points (positive down)
+// and reports whether its offset changed.
+func (in *textInput) scrollDelta(dy driver.Points) bool {
+	if !in.multiline() || dy == 0 {
 		return false
 	}
 	if in.contentHeight == 0 && in.w != nil {
@@ -385,7 +391,7 @@ func (in *textInput) wheelScroll(notches driver.Points) bool {
 	if maxScroll <= 0 {
 		return false
 	}
-	to := min(max(in.scroll-float32(notches*wheelStep), 0), maxScroll)
+	to := min(max(in.scroll+float32(dy), 0), maxScroll)
 	if to == in.scroll {
 		return false
 	}

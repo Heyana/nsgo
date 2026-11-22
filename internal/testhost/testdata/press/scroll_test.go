@@ -11,9 +11,6 @@ import (
 // The same point distance must reach a wheel handler and a native scroll view, including in a browser with an emulated high-density display.
 func TestTouchpadScrollUsesPointDistances(t *testing.T) {
 	desktopPointer(t)
-	if nsgotest.Target() == "windows" {
-		t.Skip("Windows test input emits wheel notches, not precise touchpad distances")
-	}
 	var moved core.Point
 	app := nsgotest.Start(t, func(*core.Scope) core.Node {
 		return core.View{Style: core.Style{Gap: 20}, Children: []core.Node{

@@ -5,7 +5,9 @@ package windows
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -171,5 +173,108 @@ func TestTestHostCommitsCompositionBeforeBlur(t *testing.T) {
 				t.Fatalf("events %s after %s", got, want)
 			}
 		})
+	}
+}
+
+// TestTestHostPreciseScroll verifies that testSurface.Scroll delivers exact
+// point distances and touchpad phases to OnWheel as well as exact point
+// distances to both vertical and horizontal native scroll views.
+func TestTestHostPreciseScroll(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	var mu sync.Mutex
+	var wheelEvents []core.WheelEvent
+	var vOffset, hOffset core.Point
+	app := func(*core.Scope) core.Node {
+		return core.View{
+			Style: core.Style{Width: driver.Pt(300), Height: driver.Pt(340), Gap: 10},
+			Children: []core.Node{
+				core.View{
+					Style: core.Style{Width: driver.Pt(280), Height: driver.Pt(100)},
+					OnWheel: func(e core.WheelEvent) {
+						mu.Lock()
+						wheelEvents = append(wheelEvents, e)
+						mu.Unlock()
+					},
+				},
+				core.Scroll{
+					Style: core.Style{Width: driver.Pt(280), Height: driver.Pt(100)},
+					OnScroll: func(e core.ScrollEvent) {
+						mu.Lock()
+						vOffset = e.Offset
+						mu.Unlock()
+					},
+					Children: []core.Node{core.View{Style: core.Style{Height: driver.Pt(1000)}}},
+				},
+				core.Scroll{
+					Horizontal: true,
+					Style:      core.Style{Width: driver.Pt(280), Height: driver.Pt(100)},
+					OnScroll: func(e core.ScrollEvent) {
+						mu.Lock()
+						hOffset = e.Offset
+						mu.Unlock()
+					},
+					Children: []core.Node{core.View{Style: core.Style{Width: driver.Pt(1000), Height: driver.Pt(100)}}},
+				},
+			},
+		}
+	}
+	hwnd := startApp(t, "nsgo-precise-scroll", app, 300, 340)
+	var ts *testSurface
+	onMain(t, hwnd, func(w *window) { ts = &testSurface{w: w} })
+	ts.Sync()
+
+	// TouchpadScroll passes negated content deltas as the offset delta.
+	if err := ts.Scroll(driver.Point{X: 100, Y: 50}, driver.Point{X: -40, Y: -60}); err != nil {
+		t.Fatal(err)
+	}
+	ts.Sync()
+
+	mu.Lock()
+	gotWheel := append([]core.WheelEvent(nil), wheelEvents...)
+	mu.Unlock()
+	if len(gotWheel) < 3 {
+		t.Fatalf("got %d wheel events, want GestureBegan, GestureChanged..., GestureEnded: %+v", len(gotWheel), gotWheel)
+	}
+	if gotWheel[0].Phase != core.GestureBegan || !gotWheel[0].Touchpad || gotWheel[0].Delta != (core.Point{}) {
+		t.Fatalf("first wheel event = %+v, want GestureBegan Touchpad:true zero delta", gotWheel[0])
+	}
+	last := gotWheel[len(gotWheel)-1]
+	if last.Phase != core.GestureEnded || !last.Touchpad || last.Delta != (core.Point{}) {
+		t.Fatalf("last wheel event = %+v, want GestureEnded Touchpad:true zero delta", last)
+	}
+	var moved core.Point
+	for i, ev := range gotWheel[1 : len(gotWheel)-1] {
+		if ev.Phase != core.GestureChanged || !ev.Touchpad {
+			t.Fatalf("middle wheel event[%d] = %+v, want GestureChanged Touchpad:true", i, ev)
+		}
+		moved.X += ev.Delta.X
+		moved.Y += ev.Delta.Y
+	}
+	if math.Abs(float64(moved.X-40)) > 0.5 || math.Abs(float64(moved.Y-60)) > 0.5 {
+		t.Fatalf("OnWheel moved %v, want {40 60}", moved)
+	}
+
+	if err := ts.Scroll(driver.Point{X: 100, Y: 160}, driver.Point{Y: 80}); err != nil {
+		t.Fatal(err)
+	}
+	ts.Sync()
+	mu.Lock()
+	gotV := vOffset
+	mu.Unlock()
+	if math.Abs(float64(gotV.Y-80)) > 0.5 {
+		t.Fatalf("vertical scroll offset = %v, want Y 80", gotV)
+	}
+
+	if err := ts.Scroll(driver.Point{X: 100, Y: 270}, driver.Point{X: 75}); err != nil {
+		t.Fatal(err)
+	}
+	ts.Sync()
+	mu.Lock()
+	gotH := hOffset
+	mu.Unlock()
+	if math.Abs(float64(gotH.X-75)) > 0.5 {
+		t.Fatalf("horizontal scroll offset = %v, want X 75", gotH)
 	}
 }
