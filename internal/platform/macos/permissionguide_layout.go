@@ -30,6 +30,7 @@ var privacyAnchors = map[string]string{
 	driver.PermissionMediaLibrary:       "Privacy_Media",
 	driver.PermissionLocation:           "Privacy_LocationServices",
 	driver.PermissionBackgroundLocation: "Privacy_LocationServices",
+	driver.PermissionMotion:             "Privacy_Motion",
 }
 
 // privacySettingsURL is the URL of the pane that gives the permission name, "" for none.

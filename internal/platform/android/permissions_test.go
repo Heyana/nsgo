@@ -96,6 +96,8 @@ func TestPermissionsJava(t *testing.T) {
 		{"reminders unavailable", 13, driver.PermissionRequest{Command: driver.PermissionCheck, Name: driver.PermissionReminders}, driver.PermissionUnavailable, false},
 		{"open settings camera", 14, driver.PermissionRequest{Command: driver.PermissionOpenSettings, Name: driver.PermissionCamera}, 0, true},
 		{"open settings location", 15, driver.PermissionRequest{Command: driver.PermissionOpenSettings, Name: driver.PermissionLocation}, 0, true},
+		{"open settings background location", 17, driver.PermissionRequest{Command: driver.PermissionOpenSettings, Name: driver.PermissionBackgroundLocation}, 0, true},
+		{"open settings motion", 18, driver.PermissionRequest{Command: driver.PermissionOpenSettings, Name: driver.PermissionMotion}, 0, true},
 		{"open settings unsupported", 16, driver.PermissionRequest{Command: driver.PermissionOpenSettings, Name: driver.PermissionAccessibility}, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

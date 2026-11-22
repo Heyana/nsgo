@@ -66,7 +66,6 @@ NSGo's own, for [#56](https://github.com/nsgo-dev/nsgo/issues/56) ([location and
 | Location on Macs and TVs | `CLLocationManager`, [#1403](https://github.com/nsgo-dev/nsgo/issues/1403) | A notarized macOS build and a Mac App Store build get fixes, with the location entitlement `nsgo build` claims, and a tvOS app a one-shot fix, its streams reporting unavailable; so far a macOS build wrote `UIBackgroundModes` as an array, read location as not asked without a prompt, failed a fix without it as not allowed and answered motion unavailable (2026-11-16) |
 | Location elsewhere | Geolocation API, `Windows.Devices.Geolocation`, GeoClue, [#1404](https://github.com/nsgo-dev/nsgo/issues/1404) | The web, Windows and Linux give location fixes |
 | Motion in mobile browsers | `DeviceMotionEvent`, [#1208](https://github.com/nsgo-dev/nsgo/issues/1208) | Safari on an iPhone and Chrome on Android report natural-axis motion, with permission and lifecycle verified on devices |
-| The sensors' settings | `UIApplicationOpenSettingsURLString`, `Privacy_LocationServices`, [#1405](https://github.com/nsgo-dev/nsgo/issues/1405) | `OpenPermissionSettings` opens location's and motion's settings on macOS too, where iOS and Android open the app's page now |
 | More sensor services | `CLMonitor`, `CMPedometer`, `TYPE_STEP_COUNTER`, `CMAltimeter`, [#1406](https://github.com/nsgo-dev/nsgo/issues/1406) | Geofencing, steps, activity recognition, the barometer, a temporary precise-location request and bounded background motion get scoped APIs of their own |
 
 ## Bluetooth

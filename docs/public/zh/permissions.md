@@ -65,6 +65,8 @@ windows:
 
 `cx.OpenPermissionSettings` 打开授予某项权限的页面，并回答是否打开：macOS 上是“隐私与安全性”中该权限的面板（包括自动化、通讯录、照片和定位服务）或“通知”，iOS 上是“设置”中本应用的页面（通知从 iOS 16 起直接打开通知设置页），Android 上是“设置”中本应用的页面，Windows 上是麦克风、相机或通知的页面。
 
+对于 `PermissionLocation` 和 `PermissionBackgroundLocation`，macOS 打开“定位服务”；`PermissionMotion` 打开“运动与健身”，但 macOS 尚不提供运动采样。iOS 和 Android 对这三项权限都打开本应用的设置页面。打开设置不会请求或授予权限。
+
 ## 引导用户
 
 `desktop.GuidePermission` 打开该页面并等待用户授予权限。在 macOS 上，一个面板跟随系统设置的窗口且不抢焦点；对于列表接受拖入应用的面板，它会展示应用，让用户把应用拖进列表。应用获得权限、用户关闭面板或系统设置、调用 `stop` 或组件销毁时，引导结束，回调收到当时的状态；新的引导会结束之前的引导。

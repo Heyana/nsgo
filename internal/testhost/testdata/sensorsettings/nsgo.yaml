@@ -1,0 +1,7 @@
+name: SensorSettings
+id: dev.nsgo.test.sensorsettings1405
+version: 0.1.0
+updates:
+  channel: none
+build:
+  installers: false

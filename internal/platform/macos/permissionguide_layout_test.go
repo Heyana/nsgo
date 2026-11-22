@@ -59,6 +59,25 @@ func TestPrivacyPanes(t *testing.T) {
 	}
 }
 
+// Sensor panes stay navigable even when the sensor provider is unavailable.
+func TestSensorPrivacyPanes(t *testing.T) {
+	for _, tc := range []struct{ name, anchor string }{
+		{driver.PermissionLocation, "Privacy_LocationServices"},
+		{driver.PermissionBackgroundLocation, "Privacy_LocationServices"},
+		{driver.PermissionMotion, "Privacy_Motion"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want := "x-apple.systempreferences:com.apple.preference.security?" + tc.anchor
+			if got := privacySettingsURL(tc.name); got != want {
+				t.Fatalf("pane = %q, want %q", got, want)
+			}
+			if takesDrag(tc.name) {
+				t.Error("sensor pane must list apps that requested access, without a drag")
+			}
+		})
+	}
+}
+
 func TestSplitRuns(t *testing.T) {
 	app, permission := runMarker{guideAppMarker, "Notes"}, runMarker{guidePermissionMarker, "Accessibility"}
 	got := splitRuns("Drag "+guideAppMarker+" to the list above to allow "+guidePermissionMarker+".", app, permission)
