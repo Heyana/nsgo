@@ -294,6 +294,9 @@ func androidGhosttyFile(dir, goarch, abi string) (apk.File, error) {
 // links base/terminal. Android's loader searches the APK's ABI directory, so
 // the library is a sibling of libnsgo.so rather than a Go-embedded payload.
 func androidGhosttyLibrary(ctx context.Context, p *project, goarch, abi string) (apk.File, error) {
+	if goarch != "arm64" {
+		return apk.File{}, nil
+	}
 	dir, err := linkedDir(ctx, p, []string{"GOOS=android", "GOARCH=" + goarch, "CGO_ENABLED=0"}, ghosttyPackage)
 	if err != nil {
 		return apk.File{}, err
