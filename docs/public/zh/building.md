@@ -74,6 +74,7 @@ build:
 # apple: { info: { UIBackgroundModes: [audio] } }  # iOS 画中画的后台播放模式
 # android: { permissions: [REQUEST_INSTALL_PACKAGES] }  # 运行时所需之外的清单权限
 # android: { recording: true }  # microphone.RecordWAV 录音所用的麦克风服务，连同 RECORD_AUDIO、前台服务权限和 POST_NOTIFICATIONS；从 Android 13 起 RecordWAV 会一并申请后者以显示录音通知，用户拒绝时照常录音
+# android: { background_downloads: true }  # cx.Download 使用的 dataSync 前台服务
 # android: { loopback_cleartext: true }  # 允许 APK 和 App Bundle 通过明文 HTTP 访问回环地址
 # windows: { command_line: true }  # 添加 <name>.com 控制台伴侣，把参数和标准流转给 <name>.exe；store 构建不含
 # windows: { publisher: Example Ltd }  # Windows 可执行文件的详细信息、安装程序和卸载项显示的发布者；省略时为 windows.store.publisher_name

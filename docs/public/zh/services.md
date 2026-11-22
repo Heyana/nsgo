@@ -247,6 +247,38 @@ Android 使用 `NsdManager`。在 Android 12 及更早版本以及低于 T Exten
 
 可用 `nsgotest.LocalServices` 为无头测试提供浏览结果。
 
+## 后台下载
+
+在独立的 iOS、macOS 应用及 Android 上使用 `cx.Download` 和 `cx.OnDownloadUpdate`。嵌入式 Apple 视图尚无传输宿主。Android 应用需在 `nsgo.yaml` 中启用 `android.background_downloads: true`。应用可见时，通过用户操作启动下载。目标路径必须是绝对路径，且父目录已存在并可由应用写入。
+
+```go
+cx.OnDownloadUpdate(func(p core.DownloadProgress) {
+    progress.Set(p)
+})
+task, err := cx.Download(core.DownloadRequest{URL: url}, path, core.DownloadOptions{
+    CertificatePEM: serverCertificate,
+})
+```
+
+下载使用 GET，可附加请求头。HTTPS 默认信任系统证书。填写 `CertificatePEM` 可以固定服务端的叶证书，并继续检查主机名和证书有效期。请传入最终 URL，以便直接取得成功响应。
+
+在 Apple 平台上，公共主机名使用自签名证书时，需要在 `apple.info` 中为该主机配置 App Transport Security 例外。传输仍会验证证书固定值、主机名和有效期。连接本地 NAS 时，还应通过 `NSLocalNetworkUsageDescription` 说明用途，无限定主机名或 `.local` 主机使用 `NSAllowsLocalNetworking`。[Apple 的 ATS 配置](https://developer.apple.com/documentation/security/preventing-insecure-network-connections)
+
+```yaml
+apple:
+  info:
+    NSAppTransportSecurity:
+      NSExceptionDomains:
+        files.example.com:
+          NSExceptionAllowsInsecureHTTPLoads: true
+```
+
+Android 前台服务在界面退出前台后继续下载，并在获得通知权限时显示进度。进度以字节计，未知总长度时 `Total` 为 -1。下载成功后原子替换目标文件。`task.Pause()` 保留分片文件，服务器提供校验标识时 `task.Resume()` 使用 HTTP Range 续传，`task.Cancel()` 删除分片文件。
+
+iOS 使用系统的后台 URLSession，在应用挂起时继续传输。应用启动时重新连接该会话，并在确认后台处理结束前发布文件。macOS 的传输在进程内运行。Apple 平台使用原生续传数据暂停和恢复下载，并将请求元数据保存在应用私有存储中，直到终态写入完成。不支持续传的服务器会从头开始传输。
+
+启动应用后重新注册 `OnDownloadUpdate`，即可查看活动任务和保存的结果。处理完终态后调用 `p.Task.Forget()`。Android 停止下载服务时（例如前台传输超时），任务报告 `DownloadInterrupted`。在 Windows、Linux、tvOS、watchOS 和 Web 上，`Download` 返回 `ErrDownloadUnavailable`。
+
 ## 语音与生命周期
 
 `cx.StartSpeech` 在 `cx.Env().CanRecognizeSpeech()` 为真时用系统识别器识别语音，并随着转写结果变化返回文本。在无头测试中，识别期间 `app.Speech` 保存一个 `nsgotest.SpeechSession`。使用 `app.HearSpeech` 和 `app.EndSpeech` 交付结果。

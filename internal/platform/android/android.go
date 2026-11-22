@@ -141,6 +141,8 @@ const (
 	msgAudioReport = 33
 	// msgGameServicesReport is what the runtime's Play Games Services hook reports, JSON (driver.ReportGameServices).
 	msgGameServicesReport = 31
+	// msgDownloadReport is a background download's progress or result, JSON (driver.ReportDownload).
+	msgDownloadReport = 36
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
@@ -157,6 +159,8 @@ const (
 	extDiscovery = 10
 	// extSurfaceReset tells Java that a full native tree of the surface's attachment generation follows: surface ID and generation (overlay.go, ViewAttachment.java).
 	extSurfaceReset = 11
+	// extDownload carries a process-wide background download command as JSON, which NsgoEngine hands to BackgroundDownloadService.
+	extDownload = 5
 )
 
 // The parts of an image view's request msgImage carries.
@@ -309,6 +313,15 @@ func connect(opts Options) *surface {
 		if errors.Is(err, errNoExtendedMessages) {
 			driver.ReportGameServices(gameServicesUnavailable(msg))
 		}
+	})
+	driver.ConnectDownloads(func(command driver.DownloadCommand) error {
+		msg, _ := json.Marshal(command)
+		err := s.sendExtended(extDownload, func(w *writer) { w.buf = append(w.buf, msg...) })
+		if errors.Is(err, errNoExtendedMessages) {
+			// A runtime built before extended messages has no background download service.
+			return driver.ErrDownloadUnavailable
+		}
+		return err
 	})
 	return s
 }
@@ -478,6 +491,11 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			time.Local = readTimeZone(&r)
 		case msgRecordingReport:
 			driver.ReportRecording(slices.Clone(payload))
+		case msgDownloadReport:
+			var progress driver.DownloadProgress
+			if err := json.Unmarshal(payload, &progress); err == nil {
+				driver.ReportDownload(progress)
+			}
 		case msgCanvasRequest:
 			s.canvasRequest(&r)
 		case msgCookiesSet:

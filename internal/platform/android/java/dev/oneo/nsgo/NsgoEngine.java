@@ -15,6 +15,7 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.Arrays;
 import java.util.TimeZone;
 
 /**
@@ -171,6 +172,7 @@ public final class NsgoEngine {
         Listener idle;
         // Its recording's file is finished, for the next process to hear of.
         RecordingService.ownerEnded(this);
+        BackgroundDownloadService.ownerEnded(this);
         synchronized (this) {
             if (closed) return;
             closed = true;
@@ -195,6 +197,10 @@ public final class NsgoEngine {
         IOException failure = null;
         try (DataInputStream in = new DataInputStream(new BufferedInputStream(running.getInputStream()))) {
             for (Protocol.Message message; (message = Protocol.readMessage(in)) != null; ) {
+                if (message.kind == Protocol.EXTENDED && (message.payload[0] & 0xff) == Protocol.EXT_DOWNLOAD) {
+                    BackgroundDownloadService.message(application, this, Arrays.copyOfRange(message.payload, 1, message.payload.length));
+                    continue;
+                }
                 Listener current;
                 synchronized (this) {
                     current = listener;
@@ -208,6 +214,7 @@ public final class NsgoEngine {
         // A corrupt pipe cannot be resynchronized; do not leave its writer running.
         if (failure != null) destroy();
         RecordingService.ownerEnded(this);
+        BackgroundDownloadService.ownerEnded(this);
         Listener current;
         synchronized (this) {
             current = listener;

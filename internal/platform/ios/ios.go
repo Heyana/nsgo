@@ -469,6 +469,7 @@ func loadUIKit() {
 				// Before it returns, so a press that launched the app is
 				// heard.
 				apple.WatchNotifications()
+				configureDownloads()
 				return true
 			}},
 			// iOS ends the app, as the user swipes it away while it runs:
@@ -481,6 +482,11 @@ func loadUIKit() {
 			}},
 			{Cmd: sel("application:didDiscardSceneSessions:"), Fn: func(self objc.ID, _ objc.SEL, application, sessions objc.ID) {
 				apple.ForEach(sessions, func(session objc.ID) { discardScene(sessionID(session)) })
+			}},
+			{Cmd: sel("application:handleEventsForBackgroundURLSession:completionHandler:"), Fn: func(_ objc.ID, _ objc.SEL, _, identifier, completion objc.ID) {
+				if !apple.HandleDownloadEvents(apple.GoString(identifier), completion) {
+					apple.CallBlock(completion)
+				}
 			}},
 			{Cmd: sel("buildMenuWithBuilder:"), Fn: buildKeyMenus},
 		})

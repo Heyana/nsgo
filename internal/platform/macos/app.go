@@ -46,6 +46,11 @@ func startOwn(app engine.App, opts Options) *surface {
 			Material: opts.Material, Constraints: opts.Constraints, Transparent: opts.Transparent, NoShadow: opts.NoShadow,
 			SkipTaskbar: opts.SkipTaskbar, Hidden: opts.Hidden}}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
+	downloadDir := eopts.DataDir
+	if opts.Host.DataDir != "" {
+		downloadDir = opts.Host.DataDir
+	}
+	apple.ConfigureDownloads(downloadDir, opts.ID, false)
 	imageload.UseDiskCache(eopts.CacheDir)
 	s.engine = engine.Start(s, app, eopts)
 	s.reportFrameWindow(s.env)

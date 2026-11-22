@@ -250,6 +250,38 @@ Android uses `NsdManager`. Android 12 and earlier and Android 13 before T Extens
 
 Use `nsgotest.LocalServices` to supply browse results in a headless test.
 
+## Background downloads
+
+Use `cx.Download` and `cx.OnDownloadUpdate` in standalone iOS and macOS apps, and on Android. Embedded Apple views have no transfer host. Android apps enable `android.background_downloads: true` in `nsgo.yaml`. Start a download from a user action while the app is visible. Use an absolute destination with an existing parent directory the app can write.
+
+```go
+cx.OnDownloadUpdate(func(p core.DownloadProgress) {
+    progress.Set(p)
+})
+task, err := cx.Download(core.DownloadRequest{URL: url}, path, core.DownloadOptions{
+    CertificatePEM: serverCertificate,
+})
+```
+
+The transfer uses GET and accepts optional request headers. It uses the normal HTTPS trust store unless `CertificatePEM` pins the server's leaf certificate. The pin also requires a matching hostname and a valid certificate. Use the final URL as the service requires a successful response from that URL.
+
+On Apple, a self-signed certificate at a public hostname needs an App Transport Security exception for that host in `apple.info`. The transfer still checks its exact certificate pin, hostname and validity. A local NAS connection also needs an `NSLocalNetworkUsageDescription` explaining access, and unqualified or `.local` hosts use `NSAllowsLocalNetworking`. [Apple's ATS settings](https://developer.apple.com/documentation/security/preventing-insecure-network-connections)
+
+```yaml
+apple:
+  info:
+    NSAppTransportSecurity:
+      NSExceptionDomains:
+        files.example.com:
+          NSExceptionAllowsInsecureHTTPLoads: true
+```
+
+The Android foreground service continues after the activity leaves the screen. It posts a progress notification, subject to Android's notification permission. Progress uses byte counts and sets `Total` to -1 until known. Success atomically replaces the destination. `task.Pause()` keeps the partial file, `task.Resume()` uses an HTTP range when the server supplies a validator, and `task.Cancel()` removes the partial file.
+
+iOS uses a system background URLSession that continues transfers while the app is suspended. The app reconnects its session on launch and publishes files before acknowledging background completion. macOS transfers run in process. Apple platforms use native resume data for paused downloads and keep request metadata in private app storage until a terminal result is saved. A server that cannot resume starts the transfer again.
+
+Register `OnDownloadUpdate` again when the app starts to see active tasks and saved results. Use `p.Task.Forget()` after handling a final result. Android can stop the service, for example when its foreground transfer time expires. The app then receives `DownloadInterrupted`. On Windows, Linux, tvOS, watchOS and the web, `Download` returns `ErrDownloadUnavailable`.
+
 ## Speech and the lifecycle
 
 `cx.StartSpeech` recognizes speech with the system's recognizer where `cx.Env().CanRecognizeSpeech()` says it exists, and answers with the transcript as it changes. In a headless test, `app.Speech` holds a `nsgotest.SpeechSession` while recognition is active. Use `app.HearSpeech` and `app.EndSpeech` to deliver results.

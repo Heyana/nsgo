@@ -203,6 +203,8 @@ type project struct {
 		Classes []string `yaml:"classes"`
 		// ShareTypes are the MIME types the launcher accepts from the sharesheet.
 		ShareTypes []string `yaml:"share_types"`
+		// BackgroundDownloads declares the runtime's dataSync download service.
+		BackgroundDownloads bool `yaml:"background_downloads"`
 		// LoopbackCleartext allows HTTP to loopback in standalone packages.
 		LoopbackCleartext bool `yaml:"loopback_cleartext"`
 		// UsesCleartextTraffic allows plain HTTP to any host in standalone packages.

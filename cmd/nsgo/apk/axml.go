@@ -51,6 +51,8 @@ type Manifest struct {
 	Overlay bool
 	// Recording declares the runtime's RecordingService, the microphone foreground service microphone.RecordWAV records in, with the permissions it needs. An app without it declares no such service, as Google Play asks an app to justify each foreground-service type its manifest has.
 	Recording bool
+	// BackgroundDownloads declares the runtime's dataSync transfer service.
+	BackgroundDownloads bool
 	// Location declares the runtime's LocationService, the location foreground service a background location stream runs in (core.LocationOptions.Background), for an app whose Permissions name FOREGROUND_SERVICE_LOCATION; an app without it declares no such service, which Google Play would ask it to justify.
 	Location bool
 	// Libraries are the shared libraries of the device the app uses where it has them, by name, as uses-library elements that do not require them.
@@ -347,6 +349,10 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 	if m.Recording {
 		perms = append(slices.Clip(perms), recordingPermissions...)
 	}
+	if m.BackgroundDownloads {
+		perms = append(slices.Clip(perms), "android.permission.FOREGROUND_SERVICE",
+			"android.permission.FOREGROUND_SERVICE_DATA_SYNC", "android.permission.POST_NOTIFICATIONS")
+	}
 	for _, perm := range perms {
 		if err := validPermission(perm); err != nil {
 			return nil, err
@@ -361,6 +367,9 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 	}
 	if m.Recording {
 		app.kids = append(app.kids, foregroundService(RecordingService, "microphone"))
+	}
+	if m.BackgroundDownloads {
+		app.kids = append(app.kids, foregroundService("dev.oneo.nsgo.BackgroundDownloadService", "dataSync"))
 	}
 	if m.Location {
 		app.kids = append(app.kids, foregroundService(LocationService, "location"))

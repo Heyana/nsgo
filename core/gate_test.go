@@ -88,6 +88,7 @@ var gated = map[string]service{
 // exempt are the exported Scope methods that do not ask gate, by why.
 var exempt = map[string][]string{
 	"document metadata is ignored without a browser head capability and is refused to confined owners": {"BindWebHead"},
+	"app-wide downloads are held to unrestricted owners":                                               {"Download", "OnDownloadUpdate"},
 	"the graph, its scopes and what they read": {"Child", "Dispose", "Abort", "Disposed", "HasTree", "Cleanup", "Context", "Post", "AfterFunc",
 		"Untrack", "PauseTracking", "Batch", "Effect", "RenderEffect", "Run", "Env", "Theme", "Dark", "Palette", "Now",
 		"WallTime", "KeyLabel", "Present", "OnExit", "CurrentWindow", "MainWindow", "Quitting", "Hiding", "LaunchAtLogin", "OnNetworkChange"},

@@ -616,6 +616,36 @@ func TestEncodeManifestRecording(t *testing.T) {
 	}
 }
 
+func TestEncodeManifestBackgroundDownloads(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		m := Manifest{Package: "dev.oneo.nsgo.test", BackgroundDownloads: enabled}
+		data, err := EncodeManifest(androidruntime.Manifest, m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		root := decodeXML(t, data).root
+		const permission = "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+		const service = "dev.oneo.nsgo.BackgroundDownloadService"
+		count := 0
+		for _, kid := range root.kids {
+			if kid.name == "uses-permission" && kid.string(t, "name") == permission {
+				count++
+			}
+		}
+		for _, kid := range root.child(t, "application").kids {
+			if kid.name == "service" && kid.string(t, "name") == service {
+				count++
+				if kid.value(t, "exported") != 0 || kid.value(t, "foregroundServiceType") != 1 {
+					t.Fatal("the download service must be private and use dataSync")
+				}
+			}
+		}
+		if enabled && count != 2 || !enabled && count != 0 {
+			t.Fatalf("enabled=%t, manifest has %d download declarations", enabled, count)
+		}
+	}
+}
+
 // TestEncodeManifestServices checks that an app that records and shows overlays declares both services, each of its own type, and asks once for the foreground-service permission they share.
 func TestEncodeManifestServices(t *testing.T) {
 	data, err := EncodeManifest(androidruntime.Manifest, Manifest{

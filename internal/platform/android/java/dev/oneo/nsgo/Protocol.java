@@ -67,6 +67,8 @@ final class Protocol {
                 return true;
             case EXT_GAME_SERVICES:
                 return true;
+            case EXT_DOWNLOAD:
+                return true;
             default:
                 return false;
         }
@@ -102,6 +104,7 @@ final class Protocol {
     static final int SCAN = 21;
     /** A bitmap of the next batch: item index, key, width, height and premultiplied RGBA bytes. */
     static final int PIXEL_FRAME = 22;
+
     /** The requesting surface, the request's count and the app's data directory. */
     static final int DISK_SPACE = 23;
 
@@ -141,6 +144,8 @@ final class Protocol {
     static final int CAP_FETCH_TO_FILE = 64;
     /** Sets the surface's preferred frame rate: its ID and a float in Hz. */
     static final int EXT_FRAME_RATE = 1;
+    /** A process-wide background download command, JSON, which NsgoEngine hands to BackgroundDownloadService. */
+    static final int EXT_DOWNLOAD = 5;
 
     /** Reads a bundled file: its request ID and the path under assets/. */
     static final int EXT_ASSET_READ = 9;
@@ -177,6 +182,7 @@ final class Protocol {
     static final int CANVAS_REQUEST = 22;
     /** What the code scanner reports: the surface, the request's count and a SCAN_FRAME with the frame's width, height and luminance, a SCAN_CLOSED, or a SCAN_FAILED with why (scan.go). */
     static final int SCAN_REPORT = 23;
+    static final int DOWNLOAD_REPORT = 36;
 
     /** Game controller connect, disconnect or button/axis state (gamepad.go, Gamepads). */
     static final int GAMEPAD = 24;
