@@ -26,14 +26,14 @@ NSH's `nsh/updater` downloads, verifies and swaps in the next version itself. NS
 
 | Managed | Copies |
 | --- | --- |
-| `ManagedSelf` | Direct macOS, Windows and Android builds; Linux where dpkg owns the executable |
-| `ManagedPage` | iOS App Store builds; direct Linux copies outside the Debian package, including AppImages, tarballs and Arch installs |
+| `ManagedSelf` | Direct macOS, Windows and Android builds; Linux where dpkg or pacman owns the executable, or it runs from an AppImage |
+| `ManagedPage` | iOS App Store builds; direct Linux copies outside Debian, Arch and AppImage installs |
 | `ManagedDevelopment` | `nsgo dev`, `nsgo test` and plain Go builds |
 | `ManagedChannel` | `none`, Steam, and non-iOS `store` builds |
 | `ManagedStore` | Android store installers, Flatpak, Snap and TestFlight; `Store` names them |
 | `ManagedUnavailable` | Targets with no updater, or a configured native updater that failed to load |
 
-Linux probes package ownership once at launch, before the first feed request, against the Debian package its generated appcast offers. An ownership probe that fails or exceeds two seconds gives the release's page.
+Linux resolves Debian or Arch package ownership, or the running AppImage, once at launch before the first feed request. A copy outside those formats, or a failed or timed-out ownership probe, gives the release's page.
 
 `updater.Status(cx)` is a tracked read of `Capability`, `AutomaticChecks`, `AutomaticDownloads`, `Available`, `Notes` and `LastCheck`, and of an in-app update's `Phase`, `Loaded` and `Total` on Linux and Android, which the core keeps across the platform's reports. It tracks native found/not-found notifications, check times and preferences across windows. Sparkle supplies version metadata through its delegate. WinSparkle's public callbacks carry no version, so a found callback reads the configured appcast for status metadata; WinSparkle alone chooses and installs its update. A failed metadata read retains the last successful metadata.
 
@@ -92,6 +92,7 @@ Linux cannot tell a distribution's package from a downloaded one, so its package
 - WinSparkle on Windows 11 x64 offered 0.2.0, verified the download, ran the setup with `/S /RELAUNCH` and started 0.2.0 (2026-11-11).
 - WinSparkle on an English Windows 11 x64 spoke the language an app forced as it mounted: Simplified and Traditional Chinese, Brazilian Portuguese and Japanese (2026-11-16). wxWidgets matches the language set only in lower case (`zh_cn`), which `TestWinSparkleLanguage` keeps.
 - Linux under Wayland offered 0.2.0 in `updater`'s alert as the app started, and with `SNAP` set asked nothing. iOS's check reaches the App Store from the simulator, and a development build on an iPhone, whose receipt is `sandboxReceipt`, checked nothing.
-- Android's emulators, API 29 and 34, checked an APK installed by adb or the package installer and left one installed as Google Play's alone; Android refuses cleartext, so an appcast has not been read there.
+- Android emulators on API 29 and 34 checked an APK installed by adb or the package installer and left one installed as Google Play's alone. On API 35 ARM64, a release fixture read an HTTPS appcast, showed live download progress while its APK grew on disk, and updated from 1.0.0 to 1.0.1 through the real package installer after native confirmation (2026-11-23).
 - Headless tests cover installing on Linux and Android: only signed packages are offered, multi-item Linux appcasts list `.deb`, `.pkg.tar.gz` and `.AppImage`, downloads stream to disk with progress reported via `updater.Status` and `SetTaskProgress` and clean up partial files on cancellation or bad SHA-256/Ed25519 signatures, Linux detects Debian, Arch (`.pkg.tar.gz`/`.pkg.tar.zst`) and AppImage installs, constructs `pkexec` commands and atomically replaces AppImages with executable bits and rollback on error, Android hands the APK to its installer, a failure offers the page, the install finishes after the scope that offered it is disposed, one runs at a time, and staged packages are removed. A native Linux fixture drove the install request through the engine with a fake `pkexec`, checking dpkg and pacman arguments, success, failure and cancelled authentication. Linux on the Steam channel and Chromium returned an unavailable service.
-- Not run yet: a Developer ID or notarized macOS update, Windows on arm64, a Flatpak, a TestFlight build, Android reading an `https` appcast and installing the APK it names, and a Linux update that replaces the installed package and restarts the app.
+- An installed Debian release fixture under an owned X display confirmed its native update prompt, streamed the signed 1.0.1 package to disk, installed it through real `pkexec dpkg` and restarted into a new process with the new version; the staged package was removed (2026-11-23). The fixture ran as root, so this does not verify a non-root Polkit authentication prompt.
+- Not run yet: a Developer ID or notarized macOS update, Windows on arm64, a Flatpak, a TestFlight build, native pacman/AppImage update-and-relaunch flows, or a physical Android phone. The opt-in `internal/testhost/testdata/installedupdates` fixture supports installed-package acceptance without replacing NSGo's updater or HTTP client.

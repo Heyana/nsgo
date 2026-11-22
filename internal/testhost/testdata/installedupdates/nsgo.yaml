@@ -1,0 +1,12 @@
+name: NSGoUpdate1420
+id: dev.nsgo.test.installedupdates1420
+version: 1.0.0
+updates:
+  channel: none
+linux:
+  summary: Isolated installed update verification
+  description: A fixture for native signed package update acceptance
+  license: MIT
+build:
+  targets: [linux_x64, android_arm64]
+  open: false
