@@ -82,6 +82,8 @@ In headless Linux and Android tests, read `app.Installs` and set `app.InstallPac
 
 Use `desktop.RequestRestart` when an app restart must honor its `OnQuitRequest` cancellation or deferred save. Headless tests can inspect `app.Restarts` after answering the handler. [Lifecycle](https://nsgo.dev/docs/services.md#lifecycle)
 
+Use `app.Play` with `core.VideoInfo.RateChangeable` set explicitly to test both a video's adjustable-speed controls and its fixed-speed fallback. [Media reports](https://nsgo.dev/docs/testing.md#media-reports)
+
 ## On a platform
 
 Cleanup closes native context menus left open by an app, including between subtests in one process.

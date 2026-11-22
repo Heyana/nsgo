@@ -405,13 +405,14 @@ func (a *App) Load(selector string, pixels driver.Size) {
 }
 
 // Play reports that the video selector matches opened and loaded
-// info, as a platform does: it starts loading, then loads.
+// info, including its rate capability, as a platform does: it starts loading,
+// then loads.
 func (a *App) Play(selector string, info core.VideoInfo) {
 	a.t.Helper()
 	v := a.Find(selector)
 	for _, k := range []driver.EventKind{driver.EventLoadStart, driver.EventLoad} {
 		if v.Events.Has(k) {
-			a.dispatch(driver.Event{Kind: k, ID: v.ID, Duration: info.Duration, Size: info.Size})
+			a.dispatch(driver.Event{Kind: k, ID: v.ID, Duration: info.Duration, Size: info.Size, RateChangeable: info.RateChangeable})
 		}
 	}
 }
