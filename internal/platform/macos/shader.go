@@ -66,7 +66,7 @@ func (s *surface) shadeLater(v *view) {
 // those waiting to draw.
 func (s *surface) drawShaders() {
 	s.animator.ChangedShaders(func(id driver.NodeID) {
-		if int(id) < len(s.views) && s.views[id] != nil && s.views[id].fx == nil {
+		if int(id) < len(s.views) && s.views[id] != nil && s.effects.Get(s.views[id]) == nil {
 			s.views[id].redraw()
 		}
 	})

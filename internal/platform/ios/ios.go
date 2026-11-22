@@ -87,7 +87,6 @@ type view struct {
 	drawing    *driver.Drawing    // a canvas's
 	played     []driver.DrawOp    // the ops it last drew, its bound arguments' values in place
 	shader     *apple.ShaderLayer // a shader view's (shader.go)
-	fx         *apple.Effect      // its effect, transition or navigation shader (effect.go)
 	container  objc.ID            // what holds its children under an effect or for its clip, once it has one
 	clipHeld   bool               // whether container clips the children in place of the view's own layer, which keeps its shadow and outline (clipsInHolder)
 	web        *apple.Web         // a web view's
@@ -252,7 +251,7 @@ type surface struct {
 	// effects are the views with an effect, a transition or a navigation
 	// shader (effect.go); root is the root view's, which screen shaders
 	// draw over.
-	effects map[*view]bool
+	effects apple.Effects[*view]
 	root    driver.NodeID
 
 	selecting *selection
@@ -501,7 +500,7 @@ func Run(root engine.App, opts Options) {
 // newSurface is the surface the scene shows root in; a test host's has no
 // root until the test opens one.
 func newSurface(root engine.App, opts Options) *surface {
-	s := &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, tops: map[*view]*view{}, effects: map[*view]bool{}, slides: map[*view]*slide{}, appearance: opts.Appearance,
+	s := &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, tops: map[*view]*view{}, slides: map[*view]*slide{}, appearance: opts.Appearance,
 		components: opts.Components, unknown: map[string]bool{}, accessories: map[driver.NodeID]*view{}, ownTexts: map[driver.NodeID]*view{},
 		perfOn: opts.Perf}
 	if automationBuild {
@@ -1500,8 +1499,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemShaderTransition:
 			s.startTransition(v)
 		case driver.ItemShaderInput:
-			if v.fx != nil {
-				v.fx.Invalidate()
+			if fx := s.effects.Get(v); fx != nil {
+				fx.Invalidate()
 				s.shadeLater(v)
 			}
 		case driver.ItemScrollTo:

@@ -9,84 +9,41 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-func (s *surface) ensureEffect(v *view) *apple.Effect {
-	if v.fx == nil {
-		v.fx = apple.NewEffect(func() { s.shadeLater(v) })
-	}
-	return v.fx
-}
-
-func (s *surface) setEffect(v *view, sh *driver.Shader) {
-	if sh == nil || sh.Program == nil {
-		s.endEffect(v)
-		return
-	}
-	if s.ensureEffect(v).Set(sh, float64(s.env.PixelRatio), contentActions) {
-		s.animator.BindShader(v.id, sh.Nodes)
-		s.effects[v] = true
-		s.shadeLater(v)
-	}
-}
-
-func (s *surface) effectTarget(v *view) apple.EffectTarget {
+// effectHost binds the shared effect lifecycle to this backend's view type.
+// nsgo:allow-duplicate The native view type belongs to its backend; lifecycle bookkeeping lives in apple.Effects.
+func (s *surface) effectHost() apple.EffectHost[*view] {
 	var root *view
 	if int(s.root) < len(s.views) {
 		root = s.views[s.root]
 	}
-	target := apple.EffectTarget{
-		Scale: float64(s.env.PixelRatio),
-		Lanes: func(lanes []float64) { s.animator.ShaderLanes(v.id, lanes) },
+	return apple.EffectHost[*view]{
+		Root: root, Scale: float64(s.env.PixelRatio), Actions: contentActions,
+		Animator:  s.animator,
+		ID:        func(v *view) driver.NodeID { return v.id },
+		Native:    func(v *view) objc.ID { return v.native },
+		Container: s.container,
+		Current:   func(v *view) bool { return int(v.id) < len(s.views) && s.views[v.id] == v },
+		Ready:     s.shadeLater,
 	}
-	if root != nil {
-		target.Root = root.native
-	}
-	host := v
-	if v.fx.Covers() {
-		host = root
-	}
-	if host != nil {
-		target.View = host.native
-		target.Holder = func() objc.ID { return s.container(host) }
-	}
-	return target
+}
+
+func (s *surface) setEffect(v *view, sh *driver.Shader) {
+	s.effects.Set(v, sh, s.effectHost())
 }
 
 func (s *surface) startTransition(v *view) {
-	fx := s.ensureEffect(v)
-	fx.CaptureStart(s.effectTarget(v))
+	s.effects.CaptureStart(v, s.effectHost())
 }
 
-func (s *surface) drawEffects() {
-	for v := range s.effects {
-		if s.views[v.id] != v || v.fx == nil {
-			delete(s.effects, v)
-			continue
-		}
-		v.fx.Draw(s.effectTarget(v))
-	}
-}
+func (s *surface) drawEffects() { s.effects.Draw(s.effectHost()) }
 
-func (s *surface) staleEffects() {
-	for v := range s.effects {
-		if v.fx != nil {
-			v.fx.Invalidate()
-		}
-	}
-}
+func (s *surface) staleEffects() { s.effects.Invalidate() }
 
 func (s *surface) navigating(host *view) bool {
-	return host != nil && host.fx.Navigating()
+	return host != nil && s.effects.Get(host).Navigating()
 }
 
-func (s *surface) endEffect(v *view) {
-	if v.fx == nil {
-		return
-	}
-	fx := v.fx
-	v.fx = nil
-	delete(s.effects, v)
-	fx.Close()
-}
+func (s *surface) endEffect(v *view) { s.effects.End(v) }
 
 // container puts the host's managed children in their own view once.
 func (s *surface) container(host *view) objc.ID {

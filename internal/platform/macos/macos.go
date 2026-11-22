@@ -147,7 +147,6 @@ type view struct {
 	played    []driver.DrawOp       // the ops it last drew, its bound arguments' values in place
 	canvas    canvasPaint           // how it paints (content.go)
 	shader    *apple.ShaderLayer    // a shader view's (shader.go)
-	fx        *apple.Effect         // its effect, transition or navigation shader (effect.go)
 	web       *apple.Web            // a web view's
 	video     *apple.Video          // a video's
 
@@ -303,7 +302,7 @@ type surface struct {
 	shading []*view
 	// effects are the views with an effect, a transition or a navigation
 	// shader (effect.go).
-	effects map[*view]bool
+	effects apple.Effects[*view]
 
 	// The frame clock and what it animates.
 	animator *driver.Animator
@@ -932,7 +931,7 @@ var defaultLanguage string
 // host's view.
 func newSurface(opts Options, embedded bool) *surface {
 	s := &surface{epoch: time.Now(), motions: map[*view]*motion{}, movers: map[*view]struct{}{},
-		inside: map[*view]struct{}{}, effects: map[*view]bool{},
+		inside:     map[*view]struct{}{},
 		components: opts.Components, embedded: embedded, appearance: opts.Appearance, opts: opts}
 	s.appName = opts.Title
 	if automationBuild {
@@ -2398,8 +2397,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemShaderTransition:
 			s.startTransition(v)
 		case driver.ItemShaderInput:
-			if v.fx != nil {
-				v.fx.Invalidate()
+			if fx := s.effects.Get(v); fx != nil {
+				fx.Invalidate()
 				s.shadeLater(v)
 			}
 		case driver.ItemScrollTo:
