@@ -996,12 +996,7 @@ type Screen struct {
 	Title     string
 	TitleFunc func() string
 	Header    Node
-	// HeaderLeft, HeaderRight and HeaderTitle are views the system header
-	// shows at its start, at its end and in place of the title. HeaderLeft
-	// and HeaderRight take their content's size; HeaderTitle fills the room
-	// the bar leaves between its ends when its views grow or take a
-	// percentage width, and otherwise takes its content's size bounded by
-	// that room.
+	// HeaderLeft, HeaderRight and HeaderTitle are views the system header shows at its start, at its end and in place of the title. HeaderLeft and HeaderRight take their content's size; HeaderTitle fills the room the bar leaves between its ends when its views grow or take a percentage width, and otherwise takes its content's size bounded by that room.
 	HeaderLeft, HeaderRight, HeaderTitle Node
 	// IOS and Android hold what only their platform's header has.
 	IOS     IOSScreenProps

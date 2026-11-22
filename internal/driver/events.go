@@ -153,10 +153,7 @@ const (
 	// EventPaste is what the user pasted into an input (Data, a
 	// *PasteEvent), before the text it inserts is reported.
 	EventPaste
-	// EventScreenHeader is the height of a screen's system header bar
-	// (Value), its large title shown, as the platform measured it; the
-	// status bar above it is the core's to add. Size.Width, when positive,
-	// is the room the bar leaves for its TitleView between its ends.
+	// EventScreenHeader is the height of a screen's system header bar (Value), its large title shown, as the platform measured it; the status bar above it is the core's to add. Size.Width, when positive, is the room the bar leaves for its TitleView between its ends.
 	EventScreenHeader
 	// EventOpenURL answers ItemOpenURL Count with whether the URL opened
 	// (Finished).

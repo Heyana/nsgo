@@ -66,8 +66,7 @@ func TestReadEnvironmentReadsAndroidHeaderHeights(t *testing.T) {
 	}
 }
 
-// TestScreenItemEncodesTitleFills verifies that ItemScreen writes TitleFills
-// as bit 7 of the header flags byte so Header.java reads it accurately.
+// TestScreenItemEncodesTitleFills verifies that ItemScreen writes TitleFills as bit 7 of the header flags byte so Header.java reads it accurately.
 func TestScreenItemEncodesTitleFills(t *testing.T) {
 	for _, fills := range []bool{false, true} {
 		var w writer
@@ -118,11 +117,7 @@ func TestScreenItemEncodesTitleFills(t *testing.T) {
 	}
 }
 
-// TestHeaderJavaTitleFills compiles and runs Header.java on the JVM against
-// AOSP Toolbar measurement semantics: left and right ends are measured before
-// a filling titleView with MATCH_PARENT width, returning the exact remaining
-// room in points, while an intrinsic titleView keeps its content width and
-// toggling TitleFills restores its saved core width.
+// TestHeaderJavaTitleFills compiles and runs Header.java on the JVM against AOSP Toolbar measurement semantics: left and right ends are measured before a filling titleView with MATCH_PARENT width, returning the exact remaining room in points, while an intrinsic titleView keeps its content width and toggling TitleFills restores its saved core width.
 func TestHeaderJavaTitleFills(t *testing.T) {
 	encodeScreen := func(canGoBack bool, left, right, titleView int32, titleFills bool) []byte {
 		var buf bytes.Buffer

@@ -35,10 +35,7 @@ type navBar struct {
 	// collapsed: the large title went into the bar as the content
 	// scrolled under it.
 	collapsed bool
-	// fit is the bar's height as UIKit sizes it, reported the one last
-	// told to the engine; titleWidth is the room between the bar's ends
-	// last reported for TitleView, barWidth the width the bar last laid
-	// out at, and titleWrap the NsgoTitleView currently attached to item.
+	// fit is the bar's height as UIKit sizes it, reported the one last told to the engine; titleWidth is the room between the bar's ends last reported for TitleView, barWidth the width the bar last laid out at, and titleWrap the NsgoTitleView currently attached to item.
 	fit, reported, titleWidth driver.Points
 	barWidth                  float64
 	titleWrap                 objc.ID
@@ -439,8 +436,7 @@ func (s *surface) reportScreenInsets(v *view) {
 	s.engine.Dispatch(driver.Event{Kind: driver.EventScreenInsets, ID: v.id, Insets: got})
 }
 
-// reportTitleWidth tells the engine the width UIKit left for screen v's
-// TitleView between its bar's leading and trailing items.
+// reportTitleWidth tells the engine the width UIKit left for screen v's TitleView between its bar's leading and trailing items.
 func (s *surface) reportTitleWidth(v *view, width driver.Points) {
 	b := v.bar
 	if b == nil || b.config.HeaderHidden || width <= 0 || width == b.titleWidth {
@@ -642,10 +638,7 @@ func (s *surface) headerWrap(id driver.NodeID) objc.ID {
 	return v.headerWrap
 }
 
-// titleWrap returns the NsgoTitleView the navigation item holds for
-// screen's TitleView id. Auto Layout sizes it from intrinsicContentSize:
-// expanded across the room between the bar's ends when fills is set, or
-// at its content's size otherwise.
+// titleWrap returns the NsgoTitleView the navigation item holds for screen's TitleView id. Auto Layout sizes it from intrinsicContentSize: expanded across the room between the bar's ends when fills is set, or at its content's size otherwise.
 func (s *surface) titleWrap(screen *view, id driver.NodeID, fills bool) objc.ID {
 	if int(id) >= len(s.views) || s.views[id] == nil {
 		return 0

@@ -894,11 +894,7 @@ type ScreenConfig struct {
 	// Background, TitleColor and TintColor are the header's colors; 0
 	// keeps the platform's.
 	Background, TitleColor, TintColor Color
-	// Left, Right and TitleView are the header views, each a layout root
-	// that no view holds, or 0. Left and Right take their content's size;
-	// TitleView expands to fill the room between the bar's ends when
-	// TitleFills is set and otherwise takes its content's size bounded by
-	// that room.
+	// Left, Right and TitleView are the header views, each a layout root that no view holds, or 0. Left and Right take their content's size; TitleView expands to fill the room between the bar's ends when TitleFills is set and otherwise takes its content's size bounded by that room.
 	Left, Right, TitleView NodeID
 	TitleFills             bool
 	// Header is the screen's own header, which a platform without a

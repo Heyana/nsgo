@@ -177,9 +177,7 @@ final class Header {
         boolean back = canGoBack && !backHidden;
         toolbar.setNavigationIcon(back ? arrow : null);
         toolbar.setNavigationContentDescription(back ? upDescription(backTitle) : null);
-        // The header views: the core sized left and right, and a filling
-        // titleView takes MATCH_PARENT after both ends are measured so
-        // Toolbar leaves it the exact room between them.
+        // The header views: the core sized left and right, and a filling titleView takes MATCH_PARENT after both ends are measured so Toolbar leaves it the exact room between them.
         if (titleHolder instanceof Holder) ((Holder) titleHolder).fills = false;
         for (int i = toolbar.getChildCount() - 1; i >= 0; i--) {
             if (toolbar.getChildAt(i) instanceof Holder) toolbar.removeViewAt(i);

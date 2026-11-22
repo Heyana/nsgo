@@ -35,8 +35,7 @@ public final class HeaderCheck {
 
         DataInputStream in = new DataInputStream(System.in);
 
-        // Scenario 1: filling titleView with back arrow (56dp) + left (40dp) + right (50dp + 12dp end margin)
-        // in a 354dp (708px) toolbar => 354 - 56 - 40 - 50 - 12 = 196dp.
+        // Scenario 1: filling titleView with back arrow (56dp) + left (40dp) + right (50dp + 12dp end margin) in a 354dp (708px) toolbar => 354 - 56 - 40 - 50 - 12 = 196dp.
         header.configure(in, holders::get);
         StringBuilder order = new StringBuilder();
         for (int i = 0; i < toolbar.getChildCount(); i++) {
