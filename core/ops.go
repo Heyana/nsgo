@@ -180,6 +180,7 @@ func (t *Tree) setView(n *node, v View) {
 	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
 	p := &n.props
+	p.Href = v.Web.href(n.owner)
 	p.Label = readText(v.Label, v.LabelFunc)
 	p.Hint = readText(v.Hint, v.HintFunc)
 	p.Description = readText(v.AccessibilityDescription, v.AccessibilityDescriptionFunc)
@@ -231,6 +232,9 @@ func (t *Tree) setText(cx *Scope, n *node, v Text) {
 		Selectable: v.Selectable, PointerEvents: v.PointerEvents}
 	n.ownPointer = v.PointerEvents
 	t.pointersMoved = t.pointerStyled
+	if v.AccessibilityLevel != nil {
+		n.props.Level = v.AccessibilityLevel()
+	}
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleText
 	}

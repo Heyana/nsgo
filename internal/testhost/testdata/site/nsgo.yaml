@@ -1,0 +1,4 @@
+name: Site Fixture
+id: dev.nsgo.test.site
+build:
+  installers: false

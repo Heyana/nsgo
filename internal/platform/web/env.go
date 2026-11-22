@@ -209,6 +209,7 @@ func (s *surface) environment() driver.Environment {
 		FontScale:        float32(length("width") / 16),
 		PixelRatio:       float32(g.Get("devicePixelRatio").Float()),
 		OS:               driver.OSWeb,
+		CanSetPageHead:   s.whole,
 		HasWebView:       true,
 		CustomCursor:     true,
 		AppleKeyboard:    apple,

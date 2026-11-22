@@ -165,6 +165,8 @@ type View struct {
 	IOS     IOSViewProps
 	Android AndroidViewProps
 	Desktop DesktopViewProps
+	// Web holds the document semantics only the web backend has.
+	Web WebViewProps
 	// EdgeBar, when its Scroll is set, makes the view a bar over that
 	// scroll view's side, which the scroll view's edge effect sets apart
 	// from the content scrolling under it (Scroll.EdgeEffects).
@@ -351,6 +353,8 @@ type Text struct {
 	OnTextLayout func(lines []TextLine)
 	Ref          *Ref
 	Role         Role
+	// AccessibilityLevel is a heading's level, from 1, as a View's.
+	AccessibilityLevel func() int
 	// Label replaces the text for assistive technology.
 	Label     string
 	LabelFunc func() string

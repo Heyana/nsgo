@@ -15,7 +15,7 @@ import (
 type twin struct{ value, fn int }
 
 // twinPackages are where the elements and components whose twins mounting
-// checks live: this module's core, base, mobile and desktop. An app's own
+// checks live: this module's core, base, mobile, desktop and web. An app's own
 // components keep their own rules.
 var twinPackages = strings.TrimSuffix(reflect.TypeFor[View]().PkgPath(), "/core") + "/"
 
@@ -50,7 +50,7 @@ func (t *Tree) checkTwins(el Node) {
 // type outside twinPackages.
 func replacingTwins(typ reflect.Type) []twin {
 	rel, ok := strings.CutPrefix(typ.PkgPath(), twinPackages)
-	if !ok || !(rel == "core" || rel == "base" || strings.HasPrefix(rel, "base/") || rel == "mobile" || rel == "desktop") {
+	if !ok || !(rel == "core" || rel == "base" || strings.HasPrefix(rel, "base/") || rel == "mobile" || rel == "desktop" || rel == "web") {
 		return nil
 	}
 	var out []twin

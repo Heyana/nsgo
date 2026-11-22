@@ -138,6 +138,10 @@ func main() { nsgo.Run(Root) }
 - Put every user-visible word in `locales/`, a YAML catalog per language in ICU MessageFormat beside `nsgo.yaml`, and call the generated functions (`locales.Greeting(cx, "Ada")`), never string literals. `dev`, `build` and `test` check catalogs and regenerate the functions; `go tool nsgo dev -lang en-XA` finds untranslated and cut text, `-lang ar-XB` right-to-left layout.
 - Write configuration people edit by hand in YAML, not JSON: `nsgo.yaml`, catalogs and themes.
 
+## Web documents
+
+Use `web.Head` (`github.com/nsgo-dev/nsgo/web`) for a page's title and description, or `Head` from `nsgo/web` in TSX. It follows the visible owner's lifetime and renders no layout node. `RoleHeader` and `AccessibilityLevel` give views and texts semantic headings; `base.Link` and `ui.Link` publish browser addresses with native middle-click behavior. Custom links use `core.View.Web` with `core.WebViewProps.Href` or `HrefFunc`. Keep the app's styles and pointer behavior. [Publishing on the web](https://nsgo.dev/docs/web.md) covers metadata inheritance, confined content and CDN loading.
+
 ## Tests and checks
 
 Run the tool, never `go vet`, `go test`, `go build` or `go run` directly: it type-checks TSX, generates catalogs and vets build tags for every target.

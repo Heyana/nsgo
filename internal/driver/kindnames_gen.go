@@ -130,6 +130,7 @@ var itemKindNames = map[ItemKind]string{
 	ItemCursorPoint:         "ItemCursorPoint",
 	ItemPointerLock:         "ItemPointerLock",
 	ItemHapticPattern:       "ItemHapticPattern",
+	ItemPageHead:            "ItemPageHead",
 }
 
 // String returns the kind's name, as a log or an event prints it.

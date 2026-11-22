@@ -33,6 +33,11 @@ func (r *runtime) viewProp(p *core.View, name string, v js.Value) bool {
 		p.Accessible = v.ToBoolean()
 	case "role":
 		p.Role = roles[stringOf(v)]
+	case "accessibilityLevel":
+		level := int(v.ToInteger())
+		p.AccessibilityLevel = func() int { return level }
+	case "href":
+		p.Web.Href = stringOf(v)
 	case "accessibilityState":
 		o := r.options(v)
 		p.Disabled, p.Selected = boolFunc(o.bool("disabled", false)), boolFunc(o.bool("selected", false))
@@ -252,6 +257,9 @@ var liveRegions = map[string]core.LiveRegion{"none": core.LiveRegionNone, "polit
 // textProp sets a prop of a <Text>, reporting whether it has it.
 func (r *runtime) textProp(p *core.Text, name string, v js.Value) bool {
 	switch name {
+	case "accessibilityLevel":
+		level := int(v.ToInteger())
+		p.AccessibilityLevel = func() int { return level }
 	case "labelFor":
 		p.LabelFor = r.labelRef(v)
 	case "labelledBy":

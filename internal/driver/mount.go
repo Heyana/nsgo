@@ -408,7 +408,17 @@ const (
 	ItemPointerLock
 	// ItemHapticPattern replaces the current haptic pattern, or stops it when empty.
 	ItemHapticPattern
+	// ItemPageHead replaces the web document's scoped title and description.
+	// Sent only to a web backend; an embedded app leaves its host's head alone.
+	ItemPageHead
 )
+
+// PageHead is the merged metadata of the visible web.Head components.
+// An unset field restores the page's original value; a set empty one clears it.
+type PageHead struct {
+	Title, Description       string
+	HasTitle, HasDescription bool
+}
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.
 type AppleSignInRequest struct {
@@ -531,6 +541,7 @@ const (
 // are set; the large groups are pointers so items stay small.
 type MountItem struct {
 	Kind   ItemKind
+	Head   *PageHead // ItemPageHead
 	ID     NodeID
 	View   ViewKind // ItemCreate
 	Parent NodeID   // ItemInsert
@@ -1002,6 +1013,8 @@ const (
 // ViewProps is a view's accessibility and identity.
 type ViewProps struct {
 	Role Role
+	// Href is the browser address of a link; other backends ignore it.
+	Href string
 	// Level is a heading's or a tree item's level, from 1; 0 for none.
 	Level int
 	Label string

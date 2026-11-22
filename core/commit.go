@@ -317,6 +317,7 @@ func (t *Tree) commitRound() {
 		t.followHome()
 	}
 	t.emitStatusBar()
+	t.emitPageHead()
 	t.emitHistory()
 	t.items = append(t.items, t.commands...)
 	t.commands = t.commands[:0]

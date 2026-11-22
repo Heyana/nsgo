@@ -53,6 +53,7 @@ func (l Link) Render(cx *core.Scope) core.Node {
 		return l.Href
 	}
 	v := core.View{Class: l.Class, Style: l.Style, StyleFunc: l.StyleFunc, Role: core.RoleLink, Label: l.Label, Hint: l.Hint, TestID: l.TestID, OnLayout: l.OnLayout, Tooltip: l.Tooltip,
+		Web:     core.WebViewProps{Href: l.Href, HrefFunc: l.HrefFunc},
 		HitSlop: l.HitSlop, HitSlopFunc: l.HitSlopFunc, Disabled: l.Disabled, Invalid: l.Invalid, Children: l.Children,
 		OnPress: func(e core.PressEvent) {
 			if to := href(); to != "" {

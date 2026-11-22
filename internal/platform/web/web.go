@@ -149,6 +149,7 @@ type surface struct {
 	touch        fingers
 	covers       []covered // what the modals made inert, oldest first
 	history      history
+	pageHead     pageHeadState
 	screen       browserScreen
 	// whole is set when the app fills the page; an app in an element of
 	// it takes the page's keys only after a press in it, pressedIn, or
@@ -1550,8 +1551,11 @@ func (s *surface) mount(b *driver.MountBatch) {
 			s.setKeymap(it.Keys, it.HeldKeys, it.HeldMouseButtons)
 			continue
 		case driver.ItemTitle:
-			if s.whole {
-				s.doc.Set("title", it.Value)
+			s.setPageTitle(it.Value)
+			continue
+		case driver.ItemPageHead:
+			if it.Head != nil {
+				s.setPageHead(*it.Head)
 			}
 			continue
 		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemMenu, driver.ItemRequestReview:
@@ -1807,6 +1811,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemViewProps:
 			v.disabled = it.ViewProps.Disabled
 			v.props = *it.ViewProps
+			s.setDocumentProps(v, it.ViewProps)
 			setViewProps(v, it.ViewProps)
 			s.setPointer(v, it.ViewProps)
 			if v.input != nil {
@@ -1872,6 +1877,7 @@ func (s *surface) SubmitGPU(driver.GPUFrame) {}
 // lines (nsgo-text) as the measuring element does (textBase), and takes
 // the browser's own look off text fields (nsgo-field).
 const baseCSS = `.nsgo-el { position: absolute; box-sizing: border-box; margin: 0; left: 0; top: 0; }
+.nsgo-el:is(h1,h2,h3,h4,h5,h6,a) { font: inherit; color: inherit; text-decoration: none; cursor: inherit; }
 .nsgo-view { border: 0 solid transparent; outline: none; }
 .nsgo-text { white-space: pre-wrap; overflow-wrap: break-word; }
 .nsgo-field { padding: 0; border: 0; outline: none; background: transparent; resize: none; }`
@@ -2840,6 +2846,10 @@ func (s *surface) stopLongPress() {
 
 func (s *surface) pointerDown(e js.Value) {
 	s.stopLongPress()
+	if s.documentLink(e.Get("target")) != nil && browserLinkClick(e) {
+		s.press = press{}
+		return
+	}
 	if e.Get("button").Int() != 0 {
 		s.press = press{}
 		return
@@ -2911,6 +2921,16 @@ func (s *surface) pointerMove(e js.Value) {
 func (s *surface) click(e js.Value) {
 	p := s.press
 	s.press = press{}
+	if link := s.documentLink(e.Get("target")); link != nil {
+		if link.disabled {
+			e.Call("preventDefault")
+			return
+		}
+		if browserLinkClick(e) {
+			return
+		}
+		e.Call("preventDefault")
+	}
 	if s.canvasNodePress(e.Get("target")) {
 		return
 	}

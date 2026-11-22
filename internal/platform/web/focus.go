@@ -39,6 +39,9 @@ func (s *surface) listenFocus(ls *listeners) {
 	})
 	// A click presses without focusing, as in native apps.
 	ls.on(s.host, "mousedown", func(e js.Value) {
+		if s.documentLink(e.Get("target")) != nil && browserLinkClick(e) {
+			return
+		}
 		if v := s.target(e.Get("target")); v != nil && v.kind != driver.KindInput && v.pressable() {
 			e.Call("preventDefault")
 		}

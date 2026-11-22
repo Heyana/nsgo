@@ -41,6 +41,7 @@ nsgo
 │   │   ├── locales                      Their catalogs
 │   │   └── internal/                    What they share
 │   ├── mobile                           What only phones have
+│   ├── web                              Browser document metadata
 │   ├── audio                            Sounds and players, on core's part
 │   ├── gamepad                          Game controllers in the W3C Standard Gamepad layout
 │   ├── desktop                          What only desktops have
@@ -175,7 +176,7 @@ Backends exchange view and service messages with `core` through the engine, so `
 - `ResolvePageAddress` lets the web backend validate and canonicalize an app address with the browser's URL parser before the core updates its address or history.
 - `UpdateDownload` lets `core.DownloadUpdate` use the platform HTTP client without a surface. It verifies and stages the package before installation is requested through the engine.
 
-Portable packages build unchanged for every target, with no purego, `syscall` or `unsafe`: `core`, `base` but for `base/terminal`, `ui`, `i18n`, `mobile`, `audio`, `desktop`, `icons`, `tsx`, `nsgotest`, `internal/automation`, `internal/driver`, `internal/appstartup`, `internal/mimeinfo`, `internal/layout`, `internal/testhost`, the shader compilers and `internal/engine`. No package has cgo files or hand-written C.
+Portable packages build unchanged for every target, with no purego, `syscall` or `unsafe`: `core`, `base` but for `base/terminal`, `ui`, `i18n`, `mobile`, `web`, `audio`, `desktop`, `icons`, `tsx`, `nsgotest`, `internal/automation`, `internal/driver`, `internal/appstartup`, `internal/mimeinfo`, `internal/layout`, `internal/testhost`, the shader compilers and `internal/engine`. No package has cgo files or hand-written C.
 
 ## Backends
 

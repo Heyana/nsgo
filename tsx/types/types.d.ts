@@ -300,6 +300,8 @@ export interface HostProps {
   accessibilityHint?: string;
   accessibilityDescription?: string;
   role?: AccessibilityRole;
+  /** Heading or tree-item level, starting at one. */
+  accessibilityLevel?: number;
   accessibilityState?: AccessibilityState;
   accessibilityValue?: { min?: number; max?: number; now?: number; text?: string };
   accessibilityElementsHidden?: boolean;
@@ -344,7 +346,10 @@ export interface DesktopHostProps { windowDrag?: boolean }
 export interface IOSProps extends IOSHostProps {}
 export interface AndroidProps extends AndroidHostProps {}
 export interface DesktopProps extends DesktopHostProps {}
-export interface WebProps {}
+export interface WebProps {
+  /** Browser address of a link-role View; ordinary clicks use onPress. */
+  href?: string;
+}
 
 export interface CommonProps extends TouchProps, HostProps, StateStyleProps {
   ref?: YNode | ((node: YNode) => void);

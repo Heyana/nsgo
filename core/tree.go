@@ -92,6 +92,7 @@ type Tree struct {
 	tooltips, described []*node
 	headerViews         []*node
 	status              statusBars
+	pageHead            pageHeads
 	orientations        orientationRequests
 	anim                animations
 	layoutAnim          *LayoutAnimation
@@ -1819,6 +1820,10 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 			}
 		})
 	}
+	n.props.Href = v.Web.href(n.owner)
+	if v.Web.HrefFunc != nil {
+		t.bindAccessibilityText(cx, n, &n.props.Href, func() string { return v.Web.href(n.owner) })
+	}
 	if v.PartStates != nil {
 		cx.renderEffect(func() {
 			t.partStates(n, v.PartStates())
@@ -1893,6 +1898,14 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 		n.props.Role = RoleText
 	}
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, hintFunc: v.HintFunc})
+	if v.AccessibilityLevel != nil {
+		cx.renderEffect(func() {
+			if level := v.AccessibilityLevel(); level != n.props.Level {
+				n.props.Level = level
+				t.touch(n)
+			}
+		})
+	}
 	t.setRef(n, v.Ref)
 	n.text = &textNode{content: v.Content, maxLines: v.MaxLines, ellipsize: v.EllipsizeMode,
 		noScale: v.NoFontScaling, maxScale: v.MaxFontSizeMultiplier,

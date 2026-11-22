@@ -434,7 +434,7 @@ func (r *renderer) blockAt(cx *core.Scope, b Block, live func() Block, first boo
 			content = func() []Inline { return grown(live, b).Content }
 		}
 		return r.inlineText(cx, at, b.Content, content, caret, core.Text{Class: r.class(PartHeading, PartHeading1+Part(level-1)),
-			StyleFunc: heading, Role: core.RoleHeader})
+			StyleFunc: heading, Role: core.RoleHeader, AccessibilityLevel: func() int { return level }})
 	case Blockquote:
 		var quoted func() []Block
 		if live != nil {
