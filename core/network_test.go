@@ -13,11 +13,11 @@ func TestNetworkStartsOnDemandAndReportsChanges(t *testing.T) {
 	started, stopped := 0, 0
 	root := NewRoot(RootOptions{
 		Post: func(fn func()) { pending = append(pending, fn) },
-		WatchNetwork: func(changed func(driver.Network)) (driver.Network, func()) {
+		NetworkWatcher: testNetworkWatcher(func(changed func(driver.Network)) (driver.Network, func()) {
 			started++
 			report = changed
 			return driver.Network{Online: true, Expensive: true}, func() { stopped++ }
-		},
+		}),
 	})
 	tree := NewTree(root, nil)
 	pinned := Network{Online: false}
@@ -72,4 +72,27 @@ func TestNetworkDefaultsOnline(t *testing.T) {
 	if got := root.Env().Network(); got != (Network{Online: true}) {
 		t.Fatalf("default network = %+v", got)
 	}
+}
+
+func TestNetworkSubscriptionStartsTheWatcher(t *testing.T) {
+	starts := 0
+	root := NewRoot(RootOptions{
+		NetworkWatcher: testNetworkWatcher(func(func(driver.Network)) (driver.Network, func()) {
+			starts++
+			return driver.Network{Online: true}, nil
+		}),
+	})
+	defer root.Dispose()
+	changes := 0
+	root.OnNetworkChange(func(Network) { changes++ })
+	if starts != 1 || changes != 0 {
+		t.Fatalf("a subscription started %d watchers and received %d initial changes", starts, changes)
+	}
+}
+
+// testNetworkWatcher exposes the injected callback through the same optional method as native providers.
+type testNetworkWatcher func(changed func(driver.Network)) (driver.Network, func())
+
+func (w testNetworkWatcher) WatchNetwork(changed func(driver.Network)) (driver.Network, func()) {
+	return w(changed)
 }

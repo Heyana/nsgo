@@ -157,8 +157,8 @@ type Options struct {
 	Geometry driver.Geometry
 	// Environment is what the platform knows at start.
 	Environment driver.Environment
-	// WatchNetwork reads and follows the system route on the app's first network read.
-	WatchNetwork driver.WatchNetwork
+	// NetworkWatcher reads and follows the system route on the app's first network read.
+	NetworkWatcher driver.NetworkWatcher
 	// Clock runs the app's timers; the system's when nil.
 	Clock core.Clock
 	// Storage keeps the app's entries; in memory for the engine's life
@@ -497,17 +497,17 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 		Clock:        opts.Clock,
 		Report:       report,
 		// The platform owns the display frame: the engine only asks.
-		RequestFrame: func() { frames.wanted = true },
-		Storage:      opts.Storage,
-		Secrets:      opts.Secrets,
-		WatchNetwork: opts.WatchNetwork,
-		DataDir:      opts.DataDir,
-		CacheDir:     opts.CacheDir,
-		LogsDir:      opts.LogsDir,
-		Host:         opts.Host.Channel,
-		Windows:      opts.Windows,
-		HotKeys:      opts.HotKeys,
-		Tray:         opts.Tray,
+		RequestFrame:   func() { frames.wanted = true },
+		Storage:        opts.Storage,
+		Secrets:        opts.Secrets,
+		NetworkWatcher: opts.NetworkWatcher,
+		DataDir:        opts.DataDir,
+		CacheDir:       opts.CacheDir,
+		LogsDir:        opts.LogsDir,
+		Host:           opts.Host.Channel,
+		Windows:        opts.Windows,
+		HotKeys:        opts.HotKeys,
+		Tray:           opts.Tray,
 	})
 	tree := core.NewTree(root, p)
 	e.tree = tree

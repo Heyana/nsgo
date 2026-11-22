@@ -13,6 +13,8 @@ import (
 )
 
 var networkAPI struct {
+	once                   sync.Once
+	available              bool
 	create                 func() uintptr
 	queue                  func(uintptr, uintptr)
 	setup                  func(uintptr, objc.Block)
@@ -23,7 +25,14 @@ var networkAPI struct {
 	releaseQueue           func(uintptr)
 }
 
-var bindNetwork = sync.OnceValue(func() bool {
+func bindNetwork() bool {
+	networkAPI.once.Do(func() {
+		networkAPI.available = loadNetworkAPI()
+	})
+	return networkAPI.available
+}
+
+func loadNetworkAPI() bool {
 	lib, err := purego.Dlopen("/System/Library/Frameworks/Network.framework/Network", purego.RTLD_NOW|purego.RTLD_LOCAL)
 	if err != nil {
 		return false
@@ -48,10 +57,13 @@ var bindNetwork = sync.OnceValue(func() bool {
 	purego.RegisterLibFunc(&networkAPI.newQueue, purego.RTLD_DEFAULT, "dispatch_queue_create")
 	purego.RegisterLibFunc(&networkAPI.releaseQueue, purego.RTLD_DEFAULT, "dispatch_release")
 	return true
-})
+}
 
-// WatchNetwork reads and follows the system's default Network.framework path.
-func WatchNetwork(changed func(driver.Network)) (driver.Network, func()) {
+// NetworkWatcher supplies the system's default Network.framework path.
+type NetworkWatcher struct{}
+
+// WatchNetwork reads and follows the current default path.
+func (NetworkWatcher) WatchNetwork(changed func(driver.Network)) (driver.Network, func()) {
 	initial := driver.Network{Online: true}
 	if !bindNetwork() {
 		return initial, nil

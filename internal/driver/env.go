@@ -169,10 +169,14 @@ type Network struct {
 	Expensive bool
 }
 
-// WatchNetwork starts listening for connectivity changes. It returns a
-// snapshot and a function that stops the listener, or nil when unsupported.
-// Changes can arrive on any goroutine.
-type WatchNetwork func(changed func(Network)) (initial Network, stop func())
+// NetworkWatcher supplies connectivity when an app reads its network state.
+// Keeping its method behind an interface lets apps that never read that state
+// leave the native watcher out of their binary.
+type NetworkWatcher interface {
+	// WatchNetwork returns the initial state and a stop function, or nil
+	// when unsupported. Changes can arrive on any goroutine.
+	WatchNetwork(changed func(Network)) (initial Network, stop func())
+}
 
 // FrontmostAppInfo is the application in front on the desktop.
 type FrontmostAppInfo struct {

@@ -11,6 +11,8 @@ import (
 )
 
 var linuxNetwork struct {
+	once               sync.Once
+	bound              bool
 	monitor            func() uintptr
 	available, metered func(uintptr) int32
 	notify             uintptr
@@ -18,7 +20,14 @@ var linuxNetwork struct {
 	observers          sync.Map
 }
 
-var bindLinuxNetwork = sync.OnceValue(func() bool {
+func bindLinuxNetwork() bool {
+	linuxNetwork.once.Do(func() {
+		linuxNetwork.bound = loadLinuxNetwork()
+	})
+	return linuxNetwork.bound
+}
+
+func loadLinuxNetwork() bool {
 	for name, into := range map[string]any{
 		"g_network_monitor_get_default":           &linuxNetwork.monitor,
 		"g_network_monitor_get_network_available": &linuxNetwork.available,
@@ -32,7 +41,7 @@ var bindLinuxNetwork = sync.OnceValue(func() bool {
 	}
 	linuxNetwork.notify = newCallback(linuxNetworkChanged)
 	return true
-})
+}
 
 func linuxNetworkChanged(monitor, _, id uintptr) {
 	if callback, ok := linuxNetwork.observers.Load(id); ok {
@@ -45,7 +54,9 @@ func linuxNetworkState(monitor uintptr) driver.Network {
 	return driver.Network{Online: online, Expensive: online && linuxNetwork.metered(monitor) != 0}
 }
 
-func watchNetwork(changed func(driver.Network)) (driver.Network, func()) {
+type networkWatcher struct{}
+
+func (networkWatcher) WatchNetwork(changed func(driver.Network)) (driver.Network, func()) {
 	if !bindLinuxNetwork() {
 		return driver.Network{Online: true}, nil
 	}

@@ -908,13 +908,13 @@ var classRegistered bool
 // startEngine starts app's engine at size.
 func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	eopts := engine.Options{
-		Size:         size,
-		Environment:  w.env,
-		WatchNetwork: watchNetwork,
-		Appearance:   opts.Appearance,
-		Host:         opts.Host,
-		Tray:         !w.embedded,
-		Secrets:      credentials{},
+		Size:           size,
+		Environment:    w.env,
+		NetworkWatcher: networkWatcher{},
+		Appearance:     opts.Appearance,
+		Host:           opts.Host,
+		Tray:           !w.embedded,
+		Secrets:        credentials{},
 	}
 	if opts.Hidden {
 		eopts.Windows = &engine.WindowOptions{Title: opts.Title, Width: opts.Width, Height: opts.Height,

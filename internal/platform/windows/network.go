@@ -13,14 +13,17 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
+var windowsNetworkAPI struct {
+	once                  sync.Once
+	notifyInterfaceChange *syscall.LazyProc
+	cancelNotification    *syscall.LazyProc
+	uninitializeCOM       *syscall.LazyProc
+	callback              uintptr
+}
+
 var (
-	ipHelper                = syscall.NewLazyDLL("iphlpapi.dll")
-	notifyIPInterfaceChange = ipHelper.NewProc("NotifyIpInterfaceChange")
-	cancelIPNotification    = ipHelper.NewProc("CancelMibChangeNotify2")
-	uninitializeNetworkCOM  = ole32.NewProc("CoUninitialize")
-	networkNotification     = sync.OnceValue(func() uintptr { return syscall.NewCallback(networkInterfaceChanged) })
-	networkObservers        sync.Map
-	nextNetworkObserver     atomic.Uintptr
+	networkObservers    sync.Map
+	nextNetworkObserver atomic.Uintptr
 )
 
 func networkInterfaceChanged(id, _, _ uintptr) uintptr {
@@ -33,7 +36,9 @@ func networkInterfaceChanged(id, _, _ uintptr) uintptr {
 	return 0
 }
 
-func watchNetwork(changed func(driver.Network)) (driver.Network, func()) {
+type networkWatcher struct{}
+
+func (networkWatcher) WatchNetwork(changed func(driver.Network)) (driver.Network, func()) {
 	first := make(chan driver.Network, 1)
 	done := make(chan struct{})
 	go runNetworkMonitor(first, done, changed)
@@ -48,13 +53,20 @@ func watchNetwork(changed func(driver.Network)) (driver.Network, func()) {
 func runNetworkMonitor(first chan<- driver.Network, done <-chan struct{}, changed func(driver.Network)) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	windowsNetworkAPI.once.Do(func() {
+		ipHelper := syscall.NewLazyDLL("iphlpapi.dll")
+		windowsNetworkAPI.notifyInterfaceChange = ipHelper.NewProc("NotifyIpInterfaceChange")
+		windowsNetworkAPI.cancelNotification = ipHelper.NewProc("CancelMibChangeNotify2")
+		windowsNetworkAPI.uninitializeCOM = ole32.NewProc("CoUninitialize")
+		windowsNetworkAPI.callback = syscall.NewCallback(networkInterfaceChanged)
+	})
 	const multithreaded = 0
 	hr, _, _ := coInitializeEx.Call(0, multithreaded)
 	if failed(hr) {
 		first <- driver.Network{Online: true}
 		return
 	}
-	defer uninitializeNetworkCOM.Call()
+	defer windowsNetworkAPI.uninitializeCOM.Call()
 	clsid := parseGUID("dcb00c01-570f-4a9b-8d69-199fdba5723b")           // CLSID_NetworkListManager
 	connectivityIID := parseGUID("dcb00000-570f-4a9b-8d69-199fdba5723b") // IID_INetworkListManager
 	costIID := parseGUID("dcb00008-570f-4a9b-8d69-199fdba5723b")         // IID_INetworkCostManager
@@ -75,9 +87,9 @@ func runNetworkMonitor(first chan<- driver.Network, done <-chan struct{}, change
 	networkObservers.Store(id, updates)
 	defer networkObservers.Delete(id)
 	var notification uintptr
-	status, _, _ := notifyIPInterfaceChange.Call(0, networkNotification(), id, 0, uintptr(unsafe.Pointer(&notification)))
+	status, _, _ := windowsNetworkAPI.notifyInterfaceChange.Call(0, windowsNetworkAPI.callback, id, 0, uintptr(unsafe.Pointer(&notification)))
 	if status == 0 {
-		defer cancelIPNotification.Call(notification)
+		defer windowsNetworkAPI.cancelNotification.Call(notification)
 	}
 	// Interface notifications arrive immediately. Recheck cost and NLM's
 	// Internet validation, which can change on the same interface.

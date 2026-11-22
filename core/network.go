@@ -11,7 +11,8 @@ type networkState struct {
 	value    *Signal[Network]
 	native   Network
 	reported bool
-	observed bool
+	// Installed by a network read so ordinary environment updates retain no native watcher.
+	activate func()
 }
 
 func newNetworkState(owner *Scope) *networkState {
@@ -41,17 +42,19 @@ func (cx *Scope) OnNetworkChange(fn func(Network)) {
 }
 
 func (n *networkState) observe() {
-	n.observed = true
-	n.start()
+	if n.activate == nil {
+		n.activate = n.start
+	}
+	n.activate()
 }
 
 func (n *networkState) start() {
-	watch := n.owner.rt.watchNetwork
-	if watch == nil || n.reported || !n.observed {
+	watcher := n.owner.rt.networkWatcher
+	if watcher == nil || n.reported {
 		return
 	}
-	n.owner.rt.watchNetwork = nil
-	initial, stop := watch(func(value Network) {
+	n.owner.rt.networkWatcher = nil
+	initial, stop := watcher.WatchNetwork(func(value Network) {
 		n.owner.Post(func() {
 			n.native = value
 			if !n.reported {
@@ -72,6 +75,8 @@ func (n *networkState) setEnvironment(value *Network) {
 		n.value.Set(*value)
 		return
 	}
-	n.start()
+	if n.activate != nil {
+		n.activate()
+	}
 	n.value.Set(n.native)
 }

@@ -11,7 +11,7 @@ import (
 
 func TestNetworkMonitorReadsTheSystemPath(t *testing.T) {
 	updates := make(chan driver.Network, 8)
-	initial, stop := WatchNetwork(func(value driver.Network) {
+	initial, stop := (NetworkWatcher{}).WatchNetwork(func(value driver.Network) {
 		select {
 		case updates <- value:
 		default:

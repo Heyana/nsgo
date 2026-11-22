@@ -396,6 +396,8 @@ The web applies `ItemOrientation` through `screen.orientation.lock`. A `ToggleFu
 
 `Env.Network` shares one connectivity signal across the engine's surfaces. `Scope.OnNetworkChange` follows the signal without an initial event or duplicate values. Test environments can replace it. Targets without a source report online and unmetered.
 
+Apple, Windows, Linux and web providers implement the optional `NetworkWatcher` method interface. The first network read installs the activation hook, so ordinary environment updates leave unused watcher code unreachable to the linker.
+
 Apple reads the default path with Network.framework. Windows reads Network List Manager's connectivity and cost, wakes on interface changes, and rechecks validation and cost while observed. Linux follows GIO's default-route availability and metered properties. The web follows `navigator.onLine` and the browser's online and offline events. These observers start on the app's first read and stop when its graph ends. Android carries its validated route and metered state in the environment through its existing default network callback, which also sends DNS settings. No backend probes the app's servers.
 
 ## The device

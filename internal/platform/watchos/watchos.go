@@ -265,7 +265,7 @@ var hostReady chan struct{}
 // start starts the engine at the surface's size; test, when set, is what
 // a test host opens it with.
 func (s *surface) start(test *testOpen) {
-	opts := engine.Options{Size: s.size, Environment: s.env, WatchNetwork: apple.WatchNetwork, Thread: apple.RaiseThread, Appearance: s.opts.Appearance,
+	opts := engine.Options{Size: s.size, Environment: s.env, NetworkWatcher: apple.NetworkWatcher{}, Thread: apple.RaiseThread, Appearance: s.opts.Appearance,
 		Secrets: apple.Keychain{}}
 	opts.SetDirs(engine.AppDirs(s.opts.ID))
 	if test != nil {

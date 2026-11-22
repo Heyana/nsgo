@@ -8,7 +8,9 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-func watchNetwork(changed func(driver.Network)) (driver.Network, func()) {
+type networkWatcher struct{}
+
+func (networkWatcher) WatchNetwork(changed func(driver.Network)) (driver.Network, func()) {
 	window := js.Global()
 	navigator := window.Get("navigator")
 	if !navigator.Truthy() || navigator.Get("onLine").Type() != js.TypeBoolean {

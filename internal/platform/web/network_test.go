@@ -19,7 +19,7 @@ func TestBrowserNetworkFollowsNavigator(t *testing.T) {
 	defer window.Get("Reflect").Call("deleteProperty", navigator, "onLine")
 	set(true)
 	var states []driver.Network
-	initial, close := watchNetwork(func(value driver.Network) { states = append(states, value) })
+	initial, close := (networkWatcher{}).WatchNetwork(func(value driver.Network) { states = append(states, value) })
 	if close == nil {
 		t.Fatal("the browser did not provide navigator.onLine")
 	}

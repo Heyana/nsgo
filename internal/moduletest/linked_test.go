@@ -71,6 +71,35 @@ func TestMinimalAppLinks(t *testing.T) {
 	}
 }
 
+func TestNetworkWatchersLinkOnUse(t *testing.T) {
+	for _, target := range []struct{ os, arch, backend, loader string }{
+		{"darwin", "arm64", "apple", "loadNetworkAPI"},
+		{"windows", "amd64", "windows", "networkInterfaceChanged"},
+		{"linux", "amd64", "linux", "loadLinuxNetwork"},
+		{"js", "wasm", "web", "networkWatcher.WatchNetwork"},
+	} {
+		t.Run(target.os+"_"+target.arch, func(t *testing.T) {
+			t.Parallel()
+			prefix := modulePath + "/internal/platform/" + target.backend + "."
+			for _, fixture := range []string{"minimal", "network"} {
+				_, symbols := linkedPackagesAndSymbolsOf(t, moduleRoot+"/testdata/"+fixture, target.os, target.arch, "")
+				linked := false
+				for symbol := range symbols {
+					if strings.HasPrefix(symbol, prefix) && strings.HasSuffix(symbol, ".WatchNetwork") {
+						linked = true
+					}
+					if fixture == "minimal" && symbol == prefix+target.loader {
+						t.Errorf("an app without a network read links %s", symbol)
+					}
+				}
+				if want := fixture == "network"; linked != want {
+					t.Errorf("%s app links its native network watcher = %t, want %t", fixture, linked, want)
+				}
+			}
+		})
+	}
+}
+
 // TestDevBuildsLink builds the minimal app as nsgo dev does, with the dev client (nsgodev), for each target, which TestReleaseBuildsLinkNoDevClient does for this machine's alone, and checks that the client, which reaches the dev server over HTTP, links.
 func TestDevBuildsLink(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
@@ -95,6 +124,13 @@ func linkedPackages(t *testing.T, goos, goarch, tags string) map[string]bool {
 // linkedPackagesOf is linkedPackages for the app in dir.
 func linkedPackagesOf(t *testing.T, dir, goos, goarch, tags string) map[string]bool {
 	t.Helper()
+	packages, _ := linkedPackagesAndSymbolsOf(t, dir, goos, goarch, tags)
+	return packages
+}
+
+// linkedPackagesAndSymbolsOf also keeps concrete linker symbols for optional backend methods.
+func linkedPackagesAndSymbolsOf(t *testing.T, dir, goos, goarch, tags string) (map[string]bool, map[string]bool) {
+	t.Helper()
 	cmd := exec.Command("go", "build", "-trimpath", "-tags="+tags, "-ldflags=-dumpdep", "-o", os.DevNull, dir)
 	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0", "GOFLAGS=")
 	var dump bytes.Buffer
@@ -103,6 +139,7 @@ func linkedPackagesOf(t *testing.T, dir, goos, goarch, tags string) map[string]b
 		t.Fatalf("go build: %v\n%s", err, dump.Bytes())
 	}
 	linked := map[string]bool{}
+	symbols := map[string]bool{}
 	sc := bufio.NewScanner(&dump)
 	sc.Buffer(nil, 1<<20)
 	for sc.Scan() {
@@ -114,11 +151,12 @@ func linkedPackagesOf(t *testing.T, dir, goos, goarch, tags string) map[string]b
 		if pseudoSymbol(from) || pseudoSymbol(to) {
 			continue
 		}
+		symbols[to] = true
 		if pkg := symbolPackage(to); pkg != symbolPackage(from) {
 			linked[pkg] = true
 		}
 	}
-	return linked
+	return linked, symbols
 }
 
 // pseudoSymbol reports whether sym is no code of its package's: the

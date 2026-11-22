@@ -719,13 +719,13 @@ var sceneReady chan struct{}
 func (s *surface) startEngine(test *testOpen) {
 	bounds := objc.Send[apple.CGRect](s.native, selBounds)
 	opts := engine.Options{
-		Size:         driver.Size{Width: driver.Points(bounds.Size.Width), Height: driver.Points(bounds.Size.Height)},
-		Environment:  s.env,
-		WatchNetwork: apple.WatchNetwork,
-		Thread:       apple.RaiseThread,
-		Appearance:   s.appearance,
-		Host:         s.host,
-		Secrets:      apple.Keychain{},
+		Size:           driver.Size{Width: driver.Points(bounds.Size.Width), Height: driver.Points(bounds.Size.Height)},
+		Environment:    s.env,
+		NetworkWatcher: apple.NetworkWatcher{},
+		Thread:         apple.RaiseThread,
+		Appearance:     s.appearance,
+		Host:           s.host,
+		Secrets:        apple.Keychain{},
 	}
 	opts.SetDirs(engine.AppDirs(s.id))
 	if test != nil {

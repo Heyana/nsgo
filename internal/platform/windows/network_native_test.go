@@ -11,7 +11,7 @@ import (
 
 func TestNetworkMonitorReadsNetworkListManager(t *testing.T) {
 	updates := make(chan driver.Network, 8)
-	_, stop := watchNetwork(func(value driver.Network) {
+	_, stop := (networkWatcher{}).WatchNetwork(func(value driver.Network) {
 		select {
 		case updates <- value:
 		default:
