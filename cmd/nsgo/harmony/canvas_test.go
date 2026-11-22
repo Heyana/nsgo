@@ -16,6 +16,9 @@ var canvasCase = regexp.MustCompile(`(?m)^\s*case ([0-9]+):`)
 // recorderOnlyKinds are the drawing kinds the recorder resolves itself, so players skip them.
 var recorderOnlyKinds = map[driver.DrawKind]bool{driver.DrawTextAlign: true, driver.DrawTextBaseline: true}
 
+// unplayedKinds are kinds canvasJSON sends that this player does not draw yet: HarmonyOS mesh playback arrives with the DrawVertices host change for #1211, which removes it from here.
+var unplayedKinds = map[driver.DrawKind]bool{driver.DrawVertices: true}
+
 // TestCanvasPlayerReadsEveryDrawKind checks that Index.ets's canvas player has a case for every drawing kind canvasJSON sends, under the driver's number, and none for a number the driver lacks. A kind the player has no case for is dropped silently, as DrawAtlas was before the host learned it.
 func TestCanvasPlayerReadsEveryDrawKind(t *testing.T) {
 	root := filepath.Join("..", "..", "..")
@@ -44,7 +47,7 @@ func TestCanvasPlayerReadsEveryDrawKind(t *testing.T) {
 	known := map[driver.DrawKind]bool{}
 	for k := driver.DrawSave; k.String() != "DrawKind("+strconv.Itoa(int(k))+")"; k++ {
 		known[k] = true
-		if !recorderOnlyKinds[k] && !read[k] {
+		if !recorderOnlyKinds[k] && !unplayedKinds[k] && !read[k] {
 			t.Errorf("the canvas player has no case for %s (%d)", k, k)
 		}
 	}
