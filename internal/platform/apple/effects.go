@@ -38,7 +38,8 @@ func (effects *Effects[V]) ensure(v V, host EffectHost[V]) *Effect {
 	if effects.entries == nil {
 		effects.entries = make(map[V]*Effect)
 	}
-	fx := NewEffect(func() { host.Ready(v) })
+	ready := host.Ready
+	fx := NewEffect(func() { ready(v) })
 	effects.entries[v] = fx
 	return fx
 }
