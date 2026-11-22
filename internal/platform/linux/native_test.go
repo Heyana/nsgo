@@ -131,10 +131,13 @@ func startTestWindow(t *testing.T, app engine.App, opts Options) *window {
 	return r.w
 }
 
-// onLoop runs fn on the window's GTK thread and waits for it.
+// onLoop runs fn on the window's GTK thread and waits for it, after applying the mount batches the engine already handed over. Loop calls run between GLib dispatches, so a batch whose idle has not been dispatched yet would otherwise land after fn, and a step after engine.Sync would not see it.
 func (w *window) onLoop(t *testing.T, fn func()) {
 	t.Helper()
-	if !runOnThread(postLoopCall, 10*time.Second, "panic on the GTK thread", fn) {
+	if !runOnThread(postLoopCall, 10*time.Second, "panic on the GTK thread", func() {
+		w.applyBatches()
+		fn()
+	}) {
 		t.Fatal("the GTK thread did not run the step")
 	}
 }
