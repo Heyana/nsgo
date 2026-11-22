@@ -587,8 +587,7 @@ final class Scrolling {
                 if (braking) return super.onTouchEvent(e);
             }
             boolean handled = super.dispatchTouchEvent(e);
-            // A child may consume UP, bypassing onTouchEvent. after() clears
-            // touching, so the view-owned path can safely have called it already.
+            // A child may consume UP, bypassing onTouchEvent. after() clears touching, so the view-owned path can safely have called it already.
             if (e.getActionMasked() == MotionEvent.ACTION_UP || e.getActionMasked() == MotionEvent.ACTION_CANCEL) d.after(e);
             return handled;
         }
@@ -662,8 +661,7 @@ final class Scrolling {
                 if (braking) return super.onTouchEvent(e);
             }
             boolean handled = super.dispatchTouchEvent(e);
-            // A child may consume UP, bypassing onTouchEvent. after() clears
-            // touching, so the view-owned path can safely have called it already.
+            // A child may consume UP, bypassing onTouchEvent. after() clears touching, so the view-owned path can safely have called it already.
             if (e.getActionMasked() == MotionEvent.ACTION_UP || e.getActionMasked() == MotionEvent.ACTION_CANCEL) d.after(e);
             return handled;
         }
