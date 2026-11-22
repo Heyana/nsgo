@@ -237,6 +237,8 @@ interface CanvasOp {
   img?: string;
   n?: boolean;
   sp?: number[];
+  v?: number[];
+  va?: number[];
 }
 
 interface CanvasGradientData {
@@ -2586,6 +2588,63 @@ struct CanvasView {
     ctx.globalAlpha = alpha;
   }
 
+  // drawVertices draws a mesh op's triangles, x, y, u, v at each corner:
+  // each clipped to itself, grown by half a pixel so neighbors leave no
+  // seam, and drawn from the image through the affine transform its
+  // corners make. A Path2D clips, so the drawing's own path is kept.
+  // Vertex colors play only as each triangle's mean alpha.
+  private drawVertices(ctx: CanvasRenderingContext2D, pm: image.PixelMap, o: CanvasOp): void {
+    const v = o.v ?? [];
+    const alphas = o.va ?? [];
+    const d = density();
+    const size = pm.getImageInfoSync().size;
+    const nw = size.width / d;
+    const nh = size.height / d;
+    const grow = 0.5 / d;
+    const alpha = ctx.globalAlpha;
+    for (let i = 0; i + 11 < v.length; i += 12) {
+      const x0 = v[i], y0 = v[i + 1], u0 = v[i + 2], t0 = v[i + 3];
+      const x1 = v[i + 4], y1 = v[i + 5], u1 = v[i + 6], t1 = v[i + 7];
+      const x2 = v[i + 8], y2 = v[i + 9], u2 = v[i + 10], t2 = v[i + 11];
+      const du1 = u1 - u0, dt1 = t1 - t0, du2 = u2 - u0, dt2 = t2 - t0;
+      const det = du1 * dt2 - du2 * dt1;
+      if (det === 0) {
+        continue;
+      }
+      const dx1 = x1 - x0, dy1 = y1 - y0, dx2 = x2 - x0, dy2 = y2 - y0;
+      const a = (dx1 * dt2 - dx2 * dt1) / det;
+      const b = (dy1 * dt2 - dy2 * dt1) / det;
+      const c = (dx2 * du1 - dx1 * du2) / det;
+      const e = (dy2 * du1 - dy1 * du2) / det;
+      const cx = (x0 + x1 + x2) / 3;
+      const cy = (y0 + y1 + y2) / 3;
+      const path = new Path2D();
+      const xs = [x0, x1, x2];
+      const ys = [y0, y1, y2];
+      for (let k = 0; k < 3; k++) {
+        const len = Math.hypot(xs[k] - cx, ys[k] - cy);
+        const s = len > 0 ? grow / len : 0;
+        const px = xs[k] + (xs[k] - cx) * s;
+        const py = ys[k] + (ys[k] - cy) * s;
+        if (k === 0) {
+          path.moveTo(px, py);
+        } else {
+          path.lineTo(px, py);
+        }
+      }
+      path.closePath();
+      ctx.save();
+      ctx.clip(path);
+      if (alphas.length > 0) {
+        ctx.globalAlpha = alpha * (alphas[i / 12] ?? 1);
+      }
+      ctx.imageSmoothingEnabled = o.n !== true;
+      ctx.transform(a, b, c, e, x0 - a * u0 - c * t0, y0 - b * u0 - e * t0);
+      ctx.drawImage(pm, 0, 0, nw, nh);
+      ctx.restore();
+    }
+  }
+
   // loadImage decodes an image op once; a repaint draws it when it comes.
   private loadImage(key: string, uri: string, data: string): void {
     if (canvasImageCache.has(key)) {
@@ -2810,6 +2869,7 @@ struct CanvasView {
           ctx.shadowBlur = o.r ?? 0;
           break;
         case 37:
+        case 40:
         case 41: {
           const uri = o.img ?? '';
           const data = o.imgd ?? '';
@@ -2825,6 +2885,8 @@ struct CanvasView {
           if (o.k === 41) {
             ctx.imageSmoothingEnabled = !(o.n ?? false);
             this.drawAtlas(ctx, pm, o.sp ?? []);
+          } else if (o.k === 40) {
+            this.drawVertices(ctx, pm, o);
           } else {
             const src = o.tint === undefined || o.tint === 0xffffffff ? pm : this.tintedImage(pm, o.tint);
             this.drawImage(ctx, src, o);

@@ -52,6 +52,9 @@ type canvasOp struct {
 	Nearest bool `json:"n,omitempty"`
 	// Sprites packs an atlas's sprites, nine numbers each: the source rectangle's x, y, width and height in the image's points, the transform's SCos, SSin, TX and TY, and the opacity factor.
 	Sprites []float32 `json:"sp,omitempty"`
+	// V is a mesh's vertices, x, y, u, v each, in canvas and image points, and VA its triangles' mean alpha, when a vertex color is not opaque white. A mesh samples nearest by Nearest.
+	V  []float32 `json:"v,omitempty"`
+	VA []float32 `json:"va,omitempty"`
 }
 
 // image names the op's image and whether it is sampled nearest.
@@ -139,6 +142,13 @@ func canvasJSON(ops []driver.DrawOp, packed bool) string {
 			if o.Dash != nil {
 				c.D = append([]float32(nil), (*o.Dash)...)
 			}
+		case driver.DrawVertices:
+			if draw, ok := o.ImageRect(); ok {
+				c = canvasOp{K: int(driver.DrawImage), X: draw.X, Y: draw.Y, W: draw.W, H: draw.H, X1: &draw.X1, Y1: draw.Y1, X2: draw.X2, Y2: &draw.Y2}
+			} else if o.Mesh != nil {
+				c = canvasOp{K: c.K, V: meshVertices(o.Mesh.Vertices), VA: meshAlphas(o.Mesh.Vertices)}
+			}
+			fallthrough
 		case driver.DrawImage:
 			if o.Tinted {
 				tint := uint32(o.Color)
@@ -186,6 +196,40 @@ func appendAtlas(out []canvasOp, op *driver.DrawOp, alpha float32) []canvasOp {
 			img,
 			canvasOp{K: int(driver.DrawRestore)},
 		)
+	}
+	return out
+}
+
+// meshVertices flattens a mesh's positions and texture coordinates.
+func meshVertices(vertices []driver.CanvasVertex) []float32 {
+	out := make([]float32, 0, len(vertices)*4)
+	for _, v := range vertices {
+		out = append(out, float32(v.Position.X), float32(v.Position.Y), float32(v.TexCoord.X), float32(v.TexCoord.Y))
+	}
+	return out
+}
+
+// meshAlphas is each triangle's mean vertex alpha, or nil when every vertex is opaque, which the host plays as the triangle's alpha: an ArkUI canvas has no way to multiply an image by interpolated colors.
+func meshAlphas(vertices []driver.CanvasVertex) []float32 {
+	var out []float32
+	for i := 0; i+2 < len(vertices); i += 3 {
+		var sum float64
+		for _, v := range vertices[i : i+3] {
+			a := 1.0
+			if v.Color != 0 {
+				_, _, _, a = v.Color.Components()
+			}
+			sum += a
+		}
+		if out == nil && sum < 3 {
+			out = make([]float32, i/3, len(vertices)/3)
+			for j := range out {
+				out[j] = 1
+			}
+		}
+		if out != nil {
+			out = append(out, float32(sum/3))
+		}
 	}
 	return out
 }
