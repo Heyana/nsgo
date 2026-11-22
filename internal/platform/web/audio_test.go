@@ -185,6 +185,31 @@ func TestWebAudioSounds(t *testing.T) {
 	}
 }
 
+// onsetTap posts the context frame of every sample above the threshold that follows at least options.silence quiet frames; a tone's zero crossings are much shorter. An unconnected input renders no channels and counts as one quiet render quantum.
+const onsetTap = `registerProcessor("nsgo-onset-tap", class extends AudioWorkletProcessor {
+	constructor(options) {
+		super();
+		this.silence = options.processorOptions.silence;
+		this.quiet = 0;
+	}
+	process(inputs, outputs) {
+		const samples = inputs[0][0];
+		if (!samples) {
+			this.quiet += outputs[0][0]?.length ?? 128;
+			return true;
+		}
+		for (let i = 0; i < samples.length; i++) {
+			if (Math.abs(samples[i]) < 0.01) {
+				this.quiet++;
+				continue;
+			}
+			if (this.quiet > this.silence) this.port.postMessage(currentFrame + i);
+			this.quiet = 0;
+		}
+		return true;
+	}
+});`
+
 // TestWebAudioSchedulesStarts measures two voices scheduled 500 ms apart, in different turns, in the samples the output context renders.
 func TestWebAudioSchedulesStarts(t *testing.T) {
 	doc := js.Global().Get("document")
@@ -211,38 +236,29 @@ func TestWebAudioSchedulesStarts(t *testing.T) {
 		t.Fatalf("latency of the running output: %+v", e)
 	}
 	t.Logf("output latency %v", reports[3].Latency)
-	if a.output.Get("createScriptProcessor").Type() != js.TypeFunction {
-		t.Skip("the browser has no ScriptProcessorNode to record its output")
+	worklet := a.output.Get("audioWorklet")
+	if !worklet.Truthy() {
+		t.Skip("the browser has no AudioWorklet to record its output")
 	}
-	tap := a.output.Call("createScriptProcessor", 1024, 1, 1)
+	// The tap finds onsets on the audio thread and reports them as frames of the context's own timeline, where source.start is sample accurate. A ScriptProcessorNode's playbackTime is read on the main thread when its event runs, so a busy main thread shifts it by whole render quanta (Chromium's ScriptProcessorHandler::FireProcessEvent), and it may drop a buffer altogether.
+	module := js.Global().Get("Blob").New([]any{onsetTap}, map[string]any{"type": "text/javascript"})
+	moduleURL := js.Global().Get("URL").Call("createObjectURL", module)
+	defer js.Global().Get("URL").Call("revokeObjectURL", moduleURL)
+	if _, err := await(worklet.Call("addModule", moduleURL)); err != nil {
+		t.Fatalf("load the onset tap: %v", err)
+	}
+	rate := a.output.Get("sampleRate").Float()
+	tap := js.Global().Get("AudioWorkletNode").New(a.output, "nsgo-onset-tap", map[string]any{"processorOptions": map[string]any{"silence": int(rate / 50)}})
 	tap.Call("connect", a.output.Get("destination"))
 	defer tap.Call("disconnect")
-	rate := a.output.Get("sampleRate").Float()
 	var onsets []float64
-	quiet := 0
-	var data []byte
-	process := js.FuncOf(func(_ js.Value, args []js.Value) any {
-		e := args[0]
-		at := e.Get("playbackTime").Float()
-		samples := e.Get("inputBuffer").Call("getChannelData", 0)
-		bytes := js.Global().Get("Uint8Array").New(samples.Get("buffer"), samples.Get("byteOffset"), samples.Get("byteLength"))
-		data = slices.Grow(data[:0], bytes.Length())[:bytes.Length()]
-		js.CopyBytesToGo(data, bytes)
-		for i := 0; i+4 <= len(data); i += 4 {
-			if math.Abs(float64(math.Float32frombits(binary.LittleEndian.Uint32(data[i:])))) < 0.01 {
-				quiet++
-				continue
-			}
-			// A start follows at least 20 ms of silence; a tone's zero crossings are much shorter.
-			if quiet > int(rate/50) {
-				onsets = append(onsets, at+float64(i/4)/rate)
-			}
-			quiet = 0
-		}
+	report := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		onsets = append(onsets, args[0].Get("data").Float()/rate)
 		return nil
 	})
-	defer process.Release()
-	tap.Set("onaudioprocess", process)
+	defer report.Release()
+	tap.Get("port").Set("onmessage", report)
+	defer tap.Get("port").Set("onmessage", js.Null())
 	first := time.Now().Add(300 * time.Millisecond)
 	a.play(2, 1, 1, 0, first, false)
 	a.voices[len(a.voices)-1].gain.Call("connect", tap)
