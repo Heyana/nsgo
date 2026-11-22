@@ -90,7 +90,7 @@ Use `app.Play` with `core.VideoInfo.RateChangeable` set explicitly to test both 
 
 Cleanup closes native context menus left open by an app, including between subtests in one process.
 
-Read `app.Surface(selector).Config()` for opening options and `app.StatusBar` for the resolved status bar settings the app sent.
+Use `app.Surface(selector)` for window-local `Exists`, `Texts`, `Enabled`, `Clear`, `Focus`, pointer and gesture steps, `DropFiles`, media reports, captures, `Resize`, `Settle` and waits. Its `Post` schedules through the original app and refuses a closed window; app-wide clocks and service fixtures stay on the parent `App`. Read `Surface.Config()` for opening options and `app.StatusBar` for the resolved status bar settings.
 
 Test discovery follows the target's build tags, including target-only tests in packages that also have portable files.
 

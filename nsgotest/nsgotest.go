@@ -880,11 +880,20 @@ func (a *App) yieldToPage() bool {
 
 // Post runs fn on the app's graph goroutine as the next step or wait settles: the test goroutine headless, the engine goroutine on a target. It is safe to call from any goroutine, fn may read or set the app's signals and post more, and the step settles what they post too. As fn may run off the test goroutine, it takes no steps and does not call t.Fatal or t.FailNow: check what it did after the step.
 func (a *App) Post(fn func()) {
-	if t := a.target; t != nil && !t.live {
-		posted := fn
-		fn = func() { t.postApp(posted) }
+	if a.owner != nil {
+		a.owner.Post(fn)
+		return
 	}
-	a.postTest(fn)
+	a.postTest(func() { a.postGraph(fn) })
+}
+
+// postGraph hands a queued test function to the graph on its owning goroutine.
+func (a *App) postGraph(fn func()) {
+	if t := a.target; t != nil && !t.live {
+		t.postApp(fn)
+		return
+	}
+	fn()
 }
 
 // postTest queues fn to run on the test goroutine as the next step or wait settles, also on a target.

@@ -132,7 +132,7 @@ func main() { nsgo.Run(Root) }
 
 Run the tool, never `go vet`, `go test`, `go build` or `go run` directly: it type-checks TSX, generates catalogs and vets build tags for every target.
 
-Use `app.Surface("title:Settings")` to run test steps in a secondary desktop window. [Testing](https://nsgo.dev/docs/testing.md)
+Use `app.Surface("title:Settings")` for the same view queries, input steps, resizing and waits in a secondary desktop window; its `Post` schedules through the app, and closed handles fail. Keep app-wide service fixtures on the original `App`. [Testing](https://nsgo.dev/docs/testing.md)
 
 ```sh
 go tool nsgo check                 # vet; -target web,android vets those targets instead, all every available one

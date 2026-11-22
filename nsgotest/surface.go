@@ -10,7 +10,8 @@ import (
 )
 
 // Surface is an open window, panel or tray view, as nsgotest's steps see it.
-// A surface's handle stays tied to it after it closes.
+// A surface's handle stays tied to it after it closes. View queries and input
+// steps use this surface; app-wide service fixtures and clocks stay on App.
 type Surface struct {
 	app    *App
 	model  *App
@@ -83,46 +84,10 @@ func (s *Surface) SystemGestures() core.SystemGestureOptions {
 	return options
 }
 
-// Press presses the matched view in this surface.
-func (s *Surface) Press(selector string) {
-	s.app.t.Helper()
-	s.open().Press(selector)
-}
-
 // DragTo drags source onto target inside this surface.
 func (s *Surface) DragTo(source, target string) {
 	s.app.t.Helper()
 	s.open().DragTo(source, target)
-}
-
-// Type types into the matched field in this surface.
-func (s *Surface) Type(selector, text string) {
-	s.app.t.Helper()
-	s.open().Type(selector, text)
-}
-
-// Key presses a key with this surface's focus.
-func (s *Surface) Key(key string) {
-	s.app.t.Helper()
-	s.open().Key(key)
-}
-
-// Find finds one view in this surface.
-func (s *Surface) Find(selector string) *View {
-	s.app.t.Helper()
-	return s.open().Find(selector)
-}
-
-// Query returns matching views in this surface.
-func (s *Surface) Query(selector string) []*View {
-	s.app.t.Helper()
-	return s.open().Query(selector)
-}
-
-// Screenshot captures only this surface on a native target.
-func (s *Surface) Screenshot(name string) {
-	s.app.t.Helper()
-	s.open().Screenshot(name)
 }
 
 func (s *Surface) title() string {
@@ -132,7 +97,13 @@ func (s *Surface) title() string {
 func (s *Surface) open() *App {
 	s.app.t.Helper()
 	s.app.Settle()
-	if s.closed {
+	return s.checkOpen()
+}
+
+// checkOpen validates the handle without settling, including while queued posts run.
+func (s *Surface) checkOpen() *App {
+	s.app.t.Helper()
+	if s.closed || s.model.tree != nil && s.model.tree.Closed() {
 		s.app.t.Fatalf("nsgotest: surface %q is closed", s.title())
 	}
 	if t := s.model.target; t != nil && t.surface == nil {

@@ -33,7 +33,9 @@ The headless software GPU model keeps devices per surface, selecting both the de
 
 ## Steps
 
-`App.Post` queues app work until the next step or wait settles. Headless the test owns the app's graph; on a target the callback is posted to the scope the native host rendered the app under, and the step's engine barrier waits for it. A step on a target is quiet only once no posts are queued after its last engine barrier, so a post that posts another settles in the same step. The test's separate graph still runs its own storage and model callbacks on the test goroutine, as `testhost.PostToTest` runs tsxtest's VM work.
+`Surface` delegates view queries, input, gestures, media reports, captures, sizing and waits to its window's model (`surface_steps.go`), using the original `App` algorithms. App-wide service fixtures and clocks remain on the original app.
+
+`App.Post` queues app work until the next step or wait settles. `Surface.Post` uses the owner's queue too, checking the handle on the test goroutine before graph dispatch; a closed tree is refused even before its model's removal. On a target a fresh engine barrier and model drain first apply earlier callbacks' window closures. Headless the test owns the app's graph; on a target the callback is posted to the scope the native host rendered the app under, and the step's engine barrier waits for it. A step on a target is quiet only once no posts are queued after its last engine barrier, so a post that posts another settles in the same step. The test's separate graph still runs its own storage and model callbacks on the test goroutine, as `testhost.PostToTest` runs tsxtest's VM work.
 
 Steps (`steps.go`, `pointer.go`) act as a user does and send what a platform sends, to the views that report it. A step whose selector matches no view, more than one it would act on, or a disabled one, fails the test. Before a step, alerts the last one left unanswered get their default answer: the cancel button, else dismissed when cancelable, else the step fails; `App.OnAlert` answers them instead.
 
