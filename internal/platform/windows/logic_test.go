@@ -2168,7 +2168,10 @@ func TestAccessibilityLevelAndSpinButton(t *testing.T) {
 }
 
 func TestScrollZoomAndHitTesting(t *testing.T) {
-	w := &window{animator: driver.NewAnimator(nil), env: driver.Environment{ReduceMotion: true}}
+	// Moving an offset reports the scroll to the engine.
+	eng := engine.Start(noopPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{})
+	t.Cleanup(eng.Close)
+	w := &window{engine: eng, animator: driver.NewAnimator(nil), env: driver.Environment{ReduceMotion: true}}
 	child := &view{id: 2, kind: driver.KindView, frame: driver.Bounds{Origin: driver.Point{X: 20, Y: 30}, Size: driver.Size{Width: 40, Height: 40}},
 		style: driver.ViewStyle{Opacity: 1}}
 	scroll := &view{id: 1, kind: driver.KindScroll, frame: driver.Bounds{Size: driver.Size{Width: 200, Height: 200}},
