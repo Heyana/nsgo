@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -147,6 +148,7 @@ type view struct {
 	played    []driver.DrawOp       // the ops it last drew, its bound arguments' values in place
 	canvas    canvasPaint           // how it paints (content.go)
 	shader    *apple.ShaderLayer    // a shader view's (shader.go)
+	gpu       *apple.GPULayer       // a GPU view's (gpu.go)
 	web       *apple.Web            // a web view's
 	video     *apple.Video          // a video's
 
@@ -189,6 +191,8 @@ type view struct {
 }
 
 type surface struct {
+	// gpuLayers are the GPU views' layers by view, which the engine goroutine submits frames to.
+	gpuLayers    sync.Map
 	sensors      apple.Sensors
 	saves        driver.SavePreflights
 	checkingSave atomic.Bool
@@ -1196,6 +1200,7 @@ func (s *surface) environment() driver.Environment {
 		Speak:            apple.SpeakAvailable(),
 		Audio:            apple.AudioAvailable(),
 		Gamepads:         true,
+		GPU:              apple.GPUSupported(),
 		AudioSchedule:    apple.AudioAvailable(),
 		CanSendInput:     true,
 		CanLockPointer:   true,
@@ -2049,8 +2054,6 @@ func (s *surface) RequestFrame() {
 	}
 }
 
-func (s *surface) SubmitGPU(driver.GPUFrame) {}
-
 func (s *surface) apply(b *driver.MountBatch) {
 	defer func() { s.openFrame = driver.WindowFrame{} }()
 	s.batch++
@@ -2403,6 +2406,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.animator.BindCanvas(v.id, it.Drawing.Slots)
 			v.setCanvasNodes(it.Drawing.Nodes)
 			v.redraw()
+		case driver.ItemGPU:
+			if v.kind == driver.KindGPU && it.GPU != nil {
+				v.newGPU(*it.GPU)
+			}
 		case driver.ItemShader:
 			if v.kind == driver.KindShader && it.Shader != nil && it.Shader.Role == driver.ShaderFill {
 				s.setShader(v, it.Shader)
@@ -2616,6 +2623,9 @@ func (s *surface) delete(v *view, kept bool) {
 	v.releaseAXBar()
 	if v.shader != nil {
 		v.shader.Release()
+	}
+	if v.gpu != nil {
+		s.releaseGPU(v)
 	}
 	s.endEffect(v)
 	if v.content != v.native {

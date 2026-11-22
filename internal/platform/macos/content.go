@@ -231,6 +231,9 @@ func (v *view) sizeContent() {
 	if v.shader != nil {
 		v.sizeShader()
 	}
+	if v.gpu != nil {
+		v.sizeGPU()
+	}
 	if v.contentLayer == 0 {
 		return
 	}
@@ -268,6 +271,9 @@ func (s *surface) rescale() {
 	for _, v := range s.views {
 		if v != nil && v.shader != nil {
 			v.sizeShader()
+		}
+		if v != nil && v.gpu != nil {
+			v.sizeGPU()
 		}
 		if v == nil || v.contentLayer == 0 {
 			continue

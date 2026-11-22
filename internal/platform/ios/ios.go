@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"structs"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -87,6 +88,7 @@ type view struct {
 	drawing    *driver.Drawing    // a canvas's
 	played     []driver.DrawOp    // the ops it last drew, its bound arguments' values in place
 	shader     *apple.ShaderLayer // a shader view's (shader.go)
+	gpu        *apple.GPULayer    // a GPU view's (gpu.go)
 	container  objc.ID            // what holds its children under an effect or for its clip, once it has one
 	clipHeld   bool               // whether container clips the children in place of the view's own layer, which keeps its shadow and outline (clipsInHolder)
 	web        *apple.Web         // a web view's
@@ -143,6 +145,8 @@ type view struct {
 }
 
 type surface struct {
+	// gpuLayers are the GPU views' layers by view, which the engine goroutine submits frames to.
+	gpuLayers sync.Map
 	sensors   apple.Sensors
 	discovery apple.Discovery
 
@@ -823,6 +827,7 @@ func (s *surface) environment() driver.Environment {
 		Speak:            apple.SpeakAvailable(),
 		Audio:            idiom != driver.IdiomTV && apple.AudioAvailable(), // none on tvOS in the first stages (docs/architecture/audio.md)
 		Gamepads:         true,
+		GPU:              idiom != driver.IdiomTV && apple.GPUSupported(), // tvOS waits for its own verification (docs/architecture/gpu.md)
 		AudioSchedule:    idiom != driver.IdiomTV && apple.AudioAvailable(),
 		Camera:           cameraAvailable(),
 		ScanCode:         cameraAvailable() && idiom != driver.IdiomTV,
@@ -1098,8 +1103,6 @@ func (s *surface) RequestFrame() {
 		apple.OnMain(s.frameClock)
 	}
 }
-
-func (s *surface) SubmitGPU(driver.GPUFrame) {}
 
 // frameClock starts the clock that serves a frame the engine asked s for: s's own, or, for a standalone app's scene that shows in no foreground window, that of one that does, since the engine asks one of its surfaces for the frames of all their trees.
 func (s *surface) frameClock() {
@@ -1497,6 +1500,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.animator.BindCanvas(v.id, it.Drawing.Slots)
 			v.setCanvasNodes(it.Drawing.Nodes)
 			v.redraw()
+		case driver.ItemGPU:
+			if v.kind == driver.KindGPU && it.GPU != nil && s.env.GPU {
+				v.newGPU(*it.GPU)
+			}
 		case driver.ItemShader:
 			if v.kind == driver.KindShader && it.Shader != nil && it.Shader.Role == driver.ShaderFill {
 				s.setShader(v, it.Shader)
@@ -1773,6 +1780,9 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	if v.shader != nil {
 		v.shader.Release()
+	}
+	if v.gpu != nil {
+		s.releaseGPU(v)
 	}
 	delete(views, v.native)
 	if v.input != nil {

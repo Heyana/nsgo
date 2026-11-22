@@ -330,6 +330,9 @@ func (v *view) place(f driver.Bounds) {
 	if v.shader != nil {
 		v.sizeShader()
 	}
+	if v.gpu != nil {
+		v.sizeGPU()
+	}
 	if field := v.surface.accessories[v.id]; field != nil && field.input != nil {
 		// A taller bar shows only once the keyboard asks for it again.
 		field.input.field.Send(sel("reloadInputViews"))

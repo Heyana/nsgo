@@ -424,6 +424,7 @@ Work is staged in reviewable issues matching the roadmap:
 2. **[#1105](https://github.com/nsgo-dev/nsgo/issues/1105) — macOS and iOS (`internal/platform/apple`)**:
    - Metal `GPUView` on `CAMetalLayer` via `purego` and Objective-C runtime, extending `internal/platform/apple/shader.go`'s dedicated render goroutine so `nextDrawable` never blocks the main thread.
    - `MTLBuffer`, `MTLTexture` (2D/cube/2D-array/depth/MSAA), `MTLSamplerState`, `MTLRenderPipelineState`, `MTLDepthStencilState`, `MTLCommandBuffer` / `MTLRenderCommandEncoder`, and async blit readback.
+   - Implemented in `internal/platform/apple/gpu.go`: passes that target the view draw into a persistent surface texture, which a presenting frame copies into the layer's drawable, so a pass that loads the surface and `Device.ReadSurface` both see the last frame. Uploads and readbacks blit through buffers in submission order, `Depth24Plus` maps to `Depth32Float` (Apple GPUs have no 24-bit depth), and a pipeline's Metal state is made per depth attachment format the first time a pass uses it. tvOS reports `SupportsGPU() == false` until it is verified.
 3. **[#1106](https://github.com/nsgo-dev/nsgo/issues/1106) — Windows (`internal/platform/windows`)**:
    - Direct3D 11 backend via `syscall` and COM vtables on the Direct2D/DXGI device (`ID3D11Device`, `ID3D11DeviceContext`, `D3DCompile` HLSL SM 5.0), compositing the GPU view cleanly beneath native views.
    - Full `DXGI_ERROR_DEVICE_REMOVED` / `DXGI_ERROR_DEVICE_RESET` detection and recovery into `OnDeviceLost` / `OnReady`.
