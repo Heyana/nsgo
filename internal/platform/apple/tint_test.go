@@ -3,6 +3,7 @@
 package apple
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
@@ -12,6 +13,13 @@ import (
 )
 
 func TestBackdropTintTransitionsAndAnimatedBackgrounds(t *testing.T) {
+	// BackdropTint styles inside WithoutAnimation's CATransaction. When that transaction is the thread's outermost one, its commit ends at once the animations it added to a layer outside any window, as this one is, so the transitions the test reads would be gone or not depending on whether an earlier test left an implicit transaction open on the thread the test runs on. An outer transaction, held on one thread as transactions are per thread, keeps them on the layer as a window's layer keeps them.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	transaction := objc.ID(Class("CATransaction"))
+	transaction.Send(sel("begin"))
+	defer transaction.Send(sel("commit"))
+
 	layer := objc.ID(objc.GetClass("CALayer")).Send(selNew)
 	defer layer.Send(selRelease)
 	defer ForgetTransform(layer)
