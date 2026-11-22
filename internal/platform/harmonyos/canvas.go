@@ -91,9 +91,11 @@ type stop struct {
 	C string  `json:"c"`
 }
 
-// canvasJSON serializes a drawing for the host.
-func canvasJSON(ops []driver.DrawOp) string {
+// canvasJSON serializes a drawing for the host. packed says the host plays an atlas from one op (deviceData.CanvasAtlas); a host built before that op, such as an older committed prebuilt host, gets each sprite expanded into the image ops it has always played.
+func canvasJSON(ops []driver.DrawOp, packed bool) string {
 	out := make([]canvasOp, 0, len(ops))
+	alpha := float32(1)
+	var saved []float32
 	for i := range ops {
 		o := &ops[i]
 		c := canvasOp{
@@ -111,6 +113,16 @@ func canvasJSON(ops []driver.DrawOp) string {
 			c.A = &o.A
 		}
 		switch o.Kind {
+		case driver.DrawSave:
+			saved = append(saved, alpha)
+		case driver.DrawRestore:
+			if n := len(saved); n != 0 {
+				alpha, saved = saved[n-1], saved[:n-1]
+			}
+		case driver.DrawAlpha:
+			if o.A >= 0 && o.A <= 1 {
+				alpha = o.A
+			}
 		case driver.DrawFillColor, driver.DrawStrokeColor, driver.DrawShadow:
 			c.C = webstyle.Color(o.Color)
 		case driver.DrawLineCap:
@@ -134,6 +146,10 @@ func canvasJSON(ops []driver.DrawOp) string {
 			if o.Image == nil || o.Atlas == nil || len(*o.Atlas) == 0 {
 				continue
 			}
+			if !packed {
+				out = appendAtlas(out, o, alpha)
+				continue
+			}
 			c.image(o)
 			c.Sprites = atlasSprites(*o.Atlas)
 		}
@@ -144,6 +160,28 @@ func canvasJSON(ops []driver.DrawOp) string {
 		return "[]"
 	}
 	return string(b)
+}
+
+// appendAtlas replays an atlas through the image ops every host plays: a save, the sprite's transform, its alpha and the image, then a restore.
+func appendAtlas(out []canvasOp, op *driver.DrawOp, alpha float32) []canvasOp {
+	img := canvasOp{K: int(driver.DrawImage)}
+	img.image(op)
+	for _, sprite := range *op.Atlas {
+		t, b := sprite.Transform, sprite.Rect
+		x, h := float32(b.Origin.X), float32(b.Size.Height)
+		img.X1, img.Y1 = &x, float32(b.Origin.Y)
+		img.W, img.H = float32(b.Size.Width), h
+		img.X2, img.Y2 = img.W, &h
+		a := alpha * sprite.Alpha
+		out = append(out,
+			canvasOp{K: int(driver.DrawSave)},
+			canvasOp{K: int(driver.DrawTransform), X1: &t.SCos, Y1: t.SSin, X2: -t.SSin, Y2: &t.SCos, X: t.TX, Y: t.TY},
+			canvasOp{K: int(driver.DrawAlpha), A: &a},
+			img,
+			canvasOp{K: int(driver.DrawRestore)},
+		)
+	}
+	return out
 }
 
 // gradientOf maps a drawing gradient, leaving out what the host cannot play.

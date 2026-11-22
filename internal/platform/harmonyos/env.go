@@ -20,6 +20,8 @@ type deviceData struct {
 	// Lifecycle is driver.Lifecycle's value; OpenedURL is the Want's uri.
 	Lifecycle int
 	OpenedURL string
+	// CanvasAtlas says the host's canvas player draws an atlas from one op; a host built before it leaves it out.
+	CanvasAtlas bool
 }
 
 // buildEnvironment updates prev from the ArkTS host's deviceData snapshot.

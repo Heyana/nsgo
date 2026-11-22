@@ -90,6 +90,7 @@ func newSurface(opts Options) *surface {
 	s.m.frame = func() { s.frame(time.Time{}) }
 	s.env = s.environment()
 	s.size0 = s.size()
+	s.m.packedAtlas = s.device().CanvasAtlas
 	if opts.Perf {
 		s.perf = engine.NewPerfMonitor()
 		s.clock.Watch(s.perf)

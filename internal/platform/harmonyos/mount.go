@@ -46,6 +46,8 @@ type mounter struct {
 	lastKey driver.NodeID
 	// pending holds modal lifecycle events queued during a batch and dispatched once the batch's ops are flushed to the render layer.
 	pending []driver.Event
+	// packedAtlas says the host draws an atlas from one canvas op.
+	packedAtlas bool
 }
 
 // view is what the render layer keeps for a view.
@@ -207,7 +209,7 @@ func (m *mounter) applyAnimated() bool {
 	})
 	m.anim.ChangedCanvases(func(id driver.NodeID) {
 		if v := m.views[id]; v != nil && v.drawing != nil {
-			m.o.op("cv", id).str(canvasJSON(m.anim.CanvasOps(id, v.drawing)))
+			m.o.op("cv", id).str(canvasJSON(m.anim.CanvasOps(id, v.drawing), m.packedAtlas))
 			changed = true
 		}
 	})
@@ -297,7 +299,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 				ops = m.anim.CanvasOps(it.ID, it.Drawing)
 			}
 		}
-		m.o.op("cv", it.ID).str(canvasJSON(ops))
+		m.o.op("cv", it.ID).str(canvasJSON(ops, m.packedAtlas))
 	case driver.ItemImage:
 		src, fit, data, nearest := "", "cover", "", false
 		if it.Image != nil {

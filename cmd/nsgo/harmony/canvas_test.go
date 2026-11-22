@@ -24,6 +24,10 @@ func TestCanvasPlayerReadsEveryDrawKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := string(data)
+	// Go sends an atlas as one op only to a host that reports it can play one, so a player with case 40 must say so.
+	if !strings.Contains(src, "CanvasAtlas: true") {
+		t.Error("deviceJSON does not report CanvasAtlas, so Go keeps expanding atlases for this host")
+	}
 	start := strings.Index(src, "struct CanvasView {")
 	if start < 0 {
 		t.Fatal("Index.ets has no CanvasView: the pattern no longer matches")
