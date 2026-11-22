@@ -57,7 +57,9 @@ mount(App);`)
 }
 
 func TestTabBarSVGFromTSX(t *testing.T) {
-	app := run(t, `import { mount, signal, View, Text } from "nsgo";
+	for _, os := range []core.OS{core.OSAndroid, core.OSIOS} {
+		t.Run(string(os), func(t *testing.T) {
+			app := run(t, `import { mount, signal, View, Text } from "nsgo";
 import { TabBar } from "nsgo/mobile";
 function App() {
     const selected = signal(0);
@@ -70,19 +72,21 @@ function App() {
         <Text>{() => "selected " + selected()}</Text>
     </View>;
 }
-mount(App);`, nsgotest.Environment(core.Environment{OS: core.OSAndroid}))
-	bar := app.Find("id:bar")
-	if got := bar.TabBadge(0); got != (core.TabBadge{Text: "5"}) {
-		t.Fatalf("TSX tab badge = %v, want 5", got)
-	}
-	items := bar.NativeProps["items"].([]any)
-	if d, ok := items[0].(map[string]any)["drawing"].(*driver.Drawing); !ok || len(d.Ops) == 0 {
-		t.Fatal("TSX SVG did not reach the native bar")
-	}
-	app.Emit("id:bar", "change", float64(1))
-	app.Find("text:selected 1")
-	if got := app.Find("id:bar").TabBadge(0); got != (core.TabBadge{Dot: true}) {
-		t.Fatalf("updated TSX tab badge = %v, want dot", got)
+mount(App);`, nsgotest.Environment(core.Environment{OS: os}))
+			bar := app.Find("id:bar")
+			if got := bar.TabBadge(0); got != (core.TabBadge{Text: "5"}) {
+				t.Fatalf("%s: TSX tab badge = %v, want 5", os, got)
+			}
+			items := bar.NativeProps["items"].([]any)
+			if d, ok := items[0].(map[string]any)["drawing"].(*driver.Drawing); !ok || len(d.Ops) == 0 {
+				t.Fatalf("%s: TSX SVG did not reach the native bar", os)
+			}
+			app.Emit("id:bar", "change", float64(1))
+			app.Find("text:selected 1")
+			if got := app.Find("id:bar").TabBadge(0); got != (core.TabBadge{Dot: true}) {
+				t.Fatalf("%s: updated TSX tab badge = %v, want dot", os, got)
+			}
+		})
 	}
 }
 

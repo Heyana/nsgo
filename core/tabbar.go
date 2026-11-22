@@ -80,7 +80,7 @@ type TabBarItem struct {
 	// ("house"), and on Android a drawable of the app or, prefixed
 	// "android:", of the system ("android:ic_menu_search").
 	Icon string
-	// SVG is the tab's icon on Android where Icon names no drawable the app or system has, such as an SF Symbol name shared with iOS: fitted into 24 points and tinted by the bar as a drawable is. iOS uses only Icon.
+	// SVG is the tab's icon on iOS and Android where Icon names no SF Symbol or drawable, fitted into 24 points and tinted by the bar as a system icon is.
 	SVG   *SVG
 	Badge TabBadge
 }
@@ -111,7 +111,7 @@ func (b TabBar) native(cx *Scope) Node {
 				if it.Icon != "" {
 					tab["icon"] = it.Icon
 				}
-				if it.SVG != nil && cx.Env().OS() == OSAndroid {
+				if it.SVG != nil {
 					d := &driver.Drawing{}
 					it.SVG.Draw(d, Size{Width: 24, Height: 24}, RGB(0xffffff))
 					tab["drawing"] = d

@@ -3,7 +3,6 @@
 package ios
 
 import (
-	"slices"
 	"structs"
 
 	"github.com/ebitengine/purego/objc"
@@ -19,10 +18,15 @@ type directionalEdgeInsets struct {
 	Top, Leading, Bottom, Trailing float64
 }
 
+const (
+	uiImageOrientationUp               = 0
+	uiImageRenderingModeAlwaysTemplate = 2
+)
+
 // tabBar is core.TabBar's component, which the backend registers itself
 // as NSH's system_tab_bar.rs: a UITabBar on the bottom edge, or a vertical
-// UIKit bar on the leading or trailing edge, their icons SF Symbols,
-// reporting the user's choice as "change".
+// UIKit bar on the leading or trailing edge, their icons SF Symbols or SVG
+// template images, reporting the user's choice as "change".
 type tabBar struct {
 	cx        *driver.NativeContext
 	container objc.ID
@@ -33,8 +37,8 @@ type tabBar struct {
 	stack     objc.ID
 	buttons   []objc.ID
 	items     []objc.ID
-	titles    []string
-	icons     []string
+	specs     []tabBarItemSpec
+	scale     float64
 	label     string
 	tint      driver.Color
 	edge      tabBarEdge
@@ -310,7 +314,7 @@ func (t *tabBar) rebuildRailButtons() {
 	}
 	t.clearRailButtons()
 	const touchUpInside = 1 << 6
-	for range t.icons {
+	for range t.specs {
 		btn := objc.ID(apple.Class("UIButton")).Send(selNew)
 		btn.Send(sel("addTarget:action:forControlEvents:"), tabBarDelegate, sel("nsgoTabBarButtonTapped:"), uint(touchUpInside))
 		t.buttons = append(t.buttons, btn)
@@ -353,16 +357,13 @@ func (t *tabBar) styleRailButtons() {
 	for i, btn := range t.buttons {
 		selected := i == t.selected
 		title := ""
-		if i < len(t.titles) {
-			title = t.titles[i]
+		if i < len(t.specs) {
+			title = t.specs[i].title
 		}
-		icon := ""
-		if i < len(t.icons) {
-			icon = t.icons[i]
-		}
+		// The rail shows the image its UITabBarItem resolved, an SF Symbol or the SVG's template image.
 		var image objc.ID
-		if icon != "" {
-			image = objc.ID(apple.Class("UIImage")).Send(sel("systemImageNamed:"), apple.NSString(icon))
+		if i < len(t.items) {
+			image = t.items[i].Send(sel("image"))
 		}
 		fg := t.railForeground(selected)
 		if cfgClass != 0 && objc.Send[bool](btn, sel("respondsToSelector:"), sel("setConfiguration:")) {
@@ -482,37 +483,74 @@ func (t *tabBar) SetProp(name string, value any) {
 	}
 }
 
+// displayScale returns the bar's display scale, falling back to the main screen
+// before attachment so SVG template images rasterize at retina resolution.
+func (t *tabBar) displayScale() float64 {
+	var scale float64
+	if t.bar != 0 {
+		if traits := t.bar.Send(sel("traitCollection")); traits != 0 {
+			scale = objc.Send[float64](traits, sel("displayScale"))
+		}
+	}
+	if scale <= 0 {
+		if screen := objc.ID(apple.Class("UIScreen")).Send(sel("mainScreen")); screen != 0 {
+			scale = objc.Send[float64](screen, sel("scale"))
+		}
+	}
+	if scale <= 0 {
+		scale = 1
+	}
+	return scale
+}
+
+// svgTabBarImage rasterizes d into a 24-point template UIImage at scale so
+// UITabBar tints it for selected and idle states just like an SF Symbol.
+func svgTabBarImage(d *driver.Drawing, scale float64) objc.ID {
+	cg := apple.RasterizeDrawing(d, tabBarIconPoints, tabBarIconPoints, scale)
+	if cg == 0 {
+		return 0
+	}
+	defer apple.Release(cg)
+	img := objc.ID(apple.Class("UIImage")).Send(sel("imageWithCGImage:scale:orientation:"),
+		cg, scale, uiImageOrientationUp)
+	if img == 0 {
+		return 0
+	}
+	return img.Send(sel("imageWithRenderingMode:"), uiImageRenderingModeAlwaysTemplate)
+}
+
 // setItems updates title changes on the current UIKit items, preserving
 // selection and VoiceOver's item identity.
 func (t *tabBar) setItems(list []any) {
-	titles, icons := make([]string, len(list)), make([]string, len(list))
-	for i, it := range list {
-		tab, _ := it.(map[string]any)
-		titles[i], _ = tab["title"].(string)
-		icons[i], _ = tab["icon"].(string)
-	}
-	if slices.Equal(t.icons, icons) {
-		t.titles = titles
+	specs := parseTabBarItems(list)
+	scale := t.displayScale()
+	if tabBarIconsEqual(t.specs, specs) && (!tabBarHasDrawings(specs) || t.scale == scale) {
 		for i, item := range t.items {
-			if apple.GoString(item.Send(sel("title"))) != titles[i] {
-				item.Send(sel("setTitle:"), apple.NSString(titles[i]))
+			if apple.GoString(item.Send(sel("title"))) != specs[i].title {
+				item.Send(sel("setTitle:"), apple.NSString(specs[i].title))
 			}
 		}
+		t.specs = specs
 		if len(t.buttons) > 0 {
 			t.styleRailButtons()
 		}
 		return
 	}
-	t.titles, t.icons = titles, icons
+	t.specs = specs
+	t.scale = scale
 	array := objc.ID(apple.Class("NSMutableArray")).Send(selNew)
 	t.items = t.items[:0]
-	for i, icon := range icons {
-		var image objc.ID
-		if icon != "" {
-			image = objc.ID(apple.Class("UIImage")).Send(sel("systemImageNamed:"), apple.NSString(icon))
-		}
+	uiImageClass := objc.ID(apple.Class("UIImage"))
+	systemImage := func(name string) uintptr {
+		return uintptr(uiImageClass.Send(sel("systemImageNamed:"), apple.NSString(name)))
+	}
+	svgImage := func(d *driver.Drawing) uintptr {
+		return uintptr(svgTabBarImage(d, scale))
+	}
+	for i, spec := range specs {
+		image := objc.ID(resolveTabBarImage(spec, systemImage, svgImage))
 		item := objc.ID(apple.Class("UITabBarItem")).Send(selAlloc).
-			Send(sel("initWithTitle:image:tag:"), apple.NSString(titles[i]), image, i)
+			Send(sel("initWithTitle:image:tag:"), apple.NSString(spec.title), image, i)
 		t.items = append(t.items, item)
 		array.Send(sel("addObject:"), item)
 		item.Send(selRelease)

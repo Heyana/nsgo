@@ -198,3 +198,79 @@ func NativeTabBarFit() float64 {
 	})
 	return h
 }
+
+func TestTabBarSVGTemplateImages(t *testing.T) {
+	const (
+		rectDoc   = `<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="currentColor"/></svg>`
+		circleDoc = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/></svg>`
+	)
+	draw := func(doc string) *driver.Drawing {
+		svg, err := driver.ParseSVG([]byte(doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := &driver.Drawing{}
+		svg.Draw(d, driver.Size{Width: tabBarIconPoints, Height: tabBarIconPoints}, driver.RGB(0xffffff))
+		return d
+	}
+
+	onMainSync(func() {
+		bar := &tabBar{bar: objc.ID(apple.Class("UITabBar")).Send(selNew), selected: 0}
+		defer bar.bar.Send(selRelease)
+
+		items := func(title, doc string) []any {
+			return []any{
+				map[string]any{"title": title, "drawing": draw(doc)},
+				map[string]any{"title": "Fallback", "icon": "android:ic_menu_search", "drawing": draw(doc)},
+				map[string]any{"title": "Symbol", "icon": "house", "drawing": draw(doc)},
+			}
+		}
+		bar.SetProp("items", items("Home", rectDoc))
+		if len(bar.items) != 3 {
+			t.Fatalf("items = %d, want 3", len(bar.items))
+		}
+		wantScale := bar.displayScale()
+		for i := range 2 {
+			img := bar.items[i].Send(sel("image"))
+			if img == 0 {
+				t.Fatalf("tab %d has nil image", i)
+			}
+			if mode := objc.Send[int](img, sel("renderingMode")); mode != uiImageRenderingModeAlwaysTemplate {
+				t.Errorf("tab %d renderingMode = %d, want AlwaysTemplate (%d)", i, mode, uiImageRenderingModeAlwaysTemplate)
+			}
+			if scale := objc.Send[float64](img, sel("scale")); scale != wantScale {
+				t.Errorf("tab %d scale = %v, want %v", i, scale, wantScale)
+			}
+			if sz := objc.Send[apple.CGSize](img, sel("size")); sz.Width != tabBarIconPoints || sz.Height != tabBarIconPoints {
+				t.Errorf("tab %d size = %+v, want %dx%d", i, sz, tabBarIconPoints, tabBarIconPoints)
+			}
+			if apple.MsgBool(img, sel("isSymbolImage")) {
+				t.Errorf("tab %d unexpectedly resolved as an SF Symbol", i)
+			}
+		}
+		symImg := bar.items[2].Send(sel("image"))
+		if symImg == 0 || !apple.MsgBool(symImg, sel("isSymbolImage")) {
+			t.Errorf("tab 2 did not preserve SF Symbol precedence")
+		}
+
+		// Retitling with a freshly drawn identical SVG preserves UIKit item identities.
+		before := slices.Clone(bar.items)
+		firstImg := before[0].Send(sel("image"))
+		bar.SetProp("items", items("Accueil", rectDoc))
+		if !slices.Equal(before, bar.items) {
+			t.Errorf("UIKit item identities changed when only the title changed")
+		}
+		if title := apple.GoString(bar.items[0].Send(sel("title"))); title != "Accueil" {
+			t.Errorf("retitled tab 0 = %q, want Accueil", title)
+		}
+
+		// Changing the SVG replaces the UIKit items with the new template image.
+		bar.SetProp("items", items("Accueil", circleDoc))
+		if slices.Equal(before, bar.items) {
+			t.Errorf("UIKit items were not rebuilt when the SVG changed")
+		}
+		if nextImg := bar.items[0].Send(sel("image")); nextImg == 0 || nextImg == firstImg {
+			t.Errorf("SVG update did not produce a new template image")
+		}
+	})
+}

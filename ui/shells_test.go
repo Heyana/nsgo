@@ -564,9 +564,9 @@ func TestTabShellRetitlesTheSelectedTabInPlace(t *testing.T) {
 
 func TestTabShellSafeArea(t *testing.T) {
 	var in core.Edges
-	run := func(e core.Environment, icon string) *nsgotest.App {
+	run := func(e core.Environment, icon string, svg func() *core.SVG) *nsgotest.App {
 		app, _ := shell(t, e, func(cx *core.Scope) core.Node {
-			return TabShell{Label: "Sections", TestID: "shell", Tabs: []ShellTab{{Text: "Home", SystemIcon: icon, Content: func(cx *core.Scope) core.Node {
+			return TabShell{Label: "Sections", TestID: "shell", Tabs: []ShellTab{{Text: "Home", SystemIcon: icon, Icon: svg, Content: func(cx *core.Scope) core.Node {
 				nav := base.NewNav(cx, "home")
 				return nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, _ string, _ func() int) base.NavPage {
 					return base.NavPage{Title: "Home", Children: []core.Node{core.Func(func(cx *core.Scope) core.Node {
@@ -589,7 +589,7 @@ func TestTabShellSafeArea(t *testing.T) {
 	}
 	e := desktopEnv
 	e.SafeArea = core.Edges{Bottom: 34}
-	app := run(e, "")
+	app := run(e, "", nil)
 	check(app, "drawn bar", 0)
 	if bar := app.Find("role:tablist Sections").Parent; bar.Frame.Size.Height <= 34 {
 		t.Fatalf("drawn bar height = %v, want it to keep clear of the safe area", bar.Frame.Size.Height)
@@ -606,11 +606,12 @@ func TestTabShellSafeArea(t *testing.T) {
 
 	android := e
 	android.OS, android.Idiom, android.KeyboardHeight, android.SafeArea = core.OSAndroid, core.IdiomPhone, 0, core.Edges{Top: 47, Bottom: 34}
-	check(run(android, ""), "Android", 0)
+	check(run(android, "", nil), "Android", 0)
 	ios := android
 	ios.OS = core.OSIOS
-	check(run(ios, ""), "iOS drawn bar", 0)
-	check(run(ios, "house"), "iOS system bar", 34)
+	check(run(ios, "", nil), "iOS drawn bar", 0)
+	check(run(ios, "house", nil), "iOS system bar", 34)
+	check(run(ios, "", lucide.House), "iOS SVG system bar", 34)
 }
 
 // TestTabShellBarHidden restores the section's safe area and removes the drawn bar while a pushed page asks the shell to hide it.
@@ -648,62 +649,71 @@ func TestTabShellBarHidden(t *testing.T) {
 	check("shown again", true, 0)
 }
 
-// TestTabShellAndroidSVGBar puts SVG icons in Android's system bar, reactively and beside a SystemIcon, while iOS keeps to SF Symbols and desktops draw the bar.
-func TestTabShellAndroidSVGBar(t *testing.T) {
-	var set func(*core.SVG)
-	built := 0
-	tabs := func(cx *core.Scope) core.Node {
-		selected, icon := core.NewSignal(cx, 0), core.NewSignal(cx, lucide.House())
-		set = icon.Set
-		return TabShell{Label: "Sections", Selected: selected.Get, OnChange: selected.Set, Tabs: []ShellTab{
-			{Text: "Home", Icon: icon.Get, Content: func(*core.Scope) core.Node {
-				built++
-				return core.Text{Content: "Home page"}
-			}},
-			{Text: "Search", SystemIcon: "magnifyingglass", Icon: lucide.Search,
-				Content: func(*core.Scope) core.Node { return core.Text{Content: "Search page"} }},
-		}}
-	}
-	app, _ := shell(t, core.Environment{OS: core.OSAndroid, Idiom: core.IdiomPhone}, tabs)
-	items := func() []any { return app.FindMounted("id:tab-bar").NativeProps["items"].([]any) }
-	first := items()[0].(map[string]any)["drawing"].(*driver.Drawing)
-	// An SF Symbol name shared with iOS names no Android drawable, so the tab carries its SVG for the bar to fall back on; a name that does name one takes precedence there.
-	if shared := items()[1].(map[string]any); shared["icon"] != "magnifyingglass" || shared["drawing"] == nil {
-		t.Fatalf("a SystemIcon tab lost its name or its SVG: %+v", shared)
-	}
-	if app.Exists("role:tablist Sections") || len(first.Ops) == 0 {
-		t.Fatal("Android did not use native SVG icons")
-	}
-	app.Post(func() { set(lucide.Settings()) })
-	app.Settle()
-	if items()[0].(map[string]any)["drawing"] == first {
-		t.Fatal("a reactive SVG did not update the native bar")
-	}
-	app.Emit("id:tab-bar", "change", float64(1))
-	app.Find("Search page")
-	app.Emit("id:tab-bar", "change", float64(0))
-	app.Find("Home page")
-	if built != 1 {
-		t.Fatalf("Home built %d times", built)
-	}
-	// iOS still needs SF Symbols; desktops keep the drawn SVG bar at any width.
-	for _, env := range []core.Environment{phoneEnv, desktopEnv} {
-		other, _ := shell(t, env, tabs)
-		other.Find("role:tablist Sections")
-	}
-	// Where every tab has an SF Symbol, iOS uses its bar without drawing the SVGs, which it cannot show.
-	drawn := 0
-	ios, _ := shell(t, phoneEnv, func(cx *core.Scope) core.Node {
-		icon := func() *core.SVG { drawn++; return lucide.House() }
-		return TabShell{Label: "Sections", Tabs: []ShellTab{{Text: "Home", SystemIcon: "house", Icon: icon}, {Text: "Search", SystemIcon: "magnifyingglass", Icon: icon}}}
-	})
-	for _, item := range ios.FindMounted("id:tab-bar").NativeProps["items"].([]any) {
-		if tab := item.(map[string]any); tab["drawing"] != nil || tab["icon"] == nil {
-			t.Fatalf("iOS tab = %+v, want its SF Symbol alone", tab)
+// TestTabShellMobileSVGBar puts SVG icons in iOS's and Android's system bars, reactively and beside a SystemIcon, while desktops, simulated mobile builds and shells with an iconless tab draw the bar.
+func TestTabShellMobileSVGBar(t *testing.T) {
+	makeTabs := func(built *int, set *func(*core.SVG)) func(cx *core.Scope) core.Node {
+		return func(cx *core.Scope) core.Node {
+			selected, icon := core.NewSignal(cx, 0), core.NewSignal(cx, lucide.House())
+			*set = icon.Set
+			return TabShell{Label: "Sections", Selected: selected.Get, OnChange: selected.Set, Tabs: []ShellTab{
+				{Text: "Home", Icon: icon.Get, Content: func(*core.Scope) core.Node {
+					*built++
+					return core.Text{Content: "Home page"}
+				}},
+				{Text: "Search", SystemIcon: "magnifyingglass", Icon: lucide.Search,
+					Content: func(*core.Scope) core.Node { return core.Text{Content: "Search page"} }},
+			}}
 		}
 	}
-	if drawn != 0 {
-		t.Fatalf("iOS drew %d SVG icons for its system bar", drawn)
+	for _, env := range []core.Environment{
+		{OS: core.OSAndroid, Idiom: core.IdiomPhone},
+		phoneEnv,
+	} {
+		t.Run(string(env.OS), func(t *testing.T) {
+			var set func(*core.SVG)
+			built := 0
+			app, _ := shell(t, env, makeTabs(&built, &set))
+			items := func() []any { return app.FindMounted("id:tab-bar").NativeProps["items"].([]any) }
+			first := items()[0].(map[string]any)["drawing"].(*driver.Drawing)
+			// A tab with both SystemIcon and Icon carries both so the native bar prefers an SF Symbol or drawable when present and falls back to the SVG otherwise.
+			if shared := items()[1].(map[string]any); shared["icon"] != "magnifyingglass" || shared["drawing"] == nil {
+				t.Fatalf("a SystemIcon tab lost its name or its SVG: %+v", shared)
+			}
+			if app.Exists("role:tablist Sections") || len(first.Ops) == 0 {
+				t.Fatalf("%s did not use native SVG icons", env.OS)
+			}
+			app.Post(func() { set(lucide.Settings()) })
+			app.Settle()
+			if items()[0].(map[string]any)["drawing"] == first {
+				t.Fatal("a reactive SVG did not update the native bar")
+			}
+			app.Emit("id:tab-bar", "change", float64(1))
+			app.Find("Search page")
+			app.Emit("id:tab-bar", "change", float64(0))
+			app.Find("Home page")
+			if built != 1 {
+				t.Fatalf("Home built %d times", built)
+			}
+		})
+	}
+	// Desktops and simulated mobile builds keep the drawn SVG bar.
+	simIOS := phoneEnv
+	simIOS.Simulated = true
+	for _, env := range []core.Environment{desktopEnv, simIOS} {
+		var set func(*core.SVG)
+		built := 0
+		other, _ := shell(t, env, makeTabs(&built, &set))
+		other.Find("role:tablist Sections")
+	}
+	// If any tab lacks both SystemIcon and Icon, iOS and Android fall back to the drawn bar.
+	for _, env := range []core.Environment{phoneEnv, {OS: core.OSAndroid, Idiom: core.IdiomPhone}} {
+		other, _ := shell(t, env, func(cx *core.Scope) core.Node {
+			return TabShell{Label: "Sections", Tabs: []ShellTab{
+				{Text: "Home", Icon: lucide.House},
+				{Text: "Plain"},
+			}}
+		})
+		other.Find("role:tablist Sections")
 	}
 }
 

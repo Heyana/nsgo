@@ -76,7 +76,7 @@ func TestTabBarShowsNothingSimulated(t *testing.T) {
 	}
 }
 
-func TestTabBarSVGIsAndroidOnlyAndReactive(t *testing.T) {
+func TestTabBarSVGIsMobileAndReactive(t *testing.T) {
 	for _, os := range []core.OS{core.OSAndroid, core.OSIOS} {
 		t.Run(string(os), func(t *testing.T) {
 			var set func(*core.SVG)
@@ -91,15 +91,15 @@ func TestTabBarSVGIsAndroidOnlyAndReactive(t *testing.T) {
 				return app.Find("id:bar").NativeProps["items"].([]any)[0].(map[string]any)
 			}
 			first, has := item()["drawing"].(*driver.Drawing)
-			if has != (os == core.OSAndroid) || item()["icon"] != "house" {
+			if !has || item()["icon"] != "house" {
 				t.Fatalf("%s tab props = %+v", os, item())
 			}
-			if has && len(first.Ops) == 0 {
+			if len(first.Ops) == 0 {
 				t.Fatal("SVG produced no drawing")
 			}
 			app.Post(func() { set(lucide.Search()) })
 			app.Settle()
-			if os == core.OSAndroid && item()["drawing"] == first {
+			if item()["drawing"] == first {
 				t.Fatal("the SVG did not update")
 			}
 			app.Post(func() { set(nil) })

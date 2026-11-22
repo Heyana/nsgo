@@ -3,6 +3,7 @@
 package apple
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -157,4 +158,42 @@ func offscreenDecoded(src driver.ImageSource, r request) decoded {
 		}
 	}
 	return decoded{image: img, width: w, height: h, scale: scale, points: points}
+}
+
+// RasterizeDrawing renders d's top-down operations over width × height logical
+// points at scale pixels per point into a new retained CGImage with transparent
+// background, returning 0 when d has no operations or the size is invalid. The
+// caller must call Release on a non-zero result.
+func RasterizeDrawing(d *driver.Drawing, width, height, scale float64) uintptr {
+	if d == nil || len(d.Ops) == 0 || width <= 0 || height <= 0 ||
+		math.IsNaN(width) || math.IsNaN(height) || math.IsInf(width, 0) || math.IsInf(height, 0) {
+		return 0
+	}
+	if scale <= 0 || math.IsNaN(scale) || math.IsInf(scale, 0) {
+		scale = 1
+	}
+	fw, fh := math.Round(width*scale), math.Round(height*scale)
+	if fw < 1 {
+		fw = 1
+	}
+	if fh < 1 {
+		fh = 1
+	}
+	if fw*fh > maxOffscreenPixels {
+		return 0
+	}
+	pw, ph := int(fw), int(fh)
+	const premultipliedFirst, byteOrder32Little = 2, 2 << 12
+	ctx := cgOffscreenBitmapCreate(0, uintptr(pw), uintptr(ph), 8, uintptr(pw*4), srgb, premultipliedFirst|byteOrder32Little)
+	if ctx == 0 {
+		return 0
+	}
+	// Top down in logical points; the bitmap context's base space points up.
+	cgContextTranslateCTM(ctx, 0, float64(ph))
+	cgContextScaleCTM(ctx, float64(pw)/width, -float64(ph)/height)
+	p := newPlayer(ctx, d.Ops, driver.CanvasSplit{}, CanvasHost{Ratio: scale, BaseUp: true})
+	p.run()
+	img := cgBitmapContextCreateImage(ctx)
+	Release(ctx)
+	return img
 }

@@ -66,7 +66,7 @@ Touch screens have no pointer, so these exist on desktops alone.
 | Component | Differs on | What differs |
 | --- | --- | --- |
 | `ui.TabShell` | iOS | Floats over the content when it uses the system's tab bar |
-| `ui.TabShell` | iOS, Android | The system's tab bar: on iOS when every tab has a `SystemIcon`, on Android when every tab has a `SystemIcon` or an `Icon`, whose SVG shows where `SystemIcon` names no drawable. watchOS, which reports iOS, gets the drawn bar |
+| `ui.TabShell` | iOS, Android | The system's tab bar when every tab has a `SystemIcon` or an `Icon`, whose SVG shows where `SystemIcon` names no SF Symbol on iOS or drawable on Android. watchOS, which reports iOS, gets the drawn bar |
 | `ui.NavPage` | iOS, Android | iOS: the system's transparent header over the page, with its own glass, title and back button; content scrolls under it with a progressive blur. Android: Material 3's transparent 64 dp toolbar over the page, with a 22 sp title, back arrow and the header's views below the status bar, and a 152 dp large title that collapses as the scroll view at the top of the page scrolls under it with a progressive blur (API 31+ `RenderEffect`, translucent scrim before API 31); explicit custom header backgrounds override transparency. A page's own `Header` becomes the title view on both, filling the room between its ends when its views grow or take a percentage width and taking its content's size otherwise, keeping the page's left and right views; elsewhere, including watchOS, it is drawn above the page at the page's width |
 | `ui/chat` glass surfaces | macOS, iOS, Windows | No drawn rim, as the system's glass draws its own |
 | `ui/filepicker` | macOS | Shortcuts use Command instead of Control |

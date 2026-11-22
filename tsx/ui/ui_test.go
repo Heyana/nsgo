@@ -203,21 +203,25 @@ function App() {
     ]} />;
 }
 mount(App);`)}}
-	app := nsgotest.Start(t, compiler.App(files, "App.tsx"), nsgotest.Environment(core.Environment{OS: core.OSAndroid}))
-	bar := app.FindMounted("id:tab-bar")
-	if got := bar.TabBadge(0); got != (core.TabBadge{Text: "3"}) {
-		t.Fatalf("TSX shell badge = %v, want 3", got)
-	}
-	items := bar.NativeProps["items"].([]any)
-	for _, item := range items {
-		if d, ok := item.(map[string]any)["drawing"].(*driver.Drawing); !ok || len(d.Ops) == 0 {
-			t.Fatal("TSX shell icon did not reach Android's native bar")
-		}
-	}
-	app.Emit("id:tab-bar", "change", float64(1))
-	app.Find("text:Search page")
-	if got := app.FindMounted("id:tab-bar").TabBadge(0); got != (core.TabBadge{Dot: true}) {
-		t.Fatalf("updated TSX shell badge = %v, want dot", got)
+	for _, os := range []core.OS{core.OSAndroid, core.OSIOS} {
+		t.Run(string(os), func(t *testing.T) {
+			app := nsgotest.Start(t, compiler.App(files, "App.tsx"), nsgotest.Environment(core.Environment{OS: os}))
+			bar := app.FindMounted("id:tab-bar")
+			if got := bar.TabBadge(0); got != (core.TabBadge{Text: "3"}) {
+				t.Fatalf("%s: TSX shell badge = %v, want 3", os, got)
+			}
+			items := bar.NativeProps["items"].([]any)
+			for _, item := range items {
+				if d, ok := item.(map[string]any)["drawing"].(*driver.Drawing); !ok || len(d.Ops) == 0 {
+					t.Fatalf("%s: TSX shell icon did not reach the native bar", os)
+				}
+			}
+			app.Emit("id:tab-bar", "change", float64(1))
+			app.Find("text:Search page")
+			if got := app.FindMounted("id:tab-bar").TabBadge(0); got != (core.TabBadge{Dot: true}) {
+				t.Fatalf("%s: updated TSX shell badge = %v, want dot", os, got)
+			}
+		})
 	}
 }
 

@@ -130,7 +130,7 @@ type AndroidEventMapper interface {
 	ViewEvent(name string, args []any)
 }
 
-// TabBarComponent is the native component iOS and Android register for core.TabBar: the system's tab bar. Its props are "items", a list of {"title", "icon", "drawing"} maps, where "drawing" is an optional *Drawing of the tab's SVG that Android shows when "icon" names no drawable, "selectedIndex", "edge" ("bottom", "leading" or "trailing"), and "tint", the selected tab's Color as a number (0: the system's); it emits "change" with the index the user chose.
+// TabBarComponent is the native component iOS and Android register for core.TabBar: the system's tab bar. Its props are "items", a list of {"title", "icon", "drawing"} maps, where "drawing" is an optional *Drawing of the tab's SVG that iOS and Android show when "icon" names no SF Symbol or drawable, "selectedIndex", "edge" ("bottom", "leading" or "trailing"), and "tint", the selected tab's Color as a number (0: the system's); it emits "change" with the index the user chose.
 const TabBarComponent = "nsgo/tab-bar"
 
 // SwitchComponent is the native component macOS and iOS register for

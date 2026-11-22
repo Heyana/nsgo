@@ -11,7 +11,7 @@ import (
 type ShellTab struct {
 	Text     string
 	TextFunc func() string
-	// Icon draws the tab's SVG, in Android's native bar too wherever SystemIcon names no drawable there.
+	// Icon draws the tab's SVG, in the system tab bar on iOS and Android too wherever SystemIcon names no SF Symbol or drawable there.
 	Icon func() *core.SVG
 	// SystemIcon is the platform's name for the tab's icon on iOS and Android, as mobile.TabBarItem's Icon.
 	SystemIcon string
@@ -23,7 +23,7 @@ type ShellTab struct {
 	TestID  string
 }
 
-// TabShell is an app's top-level sections beside a drawn tab bar, which keeps clear of its edge's safe area, or the system's on iOS where every tab has a SystemIcon and on Android (on the bottom edge) where every tab has a SystemIcon or an Icon. On the bottom edge iOS's floats over the sections, which keep what they must show clear of it with TabBarInset. Every other bar takes room of its own, and the safe area of the sections on the bar's edge (core.Insets, core.EnvSafeArea) is 0 while it shows. Set Edge (or EdgeFunc) to mobile.TabBarLeading or mobile.TabBarTrailing to draw the bar vertically along that edge, or mobile.TabBarAutomatic to follow core.Env.VerticalBarEdge. The Selected tab's content fills the rest; Selected is the app's, set from OnChange. The bar hides while the software keyboard shows, so content padded by core.EnvKeyboard meets the keyboard without an offset. It keeps this form at every window width.
+// TabShell is an app's top-level sections beside a drawn tab bar, which keeps clear of its edge's safe area, or the system's where every tab has a SystemIcon or an Icon, on any edge on iOS and on the bottom edge on Android. On the bottom edge iOS's floats over the sections, which keep what they must show clear of it with TabBarInset. Every other bar takes room of its own, and the safe area of the sections on the bar's edge (core.Insets, core.EnvSafeArea) is 0 while it shows. Set Edge (or EdgeFunc) to mobile.TabBarLeading or mobile.TabBarTrailing to draw the bar vertically along that edge, or mobile.TabBarAutomatic to follow core.Env.VerticalBarEdge. The Selected tab's content fills the rest; Selected is the app's, set from OnChange. The bar hides while the software keyboard shows, so content padded by core.EnvKeyboard meets the keyboard without an offset. It keeps this form at every window width.
 type TabShell struct {
 	Tabs     []ShellTab
 	Selected func() int
@@ -176,9 +176,8 @@ func (s TabShell) bar(cx *core.Scope, selected func() int, change func(int), res
 	if s.LabelFunc != nil {
 		label = ""
 	}
-	nativeBar := func(cx *core.Scope) core.Node {
-		android := cx.Env().OS() == core.OSAndroid
-		return mobile.TabBar{ItemsFunc: func() []mobile.TabBarItem { return s.systemItems(android) },
+	nativeBar := func(*core.Scope) core.Node {
+		return mobile.TabBar{ItemsFunc: s.systemItems,
 			Selected: selected, OnChange: change, EdgeFunc: resolvedEdge, Label: label, LabelFunc: s.LabelFunc,
 			Style: core.Style{FlexGrow: 1}, TestID: "tab-bar"}
 	}
@@ -304,15 +303,15 @@ func (s TabShell) hasSystemBar(cx *core.Scope) bool {
 		return false
 	}
 	for _, tab := range s.Tabs {
-		if tab.SystemIcon == "" && (cx.Env().OS() != core.OSAndroid || tab.Icon == nil) {
+		if tab.SystemIcon == "" && tab.Icon == nil {
 			return false
 		}
 	}
 	return true
 }
 
-// systemItems are the tabs for the system's tab bar. On Android each also carries its SVG, which the bar shows where SystemIcon names no drawable, such as an SF Symbol name shared with iOS.
-func (s TabShell) systemItems(android bool) []mobile.TabBarItem {
+// systemItems are the tabs for the system's tab bar. Each also carries its SVG, which the bar shows where SystemIcon names no SF Symbol on iOS or drawable on Android.
+func (s TabShell) systemItems() []mobile.TabBarItem {
 	items := make([]mobile.TabBarItem, len(s.Tabs))
 	for i, tab := range s.Tabs {
 		title := tab.Text
@@ -323,7 +322,7 @@ func (s TabShell) systemItems(android bool) []mobile.TabBarItem {
 		if tab.Badge != nil {
 			items[i].Badge = tab.Badge()
 		}
-		if android && tab.Icon != nil {
+		if tab.Icon != nil {
 			items[i].SVG = tab.Icon()
 		}
 	}
