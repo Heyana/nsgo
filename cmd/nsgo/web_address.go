@@ -7,8 +7,7 @@ import (
 	"unicode"
 )
 
-// webBase fixes relative assets to the deployed app directory when the page
-// itself may be reloaded at a deeper application address.
+// webBase fixes relative assets to the deployed app directory when the page itself may be reloaded at a deeper application address.
 func (p *project) webBase() (string, error) {
 	raw := p.Web.Base
 	if raw == "" {

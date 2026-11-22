@@ -16,9 +16,7 @@ type historyEntry struct {
 	url   string
 }
 
-// history mirrors entry indices separately from navigation depths: addresses
-// may create several entries at one depth. moving waits for an asynchronous
-// history.go before applying another commit's address.
+// history mirrors entry indices separately from navigation depths: addresses may create several entries at one depth. moving waits for an asynchronous history.go before applying another commit's address.
 type history struct {
 	owned        bool
 	win          js.Value
@@ -75,8 +73,7 @@ func (h *history) start(win js.Value, ls *listeners, notify func(driver.PageAddr
 	})
 }
 
-// ownsHistory leaves an embedded app's containing page alone unless its
-// same-origin frame explicitly opts in.
+// ownsHistory leaves an embedded app's containing page alone unless its same-origin frame explicitly opts in.
 func ownsHistory(win js.Value) bool {
 	if win.Get("top").Equal(win) {
 		return true
@@ -100,16 +97,14 @@ func (h *history) popState(state js.Value) {
 		return
 	}
 	if state.Type() == js.TypeObject && state.Truthy() && state.Get("nsgo").Type() == js.TypeNumber && state.Get("session").String() != h.session {
-		// A reload can leave several entries from the old player. Skip all
-		// of them before leaving through the containing page's own entry.
+		// A reload can leave several entries from the old player. Skip all of them before leaving through the containing page's own entry.
 		h.browser().Call("back")
 		return
 	}
 	if state.Type() != js.TypeObject || !state.Truthy() || state.Get("session").String() != h.session || state.Get("index").Type() != js.TypeNumber {
 		nav := h.win.Get("navigation")
 		before := h.baseIndex >= 0 && nav.Truthy() && nav.Get("currentEntry").Truthy() && nav.Get("currentEntry").Get("index").Int() < h.baseIndex
-		// The page's entries from before this player (and entries of an earlier
-		// run) leave the app. A fresh same-document hash entry belongs to it.
+		// The page's entries from before this player (and entries of an earlier run) leave the app. A fresh same-document hash entry belongs to it.
 		if !before && (state.Type() != js.TypeObject || !state.Truthy() || state.Get("session").Type() == js.TypeUndefined) && withoutHash(h.url()) == withoutHash(h.entries[h.index].url) && h.url() != h.entries[h.index].url {
 			h.addressEntry()
 			return
@@ -164,8 +159,7 @@ func (h *history) push(depth int, url string) {
 	h.entries[h.index].url = h.url()
 }
 
-// setHistory applies one committed navigation/address change. Last address
-// wins while history.go is pending; a requested push survives coalescing.
+// setHistory applies one committed navigation/address change. Last address wins while history.go is pending; a requested push survives coalescing.
 func (s *surface) setHistory(depth int, address *driver.PageAddress) { s.history.set(depth, address) }
 func (h *history) set(depth int, address *driver.PageAddress) {
 	if !h.owned {
@@ -185,8 +179,7 @@ func (h *history) sync() {
 	}
 	current := h.entries[h.index].depth
 	if h.from >= 0 && h.depth > current {
-		// A back the app refused goes forward to the existing entry, retaining
-		// both its original URL and the browser's forward history.
+		// A back the app refused goes forward to the existing entry, retaining both its original URL and the browser's forward history.
 		for i := min(h.from, len(h.entries)-1); i > h.index; i-- {
 			if h.entries[i].depth == h.depth {
 				h.from = -1

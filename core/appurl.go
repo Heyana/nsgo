@@ -21,9 +21,7 @@ const (
 // AppURLOptions chooses how the browser records an application address.
 type AppURLOptions struct{ History HistoryBehavior }
 
-// AppURLChange reports an address reached by browser navigation or a hash
-// edit. Reason is "back", "forward" or "address". Application writes do not
-// notify these handlers; they update the tracked AppURL immediately.
+// AppURLChange reports an address reached by browser navigation or a hash edit. Reason is "back", "forward" or "address". Application writes do not notify these handlers; they update the tracked AppURL immediately.
 type AppURLChange struct{ URL, Reason string }
 
 type appURLHandler struct {
@@ -46,9 +44,7 @@ func (cx *Scope) appAddress() *appAddress {
 	return cx.rt.address
 }
 
-// AppURL reads the app's address as a tracked value. On the web this is the
-// page address before the app renders. Elsewhere it is the last link opened
-// with the app or the value SetAppURL kept. A confined subtree reads none.
+// AppURL reads the app's address as a tracked value. On the web this is the page address before the app renders. Elsewhere it is the last link opened with the app or the value SetAppURL kept. A confined subtree reads none.
 func (cx *Scope) AppURL() string {
 	if cx == nil || cx.Disposed() || confinement(cx.current()) != nil {
 		return ""
@@ -56,11 +52,7 @@ func (cx *Scope) AppURL() string {
 	return cx.appAddress().value.Get()
 }
 
-// SetAppURL sets the app's address, replacing the browser entry by default.
-// HistoryPush asks for a new entry; a navigation push in the same commit
-// supplies that entry instead. Relative addresses resolve against the page's
-// base and must stay on its origin. No navigation or network request occurs.
-// Other targets keep the address. Confined subtrees cannot change it.
+// SetAppURL sets the app's address, replacing the browser entry by default. HistoryPush asks for a new entry; a navigation push in the same commit supplies that entry instead. Relative addresses resolve against the page's base and must stay on its origin. No navigation or network request occurs. Other targets keep the address. Confined subtrees cannot change it.
 func (cx *Scope) SetAppURL(raw string, options ...AppURLOptions) error {
 	if cx == nil || cx.Disposed() {
 		return fmt.Errorf("core: no live scope")
@@ -106,9 +98,7 @@ func (cx *Scope) SetAppURL(raw string, options ...AppURLOptions) error {
 	return nil
 }
 
-// OnAppURLChange observes browser back, forward and address changes while
-// cx lives. Its returned function unsubscribes. Read AppURL for the initial
-// address; changes made before subscribing are not queued.
+// OnAppURLChange observes browser back, forward and address changes while cx lives. Its returned function unsubscribes. Read AppURL for the initial address; changes made before subscribing are not queued.
 func (cx *Scope) OnAppURLChange(fn func(AppURLChange)) func() {
 	if cx == nil || cx.Disposed() || fn == nil || confinement(cx.current()) != nil {
 		return func() {}
@@ -186,8 +176,7 @@ func (t *Tree) pageAddressChanged(change driver.PageAddressChange) {
 			t.Dispatch(driver.Event{Kind: driver.EventBack})
 		}
 	}
-	// A refused back retains the address the app is showing. A handler may
-	// also have set a replacement address while its screen was dismissed.
+	// A refused back retains the address the app is showing. A handler may also have set a replacement address while its screen was dismissed.
 	if t.historyDepth() > change.Depth || a.version != version {
 		t.historyAgain, t.changed = true, true
 		return

@@ -140,8 +140,7 @@ type Environment struct {
 	// link; "" when none did.
 	AppClip   bool
 	OpenedURL string
-	// PageURL and PageBaseURL initialize the application address when the
-	// surface owns its browser history. Empty on other surfaces and targets.
+	// PageURL and PageBaseURL initialize the application address when the surface owns its browser history. Empty on other surfaces and targets.
 	PageURL, PageBaseURL string
 	// LaunchedAtLogin says the system started this run as a login item. It stays the same throughout the run, including subsequent reopens.
 	LaunchedAtLogin bool
