@@ -88,32 +88,30 @@ func openLibs() error {
 // Go values to, so pointer arguments are uintptr and C strings are *byte.
 var (
 	// GLib.
-	gMainLoopNew       func(uintptr, int32) uintptr
-	gMainLoopRun       func(uintptr)
-	gMainLoopQuit      func(uintptr)
-	gMainLoopUnref     func(uintptr)
-	gTimeoutAdd        func(uint32, uintptr, uintptr) uint32
-	gGetMonotonicTime  func() int64
-	gSourceRemove      func(uint32)
-	gIdleAdd           func(uintptr, uintptr) uint32
-	gFree              func(uintptr)
-	gErrorFree         func(uintptr)
-	gSetPrgname        func(*byte)
-	gObjectUnref       func(uintptr)
-	gObjectGetData     func(uintptr, *byte) uintptr
-	gObjectSetData     func(uintptr, *byte, uintptr)
-	gTypeIsA           func(uintptr, uintptr) int32
-	gObjectRefSink     func(uintptr) uintptr
-	gSignalConnectData func(uintptr, *byte, uintptr, uintptr, uintptr, uint32) uint64
-	gSignalConnectObj  func(uintptr, *byte, uintptr, uintptr, uint32) uint64
-	gSignalEmitByName  func(uintptr, *byte, ...any)
-	gObjectGet         func(uintptr, ...any)
-	gObjectSetProperty func(uintptr, *byte, *gValue)
-	gObjectNotify      func(uintptr, *byte)
-	gStrfreev          func(uintptr)
-	gVariantNewString  func(*byte) uintptr
-	gVariantNewBoolean func(int32) uintptr
-	gVariantUnref      func(uintptr)
+	gMainContextIteration func(uintptr, int32) int32
+	gMainContextWakeup    func(uintptr)
+	gTimeoutAdd           func(uint32, uintptr, uintptr) uint32
+	gGetMonotonicTime     func() int64
+	gSourceRemove         func(uint32)
+	gIdleAdd              func(uintptr, uintptr) uint32
+	gFree                 func(uintptr)
+	gErrorFree            func(uintptr)
+	gSetPrgname           func(*byte)
+	gObjectUnref          func(uintptr)
+	gObjectGetData        func(uintptr, *byte) uintptr
+	gObjectSetData        func(uintptr, *byte, uintptr)
+	gTypeIsA              func(uintptr, uintptr) int32
+	gObjectRefSink        func(uintptr) uintptr
+	gSignalConnectData    func(uintptr, *byte, uintptr, uintptr, uintptr, uint32) uint64
+	gSignalConnectObj     func(uintptr, *byte, uintptr, uintptr, uint32) uint64
+	gSignalEmitByName     func(uintptr, *byte, ...any)
+	gObjectGet            func(uintptr, ...any)
+	gObjectSetProperty    func(uintptr, *byte, *gValue)
+	gObjectNotify         func(uintptr, *byte)
+	gStrfreev             func(uintptr)
+	gVariantNewString     func(*byte) uintptr
+	gVariantNewBoolean    func(int32) uintptr
+	gVariantUnref         func(uintptr)
 
 	// GTK.
 	gtkInitCheck                           func() int32
@@ -463,10 +461,8 @@ func (c *cStrings) array() uintptr { return uintptr(unsafe.Pointer(&c.ptrs[0])) 
 // bind registers every symbol once the libraries are open.
 func bind() {
 	// GLib.
-	purego.RegisterLibFunc(&gMainLoopNew, glibLib, "g_main_loop_new")
-	purego.RegisterLibFunc(&gMainLoopRun, glibLib, "g_main_loop_run")
-	purego.RegisterLibFunc(&gMainLoopQuit, glibLib, "g_main_loop_quit")
-	purego.RegisterLibFunc(&gMainLoopUnref, glibLib, "g_main_loop_unref")
+	purego.RegisterLibFunc(&gMainContextIteration, glibLib, "g_main_context_iteration")
+	purego.RegisterLibFunc(&gMainContextWakeup, glibLib, "g_main_context_wakeup")
 	purego.RegisterLibFunc(&gTimeoutAdd, glibLib, "g_timeout_add")
 	purego.RegisterLibFunc(&gGetMonotonicTime, glibLib, "g_get_monotonic_time")
 	purego.RegisterLibFunc(&gSourceRemove, glibLib, "g_source_remove")

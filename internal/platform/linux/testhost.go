@@ -107,15 +107,7 @@ func (t *testSurface) focused() *view {
 
 // onLoop runs fn on the GTK thread and waits for it.
 func (t *testSurface) onLoop(fn func()) {
-	done := make(chan struct{})
-	t.w.post(func() {
-		defer close(done)
-		fn()
-	})
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-	}
+	runOnThread(postLoopCall, 10*time.Second, "panic on the GTK thread", fn)
 }
 
 func (t *testSurface) WindowSurface(id uint32) testhost.Surface {

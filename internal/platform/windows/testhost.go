@@ -92,15 +92,7 @@ const (
 
 // onMain runs fn on the window's thread and waits for it.
 func (t *testSurface) onMain(fn func()) {
-	done := make(chan struct{})
-	t.w.post(func() {
-		defer close(done)
-		fn()
-	})
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-	}
+	runOnThread(t.w.post, 10*time.Second, "panic on the window thread", fn)
 }
 
 func (t *testSurface) WindowSurface(id uint32) testhost.Surface {

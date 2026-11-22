@@ -156,7 +156,6 @@ type window struct {
 	opts    Options
 	box     uintptr // the window content: menu bar and surface
 	menuBar uintptr
-	loop    uintptr // GMainLoop
 
 	env driver.Environment
 
@@ -380,8 +379,8 @@ func Run(app engine.App, opts Options) {
 	if links := engine.LaunchLinks(); len(links) > 0 {
 		w.engine.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: links})
 	}
+	defer w.stop()
 	w.run()
-	w.stop()
 }
 
 // launched hands the running app what a second launch asked of it: a launch to open links alone brings the app's window to the front, as opening a link does on macOS, any other launch reopens the app, and the files and links it names open.
@@ -433,7 +432,6 @@ func start(app engine.App, opts Options) (*window, error) {
 
 	w.setAppearance(opts.Appearance)
 	w.startEngine(app, opts, driver.Size{Width: opts.Width, Height: opts.Height})
-	w.loop = gMainLoopNew(0, 0)
 	w.setupSettings()
 	return w, nil
 }
@@ -688,16 +686,37 @@ func (w *window) portalParentWindow() string {
 	return formatX11ParentWindow(uint64(gdkX11SurfaceGetXID(surface)))
 }
 
-// run presents the window and runs GTK's main loop until it closes.
+// loopCalls holds synchronous test calls that run on GTK's thread outside GLib
+// callbacks so a test exit (runtime.Goexit) never unwinds through C frames.
+var loopCalls callQueue
+
+// postLoopCall queues fn to run on GTK's thread outside GLib callbacks and
+// wakes the default main context.
+func postLoopCall(fn func()) {
+	loopCalls.push(fn)
+	if gMainContextWakeup != nil {
+		gMainContextWakeup(0)
+	}
+}
+
+// run presents the window and runs GTK's default main context until it closes.
 func (w *window) run() {
 	if !w.opts.Hidden {
 		gtkWindowPresent(w.win)
 	}
-	gMainLoopRun(w.loop)
+	serveLoop(func() bool {
+		loopCalls.drain()
+		if w.closing {
+			return false
+		}
+		gMainContextIteration(0, 1)
+		loopCalls.drain()
+		return !w.closing
+	})
 }
 
 // stop ends the engine, destroys the native components still showing
-// and frees the loop after run returns.
+// and releases window resources after run returns.
 func (w *window) stop() {
 	w.restoreMenuFocus()
 	if !w.closing {
@@ -715,10 +734,6 @@ func (w *window) stop() {
 	engine.SyncStorage()
 	w.closeCustomCursors()
 	w.releaseTextContexts()
-	if w.loop != 0 {
-		gMainLoopUnref(w.loop)
-		w.loop = 0
-	}
 	// The handle stays registered: GTK may still call a callback of a
 	// window whose loop has stopped as its widgets are finalized.
 }
@@ -902,7 +917,7 @@ func (w *window) shutdown(forced bool) {
 
 	w.closePermissions()
 	w.closeSaveDialogs()
-	if w.loop != 0 {
+	if w.primary {
 		// The app ends with this window: every hold goes, sent before the main loop returns.
 		endAwake(awakeEndTimeout)
 	} else {
@@ -922,8 +937,8 @@ func (w *window) shutdown(forced bool) {
 		w.engine.Close()
 	}
 	w.stopPerf()
-	if w.loop != 0 {
-		gMainLoopQuit(w.loop)
+	if w.primary && gMainContextWakeup != nil {
+		gMainContextWakeup(0)
 	}
 }
 

@@ -18,8 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ebitengine/purego"
-
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/engine"
@@ -64,9 +62,14 @@ var testWindowCalls = sync.OnceValue(func() chan func() {
 	calls := make(chan func())
 	go func() {
 		runtime.LockOSThread()
-		for fn := range calls {
+		serveLoop(func() bool {
+			fn, ok := <-calls
+			if !ok {
+				return false
+			}
 			fn()
-		}
+			return true
+		})
 	}()
 	return calls
 })
@@ -87,12 +90,14 @@ func startTestWindow(t *testing.T, app engine.App, opts Options) *window {
 		if err != nil {
 			return
 		}
+		defer func() {
+			w.stop()
+			// Close the window for good: its close request only stops the loop, and a tiling window manager shares the screen between the windows left open.
+			gtkWindowDestroy(w.win)
+			for gMainContextIteration(0, 0) != 0 {
+			}
+		}()
 		w.run()
-		w.stop()
-		// Close the window for good: its close request only stops the loop, and a tiling window manager shares the screen between the windows left open.
-		gtkWindowDestroy(w.win)
-		for gMainContextIteration(0, 0) != 0 {
-		}
 	}
 	select {
 	case testWindowCalls() <- open:
@@ -126,26 +131,10 @@ func startTestWindow(t *testing.T, app engine.App, opts Options) *window {
 	return r.w
 }
 
-// gMainContextIteration runs what the default main context has ready.
-var gMainContextIteration = func() func(uintptr, int32) int32 {
-	var fn func(uintptr, int32) int32
-	if openLibs() == nil {
-		purego.RegisterLibFunc(&fn, glibLib, "g_main_context_iteration")
-	}
-	return fn
-}()
-
 // onLoop runs fn on the window's GTK thread and waits for it.
 func (w *window) onLoop(t *testing.T, fn func()) {
 	t.Helper()
-	done := make(chan struct{})
-	w.post(func() {
-		defer close(done)
-		fn()
-	})
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
+	if !runOnThread(postLoopCall, 10*time.Second, "panic on the GTK thread", fn) {
 		t.Fatal("the GTK thread did not run the step")
 	}
 }

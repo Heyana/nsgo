@@ -872,14 +872,7 @@ func onMain(t *testing.T, hwnd uintptr, fn func(w *window)) {
 	if w == nil {
 		t.Fatal("no such window")
 	}
-	done := make(chan struct{})
-	w.post(func() {
-		fn(w)
-		close(done)
-	})
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
+	if !runOnThread(w.post, 5*time.Second, "panic on the window thread", func() { fn(w) }) {
 		t.Fatal("the window's thread did not answer")
 	}
 }

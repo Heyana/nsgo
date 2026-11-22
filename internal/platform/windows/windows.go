@@ -769,8 +769,12 @@ func Run(app engine.App, opts Options) {
 		startWinSparkle(opts.Updates, w, w.engine.Language)
 	}
 
+	w.serveMessages()
+}
+
+func (w *window) serveMessages() {
 	var m msg
-	for {
+	serveLoop(func() bool {
 		r, _, _ := getMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
 		if int32(r) <= 0 {
 			w.closeAudio()
@@ -780,7 +784,14 @@ func Run(app engine.App, opts Options) {
 				w.engine.Close()
 				engine.SyncStorage()
 			}
-			return
+			return false
+		}
+		if m.Message == wmRun {
+			// Run posted tasks directly in Go rather than through DispatchMessageW so a test exit (runtime.Goexit) never unwinds through a Win32 callback frame.
+			if t := windows[m.Hwnd]; t != nil {
+				t.runTasks()
+				return true
+			}
 		}
 		// Shortcuts take key presses before they become characters, in the window the keys go to: this one or a surface the app opened.
 		if t := windows[m.Hwnd]; t != nil && (t == w || t.hostWindow == w) {
@@ -792,12 +803,13 @@ func Run(app engine.App, opts Options) {
 				if m.Message == wmSysKeyDown {
 					t.chrome.altAlone = false
 				}
-				continue
+				return true
 			}
 		}
 		translateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		dispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
-	}
+		return true
+	})
 }
 
 // placeNew sizes a new window so its client area is width by height in
@@ -1269,13 +1281,11 @@ func (w *window) post(fn func()) {
 }
 
 func (w *window) runTasks() {
-	w.mu.Lock()
-	fns := w.tasks
-	w.tasks = nil
-	w.mu.Unlock()
-	for _, fn := range fns {
-		fn()
-	}
+	drainTasks(&w.mu, &w.tasks, func() {
+		if w.hwnd != 0 {
+			postMessageW.Call(w.hwnd, wmRun, 0, 0)
+		}
+	})
 }
 
 func (w *window) px(p driver.Points) int32 { return int32(math.Round(float64(p) * w.scale)) }
