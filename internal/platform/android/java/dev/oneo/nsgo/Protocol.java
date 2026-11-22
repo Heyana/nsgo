@@ -149,7 +149,7 @@ final class Protocol {
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
     /** Asks Google Play to offer an update: surface and request count. */
-    static final int EXT_PLAY_UPDATE = 12;
+    static final int EXT_PLAY_UPDATE = 13;
     static final int CAP_PLAY_UPDATES = 128;
     /** The environment's third capability byte's bit for a device that plays timed vibration patterns (capHapticPatterns in protocol.go). */
     static final int CAP_HAPTIC_PATTERNS = 16;
@@ -227,7 +227,7 @@ final class Protocol {
     /** Reports a resolved service, its removal or an error (discovery.go). */
     static final int DISCOVERY_REPLY = 40;
     /** Answers EXT_PLAY_UPDATE: surface, request count, native UI shown, error. */
-    static final int PLAY_UPDATE_REPLY = 41;
+    static final int PLAY_UPDATE_REPLY = 42;
     /** Streams a bundled file: its request ID, an ASSET_* status byte and the chunk or error text. */
     static final int ASSET_REPLY = 29;
     static final int ASSET_CHUNK = 0;

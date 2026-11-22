@@ -136,7 +136,7 @@ const (
 	// msgDiscoveryReply is a resolved service, its removal or an NSD error, answering extDiscovery (discovery.go).
 	msgDiscoveryReply = 40
 	// msgPlayUpdateReply answers extPlayUpdate with native UI ownership and failure.
-	msgPlayUpdateReply = 41
+	msgPlayUpdateReply = 42
 	// msgAssetReply is one chunk or the final result of an extAssetRead.
 	msgAssetReply = 29
 	// msgAudioReport is a sound or player's status (audio.go).
@@ -167,7 +167,7 @@ const (
 	// extSurfaceReset tells Java that a full native tree of the surface's attachment generation follows: surface ID and generation (overlay.go, ViewAttachment.java).
 	extSurfaceReset = 11
 	// extPlayUpdate asks Google Play to check and offer its immediate update flow.
-	extPlayUpdate = 12
+	extPlayUpdate = 13
 	// extDownload carries a process-wide background download command as JSON, which NsgoEngine hands to BackgroundDownloadService.
 	extDownload = 5
 	// extGPUFrame submits an off-commit 3D GPU frame to GpuView.java, gpu.go's encoding.
