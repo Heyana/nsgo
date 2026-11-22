@@ -72,6 +72,41 @@ func TestKeyedListKeepsTheVisibleRowsInPlace(t *testing.T) {
 	}
 }
 
+func TestKeyedListPrependKeepsRowBelowHeaderInPlace(t *testing.T) {
+	for _, lastPage := range []bool{false, true} {
+		t.Run(fmt.Sprintf("lastPage=%v", lastPage), func(t *testing.T) {
+			var ids *core.Signal[[]int]
+			var header *core.Signal[bool]
+			a := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+				ids = core.NewSignalFunc(cx, makeIDs(30, 0), nil)
+				header = core.NewSignal(cx, true)
+				return core.List{TestID: "list", Style: core.Style{Height: core.Pt(200)},
+					Header: core.Show{When: header.Get, Then: func(*core.Scope) core.Node {
+						return core.View{Style: core.Style{Height: core.Pt(60)}}
+					}},
+					Count: func() int { return len(ids.Get()) }, Key: func(i int) any { return ids.Get()[i] },
+					EstimatedSize: 80, Row: func(cx *core.Scope, r core.ListRow) core.Node {
+						return core.Text{ContentFunc: func() string { return rowText(ids.Get()[r.Index()]) }, Style: core.Style{Height: core.Pt(40)}}
+					}}
+			})
+			list := a.Find("id:list")
+			a.ScrollTo("id:list", core.Point{Y: 16})
+			before := onScreen(t, a, list, 0)
+			if before != 44 {
+				t.Fatalf("row 0 starts at %v, want 44 below the viewport's start", before)
+			}
+			a.Post(func() {
+				ids.Set(append(makeIDs(4, 100), ids.Get()...))
+				header.Set(!lastPage)
+			})
+			a.Settle()
+			if got := onScreen(t, a, list, 0); got != before {
+				t.Errorf("row 0 moved from %v to %v after prepending", before, got)
+			}
+		})
+	}
+}
+
 // A jump to a row the same batch inserts above the viewport lands on that row, animated or not: the jump replaces the offset the inserted row would have kept.
 func TestKeyedListJumpsToARowInsertedAboveTheViewport(t *testing.T) {
 	for _, animated := range []bool{false, true} {

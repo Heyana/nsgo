@@ -46,7 +46,11 @@ type listState struct {
 	// anchored to the end (inverted lists and followEnd); NaN before.
 	anchoredEnd  Points
 	spliceAnchor Points
-	pin          *listPin
+	// The retained row (one-based) can be below the viewport's start
+	// after a splice there. Rows inserted ahead of it may straddle that
+	// start but must still keep it in place until the next scroll.
+	spliceRow int
+	pin       *listPin
 	// moved is set once the user or a scroll command moved the list.
 	moved bool
 	// lead is the last scroll step reported, in natural coordinates:
@@ -268,6 +272,7 @@ func (s *listState) setColumns(n int) {
 	n = max(n, 1)
 	if n != s.columns {
 		s.columns = n
+		s.spliceRow = 0
 		for i := range s.sizes {
 			s.sizes[i] = nan
 		}
@@ -289,6 +294,7 @@ func (s *listState) splice(at, removed, inserted int, kept map[int]int) {
 		return
 	}
 	s.pin = nil
+	s.spliceRow = 0
 	// The first visible item and where it is in the viewport. An inverted
 	// list at its start (item 0 in view at the bottom) keeps its distance
 	// from the end instead, so what arrives there shows. In its parent's
@@ -317,6 +323,9 @@ func (s *listState) splice(at, removed, inserted int, kept map[int]int) {
 		moved, stays = to, true
 	}
 	if anchored && stays {
+		if !s.inverted && fromTop > 0 && moved > anchor {
+			s.spliceRow = s.rowOf(moved) + 1
+		}
 		if s.inverted {
 			// anchorEnd brings the natural offset back to what it was;
 			// the visible rows need it moved as far as they did.
@@ -373,6 +382,9 @@ func (s *listState) measured(i int, size Points) Points {
 	start := s.itemAt(i)
 	natural := s.naturalOffset()
 	keep := start < natural && start+before <= natural && s.keepsVisibleRows()
+	if s.spliceRow != 0 {
+		keep = row+1 < s.spliceRow
+	}
 	s.sizes[i] = size
 	d := s.rowSize(row) - before
 	if d != 0 {
@@ -399,7 +411,8 @@ func (s *listState) measuredExtra(kind int, size Points) Points {
 		at = b.body
 	}
 	// Wholly before the viewport's start, as it was before the change.
-	return s.beforeViewportChanged(keeps && at < natural && at+size-d <= natural, d, natural)
+	keep := keeps && at < natural && at+size-d <= natural
+	return s.beforeViewportChanged(keep || kind == extraHeader && s.spliceRow != 0, d, natural)
 }
 
 // anchorEnd keeps an inverted list's distance from the end of its
@@ -439,6 +452,7 @@ func (s *listState) anchorEnd() Points {
 // jump moves the list to offset ahead of the platform: the window
 // follows it at once, and inverted lists anchor to it.
 func (s *listState) jump(offset Points) {
+	s.spliceRow = 0
 	s.offset = offset
 	if s.inverted {
 		s.anchoredEnd = max(s.contentLen()-s.viewport, 0)
@@ -505,6 +519,7 @@ func (s *listState) movedTo(at Points, settled bool) {
 	if abs32(at-s.offset) > pinSlack {
 		// Not a platform's rounding: the user scrolled.
 		s.moved = true
+		s.spliceRow = 0
 	}
 	s.offset = at
 	p := s.pin

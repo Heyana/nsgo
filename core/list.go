@@ -692,6 +692,7 @@ func (t *Tree) updateList(v *node) bool {
 			}
 		}
 		st.pin = nil
+		st.spliceRow = 0
 		// Where the app scrolled the list may be near its start.
 		st.moved = true
 		if cmd.pin != nil {
