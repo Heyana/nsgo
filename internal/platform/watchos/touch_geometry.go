@@ -7,9 +7,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/finger"
 )
 
-// responderTouches tracks watchOS's single surface touch stream for EventTouch
-// and the touch responder, snapshotting presentation hit targets and local
-// coordinates on every phase before dispatching.
+// responderTouches tracks watchOS's single surface touch stream for EventTouch and the touch responder, snapshotting presentation hit targets and local coordinates on every phase before dispatching.
 type responderTouches struct {
 	fingers  finger.Fingers
 	last     driver.Point

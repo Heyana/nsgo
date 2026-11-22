@@ -125,10 +125,7 @@ func (s *surface) install() {
 	}))
 }
 
-// touches reads what the page reported about the fingers on the surface:
-// the phase, the time in milliseconds and each finger's id, position and
-// whether the event is about it, then snapshots the current presentation
-// targets and local coordinates before dispatching to the engine.
+// touches reads what the page reported about the fingers on the surface: the phase, the time in milliseconds and each finger's id, position and whether the event is about it, then snapshots the current presentation targets and local coordinates before dispatching to the engine.
 func (s *surface) touches(args []js.Value) {
 	if len(args) < 3 {
 		return

@@ -16,9 +16,7 @@ func TestTouchSceneNestedBoundTransforms(t *testing.T) {
 	anim := driver.NewAnimator(func(driver.Event) {})
 	scene := newTouchScene(anim)
 
-	// Mirrors TestTouchMovesFollowNestedBoundTransforms:
-	// parent (2) at (0,0) 160x120 with origin top-left, bound TranslateX=100, TranslateY=40, Scale=1.5;
-	// child (3) at (20,10) 80x60 with origin top-left, bound Rotate=90 deg CW.
+	// Mirrors TestTouchMovesFollowNestedBoundTransforms: parent (2) at (0,0) 160x120 with origin top-left, bound TranslateX=100, TranslateY=40, Scale=1.5; child (3) at (20,10) 80x60 with origin top-left, bound Rotate=90 deg CW.
 	scene.applyBatch(&driver.MountBatch{Root: 1, Items: []driver.MountItem{
 		{Kind: driver.ItemCreate, ID: 1, View: driver.KindView},
 		{Kind: driver.ItemCreate, ID: 2, View: driver.KindView},
@@ -119,8 +117,7 @@ func TestTouchSceneScrollZoomStickyAndMultiTouch(t *testing.T) {
 		{Kind: driver.ItemEvents, ID: 4, Events: 1 << driver.EventTouch},
 	}})
 
-	// Scroll offset (20, 40) at zoom 2x: child 3 origin (50, 100) appears at (50*2 - 20, 100*2 - 40) = (80, 160).
-	// Surface (100, 180) maps to child 3 local ((100+20)/2 - 50, (180+40)/2 - 100) = (10, 10).
+	// Scroll offset (20, 40) at zoom 2x: child 3 origin (50, 100) appears at (50*2 - 20, 100*2 - 40) = (80, 160). Surface (100, 180) maps to child 3 local ((100+20)/2 - 50, (180+40)/2 - 100) = (10, 10).
 	offset := driver.Point{X: 20, Y: 40}
 	scene.setZoom(2, 2, &offset)
 

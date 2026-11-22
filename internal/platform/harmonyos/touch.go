@@ -2,9 +2,7 @@ package harmonyos
 
 import "github.com/nsgo-dev/nsgo/internal/driver"
 
-// touchNode tracks the geometry, transforms, scroll state, pointer events and
-// touch listeners of one HarmonyOS view in Go so EventTouch snapshots follow
-// bound and animated presentation transforms without changing Index.ets.
+// touchNode tracks the geometry, transforms, scroll state, pointer events and touch listeners of one HarmonyOS view in Go so EventTouch snapshots follow bound and animated presentation transforms without changing Index.ets.
 type touchNode struct {
 	id              driver.NodeID
 	kind            driver.ViewKind
@@ -34,8 +32,7 @@ func (n *touchNode) shownFrame() driver.Bounds {
 	return f
 }
 
-// touchScene maintains the HarmonyOS view hierarchy for presentation-space
-// touch hit testing and local coordinate snapshotting.
+// touchScene maintains the HarmonyOS view hierarchy for presentation-space touch hit testing and local coordinate snapshotting.
 type touchScene struct {
 	nodes   map[driver.NodeID]*touchNode
 	root    driver.NodeID
@@ -61,8 +58,7 @@ func (s *touchScene) detach(n *touchNode) {
 	n.parent = nil
 }
 
-// applyBatch applies a whole mount batch, including animation bindings, for
-// unit tests and standalone callers.
+// applyBatch applies a whole mount batch, including animation bindings, for unit tests and standalone callers.
 func (s *touchScene) applyBatch(b *driver.MountBatch) {
 	for i := range b.Items {
 		it := &b.Items[i]
@@ -340,8 +336,7 @@ func (s *touchScene) hit(n *touchNode, p driver.Point) *touchNode {
 	return nil
 }
 
-// captureTouches snapshots native hit targets and local touch positions under
-// the current static and bound presentation transforms before dispatching e.
+// captureTouches snapshots native hit targets and local touch positions under the current static and bound presentation transforms before dispatching e.
 func (s *touchScene) captureTouches(e *driver.Event) {
 	s.tracker.Capture(e, func(p driver.Point) driver.NodeID {
 		if root := s.nodes[s.root]; root != nil {

@@ -15,9 +15,7 @@ func nearPoint(a, b driver.Point) bool {
 func TestTouchGeometryFollowsNestedBoundTransforms(t *testing.T) {
 	h := &fakeHost{}
 	m := newMounter(h)
-	// Mirrors TestTouchMovesFollowNestedBoundTransforms:
-	// view 2 at (0,0) 160x120 origin top-left, bound TranslateX=100, TranslateY=40, Scale=1.5;
-	// view 3 at (20,10) 80x60 origin top-left, bound Rotate=90 deg CW.
+	// Mirrors TestTouchMovesFollowNestedBoundTransforms: view 2 at (0,0) 160x120 origin top-left, bound TranslateX=100, TranslateY=40, Scale=1.5; view 3 at (20,10) 80x60 origin top-left, bound Rotate=90 deg CW.
 	m.mount(&driver.MountBatch{Root: 1, Items: []driver.MountItem{
 		{Kind: driver.ItemCreate, ID: 1, View: driver.KindView},
 		{Kind: driver.ItemCreate, ID: 2, View: driver.KindView},

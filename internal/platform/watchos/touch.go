@@ -159,8 +159,7 @@ func (s *surface) touchUp(at driver.Point, t float64, cancelled bool) {
 	}
 }
 
-// touchesTaken cancels the active EventTouch when a native scroll view starts
-// dragging without a responder blocking it.
+// touchesTaken cancels the active EventTouch when a native scroll view starts dragging without a responder blocking it.
 func (s *surface) touchesTaken() {
 	if len(s.blocked) > 0 {
 		return
@@ -298,8 +297,7 @@ func (s *surface) unlockScrolls() {
 	s.touch.locked = nil
 }
 
-// blockNative locks the scroll views around v while v holds the touch
-// responder, or unlocks them when v is nil.
+// blockNative locks the scroll views around v while v holds the touch responder, or unlocks them when v is nil.
 func (s *surface) blockNative(v *view) {
 	prev := s.blocked
 	s.blocked = nil

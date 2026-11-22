@@ -184,8 +184,7 @@ func (m *mounter) touch(id driver.NodeID, seq int, phase driver.GesturePhase, ch
 	}
 }
 
-// reportTouches sends EventTouch with a presentation geometry snapshot for all
-// fingers currently down while a view listens to touches.
+// reportTouches sends EventTouch with a presentation geometry snapshot for all fingers currently down while a view listens to touches.
 func (m *mounter) reportTouches(phase driver.GesturePhase, changed []finger, now time.Duration) {
 	t := &m.touches
 	if !t.touching || len(t.pointers) == 0 {
