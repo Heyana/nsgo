@@ -1,6 +1,6 @@
 # Picture in Picture
 
-Issue [#54](https://github.com/nsgo-dev/nsgo/issues/54) has two paths: `core.Video` uses its native player, and `mobile.PictureInPicture` renders an independent NSGo tree into sample buffers. Video also supports macOS. Both use `AVPictureInPictureController` through purego, with no Swift or C adapter. The user confirmed both paths, separate APIs from Android overlays, view-owned lifetimes, a retained background frame, playback callbacks, YAML arrays and programmatic starts with native controls on 2026-11-15.
+Issue [#54](https://github.com/nsgo-dev/nsgo/issues/54) has two paths: `core.Video` uses its native player, and `mobile.PictureInPicture` renders an independent NSGo tree into sample buffers. Video also supports macOS, and the web uses the browser's standard video PiP API. Both use `AVPictureInPictureController` through purego, with no Swift or C adapter. The user confirmed both paths, separate APIs from Android overlays, view-owned lifetimes, a retained background frame, playback callbacks, YAML arrays and programmatic starts with native controls on 2026-11-15.
 
 ## Video
 
@@ -11,6 +11,14 @@ A video without controls uses its existing player layer. A controlled video has 
 On tvOS, the video owns an `MPNowPlayingSession` containing its `AVPlayer`, automatically publishes its playback metadata and asks the session to become active when preparing or starting PiP. Both controlled and layer-only videos use the same managed PiP path. The Now Playing session stays with the player generation until PiP has stopped. Custom sample-buffer sessions remain unsupported on tvOS. NSH has no corresponding PiP subsystem; this follows Apple's [custom-player contract](https://developer.apple.com/documentation/avkit/adopting-picture-in-picture-in-a-custom-player).
 
 The PiP window's play, pause and skip act on the `AVPlayer` directly, as the inline controls do: the backend hears the player's rate change, keeps what the window did until the app's `Paused` changes, so an unrelated change such as `Muted` leaves it alone, and reports it through `Video.OnPause`, with `VideoPauseControls`, and `Video.OnPlay` ([videos](native-views.md#videos)). Player time remains in AVPlayer; `Ref.Seek` and the window's skip controls use that player.
+
+## Web video
+
+`Video.PictureInPicture` uses the [standard](https://www.w3.org/TR/picture-in-picture/) `HTMLVideoElement.requestPictureInPicture` and the owning document's exit operation. Browser API availability and Permissions Policy determine `Supported`; loaded video metadata and a video track determine `Possible`. Start from a user press because browsers require transient user activation. Synchronous DOM exceptions and rejected requests reach `Error`. Native enter and leave events report the browser's actual session, including entry through its playback controls.
+
+Each video owns only its element's session. Repeated requests are serialized; stopping a pending start, replacing or clearing its source, disabling PiP and deletion invalidate the request. A late successful entry exits instead of reviving stale content. Exit never stops another element's session. Clearing a source resets the media element so old metadata cannot leave `Possible` true.
+
+Web PiP shows the browser's video surface. Custom NSGo content, automatic background entry and interface restoration callbacks remain iOS-only; no Document Picture-in-Picture or browser-specific prefixed API is used. A browser without the standard API reports unsupported.
 
 ## Custom content
 
@@ -40,7 +48,7 @@ apple:
     UIBackgroundModes: [audio]
 ```
 
-An iOS session missing `audio` reports a configuration error. Video support on iOS and tvOS follows AVKit's device capability, and macOS video uses the same controller; unavailable systems report `Supported: false`. Android and web PiP remain in the roadmap. Custom content remains iOS-only. The app's existing network access check applies to video URLs. Custom content stays in the app; NSGo uploads and persists no frame. App Store review may reject non-video uses of custom PiP, as issue #54 records.
+An iOS session missing `audio` reports a configuration error. Video support on iOS and tvOS follows AVKit's device capability, and macOS video uses the same controller; unavailable systems report `Supported: false`. The web supports video in browsers offering the standard API. Android PiP remains in the roadmap. Custom content remains iOS-only. The app's existing network access check applies to video URLs. Custom content stays in the app; NSGo uploads and persists no frame. App Store review may reject non-video uses of custom PiP, as issue #54 records.
 
 ## Verification
 
@@ -51,3 +59,5 @@ Mac native tests open a real player window and enter and leave PiP with and with
 On the tvOS 27 simulator, the bundled-video tests load both controlled and layer-only videos and report AVKit's `Supported: false` state. A native app-host test verifies the actual Now Playing session's player association and metadata policy, and that tvOS ignores automatic inline entry. These checks do not establish PiP entry.
 
 On the iOS simulator `examples/pip` launches with both paths, which report the unsupported state AVKit gives there (`isPictureInPictureSupported` is false). Physical Apple TV verification remains for entering, stopping and restoring video PiP; Apple's tvOS [sample requires a physical device](https://developer.apple.com/documentation/avkit/adopting-picture-in-picture-playback-in-tvos). Native iPhone verification remains for entry and restoration, fullscreen controlled video, and continuous custom video with changing overlays in the background.
+
+Web target tests record their own WebM clip, press real app controls through trusted browser input, and check the actual PiP owner against core callbacks through repeated entry/exit, browser exit, source clearing/reloading and view deletion. Controlled promises separately check stale completion, errors, unsupported browsers and ownership. These pass in Chromium; other browser engines still need acceptance.

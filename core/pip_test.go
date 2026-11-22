@@ -163,3 +163,31 @@ func TestMacVideoPictureInPictureCommands(t *testing.T) {
 		t.Fatalf("Mac video commands = %v", commands)
 	}
 }
+
+func TestWebVideoPictureInPictureDoesNotEnableCustomContent(t *testing.T) {
+	var video, custom Ref
+	var states []PictureInPictureState
+	h := newHost(t, Size{Width: 300, Height: 400}, func(cx *Scope) Node {
+		return View{Children: []Node{
+			Video{Ref: &video, PictureInPicture: true, OnPictureInPicture: func(s PictureInPictureState) { states = append(states, s) }},
+			PictureInPicture{Ref: &custom},
+		}}
+	})
+	h.tree.SetEnvironment(Environment{OS: OSWeb})
+	h.commit()
+	if len(states) != 0 {
+		t.Fatal("core preempted the browser's support detection")
+	}
+	video.StartPictureInPicture()
+	video.StopPictureInPicture()
+	custom.StartPictureInPicture()
+	b := h.commit()
+	if got := kinds(b)[driver.ItemPictureInPictureCommand]; got != 2 {
+		t.Fatalf("got %d commands, want only the video's start and stop", got)
+	}
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemPictureInPictureCommand && it.ID != video.n.id {
+			t.Fatal("web custom content started PiP")
+		}
+	}
+}

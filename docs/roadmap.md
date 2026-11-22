@@ -272,7 +272,7 @@ What `app_clip` lacks of App Clips ([tool](architecture/tool.md#app-clips)).
 
 ## Picture in Picture
 
-The iOS video and independent-tree paths of #54 and macOS video PiP are implemented with native delegate, frame and Mac entry/exit tests ([Picture in Picture](architecture/picture-in-picture.md)); native acceptance and other targets remain.
+The iOS video and independent-tree paths of #54 and macOS video PiP are implemented with native delegate, frame and Mac entry/exit tests ([Picture in Picture](architecture/picture-in-picture.md)); native acceptance and other targets remain. Web video PiP is implemented through the standard browser API and verified in Chromium with trusted input. Other browser engines need acceptance; browsers with only prefixed APIs remain unsupported.
 
 | Item | Reference | Done when |
 | --- | --- | --- |
@@ -281,7 +281,6 @@ The iOS video and independent-tree paths of #54 and macOS video PiP are implemen
 | PiP on tvOS | `AVPictureInPictureController`, [#1476](https://github.com/nsgo-dev/nsgo/issues/1476) | Verify video entry, stop and restoration on a physical Apple TV; the native player/Now Playing session path is implemented, while custom sample-buffer PiP remains unsupported |
 | macOS visual acceptance | `AVPictureInPictureController`, [#1477](https://github.com/nsgo-dev/nsgo/issues/1477) | Verify changing video pixels and the native return button on a Mac; native entry, exit, duplicate commands and active source replacement pass, but window-scoped captures of the PiP panel return black on the test runner |
 | PiP on Android | `Activity.enterPictureInPictureMode`, [#1478](https://github.com/nsgo-dev/nsgo/issues/1478) | An Android app's activity enters PiP showing its video, with the same states as on iOS |
-| PiP on the web | `HTMLVideoElement.requestPictureInPicture`, [#1479](https://github.com/nsgo-dev/nsgo/issues/1479) | A `Video` on the web enters and leaves PiP with the same states as on iOS |
 
 ## Apple TV
 

@@ -13,7 +13,7 @@ type PictureInPictureConfig struct {
 }
 
 // PictureInPictureState is the native session's state. Possible says
-// whether AVKit can start it now; Unsupported is distinct from failure.
+// whether the platform can start it now; Unsupported is distinct from failure.
 type PictureInPictureState struct {
 	Supported, Possible, Active bool
 	Error                       string

@@ -1855,6 +1855,10 @@ func (s *surface) mount(b *driver.MountBatch) {
 			if v.video != nil {
 				v.video.seek(it.Time)
 			}
+		case driver.ItemPictureInPictureCommand:
+			if v.video != nil {
+				v.video.pip.command(it.Count)
+			}
 		case driver.ItemModal:
 			v.modal = it.Modal.Animation
 		case driver.ItemCanvas:

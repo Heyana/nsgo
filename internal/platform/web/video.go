@@ -25,6 +25,7 @@ type video struct {
 
 	paused, made bool
 	playback     videoplay.State
+	pip          videoPictureInPicture
 }
 
 // videoFit is the CSS object-fit of each resize mode.
@@ -34,6 +35,11 @@ var videoFit = map[driver.ResizeMode]string{driver.Cover: "cover", driver.Contai
 func (s *surface) createVideo(v *view) {
 	vd := &video{el: s.element("video")}
 	v.video = vd
+	vd.pip.el = vd.el
+	vd.pip.report = func(state driver.PictureInPictureState) {
+		s.send(v, driver.Event{Kind: driver.EventNative, Text: driver.PictureInPictureEventName,
+			Data: &driver.PictureInPictureEvent{State: state}})
+	}
 	vd.el.Set("playsInline", true)
 	setStyle(vd.el, map[string]string{"width": "100%", "height": "100%", "border-radius": "inherit"})
 	v.inner = vd.el
@@ -49,11 +55,15 @@ func (s *surface) createVideo(v *view) {
 		}
 	})
 	on("loadedmetadata", func() {
+		vd.pip.emit("")
 		s.send(v, driver.Event{Kind: driver.EventLoad, Duration: vd.seconds("duration"), RateChangeable: true, Size: driver.Size{
 			Width:  driver.Points(vd.el.Get("videoWidth").Float()),
 			Height: driver.Points(vd.el.Get("videoHeight").Float()),
 		}})
 	})
+	on("emptied", func() { vd.pip.emit("") })
+	on("enterpictureinpicture", vd.pip.entered)
+	on("leavepictureinpicture", func() { vd.pip.emit("") })
 	on("play", func() { s.videoPlayback(v) })
 	on("playing", func() {
 		vd.playback.Completed = false
@@ -138,21 +148,24 @@ func (s *surface) setVideo(v *view, c *driver.VideoConfig) {
 	if c.Source != "" {
 		url, _ = imageURL(driver.ImageSource{URI: c.Source})
 	}
-	playChanged := !vd.made || url != vd.src || c.Paused != vd.paused
+	sourceChanged := url != vd.src
+	playChanged := !vd.made || sourceChanged || c.Paused != vd.paused
 	// Native controls may change the element before its queued event runs.
 	if !playChanged {
 		s.videoPlayback(v)
 	}
 	vd.paused, vd.made = c.Paused, true
-	if url != vd.src {
+	if sourceChanged {
 		vd.playback = videoplay.State{}
 		vd.src = url
 		if url != "" {
 			vd.el.Set("src", url)
 		} else {
 			vd.el.Call("removeAttribute", "src")
+			vd.el.Call("load")
 		}
 	}
+	vd.pip.configure(c.PictureInPicture, sourceChanged)
 	vd.interval = c.ProgressInterval
 	el := vd.el
 	el.Set("muted", c.Muted)
@@ -220,6 +233,8 @@ func (vd *video) seek(t time.Duration) {
 // release stops the video: a removed media element keeps playing until
 // it is collected.
 func (vd *video) release() {
+	vd.pip.released = true
+	vd.pip.invalidate()
 	vd.stopProgress()
 	vd.progress.Release()
 	vd.el.Call("pause")

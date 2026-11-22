@@ -186,6 +186,11 @@ func pictureInPicturePlatform(cx *Scope) bool {
 	return cx.Env().OS() == OSIOS && cx.Env().Idiom() != IdiomWatch
 }
 
+// Video backends may offer PiP without custom-content sessions.
 func videoPictureInPicturePlatform(cx *Scope) bool {
-	return cx.Env().OS() == OSMacOS || pictureInPicturePlatform(cx)
+	switch cx.Env().OS() {
+	case OSMacOS, OSWeb:
+		return true
+	}
+	return pictureInPicturePlatform(cx)
 }
