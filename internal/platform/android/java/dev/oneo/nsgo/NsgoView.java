@@ -982,6 +982,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 case Protocol.TEXT_REQUEST:
                     text(message);
                     break;
+                case Protocol.SHADER_RELEASE: {
+                    int[] ids = new int[message.readInt()];
+                    for (int i = 0; i < ids.length; i++) ids[i] = message.readInt();
+                    // After the batches that stopped drawing them.
+                    ui.post(() -> ShaderNode.release(ids));
+                    break;
+                }
                 case Protocol.RELEASE: {
                     int id = message.readInt();
                     prepared.remove(id);

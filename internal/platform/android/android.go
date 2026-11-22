@@ -85,8 +85,10 @@ const (
 	msgDiskSpace = 23
 	// This slot is inside the prior runtime's accepted range. A stale
 	// prebuilt runtime can ignore the optional monitor and keep running.
-	msgPerfPanel   = 24
-	msgTextRequest = 26
+	msgPerfPanel = 24
+	// msgShaderRelease lists the shader programs no view draws any more, which Java forgets and deletes. A prior runtime logs it as unknown.
+	msgShaderRelease = 25
+	msgTextRequest   = 26
 	// msgGamepadRumble starts or stops rumble on a connected game controller (gamepad.go, Gamepads.java).
 	msgGamepadRumble = 27
 
@@ -163,9 +165,10 @@ type surface struct {
 	// main is the activity's view, the first surface; requests is the last image request number, across surfaces.
 	main     treeView
 	requests uint32
-	// programs are the shader programs translated, numbered from nextProgram.
-	programs    map[*driver.ShaderProgram]*glProgram
-	nextProgram uint32
+	// programs are the shader programs translated, numbered from nextProgram, while a shader view draws them; unusedPrograms are those left without views, which releasePrograms releases.
+	programs       map[*driver.ShaderProgram]*glProgram
+	nextProgram    uint32
+	unusedPrograms []*glProgram
 
 	// The native components; cmu guards them, as the reader goroutine
 	// hands them their views' events.
@@ -1039,6 +1042,7 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 		batch = &driver.MountBatch{Root: b.Root, Items: pending}
 		first, requests, natives, frames, canvases = false, nil, nil, nil, nil
 	}
+	s.releasePrograms()
 	for _, l := range loads {
 		go s.load(l)
 	}
@@ -1061,6 +1065,8 @@ type treeView struct {
 	canvasPixels map[driver.NodeID]map[string]*image.RGBA
 	// shaderPixels are the copies of pixels each shader view was sent last, by image, which Java keeps.
 	shaderPixels map[driver.NodeID][]*image.RGBA
+	// shaders are the programs the shader views draw.
+	shaders map[driver.NodeID]*glProgram
 }
 
 // target is the Engine of surface id, for the reader goroutine: the first's, else an attached overlay's that has not ended, else nil.

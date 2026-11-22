@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/shader"
 )
 
 func TestMountFlushesDeferredShaderPixels(t *testing.T) {
@@ -61,5 +62,87 @@ func TestMountFlushesDeferredShaderPixels(t *testing.T) {
 		if held := s.main.shaderPixels[it.ID]; len(held) != 1 || held[0] != it.Shader.Images[0].Pixels {
 			t.Errorf("shader %d was not recorded as sent", it.ID)
 		}
+	}
+}
+
+// TestShaderProgramsReleaseWithTheirLastView counts the views drawing a program on every surface: Java hears of it once the last of them is gone, deleted, drawing another program or on an overlay that closed, and a view drawing it again later sends it anew.
+func TestShaderProgramsReleaseWithTheirLastView(t *testing.T) {
+	pipe, err := os.Create(filepath.Join(t.TempDir(), "messages"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pipe.Close()
+	ir, err := shader.CompileFragment([]byte(`package main
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	return vec4(1)
+}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog, other := &driver.ShaderProgram{IR: ir}, &driver.ShaderProgram{IR: ir}
+	draw := func(id driver.NodeID, p *driver.ShaderProgram) driver.MountItem {
+		return driver.MountItem{Kind: driver.ItemShader, ID: id, Shader: &driver.Shader{Role: driver.ShaderFill, Program: p}}
+	}
+	o := &overlay{view: treeView{id: 7, defaultsSent: true}}
+	s := &surface{out: pipe, main: treeView{defaultsSent: true}, overlays: map[uint32]*overlay{7: o}}
+	o.s = s
+	wire := bufio.NewReader(pipe)
+	// released mounts b on tv, or closes the overlay when tv is nil, and returns the programs Java was told to release.
+	released := func(tv *treeView, items ...driver.MountItem) []uint32 {
+		t.Helper()
+		at, _ := pipe.Seek(0, io.SeekCurrent)
+		if tv == nil {
+			s.forget(o)
+		} else {
+			s.mount(tv, &driver.MountBatch{Root: 1, Items: items})
+		}
+		if _, err := pipe.Seek(at, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		wire.Reset(pipe)
+		var ids []uint32
+		for {
+			kind, payload, err := readMessage(wire)
+			if err == io.EOF {
+				return ids
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if kind != msgShaderRelease {
+				continue
+			}
+			r := reader{buf: payload}
+			for range r.u32() {
+				ids = append(ids, r.u32())
+			}
+		}
+	}
+	if ids := released(&s.main, draw(2, prog), draw(3, prog)); ids != nil {
+		t.Fatalf("drawing released %v", ids)
+	}
+	if ids := released(&o.view, draw(2, prog)); ids != nil {
+		t.Fatalf("drawing on an overlay released %v", ids)
+	}
+	if ids := released(&s.main, driver.MountItem{Kind: driver.ItemDelete, ID: 2}, draw(3, other)); ids != nil {
+		t.Fatalf("the overlay's view still draws the program, but %v was released", ids)
+	}
+	// A program a later item of the same batch draws again stays.
+	if ids := released(&s.main, driver.MountItem{Kind: driver.ItemDelete, ID: 3}, draw(4, other)); ids != nil {
+		t.Fatalf("a program drawn again in its batch was released: %v", ids)
+	}
+	if ids := released(nil); len(ids) != 1 || ids[0] != 1 {
+		t.Fatalf("closing the overlay released %v, want program 1", ids)
+	}
+	if ids := released(&s.main, driver.MountItem{Kind: driver.ItemDelete, ID: 4}); len(ids) != 1 || ids[0] != 2 {
+		t.Fatalf("deleting the last view released %v, want program 2", ids)
+	}
+	if len(s.programs) != 0 || len(s.main.shaders) != 0 {
+		t.Fatalf("Go keeps %d programs and %d views", len(s.programs), len(s.main.shaders))
+	}
+	released(&s.main, draw(5, prog))
+	if p := s.programs[prog]; p == nil || p.id != 3 || !p.sent {
+		t.Fatalf("a program drawn again is %+v, want it sent anew as program 3", p)
 	}
 }

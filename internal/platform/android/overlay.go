@@ -54,7 +54,7 @@ func (o *overlay) Mount(b *driver.MountBatch) {
 	}
 }
 
-// forget lets go of overlay o as its tree closes, on the engine goroutine: its image loads and native components; Java drops its views with its window.
+// forget lets go of overlay o as its tree closes, on the engine goroutine: its image loads, shader programs and native components; Java drops its views with its window.
 func (s *surface) forget(o *overlay) {
 	s.omu.Lock()
 	o.ended = true
@@ -66,6 +66,10 @@ func (s *surface) forget(o *overlay) {
 		v.stop()
 		delete(o.view.images, id)
 	}
+	for id := range o.view.shaders {
+		s.drawWith(&o.view, id, nil)
+	}
+	s.releasePrograms()
 	s.canvasRequests.closeSurface(o.view.id)
 	s.closeSurfaceNatives(o.view.id)
 }

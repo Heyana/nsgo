@@ -12,10 +12,11 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/shaderir/glsl"
 )
 
-// Shaders draw with OpenGL ES 3.0 in the Java runtime's ShaderNode, a TextureView: Go translates each program into GLSL ES once and sends its source with the first item that draws it, with where each uniform lane lies in its std140 block; Java compiles it once for its context, writes the lanes, the animated ones each frame they change, and draws when they, the size or an image change. An image of pixels goes with the item, its bytes only when the core sent a new copy and the batch has room for them, and Java writes them into a texture the view keeps.
+// Shaders draw with OpenGL ES 3.0 in the Java runtime's ShaderNode, a TextureView: Go translates each program into GLSL ES once and sends its source with the first item that draws it, and releases it once no view draws it (msgShaderRelease), with where each uniform lane lies in its std140 block; Java compiles it once for its context, writes the lanes, the animated ones each frame they change, and draws when they, the size or an image change. An image of pixels goes with the item, its bytes only when the core sent a new copy and the batch has room for them, and Java writes them into a texture the view keeps.
 
 // glProgram is a program translated for Java.
 type glProgram struct {
+	key    *driver.ShaderProgram
 	id     uint32
 	source string // the fragment stage's GLSL ES, "" when it does not compile
 	lanes  []int  // each lane's offset in the block
@@ -23,6 +24,7 @@ type glProgram struct {
 	size   int
 	images int
 	sent   bool
+	views  int // the shader views drawing it, on every surface
 }
 
 // What a lane holds, as ShaderNode reads it: a 32-bit float, or a 32-bit
@@ -74,10 +76,12 @@ func (s *surface) trackShaders(tv *treeView, b *driver.MountBatch) ([]shaderItem
 		case driver.ItemCreate, driver.ItemDelete:
 			delete(tv.shaderPixels, it.ID)
 			delete(retry, it.ID)
+			s.drawWith(tv, it.ID, nil)
 			continue
 		case driver.ItemShader:
 			delete(retry, it.ID)
 			if it.Shader == nil {
+				s.drawWith(tv, it.ID, nil)
 				continue
 			}
 		default:
@@ -86,6 +90,7 @@ func (s *surface) trackShaders(tv *treeView, b *driver.MountBatch) ([]shaderItem
 		p := s.programs[it.Shader.Program]
 		if p == nil {
 			p = translate(it.Shader.Program)
+			p.key = it.Shader.Program
 			s.nextProgram++
 			p.id = s.nextProgram
 			if s.programs == nil {
@@ -93,6 +98,7 @@ func (s *surface) trackShaders(tv *treeView, b *driver.MountBatch) ([]shaderItem
 			}
 			s.programs[it.Shader.Program] = p
 		}
+		s.drawWith(tv, it.ID, p)
 		// The core sends the same copy while the version stays, which Java has.
 		pixels, held, left, deferred := shaderPixels(it.Shader.Images, tv.shaderPixels[it.ID], budget)
 		budget = left
@@ -120,6 +126,56 @@ func (s *surface) trackShaders(tv *treeView, b *driver.MountBatch) ([]shaderItem
 		}
 	}
 	return out, pending
+}
+
+// drawWith records that shader view id of tv draws p, nil for none. A
+// program left without views waits for releasePrograms, so a later item
+// of the batch can still draw it.
+func (s *surface) drawWith(tv *treeView, id driver.NodeID, p *glProgram) {
+	old := tv.shaders[id]
+	if old == p {
+		return
+	}
+	if p == nil {
+		delete(tv.shaders, id)
+	} else {
+		p.views++
+		if tv.shaders == nil {
+			tv.shaders = map[driver.NodeID]*glProgram{}
+		}
+		tv.shaders[id] = p
+	}
+	if old != nil {
+		old.views--
+		if old.views == 0 {
+			s.unusedPrograms = append(s.unusedPrograms, old)
+		}
+	}
+}
+
+// releasePrograms forgets the programs no shader view draws any more and
+// has Java delete those it has, after the batches that stopped drawing them.
+func (s *surface) releasePrograms() {
+	var ids []uint32
+	for _, p := range s.unusedPrograms {
+		if p.views == 0 && s.programs[p.key] == p {
+			delete(s.programs, p.key)
+			if p.sent {
+				ids = append(ids, p.id)
+			}
+		}
+	}
+	clear(s.unusedPrograms)
+	s.unusedPrograms = s.unusedPrograms[:0]
+	if len(ids) == 0 {
+		return
+	}
+	s.send(msgShaderRelease, func(w *writer) {
+		w.u32(uint32(len(ids)))
+		for _, id := range ids {
+			w.u32(id)
+		}
+	})
 }
 
 // translate turns prog into GLSL ES.

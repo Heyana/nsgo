@@ -83,6 +83,9 @@ final class Protocol {
     /** Starts frame sampling (with or without a visible panel), or updates the panel. */
     static final int PERF_PANEL = 24;
 
+    /** The shader programs no view draws any more: their count, then each one's number (ShaderNode.release). */
+    static final int SHADER_RELEASE = 25;
+
     /** A correlated text request: request ID and operation. */
     static final int TEXT_REQUEST = 26;
 

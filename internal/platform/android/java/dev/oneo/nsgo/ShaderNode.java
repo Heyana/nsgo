@@ -54,8 +54,10 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         }
     }
 
-    /** The programs Go sent, by its numbers; the UI thread writes it, the GL thread reads it. */
+    /** The programs Go sent, by its numbers, until it releases them; the UI thread writes it, the GL thread reads it. */
     private static final Map<Integer, Program> programs = new java.util.concurrent.ConcurrentHashMap<>();
+    /** The GL thread's: the programs released, until the shared context is current to delete them in. */
+    private static final List<Program> released = new ArrayList<>();
 
     // What a lane holds, as android/shader.go's lane constants.
     private static final int LANE_FLOAT = 0, LANE_INT = 1, LANE_UINT = 2, LANE_BOOL = 3;
@@ -238,6 +240,39 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         gl.post(this::render);
     }
 
+    /** Forgets the programs Go released, which no view draws any more, on the UI thread; the GL thread deletes them. */
+    static void release(int[] ids) {
+        List<Program> gone = new ArrayList<>();
+        for (int id : ids) {
+            Program p = programs.remove(id);
+            if (p != null) gone.add(p);
+        }
+        // Without the GL thread, none was linked.
+        if (gone.isEmpty() || gl == null) return;
+        gl.post(() -> {
+            if (failed) return;
+            released.addAll(gone);
+            // Without a surface, in the context alone where EGL allows it; else at the next draw.
+            if (context.equals(EGL14.eglGetCurrentContext())
+                    || EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, context)) {
+                deleteReleased();
+            }
+        });
+    }
+
+    /** Deletes the released programs, on the GL thread with the shared context current; none links again. */
+    private static void deleteReleased() {
+        for (Program p : released) {
+            if (p.id > 0) {
+                GLES30.glDeleteProgram(p.id);
+                GLES30.glDeleteBuffers(1, new int[] {p.ubo}, 0);
+                GLES30.glDeleteVertexArrays(1, new int[] {p.vao}, 0);
+            }
+            p.id = 0;
+        }
+        released.clear();
+    }
+
     /** Starts the GL thread and its context, once. */
     private static synchronized void start() {
         if (thread != null) return;
@@ -361,6 +396,7 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         try {
             if (failed || s == null || block == null || p == null || w <= 0 || h <= 0) return;
             if (!EGL14.eglMakeCurrent(display, s, s, context)) return;
+            deleteReleased();
             if (p.id == -1 && !link(p)) p.id = 0;
             GLES30.glViewport(0, 0, w, h);
             GLES30.glClearColor(0, 0, 0, 0);
