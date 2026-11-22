@@ -192,6 +192,7 @@ interface CanvasOp {
   d?: number[];
   img?: string;
   n?: boolean;
+  sp?: number[];
 }
 
 interface CanvasGradientData {
@@ -2426,6 +2427,32 @@ struct CanvasView {
     ctx.drawImage(pm, (o.x1 ?? 0) * d, (o.y1 ?? 0) * d, (o.x2 ?? 0) * d, (o.y2 ?? 0) * d, x, y, dw, dh);
   }
 
+  // drawAtlas draws an atlas op's sprites from one image, nine numbers
+  // each: the source rectangle in the image's points, the scaled rotation
+  // and translation, and the opacity factor of the current alpha.
+  private drawAtlas(ctx: CanvasRenderingContext2D, pm: image.PixelMap, sp: number[]): void {
+    const d = density();
+    const alpha = ctx.globalAlpha;
+    for (let i = 0; i + 9 <= sp.length; i += 9) {
+      const sx = sp[i] * d;
+      const sy = sp[i + 1] * d;
+      const w = sp[i + 2];
+      const h = sp[i + 3];
+      const c = sp[i + 4];
+      const s = sp[i + 5];
+      ctx.globalAlpha = alpha * sp[i + 8];
+      if (s === 0 && c > 0) {
+        ctx.drawImage(pm, sx, sy, w * d, h * d, sp[i + 6], sp[i + 7], w * c, h * c);
+        continue;
+      }
+      ctx.save();
+      ctx.transform(c, s, -s, c, sp[i + 6], sp[i + 7]);
+      ctx.drawImage(pm, sx, sy, w * d, h * d, 0, 0, w, h);
+      ctx.restore();
+    }
+    ctx.globalAlpha = alpha;
+  }
+
   // loadImage decodes an image op once; a repaint draws it when it comes.
   private loadImage(key: string, uri: string, data: string): void {
     if (canvasImageCache.has(key)) {
@@ -2497,6 +2524,7 @@ struct CanvasView {
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
     ctx.globalCompositeOperation = 'source-over';
+    ctx.imageSmoothingEnabled = true;
     ctx.clearRect(0, 0, 100000, 100000);
     let ops: CanvasOp[] = [];
     try {
@@ -2647,7 +2675,8 @@ struct CanvasView {
           ctx.shadowOffsetY = o.y ?? 0;
           ctx.shadowBlur = o.r ?? 0;
           break;
-        case 37: {
+        case 37:
+        case 40: {
           const uri = o.img ?? '';
           const data = o.imgd ?? '';
           const key = o.imgk ?? (data !== '' ? data : uri);
@@ -2659,7 +2688,12 @@ struct CanvasView {
             this.loadImage(key, uri, data);
             break;
           }
-          this.drawImage(ctx, pm, o);
+          if (o.k === 40) {
+            ctx.imageSmoothingEnabled = !(o.n ?? false);
+            this.drawAtlas(ctx, pm, o.sp ?? []);
+          } else {
+            this.drawImage(ctx, pm, o);
+          }
           break;
         }
       }

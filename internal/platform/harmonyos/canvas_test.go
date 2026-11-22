@@ -4,6 +4,7 @@ package harmonyos
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -51,4 +52,51 @@ func TestImageSendsItsSampling(t *testing.T) {
 			t.Fatalf("sampling %d sent nearest %v, want %v", sampling, got[0][5], want)
 		}
 	}
+}
+
+// TestCanvasSendsAtlasPacked checks that an atlas reaches the host as one op holding its image, whether it samples nearest and its sprites packed nine numbers each, in the order Index.ets's drawAtlas reads them, rather than as an image op per sprite.
+func TestCanvasSendsAtlasPacked(t *testing.T) {
+	src := driver.ImageSource{URI: "asset:atlas.png", Data: []byte{1, 2, 3}}
+	rects := []driver.Bounds{
+		{Origin: driver.Point{X: 4, Y: 8}, Size: driver.Size{Width: 12, Height: 16}},
+		{Origin: driver.Point{X: 0, Y: 0}, Size: driver.Size{Width: 2, Height: 3}},
+	}
+	xforms := []driver.RSXform{{SCos: 2, TX: 11, TY: 23}, {SCos: 0.5, SSin: -1, TX: -3, TY: 7}}
+	d := driver.NewDrawing(nil).SetAlpha(0.5).SetImageSmoothing(false).DrawAtlas(src, rects, xforms, []float32{0.25})
+	ops := decodeCanvas(t, d.Ops)
+	if len(ops) != 2 {
+		t.Fatalf("got %d ops, want the alpha and one atlas: %+v", len(ops), ops)
+	}
+	if ops[0].K != int(driver.DrawAlpha) || ops[0].A == nil || *ops[0].A != 0.5 {
+		t.Errorf("alpha op = %+v", ops[0])
+	}
+	atlas := ops[1]
+	if atlas.K != int(driver.DrawAtlas) || atlas.Img != src.URI || atlas.ImgData != "AQID" || !atlas.Nearest {
+		t.Errorf("atlas op = %+v", atlas)
+	}
+	want := []float32{
+		4, 8, 12, 16, 2, 0, 11, 23, 0.25,
+		0, 0, 2, 3, 0.5, -1, -3, 7, 1,
+	}
+	if !slices.Equal(atlas.Sprites, want) {
+		t.Errorf("sprites = %v, want %v", atlas.Sprites, want)
+	}
+}
+
+// TestCanvasDropsAnAtlasWithoutAnImage checks that an atlas op the host could not draw is not sent.
+func TestCanvasDropsAnAtlasWithoutAnImage(t *testing.T) {
+	sprites := driver.AtlasSprites{{Rect: driver.Bounds{Size: driver.Size{Width: 1, Height: 1}}, Transform: driver.RSXform{SCos: 1}, Alpha: 1}}
+	ops := []driver.DrawOp{{Kind: driver.DrawAtlas, Atlas: &sprites}, {Kind: driver.DrawAtlas, Image: &driver.ImageSource{URI: "a.png"}}}
+	if got := decodeCanvas(t, ops); len(got) != 0 {
+		t.Fatalf("got %+v, want nothing", got)
+	}
+}
+
+func decodeCanvas(t *testing.T, ops []driver.DrawOp) []canvasOp {
+	t.Helper()
+	var out []canvasOp
+	if err := json.Unmarshal([]byte(canvasJSON(ops)), &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
