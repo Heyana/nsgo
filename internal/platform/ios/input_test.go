@@ -4,12 +4,14 @@ package ios_test
 
 import (
 	"math"
+	"sync"
 	"testing"
 	"time"
 
 	_ "github.com/nsgo-dev/nsgo"
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/ios"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
@@ -160,4 +162,133 @@ func TestMultilinePlaceholderAccessibility(t *testing.T) {
 
 	app.Post(func() { setDesc("") })
 	check("notes", "", true)
+}
+
+// TestPastePastMaxLengthAndUndo checks that pasting text longer than MaxLength
+// into both single-line UITextField and multiline UITextView clips on a
+// composed character sequence boundary, inserts cleanly, ignores further pastes
+// once full, and undoes without crashing UIKit's undo manager (#1565).
+func TestPastePastMaxLengthAndUndo(t *testing.T) {
+	const wait = 5 * time.Second
+	for _, tc := range []struct {
+		name      string
+		multiline bool
+	}{
+		{name: "single-line", multiline: false},
+		{name: "multiline", multiline: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				value   *core.Signal[string]
+				mu      sync.Mutex
+				lastVal string
+				pasted  []string
+			)
+			app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+				value = core.NewSignal(cx, "")
+				return core.View{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+					core.Input{
+						TestID:    "ed",
+						Multiline: tc.multiline,
+						MaxLength: 10,
+						Value:     value.Get,
+						OnChange: func(s string) {
+							value.Set(s)
+							mu.Lock()
+							lastVal = s
+							mu.Unlock()
+						},
+						OnPaste: func(p core.PasteEvent) {
+							mu.Lock()
+							pasted = append(pasted, p.Text)
+							mu.Unlock()
+						},
+						Style: core.Style{Width: core.Pt(280), Height: core.Pt(100)},
+					},
+				}}
+			})
+			app.WaitFor("id:ed", wait)
+
+			waitValue := func(want string) {
+				t.Helper()
+				app.WaitUntil(wait, func() bool {
+					mu.Lock()
+					defer mu.Unlock()
+					return lastVal == want
+				})
+			}
+
+			// 1. Type 5 characters, then paste 10 characters past MaxLength (10).
+			app.Type("id:ed", "12345")
+			waitValue("12345")
+
+			got, ok := ios.InputPasteForTest("ed", "ABCDEFGHIJ", nil)
+			if !ok {
+				t.Fatal("input did not mount")
+			}
+			if got != "12345ABCDE" {
+				t.Fatalf("after clipped paste: native text = %q, want %q", got, "12345ABCDE")
+			}
+			waitValue("12345ABCDE")
+
+			// 2. Paste again when full: text stays at MaxLength, no crash.
+			got, _ = ios.InputPasteForTest("ed", "KLM", nil)
+			if got != "12345ABCDE" {
+				t.Fatalf("after paste into full input: native text = %q, want %q", got, "12345ABCDE")
+			}
+			waitValue("12345ABCDE")
+
+			// 3. Undo after clipped and refused pastes must not crash and must revert.
+			undone, canUndo, ok := ios.InputUndoForTest("ed")
+			if !ok {
+				t.Fatal("input did not mount for undo")
+			}
+			if !canUndo {
+				t.Fatal("expected undoManager.canUndo to be true after paste")
+			}
+			if undone == "12345ABCDE" {
+				t.Fatalf("undo did not change text: still %q", undone)
+			}
+			waitValue(undone)
+
+			// 4. Select all and paste text containing an emoji at the boundary: emoji stays whole.
+			selAll := driver.TextRange{Start: 0, End: driver.UTF16Len(undone)}
+			got, _ = ios.InputPasteForTest("ed", "ABCDEFGHI😀KLM", &selAll)
+			if got != "ABCDEFGHI" {
+				t.Fatalf("after emoji boundary paste: native text = %q, want %q", got, "ABCDEFGHI")
+			}
+			waitValue("ABCDEFGHI")
+
+			// 5. Undo the emoji paste cleanly too.
+			undone2, canUndo2, _ := ios.InputUndoForTest("ed")
+			if !canUndo2 {
+				t.Fatal("expected undoManager.canUndo to be true after emoji paste")
+			}
+			if undone2 != undone {
+				t.Fatalf("undo after emoji paste = %q, want %q", undone2, undone)
+			}
+			waitValue(undone2)
+
+			// 6. Combining character sequence at the boundary stays whole.
+			selAll2 := driver.TextRange{Start: 0, End: driver.UTF16Len(undone2)}
+			got, _ = ios.InputPasteForTest("ed", "ABCDEFGHIe\u0301KLM", &selAll2)
+			if got != "ABCDEFGHI" {
+				t.Fatalf("after combining sequence paste: native text = %q, want %q", got, "ABCDEFGHI")
+			}
+			waitValue("ABCDEFGHI")
+
+			// Verify OnPaste received the original clipboard texts.
+			app.WaitUntil(wait, func() bool {
+				mu.Lock()
+				defer mu.Unlock()
+				return len(pasted) >= 4
+			})
+			mu.Lock()
+			gotPasted := append([]string(nil), pasted...)
+			mu.Unlock()
+			if len(gotPasted) < 4 || gotPasted[0] != "ABCDEFGHIJ" || gotPasted[1] != "KLM" {
+				t.Fatalf("OnPaste received %q, want first two pastes [ABCDEFGHIJ KLM]", gotPasted)
+			}
+		})
+	}
 }

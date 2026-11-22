@@ -103,6 +103,56 @@ func InputAccessibilityForTest(testID string) (state InputAccessibilityState, ok
 	return state, ok
 }
 
+// InputPasteForTest puts text on the general pasteboard, focuses the mounted
+// input with testID, optionally sets its UTF-16 selection, and sends the native
+// paste: action to its editor on the main thread.
+func InputPasteForTest(testID, text string, selRange *driver.TextRange) (got string, ok bool) {
+	onMainSync(func() {
+		for _, v := range runner.views {
+			if v == nil || v.input == nil || v.props.TestID != testID {
+				continue
+			}
+			ok = true
+			in := v.input
+			if !objc.Send[bool](in.field, sel("isFirstResponder")) {
+				in.field.Send(selBecomeFirst)
+			}
+			if selRange != nil {
+				in.selectRange(*selRange)
+			}
+			generalPasteboard().Send(sel("setString:"), apple.NSString(text))
+			in.field.Send(sel("paste:"), objc.ID(0))
+			got = in.text()
+			return
+		}
+	})
+	return got, ok
+}
+
+// InputUndoForTest runs undo on the mounted input editor's NSUndoManager on
+// the main thread and returns the editor's resulting text and whether an undo
+// action was registered.
+func InputUndoForTest(testID string) (text string, canUndo, ok bool) {
+	onMainSync(func() {
+		for _, v := range runner.views {
+			if v == nil || v.input == nil || v.props.TestID != testID {
+				continue
+			}
+			ok = true
+			in := v.input
+			if um := in.field.Send(sel("undoManager")); um != 0 {
+				canUndo = objc.Send[bool](um, sel("canUndo"))
+				if canUndo {
+					um.Send(sel("undo"))
+				}
+			}
+			text = in.text()
+			return
+		}
+	})
+	return text, canUndo, ok
+}
+
 // inkBaselines draws layer's tree on white, w by h points at 3 pixels a point, and returns the bottom of each band of rows with dark ink, in points: where capitals stand.
 func inkBaselines(layer objc.ID, w, h float64) []float64 {
 	cg, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_GLOBAL)

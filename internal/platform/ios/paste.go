@@ -19,9 +19,24 @@ import (
 // pasteMethods are the editors' paste methods.
 func pasteMethods() []objc.MethodDef {
 	paste := func(self objc.ID, cmd objc.SEL, sender objc.ID) {
-		if pasteInto(self) {
+		in := inputOf(self)
+		if in == nil {
 			apple.Super(self, cmd, sender)
+			return
 		}
+		if in.fs.Config.Readonly {
+			return
+		}
+		pb := generalPasteboard()
+		text, hasText, insert := in.pasteEvent(pb)
+		if !insert {
+			return
+		}
+		if shouldPasteSelf(in.fs.Config) {
+			in.pasteText(pb, text, hasText)
+			return
+		}
+		apple.Super(self, cmd, sender)
 	}
 	return []objc.MethodDef{
 		{Cmd: sel("paste:"), Fn: paste},
@@ -50,14 +65,12 @@ func pasteMethods() []objc.MethodDef {
 var readonlyRefuses = map[objc.SEL]bool{sel("cut:"): true, sel("paste:"): true, sel("pasteAndMatchStyle:"): true,
 	sel("delete:"): true, sel("replace:"): true, sel("_promptForReplace:"): true, sel("captureTextFromCamera:"): true}
 
-// pasteInto reports a paste into editor's input, and whether the editor
-// inserts its text.
-func pasteInto(editor objc.ID) bool {
-	in := inputOf(editor)
-	if in == nil || !in.fs.Events.Has(driver.EventPaste) {
-		return true
+// pasteEvent reports a paste from pb into in when listened, returning any
+// already-read text and whether the editor should insert text.
+func (in *input) pasteEvent(pb objc.ID) (text string, hasText, insert bool) {
+	if !in.fs.Events.Has(driver.EventPaste) {
+		return "", false, in.fs.Config.PasteBehavior == driver.PasteInsert
 	}
-	pb := objc.ID(apple.Class("UIPasteboard")).Send(sel("generalPasteboard"))
 	p := &driver.PasteEvent{Text: apple.GoString(pb.Send(sel("string")))}
 	if d := pb.Send(sel("dataForPasteboardType:"), apple.NSString("public.html")); d != 0 {
 		p.HTML = string(apple.Bytes(d))
@@ -79,7 +92,50 @@ func pasteInto(editor objc.ID) bool {
 		}
 	}
 	in.fs.Dispatch(driver.Event{Kind: driver.EventPaste, ID: in.fs.ID, Data: p})
-	return p.Text != "" && len(p.URIs) == 0 && in.fs.Config.PasteBehavior == driver.PasteInsert
+	return p.Text, true, p.Text != "" && len(p.URIs) == 0 && in.fs.Config.PasteBehavior == driver.PasteInsert
+}
+
+// pasteText inserts text from pb (or the text already read by pasteEvent)
+// into in, clipped to MaxLength on a composed character sequence boundary,
+// asking the delegate and calling insertText: so UIKit registers an undo step
+// matching the inserted text rather than the unclipped pasteboard string.
+func (in *input) pasteText(pb objc.ID, text string, hasText bool) {
+	if !hasText {
+		ns := pb.Send(sel("string"))
+		if ns == 0 {
+			return
+		}
+		text = apple.GoString(ns)
+	}
+	selRange, ok := in.selection()
+	if !ok {
+		return
+	}
+	out, replaced, ok := preparePasteText(text, in.multiline, in.text(), selRange, in.fs.Config.MaxLength, clipComposedUTF16)
+	if !ok {
+		return
+	}
+	nsRange := apple.NSRange{Location: uint(selRange.Start), Length: uint(replaced)}
+	if !in.shouldChange(nsRange, out) {
+		return
+	}
+	in.field.Send(sel("insertText:"), apple.NSString(out))
+}
+
+// clipComposedUTF16 trims s to at most maxUnits UTF-16 code units without
+// splitting a composed character sequence (surrogate pairs, combining marks,
+// ZWJ emoji or CRLF).
+func clipComposedUTF16(s string, maxUnits int) string {
+	if maxUnits <= 0 {
+		return ""
+	}
+	ns := apple.NSString(s)
+	n := int(objc.Send[uint](ns, sel("length")))
+	if maxUnits >= n {
+		return s
+	}
+	seq := objc.Send[apple.NSRange](ns, sel("rangeOfComposedCharacterSequenceAtIndex:"), uint(maxUnits))
+	return apple.GoString(ns.Send(sel("substringToIndex:"), seq.Location))
 }
 
 // caretMoved reports where in's caret is, while it has the focus.
