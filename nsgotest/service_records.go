@@ -25,11 +25,13 @@ type AppleSignInRequest struct {
 type PurchaseAction string
 
 const (
-	PurchaseProducts     PurchaseAction = "products"
-	PurchaseBuy          PurchaseAction = "buy"
-	PurchaseFinish       PurchaseAction = "finish"
-	PurchaseEntitlements PurchaseAction = "entitlements"
-	PurchaseSync         PurchaseAction = "sync"
+	PurchaseProducts            PurchaseAction = "products"
+	PurchaseBuy                 PurchaseAction = "buy"
+	PurchaseFinish              PurchaseAction = "finish"
+	PurchaseEntitlements        PurchaseAction = "entitlements"
+	PurchaseSync                PurchaseAction = "sync"
+	PurchaseManageSubscriptions PurchaseAction = "manageSubscriptions"
+	PurchaseRefund              PurchaseAction = "refund"
 )
 
 // PurchaseRequest records a store operation and its options. IDs are the
@@ -45,11 +47,13 @@ type PurchaseRequest struct {
 }
 
 var purchaseActions = map[driver.PurchaseCommand]PurchaseAction{
-	driver.PurchaseProducts:     PurchaseProducts,
-	driver.PurchaseBuy:          PurchaseBuy,
-	driver.PurchaseFinish:       PurchaseFinish,
-	driver.PurchaseEntitlements: PurchaseEntitlements,
-	driver.PurchaseSync:         PurchaseSync,
+	driver.PurchaseProducts:            PurchaseProducts,
+	driver.PurchaseBuy:                 PurchaseBuy,
+	driver.PurchaseFinish:              PurchaseFinish,
+	driver.PurchaseEntitlements:        PurchaseEntitlements,
+	driver.PurchaseSync:                PurchaseSync,
+	driver.PurchaseManageSubscriptions: PurchaseManageSubscriptions,
+	driver.PurchaseRefund:              PurchaseRefund,
 }
 
 func purchaseRequest(r driver.PurchaseRequest) PurchaseRequest {

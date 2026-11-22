@@ -177,6 +177,7 @@ type storeKitAnswer struct {
 	Products     []driver.Product      `json:"products"`
 	Transaction  *storeKitTransaction  `json:"transaction"`
 	Transactions []storeKitTransaction `json:"transactions"`
+	RefundStatus string                `json:"refundStatus"`
 }
 
 // storeKitTransaction is a transaction as the library writes it, its dates in milliseconds since the Unix epoch.
@@ -198,7 +199,7 @@ type storeKitTransaction struct {
 }
 
 func (a *storeKitAnswer) driver() *driver.PurchaseAnswer {
-	out := &driver.PurchaseAnswer{Error: a.Error, Message: a.Message, Products: a.Products}
+	out := &driver.PurchaseAnswer{Error: a.Error, Message: a.Message, Products: a.Products, RefundStatus: a.RefundStatus}
 	if a.Transaction != nil {
 		out.Transaction = a.Transaction.driver()
 	}

@@ -33,6 +33,8 @@ var gated = map[string]service{
 	"FinishTransaction":             servicePurchases,
 	"CurrentEntitlements":           servicePurchases,
 	"SyncPurchases":                 servicePurchases,
+	"ManageSubscriptions":           servicePurchases,
+	"RequestRefund":                 servicePurchases,
 	"OnPurchaseUpdate":              servicePurchases,
 	"Secrets":                       serviceSecrets,
 	"PermissionStatus":              servicePermissions,

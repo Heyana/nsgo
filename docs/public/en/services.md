@@ -593,6 +593,8 @@ apple:
 
 Show the prices the store gives, `DisplayPrice`, never prices of the app's own: the store prices each storefront itself. A purchase answers once, with the transaction or an error: `core.PurchaseCancelled` when the user closes the sheet, `core.PurchasePending` while it waits for approval, as Ask to Buy does, and otherwise `core.PurchaseFailed`, with the store's words, or `PurchasesUnavailable` elsewhere. Send the transaction's `Signed`, the store's JWS, to the app's server to verify, deliver what it bought, then finish it; the store hands an unfinished transaction to the app again at every launch.
 
+`cx.ManageSubscriptions` opens Apple's subscription management UI (the system sheet on iOS, the App Store subscriptions page on macOS and tvOS). `cx.RequestRefund` starts a refund request for a transaction and answers `core.RefundSuccess` or `core.RefundCancelled`.
+
 ```go
 cx.OnPurchaseUpdate(func(t core.Transaction) { // renewals, approved purchases, other devices', refunds, and unfinished ones at launch
 	verifyAndDeliver(t.Signed, func() { cx.FinishTransaction(t.ID, nil) })

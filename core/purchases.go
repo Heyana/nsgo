@@ -26,6 +26,14 @@ const (
 
 func (e PurchaseError) Error() string { return "nsgo: purchase: " + string(e) }
 
+// RefundStatus is the result of a refund request.
+type RefundStatus string
+
+const (
+	RefundSuccess   RefundStatus = driver.RefundSuccess
+	RefundCancelled RefundStatus = driver.RefundCancelled
+)
+
 // What the store sells and records, as the platform reports them.
 type (
 	// Product is what the store sells, in the user's storefront's language and currency: show DisplayPrice as it is and never a price of the app's own, as stores price each storefront themselves.
@@ -202,6 +210,58 @@ func (cx *Scope) SyncPurchases(done func(error)) {
 	t.request(cx, driver.MountItem{Kind: driver.ItemPurchase, Purchase: &driver.PurchaseRequest{Command: driver.PurchaseSync}}, func(ev driver.Event) {
 		_, err := purchaseAnswer(ev)
 		answer(err)
+	})
+}
+
+// ManageSubscriptions opens the store's subscription-management UI. It is
+// available where the app's purchases library is available and must be called
+// from a user action. The callback is called once with any platform error.
+func (cx *Scope) ManageSubscriptions(done func(error)) {
+	answer := func(err error) {
+		if done != nil {
+			done(err)
+		}
+	}
+	t, err := cx.purchases()
+	if err != nil {
+		answer(err)
+		return
+	}
+	t.request(cx, driver.MountItem{Kind: driver.ItemPurchase, Purchase: &driver.PurchaseRequest{Command: driver.PurchaseManageSubscriptions}}, func(ev driver.Event) {
+		_, err := purchaseAnswer(ev)
+		answer(err)
+	})
+}
+
+// RequestRefund asks the store to begin a refund request for transactionID.
+// The callback receives RefundSuccess when the request was submitted or
+// RefundCancelled when the user closes the store UI.
+func (cx *Scope) RequestRefund(transactionID string, done func(RefundStatus, error)) {
+	answer := func(status RefundStatus, err error) {
+		if done != nil {
+			done(status, err)
+		}
+	}
+	t, err := cx.purchases()
+	if err != nil {
+		answer("", err)
+		return
+	}
+	if transactionID == "" {
+		answer("", fmt.Errorf("%w: no transaction", PurchaseFailed))
+		return
+	}
+	t.request(cx, driver.MountItem{Kind: driver.ItemPurchase, Purchase: &driver.PurchaseRequest{Command: driver.PurchaseRefund, Transaction: transactionID}}, func(ev driver.Event) {
+		a, err := purchaseAnswer(ev)
+		if err != nil {
+			answer("", err)
+			return
+		}
+		status := RefundStatus(a.RefundStatus)
+		if status == "" {
+			status = RefundSuccess
+		}
+		answer(status, nil)
 	})
 }
 

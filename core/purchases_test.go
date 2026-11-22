@@ -203,6 +203,29 @@ func TestSyncPurchases(t *testing.T) {
 	}
 }
 
+func TestManageSubscriptionsAndRefund(t *testing.T) {
+	app, scope := scoped(t, purchases)
+	var manageErr error
+	scope.ManageSubscriptions(func(err error) { manageErr = err })
+	var status core.RefundStatus
+	var refundErr error
+	scope.RequestRefund("42", func(s core.RefundStatus, err error) { status, refundErr = s, err })
+	app.Settle()
+	if manageErr != nil || refundErr != nil || status != core.RefundSuccess {
+		t.Fatalf("manage=%v refund=%v/%v", manageErr, status, refundErr)
+	}
+	if len(app.PurchaseRequests) != 2 || app.PurchaseRequests[0].Action != nsgotest.PurchaseManageSubscriptions || app.PurchaseRequests[1].Action != nsgotest.PurchaseRefund || app.PurchaseRequests[1].Transaction != "42" {
+		t.Fatalf("requests %+v", app.PurchaseRequests)
+	}
+	app.ManageSubscriptionsError = core.PurchaseCancelled
+	var cancelled error
+	scope.ManageSubscriptions(func(err error) { cancelled = err })
+	app.Settle()
+	if !errors.Is(cancelled, core.PurchaseCancelled) {
+		t.Fatalf("cancelled manage error %v", cancelled)
+	}
+}
+
 func TestPurchasesUnavailableWithoutAStore(t *testing.T) {
 	app, scope := scoped(t)
 	app.Products = []core.Product{coins}

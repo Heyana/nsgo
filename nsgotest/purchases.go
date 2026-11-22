@@ -68,6 +68,15 @@ func (a *App) purchase(id uint32, r driver.PurchaseRequest) {
 		if a.SyncAnswer != nil {
 			answer.Error, answer.Message = purchaseErrorCode(a.SyncAnswer)
 		}
+	case driver.PurchaseManageSubscriptions:
+		if a.ManageSubscriptionsError != nil {
+			answer.Error, answer.Message = purchaseErrorCode(a.ManageSubscriptionsError)
+		}
+	case driver.PurchaseRefund:
+		answer.RefundStatus = string(a.RefundStatus)
+		if answer.RefundStatus == "" {
+			answer.RefundStatus = driver.RefundSuccess
+		}
 	}
 	a.post(driver.Event{Kind: driver.EventPurchase, Count: id, Data: answer})
 }

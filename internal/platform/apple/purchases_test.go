@@ -53,6 +53,24 @@ func TestStoreKitRequestWritesTheLibrarysJSON(t *testing.T) {
 	}
 }
 
+func TestStoreKitSubscriptionAndRefundJSON(t *testing.T) {
+	data, err := json.Marshal(storeKitRequest{Command: driver.PurchaseManageSubscriptions.String()})
+	if err != nil || string(data) != `{"command":"manageSubscriptions"}` {
+		t.Fatalf("manage request %s, %v", data, err)
+	}
+	data, err = json.Marshal(storeKitRequest{Command: driver.PurchaseRefund.String(), Transaction: "42"})
+	if err != nil || string(data) != `{"command":"refund","transaction":"42"}` {
+		t.Fatalf("refund request %s, %v", data, err)
+	}
+	var a storeKitAnswer
+	if err := json.Unmarshal([]byte(`{"refundStatus":"cancelled"}`), &a); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.driver().RefundStatus; got != driver.RefundCancelled {
+		t.Fatalf("refund status %q", got)
+	}
+}
+
 // A process whose bundle has no library, as a test's has not, has no purchases, and answers a request unavailable.
 func TestPurchasesUnavailableWithoutTheLibrary(t *testing.T) {
 	if PurchasesAvailable() {

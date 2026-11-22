@@ -2,6 +2,12 @@
 
 import Foundation
 import StoreKit
+#if canImport(UIKit)
+import UIKit
+#endif
+#if os(macOS)
+import AppKit
+#endif
 
 /// Answer hears each answer: the call's ID, 0 for a transaction Transaction.updates delivers, and the answer's JSON.
 public typealias NsgoStoreKitAnswer = @convention(c) (UInt32, UnsafePointer<UInt8>?, Int) -> Void
@@ -45,6 +51,7 @@ private struct Answer: Encodable {
     var products: [ProductOut]?
     var transaction: TransactionOut?
     var transactions: [TransactionOut]?
+    var refundStatus: String?
 }
 
 private struct ProductOut: Encodable {
@@ -190,6 +197,45 @@ private func handle(_ r: Request) async throws -> Answer {
     case "sync":
         try await AppStore.sync()
         return Answer()
+    case "manageSubscriptions":
+#if os(iOS)
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+            throw Failure(code: "failed", message: "no active window scene")
+        }
+        try await AppStore.showManageSubscriptions(in: scene)
+#elseif os(macOS)
+        guard let url = URL(string: "https://apps.apple.com/account/subscriptions"), NSWorkspace.shared.open(url) else {
+            throw Failure(code: "failed", message: "could not open subscriptions")
+        }
+#else
+        guard let url = URL(string: "https://apps.apple.com/account/subscriptions") else {
+            throw Failure(code: "failed", message: "could not open subscriptions")
+        }
+        await UIApplication.shared.open(url)
+#endif
+        return Answer()
+    case "refund":
+        guard let id = UInt64(r.transaction ?? "") else { throw Failure(code: "failed", message: "invalid transaction") }
+#if os(iOS)
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+            throw Failure(code: "failed", message: "no active window scene")
+        }
+        let status = try await Transaction.beginRefundRequest(for: id, in: scene)
+#elseif os(macOS)
+        guard let controller = NSApp.keyWindow?.contentViewController else {
+            throw Failure(code: "failed", message: "no active window controller")
+        }
+        let status = try await Transaction.beginRefundRequest(for: id, in: controller)
+#else
+        throw Failure(code: "failed", message: "refund requests are unavailable on tvOS")
+#endif
+#if os(iOS) || os(macOS)
+        switch status {
+        case .success: return Answer(refundStatus: "success")
+        case .userCancelled: return Answer(refundStatus: "cancelled")
+        @unknown default: throw Failure(code: "failed")
+        }
+#endif
     default:
         throw Failure(code: "failed", message: "no command \(r.command)")
     }

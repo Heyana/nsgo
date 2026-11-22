@@ -16,9 +16,13 @@ const (
 	PurchaseEntitlements
 	// PurchaseSync has the store bring the user's transactions up to date, signing them in to their account where it must.
 	PurchaseSync
+	// PurchaseManageSubscriptions opens the store's subscription management UI.
+	PurchaseManageSubscriptions
+	// PurchaseRefund asks the store to begin a refund request for Transaction.
+	PurchaseRefund
 )
 
-var purchaseCommandNames = [...]string{"products", "buy", "finish", "entitlements", "sync"}
+var purchaseCommandNames = [...]string{"products", "buy", "finish", "entitlements", "sync", "manageSubscriptions", "refund"}
 
 // String returns the command's name, as traces print it.
 func (c PurchaseCommand) String() string {
@@ -69,7 +73,14 @@ type PurchaseAnswer struct {
 	Products     []Product
 	Transaction  *Transaction
 	Transactions []Transaction
+	// RefundStatus is the result of PurchaseRefund: "success" or "cancelled".
+	RefundStatus string
 }
+
+const (
+	RefundSuccess   = "success"
+	RefundCancelled = "cancelled"
+)
 
 // ProductType is what kind of thing a product sells, named as StoreKit 2 names it.
 type ProductType string
