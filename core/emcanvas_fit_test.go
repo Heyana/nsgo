@@ -172,3 +172,30 @@ func TestFittedTextPlacesReplacementAttachment(t *testing.T) {
 		t.Errorf("replacement frame %v, want %v", got, before)
 	}
 }
+
+// A width-aware em canvas is measured at the fitted font size too.
+func TestFittedTextSizesItsWidthAwareEmAttachment(t *testing.T) {
+	var fonts []Points
+	h := newHost(t, Size{Width: 500, Height: 200}, func(cx *Scope) Node {
+		return Text{TestID: "text", AdjustsFontSizeToFit: true, MinimumFontScale: 0.25, MaxLines: 1,
+			Style: Style{Width: Pt(150), Height: Pt(80), FontSize: 32},
+			Spans: []Span{{Content: "before "}, {Content: "$x$", Attachment: Canvas{TestID: "formula", MeasureEm: func(_, fs Points) EmBox {
+				fonts = append(fonts, fs)
+				return EmBox{Width: 2, Ascent: 0.75, Descent: 0.25}
+			}}}, {Content: " after"}},
+		}
+	})
+	batch := h.commit()
+	var font Points
+	for _, item := range batch.Items {
+		if item.Kind == driver.ItemText && item.ID == h.find("text").id {
+			font = item.Text.Style.Font.Size
+		}
+	}
+	if font <= 0 || font >= 32 {
+		t.Fatalf("fitted font %v", font)
+	}
+	if got := h.find("formula").frame.Size; math.Abs(float64(got.Height-font)) > 1 || math.Abs(float64(got.Width-2*font)) > 1 {
+		t.Errorf("width-aware canvas %v at fitted font %v (measured at %v)", got, font, fonts)
+	}
+}

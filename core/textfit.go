@@ -12,9 +12,7 @@ func (a *attachNode) shownSize() Size {
 	return a.size
 }
 
-// fitAttachmentTexts finishes font-relative attachment geometry before canvases
-// record their drawings. The parent's prepared text and layout caches keep the
-// natural sizes; a wider box can therefore restore the original font and paths.
+// fitAttachmentTexts finishes font-relative attachment geometry before canvases record their drawings. The parent's prepared text and layout caches keep the natural sizes; a wider box can therefore restore the original font and paths.
 func (t *Tree) fitAttachmentTexts(n *node) {
 	if !t.fullRound && !n.dirty && !n.dirtyKids {
 		return
@@ -84,8 +82,7 @@ func (t *Tree) fitAttachmentTexts(n *node) {
 			tn.shownBox = tn.pending.Content
 			t.placeAttachments(n, tn.pending.Layout)
 		} else if tn.layout != nil {
-			// A replacement attachment may have the same placeholder geometry.
-			// Its new view still needs the retained text layout's position.
+			// A replacement attachment may have the same placeholder geometry. Its new view still needs the retained text layout's position.
 			t.placeAttachments(n, tn.layout)
 		}
 	}
@@ -94,9 +91,7 @@ func (t *Tree) fitAttachmentTexts(n *node) {
 	}
 }
 
-// fittedAttachmentNode is a candidate layout with its own state. Computing it
-// never rewrites the tree's natural layout or an Em canvas's resolved font.
-// Point-sized views keep their dimensions; em-sized illustrations follow the font.
+// fittedAttachmentNode is a candidate layout with its own state. Computing it never rewrites the tree's natural layout or an Em canvas's resolved font. Point-sized views keep their dimensions; em-sized illustrations follow the font.
 type fittedAttachmentNode struct {
 	n        *node
 	scale    float32

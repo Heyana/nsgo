@@ -329,10 +329,7 @@ type Text struct {
 	// multiplier for it.
 	NoFontScaling         bool
 	MaxFontSizeMultiplier float32
-	// AdjustsFontSizeToFit shrinks the text's fonts, line heights and
-	// letter spacing, and font-relative attachments such as Canvas.Em,
-	// down to MinimumFontScale of them (at least 0.1),
-	// until it fits its box and MaxLines.
+	// AdjustsFontSizeToFit shrinks the text's fonts, line heights and letter spacing, and font-relative attachments such as Canvas.Em, down to MinimumFontScale of them (at least 0.1), until it fits its box and MaxLines.
 	AdjustsFontSizeToFit bool
 	MinimumFontScale     float32
 	// Spans, when set, are the text: runs in order, each styled over the
