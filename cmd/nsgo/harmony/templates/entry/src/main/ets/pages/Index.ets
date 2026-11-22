@@ -145,7 +145,7 @@ interface Device {
   ScreenReader: boolean;
   Lifecycle: number;
   OpenedURL: string;
-  // CanvasAtlas tells Go this player draws an atlas from one op (case 40).
+  // CanvasAtlas tells Go this player draws an atlas from one op (case 41).
   CanvasAtlas: boolean;
 }
 
@@ -2679,7 +2679,7 @@ struct CanvasView {
           ctx.shadowBlur = o.r ?? 0;
           break;
         case 37:
-        case 40: {
+        case 41: {
           const uri = o.img ?? '';
           const data = o.imgd ?? '';
           const key = o.imgk ?? (data !== '' ? data : uri);
@@ -2691,7 +2691,7 @@ struct CanvasView {
             this.loadImage(key, uri, data);
             break;
           }
-          if (o.k === 40) {
+          if (o.k === 41) {
             ctx.imageSmoothingEnabled = !(o.n ?? false);
             this.drawAtlas(ctx, pm, o.sp ?? []);
           } else {
