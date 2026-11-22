@@ -71,7 +71,6 @@ var (
 	iidWeb4                           = parseGUID("20d02d59-6df2-42dc-bd06-f98a694b1302")
 	iidWeb8                           = parseGUID("e9632730-6e1e-43ab-b7b8-7b2c9e62e094")
 	iidDownloadStarting               = parseGUID("efedc989-c396-41ca-83f7-07f845a55724")
-	iidBytesReceivedChanged           = parseGUID("828e8ab6-d94c-4264-9cef-5217170d6251")
 	iidDownloadStateChanged           = parseGUID("81336594-7ede-4ba9-bf71-acf0a95b58dd")
 	iidCursorChanged                  = parseGUID("9da43ccc-26e1-4dad-b56c-d8961c94c571")
 	iidFocusChanged                   = parseGUID("05ea24bd-6452-4926-9014-4b82b498135d")
@@ -165,7 +164,6 @@ const (
 	downloadArgsPutHandled    = 9
 
 	// ICoreWebView2DownloadOperation.
-	downloadAddBytesChanged = 3
 	downloadAddStateChanged = 7
 	downloadGetURI          = 9
 	downloadGetBytes        = 13

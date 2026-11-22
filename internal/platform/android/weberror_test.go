@@ -119,7 +119,7 @@ func TestReadEventWebErrorFailure(t *testing.T) {
 
 // TestWebNodeErrorsJava runs WebNode.java on the JVM against Android stubs, exercising onReceivedError and shouldOverrideUrlLoading, and decodes the emitted wire frames with Go's readEvent.
 func TestWebNodeErrorsJava(t *testing.T) {
-	out := runJavaAlgorithm(t, "weberror", "WebErrorCheck", nil, "WebNode", "WebMedia", "Protocol")
+	out := runJavaAlgorithm(t, "weberror", "WebErrorCheck", nil, "WebNode", "WebMedia", "WebDownload", "Protocol")
 	r := reader{out}
 	count := int(r.u32())
 

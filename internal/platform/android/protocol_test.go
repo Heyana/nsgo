@@ -1016,3 +1016,79 @@ func TestReadEventMouse(t *testing.T) {
 		t.Errorf("legacy event decoded %+v, left=%d", ev, len(r.buf))
 	}
 }
+
+// TestWebDownloadEventDecodesJSON verifies that Go decodes the JSON payload WebNode.reportDownload sends for started, finished and failed downloads.
+func TestWebDownloadEventDecodesJSON(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		json string
+		want driver.WebDownload
+	}{
+		{
+			name: "started",
+			json: `{"state":0,"id":"m1-1","url":"https://example.com/a.pdf","filename":"a.pdf","path":"/data/downloads/m1-1/a.pdf","bytes":0,"message":""}`,
+			want: driver.WebDownload{State: driver.WebDownloadStarted, ID: "m1-1", URL: "https://example.com/a.pdf", Filename: "a.pdf", Path: "/data/downloads/m1-1/a.pdf"},
+		},
+		{
+			name: "finished",
+			json: `{"state":1,"id":"m1-1","url":"https://example.com/a.pdf","filename":"a.pdf","path":"/data/downloads/m1-1/a.pdf","bytes":4096,"message":""}`,
+			want: driver.WebDownload{State: driver.WebDownloadFinished, ID: "m1-1", URL: "https://example.com/a.pdf", Filename: "a.pdf", Path: "/data/downloads/m1-1/a.pdf", Bytes: 4096},
+		},
+		{
+			name: "failed",
+			json: `{"state":2,"id":"m1-2","url":"https://example.com/missing","filename":"missing","path":"/data/downloads/m1-2/missing","bytes":0,"message":"HTTP 404"}`,
+			want: driver.WebDownload{State: driver.WebDownloadFailed, ID: "m1-2", URL: "https://example.com/missing", Filename: "missing", Path: "/data/downloads/m1-2/missing", Message: "HTTP 404"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := readWebDownload(tc.json)
+			if got == nil || *got != tc.want {
+				t.Fatalf("readWebDownload = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+	if got := readWebDownload("{not json"); got != nil {
+		t.Fatalf("malformed JSON returned %+v, want nil", got)
+	}
+}
+
+// TestWriteWebConfigEncodesDownloadDirAndHeaders verifies that writeWebConfig serializes DownloadDir and Headers in the order WebNode.configure reads them.
+func TestWriteWebConfigEncodesDownloadDirAndHeaders(t *testing.T) {
+	cfg := &driver.WebConfig{
+		Source:                          driver.WebSource{Src: "https://example.com/app", HTML: "<p>hi</p>", BaseURL: "https://example.com/"},
+		InjectedJavaScript:              "after();",
+		InjectedJavaScriptBeforeContent: "before();",
+		UserAgent:                       "CustomUA/1.0",
+		UserAgentSuffix:                 "Suffix/2.0",
+		NoScroll:                        true,
+		Restricted:                      true,
+		Media:                           driver.WebCamera,
+		PinchZoom:                       true,
+		Hosts:                           "example.com",
+		Schemes:                         "https",
+		DownloadDir:                     "/data/user/0/app/files/downloads",
+		Headers:                         map[string]string{"Authorization": "Bearer tok"},
+	}
+	var w writer
+	writeWebConfig(&w, cfg)
+	r := reader{w.buf}
+	if src, html, base := r.str(), r.str(), r.str(); src != cfg.Source.Src || html != cfg.Source.HTML || base != cfg.Source.BaseURL {
+		t.Fatalf("source = (%q, %q, %q)", src, html, base)
+	}
+	if inj, before, ua, suffix := r.str(), r.str(), r.str(), r.str(); inj != cfg.InjectedJavaScript || before != cfg.InjectedJavaScriptBeforeContent || ua != cfg.UserAgent || suffix != cfg.UserAgentSuffix {
+		t.Fatalf("scripts/ua = (%q, %q, %q, %q)", inj, before, ua, suffix)
+	}
+	const wantFlags = 1<<0 | 1<<2 | 1<<5 | 1<<6 // NoScroll, Restricted, Camera, PinchZoom
+	if flags := r.byte(); flags != wantFlags {
+		t.Fatalf("flags = %b, want %b", flags, wantFlags)
+	}
+	if hosts, schemes, dir := r.str(), r.str(), r.str(); hosts != cfg.Hosts || schemes != cfg.Schemes || dir != cfg.DownloadDir {
+		t.Fatalf("hosts=%q schemes=%q downloadDir=%q", hosts, schemes, dir)
+	}
+	if n := r.u32(); n != 1 {
+		t.Fatalf("header count = %d, want 1", n)
+	}
+	if k, v := r.str(), r.str(); k != "Authorization" || v != "Bearer tok" || len(r.buf) != 0 {
+		t.Fatalf("header = (%q, %q), %d bytes left", k, v, len(r.buf))
+	}
+}

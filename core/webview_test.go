@@ -1,8 +1,10 @@
 package core
 
 import (
+	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -423,5 +425,81 @@ func TestWebWindowRequestsUseThePagesNavigationPolicy(t *testing.T) {
 	}
 	if !slices.Equal(refused, denied) {
 		t.Errorf("refused URLs = %v, want %v", refused, denied)
+	}
+}
+
+func TestWebViewDownloadConfigAndDispatch(t *testing.T) {
+	dataDir := t.TempDir()
+	wantDir := filepath.Join(dataDir, "downloads")
+
+	var got []WebDownload
+	newDownloadHost := func(restricted bool, onDownload func(WebDownload)) *host {
+		h := &host{t: t, clock: NewManualClock(time.Unix(0, 0))}
+		h.root = testRoot(RootOptions{
+			Post:         func(fn func()) { h.posts = append(h.posts, fn) },
+			Clock:        h.clock,
+			Report:       func(err error) { h.errs = append(h.errs, err) },
+			RequestFrame: func() { h.frameWanted = true },
+			DataDir:      dataDir,
+		})
+		h.tree = NewTree(h.root, ApproxTextEngine{})
+		h.tree.Resize(Size{Width: 100, Height: 100}, Geometry{})
+		h.tree.Mount(func(cx *Scope) Node {
+			if restricted {
+				cx.ProvideAccess(hostsAccess{hosts: []string{"example.com"}})
+			}
+			return WebView{TestID: "web", Source: WebSrc("https://example.com/"), OnDownload: onDownload}
+		})
+		return h
+	}
+
+	inspect := func(h *host) (*driver.WebConfig, driver.EventMask) {
+		var cfg *driver.WebConfig
+		var mask driver.EventMask
+		id := h.find("web").id
+		for _, it := range h.commit().Items {
+			if it.ID != id {
+				continue
+			}
+			switch it.Kind {
+			case driver.ItemWeb:
+				cfg = it.Web
+			case driver.ItemEvents:
+				mask = it.Events
+			}
+		}
+		return cfg, mask
+	}
+
+	// Without OnDownload, DownloadDir stays empty and EventDownload is not requested.
+	hNo := newDownloadHost(false, nil)
+	if cfg, mask := inspect(hNo); cfg == nil || cfg.DownloadDir != "" || mask.Has(driver.EventDownload) {
+		t.Fatalf("without OnDownload: cfg=%+v mask=%b", cfg, mask)
+	}
+
+	// Restricted views clear DownloadDir even when OnDownload is set.
+	hRestricted := newDownloadHost(true, func(d WebDownload) { got = append(got, d) })
+	if cfg, _ := inspect(hRestricted); cfg == nil || cfg.DownloadDir != "" {
+		t.Fatalf("restricted view DownloadDir = %q, want empty", cfg.DownloadDir)
+	}
+
+	// Unrestricted view with OnDownload sets DownloadDir and dispatches download lifecycle events.
+	h := newDownloadHost(false, func(d WebDownload) { got = append(got, d) })
+	cfg, mask := inspect(h)
+	if cfg == nil || cfg.DownloadDir != wantDir || !mask.Has(driver.EventDownload) {
+		t.Fatalf("with OnDownload: cfg=%+v mask=%b, want DownloadDir=%q", cfg, mask, wantDir)
+	}
+	id := h.find("web").id
+	want := []WebDownload{
+		{State: WebDownloadStarted, ID: "dl-1", URL: "https://example.com/file.pdf", Filename: "file.pdf", Path: filepath.Join(wantDir, "dl-1", "file.pdf")},
+		{State: WebDownloadFinished, ID: "dl-1", URL: "https://example.com/file.pdf", Filename: "file.pdf", Path: filepath.Join(wantDir, "dl-1", "file.pdf"), Bytes: 2048},
+		{State: WebDownloadFailed, ID: "dl-2", URL: "https://example.com/missing", Filename: "missing", Path: filepath.Join(wantDir, "dl-2", "missing"), Message: "HTTP 404"},
+	}
+	for i := range want {
+		dl := want[i]
+		h.tree.Dispatch(driver.Event{Kind: driver.EventDownload, ID: id, Data: &dl})
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("dispatched downloads = %+v, want %+v", got, want)
 	}
 }

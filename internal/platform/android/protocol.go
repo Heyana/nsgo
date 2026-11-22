@@ -3,6 +3,7 @@ package android
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"image"
 	"math"
@@ -859,4 +860,35 @@ func readPaste(text, data string) *driver.PasteEvent {
 		}
 	}
 	return p
+}
+
+// writeWebConfig encodes an ItemWeb's fields in the order WebNode.configure reads them.
+func writeWebConfig(w *writer, c *driver.WebConfig) {
+	w.str(c.Source.Src)
+	w.str(c.Source.HTML)
+	w.str(c.Source.BaseURL)
+	w.str(c.InjectedJavaScript)
+	// WebNode runs its bridge first, so the app's script can post.
+	w.str(c.InjectedJavaScriptBeforeContent)
+	w.str(c.UserAgent)
+	w.str(c.UserAgentSuffix)
+	// Android has no back and forward swipes.
+	w.flags(c.NoScroll, c.NoJavaScript, c.Restricted, c.Incognito, c.Media&driver.WebMicrophone != 0, c.Media&driver.WebCamera != 0, c.PinchZoom)
+	w.str(c.Hosts)
+	w.str(c.Schemes)
+	w.str(c.DownloadDir)
+	w.u32(uint32(len(c.Headers)))
+	for name, value := range c.Headers {
+		w.str(name)
+		w.str(value)
+	}
+}
+
+// readWebDownload decodes a JSON payload written by WebNode.reportDownload into a WebDownload.
+func readWebDownload(data string) *driver.WebDownload {
+	var download driver.WebDownload
+	if json.Unmarshal([]byte(data), &download) != nil {
+		return nil
+	}
+	return &download
 }

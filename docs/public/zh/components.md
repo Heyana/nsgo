@@ -32,6 +32,8 @@ core.View{
 
 在 macOS、iOS、Windows 和 Linux 上，`OnOpenWindow` 接收网页的新窗口请求。WebView 不会弹出窗口。应用可根据请求的 `URL` 和 `UserInitiated` 决定通过 `Ref.Load` 在同一视图导航、在其他位置打开 URL，或者忽略请求。受限 WebView 会通过 `OnError` 报告被拒绝的请求。
 
+设置 `OnDownload` 后，macOS、iOS、Linux、Windows 和 Android 上的 WebView 会保存网页下载的文件。下载文件保存在应用数据目录的 `downloads/<id>/<file name>` 下，并报告开始、完成（附字节数）或失败；未设置 `OnDownload` 的视图以及受限视图会取消下载。
+
 `core.Video` 用平台的播放器播放文件或 URL。在 macOS、iOS 和 tvOS 上，`Video.AudioSource` 可以为有固定时长的视频指定单独的音频文件或 URL。视频使用该来源的音轨，画面和声音同时开始，`Ref.Seek` 在同一条时间轴上移动两者。播放时长由画面决定，较短的音轨播完后保持静音。
 
 带透明通道的视频会透出它后面的内容：macOS 上用 `.mov` 里带 alpha 的 HEVC（iOS 尚未验证），Linux 上用 WebM 里带 alpha 的 VP9，并需要 GStreamer 的 codecalpha 插件（`gstreamer1.0-plugins-bad`，Linux 安装包可以在 `nsgo.yaml` 里把它列为推荐依赖）。在 macOS、iOS、Windows 和 Linux 上，本地视频的透明通道无法保留时（Apple 平台上的 WebM、Linux 上的 HEVC，以及在 Windows 机器上验证 Media Foundation 的透明通道输出之前，Windows 上的任何格式），`OnError` 会说明原因，而不是把视频显示在不透明的方框里：这个错误是 `*core.MediaError`，其 `Reason` 为 `core.MediaErrorAlphaUnsupported`，应用可以据此改用自己的解码器播放这段视频。Android 和 Web 平台，以及各平台上的远程 URL，会按解码器的输出播放这类视频，可能是不透明的。

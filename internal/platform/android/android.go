@@ -410,9 +410,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 				}
 				s.unstage(answerKey(from, ev.Count))
 			case driver.EventDownload:
-				var download driver.WebDownload
-				if json.Unmarshal([]byte(data), &download) == nil {
-					ev.Data = &download
+				if dl := readWebDownload(data); dl != nil {
+					ev.Data = dl
 				}
 			case driver.EventMessage:
 				// WebNode takes only the top frame's, with the URL of its page.
@@ -1779,25 +1778,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			writeHeaderFont(w, c.TitleFont)
 			writeHeaderFont(w, c.LargeTitleFont)
 		case driver.ItemWeb:
-			c := it.Web
-			w.str(c.Source.Src)
-			w.str(c.Source.HTML)
-			w.str(c.Source.BaseURL)
-			w.str(c.InjectedJavaScript)
-			// WebNode runs its bridge first, so the app's script can post.
-			w.str(c.InjectedJavaScriptBeforeContent)
-			w.str(c.UserAgent)
-			w.str(c.UserAgentSuffix)
-			// Android has no back and forward swipes.
-			w.flags(c.NoScroll, c.NoJavaScript, c.Restricted, c.Incognito, c.Media&driver.WebMicrophone != 0, c.Media&driver.WebCamera != 0, c.PinchZoom)
-			w.str(c.Hosts)
-			w.str(c.Schemes)
-			w.str(c.DownloadDir)
-			w.u32(uint32(len(c.Headers)))
-			for name, value := range c.Headers {
-				w.str(name)
-				w.str(value)
-			}
+			writeWebConfig(w, it.Web)
 		case driver.ItemVideo:
 			c := it.Video
 			w.str(c.Source)

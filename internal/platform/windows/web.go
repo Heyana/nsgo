@@ -127,6 +127,7 @@ type webView struct {
 	lastButton, downCount int
 
 	downloads []*webDownload
+	dispatch  func(driver.Event) // test override for wv.w.engine.Dispatch
 }
 
 type webDownload struct {
@@ -189,6 +190,10 @@ func (wv *webView) unavailable() {
 func (wv *webView) report(e driver.Event) {
 	if wv.v.events.Has(e.Kind) {
 		e.ID = wv.v.id
+		if wv.dispatch != nil {
+			wv.dispatch(e)
+			return
+		}
 		wv.w.engine.Dispatch(e)
 	}
 }
@@ -331,6 +336,10 @@ func (wv *webView) downloadStarted(args *comObject) {
 	if args == nil {
 		return
 	}
+	if wv.closed {
+		args.call(downloadArgsPutCancel, 1)
+		return
+	}
 	wv.aborted = 0 // the navigation that ended aborted became this download
 	if wv.config.DownloadDir == "" {
 		args.call(downloadArgsPutCancel, 1)
@@ -349,25 +358,31 @@ func (wv *webView) downloadStarted(args *comObject) {
 		strconv.FormatUint(webDownloadSerial.Add(1), 36)
 	dir := filepath.Join(wv.config.DownloadDir, id)
 	path := filepath.Join(dir, name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		args.call(downloadArgsPutCancel, 1)
-		op.release()
-		return
-	}
-	if failed(args.call(downloadArgsPutResultPath, uintptr(unsafe.Pointer(wide(path))))) ||
-		failed(args.call(downloadArgsPutHandled, 1)) {
-		args.call(downloadArgsPutCancel, 1)
-		op.release()
-		return
-	}
 	dl := &webDownload{view: wv, op: op, item: driver.WebDownload{State: driver.WebDownloadStarted,
 		ID: id, URL: op.getString(downloadGetURI), Filename: name, Path: path}}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		args.call(downloadArgsPutCancel, 1)
+		dl.item.State, dl.item.Message = driver.WebDownloadFailed, err.Error()
+		wv.reportDownload(dl)
+		op.release()
+		return
+	}
+	if hr := args.call(downloadArgsPutResultPath, uintptr(unsafe.Pointer(wide(path)))); failed(hr) {
+		args.call(downloadArgsPutCancel, 1)
+		dl.item.State, dl.item.Message = driver.WebDownloadFailed, hresultError("WebView2 could not set the download destination", hr).Error()
+		wv.reportDownload(dl)
+		op.release()
+		return
+	}
+	if hr := args.call(downloadArgsPutHandled, 1); failed(hr) {
+		args.call(downloadArgsPutCancel, 1)
+		dl.item.State, dl.item.Message = driver.WebDownloadFailed, hresultError("WebView2 could not handle the download", hr).Error()
+		wv.reportDownload(dl)
+		op.release()
+		return
+	}
 	wv.downloads = append(wv.downloads, dl)
 	wv.reportDownload(dl)
-	op.subscribe(downloadAddBytesChanged, newHandler(&iidBytesReceivedChanged, func(uintptr, unsafe.Pointer) {
-		// The public event model reports the byte count when the download
-		// reaches its terminal state, matching the Apple and Linux hosts.
-	}))
 	op.subscribe(downloadAddStateChanged, newHandler(&iidDownloadStateChanged, func(uintptr, unsafe.Pointer) {
 		wv.downloadStateChanged(dl)
 	}))
@@ -393,6 +408,8 @@ func (wv *webView) downloadStateChanged(dl *webDownload) {
 		var bytes int64
 		if !failed(dl.op.call(downloadGetBytes, uintptr(unsafe.Pointer(&bytes)))) {
 			dl.item.Bytes = bytes
+		} else if info, err := os.Stat(dl.item.Path); err == nil {
+			dl.item.Bytes = info.Size()
 		}
 	case 1: // COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED
 		dl.item.State = driver.WebDownloadFailed

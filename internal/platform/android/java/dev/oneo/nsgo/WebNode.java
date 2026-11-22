@@ -6,7 +6,6 @@ import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Base64;
 import android.view.ContextThemeWrapper;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
@@ -21,18 +20,11 @@ import android.webkit.MimeTypeMap;
 import android.webkit.URLUtil;
 import org.json.JSONException;
 import org.json.JSONObject;
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLConnection;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
@@ -133,6 +125,8 @@ final class WebNode {
     private String downloadDir = "";
     /** The blob: downloads waiting for their page's bytes, by the token the page answers with. UI thread. */
     private final Map<String, BlobAnswer> blobs = new HashMap<>();
+    /** Tracks active HTTP downloads so destroy() cancels them promptly. */
+    private final WebDownload.Tracker activeDownloads = new WebDownload.Tracker();
     private volatile boolean destroyed;
     private static final AtomicLong DOWNLOAD_SERIAL = new AtomicLong();
     private static final ExecutorService DOWNLOADS = Executors.newFixedThreadPool(3, r -> {
@@ -302,16 +296,17 @@ final class WebNode {
         if (downloadDir.isEmpty() || destroyed) return;
         String id = Long.toString(System.currentTimeMillis(), 36) + "-"
                 + Long.toString(DOWNLOAD_SERIAL.incrementAndGet(), 36);
-        String scheme = schemeOf(url);
+        String scheme = WebDownload.schemeOf(url);
         boolean scripts = view.getSettings().getJavaScriptEnabled();
         switch (scheme) {
             case "http": case "https": {
                 String name = downloadName(url, contentDisposition, mimetype);
                 File path = start(id, url, name);
                 if (path == null) return;
-                String cookies = CookieManager.getInstance().getCookie(url);
-                Map<String, String> request = requestHeaders(url, userAgent, cookies, Objects.toString(view.getUrl(), ""));
-                DOWNLOADS.execute(() -> fetchDownload(id, url, request, path));
+                String source = src;
+                Map<String, String> appHeaders = new HashMap<>(headers);
+                String pageUrl = Objects.toString(view.getUrl(), "");
+                DOWNLOADS.execute(() -> fetchDownload(id, url, source, appHeaders, userAgent, pageUrl, path));
                 return;
             }
             case "data":
@@ -357,15 +352,15 @@ final class WebNode {
     /** Saves a data: URL's bytes, decoded here, under the page's name for it or one after its type. */
     private void saveData(String id, String url, String pageName, String mimetype) {
         if (destroyed) return;
-        String type = dataType(url);
+        String type = WebDownload.dataType(url);
         String name = localName(pageName, type.isEmpty() ? mimetype : type);
         File path = start(id, url, name);
         if (path == null) return;
         DOWNLOADS.execute(() -> {
             try {
-                save(id, url, path, decodeDataURL(url));
-            } catch (IOException | IllegalArgumentException e) {
-                failed(id, url, path, 0, String.valueOf(e.getMessage()));
+                save(id, url, path, WebDownload.decodeDataURL(url));
+            } catch (IOException | IllegalArgumentException | OutOfMemoryError e) {
+                failed(id, url, path, 0, WebDownload.errorMessage(e));
             }
         });
     }
@@ -385,9 +380,9 @@ final class WebNode {
             if (path == null) return;
             DOWNLOADS.execute(() -> {
                 try {
-                    save(id, url, path, Base64.decode(base64, Base64.DEFAULT));
-                } catch (IllegalArgumentException e) {
-                    failed(id, url, path, 0, String.valueOf(e.getMessage()));
+                    save(id, url, path, WebDownload.decodeBase64(base64));
+                } catch (IllegalArgumentException | OutOfMemoryError e) {
+                    failed(id, url, path, 0, WebDownload.errorMessage(e));
                 }
             });
         });
@@ -406,11 +401,6 @@ final class WebNode {
         view.evaluateJavascript(script, null);
     }
 
-    private static String schemeOf(String url) {
-        String scheme = android.net.Uri.parse(url).getScheme();
-        return scheme == null ? "" : scheme.toLowerCase(Locale.ROOT);
-    }
-
     /** The JSON string evaluateJavascript answers with, as text; "" for anything else. */
     private static String unquote(String json) {
         if (json == null || !json.startsWith("\"")) return "";
@@ -422,119 +412,28 @@ final class WebNode {
     }
 
     private static String downloadName(String url, String contentDisposition, String mimetype) {
-        String name = URLUtil.guessFileName(url, contentDisposition, mimetype);
-        name = new File(name == null ? "" : name).getName();
-        if (name.isEmpty() || ".".equals(name) || "..".equals(name)) return "download";
-        return name;
+        return WebDownload.sanitizeName(URLUtil.guessFileName(url, contentDisposition, mimetype));
     }
 
     /** The name a data: or blob: download saves as: the page's, else "download" with its type's extension. Their URLs hold no name. */
     private static String localName(String pageName, String mimetype) {
-        String name = new File(pageName == null ? "" : pageName).getName();
-        if (!name.isEmpty() && !".".equals(name) && !"..".equals(name)) return name;
         String extension = mimetype == null ? null
                 : MimeTypeMap.getSingleton().getExtensionFromMimeType(mimetype.toLowerCase(Locale.ROOT));
-        return extension == null || extension.isEmpty() ? "download" : "download." + extension;
-    }
-
-    /** The media type a data: URL names, without its parameters, or "". */
-    private static String dataType(String url) {
-        int comma = url.indexOf(',');
-        if (comma < 5) return "";
-        String type = url.substring(5, comma);
-        int semicolon = type.indexOf(';');
-        return (semicolon >= 0 ? type.substring(0, semicolon) : type).trim();
-    }
-
-    /** Decodes a data: URL's bytes (RFC 2397): percent-encoded, then base64 when it says so. */
-    static byte[] decodeDataURL(String url) throws IOException {
-        int comma = url.indexOf(',');
-        if (!url.regionMatches(true, 0, "data:", 0, 5) || comma < 0) throw new IOException("Malformed data: URL.");
-        boolean base64 = false;
-        for (String parameter : url.substring(5, comma).split(";")) {
-            if (parameter.trim().equalsIgnoreCase("base64")) base64 = true;
-        }
-        byte[] bytes = percentDecode(url.substring(comma + 1));
-        return base64 ? Base64.decode(bytes, Base64.DEFAULT) : bytes;
-    }
-
-    private static byte[] percentDecode(String s) throws IOException {
-        byte[] in = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        ByteArrayOutputStream out = new ByteArrayOutputStream(in.length);
-        for (int i = 0; i < in.length; i++) {
-            if (in[i] == '%' && i + 2 < in.length) {
-                int high = Character.digit(in[i + 1], 16), low = Character.digit(in[i + 2], 16);
-                if (high >= 0 && low >= 0) {
-                    out.write(high << 4 | low);
-                    i += 2;
-                    continue;
-                }
-            }
-            out.write(in[i]);
-        }
-        return out.toByteArray();
-    }
-
-    /**
-     * The fields a download's own request sends, as the page's would have: the user agent, the cookies, the view's Headers when the download is on its source's origin, so they reach no other host, and a Referer as browsers send one by default (strict-origin-when-cross-origin): the page without its fragment and user name on its own origin, only its origin elsewhere, and none from https to http.
-     */
-    private Map<String, String> requestHeaders(String url, String userAgent, String cookies, String page) {
-        Map<String, String> request = new HashMap<>();
-        if (sameOrigin(url, src)) request.putAll(headers);
-        if (userAgent != null && !userAgent.isEmpty()) request.put("User-Agent", userAgent);
-        if (cookies != null && !cookies.isEmpty()) request.put("Cookie", cookies);
-        android.net.Uri from = android.net.Uri.parse(page);
-        String scheme = schemeOf(page);
-        if ((scheme.equals("http") || scheme.equals("https")) && from.getHost() != null
-                && !(scheme.equals("https") && schemeOf(url).equals("http"))) {
-            String origin = scheme + "://" + from.getHost() + (from.getPort() >= 0 ? ":" + from.getPort() : "");
-            String query = from.getEncodedQuery();
-            request.put("Referer", !sameOrigin(url, page) ? origin + "/"
-                    : origin + Objects.toString(from.getEncodedPath(), "") + (query != null ? "?" + query : ""));
-        }
-        return request;
-    }
-
-    private static boolean sameOrigin(String a, String b) {
-        android.net.Uri x = android.net.Uri.parse(a), y = android.net.Uri.parse(b);
-        return x.getScheme() != null && x.getScheme().equalsIgnoreCase(Objects.toString(y.getScheme(), ""))
-                && x.getHost() != null && x.getHost().equalsIgnoreCase(Objects.toString(y.getHost(), ""))
-                && port(x) == port(y);
-    }
-
-    private static int port(android.net.Uri u) {
-        if (u.getPort() >= 0) return u.getPort();
-        return "https".equalsIgnoreCase(u.getScheme()) ? 443 : 80;
+        return WebDownload.localName(pageName, extension);
     }
 
     /** Fetches an http(s) download again, outside the WebView, which hands its downloads to the app. */
-    private void fetchDownload(String id, String url, Map<String, String> request, File path) {
+    private void fetchDownload(String id, String url, String source, Map<String, String> appHeaders,
+            String userAgent, String pageUrl, File path) {
         File partial = new File(path.getParentFile(), "." + path.getName() + ".part");
-        HttpURLConnection connection = null;
-        long bytes = 0;
         try {
-            connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setUseCaches(false);
-            for (Map.Entry<String, String> field : request.entrySet()) {
-                connection.setRequestProperty(field.getKey(), field.getValue());
+            long bytes = WebDownload.fetch(url, source, appHeaders, userAgent, pageUrl,
+                    target -> CookieManager.getInstance().getCookie(target), partial, path, activeDownloads);
+            if (bytes >= 0) {
+                reportDownload(id, url, path.getName(), path.getPath(), 1, bytes, "");
             }
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) throw new IOException("HTTP " + status);
-            try (InputStream input = new BufferedInputStream(connection.getInputStream());
-                    OutputStream output = new BufferedOutputStream(new FileOutputStream(partial))) {
-                byte[] buffer = new byte[64 << 10];
-                for (int n; (n = input.read(buffer)) >= 0; ) {
-                    if (n == 0) continue;
-                    output.write(buffer, 0, n);
-                    bytes += n;
-                }
-            }
-            finish(id, url, partial, path, bytes);
         } catch (IOException | RuntimeException e) {
-            failed(id, url, path, bytes, String.valueOf(e.getMessage()));
-        } finally {
-            if (connection != null) connection.disconnect();
-            partial.delete();
+            failed(id, url, path, 0, WebDownload.errorMessage(e));
         }
     }
 
@@ -547,7 +446,7 @@ final class WebNode {
             }
             finish(id, url, partial, path, data.length);
         } catch (IOException e) {
-            failed(id, url, path, 0, String.valueOf(e.getMessage()));
+            failed(id, url, path, 0, WebDownload.errorMessage(e));
         } finally {
             partial.delete();
         }
@@ -690,6 +589,7 @@ final class WebNode {
     void destroy() {
         destroyed = true;
         media.close();
+        activeDownloads.cancelAll();
         page = null;
         blobs.clear();
         view.stopLoading();
