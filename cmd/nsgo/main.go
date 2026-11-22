@@ -118,7 +118,7 @@ func main() {
 		fs.StringVar(&o.junit, "junit", "", "write a JUnit XML report to `file`")
 		fs.BoolVar(&o.trace, "trace", false, "print each step's mount items and commit times")
 		fs.BoolVar(&o.activate, "activate", false, "activate the test app for keyboard input (with -target macos)")
-		fs.StringVar(&o.target, "target", "", "run on a `platform`: macos, windows, linux, web, ios, ios_simulator, tvos_simulator, watchos_simulator or android; an arch name such as windows_x64 means its OS when the tests run for that architecture here (default: headless)")
+		fs.StringVar(&o.target, "target", "", "run on a `platform`: macos, windows, linux, tui, web, ios, ios_simulator, tvos_simulator, watchos_simulator or android; an arch name such as windows_x64 means its OS when the tests run for that architecture here (default: headless)")
 		fs.StringVar(&o.screenshots, "screenshots", "", "write target screenshots under this relative `directory` (default: .nsgo/test/screenshots/<target>)")
 		fs.StringVar(&o.device, "device", "", "the `device` the target runs on: an iPhone's name, UDID, serial or ECID, a simulator's name or UDID, or an adb serial (default: the only one connected, or the booted simulator)")
 		fs.StringVar(&o.team, "team", "", "the Apple developer `team` -target ios signs the tests with (default: the team Xcode last used)")
