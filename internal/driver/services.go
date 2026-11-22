@@ -15,6 +15,9 @@ import (
 // with the page and verified download that gets it, Version empty when the
 // running one is the newest, or why it could not check.
 type Update struct {
+	// Restart identifies a prepared platform update applied by restarting,
+	// including platforms whose updater exposes no version label.
+	Restart                          bool
 	App, Current                     string
 	Version, URL, Notes              string
 	Download, Signature, SHA256, Key string

@@ -1426,7 +1426,7 @@ func (a *App) checkForUpdates(it *driver.MountItem) {
 	}
 	ev := driver.Event{Kind: driver.EventUpdate, Count: it.Count, Finished: c.Shown}
 	if !c.Shown {
-		u := &driver.Update{App: c.App, Current: c.Current, Version: c.Version, URL: c.URL, Notes: c.Notes,
+		u := &driver.Update{Restart: c.Restart, App: c.App, Current: c.Current, Version: c.Version, URL: c.URL, Notes: c.Notes,
 			Download: c.Download, Signature: c.Signature, SHA256: c.SHA256, Key: c.Key, Size: c.Size, Managed: driver.UpdateManaged(c.Managed), Store: c.Store}
 		if c.Err != nil {
 			u.Err = c.Err.Error()

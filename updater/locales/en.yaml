@@ -4,6 +4,9 @@ updateAvailable:
 updateAvailableMessage:
   message: "{app} {version} is available. You have {current}."
   description: The alert offering a newer version, which names it and the running one.
+updateReadyMessage:
+  message: "A new build of {app} is ready. Restart to use it."
+  description: The alert offering a prepared platform update whose version label is unavailable or unchanged.
 update:
   message: "Update"
   description: The button of the alert offering a newer version, which installs it, or opens its page in the App Store or a browser.

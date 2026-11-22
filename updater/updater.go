@@ -133,7 +133,7 @@ func check(cx *core.Scope, background bool, answered func(core.UpdateCheck)) {
 				}
 				cx.ShowAlert(core.AlertConfig{Title: msgs.UpdateError(), Message: message, Actions: ok, Cancelable: true}, func(int) {})
 			}
-		case c.Version == "":
+		case c.Version == "" && !c.Restart:
 			// The running version is the newest, so a package staged for an earlier update has been installed or is out of date. One still downloading or installing stays.
 			if !cx.UpdateActive() {
 				discardStaged(cx)
@@ -143,15 +143,21 @@ func check(cx *core.Scope, background bool, answered func(core.UpdateCheck)) {
 					Actions: ok, Cancelable: true}, func(int) {})
 			}
 		default:
+			offer := msgs.UpdateAvailableMessage(c.App, c.Version, c.Current)
+			if c.Restart && (c.Version == "" || c.Version == c.Current) {
+				offer = msgs.UpdateReadyMessage(c.App)
+			}
 			cx.ShowAlert(core.AlertConfig{
 				Title:   msgs.UpdateAvailable(c.App),
-				Message: updateMessage(msgs.UpdateAvailableMessage(c.App, c.Version, c.Current), c.Notes),
+				Message: updateMessage(offer, c.Notes),
 				Actions: []core.AlertAction{{Label: msgs.Update(), Role: core.AlertDefault},
 					{Label: msgs.Later(), Role: core.AlertCancel}},
 				Cancelable: true,
 			}, func(index int) {
 				if index == 0 {
-					if c.Download != "" && installs(cx) {
+					if c.Restart {
+						cx.RequestRestart()
+					} else if c.Download != "" && installs(cx) {
 						downloadAndInstall(cx, c)
 					} else {
 						cx.OpenURL(c.URL, nil)

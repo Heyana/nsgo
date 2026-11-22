@@ -1288,7 +1288,7 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 	if err != nil {
 		return err
 	}
-	app := webApp{Wasm: "app.wasm", WasmSize: info.Size(), Base: base}
+	app := webApp{Version: p.Version, Release: !dev, Wasm: "app.wasm", WasmSize: info.Size(), Base: base}
 	// write puts data in dir, by its content's name in a release, and
 	// returns the name.
 	write := func(name string, data []byte) (string, error) {
@@ -1433,6 +1433,8 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 // webApp is a site's nsgo.json, which names the files of the app for the
 // loader, relative to itself.
 type webApp struct {
+	Version  string `json:"version,omitempty"`
+	Release  bool   `json:"release,omitempty"`
 	Base     string `json:"base,omitempty"`
 	Wasm     string `json:"wasm"`
 	WasmSize int64  `json:"wasmSize"`

@@ -31,6 +31,9 @@ import (
 
 // Options configure the page.
 type Options struct {
+	// UpdateConfig is the published nsgo.json the loader started. Embedded
+	// hosts control their own lifetime; only standalone releases can reload.
+	UpdateConfig string
 	// Mount is the CSS selector of the element the app fills; the body
 	// when empty.
 	Mount string
@@ -146,6 +149,7 @@ type surface struct {
 	measureLang  string        // measure's lang attribute
 	metrics      js.Value      // a canvas's 2D context, for fonts' metrics
 	engine       *engine.Engine
+	updates      webUpdates
 	audio        *webAudio
 	audioGesture bool
 	views        []*view // index is NodeID
@@ -440,6 +444,7 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 	s.env = s.environment()
 	s.setAppearance(opts.Appearance)
 	eopts := engine.Options{
+		Updater:   s.initUpdates(opts),
 		ReadAsset: readAsset,
 		Size:      s.size(), Environment: s.env, NetworkWatcher: networkWatcher{}, Appearance: opts.Appearance,
 		Storage: engine.NewStorage(newLocalStorage(opts.ID)),
@@ -1582,7 +1587,15 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemDirection:
 			s.rtl = it.RTL
 			continue
-		case driver.ItemQuit, driver.ItemPopupMenu:
+		case driver.ItemCheckForUpdates:
+			s.checkForUpdates(it)
+			continue
+		case driver.ItemQuit:
+			if it.On {
+				s.restartUpdatedPage()
+			}
+			continue
+		case driver.ItemPopupMenu:
 			// No toasts; a page neither quits nor shows native menus, and
 			// the core never asks it to.
 			continue
@@ -2853,6 +2866,7 @@ func (s *surface) windowCommand(c *driver.WindowCommand) {
 	case driver.WindowClose:
 		js.Global().Call("close")
 	case driver.WindowDestroy:
+		s.closeUpdates()
 		s.closeAudio()
 		s.closeNotifications()
 		s.clearDisplayHolds()
@@ -2879,6 +2893,7 @@ func (s *surface) listen() {
 	}
 	ls.on(js.Global(), "pagehide", func(e js.Value) {
 		if !e.Get("persisted").Truthy() {
+			s.closeUpdates()
 			s.closeAudio()
 			s.closeNotifications()
 		}

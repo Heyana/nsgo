@@ -40,6 +40,7 @@ func For(cx *core.Scope) Messages {
 var Parameters = map[string][]string{
 	"UpdateAvailable":        {"app"},
 	"UpdateAvailableMessage": {"app", "version", "current"},
+	"UpdateReadyMessage":     {"app"},
 	"UpToDateMessage":        {"app", "version"},
 	"InstallErrorMessage":    {"app", "version"},
 	"UpdateStore":            {"store"},
@@ -53,6 +54,7 @@ type Translation struct {
 	Texts                  map[string]string
 	UpdateAvailable        func(app string) string
 	UpdateAvailableMessage func(app string, version string, current string) string
+	UpdateReadyMessage     func(app string) string
 	UpToDateMessage        func(app string, version string) string
 	InstallErrorMessage    func(app string, version string) string
 	UpdateStore            func(store string) string
@@ -200,6 +202,9 @@ func Supply(lang string, t Translation) {
 	if t.UpdateAvailableMessage != nil {
 		s.UpdateAvailableMessage = t.UpdateAvailableMessage
 	}
+	if t.UpdateReadyMessage != nil {
+		s.UpdateReadyMessage = t.UpdateReadyMessage
+	}
 	if t.UpToDateMessage != nil {
 		s.UpToDateMessage = t.UpToDateMessage
 	}
@@ -268,6 +273,30 @@ func (msgs Messages) UpdateAvailableMessage(app string, version string, current 
 			return msgs.arg(app) + " " + msgs.arg(version) + " is available. You have " + msgs.arg(current) + "."
 		case "zh-Hans":
 			return app + " " + version + " 现已推出，你的版本是 " + current + "。"
+		}
+	}
+}
+
+// UpdateReadyMessage says "A new build of {app} is ready. Restart to use it."
+// in the language the app shows under cx.
+//
+// The alert offering a prepared platform update whose version label is unavailable or unchanged.
+func UpdateReadyMessage(cx *core.Scope, app string) string { return For(cx).UpdateReadyMessage(app) }
+
+// UpdateReadyMessage is the package's UpdateReadyMessage in the language of msgs.
+func (msgs Messages) UpdateReadyMessage(app string) string {
+	if i18n.IsPseudo(msgs.lang) {
+		return i18n.Pseudo(msgs.lang, Messages{lang: Source, mark: true}.UpdateReadyMessage(app))
+	}
+	for lang := msgs.lang; ; lang = i18n.Parent(lang) {
+		if f := supplied[lang].UpdateReadyMessage; f != nil {
+			return f(app)
+		}
+		switch lang {
+		case "", "en":
+			return "A new build of " + msgs.arg(app) + " is ready. Restart to use it."
+		case "zh-Hans":
+			return app + " 的新版本已准备好，重启即可使用。"
 		}
 	}
 }

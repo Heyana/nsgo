@@ -34,6 +34,23 @@ func start(t *testing.T, found core.UpdateCheck) *nsgotest.App {
 
 var newer = core.UpdateCheck{App: "Hello", Current: "1.0", Version: "1.1", URL: "https://example.com/hello/1.1"}
 
+func TestPreparedPlatformUpdateConfirmsRestart(t *testing.T) {
+	app := start(t, core.UpdateCheck{App: "Hello", Current: "1.0", Restart: true})
+	app.Press("text:Check")
+	if alerts := app.Alerts(); len(alerts) != 1 || alerts[0].Message != "A new build of Hello is ready. Restart to use it." {
+		t.Fatalf("prepared update: %+v", alerts)
+	}
+	app.Answer(1)
+	if app.Restarts != 0 {
+		t.Fatal("Later restarted the app")
+	}
+	app.Press("text:Check")
+	app.Answer(0)
+	if app.Restarts != 1 || len(app.OpenedURLs) != 0 || len(app.Installs) != 0 {
+		t.Fatalf("restart=%d urls=%v installs=%v", app.Restarts, app.OpenedURLs, app.Installs)
+	}
+}
+
 func TestUpdateOpensTheNewerVersion(t *testing.T) {
 	app := start(t, newer)
 	app.Press("text:Check")

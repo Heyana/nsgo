@@ -141,6 +141,7 @@ async function runApp(element, at, config, options, hostModule, report) {
     if (k.startsWith("nsgo-")) go.argv.push(v === "" ? `--${k}` : `--${k}=${v}`);
   }
   go.env = { NSGO_BASE: at(".") };
+  if (config.release) go.env.NSGO_WEB_CONFIG = JSON.stringify(config);
   if (config.resources) go.env.NSGO_RESOURCES = JSON.stringify(config.resources);
   if (bridged) go.env.NSGO_HOST = key;
   if (element) {

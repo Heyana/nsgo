@@ -40,10 +40,23 @@ self.addEventListener("fetch", (event) => {
     // Online visits get the current page, which names its immutable files.
     // A disconnected visit gets the complete release of the active worker.
     event.respondWith(fetch(request, { cache: "no-cache" }).catch(offlinePage));
-  } else if (url.href !== index && assets.has(url.href)) {
+  } else if (url.href !== index && url.origin === scope.origin && url.pathname.startsWith(scope.pathname)) {
     event.respondWith((async () => {
-      const response = await cached(url.href);
-      if (!response) return fetch(new Request(request, { integrity: assets.get(url.href) }));
+      let response = await cached(url.href);
+      if (!response) {
+        // A user may reload into a new release while other old pages keep
+        // this worker active. Its waiting successor has already verified
+        // the new immutable files; serve those without retiring old caches.
+        const names = await caches.keys();
+        for (const name of names) {
+          if (!name.startsWith(namespace) || name === cacheName) continue;
+          response = await (await caches.open(name)).match(url.href, { ignoreVary: true });
+          if (response) break;
+        }
+      }
+      if (!response) return assets.has(url.href)
+        ? fetch(new Request(request, { integrity: assets.get(url.href) }))
+        : fetch(request);
       return request.headers.has("Range") ? singleRange(request, response) : response;
     })());
   }
