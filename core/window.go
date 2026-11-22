@@ -609,6 +609,7 @@ type Tray struct {
 	opts    TrayOptions
 	cfg     driver.TrayConfig
 	view    *Window
+	bounds  Bounds // the rectangle reported by the latest native click
 	removed bool
 }
 
@@ -675,6 +676,18 @@ func (tr *Tray) SetTooltip(tooltip string) {
 	tr.send()
 }
 
+// ClickBounds is the core's part of desktop.Tray.ClickBounds, which apps use:
+// the icon's screen rectangle reported by its latest native click, in the
+// coordinates of Env.Displays and Window.ShowAt. Read it in OnClick or Menu
+// to place a popup. It is unavailable before a click, after Remove, and where
+// the system reports no icon rectangle, such as Linux's StatusNotifierItem.
+func (tr *Tray) ClickBounds() (Bounds, bool) {
+	if tr == nil || tr.removed || !(tr.bounds.Size.Width > 0 && tr.bounds.Size.Height > 0) {
+		return Bounds{}, false
+	}
+	return tr.bounds, true
+}
+
 // Remove takes the icon away, as its owner going does.
 func (tr *Tray) Remove() {
 	if tr == nil || tr.removed {
@@ -690,7 +703,9 @@ func (tr *Tray) Remove() {
 }
 
 // clicked handles a click on the icon: button 0 is the primary.
-func (tr *Tray) clicked(button int) {
+func (tr *Tray) clicked(ev driver.Event) {
+	tr.bounds, _ = ev.Data.(Bounds)
+	button := ev.Index
 	o := tr.opts
 	switch {
 	case button == 0 && o.Panel != nil && !o.Panel.closed:
@@ -933,7 +948,7 @@ func (t *Tree) surfaceEvent(ev driver.Event) bool {
 		}
 	case driver.EventTray:
 		if tr := rt.trays[ev.Count]; tr != nil {
-			t.within(tr.owner, func() { tr.clicked(ev.Index) })
+			t.within(tr.owner, func() { tr.clicked(ev) })
 		}
 	case driver.EventHotKey:
 		rt.hotKey(ev.Count)

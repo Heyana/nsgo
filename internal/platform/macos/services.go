@@ -501,7 +501,16 @@ func (s *surface) windowFrame() driver.WindowFrame {
 	if s.embedded || s.window == 0 {
 		return driver.WindowFrame{}
 	}
-	frame := objc.Send[apple.CGRect](s.window, sel("frame"))
+	return screenWindowFrame(s.window)
+}
+
+// screenWindowFrame converts a native window's frame to the same desktop
+// points as displays, including the status item's button window.
+func screenWindowFrame(window objc.ID) driver.WindowFrame {
+	if window == 0 {
+		return driver.WindowFrame{}
+	}
+	frame := objc.Send[apple.CGRect](window, sel("frame"))
 	screens := screenFrames("frame")
 	if len(screens) == 0 {
 		return driver.WindowFrame{}

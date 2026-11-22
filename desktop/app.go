@@ -110,7 +110,9 @@ func OnOpenLinks(cx *core.Scope, fn func(links []string)) { cx.OnOpenLinks(fn) }
 
 // NewTray adds a tray icon, which cx keeps: an image, or a
 // view that draws it and may change, a panel its primary click shows
-// under it, and a menu its secondary click shows.
+// under it, and a menu its secondary click shows. Title shows beside
+// either image or view on macOS. Read Tray.ClickBounds in OnClick or
+// Menu to place a custom panel with Window.ShowAt where bounds are available.
 func NewTray(cx *core.Scope, opts TrayOptions) *Tray { return cx.NewTray(opts) }
 
 // HotKeyState is what the platform answered a global shortcut's registration.

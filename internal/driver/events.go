@@ -214,7 +214,8 @@ const (
 	// a []string of paths): from the Finder, or named when it launched.
 	EventOpenFiles
 	// EventTray reports a click on tray icon Count: Index 0 for the
-	// primary button, 1 for the secondary.
+	// primary button, 1 for the secondary. Data is the icon's Bounds in
+	// desktop screen points when the system supplies them, nil otherwise.
 	EventTray
 	// EventHotKey reports the global shortcut whose ID is Count.
 	EventHotKey

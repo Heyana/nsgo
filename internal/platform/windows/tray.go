@@ -260,7 +260,18 @@ func (w *window) trayMessage(lParam uintptr) {
 			return
 		}
 	}
-	w.engine.Dispatch(driver.Event{Kind: driver.EventTray, Count: id, Index: index})
+	var bounds any
+	if r, ok := w.trayRect(id); ok {
+		monitor, _, _ := monitorFromRect.Call(uintptr(unsafe.Pointer(&r)), monitorDefaultNear)
+		for _, p := range monitorLayout() {
+			if p.monitor == monitor {
+				bounds = driver.Bounds{Origin: p.point(r.Left, r.Top), Size: driver.Size{
+					Width: driver.Points(float64(r.Right-r.Left) / p.scale), Height: driver.Points(float64(r.Bottom-r.Top) / p.scale)}}
+				break
+			}
+		}
+	}
+	w.engine.Dispatch(driver.Event{Kind: driver.EventTray, Count: id, Index: index, Data: bounds})
 }
 
 func trayHICON(data []byte) (uintptr, bool) {

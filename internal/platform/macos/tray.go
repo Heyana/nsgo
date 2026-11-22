@@ -101,12 +101,20 @@ func (tr *tray) show(view *surface) {
 	tr.view = view
 	button := tr.item.Send(sel("button"))
 	size := objc.Send[apple.CGRect](view.native, selBounds).Size
-	tr.item.Send(sel("setLength:"), size.Width)
+	// Reserve the drawn view's width as an empty image, so AppKit lays out
+	// the title beside it with the menu bar's own spacing and font. A fixed
+	// status-item length clips the title and puts it underneath the view.
+	image := objc.ID(apple.Class("NSImage")).Send(selAlloc).Send(sel("initWithSize:"),
+		apple.CGSize{Width: size.Width, Height: 18})
+	button.Send(sel("setImage:"), image)
+	image.Send(selRelease)
+	tr.item.Send(sel("setLength:"), float64(-1))
 	if view.native.Send(selSuperview) != button {
 		button.Send(selAddSubview, view.native)
 	}
 	bounds := objc.Send[apple.CGRect](button, selBounds)
-	view.native.Send(selSetFrame, apple.Rect(0, (bounds.Size.Height-size.Height)/2, size.Width, size.Height))
+	icon := objc.Send[apple.CGRect](button.Send(sel("cell")), sel("imageRectForBounds:"), bounds)
+	view.native.Send(selSetFrame, apple.Rect(icon.Origin.X, (bounds.Size.Height-size.Height)/2, size.Width, size.Height))
 }
 
 // remove takes the icon out of the menu bar.
@@ -146,7 +154,11 @@ func trayClicked(_ objc.ID, _ objc.SEL, button objc.ID) {
 	if index == 0 && time.Since(tr.blurred) < 300*time.Millisecond {
 		return
 	}
-	tr.owner.engine.Dispatch(driver.Event{Kind: driver.EventTray, Count: tr.cfg.ID, Index: index})
+	var bounds any
+	if f := screenWindowFrame(button.Send(selWindow)); f.Width > 0 && f.Height > 0 {
+		bounds = driver.Bounds{Origin: driver.Point{X: f.X, Y: f.Y}, Size: driver.Size{Width: f.Width, Height: f.Height}}
+	}
+	tr.owner.engine.Dispatch(driver.Event{Kind: driver.EventTray, Count: tr.cfg.ID, Index: index, Data: bounds})
 }
 
 // trayMenu shows entries as icon id's menu, and reports it closed as a
