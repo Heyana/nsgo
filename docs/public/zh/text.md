@@ -37,7 +37,7 @@ core.Text{Style: core.Style{FontSize: 15}, Spans: []core.Span{
 
 `SpansFunc` 在读取的值变化时重新给出 span，只有不同的部分会重新排版，因此代码编辑器的行会在高亮到达时重新着色。span 的 `Background` 和 `CornerRadius` 会在每一行字符后面画一个盒子，它的 `Cursor` 决定指针在这些字符上的样子，优先于整段文字的。`Visibility: core.VisibilityHidden` 原地隐藏一个 span：它的文字仍占着位置，显示时各行不会移动，复制和屏幕阅读器都会略过它，适合逐词淡入的文字。
 
-给带有 `Background` 的 span 设置 `BackgroundInsetTop: core.Pct(62)`，会高亮每行背景盒子下方的 38%。`BackgroundInsetBottom` 从底部内缩。两个值都可以用点数或盒子高度的百分比表示，盒子的高度取自字体的上升部到下降部。内缩不会影响排版。在 TSX 中，可以在嵌套的 `<Text>` 样式中设置 `backgroundInsetTop: "62%"` 和 `backgroundInsetBottom`。
+给带有 `Background` 的 span 设置 `BackgroundInsetTop: core.Pct(62)`，会高亮每行背景盒子下方的 38%。`BackgroundInsetBottom` 从底部内缩。两个值都可以用点数或盒子高度的百分比表示，盒子的高度取自字体的上升部到下降部。内缩不会影响排版。在 TSX 中，可以在嵌套的 `<Text>` 样式中设置 `backgroundInsetTop: "62%"` 和 `backgroundInsetBottom`。 鸿蒙和四种小程序目标也会绘制圆角背景及垂直内缩。
 
 `Attachment` 把一个视图放进文本，替代 span 的内容。它按自身尺寸布局，随周围的文字换行，并接收自己的按压，因此图标、图片或小按钮可以出现在一行里。默认以视图内第一行文字的基线对齐周围文字，基线采用该行实际使用的字体度量。`Em` 画布提供自己的基线，其余没有基线的视图以底边对齐。可以用 `Style.VerticalAlign` 选择其他对齐方式。
 

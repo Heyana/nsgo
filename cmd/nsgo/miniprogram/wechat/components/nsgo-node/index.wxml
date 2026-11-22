@@ -146,6 +146,7 @@
     binderror="onError"
   />
   <image wx:if="{{node.cv}}" class="fill" src="{{node.cv}}" mode="scaleToFill" />
+  <view wx:for="{{node.t ? node.t.b : []}}" wx:for-item="b" class="span-background" style="{{m.background(node.t, b)}}" />
   <text
     wx:for="{{node.t ? node.t.r : []}}"
     wx:for-item="r"

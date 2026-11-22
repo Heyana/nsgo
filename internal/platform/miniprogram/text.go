@@ -445,6 +445,15 @@ type TextLayout struct {
 	lines  []driver.TextLine
 	boxes  []attachmentBox
 	carets driver.LazyCarets
+	under  []backgroundBox
+}
+
+// backgroundBox is one span's painted band on one line, behind its glyphs.
+type backgroundBox struct {
+	box        driver.Bounds
+	color      driver.Color
+	radius     driver.Points
+	span, line int
 }
 
 type attachmentBox struct {
@@ -497,6 +506,7 @@ func (p *prepared) Layout(size driver.Size) driver.TextLayout {
 				cx += sg.width
 				continue
 			}
+			p.backgrounds(l, sg, st, i, cx, y+base, x+ln.trimmed)
 			text := ellipsis
 			if sg.start >= 0 {
 				text = p.t.Text[sg.start:sg.end]
@@ -520,6 +530,45 @@ func (p *prepared) Layout(size driver.Size) driver.TextLayout {
 	}
 	l.carets.Set(func() driver.CaretLayout { return p.carets(lines, l.lines) })
 	return l
+}
+
+// backgrounds places paint against the shaped segments without splitting them: adding a background must preserve kerning, widths and line breaks.
+func (p *prepared) backgrounds(l *TextLayout, sg segment, st *runStyle, line int, x, baseline, lineEnd driver.Points) {
+	for i, sp := range p.t.Spans {
+		bg := sp.Background
+		if sp.Hidden || bg.Color == 0 {
+			continue
+		}
+		left, right := x, x+sg.width
+		if sg.start < 0 {
+			// An ellipsis inherits the background at its cut in the text.
+			if sg.end <= sp.Start || sg.end > sp.End {
+				continue
+			}
+		} else {
+			start, end := max(sg.start, sp.Start), min(sg.end, sp.End)
+			if start >= end {
+				continue
+			}
+			left += p.e.width(st, p.t.Text[sg.start:start])
+			right = x + p.e.width(st, p.t.Text[sg.start:end])
+		}
+		right = min(right, lineEnd)
+		top, bottom := bg.VerticalBounds(st.size)
+		if right <= left || bottom <= top {
+			continue
+		}
+		box := driver.Bounds{Origin: driver.Point{X: left, Y: baseline - 0.8*st.size + top},
+			Size: driver.Size{Width: right - left, Height: bottom - top}}
+		n := len(l.under) - 1
+		if n >= 0 && l.under[n].span == i && l.under[n].line == line &&
+			abs(l.under[n].box.Origin.X+l.under[n].box.Size.Width-left) < 0.01 {
+			l.under[n].box.Size.Width = right - l.under[n].box.Origin.X
+		} else {
+			l.under = append(l.under, backgroundBox{box: box, color: bg.Color,
+				radius: max(0, bg.Radius), span: i, line: line})
+		}
+	}
 }
 
 // lineStart is where a line as wide as width starts in a box as wide as
@@ -656,7 +705,8 @@ func (p *prepared) truncateTail(ln *line, maxWidth driver.Points) {
 		ellStyle = rest[0].style
 	}
 	ew := p.e.width(&p.styles[ellStyle], ellipsis)
-	kept = append(kept, segment{start: -1, style: ellStyle, width: ew, attachment: -1})
+	// The ellipsis is a segment of its own, a run the text does not hold, ending where the text was cut so a span's background reaches it.
+	kept = append(kept, segment{start: -1, end: end, style: ellStyle, width: ew, attachment: -1})
 	ln.segments = kept
 	ln.width = x + ew
 	ln.trimmed = ln.width

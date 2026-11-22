@@ -14,12 +14,23 @@ import (
 // textRun is one styled run of a text with spans, as the host draws a Span
 // for it.
 type textRun struct {
-	T string  `json:"t"`
-	C string  `json:"c,omitempty"`
-	S float32 `json:"s,omitempty"`
-	W int     `json:"w,omitempty"`
-	I bool    `json:"i,omitempty"`
-	F string  `json:"f,omitempty"`
+	T string          `json:"t"`
+	C string          `json:"c,omitempty"`
+	S float32         `json:"s,omitempty"`
+	W int             `json:"w,omitempty"`
+	I bool            `json:"i,omitempty"`
+	F string          `json:"f,omitempty"`
+	B *textBackground `json:"b,omitempty"`
+}
+
+// textBackground keeps inset units until ArkUI supplies each line's font box.
+type textBackground struct {
+	C  string  `json:"c"`
+	R  float32 `json:"r,omitempty"`
+	T  float32 `json:"t,omitempty"`
+	B  float32 `json:"b,omitempty"`
+	TP bool    `json:"tp,omitempty"`
+	BP bool    `json:"bp,omitempty"`
 }
 
 // textRunsJSON draws a text's spans as one run each, taking the text's own
@@ -56,8 +67,22 @@ func textRunsJSON(t *driver.TextContent) string {
 		if c == 0 {
 			c = t.Style.Color
 		}
-		out = append(out, textRun{T: drawnText(r.Text), C: webstyle.Color(c), S: float32(f.Size),
-			W: int(f.Weight), I: f.Italic, F: f.Family})
+		run := textRun{T: drawnText(r.Text), C: webstyle.Color(c), S: float32(f.Size),
+			W: int(f.Weight), I: f.Italic, F: f.Family}
+		if bg := r.Background; bg.Color != 0 && run.T != "" {
+			run.B = &textBackground{C: webstyle.Color(bg.Color), R: float32(max(0, bg.Radius))}
+			if n, ok := bg.Top.Percent(); ok {
+				run.B.T, run.B.TP = n, true
+			} else if n, ok := bg.Top.Points(); ok {
+				run.B.T = float32(n)
+			}
+			if n, ok := bg.Bottom.Percent(); ok {
+				run.B.B, run.B.BP = n, true
+			} else if n, ok := bg.Bottom.Points(); ok {
+				run.B.B = float32(n)
+			}
+		}
+		out = append(out, run)
 	}
 	b, err := json.Marshal(out)
 	if err != nil {

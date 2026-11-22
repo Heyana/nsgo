@@ -25,7 +25,7 @@ import (
 //	a  id css                what its animated values draw over its style
 //	tr id css                the transition of its frame's next change
 //	ka id frames             its keyframe animation (null: none)
-//	t  id text               a text's runs: {x, y, s: [css], r: [[text, x, y, h, style]]}
+//	t  id text               a text's runs: {x, y, s: [css], r: [[text, x, y, h, style]], b: [[x, y, w, h, color, radius]]}
 //	e  id bits               the touches it reports (touch* constants)
 //	sc id config             a scroll view's: {h, hide, rf, rt}
 //	ss id w h                a scroll view's content size
@@ -598,6 +598,25 @@ func (m *mounter) sendText(v *view) {
 		runs = append(runs, ']')
 	}
 	t.raw("r", append(runs, ']'))
+	backgrounds := []byte{'['}
+	for i, bg := range l.under {
+		if i > 0 {
+			backgrounds = append(backgrounds, ',')
+		}
+		backgrounds = append(backgrounds, '[')
+		for k, x := range []driver.Points{bg.box.Origin.X, bg.box.Origin.Y, bg.box.Size.Width, bg.box.Size.Height} {
+			if k > 0 {
+				backgrounds = append(backgrounds, ',')
+			}
+			backgrounds = appendNum(backgrounds, float64(x))
+		}
+		backgrounds = append(backgrounds, ',')
+		backgrounds = appendString(backgrounds, webstyle.Color(bg.color))
+		backgrounds = append(backgrounds, ',')
+		backgrounds = appendNum(backgrounds, float64(min(bg.radius, bg.box.Size.Width/2, bg.box.Size.Height/2)))
+		backgrounds = append(backgrounds, ']')
+	}
+	t.raw("b", append(backgrounds, ']'))
 	if s := v.text.Shadow; s.Color != 0 {
 		t.str("sh", webstyle.TextShadow(s))
 	}

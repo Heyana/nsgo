@@ -8,13 +8,14 @@ import { camera, cameraPicker } from '@kit.CameraKit';
 import { fileIo as fs, fileUri, picker } from '@kit.CoreFileKit';
 import { accessibility } from '@kit.AccessibilityKit';
 import { formProvider, formBindingData } from '@kit.FormKit';
-import { display, window, typeNode, BuilderNode, NodeController, FrameNode, UIContext, componentSnapshot } from '@kit.ArkUI';
-import { displaySync } from '@kit.ArkGraphics2D';
+import { display, window, typeNode, BuilderNode, NodeController, FrameNode, UIContext, FrameCallback, componentSnapshot } from '@kit.ArkUI';
+import { displaySync, text } from '@kit.ArkGraphics2D';
 import { common, ConfigurationConstant, abilityAccessCtrl, bundleManager } from '@kit.AbilityKit';
 import type { Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { userAuth } from '@kit.UserAuthenticationKit';
 import MeasureText, { MeasureOptions } from '@ohos.measure';
 import { SandboxFiles } from './SandboxFiles';
+import { SpanBackgroundPaint, SpanRectangle, backgroundBand, spanLineRange, joinSpanBoxes } from './SpanBackground';
 
 // The host the harmonyos target builds: the app's engine runs in WebAssembly
 // in a 1x1 Web view, and this page draws what it mounts with ArkUI views.
@@ -156,6 +157,7 @@ interface TextRun {
   w?: number;
   i?: boolean;
   f?: string;
+  b?: SpanBackgroundPaint;
 }
 
 interface CanvasOp {
@@ -2583,21 +2585,148 @@ struct WebView {
 // The builders for the leaves typeNode cannot make: rich text (Span), an
 // image drawn from its bytes, and a canvas.
 @Builder function spanBuilder(v: VNode) {
-  Text() {
-    ForEach(v.runs, (r: TextRun) => {
-      Span(r.t)
-        .fontSize(r.s ?? v.fs)
-        .fontWeight(r.w ?? v.fw)
-        .fontColor(r.c ?? v.color)
-        .fontStyle(r.i === true ? FontStyle.Italic : FontStyle.Normal)
-    // A run is keyed by what it draws, not only its place: ForEach keeps the child of a key it has seen, so with index keys a run whose text or style changed, such as a counter's digits, kept showing the old one.
-    }, (r: TextRun, i: number) => i + ':' + JSON.stringify(r))
+  SpanTextView({ runs: v.runs, textAlignment: v.align, maxLines: v.maxLines })
+}
+
+// Native layout is available after the frame's layout task. Redraw once there rather than measuring the span again or moving its glyphs.
+class SpanBackgroundFrame extends FrameCallback {
+  private paint: () => void;
+
+  constructor(paint: () => void) {
+    super();
+    this.paint = paint;
   }
-  .textAlign(v.align === 1 ? TextAlign.Center :
-    (v.align === 2 ? TextAlign.End : TextAlign.Start))
-  .maxLines(v.maxLines > 0 ? v.maxLines : 100)
-  .textOverflow({ overflow: TextOverflow.Ellipsis })
-  .width('100%')
+
+  onIdle(_time: number): void {
+    this.paint();
+  }
+}
+
+// SpanTextView paints each native line's band below the Text component, keeping selection and glyphs above it. Neither Canvas nor the bands take input or change the text's layout.
+@Component
+struct SpanTextView {
+  @Prop @Watch('schedulePaint') runs: TextRun[] = [];
+  @Prop @Watch('schedulePaint') textAlignment: number = 0;
+  @Prop @Watch('schedulePaint') maxLines: number = 0;
+  private controller: TextController = new TextController();
+  private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
+  private ready: boolean = false;
+  private pending: boolean = false;
+
+  private hasBackground(): boolean {
+    return this.runs.some((r: TextRun) => r.b !== undefined);
+  }
+
+  aboutToDisappear(): void {
+    this.ready = false;
+  }
+
+  private schedulePaint(): void {
+    if (!this.ready || this.pending) {
+      return;
+    }
+    this.pending = true;
+    this.getUIContext().postFrameCallback(new SpanBackgroundFrame(() => {
+      this.pending = false;
+      if (this.ready) {
+        this.paint();
+      }
+    }));
+  }
+
+  private paint(): void {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, ctx.width, ctx.height);
+    const layout = this.controller.getLayoutManager();
+    if (layout === undefined) {
+      return;
+    }
+    let value = '';
+    this.runs.forEach((r: TextRun) => { value += r.t; });
+    let start = 0;
+    const count = Math.min(layout.getLineCount(), this.maxLines > 0 ? this.maxLines : 100);
+    for (let i = 0; i < this.runs.length; i++) {
+      const run = this.runs[i];
+      const end = start + run.t.length;
+      const bg = run.b;
+      if (bg !== undefined) {
+        for (let line = 0; line < count; line++) {
+          const metrics = layout.getLineMetrics(line);
+          const range = spanLineRange(value, metrics.startIndex, metrics.endIndex, start, end);
+          if (range === undefined) {
+            continue;
+          }
+          const boxes = layout.getRectsForRange(range, text.RectWidthStyle.TIGHT, text.RectHeightStyle.TIGHT);
+          const rects = boxes.map((box: text.TextBox): SpanRectangle => {
+            return { left: box.rect.left, top: box.rect.top, right: box.rect.right, bottom: box.rect.bottom };
+          });
+          joinSpanBoxes(rects).forEach((rect: SpanRectangle) => {
+            const ui = this.getUIContext();
+            const band = backgroundBand(ui.px2vp(rect.left), ui.px2vp(rect.top),
+              ui.px2vp(rect.right), ui.px2vp(rect.bottom), bg);
+            if (band === undefined) {
+              return;
+            }
+            const x = band.x;
+            const y = band.y;
+            const w = band.width;
+            const h = band.height;
+            const r = band.radius;
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+            ctx.fillStyle = band.color;
+            ctx.fill();
+          });
+        }
+      }
+      start = end;
+    }
+  }
+
+  build() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      if (this.hasBackground()) {
+        Canvas(this.ctx)
+          .width('100%')
+          .height('100%')
+          .hitTestBehavior(HitTestMode.None)
+          .onReady(() => {
+            this.ready = true;
+            this.schedulePaint();
+          })
+          .onAreaChange(() => { this.schedulePaint(); })
+          .onDisAppear(() => { this.ready = false; })
+      }
+      Text(undefined, { controller: this.controller }) {
+        // Key by paint too so same-size text and background changes rebuild.
+        ForEach(this.runs, (r: TextRun) => {
+          Span(r.t)
+            .fontSize(r.s ?? 16)
+            .fontWeight(r.w ?? 400)
+            .fontColor(r.c ?? '#000000')
+            .fontFamily(r.f ?? '')
+            .fontStyle(r.i === true ? FontStyle.Italic : FontStyle.Normal)
+        }, (r: TextRun, i: number) => i + ':' + JSON.stringify(r))
+      }
+      .textAlign(this.textAlignment === 1 ? TextAlign.Center :
+        (this.textAlignment === 2 ? TextAlign.End : TextAlign.Start))
+      .maxLines(this.maxLines > 0 ? this.maxLines : 100)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .width('100%')
+      .onAreaChange(() => { this.schedulePaint(); })
+    }
+    .width('100%')
+    .height('100%')
+  }
 }
 
 @Builder function imageBuilder(v: VNode) {

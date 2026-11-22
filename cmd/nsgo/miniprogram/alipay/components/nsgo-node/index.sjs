@@ -8,6 +8,10 @@ export default {
     return 'left:' + (t.x + r[1]) + 'px;top:' + (t.y + r[2]) + 'px;line-height:' + r[3] + 'px;' + t.s[r[4]] +
       (t.sh ? 'text-shadow:' + t.sh + ';' : '')
   },
+  background: function (t, b) {
+    return 'left:' + (t.x + b[0]) + 'px;top:' + (t.y + b[1]) + 'px;width:' + b[2] + 'px;height:' + b[3] +
+      'px;background-color:' + b[4] + ';border-radius:' + b[5] + 'px;'
+  },
   field: function (n) {
     var i = n.fd
     return 'left:' + i.x + 'px;top:' + i.y + 'px;width:' + i.w + 'px;height:' + i.h + 'px;' + i.css
