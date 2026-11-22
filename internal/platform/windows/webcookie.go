@@ -316,8 +316,7 @@ func cookieManagerOf(web *comObject) *comObject {
 // addWebCookie adds or replaces c in manager's store, or removes its key when expired. A cookie without an expiry is a session one, as CreateCookie makes it.
 func addWebCookie(manager *comObject, c driver.WebCookie) error {
 	if !c.Expires.IsZero() && !c.Expires.After(time.Now()) {
-		// WebView2 refuses negative expiry times (except -1, a session
-		// cookie), so delete expired cookies by their key instead.
+		// WebView2 refuses negative expiry times (except -1, a session cookie), so delete expired cookies by their key instead.
 		hr := manager.call(cookieManagerDeleteByKey, uintptr(unsafe.Pointer(wide(c.Name))),
 			uintptr(unsafe.Pointer(wide(c.Domain))), uintptr(unsafe.Pointer(wide(c.CookiePath()))))
 		if failed(hr) {

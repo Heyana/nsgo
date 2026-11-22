@@ -91,8 +91,7 @@ func TestHTTPCookieExpiryOutsideNanoseconds(t *testing.T) {
 					t.Fatal("Foundation refused a valid cookie expiry")
 				}
 				got := webCookie(cookie)
-				// WebKit may cap a long-lived cookie's lifetime; its expiry must
-				// stay on the right side of now in both directions.
+				// WebKit may cap a long-lived cookie's lifetime; its expiry must stay on the right side of now in both directions.
 				if got.Expires.IsZero() || got.Expires.After(now) != tc.future {
 					t.Fatalf("expiry %s became %s (want future %t)", tc.expires, got.Expires, tc.future)
 				}

@@ -93,9 +93,7 @@ func TestSetWebCookiesReachesThePagesLoadedAfter(t *testing.T) {
 	}
 }
 
-// cookieApp is a run of TestSetWebCookiesReachesThePagesLoadedAfter's app:
-// "set" writes the cookies and loads /page and /incognito, "again" loads /again,
-// and "expire" removes the persistent cookie before loading /expire.
+// cookieApp is a run of TestSetWebCookiesReachesThePagesLoadedAfter's app: "set" sets the cookies and loads /page and /incognito, "again" loads /again, and "expire" removes the persistent cookie before loading /expire; the window's title says when it is done.
 func cookieApp(t *testing.T, phase string) {
 	server, value := os.Getenv("NSGO_TEST_SERVER"), os.Getenv("NSGO_TEST_VALUE")
 	host := strings.TrimPrefix(server, "http://")

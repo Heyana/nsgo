@@ -14,7 +14,8 @@ func TestHoldsWebCookiesSkipsWhatTheStoreDrops(t *testing.T) {
 		held bool
 	}{
 		{[]driver.WebCookie{{Name: "a", Value: "1", Domain: ".example.com"}, {Name: "b", Value: "2", Domain: "example.com", Path: "/"}}, true},
-		{[]driver.WebCookie{{Name: "a", Value: "1", Domain: "example.com"}}, false},
+		// WebView2 may write a domain cookie's leading dot either way.
+		{[]driver.WebCookie{{Name: "a", Value: "1", Domain: "example.com"}}, true},
 		{[]driver.WebCookie{{Name: "a", Value: "0", Domain: ".example.com"}}, false},
 		{[]driver.WebCookie{{Name: "c", Value: "3", Domain: "example.com"}}, false},
 		// Replaced by the next, and expired.
@@ -50,8 +51,7 @@ func TestExpiredCookieWaitsForDeletion(t *testing.T) {
 	if !holdsWebCookies(nil, []driver.WebCookie{expired}) {
 		t.Fatal("did not acknowledge the cookie's removal")
 	}
-	// Removing the host-only cookie must not wait for a domain cookie
-	// with the same name and path, which is a different WebView2 key.
+	// Removing the host-only cookie must not wait for a domain cookie with the same name and path, which is a different WebView2 key.
 	expired.Domain = "example.com"
 	if !holdsWebCookies([]driver.WebCookie{c}, []driver.WebCookie{expired}) {
 		t.Fatal("a domain cookie blocked the host-only cookie's deletion")
