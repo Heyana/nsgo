@@ -56,6 +56,8 @@ go tool nsgo test -env GOOS=js -env GOARCH=wasm ./internal/platform/harmonyos \
 go tool nsgo test -target harmonyos -run TestHarmonyOSPages -timeout 10m ./examples/gallery
 ```
 
+On a Linux desktop, run the real global-shortcut portal acceptance check with `NSGO_TEST_GLOBAL_SHORTCUT_PORTAL=<installed-desktop-id> go tool nsgo test -run TestGlobalShortcutPortalWithPermission ./internal/platform/linux`. The ID must have a `.desktop` entry. Grant Ctrl+Alt+K in the compositor’s prompt, then press it with another application focused; the check waits for both registration and activation. It is skipped unless the environment variable is set.
+
 ## Releases
 
 NSGo releases on demand when a downstream project needs a tagged version or maintainers have changes ready to ship. When requesting a release for a library, link the dependent work and name the commit that contains the last NSGo change it needs. The first release tag that contains that commit is the version the library can require.

@@ -93,6 +93,115 @@ func TestGlobalShortcutsReachTheBackend(t *testing.T) {
 	}
 }
 
+// TestGlobalShortcutFromAnotherClient sends real XTest key presses while a
+// different X11 client owns keyboard focus. Disposing the registration returns
+// its key to that client instead of dispatching the app's callback.
+func TestGlobalShortcutFromAnotherClient(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens X11 windows")
+	}
+	if os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("DISPLAY") == "" {
+		t.Skip("needs an X11 display")
+	}
+	const title = "nsgo-background-hotkey"
+	owners := make(chan *core.Scope, 1)
+	fired := make(chan struct{}, 8)
+	w := startTestWindow(t, func(cx *core.Scope) core.Node {
+		owner := cx.Child()
+		var h *core.HotKey
+		owner.Run(func() { h = owner.RegisterHotKey("ctrl+alt+k", func() { fired <- struct{}{} }) })
+		cx.Effect(func() { cx.SetTitle(title + "|" + h.State().String()) })
+		owners <- owner
+		return core.Text{Content: "Background shortcut"}
+	}, Options{Title: title, Width: 200, Height: 100})
+	owner := <-owners
+	waitForTitle(t, w, title+"|registered")
+	w.onLoop(t, func() { bindX11WebInput() })
+	if !bindDesktopXlib() || !bindXPointer() || !xWebInput.ready {
+		t.Skip("needs Xlib and XTest")
+	}
+	x := &desktopXlib
+	display := x.openDisplay(nil)
+	if display == 0 {
+		t.Fatal("cannot open the other client's X11 connection")
+	}
+	defer x.closeDisplay(display)
+	other := x.createWindow(display, x.rootWindow(display), 0, 0, 100, 100, 0, 0, 0)
+	defer x.destroyWindow(display, other)
+	x.selectInput(display, other, 1) // KeyPressMask
+	// Map independently of a window manager, which may otherwise defer the
+	// MapRequest until after the test asks the server to focus this window.
+	x11ChangeWindowAttributes(display, other, x11CWOverrideRedirect, &x11WindowAttributes{overrideRedirect: 1})
+	xPointer.mapWindow(display, other)
+	x.sync(display, 0)
+	xWebInput.setInputFocus(display, other, 1, 0)
+	x.sync(display, 0)
+	var focus uintptr
+	var revert int32
+	xWebInput.getInputFocus(display, &focus, &revert)
+	if focus != other {
+		t.Fatalf("keyboard focus = %#x, want the other client %#x", focus, other)
+	}
+	press := func() {
+		t.Helper()
+		codes := []uint32{uint32(xWebInput.keysymToKeycode(display, 0xffe3)), uint32(xWebInput.keysymToKeycode(display, 0xffe9)), uint32(xWebInput.keysymToKeycode(display, 'k'))}
+		for _, code := range codes {
+			if code == 0 || xWebInput.fakeKey(display, code, 1, 0) == 0 {
+				t.Fatal("XTest refused the key press")
+			}
+		}
+		for i := len(codes) - 1; i >= 0; i-- {
+			xWebInput.fakeKey(display, codes[i], 0, 0)
+		}
+		x.sync(display, 0)
+	}
+	press()
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the global shortcut did not fire with another client focused")
+	}
+	xWebInput.getInputFocus(display, &focus, &revert)
+	if focus != other {
+		t.Errorf("the shortcut took keyboard focus from the other client")
+	}
+	owner.Post(owner.Dispose)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var released bool
+		w.onLoop(t, func() { released = w.hotKeys == nil })
+		if released {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("disposing the owner kept its global shortcut")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// Remove the modifier events that the grabbed press left with the client.
+	for x.pending(display) != 0 {
+		var event desktopEvent
+		x.nextEvent(display, &event)
+	}
+	press()
+	var received bool
+	for x.pending(display) != 0 {
+		var event desktopEvent
+		x.nextEvent(display, &event)
+		if event.typ == x11KeyPress && *(*uint32)(unsafe.Add(unsafe.Pointer(&event), 84)) == uint32(xWebInput.keysymToKeycode(display, 'k')) {
+			received = true
+		}
+	}
+	if !received {
+		t.Error("the released shortcut did not return to the focused client")
+	}
+	select {
+	case <-fired:
+		t.Error("the disposed registration still dispatched its callback")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 // holdX11Combo grabs combo, a trigger as portalTrigger writes it, on a display connection of its own, as another client would, until the test ends.
 func holdX11Combo(t *testing.T, combo string) {
 	t.Helper()
