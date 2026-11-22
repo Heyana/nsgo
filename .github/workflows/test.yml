@@ -88,7 +88,7 @@ jobs:
       - name: Install native test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin avahi-daemon dbus openbox
+          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb openbox pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin avahi-daemon dbus openbox
       - name: Allow WebKit's sandbox on the runner
         run: |
           # Ubuntu restricts unprivileged user namespaces. Grant bubblewrap that permission so WebKit can keep its sandbox enabled.
@@ -108,6 +108,19 @@ jobs:
           pactl set-default-sink nsgo_test
       - name: Vet
         run: go tool nsgo check
+      - name: Test native window limits and titlebar buttons
+        env:
+          GDK_BACKEND: x11
+          NSGO_REQUIRE_WINDOW_MANAGER: "1"
+        run: |
+          xvfb-run -a dbus-run-session -- sh -e <<'SCRIPT'
+            openbox --sm-disable > "$RUNNER_TEMP/nsgo-window-limits-openbox.log" 2>&1 &
+            manager=$!
+            trap "kill $manager 2>/dev/null || true" EXIT
+            sleep .5
+            kill -0 "$manager"
+            go tool nsgo test -run "^TestWindowConstraints" -timeout 2m ./internal/platform/linux
+          SCRIPT
       - name: Test HarmonyOS Wasm backend under Node.js
         # The gallery's TestHarmonyOSPages needs an ArkUI emulator connected through hdc, which this runner does not have.
         # Keep the Wasm test process within Go's environment size limit.

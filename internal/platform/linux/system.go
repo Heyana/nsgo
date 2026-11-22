@@ -685,9 +685,8 @@ func (w *window) toggleMaximize() {
 }
 
 // setConstraints limits the surface's size, which the window's follows
-// around its menu bar and title bar. GTK 4 sets no maximum and takes no
-// buttons, so a window is fixed by not being resizable, at the size its
-// minimum then asks: GTK shows such a window at its natural size.
+// around its menu bar and title bar. A fixed window takes its natural
+// size from the request; nonfixed X11 maximums use WM_NORMAL_HINTS.
 func (w *window) setConstraints(c driver.WindowConstraints) {
 	if w.win == 0 {
 		return
@@ -708,6 +707,7 @@ func (w *window) setConstraints(c driver.WindowConstraints) {
 		gtkWidgetSetSizeRequest(w.surface, request(c.MinWidth), request(c.MinHeight))
 	}
 	gtkWindowSetResizable(w.win, boolInt(!fixed))
+	w.updateWindowLimits()
 }
 
 // The keyvals of the menu bar's keys.

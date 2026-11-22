@@ -276,6 +276,8 @@ cx.OnQuit(func(ctx context.Context) { saveDraft(ctx) })
 
 `desktop.CursorPoint(cx, func(p core.Point, available bool) { ... })` 在 macOS、Windows 和 X11 上可以读取应用窗口外的指针位置，每次调用读取一次。位置与 `desktop.Monitors(cx)` 和 `Window.ShowAt` 使用同一屏幕坐标系。在 Wayland 等不支持的目标上，或作用域缺少 `core.AccessCursorPoint` 权限时，`available` 为 false。
 
+`desktop.SetWindowConstraints` 限制内容尺寸，并控制调整大小、最小化和最大化；打开窗口时可设置 `WindowOptions.Constraints`，主窗口可用 `nsgo.WindowConstraints`。Linux 在 X11 下支持非固定的最大尺寸，并在 X11 和 Wayland 下从 GTK 原生标题栏移除被禁止的最小化、最大化按钮。Wayland 目前只有固定尺寸能限制上界。
+
 `desktop.SetWindowLevel` 让窗口浮在其他窗口之上；`desktop.SetWindowWorkspaces(cx, desktop.WindowWorkspacesAll)` 或 `WindowOptions.Workspaces` 让它出现在每个工作区，桌宠、HUD、计时器都是这样：macOS 上出现在每个空间（Space）和其他应用的全屏空间之上，不参与 Cmd-` 切换；Linux 上出现在 X11 窗口管理器的每个虚拟桌面。Windows 和 Wayland 上它留在打开时所在的那个。`desktop.CanSetWindowWorkspaces` 说明它是否生效：macOS 上以及支持 `_NET_WM_DESKTOP` 的 X11 窗口管理器下为 true。主窗口在自己的内容里调用 `desktop.SetWindowWorkspaces` 即可出现在每个工作区。测试中 `nsgotest.App.Window` 列出这些请求，`nsgotest.Environment` 可以设置 `CanSetWindowWorkspaces`。
 
 `desktop.RegisterHotKey` 绑定全局快捷键，无论哪个应用在前台都生效，支持 macOS、Linux，以及用 `nsgo.Run(App)` 运行的 Windows 应用。它返回的句柄的 `State` 说明系统是否接受了它：系统答复前是 `HotKeyPending`，之后是 `HotKeyRegistered`；组合键已被其他注册占用时是 `HotKeyTaken`；按键或平台不支持全局快捷键时是 `HotKeyUnsupported`。快捷键录制器据此可以请用户换一个组合。在 macOS 上，只有应用自己已注册、或其他应用以独占方式注册的组合键才算被占用。在 Wayland 上由合成器请用户绑定快捷键，用户绑定后才是已注册；用户或合成器没有绑定的是已占用。测试中用 `nsgotest.HotKeyTaken` 和 `nsgotest.HotKeyUnsupported` 让组合键这样答复。

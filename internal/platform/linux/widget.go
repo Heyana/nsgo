@@ -316,6 +316,9 @@ func (w *window) showWidget(v *view) {
 // allocateSurface reports the size GTK gave the surface and places the
 // root view in it.
 func (w *window) allocateSurface(width, height int32) {
+	if w.limits.watched {
+		w.applyMaximumHints()
+	}
 	size := driver.Size{Width: driver.Points(width), Height: driver.Points(height)}
 	if !w.started {
 		// The surface exists now, so its scale and direction are known.

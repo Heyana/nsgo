@@ -261,10 +261,9 @@ func SetWindowPointerEvents(cx *core.Scope, p WindowPointerEvents) { cx.SetWindo
 //	desktop.SetWindowConstraints(cx, desktop.WindowConstraints{MinWidth: 480, MinHeight: 320, NoMaximize: true})
 //
 // A window sets them as it opens with WindowOptions.Constraints, and the
-// main window with nsgo.WindowConstraints. On Linux, GTK 4 has neither
-// maximum sizes nor a way to take the title bar's buttons, so only
-// NoResize, or a maximum equal to the minimum, limits a window from
-// above, and the user's buttons stay.
+// main window with nsgo.WindowConstraints. Linux applies maximum sizes
+// through X11's window manager and filters GTK's native titlebar buttons.
+// Wayland supports fixed sizes, but nonfixed maximums remain unsupported.
 func SetWindowConstraints(cx *core.Scope, c WindowConstraints) { cx.SetWindowConstraints(c) }
 
 // OrderFront shows the window, restoring it when minimized or hidden,

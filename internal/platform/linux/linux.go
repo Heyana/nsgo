@@ -162,6 +162,7 @@ type window struct {
 	engine  *engine.Engine
 	batches queue.Batches
 	chrome  chrome
+	limits  windowLimits
 
 	// The engine goroutine hands these to the main thread.
 	mu    sync.Mutex
