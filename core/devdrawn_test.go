@@ -403,7 +403,7 @@ func TestPaintAuditStrokesTransformedQuadsAndHighlightInspectUseDrawnBounds(t *t
 	// paintAudit draws transformed boxes as closed paths (MoveTo/LineTo/ClosePath/Stroke).
 	boxes := h.tree.auditBoxes(nil)
 	var d Drawing
-	paintAudit(&d, boxes, Size{Width: 200, Height: 200}, 1, 0, measurement{})
+	paintAudit(&d, boxes, Size{Width: 200, Height: 200}, 1, 0, measurement{}, rulerCursor{})
 	moveTos := 0
 	for _, op := range d.Ops {
 		if op.Kind == driver.DrawMoveTo {
