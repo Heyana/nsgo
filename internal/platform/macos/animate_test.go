@@ -104,6 +104,11 @@ func TestTransitionsRunBesideAnimatedValues(t *testing.T) {
 		loadAppKit()
 		s := &surface{native: objc.ID(classView).Send(selNew), animator: driver.NewAnimator(nil), epoch: time.Now()}
 		defer s.native.Send(selRelease)
+		// The transform transition starts the frame clock, whose stall watcher targets the surface's native view: a bare view answers no nsgoWatch:, so stop it before the view goes.
+		defer func() {
+			s.stopTicking()
+			invalidate(&s.link)
+		}()
 
 		tr := driver.Transition{Duration: time.Second, Easing: driver.EaseOut}
 		style := driver.ViewStyle{
