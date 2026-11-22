@@ -46,6 +46,7 @@ func (policy licensePolicy) validate() error {
 
 type licenseModule struct {
 	Path, Version, Dir string
+	Main               bool
 	Replace            *licenseModule
 }
 
@@ -178,7 +179,7 @@ func addLicensePackage(sources map[string]*licenseSource, pkg licensePackage) {
 		source = &licenseSource{name: module.Path, label: label, root: root, dirs: map[string]bool{root: true}}
 		sources[module.Path] = source
 	}
-	source.firstParty = source.firstParty || !pkg.DepOnly
+	source.firstParty = source.firstParty || !pkg.DepOnly || module.Main
 	source.addDirs(pkg.Dir)
 	for _, file := range pkg.EmbedFiles {
 		source.addDirs(filepath.Join(pkg.Dir, filepath.Dir(file)))

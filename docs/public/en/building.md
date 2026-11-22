@@ -133,7 +133,7 @@ Set `gamepad: true` when your app handles a hardware gamepad. Android declares b
 
 `nsgo build` puts `THIRD_PARTY_NOTICES.txt` in the standalone package's resources. It includes the license texts of the Go modules used by that target, the Go runtime and NSGo's bundled Java or JavaScript runtime. Web builds name the file by its content, as for other resources. Use `core.ThirdPartyNotices()` to show the same text in an in-app credits screen. The function returns an empty string in development, tests and builds of embedded libraries.
 
-By default an unknown or missing third-party license fails the build and a detected copyleft license warns. Set either rule to `error` or `warn`. The `allow` list exempts exact module paths from both rules and keeps any license text the build found.
+By default an unknown or missing third-party license fails the build and a detected copyleft license warns. Modules listed in the app's Go workspace (`go.work`) are treated as first-party code alongside the app's own module: any license files they contain are included, and they do not trigger third-party checks. Set either rule to `error` or `warn`. The `allow` list exempts exact module paths from both rules and keeps any license text the build found.
 
 ```yaml
 licenses:

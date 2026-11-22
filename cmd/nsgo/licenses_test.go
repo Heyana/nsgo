@@ -92,3 +92,99 @@ func TestLicenseNoticesCopyleftPolicy(t *testing.T) {
 		t.Fatalf("copyleft warning did not preserve the text, err = %v", err)
 	}
 }
+
+func TestLicenseNoticesWorkspaceModules(t *testing.T) {
+	t.Setenv("GOWORK", "")
+	t.Setenv("GOFLAGS", "")
+	copyleftText, err := assets.ReadLicenseFile("License/MPL-2.0/pristine.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	app := filepath.Join(dir, "app")
+	lib := filepath.Join(dir, "lib")
+	dep := filepath.Join(dir, "dep")
+	files := map[string]string{
+		filepath.Join(dir, "go.work"):           "go 1.27.3\n\nuse (\n\t./app\n\t./lib\n)\n\nreplace go.example/dep => ./dep\n",
+		filepath.Join(app, "go.mod"):            "module go.example/app\n\ngo 1.27.3\n\nrequire go.example/dep v0.0.0\n",
+		filepath.Join(app, "main.go"):           "package main\n\nimport _ \"go.example/lib/sub\"\n\nfunc main() {}\n",
+		filepath.Join(app, "dep.go"):            "//go:build withdep\n\npackage main\n\nimport _ \"go.example/dep/sub\"\n",
+		filepath.Join(lib, "go.mod"):            "module go.example/lib\n\ngo 1.27.3\n",
+		filepath.Join(lib, "sub", "sub.go"):     "package sub\n",
+		filepath.Join(lib, "unused", "u.go"):    "package unused\n",
+		filepath.Join(lib, "unused", "LICENSE"): "Unused package license text.\n",
+		filepath.Join(dep, "go.mod"):            "module go.example/dep\n\ngo 1.27.3\n",
+		filepath.Join(dep, "sub", "dep.go"):     "package sub\n",
+	}
+	for name, data := range files {
+		if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(name, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A sibling workspace module without a license file is first-party:
+	// no error, and omitted from the notices when it has no license documents.
+	p := &project{Dir: app, Licenses: licensePolicy{Unknown: "error", Copyleft: "error"}}
+	if _, err := p.licenseNoticesFile(t.Context(), nil, nil, nil, ""); err != nil {
+		t.Fatalf("workspace sibling without license failed: %v", err)
+	}
+	if strings.Contains(p.thirdPartyNotices, "go.example/lib") {
+		t.Fatalf("workspace sibling without license documents should be omitted:\n%s", p.thirdPartyNotices)
+	}
+
+	// A nested license document in an imported package of a workspace module is
+	// included in notices without triggering unknown or copyleft policy errors.
+	nestedLicense := filepath.Join(lib, "sub", "LICENSE")
+	if err := os.WriteFile(nestedLicense, copyleftText, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.licenseNoticesFile(t.Context(), nil, nil, nil, ""); err != nil {
+		t.Fatalf("workspace sibling with nested copyleft license failed: %v", err)
+	}
+	for _, want := range []string{"go.example/lib", "sub/LICENSE", string(copyleftText)} {
+		if !strings.Contains(p.thirdPartyNotices, want) {
+			t.Errorf("notices lack %q", want)
+		}
+	}
+	for _, unwanted := range []string{"License identification incomplete.", "unused/LICENSE"} {
+		if strings.Contains(p.thirdPartyNotices, unwanted) {
+			t.Errorf("notices should not contain %q", unwanted)
+		}
+	}
+
+	// A root license with unrecognized text in a workspace module is also
+	// included without failing unknown-license checks.
+	if err := os.Remove(nestedLicense); err != nil {
+		t.Fatal(err)
+	}
+	const customLicense = "Proprietary workspace module license.\n"
+	if err := os.WriteFile(filepath.Join(lib, "LICENSE"), []byte(customLicense), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.licenseNoticesFile(t.Context(), nil, nil, nil, ""); err != nil {
+		t.Fatalf("workspace sibling with custom license failed: %v", err)
+	}
+	for _, want := range []string{"go.example/lib", customLicense} {
+		if !strings.Contains(p.thirdPartyNotices, want) {
+			t.Errorf("notices lack %q", want)
+		}
+	}
+	if strings.Contains(p.thirdPartyNotices, "License identification incomplete.") {
+		t.Error("workspace sibling should not be marked incomplete")
+	}
+
+	// A module replaced by go.work (not listed in use) stays third-party and is
+	// still subject to unknown-license checks.
+	tags := []string{"withdep"}
+	if _, err := p.licenseNoticesFile(t.Context(), nil, tags, nil, ""); err == nil || !strings.Contains(err.Error(), "go.example/dep has no recognized license text") {
+		t.Fatalf("replaced third-party module in go.work = %v", err)
+	}
+	p.Licenses.Allow = []string{"go.example/dep"}
+	if _, err := p.licenseNoticesFile(t.Context(), nil, tags, nil, ""); err != nil {
+		t.Fatalf("allowed replaced third-party module failed: %v", err)
+	}
+}

@@ -73,7 +73,7 @@ Every go command that links the app takes `build.ldflags`, with the values of `b
 
 ### License notices
 
-Standalone builds list the target's Go packages with the release tags, build environment and TSX overlay. The universal macOS build takes the union of both architectures. `licenses.go` reads license and notice files from the selected module roots and package directories, including local replacements, vendored packages and the Go toolchain. It keeps the original text and uses Google's license classifier to apply `licenses.unknown`, `licenses.copyleft` and exact module exceptions. The shared resource walk puts `THIRD_PARTY_NOTICES.txt` in the package. The main package's generated overlay supplies the same string to `core.ThirdPartyNotices`.
+Standalone builds list the target's Go packages with the release tags, build environment and TSX overlay. The universal macOS build takes the union of both architectures. `licenses.go` reads license and notice files from the selected module roots and package directories, including local replacements, vendored packages and the Go toolchain. Main modules — the app's own module and sibling modules in a Go workspace (`Module.Main`) — are treated as first-party: their license files are included when present, and they are exempt from `licenses.unknown` and `licenses.copyleft`. For third-party modules, it keeps the original text and uses Google's license classifier to apply `licenses.unknown`, `licenses.copyleft` and exact module exceptions. The shared resource walk puts `THIRD_PARTY_NOTICES.txt` in the package. The main package's generated overlay supplies the same string to `core.ThirdPartyNotices`.
 
 ## Checking
 
