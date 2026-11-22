@@ -9,9 +9,7 @@ import (
 // Environment is what the platform reports about where the app runs. The
 // surface size is not part of it: Tree.Resize reports that.
 type Environment struct {
-	// CanSetPageHead says the surface owns the browser document's head.
-	// False for embedded surfaces, native targets and simulated test hosts
-	// without a document; independent of which OS a web app imitates.
+	// CanSetPageHead says the surface owns the browser document's head. False for embedded surfaces, native targets and simulated test hosts without a document; independent of which OS a web app imitates.
 	CanSetPageHead bool
 	// Network is connectivity when a platform or test supplies it with its environment.
 	Network *Network

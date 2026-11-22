@@ -27,15 +27,13 @@ type DesktopViewProps struct {
 
 // WebViewProps are a View's props only the web has.
 type WebViewProps struct {
-	// Href gives a link its browser address. Ordinary presses still use
-	// OnPress; a middle click or modified click opens the browser's link.
+	// Href gives a link its browser address. Ordinary presses still use OnPress; a middle click or modified click opens the browser's link.
 	Href     string
 	HrefFunc func() string
 }
 
 func (p WebViewProps) href(owner *Scope) string {
-	// A confined plugin cannot turn a native browser link into a path
-	// around its host's OpenURL access checks. Its OnPress remains scoped.
+	// A confined plugin cannot turn a native browser link into a path around its host's OpenURL access checks. Its OnPress remains scoped.
 	if p.HrefFunc != nil && p.Href != "" {
 		panic("core.View.Web sets both Href and HrefFunc, which replaces it")
 	}

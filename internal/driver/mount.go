@@ -408,13 +408,11 @@ const (
 	ItemPointerLock
 	// ItemHapticPattern replaces the current haptic pattern, or stops it when empty.
 	ItemHapticPattern
-	// ItemPageHead replaces the web document's scoped title and description.
-	// Sent only to a web backend; an embedded app leaves its host's head alone.
+	// ItemPageHead replaces the web document's scoped title and description. Sent only to a web backend; an embedded app leaves its host's head alone.
 	ItemPageHead
 )
 
-// PageHead is the merged metadata of the visible web.Head components.
-// An unset field restores the page's original value; a set empty one clears it.
+// PageHead is the merged metadata of the visible web.Head components. An unset field restores the page's original value; a set empty one clears it.
 type PageHead struct {
 	Title, Description       string
 	HasTitle, HasDescription bool

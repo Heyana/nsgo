@@ -17,9 +17,7 @@ type pageHeads struct {
 	started bool
 }
 
-// BindWebHead is the core's part of web.Head, which apps use: bind each
-// non-nil field to the current owner's lifetime. Native and confined
-// owners have no document metadata to change.
+// BindWebHead is the core's part of web.Head, which apps use: bind each non-nil field to the current owner's lifetime. Native and confined owners have no document metadata to change.
 func (cx *Scope) BindWebHead(title, description func() string) {
 	t := cx.tree()
 	if t == nil || !t.reported.CanSetPageHead || confinement(cx.current()) != nil || title == nil && description == nil {

@@ -8,18 +8,13 @@ import (
 	"unicode"
 )
 
-// MaxURLLength is the longest URL OpenURL opens, in bytes: a mailto:
-// link with a body fits.
+// MaxURLLength is the longest URL OpenURL opens, in bytes: a mailto: link with a body fits.
 const MaxURLLength = 16 << 10
 
-// The schemes OpenURL never opens: they run code or reach the app's own
-// files and data rather than another app.
+// The schemes OpenURL never opens: they run code or reach the app's own files and data rather than another app.
 var refusedSchemes = []string{"javascript", "vbscript", "data", "blob", "file", "about", "asset"}
 
-// CheckURL reports why OpenURL would refuse u: it must be absolute, at
-// most MaxURLLength bytes, without spaces or control characters, a web
-// address with a host, and of a scheme that opens another app, not
-// javascript:, data:, blob:, file:, about: or asset:.
+// CheckURL reports why OpenURL would refuse u: it must be absolute, at most MaxURLLength bytes, without spaces or control characters, a web address with a host, and of a scheme that opens another app, not javascript:, data:, blob:, file:, about: or asset:.
 func CheckURL(u string) error {
 	if len(u) > MaxURLLength {
 		return fmt.Errorf("core: a URL has at most %d bytes, this one %d", MaxURLLength, len(u))

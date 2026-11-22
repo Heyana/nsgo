@@ -1,13 +1,9 @@
-// Package web provides the browser document around an NSGo app. Its
-// components render nothing and do nothing on native targets.
+// Package web provides the browser document around an NSGo app. Its components render nothing and do nothing on native targets.
 package web
 
 import "github.com/nsgo-dev/nsgo/core"
 
-// Head sets the document's metadata while its owner is visible. The latest
-// mounted Head wins for each field it sets, restoring the earlier one when
-// hidden or removed. An embedded app leaves its host's document alone.
-// An empty static field inherits; a function returning empty clears it.
+// Head sets the document's metadata while its owner is visible. The latest mounted Head wins for each field it sets, restoring the earlier one when hidden or removed. An embedded app leaves its host's document alone. An empty static field inherits; a function returning empty clears it.
 type Head struct {
 	Title           string
 	TitleFunc       func() string

@@ -11,8 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Document semantics share the app's measured layout and styles. Native
-// controls keep their elements; ordinary views and texts may change tags.
+// Document semantics share the app's measured layout and styles. Native controls keep their elements; ordinary views and texts may change tags.
 func documentTag(kind driver.ViewKind, p *driver.ViewProps) string {
 	if kind != driver.KindView && kind != driver.KindText {
 		return ""
@@ -50,8 +49,7 @@ func (s *surface) setDocumentProps(v *view, p *driver.ViewProps) {
 	}
 }
 
-// retag preserves the mounted view's children, styles, listeners and live
-// animations when its reactive heading level or link address changes.
+// retag preserves the mounted view's children, styles, listeners and live animations when its reactive heading level or link address changes.
 func (s *surface) retag(v *view, tag string) {
 	old := v.el
 	if strings.EqualFold(old.Get("tagName").String(), tag) {
