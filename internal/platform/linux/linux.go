@@ -280,11 +280,12 @@ type window struct {
 	barDrag      *barDrag // the bar the pointer drags
 	pinching     *twoFinger
 	// wheelTaker is the view with OnWheel a touchpad scroll goes to.
-	wheelTaker *view
-	rotating   *twoFinger
-	closing    bool
-	lastWidth  driver.Points
-	lastHeight driver.Points
+	wheelTaker       *view
+	rotating         *twoFinger
+	closing          bool
+	watchingTimeZone bool
+	lastWidth        driver.Points
+	lastHeight       driver.Points
 	// resized is a commit the main thread stopped waiting for during a busy allocation. The next allocation observes its completion before waiting for the newer size.
 	resized       <-chan struct{}
 	started       bool
@@ -806,6 +807,10 @@ func (w *window) createWindow(opts Options) {
 // app's lifecycle change.
 func (w *window) setupSettings() {
 	followPowerProfiles()
+	if !w.watchingTimeZone {
+		w.watchingTimeZone = true
+		acquireTimeZoneWatcher()
+	}
 	gSignalConnect(w.surface, "map", cbMapped, w.handle)
 	gSignalConnect(w.surface, "unmap", cbMapped, w.handle)
 	if settings := gtkSettingsGetDefault(); settings != 0 {
@@ -955,6 +960,10 @@ func (w *window) shutdown(forced bool) {
 	}
 	w.unwatchSession()
 	w.login.close()
+	if w.watchingTimeZone {
+		w.watchingTimeZone = false
+		releaseTimeZoneWatcher()
+	}
 	w.closeAudio()
 	w.discovery.close()
 	w.releasePointer(false)

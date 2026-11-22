@@ -5,18 +5,133 @@ package web
 import (
 	"encoding/binary"
 	"strconv"
+	"sync"
 	"syscall/js"
 	"time"
 )
 
-// Go's js runtime sets time.Local to the offset the browser's zone has
-// now, so times across a daylight saving change show an hour off. As
-// NSH's web runtime asks the page for the offset at each time, this asks
-// the browser's Date for the zone's changes, from 1970 to 50 years ahead,
-// and makes time.Local of them.
-func init() {
-	if loc, err := time.LoadLocationFromTZData("Local", browserZone(time.Now().Year()+50)); err == nil {
+// Go's js runtime sets time.Local once to the offset the browser's zone has
+// at startup, so times across a daylight saving change show an hour off and
+// a change of the system's zone while the page stays open goes unseen.
+// refreshTimeZone checks Intl.DateTimeFormat().resolvedOptions().timeZone and
+// Date's offsets, loads the IANA zone when available (for apps with tzdata),
+// else synthesizes TZif transitions from the browser's Date from 1970 to 50
+// years ahead, else falls back to a fixed zone, and updates time.Local only
+// when the browser's zone changed. Times read after a change are in the new
+// zone; the app is not rendered again for it.
+
+const timeZoneCheckIntervalMS = 30_000
+
+type browserZoneSignature struct {
+	iana      string
+	nowOffset int
+	janOffset int
+	julOffset int
+}
+
+type webZoneTracker struct {
+	mu           sync.Mutex
+	hasSig       bool
+	lastSig      browserZoneSignature
+	readSig      func(time.Time) browserZoneSignature
+	loadLocation func(string) (*time.Location, error)
+	synthTZif    func(int) []byte
+	apply        func(*time.Location)
+	now          func() time.Time
+}
+
+var webTimeZone = webZoneTracker{
+	readSig:      readBrowserZoneSignature,
+	loadLocation: time.LoadLocation,
+	synthTZif:    browserZone,
+	apply: func(loc *time.Location) {
+		// Go has no other way to change the zone: the store races with readers of time.Local, but it is one pointer, which none sees torn.
 		time.Local = loc
+	},
+	now: time.Now,
+}
+
+func init() {
+	refreshTimeZone()
+}
+
+func refreshTimeZone() bool {
+	return webTimeZone.refresh()
+}
+
+func (t *webZoneTracker) refresh() bool {
+	now := time.Now()
+	if t.now != nil {
+		now = t.now()
+	}
+	sig := t.readSig(now)
+
+	t.mu.Lock()
+	if t.hasSig && sig == t.lastSig {
+		t.mu.Unlock()
+		return false
+	}
+	t.lastSig = sig
+	t.hasSig = true
+	t.mu.Unlock()
+
+	loc := loadBrowserLocation(sig, now.UTC().Year()+50, t.loadLocation, t.synthTZif)
+	t.apply(loc)
+	return true
+}
+
+func loadBrowserLocation(sig browserZoneSignature, endYear int, loadLocation func(string) (*time.Location, error), synthTZif func(int) []byte) *time.Location {
+	if sig.iana != "" && loadLocation != nil {
+		if loc, err := loadLocation(sig.iana); err == nil {
+			return loc
+		}
+	}
+	name := sig.iana
+	if name == "" {
+		name = "Local"
+	}
+	if synthTZif != nil {
+		if data := synthTZif(endYear); len(data) > 0 {
+			if loc, err := time.LoadLocationFromTZData(name, data); err == nil {
+				return loc
+			}
+		}
+	}
+	return time.FixedZone(name, sig.nowOffset)
+}
+
+func browserTimeZoneID() string {
+	intl := js.Global().Get("Intl")
+	if !intl.Truthy() {
+		return ""
+	}
+	dtf := intl.Get("DateTimeFormat")
+	if dtf.Type() != js.TypeFunction {
+		return ""
+	}
+	inst := dtf.New()
+	if !inst.Truthy() || inst.Get("resolvedOptions").Type() != js.TypeFunction {
+		return ""
+	}
+	opts := inst.Call("resolvedOptions")
+	if !opts.Truthy() {
+		return ""
+	}
+	tz := opts.Get("timeZone")
+	if tz.Type() != js.TypeString {
+		return ""
+	}
+	return tz.String()
+}
+
+func readBrowserZoneSignature(now time.Time) browserZoneSignature {
+	date := dateClass()
+	year := now.UTC().Year()
+	return browserZoneSignature{
+		iana:      browserTimeZoneID(),
+		nowOffset: offsetAt(date, float64(now.UnixMilli())),
+		janOffset: offsetAt(date, float64(time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli())),
+		julOffset: offsetAt(date, float64(time.Date(year, 7, 1, 0, 0, 0, 0, time.UTC).UnixMilli())),
 	}
 }
 
@@ -65,7 +180,7 @@ func browserZone(end int) []byte {
 	}
 	// A zone type per offset; daylight saving is any offset above this
 	// year's smaller one.
-	year := time.Now().Year()
+	year := time.Now().UTC().Year()
 	std := min(offsetAt(date, float64(time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli())),
 		offsetAt(date, float64(time.Date(year, 7, 1, 0, 0, 0, 0, time.UTC).UnixMilli())))
 	var types []int

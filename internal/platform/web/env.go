@@ -22,6 +22,8 @@ type watch struct {
 	changed          js.Func
 	refreshRate      float64
 	measuringDisplay bool
+	tzTimer          js.Value
+	tzTick           js.Func
 	// settings are what Intl says of settingsFor's hours and weeks.
 	settingsFor string
 	settings    driver.LocaleSettings
@@ -100,6 +102,17 @@ func (s *surface) watchChanges() {
 		screen.Call("addEventListener", "change", displayChanged)
 	}
 	s.measureDisplayRate()
+	g.Call("addEventListener", "pageshow", w.changed)
+	// Browsers fire no time-zone change event; re-check lightly while the page stays visible.
+	if g.Get("setInterval").Type() == js.TypeFunction {
+		w.tzTick = js.FuncOf(func(js.Value, []js.Value) any {
+			if s.doc.Get("visibilityState").String() != "hidden" {
+				refreshTimeZone()
+			}
+			return nil
+		})
+		w.tzTimer = g.Call("setInterval", w.tzTick, timeZoneCheckIntervalMS)
+	}
 	// A page that loses the focus or hides hears no key or mouse button come up, so every held one comes up then.
 	g.Call("addEventListener", "blur", js.FuncOf(func(js.Value, []js.Value) any {
 		s.releaseKeys(driver.Modifiers{}, true)
@@ -125,6 +138,11 @@ func (s *surface) watchChanges() {
 		if args[0].Get("persisted").Bool() {
 			s.engine.Hide()
 		} else {
+			if w.tzTimer.Truthy() {
+				g.Call("clearInterval", w.tzTimer)
+				w.tzTimer = js.Undefined()
+				w.tzTick.Release()
+			}
 			s.clearDisplayHolds()
 			s.engine.Close()
 		}
@@ -153,6 +171,7 @@ func (s *surface) watchRatio(ratio float64) {
 }
 
 func (s *surface) updateEnv() {
+	refreshTimeZone()
 	if ratio := js.Global().Get("devicePixelRatio").Float(); ratio != s.watch.ratio {
 		s.watchRatio(ratio)
 		s.measureDisplayRate()
