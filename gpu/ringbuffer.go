@@ -185,7 +185,7 @@ func (d *Device) CreateRingBuffer(cx *core.Scope, desc RingBufferDesc) (*RingBuf
 		dd.Shared = backing
 	}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBuffer, ID: id, Buffer: &dd})
-	buf := &Buffer{dev: d, id: id, size: totalSize, usage: usage}
+	buf := &Buffer{dev: d, id: id, epoch: d.generation, label: desc.Label, size: totalSize, usage: usage}
 
 	rb := &RingBuffer{
 		dev:            d,

@@ -13,7 +13,6 @@ type SoftwareRenderer struct {
 	mu   sync.Mutex
 	soft *driver.GPUSoftwareDevice
 	dev  *Device
-	mu   sync.Mutex
 	err  error
 }
 
@@ -71,9 +70,7 @@ func newSoftwareRenderer(width, height int, depthFormat TextureFormat, features 
 		r.mu.Lock()
 		rbs, err := soft.Submit(frame)
 		if err != nil {
-			r.mu.Lock()
 			r.err = err
-			r.mu.Unlock()
 		}
 		r.mu.Unlock()
 		for _, rb := range rbs {

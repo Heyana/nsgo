@@ -1277,10 +1277,10 @@ func (d *Device) preparePipelineDesc(desc PipelineDesc) (driver.GPUPipelineDesc,
 	dVBs := make([]driver.GPUVertexBufferLayout, len(desc.VertexBuffers))
 	for i, vb := range desc.VertexBuffers {
 		if vb.StepMode != StepVertex && vb.StepMode != StepInstance {
-			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("vertex buffer %d has invalid StepMode %d", i, vb.StepMode)}
+			return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("vertex buffer %d has invalid StepMode %d", i, vb.StepMode)}
 		}
 		if vb.StepMode == StepVertex && vb.StepRate > 1 {
-			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("vertex buffer %d StepRate %d requires StepInstance", i, vb.StepRate)}
+			return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("vertex buffer %d StepRate %d requires StepInstance", i, vb.StepRate)}
 		}
 		stepRate := vb.StepRate
 		if vb.StepMode == StepInstance && stepRate == 0 {
