@@ -8,6 +8,7 @@ import android.view.View;
 final class TextNode extends View {
     private final Layout text;
     int selectable = Protocol.SELECTABLE_ON;
+    TextCopy copy = TextCopy.EMPTY;
     int from, to;
 
     TextNode(Context context, String text, int x, int y, int width, int height) {

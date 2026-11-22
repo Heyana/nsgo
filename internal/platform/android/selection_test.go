@@ -61,7 +61,7 @@ func runSelectionFixture(t *testing.T, host, area driver.Point, nodes selectionF
 		input.byte(step.op)
 		input.floats(float32(step.x), float32(step.y))
 	}
-	return runJavaAlgorithm(t, "selection", "SelectionCheck", input.buf, "Selection", "Protocol")
+	return runJavaAlgorithm(t, "selection", "SelectionCheck", input.buf, "Selection", "Protocol", "TextCopy")
 }
 
 type selectionFixture struct {
@@ -202,7 +202,7 @@ func TestSelectionRefreshReportsChanges(t *testing.T) {
 }
 
 func TestSelectionProcessTextToolbar(t *testing.T) {
-	out := runJavaAlgorithm(t, "selection", "ProcessTextCheck", nil, "Selection", "Protocol")
+	out := runJavaAlgorithm(t, "selection", "ProcessTextCheck", nil, "Selection", "Protocol", "TextCopy")
 	r := reader{out}
 
 	if action, mime, flags := r.str(), r.str(), r.u32(); action != "android.intent.action.PROCESS_TEXT" || mime != "text/plain" || flags != 0 {

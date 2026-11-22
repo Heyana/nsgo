@@ -3209,7 +3209,17 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
             // Optional footer: old runtimes ignore it, and pixel-only
             // follow-up batches retain the last committed version.
-            if (in.available() >= 8) geometryVersion = in.readLong();
+            if (in.available() >= 8) {
+                long version = in.readLong();
+                if (version != 0) geometryVersion = version;
+            }
+            if (in.available() >= 4) {
+                for (int i = 0, count = in.readInt(); i < count; i++) {
+                    Node n = nodes.get(in.readInt());
+                    TextCopy copy = TextCopy.read(in);
+                    if (n != null && n.view instanceof TextNode) ((TextNode) n.view).copy = copy;
+                }
+            }
         } catch (IOException e) {
             Log.e(TAG, "bad batch", e);
         }
@@ -3444,6 +3454,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 style(n, in);
                 break;
             case Protocol.ITEM_TEXT: {
+                ((TextNode) n.view).copy = TextCopy.EMPTY;
                 n.text = Protocol.readString(in);
                 int laid = in.readInt();
                 StaticLayout layout = layouts.remove(laid);

@@ -39,7 +39,7 @@ core.Text{Style: core.Style{FontSize: 15}, Spans: []core.Span{
 
 Set `BackgroundInsetTop: core.Pct(62)` on a span with a `Background` to highlight the lower 38% of its box on each line. `BackgroundInsetBottom` trims the lower edge. Both insets take points or percentages of the box's height, from the font's ascent to its descent. They leave text layout unchanged. In TSX, set `backgroundInsetTop: "62%"` and `backgroundInsetBottom` in a nested `<Text>`'s style. Rounded backgrounds and vertical insets also render on HarmonyOS and the four mini-program targets.
 
-`Attachment` puts a view inside a text, in place of the span's content. It is laid out at its own size, wraps with the words around it and takes its own presses, so an icon, an image or a small button can sit in a line. By default its first text line aligns to the surrounding baseline, using the metrics of its actual font. An `Em` canvas provides its own baseline, and a view without a baseline sits on its bottom edge. Set `Style.VerticalAlign` to choose another alignment.
+`Attachment` puts a view inside a text, in place of the span's content. It is laid out at its own size, wraps with the words around it and takes its own presses, so an icon, an image or a small button can sit in a line. A selection copies the span's `Content` in its place, leaving it out when empty. By default its first text line aligns to the surrounding baseline, using the metrics of its actual font. An `Em` canvas provides its own baseline, and a view without a baseline sits on its bottom edge. Set `Style.VerticalAlign` to choose another alignment.
 
 ```go
 core.Text{Style: core.Style{FontSize: 17, LineHeight: 24}, Spans: []core.Span{

@@ -1905,10 +1905,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			}
 		}
 	}
-	if b.GeometryVersion != 0 {
-		// An optional footer keeps earlier runtimes and their batch decoder compatible while the runtime workflow rebuilds the new observer.
-		w.u64(b.GeometryVersion)
-	}
+	writeTextCopyFooter(w, b)
 }
 
 // sendFonts tells Java the app's font files, paths in the APK's assets,

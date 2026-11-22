@@ -311,7 +311,7 @@ final class Selection {
         if (listener != null) listener.onSelectionChange(selected, x, y, width, height);
     }
 
-    /** The selected text: texts on one row joined by a tab, others by a line break; attachments left out. */
+    /** The selected text: texts on one row joined by a tab, others by a line break; attachments as their copy text. */
     String text() {
         if (start == null) return "";
         StringBuilder out = new StringBuilder();
@@ -323,7 +323,7 @@ final class Selection {
             Rect f = boxes.get(i);
             if (previous != null) out.append(previous.top < f.bottom && f.top < previous.bottom ? '\t' : '\n');
             previous = f;
-            out.append(c.subSequence(from, to).toString().replace("￼", ""));
+            out.append(texts.get(i).copy.text(c, from, to));
         }
         return out.toString();
     }
@@ -469,6 +469,13 @@ final class Selection {
         }
     }
 
+    /** Copies the current selection through the same path as the floating toolbar. */
+    void copy() {
+        ClipboardManager clipboard = host.getContext().getSystemService(ClipboardManager.class);
+        clipboard.setPrimaryClip(ClipData.newPlainText(null, text()));
+        hideToolbar();
+    }
+
     private void populateProcessTextMenu(Menu menu, List<ResolveInfo> out) {
         out.clear();
         if (isEmpty()) return;
@@ -507,9 +514,7 @@ final class Selection {
             @Override
             public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
                 if (item.getItemId() == android.R.id.copy) {
-                    ClipboardManager clipboard = host.getContext().getSystemService(ClipboardManager.class);
-                    clipboard.setPrimaryClip(ClipData.newPlainText(null, text()));
-                    mode.finish();
+                    copy();
                     return true;
                 }
                 if (item.getItemId() == android.R.id.selectAll) {

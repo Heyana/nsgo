@@ -273,6 +273,12 @@ final class TestAgent {
                 view.testReply(id, "", new JSONObject().put("Start", field.getSelectionStart()).put("End", field.getSelectionEnd()).toString());
                 return;
             }
+            case "copy-selection": {
+                Selection selected = (Selection) field(view, "selection");
+                if (selected == null || selected.isEmpty()) throw new IllegalStateException("no native text selection");
+                selected.copy();
+                break;
+            }
             case "editor-action": {
                 View focused = activity().getCurrentFocus();
                 EditorInfo info = new EditorInfo();

@@ -45,6 +45,7 @@ final class TextNode extends FrameLayout {
     private final Paint tintPaint = new Paint();
     /** Whether the text selects, as driver.Selectable, and its highlight's color, 0 for the theme's. */
     int selectable;
+    TextCopy copy = TextCopy.EMPTY;
     private int selectionColor;
     /** The UTF-16 range a selection highlights, and its outline. */
     private int selStart, selEnd;
