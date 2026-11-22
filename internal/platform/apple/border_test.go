@@ -66,7 +66,7 @@ func TestForgetBordersReleasesSideLayers(t *testing.T) {
 	purego.RegisterLibFunc(&retainCount, load("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"), "CFGetRetainCount")
 	layer := objc.ID(objc.GetClass("CALayer")).Send(selNew)
 	defer layer.Send(selRelease)
-	setBorders(layer, &driver.ViewStyle{Borders: driver.Edges{Top: 1, Bottom: 2}, BorderColors: driver.EdgeColors{Top: driver.RGB(0xff0000), Bottom: driver.RGB(0x0000ff)}}, &driver.Transition{})
+	setBorders(layer, &driver.ViewStyle{Borders: driver.Edges{Top: 1, Bottom: 2}, BorderColors: driver.EdgeColors{Top: driver.RGB(0xff0000), Bottom: driver.RGB(0x0000ff)}}, &driver.Transition{}, 0)
 	r := rings[layer]
 	if r == nil || r.sides[0] == 0 || r.sides[2] == 0 {
 		t.Fatal("per-side border did not create its side layers")
