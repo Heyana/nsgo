@@ -13,9 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// glGPUView hosts a GtkGLArea for a driver.KindGPU view and executes
-// off-commit driver.GPUFrame batches on its OpenGL 3.3 Core or OpenGL ES 3.0
-// context through libepoxy (purego, zero cgo).
+// glGPUView hosts a GtkGLArea for a driver.KindGPU view and executes off-commit driver.GPUFrame batches on its OpenGL 3.3 Core or OpenGL ES 3.0 context through libepoxy (purego, zero cgo).
 type glGPUView struct {
 	hosted
 	area        uintptr
@@ -29,8 +27,7 @@ type glGPUView struct {
 	frames      []driver.GPUFrame
 }
 
-// Additional OpenGL 3.3 Core / OpenGL ES 3.0 and GtkGLArea functions bound
-// lazily through libepoxy and GTK 4.
+// Additional OpenGL 3.3 Core / OpenGL ES 3.0 and GtkGLArea functions bound lazily through libepoxy and GTK 4.
 var (
 	gpuGLOnce bool
 	gpuGLOK   bool
@@ -93,8 +90,7 @@ var (
 	gtkGLAreaGetContext          func(uintptr) uintptr
 )
 
-// loadGPU binds the OpenGL 3.3 Core / ES 3.0 and GtkGLArea functions once and
-// reports whether Linux GPU views are supported on this machine.
+// loadGPU binds the OpenGL 3.3 Core / ES 3.0 and GtkGLArea functions once and reports whether Linux GPU views are supported on this machine.
 func loadGPU() bool {
 	if gpuGLOnce {
 		return gpuGLOK
@@ -489,11 +485,9 @@ func (w *window) setGPU(v *view, cfg driver.GPUViewConfig) {
 		}
 		gtkGLAreaSetHasDepthBuffer(g.area, boolInt(cfg.DepthFormat != driver.GPUFormatUndefined))
 		gtkGLAreaSetHasStencilBuffer(g.area, boolInt(cfg.DepthFormat == driver.GPUFormatDepth24PlusStencil8))
-		// Keep the last rendered framebuffer across HUD/window repaints;
-		// SubmitGPU calls gtk_gl_area_queue_render for each new GPUFrame.
+		// Keep the last rendered framebuffer across HUD/window repaints; SubmitGPU calls gtk_gl_area_queue_render for each new GPUFrame.
 		gtkGLAreaSetAutoRender(g.area, 0)
-		// Host underneath v's children so HUD overlays paint above the 3D surface
-		// and receive pointer events normally.
+		// Host underneath v's children so HUD overlays paint above the 3D surface and receive pointer events normally.
 		w.hostUnder(v, &g.hosted, g.area, false)
 		w.connect(v, g.area, "realize", cbGPURealize)
 		w.connect(v, g.area, "resize", cbGPUResize)
@@ -532,9 +526,7 @@ func (w *window) closeGPU(v *view) {
 	v.gpu = nil
 }
 
-// SubmitGPU implements engine.Platform: queues an off-commit GPUFrame from the
-// engine goroutine and wakes the GTK main loop to schedule gtk_gl_area_queue_render
-// without touching the UI view tree.
+// SubmitGPU implements engine.Platform: queues an off-commit GPUFrame from the engine goroutine and wakes the GTK main loop to schedule gtk_gl_area_queue_render without touching the UI view tree.
 func (w *window) SubmitGPU(frame driver.GPUFrame) {
 	w.gpuMu.Lock()
 	if w.gpuPending == nil {

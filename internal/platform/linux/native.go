@@ -50,8 +50,7 @@ func (w *window) host(v *view, h *hosted, child uintptr, target bool) {
 	}
 }
 
-// hostUnder makes child v's hosted widget beneath v's app children so HUD
-// overlays render above it.
+// hostUnder makes child v's hosted widget beneath v's app children so HUD overlays render above it.
 func (w *window) hostUnder(v *view, h *hosted, child uintptr, target bool) {
 	if h.child != 0 {
 		w.unparentWidget(h.child)

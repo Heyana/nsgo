@@ -8,8 +8,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/shaderir/glsl"
 )
 
-// OpenGL 3.3 Core / OpenGL ES 3.0 constants used by the Linux GPU backend.
-// Prefixed with gpuGL to stay independent of the build-tagged 2D shader path.
+// OpenGL 3.3 Core / OpenGL ES 3.0 constants used by the Linux GPU backend. Prefixed with gpuGL to stay independent of the build-tagged 2D shader path.
 const (
 	gpuGLFalse = 0
 	gpuGLTrue  = 1
@@ -157,9 +156,7 @@ const (
 	gpuGLUniformBufferOffsetAlign = 0x8A34
 )
 
-// glAPI abstracts OpenGL 3.3 Core / OpenGL ES 3.0 entry points so the full GPU
-// command interpreter, resource manager, and state machine are unit-testable on
-// any host while gpu.go wires it directly to libepoxy through purego on Linux.
+// glAPI abstracts OpenGL 3.3 Core / OpenGL ES 3.0 entry points so the full GPU command interpreter, resource manager, and state machine are unit-testable on any host while gpu.go wires it directly to libepoxy through purego on Linux.
 type glAPI interface {
 	// Shaders and programs.
 	CreateShader(kind uint32) uint32
@@ -282,8 +279,7 @@ type glGPUTexture struct {
 	height    uint32
 	layers    uint32
 	mipLevels uint32
-	// rendered records whether the texture's current contents came from an FBO
-	// render pass (OpenGL Y-up) rather than a top-row-first WriteTexture upload.
+	// rendered records whether the texture's current contents came from an FBO render pass (OpenGL Y-up) rather than a top-row-first WriteTexture upload.
 	rendered bool
 }
 
@@ -316,8 +312,7 @@ type glGPUReadback struct {
 	errMsg string
 }
 
-// glGPUContext owns all retained OpenGL objects and executes driver.GPUFrame
-// batches within one GtkGLArea's GL context.
+// glGPUContext owns all retained OpenGL objects and executes driver.GPUFrame batches within one GtkGLArea's GL context.
 type glGPUContext struct {
 	gl            glAPI
 	es            bool
@@ -374,8 +369,7 @@ func mergeGPULimits(maxTex, maxUBO, minUBOAlign, maxAttribs int32) driver.GPULim
 	return lim
 }
 
-// destroyAll deletes every OpenGL object owned by c. Caller must have made the
-// owning GL context current.
+// destroyAll deletes every OpenGL object owned by c. Caller must have made the owning GL context current.
 func (c *glGPUContext) destroyAll() {
 	if c == nil || c.gl == nil {
 		return
@@ -424,8 +418,7 @@ func (c *glGPUContext) destroyAll() {
 	c.lastOffscreenColors = 0
 }
 
-// executeFrame runs one submitted driver.GPUFrame against the active GL context:
-// non-readback resource ops -> copy ops -> render passes -> readbacks.
+// executeFrame runs one submitted driver.GPUFrame against the active GL context: non-readback resource ops -> copy ops -> render passes -> readbacks.
 func (c *glGPUContext) executeFrame(frame driver.GPUFrame, defaultFBO uint32, surfaceW, surfaceH int32) ([]glGPUReadback, []glGPUError) {
 	var (
 		readbacks   []glGPUReadback
@@ -855,8 +848,7 @@ func (c *glGPUContext) createSampler(id driver.GPUID, desc *driver.GPUSamplerDes
 	return nil
 }
 
-// compilePipelineGLSL emits GLSL 3.30 Core or GLSL ES 3.00 sources and binding
-// tables from desc, handling both single-module and separate VS/FS modules.
+// compilePipelineGLSL emits GLSL 3.30 Core or GLSL ES 3.00 sources and binding tables from desc, handling both single-module and separate VS/FS modules.
 func compilePipelineGLSL(desc *driver.GPUPipelineDesc, version glsl.GLSLVersion) (glsl.PipelineSource, error) {
 	if desc == nil || desc.Vertex.IR == nil {
 		return glsl.PipelineSource{}, fmt.Errorf("pipeline missing vertex shader IR")
@@ -1191,8 +1183,7 @@ func glBlendOperation(op driver.GPUBlendOperation) uint32 {
 	}
 }
 
-// glFlipYRect converts a WebGPU top-left rect (y, h) inside a target of height
-// targetH into an OpenGL bottom-left Y coordinate.
+// glFlipYRect converts a WebGPU top-left rect (y, h) inside a target of height targetH into an OpenGL bottom-left Y coordinate.
 func glFlipYRect(y, h, targetH int32) int32 {
 	return targetH - (y + h)
 }
@@ -1211,8 +1202,7 @@ type glPassState struct {
 	indexFormat    driver.GPUIndexFormat
 }
 
-// passIsOffscreen reports whether pass targets offscreen texture attachments
-// rather than the view's swapchain framebuffer.
+// passIsOffscreen reports whether pass targets offscreen texture attachments rather than the view's swapchain framebuffer.
 func passIsOffscreen(pass driver.GPUPass) bool {
 	for _, ca := range pass.ColorAttachments {
 		if ca.Texture != 0 {

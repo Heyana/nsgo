@@ -786,8 +786,7 @@ func TestGLGPURenderStateDepthCullBlendViewportScissor(t *testing.T) {
 
 func TestGLGPUOffscreenFBOAndReadback(t *testing.T) {
 	gl := newMockGL()
-	// 2x2 RGBA pixels returned by mock glReadPixels (OpenGL bottom-to-top):
-	// bottom row = blue (0,0,255,255), top row = red (255,0,0,255)
+	// 2x2 RGBA pixels returned by mock glReadPixels (OpenGL bottom-to-top): bottom row = blue (0,0,255,255), top row = red (255,0,0,255)
 	gl.readPixelsSource = []byte{
 		0, 0, 255, 255, 0, 0, 255, 255,
 		255, 0, 0, 255, 255, 0, 0, 255,

@@ -286,9 +286,7 @@ func firstChildView(parent uintptr) uintptr {
 	return 0
 }
 
-// firstNative returns the first child of p that is no NsgoView: the
-// first native widget it hosts above its children, or 0. A GPU view's
-// GtkGLArea sits beneath p's children so HUD overlays paint over it.
+// firstNative returns the first child of p that is no NsgoView: the first native widget it hosts above its children, or 0. A GPU view's GtkGLArea sits beneath p's children so HUD overlays paint over it.
 func firstNative(p *view) uintptr {
 	for c := gtkWidgetGetFirstChild(p.widget); c != 0; c = gtkWidgetGetNextSibling(c) {
 		if p.gpu != nil && c == p.gpu.area {

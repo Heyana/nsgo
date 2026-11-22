@@ -74,10 +74,7 @@ func packU16(vals ...uint16) []byte {
 	return out
 }
 
-// TestLinuxGPUViewDepthTestedTexturedLitAndHUD opens a real GTK 4 window with a
-// GtkGLArea-backed gpu.View, renders a depth-tested, textured, lit 3D scene
-// with a HUD child overlaid on top, and verifies pixels via ReadSurface and
-// window capture, plus clean GL resource release on unmount.
+// TestLinuxGPUViewDepthTestedTexturedLitAndHUD opens a real GTK 4 window with a GtkGLArea-backed gpu.View, renders a depth-tested, textured, lit 3D scene with a HUD child overlaid on top, and verifies pixels via ReadSurface and window capture, plus clean GL resource release on unmount.
 func TestLinuxGPUViewDepthTestedTexturedLitAndHUD(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")
@@ -100,9 +97,7 @@ func TestLinuxGPUViewDepthTestedTexturedLitAndHUD(t *testing.T) {
 		}
 	}
 
-	// Near red quad at z = 0.2 (drawn FIRST) and larger far blue quad at z = 0.8
-	// (drawn SECOND — depth test must keep the near red quad in the center!).
-	// Layout per vertex: pos(3) + normal(3) + uv(2) + tint(4) = 12 floats = 48 bytes.
+	// Near red quad at z = 0.2 (drawn FIRST) and larger far blue quad at z = 0.8 (drawn SECOND — depth test must keep the near red quad in the center!). Layout per vertex: pos(3) + normal(3) + uv(2) + tint(4) = 12 floats = 48 bytes.
 	verts := packF32(
 		// Near red quad (0..3) at z = 0.2, normal = +Z
 		-0.45, -0.45, 0.2, 0, 0, 1, 0, 1, 1, 0, 0, 1,
@@ -305,8 +300,7 @@ func TestLinuxGPUViewDepthTestedTexturedLitAndHUD(t *testing.T) {
 		t.Skip("OpenGL 3.3 / ES 3.0 unavailable in this Linux environment")
 	}
 
-	// Wait for the depth-tested 3D scene and HUD overlay to render.
-	// Note Cairo/X11 pixels in waitPixels are BGRA ([0]=B, [1]=G, [2]=R).
+	// Wait for the depth-tested 3D scene and HUD overlay to render. Note Cairo/X11 pixels in waitPixels are BGRA ([0]=B, [1]=G, [2]=R).
 	waitPixels(t, w, "green HUD top-left, red near quad center, blue far quad rim", func(p pixels) bool {
 		hud := p.at(12, 12)      // green HUD child painted OVER the GPU surface
 		center := p.at(100, 100) // near red quad wins depth test
