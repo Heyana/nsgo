@@ -16,14 +16,7 @@ import (
 
 // Shared-mode, event-driven WASAPI pull PCM output over syscall COM vtables.
 //
-// Each open stream owns one OS-thread-locked goroutine initialized in the
-// multithreaded COM apartment (COINIT_MULTITHREADED). That goroutine owns all
-// WASAPI COM interfaces (IMMDeviceEnumerator, IMMDevice, IAudioClient,
-// IAudioRenderClient, IAudioClock), drives the WaitForMultipleObjects event
-// loop, invokes the client's Render callback, samples IAudioClock + QPC for
-// monotonic Position, and handles Start, Pause, Flush, Close and device-switch
-// notifications without cross-thread COM calls or lock contention on the audio
-// thread.
+// Each open stream owns one OS-thread-locked goroutine initialized in the multithreaded COM apartment (COINIT_MULTITHREADED). That goroutine owns all WASAPI COM interfaces (IMMDeviceEnumerator, IMMDevice, IAudioClient, IAudioRenderClient, IAudioClock), drives the WaitForMultipleObjects event loop, invokes the client's Render callback, samples IAudioClock + QPC for monotonic Position, and handles Start, Pause, Flush, Close and device-switch notifications without cross-thread COM calls or lock contention on the audio thread.
 
 var (
 	wasapiCoUninitialize            = ole32.NewProc("CoUninitialize")
@@ -715,8 +708,7 @@ func (o *wasapiOutput) Close() {
 	<-o.done
 }
 
-// wasapiNotifier implements IMMNotificationClient so default playback device
-// switches, removals and state changes wake the worker to pause and interrupt.
+// wasapiNotifier implements IMMNotificationClient so default playback device switches, removals and state changes wake the worker to pause and interrupt.
 type wasapiNotifier struct {
 	vtbl   *[8]uintptr
 	refs   atomic.Int32

@@ -7,9 +7,7 @@ import (
 	"unsafe"
 )
 
-// TestWASAPIGUIDs verifies every WASAPI class and interface ID against
-// Windows' CLSIDFromString using the canonical strings from mmdeviceapi.h,
-// audioclient.h and ksmedia.h.
+// TestWASAPIGUIDs verifies every WASAPI class and interface ID against Windows' CLSIDFromString using the canonical strings from mmdeviceapi.h, audioclient.h and ksmedia.h.
 func TestWASAPIGUIDs(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

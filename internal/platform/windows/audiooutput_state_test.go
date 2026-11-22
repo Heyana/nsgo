@@ -160,8 +160,7 @@ func TestWASAPIPositionClockFlushAndMonotonicity(t *testing.T) {
 		t.Fatalf("second resetRun dropped %d, want 0", again)
 	}
 
-	// After IAudioClient.Reset, hardware clock restarts at 0, then advances to 240.
-	// Monotonic position must continue from base=500 -> 740.
+	// After IAudioClient.Reset, hardware clock restarts at 0, then advances to 240. Monotonic position must continue from base=500 -> 740.
 	t2 := t1.Add(15 * time.Millisecond)
 	if f, a := s.sampleClock(0, devFreq, 3_000_000, 3_000_000, qpcFreq, t2); f != 500 || !a.Equal(t1.Add(-2*time.Millisecond)) {
 		t.Fatalf("zero after reset changed position: %d at %v", f, a)
