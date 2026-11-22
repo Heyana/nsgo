@@ -22,6 +22,8 @@ core.View{
 
 On macOS, iOS, Windows and Linux, `OnNavigationStateChange` also reports same-document URL, history and title changes.
 
+Set `WebView.Media` to `core.WebMicrophone`, `core.WebCamera` or both to allow a page’s `getUserMedia` requests. Declare the usage descriptions in `apple.info` and `RECORD_AUDIO` or `CAMERA` in `android.permissions`; the system still asks the user. On Android, a pending request is refused if the app removes one of its requested devices, the page leaves or the view closes while the system prompt is open. The page must request access again after such a change.
+
 `WebView.Muted` and `MutedFunc` (TSX `muted`) silence all page audio on Windows and Linux, including Web Audio and embedded frames. macOS 12 and iOS 15 or later suspend media playback while muted. Other hosts keep their usual playback. Updates apply to the current page and carry across navigations.
 
 In TSX, a change of `injectedJavaScriptBeforeContentLoaded` loads the source again with the new script in the same web view, as `InjectedJavaScriptBeforeContentFunc` does; a change of `injectedJavaScript` makes a new web view, which loads the source anew, as a change of `userAgent`, `userAgentSuffix` or `mobile` does.

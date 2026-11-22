@@ -11,8 +11,6 @@ import android.view.ContextThemeWrapper;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
-import android.webkit.PermissionRequest;
-import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -35,8 +33,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
@@ -128,9 +124,7 @@ final class WebNode {
     private Map<String, String> headers = new HashMap<>();
     private boolean noScroll;
     private boolean incognito;
-    /** What pages may capture through getUserMedia, driver.WebMedia's bits: MICROPHONE, CAMERA. */
-    private int media;
-    private static final int MICROPHONE = 1, CAMERA = 2;
+    private final WebMedia media;
     private String downloadDir = "";
     /** The blob: downloads waiting for their page's bytes, by the token the page answers with. UI thread. */
     private final Map<String, BlobAnswer> blobs = new HashMap<>();
@@ -153,11 +147,13 @@ final class WebNode {
         this.reporter = reporter;
         themed = new ContextThemeWrapper(context, android.R.style.Theme_DeviceDefault_NoActionBar);
         view = new WebView(themed);
+        media = new WebMedia(p -> view.getContext().checkSelfPermission(p)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED, reporter::askPermissions);
         view.getSettings().setDomStorageEnabled(true);
         view.addJavascriptInterface(new Bridge(), INTERFACE);
         view.addJavascriptInterface(new Blobs(), BLOBS);
         view.setWebViewClient(new Client());
-        view.setWebChromeClient(new Chrome());
+        view.setWebChromeClient(media);
         view.setDownloadListener(this::download);
         view.setOnTouchListener((v, e) -> {
             if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
@@ -258,6 +254,7 @@ final class WebNode {
 
         @Override
         public void onPageStarted(WebView web, String url, Bitmap favicon) {
+            media.leave();
             // android.webkit cannot run a script at document start: only androidx's WebViewCompat.addDocumentStartJavaScript can, which the runtime does without. The bridge, then the app's script before content, run as the page starts instead, so a page's earliest scripts may run before them.
             // This runs after the page at url committed, and evaluateJavascript reaches the page committed last. The view shows url, or for HTML loadDataWithBaseURL loaded, whose commit is a data: URL, the history URL. Showing another URL, it has committed another page since, whose own start comes next, or the app started a load of the URL it shows, which the page here would report until it commits: so then no page gets a bridge.
             String shown = web.getUrl();
@@ -285,44 +282,6 @@ final class WebNode {
             if (!request.isForMainFrame()) return;
             Navigation nav = new Navigation(request.getUrl().toString(), "", false, false, false);
             reporter.report(Protocol.EVENT_ERROR, String.valueOf(error.getDescription()), nav);
-        }
-    }
-
-    /** Answers getUserMedia with what media grants, asking the user for RECORD_AUDIO and CAMERA first where the app holds neither; other resources keep android.webkit's refusal. */
-    private final class Chrome extends WebChromeClient {
-        @Override
-        public void onPermissionRequest(PermissionRequest request) {
-            int want = 0;
-            List<String> resources = new ArrayList<>(), permissions = new ArrayList<>();
-            for (String resource : request.getResources()) {
-                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
-                    want |= MICROPHONE;
-                    permissions.add(android.Manifest.permission.RECORD_AUDIO);
-                } else if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
-                    want |= CAMERA;
-                    permissions.add(android.Manifest.permission.CAMERA);
-                } else {
-                    continue;
-                }
-                resources.add(resource);
-            }
-            if (want == 0 || (media & want) != want || destroyed) {
-                request.deny();
-                return;
-            }
-            String[] granted = resources.toArray(new String[0]);
-            List<String> missing = new ArrayList<>();
-            for (String p : permissions) {
-                if (view.getContext().checkSelfPermission(p) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(p);
-            }
-            if (missing.isEmpty()) {
-                request.grant(granted);
-                return;
-            }
-            reporter.askPermissions(missing.toArray(new String[0]), allowed -> {
-                if (allowed && !destroyed) request.grant(granted);
-                else request.deny();
-            });
         }
     }
 
@@ -631,7 +590,8 @@ final class WebNode {
         restricted = Protocol.flag(flags, 2);
         boolean incognito = Protocol.flag(flags, 3);
         boolean pinchZoom = Protocol.flag(flags, 6);
-        media = (Protocol.flag(flags, 4) ? MICROPHONE : 0) | (Protocol.flag(flags, 5) ? CAMERA : 0);
+        media.configure((Protocol.flag(flags, 4) ? WebMedia.MICROPHONE : 0)
+                | (Protocol.flag(flags, 5) ? WebMedia.CAMERA : 0));
         String hosts = Protocol.readString(in).trim();
         this.hosts = hosts.isEmpty() ? new String[0] : hosts.split(" +");
         String schemes = Protocol.readString(in).trim().toLowerCase(Locale.ROOT);
@@ -682,6 +642,7 @@ final class WebNode {
 
     /** Loads a source, the config's or Ref.Load's, which leaves the config's alone. */
     private void load(String src, String html, String baseURL) {
+        media.leave();
         // Apps load their own files; pages from elsewhere may not.
         WebSettings settings = view.getSettings();
         if (!html.isEmpty()) {
@@ -717,6 +678,7 @@ final class WebNode {
     /** Stops the page and frees the WebView. */
     void destroy() {
         destroyed = true;
+        media.close();
         page = null;
         blobs.clear();
         view.stopLoading();
