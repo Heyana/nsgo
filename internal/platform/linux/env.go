@@ -303,7 +303,7 @@ func (w *window) lifecycle() driver.Lifecycle {
 	}
 	active := false
 	windowHandles.Range(func(_, v any) bool {
-		if other := v.(*window); !other.closing && other.rootWindow() != 0 && gtkWindowIsActive(other.rootWindow()) != 0 {
+		if other := v.(*window); !other.closing && windowActive(other.rootWindow()) {
 			active = true
 		}
 		return !active
@@ -342,6 +342,11 @@ func updateAppSurface() {
 		}
 		return true
 	})
+}
+
+// windowActive reports whether win is a shown window with the keyboard focus. GTK keeps a hidden window's is-active set until the window manager moves the focus, which may never happen, so a window that is not mapped is never active.
+func windowActive(win uintptr) bool {
+	return win != 0 && gtkWidgetGetMapped(win) != 0 && gtkWindowIsActive(win) != 0
 }
 
 // rootWindow is the GtkWindow the surface shows in, the host's for an
@@ -393,12 +398,12 @@ func activityCallback(object, pspec, data uintptr) {
 				w.releasePointer(true)
 			}
 			w.syncOwnedVisibility()
-			active := w.win != 0 && gtkWindowIsActive(w.win) != 0
+			active := windowActive(w.win)
 			if active {
 				w.focused = true
 			}
 			// Keys and mouse buttons held come up in another window once this one is no longer active: an embedded surface's is the host's.
-			if root := w.rootWindow(); root == 0 || gtkWindowIsActive(root) == 0 {
+			if !windowActive(w.rootWindow()) {
 				w.releaseKeys()
 				w.releaseMouseButtons()
 			}
@@ -435,7 +440,7 @@ func (w *window) reportFrameWindow(env driver.Environment) {
 	root := w.rootWindow()
 	visible := root != 0 && w.surface != 0 && w.kind != driver.SurfaceTrayIcon && gtkWidgetGetMapped(w.surface) != 0 &&
 		env.Lifecycle != driver.LifecycleBackground
-	w.engine.SetFrameWindow(visible, visible && gtkWindowIsActive(root) != 0)
+	w.engine.SetFrameWindow(visible, visible && windowActive(root))
 }
 
 // settingBool reads a gboolean property of settings.

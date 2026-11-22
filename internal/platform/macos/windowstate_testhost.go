@@ -18,11 +18,9 @@ func (t *testSurface) WindowState() (testhost.WindowState, error) {
 			err = errors.New("the surface has no desktop window")
 			return
 		}
-		state = testhost.WindowState{
-			Frame:   t.s.windowFrame(),
-			Visible: objc.Send[bool](t.s.window, sel("isVisible")),
-			Focused: objc.Send[bool](t.s.window, sel("isKeyWindow")),
-		}
+		visible := objc.Send[bool](t.s.window, sel("isVisible"))
+		// A window ordered out is never the key window, whatever AppKit still reports.
+		state = testhost.WindowState{Frame: t.s.windowFrame(), Visible: visible, Focused: visible && objc.Send[bool](t.s.window, sel("isKeyWindow"))}
 	})
 	return state, err
 }

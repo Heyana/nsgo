@@ -22,7 +22,7 @@ func (t *testSurface) WindowState() (testhost.WindowState, error) {
 		}
 		visible, _, _ := isWindowVisible.Call(w.hwnd)
 		foreground, _, _ := getForegroundWindow.Call()
-		done <- result{state: testhost.WindowState{Frame: w.windowFrame(), Visible: visible != 0, Focused: foreground == w.hwnd}}
+		done <- result{state: testhost.WindowState{Frame: w.windowFrame(), Visible: visible != 0, Focused: visible != 0 && foreground == w.hwnd}}
 	})
 	select {
 	case r := <-done:

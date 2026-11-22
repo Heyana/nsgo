@@ -1638,6 +1638,8 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 	case driver.WindowHide:
 		w.visible = false
 		gtkWidgetSetVisible(w.win, 0)
+		// GTK may leave the hidden window's is-active set, so its focus loss is not notified: read every window's focus again now.
+		activityCallback(0, 0, 0)
 	case driver.WindowSetFrame:
 		w.setFrame(c.Frame)
 	case driver.WindowOrderFront:

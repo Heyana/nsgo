@@ -54,7 +54,7 @@ func (t *testSurface) WindowState() (testhost.WindowState, error) {
 				}
 			}
 		}
-		done <- result{state: testhost.WindowState{Frame: frame, Visible: gtkWidgetGetVisible(w.win) != 0, Focused: gtkWindowIsActive(w.win) != 0}}
+		done <- result{state: testhost.WindowState{Frame: frame, Visible: gtkWidgetGetVisible(w.win) != 0, Focused: windowActive(w.win)}}
 	})
 	select {
 	case r := <-done:

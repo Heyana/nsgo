@@ -20,7 +20,7 @@ func (w *window) canLockPointer() bool {
 
 func (w *window) canHoldPointer() bool {
 	root := w.rootWindow()
-	return root != 0 && gtkWindowIsActive(root) != 0 && gtkWidgetGetMapped(w.surface) != 0
+	return windowActive(root) && gtkWidgetGetMapped(w.surface) != 0
 }
 
 func (w *window) setPointerLock(it *driver.MountItem) {
