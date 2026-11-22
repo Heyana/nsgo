@@ -6,6 +6,7 @@ public class ClipData {
     public static class Item {
         public Uri getUri() { return null; }
         public CharSequence getText() { return null; }
+        public String getHtmlText() { return null; }
     }
     public int getItemCount() { return 0; }
     public Item getItemAt(int index) { return new Item(); }
