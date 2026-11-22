@@ -28,6 +28,43 @@ func wait1394(t *testing.T, s string, p func() bool) {
 	}
 	t.Fatal("timed out waiting for ", s)
 }
+
+// nativePixels1394 renders the complete GtkWindow snapshot, including the
+// root surface background and GTK's native render nodes. The software paint
+// helper used by most tests deliberately bypasses that layer.
+func nativePixels1394(t *testing.T, w *window) pixels {
+	t.Helper()
+	var out pixels
+	w.onLoop(t, func() {
+		width, height := gtkWidgetGetWidth(w.win), gtkWidgetGetHeight(w.win)
+		if width <= 0 || height <= 0 {
+			return
+		}
+		paintable := gtkWidgetPaintableNew(w.win)
+		if paintable == 0 {
+			return
+		}
+		defer gObjectUnref(paintable)
+		snapshot := gtkSnapshotNew()
+		gdkPaintableSnapshot(paintable, snapshot, float64(width), float64(height))
+		node := gtkSnapshotFreeToNode(snapshot)
+		if node == 0 {
+			return
+		}
+		defer gskRenderNodeUnref(node)
+		surface := cairoImageSurfaceCreate(0, width, height)
+		cr := cairoCreate(surface)
+		gskRenderNodeDraw(node, cr)
+		cairoSurfaceFlush(surface)
+		stride := int(cairoImageSurfaceGetStride(surface))
+		data := (*[1 << 30]byte)(cPointer(cairoImageSurfaceGetData(surface)))[: stride*int(height) : stride*int(height)]
+		out = pixels{data: append([]byte(nil), data...), stride: stride, width: int(width), height: int(height)}
+		cairoDestroy(cr)
+		cairoSurfaceDestroy(surface)
+	})
+	return out
+}
+
 func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens windows")
@@ -78,27 +115,32 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 		})
 		return m
 	})
-	waitPixels(t, p, "the transparent card pixels", func(px pixels) bool {
-		return px.width == 180 && px.height == 80
+	var composited bool
+	host.onLoop(t, func() { composited = p.environment().WindowTransparent })
+	var initial pixels
+	wait1394(t, "the native transparent card pixels", func() bool {
+		initial = nativePixels1394(t, p)
+		return initial.width == 180 && initial.height == 80
 	})
-	initial := p.surfacePixels(t)
 	if q := initial.at(initial.width/2, initial.height/2); q[3] != 255 {
 		t.Fatalf("the card center is not opaque: alpha=%d", q[3])
 	}
-	clear, antialias := 0, 0
-	for y := 0; y < initial.height; y++ {
-		for x := 0; x < initial.width; x++ {
-			a := initial.at(x, y)[3]
-			switch {
-			case a == 0:
-				clear++
-			case a < 255:
-				antialias++
+	if composited {
+		clear, antialias := 0, 0
+		for y := 0; y < initial.height; y++ {
+			for x := 0; x < initial.width; x++ {
+				a := initial.at(x, y)[3]
+				switch {
+				case a == 0:
+					clear++
+				case a < 255:
+					antialias++
+				}
 			}
 		}
-	}
-	if clear == 0 || antialias == 0 {
-		t.Fatalf("transparent rounded panel has no clear/antialiased pixels: clear=%d antialias=%d", clear, antialias)
+		if clear == 0 || antialias == 0 {
+			t.Fatalf("transparent rounded panel has no clear/antialiased pixels: clear=%d antialias=%d", clear, antialias)
+		}
 	}
 	var d, x, r uintptr
 	anchor := driver.Bounds{Origin: driver.Point{X: 300, Y: 180}, Size: driver.Size{Width: 40, Height: 24}}
