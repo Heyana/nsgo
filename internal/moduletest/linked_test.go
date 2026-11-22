@@ -25,6 +25,8 @@ var unlinked = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/shader", "github.com/nsgo-dev/nsgo/internal/shader/wgsl", "go/parser",
 		// Only nsgo dev -automation's builds link the agent and what tests run on.
 		"testing", "github.com/nsgo-dev/nsgo/nsgotest", "github.com/nsgo-dev/nsgo/internal/automation",
+		// Only builds tagged nsgotui (nsgo -target tui) link the terminal backend and its cell library.
+		"github.com/nsgo-dev/nsgo/internal/platform/tui", "github.com/gdamore/tcell/v3",
 	},
 	// The page decodes and encodes images with the browser's codecs.
 	"js": {"image/png", "image/jpeg", "image/gif", "golang.org/x/image/webp", "golang.org/x/image/draw"},
