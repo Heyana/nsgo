@@ -162,6 +162,8 @@ type Options struct {
 	NetworkWatcher driver.NetworkWatcher
 	// Clock runs the app's timers; the system's when nil.
 	Clock core.Clock
+	// TransitionEnds is a test host's (testhost.Options.TransitionEnds): it takes, as the app starts, whether a view of any of its surfaces waits for its style transition to end.
+	TransitionEnds func(pending func() bool)
 	// Storage keeps the app's entries; in memory for the engine's life
 	// when nil. Platforms pass OpenFileStorage in the data directory.
 	Storage *core.Store
@@ -525,6 +527,9 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 	tree.SetEnvironment(opts.Environment)
 	tree.SetAppearance(opts.Appearance)
 	tree.SetTokens(tokens)
+	if opts.TransitionEnds != nil {
+		opts.TransitionEnds(func() bool { return e.transitionsEnding(tree) })
+	}
 	perf, trace := opts.Perf, Trace
 	// attach makes t's surface p's. A test host's observer may keep a
 	// batch past the next commit.
@@ -999,6 +1004,24 @@ func (e *Engine) Language() string {
 		return lang
 	case <-e.exited:
 		return ""
+	}
+}
+
+// transitionsEnding reports whether a view of tree's or of a surface it opened waits for its style transition to end, asking on the engine's goroutine; false once the engine ended.
+func (e *Engine) transitionsEnding(tree *core.Tree) bool {
+	done := make(chan bool, 1)
+	e.push(message{fn: func() {
+		pending := tree.PendingTransitionEnds()
+		for _, t := range tree.Surfaces() {
+			pending = pending || !t.Closed() && t.PendingTransitionEnds()
+		}
+		done <- pending
+	}})
+	select {
+	case pending := <-done:
+		return pending
+	case <-e.exited:
+		return false
 	}
 }
 

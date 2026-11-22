@@ -46,6 +46,7 @@ func (o *Options) UseTest(t testhost.Options, pin *TestPin) {
 	if t.Clock != nil {
 		o.Clock = t.Clock
 	}
+	o.TransitionEnds = t.TransitionEnds
 	pin.Set(t.Environment)
 	o.Pin = pin.apply
 	o.Storage = t.Storage

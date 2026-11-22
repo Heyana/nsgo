@@ -57,6 +57,8 @@ type Options struct {
 	// Clock is the test's, which the app's timers run on in place of the
 	// system's: they fire as the test moves it.
 	Clock core.Clock
+	// TransitionEnds, when set, takes from the engine as the app starts a function reporting whether a view of the app's waits for its style transition to end before its OnTransitionEnd runs (core.Tree.PendingTransitionEnds), which a step takes Clock's frames for. It may be called on any goroutine but the engine's, and reports false once the engine ended.
+	TransitionEnds func(pending func() bool)
 	// FPS measures the app with the backend's performance monitor and
 	// logs its readings once a second (nsgo test -fps), where the backend
 	// has one: macOS, iOS, Windows, Linux and Android. The web measures

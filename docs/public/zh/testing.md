@@ -100,7 +100,7 @@ go tool nsgo test
 
 `app.Post(func() { state.Set(value) })` 把工作排到应用的响应式图所在的 goroutine 上，在下一个步骤或等待稳定时运行：无头运行时是测试 goroutine，在目标平台上是引擎 goroutine。可以从测试或桩出来的工作 goroutine 调用它，再用 `app.Settle()` 或等待读取结果视图。函数可以继续投递，同一个步骤会一并运行；它不执行步骤，也不调用 `t.Fatal`，因为在目标平台上它不在测试 goroutine 上运行。
 
-无头运行时，每个步骤随后会逐帧推进时钟，最多 2 秒，直到有限动画结束、每个样式过渡都执行了它的 `OnTransitionEnd`：经 `EndingStyle` 关闭的对话框或弹出框在 `app.Press` 返回时已经消失。要观察中途的状态，用 `nsgotest.ManualFrames()` 启动；这时它们只随 `app.Advance` 推进的时钟移动。
+每个步骤随后会逐帧推进时钟，最多 2 秒，直到有限动画结束、每个样式过渡都执行了它的 `OnTransitionEnd`；在目标平台上动画由平台运行，步骤只为样式过渡推进时钟：经 `EndingStyle` 关闭的对话框或弹出框在 `app.Press` 返回时已经消失。要观察中途的状态，用 `nsgotest.ManualFrames()` 启动；这时它们只随 `app.Advance` 推进的时钟移动。
 
 ## 时间
 
@@ -108,7 +108,7 @@ go tool nsgo test
 
 应用用 `cx.Now()` 读取这个时钟，用 `cx.WallTime()` 读取它显示的日期，所以应用自己测量的时间（例如手势速度、双击的时间窗口）要用它们来计时。`time.Now()` 和 `time.Sleep` 跟随系统时钟，`Advance` 不会推进它：用 `time.Now()` 计时的应用察觉不到测试推进的时间，测试里的 `time.Sleep` 只会让测试变慢。等待来自其他 goroutine 的工作（例如收到回复后的 `cx.Post`）时，用 `app.WaitFor`、`app.WaitForGone` 或 `app.WaitUntil`，它们的超时按真实时间计算。
 
-无头运行时，这些等待在每次检查之间逐帧推进时钟。用 `nsgotest.ManualFrames()` 启动可在等待时保持时钟不动。在目标平台上，等待会让应用稳定下来，动画则由平台自行运行。
+无头运行时，这些等待在每次检查之间逐帧推进时钟。用 `nsgotest.ManualFrames()` 启动可在等待时保持时钟不动。在目标平台上，等待会让应用稳定下来，动画则由平台自行运行；只有样式过渡在等它的 `OnTransitionEnd` 时，等待才会像步骤一样在检查之间推进时钟。
 
 首屏依赖日期的界面（例如今天到期的内容）用 `nsgotest.WallTime(t0)` 启动：首次渲染时 `cx.WallTime()` 就是 `t0`，保留它的时区，计时器仍按时钟自身的时间运行。`nsgotest.Clock(c)` 让应用运行在测试自己的时钟上，供应用之外的代码共用；`c.Advance` 推进它时，应用的计时器随之触发。在目标平台上用 `nsgotest.Measure()` 测量时，应用改为运行在系统时钟上，见下文。
 

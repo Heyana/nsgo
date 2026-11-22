@@ -916,7 +916,7 @@ func (a *App) step(format string, args ...any) {
 	}
 }
 
-// done ends a step: it settles, then takes display frames while an animation that ends runs, a style transition waits for its OnTransitionEnd or lists bind the rows they pace, for at most settleLimit of the clock's time, and has OnAlert answer the alerts shown, taking the frames of what those answers start in turn. Frames the app asks for itself do not hold a step, since its own loops may never end: Advance runs them.
+// done ends a step: it settles, then takes display frames while an animation that ends runs, a style transition waits for its OnTransitionEnd or lists bind the rows they pace, for at most settleLimit of the clock's time, on a target only the transitions' as the platform runs the rest, and has OnAlert answer the alerts shown, taking the frames of what those answers start in turn. Frames the app asks for itself do not hold a step, since its own loops may never end: Advance runs them.
 func (a *App) done() {
 	a.t.Helper()
 	if a.owner != nil {
@@ -926,7 +926,7 @@ func (a *App) done() {
 	answered := 0
 	for {
 		if a.target != nil {
-			a.target.settle()
+			a.target.takeFrames()
 		} else {
 			a.takeFrames()
 		}
@@ -1065,9 +1065,7 @@ func (a *App) WaitForGone(selector string, timeout time.Duration) {
 	a.WaitUntil(timeout, func() bool { return len(a.Query(selector)) == 0 })
 }
 
-// WaitUntil settles until cond holds, failing the test after timeout of
-// real time. Headless it advances one frame between checks unless
-// ManualFrames was set.
+// WaitUntil settles until cond holds, failing the test after timeout of real time. Headless it advances one frame between checks unless ManualFrames was set; on a target it takes a step's frames between checks, moving the clock only while a style transition waits for its OnTransitionEnd.
 func (a *App) WaitUntil(timeout time.Duration, cond func() bool) {
 	a.t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -1081,9 +1079,12 @@ func (a *App) WaitUntil(timeout time.Duration, cond func() bool) {
 			a.t.Fatalf("nsgotest: the condition did not hold after %v\n%s", timeout, a.Dump())
 		}
 		time.Sleep(time.Millisecond)
-		if clockApp.target == nil && !clockApp.manualFrames {
+		switch {
+		case a.target != nil:
+			a.target.takeFrames()
+		case !clockApp.manualFrames:
 			clockApp.elapse(driver.FrameInterval)
-		} else {
+		default:
 			a.Settle()
 		}
 	}

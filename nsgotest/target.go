@@ -89,6 +89,8 @@ type target struct {
 	updates []targetUpdate
 	// lost says why a live model stopped following its surface: a batch it could not apply. It queues nothing after.
 	lost string
+	// transitionsEnding is the engine's TransitionEnds, which it sets as the app starts; mu guards it.
+	transitionsEnding func() bool
 	// appScope is the scope the platform renders the app under, on the engine's graph, which App.Post posts to; a.root is the test's own graph, for storage and the model's callbacks. The engine's goroutine sets it, which may be after Open returns, as on Windows and Android.
 	appScope *core.Scope
 	// windowed is set where the host has the app open its windows itself (testhost.WindowHost): the app's own surface, 0, then shows no view, and the model follows the main window, numbered main once its opening came, 0 before and once it closed. The own surface's batches apply aside, for what they ask of the platform and the application menu, which ownMenu keeps. mu guards main.
@@ -332,6 +334,11 @@ func (a *App) targetOptions(t *target) testhost.Options {
 		TakePhoto:  takePhoto,
 		ScanCode:   scanCode,
 		DiskSpace:  a.diskSpace,
+		TransitionEnds: func(pending func() bool) {
+			t.mu.Lock()
+			t.transitionsEnding = pending
+			t.mu.Unlock()
+		},
 	}
 }
 
@@ -688,6 +695,35 @@ func (t *target) menu(step func(testhost.Surface) error) {
 		t.a.t.Skipf("nsgotest: %s: %v", t.a.stepName, err)
 	} else {
 		t.check(err)
+	}
+	t.settle()
+}
+
+// takeFrames settles, then, while a view of the app waits for its style transition to end, moves the test's clock a frame at a time, settleLimit at most, and settles again, as a headless step takes frames: the platform runs the transition in real time, the core times its OnTransitionEnd on the clock.
+func (t *target) takeFrames() {
+	if t.owner != nil {
+		t.owner.takeFrames()
+		return
+	}
+	t.settle()
+	if t.a.measure {
+		// The app runs on the system's clock.
+		return
+	}
+	t.mu.Lock()
+	ending := t.transitionsEnding
+	t.mu.Unlock()
+	if ending == nil || !ending() {
+		return
+	}
+	limit := t.a.Clock.Now().Add(settleLimit)
+	for t.a.Clock.Now().Before(limit) {
+		t.a.Clock.Advance(driver.FrameInterval)
+		t.surface.Sync()
+		t.drain()
+		if !ending() {
+			break
+		}
 	}
 	t.settle()
 }

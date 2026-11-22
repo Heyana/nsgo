@@ -53,7 +53,7 @@ func (host) Open(app func(cx *core.Scope) core.Node, o testhost.Options) (testho
 		ReadAsset:    readAsset,
 		CheckCommits: o.CheckCommits,
 		Size:         s.size0, Environment: env, Clock: o.Clock, Storage: o.Storage,
-		Observe: o.Observe, Event: o.Event,
+		Observe: o.Observe, Event: o.Event, TransitionEnds: o.TransitionEnds,
 	}
 	if dir, err := os.MkdirTemp("", "nsgo-test-"); err == nil {
 		engineOpts.DataDir = filepath.Join(dir, "data")
