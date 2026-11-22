@@ -17,12 +17,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/codescan"
 )
 
-// Scanning a code on Linux: the XDG Desktop Portal's Camera interface
-// (org.freedesktop.portal.Camera) checks whether a camera is present
-// (IsCameraPresent), asks the user for access (AccessCamera), and returns a
-// PipeWire file descriptor (OpenPipeWireRemote). GStreamer's pipewiresrc pulls
-// BGRA frames from that stream into a modal GTK 4 window while codescan
-// decodes QR codes and barcodes off the main thread.
+// Scanning a code on Linux: the XDG Desktop Portal's Camera interface (org.freedesktop.portal.Camera) checks whether a camera is present (IsCameraPresent), asks the user for access (AccessCamera), and returns a PipeWire file descriptor (OpenPipeWireRemote). GStreamer's pipewiresrc pulls BGRA frames from that stream into a modal GTK 4 window while codescan decodes QR codes and barcodes off the main thread.
 
 const (
 	cameraPortalIface = "org.freedesktop.portal.Camera"
@@ -134,8 +129,7 @@ func scanGSTReady() bool {
 	return bindScanCamera() && gstFeature("pipewiresrc") && gstFeature("videoconvert") && gstFeature("appsink")
 }
 
-// cameraAvailable reports whether GStreamer has PipeWire camera support and
-// org.freedesktop.portal.Camera reports IsCameraPresent == true.
+// cameraAvailable reports whether GStreamer has PipeWire camera support and org.freedesktop.portal.Camera reports IsCameraPresent == true.
 func cameraAvailable() bool {
 	scanProbeOnce.Do(func() {
 		if !scanGSTAvailable() {
@@ -150,9 +144,7 @@ func cameraAvailable() bool {
 	return scanProbeOK
 }
 
-// portalCameraPresent reads org.freedesktop.portal.Camera's IsCameraPresent
-// property with a bounded 250 ms timeout so headless systems without a portal
-// fail fast.
+// portalCameraPresent reads org.freedesktop.portal.Camera's IsCameraPresent property with a bounded 250 ms timeout so headless systems without a portal fail fast.
 func portalCameraPresent(bus uintptr) bool {
 	args := [2]uintptr{
 		gVariantTakeRef(gVariantNewString(cstr(cameraPortalIface))),

@@ -14,10 +14,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/codescan"
 )
 
-// Scanning a code on Windows: WinRT's MediaCapture opens the default video
-// capture device in CPU memory mode and streams BGRA8 frames through a
-// MediaFrameReader; a modal card drawn in Direct2D shows the live preview with
-// a Cancel button while codescan decodes frames off the UI thread.
+// Scanning a code on Windows: WinRT's MediaCapture opens the default video capture device in CPU memory mode and streams BGRA8 frames through a MediaFrameReader; a modal card drawn in Direct2D shows the live preview with a Cancel button while codescan decodes frames off the UI thread.
 
 var (
 	mf                  = syscall.NewLazyDLL("mf.dll")
@@ -133,8 +130,7 @@ var (
 	scanPermissionState = permissionStatus
 )
 
-// cameraAvailable reports whether Media Foundation enumerates at least one
-// video capture device and WinRT's MediaCapture class can be reached.
+// cameraAvailable reports whether Media Foundation enumerates at least one video capture device and WinRT's MediaCapture class can be reached.
 func cameraAvailable() bool {
 	comApartment()
 	if mfCreateAttributes.Find() != nil || mfEnumDeviceSources.Find() != nil {

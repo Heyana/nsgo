@@ -10,13 +10,9 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Scanning a code on the web: navigator.mediaDevices.getUserMedia feeds a
-// live <video> inside a full-screen dismissible modal overlay while
-// BarcodeDetector reads the requested code formats at a steady interval.
+// Scanning a code on the web: navigator.mediaDevices.getUserMedia feeds a live <video> inside a full-screen dismissible modal overlay while BarcodeDetector reads the requested code formats at a steady interval.
 
-// barcodeFormatNames maps each driver.CodeKind to the W3C Shape Detection
-// BarcodeDetector format names that read it. UPC-A is normalized to EAN-13
-// with a leading 0, matching driver.CodeEAN13.
+// barcodeFormatNames maps each driver.CodeKind to the W3C Shape Detection BarcodeDetector format names that read it. UPC-A is normalized to EAN-13 with a leading 0, matching driver.CodeEAN13.
 var barcodeFormatNames = map[driver.CodeKind][]string{
 	driver.CodeQR:         {"qr_code"},
 	driver.CodeAztec:      {"aztec"},
@@ -42,8 +38,7 @@ func barcodeFormats(r driver.ScanRequest) []string {
 	return out
 }
 
-// filterBarcodeFormats keeps only the formats from requested that appear in
-// supported, preserving order.
+// filterBarcodeFormats keeps only the formats from requested that appear in supported, preserving order.
 func filterBarcodeFormats(requested, supported []string) []string {
 	var out []string
 	for _, f := range requested {
@@ -54,8 +49,7 @@ func filterBarcodeFormats(requested, supported []string) []string {
 	return out
 }
 
-// barcodeFromDetected maps a BarcodeDetector result (format, rawValue) to a
-// driver.ScannedCode if it matches r, or returns nil.
+// barcodeFromDetected maps a BarcodeDetector result (format, rawValue) to a driver.ScannedCode if it matches r, or returns nil.
 func barcodeFromDetected(format, rawValue string, r driver.ScanRequest) *driver.ScannedCode {
 	if rawValue == "" {
 		return nil
@@ -113,8 +107,7 @@ func scanErrorMessage(name, fallback string) string {
 	return "camera failed to start"
 }
 
-// scanCodeAvailable reports whether the browser exposes both
-// navigator.mediaDevices.getUserMedia and BarcodeDetector.
+// scanCodeAvailable reports whether the browser exposes both navigator.mediaDevices.getUserMedia and BarcodeDetector.
 func scanCodeAvailable() bool {
 	g := js.Global()
 	if !g.Truthy() {
