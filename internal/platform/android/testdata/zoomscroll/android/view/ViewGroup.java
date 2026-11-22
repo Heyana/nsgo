@@ -33,6 +33,16 @@ public class ViewGroup extends View implements ViewParent {
         if (child.parent == this) child.parent = null;
     }
 
+    public int getChildCount() {
+        return children.size();
+    }
+
+    public View getChildAt(int index) {
+        return children.get(index);
+    }
+
+    protected void dispatchDraw(android.graphics.Canvas canvas) {}
+
     public void setClipToPadding(boolean clip) {}
 
     public void setClipChildren(boolean clip) {}

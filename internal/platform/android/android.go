@@ -1914,7 +1914,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			}
 		}
 	}
-	writeTextCopyFooter(w, b)
+	writeBatchFooter(w, b)
 }
 
 // sendFonts tells Java the app's font files, paths in the APK's assets,

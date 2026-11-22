@@ -20,6 +20,7 @@ import android.widget.ScrollView;
 
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.util.function.BiConsumer;
 
 /**
  * Scroll views, as NSH's ScrollBox scrolls: Android's ScrollView and
@@ -208,6 +209,35 @@ final class Scrolling {
 
         /** Releases any sibling overlay views attached to the outer frame before replacing the scroller. */
         default void detach() {}
+
+        /** Sets the backdrop source the scroll view's frame passes down while it draws, null for none, and pass, which hands its content the source forwarded through the scroll offset, or null. */
+        void setInheritedBackdrop(Object source, BiConsumer<View, Object> pass);
+    }
+
+    /** The backdrop source a scroll view's frame passes down while it draws, from Android 12. */
+    static final class InheritedBackdrop {
+        private Object source;
+        private BiConsumer<View, Object> pass;
+
+        void set(Object source, BiConsumer<View, Object> pass) {
+            this.source = source;
+            this.pass = pass;
+        }
+
+        /** Runs dispatch, the scroller's own child drawing, with the source passed to its content. */
+        void dispatch(ViewGroup scroller, Runnable dispatch) {
+            if (source == null || pass == null || scroller.getChildCount() == 0) {
+                dispatch.run();
+                return;
+            }
+            View child = scroller.getChildAt(0);
+            pass.accept(child, source);
+            try {
+                dispatch.run();
+            } finally {
+                pass.accept(child, null);
+            }
+        }
     }
 
     /**
@@ -743,10 +773,21 @@ final class Scrolling {
     /** A vertical scroll view. */
     static final class VScroll extends ScrollView implements Scroller {
         final Driver d;
+        private final InheritedBackdrop backdrop = new InheritedBackdrop();
 
         VScroll(Context context, Host host, float density, View content, ViewGroup frame) {
             super(context);
             d = new Driver(this, false, host, density, content, frame);
+        }
+
+        @Override
+        public void setInheritedBackdrop(Object source, BiConsumer<View, Object> pass) {
+            backdrop.set(source, pass);
+        }
+
+        @Override
+        protected void dispatchDraw(Canvas canvas) {
+            backdrop.dispatch(this, () -> super.dispatchDraw(canvas));
         }
 
         @Override
@@ -829,10 +870,21 @@ final class Scrolling {
     /** A horizontal scroll view. */
     static final class HScroll extends HorizontalScrollView implements Scroller {
         final Driver d;
+        private final InheritedBackdrop backdrop = new InheritedBackdrop();
 
         HScroll(Context context, Host host, float density, View content, ViewGroup frame) {
             super(context);
             d = new Driver(this, true, host, density, content, frame);
+        }
+
+        @Override
+        public void setInheritedBackdrop(Object source, BiConsumer<View, Object> pass) {
+            backdrop.set(source, pass);
+        }
+
+        @Override
+        protected void dispatchDraw(Canvas canvas) {
+            backdrop.dispatch(this, () -> super.dispatchDraw(canvas));
         }
 
         @Override
@@ -931,6 +983,7 @@ final class Scrolling {
         private float notifiedZoom = 1;
         private float lastX, lastY, downX, downY;
         private boolean dragging, pinching, momentum, tapping;
+        private final InheritedBackdrop backdrop = new InheritedBackdrop();
 
         ZoomScroll(Context context, Host host, float density, View content) {
             super(context);
@@ -1258,6 +1311,16 @@ final class Scrolling {
         @Override
         public float pulled() {
             return 0;
+        }
+
+        @Override
+        public void setInheritedBackdrop(Object source, BiConsumer<View, Object> pass) {
+            backdrop.set(source, pass);
+        }
+
+        @Override
+        protected void dispatchDraw(Canvas canvas) {
+            backdrop.dispatch(this, () -> super.dispatchDraw(canvas));
         }
     }
 }

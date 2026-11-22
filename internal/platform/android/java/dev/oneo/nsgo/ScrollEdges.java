@@ -38,11 +38,44 @@ final class ScrollEdges extends FrameLayout {
     private boolean hasEdges;
     /** Lazily instantiated only on API 31+ so older ART runtimes never load RenderNode/RenderEffect. */
     private Hardware hardware;
+    /** What NsgoView answers about backdrop filters, null until it sets it, and the state Backdrop keeps for this view, null before Android 12. */
+    Backdrop.Host backdropHost;
+    final Object backdropState = Backdrop.createState();
+    private final Backdrop.Callbacks backdropCallbacks = new Backdrop.Callbacks() {
+        @Override public void superDraw(Canvas canvas) { ScrollEdges.super.draw(canvas); }
+        @Override public boolean drawChild(Canvas canvas, View child, long drawingTime) {
+            return ScrollEdges.this.drawChild(canvas, child, drawingTime);
+        }
+        @Override public void superOnDrawForeground(Canvas canvas) { ScrollEdges.super.onDrawForeground(canvas); }
+    };
 
     ScrollEdges(Context context, float density) {
         super(context);
         this.density = density;
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    @Override
+    public void draw(Canvas canvas) {
+        if (backdropHost == null || !backdropHost.hasBackdropDescendant(this)) {
+            super.draw(canvas);
+            return;
+        }
+        if (!hasEdges) {
+            Backdrop.drawContainer(this, canvas, backdropHost, backdropCallbacks, backdropState);
+            return;
+        }
+        // The edges record the scroller in dispatchDraw, so it draws there, and a backdrop filter inside it blurs what this view and its ancestors drew.
+        View scroller = null;
+        for (int i = 0; i < getChildCount() && scroller == null; i++) {
+            if (backdropHost.hasBackdropDescendant(getChildAt(i))) scroller = getChildAt(i);
+        }
+        if (scroller != null) backdropHost.setInherited(scroller, Backdrop.forwardContainerBackground(this, backdropState, scroller));
+        try {
+            super.draw(canvas);
+        } finally {
+            if (scroller != null) backdropHost.setInherited(scroller, null);
+        }
     }
 
     boolean hasEdges() {

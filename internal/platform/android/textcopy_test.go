@@ -61,7 +61,7 @@ func TestSelectionCopiesAttachmentsAndHiddenSpans(t *testing.T) {
 func TestTextCopyFooterCompatibility(t *testing.T) {
 	for _, version := range []uint64{0, 42} {
 		var w writer
-		writeTextCopyFooter(&w, &driver.MountBatch{GeometryVersion: version})
+		writeTextCopyFooter(&w, &driver.MountBatch{GeometryVersion: version}, false)
 		if version == 0 {
 			if len(w.buf) != 0 {
 				t.Fatal("pixel-only follow-up gained a footer")
@@ -75,7 +75,7 @@ func TestTextCopyFooterCompatibility(t *testing.T) {
 		{Kind: driver.ItemText, ID: 7, Text: &driver.TextContent{Text: "\uFFFC", Spans: []driver.TextSpan{{Start: 0, End: 3, Copy: "$x$"}}}},
 		{Kind: driver.ItemDelete, ID: 8},
 		{Kind: driver.ItemText, ID: 9, Text: &driver.TextContent{Text: "plain"}},
-	}})
+	}}, false)
 	r := reader{w.buf}
 	if r.u64() != 42 || r.u32() != 2 || r.u32() != 7 || r.u32() != 1 || r.u32() != 0 || r.u32() != 1 || r.byte() != 0 || r.str() != "$x$" || r.u32() != 9 || r.u32() != 0 || len(r.buf) != 0 {
 		t.Fatal("copy footer does not retain geometry, node IDs or empty replacement")
