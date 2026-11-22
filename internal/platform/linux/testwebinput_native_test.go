@@ -62,8 +62,7 @@ body { margin: 0 } button,input { display: block; box-sizing: border-box; width:
 		if !w.canSendWebInput() {
 			t.Skip("trusted web input needs X11 and XTest")
 		}
-		// Enable exactly the isolation nsgotest uses, after the ordinary
-		// native fixture has initialized its engine and page.
+		// Enable exactly the isolation nsgotest uses, after the ordinary native fixture has initialized its engine and page.
 		w.opts.test = &testOpen{}
 	})
 	t.Cleanup(func() { w.onLoop(t, func() { w.opts.test = nil }) })
@@ -74,8 +73,7 @@ body { margin: 0 } button,input { display: block; box-sizing: border-box; width:
 		if !ok {
 			t.Fatal("no X11 test surface")
 		}
-		// An unrecorded native click uses the same XTest source but has
-		// no matching request serial. It must stay outside the page.
+		// An unrecorded native click uses the same XTest source but has no matching request serial. It must stay outside the page.
 		xWebInput.warpPointer(display, 0, xid, 0, 0, 0, 0, 12, 16)
 		xWebInput.fakeButton(display, 1, 1, 0)
 		xWebInput.fakeButton(display, 1, 0, 0)

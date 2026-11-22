@@ -9,10 +9,7 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-// The X11 translator retains the provenance GTK's GdkEvent omits: the XI2
-// source device and the request serial. Match only NSGo's own XTest requests,
-// then retain their GDK events so every controller admits the same event.
-// All state belongs to the GTK thread; ordinary apps never install this hook.
+// The X11 translator retains the provenance GTK's GdkEvent omits: the XI2 source device and the request serial. Match only NSGo's own XTest requests, then retain their GDK events so every controller admits the same event. All state belongs to the GTK thread; ordinary apps never install this hook.
 var testWebInput struct {
 	display      uintptr
 	nextRequest  func(uintptr) uintptr
@@ -162,9 +159,7 @@ func isTestWebInputEvent(event uintptr) bool {
 		return false
 	}
 	window := gdkX11SurfaceGetXID(surface)
-	// Wire events are queued in dispatch order. Include rejected physical
-	// events so one with the same millisecond and detail cannot borrow the
-	// approval of the following scripted event.
+	// Wire events are queued in dispatch order. Include rejected physical events so one with the same millisecond and detail cannot borrow the approval of the following scripted event.
 	for n, e := range testWebInput.events {
 		if e.kind != kind || e.time != tm || e.detail != detail || e.window != window {
 			continue
