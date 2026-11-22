@@ -90,6 +90,8 @@ Publish built web and desktop packages with `go tool nsgo publish itch -target w
 
 Standalone builds bundle `THIRD_PARTY_NOTICES.txt`. Show the text with `core.ThirdPartyNotices()`. Configure missing or unrecognized licenses with `licenses.unknown`, copyleft handling with `licenses.copyleft`, and reviewed exceptions by exact module path in `licenses.allow`.
 
+MSIX display names use each catalog's `appName`, with source-language fallback. The tool writes the language/scale resource index and 100–400% logo variants directly; building on macOS needs no Windows SDK.
+
 ## Documents
 
 On Linux, audio and video rely on the system's GStreamer plug-ins. Use `linux.depends` and `linux.recommends` to declare the codecs your app needs. [Building](https://nsgo.dev/docs/building.md).

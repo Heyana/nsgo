@@ -30,6 +30,11 @@ func (p *project) appNames() (*appNames, error) {
 	if err := ds.err(); err != nil {
 		return nil, err
 	}
+	return catalogAppNames(c)
+}
+
+// catalogAppNames reads only explicit appName translations from a parsed catalog.
+func catalogAppNames(c *catalog) (*appNames, error) {
 	src := c.files[c.source]
 	if src == nil || src.msgs[appNameKey] == nil {
 		return nil, nil

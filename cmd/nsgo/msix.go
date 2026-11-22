@@ -81,8 +81,19 @@ func buildMSIX(ctx context.Context, p *project, dir, arch string) (string, error
 		// A package must have logos; a clear one stands in.
 		img = image.NewNRGBA(image.Rect(0, 0, 1, 1))
 	}
-	for _, l := range msixLogos {
-		files = append(files, msixFile{"Assets/" + l.name, scaledPNG(img, l.size)})
+	resources, err := msixResourceFiles(p, img)
+	if err != nil {
+		return "", err
+	}
+	names := map[string]bool{}
+	for _, f := range files {
+		names[strings.ToLower(f.name)] = true
+	}
+	for _, f := range resources {
+		if names[strings.ToLower(f.name)] {
+			return "", fmt.Errorf("MSIX payload reserves %q for generated resources", f.name)
+		}
+		files = append(files, f)
 	}
 	manifest, err := msixManifest(p, arch)
 	if err != nil {
@@ -280,28 +291,18 @@ type msixFileType struct {
 
 // msixManifest is the package's AppxManifest.xml: the app, which runs with full trust as desktop apps do, its logos, languages and file types, and the devices it uses.
 func msixManifest(p *project, arch string) ([]byte, error) {
-	name, err := p.displayName()
-	if err != nil {
-		return nil, err
-	}
 	d := msixData{
-		Identity:      p.Windows.Store.Identity,
+		Identity:      msixIdentityName(p),
 		Publisher:     p.Windows.Store.Publisher,
 		PublisherName: p.Windows.Store.PublisherName,
 		Version:       msixVersion(p.Version),
 		Arch:          msixArch[arch],
-		Name:          name,
-		Description:   name,
+		Name:          msixAppDisplayName,
+		Description:   msixAppDisplayName,
 		Exe:           p.Name + ".exe",
 		StartupTask:   appstartup.WindowsTaskID,
 
 		DeviceCapabilities: p.Windows.DeviceCapabilities,
-	}
-	if d.Identity == "" {
-		d.Identity = strings.Trim(msixIdentityPattern.ReplaceAllString(p.ID, "-"), ".-")
-		if len(d.Identity) > 50 {
-			d.Identity = d.Identity[:50]
-		}
 	}
 	if d.PublisherName == "" {
 		d.PublisherName = p.maintainer()
@@ -309,17 +310,14 @@ func msixManifest(p *project, arch string) ([]byte, error) {
 	if d.Publisher == "" {
 		d.Publisher = "CN=" + strings.NewReplacer(",", " ", "=", " ", "\"", " ").Replace(d.PublisherName)
 	}
-	n, err := p.appNames()
+	n, err := msixResourceNames(p)
 	if err != nil {
 		return nil, err
 	}
-	d.Languages = []string{"en-us"}
-	if n != nil {
-		d.Languages = nil
-		for _, lang := range n.languages() {
-			d.Languages = append(d.Languages, strings.ToLower(lang))
-		}
+	for _, lang := range n.languages() {
+		d.Languages = append(d.Languages, strings.ToLower(lang))
 	}
+
 	for _, t := range p.FileTypes {
 		ft := msixFileType{Name: slug(t.Extensions[0]), DisplayName: t.Name}
 		if ft.Name == "" {

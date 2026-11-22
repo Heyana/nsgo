@@ -206,6 +206,8 @@ AppImages embed a `gh-releases-zsync` locator using `release.github` or the GitH
 | Linux | `<name>-<version>-linux-<arch>.tar.gz` with the app's AppStream metadata, and `flatpak/<id>.yml`, the manifest Flathub builds the Flatpak from, which downloads those archives from the release on GNOME's runtime |
 | Android | `<name>-<version>-android-<arch>.aab`, an App Bundle for Google Play signed with `sign.keystore`, the upload key |
 
+The MSIX reads each language's display name from the catalogs' `appName`, falling back to the source language. Its Start, taskbar and Store logos include 100%, 125%, 150%, 200% and 400% variants. The tool writes their resource index on macOS; no Windows SDK is needed.
+
 `-target macos` selects both macOS architectures on the store channel and writes one `<name>-<version>-macos-universal.pkg`, as does `-target macos_universal`. Select `-target android_arm64,android_x64` for one `<name>-<version>-android-universal.aab` containing `arm64-v8a` and `x86_64`. The x86_64 slice requires an Android NDK.
 
 ```yaml

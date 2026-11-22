@@ -14,6 +14,12 @@ https://github.com/ebitengine/purego, Copyright 2025 The Ebitengine Authors,
 licensed under the Apache License, Version 2.0. NSGo pins the templates,
 keeps descriptors in native memory and checks allocation before returning a block.
 
+cmd/nsgo/pri follows the data layouts and checksum rules of Microsoft MRT Core,
+https://github.com/microsoft/WindowsAppSDK/tree/main/dev/MRTCore/mrt/mrm,
+Copyright (c) Microsoft Corporation and Contributors, licensed under the MIT
+License (cmd/nsgo/pri/LICENSE). It writes resource indices in Go rather than
+calling Windows SDK tools.
+
 core/tailwind_palette.go is Tailwind CSS's default palette,
 https://github.com/tailwindlabs/tailwindcss, Copyright (c) Tailwind Labs, Inc.,
 licensed under the MIT License, converted to sRGB as NSH converts it.

@@ -215,7 +215,7 @@ func TestMSIXDeclaresDisabledStartupTask(t *testing.T) {
 			t.Fatalf("%s extensions: %+v", arch, values.Extensions)
 		}
 		e := values.Extensions[0]
-		if e.Category != "windows.startupTask" || e.Executable != "My App.exe" || e.EntryPoint != "Windows.FullTrustApplication" || e.Task.ID != "NSGoStartup" || e.Task.Enabled != "false" || e.Task.DisplayName != "My App" {
+		if e.Category != "windows.startupTask" || e.Executable != "My App.exe" || e.EntryPoint != "Windows.FullTrustApplication" || e.Task.ID != "NSGoStartup" || e.Task.Enabled != "false" || e.Task.DisplayName != msixAppDisplayName {
 			t.Fatalf("%s startup task %+v", arch, e)
 		}
 	}

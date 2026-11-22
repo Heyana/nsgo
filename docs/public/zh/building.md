@@ -190,6 +190,8 @@ AppImage 根据 `release.github` 或 GitHub 远程 `origin` 嵌入 `gh-releases-
 | Linux | 带应用 AppStream 元数据的 `<name>-<version>-linux-<arch>.tar.gz`，以及 `flatpak/<id>.yml`：Flathub 据此构建 Flatpak 的清单，在 GNOME 运行时上从 Release 下载这些归档 |
 | Android | 用于 Google Play 的 App Bundle `<name>-<version>-android-<arch>.aab`，用上传密钥 `sign.keystore` 签名 |
 
+MSIX 从各语言目录的 `appName` 读取显示名称，缺少匹配时回退到源语言；开始菜单、任务栏和商店图标包含 100%、125%、150%、200% 和 400% 版本。工具直接在 macOS 上生成资源索引，无需 Windows SDK。
+
 在商店渠道，`-target macos` 选择两种 macOS 架构，和 `-target macos_universal` 一样，生成一份 `<name>-<version>-macos-universal.pkg`。使用 `-target android_arm64,android_x64` 生成一份包含 `arm64-v8a` 和 `x86_64` 的 `<name>-<version>-android-universal.aab`。构建 x86_64 需要 Android NDK。
 
 ```yaml
