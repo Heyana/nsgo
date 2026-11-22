@@ -70,7 +70,7 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 | macOS | 全部权限；App 管理、开发者工具和媒体与 Apple Music 为未知 |
 | iOS | 麦克风、相机、日历、提醒事项、蓝牙和媒体资料库 |
 | Windows | 麦克风和相机，但从不弹窗请求；其余不受限 |
-| Linux | 不受限；在 Flatpak 和 Snap 中麦克风和相机为未知 |
+| Linux | 沙盒外不受限；在 Flatpak 和 Snap 中通过桌面 Portal 读取和请求相机，通过 Portal 与 PipeWire 读取和请求麦克风 |
 | Web | 麦克风和相机，在 Firefox 中为未知 |
 | Android、Apple Watch、小程序 | 目前为未知 |
 

@@ -70,7 +70,7 @@ The app held out is its bundle, else its executable; `GuideOptions.App` names an
 | macOS | Every permission; App Management, Developer Tools and Media & Apple Music are unknown |
 | iOS | The microphone, the camera, calendars, reminders, Bluetooth and the media library |
 | Windows | The microphone and the camera, which it never asks for; the rest is not gated |
-| Linux | Not gated; the microphone and the camera are unknown in Flatpak and Snap |
+| Linux | Not gated outside sandboxes; in Flatpak and Snap, the camera through the desktop portal and the microphone through the portal and PipeWire |
 | Web | The microphone and the camera, unknown in Firefox |
 | Android, Apple Watch, mini programs | Unknown for now |
 

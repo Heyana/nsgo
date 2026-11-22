@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Check and request camera and microphone permissions in Flatpak and Snap Linux sandboxes through the XDG Desktop Portal (`Camera`, `Device` and `PermissionStore`) and PipeWire native registry access (#1576).
 - Read QR codes and barcodes from a Mac's camera with `Scope.ScanCode` (#429 by @houko).
 - Read accelerometer, gyroscope and fused motion from mobile browsers (#1208 by @houko).
 - Report Android's regional preferences in `Env.LocaleSettings` and `i18n.Regional` — first day of the week, temperature unit (`TemperatureUnit`), 12/24-hour clock from `DateFormat.is24HourFormat` and measurement system — from the format locale's Unicode extensions and ICU data (#1591).

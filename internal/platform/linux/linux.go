@@ -876,6 +876,7 @@ func (w *window) shutdown(forced bool) {
 
 	w.cancelColorPick()
 	w.closeShares()
+	w.closePermissions()
 	if w.loop != 0 {
 		// The app ends with this window: every hold goes, sent before the main loop returns.
 		endAwake(awakeEndTimeout)
@@ -1036,8 +1037,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.applyHotKeys(it.Keys)
 			continue
 		case driver.ItemPermission:
-			// Nothing to ask, no settings page and nothing to guide.
-			driver.AnswerPermission(it.Count, *it.Permission, linuxPermission, w.engine.Dispatch)
+			w.permission(it.Count, *it.Permission)
 			continue
 		case driver.ItemKeepAwake:
 			if it.Awake != nil {
