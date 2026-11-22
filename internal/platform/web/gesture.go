@@ -248,6 +248,7 @@ func removePointer(ps []*pointer, p *pointer) []*pointer {
 			out = append(out, q)
 		}
 	}
+	clear(ps[len(out):])
 	return out
 }
 

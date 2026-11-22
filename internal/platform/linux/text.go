@@ -196,10 +196,7 @@ func (w *window) fontExtent(f driver.Font, ui string) driver.FontExtent {
 		Descent: fromPango(logical.Y + logical.Height - base),
 		XHeight: fromPango(base - ink.Y),
 	}
-	if w.extents == nil {
-		w.extents = map[fontKey]driver.FontExtent{}
-	}
-	w.extents[key] = e
+	remember(&w.extents, key, e)
 	return e
 }
 
@@ -630,10 +627,7 @@ func (w *window) capHeight(f driver.Font, ui string) driver.Points {
 	pangoLayoutGetExtents(l, &ink, &logical)
 	h := fromPango(pangoLayoutGetBaseline(l) - ink.Y)
 	gObjectUnref(l)
-	if w.capHeights == nil {
-		w.capHeights = map[fontKey]driver.Points{}
-	}
-	w.capHeights[key] = h
+	remember(&w.capHeights, key, h)
 	return h
 }
 
@@ -720,10 +714,7 @@ func (w *window) fontLines(f driver.Font, ui string) lineMetrics {
 		strike: fromPango(pangoFontMetricsStrikePos(metrics)), strikeThickness: fromPango(pangoFontMetricsStrikeThick(metrics)),
 	}
 	pangoFontMetricsUnref(metrics)
-	if w.lineMetrics == nil {
-		w.lineMetrics = map[fontKey]lineMetrics{}
-	}
-	w.lineMetrics[key] = m
+	remember(&w.lineMetrics, key, m)
 	return m
 }
 
@@ -1104,4 +1095,18 @@ func (l *textLayout) Release() {
 type fontKey struct {
 	font driver.Font
 	ui   string
+}
+
+// maxFontMetrics bounds each cache of font metrics, which a font size
+// slider or a change of text scale would otherwise grow without end.
+const maxFontMetrics = 256
+
+// remember caches v at key in m, emptying m first when it is full.
+func remember[T any](m *map[fontKey]T, key fontKey, v T) {
+	if *m == nil {
+		*m = map[fontKey]T{}
+	} else if len(*m) >= maxFontMetrics {
+		clear(*m)
+	}
+	(*m)[key] = v
 }

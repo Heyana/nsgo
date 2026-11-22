@@ -716,6 +716,7 @@ func (s *surface) pickScreenColor(id uint32) {
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id, Finished: true, Data: driver.Color(packed)})
 	})
 	sampler.Send(sel("showSamplerWithSelectionHandler:"), done)
+	done.Release()
 }
 
 // cursorPoint maps AppKit's location to the same primary-screen coordinates

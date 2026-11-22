@@ -82,6 +82,7 @@ func (s *surface) setKeyframes(v *view, a driver.KeyframeAnimation) {
 	for _, anim := range v.running {
 		anim.Call("cancel")
 	}
+	clear(v.running)
 	v.running = v.running[:0]
 	d, frames := a.Cycle()
 	if d <= 0 {

@@ -278,6 +278,7 @@ func (w *window) tick(at time.Time, fromFrameClock bool) {
 			live = append(live, v)
 		}
 	}
+	clear(w.animating[len(live):])
 	w.animating = live
 	running := false
 	if w.animator.Running() {
