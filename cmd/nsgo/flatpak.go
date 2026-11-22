@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"image"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,14 +16,7 @@ import (
 	"time"
 )
 
-// A store build of a Linux target is what Flathub builds the app's
-// Flatpak from, since a .flatpak bundle is an OSTree commit no Mac can
-// write: <slug>-<version>-linux-<arch>.tar.gz, the Linux package with
-// the app's AppStream metadata, <id>.metainfo.xml, and once every target
-// is built, flatpak/<id>.yml in the releases directory, the manifest
-// that installs the archives of the release on GNOME's runtime, which
-// has GTK 4 and WebKitGTK. Submit the manifest to Flathub, or build it
-// with flatpak-builder.
+// A Linux store build writes an installable .flatpak bundle in Go, plus the source archive and flatpak/<id>.yml for Flathub or flatpak-builder. Both use GNOME's runtime, which supplies GTK 4 and WebKitGTK.
 
 // flatpakRuntime is the GNOME runtime's version the manifest names,
 // unless linux.flatpak_runtime names another.
@@ -36,6 +30,29 @@ var flatpakArch = map[string]string{"x64": "x86_64", "arm64": "aarch64"}
 // added, and returns its path.
 func buildLinuxArchive(ctx context.Context, p *project, dir, arch string) (string, error) {
 	stage(ctx, "writing the Flatpak's archive")
+	if len(p.linuxCategories()) == 0 {
+		// AppStream requires a category. Apps can replace this store-package fallback with linux.categories; ordinary desktop entries stay as set.
+		entry := filepath.Join(dir, p.ID+".desktop")
+		data, err := os.ReadFile(entry)
+		if err != nil {
+			return "", err
+		}
+		if !strings.Contains(string(data), "\nCategories=") {
+			data = append(data, []byte("Categories=Utility;\n")...)
+		}
+		if err := os.WriteFile(entry, data, 0o644); err != nil {
+			return "", err
+		}
+	}
+	// AppStream composition requires the desktop entry's icon to exist even when the app has no artwork. Match MSIX's transparent package fallback.
+	icon := filepath.Join(dir, p.ID+".png")
+	if _, err := os.Stat(icon); os.IsNotExist(err) {
+		if err := os.WriteFile(icon, scaledPNG(image.NewNRGBA(image.Rect(0, 0, 1, 1)), 512), 0o644); err != nil {
+			return "", err
+		}
+	} else if err != nil {
+		return "", err
+	}
 	metainfo, err := p.metainfo()
 	if err != nil {
 		return "", err
@@ -208,7 +225,7 @@ modules:
     build-commands:
       - mkdir -p /app/lib/{{.Slug}} /app/bin
       - cp -a . /app/lib/{{.Slug}}/
-      - ln -s {{q (printf "/app/lib/%s/%s" .Slug .Command)}} {{q (printf "/app/bin/%s" .Command)}}
+      - ln -s {{q (printf "../lib/%s/%s" .Slug .Command)}} {{q (printf "/app/bin/%s" .Command)}}
       - install -Dm644 {{.ID}}.desktop /app/share/applications/{{.ID}}.desktop
       - if [ -f {{.ID}}.png ]; then install -Dm644 {{.ID}}.png /app/share/icons/hicolor/512x512/apps/{{.ID}}.png; fi
       - install -Dm644 {{.ID}}.metainfo.xml /app/share/metainfo/{{.ID}}.metainfo.xml

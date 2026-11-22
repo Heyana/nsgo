@@ -307,7 +307,7 @@ func TestFlatpakManifest(t *testing.T) {
 	sum := sha256.Sum256([]byte("x64"))
 	for _, want := range []string{"id: dev.example.myapp\n", "command: \"My App\"\n",
 		`url: "https://github.com/me/my-app/releases/download/v1.0.0/my-app-1.0.0-linux-x64.tar.gz"`,
-		"sha256: " + hex.EncodeToString(sum[:]), "only-arches: [x86_64]", `ln -s "/app/lib/my-app/My App" "/app/bin/My App"`} {
+		"sha256: " + hex.EncodeToString(sum[:]), "only-arches: [x86_64]", `ln -s "../lib/my-app/My App" "/app/bin/My App"`} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("the manifest lacks %s:\n%s", want, data)
 		}

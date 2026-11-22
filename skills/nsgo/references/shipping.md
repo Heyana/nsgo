@@ -64,6 +64,8 @@ Use the raw Git tag prefix in `release.tag_prefix`; generated install scripts en
 
 On the store channel, `-target macos` and `-target macos_universal` write one universal Mac App Store PKG. `-target android_arm64,android_x64` writes one AAB for both ABIs and needs an NDK for x86_64 ([Building](https://nsgo.dev/docs/building.md#store-packages)).
 
+Linux store builds write an installable `.flatpak` in Go alongside the archive and `flatpak/<id>.yml` for flatpak-builder/Flathub. Install with `flatpak install --user ./<bundle>.flatpak`; use a configured remote for GNOME runtime dependencies.
+
 Android store builds require API 36 or higher. Record outstanding store questionnaires in `compliance` and declare Apple's export compliance in `apple.info` ([Store compliance](https://nsgo.dev/docs/building.md#store-compliance)).
 For Steam, upload the desktop target directories directly. Use `steam-launch.sh` for Linux x64 and upload `nsgo-gtk/` with it. Native dev with `steam.app_id` writes `steam_appid.txt` into its build and starts there. The depot output excludes that file, installers and self-updaters.
 

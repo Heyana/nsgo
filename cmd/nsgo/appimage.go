@@ -30,7 +30,7 @@ var appImageRuntimes = map[string]pinned{
 
 // linuxPackageSuffixes name the packages written beside the Linux
 // package, which none of them holds.
-var linuxPackageSuffixes = []string{".deb", ".pkg.tar.gz", ".AppImage", ".AppImage.zsync", ".tar.gz"}
+var linuxPackageSuffixes = []string{".deb", ".pkg.tar.gz", ".AppImage", ".AppImage.zsync", ".tar.gz", ".flatpak"}
 
 // isLinuxPackage reports whether a file at the top of the Linux package
 // is one of the packages written from it.

@@ -541,7 +541,11 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 			if err != nil {
 				return err
 			}
-			return p.releaseAssets(archive)
+			bundle, err := buildFlatpakBundle(ctx, p, dir, goArch(arch))
+			if err != nil {
+				return err
+			}
+			return p.releaseAssets(archive, bundle)
 		}
 		deb, pkg, err := buildLinuxPackages(ctx, p, dir, goArch(arch))
 		if err != nil {
