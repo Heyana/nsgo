@@ -1407,6 +1407,7 @@ func (s *surface) observe() {
 	// Keys and mouse buttons held as the window stops being key come up for the app: their ups go to the window that is key now, or to none.
 	s.stops = append(s.stops, apple.Observe(center, apple.Global(appKitPath, "NSWindowDidResignKeyNotification"), func(note objc.ID) {
 		if note.Send(sel("object")) == s.window {
+			s.commitMarked()
 			s.releaseKeys()
 			s.releaseMouseButtons()
 		}
@@ -2632,6 +2633,9 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 
 // delete releases v; kept leaves its native where it is, going away.
 func (s *surface) delete(v *view, kept bool) {
+	if v.input != nil {
+		v.input.commitMarked(v.input.editor())
+	}
 	if !kept && !s.inGhost(v.native) {
 		v.native.Send(selRemoveFromSuperview)
 	}

@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"unsafe"
 
 	"github.com/ebitengine/purego/objc"
 
@@ -61,6 +62,9 @@ var (
 	selFirstResponder      = sel("firstResponder")
 	selLength              = sel("length")
 	selUnmarkText          = sel("unmarkText")
+	selInputContext        = sel("inputContext")
+	selDiscardMarkedText   = sel("discardMarkedText")
+	selFirstRectForRange   = sel("firstRectForCharacterRange:actualRange:")
 	selDoCommand           = sel("textView:doCommandBySelector:")
 	selControlCommand      = sel("control:textView:doCommandBySelector:")
 	selInsertNewline       = sel("insertNewline:")
@@ -80,6 +84,9 @@ var (
 
 	selResetCursorRects = sel("resetCursorRects")
 )
+
+// nsNotFound is NSNotFound: no range to replace or no marked range.
+const nsNotFound = uint(1<<63 - 1)
 
 // registerInput registers the field and text view classes.
 func registerInput() {
@@ -163,9 +170,11 @@ func registerInput() {
 				return ok
 			}},
 			{Cmd: sel("resignFirstResponder"), Fn: func(self objc.ID, cmd objc.SEL) bool {
+				in := inputOf(self)
+				in.commitMarked(self)
 				ok := apple.SendSuper[bool](self, cmd)
 				if ok {
-					inputOf(self).focusChanged(false)
+					in.focusChanged(false)
 				}
 				return ok
 			}},
@@ -173,6 +182,7 @@ func registerInput() {
 				apple.Super(self, cmd)
 				inputOf(self).compositionChanged()
 			}},
+			{Cmd: selFirstRectForRange, Fn: firstRectForCharacterRange},
 			{Cmd: sel("acceptsFirstMouse:"), Fn: func(objc.ID, objc.SEL, objc.ID) bool { return true }},
 			{Cmd: sel("paste:"), Fn: func(self objc.ID, cmd objc.SEL, sender objc.ID) {
 				if pasteInto(self) {
@@ -520,6 +530,128 @@ func (in *input) compose(composing bool, marked string) {
 	}
 }
 
+// commitMarked commits any marked text the editor still composes, ends
+// the input method's session so it does not linger or drop the text on
+// focus loss, and reports the committed text before ending the
+// composition.
+func (in *input) commitMarked(e objc.ID) {
+	if in == nil || e == 0 || !objc.Send[bool](e, selHasMarkedText) {
+		return
+	}
+	r := objc.Send[apple.NSRange](e, selMarkedRange)
+	in.applying = true
+	e.Send(selUnmarkText)
+	if ic := e.Send(selInputContext); ic != 0 {
+		ic.Send(selDiscardMarkedText)
+	}
+	if r.Location != nsNotFound && r.Length > 0 {
+		n := objc.Send[uint](e.Send(selString), selLength)
+		end := min(r.Location+r.Length, n)
+		e.Send(selSetSelRange, apple.NSRange{Location: end})
+	}
+	in.applying = false
+	in.updatePlaceholder()
+	in.editing = false
+	text := apple.GoString(e.Send(selString))
+	in.fs.Edited(text)
+	in.compose(false, "")
+}
+
+// commitMarked commits any composition in the surface's active editor.
+func (s *surface) commitMarked() {
+	if s == nil || s.window == 0 {
+		return
+	}
+	fr := s.window.Send(selFirstResponder)
+	if fr == 0 || !objc.Send[bool](fr, sel("isKindOfClass:"), apple.Class("NSTextView")) {
+		return
+	}
+	pasteInput(fr).commitMarked(fr)
+}
+
+// firstRectForCharacterRange answers AppKit's candidate-window and caret
+// geometry query. When the input is a point-wide sink (as code, rich
+// text and terminal editors place at the caret), or when AppKit returns
+// an empty rectangle because the range is clipped outside the view's
+// visible box, return the input's own screen rectangle instead so macOS
+// opens the candidate window beside the caret rather than at the
+// screen's corner.
+func firstRectForCharacterRange(self objc.ID, cmd objc.SEL, r apple.NSRange, actual unsafe.Pointer) apple.CGRect {
+	rect := apple.SendSuper[apple.CGRect](self, cmd, r, actual)
+	in := pasteInput(self)
+	if in == nil {
+		return rect
+	}
+	w := self.Send(selWindow)
+	if w == 0 {
+		return rect
+	}
+	if !isPointWide(in) && rect.Size.Height > 0 {
+		return rect
+	}
+	if fallback, ok := fallbackCaretScreenRect(self, in, w); ok {
+		return fallback
+	}
+	return rect
+}
+
+// isPointWide reports whether in is a caret-tracking input sink whose
+// box is too narrow to lay out glyphs inside its clip view.
+func isPointWide(in *input) bool {
+	if in == nil || in.host == 0 {
+		return false
+	}
+	return objc.Send[apple.CGRect](in.host, selBounds).Size.Width <= 2
+}
+
+// fallbackCaretScreenRect returns the input's screen-coordinate caret
+// box for firstRectForCharacterRange:actualRange: when AppKit's layout
+// geometry cannot place a range (point-wide sinks or clipped ranges).
+func fallbackCaretScreenRect(self objc.ID, in *input, w objc.ID) (apple.CGRect, bool) {
+	var anchor objc.ID
+	var local apple.CGRect
+	if in.multiline {
+		anchor = self
+		local = objc.Send[apple.CGRect](self, sel("visibleRect"))
+		if local.Size.Height <= 0 && in.host != 0 {
+			anchor = in.host
+			local = objc.Send[apple.CGRect](in.host, selBounds)
+		}
+		if local.Size.Height <= 0 {
+			if v := views[in.field]; v != nil {
+				anchor = v.native
+				local = objc.Send[apple.CGRect](anchor, selBounds)
+			}
+		}
+		if local.Size.Height <= 0 {
+			return apple.CGRect{}, false
+		}
+		if lm, font := self.Send(sel("layoutManager")), self.Send(sel("font")); lm != 0 && font != 0 {
+			if lh := objc.Send[float64](lm, sel("defaultLineHeightForFont:"), font); lh > 0 && local.Size.Height > lh {
+				if !objc.Send[bool](anchor, sel("isFlipped")) {
+					local.Origin.Y += local.Size.Height - lh
+				}
+				local.Size.Height = lh
+			}
+		}
+	} else {
+		anchor = in.field
+		local = objc.Send[apple.CGRect](anchor, selBounds)
+		if local.Size.Height <= 0 {
+			if v := views[in.field]; v != nil {
+				anchor = v.native
+				local = objc.Send[apple.CGRect](anchor, selBounds)
+			}
+		}
+		if local.Size.Height <= 0 {
+			return apple.CGRect{}, false
+		}
+	}
+	winRect := objc.Send[apple.CGRect](anchor, sel("convertRect:toView:"), local, objc.ID(0))
+	screen := objc.Send[apple.CGRect](w, sel("convertRectToScreen:"), winRect)
+	return screen, screen.Size.Height > 0
+}
+
 // selectionChanged reports the user's selection.
 func (in *input) selectionChanged() {
 	if in == nil || in.applying || in.focusing || !in.fs.Events.Has(driver.EventSelectionChange) {
@@ -547,8 +679,10 @@ func (in *input) focusChanged(focused bool) {
 			in.selectRange(*r)
 		}
 	} else {
-		// Leaving the input ends its composition.
+		// Leaving the input commits any remaining text and ends its composition.
+		in.commitMarked(in.editor())
 		in.editing = false
+		in.fs.Edited(in.text())
 		in.compose(false, "")
 	}
 	if in.focused == focused {
@@ -603,8 +737,7 @@ func (in *input) command(tv objc.ID, cmd objc.SEL) bool {
 	case selInsertNewline:
 		if objc.Send[bool](tv, selHasMarkedText) {
 			// A return that commits a composition only commits it.
-			tv.Send(selUnmarkText)
-			in.compositionChanged()
+			in.commitMarked(tv)
 			return true
 		}
 		insert, blur := in.fs.Return(in.text(), in.keyMods&shift != 0)
@@ -619,8 +752,7 @@ func (in *input) command(tv objc.ID, cmd objc.SEL) bool {
 		// Option and Control with Return: a line break in a multiline
 		// input whatever Return does; a single line holds none.
 		if objc.Send[bool](tv, selHasMarkedText) {
-			tv.Send(selUnmarkText)
-			in.compositionChanged()
+			in.commitMarked(tv)
 		} else if in.multiline {
 			tv.Send(selInsertNLIgnore, objc.ID(0))
 		}
@@ -742,7 +874,7 @@ func (in *input) followAccent(editor objc.ID) {
 	}
 	app.Send(set, nsColor(accent))
 	appAccent = accent
-	context := editor.Send(sel("inputContext"))
+	context := editor.Send(selInputContext)
 	context.Send(sel("deactivate"))
 	context.Send(sel("activate"))
 }
@@ -770,6 +902,10 @@ func (v *view) configure(c *driver.InputConfig) {
 		if focused {
 			in.focus()
 		}
+	}
+	if c.Disabled || c.Readonly {
+		// Commit any active composition before the editor stops taking edits.
+		in.commitMarked(in.editor())
 	}
 	in.fs.Config = *c
 	font := apple.Font(c.Style.Font)

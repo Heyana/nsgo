@@ -3,6 +3,8 @@
 package apple
 
 import (
+	"reflect"
+	"runtime"
 	"structs"
 
 	"github.com/ebitengine/purego"
@@ -16,10 +18,11 @@ import (
 // runs out.
 
 var (
-	ownClasses     = map[objc.Class]bool{}
-	msgSendSuper2  uintptr
-	objectGetClass uintptr
-	superPoint     func(super *objcSuper, cmd objc.SEL, x, y float64) objc.ID
+	ownClasses         = map[objc.Class]bool{}
+	msgSendSuper2      uintptr
+	msgSendSuper2Stret uintptr
+	objectGetClass     uintptr
+	superPoint         func(super *objcSuper, cmd objc.SEL, x, y float64) objc.ID
 )
 
 type objcSuper struct {
@@ -36,6 +39,9 @@ func loadSuper() {
 	lib := load("/usr/lib/libobjc.A.dylib")
 	objectGetClass = symbol(lib, "object_getClass")
 	send := symbol(lib, "objc_msgSendSuper2")
+	if runtime.GOARCH == "amd64" {
+		msgSendSuper2Stret = symbol(lib, "objc_msgSendSuper2_stret")
+	}
 	purego.RegisterFunc(&superPoint, send)
 	msgSendSuper2 = send
 }
@@ -71,7 +77,13 @@ func ownClass(self objc.ID) objc.Class {
 func SendSuper[T any](self objc.ID, cmd objc.SEL, args ...any) T {
 	loadSuper()
 	var fn func(super *objcSuper, cmd objc.SEL, args ...any) T
-	purego.RegisterFunc(&fn, msgSendSuper2)
+	send := msgSendSuper2
+	if runtime.GOARCH == "amd64" {
+		if t := reflect.TypeFor[T](); t.Kind() == reflect.Struct && t.Size() > 16 {
+			send = msgSendSuper2Stret
+		}
+	}
+	purego.RegisterFunc(&fn, send)
 	return fn(&objcSuper{receiver: self, class: ownClass(self)}, cmd, args...)
 }
 

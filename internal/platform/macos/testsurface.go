@@ -761,9 +761,6 @@ func (t *testSurface) Commit(text string) error {
 	return err
 }
 
-// nsNotFound is NSNotFound, no range to replace: the marked text's.
-const nsNotFound = uint(1<<63 - 1)
-
 func (t *testSurface) Key(key string) error {
 	t.follow()
 	if err := t.keyboard(); err != nil {

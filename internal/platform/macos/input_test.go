@@ -340,3 +340,236 @@ func TestInputReplacementKeepsItsClipHolder(t *testing.T) {
 		}
 	})
 }
+
+// TestInputCommitsMarkedTextOnFocusLoss checks that marked text an input method
+// still composes (such as a whole message under live conversion) is unmarked,
+// kept and reported before composition end when the input loses focus, hands
+// off the shared field editor to another field, turns read-only or disabled,
+// or its window resigns key, without firing spurious key presses (#1562).
+func TestInputCommitsMarkedTextOnFocusLoss(t *testing.T) {
+	onMain(func() {
+		loadAppKit()
+		window := objc.ID(apple.Class("NSWindow")).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
+			apple.Rect(120, 140, 500, 240), uint(0), uint(2), false)
+		window.Send(sel("setReleasedWhenClosed:"), false)
+		defer window.Send(selRelease)
+		const message = "今日はいい天気"
+		markLen := uint(driver.UTF16Len(message))
+
+		for _, multiline := range []bool{false, true} {
+			for _, loss := range []string{"blur", "focus-other-input", "readonly", "disabled", "resign-key"} {
+				s := &surface{window: window, views: make([]*view, 3), animator: driver.NewAnimator(func(driver.Event) {})}
+				v1 := s.create(driver.KindInput, 1)
+				s.views[v1.id] = v1
+				v2 := s.create(driver.KindInput, 2)
+				s.views[v2.id] = v2
+				var evs []driver.Event
+				v1.input.fs.Dispatch = func(ev driver.Event) { evs = append(evs, ev) }
+				v1.input.fs.Events = driver.EventMask(^uint64(0))
+				v2.input.fs.Dispatch = func(driver.Event) {}
+				window.Send(sel("contentView")).Send(selAddSubview, v1.native)
+				window.Send(sel("contentView")).Send(selAddSubview, v2.native)
+				v1.native.Send(selSetFrame, apple.Rect(10, 10, 260, 40))
+				v2.native.Send(selSetFrame, apple.Rect(10, 70, 260, 40))
+				cfg := driver.InputConfig{Multiline: multiline, Content: driver.Bounds{Size: driver.Size{Width: 260, Height: 40}}}
+				v1.configure(&cfg)
+				v2.configure(&driver.InputConfig{Content: driver.Bounds{Size: driver.Size{Width: 260, Height: 40}}})
+				v1.native.Send(sel("layoutSubtreeIfNeeded"))
+				v2.native.Send(sel("layoutSubtreeIfNeeded"))
+				v1.input.focus()
+				e := v1.input.editor()
+				if e == 0 {
+					t.Fatalf("multiline=%v %s: no editor while focused", multiline, loss)
+				}
+
+				// Mark a full message with a mid-clause selection, as live conversion does.
+				e.Send(sel("setMarkedText:selectedRange:replacementRange:"),
+					apple.NSString(message), apple.NSRange{Location: 0, Length: 3}, apple.NSRange{Location: nsNotFound})
+				if !objc.Send[bool](e, selHasMarkedText) {
+					t.Fatalf("multiline=%v %s: editor has no marked text after setMarkedText", multiline, loss)
+				}
+				// Reset events and simulate a stale engine value so commitMarked must
+				// dispatch the final committed EventChangeText before ending composition.
+				v1.input.fs.Value("きょう", v1.input.fs.Count)
+				v1.input.fs.Edited("きょう")
+				evs = nil
+
+				switch loss {
+				case "blur":
+					window.Send(sel("makeFirstResponder:"), objc.ID(0))
+				case "focus-other-input":
+					v2.input.focus()
+				case "readonly":
+					cfg.Readonly = true
+					v1.configure(&cfg)
+				case "disabled":
+					cfg.Disabled = true
+					v1.configure(&cfg)
+				case "resign-key":
+					s.commitMarked()
+				}
+
+				if got := v1.input.text(); got != message {
+					t.Errorf("multiline=%v %s: text = %q, want %q", multiline, loss, got, message)
+				}
+				if !multiline {
+					if got := apple.GoString(v1.input.field.Send(selStringValue)); got != message {
+						t.Errorf("multiline=%v %s: field stringValue = %q, want %q", multiline, loss, got, message)
+					}
+				}
+				if cur := v1.input.editor(); cur != 0 && objc.Send[bool](cur, selHasMarkedText) {
+					t.Errorf("multiline=%v %s: marked text was not cleared", multiline, loss)
+				}
+				if loss == "resign-key" || loss == "readonly" {
+					if got := objc.Send[apple.NSRange](e, selSelectedRange); got != (apple.NSRange{Location: markLen}) {
+						t.Errorf("multiline=%v %s: selection after commit = %+v, want caret at end %d", multiline, loss, got, markLen)
+					}
+				}
+
+				changeIdx, endIdx := -1, -1
+				for i, ev := range evs {
+					switch ev.Kind {
+					case driver.EventChangeText:
+						if ev.Text == message {
+							changeIdx = i
+						}
+					case driver.EventCompositionChange:
+						if ev.Finished {
+							endIdx = i
+						}
+					case driver.EventKeyPress:
+						t.Errorf("multiline=%v %s: spurious key press %q during commit", multiline, loss, ev.Text)
+					}
+				}
+				if changeIdx < 0 {
+					t.Errorf("multiline=%v %s: committed text %q was not reported (events: %+v)", multiline, loss, message, evs)
+				}
+				if endIdx < 0 {
+					t.Errorf("multiline=%v %s: composition end was not reported (events: %+v)", multiline, loss, evs)
+				}
+				if changeIdx >= 0 && endIdx >= 0 && changeIdx >= endIdx {
+					t.Errorf("multiline=%v %s: EventChangeText (%d) did not precede composition end (%d)", multiline, loss, changeIdx, endIdx)
+				}
+
+				window.Send(sel("makeFirstResponder:"), objc.ID(0))
+				s.delete(v2, false)
+				s.delete(v1, false)
+			}
+		}
+	})
+}
+
+// TestPointWideSinkCandidateRect checks that firstRectForCharacterRange:actualRange:
+// places macOS input-method candidates beside the caret of a point-wide editor sink
+// (1pt or 0pt wide, as code, rich text and terminal editors use), including after
+// scrolling or moving the sink, instead of returning (0, 0) at the screen's corner,
+// while normal wide inputs keep tracking character positions (#1562).
+func TestPointWideSinkCandidateRect(t *testing.T) {
+	onMain(func() {
+		loadAppKit()
+		window := objc.ID(apple.Class("NSWindow")).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
+			apple.Rect(220, 310, 600, 400), uint(0), uint(2), false)
+		window.Send(sel("setReleasedWhenClosed:"), false)
+		defer window.Send(selRelease)
+		// Mount inside a flipped root view, as NSGo surfaces do.
+		root := objc.ID(classView).Send(selAlloc).Send(sel("initWithFrame:"), apple.Rect(0, 0, 600, 400))
+		window.Send(sel("setContentView:"), root)
+		defer root.Send(selRelease)
+
+		for _, tc := range []struct {
+			name      string
+			multiline bool
+			width     driver.Points
+		}{
+			{"single-1pt", false, 1},
+			{"single-0pt", false, 0},
+			{"multi-1pt", true, 1},
+			{"multi-0pt", true, 0},
+		} {
+			s := &surface{window: window, native: root, views: make([]*view, 2), animator: driver.NewAnimator(func(driver.Event) {})}
+			v := s.create(driver.KindInput, 1)
+			s.views[v.id] = v
+			v.input.fs.Dispatch = func(driver.Event) {}
+			root.Send(selAddSubview, v.native)
+			v.native.Send(selSetFrame, apple.Rect(110, 90, float64(tc.width), 20))
+			cfg := driver.InputConfig{
+				Multiline: tc.multiline,
+				Style:     driver.TextStyle{Font: driver.Font{Size: 14, Weight: 400}, Color: driver.RGB(0)},
+				Content:   driver.Bounds{Size: driver.Size{Width: tc.width, Height: 20}},
+			}
+			v.configure(&cfg)
+			v.native.Send(sel("layoutSubtreeIfNeeded"))
+			v.input.focus()
+			e := v.input.editor()
+			if e == 0 {
+				t.Fatalf("%s: no editor while focused", tc.name)
+			}
+
+			e.Send(sel("setMarkedText:selectedRange:replacementRange:"),
+				apple.NSString("今日はいい天気ですね"), apple.NSRange{Location: 10, Length: 0}, apple.NSRange{Location: nsNotFound})
+			e.Send(sel("scrollRangeToVisible:"), apple.NSRange{Location: 10, Length: 0})
+
+			checkAt := func(when string, caretX, caretY float64) {
+				v.native.Send(selSetFrame, apple.Rect(caretX, caretY, float64(tc.width), 20))
+				v.native.Send(sel("layoutSubtreeIfNeeded"))
+				winBox := objc.Send[apple.CGRect](v.native, sel("convertRect:toView:"),
+					objc.Send[apple.CGRect](v.native, selBounds), objc.ID(0))
+				wantScreen := objc.Send[apple.CGRect](window, sel("convertRectToScreen:"), winBox)
+				for _, r := range []apple.NSRange{
+					{Location: 0, Length: 0},
+					{Location: 0, Length: 10},
+					{Location: 5, Length: 5},
+					{Location: 10, Length: 0},
+				} {
+					var actual apple.NSRange
+					got := objc.Send[apple.CGRect](e, selFirstRectForRange, r, unsafe.Pointer(&actual))
+					if got.Size.Height <= 0 {
+						t.Errorf("%s %s range %+v: empty screen rect %+v (candidates would open at screen corner)", tc.name, when, r, got)
+						continue
+					}
+					if math.Abs(got.Origin.X-wantScreen.Origin.X) > 4 || math.Abs(got.Origin.Y-wantScreen.Origin.Y) > 6 {
+						t.Errorf("%s %s range %+v: screen rect %+v, want beside sink %+v", tc.name, when, r, got, wantScreen)
+					}
+					// Also verify nil actualRange works safely.
+					gotNil := objc.Send[apple.CGRect](e, selFirstRectForRange, r, unsafe.Pointer(nil))
+					if gotNil != got {
+						t.Errorf("%s %s range %+v: nil actualRange gave %+v, want %+v", tc.name, when, r, gotNil, got)
+					}
+				}
+			}
+
+			checkAt("initial caret", 110, 90)
+			checkAt("moved caret", 280, 210)
+
+			window.Send(sel("makeFirstResponder:"), objc.ID(0))
+			s.delete(v, false)
+		}
+
+		// Normal wide inputs keep tracking character positions across the line.
+		for _, multiline := range []bool{false, true} {
+			s := &surface{window: window, native: root, views: make([]*view, 2), animator: driver.NewAnimator(func(driver.Event) {})}
+			v := s.create(driver.KindInput, 1)
+			s.views[v.id] = v
+			v.input.fs.Dispatch = func(driver.Event) {}
+			root.Send(selAddSubview, v.native)
+			v.native.Send(selSetFrame, apple.Rect(40, 40, 260, 40))
+			v.configure(&driver.InputConfig{
+				Multiline: multiline,
+				Style:     driver.TextStyle{Font: driver.Font{Size: 14, Weight: 400}, Color: driver.RGB(0)},
+				Content:   driver.Bounds{Size: driver.Size{Width: 260, Height: 40}},
+			})
+			v.native.Send(sel("layoutSubtreeIfNeeded"))
+			v.input.focus()
+			e := v.input.editor()
+			e.Send(sel("setMarkedText:selectedRange:replacementRange:"),
+				apple.NSString("今日はいい天気"), apple.NSRange{Location: 7, Length: 0}, apple.NSRange{Location: nsNotFound})
+			start := objc.Send[apple.CGRect](e, selFirstRectForRange, apple.NSRange{Location: 0, Length: 0}, unsafe.Pointer(nil))
+			end := objc.Send[apple.CGRect](e, selFirstRectForRange, apple.NSRange{Location: 7, Length: 0}, unsafe.Pointer(nil))
+			if start.Size.Height <= 0 || end.Size.Height <= 0 || end.Origin.X <= start.Origin.X+40 {
+				t.Errorf("wide multiline=%v: start=%+v end=%+v, want end.Origin.X well past start.Origin.X", multiline, start, end)
+			}
+			window.Send(sel("makeFirstResponder:"), objc.ID(0))
+			s.delete(v, false)
+		}
+	})
+}

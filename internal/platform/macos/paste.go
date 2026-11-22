@@ -26,6 +26,15 @@ func registerPaste() {
 		}
 	}
 	classFieldEditor = register("NsgoFieldEditor", apple.Class("NSTextView"), nil, append(editorCursor(), []objc.MethodDef{
+		{Cmd: sel("resignFirstResponder"), Fn: func(self objc.ID, cmd objc.SEL) bool {
+			pasteInput(self).commitMarked(self)
+			return apple.SendSuper[bool](self, cmd)
+		}},
+		{Cmd: selUnmarkText, Fn: func(self objc.ID, cmd objc.SEL) {
+			apple.Super(self, cmd)
+			pasteInput(self).compositionChanged()
+		}},
+		{Cmd: selFirstRectForRange, Fn: firstRectForCharacterRange},
 		{Cmd: sel("paste:"), Fn: paste},
 		{Cmd: sel("pasteAsPlainText:"), Fn: paste},
 		{Cmd: sel("validateUserInterfaceItem:"), Fn: validatePaste},
@@ -70,7 +79,9 @@ func registerPaste() {
 			// returned.
 			Cmd: sel("windowWillClose:"),
 			Fn: func(self objc.ID, _ objc.SEL, note objc.ID) {
-				if s := windowSurface(note.Send(sel("object"))); s == nil || s.id == 0 {
+				s := windowSurface(note.Send(sel("object")))
+				s.commitMarked()
+				if s == nil || s.id == 0 {
 					apple.OnMain(finish)
 				}
 			},
@@ -164,7 +175,7 @@ func pasteFrom(pb objc.ID) *driver.PasteEvent {
 
 // caretMoved reports where in's caret is, while it has the focus.
 func (in *input) caretMoved() {
-	if in == nil || !in.focused || !in.fs.Events.Has(driver.EventCaretMove) {
+	if in == nil || in.applying || !in.focused || !in.fs.Events.Has(driver.EventCaretMove) {
 		return
 	}
 	v := views[in.field]
@@ -173,7 +184,7 @@ func (in *input) caretMoved() {
 		return
 	}
 	r := objc.Send[apple.NSRange](e, selSelectedRange)
-	screen := objc.Send[apple.CGRect](e, sel("firstRectForCharacterRange:actualRange:"),
+	screen := objc.Send[apple.CGRect](e, selFirstRectForRange,
 		apple.NSRange{Location: r.Location + r.Length}, unsafe.Pointer(nil))
 	var at apple.CGRect
 	if screen.Size.Height > 0 {

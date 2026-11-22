@@ -97,7 +97,7 @@ A final layout answers where its carets are, as NSH's `TextEngine` hit testing d
 - `internal/platform/field` keeps what every Go backend reports the same way: edit counts, selections, keys, compositions, and a `Value` held while an input method composes. Android's `InputField` does the same in Java.
 - An input that loses the focus while an input method composes ends the composition, `OnCompositionChange{Composing:false}`, before its `OnBlur` everywhere but Android, and keeps the composed text everywhere but Linux:
   - Windows completes the IMM32 composition (`CPS_COMPLETE`) as the field loses the focus, whether a click, the app (`Ref.Focus`, `Ref.Blur`), a modal or alert, hiding or UI Automation moves it, so the committed `OnChange` comes before the end and the blur. A field that turns disabled or read-only while composing commits first in the same way, before it stops taking text.
-  - macOS and iOS keep the editor's marked text, already in the field's value and reported by `OnChange` as it was marked, as AppKit and UIKit unmark it while the editor resigns. On macOS an input method's own session is not yet ended and committed as NSH's `commit_marked` does (the roadmap's input methods on macOS).
+  - macOS commits any marked text before the editor resigns, turns disabled or read-only, leaves the tree, or its window resigns key or closes (`unmarkText` followed by `inputContext.discardMarkedText` to end the input method's session without dropping live-converted text), reporting any uncommitted `OnChange` and `OnCompositionChange{Composing:false}` before `OnBlur`. iOS keeps the editor's marked text as UIKit unmarks it while the editor resigns.
   - The web keeps what the browser commits as the element blurs: Chrome fires `compositionend` with the composed text in the value, and the backend reports it before the end.
   - Android's `InputField` clears the composing span as it loses the focus, keeping its text, already reported by `OnChange` as it was composed; the view's focus listener reports the blur first, so `OnBlur` precedes the composition's end there.
   - On Linux the preedit is never in a GTK 4 editor's text, and the backend ends the composition as the editor loses the focus: what the input method commits as GTK tells it of the focus-out reaches the field as an edit, and a preedit it drops is gone, so without such a commit the app hears only the end and the blur.
@@ -107,7 +107,7 @@ A final layout answers where its carets are, as NSH's `TextEngine` hit testing d
 
   | Platform | Caret bounds |
   | --- | --- |
-  | macOS | AppKit's `firstRectForCharacterRange:` |
+  | macOS | AppKit's `firstRectForCharacterRange:actualRange:`, falling back to the input's own screen box for point-wide editor sinks and clipped ranges so input-method candidates open beside the caret rather than at the screen's corner |
   | iOS | UIKit's caret rect, even with `HideCaret` |
   | Android | The EditText's `Layout` after it takes the text |
   | Linux | GTK's cursor extents and locations |
