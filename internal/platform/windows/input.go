@@ -578,7 +578,7 @@ func (in *textInput) scrollDelta(dy driver.Points) bool {
 		if maxScroll <= 0 {
 			return false
 		}
-		to := min(max(in.scroll-float32(notches*wheelStep), 0), maxScroll)
+		to := min(max(in.scroll+float32(dy), 0), maxScroll)
 		if to == in.scroll || !in.re.setVScroll(to) {
 			return false
 		}
