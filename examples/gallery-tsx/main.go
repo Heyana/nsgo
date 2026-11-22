@@ -13,6 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/tsx/compiler"
 	_ "github.com/nsgo-dev/nsgo/tsx/diagram"
 	_ "github.com/nsgo-dev/nsgo/tsx/editor"
+	_ "github.com/nsgo-dev/nsgo/tsx/formula"
 	_ "github.com/nsgo-dev/nsgo/tsx/terminal"
 	_ "github.com/nsgo-dev/nsgo/tsx/ui"
 	_ "github.com/nsgo-dev/nsgo/tsx/ui/chat"

@@ -267,6 +267,7 @@ nsgo/base.Dialog
 nsgo/base.DiffView
 nsgo/base.DockArea
 nsgo/base.Editor
+nsgo/base.Formula
 nsgo/base.HoverCard
 nsgo/base.Input
 nsgo/base.Link

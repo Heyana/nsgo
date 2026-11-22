@@ -196,6 +196,7 @@ var typePrefixes = map[string]string{
 	"github.com/nsgo-dev/nsgo/base/diagram":   "Diagram",
 	"github.com/nsgo-dev/nsgo/base/dock":      "Dock",
 	"github.com/nsgo-dev/nsgo/base/editor":    "Editor",
+	"github.com/nsgo-dev/nsgo/base/formula":   "Formula",
 	"github.com/nsgo-dev/nsgo/base/plot":      "Plot",
 	"github.com/nsgo-dev/nsgo/base/textview":  "TextView",
 	"github.com/nsgo-dev/nsgo/base/toast":     "Toast",

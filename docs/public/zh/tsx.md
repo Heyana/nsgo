@@ -50,6 +50,17 @@ import { Diagram, TextView } from "nsgo/base";
 
 `nsgo/ui` 的 TextView 也接受相同的 `renderDiagram`。其他语言的代码块继续使用原有渲染方式；无效的图表显示源码。
 
+在 Go 宿主中副作用导入 `github.com/nsgo-dev/nsgo/tsx/formula`，并导入 `tsx/textview` 或 `tsx/ui`，即可从 `nsgo/base` 使用排版后的 `Formula`；未导入该包的应用不会链接数学引擎和字体。它接受 `source`、`dialect`（默认为 `tex`，也可设为 `typst`）、`display`、`accessibilityLabel` 和样式属性，字号和颜色继承周围的文本。可以直接使用，也可以给 TextView 提供渲染函数：
+
+```tsx
+import { Formula, TextView } from "nsgo/base";
+
+<TextView markdown={markdown}
+  renderMath={(math) => <Formula source={math.tex} display={math.display} />} />
+```
+
+`nsgo/ui` 的 TextView 也接受相同的 `renderMath`；复制公式时仍得到 TeX。Go 的 `Renderer` 由宿主配置。
+
 ## 在 TSX 中使用 Go
 
 注册 Go 代码供 TSX 导入：

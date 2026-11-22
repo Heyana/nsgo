@@ -52,6 +52,31 @@ func TestTextViewDrawsItsDiagram(t *testing.T) {
 	app.Screenshot("tsx-textview-diagram")
 }
 
+func TestTextViewDrawsItsFormulas(t *testing.T) {
+	app := nsgotest.Start(t, Root, nsgotest.Size(1080, 760), nsgotest.Environment(core.Environment{Locale: "en-US"}))
+	app.Press("id:nav-TextView")
+	app.WaitFor("id:demo-TextView", 5*time.Second)
+	app.WaitUntil(10*time.Second, func() bool {
+		for _, id := range []string{"textview-inline-math", "textview-display-math"} {
+			views := app.QueryMounted("id:" + id)
+			if len(views) != 1 || views[0].Kind != nsgotest.KindCanvas || len(views[0].Ops) == 0 {
+				return false
+			}
+		}
+		return true
+	})
+	for id, want := range map[string]string{"textview-inline-math": "E equals m c squared", "textview-display-math": "1 over 2"} {
+		if got := app.FindMounted("id:" + id).Props.Label; got != want {
+			t.Fatalf("%s reads %q, want %q", id, got, want)
+		}
+	}
+	if v := app.Find("id:textview-scroll"); v.Content.Height > v.Frame.Size.Height+1 {
+		app.Scroll("id:textview-scroll", 1000)
+	}
+	app.WaitFor("id:textview-display-math", 5*time.Second)
+	app.Screenshot("tsx-textview-formulas")
+}
+
 // startPhone starts the gallery at a phone's size, in its narrow layout.
 func startPhone(t *testing.T) *nsgotest.App {
 	t.Helper()

@@ -1,5 +1,5 @@
 import { Scroll, signal, Text, View } from "nsgo";
-import { Diagram, Editor } from "nsgo/base";
+import { Diagram, Editor, Formula } from "nsgo/base";
 import { DiffView, TextView } from "nsgo/ui";
 import { BoolKnob, ChoiceKnob, NumberKnob, StagePage, Status } from "../parts";
 
@@ -123,6 +123,14 @@ flowchart LR
   accTitle: Document pipeline
   A[Markdown] --> B[Native diagram]
 \`\`\`
+
+## Formulas
+
+Inline energy: $E=mc^2$.
+
+$$
+\\frac{1}{2}
+$$
 `;
 
 export function TextViewDemo() {
@@ -133,7 +141,9 @@ export function TextViewDemo() {
         <Scroll testID="textview-scroll" class="flex-1">
           <View class="p-4">
             <TextView testID="textview" markdown={markdown} selectable={selectable()}
-              renderDiagram={(code) => <Diagram testID="textview-diagram" source={code.code} errorClass="font-mono" />} />
+              renderDiagram={(code) => <Diagram testID="textview-diagram" source={code.code} errorClass="font-mono" />}
+              renderMath={(math) => <Formula testID={math.display ? "textview-display-math" : "textview-inline-math"}
+                source={math.tex} display={math.display} />} />
           </View>
         </Scroll>
       </View>

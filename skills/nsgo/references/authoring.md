@@ -51,3 +51,4 @@ On HarmonyOS, use Go’s standard file APIs under `cx.DataDir()`, `cx.CacheDir()
 - In TSX data, omit a flow node's `width`/`height` to measure its JSX content, an edge's `width` for the default stroke, and a quota row's `pace` to omit its pace mark.
 - Register Go components for TSX in an `init` function with `tsx.Register("example.com/chips", ...)`.
 - For TSX Mermaid diagrams, import `tsx/diagram` for its effect in Go, then `Diagram` from `nsgo/base`. A `TextView` from `nsgo/base` or `nsgo/ui` takes `renderDiagram={(code) => <Diagram source={code.code} errorClass="font-mono" />}`. [TSX apps](https://nsgo.dev/docs/tsx.md)
+- For TSX math, import `tsx/formula` for its effect in Go, then `Formula` from `nsgo/base`; `dialect` is `tex` or `typst`. A TextView takes `renderMath={(math) => <Formula source={math.tex} display={math.display} />}`. Font size and color inherit from text. [TSX apps](https://nsgo.dev/docs/tsx.md)

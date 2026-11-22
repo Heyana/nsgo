@@ -50,6 +50,17 @@ import { Diagram, TextView } from "nsgo/base";
 
 The same `renderDiagram` prop works on `nsgo/ui`'s TextView. A non-Mermaid code block keeps its usual renderer; an invalid diagram shows its source.
 
+For typeset math, import `github.com/nsgo-dev/nsgo/tsx/formula` for its effect in the Go host, alongside `tsx/textview` or `tsx/ui`. This adds `Formula` to `nsgo/base`; apps that omit the package keep the math engine and font out of their binary. It takes `source`, `dialect` (`tex` by default, or `typst`), `display`, `accessibilityLabel` and styling props. Font size and color follow the surrounding text. Use it directly or provide a TextView renderer:
+
+```tsx
+import { Formula, TextView } from "nsgo/base";
+
+<TextView markdown={markdown}
+  renderMath={(math) => <Formula source={math.tex} display={math.display} />} />
+```
+
+The same `renderMath` works on `nsgo/ui`'s TextView. Formulas retain their TeX when copied. The Go `Renderer` remains a host configuration.
+
 `UrlScheme.url()` reads the tracked application address; `UrlScheme.setUrl(url, { history: "push" })` adds an address entry, or replaces it when options are omitted. `UrlScheme.on("change", fn)` observes browser back, forward and hash changes and returns an unsubscribe function. See [Application addresses](addresses.md) for routing, same-origin validation and deep-link hosting.
 
 ## Go from TSX
