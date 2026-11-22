@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -53,6 +54,25 @@ type SceneForTest struct {
 	Orientations uint
 	// Foreground says the scene is in the foreground, active or not.
 	Foreground bool
+}
+
+// DetachHardwareKeyboardForTest tells the system no hardware keyboard is connected, as a newly booted simulator has none, so that a focused field shows the software keyboard. The keys a test presses on a simulator are IOHID keyboard events, and once UIKit takes one it counts a hardware keyboard as connected for as long as the simulator runs, in every app launched after it too, so focus shows no software keyboard and leaves the inset at 0. On a physical device it does nothing: a real keyboard is the user's.
+func DetachHardwareKeyboardForTest() error {
+	if !runningOnSimulator() {
+		return nil
+	}
+	gs, err := purego.Dlopen("/System/Library/PrivateFrameworks/GraphicsServices.framework/GraphicsServices", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	if err != nil {
+		return err
+	}
+	sym, err := purego.Dlsym(gs, "GSEventSetHardwareKeyboardAttached")
+	if err != nil {
+		return err
+	}
+	var setAttached func(attached bool, layout uint32)
+	purego.RegisterFunc(&setAttached, sym)
+	onMainSync(func() { setAttached(false, 0) })
+	return nil
 }
 
 // MultipleScenesForTest reports whether UIKit can show the app in several scenes at once: an iPad's, when the app declares them.

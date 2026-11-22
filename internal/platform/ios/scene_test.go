@@ -222,7 +222,7 @@ func TestSceneStatusBarAndOrientationsArePerScene(t *testing.T) {
 	})
 }
 
-// TestSceneKeyboardInsetFollowsFocus focuses fields in both scenes and checks the inset in each tree.
+// TestSceneKeyboardInsetFollowsFocus focuses fields in both scenes and checks the software keyboard's inset in each tree.
 func TestSceneKeyboardInsetFollowsFocus(t *testing.T) {
 	var heights [2]atomic.Int32
 	a := &sceneCounter{look: func(cx *core.Scope, n int32) []core.Node {
@@ -232,6 +232,10 @@ func TestSceneKeyboardInsetFollowsFocus(t *testing.T) {
 		return []core.Node{core.Input{TestID: "keyboard", Style: core.Style{Width: core.Pt(200), Height: core.Pt(44)}}}
 	}}
 	_, first, second := openSecondScene(t, a)
+	// The keys an earlier test pressed leave the simulator with a hardware keyboard, which keeps the software one hidden.
+	if err := ios.DetachHardwareKeyboardForTest(); err != nil {
+		t.Fatal(err)
+	}
 	for i, sc := range []ios.SceneForTest{second, first, second} {
 		if err := ios.ActivateSceneForTest(sc, sceneWait); err != nil {
 			t.Fatal(err)
