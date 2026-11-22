@@ -22,6 +22,7 @@ Everything to hand out lands in `dist/releases`, the only directory to look in:
 | `*.pkg`, `*.msix`, `*.aab`, `*.tar.gz` and `flatpak/` | A `store` build's [store packages](#store-packages) |
 | `install.sh`, `install.ps1` | Scripts installing the app from [GitHub releases](#publish-on-github) |
 | `appcast-<target>.xml` | The feeds [updating](#updates) apps read |
+| `homebrew/<name>.rb`, `winget/` | Direct-release [Homebrew cask and winget manifests](#channels) |
 | `*-web.zip` | The site, to unpack and serve as it is |
 | `miniprogram/<platform>/` | Each mini program's project, to upload from its developer tool |
 
@@ -346,7 +347,7 @@ The channel decides who updates the app. `-channel` replaces `updates.channel` f
 | `steam` | Steam | Produce [depot directories](#steam-depots) that Steam updates |
 | `none` | Linux distributions and anyone who repackages the app | Check nothing |
 
-Stores reject apps that update themselves, so upload a `store` build, never a direct one. A Homebrew cask for a direct app says `auto_updates true`. Wherever the system tells who installed the app, the app checks that too: an Android app from Google Play or another store, a Flatpak or Snap, and a TestFlight build check nothing, as their store updates them.
+Stores reject apps that update themselves, so upload a `store` build, never a direct one. Each direct release with macOS or Windows installers also writes a Homebrew cask (`dist/releases/homebrew/<name>.rb`, declaring `auto_updates true`, checksums and download URLs for the built disk images) and a winget multi-file manifest (`dist/releases/winget/<id>.yaml`, `<id>.installer.yaml` and `<id>.locale.en-US.yaml` for the built NSIS installers). Wherever the system tells who installed the app, the app checks that too: an Android app from Google Play or another store, a Flatpak or Snap, and a TestFlight build check nothing, as their store updates them.
 
 ### Checking from the app
 

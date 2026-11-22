@@ -91,6 +91,9 @@ func buildAll(ctx context.Context, p *project) error {
 	if err := p.writeFlatpakManifest(buildTargets); err != nil {
 		return err
 	}
+	if err := p.writePackageManifests(ctx, buildTargets); err != nil {
+		return err
+	}
 	buildSummary(p, len(buildTargets), total, time.Since(started))
 	if p.openOutput() {
 		openDir(p.Build.Output)

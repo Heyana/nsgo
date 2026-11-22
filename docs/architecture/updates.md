@@ -30,7 +30,7 @@ Linux, Android and iOS have no such schedule, so `nsgo.Run` calls `updater.Check
 
 One platform reaches users through several channels, and the channel, not the platform, decides who updates the app. `updates.channel`, or `nsgo build -channel`, names it per build:
 
-- `direct`, the default with a key: the app's own downloads update themselves. macOS and Windows packages carry Sparkle and WinSparkle, and each release writes signed appcasts. On this channel the `macos_universal` target joins the two macOS architectures into one app with one DMG and feed.
+- `direct`, the default with a key: the app's own downloads update themselves. macOS and Windows packages carry Sparkle and WinSparkle, and each release writes signed appcasts plus package manager manifests (`homebrew/<slug>.rb` with `auto_updates true` and `winget/` multi-file manifests) for the built macOS and Windows installers. On this channel the `macos_universal` target joins the two macOS architectures into one app with one DMG and feed.
 - `store`: a store or package manager updates the app. Packages carry no updater and no appcast; iOS still asks the App Store, which needs no key.
 - `steam`: Steam updates the depot. The desktop build uses `nsgo_steam` to omit the platform self-updater, the Linux package installer and downloader hook, and the automatic schedule. The public update checks compile as no-ops.
 - `none`: nothing checks, for packagers who repackage the app.
@@ -68,7 +68,7 @@ Linux cannot tell a distribution's package from a downloaded one, so its package
 
 ## Verification
 
-- `updater`'s alerts and schedule are tested with `nsgotest`; the appcast reader, version order, App Store answers and the installer rules run headless, and the tool's tests cover channels, flags and signed appcasts.
+- `updater`'s alerts and schedule are tested with `nsgotest`; the appcast reader, version order, App Store answers and the installer rules run headless, and the tool's tests cover channels, flags, signed appcasts, Homebrew casks (checked with `brew style` and strict `Cask::Audit`) and winget manifests (strict YAML schema round-trip and `winget validate` on Windows).
 - End to end against a local appcast (2026-11-11), with a copy of the tool that took an `http` feed, Sparkle on macOS downloaded 0.2.0 in the background and installed it, ad hoc signed, as 0.1.0 quit.
 - WinSparkle on Windows 11 x64 offered 0.2.0, verified the download, ran the setup with `/S /RELAUNCH` and started 0.2.0 (2026-11-11).
 - WinSparkle on an English Windows 11 x64 spoke the language an app forced as it mounted: Simplified and Traditional Chinese, Brazilian Portuguese and Japanese (2026-11-16). wxWidgets matches the language set only in lower case (`zh_cn`), which `TestWinSparkleLanguage` keeps.

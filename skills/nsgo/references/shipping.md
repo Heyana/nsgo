@@ -54,7 +54,7 @@ go tool nsgo build -channel steam -target macos_universal,windows_x64,linux_x64
 go tool nsgo build -release-notes notes.md  # the release's notes, which the update prompts show
 ```
 
-Packages land in `dist/<name>-<version>-<target>`, and everything to hand out in `dist/releases`, each file named `<name>-<version>-<system>-<arch>` with its `.sha256`. Builds are release builds; `go tool nsgo dev -release` runs one with hot reload for measuring.
+Packages land in `dist/<name>-<version>-<target>`, and everything to hand out in `dist/releases`, each file named `<name>-<version>-<system>-<arch>` with its `.sha256`. Direct releases with macOS or Windows installers also write a Homebrew cask (`dist/releases/homebrew/<slug>.rb`, with `auto_updates true`) and a winget multi-file manifest (`dist/releases/winget/`). Builds are release builds; `go tool nsgo dev -release` runs one with hot reload for measuring.
 
 On the store channel, `-target macos` and `-target macos_universal` write one universal Mac App Store PKG. `-target android_arm64,android_x64` writes one AAB for both ABIs and needs an NDK for x86_64 ([Building](https://nsgo.dev/docs/building.md#store-packages)).
 

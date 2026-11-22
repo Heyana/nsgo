@@ -183,13 +183,7 @@ func (p *project) writeFlatpakManifest(targets []string) error {
 // releaseFilesURL is where this version's release files are downloaded
 // from: updates.feed, else its GitHub release; "" without either.
 func (p *project) releaseFilesURL() string {
-	if p.Updates.Feed != "" {
-		return p.Updates.Feed
-	}
-	if repo := p.githubRepository(context.Background()); repo != "" {
-		return "https://github.com/" + repo + "/releases/download/" + url.PathEscape(p.tagPrefix()+p.Version) + "/"
-	}
-	return ""
+	return p.releaseFilesURLContext(context.Background())
 }
 
 // flatpakManifest installs the app in /app/lib/<slug>, its command, desktop

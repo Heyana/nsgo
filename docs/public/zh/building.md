@@ -22,6 +22,7 @@ go tool nsgo build
 | `*.pkg`、`*.msix`、`*.aab`、`*.tar.gz` 和 `flatpak/` | `store` 构建的[商店包](#商店包) |
 | `install.sh`、`install.ps1` | 从 [GitHub Releases](#发布到-github) 安装应用的脚本 |
 | `appcast-<目标>.xml` | [自动更新](#自动更新)的应用读取的更新源 |
+| `homebrew/<name>.rb`、`winget/` | direct 发布的 [Homebrew cask 与 winget 清单](#渠道) |
 | `*-web.zip` | 网站，解压后原样部署即可 |
 | `miniprogram/<平台>/` | 各小程序的项目，用对应开发者工具上传 |
 
@@ -335,7 +336,7 @@ updates:
 | `steam` | Steam | 生成由 Steam 更新的 [depot 目录](#steam-depot) |
 | `none` | Linux 发行版，以及重新打包应用的人 | 不检查更新 |
 
-应用商店会拒绝自行更新的应用，所以上传 `store` 构建，不要上传 direct 构建。direct 应用的 Homebrew cask 应写 `auto_updates true`。凡是系统能说明应用由谁安装的地方，应用也会检查：从 Google Play 或其他商店安装的 Android 应用、Flatpak 或 Snap，以及 TestFlight 构建都不检查，由各自的商店更新。
+应用商店会拒绝自行更新的应用，所以上传 `store` 构建，不要上传 direct 构建。包含 macOS 或 Windows 安装程序的每次 direct 发布还会写出 Homebrew cask（`dist/releases/homebrew/<name>.rb`，声明 `auto_updates true` 及已构建磁盘映像的校验和与下载地址）和 winget 多文件清单（`dist/releases/winget/<id>.yaml`、`<id>.installer.yaml` 和 `<id>.locale.en-US.yaml`，对应已构建的 NSIS 安装程序）。凡是系统能说明应用由谁安装的地方，应用也会检查：从 Google Play 或其他商店安装的 Android 应用、Flatpak 或 Snap，以及 TestFlight 构建都不检查，由各自的商店更新。
 
 ### 在应用中检查
 
