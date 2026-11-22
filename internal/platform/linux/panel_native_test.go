@@ -3,6 +3,8 @@
 package linux
 
 import (
+	"math"
+
 	"github.com/ebitengine/purego"
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -77,35 +79,86 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 		return m
 	})
 	waitPixels(t, p, "the transparent card pixels", func(px pixels) bool {
-		q := px.at(px.width/2, px.height/2)
-		return q[0] > 80 && q[3] > 80
+		return px.width == 180 && px.height == 80
 	})
+	initial := p.surfacePixels(t)
+	if q := initial.at(initial.width/2, initial.height/2); q[3] != 255 {
+		t.Fatalf("the card center is not opaque: alpha=%d", q[3])
+	}
+	clear, antialias := 0, 0
+	for y := 0; y < initial.height; y++ {
+		for x := 0; x < initial.width; x++ {
+			a := initial.at(x, y)[3]
+			switch {
+			case a == 0:
+				clear++
+			case a < 255:
+				antialias++
+			}
+		}
+	}
+	if clear == 0 || antialias == 0 {
+		t.Fatalf("transparent rounded panel has no clear/antialiased pixels: clear=%d antialias=%d", clear, antialias)
+	}
 	var d, x, r uintptr
-	var before driver.Point
+	anchor := driver.Bounds{Origin: driver.Point{X: 300, Y: 180}, Size: driver.Size{Width: 40, Height: 24}}
+	panelOrigin := func(size driver.Size) driver.Point {
+		var want driver.Point
+		host.onLoop(t, func() {
+			displays := p.environment().Displays
+			if len(displays) == 0 {
+				t.Fatal("the native test has no display")
+			}
+			area := displays[0].VisibleFrame
+			center := driver.Point{X: anchor.Origin.X + anchor.Size.Width/2, Y: anchor.Origin.Y + anchor.Size.Height/2}
+			for _, display := range displays {
+				if display.Frame.Contains(center) {
+					area = display.VisibleFrame
+					break
+				}
+			}
+			want, _ = driver.PlaceWindow(anchor, size, area, driver.WindowPlaceRight)
+		})
+		return want
+	}
+	nativeOrigin := func() driver.Point {
+		var got driver.Point
+		host.onLoop(t, func() {
+			a, b := translate1394(d, x, r)
+			got = driver.Point{X: driver.Points(a), Y: driver.Points(b)}
+		})
+		return got
+	}
+	assertPlacement := func(size driver.Size, label string) {
+		want := panelOrigin(size)
+		got := nativeOrigin()
+		var scale float64
+		host.onLoop(t, func() { scale = float64(max(gtkWidgetGetScaleFactor(p.win), 1)) })
+		want = driver.Point{X: driver.Points(math.Round(float64(want.X) * scale)), Y: driver.Points(math.Round(float64(want.Y) * scale))}
+		if got != want {
+			t.Errorf("%s panel origin = %v, want %v (scale %.1f)", label, got, want, scale)
+		}
+	}
 	host.onLoop(t, func() {
 		d, x, _ = p.x11Window()
 		r = x11LevelRoot(d)
-		a, b := translate1394(d, x, r)
-		before = driver.Point{X: driver.Points(a), Y: driver.Points(b)}
 		if p.environment().WindowTransparent != displayComposites() {
 			t.Errorf("transparent=%v compositor=%v", p.environment().WindowTransparent, displayComposites())
 		}
 	})
+	assertPlacement(driver.Size{Width: 180, Height: 80}, "initial")
 	ctl.s.Post(func() { ctl.h.Set(180) })
 	wait1394(t, "grow", func() bool {
-		var h int32
-		host.onLoop(t, func() { h = gtkWidgetGetHeight(p.surface) })
-		return h >= 180
+		var width, height int32
+		host.onLoop(t, func() { width, height = gtkWidgetGetWidth(p.surface), gtkWidgetGetHeight(p.surface) })
+		return width == 180 && height == 180
 	})
-	var after driver.Point
-	host.onLoop(t, func() { a, b := translate1394(d, x, r); after = driver.Point{X: driver.Points(a), Y: driver.Points(b)} })
-	if after.X != before.X {
-		t.Errorf("panel left its right-side anchor from %v to %v", before, after)
-	}
+	assertPlacement(driver.Size{Width: 180, Height: 180}, "grown")
 	ctl.s.Post(func() { ctl.h.Set(40) })
 	wait1394(t, "shrink", func() bool {
-		var h int32
-		host.onLoop(t, func() { h = gtkWidgetGetHeight(p.surface) })
-		return h <= 45
+		var width, height int32
+		host.onLoop(t, func() { width, height = gtkWidgetGetWidth(p.surface), gtkWidgetGetHeight(p.surface) })
+		return width == 180 && height == 40
 	})
+	assertPlacement(driver.Size{Width: 180, Height: 40}, "shrunk")
 }
