@@ -804,7 +804,7 @@ func (w *window) serveMessages() {
 		// Shortcuts take key presses before they become characters, in the window the keys go to: this one or a surface the app opened.
 		if t := windows[m.Hwnd]; t != nil && (t == w || t.hostWindow == w) {
 			if t.ignoreTestInput(m.Message) {
-				continue
+				return true
 			}
 			t.reportModality(m.Message, m.WParam)
 			if (m.Message == wmKeyDown || m.Message == wmSysKeyDown) && (t.keyDown(m.WParam, m.LParam) || t.shortcut(m.WParam, m.LParam)) {
