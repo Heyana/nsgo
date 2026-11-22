@@ -48,10 +48,10 @@ jobs:
             mergeable=null
             labelled=false
             for attempt in 1 2 3 4; do
-              if response=$(gh api "repos/$GH_REPO/pulls/$number" 2>/dev/null); then
-                mergeable=$(printf '%s' "$response" | jq -r '.mergeable | tostring')
-                labelled=$(printf '%s' "$response" | jq -r --arg label "$LABEL" 'any(.labels[]; .name == $label) | tostring')
-              else
+              # The parse sits inside the condition so a body that is not JSON counts as not computed instead of tripping set -e.
+              if ! { response=$(gh api "repos/$GH_REPO/pulls/$number" 2>/dev/null) \
+                && mergeable=$(printf '%s' "$response" | jq -r '.mergeable | tostring') \
+                && labelled=$(printf '%s' "$response" | jq -r --arg label "$LABEL" 'any(.labels[]; .name == $label) | tostring'); }; then
                 mergeable=null
               fi
               [ "$mergeable" != null ] && break
