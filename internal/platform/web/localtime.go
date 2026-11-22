@@ -10,15 +10,7 @@ import (
 	"time"
 )
 
-// Go's js runtime sets time.Local once to the offset the browser's zone has
-// at startup, so times across a daylight saving change show an hour off and
-// a change of the system's zone while the page stays open goes unseen.
-// refreshTimeZone checks Intl.DateTimeFormat().resolvedOptions().timeZone and
-// Date's offsets, loads the IANA zone when available (for apps with tzdata),
-// else synthesizes TZif transitions from the browser's Date from 1970 to 50
-// years ahead, else falls back to a fixed zone, and updates time.Local only
-// when the browser's zone changed. Times read after a change are in the new
-// zone; the app is not rendered again for it.
+// Go's js runtime sets time.Local once to the offset the browser's zone has at startup, so times across a daylight saving change show an hour off and a change of the system's zone while the page stays open goes unseen. refreshTimeZone checks Intl.DateTimeFormat().resolvedOptions().timeZone and Date's offsets, loads the IANA zone when available (for apps with tzdata), else synthesizes TZif transitions from the browser's Date from 1970 to 50 years ahead, else falls back to a fixed zone, and updates time.Local only when the browser's zone changed. Times read after a change are in the new zone; the app is not rendered again for it.
 
 const timeZoneCheckIntervalMS = 30_000
 

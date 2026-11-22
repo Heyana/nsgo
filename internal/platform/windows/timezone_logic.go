@@ -41,8 +41,7 @@ type windowsZoneMeta struct {
 	dst  string
 }
 
-// windowsZones maps Windows time zone key names (CLDR windowsZones.xml territory "001")
-// to their canonical IANA zone IDs and standard/daylight abbreviations.
+// windowsZones maps Windows time zone key names (CLDR windowsZones.xml territory "001") to their canonical IANA zone IDs and standard/daylight abbreviations.
 var windowsZones = map[string]windowsZoneMeta{
 	"Egypt Standard Time":             {"Africa/Cairo", "EET", "EEST"},
 	"Morocco Standard Time":           {"Africa/Casablanca", "+00", "+01"},
@@ -191,8 +190,7 @@ func windowsZoneIDToIANA(winID string) (string, bool) {
 	return meta.iana, ok
 }
 
-// localeRegion extracts the ISO 3166-1 / UN M.49 region subtag from a BCP-47 locale tag
-// (such as "en-US" -> "US", "zh-Hans-CN" -> "CN", "es-419" -> "419").
+// localeRegion extracts the ISO 3166-1 / UN M.49 region subtag from a BCP-47 locale tag (such as "en-US" -> "US", "zh-Hans-CN" -> "CN", "es-419" -> "419").
 func localeRegion(locale string) string {
 	parts := strings.Split(strings.ReplaceAll(locale, "_", "-"), "-")
 	for i := 1; i < len(parts); i++ {
@@ -264,10 +262,7 @@ func windowsZoneAbbrs(keyName, stdName, dstName string, stdOffset, dstOffset int
 	return std, dst
 }
 
-// winPseudoUnix returns the local-time Unix seconds represented by d in year.
-// When d.Year == 0, d specifies a recurring weekday occurrence (d.Day 1..5,
-// where 5 means the last occurrence of d.DayOfWeek in d.Month); otherwise d
-// specifies an absolute calendar date.
+// winPseudoUnix returns the local-time Unix seconds represented by d in year. When d.Year == 0, d specifies a recurring weekday occurrence (d.Day 1..5, where 5 means the last occurrence of d.DayOfWeek in d.Month); otherwise d specifies an absolute calendar date.
 func winPseudoUnix(year int, d winSystemTime) int64 {
 	if d.Year != 0 {
 		return time.Date(int(d.Year), time.Month(d.Month), int(d.Day), int(d.Hour), int(d.Minute), int(d.Second), 0, time.UTC).Unix()
@@ -293,8 +288,7 @@ func daysInMonth(year int, month time.Month) int {
 	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
 }
 
-// windowsTZif encodes info's offsets and daylight saving transitions as a TZif v2
-// payload that time.LoadLocationFromTZData parses without needing embedded tzdata.
+// windowsTZif encodes info's offsets and daylight saving transitions as a TZif v2 payload that time.LoadLocationFromTZData parses without needing embedded tzdata.
 func windowsTZif(info *winDynamicTimeZoneInfo, stdAbbr, dstAbbr string, baseYear int) []byte {
 	type tx struct {
 		when  int64
@@ -377,10 +371,7 @@ func windowsTZif(info *winDynamicTimeZoneInfo, stdAbbr, dstAbbr string, baseYear
 	return append(b, '\n', '\n')
 }
 
-// windowsLocation builds a *time.Location from a Windows DYNAMIC_TIME_ZONE_INFORMATION.
-// When DST is enabled and an IANA ID is known, it first tries loadLocation (which succeeds
-// when tzdata is available), otherwise it synthesizes TZif rules directly from info, and
-// finally falls back to a fixed zone of the zone's standard bias.
+// windowsLocation builds a *time.Location from a Windows DYNAMIC_TIME_ZONE_INFORMATION. When DST is enabled and an IANA ID is known, it first tries loadLocation (which succeeds when tzdata is available), otherwise it synthesizes TZif rules directly from info, and finally falls back to a fixed zone of the zone's standard bias.
 func windowsLocation(info *winDynamicTimeZoneInfo, iana string, loadLocation func(string) (*time.Location, error), baseYear int) *time.Location {
 	keyName := utf16String(info.TimeZoneKeyName[:])
 	stdName := utf16String(info.StandardName[:])

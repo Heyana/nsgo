@@ -18,9 +18,7 @@ const (
 	inotifyQOverflow       = 0x4000
 )
 
-// followSystemTimeZone reports whether this process follows the system's
-// /etc/localtime rather than an explicit TZ environment variable, matching
-// Go's time/zoneinfo_unix.go.
+// followSystemTimeZone reports whether this process follows the system's /etc/localtime rather than an explicit TZ environment variable, matching Go's time/zoneinfo_unix.go.
 func followSystemTimeZone(lookupEnv func(string) (string, bool)) bool {
 	tz, ok := lookupEnv("TZ")
 	if !ok {
@@ -29,8 +27,7 @@ func followSystemTimeZone(lookupEnv func(string) (string, bool)) bool {
 	return tz == defaultLocaltimePath || tz == ":"+defaultLocaltimePath
 }
 
-// zoneNameFromSymlink extracts an IANA zone ID (such as "America/New_York")
-// from a symlink target pointing under a zoneinfo directory.
+// zoneNameFromSymlink extracts an IANA zone ID (such as "America/New_York") from a symlink target pointing under a zoneinfo directory.
 func zoneNameFromSymlink(target string) string {
 	if target == "" {
 		return ""
@@ -51,8 +48,7 @@ func zoneNameFromSymlink(target string) string {
 	return name
 }
 
-// parseInotifyEvents parses raw Linux inotify_event records and reports whether
-// any event targets one of names or indicates a queue overflow.
+// parseInotifyEvents parses raw Linux inotify_event records and reports whether any event targets one of names or indicates a queue overflow.
 func parseInotifyEvents(buf []byte, names ...string) bool {
 	for len(buf) >= inotifyEventHeaderSize {
 		mask := binary.NativeEndian.Uint32(buf[4:8])
@@ -105,9 +101,7 @@ func locationsAgree(a, b *time.Location, year int) bool {
 	return true
 }
 
-// readLinuxTimeZone reads the system's current time zone from localtimePath
-// (and timezonePath as a name hint or fallback) and returns its name, raw TZif
-// bytes, and parsed *time.Location.
+// readLinuxTimeZone reads the system's current time zone from localtimePath (and timezonePath as a name hint or fallback) and returns its name, raw TZif bytes, and parsed *time.Location.
 func readLinuxTimeZone(localtimePath, timezonePath string, loadLocation func(string) (*time.Location, error), nowYear int) (name string, data []byte, loc *time.Location, ok bool) {
 	if data, err := os.ReadFile(localtimePath); err == nil && len(data) > 0 {
 		if link, err := os.Readlink(localtimePath); err == nil {
@@ -209,10 +203,7 @@ func (t *linuxZoneTracker) refresh() bool {
 	return true
 }
 
-// applyNamed handles a D-Bus timedate1 Timezone property change. It prefers
-// reloading /etc/localtime when the file changed on disk so TZif data stays
-// authoritative, falling back to loadLocation(name) when /etc/localtime has
-// not changed on disk.
+// applyNamed handles a D-Bus timedate1 Timezone property change. It prefers reloading /etc/localtime when the file changed on disk so TZif data stays authoritative, falling back to loadLocation(name) when /etc/localtime has not changed on disk.
 func (t *linuxZoneTracker) applyNamed(name string) bool {
 	if !followSystemTimeZone(t.lookupEnv) {
 		return false

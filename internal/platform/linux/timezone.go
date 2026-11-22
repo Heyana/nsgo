@@ -12,13 +12,7 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-// Go reads the local zone from /etc/localtime once on Linux, at the first use
-// of time.Local. acquireTimeZoneWatcher watches /etc for changes to localtime
-// and timezone via inotify and subscribes to org.freedesktop.timedate1's
-// Timezone property on the system bus, updating time.Local whenever the system
-// zone changes while the process follows /etc/localtime (TZ unset or pointing
-// at /etc/localtime). Times read after a change are in the new zone; the app
-// is not rendered again for it.
+// Go reads the local zone from /etc/localtime once on Linux, at the first use of time.Local. acquireTimeZoneWatcher watches /etc for changes to localtime and timezone via inotify and subscribes to org.freedesktop.timedate1's Timezone property on the system bus, updating time.Local whenever the system zone changes while the process follows /etc/localtime (TZ unset or pointing at /etc/localtime). Times read after a change are in the new zone; the app is not rendered again for it.
 
 var linuxTimeZone = linuxZoneTracker{
 	localtimePath: defaultLocaltimePath,
@@ -66,8 +60,7 @@ func init() {
 	linuxTimeZone.seed()
 }
 
-// acquireTimeZoneWatcher starts watching system time zone changes when the
-// first window or embedded surface opens.
+// acquireTimeZoneWatcher starts watching system time zone changes when the first window or embedded surface opens.
 func acquireTimeZoneWatcher() {
 	tzWatchMu.Lock()
 	tzWatchRefs++
@@ -129,8 +122,7 @@ func acquireTimeZoneWatcher() {
 	}
 }
 
-// releaseTimeZoneWatcher tears down the inotify and D-Bus watchers when the
-// last window or embedded surface closes.
+// releaseTimeZoneWatcher tears down the inotify and D-Bus watchers when the last window or embedded surface closes.
 func releaseTimeZoneWatcher() {
 	tzWatchMu.Lock()
 	if tzWatchRefs == 0 {
@@ -212,11 +204,7 @@ func timedateProxyZone(proxy uintptr) string {
 	return goString(gVariantGetString(p, 0))
 }
 
-// startInotifyTimeZoneWatcher watches the directory containing targetPath via
-// Linux inotify (pure syscall) and calls onChange whenever any entry matching
-// watchNames is created, replaced, modified or moved into place. Calling the
-// returned stop function closes the inotify descriptor and waits for the
-// watcher goroutine to exit.
+// startInotifyTimeZoneWatcher watches the directory containing targetPath via Linux inotify (pure syscall) and calls onChange whenever any entry matching watchNames is created, replaced, modified or moved into place. Calling the returned stop function closes the inotify descriptor and waits for the watcher goroutine to exit.
 func startInotifyTimeZoneWatcher(targetPath string, watchNames []string, onChange func()) (func(), error) {
 	fd, err := syscall.InotifyInit1(syscall.IN_CLOEXEC | syscall.IN_NONBLOCK)
 	if err != nil {

@@ -11,13 +11,7 @@ import (
 	"unsafe"
 )
 
-// Go reads the local zone from GetTimeZoneInformation once on Windows, at the
-// first use of time.Local. refreshTimeZone re-reads GetDynamicTimeZoneInformation
-// whenever WM_TIMECHANGE or an "intl" WM_SETTINGCHANGE arrives, maps the Windows
-// zone ID to IANA through icu.dll (falling back to the CLDR table and TZif rules
-// synthesized from DYNAMIC_TIME_ZONE_INFORMATION), and updates time.Local when
-// the zone changed. Times read after a change are in the new zone; the app is
-// not rendered again for it.
+// Go reads the local zone from GetTimeZoneInformation once on Windows, at the first use of time.Local. refreshTimeZone re-reads GetDynamicTimeZoneInformation whenever WM_TIMECHANGE or an "intl" WM_SETTINGCHANGE arrives, maps the Windows zone ID to IANA through icu.dll (falling back to the CLDR table and TZif rules synthesized from DYNAMIC_TIME_ZONE_INFORMATION), and updates time.Local when the zone changed. Times read after a change are in the new zone; the app is not rendered again for it.
 
 const wmTimeChange = 0x001E
 
@@ -53,8 +47,7 @@ func readWindowsTimeZone() (winDynamicTimeZoneInfo, bool) {
 }
 
 func windowsIDToIANA(winID string) string {
-	// icu.dll exports C (cdecl) functions; syscall.LazyProc.Call uses stdcall on 386,
-	// so skip icu.dll on 386 and fall back to the built-in CLDR table.
+	// icu.dll exports C (cdecl) functions; syscall.LazyProc.Call uses stdcall on 386, so skip icu.dll on 386 and fall back to the built-in CLDR table.
 	if runtime.GOARCH != "386" && icuDLL.Load() == nil && ucalGetTimeZoneIDForWindowsID.Find() == nil {
 		if region := localeRegion(userLocale()); region != "" {
 			if id := icuWindowsIDToIANA(winID, region); id != "" {
