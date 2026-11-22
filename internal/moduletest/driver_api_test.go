@@ -26,7 +26,7 @@ func allowedPublicDriverType(name string) bool {
 		"Geometry", "GesturePhase", "GlassEffect", "Gradient",
 		"GradientCorner", "GradientExtent", "GradientKind", "GradientPaint",
 		"GradientSpread", "GradientStop", "HeaderSystemItem", "HingeState",
-		"HotKeyState", "Idiom", "ImageScales", "ImageSource",
+		"HotKeyState", "Idiom", "ImageSampling", "ImageScales", "ImageSource",
 		"Interpolation", "KeyboardAppearance", "KeyboardDismissMode", "KeyboardTaps",
 		"KeyboardType", "Keyframe", "KeyframeAnimation", "Keyframes",
 		"LayoutAnimation", "LayoutCurve", "LayoutProperty", "LayoutTransition",
