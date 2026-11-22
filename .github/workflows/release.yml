@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes a GitHub release when a version tag is pushed. A maintainer decides the version: `go run ./tools/changelog release X.Y.Z` folds changelog.d's fragments into CHANGELOG.md and turns its `## [Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` above a fresh `## [Unreleased]`; they merge that to main, then push the tag vX.Y.Z on main's commit. This workflow refuses a tag that is not on main, has fragments left uncollected or has no changelog section, runs test.yml, publishes the section as the release's notes (a prerelease for a version with a suffix such as -rc.1) and asks the Go module proxy for the version so pkg.go.dev lists it.
+# Publishes a GitHub release when a version tag is pushed. A maintainer decides the version: `go run ./tools/changelog release X.Y.Z` folds changelog.d's fragments into CHANGELOG.md and turns its `## [Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` above a fresh `## [Unreleased]`; they merge that to main, then push the tag vX.Y.Z on main's commit. This workflow refuses a tag that is not on main, has fragments left uncollected, has no changelog section or carries an Android runtime not built from its Java, runs test.yml, publishes the section as the release's notes (a prerelease for a version with a suffix such as -rc.1) and asks the Go module proxy for the version so pkg.go.dev lists it.
 
 on:
   push:
@@ -65,6 +65,72 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  android-runtime:
+    name: Check the Android runtime is current
+    # Pull requests no longer commit classes.dex and classes.jar (#1759); a maintainer rebuilds them in a bot/android-runtime pull request. A tag whose committed binaries were not built from its own Java would ship a runtime that does not match its sources, so this rebuilds them and refuses the release when they differ.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          # The JDK the committed runtime is built with, as in test.yml's android job, so javac gives the same class files.
+          java-version: '21'
+      - name: Rebuild the runtime and compare it with the committed one
+        run: |
+          set -euo pipefail
+          runtime=internal/platform/android/runtime
+          # build.sh needs platform 36 and a d8 from cmdline-tools or build-tools 36+; install what the runner image lacks, as test.yml's android job does.
+          if [ ! -f "$ANDROID_HOME/platforms/android-36/android.jar" ] || { [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/d8" ] && ! ls "$ANDROID_HOME"/build-tools/3[6-9]*/d8 >/dev/null 2>&1; }; then
+            (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          fi
+          dexdump=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name dexdump | sort -V | tail -n 1)
+          if [ -z "$dexdump" ]; then
+            echo "::error::No dexdump in $ANDROID_HOME/build-tools, so the committed classes.dex cannot be compared."
+            exit 1
+          fi
+          committed="$RUNNER_TEMP/committed"
+          mkdir -p "$committed"
+          cp "$runtime/classes.dex" "$runtime/classes.jar" "$committed/"
+          "$runtime/build.sh"
+
+          # The jar holds javac's class files, which a JDK 21 compiles the same on any machine, so its entries' checksums of their uncompressed bytes must match exactly; the archive's own bytes are not compared, as they depend on the jar tool's compressor.
+          entries() { unzip -v "$1" | awk 'length($7) == 8 && $7 ~ /^[0-9a-f]+$/ { print $7, $8 }'; }
+          # d8 writes its version into the dex and its register allocation and instruction choice change between releases, so the runner's d8 and a maintainer's give different bytes for the same classes. Compare what d8 keeps from the classes instead: every class, its superclass, interfaces and flags, and every field and method with its type and flags. The helper classes d8 adds under com.android.tools.r8 are its own, not the runtime's, and are left out.
+          declarations() {
+            "$dexdump" "$1" | awk '
+              /^  Class descriptor/ { skip = index($NF, "Lcom/android/tools/r8/") == 2 }
+              skip { next }
+              /^  (Class descriptor|Access flags|Superclass|Interfaces|Static fields|Instance fields|Direct methods|Virtual methods) / || /^    #[0-9]+ / || /^      (name|type|access) / { print }
+            '
+          }
+          # Listed into files rather than compared through process substitution, so a failing unzip or dexdump stops the step instead of leaving two empty listings that match.
+          entries "$committed/classes.jar" > "$RUNNER_TEMP/committed-jar.txt"
+          entries "$runtime/classes.jar" > "$RUNNER_TEMP/built-jar.txt"
+          declarations "$committed/classes.dex" > "$RUNNER_TEMP/committed-dex.txt"
+          declarations "$runtime/classes.dex" > "$RUNNER_TEMP/built-dex.txt"
+          for listing in built-jar built-dex; do
+            if [ ! -s "$RUNNER_TEMP/$listing.txt" ]; then
+              echo "::error::The rebuilt runtime's $listing listing is empty, so it cannot be compared."
+              exit 1
+            fi
+          done
+          stale=""
+          if ! diff -u "$RUNNER_TEMP/committed-jar.txt" "$RUNNER_TEMP/built-jar.txt"; then
+            stale="$stale classes.jar"
+          fi
+          if ! diff -u "$RUNNER_TEMP/committed-dex.txt" "$RUNNER_TEMP/built-dex.txt"; then
+            stale="$stale classes.dex"
+          fi
+          if [ -n "$stale" ]; then
+            echo "::error title=Stale Android runtime::The committed$stale in $runtime at $GITHUB_REF_NAME was not built from this commit's Java. Delete the tag, rebuild both with $runtime/build.sh on main's tip, merge them in a bot/android-runtime pull request, and tag the merged commit."
+            exit 1
+          fi
+          echo "The committed Android runtime matches the Java of $GITHUB_SHA."
+
   test:
     name: Test
     needs: notes
@@ -72,7 +138,7 @@ jobs:
 
   publish:
     name: Publish the release
-    needs: [notes, test]
+    needs: [notes, android-runtime, test]
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 10
     permissions:
