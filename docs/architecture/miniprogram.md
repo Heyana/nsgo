@@ -59,6 +59,10 @@ Text fields are WeChat's `input` and `textarea` in their content box, which leav
 
 Alerts are the platform's modal or action sheet, the clipboard holds text, storage is the mini program's under the app's prefix, photos come from `chooseMedia` and files from a chat (`chooseMessageFile`, which Alipay lacks). A link goes on the clipboard, as a mini program opens no browser. Requests the platform has no API for are answered as failed.
 
+`Scope.SignInMiniProgram` requests a short-lived host login code: `wx.login`, `qq.login`, `tt.login`, or Alipay's `my.getAuthCode` with `auth_base`. It has its own `AccessMiniProgramSignIn` gate and environment capability, false on other backends. The runtime's `signin.js` normalizes the reply and answers once; the Wasm bridge reports a typed credential through `EventMiniProgramSignIn`. The app exchanges the code on its own server, which holds the platform app secret. No client-side identity or token is inferred from the code.
+
+NSGo keeps this separate from `AuthSession`: these hosts neither open its authorization URL nor return an OAuth callback, so silently reusing that API would discard the app's URL/PKCE/state contract. Douyin's anonymous device code is never a signed-in user code. Its login is silent unless the app explicitly sets `MiniProgramSignInOptions.Prompt`; an unsigned host answers `MiniProgramSignInNotSignedIn`, and documented host-login cancellation code 113001 answers cancelled. Other failures return stable errors without credential-bearing host payloads. See [Douyin login](https://developer.open-douyin.com/docs/resource/zh-CN/mini-app/develop/api/open-interface/log-in/tt-login) and [Alipay authorization codes](https://pds.alipay.com/docs/miniprogram/mpdev/API_OpenAPI_getAuthCode).
+
 ## The package
 
 `WXWebAssembly` and its likes load only files of the code package, `.wasm.br` among them, and every platform holds each package to 2 MB, so the module goes in a subpackage of its own, which the page loads before it, and its size decides which apps fit:

@@ -94,6 +94,8 @@ type Environment struct {
 	HasWebView bool
 	// SignInWithApple says ItemSignInWithApple and ItemAppleCredentialState reach Sign in with Apple here.
 	SignInWithApple bool
+	// MiniProgramSignIn says ItemMiniProgramSignIn reaches the host login API.
+	MiniProgramSignIn bool
 	// Purchases says ItemPurchase reaches the platform's store here.
 	Purchases bool
 	// CanRequestReview says ItemRequestReview can ask the platform's store to show an in-app rating prompt.

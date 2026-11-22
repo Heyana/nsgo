@@ -133,6 +133,7 @@ var itemKindNames = map[ItemKind]string{
 	ItemPageHead:            "ItemPageHead",
 	ItemEditMenu:            "ItemEditMenu",
 	ItemImageCacheLimit:     "ItemImageCacheLimit",
+	ItemMiniProgramSignIn:   "ItemMiniProgramSignIn",
 }
 
 // String returns the kind's name, as a log or an event prints it.
@@ -241,16 +242,17 @@ var eventKindNames = map[EventKind]string{
 	EventOpenScene:             "EventOpenScene",
 	EventKeyUp:                 "EventKeyUp",
 
-	EventMouseUp:         "EventMouseUp",
-	EventGPU:             "EventGPU",
-	EventSavePreflight:   "EventSavePreflight",
-	EventDiskSpace:       "EventDiskSpace",
-	EventDiscovery:       "EventDiscovery",
-	EventShared:          "EventShared",
-	EventCursorPoint:     "EventCursorPoint",
-	EventPointerDelta:    "EventPointerDelta",
-	EventPointerUnlocked: "EventPointerUnlocked",
-	EventEditAction:      "EventEditAction",
+	EventMouseUp:           "EventMouseUp",
+	EventGPU:               "EventGPU",
+	EventSavePreflight:     "EventSavePreflight",
+	EventDiskSpace:         "EventDiskSpace",
+	EventDiscovery:         "EventDiscovery",
+	EventShared:            "EventShared",
+	EventCursorPoint:       "EventCursorPoint",
+	EventPointerDelta:      "EventPointerDelta",
+	EventPointerUnlocked:   "EventPointerUnlocked",
+	EventEditAction:        "EventEditAction",
+	EventMiniProgramSignIn: "EventMiniProgramSignIn",
 }
 
 // String returns the kind's name, as a log or an event prints it.

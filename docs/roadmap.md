@@ -54,7 +54,7 @@ NSGo's own, beyond NSH: OAuth sign-in in the system's authentication session ([s
 | The app's own scheme on desktops | #262, [#1399](https://github.com/nsgo-dev/nsgo/issues/1399) | Windows and Linux catch a redirect to a scheme the app registers, once #262 lets one reach the running app, where they serve loopback redirects alone now |
 | Sign-in on watchOS | `ASWebAuthenticationSession`, [#1400](https://github.com/nsgo-dev/nsgo/issues/1400) | The SwiftUI host starts a session from watchOS 6.2, where a session ends unavailable now; tvOS has no such session |
 | Popups their provider cuts off | `Cross-Origin-Opener-Policy`, [#1401](https://github.com/nsgo-dev/nsgo/issues/1401) | A web sign-in completes with a provider whose page sends a COOP that cuts the popup off from the page, which then reads the popup as closed and ends the session cancelled: the page served at the redirect hands its address back over a `BroadcastChannel` instead |
-| Sign-in in mini programs | `wx.login` and the platforms' own, [#1402](https://github.com/nsgo-dev/nsgo/issues/1402) | A mini program signs in through its platform's login, where a session ends unavailable now |
+| Sign-in in mini programs | `wx.login` and the platforms' own, [#1402](https://github.com/nsgo-dev/nsgo/issues/1402) | `SignInMiniProgram` returns typed WeChat, QQ, Douyin or Alipay login codes for server exchange, with capability/access checks and explicit Douyin prompting; all four adapters and the browser Wasm bridge pass, and WeChat DevTools 2.01.2510290 returns a development code through the production runtime under `touristappid`; registered-app server exchange and physical host acceptance remain unverified |
 
 ## Location and motion
 

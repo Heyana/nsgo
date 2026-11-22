@@ -525,6 +525,10 @@ The redirect is `com.example.app:/oauth2redirect` where the system's session cat
 
 Use the exact redirect passed to the authorization URL function. Web and desktop loopback redirects encode Unicode paths and resolve dot segments before the function receives them; a loopback `Path` is decoded text, so a literal `%` is escaped too.
 
+Mini programs use `cx.SignInMiniProgram(core.MiniProgramSignInOptions{}, done)` instead. The callback receives a `core.MiniProgramCredential` with its `Platform` (`MiniProgramWeChat`, `MiniProgramQQ`, `MiniProgramDouyin` or `MiniProgramAlipay`) and a nonempty, short-lived `Code`. Send it to your server for the host's code exchange; keep the app secret there. This is `wx.login`/`qq.login`/`tt.login`, or Alipay's basic `auth_base` authorization, without requesting profile information. It does not open a URL or run an OAuth URL builder.
+
+`cx.Env().CanSignInMiniProgram()` reports the host API's availability. Other targets answer `core.MiniProgramSignInUnavailable`; code without `core.AccessMiniProgramSignIn` gets `AccessDenied`. Douyin asks silently by default: an unsigned host returns `MiniProgramSignInNotSignedIn`, and `MiniProgramSignInOptions{Prompt: true}` permits its host-account login window. Closing that window returns `MiniProgramSignInCancelled`. An anonymous device code never counts as a signed-in user. Tests set `nsgotest.Environment(core.Environment{MiniProgramSignIn: true})` and `app.MiniProgramSignIn`; `app.MiniProgramSignIns` records requests. TSX does not run in mini programs.
+
 An app whose web views should be signed in as the user already is elsewhere, such as in their own browser, writes the cookies of that sign-in with `cx.SetWebCookies`, HttpOnly ones included, which page scripts cannot set, then loads the pages: done runs once the store holds them. The store is the persistent one every web view of the app shares, so cookies with an `Expires` outlive the app; Incognito views do not see them, except on Android, which keeps one store per app. The web, tvOS and watchOS answer `Unavailable`.
 
 ```go

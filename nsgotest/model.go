@@ -941,6 +941,8 @@ func (a *App) apply(b *driver.MountBatch) {
 				result = core.BiometricUnavailable
 			}
 			a.post(driver.Event{Kind: driver.EventBiometric, Count: it.Count, Index: int(result)})
+		case driver.ItemMiniProgramSignIn:
+			a.signInMiniProgram(it)
 		case driver.ItemSignInWithApple:
 			a.signInWithApple(&it)
 		case driver.ItemAppleCredentialState:

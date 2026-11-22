@@ -296,6 +296,8 @@ const (
 	EventPointerUnlocked
 	// EventEditAction is an action chosen from the edit menu ItemEditMenu opened on input ID (Count is the EditAction: EditCut, EditCopy or EditSelectAll; Paste runs the input's own EventPaste). Like EventKeyUp and EventMouseUp, it is never in a view's EventMask.
 	EventEditAction
+	// EventMiniProgramSignIn answers ItemMiniProgramSignIn Count, Data a *MiniProgramCredential, or Text a stable failure code.
+	EventMiniProgramSignIn
 )
 
 // SharedItem is text or a file copied from an incoming share.

@@ -410,6 +410,8 @@ const (
 	ItemEditMenu
 	// ItemImageCacheLimit sets the maximum number of encoded image bytes kept in memory (Bytes). Negative values are clamped to zero by the core.
 	ItemImageCacheLimit
+	// ItemMiniProgramSignIn asks for a platform login code, answered by EventMiniProgramSignIn. On permits a host-account prompt on Douyin. Sent only where MiniProgramSignIn is available.
+	ItemMiniProgramSignIn
 )
 
 // EditAction is an editing action of an input's touch edit menu (ItemEditMenu, EventEditAction).

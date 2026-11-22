@@ -140,7 +140,9 @@ func (s *surface) environment() driver.Environment {
 	if m := d.Get("deviceModel"); m.Type() == js.TypeString {
 		model = m.String()
 	}
-	return buildEnvironment(s.env, deviceInfo{
+	env := s.env
+	env.MiniProgramSignIn = s.bridge.Get("canSignIn").Truthy()
+	return buildEnvironment(env, deviceInfo{
 		SafeArea:     driver.Edges{Top: num("safeTop"), Right: num("safeRight"), Bottom: num("safeBottom"), Left: num("safeLeft")},
 		Dark:         d.Get("dark").Truthy(),
 		PixelRatio:   float32(d.Get("pixelRatio").Float()),

@@ -76,6 +76,8 @@ const (
 	AccessGamepad = "gamepad"
 	// AccessAuthSession is signing in through the system's authentication session (AuthSession).
 	AccessAuthSession = "authSession"
+	// AccessMiniProgramSignIn permits requesting a mini program host login code.
+	AccessMiniProgramSignIn = "miniProgramSignIn"
 	// AccessHost is the host's handlers, by name (CallHost, PostHost).
 	AccessHost = "host"
 	// AccessLocation is the location fixes Locate and WatchLocation give and PermissionLocation, AccessBackgroundLocation a stream that goes on in the background and PermissionBackgroundLocation, and AccessMotion the motion samples WatchMotion gives and PermissionMotion: three independent grants.
@@ -173,6 +175,7 @@ const (
 	serviceOverlay            service = "overlay"
 	serviceAudio              service = "audio"
 	serviceAuthSession        service = "authSession"
+	serviceMiniProgramSignIn  service = "miniProgramSignIn"
 	serviceLocation           service = "location"
 	serviceBackgroundLocation service = "backgroundLocation"
 	serviceMotion             service = "motion"
@@ -213,6 +216,7 @@ var services = map[service]serviceRule{
 	serviceOverlay:            {permission: AccessOverlay},
 	serviceAudio:              {permission: AccessAudio},
 	serviceAuthSession:        {permission: AccessAuthSession},
+	serviceMiniProgramSignIn:  {permission: AccessMiniProgramSignIn},
 	serviceLocation:           {permission: AccessLocation},
 	serviceBackgroundLocation: {permission: AccessBackgroundLocation},
 	serviceMotion:             {permission: AccessMotion},

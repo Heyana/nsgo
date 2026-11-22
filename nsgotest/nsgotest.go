@@ -372,6 +372,9 @@ type App struct {
 	BiometricAvailability core.BiometricKind
 	BiometricAnswer       core.BiometricResult
 	AuthenticationReasons []string
+	// MiniProgramSignIns records requests; MiniProgramSignIn supplies a code or error. Without it the platform answers unavailable.
+	MiniProgramSignIns []core.MiniProgramSignInOptions
+	MiniProgramSignIn  func(core.MiniProgramSignInOptions) (core.MiniProgramCredential, error)
 	// AppleSignIns are the Sign in with Apple requests the app made where the environment says SignInWithApple, oldest first, their nonces hashed as the system receives them. AppleSignIn answers each with the credential the user signs in with, or an error, core.AppleSignInCancelled for a user who closes the sheet; without it the user cancels. AppleCredentialStates is what the platform answers a credential's state with, by user ID, AppleCredentialNotFound for one it does not hold.
 	AppleSignIns          []AppleSignInRequest
 	AppleSignIn           func(r AppleSignInRequest) (core.AppleCredential, error)

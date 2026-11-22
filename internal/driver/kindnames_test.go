@@ -10,6 +10,8 @@ func TestKindNames(t *testing.T) {
 		want string
 	}{
 		{ItemModal.String(), "ItemModal"},
+		{ItemMiniProgramSignIn.String(), "ItemMiniProgramSignIn"},
+		{EventMiniProgramSignIn.String(), "EventMiniProgramSignIn"},
 		{ItemCreate.String(), "ItemCreate"},
 		{EventPress.String(), "EventPress"},
 		{EventKeyUp.String(), "EventKeyUp"},

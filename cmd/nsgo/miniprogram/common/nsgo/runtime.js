@@ -16,6 +16,7 @@
 
 const { Tree } = require('./tree.js')
 const pixels = require('./pixels.js')
+const signin = require('./signin.js')
 const goExec = require('./wasm_exec.js')
 const config = require('./config.js')
 const { globalOf, apiOf } = require('./api.js')
@@ -276,6 +277,8 @@ function start(page, host = mpHost()) {
     event: null,
     // The platform's APIs, as WeChat's (api.js).
     api: host.api,
+    canSignIn: signin.available(config.platform, host.api),
+    signIn: (options) => signin.signIn(config.platform, host.api, options),
     pixelImages: config.platform === 'wechat' && typeof host.api.createSelectorQuery === 'function',
     pixelBuffer: pixels.buffer,
     showPixels: pixels.show,

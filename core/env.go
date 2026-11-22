@@ -42,6 +42,7 @@ type Env struct {
 	workspaces              *Signal[bool]
 	hasWebView              *Signal[bool]
 	appleSignIn             *Signal[bool]
+	miniSignIn              *Signal[bool]
 	purchases               *Signal[bool]
 	canRequestReview        *Signal[bool]
 	gameServices            *Signal[bool]
@@ -136,6 +137,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		workspaces:       NewSignal(cx, false),
 		hasWebView:       NewSignal(cx, false),
 		appleSignIn:      NewSignal(cx, false),
+		miniSignIn:       NewSignal(cx, false),
 		purchases:        NewSignal(cx, false),
 		canRequestReview: NewSignal(cx, false),
 		gameServices:     NewSignal(cx, false),
@@ -273,6 +275,7 @@ func (e *Env) set(v Environment) {
 	e.workspaces.Set(v.CanSetWindowWorkspaces)
 	e.hasWebView.Set(v.HasWebView)
 	e.appleSignIn.Set(v.SignInWithApple)
+	e.miniSignIn.Set(v.MiniProgramSignIn)
 	e.purchases.Set(v.Purchases)
 	e.canRequestReview.Set(v.CanRequestReview)
 	e.gameServices.Set(v.CanUseGameServices)
@@ -477,6 +480,9 @@ func (e *Env) HasWebView() bool { return e.hasWebView.Get() }
 
 // CanSignInWithApple reports whether Scope.SignInWithApple and Scope.AppleCredentialState reach Sign in with Apple here: macOS, iOS and tvOS.
 func (e *Env) CanSignInWithApple() bool { return e.appleSignIn.Get() }
+
+// CanSignInMiniProgram reports whether SignInMiniProgram reaches the host login API.
+func (e *Env) CanSignInMiniProgram() bool { return e.miniSignIn.Get() }
 
 // CanPurchase reports whether Scope.Products, Purchase and the other in-app purchase services reach a store here: the App Store on macOS, iOS and tvOS, in a build nsgo.yaml's apple.purchases gives StoreKit.
 func (e *Env) CanPurchase() bool { return e.purchases.Get() }

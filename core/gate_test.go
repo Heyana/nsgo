@@ -26,6 +26,7 @@ var gated = map[string]service{
 	"BiometricAvailability":         serviceBiometrics,
 	"AuthenticateBiometric":         serviceBiometrics,
 	"SignInWithApple":               serviceSignInWithApple,
+	"SignInMiniProgram":             serviceMiniProgramSignIn,
 	"AppleCredentialState":          serviceSignInWithApple,
 	"Products":                      servicePurchases,
 	"Purchase":                      servicePurchases,

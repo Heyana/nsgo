@@ -1,0 +1,5 @@
+name: NSGo Mini Program Sign In
+id: dev.nsgo.signin1402
+version: 0.1.0
+dev:
+  target: miniprogram_wechat
