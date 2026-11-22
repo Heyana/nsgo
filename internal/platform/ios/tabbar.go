@@ -37,6 +37,7 @@ type tabBar struct {
 	label     string
 	tint      driver.Color
 	edge      tabBarEdge
+	metrics   tabBarSizing
 	// selected is the selected tab's index, kept for props in any order.
 	selected int
 }
@@ -47,9 +48,33 @@ var (
 	tabBarButtons    = map[objc.ID]*tabBar{}
 	tabBarDelegate   objc.ID
 	classTabBarHost  objc.Class
+	tabBarClass      objc.Class
 )
 
 func registerTabBar() {
+	recheck := func(self objc.ID) {
+		if t := tabBars[self]; t != nil {
+			t.measure()
+		}
+	}
+	tabBarClass = register("NsgoTabBar", apple.Class("UITabBar"), nil, []objc.MethodDef{
+		{Cmd: sel("didMoveToWindow"), Fn: func(self objc.ID, cmd objc.SEL) {
+			apple.Super(self, cmd)
+			recheck(self)
+		}},
+		{Cmd: sel("safeAreaInsetsDidChange"), Fn: func(self objc.ID, cmd objc.SEL) {
+			apple.Super(self, cmd)
+			recheck(self)
+		}},
+		{Cmd: sel("layoutSubviews"), Fn: func(self objc.ID, cmd objc.SEL) {
+			apple.Super(self, cmd)
+			recheck(self)
+		}},
+		{Cmd: sel("traitCollectionDidChange:"), Fn: func(self objc.ID, cmd objc.SEL, previous objc.ID) {
+			apple.Super(self, cmd, previous)
+			recheck(self)
+		}},
+	})
 	class := register("NsgoTabBarDelegate", apple.Class("NSObject"),
 		[]*objc.Protocol{objc.GetProtocol("UITabBarDelegate")}, []objc.MethodDef{
 			{Cmd: sel("tabBar:didSelectItem:"), Fn: func(_ objc.ID, _ objc.SEL, bar, item objc.ID) {
@@ -58,7 +83,7 @@ func registerTabBar() {
 					return
 				}
 				for i, it := range t.items {
-					if it == item {
+					if it == item && t.cx != nil {
 						t.selected = i
 						t.cx.Emit("change", float64(i))
 					}
@@ -104,7 +129,7 @@ func newTabBar(cx *driver.NativeContext) driver.NativeComponent {
 	t := &tabBar{
 		cx:        cx,
 		container: objc.ID(classTabBarHost).Send(selNew),
-		bar:       objc.ID(apple.Class("UITabBar")).Send(selNew),
+		bar:       objc.ID(tabBarClass).Send(selNew),
 	}
 	t.bar.Send(selSetDeleg, tabBarDelegate)
 	t.container.Send(selAddSubview, t.bar)
@@ -141,23 +166,32 @@ func (t *tabBar) safeInsets() edgeInsets {
 	return edgeInsets{}
 }
 
-// measure asks for the system's height on the bottom edge (with the home
-// indicator below it while outside a window) or the vertical bar's width on a
-// leading or trailing edge.
+// measure reports the vertical bar's width on a leading or trailing edge, or asks UIKit for the bottom bar's natural height at its current placement, width, safe area and traits, reporting only changed heights. Before attachment it reports the bar's own fitted height without guessing the key window's bottom safe area; once attached and laid out, UIKit's sizeThatFits: reflects the bar's actual safe-area overlap.
 func (t *tabBar) measure() {
 	if t.cx == nil {
 		return
 	}
-	in := t.safeInsets()
-	var fitHeight, bottom float64
-	if t.edge == tabBarEdgeBottom && t.bar != 0 {
-		fit := objc.Send[apple.CGSize](t.bar, sel("sizeThatFits:"), apple.CGSize{Width: 390})
-		fitHeight = fit.Height
-		if objc.Send[objc.ID](t.bar, sel("window")) == 0 {
-			bottom = in.Bottom
-		}
+	if t.edge != tabBarEdgeBottom || t.bar == 0 {
+		// A later bottom edge reports its height afresh.
+		t.metrics = tabBarSizing{}
+		in := t.safeInsets()
+		t.cx.SetSize(tabBarNaturalSize(t.edge, 0, t.rtl(), in.Left, in.Right, 0))
+		return
 	}
-	t.cx.SetSize(tabBarNaturalSize(t.edge, fitHeight, t.rtl(), in.Left, in.Right, bottom))
+	attached := objc.Send[objc.ID](t.bar, sel("window")) != 0
+	bounds := objc.Send[apple.CGRect](t.bar, selBounds)
+	width, ok := t.metrics.measureWidth(attached, bounds.Size.Width, bounds.Size.Height)
+	if !ok && t.metrics.hasReported {
+		return
+	}
+	if !ok {
+		// Just back from a vertical edge, the bar has no bottom frame yet; report its detached height so layout gives it one.
+		width = defaultTabBarWidth
+	}
+	fit := objc.Send[apple.CGSize](t.bar, sel("sizeThatFits:"), apple.CGSize{Width: width})
+	if h, changed := t.metrics.update(fit.Height); changed {
+		t.cx.SetSize(driver.Size{Height: h})
+	}
 }
 
 func (t *tabBar) View() any {
@@ -467,6 +501,7 @@ func (t *tabBar) setItems(list []any) {
 		t.rebuildRailButtons()
 	}
 	t.showSelected()
+	t.measure()
 }
 
 func (t *tabBar) Command(string, any) {}

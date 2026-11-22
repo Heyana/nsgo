@@ -3,6 +3,7 @@
 package ios
 
 import (
+	"math"
 	"slices"
 	"testing"
 
@@ -75,6 +76,95 @@ func TestTabBarVerticalEdgeSwitchesContainerAndSelection(t *testing.T) {
 		bar.SetProp("edge", "bottom")
 		if last := sizes[len(sizes)-1]; last.Height <= 0 || last.Width != 0 {
 			t.Fatalf("bottom measured size = %+v, want height > 0 and width 0", last)
+		}
+	})
+}
+
+func TestTabBarSizeFollowsAttachmentAndPlacement(t *testing.T) {
+	onMainSync(func() {
+		var sizes []driver.Size
+		cx := driver.NewNativeContext(func(string, any) {}, func(s driver.Size) {
+			sizes = append(sizes, s)
+		})
+		bar := newTabBar(cx).(*tabBar)
+		defer bar.Close()
+
+		detachedFit := objc.Send[apple.CGSize](bar.bar, sel("sizeThatFits:"), apple.CGSize{Width: defaultTabBarWidth}).Height
+		if detachedFit <= 0 {
+			detachedFit = defaultTabBarHeight
+		}
+		if len(sizes) != 1 || math.Abs(float64(sizes[0].Height)-detachedFit) > 0.01 {
+			t.Fatalf("initial detached sizes = %v, want single base height %v without keyWindow safe area", sizes, detachedFit)
+		}
+		if sizes[0].Width != 0 {
+			t.Fatalf("initial width = %v, want 0", sizes[0].Width)
+		}
+
+		// Calling layoutSubviews while detached does not emit duplicate sizes.
+		bar.bar.Send(sel("layoutSubviews"))
+		if len(sizes) != 1 {
+			t.Fatalf("detached layoutSubviews reported extra sizes: %v", sizes)
+		}
+
+		app := objc.ID(apple.Class("UIApplication")).Send(sel("sharedApplication"))
+		window := objc.Send[objc.ID](app, sel("keyWindow"))
+		if window == 0 {
+			return
+		}
+		winBounds := objc.Send[apple.CGRect](window, selBounds)
+		winInsets := objc.Send[edgeInsets](window, sel("safeAreaInsets"))
+		if winBounds.Size.Width <= 0 || winBounds.Size.Height <= 0 {
+			return
+		}
+
+		container := objc.ID(apple.Class("UIView")).Send(selNew)
+		defer func() {
+			bar.bar.Send(selRemoveFromSuperview)
+			container.Send(selRemoveFromSuperview)
+			container.Send(selRelease)
+		}()
+
+		w := winBounds.Size.Width
+		container.Send(selSetFrame, apple.Rect(0, 60, w, detachedFit))
+		bar.bar.Send(selSetFrame, apple.Rect(0, 0, w, detachedFit))
+		container.Send(selAddSubview, bar.bar)
+		window.Send(selAddSubview, container)
+		window.Send(sel("layoutIfNeeded"))
+
+		// Repeated layout at the same top placement must not emit redundant sizes.
+		countAfterTop := len(sizes)
+		bar.bar.Send(sel("layoutSubviews"))
+		if len(sizes) != countAfterTop {
+			t.Fatalf("unchanged top layoutSubviews emitted extra sizes: %v", sizes)
+		}
+
+		if winInsets.Bottom <= 0 {
+			return
+		}
+
+		// Move ancestor container to the bottom of the window so the bar overlaps the bottom safe area.
+		container.Send(selSetFrame, apple.Rect(0, winBounds.Size.Height-detachedFit, w, detachedFit))
+		window.Send(sel("layoutIfNeeded"))
+		bottomHeight := sizes[len(sizes)-1].Height
+		if math.Abs(float64(bottomHeight)-(detachedFit+winInsets.Bottom)) > 0.51 {
+			t.Fatalf("bottom placement height = %v, want %v (sizes=%v)", bottomHeight, detachedFit+winInsets.Bottom, sizes)
+		}
+
+		// Resize bar to its reported bottom height: steady state must not re-emit.
+		countAfterBottom := len(sizes)
+		container.Send(selSetFrame, apple.Rect(0, winBounds.Size.Height-float64(bottomHeight), w, float64(bottomHeight)))
+		bar.bar.Send(selSetFrame, apple.Rect(0, 0, w, float64(bottomHeight)))
+		window.Send(sel("layoutIfNeeded"))
+		if len(sizes) != countAfterBottom {
+			t.Fatalf("steady bottom layout emitted extra sizes: %v", sizes)
+		}
+
+		// Move ancestor back to Top: 60: height must shrink back to base height.
+		container.Send(selSetFrame, apple.Rect(0, 60, w, float64(bottomHeight)))
+		window.Send(sel("layoutIfNeeded"))
+		restored := sizes[len(sizes)-1].Height
+		if math.Abs(float64(restored)-detachedFit) > 0.51 {
+			t.Fatalf("restored top placement height = %v, want %v (sizes=%v)", restored, detachedFit, sizes)
 		}
 	})
 }
