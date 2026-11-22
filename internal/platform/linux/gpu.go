@@ -513,8 +513,10 @@ func (w *window) closeGPU(v *view) {
 		return
 	}
 	w.gpuMu.Lock()
+	pending := w.gpuPending[v.id]
 	delete(w.gpuPending, v.id)
 	w.gpuMu.Unlock()
+	completeGPUFrames(pending)
 	if g.ctx != nil && g.area != 0 {
 		gtkGLAreaMakeCurrent(g.area)
 		if gtkGLAreaGetError(g.area) == 0 {
@@ -522,6 +524,7 @@ func (w *window) closeGPU(v *view) {
 		}
 		g.ctx = nil
 	}
+	completeGPUFrames(g.frames)
 	g.frames = nil
 	g.realized = false
 	g.hasRendered = false
@@ -562,6 +565,7 @@ func (w *window) flushGPU() {
 	for id, frames := range pending {
 		v := w.view(id)
 		if v == nil || v.deleted || v.gpu == nil || v.gpu.area == 0 {
+			completeGPUFrames(frames)
 			continue
 		}
 		v.gpu.frames = append(v.gpu.frames, frames...)
@@ -746,6 +750,7 @@ func gpuRenderCallback(area, context, data uintptr) uintptr {
 
 	frames := g.frames
 	g.frames = nil
+	defer completeGPUFrames(frames)
 	for _, fr := range frames {
 		if fr.Generation != 0 && fr.Generation != g.generation {
 			continue
@@ -801,6 +806,7 @@ func gpuUnrealizeCallback(area, data uintptr) {
 	wasRealized := g.realized
 	g.realized = false
 	g.hasRendered = false
+	completeGPUFrames(g.frames)
 	g.frames = nil
 	if wasRealized && !v.deleted && !w.closing && w.engine != nil {
 		w.engine.Dispatch(driver.Event{
@@ -813,5 +819,14 @@ func gpuUnrealizeCallback(area, data uintptr) {
 				Message:    "GL context unrealized",
 			},
 		})
+	}
+}
+
+// completeGPUFrames reports frames done, rendered or dropped, so the FrameFences gpu.Device waits on for their ring slots are released.
+func completeGPUFrames(frames []driver.GPUFrame) {
+	for _, f := range frames {
+		if f.OnComplete != nil {
+			f.OnComplete()
+		}
 	}
 }
