@@ -108,6 +108,7 @@ var (
 	gSignalConnectObj  func(uintptr, *byte, uintptr, uintptr, uint32) uint64
 	gSignalEmitByName  func(uintptr, *byte, ...any)
 	gObjectGet         func(uintptr, ...any)
+	gObjectSetProperty func(uintptr, *byte, *gValue)
 	gObjectNotify      func(uintptr, *byte)
 	gStrfreev          func(uintptr)
 	gVariantNewString  func(*byte) uintptr
@@ -485,6 +486,7 @@ func bind() {
 	purego.RegisterLibFunc(&gSignalConnectObj, gobjectLib, "g_signal_connect_object")
 	purego.RegisterLibFunc(&gSignalEmitByName, gobjectLib, "g_signal_emit_by_name")
 	purego.RegisterLibFunc(&gObjectGet, gobjectLib, "g_object_get")
+	purego.RegisterLibFunc(&gObjectSetProperty, gobjectLib, "g_object_set_property")
 	purego.RegisterLibFunc(&gObjectNotify, gobjectLib, "g_object_notify")
 
 	// GTK.

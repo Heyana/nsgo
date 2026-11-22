@@ -60,6 +60,8 @@ func (w *window) audioCommand(id uint32, req *driver.AudioRequest) {
 			w.audioReport(id, driver.AudioEvent{Phase: driver.AudioFailure, Error: driver.AudioUnavailable})
 		case driver.AudioReadLatency:
 			w.audioReport(id, driver.AudioEvent{Phase: driver.AudioLatency})
+		case driver.AudioPlay:
+			w.audioReport(id, driver.AudioEvent{Phase: driver.AudioPlaybackEnded, Playback: req.Playback})
 		}
 		return
 	}
@@ -76,6 +78,10 @@ func (w *window) audioCommand(id uint32, req *driver.AudioRequest) {
 		a.load(w, id, *req)
 	case driver.AudioPlay:
 		a.play(id, req)
+	case driver.AudioPlaybackSet, driver.AudioPlaybackStop:
+		if a.mixer != nil {
+			a.mixer.control(id, req)
+		}
 	case driver.AudioReadLatency:
 		a.readLatency(w, id)
 	case driver.AudioStop:
@@ -195,16 +201,25 @@ func remoteAudio(uri string) bool {
 func (a *linuxAudio) play(id uint32, req *driver.AudioRequest) {
 	sound := a.sounds[id]
 	if sound == nil || len(sound.pcm) == 0 {
+		a.playbackEnded(id, req.Playback)
 		return
 	}
 	a.checkOutput()
 	if a.mixer == nil {
-		a.mixer = newSoundMixer()
+		a.mixer = newSoundMixer(a.playbackEnded)
 	}
 	if a.mixer != nil {
-		a.mixer.play(soundPlayback{id: id, pcm: sound.pcm, volume: req.Volume, rate: req.Rate, pan: req.Pan, startAt: req.StartAt, loop: req.Loop})
+		a.mixer.play(soundPlayback{id: id, playback: req.Playback, pcm: sound.pcm, volume: req.Volume, rate: req.Rate, pan: req.Pan, startAt: req.StartAt, loop: req.Loop})
 		a.lastPlay = time.Now()
 		a.ensureTick()
+	} else {
+		a.playbackEnded(id, req.Playback)
+	}
+}
+
+func (a *linuxAudio) playbackEnded(sound, playback uint32) {
+	if playback != 0 {
+		a.root.audioReport(sound, driver.AudioEvent{Phase: driver.AudioPlaybackEnded, Playback: playback})
 	}
 }
 
@@ -212,7 +227,7 @@ func (a *linuxAudio) play(id uint32, req *driver.AudioRequest) {
 func (a *linuxAudio) readLatency(w *window, id uint32) {
 	a.checkOutput()
 	if a.mixer == nil {
-		a.mixer = newSoundMixer()
+		a.mixer = newSoundMixer(a.playbackEnded)
 	}
 	if a.mixer == nil {
 		w.audioReport(id, driver.AudioEvent{Phase: driver.AudioLatency})

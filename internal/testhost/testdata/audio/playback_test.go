@@ -13,11 +13,11 @@ import (
 
 func TestMain(m *testing.M) { nsgotest.Main(m) }
 
-func TestSoundPlaybackCompletesOnApple(t *testing.T) {
+func TestSoundPlaybackCompletes(t *testing.T) {
 	switch nsgotest.Target() {
-	case "ios", "ios_simulator", "macos":
+	case "ios", "ios_simulator", "macos", "linux", "web":
 	default:
-		t.Skip("runs the native Apple audio backend")
+		t.Skip("runs a backend with individual sound playback controls")
 	}
 	data := silentWAV(2)
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {

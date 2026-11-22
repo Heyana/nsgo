@@ -257,41 +257,43 @@ func soundDuration(pcm []byte) time.Duration {
 }
 
 type soundVoice struct {
-	sound         uint32
-	bin, src, pad uintptr
-	until         time.Time
-	// A looping voice keeps its appsrc and pushes copies of pcm, counted in copies, from started on; it never ends on its own.
-	loop      bool
+	play           soundPlayback
+	bin, src, pad  uintptr
+	started, until time.Time
+	// A looping voice keeps its appsrc and pushes copies of play.pcm, counted in copies, from started on; it never ends on its own.
 	appsrc    uintptr
-	pcm       []byte
 	inputRate int
 	copies    int64
-	started   time.Time
 }
 
 type soundPlayback struct {
-	id                uint32
+	id, playback      uint32
 	pcm               []byte
 	volume, rate, pan float32
 	// startAt is the Go clock time the voice should start at; zero, or a time sooner than the mixer can reach, starts it at the next mixer block.
 	startAt time.Time
 	loop    bool
+	// skip is how many frames of pcm the first copy of a looping playback leaves out, so that a rate change resumes the loop where it was.
+	skip int
 }
 
 // soundLoopAhead is how much of a looping voice stays queued past now.
 const soundLoopAhead = 500 * time.Millisecond
 
-// copyEnd is where copy n of a looping voice's sound ends, counted in its input frames so that copies stay sample-contiguous.
+// copyEnd is where copy n of a looping voice's sound ends, counted in its input frames so that copies stay sample-contiguous. The first copy is short by play.skip frames.
 func (v *soundVoice) copyEnd(n int64) time.Duration {
-	frames := int64(len(v.pcm) / soundFrameBytes)
-	return time.Duration(n * frames * int64(time.Second) / int64(v.inputRate))
+	frames := max(0, n*int64(len(v.play.pcm)/soundFrameBytes)-int64(v.play.skip))
+	return time.Duration(frames * int64(time.Second) / int64(v.inputRate))
 }
 
 // fill queues copies of a looping voice's sound until soundLoopAhead past now is queued.
 func (v *soundVoice) fill(now time.Time) bool {
 	for v.copyEnd(v.copies) < now.Sub(v.started)+soundLoopAhead {
-		start := v.copyEnd(v.copies)
-		if !pushSoundBuffer(v.appsrc, v.pcm, uint64(start), v.copyEnd(v.copies+1)-start) {
+		start, pcm := v.copyEnd(v.copies), v.play.pcm
+		if v.copies == 0 {
+			pcm = pcm[v.play.skip*soundFrameBytes:]
+		}
+		if !pushSoundBuffer(v.appsrc, pcm, uint64(start), v.copyEnd(v.copies+1)-start) {
 			return false
 		}
 		v.copies++
@@ -302,7 +304,7 @@ func (v *soundVoice) fill(now time.Time) bool {
 // feed keeps every looping voice queued ahead of its playback.
 func (m *soundMixer) feed(now time.Time) {
 	for i := range m.voices {
-		if m.voices[i].loop {
+		if m.voices[i].play.loop {
 			m.voices[i].fill(now)
 		}
 	}
@@ -316,9 +318,10 @@ type soundMixer struct {
 	pending              []soundPlayback
 	// knownLatency is the last live latency the pipeline answered.
 	knownLatency time.Duration
+	ended        func(uint32, uint32)
 }
 
-func newSoundMixer() *soundMixer {
+func newSoundMixer(ended func(uint32, uint32)) *soundMixer {
 	var output string
 	for _, name := range []string{"autoaudiosink", "pipewiresink", "pulsesink", "alsasink"} {
 		if factory := gstElementFactoryFind(cstr(name)); factory != 0 {
@@ -330,7 +333,11 @@ func newSoundMixer() *soundMixer {
 	if output == "" {
 		return nil
 	}
-	return soundMixerTo(output)
+	m := soundMixerTo(output)
+	if m != nil {
+		m.ended = ended
+	}
+	return m
 }
 
 func soundMixerTo(output string) *soundMixer {
@@ -351,6 +358,7 @@ func soundMixerTo(output string) *soundMixer {
 
 func (m *soundMixer) play(play soundPlayback) {
 	if len(m.pending) == driver.MaxSoundVoices {
+		m.endPlayback(m.pending[0])
 		m.pending[0] = soundPlayback{}
 		m.pending = m.pending[1:]
 	}
@@ -436,16 +444,24 @@ func (m *soundMixer) checkOutput() string {
 func (m *soundMixer) startVoice(play soundPlayback) {
 	m.sweep(time.Now(), 0)
 	if len(m.voices) == driver.MaxSoundVoices {
-		m.remove(m.voices[0])
+		m.finishVoice(m.voices[0])
 		m.voices = m.voices[1:]
 	}
+	voice, ok := m.prepareVoice(play)
+	if !ok {
+		m.endPlayback(play)
+		return
+	}
+	m.voices = append(m.voices, voice)
+}
 
+func (m *soundMixer) prepareVoice(play soundPlayback) (soundVoice, bool) {
 	// Changing the input caps' sample rate gives the same pitch shift as
 	// Apple's varispeed, and GStreamer resamples it back to the mixer rate.
 	inputRate := int(math.Round(float64(play.rate) * soundRate))
 	input := fmt.Sprintf("audio/x-raw,format=F32LE,layout=interleaved,channels=2,rate=%d", inputRate)
 	desc := "appsrc name=voice is-live=true format=time min-latency=0 max-latency=0 caps=\"" + input +
-		"\" ! audioresample ! " + soundCaps + fmt.Sprintf(" ! volume volume=%g", play.volume)
+		"\" ! audioresample ! capsfilter caps=\"" + soundCaps + "\""
 	if play.pan != 0 {
 		// The simple method is a balance: it attenuates the side away from the pan and leaves the other untouched, as driver.AudioPanGains does. audiopanorama is in gst-plugins-good, so a centered voice does not need it.
 		desc += fmt.Sprintf(" ! audiopanorama method=simple panorama=%g", play.pan)
@@ -457,59 +473,71 @@ func (m *soundMixer) startVoice(play soundPlayback) {
 			gstObjectUnref(bin)
 		}
 		log.Print("nsgo: sound voice: ", soundError(gerr))
-		return
+		return soundVoice{}, false
 	}
 	if gstBinAdd(m.pipeline, bin) == 0 {
 		gstObjectUnref(bin)
-		return
+		return soundVoice{}, false
 	}
-	voice := soundVoice{sound: play.id, bin: bin, src: gstElementGetStaticPad(bin, cstr("src")),
+	voice := soundVoice{play: play, bin: bin, src: gstElementGetStaticPad(bin, cstr("src")),
 		pad: gstElementGetRequestPad(m.mixer, cstr("sink_%u"))}
 	start := gstElementRunningTime(m.pipeline)
+	now := time.Now()
 	// The voice's segment begins at zero. Its pad shifts that segment ahead of the mixer's block already being aggregated, or to the running time that matches startAt on the Go clock; the pipeline clock and the Go clock advance together over a voice's delay.
 	lead := 20 * time.Millisecond
-	if delay := time.Until(play.startAt); delay > lead {
+	if delay := play.startAt.Sub(now); delay > lead {
 		lead = delay
 	}
 	if voice.src == 0 || voice.pad == 0 || start == math.MaxUint64 {
 		m.remove(voice)
-		return
+		return soundVoice{}, false
 	}
+	setSoundVolume(voice.pad, play.volume)
 	gstPadSetOffset(voice.src, int64(start)+int64(lead))
 	if gstPadLink(voice.src, voice.pad) != 0 || gstElementSyncState(bin) == 0 {
 		m.remove(voice)
-		return
+		return soundVoice{}, false
 	}
 	src := gstBinGetByName(bin, cstr("voice"))
 	if play.loop {
-		voice.loop, voice.appsrc, voice.pcm, voice.inputRate, voice.started = true, src, play.pcm, inputRate, time.Now().Add(lead)
+		voice.appsrc, voice.inputRate, voice.started = src, inputRate, now.Add(lead)
 		if !voice.fill(voice.started) {
 			m.remove(voice)
-			return
+			return soundVoice{}, false
 		}
-		m.voices = append(m.voices, voice)
-		return
+		return voice, true
 	}
 	defer gstObjectUnref(src)
 	duration := time.Duration(float64(soundDuration(play.pcm)) / float64(play.rate))
 	if !pushSound(src, play.pcm, 0, duration) {
 		m.remove(voice)
-		return
+		return soundVoice{}, false
 	}
-	// Leave time for the mixer and the device's output buffer to drain.
-	voice.until = time.Now().Add(lead + duration + 500*time.Millisecond)
-	m.voices = append(m.voices, voice)
+	// The mixer's reported latency includes the device's queued output.
+	latency := m.knownLatency
+	if latency <= 0 {
+		latency = 500 * time.Millisecond
+	}
+	voice.started = now.Add(lead)
+	voice.until = voice.started.Add(duration + latency)
+	return voice, true
 }
 
 func (m *soundMixer) sweep(now time.Time, stop uint32) {
 	if stop != 0 {
-		m.pending = slices.DeleteFunc(m.pending, func(play soundPlayback) bool { return play.id == stop })
+		m.pending = slices.DeleteFunc(m.pending, func(play soundPlayback) bool {
+			if play.id != stop {
+				return false
+			}
+			m.endPlayback(play)
+			return true
+		})
 	}
 	m.voices = slices.DeleteFunc(m.voices, func(voice soundVoice) bool {
-		if voice.sound != stop && (voice.loop || voice.until.After(now)) {
+		if voice.play.id != stop && (voice.play.loop || voice.until.After(now)) {
 			return false
 		}
-		m.remove(voice)
+		m.finishVoice(voice)
 		return true
 	})
 }
@@ -535,8 +563,12 @@ func (m *soundMixer) remove(voice soundVoice) {
 func (m *soundMixer) close() {
 	gstElementSetState(m.pipeline, gstStateNull)
 	for _, voice := range m.voices {
-		m.remove(voice)
+		m.finishVoice(voice)
 	}
+	for _, play := range m.pending {
+		m.endPlayback(play)
+	}
+	m.voices, m.pending = nil, nil
 	gstObjectUnref(m.bus)
 	gstObjectUnref(m.mixer)
 	gstObjectUnref(m.pipeline)

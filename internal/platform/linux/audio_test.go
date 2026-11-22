@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 	"unsafe"
@@ -201,6 +202,7 @@ func TestLinuxAudioMixerOutput(t *testing.T) {
 				if message := mixer.checkOutput(); message != "" {
 					t.Error(message)
 				}
+				mixer.sweep(time.Now(), 0)
 				mixer.startPending()
 				mixer.feed(time.Now())
 			})
@@ -237,8 +239,19 @@ func TestLinuxAudioMixerOutput(t *testing.T) {
 	hear(0, 0)
 
 	// A looping 100 ms voice still sounds after a second, past what its first fill queued, until its sound stops.
-	w.onLoop(t, func() { mixer.play(soundPlayback{id: 3, pcm: pcm, volume: 1, rate: 1, loop: true}) })
+	w.onLoop(t, func() { mixer.play(soundPlayback{id: 3, playback: 200, pcm: pcm, volume: 1, rate: 1, loop: true}) })
 	hear(0.25, 0.25)
+	for until := time.Now().Add(time.Second); time.Now().Before(until); time.Sleep(20 * time.Millisecond) {
+		w.onLoop(t, func() { mixer.feed(time.Now()) })
+	}
+	hear(0.25, 0.25)
+	// A rate change reconnects the looping voice mid-copy, and it keeps repeating.
+	w.onLoop(t, func() {
+		mixer.control(3, &driver.AudioRequest{Command: driver.AudioPlaybackSet, Playback: 200, Volume: 1, Rate: 2})
+		if len(mixer.voices) != 1 || !mixer.voices[0].play.loop || mixer.voices[0].play.rate != 2 {
+			t.Error("a rate change dropped the looping voice")
+		}
+	})
 	for until := time.Now().Add(time.Second); time.Now().Before(until); time.Sleep(20 * time.Millisecond) {
 		w.onLoop(t, func() { mixer.feed(time.Now()) })
 	}
@@ -250,6 +263,77 @@ func TestLinuxAudioMixerOutput(t *testing.T) {
 		}
 	})
 	hear(0, 0)
+
+	// Distinct halves reveal a rate change that restarts the source.
+	pcm = make([]byte, 4*soundRate*soundFrameBytes)
+	for at := 0; at < len(pcm); at += 4 {
+		level := float32(0.125)
+		if at >= len(pcm)/2 {
+			level = 0.25
+		}
+		binary.LittleEndian.PutUint32(pcm[at:], math.Float32bits(level))
+	}
+	var ended []uint32
+	w.onLoop(t, func() {
+		mixer.ended = func(_, playback uint32) { ended = append(ended, playback) }
+		mixer.play(soundPlayback{id: 3, playback: 201, pcm: pcm, volume: 1, rate: 1})
+	})
+	hear(0.125, 0.125)
+	w.onLoop(t, func() {
+		mixer.play(soundPlayback{id: 3, playback: 202, pcm: pcm, rate: 1, startAt: time.Now().Add(time.Minute)})
+		mixer.control(3, &driver.AudioRequest{Command: driver.AudioPlaybackStop, Playback: 202})
+		if !slices.Contains(ended, uint32(202)) || len(mixer.voices) != 1 {
+			t.Error("stopping a pending playback affected its sibling")
+		}
+		mixer.control(3, &driver.AudioRequest{Command: driver.AudioPlaybackSet, Playback: 201, Rate: 1})
+	})
+	hear(0, 0)
+	w.onLoop(t, func() {
+		mixer.control(3, &driver.AudioRequest{Command: driver.AudioPlaybackSet, Playback: 201, Volume: 0.5, Rate: 1})
+	})
+	hear(0.125, 0.125)
+	w.onLoop(t, func() {
+		mixer.control(3, &driver.AudioRequest{Command: driver.AudioPlaybackSet, Playback: 201, Volume: 0.5, Rate: 2})
+	})
+	deadline := time.Now().Add(1800 * time.Millisecond)
+	finished, restartedFrames := false, 0
+	for !finished && time.Now().Before(deadline) {
+		w.onLoop(t, func() {
+			if message := mixer.checkOutput(); message != "" {
+				t.Error(message)
+			}
+			mixer.sweep(time.Now(), 0)
+			finished = slices.Contains(ended, uint32(201))
+		})
+		sample := gstAppSinkTryPullSample(sink, uint64(20*time.Millisecond))
+		if sample == 0 {
+			continue
+		}
+		buffer := gstSampleGetBuffer(sample)
+		data := make([]byte, gstBufferGetSize(buffer))
+		if len(data) > 0 {
+			gstBufferExtract(buffer, 0, unsafe.Pointer(&data[0]), uintptr(len(data)))
+		}
+		gstMiniObjectUnref(sample)
+		for frame := 0; frame+soundFrameBytes <= len(data); frame += soundFrameBytes {
+			level := math.Float32frombits(binary.LittleEndian.Uint32(data[frame:]))
+			if math.Abs(float64(level-0.0625)) < 0.005 {
+				restartedFrames++
+			}
+		}
+	}
+	if !finished || restartedFrames > soundRate/20 {
+		t.Fatalf("rate change completion=%v, replayed prefix frames=%d", finished, restartedFrames)
+	}
+	w.onLoop(t, func() {
+		for playback := uint32(300); playback < 300+driver.MaxSoundVoices+1; playback++ {
+			mixer.play(soundPlayback{id: 4, playback: playback, pcm: pcm, rate: 1})
+		}
+		if !slices.Contains(ended, uint32(300)) || len(mixer.voices) != driver.MaxSoundVoices {
+			t.Error("the oldest playback was not retired at the native limit")
+		}
+		mixer.sweep(time.Now(), 4)
+	})
 }
 
 // TestLinuxAudioMixerSchedulesStarts measures two voices scheduled 500 ms apart in the mixed output's timestamps.
@@ -336,7 +420,7 @@ func TestLinuxAudioOutputLatencyAnswers(t *testing.T) {
 }
 
 func TestLinuxAudioPlayer(t *testing.T) {
-	_, cx := audioTestWindow(t)
+	w, cx := audioTestWindow(t)
 	for name, source := range audioTestSources(t) {
 		played, ended := make(chan error, 1), make(chan struct{}, 1)
 		cx.Post(func() {
@@ -377,6 +461,47 @@ func TestLinuxAudioPlayer(t *testing.T) {
 	if err := awaitAudio(t, played); err != nil {
 		t.Fatal(err)
 	}
+	cx.Post(func() { p.SetMuted(true) })
+	w.engine.Sync()
+	var stream uintptr
+	var before int64
+	w.onLoop(t, func() {
+		for _, player := range w.audio.players {
+			stream = player.stream
+		}
+		var volume float64
+		gObjectGet(stream, uintptr(unsafe.Pointer(cstr("volume"))), uintptr(unsafe.Pointer(&volume)), 0)
+		before = gtkMediaStreamGetTimestamp(stream)
+		if volume != 0 || gtkMediaStreamGetPlaying(stream) == 0 {
+			t.Error("muting the player did not preserve silent playback")
+		}
+	})
+	muteDeadline := time.Now().Add(2 * time.Second)
+	for {
+		var advanced bool
+		w.onLoop(t, func() {
+			advanced = gtkMediaStreamGetTimestamp(stream) != before
+			if gtkMediaStreamGetPlaying(stream) == 0 {
+				t.Error("the muted player paused")
+			}
+		})
+		if advanced {
+			break
+		}
+		if time.Now().After(muteDeadline) {
+			t.Fatal("the muted player's timeline stopped")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cx.Post(func() { p.SetMuted(false) })
+	w.engine.Sync()
+	w.onLoop(t, func() {
+		var volume float64
+		gObjectGet(stream, uintptr(unsafe.Pointer(cstr("volume"))), uintptr(unsafe.Pointer(&volume)), 0)
+		if math.Abs(volume-0.4) > 1e-6 || gtkMediaStreamGetPlaying(stream) == 0 {
+			t.Error("unmuting did not restore the playing volume")
+		}
+	})
 	last := awaitAudio(t, progress)
 	deadline := time.After(4 * time.Second)
 looped:

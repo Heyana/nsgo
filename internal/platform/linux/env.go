@@ -116,6 +116,8 @@ func (w *window) environment() driver.Environment {
 		DiscoverServices: true,
 		AudioSchedule:    loadSound(),
 
+		AudioPlaybackControls: loadSound(),
+
 		// GTK keeps only a window's size (setFrame), so no window is placed, and a Wayland compositor stacks its windows itself.
 		CanSetWindowLevel:      w.canSetLevel(),
 		CanSetWindowWorkspaces: w.canSetWorkspaces(),
