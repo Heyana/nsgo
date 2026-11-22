@@ -546,6 +546,9 @@ const capHapticPatterns = 16
 // capFetchToFile is the third capability byte's bit for a runtime that streams a msgFetch with fetchToFile to a file (Protocol.CAP_FETCH_TO_FILE): one built before it reads the destination as the header count, so Go asks it for the whole body instead.
 const capFetchToFile = 64
 
+// capSpeech is the third capability byte's bit for a device and runtime that recognize speech through SpeechRecognizer on ItemSpeech (Protocol.CAP_SPEECH): one built before Speech.java reads as having no speech recognition.
+const capSpeech = 8
+
 // readEnvironmentCapabilities reads the environment as readEnvironment does, with the third capability byte, which says what the runtime itself can do (cap* bits) rather than the device, so it stays out of driver.Environment.
 func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	env := driver.Environment{
@@ -617,7 +620,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 		env.LocaleSettings.MeasurementSystem = r.str()
 		env.LocaleSettings.TemperatureUnit = r.str()
 		env.LocaleSettings.Region = r.str()
-		// The second capability byte's bits are all taken too; a third follows the locale settings, before the display, so a runtime built before it, which ends here, reads as having none of them. Its bits: capExtendedMessages, capAudio, capHapticPatterns, capDiscoverServices and capFetchToFile.
+		// The second capability byte's bits are all taken too; a third follows the locale settings, before the display, so a runtime built before it, which ends here, reads as having none of them. Its bits: capExtendedMessages, capAudio, capSpeech, capHapticPatterns, capDiscoverServices and capFetchToFile.
 		if len(r.buf) > 0 {
 			third = r.byte()
 		}
@@ -627,6 +630,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	env.Audio = third&capAudio != 0
 	env.AudioPlaybackControls = env.Audio
 	env.HapticPatterns = third&capHapticPatterns != 0
+	env.Speech = third&capSpeech != 0
 	// The display follows the third capability byte.
 	if len(r.buf) > 0 && r.byte() != 0 && len(r.buf) >= 20 {
 		id := r.u32()

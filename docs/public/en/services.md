@@ -284,7 +284,7 @@ Register `OnDownloadUpdate` again when the app starts to see active tasks and sa
 
 ## Speech and the lifecycle
 
-`cx.StartSpeech` recognizes speech with the system's recognizer where `cx.Env().CanRecognizeSpeech()` says it exists, and answers with the transcript as it changes. In a headless test, `app.Speech` holds a `nsgotest.SpeechSession` while recognition is active. Use `app.HearSpeech` and `app.EndSpeech` to deliver results.
+`cx.StartSpeech` recognizes speech with the system's recognizer where `cx.Env().CanRecognizeSpeech()` says it exists (macOS, iOS, Android, Windows and browsers exposing `SpeechRecognition` or `webkitSpeechRecognition`), and answers with the transcript as it changes. On Apple platforms declare `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription` in `apple.info`; on Android add `RECORD_AUDIO` to `android.permissions`. In a headless test, `app.Speech` holds a `nsgotest.SpeechSession` while recognition is active. Use `app.HearSpeech` and `app.EndSpeech` to deliver results.
 
 ```go
 session, err := cx.StartSpeech(core.SpeechOptions{

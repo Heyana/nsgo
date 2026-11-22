@@ -281,7 +281,7 @@ iOS 使用系统的后台 URLSession，在应用挂起时继续传输。应用�
 
 ## 语音与生命周期
 
-`cx.StartSpeech` 在 `cx.Env().CanRecognizeSpeech()` 为真时用系统识别器识别语音，并随着转写结果变化返回文本。在无头测试中，识别期间 `app.Speech` 保存一个 `nsgotest.SpeechSession`。使用 `app.HearSpeech` 和 `app.EndSpeech` 交付结果。
+`cx.StartSpeech` 在 `cx.Env().CanRecognizeSpeech()` 为真时用系统识别器识别语音（支持 macOS、iOS、Android、Windows 以及提供 `SpeechRecognition` 或 `webkitSpeechRecognition` 的浏览器），并随着转写结果变化返回文本。在 Apple 平台上需在 `apple.info` 中声明 `NSMicrophoneUsageDescription` 和 `NSSpeechRecognitionUsageDescription`；在 Android 上需在 `android.permissions` 中添加 `RECORD_AUDIO`。在无头测试中，识别期间 `app.Speech` 保存一个 `nsgotest.SpeechSession`。使用 `app.HearSpeech` 和 `app.EndSpeech` 交付结果。
 
 ```go
 session, err := cx.StartSpeech(core.SpeechOptions{

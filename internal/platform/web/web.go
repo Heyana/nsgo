@@ -1510,6 +1510,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 				s.audio.handle(it.Count, it.Audio)
 			}
 			continue
+		case driver.ItemSpeech:
+			speech(it.Count, *it.Speech, s.engine.Dispatch)
+			continue
 		case driver.ItemSpeak:
 			speak(it.Count, *it.Speak, s.engine.Dispatch)
 			continue

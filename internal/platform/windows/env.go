@@ -109,6 +109,7 @@ func (w *window) environment() driver.Environment {
 		CanDockPanels:         !w.embedded,
 		Lifecycle:             w.lifecycle(),
 		LowPowerMode:          lowPowerMode(),
+		Speech:                speechAvailable(),
 		Speak:                 speakAvailable(),
 		ScanCode:              scanCameraAvailable(),
 		Gamepads:              true,

@@ -212,6 +212,7 @@ func (s *surface) environment() driver.Environment {
 	env := driver.Environment{
 		KeyCodeNames: s.keyCodeNames,
 		ScreenColor:  js.Global().Get("EyeDropper").Truthy(),
+		Speech:       speechAvailable(),
 		Speak:        speakAvailable(),
 		Gamepads:     g.Get("navigator").Get("getGamepads").Type() == js.TypeFunction,
 		Audio:        webAudioAvailable(),

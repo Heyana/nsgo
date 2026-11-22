@@ -62,10 +62,7 @@ type SpeechSession struct {
 }
 
 // StartSpeech recognizes what the user says, one session at a time: a
-// new one aborts the one running, and the scope that started it going
-// aborts it too. macOS and iOS recognize with the Speech framework, the
-// app's Info.plist declaring NSMicrophoneUsageDescription and
-// NSSpeechRecognitionUsageDescription; elsewhere the session ends with
+// new one aborts the one running, and the scope that started it going aborts it too. macOS and iOS recognize with the Speech framework (Info.plist declaring NSMicrophoneUsageDescription and NSSpeechRecognitionUsageDescription), Android with SpeechRecognizer (android.permissions declaring RECORD_AUDIO), Windows with WinRT's Windows.Media.SpeechRecognition, and the web with SpeechRecognition where the browser exposes it; elsewhere the session ends with
 // SpeechUnavailable. It fails only for a Lang that is no language tag.
 func (cx *Scope) StartSpeech(opts SpeechOptions) (*SpeechSession, error) {
 	if opts.Lang != "" && !languageTag(opts.Lang) {

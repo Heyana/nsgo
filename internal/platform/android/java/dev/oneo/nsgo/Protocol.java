@@ -125,6 +125,8 @@ final class Protocol {
     static final int CAP_EXTENDED_MESSAGES = 1;
     /** The third capability byte's bit for a runtime that plays sounds and players (Audio.java), capAudio in protocol.go. */
     static final int CAP_AUDIO = 2;
+    /** The third capability byte's bit for a device and runtime that recognize speech (Speech.java), capSpeech in protocol.go. */
+    static final int CAP_SPEECH = 8;
 
     // Extended kinds, the first byte of an EXTENDED message, kept in sync with android.go's ext* constants: each is EXT_NAME = n with n from 1 up, and has its case in isExtended.
     /** A staged audio file, or a failure: surface, object, path, error code and message (audio.go, Audio.file). */
@@ -350,6 +352,7 @@ final class Protocol {
     static final int ITEM_INSTALL_PACKAGE = 65;
     static final int ITEM_CAN_INSTALL_PACKAGES = 66;
     static final int ITEM_INSTALL_SETTINGS = 67;
+    static final int ITEM_SPEECH = 77;
     static final int ITEM_TAKE_PHOTO = 78;
     static final int ITEM_MATCH = 79;
     static final int ITEM_HAPTIC = 81;
@@ -495,6 +498,7 @@ final class Protocol {
     static final int EVENT_MODAL_SHOWN = 63;
     static final int EVENT_MODAL_DISMISSED = 64;
     static final int EVENT_SCREEN_INSETS = 65;
+    static final int EVENT_SPEECH = 73;
     static final int EVENT_INPUT_MODALITY = 75;
     static final int EVENT_NOTIFICATION = 76;
     static final int EVENT_NOTIFICATION_PRESS = 77;

@@ -415,6 +415,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 				ev.Data = readPicked(data)
 			case driver.EventSpeak:
 				ev.Data, ev.Text, ev.Index = readSpeak(ev, data), "", 0
+			case driver.EventSpeech:
+				ev.Data, ev.Text, ev.Index, ev.Finished = readSpeech(ev, data), "", 0, false
 			case driver.EventFiles:
 				if s.pickedFolders(answerKey(from, ev.Count)) {
 					ev.Data = s.readFolders(data)
@@ -1657,6 +1659,8 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 				w.u64(uint64(segment.Milliseconds))
 				w.byte(segment.Amplitude)
 			}
+		case driver.ItemSpeech:
+			writeSpeechRequest(w, it.Count, *it.Speech)
 		case driver.ItemSpeak:
 			r := it.Speak
 			w.u32(it.Count)

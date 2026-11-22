@@ -958,6 +958,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             perfPanel = null;
         }
         clearDisplayHolds();
+        Speech.releaseView(this);
         if (sensors != null) { sensors.close(); sensors = null; }
         if (systemPermissions != null) systemPermissions.clear();
         if (network != null) {
@@ -1392,8 +1393,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             LocalePrefs.read(formatLocale, hostLocale != null ? null : locale,
                     android.text.format.DateFormat.is24HourFormat(getContext()),
                     measurementSystem(formatLocale)).write(d);
-            // The second capability byte's bits are taken too: a third follows the locale settings, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, Protocol.CAP_DISCOVER_SERVICES and Protocol.CAP_FETCH_TO_FILE.
-            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES | Protocol.CAP_FETCH_TO_FILE | (hapticPatterns.available ? Protocol.CAP_HAPTIC_PATTERNS : 0);
+            // The second capability byte's bits are taken too: a third follows the locale settings, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, Protocol.CAP_SPEECH where the device recognizes speech, Protocol.CAP_DISCOVER_SERVICES and Protocol.CAP_FETCH_TO_FILE.
+            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES | Protocol.CAP_FETCH_TO_FILE | (hapticPatterns.available ? Protocol.CAP_HAPTIC_PATTERNS : 0)
+                    | (Speech.available(getContext()) ? Protocol.CAP_SPEECH : 0);
             d.writeByte(third);
             writeDisplay(d);
         } catch (IOException impossible) {
@@ -1617,6 +1619,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             return;
         }
         if (request == Sensors.PERMISSION_REQUEST) { if (sensors != null) sensors.permissionResult(); return; }
+        if (request == Speech.PERMISSION_REQUEST) {
+            Speech.permissionResult(this, results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED);
+            return;
+        }
         if (request == Scanner.PERMISSION_REQUEST) {
             if (scanner != null) scanner.permissionResult(results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED);
             return;
@@ -2051,6 +2057,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     /** Answers ITEM_SPEAK count of this view's tree: an utterance's end, stopped or with error, one of driver's Speak errors, or the voices as JSON. */
     void answerSpeak(long count, boolean stopped, String error, String voices) {
         event(Protocol.EVENT_SPEAK, 0, count, 0, 0, error, 0, 0, stopped ? 1 : 0, 0, 0, 0, 0, null, 0, 0, false, voices, false);
+    }
+
+    /** Reports speech session count of this view's tree: its phase (Speech.STARTED, RESULT or ENDED), transcript text, finality and error. */
+    void answerSpeech(long count, int phase, String text, boolean finalResult, String error) {
+        event(Protocol.EVENT_SPEECH, 0, count, 0, 0, text, 0, 0, phase, 0, 0, 0, 0, null, 0, 0, false, error, finalResult);
     }
 
     /** Answers ITEM_OVERLAY_PERMISSION count of this view's tree with permission, an OVERLAY_* of Protocol's. */
@@ -3582,6 +3593,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 orientation = in.readUnsignedByte();
                 applyOrientation();
                 break;
+            case Protocol.ITEM_SPEECH: {
+                long count = in.readInt() & 0xffffffffL;
+                int command = in.readUnsignedByte();
+                String lang = Protocol.readString(in);
+                boolean interim = Protocol.flag(in.readUnsignedByte(), 0);
+                Speech.handle(this, count, command, lang, interim);
+                break;
+            }
             case Protocol.ITEM_SPEAK: {
                 long count = in.readInt() & 0xffffffffL;
                 int command = in.readUnsignedByte();

@@ -22,7 +22,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- NotificationReceiver sets scheduled notifications' alarms again after a reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- From API 30, TextToSpeech finds the system's speech engines and text selections find ACTION_PROCESS_TEXT apps only through these queries. -->
+    <!-- From API 30, TextToSpeech and SpeechRecognizer find the system's speech services and text selections find ACTION_PROCESS_TEXT apps only through these queries. -->
     <queries>
         <package android:name="com.android.vending" />
         <intent>
@@ -31,6 +31,9 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 

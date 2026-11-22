@@ -439,6 +439,9 @@ func aarManifest(overlay bool, libraries []string) string {
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
         </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
     </queries>
     <application android:extractNativeLibs="true">
         <provider
