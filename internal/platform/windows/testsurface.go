@@ -19,10 +19,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// A surface acting as the user does, with Win32 messages posted to the
-// window and PrintWindow captures, for the test host (testhost.go) and for
-// nsgo dev's automation (automation.go), whose live surfaces wrap the
-// running app's windows with no test options: test is nil.
+// A surface acting as the user does, with Win32 messages posted to the window and PrintWindow captures, for the test host (testhost.go) and for nsgo dev's automation (automation.go), whose live surfaces wrap the running app's windows with no test options: test is nil.
 
 type testSurface struct {
 	w    *window
@@ -317,9 +314,7 @@ var (
 
 const scsSetStr = 0x0009 // SCS_SETSTR: GCS_COMPREAD | GCS_COMPSTR
 
-// Compose has the window's IME compose text, through IMM as the IME's
-// own composition goes: the IME answers with WM_IME_COMPOSITION. A
-// machine whose input language has no IME composes nothing.
+// Compose has the window's IME compose text, through IMM as the IME's own composition goes: the IME answers with WM_IME_COMPOSITION. A machine whose input language has no IME composes nothing.
 func (t *testSurface) Compose(text string) error {
 	var err error
 	t.onMain(func() {
@@ -495,8 +490,7 @@ func (t *testSurface) Back() error {
 	return t.Key("escape")
 }
 
-// Answer clicks the button at index of the alert the window draws, or
-// presses Escape for -1, as a user would.
+// Answer clicks the button at index of the alert the window draws, or presses Escape for -1, as a user would.
 func (t *testSurface) Answer(id uint32, index int) error {
 	var err error
 	deadline := time.Now().Add(3 * time.Second)
@@ -608,8 +602,7 @@ func (t *testSurface) Sync() {
 	}
 }
 
-// Animating counts transitions, layout animations and animated values
-// that end.
+// Animating counts transitions, layout animations and animated values that end.
 func (t *testSurface) Animating() bool {
 	var busy bool
 	t.onMain(func() {
@@ -640,8 +633,7 @@ func (t *testSurface) SetEnvironment(env driver.Environment) error {
 	return nil
 }
 
-// ChooseMenu implements testhost.Surface: the menu bar's command, as
-// WM_COMMAND brings it.
+// ChooseMenu implements testhost.Surface: the menu bar's command, as WM_COMMAND brings it.
 func (t *testSurface) ChooseMenu(id uint32) error {
 	var err error
 	t.onMain(func() {
