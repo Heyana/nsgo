@@ -927,13 +927,17 @@ func (t *testSurface) Answer(id uint32, index int) error {
 			return
 		}
 		window := shown.alert.Send(sel("window"))
-		if index < 0 && (s.window == 0 || s.kind == driver.SurfaceTrayIcon) {
-			// The app's own alert runs modal, with no window to end a sheet of.
-			nsApp().Send(sel("abortModal"))
+		parent := window.Send(sel("sheetParent"))
+		if parent == 0 && nsApp().Send(sel("modalWindow")) != window {
+			err = fmt.Errorf("alert %d is waiting to show", id)
 			return
 		}
 		if index < 0 {
-			s.window.Send(sel("endSheet:returnCode:"), window, 0)
+			if parent != 0 {
+				parent.Send(sel("endSheet:returnCode:"), window, 0)
+			} else if nsApp().Send(sel("modalWindow")) == window {
+				nsApp().Send(sel("abortModal"))
+			}
 			return
 		}
 		for i, action := range shown.order {

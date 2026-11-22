@@ -229,7 +229,7 @@ func (s *surface) share(r driver.ShareRequest, id uint32) {
 	s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id, Finished: true})
 }
 
-// pickImages shows an open panel as a sheet on the window for the
+// pickImages shows an open panel for the
 // images r asks for, then prepares the ones chosen off the main thread.
 func (s *surface) pickImages(r driver.PickRequest, id uint32) {
 	if s.test != nil && s.test.options.PickImages != nil {
@@ -253,7 +253,7 @@ func (s *surface) pickImages(r driver.PickRequest, id uint32) {
 	}
 	panel.Send(sel("setAllowedFileTypes:"), types)
 	panel.Send(sel("retain"))
-	done := objcblock.New(func(_ objc.Block, response int) {
+	s.beginFilePanel(panel, func(response int) {
 		defer panel.Send(selRelease)
 		var paths []string
 		if response == 1 { // NSModalResponseOK
@@ -275,11 +275,9 @@ func (s *surface) pickImages(r driver.PickRequest, id uint32) {
 			s.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: id, Data: driver.FinishPick(r, files, nil)})
 		}()
 	})
-	panel.Send(sel("beginSheetModalForWindow:completionHandler:"), s.window, done)
-	done.Release()
 }
 
-// pickFiles shows an open panel as a sheet on the window for the files
+// pickFiles shows an open panel for the files
 // r offers and answers with their paths.
 func (s *surface) pickFiles(r driver.FilesRequest, id uint32) {
 	panel := objc.ID(apple.Class("NSOpenPanel")).Send(sel("openPanel"))
@@ -289,7 +287,7 @@ func (s *surface) pickFiles(r driver.FilesRequest, id uint32) {
 	panel.Send(sel("setAllowedContentTypes:"), apple.ContentTypes(r))
 	configureFilePanel(panel, r.Title, r.Button, r.Start)
 	panel.Send(sel("retain"))
-	done := objcblock.New(func(_ objc.Block, response int) {
+	s.beginFilePanel(panel, func(response int) {
 		defer panel.Send(selRelease)
 		var files []driver.File
 		if response == 1 { // NSModalResponseOK
@@ -299,11 +297,9 @@ func (s *surface) pickFiles(r driver.FilesRequest, id uint32) {
 		}
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id, Data: files})
 	})
-	panel.Send(sel("beginSheetModalForWindow:completionHandler:"), s.window, done)
-	done.Release()
 }
 
-// pickDirectories shows an open panel as a sheet on the window for
+// pickDirectories shows an open panel for
 // folders and answers with their paths.
 func (s *surface) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 	panel := objc.ID(apple.Class("NSOpenPanel")).Send(sel("openPanel"))
@@ -313,7 +309,7 @@ func (s *surface) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 	panel.Send(sel("setAllowsMultipleSelection:"), r.Limit > 1)
 	configureFilePanel(panel, r.Title, r.Button, r.Start)
 	panel.Send(sel("retain"))
-	done := objcblock.New(func(_ objc.Block, response int) {
+	s.beginFilePanel(panel, func(response int) {
 		defer panel.Send(selRelease)
 		var dirs []driver.Directory
 		if response == 1 { // NSModalResponseOK
@@ -323,8 +319,6 @@ func (s *surface) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 		}
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id, Data: dirs})
 	})
-	panel.Send(sel("beginSheetModalForWindow:completionHandler:"), s.window, done)
-	done.Release()
 }
 
 // configureFilePanel gives an open or save panel its message, prompt and starting folder, with AppKit's defaults for absent or unusable hints.
@@ -360,7 +354,7 @@ func savePanel(r driver.SaveRequest) objc.ID {
 	return panel
 }
 
-// saveFile shows a save panel as a sheet on the window for the file r
+// saveFile shows a save panel for the file r
 // suggests, then saves it where the user chose off the main thread.
 func (s *surface) saveFile(r driver.SaveRequest, id uint32) {
 	panel := savePanel(r)
@@ -371,7 +365,7 @@ func (s *surface) saveFile(r driver.SaveRequest, id uint32) {
 		preflight = &savePanelPreflight{s: s, id: id}
 		delegate = preflight.delegate(panel)
 	}
-	done := objcblock.New(func(_ objc.Block, response int) {
+	s.beginFilePanel(panel, func(response int) {
 		defer panel.Send(selRelease)
 		if delegate != 0 {
 			panel.Send(selSetDelegate, objc.ID(0))
@@ -393,8 +387,6 @@ func (s *surface) saveFile(r driver.SaveRequest, id uint32) {
 			go s.saves.Save(r, id, path, s.engine.Dispatch)
 		}
 	})
-	panel.Send(sel("beginSheetModalForWindow:completionHandler:"), s.window, done)
-	done.Release()
 }
 
 // popupMenu shows entries as a context menu at p in the root's points.

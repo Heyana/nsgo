@@ -7,7 +7,7 @@ order: 44
 
 ## Alerts and the clipboard
 
-`cx.ShowAlert` shows the platform's alert or action sheet. Its `Actions` come back by index, and a role draws the cancel and destructive buttons the platform's way.
+`cx.ShowAlert` shows the platform's alert or action sheet. Its `Actions` come back by index, and a role draws the cancel and destructive buttons the platform's way. On macOS, alerts and file pickers use a sheet while their window is visible. A hidden, minimized or offscreen window, or a tray app without a window, opens the dialog separately instead. Closing the requesting window cancels its dialogs.
 
 ```go
 cx.ShowAlert(core.AlertConfig{

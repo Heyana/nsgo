@@ -4,7 +4,8 @@
 // per node, styled through its CALayer, with text the engine laid out
 // with CoreText drawn on the main thread and images decoded off it, and
 // an optional NSVisualEffectView material behind the window's content.
-// Alerts are sheets on the window; Escape, Cmd-[, Option-Left and the
+// Alerts are sheets of visible windows or standalone modal dialogs;
+// Escape, Cmd-[, Option-Left and the
 // mouse's back button go back. It calls AppKit through purego, so it
 // builds without cgo.
 package macos
@@ -368,8 +369,11 @@ type surface struct {
 	// The performance monitor and the panel that shows it.
 	perf *engine.PerfMonitor
 	hud  *hud
-	// alerts are the alerts shown, by ID, kept for a test host or nsgo dev's automation to answer them.
+	// alerts are pending and shown alerts, canceled on close and answerable
+	// by a test host or nsgo dev's automation.
 	alerts map[uint32]shownAlert
+	// filePanels are the surface's native open/save panels, canceled on close.
+	filePanels map[objc.ID]struct{}
 
 	chrome
 }
@@ -1003,6 +1007,7 @@ func (s *surface) close() {
 		return
 	}
 	s.closed = true
+	s.closeDialogs()
 
 	s.releaseChildWindows()
 	if s.scanner != nil {
@@ -1955,8 +1960,8 @@ func (s *surface) pressOutside(event objc.ID) {
 	}
 }
 
-// alert shows a as a sheet on the window. The Cancel action answers
-// Escape; the sheet's answer goes to the engine as EventAlert.
+// alert shows a as a sheet of a visible window, else on its own. The
+// Cancel action answers Escape; its answer goes to the engine as EventAlert.
 func (s *surface) alert(a *driver.AlertConfig) {
 	alert := objc.ID(apple.Class("NSAlert")).Send(selNew)
 	alert.Send(sel("setMessageText:"), apple.NSString(a.Title))
@@ -2003,26 +2008,35 @@ func (s *surface) alert(a *driver.AlertConfig) {
 		} else {
 			index = order[index]
 		}
-		s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: index})
+		if !s.closed {
+			s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: index})
+		}
 		if s.alerts != nil {
 			delete(s.alerts, id)
 		}
 		alert.Send(selRelease)
 	}
-	if s.alerts != nil {
-		s.alerts[id] = shownAlert{alert, order}
+	if s.alerts == nil {
+		s.alerts = map[uint32]shownAlert{}
 	}
-	if s.window == 0 || s.kind == driver.SurfaceTrayIcon {
-		// The app's own surface has no window: the alert is the app's,
-		// once the batch has returned.
-		apple.OnMain(func() {
+	s.alerts[id] = shownAlert{alert, order}
+	window := s.panelWindow()
+	if window == 0 {
+		// Run outside the mount batch, with only one standalone modal loop.
+		queueStandaloneAlert(func() {
+			if s.closed {
+				answer(0)
+				return
+			}
 			activateApp()
-			answer(objc.Send[int](alert, sel("runModal")))
+			response := objc.Send[int](alert, sel("runModal"))
+			alert.Send(selWindow).Send(sel("orderOut:"), objc.ID(0))
+			answer(response)
 		})
 		return
 	}
 	done := objcblock.New(func(_ objc.Block, response int) { answer(response) })
-	alert.Send(sel("beginSheetModalForWindow:completionHandler:"), s.window, done)
+	alert.Send(sel("beginSheetModalForWindow:completionHandler:"), window, done)
 	done.Release()
 }
 

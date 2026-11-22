@@ -60,7 +60,7 @@ Windows checks the registry first because the shell asks the user for an app for
 | Target | Picker | Prepared by |
 | --- | --- | --- |
 | iOS | `PHPickerViewController`, ordered, no permission | ImageIO |
-| macOS | An `NSOpenPanel` sheet for any image | ImageIO |
+| macOS | An `NSOpenPanel`, a sheet while its owner is visible, otherwise standalone | ImageIO |
 | Android | The Photo Picker from API 33 (30 with its extension), else the documents UI | `ImageDecoder` in `Services.java` |
 | Windows | `GetOpenFileNameW`, from a message of its own | `internal/platform/picked` |
 | Linux | `GtkFileDialog` | `internal/platform/picked` |
@@ -107,7 +107,7 @@ Both pickers take hints a platform without the setting ignores, each empty for t
 
 | Target | Picker | Folder picker | Save dialog |
 | --- | --- | --- | --- |
-| macOS | An `NSOpenPanel` sheet with `UTType`s; `Title` is its `message`, `Button` its `prompt`, `Start` its `directoryURL` | An `NSOpenPanel` sheet for directories, the same hints applying | An `NSSavePanel` sheet with the name's extension and `Start` as its `directoryURL` |
+| macOS | An `NSOpenPanel`, a sheet of a visible owner or standalone, with `UTType`s; `Title` is its `message`, `Button` its `prompt`, `Start` its `directoryURL` | An `NSOpenPanel` for directories with the same presentation and hints | An `NSSavePanel` with the same presentation, the name's extension and `Start` as its `directoryURL` |
 | iOS | `UIDocumentPickerViewController` copying into the app's `tmp`; `Start` is its `directoryURL` | The same for `public.folder`, opening the folders where they are | The same export picker with `Start` as its `directoryURL` |
 | Android | `ACTION_OPEN_DOCUMENT`; Java copies each document into the cache's `nsgo-files` | `ACTION_OPEN_DOCUMENT_TREE`, one folder, whose tree Java lists and reads a megabyte at a time for Go (`msgFolder`); the grant lasts until the device restarts | `ACTION_CREATE_DOCUMENT`; Java copies the file in and deletes the document when that fails |
 | Windows | `IFileOpenDialog`, filtering by extension; `SetTitle`, `SetOkButtonLabel`, `SetFolder` and a named filter | `IFileOpenDialog` with `FOS_PICKFOLDERS`, the same hints applying; Windows 11's Home, not on disk, opens the profile | `IFileSaveDialog`, with `SetFolder` for `Start` and an overwrite prompt |
@@ -536,7 +536,7 @@ Shortcuts are scoped to their owner: the platform matches key presses against th
 - iOS and Android match a hardware keyboard too. `KeyLabel` names a binding as the platform shows it (⇧⌘L, Ctrl+Shift+L), `Environment.AppleKeyboard` telling the web on Apple platforms.
 - NSGo extends NSH's iOS keymap with localized `KeyOptions.Title` and `Group` functions. The current winning titled bindings become `UIKeyCommand`s in the surface responder chain, and the application delegate builds their named groups as `UIMenu`s on iPadOS 26 and later. The main menu rebuilds when the active commands or their labels change. UIKit actions check the binding ID and the current keymap before sending `EventKey`. Hardware presses that UIKit leaves to the responder chain follow the ordinary keymap.
 - Android also offers an input method's editor action or committed Return to the same keymap before the field's key, submit or blur handling. `KeyAlways` takes it while an input has focus; automatic and `KeyNotEditing` bindings leave it to `SubmitBehavior`. A software action is a complete press and release, so repeated actions do not leave Enter held, and it is not keyboard input to `focus-visible:`, as a software Return is not on iOS (#414).
-- An alert's `Sheet` presents its actions as an action sheet, and `Cancelable` lets Escape, back and a press outside close it with -1 ([components](components.md#popups)).
+- An alert's `Sheet` presents its actions as an action sheet, and `Cancelable` lets Escape, back and a press outside close it with -1 ([components](components.md#popups)). On macOS, alerts and open/save panels attach as sheets only while their owner is visible, not minimized, and intersects a display; otherwise they activate the app and show independently. Standalone alerts serialize on the main run loop, whose block permits the main dispatch queue to apply batches and answer or cancel them during `runModal`; a dispatch-queue block would hold that serial queue until the alert closed. Closing a surface cancels its native dialogs, including queued alerts.
 - The status bar layers as NSH's `status_bar.rs`: `SetStatusBar` patches the app's default, and each screen's or modal's `StatusBar` is over it while shown. The latest wins field by field; iOS and Android apply the result. A TSX app's default is `nsgo.yaml`'s `status_bar` (`foreground`, `hidden`), as NSH's `nsh.json` `statusBar`.
 
 ## Where NSGo departs from NSH
