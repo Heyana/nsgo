@@ -83,7 +83,7 @@ func TestRichEditNativeEditingUndoMaskingScrollAndDraw(t *testing.T) {
 		return nil
 	}
 
-	// 1. Plain input: verify ITextServices2 is active, spell checking enabled,    editing, selection, and native undo/redo work.
+	// 1. Plain input: verify ITextServices2 is active, spell checking enabled, editing, selection, and native undo/redo work.
 	typeText(hwnd, "hello")
 	waitForTitle(t, hwnd, title+"|hello||", 5*time.Second)
 
@@ -121,7 +121,7 @@ func TestRichEditNativeEditingUndoMaskingScrollAndDraw(t *testing.T) {
 		}
 	})
 
-	// 2. Password input: verify TXTBIT_USEPASSWORD, bullet password char,    spell checking disabled, and copy blocked.
+	// 2. Password input: verify TXTBIT_USEPASSWORD, bullet password char, spell checking disabled, and copy blocked.
 	onMain(t, hwnd, func(w *window) {
 		in := findField(w, "secret")
 		if in == nil {
@@ -147,7 +147,7 @@ func TestRichEditNativeEditingUndoMaskingScrollAndDraw(t *testing.T) {
 		}
 	})
 
-	// 3. Multiline input: NoAutoCorrect disables spell checking, scrolling works,    and TxDrawD2D renders cleanly during paint.
+	// 3. Multiline input: NoAutoCorrect disables spell checking, scrolling works, and TxDrawD2D renders cleanly during paint.
 	onMain(t, hwnd, func(w *window) {
 		in := findField(w, "multi")
 		if in == nil {
