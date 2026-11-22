@@ -37,6 +37,10 @@ class Client(dbus.service.Object):
             return self.location
         return ""
 
+    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="ssv", out_signature="")
+    def Set(self, interface, name, value):
+        return None
+
 class Location(dbus.service.Object):
     def __init__(self, bus):
         super().__init__(bus, LOCATION)
