@@ -10,8 +10,7 @@ import (
 )
 
 // value is an expression checked: its type, and a constant (c, a scalar;
-// comps, an abstract vector's components; fields, a constant struct's members)
-// or its IR.
+// comps, an abstract vector's components; fields, a constant struct's members) or its IR.
 type value struct {
 	t      ty
 	c      constant.Value

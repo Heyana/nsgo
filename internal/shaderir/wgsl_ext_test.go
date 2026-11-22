@@ -77,8 +77,7 @@ func TestPrivatesAndStructsCodegen(t *testing.T) {
 		},
 	}
 
-	// GLSL Fragment and Compile: Inner struct S0 must precede Outer struct S1,
-	// and P0/P1/P2 must be module-scope variables.
+	// GLSL Fragment and Compile: Inner struct S0 must precede Outer struct S1, and P0/P1/P2 must be module-scope variables.
 	glslFrag := glsl.Fragment(p, "nsgoShader", glsl.Options{Block: "U"})
 	_, glslFS := glsl.Compile(p, glsl.GLSLVersionES300, -1)
 	for name, out := range map[string]string{"glsl.Fragment": glslFrag, "glsl.Compile": glslFS} {

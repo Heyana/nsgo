@@ -141,9 +141,7 @@ fn shade(uv: vec2f) -> vec4f { return vec4f(uv.x, 0.0, 1.0, uniforms.alpha); }`)
 	}
 }
 
-// TestWGSLRestDraws executes var<private>, user structs, non-square matrices,
-// bit-counting, packing/unpacking, modf and frexp on Metal and checks the
-// computed values against exact expected results.
+// TestWGSLRestDraws executes var<private>, user structs, non-square matrices, bit-counting, packing/unpacking, modf and frexp on Metal and checks the computed values against exact expected results.
 func TestWGSLRestDraws(t *testing.T) {
 	if !loadMetal() {
 		t.Skip("no Metal device")
@@ -179,9 +177,7 @@ fn shade(uv: vec2f) -> vec4f {
 		r += 0.25;
 	}
 	// 3. Bit-counting (runtime uniforms so not constant-folded):
-	// bits = 0x00F01230u: clz=8, popcnt=8, ctz=4, flb=23, ftb=4, rev=0x0C480F00u
-	// extractBits(bits, 4u, 8u) = 0x23u, insertBits(bits, 0xABu, 8u, 8u) = 0x00F0AB30u
-	// sval = -12i (0xFFFFFFF4): flb(-12i)=3i, extractBits(-12i, 0u, 4u)=4i, extractBits(-12i, 2u, 4u)=-3i
+	// bits = 0x00F01230u: clz=8, popcnt=8, ctz=4, flb=23, ftb=4, rev=0x0C480F00u extractBits(bits, 4u, 8u) = 0x23u, insertBits(bits, 0xABu, 8u, 8u) = 0x00F0AB30u sval = -12i (0xFFFFFFF4): flb(-12i)=3i, extractBits(-12i, 0u, 4u)=4i, extractBits(-12i, 2u, 4u)=-3i
 	let u = uniforms.bits;
 	let s = uniforms.sval;
 	var g = 0.0;

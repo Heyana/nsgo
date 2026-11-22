@@ -202,8 +202,7 @@ func (c *checker) check() {
 	p.Uniforms = []shaderir.Type{{Main: shaderir.Vec2}, {Main: shaderir.Float}}
 	p.Varyings = []shaderir.Type{{Main: shaderir.Vec2}}
 
-	// Pass 1: register all module-scope declarations so they may reference
-	// one another in any order.
+	// Pass 1: register all module-scope declarations so they may reference one another in any order.
 	var privSyms []*symbol
 	var constSyms []*symbol
 	for _, a := range c.m.aliases {
@@ -250,8 +249,7 @@ func (c *checker) check() {
 		c.declare(f.name, f.pos, &symbol{kind: symFn, fn: info})
 	}
 
-	// Pass 2: resolve aliases, structs, uniforms, consts, function signatures,
-	// and var<private> globals.
+	// Pass 2: resolve aliases, structs, uniforms, consts, function signatures, and var<private> globals.
 	for _, a := range c.m.aliases {
 		c.resolveAlias(c.global.names[a.name])
 	}
@@ -301,8 +299,7 @@ func (c *checker) check() {
 		fail(d.decl.pos, "shade must be fn shade(uv: vec2f) -> vec4f")
 	}
 
-	// Compile all user functions (so errors in unused user functions are still
-	// reported), __nsh_fragment, and only the built-in helpers they reach.
+	// Compile all user functions (so errors in unused user functions are still reported), __nsh_fragment, and only the built-in helpers they reach.
 	compiled := map[*fnInfo]bool{}
 	var queue []*fnInfo
 	enqueue := func(f *fnInfo) {

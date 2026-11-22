@@ -471,8 +471,7 @@ func (c *checker) matrix(t ty, x *callExpr, out *[]shaderir.Stmt) value {
 	return value{t: t, e: builtinCall(f, t, args...)}
 }
 
-// zeroValue returns a constant zero value for scalar, vector, or struct types,
-// if representable as a compile-time constant.
+// zeroValue returns a constant zero value for scalar, vector, or struct types, if representable as a compile-time constant.
 func zeroValue(t ty) (value, bool) {
 	switch {
 	case t.isScalar():
@@ -497,8 +496,7 @@ func zeroValue(t ty) (value, bool) {
 	return value{}, false
 }
 
-// structOf constructs a struct value, either as a compile-time constant or
-// in a local variable assigned field by field.
+// structOf constructs a struct value, either as a compile-time constant or in a local variable assigned field by field.
 func (c *checker) structOf(t ty, x *callExpr, out *[]shaderir.Stmt) value {
 	c.resolveStruct(t.st)
 	fields := t.st.fields

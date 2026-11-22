@@ -72,8 +72,7 @@ func UniformVariableOffsetsInDwords(program *shaderir.Program) []int {
 			headInDwords += 4
 		case shaderir.Mat2, shaderir.Mat3, shaderir.Mat4,
 			shaderir.Mat2x3, shaderir.Mat2x4, shaderir.Mat3x2, shaderir.Mat3x4, shaderir.Mat4x2, shaderir.Mat4x3:
-			// In HLSL cbuffers (column_major by default), a floatCxR has R columns of C dwords each,
-			// each column starting on a 4-dword register boundary.
+			// In HLSL cbuffers (column_major by default), a floatCxR has R columns of C dwords each, each column starting on a 4-dword register boundary.
 			headInDwords = align(headInDwords)
 			offsetsInDwords = append(offsetsInDwords, headInDwords)
 			headInDwords += (u.MatrixRows()-1)*UniformVariableBoundaryInDwords + u.MatrixCols()
