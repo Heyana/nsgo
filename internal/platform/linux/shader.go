@@ -5,6 +5,7 @@ package linux
 import (
 	"image"
 	"log"
+	"slices"
 	"strconv"
 	"unsafe"
 
@@ -45,6 +46,7 @@ type glShaderView struct {
 	// sizes in pixels; pictures what a WGSL program reads instead, an
 	// effect's (effect.go).
 	textures map[string]glTexture
+	bound    []string // the keys of the images the drawing under way reads
 	pictures [4]*glPicture
 	// pixels are the textures of the images that are pixels, by their place in Images: kept while their size stays and updated in place with each copy the core sends.
 	pixels [4]pixelTexture
@@ -353,6 +355,7 @@ func (w *window) drawGL(g *glShaderView, id driver.NodeID, context uintptr) {
 	copy(g.lanes[bridge:], g.shader.Lanes)
 	w.animator.ShaderLanes(id, g.lanes[bridge:])
 	g.lanes[0], g.lanes[1], g.lanes[2] = width, height, scale
+	g.bound = g.bound[:0]
 	for i := range g.count {
 		glActiveTexture(glTexture0 + uint32(i))
 		var t glTexture
@@ -381,6 +384,13 @@ func (w *window) drawGL(g *glShaderView, id driver.NodeID, context uintptr) {
 			*p = pixelTexture{}
 		}
 	}
+	// So do images the view no longer reads, such as an offscreen canvas's earlier versions.
+	for key, t := range g.textures {
+		if !slices.Contains(g.bound, key) {
+			glDeleteTextures(1, &t.id)
+			delete(g.textures, key)
+		}
+	}
 	clear(g.buf)
 	shaderir.PutLanes(g.buf, g.offsets, g.types, g.lanes, 4)
 
@@ -404,6 +414,7 @@ func (w *window) drawGL(g *glShaderView, id driver.NodeID, context uintptr) {
 func (w *window) shaderTexture(v *view, src driver.ImageSource) glTexture {
 	g := v.shader
 	key := src.Key()
+	g.bound = append(g.bound, key)
 	if t, ok := g.textures[key]; ok {
 		return t
 	}

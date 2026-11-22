@@ -83,3 +83,58 @@ func Fragment(dst vec4, pos vec2) vec4 {
 		return left[2] > 0xf0 && left[0] < 0x10 && right[0] > 0xf0 && right[2] < 0x10
 	})
 }
+
+// TestShaderViewsKeepOnlyTheirImages draws a shader view with a red
+// image, then a blue one, and checks the view keeps only the blue one's
+// texture.
+func TestShaderViewsKeepOnlyTheirImages(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	var images []driver.ImageSource
+	for _, c := range []color.RGBA{{255, 0, 0, 255}, {0, 0, 255, 255}} {
+		src := image.NewRGBA(image.Rect(0, 0, 2, 2))
+		for x := range 2 {
+			for y := range 2 {
+				src.SetRGBA(x, y, c)
+			}
+		}
+		var encoded bytes.Buffer
+		png.Encode(&encoded, src)
+		images = append(images, driver.ImageSource{Data: encoded.Bytes()})
+	}
+	prog := core.MustCompileShader(`package main
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	return image0At(pos * image0Size() / rectSize())
+}
+`)
+	title := "nsgo-native-" + t.Name()
+	app := func(cx *core.Scope) core.Node {
+		cx.SetTitle(title)
+		return core.View{Style: core.Style{Width: driver.Pt(100), Height: driver.Pt(100)},
+			Children: []core.Node{core.Shader{Program: prog, Images: []core.ImageSource{images[0]},
+				Style: core.Style{Width: driver.Pt(100), Height: driver.Pt(100)}}}}
+	}
+	w := startTestWindow(t, app, Options{Title: title, Width: 100, Height: 100})
+	waitForTitle(t, w, title)
+	waitPixels(t, w, "the red image", func(p pixels) bool { px := p.at(50, 50); return px[2] > 0xf0 && px[0] < 0x10 })
+	var g *glShaderView
+	w.onLoop(t, func() {
+		for _, v := range w.views {
+			if v != nil && v.shader != nil {
+				g = v.shader
+				w.setShader(v, &driver.Shader{Program: g.shader.Program, Images: images[1:]})
+			}
+		}
+	})
+	if g == nil {
+		t.Fatal("no shader view")
+	}
+	waitPixels(t, w, "the blue image", func(p pixels) bool { px := p.at(50, 50); return px[0] > 0xf0 && px[2] < 0x10 })
+	w.onLoop(t, func() {
+		if _, ok := g.textures[images[1].Key()]; len(g.textures) != 1 || !ok {
+			t.Errorf("the view keeps %d textures, want only its image's", len(g.textures))
+		}
+	})
+}

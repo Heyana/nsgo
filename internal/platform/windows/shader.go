@@ -6,6 +6,7 @@ import (
 	"image"
 	"log"
 	"math"
+	"slices"
 	"syscall"
 	"unsafe"
 
@@ -105,6 +106,7 @@ type shaderView struct {
 	// images are the images' textures, by ImageSource.Key; pictures what
 	// a WGSL program reads instead, an effect's (effect.go).
 	images   map[string]*d3dImage
+	bound    []string // the keys of the images the drawing under way reads
 	pictures [4]*pictureTex
 	// pixels are the textures of the images that are pixels, by their place in Images: kept while their size stays and updated in place with each copy the core sends.
 	pixels [4]*pixelImage
@@ -317,6 +319,7 @@ func (sv *shaderView) render(p *painter, prog *d3dProgram, width, height float32
 	}
 	defer ctx.release()
 	srvs := make([]uintptr, prog.textures)
+	sv.bound = sv.bound[:0]
 	for i := range prog.textures {
 		var px *image.RGBA
 		if !sv.shader.Program.WGSL && i < len(sv.shader.Images) {
@@ -353,6 +356,13 @@ func (sv *shaderView) render(p *painter, prog *d3dProgram, width, height float32
 		if im := sv.pixels[i]; im != nil {
 			releaseAll(&im.srv, &im.tex)
 			sv.pixels[i] = nil
+		}
+	}
+	// So do images the view no longer reads, such as an offscreen canvas's earlier versions.
+	for key, im := range sv.images {
+		if !slices.Contains(sv.bound, key) {
+			releaseAll(&im.srv, &im.tex)
+			delete(sv.images, key)
 		}
 	}
 	if cap(sv.buf) < prog.size {
@@ -425,6 +435,7 @@ func (sv *shaderView) pixelImage(g *gfx, ctx *comObject, i int, px *image.RGBA) 
 // time; nil until it has loaded, when the view draws again.
 func (sv *shaderView) image(w *window, g *gfx, src driver.ImageSource) *d3dImage {
 	key := src.Key()
+	sv.bound = append(sv.bound, key)
 	if im := sv.images[key]; im != nil && im.generation == gfxGeneration {
 		return im
 	}

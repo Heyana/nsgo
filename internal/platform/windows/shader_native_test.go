@@ -103,3 +103,66 @@ func Fragment(dst vec4, pos vec2) vec4 {
 		t.Errorf("right pixel %v, want half blue", right[:4])
 	}
 }
+
+// TestShaderViewsKeepOnlyTheirImages draws a shader view with one image,
+// then another, and checks the view keeps only the second's texture.
+func TestShaderViewsKeepOnlyTheirImages(t *testing.T) {
+	g, err := devices()
+	if err != nil {
+		t.Skip(err)
+	}
+	w := &window{scale: 1, animator: driver.NewAnimator(nil), canvasImages: map[string]*imageSlot{}}
+	var images []driver.ImageSource
+	for _, c := range []color.RGBA{{255, 0, 0, 255}, {0, 0, 255, 255}} {
+		src := image.NewRGBA(image.Rect(0, 0, 2, 2))
+		for x := range 2 {
+			for y := range 2 {
+				src.SetRGBA(x, y, c)
+			}
+		}
+		var encoded bytes.Buffer
+		png.Encode(&encoded, src)
+		pic, err := decode(context.Background(), encoded.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		img := driver.ImageSource{Data: encoded.Bytes()}
+		w.canvasImages[img.Key()] = &imageSlot{src: img, pic: pic}
+		images = append(images, img)
+	}
+	ir, err := shader.CompileFragment([]byte(`package main
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	return image0At(pos)
+}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog := &driver.ShaderProgram{IR: ir}
+	v := &view{id: 1}
+	props := bitmapProperties1{format: dxgiFormatBGRA, alphaMode: d2dAlphaPremultiplied, dpiX: 96, dpiY: 96,
+		options: d2dBitmapTarget}
+	var target *comObject
+	if failed(g.dc.callSize(dcCreateBitmap, 4, 4, 0, 0, uintptr(unsafe.Pointer(&props)), uintptr(unsafe.Pointer(&target)))) {
+		t.Fatal("no target bitmap")
+	}
+	defer target.release()
+	defer func() { v.shaderView.release() }()
+	for _, img := range images {
+		w.setShader(v, &driver.Shader{Program: prog, Images: []driver.ImageSource{img}})
+		g.dc.call(dcSetTarget, target.ptr())
+		g.dc.call(rtBeginDraw)
+		p := newPainter(w, g)
+		p.setTransform(identity)
+		p.drawShader(v, 4, 4)
+		p.release()
+		if hr := g.dc.call(rtEndDraw, 0, 0); failed(hr) {
+			t.Fatal(hresultError("EndDraw", hr))
+		}
+		g.dc.call(dcSetTarget, 0)
+		if len(v.shaderView.images) != 1 || v.shaderView.images[img.Key()] == nil {
+			t.Errorf("the view keeps %d textures, want only its image's", len(v.shaderView.images))
+		}
+	}
+}
