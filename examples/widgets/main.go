@@ -34,15 +34,17 @@ var presses struct {
 	pending *int
 }
 
-// pressed sets the count a button of the activity names, "set:<n>", so a
-// press needs nothing of the app's views: it updates the activity itself,
-// as the system holds it until the handler returns.
+// pressed sets the count a widget or activity button names, "set:<n>", so a press needs nothing of the app's views: it updates the widget or activity, as the system holds it until the handler returns.
 func pressed(p widget.ActivityPress) {
 	n, err := strconv.Atoi(strings.TrimPrefix(p.Action, "set:"))
 	if err != nil {
 		return
 	}
-	p.Activity.Update(activityContent(n))
+	if p.Activity != nil {
+		p.Activity.Update(activityContent(n))
+	} else {
+		widget.Update("counter", entry(n, time.Now()))
+	}
 	presses.Lock()
 	set := presses.set
 	if set == nil {
@@ -135,6 +137,9 @@ func entry(n int, now time.Time) widget.Entry {
 	number := widget.Text{Content: count, Style: widget.Style{FontSize: 44, FontWeight: core.FontWeightBold, FontVariant: core.FontTabularNums, Accented: true}}
 	small := widget.Column{Style: widget.Style{AlignItems: widget.AlignStart, FillWidth: true, FillHeight: true}, Children: []widget.View{
 		label, widget.Spacer{}, number,
+		widget.Button{Action: "set:" + strconv.Itoa(n+1), Children: []widget.View{
+			widget.Text{Content: "More", Style: widget.Style{TextStyle: widget.Headline, Color: widget.Accent}},
+		}},
 	}}
 	hour := now.Truncate(time.Hour).Add(time.Hour)
 	return widget.Entry{

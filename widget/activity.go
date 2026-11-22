@@ -122,10 +122,10 @@ func DismissAt(t time.Time) Dismissal { return Dismissal{at: t} }
 
 // ActivityPress is a press of an ActivityAction or a Button.
 type ActivityPress struct {
-	// Activity is the pressed one, and Action its ActivityAction's ID or
-	// its Button's Action.
+	// Activity is the pressed activity, or nil for a widget's Button.
 	Activity *Activity
-	Action   string
+	// Action is the ActivityAction's ID or the Button's Action.
+	Action string
 }
 
 // PushToken is a token APNs takes to update an activity, or with
@@ -246,12 +246,7 @@ var handlers struct {
 	tokens  []PushToken
 }
 
-// OnAction runs fn with each press of an activity's action or button. Set
-// it in main, before nsgo.Run: on iOS the system starts the app in the
-// background for a press, without its views, and the press that started
-// it waits for fn. fn runs on a goroutine of the system's, not the app's
-// views': reach them through a core.Scope's Post. A press holds the
-// activity on iOS until fn returns, so update it there.
+// OnAction runs fn with each press of a widget's button or an activity's action or button. Set it in main, before nsgo.Run, so it is ready if the system starts the app for a press. On iOS that launch runs in the background without its views. fn runs independently of the views: reach them through a core.Scope's Post. An Apple press holds the widget or activity until fn returns, so publish its update there.
 func OnAction(fn func(ActivityPress)) {
 	handlers.Lock()
 	handlers.press = fn

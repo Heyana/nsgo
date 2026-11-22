@@ -55,6 +55,18 @@ widget.Entry{
 
 `Style` 提供间距、内边距、尺寸或撑满、对齐、带圆角的背景、系统的文字样式或字号、字重、字形和变体、行数限制，以及用应用打开的 `Link` 和把视图列入系统着色的 `Accented`。`widget.Primary`、`Secondary` 和 `Accent` 跟随外观，`RGB` 和 `RGBA` 可以用 `Dark` 指定深色模式下的另一种颜色。
 
+## 按钮
+
+从 iOS 17 和 macOS 14 开始，`widget.Button` 会运行 `widget.OnAction`，不打开应用；旧系统只显示它的子视图。在 `main` 中、`nsgo.Run` 之前注册处理函数：系统可能在后台启动应用，不带任何视图。小组件按钮的 `Activity` 为 `nil`，`Action` 是按钮设置的值。
+
+```go
+widget.Button{Action: "refresh", Children: []widget.View{
+    widget.Text{Content: "Refresh"},
+}}
+```
+
+在处理函数返回前处理动作并调用 `widget.Update`，系统自动重载时间线时才能读取更新。处理函数不在视图的 goroutine 上运行，改变视图时使用 `core.Scope.Post`。它与[实时活动](live-activities.md) 使用同一处理函数和意图，`nsgo.yaml` 只需声明 `widgets`，无需启用 `live_activities`。
+
 ## 实时活动
 
 同一个扩展还负责绘制应用的实时活动，显示在锁屏和灵动岛里（[实时活动](live-activities.md)）。

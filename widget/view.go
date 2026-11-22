@@ -115,10 +115,7 @@ type Gauge struct {
 	Style Style
 }
 
-// Button stacks its children as a Column does and, pressed in a Live
-// Activity from iOS 17, runs the handler of OnAction with Action, without
-// opening the app. Elsewhere, in widgets and on Android, it shows its
-// children alone.
+// Button stacks its children as a Column does. In widgets from iOS 17 and macOS 14, and in Live Activities from iOS 17, a press runs OnAction with Action without opening the app. On older systems and Android it shows its children alone.
 type Button struct {
 	Action   string
 	Style    Style

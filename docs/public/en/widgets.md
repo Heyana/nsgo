@@ -55,6 +55,18 @@ widget.Entry{
 
 `Style` takes a gap, padding, a size or fill, alignment, a background with rounded corners, the system's text styles or a font size, weight, design and variant, line limits, a `Link` that opens with the app, and `Accented`, which puts a view among those the system tints. `widget.Primary`, `Secondary` and `Accent` follow the appearance, and `RGB` and `RGBA` take another color in dark mode with `Dark`.
 
+## Buttons
+
+`widget.Button` runs `widget.OnAction` from iOS 17 and macOS 14, without opening the app. Older systems show its children alone. Register the handler in `main`, before `nsgo.Run`: the system may start the app in the background without its views. A widget press has `Activity == nil`; its `Action` is the button's value.
+
+```go
+widget.Button{Action: "refresh", Children: []widget.View{
+    widget.Text{Content: "Refresh"},
+}}
+```
+
+Handle the action and call `widget.Update` before the handler returns, so the system's automatic timeline reload sees the result. The handler runs outside the views' goroutine; use `core.Scope.Post` to change views. This uses the same handler and intent as [Live Activities](live-activities.md), and needs only `widgets` in `nsgo.yaml`, without `live_activities`.
+
 ## Live Activities
 
 The same extension draws the app's Live Activities on the Lock Screen and in the Dynamic Island ([Live Activities](live-activities.md)).

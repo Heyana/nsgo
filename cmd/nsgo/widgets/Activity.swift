@@ -1,11 +1,7 @@
-// What the widget extension and the app's NSGoWidgetKit share of Live
-// Activities: their attributes, whose content-state is the JSON package
-// widget writes, and the intent a button of one runs, which iOS runs in
-// the app's process, where NSGO_APP is set (Activities.swift).
+// What the widget extension and the app's NSGoWidgetKit share of Live Activities: their attributes, whose content-state is the JSON package widget writes. Actions.swift holds their shared button intent.
 
 #if os(iOS)
 import ActivityKit
-import AppIntents
 import Foundation
 
 /// JSONValue holds a JSON value as it decodes, so a content-state is the
@@ -76,28 +72,4 @@ struct NSGoActivityAttributes: ActivityAttributes {
     var id: String
 }
 
-/// NSGoActionIntent is a press of a button of an activity: its action, as
-/// package widget's Button names it.
-@available(iOS 17.0, *)
-struct NSGoActionIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "Action"
-    static var isDiscoverable: Bool = false
-
-    @Parameter(title: "Activity") var activity: String
-    @Parameter(title: "Action") var action: String
-
-    init() {}
-
-    init(activity: String, action: String) {
-        self.activity = activity
-        self.action = action
-    }
-
-    func perform() async throws -> some IntentResult {
-        #if NSGO_APP
-        await Presses.press(activity: activity, action: action)
-        #endif
-        return .result()
-    }
-}
 #endif

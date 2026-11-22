@@ -173,22 +173,20 @@ func TestWidgetsCompile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir()) // os.UserCacheDir reads it on macOS
 	p := &project{ID: "dev.example.app", Widgets: []widgetKind{{Kind: "counter"}}, LiveActivities: liveActivities{Enabled: true}}
 	for _, c := range []struct {
-		target  widgetTarget
-		symbols []string
+		target     widgetTarget
+		activities bool
+		symbols    []string
 	}{
-		{macWidgetTarget(runtime.GOARCH), []string{"_nsgo_widgets_reload"}},
-		{iosWidgetTarget(true), []string{"_nsgo_widgets_reload", "_nsgo_activity_start", "_nsgo_activity_listen"}},
+		{macWidgetTarget(runtime.GOARCH), false, []string{"_nsgo_widgets_reload", "_nsgo_activity_listen"}},
+		{iosWidgetTarget(true), false, []string{"_nsgo_widgets_reload", "_nsgo_activity_listen"}},
+		{iosWidgetTarget(true), true, []string{"_nsgo_widgets_reload", "_nsgo_activity_start", "_nsgo_activity_listen"}},
 	} {
+		p.LiveActivities.Enabled = c.activities
 		w, err := compileWidgets(t.Context(), p, c.target)
 		if err != nil {
 			t.Fatal(err)
 		}
-		files := []string{w.exe, w.lib}
-		if c.target.ios {
-			files = append(files, filepath.Join(w.exeIntents, "extract.actionsdata"), filepath.Join(w.libIntents, "extract.actionsdata"))
-		} else if w.exeIntents != "" || w.libIntents != "" {
-			t.Errorf("macOS's widgets have App Intents: %+v", w)
-		}
+		files := []string{w.exe, w.lib, filepath.Join(w.exeIntents, "extract.actionsdata"), filepath.Join(w.libIntents, "extract.actionsdata")}
 		for _, f := range files {
 			if _, err := os.Stat(f); err != nil {
 				t.Error(err)
@@ -200,14 +198,17 @@ func TestWidgetsCompile(t *testing.T) {
 				t.Errorf("the %s library exports no %s: %v", c.target.sdk, sym, err)
 			}
 		}
-		if !c.target.ios {
-			continue
-		}
 		for _, f := range []string{w.exeIntents, w.libIntents} {
 			data, err := os.ReadFile(filepath.Join(f, "extract.actionsdata"))
 			if err != nil || !strings.Contains(string(data), `"NSGoActionIntent"`) {
 				t.Errorf("%s lacks NSGoActionIntent: %v", f, err)
 			}
+			if !c.target.ios && f == w.libIntents && !strings.Contains(string(data), "com.apple.link.systemProtocol.ForegroundContinuable") {
+				t.Error("macOS widget actions have no app-process protocol")
+			}
+		}
+		if !c.target.ios {
+			continue
 		}
 		// iOS 15 runs the widgets, without ActivityKit and App Intents.
 		out, _ = exec.Command("otool", "-l", w.exe).Output()

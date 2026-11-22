@@ -84,3 +84,4 @@ Terminal path links use the shell’s OSC 7 directory, or `terminal.Options.Dir`
 Mermaid diagrams use `diagram.View.Icons` to map names such as `"fa:fa-car"` to `*core.SVG` documents. Image nodes share the canvas image loader (HTTP(S), files and `asset:`); `constraint: "on"` preserves their proportions. A custom `RenderDiagram` callback can return a `diagram.View` with the app's icon map ([text](https://nsgo.dev/docs/text.md)).
 
 Android Live Activity actions reach `widget.OnAction` without opening the Activity while the posting engine runs; keep that engine alive for actions, and use the notification content tap to reopen the app. [Live Activities](https://nsgo.dev/docs/live-activities.md#presses).
+`widget.Button` calls `widget.OnAction` from iOS 17 and macOS 14; register it before `nsgo.Run`, handle `Activity == nil` for a widget, and publish `widget.Update` before returning. See [Widgets](https://nsgo.dev/docs/widgets.md#buttons).

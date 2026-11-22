@@ -14,12 +14,7 @@
 //		}},
 //	})
 //
-// The extension draws the views with SwiftUI and runs none of the app's
-// code: a widget shows what the app wrote last, until it writes again, and
-// a tap opens the app. Update can be called from any goroutine, before
-// nsgo.Run too. Elsewhere than macOS and iOS, and in an app not built with
-// its widgets, it reports why it cannot show them. Like microphone, the
-// package reaches the system directly and stands apart from the engine.
+// The extension draws the views with SwiftUI and runs none of the app's code: a widget shows what the app wrote last, until it writes again, and a tap outside its Buttons opens the app. Update can be called from any goroutine, before nsgo.Run too. Elsewhere than macOS and iOS, and in an app not built with its widgets, it reports why it cannot show them. Like microphone, the package reaches the system directly and stands apart from the engine.
 //
 // The same extension draws the app's Live Activities on the Lock Screen
 // and in the Dynamic Island of iPhones, which Android 16 shows as Live

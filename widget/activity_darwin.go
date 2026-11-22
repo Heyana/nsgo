@@ -33,10 +33,7 @@ var kitFns struct {
 	end     func(id, state string, final int32, dismissal int32, at float64) uintptr
 	list    func() uintptr
 	enabled func() int32
-	listen  func(cb uintptr)
 	free    func(p uintptr)
-
-	listening sync.Once
 }
 
 // The events nsgo_activity_listen's callback reports.
@@ -72,7 +69,6 @@ func activityKit() error {
 		purego.RegisterLibFunc(&kitFns.end, lib, "nsgo_activity_end")
 		purego.RegisterLibFunc(&kitFns.list, lib, "nsgo_activity_list")
 		purego.RegisterLibFunc(&kitFns.enabled, lib, "nsgo_activity_enabled")
-		purego.RegisterLibFunc(&kitFns.listen, lib, "nsgo_activity_listen")
 		purego.RegisterLibFunc(&kitFns.free, lib, "nsgo_free")
 		if kitFns.enabled() < 0 {
 			kitFns.err = ErrActivitiesUnsupported
@@ -244,33 +240,13 @@ func activitiesEnabled() bool { return activityKit() == nil && kitFns.enabled() 
 
 // activityByID returns the running activity id, or one of an unknown kind.
 func activityByID(id string) *Activity {
+	if id == "" {
+		return nil
+	}
 	for _, l := range list() {
 		if l.ID == id {
 			return &Activity{id: l.ID, kind: l.Kind}
 		}
 	}
 	return &Activity{id: id}
-}
-
-// listen has the library report presses and push tokens, which it keeps
-// until then: the press that started the app in the background waits for
-// it.
-func listen() {
-	if activityKit() != nil {
-		return
-	}
-	kitFns.listening.Do(func() {
-		cb := purego.NewCallback(func(event int32, id, value uintptr) {
-			a, v := cString(id), cString(value)
-			switch event {
-			case eventPress:
-				pressed(ActivityPress{Activity: activityByID(a), Action: v})
-			case eventToken:
-				tokenChanged(PushToken{Activity: activityByID(a), Token: v})
-			case eventStartToken:
-				tokenChanged(PushToken{Token: v})
-			}
-		})
-		kitFns.listen(cb)
-	})
 }

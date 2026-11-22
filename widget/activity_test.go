@@ -109,9 +109,15 @@ func TestActivityHandlers(t *testing.T) {
 	pressed(ActivityPress{Activity: a, Action: "early"})
 	tokenChanged(PushToken{Token: "ab"})
 	var presses []string
-	OnAction(func(p ActivityPress) { presses = append(presses, p.Action) })
+	OnAction(func(p ActivityPress) {
+		presses = append(presses, p.Action)
+		if p.Action == "widget" && p.Activity != nil {
+			t.Error("a widget press names an activity")
+		}
+	})
 	pressed(ActivityPress{Activity: a, Action: "late"})
-	if strings.Join(presses, ",") != "early,late" {
+	pressed(ActivityPress{Action: "widget"})
+	if strings.Join(presses, ",") != "early,late,widget" {
 		t.Errorf("presses = %v, want the early one first", presses)
 	}
 	var tokens []string

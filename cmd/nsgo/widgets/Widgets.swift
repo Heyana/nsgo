@@ -450,21 +450,16 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// pressed makes the view a button that runs action in the app, in a
-    /// Live Activity from iOS 17.
+    /// pressed makes the view a button that runs action in the app, in a widget or Live Activity on systems with interactive widgets.
     @ViewBuilder func pressed(activity: String?, action: String?) -> some View {
-        #if os(iOS)
-        if #available(iOS 17.0, *), let activity, let action {
-            Button(intent: NSGoActionIntent(activity: activity, action: action)) {
+        if #available(iOS 17.0, macOS 14.0, *), let action {
+            Button(intent: NSGoActionIntent(activity: activity ?? "", action: action)) {
                 self.contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         } else {
             self
         }
-        #else
-        self
-        #endif
     }
 
     @ViewBuilder func linked(_ link: String?) -> some View {
