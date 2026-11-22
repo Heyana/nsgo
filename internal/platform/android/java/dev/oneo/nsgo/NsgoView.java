@@ -191,6 +191,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private static final long FOLDS_WAIT_MS = 300, FOLDS_WAIT_LONGEST_MS = 3000;
     private final Discovery discovery;
     private Sensors sensors;
+    private Permissions systemPermissions;
     private Gamepads gamepads;
     private boolean ownsEngine;
     private boolean attached;
@@ -847,6 +848,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
         clearDisplayHolds();
         if (sensors != null) { sensors.close(); sensors = null; }
+        if (systemPermissions != null) systemPermissions.clear();
         if (network != null) {
             getContext().getSystemService(ConnectivityManager.class).unregisterNetworkCallback(network);
             network = null;
@@ -1428,9 +1430,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Hears the activity's permission prompts: the camera's, which a photo waits for, the notifications' and the microphone's, which a recording waits for. A host's activity passes its own here.
+     * Hears the activity's permission prompts: the camera's, which a photo waits for, the notifications', the system permissions' and the microphone's, which a recording waits for. A host's activity passes its own here.
      */
     public void permissionResult(int request, String[] permissions, int[] results) {
+        if (request == Permissions.PERMISSION_REQUEST) {
+            if (systemPermissions != null) systemPermissions.permissionResult(permissions, results);
+            return;
+        }
         if (request == MEDIA_PERMISSION_REQUEST) {
             boolean allowed = results.length > 0;
             for (int r : results) allowed &= r == android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -1885,6 +1891,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     /** Answers ITEM_OVERLAY_PERMISSION count of this view's tree with permission, an OVERLAY_* of Protocol's. */
     void answerOverlayPermission(long count, int permission) {
         event(Protocol.EVENT_OVERLAY_PERMISSION, 0, count, 0, 0, "", 0, 0, permission);
+    }
+
+    /** Answers ITEM_PERMISSION count of this view's tree with status (PERMISSION_*) or whether settings opened. */
+    void answerSystemPermission(long count, int status, boolean opened) {
+        event(Protocol.EVENT_PERMISSION, 0, count, 0, 0, "", 0, 0, status, 0, 0, 0, 0, null, 0, 0, false, "", opened);
     }
 
     /** Draws the canvases and shaders again, as an image they draw arrived. */
@@ -3514,6 +3525,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 (primary != null ? primary : this).overlays.permission(this, count, ask);
                 break;
             }
+            case Protocol.ITEM_PERMISSION: {
+                long count = in.readInt() & 0xffffffffL;
+                int command = in.readUnsignedByte();
+                String name = Protocol.readString(in);
+                (primary != null ? primary : this).systemPermissions().handle(count, command, name,
+                        this::answerSystemPermission);
+                break;
+            }
             case Protocol.ITEM_MENU:
             case Protocol.ITEM_HISTORY:
                 // Desktop menus and the web's history; Go writes no fields.
@@ -4267,6 +4286,74 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         event(Protocol.EVENT_NOTIFICATION, 0, count, 0, 0, "", 0, 0, Notifications.permission(getContext()));
         // Live Activities show with the permission.
         write(Protocol.LIVE_REPORT, LiveUpdates.state(getContext()));
+    }
+
+    /** Lazily creates the primary view's system permission controller. */
+    private Permissions systemPermissions() {
+        if (systemPermissions == null) {
+            systemPermissions = new Permissions(new Permissions.Host() {
+                @Override public int sdkInt() {
+                    return Build.VERSION.SDK_INT;
+                }
+
+                @Override public boolean granted(String permission) {
+                    return getContext().checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
+                }
+
+                @Override public boolean declared(String permission) {
+                    try {
+                        String[] requested = getContext().getPackageManager()
+                                .getPackageInfo(getContext().getPackageName(), PackageManager.GET_PERMISSIONS)
+                                .requestedPermissions;
+                        return requested != null && java.util.Arrays.asList(requested).contains(permission);
+                    } catch (PackageManager.NameNotFoundException e) {
+                        return false;
+                    }
+                }
+
+                @Override public boolean asked(String key) {
+                    return getContext().getSharedPreferences(Permissions.PREFS, Context.MODE_PRIVATE)
+                            .getBoolean(key, false);
+                }
+
+                @Override public void markAsked(String key) {
+                    getContext().getSharedPreferences(Permissions.PREFS, Context.MODE_PRIVATE)
+                            .edit().putBoolean(key, true).apply();
+                }
+
+                @Override public boolean request(String[] permissions) {
+                    Activity activity = activity();
+                    if (activity == null) return false;
+                    try {
+                        activity.requestPermissions(permissions, Permissions.PERMISSION_REQUEST);
+                        return true;
+                    } catch (RuntimeException e) {
+                        Log.w(TAG, "requestPermissions failed", e);
+                        return false;
+                    }
+                }
+
+                @Override public boolean openSettings() {
+                    Activity activity = activity();
+                    Context context = activity != null ? activity : getContext();
+                    Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.fromParts("package", context.getPackageName(), null));
+                    if (activity == null) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try {
+                        context.startActivity(intent);
+                        return true;
+                    } catch (RuntimeException e) {
+                        Log.w(TAG, "the permission's setting does not open", e);
+                        return false;
+                    }
+                }
+
+                @Override public void warn(String message) {
+                    Log.w(TAG, message);
+                }
+            });
+        }
+        return systemPermissions;
     }
 
     /**

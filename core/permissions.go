@@ -22,17 +22,17 @@ const (
 	PermissionAppManagement Permission = driver.PermissionAppManagement
 	// PermissionDeveloperTools is running software that does not meet the system's security policy, on macOS, which never tells it (PermissionUnknown).
 	PermissionDeveloperTools Permission = driver.PermissionDeveloperTools
-	// PermissionMicrophone is recording; asking needs NSMicrophoneUsageDescription in apple.info.
+	// PermissionMicrophone is recording; asking needs NSMicrophoneUsageDescription in apple.info and RECORD_AUDIO in android.permissions.
 	PermissionMicrophone Permission = driver.PermissionMicrophone
-	// PermissionCamera is the camera; asking needs NSCameraUsageDescription.
+	// PermissionCamera is the camera; asking needs NSCameraUsageDescription in apple.info and CAMERA in android.permissions.
 	PermissionCamera Permission = driver.PermissionCamera
-	// PermissionCalendars is the user's calendars; asking needs NSCalendarsFullAccessUsageDescription from macOS 14 and iOS 17, NSCalendarsUsageDescription before.
+	// PermissionCalendars is the user's calendars; asking needs NSCalendarsFullAccessUsageDescription from macOS 14 and iOS 17, NSCalendarsUsageDescription before, and READ_CALENDAR and WRITE_CALENDAR in android.permissions.
 	PermissionCalendars Permission = driver.PermissionCalendars
 	// PermissionReminders is the user's reminders; asking needs NSRemindersFullAccessUsageDescription from macOS 14 and iOS 17, NSRemindersUsageDescription before.
 	PermissionReminders Permission = driver.PermissionReminders
-	// PermissionBluetooth is Bluetooth devices; asking needs NSBluetoothAlwaysUsageDescription.
+	// PermissionBluetooth is Bluetooth devices; asking needs NSBluetoothAlwaysUsageDescription in apple.info and BLUETOOTH_CONNECT (API 31+) or BLUETOOTH (API 28–30) in android.permissions.
 	PermissionBluetooth Permission = driver.PermissionBluetooth
-	// PermissionMediaLibrary is Media & Apple Music: iOS tells and asks it (NSAppleMusicUsageDescription), macOS never tells it.
+	// PermissionMediaLibrary is Media & Apple Music: iOS tells and asks it (NSAppleMusicUsageDescription), Android tells and asks READ_MEDIA_AUDIO (API 33+) or READ_EXTERNAL_STORAGE (API 28–32) in android.permissions, and macOS never tells it.
 	PermissionMediaLibrary Permission = driver.PermissionMediaLibrary
 	// PermissionLocation is the device's location while the app shows (Locate, WatchLocation): asking needs NSLocationWhenInUseUsageDescription, or NSLocationUsageDescription on macOS, and on Android ACCESS_COARSE_LOCATION, with ACCESS_FINE_LOCATION for a precise one, in android.permissions. Whether the user allowed only an approximate location shows on each fix (LocationFix.Approximate).
 	PermissionLocation Permission = driver.PermissionLocation
@@ -101,7 +101,7 @@ func (cx *Scope) RequestPermission(p Permission, done func(PermissionStatus)) {
 	})
 }
 
-// OpenPermissionSettings opens the page of the system's settings that gives p, and answers done, when not nil, with whether one opened: Privacy & Security at p's pane on macOS, the app's page in Settings on iOS, and the microphone's or the camera's page of Privacy & security on Windows. Elsewhere it answers false.
+// OpenPermissionSettings opens the page of the system's settings that gives p, and answers done, when not nil, with whether one opened: Privacy & Security at p's pane on macOS, the app's page in Settings on iOS and Android, and the microphone's or the camera's page of Privacy & security on Windows. Elsewhere it answers false.
 func (cx *Scope) OpenPermissionSettings(p Permission, done func(opened bool)) {
 	answer := func(opened bool) {
 		if done != nil {

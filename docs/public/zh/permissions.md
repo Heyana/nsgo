@@ -41,15 +41,23 @@ apple:
     NSRemindersFullAccessUsageDescription: 把任务变成提醒事项。   # 之前为 NSRemindersUsageDescription
     NSBluetoothAlwaysUsageDescription: 查找你的耳机。
     NSAppleMusicUsageDescription: 播放你的资料库。                # iOS
+android:
+  permissions:
+    - RECORD_AUDIO
+    - CAMERA
+    - READ_CALENDAR
+    - WRITE_CALENDAR
+    - BLUETOOTH_CONNECT      # Android 12+；Android 9–11 为 BLUETOOTH
+    - READ_MEDIA_AUDIO       # Android 13+；Android 9–12 为 READ_EXTERNAL_STORAGE
 windows:
   device_capabilities: [microphone, webcam]  # store 构建的 MSIX 声明的设备
 ```
 
-在 `nsgo dev` 下，macOS 把应用的行为记在启动它的终端名下，询问和列出的都是终端；要测试应用自己的权限，请先构建应用。
+在 Android 上，每项权限都必须在 `nsgo.yaml` 的 `android.permissions` 中声明；清单中未声明的权限回答 `PermissionUnavailable`。在 `nsgo dev` 下，macOS 把应用的行为记在启动它的终端名下，询问和列出的都是终端；要测试应用自己的权限，请先构建应用。
 
 ## 打开设置
 
-`cx.OpenPermissionSettings` 打开授予某项权限的页面，并回答是否打开：macOS 上是“隐私与安全性”中该权限的面板，iOS 上是“设置”中本应用的页面，Windows 上是麦克风或相机的页面。
+`cx.OpenPermissionSettings` 打开授予某项权限的页面，并回答是否打开：macOS 上是“隐私与安全性”中该权限的面板，iOS 和 Android 上是“设置”中本应用的页面，Windows 上是麦克风或相机的页面。
 
 ## 引导用户
 
@@ -72,7 +80,8 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 | Windows | 麦克风和相机，但从不弹窗请求；其余不受限 |
 | Linux | 沙盒外不受限；在 Flatpak 和 Snap 中通过桌面 Portal 读取和请求相机，通过 Portal 与 PipeWire 读取和请求麦克风 |
 | Web | 麦克风和相机，在 Firefox 中为未知 |
-| Android、Apple Watch、小程序 | 目前为未知 |
+| Android | 在 `android.permissions` 中声明了的麦克风、相机、日历、蓝牙和媒体资料库 |
+| Apple Watch、小程序 | 目前为未知 |
 
 定位和运动权限在有对应传感器的平台上都能读取和请求，包括 Android 和 Apple Watch，其他平台为不可用。
 

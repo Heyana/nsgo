@@ -41,15 +41,23 @@ apple:
     NSRemindersFullAccessUsageDescription: Turns tasks into reminders.            # NSRemindersUsageDescription before
     NSBluetoothAlwaysUsageDescription: Finds your headphones.
     NSAppleMusicUsageDescription: Plays your library.                            # iOS
+android:
+  permissions:
+    - RECORD_AUDIO
+    - CAMERA
+    - READ_CALENDAR
+    - WRITE_CALENDAR
+    - BLUETOOTH_CONNECT      # Android 12+; BLUETOOTH on Android 9–11
+    - READ_MEDIA_AUDIO       # Android 13+; READ_EXTERNAL_STORAGE on Android 9–12
 windows:
   device_capabilities: [microphone, webcam]  # what a store build's MSIX declares
 ```
 
-Under `nsgo dev`, macOS charges what the app does to the terminal that started it, so the terminal is the app asked and listed; build the app to test its own permissions.
+On Android, each permission must be listed in `nsgo.yaml`'s `android.permissions`; one left out of the manifest answers `PermissionUnavailable`. Under `nsgo dev`, macOS charges what the app does to the terminal that started it, so the terminal is the app asked and listed; build the app to test its own permissions.
 
 ## Opening the settings
 
-`cx.OpenPermissionSettings` opens the page that gives a permission and answers whether one opened: Privacy & Security at the permission's pane on macOS, the app's page in Settings on iOS, and the microphone's or the camera's page on Windows.
+`cx.OpenPermissionSettings` opens the page that gives a permission and answers whether one opened: Privacy & Security at the permission's pane on macOS, the app's page in Settings on iOS and Android, and the microphone's or the camera's page on Windows.
 
 ## Guiding the user
 
@@ -72,7 +80,8 @@ The app held out is its bundle, else its executable; `GuideOptions.App` names an
 | Windows | The microphone and the camera, which it never asks for; the rest is not gated |
 | Linux | Not gated outside sandboxes; in Flatpak and Snap, the camera through the desktop portal and the microphone through the portal and PipeWire |
 | Web | The microphone and the camera, unknown in Firefox |
-| Android, Apple Watch, mini programs | Unknown for now |
+| Android | The microphone, the camera, calendars, Bluetooth and the media library, where `android.permissions` declares them |
+| Apple Watch, mini programs | Unknown for now |
 
 Location and motion permissions follow each [platform's sensors](services.md#location-and-motion). On mobile Safari, ask for `PermissionMotion` from a press handler.
 

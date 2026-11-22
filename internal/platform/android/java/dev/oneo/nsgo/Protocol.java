@@ -331,6 +331,7 @@ final class Protocol {
     static final int ITEM_BIOMETRIC_AUTHENTICATE = 87;
     static final int ITEM_OPEN_SURFACE = 68;
     static final int ITEM_OVERLAY_PERMISSION = 89;
+    static final int ITEM_PERMISSION = 90;
     static final int ITEM_KEEP_AWAKE = 93;
     static final int ITEM_RELEASE_AWAKE = 94;
     static final int ITEM_SPEAK = 102;
@@ -365,6 +366,21 @@ final class Protocol {
     static final int NOTIFICATIONS_GRANTED = 1;
     static final int NOTIFICATIONS_DENIED = 2;
     static final int NOTIFICATIONS_UNAVAILABLE = 3;
+
+    // What EVENT_PERMISSION answers ITEM_PERMISSION with, as the driver's Permission* statuses.
+    static final int PERMISSION_NOT_ASKED = 0;
+    static final int PERMISSION_GRANTED = 1;
+    static final int PERMISSION_DENIED = 2;
+    static final int PERMISSION_UNKNOWN = 3;
+    static final int PERMISSION_NOT_GATED = 4;
+    static final int PERMISSION_UNAVAILABLE = 5;
+
+    // What ITEM_PERMISSION asks, as driver.PermissionCommand.
+    static final int PERMISSION_CHECK = 0;
+    static final int PERMISSION_ASK = 1;
+    static final int PERMISSION_OPEN_SETTINGS = 2;
+    static final int PERMISSION_GUIDE = 3;
+    static final int PERMISSION_STOP_GUIDE = 4;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -447,6 +463,7 @@ final class Protocol {
     static final int EVENT_NOTIFICATION_PRESS = 77;
     static final int EVENT_BIOMETRIC = 78;
     static final int EVENT_OVERLAY_PERMISSION = 80;
+    static final int EVENT_PERMISSION = 82;
     static final int EVENT_OPEN_LINKS = 87;
     static final int EVENT_SPEAK = 90;
 

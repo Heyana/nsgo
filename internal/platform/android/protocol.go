@@ -354,6 +354,13 @@ func writeDirection(w *writer, it *driver.MountItem) {
 	w.str(forcedLanguage(it))
 }
 
+// writePermission writes ItemPermission as NsgoView.apply reads it: the request's count, its command (PermissionCheck, ...) and the permission's key.
+func writePermission(w *writer, count uint32, r *driver.PermissionRequest) {
+	w.u32(count)
+	w.byte(byte(r.Command))
+	w.str(r.Name)
+}
+
 // writer and reader are the protocol's encoding: big-endian, lengths
 // as uint32, points as float32, strings as a length and UTF-8 bytes and
 // booleans as the bits of one byte, the first lowest.
