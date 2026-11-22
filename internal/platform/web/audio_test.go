@@ -382,7 +382,7 @@ func TestWebAudioPlayer(t *testing.T) {
 	wait(driver.AudioPlaying, nil)
 	wait(driver.AudioProgress, func(e driver.AudioEvent) bool { return e.Position < 350*time.Millisecond })
 	send(driver.AudioClose)
-	if p.el.Truthy() || p.timer.Truthy() || p.objectURL != "" || a.output.Truthy() {
+	if p.el.Truthy() || p.node.Truthy() || p.track.Truthy() || p.timer.Truthy() || p.objectURL != "" {
 		t.Fatal("closing left player resources")
 	}
 
@@ -393,13 +393,15 @@ func TestWebAudioPlayer(t *testing.T) {
 		ProgressInterval: 20 * time.Millisecond, Source: driver.ImageSource{Data: audioWAV(700 * time.Millisecond)}})
 	p = a.players[1]
 	send(driver.AudioPreload)
-	wait(driver.AudioOpened, nil)
-	if p.el.Get("loop").Bool() {
-		t.Fatal("a loop with a start used the element's loop, which restarts at 0")
+	if e := wait(driver.AudioOpened, nil); e.Duration != 700*time.Millisecond {
+		t.Fatalf("unexpected decoded duration: %+v", e)
+	}
+	if p.el.Truthy() || !p.track.Truthy() {
+		t.Fatal("a looping player streamed its track instead of decoding it")
 	}
 	pressAudio(t, doc, a, func() { send(driver.AudioResume) })
 	wait(driver.AudioPlaying, nil)
-	wait(driver.AudioProgress, func(e driver.AudioEvent) bool { return e.Laps == 1 && e.Position == loopStart })
+	wait(driver.AudioProgress, func(e driver.AudioEvent) bool { return e.Laps == 1 })
 	wait(driver.AudioProgress, func(e driver.AudioEvent) bool { return e.Laps == 2 })
 	lapped := false
 	for _, e := range reports {
@@ -415,6 +417,20 @@ func TestWebAudioPlayer(t *testing.T) {
 	}
 	a.handle(1, &driver.AudioRequest{Command: driver.AudioSet, Volume: 0.25, Rate: 2})
 	wait(driver.AudioEnded, nil)
+	send(driver.AudioClose)
+
+	// A track longer than a gapless loop decodes streams through the element, whose own loop repeats it.
+	reports = nil
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioOpen, Volume: 1, Rate: 1, Loop: true,
+		Source: driver.ImageSource{Data: audioWAV(driver.MaxGaplessLoopDuration + time.Second)}})
+	p = a.players[1]
+	send(driver.AudioPreload)
+	if e := wait(driver.AudioOpened, nil); e.Duration <= driver.MaxGaplessLoopDuration {
+		t.Fatalf("unexpected long track: %+v", e)
+	}
+	if !p.noTrack || p.track.Truthy() || !p.el.Get("loop").Bool() {
+		t.Fatal("a track too long to decode did not loop through the element")
+	}
 	send(driver.AudioClose)
 
 	for _, data := range [][]byte{aacTone, mp3Tone, []byte("not audio")} {
@@ -503,5 +519,140 @@ func TestWebAudioThroughApp(t *testing.T) {
 	js.Global().Call("dispatchEvent", js.Global().Get("PageTransitionEvent").New("pagehide"))
 	if s.audio != nil || a.output.Truthy() || len(a.sounds) != 0 || len(a.voices) != 0 || len(a.players) != 0 {
 		t.Fatal("leaving the page kept audio resources")
+	}
+}
+
+// wavLevel is a stretch of a levelWAV: a level from -1 to 1 held for d.
+type wavLevel struct {
+	d     time.Duration
+	level float64
+}
+
+// levelWAV is 16-bit mono PCM at rate holding each level in turn.
+func levelWAV(rate int, levels ...wavLevel) []byte {
+	n := 0
+	for _, l := range levels {
+		n += int(l.d.Seconds() * float64(rate))
+	}
+	data := make([]byte, 44+2*n)
+	copy(data, "RIFF")
+	binary.LittleEndian.PutUint32(data[4:], uint32(len(data)-8))
+	copy(data[8:], "WAVEfmt ")
+	binary.LittleEndian.PutUint32(data[16:], 16)
+	binary.LittleEndian.PutUint16(data[20:], 1)
+	binary.LittleEndian.PutUint16(data[22:], 1)
+	binary.LittleEndian.PutUint32(data[24:], uint32(rate))
+	binary.LittleEndian.PutUint32(data[28:], uint32(2*rate))
+	binary.LittleEndian.PutUint16(data[32:], 2)
+	binary.LittleEndian.PutUint16(data[34:], 16)
+	copy(data[36:], "data")
+	binary.LittleEndian.PutUint32(data[40:], uint32(2*n))
+	at := 44
+	for _, l := range levels {
+		for range int(l.d.Seconds() * float64(rate)) {
+			binary.LittleEndian.PutUint16(data[at:], uint16(int16(l.level*32767)))
+			at += 2
+		}
+	}
+	return data
+}
+
+// TestWebAudioPlayerLoopsWithoutGap records a looping player's output: a 300 ms intro at one level, then a 300 ms body at another that repeats from the loop start, with no silence at the repeats and no intro after the first pass.
+func TestWebAudioPlayerLoopsWithoutGap(t *testing.T) {
+	doc := js.Global().Get("document")
+	var reports []driver.AudioEvent
+	a := newWebAudio(doc, func(e driver.Event) { reports = append(reports, *e.Data.(*driver.AudioEvent)) }, false)
+	defer a.close()
+	const loopStart = 300 * time.Millisecond
+	track := levelWAV(48000, wavLevel{loopStart, 0.5}, wavLevel{300 * time.Millisecond, 0.25})
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioOpen, Volume: 1, Rate: 1, Loop: true, LoopStart: loopStart,
+		ProgressInterval: 20 * time.Millisecond, Source: driver.ImageSource{Data: track}})
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioPreload})
+	audioWait(t, "the decoded track", func() bool { return a.players[1].track.Truthy() })
+	p := a.players[1]
+	pressAudio(t, doc, a, func() { a.handle(1, &driver.AudioRequest{Command: driver.AudioResume}) })
+	if !p.node.Truthy() {
+		t.Fatal("the looping player did not play its decoded track")
+	}
+	if a.output.Get("createScriptProcessor").Type() != js.TypeFunction {
+		t.Skip("the browser has no ScriptProcessorNode to record its output")
+	}
+	const block = 1024
+	tap := a.output.Call("createScriptProcessor", block, 1, 1)
+	tap.Call("connect", a.output.Get("destination"))
+	defer tap.Call("disconnect")
+	rate := a.output.Get("sampleRate").Float()
+	// Each run is a stretch of contiguous blocks: a block the page did not process in time starts a new one.
+	var runs [][]float32
+	next := -1.0
+	var data []byte
+	process := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		e := args[0]
+		at := e.Get("playbackTime").Float()
+		samples := e.Get("inputBuffer").Call("getChannelData", 0)
+		bytes := js.Global().Get("Uint8Array").New(samples.Get("buffer"), samples.Get("byteOffset"), samples.Get("byteLength"))
+		data = slices.Grow(data[:0], bytes.Length())[:bytes.Length()]
+		js.CopyBytesToGo(data, bytes)
+		if len(runs) == 0 || math.Abs(at-next) > 0.5/rate {
+			runs = append(runs, nil)
+		}
+		next = at + block/rate
+		for i := 0; i+4 <= len(data); i += 4 {
+			runs[len(runs)-1] = append(runs[len(runs)-1], math.Float32frombits(binary.LittleEndian.Uint32(data[i:])))
+		}
+		return nil
+	})
+	defer process.Release()
+	tap.Set("onaudioprocess", process)
+	p.gain.Call("connect", tap)
+	audioWait(t, "four repeats", func() bool {
+		return len(reports) > 0 && reports[len(reports)-1].Laps >= 4
+	})
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioPause})
+	tap.Set("onaudioprocess", js.Null())
+
+	// The longest silence between the first and the last sound of a run, and whether the intro's level came back after the body's.
+	var longest, recorded int
+	introAgain := false
+	for _, run := range runs {
+		first, last := -1, -1
+		for i, v := range run {
+			if math.Abs(float64(v)) > 0.05 {
+				if first < 0 {
+					first = i
+				}
+				last = i
+			}
+		}
+		if first < 0 {
+			continue
+		}
+		recorded += last - first
+		quiet, body := 0, 0
+		for _, v := range run[first : last+1] {
+			level := math.Abs(float64(v))
+			switch {
+			case level <= 0.05:
+				quiet++
+				longest = max(longest, quiet)
+				continue
+			case level < 0.35:
+				body++
+			case body > int(rate/100):
+				// 10 ms of the body went by, so this is the intro again.
+				introAgain = true
+			}
+			quiet = 0
+		}
+	}
+	t.Logf("recorded %.0f ms of the loop, longest silence %.2f ms", float64(recorded)/rate*1000, float64(longest)/rate*1000)
+	if float64(recorded) < 0.9*rate {
+		t.Fatalf("recorded %d samples of the loop, want at least 0.9 s", recorded)
+	}
+	if gap := float64(longest) / rate; gap >= 0.005 {
+		t.Fatalf("the loop fell silent for %.2f ms, want under 5 ms", gap*1000)
+	}
+	if introAgain {
+		t.Fatal("a repeat played the intro again instead of starting at the loop start")
 	}
 }

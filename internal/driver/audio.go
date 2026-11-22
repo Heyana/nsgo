@@ -14,6 +14,12 @@ const (
 	MaxSoundVoices   = 32
 )
 
+// The limits on the track a looping player decodes into memory to repeat it without a gap where the platform's streaming player cannot (Linux and the web): its encoded bytes and its decoded length. A longer track, or one the platform cannot read whole, loops with a seek at its end.
+const (
+	MaxGaplessLoopBytes    = 32 << 20
+	MaxGaplessLoopDuration = 5 * time.Minute
+)
+
 // AudioCommand is what an ItemAudio asks of a sound or a player.
 type AudioCommand uint8
 

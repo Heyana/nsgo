@@ -182,6 +182,22 @@ func (a *webAudio) load(id uint32, source driver.ImageSource, bytes, decodedByte
 	}()
 }
 
+// decodeTrack reads and decodes a looping player's whole track, within driver.MaxGaplessLoopBytes and driver.MaxGaplessLoopDuration. It is undefined when the track is larger or longer, or the browser cannot read or decode it whole, so that the player streams it instead.
+func (a *webAudio) decodeTrack(ctx context.Context, source driver.ImageSource) js.Value {
+	data, code, _ := a.soundBytes(ctx, source, driver.MaxGaplessLoopBytes)
+	if code != "" || len(data) == 0 || ctx.Err() != nil {
+		return js.Undefined()
+	}
+	if !a.decoder.Truthy() {
+		a.decoder = js.Global().Get("OfflineAudioContext").New(1, 1, 48000)
+	}
+	track, err := await(a.decoder.Call("decodeAudioData", audioBytes(data).Get("buffer")))
+	if err != nil || mediaTime(track.Get("duration")) > driver.MaxGaplessLoopDuration {
+		return js.Undefined()
+	}
+	return track
+}
+
 func (a *webAudio) soundBytes(ctx context.Context, source driver.ImageSource, limit int64) ([]byte, string, string) {
 	tooLarge := fmt.Sprintf("the sound exceeds its limit of %d encoded bytes", limit)
 	if len(source.Data) > 0 {
@@ -413,7 +429,7 @@ func (a *webAudio) unload(id uint32) {
 func (a *webAudio) closePlayer(id uint32) {
 	if p := a.players[id]; p != nil {
 		delete(a.players, id)
-		p.release()
+		p.close()
 	}
 }
 
