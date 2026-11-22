@@ -247,8 +247,11 @@ func (t *Tree) commitRound() {
 			t.showTop(s)
 			t.markScreens(s)
 			live = append(live, s)
+		} else {
+			delete(t.navTops, s) // else the map keeps the removed stack and its subtree
 		}
 	}
+	clear(t.stacks[len(live):]) // still in the array, which would keep the stacks removed
 	t.stacks = live
 	t.updatePeerStyles()
 	t.updateClassKids()

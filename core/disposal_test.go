@@ -91,3 +91,79 @@ func TestRemovedOverlaysAreFreed(t *testing.T) {
 	}
 	goruntime.KeepAlive(h.tree)
 }
+
+// Navigation stacks are freed once removed: neither the tree's stacks nor the top screens it remembers for their transitions keep one shown and hidden again and again.
+func TestRemovedStacksAreFreed(t *testing.T) {
+	var shown *Signal[bool]
+	h := newHost(t, Size{Width: 400, Height: 400}, func(cx *Scope) Node {
+		shown = NewSignal(cx, true)
+		return View{Children: []Node{
+			Show{When: shown.Get, Then: func(*Scope) Node {
+				return Stack{TestID: "stack", Style: Style{FlexGrow: 1}, Children: []Node{
+					Screen{Title: "Home", TestID: "home", Children: []Node{Text{Content: "Home"}}},
+				}}
+			}},
+		}}
+	})
+	h.commit()
+	gone := []weak.Pointer[node]{weak.Make(h.find("stack")), weak.Make(h.find("home"))}
+	for _, on := range []bool{false, true, false} {
+		shown.Set(on)
+		h.commit()
+	}
+	goruntime.GC()
+	for i, p := range gone {
+		if p.Value() != nil {
+			t.Errorf("view %d of a removed stack stays in memory", i)
+		}
+	}
+	if n := len(h.tree.navTops); n != 0 {
+		t.Errorf("the tree remembers the tops of %d stacks once they are removed", n)
+	}
+	goruntime.KeepAlive(h.tree)
+}
+
+// Views whose part shows the focus are freed once removed, though the focus never starts or stops showing meanwhile.
+func TestRemovedFocusPartsAreFreed(t *testing.T) {
+	var shown *Signal[bool]
+	h := newHost(t, Size{Width: 400, Height: 400}, func(cx *Scope) Node {
+		shown = NewSignal(cx, true)
+		return View{Children: []Node{
+			Show{When: shown.Get, Then: func(*Scope) Node {
+				return View{TestID: "part", PartStates: func() PartStates { return PartStates{Focused: true} }}
+			}},
+		}}
+	})
+	h.commit()
+	gone := weak.Make(h.find("part"))
+	for _, on := range []bool{false, true, false} {
+		shown.Set(on)
+		h.commit()
+	}
+	goruntime.GC()
+	if gone.Value() != nil {
+		t.Error("a removed view whose part showed the focus stays in memory")
+	}
+	if n := len(h.tree.focusParts); n != 0 {
+		t.Errorf("the tree keeps %d parts showing the focus once they are removed", n)
+	}
+	goruntime.KeepAlive(h.tree)
+}
+
+// A part that stops showing the focus leaves the tree's list of them.
+func TestPartsStopShowingTheFocus(t *testing.T) {
+	var focused *Signal[bool]
+	h := newHost(t, Size{Width: 400, Height: 400}, func(cx *Scope) Node {
+		focused = NewSignal(cx, true)
+		return View{TestID: "part", PartStates: func() PartStates { return PartStates{Focused: focused.Get()} }}
+	})
+	h.commit()
+	if n := len(h.tree.focusParts); n != 1 {
+		t.Fatalf("the tree keeps %d parts showing the focus, want 1", n)
+	}
+	focused.Set(false)
+	h.commit()
+	if n := len(h.tree.focusParts); n != 0 {
+		t.Errorf("the tree keeps %d parts showing the focus once it stops, want 0", n)
+	}
+}

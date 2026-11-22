@@ -1125,6 +1125,9 @@ func (t *Tree) discard(n *node) {
 		n.place.unplace(n)
 	}
 	delete(t.sticky, n)
+	if n.part.Focused {
+		t.forgetFocusPart(n)
+	}
 	if n.ref != nil && n.ref.n == n {
 		n.ref.n = nil
 	}
@@ -1565,8 +1568,19 @@ func (t *Tree) updateFocusVisible() {
 func (t *Tree) partStates(n *node, p PartStates) {
 	if p.Focused && !n.part.Focused && !slices.Contains(t.focusParts, n) {
 		t.focusParts = append(t.focusParts, n)
+	} else if !p.Focused && n.part.Focused {
+		t.forgetFocusPart(n)
 	}
 	n.part = p
+}
+
+// forgetFocusPart takes n out of the nodes whose part shows the focus,
+// as its part stops showing it or it is deleted, so the list keeps no
+// removed subtree.
+func (t *Tree) forgetFocusPart(n *node) {
+	if i := slices.Index(t.focusParts, n); i >= 0 {
+		t.focusParts = slices.Delete(t.focusParts, i, i+1)
+	}
 }
 
 // shownInteraction is n's interaction states with those its part shows:
