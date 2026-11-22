@@ -18,8 +18,7 @@ import (
 
 const pipelineCacheFormatVersion = 1
 
-// PipelineCacheStats reports cache hit, miss, store, and compilation counts
-// for a PipelineCache.
+// PipelineCacheStats reports cache hit, miss, store, and compilation counts for a PipelineCache.
 type PipelineCacheStats struct {
 	Hits         uint64
 	Misses       uint64
@@ -35,14 +34,9 @@ type pipelineCacheRecord struct {
 	Artifacts *driver.GPUPipelineArtifacts `json:"artifacts"`
 }
 
-// PipelineCache persists compiled GPU pipeline target artifacts (MSL, HLSL,
-// GLSL 3.30, GLSL ES 3.00, WGSL, and optional backend PSO/binary archive blobs)
-// across launches so subsequent runs reuse cached pipelines without shader
-// recompilation or first-draw hitches.
+// PipelineCache persists compiled GPU pipeline target artifacts (MSL, HLSL, GLSL 3.30, GLSL ES 3.00, WGSL, and optional backend PSO/binary archive blobs) across launches so subsequent runs reuse cached pipelines without shader recompilation or first-draw hitches.
 //
-// Metadata and portable shader artifacts are stored as deterministic, versioned
-// JSON files (never encoding/gob). PipelineCache is safe for concurrent use by
-// asynchronous precompilation goroutines.
+// Metadata and portable shader artifacts are stored as deterministic, versioned JSON files (never encoding/gob). PipelineCache is safe for concurrent use by asynchronous precompilation goroutines.
 type PipelineCache struct {
 	mu           sync.RWMutex
 	dir          string
@@ -54,10 +48,7 @@ type PipelineCache struct {
 	compilations uint64
 }
 
-// NewPipelineCache opens or creates a persistent PipelineCache backed by dir.
-// When dir is empty, the cache operates in memory only. Existing valid cache
-// entries in dir are loaded immediately so a second launch hits the cache with
-// zero shader recompilation.
+// NewPipelineCache opens or creates a persistent PipelineCache backed by dir. When dir is empty, the cache operates in memory only. Existing valid cache entries in dir are loaded immediately so a second launch hits the cache with zero shader recompilation.
 func NewPipelineCache(dir string) (*PipelineCache, error) {
 	c := &PipelineCache{
 		dir:     dir,
@@ -92,8 +83,7 @@ func (c *PipelineCache) Dir() string {
 	return c.dir
 }
 
-// CacheStats returns a snapshot of the cache's hit, miss, store, entry, and
-// shader compilation counters.
+// CacheStats returns a snapshot of the cache's hit, miss, store, entry, and shader compilation counters.
 func (c *PipelineCache) CacheStats() PipelineCacheStats {
 	if c == nil {
 		return PipelineCacheStats{}
@@ -109,8 +99,7 @@ func (c *PipelineCache) CacheStats() PipelineCacheStats {
 	}
 }
 
-// ResetStats zeroes hit, miss, store, and compilation counters while keeping
-// all cached entries intact.
+// ResetStats zeroes hit, miss, store, and compilation counters while keeping all cached entries intact.
 func (c *PipelineCache) ResetStats() {
 	if c == nil {
 		return
@@ -134,8 +123,7 @@ func (c *PipelineCache) Has(key string) bool {
 	return ok
 }
 
-// Clear removes all cached pipeline entries and backend blobs from memory and
-// from the backing directory (if any).
+// Clear removes all cached pipeline entries and backend blobs from memory and from the backing directory (if any).
 func (c *PipelineCache) Clear() error {
 	if c == nil {
 		return nil
@@ -170,9 +158,7 @@ func (c *PipelineCache) Clear() error {
 	return nil
 }
 
-// PutBackendBlob persists an opaque backend-native compiled pipeline cache blob
-// (for example a Metal binary archive, Vulkan VkPipelineCache, or D3D11/12 PSO
-// library) associated with key and backend name (e.g. "metal", "vulkan", "d3d11").
+// PutBackendBlob persists an opaque backend-native compiled pipeline cache blob (for example a Metal binary archive, Vulkan VkPipelineCache, or D3D11/12 PSO library) associated with key and backend name (e.g. "metal", "vulkan", "d3d11").
 func (c *PipelineCache) PutBackendBlob(key, backend string, data []byte) error {
 	if c == nil || key == "" || backend == "" {
 		return nil
@@ -193,8 +179,7 @@ func (c *PipelineCache) PutBackendBlob(key, backend string, data []byte) error {
 	return writeFileAtomic(filepath.Join(dir, bk+".bin"), cp)
 }
 
-// GetBackendBlob retrieves a previously stored backend-native binary cache blob
-// for key and backend name.
+// GetBackendBlob retrieves a previously stored backend-native binary cache blob for key and backend name.
 func (c *PipelineCache) GetBackendBlob(key, backend string) ([]byte, bool) {
 	if c == nil || key == "" || backend == "" {
 		return nil, false
@@ -334,11 +319,7 @@ func writeFileAtomic(dst string, data []byte) error {
 	return nil
 }
 
-// computePipelineCacheKey derives a deterministic SHA-256 hex digest from the
-// shader source, entry points, bind group layout schemas, vertex layouts,
-// primitive state, depth/stencil state, color targets, and sample count.
-// Runtime handle IDs and pointer addresses are never hashed so keys stay
-// identical across app launches.
+// computePipelineCacheKey derives a deterministic SHA-256 hex digest from the shader source, entry points, bind group layout schemas, vertex layouts, primitive state, depth/stencil state, color targets, and sample count. Runtime handle IDs and pointer addresses are never hashed so keys stay identical across app launches.
 func computePipelineCacheKey(desc PipelineDesc, dd driver.GPUPipelineDesc) string {
 	h := sha256.New()
 	var buf [8]byte

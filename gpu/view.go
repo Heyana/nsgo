@@ -26,34 +26,27 @@ type ViewProps struct {
 	// ready, and again after recovery from device loss.
 	OnReady func(dev *Device)
 	// OnFrame, when set, runs on every display frame via RequestAnimationFrame
-	// once the device is ready and not suspended, submitting commands off-commit
-	// with zero UI view-tree commits per frame.
+	// once the device is ready and not suspended, submitting commands off-commit with zero UI view-tree commits per frame.
 	OnFrame func(frame *Frame)
 	// OnResize runs when the drawable size in physical pixels changes.
 	OnResize func(width, height int)
 	// OnDeviceLost runs if the underlying GPU context or device is lost; all
 	// non-retained handles from the previous Device are invalidated.
 	OnDeviceLost func(DeviceLostEvent)
-	// OnDeviceRestored runs on the engine goroutine after a lost device or
-	// surface is recreated, receiving the fresh ready *Device after any
-	// retained resources have been automatically restored.
+	// OnDeviceRestored runs on the engine goroutine after a lost device or surface is recreated, receiving the fresh ready *Device after any retained resources have been automatically restored.
 	OnDeviceRestored func(dev *Device)
-	// OnSuspend runs when the app or surface enters the background and GPU
-	// frame submission is automatically paused.
+	// OnSuspend runs when the app or surface enters the background and GPU frame submission is automatically paused.
 	OnSuspend func()
-	// OnResume runs when the app or surface returns to the active state and
-	// GPU frame submission resumes.
+	// OnResume runs when the app or surface returns to the active state and GPU frame submission resumes.
 	OnResume func()
 	// OnError reports asynchronous GPU validation, unsupported, or OOM errors.
 	OnError func(Error)
 	// OnPassTimings runs on the engine goroutine when per-pass GPU timing measurements complete for a submitted frame.
 	OnPassTimings func([]PassTiming)
 
-	// RetainResources, when true, opts every resource created on this view's
-	// Device into automatic recreation after device or surface loss.
+	// RetainResources, when true, opts every resource created on this view's Device into automatic recreation after device or surface loss.
 	RetainResources bool
-	// PipelineCache, when set, attaches a persistent pipeline cache to every
-	// Device created by this view (including restored devices).
+	// PipelineCache, when set, attaches a persistent pipeline cache to every Device created by this view (including restored devices).
 	PipelineCache *PipelineCache
 
 	Class     string
@@ -144,8 +137,7 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 		stopFrame = cx.RequestAnimationFrame(tick)
 	}
 
-	// Gate GPU frame submission on app/window lifecycle so backgrounded apps
-	// (especially iOS Metal and Android Activity pause) never submit GPU work.
+	// Gate GPU frame submission on app/window lifecycle so backgrounded apps (especially iOS Metal and Android Activity pause) never submit GPU work.
 	cx.Effect(func() {
 		lc := cx.Env().Lifecycle()
 		if lc == core.LifecycleBackground {

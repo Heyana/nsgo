@@ -419,8 +419,7 @@ func TestGPUAndroidSurfaceRotationAndRetainedAutoRestore(t *testing.T) {
 			RetainResources: true,
 			OnReady: func(d *gpu.Device) {
 				dev = d
-				// Only create resources once on epoch 1; subsequent rotations rely
-				// exclusively on RetainResources automatic recreation!
+				// Only create resources once on epoch 1; subsequent rotations rely exclusively on RetainResources automatic recreation!
 				if d.Epoch() > 1 {
 					return
 				}

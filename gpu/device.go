@@ -413,21 +413,16 @@ func (d *Device) WaitIdle() {
 	}
 }
 
-// Epoch returns the device epoch counter (alias of Generation, incremented on
-// every device loss and surface recreation).
+// Epoch returns the device epoch counter (alias of Generation, incremented on every device loss and surface recreation).
 func (d *Device) Epoch() uint32 { return d.generation }
 
-// IsLost reports whether this Device has been invalidated by device/context loss
-// or view disposal.
+// IsLost reports whether this Device has been invalidated by device/context loss or view disposal.
 func (d *Device) IsLost() bool { return d == nil || d.lost.Load() }
 
-// IsSuspended reports whether GPU frame submission is currently paused because
-// the owning app or surface is in the background.
+// IsSuspended reports whether GPU frame submission is currently paused because the owning app or surface is in the background.
 func (d *Device) IsSuspended() bool { return d != nil && d.suspended.Load() }
 
-// SetPipelineCache attaches a PipelineCache to d so CreatePipeline,
-// CreatePipelineAsync, and PrecompilePipelines reuse compiled artifacts across
-// launches and device restores.
+// SetPipelineCache attaches a PipelineCache to d so CreatePipeline, CreatePipelineAsync, and PrecompilePipelines reuse compiled artifacts across launches and device restores.
 func (d *Device) SetPipelineCache(cache *PipelineCache) {
 	if d == nil {
 		return
@@ -443,8 +438,7 @@ func (d *Device) PipelineCache() *PipelineCache {
 	return d.cache
 }
 
-// CacheStats returns the hit/miss/compilation counters of the attached
-// PipelineCache, or a zero PipelineCacheStats if no cache is attached.
+// CacheStats returns the hit/miss/compilation counters of the attached PipelineCache, or a zero PipelineCacheStats if no cache is attached.
 func (d *Device) CacheStats() PipelineCacheStats {
 	if d == nil || d.cache == nil {
 		return PipelineCacheStats{}
@@ -742,14 +736,12 @@ func (p *Pipeline) Valid() bool {
 	return p != nil && !p.closed && p.dev != nil && p.dev.alive() && p.epoch == p.dev.generation
 }
 
-// Ready reports whether p has finished compiling (for asynchronous precompilation)
-// and is valid for binding in a RenderPass.
+// Ready reports whether p has finished compiling (for asynchronous precompilation) and is valid for binding in a RenderPass.
 func (p *Pipeline) Ready() bool {
 	return p.Valid() && p.ready.Load()
 }
 
-// CacheKey returns the deterministic pipeline cache key computed from the
-// pipeline's shaders and render state.
+// CacheKey returns the deterministic pipeline cache key computed from the pipeline's shaders and render state.
 func (p *Pipeline) CacheKey() string {
 	if p == nil {
 		return ""
@@ -770,8 +762,7 @@ func (p *Pipeline) Err() error {
 	}
 }
 
-// Done returns a channel that closes when asynchronous pipeline compilation
-// completes (or is already closed for synchronously created pipelines).
+// Done returns a channel that closes when asynchronous pipeline compilation completes (or is already closed for synchronously created pipelines).
 func (p *Pipeline) Done() <-chan struct{} {
 	if p == nil {
 		ch := make(chan struct{})
@@ -986,8 +977,7 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 	return tex, nil
 }
 
-// CreateTextureFromImage allocates a 2D texture from an ImageSource with Pixels
-// and uploads its RGBA pixels.
+// CreateTextureFromImage allocates a 2D texture from an ImageSource with Pixels and uploads its RGBA pixels.
 func (d *Device) CreateTextureFromImage(cx *core.Scope, src core.ImageSource, desc TextureDesc) (*Texture, error) {
 	if src.Pixels == nil {
 		return nil, Error{Code: ErrInvalidDescriptor, Message: "CreateTextureFromImage requires ImageSource.Pixels"}
@@ -1415,9 +1405,7 @@ func (d *Device) preparePipelineDesc(desc PipelineDesc) (driver.GPUPipelineDesc,
 	return dd, key, nil
 }
 
-// CreatePipeline compiles and validates an immutable render pipeline scoped to cx.
-// When a PipelineCache is attached to d, compiled target shader artifacts are
-// reused across launches without recompilation.
+// CreatePipeline compiles and validates an immutable render pipeline scoped to cx. When a PipelineCache is attached to d, compiled target shader artifacts are reused across launches without recompilation.
 func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, error) {
 	dd, key, err := d.preparePipelineDesc(desc)
 	if err != nil {
@@ -1452,11 +1440,7 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 	return p, nil
 }
 
-// CreatePipelineAsync validates desc synchronously and compiles target shader
-// artifacts asynchronously off the engine goroutine without blocking frames.
-// The returned *Pipeline starts with Ready() == false and flips to Ready() == true
-// once compilation finishes and the pipeline is submitted to the backend; onReady
-// then runs on the engine goroutine (or synchronously on a standalone renderer).
+// CreatePipelineAsync validates desc synchronously and compiles target shader artifacts asynchronously off the engine goroutine without blocking frames. The returned *Pipeline starts with Ready() == false and flips to Ready() == true once compilation finishes and the pipeline is submitted to the backend; onReady then runs on the engine goroutine (or synchronously on a standalone renderer).
 func (d *Device) CreatePipelineAsync(cx *core.Scope, desc PipelineDesc, onReady func(*Pipeline, error)) *Pipeline {
 	postScope := cx
 	if postScope == nil {
@@ -1532,10 +1516,7 @@ func (d *Device) CreatePipelineAsync(cx *core.Scope, desc PipelineDesc, onReady 
 	return p
 }
 
-// PrecompilePipelines compiles a batch of pipelines asynchronously ahead of
-// first draw without blocking the engine goroutine. It returns the handles in
-// descriptor order immediately; onDone fires once all pipelines have finished
-// compiling (with the first error encountered, if any).
+// PrecompilePipelines compiles a batch of pipelines asynchronously ahead of first draw without blocking the engine goroutine. It returns the handles in descriptor order immediately; onDone fires once all pipelines have finished compiling (with the first error encountered, if any).
 func (d *Device) PrecompilePipelines(cx *core.Scope, descs []PipelineDesc, onDone func([]*Pipeline, error)) []*Pipeline {
 	postScope := cx
 	if postScope == nil {
@@ -1578,10 +1559,7 @@ func (d *Device) PrecompilePipelines(cx *core.Scope, descs []PipelineDesc, onDon
 	return pipes
 }
 
-// restoreRetainedFrom recreates all open retained resources from a previous lost
-// Device onto d in dependency order (buffers -> textures -> samplers ->
-// bind group layouts -> bind groups -> pipelines) so apps opting into retention
-// continue rendering seamlessly after device or surface restoration.
+// restoreRetainedFrom recreates all open retained resources from a previous lost Device onto d in dependency order (buffers -> textures -> samplers -> bind group layouts -> bind groups -> pipelines) so apps opting into retention continue rendering seamlessly after device or surface restoration.
 func (d *Device) restoreRetainedFrom(prev *Device) {
 	if d == nil || prev == nil || !d.alive() {
 		return
@@ -1813,8 +1791,7 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 
 // --- Data uploads ---
 
-// WriteBuffer copies data into buf starting at byte offset. Data is cloned
-// before returning so callers may immediately reuse the slice.
+// WriteBuffer copies data into buf starting at byte offset. Data is cloned before returning so callers may immediately reuse the slice.
 func (d *Device) WriteBuffer(buf *Buffer, offset uint64, data []byte) {
 	if !d.alive() || buf == nil || !buf.Valid() || buf.dev != d || len(data) == 0 {
 		return
@@ -2166,9 +2143,7 @@ func (p *RenderPass) SetScissor(x, y, width, height int32) {
 	})
 }
 
-// SetPipeline binds the active render pipeline. Stale handles from a lost
-// device or pipelines still compiling asynchronously are safely ignored, and
-// subsequent draws are skipped until a valid ready pipeline is bound.
+// SetPipeline binds the active render pipeline. Stale handles from a lost device or pipelines still compiling asynchronously are safely ignored, and subsequent draws are skipped until a valid ready pipeline is bound.
 func (p *RenderPass) SetPipeline(pipe *Pipeline) {
 	if p.ended || p.invalid {
 		return

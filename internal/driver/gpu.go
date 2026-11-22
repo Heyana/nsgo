@@ -713,8 +713,7 @@ type GPUColorTargetState struct {
 	WriteMask GPUColorWriteMask
 }
 
-// GPUPipelineBindingSlot records a compiled target shader resource binding slot
-// (Metal buffer/texture/sampler slot or HLSL b/t/s register).
+// GPUPipelineBindingSlot records a compiled target shader resource binding slot (Metal buffer/texture/sampler slot or HLSL b/t/s register).
 type GPUPipelineBindingSlot struct {
 	Group   uint32 `json:"group"`
 	Binding uint32 `json:"binding"`
@@ -740,9 +739,7 @@ type GPUPipelineSamplerPair struct {
 	SamplerBinding uint32 `json:"sampler_binding"`
 }
 
-// GPUPipelineArtifacts holds precompiled portable target shader sources and
-// binding tables persisted by gpu.PipelineCache so backends skip recompilation
-// across launches and avoid first-draw hitches.
+// GPUPipelineArtifacts holds precompiled portable target shader sources and binding tables persisted by gpu.PipelineCache so backends skip recompilation across launches and avoid first-draw hitches.
 type GPUPipelineArtifacts struct {
 	MSLSource          string                    `json:"msl_source,omitempty"`
 	MSLVertexEntry     string                    `json:"msl_vertex_entry,omitempty"`

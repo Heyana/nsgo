@@ -280,9 +280,7 @@ func (a *App) TriggerGPUDeviceLost(selector string, reason GPUDeviceLostReason, 
 	a.TriggerGPUDeviceLostWithReason(selector, reason, message)
 }
 
-// TriggerGPUDeviceLostWithReason simulates a GPU device, WebGL/WebGPU context,
-// or Android surface loss with an explicit reason on the KindGPU view matching
-// selector and settles the app.
+// TriggerGPUDeviceLostWithReason simulates a GPU device, WebGL/WebGPU context, or Android surface loss with an explicit reason on the KindGPU view matching selector and settles the app.
 func (a *App) TriggerGPUDeviceLostWithReason(selector string, reason GPUDeviceLostReason, message string) {
 	a.t.Helper()
 	v := a.Find(selector)
@@ -306,8 +304,7 @@ func (a *App) TriggerGPUDeviceLostWithReason(selector string, reason GPUDeviceLo
 }
 
 // RestoreGPUDevice simulates GPU device recreation after a device loss on the
-// KindGPU view matching selector, bumping its generation and invoking OnReady
-// and OnDeviceRestored.
+// KindGPU view matching selector, bumping its generation and invoking OnReady and OnDeviceRestored.
 func (a *App) RestoreGPUDevice(selector string) {
 	a.t.Helper()
 	v := a.Find(selector)
@@ -340,9 +337,7 @@ func (a *App) RestoreGPUDevice(selector string) {
 	a.Settle()
 }
 
-// TriggerGPUSurfaceRotation simulates an Android surface destruction and
-// recreation across orientation change on the KindGPU view matching selector.
-// If width or height is <= 0, the current surface width and height are swapped.
+// TriggerGPUSurfaceRotation simulates an Android surface destruction and recreation across orientation change on the KindGPU view matching selector. If width or height is <= 0, the current surface width and height are swapped.
 func (a *App) TriggerGPUSurfaceRotation(selector string, width, height int) {
 	a.t.Helper()
 	v := a.Find(selector)
