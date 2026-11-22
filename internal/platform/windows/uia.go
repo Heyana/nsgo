@@ -95,6 +95,7 @@ const (
 	propIsPassword            = 30019
 	propLabeledBy             = 30018
 	propLiveSetting           = 30135
+	propLevel                 = 30154
 	propHeadingLevel          = 30173
 	propIsDialog              = 30174
 	propFullDescription       = 30159
@@ -330,7 +331,19 @@ type uiaSpec struct {
 	toggle                                          int32 // ToggleState, -1 for none
 	min, max, now                                   float32
 	live                                            driver.LiveRegion
+	level                                           int
 	heading, dialog, password                       bool
+}
+
+// headingLevel returns UIA's HeadingLevel enum (HeadingLevel1..HeadingLevel9) for a heading, or 0 for other elements.
+func (s uiaSpec) headingLevel() int32 {
+	if !s.heading {
+		return 0
+	}
+	if s.level <= 0 {
+		return headingLevel1
+	}
+	return headingLevel1 + int32(min(s.level, 9)-1)
 }
 
 // uiaControls are the control types of the roles.
@@ -428,6 +441,7 @@ func (e *uiaElement) spec(v *view) uiaSpec {
 			s.name = groupedText(v)
 		}
 	}
+	s.level = max(p.Level, 0)
 	s.heading, s.dialog = p.Role == driver.RoleHeader, p.Role == driver.RoleDialog || p.Role == driver.RoleAlertDialog
 	if p.Role == driver.RoleAlert && s.live == driver.LiveRegionNone {
 		s.live = driver.LiveRegionAssertive
@@ -643,9 +657,13 @@ func uiaGetPropertyValue(i *uiaIface, id uintptr, out *variant) uintptr {
 		out.setBool(s.password)
 	case propLiveSetting:
 		out.setInt(int32(s.live))
+	case propLevel:
+		if s.level > 0 {
+			out.setInt(int32(s.level))
+		}
 	case propHeadingLevel:
-		if s.heading {
-			out.setInt(headingLevel1)
+		if hl := s.headingLevel(); hl != 0 {
+			out.setInt(hl)
 		}
 	case propIsDialog:
 		out.setBool(s.dialog)
@@ -1155,6 +1173,26 @@ func (w *window) uiaChanged(held []uiaShown) {
 			a.setBool(was.selected)
 			b.setBool(now.selected)
 			h.e.raise(propSelectionItemSelected, &a, &b)
+		}
+		if was.level != now.level {
+			var a, b variant
+			if was.level > 0 {
+				a.setInt(int32(was.level))
+			}
+			if now.level > 0 {
+				b.setInt(int32(now.level))
+			}
+			h.e.raise(propLevel, &a, &b)
+		}
+		if wasHL, nowHL := was.headingLevel(), now.headingLevel(); wasHL != nowHL {
+			var a, b variant
+			if wasHL != 0 {
+				a.setInt(wasHL)
+			}
+			if nowHL != 0 {
+				b.setInt(nowHL)
+			}
+			h.e.raise(propHeadingLevel, &a, &b)
 		}
 	}
 }

@@ -129,6 +129,19 @@ roleColumnHeader:
 roleCell:
   message: "cell"
   description: What Android's screen reader announces a cell of a table or grid as.
+roleSpinButton:
+  message: "spin button"
+  description: What Android's screen reader announces a numeric spin button as.
+roleHeadingLevel:
+  message: "heading level {level}"
+  description: What Android's screen reader announces a heading with a level as; level is the heading's level, from 1.
+  placeholders:
+    level: { type: String }
+stateLevel:
+  message: "level {level}"
+  description: What Android's screen reader announces a nested item's level, such as a tree item's depth, as; level is the item's level, from 1.
+  placeholders:
+    level: { type: String }
 statePartiallyChecked:
   message: "partially checked"
   description: What Android's screen reader announces a checkbox in its mixed state as, checked for some of the items it stands for.

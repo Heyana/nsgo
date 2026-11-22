@@ -1114,3 +1114,86 @@ func TestBackdropPath(t *testing.T) {
 		t.Error("backdropPath through a collapsed layout scale failed")
 	}
 }
+
+func TestAccessibilityLevelAndSpinButton(t *testing.T) {
+	if got := roleNick(driver.KindInput, &driver.ViewProps{Role: driver.RoleSpinButton}, false); got != "spin-button" {
+		t.Errorf("spin button input roleNick = %q, want spin-button", got)
+	}
+	if got := roleNick(driver.KindView, &driver.ViewProps{Role: driver.RoleHeader}, false); got != "heading" {
+		t.Errorf("header roleNick = %q, want heading", got)
+	}
+
+	const levelProp = int32(42)
+	prevEnums := enums
+	prevInit := gValueInit
+	prevUnset := gValueUnset
+	prevSetInt := gValueSetInt
+	prevSetBool := gValueSetBoolean
+	prevSetStr := gValueSetString
+	prevUpdateProp := gtkAccessibleUpdatePropertyValue
+	prevResetProp := gtkAccessibleResetProperty
+	prevUpdateState := gtkAccessibleUpdateStateValue
+	prevResetState := gtkAccessibleResetState
+	t.Cleanup(func() {
+		enums = prevEnums
+		gValueInit = prevInit
+		gValueUnset = prevUnset
+		gValueSetInt = prevSetInt
+		gValueSetBoolean = prevSetBool
+		gValueSetString = prevSetStr
+		gtkAccessibleUpdatePropertyValue = prevUpdateProp
+		gtkAccessibleResetProperty = prevResetProp
+		gtkAccessibleUpdateStateValue = prevUpdateState
+		gtkAccessibleResetState = prevResetState
+	})
+
+	enums = map[string]map[string]int32{
+		"property": {"label": 1, "description": 2, "value-text": 3, "level": levelProp},
+		"state":    {"disabled": -1, "selected": -1, "checked": -1, "pressed": -1, "expanded": -1, "hidden": -1, "busy": -1, "invalid": -1},
+	}
+	var lastType uintptr
+	gValueInit = func(p, typ uintptr) uintptr {
+		lastType = typ
+		return p
+	}
+	gValueUnset = func(uintptr) {}
+	gValueSetInt = func(v *gValue, n int32) { v.data[0] = uint64(uint32(n)) }
+	gValueSetBoolean = func(v *gValue, n int32) { v.data[0] = uint64(uint32(n)) }
+	gValueSetString = func(*gValue, *byte) {}
+	gtkAccessibleUpdateStateValue = func(uintptr, int32, *int32, *gValue) {}
+	gtkAccessibleResetState = func(uintptr, int32) {}
+
+	var ops []int32
+	gtkAccessibleUpdatePropertyValue = func(_ uintptr, _ int32, prop *int32, val *gValue) {
+		if *prop == levelProp {
+			if lastType != gTypeInt {
+				t.Errorf("level property GType = %d, want gTypeInt (%d)", lastType, gTypeInt)
+			}
+			ops = append(ops, int32(val.data[0]))
+		}
+	}
+	gtkAccessibleResetProperty = func(_ uintptr, prop int32) {
+		if prop == levelProp {
+			ops = append(ops, 0)
+		}
+	}
+
+	w := &window{}
+	v := &view{widget: 1, props: driver.ViewProps{Role: driver.RoleHeader, Level: 3}}
+	w.updateAccess(v)
+	v.props.Level = 2
+	w.updateAccess(v)
+	v.props.Level = 2
+	w.updateAccess(v)
+	v.props.Level = 0
+	w.updateAccess(v)
+	want := []int32{3, 2, 0}
+	if len(ops) != len(want) {
+		t.Fatalf("level ops = %v, want %v", ops, want)
+	}
+	for i := range want {
+		if ops[i] != want[i] {
+			t.Fatalf("level ops = %v, want %v", ops, want)
+		}
+	}
+}

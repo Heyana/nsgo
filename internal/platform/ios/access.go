@@ -3,8 +3,6 @@
 package ios
 
 import (
-	"fmt"
-	"math"
 	"runtime"
 	"strings"
 	"unsafe"
@@ -36,7 +34,8 @@ var (
 	selSetAccessibilityHint           = sel("setAccessibilityHint:")
 	selSetAccessibilityElementsHidden = sel("setAccessibilityElementsHidden:")
 	selCustomAction                   = sel("nsgoAccessibilityAction:")
-	layoutChanged                     uint32 // UIAccessibilityLayoutChangedNotification
+	layoutChanged                     uint32  // UIAccessibilityLayoutChangedNotification
+	headingLevelKey                   objc.ID // UIAccessibilityTextAttributeHeadingLevel
 )
 
 var traitNames = []string{"Button", "Link", "Header", "Image", "StaticText", "Selected", "NotEnabled", "TabBar", "SearchField",
@@ -59,6 +58,9 @@ func loadAccessibility(uikit uintptr) {
 			panic(err)
 		}
 		traits[name] = **(**uint64)(unsafe.Pointer(&addr))
+	}
+	if addr, err := purego.Dlsym(uikit, "UIAccessibilityTextAttributeHeadingLevel"); err == nil && addr != 0 {
+		headingLevelKey = **(**objc.ID)(unsafe.Pointer(&addr))
 	}
 }
 
@@ -86,6 +88,7 @@ func accessMethods() []objc.MethodDef {
 		{Cmd: sel("accessibilityPerformMagicTap"), Fn: standard(driver.ActionMagicTap)},
 		{Cmd: selCustomAction, Fn: accessibilityCustom},
 		{Cmd: sel("accessibilityLabel"), Fn: accessibilityLabel},
+		{Cmd: sel("accessibilityAttributedLabel"), Fn: accessibilityAttributedLabel},
 	}
 }
 
@@ -164,6 +167,21 @@ func collectText(native objc.ID, out *[]string) {
 func accessibilityLabel(self objc.ID, cmd objc.SEL) objc.ID {
 	if v := views[self]; v != nil && v.id != 0 {
 		return nsOrNil(v.spokenLabel())
+	}
+	return apple.SendSuper[objc.ID](self, cmd)
+}
+
+// accessibilityAttributedLabel attaches UIAccessibilityTextAttributeHeadingLevel to a levelled heading's label so VoiceOver announces its level and includes it in the heading-level rotor.
+func accessibilityAttributedLabel(self objc.ID, cmd objc.SEL) objc.ID {
+	if v := views[self]; v != nil && v.id != 0 && headingLevelKey != 0 {
+		if level := headingLevel(&v.props); level > 0 {
+			if label := v.spokenLabel(); label != "" {
+				n := objc.ID(apple.Class("NSNumber")).Send(sel("numberWithInt:"), level)
+				attrs := objc.ID(apple.Class("NSDictionary")).Send(sel("dictionaryWithObject:forKey:"), n, headingLevelKey)
+				return objc.ID(apple.Class("NSAttributedString")).Send(selAlloc).Send(
+					sel("initWithString:attributes:"), apple.NSString(label), attrs).Send(sel("autorelease"))
+			}
+		}
 	}
 	return apple.SendSuper[objc.ID](self, cmd)
 }
@@ -263,7 +281,7 @@ func (v *view) updateAccessibility() {
 		t = traits["Image"]
 	case driver.RoleText:
 		t = traits["StaticText"]
-	case driver.RoleAdjustable:
+	case driver.RoleAdjustable, driver.RoleSpinButton:
 		t = traits["Adjustable"]
 	case driver.RoleProgressBar:
 		t = traits["UpdatesFrequently"]
@@ -331,60 +349,7 @@ func (v *view) updateAccessibility() {
 	}
 }
 
-// spokenValue is the value VoiceOver reads: the value's text, else a range's percentage, then the checked and expanded states.
-func spokenValue(p *driver.ViewProps) string {
-	var parts []string
-	val := p.Value
-	switch {
-	case val.Text != "":
-		parts = append(parts, val.Text)
-	case val.IsRange():
-		parts = append(parts, fmt.Sprintf("%g%%", math.Round(float64((val.Now-val.Min)/(val.Max-val.Min)*100))))
-	}
-	return strings.Join(append(parts, spokenStates(p)...), ", ")
-}
-
-// spokenStates are the states VoiceOver reads after a value, which UIKit has no traits for.
-func spokenStates(p *driver.ViewProps) []string {
-	var parts []string
-	switch p.Role {
-	case driver.RoleCheckbox, driver.RoleSwitch, driver.RoleRadio, driver.RoleMenuItemCheckbox, driver.RoleMenuItemRadio:
-		switch {
-		case p.Indeterminate:
-			parts = append(parts, "mixed")
-		case p.Checked || p.Selected:
-			parts = append(parts, "1")
-		default:
-			parts = append(parts, "0")
-		}
-	}
-	if p.Expandable {
-		if p.Expanded {
-			parts = append(parts, "expanded")
-		} else {
-			parts = append(parts, "collapsed")
-		}
-	}
-	// UIKit has no trait for it, so it is spoken, as mixed is.
-	if p.Invalid {
-		parts = append(parts, "invalid data")
-	}
-	return parts
-}
-
-// editorValue is what VoiceOver reads as an input's value: the editor's own, its text, then the input's value text when it differs, such as a multiple combobox's chosen items, and its states, such as a combobox's expanded state.
-func editorValue(own string, p *driver.ViewProps) string {
-	var parts []string
-	if own != "" {
-		parts = append(parts, own)
-	}
-	if t := p.Value.Text; t != "" && t != own {
-		parts = append(parts, t)
-	}
-	return strings.Join(append(parts, spokenStates(p)...), ", ")
-}
-
-// editorAccess are an input's editor's answers to VoiceOver. The editor is the input's element, as UIKit's text field or text view, so it can be edited whatever the input's role; it reads the input's label and hint (including a multiline text view's placeholder while empty), the value editorValue gives, and the search field trait for RoleSearchField.
+// editorAccess are an input's editor's answers to VoiceOver. The editor is the input's element, as UIKit's text field or text view, so it can be edited whatever the input's role; it reads the input's label and hint (including a multiline text view's placeholder while empty), the value editorValue gives, the search field trait for RoleSearchField, and the adjustable trait with increment and decrement actions for RoleSpinButton.
 func editorAccess() []objc.MethodDef {
 	return []objc.MethodDef{
 		{Cmd: sel("accessibilityLabel"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
@@ -414,8 +379,8 @@ func editorAccess() []objc.MethodDef {
 		}},
 		{Cmd: sel("accessibilityTraits"), Fn: func(self objc.ID, cmd objc.SEL) uint64 {
 			t := apple.SendSuper[uint64](self, cmd)
-			if v := views[self]; v != nil && v.props.Role == driver.RoleSearchField {
-				t |= traits["SearchField"]
+			if v := views[self]; v != nil {
+				t = editorTraits(t, &v.props, traits["SearchField"], traits["Adjustable"])
 			}
 			return t
 		}},
@@ -430,6 +395,16 @@ func editorAccess() []objc.MethodDef {
 				return apple.NSString(value)
 			}
 			return own
+		}},
+		{Cmd: sel("accessibilityIncrement"), Fn: func(self objc.ID, _ objc.SEL) {
+			if v := views[self]; v != nil {
+				v.action(driver.ActionIncrement)
+			}
+		}},
+		{Cmd: sel("accessibilityDecrement"), Fn: func(self objc.ID, _ objc.SEL) {
+			if v := views[self]; v != nil {
+				v.action(driver.ActionDecrement)
+			}
 		}},
 	}
 }

@@ -41,10 +41,11 @@ const (
 )
 
 var (
-	selSetAccessibilityHidden   = sel("setAccessibilityHidden:")
-	selSetAccessibilityHelp     = sel("setAccessibilityHelp:")
-	selSetAccessibilityExpanded = sel("setAccessibilityExpanded:")
-	selCustomAction             = sel("nsgoAccessibilityAction:")
+	selSetAccessibilityHidden       = sel("setAccessibilityHidden:")
+	selSetAccessibilityHelp         = sel("setAccessibilityHelp:")
+	selSetAccessibilityExpanded     = sel("setAccessibilityExpanded:")
+	selAccessibilityDisclosureLevel = sel("accessibilityDisclosureLevel")
+	selCustomAction                 = sel("nsgoAccessibilityAction:")
 
 	axPerform = map[objc.SEL]string{
 		sel("accessibilityPerformIncrement"): driver.ActionIncrement,
@@ -97,6 +98,12 @@ func accessMethods() []objc.MethodDef {
 				return false
 			}
 			return apple.SendSuper[bool](self, cmd, name)
+		}},
+		{Cmd: selAccessibilityDisclosureLevel, Fn: func(self objc.ID, _ objc.SEL) int {
+			if v := views[self]; v != nil && v.props.Role != driver.RoleHeader && v.props.Level > 0 {
+				return v.props.Level - 1
+			}
+			return 0
 		}},
 		{Cmd: sel("accessibilityTitleUIElement"), Fn: func(self objc.ID, _ objc.SEL) objc.ID {
 			if v := views[self]; v != nil {
@@ -619,8 +626,13 @@ func (v *view) updateAccessibility() {
 			n = 1
 		}
 		native.Send(selSetAccessibilityValue, objc.ID(apple.Class("NSNumber")).Send(sel("numberWithInt:"), n))
+	case p.Role == driver.RoleHeader && p.Level > 0:
+		// VoiceOver reads an AXHeading's level from AXValue as a 1-based NSNumber.
+		native.Send(selSetAccessibilityValue, objc.ID(apple.Class("NSNumber")).Send(sel("numberWithInt:"), p.Level))
 	case val.Text != "":
 		native.Send(selSetAccessibilityValue, apple.NSString(val.Text))
+	default:
+		native.Send(selSetAccessibilityValue, 0)
 	}
 	var custom []objc.ID
 	for _, a := range p.ActionList() {
@@ -667,8 +679,12 @@ func accessibilityPress(self objc.ID, _ objc.SEL) bool {
 	return true
 }
 
-// accessibilityAllowed offers VoiceOver only the actions a view has.
+// accessibilityAllowed offers VoiceOver only the actions and level attributes a view has.
 func accessibilityAllowed(self objc.ID, cmd objc.SEL, selector objc.SEL) bool {
+	if selector == selAccessibilityDisclosureLevel {
+		v := views[self]
+		return v != nil && v.props.Role != driver.RoleHeader && v.props.Level > 0
+	}
 	if name, ok := axPerform[selector]; ok {
 		v := views[self]
 		return v != nil && v.props.HasAction(name)

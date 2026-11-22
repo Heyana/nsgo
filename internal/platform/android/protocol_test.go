@@ -317,8 +317,13 @@ func TestSpokenWordsMatchJava(t *testing.T) {
 	for _, m := range regexp.MustCompile(`static final int SPOKEN_(\w+) = (\d+);`).FindAllStringSubmatch(string(java), -1) {
 		i, _ := strconv.Atoi(m[2])
 		want := strings.ToLower(strings.ReplaceAll(m[1], "_", " "))
-		if m[1] == "SEPARATOR" {
+		switch m[1] {
+		case "SEPARATOR":
 			want = ", "
+		case "HEADING_LEVEL":
+			want = "heading level {level}"
+		case "LEVEL":
+			want = "level {level}"
 		}
 		if i >= len(words) || words[i] != want {
 			t.Errorf("Protocol.java's SPOKEN_%s is %d, which spoken says as %q", m[1], i, words[min(i, len(words)-1)])
@@ -334,18 +339,21 @@ func TestSpokenWordsMatchJava(t *testing.T) {
 func TestDirectionSaysTheWordsInTheAppsLanguage(t *testing.T) {
 	english := spoken("en")
 	for _, c := range []struct {
-		lang      string
-		forced    bool
-		wantTag   string
-		rtl       bool
-		searchBox string
-		partly    string
-		separator string
+		lang       string
+		forced     bool
+		wantTag    string
+		rtl        bool
+		searchBox  string
+		partly     string
+		separator  string
+		spinButton string
+		headingLvl string
+		level      string
 	}{
-		{"en", false, "", false, "search box", "partially checked", ", "},
-		{"zh-Hans", true, "zh-Hans", false, "搜索框", "部分选中", "，"},
-		{"zh-CN", true, "zh-CN", false, "搜索框", "部分选中", "，"},
-		{"de", false, "", true, "search box", "partially checked", ", "},
+		{"en", false, "", false, "search box", "partially checked", ", ", "spin button", "heading level {level}", "level {level}"},
+		{"zh-Hans", true, "zh-Hans", false, "搜索框", "部分选中", "，", "微调按钮", "{level} 级标题", "第 {level} 级"},
+		{"zh-CN", true, "zh-CN", false, "搜索框", "部分选中", "，", "微调按钮", "{level} 级标题", "第 {level} 级"},
+		{"de", false, "", true, "search box", "partially checked", ", ", "spin button", "heading level {level}", "level {level}"},
 	} {
 		var w writer
 		writeDirection(&w, &driver.MountItem{Kind: driver.ItemDirection, RTL: c.rtl, Language: c.lang, Forced: c.forced})
@@ -364,8 +372,8 @@ func TestDirectionSaysTheWordsInTheAppsLanguage(t *testing.T) {
 		if gotForced != c.wantTag {
 			t.Errorf("%s (forced=%v): forced tag = %q, want %q", c.lang, c.forced, gotForced, c.wantTag)
 		}
-		if words[2] != c.searchBox || words[13] != c.partly || words[len(words)-1] != c.separator {
-			t.Errorf("%s: a search box is %q, partially checked %q and separator %q", c.lang, words[2], words[13], words[len(words)-1])
+		if words[2] != c.searchBox || words[13] != c.partly || words[16] != c.separator || words[17] != c.spinButton || words[18] != c.headingLvl || words[19] != c.level {
+			t.Errorf("%s: searchBox=%q partly=%q sep=%q spinButton=%q headingLevel=%q level=%q", c.lang, words[2], words[13], words[16], words[17], words[18], words[19])
 		}
 		for i, s := range words {
 			if s == "" || c.searchBox != english[2] && s == english[i] {
@@ -395,6 +403,54 @@ func TestForcedLanguageEncoding(t *testing.T) {
 		got := forcedLanguage(&driver.MountItem{Language: tc.lang, Forced: tc.forced})
 		if got != tc.want {
 			t.Errorf("forcedLanguage(%q, forced=%v) = %q, want %q", tc.lang, tc.forced, got, tc.want)
+		}
+	}
+}
+
+// TestViewPropsEncodesLevelAndSpinButton checks that writeViewProps writes RoleSpinButton and Level (clamping negatives to 0) in the exact order NsgoView.props reads them (#1594).
+func TestViewPropsEncodesLevelAndSpinButton(t *testing.T) {
+	labels := []driver.NodeID{4, 9}
+	actions := []driver.AccessibilityAction{{Name: driver.ActionIncrement}, {Name: driver.ActionDecrement}}
+	for _, c := range []struct {
+		name      string
+		props     driver.ViewProps
+		wantRole  driver.Role
+		wantLevel uint32
+	}{
+		{"spin button", driver.ViewProps{Role: driver.RoleSpinButton, Label: "Count", Actions: &actions, Value: driver.AccessibilityValue{Min: 0, Max: 10, Now: 3, Text: "3"}, LabelledBy: &labels}, driver.RoleSpinButton, 0},
+		{"heading level", driver.ViewProps{Role: driver.RoleHeader, Label: "Section", Level: 3}, driver.RoleHeader, 3},
+		{"tree item level", driver.ViewProps{Role: driver.RoleTreeItem, Label: "Child", Level: 2}, driver.RoleTreeItem, 2},
+		{"negative level clamped", driver.ViewProps{Role: driver.RoleHeader, Level: -4}, driver.RoleHeader, 0},
+	} {
+		var w writer
+		writeViewProps(&w, &c.props)
+		r := reader{w.buf}
+		role := driver.Role(r.byte())
+		_ = r.byte() // flags
+		_, _ = r.str(), r.str()
+		_, _, _, _ = r.points(), r.points(), r.points(), r.points()
+		_ = r.str() // help
+		_ = r.byte()
+		_, _ = r.byte(), r.byte()
+		_, _, _ = r.float(), r.float(), r.float()
+		_ = r.str() // valueText
+		for range r.u32() {
+			_, _ = r.str(), r.str()
+		}
+		_ = r.byte()
+		_, _, _, _ = r.points(), r.points(), r.points(), r.points()
+		_ = r.u32()
+		if r.byte() != 0 {
+			_, _ = r.u32(), r.points()
+		}
+		_, _, _ = r.byte(), r.byte(), r.u32()
+		_, _ = r.byte(), r.u32()
+		for range r.u32() {
+			_ = r.u32()
+		}
+		level := r.u32()
+		if role != c.wantRole || level != c.wantLevel || len(r.buf) != 0 {
+			t.Errorf("%s: role=%d (want %d), level=%d (want %d), %d bytes left", c.name, role, c.wantRole, level, c.wantLevel, len(r.buf))
 		}
 	}
 }

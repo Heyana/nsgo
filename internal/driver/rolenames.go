@@ -12,7 +12,7 @@ var roleNames = map[Role]string{
 	RoleOption: "option", RoleGroup: "group", RoleRegion: "region",
 	RoleNavigation: "navigation", RoleTree: "tree", RoleTreeItem: "treeitem",
 	RoleToolbar: "toolbar", RoleMenuItemCheckbox: "menuitemcheckbox",
-	RoleMenuItemRadio: "menuitemradio", RoleCombobox: "combobox",
+	RoleMenuItemRadio: "menuitemradio", RoleSpinButton: "spinbutton", RoleCombobox: "combobox",
 	RoleStatus: "status", RoleSearchField: "searchbox",
 }
 

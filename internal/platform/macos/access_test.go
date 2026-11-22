@@ -629,3 +629,49 @@ func TestInvalidAccessibility(t *testing.T) {
 		swView.native.Send(selRelease)
 	})
 }
+
+// TestAccessibilityLevel checks, through the NSAccessibility properties VoiceOver reads, that a heading exposes ViewProps.Level as a 1-based accessibilityValue without disclosure level, that a tree item exposes it as a 0-based accessibilityDisclosureLevel, and that clearing Level removes both (#1594).
+func TestAccessibilityLevel(t *testing.T) { onMain(func() { accessibilityLevel(t) }) }
+
+func accessibilityLevel(t *testing.T) {
+	loadAppKit()
+	heading := &view{id: 1, kind: driver.KindView, native: objc.ID(classView).Send(selNew)}
+	views[heading.native] = heading
+	heading.setProps(&driver.ViewProps{Role: driver.RoleHeader, Label: "Section", Level: 3})
+	if got := apple.GoString(heading.native.Send(sel("accessibilityRole"))); got != "AXHeading" {
+		t.Errorf("heading role = %q, want AXHeading", got)
+	}
+	if val := heading.native.Send(sel("accessibilityValue")); val == 0 || objc.Send[int](val, sel("intValue")) != 3 {
+		t.Errorf("heading level 3 accessibilityValue = %v, want 3", val)
+	}
+	if objc.Send[bool](heading.native, sel("isAccessibilitySelectorAllowed:"), selAccessibilityDisclosureLevel) {
+		t.Error("heading allowed accessibilityDisclosureLevel")
+	}
+	heading.setProps(&driver.ViewProps{Role: driver.RoleHeader, Label: "Section", Level: 0})
+	if val := heading.native.Send(sel("accessibilityValue")); val != 0 {
+		t.Errorf("cleared heading accessibilityValue = %v, want nil", val)
+	}
+
+	item := &view{id: 2, kind: driver.KindView, native: objc.ID(classView).Send(selNew)}
+	views[item.native] = item
+	item.setProps(&driver.ViewProps{Role: driver.RoleTreeItem, Label: "Child", Level: 2})
+	if !objc.Send[bool](item.native, sel("isAccessibilitySelectorAllowed:"), selAccessibilityDisclosureLevel) {
+		t.Error("tree item with level 2 disallowed accessibilityDisclosureLevel")
+	}
+	if got := objc.Send[int](item.native, selAccessibilityDisclosureLevel); got != 1 {
+		t.Errorf("tree item level 2 accessibilityDisclosureLevel = %d, want 1", got)
+	}
+	item.setProps(&driver.ViewProps{Role: driver.RoleTreeItem, Label: "Root", Level: 1})
+	if got := objc.Send[int](item.native, selAccessibilityDisclosureLevel); got != 0 {
+		t.Errorf("tree item level 1 accessibilityDisclosureLevel = %d, want 0", got)
+	}
+	item.setProps(&driver.ViewProps{Role: driver.RoleTreeItem, Label: "Plain", Level: 0})
+	if objc.Send[bool](item.native, sel("isAccessibilitySelectorAllowed:"), selAccessibilityDisclosureLevel) {
+		t.Error("cleared tree item still allowed accessibilityDisclosureLevel")
+	}
+
+	delete(views, heading.native)
+	delete(views, item.native)
+	heading.native.Send(selRelease)
+	item.native.Send(selRelease)
+}

@@ -232,6 +232,7 @@ func newAccessibleWidget(t uintptr, role int32) uintptr {
 // accessState is what was last given to GTK of a view.
 type accessState struct {
 	label, description, valueText string
+	level                         int
 	multiSelectable               bool
 	min, max, now                 float32
 	ranged                        bool
@@ -252,7 +253,7 @@ func (w *window) updateAccess(v *view) bool {
 		label = v.plain
 	}
 	old := v.access
-	n := accessState{label: label, description: p.HelpText(), valueText: p.Value.Text, multiSelectable: p.MultiSelectable, set: true, testID: p.TestID}
+	n := accessState{label: label, description: p.HelpText(), valueText: p.Value.Text, level: max(p.Level, 0), multiSelectable: p.MultiSelectable, set: true, testID: p.TestID}
 	if p.Value.IsRange() {
 		n.ranged, n.min, n.max, n.now = true, p.Value.Min, p.Value.Max, p.Value.Now
 	}
@@ -302,6 +303,20 @@ func (w *window) updateAccess(v *view) bool {
 	setString("label", n.label, old.label)
 	setString("description", n.description, old.description)
 	setString("value-text", n.valueText, old.valueText)
+	if n.level != old.level {
+		// GTK_ACCESSIBLE_PROPERTY_LEVEL takes a 1-based int, reset when 0.
+		if prop := enumValue("property", "level"); prop >= 0 {
+			if n.level > 0 {
+				var val gValue
+				gValueInit(uintptr(unsafe.Pointer(&val)), gTypeInt)
+				gValueSetInt(&val, int32(n.level))
+				gtkAccessibleUpdatePropertyValue(acc, 1, &prop, &val)
+				gValueUnset(uintptr(unsafe.Pointer(&val)))
+			} else {
+				gtkAccessibleResetProperty(acc, prop)
+			}
+		}
+	}
 	if n.multiSelectable != old.multiSelectable {
 		// GTK_ACCESSIBLE_PROPERTY_MULTI_SELECTABLE, whose nick has a hyphen.
 		prop := enumValue("property", "multi-selectable")

@@ -2116,3 +2116,52 @@ func TestPreciseScrollMovesNativeScrollViewsByExactPoints(t *testing.T) {
 		t.Fatalf("outerV after innerV at edge = %v, want 63.25", outerV.offset.Y)
 	}
 }
+
+func TestAccessibilityLevelAndSpinButton(t *testing.T) {
+	heading := &view{id: 1, kind: driver.KindView, props: driver.ViewProps{Role: driver.RoleHeader, Label: "Section", Level: 3}}
+	unlevelled := &view{id: 2, kind: driver.KindView, props: driver.ViewProps{Role: driver.RoleHeader, Label: "Title"}}
+	deepHeading := &view{id: 3, kind: driver.KindView, props: driver.ViewProps{Role: driver.RoleHeader, Label: "Deep", Level: 12}}
+	treeItem := &view{id: 4, kind: driver.KindView, props: driver.ViewProps{Role: driver.RoleTreeItem, Label: "Child", Level: 2}}
+	plain := &view{id: 5, kind: driver.KindView, props: driver.ViewProps{Role: driver.RoleTreeItem, Label: "Plain"}}
+	spin := &view{id: 6, kind: driver.KindInput, field: &textInput{}, props: driver.ViewProps{Role: driver.RoleSpinButton, Label: "Count"}}
+	w := &window{views: []*view{nil, heading, unlevelled, deepHeading, treeItem, plain, spin}}
+
+	prop := func(id driver.NodeID, propID uintptr) variant {
+		var out variant
+		if code := uiaGetPropertyValue(&w.element(id, 0).simple, propID, &out); code != sOK {
+			t.Fatalf("node %d prop %d failed: %x", id, propID, code)
+		}
+		return out
+	}
+
+	if v := prop(1, propHeadingLevel); v.vt != vtI4 || int32(v.val) != headingLevel1+2 {
+		t.Errorf("heading level 3 HeadingLevel = %+v, want %d", v, headingLevel1+2)
+	}
+	if v := prop(1, propLevel); v.vt != vtI4 || int32(v.val) != 3 {
+		t.Errorf("heading level 3 Level = %+v, want 3", v)
+	}
+	if v := prop(2, propHeadingLevel); v.vt != vtI4 || int32(v.val) != headingLevel1 {
+		t.Errorf("unlevelled heading HeadingLevel = %+v, want %d", v, headingLevel1)
+	}
+	if v := prop(2, propLevel); v.vt != vtEmpty {
+		t.Errorf("unlevelled heading Level = %+v, want empty", v)
+	}
+	if v := prop(3, propHeadingLevel); v.vt != vtI4 || int32(v.val) != headingLevel1+8 {
+		t.Errorf("heading level 12 HeadingLevel = %+v, want clamped %d", v, headingLevel1+8)
+	}
+	if v := prop(3, propLevel); v.vt != vtI4 || int32(v.val) != 12 {
+		t.Errorf("heading level 12 Level = %+v, want 12", v)
+	}
+	if v := prop(4, propHeadingLevel); v.vt != vtEmpty {
+		t.Errorf("tree item HeadingLevel = %+v, want empty", v)
+	}
+	if v := prop(4, propLevel); v.vt != vtI4 || int32(v.val) != 2 {
+		t.Errorf("tree item level 2 Level = %+v, want 2", v)
+	}
+	if v := prop(5, propLevel); v.vt != vtEmpty {
+		t.Errorf("unlevelled tree item Level = %+v, want empty", v)
+	}
+	if v := prop(6, propControlType); v.vt != vtI4 || int32(v.val) != ctSpinner {
+		t.Errorf("spin button input ControlType = %+v, want %d", v, ctSpinner)
+	}
+}

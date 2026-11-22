@@ -324,7 +324,71 @@ func spoken(lang string) []string {
 		m.RoleLink(), m.RoleTab(), m.RoleSearchBox(), m.RoleStatus(), m.RoleMenu(), m.RoleMenuItem(), m.RoleDialog(), m.RoleAlert(),
 		m.RoleTable(), m.RoleGrid(), m.RoleRow(), m.RoleColumnHeader(), m.RoleCell(),
 		m.StatePartiallyChecked(), m.StateExpanded(), m.StateCollapsed(), m.SpokenSeparator(),
+		m.RoleSpinButton(), m.RoleHeadingLevel("{level}"), m.StateLevel("{level}"),
 	}
+}
+
+// writeViewProps writes a view's props as NsgoView.props reads it.
+func writeViewProps(w *writer, p *driver.ViewProps) {
+	role := p.Role
+	if role == driver.RoleAlertDialog {
+		// The runtime knows a dialog, which names its pane alike.
+		role = driver.RoleDialog
+	}
+	w.byte(byte(role))
+	w.flags(p.Disabled, p.Selected, p.Checked, p.Indeterminate, p.Focusable, p.NoFocus)
+	w.str(p.Label)
+	w.str(p.TestID)
+	// Java decides when a drag activates the pan.
+	a := p.PanActivation
+	w.points(a.ActiveOffsetX)
+	w.points(a.ActiveOffsetY)
+	w.points(a.FailOffsetX)
+	w.points(a.FailOffsetY)
+	// Accessibility beyond the role, label and states.
+	w.str(p.HelpText())
+	w.flags(p.Expandable, p.Expanded, p.ElementsHidden, p.Value.IsRange())
+	w.byte(byte(p.Accessible))
+	w.byte(byte(p.LiveRegion))
+	w.float(p.Value.Min)
+	w.float(p.Value.Max)
+	w.float(p.Value.Now)
+	w.str(p.Value.Text)
+	actions := p.ActionList()
+	w.u32(uint32(len(actions)))
+	for _, act := range actions {
+		w.str(act.Name)
+		w.str(act.Label)
+	}
+	// The runtime routes touches by them and times long presses.
+	w.byte(byte(p.PointerEvents))
+	w.points(p.HitSlop.Top)
+	w.points(p.HitSlop.Right)
+	w.points(p.HitSlop.Bottom)
+	w.points(p.HitSlop.Left)
+	w.u32(uint32(max(p.DelayLongPress.Milliseconds(), 0)))
+	if r := p.Ripple; r != nil {
+		w.flags(true, r.Borderless, r.Foreground)
+		w.u32(uint32(r.Color))
+		w.points(r.Radius)
+	} else {
+		w.byte(0)
+	}
+	// Selections run on the UI thread (Selection.java).
+	w.flags(p.SelectionArea)
+	w.byte(byte(p.Selectable))
+	w.u32(uint32(p.SelectionColor))
+	w.flags(p.Invalid, p.LabelPress)
+	w.u32(uint32(p.LabelFor))
+	var labels []driver.NodeID
+	if p.LabelledBy != nil {
+		labels = *p.LabelledBy
+	}
+	w.u32(uint32(len(labels)))
+	for _, id := range labels {
+		w.u32(uint32(id))
+	}
+	w.u32(uint32(max(p.Level, 0)))
 }
 
 // forcedLanguage returns the BCP 47 tag to apply as Android 13's per-app

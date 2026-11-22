@@ -203,3 +203,58 @@ func TestCollapsibleRevealsMeasured(t *testing.T) {
 		t.Fatal("the content stayed after closing")
 	}
 }
+
+// TestNumberInputSpinButtonAndLevels checks that NumberInput exposes RoleSpinButton with increment and decrement actions on phones too, and that AccordionHeader and Tree report their AccessibilityLevel (#1594).
+func TestNumberInputSpinButtonAndLevels(t *testing.T) {
+	start, minV, maxV := 5.0, 0.0, 20.0
+	items := []base.TreeItem{{ID: "root", Label: "Root", Children: []base.TreeItem{{ID: "leaf", Label: "Leaf"}}}}
+	for _, env := range []core.Environment{
+		{OS: core.OSIOS, Idiom: core.IdiomPhone},
+		{OS: core.OSAndroid, Idiom: core.IdiomPhone},
+	} {
+		app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+			n := core.NewSignal(cx, &start)
+			return core.View{Style: core.Style{Width: core.Pt(300), Height: core.Pt(300)}, Children: []core.Node{
+				base.NumberInput{Label: "Quantity", Value: n.Get, OnChange: n.Set,
+					Min: func() *float64 { return &minV }, Max: func() *float64 { return &maxV }, Step: func() float64 { return 2 }},
+				base.Accordion{Children: []core.Node{
+					base.AccordionItem{Value: "a", Children: []core.Node{
+						base.AccordionHeader{TestID: "default-h", Children: []core.Node{base.AccordionTrigger{Children: []core.Node{core.Text{Content: "A"}}}}},
+					}},
+					base.AccordionItem{Value: "b", Children: []core.Node{
+						base.AccordionHeader{TestID: "level-2-h", Level: 2, Children: []core.Node{base.AccordionTrigger{Children: []core.Node{core.Text{Content: "B"}}}}},
+					}},
+				}},
+				base.Tree{Items: func() []base.TreeItem { return items }, DefaultExpanded: []string{"root"}, EstimatedSize: 24,
+					Style: core.Style{Width: core.Pt(200), Height: core.Pt(100)}},
+			}}
+		}, nsgotest.Environment(env))
+		field := app.Find("role:spinbutton Quantity")
+		if field.Props.Role != core.RoleSpinButton {
+			t.Fatalf("%v: role = %v, want RoleSpinButton", env.OS, field.Props.Role)
+		}
+		if v := field.Props.Value; !v.IsRange() || v.Min != 0 || v.Max != 20 || v.Now != 5 {
+			t.Fatalf("%v: value = %+v, want range [0,20] now 5", env.OS, v)
+		}
+		app.AccessibilityAction("role:spinbutton Quantity", core.ActionIncrement)
+		if got := app.Find("role:spinbutton Quantity").Props.Value.Now; got != 7 {
+			t.Errorf("%v: after increment now = %v, want 7", env.OS, got)
+		}
+		app.AccessibilityAction("role:spinbutton Quantity", core.ActionDecrement)
+		if got := app.Find("role:spinbutton Quantity").Props.Value.Now; got != 5 {
+			t.Errorf("%v: after decrement now = %v, want 5", env.OS, got)
+		}
+		if got := app.Find("id:default-h").Props.Level; got != 3 {
+			t.Errorf("%v: default AccordionHeader level = %d, want 3", env.OS, got)
+		}
+		if got := app.Find("id:level-2-h").Props.Level; got != 2 {
+			t.Errorf("%v: explicit AccordionHeader level = %d, want 2", env.OS, got)
+		}
+		if got := app.Find("role:treeitem Root").Props.Level; got != 1 {
+			t.Errorf("%v: root tree item level = %d, want 1", env.OS, got)
+		}
+		if got := app.Find("role:treeitem Leaf").Props.Level; got != 2 {
+			t.Errorf("%v: child tree item level = %d, want 2", env.OS, got)
+		}
+	}
+}

@@ -38,10 +38,12 @@ func For(cx *core.Scope) Messages {
 // its method, for the TSX declarations of the messages
 // (tsx.RegisterMessages).
 var Parameters = map[string][]string{
-	"AboutApp":  {"app"},
-	"HideApp":   {"app"},
-	"QuitApp":   {"app"},
-	"GuideDrag": {"app", "permission"},
+	"AboutApp":         {"app"},
+	"HideApp":          {"app"},
+	"QuitApp":          {"app"},
+	"GuideDrag":        {"app", "permission"},
+	"RoleHeadingLevel": {"level"},
+	"StateLevel":       {"level"},
 }
 
 // Translation is a language's messages another package supplies:
@@ -49,11 +51,13 @@ var Parameters = map[string][]string{
 // of the others; a key or a field left out leaves the message to the
 // catalog.
 type Translation struct {
-	Texts     map[string]string
-	AboutApp  func(app string) string
-	HideApp   func(app string) string
-	QuitApp   func(app string) string
-	GuideDrag func(app string, permission string) string
+	Texts            map[string]string
+	AboutApp         func(app string) string
+	HideApp          func(app string) string
+	QuitApp          func(app string) string
+	GuideDrag        func(app string, permission string) string
+	RoleHeadingLevel func(level string) string
+	StateLevel       func(level string) string
 }
 
 var supplied = map[string]Translation{}
@@ -114,6 +118,7 @@ const (
 	textRoleRow
 	textRoleColumnHeader
 	textRoleCell
+	textRoleSpinButton
 	textStatePartiallyChecked
 	textStateExpanded
 	textStateCollapsed
@@ -178,6 +183,7 @@ var keyOfText = [numTexts]string{
 	"roleRow",
 	"roleColumnHeader",
 	"roleCell",
+	"roleSpinButton",
 	"statePartiallyChecked",
 	"stateExpanded",
 	"stateCollapsed",
@@ -240,6 +246,7 @@ var textsEn = i18n.NewTexts(""+
 	"row"+
 	"column header"+
 	"cell"+
+	"spin button"+
 	"partially checked"+
 	"expanded"+
 	"collapsed"+
@@ -299,6 +306,7 @@ var textsEn = i18n.NewTexts(""+
 		3,
 		13,
 		4,
+		11,
 		17,
 		8,
 		9,
@@ -361,6 +369,7 @@ var textsZhHans = i18n.NewTexts(""+
 	"行"+
 	"列标题"+
 	"单元格"+
+	"微调按钮"+
 	"部分选中"+
 	"已展开"+
 	"已收起"+
@@ -420,6 +429,7 @@ var textsZhHans = i18n.NewTexts(""+
 		3,
 		9,
 		9,
+		12,
 		12,
 		9,
 		9,
@@ -491,6 +501,12 @@ func Supply(lang string, t Translation) {
 	}
 	if t.GuideDrag != nil {
 		s.GuideDrag = t.GuideDrag
+	}
+	if t.RoleHeadingLevel != nil {
+		s.RoleHeadingLevel = t.RoleHeadingLevel
+	}
+	if t.StateLevel != nil {
+		s.StateLevel = t.StateLevel
 	}
 	supplied[lang] = s
 	Catalog.Add(lang)
@@ -1054,6 +1070,63 @@ func RoleCell(cx *core.Scope) string { return For(cx).RoleCell() }
 
 // RoleCell is the package's RoleCell in the language of msgs.
 func (msgs Messages) RoleCell() string { return msgs.text(textRoleCell) }
+
+// RoleSpinButton says "spin button"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a numeric spin button as.
+func RoleSpinButton(cx *core.Scope) string { return For(cx).RoleSpinButton() }
+
+// RoleSpinButton is the package's RoleSpinButton in the language of msgs.
+func (msgs Messages) RoleSpinButton() string { return msgs.text(textRoleSpinButton) }
+
+// RoleHeadingLevel says "heading level {level}"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a heading with a level as; level is the heading's level, from 1.
+func RoleHeadingLevel(cx *core.Scope, level string) string { return For(cx).RoleHeadingLevel(level) }
+
+// RoleHeadingLevel is the package's RoleHeadingLevel in the language of msgs.
+func (msgs Messages) RoleHeadingLevel(level string) string {
+	if i18n.IsPseudo(msgs.lang) {
+		return i18n.Pseudo(msgs.lang, Messages{lang: Source, mark: true}.RoleHeadingLevel(level))
+	}
+	for lang := msgs.lang; ; lang = i18n.Parent(lang) {
+		if f := supplied[lang].RoleHeadingLevel; f != nil {
+			return f(level)
+		}
+		switch lang {
+		case "", "en":
+			return "heading level " + msgs.arg(level)
+		case "zh-Hans":
+			return level + " 级标题"
+		}
+	}
+}
+
+// StateLevel says "level {level}"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a nested item's level, such as a tree item's depth, as; level is the item's level, from 1.
+func StateLevel(cx *core.Scope, level string) string { return For(cx).StateLevel(level) }
+
+// StateLevel is the package's StateLevel in the language of msgs.
+func (msgs Messages) StateLevel(level string) string {
+	if i18n.IsPseudo(msgs.lang) {
+		return i18n.Pseudo(msgs.lang, Messages{lang: Source, mark: true}.StateLevel(level))
+	}
+	for lang := msgs.lang; ; lang = i18n.Parent(lang) {
+		if f := supplied[lang].StateLevel; f != nil {
+			return f(level)
+		}
+		switch lang {
+		case "", "en":
+			return "level " + msgs.arg(level)
+		case "zh-Hans":
+			return "第 " + level + " 级"
+		}
+	}
+}
 
 // StatePartiallyChecked says "partially checked"
 // in the language the app shows under cx.

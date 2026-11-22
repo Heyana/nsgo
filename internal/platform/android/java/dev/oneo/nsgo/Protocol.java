@@ -595,6 +595,9 @@ final class Protocol {
     static final int SPOKEN_EXPANDED = 14;
     static final int SPOKEN_COLLAPSED = 15;
     static final int SPOKEN_SEPARATOR = 16;
+    static final int SPOKEN_SPIN_BUTTON = 17;
+    static final int SPOKEN_HEADING_LEVEL = 18;
+    static final int SPOKEN_LEVEL = 19;
 
     // Keyboard types, as in core/mount.go.
     static final int KEYBOARD_EMAIL = 1;
