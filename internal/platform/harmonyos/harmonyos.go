@@ -199,6 +199,7 @@ type deviceData struct {
 	Dark                  bool
 	PixelRatio, FontScale float64
 	Language, OS          string
+	DeviceModel           string
 	// OSMajor and OSMinor are the system's version; Tablet, RTL and
 	// ScreenReader are the environment the app reads.
 	OSMajor, OSMinor          int
@@ -248,6 +249,7 @@ func (s *surface) environment() driver.Environment {
 	env.Lifecycle = driver.Lifecycle(d.Lifecycle)
 	env.OSVersion = driver.OSVersion{Major: d.OSMajor, Minor: d.OSMinor}
 	env.OpenedURL = d.OpenedURL
+	env.DeviceModel = d.DeviceModel
 	if d.Language != "" {
 		env.Locale = d.Language
 	} else {

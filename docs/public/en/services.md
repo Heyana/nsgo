@@ -270,7 +270,7 @@ cx.SetLocale("de")
 cx.OnQuit(func(ctx context.Context) { saveDraft(ctx) })
 ```
 
-`cx.Env().DeviceName()` is the name the user gave the device, and `cx.Env().DeviceModel()` its hardware model, such as `Mac15,7`, `iPhone15,2` or `Google Pixel 8`, so an app can tell two paired devices apart. macOS, Android, Windows and Linux give both; iOS gives the model, and the name only to an app with Apple's user-assigned device name entitlement; the web gives neither. Tests set them with `nsgotest.Environment`.
+`cx.Env().DeviceName()` is the name the user gave the device, and `cx.Env().DeviceModel()` its hardware model, such as `Mac15,7`, `iPhone15,2` or `Google Pixel 8`, so an app can tell two paired devices apart. macOS, Android, Windows and Linux give both; iOS gives the model, and the name only to an app with Apple's user-assigned device name entitlement. watchOS gives its hardware identifier, HarmonyOS its market name or product model, and mini programs the platform's brand and model; those targets leave the user-assigned name empty. The web gives neither. Tests set them with `nsgotest.Environment`.
 
 `cx.Env().ThermalState()` reports `core.ThermalNominal`, `ThermalFair`, `ThermalSerious` or `ThermalCritical` on Apple platforms and Android API 29 or later. `cx.Env().LowPowerMode()` reports `core.LowPowerOn` or `LowPowerOff` on Apple platforms, Android, Windows and Linux sessions with power-profiles-daemon. Where the system gives no value, the reads return `ThermalUnknown` and `LowPowerUnknown`. Each read follows changes independently, so an app can adjust its workload while it runs. In tests set `ThermalState` and `LowPowerMode` on `core.Environment` through `nsgotest.Environment` or `app.SetEnvironment`.
 

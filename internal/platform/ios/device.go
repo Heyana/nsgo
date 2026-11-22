@@ -3,9 +3,7 @@
 package ios
 
 import (
-	"os"
 	"sync"
-	"syscall"
 
 	"github.com/ebitengine/purego/objc"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
@@ -13,10 +11,7 @@ import (
 
 // hardwareModel is the hardware's model identifier, such as "iPhone15,2". A simulator's sysctl names the Mac's architecture, so there it is the simulated device's identifier from SIMULATOR_MODEL_IDENTIFIER; UIDevice's generic model, such as "iPhone", when neither says.
 var hardwareModel = sync.OnceValue(func() string {
-	if id := os.Getenv("SIMULATOR_MODEL_IDENTIFIER"); id != "" {
-		return id
-	}
-	if model, _ := syscall.Sysctl("hw.machine"); model != "" && model != "arm64" && model != "x86_64" {
+	if model := apple.ModelIdentifier(); model != "" {
 		return model
 	}
 	return apple.GoString(objc.ID(apple.Class("UIDevice")).Send(sel("currentDevice")).Send(sel("model")))

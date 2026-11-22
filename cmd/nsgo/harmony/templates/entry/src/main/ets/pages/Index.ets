@@ -134,6 +134,7 @@ interface Device {
   FontScale: number;
   Language: string;
   OS: string;
+  DeviceModel: string;
   OSMajor: number;
   OSMinor: number;
   Dark: boolean;
@@ -1842,6 +1843,7 @@ struct Index {
       Keyboard: this.keyboard,
       PixelRatio: d.densityPixels, FontScale: config?.fontSizeScale ?? 1,
       Language: locale, OS: 'ohos',
+      DeviceModel: deviceInfo.marketName || deviceInfo.productModel,
       OSMajor: deviceInfo.majorVersion, OSMinor: deviceInfo.seniorVersion,
       Dark: dark,
       Tablet: deviceInfo.deviceType === 'tablet',

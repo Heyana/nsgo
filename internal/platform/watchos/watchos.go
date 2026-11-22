@@ -286,6 +286,7 @@ func (s *surface) environment(scale float64, safe driver.Edges, flags uint32) dr
 	thermal, lowPower := apple.ProcessPower()
 	steps := int(flags>>8) - 128
 	env := driver.Environment{
+		DeviceModel:      apple.ModelIdentifier(),
 		SafeArea:         safe,
 		Dark:             flags&1 != 0,
 		ReduceMotion:     flags&2 != 0,

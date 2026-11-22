@@ -168,6 +168,12 @@ function device(api) {
     top = menu && menu.bottom ? menu.bottom + (menu.top - status) : status
   }
   const os = osOf(dev.platform, dev.system)
+  const brand = typeof dev.brand === 'string' ? dev.brand.trim() : ''
+  const model = typeof dev.model === 'string' ? dev.model.trim() : ''
+  // Some hosts already include the brand in their model. Keep one copy,
+  // and leave the model empty when the platform supplies only a brand.
+  const deviceModel = !model ? '' : !brand || model.toLowerCase().startsWith(brand.toLowerCase())
+    ? model : brand + ' ' + model
   return {
     width: win.windowWidth,
     height: win.windowHeight,
@@ -176,6 +182,7 @@ function device(api) {
     fontScale: base.fontSizeScaleFactor || 1,
     language: base.language || 'zh_CN',
     os,
+    deviceModel,
     osVersion: String(dev.system || '').replace(/^[^0-9]*/, ''),
     tablet: (dev.deviceOrientation && Math.min(win.screenWidth, win.screenHeight) >= 600) || false,
     safeTop: top,

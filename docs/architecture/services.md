@@ -418,7 +418,12 @@ Apple reads the default path with Network.framework. Windows reads Network List 
 | Android | `Settings.Global.DEVICE_NAME` | `Build.MANUFACTURER` and `Build.MODEL`, such as `Google Pixel 8`, the maker left out when the model starts with it |
 | Windows | The physical DNS host name, Settings' device name | The firmware's `SystemProductName` |
 | Linux | `/etc/machine-info`'s `PRETTY_HOSTNAME`, else the host name | DMI's `product_name`, else the device tree's `model` |
-| Web, watchOS, HarmonyOS and mini programs | Empty | Empty |
+| watchOS | Empty; attributing the user-assigned name remains open | `hw.machine`, such as `Watch8,3`, or the simulator's `SIMULATOR_MODEL_IDENTIFIER` |
+| HarmonyOS | Empty | `deviceInfo.marketName`, else `productModel` |
+| Mini programs | Empty | The platform's brand and model from `getDeviceInfo`, else `getSystemInfoSync`, with an existing brand prefix kept once |
+| Web | Empty | Empty |
+
+watchOS 9 and later return a generic device name without Apple's user-assigned device name entitlement. It can differ from `WKInterfaceDevice.model`, so comparing those strings cannot attribute the name; NSGo keeps it empty until that attribution is implemented. The identity fixture passed on an unentitled physical iPhone XR (iOS 18.7.11, `iPhone11,8`) and in the watchOS 27 simulator (`Watch8,3`); entitled Apple names and physical HarmonyOS and mini program readings remain unverified ([roadmap](../roadmap.md#from-nsgos-issues)).
 
 On Windows and Linux, a firmware placeholder such as `To Be Filled By O.E.M.` or `System Product Name` leaves the model empty. Mapping Apple's identifiers to marketing names, such as `iPhone15,2` to iPhone 14 Pro, would need a table kept current with every release, so the identifier stays as the platform gives it.
 

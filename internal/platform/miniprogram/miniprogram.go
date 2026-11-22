@@ -140,6 +140,10 @@ func (s *surface) environment() driver.Environment {
 	env.Locale = strings.ReplaceAll(d.Get("language").String(), "_", "-")
 	deviceOS(&env, d.Get("os").String())
 	env.OSVersion = osVersion(d.Get("osVersion").String())
+	env.DeviceModel = ""
+	if model := d.Get("deviceModel"); model.Type() == js.TypeString {
+		env.DeviceModel = model.String()
+	}
 	env.Idiom = driver.IdiomPhone
 	if d.Get("tablet").Truthy() {
 		env.Idiom = driver.IdiomTablet
