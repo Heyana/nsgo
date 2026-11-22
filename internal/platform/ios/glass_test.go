@@ -162,8 +162,8 @@ func TestInteractiveLiquidGlassRoutesTouches(t *testing.T) {
 	app.Settle()
 	onMainSync(func() {
 		glassView := findView("glass")
-		if glassView.backdrop != 0 || glassView.glass || glassView.glassInteractive {
-			failMsg = fmt.Sprintf("removing glass left backdrop=%v glass=%v interactive=%v", glassView.backdrop, glassView.glass, glassView.glassInteractive)
+		if glassView.backdrop != 0 || glassView.backdropKind != backdropNone || glassView.glassInteractive {
+			failMsg = fmt.Sprintf("removing glass left backdrop=%v kind=%v interactive=%v", glassView.backdrop, glassView.backdropKind, glassView.glassInteractive)
 		}
 	})
 	if failMsg != "" {
