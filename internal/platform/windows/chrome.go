@@ -296,6 +296,9 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		postMessageW.Call(w.hwnd, wmClose, 0, 0)
 	case driver.WindowShow:
 		w.visible, w.focused = true, false
+		if !w.parentVisible() {
+			break
+		}
 		if w.kind == driver.SurfacePanel {
 			w.anchor, w.anchorBounds, w.placement = c.Anchor, c.AnchorBounds, c.Placement
 			w.placePanel(w.anchor, w.anchorBounds, w.placement)
@@ -315,6 +318,9 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		// Windows has no public API that shows a window on every virtual desktop: IVirtualDesktopManager only moves one to another, so it stays on its own, and the environment leaves CanSetWindowWorkspaces false.
 	case driver.WindowOrderFront:
 		w.visible, w.focused = true, false
+		if !w.parentVisible() {
+			break
+		}
 		if w.kind == driver.SurfacePanel {
 			w.placePanel(w.anchor, w.anchorBounds, w.placement)
 		}

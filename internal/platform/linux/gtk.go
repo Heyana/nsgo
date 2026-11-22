@@ -134,6 +134,7 @@ var (
 	gtkWindowUnmaximize                    func(uintptr)
 	gtkWindowFullscreen                    func(uintptr)
 	gtkWindowUnfullscreen                  func(uintptr)
+	gtkWindowSetTransientFor               func(uintptr, uintptr)
 	gtkWindowIsFullscreen                  func(uintptr) int32
 	gtkWindowIsMaximized                   func(uintptr) int32
 	gtkWindowIsActive                      func(uintptr) int32
@@ -509,6 +510,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWindowUnmaximize, gtkLib, "gtk_window_unmaximize")
 	purego.RegisterLibFunc(&gtkWindowFullscreen, gtkLib, "gtk_window_fullscreen")
 	purego.RegisterLibFunc(&gtkWindowUnfullscreen, gtkLib, "gtk_window_unfullscreen")
+	purego.RegisterLibFunc(&gtkWindowSetTransientFor, gtkLib, "gtk_window_set_transient_for")
 	purego.RegisterLibFunc(&gtkWindowIsFullscreen, gtkLib, "gtk_window_is_fullscreen")
 	purego.RegisterLibFunc(&gtkWindowIsMaximized, gtkLib, "gtk_window_is_maximized")
 	purego.RegisterLibFunc(&gtkWindowIsActive, gtkLib, "gtk_window_is_active")

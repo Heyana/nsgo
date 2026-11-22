@@ -369,6 +369,7 @@ func mappedCallback(widget, data uintptr) {
 	if !w.canHoldPointer() {
 		w.releasePointer(true)
 	}
+	w.syncOwnedVisibility()
 	w.updateEnvironment()
 	if !w.primary {
 		updateAppSurface()
@@ -383,6 +384,7 @@ func activityCallback(object, pspec, data uintptr) {
 			if lockedPointer.owner == w && !w.canHoldPointer() {
 				w.releasePointer(true)
 			}
+			w.syncOwnedVisibility()
 			active := w.win != 0 && gtkWindowIsActive(w.win) != 0
 			if active {
 				w.focused = true

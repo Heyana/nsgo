@@ -45,8 +45,9 @@ type WindowOptions struct {
 	// open: OpenWindow shows and focuses it instead of opening another.
 	Key string
 	// Parent is an open window of the same app. Closing it closes this
-	// window too. On macOS this window opens centered over it when Frame
-	// is unset, stays above it and follows its visibility and full screen.
+	// window too. On desktops it stays above its parent and follows its
+	// visibility. On macOS it also centers over it when Frame is unset
+	// and follows its full screen.
 	Parent *Window
 	// Hidden opens the window without showing it.
 	Hidden bool

@@ -88,7 +88,7 @@ jobs:
       - name: Install native test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin avahi-daemon dbus
+          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin avahi-daemon dbus openbox
       - name: Allow WebKit's sandbox on the runner
         run: |
           # Ubuntu restricts unprivileged user namespaces. Grant bubblewrap that permission so WebKit can keep its sandbox enabled.
@@ -176,6 +176,20 @@ jobs:
         run: xvfb-run -a go tool nsgo test -target linux -fps -run '^TestPerfCanvasSprites' ./examples/gallery
       - name: Test browser empty web sources
         run: go tool nsgo test -target web -run '^TestEmptyWebSourceIsOpaque$' ./internal/platform/web
+      - name: Test Linux owned-window visibility and minimization
+        env:
+          NSGO_OWNED_WINDOWS_REQUIRE_WM: '1'
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+        run: |
+          xvfb-run -a sh -eu <<'SCRIPT'
+          openbox > "$RUNNER_TEMP/owned-window-manager.log" 2>&1 &
+          wm_pid=$!
+          trap 'kill "$wm_pid" 2>/dev/null || true' EXIT
+          sleep 1
+          kill -0 "$wm_pid"
+          go tool nsgo test -run '^TestOwnedWindowsFollow' ./internal/platform/linux -- -count=1
+          SCRIPT
       - name: Test
         env:
           GDK_BACKEND: x11
@@ -453,6 +467,8 @@ jobs:
         run: go tool nsgo test -run '^TestWebView2WindowRequests$' ./internal/platform/windows
       - name: Test pixel frames and animated images
         run: go tool nsgo test -run '^(TestPixelFramesShowEachFrame|TestAnimatedGIFAndSVGImagesDraw)$' ./internal/platform/windows
+      - name: Test Windows owned-window visibility and minimization
+        run: go tool nsgo test -run '^TestOwnedWindowsFollowVisibility$' ./internal/platform/windows -- -count=1
       - name: Test Windows last-window close and session end
         run: go tool nsgo test -run '^TestWindows(LastWindowAsksBeforeQuitting|SessionEndForcesQuit)$' ./internal/platform/windows
       - name: Test Windows audio

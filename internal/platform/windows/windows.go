@@ -356,12 +356,14 @@ func (v *view) detach() {
 }
 
 type window struct {
-	testID   uint32 // the opened test surface, 0 for a regular window
-	batch    uint64 // batches applied
-	hwnd     uintptr
-	title    string
-	saves    driver.SavePreflights
-	devFrame devWindowFrame
+	testID       uint32  // the opened test surface, 0 for a regular window
+	surfaceID    uint32  // the engine surface, independent of the test host
+	parentWindow *window // WindowOptions.Parent, separate from the app service host
+	batch        uint64  // batches applied
+	hwnd         uintptr
+	title        string
+	saves        driver.SavePreflights
+	devFrame     devWindowFrame
 
 	powerNotification uintptr
 	// primary is the backend's own surface. Opened surfaces share its engine
@@ -971,6 +973,8 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 		opts.Hidden = true
 	}
 	child := newWindow(opts)
+	child.surfaceID = cfg.ID
+	child.parentWindow = w.surfaceWindow(cfg.Parent)
 	child.opts, child.hostWindow, child.kind, child.hideOnBlur, child.noActivate = opts, w, cfg.Kind, cfg.HideOnBlur, cfg.NoActivate
 	child.visible = !opts.Hidden
 	child.chrome.constraints = opts.Constraints
@@ -1009,7 +1013,7 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	hwnd, _, _ := createWindowExW.Call(ex, uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(wide(opts.Title))), style,
 		cwUseDefault, cwUseDefault, uintptr(frame.Right-frame.Left), uintptr(frame.Bottom-frame.Top),
-		0, 0, instance, 0)
+		child.parentHandle(), 0, instance, 0)
 	if hwnd == 0 {
 		return
 	}
@@ -1063,7 +1067,7 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	child.engine.Resize(driver.Size{Width: size.X, Height: size.Y}, driver.Geometry{})
 	child.engine.SetEnvironment(child.env)
 	child.reportFrameWindow()
-	if !opts.Hidden {
+	if !opts.Hidden && child.parentVisible() {
 		if cfg.Kind == driver.SurfacePanel {
 			child.placePanel(0, driver.Bounds{}, driver.WindowPlaceDefault)
 			child.orderFront()
@@ -2473,9 +2477,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 	case wmShowWindow:
 		if w.engine != nil {
-			w.post(w.updateEnvironment) // once the window shows or hides
+			w.post(func() {
+				w.syncOwnedVisibility()
+				w.updateEnvironment()
+			}) // once the window shows or hides
 		}
 	case wmSize:
+		w.post(w.syncOwnedVisibility)
 		if wParam != sizeMinimized {
 			width, height := int32(lParam&0xffff), int32(lParam>>16&0xffff)
 			size := w.point(width, height)

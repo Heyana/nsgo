@@ -98,12 +98,14 @@ type testOpen struct {
 // window is one GTK window and the tree it shows. The engine's goroutine
 // reaches its main-thread half only through Mount and post.
 type window struct {
-	testID      uint32  // the opened test surface, 0 for a regular window
-	batch       uint64  // batches applied
-	win         uintptr // GtkWindow, 0 for an embedded surface
-	surface     uintptr // the NsgoView holding the root view
-	saves       driver.SavePreflights
-	saveDialogs map[uintptr]*saveDialogPreflight
+	surfaceID    uint32  // the engine surface, independent of the test host
+	parentWindow *window // WindowOptions.Parent, separate from the app service opener
+	testID       uint32  // the opened test surface, 0 for a regular window
+	batch        uint64  // batches applied
+	win          uintptr // GtkWindow, 0 for an embedded surface
+	surface      uintptr // the NsgoView holding the root view
+	saves        driver.SavePreflights
+	saveDialogs  map[uintptr]*saveDialogPreflight
 	// primary is the backend's own surface. Opened surfaces share the GTK main loop, but closing one must not end the app.
 	primary bool
 	// opener is the app's own window for a surface the app opened, which goes when that window stops (stop).
@@ -500,6 +502,8 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 		opts.Hidden = true
 	}
 	child := newWindow(opts, false)
+	child.surfaceID = cfg.ID
+	child.parentWindow = w.surfaceWindow(cfg.Parent)
 	child.opener = w
 	if w.opener != nil {
 		child.opener = w.opener
@@ -508,6 +512,9 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	// Applied as the window maps (windowMappedCallback).
 	child.workspaces = cfg.Workspaces
 	child.createWindow(opts)
+	if child.parentWindow != nil {
+		gtkWindowSetTransientFor(child.win, child.parentWindow.win)
+	}
 	child.applyLook(opts)
 	child.setupSettings()
 	child.visible = !opts.Hidden
@@ -539,7 +546,7 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	child.engine.Resize(size, driver.Geometry{})
 	child.engine.SetEnvironment(child.env)
 	child.reportFrameWindow(child.env)
-	if !opts.Hidden {
+	if !opts.Hidden && child.parentVisible() {
 		gtkWindowPresent(child.win)
 	}
 }
@@ -1552,6 +1559,9 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 			break
 		}
 		w.visible = true
+		if !w.parentVisible() {
+			break
+		}
 		gtkWidgetSetVisible(w.win, 1)
 		gtkWindowPresent(w.win)
 	case driver.WindowHide:
@@ -1566,7 +1576,9 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 			break
 		}
 		w.visible = true
-		gtkWindowPresent(w.win)
+		if w.parentVisible() {
+			gtkWindowPresent(w.win)
+		}
 	case driver.WindowFitSize:
 		if w.kind == driver.SurfacePanel {
 			w.fitPanel(c.Frame.Width, c.Frame.Height)
