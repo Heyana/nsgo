@@ -79,7 +79,7 @@ type Options struct {
 	Material driver.WindowMaterial
 	// Constraints limit the window (nsgo.WindowConstraints).
 	Constraints driver.WindowConstraints
-	// Transparent opens the window without a background or frame, NoShadow without DWM's shadow, which only a transparent window lacks, and SkipTaskbar off the taskbar (look.go).
+	// Transparent opens the window without a background or frame, NoShadow without DWM's shadow where its title bar is hidden (a transparent one has none), and SkipTaskbar off the taskbar (look.go).
 	Transparent, NoShadow, SkipTaskbar bool
 	// Fonts are font files under the app's resources, registered before
 	// the first view.

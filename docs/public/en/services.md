@@ -372,6 +372,8 @@ Desktop resizes on macOS, Windows and Linux wait up to 16 ms for the new layout 
 
 Set `desktop.WindowOptions.Parent` to an open window of the app to close both when the parent closes. On desktops the child stays above its parent and follows it when it hides or minimizes; a child explicitly hidden stays hidden when the parent returns. On macOS it also centers over its parent when `Frame` is unset and follows it into full screen.
 
+`WindowOptions.NoShadow` and `desktop.SetWindowShadow(cx, false)` also take the shadow from a Windows window whose title bar is hidden, which draws its own chrome; a window with the system's title bar keeps its frame and shadow, as does a Linux window its window manager decorates, where `NoShadow` only clears the shadow of GTK's own decorations.
+
 `desktop.SetWindowPointerEvents` lets the pointer through a window to the windows below it, of any app: `WindowPointerNone` everywhere, as a heads-up display does, and `WindowPointerPainted` wherever no view draws something or hears the pointer, as around a desktop pet that still takes presses, drags and right clicks on itself; the title bar the system draws counts as nothing drawn. `WindowOptions.PointerEvents` and `PanelOptions.PointerEvents` open a window so. A `Desktop.WindowDrag` region still drags inside a pressable ancestor; a nearer pressable or editing control keeps its own input instead of dragging the window. A window that takes no pointer hears no presses, so the app gives it back from a shortcut, a tray icon or another window. Code an `Access` holds needs `core.AccessOverlay`.
 
 ```go

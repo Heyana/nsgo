@@ -62,14 +62,19 @@ const (
 	wmNCLButtonDblClk = 0x00A3
 	wmNCMouseLeave    = 0x02A2
 
-	htClient    = 1
-	htCaption   = 2
-	htMinButton = 8
-	htMaxButton = 9
-	htTop       = 12
-	htTopLeft   = 13
-	htTopRight  = 14
-	htClose     = 20
+	htClient      = 1
+	htCaption     = 2
+	htMinButton   = 8
+	htMaxButton   = 9
+	htTop         = 12
+	htTopLeft     = 13
+	htLeft        = 10
+	htRight       = 11
+	htTopRight    = 14
+	htBottom      = 15
+	htBottomLeft  = 16
+	htBottomRight = 17
+	htClose       = 20
 
 	smCyFrame                        = 33
 	smCxPaddedBorder                 = 92
@@ -264,6 +269,8 @@ func (w *window) topBorder() int32 {
 
 // frameChanged has the window compute its client area again.
 func (w *window) frameChanged() {
+	// Whether the window is shadowless follows its title bar, full screen and transparency.
+	w.applyBare()
 	setWindowPos.Call(w.hwnd, 0, 0, 0, 0, 0, swpFrameChanged|swpNoMove|swpNoSize|swpNoZOrder|swpNoActivate)
 }
 
@@ -371,6 +378,10 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 	case driver.WindowSetSkipTaskbar:
 		if w.kind == driver.SurfaceWindow && !(w.primary && w.opts.Hidden) {
 			w.setSkipTaskbar(c.On)
+		}
+	case driver.WindowSetShadow:
+		if !w.embedded && w.kind == driver.SurfaceWindow && !(w.primary && w.opts.Hidden) {
+			w.setShadow(c.On)
 		}
 	case driver.WindowFitSize:
 		if w.kind == driver.SurfacePanel {
@@ -555,6 +566,10 @@ func (w *window) ncCalcSize(wParam, lParam uintptr) (uintptr, bool) {
 	if wParam == 0 || !w.hidden() {
 		return 0, false
 	}
+	if w.shadowless() && !w.zoomed() {
+		// The proposed window rectangle is the client area: no non-client frame for DefWindowProc to paint once DWM no longer does.
+		return 0, true
+	}
 	params := *(**ncCalcSizeParams)(unsafe.Pointer(&lParam)) // the message's, valid while it is handled
 	top := params.Rects[0].Top
 	defWindowProcW.Call(w.hwnd, wmNCCalcSize, wParam, lParam)
@@ -617,7 +632,9 @@ func (w *window) ncHitTest(lParam uintptr) uintptr {
 	screenToClient.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))
 	p := w.point(at.X, at.Y)
 	if w.hidden() {
-		if border := w.frameThickness(); !w.zoomed() && !w.chrome.constraints.NoResize && at.Y < border {
+		border := w.frameThickness()
+		resizable := !w.zoomed() && !w.chrome.constraints.NoResize
+		if resizable && at.Y < border {
 			var client rect
 			getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&client)))
 			switch {
@@ -628,6 +645,14 @@ func (w *window) ncHitTest(lParam uintptr) uintptr {
 			}
 			return htTop
 		}
+		// A shadowless window's client covers its side and bottom resize borders too.
+		if resizable && w.shadowless() {
+			var client rect
+			getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&client)))
+			if code := edgeHit(at, client, border); code != 0 {
+				return code
+			}
+		}
 		if code := w.captionAt(p); code != 0 {
 			return uintptr(code)
 		}
@@ -636,6 +661,24 @@ func (w *window) ncHitTest(lParam uintptr) uintptr {
 		return htCaption
 	}
 	return htClient
+}
+
+// edgeHit returns the side or bottom resize edge a client point at is within border pixels of, in a client area of size client, or 0.
+func edgeHit(at point, client rect, border int32) uintptr {
+	left, right, bottom := at.X < border, at.X >= client.Right-border, at.Y >= client.Bottom-border
+	switch {
+	case bottom && at.X < border*2:
+		return htBottomLeft
+	case bottom && at.X >= client.Right-border*2:
+		return htBottomRight
+	case bottom:
+		return htBottom
+	case left:
+		return htLeft
+	case right:
+		return htRight
+	}
+	return 0
 }
 
 func isButton(code uint32) bool { return code == htMinButton || code == htMaxButton || code == htClose }

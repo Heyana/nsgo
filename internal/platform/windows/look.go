@@ -4,7 +4,7 @@ package windows
 
 import "unsafe"
 
-// A transparent window is a popup without a frame, as NSH's is: a system frame around see-through content would draw a box nothing is in, and its system menu stays for the taskbar's menu. It draws through DirectComposition with alpha, as a window with a material does (material.go), clearing to nothing where the app draws nothing, and DWM draws it bare: no shadow and square corners. Only a window opened transparent has the composition, which WS_EX_NOREDIRECTIONBITMAP holds from the window's creation, so only such a window changes between transparent and framed later, clearing to white while framed, and only its environment reports CanMakeWindowsTransparent. A framed window keeps the shadow its frame casts. A transparent panel (SurfaceConfig.Transparent) opens the same way, a popup whose content draws its own corners and shadow, and stays so; without DirectComposition it stays opaque, as its environment's WindowTransparent says.
+// A transparent window is a popup without a frame, as NSH's is: a system frame around see-through content would draw a box nothing is in, and its system menu stays for the taskbar's menu. It draws through DirectComposition with alpha, as a window with a material does (material.go), clearing to nothing where the app draws nothing, and DWM draws it bare: no shadow and square corners. Only a window opened transparent has the composition, which WS_EX_NOREDIRECTIONBITMAP holds from the window's creation, so only such a window changes between transparent and framed later, clearing to white while framed, and only its environment reports CanMakeWindowsTransparent. A window with the system's title bar keeps its frame and the shadow DWM casts with it, NoShadow or not: DWM draws that shadow with the frame's non-client rendering, which has no switch of its own, and turning the rendering off would trade the Windows 11 frame for the classic one DefWindowProc draws. A window with a hidden title bar draws its own chrome, so with NoShadow it is shadowless: it has no non-client area at all, its client covering its whole frame with the resize edges hit-tested in it (chrome.go), and DWM's non-client rendering is off. A transparent panel (SurfaceConfig.Transparent) opens the same way, a popup whose content draws its own corners and shadow, and stays so; without DirectComposition it stays opaque, as its environment's WindowTransparent says.
 //
 // A window off the taskbar is a tool window, which neither the taskbar nor Alt+Tab lists; a framed one then shows a tool window's smaller caption. The taskbar adds or deletes the button of a window that shows as the style changes (ITaskbarList).
 
@@ -44,15 +44,32 @@ func (w *window) frameStyle(current uintptr) uintptr {
 	return style
 }
 
-// applyBare has DWM draw a transparent window without a shadow or rounded corners, or a framed one as its style says.
+// shadowless reports whether the window draws without DWM's shadow though it is not transparent: NoShadow on a window whose title bar is hidden, out of full screen.
+func (w *window) shadowless() bool {
+	return w.opts.NoShadow && w.hidden()
+}
+
+// applyBare has DWM draw a transparent window without a shadow or rounded corners, a shadowless one without its non-client rendering, or a framed one as its style says.
 func (w *window) applyBare() {
 	policy, corners := int32(dwmNCRPUseWindowStyle), int32(dwmCornerDefault)
-	if w.transparent {
+	switch {
+	case w.transparent:
 		policy, corners = dwmNCRPDisabled, dwmCornerDoNotRound
+	case w.shadowless():
+		policy = dwmNCRPDisabled
 	}
 	// Each fails quietly where the system lacks it.
 	dwmSetWindowAttribute.Call(w.hwnd, dwmwaNCRenderingPolicy, uintptr(unsafe.Pointer(&policy)), 4)
 	dwmSetWindowAttribute.Call(w.hwnd, dwmwaWindowCornerPreference, uintptr(unsafe.Pointer(&corners)), 4)
+}
+
+// setShadow keeps DWM's shadow around the window, or takes it away where the window draws its own chrome (shadowless), which it does as its title bar hides too.
+func (w *window) setShadow(on bool) {
+	if w.opts.NoShadow == !on {
+		return
+	}
+	w.opts.NoShadow = !on
+	w.frameChanged()
 }
 
 // setTransparent changes a window opened transparent between transparent and framed, keeping its content's size and place; others stay as they are.

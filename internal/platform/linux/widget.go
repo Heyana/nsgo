@@ -454,8 +454,7 @@ func allocateNative(widget uintptr, b driver.Bounds) {
 	gtkWidgetAllocate(widget, width, height, -1, t)
 }
 
-// snapshotSurface paints the root's background over the surface, then
-// the root view.
+// snapshotSurface paints an opaque surface's background, then the root view.
 func (w *window) snapshotSurface(snap uintptr) {
 	// The frame's layout is done: the canvases it showed draw in it.
 	// Looking after each view's allocation, every hidden canvas's way up
@@ -465,14 +464,16 @@ func (w *window) snapshotSurface(snap uintptr) {
 		w.revealCanvases()
 	}
 	w.updateInputRegion()
-	bg := driver.RGB(0xffffff)
 	root := w.view(w.root)
-	if root != nil {
-		bg = background(root)
-	}
 	rect := grapheneRect{0, 0, float32(gtkWidgetGetWidth(w.surface)), float32(gtkWidgetGetHeight(w.surface))}
-	c := rgba(bg)
-	gtkSnapshotAppendColor(snap, &c, &rect)
+	if !w.transparent || !displayComposites() {
+		bg := driver.RGB(0xffffff)
+		if root != nil {
+			bg = background(root)
+		}
+		c := rgba(bg)
+		gtkSnapshotAppendColor(snap, &c, &rect)
+	}
 	if root != nil && root.widget != 0 && gtkWidgetGetParent(root.widget) == w.surface {
 		gtkWidgetSnapshotChild(w.surface, root.widget, snap)
 	}
