@@ -425,6 +425,63 @@ func TestReadEnvironmentSetsCanRequestReview(t *testing.T) {
 	}
 }
 
+// TestReadEnvironmentSeparatesSpeechFromAudio: NsgoView writes text to speech as bit 1 of the second capability byte and audio playback as capAudio in the third, so a device without a speech engine still plays sounds, a speaking one does not claim audio by itself, the online bit 16 of the second byte says nothing of audio, and a runtime built before the third byte reads as having no audio.
+func TestReadEnvironmentSeparatesSpeechFromAudio(t *testing.T) {
+	for _, c := range []struct {
+		more         byte
+		third        []byte
+		speak, audio bool
+	}{
+		{0, nil, false, false},
+		{1, nil, true, false},
+		{8 | 16, []byte{capExtendedMessages}, false, false},
+		{0, []byte{capAudio}, false, true},
+		{1, []byte{capExtendedMessages | capAudio}, true, true},
+	} {
+		var w writer
+		w.floats(0, 0, 0, 0, 0, 1, 2.5)
+		w.byte(0) // flags
+		w.byte(c.more)
+		w.byte(byte(driver.IdiomPhone))
+		w.str("en-US")
+		w.str("Pixel")
+		w.str("Google Pixel 9")
+		w.floats(56, 96) // HeaderHeight, LargeHeaderHeight
+		w.u32(35)        // API level
+		w.byte(0)        // thermal state
+		w.byte(0)        // low-power mode
+		if c.third != nil {
+			w.byte(1)
+			w.str("h23")
+			w.str("metric")
+			w.str("celsius")
+			w.str("US")
+			w.buf = append(w.buf, c.third...)
+		}
+
+		env := readEnvironment(&reader{w.buf})
+		if env.Speak != c.speak || env.Audio != c.audio || env.AudioPlaybackControls != c.audio {
+			t.Errorf("readEnvironment with capability bytes %d and %v: Speak %v, Audio %v, AudioPlaybackControls %v; want %v, %v, %v", c.more, c.third, env.Speak, env.Audio, env.AudioPlaybackControls, c.speak, c.audio, c.audio)
+		}
+	}
+
+	testhost.RequireSource(t)
+	java, err := os.ReadFile(filepath.Join("java", "dev", "oneo", "nsgo", "Protocol.java"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := os.ReadFile(filepath.Join("java", "dev", "oneo", "nsgo", "NsgoView.java"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := regexp.MustCompile(`static final int CAP_AUDIO = (\d+);`).FindSubmatch(java); m == nil || string(m[1]) != strconv.Itoa(capAudio) {
+		t.Errorf("Protocol.java's CAP_AUDIO is %q, android.go's capAudio %d", m, capAudio)
+	}
+	if m := regexp.MustCompile(`int third = ([^;]*);`).FindSubmatch(view); m == nil || !strings.Contains(string(m[1]), "Protocol.CAP_AUDIO") {
+		t.Errorf("NsgoView.environment's third capability byte is %q, without Protocol.CAP_AUDIO", m)
+	}
+}
+
 // TestReadEnvironmentMapsPowerState: NsgoView writes PowerManager's thermal status plus one, 0 before API 29, and the power-save mode as 0 unknown, 1 off or 2 on.
 func TestReadEnvironmentMapsPowerState(t *testing.T) {
 	for _, c := range []struct {
