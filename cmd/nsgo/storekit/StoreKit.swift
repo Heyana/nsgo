@@ -228,10 +228,10 @@ private func handle(_ r: Request) async throws -> Answer {
         }
         let status = try await Transaction.beginRefundRequest(for: id, in: scene)
 #elseif os(macOS)
-        guard let controller = presentationObject(r.presentation) as? NSViewController else {
-            throw Failure(code: "failed", message: "no active window controller")
+        guard let window = presentationObject(r.presentation) as? NSWindow else {
+            throw Failure(code: "failed", message: "no active window")
         }
-        let status = try await Transaction.beginRefundRequest(for: id, in: controller)
+        let status = try await beginRefundRequest(for: id, from: window)
 #else
         throw Failure(code: "failed", message: "refund requests are unavailable on tvOS")
 #endif
@@ -246,6 +246,25 @@ private func handle(_ r: Request) async throws -> Answer {
         throw Failure(code: "failed", message: "no command \(r.command)")
     }
 }
+
+#if os(macOS)
+/// beginRefundRequest presents StoreKit's refund sheet on window. StoreKit takes a view controller on macOS, and NSGo's windows have none: without a content view controller, a transient one whose empty view sits in the window's content view anchors the sheet for as long as the request runs, leaving the window's own views and responder chain as they are.
+@MainActor
+private func beginRefundRequest(for id: UInt64, from window: NSWindow) async throws -> Transaction.RefundRequestStatus {
+    if let controller = window.contentViewController {
+        return try await Transaction.beginRefundRequest(for: id, in: controller)
+    }
+    guard let content = window.contentView else {
+        throw Failure(code: "failed", message: "no window content")
+    }
+    let anchor = NSView(frame: .zero)
+    let controller = NSViewController()
+    controller.view = anchor
+    content.addSubview(anchor)
+    defer { anchor.removeFromSuperview() }
+    return try await Transaction.beginRefundRequest(for: id, in: controller)
+}
+#endif
 
 /// send answers call id with a.
 private func send(_ id: UInt32, _ a: Answer) {

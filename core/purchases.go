@@ -213,9 +213,7 @@ func (cx *Scope) SyncPurchases(done func(error)) {
 	})
 }
 
-// ManageSubscriptions opens the store's subscription-management UI. It is
-// available where the app's purchases library is available and must be called
-// from a user action. The callback is called once with any platform error.
+// ManageSubscriptions opens the store's subscription-management UI. It is available where the app's purchases library is available and must be called from a user action. The callback is called once with any platform error.
 func (cx *Scope) ManageSubscriptions(done func(error)) {
 	answer := func(err error) {
 		if done != nil {
@@ -233,9 +231,7 @@ func (cx *Scope) ManageSubscriptions(done func(error)) {
 	})
 }
 
-// RequestRefund asks the store to begin a refund request for transactionID.
-// The callback receives RefundSuccess when the request was submitted or
-// RefundCancelled when the user closes the store UI.
+// RequestRefund asks the store to begin a refund request for transactionID. The callback receives RefundSuccess when the request was submitted or RefundCancelled when the user closes the store UI.
 func (cx *Scope) RequestRefund(transactionID string, done func(RefundStatus, error)) {
 	answer := func(status RefundStatus, err error) {
 		if done != nil {
