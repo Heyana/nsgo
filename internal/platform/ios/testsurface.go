@@ -857,6 +857,31 @@ func hidKey(w objc.ID, usage uint32, isDown bool) {
 	time.Sleep(10 * time.Millisecond)
 }
 
+// softwareKeyBinding gives keymap bindings the same first chance as a real key before the test host directly asks UITextInput to edit. It leaves unbound editing keys to UIKit.
+func (t *testSurface) softwareKeyBinding(name string, flags uint) bool {
+	if t.s == nil || t.s.engine == nil || len(t.s.keys) == 0 {
+		return false
+	}
+	id, ok := driver.FindKey(t.s.keys, apple.KeyNames(name, flags), t.s.focusKeyUse(), false)
+	if !ok {
+		return false
+	}
+	var editor objc.ID
+	onMainSync(func() {
+		for _, v := range t.s.views {
+			if v != nil && v.input != nil && v.input.focused {
+				editor = v.input.field
+				break
+			}
+		}
+		t.s.engine.Dispatch(driver.Event{Kind: driver.EventKey, Count: id})
+		if editor != 0 && !objc.Send[bool](editor, sel("isFirstResponder")) {
+			editor.Send(selBecomeFirst)
+		}
+	})
+	return true
+}
+
 // Key presses a hardware keyboard's keys, as UIKit takes a real one's:
 // the modifiers first. The edit keys a field takes from the software
 // keyboard go through its input manager on simulators, and public UITextInput
@@ -872,6 +897,10 @@ func (t *testSurface) Key(key string) error {
 	name := strings.ToLower(key)
 	switch name {
 	case "mod+a":
+		_, _, flags, _ := parseDeviceKey(name)
+		if t.softwareKeyBinding("a", flags) {
+			return nil
+		}
 		onMainSync(func() {
 			if f := t.focusedEditor(w); f != 0 {
 				f.Send(sel("selectAll:"), objc.ID(0))
@@ -879,6 +908,10 @@ func (t *testSurface) Key(key string) error {
 		})
 		return nil
 	case "backspace":
+		_, _, flags, _ := parseDeviceKey(name)
+		if t.softwareKeyBinding("backspace", flags) {
+			return nil
+		}
 		var done bool
 		onMainSync(func() {
 			if kb := keyboardImpl(); kb != 0 && w.Send(sel("firstResponder")) != 0 {
@@ -930,6 +963,10 @@ func (t *testSurface) keyDevice(w objc.ID, key string) error {
 	name := strings.ToLower(key)
 	switch name {
 	case "mod+a":
+		_, _, flags, _ := parseDeviceKey(name)
+		if t.softwareKeyBinding("a", flags) {
+			return nil
+		}
 		onMainSync(func() {
 			if f := t.focusedEditor(w); f != 0 && objc.Send[bool](f, sel("respondsToSelector:"), sel("selectAll:")) {
 				f.Send(sel("selectAll:"), objc.ID(0))
@@ -937,6 +974,10 @@ func (t *testSurface) keyDevice(w objc.ID, key string) error {
 		})
 		return nil
 	case "backspace":
+		_, _, flags, _ := parseDeviceKey(name)
+		if t.softwareKeyBinding("backspace", flags) {
+			return nil
+		}
 		var done bool
 		onMainSync(func() {
 			f := t.focusedEditor(w)

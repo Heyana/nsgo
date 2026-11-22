@@ -4522,6 +4522,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         return name == null ? "" : name;
     }
 
+    /** Lets the Android test agent offer a Control shortcut to the mounted keymap before native editor shortcuts. */
+    boolean keyBindingShortcut(KeyEvent e) {
+        return keyBinding(e);
+    }
+
     /** The one matcher for hardware keys and Return delivered through an IME. */
     private boolean keyBinding(KeyEvent e) {
         int code = e.getKeyCode();

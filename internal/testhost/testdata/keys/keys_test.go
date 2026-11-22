@@ -49,8 +49,41 @@ func startField(t *testing.T, key string, options *core.KeyOptions) (*nsgotest.A
 	return app, events
 }
 
+// TestMobileEditingKeysIOS checks Backspace and select-all in one app, as iOS hosts one app per test process; software Return on iOS is #1351.
+func TestMobileEditingKeysIOS(t *testing.T) {
+	if target := nsgotest.Target(); target != "ios" && target != "ios_simulator" {
+		t.Skip("iOS test host")
+	}
+	var bindings atomic.Int32
+	var text, selection atomic.Value
+	text.Store("")
+	selection.Store(core.TextRange{})
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		value := core.NewSignal(cx, "")
+		cx.OnKeyWith("backspace", core.KeyOptions{When: core.KeyAlways}, func() { bindings.Add(1) })
+		cx.OnKeyWith("mod+a", core.KeyOptions{When: core.KeyAlways}, func() { bindings.Add(1) })
+		return core.Input{TestID: "field", AutoFocus: true, Value: value.Get,
+			Style:             core.Style{Width: core.Pt(240), Height: core.Pt(40)},
+			OnChange:          func(v string) { text.Store(v); value.Set(v) },
+			OnSelectionChange: func(r core.TextRange) { selection.Store(r) }}
+	}, nsgotest.Size(300, 120))
+	app.Type("id:field", "entry")
+	app.Key("backspace")
+	if bindings.Load() != int32(1) || text.Load() != "entry" || !app.Find("id:field").Focused {
+		t.Fatalf("Backspace: bindings=%d text=%q focused=%v", bindings.Load(), text.Load(), app.Find("id:field").Focused)
+	}
+	beforeSelection := selection.Load()
+	app.Key("mod+a")
+	if bindings.Load() != int32(2) || text.Load() != "entry" || selection.Load() != beforeSelection {
+		t.Fatalf("select-all: bindings=%d text=%q selection=%v", bindings.Load(), text.Load(), selection.Load())
+	}
+}
+
 // Editing keys take the same keymap path as ordinary keys, before an editor acts.
 func TestEditingKeysHonorAlwaysBindings(t *testing.T) {
+	if target := nsgotest.Target(); target == "ios" || target == "ios_simulator" {
+		t.Skip("covered by TestMobileEditingKeysIOS; software Return is #1351")
+	}
 	for _, key := range []string{"enter", "return", "backspace", "mod+a"} {
 		t.Run(key, func(t *testing.T) {
 			app, events := startField(t, key, &core.KeyOptions{When: core.KeyAlways})
@@ -71,6 +104,9 @@ func TestEditingKeysHonorAlwaysBindings(t *testing.T) {
 }
 
 func TestEditingKeysKeepTheirUnboundActions(t *testing.T) {
+	if target := nsgotest.Target(); target == "ios" || target == "ios_simulator" {
+		t.Skip("software Return is #1351")
+	}
 	for _, binding := range []struct {
 		name    string
 		options *core.KeyOptions

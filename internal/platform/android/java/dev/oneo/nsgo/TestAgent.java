@@ -421,8 +421,11 @@ final class TestAgent {
         long now = SystemClock.uptimeMillis();
         Activity a = activity();
         KeyEvent down = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0);
-        // A key with Control is offered as a shortcut first, as the
-        // window's input stage offers it: a field's Control+A selects all.
+        // A key with Control is offered to the keymap first, as NsgoView.dispatchKeyEvent offers it before the window's input stage tries it as a shortcut, so a KeyAlways binding takes Control+A before the field selects all. A consumed key is released at once so its consumed state cannot leak into the next test.
+        if ((meta & KeyEvent.META_CTRL_ON) != 0 && view.keyBindingShortcut(down)) {
+            view.keyBindingShortcut(new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
+            return;
+        }
         if ((meta & KeyEvent.META_CTRL_ON) != 0 && a.dispatchKeyShortcutEvent(down)) return;
         a.dispatchKeyEvent(down);
         a.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
