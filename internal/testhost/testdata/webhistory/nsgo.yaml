@@ -1,0 +1,8 @@
+name: NSGo Web History
+id: dev.nsgo.webhistory1364
+android:
+  loopback_cleartext: true
+apple:
+  info:
+    NSAppTransportSecurity:
+      NSAllowsArbitraryLoadsInWebContent: true
