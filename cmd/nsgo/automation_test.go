@@ -359,7 +359,7 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 		t.Errorf("-target android -automation -release: %v", err)
 	}
 	p.Dev.Target = "web"
-	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "macOS, Windows, Android and Apple devices and simulators so far") {
+	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "macOS, Windows, Linux, Android and Apple devices and simulators so far") {
 		t.Errorf("-automation -target web: %v", err)
 	}
 	for _, target := range []string{"native", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator"} {
@@ -686,7 +686,7 @@ func TestAutomationSupportedTargets(t *testing.T) {
 		want           bool
 	}{
 		{"native", "darwin", true},
-		{"native", "linux", false},
+		{"native", "linux", true},
 		{"native", "windows", true},
 		{"android", "darwin", true},
 		{"android", "linux", true},
@@ -710,9 +710,10 @@ func TestCheckDevAutomation(t *testing.T) {
 	}{
 		{"native", "darwin", false, ""},
 		{"native", "windows", false, ""},
-		{"native", "linux", false, "macOS, Windows, Android and Apple devices and simulators so far"},
-		{"web", "darwin", false, "macOS, Windows, Android and Apple devices and simulators so far"},
-		{"web", "windows", false, "macOS, Windows, Android and Apple devices and simulators so far"},
+		{"native", "linux", false, ""},
+		{"native", "linux", true, "-release"},
+		{"web", "darwin", false, "macOS, Windows, Linux, Android and Apple devices and simulators so far"},
+		{"web", "windows", false, "macOS, Windows, Linux, Android and Apple devices and simulators so far"},
 		{"native", "darwin", true, "-release"},
 		{"native", "windows", true, "-release"},
 	} {

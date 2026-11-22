@@ -9,8 +9,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// liveWindows holds the standalone app's windows for the agent. Keep the
-// same testSurface between requests so its input state follows the window.
+// liveWindows holds the standalone app's windows for the agent. Keep the same testSurface between requests so its input state follows the window.
 var liveWindows sync.Map // *window -> *testSurface
 
 func init() {

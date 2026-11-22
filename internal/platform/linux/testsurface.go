@@ -23,13 +23,11 @@ func (t *testSurface) RequestQuit(id uint32, forced bool) {
 	t.w.engine.Dispatch(driver.Event{Kind: driver.EventQuitRequest, Count: id, Forced: forced})
 }
 
-// testSurface drives a test window or a window of the running app through
-// the backend's input entry points, since GTK 4 takes no made-up events.
+// testSurface drives a test window or a window of the running app through the backend's input entry points, since GTK 4 takes no made-up events.
 type testSurface struct {
 	w      *window
 	clicks testhost.Clicks
-	// field is the field a press last focused: GTK reports the focus
-	// only while the window is active, which a test cannot ask.
+	// field is the field a press last focused: GTK reports the focus only while the window is active, which a test cannot ask.
 	field *view
 	// mods are the state bits of the modifier keys KeyDown holds, which every key after them carries until their KeyUp.
 	mods uint32
@@ -291,8 +289,7 @@ func (t *testSurface) Type(text string) error {
 	return nil
 }
 
-// imWidget is the focused field's widget its input method reports to:
-// an entry's text, or a text view.
+// imWidget is the focused field's widget its input method reports to: an entry's text, or a text view.
 func (t *testSurface) imWidget() (*view, uintptr, error) {
 	v := t.focused()
 	switch {
@@ -304,8 +301,7 @@ func (t *testSurface) imWidget() (*view, uintptr, error) {
 	return v, gtkEditableGetDelegate(v.entry), nil
 }
 
-// Compose has the field's input method context preedit text, as GTK's
-// editors report an input method's: by their preedit-changed signal.
+// Compose has the field's input method context preedit text, as GTK's editors report an input method's: by their preedit-changed signal.
 func (t *testSurface) Compose(text string) error {
 	var err error
 	t.scripted(func() {
@@ -542,8 +538,7 @@ func findButton(widget uintptr, label string) uintptr {
 	return 0
 }
 
-// Answer clicks the button of the alert dialog GTK shows, which it
-// presents a moment after the app asks.
+// Answer clicks the button of the alert dialog GTK shows, which it presents a moment after the app asks.
 func (t *testSurface) Answer(id uint32, index int) error {
 	loadDialogs()
 	deadline := time.Now().Add(3 * time.Second)
@@ -619,8 +614,7 @@ func (t *testSurface) Screenshot() ([]byte, error) {
 		img = image.NewRGBA(image.Rect(0, 0, width, height))
 		for y := range height {
 			for x := range width {
-				// Cairo's ARGB32 is premultiplied BGRA in memory, as
-				// image.RGBA is premultiplied RGBA.
+				// Cairo's ARGB32 is premultiplied BGRA in memory, as image.RGBA is premultiplied RGBA.
 				s, d := data[y*stride+4*x:], img.Pix[y*img.Stride+4*x:]
 				d[0], d[1], d[2], d[3] = s[2], s[1], s[0], s[3]
 			}
@@ -648,8 +642,7 @@ func (t *testSurface) PointerDelta(dx, dy float64) {
 
 func (t *testSurface) Sync() { t.w.engine.Sync() }
 
-// Animating counts transitions, layout animations and animated values
-// that end; endless images do not count.
+// Animating counts transitions, layout animations and animated values that end; endless images do not count.
 func (t *testSurface) Animating() bool {
 	var busy bool
 	t.onLoop(func() {
@@ -676,8 +669,7 @@ func (t *testSurface) SetEnvironment(env driver.Environment) error {
 	return nil
 }
 
-// ChooseMenu implements testhost.Surface: the menu bar's item's action
-// is activated, as GTK's menu bar does.
+// ChooseMenu implements testhost.Surface: the menu bar's item's action is activated, as GTK's menu bar does.
 func (t *testSurface) ChooseMenu(id uint32) error {
 	var err error
 	t.onLoop(func() {
@@ -716,9 +708,7 @@ func (t *testSurface) ChooseDockMenu(id uint32) error {
 	return err
 }
 
-// ChoosePopup implements testhost.Surface: the context menu's item's
-// action is activated and the popover pops down, as a click on the item
-// does.
+// ChoosePopup implements testhost.Surface: the context menu's item's action is activated and the popover pops down, as a click on the item does.
 func (t *testSurface) ChoosePopup(id uint32) error {
 	var err error
 	t.onLoop(func() {

@@ -19,8 +19,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/automation"
 )
 
-// TestLinuxAutomationEndToEnd exercises both commands in a real GTK window.
-// Run with NSGO_AUTOMATION_E2E=1 xvfb-run -a go tool nsgo test -run TestLinuxAutomationEndToEnd ./cmd/nsgo.
+// TestLinuxAutomationEndToEnd exercises both commands in a real GTK window. Run with NSGO_AUTOMATION_E2E=1 xvfb-run -a go tool nsgo test -run TestLinuxAutomationEndToEnd ./cmd/nsgo.
 func TestLinuxAutomationEndToEnd(t *testing.T) {
 	if os.Getenv("NSGO_AUTOMATION_E2E") == "" {
 		t.Skip("set NSGO_AUTOMATION_E2E=1 in a Linux desktop session or under xvfb-run")
