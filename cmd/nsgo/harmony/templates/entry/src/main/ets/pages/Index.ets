@@ -98,9 +98,34 @@ function edgeEnd(start: number, size: number): number {
   return size > 0 ? start + size : 0;
 }
 
-// edgeFromRight is how far in from the right edge of a window width wide an avoid area that starts at start and spans size reaches, or 0 for an empty one.
-function edgeFromRight(start: number, size: number, width: number): number {
-  return size > 0 ? Math.max(0, width - start) : 0;
+// edgeFromEnd is how far in from the far edge (the right or the bottom) of a window extent long an avoid area that starts at start and spans size reaches, or 0 for an empty one.
+function edgeFromEnd(start: number, size: number, extent: number): number {
+  return size > 0 ? Math.max(0, extent - start) : 0;
+}
+
+// BarRequest is one of the window's system bar requests. It is made only when what it asks for changes, because avoidAreaChange fires when an edge swipe reveals hidden bars for a moment and asking again then would hide them at once. A failed request is made again only when retry is set, which the page does for a batch that carries the engine's status bar, never for an avoid area change, so a call the device keeps refusing cannot re-hide revealed bars or run on every frame. A failure that arrives after a newer request was made is ignored, so it cannot undo that request.
+class BarRequest {
+  asked: string | undefined = undefined;
+  failed: boolean = false;
+
+  make(want: string, retry: boolean, call: () => Promise<void>): void {
+    if (want === this.asked && !(retry && this.failed)) {
+      return;
+    }
+    this.asked = want;
+    this.failed = false;
+    const fail = (e: Error): void => {
+      if (this.asked === want) {
+        this.failed = true;
+      }
+      console.error('NSGO harmony: system bars ' + want + ': ' + e);
+    };
+    try {
+      call().catch(fail);
+    } catch (e) {
+      fail(e as Error);
+    }
+  }
 }
 
 // mimeOf guesses a file's media type from its extension.
@@ -431,6 +456,8 @@ class Tree {
   sbStyle: number = 1;
   sbHidden: boolean = false;
   sbImmersive: boolean = false;
+  // sbSent is set by a batch that carries the status bar, so the page makes a failed system bar request again for it.
+  sbSent: boolean = false;
   // appMode is the driver.Appearance the app shows in.
   appMode: number = 0;
   // layoutMs and layoutCurve are this batch's layout animation, which a
@@ -573,6 +600,7 @@ class Tree {
         this.sbStyle = o[2] as number;
         this.sbHidden = o[3] as boolean;
         this.sbImmersive = o[4] as boolean;
+        this.sbSent = true;
       } else if (code === 'la') {
         this.layoutMs = o[2] as number;
         this.layoutCurve = o[3] as number;
@@ -1110,8 +1138,9 @@ struct Index {
   private safeBottom: number = 0;
   private safeLeft: number = 0;
   private keyboard: number = 0;
-  // barsShown is the system bars the window was last asked to show, so the bars are set only when the engine's request changes: avoidAreaChange fires when an edge swipe reveals hidden bars for a moment, and setting them again then would hide them at once.
-  private barsShown: string = '';
+  // bars and indicator are the window's two system bar requests: the bars setWindowSystemBarEnable shows, and whether setSpecificSystemBarEnabled shows the navigation indicator. Each is tracked on its own, so one the device refuses does not make the other again.
+  private bars: BarRequest = new BarRequest();
+  private indicator: BarRequest = new BarRequest();
   // The display clock that runs while something animates.
   private sync: displaySync.DisplaySync | undefined = undefined;
   // framePending is a frame the page has not finished. The display clock fires every vsync whether or not the engine kept up, and each runJavaScript queues behind the last, so a frame slower than the vsync let dozens queue in the page (over a hundred at launch on a phone) and every touch waited behind them. A vsync that finds a frame pending is skipped; the engine's clock reads the time, so the next frame catches up.
@@ -1835,20 +1864,28 @@ struct Index {
   readEnv(): void {
     if (this.win !== undefined) {
       try {
-        const bars = this.win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
-        // The display's cutout stays an inset when immersive mode hides the status bar over it, as on the other targets. Its areas are the cutout's bounds, which need not start at the window's edge.
+        // The display's cutout stays an inset when immersive mode hides the status bar over it, as on the other targets, on whichever side the rotation puts it. Its areas are the cutout's bounds, which need not start at the window's edge.
         const cut = this.win.getWindowAvoidArea(window.AvoidAreaType.TYPE_CUTOUT);
-        const width = this.win.getWindowProperties().windowRect.width;
-        this.safeTop = Math.max(px2vp(bars.topRect.height), px2vp(edgeEnd(cut.topRect.top, cut.topRect.height)));
+        const rect = this.win.getWindowProperties().windowRect;
+        let top = edgeEnd(cut.topRect.top, cut.topRect.height);
+        let left = edgeEnd(cut.leftRect.left, cut.leftRect.width);
+        let right = edgeFromEnd(cut.rightRect.left, cut.rightRect.width, rect.width);
+        let bottom = edgeFromEnd(cut.bottomRect.top, cut.bottomRect.height, rect.height);
+        // While immersive mode hides the bars, an edge swipe reveals them over the content for a moment, as on Android, so only the cutout insets the window: the areas the revealed bars report would move the whole layout once as they show and again as they hide. A refused request leaves the bars showing, so their areas count again.
+        if (!this.tree.sbImmersive || this.bars.failed) {
+          const bars = this.win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+          // A full-screen window's system bar area carries the status bar but not the navigation indicator, whose own area is what the bottom of the tree must stay above. In landscape the bars' side areas inset the sides.
+          const nav = this.win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+          top = Math.max(top, bars.topRect.height);
+          left = Math.max(left, edgeEnd(bars.leftRect.left, bars.leftRect.width));
+          right = Math.max(right, edgeFromEnd(bars.rightRect.left, bars.rightRect.width, rect.width));
+          bottom = Math.max(bottom, bars.bottomRect.height, nav.bottomRect.height);
+        }
+        this.safeTop = px2vp(top);
         this.renderer.safeTop = this.safeTop;
-        // In landscape the system bars' side areas and the cutout's both inset the sides.
-        this.safeLeft = px2vp(Math.max(edgeEnd(bars.leftRect.left, bars.leftRect.width), edgeEnd(cut.leftRect.left, cut.leftRect.width)));
-        this.safeRight = px2vp(Math.max(edgeFromRight(bars.rightRect.left, bars.rightRect.width, width), edgeFromRight(cut.rightRect.left, cut.rightRect.width, width)));
-        // A full-screen window's system bar area carries the status bar but
-        // not the navigation indicator, whose own area is what the bottom of
-        // the tree must stay above.
-        const nav = this.win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
-        this.safeBottom = Math.max(px2vp(bars.bottomRect.height), px2vp(nav.bottomRect.height));
+        this.safeLeft = px2vp(left);
+        this.safeRight = px2vp(right);
+        this.safeBottom = px2vp(bottom);
         const kb = this.win.getWindowAvoidArea(window.AvoidAreaType.TYPE_KEYBOARD);
         this.keyboard = px2vp(kb.bottomRect.height);
       } catch (e) {
@@ -1902,9 +1939,14 @@ struct Index {
   }
 
   apply(ops: string): void {
+    const immersive = this.tree.sbImmersive;
     this.renderer.apply(ops);
     this.applyStatusBar();
     this.applyAppearance();
+    // readEnv counts the bars' areas only outside immersive mode, so the safe area is read again when it starts or ends.
+    if (this.tree.sbImmersive !== immersive) {
+      setTimeout(() => { this.readEnv(); }, 0);
+    }
   }
 
   // touch reports the fingers on the surface, which the engine hit-tests
@@ -1980,30 +2022,19 @@ struct Index {
     setTimeout(() => { this.readEnv(); }, 0);
   }
 
-  // applyStatusBar gives the window the system bars the engine asked for. Immersive hides the status bar, the navigation bar and the navigation indicator; ending it shows them again, the status bar only if the engine does not hide it. Outside immersive mode the navigation bar stays, as three-button navigation needs it. EntryAbility lays the window out full screen from the start, so the content already runs under the bars and the avoid areas readEnv reads report what they cover in either state.
+  // applyStatusBar gives the window the system bars the engine asked for. Immersive hides the status bar, the navigation bar and the navigation indicator; ending it shows them again, the status bar only if the engine does not hide it. Outside immersive mode the navigation bar stays, as three-button navigation needs it. EntryAbility lays the window out full screen from the start, so the content already runs under the bars in either state; readEnv counts their areas as insets outside immersive mode and only the cutout's within it.
   applyStatusBar(): void {
     const w = this.win;
     if (w === undefined) {
       return;
     }
     const immersive = this.tree.sbImmersive;
-    const hidden = this.tree.sbHidden;
-    const shown = immersive ? 'none' : (hidden ? 'navigation' : 'status,navigation');
-    if (shown !== this.barsShown) {
-      this.barsShown = shown;
-      // A request that fails is made again on the next batch or avoid area change.
-      const failed = (e: Error): void => {
-        this.barsShown = '';
-        console.error('NSGO harmony: system bars: ' + e);
-      };
-      try {
-        w.setWindowSystemBarEnable(immersive ? [] : (hidden ? ['navigation'] : ['status', 'navigation'])).catch(failed);
-        w.setSpecificSystemBarEnabled('navigationIndicator', !immersive).catch(failed);
-      } catch (e) {
-        this.barsShown = '';
-        console.error('NSGO harmony: system bars: ' + e);
-      }
-    }
+    const names: Array<'status' | 'navigation'> = immersive ? [] : (this.tree.sbHidden ? ['navigation'] : ['status', 'navigation']);
+    // A batch that carries the status bar makes a failed request again; an avoid area change or an appearance change does not.
+    const retry = this.tree.sbSent;
+    this.tree.sbSent = false;
+    this.bars.make(names.join(','), retry, () => w.setWindowSystemBarEnable(names));
+    this.indicator.make(immersive ? 'hide' : 'show', retry, () => w.setSpecificSystemBarEnabled('navigationIndicator', !immersive));
     try {
       // Auto follows the appearance, as the engine's StatusBarAuto says.
       const light = this.tree.sbStyle === 3 || (this.tree.sbStyle === 1 && this.dark);

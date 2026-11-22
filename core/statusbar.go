@@ -32,7 +32,7 @@ func (t Toggle) over(below Toggle) Toggle {
 type StatusBarSetting struct {
 	Foreground StatusBarStyle
 	Hidden     Toggle
-	// Immersive hides the status and navigation bars on Android, and the status bar and navigation indicator on HarmonyOS. On iOS it hides the status bar and lets UIKit hide the home indicator. Other targets ignore it.
+	// Immersive hides the status and navigation bars on Android, and the status bar, navigation bar and navigation indicator on HarmonyOS. On iOS it hides the status bar and lets UIKit hide the home indicator. Other targets ignore it.
 	Immersive Toggle
 	// Animated animates the change to this layer's settings.
 	Animated Toggle

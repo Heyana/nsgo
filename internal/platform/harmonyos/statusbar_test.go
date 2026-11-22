@@ -9,7 +9,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestStatusBarSendsImmersive checks that the status bar's operation carries the immersive request where Index.ets reads it: o[2] the style, o[3] hidden, o[4] immersive, so that the page hides the status bar and the navigation indicator while it is on and shows them again when it ends.
+// TestStatusBarSendsImmersive checks that the status bar's operation carries the immersive request where Index.ets reads it: o[2] the style, o[3] hidden, o[4] immersive, so that the page hides the status bar, the navigation bar and the navigation indicator while it is on and shows them again when it ends.
 func TestStatusBarSendsImmersive(t *testing.T) {
 	for _, c := range []driver.StatusBarConfig{
 		{Style: driver.StatusBarLight, Immersive: true},
