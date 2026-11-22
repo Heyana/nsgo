@@ -131,10 +131,7 @@ func union(a, b driver.Bounds) driver.Bounds {
 	return driver.Bounds{Origin: driver.Point{X: x0, Y: y0}, Size: driver.Size{Width: x1 - x0, Height: y1 - y0}}
 }
 
-// canvasRasterScale returns the pixels per point canvas view v rasterizes at:
-// the window's pixel ratio times the stepped scale of v and every ancestor's
-// style transform, keyframe/layout scale, and enclosing scroll zooms, capped
-// at 4× and bounded within 4096 × 4096 pixels and maxRaster per side.
+// canvasRasterScale returns the pixels per point canvas view v rasterizes at: the window's pixel ratio times the stepped scale of v and every ancestor's style transform, keyframe/layout scale, and enclosing scroll zooms, capped at 4× and bounded within 4096 × 4096 pixels and maxRaster per side.
 func (w *window) canvasRasterScale(v *view, width, height float64) float64 {
 	base := max(float64(w.env.PixelRatio), 1)
 	zoom := 1.0

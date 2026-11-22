@@ -409,9 +409,7 @@ func (w *window) allocateView(v *view) {
 }
 
 // place allocates v's widget at the frame it shows, less its parent's
-// scroll offset ox, oy (and scaled by its parent's scroll zoom when set),
-// with its transform around its center and the scale of a layout animation
-// after it.
+// scroll offset ox, oy (and scaled by its parent's scroll zoom when set), with its transform around its center and the scale of a layout animation after it.
 func (w *window) place(v *view, ox, oy float32) {
 	if gtkWidgetGetChildVisible(v.widget) == 0 {
 		return

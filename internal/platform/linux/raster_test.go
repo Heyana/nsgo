@@ -101,9 +101,7 @@ func TestCanvasesCairoCannotHoldDrawNothing(t *testing.T) {
 	w.snapshotCanvas(v, 0, 300, 10)
 }
 
-// TestRasterCanvasSharpUnderStyleTransformAndScrollZoom verifies in Cairo
-// pixels that a 1-point black line in a canvas rasterizes sharply at 3x scale
-// under both a style transform and a zooming scroll view, with no grey blur.
+// TestRasterCanvasSharpUnderStyleTransformAndScrollZoom verifies in Cairo pixels that a 1-point black line in a canvas rasterizes sharply at 3x scale under both a style transform and a zooming scroll view, with no grey blur.
 func TestRasterCanvasSharpUnderStyleTransformAndScrollZoom(t *testing.T) {
 	if err := openLibs(); err != nil {
 		t.Skip(err)

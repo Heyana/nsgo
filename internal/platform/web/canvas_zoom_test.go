@@ -125,9 +125,7 @@ func TestCanvasScrollZoomReachesNewSubtrees(t *testing.T) {
 func TestCanvasScrollZoomBoundsBitmap(t *testing.T) {
 	s, _ := canvasZoomSurface(t)
 	s.zoomCommand(s.view(2), &driver.ZoomRequest{Scale: 4, Center: &driver.Point{}}, false)
-	// Canvases whose full bitmap would exceed 4096×4096 or 16384 side draw only
-	// their visible slice at full zoom resolution (ratio 2 * 4 = 8), staying
-	// well within the bitmap budget.
+	// Canvases whose full bitmap would exceed 4096×4096 or 16384 side draw only their visible slice at full zoom resolution (ratio 2 * 4 = 8), staying well within the bitmap budget.
 	square := mountCanvas(s, 6, 7, 2, 1024, 1024)
 	long := mountCanvas(s, 8, 9, 2, 4096, 10)
 	large := mountCanvas(s, 10, 11, 2, 2500, 2500)
@@ -157,8 +155,7 @@ func TestCanvasScrollZoomBoundsBitmap(t *testing.T) {
 	if large.canvasTile.x < 900 || large.canvasTile.y < 900 {
 		t.Errorf("scrolled large canvas tile = %+v, want origin near (1000, 1000)", large.canvasTile)
 	}
-	// A rotated large canvas cannot use axis-aligned slicing, so it still
-	// stays bounded within the bitmap budget.
+	// A rotated large canvas cannot use axis-aligned slicing, so it still stays bounded within the bitmap budget.
 	rot := mountCanvas(s, 12, 13, 2, 1024, 1024)
 	s.mount(&driver.MountBatch{Items: []driver.MountItem{
 		{Kind: driver.ItemViewStyle, ID: 12, ViewStyle: &driver.ViewStyle{Opacity: 1, Transform: driver.Transform{Rotate: 15}}},

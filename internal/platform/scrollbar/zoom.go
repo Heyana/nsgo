@@ -6,14 +6,9 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Zooming math shared by desktop scroll views (Windows, Linux): axis limits
-// with optional centering, rubber-banded zoom bounds, focal-point mapping,
-// animated zoom easing, and Ctrl+wheel zoom scaling.
+// Zooming math shared by desktop scroll views (Windows, Linux): axis limits with optional centering, rubber-banded zoom bounds, focal-point mapping, animated zoom easing, and Ctrl+wheel zoom scaling.
 
-// ZoomAxisLimits returns the offset limits along one axis for a zooming
-// scroll view of viewport frame and unzoomed content size at zoom z.
-// When CenterContent is set and the zoomed content plus insets fits inside
-// the viewport, lo and hi both equal the offset that centers it.
+// ZoomAxisLimits returns the offset limits along one axis for a zooming scroll view of viewport frame and unzoomed content size at zoom z. When CenterContent is set and the zoomed content plus insets fits inside the viewport, lo and hi both equal the offset that centers it.
 func ZoomAxisLimits(c *driver.ScrollConfig, frame, content driver.Size, z float64, horizontal bool) (lo, hi driver.Points) {
 	in := c.Behavior.ContentInset
 	lead, trail, length, viewport := in.Top, in.Bottom, content.Height, frame.Height
@@ -39,8 +34,7 @@ func ClampZoomOffset(c *driver.ScrollConfig, frame, content driver.Size, p drive
 	}
 }
 
-// LimitZoom keeps scale within c's zoom limits, rubber-banding past them
-// while rubber is true unless NoBouncesZoom is set.
+// LimitZoom keeps scale within c's zoom limits, rubber-banding past them while rubber is true unless NoBouncesZoom is set.
 func LimitZoom(c *driver.ScrollConfig, scale float64, rubber bool) float64 {
 	lo, hi := float64(c.MinZoomScale), float64(c.MaxZoomScale)
 	if hi <= lo {
@@ -60,8 +54,7 @@ func LimitZoom(c *driver.ScrollConfig, scale float64, rubber bool) float64 {
 	return scale
 }
 
-// ContentAt returns the unzoomed content point at viewport point focus,
-// given offset and zoom z.
+// ContentAt returns the unzoomed content point at viewport point focus, given offset and zoom z.
 func ContentAt(offset, focus driver.Point, z float64) driver.Point {
 	if z <= 0 {
 		z = 1
@@ -70,24 +63,20 @@ func ContentAt(offset, focus driver.Point, z float64) driver.Point {
 	return driver.Point{X: (offset.X + focus.X) / zp, Y: (offset.Y + focus.Y) / zp}
 }
 
-// OffsetFor returns the offset that places unzoomed content point c at
-// viewport point focus at zoom z.
+// OffsetFor returns the offset that places unzoomed content point c at viewport point focus at zoom z.
 func OffsetFor(content, focus driver.Point, z float64) driver.Point {
 	zp := driver.Points(z)
 	return driver.Point{X: content.X*zp - focus.X, Y: content.Y*zp - focus.Y}
 }
 
-// ZoomEase interpolates a scroll view's zoom from Scale to Target while
-// keeping unzoomed content point moving from From to To at viewport Focus.
+// ZoomEase interpolates a scroll view's zoom from Scale to Target while keeping unzoomed content point moving from From to To at viewport Focus.
 type ZoomEase struct {
 	From, To, Focus driver.Point
 	Scale, Target   float64
 	Clamped         bool
 }
 
-// NewZoomEase builds a ZoomEase from current (offset, zoom) to targetZoom
-// with content point c placed at viewport focus. It returns ok=false when
-// the view is already within half a point and 1e-3 scale of the target.
+// NewZoomEase builds a ZoomEase from current (offset, zoom) to targetZoom with content point c placed at viewport focus. It returns ok=false when the view is already within half a point and 1e-3 scale of the target.
 func NewZoomEase(c *driver.ScrollConfig, frame, content driver.Size, offset driver.Point, zoom float64, targetContent, focus driver.Point, targetZoom float64) (ZoomEase, driver.Point, bool) {
 	at := ClampZoomOffset(c, frame, content, OffsetFor(targetContent, focus, targetZoom), targetZoom)
 	if math.Abs(float64(at.X-offset.X)) < 0.5 && math.Abs(float64(at.Y-offset.Y)) < 0.5 && math.Abs(targetZoom-zoom) < 1e-3 {
@@ -115,8 +104,7 @@ func (e ZoomEase) Step(c *driver.ScrollConfig, frame, content driver.Size, k flo
 	return at, z
 }
 
-// WheelZoom scales current by a Ctrl+wheel delta in points (positive delta
-// zooms out, negative delta zooms in, matching web's wheel zoom).
+// WheelZoom scales current by a Ctrl+wheel delta in points (positive delta zooms out, negative delta zooms in, matching web's wheel zoom).
 func WheelZoom(current, deltaY float64) float64 {
 	return current * math.Exp(-deltaY/100)
 }

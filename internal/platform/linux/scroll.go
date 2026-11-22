@@ -13,9 +13,7 @@ import (
 // wheel and the bar out, and snapping views settle on a snap point once
 // the wheel rests or the bar is let go, as NSH's desktops do. A touchpad
 // glides on as its fingers lift (wheelGlide), as a finger's drag does
-// (touchscroll.go). Zooming scroll views (MaxZoomScale > MinZoomScale) scale
-// their content around the origin, respond to ItemZoomTo, Ctrl+wheel and
-// two-finger pinches, and pan along both axes.
+// (touchscroll.go). Zooming scroll views (MaxZoomScale > MinZoomScale) scale their content around the origin, respond to ItemZoomTo, Ctrl+wheel and two-finger pinches, and pan along both axes.
 
 // zoomAnim is an animated scroll zoom in flight.
 type zoomAnim struct {
@@ -39,8 +37,7 @@ func (v *view) zoomValue() float32 {
 	return 0
 }
 
-// clampOffset clamps offset to v's content limits, accounting for scroll zoom
-// and any active refresh room.
+// clampOffset clamps offset to v's content limits, accounting for scroll zoom and any active refresh room.
 func (v *view) clampOffset(offset driver.Point, refreshing bool) driver.Point {
 	if v.scroll.Zooms() {
 		return scrollbar.ClampZoomOffset(&v.scroll, v.frame.Size, v.size, offset, v.zoomScale())
@@ -89,8 +86,7 @@ func (w *window) configureScrollZoom(v *view, old *driver.ScrollConfig) {
 	}
 }
 
-// zoomTo zooms scroll view v to r.Scale, keeping content point r.Center (or
-// the current viewport center) in the middle of the viewport.
+// zoomTo zooms scroll view v to r.Scale, keeping content point r.Center (or the current viewport center) in the middle of the viewport.
 func (w *window) zoomTo(v *view, r *driver.ZoomRequest, animated bool) {
 	if r == nil || !v.scroll.Zooms() {
 		return

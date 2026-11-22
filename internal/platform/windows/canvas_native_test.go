@@ -265,10 +265,7 @@ func TestCanvasListsDrawWhatAFullPlayDoes(t *testing.T) {
 	}
 }
 
-// TestStyleTransformAndScrollZoomAreSharp verifies in Direct2D pixels that a
-// 1-point black line in a canvas (both vector command-list and offscreen
-// mixing paths) draws sharply at 3x scale under a style transform and under a
-// zooming scroll view, with no grey edge blur.
+// TestStyleTransformAndScrollZoomAreSharp verifies in Direct2D pixels that a 1-point black line in a canvas (both vector command-list and offscreen mixing paths) draws sharply at 3x scale under a style transform and under a zooming scroll view, with no grey edge blur.
 func TestStyleTransformAndScrollZoomAreSharp(t *testing.T) {
 	g, err := devices()
 	if err != nil {

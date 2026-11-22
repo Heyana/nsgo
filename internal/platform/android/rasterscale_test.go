@@ -13,10 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestAndroidRasterScaleMatchesDriver compiles RasterScale.java on the host
-// JVM and verifies its half-step progression matches driver.RasterStep, its
-// nested step combination caps at 4, and its bitmap budget keeps backing
-// bitmaps within 4096 × 4096 pixels and a 16384-pixel side.
+// TestAndroidRasterScaleMatchesDriver compiles RasterScale.java on the host JVM and verifies its half-step progression matches driver.RasterStep, its nested step combination caps at 4, and its bitmap budget keeps backing bitmaps within 4096 × 4096 pixels and a 16384-pixel side.
 func TestAndroidRasterScaleMatchesDriver(t *testing.T) {
 	javac, java := androidJDK(t)
 	tmp := t.TempDir()

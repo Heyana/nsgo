@@ -28,8 +28,7 @@ type canvasCache struct {
 	drawing *driver.Drawing
 	split   driver.CanvasSplit // At 0 when the drawing is one list
 	atlas   bool               // a recording can contain aliased sprites
-	// mixes reports whether the drawing uses DrawClear or non-source-over
-	// composites, which rasterize into an offscreen bitmap scaled with world.
+	// mixes reports whether the drawing uses DrawClear or non-source-over composites, which rasterize into an offscreen bitmap scaled with world.
 	mixes bool
 	// head is the static part's list, or the whole drawing's; tail the
 	// rest's, nil until played for the arguments' current values.
@@ -83,9 +82,7 @@ func (c *canvasCache) argsChanged() {
 
 func (c *canvasCache) release() { releaseAll(&c.head, &c.tail) }
 
-// offscreenScale is the pixels per point an offscreen canvas bitmap draws at
-// under world transform world: baseScale times driver.RasterStep of world's
-// stretch, bounded to 4096 × 4096 pixels and a 16384-pixel side.
+// offscreenScale is the pixels per point an offscreen canvas bitmap draws at under world transform world: baseScale times driver.RasterStep of world's stretch, bounded to 4096 × 4096 pixels and a 16384-pixel side.
 func offscreenScale(width, height, baseScale float32, world matrix) float32 {
 	if baseScale <= 0 {
 		baseScale = 1

@@ -27,8 +27,7 @@ type Player struct {
 	// Ratio is the canvas's pixels per point, and Size its diagonal in
 	// points, which repeating gradients cover.
 	Ratio, Size float64
-	// OriginX and OriginY shift the drawing space when the <canvas> holds
-	// only a visible sub-rectangle of a larger canvas.
+	// OriginX and OriginY shift the drawing space when the <canvas> holds only a visible sub-rectangle of a larger canvas.
 	OriginX, OriginY float64
 	// Font is the context's font shorthand of a font.
 	Font func(driver.Font) string

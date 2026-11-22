@@ -55,11 +55,7 @@ func (r canvasRect) contains(o canvasRect) bool {
 	return r.w > 0 && r.h > 0 && o.x >= r.x && o.y >= r.y && o.x+o.w <= r.x+r.w && o.y+o.h <= r.y+r.h
 }
 
-// paint plays a canvas view's drawing into its <canvas>, whose pixels follow
-// the pixel ratio, enclosing scroll zooms and style transforms. A canvas whose
-// full bitmap would pass maxZoomPixels or maxZoomSide draws only its visible
-// part (with overscan) positioned inside the view so it stays sharp within
-// the budget. The drawing's origin is inside the border.
+// paint plays a canvas view's drawing into its <canvas>, whose pixels follow the pixel ratio, enclosing scroll zooms and style transforms. A canvas whose full bitmap would pass maxZoomPixels or maxZoomSide draws only its visible part (with overscan) positioned inside the view so it stays sharp within the budget. The drawing's origin is inside the border.
 func (s *surface) paint(v *view) {
 	if v.drawing == nil {
 		return
@@ -116,13 +112,7 @@ func (s *surface) paint(v *view) {
 	s.requestGlassPaint()
 }
 
-// setCanvasExact draws a canvas inside zoomed scroll contents or an
-// axis-aligned scale transform pixel for pixel while its bitmap is exactly as
-// large as the screen shows it. Chrome composes nested scale transforms with
-// filtering even when they add up to one pixel per pixel, which greys a sharp
-// edge; nearest sampling of a bitmap at that size changes nothing else. During
-// a zoom, under rotation/skew, or past the raster bounds, the bitmap is scaled
-// for the screen and keeps smooth sampling.
+// setCanvasExact draws a canvas inside zoomed scroll contents or an axis-aligned scale transform pixel for pixel while its bitmap is exactly as large as the screen shows it. Chrome composes nested scale transforms with filtering even when they add up to one pixel per pixel, which greys a sharp edge; nearest sampling of a bitmap at that size changes nothing else. During a zoom, under rotation/skew, or past the raster bounds, the bitmap is scaled for the screen and keeps smooth sampling.
 func (s *surface) setCanvasExact(v *view) {
 	zoom, zoomed := s.canvasZoom(v)
 	tw, th := v.canvasTile.w, v.canvasTile.h
@@ -166,9 +156,7 @@ const (
 	skewAttr = "data-nsgo-skew"
 )
 
-// boundCanvasRatio clamps fullRatio for a w×h point bitmap so its pixels stay
-// within maxZoomPixels and maxZoomSide, never below baseRatio when baseRatio
-// alone fits (or keeping baseRatio when even baseRatio alone exceeds the budget).
+// boundCanvasRatio clamps fullRatio for a w×h point bitmap so its pixels stay within maxZoomPixels and maxZoomSide, never below baseRatio when baseRatio alone fits (or keeping baseRatio when even baseRatio alone exceeds the budget).
 func boundCanvasRatio(w, h, baseRatio, fullRatio float64) float64 {
 	if fullRatio <= baseRatio || w <= 0 || h <= 0 {
 		return baseRatio
@@ -179,8 +167,7 @@ func boundCanvasRatio(w, h, baseRatio, fullRatio float64) float64 {
 	return baseRatio * zoom
 }
 
-// canvasPlan returns the drawing-point rectangle, raster ratio and whether
-// only a visible slice is drawn for canvas v of size w×h points.
+// canvasPlan returns the drawing-point rectangle, raster ratio and whether only a visible slice is drawn for canvas v of size w×h points.
 func (s *surface) canvasPlan(v *view, w, h float64) (tile canvasRect, ratio float64, sliced bool) {
 	zoom, _ := s.canvasZoom(v)
 	base := float64(s.env.PixelRatio)
@@ -196,8 +183,7 @@ func (s *surface) canvasPlan(v *view, w, h float64) (tile canvasRect, ratio floa
 	if fw*fh <= maxZoomPixels && fw <= maxZoomSide && fh <= maxZoomSide {
 		return full, fullRatio, false
 	}
-	// Past the full-canvas bitmap budget: draw only the visible part at full
-	// resolution when the canvas is axis-aligned and laid out in the page.
+	// Past the full-canvas bitmap budget: draw only the visible part at full resolution when the canvas is axis-aligned and laid out in the page.
 	if s.canvasAxisAligned(v) {
 		if vis, ok := s.visibleCanvasRect(v, w, h); ok {
 			if vis.w <= 0 || vis.h <= 0 {
@@ -213,9 +199,7 @@ func (s *surface) canvasPlan(v *view, w, h float64) (tile canvasRect, ratio floa
 	return full, boundCanvasRatio(w, h, base, fullRatio), false
 }
 
-// padVisibleTile expands visible rect vis within [0, w]×[0, h] by up to half
-// its extent on each side so small scrolls and pans do not repaint every frame,
-// keeping the padded bitmap well within maxZoomPixels and maxZoomSide.
+// padVisibleTile expands visible rect vis within [0, w]×[0, h] by up to half its extent on each side so small scrolls and pans do not repaint every frame, keeping the padded bitmap well within maxZoomPixels and maxZoomSide.
 func padVisibleTile(vis canvasRect, w, h, ratio float64) canvasRect {
 	x0, y0, x1, y1 := vis.x, vis.y, vis.x+vis.w, vis.y+vis.h
 	const overscanPixels = maxZoomPixels / 2
@@ -236,9 +220,7 @@ func padVisibleTile(vis canvasRect, w, h, ratio float64) canvasRect {
 	return canvasRect{x: x0, y: y0, w: x1 - x0, h: y1 - y0}
 }
 
-// visibleCanvasRect returns the visible sub-rectangle of canvas v (whose
-// drawing space is w×h points) in v's drawing points, clipped by the viewport,
-// host and every scroll or clipping ancestor.
+// visibleCanvasRect returns the visible sub-rectangle of canvas v (whose drawing space is w×h points) in v's drawing points, clipped by the viewport, host and every scroll or clipping ancestor.
 func (s *surface) visibleCanvasRect(v *view, w, h float64) (canvasRect, bool) {
 	if !v.el.Get("isConnected").Bool() || w <= 0 || h <= 0 {
 		return canvasRect{}, false
@@ -298,17 +280,14 @@ func (s *surface) visibleCanvasRect(v *view, w, h float64) (canvasRect, bool) {
 	return canvasRect{x: lx0, y: ly0, w: lx1 - lx0, h: ly1 - ly0}, true
 }
 
-// canvasScale is the pixels per point a canvas view draws at: the screen's
-// pixel ratio times enclosing scroll zooms and style transforms, bounded by
-// maxRasterZoom and the bitmap budget.
+// canvasScale is the pixels per point a canvas view draws at: the screen's pixel ratio times enclosing scroll zooms and style transforms, bounded by maxRasterZoom and the bitmap budget.
 func (s *surface) canvasScale(v *view) float64 {
 	w, h := v.canvasSize()
 	_, ratio, _ := s.canvasPlan(v, w, h)
 	return ratio
 }
 
-// canvasZoom is the product of the zooms of the scroll views and scaled style
-// transforms v is in, nested ones included, and whether any of them scales.
+// canvasZoom is the product of the zooms of the scroll views and scaled style transforms v is in, nested ones included, and whether any of them scales.
 func (s *surface) canvasZoom(v *view) (zoom float64, zoomed bool) {
 	zoom = 1
 	// Only zoomed scroll contents and scaled views carry the attribute, so this visits them alone rather than every ancestor.
@@ -327,16 +306,12 @@ func (s *surface) canvasZoom(v *view) (zoom float64, zoomed bool) {
 	return zoom, zoomed
 }
 
-// canvasAxisAligned reports whether no ancestor (including v) rotates, skews
-// or tilts out of the plane.
+// canvasAxisAligned reports whether no ancestor (including v) rotates, skews or tilts out of the plane.
 func (s *surface) canvasAxisAligned(v *view) bool {
 	return !v.el.Call("closest", "["+skewAttr+"]").Truthy()
 }
 
-// followTransform updates v's transform zoom and skew attributes from its
-// current style and animated values, replaying canvases inside when its scale
-// changes. Animated and CSS-transitioned transforms debounce replay until the
-// motion rests; static style changes replay at once.
+// followTransform updates v's transform zoom and skew attributes from its current style and animated values, replaying canvases inside when its scale changes. Animated and CSS-transitioned transforms debounce replay until the motion rests; static style changes replay at once.
 func (s *surface) followTransform(v *view, animated bool) {
 	vs := v.style
 	if v.animated.Set != 0 {
@@ -387,8 +362,7 @@ func (s *surface) followTransform(v *view, animated bool) {
 	s.refreshCanvasScale(v.el)
 }
 
-// rasterAfterTransform keeps CSS scaling cheap during a transform animation or
-// transition, then replays canvases inside v once it rests.
+// rasterAfterTransform keeps CSS scaling cheap during a transform animation or transition, then replays canvases inside v once it rests.
 func (s *surface) rasterAfterTransform(v *view, waitMs int) {
 	if v.rasterEnd.IsUndefined() {
 		v.rasterEnd = js.FuncOf(func(js.Value, []js.Value) any {
@@ -417,8 +391,7 @@ func (v *view) stopTransformRaster() {
 	}
 }
 
-// checkSlicedCanvases repaints any visible-slice canvas whose visible area has
-// moved outside the sub-rectangle currently painted in its <canvas>.
+// checkSlicedCanvases repaints any visible-slice canvas whose visible area has moved outside the sub-rectangle currently painted in its <canvas>.
 func (s *surface) checkSlicedCanvases() {
 	for v := range s.slicedCanvases {
 		if s.view(v.id) != v || v.drawing == nil {
@@ -436,9 +409,7 @@ func (s *surface) checkSlicedCanvases() {
 	}
 }
 
-// refreshCanvasScale replays the drawings under root whose raster scale or
-// visible slice changed. DOM placement is authoritative, including kept content
-// moved to a new scroll view and sticky wrappers around list cells.
+// refreshCanvasScale replays the drawings under root whose raster scale or visible slice changed. DOM placement is authoritative, including kept content moved to a new scroll view and sticky wrappers around list cells.
 func (s *surface) refreshCanvasScale(root js.Value) {
 	canvases := root.Call("querySelectorAll", "canvas")
 	for i := range canvases.Length() {

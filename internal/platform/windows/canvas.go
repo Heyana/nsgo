@@ -169,8 +169,7 @@ func (c *canvasPlayer) playAll(ops []driver.DrawOp) {
 	c.p.setTransform(c.world)
 }
 
-// canvasOffscreen plays ops into a bitmap of the canvas's own at scale pixels
-// per point and draws it; false when there is no bitmap.
+// canvasOffscreen plays ops into a bitmap of the canvas's own at scale pixels per point and draws it; false when there is no bitmap.
 func (p *painter) canvasOffscreen(v *view, ops []driver.DrawOp, width, height, scale float32) bool {
 	pw, ph := uint32(math.Ceil(float64(width*scale))), uint32(math.Ceil(float64(height*scale)))
 	if pw == 0 || ph == 0 || uint64(pw)*uint64(ph) > 1<<24 {

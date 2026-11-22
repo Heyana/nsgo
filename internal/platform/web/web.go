@@ -175,8 +175,7 @@ type surface struct {
 	// canvasImages are the images canvases draw, by ImageSource.Key.
 	canvasImages map[string]*canvasImage
 	meshCanvas   js.Value
-	// slicedCanvases are the canvases past the bitmap budget whose visible
-	// part is drawn and updated as scrolling or panning moves them.
+	// slicedCanvases are the canvases past the bitmap budget whose visible part is drawn and updated as scrolling or panning moves them.
 	slicedCanvases map[*view]bool
 	// canvasFrames are the canvases of the pixels canvases drew last (canvasFrame).
 	canvasFrames      []canvasFrame
@@ -283,15 +282,12 @@ type view struct {
 	moves       bool     // pointermove is
 	// canvasRatio is the pixels per point of the last replay, including scroll zoom and style transforms.
 	canvasRatio float64
-	// canvasTile is the drawing-point rectangle painted in inner, and
-	// canvasSliced whether inner is positioned as a visible sub-rectangle.
+	// canvasTile is the drawing-point rectangle painted in inner, and canvasSliced whether inner is positioned as a visible sub-rectangle.
 	canvasTile   canvasRect
 	canvasSliced bool
 	// canvasExact is whether the canvas is drawn with image-rendering: pixelated, which it is while its bitmap matches the screen pixels an axis-aligned zoom shows it at.
 	canvasExact bool
-	// transformZoom and transformSkewed track the view's style/animated
-	// transform scale and whether it rotates/skews/tilts, for sharp canvas
-	// replay under style transforms.
+	// transformZoom and transformSkewed track the view's style/animated transform scale and whether it rotates/skews/tilts, for sharp canvas replay under style transforms.
 	transformZoom   float64
 	transformSkewed bool
 	rasterTimer     js.Value

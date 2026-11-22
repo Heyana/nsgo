@@ -126,8 +126,7 @@ func TestLargeZoomedCanvasIsSharp(t *testing.T) {
 	requireWeb(t)
 	var ref core.Ref
 	draws := 0
-	// 2500×2500 at 3x zoom (ratio 2 -> 15000×15000 full bitmap) exceeds the
-	// 4096×4096 budget and stays sharp only by drawing its visible slice.
+	// 2500×2500 at 3x zoom (ratio 2 -> 15000×15000 full bitmap) exceeds the 4096×4096 budget and stays sharp only by drawing its visible slice.
 	large := core.Canvas{Style: core.Style{Width: core.Pt(2500), Height: core.Pt(2500)}, Draw: func(d *core.Drawing, _ core.Size) {
 		draws++
 		d.SetFillColor(core.RGB(0xffffff)).FillRect(0, 0, 2500, 2500)

@@ -162,8 +162,7 @@ func (t Transform) Scales() (x, y float32) {
 	return x, y
 }
 
-// RasterScale is the largest magnitude scale factor t applies along either
-// axis in the view's plane, folding Then in when set.
+// RasterScale is the largest magnitude scale factor t applies along either axis in the view's plane, folding Then in when set.
 func (t Transform) RasterScale() float32 {
 	if t.Then != (Matrix3D{}) {
 		t = t.InPlane()
@@ -172,8 +171,7 @@ func (t Transform) RasterScale() float32 {
 	return max(float32(math.Abs(float64(sx))), float32(math.Abs(float64(sy))))
 }
 
-// AxisAligned reports whether t only translates and scales in the view's
-// plane, without rotation, skew, perspective or depth.
+// AxisAligned reports whether t only translates and scales in the view's plane, without rotation, skew, perspective or depth.
 func (t Transform) AxisAligned() bool {
 	if t.Rotate != 0 || t.RotateX != 0 || t.RotateY != 0 || t.RotateZ != 0 || t.SkewX != 0 || t.SkewY != 0 || t.Perspective != 0 {
 		return false
@@ -185,10 +183,7 @@ func (t Transform) AxisAligned() bool {
 	return t.Flat() && m[1] == 0 && m[4] == 0
 }
 
-// RasterStep is how many times its pixels a layer scaled by scale draws
-// its content at: 1 up to its own size, then in steps of a half up to 4,
-// so its text and drawings stay sharp while a zoom redraws them only as
-// it passes a step.
+// RasterStep is how many times its pixels a layer scaled by scale draws its content at: 1 up to its own size, then in steps of a half up to 4, so its text and drawings stay sharp while a zoom redraws them only as it passes a step.
 func RasterStep(scale float32) float64 {
 	if !(scale > 1) {
 		return 1
