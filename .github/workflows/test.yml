@@ -209,6 +209,11 @@ jobs:
           NSGO_GALLERY_PERF: '1'
           NSGO_GALLERY_PERF_SECONDS: '3'
         run: xvfb-run -a go tool nsgo test -target linux -fps -run '^TestPerfCanvasSprites' ./examples/gallery
+      - name: Compare native Cairo atlas pixels
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+        run: xvfb-run -a go tool nsgo test -target linux -run '^TestCanvasAtlas(MatchesDrawImageFrom|Sampling)$' ./internal/testhost/testdata/capture
       - name: Test browser empty web sources
         run: go tool nsgo test -target web -run '^TestEmptyWebSourceIsOpaque$' ./internal/platform/web
       - name: Test Linux owned-window visibility and minimization
@@ -248,6 +253,8 @@ jobs:
         run: go tool nsgo test -target web ./internal/testhost/testdata/press
       - name: Test browser editing keys and bindings
         run: go tool nsgo test -target web ./internal/testhost/testdata/keys
+      - name: Compare canvas atlas pixels in Chromium
+        run: go tool nsgo test -target web -run '^TestCanvasAtlas(MatchesDrawImageFrom|Sampling)$' ./internal/testhost/testdata/capture
       - name: Test browser backend
         run: go tool nsgo test -target web ./internal/platform/web
       - name: Test browser raised sound limits
@@ -330,6 +337,8 @@ jobs:
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestGreets$' ./examples/hello || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/press || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestStandaloneReviewSDKClasses$' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestCanvasAtlasWire$' ./internal/platform/android
+            go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestCanvasAtlas(MatchesDrawImageFrom|Sampling)$' ./internal/testhost/testdata/capture
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestHardwareKeys' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestNotificationPressIntentsKeepCollidingIDs$' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestMountFlushesDeferredShaderPixels$|^TestSendExtended' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
@@ -464,6 +473,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 2m -run '^Test(IOSCaptureIsSRGB|Apple(Content|Native|Image|Scroll)ClipKeepsOuterDecoration)$' ./internal/testhost/testdata/capture
           go tool nsgo test -target ios_simulator -timeout 1m -run '^Test(Scroll|List)PastItsEndComesBackToIt$' ./nsgotest
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/frameclock
+          go tool nsgo test -target ios_simulator -timeout 1m -run '^TestCanvasAtlas(MatchesDrawImageFrom|Sampling)$' ./internal/testhost/testdata/capture
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestPressAtFindsZoomedScrollContent$' ./internal/testhost/testdata/press
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audio
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
@@ -510,6 +520,8 @@ jobs:
         run: go tool nsgo test -target windows -run TestWindowStateReadsNativeVisibility ./internal/testhost/testdata/windowstate
       - name: Test widget and Live Activity recording
         run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
+      - name: Compare Direct2D atlas pixels in direct and cached drawing
+        run: go tool nsgo test -run '^TestCanvasAtlasDrawsLikeImages$' ./internal/platform/windows
       - name: Test native focus, styles, activation and label relationships
         run: go tool nsgo test -run '^(TestRefFocusUsesNativeKeyboardStops|TestNativeLabeledByProvider)$' ./internal/platform/windows
       - name: Run the many-sprite canvas scenario

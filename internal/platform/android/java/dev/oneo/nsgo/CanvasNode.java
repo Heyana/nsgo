@@ -583,6 +583,9 @@ final class CanvasNode extends View {
                     case Protocol.DRAW_VERTICES:
                         vertices(b);
                         break;
+                    case Protocol.DRAW_ATLAS:
+                        atlas(b);
+                        break;
                     case Protocol.DRAW_CLEAR: {
                         float x = b.getFloat(), y = b.getFloat(), w = b.getFloat(), h = b.getFloat();
                         canvas.save();
@@ -908,6 +911,66 @@ final class CanvasNode extends View {
             canvas.concat(state.ctm);
             draw(() -> canvas.drawVertices(Canvas.VertexMode.TRIANGLES, verts.length, verts, 0,
                     tex, 0, colors, 0, null, 0, 0, paint), true);
+            canvas.restore();
+        }
+
+        private void atlas(ByteBuffer ops) {
+            String key = string(ops);
+            boolean nearest = ops.get() != 0;
+            int count = ops.getInt();
+            ByteBuffer sprites = ops.slice();
+            ops.position(ops.position() + count * AtlasMesh.SPRITE_BYTES);
+            if (count == 0) return;
+            if (pixels.containsKey(key)) {
+                Picture picture = pixels.get(key);
+                if (picture != null) atlas(picture, sprites, count, nearest);
+            } else if (pictures != null && !key.isEmpty()) {
+                try (CanvasImages<Picture>.Lease lease = pictures.acquire(key)) {
+                    if (lease != null) atlas(lease.value, sprites, count, nearest);
+                }
+            }
+        }
+
+        private void atlas(Picture p, ByteBuffer sprites, int count, boolean nearest) {
+            canvas.save();
+            canvas.concat(state.ctm);
+            boolean simple = state.composite == SOURCE_OVER && Color.alpha(state.shadowColor) == 0;
+            if (simple && AtlasMesh.draw(canvas, p, sprites, count, state.alpha, nearest)) {
+                canvas.restore();
+                return;
+            }
+            Rect from = new Rect();
+            RectF to = new RectF();
+            paint.reset();
+            paint.setAntiAlias(true);
+            paint.setFilterBitmap(!nearest);
+            for (int i = 0; i < count; i++) {
+                float x = sprites.getFloat(), y = sprites.getFloat(), w = sprites.getFloat(), h = sprites.getFloat();
+                float c = sprites.getFloat(), s = sprites.getFloat(), tx = sprites.getFloat(), ty = sprites.getFloat();
+                float alpha = sprites.getFloat() * state.alpha;
+                from.set(Math.round(x * p.scale), Math.round(y * p.scale),
+                        Math.round((x + w) * p.scale), Math.round((y + h) * p.scale));
+                paint.setAlpha(Math.round(255 * alpha));
+                if (s == 0 && c > 0) {
+                    to.set(tx, ty, tx + w * c, ty + h * c);
+                    if (simple) {
+                        canvas.drawBitmap(p.bitmap, from, to, paint);
+                    } else {
+                        draw(() -> canvas.drawBitmap(p.bitmap, from, to, paint), true);
+                    }
+                    continue;
+                }
+                to.set(0, 0, w, h);
+                Matrix local = new Matrix();
+                local.setValues(new float[]{c, -s, tx, s, c, ty, 0, 0, 1});
+                canvas.save();
+                canvas.concat(local);
+                Matrix original = new Matrix(state.ctm);
+                state.ctm.preConcat(local);
+                draw(() -> canvas.drawBitmap(p.bitmap, from, to, paint), true);
+                state.ctm.set(original);
+                canvas.restore();
+            }
             canvas.restore();
         }
 

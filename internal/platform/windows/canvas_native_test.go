@@ -32,7 +32,7 @@ func TestCanvasSamples(t *testing.T) {
 	}
 	src := driver.ImageSource{Data: logo}
 	w.canvasImages = map[string]*imageSlot{src.Key(): {src: src, pic: pic}}
-	for _, s := range append(canvastest.Samples(w, logo), canvastest.Sampling(w)) {
+	for _, s := range append(canvastest.Samples(w, logo), canvastest.Sampling(w), canvastest.AtlasSampling(w)) {
 		t.Run(s.Name, func(t *testing.T) {
 			img := drawImage(t, g, s.Width, s.Height, func(p *painter) {
 				p.canvas(&view{drawing: s.Drawing}, float32(s.Width), float32(s.Height))

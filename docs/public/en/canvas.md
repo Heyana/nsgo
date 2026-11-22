@@ -44,11 +44,13 @@ badge := core.MustParseSVG([]byte(`<svg viewBox="0 0 120 40">
 d.DrawSVGIn(badge, 12, 12, 180, 60)
 ```
 
-Scaled bitmaps use smooth sampling by default. For pixel art, call `d.SetImageSmoothing(false)` before drawing the bitmap, or set `ctx.imageSmoothingEnabled = false` in TSX. `Save` and `Restore` keep the setting with the rest of the drawing state. Nearest-neighbor sampling is available on Apple platforms, Windows, Linux, Android and the web; HarmonyOS and mini programs apply it too, though their output is not yet checked on devices.
+Scaled bitmaps use smooth sampling by default. For pixel art, call `d.SetImageSmoothing(false)` before `DrawImage`, `DrawImageFrom` or `DrawAtlas`, or set `ctx.imageSmoothingEnabled = false` in TSX. `Save` and `Restore` keep the setting with the rest of the drawing state. Nearest-neighbor sampling is available on Apple platforms, Windows, Linux, Android and the web; HarmonyOS and mini programs apply it too, though their output is not yet checked on devices.
 
 `d.DrawVertices(image, vertices)` draws a textured mesh. Each consecutive three `core.CanvasVertex` values make one triangle. Set `Position` in canvas points and `TexCoord` in image points, as in `DrawImageFrom`. Each vertex's `Color` multiplies the texture and interpolates over the triangle. Its zero value leaves the texture unchanged. Update the points and record the drawing again to deform the mesh. The image can be any `ImageSource`, including a pixel buffer or an `OffscreenImage`'s `Source()`; Android's canvases draw no offscreen images yet. `SetImageSmoothing(false)` applies to meshes too. The web needs inline or same-origin images for arbitrary meshes.
 
 `DrawTintedImage`, `DrawTintedImageIn` and `DrawTintedImageFrom` multiply an image's sRGB and alpha channels by a color before compositing. With the default source-over mode, transparent pixels leave the backdrop visible. Use `drawTintedImage(image, tint, ...args)` in TSX with the same coordinate forms as `drawImage`. A cross-origin source on the web must permit anonymous CORS requests for its pixels to be tinted. HarmonyOS does not support tinting yet and draws these images untinted.
+
+Use `d.DrawAtlas(source, rects, xforms, alphas)` to draw many sprites from one image in order. Each `core.Bounds` selects a tile in the image's own points. The matching `core.RSXform` maps the tile's top-left corner to `TX, TY`, with `SCos` and `SSin` set to the scale times the cosine and sine of the rotation. For example, `core.RSXform{SCos: 0.5, TX: 40, TY: 20}` draws a 32-point tile at half size at (40, 20). Pass `nil` for full sprite opacity, or supply factors that multiply the current drawing alpha.
 
 `Drawing.Node` names a part of a drawing, such as a chart's bar or a map's region, with bounds, a role, a label and a selected state. Assistive technology reads those parts as the canvas's children, and tests find them by label, text or test ID; a press on one is a press at its center.
 
@@ -63,7 +65,7 @@ d.Node(core.CanvasNode{
 
 ## Offscreen images
 
-`cx.NewOffscreenImage(size, scale, draw)` renders a `core.Drawing` once into a retained offscreen image that later frames draw with `DrawImage`, `DrawImageIn`, `DrawImageFrom` or `core.Image`. Passing `scale <= 0` uses the current display pixel ratio. The drawing is re-rendered only when `Invalidate()` or `Resize(size, scale)` is called (or when new fonts register), and is automatically released when `cx` is disposed or `Release()` is called.
+`cx.NewOffscreenImage(size, scale, draw)` renders a `core.Drawing` once into a retained offscreen image that later frames draw with `DrawImage`, `DrawImageIn`, `DrawImageFrom`, `DrawAtlas` or `core.Image`. Passing `scale <= 0` uses the current display pixel ratio. The drawing is re-rendered only when `Invalidate()` or `Resize(size, scale)` is called (or when new fonts register), and is automatically released when `cx` is disposed or `Release()` is called.
 
 ```go
 tiles := cx.NewOffscreenImage(core.Size{Width: 512, Height: 512}, 0, func(d *core.Drawing) {

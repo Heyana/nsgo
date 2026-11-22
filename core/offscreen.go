@@ -16,7 +16,7 @@ var nextOffscreenID atomic.Uint64
 // re-executing its drawing operations.
 //
 // Source returns an ImageSource directly usable in Drawing.DrawImage,
-// Drawing.DrawImageIn, Drawing.DrawImageFrom, and Image. The offscreen
+// Drawing.DrawImageIn, Drawing.DrawImageFrom, Drawing.DrawAtlas, and Image. The offscreen
 // drawing is recorded lazily on first use and re-recorded only when
 // Invalidate or Resize is called (or when newly registered fonts become
 // available). Call Release to drop the cached surface early; it is also

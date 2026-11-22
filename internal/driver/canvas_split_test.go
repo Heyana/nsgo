@@ -46,3 +46,14 @@ func TestSplitCanvasWithoutBindingsHasNoStaticPart(t *testing.T) {
 		t.Errorf("split %+v of an unbound drawing", s)
 	}
 }
+
+func TestSplitCanvasKeepsAtlasAsStaticPaint(t *testing.T) {
+	d := &Drawing{}
+	tile := Bounds{Size: Size{Width: 10, Height: 10}}
+	d.DrawAtlas(ImageSource{URI: "asset:atlas.png"}, []Bounds{tile}, []RSXform{{SCos: 1}}, nil)
+	d.Translate(10, 0).Bind(ArgX, testNode(1)).FillRect(0, 0, 10, 10)
+	s := SplitCanvas(d)
+	if !s.Static(d) || !s.Skips(0, &d.Ops[0]) {
+		t.Fatalf("split %+v should keep the atlas and skip its painting during replay", s)
+	}
+}

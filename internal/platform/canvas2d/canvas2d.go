@@ -180,6 +180,8 @@ func (p *Player) Play(op *driver.DrawOp) {
 		p.image(op)
 	case driver.DrawVertices:
 		p.vertices(op)
+	case driver.DrawAtlas:
+		p.atlas(op)
 	}
 }
 

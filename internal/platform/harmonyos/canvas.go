@@ -17,14 +17,14 @@ type canvasOp struct {
 	K    int       `json:"k"`
 	X    float32   `json:"x,omitempty"`
 	Y    float32   `json:"y,omitempty"`
-	X1   float32   `json:"x1,omitempty"`
+	X1   *float32  `json:"x1,omitempty"`
 	Y1   float32   `json:"y1,omitempty"`
 	X2   float32   `json:"x2,omitempty"`
-	Y2   float32   `json:"y2,omitempty"`
+	Y2   *float32  `json:"y2,omitempty"`
 	W    float32   `json:"w,omitempty"`
 	H    float32   `json:"h,omitempty"`
 	R    float32   `json:"r,omitempty"`
-	A    float32   `json:"a,omitempty"`
+	A    *float32  `json:"a,omitempty"`
 	A0   float32   `json:"a0,omitempty"`
 	A1   float32   `json:"a1,omitempty"`
 	RY   float32   `json:"ry,omitempty"`
@@ -69,14 +69,38 @@ type stop struct {
 // canvasJSON serializes a drawing for the host.
 func canvasJSON(ops []driver.DrawOp) string {
 	out := make([]canvasOp, 0, len(ops))
+	alpha := float32(1)
+	var saved []float32
 	for i := range ops {
 		o := &ops[i]
 		c := canvasOp{
-			K: int(o.Kind), X: o.X, Y: o.Y, X1: o.X1, Y1: o.Y1, X2: o.X2, Y2: o.Y2,
-			W: o.W, H: o.H, R: o.R, A: o.A, A0: o.A0, A1: o.A1, RY: o.RY, CCW: o.CCW, EO: o.EvenOdd,
+			K: int(o.Kind), X: o.X, Y: o.Y, Y1: o.Y1, X2: o.X2,
+			W: o.W, H: o.H, R: o.R, A0: o.A0, A1: o.A1, RY: o.RY, CCW: o.CCW, EO: o.EvenOdd,
 			T: o.Text, FF: o.Font.Family, FS: float32(o.Font.Size), FW: int(o.Font.Weight), FI: o.Font.Italic,
 		}
+		if o.X1 != 0 || o.Kind == driver.DrawTransform || o.Kind == driver.DrawSetTransform {
+			c.X1 = &o.X1
+		}
+		if o.Y2 != 0 || o.Kind == driver.DrawTransform || o.Kind == driver.DrawSetTransform {
+			c.Y2 = &o.Y2
+		}
+		if o.A != 0 || o.Kind == driver.DrawAlpha {
+			c.A = &o.A
+		}
 		switch o.Kind {
+		case driver.DrawSave:
+			saved = append(saved, alpha)
+		case driver.DrawRestore:
+			if n := len(saved); n != 0 {
+				alpha, saved = saved[n-1], saved[:n-1]
+			}
+		case driver.DrawAlpha:
+			if o.A >= 0 && o.A <= 1 {
+				alpha = o.A
+			}
+		case driver.DrawAtlas:
+			out = appendAtlas(out, o, alpha)
+			continue
 		case driver.DrawFillColor, driver.DrawStrokeColor, driver.DrawShadow:
 			c.C = webstyle.Color(o.Color)
 		case driver.DrawLineCap:
@@ -110,6 +134,33 @@ func canvasJSON(ops []driver.DrawOp) string {
 }
 
 // gradientOf maps a drawing gradient, leaving out what the host cannot play.
+// appendAtlas replays through the committed ArkTS host's image ops.
+func appendAtlas(out []canvasOp, op *driver.DrawOp, alpha float32) []canvasOp {
+	if op.Image == nil || op.Atlas == nil {
+		return out
+	}
+	img := canvasOp{K: int(driver.DrawImage), Img: op.Image.URI}
+	if len(op.Image.Data) > 0 {
+		img.ImgData = base64.StdEncoding.EncodeToString(op.Image.Data)
+	}
+	for _, sprite := range *op.Atlas {
+		t, b := sprite.Transform, sprite.Rect
+		x, h := float32(b.Origin.X), float32(b.Size.Height)
+		img.X1, img.Y1 = &x, float32(b.Origin.Y)
+		img.W, img.H = float32(b.Size.Width), h
+		img.X2, img.Y2 = img.W, &h
+		a := alpha * sprite.Alpha
+		out = append(out,
+			canvasOp{K: int(driver.DrawSave)},
+			canvasOp{K: int(driver.DrawTransform), X1: &t.SCos, Y1: t.SSin, X2: -t.SSin, Y2: &t.SCos, X: t.TX, Y: t.TY},
+			canvasOp{K: int(driver.DrawAlpha), A: &a},
+			img,
+			canvasOp{K: int(driver.DrawRestore)},
+		)
+	}
+	return out
+}
+
 func gradientOf(g *driver.CanvasGradient) *gradient {
 	if g == nil || g.Conic {
 		return nil

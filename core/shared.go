@@ -67,10 +67,16 @@ type (
 	// DecayConfig slows a value from Velocity (units per second; the value's
 	// current velocity when 0) by Deceleration per millisecond (0.998 when 0).
 	DecayConfig = driver.DecayConfig
+	// AtlasSprite is a recorded source rectangle, transform and opacity.
+	AtlasSprite = driver.AtlasSprite
+	// AtlasSprites is the sprite list recorded by a DrawAtlas operation.
+	AtlasSprites = driver.AtlasSprites
 	// DrawKind is a drawing operation.
 	DrawKind = driver.DrawKind
 	// DrawOp is one operation; Kind says which fields it uses.
 	DrawOp = driver.DrawOp
+	// RSXform scales, rotates and translates one DrawAtlas sprite.
+	RSXform = driver.RSXform
 	// Drawing is a recording of 2D drawing operations, modeled on the web's
 	// CanvasRenderingContext2D: a current path, fill and stroke settings, and a
 	// transform, saved and restored as a stack.
@@ -625,6 +631,7 @@ const (
 	DrawTextAlign      = driver.DrawTextAlign
 	DrawTextBaseline   = driver.DrawTextBaseline
 	DrawVertices       = driver.DrawVertices
+	DrawAtlas          = driver.DrawAtlas
 )
 
 const (

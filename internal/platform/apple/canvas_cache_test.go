@@ -26,7 +26,7 @@ func isolatedCanvasImages(t *testing.T) {
 			if im.cancel != nil {
 				im.cancel()
 			}
-			Release(im.image)
+			im.release()
 			im.image = 0
 			delete(canvasImages, key)
 		}
@@ -134,7 +134,7 @@ func TestCanvasImageCacheKeepsLoadsUnderWayAndEvictsFailed(t *testing.T) {
 		if im.cancel != nil {
 			im.cancel()
 		}
-		Release(im.image)
+		im.release()
 		delete(canvasImages, key)
 	}
 	for i := range maxCanvasImages {

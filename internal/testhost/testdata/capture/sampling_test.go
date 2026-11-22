@@ -15,6 +15,16 @@ import (
 
 // TestImageSampling checks the Canvas and Image presentation paths, for encoded, pixel-buffer and offscreen sources, with original black and white texels as the nearest-neighbor reference.
 func TestImageSampling(t *testing.T) {
+	checkImageSampling(t, canvastest.DrawSampling, true)
+}
+
+// TestCanvasAtlasSampling checks DrawAtlas's canvas draws alone: the Image views are TestImageSampling's, and the 640-pixel one does not fit the 320-pixel-wide Android emulator CI runs this on.
+func TestCanvasAtlasSampling(t *testing.T) {
+	checkImageSampling(t, canvastest.DrawAtlasSampling, false)
+}
+
+// checkImageSampling draws the sampling squares with draw on a canvas and, with images, checks the Image views and offscreen sources too.
+func checkImageSampling(t *testing.T, draw func(*core.Drawing, core.ImageSource, float32), images bool) {
 	switch nsgotest.Target() {
 	case "macos", "ios_simulator", "android", "linux", "web":
 	default:
@@ -27,7 +37,7 @@ func TestImageSampling(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Android draws no offscreen images yet.
-	offscreen := nsgotest.Target() != "android"
+	offscreen := images && nsgotest.Target() != "android"
 	var ratio float32
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		ratio = cx.Env().PixelRatio()
@@ -35,7 +45,7 @@ func TestImageSampling(t *testing.T) {
 		// The offscreen forms sit beside the canvas so the whole stays within a small display's height: AppKit lets a window run past the screen's bottom, and the capture shows nothing there.
 		top := []core.Node{
 			core.Canvas{TestID: "canvas", Style: core.Style{Width: pt(256), Height: pt(256)}, Draw: func(d *core.Drawing, size core.Size) {
-				canvastest.DrawSampling(d, core.ImageSource{Data: encoded.Bytes()}, float32(size.Width)/2)
+				draw(d, core.ImageSource{Data: encoded.Bytes()}, float32(size.Width)/2)
 			}},
 		}
 		if offscreen {
@@ -61,8 +71,10 @@ func TestImageSampling(t *testing.T) {
 		}
 		children := []core.Node{
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignStart}, Children: top},
-			core.Image{TestID: "image", Style: core.Style{Width: pt(640), Height: pt(360)},
-				Source: core.ImageSource{Pixels: frame}, ResizeMode: core.Stretch, Sampling: core.ImageSamplingNearest},
+		}
+		if images {
+			children = append(children, core.Image{TestID: "image", Style: core.Style{Width: pt(640), Height: pt(360)},
+				Source: core.ImageSource{Pixels: frame}, ResizeMode: core.Stretch, Sampling: core.ImageSamplingNearest})
 		}
 		return core.View{Style: core.Style{Width: core.Pct(100), Height: core.Pct(100), Padding: core.All(core.Points(16 / ratio)), Background: core.RGB(0xff0000)}, Children: children}
 	}, nsgotest.Size(700, 680))
@@ -70,10 +82,19 @@ func TestImageSampling(t *testing.T) {
 		b := app.Find("id:" + id).Bounds()
 		return image.Pt(int(math.Round(float64(float32(b.Origin.X)*ratio))), int(math.Round(float64(float32(b.Origin.Y)*ratio))))
 	}
-	canvas, picture := origin("canvas"), origin("image")
+	canvas := origin("canvas")
+	origins := []image.Point{canvas.Add(image.Pt(129, 1))}
+	var picture image.Point
+	if images {
+		picture = origin("image")
+		origins = append(origins, picture.Add(image.Pt(1, 1)))
+	}
 	var offscreenOrigins []image.Point
 	if offscreen {
 		offscreenOrigins = []image.Point{origin("offscreen-canvas"), origin("offscreen-image")}
+		for _, o := range offscreenOrigins {
+			origins = append(origins, o.Add(image.Pt(1, 1)))
+		}
 	}
 	var img image.Image
 	// The PNG canvas image loads off-thread. Wait until both views have
@@ -81,10 +102,6 @@ func TestImageSampling(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		img = app.Capture()
-		origins := []image.Point{canvas.Add(image.Pt(129, 1)), picture.Add(image.Pt(1, 1))}
-		for _, o := range offscreenOrigins {
-			origins = append(origins, o.Add(image.Pt(1, 1)))
-		}
 		ready := true
 		for _, p := range origins {
 			r, g, b, a := img.At(p.X, p.Y).RGBA()
@@ -120,6 +137,9 @@ func TestImageSampling(t *testing.T) {
 		if !blended {
 			t.Errorf("smooth canvas draw at y=%d has no blended texel edge", y)
 		}
+	}
+	if !images {
+		return
 	}
 	if first, differs := canvastest.SamplingDifference(img, picture, frame, 2, tolerance); differs {
 		t.Errorf("nearest Image differs at capture pixel %v: %v", first, img.At(first.X, first.Y))

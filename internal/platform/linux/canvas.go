@@ -39,34 +39,35 @@ func (m cairoMatrix) invert() (cairoMatrix, bool) {
 }
 
 var (
-	cairoSetDash               func(cr uintptr, dashes *float64, n int32, offset float64)
-	cairoSetMiterLimit         func(cr uintptr, limit float64)
-	cairoTransform             func(cr uintptr, m *cairoMatrix)
-	cairoSetMatrix             func(cr uintptr, m *cairoMatrix)
-	cairoGetMatrix             func(cr uintptr, m *cairoMatrix)
-	cairoCopyPath              func(cr uintptr) uintptr
-	cairoAppendPath            func(cr, path uintptr)
-	cairoPathDestroy           func(path uintptr)
-	cairoStrokePreserve        func(cr uintptr)
-	cairoSetSource             func(cr, pattern uintptr)
-	cairoPatternCreateLinear   func(x0, y0, x1, y1 float64) uintptr
-	cairoPatternCreateRadial   func(x0, y0, r0, x1, y1, r1 float64) uintptr
-	cairoPatternCreateMesh     func() uintptr
-	cairoMeshBeginPatch        func(p uintptr)
-	cairoMeshEndPatch          func(p uintptr)
-	cairoMeshMoveTo            func(p uintptr, x, y float64)
-	cairoMeshLineTo            func(p uintptr, x, y float64)
-	cairoMeshCurveTo           func(p uintptr, x1, y1, x2, y2, x, y float64)
-	cairoMeshSetCornerColor    func(p uintptr, corner uint32, r, g, b, a float64)
-	cairoPatternAddStop        func(p uintptr, offset, r, g, b, a float64)
-	cairoPatternSetExtend      func(p uintptr, extend int32)
-	cairoPatternSetMatrix      func(p uintptr, m *cairoMatrix)
-	cairoPatternDestroy        func(p uintptr)
-	cairoMaskSurface           func(cr, surface uintptr, x, y float64)
-	cairoMask                  func(cr, pattern uintptr)
-	cairoPopGroup              func(cr uintptr) uintptr
-	cairoImageSurfaceCreateFor func(data unsafe.Pointer, format, w, h, stride int32) uintptr
-	pangoCairoLayoutPath       func(cr, layout uintptr)
+	cairoSetDash                 func(cr uintptr, dashes *float64, n int32, offset float64)
+	cairoSetMiterLimit           func(cr uintptr, limit float64)
+	cairoTransform               func(cr uintptr, m *cairoMatrix)
+	cairoSetMatrix               func(cr uintptr, m *cairoMatrix)
+	cairoGetMatrix               func(cr uintptr, m *cairoMatrix)
+	cairoCopyPath                func(cr uintptr) uintptr
+	cairoAppendPath              func(cr, path uintptr)
+	cairoPathDestroy             func(path uintptr)
+	cairoStrokePreserve          func(cr uintptr)
+	cairoSetSource               func(cr, pattern uintptr)
+	cairoPatternCreateForSurface func(surface uintptr) uintptr
+	cairoPatternCreateLinear     func(x0, y0, x1, y1 float64) uintptr
+	cairoPatternCreateRadial     func(x0, y0, r0, x1, y1, r1 float64) uintptr
+	cairoPatternCreateMesh       func() uintptr
+	cairoMeshBeginPatch          func(p uintptr)
+	cairoMeshEndPatch            func(p uintptr)
+	cairoMeshMoveTo              func(p uintptr, x, y float64)
+	cairoMeshLineTo              func(p uintptr, x, y float64)
+	cairoMeshCurveTo             func(p uintptr, x1, y1, x2, y2, x, y float64)
+	cairoMeshSetCornerColor      func(p uintptr, corner uint32, r, g, b, a float64)
+	cairoPatternAddStop          func(p uintptr, offset, r, g, b, a float64)
+	cairoPatternSetExtend        func(p uintptr, extend int32)
+	cairoPatternSetMatrix        func(p uintptr, m *cairoMatrix)
+	cairoPatternDestroy          func(p uintptr)
+	cairoMaskSurface             func(cr, surface uintptr, x, y float64)
+	cairoMask                    func(cr, pattern uintptr)
+	cairoPopGroup                func(cr uintptr) uintptr
+	cairoImageSurfaceCreateFor   func(data unsafe.Pointer, format, w, h, stride int32) uintptr
+	pangoCairoLayoutPath         func(cr, layout uintptr)
 )
 
 func bindCanvas(cairoLib, pangocairoLib uintptr) {
@@ -81,6 +82,7 @@ func bindCanvas(cairoLib, pangocairoLib uintptr) {
 	reg(&cairoPathDestroy, cairoLib, "cairo_path_destroy")
 	reg(&cairoStrokePreserve, cairoLib, "cairo_stroke_preserve")
 	reg(&cairoSetSource, cairoLib, "cairo_set_source")
+	reg(&cairoPatternCreateForSurface, cairoLib, "cairo_pattern_create_for_surface")
 	reg(&cairoPatternCreateLinear, cairoLib, "cairo_pattern_create_linear")
 	reg(&cairoPatternCreateRadial, cairoLib, "cairo_pattern_create_radial")
 	reg(&cairoPatternCreateMesh, cairoLib, "cairo_pattern_create_mesh")
@@ -329,6 +331,8 @@ func (p *canvasPlayer) play(op *driver.DrawOp) {
 		p.image(op)
 	case driver.DrawVertices:
 		p.vertices(op)
+	case driver.DrawAtlas:
+		p.atlas(op)
 	case driver.DrawClear:
 		path := cairoCopyPath(cr)
 		cairoSave(cr)

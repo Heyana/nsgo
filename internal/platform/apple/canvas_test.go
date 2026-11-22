@@ -111,7 +111,7 @@ func TestCanvasSamples(t *testing.T) {
 	if len(loaded) == 0 {
 		t.Fatal("the image did not load")
 	}
-	for _, s := range append(canvastest.Samples(TextEngine{}, logo), canvastest.Sampling(TextEngine{})) {
+	for _, s := range append(canvastest.Samples(TextEngine{}, logo), canvastest.Sampling(TextEngine{}), canvastest.AtlasSampling(TextEngine{})) {
 		t.Run(s.Name, func(t *testing.T) {
 			for _, flipped := range []bool{false, true} {
 				for _, f := range s.Check(play(t, s.Name, s.Drawing, s.Width, s.Height, flipped)) {

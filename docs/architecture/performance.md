@@ -145,6 +145,20 @@ The desktop main column uses the monitor's measured work per frame. In particula
 
 Batching is warranted on macOS, where each crop creates a Core Graphics subimage and both loads miss 60 Hz, and on Android at 5,000 sprites, where main-thread work alone exceeds one refresh. The Linux software renderer also falls short and warrants measuring a reused atlas pattern on native Linux. Chrome holds 60 Hz at 1,000 and falls below it at 5,000. Windows keeps about 45 callbacks/s at both loads, while its main-thread work rises from 1.39 to 4.87 ms. [DrawAtlas](https://github.com/nsgo-dev/nsgo/issues/1103) tracks the implementation and comparison.
 
+## Canvas atlas batching
+
+The [many-sprite scenario](https://github.com/nsgo-dev/nsgo/pull/1164) draws 1,000 or 5,000 moving 32 × 32 crops from one 1024 × 1024 image into 16-point squares. For this comparison, both runs used the same fixture and positions, with one `DrawAtlas` call in place of the per-sprite `DrawImageFrom` calls. Source rectangles and transform storage were prepared before the frame loop. Each load ran for five seconds after a two-second warm-up. Rates count animation callbacks, and held-frame capture age includes test settling, PNG encoding and readback.
+
+| Target and setup | 1,000 callbacks/s | 5,000 callbacks/s | Capture age p50 (1,000 / 5,000, ms) |
+| --- | ---: | ---: | ---: |
+| macOS 27.2, M4 Pro, 120 Hz | 24.56 → 28.63 | 6.64 → 7.76 | 281 / 415 → 283 / 397 |
+| Android 12, Pixel 3 XL, 60 Hz | 59.88 → 59.87 | 29.26 → 39.92 | 936 / 1,478 → 959 / 1,474 |
+| Headless Chromium, M4 Pro | 59.81 → 60.01 | 55.45 → 59.99 | 520 / 1,205 → 742 / 1,095 |
+
+On macOS the median of each second's app recording time fell from 0.21 to 0.04 ms at 1,000 sprites and from 0.69 to 0.08 ms at 5,000. The frame rate still reflects Core Graphics image draws and Core Animation. On Android, much of this workload lands on fractional device pixels. Those sprites use the bitmap path and still share one image lookup and paint state.
+
+In the Ubuntu 24.04 arm64 VM, the isolated 5,000-sprite Cairo replay took 20.86 ms per drawing with individual operations and 15.81 ms with the reused pattern. End-to-end callback rates in the shared VM varied with host load and were lower in the first atlas run, at 25.54 → 10.83 for 1,000 sprites and 10.37 → 1.98 for 5,000. Linux desktop throughput needs a paired run on a dedicated machine.
+
 ## Partial frames on Windows
 
 As NSH's, a frame draws only what changed since its back buffer was drawn and presents only what changed since the last frame (`internal/platform/windows/damage.go`):

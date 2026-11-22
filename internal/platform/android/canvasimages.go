@@ -56,7 +56,7 @@ func (c *canvasRequests) update(surface uint32, b *driver.MountBatch) {
 		var sources []driver.ImageSource
 		if it.Kind == driver.ItemCanvas && it.Drawing != nil {
 			for _, op := range it.Drawing.Ops {
-				if (op.Kind == driver.DrawImage || op.Kind == driver.DrawVertices) && op.Image != nil && op.Image.Pixels == nil {
+				if op.Image != nil && op.Image.Pixels == nil {
 					sources = append(sources, *op.Image)
 				}
 			}

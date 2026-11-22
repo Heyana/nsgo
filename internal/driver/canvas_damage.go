@@ -174,7 +174,7 @@ func (d *damageScan) step(a, b *DrawOp, changed bool) bool {
 			}
 			return d.path[i].inflate(d.cur[i].strokeReach())
 		})
-	case DrawFillText, DrawStrokeText, DrawClear, DrawImage, DrawVertices:
+	case DrawFillText, DrawStrokeText, DrawClear, DrawImage, DrawVertices, DrawAtlas:
 		s := &d.cur[1]
 		if !changed && !s.painted && !s.moved && !s.composed {
 			return true
@@ -267,6 +267,18 @@ func (s *damageState) opBox(op *DrawOp) box {
 		}
 	}
 	switch op.Kind {
+	case DrawAtlas:
+		if op.Atlas != nil {
+			for _, sprite := range *op.Atlas {
+				t := sprite.Transform
+				x, y := float64(t.SCos), float64(t.SSin)
+				m := s.m.then(canvasMatrix{a: x, b: y, c: -y, d: x, e: float64(t.TX), f: float64(t.TY)})
+				w, h := float64(sprite.Rect.Size.Width), float64(sprite.Rect.Size.Height)
+				for _, p := range [4]cpoint{{}, {w, 0}, {0, h}, {w, h}} {
+					b.add(m.apply(p))
+				}
+			}
+		}
 	case DrawFillText, DrawStrokeText:
 		em := float32(op.Font.Size)
 		if em <= 0 {

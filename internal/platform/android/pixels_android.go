@@ -29,7 +29,7 @@ func (v *treeView) trackCanvasPixels(b *driver.MountBatch, frames *[]pixelFrame)
 			var current map[string]*image.RGBA
 			if it.Drawing != nil {
 				for _, op := range it.Drawing.Ops {
-					if op.Kind != driver.DrawImage && op.Kind != driver.DrawVertices || op.Image == nil || op.Image.Pixels == nil {
+					if op.Image == nil || op.Image.Pixels == nil {
 						continue
 					}
 					px, key := op.Image.Pixels, op.Image.Key()

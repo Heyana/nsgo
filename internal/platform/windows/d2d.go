@@ -4,7 +4,7 @@ package windows
 
 // The Direct3D 11, DXGI, Direct2D 1.1 and DirectWrite interfaces this
 // backend calls, as vtable indexes (from d3d11.h, dxgi1_2.h, d2d1_1.h,
-// d2d1effects.h and dwrite.h; each interface's methods follow its base's),
+// d2d1_3.h, d2d1effects.h and dwrite.h; each interface's methods follow its base's),
 // and the structs they take.
 
 import "syscall"
@@ -20,19 +20,20 @@ var (
 )
 
 var (
-	iidDXGIDevice        = parseGUID("54ec77fa-1377-44e6-8c32-88fd5f44c84c")
-	iidDXGIDevice1       = parseGUID("77db970f-6276-48ba-ba28-070143b4392c")
-	iidDXGIFactory2      = parseGUID("50c83a1c-e072-4c48-87b0-3630fa36a6d0")
-	iidDXGISurface       = parseGUID("cafcb56c-6ac3-4889-bf47-9e23bbd260ec")
-	iidD3D11Multithread  = parseGUID("9b7e4e00-342c-4106-a19f-4f2704f689f0")
-	iidD2D1Factory1      = parseGUID("bb12d362-daee-4b9a-aa1d-14ba401cfa1f")
-	iidDWriteFactory     = parseGUID("b859ee5a-d838-4b5b-a2e8-1adc7d93db48")
-	iidDWriteFactory2    = parseGUID("0439fc60-ca44-4994-8dee-3a9af7b732ec")
-	iidDWriteTextFormat1 = parseGUID("5f174b49-0d8b-4cfb-8bca-f1cce9d06c67")
-	iidDWriteTextLayout1 = parseGUID("9064d822-80a7-465c-a986-df65f78b8feb")
-	iidDWriteInline      = parseGUID("8339fde3-106f-47ab-8373-1c6295eb10b3")
-	clsidGaussianBlur    = parseGUID("1feb6d69-2fe6-4ac9-8c58-1d7f93e7a6a5")
-	clsidShadow          = parseGUID("c67ea361-1863-4e69-89db-695d3e9a5b6b")
+	iidDXGIDevice         = parseGUID("54ec77fa-1377-44e6-8c32-88fd5f44c84c")
+	iidDXGIDevice1        = parseGUID("77db970f-6276-48ba-ba28-070143b4392c")
+	iidDXGIFactory2       = parseGUID("50c83a1c-e072-4c48-87b0-3630fa36a6d0")
+	iidDXGISurface        = parseGUID("cafcb56c-6ac3-4889-bf47-9e23bbd260ec")
+	iidD3D11Multithread   = parseGUID("9b7e4e00-342c-4106-a19f-4f2704f689f0")
+	iidD2D1Factory1       = parseGUID("bb12d362-daee-4b9a-aa1d-14ba401cfa1f")
+	iidD2D1DeviceContext3 = parseGUID("235a7496-8351-414c-bcd4-6672ab2d8e00")
+	iidDWriteFactory      = parseGUID("b859ee5a-d838-4b5b-a2e8-1adc7d93db48")
+	iidDWriteFactory2     = parseGUID("0439fc60-ca44-4994-8dee-3a9af7b732ec")
+	iidDWriteTextFormat1  = parseGUID("5f174b49-0d8b-4cfb-8bca-f1cce9d06c67")
+	iidDWriteTextLayout1  = parseGUID("9064d822-80a7-465c-a986-df65f78b8feb")
+	iidDWriteInline       = parseGUID("8339fde3-106f-47ab-8373-1c6295eb10b3")
+	clsidGaussianBlur     = parseGUID("1feb6d69-2fe6-4ac9-8c58-1d7f93e7a6a5")
+	clsidShadow           = parseGUID("c67ea361-1863-4e69-89db-695d3e9a5b6b")
 )
 
 // Vtable indexes.
@@ -80,6 +81,8 @@ const (
 	rtDrawText              = 27
 	rtDrawTextLayout        = 28
 	rtSetTransform          = 30
+	rtSetAntialiasMode      = 32
+	rtGetAntialiasMode      = 33
 	rtPopLayer              = 41
 	rtPushAxisAlignedClip   = 45
 	rtPopAxisAlignedClip    = 46
@@ -96,6 +99,11 @@ const (
 	dcSetTarget                   = 74
 	dcDrawImage                   = 83
 	dcPushLayer                   = 86
+
+	// ID2D1DeviceContext3, ID2D1SpriteBatch
+	dcCreateSpriteBatch = 106
+	dcDrawSpriteBatch   = 107
+	spriteBatchAdd      = 4
 
 	// ID2D1SolidColorBrush
 	brushSetColor = 8

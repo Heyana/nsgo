@@ -26,6 +26,7 @@ import (
 type canvasCache struct {
 	drawing *driver.Drawing
 	split   driver.CanvasSplit // At 0 when the drawing is one list
+	atlas   bool               // a recording can contain aliased sprites
 	// head is the static part's list, or the whole drawing's; tail the
 	// rest's, nil until played for the arguments' current values.
 	head, tail *comObject
@@ -36,9 +37,15 @@ type canvasCache struct {
 // setDrawing takes v's new drawing.
 func (c *canvasCache) setDrawing(d *driver.Drawing) {
 	c.release()
-	c.drawing, c.split = d, driver.CanvasSplit{}
+	c.drawing, c.split, c.atlas = d, driver.CanvasSplit{}, false
 	if d == nil {
 		return
+	}
+	for _, op := range d.Ops {
+		if op.Kind == driver.DrawAtlas {
+			c.atlas = true
+			break
+		}
 	}
 	if s := driver.SplitCanvas(d); s.Static(d) && !mixesAfter(d.Ops, s.At) {
 		c.split = s
@@ -83,6 +90,10 @@ func (p *painter) canvas(v *view, width, height float32) {
 		c.scale, c.generation = p.scale, gfxGeneration
 	}
 	ops := p.w.animator.CanvasOps(v.id, v.drawing)
+	if c.atlas && !atlasListTransform(p.m, p.scale) {
+		p.playCanvas(v, ops, width, height)
+		return
+	}
 	if c.head == nil {
 		if c.split.At > 0 {
 			c.head = p.recordCanvas(v, ops[:c.split.At], driver.CanvasSplit{}, width, height)

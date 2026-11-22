@@ -37,7 +37,7 @@ func TestCanvasSamples(t *testing.T) {
 			fn()
 		}
 	}
-	for _, s := range append(canvastest.Samples(w, logo), canvastest.Sampling(w)) {
+	for _, s := range append(canvastest.Samples(w, logo), canvastest.Sampling(w), canvastest.AtlasSampling(w)) {
 		t.Run(s.Name, func(t *testing.T) {
 			width, height := s.Width*canvastest.Scale, s.Height*canvastest.Scale
 			surface := cairoImageSurfaceCreate(0, int32(width), int32(height))

@@ -216,6 +216,7 @@ type canvasState struct {
 	fill, stroke         driver.Color
 	fillGrad, strokeGrad *driver.CanvasGradient
 	shadow               bool
+	alpha                float64
 	composite            driver.CompositeOp
 	// dash and phase are the dash pattern, which an offset sets again.
 	dash  []float64
@@ -253,7 +254,7 @@ func PlayOver(ctx uintptr, ops []driver.DrawOp, split driver.CanvasSplit, host C
 
 func newPlayer(ctx uintptr, ops []driver.DrawOp, split driver.CanvasSplit, host CanvasHost) *player {
 	return &player{ctx: ctx, ops: ops, split: split, base: cgContextGetCTM(ctx), host: host,
-		stack: []canvasState{{fill: 0x000000ff, stroke: 0x000000ff}}}
+		stack: []canvasState{{fill: 0x000000ff, stroke: 0x000000ff, alpha: 1}}}
 }
 
 func (p *player) run() {
@@ -514,7 +515,8 @@ func (p *player) play(at int) {
 	case driver.DrawLineDashOffset:
 		p.setDash(nil, f(op.W))
 	case driver.DrawAlpha:
-		cgContextSetAlpha(ctx, f(op.A))
+		p.st().alpha = min(max(f(op.A), 0), 1)
+		cgContextSetAlpha(ctx, p.st().alpha)
 	case driver.DrawComposite:
 		if int(op.Composite) < len(blendModes) {
 			p.st().composite = op.Composite
@@ -531,6 +533,8 @@ func (p *player) play(at int) {
 		p.image(op)
 	case driver.DrawVertices:
 		p.vertices(op)
+	case driver.DrawAtlas:
+		p.atlas(op)
 	}
 }
 
@@ -834,6 +838,8 @@ type loadedImage struct {
 	meshPixels      []byte // BGRA, fetched only when a mesh uses the image
 	failed          bool
 	waiting         map[any]func()
+	atlasCrops      map[driver.Bounds]uintptr
+	atlasPixels     int
 	used            uint64
 	cancel          context.CancelFunc
 }
@@ -863,11 +869,6 @@ func tintedImage(image uintptr, tint driver.Color) uintptr {
 	pix := unsafe.Slice((*byte)(*(*unsafe.Pointer)(unsafe.Pointer(&data))), w*h*4)
 	driver.TintImagePixels(pix, pix, tint, false, true)
 	return rgbaImage(pix, w, h)
-}
-
-func (img *loadedImage) release() {
-	Release(img.image)
-	Release(img.canvasTint)
 }
 
 // canvasImageUse counts the images drawn; canvasPass is its value when the last pass of drawing ended, so images used since are the current pass's, which eviction keeps; canvasPassPosted says an endCanvasPass is posted.
@@ -981,7 +982,6 @@ func evictCanvasImages(reserve int) {
 			break
 		}
 		canvasImages[oldest].release()
-		canvasImages[oldest].image = 0
 		delete(canvasImages, oldest)
 		unkept--
 	}

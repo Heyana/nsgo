@@ -35,6 +35,30 @@ func DrawSampling(d *driver.Drawing, src driver.ImageSource, size float32) {
 	d.Restore().DrawImageIn(src, 0, size, size, size)
 }
 
+// DrawAtlasSampling draws the same four sampling squares through DrawAtlas.
+func DrawAtlasSampling(d *driver.Drawing, src driver.ImageSource, size float32) {
+	rect := driver.Bounds{Size: driver.Size{Width: 16, Height: 16}}
+	draw := func(x, y float32) {
+		d.DrawAtlas(src, []driver.Bounds{rect}, []driver.RSXform{{SCos: size / 16, TX: x, TY: y}}, nil)
+	}
+	draw(0, 0)
+	d.Save().SetImageSmoothing(false)
+	draw(size, 0)
+	d.Save().SetImageSmoothing(true).Restore()
+	draw(size, size)
+	d.Restore()
+	draw(0, size)
+}
+
+// AtlasSampling checks DrawAtlas against the same nearest texel reference.
+func AtlasSampling(text driver.TextEngine) *Sample {
+	s := Sampling(text)
+	s.Name = "atlas-sampling"
+	s.Drawing = driver.NewDrawing(text)
+	DrawAtlasSampling(s.Drawing, driver.ImageSource{Pixels: Checkerboard(16, 16)}, 16*8/Scale)
+	return s
+}
+
 // Sampling checks every pixel of two nearest draws at 8× and looks for
 // blended pixels in the corresponding smooth draws.
 func Sampling(text driver.TextEngine) *Sample {

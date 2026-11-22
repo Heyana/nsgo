@@ -126,6 +126,8 @@ const (
 	DrawTextBaseline
 	// DrawVertices draws Image through Mesh, with its bounds in X, Y, W, H.
 	DrawVertices
+	// DrawAtlas draws a list of sprites from Image, in Atlas's order.
+	DrawAtlas
 )
 
 // UsesPath reports whether an op of kind k builds on the current path or
@@ -154,6 +156,7 @@ type DrawOp struct {
 	Image     *ImageSource
 	Sampling  ImageSampling
 	Mesh      *CanvasMesh
+	Atlas     *AtlasSprites
 	// Tinted multiplies a DrawImage's source channels by Color before it composites.
 	Tinted bool
 	// TextAlign and TextBaseline are what a text op was placed with.
