@@ -240,7 +240,7 @@ func TestWebStrictCSP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.close()
-	raw, err := b.call("", "Target.createTarget", map[string]any{"url": fmt.Sprintf("http://%s/index.html", ln.Addr())})
+	raw, err := b.call("", "Target.createTarget", map[string]any{"url": "about:blank"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,6 +253,10 @@ func TestWebStrictCSP(t *testing.T) {
 	var attached struct{ SessionID string }
 	json.Unmarshal(raw, &attached)
 	pg := &webPage{b: b, session: attached.SessionID}
+	// Navigate after attaching so the first load commits before polling the app.
+	if _, err := pg.call("Page.navigate", map[string]any{"url": fmt.Sprintf("http://%s/index.html", ln.Addr())}); err != nil {
+		t.Fatal(err)
+	}
 	eval := func(expr string) any {
 		t.Helper()
 		raw, err := pg.call("Runtime.evaluate", map[string]any{"expression": expr, "returnByValue": true, "awaitPromise": true})
@@ -349,7 +353,7 @@ func TestWebDevClientKeepsItsToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.close()
-	raw, err := b.call("", "Target.createTarget", map[string]any{"url": s.pageURL(s.urlAt("localhost"), "/")})
+	raw, err := b.call("", "Target.createTarget", map[string]any{"url": "about:blank"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,6 +366,10 @@ func TestWebDevClientKeepsItsToken(t *testing.T) {
 	var attached struct{ SessionID string }
 	json.Unmarshal(raw, &attached)
 	pg := &webPage{b: b, session: attached.SessionID}
+	// Navigate after attaching so the app starts before waiting for its DevTools connection.
+	if _, err := pg.call("Page.navigate", map[string]any{"url": s.pageURL(s.urlAt("localhost"), "/")}); err != nil {
+		t.Fatal(err)
+	}
 	answered()
 	if _, err := pg.call("Page.reload", map[string]any{}); err != nil {
 		t.Fatal(err)

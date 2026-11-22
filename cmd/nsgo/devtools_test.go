@@ -378,7 +378,7 @@ func TestDevPagesTakeTheTokenOutOfTheirAddress(t *testing.T) {
 	}
 	defer b.close()
 	open := func(url string) *webPage {
-		raw, err := b.call("", "Target.createTarget", map[string]any{"url": url})
+		raw, err := b.call("", "Target.createTarget", map[string]any{"url": "about:blank"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -390,7 +390,12 @@ func TestDevPagesTakeTheTokenOutOfTheirAddress(t *testing.T) {
 		}
 		var attached struct{ SessionID string }
 		json.Unmarshal(raw, &attached)
-		return &webPage{b: b, session: attached.SessionID}
+		pg := &webPage{b: b, session: attached.SessionID}
+		// Navigate after attaching so a cold browser's initial load commits before waiting for the page's first command.
+		if _, err := pg.call("Page.navigate", map[string]any{"url": url}); err != nil {
+			t.Fatal(err)
+		}
+		return pg
 	}
 	eval := func(pg *webPage, expr string) any {
 		t.Helper()
