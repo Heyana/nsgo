@@ -1432,8 +1432,7 @@ func gliding(v objc.ID) bool {
 	return false
 }
 
-// Resize changes the test host's UIWindow, not the system's scene.
-// Split View and Stage Manager still need system-driven acceptance.
+// Resize changes the test host's UIWindow, not the system's scene. Split View and Stage Manager still need system-driven acceptance.
 func (t *testSurface) Resize(size driver.Size) error {
 	if t.test == nil {
 		return errors.New("Resize is only for tests; the running app follows its scene's size")

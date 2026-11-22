@@ -216,8 +216,7 @@ type surface struct {
 	resizedScrolls []*view
 
 	keyboard driver.Points
-	// keyboardFrame is the last notified frame in the screen's coordinates;
-	// layout reprojects it as a scene or an embedded surface moves or resizes.
+	// keyboardFrame is the last notified frame in the screen's coordinates; layout reprojects it as a scene or an embedded surface moves or resizes.
 	keyboardFrame apple.CGRect
 	// keyboardScroll is the scroll view keeping the focused input clear
 	// of the keyboard (keyboard.go).

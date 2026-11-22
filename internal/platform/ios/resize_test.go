@@ -13,8 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
-// TestResizeRelayoutsTheNativeWindow exercises a native UIWindow viewport.
-// It does not request a Split View, Slide Over or Stage Manager arrangement.
+// TestResizeRelayoutsTheNativeWindow exercises a native UIWindow viewport. It does not request a Split View, Slide Over or Stage Manager arrangement.
 func TestResizeRelayoutsTheNativeWindow(t *testing.T) {
 	var mu sync.Mutex
 	var size core.Size
@@ -51,8 +50,7 @@ func TestResizeRelayoutsTheNativeWindow(t *testing.T) {
 		if scale <= 0 || float64(img.Bounds().Dy()) != float64(want.Height)*scale {
 			t.Fatalf("resize to %+v captured %v", want, img.Bounds().Size())
 		}
-		// The corner must move in the native hierarchy, rather than a stale
-		// frame stretching to fill the resized window.
+		// The corner must move in the native hierarchy, rather than a stale frame stretching to fill the resized window.
 		r, g, b, _ := img.At(img.Bounds().Min.X+int(float64(want.Width-36)*scale), img.Bounds().Min.Y+int(100*scale)).RGBA()
 		if r>>8 < 200 || g>>8 > 90 || b>>8 > 70 {
 			t.Fatalf("resize to %+v: corner pixel = %d,%d,%d", want, r>>8, g>>8, b>>8)

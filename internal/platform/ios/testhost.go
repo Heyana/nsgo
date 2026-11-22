@@ -51,8 +51,7 @@ func (host) Open(root func(cx *core.Scope) core.Node, o testhost.Options) (testh
 	}
 	test := &testOpen{options: o}
 	onMainSync(func() {
-		// A previous test may have resized its window. Each test starts
-		// with the scene's actual size again.
+		// A previous test may have resized its window. Each test starts with the scene's actual size again.
 		space := runner.window.Send(sel("windowScene")).Send(sel("coordinateSpace"))
 		runner.window.Send(selSetFrame, objc.Send[apple.CGRect](space, selBounds))
 		runner.window.Send(sel("layoutIfNeeded"))

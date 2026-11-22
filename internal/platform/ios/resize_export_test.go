@@ -19,9 +19,7 @@ func WindowGeometryForTest() (size core.Size, safe core.Edges) {
 	return
 }
 
-// NotifyKeyboardFrameForTest delivers one controlled keyboard notification,
-// converting its surface-local rectangle to UIKit's screen coordinates. An
-// empty frame hides it. This does not show or move the system keyboard.
+// NotifyKeyboardFrameForTest delivers one controlled keyboard notification, converting its surface-local rectangle to UIKit's screen coordinates. An empty frame hides it. This does not show or move the system keyboard.
 func NotifyKeyboardFrameForTest(frame core.Bounds) {
 	onMainSync(func() {
 		space := runner.window.Send(sel("screen")).Send(sel("coordinateSpace"))

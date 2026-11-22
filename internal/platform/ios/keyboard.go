@@ -67,8 +67,7 @@ func (s *surface) keyboardMoved(note objc.ID, hiding bool) {
 	s.setKeyboard(s.keyboardOverlap(), time.Duration(seconds*float64(time.Second)))
 }
 
-// keyboardOverlap measures the notified keyboard in the current surface, not
-// the surface's size and position when the notification arrived.
+// keyboardOverlap measures the notified keyboard in the current surface, not the surface's size and position when the notification arrived.
 func (s *surface) keyboardOverlap() driver.Points {
 	w := s.uiWindow()
 	if w == 0 || s.keyboardFrame.Size.Width <= 0 || s.keyboardFrame.Size.Height <= 0 {
