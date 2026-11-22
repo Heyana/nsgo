@@ -1105,12 +1105,12 @@ func TestBackdropPath(t *testing.T) {
 		}
 	}
 
-	// Verify singular matrix (zero scale) is rejected cleanly.
+	// A layout scale animation starting from zero is clamped by layoutScale so picking can invert it, and the backdrop path still maps through it.
 	collapsed := &view{id: 6, parent: root,
 		frame: driver.Bounds{Size: driver.Size{Width: 10, Height: 10}},
 		style: driver.ViewStyle{Opacity: 1}}
 	collapsed.layout = &layoutAnim{fade: &driver.LayoutTransition{Property: driver.LayoutScale}, shownPart: 0}
-	if _, _, ok := backdropPath(root, collapsed); ok {
-		t.Error("backdropPath with zero layout scale succeeded")
+	if _, _, ok := backdropPath(root, collapsed); !ok {
+		t.Error("backdropPath through a collapsed layout scale failed")
 	}
 }
