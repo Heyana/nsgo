@@ -23,8 +23,7 @@ func readJavaProtocol(t *testing.T) string {
 func TestJavaProtocolDetectsEveryKindMutation(t *testing.T) {
 	source := readJavaProtocol(t)
 	pkg := driverProtocolConstants(t)
-	// Mutate each shipped declaration independently, including aliases and the
-	// preflight constants previously checked by hand. No Java compiler is needed.
+	// Mutate each shipped declaration independently, including aliases and the preflight constants previously checked by hand. No Java compiler is needed.
 	declarations := regexp.MustCompile(`static final int ((?:ITEM|EVENT)_\w+) = (\d+);`).FindAllStringSubmatch(source, -1)
 	if len(declarations) == 0 {
 		t.Fatal("Protocol.java has no kind declarations to mutate")
