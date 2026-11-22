@@ -64,6 +64,8 @@ type project struct {
 	// noticeArchitectures is set for a bundle with more than one Go binary.
 	noticeArchitectures []string
 	thirdPartyNotices   string
+	// nativeLibraries are the declarations selected for each executable slice.
+	nativeLibraries map[string][]nativeLibrary
 
 	Name    string `yaml:"name"`
 	ID      string `yaml:"id"`

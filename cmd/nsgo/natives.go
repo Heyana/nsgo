@@ -55,14 +55,28 @@ func linkedDir(ctx context.Context, p *project, env []string, pkg string, extra 
 // signature then seals them.
 func addMacLibraries(ctx context.Context, p *project, app, arch string) error {
 	dir, err := linkedDir(ctx, p, []string{"GOOS=darwin", "GOARCH=" + arch, "CGO_ENABLED=0"}, ghosttyPackage)
-	if err != nil || dir == "" {
+	if err != nil {
 		return err
 	}
-	dst := filepath.Join(app, "Contents", "Frameworks", "libghostty-vt.dylib")
-	if err := copyLibrary(filepath.Join(dir, "lib", "darwin-"+arch, "libghostty-vt.dylib"), dst); err != nil {
+	frameworks := filepath.Join(app, "Contents", "Frameworks")
+	if dir != "" {
+		if err := copyLibrary(filepath.Join(dir, "lib", "darwin-"+arch, "libghostty-vt.dylib"), filepath.Join(frameworks, "libghostty-vt.dylib")); err != nil {
+			return err
+		}
+	}
+	if err := p.addNativeLibraries(ctx, "macos_"+goArchName(arch), frameworks); err != nil {
 		return err
 	}
-	return run(ctx, "codesign", "--force", "--sign", "-", dst)
+	libs, err := filepath.Glob(filepath.Join(frameworks, "*.dylib"))
+	if err != nil {
+		return err
+	}
+	for _, lib := range libs {
+		if err := run(ctx, "codesign", "--force", "--sign", "-", lib); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // addIOSFrameworks puts the native libraries the app links for sys into its

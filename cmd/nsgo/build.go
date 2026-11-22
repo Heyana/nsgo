@@ -436,9 +436,6 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 			return err
 		}
 		install := p.installers()
-		if !install && p.channel() != channelSteam {
-			return nil
-		}
 		signer := windowsSignerOf(p)
 		if signer != nil {
 			if err := signer.signWindowsPackage(ctx, p, dir); err != nil {
@@ -584,6 +581,9 @@ func buildMacUniversal(ctx context.Context, p *project, dir string) error {
 	}
 	x64, err := buildMacApp(ctx, p, filepath.Join(work, "x64"), "amd64")
 	if err != nil {
+		return err
+	}
+	if err := matchMacLibraries(arm, x64); err != nil {
 		return err
 	}
 	// Moving the arm64 bundle keeps its framework links, executable modes and the signatures of what lipo leaves alone, such as Sparkle's.
@@ -832,6 +832,11 @@ func (p *project) buildOverlay(ctx context.Context, env, tags, flags []string, f
 		}
 	}
 	if !p.packageLicenses || p.testBinary {
+		p.nativeLibraries = map[string][]nativeLibrary{}
+		if nativeTarget(env) != "" {
+			_, err := p.listLicenseSources(ctx, env, tags, flags, overlay, map[string]*licenseSource{})
+			return overlay, err
+		}
 		return overlay, nil
 	}
 	stage(ctx, "collecting license notices")
@@ -994,7 +999,10 @@ func buildWindows(ctx context.Context, p *project, dir, arch string) error {
 	if err := copyResources(p, dir); err != nil {
 		return err
 	}
-	return addWinSparkle(ctx, p, dir, arch)
+	if err := addWinSparkle(ctx, p, dir, arch); err != nil {
+		return err
+	}
+	return p.addNativeLibraries(ctx, "windows_"+goArchName(arch), dir)
 }
 
 // buildLinux writes <dir>/<name> with the resources and icon beside it.
@@ -1007,7 +1015,10 @@ func buildLinux(ctx context.Context, p *project, dir, arch string) error {
 	if err := copyResources(p, dir); err != nil {
 		return err
 	}
-	return writeLinuxIcon(p, dir)
+	if err := writeLinuxIcon(p, dir); err != nil {
+		return err
+	}
+	return p.addNativeLibraries(ctx, "linux_"+goArchName(arch), dir)
 }
 
 // buildFPS is -fps: the site starts its app with --nsgo-fps, which a page

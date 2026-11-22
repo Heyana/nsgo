@@ -64,12 +64,14 @@ type licenseSource struct {
 	name, label, root string
 	firstParty        bool
 	dirs              map[string]bool
+	files             map[string]bool // explicit native license paths; true for primary texts
 }
 
 var licenseClassifier = sync.OnceValues(assets.DefaultClassifier)
 
 func (p *project) licenseNoticesFile(ctx context.Context, env, tags, flags []string, overlay string) (string, error) {
 	sources := map[string]*licenseSource{}
+	p.nativeLibraries = map[string][]nativeLibrary{}
 	var hasCore bool
 	architectures := p.noticeArchitectures
 	if len(architectures) == 0 {
@@ -101,6 +103,9 @@ func (p *project) licenseNoticesFile(ctx context.Context, env, tags, flags []str
 
 func (p *project) listLicenseSources(ctx context.Context, env, tags, flags []string, overlay string, sources map[string]*licenseSource) (bool, error) {
 	args := append([]string{"list", "-deps", "-json=ImportPath,Dir,Root,DepOnly,Standard,Module,EmbedFiles"}, flags...)
+	if p.testBinary {
+		args = append(args, "-test")
+	}
 	args = append(args, tagsArgs(tags)...)
 	if overlay != "" {
 		args = append(args, "-overlay", overlay)
@@ -154,6 +159,9 @@ func (p *project) listLicenseSources(ctx context.Context, env, tags, flags []str
 			hasCore = true
 		}
 		addLicensePackage(sources, pkg)
+		if err := p.addPackageNatives(pkg, nativeTarget(env), sources); err != nil {
+			return false, err
+		}
 	}
 }
 
@@ -170,8 +178,10 @@ func addLicensePackage(sources map[string]*licenseSource, pkg licensePackage) {
 				label += " => " + moduleLabel(module.Replace)
 			}
 		}
-		if root == "" {
-			// Vendored packages report their directory but omit Module.Dir.
+		rel, relErr := filepath.Rel(root, pkg.Dir)
+		if root == "" || relErr != nil || !filepath.IsLocal(rel) {
+			// A vendored package can still report its original replacement's
+			// Module.Dir. Its selected files and notices belong to vendor.
 			root = pkg.Dir
 			if rel, ok := strings.CutPrefix(pkg.ImportPath, module.Path+"/"); ok {
 				for range strings.SplitSeq(rel, "/") {
@@ -242,39 +252,32 @@ func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*
 		types := map[string]bool{}
 		var unknown []string
 		var documents int
-		for _, dir := range slices.Sorted(maps.Keys(source.dirs)) {
-			files, err := os.ReadDir(dir)
+		files, err := source.licenseFiles()
+		if err != nil {
+			return "", fmt.Errorf("read licenses for %s: %w", source.name, err)
+		}
+		for _, path := range slices.Sorted(maps.Keys(files)) {
+			data, err := os.ReadFile(path)
 			if err != nil {
-				return "", fmt.Errorf("read licenses for %s: %w", source.name, err)
+				return "", fmt.Errorf("read license for %s: %w", source.name, err)
 			}
-			for _, f := range files {
-				primary, include := isLicenseDocument(f.Name())
-				if f.IsDir() || !include {
-					continue
+			rel, _ := filepath.Rel(source.root, path)
+			filename := filepath.ToSlash(rel)
+			known := false
+			for _, match := range classifier.Match(data).Matches {
+				if match.MatchType == "License" {
+					types[match.Name] = true
+					known = true
 				}
-				path := filepath.Join(dir, f.Name())
-				data, err := os.ReadFile(path)
-				if err != nil {
-					return "", fmt.Errorf("read license for %s: %w", source.name, err)
-				}
-				rel, _ := filepath.Rel(source.root, path)
-				filename := filepath.ToSlash(rel)
-				known := false
-				for _, match := range classifier.Match(data).Matches {
-					if match.MatchType == "License" {
-						types[match.Name] = true
-						known = true
-					}
-				}
-				if primary && !known {
-					unknown = append(unknown, filename)
-				}
-				fmt.Fprintf(&section, "\n%s\n\n", filename)
-				section.Write(data)
-				documents++
-				if !bytes.HasSuffix(data, []byte("\n")) {
-					section.WriteByte('\n')
-				}
+			}
+			if files[path] && !known {
+				unknown = append(unknown, filename)
+			}
+			fmt.Fprintf(&section, "\n%s\n\n", filename)
+			section.Write(data)
+			documents++
+			if !bytes.HasSuffix(data, []byte("\n")) {
+				section.WriteByte('\n')
 			}
 		}
 		if source.firstParty && documents == 0 {
@@ -285,7 +288,7 @@ func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*
 			if len(unknown) > 0 {
 				reason = "has unrecognized license text in " + strings.Join(unknown, ", ")
 			}
-			if err := p.Licenses.report(ctx, name, "unknown", reason); err != nil {
+			if err := p.Licenses.report(ctx, source.name, "unknown", reason); err != nil {
 				violations = append(violations, err)
 			}
 			section.WriteString("License identification incomplete.\n")
@@ -297,13 +300,34 @@ func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*
 			}
 		}
 		if len(copyleft) > 0 && !source.firstParty {
-			if err := p.Licenses.report(ctx, name, "copyleft", "has copyleft license text ("+strings.Join(copyleft, ", ")+")"); err != nil {
+			if err := p.Licenses.report(ctx, source.name, "copyleft", "has copyleft license text ("+strings.Join(copyleft, ", ")+")"); err != nil {
 				violations = append(violations, err)
 			}
 		}
 		out.WriteString(section.String())
 	}
 	return out.String(), errors.Join(violations...)
+}
+
+// licenseFiles merges discovered notices and explicit native-license paths.
+func (source *licenseSource) licenseFiles() (map[string]bool, error) {
+	files := maps.Clone(source.files)
+	if files == nil {
+		files = map[string]bool{}
+	}
+	for _, dir := range slices.Sorted(maps.Keys(source.dirs)) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			primary, include := isLicenseDocument(entry.Name())
+			if !entry.IsDir() && include {
+				files[filepath.Join(dir, entry.Name())] = primary
+			}
+		}
+	}
+	return files, nil
 }
 
 func isLicenseDocument(name string) (primary, include bool) {

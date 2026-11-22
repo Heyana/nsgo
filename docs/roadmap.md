@@ -411,6 +411,8 @@ What the desktop installers ([tool](architecture/tool.md#installers)) and the st
 | Linux arm64 Steam runtime | [Steam verification (#1228)](https://github.com/nsgo-dev/nsgo/issues/1228) | An arm64 depot includes its own GTK 4 libraries and opens in a Steam runtime for arm64 |
 | AppImage updates | `.upd_info`, zsync, [#1417](https://github.com/nsgo-dev/nsgo/issues/1417) | The AppImage carries its update information, so AppImageUpdate and launchers update it |
 
+Third-party Go packages can declare desktop native libraries through `nsgo-natives.yaml` ([#1722](https://github.com/nsgo-dev/nsgo/issues/1722), [native libraries](public/en/native-libraries.md)). iOS/tvOS frameworks, Android ABI libraries, watchOS and HarmonyOS native dependencies need packaging contracts of their own; web and mini-program builds do not consume these shared libraries.
+
 ## Updates
 
 What updates ([updates](architecture/updates.md)) still lack, on the direct channel and the stores'.
