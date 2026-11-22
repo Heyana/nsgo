@@ -210,6 +210,52 @@ func TestDockMenuFollowsItsOwner(t *testing.T) {
 	}
 }
 
+// Pending app icon menus follow call order across surfaces, even though the
+// app surface always commits before its child windows.
+func TestDockMenuPendingReplacementAcrossSurfaces(t *testing.T) {
+	cases := []struct {
+		name           string
+		appLast, clear bool
+	}{
+		{"window then app", true, false},
+		{"app then window", false, false},
+		{"app clears window", true, true},
+		{"window clears app", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var app, child *Scope
+			w := newWindows(t, func(cx *Scope) {
+				app = cx
+				cx.OpenWindow(WindowOptions{}, func(cx *Scope) Node { child = cx; return View{} })
+			})
+			first, last, latestSurface := app, child, uint32(1)
+			if tc.appLast {
+				first, last, latestSurface = child, app, 0
+			}
+			first.SetDockMenu([]MenuItem{{Label: "Old", OnSelect: func() {}}})
+			var latest []MenuItem
+			if !tc.clear {
+				latest = []MenuItem{{Label: "Latest", OnSelect: func() {}}}
+			}
+			last.SetDockMenu(latest)
+			w.commit()
+			for _, surface := range []uint32{0, 1} {
+				items := w.take(surface, driver.ItemDockMenu)
+				if surface != latestSurface {
+					if len(items) != 0 {
+						t.Errorf("superseded surface %d sent %d menus", surface, len(items))
+					}
+				} else if len(items) != 1 {
+					t.Errorf("latest surface sent %d menus", len(items))
+				} else if tc.clear && items[0].Menu != nil || !tc.clear && (len(items[0].Menu) != 1 || items[0].Menu[0].Label != "Latest") {
+					t.Errorf("latest menu %+v", items[0].Menu)
+				}
+			}
+		})
+	}
+}
+
 // dockMenus are the app icon menus a batch sends, in order.
 func dockMenus(b *driver.MountBatch) [][]driver.MenuEntry {
 	var menus [][]driver.MenuEntry

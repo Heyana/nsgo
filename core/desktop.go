@@ -282,6 +282,12 @@ func (cx *Scope) SetDockMenu(items []MenuItem) {
 		return
 	}
 	d := &cx.rt.dock
+	// The engine commits the app surface before its windows, regardless of
+	// which scope set the menu last. Drop an earlier surface's pending menu
+	// before changing ownership, so it cannot mount after the replacement.
+	if previous := d.tree; previous != nil && previous != t {
+		previous.commands = slices.DeleteFunc(previous.commands, func(it driver.MountItem) bool { return it.Kind == driver.ItemDockMenu })
+	}
 	d.gen++
 	gen := d.gen
 	d.tree, d.entries, d.actions = t, nil, nil

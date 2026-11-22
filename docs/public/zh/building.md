@@ -396,7 +396,9 @@ desktop.OnOpenFiles(cx, func(paths []string) { open(paths[0]) })
 
 iOS 把普通文档导入为应用自有的临时文件，保留原来的文件名。读取文件提供程序时会在 UI 线程之外协调访问，并在处理函数执行前结束安全作用域。要长期保留，请把导入文件移到 `cx.DataDir()`；编辑只影响副本。iOS 使用应用的文档图标，`icon` 只用于 macOS。App Clip 和 tvOS 包不登记文档类型。文件不会混入 `OnOpenLinks`。
 
-`desktop.AddRecentFile(cx, path)` 把用户打开过的文档列进 Dock 菜单和“文件 › 打开最近使用”，选中后同样交给这个处理函数；`desktop.ClearRecentFiles` 清除这些记录。
+`desktop.AddRecentFile(cx, path)` 记录用户打开过的文档：macOS 上列进程序坞菜单和“文件 › 打开最近使用”，Windows 上列进跳转列表的“最近”，Linux 上记录到桌面的最近使用文件。选中后同样交给这个处理函数。`desktop.ClearRecentFiles` 清除应用自己的登记，Linux 上保留其他应用对同一文件的记录，也遵循 GTK 的历史记录设置。
+
+`desktop.SetDockMenu(cx, items)` 设置应用图标上的操作：macOS 的程序坞菜单、Windows 的跳转列表任务，以及 Linux 的 Ubuntu dock、Plasma 和 Dash to Dock 支持的 quicklist。Linux 需要安装与应用 `id` 匹配的桌面项，支持子菜单、分隔线、勾选和禁用项。菜单属于设置它的作用域；应用各窗口中最后一次设置的菜单生效。
 
 ## 链接
 

@@ -46,9 +46,9 @@ const (
 // the default menu comes back.
 func SetApplicationMenu(cx *core.Scope, items []MenuItem) { cx.SetApplicationMenu(items) }
 
-// SetDockMenu sets the items the app's icon offers above the system's own, nil none: the menu of its Dock icon on macOS, with submenus, separators, check marks and disabled items as the application menu has them, and the Tasks of its Jump List on Windows, its taskbar button's and Start menu entry's. The items' handlers run under the current owner; when it goes, the items go too. The app has one such menu, the one any window set last.
+// SetDockMenu sets the items the app's icon offers above the system's own, nil none: the menu of its Dock icon on macOS, with submenus, separators, check marks and disabled items as the application menu has them, the quicklist on Linux launchers that support Unity LauncherEntry (Ubuntu dock, Plasma and Dash to Dock), and the Tasks of its Jump List on Windows, its taskbar button's and Start menu entry's. The items' handlers run under the current owner; when it goes, the items go too. The app has one such menu, the one any window set last.
 //
-// A Jump List task is a top-level enabled item with a label and an OnSelect; submenus, separators and check marks are left out. Windows keeps the list while the app is not running: a task starts the app again, which hands the task to the copy already running when nsgo.yaml gives the app an id, and the item labeled as the task runs once the app has set its menu. Elsewhere it does nothing.
+// A Jump List task is a top-level enabled item with a label and an OnSelect; submenus, separators and check marks are left out. Windows keeps the list while the app is not running: a task starts the app again, which hands the task to the copy already running when nsgo.yaml gives the app an id, and the item labeled as the task runs once the app has set its menu. Phones and the web ignore the menu.
 func SetDockMenu(cx *core.Scope, items []MenuItem) { cx.SetDockMenu(items) }
 
 // PopupMenu shows items as the platform's own context menu, its top left

@@ -28,7 +28,7 @@ func init() {
 
 // TestTrayMenuNumbersEveryEntry gives separators, submenus and plain labels IDs of their own, which a later menu never reuses.
 func TestTrayMenuNumbersEveryEntry(t *testing.T) {
-	var m trayMenu
+	var m dbusMenu
 	m.set([]driver.MenuEntry{
 		{Label: "Open", ID: 7},
 		{Separator: true},

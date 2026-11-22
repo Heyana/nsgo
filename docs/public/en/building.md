@@ -423,7 +423,9 @@ desktop.OnOpenFiles(cx, func(paths []string) { open(paths[0]) })
 
 On iOS, regular documents are imported into app-owned temporary files with their original names. File-provider reads are coordinated off the UI thread, and their security scopes end before the handler runs. Move an import into `cx.DataDir()` to keep it; edits affect the copy. iOS uses the app's document icon; `icon` applies on macOS. App Clips and tvOS packages register no document types. File opens stay separate from `OnOpenLinks`.
 
-`desktop.AddRecentFile(cx, path)` lists a document the user opened in the Dock menu and File › Open Recent, whose choice reaches the same handler, and `desktop.ClearRecentFiles` forgets them.
+`desktop.AddRecentFile(cx, path)` records a document the user opened: in the Dock menu and File › Open Recent on macOS, the Jump List's Recent category on Windows, and the desktop's recently used files on Linux. A choice reaches the same handler. `desktop.ClearRecentFiles` forgets the app's registrations, keeping other apps' history of shared files on Linux; Linux also respects GTK's history setting.
+
+`desktop.SetDockMenu(cx, items)` sets actions on the app's icon: macOS's Dock menu, Windows' Jump List tasks and the quicklist on Linux's Ubuntu dock, Plasma and Dash to Dock where quicklists are supported. Linux needs an installed desktop entry matching the app's `id`, and keeps submenus, separators, checked and disabled items. The menu belongs to the scope that set it, and the last setter across the app's windows replaces it.
 
 ## Links
 

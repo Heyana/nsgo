@@ -737,8 +737,24 @@ func (t *testSurface) ChooseMenu(id uint32) error {
 	return err
 }
 
-// ChooseDockMenu implements testhost.Surface: Linux has no app icon menu yet.
-func (t *testSurface) ChooseDockMenu(uint32) error { return testhost.ErrNoMenu }
+// ChooseDockMenu implements testhost.Surface through the exported quicklist's selection path.
+func (t *testSurface) ChooseDockMenu(id uint32) error {
+	var err error
+	t.onLoop(func() {
+		m := t.w.launcherRoot().dockMenu
+		if m == nil {
+			err = testhost.ErrNoMenu
+			return
+		}
+		for nativeID, item := range m.menu.items {
+			if item.entry.ID == id && m.choose(nativeID) {
+				return
+			}
+		}
+		err = fmt.Errorf("the launcher menu has no item %d", id)
+	})
+	return err
+}
 
 // ChoosePopup implements testhost.Surface: the context menu's item's
 // action is activated and the popover pops down, as a click on the item

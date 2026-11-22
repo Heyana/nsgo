@@ -87,7 +87,7 @@ jobs:
       - name: Install native test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb openbox pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin avahi-daemon dbus openbox gnome-sushi
+          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb openbox pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin libdbusmenu-glib4 avahi-daemon dbus openbox gnome-sushi
       - name: Allow WebKit's sandbox on the runner
         run: |
           # Ubuntu restricts unprivileged user namespaces. Grant bubblewrap that permission so WebKit can keep its sandbox enabled.
@@ -239,6 +239,12 @@ jobs:
           NSGO_REQUIRE_JDK: '1'
         # examples/gallery runs its tests in sequence for about nine minutes on a hosted runner, beside the other packages, so go test's default ten-minute limit cuts it off.
         run: xvfb-run -a go tool nsgo test -- -timeout=20m
+      - name: Test Linux launcher menus and recent files
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          GIO_USE_VFS: local
+        run: xvfb-run -a dbus-run-session -- go tool nsgo test -run '^(TestLauncherQuicklistOverDBus|TestRecentFilesPreserveOtherApplications|TestTrayServesItsItemAndMenuOverDBus)$' ./internal/platform/linux
       - name: Test Linux display frame timestamps
         env:
           GDK_BACKEND: x11

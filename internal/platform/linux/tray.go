@@ -8,8 +8,6 @@ import (
 	"image/color"
 	"image/png"
 	"os"
-	"slices"
-	"strings"
 	"sync"
 	"unsafe"
 
@@ -61,6 +59,7 @@ const trayIntrospection = `
     <method name="GetGroupProperties"><arg name="ids" type="ai" direction="in"/><arg name="propertyNames" type="as" direction="in"/><arg name="properties" type="a(ia{sv})" direction="out"/></method>
     <method name="GetProperty"><arg name="id" type="i" direction="in"/><arg name="name" type="s" direction="in"/><arg name="value" type="v" direction="out"/></method>
     <method name="Event"><arg name="id" type="i" direction="in"/><arg name="eventId" type="s" direction="in"/><arg name="data" type="v" direction="in"/><arg name="timestamp" type="u" direction="in"/></method>
+    <method name="EventGroup"><arg name="events" type="a(isvu)" direction="in"/><arg name="idErrors" type="ai" direction="out"/></method>
     <method name="AboutToShow"><arg name="id" type="i" direction="in"/><arg name="needUpdate" type="b" direction="out"/></method>
     <method name="AboutToShowGroup"><arg name="ids" type="ai" direction="in"/><arg name="updatesNeeded" type="ai" direction="out"/><arg name="idErrors" type="ai" direction="out"/></method>
     <signal name="ItemsPropertiesUpdated"><arg name="updatedProps" type="a(ia{sv})"/><arg name="removedProps" type="a(ias)"/></signal>
@@ -89,103 +88,12 @@ type linuxTray struct {
 	// pixmap is the icon as the item's ARGB32 pixels, pixW by pixH, nil without a PNG.
 	pixmap     []byte
 	pixW, pixH int
-	menu       trayMenu
+	menu       dbusMenu
 	popupID    uint32
 	// asked are the hosts' AboutToShow calls for the menu, which wait for the app's menu (ItemTrayMenu) or until waitID's timeout.
 	asked  []uintptr
 	waitID uint32
 }
-
-// trayMenu is a tray's menu as dbusmenu numbers it: every entry has an ID of its own, which the menus the tray shows never reuse, so that an event for an entry of an older layout finds none. 0 is the root, whose children root lists.
-type trayMenu struct {
-	items    map[int32]*trayItem
-	root     []int32
-	last     int32
-	revision uint32
-}
-
-type trayItem struct {
-	entry    driver.MenuEntry // Items left out: children has them
-	children []int32
-}
-
-// set numbers entries as the menu's new layout.
-func (m *trayMenu) set(entries []driver.MenuEntry) {
-	m.items = map[int32]*trayItem{}
-	m.root = m.add(entries)
-	m.revision++
-}
-
-func (m *trayMenu) add(entries []driver.MenuEntry) []int32 {
-	ids := make([]int32, len(entries))
-	for i, e := range entries {
-		m.last++
-		id := m.last
-		ids[i] = id
-		it := &trayItem{entry: e}
-		it.entry.Items = nil
-		m.items[id] = it
-		it.children = m.add(e.Items)
-	}
-	return ids
-}
-
-// node returns the entry id names, nil for the root, and its children's IDs; ok is false for an ID the layout lacks.
-func (m *trayMenu) node(id int32) (entry *driver.MenuEntry, children []int32, ok bool) {
-	if id == 0 {
-		return nil, m.root, true
-	}
-	it := m.items[id]
-	if it == nil {
-		return nil, nil, false
-	}
-	return &it.entry, it.children, true
-}
-
-// itemProperties are the dbusmenu properties the menu's entries have.
-var itemProperties = []string{"type", "label", "enabled", "visible", "children-display", "toggle-type", "toggle-state"}
-
-// itemProperty is an entry's property, 0 where it has the default; entry is nil for the root.
-func itemProperty(entry *driver.MenuEntry, parent bool, name string) uintptr {
-	if name == "children-display" {
-		if parent {
-			return gVariantNewString(cstr("submenu"))
-		}
-		return 0
-	}
-	if entry == nil {
-		return 0
-	}
-	switch name {
-	case "type":
-		if entry.Separator {
-			return gVariantNewString(cstr("separator"))
-		}
-	case "label":
-		if !entry.Separator {
-			return gVariantNewString(cstr(menuLabel(entry.Label)))
-		}
-	case "enabled":
-		return gVariantNewBoolean(boolInt(!entry.Disabled))
-	case "visible":
-		return gVariantNewBoolean(1)
-	case "toggle-type":
-		if entry.Radio {
-			return gVariantNewString(cstr("radio"))
-		}
-		if entry.Checkable {
-			return gVariantNewString(cstr("checkmark"))
-		}
-	case "toggle-state":
-		if entry.Checkable {
-			return gVariantNewInt32(boolInt(entry.Checked))
-		}
-	}
-	return 0
-}
-
-// menuLabel escapes a label's underscores, which dbusmenu reads as access keys.
-func menuLabel(label string) string { return strings.ReplaceAll(label, "_", "__") }
 
 var (
 	gDBusNodeInfoNewForXML               func(xml *byte, err *uintptr) uintptr
@@ -207,6 +115,7 @@ var (
 		purego.RegisterLibFunc(&gDBusConnectionRegisterObject, gioLib, "g_dbus_connection_register_object")
 		purego.RegisterLibFunc(&gDBusConnectionUnregisterObject, gioLib, "g_dbus_connection_unregister_object")
 		purego.RegisterLibFunc(&gDBusConnectionCloseSync, gioLib, "g_dbus_connection_close_sync")
+		purego.RegisterLibFunc(&gDBusConnectionSignalUnsubscribe, gioLib, "g_dbus_connection_signal_unsubscribe")
 		purego.RegisterLibFunc(&gDBusAddressGetForBusSync, gioLib, "g_dbus_address_get_for_bus_sync")
 		purego.RegisterLibFunc(&gBusOwnNameOnConnection, gioLib, "g_bus_own_name_on_connection")
 		purego.RegisterLibFunc(&gBusUnownName, gioLib, "g_bus_unown_name")
@@ -529,63 +438,13 @@ func menuProperty(name string) uintptr {
 
 func (w *window) trayMenuMethod(tr *linuxTray, method string, params, invocation uintptr) {
 	m := &tr.menu
+	if m.readMethod(method, params, invocation) {
+		return
+	}
+	if m.eventMethod(method, params, invocation, func(id int32, name string) { w.trayMenuEvent(tr, id, name) }) {
+		return
+	}
 	switch method {
-	case "GetLayout":
-		parent, depth := variantInt32(params, 0), variantInt32(params, 1)
-		if _, _, ok := m.node(parent); !ok {
-			trayError(invocation, "org.freedesktop.DBus.Error.InvalidArgs", "no such menu item")
-			return
-		}
-		children := []uintptr{gVariantNewUint32(m.revision), m.layout(parent, depth)}
-		gDBusMethodInvocationReturnValue(invocation, gVariantNewTuple(&children[0], uintptr(len(children))))
-	case "GetGroupProperties":
-		ids := variantInt32s(params, 0)
-		if len(ids) == 0 {
-			for id := range m.items {
-				ids = append(ids, id)
-			}
-			slices.Sort(ids)
-		}
-		values := make([]uintptr, 0, len(ids))
-		for _, id := range ids {
-			if entry, children, ok := m.node(id); ok {
-				item := []uintptr{gVariantNewInt32(id), menuEntryProperties(entry, len(children) > 0)}
-				values = append(values, gVariantNewTuple(&item[0], uintptr(len(item))))
-			}
-		}
-		v := menuArray("(ia{sv})", values)
-		gDBusMethodInvocationReturnValue(invocation, gVariantNewTuple(&v, 1))
-	case "GetProperty":
-		entry, children, ok := m.node(variantInt32(params, 0))
-		var value uintptr
-		if ok {
-			value = itemProperty(entry, len(children) > 0, variantString(params, 1))
-		}
-		if value == 0 {
-			trayError(invocation, "org.freedesktop.DBus.Error.InvalidArgs", "no such menu item property")
-			return
-		}
-		v := gVariantNewVariant(value)
-		gDBusMethodInvocationReturnValue(invocation, gVariantNewTuple(&v, 1))
-	case "Event":
-		id := variantInt32(params, 0)
-		switch variantString(params, 1) {
-		case "clicked":
-			if entry, _, ok := m.node(id); ok && entry != nil && !entry.Disabled {
-				if entry.ID != 0 {
-					w.engine.Dispatch(driver.Event{Kind: driver.EventMenu, Count: entry.ID})
-				} else if entry.Role == driver.MenuQuit {
-					w.requestQuit()
-				}
-			}
-			w.trayMenuClosed(tr)
-		case "closed":
-			// Qt hosts close the menu before they report the click; core still finds the chosen item.
-			if id == 0 {
-				w.trayMenuClosed(tr)
-			}
-		}
-		returnTray(invocation)
 	case "AboutToShow":
 		id := variantInt32(params, 0)
 		if _, _, ok := m.node(id); !ok {
@@ -616,6 +475,26 @@ func (w *window) trayMenuMethod(tr *linuxTray, method string, params, invocation
 	}
 }
 
+func (w *window) trayMenuEvent(tr *linuxTray, id int32, name string) {
+	m := &tr.menu
+	switch name {
+	case "clicked":
+		if entry, _, ok := m.node(id); ok && entry != nil && !entry.Disabled {
+			if entry.ID != 0 {
+				w.engine.Dispatch(driver.Event{Kind: driver.EventMenu, Count: entry.ID})
+			} else if entry.Role == driver.MenuQuit {
+				w.requestQuit()
+			}
+		}
+		w.trayMenuClosed(tr)
+	case "closed":
+		// Qt hosts close the menu before they report the click; core still finds the chosen item.
+		if id == 0 {
+			w.trayMenuClosed(tr)
+		}
+	}
+}
+
 // askTrayMenu has the app build the tray's menu, as a secondary click does, unless it is building it already.
 func (w *window) askTrayMenu(tr *linuxTray) {
 	if tr.waitID != 0 {
@@ -631,68 +510,6 @@ func (w *window) trayMenuClosed(tr *linuxTray) {
 		w.engine.Dispatch(driver.Event{Kind: driver.EventMenuClosed, Count: tr.popupID})
 		tr.popupID = 0
 	}
-}
-
-// layout is the (ia{sv}av) of the item id with its children depth levels down, all of them for a negative depth.
-func (m *trayMenu) layout(id int32, depth int32) uintptr {
-	entry, children, _ := m.node(id)
-	var values []uintptr
-	if depth != 0 {
-		values = make([]uintptr, len(children))
-		for i, child := range children {
-			values[i] = gVariantNewVariant(m.layout(child, depth-1))
-		}
-	}
-	node := []uintptr{gVariantNewInt32(id), menuEntryProperties(entry, len(children) > 0), menuArray("v", values)}
-	return gVariantNewTuple(&node[0], uintptr(len(node)))
-}
-
-// menuEntryProperties is the a{sv} of an entry's properties, nil for the root.
-func menuEntryProperties(entry *driver.MenuEntry, parent bool) uintptr {
-	props := []uintptr{}
-	for _, name := range itemProperties {
-		if v := itemProperty(entry, parent, name); v != 0 {
-			props = append(props, menuDictEntry(name, v))
-		}
-	}
-	return menuDict(props)
-}
-
-// variantInt32 is the int32 child i of a tuple.
-func variantInt32(tuple uintptr, i int) int32 {
-	child := gVariantGetChildValue(tuple, uintptr(i))
-	defer gVariantUnref(child)
-	return gVariantGetInt32(child)
-}
-
-// variantInt32s is the ai child i of a tuple.
-func variantInt32s(tuple uintptr, i int) []int32 {
-	array := gVariantGetChildValue(tuple, uintptr(i))
-	defer gVariantUnref(array)
-	out := make([]int32, gVariantNChildren(array))
-	for j := range out {
-		out[j] = variantInt32(array, j)
-	}
-	return out
-}
-
-func menuDictEntry(key string, value uintptr) uintptr {
-	return gVariantNewDictEntry(gVariantNewString(cstr(key)), gVariantNewVariant(value))
-}
-
-func menuDict(entries []uintptr) uintptr {
-	return menuArray("{sv}", entries)
-}
-
-func menuArray(signature string, values []uintptr) uintptr {
-	t := gVariantTypeNew(cstr(signature))
-	var ptr *uintptr
-	if len(values) != 0 {
-		ptr = &values[0]
-	}
-	v := gVariantNewArray(t, ptr, uintptr(len(values)))
-	gVariantTypeFree(t)
-	return v
 }
 
 // trayIcon converts the PNG in TrayConfig to the StatusNotifierItem's pixmap: network-order ARGB32 with straight alpha, at most trayIconSize pixels on its longer side. It returns nil without a PNG.

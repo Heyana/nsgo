@@ -191,6 +191,7 @@ type window struct {
 	natives         map[uintptr]*view // by the objects of hosted widgets
 	appID           string
 	keys            []driver.KeyBinding
+	dockMenu        *launcherMenu
 	hotKeys         *globalHotKeys
 	colorPick       *portalColorPick
 	discovery       avahiDiscovery
@@ -956,6 +957,7 @@ func (w *window) shutdown(forced bool) {
 	w.loopback.Close()
 	w.visible = false
 	w.removeTrays()
+	w.closeDockMenu()
 	if w.ticking {
 		gtkWidgetRemoveTickCallback(w.surface, w.tickID)
 		gSourceRemove(w.watchID)
@@ -1188,6 +1190,12 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemPopupMenu:
 			w.popupMenu(it.Menu, it.Point, it.Count)
+			continue
+		case driver.ItemDockMenu:
+			w.setDockMenu(it.Menu)
+			continue
+		case driver.ItemRecentFile:
+			w.recentFile(it.Value, it.On)
 			continue
 		case driver.ItemTray:
 			w.applyTray(*it.Tray)
