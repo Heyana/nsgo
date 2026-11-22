@@ -745,12 +745,26 @@ func (v *view) release(velocity, snapVelocity float32) {
 	s.phase.user = s.phase.kind == easing
 }
 
+// keepScrollStart keeps a scroll view resting at its start there across a
+// ContentInset change, retaining any active refresh room. Keeping the previous
+// RefreshIndicator height lets a simultaneous indicator-height change ease in
+// configureScroll instead of jumping.
+func keepScrollStart(oldCfg, newCfg *driver.ScrollConfig, refreshing bool, at driver.Point) driver.Point {
+	if newCfg.Behavior.ContentInset == oldCfg.Behavior.ContentInset {
+		return at
+	}
+	next := *newCfg
+	next.Behavior.RefreshIndicator = oldCfg.Behavior.RefreshIndicator
+	return scrollbar.KeepStart(scrollbar.RestInset(oldCfg, refreshing), scrollbar.RestInset(&next, refreshing), at)
+}
+
 // configureScroll applies a scroll view's configuration.
 func (v *view) configureScroll(c *driver.ScrollConfig) {
 	s := v.sc
-	old := s.config.Behavior.ContentInset
-	indicator := s.config.Behavior.RefreshIndicator
-	zoomed, scale := s.config.Zooms(), s.config.ZoomScale
+	oldCfg := s.config
+	old := oldCfg.Behavior.ContentInset
+	indicator := oldCfg.Behavior.RefreshIndicator
+	zoomed, scale := oldCfg.Zooms(), oldCfg.ZoomScale
 	s.config = *c
 	if !v.indicates() {
 		s.alpha = 0
@@ -759,10 +773,8 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 		s.phase = scrollPhase{}
 	}
 	in := c.Behavior.ContentInset
-	if in != old {
-		// A view resting at its start stays there.
-		s.at = scrollbar.KeepStart(old, in, s.at)
-	}
+	// A view resting at its start stays there, keeping any refresh room.
+	s.at = keepScrollStart(&oldCfg, c, s.refreshing, s.at)
 	switch {
 	case c.Zooms() && !zoomed:
 		s.zoom = float64(c.ClampZoom(c.ZoomScale))
