@@ -30,16 +30,16 @@ import (
 
 // input is an input view's editor and what it tracks.
 type input struct {
-	fs    field.State
-	field objc.ID // the responder: an NSTextField or an NSTextView
-	host  objc.ID // what is placed: the field, or the text view's scroll view
-	label objc.ID // a text view's placeholder
-	// lift is how far a text view's lines, and its placeholder's, are drawn above where AppKit puts them: AppKit sets a line's extra height above its glyphs, where core.Text centers the font in the line.
-	lift      float64
-	multiline bool
-	masked    bool
-	focused   bool
-	embedded  bool // in a host's view, whose app's accent is the host's
+	fs         field.State
+	field      objc.ID // the responder: an NSTextField or an NSTextView
+	host       objc.ID // what is placed: the field, or the text view's scroll view
+	label      objc.ID // a text view's placeholder
+	lift       float64 // placeholder's lift to match the baselines of core.Text
+	editorLift float64
+	multiline  bool
+	masked     bool
+	focused    bool
+	embedded   bool // in a host's view, whose app's accent is the host's
 	// applying is a change made here, clipping an insertion cut to
 	// maxLength, editing an edit allowed and not reported yet, focusing a
 	// field taking the focus.
@@ -140,7 +140,7 @@ func registerInput() {
 					return apple.CGPoint{}
 				}
 				p := in.fs.Config.Padding
-				return apple.CGPoint{X: float64(p.Left), Y: float64(p.Top) - in.lift}
+				return apple.CGPoint{X: float64(p.Left), Y: float64(p.Top) - in.editorLift}
 			}},
 			{Cmd: sel("keyDown:"), Fn: func(self objc.ID, cmd objc.SEL, event objc.ID) {
 				in := inputOf(self)
@@ -455,7 +455,7 @@ func (in *input) styleLines() {
 	case driver.TextAlignEnd:
 		align = nsAlignRight
 	}
-	styleLines(in.field, objc.ID(font), nsColor(c.Style.Color), c.Style.LineHeight, align)
+	in.setLineStyle(objc.ID(font), nsColor(c.Style.Color), c.Style.LineHeight, align)
 }
 
 func (in *input) updatePlaceholder() {
@@ -794,13 +794,7 @@ func (v *view) configure(c *driver.InputConfig) {
 		in.label.Send(selSetTextColor, nsColor(placeholderColor(c)))
 		in.label.Send(selSetAlignment, align)
 		setPlaceholderLabel(in.label, c.Placeholder, objc.ID(font), placeholderColor(c), align, c.Style.LineHeight)
-		styleLines(in.field, objc.ID(font), nsColor(c.Style.Color), c.Style.LineHeight, align)
-		in.lift = 0
-		if c.Style.LineHeight > 0 {
-			natural := objc.Send[float64](objc.ID(font), sel("ascender")) - objc.Send[float64](objc.ID(font), sel("descender"))
-			in.lift = (float64(c.Style.LineHeight) - natural) / 2
-		}
-		in.field.Send(sel("invalidateTextContainerOrigin"))
+		in.setLineStyle(objc.ID(font), nsColor(c.Style.Color), c.Style.LineHeight, align)
 	} else {
 		in.field.Send(selSetEnabled, !c.Disabled)
 		// A read-only field still selects and copies: turning editing off turns selecting off with it, and the field editor of a field being edited keeps what it had.
@@ -853,13 +847,31 @@ func newParagraph(lineHeight driver.Points, align int) objc.ID {
 	return para
 }
 
-// styleLines gives a text view's text, and what is typed or pasted into it later, the input's alignment and line height. AppKit lays a text view's lines at its font's own height otherwise, and a new string drops the paragraph style its old text had, so this goes over the whole text each time.
-func styleLines(tv, font, color objc.ID, lineHeight driver.Points, align int) {
+// setLineStyle gives the text view's current and future text the input's alignment and line height.
+func (in *input) setLineStyle(font, color objc.ID, lineHeight driver.Points, align int) {
+	tv := in.field
 	a := textAttrs()
 	if tv == 0 || font == 0 || color == 0 || a.font == 0 || a.color == 0 || a.paragraph == 0 {
 		return
 	}
-	para := newParagraph(lineHeight, align)
+	in.lift, in.editorLift = 0, 0
+	height := lineHeight
+	if lineHeight > 0 {
+		natural := objc.Send[float64](font, sel("ascender")) - objc.Send[float64](font, sel("descender"))
+		in.lift = (float64(lineHeight) - natural) / 2
+		in.editorLift = in.lift
+		// TextKit 2 uses the line box for editing geometry. Put surplus
+		// height below that box and move the origin to keep the baselines.
+		manager := sel("textLayoutManager")
+		if in.lift > 0 && objc.Send[bool](tv, sel("respondsToSelector:"), manager) && tv.Send(manager) != 0 {
+			height = driver.Points(natural)
+			in.editorLift = -in.lift
+		}
+	}
+	para := newParagraph(height, align)
+	if height < lineHeight {
+		para.Send(sel("setLineSpacing:"), float64(lineHeight-height))
+	}
 	tv.Send(selSetDefaultParagraph, para)
 	attrs := objc.ID(apple.Class("NSMutableDictionary")).Send(sel("dictionary"))
 	attrs.Send(sel("setObject:forKey:"), font, a.font)
@@ -870,6 +882,7 @@ func styleLines(tv, font, color objc.ID, lineHeight driver.Points, align int) {
 		tv.Send(selTextStorage).Send(selAddAttribute, a.paragraph, para, apple.NSRange{Length: n})
 	}
 	para.Send(selRelease)
+	tv.Send(sel("invalidateTextContainerOrigin"))
 }
 
 // setPlaceholder gives a field its placeholder in its font, color and

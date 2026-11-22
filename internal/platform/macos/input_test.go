@@ -5,6 +5,7 @@ package macos
 import (
 	"math"
 	"strings"
+	"sync"
 	"testing"
 	"unsafe"
 
@@ -120,7 +121,9 @@ func TestMultilineInputTakesTheLineHeight(t *testing.T) {
 			if id == 0 {
 				return 0, 0, -1
 			}
-			return objc.Send[float64](id, sel("minimumLineHeight")), objc.Send[float64](id, sel("maximumLineHeight")), objc.Send[int](id, sel("alignment"))
+			spacing := objc.Send[float64](id, sel("lineSpacing"))
+			return objc.Send[float64](id, sel("minimumLineHeight")) + spacing,
+				objc.Send[float64](id, sel("maximumLineHeight")) + spacing, objc.Send[int](id, sel("alignment"))
 		}
 		at := func(i int) objc.ID {
 			return in.field.Send(selTextStorage).Send(sel("attribute:atIndex:effectiveRange:"), paragraph, uint(i), uintptr(0))
@@ -175,6 +178,73 @@ func TestMultilineInputTakesTheLineHeight(t *testing.T) {
 			}
 			if in.lift != 0 {
 				t.Errorf("without a line height the lines are lifted %v pt", in.lift)
+			}
+		}
+	})
+}
+
+var multilineGeometryWindow = sync.OnceValue(func() objc.Class {
+	return register("NsgoMultilineGeometryWindow", apple.Class("NSWindow"), nil, []objc.MethodDef{
+		{Cmd: sel("isKeyWindow"), Fn: func(objc.ID, objc.SEL) bool { return true }},
+	})
+})
+
+func TestMultilineInputEditingGeometryFitsTheFont(t *testing.T) {
+	onMain(func() {
+		loadAppKit()
+		window := objc.ID(multilineGeometryWindow()).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
+			apple.Rect(0, 0, 300, 120), uint(0), uint(2), false)
+		window.Send(sel("setReleasedWhenClosed:"), false)
+		defer window.Send(selRelease)
+		s := &surface{views: make([]*view, 2), animator: driver.NewAnimator(func(driver.Event) {})}
+		v := s.create(driver.KindInput, 1)
+		s.views[v.id] = v
+		defer s.delete(v, false)
+		v.configure(&driver.InputConfig{Multiline: true})
+		editor := v.input.field
+		manager := sel("textLayoutManager")
+		if !objc.Send[bool](editor, sel("respondsToSelector:"), manager) || editor.Send(manager) == 0 {
+			t.Skip("requires a TextKit 2 editor")
+		}
+		window.Send(sel("contentView")).Send(selAddSubview, v.native)
+		v.native.Send(selSetFrame, apple.Rect(0, 0, 300, 120))
+		indicator := apple.Class("NSTextInsertionIndicator") // macOS 14
+		for _, height := range []driver.Points{0, 22, 40} {
+			v.configure(&driver.InputConfig{
+				Multiline: true,
+				Style:     driver.TextStyle{Font: driver.Font{Size: 14.5, Weight: 400}, LineHeight: height, Color: driver.RGB(0)},
+				Padding:   driver.Edges{Top: 8},
+				Content:   driver.Bounds{Origin: driver.Point{Y: 8}, Size: driver.Size{Width: 300, Height: 112}},
+			})
+			v.input.replaceText("HHHH\nHHHH\nHHHH")
+			window.Send(sel("makeFirstResponder:"), editor)
+			font := editor.Send(sel("font"))
+			want := objc.Send[float64](font, sel("ascender")) - objc.Send[float64](font, sel("descender"))
+			check := func(kind string, i uint, got float64) {
+				t.Helper()
+				if math.Abs(got-want) > 1 {
+					t.Errorf("%v pt lines at character %d: %s is %.2f pt tall, want the font's %.2f pt", height, i, kind, got, want)
+				}
+			}
+			for _, i := range []uint{1, 6, 11} {
+				editor.Send(selSetSelRange, apple.NSRange{Location: i})
+				v.native.Send(sel("layoutSubtreeIfNeeded"))
+				ime := objc.Send[apple.CGRect](editor, sel("firstRectForCharacterRange:actualRange:"), apple.NSRange{Location: i, Length: 1}, uintptr(0))
+				check("candidate anchor", i, ime.Size.Height)
+				if indicator == 0 {
+					continue
+				}
+				found := false
+				for _, sub := range apple.Subviews(editor) {
+					if objc.Send[bool](sub, sel("isKindOfClass:"), indicator) {
+						check("insertion indicator", i, objc.Send[apple.CGRect](sub, sel("frame")).Size.Height)
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("no insertion indicator at character %d", i)
+				}
 			}
 		}
 	})
