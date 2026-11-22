@@ -63,7 +63,7 @@ func pasteMethods() []objc.MethodDef {
 			}
 			if in := inputOf(self); action == sel("paste:") && in != nil && in.fs.Events.Has(driver.EventPaste) &&
 				!in.fs.Config.Readonly {
-				pb := objc.ID(apple.Class("UIPasteboard")).Send(sel("generalPasteboard"))
+				pb := generalPasteboard()
 				if objc.Send[bool](pb, sel("hasImages")) || objc.Send[bool](pb, sel("hasURLs")) {
 					return true // images and files too
 				}
@@ -89,7 +89,7 @@ func editMenuOffers(actions driver.EditAction, action objc.SEL) bool {
 		if actions&driver.EditPaste == 0 {
 			return false
 		}
-		pb := objc.ID(apple.Class("UIPasteboard")).Send(sel("generalPasteboard"))
+		pb := generalPasteboard()
 		return objc.Send[bool](pb, sel("hasStrings")) || objc.Send[bool](pb, sel("hasImages")) || objc.Send[bool](pb, sel("hasURLs"))
 	case sel("selectAll:"):
 		return actions&driver.EditSelectAll != 0

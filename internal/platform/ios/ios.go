@@ -1274,7 +1274,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.audio.Handle(it.Count, it.Audio)
 			continue
 		case driver.ItemSetClipboard:
-			objc.ID(apple.Class("UIPasteboard")).Send(sel("generalPasteboard")).Send(sel("setString:"), apple.NSString(it.Value))
+			if pasteboard := generalPasteboard(); pasteboard != 0 {
+				pasteboard.Send(sel("setString:"), apple.NSString(it.Value))
+			}
 			continue
 		case driver.ItemReadClipboard:
 			s.readClipboard(it)
@@ -1540,6 +1542,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 				s.oriented = append(s.oriented, v)
 			}
 		case driver.ItemWeb:
+			if onTV() {
+				v.report(driver.Event{Kind: driver.EventError, Text: "Web views are unavailable on tvOS", Navigation: &driver.WebNavigation{URL: it.Web.Source.Src}})
+				break
+			}
 			v.web.Configure(it.Web)
 		case driver.ItemWebCommand:
 			if in, ok := it.Data.(*driver.WebInput); ok && it.WebCommand == driver.WebSendInput {

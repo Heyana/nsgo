@@ -20,6 +20,9 @@ import (
 // files and saves, the share sheet, and the app's appearance.
 
 func generalPasteboard() objc.ID {
+	if onTV() {
+		return 0 // UIPasteboard is unavailable on tvOS.
+	}
 	return objc.ID(apple.Class("UIPasteboard")).Send(sel("generalPasteboard"))
 }
 
@@ -29,11 +32,15 @@ var imageTypes = []string{"public.png", "public.jpeg", "public.heic", "public.ti
 // setClipboardImage puts the image data encodes on the pasteboard as a
 // PNG.
 func setClipboardImage(data []byte) {
+	pasteboard := generalPasteboard()
+	if pasteboard == 0 {
+		return
+	}
 	png, _, err := apple.PNG(data)
 	if err != nil {
 		return
 	}
-	generalPasteboard().Send(sel("setData:forPasteboardType:"), apple.NSData(png), apple.NSString("public.png"))
+	pasteboard.Send(sel("setData:forPasteboardType:"), apple.NSData(png), apple.NSString("public.png"))
 }
 
 var uiImagePNG func(image objc.ID) objc.ID
@@ -44,6 +51,10 @@ var uiImagePNG func(image objc.ID) objc.ID
 func (s *surface) readClipboard(it *driver.MountItem) {
 	pb := generalPasteboard()
 	ev := driver.Event{Kind: driver.EventClipboard, Count: it.Count}
+	if pb == 0 {
+		s.engine.Dispatch(ev)
+		return
+	}
 	switch it.Clipboard {
 	case driver.ClipboardReadText:
 		ev.Text = apple.GoString(pb.Send(sel("string")))
@@ -195,6 +206,10 @@ type pickRequest struct {
 // picking needs no permission. The picked images load and are prepared
 // off the main thread, in the order picked.
 func (s *surface) pickImages(r driver.PickRequest, id uint32) {
+	if onTV() {
+		s.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: id})
+		return // PHPickerViewController is unavailable on tvOS.
+	}
 	pickerOnce.Do(func() {
 		if _, err := purego.Dlopen("/System/Library/Frameworks/PhotosUI.framework/PhotosUI", purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil {
 			return

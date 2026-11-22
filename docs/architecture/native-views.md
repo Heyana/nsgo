@@ -16,6 +16,8 @@ On macOS and iOS, a rounded `Overflow: Hidden` with an outer shadow or outline c
 
 ## Web views
 
+tvOS reports `Env.HasWebView` false and answers each configuration with a `WebError` for its source URL, without loading WebKit. The simulator may expose private WebKit classes; their presence does not make the public API available. Commands on the uncreated native view are no-ops.
+
 On Linux, initialization checks whether the system bubblewrap can start WebKitGTK's sandbox under AppArmor's user namespace restriction. A failed probe uses the same placeholder as a missing WebKitGTK library, and cookie requests return the diagnostic. The check runs once, on the first use of WebKitGTK.
 
 - `WebView.UserAgentSuffix` appends a token after `UserAgent` or the engine's own user agent. macOS and iOS use `WKWebViewConfiguration.applicationNameForUserAgent` at creation for the default agent and `customUserAgent` for an override. Windows and Linux append to the WebView2 or WebKitGTK agent, and Android uses `WebSettings.getDefaultUserAgent` when the app supplies no override. These hosts send the result in HTTP requests and expose it as `navigator.userAgent`. HarmonyOS, the web and mini programs keep their host's user agent.

@@ -29,6 +29,9 @@ var (
 // cameraAvailable is Environment.Camera: the device has a camera the
 // picker shows, which the simulator has not.
 var cameraAvailable = sync.OnceValue(func() bool {
+	if onTV() {
+		return false // UIImagePickerController is unavailable on tvOS.
+	}
 	return objc.Send[bool](objc.ID(apple.Class("UIImagePickerController")), sel("isSourceTypeAvailable:"), sourceCamera)
 })
 

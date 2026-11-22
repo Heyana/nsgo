@@ -222,7 +222,7 @@ func textInputMethods() []objc.MethodDef {
 				// As every copy takes a text: hidden spans left out and attachments as their copy texts.
 				from, to := driver.UTF16Offset(v.plain, v.clampUnits(v.tsel.start)), driver.UTF16Offset(v.plain, v.clampUnits(v.tsel.end))
 				text := driver.CopiedText(v.plain, v.spans, from, to)
-				objc.ID(apple.Class("UIPasteboard")).Send(sel("generalPasteboard")).Send(sel("setString:"), apple.NSString(text))
+				generalPasteboard().Send(sel("setString:"), apple.NSString(text))
 			}
 		}},
 		{Cmd: sel("selectAll:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {

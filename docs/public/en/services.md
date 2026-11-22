@@ -26,6 +26,8 @@ cx.ShowAlert(core.AlertConfig{
 
 `SetClipboard` writes text and `SetClipboardImage` an image. `ReadClipboard`, `ReadClipboardImage` and `ReadClipboardFiles` answer asynchronously, and `HasClipboardText` and `HasClipboardImage` read what the clipboard holds without a paste notice. `core.FileFromURL` opens the URLs `ReadClipboardFiles` and `View.OnFileDrop` give as a `core.File`: `file:` URLs, and on the web `blob:` URLs.
 
+tvOS has no public pasteboard. Clipboard writes are ignored, reads return no content, and presence checks return false.
+
 ```go
 cx.ReadClipboard(func(text string) { pasted.Set(text) })
 cx.SetClipboard("Hello")
@@ -103,6 +105,8 @@ In tests, `nsgotest.MenuItem.Icon` records each item's icon in `app.Menu`, `app.
 ## Photos and files
 
 `cx.PickImages` shows the system's photo picker and answers with `core.PickedFile`s, whose bytes, name, type and pixel size the app reads. `cx.TakePhoto` shows the camera where the platform has one; `cx.Env().CanTakePhoto` says whether it does. On macOS, Windows and Linux it shows the scanner's camera preview with a Take Photo button. `cx.ScanCode` opens a camera preview and answers with the first code it reads, a QR code unless `ScanOptions.Kinds` asks for others, or nil when the user closes it; `cx.Env().CanScanCode` says whether the platform has a scanner, on macOS, iOS and Android devices with a camera, Windows machines with one, Linux desktops with the Camera portal and GStreamer `pipewiresrc`, and browsers with `getUserMedia` and `BarcodeDetector`. macOS presents a sheet when the requesting window is visible, Windows and Linux a modal over the window, and the web an overlay over the page. Put `NSCameraUsageDescription` in `apple.info` for macOS and iOS, and `CAMERA` in `android.permissions` for Android. Android, Windows and Linux read every kind but PDF417. Treat the code's text as untrusted input.
+
+On tvOS, `PickImages` answers with no images and `TakePhoto` returns `core.ErrNoCamera`; NSGo does not provide the Continuity Camera picker.
 
 In tests, `nsgotest.App.PickImages`, `nsgotest.App.TakePhoto` and `nsgotest.App.ScanCode` receive `nsgotest.ImagePick` records for picks and captures and `nsgotest.CodeScan` records for scans, and answer in place of system UI. The hooks work headless and under supported `nsgo test -target` hosts. `nsgotest.Environment(core.Environment{Camera: true, ScanCode: true})` gives a target without a camera one.
 

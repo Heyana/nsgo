@@ -648,8 +648,9 @@ func controllerCopy(self objc.ID, _ objc.SEL, _ objc.ID) {
 		return
 	}
 	sl.list()
-	pb := objc.ID(apple.Class("UIPasteboard")).Send(sel("generalPasteboard"))
-	pb.Send(sel("setString:"), apple.NSString(sl.model.Text(sl)))
+	if pb := generalPasteboard(); pb != 0 {
+		pb.Send(sel("setString:"), apple.NSString(sl.model.Text(sl)))
+	}
 }
 
 // controllerSelectAll is the view controller's selectAll:, which selects

@@ -26,6 +26,8 @@ cx.ShowAlert(core.AlertConfig{
 
 `SetClipboard` 写入文本，`SetClipboardImage` 写入图片。`ReadClipboard`、`ReadClipboardImage` 和 `ReadClipboardFiles` 异步回答，`HasClipboardText` 和 `HasClipboardImage` 只读取剪贴板内容，不会触发粘贴提示。`core.FileFromURL` 把 `ReadClipboardFiles` 和 `View.OnFileDrop` 给出的 URL 打开为 `core.File`：`file:` URL，以及 Web 上的 `blob:` URL。
 
+tvOS 没有公开的剪贴板接口。写入操作被忽略，读取结果为空，内容检查返回 false。
+
 ```go
 cx.ReadClipboard(func(text string) { pasted.Set(text) })
 cx.SetClipboard("Hello")
@@ -103,6 +105,8 @@ desktop.SetApplicationMenu(cx, []desktop.MenuItem{{
 ## 照片与文件
 
 `cx.PickImages` 显示系统照片选择器，返回 `core.PickedFile`，其中包含字节、名称、类型和像素尺寸。`cx.TakePhoto` 在平台有相机时打开相机；`cx.Env().CanTakePhoto` 说明是否有。在 macOS、Windows 和 Linux 上，它显示与扫码相同的相机预览，并带有“拍照”按钮。`cx.ScanCode` 打开相机预览，返回读到的第一个码，默认只读二维码，`ScanOptions.Kinds` 可以指定其他种类；用户关闭时返回 nil。`cx.Env().CanScanCode` 说明平台是否能扫码，支持带相机的 macOS、iOS、Android 和 Windows 设备、具备 Camera 门户和 GStreamer `pipewiresrc` 的 Linux 桌面，以及支持 `getUserMedia` 和 `BarcodeDetector` 的浏览器。macOS 在发起请求的可见窗口上展示附属面板，Windows 和 Linux 在窗口上展示模态预览，Web 在页面上展示浮层。macOS 和 iOS 需要在 `apple.info` 中设置 `NSCameraUsageDescription`，Android 需要在 `android.permissions` 中加入 `CAMERA`。Android、Windows 和 Linux 除 PDF417 外都能识别。码里的文本是不可信的输入。
+
+在 tvOS 上，`PickImages` 返回空图片列表，`TakePhoto` 返回 `core.ErrNoCamera`；NSGo 尚未提供 Continuity Camera 选择器。
 
 测试中，`nsgotest.App.PickImages`、`nsgotest.App.TakePhoto` 和 `nsgotest.App.ScanCode` 接收照片选择或拍摄记录 `nsgotest.ImagePick`，或扫码记录 `nsgotest.CodeScan`，并代替系统界面回答。它们可用于无头测试和支持这些钩子的 `nsgo test -target` 宿主。目标没有相机时，用 `nsgotest.Environment(core.Environment{Camera: true, ScanCode: true})` 启动即可得到。
 
