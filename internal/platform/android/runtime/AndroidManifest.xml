@@ -37,6 +37,7 @@
         android:label="NSGo"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:extractNativeLibs="true"
+        android:supportsRtl="true"
         android:enableOnBackInvokedCallback="true">
         <activity
             android:name="dev.oneo.nsgo.NsgoActivity"

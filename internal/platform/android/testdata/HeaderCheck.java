@@ -18,6 +18,15 @@ public final class HeaderCheck {
         near(HeaderLayout.TITLE, 22f, "TITLE");
         near(HeaderLayout.LARGE_TITLE, 28f, "LARGE_TITLE");
 
+        // A larger font can grow the band without changing its collapse contract.
+        near(HeaderLayout.expandedBar(true, 64, 120), 184, "large font expanded bar");
+        near(HeaderLayout.collapse(true, 150, 120), 120, "large font collapse");
+        near(HeaderLayout.fraction(true, 60, 120), .5f, "large font fraction");
+        // Trailing controls track the headline center, then stay on the toolbar.
+        check(HeaderLayout.actionTopPx(176, 24, 64, 34, 28, 44) == 109, "expanded action beside title");
+        check(HeaderLayout.actionTopPx(88, 24, 64, 34, 28, 44) == 34, "collapsed action on toolbar");
+        check(HeaderLayout.actionTopPx(110, 24, 64, 34, 28, 44) == 43, "action follows headline before pinning");
+
         float density = 3f;
         int statusPx = Math.round(24f * density); // 72 px
         int barPx = Math.round(HeaderLayout.BAR * density); // 192 px

@@ -123,6 +123,7 @@ var androidAttrs = map[string]attrSpec{
 	"resource":            {0x01010025, typeReference, parseResourceID},
 
 	"extractNativeLibs":           {0x010104ea, typeBool, parseBool},
+	"supportsRtl":                 {0x010103af, typeBool, parseBool},
 	"enableOnBackInvokedCallback": {0x0101066c, typeBool, parseBool},
 	"configChanges":               {0x0101001f, typeHex, parseConfigChanges},
 	"windowSoftInputMode":         {0x0101022b, typeHex, parseSoftInputMode},

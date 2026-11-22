@@ -998,8 +998,9 @@ type Screen struct {
 	// shows at its start, at its end and in place of the title, each at
 	// its content's size.
 	HeaderLeft, HeaderRight, HeaderTitle Node
-	// IOS holds what only iOS's header has.
-	IOS IOSScreenProps
+	// IOS and Android hold what only their platform's header has.
+	IOS     IOSScreenProps
+	Android AndroidScreenProps
 	// HeaderHidden hides the system header.
 	HeaderHidden bool
 	// HeaderTransparent lays the content out under a header without a
@@ -1014,6 +1015,12 @@ type Screen struct {
 	HeaderBackTitle string
 	HeaderStyle     Style
 	HeaderStyleFunc func() Style
+	// HeaderTitleStyle and HeaderLargeTitleStyle set the system header's
+	// compact and expanded title fonts: FontFamily, FontSize, FontWeight
+	// and FontStyle. Unset fields keep the platform's defaults. The Func
+	// forms merge over their static styles as the graph changes.
+	HeaderTitleStyle, HeaderLargeTitleStyle         Style
+	HeaderTitleStyleFunc, HeaderLargeTitleStyleFunc func() Style
 	// HeaderClass gives the system header its colors as classes: bg-*, text-* for the title, tint-* for the buttons. HeaderStyle wins over them. The header has no siblings: peer-* variants are logged and ignored.
 	HeaderClass string
 	// Animation is how the screen enters and leaves (iOS slides it by

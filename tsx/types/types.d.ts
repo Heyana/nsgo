@@ -690,6 +690,7 @@ export type HeaderSystemItem = "add" | "done" | "close" | "edit" | "compose" | "
 /** A page's own props. */
 export interface NavPageHostProps { title?: string; headerVisible?: boolean; headerLargeTitle?: boolean; headerTransparent?: boolean; headerBackTitle?: string; headerBackVisible?: boolean; popOnSwipe?: boolean; popOnBack?: boolean; animation?: ScreenAnimation; transitionShader?: TransitionShader; statusBar?: StatusBar }
 export interface IOSNavPageHostProps { headerRightSystemItem?: HeaderSystemItem }
+export interface AndroidNavPageHostProps { headerRightWithLargeTitle?: boolean }
 
 /** A node: what an element is, with its view's methods. */
 export interface YNode {

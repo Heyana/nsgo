@@ -102,6 +102,49 @@ final class TestAgent {
         return (Activity) c;
     }
 
+    /** Reads native geometry and typography, including views placed outside core's layout roots. */
+    private void viewMetrics(View target, JSONObject query, int[] origin, JSONArray out) throws JSONException {
+        boolean match = query.has("testID") && query.getString("testID").equals(target.getTag());
+        if (query.has("text") && target instanceof android.widget.TextView) {
+            match |= query.getString("text").contentEquals(((android.widget.TextView) target).getText());
+        }
+        if (match) {
+            int[] at = new int[2];
+            target.getLocationInWindow(at);
+            float d = view.density(), alpha = target.getAlpha();
+            android.view.ViewParent parent = target.getParent();
+            while (parent instanceof View) {
+                alpha *= ((View) parent).getAlpha();
+                parent = parent.getParent();
+            }
+            android.graphics.Rect visible = new android.graphics.Rect();
+            target.getGlobalVisibleRect(visible);
+            JSONObject m = new JSONObject().put("direction", target.getLayoutDirection())
+                    .put("rootDirection", view.getLayoutDirection()).put("rtlSupported", (view.getContext().getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_SUPPORTS_RTL) != 0)
+                    .put("visibleHeight", visible.height() / d).put("x", (at[0] - origin[0]) / d).put("y", (at[1] - origin[1]) / d)
+                    .put("width", target.getWidth() / d).put("height", target.getHeight() / d)
+                    .put("alpha", alpha).put("visible", target.isShown())
+                    .put("paddingBottom", target.getPaddingBottom() / d).put("paddingTop", target.getPaddingTop() / d);
+            if (target instanceof android.widget.TextView) {
+                android.widget.TextView text = (android.widget.TextView) target;
+                android.graphics.Typeface font = text.getTypeface();
+                m.put("size", text.getTextSize() / target.getResources().getDisplayMetrics().scaledDensity)
+                        .put("weight", font.getWeight()).put("italic", font.isItalic());
+                if (query.has("family")) {
+                    android.graphics.Typeface expected = android.graphics.Typeface.create(
+                            android.graphics.Typeface.create(query.getString("family"), android.graphics.Typeface.NORMAL),
+                            font.getWeight(), font.isItalic());
+                    m.put("familyMatches", font.equals(expected));
+                }
+            }
+            out.put(m);
+        }
+        if (target instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) target;
+            for (int i = 0; i < group.getChildCount(); i++) viewMetrics(group.getChildAt(i), query, origin, out);
+        }
+    }
+
     /** x, y of the surface's points, in the window's pixels. */
     private float[] window(double x, double y) {
         int[] at = new int[2];
@@ -280,6 +323,14 @@ final class TestAgent {
             case "system-bars":
                 view.testReply(id, "", systemBars());
                 return;
+            case "view-metrics": {
+                JSONArray metrics = new JSONArray();
+                int[] origin = new int[2];
+                view.getLocationInWindow(origin);
+                viewMetrics(view, op, origin, metrics);
+                view.testReply(id, "", metrics.toString());
+                return;
+            }
             case "screenshot":
                 view.testReply(id, "", screenshot());
                 return;

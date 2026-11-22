@@ -27,13 +27,15 @@ type screenNode struct {
 	peek bool
 
 	// native is set where the platform draws the header.
-	native            bool
-	title             string
-	headerStyle       Style
-	headerClass       Style  // HeaderClass's, under headerStyle
-	symbols           string // HeaderRightSymbols's, as ScreenConfig has them
-	left, right, view *node  // the header views
-	bar               *node  // Header, unused under a native header
+	native                      bool
+	title                       string
+	headerStyle                 Style
+	headerClass                 Style  // HeaderClass's, under headerStyle
+	symbols                     string // HeaderRightSymbols's, as ScreenConfig has them
+	left, right, view           *node  // the header views
+	bar                         *node  // Header, unused under a native header
+	titleStyle, largeTitleStyle Style
+
 	// header is the area the system header covers from the top; pad what
 	// the content is laid out below.
 	header, pad Points
@@ -64,6 +66,7 @@ func (t *Tree) mountScreen(cx *Scope, parent *node, s Screen) {
 	// iOS and Android draw the header, not a watch or a web build that runs as them; elsewhere a platform does where it reports a header's height.
 	env := t.root.Env()
 	sn := &screenNode{screen: &s, title: s.Title, headerStyle: s.HeaderStyle,
+		titleStyle: s.HeaderTitleStyle, largeTitleStyle: s.HeaderLargeTitleStyle,
 		native: env.headers[0] > 0 || Untracked(cx, env.mobileBars), top: NewSignal(cx, Points(0)),
 		reported: NewSignal[*Edges](cx, nil)}
 	for p := parent; p != nil; p = p.parent {
@@ -97,6 +100,17 @@ func (t *Tree) mountScreen(cx *Scope, parent *node, s Screen) {
 	if s.HeaderStyleFunc != nil {
 		cx.renderEffect(func() {
 			sn.headerStyle = s.HeaderStyle.Merge(s.HeaderStyleFunc())
+			t.touch(n)
+		})
+	}
+	if s.HeaderTitleStyleFunc != nil || s.HeaderLargeTitleStyleFunc != nil {
+		cx.renderEffect(func() {
+			if s.HeaderTitleStyleFunc != nil {
+				sn.titleStyle = s.HeaderTitleStyle.Merge(s.HeaderTitleStyleFunc())
+			}
+			if s.HeaderLargeTitleStyleFunc != nil {
+				sn.largeTitleStyle = s.HeaderLargeTitleStyle.Merge(s.HeaderLargeTitleStyleFunc())
+			}
 			t.touch(n)
 		})
 	}
@@ -315,6 +329,10 @@ func (t *Tree) screenConfig(n *node) driver.ScreenConfig {
 		TitleView:         headerID(sn.view),
 		Header:            headerID(sn.bar),
 		HeaderHeight:      sn.header,
+
+		TitleFont:           headerFont(sn.titleStyle),
+		LargeTitleFont:      headerFont(sn.largeTitleStyle),
+		RightWithLargeTitle: s.Android.HeaderRightWithLargeTitle,
 	}
 	if c.Right != 0 {
 		c.RightSystemItem = s.IOS.HeaderRightSystemItem
@@ -538,4 +556,9 @@ func (t *Tree) innerStack(host *node) *node {
 	}
 	walk(host)
 	return found
+}
+
+// headerFont leaves defaults unresolved so each native bar keeps its own font.
+func headerFont(s Style) driver.Font {
+	return driver.Font{Family: s.FontFamily, Size: s.FontSize, Weight: s.FontWeight, Italic: s.FontStyle == FontStyleItalic}
 }

@@ -76,6 +76,13 @@ func TestWriteBundle(t *testing.T) {
 			t.Errorf("the manifest lacks %q", s)
 		}
 	}
+	// supportsRtl must carry its framework ID and a compiled true boolean.
+	rtl := pbString(pbString(pbString(nil, 1, androidNS), 2, "supportsRtl"), 3, "true")
+	rtl = pbVarint(rtl, 5, 0x010103af)
+	rtl = pbBytes(rtl, 6, pbBytes(nil, 7, pbVarint(nil, 8, 1)))
+	if !bytes.Contains([]byte(manifest), rtl) {
+		t.Fatal("bundle manifest does not enable native RTL layout")
+	}
 	table := string(files["base/resources.pb"])
 	for _, s := range []string{"ic_launcher", "app_name", "测试", "zh-Hans", iconFile} {
 		if !strings.Contains(table, s) {

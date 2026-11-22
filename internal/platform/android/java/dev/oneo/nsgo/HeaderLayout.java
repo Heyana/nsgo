@@ -22,20 +22,32 @@ final class HeaderLayout {
 
     /** Clamps how far a large title collapses for a scroll offset of scrolled points below the header. */
     static float collapse(boolean large, float scrolled) {
+        return collapse(large, scrolled, COLLAPSE);
+    }
+
+    static float collapse(boolean large, float scrolled, float travel) {
         if (!large || Float.isNaN(scrolled) || scrolled <= 0) return 0;
-        return Math.min(scrolled, COLLAPSE);
+        return Math.min(scrolled, travel);
     }
 
     /** Normalized collapse progress in [0, 1]; a regular bar is always fully collapsed (1). */
     static float fraction(boolean large, float collapsed) {
+        return fraction(large, collapsed, COLLAPSE);
+    }
+
+    static float fraction(boolean large, float collapsed, float travel) {
         if (!large) return 1;
-        return clamp01(collapsed / COLLAPSE);
+        return clamp01(collapsed / travel);
     }
 
     /** The bar's expanded height reported to the core, in points. */
     static float expandedBar(boolean large, float measuredBar) {
+        return expandedBar(large, measuredBar, COLLAPSE);
+    }
+
+    static float expandedBar(boolean large, float measuredBar, float travel) {
         float bar = Math.max(BAR, measuredBar);
-        return large ? bar + COLLAPSE : bar;
+        return large ? bar + travel : bar;
     }
 
     /** Total visible header container height in pixels, shrinking from fullPx as the large title collapses. */
@@ -72,6 +84,12 @@ final class HeaderLayout {
     static int backgroundColor(int customArgb, boolean transparent, int themeArgb) {
         if (customArgb != 0) return customArgb;
         return transparent ? 0 : themeArgb;
+    }
+
+    /** Places an action on the headline's center, stopping at the compact toolbar's center. */
+    static int actionTopPx(int height, int barTop, int barHeight, int titleHeight, int bottomPadding, int actionHeight) {
+        int center = Math.max(barTop + barHeight / 2, height - bottomPadding - titleHeight / 2);
+        return center - actionHeight / 2;
     }
 
     /** Scales the alpha channel of an ARGB color by alpha in [0, 1]. */

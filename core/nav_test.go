@@ -505,3 +505,33 @@ func TestAndroidLargeTitleHeader(t *testing.T) {
 		t.Errorf("measured android large header = %v, want 188 (164 + 24)", got.HeaderHeight)
 	}
 }
+
+func TestScreenHeaderFontsFollowStyles(t *testing.T) {
+	var resize *Signal[Points]
+	h := newPhone(t, phone, func(cx *Scope) Node {
+		resize = NewSignal(cx, Points(24))
+		return Stack{Style: Style{FlexGrow: 1}, Children: []Node{
+			Screen{Title: "Inbox", TestID: "styled", HeaderLargeTitle: true,
+				HeaderTitle:               Text{Content: "Search"},
+				HeaderTitleStyle:          Style{FontFamily: "serif", FontSize: 18, FontWeight: FontWeightMedium},
+				HeaderTitleStyleFunc:      func() Style { return Style{FontSize: resize.Get()} },
+				HeaderLargeTitleStyle:     Style{FontFamily: "monospace", FontWeight: FontWeightSemibold},
+				HeaderLargeTitleStyleFunc: func() Style { return Style{FontSize: resize.Get() + 8} },
+				Android:                   AndroidScreenProps{HeaderRightWithLargeTitle: true}},
+		}}
+	})
+	check := func(size Points) {
+		t.Helper()
+		c := screenItems(h.commit())[h.find("styled").id]
+		if !c.LargeTitle || c.TitleView == 0 || !c.RightWithLargeTitle {
+			t.Fatalf("custom title removed the large title or placement: %+v", c)
+		}
+		if c.TitleFont != (driver.Font{Family: "serif", Size: size, Weight: FontWeightMedium}) ||
+			c.LargeTitleFont != (driver.Font{Family: "monospace", Size: size + 8, Weight: FontWeightSemibold}) {
+			t.Fatalf("title fonts: compact %+v, large %+v", c.TitleFont, c.LargeTitleFont)
+		}
+	}
+	check(24)
+	resize.Set(30)
+	check(30)
+}

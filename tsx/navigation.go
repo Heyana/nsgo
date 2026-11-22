@@ -183,6 +183,13 @@ func (r *runtime) navPage(call js.FunctionCall) js.Value {
 			TransitionShader:  p.transitionShader(),
 		}
 		s.IOS.HeaderRightSystemItem = headerItems[p.str("headerRightSystemItem")]
+		s.Android.HeaderRightWithLargeTitle = p.bool("headerRightWithLargeTitle")
+		if p.has("headerTitleStyle") {
+			s.HeaderTitleStyleFunc = func() core.Style { return r.style(p.get("headerTitleStyle")) }
+		}
+		if p.has("headerLargeTitleStyle") {
+			s.HeaderLargeTitleStyleFunc = func() core.Style { return r.style(p.get("headerLargeTitleStyle")) }
+		}
 		if p.has("headerStyle") {
 			s.HeaderStyleFunc = func() core.Style {
 				h := r.options(p.get("headerStyle"))

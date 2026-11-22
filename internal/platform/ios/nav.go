@@ -252,11 +252,7 @@ func (s *surface) styleBar(b *navBar, c *driver.ScreenConfig) {
 	b.bar.Send(sel("setTintColor:"), tint)
 	if onTV() {
 		// tvOS refuses UINavigationBarAppearance but takes the title's attributes on the bar. Without them the title is in the system appearance's color, which need not show on the app's own background; without a TitleColor it goes back to that default.
-		attrs := objc.ID(0)
-		if c.TitleColor != 0 {
-			key := apple.Global(uikitPath, "NSForegroundColorAttributeName")
-			attrs = objc.ID(apple.Class("NSDictionary")).Send(sel("dictionaryWithObject:forKey:"), uiColor(c.TitleColor), key)
-		}
+		attrs := headerTitleAttributes(c.TitleColor, c.TitleFont, false)
 		b.bar.Send(sel("setTitleTextAttributes:"), attrs)
 		return
 	}
@@ -273,10 +269,10 @@ func (s *surface) styleBar(b *navBar, c *driver.ScreenConfig) {
 		a.Send(sel("configureWithDefaultBackground"))
 		a.Send(sel("setBackgroundEffect:"), objc.ID(apple.Class("UIBlurEffect")).Send(sel("effectWithStyle:"), systemChromeMaterial))
 	}
-	if c.TitleColor != 0 {
-		key := apple.Global(uikitPath, "NSForegroundColorAttributeName")
-		attrs := objc.ID(apple.Class("NSDictionary")).Send(sel("dictionaryWithObject:forKey:"), uiColor(c.TitleColor), key)
+	if attrs := headerTitleAttributes(c.TitleColor, c.TitleFont, false); attrs != 0 {
 		a.Send(sel("setTitleTextAttributes:"), attrs)
+	}
+	if attrs := headerTitleAttributes(c.TitleColor, c.LargeTitleFont, true); attrs != 0 {
 		a.Send(sel("setLargeTitleTextAttributes:"), attrs)
 	}
 	if c.TintColor != 0 {
@@ -1149,4 +1145,36 @@ func (s *surface) barAnimation() int {
 		return fade
 	}
 	return 0
+}
+
+// headerTitleAttributes preserves UIKit's own font unless the app overrides it.
+func headerTitleAttributes(color driver.Color, font driver.Font, large bool) objc.ID {
+	if color == 0 && font == (driver.Font{}) {
+		return 0
+	}
+	attrs := objc.ID(apple.Class("NSMutableDictionary")).Send(selNew)
+	attrs.Send(sel("autorelease"))
+	if color != 0 {
+		attrs.Send(sel("setObject:forKey:"), uiColor(color), apple.Global(uikitPath, "NSForegroundColorAttributeName"))
+	}
+	if font != (driver.Font{}) {
+		style, size, weight := "UIFontTextStyleHeadline", float64(17), driver.FontWeightSemibold
+		if large {
+			style, size, weight = "UIFontTextStyleLargeTitle", 34, driver.FontWeightBold
+		}
+		preferred := objc.ID(apple.Class("UIFont")).Send(sel("preferredFontForTextStyle:"), apple.Global(uikitPath, style))
+		scale := objc.Send[float64](preferred, sel("pointSize")) / size
+		if font.Size <= 0 {
+			font.Size = driver.Points(size)
+		}
+		font.Size *= driver.Points(scale)
+		if font.Weight == 0 {
+			font.Weight = weight
+		}
+		if ref := apple.Font(font); ref != 0 {
+			attrs.Send(sel("setObject:forKey:"), objc.ID(ref), apple.Global(uikitPath, "NSFontAttributeName"))
+			apple.Release(ref)
+		}
+	}
+	return attrs
 }

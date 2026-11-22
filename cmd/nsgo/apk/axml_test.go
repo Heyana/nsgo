@@ -41,6 +41,9 @@ func TestEncodeManifest(t *testing.T) {
 	}
 
 	app := root.child(t, "application")
+	if got := app.value(t, "supportsRtl"); got == 0 {
+		t.Fatal("standalone native views must support RTL")
+	}
 	if got := app.string(t, "label"); got != "Test" {
 		t.Fatalf("label = %q", got)
 	}
@@ -515,6 +518,7 @@ func TestFrameworkAttributeIDs(t *testing.T) {
 		"isGame":                      0x010103f4,
 		"resource":                    0x01010025,
 		"extractNativeLibs":           0x010104ea,
+		"supportsRtl":                 0x010103af,
 		"enableOnBackInvokedCallback": 0x0101066c,
 		"foregroundServiceType":       0x01010599,
 		"configChanges":               0x0101001f,

@@ -4,7 +4,7 @@
 import type { Accessor, Easing } from "./index";
 import type {
   AndroidDialogHostProps, ColorValue, CommonProps, DialogHostProps, InputHostProps, IOSDialogHostProps, IOSInputHostProps,
-  IOSNavPageHostProps, IOSProps, JSX, ListItemsProps, NavPageHostProps, StyleProp, TextStyle, TransitionShader, ViewStyle, YNode,
+  AndroidNavPageHostProps, IOSNavPageHostProps, IOSProps, JSX, ListItemsProps, NavPageHostProps, StyleProp, TextStyle, TransitionShader, ViewStyle, YNode,
 } from "./types";
 
 export interface IOSInputProps extends IOSProps, IOSInputHostProps {}
@@ -74,6 +74,9 @@ export interface NavPageProps extends NavPageHostProps {
   headerRight?: JSX.Element;
   headerTitle?: JSX.Element;
   headerStyle?: HeaderStyle;
+  /** Native compact and expanded title fonts; zero/omitted fields keep platform defaults. */
+  headerTitleStyle?: StyleProp<Pick<TextStyle, "fontFamily" | "fontSize" | "fontWeight" | "fontStyle">>;
+  headerLargeTitleStyle?: StyleProp<Pick<TextStyle, "fontFamily" | "fontSize" | "fontWeight" | "fontStyle">>;
   /** The system header's colors as classes: bg-*, text-* for the title, tint-* for the buttons; headerStyle wins over them. The header has no siblings: peer-* variants are logged and ignored. */
   headerClass?: string;
   onDismiss?: () => void;
@@ -82,6 +85,7 @@ export interface NavPageProps extends NavPageHostProps {
   class?: string;
   children?: JSX.Element;
   ios?: IOSNavPageHostProps;
+  android?: AndroidNavPageHostProps;
 }
 export declare function NavPage(props: NavPageProps): YNode;
 

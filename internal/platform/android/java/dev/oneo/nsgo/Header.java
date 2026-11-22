@@ -6,6 +6,7 @@ import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -43,9 +44,15 @@ final class Header {
     private final float density;
     /** The bar's height last reported to the engine, in points. */
     float reported;
-    /** Whether the screen asked for a large title, whether a custom title view replaces the title, and how far it collapsed, in points. */
-    private boolean large, hasTitleView;
-    private float collapsed;
+    /** Whether the screen asked for a large title and trailing actions beside it, and how far it collapsed, in points. */
+    private boolean large, rightWithLargeTitle;
+    private View customTitle, trailing;
+    private final int toolbarEndInset;
+    private Typeface toolbarTypeface;
+    private final Typeface largeTypeface;
+    private HeaderFont titleFont = new HeaderFont(), largeTitleFont = new HeaderFont();
+    private float collapsed, scrolled;
+    private float largeHeight = HeaderLayout.COLLAPSE;
     /** The toolbar's measured bar height (at least BAR), in points. */
     private float measuredBar = BAR;
     /** The header area's height the core set, status bar included, in pixels. */
@@ -64,7 +71,12 @@ final class Header {
 
     Header(Context context, float density, Runnable back) {
         this.density = density;
-        view = new FrameLayout(context);
+        view = new FrameLayout(context) {
+            @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+                super.onLayout(changed, left, top, right, bottom);
+                placeTrailing();
+            }
+        };
         // Over the screen's content, which the core inserts after it, and
         // without the shadow its elevation would cast.
         view.setOutlineProvider(null);
@@ -72,6 +84,7 @@ final class Header {
         view.setClipChildren(true);
 
         toolbar = new Toolbar(context);
+        toolbarEndInset = toolbar.getContentInsetEnd();
         toolbar.setBackgroundColor(0);
         arrow = new BackArrow(density);
         toolbar.setNavigationOnClickListener(v -> back.run());
@@ -83,6 +96,7 @@ final class Header {
         largeBand.setVisibility(View.GONE);
 
         largeTitle = new TextView(context);
+        largeTypeface = largeTitle.getTypeface();
         largeTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, HeaderLayout.LARGE_TITLE);
         largeTitle.setSingleLine(true);
         largeTitle.setEllipsize(TextUtils.TruncateAt.END);
@@ -123,23 +137,27 @@ final class Header {
         boolean hidden = Protocol.flag(flags, 0), transparent = Protocol.flag(flags, 1);
         large = Protocol.flag(flags, 2);
         boolean canGoBack = Protocol.flag(flags, 3), backHidden = Protocol.flag(flags, 4);
+        rightWithLargeTitle = Protocol.flag(flags, 7);
         String backTitle = Protocol.readString(in);
         int background = in.readInt(), titleColor = in.readInt(), tint = in.readInt();
         int left = in.readInt(), right = in.readInt(), titleView = in.readInt();
         float height = in.readFloat();
+        titleFont = HeaderFont.read(in);
+        largeTitleFont = HeaderFont.read(in);
 
         this.background = background;
         this.titleColor = titleColor;
         this.tint = tint;
         this.transparent = transparent;
-        this.hasTitleView = titleView != 0;
+        boolean hasTitleView = titleView != 0;
         if (!large) collapsed = 0;
         full = Math.round(height * density);
 
         view.setVisibility(hidden ? View.GONE : View.VISIBLE);
         String shownTitle = hasTitleView ? null : title;
         toolbar.setTitle(shownTitle);
-        largeTitle.setText(shownTitle == null ? "" : shownTitle);
+        largeTitle.setText(title);
+        largeTitleFont.apply(largeTitle, HeaderLayout.LARGE_TITLE, largeTypeface);
         styleToolbarTitle();
 
         boolean back = canGoBack && !backHidden;
@@ -149,9 +167,28 @@ final class Header {
         for (int i = toolbar.getChildCount() - 1; i >= 0; i--) {
             if (toolbar.getChildAt(i) instanceof Holder) toolbar.removeViewAt(i);
         }
+        if (trailing != null && trailing.getParent() == view) view.removeView(trailing);
+        trailing = null;
         add(wrap, left, Gravity.START);
-        add(wrap, titleView, Gravity.START);
-        add(wrap, right, Gravity.END);
+        customTitle = add(wrap, titleView, Gravity.START);
+        int reserved = 0;
+        if (large && rightWithLargeTitle && right != 0) {
+            trailing = wrap.apply(right);
+            if (trailing != null) {
+                if (trailing.getParent() instanceof ViewGroup) ((ViewGroup) trailing.getParent()).removeView(trailing);
+                ViewGroup.LayoutParams size = trailing.getLayoutParams();
+                int width = size != null ? Math.max(1, size.width) : 1;
+                int actionHeight = size != null ? Math.max(1, size.height) : 1;
+                FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(width, actionHeight, Gravity.TOP | Gravity.END);
+                p.setMarginEnd(Math.round(12 * density));
+                view.addView(trailing, p);
+                reserved = width + Math.round(28 * density);
+            }
+        } else add(wrap, right, Gravity.END);
+        toolbar.setContentInsetsRelative(toolbar.getContentInsetStart(), Math.max(toolbarEndInset, reserved));
+        largeTitle.setPaddingRelative(Math.round(HeaderLayout.LARGE_PADDING_HORIZONTAL * density), 0,
+                Math.max(Math.round(HeaderLayout.LARGE_PADDING_HORIZONTAL * density), reserved),
+                Math.round(HeaderLayout.LARGE_PADDING_BOTTOM * density));
 
         a11yState = -1;
         colors(dark);
@@ -161,7 +198,8 @@ final class Header {
     /** Collapses a large title as the scroll view at the top of the screen moves its content scrolled points under the header, as Material's large top app bar does: the bar shrinks with the content, so the core keeps the expanded height and the content's inset. */
     void follow(float scrolled) {
         if (!large) return;
-        float c = HeaderLayout.collapse(true, scrolled);
+        this.scrolled = scrolled;
+        float c = HeaderLayout.collapse(true, scrolled, largeHeight);
         if (c == collapsed) return;
         collapsed = c;
         collapse();
@@ -179,7 +217,7 @@ final class Header {
         }
 
         int barPx = Math.round(measuredBar * density);
-        float expanded = HeaderLayout.expandedBar(large, measuredBar);
+        float expanded = HeaderLayout.expandedBar(large, measuredBar, largeHeight);
         int barTop = HeaderLayout.barTopPx(full, expanded, density);
         FrameLayout.LayoutParams tp = (FrameLayout.LayoutParams) toolbar.getLayoutParams();
         if (tp.height != barPx || tp.topMargin != barTop) {
@@ -188,7 +226,7 @@ final class Header {
             toolbar.setLayoutParams(tp);
         }
 
-        boolean showLarge = large && !hasTitleView;
+        boolean showLarge = large;
         int bandHeight = showLarge ? HeaderLayout.largeBandHeightPx(h, barTop, barPx) : 0;
         if (bandHeight > 0) {
             int bandTop = barTop + barPx;
@@ -204,13 +242,34 @@ final class Header {
         }
 
         applyTitleState();
+        placeTrailing();
+    }
+
+    /** Keeps the trailing view beside the headline until it reaches the pinned toolbar. */
+    private void placeTrailing() {
+        if (trailing == null) return;
+        float expanded = HeaderLayout.expandedBar(large, measuredBar, largeHeight);
+        int barTop = HeaderLayout.barTopPx(full, expanded, density);
+        int padB = largeTitle.getPaddingBottom();
+        int titleHeight = Math.max(largeTitle.getLineHeight(), largeTitle.getMeasuredHeight() - padB);
+        int actionHeight = trailing.getLayoutParams().height;
+        trailing.setTranslationY(HeaderLayout.actionTopPx(
+                HeaderLayout.containerHeightPx(full, collapsed, density), barTop,
+                Math.round(measuredBar * density), titleHeight, padB, actionHeight));
     }
 
     /** Updates the large and collapsed title opacities and accessibility visibility for the current collapse fraction. */
     private void applyTitleState() {
-        boolean showLarge = large && !hasTitleView;
-        float fraction = HeaderLayout.fraction(showLarge, collapsed);
+        boolean showLarge = large;
+        float fraction = HeaderLayout.fraction(showLarge, collapsed, largeHeight);
         largeTitle.setAlpha(showLarge ? HeaderLayout.largeTitleAlpha(fraction) : 0f);
+        if (customTitle != null) {
+            float alpha = HeaderLayout.toolbarTitleAlpha(showLarge, fraction);
+            customTitle.setAlpha(alpha);
+            customTitle.setVisibility(alpha > 0 ? View.VISIBLE : View.INVISIBLE);
+            customTitle.setImportantForAccessibility(alpha > 0 ? View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                    : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
         int argb = HeaderLayout.withAlpha(resolvedTitleColor, HeaderLayout.toolbarTitleAlpha(showLarge, fraction));
         if (!titleColorApplied || argb != lastToolbarTitleColor) {
             titleColorApplied = true;
@@ -234,10 +293,13 @@ final class Header {
         }
     }
 
-    /** Sizes the toolbar's own title TextView to Material 3's 22 sp Title Large once on configure. */
+    /** Applies the compact font overrides, with Material 3's 22 sp title as the default. */
     private void styleToolbarTitle() {
         TextView titleView = toolbarTitleView();
-        if (titleView != null) titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, HeaderLayout.TITLE);
+        if (titleView != null) {
+            if (toolbarTypeface == null) toolbarTypeface = titleView.getTypeface();
+            titleFont.apply(titleView, HeaderLayout.TITLE, toolbarTypeface);
+        }
     }
 
     /** Returns the Toolbar's own title TextView if created (Holders are FrameLayouts, never TextViews). */
@@ -253,17 +315,26 @@ final class Header {
     float measure(int width) {
         toolbar.measure(View.MeasureSpec.makeMeasureSpec(Math.max(width, 1), View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        float bar = Math.max(BAR, Math.round(toolbar.getMeasuredHeight() / density));
-        if (bar != measuredBar) {
+        int actionHeight = trailing == null ? 0 : trailing.getLayoutParams().height;
+        float bar = Math.max(BAR, Math.round(Math.max(toolbar.getMeasuredHeight(), actionHeight) / density));
+        float band = HeaderLayout.COLLAPSE;
+        if (large) {
+            largeTitle.measure(View.MeasureSpec.makeMeasureSpec(Math.max(width, 1), View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            band = Math.max(band, (float) Math.ceil(largeTitle.getMeasuredHeight() / density));
+        }
+        if (bar != measuredBar || band != largeHeight) {
             measuredBar = bar;
+            largeHeight = band;
+            collapsed = HeaderLayout.collapse(large, scrolled, largeHeight);
             collapse();
         }
-        return HeaderLayout.expandedBar(large, bar);
+        return HeaderLayout.expandedBar(large, bar, largeHeight);
     }
 
-    private void add(IntFunction<View> wrap, int id, int gravity) {
+    private View add(IntFunction<View> wrap, int id, int gravity) {
         View holder = id != 0 ? wrap.apply(id) : null;
-        if (holder == null) return;
+        if (holder == null) return null;
         if (holder.getParent() instanceof ViewGroup) ((ViewGroup) holder.getParent()).removeView(holder);
         ViewGroup.LayoutParams size = holder.getLayoutParams();
         Toolbar.LayoutParams p = new Toolbar.LayoutParams(
@@ -271,6 +342,30 @@ final class Header {
                 gravity | Gravity.CENTER_VERTICAL);
         if (gravity == Gravity.END) p.setMarginEnd(Math.round(12 * density));
         toolbar.addView(holder, p);
+        return holder;
+    }
+
+    /** Font overrides written by writeHeaderFont; unset fields retain native defaults. */
+    private static final class HeaderFont {
+        String family = "";
+        float size;
+        int weight;
+        boolean italic;
+
+        static HeaderFont read(DataInputStream in) throws IOException {
+            HeaderFont font = new HeaderFont();
+            font.family = Protocol.readString(in);
+            font.size = in.readFloat();
+            font.weight = in.readUnsignedShort();
+            font.italic = Protocol.flag(in.readUnsignedByte(), 0);
+            return font;
+        }
+
+        void apply(TextView view, float defaultSize, Typeface defaultTypeface) {
+            view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size > 0 ? size : defaultSize);
+            view.setTypeface(family.isEmpty() && weight == 0 && !italic ? defaultTypeface
+                    : Text.typeface(family, weight > 0 ? weight : defaultTypeface.getWeight(), italic));
+        }
     }
 
     /** Sizes the holder of a header view to its frame, in pixels. */

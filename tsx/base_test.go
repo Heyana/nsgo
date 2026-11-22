@@ -345,3 +345,27 @@ mount(() => <PlotAppearScope>
 		}
 	}
 }
+
+func TestNavPageNativeTitleStyles(t *testing.T) {
+	app := run(t, `import { mount, signal, Text } from "nsgo";
+import { createNavStack, NavStack, NavPage } from "nsgo/base";
+const nav = createNavStack(["inbox"]), size = signal(20);
+mount(() => <NavStack state={nav}>{() => <NavPage testID="page" title="Inbox" headerLargeTitle
+  headerTitleStyle={[{ fontFamily: "serif", fontWeight: "500" }, { fontSize: size() }]}
+  headerLargeTitleStyle={{ fontSize: size() + 10, fontWeight: "600", fontStyle: "italic" }}
+  android={{ headerRightWithLargeTitle: true }}>
+  <Text testID="change" onPress={() => size.set(26)}>Change</Text>
+</NavPage>}</NavStack>);`, nsgotest.Environment(core.Environment{OS: core.OSAndroid, HeaderHeight: 64, LargeHeaderHeight: 152}))
+	check := func(size core.Points) {
+		t.Helper()
+		c := app.FindMounted("id:page").Screen
+		if c.TitleFont.Size != size || c.TitleFont.Family != "serif" || c.TitleFont.Weight != core.FontWeightMedium ||
+			c.LargeTitleFont.Size != size+10 || c.LargeTitleFont.Weight != core.FontWeightSemibold || !c.LargeTitleFont.Italic || !c.RightWithLargeTitle {
+			t.Fatalf("native title style: %+v", c)
+		}
+	}
+	check(20)
+	app.Press("id:change")
+	app.Settle()
+	check(26)
+}

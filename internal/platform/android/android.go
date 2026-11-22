@@ -1682,7 +1682,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		case driver.ItemScreen:
 			c := it.Screen
 			w.str(c.Title)
-			w.flags(c.HeaderHidden, c.HeaderTransparent, c.LargeTitle, c.CanGoBack, c.BackHidden, c.NoPopOnSwipe, c.NoPopOnBack)
+			w.flags(c.HeaderHidden, c.HeaderTransparent, c.LargeTitle, c.CanGoBack, c.BackHidden, c.NoPopOnSwipe, c.NoPopOnBack, c.RightWithLargeTitle)
 			w.str(c.BackTitle)
 			w.u32(uint32(c.Background))
 			w.u32(uint32(c.TitleColor))
@@ -1691,6 +1691,8 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			w.u32(uint32(c.Right))
 			w.u32(uint32(c.TitleView))
 			w.points(c.HeaderHeight)
+			writeHeaderFont(w, c.TitleFont)
+			writeHeaderFont(w, c.LargeTitleFont)
 		case driver.ItemWeb:
 			c := it.Web
 			w.str(c.Source.Src)
@@ -2104,4 +2106,12 @@ func writeViewProps(w *writer, p *driver.ViewProps) {
 	for _, id := range labels {
 		w.u32(uint32(id))
 	}
+}
+
+// writeHeaderFont keeps zero fields for the native header's defaults.
+func writeHeaderFont(w *writer, f driver.Font) {
+	w.str(firstFamily(f.Family))
+	w.points(f.Size)
+	w.u16(uint16(f.Weight))
+	w.flags(f.Italic)
 }
