@@ -22,14 +22,12 @@ func (w *window) setMenu(entries []driver.MenuEntry) {
 	w.showMenuBar()
 }
 
-// menuPopups reports whether this window offers its application menu as a
-// popup instead of a bar, including while a hidden-title-bar window is full screen.
+// menuPopups reports whether this window offers its application menu as a popup instead of a bar, including while a hidden-title-bar window is full screen.
 func (w *window) menuPopups() bool {
 	return !w.embedded && len(w.chrome.menu) != 0 && w.chrome.titleBar == driver.TitleBarHidden && !(w.primary && w.opts.Hidden)
 }
 
-// popupApplicationMenu opens the application menu at the surface's leading
-// top corner. Request zero is internal: it has no PopupMenu close callback.
+// popupApplicationMenu opens the application menu at the surface's leading top corner. Request zero is internal: it has no PopupMenu close callback.
 func (w *window) popupApplicationMenu(entries []driver.MenuEntry) {
 	var at driver.Point
 	if w.dir == 2 { // GTK_TEXT_DIR_RTL
@@ -38,9 +36,7 @@ func (w *window) popupApplicationMenu(entries []driver.MenuEntry) {
 	w.showPopupMenu(entries, at, 0, true)
 }
 
-// restoreMenuFocus gives native menus' actions and dismissal back the editor
-// or view that owned the keyboard before opening. A retained widget may have
-// left the tree while the menu was open; only one still in this window returns.
+// restoreMenuFocus gives native menus' actions and dismissal back the editor or view that owned the keyboard before opening. A retained widget may have left the tree while the menu was open; only one still in this window returns.
 func (w *window) restoreMenuFocus() {
 	if !w.menuFocusPending {
 		return
@@ -66,8 +62,7 @@ func (w *window) restoreMenuFocus() {
 	}
 }
 
-// menuPopupKey follows Alt alone, F10 and top-level mnemonics in a window
-// with no bar. Other Alt chords, including the window manager's, keep their keys.
+// menuPopupKey follows Alt alone, F10 and top-level mnemonics in a window with no bar. Other Alt chords, including the window manager's, keep their keys.
 func (w *window) menuPopupKey(keyval, state uint32, pressed, repeat bool) bool {
 	c := &w.chrome
 	alt := keyval == gdkAltL || keyval == gdkAltR

@@ -74,8 +74,7 @@ func Label(lang string, e *driver.MenuEntry, app string) string {
 	return e.Label
 }
 
-// Mnemonic returns the first letter or digit in label, lowercased, or zero
-// when it has neither. Labels have no access-key marker: '&' shows as itself.
+// Mnemonic returns the first letter or digit in label, lowercased, or zero when it has neither. Labels have no access-key marker: '&' shows as itself.
 func Mnemonic(label string) rune {
 	for _, r := range label {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {

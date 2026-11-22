@@ -572,8 +572,7 @@ func (w *window) popupMenu(entries []driver.MenuEntry, p driver.Point, id uint32
 	w.showPopupMenu(entries, p, id, false)
 }
 
-// showPopupMenu shares the native menu and action path between a context menu
-// and the keyboard's application-menu popup. Keyboard menus select their first item.
+// showPopupMenu shares the native menu and action path between a context menu and the keyboard's application-menu popup. Keyboard menus select their first item.
 func (w *window) showPopupMenu(entries []driver.MenuEntry, p driver.Point, id uint32, keyboard bool) {
 	if w.popover != 0 {
 		gtkPopoverPopdown(w.popover) // reports the one before closed

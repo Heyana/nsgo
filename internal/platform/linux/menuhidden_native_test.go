@@ -10,8 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// TestHiddenApplicationMenuKeyboard opens the application menu through the
-// backend's GTK key callbacks while its title bar and menu bar are hidden.
+// TestHiddenApplicationMenuKeyboard opens the application menu through the backend's GTK key callbacks while its title bar and menu bar are hidden.
 func TestHiddenApplicationMenuKeyboard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens GTK menus")
@@ -124,8 +123,7 @@ func TestHiddenApplicationMenuKeyboard(t *testing.T) {
 	}
 }
 
-// TestHiddenApplicationMenuNativeKeys drives GTK's real event stream with
-// XTest: the popup owns Escape and Return, and its first item is selected.
+// TestHiddenApplicationMenuNativeKeys drives GTK's real event stream with XTest: the popup owns Escape and Return, and its first item is selected.
 func TestHiddenApplicationMenuNativeKeys(t *testing.T) {
 	if testing.Short() || os.Getenv("DISPLAY") == "" || os.Getenv("WAYLAND_DISPLAY") != "" {
 		t.Skip("needs an X11 desktop with XTest")
