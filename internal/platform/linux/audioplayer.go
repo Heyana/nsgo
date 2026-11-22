@@ -433,12 +433,17 @@ func (p *linuxPlayer) resetStream() {
 // dropStream frees the GTK stream and leaves the player's state as it is.
 func (p *linuxPlayer) dropStream() {
 	if p.stream != 0 {
-		gtkMediaStreamSetPlaying(p.stream, 0)
-		gtkMediaFileClear(p.stream)
-		gObjectUnref(p.stream)
+		freeMediaStream(p.stream)
 		p.stream = 0
 	}
 	p.seeking = false
+}
+
+// freeMediaStream stops a GtkMediaFile, closes its file and lets it go.
+func freeMediaStream(stream uintptr) {
+	gtkMediaStreamSetPlaying(stream, 0)
+	gtkMediaFileClear(stream)
+	gObjectUnref(stream)
 }
 
 func (p *linuxPlayer) close() {

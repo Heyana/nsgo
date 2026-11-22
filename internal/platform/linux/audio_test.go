@@ -598,6 +598,39 @@ looped:
 	}
 }
 
+// A player closed while its seek runs keeps its stream until the seek ends: freed at once, GStreamer's streaming thread may still hold the pipeline's locks and abort the process.
+func TestLinuxAudioPlayerClosesWhileSeeking(t *testing.T) {
+	w, cx := audioTestWindow(t)
+	for range 20 {
+		played := make(chan error, 1)
+		var p *core.AudioPlayer
+		cx.Post(func() {
+			p = cx.NewAudioPlayer(core.AudioSource{Data: audioTestWAV(1200 * time.Millisecond)}, core.AudioPlayerOptions{})
+			p.Play(func(err error) { played <- err })
+		})
+		if err := awaitAudio(t, played); err != nil {
+			t.Fatal(err)
+		}
+		cx.Post(func() {
+			p.Seek(600 * time.Millisecond)
+			p.Close()
+		})
+	}
+	// The retired streams go once their seeks end.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var left int
+		w.onLoop(t, func() { left = len(w.audioRoot().audio.retired) })
+		if left == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d closed streams still held", left)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestLinuxAudioPlayerLoopsFromItsStart(t *testing.T) {
 	_, cx := audioTestWindow(t)
 	const loopStart = 600 * time.Millisecond

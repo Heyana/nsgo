@@ -37,6 +37,39 @@ type linuxAudio struct {
 	timer    uint32
 	// latencyReads wait for the mixer to reach PLAYING, which configures its latency.
 	latencyReads []latencyRead
+	// retired holds closed players' streams that were seeking: GtkMediaFile frees its GStreamer pipeline at once, while a streaming thread may still hold the pipeline's locks for the seek's flush, which aborts the process, so a seeking stream goes once its seek ends.
+	retired []retiredStream
+}
+
+type retiredStream struct {
+	stream uintptr
+	until  time.Time
+}
+
+// retiredStreamWait bounds how long a closed player's seek may hold its stream.
+const retiredStreamWait = 2 * time.Second
+
+// closePlayer closes p, keeping its stream until a seek under way ends.
+func (a *linuxAudio) closePlayer(p *linuxPlayer) {
+	if p.stream != 0 && gtkMediaStreamIsSeeking(p.stream) != 0 {
+		gtkMediaStreamSetPlaying(p.stream, 0)
+		a.retired = append(a.retired, retiredStream{p.stream, time.Now().Add(retiredStreamWait)})
+		p.stream = 0
+		a.ensureTick()
+	}
+	p.close()
+}
+
+// releaseRetired frees the retired streams whose seek ended or whose wait ran out, reporting whether any remain.
+func (a *linuxAudio) releaseRetired(now time.Time) bool {
+	a.retired = slices.DeleteFunc(a.retired, func(r retiredStream) bool {
+		if gtkMediaStreamIsSeeking(r.stream) != 0 && now.Before(r.until) {
+			return false
+		}
+		freeMediaStream(r.stream)
+		return true
+	})
+	return len(a.retired) > 0
 }
 
 type latencyRead struct {
@@ -99,7 +132,7 @@ func (w *window) audioCommand(id uint32, req *driver.AudioRequest) {
 	case driver.AudioClose:
 		if p := a.players[id]; p != nil {
 			delete(a.players, id)
-			p.close()
+			a.closePlayer(p)
 		}
 	default:
 		if p := a.players[id]; p != nil {
@@ -319,7 +352,7 @@ func audioTick(handle uintptr) int32 {
 		}
 	}
 	a.answerLatency(now)
-	active := a.mixer != nil
+	active := a.releaseRetired(now) || a.mixer != nil
 	for _, p := range a.players {
 		if p.tick(now) {
 			active = true
@@ -346,11 +379,20 @@ func (w *window) closeAudio() {
 	for id, p := range a.players {
 		if w == root || p.owner == w {
 			delete(a.players, id)
-			p.close()
+			a.closePlayer(p)
 		}
 	}
 	a.latencyReads = slices.DeleteFunc(a.latencyReads, func(r latencyRead) bool { return w == root || r.owner == w })
 	if w == root {
+		// The tick stops with the window, so the seeks end here: GtkMediaFile learns of them through the main context.
+		for deadline := time.Now().Add(retiredStreamWait); a.releaseRetired(time.Now()) && time.Now().Before(deadline); {
+			gMainContextIteration(0, 0)
+			time.Sleep(time.Millisecond)
+		}
+		for _, r := range a.retired {
+			freeMediaStream(r.stream)
+		}
+		a.retired = nil
 		if a.timer != 0 {
 			gSourceRemove(a.timer)
 		}
