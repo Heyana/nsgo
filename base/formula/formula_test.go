@@ -13,6 +13,7 @@ import (
 
 	"github.com/caelyreth/untie"
 
+	_ "github.com/nsgo-dev/nsgo"
 	"github.com/nsgo-dev/nsgo/base/formula/locales"
 	"github.com/nsgo-dev/nsgo/base/textview"
 	"github.com/nsgo-dev/nsgo/core"
@@ -20,6 +21,8 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
+
+func TestMain(m *testing.M) { nsgotest.Main(m) }
 
 // The SHA-256 of fonts/NewCMMath-Book.otf, as typst/typst-assets@94dcb990 has it.
 const fontDigest = "2ea09ebc9167b1e1a66f31390dc917f2d4004ecfca72d51b28010e4ad6becd95"
@@ -156,13 +159,13 @@ func TestViewSizesByFontAndReads(t *testing.T) {
 		t.Errorf("the inline formula reaches %v below the baseline, want its subscript's depth", below)
 	}
 
-	size.Set(32)
+	app.Post(func() { size.Set(32) })
 	app.Settle()
 	app.Screenshot("formula-baseline")
 	if got := app.Find("id:half").Frame.Size; math.Abs(float64(got.Width-2*small.Width)) > 1 || math.Abs(float64(got.Height-2*small.Height)) > 1 {
 		t.Errorf("at 32 points %v, at 16 %v: it doubles", got, small)
 	}
-	source.Set(`x_i^2`)
+	app.Post(func() { source.Set(`x_i^2`) })
 	app.Settle()
 	if got := app.Find("id:half").Props.Label; got != "x sub i squared" {
 		t.Errorf("label %q after its source changed", got)
@@ -223,7 +226,7 @@ func TestViewPaints(t *testing.T) {
 	if len(app.Find("id:ink").Drawing.ViewPaints) == 0 {
 		t.Error("ink is no view paint: a new text color would draw the formula again")
 	}
-	color.Set(core.RGB(0x0000ff))
+	app.Post(func() { color.Set(core.RGB(0x0000ff)) })
 	app.Settle()
 	if got := fills("ink"); len(got) != 1 || got[0] != core.RGB(0x0000ff) {
 		t.Errorf("ink fills %v after the text color changed", got)

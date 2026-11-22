@@ -229,7 +229,16 @@ What formulas cost an app, from a `ui.TextView` with and without `RenderMath` (2
 | --- | --- |
 | macOS, Windows, Linux | 6.2, 6.6 and 6.5 MB of binary, the 1.4 MB font among it |
 | Android | 2.8 MB of APK |
+| watchOS arm64 | 6.1 MB of executable (2026-11-23), its 1,432,068-byte font included |
 | Web | 10.8 MB of WebAssembly, 3.0 MB gzipped (2.2 MB with Brotli), the font 0.95 MB of it |
+
+On a Series 9 (41 mm) watchOS 27.0 simulator, the gallery's three formulas render through the SwiftUI/Core Graphics host. Three fresh runs of `TestWatchFormulaMemory` (2026-11-23, Go 1.27.4) retained a median 3,896,768 additional Go heap bytes after parsing the font and collecting garbage; this includes Untie's owned copy of the embedded font and its parsed tables. The median sampled loading peak was 8,758,312 bytes of Go heap (2 ms sampling), and the focused test host after drawing the formulas used 33,261,560 bytes of physical footprint. These are simulator test-process readings, including the test harness, not a physical watch's budget. `os_proc_available_memory` returned 0; [Apple's available-memory guidance](https://developer.apple.com/documentation/os/os_proc_available_memory) makes the app's current limit device- and lifecycle-dependent. Comparing footprint and headroom on a physical arm64 watch remains open ([roadmap](../roadmap.md#formulas)).
+
+Repeat the opt-in probe alone in fresh processes; `-trace` retains its JSON measurements:
+
+```sh
+go tool nsgo test -target watchos_simulator -device <owned-UUID> -env NSGO_FORMULA_MEMORY=1 -run TestWatchFormulaMemory -trace ./base/formula -- -count=3
+```
 
 | MyGo's adapter | NSGo | Why |
 | --- | --- | --- |
