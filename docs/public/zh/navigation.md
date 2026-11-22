@@ -39,7 +39,7 @@ Android 使用 Material 3 顶部应用栏。普通应用栏高 64 dp，标题为
 
 调用 `mobile.Immersive(cx, true)` 为窗口请求全屏，调用 `mobile.Immersive(cx, false)` 恢复窗口原有的系统栏设置。页面或对话框可设置 `StatusBar: core.StatusBarSetting{Immersive: core.ToggleOn}`，在显示期间请求全屏。TSX 页面或对话框使用 `statusBar={{ immersive: true }}`，窗口的默认值可在 `nsgo.yaml` 中设置为 `status_bar: { immersive: true }`。
 
-在 Android 上，从屏幕边缘滑动可短暂显示状态栏和导航栏。在 iOS 上，状态栏隐藏，底部主屏幕指示条的隐藏和显示由 UIKit 决定。`cx.Env().SafeArea()` 继续报告系统提供的边距，包括屏幕开孔占用的区域。
+在 Android 上，从屏幕边缘滑动可短暂显示状态栏和导航栏。在 HarmonyOS 上，状态栏和底部导航条隐藏，从屏幕边缘滑动可短暂显示它们。在 iOS 上，状态栏隐藏，底部主屏幕指示条的隐藏和显示由 UIKit 决定。`cx.Env().SafeArea()` 继续报告系统提供的边距，包括屏幕开孔占用的区域。
 
 ## 模态
 

@@ -491,7 +491,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		m.o.op("app", 0).num(float64(it.Appearance))
 	case driver.ItemStatusBar:
 		if it.StatusBar != nil {
-			m.o.op("sb", 0).num(float64(it.StatusBar.Style)).boolean(it.StatusBar.Hidden)
+			m.o.op("sb", 0).num(float64(it.StatusBar.Style)).boolean(it.StatusBar.Hidden).boolean(it.StatusBar.Immersive)
 		}
 	case driver.ItemTitle:
 		// A phone has no window title: the task switcher's label is the

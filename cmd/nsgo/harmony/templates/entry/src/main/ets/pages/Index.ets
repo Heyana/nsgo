@@ -93,6 +93,11 @@ interface PickedFileInfo {
   p: string;
 }
 
+// edgeEnd is how far into the window an avoid area that starts at start and spans size reaches, or 0 for an empty one.
+function edgeEnd(start: number, size: number): number {
+  return size > 0 ? start + size : 0;
+}
+
 // mimeOf guesses a file's media type from its extension.
 function mimeOf(path: string): string {
   const dot = path.lastIndexOf('.');
@@ -417,9 +422,10 @@ class Tree {
   root: number = -1;
   // sticky are the cells each scroll view pins as it scrolls.
   sticky: Map<number, StickyCell[]> = new Map();
-  // The status bar: a driver.StatusBarStyle and whether it shows.
+  // The status bar: a driver.StatusBarStyle, whether it shows, and whether the window is immersive, hiding every system bar.
   sbStyle: number = 1;
   sbHidden: boolean = false;
+  sbImmersive: boolean = false;
   // appMode is the driver.Appearance the app shows in.
   appMode: number = 0;
   // layoutMs and layoutCurve are this batch's layout animation, which a
@@ -561,6 +567,7 @@ class Tree {
       } else if (code === 'sb') {
         this.sbStyle = o[2] as number;
         this.sbHidden = o[3] as boolean;
+        this.sbImmersive = o[4] as boolean;
       } else if (code === 'la') {
         this.layoutMs = o[2] as number;
         this.layoutCurve = o[3] as number;
@@ -1094,8 +1101,12 @@ struct Index {
   // awake holds the power assertions keeping the screen on.
   private awake: Set<number> = new Set();
   private safeTop: number = 0;
+  private safeRight: number = 0;
   private safeBottom: number = 0;
+  private safeLeft: number = 0;
   private keyboard: number = 0;
+  // barsShown is the system bars the window was last asked to show, so the bars are set only when the engine's request changes: avoidAreaChange fires when an edge swipe reveals hidden bars for a moment, and setting them again then would hide them at once.
+  private barsShown: string = '';
   // The display clock that runs while something animates.
   private sync: displaySync.DisplaySync | undefined = undefined;
   // framePending is a frame the page has not finished. The display clock fires every vsync whether or not the engine kept up, and each runJavaScript queues behind the last, so a frame slower than the vsync let dozens queue in the page (over a hundred at launch on a phone) and every touch waited behind them. A vsync that finds a frame pending is skipped; the engine's clock reads the time, so the next frame catches up.
@@ -1820,8 +1831,13 @@ struct Index {
     if (this.win !== undefined) {
       try {
         const bars = this.win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
-        this.safeTop = px2vp(bars.topRect.height);
+        // The display's cutout stays an inset when immersive mode hides the status bar over it, as on the other targets. Its areas are the cutout's bounds, which need not start at the window's edge.
+        const cut = this.win.getWindowAvoidArea(window.AvoidAreaType.TYPE_CUTOUT);
+        const width = this.win.getWindowProperties().windowRect.width;
+        this.safeTop = Math.max(px2vp(bars.topRect.height), px2vp(edgeEnd(cut.topRect.top, cut.topRect.height)));
         this.renderer.safeTop = this.safeTop;
+        this.safeLeft = px2vp(edgeEnd(cut.leftRect.left, cut.leftRect.width));
+        this.safeRight = cut.rightRect.width > 0 ? px2vp(Math.max(0, width - cut.rightRect.left)) : 0;
         // A full-screen window's system bar area carries the status bar but
         // not the navigation indicator, whose own area is what the bottom of
         // the tree must stay above.
@@ -1863,7 +1879,7 @@ struct Index {
     this.dark = this.appMode === 2 ? true : (this.appMode === 1 ? false : dark);
     const out: Device = {
       Width: px2vp(d.width), Height: px2vp(d.height),
-      SafeTop: this.safeTop, SafeRight: 0, SafeBottom: this.safeBottom, SafeLeft: 0,
+      SafeTop: this.safeTop, SafeRight: this.safeRight, SafeBottom: this.safeBottom, SafeLeft: this.safeLeft,
       Keyboard: this.keyboard,
       PixelRatio: d.densityPixels, FontScale: config?.fontSizeScale ?? 1,
       Language: locale, OS: 'ohos',
@@ -1958,14 +1974,27 @@ struct Index {
     setTimeout(() => { this.readEnv(); }, 0);
   }
 
-  // applyStatusBar gives the window the status bar the engine asked for.
+  // applyStatusBar gives the window the system bars the engine asked for. Immersive hides the status bar and the navigation indicator, and the system reveals them for a moment on an edge swipe; ending it shows them again. EntryAbility lays the window out full screen from the start, so the content already runs under the bars and the avoid areas readEnv reads report what they cover in either state.
   applyStatusBar(): void {
     const w = this.win;
     if (w === undefined) {
       return;
     }
+    const immersive = this.tree.sbImmersive;
+    const shown = immersive ? 'none' : (this.tree.sbHidden ? 'indicator' : 'status,indicator');
+    if (shown !== this.barsShown) {
+      this.barsShown = shown;
+      const failed = (e: Error): void => {
+        console.error('NSGO harmony: system bars: ' + e);
+      };
+      try {
+        w.setWindowSystemBarEnable(immersive || this.tree.sbHidden ? [] : ['status']).catch(failed);
+        w.setSpecificSystemBarEnabled('navigationIndicator', !immersive).catch(failed);
+      } catch (e) {
+        failed(e as Error);
+      }
+    }
     try {
-      w.setWindowSystemBarEnable(this.tree.sbHidden ? [] : ['status']);
       // Auto follows the appearance, as the engine's StatusBarAuto says.
       const light = this.tree.sbStyle === 3 || (this.tree.sbStyle === 1 && this.dark);
       w.setWindowSystemBarProperties({

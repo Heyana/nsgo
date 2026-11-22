@@ -63,12 +63,7 @@ const (
 // haptics, and every other platform, play nothing.
 func PlayHaptic(cx *core.Scope, h Haptic) { cx.PlayHaptic(h) }
 
-// Immersive requests that the window hide its system bars. Android
-// hides its status and navigation bars and reveals them briefly on an
-// edge swipe. iOS hides the status bar and lets UIKit hide the home
-// indicator. Pass false to return to the window's regular settings.
-// A shown screen or modal can override it in its StatusBar. Other
-// targets ignore it.
+// Immersive requests that the window hide its system bars. Android hides its status and navigation bars, and HarmonyOS its status bar and navigation indicator; both reveal them briefly on an edge swipe. iOS hides the status bar and lets UIKit hide the home indicator. Pass false to return to the window's regular settings. A shown screen or modal can override it in its StatusBar. Other targets ignore it.
 func Immersive(cx *core.Scope, on bool) {
 	toggle := core.ToggleOff
 	if on {
