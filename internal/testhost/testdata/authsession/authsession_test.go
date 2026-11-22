@@ -24,9 +24,7 @@ import (
 
 func TestMain(m *testing.M) { nsgotest.Main(m) }
 
-// This opt-in integration test opens only a synthetic provider, never an
-// account's authorization endpoint. Use an isolated browser profile on a lab
-// desktop; Apple scheme sessions may need their system consent sheet accepted.
+// This opt-in integration test opens only a synthetic provider, never an account's authorization endpoint. Use an isolated browser profile on a lab desktop; Apple scheme sessions may need their system consent sheet accepted.
 func TestAuthSessionProviderAndCancel(t *testing.T) {
 	if os.Getenv("NSGO_TEST_AUTH_BROWSER") != "1" {
 		t.Skip("set NSGO_TEST_AUTH_BROWSER=1 on an isolated native browser fixture")

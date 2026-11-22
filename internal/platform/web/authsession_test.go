@@ -19,8 +19,7 @@ func (authTestPlatform) Mount(*driver.MountBatch)  {}
 func (authTestPlatform) RequestFrame()             {}
 func (authTestPlatform) SubmitGPU(driver.GPUFrame) {}
 
-// Real popups and navigation exercise the browser's URL serialization and
-// close detection. No provider account, cookies or external network is used.
+// Real popups and navigation exercise the browser's URL serialization and close detection. No provider account, cookies or external network is used.
 func TestAuthPopupCallbackAndClose(t *testing.T) {
 	events := make(chan driver.Event, 16)
 	e := engine.Start(authTestPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{Event: func(_ uint32, ev driver.Event) {

@@ -71,9 +71,7 @@ func (s *Sessions) start(id uint32, path, page string, dispatch func(driver.Even
 		return
 	}
 	base := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(l.Addr().(*net.TCPAddr).Port), Path: "/"}
-	// Path is a decoded path, as serve reads it. Escape it and resolve dot
-	// segments before reporting the redirect, so browser navigation and the
-	// listener agree on the callback's path.
+	// Path is a decoded path, as serve reads it. Escape it and resolve dot segments before reporting the redirect, so browser navigation and the listener agree on the callback's path.
 	redirect := base.ResolveReference(&url.URL{Path: path})
 	path = redirect.Path
 	ss := &session{listener: l, redirect: redirect.String()}
