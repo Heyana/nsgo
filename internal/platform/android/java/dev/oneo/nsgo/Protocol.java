@@ -137,6 +137,8 @@ final class Protocol {
     static final int EXT_SURFACE_RESET = 11;
     /** The environment's third capability byte's bit for a device that plays timed vibration patterns (capHapticPatterns in protocol.go). */
     static final int CAP_HAPTIC_PATTERNS = 16;
+    /** The environment's third capability byte's bit for a runtime that streams a FETCH_TO_FILE fetch to its file (Downloads.java), capFetchToFile in protocol.go: Go sends FETCH_TO_FILE only to a runtime with it. */
+    static final int CAP_FETCH_TO_FILE = 64;
     /** Sets the surface's preferred frame rate: its ID and a float in Hz. */
     static final int EXT_FRAME_RATE = 1;
 

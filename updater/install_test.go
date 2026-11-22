@@ -259,7 +259,7 @@ func TestUpdateReportsStreamingProgressAndResets(t *testing.T) {
 		s := current()
 		return s.Phase == updater.PhaseDownloading && s.Loaded == 400 && s.Total == 1000
 	})
-	if s := current(); s.Version != "1.1" || s.Fraction() != 0.4 {
+	if s := current(); s.Available != "1.1" || s.Fraction() != 0.4 {
 		t.Fatalf("mid-download status = %+v", s)
 	}
 	if app.TaskProgress.State != core.TaskProgressNormal || app.TaskProgress.Value != 0.4 {

@@ -2406,7 +2406,10 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		return
 	case driver.EventUpdate:
 		if state, ok := ev.Data.(*driver.UpdaterState); ok && state != nil {
-			t.rt.updater.Set(updaterState(*state))
+			// The platform's report leaves the core's own download progress as it is.
+			next, cur := updaterState(*state), t.rt.updater.GetUntracked()
+			next.Phase, next.Loaded, next.Total = cur.Phase, cur.Loaded, cur.Total
+			t.rt.updater.Set(next)
 			return
 		}
 		if update, ok := ev.Data.(*driver.Update); ok && update != nil {

@@ -344,6 +344,12 @@ func TestEnvironmentSaysTheRuntimeReadsExtendedMessages(t *testing.T) {
 	if m := regexp.MustCompile(`int third = ([^;]*);`).FindStringSubmatch(view); m == nil || !strings.Contains(m[1], "Protocol.CAP_DISCOVER_SERVICES") {
 		t.Errorf("NsgoView.environment's third capability byte is %v, without Protocol.CAP_DISCOVER_SERVICES", m)
 	}
+	if m := regexp.MustCompile(`static final int CAP_FETCH_TO_FILE = (\d+);`).FindStringSubmatch(java); m == nil || m[1] != strconv.Itoa(capFetchToFile) {
+		t.Errorf("Protocol.java's CAP_FETCH_TO_FILE is %v, protocol.go's capFetchToFile %d", m, capFetchToFile)
+	}
+	if m := regexp.MustCompile(`int third = ([^;]*);`).FindStringSubmatch(view); m == nil || !strings.Contains(m[1], "Protocol.CAP_FETCH_TO_FILE") {
+		t.Errorf("NsgoView.environment's third capability byte is %v, without Protocol.CAP_FETCH_TO_FILE", m)
+	}
 	if m := regexp.MustCompile(`static final int CAP_HAPTIC_PATTERNS = (\d+);`).FindStringSubmatch(java); m == nil || m[1] != strconv.Itoa(capHapticPatterns) {
 		t.Errorf("Protocol.java's CAP_HAPTIC_PATTERNS is %v, protocol.go's capHapticPatterns %d", m, capHapticPatterns)
 	}

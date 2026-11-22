@@ -26,12 +26,19 @@ type Capability struct {
 	Store   string
 }
 
-// State is the updater's latest knowledge. Reading Status in a binding tracks changes. AutomaticDownloads is supported only by Sparkle on macOS.
+// State is the updater's latest knowledge. Reading Status in a binding tracks changes. AutomaticDownloads is supported only by Sparkle on macOS. Phase, Loaded and Total follow an in-app update that downloads and installs on Linux and Android.
 type State struct {
 	Capability                          Capability
 	AutomaticChecks, AutomaticDownloads bool
 	Available, Notes                    string
 	LastCheck                           time.Time
+	Phase                               Phase
+	Loaded, Total                       int64
+}
+
+// Fraction is the download's progress from 0 to 1, or 0 when Total is unknown or no bytes have arrived yet.
+func (s State) Fraction() float64 {
+	return core.UpdaterState{Loaded: s.Loaded, Total: s.Total}.Fraction()
 }
 
 // CapabilityOf reports how this copy updates, synchronously and without network I/O.
@@ -49,7 +56,8 @@ const lastCheckKey = "last-check"
 func Status(cx *core.Scope) State {
 	s := core.UpdaterStatus(cx)
 	result := State{Capability: Capability{s.Managed, s.Store}, AutomaticChecks: s.AutomaticChecks,
-		AutomaticDownloads: s.AutomaticDownloads, Available: s.Available, Notes: s.Notes, LastCheck: s.LastCheck}
+		AutomaticDownloads: s.AutomaticDownloads, Available: s.Available, Notes: s.Notes, LastCheck: s.LastCheck,
+		Phase: s.Phase, Loaded: s.Loaded, Total: s.Total}
 	if !s.NativePreferences {
 		storage := scheduleStorage(cx)
 		if value, ok := storage.GetItem(automaticKey); ok {

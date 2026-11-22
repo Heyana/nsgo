@@ -184,6 +184,8 @@ type surface struct {
 	frameWanted atomic.Bool
 	// extendedMessages is set once the runtime's environment says it reads msgExtended messages (capExtendedMessages), which a runtime built before them refuses as a corrupt pipe.
 	extendedMessages atomic.Bool
+	// fetchToFile is set once the runtime's environment says it streams a fetch to a file (capFetchToFile).
+	fetchToFile atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -440,6 +442,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 		case msgEnvironment:
 			env, third := readEnvironmentCapabilities(&r)
 			s.extendedMessages.Store(third&capExtendedMessages != 0)
+			s.fetchToFile.Store(third&capFetchToFile != 0)
 			if env.Equal(s.env) {
 				break
 			}

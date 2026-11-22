@@ -1383,8 +1383,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             LocalePrefs.read(formatLocale, hostLocale != null ? null : locale,
                     android.text.format.DateFormat.is24HourFormat(getContext()),
                     measurementSystem(formatLocale)).write(d);
-            // The second capability byte's bits are taken too: a third follows the locale settings, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, and Protocol.CAP_DISCOVER_SERVICES.
-            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES | (hapticPatterns.available ? Protocol.CAP_HAPTIC_PATTERNS : 0);
+            // The second capability byte's bits are taken too: a third follows the locale settings, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, Protocol.CAP_DISCOVER_SERVICES and Protocol.CAP_FETCH_TO_FILE.
+            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES | Protocol.CAP_FETCH_TO_FILE | (hapticPatterns.available ? Protocol.CAP_HAPTIC_PATTERNS : 0);
             d.writeByte(third);
             writeDisplay(d);
         } catch (IOException impossible) {

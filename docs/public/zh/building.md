@@ -352,7 +352,7 @@ updates:
 
 `updater.CapabilityOf(cx)` 无需网络请求即可说明此副本由谁更新：`ManagedSelf`、`ManagedPage`、`ManagedDevelopment`、`ManagedChannel`、`ManagedStore`（`Store` 给出商店名称），或 `ManagedUnavailable`。开发版本、禁用的渠道和商店安装会显示各自的原因；只有更新源错误、已打包的更新组件加载失败等实际故障才设置 `core.UpdateCheck.Err`。
 
-在绑定中读取 `updater.Status(cx)`，即可跟踪 `Capability`、`AutomaticChecks`、`AutomaticDownloads`、`Available`、`Notes` 和 `LastCheck`。`updater.SetAutomaticChecks(cx, on)` 保存用户的选择，并在运行时改变每日检查；Sparkle 和 WinSparkle 使用各自的设置，Linux、Android 和 iOS 使用私有存储分区。`updater.SetAutomaticDownloads(cx, on)` 仅支持 macOS，初始值来自 `updates.automatic_downloads`；其他平台报告 false 并忽略该设置。不支持更新或由外部分发渠道管理的版本将两个设置都报告为 false。WinSparkle 在发现更新的回调后读取 appcast，取得状态所需的版本说明，安装仍由 WinSparkle 决定。Linux 在启动时确认 Debian 软件包是否拥有可执行文件，因此 AppImage 和解压副本在第一次检查之前就能报告 `ManagedPage`。
+在绑定中读取 `updater.Status(cx)`，即可跟踪 `Capability`、`AutomaticChecks`、`AutomaticDownloads`、`Available`、`Notes` 和 `LastCheck`，在 Linux 和 Android 上还能跟踪更新的 `Phase`、`Loaded` 和 `Total`（进度条可用 `Fraction()`）。`updater.SetAutomaticChecks(cx, on)` 保存用户的选择，并在运行时改变每日检查；Sparkle 和 WinSparkle 使用各自的设置，Linux、Android 和 iOS 使用私有存储分区。`updater.SetAutomaticDownloads(cx, on)` 仅支持 macOS，初始值来自 `updates.automatic_downloads`；其他平台报告 false 并忽略该设置。不支持更新或由外部分发渠道管理的版本将两个设置都报告为 false。WinSparkle 在发现更新的回调后读取 appcast，取得状态所需的版本说明，安装仍由 WinSparkle 决定。Linux 在启动时确认 Debian 软件包是否拥有可执行文件，因此 AppImage 和解压副本在第一次检查之前就能报告 `ManagedPage`。
 
 ## 登录时启动
 

@@ -18,15 +18,6 @@ const (
 	PhaseInstalling = core.UpdateInstalling
 )
 
-// State reports the live download and install progress of an in-app update.
-type State = core.UpdateState
-
-// Status reads the live progress of an in-app update, subscribing the calling
-// view or effect to updates while a package downloads and installs.
-func Status(cx *core.Scope) State {
-	return cx.UpdateState()
-}
-
 // DownloadProgress reports bytes written while an update is downloaded.
 type DownloadProgress struct {
 	Loaded, Total int64

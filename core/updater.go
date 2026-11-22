@@ -24,7 +24,7 @@ const (
 	UpdaterStore UpdaterManaged = UpdaterManaged(driver.UpdateManagedStore)
 )
 
-// UpdaterState is the core's part of updater.State. NativePreferences identifies a platform updater that owns its preferences and schedule.
+// UpdaterState is the core's part of updater.State. NativePreferences identifies a platform updater that owns its preferences and schedule. Phase, Loaded and Total follow an in-app update's download and install on Linux and Android (InstallUpdateInBackground), which the core tracks itself.
 type UpdaterState struct {
 	Managed                             UpdaterManaged
 	Store                               string
@@ -32,6 +32,19 @@ type UpdaterState struct {
 	AutomaticChecks, AutomaticDownloads bool
 	Available, Notes                    string
 	LastCheck                           time.Time
+	Phase                               UpdatePhase
+	Loaded, Total                       int64
+}
+
+// Fraction is the download's progress from 0 to 1, or 0 when Total is unknown or no bytes have arrived yet.
+func (s UpdaterState) Fraction() float64 {
+	if s.Total <= 0 || s.Loaded <= 0 {
+		return 0
+	}
+	if s.Loaded >= s.Total {
+		return 1
+	}
+	return float64(s.Loaded) / float64(s.Total)
 }
 
 // UpdaterStatus is the core's tracked read for updater.Status.

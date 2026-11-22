@@ -5,6 +5,7 @@ package android
 import (
 	"context"
 	"errors"
+	"os"
 	"strconv"
 	"sync"
 
@@ -46,10 +47,22 @@ func (s *surface) httpGet(ctx context.Context, url string, header imageload.Head
 	return s.fetch(ctx, url, "", header, progress)
 }
 
-// httpGetToFile is imageload.HTTPToFile: streams the response body to dst in
-// the Java runtime so large update packages do not enter the Java heap or pipe.
+// httpGetToFile is imageload.HTTPToFile: streams the response body to dst in the Java runtime so large update packages do not enter the Java heap or pipe. A runtime without capFetchToFile, which would misread the request, sends the whole body, which this writes to dst.
 func (s *surface) httpGetToFile(ctx context.Context, url string, header imageload.Header, dst string, progress imageload.Progress) (*imageload.Response, error) {
-	return s.fetch(ctx, url, dst, header, progress)
+	if s.fetchToFile.Load() {
+		return s.fetch(ctx, url, dst, header, progress)
+	}
+	resp, err := s.fetch(ctx, url, "", header, progress)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status == 200 {
+		if err := os.WriteFile(dst, resp.Body, 0o600); err != nil {
+			return nil, err
+		}
+	}
+	resp.Body = nil
+	return resp, nil
 }
 
 func (s *surface) fetch(ctx context.Context, url, dst string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
