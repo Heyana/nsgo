@@ -1579,6 +1579,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 				s.shadeLater(v)
 			}
 		case driver.ItemScrollTo:
+			if v.input != nil {
+				v.scrollInputTo(it.Point, it.Animated)
+				break
+			}
 			start, end := scrollLimits(v.native)
 			to := apple.CGPoint{
 				X: min(max(float64(it.Point.X), start.X), end.X),

@@ -85,6 +85,15 @@ func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
 	if s.wheelTaken(event) {
 		return
 	}
+	for p := v.up; p != nil; p = p.up {
+		if p.input != nil && p.input.multiline && p.input.host != 0 {
+			p.input.host.Send(cmd, event)
+			return
+		}
+		if p.sc != nil {
+			break
+		}
+	}
 	s.wheels.chain = s.scrollsAt(event)
 	if !s.wheelEvent(event) {
 		// What no view takes goes to the host's views around the surface.

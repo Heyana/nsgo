@@ -3388,7 +3388,16 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             case Protocol.ITEM_SCROLL_TO: {
                 float x = in.readFloat(), y = in.readFloat();
                 boolean animated = Protocol.flag(in.readUnsignedByte(), 0);
-                if (n == null || !(n.scroller instanceof Scrolling.Scroller)) break;
+                if (n == null) break;
+                if (n.field != null) {
+                    InputField field = n.field;
+                    afterLayout(field, () -> {
+                        n.applied++;
+                        field.scrollToPoints(x, y);
+                    });
+                    break;
+                }
+                if (!(n.scroller instanceof Scrolling.Scroller)) break;
                 Scrolling.Scroller scroller = (Scrolling.Scroller) n.scroller;
                 // Scroll views clamp to their content, which takes its new
                 // size at the next layout. Counted as applied, the scroll
@@ -5619,7 +5628,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 break;
             case Protocol.KIND_INPUT:
                 n.field = field(n);
-                ((ViewGroup) view).addView(n.field);
+                n.children = (ViewGroup) view;
+                n.children.addView(n.field);
                 break;
             case Protocol.KIND_WEB:
                 // The WebView fills the node's view, which draws its style.
@@ -5739,6 +5749,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             @Override public void paste(String text, String data) {
                 if (n.has(Protocol.EVENT_PASTE)) {
                     event(Protocol.EVENT_PASTE, n.id, 0, 0, 0, text, 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, data, false);
+                }
+            }
+
+            @Override public void scroll(float x, float y, float maxY) {
+                if (n.has(Protocol.EVENT_SCROLL)) {
+                    float w = n.view.getWidth() / density;
+                    float h = n.view.getHeight() / density + maxY;
+                    event(Protocol.EVENT_SCROLL, n.id, n.applied, x, y, "", w, h, 0, 0, 0, 0, 0, null);
                 }
             }
 

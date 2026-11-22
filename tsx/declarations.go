@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
 )
 
@@ -329,6 +330,8 @@ func (d *declarer) propType(f reflect.StructField) string {
 			return n + " | ((ref: " + n + ") => void)"
 		}
 		return "YNode | ((node: YNode) => void)"
+	case f.Name == "HideIndicator" && t.Kind() == reflect.Bool || t == scrollbarMakerType:
+		return "boolean | " + d.ts(reflect.TypeFor[base.ScrollbarTheme]())
 	case t.Kind() == reflect.Bool && strings.HasPrefix(f.Name, "No"):
 		return "boolean"
 	case t.Kind() == reflect.Func && t.NumIn() == 0 && t.NumOut() == 1 && t.Out(0) != nodeType:

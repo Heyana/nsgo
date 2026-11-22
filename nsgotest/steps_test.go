@@ -1374,3 +1374,41 @@ func TestTransitionsAndAnimatedValuesCoexist(t *testing.T) {
 		t.Errorf("Transition duration = %v, want 200ms", app.Find("id:box").Style.Transition.Duration)
 	}
 }
+
+func TestMultilineInputScrollsHeadless(t *testing.T) {
+	var ref core.Ref
+	var last core.ScrollEvent
+	text := strings.Repeat("line of text\n", 25)
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.Input{
+			TestID:       "notes",
+			Ref:          &ref,
+			Multiline:    true,
+			DefaultValue: text,
+			OnScroll:     func(e core.ScrollEvent) { last = e },
+			Style:        core.Style{Width: core.Pt(200), Height: core.Pt(80)},
+		}
+	})
+	v := app.Find("id:notes")
+	if v.Content.Height <= v.Frame.Size.Height {
+		t.Fatalf("multiline content %v did not overflow frame %v", v.Content, v.Frame.Size)
+	}
+	app.Scroll("id:notes", 50)
+	if got := app.Find("id:notes").Offset.Y; got != 50 {
+		t.Fatalf("after Scroll(50): offset.Y = %v, want 50", got)
+	}
+	if last.Offset.Y != 50 || last.ContentSize.Height <= last.Size.Height {
+		t.Fatalf("OnScroll event = %+v", last)
+	}
+	ref.ScrollTo(core.Point{Y: 20}, false)
+	app.Advance(0)
+	if got := app.Find("id:notes").Offset.Y; got != 20 {
+		t.Fatalf("after Ref.ScrollTo(20): offset.Y = %v, want 20", got)
+	}
+	ref.ScrollToEnd(false)
+	app.Advance(0)
+	wantMax := app.Find("id:notes").Content.Height - app.Find("id:notes").Frame.Size.Height
+	if got := app.Find("id:notes").Offset.Y; got != wantMax {
+		t.Fatalf("after Ref.ScrollToEnd: offset.Y = %v, want %v", got, wantMax)
+	}
+}

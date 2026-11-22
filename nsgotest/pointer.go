@@ -313,7 +313,9 @@ func (a *App) startDrag(f *finger, t driver.Point) {
 				return
 			}
 		}
-		if v.Kind == KindScroll && !v.Scroll.Behavior.NoScroll && v.Scroll.Horizontal != vertical &&
+		scrollable := v.Kind == KindScroll && !v.Scroll.Behavior.NoScroll && v.Scroll.Horizontal != vertical ||
+			v.Kind == KindInput && v.Input.Multiline && vertical
+		if scrollable &&
 			driver.Points(math.Hypot(float64(t.X), float64(t.Y))) >= driver.DefaultPanSlop && a.canScroll(v, t) {
 			if f.reporting {
 				// The scroll view takes the touches over.
@@ -385,10 +387,17 @@ func (a *App) dragScroll(f *finger) {
 
 // scrollView moves v to off as a user's scroll and reports it.
 func (a *App) scrollView(v *View, off driver.Point) {
+	if v.Kind == KindInput {
+		a.syncInputContent(v)
+	}
 	v.Offset = off
 	a.anim.Scroll(v.ID, off)
 	a.pullValue(v)
-	a.dispatch(driver.Event{Kind: driver.EventScroll, ID: v.ID, Point: off, Value: v.ZoomScale, Count: v.Applied})
+	ev := driver.Event{Kind: driver.EventScroll, ID: v.ID, Point: off, Value: v.ZoomScale, Count: v.Applied}
+	if v.Kind == KindInput && v.Input.Multiline {
+		ev.Size = v.Content
+	}
+	a.dispatch(ev)
 }
 
 // pulled is how far vertical scroll view v is pulled past its top.
@@ -1018,7 +1027,9 @@ func (a *App) setHovered(next []*View, at driver.Point) {
 func (a *App) Scroll(selector string, distance driver.Points) {
 	a.t.Helper()
 	a.step("scroll(%s, %v)", selector, distance)
-	isScroll := func(v *View) bool { return v.Kind == KindScroll }
+	isScroll := func(v *View) bool {
+		return v.Kind == KindScroll || v.Kind == KindInput && v.Input.Multiline
+	}
 	v := a.pick(selector, "scroll view", func(m *View) (*View, bool) {
 		t := m.upTo(isScroll)
 		if t == nil {

@@ -510,9 +510,9 @@ func (t *ScrollbarTheme) Scrollbar(_ *core.Scope, target *core.Ref, horizontal b
 		Class:          look.Class, Style: look.Style, ThumbClass: look.ThumbClass, ThumbStyle: look.ThumbStyle, ThumbStyleFunc: look.ThumbStyleFunc, Label: look.Label}
 }
 
-// SetScrollbarTheme draws the bar of every scroll view and list that shows
-// its indicator with a Scrollbar of theme; nil gives them the platform's
-// back. A view with a Bar of its own keeps it.
+// SetScrollbarTheme draws the bar of every scroll view, list and multiline
+// input that shows its indicator with a Scrollbar of theme; nil gives them
+// the platform's back. A view with a Bar of its own keeps it.
 func SetScrollbarTheme(cx *core.Scope, theme *ScrollbarTheme) {
 	if theme == nil {
 		cx.SetScrollbars(nil)

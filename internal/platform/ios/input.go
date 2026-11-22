@@ -35,6 +35,13 @@ type input struct {
 	applying, clipping, lineBreak bool
 	// hardwareReturn keeps a physical Return's unhandled UIKit edit from being matched again as an unmodified software-keyboard action.
 	hardwareReturn bool
+	// Multiline scrolling: scrollApplied counts ItemScrollTo commands applied;
+	// lastScroll* deduplicate scrollViewDidScroll: notifications.
+	scrollApplied     uint32
+	lastScroll        driver.Point
+	lastScrollMax     driver.Points
+	lastScrollApplied uint32
+	scrollReported    bool
 }
 
 var classField, classTextView objc.Class
@@ -61,6 +68,7 @@ func inputMethods() []objc.MethodDef {
 		{Cmd: sel("textViewDidChange:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { inputAt(self).changed() }},
 		{Cmd: sel("textField:shouldChangeCharactersInRange:replacementString:"), Fn: inputShouldChange},
 		{Cmd: sel("textView:shouldChangeTextInRange:replacementText:"), Fn: inputShouldChange},
+		{Cmd: sel("scrollViewDidScroll:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { inputAt(self).didScroll() }},
 	}
 }
 
@@ -169,6 +177,11 @@ func (v *view) setEditor(multiline bool) {
 			in.label = 0
 		}
 	}
+	in.scrollApplied = 0
+	in.lastScroll = driver.Point{}
+	in.lastScrollMax = 0
+	in.lastScrollApplied = 0
+	in.scrollReported = false
 	if multiline {
 		tv := objc.ID(classTextView).Send(selNew)
 		tv.Send(sel("setBackgroundColor:"), objc.ID(apple.Class("UIColor")).Send(sel("clearColor")))
@@ -181,8 +194,6 @@ func (v *view) setEditor(multiline bool) {
 		// The placeholder is exposed on the text view itself (editorAccess), so its drawn label is not a separate VoiceOver stop.
 		label.Send(selSetIsAccessibilityElement, false)
 		label.Send(selSetAccessibilityElementsHidden, true)
-		v.children().Send(selAddSubview, label)
-		label.Send(selRelease)
 		in.field, in.label = tv, label
 	} else {
 		f := objc.ID(classField).Send(selNew)
@@ -192,8 +203,13 @@ func (v *view) setEditor(multiline bool) {
 		in.field = f
 	}
 	in.multiline = multiline
-	v.children().Send(selAddSubview, in.field)
+	// Place the editor (and placeholder behind it) underneath any overlay children such as a Scrollbar host.
+	v.children().Send(sel("insertSubview:atIndex:"), in.field, 0)
 	in.field.Send(selRelease)
+	if in.label != 0 {
+		v.children().Send(sel("insertSubview:atIndex:"), in.label, 0)
+		in.label.Send(selRelease)
+	}
 	views[in.field] = v
 	if v.surface != nil {
 		v.surface.directTree(v.native)
@@ -705,6 +721,8 @@ func (v *view) configure(c *driver.InputConfig) {
 		placeholder = c.PlaceholderColor
 	}
 	if in.multiline {
+		f.Send(sel("setShowsVerticalScrollIndicator:"), !c.HideIndicator)
+		f.Send(sel("setShowsHorizontalScrollIndicator:"), false)
 		in.label.Send(selSetFont, objc.ID(font))
 		in.label.Send(selSetTextColor, uiColor(placeholder))
 		in.label.Send(selSetTextAlignment, align)
@@ -794,5 +812,74 @@ func inputLayout(self objc.ID, cmd objc.SEL) {
 		frame.Size.Height = min(fit.Height, frame.Size.Height+in.lift)
 		frame.Origin.Y -= in.lift
 		in.label.Send(selSetFrame, frame)
+	}
+}
+
+func (in *input) scrollMetrics() (offset driver.Point, maxY driver.Points) {
+	if !in.multiline || in.field == 0 {
+		return driver.Point{}, 0
+	}
+	start, end := scrollLimits(in.field)
+	off := objc.Send[apple.CGPoint](in.field, sel("contentOffset"))
+	offset = driver.Point{
+		X: driver.Points(off.X - start.X),
+		Y: driver.Points(off.Y - start.Y),
+	}
+	if in.text() == "" {
+		return offset, 0
+	}
+	maxY = driver.Points(max(end.Y-start.Y, 0))
+	return offset, maxY
+}
+
+func (in *input) didScroll() {
+	if in == nil || !in.multiline {
+		return
+	}
+	in.reportScroll(false)
+}
+
+func (in *input) reportScroll(force bool) {
+	if in == nil || !in.multiline || in.field == 0 {
+		return
+	}
+	v := views[in.field]
+	if v == nil || v.surface == nil {
+		return
+	}
+	offset, maxY := in.scrollMetrics()
+	if !force && in.scrollReported && offset == in.lastScroll && maxY == in.lastScrollMax && in.scrollApplied == in.lastScrollApplied {
+		return
+	}
+	in.scrollReported = true
+	in.lastScroll = offset
+	in.lastScrollMax = maxY
+	in.lastScrollApplied = in.scrollApplied
+	frame := objc.Send[apple.CGRect](v.native, selBounds).Size
+	v.report(driver.Event{
+		Kind:  driver.EventScroll,
+		Point: offset,
+		Size:  driver.Size{Width: driver.Points(frame.Width), Height: driver.Points(frame.Height) + maxY},
+		Count: in.scrollApplied,
+	})
+}
+
+func (v *view) scrollInputTo(p driver.Point, animated bool) {
+	in := v.input
+	if in == nil || !in.multiline || in.field == 0 {
+		return
+	}
+	in.scrollApplied++
+	v.native.Send(sel("layoutIfNeeded"))
+	in.field.Send(sel("layoutIfNeeded"))
+	start, end := scrollLimits(in.field)
+	cur := objc.Send[apple.CGPoint](in.field, sel("contentOffset"))
+	to := apple.CGPoint{
+		X: min(max(start.X+float64(p.X), start.X), end.X),
+		Y: min(max(start.Y+float64(p.Y), start.Y), end.Y),
+	}
+	in.field.Send(sel("setContentOffset:animated:"), to, animated)
+	if (!animated || cur == to) && in.lastScrollApplied != in.scrollApplied {
+		in.reportScroll(true)
 	}
 }

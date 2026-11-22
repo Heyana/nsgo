@@ -95,11 +95,11 @@ const (
 	ItemAlert
 	// ItemDismissKeyboard takes focus away from the focused text field.
 	ItemDismissKeyboard
-	// ItemScrollTo scrolls ID to Point (its content's offset, UIKit's
-	// contentOffset: ContentInset makes it negative at the start),
-	// animated when Animated; the platform clamps it and reports
-	// EventScroll. Platforms count the ItemScrollTo and ItemScrollBy
-	// items they applied to each scroll view and report the count with
+	// ItemScrollTo scrolls ID (a scroll view or multiline input) to Point
+	// (its content's offset, UIKit's contentOffset: ContentInset makes it
+	// negative at the start), animated when Animated; the platform clamps it
+	// and reports EventScroll. Platforms count the ItemScrollTo and
+	// ItemScrollBy items they applied to each view and report the count with
 	// its offsets.
 	ItemScrollTo
 	// ItemCanvas replaces a canvas's drawing (Drawing), in the view's
@@ -992,6 +992,8 @@ type InputConfig struct {
 	// platform draws around it, such as an input method's candidates.
 	AccentColor Color
 	HideCaret   bool
+	// HideIndicator hides a multiline input's native scroll bar.
+	HideIndicator bool
 	// PasteBehavior says whether a paste inserts its text.
 	PasteBehavior PasteBehavior
 }

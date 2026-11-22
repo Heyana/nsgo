@@ -133,16 +133,20 @@ func TestScrollPropsSetTheirFields(t *testing.T) {
 func TestInputPropsSetTheirFields(t *testing.T) {
 	r := decoding()
 	p := setProps(t, r, (*runtime).inputProp, `{value: "v", defaultValue: "d", placeholder: "p", allowFontScaling: false,
-		maxFontSizeMultiplier: 2, masked: true, multiline: true, maxLength: 9, readonly: true, autoFocus: true,
+		maxFontSizeMultiplier: 2, masked: true, multiline: true, scrollbar: false, maxLength: 9, readonly: true, autoFocus: true,
 		disabled: true, autoCorrect: false, caret: false, inputAccessoryViewID: "bar", testID: "a",
 		accessibilityLabel: "b", role: "search", selectedRange: {start: 1, end: 2},
 		onChange: e => { globalThis.heard = "change " + e.value },
 		onSubmit: e => { globalThis.heard = "submit " + e.text },
-		onKeyPress: e => { globalThis.heard = "key " + e.key }}`)
+		onKeyPress: e => { globalThis.heard = "key " + e.key },
+		onScroll: e => { globalThis.heard = "scroll " + e.offset.y }}`)
 	if p.Value() != "v" || p.DefaultValue != "d" || p.Placeholder != "p" || !p.NoFontScaling || p.MaxFontSizeMultiplier != 2 ||
-		!p.Masked || !p.Multiline || p.MaxLength != 9 || !p.Readonly || !p.AutoFocus || !p.Disabled() || !p.NoAutoCorrect ||
+		!p.Masked || !p.Multiline || !p.HideIndicator || p.Bar != nil || p.MaxLength != 9 || !p.Readonly || !p.AutoFocus || !p.Disabled() || !p.NoAutoCorrect ||
 		!p.HideCaret || p.InputAccessoryViewID != "bar" || p.TestID != "a" || p.Label != "b" || p.Role != core.RoleSearchField {
 		t.Errorf("decoded %+v", p)
+	}
+	if themed := setProps(t, r, (*runtime).inputProp, `{multiline: true, scrollbar: {mode: "always"}}`); themed.HideIndicator || themed.Bar == nil {
+		t.Errorf("themed scrollbar decoded HideIndicator=%v Bar=%v", themed.HideIndicator, themed.Bar)
 	}
 	if got := p.SelectedRange(); got.Start != 1 || got.End != 2 {
 		t.Errorf("selected range %+v", got)
@@ -151,6 +155,7 @@ func TestInputPropsSetTheirFields(t *testing.T) {
 		"change x": func() { p.OnChange("x") },
 		"submit x": func() { p.OnSubmit("x") },
 		"key x":    func() { p.OnKeyPress("x") },
+		"scroll 9": func() { p.OnScroll(core.ScrollEvent{Offset: core.Point{Y: 9}}) },
 	} {
 		fire()
 		if got := jsValue(t, r, `heard`).String(); got != want {

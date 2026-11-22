@@ -1823,6 +1823,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 				v.sc.applied++
 				s.interruptMomentum(v)
 				scrolls = append(scrolls, scrollTo{v: v, to: it.Point, animated: it.Animated})
+			} else if v.kind == driver.KindInput && v.input != nil {
+				v.input.applied++
+				scrolls = append(scrolls, scrollTo{v: v, to: it.Point, animated: it.Animated})
 			}
 		case driver.ItemScrollBy:
 			if v.kind == driver.KindScroll {
@@ -1896,7 +1899,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 	}
 	s.dom.flush()
 	for _, sc := range scrolls {
-		if sc.relative {
+		if sc.v.kind == driver.KindInput {
+			s.scrollInputTo(sc.v, sc.to, sc.animated)
+		} else if sc.relative {
 			sc.v.scrollBy(sc.to)
 		} else {
 			s.scrollTo(sc.v, sc.to, sc.animated)

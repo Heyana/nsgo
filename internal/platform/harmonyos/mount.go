@@ -80,7 +80,8 @@ type view struct {
 	offset         driver.Point
 	// applied counts the scrolls the engine asked for, which its event
 	// answers carry.
-	applied uint32
+	applied   uint32
+	multiline bool
 }
 
 func newMounter(s *surface) *mounter {
@@ -761,6 +762,9 @@ func (m *mounter) input(id driver.NodeID, c *driver.InputConfig) {
 	if f.Weight == 0 {
 		f.Weight = 400
 	}
+	if v := m.views[id]; v != nil {
+		v.multiline = c.Multiline
+	}
 	m.o.op("in", id).str(c.Placeholder).num(float64(f.Size)).num(float64(f.Weight)).
 		str(webstyle.Color(c.Style.Color)).str(webstyle.Fill(c.PlaceholderColor)).
 		boolean(c.Masked).boolean(c.Multiline).
@@ -768,7 +772,8 @@ func (m *mounter) input(id driver.NodeID, c *driver.InputConfig) {
 		num(float64(c.Content.Size.Width)).num(float64(c.Content.Size.Height)).
 		boolean(c.Readonly).boolean(c.Disabled).
 		num(float64(c.Padding.Top)).num(float64(c.Padding.Right)).
-		num(float64(c.Padding.Bottom)).num(float64(c.Padding.Left))
+		num(float64(c.Padding.Bottom)).num(float64(c.Padding.Left)).
+		boolean(c.HideIndicator)
 }
 
 // scrollTo scrolls a scroll view to offset, as the app asked.
@@ -942,7 +947,7 @@ func (m *mounter) scrollTarget(p driver.Point) driver.NodeID {
 	var best *view
 	bestDepth := -1
 	for _, v := range m.views {
-		if v.kind != driver.KindScroll {
+		if v.kind != driver.KindScroll && !(v.kind == driver.KindInput && v.multiline) {
 			continue
 		}
 		b, depth := m.surfaceBounds(v)

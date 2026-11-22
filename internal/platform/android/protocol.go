@@ -792,7 +792,7 @@ func writeEditing(w *writer, in *driver.InputConfig) {
 	w.byte(byte(in.Submit()))
 	w.byte(byte(in.ReturnKey))
 	w.byte(byte(in.AutoCapitalize))
-	w.flags(in.NoAutoCorrect, in.HideCaret)
+	w.flags(in.NoAutoCorrect, in.HideCaret, in.HideIndicator)
 	hint, ok := autofillHints[in.AutoComplete]
 	if !ok {
 		hint = "-"

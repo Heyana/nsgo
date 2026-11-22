@@ -11,7 +11,9 @@ import (
 
 	"github.com/ebitengine/purego/objc"
 
+	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/engine"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
@@ -659,5 +661,93 @@ func TestInputLanguageAndKoreanLineBreaking(t *testing.T) {
 		if strat := objc.Send[uint](para, sel("lineBreakStrategy")); strat != 0 {
 			t.Errorf("lineBreakStrategy = %#x after clearing language, want 0", strat)
 		}
+	})
+}
+
+// TestMultilineInputScrollsAndReportsOffset verifies that a multiline input
+// hides its NSScroller when HideIndicator is set, keeps overlay children (such
+// as a Scrollbar host) above the NSScrollView even across editor switches,
+// accepts ItemScrollTo, and reports offset and scrollable size on EventScroll (#1596).
+func TestMultilineInputScrollsAndReportsOffset(t *testing.T) {
+	onMain(func() {
+		loadAppKit()
+		var reported []driver.Event
+		eng := engine.Start(actionEngine{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{Event: func(_ uint32, e driver.Event) {
+			if e.Kind == driver.EventScroll {
+				reported = append(reported, e)
+			}
+		}})
+		defer eng.Close()
+
+		window := objc.ID(apple.Class("NSWindow")).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
+			apple.Rect(0, 0, 300, 120), uint(0), uint(2), false)
+		window.Send(sel("setReleasedWhenClosed:"), false)
+		defer window.Send(selRelease)
+
+		s := &surface{engine: eng, views: make([]*view, 3), animator: driver.NewAnimator(func(driver.Event) {})}
+		v := s.create(driver.KindInput, 1)
+		s.views[v.id] = v
+		v.events = 1 << driver.EventScroll
+		window.Send(sel("contentView")).Send(selAddSubview, v.native)
+		v.native.Send(selSetFrame, apple.Rect(0, 0, 240, 80))
+
+		// Mount an overlay child (as core does for barHost) before switching to multiline.
+		overlay := s.create(driver.KindView, 2)
+		s.views[overlay.id] = overlay
+		v.native.Send(selAddSubview, overlay.native)
+
+		cfg := driver.InputConfig{
+			Multiline:     true,
+			HideIndicator: true,
+			Style:         driver.TextStyle{Font: driver.Font{Size: 16, Weight: 400}, Color: driver.RGB(0), LineHeight: 20},
+			Content:       driver.Bounds{Size: driver.Size{Width: 240, Height: 80}},
+		}
+		v.configure(&cfg)
+		if objc.Send[bool](v.input.host, sel("hasVerticalScroller")) {
+			t.Fatal("HideIndicator=true left NSScrollView vertical scroller enabled")
+		}
+		subs := v.native.Send(sel("subviews"))
+		lastSub := subs.Send(sel("objectAtIndex:"), objc.Send[int](subs, sel("count"))-1)
+		if lastSub != overlay.native {
+			t.Fatal("overlay child (barHost) is not above the multiline NSScrollView")
+		}
+
+		v.input.replaceText(strings.Repeat("line of text\n", 30))
+		v.native.Send(sel("layoutSubtreeIfNeeded"))
+
+		reported = nil
+		v.scrollInputTo(driver.Point{Y: 60}, false)
+		if len(reported) == 0 {
+			t.Fatal("scrollInputTo did not report EventScroll")
+		}
+		last := reported[len(reported)-1]
+		if math.Abs(float64(last.Point.Y)-60) > 1 {
+			t.Fatalf("reported offset Y = %v, want ~60", last.Point.Y)
+		}
+		if last.Size.Height <= 80 {
+			t.Fatalf("reported scrollable height = %v, want > 80", last.Size.Height)
+		}
+		if last.Count != 1 {
+			t.Fatalf("reported applied count = %d, want 1", last.Count)
+		}
+
+		// User-driven clip scroll triggers NSViewBoundsDidChangeNotification and reports the new offset.
+		reported = nil
+		clip := v.input.host.Send(sel("contentView"))
+		clip.Send(sel("scrollToPoint:"), apple.CGPoint{X: 0, Y: 120})
+		v.input.host.Send(sel("reflectScrolledClipView:"), clip)
+		if len(reported) == 0 || math.Abs(float64(reported[len(reported)-1].Point.Y)-120) > 1 {
+			t.Fatalf("bounds change did not report offset ~120: %+v", reported)
+		}
+
+		// Clearing HideIndicator re-enables the native scroller.
+		cfg.HideIndicator = false
+		v.configure(&cfg)
+		if !objc.Send[bool](v.input.host, sel("hasVerticalScroller")) {
+			t.Fatal("HideIndicator=false did not re-enable NSScrollView vertical scroller")
+		}
+
+		s.delete(overlay, false)
+		s.delete(v, false)
 	})
 }

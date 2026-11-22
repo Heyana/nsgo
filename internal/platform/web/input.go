@@ -20,8 +20,10 @@ import (
 // end, since setting the value would end the composition and commit the
 // text as typed.
 
-// fieldCSS colors placeholders that have a color.
-const fieldCSS = `.nsgo-placeholder::placeholder { color: var(--nsgo-placeholder); opacity: 1; }`
+// fieldCSS colors placeholders that have a color and hides native scrollbars
+// when HideIndicator is set.
+const fieldCSS = `.nsgo-placeholder::placeholder { color: var(--nsgo-placeholder); opacity: 1; }
+.nsgo-no-bar::-webkit-scrollbar { display: none; }`
 
 var inputModes = map[driver.KeyboardType]string{
 	driver.KeyboardEmail:   "email",
@@ -43,12 +45,17 @@ var capitalize = map[driver.AutoCapitalize]string{
 
 // webInput is a text field's element and what it tracks.
 type webInput struct {
-	fs        field.State
-	listeners listeners
-	props     *driver.ViewProps // the last, which a new element takes
-	config    *driver.InputConfig
-	look      classSlot // the field's class of its text style (classes.go)
-	lang      string    // the lang attribute v.inner holds
+	fs             field.State
+	listeners      listeners
+	props          *driver.ViewProps // the last, which a new element takes
+	config         *driver.InputConfig
+	look           classSlot // the field's class of its text style (classes.go)
+	lang           string    // the lang attribute v.inner holds
+	applied        uint32
+	lastScroll     driver.Point
+	lastScrollMax  driver.Points
+	lastApplied    uint32
+	scrollReported bool
 }
 
 // createInput puts an <input> in v's element.
@@ -74,9 +81,15 @@ func (s *surface) setFieldElement(v *view, tag string) {
 	s.freeClass(&in.look)
 	in.look = classSlot{} // the new element has none
 	in.lang = ""
+	in.applied = 0
+	in.lastScroll = driver.Point{}
+	in.lastScrollMax = 0
+	in.lastApplied = 0
+	in.scrollReported = false
 	el.Set("value", value)
 	v.inner = el
-	v.el.Call("appendChild", el)
+	// Keep the field beneath any overlay children such as a Scrollbar host.
+	v.el.Call("insertBefore", el, v.el.Get("firstChild"))
 	if v.border != (driver.Edges{}) {
 		unborder(el, v.border)
 	}
@@ -123,6 +136,9 @@ func (s *surface) setFieldElement(v *view, tag string) {
 	}
 	for _, name := range []string{"select", "keyup", "pointerup", "input", "scroll", "focus"} {
 		on(name, func(js.Value) { s.caretMoved(v) })
+	}
+	if tag == "textarea" {
+		on("scroll", func(js.Value) { s.reportInputScroll(v, false) })
 	}
 	on("paste", func(e js.Value) { s.pasted(v, e) })
 	on("focus", func(js.Value) { s.send(v, driver.Event{Kind: driver.EventFocus}) })
@@ -270,7 +286,70 @@ func (s *surface) setInput(v *view, c *driver.InputConfig) {
 	} else {
 		classes.Call("remove", "nsgo-placeholder")
 	}
+	if c.Multiline && c.HideIndicator {
+		s.fieldStyle()
+		classes.Call("add", "nsgo-no-bar")
+		css["scrollbar-width"] = "none"
+	} else {
+		classes.Call("remove", "nsgo-no-bar")
+	}
 	s.setClass(el, &in.look, s.sortedCSS(css))
+}
+
+func (s *surface) inputScrollMetrics(v *view) (offset driver.Point, maxY driver.Points) {
+	if v.input == nil || v.input.config == nil || !v.input.config.Multiline || v.inner.IsUndefined() || v.inner.IsNull() {
+		return driver.Point{}, 0
+	}
+	el := v.inner
+	offset = driver.Point{
+		X: driver.Points(max(el.Get("scrollLeft").Float(), 0)),
+		Y: driver.Points(max(el.Get("scrollTop").Float(), 0)),
+	}
+	if el.Get("value").String() == "" {
+		return offset, 0
+	}
+	maxY = driver.Points(max(el.Get("scrollHeight").Float()-el.Get("clientHeight").Float(), 0))
+	return offset, maxY
+}
+
+func (s *surface) reportInputScroll(v *view, force bool) {
+	in := v.input
+	if in == nil || in.config == nil || !in.config.Multiline {
+		return
+	}
+	offset, maxY := s.inputScrollMetrics(v)
+	if !force && in.scrollReported && offset == in.lastScroll && maxY == in.lastScrollMax && in.applied == in.lastApplied {
+		return
+	}
+	in.scrollReported = true
+	in.lastScroll = offset
+	in.lastScrollMax = maxY
+	in.lastApplied = in.applied
+	s.send(v, driver.Event{
+		Kind:  driver.EventScroll,
+		Point: offset,
+		Size:  driver.Size{Width: v.frame.Size.Width, Height: v.frame.Size.Height + maxY},
+		Count: in.applied,
+	})
+}
+
+func (s *surface) scrollInputTo(v *view, to driver.Point, animated bool) {
+	in := v.input
+	if in == nil || in.config == nil || !in.config.Multiline || v.inner.IsUndefined() || v.inner.IsNull() {
+		return
+	}
+	el := v.inner
+	_, maxY := s.inputScrollMetrics(v)
+	y := min(max(float64(to.Y), 0), float64(maxY))
+	if animated {
+		opts := js.Global().Get("Object").New()
+		opts.Set("top", y)
+		opts.Set("behavior", "smooth")
+		el.Call("scrollTo", opts)
+	} else {
+		el.Set("scrollTop", y)
+	}
+	s.reportInputScroll(v, true)
 }
 
 // fieldStyle adds fieldCSS to the page once.

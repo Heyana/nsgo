@@ -10,27 +10,58 @@ import (
 )
 
 // TestInputSendsEditability checks that a field's input operation carries its
-// editability at o[13] and o[14] and its padding (top, right, bottom, left) at
-// o[15]..o[18] (#1598).
+// editability at o[13] and o[14], its padding (top, right, bottom, left) at
+// o[15]..o[18] (#1598), and whether it hides its scroll indicator at o[19] (#1596).
 func TestInputSendsEditability(t *testing.T) {
 	pad := driver.Edges{Top: 18, Right: 20, Bottom: 22, Left: 12}
-	for _, c := range []driver.InputConfig{{Readonly: true}, {Disabled: true}, {Multiline: true, Padding: pad}} {
+	for _, c := range []driver.InputConfig{{Readonly: true}, {Disabled: true}, {Multiline: true, Padding: pad, HideIndicator: true}, {}} {
 		m := &mounter{views: map[driver.NodeID]*view{}}
 		m.input(4, &c)
 		var got [][]any
 		if err := json.Unmarshal(m.o.bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
-		if len(got) != 1 || len(got[0]) != 19 || got[0][0] != "in" {
-			t.Fatalf("input operations %v, want one in with 17 arguments", got)
+		if len(got) != 1 || len(got[0]) != 20 || got[0][0] != "in" {
+			t.Fatalf("input operations %v, want one in with 18 arguments", got)
 		}
 		o := got[0]
-		if o[13] != c.Readonly || o[14] != c.Disabled {
-			t.Errorf("readonly %v and disabled %v, want %v and %v", o[13], o[14], c.Readonly, c.Disabled)
+		if o[13] != c.Readonly || o[14] != c.Disabled || o[19] != c.HideIndicator {
+			t.Errorf("readonly %v, disabled %v, hideIndicator %v; want %v, %v, %v",
+				o[13], o[14], o[19], c.Readonly, c.Disabled, c.HideIndicator)
 		}
 		if o[15] != float64(c.Padding.Top) || o[16] != float64(c.Padding.Right) ||
 			o[17] != float64(c.Padding.Bottom) || o[18] != float64(c.Padding.Left) {
 			t.Errorf("padding %v %v %v %v, want %+v", o[15], o[16], o[17], o[18], c.Padding)
 		}
+	}
+}
+
+func TestMultilineInputScrolls(t *testing.T) {
+	s := &surface{}
+	m := newMounter(s)
+	m.views[1] = &view{id: 1, kind: driver.KindView, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 400}}}
+	m.views[2] = &view{id: 2, kind: driver.KindInput, parent: 1, frame: driver.Bounds{Origin: driver.Point{X: 10, Y: 10}, Size: driver.Size{Width: 200, Height: 80}}}
+	m.views[3] = &view{id: 3, kind: driver.KindInput, parent: 1, frame: driver.Bounds{Origin: driver.Point{X: 10, Y: 120}, Size: driver.Size{Width: 200, Height: 40}}}
+	m.input(2, &driver.InputConfig{Multiline: true, HideIndicator: true})
+	m.input(3, &driver.InputConfig{Multiline: false})
+
+	if got := m.scrollTarget(driver.Point{X: 50, Y: 40}); got != 2 {
+		t.Fatalf("multiline scrollTarget = %d, want 2", got)
+	}
+	if got := m.scrollTarget(driver.Point{X: 50, Y: 140}); got != 0 {
+		t.Fatalf("single-line scrollTarget = %d, want 0", got)
+	}
+
+	m.o.reset()
+	m.scrollTo(2, driver.Point{Y: 45}, false)
+	var ops [][]any
+	if err := json.Unmarshal(m.o.bytes(), &ops); err != nil {
+		t.Fatal(err)
+	}
+	if len(ops) != 1 || ops[0][0] != "so" || ops[0][1] != float64(2) || ops[0][3] != float64(45) {
+		t.Fatalf("scrollTo ops = %v, want [so 2 0 45 false]", ops)
+	}
+	if m.views[2].applied != 1 {
+		t.Fatalf("applied = %d, want 1", m.views[2].applied)
 	}
 }

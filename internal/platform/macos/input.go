@@ -47,6 +47,13 @@ type input struct {
 	applying, clipping, editing, focusing bool
 	keyMods                               uint // of the key a text view handles
 	pendingSelection                      *driver.TextRange
+	// Multiline scrolling: applied counts ItemScrollTo commands applied;
+	// lastScroll* deduplicate bounds-change notifications.
+	scrollApplied     uint32
+	lastScroll        driver.Point
+	lastScrollMax     driver.Points
+	lastScrollApplied uint32
+	scrollReported    bool
 }
 
 var (
@@ -83,10 +90,15 @@ var (
 	classField, classSecureField, classTextView, classSecureEditor, classSecureFieldCell, classPlaceholderLabel objc.Class
 
 	selResetCursorRects = sel("resetCursorRects")
+	selInputDidScroll   = sel("nsgoInputDidScroll:")
 )
 
 // nsNotFound is NSNotFound: no range to replace or no marked range.
 const nsNotFound = uint(1<<63 - 1)
+
+var boundsDidChangeNote = sync.OnceValue(func() objc.ID {
+	return apple.Global("/System/Library/Frameworks/AppKit.framework/AppKit", "NSViewBoundsDidChangeNotification")
+})
 
 // registerInput registers the field and text view classes.
 func registerInput() {
@@ -199,6 +211,7 @@ func registerInput() {
 				}
 			}},
 			{Cmd: sel("validateUserInterfaceItem:"), Fn: validatePaste},
+			{Cmd: selInputDidScroll, Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { inputOf(self).didScroll() }},
 		}))
 }
 
@@ -269,12 +282,33 @@ func (v *view) setEditor(multiline, masked bool) {
 	text := ""
 	if in.field != 0 {
 		text = in.text()
+		in.stopObservingScroll()
 		in.host.Send(selRemoveFromSuperview)
 		delete(views, in.field)
 		delete(views, in.host)
 		if in.label != 0 {
 			in.label.Send(selRemoveFromSuperview)
 			in.label = 0
+		}
+	}
+	in.scrollApplied = 0
+	in.lastScroll = driver.Point{}
+	in.lastScrollMax = 0
+	in.lastScrollApplied = 0
+	in.scrollReported = false
+	// The editor goes under the children already there, such as a scroll bar's host, in the view that holds them (a clip holder once one is installed).
+	children := v.children()
+	var firstChild objc.ID
+	subs := children.Send(sel("subviews"))
+	if objc.Send[int](subs, sel("count")) > 0 {
+		firstChild = subs.Send(sel("objectAtIndex:"), 0)
+	}
+	const below = -1
+	addUnder := func(sub objc.ID) {
+		if firstChild != 0 {
+			children.Send(selAddSubviewPositioned, sub, below, firstChild)
+		} else {
+			children.Send(selAddSubview, sub)
 		}
 	}
 	if multiline {
@@ -285,7 +319,7 @@ func (v *view) setEditor(multiline, masked bool) {
 		label.Send(selSetAccessibilityElement, false)
 		label.Send(sel("cell")).Send(selSetAccessibilityElement, false)
 		label.Send(sel("cell")).Send(sel("setWraps:"), true)
-		v.children().Send(selAddSubview, label)
+		addUnder(label)
 		in.field, in.host, in.label = tv, scroll, label
 	} else {
 		class := classField
@@ -315,11 +349,14 @@ func (v *view) setEditor(multiline, masked bool) {
 		in.field, in.host = f, f
 	}
 	in.multiline, in.masked = multiline, masked && !multiline
-	v.children().Send(selAddSubview, in.host)
+	addUnder(in.host)
 	in.host.Send(selRelease)
 	views[in.field], views[in.host] = v, v
 	if v.surface != nil {
 		v.surface.directTree(v.native)
+	}
+	if in.multiline {
+		in.startObservingScroll()
 	}
 	if text != "" {
 		in.replaceText(text)
@@ -946,6 +983,7 @@ func (v *view) configure(c *driver.InputConfig) {
 	in.field.Send(selSetAlignment, align)
 	in.field.Send(selSetEditable, !c.Readonly && !c.Disabled)
 	if in.multiline {
+		in.host.Send(sel("setHasVerticalScroller:"), !c.HideIndicator)
 		in.field.Send(sel("setSelectable:"), !c.Disabled)
 		// The inset's halves sum each axis's padding; textContainerOrigin
 		// puts the text after the top and left padding.
@@ -1278,4 +1316,112 @@ func superResponds(self objc.ID, cmd objc.SEL) bool {
 		super = apple.Class("NSSecureTextField")
 	}
 	return objc.Send[bool](objc.ID(super), sel("instancesRespondToSelector:"), cmd)
+}
+
+func (in *input) startObservingScroll() {
+	if !in.multiline || in.host == 0 || in.field == 0 {
+		return
+	}
+	clip := in.host.Send(sel("contentView"))
+	if clip == 0 {
+		return
+	}
+	clip.Send(sel("setPostsBoundsChangedNotifications:"), true)
+	center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
+	center.Send(sel("addObserver:selector:name:object:"), in.field, selInputDidScroll, boundsDidChangeNote(), clip)
+}
+
+func (in *input) stopObservingScroll() {
+	if !in.multiline || in.field == 0 {
+		return
+	}
+	center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
+	center.Send(sel("removeObserver:"), in.field)
+}
+
+func (in *input) scrollMetrics() (offset driver.Point, maxY driver.Points) {
+	if !in.multiline || in.host == 0 || in.field == 0 {
+		return driver.Point{}, 0
+	}
+	clip := in.host.Send(sel("contentView"))
+	if clip == 0 {
+		return driver.Point{}, 0
+	}
+	clipBounds := objc.Send[apple.CGRect](clip, selBounds)
+	offset = driver.Point{
+		X: driver.Points(max(clipBounds.Origin.X, 0)),
+		Y: driver.Points(max(clipBounds.Origin.Y, 0)),
+	}
+	if in.text() == "" {
+		return offset, 0
+	}
+	docFrame := objc.Send[apple.CGRect](in.field, selFrame)
+	docH := docFrame.Size.Height
+	if lm, tc := in.field.Send(sel("layoutManager")), in.field.Send(sel("textContainer")); lm != 0 && tc != 0 {
+		used := objc.Send[apple.CGRect](lm, sel("usedRectForTextContainer:"), tc)
+		inset := objc.Send[apple.CGSize](in.field, sel("textContainerInset"))
+		docH = max(docH, used.Size.Height+2*inset.Height)
+	}
+	maxY = driver.Points(max(docH-clipBounds.Size.Height, 0))
+	return offset, maxY
+}
+
+func (in *input) didScroll() {
+	if in == nil || !in.multiline {
+		return
+	}
+	in.reportScroll(false)
+}
+
+func (in *input) reportScroll(force bool) {
+	if in == nil || !in.multiline || in.host == 0 || in.field == 0 {
+		return
+	}
+	v := views[in.field]
+	if v == nil || v.surface == nil {
+		return
+	}
+	offset, maxY := in.scrollMetrics()
+	if !force && in.scrollReported && offset == in.lastScroll && maxY == in.lastScrollMax && in.scrollApplied == in.lastScrollApplied {
+		return
+	}
+	in.scrollReported = true
+	in.lastScroll = offset
+	in.lastScrollMax = maxY
+	in.lastScrollApplied = in.scrollApplied
+	frame := objc.Send[apple.CGRect](v.native, selBounds).Size
+	v.report(driver.Event{
+		Kind:  driver.EventScroll,
+		Point: offset,
+		Size:  driver.Size{Width: driver.Points(frame.Width), Height: driver.Points(frame.Height) + maxY},
+		Count: in.scrollApplied,
+	})
+}
+
+func (v *view) scrollInputTo(p driver.Point, animated bool) {
+	in := v.input
+	if in == nil || !in.multiline || in.host == 0 || in.field == 0 {
+		return
+	}
+	in.scrollApplied++
+	v.native.Send(sel("layoutSubtreeIfNeeded"))
+	if lm, tc := in.field.Send(sel("layoutManager")), in.field.Send(sel("textContainer")); lm != 0 && tc != 0 {
+		lm.Send(sel("ensureLayoutForTextContainer:"), tc)
+	}
+	_, maxY := in.scrollMetrics()
+	clip := in.host.Send(sel("contentView"))
+	if clip == 0 {
+		return
+	}
+	clipBounds := objc.Send[apple.CGRect](clip, selBounds)
+	docFrame := objc.Send[apple.CGRect](in.field, selFrame)
+	if needH := clipBounds.Size.Height + float64(maxY); docFrame.Size.Height < needH {
+		in.field.Send(sel("setFrameSize:"), apple.CGSize{Width: docFrame.Size.Width, Height: needH})
+	}
+	y := min(max(float64(p.Y), 0), float64(maxY))
+	clip.Send(sel("scrollToPoint:"), apple.CGPoint{X: 0, Y: y})
+	in.host.Send(sel("reflectScrolledClipView:"), clip)
+	if in.lastScrollApplied != in.scrollApplied {
+		in.reportScroll(true)
+	}
 }

@@ -660,7 +660,7 @@ func insetOrigin(s *Style, size, hostSize Size, rtl bool) Point {
 // it back in its parent when it no longer is, and keeps the sticky views
 // the tree pins.
 func (t *Tree) syncPosition(n *node) {
-	if n.kind == 0 || n.attach != nil || n.accessory != nil || n.pip != nil || n.headerView || n.isStack {
+	if n.kind == 0 || n.attach != nil || n.accessory != nil || n.pip != nil || n.headerView || n.inputBar || n.isStack {
 		return
 	}
 	host := n.parent != nil && n.parent.scroll != nil && n.parent.scroll.barHost == n

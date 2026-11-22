@@ -1778,6 +1778,10 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemStickyCells:
 			w.setSticky(v, it.Sticky)
 		case driver.ItemScrollTo:
+			if v.field != nil {
+				v.field.scrollTo(it.Point)
+				break
+			}
 			v.applied++
 			w.interruptScroll(v)
 			if it.Animated {
@@ -2024,8 +2028,13 @@ func (w *window) wheel(at driver.Point, notches driver.Points, tilt bool) {
 		return
 	}
 	if !tilt {
-		if in := w.fieldAt(at); in != nil && in.wheelScroll(notches) {
-			return
+		under, _ := viewsAt(root, at, func(v *view) bool {
+			return v.kind == driver.KindScroll || v.field != nil && v.field.multiline()
+		}, nil)
+		if n := len(under); n > 0 && under[n-1].field != nil {
+			if under[n-1].field.wheelScroll(notches) {
+				return
+			}
 		}
 	}
 	v, to := wheelTurn(scrollsAt(root, at, nil), notches, tilt)
@@ -2221,6 +2230,9 @@ func (w *window) hoverBars(at driver.Point) {
 
 // showsBar reports whether v's bar is visible: its opacity is above zero.
 func (w *window) showsBar(v *view) bool {
+	if v.field != nil && v.field.config.HideIndicator {
+		return false
+	}
 	return !v.scroll.HideIndicator && v.barAlpha > 0
 }
 

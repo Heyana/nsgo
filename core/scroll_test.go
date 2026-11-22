@@ -2,6 +2,7 @@ package core
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -250,5 +251,156 @@ func TestScrollEventsMarkStaleReports(t *testing.T) {
 	want := []report{{5, false}, {5, true}, {100, true}, {200, false}, {150, false}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("reports %v, want %v", got, want)
+	}
+}
+
+type inputTestBar struct {
+	watched *[]ScrollEvent
+}
+
+func (b inputTestBar) Scrollbar(cx *Scope, target *Ref, horizontal bool) Node {
+	cx.WatchScroll(func() *Ref { return target }, func(e ScrollEvent) {
+		*b.watched = append(*b.watched, e)
+	})
+	return View{TestID: "input-bar", Style: Style{Position: Absolute, Right: Pt(0), Top: Pt(0), Bottom: Pt(0), Width: Pt(8)}}
+}
+
+func TestMultilineInputScrollAndScrollbar(t *testing.T) {
+	var ref Ref
+	var events []ScrollEvent
+	var watched []ScrollEvent
+	var multiline *Signal[bool]
+	text := strings.Repeat("line of text\n", 20)
+
+	h := newHost(t, Size{Width: 240, Height: 200}, func(cx *Scope) Node {
+		multiline = NewSignal(cx, true)
+		return Show{
+			When: multiline.Get,
+			Then: func(*Scope) Node {
+				return Input{
+					TestID:       "notes",
+					Ref:          &ref,
+					Multiline:    true,
+					DefaultValue: text,
+					Bar:          inputTestBar{watched: &watched},
+					OnScroll:     func(e ScrollEvent) { events = append(events, e) },
+					Style:        Style{Width: Pt(200), Height: Pt(80), Padding: All(6)},
+				}
+			},
+			Else: func(*Scope) Node {
+				return Input{
+					TestID:       "single",
+					DefaultValue: "one line",
+					Bar:          inputTestBar{watched: &watched},
+					Style:        Style{Width: Pt(200), Height: Pt(32)},
+				}
+			},
+		}
+	})
+	b := h.commit()
+	in := h.find("notes")
+	if in == nil {
+		t.Fatal("missing multiline input")
+	}
+	if in.ChildCount() != 0 {
+		t.Fatalf("multiline input must stay a layout leaf, got ChildCount=%d", in.ChildCount())
+	}
+	if len(in.nativeChildren()) != 1 || in.input.barHost == nil {
+		t.Fatalf("expected barHost as native child of multiline input, got %d", len(in.nativeChildren()))
+	}
+	var cfg *driver.InputConfig
+	var mask driver.EventMask
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemInput && it.ID == in.id {
+			cfg = it.Input
+		}
+		if it.Kind == driver.ItemEvents && it.ID == in.id {
+			mask = it.Events
+		}
+	}
+	if cfg == nil || !cfg.HideIndicator {
+		t.Fatalf("expected ItemInput HideIndicator=true when Bar is set, got %+v", cfg)
+	}
+	if !mask.Has(driver.EventScroll) {
+		t.Fatalf("expected EventScroll on multiline input, mask=%b", mask)
+	}
+	if len(watched) == 0 || watched[len(watched)-1].ContentSize.Height <= watched[len(watched)-1].Size.Height {
+		t.Fatalf("expected initial WatchScroll with overflow, got %+v", watched)
+	}
+
+	// Programmatic ScrollTo emits ItemScrollTo and reconciles stale/applied reports without loops.
+	ref.ScrollTo(Point{Y: 50}, false)
+	b = h.commit()
+	var scrollItems []driver.MountItem
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemScrollTo && it.ID == in.id {
+			scrollItems = append(scrollItems, it)
+		}
+	}
+	if len(scrollItems) != 1 || scrollItems[0].Point.Y != 50 || scrollItems[0].Animated {
+		t.Fatalf("ItemScrollTo = %+v, want Y=50 non-animated", scrollItems)
+	}
+	// Stale report (Count 0) is marked stale; applied report (Count 1) settles and updates platformScroll.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventScroll, ID: in.id, Point: Point{Y: 10}, Count: 0})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventScroll, ID: in.id, Point: Point{Y: 50}, Size: Size{Width: 200, Height: 340}, Count: 1})
+	h.commit()
+	if len(events) != 2 || !events[0].Stale || events[1].Stale || events[1].Offset.Y != 50 || events[1].ContentSize.Height != 340 {
+		t.Fatalf("OnScroll events = %+v", events)
+	}
+	if last := watched[len(watched)-1]; last.Offset.Y != 50 || last.ContentSize.Height != 340 {
+		t.Fatalf("WatchScroll last = %+v, want Offset.Y=50 ContentSize.Height=340", last)
+	}
+
+	// ScrollToEnd scrolls to the bottom of the scrollable height.
+	ref.ScrollToEnd(true)
+	b = h.commit()
+	scrollItems = nil
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemScrollTo && it.ID == in.id {
+			scrollItems = append(scrollItems, it)
+		}
+	}
+	if len(scrollItems) != 1 || scrollItems[0].Point.Y != 260 || !scrollItems[0].Animated {
+		t.Fatalf("ScrollToEnd ItemScrollTo = %+v, want Y=260 animated", scrollItems)
+	}
+
+	// Single-line inputs never mount a barHost or listen for EventScroll.
+	multiline.Set(false)
+	b = h.commit()
+	single := h.find("single")
+	if single == nil || single.input.barHost != nil {
+		t.Fatalf("single-line input should not mount a barHost")
+	}
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemEvents && it.ID == single.id && it.Events.Has(driver.EventScroll) {
+			t.Fatalf("single-line input should not request EventScroll")
+		}
+	}
+}
+
+func TestSetScrollbarsAppliesToMultilineInputs(t *testing.T) {
+	var watched []ScrollEvent
+	h := newHost(t, Size{Width: 240, Height: 200}, func(cx *Scope) Node {
+		return View{Children: []Node{
+			Input{TestID: "a", Multiline: true, DefaultValue: strings.Repeat("row\n", 15), Style: Style{Width: Pt(200), Height: Pt(60)}},
+			Input{TestID: "hidden", Multiline: true, HideIndicator: true, DefaultValue: strings.Repeat("row\n", 15), Style: Style{Width: Pt(200), Height: Pt(60)}},
+		}}
+	})
+	h.commit()
+	if h.find("a").input.barHost != nil {
+		t.Fatal("barHost mounted before SetScrollbars")
+	}
+	h.root.SetScrollbars(inputTestBar{watched: &watched})
+	h.commit()
+	if h.find("a").input.barHost == nil || !h.find("a").input.config.HideIndicator {
+		t.Fatal("SetScrollbars did not mount barHost or hide indicator on multiline input")
+	}
+	if h.find("hidden").input.barHost != nil {
+		t.Fatal("SetScrollbars mounted barHost on HideIndicator multiline input")
+	}
+	h.root.SetScrollbars(nil)
+	h.commit()
+	if h.find("a").input.bar.Get() != nil || h.find("a").input.config.HideIndicator {
+		t.Fatal("SetScrollbars(nil) did not clear bar or restore indicator")
 	}
 }

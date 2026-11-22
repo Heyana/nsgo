@@ -691,6 +691,7 @@ func (a *App) returnKey(v *View) {
 func (a *App) edit(v *View, text string) {
 	a.edits[v.ID]++
 	v.Text = text
+	a.syncInputContent(v)
 	a.dispatch(driver.Event{Kind: driver.EventChangeText, ID: v.ID, Text: text, Count: a.edits[v.ID]})
 	end := driver.UTF16Len(text)
 	a.moveSelection(v, driver.TextRange{Start: end, End: end})
@@ -824,6 +825,7 @@ func (a *App) Compose(selector, text string) {
 		v.held = nil
 		if a.edits[v.ID] <= it.Count {
 			v.Text = it.Value
+			a.syncInputContent(v)
 		}
 	}
 }

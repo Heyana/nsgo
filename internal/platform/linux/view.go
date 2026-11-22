@@ -80,17 +80,22 @@ type view struct {
 	// An input's editor: entry is what is placed at the content, a
 	// GtkEntry, or a GtkScrolledWindow holding the GtkTextView textView
 	// of buffer; hint is a text view's placeholder label.
-	entry, textView, buffer, hint uintptr
-	langTag, keepAllTag           uintptr
-	editorPlaceholder             editorPlaceholderState
-	provider                      uintptr // the editor's CSS, for the display
-	editorNum                     uint64  // names the editor's widgets for its CSS (editorName)
-	input                         driver.InputConfig
-	fs                            field.State
-	preedit                       preeditState
+	entry, textView, buffer, hint, vadj uintptr
+	langTag, keepAllTag                 uintptr
+	editorPlaceholder                   editorPlaceholderState
+	provider                            uintptr // the editor's CSS, for the display
+	editorNum                           uint64  // names the editor's widgets for its CSS (editorName)
+	input                               driver.InputConfig
+	fs                                  field.State
+	preedit                             preeditState
 	// setting is the window setting the text, not the user; clipping an
 	// insertion cut to maxLength.
-	setting, clipping bool
+	setting, clipping   bool
+	inputScrollApplied  uint32
+	lastInputScroll     driver.Point
+	lastInputScrollMax  driver.Points
+	lastInputApplied    uint32
+	inputScrollReported bool
 
 	// An image view's configuration, source and placeholder.
 	image               driver.ImageConfig

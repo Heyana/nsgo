@@ -166,7 +166,12 @@ type textInput struct {
 	focused, active, caretOn bool
 	// scroll is how far the text is scrolled to the left, or a multiline
 	// field's up.
-	scroll float32
+	scroll            float32
+	scrollApplied     uint32
+	lastScroll        driver.Point
+	lastScrollMax     driver.Points
+	lastScrollApplied uint32
+	scrollReported    bool
 	// What the press selecting now selects by, and the word it started on.
 	drag                 dragKind
 	dragStart, dragEnd   int
@@ -449,8 +454,11 @@ func (in *textInput) scrollDelta(dy driver.Points) bool {
 	}
 	in.scroll = to
 	if in.w != nil && in.v != nil {
-		in.w.showBar(in.v)
+		if !in.config.HideIndicator {
+			in.w.showBar(in.v)
+		}
 		in.w.redrawView(in.v)
+		in.reportScroll(false)
 	}
 	if in.w != nil {
 		in.caretMoved()
@@ -565,10 +573,67 @@ func (in *textInput) reveal() {
 		in.scroll = x + caret - in.width
 	}
 	in.origin(layout) // clamps it to the text
-	if in.multiline() && in.scroll != old && in.w != nil && in.v != nil {
-		in.w.showBar(in.v)
+	if in.multiline() {
+		if in.scroll != old && !in.config.HideIndicator && in.w != nil && in.v != nil {
+			in.w.showBar(in.v)
+		}
+		in.reportScroll(false)
 	}
 	in.caretMoved()
+}
+
+// maxScroll returns the vertical scroll range of a multiline field in points.
+func (in *textInput) maxScroll() float32 {
+	if !in.multiline() || in.model.text == "" && !in.model.composing() {
+		return 0
+	}
+	layout := in.textLayout()
+	if layout == nil {
+		return 0
+	}
+	return max(layoutMetrics(layout).height-in.height, 0)
+}
+
+// reportScroll reports a multiline field's scroll offset and scrollable size.
+func (in *textInput) reportScroll(force bool) {
+	if !in.multiline() || in.v.deleted || in.w.engine == nil {
+		return
+	}
+	maxY := in.maxScroll()
+	in.scroll = min(max(in.scroll, 0), maxY)
+	offset := driver.Point{Y: driver.Points(in.scroll)}
+	maxPts := driver.Points(maxY)
+	if !force && in.scrollReported && offset == in.lastScroll && maxPts == in.lastScrollMax && in.scrollApplied == in.lastScrollApplied {
+		return
+	}
+	in.scrollReported = true
+	in.lastScroll = offset
+	in.lastScrollMax = maxPts
+	in.lastScrollApplied = in.scrollApplied
+	frame := in.v.frame.Size
+	in.w.report(in.v, driver.Event{
+		Kind:  driver.EventScroll,
+		ID:    in.v.id,
+		Point: offset,
+		Size:  driver.Size{Width: frame.Width, Height: frame.Height + maxPts},
+		Count: in.scrollApplied,
+	})
+}
+
+// scrollTo moves a multiline field's vertical offset to p.Y.
+func (in *textInput) scrollTo(p driver.Point) {
+	if !in.multiline() {
+		return
+	}
+	in.scrollApplied++
+	in.setSize(float32(in.config.Content.Size.Width), float32(in.config.Content.Size.Height))
+	maxY := in.maxScroll()
+	next := min(max(float32(p.Y), 0), maxY)
+	if next != in.scroll {
+		in.scroll = next
+		in.w.redrawView(in.v)
+	}
+	in.reportScroll(true)
 }
 
 // wakeCaret shows the caret for a whole blink: typing and moving never
@@ -1276,6 +1341,13 @@ func (in *textInput) configure(c *driver.InputConfig) {
 	if old.Style != c.Style || old.Masked != c.Masked || old.Multiline != c.Multiline {
 		in.relayout()
 		in.scroll = 0
+		if old.Multiline != c.Multiline {
+			in.scrollApplied = 0
+			in.lastScroll = driver.Point{}
+			in.lastScrollMax = 0
+			in.lastScrollApplied = 0
+			in.scrollReported = false
+		}
 	}
 	releaseAll(&in.hint)
 	// A field that stops taking text, disabled or read-only, first commits what the IME composes in it, while its old config still lets the result in, as the blur below would for an editable field; the browser and AppKit keep that text too.
@@ -1316,6 +1388,11 @@ func (in *textInput) setText(text string) {
 	in.relayout()
 	if in.focused {
 		in.reveal()
+	} else if in.multiline() {
+		if clamped := min(max(in.scroll, 0), in.maxScroll()); clamped != in.scroll {
+			in.scroll = clamped
+			in.reportScroll(false)
+		}
 	}
 	in.w.uiaValueChanged(in)
 }

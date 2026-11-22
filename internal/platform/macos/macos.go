@@ -2531,6 +2531,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemScrollTo:
 			if v.sc != nil {
 				v.scrollTo(it.Point, it.Animated)
+			} else if v.input != nil {
+				v.scrollInputTo(it.Point, it.Animated)
 			}
 		case driver.ItemScrollBy:
 			if v.sc != nil {
@@ -2777,6 +2779,7 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	delete(views, v.native)
 	if in := v.input; in != nil {
+		in.stopObservingScroll()
 		delete(views, in.field)
 		delete(views, in.host)
 	}

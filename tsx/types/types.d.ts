@@ -672,6 +672,7 @@ export interface InputHostProps {
   autoCapitalize?: AutoCapitalize;
   autoCorrect?: boolean;
   multiline?: boolean;
+  scrollbar?: boolean;
   maxLength?: number;
   readonly?: boolean;
   submitBehavior?: SubmitBehavior;

@@ -210,7 +210,7 @@ func viewContainsCallback(widget uintptr, x, y float64) int32 {
 		return boolInt(x >= 0 && y >= 0 && x < float64(gtkWidgetGetWidth(widget)) && y < float64(gtkWidgetGetHeight(widget)))
 	}
 	v := r.v
-	if v.style.Hidden || v.deleted {
+	if v.style.Hidden || v.deleted || v.props.PointerEvents == driver.PointerEventsNone || v.props.PointerEvents == driver.PointerEventsBoxNone {
 		return 0
 	}
 	f := v.shownFrame()
@@ -268,12 +268,22 @@ func (w *window) insertWidget(p, v, before *view) {
 	next := uintptr(0)
 	if before != nil && before.widget != 0 && gtkWidgetGetParent(before.widget) == p.widget {
 		next = before.widget
-	} else {
+	} else if p.kind != driver.KindInput {
 		next = firstNative(p.widget)
 	}
 	gtkWidgetInsertBefore(v.widget, p.widget, next)
 	gtkWidgetQueueAllocate(p.widget)
 	gtkWidgetQueueDraw(p.widget)
+}
+
+// firstChildView returns the first child of parent that is an NsgoView, or 0.
+func firstChildView(parent uintptr) uintptr {
+	for c := gtkWidgetGetFirstChild(parent); c != 0; c = gtkWidgetGetNextSibling(c) {
+		if _, ok := lookupWidget(c); ok {
+			return c
+		}
+	}
+	return 0
 }
 
 // firstNative returns the first child of parent that is no NsgoView: the

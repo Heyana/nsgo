@@ -75,10 +75,12 @@ func (t *Tree) prepareInput(n *node) {
 			s = c.Placeholder
 		}
 		if in.measured.set(t.text, inputText(s, c)) {
+			in.platformScroll = Size{}
 			t.markLayout(n)
 		}
 	} else if in.measured.prepared != nil {
 		in.measured.release()
+		in.platformScroll = Size{}
 		t.markLayout(n)
 	}
 	if in.contentSize != nil && in.value != "" {
@@ -140,4 +142,42 @@ func (t *Tree) reportContentSize(n *node) {
 type CaretEvent struct {
 	Bounds     Bounds
 	PageBounds Bounds
+}
+
+// inputScrollContent returns the scrollable content size of multiline input n
+// relative to its frame: frame.Size plus any vertical text overflow beyond its
+// content box. Empty text never overflows.
+func (t *Tree) inputScrollContent(n *node) Size {
+	in := n.input
+	size := n.frame.Size
+	if in == nil || !in.config.Multiline || in.value == "" || in.measured.prepared == nil {
+		return size
+	}
+	w := max(in.config.Content.Size.Width, 0)
+	textH := ceil(in.measured.prepared.Measure(w).Height, t.ratio)
+	overflow := max(textH-in.config.Content.Size.Height, 0)
+	return Size{Width: size.Width, Height: size.Height + overflow}
+}
+
+// inputScrollEvent is where multiline input n's text scroll is at offset p.
+func (t *Tree) inputScrollEvent(n *node, p Point) ScrollEvent {
+	in := n.input
+	content := t.inputScrollContent(n)
+	if in.value != "" && in.platformScroll.Height > 0 {
+		content = in.platformScroll
+	}
+	return ScrollEvent{
+		Offset:      p,
+		ContentSize: content,
+		Size:        n.frame.Size,
+		ZoomScale:   1,
+		Stale:       !in.scroll.settled(),
+	}
+}
+
+// scrollInputTo sends multiline input n to offset p, counting the scroll.
+func (t *Tree) scrollInputTo(n *node, p Point, animated bool) {
+	n.input.scroll.issue(true, animated, p)
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemScrollTo, ID: n.id, Point: p, Animated: animated})
+	t.changed = true
 }

@@ -578,12 +578,14 @@ func (a *App) apply(b *driver.MountBatch) {
 			v.MaxLines, v.Ellipsize = it.Text.MaxLines, it.Text.Ellipsize
 		case driver.ItemInput:
 			v.Input = *it.Input
+			resized = append(resized, v)
 		case driver.ItemInputValue:
 			if v.Composing != "" {
 				held := it
 				v.held = &held
 			} else if a.edits[it.ID] <= it.Count {
 				v.Text = it.Value
+				resized = append(resized, v)
 			}
 		case driver.ItemSelection:
 			n := driver.UTF16Len(v.Text)
@@ -725,6 +727,9 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 			a.setFocus(v, true)
 		case driver.ItemScrollTo, driver.ItemScrollBy:
+			if v.Kind == KindInput {
+				a.syncInputContent(v)
+			}
 			v.Applied++
 			if it.Kind == driver.ItemScrollBy {
 				v.Offset.X += it.Point.X
@@ -736,7 +741,11 @@ func (a *App) apply(b *driver.MountBatch) {
 			// A platform reports where a scroll lands, and that an animated
 			// one came to rest.
 			id, at, n := it.ID, v.Offset, v.Applied
-			a.post(driver.Event{Kind: driver.EventScroll, ID: id, Point: at, Count: n})
+			ev := driver.Event{Kind: driver.EventScroll, ID: id, Point: at, Count: n}
+			if v.Kind == KindInput && v.Input.Multiline {
+				ev.Size = v.Content
+			}
+			a.post(ev)
 			if it.Animated && v.Events.Has(driver.EventScrollEnd) {
 				a.post(driver.Event{Kind: driver.EventScrollEnd, ID: id, Point: at, Count: n})
 			}
@@ -1096,14 +1105,27 @@ func (a *App) apply(b *driver.MountBatch) {
 	a.syncGPUViews(gpuConfigured, resized)
 	// When content shrinks or the viewport grows, pull an offset past the new end back after the batch's scroll commands keep the visible content in place.
 	for _, v := range resized {
-		if v.Kind != KindScroll || v.Scroll.Zooms() || a.views[v.ID] != v {
+		if a.views[v.ID] != v {
+			continue
+		}
+		if v.Kind == KindInput {
+			a.syncInputContent(v)
+			if !v.Input.Multiline {
+				v.Offset = driver.Point{}
+				continue
+			}
+		} else if v.Kind != KindScroll || v.Scroll.Zooms() {
 			continue
 		}
 		end := v.clamp(v.Offset)
 		if at := (driver.Point{X: min(v.Offset.X, end.X), Y: min(v.Offset.Y, end.Y)}); at != v.Offset {
 			v.Offset = at
 			a.anim.Scroll(v.ID, at)
-			a.post(driver.Event{Kind: driver.EventScroll, ID: v.ID, Point: at, Count: v.Applied})
+			ev := driver.Event{Kind: driver.EventScroll, ID: v.ID, Point: at, Count: v.Applied}
+			if v.Kind == KindInput {
+				ev.Size = v.Content
+			}
+			a.post(ev)
 		}
 	}
 	for _, v := range modalInserted {
@@ -1213,6 +1235,39 @@ func screenInsetsOf(v, root *View, rootSafe driver.Edges) driver.Edges {
 		}
 	}
 	return in
+}
+
+// syncInputContent measures a multiline input's wrapped text height to match
+// core's scrollable content size relative to v.Frame.Size.
+func (a *App) syncInputContent(v *View) {
+	if v == nil || v.Kind != KindInput {
+		return
+	}
+	if !v.Input.Multiline || v.Text == "" {
+		v.Content = v.Frame.Size
+		return
+	}
+	var te driver.TextEngine = core.ApproxTextEngine{}
+	if a.textEngine != nil {
+		te = a.textEngine
+	}
+	text := v.Text
+	if strings.HasSuffix(text, "\n") {
+		text += "\u200b"
+	}
+	p := te.Prepare(&driver.AttributedText{Text: text, Style: v.Input.Style})
+	h := p.Measure(max(v.Input.Content.Size.Width, 0)).Height
+	p.Release()
+	ratio := float32(1)
+	if a.env != nil && a.env.PixelRatio > 0 {
+		ratio = a.env.PixelRatio
+	}
+	up := max(float32(math.Ceil(float64(float32(h)*ratio-1e-3))), 0) / ratio
+	if up < float32(h) {
+		up += 1 / ratio
+	}
+	overflow := max(driver.Points(up)-v.Input.Content.Size.Height, 0)
+	v.Content = driver.Size{Width: v.Frame.Size.Width, Height: v.Frame.Size.Height + overflow}
 }
 
 // canFocus follows the platform's imperative focus contract. A command to a plain view, a hidden stop or a view below a modal changes nothing.

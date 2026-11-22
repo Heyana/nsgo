@@ -91,6 +91,7 @@ type Tree struct {
 	// tooltips registers anchors; described retains their previous description targets.
 	tooltips, described []*node
 	headerViews         []*node
+	inputBars           []*node
 	status              statusBars
 	pageHead            pageHeads
 	orientations        orientationRequests
@@ -335,13 +336,17 @@ type node struct {
 	// headerView is a view of a screen's system header: a layout root
 	// at its content size that the platform puts in the bar.
 	headerView bool
-	panning    bool           // it follows pans: OnPan or PanValues
-	pinching   bool           // it follows pinches: OnPinch or PinchValue
-	rotating   bool           // it follows rotations: OnRotation or RotationValue
-	anim       *viewAnimation // the animated values bound to the view
-	part       PartStates     // the states it is styled in as a control's part
-	isStack    bool
-	ref        *Ref
+	// inputBar is a multiline input's scrollbar host: laid out as its own
+	// root at the input's frame size so the input stays a leaf for text
+	// measurement, and drawn over the editor.
+	inputBar bool
+	panning  bool           // it follows pans: OnPan or PanValues
+	pinching bool           // it follows pinches: OnPinch or PinchValue
+	rotating bool           // it follows rotations: OnRotation or RotationValue
+	anim     *viewAnimation // the animated values bound to the view
+	part     PartStates     // the states it is styled in as a control's part
+	isStack  bool
+	ref      *Ref
 	// edgeBar is the scroll view side the view is a bar over.
 	edgeBar *EdgeBar
 	// place is the holder a place region shows; held the holder whose
@@ -630,7 +635,65 @@ type inputNode struct {
 	measured, sized preparedInput
 	reported        Size // the content size last reported
 	reportedOK      bool
+	// Multiline scrolling and app-drawn scroll bar (scrollbars.go).
+	ownBar         ScrollbarMaker
+	hideIndicator  bool
+	barHost        *node
+	bar            *Signal[ScrollbarMaker]
+	scroll         scrollTracker
+	platformScroll Size // non-zero when platform reported its exact scrollable content size
+	onScroll       func(ScrollEvent)
 }
+
+// scrollTracker tracks a scrollable view's offset and unapplied scroll commands.
+type scrollTracker struct {
+	// offset is the reported offset with the scrolls the platform had not
+	// applied yet replayed over it.
+	offset Point
+	// issued counts the ItemScrollTo and ItemScrollBy items sent, and
+	// pending holds those a report has not shown applied, oldest first.
+	issued  uint32
+	applied uint32
+	pending []pendingScroll
+}
+
+// issue records a scroll sent to the platform.
+func (st *scrollTracker) issue(to, animated bool, p Point) {
+	st.issued++
+	st.pending = append(st.pending, pendingScroll{n: st.issued, to: to, animated: animated, p: p, before: st.offset})
+	if to {
+		st.offset = p
+	} else {
+		st.offset.X += p.X
+		st.offset.Y += p.Y
+	}
+}
+
+// report records an offset the platform reported after applying applied
+// scrolls: those it had not applied yet still count, so a report that
+// predates them does not move the content back.
+func (st *scrollTracker) report(p Point, applied uint32) {
+	st.applied = max(st.applied, applied)
+	k := 0
+	for k < len(st.pending) && st.pending[k].n <= st.applied {
+		k++
+	}
+	st.pending = st.pending[k:]
+	for i := range st.pending {
+		s := &st.pending[i]
+		s.before = p
+		if s.to {
+			p = s.p
+		} else {
+			p.X += s.p.X
+			p.Y += s.p.Y
+		}
+	}
+	st.offset = p
+}
+
+// settled reports whether every scroll sent so far has been applied.
+func (st *scrollTracker) settled() bool { return len(st.pending) == 0 }
 
 // preparedInput is text of a field prepared in its style.
 type preparedInput struct {
@@ -656,19 +719,12 @@ type scrollNode struct {
 	contentEnd Points
 	config     driver.ScrollConfig
 	content    Size
-	// offset is the reported offset with the scrolls the platform had not
-	// applied yet replayed over it.
-	offset Point
+	scrollTracker
 	// start is the ContentOffset it was sent before it first showed.
 	start  Point
 	zoom   float32 // the last reported
 	on     scrollSpec
 	resend bool // EventRefresh came: send the config again
-	// issued counts the ItemScrollTo and ItemScrollBy items sent, and
-	// pending holds those a report has not shown applied, oldest first.
-	issued  uint32
-	applied uint32
-	pending []pendingScroll
 	// by is the ItemScrollBy the lists ask for in this commit, sent with
 	// the content size; to the ItemScrollTo their parent-viewport lists
 	// ask for.
@@ -699,44 +755,9 @@ type pendingScroll struct {
 	before   Point // predicted offset before this command, for cancellation
 }
 
-// issue records a scroll sent to the platform.
-func (sc *scrollNode) issue(to, animated bool, p Point) {
-	sc.issued++
-	sc.pending = append(sc.pending, pendingScroll{n: sc.issued, to: to, animated: animated, p: p, before: sc.offset})
-	if to {
-		sc.offset = p
-	} else {
-		sc.offset.X += p.X
-		sc.offset.Y += p.Y
-	}
-}
-
-// report records an offset the platform reported after applying applied
-// scrolls: those it had not applied yet still count, so a report that
-// predates them does not move the content back.
-func (sc *scrollNode) report(p Point, applied uint32) {
-	sc.applied = max(sc.applied, applied)
-	k := 0
-	for k < len(sc.pending) && sc.pending[k].n <= sc.applied {
-		k++
-	}
-	sc.pending = sc.pending[k:]
-	for i := range sc.pending {
-		s := &sc.pending[i]
-		s.before = p
-		if s.to {
-			p = s.p
-		} else {
-			p.X += s.p.X
-			p.Y += s.p.Y
-		}
-	}
-	sc.offset = p
-}
-
 // settled reports whether every scroll the core asked for was applied.
 func (sc *scrollNode) settled() bool {
-	return len(sc.pending) == 0 && sc.by == (Point{}) && sc.to == nil
+	return sc.scrollTracker.settled() && sc.by == (Point{}) && sc.to == nil
 }
 
 // main is p along the scroll view's axis.
@@ -2138,11 +2159,13 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus, accessory: v.InputAccessoryViewID,
 		selection: v.OnSelectionChange, keyPress: v.OnKeyPress, composition: v.OnCompositionChange,
 		contentSize: v.OnContentSizeChange, caret: v.OnCaretMove, paste: v.OnPaste,
-		noScale: v.NoFontScaling, maxScale: v.MaxFontSizeMultiplier}
+		noScale: v.NoFontScaling, maxScale: v.MaxFontSizeMultiplier,
+		ownBar: v.Bar, hideIndicator: v.HideIndicator, onScroll: v.OnScroll}
 	in.config = driver.InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType,
 		Multiline: v.Multiline, MaxLength: max(v.MaxLength, 0), SubmitBehavior: v.SubmitBehavior, ReturnKey: v.ReturnKeyType,
 		AutoCapitalize: v.AutoCapitalize, NoAutoCorrect: v.NoAutoCorrect, AutoComplete: v.AutoComplete,
-		KeyboardAppearance: v.IOS.KeyboardAppearance, HideCaret: v.HideCaret, PasteBehavior: v.PasteBehavior}
+		KeyboardAppearance: v.IOS.KeyboardAppearance, HideCaret: v.HideCaret, HideIndicator: v.Multiline && v.HideIndicator,
+		PasteBehavior: v.PasteBehavior}
 	n.input = in
 	in.suggest = v.Suggest
 	if in.suggest != nil {
@@ -2203,6 +2226,7 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 			t.changed = true
 		})
 	}
+	t.refreshBar(n)
 }
 
 // scrollDefaults lets a scroll view shrink below its content, as React
@@ -2800,6 +2824,21 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			if t.auditRead != nil && t.auditRead() {
 				t.framesMoved, t.changed = true, true
 			}
+			if len(t.watches) > 0 {
+				t.changed = true
+			}
+		} else if in := n.input; in != nil && in.config.Multiline {
+			in.scroll.report(ev.Point, ev.Count)
+			if in.value != "" && ev.Size.Height > 0 {
+				in.platformScroll = ev.Size
+			}
+			if len(t.watches) > 0 {
+				t.changed = true
+			}
+			if in.onScroll != nil {
+				e := t.inputScrollEvent(n, ev.Point)
+				t.within(n.owner, func() { in.onScroll(e) })
+			}
 		}
 		if h.scroll != nil {
 			if n.scroll != nil {
@@ -2961,7 +3000,7 @@ func appendNative(out []*node, children []*node) []*node {
 		switch {
 		case c.kind == 0:
 			out = appendNative(out, c.children)
-		case c.hoist == nil && c.attach == nil && c.accessory == nil && c.pip == nil && !c.headerView:
+		case c.hoist == nil && c.attach == nil && c.accessory == nil && c.pip == nil && !c.headerView && !c.inputBar:
 			out = append(out, c)
 		}
 	}
@@ -2969,11 +3008,13 @@ func appendNative(out []*node, children []*node) []*node {
 }
 
 // nativeChildren returns n's native children: the views it lays out, a
-// text's attachments, then the overlays and modals it hosts, last on top.
+// text's attachments, a multiline input's scrollbar host, then the overlays
+// and modals it hosts, last on top.
 func (n *node) nativeChildren() []*node {
 	attached := n.text != nil && n.text.attachments > 0
+	inputBar := n.input != nil && n.input.barHost != nil && !n.input.barHost.deleted
 	flat := stacked(n.flatChildren())
-	if len(n.hosted) == 0 && !attached {
+	if len(n.hosted) == 0 && !attached && !inputBar {
 		return flat
 	}
 	out := append([]*node(nil), flat...)
@@ -2983,6 +3024,9 @@ func (n *node) nativeChildren() []*node {
 				out = append(out, sp.attach)
 			}
 		}
+	}
+	if inputBar {
+		out = append(out, n.input.barHost)
 	}
 	for _, h := range n.hosted {
 		if !h.deleted {
@@ -3085,6 +3129,7 @@ func (n *node) events() driver.EventMask {
 	bit(driver.EventChangeText, n.kind == driver.KindInput)
 	bit(driver.EventSelectionChange, h.textSelection != nil)
 	if in := n.input; in != nil {
+		bit(driver.EventScroll, in.config.Multiline)
 		bit(driver.EventSelectionChange, in.selection != nil)
 		bit(driver.EventKeyPress, in.keyPress != nil)
 		bit(driver.EventCompositionChange, in.composition != nil)

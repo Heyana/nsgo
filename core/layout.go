@@ -154,7 +154,7 @@ func (t *Tree) markLayout(n *node) {
 // view whose style changed is none: its own size may have.
 func (t *Tree) boundary(n *node) bool {
 	if n.kind == 0 || n.isRoot || !n.lstyleOK || n.deleted || n.hoist != nil || n.attach != nil || n.accessory != nil || n.pip != nil ||
-		n.headerView {
+		n.headerView || n.inputBar {
 		return false
 	}
 	p := n.nativeParent()
@@ -560,6 +560,7 @@ func (t *Tree) layout() {
 		t.layoutPictureInPictures()
 		t.layoutAccessories()
 		t.layoutHeaderViews()
+		t.layoutInputBars()
 		return
 	}
 	if t.fit != (Size{}) {
@@ -577,6 +578,7 @@ func (t *Tree) layout() {
 	t.layoutPictureInPictures()
 	t.layoutAccessories()
 	t.layoutHeaderViews()
+	t.layoutInputBars()
 }
 
 // layoutRoot lays root out in space, which it fills when fill is set.
@@ -670,6 +672,7 @@ func (t *Tree) syncContent(n *node) bool {
 		p := Edges{Top: Points(l.Padding.Top), Right: Points(l.Padding.Right), Bottom: Points(l.Padding.Bottom), Left: Points(l.Padding.Left)}
 		if b := contentBox(l); b != n.input.config.Content || p != n.input.config.Padding {
 			n.input.config.Content, n.input.config.Padding = b, p
+			n.input.platformScroll = Size{}
 			t.mark(n)
 			return true
 		}

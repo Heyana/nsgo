@@ -414,6 +414,11 @@ type Input struct {
 	// style sizes it; Return inserts a line break unless SubmitBehavior
 	// says else.
 	Multiline bool
+	// HideIndicator hides a multiline field's native scroll bar.
+	HideIndicator bool
+	// Bar draws a multiline field's scroll bar in place of the platform's
+	// indicator, over the app's (Scope.SetScrollbars).
+	Bar ScrollbarMaker
 	// MaxLength caps the text the user enters, in UTF-16 units; 0 sets
 	// no cap.
 	MaxLength int
@@ -482,10 +487,12 @@ type Input struct {
 	// and files are never inserted, nor the text naming pasted files.
 	OnPaste       func(PasteEvent)
 	PasteBehavior PasteBehavior
-	OnLayout      func(Bounds)
-	Ref           *Ref
-	Label         string
-	LabelFunc     func() string
+	// OnScroll receives a multiline field's scroll offset as its text scrolls.
+	OnScroll  func(ScrollEvent)
+	OnLayout  func(Bounds)
+	Ref       *Ref
+	Label     string
+	LabelFunc func() string
 	// LabelledBy names the input from visible elements, as a View's.
 	LabelledBy []*Ref
 	// AccessibilityDescription and Invalid are a View's: what the field
@@ -713,8 +720,8 @@ func (r *Ref) path() []int {
 	return path
 }
 
-// ScrollTo scrolls the element, a Scroll or List, so its content's
-// offset is at.
+// ScrollTo scrolls the element, a Scroll, List or multiline Input, so its
+// content's offset is at.
 func (r *Ref) ScrollTo(at Point, animated bool) {
 	if !r.placed() {
 		return
@@ -725,11 +732,15 @@ func (r *Ref) ScrollTo(at Point, animated bool) {
 	}
 	if r.n.scroll != nil {
 		r.t.scrollTo(r.n, at, animated)
+		return
+	}
+	if in := r.n.input; in != nil && in.config.Multiline {
+		r.t.scrollInputTo(r.n, at, animated)
 	}
 }
 
-// ScrollToEnd scrolls the element, a Scroll or List, to the end of its
-// content. A list keeps following the end as the rows there are
+// ScrollToEnd scrolls the element, a Scroll, List or multiline Input, to the
+// end of its content. A list keeps following the end as the rows there are
 // measured, until the user scrolls away.
 func (r *Ref) ScrollToEnd(animated bool) {
 	if !r.placed() {
@@ -746,6 +757,12 @@ func (r *Ref) ScrollToEnd(animated bool) {
 			end = Point{Y: max(sc.content.Height-r.n.frame.Size.Height+d.Bottom, -d.Top)}
 		}
 		r.t.scrollTo(r.n, end, animated)
+		return
+	}
+	if in := r.n.input; in != nil && in.config.Multiline {
+		content := r.t.inputScrollEvent(r.n, in.scroll.offset).ContentSize
+		end := Point{Y: max(content.Height-r.n.frame.Size.Height, 0)}
+		r.t.scrollInputTo(r.n, end, animated)
 	}
 }
 

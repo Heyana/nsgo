@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/base"
@@ -267,6 +269,61 @@ func TestScrollbarTheme(t *testing.T) {
 		})
 		if s := app.Find("list").Scroll; !s.HideIndicator {
 			t.Fatal("the theme does not replace the platform's indicator")
+		}
+	})
+}
+
+// TestMultilineInputScrollbarTheme draws a Scrollbar over a multiline Input,
+// follows scrolling, and drags its thumb to scroll the input's text (#1596).
+func TestMultilineInputScrollbarTheme(t *testing.T) {
+	headless(t)
+	each(t, func(t *testing.T, e core.Environment) {
+		var text strings.Builder
+		for i := range 30 {
+			fmt.Fprintf(&text, "line %d of multiline notes\n", i)
+		}
+		var scrolled []core.Points
+		app, _ := start(t, e, func(cx *core.Scope) core.Node {
+			theme := ScrollbarTheme(cx)
+			theme.Mode = base.ScrollbarAlways
+			theme.Vertical.Label = "Notes scrollbar"
+			base.SetScrollbarTheme(cx, theme)
+			return Input{
+				TestID:       "notes",
+				Multiline:    true,
+				DefaultValue: text.String(),
+				OnScroll:     func(ev core.ScrollEvent) { scrolled = append(scrolled, ev.Offset.Y) },
+				Style:        core.Style{Width: core.Pt(220), Height: core.Pt(80)},
+			}
+		})
+		in := app.Find("notes")
+		if !in.Input.HideIndicator {
+			t.Fatal("the theme does not hide the multiline input's native indicator")
+		}
+		if in.Content.Height <= in.Frame.Size.Height {
+			t.Fatalf("multiline input content %v does not overflow frame %v", in.Content, in.Frame.Size)
+		}
+		if len(in.Children) != 1 {
+			t.Fatalf("multiline input children = %d, want 1 bar host", len(in.Children))
+		}
+		bar := app.Find("label:Notes scrollbar")
+		if bar == nil {
+			t.Fatal("expected Scrollbar over multiline input")
+		}
+		// Scrolling the multiline input updates its offset and OnScroll.
+		app.Scroll("notes", 60)
+		if app.Find("notes").Offset.Y <= 0 {
+			t.Fatalf("after Scroll: offset = %v, want > 0", app.Find("notes").Offset)
+		}
+		if len(scrolled) == 0 || scrolled[len(scrolled)-1] <= 0 {
+			t.Fatalf("OnScroll did not receive multiline scroll offset: %v", scrolled)
+		}
+		// Dragging the scrollbar thumb moves the multiline input's text offset.
+		before := app.Find("notes").Offset.Y
+		app.Drag("label:Notes scrollbar", core.Point{Y: 20})
+		after := app.Find("notes").Offset.Y
+		if after <= before {
+			t.Fatalf("dragging scrollbar thumb did not advance input offset: before=%v after=%v", before, after)
 		}
 	})
 }

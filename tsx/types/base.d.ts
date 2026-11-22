@@ -19,6 +19,7 @@ export interface InputProps extends Omit<CommonProps, "ios">, InputHostProps {
   onKeyPress?: (e: { key: string }) => void;
   onCompositionChange?: (e: { composing: boolean; text: string }) => void;
   onContentSizeChange?: (e: { size: import("./types").Size }) => void;
+  onScroll?: (e: import("./types").ScrollEvent) => void;
 }
 export declare function Input(props: InputProps): YNode;
 

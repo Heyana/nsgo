@@ -45,6 +45,9 @@ final class InputField extends EditText {
 
         /** The user pasted text and data (as Go's readPaste reads it). */
         void paste(String text, String data);
+
+        /** The multiline field's scroll offset and vertical scroll range, in points. */
+        void scroll(float x, float y, float maxY);
     }
 
     /** core.SubmitBehavior's codes, as InputConfig.Submit resolves them. */
@@ -74,6 +77,9 @@ final class InputField extends EditText {
     private float padTop, padRight, padBottom, padLeft;
     /** The ScrollView hosting a multiline field inside its padding box, or null when single-line. */
     private ScrollView host;
+    private boolean hideIndicator;
+    private float lastScrollX, lastScrollY, lastScrollMax;
+    private boolean scrollReported;
 
     /**
      * A multiline field's scroll view, filling the input's padding box so its
@@ -88,7 +94,7 @@ final class InputField extends EditText {
             this.field = field;
             setFillViewport(true);
             setClipToPadding(false);
-            setVerticalScrollBarEnabled(true);
+            setVerticalScrollBarEnabled(!field.hideIndicator);
             setHorizontalScrollBarEnabled(false);
             setScrollBarStyle(View.SCROLLBARS_OUTSIDE_OVERLAY);
             setNestedScrollingEnabled(true);
@@ -101,6 +107,7 @@ final class InputField extends EditText {
         protected void onScrollChanged(int x, int y, int oldX, int oldY) {
             super.onScrollChanged(x, y, oldX, oldY);
             field.caretMoved();
+            field.reportScroll(false);
         }
     }
 
@@ -225,6 +232,50 @@ final class InputField extends EditText {
     protected void onScrollChanged(int x, int y, int oldX, int oldY) {
         super.onScrollChanged(x, y, oldX, oldY);
         caretMoved();
+        if (multiline) reportScroll(false);
+    }
+
+    /** The multiline field's vertical scroll range in points. */
+    float maxScrollYPoints() {
+        if (!multiline || length() == 0) return 0;
+        float density = getResources().getDisplayMetrics().density;
+        if (host != null && host.getHeight() > 0) {
+            return Math.max(getHeight() - host.getHeight(), 0) / density;
+        }
+        android.text.Layout l = getLayout();
+        if (l == null) return 0;
+        int visible = getHeight() - getTotalPaddingTop() - getTotalPaddingBottom();
+        return Math.max(l.getHeight() - visible, 0) / density;
+    }
+
+    /** Reports the multiline field's scroll offset and vertical scroll range to the engine. */
+    void reportScroll(boolean force) {
+        if (listener == null || !multiline) return;
+        float density = getResources().getDisplayMetrics().density;
+        float x = Math.max(host != null ? host.getScrollX() : getScrollX(), 0) / density;
+        float y = Math.max(host != null ? host.getScrollY() : getScrollY(), 0) / density;
+        float maxY = maxScrollYPoints();
+        if (!force && scrollReported && x == lastScrollX && y == lastScrollY && maxY == lastScrollMax) return;
+        scrollReported = true;
+        lastScrollX = x;
+        lastScrollY = y;
+        lastScrollMax = maxY;
+        listener.scroll(x, y, maxY);
+    }
+
+    /** ItemScrollTo: moves a multiline field's scroll offset to (x, y) in points. */
+    void scrollToPoints(float x, float y) {
+        if (!multiline) return;
+        float density = getResources().getDisplayMetrics().density;
+        int maxPx = Math.round(maxScrollYPoints() * density);
+        int targetY = Math.min(Math.max(Math.round(y * density), 0), maxPx);
+        int prevY = host != null ? host.getScrollY() : getScrollY();
+        if (targetY != prevY) {
+            scrollReported = false;
+            if (host != null) host.scrollTo(0, targetY); else scrollTo(0, targetY);
+        } else {
+            reportScroll(true);
+        }
     }
 
     @Override
@@ -320,6 +371,7 @@ final class InputField extends EditText {
         int capitalize = in.readUnsignedByte();
         int flags = in.readUnsignedByte();
         boolean noAutoCorrect = Protocol.flag(flags, 0), hideCaret = Protocol.flag(flags, 1);
+        boolean hideIndicator = Protocol.flag(flags, 2);
         String autofill = Protocol.readString(in);
         int placeholderColor = in.readInt(), selectionColor = in.readInt();
         pasteReport = in.readUnsignedByte() == 1;
@@ -329,8 +381,20 @@ final class InputField extends EditText {
         padLeft = in.readFloat();
 
         boolean restart = configured && multiline && this.submit != submit;
+        if (this.multiline != multiline) {
+            scrollReported = false;
+            lastScrollX = 0;
+            lastScrollY = 0;
+            lastScrollMax = 0;
+        }
         this.multiline = multiline;
         this.submit = submit;
+        this.hideIndicator = hideIndicator;
+        if (host != null) {
+            host.setVerticalScrollBarEnabled(!hideIndicator);
+        }
+        setVerticalScrollBarEnabled(multiline && host == null && !hideIndicator);
+        setHorizontalScrollBarEnabled(false);
         int type = NsgoView.inputType(keyboard, masked && !multiline);
         if ((type & InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT) {
             // core.AutoCapitalize: sentences, none, words, characters.
@@ -416,6 +480,9 @@ final class InputField extends EditText {
 
     void setHost(ScrollView host) {
         this.host = host;
+        if (host != null) {
+            host.setVerticalScrollBarEnabled(!hideIndicator);
+        }
     }
 
     private void submitted() {

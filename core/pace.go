@@ -110,7 +110,7 @@ func (t *Tree) holdView(p, c *node) bool {
 
 // neverPaced reports whether n is made with its parent wherever it is.
 func neverPaced(t *Tree, n *node) bool {
-	return t.sticky[n] || n.follow != nil || n.hoist != nil || n.isRoot || n.attach != nil ||
+	return t.sticky[n] || n.follow != nil || n.hoist != nil || n.isRoot || n.attach != nil || n.inputBar ||
 		n.h.layout != nil || n.input != nil && n.input.autoFocus || moves(n)
 }
 

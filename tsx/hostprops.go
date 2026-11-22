@@ -536,6 +536,8 @@ func (r *runtime) inputProp(p *core.Input, name string, v js.Value) bool {
 		p.Masked = v.ToBoolean()
 	case "multiline":
 		p.Multiline = v.ToBoolean()
+	case "scrollbar":
+		p.HideIndicator, p.Bar = !v.ToBoolean(), r.scrollbarTheme(v)
 	case "maxLength":
 		p.MaxLength = int(v.ToInteger())
 	case "readonly":
@@ -634,6 +636,8 @@ func (r *runtime) inputProp(p *core.Input, name string, v js.Value) bool {
 		if isFunction(v) {
 			p.OnContentSizeChange = func(s core.Size) { r.call(v, r.sizeEvent(s)) }
 		}
+	case "onScroll":
+		p.OnScroll = r.scrollEventHandler(v)
 	case "onCaretMove":
 		p.OnCaretMove = nil
 		if isFunction(v) {

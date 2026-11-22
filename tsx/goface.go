@@ -555,28 +555,29 @@ func goFace(t reflect.Type, spec *faceSpec) face {
 }
 
 var (
-	nodeType      = reflect.TypeFor[core.Node]()
-	nodesType     = reflect.TypeFor[[]core.Node]()
-	scopeType     = reflect.TypeFor[*core.Scope]()
-	styleType     = reflect.TypeFor[core.Style]()
-	refType       = reflect.TypeFor[*core.Ref]()
-	valueType     = reflect.TypeFor[*core.AnimatedValue]()
-	animNodeType  = reflect.TypeFor[core.AnimatedNode]()
-	durationType  = reflect.TypeFor[time.Duration]()
-	timingType    = reflect.TypeFor[core.TimingConfig]()
-	colorType     = reflect.TypeFor[core.Color]()
-	pointsType    = reflect.TypeFor[core.Points]()
-	lengthType    = reflect.TypeFor[core.Length]()
-	edgesType     = reflect.TypeFor[core.Edges]()
-	pointType     = reflect.TypeFor[core.Point]()
-	sizeType      = reflect.TypeFor[core.Size]()
-	boundsType    = reflect.TypeFor[core.Bounds]()
-	imageType     = reflect.TypeFor[core.ImageSource]()
-	pressType     = reflect.TypeFor[core.PressEvent]()
-	jsValueGoType = reflect.TypeFor[js.Value]()
-	errorType     = reflect.TypeFor[error]()
-	easingType    = reflect.TypeFor[core.Easing]()
-	regexpType    = reflect.TypeFor[*regexp.Regexp]()
+	nodeType           = reflect.TypeFor[core.Node]()
+	nodesType          = reflect.TypeFor[[]core.Node]()
+	scopeType          = reflect.TypeFor[*core.Scope]()
+	styleType          = reflect.TypeFor[core.Style]()
+	refType            = reflect.TypeFor[*core.Ref]()
+	valueType          = reflect.TypeFor[*core.AnimatedValue]()
+	animNodeType       = reflect.TypeFor[core.AnimatedNode]()
+	durationType       = reflect.TypeFor[time.Duration]()
+	timingType         = reflect.TypeFor[core.TimingConfig]()
+	colorType          = reflect.TypeFor[core.Color]()
+	pointsType         = reflect.TypeFor[core.Points]()
+	lengthType         = reflect.TypeFor[core.Length]()
+	edgesType          = reflect.TypeFor[core.Edges]()
+	pointType          = reflect.TypeFor[core.Point]()
+	sizeType           = reflect.TypeFor[core.Size]()
+	boundsType         = reflect.TypeFor[core.Bounds]()
+	imageType          = reflect.TypeFor[core.ImageSource]()
+	pressType          = reflect.TypeFor[core.PressEvent]()
+	jsValueGoType      = reflect.TypeFor[js.Value]()
+	errorType          = reflect.TypeFor[error]()
+	easingType         = reflect.TypeFor[core.Easing]()
+	regexpType         = reflect.TypeFor[*regexp.Regexp]()
+	scrollbarMakerType = reflect.TypeFor[core.ScrollbarMaker]()
 )
 
 // propName is a field's prop: its rename, NSH's name or lower camel case.
@@ -756,6 +757,16 @@ func planFields(t reflect.Type, spec *faceSpec) []field {
 				}
 				v.Set(p.r.partsOf(p.get("children"), elem))
 			}
+		case ft == scrollbarMakerType:
+			plan.prop = "scrollbar"
+			plan.set = func(p *props, v reflect.Value) {
+				if m := p.r.scrollbarTheme(p.get("scrollbar")); m != nil {
+					v.Set(reflect.ValueOf(m))
+				}
+			}
+		case name == "HideIndicator" && ft.Kind() == reflect.Bool:
+			plan.prop = "scrollbar"
+			plan.set = func(p *props, v reflect.Value) { v.SetBool(!p.boolOr("scrollbar", true)) }
 		case ft.Kind() == reflect.Bool && strings.HasPrefix(base, "No") && len(base) > 2 && unicode.IsUpper(rune(base[2])):
 			plan.prop = lowerCamel(base[2:])
 			if r, ok := spec.renames[name]; ok {

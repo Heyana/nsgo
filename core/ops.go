@@ -428,11 +428,14 @@ func (t *Tree) setInput(n *node, v Input) {
 	if v.KeyboardTypeFunc != nil {
 		keyboardType = v.KeyboardTypeFunc()
 	}
+	in.ownBar, in.hideIndicator, in.onScroll = v.Bar, v.HideIndicator, v.OnScroll
+	hideIndicator := v.Multiline && (v.HideIndicator || in.config.HideIndicator && in.barHost != nil)
 	in.config = driver.InputConfig{Placeholder: placeholder, Masked: v.Masked, Readonly: readonly,
 		KeyboardType: keyboardType, Multiline: v.Multiline, MaxLength: max(v.MaxLength, 0),
 		SubmitBehavior: v.SubmitBehavior, ReturnKey: v.ReturnKeyType, AutoCapitalize: v.AutoCapitalize,
 		NoAutoCorrect: v.NoAutoCorrect, AutoComplete: v.AutoComplete, KeyboardAppearance: v.IOS.KeyboardAppearance,
-		HideCaret: v.HideCaret, PasteBehavior: v.PasteBehavior, Disabled: read(v.Disabled)}
+		HideCaret: v.HideCaret, HideIndicator: hideIndicator, PasteBehavior: v.PasteBehavior, Disabled: read(v.Disabled)}
+	t.refreshBar(n)
 	in.valueFn = nil
 	if v.Value != nil {
 		value := v.Value()

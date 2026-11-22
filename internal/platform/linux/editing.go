@@ -32,58 +32,64 @@ import (
 type textIter [32]uintptr
 
 var (
-	gtkTextViewNew                 func() uintptr
-	gtkTextViewGetBuffer           func(uintptr) uintptr
-	gtkTextViewSetWrapMode         func(uintptr, int32)
-	gtkTextViewSetEditable         func(uintptr, int32)
-	gtkTextViewSetCursorVisible    func(uintptr, int32)
-	gtkTextViewSetJustification    func(uintptr, int32)
-	gtkTextViewSetAcceptsTab       func(uintptr, int32)
-	gtkTextViewSetInputPurpose     func(uintptr, int32)
-	gtkTextViewSetInputHints       func(uintptr, int32)
-	gtkTextViewSetTopMargin        func(uintptr, int32)
-	gtkTextViewSetBottomMargin     func(uintptr, int32)
-	gtkTextViewSetLeftMargin       func(uintptr, int32)
-	gtkTextViewSetRightMargin      func(uintptr, int32)
-	gtkTextViewResetImContext      func(uintptr)
-	gtkTextBufferSetText           func(uintptr, *byte, int32)
-	gtkTextBufferGetText           func(uintptr, *textIter, *textIter, int32) uintptr
-	gtkTextBufferGetBounds         func(uintptr, *textIter, *textIter)
-	gtkTextBufferGetSelectionBound func(uintptr, *textIter, *textIter) int32
-	gtkTextBufferGetIterAtOffset   func(uintptr, *textIter, int32)
-	gtkTextBufferSelectRange       func(uintptr, *textIter, *textIter)
-	gtkTextBufferInsert            func(uintptr, uintptr, *byte, int32)
-	gtkTextBufferInsertAtCursor    func(uintptr, *byte, int32)
-	gtkTextBufferDeleteSelection   func(uintptr, int32, int32) int32
-	gtkTextBufferGetTagTable       func(uintptr) uintptr
-	gtkTextBufferApplyTag          func(uintptr, uintptr, *textIter, *textIter)
-	gtkTextBufferRemoveTag         func(uintptr, uintptr, *textIter, *textIter)
-	gtkTextTagNew                  func(*byte) uintptr
-	gtkTextTagTableAdd             func(uintptr, uintptr) int32
-	gtkTextIterGetOffset           func(uintptr) int32
-	gtkScrolledWindowNew           func() uintptr
-	gtkScrolledWindowSetChild      func(uintptr, uintptr)
-	gtkScrolledWindowSetPolicy     func(uintptr, int32, int32)
-	gtkEditableGetSelectionBounds  func(uintptr, *int32, *int32) int32
-	gtkEditableInsertText          func(uintptr, *byte, int32, uintptr)
-	gtkEditableSetPosition         func(uintptr, int32)
-	gtkEditableGetDelegate         func(uintptr) uintptr
-	gtkEntrySetInputPurpose        func(uintptr, int32)
-	gtkEntrySetInputHints          func(uintptr, int32)
-	gtkEntrySetAttributes          func(uintptr, uintptr)
-	gtkWidgetSetName               func(uintptr, *byte)
-	gtkLabelSetText                func(uintptr, *byte)
-	gtkLabelSetAttributes          func(uintptr, uintptr)
-	gtkLabelSetXalign              func(uintptr, float32)
-	gtkLabelSetYalign              func(uintptr, float32)
-	gSignalStopEmissionByName      func(uintptr, *byte)
-	gObjectSetStr                  func(uintptr, *byte, *byte, uintptr)
-	gtkStyleContextAddForDisplay   func(uintptr, uintptr, uint32)
-	gtkStyleContextRemoveDisplay   func(uintptr, uintptr)
+	gtkTextViewNew                  func() uintptr
+	gtkTextViewGetBuffer            func(uintptr) uintptr
+	gtkTextViewSetWrapMode          func(uintptr, int32)
+	gtkTextViewSetEditable          func(uintptr, int32)
+	gtkTextViewSetCursorVisible     func(uintptr, int32)
+	gtkTextViewSetJustification     func(uintptr, int32)
+	gtkTextViewSetAcceptsTab        func(uintptr, int32)
+	gtkTextViewSetInputPurpose      func(uintptr, int32)
+	gtkTextViewSetInputHints        func(uintptr, int32)
+	gtkTextViewSetTopMargin         func(uintptr, int32)
+	gtkTextViewSetBottomMargin      func(uintptr, int32)
+	gtkTextViewSetLeftMargin        func(uintptr, int32)
+	gtkTextViewSetRightMargin       func(uintptr, int32)
+	gtkTextViewResetImContext       func(uintptr)
+	gtkTextBufferSetText            func(uintptr, *byte, int32)
+	gtkTextBufferGetText            func(uintptr, *textIter, *textIter, int32) uintptr
+	gtkTextBufferGetBounds          func(uintptr, *textIter, *textIter)
+	gtkTextBufferGetSelectionBound  func(uintptr, *textIter, *textIter) int32
+	gtkTextBufferGetIterAtOffset    func(uintptr, *textIter, int32)
+	gtkTextBufferSelectRange        func(uintptr, *textIter, *textIter)
+	gtkTextBufferInsert             func(uintptr, uintptr, *byte, int32)
+	gtkTextBufferInsertAtCursor     func(uintptr, *byte, int32)
+	gtkTextBufferDeleteSelection    func(uintptr, int32, int32) int32
+	gtkTextBufferGetTagTable        func(uintptr) uintptr
+	gtkTextBufferApplyTag           func(uintptr, uintptr, *textIter, *textIter)
+	gtkTextBufferRemoveTag          func(uintptr, uintptr, *textIter, *textIter)
+	gtkTextTagNew                   func(*byte) uintptr
+	gtkTextTagTableAdd              func(uintptr, uintptr) int32
+	gtkTextIterGetOffset            func(uintptr) int32
+	gtkScrolledWindowNew            func() uintptr
+	gtkScrolledWindowSetChild       func(uintptr, uintptr)
+	gtkScrolledWindowSetPolicy      func(uintptr, int32, int32)
+	gtkScrolledWindowGetVadjustment func(uintptr) uintptr
+	gtkAdjustmentGetValue           func(uintptr) float64
+	gtkAdjustmentSetValue           func(uintptr, float64)
+	gtkAdjustmentGetLower           func(uintptr) float64
+	gtkAdjustmentGetUpper           func(uintptr) float64
+	gtkAdjustmentGetPageSize        func(uintptr) float64
+	gtkEditableGetSelectionBounds   func(uintptr, *int32, *int32) int32
+	gtkEditableInsertText           func(uintptr, *byte, int32, uintptr)
+	gtkEditableSetPosition          func(uintptr, int32)
+	gtkEditableGetDelegate          func(uintptr) uintptr
+	gtkEntrySetInputPurpose         func(uintptr, int32)
+	gtkEntrySetInputHints           func(uintptr, int32)
+	gtkEntrySetAttributes           func(uintptr, uintptr)
+	gtkWidgetSetName                func(uintptr, *byte)
+	gtkLabelSetText                 func(uintptr, *byte)
+	gtkLabelSetAttributes           func(uintptr, uintptr)
+	gtkLabelSetXalign               func(uintptr, float32)
+	gtkLabelSetYalign               func(uintptr, float32)
+	gSignalStopEmissionByName       func(uintptr, *byte)
+	gObjectSetStr                   func(uintptr, *byte, *byte, uintptr)
+	gtkStyleContextAddForDisplay    func(uintptr, uintptr, uint32)
+	gtkStyleContextRemoveDisplay    func(uintptr, uintptr)
 
-	cbEntryInsert, cbEntryDelete, cbEntrySelection, cbPreedit                uintptr
-	cbBufferChanged, cbBufferInsert, cbBufferDelete, cbBufferMark, cbAreaKey uintptr
-	editorProviders                                                          atomic.Int64
+	cbEntryInsert, cbEntryDelete, cbEntrySelection, cbPreedit                               uintptr
+	cbBufferChanged, cbBufferInsert, cbBufferDelete, cbBufferMark, cbAreaKey, cbInputScroll uintptr
+	editorProviders                                                                         atomic.Int64
 )
 
 func bindEditing() {
@@ -123,6 +129,12 @@ func bindEditing() {
 		{&gtkScrolledWindowNew, "gtk_scrolled_window_new"},
 		{&gtkScrolledWindowSetChild, "gtk_scrolled_window_set_child"},
 		{&gtkScrolledWindowSetPolicy, "gtk_scrolled_window_set_policy"},
+		{&gtkScrolledWindowGetVadjustment, "gtk_scrolled_window_get_vadjustment"},
+		{&gtkAdjustmentGetValue, "gtk_adjustment_get_value"},
+		{&gtkAdjustmentSetValue, "gtk_adjustment_set_value"},
+		{&gtkAdjustmentGetLower, "gtk_adjustment_get_lower"},
+		{&gtkAdjustmentGetUpper, "gtk_adjustment_get_upper"},
+		{&gtkAdjustmentGetPageSize, "gtk_adjustment_get_page_size"},
 		{&gtkEditableGetSelectionBounds, "gtk_editable_get_selection_bounds"},
 		{&gtkEditableInsertText, "gtk_editable_insert_text"},
 		{&gtkEditableSetPosition, "gtk_editable_set_position"},
@@ -154,6 +166,7 @@ func init() {
 	cbBufferDelete = newCallback(bufferDeleteCallback)
 	cbBufferMark = newCallback(bufferMarkCallback)
 	cbAreaKey = newCallback(areaKeyCallback)
+	cbInputScroll = newCallback(inputScrollCallback)
 }
 
 // cssColor is c in CSS.
@@ -269,6 +282,13 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 	purpose, hints := inputPurpose(in)
 	dir := gtkTextDir(in.Style.RTL)
 	if v.textView != 0 {
+		// GTK_POLICY_AUTOMATIC = 1, GTK_POLICY_NEVER = 2, GTK_POLICY_EXTERNAL = 3.
+		// EXTERNAL hides GTK's scrollbar while keeping scrolling enabled.
+		vpolicy := int32(1)
+		if in.HideIndicator {
+			vpolicy = 3
+		}
+		gtkScrolledWindowSetPolicy(v.entry, 2, vpolicy)
 		tv := v.textView
 		directTree(v.entry, dir)
 		gtkWidgetSetDirection(v.hint, dir)
@@ -389,6 +409,12 @@ func (w *window) makeEditor(v *view, multiline bool) {
 			w.engine.Dispatch(ev)
 		}
 	}
+	v.inputScrollApplied = 0
+	v.lastInputScroll = driver.Point{}
+	v.lastInputScrollMax = 0
+	v.lastInputApplied = 0
+	v.inputScrollReported = false
+	firstView := firstChildView(v.widget)
 	if multiline {
 		// The placeholder is exposed on the text view itself (GTK_ACCESSIBLE_PROPERTY_PLACEHOLDER), so its drawn label stays out of AT-SPI.
 		v.hint = newAccessibleWidget(gtkLabelGetType(), enumValue("role", placeholderLabelRole))
@@ -399,7 +425,7 @@ func (w *window) makeEditor(v *view, multiline bool) {
 		// At the top of the content box, where the text view's first line is: a label centers its lines in its box.
 		gtkLabelSetYalign(v.hint, 0)
 		gtkWidgetSetName(v.hint, cstr(editorName(v)+"-hint"))
-		gtkWidgetSetParent(v.hint, v.widget)
+		gtkWidgetInsertBefore(v.hint, v.widget, firstView)
 		v.entry = gtkScrolledWindowNew()
 		gObjectRefSink(v.entry)
 		gtkScrolledWindowSetPolicy(v.entry, 2, 1) // never across, as needed down
@@ -423,6 +449,12 @@ func (w *window) makeEditor(v *view, multiline bool) {
 		gSignalConnect(focus, "leave", cbEntryFocusLeave, w.handle)
 		gtkWidgetAddController(v.textView, focus)
 		w.entries[focus] = v
+		v.vadj = gtkScrolledWindowGetVadjustment(v.entry)
+		if v.vadj != 0 {
+			w.entries[v.vadj] = v
+			gSignalConnect(v.vadj, "value-changed", cbInputScroll, w.handle)
+			gSignalConnect(v.vadj, "changed", cbInputScroll, w.handle)
+		}
 		keys := gtkEventControllerKeyNew()
 		gtkEventControllerSetPropagationPhase(keys, propagationPhaseCapture)
 		gSignalConnect(keys, "key-pressed", cbAreaKey, w.handle)
@@ -453,8 +485,8 @@ func (w *window) makeEditor(v *view, multiline bool) {
 		}
 		gtkWidgetSetName(v.entry, cstr(editorName(v)))
 	}
-	// Hosted in the input's widget, after its children, at its content.
-	gtkWidgetSetParent(v.entry, v.widget)
+	// Hosted in the input's widget underneath any overlay children such as a Scrollbar host.
+	gtkWidgetInsertBefore(v.entry, v.widget, firstView)
 	w.entries[v.entry] = v
 	v.editorFocusable = w.inputFocusWidget(v) != 0
 	if v.provider == 0 {
@@ -482,7 +514,7 @@ func (w *window) dropEditor(v *view) {
 			*p = 0
 		}
 	}
-	v.textView, v.buffer = 0, 0
+	v.textView, v.buffer, v.vadj = 0, 0, 0
 	v.editorFocusable = false
 	v.langTag, v.keepAllTag = 0, 0
 	v.editorPlaceholder.reset()
@@ -945,5 +977,82 @@ func entryFocusLeaveCallback(controller, data uintptr) {
 	w.finishPreedit(v)
 	if v.events.Has(driver.EventBlur) {
 		w.engine.Dispatch(driver.Event{Kind: driver.EventBlur, ID: v.id})
+	}
+}
+
+func (w *window) inputScrollMetrics(v *view) (offset driver.Point, maxY driver.Points) {
+	if v.vadj == 0 {
+		return driver.Point{}, 0
+	}
+	lower := gtkAdjustmentGetLower(v.vadj)
+	upper := gtkAdjustmentGetUpper(v.vadj)
+	page := gtkAdjustmentGetPageSize(v.vadj)
+	val := gtkAdjustmentGetValue(v.vadj)
+	offset = driver.Point{Y: driver.Points(max(val-lower, 0))}
+	if w.editorText(v) == "" {
+		return offset, 0
+	}
+	maxY = driver.Points(max(upper-lower-page, 0))
+	return offset, maxY
+}
+
+func (w *window) reportInputScroll(v *view, force bool) {
+	if v.textView == 0 || v.vadj == 0 || v.deleted || w.closing || w.engine == nil {
+		return
+	}
+	offset, maxY := w.inputScrollMetrics(v)
+	if !force && v.inputScrollReported && offset == v.lastInputScroll && maxY == v.lastInputScrollMax && v.inputScrollApplied == v.lastInputApplied {
+		return
+	}
+	v.inputScrollReported = true
+	v.lastInputScroll = offset
+	v.lastInputScrollMax = maxY
+	v.lastInputApplied = v.inputScrollApplied
+	frame := v.frame.Size
+	w.engine.Dispatch(driver.Event{
+		Kind:  driver.EventScroll,
+		ID:    v.id,
+		Point: offset,
+		Size:  driver.Size{Width: frame.Width, Height: frame.Height + maxY},
+		Count: v.inputScrollApplied,
+	})
+}
+
+func (w *window) scrollInputTo(v *view, p driver.Point) {
+	if v.textView == 0 || v.vadj == 0 {
+		return
+	}
+	v.inputScrollApplied++
+	lower := gtkAdjustmentGetLower(v.vadj)
+	upper := gtkAdjustmentGetUpper(v.vadj)
+	page := gtkAdjustmentGetPageSize(v.vadj)
+	maxY := max(upper-lower-page, 0)
+	target := lower + min(max(float64(p.Y), 0), maxY)
+	gtkAdjustmentSetValue(v.vadj, target)
+	if v.lastInputApplied != v.inputScrollApplied {
+		w.reportInputScroll(v, true)
+	}
+}
+
+func (w *window) wheelInput(v *view, dy float64) bool {
+	if v.textView == 0 || v.vadj == 0 || dy == 0 {
+		return false
+	}
+	lower := gtkAdjustmentGetLower(v.vadj)
+	upper := gtkAdjustmentGetUpper(v.vadj)
+	page := gtkAdjustmentGetPageSize(v.vadj)
+	cur := gtkAdjustmentGetValue(v.vadj)
+	maxY := max(upper-lower-page, 0)
+	next := lower + min(max(cur-lower+dy, 0), maxY)
+	if next == cur {
+		return false
+	}
+	gtkAdjustmentSetValue(v.vadj, next)
+	return true
+}
+
+func inputScrollCallback(adj uintptr, data uintptr) {
+	if w, v := editorOf(adj, data); v != nil {
+		w.reportInputScroll(v, false)
 	}
 }

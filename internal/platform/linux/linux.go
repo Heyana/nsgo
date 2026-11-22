@@ -1517,6 +1517,10 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemStickyCells:
 			w.setSticky(v, it.Sticky)
 		case driver.ItemScrollTo:
+			if v.kind == driver.KindInput {
+				w.scrollInputTo(v, it.Point)
+				break
+			}
 			v.applied++
 			w.stopWheelGlide()
 			w.interruptScroll(v)
@@ -1796,6 +1800,16 @@ func (w *window) wheel(at driver.Point, dx, dy float64) {
 		return
 	}
 	w.stopWheelGlide()
+	if dy != 0 {
+		hitScrolls, _ := viewsAt(root, at, func(v *view) bool {
+			return v.kind == driver.KindScroll || v.kind == driver.KindInput && v.textView != 0
+		}, nil)
+		if n := len(hitScrolls); n > 0 && hitScrolls[n-1].kind == driver.KindInput {
+			if w.wheelInput(hitScrolls[n-1], dy) {
+				return
+			}
+		}
+	}
 	under := scrollsAt(root, at, nil)
 	for i := len(under) - 1; i >= 0; i-- {
 		v := under[i]

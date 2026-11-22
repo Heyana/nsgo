@@ -195,7 +195,7 @@ func audited(n *node) bool {
 	switch {
 	case n.hidden || n.style.Display == DisplayNone || n.attach != nil && n.attach.cut || n.accessory != nil || n.headerView:
 		return false
-	case n.parent != nil && n.parent.scroll != nil && n.parent.scroll.barHost == n:
+	case n.inputBar || n.parent != nil && n.parent.scroll != nil && n.parent.scroll.barHost == n:
 		return false
 	case n.hoist != nil && n.hoist.modal != nil && (n.hoist.dismissed || n.hoist.reported.GetUntracked() != nil):
 		return false
