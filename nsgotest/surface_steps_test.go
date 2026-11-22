@@ -196,8 +196,7 @@ func TestSurfacePostsObserveEarlierNativeClosures(t *testing.T) {
 			source := tg.surface
 			tg.surface = settlingSurface{sync: func() { unblock(); source.Sync() }}
 			if staleBarrier {
-				// A timed-out earlier step can leave a completed barrier that
-				// predates the close. It must be consumed before a fresh one.
+				// A timed-out earlier step can leave a completed barrier that predates the close. It must be consumed before a fresh one.
 				tg.syncing = make(chan struct{})
 				close(tg.syncing)
 			}
@@ -214,8 +213,7 @@ func TestSurfacePostsObserveEarlierNativeClosures(t *testing.T) {
 				})
 				child.Post(func() { ran.Store(true) })
 				tg.runPosts()
-				// If the post missed the closure, finish both barriers so the
-				// assertion also observes any incorrectly dispatched callback.
+				// If the post missed the closure, finish both barriers so the assertion also observes any incorrectly dispatched callback.
 				deadline := time.Now().Add(time.Second)
 				tg.sync(deadline)
 				tg.sync(deadline)

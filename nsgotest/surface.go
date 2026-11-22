@@ -9,9 +9,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Surface is an open window, panel or tray view, as nsgotest's steps see it.
-// A surface's handle stays tied to it after it closes. View queries and input
-// steps use this surface; app-wide service fixtures and clocks stay on App.
+// Surface is an open window, panel or tray view, as nsgotest's steps see it. A surface's handle stays tied to it after it closes. View queries and input steps use this surface; app-wide service fixtures and clocks stay on App.
 type Surface struct {
 	app    *App
 	model  *App

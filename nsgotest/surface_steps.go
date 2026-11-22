@@ -555,20 +555,16 @@ func (s *Surface) Screenshot(name string) {
 	s.open().Screenshot(name)
 }
 
-// Post queues fn with App.Post's scheduling. The surface is checked on the
-// test goroutine before fn is handed to the app's graph. Like App.Post, it is
-// safe to call from any goroutine; fn takes no test steps.
+// Post queues fn with App.Post's scheduling. The surface is checked on the test goroutine before fn is handed to the app's graph. Like App.Post, it is safe to call from any goroutine; fn takes no test steps.
 func (s *Surface) Post(fn func()) {
 	s.app.postTest(func() {
 		if t := s.app.target; t != nil && !t.live {
 			deadline := time.Now().Add(settleWait)
-			// Finish a previous step's barrier before starting one ordered
-			// after the graph callbacks already dispatched by this queue.
+			// Finish a previous step's barrier before starting one ordered after the graph callbacks already dispatched by this queue.
 			if t.syncing != nil && !t.sync(deadline) || !t.sync(deadline) {
 				s.app.t.Fatalf("nsgotest: surface %q: timed out waiting to post", s.title())
 			}
-			// Earlier callbacks may close this window or its parent. Apply
-			// those closures before validating the handle on the test goroutine.
+			// Earlier callbacks may close this window or its parent. Apply those closures before validating the handle on the test goroutine.
 			t.drain()
 		}
 		s.checkOpen()
