@@ -427,6 +427,10 @@ func aarManifest(overlay bool, libraries []string) string {
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
     </queries>
     <application android:extractNativeLibs="true">
         <provider

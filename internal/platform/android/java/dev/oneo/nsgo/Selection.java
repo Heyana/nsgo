@@ -1,8 +1,15 @@
 package dev.oneo.nsgo;
 
+import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.res.TypedArray;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
@@ -17,6 +24,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import java.text.BreakIterator;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -331,20 +339,105 @@ final class Selection {
         return false;
     }
 
-    /** Shows the floating toolbar over the selection: Copy and Select all, in the system's words. */
+    /** Menu group and starting order for ACTION_PROCESS_TEXT items, after Copy and Select all. */
+    static final int PROCESS_TEXT_GROUP = 1;
+    static final int PROCESS_TEXT_ORDER_START = 100;
+
+    /** Query intent for apps offering read-only text actions (Translate, web search, etc.). */
+    static Intent processTextQueryIntent() {
+        return new Intent(Intent.ACTION_PROCESS_TEXT).setType("text/plain");
+    }
+
+    /** Launch intent for a resolved ACTION_PROCESS_TEXT activity over a read-only selection. */
+    static Intent processTextIntent(ActivityInfo info, String selected, boolean newTask) {
+        Intent intent = new Intent(Intent.ACTION_PROCESS_TEXT)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_PROCESS_TEXT, selected)
+                .putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+                .setClassName(info.packageName, info.name);
+        if (newTask) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return intent;
+    }
+
+    /** Supported ACTION_PROCESS_TEXT activities in PackageManager's order, filtered as Android's TextView filters them. */
+    static List<ResolveInfo> processTextActivities(Context context) {
+        PackageManager pm = context.getPackageManager();
+        if (pm == null) return Collections.emptyList();
+        List<ResolveInfo> resolved = pm.queryIntentActivities(processTextQueryIntent(), 0);
+        if (resolved == null || resolved.isEmpty()) return Collections.emptyList();
+        List<ResolveInfo> supported = new ArrayList<>(resolved.size());
+        String ownPackage = context.getPackageName();
+        for (ResolveInfo info : resolved) {
+            if (!isSupportedProcessTextActivity(context, ownPackage, info)) continue;
+            CharSequence label = info.loadLabel(pm);
+            if (label == null || label.length() == 0) continue;
+            supported.add(info);
+        }
+        return supported;
+    }
+
+    private static boolean isSupportedProcessTextActivity(Context context, String ownPackage, ResolveInfo info) {
+        if (info == null || info.activityInfo == null) return false;
+        ActivityInfo ai = info.activityInfo;
+        if (ai.packageName == null || ai.name == null) return false;
+        if (ownPackage != null && ownPackage.equals(ai.packageName)) return true;
+        if (!ai.exported) return false;
+        return ai.permission == null || context.checkSelfPermission(ai.permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private static boolean isActivityContext(Context context) {
+        Context c = context;
+        while (c instanceof ContextWrapper) {
+            if (c instanceof Activity) return true;
+            c = ((ContextWrapper) c).getBaseContext();
+        }
+        return c instanceof Activity;
+    }
+
+    static boolean launchProcessText(Context context, ActivityInfo info, String selected) {
+        if (info == null || selected == null || selected.isEmpty()) return false;
+        Intent intent = processTextIntent(info, selected, !isActivityContext(context));
+        try {
+            context.startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException | SecurityException e) {
+            return false;
+        }
+    }
+
+    private void populateProcessTextMenu(Menu menu, List<ResolveInfo> out) {
+        out.clear();
+        if (isEmpty()) return;
+        Context context = host.getContext();
+        PackageManager pm = context.getPackageManager();
+        if (pm == null) return;
+        List<ResolveInfo> activities = processTextActivities(context);
+        for (int i = 0; i < activities.size(); i++) {
+            ResolveInfo info = activities.get(i);
+            MenuItem item = menu.add(PROCESS_TEXT_GROUP, Menu.NONE, PROCESS_TEXT_ORDER_START + i, info.loadLabel(pm));
+            item.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+            out.add(info);
+        }
+    }
+
+    /** Shows the floating toolbar over the selection: Copy, Select all and ACTION_PROCESS_TEXT apps. */
     void showToolbar() {
         if (start == null || toolbar != null) return;
+        final List<ResolveInfo> processText = new ArrayList<>();
         toolbar = host.startActionMode(new ActionMode.Callback2() {
             @Override
             public boolean onCreateActionMode(ActionMode mode, Menu menu) {
                 menu.add(Menu.NONE, android.R.id.copy, 0, android.R.string.copy);
                 menu.add(Menu.NONE, android.R.id.selectAll, 1, android.R.string.selectAll);
+                populateProcessTextMenu(menu, processText);
                 return true;
             }
 
             @Override
             public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
-                return false;
+                menu.removeGroup(PROCESS_TEXT_GROUP);
+                populateProcessTextMenu(menu, processText);
+                return true;
             }
 
             @Override
@@ -357,7 +450,16 @@ final class Selection {
                 }
                 if (item.getItemId() == android.R.id.selectAll) {
                     selectAll();
+                    mode.invalidate();
                     return true;
+                }
+                if (item.getGroupId() == PROCESS_TEXT_GROUP) {
+                    int index = item.getOrder() - PROCESS_TEXT_ORDER_START;
+                    if (index >= 0 && index < processText.size()) {
+                        launchProcessText(host.getContext(), processText.get(index).activityInfo, text());
+                        mode.finish();
+                        return true;
+                    }
                 }
                 return false;
             }

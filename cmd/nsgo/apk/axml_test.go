@@ -61,6 +61,25 @@ func TestEncodeManifest(t *testing.T) {
 	if got := provider.value(t, "grantUriPermissions"); got == 0 {
 		t.Fatal("the file provider grants no URI permissions")
 	}
+	queries := root.child(t, "queries")
+	var hasTTS, hasProcessText bool
+	for _, intent := range queries.kids {
+		if intent.name != "intent" {
+			continue
+		}
+		switch intent.child(t, "action").string(t, "name") {
+		case "android.intent.action.TTS_SERVICE":
+			hasTTS = true
+		case "android.intent.action.PROCESS_TEXT":
+			if got := intent.child(t, "data").string(t, "mimeType"); got != "text/plain" {
+				t.Fatalf("PROCESS_TEXT query mimeType = %q, want text/plain", got)
+			}
+			hasProcessText = true
+		}
+	}
+	if !hasTTS || !hasProcessText {
+		t.Fatalf("manifest <queries> has TTS=%t PROCESS_TEXT=%t, want both", hasTTS, hasProcessText)
+	}
 
 	doc.walk(func(e *xmlNode) {
 		last := uint32(0)

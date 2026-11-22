@@ -171,6 +171,9 @@ func TestAndroidLibraries(t *testing.T) {
 	if m := aarManifest(false, []string{windowExtensions}); !strings.Contains(m, `<uses-library android:name="androidx.window.extensions" android:required="false" />`) {
 		t.Errorf("the AAR's manifest lacks the window extensions:\n%s", m)
 	}
+	if m := aarManifest(false, nil); !strings.Contains(m, `android.intent.action.PROCESS_TEXT`) || !strings.Contains(m, `android:mimeType="text/plain"`) {
+		t.Errorf("the AAR's manifest lacks the ACTION_PROCESS_TEXT query:\n%s", m)
+	}
 }
 
 func TestFileSelectsGeometry(t *testing.T) {

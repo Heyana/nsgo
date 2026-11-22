@@ -113,3 +113,98 @@ func TestSelectionMatchesJava(t *testing.T) {
 		t.Errorf("Java wrote %d unexpected bytes", len(r.buf))
 	}
 }
+
+func TestSelectionProcessTextToolbar(t *testing.T) {
+	out := runJavaAlgorithm(t, "selection", "ProcessTextCheck", nil, "Selection", "Protocol")
+	r := reader{out}
+
+	if action, mime, flags := r.str(), r.str(), r.u32(); action != "android.intent.action.PROCESS_TEXT" || mime != "text/plain" || flags != 0 {
+		t.Fatalf("query intent = (%q, %q, %d), want (PROCESS_TEXT, text/plain, 0)", action, mime, flags)
+	}
+
+	const typeFloating = 1
+	if modeType := r.u32(); modeType != typeFloating {
+		t.Fatalf("ActionMode type = %d, want %d (TYPE_FLOATING)", modeType, typeFloating)
+	}
+
+	type menuItem struct {
+		group, id, order, showAsAction uint32
+		title                          string
+	}
+	nItems := int(r.u32())
+	items := make([]menuItem, nItems)
+	for i := range items {
+		items[i] = menuItem{r.u32(), r.u32(), r.u32(), r.u32(), r.str()}
+	}
+	wantItems := []menuItem{
+		{0, 1, 0, 0, "res:1"}, // android.R.id.copy
+		{0, 2, 1, 0, "res:2"}, // android.R.id.selectAll
+		{1, 0, 100, 1, "Translate"},
+		{1, 0, 101, 1, "Dictionary"},
+		{1, 0, 102, 1, "Own Action"},
+	}
+	if !slices.Equal(items, wantItems) {
+		t.Fatalf("toolbar menu items =\n  %v\nwant\n  %v", items, wantItems)
+	}
+
+	handledTranslate := r.byte() != 0
+	finishedAfterTranslate := r.byte() != 0
+	handledDictionary := r.byte() != 0
+	handledOwn := r.byte() != 0
+	missingOk := r.byte() != 0
+	deniedOk := r.byte() != 0
+	if !handledTranslate || !finishedAfterTranslate || !handledDictionary || !handledOwn {
+		t.Fatalf("click outcomes = (translate=%t finished=%t dict=%t own=%t), want all true",
+			handledTranslate, finishedAfterTranslate, handledDictionary, handledOwn)
+	}
+	if missingOk || deniedOk {
+		t.Fatalf("failed launches returned (missing=%t denied=%t), want false", missingOk, deniedOk)
+	}
+
+	type launchedIntent struct {
+		action, mime, pkg, cls, text string
+		readonly                     bool
+		flags                        uint32
+	}
+	nLaunched := int(r.u32())
+	launched := make([]launchedIntent, nLaunched)
+	for i := range launched {
+		launched[i] = launchedIntent{r.str(), r.str(), r.str(), r.str(), r.str(), r.byte() != 0, r.u32()}
+	}
+	const flagNewTask = 0x10000000
+	wantLaunched := []launchedIntent{
+		{
+			action:   "android.intent.action.PROCESS_TEXT",
+			mime:     "text/plain",
+			pkg:      "com.google.android.apps.translate",
+			cls:      "com.google.android.apps.translate.TranslateActivity",
+			text:     "alpha",
+			readonly: true,
+			flags:    0,
+		},
+		{
+			action:   "android.intent.action.PROCESS_TEXT",
+			mime:     "text/plain",
+			pkg:      "com.example.allowed",
+			cls:      "com.example.allowed.AllowedActivity",
+			text:     "alpha beta",
+			readonly: true,
+			flags:    0,
+		},
+		{
+			action:   "android.intent.action.PROCESS_TEXT",
+			mime:     "text/plain",
+			pkg:      "dev.oneo.nsgo.test",
+			cls:      "dev.oneo.nsgo.test.InternalActivity",
+			text:     "gamma",
+			readonly: true,
+			flags:    flagNewTask,
+		},
+	}
+	if !slices.Equal(launched, wantLaunched) {
+		t.Fatalf("launched intents =\n  %+v\nwant\n  %+v", launched, wantLaunched)
+	}
+	if len(r.buf) != 0 {
+		t.Errorf("Java wrote %d unexpected bytes", len(r.buf))
+	}
+}

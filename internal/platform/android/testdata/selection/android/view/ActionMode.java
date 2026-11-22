@@ -7,6 +7,8 @@ public abstract class ActionMode {
 
     public abstract void finish();
 
+    public abstract void invalidate();
+
     public abstract void invalidateContentRect();
 
     public abstract static class Callback2 {

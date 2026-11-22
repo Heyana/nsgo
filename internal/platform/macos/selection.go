@@ -5,10 +5,13 @@ package macos
 import (
 	"math"
 	"slices"
+	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/ebitengine/purego/objc"
 
+	"github.com/nsgo-dev/nsgo/desktop/locales"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
@@ -53,7 +56,38 @@ const (
 	// selectPressSlop is how far a press on a press target in an area
 	// drags before it selects instead, as NSH's does.
 	selectPressSlop = 10
+	// pasteboardLegacyText is NSStringPboardType, which macOS Services still
+	// asks for beside public.utf8-plain-text.
+	pasteboardLegacyText = "NSStringPboardType"
 )
+
+var classSelectionHelper objc.Class
+
+// registerSelection registers the hidden non-editable NSTextView class that
+// builds AppKit's Look Up, Translate, Share and Speech items for a selection's
+// secondary-click menu without taking focus, hit tests or VoiceOver.
+func registerSelection() {
+	no := func(objc.ID, objc.SEL) bool { return false }
+	classSelectionHelper = register("NsgoSelectionHelper", apple.Class("NSTextView"), nil, []objc.MethodDef{
+		{Cmd: sel("hitTest:"), Fn: func(objc.ID, objc.SEL, apple.CGPoint) objc.ID { return 0 }},
+		{Cmd: sel("acceptsFirstResponder"), Fn: no},
+		{Cmd: sel("canBecomeKeyView"), Fn: no},
+		{Cmd: sel("isAccessibilityElement"), Fn: no},
+	})
+}
+
+// registerServicesMenuSendTypes tells macOS Services that selections in this
+// app can send plain text to other apps' services.
+func registerServicesMenuSendTypes(app objc.ID) {
+	if app == 0 {
+		return
+	}
+	sendTypes := objc.ID(apple.Class("NSMutableArray")).Send(sel("array"))
+	sendTypes.Send(sel("addObject:"), apple.NSString(pasteboardText))
+	sendTypes.Send(sel("addObject:"), apple.NSString(pasteboardLegacyText))
+	returnTypes := objc.ID(apple.Class("NSArray")).Send(sel("array"))
+	app.Send(sel("registerServicesMenuSendTypes:returnTypes:"), sendTypes, returnTypes)
+}
 
 // Len implements core.SelectionTexts.
 func (s *selection) Len() int { return len(s.texts) }
@@ -408,6 +442,309 @@ func surfaceSelectAll(self objc.ID, _ objc.SEL, _ objc.ID) {
 func surfaceResign(self objc.ID, cmd objc.SEL) bool {
 	views[self].surface.clearSelection()
 	return true
+}
+
+// surfaceValidateMenuItem enables Copy while the selection is non-empty and
+// Select All while an area is active.
+func surfaceValidateMenuItem(self objc.ID, _ objc.SEL, item objc.ID) bool {
+	v := views[self]
+	if v == nil || v.surface == nil {
+		return false
+	}
+	s := v.surface
+	switch objc.Send[objc.SEL](item, sel("action")) {
+	case sel("copy:"):
+		return s.selecting != nil && !s.selecting.model.IsEmpty()
+	case sel("selectAll:"):
+		return s.selecting != nil
+	}
+	return true
+}
+
+func isTextPasteboardType(t objc.ID) bool {
+	if t == 0 {
+		return false
+	}
+	name := apple.GoString(t)
+	return name == pasteboardText || name == pasteboardLegacyText
+}
+
+func hasTextPasteboardType(types objc.ID) bool {
+	if types == 0 {
+		return false
+	}
+	found := false
+	apple.ForEach(types, func(t objc.ID) {
+		if !found && isTextPasteboardType(t) {
+			found = true
+		}
+	})
+	return found
+}
+
+// surfaceValidRequestor implements NSServicesMenuRequestor's negotiation on
+// the surface so macOS Services (in both context menus and the app's Services
+// submenu) see the active read-only selection as plain text.
+func surfaceValidRequestor(self objc.ID, cmd objc.SEL, sendType, returnType objc.ID) objc.ID {
+	if returnType == 0 && isTextPasteboardType(sendType) {
+		if v := views[self]; v != nil && v.surface != nil && v.surface.selecting != nil && !v.surface.selecting.model.IsEmpty() {
+			return self
+		}
+	}
+	return apple.SendSuper[objc.ID](self, cmd, sendType, returnType)
+}
+
+// surfaceWriteSelection implements NSServicesMenuRequestor's
+// writeSelectionToPasteboard:types: for the active selection.
+func surfaceWriteSelection(self objc.ID, _ objc.SEL, pb, types objc.ID) bool {
+	v := views[self]
+	if v == nil || v.surface == nil || v.surface.selecting == nil || v.surface.selecting.model.IsEmpty() || pb == 0 || !hasTextPasteboardType(types) {
+		return false
+	}
+	text := v.surface.selecting.selectedText()
+	if text == "" {
+		return false
+	}
+	pb.Send(sel("clearContents"))
+	return objc.Send[bool](pb, sel("setString:forType:"), apple.NSString(text), apple.NSString(pasteboardText))
+}
+
+func (s *selection) selectedText() string {
+	s.list()
+	return s.model.Text(s)
+}
+
+// rectAt reports whether event lands on the selection's highlight, and returns
+// the union of the selection's highlight rectangles in the surface's flipped
+// coordinates.
+func (s *selection) rectAt(event objc.ID) (apple.CGRect, bool) {
+	if s.model.IsEmpty() || s.area == nil || s.area.surface == nil {
+		return apple.CGRect{}, false
+	}
+	surfaceView := s.area.surface.native
+	loc := objc.Send[apple.CGPoint](surfaceView, selConvertPoint, objc.Send[apple.CGPoint](event, selLocationInWindow), objc.ID(0))
+	hit := false
+	hasRect := false
+	var minX, minY, maxX, maxY float64
+	for _, r := range s.model.Ranges(s) {
+		v := s.texts[r.Text]
+		if v.layout == nil {
+			continue
+		}
+		for _, b := range v.layout.SelectionRects(r.Start, r.End, boxRect(v.box)) {
+			sr := objc.Send[apple.CGRect](surfaceView, sel("convertRect:fromView:"), b, v.native)
+			if !hasRect {
+				minX, minY = sr.Origin.X, sr.Origin.Y
+				maxX, maxY = sr.Origin.X+sr.Size.Width, sr.Origin.Y+sr.Size.Height
+				hasRect = true
+			} else {
+				minX = min(minX, sr.Origin.X)
+				minY = min(minY, sr.Origin.Y)
+				maxX = max(maxX, sr.Origin.X+sr.Size.Width)
+				maxY = max(maxY, sr.Origin.Y+sr.Size.Height)
+			}
+			if loc.X >= sr.Origin.X && loc.X <= sr.Origin.X+sr.Size.Width &&
+				loc.Y >= sr.Origin.Y && loc.Y <= sr.Origin.Y+sr.Size.Height {
+				hit = true
+			}
+		}
+	}
+	if !hit || !hasRect {
+		return apple.CGRect{}, false
+	}
+	return apple.Rect(minX, minY, maxX-minX, maxY-minY), true
+}
+
+// selectionMenuAt reports whether a secondary click at event should open the
+// selection's system menu rather than clear or drag the selection.
+func (s *surface) selectionMenuAt(event objc.ID) bool {
+	sl := s.selecting
+	if sl == nil || sl.model.IsEmpty() || s.contextView(event) != nil {
+		return false
+	}
+	sl.list()
+	_, ok := sl.rectAt(event)
+	return ok
+}
+
+// menuForEvent supplies AppKit's context menu on secondary clicks over an
+// active selection when no app context menu handles the click.
+func menuForEvent(self objc.ID, cmd objc.SEL, event objc.ID) objc.ID {
+	if v := views[self]; v != nil && v.surface != nil {
+		if menu := v.surface.selectionMenu(event); menu != 0 {
+			return menu
+		}
+	}
+	return apple.SendSuper[objc.ID](self, cmd, event)
+}
+
+// quickLookWithEvent opens macOS's dictionary panel on a three-finger tap or
+// Force Touch over an active selection.
+func quickLookWithEvent(self objc.ID, cmd objc.SEL, event objc.ID) {
+	if v := views[self]; v != nil && v.surface != nil && v.surface.lookUpSelection(event) {
+		return
+	}
+	apple.Super(self, cmd, event)
+}
+
+func (s *surface) lookUpSelection(event objc.ID) bool {
+	sl := s.selecting
+	if sl == nil || sl.model.IsEmpty() {
+		return false
+	}
+	sl.list()
+	rect, ok := sl.rectAt(event)
+	if !ok {
+		return false
+	}
+	text := sl.model.Text(sl)
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	s.lookUp(text, driver.Bounds{
+		Origin: driver.Point{X: driver.Points(rect.Origin.X), Y: driver.Points(rect.Origin.Y)},
+		Size:   driver.Size{Width: driver.Points(rect.Size.Width), Height: driver.Points(rect.Size.Height)},
+	})
+	return true
+}
+
+func (s *surface) ensureSelectionHelper() objc.ID {
+	if s.selHelper == 0 {
+		h := objc.ID(classSelectionHelper).Send(selAlloc).Send(sel("initWithFrame:"), apple.Rect(0, 0, 1, 1))
+		h.Send(selSetEditable, false)
+		h.Send(sel("setSelectable:"), true)
+		h.Send(sel("setRichText:"), false)
+		h.Send(sel("setDrawsBackground:"), false)
+		h.Send(selSetTextColor, objc.ID(apple.Class("NSColor")).Send(sel("clearColor")))
+		h.Send(sel("setSelectedTextAttributes:"), objc.ID(apple.Class("NSDictionary")).Send(sel("dictionary")))
+		h.Send(sel("setTextContainerInset:"), apple.CGSize{})
+		if tc := h.Send(sel("textContainer")); tc != 0 {
+			tc.Send(sel("setLineFragmentPadding:"), 0.0)
+		}
+		h.Send(selSetAccessibilityElement, false)
+		s.selHelper = h
+	}
+	if s.selHelper.Send(selSuperview) != s.native && s.native != 0 {
+		s.native.Send(selAddSubview, s.selHelper)
+	}
+	return s.selHelper
+}
+
+// selectionMenu builds AppKit's secondary-click menu for the active selection:
+// Look Up, Translate, Copy, Share, Speech and (via AppKit's context menu
+// plug-ins and NsgoSurface's NSServicesMenuRequestor methods) macOS Services.
+func (s *surface) selectionMenu(event objc.ID) objc.ID {
+	sl := s.selecting
+	if sl == nil || sl.model.IsEmpty() || s.contextView(event) != nil {
+		return 0
+	}
+	sl.list()
+	rect, ok := sl.rectAt(event)
+	if !ok {
+		return 0
+	}
+	text := sl.model.Text(sl)
+	if text == "" {
+		return 0
+	}
+	helper := s.ensureSelectionHelper()
+	frame := apple.Rect(rect.Origin.X, rect.Origin.Y, max(rect.Size.Width, 1), max(rect.Size.Height, 1))
+	helper.Send(selSetFrame, frame)
+	helper.Send(selSetStringText, apple.NSString(text))
+	if lm, tc := helper.Send(sel("layoutManager")), helper.Send(sel("textContainer")); lm != 0 && tc != 0 {
+		lm.Send(sel("ensureLayoutForTextContainer:"), tc)
+	}
+	helper.Send(selSetSelRange, apple.NSRange{Location: 0, Length: uint(len(utf16.Encode([]rune(text))))})
+
+	menu := helper.Send(sel("menuForEvent:"), event)
+	if menu == 0 {
+		menu = objc.ID(apple.Class("NSMenu")).Send(selAlloc).Send(sel("initWithTitle:"), apple.NSString("")).Send(sel("autorelease"))
+	}
+	s.filterSelectionMenu(menu, helper)
+	menu.Send(sel("setAllowsContextMenuPlugIns:"), true)
+	s.directMenu(menu)
+	return menu
+}
+
+// filterSelectionMenu keeps the read-only text services from NSTextView's
+// menu (Look Up, Translate, Copy, Share and Speech) and strips editing items.
+func (s *surface) filterSelectionMenu(menu, helper objc.ID) {
+	hasCopy := false
+	for i := objc.Send[int](menu, sel("numberOfItems")) - 1; i >= 0; i-- {
+		item := menu.Send(sel("itemAtIndex:"), i)
+		if objc.Send[bool](item, sel("isSeparatorItem")) {
+			continue
+		}
+		action := objc.Send[objc.SEL](item, sel("action"))
+		switch {
+		case action == sel("_rvMenuItemAction"):
+			// Look Up and Translate items constructed by AppKit's Reveal integration.
+		case action == sel("copy:"):
+			item.Send(selSetTarget, s.native)
+			hasCopy = true
+		case action == sel("_performStandardShareMenuItem:"):
+			// Share…
+		case objc.Send[bool](item, sel("hasSubmenu")) && isSpeechSubmenu(item.Send(sel("submenu"))):
+			retargetSubmenu(item.Send(sel("submenu")), helper)
+		default:
+			menu.Send(sel("removeItemAtIndex:"), i)
+		}
+	}
+	if !hasCopy {
+		copyItem := objc.ID(apple.Class("NSMenuItem")).Send(selAlloc).Send(
+			sel("initWithTitle:action:keyEquivalent:"),
+			apple.NSString(locales.In(s.language).Copy()), sel("copy:"), apple.NSString(""))
+		copyItem.Send(selSetTarget, s.native)
+		menu.Send(sel("addItem:"), copyItem)
+		copyItem.Send(selRelease)
+	}
+	// Remove leading, trailing and consecutive separators left by stripped items.
+	prevSep := true
+	for i := 0; i < objc.Send[int](menu, sel("numberOfItems")); {
+		item := menu.Send(sel("itemAtIndex:"), i)
+		if objc.Send[bool](item, sel("isSeparatorItem")) {
+			if prevSep {
+				menu.Send(sel("removeItemAtIndex:"), i)
+				continue
+			}
+			prevSep = true
+		} else {
+			prevSep = false
+		}
+		i++
+	}
+	for n := objc.Send[int](menu, sel("numberOfItems")); n > 0; n-- {
+		if !objc.Send[bool](menu.Send(sel("itemAtIndex:"), n-1), sel("isSeparatorItem")) {
+			break
+		}
+		menu.Send(sel("removeItemAtIndex:"), n-1)
+	}
+}
+
+func isSpeechSubmenu(sub objc.ID) bool {
+	if sub == 0 {
+		return false
+	}
+	n := objc.Send[int](sub, sel("numberOfItems"))
+	for i := 0; i < n; i++ {
+		if objc.Send[objc.SEL](sub.Send(sel("itemAtIndex:"), i), sel("action")) == sel("startSpeaking:") {
+			return true
+		}
+	}
+	return false
+}
+
+func retargetSubmenu(sub, target objc.ID) {
+	if sub == 0 {
+		return
+	}
+	n := objc.Send[int](sub, sel("numberOfItems"))
+	for i := 0; i < n; i++ {
+		item := sub.Send(sel("itemAtIndex:"), i)
+		if !objc.Send[bool](item, sel("isSeparatorItem")) {
+			item.Send(selSetTarget, target)
+		}
+	}
 }
 
 // selectionColor returns the CGColor text v highlights in, the text's
