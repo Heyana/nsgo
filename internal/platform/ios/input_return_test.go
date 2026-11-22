@@ -11,8 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
-// Exercise the software keyboard, rather than delivering EventKey directly:
-// neither UIKit delegate may submit, blur or edit a Return a binding takes.
+// Exercise the software keyboard, rather than delivering EventKey directly: neither UIKit delegate may submit, blur or edit a Return a binding takes.
 func TestSoftwareReturnReachesTheKeymapBeforeEditing(t *testing.T) {
 	if onTV() {
 		t.Skip("the iPhone and iPad software keyboard")

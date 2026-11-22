@@ -33,8 +33,7 @@ type input struct {
 	// applying is a change made here, clipping an insertion cut to
 	// maxLength, lineBreak a line break typed with a modifier.
 	applying, clipping, lineBreak bool
-	// hardwareReturn keeps a physical Return's unhandled UIKit edit from
-	// being matched again as an unmodified software-keyboard action.
+	// hardwareReturn keeps a physical Return's unhandled UIKit edit from being matched again as an unmodified software-keyboard action.
 	hardwareReturn bool
 }
 
@@ -102,8 +101,7 @@ func registerInput() {
 			apple.Super(self, cmd, presses, event)
 			return
 		}
-		// UITextField/UITextView can consume a physical Return before it
-		// reaches the controller: offer its actual modifiers first.
+		// UITextField/UITextView can consume a physical Return before it reaches the controller: offer its actual modifiers first.
 		pressesBegan(self, cmd, presses, event)
 	}}
 	returnEnd := objc.MethodDef{Cmd: sel("pressesEnded:withEvent:"), Fn: pressesEnded}
@@ -394,9 +392,7 @@ func (in *input) focusChanged(focused bool) {
 	v.surface.refreshKeyCommands()
 }
 
-// takeSoftwareReturn offers one complete software-keyboard action to the
-// surface's current keymap, without changing input modality or starting a
-// hardware repeat timer. Native editing and composition keep their keys.
+// takeSoftwareReturn offers one complete software-keyboard action to the surface's current keymap, without changing input modality or starting a hardware repeat timer. Native editing and composition keep their keys.
 func (in *input) takeSoftwareReturn() bool {
 	if in.hardwareReturn || in.applying || in.clipping || in.lineBreak || in.fs.Config.Readonly {
 		return false
@@ -412,8 +408,7 @@ func (in *input) takeSoftwareReturn() bool {
 	return ok
 }
 
-// returnPressed is UITextFieldDelegate's Return action. A Return that
-// commits marked text belongs to the input method, before shortcuts too.
+// returnPressed is UITextFieldDelegate's Return action. A Return that commits marked text belongs to the input method, before shortcuts too.
 func (in *input) returnPressed() {
 	if in.fs.Config.Readonly {
 		return

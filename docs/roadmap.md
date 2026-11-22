@@ -99,7 +99,7 @@ What 0.5.0 changed in how the keyboard's focus, popups and assistive technology 
 | Physical key positions on more targets | [#1242](https://github.com/nsgo-dev/nsgo/issues/1242) | Report physical positions from HarmonyOS, and add native test-host input by code |
 | HarmonyOS test clipboard keys | NSGo's [#1353](https://github.com/nsgo-dev/nsgo/issues/1353) | `app.Select` moves the native range and test typing replaces it; verify that path on a HarmonyOS device and make the test host's copy, cut and paste keys drive its native clipboard edits, as iOS and Android already do |
 | Android shortcut discovery | `Activity.onProvideKeyboardShortcuts` | Android's system shortcut list shows the titled bindings active in the focused window, with the same localized names and groups as iOS. |
-| Mobile test editing keys | NSGo's [#414](https://github.com/nsgo-dev/nsgo/issues/414), [#415](https://github.com/nsgo-dev/nsgo/issues/415), [#1354](https://github.com/nsgo-dev/nsgo/issues/1354) | Android and iOS test hosts give `KeyAlways` bindings first for Backspace and select-all, then preserve native unbound editing; Android Control shortcuts and iOS software editing regressions pass natively, while iOS software Return is [#1351](https://github.com/nsgo-dev/nsgo/issues/1351) |
+| Mobile test editing keys | NSGo's [#414](https://github.com/nsgo-dev/nsgo/issues/414), [#415](https://github.com/nsgo-dev/nsgo/issues/415), [#1354](https://github.com/nsgo-dev/nsgo/issues/1354) | Android and iOS test hosts give `KeyAlways` bindings first for Backspace and select-all, then preserve native unbound editing; Android Control shortcuts and iOS software editing regressions pass natively |
 
 ## Native development restarts
 
