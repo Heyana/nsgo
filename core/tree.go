@@ -148,10 +148,13 @@ type Tree struct {
 	// says what they follow changed.
 	followers   []*node
 	followMoved bool
-	// framesMoved says a frame, a scroll, a deletion, a restyle layout reads or a Visibility changed the boxes the layout audit draws since a round last looked; auditRead and bumpAudit are what keep them up to date, nil until DevTools' overlay mounts (keepAudit).
+	// framesMoved says a frame, a scroll, a deletion, a restyle layout reads or a Visibility changed the boxes the layout audit draws since a round last looked; auditRead, bumpAudit and tickAudit are what keep them up to date, nil until DevTools' overlay mounts (keepAudit).
 	framesMoved bool
 	auditRead   func() bool
 	bumpAudit   func()
+	tickAudit   func()
+	// devDrawn tracks drawn geometry (transforms, animations, transitions, sticky shifts) while DevTools or their overlay read bounds; nil in release builds.
+	devDrawn *devDrawn
 	// edgeBars are the views that are bars over a scroll view's side, and
 	// edgeScrolls the scroll views they last reached into.
 	edgeBars, edgeScrolls []*node
@@ -2623,6 +2626,9 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			}
 		}
 	case driver.EventPan:
+		if t.devDrawn != nil {
+			t.devDrawnGesture(ev)
+		}
 		if ev.Phase == GestureBegan {
 			t.panActivated(n)
 		}
@@ -2635,6 +2641,9 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			})
 		}
 	case driver.EventPinch, driver.EventRotation:
+		if t.devDrawn != nil {
+			t.devDrawnGesture(ev)
+		}
 		fn := h.pinch
 		if ev.Kind == driver.EventRotation {
 			fn = h.rotation
@@ -2694,6 +2703,9 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		}
 		if n.scroll != nil {
 			t.scrolled(n, ev)
+			if t.devDrawn != nil && ev.Kind == driver.EventScrollEnd {
+				t.devDrawnScrollEnd(n)
+			}
 			t.dispatchScroll(n, ev)
 		}
 	case driver.EventScroll:
@@ -2704,6 +2716,9 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			t.scrolled(n, ev)
 			if ev.Value > 0 {
 				n.scroll.zoom = ev.Value
+			}
+			if t.devDrawn != nil {
+				t.devDrawnScroll(n, ev.Point)
 			}
 			if anchored(t.view) || slices.ContainsFunc(t.frames, anchored) {
 				t.markLayout(t.view) // anchored overlays follow the scroll

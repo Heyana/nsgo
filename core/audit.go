@@ -4,8 +4,10 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/devtools"
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 // The layout audit follows mygo-layout-audit (https://github.com/knothhe/mygo-layout-audit, MIT): its colors, its grid and its ruler.
@@ -45,7 +47,9 @@ type layoutAudit struct {
 	frames *Signal[uint64]
 	// watch hears whether the audit shows, for DevTools (devtools.Surface.WatchLayout).
 	watch func(on bool)
-	boxes []auditBox
+	// stopTick cancels the pending display frame callback while animations move boxes.
+	stopTick func()
+	boxes    []auditBox
 }
 
 // newLayoutAudit starts the audit as l says, under DevTools' overlay's scope cx, binding auditKey when it shows.
@@ -77,12 +81,45 @@ func (a *layoutAudit) show(on bool) {
 		a.shown.Set(on)
 		a.leaveRuler()
 	})
+	if !on {
+		a.stopTicking()
+	}
 	if a.watch != nil {
 		a.watch(on)
 	}
 }
 
-// keepAudit has t keep a's boxes up to date while a drawing reads them: auditRead reports whether one does, so a scroll commits, and bumpAudit, after each round's OnLayout handlers, has a draw them again when a frame, a scroll or a deletion changed them since the last round looked, which the next round sends within the commit. DevTools' overlay calls it as it mounts, so release builds link neither.
+// stopTicking cancels any pending animation frame callback for the audit.
+func (a *layoutAudit) stopTicking() {
+	if a.stopTick != nil {
+		stop := a.stopTick
+		a.stopTick = nil
+		stop()
+	}
+}
+
+// keepTicking schedules display frames while the audit's boxes are drawn and an
+// animation, transition, layout animation, or keyframe is moving views.
+func (a *layoutAudit) keepTicking(t *Tree) {
+	if a.stopTick != nil || t.auditRead == nil || !t.auditRead() {
+		return
+	}
+	if t.devDrawn == nil || !t.devDrawn.active(t) {
+		return
+	}
+	a.stopTick = a.owner.RequestAnimationFrame(func(at time.Time) {
+		a.stopTick = nil
+		if t.auditRead == nil || !t.auditRead() {
+			return
+		}
+		if t.devDrawn != nil && t.devDrawn.step(t, at) {
+			a.frames.Set(a.frames.GetUntracked() + 1)
+		}
+		a.keepTicking(t)
+	})
+}
+
+// keepAudit has t keep a's boxes up to date while a drawing reads them: auditRead reports whether one does, so a scroll commits, bumpAudit, after each round's OnLayout handlers, has a draw them again when a frame, a scroll or a deletion changed them since the last round looked, which the next round sends within the commit, and tickAudit keeps them redrawing while animations or transitions run. DevTools' overlay calls it as it mounts, so release builds link none of them.
 func (t *Tree) keepAudit(a *layoutAudit) {
 	t.auditRead = func() bool { return len(a.frames.subs.list) > 0 }
 	t.bumpAudit = func() {
@@ -94,19 +131,23 @@ func (t *Tree) keepAudit(a *layoutAudit) {
 			t.within(t.root, func() { a.frames.Set(a.frames.GetUntracked() + 1) })
 		}
 	}
+	t.tickAudit = func() { a.keepTicking(t) }
 }
 
-// auditBox is a view's box as the layout audit draws it: its border box and edges, and the part of the surface it shows in.
+// auditBox is a view's box as the layout audit draws it: its drawn border box and edges, the part of the surface it shows in, and the transform mapping its local border box to the surface.
 type auditBox struct {
 	bounds, clip Bounds
 	box          devtools.Box
+	matrix       driver.Matrix3D
+	size         Size
 }
 
 // auditBoxes appends the box of each view the tree shows, from the root view, as DevTools list them (devChildren). It leaves out hidden views and what they hold (Display None, Visibility Hidden and attachments a text's line limit cuts off), the views the core makes for itself, such as scroll bars' hosts, what the platform shows apart from the surface (an input's accessory, a screen header's views and a sheet it presents) and modals that went.
 func (t *Tree) auditBoxes(out []auditBox) []auditBox {
+	t.stepDevDrawn()
 	surface := Bounds{Size: t.view.frame.Size}
-	var visit func(n *node, clip Bounds, invisible bool)
-	visit = func(n *node, clip Bounds, invisible bool) {
+	var visit func(n, parent *node, parentContentM driver.Matrix3D, clip Bounds, invisible bool)
+	visit = func(n, parent *node, parentContentM driver.Matrix3D, clip Bounds, invisible bool) {
 		if !audited(n) {
 			return
 		}
@@ -114,17 +155,29 @@ func (t *Tree) auditBoxes(out []auditBox) []auditBox {
 		if n.hoist != nil {
 			clip, invisible = surface, false
 		}
+		if np := n.nativeParent(); np != parent {
+			parent = np
+			if np == nil {
+				parentContentM = driver.Identity3D
+			} else {
+				pm, _ := t.drawnMatrix(np)
+				parentContentM = pm.Mul(scrollContentMatrix(np))
+			}
+		}
 		// Visibility Hidden hides what a view holds too, as the native view does and as hit testing reads it.
 		invisible = invisible || n.style.Visibility == VisibilityHidden
-		b, box := t.devBox(n)
+		m, size := t.drawnMatrixWith(n, parent, parentContentM)
+		b := transformBounds(m, Bounds{Size: size})
+		box := devBoxEdges(n)
 		if !invisible {
-			out = append(out, auditBox{bounds: b, clip: clip, box: box})
+			out = append(out, auditBox{bounds: b, clip: clip, box: box, matrix: m, size: size})
 		}
 		x, y := n.clips()
 		inner := clipTo(clip, b, x, y)
-		t.devChildren(n, func(c *node) { visit(c, inner, invisible) })
+		contentM := m.Mul(scrollContentMatrix(n))
+		t.devChildren(n, func(c *node) { visit(c, n, contentM, inner, invisible) })
 	}
-	visit(t.view, surface, false)
+	visit(t.view, nil, driver.Identity3D, surface, false)
 	return out
 }
 
@@ -210,6 +263,9 @@ func (t *Tree) auditLayer(a *layoutAudit) Node {
 			if a.bounds.Get() {
 				a.frames.Get()
 				a.boxes = t.auditBoxes(a.boxes)
+				a.keepTicking(t)
+			} else {
+				a.stopTicking()
 			}
 			paintAudit(d, a.boxes, size, cx.Env().PixelRatio(), a.grid.Get(), a.m.Get())
 		}
@@ -322,17 +378,21 @@ func paintAudit(d *Drawing, boxes []auditBox, size Size, ratio float32, grid Poi
 			d.Rect(float32(b.clip.Origin.X), float32(b.clip.Origin.Y), float32(b.clip.Size.Width), float32(b.clip.Size.Height))
 			d.Clip()
 		}
+		base := Bounds{Size: b.size}
+		if b.matrix == (driver.Matrix3D{}) {
+			base = b.bounds
+		}
 		if b.box.Margin != [4]float32{} {
-			strokeInside(d, growBounds(b.bounds, b.box.Margin, 1), auditMargin, line)
+			strokeBox(d, b.matrix, growBounds(base, b.box.Margin, 1), auditMargin, line)
 		}
 		if b.box.Padding != [4]float32{} {
 			var in [4]float32
 			for i := range in {
 				in[i] = b.box.Border[i] + b.box.Padding[i]
 			}
-			strokeInside(d, growBounds(b.bounds, in, -1), auditContent, line)
+			strokeBox(d, b.matrix, growBounds(base, in, -1), auditContent, line)
 		}
-		strokeInside(d, b.bounds, auditBorder, line)
+		strokeBox(d, b.matrix, base, auditBorder, line)
 		if cut {
 			d.Restore()
 		}
@@ -354,6 +414,54 @@ func paintAudit(d *Drawing, boxes []auditBox, size Size, ratio float32, grid Poi
 	if m.points > 0 {
 		paintRuler(d, m)
 	}
+}
+
+// strokeBox strokes local mapped through m, using strokeInside for pure
+// translations so untransformed boxes land on the pixel grid.
+func strokeBox(d *Drawing, m driver.Matrix3D, local Bounds, color Color, line float32) {
+	if isPureTranslation(m) {
+		strokeInside(d, transformBounds(m, local), color, line)
+		return
+	}
+	if local.Size.Width <= 0 || local.Size.Height <= 0 {
+		return
+	}
+	x0, y0 := float64(local.Origin.X), float64(local.Origin.Y)
+	x1, y1 := x0+float64(local.Size.Width), y0+float64(local.Size.Height)
+	var pts [4][2]float64
+	var minX, minY, maxX, maxY float64
+	for i, c := range [4][2]float64{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}} {
+		px, py := m.Apply(c[0], c[1])
+		if math.IsNaN(px) || math.IsNaN(py) || math.IsInf(px, 0) || math.IsInf(py, 0) {
+			return
+		}
+		pts[i] = [2]float64{px, py}
+		if i == 0 {
+			minX, maxX, minY, maxY = px, px, py, py
+		} else {
+			minX, maxX = min(minX, px), max(maxX, px)
+			minY, maxY = min(minY, py), max(maxY, py)
+		}
+	}
+	if maxX-minX < float64(line) || maxY-minY < float64(line) {
+		return
+	}
+	d.SetStrokeColor(color)
+	d.BeginPath()
+	d.MoveTo(float32(pts[0][0]), float32(pts[0][1]))
+	d.LineTo(float32(pts[1][0]), float32(pts[1][1]))
+	d.LineTo(float32(pts[2][0]), float32(pts[2][1]))
+	d.LineTo(float32(pts[3][0]), float32(pts[3][1]))
+	d.ClosePath()
+	d.Stroke()
+}
+
+func isPureTranslation(m driver.Matrix3D) bool {
+	if m == (driver.Matrix3D{}) || m == driver.Identity3D {
+		return true
+	}
+	a, b, c, d, _, _, ok := m.Affine()
+	return ok && a == 1 && b == 0 && c == 0 && d == 1
 }
 
 // strokeInside strokes the inside edge of b in color, lines wide.

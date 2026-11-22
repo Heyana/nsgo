@@ -1253,6 +1253,12 @@ func (t *Tree) listCommand(ln *listNode, c listCommand) {
 // scrollTo sends scroll view n to p, counting the scroll.
 func (t *Tree) scrollTo(n *node, p Point, animated bool) {
 	n.scroll.issue(true, p)
+	if t.devDrawn != nil {
+		t.devDrawnScroll(n, p)
+	}
+	if t.auditRead != nil && t.auditRead() {
+		t.framesMoved = true
+	}
 	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemScrollTo, ID: n.id, Point: p, Animated: animated})
 	t.changed = true
 }

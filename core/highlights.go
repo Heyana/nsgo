@@ -45,8 +45,9 @@ func (t *Tree) inspected(n *node) inspection {
 	if n == nil {
 		return inspection{}
 	}
+	t.stepDevDrawn()
 	l := &n.lstate.Rounded
-	return inspection{bounds: t.surfaceBounds(n),
+	return inspection{bounds: t.drawnBounds(n),
 		margin: [4]Points{Points(l.Margin.Top), Points(l.Margin.Right), Points(l.Margin.Bottom), Points(l.Margin.Left)},
 		borderPadding: [4]Points{Points(l.Border.Top + l.Padding.Top), Points(l.Border.Right + l.Padding.Right),
 			Points(l.Border.Bottom + l.Padding.Bottom), Points(l.Border.Left + l.Padding.Left)}}
@@ -91,10 +92,12 @@ func (t *Tree) mountHighlights(cx *Scope, parent *node, opts UpdateHighlights) {
 	h := &highlights{owner: cx, root: new(Ref), boxes: NewSignalFunc[[]highlightBox](cx, nil, nil), updates: !opts.NoUpdates,
 		inspect: NewSignal(cx, inspection{}), picking: NewSignal(cx, false), audit: newLayoutAudit(cx, opts.Layout)}
 	t.highlights = h
+	t.ensureDevDrawn()
 	t.keepAudit(h.audit)
 	cx.Cleanup(func() {
+		h.audit.stopTicking()
 		if t.highlights == h {
-			t.highlights, t.auditRead, t.bumpAudit = nil, nil, nil
+			t.highlights, t.auditRead, t.bumpAudit, t.tickAudit = nil, nil, nil, nil
 		}
 	})
 	box := func(cx *Scope, b func() highlightBox, _ func() int) Node {
@@ -129,7 +132,8 @@ func (t *Tree) pickAt(p Point, pressed bool) {
 	if h == nil {
 		return
 	}
-	id, _ := hitWith(t.view, p, func(n *node) bool { return !h.owns(n) })
+	t.stepDevDrawn()
+	id, _ := t.hitDrawnWith(t.view, p, func(n *node) bool { return !h.owns(n) })
 	n := t.node(id)
 	if n == nil {
 		return
@@ -169,7 +173,7 @@ func (t *Tree) noteChanges(items []driver.MountItem) {
 		if n == nil || n.deleted || h.owns(n) {
 			continue
 		}
-		if b := t.surfaceBounds(n); b.Size.Width > 0 && b.Size.Height > 0 {
+		if b := t.drawnBounds(n); b.Size.Width > 0 && b.Size.Height > 0 {
 			boxes = append(boxes, b)
 		}
 	}

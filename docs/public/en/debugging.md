@@ -169,7 +169,7 @@ A readout in the bottom corner shows the window's size in points, with buttons t
 | `Cmd+Option+Shift+L`, `Ctrl+Alt+Shift+L` | Shows or hides the audit, in a build with `-layout` |
 | `Esc`, back | Stops measuring |
 
-If your app binds the same key, the app's binding wins. Without the key, as on a phone, run with `-devtools` too and show and hide the audit with DevTools' **Layout**; hide it to reach a control under the readout. The boxes are where layout placed the views, before transforms and animations move them, and follow a scroll a frame behind it. Redrawing them costs every update time, so measure speed without them.
+If your app binds the same key, the app's binding wins. Without the key, as on a phone, run with `-devtools` too and show and hide the audit with DevTools' **Layout**; hide it to reach a control under the readout. The boxes follow transforms, layout animations, transitions and sticky offsets, and follow a scroll a frame behind it. Redrawing them costs every update time, so measure speed without them.
 
 ## Speed
 

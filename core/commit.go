@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nsgo-dev/nsgo/internal/devtools"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/layout"
 )
@@ -56,6 +57,9 @@ func (t *Tree) commit(shared bool) *driver.MountBatch {
 	t.items = t.items[:0]
 	t.commits++
 	t.commitStart = t.rt.clock.Now()
+	if t.devDrawn != nil || devtools.Enabled || t.highlights != nil {
+		t.ensureDevDrawn().beginCommit()
+	}
 	t.resetPace()
 	for round := 0; t.changed && round < maxRounds; round++ {
 		if t.focusMoved {
@@ -97,6 +101,9 @@ func (t *Tree) commit(shared bool) *driver.MountBatch {
 	}
 	if len(t.items) == 0 {
 		return nil
+	}
+	if t.devDrawn != nil {
+		t.syncDevDrawn(t.commitStart)
 	}
 	if t.highlights != nil {
 		t.noteChanges(t.items)
@@ -322,6 +329,9 @@ func (t *Tree) commitRound() {
 			frame := n.frame
 			t.within(n.owner, func() { n.h.layout(frame) })
 		}
+	}
+	if t.devDrawn != nil {
+		t.syncDevDrawn(t.commitStart)
 	}
 	if t.bumpAudit != nil {
 		t.bumpAudit()
@@ -872,7 +882,11 @@ func (t *Tree) emitParts(n *node) bool {
 		// Its parent's hit tests look for it anywhere from now on.
 		n.transformed, styled = true, true
 	}
-	if ev := n.events(); ev != n.sent.events {
+	ev := n.events()
+	if t.devDrawn != nil && n.scroll != nil && n.bound != nil && n.bound.scroll != (AnimatedXY{}) {
+		ev |= 1 << driver.EventScrollEnd
+	}
+	if ev != n.sent.events {
 		n.sent.events = ev
 		add(driver.MountItem{Kind: driver.ItemEvents, ID: n.id, Events: ev})
 	}

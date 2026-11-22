@@ -438,6 +438,7 @@ var kindNames = map[driver.ViewKind]string{
 
 // Elements returns the tree's views from its root, leaving out DevTools' own.
 func (s *devSurface) Elements() devtools.Node {
+	s.t.stepDevDrawn()
 	var walk func(n *node) []devtools.Node
 	walk = func(n *node) []devtools.Node {
 		var out []devtools.Node
@@ -461,10 +462,14 @@ func (t *Tree) devChildren(n *node, visit func(*node)) {
 	}
 }
 
-// devBox is n's box as DevTools show it, the layout audit too: its border box in the surface, and its margin, border and padding as laid out.
+// devBox is n's box as DevTools show it, the layout audit too: its drawn border box in the surface, and its margin, border and padding as laid out.
 func (t *Tree) devBox(n *node) (Bounds, devtools.Box) {
+	return t.drawnBounds(n), devBoxEdges(n)
+}
+
+func devBoxEdges(n *node) devtools.Box {
 	l := &n.lstate.Rounded
-	return t.surfaceBounds(n), devtools.Box{Margin: fourSides(l.Margin.Top, l.Margin.Right, l.Margin.Bottom, l.Margin.Left),
+	return devtools.Box{Margin: fourSides(l.Margin.Top, l.Margin.Right, l.Margin.Bottom, l.Margin.Left),
 		Border: fourSides(l.Border.Top, l.Border.Right, l.Border.Bottom, l.Border.Left), Padding: fourSides(l.Padding.Top, l.Padding.Right, l.Padding.Bottom, l.Padding.Left)}
 }
 
