@@ -26,6 +26,7 @@ type mounter struct {
 	root  driver.NodeID
 	o     ops
 	anim  *driver.Animator
+	scene *touchScene
 	// frame is called when a frame the engine asked for begins.
 	frame func()
 	// dropped records once the kinds this mounter has no case for, so the
@@ -77,7 +78,20 @@ type view struct {
 }
 
 func newMounter(s *surface) *mounter {
-	return &mounter{s: s, views: map[driver.NodeID]*view{}, dropped: map[driver.ItemKind]bool{}}
+	return &mounter{
+		s:       s,
+		views:   map[driver.NodeID]*view{},
+		scene:   newTouchScene(nil),
+		dropped: map[driver.ItemKind]bool{},
+	}
+}
+
+func (m *mounter) captureTouches(e *driver.Event) {
+	if m.scene == nil {
+		return
+	}
+	m.scene.anim = m.anim
+	m.scene.captureTouches(e)
 }
 
 // mount applies a batch and hands its operations to the render layer.
@@ -95,6 +109,7 @@ func (m *mounter) mount(b *driver.MountBatch) {
 	for i := range b.Items {
 		m.item(b, &b.Items[i])
 	}
+	m.applyAnimated()
 	m.flush()
 	if m.anim != nil && m.anim.Running() {
 		m.s.RequestFrame()
@@ -136,6 +151,9 @@ func (m *mounter) applyAnimated() bool {
 
 // item applies one mount item.
 func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
+	if m.scene != nil {
+		m.scene.applyItem(b.Root, it)
+	}
 	switch it.Kind {
 	case driver.ItemCreate:
 		v := &view{id: it.ID, kind: it.View, style: driver.DefaultViewStyle}
@@ -677,6 +695,9 @@ func (m *mounter) scrollTo(id driver.NodeID, offset driver.Point, animated bool)
 		v.applied++
 		v.offset = offset
 	}
+	if m.scene != nil {
+		m.scene.setScrollOffset(id, offset)
+	}
 	m.o.op("so", id).num(float64(offset.X)).num(float64(offset.Y)).boolean(animated)
 }
 
@@ -687,6 +708,9 @@ func (m *mounter) scrolled(id driver.NodeID, offset driver.Point) {
 		return
 	}
 	v.offset = offset
+	if m.scene != nil {
+		m.scene.setScrollOffset(id, offset)
+	}
 	m.s.dispatch(driver.Event{Kind: driver.EventScroll, ID: id, Point: offset, Count: v.applied})
 }
 
@@ -698,6 +722,9 @@ func (m *mounter) zoomed(id driver.NodeID, scale float32, offset driver.Point) {
 		return
 	}
 	v.offset = offset
+	if m.scene != nil {
+		m.scene.setZoom(id, scale, &offset)
+	}
 	m.s.dispatch(driver.Event{Kind: driver.EventScroll, ID: id, Point: offset, Value: scale, Count: v.applied})
 }
 

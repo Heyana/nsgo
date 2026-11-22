@@ -88,12 +88,14 @@ type view struct {
 	animated   driver.AnimatedValues
 	acss       string // as last sent
 	// shift is a sticky cell's from its frame.
-	shift  driver.Point
-	events driver.EventMask
-	props  driver.ViewProps
-	ax     string // last sent accessibility JSON, empty for none
-	layout *TextLayout
-	text   *driver.TextContent
+	shift           driver.Point
+	events          driver.EventMask
+	props           driver.ViewProps
+	ax              string // last sent accessibility JSON, empty for none
+	overflow        driver.Bounds
+	transformedKids bool
+	layout          *TextLayout
+	text            *driver.TextContent
 	// A scroll view's offset, the scrolls it applied and sticky cells.
 	offset  driver.Point
 	applied uint32
@@ -121,6 +123,8 @@ type mounter struct {
 	h        host
 	views    []*view
 	root     driver.NodeID
+	modals   []*view
+	blocking *view
 	o        ops
 	animator *driver.Animator
 	// ticking is set while a frame is asked for.
@@ -219,6 +223,19 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 	case driver.ItemAppearance, driver.ItemDirection:
 		m.h.service(it)
 		return
+	case driver.ItemBlockNative:
+		prev := m.blocking
+		m.blocking = nil
+		if prev != nil {
+			m.sendEvents(prev)
+		}
+		if it.ID != 0 {
+			if next := m.view(it.ID); next != nil {
+				m.blocking = next
+				m.sendEvents(next)
+			}
+		}
+		return
 	}
 	v := m.view(it.ID)
 	if v == nil {
@@ -245,6 +262,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		}
 		parent.children = append(parent.children[:at], append([]*view{v}, parent.children[at:]...)...)
 		v.parent = parent
+		if v.kind == driver.KindModal {
+			m.modals = append(m.modals, v)
+		}
 		m.o.op("i", parent.id).num(float64(v.id))
 		if before := m.view(it.Before); before != nil && before.parent == parent {
 			m.o.num(float64(before.id))
@@ -275,6 +295,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 			c.parent = nil
 		}
 		m.views[it.ID] = nil
+		if m.blocking == v {
+			m.blocking = nil
+		}
 		m.animator.Forget(v.id)
 		delete(m.repaint, v.id)
 		m.touches.forget(v)
@@ -348,6 +371,8 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 	case driver.ItemEvents:
 		v.events = it.Events
 		m.sendEvents(v)
+	case driver.ItemOverflow:
+		v.overflow, v.transformedKids = it.Frame, it.Transformed
 	case driver.ItemText:
 		v.text = it.Text
 		v.layout, _ = it.Text.Layout.(*TextLayout)
@@ -475,6 +500,14 @@ func (m *mounter) placePixelImage(v *view) {
 
 // detach takes v out of its parent's children.
 func (m *mounter) detach(v *view) {
+	if v.kind == driver.KindModal {
+		for k, modal := range m.modals {
+			if modal == v {
+				m.modals = append(m.modals[:k], m.modals[k+1:]...)
+				break
+			}
+		}
+	}
 	p := v.parent
 	if p == nil {
 		return
@@ -551,6 +584,9 @@ func (m *mounter) sendEvents(v *view) {
 		// views around it; others keep the drags they start.
 		pa := v.props.PanActivation
 		if (ev.Has(driver.EventPan) || m.animator.PanBound(v.id)) && pa.FailOffsetY == 0 && pa.ActiveOffsetX == 0 {
+			bits |= touchCapture
+		}
+		if m.blocking == v && ev.Has(driver.EventTouch) {
 			bits |= touchCapture
 		}
 	}
@@ -887,9 +923,12 @@ func (m *mounter) origin(v *view) driver.Point {
 
 // pointer returns an event of kind for v at page point page.
 func (m *mounter) pointer(v *view, kind driver.EventKind, page driver.Point) driver.Event {
-	o := m.origin(v)
-	return driver.Event{Kind: kind, ID: v.id, Page: page, Count: 1,
-		Point: driver.Point{X: page.X - o.X, Y: page.Y - o.Y}}
+	local, ok := m.surfacePoint(v, page)
+	if !ok {
+		o := m.origin(v)
+		local = driver.Point{X: page.X - o.X, Y: page.Y - o.Y}
+	}
+	return driver.Event{Kind: kind, ID: v.id, Page: page, Count: 1, Point: local}
 }
 
 // send dispatches ev for v when v is mounted and asked for its kind.

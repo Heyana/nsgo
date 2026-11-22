@@ -9,7 +9,12 @@ const pixels = require('../../nsgo/pixels.js')
 // The phases of a touch event, as Go numbers them.
 const PHASES = { touchstart: 0, touchmove: 1, touchend: 2, touchcancel: 3 }
 
-const fingers = (list) => Array.prototype.map.call(list || [], (t) => [t.identifier, t.pageX, t.pageY])
+const fingers = (list) =>
+  Array.prototype.map.call(list || [], (t) => [
+    t.identifier,
+    t.pageX != null ? t.pageX : t.clientX,
+    t.pageY != null ? t.pageY : t.clientY,
+  ])
 
 Component({
   options: { addGlobalClass: false },

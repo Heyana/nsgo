@@ -52,6 +52,8 @@ type twoFinger struct {
 }
 
 type touches struct {
+	geometry driver.TouchTracker
+	touching bool
 	pointers []*pointer
 	two      *twoFinger
 	// event is the touch event being handled: the views it bubbles
@@ -115,16 +117,23 @@ func (m *mounter) touch(id driver.NodeID, seq int, phase driver.GesturePhase, ch
 	for _, f := range changed {
 		switch phase {
 		case driver.GestureBegan:
-			if v == nil || t.pointer(f.id) != nil {
+			if t.pointer(f.id) != nil {
 				continue
 			}
-			p := &pointer{id: f.id, start: f.page, at: f.page, view: v,
+			target := m.hitTarget(v, f.page, len(changed) > 1)
+			if target == nil {
+				continue
+			}
+			p := &pointer{id: f.id, start: f.page, at: f.page, view: target,
 				samples: []sample{{now, float64(f.page.X), float64(f.page.Y)}}}
 			if len(t.pointers) == 0 {
-				p.pan = m.nearest(v, driver.EventPan)
+				p.pan = m.nearest(target, driver.EventPan)
 			}
-			p.pinch = m.nearest(v, driver.EventPinch, driver.EventRotation)
-			p.touch = m.nearest(v, driver.EventTouch)
+			p.pinch = m.nearest(target, driver.EventPinch, driver.EventRotation)
+			p.touch = m.nearest(target, driver.EventTouch)
+			if p.touch != nil {
+				t.touching = true
+			}
 			t.pointers = append(t.pointers, p)
 			if len(t.pointers) == 2 && t.two == nil {
 				m.startTwoFinger()
@@ -169,33 +178,213 @@ func (m *mounter) touch(id driver.NodeID, seq int, phase driver.GesturePhase, ch
 			}
 		}
 		t.pointers = kept
+		if len(t.pointers) == 0 {
+			t.touching = false
+		}
 	}
 }
 
-// reportTouches sends EventTouch to the views following the fingers that
-// changed.
+// reportTouches sends EventTouch with a presentation geometry snapshot for all
+// fingers currently down while a view listens to touches.
 func (m *mounter) reportTouches(phase driver.GesturePhase, changed []finger, now time.Duration) {
+	t := &m.touches
+	if !t.touching || len(t.pointers) == 0 {
+		return
+	}
 	changedID := map[int]bool{}
 	for _, f := range changed {
 		changedID[f.id] = true
 	}
-	seen := map[*view]bool{}
-	for _, p := range m.touches.pointers {
-		v := p.touch
-		if v == nil || !changedID[p.id] || seen[v] {
-			continue
-		}
-		seen[v] = true
-		ev := driver.Event{Kind: driver.EventTouch, Phase: phase, Time: now}
-		o := m.origin(v)
+	touches := make([]driver.Touch, 0, len(t.pointers))
+	anyChanged := false
+	for _, q := range t.pointers {
+		c := changedID[q.id]
+		anyChanged = anyChanged || c
+		touches = append(touches, driver.Touch{ID: q.id, Position: q.at, PagePosition: q.at, Changed: c})
+	}
+	if !anyChanged {
+		return
+	}
+	ev := driver.Event{Kind: driver.EventTouch, Phase: phase, Time: now, Touches: touches}
+	m.captureTouches(&ev, changedID)
+	m.h.dispatch(ev)
+}
+
+func (m *mounter) captureTouches(e *driver.Event, changedID map[int]bool) {
+	m.touches.geometry.Capture(e, func(p driver.Point) driver.NodeID {
 		for _, q := range m.touches.pointers {
-			if q.touch == v {
-				ev.Touches = append(ev.Touches, driver.Touch{ID: q.id, PagePosition: q.at, Changed: changedID[q.id],
-					Position: driver.Point{X: q.at.X - o.X, Y: q.at.Y - o.Y}})
+			if changedID[q.id] && q.at == p && q.view != nil {
+				return q.view.id
 			}
 		}
-		m.send(v, ev)
+		if h := m.hitAt(p); h != nil {
+			return h.id
+		}
+		return 0
+	}, func(id driver.NodeID) (driver.NodeID, driver.EventMask) {
+		v := m.view(id)
+		if v == nil {
+			return 0, 0
+		}
+		var up driver.NodeID
+		if v.parent != nil {
+			up = v.parent.id
+		}
+		return up, v.events
+	}, func(id driver.NodeID, p driver.Point) (driver.Point, bool) {
+		v := m.view(id)
+		if v == nil {
+			return driver.Point{}, false
+		}
+		return m.surfacePoint(v, p)
+	})
+}
+
+func (m *mounter) shownFrame(v *view) driver.Bounds {
+	f := v.frame
+	f.Origin.X += v.shift.X
+	f.Origin.Y += v.shift.Y
+	return f
+}
+
+func (m *mounter) shownStyle(v *view) driver.ViewStyle {
+	if v.animated.Set != 0 {
+		return v.animated.Apply(v.style)
 	}
+	return v.style
+}
+
+func (m *mounter) pointerMatrix(v *view) driver.Matrix3D {
+	st := m.shownStyle(v)
+	f := m.shownFrame(v)
+	mat := st.Matrix(f.Size)
+	if p := v.parent; p != nil && v.kind != driver.KindModal {
+		at := f.Origin
+		if p.kind == driver.KindScroll {
+			at.X -= p.offset.X
+			at.Y -= p.offset.Y
+		}
+		mat = driver.ChildPerspective(m.shownStyle(p).ChildPerspective, p.frame.Size, at).Mul(mat)
+	}
+	return mat
+}
+
+func (m *mounter) surfacePoint(v *view, p driver.Point) (driver.Point, bool) {
+	if v.parent != nil && v.kind != driver.KindModal {
+		var ok bool
+		p, ok = m.surfacePoint(v.parent, p)
+		if !ok {
+			return driver.Point{}, false
+		}
+		if v.parent.kind == driver.KindScroll {
+			p.X += v.parent.offset.X
+			p.Y += v.parent.offset.Y
+		}
+	}
+	return driver.IntoView(m.shownFrame(v), m.pointerMatrix(v), p)
+}
+
+func (m *mounter) hasTransformedDescendant(v *view) bool {
+	for _, c := range v.children {
+		if c == nil || c.kind == driver.KindModal {
+			continue
+		}
+		st := m.shownStyle(c)
+		if st.Hidden {
+			continue
+		}
+		if st.Transform != (driver.Transform{}) || c.shift != (driver.Point{}) {
+			return true
+		}
+		if !st.Clip && c.kind != driver.KindScroll && m.hasTransformedDescendant(c) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *mounter) hitView(v *view, p driver.Point) *view {
+	if v == nil {
+		return nil
+	}
+	st := m.shownStyle(v)
+	if st.Hidden {
+		return nil
+	}
+	f := m.shownFrame(v)
+	local, ok := driver.IntoView(f, m.pointerMatrix(v), p)
+	if !ok {
+		return nil
+	}
+	area, transformed := v.overflow, v.transformedKids
+	if st.Clip || v.kind == driver.KindScroll {
+		area, transformed = driver.Bounds{}, false
+	} else if !transformed {
+		transformed = m.hasTransformedDescendant(v)
+	}
+	self, children := driver.ReachView(f.Size, &v.props, area, transformed, local)
+	if children {
+		childPoint := local
+		if v.kind == driver.KindScroll {
+			childPoint.X += v.offset.X
+			childPoint.Y += v.offset.Y
+		}
+		for i := len(v.children) - 1; i >= 0; i-- {
+			c := v.children[i]
+			if c.kind == driver.KindModal {
+				continue
+			}
+			if h := m.hitView(c, childPoint); h != nil {
+				return h
+			}
+		}
+	}
+	if self {
+		return v
+	}
+	return nil
+}
+
+func (m *mounter) hitAt(p driver.Point) *view {
+	for i := len(m.modals) - 1; i >= 0; i-- {
+		if h := m.hitView(m.modals[i], p); h != nil {
+			return h
+		}
+	}
+	return m.hitView(m.view(m.root), p)
+}
+
+func (m *mounter) hitIn(v *view, p driver.Point) *view {
+	if v == nil {
+		return nil
+	}
+	inParent := p
+	if v.parent != nil && v.kind != driver.KindModal {
+		var ok bool
+		inParent, ok = m.surfacePoint(v.parent, p)
+		if !ok {
+			return nil
+		}
+		if v.parent.kind == driver.KindScroll {
+			inParent.X += v.parent.offset.X
+			inParent.Y += v.parent.offset.Y
+		}
+	}
+	return m.hitView(v, inParent)
+}
+
+func (m *mounter) hitTarget(v *view, p driver.Point, multi bool) *view {
+	if v != nil {
+		if h := m.hitIn(v, p); h != nil {
+			return h
+		}
+	}
+	if v == nil || multi {
+		if h := m.hitAt(p); h != nil {
+			return h
+		}
+	}
+	return v
 }
 
 // movePan decides a finger's pan and moves it.

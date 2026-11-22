@@ -11,9 +11,6 @@ import (
 
 // TestTouchCoordinatesFollowTheCamera uses native pointer input on a target: the camera's bound values move the content without changing its layout.
 func TestTouchCoordinatesFollowTheCamera(t *testing.T) {
-	if nsgotest.Target() == "watchos_simulator" {
-		t.Skip("watchOS does not report OnTouch or responder events")
-	}
 	var state camera.State
 	type sample struct {
 		kind     string
@@ -93,9 +90,6 @@ func TestTouchCoordinatesFollowTheCamera(t *testing.T) {
 
 // TestTouchMovesFollowNestedBoundTransforms checks the entire responder sequence under a translated/scaled parent and a rotated child. There is no native pan recognizer here to move the content with the finger.
 func TestTouchMovesFollowNestedBoundTransforms(t *testing.T) {
-	if nsgotest.Target() == "watchos_simulator" {
-		t.Skip("watchOS does not report OnTouch or responder events")
-	}
 	var touches []core.Touch
 	var moves []core.ResponderEvent
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {

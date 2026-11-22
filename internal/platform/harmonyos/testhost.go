@@ -75,8 +75,10 @@ type testSurface struct {
 
 // touch reports one finger at at.
 func (t *testSurface) touch(phase driver.GesturePhase, at driver.Point, mods driver.Modifiers) {
-	t.s.dispatch(driver.Event{Kind: driver.EventTouch, Phase: phase, Modifiers: mods, Time: time.Since(t.epoch),
-		Touches: []driver.Touch{{ID: 0, Position: at, PagePosition: at, Changed: true}}})
+	ev := driver.Event{Kind: driver.EventTouch, Phase: phase, Modifiers: mods, Time: time.Since(t.epoch),
+		Touches: []driver.Touch{{ID: 0, Position: at, PagePosition: at, Changed: true}}}
+	t.s.m.captureTouches(&ev)
+	t.s.dispatch(ev)
 }
 
 func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Modifiers) error {

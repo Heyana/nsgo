@@ -25,6 +25,7 @@
   onRefresherRefresh="onRefresh"
   onScroll="onScroll"
   onTouchStart="onDragStart"
+  onTouchMove="onTouch"
   onTouchEnd="onDragEnd"
   onTouchCancel="onDragEnd"
 >
@@ -32,7 +33,16 @@
     <nsgo-node a:for="{{node.c}}" a:key="id" node="{{item}}" onNsgo="onNsgo" />
   </view>
 </scroll-view>
-<view a:elif="{{node.k === 'input'}}" class="n" style="{{m.box(node)}}" aria-hidden="{{node.ax && node.ax.hd ? 'true' : ''}}">
+<view
+  a:elif="{{node.k === 'input'}}"
+  class="n"
+  style="{{m.box(node)}}"
+  onTouchStart="onTouch"
+  onTouchMove="onTouch"
+  onTouchEnd="onTouch"
+  onTouchCancel="onTouch"
+  aria-hidden="{{node.ax && node.ax.hd ? 'true' : ''}}"
+>
   <block a:if="{{node.fd}}">
     <textarea
       a:if="{{node.fd.ml}}"

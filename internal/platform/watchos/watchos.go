@@ -146,7 +146,9 @@ type surface struct {
 	// focused is the field the system's text input edits.
 	focused *view
 
-	touch touchState
+	touch   touchState
+	fingers responderTouches
+	blocked []*view // the scroll views a touch responder locked (ItemBlockNative)
 }
 
 func init() {
@@ -440,6 +442,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemAnimation:
 			s.animator.Apply(it.Animation)
 			continue
+		case driver.ItemBlockNative:
+			s.blockNative(s.view(it.ID))
+			continue
 		case driver.ItemAlert:
 			s.alert(it.Alert)
 			continue
@@ -685,6 +690,8 @@ func (s *surface) delete(v *view) {
 	if s.touch.pressed == v {
 		s.touch.pressed = nil
 	}
+	s.touch.locked = dropView(s.touch.locked, v)
+	s.blocked = dropView(s.blocked, v)
 	if s.focused == v {
 		s.focused = nil
 	}
@@ -696,6 +703,7 @@ func (v *view) report(e driver.Event) {
 	if v.events.Has(e.Kind) && !v.deleted {
 		e.ID = v.id
 		if v.s.animator.Gesture(&e) {
+			v.s.applyAnimated()
 			v.s.tick(true)
 		}
 		v.s.engine.Dispatch(e)
@@ -906,8 +914,9 @@ func hostScroll(id uint32, x, y float64, phase uint8) {
 	v.phase = phase
 	switch {
 	case phase == phaseDragging && was != phaseDragging:
-		// A drag that scrolls is no press.
+		// A drag that scrolls is no press, and cancels touches unless a responder blocked it.
 		s.cancelPress()
+		s.touchesTaken()
 		if was == phaseGliding {
 			v.scrollEvent(driver.EventMomentumEnd)
 		}

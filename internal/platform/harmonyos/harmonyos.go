@@ -86,6 +86,7 @@ func newSurface(opts Options) *surface {
 	s.anim = driver.NewAnimator(func(ev driver.Event) { s.engine.Dispatch(ev) })
 	s.clock = driver.NewClock(s.anim)
 	s.m.anim = s.anim
+	s.m.scene.anim = s.anim
 	s.m.frame = func() { s.frame(time.Time{}) }
 	s.env = s.environment()
 	s.size0 = s.size()
@@ -126,8 +127,8 @@ func (s *surface) install() {
 
 // touches reads what the page reported about the fingers on the surface:
 // the phase, the time in milliseconds and each finger's id, position and
-// whether the event is about it. The engine finds the views under them from
-// its frames.
+// whether the event is about it, then snapshots the current presentation
+// targets and local coordinates before dispatching to the engine.
 func (s *surface) touches(args []js.Value) {
 	if len(args) < 3 {
 		return
@@ -148,6 +149,7 @@ func (s *surface) touches(args []js.Value) {
 		p := driver.Point{X: driver.Points(f.X), Y: driver.Points(f.Y)}
 		ev.Touches = append(ev.Touches, driver.Touch{ID: f.ID, Position: p, PagePosition: p, Changed: f.Changed})
 	}
+	s.m.captureTouches(&ev)
 	s.dispatch(ev)
 }
 

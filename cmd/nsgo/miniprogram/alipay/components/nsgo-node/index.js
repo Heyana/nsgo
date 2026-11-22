@@ -8,7 +8,12 @@
 // The phases of a touch event, as Go numbers them.
 const PHASES = { touchstart: 0, touchmove: 1, touchend: 2, touchcancel: 3 }
 
-const fingers = (list) => Array.prototype.map.call(list || [], (t) => [t.identifier, t.pageX, t.pageY])
+const fingers = (list) =>
+  Array.prototype.map.call(list || [], (t) => [
+    t.identifier,
+    t.pageX != null ? t.pageX : t.clientX,
+    t.pageY != null ? t.pageY : t.clientY,
+  ])
 
 // The time of the event of each kind a view kept last, so the views it
 // bubbles through further out leave it.
@@ -72,11 +77,13 @@ Component({
     },
     // Alipay's scroll views report no drags: the finger going down and up
     // on one stands for them.
-    onDragStart() {
+    onDragStart(e) {
       this.send('dragstart', this.id())
+      this.onTouch(e)
     },
-    onDragEnd() {
+    onDragEnd(e) {
       this.send('dragend', this.id())
+      this.onTouch(e)
     },
     onRefresh() {
       this.send('refresh', this.id())

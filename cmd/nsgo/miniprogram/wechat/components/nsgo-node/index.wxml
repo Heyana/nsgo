@@ -32,12 +32,28 @@
   bindscroll="onScroll"
   binddragstart="onDragStart"
   binddragend="onDragEnd"
+  bindtouchstart="{{node.tf ? 'onTouch' : ''}}"
+  bindtouchmove="{{node.tf && !node.tc ? 'onTouch' : ''}}"
+  catchtouchmove="{{node.tc ? 'onTouch' : ''}}"
+  bindtouchend="{{node.tf ? 'onTouch' : ''}}"
+  bindtouchcancel="{{node.tf ? 'onTouch' : ''}}"
 >
   <view class="content" style="width:{{node.cs ? node.cs[0] : node.f[2]}}px;height:{{node.cs ? node.cs[1] : node.f[3]}}px">
     <nsgo-node wx:for="{{node.c}}" wx:key="id" node="{{item}}" />
   </view>
 </scroll-view>
-<view wx:elif="{{node.k === 'input'}}" id="n" class="n" style="{{m.box(node)}}" aria-hidden="{{node.ax && node.ax.hd ? 'true' : ''}}">
+<view
+  wx:elif="{{node.k === 'input'}}"
+  id="n"
+  class="n"
+  style="{{m.box(node)}}"
+  bindtouchstart="{{node.tf ? 'onTouch' : ''}}"
+  bindtouchmove="{{node.tf && !node.tc ? 'onTouch' : ''}}"
+  catchtouchmove="{{node.tc ? 'onTouch' : ''}}"
+  bindtouchend="{{node.tf ? 'onTouch' : ''}}"
+  bindtouchcancel="{{node.tf ? 'onTouch' : ''}}"
+  aria-hidden="{{node.ax && node.ax.hd ? 'true' : ''}}"
+>
   <block wx:if="{{node.fd}}">
     <textarea
       wx:if="{{node.fd.ml}}"

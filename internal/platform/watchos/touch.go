@@ -4,6 +4,7 @@ package watchos
 
 import (
 	"math"
+	"slices"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -68,6 +69,7 @@ func pressable(v *view) bool {
 }
 
 func (s *surface) touchDown(at driver.Point, t float64) {
+	s.unlockScrolls()
 	g := &s.touch
 	*g = touchState{down: true, start: at, last: at, lastTime: t, long: g.long + 1}
 	root := s.view(s.root)
@@ -83,6 +85,7 @@ func (s *surface) touchDown(at driver.Point, t float64) {
 		s.waitLongPress(v)
 	}
 	g.pan = hit(root, at, func(v *view) bool { return v.events.Has(driver.EventPan) })
+	s.dispatchTouch(s.fingers.down(s.listensTouches(), at, t, s.touchHit, s.touchParent, s.touchLocal))
 }
 
 func (s *surface) touchMove(at driver.Point, t float64) {
@@ -90,6 +93,7 @@ func (s *surface) touchMove(at driver.Point, t float64) {
 	if !g.down {
 		return
 	}
+	s.dispatchTouch(s.fingers.move(at, t, s.touchHit, s.touchParent, s.touchLocal))
 	d := driver.Point{X: at.X - g.start.X, Y: at.Y - g.start.Y}
 	if math.Hypot(float64(d.X), float64(d.Y)) > longPressSlop {
 		g.long++
@@ -138,6 +142,7 @@ func (s *surface) touchUp(at driver.Point, t float64, cancelled bool) {
 		p.report(driver.Event{Kind: driver.EventPan, Phase: phase, Point: d, Position: s.local(p, at), PagePosition: at, Velocity: velocity})
 	}
 	s.unlockScrolls()
+	s.dispatchTouch(s.fingers.up(at, t, cancelled, s.touchHit, s.touchParent, s.touchLocal))
 	v := g.pressed
 	g.pressed, g.pan, g.panning = nil, nil, false
 	if v == nil || v.deleted {
@@ -152,6 +157,59 @@ func (s *surface) touchUp(at driver.Point, t float64, cancelled bool) {
 		e.Point, e.Index = p, v.indexAt(p)
 		v.pressEvent(driver.EventPress, e)
 	}
+}
+
+// touchesTaken cancels the active EventTouch when a native scroll view starts
+// dragging without a responder blocking it.
+func (s *surface) touchesTaken() {
+	if len(s.blocked) > 0 {
+		return
+	}
+	s.dispatchTouch(s.fingers.cancel(s.touchHit, s.touchParent, s.touchLocal))
+}
+
+func (s *surface) listensTouches() bool {
+	for _, v := range s.views {
+		if v != nil && !v.deleted && v.events.Has(driver.EventTouch) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *surface) dispatchTouch(ev driver.Event, ok bool) {
+	if ok && s.engine != nil {
+		s.engine.Dispatch(ev)
+	}
+}
+
+func (s *surface) touchHit(p driver.Point) driver.NodeID {
+	if root := s.view(s.root); root != nil {
+		if v := hit(root, p, func(*view) bool { return true }); v != nil {
+			return v.id
+		}
+	}
+	return 0
+}
+
+func (s *surface) touchParent(id driver.NodeID) (driver.NodeID, driver.EventMask) {
+	v := s.view(id)
+	if v == nil || v.deleted {
+		return 0, 0
+	}
+	var up driver.NodeID
+	if v.parent != nil {
+		up = v.parent.id
+	}
+	return up, v.events
+}
+
+func (s *surface) touchLocal(id driver.NodeID, p driver.Point) (driver.Point, bool) {
+	v := s.view(id)
+	if v == nil || v.deleted {
+		return driver.Point{}, false
+	}
+	return s.local(v, p), true
 }
 
 // cancelPress ends the press the touch began, as a scroll or a pan takes
@@ -219,22 +277,56 @@ func (s *surface) pressOutside(root *view, at driver.Point) {
 // lockScrolls holds the scroll views around v still while its pan runs.
 func (s *surface) lockScrolls(v *view) {
 	for p := v.parent; p != nil; p = p.parent {
-		if p.kind == driver.KindScroll {
+		if p.kind == driver.KindScroll && !slices.Contains(s.touch.locked, p) {
+			was := slices.Contains(s.blocked, p)
 			s.touch.locked = append(s.touch.locked, p)
-			s.w.op(opLock, p.id)
-			s.w.flag(true)
+			if !was {
+				s.w.op(opLock, p.id)
+				s.w.flag(true)
+			}
 		}
 	}
 }
 
 func (s *surface) unlockScrolls() {
 	for _, p := range s.touch.locked {
-		if !p.deleted {
+		if !p.deleted && !slices.Contains(s.blocked, p) {
 			s.w.op(opLock, p.id)
 			s.w.flag(false)
 		}
 	}
 	s.touch.locked = nil
+}
+
+// blockNative locks the scroll views around v while v holds the touch
+// responder, or unlocks them when v is nil.
+func (s *surface) blockNative(v *view) {
+	prev := s.blocked
+	s.blocked = nil
+	if v != nil && !v.deleted {
+		for p := v.parent; p != nil; p = p.parent {
+			if p.kind == driver.KindScroll && !slices.Contains(s.blocked, p) {
+				s.blocked = append(s.blocked, p)
+				if !slices.Contains(prev, p) && !slices.Contains(s.touch.locked, p) {
+					s.w.op(opLock, p.id)
+					s.w.flag(true)
+				}
+			}
+		}
+	}
+	for _, p := range prev {
+		if !p.deleted && !slices.Contains(s.blocked, p) && !slices.Contains(s.touch.locked, p) {
+			s.w.op(opLock, p.id)
+			s.w.flag(false)
+		}
+	}
+}
+
+func dropView(list []*view, v *view) []*view {
+	if i := slices.Index(list, v); i >= 0 {
+		return slices.Delete(list, i, i+1)
+	}
+	return list
 }
 
 // hit returns the innermost view under p that match takes, p in the
@@ -248,7 +340,11 @@ func hit(v *view, p driver.Point, match func(*view) bool) *view {
 	if !mapped {
 		return nil
 	}
-	self, children := driver.ReachView(f.Size, &v.props, v.overflow, v.transformedKids, local)
+	area, transformed := v.overflow, v.transformedKids
+	if v.shownStyle().Clip || v.kind == driver.KindScroll {
+		area, transformed = driver.Bounds{}, false
+	}
+	self, children := driver.ReachView(f.Size, &v.props, area, transformed, local)
 	if children {
 		local.X += v.offset.X
 		local.Y += v.offset.Y
@@ -306,15 +402,7 @@ func (v *view) indexAt(p driver.Point) int {
 
 // pointerMatrix uses exactly the affine transform sent to SwiftUI.
 func (v *view) pointerMatrix() driver.Matrix3D {
-	st, f := v.shownStyle(), v.shownFrame()
 	k, _ := v.keyframe()
-	m := k.Matrix(f.Size).Mul(st.Matrix(f.Size))
 	_, scale := v.layoutPart()
-	if scale != 1 {
-		m = driver.Transform{Scale: float32(scale)}.Matrix(driver.Point{X: f.Size.Width / 2, Y: f.Size.Height / 2}).Mul(m)
-	}
-	if _, _, _, _, _, _, ok := m.Affine(); !ok {
-		return driver.Identity3D
-	}
-	return m
+	return affinePointerMatrix(v.shownStyle(), v.shownFrame(), k, scale)
 }

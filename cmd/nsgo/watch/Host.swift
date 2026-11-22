@@ -591,6 +591,8 @@ struct Root: View {
 	@Environment(\.scenePhase) private var phase
 	@Environment(\.dynamicTypeSize) private var typeSize
 	@State private var touching = false
+	@State private var lastTouch = CGPoint.zero
+	@GestureState private var gestureActive = false
 
 	var body: some View {
 		GeometryReader { geo in
@@ -602,14 +604,23 @@ struct Root: View {
 			.contentShape(Rectangle())
 			.simultaneousGesture(
 				DragGesture(minimumDistance: 0, coordinateSpace: .named("nsgo"))
+					.updating($gestureActive) { _, state, _ in state = true }
 					.onChanged { g in
+						lastTouch = g.location
 						bridge?.touch(touching ? 1 : 0, g.location.x, g.location.y, g.time.timeIntervalSinceReferenceDate)
 						touching = true
 					}
 					.onEnded { g in
 						touching = false
+						lastTouch = g.location
 						bridge?.touch(2, g.location.x, g.location.y, g.time.timeIntervalSinceReferenceDate)
 					})
+			.onChange(of: gestureActive) { _, active in
+				if !active && touching {
+					touching = false
+					bridge?.touch(3, lastTouch.x, lastTouch.y, Date.timeIntervalSinceReferenceDate)
+				}
+			}
 			.onAppear { report(geo) }
 			.onChange(of: geo.size) { report(geo) }
 			.onChange(of: scheme) { report(geo) }
