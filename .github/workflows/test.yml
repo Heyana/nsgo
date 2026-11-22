@@ -347,8 +347,8 @@ jobs:
 
   apple-simulator:
     needs: changes
-    # Skips a pull request that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
-    if: ${{ !cancelled() && needs.changes.outputs.apple != 'false' }}
+    # Runs only in the merge queue and on push, never on a pull request: the organization has one depot-macos-15 runner, and pull request runs queued ahead of merge groups made every group time out. A skipped job counts as passed, so the pull request still reaches the queue, and an Apple failure there removes it from the batch. In the queue it still skips a change that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.apple != 'false' }}
     # Simulator packages are arm64; the Intel desktop job cannot run them.
     runs-on: depot-macos-15
     timeout-minutes: 40
