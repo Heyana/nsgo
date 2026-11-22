@@ -954,12 +954,17 @@ func (e *Engine) DispatchBeforeFrame(ev driver.Event) {
 
 // DispatchKeyDown reports EventKeyDown ev and waits for the engine to run the view's OnKeyDown, after what is queued before it, returning whether it consumed the key: the platform calls it on its main thread before matching the keymap, which a consumed key skips. It returns false once the engine has ended. It must not be called from the engine goroutine.
 func (e *Engine) DispatchKeyDown(ev driver.Event) bool {
+	return <-e.DispatchKeyDownAsync(ev)
+}
+
+// DispatchKeyDownAsync queues a down before returning its buffered answer. A platform with an asynchronous transport can keep reading other messages, including native text replies and the matching key up, while the handler runs.
+func (e *Engine) DispatchKeyDownAsync(ev driver.Event) <-chan bool {
 	if e.event != nil {
 		e.event(e.surface, ev)
 	}
 	request := &keyDownRequest{event: ev, done: make(chan bool, 1)}
 	e.push(message{surface: e.surface, keyDown: request})
-	return <-request.done
+	return request.done
 }
 
 // InputModality reports what the user gives the surface input with

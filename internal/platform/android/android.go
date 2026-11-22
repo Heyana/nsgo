@@ -166,6 +166,8 @@ const (
 	extDiscovery = 10
 	// extSurfaceReset tells Java that a full native tree of the surface's attachment generation follows: surface ID and generation (overlay.go, ViewAttachment.java).
 	extSurfaceReset = 11
+	// extKeyReply answers a hardware key down that msgPhysicalKey asked about: surface, request and whether the focused view's OnKeyDown consumed it (keyboard.go, HardwareKeys.java).
+	extKeyReply = 12
 	// extPlayUpdate asks Google Play to check and offer its immediate update flow.
 	extPlayUpdate = 13
 	// extDownload carries a process-wide background download command as JSON, which NsgoEngine hands to BackgroundDownloadService.

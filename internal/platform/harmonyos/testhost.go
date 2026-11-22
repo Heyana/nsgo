@@ -193,6 +193,22 @@ func (t *testSurface) SelectRange(selection driver.TextRange) (driver.TextRange,
 func (t *testSurface) Compose(string) error { return testhost.ErrNoInputMethod }
 func (t *testSurface) Commit(string) error  { return testhost.ErrNoInputMethod }
 
+func (t *testSurface) KeyDown(key string) error { return t.holdKey(key, 0) }
+func (t *testSurface) KeyUp(key string) error   { return t.holdKey(key, 1) }
+
+func (t *testSurface) holdKey(key string, action int) error {
+	key = driver.NormalizeKey(key)
+	if key == "mod" {
+		key = "ctrl"
+	}
+	code, ok := keyCode[key]
+	if !ok {
+		return errors.New("unknown key " + key)
+	}
+	t.s.m.key(code, action, t.s.m.keyModifiers(0), key)
+	return nil
+}
+
 // Key presses a key the keymap names, as a keyboard does.
 func (t *testSurface) Key(key string) error {
 	mods := 0
@@ -315,4 +331,9 @@ func (t *testSurface) SetEnvironment(env driver.Environment) error {
 	return nil
 }
 
-func (t *testSurface) Sync() { t.s.engine.Sync() }
+func (t *testSurface) Sync() {
+	for t.s.m.keyRunning {
+		time.Sleep(time.Millisecond)
+	}
+	t.s.engine.Sync()
+}

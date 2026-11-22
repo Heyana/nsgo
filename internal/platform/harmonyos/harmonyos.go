@@ -225,6 +225,9 @@ func (s *surface) environment() driver.Environment {
 func (s *surface) changed() {
 	env := s.environment()
 	if !env.Equal(s.env) {
+		if env.Lifecycle != driver.LifecycleActive && s.env.Lifecycle == driver.LifecycleActive {
+			s.m.key(0, 2, 0, "")
+		}
 		s.env = env
 		s.engine.SetEnvironment(env)
 		if s.m != nil {

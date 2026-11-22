@@ -42,9 +42,14 @@ type mounter struct {
 	// focus without duplicating echoed page events.
 	focused       driver.NodeID
 	reportedFocus driver.NodeID
-	// lastKey is the last key pressed without a release between, so its
-	// auto-repeats are told apart from a fresh press.
-	lastKey driver.NodeID
+	// nativeFocused changes only with the page's focus reports, not an ItemFocus request the current host cannot honor on a plain view.
+	nativeFocused driver.NodeID
+	// pressed, held, keyQueue and keyRunning are the hardware keys down, those reported held to the views that heard them, and the keys waiting while one runs (keyboard.go); heldKeys says the app follows held keys (core.KeysDown).
+	pressed    map[driver.NodeID]bool
+	heldKeys   bool
+	held       map[driver.NodeID]harmonyHeldKey
+	keyQueue   []harmonyKey
+	keyRunning bool
 	// pending holds modal lifecycle events queued during a batch and dispatched once the batch's ops are flushed to the render layer.
 	pending []driver.Event
 	// packedAtlas says the host draws an atlas from one canvas op.
@@ -68,6 +73,7 @@ type view struct {
 	value     string
 	selection driver.TextRange
 	selected  bool // a native selection callback has supplied selection
+	events    driver.EventMask
 	// edits counts the user's edits, so a value the engine computed from an
 	// older edit is dropped instead of overwriting what was typed since.
 	edits   uint32
@@ -508,7 +514,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		m.o.op("match", it.ID).num(float64(it.Before))
 	case driver.ItemKeymap:
 		m.keys = append([]driver.KeyBinding(nil), it.Keys...)
-		m.lastKey = 0
+		m.heldKeys = it.HeldKeys
 	case driver.ItemAppearance:
 		m.o.op("app", 0).num(float64(it.Appearance))
 	case driver.ItemStatusBar:
@@ -626,6 +632,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 	case driver.ItemEvents:
 		bits := it.Events
 		if v := m.views[it.ID]; v != nil {
+			v.events = bits
 			// A field takes a press to focus even when the app asks for
 			// none, as ArkUI's own hit test does.
 			v.pressable = bits.Has(driver.EventPress) || v.kind == driver.KindInput || v.kind == driver.KindWeb
@@ -873,6 +880,7 @@ func (m *mounter) reportFocus(id driver.NodeID) {
 		m.s.dispatch(driver.Event{Kind: driver.EventBlur, ID: prev})
 	}
 	m.focused = id
+	m.nativeFocused = id
 	if m.reportedFocus == id {
 		return
 	}
@@ -884,6 +892,9 @@ func (m *mounter) reportFocus(id driver.NodeID) {
 func (m *mounter) reportBlur(id driver.NodeID) {
 	if m.focused == id {
 		m.focused = 0
+	}
+	if m.nativeFocused == id {
+		m.nativeFocused = 0
 	}
 	if m.reportedFocus != id {
 		return
@@ -1002,7 +1013,11 @@ func (m *mounter) press(id driver.NodeID, kind driver.EventKind, page driver.Poi
 // editing says whether a text input or a web view has the keyboard focus,
 // which keeps a shortcut from firing over a key the field edits.
 func (m *mounter) editing() bool {
-	v := m.views[m.focused]
+	id := m.nativeFocused
+	if id == 0 {
+		id = m.focused
+	}
+	v := m.views[id]
 	return v != nil && (v.kind == driver.KindInput || v.kind == driver.KindWeb)
 }
 
@@ -1010,19 +1025,26 @@ func (m *mounter) editing() bool {
 // keymap, as Android's dispatchKeyEvent does: a press names the key with
 // and without "mod" for Control, and FindKey decides what fires.
 func (m *mounter) key(code driver.NodeID, action, mods int, text string) {
-	if action == 1 { // a release clears the held key
-		m.lastKey = 0
+	key := harmonyKey{code: code, action: action, mods: mods, text: text, editing: m.editing(), observe: m.heldKeys}
+	if v := m.views[m.nativeFocused]; v != nil && v.events.Has(driver.EventKeyDown) {
+		key.target = v.id
+	}
+	m.keyQueue = append(m.keyQueue, key)
+	if m.keyRunning {
 		return
 	}
-	if len(m.keys) == 0 {
-		return
-	}
-	repeat := m.lastKey == code
-	m.lastKey = code
-	name := keyName(code, text)
-	if name == "" {
-		return
-	}
+	m.keyRunning = true
+	go func() {
+		for len(m.keyQueue) > 0 {
+			key := m.keyQueue[0]
+			m.keyQueue = m.keyQueue[1:]
+			m.dispatchKey(key)
+		}
+		m.keyRunning = false
+	}()
+}
+
+func (m *mounter) matchKey(name string, mods int, repeat, editing bool) {
 	rest := ""
 	if mods&2 != 0 {
 		rest += "alt+"
@@ -1040,7 +1062,7 @@ func (m *mounter) key(code driver.NodeID, action, mods int, text string) {
 	}
 	// The page knows only whether a text input has the keyboard focus, so it reports KeyUseText alone, as FindKey allows.
 	var focus driver.KeyUse
-	if m.editing() {
+	if editing {
 		focus = driver.KeyUseText
 	}
 	if id, _ := driver.FindKey(m.keys, names, focus, repeat); id != 0 {
@@ -1060,6 +1082,15 @@ func keyName(code driver.NodeID, text string) string {
 		return fmt.Sprintf("f%d", int(code)-2089)
 	}
 	switch code {
+	// OpenHarmony's InputKit KeyCode enum; Linux fallback values are below.
+	case 2045, 2046:
+		return "alt"
+	case 2047, 2048:
+		return "shift"
+	case 2072, 2073:
+		return "ctrl"
+	case 2076, 2077:
+		return "meta"
 	case 2012:
 		return "up"
 	case 2013:
@@ -1102,6 +1133,7 @@ func keyName(code driver.NodeID, text string) string {
 // linuxKeys are the Linux input event codes the emulator's uinput injects;
 // a real keyboard reports OHOS KeyCodes instead.
 var linuxKeys = map[driver.NodeID]string{
+	29: "ctrl", 97: "ctrl", 42: "shift", 54: "shift", 56: "alt", 100: "alt", 125: "meta", 126: "meta",
 	1: "escape", 2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8", 10: "9", 11: "0",
 	14: "backspace", 15: "tab", 16: "q", 17: "w", 18: "e", 19: "r", 20: "t",
 	21: "y", 22: "u", 23: "i", 24: "o", 25: "p", 28: "enter",

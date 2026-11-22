@@ -60,6 +60,7 @@ final class Protocol {
                 return true;
             case EXT_DISCOVERY:
             case EXT_SURFACE_RESET:
+            case EXT_KEY_REPLY:
             case EXT_PLAY_UPDATE:
                 return true;
             case EXT_ASSET_READ:
@@ -152,6 +153,8 @@ final class Protocol {
     static final int CAP_AUTH_SESSION = 2;
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
+    /** Answers a PHYSICAL_KEY down that asked: surface, request and whether the focused view consumed it (HardwareKeys). */
+    static final int EXT_KEY_REPLY = 12;
     /** Asks Google Play to offer an update: surface and request count. */
     static final int EXT_PLAY_UPDATE = 13;
     static final int CAP_PLAY_UPDATES = 128;
@@ -226,7 +229,7 @@ final class Protocol {
     static final int TEXT_REPLY = 27;
     /** Frame timestamp, display period, app UI work in nanoseconds, and whether the app changed. */
     static final int PERF_FRAME = 28;
-    /** A hardware key: surface, view, scan code, Android key code, flags and name. */
+    /** A hardware key: surface, view, scan code, Android key code, flags and name, then, for a down the view may consume, the request EXT_KEY_REPLY answers (0 or absent: none). */
     static final int PHYSICAL_KEY = 30;
     /** Reports a resolved service, its removal or an error (discovery.go). */
     static final int DISCOVERY_REPLY = 40;

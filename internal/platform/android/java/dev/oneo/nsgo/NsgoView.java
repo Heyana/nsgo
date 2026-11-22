@@ -321,6 +321,54 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private int[] keyFlags = new int[0];
     /** The keymap's binding IDs, which EventKey reports. */
     private int[] keyIds = new int[0];
+    /** Set while a key Go did not consume re-enters the Activity's dispatch, so that no NSGo view asks Go about that same key again. UI thread only. */
+    private static boolean deliveringHardwareContinuation;
+    private final HardwareKeys hardwareKeys = new HardwareKeys(new HardwareKeys.Host() {
+        @Override public int target() {
+            if ((focusKeyUse() & Protocol.KEY_USE_TEXT) != 0) return -1;
+            Node node = byView.get(findFocus());
+            return node != null && node.has(Protocol.EVENT_KEY) ? node.id : 0;
+        }
+        @Override public boolean heldKeys() { return reportHeldKeys; }
+        @Override public void send(int request, int target, HardwareKeys.Event event) {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            try {
+                out.writeInt(surface);
+                out.writeInt(target);
+                out.writeInt(event.scan);
+                out.writeInt(event.key);
+                out.writeByte(event.modifiers | (!event.down ? 16 : 0) | (event.repeat ? 32 : 0));
+                Protocol.writeString(out, event.name);
+                // Appended, so that Go reads a report without it as before.
+                if (request != 0) out.writeInt(request);
+            } catch (IOException impossible) {
+                throw new AssertionError(impossible);
+            }
+            write(Protocol.PHYSICAL_KEY, bytes.toByteArray());
+        }
+        @Override public void fallback(HardwareKeys.Event event) {
+            KeyEvent key = (KeyEvent) event.nativeEvent;
+            Activity activity = activity();
+            // The key passed the test input gate as it arrived; its continuation may come after the scripted step that sent it.
+            inputGate.enterScripted();
+            try {
+                if (surface == 0 && activity != null) {
+                    deliveringHardwareContinuation = true;
+                    try { activity.dispatchKeyEvent(key); }
+                    finally { deliveringHardwareContinuation = false; }
+                } else {
+                    continueHardwareKey(key);
+                }
+            } finally {
+                inputGate.leaveScripted();
+            }
+        }
+        @Override public void schedule(Runnable timeout) { ui.postDelayed(timeout, 2000); }
+        @Override public void unschedule(Runnable timeout) { ui.removeCallbacks(timeout); }
+    });
+
+    void whenKeysIdle(Runnable action) { hardwareKeys.whenIdle(action); }
     private final Set<Integer> consumedKeys = new HashSet<>();
     private int statusBarStyle;
     private boolean statusBarHidden, immersive, wasImmersive;
@@ -699,7 +747,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (!hasFocus) {
-            releasePhysicalKeys();
+            hardwareKeys.cancel();
             activationKeys.clear();
         }
         environment();
@@ -736,7 +784,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     @Override
     protected void onDetachedFromWindow() {
-        releasePhysicalKeys();
+        hardwareKeys.cancel();
         pauseAudio();
         hapticPatterns.stop();
         getViewTreeObserver().removeOnPreDrawListener(drawEffects);
@@ -1077,6 +1125,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private void release() {
         if (audio != null) { audio.close(); audio = null; }
         AuthSession.dispose(this);
+        hardwareKeys.cancel();
         measuring = false;
         if (perfPanel != null) {
             getOverlay().remove(perfPanel);
@@ -1352,6 +1401,16 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                             write(Protocol.PLAY_UPDATE_REPLY, bytes.toByteArray());
                         } catch (IOException impossible) { throw new AssertionError(impossible); }
                     });
+                });
+                break;
+            }
+
+            case Protocol.EXT_KEY_REPLY: {
+                int from = message.readInt(), request = message.readInt();
+                boolean consumed = message.readUnsignedByte() != 0;
+                ui.post(() -> {
+                    NsgoView view = from == surface ? this : overlays == null ? null : overlays.view(from);
+                    if (view != null) view.hardwareKeys.reply(request, consumed);
                 });
                 break;
             }
@@ -5599,8 +5658,42 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         mouse.keyEvent(e);
         // A key the window delivers is the keyboard's input. An IME's action or committed Return, which a field offers to keyBinding, leaves the modality, as a software Return does on iOS.
         if (e.getAction() == KeyEvent.ACTION_DOWN && !KeyEvent.isModifierKey(e.getKeyCode())) modality(Protocol.MODALITY_KEYBOARD);
-        physicalKey(e);
-        return keyBinding(e) || activateKey(e) || super.dispatchKeyEvent(e);
+        if (!deliveringHardwareContinuation && e.isFromSource(android.view.InputDevice.SOURCE_KEYBOARD)
+                && (e.getAction() == KeyEvent.ACTION_DOWN || e.getAction() == KeyEvent.ACTION_UP)) {
+            int scan = e.getScanCode(), code = e.getKeyCode();
+            long identity = ((long) e.getDeviceId() << 32) | (scan != 0 ? scan : 0x10000 | code);
+            HardwareKeys.Event key = new HardwareKeys.Event(identity, scan, code, physicalKeyName(e), modifiers(e.getMetaState()),
+                    e.getAction() == KeyEvent.ACTION_DOWN, e.getRepeatCount() > 0, new KeyEvent(e));
+            if (hardwareKeys.dispatch(key)) return true;
+        }
+        return continueHardwareKey(e);
+    }
+
+    private boolean continueHardwareKey(KeyEvent event) {
+        if (keyBinding(event) || activateKey(event) || super.dispatchKeyEvent(event)) return true;
+        // ViewRoot searches for the next focus after an unhandled key; a key that waited for Go's answer comes back through the Activity after that dispatch has ended, so it searches here, with Android's own focus search.
+        if (deliveringHardwareContinuation && event.getAction() == KeyEvent.ACTION_DOWN &&
+                !event.isCtrlPressed() && !event.isAltPressed() && !event.isMetaPressed()) {
+            int direction = 0;
+            switch (event.getKeyCode()) {
+                case KeyEvent.KEYCODE_TAB: direction = event.isShiftPressed() ? View.FOCUS_BACKWARD : View.FOCUS_FORWARD; break;
+                case KeyEvent.KEYCODE_DPAD_LEFT: if (!event.isShiftPressed()) direction = View.FOCUS_LEFT; break;
+                case KeyEvent.KEYCODE_DPAD_RIGHT: if (!event.isShiftPressed()) direction = View.FOCUS_RIGHT; break;
+                case KeyEvent.KEYCODE_DPAD_UP: if (!event.isShiftPressed()) direction = View.FOCUS_UP; break;
+                case KeyEvent.KEYCODE_DPAD_DOWN: if (!event.isShiftPressed()) direction = View.FOCUS_DOWN; break;
+                default: break;
+            }
+            if (direction != 0) {
+                View focused = findFocus();
+                // Real hardware leaves touch mode before dispatch; a delayed continuation, and the test keyboard, must leave it before the search, or Android filters out the other plain controls.
+                if (focused != null && focused.isInTouchMode()) focused.requestFocusFromTouch();
+                View next = (focused == null ? this : focused).focusSearch(direction);
+                if (next != null && next != focused) {
+                    return next.isInTouchMode() ? next.requestFocusFromTouch() : next.requestFocus(direction);
+                }
+            }
+        }
+        return false;
     }
 
     @Override
@@ -5616,55 +5709,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         return super.dispatchGenericMotionEvent(e);
     }
 
-    private record PhysicalKey(int id, int scan, int key, String name) {}
-
+    /** Whether the app follows held keys (core.KeysDown), from ItemKeymap. */
     private boolean reportHeldKeys;
-    private final java.util.HashMap<Long, PhysicalKey> heldPhysicalKeys = new java.util.HashMap<>();
-
-    private void physicalKey(KeyEvent e) {
-        if (!e.isFromSource(android.view.InputDevice.SOURCE_KEYBOARD)) return;
-        int scan = e.getScanCode(), key = e.getKeyCode();
-        long identity = ((long) e.getDeviceId() << 32) | (scan != 0 ? scan : 0x10000 | key);
-        int mods = (e.isCtrlPressed() ? 1 : 0) | (e.isAltPressed() ? 2 : 0)
-                | (e.isShiftPressed() ? 4 : 0) | (e.isMetaPressed() ? 8 : 0);
-        if (e.getAction() == KeyEvent.ACTION_UP) {
-            PhysicalKey held = heldPhysicalKeys.remove(identity);
-            if (held != null) reportPhysicalKey(held, mods | 16);
-            return;
-        }
-        if (e.getAction() != KeyEvent.ACTION_DOWN || (focusKeyUse() & Protocol.KEY_USE_TEXT) != 0) return;
-        Node focused = byView.get(findFocus());
-        int id = focused != null && focused.has(Protocol.EVENT_KEY) ? focused.id : 0;
-        if (id == 0 && !reportHeldKeys) return;
-        String name = physicalKeyName(e);
-        PhysicalKey current = new PhysicalKey(id, scan, key, name);
-        boolean repeat = e.getRepeatCount() != 0;
-        PhysicalKey previous = heldPhysicalKeys.get(identity);
-        if (previous != null && !repeat) reportPhysicalKey(previous, mods | 16);
-        if (previous == null || !repeat) heldPhysicalKeys.put(identity, current);
-        if (!repeat || id != 0) reportPhysicalKey(current, mods | (repeat ? 32 : 0));
-    }
-
-    private void releasePhysicalKeys() {
-        for (PhysicalKey key : heldPhysicalKeys.values()) reportPhysicalKey(key, 16);
-        heldPhysicalKeys.clear();
-    }
-
-    private void reportPhysicalKey(PhysicalKey key, int flags) {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        DataOutputStream out = new DataOutputStream(bytes);
-        try {
-            out.writeInt(surface);
-            out.writeInt(key.id());
-            out.writeInt(key.scan());
-            out.writeInt(key.key());
-            out.writeByte(flags);
-            Protocol.writeString(out, key.name());
-        } catch (IOException impossible) {
-            throw new AssertionError(impossible);
-        }
-        write(Protocol.PHYSICAL_KEY, bytes.toByteArray());
-    }
 
     private static String physicalKeyName(KeyEvent e) {
         switch (e.getKeyCode()) {

@@ -135,6 +135,18 @@ func (t *testSurface) Type(text string) error {
 
 func (t *testSurface) Key(key string) error { return t.do(map[string]any{"op": "key", "key": key}) }
 
+// KeyDown and KeyUp hold and release one key through the agent's test keyboard, as the hardware keyboard's own events, and wait until Java has run what each one caused.
+func (t *testSurface) KeyDown(key string) error {
+	return t.do(map[string]any{"op": "key-down", "key": key})
+}
+
+func (t *testSurface) KeyUp(key string) error {
+	return t.do(map[string]any{"op": "key-up", "key": key})
+}
+
+// BlurWindow moves the activity to the back, so the window loses focus and releases the held keys.
+func (t *testSurface) BlurWindow() error { return t.do(map[string]any{"op": "blur-window"}) }
+
 func (t *testSurface) SelectRange(selection driver.TextRange) (driver.TextRange, error) {
 	data, err := t.ask(map[string]any{"op": "select-range", "start": selection.Start, "end": selection.End})
 	if err != nil {

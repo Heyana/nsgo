@@ -68,6 +68,7 @@ final class TestAgent {
 
     private final NsgoView view;
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private final HeldKeyAgent heldKeys = new HeldKeyAgent();
 
     TestAgent(NsgoView view) {
         this.view = view;
@@ -282,6 +283,15 @@ final class TestAgent {
                 break;
             case "key":
                 key(op.getString("key"));
+                view.whenKeysIdle(() -> view.testReply(id, "", ""));
+                return;
+            case "key-down":
+            case "key-up":
+                heldKeys.key(activity(), view.inputGate, op.getString("key"), op.getString("op").equals("key-down"));
+                view.whenKeysIdle(() -> view.testReply(id, "", ""));
+                return;
+            case "blur-window":
+                activity().moveTaskToBack(true);
                 break;
             case "select-range": {
                 View focused = activity().getCurrentFocus();
@@ -812,8 +822,12 @@ final class TestAgent {
                 .put("description", item.getContentDescription().toString()).toString();
     }
 
-    private static int keyCode(String name) {
+    static int keyCode(String name) {
         switch (name) {
+            case "shift": return KeyEvent.KEYCODE_SHIFT_LEFT;
+            case "mod": case "ctrl": case "control": return KeyEvent.KEYCODE_CTRL_LEFT;
+            case "alt": case "option": return KeyEvent.KEYCODE_ALT_LEFT;
+            case "meta": case "super": case "cmd": case "command": return KeyEvent.KEYCODE_META_LEFT;
             case "enter": case "return": return KeyEvent.KEYCODE_ENTER;
             case "backspace": return KeyEvent.KEYCODE_DEL;
             case "delete": return KeyEvent.KEYCODE_FORWARD_DEL;
@@ -827,6 +841,7 @@ final class TestAgent {
             case "home": return KeyEvent.KEYCODE_MOVE_HOME;
             case "end": return KeyEvent.KEYCODE_MOVE_END;
             default:
+                if (name.matches("f([1-9]|1[0-2])")) return KeyEvent.KEYCODE_F1 + Integer.parseInt(name.substring(1)) - 1;
                 if (name.length() == 1) {
                     char c = name.charAt(0);
                     if (c >= 'a' && c <= 'z') return KeyEvent.KEYCODE_A + (c - 'a');
@@ -839,7 +854,7 @@ final class TestAgent {
     /** Presses a key ("enter", "mod+a") as a hardware keyboard's. */
     private void key(String key) {
         String[] parts = key.toLowerCase().split("\\+");
-        int meta = 0;
+        int meta = heldKeys.modifiers();
         for (int i = 0; i < parts.length - 1; i++) {
             switch (parts[i]) {
                 case "mod": case "ctrl": case "control": meta |= KeyEvent.META_CTRL_ON | KeyEvent.META_CTRL_LEFT_ON; break;
@@ -853,16 +868,19 @@ final class TestAgent {
         long now = SystemClock.uptimeMillis();
         Activity a = activity();
         KeyEvent down = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0);
+        down.setSource(InputDevice.SOURCE_KEYBOARD);
+        KeyEvent up = new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0);
+        up.setSource(InputDevice.SOURCE_KEYBOARD);
         // A key with Control is offered to the keymap first, as NsgoView.dispatchKeyEvent offers it before the window's input stage tries it as a shortcut, so a KeyAlways binding takes Control+A before the field selects all. A consumed key is released at once so its consumed state cannot leak into the next test.
         view.inputGate.enterScripted();
         try {
             if ((meta & KeyEvent.META_CTRL_ON) != 0 && view.keyBindingShortcut(down)) {
-                view.keyBindingShortcut(new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
+                view.keyBindingShortcut(up);
                 return;
             }
             if ((meta & KeyEvent.META_CTRL_ON) != 0 && a.dispatchKeyShortcutEvent(down)) return;
             a.dispatchKeyEvent(down);
-            a.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
+            a.dispatchKeyEvent(up);
         } finally {
             view.inputGate.leaveScripted();
         }

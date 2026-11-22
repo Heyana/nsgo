@@ -33,14 +33,26 @@ func (s *surface) physicalKey(r *reader) {
 	scan, key := r.u32(), r.u32()
 	flags := r.byte()
 	name := r.str()
-	target := s.target(from)
-	if target == nil {
-		return
+	// A down the focused view may consume carries the request Java waits on; a runtime that predates it sends none.
+	var request uint32
+	if len(r.buf) >= 4 {
+		request = r.u32()
 	}
+	target := s.target(from)
 	kind := driver.EventKeyDown
 	if flags&16 != 0 {
 		kind = driver.EventKeyUp
 	}
-	target.Dispatch(driver.Event{Kind: kind, ID: id, Text: name, KeyCode: androidKeyCode(scan, key), Repeat: flags&32 != 0,
-		Modifiers: driver.Modifiers{Control: flags&1 != 0, Alt: flags&2 != 0, Shift: flags&4 != 0, Platform: flags&8 != 0}})
+	ev := driver.Event{Kind: kind, ID: id, Text: name, KeyCode: androidKeyCode(scan, key), Repeat: flags&32 != 0,
+		Modifiers: driver.Modifiers{Control: flags&1 != 0, Alt: flags&2 != 0, Shift: flags&4 != 0, Platform: flags&8 != 0}}
+	switch {
+	case target == nil:
+		if request != 0 {
+			s.answerKeyDown(from, request, false)
+		}
+	case request != 0 && kind == driver.EventKeyDown:
+		s.consumeKey(target, from, request, ev)
+	default:
+		target.Dispatch(ev)
+	}
 }
