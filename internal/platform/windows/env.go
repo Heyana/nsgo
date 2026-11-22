@@ -319,8 +319,7 @@ func (w *window) updateAppSurface() {
 	}
 }
 
-// minimized reports whether the window, or an embedded view's ancestor root
-// window, is minimized.
+// minimized reports whether the window, or an embedded view's ancestor root window, is minimized.
 func (w *window) minimized() bool {
 	if w.embedded {
 		if state, ok := embeddedRoots.stateOf(w); ok {

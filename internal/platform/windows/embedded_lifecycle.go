@@ -21,16 +21,14 @@ const (
 	embeddedWAInactive uintptr = 0 // WA_INACTIVE
 )
 
-// embeddedRootState holds the lifecycle-relevant state of an embedded view's
-// ancestor root window (GA_ROOT).
+// embeddedRootState holds the lifecycle-relevant state of an embedded view's ancestor root window (GA_ROOT).
 type embeddedRootState struct {
 	visible   bool
 	minimized bool
 	active    bool
 }
 
-// initialEmbeddedRootState builds the root window's initial state on attach
-// from IsWindowVisible(root), IsIconic(root) and GetForegroundWindow() == root.
+// initialEmbeddedRootState builds the root window's initial state on attach from IsWindowVisible(root), IsIconic(root) and GetForegroundWindow() == root.
 func initialEmbeddedRootState(visible, iconic, foreground bool) embeddedRootState {
 	return embeddedRootState{
 		visible:   visible,
@@ -39,8 +37,7 @@ func initialEmbeddedRootState(visible, iconic, foreground bool) embeddedRootStat
 	}
 }
 
-// lifecycle reports the driver.Lifecycle corresponding to the root window's
-// visibility, minimized and activation state.
+// lifecycle reports the driver.Lifecycle corresponding to the root window's visibility, minimized and activation state.
 func (s embeddedRootState) lifecycle() driver.Lifecycle {
 	if !s.visible || s.minimized {
 		return driver.LifecycleBackground
@@ -51,8 +48,7 @@ func (s embeddedRootState) lifecycle() driver.Lifecycle {
 	return driver.LifecycleInactive
 }
 
-// applyMessage updates s for a Win32 message observed on the root window and
-// reports whether the state changed.
+// applyMessage updates s for a Win32 message observed on the root window and reports whether the state changed.
 func (s embeddedRootState) applyMessage(message uint32, wParam, _ uintptr) (embeddedRootState, bool) {
 	next := s
 	switch message {
@@ -68,8 +64,7 @@ func (s embeddedRootState) applyMessage(message uint32, wParam, _ uintptr) (embe
 	case embeddedMsgShowWindow:
 		next.visible = wParam != 0
 	case embeddedMsgActivate:
-		// LOWORD(wParam) is WA_INACTIVE / WA_ACTIVE / WA_CLICKACTIVE;
-		// HIWORD(wParam) is nonzero when the window is minimized.
+		// LOWORD(wParam) is WA_INACTIVE / WA_ACTIVE / WA_CLICKACTIVE; HIWORD(wParam) is nonzero when the window is minimized.
 		next.active = wParam&0xffff != embeddedWAInactive
 	case embeddedMsgActivateApp:
 		next.active = wParam != 0
@@ -79,15 +74,13 @@ func (s embeddedRootState) applyMessage(message uint32, wParam, _ uintptr) (embe
 	return next, next != s
 }
 
-// embeddedRootWatcher receives lifecycle updates for an embedded view's
-// ancestor root window.
+// embeddedRootWatcher receives lifecycle updates for an embedded view's ancestor root window.
 type embeddedRootWatcher interface {
 	embeddedRootChanged(root uintptr, state embeddedRootState)
 	embeddedRootDestroyed(root uintptr)
 }
 
-// embeddedRootHooks abstracts Win32 subclass installation and root state reads
-// so embeddedRootManager can be tested in pure Go on every OS.
+// embeddedRootHooks abstracts Win32 subclass installation and root state reads so embeddedRootManager can be tested in pure Go on every OS.
 type embeddedRootHooks struct {
 	install   func(root uintptr) bool
 	remove    func(root uintptr)
@@ -100,10 +93,7 @@ type embeddedRootEntry struct {
 	views      []embeddedRootWatcher
 }
 
-// embeddedRootManager ref-counts root-window subclasses across embedded views
-// sharing the same ancestor root HWND (GA_ROOT). Removing or reparenting one
-// embedded view leaves siblings observing the same root untouched, and both
-// view destruction and root WM_NCDESTROY clean up the subclass.
+// embeddedRootManager ref-counts root-window subclasses across embedded views sharing the same ancestor root HWND (GA_ROOT). Removing or reparenting one embedded view leaves siblings observing the same root untouched, and both view destruction and root WM_NCDESTROY clean up the subclass.
 type embeddedRootManager struct {
 	hooks  embeddedRootHooks
 	mu     sync.Mutex
@@ -119,8 +109,7 @@ func newEmbeddedRootManager(hooks embeddedRootHooks) *embeddedRootManager {
 	}
 }
 
-// attach registers w to observe root, installing a subclass on root if no
-// other embedded view is observing it yet.
+// attach registers w to observe root, installing a subclass on root if no other embedded view is observing it yet.
 func (m *embeddedRootManager) attach(w embeddedRootWatcher, root uintptr) (embeddedRootState, bool) {
 	if w == nil || root == 0 {
 		return embeddedRootState{}, false
@@ -175,8 +164,7 @@ func (m *embeddedRootManager) attach(w embeddedRootWatcher, root uintptr) (embed
 	return out, sub
 }
 
-// detach removes w from its observed root, removing the root's subclass once
-// no embedded views remain on it.
+// detach removes w from its observed root, removing the root's subclass once no embedded views remain on it.
 func (m *embeddedRootManager) detach(w embeddedRootWatcher) {
 	if w == nil {
 		return
@@ -212,8 +200,7 @@ func (m *embeddedRootManager) detachLocked(w embeddedRootWatcher) uintptr {
 	return 0
 }
 
-// sync updates w's observed root after a potential reparenting. It reports
-// whether w's root changed and whether w is currently attached to newRoot.
+// sync updates w's observed root after a potential reparenting. It reports whether w's root changed and whether w is currently attached to newRoot.
 func (m *embeddedRootManager) sync(w embeddedRootWatcher, newRoot uintptr) (state embeddedRootState, changed bool, attached bool) {
 	if w == nil {
 		return embeddedRootState{}, false, false
@@ -270,9 +257,7 @@ func (m *embeddedRootManager) watchersOf(root uintptr) []embeddedRootWatcher {
 	return slices.Clone(entry.views)
 }
 
-// handleMessage processes a Win32 message observed on root and notifies every
-// embedded view attached to root when its lifecycle state changes or when root
-// receives WM_NCDESTROY.
+// handleMessage processes a Win32 message observed on root and notifies every embedded view attached to root when its lifecycle state changes or when root receives WM_NCDESTROY.
 func (m *embeddedRootManager) handleMessage(root uintptr, message uint32, wParam, lParam uintptr) (stateChanged bool, destroyed bool) {
 	m.mu.Lock()
 	entry := m.roots[root]

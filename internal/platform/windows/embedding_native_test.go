@@ -105,10 +105,7 @@ func TestEmbeddedSystemKeysReachTheApp(t *testing.T) {
 	waitEvent("shortcut")
 }
 
-// TestEmbeddedLifecycleFollowsRootWindow embeds two views in a plain Win32
-// host window (not an NSGo window) and checks that minimizing and restoring
-// that root window updates Env.Minimized and Env.Lifecycle for both views,
-// and keeps updating the second after the first closes.
+// TestEmbeddedLifecycleFollowsRootWindow embeds two views in a plain Win32 host window (not an NSGo window) and checks that minimizing and restoring that root window updates Env.Minimized and Env.Lifecycle for both views, and keeps updating the second after the first closes.
 func TestEmbeddedLifecycleFollowsRootWindow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens windows")

@@ -16,8 +16,7 @@ var (
 )
 
 const (
-	// embeddedRootSubclassID identifies NSGo's comctl32 subclass on an embedded
-	// view's ancestor root window (GA_ROOT).
+	// embeddedRootSubclassID identifies NSGo's comctl32 subclass on an embedded view's ancestor root window (GA_ROOT).
 	embeddedRootSubclassID uintptr = 0x4E53474F // "NSGO"
 
 	wmWindowPosChanged = 0x0047
@@ -118,8 +117,7 @@ func rootSubclassProc(hwnd, message, wParam, lParam, _, _ uintptr) uintptr {
 	return r
 }
 
-// embeddedAncestorRoot returns the ancestor root window (GA_ROOT) of an
-// embedded child view, or 0 if it has no distinct root window.
+// embeddedAncestorRoot returns the ancestor root window (GA_ROOT) of an embedded child view, or 0 if it has no distinct root window.
 func (w *window) embeddedAncestorRoot() uintptr {
 	if !w.embedded || w.hwnd == 0 {
 		return 0
@@ -131,8 +129,7 @@ func (w *window) embeddedAncestorRoot() uintptr {
 	return root
 }
 
-// observeEmbeddedRoot attaches w to its current ancestor root window's
-// subclass so root minimize, restore, show/hide and activation reach w.
+// observeEmbeddedRoot attaches w to its current ancestor root window's subclass so root minimize, restore, show/hide and activation reach w.
 func (w *window) observeEmbeddedRoot() {
 	if !w.embedded || w.hwnd == 0 {
 		return
@@ -142,8 +139,7 @@ func (w *window) observeEmbeddedRoot() {
 	embeddedRoots.attach(w, root)
 }
 
-// syncEmbeddedRoot checks whether an embedded view was reparented under a
-// different ancestor root window and moves its root observation accordingly.
+// syncEmbeddedRoot checks whether an embedded view was reparented under a different ancestor root window and moves its root observation accordingly.
 func (w *window) syncEmbeddedRoot() {
 	if !w.embedded || w.hwnd == 0 {
 		return
@@ -159,8 +155,7 @@ func (w *window) syncEmbeddedRoot() {
 	}
 }
 
-// unobserveEmbeddedRoot detaches w from its observed root window, removing the
-// root subclass when no other embedded view observes that root.
+// unobserveEmbeddedRoot detaches w from its observed root window, removing the root subclass when no other embedded view observes that root.
 func (w *window) unobserveEmbeddedRoot() {
 	if !w.embedded {
 		return
