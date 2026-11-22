@@ -18,8 +18,6 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 | Progress and status | `ui.Progress`, `ui.ProgressRing`, `ui.Spinner`, `ui.Skeleton`, `ui.Meter`, `ui.Badge`, `ui.Avatar`, `ui.AvatarGroup` |
 | Documents and editors | `base/textview` for streaming Markdown with formulas (`base/formula`) and Mermaid diagrams (`base/diagram`), `ui/editor` for code, `ui/richeditor` for rich text, `ui/diff`, `base/terminal` |
 | Complex views | `ui/chat` for conversations, `ui/flow` for flow diagrams, `ui/commitgraph`, `base/dock` for dockable panels |
-
-For formulas receiving source in chunks, use `formula.View.SourceFunc` with `Streaming` or `StreamingFunc` to hide unfinished recovery ink, and clear the flag at completion so remaining errors show. A TextView `RenderMath` callback can return that view. [Text](https://nsgo.dev/docs/text.md)
 | Web content and media | `core.WebView`, `core.Video`, `core.Canvas` for 2D drawing and shaders |
 | Platform services | `cx` methods and `core.Env` (clipboard, storage, secrets, links, pickers, speaking, notifications, haptics, permissions, biometrics, Sign in with Apple, in-app purchases through `cx.Purchase`, OAuth sign-in through `cx.AuthSession` rather than a web view, `cx.SetWebCookies` to carry a sign-in into web views, `cx.WebCookies` to read one out and `cx.ClearWebsiteData` to sign out of every site), `desktop` for windows, trays and menus, `mobile` for phones, `widget` for widgets and Live Activities, `updater` for updates |
 
@@ -27,6 +25,7 @@ For formulas receiving source in chunks, use `formula.View.SourceFunc` with `Str
 
 - Give a text attachment's span `Content` for selections to copy in its place; empty content omits it ([text](https://nsgo.dev/docs/text.md#runs-and-links)).
 - For diagrams in an app's palette, return `base/diagram.View` with `ThemeFunc` from the text view's `RenderDiagram` callback and build its `diagram.Theme` from `ui.ColorsOf(cx)` inside that function ([text](https://nsgo.dev/docs/text.md#documents)).
+- For formulas receiving source in chunks, use `formula.View.SourceFunc` with `Streaming` or `StreamingFunc` to hide unfinished recovery ink, and clear the flag at completion so remaining errors show; a TextView `RenderMath` callback can return that view ([text](https://nsgo.dev/docs/text.md)).
 - Use `ui.ShellTab.TextFunc` and `ui.TabShell.LabelFunc` for a changing tab title and bar name, and set `Edge` (`mobile.TabBarLeading`, `mobile.TabBarTrailing` or `mobile.TabBarAutomatic`, reading `core.Env.VerticalBarEdge`) on `mobile.TabBar` or `ui.TabShell` to place the bar vertically along an edge.
 - Set `tabBarBackground`, `tabBarIdle`, `tabBarSelected` and `tabBarIndicator` as Android `mobile.TabBar` palette roles. A custom palette uses `Accent` for selected content by default.
 

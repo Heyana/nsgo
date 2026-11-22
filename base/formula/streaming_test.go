@@ -53,8 +53,7 @@ func TestStreamingKeepsInkAndRestoresErrorsWhenFinished(t *testing.T) {
 	if v, ordinary := app.Find("id:stream"), app.Find("id:ordinary"); v.Frame.Size == first || math.Abs(float64(v.Frame.Size.Width-ordinary.Frame.Size.Width)) > 1 || math.Abs(float64(v.Frame.Size.Height-ordinary.Frame.Size.Height)) > 1 {
 		t.Errorf("completed formula size %+v, initial %+v, ordinary %+v", v.Frame.Size, first, app.Find("id:ordinary").Frame.Size)
 	}
-	// Changing only the streaming state must reveal a remaining error,
-	// even when another view shares the renderer's cached layout.
+	// Changing only the streaming state must reveal a remaining error, even when another view shares the renderer's cached layout.
 	source.Set(`x+\unknown`)
 	app.Settle()
 	if hasFill(app.Find("id:stream"), errorColor) || !hasFill(app.Find("id:ordinary"), errorColor) {

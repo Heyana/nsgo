@@ -56,10 +56,7 @@ type View struct {
 	SourceFunc func() string
 	Dialect    Dialect
 	Display    bool
-	// Streaming hides recoverable error and placeholder ink while Source
-	// is still arriving. SourceFunc continues to lay out each update. Set
-	// it false when the source is complete to show remaining errors;
-	// StreamingFunc follows what it reads.
+	// Streaming hides recoverable error and placeholder ink while Source is still arriving. SourceFunc continues to lay out each update. Set it false when the source is complete to show remaining errors; StreamingFunc follows what it reads.
 	Streaming     bool
 	StreamingFunc func() bool
 	// Renderer lays it out; nil is Default().
