@@ -12,8 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
-// TestRotationPublishesSizeAndSafeAreaTogether observes every reactive update,
-// including those during UIKit's transition, rather than only its final layout.
+// TestRotationPublishesSizeAndSafeAreaTogether observes every reactive update, including those during UIKit's transition, rather than only its final layout.
 func TestRotationPublishesSizeAndSafeAreaTogether(t *testing.T) {
 	type observation struct {
 		size core.Size
