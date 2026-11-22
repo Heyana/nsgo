@@ -11,9 +11,7 @@ import (
 	"unicode/utf16"
 )
 
-// Short IDs keep their existing WinRT identity. Longer IDs use a separate
-// group, so an app's short ID cannot collide with a generated tag. Tags stay
-// within the original 16 UTF-16-unit limit, also on older Windows 10 builds.
+// Short IDs keep their existing WinRT identity. Longer IDs use a separate group, so an app's short ID cannot collide with a generated tag. Tags stay within the original 16 UTF-16-unit limit, also on older Windows 10 builds.
 const (
 	toastGroup     = "nsgo"
 	toastLongGroup = "nsgo.long"
