@@ -71,6 +71,8 @@ final class Protocol {
                 return true;
             case EXT_GPU_FRAME:
                 return true;
+            case EXT_GEOMETRY:
+                return true;
             default:
                 return false;
         }
@@ -115,8 +117,6 @@ final class Protocol {
     /** The shader programs no view draws any more: their count, then each one's number (ShaderNode.release). */
     static final int SHADER_RELEASE = 25;
 
-    /** Enables native DevTools border-box snapshots on a surface. */
-    static final int GEOMETRY = 37;
     /** A correlated text request: request ID and operation. */
     static final int TEXT_REQUEST = 26;
     /** Starts or stops rumble on a game controller: device id, lowFreq, highFreq, durationMs (gamepad.go, Gamepads). */
@@ -155,6 +155,8 @@ final class Protocol {
     static final int EXT_DOWNLOAD = 5;
     /** Submits an off-commit 3D GPU frame batch directly to a GpuView (gpu.go, GpuView). */
     static final int EXT_GPU_FRAME = 3;
+    /** Enables native DevTools border-box snapshots on a surface: its ID and a flag. */
+    static final int EXT_GEOMETRY = 7;
 
     /** Reads a bundled file: its request ID and the path under assets/. */
     static final int EXT_ASSET_READ = 9;

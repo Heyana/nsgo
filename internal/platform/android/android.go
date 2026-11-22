@@ -89,7 +89,6 @@ const (
 	// msgShaderRelease lists the shader programs no view draws any more, which Java forgets and deletes. A prior runtime logs it as unknown.
 	msgShaderRelease = 25
 	msgTextRequest   = 26
-	msgGeometry      = 37 // optional DevTools observation
 	// msgGamepadRumble starts or stops rumble on a connected game controller (gamepad.go, Gamepads.java).
 	msgGamepadRumble = 27
 	// msgExtended is a Go-to-Java message of an extended kind (ext* below): its sub-kind byte, then that message's payload (sendExtended). The kinds above stop at 31, the most Protocol.readMessage takes, so that stray text on stdout, whose first byte is a space or a letter, is refused rather than read as a message; slots 2, 3, 4, 7 and 12 belonged to retired messages a stale runtime could still read. Add new Go-to-Java messages as extended kinds.
@@ -167,6 +166,8 @@ const (
 	extDownload = 5
 	// extGPUFrame submits an off-commit 3D GPU frame to GpuView.java, gpu.go's encoding.
 	extGPUFrame = 3
+	// extGeometry turns a surface's native DevTools border-box snapshots on or off: its ID and a flag.
+	extGeometry = 7
 )
 
 // The parts of an image view's request msgImage carries.

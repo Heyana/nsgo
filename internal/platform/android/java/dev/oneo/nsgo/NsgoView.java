@@ -1172,15 +1172,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     });
                     break;
                 }
-                case Protocol.GEOMETRY: {
-                    int to = message.readInt();
-                    boolean on = message.readBoolean();
-                    ui.post(() -> {
-                        NsgoView view = to == 0 ? this : overlays.view(to);
-                        if (view != null) view.observeGeometry(on);
-                    });
-                    break;
-                }
                 case Protocol.PERF_PANEL:
                     if (payload.length == 1) {
                         boolean show = message.readBoolean();
@@ -1274,6 +1265,15 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 if (!GpuView.dispatch(to, viewId, frame)) {
                     ui.post(() -> GpuView.dispatch(to, viewId, frame));
                 }
+                break;
+            }
+            case Protocol.EXT_GEOMETRY: {
+                int to = message.readInt();
+                boolean on = message.readBoolean();
+                ui.post(() -> {
+                    NsgoView view = to == 0 ? this : overlays.view(to);
+                    if (view != null) view.observeGeometry(on);
+                });
                 break;
             }
             default:

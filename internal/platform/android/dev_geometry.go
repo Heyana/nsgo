@@ -23,7 +23,8 @@ func (s *surface) observeGeometry(surface uint32, report func(driver.GeometrySna
 		s.geometryReports[surface] = report
 	}
 	s.geometryMu.Unlock()
-	s.send(msgGeometry, func(w *writer) {
+	// A runtime that reads no extended messages reports no native geometry, and DevTools does without it (errNoExtendedMessages).
+	_ = s.sendExtended(extGeometry, func(w *writer) {
 		w.u32(surface)
 		w.flags(report != nil)
 	})
