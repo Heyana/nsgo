@@ -173,3 +173,223 @@ func TestCaretsHitTheCharacters(t *testing.T) {
 		t.Fatalf("hit = %+v", c)
 	}
 }
+
+func TestLimitedTextTruncatesRemainingTextAndMatchesMeasure(t *testing.T) {
+	e := NewTextEngine(&approx{})
+	// 5 pts per character at size 10, line height 12.
+	for _, tc := range []struct {
+		name      string
+		text      string
+		maxLines  int
+		width     driver.Points
+		wantRuns  string
+		wantWidth driver.Points
+	}{
+		{
+			name:      "single line pulls remaining word before ellipsizing",
+			text:      "Earth Supercalifragilistic",
+			maxLines:  1,
+			width:     72,
+			wantRuns:  "Earth Superca…",
+			wantWidth: 70,
+		},
+		{
+			name:      "two lines pulls remaining word onto second line",
+			text:      "Short line\nA Supercalifragilistic",
+			maxLines:  2,
+			width:     72,
+			wantRuns:  "Short line|A Supercalifr…",
+			wantWidth: 70,
+		},
+		{
+			name:      "two lines wraps words then truncates remaining text",
+			text:      "one two three four five",
+			maxLines:  2,
+			width:     40,
+			wantRuns:  "one two|three f…",
+			wantWidth: 40,
+		},
+		{
+			name:      "trailing spaces before truncation are trimmed",
+			text:      "a   bcdefgh",
+			maxLines:  1,
+			width:     20,
+			wantRuns:  "a…",
+			wantWidth: 10,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at := plain(tc.text)
+			at.MaxLines, at.Ellipsize = tc.maxLines, driver.EllipsizeTail
+			p := e.Prepare(at)
+			size := p.Measure(tc.width)
+			if size.Width != tc.wantWidth || size.Height != driver.Points(tc.maxLines*12) {
+				t.Fatalf("Measure(%v) = %+v, want width %v height %d", tc.width, size, tc.wantWidth, tc.maxLines*12)
+			}
+			fitted := p.Layout(size).(*TextLayout)
+			fixed := p.Layout(driver.Size{Width: tc.width, Height: size.Height}).(*TextLayout)
+			if got := strings.Join(runs(fitted), "|"); got != tc.wantRuns {
+				t.Errorf("fitted runs = %q, want %q", got, tc.wantRuns)
+			}
+			if got := strings.Join(runs(fixed), "|"); got != tc.wantRuns {
+				t.Errorf("fixed runs = %q, want %q", got, tc.wantRuns)
+			}
+			gl, wl := fitted.TextLines(), fixed.TextLines()
+			if len(gl) != tc.maxLines || len(wl) != tc.maxLines {
+				t.Fatalf("line counts %d / %d, want %d", len(gl), len(wl), tc.maxLines)
+			}
+			if gl[tc.maxLines-1].Bounds.Size.Width != wl[tc.maxLines-1].Bounds.Size.Width {
+				t.Errorf("last line width at measured box = %v, at offered width = %v",
+					gl[tc.maxLines-1].Bounds.Size.Width, wl[tc.maxLines-1].Bounds.Size.Width)
+			}
+		})
+	}
+}
+
+func TestLimitedTextKeepsWidthAtHardBreak(t *testing.T) {
+	e := NewTextEngine(&approx{})
+	for _, tc := range []struct {
+		name      string
+		text      string
+		maxLines  int
+		mode      driver.EllipsizeMode
+		wantRuns  string
+		wantWidth driver.Points
+	}{
+		{"tail 1 line", "Short\nline", 1, driver.EllipsizeTail, "Short…", 30},
+		{"clip 1 line", "Short\nline", 1, driver.EllipsizeClip, "Short", 25},
+		{"head 1 line", "Short\nline", 1, driver.EllipsizeHead, "…line", 25},
+		{"tail 2 lines", "Short\nSecond\nThird", 2, driver.EllipsizeTail, "Short|Second…", 35},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at := plain(tc.text)
+			at.MaxLines, at.Ellipsize = tc.maxLines, tc.mode
+			p := e.Prepare(at)
+			bounded, intrinsic := p.Measure(200), p.Measure(driver.Auto)
+			if bounded != intrinsic {
+				t.Fatalf("Measure(200) = %+v != Measure(Auto) = %+v", bounded, intrinsic)
+			}
+			if bounded.Width != tc.wantWidth || bounded.Height != driver.Points(tc.maxLines*12) {
+				t.Fatalf("Measure = %+v, want width %v height %d", bounded, tc.wantWidth, tc.maxLines*12)
+			}
+			if got := strings.Join(runs(p.Layout(bounded)), "|"); got != tc.wantRuns {
+				t.Errorf("runs = %q, want %q", got, tc.wantRuns)
+			}
+		})
+	}
+}
+
+func TestLimitedTextHeadAndMiddleMultiLine(t *testing.T) {
+	e := NewTextEngine(&approx{})
+	for _, tc := range []struct {
+		name     string
+		mode     driver.EllipsizeMode
+		maxLines int
+		text     string
+		width    driver.Points
+		wantRuns string
+	}{
+		{"1 line head", driver.EllipsizeHead, 1, "Earth Supercalifragilistic", 72, "…ifragilistic"},
+		{"1 line middle", driver.EllipsizeMiddle, 1, "Earth Science Weekly", 72, "Earth S…Weekly"},
+		{"2 lines middle", driver.EllipsizeMiddle, 2, "Short line\nA Supercalifragilistic", 72, "Short line|A Super…listic"},
+		{"2 lines head", driver.EllipsizeHead, 2, "Short line\nA Supercalifragilistic", 72, "Short line|…ragilistic"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at := plain(tc.text)
+			at.MaxLines, at.Ellipsize = tc.maxLines, tc.mode
+			p := e.Prepare(at)
+			size := p.Measure(tc.width)
+			if size.Width > tc.width || size.Height != driver.Points(tc.maxLines*12) {
+				t.Fatalf("Measure(%v) = %+v", tc.width, size)
+			}
+			fitted := p.Layout(size).(*TextLayout)
+			fixed := p.Layout(driver.Size{Width: tc.width, Height: size.Height}).(*TextLayout)
+			if got := strings.Join(runs(fitted), "|"); got != tc.wantRuns {
+				t.Errorf("fitted runs = %q, want %q", got, tc.wantRuns)
+			}
+			if got := strings.Join(runs(fixed), "|"); got != tc.wantRuns {
+				t.Errorf("fixed runs = %q, want %q", got, tc.wantRuns)
+			}
+		})
+	}
+
+	// Attachments kept after middle truncation keep their original indices.
+	att := string(driver.AttachmentRune)
+	at := plain(att + " middletext " + att)
+	at.MaxLines, at.Ellipsize = 1, driver.EllipsizeMiddle
+	at.Attachments = []driver.TextAttachment{
+		{Offset: 0, Size: driver.Size{Width: 10, Height: 10}},
+		{Offset: len(at.Text) - len(att), Size: driver.Size{Width: 10, Height: 10}},
+	}
+	p := e.Prepare(at)
+	size := p.Measure(40)
+	l := p.Layout(size).(*TextLayout)
+	if _, ok := l.Attachment(0); !ok {
+		t.Error("first attachment was dropped")
+	}
+	if _, ok := l.Attachment(1); !ok {
+		t.Error("second attachment lost its original index after middle cut")
+	}
+}
+
+func TestLimitedTextAlignsEllipsis(t *testing.T) {
+	e := NewTextEngine(&approx{})
+	const width driver.Points = 72
+	for _, tc := range []struct {
+		name  string
+		align driver.TextAlign
+		rtl   bool
+		wantX driver.Points
+	}{
+		{"center", driver.TextAlignCenter, false, 1},
+		{"end", driver.TextAlignEnd, false, 2},
+		{"RTL start", driver.TextAlignStart, true, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at := plain("Earth Supercalifragilistic")
+			at.MaxLines, at.Ellipsize = 1, driver.EllipsizeTail
+			at.Style.Align, at.Style.RTL = tc.align, tc.rtl
+			l := e.Prepare(at).Layout(driver.Size{Width: width, Height: 12}).(*TextLayout)
+			if len(l.lines) != 1 {
+				t.Fatalf("got %d lines, want 1", len(l.lines))
+			}
+			// "Earth Superca…" is 70 pts wide inside 72 pts -> center x=1, end x=2.
+			if got := l.lines[0].Bounds.Origin.X; got != tc.wantX {
+				t.Errorf("x = %v, want %v (line width %v)", got, tc.wantX, l.lines[0].Bounds.Size.Width)
+			}
+		})
+	}
+}
+
+func TestLimitedTextSpansAndAttachments(t *testing.T) {
+	e := NewTextEngine(&approx{})
+	att := string(driver.AttachmentRune)
+	// "Hi " (15) + att0 (10) + " " (5) + "Super" (25) + att1 (10) = 65 pts.
+	at := plain("Hi " + att + " Super" + att)
+	at.MaxLines, at.Ellipsize = 1, driver.EllipsizeTail
+	red := at.Style
+	red.Color = driver.RGB(0xff0000)
+	superStart := len("Hi " + att + " ")
+	at.Spans = []driver.TextSpan{{Start: superStart, End: superStart + len("Super"), Style: red}}
+	at.Attachments = []driver.TextAttachment{
+		{Offset: len("Hi "), Size: driver.Size{Width: 10, Height: 10}},
+		{Offset: superStart + len("Super"), Size: driver.Size{Width: 10, Height: 10}},
+	}
+	p := e.Prepare(at)
+	// Width 45 fits "Hi "(15) + att0(10) + " "(5) + "Su"(10) + "…"(5) = 45;
+	// height is 13 because the 10pt baseline-aligned attachment reaches 1pt above the 9pt ascent.
+	size := p.Measure(45)
+	if size.Width != 45 || size.Height != 13 {
+		t.Fatalf("Measure(45) = %+v, want {Width:45 Height:13}", size)
+	}
+	l := p.Layout(size).(*TextLayout)
+	if _, ok := l.Attachment(0); !ok {
+		t.Error("first attachment should stay visible")
+	}
+	if _, ok := l.Attachment(1); ok {
+		t.Error("second attachment past the truncation point should be hidden")
+	}
+	if got := strings.Join(runs(l), "|"); got != "Hi | |Su…" {
+		t.Errorf("runs = %q, want %q", got, "Hi | |Su…")
+	}
+}

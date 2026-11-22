@@ -783,6 +783,63 @@ func TestSingleLineTextTruncatesInsteadOfWrapping(t *testing.T) {
 	}
 }
 
+// TestLimitedTextUsesAvailableWidth checks that text truncated past MaxLines
+// measures wide enough for its truncated final line to match laying out at the
+// offered width, and that repeated Measure calls reset the temporary height
+// limit (#1549).
+func TestLimitedTextUsesAvailableWidth(t *testing.T) {
+	w := testWindow()
+	const width driver.Points = 72
+	style := driver.TextStyle{Font: driver.Font{Family: "Segoe UI", Size: 13}, Color: driver.RGB(0)}
+	for _, tc := range []struct {
+		name, text string
+		lines      int
+		mode       driver.EllipsizeMode
+	}{
+		{"one line tail", "Earth Science Weekly", 1, driver.EllipsizeTail},
+		{"one line middle", "Earth Science Weekly", 1, driver.EllipsizeMiddle},
+		{"two lines tail", "Short line\nA Supercalifragilisticexpialidocious", 2, driver.EllipsizeTail},
+		{"two lines middle", "Short line\nA Supercalifragilisticexpialidocious", 2, driver.EllipsizeMiddle},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := w.Prepare(&driver.AttributedText{Text: tc.text, Style: style, MaxLines: tc.lines, Ellipsize: tc.mode})
+			defer p.Release()
+			size := p.Measure(width)
+			if size.Width > width+0.01 {
+				t.Fatalf("measured width %v exceeds %v", size.Width, width)
+			}
+			fitted := p.Layout(size).(*textLayout)
+			defer fitted.Release()
+			fixed := p.Layout(driver.Size{Width: width, Height: size.Height}).(*textLayout)
+			defer fixed.Release()
+			got, want := fitted.TextLines(), fixed.TextLines()
+			if len(got) != tc.lines || len(want) != tc.lines {
+				t.Fatalf("got %d lines at measured size %v and %d at width %v, want %d", len(got), size, len(want), width, tc.lines)
+			}
+			if g, ww := got[tc.lines-1].Bounds.Size.Width, want[tc.lines-1].Bounds.Size.Width; g < ww-0.5 {
+				t.Errorf("last line is %v points wide in the measured %v-point box, want %v as in the %v-point box", g, size.Width, ww, width)
+			}
+			// Re-measuring at Auto must not keep the narrower height limit.
+			auto := p.Measure(driver.Auto)
+			if auto.Width < size.Width-0.5 {
+				t.Errorf("auto width %v shrank below bounded width %v", auto.Width, size.Width)
+			}
+		})
+	}
+}
+
+// TestLimitedTextKeepsWidthAtHardBreak checks that text cut at an explicit
+// newline does not expand to fill unused horizontal room (#1549).
+func TestLimitedTextKeepsWidthAtHardBreak(t *testing.T) {
+	w := testWindow()
+	style := driver.TextStyle{Font: driver.Font{Family: "Segoe UI", Size: 13}, Color: driver.RGB(0)}
+	p := w.Prepare(&driver.AttributedText{Text: "Short\nline", Style: style, MaxLines: 1})
+	defer p.Release()
+	if bounded, intrinsic := p.Measure(200), p.Measure(driver.Auto); bounded != intrinsic {
+		t.Errorf("text cut at a hard break measures %v with room to spare, want intrinsic size %v", bounded, intrinsic)
+	}
+}
+
 // TestIndexAtFindsPlainTextOffsets checks that a press on plain text maps
 // to the UTF-8 offset under it, as a press on spans does.
 func TestIndexAtFindsPlainTextOffsets(t *testing.T) {

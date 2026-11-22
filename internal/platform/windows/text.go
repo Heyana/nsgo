@@ -742,25 +742,50 @@ func (pt *preparedText) Measure(maxWidth driver.Points) driver.Size {
 	if !maxWidth.IsAuto() {
 		limit = max(float32(maxWidth), 0)
 	}
+	pt.layout.callF(layoutSetMaxHeight, 1, f32(unboundedHeight))
 	pt.layout.callF(layoutSetMaxWidth, 1, f32(limit))
-	boxes := pt.stack(lineMetricsOf(pt.layout))
+	raw := lineMetricsOf(pt.layout)
+	boxes := pt.stack(raw)
 	shown := pt.shown(len(boxes))
 	var width, height float32
 	for _, b := range boxes[:shown] {
 		height += b.height
 	}
 	if shown < len(boxes) {
+		var preWidth, dwHeight float32
 		for _, b := range boxes[:shown] {
 			l, r := spanEdges(pt.layout, b.start, b.end-b.newline)
-			width = max(width, r-l)
+			preWidth = max(preWidth, r-l)
+			dwHeight += b.dwHeight
 		}
+		var trimmedWidth float32
+		var trimmedLines uint32
+		if pt.ellipsize != driver.EllipsizeClip {
+			// Apply the same height limit Layout uses so GetMetrics reflects
+			// DirectWrite's truncation before resetting the shared layout.
+			pt.layout.callF(layoutSetMaxHeight, 1, f32(dwHeight+0.01))
+			var m textMetrics
+			pt.layout.call(layoutGetMetrics, uintptr(unsafe.Pointer(&m)))
+			pt.layout.callF(layoutSetMaxHeight, 1, f32(unboundedHeight))
+			trimmedWidth, trimmedLines = m.widthWithTrailing, m.lineCount
+		}
+		softWrap := shown > 0 && boxes[shown-1].newline == 0
+		width = limitedMeasureWidth(limitedMeasureInput{
+			preWidth:     preWidth,
+			trimmedWidth: trimmedWidth,
+			trimmedLines: int(trimmedLines),
+			shown:        shown,
+			limit:        limit,
+			bounded:      limit < unbounded,
+			softWrap:     softWrap,
+			ellipsize:    pt.ellipsize,
+			useCut:       pt.cut != nil,
+		})
 	} else {
 		var m textMetrics
 		pt.layout.call(layoutGetMetrics, uintptr(unsafe.Pointer(&m)))
-		width = m.widthWithTrailing
-	}
-	if limit < unbounded {
-		width = min(width, limit)
+		firstTrimmed := len(raw) > 0 && raw[0].trimmed != 0
+		width = singlePassMeasureWidth(m.widthWithTrailing, limit, limit < unbounded, pt.cut != nil, firstTrimmed)
 	}
 	return driver.Size{Width: driver.Points(width), Height: driver.Points(height)}
 }

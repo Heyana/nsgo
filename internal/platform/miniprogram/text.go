@@ -284,6 +284,7 @@ type line struct {
 	segments []segment
 	width    driver.Points
 	trimmed  driver.Points
+	para     int // paragraph index in prepared.paragraphs
 	start    int // its first byte
 	end      int // past its last
 	cut      bool
@@ -295,10 +296,10 @@ func (p *prepared) lines(maxWidth driver.Points) []line {
 	limit := !maxWidth.IsAuto()
 	var out []line
 	for k, pieces := range p.paragraphs {
-		ln := line{start: p.starts[k], end: p.starts[k]}
+		ln := line{para: k, start: p.starts[k], end: p.starts[k]}
 		push := func() {
 			out = append(out, ln)
-			ln = line{start: ln.end, end: ln.end}
+			ln = line{para: k, start: ln.end, end: ln.end}
 		}
 		for _, pc := range pieces {
 			if limit && len(ln.segments) > 0 && ln.width+pc.trimmed > maxWidth+0.01 {
@@ -405,8 +406,17 @@ func (p *prepared) extent(st *runStyle) driver.FontExtent {
 // Measure implements driver.PreparedText. Widths round up, as native text
 // stacks do: a box exactly this wide must not wrap the text again.
 func (p *prepared) Measure(maxWidth driver.Points) driver.Size {
+	lines := p.lines(maxWidth)
+	if n := len(lines); n > 0 && lines[n-1].cut {
+		if cut, ok := p.cutHeadMiddle(lines, maxWidth); ok {
+			return p.e.Prepare(cut).Measure(maxWidth)
+		}
+		if p.t.Ellipsize != driver.EllipsizeClip {
+			p.truncateTail(&lines[n-1], maxWidth)
+		}
+	}
 	var s driver.Size
-	for _, ln := range p.lines(maxWidth) {
+	for _, ln := range lines {
 		h, _ := p.metrics(&ln)
 		s.Width = max(s.Width, ln.trimmed)
 		s.Height += h
@@ -444,21 +454,28 @@ type attachmentBox struct {
 
 // Layout implements driver.PreparedText.
 func (p *prepared) Layout(size driver.Size) driver.TextLayout {
+	lines := p.lines(size.Width + 0.01)
+	if n := len(lines); n > 0 && lines[n-1].cut {
+		if cut, ok := p.cutHeadMiddle(lines, size.Width); ok {
+			l := p.e.Prepare(cut).Layout(size).(*TextLayout)
+			if len(p.t.Attachments) > 0 {
+				boxes := make([]attachmentBox, len(p.t.Attachments))
+				for k, o := range cut.Origin {
+					if k < len(l.boxes) && o < len(boxes) {
+						boxes[o] = l.boxes[k]
+					}
+				}
+				l.boxes = boxes
+			}
+			return l
+		}
+		if p.t.Ellipsize != driver.EllipsizeClip {
+			p.truncateTail(&lines[n-1], size.Width)
+		}
+	}
 	l := &TextLayout{boxes: make([]attachmentBox, len(p.t.Attachments))}
 	for _, st := range p.styles {
 		l.styles = append(l.styles, st.css)
-	}
-	lines := p.lines(size.Width + 0.01)
-	if n := len(lines); n > 0 && lines[n-1].cut && p.t.MaxLines == 1 &&
-		(p.t.Ellipsize == driver.EllipsizeHead || p.t.Ellipsize == driver.EllipsizeMiddle) {
-		// Cut at its head or middle: the most characters that fit.
-		cut := p.t.CutToFit(func(c *driver.AttributedText) bool {
-			return p.e.Prepare(c).Measure(driver.Auto).Width <= size.Width
-		})
-		return p.e.Prepare(&cut).Layout(size)
-	}
-	if n := len(lines); n > 0 && lines[n-1].cut && p.t.Ellipsize != driver.EllipsizeClip {
-		p.ellipsize(&lines[n-1], size.Width)
 	}
 	var y driver.Points
 	type laid struct {
@@ -529,42 +546,121 @@ func (p *prepared) lineStart(width, box driver.Points) driver.Points {
 // ellipsis ends a line the line limit cut.
 const ellipsis = "…"
 
-// ellipsize ends ln with an ellipsis, dropping characters from its end
-// until it fits width.
-func (p *prepared) ellipsize(ln *line, width driver.Points) {
-	if len(ln.segments) == 0 {
-		return
+// cutHeadMiddle replaces the truncated tail of p with a head- or middle-cut
+// AttributedText when Ellipsize is EllipsizeHead or EllipsizeMiddle.
+func (p *prepared) cutHeadMiddle(lines []line, maxWidth driver.Points) (*driver.AttributedText, bool) {
+	if p.t.Ellipsize != driver.EllipsizeHead && p.t.Ellipsize != driver.EllipsizeMiddle {
+		return nil, false
 	}
-	last := &ln.segments[len(ln.segments)-1]
-	st := &p.styles[last.style]
-	ew := p.e.width(st, ellipsis)
-	for len(ln.segments) > 0 {
-		sg := &ln.segments[len(ln.segments)-1]
-		if sg.attachment >= 0 || sg.end <= sg.start {
-			ln.width -= sg.width
-			ln.segments = ln.segments[:len(ln.segments)-1]
+	fits := func(c *driver.AttributedText) bool {
+		if strings.ContainsAny(c.Text, "\n\r") {
+			return false
+		}
+		if maxWidth.IsAuto() {
+			return true
+		}
+		return p.e.Prepare(c).Measure(driver.Auto).Width <= maxWidth+0.01
+	}
+	var cut driver.AttributedText
+	if p.t.MaxLines == 1 {
+		cut = p.t.CutToFit(fits)
+	} else {
+		cut = p.t.CutRest(lines[len(lines)-1].start, fits)
+	}
+	return &cut, true
+}
+
+// truncateTail replaces ln with the longest prefix of the remaining text of
+// ln's paragraph from ln.start onward that fits maxWidth with an ellipsis.
+// Stopping at the paragraph boundary preserves explicit line breaks.
+func (p *prepared) truncateTail(ln *line, maxWidth driver.Points) {
+	var rest []segment
+	if ln.para >= 0 && ln.para < len(p.paragraphs) {
+		for _, pc := range p.paragraphs[ln.para] {
+			for _, sg := range pc.segments {
+				if sg.end <= ln.start {
+					continue
+				}
+				if sg.start < ln.start && sg.attachment < 0 {
+					sg.start = ln.start
+					sg.width = p.e.width(&p.styles[sg.style], p.t.Text[sg.start:sg.end])
+				}
+				rest = append(rest, sg)
+			}
+		}
+	}
+	limit := !maxWidth.IsAuto()
+	var kept []segment
+	var x driver.Points
+	for _, sg := range rest {
+		if sg.attachment >= 0 {
+			ew := p.e.width(&p.styles[sg.style], ellipsis)
+			if limit && x+sg.width+ew > maxWidth+0.01 {
+				break
+			}
+			kept = append(kept, sg)
+			x += sg.width
 			continue
 		}
-		text := strings.TrimRightFunc(p.t.Text[sg.start:sg.end], unicode.IsSpace)
-		w := ln.width - sg.width + p.e.width(&p.styles[sg.style], text)
-		if w+ew <= width+0.01 || len(text) == 0 {
-			// The ellipsis follows the last character, not its spaces.
-			sg.end = sg.start + len(text)
-			ln.width = w
-			sg.width = p.e.width(&p.styles[sg.style], text)
+		st := &p.styles[sg.style]
+		ew := p.e.width(st, ellipsis)
+		if !limit || x+sg.width+ew <= maxWidth+0.01 {
+			kept = append(kept, sg)
+			x += sg.width
+			continue
+		}
+		bestEnd := sg.start
+		var bestW driver.Points
+		for i := sg.start; i < sg.end; {
+			_, n := utf8.DecodeRuneInString(p.t.Text[i:])
+			w := p.e.width(st, p.t.Text[sg.start:i+n])
+			if x+w+ew > maxWidth+0.01 {
+				break
+			}
+			bestEnd, bestW = i+n, w
+			i += n
+		}
+		if bestEnd > sg.start {
+			sg.end, sg.width = bestEnd, bestW
+			kept = append(kept, sg)
+			x += bestW
+		}
+		break
+	}
+	// The ellipsis follows the last visible character, not trailing spaces.
+	for len(kept) > 0 {
+		sg := &kept[len(kept)-1]
+		if sg.attachment >= 0 {
 			break
 		}
-		_, n := utf8.DecodeLastRuneInString(text)
-		sg.end = sg.start + len(text) - n
-		ln.width -= sg.width
-		sg.width = p.e.width(&p.styles[sg.style], p.t.Text[sg.start:sg.end])
-		ln.width += sg.width
+		trimmed := strings.TrimRightFunc(p.t.Text[sg.start:sg.end], unicode.IsSpace)
+		if len(trimmed) == sg.end-sg.start {
+			break
+		}
+		x -= sg.width
+		if len(trimmed) == 0 {
+			kept = kept[:len(kept)-1]
+			continue
+		}
+		sg.end = sg.start + len(trimmed)
+		sg.width = p.e.width(&p.styles[sg.style], trimmed)
+		x += sg.width
+		break
 	}
-	// The ellipsis follows as a segment of its own: a run the text does
-	// not hold, which the layout writes in place.
-	ln.segments = append(ln.segments, segment{start: -1, style: last.style, width: ew, attachment: -1})
-	ln.width += ew
+	ellStyle := 0
+	end := ln.start
+	if n := len(kept); n > 0 {
+		ellStyle = kept[n-1].style
+		end = kept[n-1].end
+	} else if len(rest) > 0 {
+		ellStyle = rest[0].style
+	}
+	ew := p.e.width(&p.styles[ellStyle], ellipsis)
+	kept = append(kept, segment{start: -1, style: ellStyle, width: ew, attachment: -1})
+	ln.segments = kept
+	ln.width = x + ew
 	ln.trimmed = ln.width
+	ln.end = end
 }
 
 // carets reads the caret lines of lines, laid out at boxes: each
