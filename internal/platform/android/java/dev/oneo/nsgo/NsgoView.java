@@ -366,6 +366,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private final Host host;
     /** Downloads the app's images, as its Go process asks. */
     private final Downloads downloads;
+    private final AudioOutput audioOutputs;
     private java.util.Locale hostLocale;
     private float hostFontScale;
     private int hostAppearance;
@@ -433,6 +434,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             shadows = new ConcurrentHashMap<>();
             host = new Host(this);
             downloads = new Downloads(this::write);
+            audioOutputs = new AudioOutput(context.getApplicationContext(), this::write);
             overlays = new Overlays(this);
             discovery = new Discovery(context.getApplicationContext(), ui, this::write);
         } else {
@@ -443,6 +445,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             shadows = first.shadows;
             host = first.host;
             downloads = first.downloads;
+            audioOutputs = first.audioOutputs;
             overlays = null;
             discovery = first.discovery;
             engine = first.engine;
@@ -968,6 +971,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         Speech.releaseView(this);
         if (sensors != null) { sensors.close(); sensors = null; }
         if (systemPermissions != null) systemPermissions.clear();
+        if (audioOutputs != null) audioOutputs.closeAll();
         if (network != null) {
             getContext().getSystemService(ConnectivityManager.class).unregisterNetworkCallback(network);
             network = null;
@@ -1276,6 +1280,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 });
                 break;
             }
+            case Protocol.EXT_AUDIO_OUTPUT:
+                audioOutputs.message(message);
+                break;
             default:
                 Log.w(TAG, "unknown extended message " + kind);
         }

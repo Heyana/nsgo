@@ -73,6 +73,7 @@ var gated = map[string]service{
 	"LoadSound":                     serviceAudio,
 	"AudioOutputLatency":            serviceAudio,
 	"NewAudioPlayer":                serviceAudio,
+	"NewAudioOutput":                serviceAudio,
 	"AuthSession":                   serviceAuthSession,
 	"Locate":                        serviceLocation,
 	"WatchLocation":                 serviceLocation,

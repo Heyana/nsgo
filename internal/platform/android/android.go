@@ -146,6 +146,8 @@ const (
 	// msgGPUEvent is what GpuView.java reports: ready, resize, deviceLost, error, or readback (gpu.go).
 	msgGPUEvent       = 34
 	msgGeometryReport = 38 // displayed border boxes of one native surface
+	// msgAudioOutputReport answers an extAudioOutput message, pulls the next PCM block or reports an interruption (audiooutput.go, AudioOutput.java).
+	msgAudioOutputReport = 37
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
@@ -168,6 +170,8 @@ const (
 	extGPUFrame = 3
 	// extGeometry turns a surface's native DevTools border-box snapshots on or off: its ID and a flag.
 	extGeometry = 7
+	// extAudioOutput controls a pull PCM output stream and carries its rendered samples, as audiooutput.go and AudioOutput.java have them.
+	extAudioOutput = 6
 )
 
 // The parts of an image view's request msgImage carries.
@@ -233,6 +237,8 @@ type surface struct {
 	downloads downloads
 	// secrets are the secret requests Java has yet to answer.
 	secrets secretWaits
+	// audioOutputs are the open pull PCM output streams (audiooutput.go).
+	audioOutputs audioOutputManager
 
 	// testReply takes the runtime's answers to a test host's steps.
 	testReply func(r *reader)
@@ -332,6 +338,14 @@ func connect(opts Options) *surface {
 		}
 		return err
 	})
+	s.audioOutputs.init(func(body func(*writer)) error {
+		err := s.sendExtended(extAudioOutput, body)
+		if errors.Is(err, errNoExtendedMessages) {
+			// A runtime built before extended messages has no pull PCM output.
+			return driver.ErrAudioOutputUnsupported
+		}
+		return err
+	})
 	return s
 }
 
@@ -346,6 +360,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			// The runtime is gone, and the app with it.
 			s.textRPC.close()
 			s.assets.close()
+			s.closeAudioOutputs()
 			s.out.Close()
 			if s.engine != nil {
 				s.engine.Close()
@@ -525,6 +540,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			driver.ReportGameServices(slices.Clone(payload))
 		case msgGPUEvent:
 			s.gpuEvent(&r)
+		case msgAudioOutputReport:
+			s.audioOutputReport(&r)
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {

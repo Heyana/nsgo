@@ -185,6 +185,8 @@ jobs:
         run: go tool nsgo test ./internal/testhost/testdata/pick
       - name: Test headless network state
         run: go tool nsgo test ./internal/testhost/testdata/network
+      - name: Test that pull PCM audio is unsupported headless
+        run: go tool nsgo test ./internal/testhost/testdata/audiooutput
       - name: Test native photo pick answers
         env:
           GDK_BACKEND: x11
@@ -445,6 +447,8 @@ jobs:
         run: go tool nsgo test -target macos -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
       - name: Test composited captures
         run: go tool nsgo test -target macos ./internal/testhost/testdata/capture
+      - name: Test pull PCM audio
+        run: go tool nsgo test -target macos ./internal/testhost/testdata/audiooutput
       - name: Print crash reports
         if: failure()
         run: |
@@ -495,6 +499,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audio
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
           go tool nsgo test -target ios_simulator -timeout 1m ./testdata/devtools-geometry
+          go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audiooutput
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/testhost/testdata/deviceidentity
           go tool nsgo test -target watchos_simulator -timeout 1m ./testdata/devtools-geometry

@@ -131,6 +131,16 @@ On a Pixel 3 XL running Android 12, the first play of a loaded 100 ms tone took 
 
 The Apple backends read sounds through `imageload`. All backends use native decoders. WAV, AAC (`.m4a`) and MP3 are the portable formats. FLAC, Opus and Vorbis decode where the platform supports them and otherwise return `Decode`.
 
+## Pull PCM output
+
+`audio.NewOutput` opens a paused, scope-owned stream of interleaved Float32 PCM on macOS, iOS and Android. Each short render zero-fills the rest of its buffer and counts one underrun. The surface offers a `driver.AudioOutputFactory` to core, which applies the audio capability and closes the stream with its scope. PCM stays outside the mount protocol.
+
+On macOS and iOS (`internal/platform/apple/audiooutput.go`), it uses an AudioUnit default output on macOS and RemoteIO on iOS. The device calls the renderer on its audio thread and supplies a host-clock timestamp for each buffer. The output uses those timestamps and the client rate to advance `Position` only over frames whose presentation time has arrived. `Flush` stops and resets the unit, counts the client frames the reset discarded, and resumes an active stream with its previous presentation count. The count includes silence rendered for underruns. `Latency` reports the most recent block duration and scheduling lead. iOS uses the shared ambient audio session and requests the shortest positive buffer hint among active PCM streams. macOS uses the current device's buffer size. Changes to the route and iOS session interruptions pause the stream and post `OnInterrupt` to the scope.
+
+On Android (`internal/platform/android/audiooutput.go`, `AudioOutput.java`), the Java runtime opens a streaming Float32 `AudioTrack` (`MODE_STREAM`, `ENCODING_PCM_FLOAT`, requesting `PERFORMANCE_MODE_LOW_LATENCY` when a positive latency hint is given and falling back to default mode if refused). A dedicated writer thread paces Go's render goroutine over the pipe with pull credits (`AUDIO_OUTPUT` and `AUDIO_OUTPUT_REPORT`), reading hardware playback position and presentation lead from `AudioTrack.getTimestamp` with a wrap-safe fallback to `getPlaybackHeadPosition`. `Flush` pauses and flushes the `AudioTrack`, counts the unplayed client-produced frames (excluding underrun silence) discarded across the pipe and track buffer, and restarts playback while preserving `Position`'s monotonic base. `Latency` reports the actual `AudioTrack` buffer duration and queued presentation lead. Audio focus loss (`AudioFocusRequest`), `ACTION_AUDIO_BECOMING_NOISY`, routing changes (`AudioRouting.OnRoutingChangedListener`) and `AudioTrack.write` errors pause and flush the stream and post `OnInterrupt` to the scope; a dead track is recreated on the next `Start`.
+
+The app resumes an interrupted stream with `Start`. Other targets return `audio.ErrUnsupported`.
+
 ## NSH's design and this one
 
 - **The package.** NSH's `Sound` and `AudioPlayer` are modules of its core runtime. Here the API's home is `audio`, as issue #36 asked, so `core`'s API does not grow, while `core` does the engine's part as it does `mobile`'s. A package of its own beside `microphone`, importing nothing, cannot: it would reach no backend, `asset:` resource, iOS session or Android runtime, and its callbacks would run off the engine.

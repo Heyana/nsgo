@@ -73,6 +73,8 @@ final class Protocol {
                 return true;
             case EXT_GEOMETRY:
                 return true;
+            case EXT_AUDIO_OUTPUT:
+                return true;
             default:
                 return false;
         }
@@ -157,6 +159,8 @@ final class Protocol {
     static final int EXT_GPU_FRAME = 3;
     /** Enables native DevTools border-box snapshots on a surface: its ID and a flag. */
     static final int EXT_GEOMETRY = 7;
+    /** Controls a pull PCM output stream and carries rendered samples (audiooutput.go, AudioOutput). */
+    static final int EXT_AUDIO_OUTPUT = 6;
 
     /** Reads a bundled file: its request ID and the path under assets/. */
     static final int EXT_ASSET_READ = 9;
@@ -194,6 +198,8 @@ final class Protocol {
     /** What the code scanner reports: the surface, the request's count and a SCAN_FRAME with the frame's width, height and luminance, a SCAN_CLOSED, or a SCAN_FAILED with why (scan.go). */
     static final int SCAN_REPORT = 23;
     static final int DOWNLOAD_REPORT = 36;
+    /** Answers EXT_AUDIO_OUTPUT, pulls the next PCM block or reports an interruption (audiooutput.go, AudioOutput). */
+    static final int AUDIO_OUTPUT_REPORT = 37;
 
     /** Game controller connect, disconnect or button/axis state (gamepad.go, Gamepads). */
     static final int GAMEPAD = 24;
@@ -241,6 +247,16 @@ final class Protocol {
     interface Body {
         void write(DataOutputStream out) throws IOException;
     }
+
+    // What an EXT_AUDIO_OUTPUT message asks and an AUDIO_OUTPUT_REPORT reports, as audiooutput.go has them.
+    static final int PCM_OPEN = 1;
+    static final int PCM_START = 2;
+    static final int PCM_PAUSE = 3;
+    static final int PCM_CLOSE = 4;
+    static final int PCM_DATA = 5;
+    static final int PCM_REPLY = 1;
+    static final int PCM_PULL = 2;
+    static final int PCM_INTERRUPTED = 3;
 
     // What a SCAN message asks and a SCAN_REPORT reports, as scan.go has them.
     static final int SCAN_START = 0;

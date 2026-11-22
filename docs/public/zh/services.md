@@ -100,6 +100,13 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 设置 `core.SaveOptions.Accept` 可以在写入前校验用户选定的目标。回调在引擎的 goroutine 上运行。返回错误时，所选目标保持原样。macOS、Windows 和 Linux 上进程内的 GTK 对话框会显示拒绝原因，并允许用户选择其他路径。如果用户在拒绝后取消，保存回调会收到 `saved == false`、被拒绝的路径和原始错误。在 Android 和 Linux 桌面门户中，拒绝时保存回调直接收到上述结果。Android 让用户选择文件夹，传给校验回调的是树 URI，其中 `name` 查询参数为应用请求的文件名。校验通过后才创建文件，成功时返回新文档的 URI。校验超过五秒未答复，平台会放弃写入。iOS 和 HarmonyOS 对要求校验的保存返回错误。Web 没有目标路径，沿用其常规保存流程。
 
 在无头测试中，`App.PickFiles`、`App.PickDirectories` 和 `App.SaveFile` 分别接收 `nsgotest.FilePick`、`nsgotest.DirectoryPick` 和 `nsgotest.FileSave` 记录。`app.FilePicks`、`app.DirectoryPicks` 和 `app.Saves` 保存这些记录。
+
+## 拉取式 PCM 音频
+
+用 `audio.NewOutput(cx, audio.OutputConfig{SampleRate: 48000, Channels: 2, Render: render})` 播放应用解码或合成的交错 Float32 PCM。`Start` 开始拉取采样，`Pause` 停止拉取，所属作用域销毁时会关闭输出。macOS、iOS 和 Android 支持此输出，其他目标返回 `audio.ErrUnsupported`。
+
+`Render` 返回填入的音频帧数。它在音频线程上运行，须避免阻塞、分配内存或访问响应式图。填入的帧数不足时，剩余部分播放静音并增加一次 `Underruns`。`Position` 返回单调递增的帧数及该帧对应的主机时间。`Flush` 丢弃待播放的帧，`Latency` 返回缓冲延迟。音频输出线路变化或会话被中断时，输出暂停并在引擎中调用 `OnInterrupt`。应用可调用 `Start` 恢复。
+
 ## 存储
 
 `cx.Storage()` 是应用的键值存储，保存在设备上，应用的每个响应式图共享它。读取是同步的，在计算中读取会让它订阅变化；超过配额时 `SetItem` 返回 `core.StorageFullError`（默认 `core.StorageQuota` 为 5 MiB）。它是一个用户的任何程序都能读取的明文文件，令牌和密码请放进[机密](#机密)。

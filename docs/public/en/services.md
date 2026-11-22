@@ -103,6 +103,13 @@ In headless tests, `App.PickFiles`, `App.PickDirectories` and `App.SaveFile` rec
 ### Bundled assets
 
 Put files under the app's `resources/` directory and use `cx.ReadAsset("asset:maps/level.bin", done)` to read them from Go. The callback receives `([]byte, error)` on the engine's goroutine after the read and is dropped if its owner goes away or runs again. Use `errors.Is(err, core.ErrAssetNotFound)` to identify missing files. The read loads the entire file into memory.
+
+## Pull PCM audio
+
+Use `audio.NewOutput(cx, audio.OutputConfig{SampleRate: 48000, Channels: 2, Render: render})` to play interleaved Float32 PCM your app decodes or synthesizes. `Start` begins pulling samples, `Pause` stops the pulls and the owning scope closes the output as it goes. macOS, iOS and Android support this stream. Other targets return `audio.ErrUnsupported`.
+
+`Render` returns the number of frames it filled. It runs on the audio thread and must avoid blocking, allocation and graph access. A short fill plays silence for the remainder and increments `Underruns`. `Position` returns the monotonic frame count and the host time at that frame. Use `Flush` to discard pending frames and `Latency` to read the buffer latency. Route changes and interruptions pause output and call `OnInterrupt` on the engine. The app can resume it with `Start`.
+
 ## Storage
 
 `cx.Storage()` is the app's key-value storage, kept on the device and shared by every graph of the app. Reads are synchronous and read inside a computation subscribe it to changes; `SetItem` returns a `core.StorageFullError` past the quota (`core.StorageQuota`, 5 MiB by default). It is a plain file any program of the user's can read, so keep tokens and passwords in [secrets](#secrets) instead.
