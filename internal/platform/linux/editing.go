@@ -290,6 +290,13 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 		}
 	}
 	gtkWidgetSetSensitive(v.entry, boolInt(!in.Disabled))
+	// GTK takes the focus from an editor it makes insensitive without its focus controller's leave, so the blur is reported here, after the composition finished above.
+	if in.Disabled && w.focus == v {
+		w.focus = nil
+		if v.events.Has(driver.EventBlur) {
+			w.engine.Dispatch(driver.Event{Kind: driver.EventBlur, ID: v.id})
+		}
+	}
 	w.styleEntry(v)
 }
 
