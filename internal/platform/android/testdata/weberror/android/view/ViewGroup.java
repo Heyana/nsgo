@@ -1,0 +1,11 @@
+package android.view;
+
+import android.content.Context;
+
+public class ViewGroup extends View {
+    public ViewGroup(Context context) {
+        super(context);
+    }
+
+    public void removeView(View view) {}
+}

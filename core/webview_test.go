@@ -305,9 +305,24 @@ func TestWebErrorCarriesFailure(t *testing.T) {
 	})
 	h.commit()
 	id := h.find("web").id
-	h.tree.Dispatch(driver.Event{Kind: driver.EventError, ID: id, Text: "failed", Navigation: &WebNavigation{URL: "https://example.com"}, Data: &driver.WebFailure{Domain: "test", Code: 7}})
-	if got == nil || got.Domain != "test" || got.Code != 7 || got.URL != "https://example.com" {
-		t.Fatalf("error %#v", got)
+	for _, tc := range []struct {
+		url, msg, domain string
+		code             int
+	}{
+		{"https://example.com", "failed", "test", 7},
+		{"https://missing.invalid/", "net::ERR_NAME_NOT_RESOLVED", "android.webkit.WebViewClient", -2},
+	} {
+		got = nil
+		h.tree.Dispatch(driver.Event{
+			Kind:       driver.EventError,
+			ID:         id,
+			Text:       tc.msg,
+			Navigation: &WebNavigation{URL: tc.url},
+			Data:       &driver.WebFailure{Domain: tc.domain, Code: tc.code},
+		})
+		if got == nil || got.Domain != tc.domain || got.Code != tc.code || got.URL != tc.url || got.Message != tc.msg {
+			t.Fatalf("error %#v, want domain=%q code=%d url=%q msg=%q", got, tc.domain, tc.code, tc.url, tc.msg)
+		}
 	}
 }
 

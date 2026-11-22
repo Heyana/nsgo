@@ -2250,7 +2250,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Sends an event to the engine: its kind, node, count, point, text, size and index, then a gesture's phase, velocity and value, then a web view's navigation: flags of whether there is one, loading, canGoBack and canGoForward, and if there is, its URL and title; then a video's time and duration in milliseconds and whether it buffers; then a native view's callback arguments or a download as JSON, or the URL of a message's page, and whether an animation finished; then a pointer's position in its root view, a pan's position in its view, and the modifier keys (modifiers' bits).
+     * Sends an event to the engine: its kind, node, count, point, text, size and index, then a gesture's phase, velocity and value, then a web view's navigation: flags of whether there is one, loading, canGoBack and canGoForward, and if there is, its URL and title; then a video's time and duration in milliseconds and whether it buffers; then a native view's callback arguments or a download as JSON, the URL of a message's page, or a web error's domain (with its code in index), and whether an animation finished; then a pointer's position in its root view, a pan's position in its view, and the modifier keys (modifiers' bits).
      */
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
             int index, int phase, float vx, float vy, float value, WebNode.Navigation nav,
@@ -5278,6 +5278,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 n.web = new WebNode(context, new WebNode.Reporter() {
                     @Override public void report(int k, String text, WebNode.Navigation nav) {
                         if (n.has(k)) event(k, n.id, 0, 0, 0, text, 0, 0, 0, 0, 0, 0, 0, nav);
+                    }
+
+                    @Override public void error(String text, WebNode.Navigation nav, String domain, int code) {
+                        if (n.has(Protocol.EVENT_ERROR))
+                            event(Protocol.EVENT_ERROR, n.id, 0, 0, 0, text, 0, 0, code, 0, 0, 0, 0, nav,
+                                    0, 0, false, domain != null ? domain : "", false);
                     }
 
                     @Override public void message(String data, String url) {

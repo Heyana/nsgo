@@ -51,6 +51,8 @@ import java.util.concurrent.atomic.AtomicLong;
 final class WebNode {
     /** The JavaScript interface the bridge posts to. */
     static final String INTERFACE = "nsgo";
+    /** The WebError.Domain for WebResourceError codes (WebViewClient.ERROR_*). */
+    static final String ERROR_DOMAIN = "android.webkit.WebViewClient";
     /** The JavaScript interface a page hands the bytes of a blob: download to, under the token Java gave it. */
     private static final String BLOBS = "nsgoBlobs";
 
@@ -79,6 +81,9 @@ final class WebNode {
     /** Receives a web view's events; navigation has only the URL for errors. UI thread. */
     interface Reporter {
         void report(int kind, String text, Navigation navigation);
+
+        /** A page load failure: domain is empty for a refused navigation. */
+        void error(String text, Navigation navigation, String domain, int code);
 
         /** A message the page at url posted from its top frame. */
         void message(String data, String url);
@@ -248,7 +253,8 @@ final class WebNode {
             if (!request.isForMainFrame()) return false;
             String url = request.getUrl().toString();
             if (navigable(url)) return false;
-            reporter.report(Protocol.EVENT_ERROR, "nsgo: the web view may not navigate to " + url + " (the webview capability's hosts or schemes)", new Navigation(url, "", false, false, false));
+            reporter.error("nsgo: the web view may not navigate to " + url + " (the webview capability's hosts or schemes)",
+                    new Navigation(url, "", false, false, false), "", 0);
             return true;
         }
 
@@ -279,9 +285,14 @@ final class WebNode {
 
         @Override
         public void onReceivedError(WebView web, WebResourceRequest request, WebResourceError error) {
-            if (!request.isForMainFrame()) return;
-            Navigation nav = new Navigation(request.getUrl().toString(), "", false, false, false);
-            reporter.report(Protocol.EVENT_ERROR, String.valueOf(error.getDescription()), nav);
+            if (request == null || !request.isForMainFrame()) return;
+            String url = request.getUrl() != null ? request.getUrl().toString() : "";
+            Navigation nav = new Navigation(url, "", false, false, false);
+            if (error == null) {
+                reporter.error("", nav, "", 0);
+                return;
+            }
+            reporter.error(Objects.toString(error.getDescription(), ""), nav, ERROR_DOMAIN, error.getErrorCode());
         }
     }
 
