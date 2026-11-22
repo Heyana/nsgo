@@ -26,9 +26,7 @@ var (
 var libsOnce sync.Once
 var libsErr error
 
-// gtkDisplayReady checks the display as well as GTK's initialization flag:
-// gtk_init_check may return true after its earlier display connection failed.
-// A host that subsequently supplies GDK's default display can still start.
+// gtkDisplayReady checks the display as well as GTK's initialization flag: gtk_init_check may return true after its earlier display connection failed. A host that subsequently supplies GDK's default display can still start.
 func gtkDisplayReady() bool { return gtkInitCheck() != 0 && gdkDisplayGetDefault() != 0 }
 
 // openLibs loads the libraries, reporting which one is missing.

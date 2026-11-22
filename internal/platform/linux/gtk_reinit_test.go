@@ -14,8 +14,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// Each scenario needs a fresh native process: GTK deliberately keeps its
-// initialization state for the process's lifetime, including after failure.
+// Each scenario needs a fresh native process: GTK deliberately keeps its initialization state for the process's lifetime, including after failure.
 func TestGTKInitFailureDoesNotPoisonLaterStarts(t *testing.T) {
 	if scenario := os.Getenv("NSGO_GTK_REINIT_CHILD"); scenario != "" {
 		os.Unsetenv("DISPLAY")
@@ -77,8 +76,7 @@ func TestGTKDisplayCanBeSuppliedAfterInitializationFailure(t *testing.T) {
 		if _, err := NewView(app, Options{}); err == nil || !strings.Contains(err.Error(), "no display") {
 			t.Fatalf("initial NewView error=%v, want no display", err)
 		}
-		// An embedding host owns GTK's display. Supplying one explicitly
-		// after its initial failure must not be rejected by a cached error.
+		// An embedding host owns GTK's display. Supplying one explicitly after its initial failure must not be rejected by a cached error.
 		var openDisplay func(*byte) uintptr
 		var manager func() uintptr
 		var setDefault func(uintptr, uintptr)
