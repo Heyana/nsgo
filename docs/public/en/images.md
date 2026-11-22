@@ -19,7 +19,7 @@ core.Image{
 
 `core.Cover` fills the box and crops what overflows; `core.Contain` fits the whole picture, `core.Center` keeps its natural size, and `core.ScaleDown` keeps it unless it is larger than the box. `BlurRadius` blurs the picture in points, `TintColor` recolors its opaque pixels, and `ObjectPosition` places it in the box.
 
-Scaled bitmaps use smooth sampling by default. Set `Sampling: core.ImageSamplingNearest` in Go or `sampling="nearest"` in TSX to keep the hard edges of pixel art and pixel buffers. Apple platforms, Windows, Linux, Android, HarmonyOS, the web and mini programs support this setting. For exact pixel edges in a browser using CSS `pixelated`, scale to a whole number of device pixels per source pixel.
+Scaled bitmaps use smooth sampling by default. Set `Sampling: core.ImageSamplingNearest` in Go or `sampling="nearest"` in TSX to keep the hard edges of pixel art and pixel buffers. Apple platforms, Windows, Linux, Android and the web support this setting; HarmonyOS and mini programs apply it too, though their output is not yet checked on devices. For exact pixel edges in a browser using CSS `pixelated`, scale to a whole number of device pixels per source pixel.
 
 `Source` declares the size layout uses: one dimension derives the other, and an image without one is 0 by 0 until its style sizes it. `core.ImageSource{Data: data, Size: core.Size{Width: 24, Height: 24}}` shows bytes embedded with `go:embed`, and `Size` gives an SVG its intrinsic size.
 

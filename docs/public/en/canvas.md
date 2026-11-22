@@ -44,7 +44,7 @@ badge := core.MustParseSVG([]byte(`<svg viewBox="0 0 120 40">
 d.DrawSVGIn(badge, 12, 12, 180, 60)
 ```
 
-Scaled bitmaps use smooth sampling by default. For pixel art, call `d.SetImageSmoothing(false)` before drawing the bitmap, or set `ctx.imageSmoothingEnabled = false` in TSX. `Save` and `Restore` keep the setting with the rest of the drawing state. Nearest-neighbor sampling is available on Apple platforms, Windows, Linux, Android, HarmonyOS, the web and mini programs.
+Scaled bitmaps use smooth sampling by default. For pixel art, call `d.SetImageSmoothing(false)` before drawing the bitmap, or set `ctx.imageSmoothingEnabled = false` in TSX. `Save` and `Restore` keep the setting with the rest of the drawing state. Nearest-neighbor sampling is available on Apple platforms, Windows, Linux, Android and the web; HarmonyOS and mini programs apply it too, though their output is not yet checked on devices.
 
 `d.DrawVertices(image, vertices)` draws a textured mesh. Each consecutive three `core.CanvasVertex` values make one triangle. Set `Position` in canvas points and `TexCoord` in image points, as in `DrawImageFrom`. Each vertex's `Color` multiplies the texture and interpolates over the triangle. Its zero value leaves the texture unchanged. Update the points and record the drawing again to deform the mesh. The image can be any `ImageSource`, including a pixel buffer or an `OffscreenImage`'s `Source()`; Android's canvases draw no offscreen images yet. `SetImageSmoothing(false)` applies to meshes too. The web needs inline or same-origin images for arbitrary meshes.
 

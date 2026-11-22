@@ -19,7 +19,7 @@ core.Image{
 
 `core.Cover` 填满盒子并裁掉溢出部分；`core.Contain` 完整放下图片，`core.Center` 保持自然尺寸，`core.ScaleDown` 在图片大于盒子时缩小。`BlurRadius` 按点模糊，`TintColor` 重新给不透明像素上色，`ObjectPosition` 决定图片在盒子中的位置。
 
-位图缩放默认使用平滑采样。设置 Go 的 `Sampling: core.ImageSamplingNearest` 或 TSX 的 `sampling="nearest"`，可以保留像素画和像素缓冲区的锐利边缘。Apple 平台、Windows、Linux、Android、HarmonyOS、Web 和小程序支持此设置。如果浏览器使用 CSS `pixelated`，请将每个来源像素缩放为整数个设备像素，以保留精确的像素边缘。
+位图缩放默认使用平滑采样。设置 Go 的 `Sampling: core.ImageSamplingNearest` 或 TSX 的 `sampling="nearest"`，可以保留像素画和像素缓冲区的锐利边缘。Apple 平台、Windows、Linux、Android 和 Web 支持此设置；HarmonyOS 和小程序也会应用它，但其输出尚未在设备上验证。如果浏览器使用 CSS `pixelated`，请将每个来源像素缩放为整数个设备像素，以保留精确的像素边缘。
 
 `Source` 声明布局使用的尺寸：知道一边可以推出另一边，两边都不知道时图片在样式给出尺寸前是 0×0。`core.ImageSource{Data: data, Size: core.Size{Width: 24, Height: 24}}` 显示用 `go:embed` 嵌入的字节，`Size` 也给 SVG 一个固有尺寸。
 

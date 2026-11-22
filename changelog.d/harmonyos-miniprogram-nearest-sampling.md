@@ -1,3 +1,3 @@
 ### Added
 
-- Sample Canvas images and Image views nearest-neighbor on HarmonyOS and Image views in mini programs, for pixel art (#1209 by @houko).
+- Apply nearest-neighbor sampling to Canvas images and Image views on HarmonyOS and to Image views in mini programs, for pixel art, though their output is not yet checked on devices (#1209 by @houko).

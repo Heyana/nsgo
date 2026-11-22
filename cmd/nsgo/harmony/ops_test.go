@@ -102,9 +102,12 @@ func TestCanvasOpKeysMatchHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := strings.Index(string(goSrc), "type canvasOp struct {")
+	if start < 0 {
+		t.Fatal("canvasOp not found: the pattern no longer matches")
+	}
 	end := strings.Index(string(goSrc)[start:], "\n}")
 	iface := regexp.MustCompile(`(?s)interface CanvasOp \{(.*?)\n\}`).FindStringSubmatch(string(host))
-	if start < 0 || end < 0 || iface == nil {
+	if end < 0 || iface == nil {
 		t.Fatal("canvasOp or CanvasOp not found: the patterns no longer match")
 	}
 	keys := regexp.MustCompile(`json:"([a-z0-9]+)`).FindAllStringSubmatch(string(goSrc)[start:start+end], -1)
