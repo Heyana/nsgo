@@ -10,8 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-// Associate videos after a mount batch has inserted, moved or removed both
-// ends of the relationship. UIView ancestry includes a view's clipping holder.
+// Associate videos after a mount batch has inserted, moved or removed both ends of the relationship. UIView ancestry includes a view's clipping holder.
 func (s *surface) updatePictureInPictureVideos() {
 	for _, video := range s.videos {
 		var owner *apple.PictureInPicture
@@ -25,8 +24,7 @@ func (s *surface) updatePictureInPictureVideos() {
 	}
 }
 
-// dirtyPictureInPictures schedules snapshots after tree changes, animation
-// steps and image loads, including ones that need no engine commit.
+// dirtyPictureInPictures schedules snapshots after tree changes, animation steps and image loads, including ones that need no engine commit.
 func (s *surface) dirtyPictureInPictures() {
 	for _, v := range s.pips {
 		v.pip.Dirty()
@@ -55,8 +53,7 @@ func (s *surface) wakePictureInPictures() {
 	}
 }
 
-// UIKit stops its display link in the background. An active PiP session
-// uses a single pending timer to read video frames while the app can run.
+// UIKit stops its display link in the background. An active PiP session uses a single pending timer to read video frames while the app can run.
 func (s *surface) schedulePictureInPictureFrame(delay time.Duration) {
 	if s.pipTimer != nil {
 		return

@@ -102,8 +102,7 @@ func testPictureInPictureComposite(t *testing.T, separateAudio bool) {
 		var frame, overlay [4]byte
 		for deadline := time.Now().Add(6 * time.Second); time.Now().Before(deadline); {
 			frame, overlay = capture()
-			// AVFoundation color conversion may leave small contributions
-			// in the other channels. Blue and green must still be dominant.
+			// AVFoundation color conversion may leave small contributions in the other channels. Blue and green must still be dominant.
 			other := max(int(frame[1-channel]), int(frame[2]))
 			if int(frame[channel])-other > 120 && frame[channel] > 200 && frame[3] == 255 {
 				if overlay != [4]byte{0, 0, 255, 255} {

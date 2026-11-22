@@ -34,8 +34,7 @@ func loadPiPVideo() {
 	purego.RegisterLibFunc(&imageFromPixel, vt, "VTCreateCGImageFromCVPixelBuffer")
 }
 
-// SetPictureInPictureOwner selects the custom PiP tree that renders this
-// video, or nil when the video returns to the ordinary view hierarchy.
+// SetPictureInPictureOwner selects the custom PiP tree that renders this video, or nil when the video returns to the ordinary view hierarchy.
 func (v *Video) SetPictureInPictureOwner(owner *PictureInPicture, wake func()) {
 	if v.frame.owner == owner {
 		return
@@ -105,8 +104,7 @@ func (v *Video) closePiPVideo() {
 
 func (v *Video) requestPiPVideoFrame() {
 	if v.frame.output != 0 {
-		// A paused item can need another tick as it decodes its first frame
-		// after loading or seeking. Resume and seek completion can wake it again.
+		// A paused item can need another tick as it decodes its first frame after loading or seeking. Resume and seek completion can wake it again.
 		v.frame.until = time.Now().Add(2 * time.Second)
 		if v.frame.wake != nil {
 			v.frame.wake()
@@ -114,8 +112,7 @@ func (v *Video) requestPiPVideoFrame() {
 	}
 }
 
-// UpdatePictureInPictureFrame brings the detached video layer up to the
-// player's current time. It returns whether another video tick is needed.
+// UpdatePictureInPictureFrame brings the detached video layer up to the player's current time. It returns whether another video tick is needed.
 func (v *Video) UpdatePictureInPictureFrame(background bool) bool {
 	f := &v.frame
 	if f.output == 0 || f.owner.closing || (background && !f.owner.ContinuesInBackground()) || v.status.failed {
@@ -185,8 +182,7 @@ func (v *Video) layoutPiPVideo() {
 	} else if v.config.ResizeMode != driver.Stretch {
 		sx, sy = min(sx, sy), min(sx, sy)
 	}
-	// The layer is anchored at its center, so only the linear part of
-	// the track transform is needed to orient it in the holder.
+	// The layer is anchored at its center, so only the linear part of the track transform is needed to orient it in the holder.
 	WithoutAnimation(func() {
 		f.layer.Send(sel("setBounds:"), Rect(0, 0, w, h))
 		f.layer.Send(sel("setPosition:"), CGPoint{X: bounds.Size.Width / 2, Y: bounds.Size.Height / 2})
