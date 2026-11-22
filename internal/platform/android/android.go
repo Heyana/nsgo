@@ -1020,8 +1020,7 @@ func (s *surface) Mount(b *driver.MountBatch) {
 // mount sends the batch of v's tree to Java, which names its surface, and loads the image sources it changed.
 func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 	if v.detached.Load() {
-		// Services keep running while the native tree is absent. A root of
-		// zero marks a control-only batch, safe for a detached runtime.
+		// Services keep running while the native tree is absent. A root of zero marks a control-only batch, safe for a detached runtime.
 		control := &driver.MountBatch{}
 		for _, it := range b.Items {
 			if it.ID == 0 {

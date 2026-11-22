@@ -2,10 +2,7 @@ package core
 
 import "github.com/nsgo-dev/nsgo/internal/driver"
 
-// Remount makes the next driver.MountBatch recreate this tree's native views
-// without rerunning its components or disposing their scopes. The platform
-// must discard the old native tree before applying that batch, retaining
-// its process resources and animation graph.
+// Remount makes the next driver.MountBatch recreate this tree's native views without rerunning its components or disposing their scopes. The platform must discard the old native tree before applying that batch, retaining its process resources and animation graph.
 func (t *Tree) Remount() {
 	t.rt.check()
 	if t.closed || t.remounting {
@@ -31,7 +28,7 @@ func (t *Tree) Remount() {
 			t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemZoomTo, ID: n.id, Zoom: &driver.ZoomRequest{Scale: sc.zoom}})
 			// The current offset may exceed the unzoomed content's bounds.
 			t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemScrollTo, ID: n.id, Point: sc.offset})
-			sc.issue(true, sc.offset)
+			sc.issue(true, false, sc.offset)
 		}
 		if n.canvas != nil {
 			n.canvas.fresh = true

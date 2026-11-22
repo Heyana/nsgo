@@ -1006,10 +1006,7 @@ func (e *Engine) Language() string {
 // engine runs the callbacks waiting for it on its goroutine, then commits.
 func (e *Engine) Frame() { e.push(message{surface: e.surface, frame: true}) }
 
-// Remount recreates this surface's native views from the current graph. The
-// optional before callback runs on the engine goroutine immediately before
-// its complete batch is mounted, so a platform can reset its native tree in
-// the same ordered stream. Components and their state remain alive.
+// Remount recreates this surface's native views from the current graph. The optional before callback runs on the engine goroutine immediately before its complete batch is mounted, so a platform can reset its native tree in the same ordered stream. Components and their state remain alive.
 func (e *Engine) Remount(before func()) {
 	if before == nil {
 		before = func() {}
