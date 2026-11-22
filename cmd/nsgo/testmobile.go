@@ -208,18 +208,11 @@ func iosDeviceTestRunner(ctx context.Context, p *project, sys *appleOS, dir stri
 			defer cancel(nil)
 			launchTimer := time.AfterFunc(simulatorLaunchTimeout, func() { cancel(errDeviceLaunchTimeout) })
 			defer launchTimer.Stop()
-			cmd := exec.CommandContext(runCtx, "xcrun", append([]string{"devicectl", "device", "process", "launch", "--console",
-				// After --, devicectl takes the test's flags, as -test.run, for the app's rather than its own.
-				"--terminate-existing", "--device", device.UDID, p.ID, "--"}, args...)...)
-			cmd.Env = append(os.Environ(), "DEVICECTL_CHILD_NSGO_TEST_RUN="+token)
-			for _, kv := range env {
-				cmd.Env = append(cmd.Env, "DEVICECTL_CHILD_"+kv)
-			}
-			logs, err := cmd.StdoutPipe()
+			cmd, logs, err := iosDeviceTestProcess(runCtx, device.UDID, p.ID, token, args, env)
 			if err != nil {
 				return -1, err
 			}
-			cmd.Stderr = io.Discard
+			defer logs.Close()
 			if err := cmd.Start(); err != nil {
 				return -1, deviceLaunchError(runCtx, "app on "+device.Name, err)
 			}
@@ -267,6 +260,24 @@ func iosDeviceTestRunner(ctx context.Context, p *project, sys *appleOS, dir stri
 		close:          func() {},
 		timesFromStart: true,
 	}, nil
+}
+
+// iosDeviceTestProcess connects both bridged app streams to the marked-run
+// reader: Go writes panic diagnostics to stderr, including failures before the
+// first test begins. Discarding stderr leaves only devicectl's exit status.
+func iosDeviceTestProcess(ctx context.Context, device, id, token string, args, env []string) (*exec.Cmd, io.ReadCloser, error) {
+	cmd := exec.CommandContext(ctx, "xcrun", append([]string{"devicectl", "device", "process", "launch", "--console",
+		"--terminate-existing", "--device", device, id, "--"}, args...)...)
+	cmd.Env = append(os.Environ(), "DEVICECTL_CHILD_NSGO_TEST_RUN="+token)
+	for _, kv := range env {
+		cmd.Env = append(cmd.Env, "DEVICECTL_CHILD_"+kv)
+	}
+	logs, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd.Stderr = cmd.Stdout
+	return cmd, logs, nil
 }
 
 // readMarkedRun copies to out the lines a test host writes between its run's start and exit marks, calls onStart, when it is not nil, at the start mark, and returns the code the exit mark gives, even with no start mark before it, a marked runtime error even before the host starts, or ended's error when the lines end before it.

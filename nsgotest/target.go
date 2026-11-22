@@ -654,8 +654,13 @@ func (t *target) reveal(v *View) driver.Point {
 		var box driver.Bounds
 		for p := v.Parent; p != nil; p = p.Parent {
 			if p.Kind == KindScroll && !p.Scroll.Behavior.NoScroll {
-				b := p.zoomedFrame()
-				if at.X < b.Origin.X || at.Y < b.Origin.Y || at.X >= b.Origin.X+b.Size.Width || at.Y >= b.Origin.Y+b.Size.Height {
+				b, _ := t.a.revealViewport(v, p, at)
+				if b.Size.Width <= 0 || b.Size.Height <= 0 {
+					continue
+				}
+				outsideX := at.X < b.Origin.X || at.X >= b.Origin.X+b.Size.Width
+				outsideY := at.Y < b.Origin.Y || at.Y >= b.Origin.Y+b.Size.Height
+				if (p.Scroll.Horizontal || p.Scroll.Zooms()) && outsideX || (!p.Scroll.Horizontal || p.Scroll.Zooms()) && outsideY {
 					hider, box = p, b
 					break
 				}

@@ -786,6 +786,52 @@ func (a *App) BlurWindow() {
 	a.done()
 }
 
+// revealViewport excludes an unrelated native view covering a viewport edge,
+// such as a tab bar. Scroll gestures start in the remaining visible area;
+// an outer scroll can reveal an entirely covered inner viewport.
+func (a *App) revealViewport(v, scroll *View, at driver.Point) (driver.Bounds, bool) {
+	b := scroll.zoomedFrame()
+	for p := scroll.Parent; p != nil; p = p.Parent {
+		if p.Kind != KindScroll && !p.Style.Clip {
+			continue
+		}
+		c := p.zoomedFrame()
+		left, top := max(b.Origin.X, c.Origin.X), max(b.Origin.Y, c.Origin.Y)
+		right, bottom := min(b.Origin.X+b.Size.Width, c.Origin.X+c.Size.Width), min(b.Origin.Y+b.Size.Height, c.Origin.Y+c.Size.Height)
+		b = driver.Bounds{Origin: driver.Point{X: left, Y: top}, Size: driver.Size{Width: max(0, right-left), Height: max(0, bottom-top)}}
+	}
+	probe := at
+	if probe.X < b.Origin.X || probe.X >= b.Origin.X+b.Size.Width {
+		probe.X = b.Origin.X + b.Size.Width/2
+	}
+	if probe.Y < b.Origin.Y || probe.Y >= b.Origin.Y+b.Size.Height {
+		probe.Y = b.Origin.Y + b.Size.Height/2
+	}
+	hit := a.viewAt(probe, func(*View) bool { return true })
+	if hit == nil || hit.Kind != KindNative || v.within(hit) || hit.within(v) {
+		return b, b != scroll.zoomedFrame()
+	}
+	c := hit.zoomedFrame()
+	trim := func(start, size, coverStart, coverSize driver.Points) (driver.Points, driver.Points) {
+		end, coverEnd := start+size, coverStart+coverSize
+		if coverStart <= start && coverEnd > start {
+			next := min(end, coverEnd)
+			return next, end - next
+		}
+		if coverStart < end && coverEnd >= end {
+			return start, max(0, coverStart-start)
+		}
+		return start, size
+	}
+	if c.Origin.X <= b.Origin.X && c.Origin.X+c.Size.Width >= b.Origin.X+b.Size.Width {
+		b.Origin.Y, b.Size.Height = trim(b.Origin.Y, b.Size.Height, c.Origin.Y, c.Size.Height)
+	}
+	if c.Origin.Y <= b.Origin.Y && c.Origin.Y+c.Size.Height >= b.Origin.Y+b.Size.Height {
+		b.Origin.X, b.Size.Width = trim(b.Origin.X, b.Size.Width, c.Origin.X, c.Size.Width)
+	}
+	return b, b != scroll.zoomedFrame()
+}
+
 // reveal brings the middle of a named view into its scroll viewports before picking at it, as a target's native steps do.
 func (a *App) reveal(v *View) driver.Point {
 	if a.target != nil {
@@ -799,15 +845,24 @@ func (a *App) reveal(v *View) driver.Point {
 				continue
 			}
 			local := p.localPoint(at)
-			if (driver.Bounds{Size: p.Frame.Size}).Contains(local) {
+			viewport := driver.Bounds{Size: p.Frame.Size}
+			if shown, clipped := a.revealViewport(v, p, at); clipped {
+				if shown.Size.Width <= 0 || shown.Size.Height <= 0 {
+					continue
+				}
+				near := p.localPoint(shown.Origin)
+				far := p.localPoint(driver.Point{X: shown.Origin.X + shown.Size.Width, Y: shown.Origin.Y + shown.Size.Height})
+				viewport = driver.Bounds{Origin: near, Size: driver.Size{Width: far.X - near.X, Height: far.Y - near.Y}}
+			}
+			if viewport.Contains(local) {
 				continue
 			}
 			off := p.Offset
 			if p.Scroll.Horizontal || p.Scroll.Zooms() {
-				off.X += local.X - p.Frame.Size.Width/2
+				off.X += local.X - (viewport.Origin.X + viewport.Size.Width/2)
 			}
 			if !p.Scroll.Horizontal || p.Scroll.Zooms() {
-				off.Y += local.Y - p.Frame.Size.Height/2
+				off.Y += local.Y - (viewport.Origin.Y + viewport.Size.Height/2)
 			}
 			if off = p.clamp(off); off != p.Offset {
 				a.scrollView(p, off)

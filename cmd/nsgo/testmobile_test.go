@@ -156,6 +156,30 @@ exit 3
 	}
 }
 
+// devicectl bridges a native Go panic to stderr even when it succeeds as a
+// launcher. The actual process pipe must retain that diagnostic for the reader.
+func TestIOSDeviceTestPreservesPanicDiagnostics(t *testing.T) {
+	checkXcrun(t, `[ "$DEVICECTL_CHILD_NSGO_TEST_TARGET" = ios ] || exit 9
+printf 'nsgo-test-start %s\n' "$DEVICECTL_CHILD_NSGO_TEST_RUN"
+echo 'panic: device fixture failed before the first test' >&2
+exit 2
+`)
+	cmd, logs, err := iosDeviceTestProcess(t.Context(), "phone", "dev.nsgo.test", "current", []string{"-test.run=^TestA$"}, []string{"NSGO_TEST_TARGET=ios"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logs.Close()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	code, readErr := readMarkedRun(logs, "current", &output, func() error { return errors.New("device ended without its exit mark") }, nil)
+	waitErr := cmd.Wait()
+	if code != -1 || readErr == nil || waitErr == nil || !strings.Contains(output.String(), "panic: device fixture failed before the first test") {
+		t.Fatalf("code=%d read=%v wait=%v output=%q", code, readErr, waitErr, output.String())
+	}
+}
+
 // The launch and the test have deadlines of their own (#647): the launch's ends at the host's start mark, and -timeout counts from there, so a slow launch does not fail a fast test and a long test is not cut off by the launch's limit.
 func TestSimulatorTestDeadlines(t *testing.T) {
 	const marks = `printf 'nsgo-test-start %s\n' "$SIMCTL_CHILD_NSGO_TEST_RUN"

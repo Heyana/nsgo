@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -48,8 +49,14 @@ func startDesktop(t *testing.T, opts ...nsgotest.Option) *nsgotest.App {
 }
 
 // startPhone runs the gallery at a phone's size.
-func startPhone(t *testing.T) *nsgotest.App {
-	return nsgotest.Start(t, Root, nsgotest.Size(390, 844), nsgotest.Environment(core.Environment{OS: core.OSIOS, Idiom: core.IdiomPhone, Locale: "en-US"}))
+func startPhone(t *testing.T, inspect ...func(*core.Scope)) *nsgotest.App {
+	root := func(cx *core.Scope) core.Node {
+		for _, f := range inspect {
+			f(cx)
+		}
+		return Root(cx)
+	}
+	return nsgotest.Start(t, root, nsgotest.Size(390, 844), nsgotest.Environment(core.Environment{OS: core.OSIOS, Idiom: core.IdiomPhone, Locale: "en-US"}))
 }
 
 // open shows a demo in the desktop layout, from its tab's sidebar.
@@ -65,7 +72,7 @@ func showBase(app *nsgotest.App, title string) {
 }
 
 // openTab chooses a tab of the phone layout's system tab bar.
-func openTab(app *nsgotest.App, i int) { app.Emit("id:tab-bar", "change", float64(i)) }
+func openTab(app *nsgotest.App, i int) { app.SelectTab("id:tab-bar", i) }
 
 // openPhone pushes a demo in the phone layout, from its tab's index.
 func openPhone(app *nsgotest.App, name string) {
@@ -1801,11 +1808,18 @@ func TestTerminal(t *testing.T) {
 // programs: typed through the key bar and the keyboard, its title reaches
 // the panel; a long press opens the context menu.
 func TestTerminalPhone(t *testing.T) {
-	app := startPhone(t)
+	var keyboard atomic.Int32
+	app := startPhone(t, func(cx *core.Scope) {
+		cx.Effect(func() { keyboard.Store(int32(cx.Env().KeyboardHeight())) })
+	})
 	openPhone(app, "Terminal")
 	app.Find("id:terminal")
 	app.Find("id:terminal-key-escape")
 	app.Type("label:Terminal", "title on a phone")
+	if nsgotest.Target() == "ios" {
+		app.WaitUntil(5*time.Second, func() bool { return keyboard.Load() > 0 })
+		t.Logf("native software keyboard inset: %d points", keyboard.Load())
+	}
 	app.Press("id:terminal-key-ctrl")
 	app.Type("label:Terminal", "u")
 	app.Type("label:Terminal", "title from the phone")

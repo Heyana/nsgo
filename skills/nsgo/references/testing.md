@@ -13,6 +13,8 @@ func TestAdd(t *testing.T) {
 }
 ```
 
+Target scroll reveal avoids native bars covering viewport edges, including nested scroll views. Physical iPhone test output retains stderr panic diagnostics after the host starts.
+
 `TestMain` gives the platform the main thread when tests run on a target; keep it in every package with app tests. For setup and teardown around the tests, call `nsgotest.MainFunc(func() int { setup(); defer teardown(); return m.Run() })` instead, never code after `nsgotest.Main`, which does not return; on a target it runs once per test, each in a process of its own. On Android, write setup logs to stderr until the host starts: stdout carries its protocol, and a bypassed host or corrupt frame fails the run with a `nsgotest.Main` hint. If a target test times out, `nsgo test` reports whether the host started and includes the tail of that test's logcat. The target runner retries transient screen-state adb reads and stops once with a device-lost error if the device stays unreachable.
 
 An app run with its function, `nsgo.Run(func(app *core.Scope) {...})`, starts with `nsgotest.StartApp(t, fn)`, which runs it once in the app's own scope as `Run` does; never pass `core.AppRoot(fn)` to `Start`, which shows a root view as the main view, so the function's scope would not last.
@@ -59,7 +61,7 @@ A press can name a text field directly. Read `app.Find("id:field").Focused` afte
 
 `Select(selector, start, end)` uses UTF-16 offsets. On iOS, Android and HarmonyOS targets it moves the native field's range and reads it back; selection callbacks no longer skip those tests. HarmonyOS typing replaces the reported range, but its test host still lacks native clipboard keys. Desktop and web targets retain their select-all/arrow-key path.
 
-Use `app.SelectTab("id:tabs", 1)` to choose the second item of a mounted `mobile.TabBar`. It works headless with an iOS or Android `Environment` and drives the native tab bar on iOS and Android targets.
+Use `app.SelectTab("id:tabs", 1)` to choose the second item of a mounted `mobile.TabBar`. It works headless with an iOS or Android `Environment` and drives the native tab bar on iOS and Android targets; use it for phone navigation instead of model-only `Emit`.
 
 `Ref.Focus()` commands follow platform focus stops: text fields everywhere, plus enabled pressable and `Focusable` views on desktops, the web and Apple TV. Use a desktop or web `Environment` when a headless test exercises button focus. The `Focus` step reaches these desktop/web stops through Tab. Any of `OnPress`, `OnPressDown`, `OnPressUp` or `OnLongPress` makes a view a stop; Return or Space sends it the down, up and press events it handles.
 

@@ -54,11 +54,11 @@ func TestMain(m *testing.M) {
 
 `app.PressWith("id:row", core.Modifiers{Shift: true})` 为一次点击按住修饰键；`PressAtWith(selector, core.Point{X: 20, Y: 10}, mods)` 点击视图中的指定点。`Shift`、`Control`、`Alt` 和 `Platform`（Apple 上为 Command，其他平台为 Windows/Super 键）会通过无头模型和目标的原生输入传给 `OnPressDown`、`OnPressUp` 和 `OnPress`。仍遵循平台的原生约定：例如 macOS 上的 Chrome 会将 Control-click 转为上下文菜单。之后的 `Press` 或 `PressAt` 不带修饰键。watchOS 没有键盘修饰键输入，因此会拒绝带修饰键的点击。
 
-`PressAt` 的坐标是指定视图的视口内的点。无头模型和目标平台的测试模型在寻找点击目标、判断可见性和计算滚动范围时，都会计入滚动内容的缩放，包括嵌套缩放和小于 1 的比例。视图的 `Bounds()` 仍与 `Ref.Bounds` 一样，报告变换前的布局框。
+目标测试会将滚动内容中的控件移到原生栏未遮挡的位置，并遵循嵌套视口及各滚动轴。`PressAt` 的坐标是指定视图的视口内的点。无头模型和目标平台的测试模型在寻找点击目标、判断可见性和计算滚动范围时，都会计入滚动内容的缩放，包括嵌套缩放和小于 1 的比例。视图的 `Bounds()` 仍与 `Ref.Bounds` 一样，报告变换前的布局框。
 
 点击可以直接指定文本框。在无头测试和各个目标平台上，可以在点击返回后立即读取 `app.Find("id:field").Focused`，包括点击处理函数聚焦文本框的情况。
 
-`app.SelectTab("id:tabs", 1)` 选择已挂载的 `mobile.TabBar` 的第二项。无界面测试使用 iOS 或 Android 的 `Environment`，iOS 和 Android 目标使用原生标签栏。索引从零开始，必须对应现有选项。
+`app.SelectTab("id:tabs", 1)` 选择已挂载的 `mobile.TabBar` 的第二项。无界面测试使用 iOS 或 Android 的 `Environment`，iOS 和 Android 目标使用原生标签栏。索引从零开始，必须对应现有选项。手机导航测试应使用它；`Emit` 报告模型事件，仅用于无头测试。
 
 `app.Focus(selector)` 像点击一样聚焦文本框；在桌面或 Web 的 `Environment` 中，或在这些目标上，它用 Tab 走到可按压或 `Focusable` 的视图，之后的 `app.Key("Return")` 会按下它。应用调用的 `Ref.Focus()` 遵循相同的停靠点：文本框在所有平台上都能聚焦，其他视图只在桌面、Web 和 Apple TV 上能聚焦，因此无头测试按钮的焦点需要使用这些环境之一。带有 `OnPress`、`OnPressDown`、`OnPressUp` 或 `OnLongPress` 任意一个的视图都算可按压，与各平台一致；在它上面按 Return 或 Space 会发送它处理的按下、抬起和按压事件，所以只有 `OnLongPress` 的视图能获得焦点，但没有按键能按下它。
 
@@ -137,6 +137,8 @@ go tool nsgo test -target macos
 清理测试时会关闭仍打开的原生上下文菜单，避免吞掉下一个子测试的第一次点击或按键。在 macOS 上，WindowServer 截图包含测试窗口中打开的原生弹出菜单，裁剪到窗口范围内，不包含其他窗口。
 
 可用的目标有 `macos`、`windows`、`linux`、`web`（在 Chrome、Chromium 或 Edge 中）、`ios`（在连接的 iPhone 上运行，连接多台时用 `-device` 指定，用 Xcode 上次使用的团队或 `-team` 指定的团队签名）、`ios_simulator`、`tvos_simulator`（方向键、作为选择键的 Return 和作为 Menu 键的 Escape 模拟遥控器）、`watchos_simulator` 和 `android`，或 `all`。每个测试在独立的进程中运行。`app.Capture()` 返回当前像素的 `image.Image`，`app.CapturePNG()` 返回 PNG 字节，无头运行时两者都会跳过测试。在 macOS 上，截图是 WindowServer 合成后的窗口，包含 Core Animation 的阴影、蒙版、滤镜、动画和插入符；无法截取窗口时（例如窗口已最小化或在其他空间中），改由视图通过 AppKit 自行绘制，不含这些效果，并在第一次这样做时记录日志。macOS 上的两种截图路径都会在编码前转换为 sRGB。iOS 和 tvOS 也使用 sRGB 截图，因此这些目标的像素值不会因显示器使用 Display P3 而变化。Android 截取的是实际渲染的窗口，包括着色器内容。`app.Screenshot("en/library")` 会把截图保存为 `.nsgo/test/screenshots/<target>/en/library.png`，在 `macos` 上即 `.nsgo/test/screenshots/macos/en/library.png`；名称可以包含空格，但不能是绝对路径或包含 `..`。`-screenshots dir` 改为保存到 `dir` 下，`dir` 是相对于当前工作目录的路径。设备日志丢失或截断了部分内容的截图会让测试失败且不会写入文件，路径与之前的截图重复也会让该测试失败。`-fps` 会在 `macos`、`windows`、`linux` 和 `ios_simulator` 上每秒记录一次性能监视器的读数，在 `web` 和 `android` 上只记录引擎的读数。`-env KEY=VALUE` 为测试设置环境变量，手机上的测试只能这样拿到变量。在模拟器或手机上，没有 `nsgo.yaml` 的目录的测试会安装成以该目录命名的应用，ID 是 `dev.nsgo.` 加上目录名中的字母和数字，例如 `base/formula` 的是 `dev.nsgo.formula`。在 `android` 和各模拟器上，测试以应用 ID 加 `.nsgotest` 的标识安装（App Clip 也移到这个 ID 之下），与已安装的应用并存而不覆盖它，运行结束后卸载。在 `ios` 上，测试以应用自己的 ID 安装，因为描述文件只认这个 ID，会替换 iPhone 上已安装的版本及其数据。
+
+真机 iPhone 目标测试会保留应用的 stderr，包括测试宿主启动后的 Go panic 诊断。
 
 在 `android` 和 `ios` 上，测试只能在 NSGo 的测试宿主中运行：Android 运行时从测试进程的标准输出读取协议，工具也要靠宿主写下的标记才能拿到测试的输出和退出码。要在这两个目标上运行的包，其测试必须链接宿主，即在某个测试文件中导入 `github.com/nsgo-dev/nsgo`（空导入即可），并在 `TestMain` 中用 `nsgotest.Main` 或 `nsgotest.MainFunc` 启动它。构建或安装之前，`nsgo test` 会检查是否链接了宿主、是否声明了 `TestMain`。如果该函数绕过宿主，Android 会报告 stdout 协议错误并提示调用 `nsgotest.Main`；宿主启动之前，日志和初始化输出应写到 stderr。像 `ui/chat` 这样的库包，在测试文件中补上这两项后即可在手机上运行，无头运行或在其他目标上运行则无需改动。Android 目标测试达到超时时，结果还会说明宿主是否写出了启动标记，并包含运行器清理日志前该测试的 `logcat` 尾部。
 
