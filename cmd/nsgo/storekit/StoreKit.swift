@@ -175,8 +175,7 @@ private func handle(_ r: Request) async throws -> Answer {
             throw Failure(code: "notFound")
         }
         defer { _ = locked { finishing.remove(id) } }
-        // Entitlements include finished purchases. Only StoreKit's unfinished
-        // sequence can tell whether this ID still needs delivery acknowledged.
+        // Entitlements include finished purchases. Only StoreKit's unfinished sequence can tell whether this ID still needs delivery acknowledged.
         for await result in Transaction.unfinished where result.unsafePayloadValue.id == id {
             await result.unsafePayloadValue.finish()
             return Answer()

@@ -21,8 +21,7 @@ import (
 
 const fixtureProduct = "dev.nsgo.test.storekit1367.entitlement"
 
-// The SDK requires a .storekit JSON artifact; it is generated in the test's
-// temporary directory rather than adding a hand-edited JSON configuration.
+// The SDK requires a .storekit JSON artifact; it is generated in the test's temporary directory rather than adding a hand-edited JSON configuration.
 func localStoreKitConfiguration(t *testing.T) string {
 	t.Helper()
 	config := map[string]any{
@@ -129,15 +128,14 @@ func TestNativeFinishedTransactionStaysFinishedAfterEntitlements(t *testing.T) {
 	app.Settle()
 	listed := awaitResult(t, products, "products")
 	if listed.err != nil || len(listed.products) != 1 || listed.products[0].DisplayPrice == "" {
-		t.Fatalf("local product: count%d error%v", len(listed.products), listed.err)
+		t.Fatalf("local product: count %d, error %v", len(listed.products), listed.err)
 	}
 	purchase := make(chan core.Transaction, 8)
 	app.Post(func() {
 		cx.OnPurchaseUpdate(func(tr core.Transaction) { purchase <- tr })
 	})
 	app.Settle()
-	// Inject a local transaction through StoreKit Testing. This exercises the
-	// real update and finish bridge without opening a sandbox payment sheet.
+	// Inject a local transaction through StoreKit Testing. This exercises the real update and finish bridge without opening a sandbox payment sheet.
 	var nativeError objc.ID
 	if !objc.Send[bool](session, objc.RegisterName("buyProductWithIdentifier:error:"), nsString(fixtureProduct), unsafe.Pointer(&nativeError)) {
 		t.Fatalf("create local transaction: %s", nativeString(nativeError.Send(objc.RegisterName("localizedDescription"))))
