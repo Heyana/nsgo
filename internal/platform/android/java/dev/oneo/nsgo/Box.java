@@ -82,9 +82,7 @@ final class Box extends GradientDrawable {
         paint.setStyle(Paint.Style.FILL);
         boolean rimmed = look.hasRim();
         if (rimmed) {
-            // Stop the fill inset under the border so curved outer edge pixels
-            // take only the rimmed border color, matching driver.ViewStyle.Rim
-            // (and border()'s 1 px minimum stroke width).
+            // Stop the fill inset under the border so curved outer edge pixels take only the rimmed border color, matching driver.ViewStyle.Rim (and border()'s 1 px minimum stroke width).
             float inset = Math.max(0.75f, look.rimInset());
             if (w > 2 * inset && h > 2 * inset) {
                 box(path, inset, inset, w - 2 * inset, h - 2 * inset, Shape.inset(radii, inset), continuous);

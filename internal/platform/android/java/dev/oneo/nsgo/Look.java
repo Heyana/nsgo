@@ -292,11 +292,7 @@ final class Look {
         return radius > 0;
     }
 
-    /**
-     * Whether a rounded box stops its fill under a uniform solid border, as
-     * driver.ViewStyle.Rim: visible fill and border with at least one opaque,
-     * no per-side borders, no dashes or dots, and no gradients.
-     */
+    /** Whether a rounded box stops its fill under a uniform solid border, as driver.ViewStyle.Rim: visible fill and border with at least one opaque, no per-side borders, no dashes or dots, and no gradients. */
     boolean hasRim() {
         int bgAlpha = background >>> 24, borderAlpha = borderColor >>> 24;
         return rounded() && border > 0 && !sides && borderAlpha != 0 && bgAlpha != 0

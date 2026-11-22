@@ -12,9 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestBoxRimMatchesDriver runs Android's Look and Box on the JVM against
-// Go's driver.ViewStyle.Rim across styles and densities, and verifies
-// Box.draw stops the fill inset under the border with the rimmed color.
+// TestBoxRimMatchesDriver runs Android's Look and Box on the JVM against Go's driver.ViewStyle.Rim across styles and densities, and verifies Box.draw stops the fill inset under the border with the rimmed color.
 func TestBoxRimMatchesDriver(t *testing.T) {
 	javac, java := androidJDK(t)
 	classes := t.TempDir()
