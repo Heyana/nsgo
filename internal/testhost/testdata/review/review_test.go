@@ -11,8 +11,7 @@ import (
 
 func TestMain(m *testing.M) { nsgotest.Main(m) }
 
-// Run against a Google Play emulator or device with NSGO_TEST_PLAY_REVIEW=1.
-// A locally installed test app cannot prove the store displays its rating card.
+// Run against a Google Play emulator or device with NSGO_TEST_PLAY_REVIEW=1. A locally installed test app cannot prove the store displays its rating card.
 func TestStandaloneStoreReviewService(t *testing.T) {
 	if os.Getenv("NSGO_TEST_PLAY_REVIEW") != "1" {
 		t.Skip("needs an enabled Google Play Store")

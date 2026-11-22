@@ -40,8 +40,7 @@ func TestRequestReviewEncodesWithNoExtraPayload(t *testing.T) {
 	}
 }
 
-// The Android CI runner rebuilds the runtime before packaging test apps. Check
-// class definitions, rather than mere string references in NSGo's reflection.
+// The Android CI runner rebuilds the runtime before packaging test apps. Check class definitions, rather than mere string references in NSGo's reflection.
 func TestStandaloneReviewSDKClasses(t *testing.T) {
 	data := androidruntime.ClassesDex
 	if len(data) < 112 {

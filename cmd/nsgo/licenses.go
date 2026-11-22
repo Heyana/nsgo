@@ -339,8 +339,7 @@ func (policy licensePolicy) report(ctx context.Context, module, kind, reason str
 	return nil
 }
 
-// androidReviewNotices reads the SDK notices kept with the rebuilt runtime.
-// Older committed runtimes have no SDK and therefore no notice entry.
+// androidReviewNotices reads the SDK notices kept with the rebuilt runtime. Older committed runtimes have no SDK and therefore no notice entry.
 func androidReviewNotices(data []byte) (string, error) {
 	z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {

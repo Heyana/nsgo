@@ -14,8 +14,7 @@ import _ "embed"
 //go:embed classes.dex
 var ClassesDex []byte
 
-// ClassesJar holds NSGo's Java classes for a host app's build and the
-// standalone SDK's license metadata; a Gradle host supplies its own SDK.
+// ClassesJar holds NSGo's Java classes for a host app's build and the standalone SDK's license metadata; a Gradle host supplies its own SDK.
 //
 //go:embed classes.jar
 var ClassesJar []byte
