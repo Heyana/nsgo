@@ -101,6 +101,13 @@ func (t *testResult) failFor(why string) {
 	t.Output += why + "\n"
 }
 
+// testBuild holds compiler output until a package claims it, or the build's
+// event stream ends without a package failure, as go test -c can do.
+type testBuild struct {
+	output           string
+	failed, attached bool
+}
+
 // testRun gathers what go test -json reports.
 type testRun struct {
 	results []*testResult
@@ -109,7 +116,7 @@ type testRun struct {
 	// build errors, and whether it failed.
 	packages map[string]*testResult
 	// builds hold the compiler's output by import path.
-	builds map[string]string
+	builds map[string]*testBuild
 	// unbuilt are the packages whose tests did not build.
 	unbuilt map[string]bool
 	// label follows the names of the packages the current run tests (testCommand).
@@ -458,14 +465,41 @@ func (r *testRun) read(in io.Reader) {
 		}
 		r.event(ev)
 	}
+	for path, build := range r.builds {
+		if !build.failed || build.attached {
+			continue
+		}
+		name := path + r.label
+		pkg := r.packages[name]
+		if pkg == nil {
+			pkg = &testResult{Package: name}
+			r.packages[name] = pkg
+		}
+		pkg.Status = "fail"
+		pkg.Output += build.output
+		if r.unbuilt == nil {
+			r.unbuilt = map[string]bool{}
+		}
+		r.unbuilt[name] = true
+	}
+	r.builds = nil
 }
 
 func (r *testRun) event(ev testEvent) {
-	if ev.Action == "build-output" {
+	if ev.Action == "build-output" || ev.Action == "build-fail" {
 		if r.builds == nil {
-			r.builds = map[string]string{}
+			r.builds = map[string]*testBuild{}
 		}
-		r.builds[ev.ImportPath] += ev.Output
+		build := r.builds[ev.ImportPath]
+		if build == nil {
+			build = &testBuild{}
+			r.builds[ev.ImportPath] = build
+		}
+		if ev.Action == "build-output" {
+			build.output += ev.Output
+		} else {
+			build.failed = true
+		}
 		return
 	}
 	ev.Package += r.label
@@ -482,7 +516,10 @@ func (r *testRun) event(ev testEvent) {
 			pkg.Status = "fail"
 			// A package that did not build shows why.
 			if ev.FailedBuild != "" {
-				pkg.Output += r.builds[ev.FailedBuild]
+				if build := r.builds[ev.FailedBuild]; build != nil {
+					pkg.Output += build.output
+					build.attached = true
+				}
 				if r.unbuilt == nil {
 					r.unbuilt = map[string]bool{}
 				}

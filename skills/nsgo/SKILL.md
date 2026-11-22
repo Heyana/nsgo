@@ -121,6 +121,8 @@ go tool nsgo check                 # vet; -target web,android vets those targets
 go tool nsgo test                  # headless; -run as go test's, -target macos|ios|ios_simulator|android|web|all on a platform
 ```
 
+Headless `nsgo test -- -c` compiles tests without running them; compiler failures remain visible in the console and JUnit report.
+
 Name every target a change touches in one `check -target`, with `-jobs n` to vet up to n at once, each `go vet` with n compile workers; never start several checks, as a check waits for the one already running in its module.
 
 Test an app as a user uses it with `nsgotest`, finding views by text, role, label or test ID. Read [references/testing.md](references/testing.md) before writing tests.
