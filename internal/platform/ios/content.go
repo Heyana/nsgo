@@ -89,7 +89,7 @@ func (v *view) newContent() {
 	layer.Send(sel("setDrawsAsynchronously:"), v.kind == driver.KindCanvas)
 	layer.Send(sel("setContentsScale:"), v.contentScale())
 	layer.Send(sel("setZPosition:"), apple.Z(contentZ))
-	v.native.Send(selLayer).Send(sel("addSublayer:"), layer)
+	v.attachContentLayer(layer)
 	layer.Send(selRelease)
 	v.contentLayer, v.laidFrame, v.needFrame = layer, apple.CGRect{}, apple.CGRect{}
 	drawers[layer] = v

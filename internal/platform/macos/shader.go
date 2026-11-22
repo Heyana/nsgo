@@ -22,7 +22,7 @@ func (v *view) newShader() {
 	sl.Layer.Send(selActions, contentActions)
 	sl.Layer.Send(selSetZPosition, apple.Z(contentZ))
 	sl.Ready = v.redraw
-	v.native.Send(selLayer).Send(sel("addSublayer:"), sl.Layer)
+	v.attachContentLayer(sl.Layer)
 	v.shader = sl
 }
 

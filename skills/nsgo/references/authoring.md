@@ -23,6 +23,7 @@ These are the rules NSGo's own `base` and `ui` follow, for components other apps
 
 ## Look
 
+- Apple texts, canvases and shaders keep their own shadows and outlines outside `Overflow: core.Hidden`; [Layout](https://nsgo.dev/docs/layout.md#position) lists the remaining native-content limits.
 - Take every color from the theme inside a `StyleFunc` (`ui.ColorsOf(cx)`, `cx.Palette()`), so theme and appearance changes restyle in place. A color with no role goes in `Palette.Colors` under a name of yours, set for light and dark.
 - Do nothing implicitly by device: no size, form or behavior that changes on its own on a phone, a desktop or a TV. Make it a field the app sets.
 - A component shows the same on every platform. Imitate what one platform has natively, such as iOS's Liquid Glass, rather than dropping it elsewhere.

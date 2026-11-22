@@ -63,7 +63,7 @@ core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(8), Right: cor
 
 `Static` keeps a box in the flow and ignores its insets, so absolutely positioned children find an ancestor above it. `Overflow` clips children to a box, and `DisplayNone` takes a box out of layout.
 
-The box's own outer shadows and outline stay outside its clip, as in CSS, on Windows, Linux and the web, and on Apple for views, images and macOS scroll views. Android clips them with the children, as Apple does for texts, canvases, inputs, web, video and native views, iOS scroll views, and images and scroll views whose corners differ in radius. To keep them there, put the clip on an inner view with the same corners, inset by the border:
+The box's own outer shadows and outline stay outside its clip, as in CSS, on Windows, Linux and the web, and on Apple for views, texts, canvases, shaders, images and macOS scroll views. Android clips them with the children, as Apple does for inputs, web, video and native views, iOS scroll views, and images and scroll views whose corners differ in radius. To keep them there, put the clip on an inner view with the same corners, inset by the border:
 
 ```go
 core.View{Style: core.Style{CornerRadius: 16, Shadows: []core.BoxShadow{ui.Shadow(0, 8, 24, -6, ui.Black(0.18))}},

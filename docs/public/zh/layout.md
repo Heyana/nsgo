@@ -63,7 +63,7 @@ core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(8), Right: cor
 
 `Static` 让盒子留在流中并忽略 inset，因此其中的绝对定位子元素会去找更上层的祖先。`Overflow` 把子元素裁剪在盒子内，`DisplayNone` 把盒子移出布局。
 
-在 Windows、Linux 和 Web 上，以及 Apple 上的普通视图、图片和 macOS 滚动视图，盒子自身的外阴影和描边留在裁剪之外，与 CSS 一致。Android 会把它们和子元素一起裁掉；Apple 上的文本、画布、输入框、Web、视频和原生视图、iOS 滚动视图，以及各角半径不同的图片和滚动视图也是如此。要保留它们，把裁剪放到内层视图上，圆角相同，并减去边框宽度：
+在 Windows、Linux 和 Web 上，以及 Apple 上的普通视图、文本、画布、着色器、图片和 macOS 滚动视图，盒子自身的外阴影和描边留在裁剪之外，与 CSS 一致。Android 会把它们和子元素一起裁掉；Apple 上的输入框、Web、视频和原生视图、iOS 滚动视图，以及各角半径不同的图片和滚动视图也是如此。要保留它们，把裁剪放到内层视图上，圆角相同，并减去边框宽度：
 
 ```go
 core.View{Style: core.Style{CornerRadius: 16, Shadows: []core.BoxShadow{ui.Shadow(0, 8, 24, -6, ui.Black(0.18))}},

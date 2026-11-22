@@ -374,7 +374,7 @@ jobs:
           ipad=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | contains("iOS"))] | sort_by(.key | split("-") | .[1:] | map(tonumber)) | reverse | map(.value[] | select(.deviceTypeIdentifier | contains("iPad"))) | first | .udid')
           go tool nsgo test -target ios_simulator -device "$ipad" -timeout 1m -run '^(TestScenesShowTreesOfTheirOwn|TestSceneDisconnectsWhileTheOtherRuns|TestSceneStatusBarAndOrientationsArePerScene|TestSceneKeyboardInsetFollowsFocus|TestTitledKeyCommandsUseUIKit)$' ./internal/platform/ios
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/websource
-          go tool nsgo test -target ios_simulator -timeout 1m -run '^TestIOSCaptureIsSRGB$' ./internal/testhost/testdata/capture
+          go tool nsgo test -target ios_simulator -timeout 1m -run '^TestIOSCaptureIsSRGB$|^TestAppleContentClipKeepsOuterDecoration$' ./internal/testhost/testdata/capture
           go tool nsgo test -target ios_simulator -timeout 1m -run '^Test(Scroll|List)PastItsEndComesBackToIt$' ./nsgotest
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/frameclock
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos

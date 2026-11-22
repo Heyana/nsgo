@@ -139,7 +139,7 @@ func (v *view) drawLayer() objc.ID {
 	v.laidFrame = v.contentFrame()
 	v.needFrame = v.laidFrame
 	layer.Send(selSetFrame, v.laidFrame)
-	v.native.Send(selLayer).Send(sel("addSublayer:"), layer)
+	v.attachContentLayer(layer)
 	layer.Send(selRelease) // its host keeps it
 	v.contentLayer = layer
 	drawers[layer] = v
