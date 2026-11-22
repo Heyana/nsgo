@@ -739,6 +739,14 @@ func readEvent(r *reader) (uint32, driver.Event, string) {
 	return from, ev, data
 }
 
+// decodeWheelEvent unpacks EventWheel's Android wire layout: Delta travels in
+// Velocity, touchpad release Velocity travels in Size, and Precise travels in
+// Value.
+func decodeWheelEvent(ev *driver.Event) {
+	ev.Delta, ev.Velocity, ev.Size, ev.Precise, ev.Value =
+		ev.Velocity, driver.Point{X: ev.Size.Width, Y: ev.Size.Height}, driver.Size{}, ev.Value != 0, 0
+}
+
 // readNavigation reads the web navigation state NsgoView.event writes
 // last, nil for events without one.
 func readNavigation(r *reader) *driver.WebNavigation {

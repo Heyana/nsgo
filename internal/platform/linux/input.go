@@ -78,6 +78,8 @@ type twoFinger struct {
 	value    float32
 	velocity float32
 	lastTime time.Time
+	// at is where a pinch is about, in surface points.
+	at driver.Point
 }
 
 // Callbacks handed to GTK. Each finds its window or view through the
@@ -416,12 +418,24 @@ func (w *window) startLongPress(at driver.Point) {
 // cancelLongPress stops waiting for the press in progress to be long.
 func (w *window) cancelLongPress() { w.longPress++ }
 
+// gestureCenter returns the midpoint of gesture's active points in surface
+// coordinates, falling back to the last known pointer position.
+func (w *window) gestureCenter(gesture uintptr) driver.Point {
+	if gesture != 0 && gtkGestureGetBoundingBoxCenter != nil {
+		var cx, cy float64
+		if gtkGestureGetBoundingBoxCenter(gesture, &cx, &cy) != 0 {
+			return driver.Point{X: driver.Points(cx), Y: driver.Points(cy)}
+		}
+	}
+	return w.lastPointer
+}
+
 func zoomChangedCallback(gesture uintptr, scale float64, data uintptr) {
 	w := windowOf(data)
 	if w == nil || w.ignoreTestInput() {
 		return
 	}
-	w.reportTwoFinger(driver.EventPinch, float32(scale))
+	w.reportTwoFinger(driver.EventPinch, float32(scale), w.gestureCenter(gesture))
 }
 
 func rotateChangedCallback(gesture uintptr, angle, delta float64, data uintptr) {
@@ -429,7 +443,7 @@ func rotateChangedCallback(gesture uintptr, angle, delta float64, data uintptr) 
 	if w == nil || w.ignoreTestInput() {
 		return
 	}
-	w.reportTwoFinger(driver.EventRotation, float32(delta*math.Pi/180))
+	w.reportTwoFinger(driver.EventRotation, float32(delta*math.Pi/180), w.gestureCenter(gesture))
 }
 
 func gestureEndCallback(gesture uintptr, sequence uintptr, data uintptr) {
@@ -440,7 +454,7 @@ func gestureEndCallback(gesture uintptr, sequence uintptr, data uintptr) {
 	for _, g := range []*twoFinger{w.pinching, w.rotating} {
 		if g != nil && g.v != nil && !g.v.deleted {
 			w.reportGesture(driver.Event{Kind: g.kind, ID: g.v.id, Phase: driver.GestureEnded, Value: g.value,
-				Velocity: driver.Point{X: driver.Points(g.velocity)}})
+				Velocity: driver.Point{X: driver.Points(g.velocity)}, Point: w.pinchPoint(g.v, g.kind, g.at)})
 		}
 	}
 	w.pinching, w.rotating = nil, nil
@@ -455,11 +469,18 @@ func scrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
 		return 1
 	}
 	at := w.lastPointer
+	if ev := gtkEventControllerGetCurrentEvent(controller); ev != 0 {
+		if p, ok := w.eventPoint(ev); ok {
+			at = p
+			w.lastPointer = p
+		}
+	}
 	if w.controlAt(gtkWidgetPick(w.surface, float64(at.X), float64(at.Y), gtkPickDefault)) != nil {
 		return 0 // the page or the controls scroll themselves
 	}
 	w.shieldScroll.reset()
-	w.wheelEvent(gtkEventControllerGetCurrentEventState(controller), at, dx, dy, controllerPoints(controller))
+	inPoints, unitKnown := controllerScrollUnit(controller)
+	w.wheelEventKnown(gtkEventControllerGetCurrentEventState(controller), at, dx, dy, inPoints, unitKnown)
 	return 1
 }
 
@@ -485,7 +506,11 @@ func (w *window) wheelBegin() {
 // milliseconds.
 func scrollDecelerateCallback(controller uintptr, vx, vy float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil || w.ignoreTestInput() || !controllerPoints(controller) {
+	if w == nil || w.ignoreTestInput() {
+		return
+	}
+	inPoints, unitKnown := controllerScrollUnit(controller)
+	if unitKnown && !inPoints && w.wheelTaker == nil {
 		return
 	}
 	w.shieldScroll.reset()
@@ -499,9 +524,7 @@ func (w *window) wheelDecelerate(state uint32, vx, vy float64) {
 	if state&gdkControl != 0 {
 		return
 	}
-	if state&gdkShift != 0 {
-		vx, vy = vy, 0
-	}
+	vx, vy = wheelShiftAxis(vx, vy, state&gdkShift != 0)
 	if v := w.wheelTaker; v != nil {
 		w.wheelTaker = nil
 		if !v.deleted {
@@ -513,6 +536,9 @@ func (w *window) wheelDecelerate(state uint32, vx, vy float64) {
 		}
 		return
 	}
+	if !inPoints {
+		return
+	}
 	w.wheelGlide(float32(vx/1000), float32(vy/1000))
 }
 
@@ -522,6 +548,7 @@ func (w *window) wheelDecelerate(state uint32, vx, vy float64) {
 // touchpad's scroll stays on the view it began on until its fingers lift.
 func (w *window) wheelTaken(state uint32, p driver.Point, dx, dy float64, touchpad bool) bool {
 	v := w.wheelTaker
+	began := false
 	if v == nil || v.deleted || !touchpad {
 		w.wheelTaker = nil
 		root := w.view(w.root)
@@ -535,10 +562,11 @@ func (w *window) wheelTaken(state uint32, p driver.Point, dx, dy float64, touchp
 		v = under[len(under)-1]
 		if touchpad {
 			w.wheelTaker = v
+			began = true
 		}
 	}
 	ev := w.wheelEventAt(v, p, state)
-	ev.Phase, ev.Precise, ev.Delta = driver.GestureChanged, touchpad, driver.Point{X: driver.Points(-dx), Y: driver.Points(-dy)}
+	ev.Phase, ev.Precise, ev.Delta = wheelPhase(touchpad, began), touchpad, driver.Point{X: driver.Points(-dx), Y: driver.Points(-dy)}
 	w.engine.Dispatch(ev)
 	return true
 }
@@ -549,31 +577,47 @@ func (w *window) wheelEventAt(v *view, p driver.Point, state uint32) driver.Even
 		Modifiers: modifiers(state)}
 }
 
+// controllerScrollUnit reports whether a scroll controller's events come in
+// surface points (as a touchpad's do) and whether GTK 4.8+ reported the unit.
+func controllerScrollUnit(controller uintptr) (inPoints, known bool) {
+	if gtkEventControllerScrollGetUnit == nil {
+		return false, false
+	}
+	return gtkEventControllerScrollGetUnit(controller) == gdkScrollUnitSurface, true
+}
+
 // controllerPoints reports whether a scroll controller's events come in
 // points, as a touchpad's do. GTK says so from 4.8.
 func controllerPoints(controller uintptr) bool {
-	return gtkEventControllerScrollGetUnit != nil && gtkEventControllerScrollGetUnit(controller) == gdkScrollUnitSurface
+	inPoints, _ := controllerScrollUnit(controller)
+	return inPoints
 }
 
 // wheelEvent follows a wheel turn with modifiers state at surface point
 // at: a pinch with Control held, else a scroll. inPoints is set when GTK
 // says the deltas are points, as a touchpad's are.
 func (w *window) wheelEvent(state uint32, at driver.Point, dx, dy float64, inPoints bool) {
+	w.wheelEventKnown(state, at, dx, dy, inPoints, inPoints)
+}
+
+func (w *window) wheelEventKnown(state uint32, at driver.Point, dx, dy float64, inPoints, unitKnown bool) {
+	units := wheelScrollUnits(dx, dy, inPoints, unitKnown)
 	if state&gdkControl != 0 {
-		if !w.wheelPinch(at, dy) {
-			w.wheelZoom(at, dy)
+		if w.wheelPinch(at, dy) || w.wheelZoom(at, dy) {
+			return
+		}
+		// No pinch or zoom target under the pointer: let OnWheel hear Ctrl+wheel without scrolling regular Scroll views.
+		if units {
+			w.wheelTaken(state, at, dx*wheelNotch, dy*wheelNotch, false)
+		} else {
+			w.wheelTaken(state, at, dx, dy, true)
 		}
 		return
 	}
-	if state&gdkShift != 0 {
-		dx, dy = dy, 0
-	}
-	// GTK's wheel turns come as whole units; a touchpad's as points, which
-	// only their size tells before 4.8.
-	units := !inPoints && math.Abs(dx) <= 3 && math.Abs(dy) <= 3
+	dx, dy = wheelShiftAxis(dx, dy, state&gdkShift != 0)
 	// A view taking the wheel moves a notch three lines of 33 points, as
 	// browsers scroll about 100.
-	if units && w.wheelTaken(state, at, dx*99, dy*99, false) || !units && w.wheelTaken(state, at, dx, dy, true) {
+	if units && w.wheelTaken(state, at, dx*wheelNotch, dy*wheelNotch, false) || !units && w.wheelTaken(state, at, dx, dy, true) {
 		return
 	}
 	notch := 48.0
@@ -758,26 +802,28 @@ func fails(a driver.PanActivation, d driver.Point) bool {
 		a.FailOffsetY != 0 && math.Abs(float64(d.Y)) > float64(a.FailOffsetY)
 }
 
-// reportTwoFinger reports a touchscreen pinch or rotation under the
-// pointer, beginning it on the first change.
-func (w *window) reportTwoFinger(kind driver.EventKind, value float32) {
+// reportTwoFinger reports a touchscreen pinch or rotation at surface point at,
+// beginning it on the first change.
+func (w *window) reportTwoFinger(kind driver.EventKind, value float32, at driver.Point) {
 	slot := &w.pinching
 	if kind == driver.EventRotation {
 		slot = &w.rotating
 	}
 	if *slot == nil {
-		v := w.hitEvent(w.lastPointer, kind)
+		v := w.hitEvent(at, kind)
 		if v == nil {
 			return
 		}
-		*slot = &twoFinger{v: v, kind: kind, value: rest(kind), lastTime: time.Now()}
-		w.reportGesture(driver.Event{Kind: kind, ID: v.id, Phase: driver.GestureBegan, Value: rest(kind)})
+		*slot = &twoFinger{v: v, kind: kind, value: rest(kind), lastTime: time.Now(), at: at}
+		w.reportGesture(driver.Event{Kind: kind, ID: v.id, Phase: driver.GestureBegan, Value: rest(kind),
+			Point: w.pinchPoint(v, kind, at)})
 	}
 	g := *slot
 	if g.v.deleted {
 		*slot = nil
 		return
 	}
+	g.at = at
 	if kind == driver.EventRotation {
 		value = g.value + value
 	}
@@ -789,7 +835,7 @@ func (w *window) reportTwoFinger(kind driver.EventKind, value float32) {
 	}
 	g.value, g.lastTime, g.velocity = value, now, velocity
 	w.reportGesture(driver.Event{Kind: kind, ID: g.v.id, Phase: driver.GestureChanged, Value: value,
-		Velocity: driver.Point{X: driver.Points(velocity)}, Point: w.pinchPoint(g.v, kind, w.lastPointer)})
+		Velocity: driver.Point{X: driver.Points(velocity)}, Point: w.pinchPoint(g.v, kind, at)})
 }
 
 // pinchPoint is where a pinch at surface point p is about in v; other
@@ -827,10 +873,12 @@ func (w *window) wheelPinch(p driver.Point, delta float64) bool {
 		if v == nil {
 			return false
 		}
-		g = &twoFinger{v: v, kind: driver.EventPinch, value: 1, lastTime: time.Now()}
+		g = &twoFinger{v: v, kind: driver.EventPinch, value: 1, lastTime: time.Now(), at: p}
 		w.pinching = g
-		w.reportGesture(driver.Event{Kind: driver.EventPinch, ID: v.id, Phase: driver.GestureBegan, Value: 1})
+		w.reportGesture(driver.Event{Kind: driver.EventPinch, ID: v.id, Phase: driver.GestureBegan, Value: 1,
+			Point: w.pinchPoint(v, driver.EventPinch, p)})
 	}
+	g.at = p
 	g.value *= float32(math.Pow(2, -delta/20))
 	w.reportGesture(driver.Event{Kind: driver.EventPinch, ID: g.v.id, Phase: driver.GestureChanged, Value: g.value,
 		Point: w.pinchPoint(g.v, driver.EventPinch, p)})
@@ -850,7 +898,8 @@ func pinchTimeoutCallback(data uintptr) int32 {
 	if g := w.pinching; g != nil {
 		w.pinching = nil
 		if !g.v.deleted {
-			w.reportGesture(driver.Event{Kind: driver.EventPinch, ID: g.v.id, Phase: driver.GestureEnded, Value: g.value})
+			w.reportGesture(driver.Event{Kind: driver.EventPinch, ID: g.v.id, Phase: driver.GestureEnded, Value: g.value,
+				Point: w.pinchPoint(g.v, driver.EventPinch, g.at)})
 		}
 	}
 	return 0 // G_SOURCE_REMOVE
@@ -1612,13 +1661,13 @@ func (w *window) shieldScrollEvent(state uint32, at driver.Point, dx, dy float64
 	if state&gdkControl != 0 {
 		w.shieldScroll.reset()
 		if !isStop || dx != 0 || dy != 0 {
-			w.wheelEvent(state, at, dx, dy, points)
+			w.wheelEventKnown(state, at, dx, dy, points, gdkScrollEventGetUnit != nil)
 		}
 		return
 	}
 	if !smooth {
 		w.shieldScroll.reset()
-		w.wheelEvent(state, at, dx, dy, points)
+		w.wheelEventKnown(state, at, dx, dy, points, gdkScrollEventGetUnit != nil)
 		return
 	}
 	if isStop {
@@ -1626,7 +1675,7 @@ func (w *window) shieldScrollEvent(state uint32, at driver.Point, dx, dy float64
 			if w.shieldScroll.delta(evMS, now, dx, dy) {
 				w.wheelBegin()
 			}
-			w.wheelEvent(state, at, dx, dy, true)
+			w.wheelEventKnown(state, at, dx, dy, true, gdkScrollEventGetUnit != nil)
 		}
 		if vx, vy, ok := w.shieldScroll.stop(evMS, now); ok {
 			w.wheelDecelerate(state, vx, vy)
@@ -1635,13 +1684,13 @@ func (w *window) shieldScrollEvent(state uint32, at driver.Point, dx, dy float64
 	}
 	if !points {
 		w.shieldScroll.reset()
-		w.wheelEvent(state, at, dx, dy, false)
+		w.wheelEventKnown(state, at, dx, dy, false, gdkScrollEventGetUnit != nil)
 		return
 	}
 	if w.shieldScroll.delta(evMS, now, dx, dy) {
 		w.wheelBegin()
 	}
-	w.wheelEvent(state, at, dx, dy, true)
+	w.wheelEventKnown(state, at, dx, dy, true, gdkScrollEventGetUnit != nil)
 }
 
 // eventPoint returns where event happened in the surface's points.

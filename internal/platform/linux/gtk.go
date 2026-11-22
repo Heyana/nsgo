@@ -198,6 +198,7 @@ var (
 	gtkGestureDragNew                      func() uintptr
 	gtkGestureZoomNew                      func() uintptr
 	gtkGestureRotateNew                    func() uintptr
+	gtkGestureGetBoundingBoxCenter         func(uintptr, *float64, *float64) int32
 	gtkGestureSingleGetCurrentButton       func(uintptr) uint32
 	gtkEventControllerMotionNew            func() uintptr
 	gtkEventControllerKeyNew               func() uintptr
@@ -579,6 +580,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkGestureDragNew, gtkLib, "gtk_gesture_drag_new")
 	purego.RegisterLibFunc(&gtkGestureZoomNew, gtkLib, "gtk_gesture_zoom_new")
 	purego.RegisterLibFunc(&gtkGestureRotateNew, gtkLib, "gtk_gesture_rotate_new")
+	purego.RegisterLibFunc(&gtkGestureGetBoundingBoxCenter, gtkLib, "gtk_gesture_get_bounding_box_center")
 	purego.RegisterLibFunc(&gtkGestureSingleGetCurrentButton, gtkLib, "gtk_gesture_single_get_current_button")
 	purego.RegisterLibFunc(&gtkEventControllerMotionNew, gtkLib, "gtk_event_controller_motion_new")
 	purego.RegisterLibFunc(&gtkEventControllerKeyNew, gtkLib, "gtk_event_controller_key_new")

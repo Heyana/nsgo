@@ -253,9 +253,7 @@ func (w *window) gesture(lParam uintptr) bool {
 		value := g.value
 		switch kind {
 		case driver.EventPinch:
-			if g.startDist > 0 {
-				value = float32(float64(uint32(gi.Arguments)) / g.startDist)
-			}
+			value = zoomScale(uint32(gi.Arguments), g.startDist, g.value)
 		case driver.EventRotation:
 			// The angle since the rotation began, counterclockwise.
 			angle := float64(uint32(gi.Arguments))/65535*4*math.Pi - 2*math.Pi

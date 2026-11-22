@@ -153,11 +153,11 @@ Windows shows the overlay scroll indicator for user scrolling and its momentum, 
 | Target | Takes | Touchpad | Glide after the fingers |
 | --- | --- | --- | --- |
 | macOS | `scrollWheel:` before the surface routes it to scroll views; a gesture and its momentum keep their view | A phase, which only touch surfaces report | The system's momentum, as more changes and an end |
-| iOS | Two scroll-only `UIPanGestureRecognizer`s: continuous for a trackpad, discrete for a wheel | The continuous one | The view's own, from the end's `Velocity` |
+| iOS | Two scroll-only `UIPanGestureRecognizer`s: continuous (`UIScrollTypeMaskContinuous`) for a trackpad, discrete (`UIScrollTypeMaskDiscrete`) for a wheel, holding back outer scroll views while deferring to inner ones | The continuous one | The view's own, from the end's `Velocity` |
 | Web | The `wheel` event before the page's scroll handling, prevented | Pixels smaller than a notch | The browser's momentum, as more changes |
 | Windows | `WM_MOUSEWHEEL` and `WM_MOUSEHWHEEL` before the scroll views | Turns of less than a notch | The system's, as more turns |
 | Linux | The scroll controller (or hosted-view shield) before the scroll views; a touchpad keeps its view until `decelerate` or `gdk_scroll_event_is_stop` | GTK's surface unit, or deltas of points before 4.8 | The view's own, from the end's `Velocity` |
-| Android | `ACTION_SCROLL` generic motions on the view | `SOURCE_TOUCHPAD` | None yet |
+| Android | `ACTION_SCROLL` generic motions on the view; `WheelScroll` frames a touchpad gesture from begin through idle end | `SOURCE_TOUCHPAD` | The view's own, from the end's `Velocity` |
 
 ## File drops
 

@@ -357,10 +357,11 @@ func (s *surface) wheelZoom(e js.Value) {
 		if v == nil {
 			return
 		}
-		w = &wheelPinch{view: v, scale: 1}
+		px, py := v.localPoint(e.Get("clientX").Float(), e.Get("clientY").Float())
+		w = &wheelPinch{view: v, scale: 1, at: driver.Point{X: driver.Points(px), Y: driver.Points(py)}}
 		g.wheel = w
 		w.rate.update(e.Get("timeStamp").Float(), 1, 0)
-		s.send(v, driver.Event{Kind: driver.EventPinch, Phase: driver.GestureBegan, Value: 1})
+		s.send(v, driver.Event{Kind: driver.EventPinch, Phase: driver.GestureBegan, Value: 1, Point: w.at})
 	}
 	e.Call("preventDefault")
 	dy := e.Get("deltaY").Float()

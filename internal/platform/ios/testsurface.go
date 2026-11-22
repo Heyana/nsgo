@@ -732,7 +732,8 @@ func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 }
 
 // scrollDevice moves the innermost UIScrollView under at that can scroll toward
-// delta (or dispatches EventWheel to a view listening for wheel input).
+// delta, or dispatches EventWheel to the innermost view listening for wheel
+// input if it sits inside any enclosing scroll view.
 func (t *testSurface) scrollDevice(w objc.ID, at, delta driver.Point) error {
 	scriptedMainSync(func() {
 		if w == 0 || t.s == nil || t.s.engine == nil {
@@ -744,6 +745,17 @@ func (t *testSurface) scrollDevice(w objc.ID, at, delta driver.Point) error {
 		var firstScroll objc.ID
 		var firstTo driver.Point
 		for n := hit; n != 0; n = n.Send(selSuperview) {
+			if v := views[n]; firstScroll == 0 && v != nil && v.surface == t.s && v.id != 0 && v.events.Has(driver.EventWheel) {
+				local, page := t.viewPointAndPage(w, v, at)
+				v.report(driver.Event{
+					Kind:  driver.EventWheel,
+					Phase: driver.GestureChanged,
+					Point: driver.Point{X: driver.Points(local.X), Y: driver.Points(local.Y)},
+					Page:  driver.Point{X: driver.Points(page.X), Y: driver.Points(page.Y)},
+					Delta: driver.Point{X: -delta.X, Y: -delta.Y},
+				})
+				return
+			}
 			if !objc.Send[bool](n, selIsKindOf, scrollClass) || !objc.Send[bool](n, sel("isScrollEnabled")) {
 				continue
 			}
@@ -768,19 +780,6 @@ func (t *testSurface) scrollDevice(w objc.ID, at, delta driver.Point) error {
 		}
 		if firstScroll != 0 {
 			firstScroll.Send(sel("setContentOffset:animated:"), apple.CGPoint{X: float64(firstTo.X), Y: float64(firstTo.Y)}, false)
-			return
-		}
-		for n := hit; n != 0; n = n.Send(selSuperview) {
-			if v := views[n]; v != nil && v.surface == t.s && v.id != 0 && v.events.Has(driver.EventWheel) {
-				local, page := t.viewPointAndPage(w, v, at)
-				v.report(driver.Event{
-					Kind:         driver.EventWheel,
-					Point:        delta,
-					Position:     driver.Point{X: driver.Points(local.X), Y: driver.Points(local.Y)},
-					PagePosition: driver.Point{X: driver.Points(page.X), Y: driver.Points(page.Y)},
-				})
-				return
-			}
 		}
 	})
 	return nil

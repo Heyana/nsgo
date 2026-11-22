@@ -1462,7 +1462,8 @@ func webScrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
 	at := w.frameAt(v)
 	at.X += v.web.pointer.X
 	at.Y += v.web.pointer.Y
-	w.wheelEvent(gtkEventControllerGetCurrentEventState(controller), at, dx, dy, controllerPoints(controller))
+	inPoints, unitKnown := controllerScrollUnit(controller)
+	w.wheelEventKnown(gtkEventControllerGetCurrentEventState(controller), at, dx, dy, inPoints, unitKnown)
 	return 1
 }
 

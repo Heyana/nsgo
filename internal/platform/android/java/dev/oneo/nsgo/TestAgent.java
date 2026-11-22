@@ -241,6 +241,14 @@ final class TestAgent {
                 finger(id, points, true);
                 return;
             }
+            case "wheel": {
+                wheel(id, op);
+                return;
+            }
+            case "pinch": {
+                pinch(id, op);
+                return;
+            }
             case "type":
                 type(op.getString("text"));
                 break;
@@ -466,6 +474,114 @@ final class TestAgent {
             touch(down, up, MotionEvent.ACTION_UP, last);
             view.testReply(id, "", "");
         }, at);
+    }
+
+    /** Dispatches real ACTION_SCROLL generic motion event(s) from a mouse or touchpad. */
+    private void wheel(int id, JSONObject op) throws Exception {
+        float[] p = window(op.getDouble("x"), op.getDouble("y"));
+        boolean touchpad = op.optBoolean("touchpad");
+        int source = touchpad ? InputDevice.SOURCE_TOUCHPAD : InputDevice.SOURCE_MOUSE;
+        int meta = metaOf(op.optJSONObject("modifiers"));
+        JSONArray steps = op.optJSONArray("steps");
+        if (steps == null) {
+            dispatchScroll(SystemClock.uptimeMillis(), p, source,
+                    (float) op.optDouble("h", 0), (float) op.optDouble("v", 0), meta);
+            view.testReply(id, "", "");
+            return;
+        }
+        long base = SystemClock.uptimeMillis();
+        long delay = 0;
+        for (int i = 0; i < steps.length(); i++) {
+            JSONObject s = steps.getJSONObject(i);
+            float h = (float) s.optDouble("h", 0);
+            float v = (float) s.optDouble("v", 0);
+            long stepDelay = delay;
+            long eventTime = base + stepDelay;
+            boolean last = i == steps.length() - 1;
+            ui.postDelayed(() -> {
+                dispatchScroll(eventTime, p, source, h, v, meta);
+                if (last) view.testReply(id, "", "");
+            }, stepDelay);
+            delay += Math.max(s.optLong("dt", 16), 1);
+        }
+    }
+
+    private void dispatchScroll(long time, float[] p, int source, float hscroll, float vscroll, int meta) {
+        MotionEvent.PointerProperties[] props = new MotionEvent.PointerProperties[] {new MotionEvent.PointerProperties()};
+        props[0].id = 0;
+        props[0].toolType = MotionEvent.TOOL_TYPE_MOUSE;
+        MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[] {new MotionEvent.PointerCoords()};
+        coords[0].x = p[0];
+        coords[0].y = p[1];
+        coords[0].setAxisValue(MotionEvent.AXIS_HSCROLL, hscroll);
+        coords[0].setAxisValue(MotionEvent.AXIS_VSCROLL, vscroll);
+        MotionEvent e = MotionEvent.obtain(time, time, MotionEvent.ACTION_SCROLL, 1, props, coords,
+                meta, 0, 1f, 1f, 0, 0, source, 0);
+        activity().dispatchGenericMotionEvent(e);
+        e.recycle();
+    }
+
+    /** Dispatches a real two-finger pinch gesture centered at (x, y) from span0 to span1 points. */
+    private void pinch(int id, JSONObject op) throws Exception {
+        float[] center = window(op.getDouble("x"), op.getDouble("y"));
+        float d = view.density();
+        float half0 = (float) op.optDouble("from", 40) * d / 2f;
+        float half1 = (float) op.optDouble("to", 120) * d / 2f;
+        int steps = Math.max(op.optInt("steps", 6), 2);
+        long down = SystemClock.uptimeMillis();
+        touchTwo(down, down, MotionEvent.ACTION_DOWN, 1, center[0] - half0, center[1], center[0] + half0, center[1]);
+        touchTwo(down, down + 16, MotionEvent.ACTION_POINTER_DOWN | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                2, center[0] - half0, center[1], center[0] + half0, center[1]);
+        long at = 32;
+        for (int i = 1; i <= steps; i++) {
+            float half = half0 + (half1 - half0) * i / steps;
+            long time = down + at;
+            ui.postDelayed(() -> touchTwo(down, time, MotionEvent.ACTION_MOVE, 2,
+                    center[0] - half, center[1], center[0] + half, center[1]), at);
+            at += 16;
+        }
+        long up = down + at;
+        ui.postDelayed(() -> {
+            touchTwo(down, up, MotionEvent.ACTION_POINTER_UP | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                    2, center[0] - half1, center[1], center[0] + half1, center[1]);
+            touchTwo(down, up + 16, MotionEvent.ACTION_UP, 1,
+                    center[0] - half1, center[1], center[0] + half1, center[1]);
+            view.testReply(id, "", "");
+        }, at);
+    }
+
+    private void touchTwo(long down, long time, int action, int count, float x0, float y0, float x1, float y1) {
+        MotionEvent.PointerProperties[] props = new MotionEvent.PointerProperties[count];
+        MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[count];
+        for (int i = 0; i < count; i++) {
+            props[i] = new MotionEvent.PointerProperties();
+            props[i].id = i;
+            props[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+            coords[i] = new MotionEvent.PointerCoords();
+            coords[i].pressure = 1f;
+            coords[i].size = 1f;
+        }
+        coords[0].x = x0;
+        coords[0].y = y0;
+        if (count > 1) {
+            coords[1].x = x1;
+            coords[1].y = y1;
+        }
+        MotionEvent e = MotionEvent.obtain(down, time, action, count, props, coords,
+                0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+        activity().dispatchTouchEvent(e);
+        e.recycle();
+    }
+
+    private static int metaOf(JSONObject mods) {
+        int meta = 0;
+        if (mods != null) {
+            if (mods.optBoolean("Control")) meta |= KeyEvent.META_CTRL_ON | KeyEvent.META_CTRL_LEFT_ON;
+            if (mods.optBoolean("Shift")) meta |= KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON;
+            if (mods.optBoolean("Alt")) meta |= KeyEvent.META_ALT_ON | KeyEvent.META_ALT_LEFT_ON;
+            if (mods.optBoolean("Platform")) meta |= KeyEvent.META_META_ON;
+        }
+        return meta;
     }
 
     /** The innermost native scroll view containing a point in the window. */

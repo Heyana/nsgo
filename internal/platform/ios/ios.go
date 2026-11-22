@@ -98,9 +98,10 @@ type view struct {
 	video      *apple.Video // a video's
 
 	activation           driver.PanActivation
-	handoff              bool    // its pan hands off from the scroll views inside it
-	pan, pinch, rotation objc.ID // the recognizers of the gestures it follows
-	hover                objc.ID // its UIHoverGestureRecognizer while it follows hovers
+	handoff              bool         // its pan hands off from the scroll views inside it
+	pan, pinch, rotation objc.ID      // the recognizers of the gestures it follows
+	pinchAt              driver.Point // last valid pinch center in view points
+	hover                objc.ID      // its UIHoverGestureRecognizer while it follows hovers
 	// scrolls and notches are its scroll-only pans while it takes the
 	// wheel: a trackpad's two fingers and a mouse wheel's turns.
 	scrolls, notches objc.ID

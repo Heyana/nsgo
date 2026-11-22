@@ -420,9 +420,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 				ev.Origin, ev.URL, ev.MainFrame = driver.WebOrigin(data), data, true
 			}
 			if ev.Kind == driver.EventWheel {
-				// A wheel's delta comes as the velocity, and whether a
-				// touchpad turned it as the value.
-				ev.Delta, ev.Velocity, ev.Precise, ev.Value = ev.Velocity, driver.Point{}, ev.Value != 0, 0
+				decodeWheelEvent(&ev)
 			}
 			if ev.Kind == driver.EventPan {
 				// A pan's start and end carry its bound values as the size.

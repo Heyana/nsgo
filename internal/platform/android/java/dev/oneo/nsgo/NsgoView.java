@@ -311,6 +311,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         hoverRefreshPending = false;
         mouse.refresh();
     };
+    /** Tracks mouse wheels and touchpad scroll momentum for View.OnWheel, on the UI thread. */
+    private final WheelScroll wheelScroll = new WheelScroll(this::emitWheel);
+    private final Runnable wheelEnd = wheelScroll::end;
     /** The view the root node shows in, among the accessory bar. */
     private View rootView;
     private final Set<ShaderEffect> effects = new LinkedHashSet<>();
@@ -619,6 +622,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             displayManager.unregisterDisplayListener(displayListener);
             displayManager = null;
         }
+        ui.removeCallbacks(wheelEnd);
+        wheelScroll.cancel(0);
         releaseEnvironment();
         // An app waiting for the folds starts as the view leaves its window, as it would have without them.
         releaseStart();
@@ -993,6 +998,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         removeCallbacks(hoverRefresh);
         hoverRefreshPending = false;
         mouse.reset();
+        ui.removeCallbacks(wheelEnd);
+        wheelScroll.cancel(0);
         gestureRects = Collections.emptyList();
         updateGestureRects();
         clearDisplayHolds();
@@ -3244,6 +3251,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 if (n.modal >= 0) n.view.animate().cancel();
                 if (!vanish(n) && !inGhost(n.view)) detach(n.view);
                 nodes.remove(n.id);
+                if (wheelScroll.activeNode() == n.id) {
+                    ui.removeCallbacks(wheelEnd);
+                    wheelScroll.cancel(n.id);
+                }
                 byView.remove(n.view);
                 if (n.laid != 0) shown.remove(n.laid);
                 outside.remove(n);
@@ -6628,10 +6639,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         private int panState;
         private boolean panTookPress;
 
-        // The pinch: its node, whether it is in progress, its scale and velocity.
+        // The pinch: its node, whether it is in progress, its scale, velocity, and last center.
         private Node pinch;
         private boolean pinching, pinchTookPress;
-        private float scale = 1, scaleVelocity;
+        private float scale = 1, scaleVelocity, pinchX, pinchY;
 
         // The rotation: its node, its two pointers (-1: none), its state as
         // a pan's, its angle so far, the last angle between the pointers,
@@ -6820,7 +6831,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             scaleVelocity = 0;
             claim(pinch);
             float[] f = focus(pinch, d);
-            gesture(pinch, Protocol.EVENT_PINCH, Protocol.GESTURE_BEGAN, f[0], f[1], 0, 0, scale);
+            pinchX = f[0];
+            pinchY = f[1];
+            gesture(pinch, Protocol.EVENT_PINCH, Protocol.GESTURE_BEGAN, pinchX, pinchY, 0, 0, scale);
             return true;
         }
 
@@ -6832,7 +6845,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             if (dt > 0) scaleVelocity = (next - scale) * 1000f / dt;
             scale = next;
             float[] f = focus(pinch, d);
-            gesture(pinch, Protocol.EVENT_PINCH, Protocol.GESTURE_CHANGED, f[0], f[1], scaleVelocity, 0, scale);
+            pinchX = f[0];
+            pinchY = f[1];
+            gesture(pinch, Protocol.EVENT_PINCH, Protocol.GESTURE_CHANGED, pinchX, pinchY, scaleVelocity, 0, scale);
             return true;
         }
 
@@ -6842,12 +6857,18 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             pinching = false;
             pinchTookPress = false;
             int phase = cancelling ? Protocol.GESTURE_CANCELLED : Protocol.GESTURE_ENDED;
-            float[] f = focus(pinch, d);
-            gesture(pinch, Protocol.EVENT_PINCH, phase, f[0], f[1], scaleVelocity, 0, scale);
+            float[] f = cancelling ? new float[] {pinchX, pinchY} : focus(pinch, d);
+            pinchX = f[0];
+            pinchY = f[1];
+            gesture(pinch, Protocol.EVENT_PINCH, phase, pinchX, pinchY, scaleVelocity, 0, scale);
         }
 
-        /** Where a pinch is about, in n's points. */
+        /** Where a pinch is about, in n's untransformed points. */
         private float[] focus(Node n, ScaleGestureDetector d) {
+            float[] p = fromView(NsgoView.this, n.view, d.getFocusX(), d.getFocusY());
+            if (p != null) {
+                return new float[] {p[0] / density, p[1] / density};
+            }
             int[] root = new int[2], at = new int[2];
             getLocationInWindow(root);
             n.view.getLocationInWindow(at);
@@ -6865,7 +6886,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
             if (pinch == n && (!pinching || active)) {
                 if (pinching) {
-                    gesture(pinch, Protocol.EVENT_PINCH, Protocol.GESTURE_CANCELLED, 0, 0, scaleVelocity, 0, scale);
+                    gesture(pinch, Protocol.EVENT_PINCH, Protocol.GESTURE_CANCELLED, pinchX, pinchY, scaleVelocity, 0, scale);
                 }
                 pinching = false;
                 pinch = null;
@@ -6923,18 +6944,32 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Reports a wheel's turn over n, at e's place in n: a notch moves the
-     * content about 100 points, three lines of 33, as browsers scroll;
-     * a touchpad's scroll moves it by its axes' points.
+     * Reports a wheel's turn or touchpad scroll over n, at e's place in n:
+     * a notch moves the content about 100 points, three lines of 33, as
+     * browsers scroll; a touchpad's scroll moves it by its axes' points and
+     * ends with its release velocity after fingers lift so views glide on.
      */
     private void wheel(Node n, MotionEvent e) {
         boolean touchpad = e.isFromSource(InputDevice.SOURCE_TOUCHPAD);
-        float unit = touchpad ? 1 : 99;
-        // Positive axes show what is above or right, as a wheel turned away
-        // or tilted right does.
-        float dx = -e.getAxisValue(MotionEvent.AXIS_HSCROLL) * unit, dy = e.getAxisValue(MotionEvent.AXIS_VSCROLL) * unit;
-        event(Protocol.EVENT_WHEEL, n.id, 0, e.getX() / density, e.getY() / density, "", 0, 0, 0, Protocol.GESTURE_CHANGED,
-                dx, dy, touchpad ? 1 : 0, null, 0, 0, false, "", false, 0, 0, modifiers(e.getMetaState()));
+        int[] root = new int[2];
+        getLocationOnScreen(root);
+        float pageX = (e.getRawX() - root[0]) / density, pageY = (e.getRawY() - root[1]) / density;
+        wheelScroll.scroll(n.id, touchpad,
+                e.getAxisValue(MotionEvent.AXIS_HSCROLL), e.getAxisValue(MotionEvent.AXIS_VSCROLL),
+                e.getX() / density, e.getY() / density, pageX, pageY,
+                modifiers(e.getMetaState()), e.getEventTime());
+        ui.removeCallbacks(wheelEnd);
+        if (touchpad) {
+            ui.postDelayed(wheelEnd, WheelScroll.IDLE_MS);
+        }
+    }
+
+    private void emitWheel(int nodeId, int phase, float x, float y, float pageX, float pageY,
+            float dx, float dy, float vx, float vy, boolean touchpad, int mods) {
+        Node n = nodes.get(nodeId);
+        if (n == null || !n.has(Protocol.EVENT_WHEEL)) return;
+        event(Protocol.EVENT_WHEEL, nodeId, 0, x, y, "", vx, vy, 0, phase,
+                dx, dy, touchpad ? 1 : 0, null, 0, 0, false, "", false, pageX, pageY, mods);
     }
 
     /** Whether a drag of n translated by (dx, dy) points activates its pan (1), fails it (-1) or is undecided (0). */
@@ -7042,6 +7077,17 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         int[] at = new int[2];
         v.getLocationOnScreen(at);
         return new float[] {x - at[0], y - at[1]};
+    }
+
+    /** A point in ancestor's coordinates mapped into v's viewport, with every transform undone. */
+    private static float[] fromView(View ancestor, View v, float x, float y) {
+        if (v == ancestor) return new float[] {x, y};
+        if (v.getParent() instanceof ViewGroup) {
+            ViewGroup parent = (ViewGroup) v.getParent();
+            float[] p = fromView(ancestor, parent, x, y);
+            return p == null ? null : intoChild(parent, v, p[0], p[1]);
+        }
+        return null;
     }
 
     private static boolean past(float v, float limit) {
