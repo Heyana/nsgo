@@ -368,7 +368,7 @@ A playing `Video` keeps the display on only on iOS, where `AVPlayer`'s `prevents
 | Linux | Unity `LauncherEntry`'s `progress` and `progress-visible` properties where the launcher supports them | Indeterminate is a static half-filled bar; other states use their fraction |
 | iOS, Android, web and mini programs | None | No-op |
 
-`nsgotest.App.TaskProgress` keeps the last state so tests can assert normal, indeterminate and cleared progress.
+`nsgotest.App.TaskProgress` keeps the last state so tests can assert normal, indeterminate and cleared progress. The macOS native test mounts the real Dock tile content view, checks the normal and indeterminate bar states, and verifies that clearing restores the plain icon. Windows taskbar and Linux LauncherEntry native runs remain environment-dependent; their state conversion and call-order tests run in source tests.
 
 ## Haptics
 
