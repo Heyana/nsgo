@@ -111,7 +111,7 @@ func TestAppGroupStorageHandoff(t *testing.T) {
 	SyncStorage()
 	// A fresh backend loads the on-disk file, bypassing the process's
 	// open-store cache, as the full app does after the clip has exited.
-	loaded := graphOn(core.NewStore(&fileStorage{path: filepath.Join(app, "storage.json")}))
+	loaded := graphOn(NewStorage(&fileStorage{path: filepath.Join(app, "storage.json")}))
 	if got, ok := loaded.GetItem("order"); !ok || got != "table 12: two coffees" {
 		t.Fatalf("full app's stored order = %q, %v", got, ok)
 	}
