@@ -2677,6 +2677,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     @Override
     protected boolean dispatchHoverEvent(MotionEvent e) {
+        if (!inputGate.allowInput()) return true;
         boolean mouseHandled = mouse.hover(e);
         boolean handled = super.dispatchHoverEvent(e);
         return handled || mouseHandled;
@@ -5215,12 +5216,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         n.view.setFocusable(stop);
         if (!n.view.hasFocus()) n.view.setFocusableInTouchMode(false);
         n.view.setDefaultFocusHighlightEnabled(false);
-    }
-
-    @Override
-    protected boolean dispatchHoverEvent(MotionEvent e) {
-        if (!inputGate.allowInput()) return true;
-        return super.dispatchHoverEvent(e);
     }
 
     @Override
