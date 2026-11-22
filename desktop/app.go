@@ -194,5 +194,5 @@ type FrontmostAppInfo = core.FrontmostAppInfo
 // It is zero where CanReadFrontmostApp is false. Tests set it with nsgotest.Environment(core.Environment{FrontmostApp: ..., CanReadFrontmostApp: true}).
 func FrontmostApp(cx *core.Scope) FrontmostAppInfo { return cx.FrontmostApp() }
 
-// CanReadFrontmostApp reports whether FrontmostApp follows the application in front, tracked: on macOS, Windows and Linux on X11, but not on Wayland, which has no portable way to tell, on phones, the web or mini programs, or for code whose Access refuses core.AccessFrontmostApp, as it says what else the user runs.
+// CanReadFrontmostApp reports whether FrontmostApp follows the application in front, tracked: on macOS, Windows, X11 and Wayland compositors exposing version 2 or later of wlr foreign-toplevel management. Wayland provides application IDs but no PID. Other compositors, phones, the web and mini programs report false, as does code whose Access refuses core.AccessFrontmostApp.
 func CanReadFrontmostApp(cx *core.Scope) bool { return cx.CanReadFrontmostApp() }

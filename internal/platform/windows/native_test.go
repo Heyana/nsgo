@@ -1075,11 +1075,26 @@ func startApp(t *testing.T, title string, app engine.App, width, height driver.P
 func startAppWith(t *testing.T, app engine.App, opts Options) uintptr {
 	t.Helper()
 	done := make(chan struct{})
+	started := make(chan struct{}, 1)
 	go func() {
 		runtime.LockOSThread()
 		defer close(done)
-		Run(app, opts)
+		Run(func(cx *core.Scope) core.Node {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			return app(cx)
+		}, opts)
 	}()
+	// FindWindow can see the HWND before Run registers it. The engine's root starts after registration, before native-thread work is posted.
+	select {
+	case <-started:
+	case <-done:
+		t.Skip("no desktop could start the test app")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the test app's engine did not start")
+	}
 	hwnd := waitForWindow(t, opts.Title, done)
 	// A hidden tray surface initially inherits the app's title. FindWindow can find it first; tests and cleanup must use the app's root HWND.
 	onMain(t, hwnd, func(w *window) {

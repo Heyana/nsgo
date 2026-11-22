@@ -149,7 +149,7 @@ type Environment struct {
 	PageURL, PageBaseURL string
 	// LaunchedAtLogin says the system started this run as a login item. It stays the same throughout the run, including subsequent reopens.
 	LaunchedAtLogin bool
-	// FrontmostApp is the application in front on the desktop, the app itself included, and CanReadFrontmostApp says the platform follows it: on macOS, Windows and Linux on X11. FrontmostApp is zero where CanReadFrontmostApp is false.
+	// FrontmostApp is the application in front on the desktop, the app itself included, and CanReadFrontmostApp says the platform follows it: on macOS, Windows, X11 and supported Wayland compositors. FrontmostApp is zero where CanReadFrontmostApp is false.
 	FrontmostApp        FrontmostAppInfo
 	CanReadFrontmostApp bool
 	// CustomCursor says the platform shows image-based custom cursors (Style.CursorImage): true on macOS, Windows, Linux and the web; false on touch platforms.
@@ -195,13 +195,13 @@ type NetworkWatcher interface {
 
 // FrontmostAppInfo is the application in front on the desktop.
 type FrontmostAppInfo struct {
-	// ID is the macOS bundle identifier, else the executable's path; the Windows executable's path; or on X11 the GTK application ID, else the class of WM_CLASS. "" where the platform will not say, as Windows for a process it refuses to open.
+	// ID is the macOS bundle identifier, else the executable's path; a packaged Windows app's AUMID, else its executable's path; on X11 the GTK application ID, else WM_CLASS; or the Wayland application ID. "" where the platform will not say, as Windows for a process it refuses to open.
 	ID string
-	// Name is the app's display name: macOS's localized name, the executable's file description on Windows, else its file name, the class of WM_CLASS on X11.
+	// Name is the app's display name: macOS's localized name, a packaged Windows app's shell display name, else its executable's file description or file name; WM_CLASS on X11; or the desktop entry's name on Wayland, falling back to its application ID.
 	Name string
 	// PID is its process ID, 0 when unknown.
 	PID int
-	// FullScreen is whether its frontmost window covers its display: in full screen, not merely maximized.
+	// FullScreen is whether its frontmost window is in full screen, not merely maximized.
 	FullScreen bool
 }
 

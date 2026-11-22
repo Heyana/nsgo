@@ -111,7 +111,7 @@ var (
 	msgSendFloat               func(objc.ID, objc.SEL) float64
 )
 
-// loadWindowList registers what reading the window server's list of windows calls, once: the guide and the frontmost app's full screen read it.
+// loadWindowList registers the window-server calls used by the permission guide.
 func loadWindowList() bool {
 	windowListOnce.Do(func() {
 		cg, err1 := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW|purego.RTLD_GLOBAL)

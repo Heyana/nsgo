@@ -381,45 +381,45 @@ func keepWindowPointerDevice(t *testing.T, host *window) nativeWindowPointer {
 	var pin runtime.Pinner
 	t.Cleanup(func() {
 		if device != 0 {
-			wlPointer.marshal(device, 8, nil, 1, 1, nil)
+			wlClient.marshal(device, 8, nil, 1, 1, nil)
 		}
 		if manager != 0 {
-			wlPointer.marshal(manager, 1, nil, 1, 1, nil)
+			wlClient.marshal(manager, 1, nil, 1, 1, nil)
 		}
 		if queue != 0 {
-			wlPointer.roundtrip(display, queue)
+			wlClient.roundtrip(display, queue)
 		}
 		if registry != 0 {
-			wlPointer.destroy(registry)
+			wlClient.destroy(registry)
 		}
 		if queue != 0 {
-			wlPointer.destroyQueue(queue)
+			wlClient.destroyQueue(queue)
 		}
 		disconnect(display)
 		pin.Unpin()
 	})
-	queue = wlPointer.createQueue(display)
+	queue = wlClient.createQueue(display)
 	if queue == 0 {
 		t.Fatal("cannot create the private Wayland queue")
 	}
-	registry = wlPointerRequest(display, 1, wlPointer.registry, 0)
+	registry = wlPointerRequest(display, 1, wlClient.registry, 0)
 	if registry == 0 {
 		t.Fatal("cannot create the private Wayland registry")
 	}
-	wlPointer.setQueue(registry, queue)
+	wlClient.setQueue(registry, queue)
 	address, err := purego.Dlsym(lib, "wl_seat_interface")
 	if err != nil {
 		t.Fatal(err)
 	}
 	seat := (*wlInterface)(cPointer(address))
-	pointer := newWLPointerInterface("zwlr_virtual_pointer_v1", []wlPointerMessage{
-		newWLPointerMessage("motion", "uff"), newWLPointerMessage("motion_absolute", "uuuuu"),
-		newWLPointerMessage("button", "uuu"), newWLPointerMessage("axis", "uuf"), newWLPointerMessage("frame", ""),
-		newWLPointerMessage("axis_source", "u"), newWLPointerMessage("axis_stop", "uu"),
-		newWLPointerMessage("axis_discrete", "uufi"), newWLPointerMessage("destroy", ""),
+	pointer := newWLInterface("zwlr_virtual_pointer_v1", 1, []wlMessage{
+		newWLMessage("motion", "uff"), newWLMessage("motion_absolute", "uuuuu"),
+		newWLMessage("button", "uuu"), newWLMessage("axis", "uuf"), newWLMessage("frame", ""),
+		newWLMessage("axis_source", "u"), newWLMessage("axis_stop", "uu"),
+		newWLMessage("axis_discrete", "uufi"), newWLMessage("destroy", ""),
 	}, nil)
-	managerInterface := newWLPointerInterface("zwlr_virtual_pointer_manager_v1", []wlPointerMessage{
-		newWLPointerMessage("create_virtual_pointer", "?on", seat, pointer), newWLPointerMessage("destroy", ""),
+	managerInterface := newWLInterface("zwlr_virtual_pointer_manager_v1", 1, []wlMessage{
+		newWLMessage("create_virtual_pointer", "?on", seat, pointer), newWLMessage("destroy", ""),
 	}, nil)
 	listeners := [2]uintptr{
 		newCallback(func(_ uintptr, r uintptr, name uint32, iface *byte, _ uint32) {
@@ -429,12 +429,12 @@ func keepWindowPointerDevice(t *testing.T, host *window) nativeWindowPointer {
 		}), newCallback(func(uintptr, uintptr, uint32) {}),
 	}
 	pin.Pin(&listeners[0])
-	wlPointer.addListener(registry, &listeners[0], 0)
-	if wlPointer.roundtrip(display, queue) < 0 || manager == 0 {
+	wlClient.addListener(registry, &listeners[0], 0)
+	if wlClient.roundtrip(display, queue) < 0 || manager == 0 {
 		t.Fatal("the private compositor has no virtual pointer protocol")
 	}
 	device = wlPointerRequest(manager, 0, pointer, 0, 0)
-	if device == 0 || wlPointer.roundtrip(display, queue) < 0 {
+	if device == 0 || wlClient.roundtrip(display, queue) < 0 {
 		t.Fatal("the private pointer device did not initialize")
 	}
 	pointerWait(t, "GTK to discover the virtual pointer", func() bool {
@@ -446,7 +446,7 @@ func keepWindowPointerDevice(t *testing.T, host *window) nativeWindowPointer {
 	stamp := func() uintptr { return uintptr(time.Since(start).Milliseconds()) }
 	frame := func() {
 		wlPointerRequest(device, 4, nil)
-		wlPointer.roundtrip(display, queue)
+		wlClient.roundtrip(display, queue)
 	}
 	return nativeWindowPointer{
 		move: func(x, y float64) {

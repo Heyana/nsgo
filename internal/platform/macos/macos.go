@@ -582,6 +582,11 @@ func loadAppKit() {
 	classObserver = register("NsgoObserver", apple.Class("NSObject"), nil, []objc.MethodDef{{
 		Cmd: sel("observeValueForKeyPath:ofObject:change:context:"),
 		Fn: func(self objc.ID, _ objc.SEL, path, object, change objc.ID, ctx uintptr) {
+			if apple.GoString(path) == "currentSystemPresentationOptions" {
+				// KVO may run inside the active app's setter. Read its final state on the next turn rather than refresh the engine reentrantly.
+				apple.OnMain(updateFrontmost)
+				return
+			}
 			if apple.GoString(path) == "firstResponder" {
 				if v := views[objc.ID(ctx)]; v != nil {
 					v.surface.reportWebFocus()

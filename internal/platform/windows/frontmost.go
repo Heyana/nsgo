@@ -33,11 +33,12 @@ const (
 	processQueryLimitedInformation = 0x1000
 )
 
-// The application in front, which every window's environment reports. Windows says when another window comes to the front (EVENT_SYSTEM_FOREGROUND); a second hook, on the process in front alone, hears its windows move and resize, as they do entering and leaving full screen. Both post to the thread that set them, the main thread, which alone uses these.
+// The application in front, which every window's environment reports. Windows says when another window comes to the front (EVENT_SYSTEM_FOREGROUND); a second hook, on the foreground frame owner, hears its windows move and resize, as they do entering and leaving full screen. Both post to the thread that set them, the main thread, which alone uses these.
 var (
-	frontmost      driver.FrontmostAppInfo
-	frontmostHwnd  uintptr
-	frontmostMoves uintptr // the location hook on frontmost.PID's windows
+	frontmost         driver.FrontmostAppInfo
+	frontmostHwnd     uintptr
+	frontmostMoves    uintptr // the location hook on the foreground frame owner
+	frontmostMovesPID int     // a UWP client PID may differ from its frame owner
 	// frontmostFront is the foreground hook, and frontmostWatching whether the hooks are set, from the first call until unwatchFrontmost.
 	frontmostFront    uintptr
 	frontmostWatching bool
@@ -56,7 +57,7 @@ func frontmostApp() driver.FrontmostAppInfo {
 		}
 		frontmostFront, _, _ = setWinEventHook.Call(eventSystemForeground, eventSystemForeground, 0, frontmostEvent, 0, 0, winEventOutOfContext)
 		frontmost, frontmostHwnd = readFrontmost(driver.FrontmostAppInfo{})
-		hookFrontmostMoves(frontmost.PID)
+		hookFrontmostMoves(int(windowProcessID(frontmostHwnd)))
 	}
 	return frontmost
 }
@@ -87,8 +88,8 @@ func frontmostChanged(_, event, hwnd, object, _, _, _ uintptr) uintptr {
 func updateFrontmost() {
 	app, hwnd := readFrontmost(frontmost)
 	frontmostHwnd = hwnd
-	if app.PID != frontmost.PID {
-		hookFrontmostMoves(app.PID)
+	if owner := int(windowProcessID(hwnd)); owner != frontmostMovesPID {
+		hookFrontmostMoves(owner)
 	}
 	if app == frontmost {
 		return
@@ -103,6 +104,7 @@ func updateFrontmost() {
 
 // hookFrontmostMoves hears the location changes of process pid's windows alone, in place of the last process's.
 func hookFrontmostMoves(pid int) {
+	frontmostMovesPID = pid
 	if frontmostMoves != 0 {
 		unhookWinEvent.Call(frontmostMoves)
 		frontmostMoves = 0
@@ -112,22 +114,51 @@ func hookFrontmostMoves(pid int) {
 	}
 }
 
-// readFrontmost reads the application whose window is in front, and that window; last is the one read before, whose identity a window of the same process keeps without asking again.
+// readFrontmost reads the active window and its application. A stable process/AUMID keeps the last name; a UWP frame always resolves its client.
 func readFrontmost(last driver.FrontmostAppInfo) (driver.FrontmostAppInfo, uintptr) {
 	hwnd, _, _ := getForegroundWindow.Call()
 	if hwnd == 0 {
 		return driver.FrontmostAppInfo{}, 0
 	}
-	var pid uint32
-	getWindowThreadProcessID.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
-	app := driver.FrontmostAppInfo{PID: int(pid)}
-	if app.PID != 0 && app.PID == last.PID {
-		app.ID, app.Name = last.ID, last.Name
-	} else if path := processPath(pid); path != "" {
-		app.ID, app.Name = path, appName(path)
-	}
-	app.FullScreen = coversMonitor(hwnd)
+	app := readWindowFrontmost(hwnd, last)
 	return app, hwnd
+}
+
+func readWindowFrontmost(hwnd uintptr, last driver.FrontmostAppInfo) driver.FrontmostAppInfo {
+	if hwnd == 0 {
+		return driver.FrontmostAppInfo{}
+	}
+	pid := windowProcessID(hwnd)
+	var id string
+	if windowClassName(hwnd) == "ApplicationFrameWindow" {
+		frameID := windowApplicationID(hwnd)
+		pid, id = framedApplication(hwnd, pid, frameID)
+		if id == "" {
+			id = frameID
+		}
+	} else {
+		id = processApplicationID(pid)
+	}
+	app := driver.FrontmostAppInfo{PID: int(pid), ID: id, FullScreen: coversMonitor(hwnd)}
+	if app.PID != 0 && app.PID == last.PID && (id == "" || id == last.ID) {
+		app.ID, app.Name = last.ID, last.Name
+		return app
+	}
+	if id != "" {
+		app.Name = packagedApplicationName(id)
+	}
+	if path := processPath(pid); path != "" {
+		if app.ID == "" {
+			app.ID = path
+		}
+		if app.Name == "" {
+			app.Name = appName(path)
+		}
+	}
+	if app.Name == "" {
+		app.Name = id
+	}
+	return app
 }
 
 // processPath is the full path of process pid's executable, "" where Windows refuses it.
@@ -200,12 +231,9 @@ func coversMonitor(hwnd uintptr) bool {
 			return false
 		}
 	}
-	class := make([]uint16, 64)
-	if n, _, _ := getClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&class[0])), uintptr(len(class))); n != 0 {
-		switch syscall.UTF16ToString(class[:n]) {
-		case "Progman", "WorkerW":
-			return false
-		}
+	switch windowClassName(hwnd) {
+	case "Progman", "WorkerW":
+		return false
 	}
 	var r rect
 	if ok, _, _ := getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&r))); ok == 0 {

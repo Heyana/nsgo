@@ -5,6 +5,8 @@ package linux
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -13,16 +15,17 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// The application in front, on X11 alone: the window manager names the window in front in the root window's _NET_ACTIVE_WINDOW (EWMH), and that window says whose it is with WM_CLASS, _GTK_APPLICATION_ID and _NET_WM_PID, and whether it is in full screen with _NET_WM_STATE. The app hears both change as PropertyNotify events through GdkX11Display's xevent signal. Wayland has no protocol every compositor offers for it, and Xwayland sees only X clients' windows, so a Wayland session reports none. The GTK main thread alone uses these.
+// The application in front on X11: the window manager names the window in front in the root window's _NET_ACTIVE_WINDOW (EWMH), and that window says whose it is with WM_CLASS, _GTK_APPLICATION_ID and _NET_WM_PID, and whether it is in full screen with _NET_WM_STATE. The app hears both change as PropertyNotify events through GdkX11Display's xevent signal. Wayland uses its optional compositor protocol (frontmost_wayland.go), never Xwayland's partial window list. The GTK main thread alone uses these.
 var (
 	x11GetWindowProperty   func(display, window, property uintptr, offset, length int, delete int32, reqType uintptr, actualType *uintptr, actualFormat *int32, items, bytesAfter *uint, prop *uintptr) int32
 	x11Free                func(data uintptr) int32
 	x11SelectInput         func(display, window uintptr, mask int) int32
 	x11GetWindowAttributes func(display, window uintptr, attributes *x11Attributes) int32
 
-	frontmost      driver.FrontmostAppInfo
-	frontmostX11   *x11Frontmost
-	frontmostWatch sync.Once
+	frontmost        driver.FrontmostAppInfo
+	frontmostX11     *x11Frontmost
+	frontmostWayland *wlFrontmostServer
+	frontmostWatch   sync.Once
 )
 
 // x11Attributes is Xlib's XWindowAttributes on LP64, of which the app reads the event mask it selected.
@@ -62,17 +65,23 @@ type x11Frontmost struct {
 	atoms   struct{ activeWindow, pid, state, fullScreen, applicationID, utf8 uintptr }
 }
 
-// frontmostApp returns the application in front, following it from the first call on, and whether it follows it: not where GDK does not draw on X11.
+// frontmostApp follows X11 or an available compositor-owned Wayland protocol.
 func frontmostApp() (driver.FrontmostAppInfo, bool) {
 	frontmostWatch.Do(func() {
 		if frontmostX11 = watchX11Frontmost(); frontmostX11 != nil {
 			frontmost = frontmostX11.read()
+		} else {
+			frontmostWayland = watchWaylandFrontmost()
 		}
 	})
-	return frontmost, frontmostX11 != nil
+	return frontmost, frontmostX11 != nil || frontmostWayland != nil
 }
 
 func watchX11Frontmost() *x11Frontmost {
+	// Xwayland cannot describe the native clients of a Wayland desktop.
+	if os.Getenv("WAYLAND_DISPLAY") != "" || strings.EqualFold(os.Getenv("XDG_SESSION_TYPE"), "wayland") {
+		return nil
+	}
 	if bindX11HotKeys(); !x11HotKeysReady {
 		return nil
 	}
@@ -250,14 +259,23 @@ func frontmostEvent(_, xevent, _ uintptr) int32 {
 	if !(xid == f.root && atom == f.atoms.activeWindow || xid == f.active && atom == f.atoms.state) {
 		return 0
 	}
-	if app := f.read(); app != frontmost {
-		frontmost = app
-		windowHandles.Range(func(_, value any) bool {
-			if w := value.(*window); !w.closing {
-				w.updateEnvironment()
-			}
-			return true
-		})
-	}
+	reportFrontmost(f.read())
 	return 0
+}
+
+func reportFrontmost(app driver.FrontmostAppInfo) {
+	if app == frontmost {
+		return
+	}
+	frontmost = app
+	refreshFrontmostWindows()
+}
+
+func refreshFrontmostWindows() {
+	windowHandles.Range(func(_, value any) bool {
+		if w := value.(*window); !w.closing {
+			w.updateEnvironment()
+		}
+		return true
+	})
 }

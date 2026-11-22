@@ -94,7 +94,7 @@ jobs:
       - name: Install native test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb openbox pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin libdbusmenu-glib4 avahi-daemon dbus openbox gnome-sushi
+          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb openbox pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin libdbusmenu-glib4 avahi-daemon dbus openbox gnome-sushi sway
       - name: Allow WebKit's sandbox on the runner
         run: |
           # Ubuntu restricts unprivileged user namespaces. Grant bubblewrap that permission so WebKit can keep its sandbox enabled.
@@ -262,6 +262,68 @@ jobs:
           GSK_RENDERER: cairo
           GIO_USE_VFS: local
         run: xvfb-run -a dbus-run-session -- go tool nsgo test -run '^(TestLauncherQuicklistOverDBus|TestRecentFilesPreserveOtherApplications|TestTrayServesItsItemAndMenuOverDBus)$' ./internal/platform/linux
+      - name: Test X11 frontmost player states
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          GTK_A11Y: none
+          XDG_SESSION_TYPE: x11
+          NSGO_FRONTMOST_X11_NATIVE: '1'
+        run: |
+          unset WAYLAND_DISPLAY
+          fixture=$(mktemp -d)
+          cat > "$fixture/check.sh" <<'SCRIPT'
+          set -eu -o pipefail
+          openbox > "$1/openbox.log" 2>&1 &
+          manager=$!
+          trap 'kill "$manager" 2>/dev/null || true' EXIT
+          for attempt in {1..100}; do
+            if xprop -root _NET_SUPPORTING_WM_CHECK | grep -q "window id"; then break; fi
+            if ! kill -0 "$manager"; then cat "$1/openbox.log"; exit 1; fi
+            sleep 0.1
+          done
+          # Settle portal activation before timing GTK window startup.
+          timeout 30s gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.DBus.Peer.Ping > "$1/portal.log" 2>&1 || true
+          go tool nsgo test -run "^TestX11FrontmostTracksPlayerState$" ./internal/platform/linux -- -count=1
+          SCRIPT
+          xvfb-run -a dbus-run-session -- bash "$fixture/check.sh" "$fixture"
+      - name: Test Wayland frontmost applications
+        env:
+          GDK_BACKEND: wayland
+          GSK_RENDERER: cairo
+          GTK_A11Y: none
+          WLR_BACKENDS: headless
+          WLR_HEADLESS_OUTPUTS: '1'
+          WLR_RENDERER: pixman
+          WLR_LIBINPUT_NO_DEVICES: '1'
+          NSGO_FRONTMOST_WAYLAND_NATIVE: '1'
+        run: |
+          XDG_RUNTIME_DIR=$(mktemp -d)
+          export XDG_RUNTIME_DIR
+          chmod 700 "$XDG_RUNTIME_DIR"
+          printf '%s\n' 'output * mode 1280x720' 'seat seat0 fallback true' 'focus_follows_mouse no' 'xwayland disable' > "$XDG_RUNTIME_DIR/sway.conf"
+          cat > "$XDG_RUNTIME_DIR/check.sh" <<'SCRIPT'
+          set -eu -o pipefail
+          sway -c "$XDG_RUNTIME_DIR/sway.conf" > "$XDG_RUNTIME_DIR/sway.log" 2>&1 &
+          compositor=$!
+          trap 'kill "$compositor" 2>/dev/null || true' EXIT
+          SWAYSOCK=""
+          WAYLAND_DISPLAY=""
+          for attempt in {1..100}; do
+            sockets=("$XDG_RUNTIME_DIR"/sway-ipc.*.sock)
+            for candidate in "$XDG_RUNTIME_DIR"/wayland-*; do
+              if [[ -S "$candidate" ]]; then WAYLAND_DISPLAY=${candidate##*/}; break; fi
+            done
+            if [[ -S "${sockets[0]}" && -n "$WAYLAND_DISPLAY" ]]; then SWAYSOCK=${sockets[0]}; break; fi
+            if ! kill -0 "$compositor"; then cat "$XDG_RUNTIME_DIR/sway.log"; exit 1; fi
+            sleep 0.1
+          done
+          export SWAYSOCK WAYLAND_DISPLAY
+          test -n "$SWAYSOCK"
+          test -n "$WAYLAND_DISPLAY"
+          go tool nsgo test -run "^TestWaylandFrontmost" ./internal/platform/linux -- -count=1
+          SCRIPT
+          dbus-run-session -- bash "$XDG_RUNTIME_DIR/check.sh"
       - name: Test Linux display frame timestamps
         env:
           GDK_BACKEND: x11

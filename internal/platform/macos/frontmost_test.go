@@ -11,26 +11,6 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-func TestCoversDisplayTellsFullScreenFromZoomed(t *testing.T) {
-	// A 1512x982 main display with a 30-point menu bar, and a 1920x1080 display to its right, its top 100 points higher.
-	screens := []guideRect{{0, 0, 1512, 982}, {1512, -100, 1920, 1080}}
-	for _, tc := range []struct {
-		name   string
-		window guideRect
-		want   bool
-	}{
-		{"full screen", guideRect{0, 0, 1512, 982}, true},
-		{"full screen on the second display", guideRect{1512, -100, 1920, 1080}, true},
-		{"zoomed below the menu bar", guideRect{0, 30, 1512, 952}, false},
-		{"across both displays without covering either", guideRect{800, 0, 1500, 900}, false},
-		{"larger than its display", guideRect{-4, -4, 1520, 990}, true},
-	} {
-		if got := coversDisplay(tc.window, screens); got != tc.want {
-			t.Errorf("%s: coversDisplay = %v, want %v", tc.name, got, tc.want)
-		}
-	}
-}
-
 func TestReadFrontmostNamesTheWorkspacesApp(t *testing.T) {
 	if !loadWindowList() {
 		t.Skip("no window server")
@@ -76,5 +56,26 @@ func TestFrontmostFollowsWorkspaceNotifications(t *testing.T) {
 				}
 			}
 		})
+	})
+}
+
+// Emitting KVO through Foundation tests the real observer subscription and deferred cache refresh without changing the user's presentation options. Actual fullscreen-player acceptance still needs an interactive desktop.
+func TestFrontmostFollowsSystemPresentationKVO(t *testing.T) {
+	onMain(func() {
+		loadAppKit()
+		pool := objc.ID(apple.Class("NSAutoreleasePool")).Send(selNew)
+		defer pool.Send(sel("drain"))
+		frontmostApp()
+		app := objc.ID(apple.Class("NSApplication")).Send(sel("sharedApplication"))
+		key := apple.NSString("currentSystemPresentationOptions")
+		frontmost = driver.FrontmostAppInfo{ID: "stale", PID: -1}
+		app.Send(sel("willChangeValueForKey:"), key)
+		app.Send(sel("didChangeValueForKey:"), key)
+		loop := objc.ID(apple.Class("NSRunLoop")).Send(sel("mainRunLoop"))
+		until := objc.ID(apple.Class("NSDate")).Send(sel("dateWithTimeIntervalSinceNow:"), 0.05)
+		loop.Send(sel("runUntilDate:"), until)
+		if want := readFrontmost(); frontmost != want {
+			t.Fatal("presentation notification retained a stale cache")
+		}
 	})
 }
