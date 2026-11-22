@@ -3,6 +3,7 @@
 package apple
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
@@ -187,6 +188,9 @@ func TestVideoBackgroundPauseDoesNotResume(t *testing.T) {
 
 // rateReason reads AVFoundation's own reason constants from a notification like the player's.
 func TestVideoRateReason(t *testing.T) {
+	// A pool belongs to the thread that made it, so the test stays on it until the drain.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	pool := objc.ID(Class("NSAutoreleasePool")).Send(sel("new"))
 	defer pool.Send(sel("drain"))
 	for name, want := range map[string]int{

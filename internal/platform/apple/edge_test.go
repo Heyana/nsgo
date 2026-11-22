@@ -4,6 +4,7 @@ package apple
 
 import (
 	"math"
+	"runtime"
 	"testing"
 	"unsafe"
 
@@ -13,6 +14,9 @@ import (
 )
 
 func TestBackdropFilters(t *testing.T) {
+	// A pool belongs to the thread that made it, so the test stays on it until the drain.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	pool := objc.ID(Class("NSAutoreleasePool")).Send(selNew)
 	defer pool.Send(sel("drain"))
 
