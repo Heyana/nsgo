@@ -81,6 +81,7 @@ const (
 	scheduledToastFactoryCreate      = 6
 	scheduledToast2PutTag            = 6
 	scheduledToast2GetTag            = 7
+	scheduledToast2GetGroup          = 9
 	scheduledToast2PutGroup          = 8
 	vectorViewGetAt                  = 6
 	vectorViewSize                   = 7
@@ -102,10 +103,6 @@ const (
 // comApartment makes the UI thread a single-threaded apartment, once, as
 // drops and WebView2 do.
 var comApartment = sync.OnceFunc(func() { oleInitialize.Call(0) })
-
-// toastGroup is the group the app's toasts are in, so a close names one
-// by its tag.
-const toastGroup = "nsgo"
 
 // toasts is the toast notifier and the toasts showing, by the app's ID,
 // which the main thread keeps.
@@ -509,13 +506,9 @@ func (w *window) showToast(n driver.Notification) bool {
 	if failed(hr) {
 		return false
 	}
-	if t2 := toast.query(&iidToastNotification2); t2 != nil {
-		tag, group := hstring(n.ID), hstring(toastGroup)
-		t2.call(toast2PutTag, tag)
-		t2.call(toast2PutGroup, group)
-		deleteHString(tag)
-		deleteHString(group)
-		t2.release()
+	if !setToastIdentity(toast, &iidToastNotification2, n.ID) {
+		toast.release()
+		return false
 	}
 	appID, e := n.ID, w.engine
 	_, press := parseToastActivationArgs(launch)
@@ -540,6 +533,7 @@ func (w *window) showToast(n driver.Notification) bool {
 		toast.release()
 		return false
 	}
+	removeToastHistory(n.ID, true)
 	if old := toasts.shown[n.ID]; old != nil {
 		old.release()
 	}
@@ -573,15 +567,28 @@ func scheduleToast(notifier *comObject, n driver.Notification) bool {
 		return false
 	}
 	defer toast.release()
-	if t2 := toast.query(&iidScheduledToast2); t2 != nil {
-		tag, group := hstring(n.ID), hstring(toastGroup)
-		t2.call(scheduledToast2PutTag, tag)
-		t2.call(scheduledToast2PutGroup, group)
-		deleteHString(tag)
-		deleteHString(group)
-		t2.release()
+	if !setToastIdentity(toast, &iidScheduledToast2, n.ID) {
+		return false
 	}
-	return !failed(notifier.call(toastNotifierAddToSchedule, toast.ptr()))
+	if failed(notifier.call(toastNotifierAddToSchedule, toast.ptr())) {
+		return false
+	}
+	removeToastHistory(n.ID, true)
+	return true
+}
+
+// Both toast identity interfaces have Tag and Group setters in these slots.
+func setToastIdentity(toast *comObject, iid *guid, id string) bool {
+	identity := toast.query(iid)
+	if identity == nil {
+		return false
+	}
+	defer identity.release()
+	tagText, groupText := toastIdentity(id)
+	tag, group := hstring(tagText), hstring(groupText)
+	defer deleteHString(tag)
+	defer deleteHString(group)
+	return !failed(identity.call(toast2PutTag, tag)) && !failed(identity.call(toast2PutGroup, group))
 }
 
 // unscheduleToast takes the notifier's scheduled toasts tagged id off its schedule, and every one it holds, all the app's, when id is empty.
@@ -601,13 +608,14 @@ func unscheduleToast(notifier *comObject, id string) {
 			continue
 		}
 		if t2 := toast.query(&iidScheduledToast2); t2 != nil {
-			var tag uintptr
-			if !failed(t2.call(scheduledToast2GetTag, uintptr(unsafe.Pointer(&tag)))) {
-				if id == "" || hstringText(tag) == id {
-					notifier.call(toastNotifierRemoveFromSchedule, toast.ptr())
-				}
-				deleteHString(tag)
+			var tag, group uintptr
+			tagHR := t2.call(scheduledToast2GetTag, uintptr(unsafe.Pointer(&tag)))
+			groupHR := t2.call(scheduledToast2GetGroup, uintptr(unsafe.Pointer(&group)))
+			if !failed(tagHR) && !failed(groupHR) && toastMatches(id, hstringText(tag), hstringText(group)) {
+				notifier.call(toastNotifierRemoveFromSchedule, toast.ptr())
 			}
+			deleteHString(tag)
+			deleteHString(group)
 			t2.release()
 		}
 		toast.release()
@@ -644,6 +652,14 @@ func (w *window) closeToast(id string) {
 		return
 	}
 	unscheduleToast(notifier, id)
+	removeToastHistory(id, false)
+}
+
+// removeToastHistory also retires raw long-ID tags written by older versions.
+func removeToastHistory(id string, legacyOnly bool) {
+	if _, group := toastIdentity(id); legacyOnly && group == toastGroup {
+		return
+	}
 	statics := activationFactory("Windows.UI.Notifications.ToastNotificationManager", &iidToastManagerStatics2)
 	if statics == nil {
 		return
@@ -654,23 +670,41 @@ func (w *window) closeToast(id string) {
 		return
 	}
 	defer history.release()
-	tag, group := hstring(id), hstring(toastGroup)
-	defer deleteHString(tag)
-	defer deleteHString(group)
-	if toasts.packaged {
+	remove := func(tagText, groupText string) {
+		tag, group := hstring(tagText), hstring(groupText)
+		defer deleteHString(tag)
+		defer deleteHString(group)
+		if toasts.packaged {
+			if id == "" {
+				history.call(toastHistoryRemoveGroup, group)
+			} else {
+				history.call(toastHistoryRemoveGroupedTag, tag, group)
+			}
+			return
+		}
+		aumid := hstring(toasts.aumid)
+		defer deleteHString(aumid)
 		if id == "" {
-			history.call(toastHistoryRemoveGroup, group)
+			history.call(toastHistoryRemoveGroupID, group, aumid)
 		} else {
-			history.call(toastHistoryRemoveGroupedTag, tag, group)
+			history.call(toastHistoryRemoveGroupedTagID, tag, group, aumid)
+		}
+	}
+	if legacyOnly {
+		if _, group := toastIdentity(id); group != toastGroup {
+			remove(id, toastGroup)
 		}
 		return
 	}
-	aumid := hstring(toasts.aumid)
-	defer deleteHString(aumid)
 	if id == "" {
-		history.call(toastHistoryRemoveGroupID, group, aumid)
+		remove("", toastGroup)
+		remove("", toastLongGroup)
 	} else {
-		history.call(toastHistoryRemoveGroupedTagID, tag, group, aumid)
+		tag, group := toastIdentity(id)
+		remove(tag, group)
+		if group != toastGroup {
+			remove(id, toastGroup)
+		}
 	}
 }
 

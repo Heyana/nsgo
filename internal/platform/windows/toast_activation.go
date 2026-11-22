@@ -9,8 +9,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -287,31 +285,6 @@ func (d *toastPressDedup) first(press string, now time.Time) bool {
 	}
 	d.at[press] = now
 	return true
-}
-
-// toastNonce counts the toasts shown, from the time the process first showed one, so a toast of an earlier run of the app, pressed after it ended, does not share its nonce with one this run shows.
-var toastNonce struct {
-	sync.Once
-	n atomic.Uint64
-}
-
-// toastLaunch is the launch arguments of a toast shown with id: a nonce new for each toast, then the ID, which runs to the end and may hold any character.
-func toastLaunch(id string) string {
-	toastNonce.Do(func() { toastNonce.n.Store(uint64(time.Now().UnixNano())) })
-	return "n=" + strconv.FormatUint(toastNonce.n.Add(1), 36) + ";id=" + id
-}
-
-// parseToastActivationArgs returns the ID of the toast launch arguments args name and the arguments the press is known by. It also takes the bare id=<ID> of a toast an earlier version of the app showed.
-func parseToastActivationArgs(args string) (id, press string) {
-	press = strings.TrimSpace(args)
-	rest := press
-	if nonce, after, ok := strings.Cut(rest, ";"); ok && strings.HasPrefix(nonce, "n=") && strings.HasPrefix(after, "id=") {
-		rest = after
-	}
-	if !strings.HasPrefix(rest, "id=") {
-		return "", ""
-	}
-	return strings.TrimPrefix(rest, "id="), press
 }
 
 var toastActivation struct {

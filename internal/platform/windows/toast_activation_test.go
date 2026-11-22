@@ -34,7 +34,7 @@ func TestParseToastActivationArgs(t *testing.T) {
 		{"n=1a;id=a;b&n=2;id=c", "a;b&n=2;id=c", "n=1a;id=a;b&n=2;id=c"},
 		{"id=invoice-42", "invoice-42", "id=invoice-42"},
 		{"id=a;id=b", "a;id=b", "id=a;id=b"},
-		{"  id=hello world  ", "hello world", "id=hello world"},
+		{"id=hello world  ", "hello world  ", "id=hello world  "},
 		{"", "", ""},
 		{"action=invoice-42", "", ""},
 		{"n=1a;action=invoice-42", "", ""},

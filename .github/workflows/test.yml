@@ -457,6 +457,8 @@ jobs:
         run: go tool nsgo test -run '^TestWebSchemeRequestAnswers$' ./internal/platform/windows
       - name: Test native radio and tab focus
         run: go tool nsgo test -target windows -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
+      - name: Test notification IDs and native toast identities
+        run: go tool nsgo test -run '^TestToast' ./internal/platform/windows
       - name: Test instance isolation and file handoff
         run: go tool nsgo test -run '^TestInstance' ./internal/platform/windows
       - name: Test native network reachability
