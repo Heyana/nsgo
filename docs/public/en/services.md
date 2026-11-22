@@ -68,7 +68,9 @@ if desktop.CanLookUp(cx) {
 }
 ```
 
-`desktop.QuickLook` shows the system's file preview panel on files, starting at an index, as Space does in the Finder, and shows the new files when called again while it is open. `desktop.CanQuickLook` says whether it can, in a window on macOS; Windows, Linux and the web have no such panel.
+`desktop.QuickLook` asks for file previews, starting at an index, and updates the files when called again while the panel is open. `desktop.CanQuickLook` reports availability in an app's own window on macOS and Windows, and on Linux when the session exposes GNOME Sushi's running or activatable D-Bus service. Windows uses the file type's registered preview handler; supported formats depend on the installed handlers or previewer. A true result means the platform was asked, not that it rendered the file.
+
+Space or Escape closes the panel. Arrow keys select files in the request on Windows and in Sushi versions that report selection and ownership on X11. On Wayland, Linux currently opens an unparented preview; automatic owner-close and arrow selection are unavailable. KDE-specific previewers and the web are unsupported.
 
 ```go
 if desktop.CanQuickLook(cx) {

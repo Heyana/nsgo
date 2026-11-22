@@ -123,6 +123,7 @@ func (w *window) environment() driver.Environment {
 		ScheduledNotifications: true,
 
 		// An embedding host owns its window, and the app's own surface and a tray icon's show in none, as on macOS.
+		CanQuickLook:      w.showsOwnWindow(),
 		CanSetWindowLevel: w.showsOwnWindow(),
 		CanPlaceWindows:   w.showsOwnWindow(),
 

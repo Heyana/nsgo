@@ -794,6 +794,9 @@ func (w *window) serveMessages() {
 				return true
 			}
 		}
+		if previewMessage(&m) {
+			continue
+		}
 		// Shortcuts take key presses before they become characters, in the window the keys go to: this one or a surface the app opened.
 		if t := windows[m.Hwnd]; t != nil && (t == w || t.hostWindow == w) {
 			t.reportModality(m.Message, m.WParam)
@@ -1436,6 +1439,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemInstallPackage:
 			w.engine.Dispatch(driver.NoPackageInstaller(it.Count))
+			continue
+		case driver.ItemQuickLook:
+			w.quickLook(it.QuickLook)
 			continue
 		case driver.ItemShare:
 			w.share(*it.Share, it.Count)
@@ -2934,6 +2940,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmDestroy:
 		w.startup.close()
 		w.unobserveEmbeddedRoot()
+		w.closeQuickLook()
 		w.cancelColorPicker()
 		w.closeCustomCursors()
 		w.stopPower()

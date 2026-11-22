@@ -17,6 +17,10 @@ var (
 	cbWindowMapped uintptr
 	cbActivity     uintptr
 
+	cbPreviewSelection  uintptr
+	cbPreviewProperties uintptr
+	cbPreviewOwner      uintptr
+
 	cbClickPressed     uintptr
 	cbClickReleased    uintptr
 	cbMotion           uintptr
@@ -183,6 +187,9 @@ func init() {
 	cbTick = newCallback(tickCallback)
 	cbTickWatch = newCallback(tickWatchCallback)
 	cbYield = newCallback(yieldCallback)
+	cbPreviewSelection = newCallback(previewSelectionCallback)
+	cbPreviewProperties = newCallback(previewPropertiesCallback)
+	cbPreviewOwner = newCallback(previewOwnerCallback)
 	cbNotificationAction = newCallback(notificationActionCallback)
 	cbNotificationClosed = newCallback(notificationClosedCallback)
 	cbGlobalHotKeyResponse = newCallback(globalHotKeyResponse)

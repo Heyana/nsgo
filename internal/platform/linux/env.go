@@ -122,6 +122,7 @@ func (w *window) environment() driver.Environment {
 		AudioPlaybackControls: loadSound(),
 
 		// X11 positions windows and asks its window manager for stacking; a Wayland compositor chooses both for an ordinary toplevel.
+		CanQuickLook:           w.canQuickLook(),
 		CanPlaceWindows:        w.canPlace(),
 		CanSetWindowLevel:      w.canSetLevel(),
 		CanSetWindowWorkspaces: w.canSetWorkspaces(),

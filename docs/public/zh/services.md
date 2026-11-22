@@ -68,7 +68,9 @@ if desktop.CanLookUp(cx) {
 }
 ```
 
-`desktop.QuickLook` 为一组文件显示系统的文件预览面板，从指定序号的文件开始，如同在访达中按空格键；面板打开时再次调用会换成新的文件。`desktop.CanQuickLook` 说明能否显示，即在 macOS 的窗口中；Windows、Linux 和 Web 没有这样的面板。
+`desktop.QuickLook` 请求从指定序号开始预览文件，面板打开时再次调用会更新文件。`desktop.CanQuickLook` 在 macOS 和 Windows 的应用自有窗口中可用；Linux 需要会话中存在已运行或可激活的 GNOME Sushi D-Bus 服务。Windows 使用文件类型注册的预览处理程序，支持的格式由已安装的处理程序或预览器决定。返回 true 仅表示已向平台发出请求，不代表文件已经显示。
+
+空格或 Escape 关闭面板。Windows 上可用方向键切换请求中的文件，X11 上能报告选择和所属窗口的 Sushi 版本也支持。Wayland 上目前打开无父窗口的预览，无法随所属窗口自动关闭或用方向键切换文件。KDE 专用预览器和 Web 暂不支持。
 
 ```go
 if desktop.CanQuickLook(cx) {
