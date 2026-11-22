@@ -210,6 +210,8 @@ type surface struct {
 	// playUpdates guards the newer extended command against an older runtime.
 	playUpdates     atomic.Bool
 	extendedSensors atomic.Bool
+	// authSessions is set once the runtime's environment says it reads ItemAuthSession (capAuthSession); until then Go answers sessions unavailable.
+	authSessions atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -450,6 +452,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 				ev.Data, ev.Text, ev.Index = readSpeak(ev, data), "", 0
 			case driver.EventSpeech:
 				ev.Data, ev.Text, ev.Index, ev.Finished = readSpeech(ev, data), "", 0, false
+			case driver.EventAuthSession:
+				ev.Data, ev.Text, ev.Index = readAuthSession(ev, data), "", 0
 			case driver.EventFiles:
 				if s.pickedFolders(answerKey(from, ev.Count)) {
 					ev.Data = s.readFolders(data)
@@ -491,6 +495,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.fetchToFile.Store(third&capFetchToFile != 0)
 			s.playUpdates.Store(third&capPlayUpdates != 0)
 			s.extendedSensors.Store(fourth&capExtendedSensors != 0)
+			s.authSessions.Store(fourth&capAuthSession != 0)
 			if env.Equal(s.env) {
 				break
 			}
@@ -1137,7 +1142,8 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 		b = control
 	}
 	b = filterExtendedSensors(s.extendedSensors.Load(), b, func(ev driver.Event) { s.dispatchTo(v.id, ev) })
-	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutAuthSessions(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(b))))))
+	b = filterAuthSessions(s.authSessions.Load(), b, func(ev driver.Event) { s.dispatchTo(v.id, ev) })
+	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(b)))))
 	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
 	outsideBatch := func(it driver.MountItem) bool {
 		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile ||
@@ -1724,6 +1730,8 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			w.float(r.Pitch)
 		case driver.ItemAudio:
 			writeAudio(w, it.Count, it.Audio)
+		case driver.ItemAuthSession:
+			writeAuthRequest(w, it.Count, it.Auth)
 		case driver.ItemBiometricAvailability:
 			w.u32(it.Count)
 		case driver.ItemBiometricAuthenticate:

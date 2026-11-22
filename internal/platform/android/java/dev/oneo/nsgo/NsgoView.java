@@ -1076,6 +1076,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      */
     private void release() {
         if (audio != null) { audio.close(); audio = null; }
+        AuthSession.dispose(this);
         measuring = false;
         if (perfPanel != null) {
             getOverlay().remove(perfPanel);
@@ -1575,8 +1576,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             writeDisplay(d);
             // Optional environment tail, after the display, for mobile.OpenedURL.
             Protocol.writeString(d, first.openedURL);
-            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS.
-            d.writeByte(Protocol.CAP_EXTENDED_SENSORS);
+            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS and Protocol.CAP_AUTH_SESSION.
+            d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -3942,6 +3943,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 first.audio.command(surface, audioVisible(), in);
                 break;
             }
+            case Protocol.ITEM_AUTH_SESSION: {
+                AuthSession.read(this, in);
+                break;
+            }
             case Protocol.ITEM_BIOMETRIC_AUTHENTICATE: {
                 long count = in.readInt() & 0xffffffffL;
                 authenticateBiometric(count, Protocol.readString(in));
@@ -5521,9 +5526,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private final ArrayList<String> linksEarly = new ArrayList<>();
     private final ArrayList<String> sharesEarly = new ArrayList<>();
 
-    /** Reports a URL the host accepted from Android; holds its open event until the first batch while starting. */
+    /** Reports a URL the host accepted from Android, an embedded host's forwarded links included: the active authentication callback takes it first, else it holds its open event until the first batch while starting. */
     public void openLink(String link) {
         if (link == null || link.isEmpty()) return;
+        if (AuthSession.redirect(this, link)) return;
         openedURL = link;
         // On a warm link, update the tracked environment before OnOpenLinks. On a cold link, the initial environment carries it before rendering.
         environment();
@@ -5532,6 +5538,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             return;
         }
         event(Protocol.EVENT_OPEN_LINKS, 0, 0, 0, 0, link);
+    }
+
+    /** The two-phase authentication reply: redirect, or error and callback/message. */
+    void authSessionEvent(long id, int phase, String text, String data) {
+        event(Protocol.EVENT_AUTH_SESSION, 0, id, 0, 0, text, 0, 0, phase,
+                0, 0, 0, 0, null, 0, 0, false, data, false);
     }
 
     /** Gives one incoming share to the engine after it has started. */

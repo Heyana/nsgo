@@ -582,6 +582,9 @@ const capSpeech = 8
 // capExtendedSensors is the fourth capability byte's bit for a runtime that reads the scoped sensor kinds and commands (steps, activity, pressure, regions, precise-location and fitness requests) on the existing sensor messages (Protocol.CAP_EXTENDED_SENSORS): one built before it would read them as location requests, so Go answers them unavailable instead.
 const capExtendedSensors = 1
 
+// capAuthSession is the fourth capability byte's bit for a runtime that reads ItemAuthSession and opens Custom Tabs for it (Protocol.CAP_AUTH_SESSION): mount items carry no length, so one built before AuthSession.java would misread the rest of the batch, and Go answers its sessions unavailable instead.
+const capAuthSession = 2
+
 // readEnvironmentCapabilities reads the environment as readEnvironment does, with the third and fourth capability bytes, which say what the runtime itself can do (cap* bits) rather than the device, so they stay out of driver.Environment.
 func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	env := driver.Environment{
@@ -677,7 +680,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	if len(r.buf) > 0 {
 		env.OpenedURL = r.str()
 	}
-	// The third capability byte's bits are all taken; a fourth ends the environment, so a runtime built before it, which ends at the opened URL, reads as having none of them. Its bits: capExtendedSensors.
+	// The third capability byte's bits are all taken; a fourth ends the environment, so a runtime built before it, which ends at the opened URL, reads as having none of them. Its bits: capExtendedSensors and capAuthSession.
 	var fourth byte
 	if len(r.buf) > 0 {
 		fourth = r.byte()

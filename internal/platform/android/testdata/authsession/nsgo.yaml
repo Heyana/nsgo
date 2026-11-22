@@ -1,0 +1,7 @@
+name: NSGo Authentication Fixture
+id: dev.nsgo.auth1397
+version: 0.1.0
+url_schemes:
+  - dev.nsgo.auth1397
+dev:
+  target: android
