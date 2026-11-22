@@ -154,7 +154,14 @@ func TestURLSchemesRegisterInTheMSIX(t *testing.T) {
 	if err := xml.Unmarshal(data, &m); err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Extensions) != 1 || m.Extensions[0].Category != "windows.protocol" || m.Extensions[0].Protocol.Name != "umapp" || m.Extensions[0].Protocol.Parameters != `-- "%1"` {
+	// Every MSIX also declares its startup task (storepkg_test.go); only the protocols count here.
+	var protocols []string
+	for _, e := range m.Extensions {
+		if e.Category == "windows.protocol" {
+			protocols = append(protocols, e.Protocol.Name+" "+e.Protocol.Parameters)
+		}
+	}
+	if len(protocols) != 1 || protocols[0] != `umapp -- "%1"` {
 		t.Errorf("the protocols are %+v:\n%s", m.Extensions, data)
 	}
 	p.URLSchemes = []string{strings.Repeat("u", 40)}
