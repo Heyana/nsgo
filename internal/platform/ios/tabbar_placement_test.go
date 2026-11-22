@@ -9,12 +9,11 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/internal/platform/ios"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
-// A native iOS tab bar reports its natural height again when its placement or
-// safe area changes, including when only an ancestor moves, and restores its
-// base height when moved clear of the bottom safe area (#1529).
+// A native iOS tab bar reports its natural height again when its placement or safe area changes, including when only an ancestor moves, and restores its base height when moved clear of the bottom safe area (#1529).
 func TestTabBarNativeInsetsFollowPlacement(t *testing.T) {
 	var move func(int)
 	var safe atomic.Uint32
@@ -53,19 +52,33 @@ func TestTabBarNativeInsetsFollowPlacement(t *testing.T) {
 	if inset <= 0 {
 		t.Skip("requires a bottom safe area inset")
 	}
+	// A classic UITabBar grows by the bottom safe area it overlaps; iOS 26's floating bar answers sizeThatFits: with one height at every placement, so there the bar keeps its base height. Either way the laid-out height is UIKit's natural height at the new placement.
+	grows := false
 	for _, at := range []int{1, 2, 3, 0} {
 		move(at)
 		app.Settle()
 		inset = core.Points(math.Float32frombits(safe.Load()))
+		if at == 1 {
+			app.WaitUntil(5*time.Second, func() bool {
+				fit := core.Points(ios.NativeTabBarFit())
+				return fit > 0 && near(app.Find("id:bar").Bounds().Size.Height, fit)
+			})
+			grows = app.Find("id:bar").Bounds().Size.Height > base+0.5
+		}
 		want := base
-		switch at {
-		case 1:
-			want += inset
-		case 3:
-			want += inset / 2
+		if grows {
+			switch at {
+			case 1:
+				want += inset
+			case 3:
+				want += inset / 2
+			}
 		}
 		app.WaitUntil(5*time.Second, func() bool {
-			return math.Abs(float64(app.Find("id:bar").Bounds().Size.Height-want)) < 0.51
+			h := app.Find("id:bar").Bounds().Size.Height
+			return near(h, want) && near(h, core.Points(ios.NativeTabBarFit()))
 		})
 	}
 }
+
+func near(a, b core.Points) bool { return math.Abs(float64(a-b)) < 0.51 }

@@ -166,7 +166,7 @@ func (t *tabBar) safeInsets() edgeInsets {
 	return edgeInsets{}
 }
 
-// measure reports the vertical bar's width on a leading or trailing edge, or asks UIKit for the bottom bar's natural height at its current placement, width, safe area and traits, reporting only changed heights. Before attachment it reports the bar's own fitted height without guessing the key window's bottom safe area; once attached and laid out, UIKit's sizeThatFits: reflects the bar's actual safe-area overlap.
+// measure reports the vertical bar's width on a leading or trailing edge, or asks UIKit for the bottom bar's natural height at its current placement, width, safe area and traits, reporting only changed heights. Before attachment it reports the bar's own fitted height without guessing the key window's bottom safe area; once attached and laid out, UIKit's sizeThatFits: is the authority: a classic bar's adds the bottom safe area it overlaps, while iOS 26's floating bar answers one height at every placement (83 points on an iPhone, detached too), so there it changes only with width and traits.
 func (t *tabBar) measure() {
 	if t.cx == nil {
 		return

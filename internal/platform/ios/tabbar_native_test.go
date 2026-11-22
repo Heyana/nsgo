@@ -137,6 +137,13 @@ func TestTabBarSizeFollowsAttachmentAndPlacement(t *testing.T) {
 		if len(sizes) != countAfterTop {
 			t.Fatalf("unchanged top layoutSubviews emitted extra sizes: %v", sizes)
 		}
+		fitNow := func() float64 {
+			return objc.Send[apple.CGSize](bar.bar, sel("sizeThatFits:"), apple.CGSize{Width: w}).Height
+		}
+		topFit := fitNow()
+		if got := sizes[len(sizes)-1].Height; math.Abs(float64(got)-topFit) > 0.51 {
+			t.Fatalf("top placement height = %v, want UIKit's %v (sizes=%v)", got, topFit, sizes)
+		}
 
 		if winInsets.Bottom <= 0 {
 			return
@@ -145,9 +152,14 @@ func TestTabBarSizeFollowsAttachmentAndPlacement(t *testing.T) {
 		// Move ancestor container to the bottom of the window so the bar overlaps the bottom safe area.
 		container.Send(selSetFrame, apple.Rect(0, winBounds.Size.Height-detachedFit, w, detachedFit))
 		window.Send(sel("layoutIfNeeded"))
+		// A classic bar's sizeThatFits: adds the bottom safe area it overlaps; iOS 26's floating bar keeps one height at every placement (83 points on an iPhone, detached too), its glass platter sitting above the home indicator either way. The reported height follows whichever UIKit answers.
+		bottomFit := fitNow()
+		if bottomFit > topFit+0.51 && math.Abs(bottomFit-(topFit+winInsets.Bottom)) > 0.51 {
+			t.Fatalf("UIKit's bottom fit = %v, want the top fit %v plus the %v bottom safe area", bottomFit, topFit, winInsets.Bottom)
+		}
 		bottomHeight := sizes[len(sizes)-1].Height
-		if math.Abs(float64(bottomHeight)-(detachedFit+winInsets.Bottom)) > 0.51 {
-			t.Fatalf("bottom placement height = %v, want %v (sizes=%v)", bottomHeight, detachedFit+winInsets.Bottom, sizes)
+		if math.Abs(float64(bottomHeight)-bottomFit) > 0.51 {
+			t.Fatalf("bottom placement height = %v, want UIKit's %v (sizes=%v)", bottomHeight, bottomFit, sizes)
 		}
 
 		// Resize bar to its reported bottom height: steady state must not re-emit.
@@ -163,8 +175,26 @@ func TestTabBarSizeFollowsAttachmentAndPlacement(t *testing.T) {
 		container.Send(selSetFrame, apple.Rect(0, 60, w, float64(bottomHeight)))
 		window.Send(sel("layoutIfNeeded"))
 		restored := sizes[len(sizes)-1].Height
-		if math.Abs(float64(restored)-detachedFit) > 0.51 {
-			t.Fatalf("restored top placement height = %v, want %v (sizes=%v)", restored, detachedFit, sizes)
+		if math.Abs(float64(restored)-topFit) > 0.51 {
+			t.Fatalf("restored top placement height = %v, want %v (sizes=%v)", restored, topFit, sizes)
 		}
 	})
+}
+
+// NativeTabBarFit returns UIKit's sizeThatFits: height for the one live bottom-edge tab bar at its laid-out width, or 0 when there is none, for the placement test in package ios_test.
+func NativeTabBarFit() float64 {
+	var h float64
+	onMainSync(func() {
+		for bar, t := range tabBars {
+			if t.edge != tabBarEdgeBottom {
+				continue
+			}
+			w := objc.Send[apple.CGRect](bar, selBounds).Size.Width
+			if w <= 0 {
+				continue
+			}
+			h = objc.Send[apple.CGSize](bar, sel("sizeThatFits:"), apple.CGSize{Width: w}).Height
+		}
+	})
+	return h
 }
