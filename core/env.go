@@ -687,8 +687,7 @@ func (e *Env) Lifecycle() Lifecycle { return e.lifecycle.Get() }
 // part of mobile.IsAppClip, which apps use.
 func (e *Env) AppClip() bool { return e.appClip.Get() }
 
-// OpenedURL returns the web link that last opened the app, "" when none
-// did: the core's part of mobile.OpenedURL, which apps use.
+// OpenedURL returns the link that last opened the app, "" when none did: the core's part of mobile.OpenedURL, which apps use.
 func (e *Env) OpenedURL() string { return e.openedURL.Get() }
 
 // LaunchedAtLogin reports whether the system started this run as a login item: the core's part of desktop.LaunchedAtLogin, which apps use.

@@ -1,0 +1,6 @@
+name: OpenedLinks1474
+id: dev.nsgo.openedlinks1474
+version: 0.1.0
+url_schemes: [nsgo1474]
+build:
+  targets: [ios_simulator]

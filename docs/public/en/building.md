@@ -495,6 +495,7 @@ On iOS, regular documents are imported into app-owned temporary files with their
 
 ```yaml
 url_schemes: [myapp]
+# app_links: [links.example.com]  # HTTPS hosts for the full app
 ```
 
 The app hears them with `desktop.OnOpenLinks`, also while it runs: on Windows and Linux a second launch hands its link to the running app and exits. A link that launched the app waits for the first handler. Anyone can write such a link, and on Windows and Linux the handler hears any URL the app is started with, so check the scheme and ask the user before a link changes anything:
@@ -504,6 +505,12 @@ desktop.OnOpenLinks(cx, func(links []string) { show(links[0]) })
 ```
 
 On iOS and Android, `mobile.OnOpenLinks` hears links at launch and while the app runs. Open one with `xcrun simctl openurl booted myapp://settings` on the iOS simulator or `adb shell am start -a android.intent.action.VIEW -d myapp://settings` on Android. `app.OpenLinks("myapp://settings")` delivers one in a test.
+
+For iOS universal links, declare explicit HTTPS hosts with `app_links: [links.example.com]`. Each host is a DNS name without a scheme, path, port, IP address or wildcard; names are lowercased and duplicates are rejected. The tool writes `applinks:<host>` to the full app's Associated Domains entitlement, including Xcode-managed signing; an IPA profile must authorize it. App Clips retain the separate `appclips:` claims from `app_clip.domains`.
+
+Each host must serve an `apple-app-site-association` file that names the full app at `https://<host>/.well-known/apple-app-site-association`; package metadata alone cannot authorize a universal link. [Apple's association requirements](https://developer.apple.com/documentation/xcode/supporting-associated-domains) describe the server setup. Ad hoc simulator signatures omit restricted developer entitlements, so a delegate test does not establish server association.
+
+On iOS, `mobile.OpenedURL(cx)` tracks the most recent App Clip invocation, universal link or custom scheme URL, including the initial value before the root mounts. Custom scheme delivery still reaches `mobile.OnOpenLinks`; the invocation value is current when that handler runs. File opens stay in `OnOpenFiles` and do not replace the invocation URL. Android/Web invocation support is tracked separately in #1475.
 
 ## Incoming shares on Android
 

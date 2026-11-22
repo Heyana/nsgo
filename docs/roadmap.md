@@ -268,7 +268,7 @@ What `app_clip` lacks of App Clips ([tool](architecture/tool.md#app-clips)).
 | A clip on an iPhone | `startIOSDeviceClip`, [#1470](https://github.com/nsgo-dev/nsgo/issues/1470) | `nsgo dev -target ios -clip <url>` signs, installs and opens the clip on an iPhone with a paid team, and its QR code opens it through Local Experiences; it is written but unchecked, as only a personal team was at hand |
 | Getting the full app | `SKOverlay.AppClipConfiguration`, [#1472](https://github.com/nsgo-dev/nsgo/issues/1472) | `mobile.ShowAppClipOverlay` makes a scoped purego StoreKit request with scene/engine ownership and cleanup; native configuration and bridge tests cover it, while a real signed App Clip displaying its corresponding App Store offer still needs acceptance |
 | Handing data to the full app | App groups, [#1473](https://github.com/nsgo-dev/nsgo/issues/1473) | Explicit `apple.app_group` shares the clip’s and app’s data and storage; real App Clip replacement by an installed full app remains to be verified with matching App Clip and parent provisioning profiles |
-| Links into the full app | `applinks:`, `CFBundleURLTypes`, [#1474](https://github.com/nsgo-dev/nsgo/issues/1474) | The full app takes universal links and URL schemes into `mobile.OpenedURL`, as the clip takes its invocation |
+| Links into the full app | `applinks:`, `CFBundleURLTypes`, [#1474](https://github.com/nsgo-dev/nsgo/issues/1474) | Full iOS apps track scheme and universal-link invocations before mount and on later delivery, with explicit `app_links` hosts in Associated Domains; real scheme routing and native delegate regressions cover it, while signed device/AASA association remains to verify |
 
 ## Picture in Picture
 

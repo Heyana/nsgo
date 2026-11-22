@@ -641,11 +641,14 @@ func iosProjectData(p *project, sys *appleOS, team string) map[string]string {
 	return data
 }
 
-// xcodeEntitlements are the capabilities Xcode registers for the app: the app group it shares with its widgets or, with an explicit apple.app_group, its embedded clip, the clip's association and optional Sign in with Apple.
+// xcodeEntitlements are the claims Xcode's automatic signing registers: widget or App Clip groups, clip association, Associated Domains and Sign in with Apple.
 func (p *project) xcodeEntitlements(widgets, clip bool) map[string]any {
 	ents := map[string]any{}
 	if widgets || clip && p.clipStorageGroup() != "" {
 		ents = p.groupEntitlements()
+	}
+	if domains := p.appLinkDomains(); len(domains) > 0 {
+		ents[associatedDomainsEntitlement] = domains
 	}
 	if p.Apple.SignInWithApple {
 		ents[signInWithAppleEntitlement] = signInWithApple()

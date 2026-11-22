@@ -437,6 +437,7 @@ iOS 把普通文档导入为应用自有的临时文件，保留原来的文件�
 
 ```yaml
 url_schemes: [myapp]
+# app_links: [links.example.com]  # 完整应用的 HTTPS 主机
 ```
 
 应用用 `desktop.OnOpenLinks` 接收这些链接，运行中也能收到：在 Windows 和 Linux 上，第二次启动会把链接交给正在运行的应用后退出。启动应用时带来的链接会等到第一个处理函数注册。任何人都能构造这样的链接，而且在 Windows 和 Linux 上，应用启动时带的任何 URL 都会交给处理函数，所以先检查 scheme，并在链接改变任何东西之前征得用户确认：
@@ -446,6 +447,12 @@ desktop.OnOpenLinks(cx, func(links []string) { show(links[0]) })
 ```
 
 在 iOS 和 Android 上，应用用 `mobile.OnOpenLinks` 接收启动时和运行中打开的链接。在 iOS 模拟器上可以用 `xcrun simctl openurl booted myapp://settings` 打开，在 Android 上可以用 `adb shell am start -a android.intent.action.VIEW -d myapp://settings` 打开。测试里用 `app.OpenLinks("myapp://settings")` 送入链接。
+
+为 iOS 通用链接声明 `app_links: [links.example.com]`。每项是明确的 DNS 主机名，不包含协议、路径、端口、IP 地址或通配符；名称统一为小写，拒绝重复。工具把 `applinks:<host>` 写入完整应用的 Associated Domains entitlement，包括由 Xcode 自动签名的构建；IPA 的描述文件必须授予它。轻 App 继续使用 `app_clip.domains` 对应的独立 `appclips:` 声明。
+
+每个主机必须在 `https://<host>/.well-known/apple-app-site-association` 提供包含完整应用标识的关联文件；仅配置包元数据不能授权通用链接。[Apple 的关联要求](https://developer.apple.com/documentation/xcode/supporting-associated-domains)介绍服务端配置。模拟器的临时签名不包含受限 developer entitlement，因此 delegate 测试不能证明服务端关联已验证。
+
+在 iOS 上，`mobile.OpenedURL(cx)` 响应式返回最近的轻 App 调用、通用链接或自定义 scheme URL，初始值在根组件挂载前就可读取。自定义 scheme 仍交给 `mobile.OnOpenLinks`，处理函数执行时调用 URL 已更新。文件仍走 `OnOpenFiles`，不会替换调用 URL。Android/Web 的调用链接支持由 #1475 单独跟踪。
 
 ## 接收 Android 分享
 

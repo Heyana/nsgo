@@ -169,6 +169,8 @@ An App Clip can request its full app's StoreKit recommendation from an explicit 
 - Put every user-visible word in `locales/`, a YAML catalog per language in ICU MessageFormat beside `nsgo.yaml`, and call the generated functions (`locales.Greeting(cx, "Ada")`), never string literals. `dev`, `build` and `test` check catalogs and regenerate the functions; `go tool nsgo dev -lang en-XA` finds untranslated and cut text, `-lang ar-XB` right-to-left layout.
 - Write configuration people edit by hand in YAML, not JSON: `nsgo.yaml`, catalogs and themes.
 
+Declare `url_schemes` for private app URLs and `app_links` for explicit HTTPS DNS hosts (no scheme, path, port, IP or wildcard). On iOS, `mobile.OpenedURL(cx)` tracks cold and warm scheme/universal invocations; schemes still reach `mobile.OnOpenLinks`. Full-app signing claims `applinks:` domains, while App Clips keep their own `appclips:` list. The server must publish AASA and the profile must authorize Associated Domains; simulator injection does not prove association. [Links](https://nsgo.dev/docs/building.md#links)
+
 ## Terminal
 
 `base/terminal.View` runs a session the app owns and closes. `Keybinds` overrides focused, noncomposing input defaults with clipboard, selection, clear and zoom actions; `Ref.FontSize` is tracked and `SetFontSize` keeps the session. `RightClickAction` defaults to a localized unstyled menu; use `RightClickIgnore` with an app-owned menu. Import `tsx/terminal` for reactive `keybinds` and `rightClickAction` in `nsgo/base`. [Terminal](https://nsgo.dev/docs/terminal.md)

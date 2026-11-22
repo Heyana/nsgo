@@ -307,6 +307,9 @@ func signForStore(ctx context.Context, p *project, sys *appleOS, app string) err
 	if err := p.claimSignInWithApple(entitlements, entitlements); err != nil {
 		return err
 	}
+	if err := p.claimAppLinks(entitlements, entitlements); err != nil {
+		return err
+	}
 	identity := p.Sign.Identity
 	if identity == "" {
 		if identity, err = profileIdentity(ctx, profile); err != nil {

@@ -2,6 +2,9 @@ name: Cafe
 id: dev.oneo.nsgo.cafe
 version: 0.1.0
 
+# The full app's universal links, separate from its clip's invocations.
+app_links: [cafe.example.com]
+
 # The App Clip a table's code opens: its own package, so it links only
 # the order it shows.
 app_clip:

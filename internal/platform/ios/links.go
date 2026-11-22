@@ -11,11 +11,27 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-// openedURL is the web link that last opened the app (Environment's
-// OpenedURL): an App Clip's invocation or a universal link, which UIKit
-// hands the scene as an activity of browsing the web, as it connects or
-// when the link opens the running app again.
+// openedURL is the link that last opened the app (Environment's OpenedURL): an App Clip invocation, universal link or registered URL scheme, received when a scene connects or opens a running app.
 var openedURL string
+
+// recordOpenedURL keeps the latest invocation and refreshes all running scenes. During cold startup they have no engine yet; their initial environment reads the saved value before the app mounts.
+func recordOpenedURL(link string) bool {
+	if link == "" {
+		return false
+	}
+	openedURL = link
+	for _, s := range scenes {
+		if s == nil {
+			continue
+		}
+		if s.engine == nil {
+			s.env.OpenedURL = link
+			continue
+		}
+		s.refresh()
+	}
+	return true
+}
 
 // takeActivity keeps the link of activity, when it browses the web, and
 // reports whether it did.
@@ -27,8 +43,7 @@ func takeActivity(activity objc.ID) bool {
 	if url == 0 {
 		return false
 	}
-	openedURL = apple.GoString(url.Send(sel("absoluteString")))
-	return true
+	return recordOpenedURL(apple.GoString(url.Send(sel("absoluteString"))))
 }
 
 // takeConnectionActivities keeps the link a scene's connection options
@@ -42,19 +57,14 @@ func takeConnectionActivities(options objc.ID) {
 		}
 	}
 	if openedURL == "" && appClip() {
-		openedURL = os.Getenv("_XCAppClipURL")
+		recordOpenedURL(os.Getenv("_XCAppClipURL"))
 	}
 }
 
 // sceneContinueActivity is the scene delegate's
 // scene:continueUserActivity:, as a link opens the running app.
 func sceneContinueActivity(_ objc.ID, _ objc.SEL, _, activity objc.ID) {
-	if takeActivity(activity) {
-		// Env.OpenedURL is the app's, in every scene.
-		for _, s := range scenes {
-			s.refresh()
-		}
-	}
+	takeActivity(activity)
 }
 
 // isAppClip is whether the app runs as an App Clip, whose Info.plist
@@ -95,7 +105,11 @@ func contextLinks(contexts objc.ID) []string {
 func takeConnectionLinks(options objc.ID) {
 	if options != 0 {
 		contexts := options.Send(sel("URLContexts"))
-		launchLinks = append(launchLinks, contextLinks(contexts)...)
+		links := contextLinks(contexts)
+		if len(links) > 0 {
+			recordOpenedURL(links[len(links)-1])
+		}
+		launchLinks = append(launchLinks, links...)
 		importContextFiles(contexts)
 	}
 }
@@ -107,6 +121,7 @@ func sceneOpenURLContexts(_ objc.ID, _ objc.SEL, _, contexts objc.ID) {
 	if len(links) == 0 {
 		return
 	}
+	recordOpenedURL(links[len(links)-1])
 	if runner == nil || runner.engine == nil {
 		launchLinks = append(launchLinks, links...)
 		return
