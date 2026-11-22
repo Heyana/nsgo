@@ -42,6 +42,8 @@ The gallery covers the rest: tables, charts, the code editor, rich text, the ter
 
 `base/terminal.View` opens existing local paths with Command+click (Control+click on Windows and Linux), as it opens URLs. Relative paths use the shell’s OSC 7 working directory; a local shell that has not reported one uses `terminal.Options.Dir`, or the home directory when unset. Quote filenames containing spaces. Remote directory authorities and connections without a local directory report do not resolve against local files. Files and folders use `Scope.OpenFile`; URL links continue through `Scope.OpenURL` and the embedding host’s URL handler.
 
+`base/terminal.View` denies program clipboard reads and writes by default. Set `AllowClipboardRead` and `AllowClipboardWrite` only when the app permits them; the requesting view’s `AccessClipboard` still applies. The same props are available on TSX’s `Terminal` and can change without restarting its session. Apps provide consent UI. Explicit user paste independently offers a text/PNG snapshot to programs using the Kitty clipboard protocol (mode 5522); its one-use password can read only that snapshot. Programs without the mode receive ordinary bracketed text. Clipboard image availability follows the platform’s clipboard services; the X11 primary selection is not exposed.
+
 ## Next
 
 - [Components and state](components.md): how a component returns elements and how signals update them.

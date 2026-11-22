@@ -82,8 +82,9 @@ const (
 // Terminal is a terminal emulator and the program it runs. Its methods are
 // safe from any goroutine.
 type Terminal struct {
-	opts Options
-	in   inputQueue
+	opts      Options
+	clipboard *clipboardHost // guarded by mu
+	in        inputQueue
 
 	// mu guards the emulator, which the reader changes and views read.
 	mu     sync.Mutex
@@ -127,8 +128,9 @@ type gridSize struct{ cols, rows, cellW, cellH int }
 // events are what a program did while the reader wrote its output, for
 // the callbacks, which run once the lock is released.
 type events struct {
-	title bool
-	bells int
+	title     bool
+	bells     int
+	clipboard []func()
 }
 
 var load struct {
@@ -165,21 +167,14 @@ func New(opts Options) (*Terminal, error) {
 	t := &Terminal{opts: opts, done: make(chan struct{}), size: gridSize{80, 24, 8, 16}}
 	var err error
 	t.term, err = vt.NewTerminal(80, 24, vt.Effects{
-		WritePTY:     func(p []byte) { t.in.push(append([]byte(nil), p...)) },
-		Bell:         func() { t.events.bells++ },
-		TitleChanged: func() { t.events.title = true },
-		RenderHold:   t.renderHold,
-		Clipboard: func(text string, primary bool) bool {
-			if primary {
-				return false
-			}
-			for _, m := range t.mirrors {
-				m.clipOut = queueClip(m.clipOut, text)
-			}
-			return len(t.mirrors) > 0
-		},
-		Size: func() (int, int, int, int) { return t.size.cols, t.size.rows, t.size.cellW, t.size.cellH },
-		Dark: func() bool { return t.theme == nil || t.theme.dark() },
+		WritePTY:      func(p []byte) { t.in.push(append([]byte(nil), p...)) },
+		Bell:          func() { t.events.bells++ },
+		TitleChanged:  func() { t.events.title = true },
+		RenderHold:    t.renderHold,
+		Clipboard:     t.writeClipboard,
+		ClipboardRead: t.requestClipboard,
+		Size:          func() (int, int, int, int) { return t.size.cols, t.size.rows, t.size.cellW, t.size.cellH },
+		Dark:          func() bool { return t.theme == nil || t.theme.dark() },
 	})
 	if err != nil {
 		return nil, err
@@ -385,6 +380,9 @@ func (t *Terminal) write(p []byte) {
 	if ev.title && t.opts.OnTitle != nil {
 		t.opts.OnTitle(title)
 	}
+	for _, dispatch := range ev.clipboard {
+		dispatch()
+	}
 	for range ev.bells {
 		if t.opts.OnBell != nil {
 			t.opts.OnBell()
@@ -574,6 +572,10 @@ func (t *Terminal) Close() error {
 		return nil
 	}
 	t.closed = true
+	if t.clipboard != nil {
+		t.clipboard.revoke()
+		t.clipboard = nil
+	}
 	if t.timer != nil {
 		t.timer.Stop()
 	}

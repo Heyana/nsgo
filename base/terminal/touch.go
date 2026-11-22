@@ -235,13 +235,11 @@ func (v *view) ensureGesture() bool {
 	return true
 }
 
-// paste pastes the clipboard's text.
+// paste offers the clipboard snapshot to Kitty programs, or pastes text.
 func (v *view) paste() {
-	v.cx.ReadClipboard(func(text string) {
-		if text != "" && v.t != nil {
-			v.t.Paste(text)
-		}
-	})
+	if v.clipboard != nil {
+		v.clipboard.pasteClipboard()
+	}
 }
 
 // keyboardOverlap is how far a software keyboard covers the view's bottom,

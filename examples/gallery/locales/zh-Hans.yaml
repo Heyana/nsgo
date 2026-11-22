@@ -2515,3 +2515,6 @@ systemSensorsFused: 融合运动
 
 demoEmojiPicker: 表情选择器
 demoEmojiPickerDetail: 按本地化名称搜索表情并选择肤色
+
+terminalClipboardRead: "允许程序读取剪贴板"
+terminalClipboardWrite: "允许程序写入剪贴板"

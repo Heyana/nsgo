@@ -2615,3 +2615,6 @@ systemSensorsFused: Fused motion
 
 demoEmojiPicker: "EmojiPicker"
 demoEmojiPickerDetail: Search emoji by localized names and choose a skin tone
+
+terminalClipboardRead: "Program clipboard reads"
+terminalClipboardWrite: "Program clipboard writes"

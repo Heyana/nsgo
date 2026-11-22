@@ -85,8 +85,11 @@ Terminal path links use the shell’s OSC 7 directory, or `terminal.Options.Dir`
 Mermaid diagrams use `diagram.View.Icons` to map names such as `"fa:fa-car"` to `*core.SVG` documents. Image nodes share the canvas image loader (HTTP(S), files and `asset:`); `constraint: "on"` preserves their proportions. A custom `RenderDiagram` callback can return a `diagram.View` with the app's icon map ([text](https://nsgo.dev/docs/text.md)).
 
 Android Live Activity actions reach `widget.OnAction` without opening the Activity while the posting engine runs; keep that engine alive for actions, and use the notification content tap to reopen the app. [Live Activities](https://nsgo.dev/docs/live-activities.md#presses).
+
 `widget.Button` calls `widget.OnAction` from iOS 17 and macOS 14; register it before `nsgo.Run`, handle `Activity == nil` for a widget, and publish `widget.Update` before returning. See [Widgets](https://nsgo.dev/docs/widgets.md#buttons).
 
 `Text.AdjustsFontSizeToFit` shrinks formulas and other font-relative attachments with the text, respecting `MinimumFontScale`; explicit point sizes and padding stay as authored ([text](https://nsgo.dev/docs/text.md)).
 
 Use `mobile.OpenedURL(cx)` for an Android invocation or a whole-page web address available before rendering; it follows later links and browser address changes. Declare Android HTTPS hosts with `app_links` and serve their Digital Asset Links association files; embedded hosts own their filters. Keep authentication callbacks consumed before ordinary incoming-link handling. [App Links](https://nsgo.dev/docs/building.md#android-app-links).
+
+`base/terminal.View` and TSX’s `Terminal` default `AllowClipboardRead` and `AllowClipboardWrite` to false. Apps own consent UI; program requests also need the view’s `AccessClipboard`. Explicit user paste can independently offer a copied text/PNG snapshot to Kitty programs, with a one-use token limited to that snapshot. [Components](https://nsgo.dev/docs/ui.md)
