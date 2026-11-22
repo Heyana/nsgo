@@ -34,6 +34,7 @@ func writeAudio(w *writer, id uint32, r *driver.AudioRequest) {
 		w.float(left)
 		w.float(right)
 		w.float(r.Rate)
+		w.flags(r.Loop)
 	case driver.AudioPlaybackSet:
 		w.float(r.Volume)
 		w.float(r.Rate)
@@ -46,6 +47,7 @@ func writeAudio(w *writer, id uint32, r *driver.AudioRequest) {
 		w.byte(byte(r.Session))
 		w.u64(uint64(r.ProgressInterval.Milliseconds()))
 		w.u64(uint64(r.Position.Milliseconds()))
+		w.u64(uint64(r.LoopStart.Milliseconds()))
 	case driver.AudioSeek:
 		w.u64(uint64(r.Position.Milliseconds()))
 	case driver.AudioSet:

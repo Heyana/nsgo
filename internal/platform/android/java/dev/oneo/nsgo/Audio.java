@@ -55,13 +55,16 @@ final class Audio {
         final Sound sound;
         final int stream, playback;
         final float left, right;
+        /** A looping voice repeats until stopped: it has no remaining time and no completion. */
+        final boolean loop;
         long changed;
         double remaining;
         float rate;
         Runnable completion;
 
-        Voice(Sound sound, int playback, int stream, float left, float right, float rate, long now) {
+        Voice(Sound sound, int playback, int stream, float left, float right, float rate, boolean loop, long now) {
             this.sound = sound;
+            this.loop = loop;
             this.playback = playback;
             this.stream = stream;
             this.left = left;
@@ -72,7 +75,7 @@ final class Audio {
         }
 
         void advance(long now) {
-            remaining = Math.max(0, remaining - Math.max(0, now - changed) * (double) rate);
+            if (!loop) remaining = Math.max(0, remaining - Math.max(0, now - changed) * (double) rate);
             changed = now;
         }
     }
@@ -107,7 +110,8 @@ final class Audio {
             }
             case PLAY: {
                 float volume = in.readFloat(), left = in.readFloat(), right = in.readFloat(), rate = in.readFloat();
-                play(sounds.get(id), playback, volume, left, right, rate);
+                boolean loop = in.readBoolean();
+                play(sounds.get(id), playback, volume, left, right, rate, loop);
                 break;
             }
             case PLAYBACK_SET:
@@ -127,7 +131,7 @@ final class Audio {
                 float volume = in.readFloat(), rate = in.readFloat();
                 boolean loop = in.readBoolean();
                 int session = in.readUnsignedByte();
-                long interval = in.readLong(), position = in.readLong();
+                long interval = in.readLong(), position = in.readLong(), loopStart = in.readLong();
                 if (media == null) {
                     playerThread = new HandlerThread("nsgo-audio-player");
                     playerThread.start();
@@ -135,7 +139,7 @@ final class Audio {
                 }
                 Handler handler = media;
                 handler.post(() -> players.put(id, new AudioPlayer(this, context, handler, owner, id,
-                        source, volume, rate, loop, session, interval, position)));
+                        source, volume, rate, loop, loopStart, session, interval, position)));
                 break;
             }
             case PRELOAD:
@@ -287,7 +291,7 @@ final class Audio {
         failure(sound.owner, sound.id, code, message);
     }
 
-    private void play(Sound sound, int playback, float volume, float left, float right, float rate) {
+    private void play(Sound sound, int playback, float volume, float left, float right, float rate, boolean loop) {
         if (sound == null || !sound.loaded) return;
         long now = SystemClock.elapsedRealtimeNanos();
         for (int i = voices.size() - 1; i >= 0; i--) {
@@ -296,9 +300,10 @@ final class Audio {
             if (voice.remaining == 0) finishVoice(voice, false);
         }
         if (voices.size() == MAX_VOICES) finishVoice(voices.get(0), true);
-        int stream = pool.play(sound.sample, volume * left, volume * right, 1, 0, rate);
+        // SoundPool's loop of -1 repeats the sample until the stream stops.
+        int stream = pool.play(sound.sample, volume * left, volume * right, 1, loop ? -1 : 0, rate);
         if (stream != 0) {
-            Voice voice = new Voice(sound, playback, stream, left, right, rate, now);
+            Voice voice = new Voice(sound, playback, stream, left, right, rate, loop, now);
             voice.completion = () -> finishVoice(voice, false);
             voices.add(voice);
             scheduleVoice(voice);
@@ -311,6 +316,7 @@ final class Audio {
     // decoded duration, adjusting the remaining source time after rate changes.
     private void scheduleVoice(Voice voice) {
         ui.removeCallbacks(voice.completion);
+        if (voice.loop) return;
         long delay = (long) Math.ceil(voice.remaining / voice.rate / 1000000);
         ui.postDelayed(voice.completion, delay);
     }

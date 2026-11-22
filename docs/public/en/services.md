@@ -390,7 +390,7 @@ cx.Speak("Guten Morgen", core.Voice{Lang: "de-DE", Rate: 0.8}, func(stopped bool
 
 Set `audio.Voice.Loop` to repeat a sound playback until `Stop` or `Close`. For streamed music, set `audio.PlayerOptions.LoopStart` and call `SetLoop(true)`. The first pass includes the intro. Later passes start at the offset. A zero offset repeats the full track.
 
-On macOS 14 and iOS 17 or later, a finite track uses the native queue to prepare each repetition before the current one ends. Earlier Apple versions seek to the loop start when the current pass ends. On Linux and the web, a loop with a start seeks back to it at the end, with a short gap.
+On macOS 14 and iOS 17 or later, a finite track uses the native queue to prepare each repetition before the current one ends. Earlier Apple versions seek to the loop start when the current pass ends. On Windows, Linux, Android and the web, a loop with a start seeks back to it at the end, with a short gap.
 
 ## Biometrics
 

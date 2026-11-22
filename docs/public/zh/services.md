@@ -508,7 +508,7 @@ cx.Speak("おはようございます", core.Voice{Lang: "ja-JP", Rate: 0.8}, fu
 
 设置 `audio.Voice.Loop` 可让单次音效持续重复，直到调用 `Stop` 或 `Close`。音乐可设置 `audio.PlayerOptions.LoopStart`，再调用 `SetLoop(true)`。第一遍包含前奏，之后从指定位置重复。偏移量为零时重复整条音轨。
 
-在 macOS 14 和 iOS 17 或更新版本上，时长已知的音轨使用原生队列，在当前一遍结束前准备下一遍。更早的 Apple 系统在当前一遍结束时跳到循环起点。在 Linux 和 Web 上，带起点的循环在结尾跳回起点，会有短暂间隙。
+在 macOS 14 和 iOS 17 或更新版本上，时长已知的音轨使用原生队列，在当前一遍结束前准备下一遍。更早的 Apple 系统在当前一遍结束时跳到循环起点。在 Windows、Linux、Android 和 Web 上，带起点的循环在结尾跳回起点，会有短暂间隙。
 
 ## 生物识别
 

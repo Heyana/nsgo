@@ -26,6 +26,8 @@ final class AudioPlayer {
     private final AudioAttributes attributes;
     private final int session;
     private final long interval;
+    /** loopStart is where a loop starts over once a pass ends, in milliseconds. */
+    private final long loopStart;
     private String source;
     private String sourceError = "", sourceMessage = "";
     private MediaPlayer player;
@@ -50,7 +52,7 @@ final class AudioPlayer {
     };
 
     AudioPlayer(Audio audio, Context context, Handler media, int owner, int id, String source,
-            float volume, float rate, boolean loop, int session, long interval, long position) {
+            float volume, float rate, boolean loop, long loopStart, int session, long interval, long position) {
         this.audio = audio;
         this.context = context;
         this.media = media;
@@ -60,6 +62,7 @@ final class AudioPlayer {
         this.volume = volume;
         this.rate = rate;
         this.loop = loop;
+        this.loopStart = Math.max(0, loopStart);
         this.session = session;
         this.interval = Math.max(16, interval);
         this.position = position;
@@ -260,8 +263,10 @@ final class AudioPlayer {
         if (p != player || !playing || seeking || pendingSeek) return;
         if (loop) {
             try {
-                position = 0;
+                // A loop starts over at its LoopStart, within the track (driver.AudioLoopStart), with the short gap of a seek.
+                position = loopStart < duration ? loopStart : 0;
                 laps++;
+                if (position > 0) p.seekTo((int) position);
                 p.start();
                 applyRate();
                 report(Audio.PROGRESS, false);
