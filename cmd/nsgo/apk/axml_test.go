@@ -526,6 +526,7 @@ func TestFrameworkAttributeIDs(t *testing.T) {
 		"value":                       0x01010024,
 		"drawable":                    0x01010199,
 		"networkSecurityConfig":       0x01010527,
+		"usesCleartextTraffic":        0x010104ec,
 	}
 	for name, spec := range androidAttrs {
 		id, ok := want[name]

@@ -78,7 +78,7 @@ func (p *project) validateAppClip() error {
 	if c.Minimum == "" {
 		c.Minimum = "16.0"
 	}
-	if major := c.major(); major < 16 {
+	if version, ok := appleVersion(c.Minimum); !ok || version[0] < 16 {
 		return fmt.Errorf("app_clip.minimum %q is not an iOS version from 16.0", c.Minimum)
 	} else if !strings.Contains(c.Minimum, ".") {
 		c.Minimum += ".0"
@@ -121,14 +121,6 @@ func (p *project) clipProject() *project {
 	// A clip, kept small, sells nothing: its app does.
 	c.Apple.Purchases = false
 	return &c
-}
-
-// IOSMinimum is MinimumOSVersion of p's iOS package.
-func (p *project) IOSMinimum() string {
-	if p.clipParent != "" {
-		return p.parentClip.Minimum
-	}
-	return iOS.minimum
 }
 
 // clipPlist returns the entries of an App Clip's Info.plist, "" for an

@@ -14,6 +14,7 @@ func TestAppClipConfig(t *testing.T) {
 		{"app_clip: {main: ./clip, domains: [example.com, '*.shop.example.com']}", ""},
 		{"app_clip: {id: dev.other.clip}", "not under the app's ID"},
 		{"app_clip: {minimum: '15.0'}", "from 16.0"},
+		{"app_clip: {minimum: '16.bad'}", "from 16.0"},
 		{"app_clip: {domains: ['https://example.com']}", "is not a domain"},
 	} {
 		dir := t.TempDir()

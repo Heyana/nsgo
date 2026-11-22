@@ -203,6 +203,8 @@ type project struct {
 		ShareTypes []string `yaml:"share_types"`
 		// LoopbackCleartext allows HTTP to loopback in standalone packages.
 		LoopbackCleartext bool `yaml:"loopback_cleartext"`
+		// UsesCleartextTraffic allows plain HTTP to any host in standalone packages.
+		UsesCleartextTraffic bool `yaml:"uses_cleartext_traffic"`
 	} `yaml:"android"`
 	Compliance storeCompliance `yaml:"compliance"`
 	// Harmonyos is the harmonyos target's: Permissions are the ones its
@@ -321,9 +323,11 @@ type icons struct {
 	// Apple is an Icon Composer .icon for macOS, iOS and an Apple Watch
 	// without an icon of its own, or an .icns for macOS.
 	Apple string `yaml:"apple"`
-	// PNG is a square image for every other target, and for Apple targets
-	// Apple does not cover.
+	// PNG is the shared square-image fallback for targets without their own artwork, including Apple targets Apple does not cover.
 	PNG string `yaml:"png"`
+	// Windows and Linux replace PNG for their packages, store assets and installers.
+	Windows string `yaml:"windows"`
+	Linux   string `yaml:"linux"`
 	// TVOS is the Apple TV's: Xcode's .brandassets with its layered icon
 	// and top shelf images, or a wide image that fills them. Without it
 	// the PNG layers as the app icon and top shelf images.
@@ -337,6 +341,8 @@ type icons struct {
 }
 
 type androidIcon struct {
+	// PNG replaces icon.png for Android bitmap icons; adaptive layers remain optional.
+	PNG        string `yaml:"png"`
 	Foreground string `yaml:"foreground"`
 	Background string `yaml:"background"`
 	Monochrome string `yaml:"monochrome"`
@@ -399,6 +405,9 @@ func load(dir string) (*project, error) {
 	}
 	if p.Name == "" {
 		return nil, fmt.Errorf("nsgo.yaml: name is required")
+	}
+	if err := p.validateAppleMinimums(); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if err := p.validateIPadMultitasking(); err != nil {
 		return nil, err

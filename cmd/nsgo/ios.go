@@ -176,7 +176,10 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 	if sys == watchOS {
 		return buildWatchApp(ctx, p, dir, simulator)
 	}
-	env, err := iosEnv(ctx, sys, simulator)
+	if _, err := p.appleMinimum(sys); err != nil {
+		return "", err
+	}
+	env, err := iosProjectEnv(ctx, p, sys, simulator)
 	if err != nil {
 		return "", err
 	}
@@ -302,7 +305,7 @@ var iosPlist = template.Must(template.New("ios").Parse(plistHead + `	<key>Minimu
 
 // tvosPlist is iosPlist for an Apple TV, which keeps an app light unless
 // it says it follows the system's appearance.
-var tvosPlist = template.Must(template.New("tvos").Parse(plistHead + `	<key>MinimumOSVersion</key><string>17.0</string>
+var tvosPlist = template.Must(template.New("tvos").Parse(plistHead + `	<key>MinimumOSVersion</key><string>{{.TVOSMinimum}}</string>
 	<key>UILaunchScreen</key><dict/>
 	<key>UIDeviceFamily</key><array><integer>3</integer></array>
 	<key>UIUserInterfaceStyle</key><string>{{if eq .Appearance "light"}}Light{{else if eq .Appearance "dark"}}Dark{{else}}Automatic{{end}}</string>
@@ -574,6 +577,9 @@ func iosProjectData(p *project, sys *appleOS, team string) map[string]string {
 		"Minimum":     sys.minimum,
 		"Families":    sys.familyList(),
 		"ProductType": "com.apple.product-type.application",
+	}
+	if minimum, err := p.appleMinimum(sys); err == nil {
+		data["Minimum"] = minimum
 	}
 	if p.clipParent != "" {
 		data["Minimum"] = p.IOSMinimum()

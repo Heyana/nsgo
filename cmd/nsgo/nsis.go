@@ -218,7 +218,7 @@ func nsisScript(ctx context.Context, p *project, dir, arch string) (*nsisData, e
 		}
 		d.SignUninstaller, d.env = command, env
 	}
-	img, err := p.iconImage()
+	img, err := p.windowsIconImage()
 	if err != nil {
 		return nil, err
 	}

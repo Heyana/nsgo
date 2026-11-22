@@ -98,6 +98,9 @@ func (p *project) iconFile(path, ext string) ([]byte, error) {
 		return os.ReadFile(path)
 	}
 	img, err := p.iconImage()
+	if ext == ".ico" {
+		img, err = p.windowsIconImage()
+	}
 	if path != "" {
 		img, err = readIcon(path)
 	}

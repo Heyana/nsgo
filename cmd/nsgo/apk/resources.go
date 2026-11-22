@@ -84,8 +84,8 @@ type xmlResource struct {
 
 func (m Manifest) xmlResources() []xmlResource {
 	var out []xmlResource
-	if m.LoopbackCleartext {
-		out = append(out, xmlResource{networkSecurityName, networkSecurityFile, networkSecurityConfig})
+	if m.networkPolicy() {
+		out = append(out, xmlResource{networkSecurityName, networkSecurityFile, func() *node { return networkSecurityConfig(m.Cleartext) }})
 	}
 	if m.Game {
 		out = append(out, xmlResource{gameModeName, gameModeFile, gameModeConfig})

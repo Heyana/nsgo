@@ -12,6 +12,10 @@ Every command prints one line per step and the details only when a step fails, a
 
 `run`, `output` and `goTool` use the process runner in `cmd/nsgo/process.go`. It takes the executable, arguments, directory, environment and output handling. Tests can provide a runner through their context to check signing order, release repository discovery and target-test commands without starting external tools. Callers such as the device test log readers own their pipes and child process lifetimes directly.
 
+Apple package minima follow NSH's native plist keys in `apple.info`: `LSMinimumSystemVersion` and `MinimumOSVersion` (`appleminimum.go`). Packaging emits each once, rejects malformed or below-runtime values, and carries the chosen version into icon compilation and signing projects. iOS-family app links and embedded framework slices take the deployment target; macOS app links use Go 1.27's `-macos`, whose runtime floor is 13.0. iOS stays at least 15.0, tvOS 17.0 and watchOS 26.0; Mac Catalyst's iOS-equivalent framework floor is 16.0 for the Darwin runtime. App Clips retain their independent `app_clip.minimum`.
+
+`icon.windows`, `icon.linux` and `icon.android.png` keep target artwork independent across executables, installers and store assets. Unlike NSH's per-platform map with no fallback, `icon.png` remains the fallback for existing projects; Android keeps its mapping so bitmap and adaptive layers can coexist. `android.uses_cleartext_traffic`, NSH's setting in YAML spelling, adds both the typed Android manifest flag and an all-host network security policy to APKs and App Bundles. It takes precedence over the existing loopback-only policy; embedded AARs leave policy to their host.
+
 ## Dev loop
 
 `nsgo dev` (`dev.go`) starts a dev server on `-port` (8080), or the next free port on the same address. It listens on every interface unless `-host` names a local IP address or hostname.

@@ -43,10 +43,13 @@ build_number: 1         # CFBundleVersion 和 Android 的 versionCode；省略�
 # i18n: { dir: locales, source: en }  # 应用的文案目录及其编写语言
 icon:
   apple: assets/AppIcon.icon  # macOS、iOS 和 watchOS，或仅用于 macOS 的 .icns
+  windows: assets/IconWindows.png  # 可选的 Windows 图标
+  linux: assets/IconLinux.png      # 可选的 Linux 图标
   png: assets/Icon.png        # 其他所有目标
   tvos: assets/AppIconTV.brandassets  # Apple TV 的分层图标和顶部横幅，或一张宽图
   watchos: assets/AppIconWatch.icon   # Apple Watch 自己的图标，按圆形绘制，或一张方图
   android:
+    png: assets/IconAndroid.png  # 可选位图，也可不配置自适应层
     foreground: assets/IconForeground.png  # Android 自适应图标：432 像素，标志放在中央 264 像素内
     background: "#1F1F1F"                 # 颜色或方形 PNG
     monochrome: assets/IconMonochrome.png  # 可选：Android 13 主题图标着色的形状
@@ -91,11 +94,15 @@ build:
 
 工具为应用运行的每个 go 命令都使用 `build.tags`：`dev` 及其每次重新加载、`build`（包括 `-embed`）、`test`（包括 `-target`）和 `check`，覆盖所有目标。NSGo 自己的标签（例如 `dev` 中的 `nsgodev`、目标测试中的 `nsgotest`）会加在它们之后，`GOFLAGS` 中 `-tags` 的标签也会合并进来，而不是被替换；`GOFLAGS` 的其余选项照常生效。
 
+`apple.info.LSMinimumSystemVersion` 提高 macOS 包的最低系统版本，`apple.info.MinimumOSVersion` 则提高所选 iOS、tvOS 或 watchOS 包的最低版本。用带引号的版本字符串，如 `"14.2"`、`"18.0"`，包含一到三个数字部分。运行时最低要求是 macOS 13.0（Go 1.27）、iOS 15.0、tvOS 17.0、watchOS 26.0；低于要求或格式错误会报错。移动平台共用的键必须满足每个所选目标，轻 App 仍用自己的 `app_clip.minimum`。这些值用于包元数据、图标编译、签名项目和应用链接；嵌入式 iOS 框架也采用它们，Mac Catalyst 至少为 16.0，以满足 Go 的 macOS 13 要求。
+
+`icon.windows` 与 `icon.linux` 分别指定用于应用包、安装程序和商店图标的正方形 PNG。默认读取 `assets/IconWindows.png`、`assets/IconLinux.png`，再回退到 `icon.png`；`dev.icon` 接受相同设置和带 `-dev` 的默认文件。`icon.android.png` 独立指定 Android 位图，也可以不配置自适应层。其他目标仍使用共享的 `icon.png` 回退。
+
 Apple TV 的图标不是方形，而是一张分层卡片：`tvos` 取 Xcode 的 `.brandassets`（其中的 `App Icon` 堆栈和顶部横幅），或一张如 1280×768 的宽图，工具用它的边缘色铺底、让图铺满卡片，并居中生成顶部横幅；两者都没有时，`png` 按卡片高度的四分之三居中。Apple Watch 会把图标裁成圆形，所以 `watchos` 取按 watchOS 圆形绘制的 `.icon` 或一张方图；没有它时依次用 `apple` 和 `png`。两者与 `apple`、`png` 一样默认取 `assets/AppIconTV.*` 和 `assets/AppIconWatch.*`。
 
-在 Android 上，`icon.android` 让启动图标成为自适应图标，启动器按自己的形状裁剪、按需移动它，而不是把 `png` 缩小放在启动器自己的底板上。每个图层是 108 dp 的方形，PNG 缩放到 432 像素；启动器显示中央 72 dp（288 像素），并用一个可能裁到中央 66 dp（264 像素）以外任何部分的形状遮罩它，所以标志要放在这个圆内，背景铺满整个方形。`background` 是一张 PNG，或 `"#1F1F1F"` 这样的颜色。`monochrome` 是一个只看透明度的形状，用户打开主题图标时，Android 13 及以后的版本给它着色；没有它时，图标在那里保持原色。安装包仍保留 `png` 作为普通位图图标，但 Android 9（NSGo 支持的最低版本）及以后的启动器都会选用自适应图标；没有 `png` 时，工具用前景叠在背景上画出它。没有 `icon.android` 时，启动器照旧显示 `png`。
+在 Android 上，`icon.android.foreground` 与 `background` 让启动图标成为自适应图标，启动器按自己的形状裁剪、按需移动它，而不是把 `png` 缩小放在启动器自己的底板上。每个图层是 108 dp 的方形，PNG 缩放到 432 像素；启动器显示中央 72 dp（288 像素），并用一个可能裁到中央 66 dp（264 像素）以外任何部分的形状遮罩它，所以标志要放在这个圆内，背景铺满整个方形。`background` 是一张 PNG，或 `"#1F1F1F"` 这样的颜色。`monochrome` 是一个只看透明度的形状，用户打开主题图标时，Android 13 及以后的版本给它着色；没有它时，图标在那里保持原色。安装包仍保留 `icon.android.png`（没有时用 `icon.png`）作为普通位图图标，但 Android 9（NSGo 支持的最低版本）及以后的启动器都会选用自适应图标；没有 `png` 时，工具用前景叠在背景上画出它。不配置自适应层时，启动器显示 Android 位图，没有时用共享的 `png`。
 
-`android.loopback_cleartext: true` 允许 APK 或 App Bundle 通过明文 HTTP 访问 `localhost`、`127.0.0.1` 和 `::1`，例如播放应用自己的本地服务器提供的视频。该网络安全策略禁止访问其他主机时使用明文。嵌入 AAR 时，在宿主应用中配置 Android 网络安全策略。
+`android.uses_cleartext_traffic: true` 让独立 APK 或 App Bundle 通过清单标志和网络安全策略允许任意主机的明文 HTTP；两项设置同时为 true 时，它优先。仅允许回环地址时用 `android.loopback_cleartext: true` 允许 APK 或 App Bundle 通过明文 HTTP 访问 `localhost`、`127.0.0.1` 和 `::1`，例如播放应用自己的本地服务器提供的视频。该网络安全策略禁止访问其他主机时使用明文。嵌入 AAR 时，在宿主应用中配置 Android 网络安全策略。
 
 每个构建在启动时还接受 NSGo 自己的参数，例如 `--nsgo-fps`（[运行与调试](debugging.md#所有构建都接受的参数)）。在 `nsgo dev` 中，Command/Control+R 可从所有打开的窗口重新加载；当应用函数仍有其他窗口运行时，主视图关闭后也仍然可用。
 

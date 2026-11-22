@@ -73,7 +73,7 @@ func buildMSIX(ctx context.Context, p *project, dir, arch string) (string, error
 	if err != nil {
 		return "", err
 	}
-	img, err := p.iconImage()
+	img, err := p.windowsIconImage()
 	if err != nil {
 		return "", err
 	}

@@ -30,7 +30,10 @@ var watchOS = &appleOS{name: "watchOS", target: "watchos", sdk: "watchos", minim
 // identity, as iOS's are.
 func buildWatchApp(ctx context.Context, p *project, dir string, simulator bool) (string, error) {
 	sys := watchOS
-	env, err := iosEnv(ctx, sys, simulator)
+	if _, err := p.appleMinimum(sys); err != nil {
+		return "", err
+	}
+	env, err := iosProjectEnv(ctx, p, sys, simulator)
 	if err != nil {
 		return "", err
 	}
@@ -124,6 +127,10 @@ func compileWatchHost(ctx context.Context, simulator bool) (string, error) {
 // use, else the PNG through an asset catalog, which watchOS masks to a
 // circle.
 func writeWatchIcon(ctx context.Context, p *project, app string, simulator bool) (string, error) {
+	minimum, err := p.appleMinimum(watchOS)
+	if err != nil {
+		return "", err
+	}
 	sys := watchOS
 	sdk := sys.sdkName(simulator)
 	icon := p.Icon.WatchOS
@@ -138,7 +145,7 @@ func writeWatchIcon(ctx context.Context, p *project, app string, simulator bool)
 	case "":
 		return "", nil
 	case ".icon":
-		return compileIcon(ctx, icon, app, sdk, sys.minimum, sys.idioms)
+		return compileIcon(ctx, icon, app, sdk, minimum, sys.idioms)
 	}
 	img, err := readSquareIcon(icon)
 	if err != nil {
@@ -156,12 +163,12 @@ func writeWatchIcon(ctx context.Context, p *project, app string, simulator bool)
 	}); err != nil {
 		return "", err
 	}
-	return compileIcon(ctx, catalog, app, sdk, sys.minimum, sys.idioms)
+	return compileIcon(ctx, catalog, app, sdk, minimum, sys.idioms)
 }
 
 // watchosPlist is a watch-only app's: watchOS shows it dark whatever the
 // app asks for.
-var watchosPlist = template.Must(template.New("watchos").Parse(plistHead + `	<key>MinimumOSVersion</key><string>26.0</string>
+var watchosPlist = template.Must(template.New("watchos").Parse(plistHead + `	<key>MinimumOSVersion</key><string>{{.WatchOSMinimum}}</string>
 	<key>UIDeviceFamily</key><array><integer>4</integer></array>
 	<key>WKApplication</key><true/>
 	<key>WKWatchOnly</key><true/>

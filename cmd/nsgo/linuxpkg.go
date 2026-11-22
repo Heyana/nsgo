@@ -238,7 +238,7 @@ func linuxPackageFiles(p *project, dir string) ([]linuxPackageEntry, error) {
 	if len(definitions) > 0 {
 		add("usr/share/mime/packages/"+p.ID+".xml", definitions, 0o644)
 	}
-	img, err := p.iconImage()
+	img, err := p.linuxIconImage()
 	if err != nil {
 		return nil, err
 	}

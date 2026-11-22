@@ -8,11 +8,16 @@ const (
 	cleartextAttribute  = "cleartextTrafficPermitted"
 )
 
-// networkSecurityConfig allows HTTP for the exact loopback host names that
-// Android clients pass to the policy, including both forms of the IPv6 literal.
-func networkSecurityConfig() *node {
+func (m Manifest) networkPolicy() bool { return m.Cleartext || m.LoopbackCleartext }
+
+// networkSecurityConfig allows HTTP to all hosts when opted in, otherwise only the exact loopback names Android clients pass, including both IPv6 forms.
+func networkSecurityConfig(cleartext bool) *node {
 	base := &node{name: xml.Name{Local: "base-config"}}
 	setAttr(base, "", cleartextAttribute, "false")
+	if cleartext {
+		setAttr(base, "", cleartextAttribute, "true")
+		return &node{name: xml.Name{Local: "network-security-config"}, kids: []*node{base}}
+	}
 	loopback := &node{name: xml.Name{Local: "domain-config"}}
 	setAttr(loopback, "", cleartextAttribute, "true")
 	for _, host := range []string{"localhost", "127.0.0.1", "::1", "[::1]"} {

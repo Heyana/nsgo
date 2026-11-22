@@ -68,9 +68,27 @@ func (p *project) resolveIconSet(set *icons, key, suffix string) error {
 	if ext := filepath.Ext(set.WatchOS); set.WatchOS != "" && ext != ".icon" && ext != ".png" {
 		return fmt.Errorf("%s.watchos: %s is neither an .icon nor a .png", key, rel(set.WatchOS))
 	}
+	if set.Windows, err = p.iconPath(key+".windows", set.Windows, "IconWindows"+suffix+".png"); err != nil {
+		return err
+	}
+	if set.Linux, err = p.iconPath(key+".linux", set.Linux, "IconLinux"+suffix+".png"); err != nil {
+		return err
+	}
 	if set.Android != nil {
-		if set.Android.Foreground == "" || set.Android.Background == "" {
+		if set.Android.PNG != "" {
+			if set.Android.PNG, err = p.iconPath(key+".android.png", set.Android.PNG); err != nil {
+				return err
+			}
+		}
+		adaptive := set.Android.Foreground != "" || set.Android.Background != "" || set.Android.Monochrome != ""
+		if adaptive && (set.Android.Foreground == "" || set.Android.Background == "") {
 			return fmt.Errorf("%s.android needs foreground and background", key)
+		}
+		if !adaptive {
+			if set.Android.PNG == "" {
+				return fmt.Errorf("%s.android needs png or foreground and background", key)
+			}
+			return nil
 		}
 		if strings.HasPrefix(set.Android.Background, "#") {
 			if _, err := androidIconLayer(set.Android.Background); err != nil {
@@ -117,6 +135,12 @@ func (p *project) iconPath(key, path string, defaults ...string) (string, error)
 // useDevIcons points icon at the files dev.icon has, for nsgo dev's
 // builds.
 func (p *project) useDevIcons() {
+	if p.Dev.Icon.Windows != "" {
+		p.Icon.Windows = p.Dev.Icon.Windows
+	}
+	if p.Dev.Icon.Linux != "" {
+		p.Icon.Linux = p.Dev.Icon.Linux
+	}
 	if p.Dev.Icon.Apple != "" {
 		p.Icon.Apple = p.Dev.Icon.Apple
 	}
@@ -139,12 +163,33 @@ func (p *project) iconImage() (image.Image, error) {
 	return readOptionalIcon(p.Icon.PNG)
 }
 
+func (p *project) windowsIconImage() (image.Image, error) {
+	if p.Icon.Windows != "" {
+		return readOptionalIcon(p.Icon.Windows)
+	}
+	return p.iconImage()
+}
+
+func (p *project) linuxIconImage() (image.Image, error) {
+	if p.Icon.Linux != "" {
+		return readOptionalIcon(p.Icon.Linux)
+	}
+	return p.iconImage()
+}
+
+func (p *project) androidIconImage() (image.Image, error) {
+	if p.Icon.Android != nil && p.Icon.Android.PNG != "" {
+		return readOptionalIcon(p.Icon.Android.PNG)
+	}
+	return p.iconImage()
+}
+
 // adaptiveLayerSize is an adaptive icon layer's side in pixels: 108 dp at xxxhdpi, where the table puts the layers.
 const adaptiveLayerSize = 432
 
 // androidAdaptiveIcon decodes icon.android's layers, nil when it has none, and returns with them the legacy icon they make, the foreground over the background within the 72 dp a launcher shows of them, for an app without icon.png.
 func (p *project) androidAdaptiveIcon() (*apk.AdaptiveIcon, image.Image, error) {
-	if p.Icon.Android == nil {
+	if p.Icon.Android == nil || (p.Icon.Android.PNG != "" && p.Icon.Android.Foreground == "" && p.Icon.Android.Background == "" && p.Icon.Android.Monochrome == "") {
 		return nil, nil, nil
 	}
 	a := p.Icon.Android
@@ -272,9 +317,13 @@ func scaledTo(img image.Image, w, h int) *image.NRGBA {
 // returns the Info.plist entries naming it. An Icon Composer .icon
 // compiles with actool, an .icns is copied, and a PNG becomes an .icns.
 func writeMacIcon(ctx context.Context, p *project, resources string) (string, error) {
+	minimum, err := p.appleMinimum(nil)
+	if err != nil {
+		return "", err
+	}
 	switch filepath.Ext(p.Icon.Apple) {
 	case ".icon":
-		return compileIcon(ctx, p.Icon.Apple, resources, "macosx", "11.0", nil)
+		return compileIcon(ctx, p.Icon.Apple, resources, "macosx", minimum, nil)
 	case ".icns":
 		data, err := os.ReadFile(p.Icon.Apple)
 		if err != nil {
@@ -326,12 +375,16 @@ func icns(img image.Image) []byte {
 // Icon.TVOS, the project's brand assets or a wide image, else the PNG as
 // the layered icon and top shelf images the Apple TV asks for.
 func writeIOSIcon(ctx context.Context, p *project, sys *appleOS, app string, simulator bool) (string, error) {
+	minimum, err := p.appleMinimum(sys)
+	if err != nil {
+		return "", err
+	}
 	sdk := sys.sdkName(simulator)
 	if sys == tvOS {
 		return writeTVOSIcon(ctx, p, app, sdk)
 	}
 	if filepath.Ext(p.Icon.Apple) == ".icon" {
-		return compileIcon(ctx, p.Icon.Apple, app, sdk, sys.minimum, sys.idioms)
+		return compileIcon(ctx, p.Icon.Apple, app, sdk, minimum, sys.idioms)
 	}
 	img, err := p.iconImage()
 	if img == nil || err != nil {
@@ -349,7 +402,7 @@ func writeIOSIcon(ctx context.Context, p *project, sys *appleOS, app string, sim
 	}); err != nil {
 		return "", err
 	}
-	return compileIcon(ctx, catalog, app, sdk, sys.minimum, sys.idioms)
+	return compileIcon(ctx, catalog, app, sdk, minimum, sys.idioms)
 }
 
 // writeTVOSIcon compiles the app's icon into an Apple TV bundle: the
@@ -357,6 +410,10 @@ func writeIOSIcon(ctx context.Context, p *project, sys *appleOS, app string, sim
 // layer and top shelf art, or the PNG at three quarters of their height
 // over its edges' color.
 func writeTVOSIcon(ctx context.Context, p *project, app, sdk string) (string, error) {
+	minimum, err := p.appleMinimum(tvOS)
+	if err != nil {
+		return "", err
+	}
 	icon := p.Icon.TVOS
 	if icon == "" {
 		icon = p.Icon.PNG
@@ -365,7 +422,7 @@ func writeTVOSIcon(ctx context.Context, p *project, app, sdk string) (string, er
 	case "":
 		return "", nil
 	case ".brandassets":
-		return compileBrandAssets(ctx, icon, app, sdk, tvOS.minimum, tvOS.idioms)
+		return compileBrandAssets(ctx, icon, app, sdk, minimum, tvOS.idioms)
 	}
 	img, err := readIcon(icon)
 	if err != nil {
@@ -383,7 +440,7 @@ func writeTVOSIcon(ctx context.Context, p *project, app, sdk string) (string, er
 	if err := writeTVBrandAssets(filepath.Join(catalog, "AppIcon.brandassets"), img, wide); err != nil {
 		return "", err
 	}
-	return compileIcon(ctx, catalog, app, sdk, tvOS.minimum, tvOS.idioms)
+	return compileIcon(ctx, catalog, app, sdk, minimum, tvOS.idioms)
 }
 
 // compileBrandAssets compiles Xcode's brand assets collection, the
@@ -685,7 +742,7 @@ func plistEntries(plist string) string {
 // writeLinuxIcon puts the icon beside a Linux executable as <id>.png,
 // with a desktop entry that names it.
 func writeLinuxIcon(p *project, dir string) error {
-	img, err := p.iconImage()
+	img, err := p.linuxIconImage()
 	if err != nil {
 		return err
 	}
@@ -775,7 +832,7 @@ func writeWindowsResources(ctx context.Context, p *project, goarch string) ([]by
 		}
 		return nil, func() {}, err
 	}
-	img, err := p.iconImage()
+	img, err := p.windowsIconImage()
 	if err != nil {
 		return nil, func() {}, err
 	}

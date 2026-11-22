@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -152,5 +153,81 @@ func TestLoopbackCleartext(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestAllHostCleartext(t *testing.T) {
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []struct {
+		name, prefix, manifest string
+		write                  func(io.Writer, []byte, Manifest, []File, *Key) error
+	}{
+		{"apk", "", "AndroidManifest.xml", Write},
+		{"bundle", "base/", "base/manifest/AndroidManifest.xml", WriteBundle},
+	} {
+		for _, loopback := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/loopback=%t", format.name, loopback), func(t *testing.T) {
+				m := Manifest{Package: "dev.nsgo.test.http", Label: "HTTP", VersionCode: 1, Icon: []byte("PNG"), Cleartext: true, LoopbackCleartext: loopback, Game: true}
+				var archive bytes.Buffer
+				if err := format.write(&archive, androidruntime.Manifest, m, nil, key); err != nil {
+					t.Fatal(err)
+				}
+				zipped, err := zip.NewReader(bytes.NewReader(archive.Bytes()), int64(archive.Len()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				read := func(name string) []byte {
+					t.Helper()
+					f, err := zipped.Open(name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer f.Close()
+					data, err := io.ReadAll(f)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return data
+				}
+				policy := read(format.prefix + networkSecurityFile)
+				manifest := read(format.manifest)
+				const policyID = 0x7f020000
+				if format.name == "apk" {
+					app := decodeXML(t, manifest).root.child(t, "application")
+					if attr := app.attr(t, "usesCleartextTraffic"); attr.id != 0x010104ec || attr.kind != typeBool || attr.data != ^uint32(0) {
+						t.Fatalf("cleartext manifest flag: %+v", attr)
+					}
+					if app.value(t, "networkSecurityConfig") != policyID || app.child(t, "meta-data").value(t, "resource") != policyID+1 {
+						t.Fatal("network and game policy resources overlap")
+					}
+					root := decodeXML(t, policy).root
+					if len(root.kids) != 1 || root.kids[0].name != "base-config" {
+						t.Fatal("all-host opt-in has a restricted domain policy")
+					}
+					attrs := root.kids[0].attrs
+					if len(attrs) != 1 || attrs[0].kind != typeBool || attrs[0].data != ^uint32(0) {
+						t.Fatalf("base policy: %+v", attrs)
+					}
+				} else {
+					typedTrue := pbBytes(nil, 7, pbVarint(nil, 8, 1))
+					if !bytes.Contains(manifest, pbBytes(pbVarint(nil, 5, 0x010104ec), 6, typedTrue)) {
+						t.Fatal("bundle has no typed usesCleartextTraffic=true")
+					}
+					if !bytes.Contains(policy, pbString(nil, 3, "base-config")) || bytes.Contains(policy, pbString(nil, 3, "domain-config")) {
+						t.Fatal("bundle policy does not allow every host")
+					}
+					if !bytes.Contains(policy, pbBytes(nil, 6, typedTrue)) {
+						t.Fatal("bundle policy has no typed cleartext opt-in")
+					}
+					ref := pbBytes(nil, 1, pbVarint(nil, 2, policyID+1))
+					if !bytes.Contains(manifest, pbBytes(pbVarint(nil, 5, 0x01010025), 6, ref)) {
+						t.Fatal("bundle game policy index ignores network policy")
+					}
+				}
+			})
+		}
 	}
 }

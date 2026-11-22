@@ -54,10 +54,13 @@ build_number: 1         # CFBundleVersion and Android's versionCode; else from v
 # i18n: { dir: locales, source: en }  # the app's catalogs and the language they are written in
 icon:
   apple: assets/AppIcon.icon  # macOS, iOS and watchOS, or an .icns for macOS
+  windows: assets/IconWindows.png  # optional Windows artwork
+  linux: assets/IconLinux.png      # optional Linux artwork
   png: assets/Icon.png        # every other target
   tvos: assets/AppIconTV.brandassets  # the Apple TV's layered icon and top shelf art, or a wide PNG
   watchos: assets/AppIconWatch.icon   # the Apple Watch's own, drawn in circles, or a square PNG
   android:
+    png: assets/IconAndroid.png  # optional bitmap; valid without adaptive layers
     foreground: assets/IconForeground.png  # Android's adaptive icon: 432 px, the logo within the center 264 px
     background: "#1F1F1F"                 # a color or a square PNG
     monochrome: assets/IconMonochrome.png  # optional: the shape Android 13's themed icons tint
@@ -82,6 +85,7 @@ build:
 # apple: { info: { UIBackgroundModes: [audio] } }  # background playback for iOS Picture in Picture
 # android: { permissions: [REQUEST_INSTALL_PACKAGES] }  # manifest permissions beyond the runtime's
 # android: { recording: true }  # the microphone service microphone.RecordWAV records in, with RECORD_AUDIO, the foreground-service permissions and POST_NOTIFICATIONS, which RecordWAV asks for so its notification shows from Android 13; a refusal still records
+# android: { uses_cleartext_traffic: true }  # allow plain HTTP to any host in the APK and App Bundle
 # android: { loopback_cleartext: true }  # allow plain HTTP to loopback in the APK and App Bundle
 # windows: { command_line: true }  # add <name>.com, a console companion that forwards arguments and streams to <name>.exe; not in store builds
 # windows: { publisher: Example Ltd }  # the company the Windows executable's details, its installer and the uninstall entry name; else windows.store.publisher_name
@@ -102,11 +106,15 @@ Flags replace the values they name, such as `-target`, `-version` or `-output`; 
 
 Every go command the tool runs for the app takes `build.tags`, in `dev` and its reloads, `build` with `-embed` too, `test` with `-target` too and `check`, on every target. NSGo's own tags, such as `nsgodev` in `dev` or `nsgotest` in target tests, are added to them, as are the tags of `-tags` in `GOFLAGS`, which would otherwise be replaced; the rest of `GOFLAGS` applies as it is.
 
+`apple.info.LSMinimumSystemVersion` raises the macOS package's minimum, and `apple.info.MinimumOSVersion` raises the selected iOS, tvOS or watchOS package's. Write quoted version strings, such as `"14.2"` or `"18.0"`, with one to three numeric parts. The runtime floors are macOS 13.0 (Go 1.27), iOS 15.0, tvOS 17.0 and watchOS 26.0; lower or malformed values fail. The mobile key must meet every selected mobile target's floor. App Clips keep their own `app_clip.minimum`. The values reach package metadata, asset compilation, signing projects and the app's linker; embedded iOS frameworks use them too, with Mac Catalyst at least 16.0 for Go's macOS 13 runtime.
+
+`icon.windows` and `icon.linux` select square PNGs for their app packages, installer art and store logos. They default to `assets/IconWindows.png` and `assets/IconLinux.png`, then fall back to `icon.png`; `dev.icon` accepts the same settings and `-dev` default files. `icon.android.png` selects an Android bitmap independently, including when no adaptive layers are configured. Other targets keep the shared `icon.png` fallback.
+
 An Apple TV's icon is a layered card, not a square: `tvos` takes Xcode's `.brandassets`, its `App Icon` stacks and top shelf images, or a wide image such as 1280×768, which the tool draws to fit the card over its edge color and centers on the top shelf images. Without either, the PNG sits at three quarters of the card's height. An Apple Watch masks its icon to a circle, so `watchos` takes an `.icon` drawn for watchOS's circles or a square PNG; without it the app uses `apple`, then `png`. Both fall back to `assets/AppIconTV.*` and `assets/AppIconWatch.*`, as `apple` and `png` do.
 
-On Android, `icon.android` makes the launcher icon adaptive, so launchers mask it to their shape and move it as they like instead of shrinking `png` onto a plate of their own. Each layer is 108 dp square, a PNG scaled to 432 px; the launcher shows the center 72 dp, 288 px, and masks it to a shape that may cut into everything outside the center 66 dp, 264 px, so keep the logo in that circle and let the background fill the whole square. `background` is a PNG or a color such as `"#1F1F1F"`. `monochrome`, a shape whose alpha is all that counts, is what Android 13 and later tint when the user turns on themed icons; without it the icon keeps its colors there. The package keeps `png` as the plain bitmap icon, which no launcher of Android 9 or later, the oldest NSGo runs on, picks over the adaptive one; without `png`, the tool draws it from the foreground over the background. Without `icon.android`, the launcher shows `png` as before.
+On Android, `icon.android.foreground` and `background` make the launcher icon adaptive, so launchers mask it to their shape and move it as they like instead of shrinking `png` onto a plate of their own. Each layer is 108 dp square, a PNG scaled to 432 px; the launcher shows the center 72 dp, 288 px, and masks it to a shape that may cut into everything outside the center 66 dp, 264 px, so keep the logo in that circle and let the background fill the whole square. `background` is a PNG or a color such as `"#1F1F1F"`. `monochrome`, a shape whose alpha is all that counts, is what Android 13 and later tint when the user turns on themed icons; without it the icon keeps its colors there. The package keeps `icon.android.png`, else `icon.png`, as the plain bitmap icon, which no launcher of Android 9 or later, the oldest NSGo runs on, picks over the adaptive one; without `png`, the tool draws it from the foreground over the background. Without adaptive layers, the launcher shows the Android bitmap or the shared `png`.
 
-`android.loopback_cleartext: true` lets an APK or App Bundle load plain HTTP from `localhost`, `127.0.0.1` and `::1`, such as video served by the app itself. Its network security policy denies cleartext to other hosts. For an embedded AAR, configure the host app’s Android network security policy.
+`android.uses_cleartext_traffic: true` opts an APK or App Bundle into plain HTTP to any host, setting both the manifest flag and its network security policy. Without that opt-in, `android.loopback_cleartext: true` allows plain HTTP only from `localhost`, `127.0.0.1` and `::1`, such as video served by the app itself. The loopback-only policy denies cleartext to other hosts; the all-host opt-in takes precedence when both settings are true. For an embedded AAR, configure the host app’s Android network security policy.
 
 Every build also takes NSGo's own flags as it starts, such as `--nsgo-fps` ([Running and debugging](debugging.md#flags-of-every-build)). In `nsgo dev`, Command/Control+R reloads from every open window and remains available after the main view closes when another window keeps an app function running.
 

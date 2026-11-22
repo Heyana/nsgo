@@ -926,9 +926,13 @@ func experiments(cur, extra string) string {
 
 // buildMacApp writes <dir>/<name>.app for one architecture.
 func buildMacApp(ctx context.Context, p *project, dir, arch string) (string, error) {
+	minimum, err := p.appleMinimum(nil)
+	if err != nil {
+		return "", err
+	}
 	app := filepath.Join(dir, p.Name+".app")
 	bin := filepath.Join(app, "Contents", "MacOS", p.Name)
-	if err := goBuild(ctx, p, bin, []string{"GOOS=darwin", "GOARCH=" + arch, "CGO_ENABLED=0"}); err != nil {
+	if err := goBuild(ctx, p, bin, []string{"GOOS=darwin", "GOARCH=" + arch, "CGO_ENABLED=0"}, "-macos="+minimum); err != nil {
 		return "", err
 	}
 	stage(ctx, "bundling the app")
@@ -1572,6 +1576,9 @@ events.onmessage = (e) => {
 // writePlist writes t's plist for p, with extra entries, such as the
 // icon's, at the end of its top dictionary.
 func writePlist(path string, p *project, t *template.Template, extra string) error {
+	if err := p.validatePlistMinimum(t); err != nil {
+		return err
+	}
 	var out bytes.Buffer
 	if err := t.Execute(&out, p); err != nil {
 		return err
@@ -1595,11 +1602,13 @@ const plistHead = `<?xml version="1.0" encoding="UTF-8"?>
 	<key>CFBundleShortVersionString</key><string>{{.Version}}</string>
 	<key>CFBundleVersion</key><string>{{.BundleVersion}}</string>
 {{- range $key, $value := .Apple.Info}}
+{{- if and (ne $key "MinimumOSVersion") (ne $key "LSMinimumSystemVersion")}}
 	<key>{{html $key}}</key>{{$.InfoValue $value}}
+{{- end}}
 {{- end}}
 `
 
-var macPlist = template.Must(template.New("mac").Parse(plistHead + `	<key>LSMinimumSystemVersion</key><string>11.0</string>
+var macPlist = template.Must(template.New("mac").Parse(plistHead + `	<key>LSMinimumSystemVersion</key><string>{{.MacOSMinimum}}</string>
 	<key>NSHighResolutionCapable</key><true/>
 {{- if and .Copyright (not (index .Apple.Info "NSHumanReadableCopyright"))}}
 	<key>NSHumanReadableCopyright</key><string>{{html .Copyright}}</string>

@@ -43,7 +43,9 @@ type Manifest struct {
 	Permissions []string
 	// TargetSDK replaces the runtime's targetSdkVersion when it is set.
 	TargetSDK int
-	// LoopbackCleartext adds a network policy permitting HTTP to loopback hosts.
+	// Cleartext permits plain HTTP to any host, overriding loopback-only policy.
+	Cleartext bool
+	// LoopbackCleartext permits HTTP only to loopback when Cleartext is false.
 	LoopbackCleartext bool
 	// Overlay declares the runtime's OverlayService, the specialUse foreground service an overlay over other apps takes, for an app that asks for SYSTEM_ALERT_WINDOW; Permissions name its FOREGROUND_SERVICE permissions.
 	Overlay bool
@@ -130,6 +132,7 @@ var androidAttrs = map[string]attrSpec{
 	"value":                       {0x01010024, typeString, nil},
 	"drawable":                    {0x01010199, typeReference, parseAppResource},
 	"networkSecurityConfig":       {0x01010527, typeReference, parseResourceID},
+	"usesCleartextTraffic":        {0x010104ec, typeBool, parseBool},
 }
 
 // foregroundServiceTypes are the ServiceInfo.FOREGROUND_SERVICE_TYPE_* names a service lists, as attrs_manifest.xml has them.
@@ -299,7 +302,10 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 	if m.Icon != nil {
 		setAttr(app, androidNS, "icon", iconResource)
 	}
-	if m.LoopbackCleartext {
+	if m.Cleartext {
+		setAttr(app, androidNS, "usesCleartextTraffic", "true")
+	}
+	if m.networkPolicy() {
 		setAttr(app, androidNS, "networkSecurityConfig", fmt.Sprintf("@0x%08x", xmlResourceID(m)))
 	}
 	if m.Game {
@@ -308,7 +314,7 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 		meta := &node{name: xml.Name{Local: "meta-data"}}
 		setAttr(meta, androidNS, "name", "android.game_mode_config")
 		id := xmlResourceID(m)
-		if m.LoopbackCleartext {
+		if m.networkPolicy() {
 			id++
 		}
 		setAttr(meta, androidNS, "resource", fmt.Sprintf("@0x%08x", id))

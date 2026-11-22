@@ -147,7 +147,7 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 	if err != nil {
 		return "", err
 	}
-	img, err := p.iconImage()
+	img, err := p.androidIconImage()
 	if err != nil {
 		return "", err
 	}
@@ -188,6 +188,7 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 		Permissions:       p.androidPermissions(),
 		TargetSDK:         p.Android.TargetSDK,
 		LoopbackCleartext: p.Android.LoopbackCleartext,
+		Cleartext:         p.Android.UsesCleartextTraffic,
 		Overlay:           p.androidOverlay(),
 		Recording:         p.Android.Recording,
 		Location:          p.androidLocation(),

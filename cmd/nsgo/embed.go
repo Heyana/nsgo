@@ -184,9 +184,9 @@ type iosSlice struct {
 // its Go code is GOOS=darwin built with the ios tag, so NSGo's iOS
 // backend serves it, as gomobile builds it.
 var iosSlices = []iosSlice{
-	{sdk: "iphoneos", goos: "ios", archs: []string{"arm64"}, target: "%s-apple-ios15.0"},
-	{sdk: "iphonesimulator", goos: "ios", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios15.0-simulator"},
-	{sdk: "macosx", goos: "darwin", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios15.0-macabi", catalyst: true},
+	{sdk: "iphoneos", goos: "ios", archs: []string{"arm64"}, target: "%s-apple-ios%s"},
+	{sdk: "iphonesimulator", goos: "ios", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios%s-simulator"},
+	{sdk: "macosx", goos: "darwin", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios%s-macabi", catalyst: true},
 }
 
 // clangArch is clang's name of Go's architecture.
@@ -208,6 +208,10 @@ var iosLinked = []string{"UIKit", "Foundation", "CoreFoundation", "Security"}
 // iOS forbids Go's c-shared, so the static library is linked into one,
 // which exports only NSGoStart.
 func buildIOSFramework(ctx context.Context, p *project, dir string) error {
+	minimum, err := p.appleMinimum(iOS)
+	if err != nil {
+		return err
+	}
 	tmp, err := os.MkdirTemp("", "nsgo-embed-")
 	if err != nil {
 		return err
@@ -221,6 +225,7 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 	header := strings.ReplaceAll(embedHeader, "{{name}}", p.Name)
 	args := []string{"-create-xcframework"}
 	for _, sl := range iosSlices {
+		sliceMinimum := frameworkMinimum(minimum, sl.catalyst)
 		sdk, err := output(ctx, "xcrun", "--sdk", sl.sdk, "--show-sdk-path")
 		if err != nil {
 			return fmt.Errorf("the iOS SDK needs Xcode: %w", err)
@@ -232,7 +237,7 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 		slice := filepath.Join(tmp, sl.sdk)
 		var libs, dylibs []string
 		for _, arch := range sl.archs {
-			flags := "-isysroot " + sdk + " -target " + fmt.Sprintf(sl.target, clangArch(arch))
+			flags := "-isysroot " + sdk + " -target " + fmt.Sprintf(sl.target, clangArch(arch), sliceMinimum)
 			if sl.catalyst {
 				// UIKit for Mac Catalyst lives in the macOS SDK's iOSSupport.
 				support := filepath.Join(sdk, "System/iOSSupport")
@@ -289,7 +294,7 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 			args = append(args, "-library", lib, "-headers", headers)
 			continue
 		}
-		fw, err := writeIOSFramework(slice, module, p.ID, header, sl.catalyst)
+		fw, err := writeIOSFramework(slice, module, p.ID, header, sliceMinimum, sl.catalyst)
 		if err != nil {
 			return err
 		}
@@ -348,7 +353,7 @@ func writeIOSHeaders(dir, header, modulemap string) error {
 // writeIOSFramework makes the bundle of a dynamic framework in slice,
 // its binary left to the caller: iOS's flat, Mac Catalyst's in macOS's
 // versioned layout. It returns the bundle's path.
-func writeIOSFramework(slice, module, id, header string, catalyst bool) (string, error) {
+func writeIOSFramework(slice, module, id, header, minimum string, catalyst bool) (string, error) {
 	fw := filepath.Join(slice, module+".framework")
 	root := fw
 	if catalyst {
@@ -382,10 +387,10 @@ func writeIOSFramework(slice, module, id, header string, catalyst bool) (string,
 	<key>CFBundlePackageType</key><string>FMWK</string>
 	<key>CFBundleShortVersionString</key><string>1.0</string>
 	<key>CFBundleVersion</key><string>1</string>
-	<key>MinimumOSVersion</key><string>15.0</string>
+	<key>MinimumOSVersion</key><string>%[3]s</string>
 </dict>
 </plist>
-`, module, id+".framework")
+`, module, id+".framework", minimum)
 	if err := os.WriteFile(filepath.Join(plistDir, "Info.plist"), []byte(plist), 0o644); err != nil {
 		return "", err
 	}
