@@ -1512,8 +1512,7 @@ func (v *View) within(o *View) bool {
 	return false
 }
 
-// contentScale maps scroll content points to viewport points. Unset scales
-// and views other than scroll views keep their layout coordinates.
+// contentScale maps scroll content points to viewport points. Unset scales and views other than scroll views keep their layout coordinates.
 func (v *View) contentScale() driver.Points {
 	if v.Kind == KindScroll && v.ZoomScale > 0 {
 		return driver.Points(v.ZoomScale)
@@ -1533,9 +1532,7 @@ func (v *View) contentMatrix() driver.Matrix3D {
 	return m
 }
 
-// zoomedFrame is the viewport geometry for revealing a view, including
-// ancestor content zoom while leaving style transforms aside. Bounds keeps
-// the layout geometry Ref.Bounds reports.
+// zoomedFrame is the viewport geometry for revealing a view, including ancestor content zoom while leaving style transforms aside. Bounds keeps the layout geometry Ref.Bounds reports.
 func (v *View) zoomedFrame() driver.Bounds {
 	b := v.Frame
 	for p := v.Parent; p != nil; p = p.Parent {
