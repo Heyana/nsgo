@@ -8,10 +8,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
 	"rsc.io/qr"
+
+	"github.com/nsgo-dev/nsgo/internal/appstartup"
 )
 
 // An App Clip is a small part of an iOS app that runs without being
@@ -174,13 +177,44 @@ func addIOSAppClip(ctx context.Context, p *project, app string, simulator bool) 
 	return nil
 }
 
+// clipStorageGroup opts a clip and its full app into shared persistent
+// storage only when apple.app_group is explicit. Widgets alone keep the
+// app's existing sandbox storage.
+func (p *project) clipStorageGroup() string {
+	if p.AppClip != nil || p.clipParent != "" {
+		return p.Apple.AppGroup
+	}
+	return ""
+}
+
+func (p *project) clipStoragePlist() string {
+	if group := p.clipStorageGroup(); group != "" {
+		return "<key>" + appstartup.StorageAppGroupKey + "</key><string>" + xmlText(group) + "</string>"
+	}
+	return ""
+}
+
+func (p *project) needsIOSAppGroup() bool {
+	return p.iosExtension() || p.clipStorageGroup() != ""
+}
+
+// checkIOSAppGroup refuses a profile that cannot reach the configured
+// shared container, before signing a build that would fail at startup.
+func (p *project) checkIOSAppGroup(entitlements map[string]any, profile string) error {
+	groups, _ := entitlements["com.apple.security.application-groups"].([]any)
+	if p.needsIOSAppGroup() && !slices.Contains(groups, any(p.appGroup())) {
+		return fmt.Errorf("%s does not grant the app group %s", profile, p.appGroup())
+	}
+	return nil
+}
+
 // simulatorEntitlements are what an iOS bundle's ad hoc signature claims
 // for the simulator, which grants them from it: the app group the app
-// shares with its widgets. The simulator refuses to launch an app whose ad
-// hoc signature claims a developer entitlement, so the tie between an app
-// and its clip is left to device builds' profiles.
+// shares with its widgets or App Clip. The simulator refuses to launch
+// an app whose ad hoc signature claims a developer entitlement, so the
+// tie between an app and its clip is left to device builds' profiles.
 func (p *project) simulatorEntitlements() map[string]any {
-	if !p.iosExtension() {
+	if !p.needsIOSAppGroup() {
 		return nil
 	}
 	return p.groupEntitlements()
@@ -222,6 +256,9 @@ func signIOSClip(ctx context.Context, p *project, app, identity string) error {
 	appID, _ := entitlements["application-identifier"].(string)
 	if !profileAllows(appID, id) {
 		return fmt.Errorf("sign.clip_profile is for %s, not %s", appID, id)
+	}
+	if err := p.clipProject().checkIOSAppGroup(entitlements, "sign.clip_profile"); err != nil {
+		return err
 	}
 	entitlements["application-identifier"] = signedAppID(appID, id)
 	if _, ok := entitlements["com.apple.developer.parent-application-identifiers"]; !ok {

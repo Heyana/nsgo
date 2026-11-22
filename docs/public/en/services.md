@@ -146,6 +146,8 @@ store.SetItem("tab", "library")
 
 `store.Keys()` lists the keys, `RemoveItem` deletes one and `Clear` empties the storage. `cx.DataDir()` and `cx.CacheDir()` give the app's folders for files the key-value storage is too small for; `cx.LogsDir()` gives the platform's directory for log files, and a `Scope.ProvideStorage` gives a subtree a partition of its own.
 
+An iOS App Clip and its full app share these data and storage locations when `app_clip` and explicit `apple.app_group` are configured; their caches stay separate. Enabling the group does not migrate existing sandbox data. [App Clip storage](building.md#app-clips) covers configuration and signing.
+
 On HarmonyOS, Go file operations such as `os.ReadFile`, `os.WriteFile` and `os.Rename` work under these directories and `os.TempDir()`. Relative paths start in the files directory. Advisory file locks and symbolic links are unavailable.
 
 ### Crash reports

@@ -343,7 +343,7 @@ func TestPBXString(t *testing.T) {
 // Sign in with Apple's entitlement goes into what Xcode and a provisioning profile sign with only when nsgo.yaml asks for it, and a profile that does not grant it refuses the build.
 func TestSignInWithAppleEntitlement(t *testing.T) {
 	p := &project{ID: "dev.example.hello"}
-	if ents := p.xcodeEntitlements(false); len(ents) != 0 {
+	if ents := p.xcodeEntitlements(false, false); len(ents) != 0 {
 		t.Errorf("an app asking for nothing claims %v", ents)
 	}
 	granted := map[string]any{signInWithAppleEntitlement: []any{"Default"}, "application-identifier": "TEAM.dev.example.hello"}
@@ -354,7 +354,7 @@ func TestSignInWithAppleEntitlement(t *testing.T) {
 		t.Error("a profile granting Sign in with Apple claims it for an app that does not ask")
 	}
 	p.Apple.SignInWithApple = true
-	ents := p.xcodeEntitlements(true)
+	ents := p.xcodeEntitlements(true, false)
 	if v, _ := ents[signInWithAppleEntitlement].([]any); len(v) != 1 || v[0] != "Default" {
 		t.Errorf("Xcode's entitlements %v", ents)
 	}

@@ -23,6 +23,15 @@ func AppDirs(id string) (data, cache, logs string) {
 	return appDirs(runtime.GOOS, id, os.Getenv)
 }
 
+// AppGroupDirs returns an iOS app's directories with persistent data and
+// logs in the App Group container shared with its App Clip. The cache
+// stays in the bundle's sandbox, so purging it cannot discard shared data.
+func AppGroupDirs(id, container string) (data, cache, logs string) {
+	_, cache, _ = AppDirs(id)
+	data = filepath.Join(container, "Library", "Application Support", "NSGo")
+	return data, cache, filepath.Join(data, "logs")
+}
+
 func appDirs(goos, id string, env func(string) string) (data, cache, logs string) {
 	home := env("HOME")
 	under := func(dir, rest string) string {

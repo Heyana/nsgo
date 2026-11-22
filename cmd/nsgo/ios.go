@@ -220,6 +220,9 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 	if widgets {
 		extra += "\n" + p.widgetPlist(true)
 	}
+	if sys == iOS {
+		extra += "\n" + p.clipStoragePlist()
+	}
 	if clip := p.clipPlist(); clip != "" {
 		extra += "\n" + clip
 	}
@@ -257,7 +260,10 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 		return app, nil
 	}
 	stage(ctx, "signing")
-	ents := p.simulatorEntitlements()
+	var ents map[string]any
+	if sys == iOS {
+		ents = p.simulatorEntitlements()
+	}
 	if len(ents) == 0 {
 		return app, run(ctx, "codesign", "--force", "--sign", "-", app)
 	}
@@ -496,6 +502,9 @@ func signIOSApp(ctx context.Context, p *project, sys *appleOS, app, work, team s
 			"com.apple.developer.on-demand-install-capable":      true,
 			"com.apple.developer.parent-application-identifiers": []any{"$(AppIdentifierPrefix)" + p.clipParent},
 		}
+		if p.clipStorageGroup() != "" {
+			ents["com.apple.security.application-groups"] = []any{p.appGroup()}
+		}
 		if domains := p.parentClip.Domains; len(domains) > 0 {
 			ents["com.apple.developer.associated-domains"] = clipDomains(domains)
 		}
@@ -508,7 +517,7 @@ func signIOSApp(ctx context.Context, p *project, sys *appleOS, app, work, team s
 		data["Entitlements"] = "Clip.entitlements"
 	}
 	if p.clipParent == "" {
-		if ents := p.xcodeEntitlements(data["Widgets"] != ""); len(ents) > 0 {
+		if ents := p.xcodeEntitlements(data["Widgets"] != "", sys == iOS && p.AppClip != nil); len(ents) > 0 {
 			if err := os.WriteFile(filepath.Join(work, "App.entitlements"), encodePlist(ents), 0o644); err != nil {
 				return "", err
 			}
@@ -593,10 +602,10 @@ func iosProjectData(p *project, sys *appleOS, team string) map[string]string {
 	return data
 }
 
-// xcodeEntitlements are what an app signed by Xcode claims, which its automatic signing registers: the app group it shares with widgets and Sign in with Apple when apple.sign_in_with_apple asks for it.
-func (p *project) xcodeEntitlements(widgets bool) map[string]any {
+// xcodeEntitlements are what an app signed by Xcode claims, which its automatic signing registers: the app group it shares with widgets or its App Clip and Sign in with Apple when apple.sign_in_with_apple asks for it.
+func (p *project) xcodeEntitlements(widgets, clip bool) map[string]any {
 	ents := map[string]any{}
-	if widgets {
+	if widgets || clip && p.clipStorageGroup() != "" {
 		ents = p.groupEntitlements()
 	}
 	if p.Apple.SignInWithApple {

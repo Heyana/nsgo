@@ -478,7 +478,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		if err != nil {
 			return err
 		}
-		if err := signForStore(ctx, p, app); err != nil {
+		if err := signForStore(ctx, p, sys, app); err != nil {
 			return err
 		}
 		stage(ctx, "packaging the IPA")

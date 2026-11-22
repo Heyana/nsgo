@@ -27,7 +27,7 @@ func table(link string) string {
 }
 
 func Root(cx *core.Scope) core.Node {
-	cups := core.NewSignal(cx, 0)
+	cups := core.NewPersisted(cx, "cups", 0, core.PersistOptions{})
 	page := func() core.Style {
 		colors := cx.Theme().Light
 		if cx.Dark() {

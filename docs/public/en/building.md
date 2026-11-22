@@ -576,6 +576,17 @@ app_clip:
 
 The clip reads the link that opened it with `mobile.OpenedURL`, which changes as another link opens it again, and `mobile.IsAppClip` says whether the code runs as one. The system downloads a clip of up to 15 MB, or 100 MB from iOS 17 when only links open it, and `build` refuses a larger one; a clip linking `ui` takes about 11 MB. `dev -target ios_simulator -clip https://example.com/order?table=12` runs the clip alone in the simulator, opened from that link, and `-target ios` on an iPhone, printing the link's QR code: list the link in Settings > Developer > Local Experiences and the camera opens the clip from it. Apple signs App Clips only for teams of the Apple Developer Program, not personal teams. For the App Store, enable App Clips for `<id>`, sign the clip with `sign.clip_profile`, and serve the apple-app-site-association file of the domains. The repository's `examples/appclip` is a café whose clip orders at a table.
 
+To hand an order or other local data to the full app, set an explicit group alongside `app_clip`:
+
+```yaml
+apple:
+  app_group: group.dev.example.hello
+```
+
+The clip and full app then share `cx.DataDir()` and `cx.Storage()` in the group’s container. Files under the data directory and key-value entries the clip writes are available when the full app starts; `cx.LogsDir()` follows that directory, while each bundle keeps its own cache. Xcode signing claims the group for both targets; when using profiles, enable the same group for both App IDs and grant it in `sign.profile` and `sign.clip_profile`. A missing grant refuses signing, and an inaccessible group stops startup. A host’s explicit data directory still takes precedence.
+
+Without `apple.app_group`, each bundle keeps its own sandbox storage. Enabling the setting does not migrate data previously stored in those sandboxes, and widget-only apps keep their existing storage location. Keep shared secrets in the keychain rather than plain storage. The café example persists its clip’s order and displays it in the full app.
+
 ## Embed in another app
 
 `-embed` packages the app for an iOS or Android app of your own: an XCFramework, of dynamic frameworks with `-dynamic`, or an AAR whose `NSGoView` or `NsgoView` shows it. Go desktop programs show apps with `nsgo.NewView`, and web pages with the site's `nsgo.js`, whose host is the page's or the one `web.host` in `nsgo.yaml` names. The repository's `examples/embed-*` show each; [Embedding](embedding.md) covers the host side.

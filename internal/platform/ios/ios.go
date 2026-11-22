@@ -766,7 +766,7 @@ func (s *surface) startEngine(test *testOpen) {
 		Host:           s.host,
 		Secrets:        apple.Keychain{},
 	}
-	opts.SetDirs(engine.AppDirs(s.id))
+	opts.SetDirs(appDirs(s.id, s.host.DataDir))
 	s.test = test
 	if test != nil {
 		size := opts.Size

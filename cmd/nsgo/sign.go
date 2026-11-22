@@ -14,7 +14,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -262,10 +261,10 @@ func (p *project) hardenedEntitlements() map[string]any {
 	return ents
 }
 
-// signForStore signs an iOS device build with the project's provisioning
+// signForStore signs an iOS or tvOS device build with the project's provisioning
 // profile, which it embeds and takes the entitlements from. Without a
 // profile the package stays unsigned, for the developer to sign.
-func signForStore(ctx context.Context, p *project, app string) error {
+func signForStore(ctx context.Context, p *project, sys *appleOS, app string) error {
 	if p.Sign.Profile == "" {
 		detailIn(ctx, "unsigned: set sign.profile to install it on devices or upload it")
 		return nil
@@ -289,11 +288,13 @@ func signForStore(ctx context.Context, p *project, app string) error {
 	// Devices refuse an app signed with the wildcard itself, as Xcode
 	// knows: a wildcard profile signs the app's own ID.
 	entitlements["application-identifier"] = signedAppID(appID, p.ID)
-	if groups, _ := entitlements["com.apple.security.application-groups"].([]any); p.iosExtension() && !slices.Contains(groups, any(p.appGroup())) {
-		return fmt.Errorf("the provisioning profile does not grant the app group %s, which the app shares with its widgets", p.appGroup())
-	}
-	if _, ok := entitlements["com.apple.developer.associated-appclip-app-identifiers"]; p.AppClip != nil && !ok {
-		return fmt.Errorf("the provisioning profile does not tie %s to its App Clip: add the clip's target to the App ID's App Clip capability", p.ID)
+	if sys == iOS {
+		if err := p.checkIOSAppGroup(entitlements, "the provisioning profile"); err != nil {
+			return err
+		}
+		if _, ok := entitlements["com.apple.developer.associated-appclip-app-identifiers"]; p.AppClip != nil && !ok {
+			return fmt.Errorf("the provisioning profile does not tie %s to its App Clip: add the clip's target to the App ID's App Clip capability", p.ID)
+		}
 	}
 	if err := p.claimSignInWithApple(entitlements, entitlements); err != nil {
 		return err
@@ -317,11 +318,13 @@ func signForStore(ctx context.Context, p *project, app string) error {
 	if err := signFrameworks(ctx, app, identity); err != nil {
 		return err
 	}
-	if err := signIOSWidgets(ctx, p, app, identity); err != nil {
-		return err
-	}
-	if err := signIOSClip(ctx, p, app, identity); err != nil {
-		return err
+	if sys == iOS {
+		if err := signIOSWidgets(ctx, p, app, identity); err != nil {
+			return err
+		}
+		if err := signIOSClip(ctx, p, app, identity); err != nil {
+			return err
+		}
 	}
 	return run(ctx, "codesign", "--force", "--sign", identity, "--entitlements", ents, "--generate-entitlement-der", app)
 }

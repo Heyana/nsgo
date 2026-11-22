@@ -260,7 +260,7 @@ func (w widgetKind) families() []string {
 	return w.Families
 }
 
-// appGroup is the app group the iOS app shares with its widgets.
+// appGroup is the app group the iOS app shares with its widgets or App Clip.
 func (p *project) appGroup() string {
 	if p.Apple.AppGroup != "" {
 		return p.Apple.AppGroup

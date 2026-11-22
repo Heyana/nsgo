@@ -15,3 +15,10 @@ func TestShows(t *testing.T) {
 		t.Errorf("title = %q", got)
 	}
 }
+
+func TestShowsClipOrder(t *testing.T) {
+	app := nsgotest.Start(t, Root, nsgotest.Storage(map[string]string{"cups": `{"version":0,"value":2}`}))
+	if got := app.Find("id:last-order").Text; got != "Last order: 2 × Flat white" {
+		t.Fatalf("last order = %q", got)
+	}
+}

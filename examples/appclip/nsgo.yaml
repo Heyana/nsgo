@@ -9,6 +9,9 @@ app_clip:
   domains: [cafe.example.com]
   notifications: true
 
+apple:
+  app_group: group.dev.oneo.nsgo.cafe
+
 dev:
   target: ios_simulator
 

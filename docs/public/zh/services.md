@@ -143,6 +143,8 @@ store.SetItem("tab", "library")
 
 `store.Keys()` 列出键，`RemoveItem` 删除一个，`Clear` 清空存储。`cx.DataDir()` 和 `cx.CacheDir()` 给出应用存放键值存储放不下的文件的目录；`cx.LogsDir()` 给出平台存放日志的目录；`Scope.ProvideStorage` 给子树一个独立分区。
 
+配置 `app_clip` 和显式的 `apple.app_group` 后，iOS 轻 App 与完整应用共享这些数据目录和存储，缓存仍各自独立。启用应用组不会迁移已有沙盒数据。[轻 App 存储](building.md#轻-appapp-clip)介绍配置与签名。
+
 在 HarmonyOS 上，`os.ReadFile`、`os.WriteFile` 和 `os.Rename` 等 Go 文件操作可用于这些目录及系统的临时目录。相对路径从应用的文件目录开始解析。暂不支持建议性文件锁和符号链接。
 
 ### 崩溃报告

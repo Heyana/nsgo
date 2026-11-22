@@ -17,6 +17,9 @@ func TestOrdersAtTheLinksTable(t *testing.T) {
 		t.Errorf("table = %q, want Table 12", got)
 	}
 	app.Press("id:add")
+	if stored, ok := app.Storage().GetItem("cups"); !ok || stored != `{"version":0,"value":1}` {
+		t.Fatalf("persisted order = %q, %v", stored, ok)
+	}
 	if got := app.Find("id:cups").Text; got != "1 × Flat white" {
 		t.Errorf("cups = %q", got)
 	}

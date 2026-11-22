@@ -547,6 +547,17 @@ app_clip:
 
 轻 App 用 `mobile.OpenedURL` 读取打开它的链接，再从另一个链接打开时它随之变化；`mobile.IsAppClip` 说明代码是否作为轻 App 运行。系统下载的轻 App 最大 15 MB，iOS 17 起只从链接打开时最大 100 MB，超出时 `build` 会拒绝；链接 `ui` 的轻 App 约 11 MB。`dev -target ios_simulator -clip https://example.com/order?table=12` 在模拟器中单独运行轻 App，如同从该链接打开；`-target ios` 则在 iPhone 上运行，并打印该链接的二维码：在“设置 → 开发者 → Local Experiences”中登记这个链接后，用相机扫码即可打开轻 App。Apple 只为 Apple Developer Program 的团队签名轻 App，个人团队不行。上架 App Store 时需要为 `<id>` 开启 App Clips，用 `sign.clip_profile` 为轻 App 签名，并在这些域名上提供 apple-app-site-association 文件。仓库中的 `examples/appclip` 是一个咖啡馆，它的轻 App 在桌边点单。
 
+要把订单等本地数据交给完整应用，在 `app_clip` 之外显式设置应用组：
+
+```yaml
+apple:
+  app_group: group.dev.example.hello
+```
+
+轻 App 和完整应用随后通过应用组容器共享 `cx.DataDir()` 和 `cx.Storage()`。完整应用启动时可读取轻 App 写入的数据目录文件和键值记录；`cx.LogsDir()` 跟随数据目录，两者的缓存仍各自独立。Xcode 签名为两个目标声明该应用组；使用描述文件时，为两个 App ID 启用同一组，并在 `sign.profile` 和 `sign.clip_profile` 中授予它。缺少授权会拒绝签名，无法访问容器则停止启动。宿主显式指定的数据目录仍优先。
+
+未设置 `apple.app_group` 时，两者各自使用沙盒存储。启用该设置不会迁移此前保存在沙盒中的数据，仅有小组件的应用也保持原有存储位置。共享密钥应保存在钥匙串中，不要放入明文存储。咖啡馆示例会持久保存轻 App 的订单，并在完整应用中显示。
+
 ## 嵌入其他应用
 
 `-embed` 把应用打包给你自己的 iOS 或 Android 应用使用：一个 XCFramework（加 `-dynamic` 时由动态框架组成）或 AAR，通过其中的 `NSGoView` 或 `NsgoView` 显示应用。Go 桌面程序用 `nsgo.NewView` 显示应用，网页则用站点的 `nsgo.js`，其主机为页面所在的主机，或 `nsgo.yaml` 中 `web.host` 指定的主机。仓库中的 `examples/embed-*` 分别给出了示例；宿主侧见[嵌入](embedding.md)。

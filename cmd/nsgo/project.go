@@ -170,7 +170,8 @@ type project struct {
 		// Orientations are the iPad's UISupportedInterfaceOrientations~ipad, of portrait, portrait_upside_down, landscape_left and landscape_right; all four when RequiresFullScreen is false, which needs them, and undeclared otherwise.
 		Orientations []string `yaml:"orientations"`
 		// AppGroup is the app group an iOS app shares with its widgets,
-		// group.<id> by default.
+		// group.<id> by default. Setting it explicitly with app_clip also
+		// shares persistent data and storage with the App Clip.
 		AppGroup string `yaml:"app_group"`
 		// SignInWithApple claims com.apple.developer.applesignin, which Sign in with Apple needs, for the iOS and tvOS packages and the Mac App Store's (sign.go).
 		SignInWithApple bool `yaml:"sign_in_with_apple"`

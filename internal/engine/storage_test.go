@@ -88,6 +88,38 @@ func TestFileStorage(t *testing.T) {
 	}
 }
 
+func TestAppGroupStorageHandoff(t *testing.T) {
+	container := t.TempDir()
+	clip, clipCache, clipLogs := AppGroupDirs("dev.example.cafe.Clip", container)
+	app, appCache, appLogs := AppGroupDirs("dev.example.cafe", container)
+	if clip != app || clipLogs != appLogs || clipCache == appCache {
+		t.Fatalf("app and clip directories: %q, %q; cache %q, %q; logs %q, %q", app, clip, appCache, clipCache, appLogs, clipLogs)
+	}
+	if want := filepath.Join(container, "Library", "Application Support", "NSGo"); app != want {
+		t.Fatalf("shared data = %q, want %q", app, want)
+	}
+	storage := graphOn(OpenFileStorage(clip))
+	if err := storage.SetItem("order", "table 12: two coffees"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(clip, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clip, "receipt.txt"), []byte("paid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	SyncStorage()
+	// A fresh backend loads the on-disk file, bypassing the process's
+	// open-store cache, as the full app does after the clip has exited.
+	loaded := graphOn(core.NewStore(&fileStorage{path: filepath.Join(app, "storage.json")}))
+	if got, ok := loaded.GetItem("order"); !ok || got != "table 12: two coffees" {
+		t.Fatalf("full app's stored order = %q, %v", got, ok)
+	}
+	if got, err := os.ReadFile(filepath.Join(app, "receipt.txt")); err != nil || string(got) != "paid" {
+		t.Fatalf("full app's receipt = %q, %v", got, err)
+	}
+}
+
 func TestEngineMakesAppDirs(t *testing.T) {
 	root := t.TempDir()
 	opts := Options{Size: driver.Size{Width: 100, Height: 100}}

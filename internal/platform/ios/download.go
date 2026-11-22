@@ -3,7 +3,6 @@
 package ios
 
 import (
-	"github.com/nsgo-dev/nsgo/internal/engine"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
@@ -12,6 +11,6 @@ func configureDownloads() {
 	if runner == nil {
 		return
 	}
-	data, _, _ := engine.AppDirs(runner.id)
+	data, _, _ := appDirs(runner.id, runner.host.DataDir)
 	apple.ConfigureDownloads(data, runner.id, true)
 }

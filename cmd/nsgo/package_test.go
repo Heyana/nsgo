@@ -115,7 +115,7 @@ func TestTVSimulatorsArePickedApart(t *testing.T) {
 
 func TestIdentityAloneLeavesIOSUnsigned(t *testing.T) {
 	p := &project{Sign: signing{Identity: "Apple Development: someone"}}
-	if err := signForStore(t.Context(), p, t.TempDir()); err != nil {
+	if err := signForStore(t.Context(), p, iOS, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 }
