@@ -282,8 +282,10 @@ func TestLinuxAudioMixerOutput(t *testing.T) {
 	w.onLoop(t, func() {
 		mixer.play(soundPlayback{id: 3, playback: 202, pcm: pcm, rate: 1, startAt: time.Now().Add(time.Minute)})
 		mixer.control(3, &driver.AudioRequest{Command: driver.AudioPlaybackStop, Playback: 202})
-		if !slices.Contains(ended, uint32(202)) || len(mixer.voices) != 1 {
-			t.Error("stopping a pending playback affected its sibling")
+		if !slices.Contains(ended, uint32(202)) || !slices.ContainsFunc(mixer.voices, func(voice soundVoice) bool {
+			return voice.play.id == 3 && voice.play.playback == 201
+		}) {
+			t.Errorf("stopping a pending playback affected its sibling: ended=%v voices=%d", ended, len(mixer.voices))
 		}
 		mixer.control(3, &driver.AudioRequest{Command: driver.AudioPlaybackSet, Playback: 201, Rate: 1})
 	})
