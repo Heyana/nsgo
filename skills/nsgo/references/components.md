@@ -75,3 +75,5 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 - A hidden Windows or Linux title bar keeps the application menu accessible through Alt alone, F10 and Alt plus a top-level label’s first letter or digit; app bindings still take precedence, and Escape restores keyboard focus ([services](https://nsgo.dev/docs/services.md)).
 
 Formulas also render on watchOS. Their font loader retains its own parsed font and byte copy; simulator memory readings do not establish a physical watch's available headroom. Measure the app on its target watch before budgeting memory ([text](https://nsgo.dev/docs/text.md)).
+
+Terminal path links use the shell’s OSC 7 directory, or `terminal.Options.Dir` for a local shell before its first directory report. Quote paths with spaces; modifier-click opens existing local files/folders through `Scope.OpenFile`, and URL links use `Scope.OpenURL`. Remote authorities are not local paths. [Components](https://nsgo.dev/docs/ui.md)

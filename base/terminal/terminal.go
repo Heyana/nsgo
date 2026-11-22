@@ -222,6 +222,10 @@ func New(opts Options) (*Terminal, error) {
 	if dir == "" {
 		dir, _ = os.UserHomeDir()
 	}
+	if absolute, err := filepath.Abs(dir); err == nil {
+		dir = absolute
+	}
+	t.opts.Dir = dir
 	t.launch = &pty.Options{Path: path, Args: args, Dir: dir, Env: environment(opts.Env)}
 	if runtime.GOOS == "windows" {
 		// ConPTY keeps a screen of its own, which a resize pulling rows

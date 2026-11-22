@@ -534,6 +534,15 @@ func (t *Terminal) ScreenRowWraps(y int) bool {
 		ok(call(fnRowData, uintptr(row), rowDataWrap, uintptr(unsafe.Pointer(&wrap)))) && wrap
 }
 
+// CellWide reports whether ref holds a character or a wide-character spacer.
+func (t *Terminal) CellWide(ref GridRef) Wide {
+	var raw uint64
+	if !ok(call(fnGridRefCell, uintptr(unsafe.Pointer(&ref)), uintptr(unsafe.Pointer(&raw)))) {
+		return Narrow
+	}
+	return Wide(cell.wide.of(raw))
+}
+
 // Hyperlink returns the URI of the hyperlink (OSC 8) of a cell, or "".
 func (t *Terminal) Hyperlink(ref GridRef) string {
 	var buf [512]byte

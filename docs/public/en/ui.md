@@ -40,6 +40,8 @@ The [gallery](https://nsgo.dev/gallery/) runs a demo of every component in the b
 
 The gallery covers the rest: tables, charts, the code editor, rich text, the terminal, the dock, the command palette, color, date and emoji pickers (`ui.EmojiPicker`), toasts and more. Each has a demo there.
 
+`base/terminal.View` opens existing local paths with Command+click (Control+click on Windows and Linux), as it opens URLs. Relative paths use the shell’s OSC 7 working directory; a local shell that has not reported one uses `terminal.Options.Dir`, or the home directory when unset. Quote filenames containing spaces. Remote directory authorities and connections without a local directory report do not resolve against local files. Files and folders use `Scope.OpenFile`; URL links continue through `Scope.OpenURL` and the embedding host’s URL handler.
+
 ## Next
 
 - [Components and state](components.md): how a component returns elements and how signals update them.

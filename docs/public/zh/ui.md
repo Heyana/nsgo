@@ -40,6 +40,8 @@ order: 30
 
 gallery 覆盖其余组件：表格、图表、代码编辑器、富文本、终端、Dock、命令面板、颜色、日期与表情选择器（`ui.EmojiPicker`）、Toast 等。每个组件那里都有演示。
 
+`base/terminal.View` 支持 Command+单击（Windows 和 Linux 上为 Control+单击）打开已有本地路径，与 URL 链接一样。相对路径按 shell 通过 OSC 7 报告的工作目录解析；本地 shell 尚未报告时使用 `terminal.Options.Dir`，未设置则使用主目录。含空格的文件名需加引号。远程目录主机和未报告本地目录的连接不会映射到本地文件。文件及文件夹通过 `Scope.OpenFile` 打开；URL 仍通过 `Scope.OpenURL` 和嵌入宿主的 URL 处理器。
+
 ## 下一步
 
 - [组件与状态](components.md)：组件如何返回元素，signal 如何更新它们。

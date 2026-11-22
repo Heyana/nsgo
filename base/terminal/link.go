@@ -1,9 +1,14 @@
 package terminal
 
 import (
+	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nsgo-dev/nsgo/base/terminal/internal/vt"
@@ -23,6 +28,7 @@ var urlPattern = regexp.MustCompile("(?i)\\b(?:(?:https?|ftp|ssh|git|gemini|goph
 // link is a link the viewport shows.
 type link struct {
 	url   string
+	path  string // local file, opened through Scope.OpenFile
 	spans []linkSpan
 }
 
@@ -48,12 +54,48 @@ func (l link) cells(y int) (x0, x1 int, ok bool) {
 type gridCell struct{ x, y int }
 
 // linkAt returns the link in a cell of the viewport: a program's hyperlink
-// (OSC 8), or a URL printed as text, which may wrap over rows, some of them
-// out of the viewport. Links OpenURL refuses are none.
+// (OSC 8), or a URL printed as text, which may wrap beyond the viewport.
+// Terminal.linkAt also supplies the directory for local filesystem links.
 func linkAt(term *vt.Terminal, col, row int) link {
+	return linkAtDirectory(term, col, row, "")
+}
+
+// linkAt is called with t.mu held. A remote directory is never treated as
+// a local one; local programs fall back to their configured start directory.
+func (t *Terminal) linkAt(col, row int) link {
+	return linkAtDirectory(t.term, col, row, t.linkDirectory())
+}
+
+func (t *Terminal) linkDirectory() string {
+	if pwd := t.term.Pwd(); pwd != "" {
+		return localFilePath(pwd)
+	}
+	if t.opts.Conn != nil {
+		return ""
+	}
+	dir := t.opts.Dir
+	if dir == "" {
+		var err error
+		dir, err = os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+	}
+	dir, _ = filepath.Abs(dir)
+	return dir
+}
+
+func linkAtDirectory(term *vt.Terminal, col, row int, dir string) link {
 	ref, ok := term.CellAt(col, row)
 	if !ok {
 		return link{}
+	}
+	if col > 0 && term.CellWide(ref) == vt.SpacerTail {
+		col--
+		ref, ok = term.CellAt(col, row)
+		if !ok {
+			return link{}
+		}
 	}
 	y, ok := term.ScreenRow(&ref)
 	if !ok {
@@ -64,7 +106,7 @@ func linkAt(term *vt.Terminal, col, row int) link {
 	if i < 0 {
 		return link{}
 	}
-	var uri string
+	var uri, path string
 	start, end := i, i+1
 	if uri = term.Hyperlink(ref); uri != "" {
 		same := func(c gridCell) bool {
@@ -80,11 +122,22 @@ func linkAt(term *vt.Terminal, col, row int) link {
 	} else if start, end, ok = findURL(text, i); ok {
 		uri = text[start:end]
 	}
-	if uri == "" || core.CheckURL(uri) != nil {
+	if uri == "" && dir != "" {
+		start, end, path = findPath(text, i, dir)
+	} else if strings.HasPrefix(strings.ToLower(uri), "file:") && dir != "" {
+		path = existingPath(uri, dir)
+	}
+	if path != "" {
+		name := filepath.ToSlash(path)
+		if !strings.HasPrefix(name, "/") {
+			name = "/" + name
+		}
+		uri = (&url.URL{Scheme: "file", Path: name}).String()
+	} else if uri == "" || core.CheckURL(uri) != nil {
 		return link{}
 	}
 	_, rows := term.Size()
-	return link{uri, linkSpans(cells[start:end], y-row, rows)}
+	return link{url: uri, path: path, spans: linkSpans(term, cells[start:end], y-row, rows)}
 }
 
 // wrappedText returns the text of the line that screen row y is a row of,
@@ -143,7 +196,7 @@ func trimURL(s string) string {
 
 // linkSpans returns the spans of cells in the viewport whose first row is
 // screen row top.
-func linkSpans(cells []gridCell, top, rows int) []linkSpan {
+func linkSpans(term *vt.Terminal, cells []gridCell, top, rows int) []linkSpan {
 	var spans []linkSpan
 	for _, c := range cells {
 		y := c.y - top
@@ -156,5 +209,115 @@ func linkSpans(cells []gridCell, top, rows int) []linkSpan {
 		}
 		spans = append(spans, linkSpan{y, c.x, c.x})
 	}
+	for i := range spans {
+		s := &spans[i]
+		if ref, ok := term.ScreenCellAt(s.x1, s.y+top); ok && term.CellWide(ref) == vt.WideChar {
+			s.x1++
+		}
+	}
 	return spans
+}
+
+// localFilePath decodes file URLs only when their authority names this machine.
+// OSC 7 may also report a plain absolute path.
+func localFilePath(raw string) string {
+	if !strings.HasPrefix(strings.ToLower(raw), "file:") {
+		if filepath.IsAbs(raw) {
+			return filepath.Clean(raw)
+		}
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return ""
+	}
+	hostname, _ := os.Hostname()
+	if host := u.Host; host != "" && !strings.EqualFold(host, "localhost") && !strings.EqualFold(host, hostname) && host != "127.0.0.1" && host != "[::1]" {
+		return ""
+	}
+	path := filepath.FromSlash(u.Path)
+	if runtime.GOOS == "windows" && len(path) > 2 && path[0] == '\\' && path[2] == ':' {
+		path = path[1:]
+	}
+	if !filepath.IsAbs(path) {
+		return ""
+	}
+	return filepath.Clean(path)
+}
+
+// pathTokens keeps quoted filenames together; unquoted paths end at whitespace
+// or the separators used around terminal output. The filesystem distinguishes
+// actual filenames from the ordinary words printed beside them.
+var pathTokens = regexp.MustCompile("'[^'\\r\\n]+'|\"[^\"\\r\\n]+\"|[^\\s<>\"'`|\\x{2500}-\\x{259f}]+")
+var pathPosition = regexp.MustCompile(`:[0-9]+(?::[0-9]+)?$`)
+
+func findPath(text string, at int, dir string) (start, end int, path string) {
+	for _, m := range pathTokens.FindAllStringIndex(text, -1) {
+		if at < m[0] {
+			break
+		}
+		if at >= m[1] {
+			continue
+		}
+		start, end = m[0], m[1]
+		if text[start] == '"' || text[start] == '\'' {
+			start++
+			end--
+		} else {
+			for start < end && strings.ContainsRune("([{", rune(text[start])) {
+				start++
+			}
+		}
+		for end > start {
+			if p := existingPath(text[start:end], dir); p != "" && at >= start && at < end {
+				return start, end, p
+			}
+			r, n := utf8.DecodeLastRuneInString(text[start:end])
+			if strings.ContainsRune(")]},.;:!?", r) {
+				end -= n
+				continue
+			}
+			if suffix := pathPosition.FindStringIndex(text[start:end]); suffix != nil {
+				end = start + suffix[0]
+				continue
+			}
+			break
+		}
+		break
+	}
+	return 0, 0, ""
+}
+
+func existingPath(raw, dir string) string {
+	if raw == "" || strings.IndexFunc(raw, unicode.IsControl) >= 0 {
+		return ""
+	}
+	path := raw
+	if strings.HasPrefix(strings.ToLower(raw), "file:") {
+		path = localFilePath(raw)
+		if path == "" {
+			return ""
+		}
+	} else {
+		// A URL that was not an openable URL is not a relative filename.
+		if parsed, err := url.Parse(raw); err == nil && parsed.Scheme != "" && !(runtime.GOOS == "windows" && len(parsed.Scheme) == 1) {
+			return ""
+		}
+		if raw == "~" || strings.HasPrefix(raw, "~/") || runtime.GOOS == "windows" && strings.HasPrefix(raw, `~\`) {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return ""
+			}
+			path = filepath.Join(home, strings.TrimLeft(raw[1:], `/\`))
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(dir, path)
+		}
+	}
+	path = filepath.Clean(path)
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() && !info.Mode().IsRegular() {
+		return ""
+	}
+	return path
 }

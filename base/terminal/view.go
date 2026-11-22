@@ -27,7 +27,9 @@ import (
 //
 // Links, programs' hyperlinks (OSC 8) and URLs printed as text, underline
 // faintly under the mouse, fully with a hand with Command held, or Control
-// off Apple platforms, when a click opens them with Scope.OpenURL.
+// off Apple platforms, when a click opens URLs with Scope.OpenURL and
+// existing local paths with Scope.OpenFile. Relative paths use the shell's
+// OSC 7 directory, or Options.Dir before a local shell reports one.
 //
 // On touch screens a bar of the keys software keyboards lack shows over
 // the keyboard while the view has the focus, and the grid keeps to what
@@ -987,7 +989,7 @@ func (v *view) pressDown(e core.PressEvent) {
 	}
 	col, row, px, py := v.cellAt(e.Position)
 	if v.opensLinks(e.Modifiers) {
-		if l := linkAt(t.term, col, row); l.url != "" {
+		if l := t.linkAt(col, row); l.url != "" {
 			v.pressedLink = l.url
 			return
 		}
@@ -1071,7 +1073,7 @@ func (v *view) opensLinks(held core.Modifiers) bool {
 func (v *view) findLink() bool {
 	var l link
 	if v.hovered {
-		l = linkAt(v.t.term, v.hover[0], v.hover[1])
+		l = v.t.linkAt(v.hover[0], v.hover[1])
 	}
 	if on := l.url != "" && v.armed; on != v.linkOn.GetUntracked() {
 		v.cx.Post(func() { v.linkOn.Set(on) })
@@ -1110,10 +1112,18 @@ func (v *view) pressUp(e core.PressEvent) {
 		v.pressedLink = ""
 		col, row, _, _ := v.cellAt(e.Position)
 		t.mu.Lock()
-		same := t.term != nil && linkAt(t.term, col, row).url == url
+		var target link
+		if t.term != nil {
+			target = t.linkAt(col, row)
+		}
+		same := target.url == url
 		t.mu.Unlock()
 		if same {
-			v.cx.OpenURL(url, nil)
+			if target.path != "" {
+				v.cx.OpenFile(core.SharedFile{Path: target.path}, nil)
+			} else {
+				v.cx.OpenURL(url, nil)
+			}
 		}
 		return
 	}
