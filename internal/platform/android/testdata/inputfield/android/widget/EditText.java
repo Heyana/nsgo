@@ -73,6 +73,7 @@ public class EditText extends View {
     public Layout getLayout() { return null; }
     public int getTotalPaddingLeft() { return 0; }
     public int getTotalPaddingTop() { return 0; }
+    public int getTotalPaddingBottom() { return 0; }
 
     public void setText(CharSequence s) {
         text.replace(0, text.length(), s == null ? "" : s);

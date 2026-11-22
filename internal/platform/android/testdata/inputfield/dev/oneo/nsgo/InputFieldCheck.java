@@ -49,6 +49,7 @@ public final class InputFieldCheck {
                 @Override public boolean keyBinding(KeyEvent event) { return false; }
                 @Override public void caret(float x, float y, float w, float h) {}
                 @Override public void paste(String text, String data) {}
+                @Override public void scroll(float x, float y, float maxY) {}
             });
             field.notifyWatcherOnClearComposing = notifyWatcherOnClear;
             field.setOnFocusChangeListener((v, focused) -> events.add(focused ? "focus" : "blur"));

@@ -5,4 +5,5 @@ public class Layout {
     public float getPrimaryHorizontal(int offset) { return 0f; }
     public int getLineTop(int line) { return 0; }
     public int getLineBottom(int line) { return 16; }
+    public int getHeight() { return 16; }
 }

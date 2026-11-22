@@ -43,6 +43,8 @@ public class View {
     public int getTop() { return 0; }
     public int getScrollX() { return 0; }
     public int getScrollY() { return 0; }
+    public int getHeight() { return 0; }
+    public void scrollTo(int x, int y) {}
     public boolean hasFocus() { return focused; }
     public boolean isEnabled() { return enabled; }
 
