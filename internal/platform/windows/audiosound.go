@@ -70,6 +70,7 @@ type xaBuffer struct {
 }
 
 func openSoundOutput() (_ *soundOutput, err error) {
+	audioOutputOpens.Add(1)
 	const apartmentThreaded = 2
 	com, _, _ := coInitializeEx.Call(0, apartmentThreaded)
 	initialized := !failed(com)

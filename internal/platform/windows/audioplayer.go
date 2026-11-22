@@ -163,6 +163,7 @@ func (p *winAudioPlayer) open(uri string, data []byte, serial uint64) {
 }
 
 func (p *winAudioPlayer) makeEngine(serial uint64) (*comObject, error) {
+	audioOutputOpens.Add(1)
 	if err := initCOM(); err != nil {
 		return nil, err
 	}

@@ -480,3 +480,93 @@ func TestWindowsAudioPlaybackEndsWhileItsWindowIsHidden(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestWindowsAudioOpensNoOutputUntilASoundPlays(t *testing.T) {
+	before := audioOutputOpens.Load()
+	type handle struct {
+		cx *core.Scope
+		p  *audio.Player
+	}
+	ready := make(chan handle, 1)
+	latency := make(chan struct{}, 1)
+	hwnd := startWith(t, func(cx *core.Scope) core.Node {
+		if !cx.Env().CanPlayAudio() {
+			ready <- handle{cx: cx}
+			return core.View{}
+		}
+		// Everything an app can do with audio short of loading media or playing it.
+		audio.Now(cx)
+		audio.CanSchedule(cx)
+		audio.OutputLatency(cx, func(time.Duration, bool) { latency <- struct{}{} })
+		p := audio.NewPlayer(cx, audio.Source{Data: audioTestWAV(time.Second)}, audio.PlayerOptions{})
+		p.SetVolume(0.5)
+		p.SetRate(1.5)
+		p.SetLoop(true)
+		p.SetMuted(true)
+		p.Seek(100 * time.Millisecond)
+		p.Pause()
+		ready <- handle{cx, p}
+		return core.View{}
+	}, Options{Title: "windowsaudiolazy|test", Hidden: true})
+	h := waitAudioTest(t, ready, "the audio test window")
+	if h.p == nil {
+		t.Fatal("Windows did not advertise audio")
+	}
+	waitAudioTest(t, latency, "the output latency reading")
+	closed := func(when string) {
+		t.Helper()
+		onMain(t, hwnd, func(w *window) {
+			if w.audio == nil {
+				return
+			}
+			if w.audio.output != nil {
+				t.Errorf("%s: the window holds an XAudio2 output", when)
+			}
+			for _, p := range w.audio.players {
+				if p.media != nil || p.cancel != nil {
+					t.Errorf("%s: a player opened its source", when)
+				}
+			}
+		})
+		if n := audioOutputOpens.Load() - before; n != 0 {
+			t.Fatalf("%s: the app reached for an audio output %d time(s)", when, n)
+		}
+	}
+	closed("after starting and setting up a player")
+
+	// core opens a native player only to preload or play it; one the window holds still waits for that.
+	const nativePlayer = 1 << 30
+	onMain(t, hwnd, func(w *window) {
+		w.audioCommand(nativePlayer, &driver.AudioRequest{Command: driver.AudioOpen, Source: driver.ImageSource{Data: audioTestWAV(time.Second)}, Volume: 1, Rate: 1})
+		w.audioCommand(nativePlayer, &driver.AudioRequest{Command: driver.AudioSet, Volume: 0.5, Rate: 1.5, Loop: true})
+		w.audioCommand(nativePlayer, &driver.AudioRequest{Command: driver.AudioSeek, Position: 100 * time.Millisecond})
+	})
+	closed("after opening, setting and seeking a native player")
+	onMain(t, hwnd, func(w *window) { w.audioCommand(nativePlayer, &driver.AudioRequest{Command: driver.AudioClose}) })
+
+	// A loaded sound is decoded into memory; the output still waits for Play.
+	loaded := make(chan *audio.Sound, 1)
+	h.cx.Post(func() {
+		h.p.Close()
+		audio.LoadSound(h.cx, audio.Source{Data: audioTestWAV(100 * time.Millisecond)}, func(sound *audio.Sound, err error) {
+			if err != nil {
+				t.Error(err)
+			}
+			loaded <- sound
+		})
+	})
+	sound := waitAudioTest(t, loaded, "the sound load")
+	if sound == nil {
+		t.FailNow()
+	}
+	closed("after loading a sound")
+
+	// The first Play opens it, whether or not the machine has an endpoint.
+	h.cx.Post(func() { sound.Play(audio.Voice{Muted: true}) })
+	for deadline := time.Now().Add(5 * time.Second); audioOutputOpens.Load() == before; {
+		if time.Now().After(deadline) {
+			t.Fatal("playing a sound did not open the output")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -16,6 +17,9 @@ var audioAvailable = sync.OnceValue(func() bool {
 		mfCreateByteStream.Find() == nil && shCreateMemStream.Find() == nil &&
 		(xaCreateWithVersion.Find() == nil || xaCreate.Find() == nil)
 })
+
+// audioOutputOpens counts every attempt to open an XAudio2 output or a Media Foundation audio engine, the calls that reach for the default playback device, so a test can prove that an app plays nothing until it asks to.
+var audioOutputOpens atomic.Uint64
 
 // windowAudio owns one surface's sounds and players, on the window thread.
 type windowAudio struct {
