@@ -13,8 +13,7 @@ import (
 type UpdateCheck struct {
 	// Shown says the platform's own updater showed what it found in its
 	// windows, as Sparkle on macOS and WinSparkle on Windows do: they
-	// offer the newer version, install it and restart the app.
-	// Version metadata arrives separately through updater.Status; capability is still set.
+	// offer the newer version, install it and restart the app. Version metadata arrives separately through updater.Status; capability is still set.
 	Shown bool
 	// Managed and Store are updater.CapabilityOf's synchronous capability.
 	Managed UpdaterManaged

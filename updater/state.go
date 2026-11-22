@@ -26,8 +26,7 @@ type Capability struct {
 	Store   string
 }
 
-// State is the updater's latest knowledge. Reading Status in a binding tracks changes.
-// AutomaticDownloads is supported only by Sparkle on macOS.
+// State is the updater's latest knowledge. Reading Status in a binding tracks changes. AutomaticDownloads is supported only by Sparkle on macOS.
 type State struct {
 	Capability                          Capability
 	AutomaticChecks, AutomaticDownloads bool
@@ -74,8 +73,7 @@ func Status(cx *core.Scope) State {
 	return result
 }
 
-// SetAutomaticChecks persists the user's choice. Native updaters own their
-// preferences; the daily scheduler on Linux, Android and iOS uses its own partition.
+// SetAutomaticChecks persists the user's choice. Native updaters own their preferences; the daily scheduler on Linux, Android and iOS uses its own partition.
 func SetAutomaticChecks(cx *core.Scope, on bool) {
 	s := core.UpdaterStatus(cx)
 	if s.Managed != ManagedSelf && s.Managed != ManagedPage {
@@ -90,16 +88,14 @@ func SetAutomaticChecks(cx *core.Scope, on bool) {
 	}
 }
 
-// SetAutomaticDownloads changes Sparkle's persisted choice on macOS. It is a
-// no-op on platforms with no automatic-download setting.
+// SetAutomaticDownloads changes Sparkle's persisted choice on macOS. It is a no-op on platforms with no automatic-download setting.
 func SetAutomaticDownloads(cx *core.Scope, on bool) {
 	if cx.Env().OS() == core.OSMacOS && core.UpdaterStatus(cx).NativePreferences {
 		core.SetUpdaterAutomaticDownloads(cx, on)
 	}
 }
 
-// scheduleStorage gets the private partition without moving a caller's bindings
-// under a new owner: GetItem below this call still tracks that caller.
+// scheduleStorage gets the private partition without moving a caller's bindings under a new owner: GetItem below this call still tracks that caller.
 func scheduleStorage(cx *core.Scope) core.Storage {
 	part := cx.Child()
 	var storage core.Storage

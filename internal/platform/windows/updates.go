@@ -57,8 +57,7 @@ var (
 	})
 )
 
-// prepareWinSparkle loads the bundled updater and persisted preferences before
-// the first view. startWinSparkle initializes it once the app's language is known.
+// prepareWinSparkle loads the bundled updater and persisted preferences before the first view. startWinSparkle initializes it once the app's language is known.
 func prepareWinSparkle(c updates.Config, hwnd uintptr) {
 	winUpdateConfig = c
 	winUpdateFailure = ""
@@ -206,8 +205,7 @@ func reportWinSparkle() {
 	}
 }
 
-// WinSparkle's public callbacks have no version payload. A confirmed find reads
-// only status metadata from the configured appcast; WinSparkle still installs it.
+// WinSparkle's public callbacks have no version payload. A confirmed find reads only status metadata from the configured appcast; WinSparkle still installs it.
 func notifyWinSparkle(found bool) {
 	w := winUpdateOwner.Load()
 	if w == nil {

@@ -14,8 +14,7 @@ const (
 	UpdateManagedStore
 )
 
-// UpdaterState is the updater's latest snapshot. NativePreferences means the
-// platform updater owns persistence and the schedule; otherwise package updater does.
+// UpdaterState is the updater's latest snapshot. NativePreferences means the platform updater owns persistence and the schedule; otherwise package updater does.
 type UpdaterState struct {
 	Managed                             UpdateManaged
 	Store                               string
@@ -25,6 +24,5 @@ type UpdaterState struct {
 	LastCheck                           time.Time
 }
 
-// UpdatePreference changes one preference through ItemCheckForUpdates instead of
-// checking the feed. Nil leaves that preference alone.
+// UpdatePreference changes one preference through ItemCheckForUpdates instead of checking the feed. Nil leaves that preference alone.
 type UpdatePreference struct{ AutomaticChecks, AutomaticDownloads *bool }

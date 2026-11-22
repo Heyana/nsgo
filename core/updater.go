@@ -24,8 +24,7 @@ const (
 	UpdaterStore UpdaterManaged = UpdaterManaged(driver.UpdateManagedStore)
 )
 
-// UpdaterState is the core's part of updater.State. NativePreferences identifies
-// a platform updater that owns its preferences and schedule.
+// UpdaterState is the core's part of updater.State. NativePreferences identifies a platform updater that owns its preferences and schedule.
 type UpdaterState struct {
 	Managed                             UpdaterManaged
 	Store                               string

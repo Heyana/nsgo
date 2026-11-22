@@ -392,22 +392,19 @@ func Ok(cx *core.Scope) string { return For(cx).Ok() }
 // Ok is the package's Ok in the language of msgs.
 func (msgs Messages) Ok() string { return msgs.text(textOk) }
 
-// UpdateDevelopment says "This is a development build. It does not update itself."
-// in the language the app shows under cx.
+// UpdateDevelopment says "This is a development build. It does not update itself." in the language the app shows under cx.
 func UpdateDevelopment(cx *core.Scope) string { return For(cx).UpdateDevelopment() }
 
 // UpdateDevelopment is the package's UpdateDevelopment in the language of msgs.
 func (msgs Messages) UpdateDevelopment() string { return msgs.text(textUpdateDevelopment) }
 
-// UpdateChannel says "This build is updated through its distribution channel, not this app."
-// in the language the app shows under cx.
+// UpdateChannel says "This build is updated through its distribution channel, not this app." in the language the app shows under cx.
 func UpdateChannel(cx *core.Scope) string { return For(cx).UpdateChannel() }
 
 // UpdateChannel is the package's UpdateChannel in the language of msgs.
 func (msgs Messages) UpdateChannel() string { return msgs.text(textUpdateChannel) }
 
-// UpdateStore says "{store} installed this app and manages its updates."
-// in the language the app shows under cx.
+// UpdateStore says "{store} installed this app and manages its updates." in the language the app shows under cx.
 func UpdateStore(cx *core.Scope, store string) string { return For(cx).UpdateStore(store) }
 
 // UpdateStore is the package's UpdateStore in the language of msgs.

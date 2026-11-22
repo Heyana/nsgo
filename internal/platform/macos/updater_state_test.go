@@ -12,8 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/updates"
 )
 
-// Exercise the real ObjC property bridge without downloading an updater or
-// checking a feed. Sparkle's own persistence remains behind those selectors.
+// Exercise the real ObjC property bridge without downloading an updater or checking a feed. Sparkle's own persistence remains behind those selectors.
 func TestSparkleStateAndPreferencesUseNativeProperties(t *testing.T) {
 	onMain(func() {
 		old, config, failure := sparkle, sparkleConfig, sparkleFailure

@@ -8,9 +8,7 @@ import (
 	"time"
 )
 
-// LinuxConfig resolves Debian-package ownership before the first view. The
-// generated Linux appcast offers a .deb; other installations offer its page.
-// A timed-out or unavailable package manager is treated as an unowned copy.
+// LinuxConfig resolves Debian-package ownership before the first view. The generated Linux appcast offers a .deb; other installations offer its page. A timed-out or unavailable package manager is treated as an unowned copy.
 func LinuxConfig(c Config) Config {
 	if !c.Checks(false) {
 		return c
