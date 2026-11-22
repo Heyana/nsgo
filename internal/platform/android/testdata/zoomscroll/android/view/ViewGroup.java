@@ -5,6 +5,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ViewGroup extends View implements ViewParent {
+    public static class LayoutParams {
+        public static final int MATCH_PARENT = -1;
+
+        public LayoutParams(int width, int height) {}
+    }
+
     private final List<View> children = new ArrayList<>();
     private View firstTouchTarget;
     private boolean disallowIntercept;

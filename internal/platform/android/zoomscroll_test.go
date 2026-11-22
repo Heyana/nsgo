@@ -1,6 +1,7 @@
 package android
 
 import (
+	"io/fs"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -18,7 +19,14 @@ func runScrollCheck(t *testing.T, name string) {
 	t.Helper()
 	javac, java := androidJDK(t)
 	classes := t.TempDir()
-	stubs, err := filepath.Glob(filepath.Join("testdata", "zoomscroll", "android", "*", "*.java"))
+	// Stubs sit in nested packages too, such as android.content.res.
+	var stubs []string
+	err := filepath.WalkDir(filepath.Join("testdata", "zoomscroll", "android"), func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && filepath.Ext(path) == ".java" {
+			stubs = append(stubs, path)
+		}
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

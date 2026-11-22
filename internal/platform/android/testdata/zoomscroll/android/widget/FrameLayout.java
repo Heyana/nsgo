@@ -4,10 +4,16 @@ import android.content.Context;
 import android.view.ViewGroup;
 
 public class FrameLayout extends ViewGroup {
-    public static class LayoutParams {
+    public static class LayoutParams extends ViewGroup.LayoutParams {
         public int topMargin;
 
-        public LayoutParams(int width, int height, int gravity) {}
+        public LayoutParams(int width, int height) {
+            super(width, height);
+        }
+
+        public LayoutParams(int width, int height, int gravity) {
+            super(width, height);
+        }
     }
 
     public FrameLayout(Context context) {

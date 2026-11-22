@@ -1,12 +1,26 @@
 package android.view;
 
 import android.content.Context;
+import android.content.res.Resources;
+import android.graphics.Canvas;
+import java.util.ArrayList;
+import java.util.List;
 
 public class View {
     public static final int OVER_SCROLL_IF_CONTENT_SCROLLS = 1;
     public static final int OVER_SCROLL_NEVER = 2;
     public static final int SCROLL_AXIS_HORIZONTAL = 1;
     public static final int SCROLL_AXIS_VERTICAL = 2;
+    public static final int VISIBLE = 0;
+    public static final int GONE = 8;
+
+    public interface OnLayoutChangeListener {
+        void onLayoutChange(View v, int left, int top, int right, int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom);
+    }
+
+    private final Resources resources = new Resources();
+    private final List<OnLayoutChangeListener> layoutListeners = new ArrayList<>();
+    private int visibility = VISIBLE;
 
     private final Context context;
     private int width, height;
@@ -165,4 +179,32 @@ public class View {
     public boolean canScrollVertically(int direction) {
         return false;
     }
+
+    public Resources getResources() {
+        return resources;
+    }
+
+    public void addOnLayoutChangeListener(OnLayoutChangeListener l) {
+        layoutListeners.add(l);
+    }
+
+    public void removeOnLayoutChangeListener(OnLayoutChangeListener l) {
+        layoutListeners.remove(l);
+    }
+
+    public void setVisibility(int visibility) {
+        this.visibility = visibility;
+    }
+
+    public int getVisibility() {
+        return visibility;
+    }
+
+    public void invalidate() {}
+
+    public void setWillNotDraw(boolean willNotDraw) {}
+
+    public void bringToFront() {}
+
+    protected void onDraw(Canvas canvas) {}
 }
