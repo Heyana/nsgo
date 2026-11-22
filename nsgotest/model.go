@@ -23,7 +23,7 @@ type View struct {
 	// ShownFrame is the frame the view shows now: mid layout transition or layout animation, or Frame when none is running.
 	ShownFrame driver.Bounds
 	Style      driver.ViewStyle
-	Props      driver.ViewProps
+	Props      ViewProps
 	Events     driver.EventMask
 	Text       string // a text view's text or a field's value
 	// TextStyle and Spans are a text view's resolved style and its
@@ -278,7 +278,7 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 		n := &d.Nodes[i]
 		v.Children = append(v.Children, &View{Kind: KindView, Parent: v, Frame: n.Bounds, Node: n,
 			Style: driver.ViewStyle{Opacity: 1},
-			Props: driver.ViewProps{Role: n.Role, Label: n.Label, TestID: n.TestID, Selected: n.Selected}})
+			Props: ViewProps{Role: n.Role, Label: n.Label, TestID: n.TestID, Selected: n.Selected}})
 	}
 }
 
@@ -646,7 +646,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemViewStyle:
 			v.Style = *it.ViewStyle
 		case driver.ItemViewProps:
-			v.Props = *it.ViewProps
+			v.Props = viewProps(*it.ViewProps)
 		case driver.ItemAccessibilityLabel:
 			v.Props.Label = it.Value
 		case driver.ItemAccessibilityFocus:

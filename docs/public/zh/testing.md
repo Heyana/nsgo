@@ -88,6 +88,8 @@ func TestMain(m *testing.M) {
 
 无头测试通过 `app.EditMenu` 和 `app.EditMenuItems()` 检查编辑菜单，用 `app.ChooseEditAction(core.EditCopy)` 选择已提供的操作，用 `app.CloseEditMenu()` 关闭菜单；粘贴使用测试的剪贴板。`app.LongPressAt(selector, point)` 长按指定位置；无头测试中，`app.Touch(selector, point).Hold(duration)` 会在手指抬起之前触发长按，随后可用 `Move` 测试选区扫动。这些菜单记录和操作选择检查模型行为，系统工具栏仍需原生验收。
 
+`View.Props` 是 `nsgotest.ViewProps` 快照，记录视图标识、无障碍名称和状态、操作，以及焦点和指针设置。`HelpText`、`HasAction`、`ActionList` 和 `FocusStop` 提供对应策略；标签 ID、操作列表和涟漪设置会从挂载值复制。
+
 ## 小组件和实时活动
 
 `nsgotest.Widgets(true)` 记录应用通过 `widget.Update` 发布的内容。用 `app.Widgets()` 读取每类小组件的最新时间线。条目没有指定日期时，使用应用的墙钟时间。`nsgotest.Widgets(false)` 让 `widget.Available()` 返回 false，并让更新返回 `widget.ErrNoWidgets`。

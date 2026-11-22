@@ -88,6 +88,8 @@ Headless GPU tests can use `app.Surface("title:Inspector").GPUReadPixels("id:vie
 
 Headless tests inspect `app.EditMenu` and `app.EditMenuItems()`, choose an offered action with `app.ChooseEditAction(core.EditCopy)` and dismiss with `app.CloseEditMenu()`. Paste uses the test’s clipboard. `app.LongPressAt(selector, point)` holds a specific point; headless `app.Touch(selector, point).Hold(duration)` fires a long press before the finger lifts, allowing a subsequent `Move` to exercise selection sweeps. Menu records and action selection model behavior; use native acceptance to verify the system toolbar.
 
+`View.Props` is a `nsgotest.ViewProps` snapshot of identity, accessible names and states, actions, and focus and pointer settings. `HelpText`, `HasAction`, `ActionList` and `FocusStop` expose its policies; label IDs, actions and ripple settings are copied from the mounted values.
+
 ## Widgets and Live Activities
 
 `nsgotest.Widgets(true)` records what the app publishes with `widget.Update`. Read the latest timeline for each kind with `app.Widgets()`. An entry with no date gets the app's wall time. Use `nsgotest.Widgets(false)` to make `widget.Available()` false and have updates return `widget.ErrNoWidgets`.

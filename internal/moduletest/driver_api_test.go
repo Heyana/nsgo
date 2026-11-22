@@ -71,7 +71,7 @@ func allowedPublicDriverType(name string) bool {
 		"InputConfig", "ModalConfig", "PictureInPictureConfig", "ScreenConfig",
 		"ScrollConfig", "StickyCell",
 		"TouchGeometry", "VideoConfig",
-		"ViewProps", "ViewStyle", "WebConfig":
+		"ViewStyle", "WebConfig":
 		return true
 	}
 	return false

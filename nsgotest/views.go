@@ -73,8 +73,6 @@ type (
 	PictureInPictureConfig = driver.PictureInPictureConfig
 	// GPUDeviceLostReason describes why a simulated GPU device was lost.
 	GPUDeviceLostReason = driver.GPUDeviceLostReason
-	// ViewProps is a view's accessibility and identity.
-	ViewProps = driver.ViewProps
 	// ViewStyle is everything a platform draws for a view itself.
 	ViewStyle = driver.ViewStyle
 	// CustomCursor describes an image-based pointer cursor on desktops and the web.

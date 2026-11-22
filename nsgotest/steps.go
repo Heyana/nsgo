@@ -321,7 +321,8 @@ func (a *App) viewAt(p driver.Point, ok func(*View) bool) *View {
 		if !mapped {
 			return nil
 		}
-		self, children := driver.ReachView(v.Frame.Size, &v.Props, driver.Bounds{}, !s.Clip && v.Kind != KindScroll, local)
+		props := v.Props.driverProps()
+		self, children := driver.ReachView(v.Frame.Size, &props, driver.Bounds{}, !s.Clip && v.Kind != KindScroll, local)
 		if children {
 			inner := v.intoContent(local)
 			for i := len(v.Children) - 1; i >= 0; i-- {
