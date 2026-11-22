@@ -237,6 +237,7 @@ const (
 	dwParagraphCenter    = 2
 	dwWrap               = 0
 	dwNoWrap             = 1
+	dwEmergencyBreak     = 2 // DWRITE_WORD_WRAPPING_EMERGENCY_BREAK
 	dwReadingRTL         = 1 // DWRITE_READING_DIRECTION_RIGHT_TO_LEFT
 	dwLineSpacingUniform = 1
 	dwTrimmingNone       = 0

@@ -30,6 +30,7 @@ import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.text.LineBreakConfig;
 import android.hardware.biometrics.BiometricPrompt;
 import android.hardware.biometrics.BiometricManager;
 import android.hardware.display.DisplayManager;
@@ -5803,6 +5804,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         field.setLetterSpacing(style.letterSpacingEm());
         field.setFontFeatureSettings(style.features);
         field.setPaintFlags(style.paintFlags(field.getPaintFlags()));
+        field.setTextLocale(style.locale != null ? style.locale : Locale.getDefault());
+        if (Build.VERSION.SDK_INT >= 33) {
+            field.setLineBreakWordStyle(style.keepAll
+                    ? LineBreakConfig.LINE_BREAK_WORD_STYLE_PHRASE
+                    : LineBreakConfig.LINE_BREAK_WORD_STYLE_NONE);
+        }
         // A field's one line stays centered in its box.
         field.setLineHeights(field.multiline() ? Math.round(style.lineHeight) : 0, placeholder);
         field.setGravity(style.gravity() | (field.multiline() ? Gravity.TOP : Gravity.CENTER_VERTICAL));

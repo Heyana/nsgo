@@ -104,8 +104,9 @@ function mpHost(platform = config.platform || 'wechat') {
         if (!api.loadSubpackage) return resolve()
         api.loadSubpackage({ name, success: resolve, fail: reject })
       }),
-    measure(font, text) {
+    measure(font, text, lang) {
       context.font = font
+      if ('lang' in context) context.lang = lang || 'inherit'
       return context.measureText(text).width
     },
     device: () => device(api),
@@ -282,7 +283,7 @@ function start(page, host = mpHost()) {
     pixelCanvas: (bytes, width, height) => pixels.offscreen(host.api, bytes, width, height),
     ready: () => ready(),
     device: () => host.device(),
-    measure: (font, text) => host.measure(font, text),
+    measure: (font, text, lang) => host.measure(font, text, lang),
     submit(json) {
       tree.add(JSON.parse(json))
       queueFlush()

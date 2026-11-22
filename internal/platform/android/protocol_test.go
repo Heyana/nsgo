@@ -1092,3 +1092,24 @@ func TestWriteWebConfigEncodesDownloadDirAndHeaders(t *testing.T) {
 		t.Fatalf("header = (%q, %q), %d bytes left", k, v, len(r.buf))
 	}
 }
+
+// TestAndroidInputLanguageAndKoreanLineBreaking checks that Android's Java runtime applies Style.Language to EditText and configures Korean phrase line breaking on both StaticLayout and EditText (#1548).
+func TestAndroidInputLanguageAndKoreanLineBreaking(t *testing.T) {
+	nsgoView, err := os.ReadFile("java/dev/oneo/nsgo/NsgoView.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(nsgoView), "field.setTextLocale(") {
+		t.Error("NsgoView.java does not set EditText's text locale from Style.Language")
+	}
+	if !strings.Contains(string(nsgoView), "field.setLineBreakWordStyle(") {
+		t.Error("NsgoView.java does not set EditText's line break word style for Korean")
+	}
+	textJava, err := os.ReadFile("java/dev/oneo/nsgo/Text.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(textJava), "setLineBreakConfig(") || !strings.Contains(string(textJava), "LINE_BREAK_WORD_STYLE_PHRASE") {
+		t.Error("Text.java does not configure StaticLayout LineBreakConfig for Korean")
+	}
+}

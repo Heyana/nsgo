@@ -97,7 +97,11 @@ func Run(app engine.App, opts Options) {
 type measurer struct{ bridge js.Value }
 
 func (m measurer) Width(font, text string) float64 {
-	return m.bridge.Call("measure", font, text).Float()
+	return m.bridge.Call("measure", font, text, "").Float()
+}
+
+func (m measurer) WidthLang(font, text, language string) float64 {
+	return m.bridge.Call("measure", font, text, language).Float()
 }
 
 // Prepare implements engine.Platform.

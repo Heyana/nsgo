@@ -348,3 +348,42 @@ func TestDevToolsOverlayPointerEventsAndApplyTiming(t *testing.T) {
 		t.Fatalf("readout press events = %+v", h.events)
 	}
 }
+
+func TestTextAndInputsSendLanguageAndKeepAll(t *testing.T) {
+	m, h := mounted()
+	e := NewTextEngine(&approx{})
+	at := plain("直 안녕")
+	at.Style.Font.Language = "ja"
+	ko := at.Style
+	ko.Font.Language = "ko-KR"
+	at.Spans = []driver.TextSpan{{Start: len("直 "), End: len(at.Text), Style: ko}}
+	l := e.Prepare(at).Layout(driver.Size{Width: 200, Height: 20})
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemText, ID: 3, Text: &driver.TextContent{Text: at.Text, Layout: l, Spans: at.Spans}},
+		{Kind: driver.ItemCreate, ID: 4, View: driver.KindInput},
+		{Kind: driver.ItemInput, ID: 4, Input: &driver.InputConfig{
+			Multiline:   true,
+			Placeholder: "안녕하세요",
+			Style:       driver.TextStyle{Font: driver.Font{Size: 14, Weight: 400, Language: "ko-KR"}, Color: driver.RGB(0)},
+		}},
+		{Kind: driver.ItemCreate, ID: 5, View: driver.KindInput},
+		{Kind: driver.ItemInput, ID: 5, Input: &driver.InputConfig{
+			Placeholder: "直",
+			Style:       driver.TextStyle{Font: driver.Font{Size: 14, Weight: 400, Language: "ja"}, Color: driver.RGB(0)},
+		}},
+	}})
+	tx := h.ops("t")
+	if len(tx) != 1 || !strings.Contains(tx[0], `"l":["ja","ko-KR"]`) {
+		t.Fatalf("text op = %v, want l:[ja,ko-KR]", tx)
+	}
+	fds := h.ops("fd")
+	if len(fds) != 2 {
+		t.Fatalf("fd ops = %v, want 2", fds)
+	}
+	if !strings.Contains(fds[0], `"lang":"ko-KR"`) || !strings.Contains(fds[0], "word-break:keep-all;") || !strings.Contains(fds[0], "Apple SD Gothic Neo") {
+		t.Errorf("multiline Korean input fd = %s", fds[0])
+	}
+	if !strings.Contains(fds[1], `"lang":"ja"`) || strings.Contains(fds[1], "word-break:keep-all;") || !strings.Contains(fds[1], "Hiragino Sans") {
+		t.Errorf("single-line Japanese input fd = %s", fds[1])
+	}
+}

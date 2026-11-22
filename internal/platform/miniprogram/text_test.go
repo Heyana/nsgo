@@ -48,18 +48,28 @@ func runs(l driver.TextLayout) []string {
 }
 
 func TestBreaksAfterSpacesAndAroundCJK(t *testing.T) {
-	got := func(s string) []string {
+	got := func(s string, keepAll bool) []string {
+		var fn func(int) bool
+		if keepAll {
+			fn = func(int) bool { return true }
+		}
 		var out []string
-		for _, b := range breaks(s) {
+		for _, b := range breaks(s, fn) {
 			out = append(out, s[b[0]:b[1]])
 		}
 		return out
 	}
-	if g := got("hello  world"); strings.Join(g, "|") != "hello  |world" {
+	if g := got("hello  world", false); strings.Join(g, "|") != "hello  |world" {
 		t.Errorf("breaks = %q", g)
 	}
-	if g := got("你好abc"); strings.Join(g, "|") != "你|好|abc" {
+	if g := got("你好abc", false); strings.Join(g, "|") != "你|好|abc" {
 		t.Errorf("breaks = %q", g)
+	}
+	if g := got("안녕하세요 반갑습니다", false); strings.Join(g, "|") != "안|녕|하|세|요| |반|갑|습|니|다" {
+		t.Errorf("non-keep-all Korean breaks = %q", g)
+	}
+	if g := got("안녕하세요 반갑습니다", true); strings.Join(g, "|") != "안녕하세요 |반갑습니다" {
+		t.Errorf("keep-all Korean breaks = %q", g)
 	}
 }
 
@@ -391,5 +401,50 @@ func TestLimitedTextSpansAndAttachments(t *testing.T) {
 	}
 	if got := strings.Join(runs(l), "|"); got != "Hi | |Su…" {
 		t.Errorf("runs = %q, want %q", got, "Hi | |Su…")
+	}
+}
+
+func TestKoreanBreaksBetweenWordsAndPicksLanguageFonts(t *testing.T) {
+	e := NewTextEngine(&approx{})
+	// At size 10, each Hangul syllable is 10pt and a space is 5pt. "안녕하세요" (50) + " " (5) + "반갑습니다" (50) = 105pt. At width 70, keep-all wraps between words rather than splitting "반갑습니다".
+	at := plain("안녕하세요 반갑습니다 세계입니다")
+	at.Style.Font.Language = "ko-KR"
+	l := e.Prepare(at).Layout(driver.Size{Width: 70, Height: 100}).(*TextLayout)
+	if g := strings.Join(runs(l), "|"); g != "안녕하세요|반갑습니다|세계입니다" {
+		t.Fatalf("Korean runs = %q, want word-based breaks", g)
+	}
+	if len(l.languages) != 1 || l.languages[0] != "ko-KR" {
+		t.Fatalf("languages = %q, want [ko-KR]", l.languages)
+	}
+	if !strings.Contains(l.styles[0], "Apple SD Gothic Neo") {
+		t.Fatalf("Korean style = %q, want Korean font stack", l.styles[0])
+	}
+	// A single Korean word wider than the line still splits between characters.
+	narrow := e.Prepare(at).Layout(driver.Size{Width: 30, Height: 200})
+	if g := runs(narrow); g[0] != "안녕하" || g[1] != "세요" {
+		t.Fatalf("narrow Korean runs = %q, want character wrap on overflowing word", g)
+	}
+	// Language font stacks distinguish Japanese, Traditional Chinese and Simplified Chinese, and a Korean span keeps its words whole inside Japanese text.
+	mixed := plain("日本語 안녕하세요 반갑습니다")
+	mixed.Style.Font.Language = "ja"
+	koSpan := mixed.Style
+	koSpan.Font.Language = "ko"
+	koStart := len("日本語 ")
+	mixed.Spans = []driver.TextSpan{{Start: koStart, End: len(mixed.Text), Style: koSpan}}
+	ml := e.Prepare(mixed).Layout(driver.Size{Width: 65, Height: 200}).(*TextLayout)
+	if g := strings.Join(runs(ml), "|"); g != "日本語|안녕하세요|반갑습니다" {
+		t.Fatalf("mixed runs = %q, want Korean span kept by words", g)
+	}
+	if len(ml.styles) != 2 || !strings.Contains(ml.styles[0], "Hiragino Sans") || !strings.Contains(ml.styles[1], "Apple SD Gothic Neo") {
+		t.Fatalf("mixed styles = %q", ml.styles)
+	}
+	if got := family("", "zh-Hant"); !strings.Contains(got, "PingFang TC") {
+		t.Errorf("zh-Hant family = %q, want PingFang TC", got)
+	}
+	if got := family("", "zh-HK"); !strings.Contains(got, "PingFang HK") {
+		t.Errorf("zh-HK family = %q, want PingFang HK", got)
+	}
+	if got := family("Inter", "ja"); !strings.Contains(got, `"Inter"`) || !strings.Contains(got, "Hiragino Sans") {
+		t.Errorf("Inter + ja family = %q, want Inter falling back to Hiragino Sans", got)
 	}
 }

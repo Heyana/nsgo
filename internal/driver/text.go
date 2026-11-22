@@ -1,7 +1,9 @@
 package driver
 
 import (
+	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -538,4 +540,110 @@ func (v FontVariant) Tags() []string {
 		}
 	}
 	return tags
+}
+
+// KeepAllWords reports whether language breaks lines between words rather than inside words of CJK scripts, as Korean does under CSS's word-break: keep-all.
+func KeepAllWords(language string) bool {
+	if len(language) < 2 {
+		return false
+	}
+	if (language[0] != 'k' && language[0] != 'K') || (language[1] != 'o' && language[1] != 'O') {
+		return false
+	}
+	return len(language) == 2 || language[2] == '-' || language[2] == '_'
+}
+
+// KeepAllLanguage returns language with the BCP 47 Unicode line-break word extension lw-keepall added when KeepAllWords(language) is true and no explicit lw keyword is already set, preserving any other extensions and private-use subtags.
+func KeepAllLanguage(language string) string {
+	if !KeepAllWords(language) {
+		return language
+	}
+	tag := LanguageTag(language)
+	parts := strings.Split(tag, "-")
+	uAt, xAt := -1, -1
+	for i := 1; i < len(parts); i++ {
+		if len(parts[i]) != 1 {
+			continue
+		}
+		switch parts[i][0] {
+		case 'u', 'U':
+			if uAt < 0 {
+				uAt = i
+			}
+		case 'x', 'X':
+			if xAt < 0 {
+				xAt = i
+			}
+		}
+		if xAt >= 0 {
+			break
+		}
+	}
+	if uAt >= 0 {
+		end := len(parts)
+		for i := uAt + 1; i < len(parts); i++ {
+			if len(parts[i]) == 1 {
+				end = i
+				break
+			}
+			if len(parts[i]) == 2 && strings.EqualFold(parts[i], "lw") {
+				return tag
+			}
+		}
+		return strings.Join(slices.Insert(parts, end, "lw", "keepall"), "-")
+	}
+	if xAt >= 0 {
+		return strings.Join(slices.Insert(parts, xAt, "u", "lw", "keepall"), "-")
+	}
+	return tag + "-u-lw-keepall"
+}
+
+// isKeepAllCJK reports whether r is a Hangul, Han or Kana character that UAX #14 breaks around unless word-break: keep-all suppresses it.
+func isKeepAllCJK(r rune) bool {
+	return r >= 0xAC00 && r <= 0xD7AF || // Hangul Syllables
+		r >= 0x1100 && r <= 0x11FF || // Hangul Jamo
+		r >= 0x3130 && r <= 0x318F || // Hangul Compatibility Jamo
+		r >= 0xA960 && r <= 0xA97F || // Hangul Jamo Extended-A
+		r >= 0xD7B0 && r <= 0xD7FF || // Hangul Jamo Extended-B
+		r >= 0x3400 && r <= 0x4DBF || // CJK Unified Ideographs Extension A
+		r >= 0x4E00 && r <= 0x9FFF || // CJK Unified Ideographs
+		r >= 0xF900 && r <= 0xFAFF || // CJK Compatibility Ideographs
+		r >= 0x20000 && r <= 0x3FFFF || // CJK Unified Ideographs Extensions B+
+		r >= 0x3040 && r <= 0x30FF || // Hiragana and Katakana
+		r >= 0x31F0 && r <= 0x31FF || // Katakana Phonetic Extensions
+		r >= 0xFF66 && r <= 0xFF9F // Halfwidth Katakana
+}
+
+func isKeepAllWordRune(r rune) bool {
+	if r == AttachmentRune {
+		return false
+	}
+	return isKeepAllCJK(r) || unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r)
+}
+
+// KeepAllWordRanges returns the byte ranges [start, end] of words in text that should not break internally under CSS's word-break: keep-all: contiguous letter, digit and CJK runs of at least two runes containing at least one Hangul, Han or Kana character.
+func KeepAllWordRanges(text string) [][2]int {
+	var out [][2]int
+	start, runes, hasCJK := -1, 0, false
+	flush := func(end int) {
+		if start >= 0 && runes >= 2 && hasCJK {
+			out = append(out, [2]int{start, end})
+		}
+		start, runes, hasCJK = -1, 0, false
+	}
+	for i, r := range text {
+		if isKeepAllWordRune(r) {
+			if start < 0 {
+				start = i
+			}
+			runes++
+			if !hasCJK && isKeepAllCJK(r) {
+				hasCJK = true
+			}
+		} else {
+			flush(i)
+		}
+	}
+	flush(len(text))
+	return out
 }

@@ -29,16 +29,47 @@ type Measurer interface {
 // canvas and the render layer resolve sans-serif to different fonts
 // (Helvetica and PingFang SC in WeChat DevTools on a Mac), so lines
 // measured in one would not fit in the other.
-const defaultFamily = `"PingFang SC", "Helvetica Neue", Helvetica, Arial, sans-serif`
+const (
+	defaultFamily   = `"PingFang SC", "Helvetica Neue", Helvetica, Arial, sans-serif`
+	defaultFamilyJP = `"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", "Yu Gothic", "Helvetica Neue", Helvetica, Arial, sans-serif`
+	defaultFamilyTC = `"PingFang TC", "Noto Sans CJK TC", "Microsoft JhengHei", "Helvetica Neue", Helvetica, Arial, sans-serif`
+	defaultFamilyHK = `"PingFang HK", "PingFang TC", "Noto Sans CJK HK", "Noto Sans CJK TC", "Microsoft JhengHei", "Helvetica Neue", Helvetica, Arial, sans-serif`
+	defaultFamilyKR = `"Apple SD Gothic Neo", "Noto Sans CJK KR", "Malgun Gothic", "Helvetica Neue", Helvetica, Arial, sans-serif`
+)
 
 // monospaceFamily is the CSS of driver.FontMonospace.
 const monospaceFamily = `Menlo, "SF Mono", Consolas, "Roboto Mono", monospace`
 
-// family returns the CSS font-family of a family name.
-func family(name string) string {
+// defaultFamilyFor picks a default font stack whose Han and Hangul glyphs match language so the logic layer's canvas and the render layer agree on glyph forms and widths.
+func defaultFamilyFor(language string) string {
+	if language == "" {
+		return defaultFamily
+	}
+	parts := strings.Split(strings.ToLower(driver.LanguageTag(language)), "-")
+	switch parts[0] {
+	case "ja":
+		return defaultFamilyJP
+	case "ko":
+		return defaultFamilyKR
+	case "zh":
+		for _, sub := range parts[1:] {
+			switch sub {
+			case "hk", "mo":
+				return defaultFamilyHK
+			case "hant", "tw":
+				return defaultFamilyTC
+			}
+		}
+	}
+	return defaultFamily
+}
+
+// family returns the CSS font-family of a family name in language.
+func family(name, language string) string {
+	fallback := defaultFamilyFor(language)
 	switch name {
 	case "":
-		return defaultFamily
+		return fallback
 	case driver.FontMonospace:
 		return monospaceFamily
 	}
@@ -50,12 +81,12 @@ func family(name string) string {
 		case driver.FamilySerif:
 			list = append(list, "serif")
 		case driver.FamilySystem, driver.FamilyRounded:
-			list = append(list, defaultFamily)
+			list = append(list, fallback)
 		default:
 			list = append(list, strconv.Quote(f.Name))
 		}
 	}
-	return strings.Join(append(list, defaultFamily), ", ")
+	return strings.Join(append(list, fallback), ", ")
 }
 
 // fontCSS is a font as declarations: the render layer drops a font
@@ -66,7 +97,7 @@ func fontCSS(f driver.Font) string {
 		italic = "italic"
 	}
 	return "font-style:" + italic + ";font-weight:" + strconv.Itoa(int(f.Weight)) +
-		";font-size:" + webstyle.Px(f.Size) + ";font-family:" + family(f.Family) + ";"
+		";font-size:" + webstyle.Px(f.Size) + ";font-family:" + family(f.Family, f.Language) + ";"
 }
 
 // canvasFont is a font as the canvas's font shorthand.
@@ -75,13 +106,15 @@ func canvasFont(f driver.Font) string {
 	if f.Italic {
 		italic = "italic"
 	}
-	return italic + " " + strconv.Itoa(int(f.Weight)) + " " + webstyle.Px(f.Size) + " " + family(f.Family)
+	return italic + " " + strconv.Itoa(int(f.Weight)) + " " + webstyle.Px(f.Size) + " " + family(f.Family, f.Language)
 }
 
 // runStyle is how the runs of one span are measured and drawn.
 type runStyle struct {
 	font          string // canvas font
 	css           string // the run's declarations
+	language      string // BCP 47 tag for lang attribute and canvas measurement
+	keepAll       bool   // Korean word-break: keep-all
 	size          driver.Points
 	lineHeight    driver.Points
 	letterSpacing driver.Points
@@ -106,7 +139,15 @@ func newRunStyle(t driver.TextStyle) runStyle {
 	if lh <= 0 {
 		lh = t.Font.Size * 1.2
 	}
-	return runStyle{font: canvasFont(t.Font), css: css, size: t.Font.Size, lineHeight: lh, letterSpacing: t.LetterSpacing}
+	return runStyle{
+		font:          canvasFont(t.Font),
+		css:           css,
+		language:      t.Font.Language,
+		keepAll:       driver.KeepAllWords(t.Font.Language),
+		size:          t.Font.Size,
+		lineHeight:    lh,
+		letterSpacing: t.LetterSpacing,
+	}
 }
 
 // above is how far the baseline is below the top of the style's line box:
@@ -119,7 +160,12 @@ type TextEngine struct {
 	widths map[widthKey]driver.Points
 }
 
-type widthKey struct{ font, text string }
+type widthKey struct{ font, language, text string }
+
+// langMeasurer is optionally implemented by a Measurer that passes a BCP 47 language tag to the canvas context.
+type langMeasurer interface {
+	WidthLang(font, text, language string) float64
+}
 
 // NewTextEngine returns an engine measuring with m.
 func NewTextEngine(m Measurer) *TextEngine {
@@ -131,13 +177,17 @@ func (e *TextEngine) width(st *runStyle, text string) driver.Points {
 	if text == "" {
 		return 0
 	}
-	k := widthKey{st.font, text}
+	k := widthKey{st.font, st.language, text}
 	w, ok := e.widths[k]
 	if !ok {
 		if len(e.widths) > 1<<14 {
 			clear(e.widths)
 		}
-		w = driver.Points(e.m.Width(st.font, text))
+		if lm, ok := e.m.(langMeasurer); ok {
+			w = driver.Points(lm.WidthLang(st.font, text, st.language))
+		} else {
+			w = driver.Points(e.m.Width(st.font, text))
+		}
 		e.widths[k] = w
 	}
 	return w + st.letterSpacing*driver.Points(utf8.RuneCountInString(text))
@@ -209,7 +259,8 @@ func (e *TextEngine) Prepare(t *driver.AttributedText) driver.PreparedText {
 	for _, para := range strings.Split(t.Text, "\n") {
 		p.starts = append(p.starts, start)
 		var pieces []piece
-		for _, b := range breaks(para) {
+		keepAll := func(i int) bool { return p.styles[styleAt(start+i)].keepAll }
+		for _, b := range breaks(para, keepAll) {
 			var pc piece
 			for i := b[0]; i < b[1]; {
 				r, n := utf8.DecodeRuneInString(para[i:])
@@ -252,15 +303,13 @@ func cjk(r rune) bool {
 		r >= 0xFE30 && r <= 0xFE4F || r >= 0xFF00 && r <= 0xFFEF || r >= 0x20000 && r <= 0x3FFFF
 }
 
-// breaks returns where lines may break in s, as the byte ranges of its
-// pieces: after the spaces following a word, and around each CJK
-// character.
-func breaks(s string) [][2]int {
+// breaks returns where lines may break in s, as the byte ranges of its pieces: after the spaces following a word, around attachments, and around each CJK character except where keepAll holds (as Korean under CSS's word-break: keep-all).
+func breaks(s string, keepAll func(int) bool) [][2]int {
 	var out [][2]int
 	start, spaces := 0, false
 	for i, r := range s {
 		switch {
-		case cjk(r) || r == driver.AttachmentRune:
+		case r == driver.AttachmentRune || cjk(r) && (keepAll == nil || !keepAll(i)):
 			if i > start {
 				out = append(out, [2]int{start, i})
 			}
@@ -440,12 +489,13 @@ type run struct {
 // TextLayout is the text laid out at its final size: what the render
 // layer draws.
 type TextLayout struct {
-	styles []string // the runs' CSS
-	runs   []run
-	lines  []driver.TextLine
-	boxes  []attachmentBox
-	carets driver.LazyCarets
-	under  []backgroundBox
+	styles    []string // the runs' CSS
+	languages []string // the runs' BCP 47 language tags, parallel to styles
+	runs      []run
+	lines     []driver.TextLine
+	boxes     []attachmentBox
+	carets    driver.LazyCarets
+	under     []backgroundBox
 }
 
 // backgroundBox is one span's painted band on one line, behind its glyphs.
@@ -485,6 +535,7 @@ func (p *prepared) Layout(size driver.Size) driver.TextLayout {
 	l := &TextLayout{boxes: make([]attachmentBox, len(p.t.Attachments))}
 	for _, st := range p.styles {
 		l.styles = append(l.styles, st.css)
+		l.languages = append(l.languages, st.language)
 	}
 	var y driver.Points
 	type laid struct {

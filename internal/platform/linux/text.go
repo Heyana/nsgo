@@ -183,7 +183,7 @@ func (w *window) fontExtent(f driver.Font, ui string) driver.FontExtent {
 	}
 	l := pangoLayoutNew(w.measureContext(false))
 	attrs := pangoAttrListNew()
-	addStyle(attrs, 1, 0, 1, driver.TextStyle{Font: f}, ui, nil)
+	addStyle(attrs, "x", 0, 1, driver.TextStyle{Font: f}, ui, nil, false)
 	pangoLayoutSetAttributes(l, attrs)
 	pangoAttrListUnref(attrs)
 	pangoLayoutSetText(l, cstr("x"), 1)
@@ -243,7 +243,9 @@ func applyLayout(l uintptr, s *textSource, width driver.Points, drawn bool) {
 		pangoLayoutSetAlignment(l, start)
 	}
 	pangoLayoutSetJustify(l, s.style.Align == driver.TextAlignJustify)
-	if s.maxLines > 1 {
+	if s.maxLines != 1 && hasKeepAll(s) {
+		pangoLayoutSetWrap(l, pangoWrapWordChar)
+	} else if s.maxLines > 1 {
 		pangoLayoutSetWrap(l, pangoWrapWord)
 	}
 	if s.maxLines > 0 && !(drawn && s.ellipsize == driver.EllipsizeClip) {
@@ -268,6 +270,18 @@ func (s *textSource) pangoWidth(width driver.Points, drawn bool) int32 {
 // placeholderLen is the length in bytes of an attachment's placeholder.
 var placeholderLen = len(string(driver.AttachmentRune))
 
+func hasKeepAll(s *textSource) bool {
+	if driver.KeepAllWords(s.style.Font.Language) {
+		return true
+	}
+	for _, sp := range s.spans {
+		if driver.KeepAllWords(sp.Style.Font.Language) {
+			return true
+		}
+	}
+	return false
+}
+
 // textAttributes returns the Pango attributes of text: the base style
 // over all of it, then each span over its bytes, then the attachments'
 // placeholders. A placeholder is a shape of the attachment's width that
@@ -283,9 +297,10 @@ func textAttributes(text string, s *textSource) uintptr {
 		}
 	}
 	list := pangoAttrListNew()
-	addStyle(list, len(text), 0, len(text), s.style, s.ui, holes)
+	baseKeepAll := driver.KeepAllWords(s.style.Font.Language)
+	addStyle(list, text, 0, len(text), s.style, s.ui, holes, false)
 	for _, sp := range s.spans {
-		addStyle(list, len(text), sp.Start, sp.End, sp.Style, s.ui, holes)
+		addStyle(list, text, sp.Start, sp.End, sp.Style, s.ui, holes, baseKeepAll)
 	}
 	for i, at := range s.atts {
 		if at.Offset < 0 || at.Offset+placeholderLen > len(text) {
@@ -308,9 +323,9 @@ func textAttributes(text string, s *textSource) uintptr {
 	return list
 }
 
-// addStyle adds s's font, its system families in the UI font ui, and its color, spacing and decoration over start:end, clipped to textLen bytes. Its line height leaves out holes, which are in order.
-func addStyle(list uintptr, textLen, start, end int, s driver.TextStyle, ui string, holes [][2]int) {
-	start, end = min(max(start, 0), textLen), min(max(end, 0), textLen)
+// addStyle adds s's font, its system families in the UI font ui, and its color, spacing and decoration over start:end, clipped to text bytes. Its line height leaves out holes, which are in order.
+func addStyle(list uintptr, text string, start, end int, s driver.TextStyle, ui string, holes [][2]int, undoKeepAll bool) {
+	start, end = min(max(start, 0), len(text)), min(max(end, 0), len(text))
 	if end <= start {
 		return
 	}
@@ -324,6 +339,16 @@ func addStyle(list uintptr, textLen, start, end int, s driver.TextStyle, ui stri
 	f := s.Font
 	if f.Language != "" {
 		add(pangoAttrLanguageNew(pangoLanguageFromString(cstr(f.Language))))
+	}
+	if driver.KeepAllWords(f.Language) {
+		for _, r := range driver.KeepAllWordRanges(text[start:end]) {
+			if attr := pangoAttrAllowBreaksNew(0); attr != 0 {
+				setAttributeRange(attr, uint32(start+r[0]), uint32(start+r[1]))
+				pangoAttrListInsert(list, attr)
+			}
+		}
+	} else if undoKeepAll {
+		add(pangoAttrAllowBreaksNew(1))
 	}
 	add(pangoAttrFamilyNew(cstr(pangoFamilies(f.Family, ui))))
 	if f.Size > 0 {
@@ -619,7 +644,7 @@ func (w *window) capHeight(f driver.Font, ui string) driver.Points {
 	}
 	l := pangoLayoutNew(w.measureContext(false))
 	attrs := pangoAttrListNew()
-	addStyle(attrs, 1, 0, 1, driver.TextStyle{Font: f}, ui, nil)
+	addStyle(attrs, "H", 0, 1, driver.TextStyle{Font: f}, ui, nil, false)
 	pangoLayoutSetAttributes(l, attrs)
 	pangoAttrListUnref(attrs)
 	pangoLayoutSetText(l, cstr("H"), 1)

@@ -416,6 +416,9 @@ const (
 	underlineDash   = 0x0200
 )
 
+// LanguageAttr is CoreText's kCTLanguageAttributeName, which selects language-specific Han glyph forms, fallback fonts and line breaking.
+func LanguageAttr() objc.ID { return objc.ID(attrLanguage) }
+
 // runAttributes returns a new dictionary of what st sets per character:
 // font, color, letter spacing and underline, plus extra keys and values.
 // An underline CoreText cannot draw is drawn from the lines instead. The caller releases
@@ -441,7 +444,7 @@ func runAttributes(st driver.TextStyle, keys, values []uintptr) uintptr {
 	keys = append(keys, attrFont, attrColor, attrUnderline)
 	values = append(values, font, color, underline)
 	if st.Font.Language != "" {
-		lang := CFString(st.Font.Language)
+		lang := CFString(driver.KeepAllLanguage(st.Font.Language))
 		keys, values, owned = append(keys, attrLanguage), append(values, lang), append(owned, lang)
 	}
 	if line != 0 && st.DecorationColor != 0 {

@@ -2,6 +2,7 @@ package linux
 
 import (
 	"math"
+	"unicode/utf8"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -75,4 +76,22 @@ func pangoMeasuredSize(w, h int32, width driver.Points, limit int32) driver.Size
 		size.Width = min(size.Width, max(width, 0))
 	}
 	return size
+}
+
+// keepAllRuneRanges converts driver.KeepAllWordRanges's UTF-8 byte ranges into character (rune) offset ranges for GtkTextBuffer iterators.
+func keepAllRuneRanges(text string) [][2]int {
+	bytes := driver.KeepAllWordRanges(text)
+	if len(bytes) == 0 {
+		return nil
+	}
+	out := make([][2]int, 0, len(bytes))
+	pos, runeIdx := 0, 0
+	for _, r := range bytes {
+		runeIdx += utf8.RuneCountInString(text[pos:r[0]])
+		start := runeIdx
+		runeIdx += utf8.RuneCountInString(text[r[0]:r[1]])
+		out = append(out, [2]int{start, runeIdx})
+		pos = r[1]
+	}
+	return out
 }

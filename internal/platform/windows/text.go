@@ -31,7 +31,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
 
@@ -459,6 +458,8 @@ type preparedText struct {
 	w           *window
 	units       []uint16
 	offsets     []int // each unit's UTF-8 offset, and the text's length last
+	origUTF16   []int // each unit's original UTF-16 offset when word joiners were inserted, else nil
+	keepAll     bool
 	style       driver.TextStyle
 	runs        []textRun
 	attachments []textAttachment
@@ -490,17 +491,33 @@ func (w *window) Prepare(t *driver.AttributedText) driver.PreparedText {
 			pt.cut, pt.rest = &c, true
 		}
 	}
-	units16 := func(s string) {
-		for i, r := range s {
-			n := len(pt.units)
-			pt.units = utf16.AppendRune(pt.units, r)
-			for range len(pt.units) - n {
-				pt.offsets = append(pt.offsets, i)
+	type rawRun struct {
+		start, end int
+		style      driver.TextStyle
+		bg         driver.TextBackground
+	}
+	var rawRuns []rawRun
+	var keepAllRanges [][2]int
+	at := 0
+	addRaw := func(start, end int, style driver.TextStyle, bg driver.TextBackground) {
+		if end > start {
+			rawRuns = append(rawRuns, rawRun{start, end, style, bg})
+			if driver.KeepAllWords(style.Font.Language) {
+				for _, r := range driver.KeepAllWordRanges(t.Text[start:end]) {
+					keepAllRanges = append(keepAllRanges, [2]int{start + r[0], start + r[1]})
+				}
 			}
 		}
 	}
-	units16(t.Text)
-	pt.offsets = append(pt.offsets, len(t.Text))
+	for _, sp := range t.Spans {
+		start, end := min(max(sp.Start, at), len(t.Text)), min(max(sp.End, at), len(t.Text))
+		addRaw(at, start, t.Style, driver.TextBackground{})
+		addRaw(start, end, sp.Style, sp.Background)
+		at = max(at, end)
+	}
+	addRaw(at, len(t.Text), t.Style, driver.TextBackground{})
+	pt.units, pt.offsets, pt.origUTF16 = encodeKeepAllText(t.Text, keepAllRanges)
+	pt.keepAll = len(keepAllRanges) > 0
 	// unit returns the UTF-16 offset of byte offset b.
 	unit := func(b int) uint32 {
 		lo, hi := 0, len(pt.offsets)-1
@@ -514,19 +531,9 @@ func (w *window) Prepare(t *driver.AttributedText) driver.PreparedText {
 		}
 		return uint32(lo)
 	}
-	at := 0
-	add := func(start, end int, style driver.TextStyle, bg driver.TextBackground) {
-		if end > start {
-			pt.runs = append(pt.runs, textRun{unit(start), unit(end), style, bg})
-		}
+	for _, r := range rawRuns {
+		pt.runs = append(pt.runs, textRun{unit(r.start), unit(r.end), r.style, r.bg})
 	}
-	for _, sp := range t.Spans {
-		start, end := min(max(sp.Start, at), len(t.Text)), min(max(sp.End, at), len(t.Text))
-		add(at, start, t.Style, driver.TextBackground{})
-		add(start, end, sp.Style, sp.Background)
-		at = max(at, end)
-	}
-	add(at, len(t.Text), t.Style, driver.TextBackground{})
 	for _, a := range t.Attachments {
 		if a.Offset < 0 || a.Offset >= len(t.Text) {
 			continue
@@ -595,6 +602,9 @@ func (pt *preparedText) build() *comObject {
 	if pt.maxLines == 1 {
 		// A text limited to one line does not wrap: it is truncated.
 		format.call(formatSetWordWrapping, dwNoWrap)
+	} else if pt.keepAll {
+		// Keep Korean words whole between spaces while breaking a single word that overflows the line.
+		format.call(formatSetWordWrapping, dwEmergencyBreak)
 	}
 	if pt.step > 0 {
 		format.callF(formatSetLineSpacing, 0b110, dwLineSpacingUniform, f32(pt.step), f32(pt.baseline))
@@ -834,7 +844,7 @@ func (pt *preparedText) Layout(size driver.Size) driver.TextLayout {
 		}
 		return l
 	}
-	l := &textLayout{color: pt.style.Color, offsets: pt.offsets, attachments: make([]attachmentBox, len(pt.attachments)),
+	l := &textLayout{color: pt.style.Color, offsets: pt.offsets, origUTF16: pt.origUTF16, attachments: make([]attachmentBox, len(pt.attachments)),
 		shadow: pt.shadow, runs: pt.runs, style: pt.style}
 	layout := pt.build()
 	if layout == nil {
@@ -1041,6 +1051,7 @@ type textLayout struct {
 	layout      *comObject
 	color       driver.Color
 	offsets     []int
+	origUTF16   []int
 	lines       []lineBox
 	groups      []lineGroup
 	colors      []colorRange
@@ -1076,13 +1087,23 @@ func (l *textLayout) RangeRects(start, end int, out []driver.Bounds) []driver.Bo
 	return l.carets.RangeRects(start, end, out)
 }
 
+func (l *textLayout) orig(u uint32) int {
+	if l.origUTF16 == nil {
+		return int(u)
+	}
+	if int(u) >= len(l.origUTF16) {
+		return l.origUTF16[len(l.origUTF16)-1]
+	}
+	return l.origUTF16[u]
+}
+
 // caretLines reads where the lines' clusters are from DirectWrite: each
 // cluster's box and bidi level at its first unit, line by line, without
 // the line's break, its y the line's box.
 func (l *textLayout) caretLines() driver.CaretLayout {
 	out := make(driver.CaretLayout, 0, len(l.lines))
 	for _, b := range l.lines {
-		cl := driver.CaretLine{Start: int(b.start), End: int(b.end),
+		cl := driver.CaretLine{Start: l.orig(b.start), End: l.orig(b.end),
 			Box: driver.Bounds{Origin: driver.Point{Y: driver.Points(b.top)}, Size: driver.Size{Height: driver.Points(b.height)}}}
 		left, right := spanEdges(l.layout, b.start, b.end-b.trailing-b.newline)
 		cl.Box.Origin.X, cl.Box.Size.Width = driver.Points(left), driver.Points(right-left)
@@ -1092,8 +1113,10 @@ func (l *textLayout) caretLines() driver.CaretLayout {
 			l.layout.call(layoutHitTestTextPosition, uintptr(pos), 0, uintptr(unsafe.Pointer(&x)), uintptr(unsafe.Pointer(&y)),
 				uintptr(unsafe.Pointer(&m)))
 			end := max(m.position+m.length, pos+1)
-			cl.Clusters = append(cl.Clusters, driver.CaretCluster{Start: int(pos), End: int(end),
-				Left: driver.Points(m.left), Right: driver.Points(m.left + m.width), RTL: m.bidiLevel&1 != 0})
+			if cs, ce := l.orig(pos), l.orig(end); ce > cs {
+				cl.Clusters = append(cl.Clusters, driver.CaretCluster{Start: cs, End: ce,
+					Left: driver.Points(m.left), Right: driver.Points(m.left + m.width), RTL: m.bidiLevel&1 != 0})
+			}
 			pos = end
 		}
 		cl.RTL = l.style.RTL

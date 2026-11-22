@@ -3,6 +3,7 @@ package dev.oneo.nsgo;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.text.LineBreakConfig;
 import android.os.Build;
 import android.text.Layout;
 import android.text.SpannableString;
@@ -96,11 +97,62 @@ final class Text {
         return b == null ? null : b.toString();
     }
 
+    /** Reports whether language is Korean (primary subtag "ko"), which breaks lines between words. */
+    static boolean isKorean(String language) {
+        if (language == null || language.length() < 2) return false;
+        char a = language.charAt(0), b = language.charAt(1);
+        if ((a != 'k' && a != 'K') || (b != 'o' && b != 'O')) return false;
+        return language.length() == 2 || language.charAt(2) == '-' || language.charAt(2) == '_';
+    }
+
+    /** Appends the BCP 47 Unicode lw-keepall extension for Korean tags without an explicit lw keyword. */
+    static String keepAllLanguage(String language) {
+        if (!isKorean(language)) return language;
+        String tag = language.replace('_', '-');
+        String[] parts = tag.split("-");
+        int uAt = -1, xAt = -1;
+        for (int i = 1; i < parts.length; i++) {
+            if (parts[i].length() != 1) continue;
+            char c = parts[i].charAt(0);
+            if ((c == 'u' || c == 'U') && uAt < 0) uAt = i;
+            if (c == 'x' || c == 'X') {
+                xAt = i;
+                break;
+            }
+        }
+        if (uAt >= 0) {
+            int end = parts.length;
+            for (int i = uAt + 1; i < parts.length; i++) {
+                if (parts[i].length() == 1) {
+                    end = i;
+                    break;
+                }
+                if (parts[i].equalsIgnoreCase("lw")) return tag;
+            }
+            return insertSubtags(parts, end, "lw", "keepall");
+        }
+        if (xAt >= 0) return insertSubtags(parts, xAt, "u", "lw", "keepall");
+        return tag + "-u-lw-keepall";
+    }
+
+    private static String insertSubtags(String[] parts, int at, String... extra) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < at; i++) {
+            if (i > 0) b.append('-');
+            b.append(parts[i]);
+        }
+        for (String s : extra) b.append('-').append(s);
+        for (int i = at; i < parts.length; i++) b.append('-').append(parts[i]);
+        return b.toString();
+    }
+
     /** A resolved text style, as android.go's writeStyle writes it. */
     static final class Style {
         final String family;
         /** The text's language, which picks Han glyph forms, fallback fonts and line breaks, or null for the system's. */
         final Locale locale;
+        /** Whether the language breaks lines between words (Korean keep-all). */
+        final boolean keepAll;
         final float size;
         final int weight;
         final int color;
@@ -120,7 +172,8 @@ final class Text {
         Style(DataInputStream in, float density) throws IOException {
             family = Protocol.readString(in);
             String language = Protocol.readString(in);
-            locale = language.isEmpty() ? null : Locale.forLanguageTag(language);
+            keepAll = isKorean(language);
+            locale = language.isEmpty() ? null : Locale.forLanguageTag(keepAllLanguage(language));
             size = in.readFloat() * density;
             weight = in.readUnsignedShort();
             color = argb(in.readInt());
@@ -316,7 +369,7 @@ final class Text {
         private final TextPaint paint;
         private final Layout.Alignment align;
         private final int maxLines, ellipsize;
-        private final boolean attached, justify;
+        private final boolean attached, justify, keepAll;
         private final TextDirectionHeuristic direction;
         private final Shadow shadow;
 
@@ -376,6 +429,7 @@ final class Text {
             }
             this.align = style.alignment();
             this.justify = style.align == Protocol.ALIGN_JUSTIFY;
+            this.keepAll = style.keepAll;
             this.direction = style.rtl ? TextDirectionHeuristics.RTL : TextDirectionHeuristics.LTR;
             this.maxLines = maxLines;
             this.ellipsize = ellipsize;
@@ -426,6 +480,11 @@ final class Text {
                     .setTextDirection(direction)
                     .setIncludePad(false);
             if (justify) b.setJustificationMode(Layout.JUSTIFICATION_MODE_INTER_WORD);
+            if (keepAll && Build.VERSION.SDK_INT >= 33) {
+                b.setLineBreakConfig(new LineBreakConfig.Builder()
+                        .setLineBreakWordStyle(LineBreakConfig.LINE_BREAK_WORD_STYLE_PHRASE)
+                        .build());
+            }
             if (maxLines > 0) {
                 b.setMaxLines(maxLines);
                 switch (ellipsize) {

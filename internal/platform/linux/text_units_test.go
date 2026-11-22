@@ -207,3 +207,20 @@ func TestPangoMeasuredSizeWithCoreDevicePixels(t *testing.T) {
 		}
 	}
 }
+
+func TestKeepAllRuneRanges(t *testing.T) {
+	text := "안녕하세요 반갑습니다"
+	got := keepAllRuneRanges(text)
+	want := [][2]int{{0, 5}, {6, 11}}
+	if len(got) != len(want) {
+		t.Fatalf("keepAllRuneRanges(%q) = %v, want %v", text, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("range %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+	if got := keepAllRuneRanges("hello world"); got != nil {
+		t.Errorf("ASCII keepAllRuneRanges = %v, want nil", got)
+	}
+}

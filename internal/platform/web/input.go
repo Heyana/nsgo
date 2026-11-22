@@ -48,6 +48,7 @@ type webInput struct {
 	props     *driver.ViewProps // the last, which a new element takes
 	config    *driver.InputConfig
 	look      classSlot // the field's class of its text style (classes.go)
+	lang      string    // the lang attribute v.inner holds
 }
 
 // createInput puts an <input> in v's element.
@@ -72,6 +73,7 @@ func (s *surface) setFieldElement(v *view, tag string) {
 	}
 	s.freeClass(&in.look)
 	in.look = classSlot{} // the new element has none
+	in.lang = ""
 	el.Set("value", value)
 	v.inner = el
 	v.el.Call("appendChild", el)
@@ -237,6 +239,10 @@ func (s *surface) setInput(v *view, c *driver.InputConfig) {
 		maxLength = strconv.Itoa(c.MaxLength)
 	}
 	setAttr(el, "maxlength", maxLength)
+	if in.lang != c.Style.Font.Language {
+		in.lang = c.Style.Font.Language
+		setAttr(el, "lang", in.lang)
+	}
 	css := fontStyle(c.Style)
 	if c.Multiline && c.Padding != (driver.Edges{}) {
 		pad := webstyle.Px(c.Padding.Top) + " " + webstyle.Px(c.Padding.Right) + " " + webstyle.Px(c.Padding.Bottom) + " " + webstyle.Px(c.Padding.Left)

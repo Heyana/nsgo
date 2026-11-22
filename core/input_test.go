@@ -281,3 +281,49 @@ func TestInputPlaceholderFollowsItsSignal(t *testing.T) {
 		t.Fatalf("placeholder %q after it changed", got)
 	}
 }
+
+func TestInputLanguageInheritsAndUpdates(t *testing.T) {
+	var scope *Scope
+	h := newHost(t, Size{Width: 300, Height: 200}, func(cx *Scope) Node {
+		scope = cx
+		return View{Children: []Node{
+			Input{TestID: "default"},
+			View{Style: Style{Language: "ja"}, Children: []Node{
+				Input{TestID: "inherited"},
+				Input{TestID: "korean", Multiline: true, DefaultValue: "안녕하세요 세계", Style: Style{Language: "ko-KR"}},
+			}},
+		}}
+	})
+	sent := func(b *driver.MountBatch) map[NodeID]string {
+		out := map[NodeID]string{}
+		for _, it := range b.Items {
+			if it.Kind == driver.ItemInput {
+				out[it.ID] = it.Input.Style.Font.Language
+			}
+		}
+		return out
+	}
+	h.tree.SetEnvironment(Environment{Locale: "en-US"})
+	got := sent(h.commit())
+	if g := got[h.find("default").id]; g != "en-US" {
+		t.Fatalf("default input language = %q, want en-US", g)
+	}
+	if g := got[h.find("inherited").id]; g != "ja" {
+		t.Fatalf("inherited input language = %q, want ja", g)
+	}
+	if g := got[h.find("korean").id]; g != "ko-KR" {
+		t.Fatalf("korean input language = %q, want ko-KR", g)
+	}
+	if g := h.find("korean").input.measured.text.Style.Font.Language; g != "ko-KR" {
+		t.Fatalf("multiline measurement language = %q, want ko-KR", g)
+	}
+	// An input without a language follows runtime locale switches and re-emits ItemInput.
+	scope.SetLocale("zh-Hant")
+	got = sent(h.commit())
+	if g := got[h.find("default").id]; g != "zh-Hant" {
+		t.Fatalf("default input language after SetLocale = %q, want zh-Hant", g)
+	}
+	if _, ok := got[h.find("inherited").id]; ok {
+		t.Errorf("inherited input unexpectedly re-sent when app locale changed")
+	}
+}

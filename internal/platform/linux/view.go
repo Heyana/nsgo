@@ -78,6 +78,7 @@ type view struct {
 	// GtkEntry, or a GtkScrolledWindow holding the GtkTextView textView
 	// of buffer; hint is a text view's placeholder label.
 	entry, textView, buffer, hint uintptr
+	langTag, keepAllTag           uintptr
 	editorPlaceholder             editorPlaceholderState
 	provider                      uintptr // the editor's CSS, for the display
 	editorNum                     uint64  // names the editor's widgets for its CSS (editorName)

@@ -53,7 +53,7 @@ core.Text{Style: core.Style{FontSize: 17, LineHeight: 24}, Spans: []core.Span{
 
 `FontFamily` names a family or a CSS list (`Inter, "Noto Sans SC", sans-serif`), each used for the characters those before it lack. Each family in the list takes the weight and style. On macOS and iOS a line takes its height and baseline from the faces its characters are set in, so a line set wholly in a later family takes that family's, where a browser keeps the first family's as a floor. `FontWeight`, `FontStyle`, `FontVariant`, `LineHeight`, `LineHeightMultiple`, `LetterSpacing` and `LetterSpacingEm` set the face and the spacing, and `core.FontMonospace` is the platform's fixed-pitch family.
 
-`Language` is the text's BCP 47 tag, inherited like the fields above. Han characters are drawn in its forms, so `直` set in `ja` takes its Japanese form even where the system prefers Chinese. Text that sets none is in the language the app shows and follows it when it changes. Set it on a view for a subtree, or on a `Span` for one run:
+`Language` is the text's BCP 47 tag, inherited like the fields above on texts, spans and inputs. Han characters are drawn in its forms, so `直` set in `ja` takes its Japanese form even where the system prefers Chinese, and Korean (`ko`) breaks lines between words as CSS's `word-break: keep-all` does. Text and inputs that set none are in the language the app shows and follow it when it changes. Set it on a view for a subtree, or on a `Span` for one run:
 
 ```go
 core.Text{Spans: []core.Span{

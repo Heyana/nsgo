@@ -29,11 +29,12 @@ func (s *surface) caretMoved(v *view) {
 	for _, p := range []string{"font-family", "font-size", "font-weight", "font-style", "font-stretch",
 		"font-variant", "font-feature-settings", "font-kerning", "letter-spacing", "line-height", "padding-top", "padding-right", "padding-bottom",
 		"padding-left", "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
-		"text-indent", "text-transform", "word-spacing", "tab-size", "direction", "text-align"} {
+		"text-indent", "text-transform", "word-spacing", "word-break", "tab-size", "direction", "text-align"} {
 		style[p] = cs.Call("getPropertyValue", p).String()
 	}
 	style["width"] = cs.Call("getPropertyValue", "width").String()
 	setStyle(mirror, style)
+	setAttr(mirror, "lang", v.input.lang)
 	value := el.Get("value").String()
 	end := el.Get("selectionEnd").Int()
 	if el.Get("selectionDirection").String() == "backward" {

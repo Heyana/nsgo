@@ -577,6 +577,23 @@ func (m *mounter) sendText(v *view) {
 		styles = appendString(styles, s)
 	}
 	t.raw("s", append(styles, ']'))
+	hasLang := false
+	for _, lang := range l.languages {
+		if lang != "" {
+			hasLang = true
+			break
+		}
+	}
+	if hasLang {
+		langs := []byte{'['}
+		for k, lang := range l.languages {
+			if k > 0 {
+				langs = append(langs, ',')
+			}
+			langs = appendString(langs, lang)
+		}
+		t.raw("l", append(langs, ']'))
+	}
 	runs := []byte{'['}
 	n := 0
 	for _, r := range l.runs {
@@ -628,6 +645,9 @@ func (m *mounter) sendText(v *view) {
 func (m *mounter) sendInput(v *view, c *driver.InputConfig) {
 	var j object
 	css := fontCSS(c.Style.Font) + "color:" + webstyle.Color(c.Style.Color) + ";"
+	if c.Multiline && driver.KeepAllWords(c.Style.Font.Language) {
+		css += "word-break:keep-all;"
+	}
 	if c.CaretColor != 0 {
 		css += "caret-color:" + webstyle.Color(c.CaretColor) + ";"
 	}
@@ -672,6 +692,9 @@ func (m *mounter) sendInput(v *view, c *driver.InputConfig) {
 		boolean("nl", c.Multiline && submit == driver.SubmitBehaviorNewline).
 		num("x", float64(c.Content.Origin.X-b.Left)).num("y", float64(c.Content.Origin.Y-b.Top)).
 		num("w", float64(c.Content.Size.Width)).num("h", float64(c.Content.Size.Height))
+	if c.Style.Font.Language != "" {
+		j.str("lang", c.Style.Font.Language)
+	}
 	m.o.op("fd", v.id).raw(j.bytes())
 }
 

@@ -119,6 +119,43 @@ func TestLanguagePicksHanForms(t *testing.T) {
 		if got := face("zh-Hans"); !strings.Contains(got, "PingFang") || !strings.Contains(got, "SC") {
 			t.Errorf("Simplified Chinese sets in %s, want a PingFang SC face", got)
 		}
+		if got := face("ko-KR"); !strings.Contains(got, "SDGothicNeo") {
+			t.Errorf("Korean sets in %s, want an Apple SD Gothic Neo face", got)
+		}
+	}
+}
+
+// TestKoreanBreaksBetweenWords checks that Korean text breaks lines between words as CSS's word-break: keep-all does while still splitting a word wider than the line, and that a Korean span keeps its words whole inside text of another language.
+func TestKoreanBreaksBetweenWords(t *testing.T) {
+	layoutLines := func(at *driver.AttributedText, width driver.Points) []string {
+		p := TextEngine{}.Prepare(at)
+		defer p.Release()
+		l := p.Layout(driver.Size{Width: width, Height: 400}).(*Layout)
+		defer l.Release()
+		var out []string
+		for _, ln := range l.TextLines() {
+			out = append(out, at.Text[ln.Start:ln.End])
+		}
+		return out
+	}
+	text := "안녕하세요 반갑습니다 세계입니다"
+	ko := driver.TextStyle{Font: driver.Font{Size: 14, Weight: driver.FontWeightNormal, Language: "ko-KR"}, Color: driver.RGB(0)}
+	if got := layoutLines(&driver.AttributedText{Text: text, Style: ko}, 100); strings.Join(got, "|") != "안녕하세요 |반갑습니다 |세계입니다" {
+		t.Errorf("Korean lines at 100pt = %q, want word-based breaks", got)
+	}
+	// A single word wider than the line still breaks rather than overflowing.
+	if got := layoutLines(&driver.AttributedText{Text: "안녕하세요", Style: ko}, 40); len(got) < 2 {
+		t.Errorf("long Korean word at 40pt = %q, want emergency wrap across lines", got)
+	}
+	// A Korean span inside English text keeps its Korean words whole.
+	en := driver.TextStyle{Font: driver.Font{Size: 14, Weight: driver.FontWeightNormal, Language: "en"}, Color: driver.RGB(0)}
+	spanned := &driver.AttributedText{
+		Text:  text,
+		Style: en,
+		Spans: []driver.TextSpan{{Start: 0, End: len(text), Style: ko}},
+	}
+	if got := layoutLines(spanned, 100); strings.Join(got, "|") != "안녕하세요 |반갑습니다 |세계입니다" {
+		t.Errorf("Korean span lines at 100pt = %q, want word-based breaks", got)
 	}
 }
 

@@ -42,6 +42,7 @@
     <textarea
       wx:if="{{node.fd.ml}}"
       class="field"
+      lang="{{node.fd.lang || ''}}"
       style="{{m.field(node)}}"
       value="{{node.v}}"
       placeholder="{{node.fd.ph}}"
@@ -73,6 +74,7 @@
     <input
       wx:else
       class="field"
+      lang="{{node.fd.lang || ''}}"
       style="{{m.field(node)}}"
       value="{{node.v}}"
       type="{{node.fd.type}}"
@@ -151,6 +153,7 @@
     wx:for="{{node.t ? node.t.r : []}}"
     wx:for-item="r"
     class="line"
+    lang="{{node.t.l ? node.t.l[r[4]] : ''}}"
     style="{{m.run(node.t, r)}}"
     aria-hidden="{{node.ax && (node.ax.l || node.ax.hd) ? 'true' : ''}}"
   >{{r[0]}}</text>

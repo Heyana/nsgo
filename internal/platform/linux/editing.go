@@ -55,6 +55,11 @@ var (
 	gtkTextBufferInsert            func(uintptr, uintptr, *byte, int32)
 	gtkTextBufferInsertAtCursor    func(uintptr, *byte, int32)
 	gtkTextBufferDeleteSelection   func(uintptr, int32, int32) int32
+	gtkTextBufferGetTagTable       func(uintptr) uintptr
+	gtkTextBufferApplyTag          func(uintptr, uintptr, *textIter, *textIter)
+	gtkTextBufferRemoveTag         func(uintptr, uintptr, *textIter, *textIter)
+	gtkTextTagNew                  func(*byte) uintptr
+	gtkTextTagTableAdd             func(uintptr, uintptr) int32
 	gtkTextIterGetOffset           func(uintptr) int32
 	gtkScrolledWindowNew           func() uintptr
 	gtkScrolledWindowSetChild      func(uintptr, uintptr)
@@ -65,11 +70,14 @@ var (
 	gtkEditableGetDelegate         func(uintptr) uintptr
 	gtkEntrySetInputPurpose        func(uintptr, int32)
 	gtkEntrySetInputHints          func(uintptr, int32)
+	gtkEntrySetAttributes          func(uintptr, uintptr)
 	gtkWidgetSetName               func(uintptr, *byte)
 	gtkLabelSetText                func(uintptr, *byte)
+	gtkLabelSetAttributes          func(uintptr, uintptr)
 	gtkLabelSetXalign              func(uintptr, float32)
 	gtkLabelSetYalign              func(uintptr, float32)
 	gSignalStopEmissionByName      func(uintptr, *byte)
+	gObjectSetStr                  func(uintptr, *byte, *byte, uintptr)
 	gtkStyleContextAddForDisplay   func(uintptr, uintptr, uint32)
 	gtkStyleContextRemoveDisplay   func(uintptr, uintptr)
 
@@ -106,6 +114,11 @@ func bindEditing() {
 		{&gtkTextBufferInsert, "gtk_text_buffer_insert"},
 		{&gtkTextBufferInsertAtCursor, "gtk_text_buffer_insert_at_cursor"},
 		{&gtkTextBufferDeleteSelection, "gtk_text_buffer_delete_selection"},
+		{&gtkTextBufferGetTagTable, "gtk_text_buffer_get_tag_table"},
+		{&gtkTextBufferApplyTag, "gtk_text_buffer_apply_tag"},
+		{&gtkTextBufferRemoveTag, "gtk_text_buffer_remove_tag"},
+		{&gtkTextTagNew, "gtk_text_tag_new"},
+		{&gtkTextTagTableAdd, "gtk_text_tag_table_add"},
 		{&gtkTextIterGetOffset, "gtk_text_iter_get_offset"},
 		{&gtkScrolledWindowNew, "gtk_scrolled_window_new"},
 		{&gtkScrolledWindowSetChild, "gtk_scrolled_window_set_child"},
@@ -116,8 +129,10 @@ func bindEditing() {
 		{&gtkEditableGetDelegate, "gtk_editable_get_delegate"},
 		{&gtkEntrySetInputPurpose, "gtk_entry_set_input_purpose"},
 		{&gtkEntrySetInputHints, "gtk_entry_set_input_hints"},
+		{&gtkEntrySetAttributes, "gtk_entry_set_attributes"},
 		{&gtkWidgetSetName, "gtk_widget_set_name"},
 		{&gtkLabelSetText, "gtk_label_set_text"},
+		{&gtkLabelSetAttributes, "gtk_label_set_attributes"},
 		{&gtkLabelSetXalign, "gtk_label_set_xalign"},
 		{&gtkLabelSetYalign, "gtk_label_set_yalign"},
 		{&gtkStyleContextAddForDisplay, "gtk_style_context_add_provider_for_display"},
@@ -126,6 +141,7 @@ func bindEditing() {
 		purego.RegisterLibFunc(f.fn, gtkLib, f.name)
 	}
 	purego.RegisterLibFunc(&gSignalStopEmissionByName, gobjectLib, "g_signal_stop_emission_by_name")
+	purego.RegisterLibFunc(&gObjectSetStr, gobjectLib, "g_object_set")
 }
 
 func init() {
@@ -272,6 +288,8 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 		gtkTextViewSetJustification(tv, justify)
 		gtkLabelSetText(v.hint, cstr(in.Placeholder))
 		gtkLabelSetXalign(v.hint, x)
+		setWidgetLanguage(v.hint, in.Style.Font.Language, in.Placeholder, true)
+		w.applyBufferLanguage(v)
 		w.updateEditorPlaceholder(v)
 		w.updateHint(v)
 	} else {
@@ -280,6 +298,7 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 		gtkEditableSetEditable(v.entry, editable)
 		gtkEntrySetInputPurpose(v.entry, purpose)
 		gtkEntrySetInputHints(v.entry, hints)
+		setWidgetLanguage(v.entry, in.Style.Font.Language, "", false)
 		switch in.Style.Align {
 		case driver.TextAlignCenter:
 			gtkEntrySetAlignment(v.entry, 0.5)
@@ -454,7 +473,84 @@ func (w *window) dropEditor(v *view) {
 	}
 	v.textView, v.buffer = 0, 0
 	v.editorFocusable = false
+	v.langTag, v.keepAllTag = 0, 0
 	v.editorPlaceholder.reset()
+}
+
+// setWidgetLanguage sets or clears a PangoAttrList carrying language (and, for Korean multiline placeholder labels, keep-all word breaks) on a GtkLabel or GtkEntry.
+func setWidgetLanguage(widget uintptr, language, text string, label bool) {
+	if language == "" {
+		if label {
+			gtkLabelSetAttributes(widget, 0)
+		} else {
+			gtkEntrySetAttributes(widget, 0)
+		}
+		return
+	}
+	list := pangoAttrListNew()
+	if attr := pangoAttrLanguageNew(pangoLanguageFromString(cstr(language))); attr != 0 {
+		setAttributeRange(attr, 0, ^uint32(0))
+		pangoAttrListInsert(list, attr)
+	}
+	if label && driver.KeepAllWords(language) && text != "" {
+		for _, r := range driver.KeepAllWordRanges(text) {
+			if attr := pangoAttrAllowBreaksNew(0); attr != 0 {
+				setAttributeRange(attr, uint32(r[0]), uint32(r[1]))
+				pangoAttrListInsert(list, attr)
+			}
+		}
+	}
+	if label {
+		gtkLabelSetAttributes(widget, list)
+	} else {
+		gtkEntrySetAttributes(widget, list)
+	}
+	pangoAttrListUnref(list)
+}
+
+// applyBufferLanguage applies v's Style.Language (and Korean word-break:
+// keep-all tags) across v's GtkTextBuffer.
+func (w *window) applyBufferLanguage(v *view) {
+	if v.buffer == 0 {
+		return
+	}
+	lang := v.input.Style.Font.Language
+	var start, end textIter
+	gtkTextBufferGetBounds(v.buffer, &start, &end)
+	if lang != "" {
+		if v.langTag == 0 {
+			tag := gtkTextTagNew(nil)
+			gtkTextTagTableAdd(gtkTextBufferGetTagTable(v.buffer), tag)
+			gObjectUnref(tag)
+			v.langTag = tag
+		}
+		gObjectSetStr(v.langTag, cstr("language"), cstr(lang), 0)
+		gtkTextBufferApplyTag(v.buffer, v.langTag, &start, &end)
+	} else if v.langTag != 0 {
+		gObjectSetBool(v.langTag, cstr("language-set"), 0, 0)
+		gtkTextBufferRemoveTag(v.buffer, v.langTag, &start, &end)
+	}
+	if v.keepAllTag != 0 {
+		gtkTextBufferRemoveTag(v.buffer, v.keepAllTag, &start, &end)
+	}
+	if driver.KeepAllWords(lang) {
+		ranges := keepAllRuneRanges(w.editorText(v))
+		if len(ranges) > 0 {
+			if v.keepAllTag == 0 {
+				tag := gtkTextTagNew(nil)
+				gObjectSetBool(tag, cstr("allow-breaks"), 0, 0)
+				gtkTextTagTableAdd(gtkTextBufferGetTagTable(v.buffer), tag)
+				gObjectUnref(tag)
+				v.keepAllTag = tag
+			}
+			var a, b textIter
+			for _, r := range ranges {
+				gtkTextBufferGetIterAtOffset(v.buffer, &a, int32(r[0]))
+				gtkTextBufferGetIterAtOffset(v.buffer, &b, int32(r[1]))
+				gtkTextBufferApplyTag(v.buffer, v.keepAllTag, &a, &b)
+			}
+		}
+	}
 }
 
 // releaseEditor lets a deleted input's editor and CSS go.
@@ -761,6 +857,7 @@ func preeditCallback(widget uintptr, preedit uintptr, data uintptr) {
 
 func bufferChangedCallback(buffer uintptr, data uintptr) {
 	if w, v := editorOf(buffer, data); v != nil {
+		w.applyBufferLanguage(v)
 		w.edited(v)
 	}
 }

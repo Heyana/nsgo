@@ -129,3 +129,55 @@ func TestMultilineInputScrollsUnderPadding(t *testing.T) {
 		t.Errorf("single-line padding-top = %q, want 0px", got)
 	}
 }
+
+// TestLanguageInInputsAndKoreanWordBreak checks that inputs carry lang from Style.Language and that Korean texts and inputs use word-break: keep-all.
+func TestLanguageInInputsAndKoreanWordBreak(t *testing.T) {
+	doc := js.Global().Get("document")
+	if !doc.Truthy() {
+		t.Skip("run with nsgo test -target web")
+	}
+	mount := doc.Call("createElement", "div")
+	mount.Set("id", "nsgo-input-language")
+	setStyle(mount, map[string]string{"width": "320px", "height": "240px"})
+	doc.Get("body").Call("appendChild", mount)
+	defer mount.Call("remove")
+
+	s := open(func(*core.Scope) core.Node {
+		return core.View{
+			Style: core.Style{Width: core.Pt(320), Height: core.Pt(240)},
+			Children: []core.Node{
+				core.Input{TestID: "ja-in", Style: core.Style{Language: "ja", Width: core.Pt(200), Height: core.Pt(32)}},
+				core.Input{TestID: "ko-in", Multiline: true, Style: core.Style{Language: "ko-KR", Width: core.Pt(200), Height: core.Pt(60)}},
+				core.Text{TestID: "ko-txt", Content: "안녕하세요 반갑습니다", Style: core.Style{Language: "ko"}},
+			},
+		}
+	}, Options{Mount: "#nsgo-input-language"}, nil)
+	defer s.engine.Close()
+
+	var jaIn, koIn, koTxt js.Value
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		jaIn = mount.Call("querySelector", `[data-testid="ja-in"]`)
+		koIn = mount.Call("querySelector", `[data-testid="ko-in"]`)
+		koTxt = mount.Call("querySelector", `[data-testid="ko-txt"] .nsgo-text`)
+		if jaIn.Truthy() && koIn.Truthy() && koTxt.Truthy() {
+			break
+		}
+	}
+	if !jaIn.Truthy() || !koIn.Truthy() || !koTxt.Truthy() {
+		t.Fatal("elements did not mount")
+	}
+	if got := jaIn.Call("getAttribute", "lang").String(); got != "ja" {
+		t.Errorf("ja input lang = %q, want ja", got)
+	}
+	if got := koIn.Call("getAttribute", "lang").String(); got != "ko-KR" {
+		t.Errorf("ko input lang = %q, want ko-KR", got)
+	}
+	cs := js.Global().Call("getComputedStyle", koIn)
+	if got := cs.Call("getPropertyValue", "word-break").String(); got != "keep-all" {
+		t.Errorf("ko input word-break = %q, want keep-all", got)
+	}
+	tcs := js.Global().Call("getComputedStyle", koTxt)
+	if got := tcs.Call("getPropertyValue", "word-break").String(); got != "keep-all" {
+		t.Errorf("ko text word-break = %q, want keep-all", got)
+	}
+}

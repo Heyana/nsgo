@@ -564,3 +564,100 @@ func TestPointWideSinkCandidateRect(t *testing.T) {
 		}
 	})
 }
+
+// TestInputLanguageAndKoreanLineBreaking checks that single-line and multiline inputs carry Style.Language on their text, typing attributes and placeholders, and that Korean multiline inputs set NSLineBreakStrategyHangulWordPriority and break between words.
+func TestInputLanguageAndKoreanLineBreaking(t *testing.T) {
+	onMain(func() {
+		loadAppKit()
+		a := textAttrs()
+		window := objc.ID(apple.Class("NSWindow")).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
+			apple.Rect(0, 0, 400, 200), uint(0), uint(2), false)
+		window.Send(sel("setReleasedWhenClosed:"), false)
+		defer window.Send(selRelease)
+
+		s := &surface{views: make([]*view, 3), animator: driver.NewAnimator(func(driver.Event) {})}
+
+		// Single-line field carries kCTLanguageAttributeName on its text, placeholder and field editor.
+		single := s.create(driver.KindInput, 1)
+		s.views[single.id] = single
+		defer s.delete(single, false)
+		window.Send(sel("contentView")).Send(selAddSubview, single.native)
+		single.native.Send(selSetFrame, apple.Rect(0, 0, 200, 40))
+		sc := driver.InputConfig{
+			Placeholder: "直",
+			Style:       driver.TextStyle{Font: driver.Font{Size: 14, Weight: 400, Language: "ja"}, Color: driver.RGB(0)},
+			Content:     driver.Bounds{Size: driver.Size{Width: 200, Height: 40}},
+		}
+		single.configure(&sc)
+		single.input.replaceText("直")
+		phLang := single.input.field.Send(sel("placeholderAttributedString")).Send(sel("attribute:atIndex:effectiveRange:"), a.language, uint(0), uintptr(0))
+		if got := apple.GoString(phLang); got != "ja" {
+			t.Errorf("single-line placeholder language = %q, want ja", got)
+		}
+		valLang := single.input.field.Send(sel("attributedStringValue")).Send(sel("attribute:atIndex:effectiveRange:"), a.language, uint(0), uintptr(0))
+		if got := apple.GoString(valLang); got != "ja" {
+			t.Errorf("single-line unfocused value language = %q, want ja", got)
+		}
+		single.input.focus()
+		if e := single.input.editor(); e != 0 {
+			edLang := e.Send(sel("typingAttributes")).Send(sel("objectForKey:"), a.language)
+			if got := apple.GoString(edLang); got != "ja" {
+				t.Errorf("single-line field editor typing language = %q, want ja", got)
+			}
+		}
+		window.Send(sel("makeFirstResponder:"), objc.ID(0))
+
+		// Multiline Korean input sets HangulWordPriority and ko-u-lw-keepall, breaking lines between words.
+		multi := s.create(driver.KindInput, 2)
+		s.views[multi.id] = multi
+		defer s.delete(multi, false)
+		window.Send(sel("contentView")).Send(selAddSubview, multi.native)
+		multi.native.Send(selSetFrame, apple.Rect(0, 0, 100, 160))
+		ko := "안녕하세요 반갑습니다 세계입니다"
+		mc := driver.InputConfig{
+			Multiline:   true,
+			Placeholder: ko,
+			Style:       driver.TextStyle{Font: driver.Font{Size: 14, Weight: 400, Language: "ko-KR"}, Color: driver.RGB(0)},
+			Content:     driver.Bounds{Size: driver.Size{Width: 100, Height: 160}},
+		}
+		multi.configure(&mc)
+		multi.input.replaceText(ko)
+		multi.native.Send(sel("layoutSubtreeIfNeeded"))
+		tv := multi.input.field
+		typingLang := tv.Send(sel("typingAttributes")).Send(sel("objectForKey:"), a.language)
+		if got := apple.GoString(typingLang); got != "ko-KR-u-lw-keepall" {
+			t.Errorf("multiline Korean typing language = %q, want ko-KR-u-lw-keepall", got)
+		}
+		para := tv.Send(selTextStorage).Send(sel("attribute:atIndex:effectiveRange:"), a.paragraph, uint(0), uintptr(0))
+		if strat := objc.Send[uint](para, sel("lineBreakStrategy")); strat != nsLineBreakStrategyHangulWordPriority {
+			t.Errorf("multiline Korean lineBreakStrategy = %#x, want %#x", strat, nsLineBreakStrategyHangulWordPriority)
+		}
+		multi.input.host.Send(sel("tile"))
+		lm := tv.Send(sel("layoutManager"))
+		tc := tv.Send(sel("textContainer"))
+		lm.Send(sel("ensureLayoutForTextContainer:"), tc)
+		glyphCount := objc.Send[uint](lm, sel("numberOfGlyphs"))
+		var lines []string
+		str := tv.Send(selString)
+		for g := uint(0); g < glyphCount; {
+			var eff apple.NSRange
+			objc.Send[apple.CGRect](lm, sel("lineFragmentRectForGlyphAtIndex:effectiveRange:"), g, uintptr(unsafe.Pointer(&eff)))
+			cr := objc.Send[apple.NSRange](lm, sel("characterRangeForGlyphRange:actualGlyphRange:"), eff, uintptr(0))
+			lines = append(lines, apple.GoString(str.Send(sel("substringWithRange:"), cr)))
+			g = eff.Location + eff.Length
+		}
+		if got := strings.Join(lines, "|"); got != "안녕하세요 |반갑습니다 |세계입니다" {
+			t.Errorf("multiline Korean editor lines = %q, want word-based breaks", got)
+		}
+		// Clearing language clears the attribute and HangulWordPriority.
+		mc.Style.Font.Language = ""
+		multi.configure(&mc)
+		if cleared := tv.Send(selTextStorage).Send(sel("attribute:atIndex:effectiveRange:"), a.language, uint(0), uintptr(0)); cleared != 0 {
+			t.Errorf("language attribute remained %q after clearing", apple.GoString(cleared))
+		}
+		para = tv.Send(selTextStorage).Send(sel("attribute:atIndex:effectiveRange:"), a.paragraph, uint(0), uintptr(0))
+		if strat := objc.Send[uint](para, sel("lineBreakStrategy")); strat != 0 {
+			t.Errorf("lineBreakStrategy = %#x after clearing language, want 0", strat)
+		}
+	})
+}

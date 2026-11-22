@@ -652,6 +652,10 @@ func fontStyle(t driver.TextStyle) map[string]string {
 	if len(nums) > 0 {
 		numeric = strings.Join(nums, " ")
 	}
+	wordBreak := "normal"
+	if driver.KeepAllWords(t.Font.Language) {
+		wordBreak = "keep-all"
+	}
 	return map[string]string{
 		"font-family": family, "font-size": webstyle.Px(t.Font.Size), "font-weight": fmt.Sprint(t.Font.Weight),
 		"font-style": italic, "line-height": lineHeight, "letter-spacing": webstyle.Px(t.LetterSpacing),
@@ -659,6 +663,7 @@ func fontStyle(t driver.TextStyle) map[string]string {
 		"text-decoration-style": webstyle.DecorationStyles[t.DecorationStyle], "text-decoration-color": decorationColor,
 		"text-decoration-thickness": thickness, "text-underline-offset": offset,
 		"font-variant-caps": caps, "font-variant-numeric": numeric, "direction": direction,
+		"word-break": wordBreak,
 	}
 }
 

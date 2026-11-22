@@ -173,6 +173,8 @@ type textInput struct {
 	width, height        float32 // the content box's size
 	contentHeight        float32 // the laid-out text's height, for multiline scrolling and its bar
 	format, layout, hint *comObject
+	// toLayout and fromLayout map display UTF-16 offsets across word joiners inserted for multiline Korean wrapping; nil otherwise.
+	toLayout, fromLayout []uint32
 	// world is where the view was drawn last, for the pointer and the IME.
 	world matrix
 	drawn bool
@@ -195,11 +197,15 @@ func (in *textInput) editable() bool { return !in.config.Readonly && !in.config.
 func (in *textInput) masked() bool { return in.config.Masked && !in.config.Multiline }
 
 // release lets the editor's DirectWrite objects go.
-func (in *textInput) release() { releaseAll(&in.layout, &in.hint, &in.format) }
+func (in *textInput) release() {
+	releaseAll(&in.layout, &in.hint, &in.format)
+	in.toLayout, in.fromLayout = nil, nil
+}
 
 // relayout drops the shown text's layout: the text changed what it shows.
 func (in *textInput) relayout() {
 	releaseAll(&in.layout)
+	in.toLayout, in.fromLayout = nil, nil
 	in.contentHeight = 0
 }
 
@@ -208,7 +214,28 @@ func (in *textInput) setSize(width, height float32) {
 		in.width, in.height = width, height
 		in.contentHeight = 0
 		releaseAll(&in.layout, &in.hint)
+		in.toLayout, in.fromLayout = nil, nil
 	}
+}
+
+func (in *textInput) layoutPos(disp uint32) uint32 {
+	if len(in.toLayout) == 0 {
+		return disp
+	}
+	if int(disp) >= len(in.toLayout) {
+		return in.toLayout[len(in.toLayout)-1]
+	}
+	return in.toLayout[disp]
+}
+
+func (in *textInput) displayPos(layout uint32) uint32 {
+	if len(in.fromLayout) == 0 {
+		return layout
+	}
+	if int(layout) >= len(in.fromLayout) {
+		return in.fromLayout[len(in.fromLayout)-1]
+	}
+	return in.fromLayout[layout]
 }
 
 // textFormat returns the format of the config's font.
@@ -237,7 +264,11 @@ func (in *textInput) makeLayout(units []uint16, align uintptr) *comObject {
 		return nil
 	}
 	if in.multiline() {
-		layout.call(formatSetWordWrapping, dwWrap)
+		wrap := uintptr(dwWrap)
+		if driver.KeepAllWords(in.config.Style.Font.Language) {
+			wrap = dwEmergencyBreak
+		}
+		layout.call(formatSetWordWrapping, wrap)
 		layout.callF(layoutSetMaxWidth, 1, f32(max(in.width, 1)))
 	} else {
 		layout.call(formatSetWordWrapping, dwNoWrap)
@@ -272,11 +303,14 @@ func (in *textInput) makeLayout(units []uint16, align uintptr) *comObject {
 // textLayout returns the shown text, laid out.
 func (in *textInput) textLayout() *comObject {
 	if in.layout == nil {
+		in.toLayout, in.fromLayout = nil, nil
 		var units []uint16
 		if in.masked() {
 			for range in.model.text {
 				units = append(units, bullet)
 			}
+		} else if in.multiline() && driver.KeepAllWords(in.config.Style.Font.Language) {
+			units, in.toLayout, in.fromLayout = encodeKeepAllUTF16(in.model.display())
 		} else {
 			units = utf16.Encode([]rune(in.model.display()))
 		}
@@ -294,7 +328,13 @@ func (in *textInput) textLayout() *comObject {
 // width, trimmed with an ellipsis, or nil.
 func (in *textInput) placeholderLayout() *comObject {
 	if in.hint == nil && in.config.Placeholder != "" {
-		in.hint = in.makeLayout(utf16.Encode([]rune(in.config.Placeholder)), dwAlignment(in.config.Style.Align))
+		var units []uint16
+		if in.multiline() && driver.KeepAllWords(in.config.Style.Font.Language) {
+			units, _, _ = encodeKeepAllUTF16(in.config.Placeholder)
+		} else {
+			units = utf16.Encode([]rune(in.config.Placeholder))
+		}
+		in.hint = in.makeLayout(units, dwAlignment(in.config.Style.Align))
 		if in.hint != nil && !in.multiline() {
 			in.hint.callF(layoutSetMaxWidth, 1, f32(max(in.width, 1)))
 			var sign *comObject
@@ -444,7 +484,7 @@ func (in *textInput) caretRect() (x, y, h float32, ok bool) {
 		return 0, 0, 0, false
 	}
 	ox, oy := in.origin(layout)
-	x, y, h = caretAt(layout, in.model.displayCaret(in.masked()))
+	x, y, h = caretAt(layout, in.layoutPos(in.model.displayCaret(in.masked())))
 	return ox + x, oy + y, h, true
 }
 
@@ -463,7 +503,7 @@ func (in *textInput) hit(x, y float32) int {
 	if trailing != 0 {
 		pos += m.length
 	}
-	return in.model.textAt(pos, in.masked())
+	return in.model.textAt(in.displayPos(pos), in.masked())
 }
 
 // lineHit returns the text offset on the caret's line moved by lines: at
@@ -474,7 +514,7 @@ func (in *textInput) lineHit(end bool, lines int) int {
 		return in.model.caret
 	}
 	ox, oy := in.origin(layout)
-	x, y, h := caretAt(layout, in.model.displayCaret(in.masked()))
+	x, y, h := caretAt(layout, in.layoutPos(in.model.displayCaret(in.masked())))
 	switch {
 	case lines != 0:
 		y += float32(lines) * h
@@ -499,7 +539,7 @@ func (in *textInput) reveal() {
 		return
 	}
 	old := in.scroll
-	x, y, h := caretAt(layout, in.model.displayCaret(in.masked()))
+	x, y, h := caretAt(layout, in.layoutPos(in.model.displayCaret(in.masked())))
 	if in.multiline() {
 		if y < in.scroll {
 			in.scroll = y
@@ -573,7 +613,7 @@ func (in *textInput) draw(p *painter, world matrix) {
 
 	if in.focused && m.hasSelection() {
 		s, e := m.selection()
-		from, to := m.toDisplay(s, masked), m.toDisplay(e, masked)
+		from, to := in.layoutPos(m.toDisplay(s, masked)), in.layoutPos(m.toDisplay(e, masked))
 		for _, r := range hitRects(layout, from, to-from, ox, oy) {
 			p.fillRect(rectF{r.left, r.top, r.left + max(r.width, 4), r.top + r.height}, in.selectionColor())
 		}
@@ -595,7 +635,8 @@ func (in *textInput) draw(p *painter, world matrix) {
 		start := m.toDisplay(m.caret, masked)
 		thin := 1 / max(p.scale, 1)
 		underline := func(from, n uint32, width float32) {
-			for _, r := range hitRects(layout, from, n, ox, oy) {
+			lFrom, lTo := in.layoutPos(from), in.layoutPos(from+n)
+			for _, r := range hitRects(layout, lFrom, lTo-lFrom, ox, oy) {
 				y := r.top + r.height - width/2 - thin
 				p.fillRect(rectF{r.left + thin, y - width/2, r.left + r.width - thin, y + width/2}, color)
 			}
@@ -608,7 +649,7 @@ func (in *textInput) draw(p *painter, world matrix) {
 	}
 
 	if in.focused && in.active && in.caretOn && in.editable() && !in.config.HideCaret && (!m.hasSelection() || m.composing()) {
-		x, y, h := caretAt(layout, m.displayCaret(masked))
+		x, y, h := caretAt(layout, in.layoutPos(m.displayCaret(masked)))
 		// On whole pixels, so that the caret stays sharp.
 		x = float32(math.Round(float64((ox+x)*p.scale))) / p.scale
 		p.fillRect(rectF{x, oy + y, x + caretWidth(), oy + y + h}, in.caretColor())
