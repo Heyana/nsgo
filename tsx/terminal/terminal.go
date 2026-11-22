@@ -42,6 +42,12 @@ type Terminal struct {
 	MinimumContrast      func() float64
 	AutoFocus            bool
 	Transparent          bool
+	Keybinds             func() []terminal.Keybind
+	RightClickAction     func() terminal.RightClickAction
+	MenuClass            string
+	MenuStyle            core.Style
+	MenuItemClass        string
+	MenuItemStyle        core.Style
 	NoKeyBar             func() bool
 	KeyBarKeys           []string
 	KeyBarClass          string
@@ -70,6 +76,12 @@ func (r *Ref) Paste()          { r.view.Paste() }
 func (r *Ref) SelectAll()      { r.view.SelectAll() }
 func (r *Ref) ClearSelection() { r.view.ClearSelection() }
 func (r *Ref) Focus()          { r.view.Focus() }
+
+func (r *Ref) FontSize() core.Points        { return r.view.FontSize() }
+func (r *Ref) SetFontSize(size core.Points) { r.view.SetFontSize(size) }
+func (r *Ref) Perform(action terminal.Action, amount core.Points) bool {
+	return r.view.Perform(action, amount)
+}
 
 // SetCursor sets the cursor's shape until a program changes it.
 func (r *Ref) SetCursor(c terminal.CursorStyle) {
@@ -145,6 +157,14 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 		return f()
 	}
 	return core.Dynamic(func(cx *core.Scope) core.Node {
+		var keybinds []terminal.Keybind
+		if p.Keybinds != nil {
+			keybinds = p.Keybinds()
+		}
+		rightClick := terminal.RightClickContextMenu
+		if p.RightClickAction != nil {
+			rightClick = p.RightClickAction()
+		}
 		var theme, dark *terminal.Theme
 		paddingColor := terminal.PaddingBackground
 		if p.PaddingColor != nil {
@@ -163,6 +183,8 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 			Font:      core.Font{Family: read(p.FontFamily), Size: core.Points(num(p.FontSize))},
 			Padding:   terminal.Padding{X: core.Points(num(p.PaddingX)), Y: core.Points(num(p.PaddingY))},
 			AutoFocus: p.AutoFocus, Transparent: p.Transparent,
+			Keybinds: keybinds, RightClickAction: rightClick,
+			MenuClass: p.MenuClass, MenuStyle: p.MenuStyle, MenuItemClass: p.MenuItemClass, MenuItemStyle: p.MenuItemStyle,
 			Class: p.Class, Style: p.Style, Label: p.Label, TestID: p.TestID,
 			OnFocus: p.OnFocus, OnBlur: p.OnBlur, OnSizeChange: p.OnSizeChange, Ref: &ref.view,
 			KeyBarKeys: p.KeyBarKeys, NoKeyBar: p.NoKeyBar != nil && p.NoKeyBar(),
@@ -174,6 +196,16 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 
 func init() {
 	tsx.Register("nsgo/base", map[string]core.Node{"Terminal": Terminal{}},
+		tsx.Enum(map[string]terminal.Action{
+			"copy_to_clipboard": terminal.CopyToClipboard, "paste_from_clipboard": terminal.PasteFromClipboard,
+			"select_all": terminal.SelectAll, "clear_screen": terminal.ClearScreen,
+			"increase_font_size": terminal.IncreaseFontSize, "decrease_font_size": terminal.DecreaseFontSize,
+			"reset_font_size": terminal.ResetFontSize, "set_font_size": terminal.SetFontSize, "ignore": terminal.Ignore,
+		}),
+		tsx.Enum(map[string]terminal.RightClickAction{
+			"context-menu": terminal.RightClickContextMenu, "paste": terminal.RightClickPaste,
+			"copy": terminal.RightClickCopy, "copy-or-paste": terminal.RightClickCopyOrPaste, "ignore": terminal.RightClickIgnore,
+		}),
 		tsx.Enum(map[string]terminal.CursorStyle{"block": terminal.CursorBlock, "bar": terminal.CursorBar, "underline": terminal.CursorUnderline}),
 		tsx.Enum(map[string]terminal.PaddingColor{"background": terminal.PaddingBackground, "extend": terminal.PaddingExtend, "extend-always": terminal.PaddingExtendAlways}),
 		// It starts programs, past any capability, so it is not SandboxSafe.

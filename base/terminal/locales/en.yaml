@@ -45,3 +45,15 @@ keyPageUp:
 keyPageDown:
   message: "Page down"
   description: What screen readers say of the Page Down key on the bar of keys.
+copy:
+  message: "Copy"
+  description: Copy the terminal's selected text from its context menu.
+paste:
+  message: "Paste"
+  description: Paste into the terminal from its context menu.
+selectAll:
+  message: "Select All"
+  description: Select the terminal's screen and scrollback from its context menu.
+clear:
+  message: "Clear"
+  description: Clear the terminal's screen above its prompt and its scrollback.

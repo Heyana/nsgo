@@ -53,6 +53,9 @@ jobs:
         run: go tool nsgo test -target ${{ matrix.target }} -junit "$RUNNER_TEMP/gallery.xml" -screenshots gallery-screenshots ./examples/gallery
       - name: Test formula layout and display wrapping
         run: go tool nsgo test -target ${{ matrix.target }} -screenshots formula-screenshots ./base/formula
+      - name: Test terminal actions on macOS
+        if: matrix.target == 'macos'
+        run: go tool nsgo test -target macos -run '^TestTerminal(KeybindOverridesZoomAndFocus|DefaultContextMenuActionsAndLanguage|SecondaryClickPolicyAndCustomMenu)$' -screenshots terminal-actions-screenshots ./base/terminal -- -count=1
       - name: Run the many-sprite and mesh canvas scenarios
         env:
           NSGO_GALLERY_PERF: '1'
@@ -67,6 +70,7 @@ jobs:
             ${{ runner.temp }}/gallery.xml
             gallery-screenshots
             formula-screenshots
+            terminal-actions-screenshots
           if-no-files-found: warn
 
   test:

@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/nsgo-dev/nsgo/base/terminal"
+	terminalwords "github.com/nsgo-dev/nsgo/base/terminal/locales"
 	"github.com/nsgo-dev/nsgo/core"
 
 	"github.com/nsgo-dev/nsgo/examples/gallery/locales"
@@ -79,7 +80,8 @@ func terminalDemo(cx *core.Scope) core.Node {
 				th, _ = terminal.GhosttyTheme(name)
 			}
 			view := terminal.View{Terminal: t, Label: tr.DemoTerminal(), TestID: "terminal", AutoFocus: true, Ref: ref,
-				Theme: th, DarkTheme: th,
+				RightClickAction: terminal.RightClickIgnore,
+				Theme:            th, DarkTheme: th,
 				Font:         core.Font{Family: family.Get(), Size: core.Points(size.Get())},
 				Padding:      terminal.Padding{X: core.Points(padX.Get()), Y: core.Points(padY.Get())},
 				OnSizeChange: func(cols, rows int) { cells.Set([2]int{cols, rows}) },
@@ -103,6 +105,7 @@ func terminalDemo(cx *core.Scope) core.Node {
 				ui.MenuItem{Text: tr.TerminalCopy(), Icon: lucide.Copy, Disabled: func() bool { return !ref.Selected() }, OnSelect: ref.Copy},
 				ui.MenuItem{Text: tr.TerminalPaste(), OnSelect: ref.Paste},
 				ui.MenuItem{Text: tr.TerminalSelectAll(), OnSelect: ref.SelectAll},
+				ui.MenuItem{Text: terminalwords.For(cx).Clear(), OnSelect: func() { ref.Perform(terminal.ClearScreen, 0) }},
 			}}
 		})
 	})

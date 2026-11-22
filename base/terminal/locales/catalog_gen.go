@@ -68,6 +68,10 @@ const (
 	textKeyEnd
 	textKeyPageUp
 	textKeyPageDown
+	textCopy
+	textPaste
+	textSelectAll
+	textClear
 	numTexts
 )
 
@@ -88,6 +92,10 @@ var keyOfText = [numTexts]string{
 	"keyEnd",
 	"keyPageUp",
 	"keyPageDown",
+	"copy",
+	"paste",
+	"selectAll",
+	"clear",
 }
 
 // textsEn are the messages without arguments in en.
@@ -105,7 +113,11 @@ var textsEn = i18n.NewTexts(""+
 	"Home"+
 	"End"+
 	"Page up"+
-	"Page down",
+	"Page down"+
+	"Copy"+
+	"Paste"+
+	"Select All"+
+	"Clear",
 	[]uint16{
 		16,
 		14,
@@ -121,6 +133,10 @@ var textsEn = i18n.NewTexts(""+
 		3,
 		7,
 		9,
+		4,
+		5,
+		10,
+		5,
 	})
 
 // textsZhHans are the messages without arguments in zh-Hans.
@@ -138,7 +154,11 @@ var textsZhHans = i18n.NewTexts(""+
 	"Home"+
 	"End"+
 	"向上翻页"+
-	"向下翻页",
+	"向下翻页"+
+	"复制"+
+	"粘贴"+
+	"全选"+
+	"清空",
 	[]uint16{
 		17,
 		17,
@@ -154,6 +174,10 @@ var textsZhHans = i18n.NewTexts(""+
 		3,
 		12,
 		12,
+		6,
+		6,
+		6,
+		6,
 	})
 
 // texts returns the messages without arguments in lang, nil for a
@@ -377,3 +401,39 @@ func KeyPageDown(cx *core.Scope) string { return For(cx).KeyPageDown() }
 
 // KeyPageDown is the package's KeyPageDown in the language of msgs.
 func (msgs Messages) KeyPageDown() string { return msgs.text(textKeyPageDown) }
+
+// Copy says "Copy"
+// in the language the app shows under cx.
+//
+// Copy the terminal's selected text from its context menu.
+func Copy(cx *core.Scope) string { return For(cx).Copy() }
+
+// Copy is the package's Copy in the language of msgs.
+func (msgs Messages) Copy() string { return msgs.text(textCopy) }
+
+// Paste says "Paste"
+// in the language the app shows under cx.
+//
+// Paste into the terminal from its context menu.
+func Paste(cx *core.Scope) string { return For(cx).Paste() }
+
+// Paste is the package's Paste in the language of msgs.
+func (msgs Messages) Paste() string { return msgs.text(textPaste) }
+
+// SelectAll says "Select All"
+// in the language the app shows under cx.
+//
+// Select the terminal's screen and scrollback from its context menu.
+func SelectAll(cx *core.Scope) string { return For(cx).SelectAll() }
+
+// SelectAll is the package's SelectAll in the language of msgs.
+func (msgs Messages) SelectAll() string { return msgs.text(textSelectAll) }
+
+// Clear says "Clear"
+// in the language the app shows under cx.
+//
+// Clear the terminal's screen above its prompt and its scrollback.
+func Clear(cx *core.Scope) string { return For(cx).Clear() }
+
+// Clear is the package's Clear in the language of msgs.
+func (msgs Messages) Clear() string { return msgs.text(textClear) }

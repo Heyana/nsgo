@@ -58,6 +58,18 @@ type View struct {
 	Transparent bool
 	// HideIndicator hides the scroll bar; the scrollback still scrolls.
 	HideIndicator bool
+	// Keybinds override the terminal's defaults while its input is focused.
+	// They use core's key names and Ghostty's actions; later entries win.
+	Keybinds []Keybind
+	// RightClickAction is ContextMenu by default. RightClickIgnore leaves
+	// secondary clicks to an enclosing app menu.
+	RightClickAction RightClickAction
+	// MenuClass and MenuStyle style the default context menu's surface;
+	// MenuItemClass and MenuItemStyle style its four items.
+	MenuClass     string
+	MenuStyle     core.Style
+	MenuItemClass string
+	MenuItemStyle core.Style
 	// Class is Tailwind CSS classes, as core.View's, under Style.
 	Class string
 	Style core.Style
@@ -103,11 +115,17 @@ func (p View) Render(cx *core.Scope) core.Node {
 		focused: core.NewSignal(cx, false), content: core.NewSignal(cx, core.Points(0)),
 		caret: core.NewSignal(cx, core.Point{}), sinkRef: &core.Ref{}, scrollRef: &core.Ref{},
 		selected: core.NewSignal(cx, false), ctrlOn: core.NewSignal(cx, false), altOn: core.NewSignal(cx, false),
-		linkOn: core.NewSignal(cx, false),
-		bounds: core.NewSignal(cx, core.Bounds{}), rootRef: &core.Ref{}}
+		linkOn:   core.NewSignal(cx, false),
+		fontSize: core.NewSignal(cx, configuredFontSize(p.Font)),
+		bounds:   core.NewSignal(cx, core.Bounds{}), rootRef: &core.Ref{}}
 	v.cursorBlink()
 	if p.Ref != nil {
 		p.Ref.v = v
+		cx.Cleanup(func() {
+			if p.Ref.v == v {
+				p.Ref.v = nil
+			}
+		})
 	}
 	v.cellW, v.cellH = 8, 16
 	if v.t != nil {
@@ -145,7 +163,7 @@ func (p View) Render(cx *core.Scope) core.Node {
 				v.bounds.Set(b)
 			}
 		},
-		Children: []core.Node{
+		Children: v.withContextMenu([]core.Node{
 			// The grid and the key bar keep above a software keyboard.
 			core.View{StyleFunc: func() core.Style {
 				return core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(v.keyboardOverlap())}
@@ -185,7 +203,7 @@ func (p View) Render(cx *core.Scope) core.Node {
 				v.bindKeys(cx)
 				return nil
 			}},
-		},
+		}),
 	}
 }
 
@@ -211,6 +229,7 @@ type view struct {
 	focused         *core.Signal[bool]
 	cursor          *core.Signal[vt.Cursor]
 	cursorAlpha     *core.AnimatedValue
+	fontSize        *core.Signal[core.Points]
 	// content is the scroll layer's height, caret the sink's place.
 	content            *core.Signal[core.Points]
 	caret              *core.Signal[core.Point]
@@ -259,6 +278,9 @@ func (v *view) font(bold, italic bool) core.Font {
 	}
 	if f.Size == 0 {
 		f.Size = 13
+	}
+	if v.fontSize != nil {
+		f.Size = v.fontSize.Get()
 	}
 	if bold {
 		f.Weight = core.FontWeightBold
@@ -965,11 +987,13 @@ func (v *view) bindKeys(cx *core.Scope) {
 	if apple {
 		bind("meta+c", v.copy)
 		bind("meta+a", v.selectAll)
-		return
+		bind("meta+v", v.paste)
+	} else {
+		bind("ctrl+shift+c", v.copy)
+		bind("ctrl+shift+a", v.selectAll)
+		bind("ctrl+shift+v", v.paste)
 	}
-	bind("ctrl+shift+c", v.copy)
-	bind("ctrl+shift+a", v.selectAll)
-	bind("ctrl+shift+v", v.paste)
+	v.bindActions(cx)
 }
 
 // copy puts the selection on the clipboard.
