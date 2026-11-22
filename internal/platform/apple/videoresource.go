@@ -34,6 +34,16 @@ var (
 	videoResources     = map[objc.ID]*videoResource{}
 )
 
+// videoAssetWithHeaders opens one media source and returns its resource
+// loader, which the player keeps until the source closes.
+func videoAssetWithHeaders(source string, headers *driver.VideoHeaders) (objc.ID, *videoResource) {
+	if remote := videoResourceURL(source); remote != nil && headers.Len() > 0 {
+		resource := newVideoResource(remote, headers)
+		return resource.asset(), resource
+	}
+	return videoAsset(source), nil
+}
+
 func newVideoResource(source *url.URL, fields *driver.VideoHeaders) *videoResource {
 	r := &videoResource{source: source, requests: make(map[objc.ID]context.CancelFunc)}
 	for name, value := range fields.All {

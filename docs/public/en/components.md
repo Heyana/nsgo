@@ -45,7 +45,7 @@ core.Video{
 }
 ```
 
-The video copies the map when it mounts and uses the same headers if `SourceFunc` supplies a new URL. On Apple platforms, use a source with a known byte length and range support for seeking. The player sends the configured headers through same-origin redirects. Set `Headers` only for file URLs on Apple platforms. The separate `AudioSource` has its own native load.
+The video copies the map when it mounts and uses the same headers if `SourceFunc` supplies a new URL. On Apple platforms, use a source with a known byte length and range support for seeking. The player sends the configured headers through same-origin redirects. The same headers also apply to a direct HTTP `AudioSource` file on Apple platforms. Playlist URLs ending in `.m3u` or `.m3u8` use the native loader.
 
 On Linux, install GstPlay and GStreamer's `scaletempo` and `souphttpsrc` plug-ins. Use the final media URL if you set `User-Agent` or your `souphttpsrc` lacks the `location-trusted` property. With that property and the default user agent, GStreamer keeps app headers on same-origin redirects. The app's headers apply to the source file, and adaptive media segments use their own requests.
 

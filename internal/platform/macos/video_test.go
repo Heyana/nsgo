@@ -306,6 +306,7 @@ func captureView(view objc.ID) image.Image {
 // TestVideoPlaysSeparateAudioAndSeeksItsComposition uses distinct HTTP
 // resources and a native player. The audio stays blocked until the app
 // requests a seek, which must take effect once both tracks are loaded.
+// Both resources require the configured headers.
 func TestVideoPlaysSeparateAudioAndSeeksItsComposition(t *testing.T) {
 	if os.Getenv("NSGO_TEST_VIDEO_PROCESS") != t.Name() {
 		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
@@ -320,9 +321,15 @@ func TestVideoPlaysSeparateAudioAndSeeksItsComposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var videoRequests, audioRequests atomic.Int32
+	const referer = "https://media.example/player"
+	var videoRequests, audioRequests, missingHeaders atomic.Int32
 	seekRequested := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Referer") != referer || r.Header.Get("Cookie") != "test_session=1" {
+			missingHeaders.Add(1)
+			http.Error(w, "missing playback headers", http.StatusForbidden)
+			return
+		}
 		switch r.URL.Path {
 		case "/picture.mov":
 			videoRequests.Add(1)
@@ -363,6 +370,7 @@ func TestVideoPlaysSeparateAudioAndSeeksItsComposition(t *testing.T) {
 		return core.Video{
 			Source:           server.URL + "/picture.mov",
 			AudioSource:      server.URL + "/sound.wav",
+			Headers:          map[string]string{"Referer": referer, "Cookie": "test_session=1"},
 			Ref:              &ref,
 			PausedFunc:       paused.Get,
 			Muted:            true,
@@ -398,6 +406,9 @@ func TestVideoPlaysSeparateAudioAndSeeksItsComposition(t *testing.T) {
 	defer watchdog.Stop()
 	onMain(func() { Run(app, Options{Title: "Separate audio", Width: 200, Height: 140}) })
 
+	if got := missingHeaders.Load(); got != 0 {
+		t.Errorf("%d requests omitted the configured playback headers", got)
+	}
 	loaded := info.Load()
 	if loaded == nil || loaded.Duration != 500*time.Millisecond || loaded.Size.Width <= 0 || loaded.Size.Height <= 0 {
 		t.Errorf("loaded video = %+v, want the half-second picture", loaded)

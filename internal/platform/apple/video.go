@@ -55,9 +55,9 @@ type videoStatus struct {
 	pending  bool
 	reason   int
 
-	resource         *videoResource
-	cancelLoading    func()
-	seekWhileLoading *time.Duration
+	resource, audioResource *videoResource
+	cancelLoading           func()
+	seekWhileLoading        *time.Duration
 }
 
 // videoSettle is how long after the backend's own play or pause the player's rate changes are followed only once they settle. AVPlayer can finish a play only after a pause asked for right after it, and then post that play and the pause once more: on macOS 15 on Intel, a pause the app makes just after the controls played is followed, after it returned, by a play and, some 40ms later, a pause again.
@@ -288,13 +288,8 @@ func (v *Video) open() {
 		v.Dispatch(driver.Event{Kind: driver.EventError, Text: source + ": " + webmRefused(c), Index: driver.VideoErrorAlphaUnsupported})
 		return
 	}
-	var asset objc.ID
-	if remote := videoResourceURL(source); remote != nil && v.config.Headers.Len() > 0 {
-		st.resource = newVideoResource(remote, v.config.Headers)
-		asset = st.resource.asset()
-	} else {
-		asset = videoAsset(source)
-	}
+	asset, resource := videoAssetWithHeaders(source, v.config.Headers)
+	st.resource = resource
 	if asset == 0 {
 		st.failed = true
 		v.Dispatch(driver.Event{Kind: driver.EventError, Text: source + ": cannot resolve the video's location"})
@@ -302,7 +297,8 @@ func (v *Video) open() {
 	}
 	v.Dispatch(driver.Event{Kind: driver.EventLoadStart})
 	if v.config.AudioSource != "" {
-		audio := videoAsset(v.config.AudioSource)
+		audio, audioResource := videoAssetWithHeaders(v.config.AudioSource, v.config.Headers)
+		st.audioResource = audioResource
 		if audio == 0 {
 			st.failed = true
 			v.Dispatch(driver.Event{Kind: driver.EventError, Text: "cannot resolve the separate audio source"})
@@ -425,9 +421,13 @@ func (v *Video) close() {
 		v.layer, v.controller = 0, 0
 	}
 	release := func() {
-		if st != nil && st.resource != nil {
-			st.resource.close()
-			st.resource = nil
+		if st != nil {
+			for _, resource := range []*videoResource{st.resource, st.audioResource} {
+				if resource != nil {
+					resource.close()
+				}
+			}
+			st.resource, st.audioResource = nil, nil
 		}
 		if player != 0 {
 			player.Send(sel("pause"))

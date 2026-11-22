@@ -26,7 +26,7 @@
 - Keep a finger that brakes a scroll view's glide or snap on Windows and Linux, or a fling on an Android zooming scroll view, as the scroll view's touch so lifting presses nothing underneath while dragging still scrolls (#1544).
 - Let images in painted macOS and Windows windows pass the pointer through transparent pixels with `Image.HitTestAlpha` and TSX's `hitTestAlpha` (#599 by @houko).
 - Preview Go component fixtures with `nsgo dev -preview` (#659 by @houko).
-- Send `core.Video.Headers` with Android video requests and with requests for direct HTTP videos on Linux, macOS, iOS and tvOS (#681 by @houko).
+- Send `core.Video.Headers` with Android video requests and direct HTTP videos on Linux, macOS, iOS and tvOS, including separate audio files on Apple (#681 by @houko).
 - Report same-document URL, history and title changes from WebView2 through `WebView.OnNavigationStateChange` (#113 by @houko).
 - Restore the main window’s last regular frame on macOS and Windows, and its full-screen mode on Windows, across native Go rebuilds within a `dev` session (#658 by @houko).
 - Give TSX hosts stop notifications, per-runtime native JavaScript timing, deadline extensions and control of sandboxed views (#925 by @houko).
