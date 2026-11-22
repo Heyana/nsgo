@@ -83,6 +83,7 @@ func Run(app engine.App, opts Options) {
 	s.engine = engine.Start(s, app, engine.Options{
 		Size: s.size(), Environment: s.env, Appearance: opts.Appearance,
 		Storage: engine.NewStorage(&storage{api: s.api, prefix: "nsgo:" + id + ":"}),
+		Secrets: s.secretsStore(),
 	})
 	s.bridge.Set("event", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		s.event(args)

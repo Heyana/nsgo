@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -169,7 +170,7 @@ func signMacApp(ctx context.Context, p *project, app string) error {
 		}
 	}
 	args := p.macSignArgs(app)
-	if ents := p.hardenedEntitlements(); p.notarizing() && len(ents) > 0 {
+	if ents := p.macSignEntitlements(); len(ents) > 0 {
 		path, err := writeEntitlements(ents)
 		if err != nil {
 			return err
@@ -178,6 +179,48 @@ func signMacApp(ctx context.Context, p *project, app string) error {
 		args = append(args[:len(args)-1], "--entitlements", path, app)
 	}
 	return run(ctx, "codesign", args...)
+}
+
+// keychainAccessGroupsEntitlement is the entitlement that moves macOS secrets
+// to the data protection keychain for the listed access groups.
+const keychainAccessGroupsEntitlement = "keychain-access-groups"
+
+// macSignEntitlements are the entitlements signMacApp signs a macOS app with:
+// the hardened runtime's when notarizing, and keychain-access-groups from
+// macos.entitlements when signed with an identity (such as a Developer ID), as
+// a Mac App Store build claims it from macos.entitlements.
+func (p *project) macSignEntitlements() map[string]any {
+	ents := map[string]any{}
+	if p.notarizing() {
+		maps.Copy(ents, p.hardenedEntitlements())
+	}
+	if p.Sign.Identity != "" && p.Sign.Identity != "-" {
+		if groups := keychainAccessGroups(p.MacOS.Entitlements[keychainAccessGroupsEntitlement]); len(groups) > 0 {
+			ents[keychainAccessGroupsEntitlement] = groups
+		}
+	}
+	return ents
+}
+
+// keychainAccessGroups normalizes macos.entitlements' keychain-access-groups
+// into the []any of non-empty strings that encodePlist writes.
+func keychainAccessGroups(v any) []any {
+	var groups []any
+	switch v := v.(type) {
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				groups = append(groups, s)
+			}
+		}
+	case []string:
+		for _, s := range v {
+			if s != "" {
+				groups = append(groups, s)
+			}
+		}
+	}
+	return groups
 }
 
 // macSignArgs are codesign's arguments signing path with sign.identity:

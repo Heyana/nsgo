@@ -217,7 +217,9 @@ type project struct {
 	// is the volume's icon, else the app's. Category is the app's
 	// LSApplicationCategoryType, such as public.app-category.productivity,
 	// which the Mac App Store requires, and Entitlements are what a store
-	// build's sandboxed app claims beyond its defaults (macstore.go).
+	// build's sandboxed app claims beyond its defaults (macstore.go); a
+	// signed non-store build (such as Developer ID) also claims
+	// keychain-access-groups from it (sign.go).
 	MacOS struct {
 		DMGBackground string         `yaml:"dmg_background"`
 		DMGIcon       string         `yaml:"dmg_icon"`

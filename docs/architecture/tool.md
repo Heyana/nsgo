@@ -191,7 +191,7 @@ Sparkle and WinSparkle are downloaded once into the user cache and checked again
 
 ## Signing
 
-`sign.identity` signs macOS packages, libraries first: macOS keeps the permissions it grants an identity's app across builds, where each ad hoc signature counts as a new program. `nsgo dev` and `nsgo test` stay ad hoc, as macOS credits what a terminal starts to the terminal.
+`sign.identity` signs macOS packages, libraries first: macOS keeps the permissions it grants an identity's app across builds, where each ad hoc signature counts as a new program. A non-ad-hoc `sign.identity` (such as a Developer ID) also claims `keychain-access-groups` from `macos.entitlements` (`macSignEntitlements`), as a store build does, so the app can use the data protection keychain. `nsgo dev` and `nsgo test` stay ad hoc, as macOS credits what a terminal starts to the terminal.
 
 `sign.profile` signs the iOS package: `security cms` opens the profile, whose `application-identifier` must cover the bundle ID; a wildcard profile signs the app's own ID, which devices require. The profile goes in as `embedded.mobileprovision`, and `codesign` signs with `sign.identity`, else the keychain's identity for one of the profile's certificates. `-profile`, `-widgets-profile` and `-clip-profile` replace the app, widget extension and App Clip profiles from the command line.
 

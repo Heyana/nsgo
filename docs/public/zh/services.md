@@ -148,10 +148,11 @@ go func() {
 | iOS、tvOS、watchOS | 钥匙串中的通用密码，方式相同 |
 | Windows | 凭据管理器中目标为 `service/account` 的普通凭据，最多 2560 字节 |
 | Linux | Secret Service（GNOME Keyring、KWallet）中带 `service` 和 `account` 属性的条目；会话中没有运行 Secret Service 时不可用 |
-| Android | 用 Android Keystore 中的 AES 密钥加密，保存在应用的私有文件中，不进入备份 |
-| Web、小程序 | 不可用 |
+| Android | 用 Android Keystore 中的 AES 密钥加密，保存在应用的私有文件中，不进入备份；读取时也会回退读取 `expo-secure-store` 加密保存在 `SecureStore` `SharedPreferences` 中的值 |
+| 微信小程序 | 平台加密存储（`wx.setStorage` / `wx.getStorage` 的 `encrypt: true`，需基础库 2.21.3+）；旧版基础库不可用 |
+| Web、其他小程序 | 不可用（`core.ErrSecretsUnavailable`）：浏览器没有受操作系统保护的客户端机密存储（Web 会话应保存在服务端下发的 `HttpOnly` Cookie 中），QQ、支付宝和抖音小程序也没有加密存储 |
 
-服务默认是应用的 ID（`core.App().ID`）。从其他框架迁移来的应用，只要指定那个框架写入的条目，用户就不会被登出：`Service`，以及 Apple 平台上的 `AccessGroup` 和 `Accessible`。在 iOS 上，`core.SecretAfterFirstUnlock` 让后台任务在手机锁定时也能读取条目，`ThisDeviceOnly` 类的可访问性让条目不进入备份。在 macOS 上，设置 `AccessGroup` 会把条目移到数据保护钥匙串，这需要由团队签名、且 `keychain-access-groups` 权利列出该组的构建，Mac App Store 构建可以通过 `macos.entitlements` 获得它。
+服务默认是应用的 ID（`core.App().ID`）。从其他框架迁移来的应用，只要指定那个框架写入的条目，用户就不会被登出：`Service`，以及 Apple 平台上的 `AccessGroup` 和 `Accessible`。在 Android 上，将 `Service` 设为 `expo-secure-store` 使用的 `keychainService`（默认为 `"key_v1"`）即可读取它加密写入 `SharedPreferences` 的值；写入或删除会清理对应的迁移条目。在 iOS 上，`core.SecretAfterFirstUnlock` 让后台任务在手机锁定时也能读取条目，`ThisDeviceOnly` 类的可访问性让条目不进入备份。在 macOS 上，设置 `AccessGroup` 会把条目移到数据保护钥匙串，这需要由团队签名、且 `keychain-access-groups` 权利列出该组的构建；在 `nsgo.yaml` 的 `macos.entitlements` 中配置即可同时用于 Mac App Store 和 Developer ID 构建。
 
 ```go
 s := cx.Secrets()

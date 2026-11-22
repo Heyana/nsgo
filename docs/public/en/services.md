@@ -148,10 +148,11 @@ go func() {
 | iOS, tvOS, watchOS | A generic password of the keychain, the same way |
 | Windows | A generic credential of the Credential Manager whose target is `service/account`, at most 2560 bytes |
 | Linux | An item of the Secret Service (GNOME Keyring, KWallet) with `service` and `account` attributes; unavailable where the session runs none |
-| Android | Encrypted with an AES key of the Android Keystore, in the app's private files, outside backups |
-| Web, mini programs | Unavailable |
+| Android | Encrypted with an AES key of the Android Keystore, in the app's private files, outside backups; reads also fall back to values `expo-secure-store` encrypted into its `SecureStore` `SharedPreferences` |
+| WeChat mini programs | Platform-encrypted storage (`wx.setStorage` / `wx.getStorage` with `encrypt: true`, base library 2.21.3+); unavailable on older base libraries |
+| Web, other mini programs | Unavailable (`core.ErrSecretsUnavailable`): browsers have no OS-protected client secret store (keep web sessions in server-set `HttpOnly` cookies), and QQ, Alipay and Douyin mini programs lack encrypted storage |
 
-The service is the app's ID (`core.App().ID`) by default. An app that moves from another framework keeps its users signed in by naming the items that framework wrote: `Service`, and on Apple platforms `AccessGroup` and `Accessible`. On iOS, `core.SecretAfterFirstUnlock` lets background work read an item while the phone is locked, and a `ThisDeviceOnly` accessibility keeps it out of backups. On macOS an `AccessGroup` moves the items to the data protection keychain, which needs a build signed by a team whose `keychain-access-groups` entitlement lists the group, as `macos.entitlements` gives a Mac App Store build.
+The service is the app's ID (`core.App().ID`) by default. An app that moves from another framework keeps its users signed in by naming the items that framework wrote: `Service`, and on Apple platforms `AccessGroup` and `Accessible`. On Android, set `Service` to `expo-secure-store`'s `keychainService` (`"key_v1"` by default) to read values it encrypted into `SharedPreferences`; writing or deleting clears the migrated entry. On iOS, `core.SecretAfterFirstUnlock` lets background work read an item while the phone is locked, and a `ThisDeviceOnly` accessibility keeps it out of backups. On macOS an `AccessGroup` moves the items to the data protection keychain, which needs a build signed by a team whose `keychain-access-groups` entitlement lists the group, configured under `macos.entitlements` in `nsgo.yaml` for both Mac App Store and Developer ID builds.
 
 ```go
 s := cx.Secrets()
