@@ -13,9 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// TestPermissionProtocolMatchesJava holds Protocol.java's PERMISSION_* status
-// and command constants to driver's, which writePermission sends and
-// Permissions.java switches on.
+// TestPermissionProtocolMatchesJava holds Protocol.java's PERMISSION_* status and command constants to driver's, which writePermission sends and Permissions.java switches on.
 func TestPermissionProtocolMatchesJava(t *testing.T) {
 	testhost.RequireSource(t)
 	java, err := os.ReadFile(filepath.Join("java", "dev", "oneo", "nsgo", "Protocol.java"))
@@ -45,8 +43,7 @@ func TestPermissionProtocolMatchesJava(t *testing.T) {
 	}
 }
 
-// TestPermissionItemEncode checks the fields writePermission sends in the order
-// NsgoView.apply reads them.
+// TestPermissionItemEncode checks the fields writePermission sends in the order NsgoView.apply reads them.
 func TestPermissionItemEncode(t *testing.T) {
 	for _, c := range []struct {
 		count uint32
@@ -70,9 +67,7 @@ func TestPermissionItemEncode(t *testing.T) {
 	}
 }
 
-// TestPermissionsJava exercises Permissions.java on the JVM across API levels,
-// check/ask/persistence, calendar multi-permissions, queuing and settings, and
-// round-trips wire payloads between Go's writePermission and readEvent.
+// TestPermissionsJava exercises Permissions.java on the JVM across API levels, check/ask/persistence, calendar multi-permissions, queuing and settings, and round-trips wire payloads between Go's writePermission and readEvent.
 func TestPermissionsJava(t *testing.T) {
 	javac, java := androidJDK(t)
 	dir := t.TempDir()
