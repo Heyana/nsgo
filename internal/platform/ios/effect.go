@@ -53,7 +53,8 @@ func (s *surface) container(host *view) objc.ID {
 	c := apple.NewChildContainer(host.native, objc.ID(classView), false, func(sub objc.ID) bool {
 		w := views[sub]
 		return w != nil && w != host || sub == host.componentView ||
-			host.input != nil && (sub == host.input.field || sub == host.input.label)
+			host.input != nil && (sub == host.input.field || sub == host.input.label) ||
+			host.sc != nil && sub == host.sc.zoom
 	})
 	host.container = c
 	if host.contentLayer != 0 {
@@ -81,25 +82,25 @@ func (v *view) attachContentLayer(layer objc.ID) {
 	host.Send(selLayer).Send(sel("addSublayer:"), layer)
 }
 
-// clipsInHolder reports whether v clips what it holds without its own layer, which would clip its own shadow and outline too (apple.NeedsClipHolder): a plain view, text, canvas, shader or hosted native control in a holder of its children and content, or an image in its image layer where one radius draws the corners. A scroll view's children scroll in it, where a holder would hold them still.
+// clipsInHolder reports whether v clips what it holds without its own layer, which would clip its own shadow and outline too (apple.NeedsClipHolder): a plain view, text, canvas, shader, hosted native control or scroll viewport in a holder of its children and content, or an image in its own image layer.
 func (v *view) clipsInHolder(vs *driver.ViewStyle) bool {
 	switch {
-	case !apple.NeedsClipHolder(vs) || v.sc != nil:
+	case !apple.NeedsClipHolder(vs):
 		return false
 	case v.kind == driver.KindImage:
-		return !apple.ShapedCorners(vs)
+		return true
 	}
 	return v.kind == driver.KindView || v.kind == driver.KindText || v.kind == driver.KindCanvas || v.kind == driver.KindShader ||
-		v.kind == driver.KindInput || v.kind == driver.KindWeb || v.kind == driver.KindVideo || v.kind == driver.KindNative
+		v.kind == driver.KindInput || v.kind == driver.KindWeb || v.kind == driver.KindVideo || v.kind == driver.KindNative || v.sc != nil
 }
 
-// holdClip clips v's children as vs says, in a holder it makes the first time a view with drawn or hosted content needs one, and reports whether v's own layer leaves them to it (clipHeld). Any other holder but a scroll view's, an effect's or one that clipped, follows every style unclipped, as it takes the view's perspective (apple.ClipHolder).
+// holdClip clips v's children as vs says, in a holder it makes the first time a view with drawn or hosted content or a scroll viewport needs one, and reports whether v's own layer leaves them to it (clipHeld). An existing holder keeps following the view's bounds and perspective after the shadow or outline goes away, a scroll viewport's as its offset moves too (apple.ClipHolder).
 func (v *view) holdClip(vs *driver.ViewStyle) bool {
 	held := v.clipsInHolder(vs)
 	if held && v.kind != driver.KindImage && v.container == 0 {
 		v.surface.container(v)
 	}
-	if v.container != 0 && v.sc == nil {
+	if v.container != 0 {
 		clip := *vs
 		clip.Clip = held
 		v.fitHolder(&clip)
@@ -110,6 +111,11 @@ func (v *view) holdClip(vs *driver.ViewStyle) bool {
 
 // fitHolder fits v's holder to v's bounds and clips it as vs says, nil for not at all.
 func (v *view) fitHolder(vs *driver.ViewStyle) {
-	v.container.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
+	bounds := objc.Send[apple.CGRect](v.native, selBounds)
+	v.container.Send(selSetFrame, bounds)
+	if v.sc != nil {
+		// The viewport stays over the scroll view while its bounds keep children in their content coordinates for UIKit hit testing.
+		v.container.Send(sel("setBounds:"), bounds)
+	}
 	apple.ClipHolder(v.container.Send(selLayer), vs, false)
 }

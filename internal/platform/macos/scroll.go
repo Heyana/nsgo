@@ -420,6 +420,7 @@ func (v *view) commit() {
 		if s.committed != s.at || s.zoomed != s.zoom {
 			s.committed, s.zoomed = s.at, s.zoom
 			v.content.Send(sel("setBounds:"), v.contentBounds())
+			v.followScrollClip()
 		}
 		if s.shift != (driver.Point{}) {
 			s.shift = driver.Point{}
@@ -455,6 +456,7 @@ func (v *view) sizeScroll() {
 		if b := v.contentBounds(); objc.Send[apple.CGRect](v.content, selBounds) != b {
 			v.content.Send(sel("setBounds:"), b)
 		}
+		v.followScrollClip()
 		// AppKit lays the layer out again.
 		apple.SetSublayerTranslation(v.content.Send(selLayer), float64(s.shift.X), float64(s.shift.Y))
 		if s.overlay != 0 {

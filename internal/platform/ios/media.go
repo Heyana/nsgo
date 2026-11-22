@@ -301,7 +301,7 @@ func (v *view) place(f driver.Bounds) {
 		apple.SetTransform(v.native.Send(selLayer), v.drawn.Transform)
 	}
 	apple.LayoutDecor(v.native.Send(selLayer))
-	if resized && v.container != 0 && v.sc == nil {
+	if resized && v.container != 0 {
 		// As last drawn, animated corners and all: only the view's own layer leaves the clip out. The perspective's centre follows the size too.
 		held := v.drawn
 		held.Clip = v.clipHeld

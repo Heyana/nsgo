@@ -89,13 +89,15 @@ func (v *view) attachContentLayer(layer objc.ID) {
 	host.Send(selLayer).Send(sel("addSublayer:"), layer)
 }
 
-// clipsInHolder reports whether v clips what it holds without its own layer, which would clip its own shadow and outline too (apple.NeedsClipHolder): a plain view, text, canvas, shader or hosted native control in a holder of its children and content, a scroll view in the container that holds them already, or an image in its image layer, the two where one radius draws the corners.
+// clipsInHolder reports whether v clips what it holds without its own layer, which would clip its own shadow and outline too (apple.NeedsClipHolder): a plain view, text, canvas, shader or hosted native control in a holder of its children and content, a scroll view in the container that holds them already, or an image in its image layer, with a shape mask where corner radii differ.
 func (v *view) clipsInHolder(vs *driver.ViewStyle) bool {
 	switch {
 	case !apple.NeedsClipHolder(vs):
 		return false
-	case v.sc != nil, v.kind == driver.KindImage:
-		return !apple.ShapedCorners(vs)
+	case v.kind == driver.KindImage:
+		return true
+	case v.sc != nil:
+		return true
 	}
 	return v.kind == driver.KindView || v.kind == driver.KindText || v.kind == driver.KindCanvas || v.kind == driver.KindShader ||
 		v.kind == driver.KindInput || v.kind == driver.KindWeb || v.kind == driver.KindVideo || v.kind == driver.KindNative
@@ -120,6 +122,23 @@ func (v *view) holdClip(vs *driver.ViewStyle) bool {
 func (v *view) fitHolder(vs *driver.ViewStyle) {
 	if v.sc == nil {
 		v.content.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
+	} else if vs != nil && v.sc.zoomed > 0 && v.sc.zoomed != 1 {
+		// Bounds scale the scroll contents; viewport corners keep their size in points while the content zooms beneath them.
+		clip := *vs
+		z := driver.Points(v.sc.zoomed)
+		clip.CornerRadius /= z
+		clip.Corners = driver.Corners{TopLeft: clip.Corners.TopLeft / z, TopRight: clip.Corners.TopRight / z,
+			BottomRight: clip.Corners.BottomRight / z, BottomLeft: clip.Corners.BottomLeft / z}
+		vs = &clip
 	}
 	apple.ClipHolder(v.content.Send(selLayer), vs, v.sc != nil)
+}
+
+// followScrollClip keeps a scroll holder's mask at the committed viewport.
+func (v *view) followScrollClip() {
+	if v.clipHeld {
+		clip := v.drawn
+		clip.Clip = true
+		v.fitHolder(&clip)
+	}
 }

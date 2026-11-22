@@ -326,15 +326,19 @@ func (s *surface) pullBackResizedScrolls() {
 // or takes it away, moving them back unzoomed.
 func (v *view) setZoomable(on bool) {
 	s := v.sc
+	host := v.native
+	if v.container != 0 {
+		host = v.container
+	}
 	switch {
 	case on && s.zoom == 0:
 		z := objc.ID(apple.Class("UIView")).Send(selNew)
-		for _, child := range subviews(v.native) {
+		for _, child := range subviews(host) {
 			if views[child] != nil {
 				z.Send(selAddSubview, child)
 			}
 		}
-		v.native.Send(sel("insertSubview:atIndex:"), z, 0)
+		host.Send(sel("insertSubview:atIndex:"), z, 0)
 		z.Send(selRelease)
 		s.zoom = z
 		v.layoutZoom()
@@ -343,7 +347,7 @@ func (v *view) setZoomable(on bool) {
 		z := s.zoom
 		s.zoom = 0
 		for _, child := range subviews(z) {
-			v.native.Send(selInsertBelow, child, z)
+			host.Send(selInsertBelow, child, z)
 		}
 		z.Send(selRemoveFromSuperview)
 		v.setContent(s.content)

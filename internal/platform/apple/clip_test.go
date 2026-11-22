@@ -128,7 +128,7 @@ func TestClipHolderTakesThePerspective(t *testing.T) {
 	}
 }
 
-// An image clips itself to rounded corners that share a radius, some of the four or all, as a view that clips in a holder leaves its corners to it.
+// An image clips its own layer to uniform or differing corner radii, keeps the mask sized after a resize, and releases it when the image closes.
 func TestImageClipsToItsRoundedCorners(t *testing.T) {
 	host := objc.ID(objc.GetClass("CALayer")).Send(selNew)
 	defer host.Send(selRelease)
@@ -147,7 +147,21 @@ func TestImageClipsToItsRoundedCorners(t *testing.T) {
 		t.Fatalf("one radius: cornerRadius %v, maskedCorners %b; want 8 on all four", radius(), corners())
 	}
 	iv.SetStyle(&driver.ViewStyle{Corners: driver.Corners{TopLeft: 16, TopRight: 4, BottomRight: 4, BottomLeft: 4}})
-	if radius() != 0 {
-		t.Fatalf("radii that differ: cornerRadius %v; want none, the view's mask clips them", radius())
+	if radius() != 0 || iv.layer.Send(sel("mask")) == 0 {
+		t.Fatalf("radii that differ: cornerRadius %v, mask %v; want a shaped image-layer clip", radius(), iv.layer.Send(sel("mask")))
+	}
+	iv.Layout(CGSize{Width: 80, Height: 60})
+	m := iv.layer.Send(sel("mask"))
+	if got := objc.Send[CGRect](m, sel("frame")); got != Rect(0, 0, 80, 60) {
+		t.Errorf("resized image mask: %v, want current image bounds", got)
+	}
+	iv.SetStyle(&driver.ViewStyle{CornerRadius: 8})
+	if iv.layer.Send(sel("mask")) != 0 || radius() != 8 {
+		t.Error("a uniform radius did not replace the shape mask")
+	}
+	iv.SetStyle(&driver.ViewStyle{Corners: driver.Corners{TopLeft: 16, BottomRight: 8}})
+	iv.Close()
+	if HolderMask(iv.layer) != 0 {
+		t.Error("closing the image retained its corner mask")
 	}
 }

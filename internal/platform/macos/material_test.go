@@ -96,9 +96,9 @@ func TestViewsClipInAHolderToKeepTheirShadow(t *testing.T) {
 		{"a video", &view{kind: driver.KindVideo}, shaped, true},
 		{"a native component", &view{kind: driver.KindNative}, shaped, true},
 		{"an image, which clips to one radius itself", &view{kind: driver.KindImage}, card, true},
-		{"an image of corners that differ", &view{kind: driver.KindImage}, shaped, false},
+		{"an image of corners that differ", &view{kind: driver.KindImage}, shaped, true},
 		{"a scroll view", &view{kind: driver.KindScroll, sc: &scrollState{}}, card, true},
-		{"a scroll view of corners that differ", &view{kind: driver.KindScroll, sc: &scrollState{}}, shaped, false},
+		{"a scroll view of corners that differ", &view{kind: driver.KindScroll, sc: &scrollState{}}, shaped, true},
 	} {
 		if got := c.v.clipsInHolder(&c.vs); got != c.want {
 			t.Errorf("%s: clipsInHolder = %v, want %v", c.name, got, c.want)
