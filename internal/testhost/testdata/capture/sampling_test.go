@@ -32,12 +32,11 @@ func TestImageSampling(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		ratio = cx.Env().PixelRatio()
 		pt := func(px float32) core.Length { return core.Pt(core.Points(px / ratio)) }
-		children := []core.Node{
+		// The offscreen forms sit beside the canvas so the whole stays within a small display's height: AppKit lets a window run past the screen's bottom, and the capture shows nothing there.
+		top := []core.Node{
 			core.Canvas{TestID: "canvas", Style: core.Style{Width: pt(256), Height: pt(256)}, Draw: func(d *core.Drawing, size core.Size) {
 				canvastest.DrawSampling(d, core.ImageSource{Data: encoded.Bytes()}, float32(size.Width)/2)
 			}},
-			core.Image{TestID: "image", Style: core.Style{Width: pt(640), Height: pt(360)},
-				Source: core.ImageSource{Pixels: frame}, ResizeMode: core.Stretch, Sampling: core.ImageSamplingNearest},
 		}
 		if offscreen {
 			// One backing pixel per texel, filled rather than scaled, so the offscreen surface itself is exact.
@@ -52,16 +51,21 @@ func TestImageSampling(t *testing.T) {
 					}
 				}
 			})
-			children = append(children, core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{
+			top = append(top,
 				core.Canvas{TestID: "offscreen-canvas", Style: core.Style{Width: pt(128), Height: pt(128)}, Draw: func(d *core.Drawing, size core.Size) {
 					d.SetImageSmoothing(false).DrawImageIn(checker.Source(), 0, 0, float32(size.Width), float32(size.Height))
 				}},
 				core.Image{TestID: "offscreen-image", Style: core.Style{Width: pt(128), Height: pt(128)},
 					SourceFunc: checker.Source, ResizeMode: core.Stretch, Sampling: core.ImageSamplingNearest},
-			}})
+			)
+		}
+		children := []core.Node{
+			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignStart}, Children: top},
+			core.Image{TestID: "image", Style: core.Style{Width: pt(640), Height: pt(360)},
+				Source: core.ImageSource{Pixels: frame}, ResizeMode: core.Stretch, Sampling: core.ImageSamplingNearest},
 		}
 		return core.View{Style: core.Style{Width: core.Pct(100), Height: core.Pct(100), Padding: core.All(core.Points(16 / ratio)), Background: core.RGB(0xff0000)}, Children: children}
-	}, nsgotest.Size(700, 800))
+	}, nsgotest.Size(700, 680))
 	origin := func(id string) image.Point {
 		b := app.Find("id:" + id).Bounds()
 		return image.Pt(int(math.Round(float64(float32(b.Origin.X)*ratio))), int(math.Round(float64(float32(b.Origin.Y)*ratio))))
