@@ -24,6 +24,7 @@ func (s *surface) configureInput(v *view, c *driver.InputConfig) {
 	v.field.Config = *c
 	s.relayoutField(v)
 	s.sendInput(v)
+	s.sendAccess(v)
 }
 
 // sendInput sends the field's placeholder, kind and text to the host.

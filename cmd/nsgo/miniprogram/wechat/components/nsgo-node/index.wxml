@@ -11,6 +11,12 @@
   id="n"
   class="n"
   style="{{m.box(node)}}"
+  aria-role="{{node.ax ? node.ax.r : ''}}"
+  aria-label="{{node.ax ? node.ax.l : ''}}"
+  aria-description="{{node.ax ? node.ax.h : ''}}"
+  aria-disabled="{{node.ax && node.ax.d ? 'true' : ''}}"
+  aria-invalid="{{node.ax && node.ax.inv ? 'true' : ''}}"
+  aria-hidden="{{node.ax && node.ax.hd ? 'true' : ''}}"
   scroll-x="{{node.sc ? node.sc.h && !node.sc.off : false}}"
   scroll-y="{{node.sc ? !node.sc.h && !node.sc.off : true}}"
   scroll-top="{{node.so ? node.so[1] : ''}}"
@@ -31,7 +37,7 @@
     <nsgo-node wx:for="{{node.c}}" wx:key="id" node="{{item}}" />
   </view>
 </scroll-view>
-<view wx:elif="{{node.k === 'input'}}" id="n" class="n" style="{{m.box(node)}}">
+<view wx:elif="{{node.k === 'input'}}" id="n" class="n" style="{{m.box(node)}}" aria-hidden="{{node.ax && node.ax.hd ? 'true' : ''}}">
   <block wx:if="{{node.fd}}">
     <textarea
       wx:if="{{node.fd.ml}}"
@@ -41,8 +47,16 @@
       placeholder="{{node.fd.ph}}"
       placeholder-style="{{node.fd.phs}}"
       maxlength="{{node.fd.max}}"
-      disabled="{{node.fd.off}}"
+      disabled="{{node.fd.off || (node.ax && node.ax.d)}}"
       focus="{{node.fo}}"
+      aria-role="{{node.ax ? node.ax.r : ''}}"
+      aria-label="{{node.ax ? node.ax.l : ''}}"
+      aria-description="{{node.ax ? node.ax.h : ''}}"
+      aria-disabled="{{node.ax && node.ax.d ? 'true' : ''}}"
+      aria-invalid="{{node.ax && node.ax.inv ? 'true' : ''}}"
+      aria-hidden="{{node.ax && node.ax.hd ? 'true' : ''}}"
+      aria-expanded="{{node.ax ? node.ax.ex : ''}}"
+      aria-busy="{{node.ax && node.ax.bs ? 'true' : ''}}"
       selection-start="{{node.sel ? node.sel[0] : -1}}"
       selection-end="{{node.sel ? node.sel[1] : -1}}"
       confirm-type="{{node.fd.nl ? 'return' : node.fd.confirm}}"
@@ -66,8 +80,16 @@
       placeholder="{{node.fd.ph}}"
       placeholder-style="{{node.fd.phs}}"
       maxlength="{{node.fd.max}}"
-      disabled="{{node.fd.off}}"
+      disabled="{{node.fd.off || (node.ax && node.ax.d)}}"
       focus="{{node.fo}}"
+      aria-role="{{node.ax ? node.ax.r : ''}}"
+      aria-label="{{node.ax ? node.ax.l : ''}}"
+      aria-description="{{node.ax ? node.ax.h : ''}}"
+      aria-disabled="{{node.ax && node.ax.d ? 'true' : ''}}"
+      aria-invalid="{{node.ax && node.ax.inv ? 'true' : ''}}"
+      aria-hidden="{{node.ax && node.ax.hd ? 'true' : ''}}"
+      aria-expanded="{{node.ax ? node.ax.ex : ''}}"
+      aria-busy="{{node.ax && node.ax.bs ? 'true' : ''}}"
       selection-start="{{node.sel ? node.sel[0] : -1}}"
       selection-end="{{node.sel ? node.sel[1] : -1}}"
       confirm-type="{{node.fd.confirm}}"
@@ -87,6 +109,19 @@
   id="n"
   class="n"
   style="{{m.box(node)}}"
+  aria-role="{{node.ax ? node.ax.r : ''}}"
+  aria-label="{{node.ax ? node.ax.l : ''}}"
+  aria-description="{{node.ax ? node.ax.h : ''}}"
+  aria-disabled="{{node.ax && node.ax.d ? 'true' : ''}}"
+  aria-invalid="{{node.ax && node.ax.inv ? 'true' : ''}}"
+  aria-hidden="{{node.ax && node.ax.hd ? 'true' : ''}}"
+  aria-checked="{{node.ax ? node.ax.ck : ''}}"
+  aria-selected="{{node.ax ? node.ax.sl : ''}}"
+  aria-pressed="{{node.ax && node.ax.pr ? 'true' : ''}}"
+  aria-expanded="{{node.ax ? node.ax.ex : ''}}"
+  aria-busy="{{node.ax && node.ax.bs ? 'true' : ''}}"
+  aria-level="{{node.ax ? node.ax.lv : ''}}"
+  aria-live="{{node.ax ? node.ax.lr : ''}}"
   catchtap="{{node.p ? 'onTap' : ''}}"
   catchlongpress="{{node.lp ? 'onLongPress' : ''}}"
   mut-bind:touchstart="{{node.io ? 'onPressIn' : ''}}"
@@ -113,9 +148,9 @@
   <text
     wx:for="{{node.t ? node.t.r : []}}"
     wx:for-item="r"
-   
     class="line"
     style="{{m.run(node.t, r)}}"
+    aria-hidden="{{node.ax && (node.ax.l || node.ax.hd) ? 'true' : ''}}"
   >{{r[0]}}</text>
   <nsgo-node wx:for="{{node.c}}" wx:key="id" node="{{item}}" />
 </view>

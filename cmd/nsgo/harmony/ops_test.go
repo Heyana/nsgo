@@ -54,6 +54,29 @@ func TestHostReadsNothingTheRendererNeverWrites(t *testing.T) {
 	}
 }
 
+// TestHostAppliesAccessibilityAttributes checks that Index.ets wires the
+// accessibility fields sent by vp and al onto ArkUI's FrameNode attributes.
+func TestHostAppliesAccessibilityAttributes(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "cmd", "nsgo", "harmony", "templates", "entry", "src", "main", "ets", "pages", "Index.ets")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(data)
+	for _, want := range []string{
+		"c.accessibilityText(v.label)",
+		"c.accessibilityDescription(v.accDesc)",
+		"c.accessibilityLevel(v.accLevel)",
+		"c.accessibilityGroup(v.accGroup)",
+		"c.enabled(enabled)",
+		".enabled(!(v.disabled || v.propDisabled))",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("Index.ets missing %q", want)
+		}
+	}
+}
+
 func names(t *testing.T, path string, re *regexp.Regexp) map[string]bool {
 	t.Helper()
 	data, err := os.ReadFile(path)

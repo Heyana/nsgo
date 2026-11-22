@@ -68,6 +68,7 @@ type view struct {
 	// A text's layout and where it goes; a canvas's drawing; an image's
 	// loads; a field's state, config, value and its own layout.
 	layout  *apple.Layout
+	plain   string
 	box     driver.Bounds
 	drawing *driver.Drawing
 	image   *apple.ImageView
@@ -83,15 +84,16 @@ type view struct {
 	applied uint32
 	phase   uint8
 
-	// What the host was last sent: the look, the ink and the ops the
-	// look draws over and under the content.
-	sentLook look
-	sentInk  driver.Bounds
-	draws    bool
-	culled   bool
-	back     []driver.DrawOp
-	front    []driver.DrawOp
-	boxFor   boxKey
+	// What the host was last sent: the look, the ink, accessibility state
+	// and the ops the look draws over and under the content.
+	sentLook   look
+	sentInk    driver.Bounds
+	sentAccess watchAccess
+	draws      bool
+	culled     bool
+	back       []driver.DrawOp
+	front      []driver.DrawOp
+	boxFor     boxKey
 }
 
 // look is what a node's SwiftUI modifiers show (Host.swift's look op).
@@ -573,15 +575,22 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.setStyle(v, it.ViewStyle)
 		case driver.ItemViewProps:
 			v.props = *it.ViewProps
+			s.sendAccess(v)
+		case driver.ItemAccessibilityLabel:
+			v.props.Label = it.Value
+			s.sendAccess(v)
 		case driver.ItemEvents:
 			v.events = it.Events
 			if v.field != nil {
 				v.field.Events = it.Events
 			}
+			s.sendAccess(v)
 		case driver.ItemText:
 			v.layout.Release()
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
+			v.plain = it.Text.Text
 			v.box = it.Text.Content
+			s.sendAccess(v)
 			s.touched(v)
 			s.redraw[v] = true
 		case driver.ItemCanvas:
@@ -878,6 +887,17 @@ func (s *surface) sendScroll(v *view) {
 	s.w.flag(v.scroll.Horizontal)
 	s.w.flag(!v.scroll.HideIndicator)
 	s.w.f64(float64(v.content.Width), float64(v.content.Height))
+}
+
+// sendAccess sends v's accessibility state to the host when it changes.
+func (s *surface) sendAccess(v *view) {
+	inputDisabled := v.field != nil && v.field.Config.Disabled
+	a := watchAccessOf(v.kind, &v.props, v.events, v.plain, inputDisabled)
+	if a == v.sentAccess {
+		return
+	}
+	v.sentAccess = a
+	s.w.access(v.id, a)
 }
 
 // Host.swift's scroll phases.

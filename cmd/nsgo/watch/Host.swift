@@ -186,6 +186,33 @@ enum Kind: UInt8 {
 	var disabled = false
 	var focused = false
 
+	// Accessibility (opAccess).
+	var a11yFlags: UInt8 = 0
+	var a11yTraits: UInt32 = 0
+	var a11yLabel = ""
+	var a11yHint = ""
+	var a11yValue = ""
+
+	var a11yElement: Bool { a11yFlags & 1 != 0 }
+	var a11yHidden: Bool { a11yFlags & 2 != 0 }
+	var a11yDisabled: Bool { a11yFlags & 4 != 0 }
+	var a11yModal: Bool { a11yFlags & 8 != 0 }
+
+	var swiftTraits: AccessibilityTraits {
+		var t: AccessibilityTraits = []
+		if a11yTraits & (1 << 0) != 0 { _ = t.insert(.isButton) }
+		if a11yTraits & (1 << 1) != 0 { _ = t.insert(.isLink) }
+		if a11yTraits & (1 << 2) != 0 { _ = t.insert(.isHeader) }
+		if a11yTraits & (1 << 3) != 0 { _ = t.insert(.isImage) }
+		if a11yTraits & (1 << 4) != 0 { _ = t.insert(.isStaticText) }
+		if a11yTraits & (1 << 5) != 0 { _ = t.insert(.isSelected) }
+		if a11yTraits & (1 << 6) != 0 { _ = t.insert(.isSearchField) }
+		if a11yTraits & (1 << 7) != 0 { _ = t.insert(.updatesFrequently) }
+		if a11yTraits & (1 << 8) != 0 { _ = t.insert(.isTabBar) }
+		if a11yModal { _ = t.insert(.isModal) }
+		return t
+	}
+
 	init(id: UInt32, kind: Kind) {
 		self.id = id
 		self.kind = kind
@@ -214,7 +241,7 @@ struct Alert: Identifiable {
 	/// The ops Go writes, as watchos.go's op constants number them.
 	enum Op: UInt8 {
 		case create = 1, insert, remove, delete, frame, look, ink, redraw, scroll, scrollTo, input, focus, blur,
-			alert, root, lock, dismiss, cull
+			alert, root, lock, dismiss, cull, access
 	}
 
 	func apply(_ r: Reader) {
@@ -307,6 +334,15 @@ struct Alert: Identifiable {
 			case .lock:
 				let id = r.u32(), locked = r.u8() != 0
 				if let n = nodes[id], n.locked != locked { n.locked = locked }
+			case .access:
+				let id = r.u32(), flags = r.u8(), traits = r.u32()
+				let label = r.string(), hint = r.string(), value = r.string()
+				guard let n = nodes[id] else { continue }
+				if n.a11yFlags != flags { n.a11yFlags = flags }
+				if n.a11yTraits != traits { n.a11yTraits = traits }
+				if n.a11yLabel != label { n.a11yLabel = label }
+				if n.a11yHint != hint { n.a11yHint = hint }
+				if n.a11yValue != value { n.a11yValue = value }
 			}
 		}
 	}
@@ -334,6 +370,7 @@ struct NodeView: View {
 
 	var body: some View {
 		content
+			.modifier(NodeAccess(node: node))
 			.opacity(node.hidden ? 0 : node.opacity)
 			.allowsHitTesting(!node.hidden)
 			.transformEffect(node.transform)
@@ -373,6 +410,31 @@ struct NodeView: View {
 				.frame(width: node.ink.width, height: node.ink.height)
 				.offset(x: node.ink.minX, y: node.ink.minY)
 				.allowsHitTesting(false)
+		}
+	}
+}
+
+/// NodeAccess applies opAccess to non-input nodes; FieldNode applies its own
+/// accessibility modifiers directly to the underlying TextField/SecureField.
+struct NodeAccess: ViewModifier {
+	let node: Node
+
+	@ViewBuilder func body(content: Content) -> some View {
+		if node.kind == .input {
+			content.accessibilityHidden(node.a11yHidden)
+		} else if node.a11yElement {
+			content
+				.accessibilityElement(children: .ignore)
+				.accessibilityLabel(Text(verbatim: node.a11yLabel))
+				.accessibilityHint(Text(verbatim: node.a11yHint))
+				.accessibilityValue(Text(verbatim: node.a11yValue))
+				.accessibilityAddTraits(node.swiftTraits)
+				.disabled(node.a11yDisabled)
+				.accessibilityHidden(node.a11yHidden)
+		} else {
+			content
+				.accessibilityAddTraits(node.swiftTraits)
+				.accessibilityHidden(node.a11yHidden)
 		}
 	}
 }
@@ -477,7 +539,12 @@ struct FieldNode: View {
 				}
 			}
 			.focused($focus)
-			.disabled(node.disabled)
+			.disabled(node.disabled || node.a11yDisabled)
+			.accessibilityLabel(Text(verbatim: node.a11yLabel.isEmpty ? node.placeholder : node.a11yLabel))
+			.accessibilityHint(Text(verbatim: node.a11yHint))
+			.accessibilityValue(Text(verbatim: fieldValue))
+			.accessibilityAddTraits(node.swiftTraits)
+			.accessibilityHidden(node.a11yHidden)
 			.opacity(0.02)
 			.frame(width: node.frame.width, height: node.frame.height)
 			.onChange(of: node.text) { _, text in sendText(node.id, 0, text) }
@@ -491,6 +558,13 @@ struct FieldNode: View {
 			}
 			Children(node: node)
 		}
+	}
+
+	private var fieldValue: String {
+		if node.secure { return node.a11yValue }
+		if node.a11yValue.isEmpty { return node.text }
+		if node.text.isEmpty || node.a11yValue == node.text { return node.a11yValue }
+		return "\(node.text), \(node.a11yValue)"
 	}
 }
 

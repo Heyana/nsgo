@@ -247,12 +247,15 @@ class VNode {
   // none: setTextSelection applies it once, after the value.
   selStart: number = -1;
   selEnd: number = -1;
-  // testID, pointer and label are ItemViewProps': the id a UI test finds
-  // the view by, how it takes hits, and what assistive technology says.
+  // testID, pointer and accessibility fields are ItemViewProps': the id a UI
+  // test finds the view by, how it takes hits, and what assistive technology says.
   testID: string = '';
   pointer: number = 0;
   label: string = '';
-  accLabel: string = '';
+  accDesc: string = '';
+  propDisabled: boolean = false;
+  accLevel: string = 'auto';
+  accGroup: boolean = false;
   // A screen's system header: its title, whether it shows, and a back
   // button to the screen below. Its height and colors are the core's:
   // a large title's header is taller, and a transparent one leaves its
@@ -724,11 +727,15 @@ class Tree {
         } else if (code === 'vseek') {
           v.videoSeek = o[2] as number;
         } else if (code === 'al') {
-          v.accLabel = o[2] as string;
+          v.label = o[2] as string;
         } else if (code === 'vp') {
           v.testID = o[2] as string;
           v.pointer = o[3] as number;
           v.label = o[4] as string;
+          v.accDesc = o[5] as string;
+          v.propDisabled = o[6] as boolean;
+          v.accLevel = o[7] as string;
+          v.accGroup = o[8] as boolean;
         } else if (code === 'sel') {
           v.selStart = o[2] as number;
           v.selEnd = o[3] as number;
@@ -3156,10 +3163,26 @@ class Renderer {
       c.clip(v.clip);
       a.clip = v.clip;
     }
-    const acc = v.accLabel !== '' ? v.accLabel : v.label;
-    if (acc !== '' && a.acc !== acc) {
-      c.accessibilityText(acc);
-      a.acc = acc;
+    if (a.acc !== v.label) {
+      c.accessibilityText(v.label);
+      a.acc = v.label;
+    }
+    if (a.accDesc !== v.accDesc) {
+      c.accessibilityDescription(v.accDesc);
+      a.accDesc = v.accDesc;
+    }
+    if (a.accLevel !== v.accLevel) {
+      c.accessibilityLevel(v.accLevel);
+      a.accLevel = v.accLevel;
+    }
+    if (a.accGroup !== v.accGroup) {
+      c.accessibilityGroup(v.accGroup);
+      a.accGroup = v.accGroup;
+    }
+    const enabled = !(v.disabled || v.propDisabled);
+    if (a.enabled !== enabled) {
+      c.enabled(enabled);
+      a.enabled = enabled;
     }
     const key = v.testID !== '' ? v.testID : 'nsgo-' + v.id;
     if (a.key !== key) {
@@ -3248,7 +3271,7 @@ class Renderer {
     }
     a.fontSize(v.fs).fontColor(v.color)
       .type(v.masked ? InputType.Password : InputType.Normal)
-      .enabled(!v.disabled)
+      .enabled(!(v.disabled || v.propDisabled))
       // A read-only field still focuses, selects and copies; it only refuses what the user would insert or delete.
       .onWillInsert(() => !v.readonly)
       .onWillDelete(() => !v.readonly)
@@ -3615,7 +3638,11 @@ class Styled {
   rot: number = NaN;
   hidden: boolean | undefined = undefined;
   clip: boolean | undefined = undefined;
-  acc: string | undefined = undefined;
+  acc: string = '';
+  accDesc: string = '';
+  accLevel: string = 'auto';
+  accGroup: boolean = false;
+  enabled: boolean = true;
   key: string | undefined = undefined;
   pointer: number = NaN;
   press: boolean = false;

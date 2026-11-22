@@ -37,6 +37,7 @@ import (
 //	fo id focused            focus or blur a text field
 //	sel id start end         a text field's selection, in UTF-16 units
 //	cv id url                what a canvas drew, as an image
+//	ax id props              its accessibility attributes (null: none)
 //	bk id on                 whether back goes through the app (id 0)
 //
 // What no view shows (alerts, the clipboard, titles) goes to the host.
@@ -90,6 +91,7 @@ type view struct {
 	shift  driver.Point
 	events driver.EventMask
 	props  driver.ViewProps
+	ax     string // last sent accessibility JSON, empty for none
 	layout *TextLayout
 	text   *driver.TextContent
 	// A scroll view's offset, the scrolls it applied and sticky cells.
@@ -338,9 +340,11 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 				m.sendStyle(c)
 			}
 		}
+		m.sendAccess(v)
 		m.sendEvents(v)
 	case driver.ItemAccessibilityLabel:
 		v.props.Label = it.Value
+		m.sendAccess(v)
 	case driver.ItemEvents:
 		v.events = it.Events
 		m.sendEvents(v)
@@ -490,6 +494,20 @@ func (m *mounter) sendStyle(v *view) {
 		v.css = c
 		m.o.op("s", v.id).str(c)
 	}
+}
+
+func (m *mounter) sendAccess(v *view) {
+	data := accessJSON(v.kind, &v.props)
+	s := string(data)
+	if s == v.ax {
+		return
+	}
+	v.ax = s
+	if len(data) == 0 {
+		m.o.op("ax", v.id).null()
+		return
+	}
+	m.o.op("ax", v.id).raw(data)
 }
 
 // animatedStyle sends what v's animated values draw, when it changed.

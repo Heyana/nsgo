@@ -393,7 +393,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		m.s.bridge.Call("announce", it.Value)
 	case driver.ItemViewProps:
 		if it.ViewProps != nil {
-			m.o.op("vp", it.ID).str(it.ViewProps.TestID).num(float64(it.ViewProps.PointerEvents)).str(it.ViewProps.Label)
+			a := harmonyAccessOf(it.ViewProps)
+			m.o.op("vp", it.ID).str(it.ViewProps.TestID).num(float64(it.ViewProps.PointerEvents)).
+				str(a.label).str(a.desc).boolean(a.disabled).str(a.level).boolean(a.group)
 		}
 	case driver.ItemImageInfo:
 		if it.Image != nil {

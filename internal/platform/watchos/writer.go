@@ -27,6 +27,7 @@ const (
 	opLock
 	opDismiss
 	opCull
+	opAccess
 )
 
 // writer writes ops as the host's Reader reads them: little-endian
@@ -42,6 +43,8 @@ func (w *writer) op(op byte, ids ...driver.NodeID) {
 }
 
 func (w *writer) byte(b byte) { w.buf = append(w.buf, b) }
+
+func (w *writer) u32(v uint32) { w.buf = binary.LittleEndian.AppendUint32(w.buf, v) }
 
 func (w *writer) flag(b bool) {
 	if b {

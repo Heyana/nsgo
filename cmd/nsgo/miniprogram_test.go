@@ -137,6 +137,36 @@ func TestMiniProgramTreeSendsWhatChanged(t *testing.T) {
 	}
 }
 
+func TestMiniProgramTreeAccessibilityUpdates(t *testing.T) {
+	apply := runTree(t)
+	_ = apply(`[["c",1,"view"],["root",1],["c",2,"input"],["i",1,2,null]]`)
+	first := apply(`[["ax",2,{"l":"Email","d":true,"inv":true}]]`)
+	if k := keys(t, first); k != "root.c[0].ax" {
+		t.Fatalf("ax update sends %s, want root.c[0].ax", k)
+	}
+	if !strings.Contains(first, `"l":"Email"`) || !strings.Contains(first, `"d":true`) || !strings.Contains(first, `"inv":true`) {
+		t.Fatalf("ax payload = %s", first)
+	}
+	cleared := apply(`[["ax",2,null]]`)
+	if k := keys(t, cleared); k != "root.c[0].ax" || !strings.Contains(cleared, `null`) {
+		t.Fatalf("ax clear = %s", cleared)
+	}
+	for _, file := range []string{
+		"miniprogram/wechat/components/nsgo-node/index.wxml",
+		"miniprogram/alipay/components/nsgo-node/index.axml",
+	} {
+		src, err := miniprogramRuntime.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, attr := range []string{"aria-label=", "aria-description=", "aria-disabled=", "aria-invalid=", "aria-hidden=", "aria-role="} {
+			if !strings.Contains(string(src), attr) {
+				t.Errorf("%s missing %s", file, attr)
+			}
+		}
+	}
+}
+
 func TestMiniProgramProject(t *testing.T) {
 	wechat, _ := miniProgramPlatformOf("miniprogram_wechat")
 	dir := t.TempDir()

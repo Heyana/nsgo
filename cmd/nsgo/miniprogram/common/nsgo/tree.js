@@ -132,7 +132,7 @@ class Tree {
           set(id, 'v', op[2])
           break
         default:
-          // s, a, tr, ka, t, sc, fd, fo, cv: the value as it is.
+          // s, a, tr, ka, t, sc, fd, fo, cv, ax: the value as it is.
           set(id, op[0], op[2])
       }
     }
