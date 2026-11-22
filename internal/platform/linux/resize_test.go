@@ -11,9 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestSurfaceAllocationAppliesResizeBeforeReturning exercises GTK's actual
-// size_allocate vfunc, reading both the native widget allocations and GSK's
-// snapshot before the main loop can dispatch an idle callback.
+// TestSurfaceAllocationAppliesResizeBeforeReturning exercises GTK's actual size_allocate vfunc, reading both the native widget allocations and GSK's snapshot before the main loop can dispatch an idle callback.
 func TestSurfaceAllocationAppliesResizeBeforeReturning(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")
@@ -21,11 +19,19 @@ func TestSurfaceAllocationAppliesResizeBeforeReturning(t *testing.T) {
 	w := startTestWindow(t, resizeTestApp, Options{Width: 240, Height: 160})
 	waitResizeApp(t, w)
 	w.onLoop(t, func() {
+		defer lengthenResizeWait()()
 		for _, size := range []driver.Size{{Width: 320, Height: 200}, {Width: 180, Height: 140}, {Width: 280, Height: 180}} {
 			gtkWidgetAllocate(w.surface, int32(size.Width), int32(size.Height), -1, 0)
 			checkResizeAllocation(t, w, size)
 		}
 	})
+}
+
+// lengthenResizeWait gives a responsive engine time to commit on a loaded runner, so a test of the synchronous path does not race the production frame deadline. Call it on the main thread, which reads resizeWait, and call what it returns there to restore the deadline.
+func lengthenResizeWait() (restore func()) {
+	old := resizeWait
+	resizeWait = 2 * time.Second
+	return func() { resizeWait = old }
 }
 
 func resizeTestApp(cx *core.Scope) core.Node {
@@ -54,9 +60,7 @@ func checkResizeAllocation(t *testing.T, w *window, size driver.Size) {
 	if width, height := gtkWidgetGetWidth(root.widget), gtkWidgetGetHeight(root.widget); width != int32(size.Width) || height != int32(size.Height) {
 		t.Errorf("native root allocation = %dx%d, want %v", width, height, size)
 	}
-	// GtkWidgetPaintable snapshots the last completed frame until GTK's
-	// paint phase. Invoke the surface's real snapshot callback here to test
-	// the next frame using the allocations we have just given GTK.
+	// GtkWidgetPaintable snapshots the last completed frame until GTK's paint phase. Invoke the surface's real snapshot callback here to test the next frame using the allocations we have just given GTK.
 	width, height := int32(size.Width), int32(size.Height)
 	surface := cairoImageSurfaceCreate(0, width, height)
 	defer cairoSurfaceDestroy(surface)
@@ -77,10 +81,7 @@ func checkResizeAllocation(t *testing.T, w *window, size driver.Size) {
 	}
 }
 
-// TestSurfaceResizeTimeoutSkipsFurtherWaitsAndAppliesLateCommit holds the
-// engine while GTK allocates several sizes: the first wait is bounded, later
-// sizes are still reported without multiplying that wait, and the idle path
-// eventually applies the latest size once the app becomes responsive again.
+// TestSurfaceResizeTimeoutSkipsFurtherWaitsAndAppliesLateCommit holds the engine while GTK allocates several sizes: the first wait is bounded, later sizes are still reported without multiplying that wait, and the idle path eventually applies the latest size once the app becomes responsive again.
 func TestSurfaceResizeTimeoutSkipsFurtherWaitsAndAppliesLateCommit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")
@@ -104,8 +105,7 @@ func TestSurfaceResizeTimeoutSkipsFurtherWaitsAndAppliesLateCommit(t *testing.T)
 	}
 	var timedOut <-chan struct{}
 	w.onLoop(t, func() {
-		// A native window command can allocate its surface inside a mount
-		// batch. Reporting those sizes must not wait on the busy engine.
+		// A native window command can allocate its surface inside a mount batch. Reporting those sizes must not wait on the busy engine.
 		w.applying = true
 		start := time.Now()
 		for i := range 12 {
@@ -142,8 +142,7 @@ func TestSurfaceResizeTimeoutSkipsFurtherWaitsAndAppliesLateCommit(t *testing.T)
 		return isColor(p.at(p.width-10, p.height-10), 0x0000ff)
 	})
 	w.onLoop(t, func() {
-		// The window manager may have allocated the surface again; the idle
-		// commit must agree with its most recent allocation in either case.
+		// The window manager may have allocated the surface again; the idle commit must agree with its most recent allocation in either case.
 		size := driver.Size{Width: w.lastWidth, Height: w.lastHeight}
 		if root := w.view(w.root); root == nil || root.frame.Size != size {
 			t.Errorf("late layout does not match the most recent allocation %v", size)
@@ -153,6 +152,7 @@ func TestSurfaceResizeTimeoutSkipsFurtherWaitsAndAppliesLateCommit(t *testing.T)
 		default:
 			t.Error("the engine did not finish the timed-out resize")
 		}
+		defer lengthenResizeWait()()
 		gtkWidgetAllocate(w.surface, 300, 190, -1, 0)
 		if w.resized != nil {
 			t.Error("responsive allocation did not resume waiting after the late commit")
@@ -161,8 +161,7 @@ func TestSurfaceResizeTimeoutSkipsFurtherWaitsAndAppliesLateCommit(t *testing.T)
 	})
 }
 
-// TestApplyBatchesDoesNotDrainRecursively keeps batches queued when GTK's
-// native calls allocate another surface while a batch is being applied.
+// TestApplyBatchesDoesNotDrainRecursively keeps batches queued when GTK's native calls allocate another surface while a batch is being applied.
 func TestApplyBatchesDoesNotDrainRecursively(t *testing.T) {
 	w := &window{applying: true}
 	batch := &driver.MountBatch{}

@@ -344,15 +344,10 @@ func (w *window) allocateSurface(width, height int32) {
 	}
 }
 
-// resizeWait bounds how long GTK's allocation waits for the engine, as the
-// macOS and Windows resize paths do.
-const resizeWait = 16 * time.Millisecond
+// resizeWait bounds how long GTK's allocation waits for the engine, as the macOS and Windows resize paths do. It is a variable so tests on loaded runners can lengthen it on the main thread.
+var resizeWait = 16 * time.Millisecond
 
-// resize reports the new size and applies its layout before GTK snapshots the
-// surface, when the engine commits within resizeWait. Mount queues batches
-// without waiting for the GTK thread; the completion channel means the batch
-// is ready to drain here. After a timeout, further allocations report their
-// sizes without waiting again until that commit arrives.
+// resize reports the new size and applies its layout before GTK snapshots the surface, when the engine commits within resizeWait. Mount queues batches without waiting for the GTK thread; the completion channel means the batch is ready to drain here. After a timeout, further allocations report their sizes without waiting again until that commit arrives.
 func (w *window) resize(size driver.Size) {
 	if w.resized != nil {
 		select {
