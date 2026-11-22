@@ -28,9 +28,11 @@ const (
 	ccReleaseBuffer           = 4
 	ccGetNextPacketSize       = 5
 
-	audclntStreamFlagsLoopback = 0x00020000
-	audclntBufferFlagsSilent   = 0x2
-	clsctxAll                  = 0x17
+	audclntStreamFlagsLoopback       = 0x00020000
+	audclntBufferFlagsDiscontinuity  = 0x1
+	audclntBufferFlagsSilent         = 0x2
+	audclntBufferFlagsTimestampError = 0x4
+	clsctxAll                        = 0x17
 )
 
 var (
@@ -50,6 +52,18 @@ type loopbackCapture struct {
 	channels        int
 	rate            float64
 	float           bool // 32-bit float samples, otherwise 16-bit integers
+
+	// The last packet whose QPC timestamp WASAPI marked valid, as a device frame position and its QPC time in 100 ns units, to time a packet whose own timestamp is flagged invalid.
+	anchorPosition, anchorQPC uint64
+	anchored                  bool
+}
+
+// sound is the first loud sample a capture saw.
+type sound struct {
+	at        int64 // QPC time in 100 ns units, meaningful only when timed
+	timed     bool  // false when WASAPI flagged the packet's timestamp invalid and no earlier packet had a valid one
+	estimated bool  // the time comes from an earlier packet's timestamp and the device frame position
+	glitch    bool  // WASAPI flagged a discontinuity on the packet, so the engine may have dropped audio before it
 }
 
 func openLoopbackCapture(t *testing.T) *loopbackCapture {
@@ -131,13 +145,13 @@ func qpc100ns() int64 {
 	return int64(float64(counter) * 1e7 / float64(frequency))
 }
 
-// firstSound drains captured packets until one holds a sample louder than the threshold and returns that sample's QPC time in 100 ns units, or false at the deadline.
-func (c *loopbackCapture) firstSound(deadline time.Time) (int64, bool) {
+// firstSound drains captured packets until one holds a sample whose magnitude exceeds 0.005 of full scale (about -46 dBFS) and returns it, or false at the deadline.
+func (c *loopbackCapture) firstSound(deadline time.Time) (sound, bool) {
 	const threshold = 0.005
 	for time.Now().Before(deadline) {
 		var size uint32
 		if failed(c.capture.call(ccGetNextPacketSize, uintptr(unsafe.Pointer(&size)))) {
-			return 0, false
+			return sound{}, false
 		}
 		if size == 0 {
 			time.Sleep(time.Millisecond)
@@ -147,7 +161,7 @@ func (c *loopbackCapture) firstSound(deadline time.Time) (int64, bool) {
 		var frames, flags uint32
 		var position, qpc uint64
 		if failed(c.capture.call(ccGetBuffer, uintptr(unsafe.Pointer(&data)), uintptr(unsafe.Pointer(&frames)), uintptr(unsafe.Pointer(&flags)), uintptr(unsafe.Pointer(&position)), uintptr(unsafe.Pointer(&qpc)))) {
-			return 0, false
+			return sound{}, false
 		}
 		found := -1
 		if flags&audclntBufferFlagsSilent == 0 && data != nil {
@@ -159,11 +173,44 @@ func (c *loopbackCapture) firstSound(deadline time.Time) (int64, bool) {
 			}
 		}
 		c.capture.call(ccReleaseBuffer, uintptr(frames))
-		if found >= 0 {
-			return int64(qpc) + int64(float64(found/c.channels)*1e7/c.rate), true
+		if s := c.packet(flags, position, qpc, found/c.channels); found >= 0 {
+			return s, true
 		}
 	}
-	return 0, false
+	return sound{}, false
+}
+
+// packet records a captured packet's timestamp as the anchor when WASAPI marks it valid and returns the time of the packet's frame at index frame. A packet flagged with a timestamp error is timed from the anchor's QPC time plus the device frames since it, or left untimed without an anchor.
+func (c *loopbackCapture) packet(flags uint32, position, qpc uint64, frame int) sound {
+	s := sound{glitch: flags&audclntBufferFlagsDiscontinuity != 0}
+	offset := float64(frame) * 1e7 / c.rate
+	switch {
+	case flags&audclntBufferFlagsTimestampError == 0:
+		c.anchorPosition, c.anchorQPC, c.anchored = position, qpc, true
+		s.at, s.timed = int64(qpc)+int64(offset), true
+	case c.anchored && position >= c.anchorPosition:
+		s.at = int64(c.anchorQPC) + int64(float64(position-c.anchorPosition)*1e7/c.rate+offset)
+		s.timed, s.estimated = true, true
+	}
+	return s
+}
+
+func TestLoopbackPacketTimestamps(t *testing.T) {
+	c := &loopbackCapture{rate: 48000}
+	if s := c.packet(audclntBufferFlagsTimestampError, 0, 999, 0); s.timed {
+		t.Fatalf("an invalid timestamp with no anchor was timed: %+v", s)
+	}
+	if s := c.packet(0, 48000, 50_000_000, 480); !s.timed || s.estimated || s.at != 50_100_000 {
+		t.Fatalf("valid packet, frame 480 at 48 kHz: %+v, want 50_100_000", s)
+	}
+	// Half a second of device frames after the anchor, with a bogus QPC value.
+	s := c.packet(audclntBufferFlagsTimestampError|audclntBufferFlagsDiscontinuity, 72000, 1, 4800)
+	if !s.timed || !s.estimated || !s.glitch || s.at != 56_000_000 {
+		t.Fatalf("invalid timestamp after an anchor: %+v, want an estimated, glitched 56_000_000", s)
+	}
+	if s := c.packet(audclntBufferFlagsTimestampError, 47999, 1, 0); s.timed {
+		t.Fatalf("a position before the anchor was timed: %+v", s)
+	}
 }
 
 // drain discards captured audio until the endpoint has been silent for quiet.
@@ -174,12 +221,12 @@ func (c *loopbackCapture) drain(t *testing.T, quiet time.Duration) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the default endpoint did not fall silent; another app may be playing")
+			t.Skip("the default endpoint did not fall silent; another app may be playing")
 		}
 	}
 }
 
-// TestWindowsAudioLatencyThroughLoopback measures Play to the first samples the default endpoint's engine mixes, as WASAPI loopback capture sees them: first with the output closed, as an app's first sound finds it, then warm. A device adds its own output latency after the mix.
+// TestWindowsAudioLatencyThroughLoopback measures Play to the first sample above about -46 dBFS that the default endpoint's engine mixes, as WASAPI loopback capture sees it: first with XAudio2's output closed, on an endpoint the loopback capture already keeps running, then warm. A first sound on an idle endpoint also waits for the endpoint to wake, which this does not measure, and a device adds its own output latency after the mix.
 func TestWindowsAudioLatencyThroughLoopback(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -218,7 +265,18 @@ func TestWindowsAudioLatencyThroughLoopback(t *testing.T) {
 		if !ok {
 			t.Fatalf("run %d: the sound never reached the default endpoint", run)
 		}
-		latency := time.Duration(heard-start) * 100
+		if heard.glitch {
+			t.Logf("run %d: WASAPI flagged a discontinuity on the first loud packet", run)
+		}
+		if !heard.timed {
+			t.Logf("run %d: WASAPI flagged the first loud packet's timestamp invalid and no earlier packet had a valid one; not timed", run)
+			a.stop(1)
+			continue
+		}
+		if heard.estimated {
+			t.Logf("run %d: WASAPI flagged the first loud packet's timestamp invalid; timed from an earlier packet and the device position", run)
+		}
+		latency := time.Duration(heard.at-start) * 100
 		if cold {
 			t.Logf("Play to endpoint mix, output closed: %v", latency)
 		} else {
@@ -228,6 +286,9 @@ func TestWindowsAudioLatencyThroughLoopback(t *testing.T) {
 			t.Fatalf("run %d: Play reached the endpoint mix after %v", run, latency)
 		}
 		a.stop(1)
+	}
+	if len(warm) == 0 {
+		t.Skip("WASAPI gave no valid timestamp for any warm run")
 	}
 	slices.Sort(warm)
 	t.Logf("Play to endpoint mix, warm output, %d runs: %v to %v, median %v", len(warm), warm[0], warm[len(warm)-1], warm[len(warm)/2])
