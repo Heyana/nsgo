@@ -139,11 +139,7 @@ func Fragment(dst vec4, pos vec2) vec4 {
 	})
 }
 
-// TestShaderEffectReadsBackdrop opens a window with a red left half and blue
-// right half behind a ShaderEffect whose WGSL shader swaps the red and blue
-// channels of sample_backdrop(uv), and verifies the rendered pixels show blue
-// on the left and red on the right (reading what is behind the view rather
-// than transparency or the host's own background).
+// TestShaderEffectReadsBackdrop opens a window with a red left half and blue right half behind a ShaderEffect whose WGSL shader swaps the red and blue channels of sample_backdrop(uv), and verifies the rendered pixels show blue on the left and red on the right (reading what is behind the view rather than transparency or the host's own background).
 func TestShaderEffectReadsBackdrop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")

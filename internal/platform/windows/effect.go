@@ -9,19 +9,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Effects, transitions and navigation shaders (driver.Shader.Role) draw
-// their host's children through Direct3D in their place: the painter
-// draws the children into a Direct2D bitmap over a texture of the
-// device's own (the box and the overflow around it), which the program
-// reads as its picture with no copy, and draws the program's texture
-// where the children would show. The children still take input, as the
-// window hit-tests the views. A transition's first picture is drawn
-// offscreen as it starts, before its batch is applied. A view's own
-// effect hosts on it, a screen shader's on the root view. While an
-// effect shows the window draws whole frames, as its pictures reach past
-// the areas a change damages. For a program that reads sample_backdrop,
-// what the target holds behind the host is copied into its backdrop
-// picture before the host draws itself.
+// Effects, transitions and navigation shaders (driver.Shader.Role) draw their host's children through Direct3D in their place: the painter draws the children into a Direct2D bitmap over a texture of the device's own (the box and the overflow around it), which the program reads as its picture with no copy, and draws the program's texture where the children would show. The children still take input, as the window hit-tests the views. A transition's first picture is drawn offscreen as it starts, before its batch is applied. A view's own effect hosts on it, a screen shader's on the root view. While an effect shows the window draws whole frames, as its pictures reach past the areas a change damages. For a program that reads sample_backdrop, what the target holds behind the host is copied into its backdrop picture before the host draws itself.
 
 // effect is a view's effect, transition or navigation shader.
 type effect struct {
@@ -203,16 +191,12 @@ func (p *painter) drawChildren(v *view, world matrix) {
 	}
 }
 
-// backdropTransform returns the matrix mapping target DIPs into a
-// backdrop picture's DIPs for a host placed at world with ov points of
-// overflow on each side.
+// backdropTransform returns the matrix mapping target DIPs into a backdrop picture's DIPs for a host placed at world with ov points of overflow on each side.
 func backdropTransform(world matrix, ov float64) matrix {
 	return world.invert().then(translation(ov, ov))
 }
 
-// pictureBackdrop copies what the current target holds behind host into
-// e's backdrop picture (pics[1]), before host draws itself. Nothing lies
-// behind the root view, so its backdrop stays empty (transparent).
+// pictureBackdrop copies what the current target holds behind host into e's backdrop picture (pics[1]), before host draws itself. Nothing lies behind the root view, so its backdrop stays empty (transparent).
 func (p *painter) pictureBackdrop(e, host *view, world matrix) {
 	fx := e.fx
 	sh := fx.shader

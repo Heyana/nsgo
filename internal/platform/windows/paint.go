@@ -140,10 +140,7 @@ type painter struct {
 	// (damage.go).
 	areas    []rectF
 	areaClip int
-	// targetWidth, targetHeight and targetAlpha describe the current
-	// bitmap render target in pixels when known (swap chain, composition
-	// layer, effect picture, or offscreen test target), so backdrop
-	// copies match its size and alpha mode.
+	// targetWidth, targetHeight and targetAlpha describe the current bitmap render target in pixels when known (swap chain, composition layer, effect picture, or offscreen test target), so backdrop copies match its size and alpha mode.
 	targetWidth, targetHeight uint32
 	targetAlpha               bool
 }

@@ -228,9 +228,7 @@ func (w *window) snapshotChild(v *view, c, cur uintptr, clip bool, sh *shape) ui
 	return cur
 }
 
-// snapshotChildWidget snapshots child widget c of v into snap: walking
-// directly into the next ancestor on backdropPath without touching
-// GTK's cached render nodes, and delegating other children to GTK.
+// snapshotChildWidget snapshots child widget c of v into snap: walking directly into the next ancestor on backdropPath without touching GTK's cached render nodes, and delegating other children to GTK.
 func (w *window) snapshotChildWidget(v *view, c, snap uintptr) {
 	if next := w.backdropPath[v]; next != nil && next.widget == c {
 		ox, oy := float32(math.Round(float64(v.offset.X))), float32(math.Round(float64(v.offset.Y)))

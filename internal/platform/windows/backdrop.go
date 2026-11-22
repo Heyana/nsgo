@@ -20,8 +20,7 @@ import (
 
 var iidD2D1Bitmap = parseGUID("a2296057-ea42-4099-983b-539fb6505426")
 
-// backdropTarget reports the pixel size and alpha mode of the current
-// bitmap render target, or false when none is known.
+// backdropTarget reports the pixel size and alpha mode of the current bitmap render target, or false when none is known.
 func (p *painter) backdropTarget() (width, height uint32, premultiplied, ok bool) {
 	if p.targetWidth > 0 && p.targetHeight > 0 {
 		return p.targetWidth, p.targetHeight, p.targetAlpha, true
@@ -67,10 +66,7 @@ func (p *painter) backdrop() *comObject {
 	return copied
 }
 
-// copyBackdropInto copies what the current target holds behind the view
-// into dst (a target bitmap) under toDst, mapping target DIPs into dst's
-// DIPs, in one flatten pass. It reports false when the target holds no
-// pixels to copy.
+// copyBackdropInto copies what the current target holds behind the view into dst (a target bitmap) under toDst, mapping target DIPs into dst's DIPs, in one flatten pass. It reports false when the target holds no pixels to copy.
 func (p *painter) copyBackdropInto(dst *comObject, toDst matrix) bool {
 	var target *comObject
 	p.dc.call(dcGetTarget, uintptr(unsafe.Pointer(&target)))

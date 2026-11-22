@@ -168,12 +168,7 @@ func Fragment(dst vec4, pos vec2) vec4 {
 	}
 }
 
-// TestShaderEffectReadsBackdrop draws a WGSL ShaderEffect whose shader swaps
-// the red and blue channels of sample_backdrop(uv) over a red left half and
-// blue right half, verifying that sample_backdrop reads what was drawn behind
-// the host (not transparency, and not the host's own background), that overflow
-// reaches past the host's box, and that a ScreenEffect on the root reads
-// transparent.
+// TestShaderEffectReadsBackdrop draws a WGSL ShaderEffect whose shader swaps the red and blue channels of sample_backdrop(uv) over a red left half and blue right half, verifying that sample_backdrop reads what was drawn behind the host (not transparency, and not the host's own background), that overflow reaches past the host's box, and that a ScreenEffect on the root reads transparent.
 func TestShaderEffectReadsBackdrop(t *testing.T) {
 	g, err := devices()
 	if err != nil {
@@ -236,10 +231,7 @@ fn shade(uv: vec2f) -> vec4f {
 		return out, int(mapped.pitch)
 	}
 
-	// 1. ShaderEffect over red left half and blue right half with overflow and
-	// its own green background: sample_backdrop reads red/blue behind it (not
-	// green), so swapping R<->B outputs blue on the left and red on the right,
-	// including inside the overflow band.
+	// 1. ShaderEffect over red left half and blue right half with overflow and its own green background: sample_backdrop reads red/blue behind it (not green), so swapping R<->B outputs blue on the left and red on the right, including inside the overflow band.
 	pix, pitch := renderTree(40, 20, func(w *window) *view {
 		root := &view{id: 1, kind: driver.KindView, frame: driver.Bounds{Size: driver.Size{Width: 40, Height: 20}},
 			style: driver.ViewStyle{Opacity: 1}}

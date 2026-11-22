@@ -11,19 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Effects, transitions and navigation shaders (driver.Shader.Role) draw
-// their host's children through a GtkGLArea of their own over them, the
-// box and the overflow around it: as the host draws, its children's
-// render nodes go into a node of their own instead of its snapshot, which
-// the window's renderer renders into a texture of the box and the
-// overflow, downloaded and handed to the area. The children still take
-// input, as the window hit-tests the views. A transition's first picture
-// is taken as it starts, before its batch is applied. A view's own effect
-// hosts on it, a screen shader's on the root view; the host draws again
-// whenever a frame moved anything or a batch changed what it pictures.
-// For a program that reads sample_backdrop, the surface is snapshotted
-// up to the host (walking ancestors directly to leave GTK's cached
-// render nodes untouched) and rendered into the backdrop picture.
+// Effects, transitions and navigation shaders (driver.Shader.Role) draw their host's children through a GtkGLArea of their own over them, the box and the overflow around it: as the host draws, its children's render nodes go into a node of their own instead of its snapshot, which the window's renderer renders into a texture of the box and the overflow, downloaded and handed to the area. The children still take input, as the window hit-tests the views. A transition's first picture is taken as it starts, before its batch is applied. A view's own effect hosts on it, a screen shader's on the root view; the host draws again whenever a frame moved anything or a batch changed what it pictures. For a program that reads sample_backdrop, the surface is snapshotted up to the host (walking ancestors directly to leave GTK's cached render nodes untouched) and rendered into the backdrop picture.
 
 // effect is a view's effect, transition or navigation shader.
 type effect struct {
@@ -267,10 +255,7 @@ func (w *window) childrenNode(host *view, ov float64, skip uintptr) (node uintpt
 	return gtkSnapshotFreeToNode(snap), pw, ph
 }
 
-// backdropPath builds the map from each ancestor of host (starting at
-// root) to the child leading to host, and the transform mapping
-// surface points into host's local points. It reports false when host
-// is root, not under root, or its transform has no inverse.
+// backdropPath builds the map from each ancestor of host (starting at root) to the child leading to host, and the transform mapping surface points into host's local points. It reports false when host is root, not under root, or its transform has no inverse.
 func backdropPath(root, host *view) (map[*view]*view, driver.Matrix3D, bool) {
 	if root == nil || host == nil || host == root {
 		return nil, driver.Identity3D, false
@@ -300,11 +285,7 @@ func backdropPath(root, host *view) (map[*view]*view, driver.Matrix3D, bool) {
 	return path, inv, true
 }
 
-// backdropNode snapshots what the window drew behind host, scaled to
-// pixels, into a node pw by ph pixels covering host's box and ov points
-// around it; 0 where there is nothing to draw. Ancestors along the path
-// from root to host are snapshotted directly so GTK's cached render
-// nodes are not re-entered or replaced.
+// backdropNode snapshots what the window drew behind host, scaled to pixels, into a node pw by ph pixels covering host's box and ov points around it; 0 where there is nothing to draw. Ancestors along the path from root to host are snapshotted directly so GTK's cached render nodes are not re-entered or replaced.
 func (w *window) backdropNode(host *view, ov float64) (node uintptr, pw, ph int) {
 	root := w.view(w.root)
 	if w.surface == 0 || root == nil || root.widget == 0 {
@@ -387,8 +368,7 @@ func (w *window) snapshotEffect(e, host *view, snap uintptr) bool {
 		return false
 	}
 	if w.backdropStop != nil {
-		// Capturing another view's backdrop: reuse this effect's area as
-		// already rendered without mutating state or nesting captures.
+		// Capturing another view's backdrop: reuse this effect's area as already rendered without mutating state or nesting captures.
 		gtkWidgetSnapshotChild(host.widget, fx.gl.area, snap)
 		return true
 	}
@@ -413,8 +393,7 @@ func (w *window) snapshotEffect(e, host *view, snap uintptr) bool {
 	var cw, ch, bw, bh int
 	if (live >= 0 || wantsBackdrop) && (fx.stale || sh.Role.Transitions()) {
 		fx.stale = false
-		// The render nodes are taken as GTK draws them, and rendered
-		// after the frame: the renderer is GTK's own during it.
+		// The render nodes are taken as GTK draws them, and rendered after the frame: the renderer is GTK's own during it.
 		if live >= 0 {
 			contentNode, cw, ch = w.childrenNode(host, sh.Overflow, fx.gl.area)
 		}

@@ -1892,8 +1892,7 @@ func TestCanvasPartsDropTheirElements(t *testing.T) {
 }
 
 func TestBackdropTransformAndTarget(t *testing.T) {
-	// A translated host with overflow maps its local points (x, y) from
-	// target DIPs to (x + ov, y + ov) in the backdrop picture's DIPs.
+	// A translated host with overflow maps its local points (x, y) from target DIPs to (x + ov, y + ov) in the backdrop picture's DIPs.
 	cases := []struct {
 		name  string
 		world matrix
@@ -1916,8 +1915,7 @@ func TestBackdropTransformAndTarget(t *testing.T) {
 		}
 	}
 
-	// backdropTarget prefers the painter's explicit target size and alpha
-	// mode, falling back to the window's swap chain when unset.
+	// backdropTarget prefers the painter's explicit target size and alpha mode, falling back to the window's swap chain when unset.
 	p := &painter{w: &window{}}
 	if _, _, _, ok := p.backdropTarget(); ok {
 		t.Fatal("backdropTarget succeeded with no target and no swap chain")

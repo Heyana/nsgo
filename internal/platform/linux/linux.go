@@ -175,9 +175,7 @@ type window struct {
 	// effects are the views with an effect, a transition or a navigation
 	// shader (effect.go).
 	effects map[*view]bool
-	// backdropStop is the effect host being pictured for sample_backdrop,
-	// backdropPath maps each ancestor from root down to the child leading
-	// to it, and backdropStopped marks that snapshotView reached it.
+	// backdropStop is the effect host being pictured for sample_backdrop, backdropPath maps each ancestor from root down to the child leading to it, and backdropStopped marks that snapshotView reached it.
 	backdropStop    *view
 	backdropPath    map[*view]*view
 	backdropStopped bool
