@@ -1480,9 +1480,24 @@ func TestVideoChangesPlaybackRateWithoutReloading(t *testing.T) {
 			}
 		}
 	}
+	// Progress reports come while GTK's stream is set playing, before GStreamer's pipeline has reached PLAYING after a load, a rate change or a seek: until then they repeat the position it prerolled at. On a busy CI runner the audio sink can take seconds to start, so measure only from the first report at which the position moves.
+	moving := func(after time.Time) sample {
+		t.Helper()
+		prev := next(after)
+		for deadline := prev.wall.Add(10 * time.Second); ; {
+			s := next(after)
+			if s.clip > prev.clip {
+				return s
+			}
+			if s.wall.After(deadline) {
+				t.Fatalf("video position stayed at %v for 10s", s.clip)
+			}
+			prev = s
+		}
+	}
 	measure := func(want float64) sample {
 		t.Helper()
-		begin := next(time.Now().Add(180 * time.Millisecond))
+		begin := moving(time.Now().Add(180 * time.Millisecond))
 		end := next(begin.wall.Add(700 * time.Millisecond))
 		got := float64(end.clip-begin.clip) / float64(end.wall.Sub(begin.wall))
 		if got < want*0.72 || got > want*1.28 {
