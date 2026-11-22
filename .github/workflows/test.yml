@@ -57,7 +57,7 @@ jobs:
         env:
           NSGO_GALLERY_PERF: '1'
           NSGO_GALLERY_PERF_SECONDS: '3'
-        run: go tool nsgo test -target ${{ matrix.target }} -fps -run '^TestPerfCanvas(Sprites|Mesh)' ./examples/gallery
+        run: go tool nsgo test -target ${{ matrix.target }} -fps -env NSGO_GALLERY_PERF=1 -env NSGO_GALLERY_PERF_SECONDS=3 -run '^TestPerfCanvas(Sprites|Mesh)' ./examples/gallery
       - name: Keep results and screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
