@@ -234,6 +234,7 @@ var twinned = []string{"base.List.ListStyle", "base.Slider.StartLabel", "base.Tr
 var textFuncExceptions = strings.Fields(`
 core.Composition.Text core.HeaderSymbol.Label core.MenuItem.Label core.Notification.Title
 core.PickDirectoriesOptions.Title core.PickFilesOptions.Title core.ShareOptions.Text core.TabBarItem.Title
+core.SelectionBlock.Label core.SelectionBlock.Title core.SelectionInline.Label core.SelectionInline.Text core.SelectionInline.Title
 core.TextSelection.Text core.TrayOptions.Title core.WindowOptions.Title
 
 base.Accordion.Label base.AccordionPanel.Label base.AccordionTrigger.Label base.AccordionTrigger.Hint
