@@ -341,11 +341,7 @@ func TestInputReplacementKeepsItsClipHolder(t *testing.T) {
 	})
 }
 
-// TestInputCommitsMarkedTextOnFocusLoss checks that marked text an input method
-// still composes (such as a whole message under live conversion) is unmarked,
-// kept and reported before composition end when the input loses focus, hands
-// off the shared field editor to another field, turns read-only or disabled,
-// or its window resigns key, without firing spurious key presses (#1562).
+// TestInputCommitsMarkedTextOnFocusLoss checks that marked text an input method still composes (such as a whole message under live conversion) is unmarked, kept and reported before composition end when the input loses focus, hands off the shared field editor to another field, turns read-only or disabled, or its window resigns key, without firing spurious key presses (#1562).
 func TestInputCommitsMarkedTextOnFocusLoss(t *testing.T) {
 	onMain(func() {
 		loadAppKit()
@@ -388,8 +384,7 @@ func TestInputCommitsMarkedTextOnFocusLoss(t *testing.T) {
 				if !objc.Send[bool](e, selHasMarkedText) {
 					t.Fatalf("multiline=%v %s: editor has no marked text after setMarkedText", multiline, loss)
 				}
-				// Reset events and simulate a stale engine value so commitMarked must
-				// dispatch the final committed EventChangeText before ending composition.
+				// Reset events and simulate a stale engine value so commitMarked must dispatch the final committed EventChangeText before ending composition.
 				v1.input.fs.Value("きょう", v1.input.fs.Count)
 				v1.input.fs.Edited("きょう")
 				evs = nil
@@ -459,11 +454,7 @@ func TestInputCommitsMarkedTextOnFocusLoss(t *testing.T) {
 	})
 }
 
-// TestPointWideSinkCandidateRect checks that firstRectForCharacterRange:actualRange:
-// places macOS input-method candidates beside the caret of a point-wide editor sink
-// (1pt or 0pt wide, as code, rich text and terminal editors use), including after
-// scrolling or moving the sink, instead of returning (0, 0) at the screen's corner,
-// while normal wide inputs keep tracking character positions (#1562).
+// TestPointWideSinkCandidateRect checks that firstRectForCharacterRange:actualRange: places macOS input-method candidates beside the caret of a point-wide editor sink (1pt or 0pt wide, as code, rich text and terminal editors use), including after scrolling or moving the sink, instead of returning (0, 0) at the screen's corner, while normal wide inputs keep tracking character positions (#1562).
 func TestPointWideSinkCandidateRect(t *testing.T) {
 	onMain(func() {
 		loadAppKit()

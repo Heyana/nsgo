@@ -21,14 +21,9 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-// TestInputMethodCommitAndSinkCandidates runs a live AppKit window with real
-// single-line, multiline and point-wide sink core.Inputs and verifies that:
-//   - marked text still composed on blur (or moving focus to another input) is
-//     committed and reported with OnCompositionChange{Composing:false} before
-//     OnBlur, leaving hasMarkedText false;
-//   - firstRectForCharacterRange:actualRange: on a 1pt-wide editor sink opens
-//     candidates beside the sink's caret in screen coordinates rather than at
-//     (0, 0) (#1562).
+// TestInputMethodCommitAndSinkCandidates runs a live AppKit window with real single-line, multiline and point-wide sink core.Inputs and verifies that:
+//   - marked text still composed on blur (or moving focus to another input) is committed and reported with OnCompositionChange{Composing:false} before OnBlur, leaving hasMarkedText false;
+//   - firstRectForCharacterRange:actualRange: on a 1pt-wide editor sink opens candidates beside the sink's caret in screen coordinates rather than at (0, 0) (#1562).
 func TestInputMethodCommitAndSinkCandidates(t *testing.T) {
 	if os.Getenv("NSGO_TEST_IME_PROCESS") != t.Name() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

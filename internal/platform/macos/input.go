@@ -530,10 +530,7 @@ func (in *input) compose(composing bool, marked string) {
 	}
 }
 
-// commitMarked commits any marked text the editor still composes, ends
-// the input method's session so it does not linger or drop the text on
-// focus loss, and reports the committed text before ending the
-// composition.
+// commitMarked commits any marked text the editor still composes, ends the input method's session so it does not linger or drop the text on focus loss, and reports the committed text before ending the composition.
 func (in *input) commitMarked(e objc.ID) {
 	if in == nil || e == 0 || !objc.Send[bool](e, selHasMarkedText) {
 		return
@@ -569,13 +566,7 @@ func (s *surface) commitMarked() {
 	pasteInput(fr).commitMarked(fr)
 }
 
-// firstRectForCharacterRange answers AppKit's candidate-window and caret
-// geometry query. When the input is a point-wide sink (as code, rich
-// text and terminal editors place at the caret), or when AppKit returns
-// an empty rectangle because the range is clipped outside the view's
-// visible box, return the input's own screen rectangle instead so macOS
-// opens the candidate window beside the caret rather than at the
-// screen's corner.
+// firstRectForCharacterRange answers AppKit's candidate-window and caret geometry query. When the input is a point-wide sink (as code, rich text and terminal editors place at the caret), or when AppKit returns an empty rectangle because the range is clipped outside the view's visible box, return the input's own screen rectangle instead so macOS opens the candidate window beside the caret rather than at the screen's corner.
 func firstRectForCharacterRange(self objc.ID, cmd objc.SEL, r apple.NSRange, actual unsafe.Pointer) apple.CGRect {
 	rect := apple.SendSuper[apple.CGRect](self, cmd, r, actual)
 	in := pasteInput(self)
@@ -595,8 +586,7 @@ func firstRectForCharacterRange(self objc.ID, cmd objc.SEL, r apple.NSRange, act
 	return rect
 }
 
-// isPointWide reports whether in is a caret-tracking input sink whose
-// box is too narrow to lay out glyphs inside its clip view.
+// isPointWide reports whether in is a caret-tracking input sink whose box is too narrow to lay out glyphs inside its clip view.
 func isPointWide(in *input) bool {
 	if in == nil || in.host == 0 {
 		return false
@@ -604,9 +594,7 @@ func isPointWide(in *input) bool {
 	return objc.Send[apple.CGRect](in.host, selBounds).Size.Width <= 2
 }
 
-// fallbackCaretScreenRect returns the input's screen-coordinate caret
-// box for firstRectForCharacterRange:actualRange: when AppKit's layout
-// geometry cannot place a range (point-wide sinks or clipped ranges).
+// fallbackCaretScreenRect returns the input's screen-coordinate caret box for firstRectForCharacterRange:actualRange: when AppKit's layout geometry cannot place a range (point-wide sinks or clipped ranges).
 func fallbackCaretScreenRect(self objc.ID, in *input, w objc.ID) (apple.CGRect, bool) {
 	var anchor objc.ID
 	var local apple.CGRect
