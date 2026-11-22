@@ -102,10 +102,22 @@ type layout struct {
 	drawn bool
 }
 
-// paintRun is shapes filled in one paint.
+// paintRun is a glyph path or a rule, filled in one paint. Rules keep their
+// snapping axis until drawing knows the final font size and display density.
 type paintRun struct {
 	paint display.Paint
 	path  *core.Path
+	rect  untie.Rect
+	snap  display.SnapAxis
+}
+
+func (r paintRun) draw(d *core.Drawing, grid display.PixelGrid) {
+	if r.path != nil {
+		d.FillPath(r.path, core.NonZero)
+		return
+	}
+	b := grid.SnapRect(r.rect, r.snap)
+	d.FillRect(b.X, b.Y, b.Width, b.Height)
 }
 
 // parsed returns the layout of key with its description, its shapes made once the renderer's fonts have loaded and draw is set.
@@ -173,16 +185,18 @@ func (r *Renderer) make(key layoutKey, draw bool) *layout {
 	at := func(x, y float32) (float32, float32) { return (x - b.X) / referenceSize, (y - b.Y) / referenceSize }
 	var run *paintRun
 	err = render.Walk(box, func(c render.Command) error {
+		if c.Kind == render.CommandRule {
+			x, y := at(c.Rect.X, c.Rect.Y)
+			l.runs = append(l.runs, paintRun{paint: c.Paint,
+				rect: untie.Rect{X: x, Y: y, Width: c.Rect.Width / referenceSize, Height: c.Rect.Height / referenceSize}, snap: c.Snap})
+			run = nil
+			return nil
+		}
 		if run == nil || run.paint != c.Paint {
 			l.runs = append(l.runs, paintRun{paint: c.Paint, path: new(core.Path)})
 			run = &l.runs[len(l.runs)-1]
 		}
 		p := run.path
-		if c.Kind == render.CommandRule {
-			x, y := at(c.Rect.X, c.Rect.Y)
-			p.Rect(x, y, c.Rect.Width/referenceSize, c.Rect.Height/referenceSize)
-			return nil
-		}
 		point := func(q untie.Point) (float32, float32) { return at(c.At.X+q.X*c.Em, c.At.Y+q.Y*c.Em) }
 		for _, s := range c.Path.Segments {
 			switch s.Op {

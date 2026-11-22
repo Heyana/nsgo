@@ -106,10 +106,11 @@ func (v View) Render(cx *core.Scope) core.Node {
 						return
 					}
 					scale := float32(size.Height) / (l.em.Ascent + l.em.Descent)
+					grid := display.PixelGrid{Scale: scale, PixelRatio: cx.Env().PixelRatio()}
 					d.Scale(scale, scale)
 					for _, run := range l.runs {
 						fill(d, run.paint, v.ErrorStyle.Color)
-						d.FillPath(run.path, core.NonZero)
+						run.draw(d, grid)
 					}
 				},
 			}
