@@ -19,10 +19,7 @@ const entryBytes = 960
 var installOnce sync.Once
 var installed bool
 
-// Install routes the default Go logger to the main bundle's unified log. It
-// leaves a custom writer alone. A terminal, file or pipe still gets its output,
-// except when Xcode already shows the unified log; development always keeps it.
-// The first call owns the process-wide standard logger, as it does stderr.
+// Install routes the default Go logger to the main bundle's unified log. It leaves a custom writer alone. A terminal, file or pipe still gets its output, except when Xcode already shows the unified log; development always keeps it. The first call owns the process-wide standard logger, as it does stderr.
 func Install(development bool) bool {
 	installOnce.Do(func() { installed = install(log.Default(), development) })
 	return installed
@@ -102,8 +99,7 @@ func (w *writer) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-// parts keeps every entry under the store's roughly 1 KiB payload limit, at a
-// line boundary where one fits and otherwise between UTF-8 characters.
+// parts keeps every entry under the store's roughly 1 KiB payload limit, at a line boundary where one fits and otherwise between UTF-8 characters.
 func parts(text string, emit func(string)) {
 	for len(text) > entryBytes {
 		end := entryBytes

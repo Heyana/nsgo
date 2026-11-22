@@ -129,10 +129,7 @@ func (l *nativeLog) write(kind uint8, text string) {
 	var pin runtime.Pinner
 	pin.Pin(&message[0])
 	defer pin.Unpin()
-	// Clang's OSLogBufferLayout: non-scalar summary, one argument, a public
-	// StringKind descriptor (2<<4 | 2), its pointer's size, then the pointer.
-	// An Objective-C formatter takes ObjCObjKind (4) instead.
-	// _os_log_impl copies the string during this call, as it does a C stack's.
+	// Clang's OSLogBufferLayout: non-scalar summary, one argument, a public StringKind descriptor (2<<4 | 2), its pointer's size, then the pointer. An Objective-C formatter takes ObjCObjKind (4) instead. _os_log_impl copies the string during this call, as it does a C stack's.
 	buffer := [12]byte{2, 1, 0x22, 8}
 	pointer := uintptr(unsafe.Pointer(&message[0]))
 	if l.api.objectString {
@@ -148,10 +145,7 @@ func (l *nativeLog) write(kind uint8, text string) {
 	runtime.KeepAlive(message)
 }
 
-// imageFormat finds a canonical formatter in Foundation's registered log
-// strings. Go's own read-only strings have no __oslogstring catalogue, so using
-// one makes Console report a UUID compose failure even while the process lives.
-// The argument descriptor, rather than the formatter's default, marks it public.
+// imageFormat finds a canonical formatter in Foundation's registered log strings. Go's own read-only strings have no __oslogstring catalogue, so using one makes Console report a UUID compose failure even while the process lives. The argument descriptor, rather than the formatter's default, marks it public.
 func imageFormat(base unsafe.Pointer) (*byte, bool, error) {
 	header := unsafe.Slice((*byte)(base), 32)
 	if binary.LittleEndian.Uint32(header) != 0xfeedfacf {
