@@ -117,6 +117,8 @@ With `-target web`, libraries that do not link the backend run headless inside t
 
 `NSGO_BROWSER` names the browser `-target web` runs. macOS discovery prefers an installed Chrome for Testing. Startup waits up to 30 seconds and reports the browser's error output on failure.
 
+Use `app.Surface("id:palette").WindowState()` on macOS, Windows or Linux to assert the real window’s `Frame`, `Visible` and `Focused`. Check `Frame.Move` before asserting position. This step skips headless tests and unsupported targets; compare both windows’ states to verify a `NoActivate` panel kept native focus in the original window.
+
 ## TSX
 
 A TSX app's `*.test.tsx` files, written with `nsgo/test`, run with its Go tests under `go tool nsgo test`.

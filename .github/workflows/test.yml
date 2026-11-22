@@ -158,6 +158,17 @@ jobs:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
         run: xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/keys
+      - name: Test native window state and non-activating panels
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+        run: |
+          xvfb-run -a dbus-run-session -- bash -euo pipefail <<'SH'
+          openbox --sm-disable >/tmp/nsgo-windowstate-wm.log 2>&1 &
+          task_wm_pid=$!
+          trap 'kill "$task_wm_pid" 2>/dev/null || true; wait "$task_wm_pid" 2>/dev/null || true' EXIT
+          go tool nsgo test -target linux -timeout 2m ./internal/testhost/testdata/windowstate
+          SH
       - name: Test native web sources and restricted history
         env:
           GDK_BACKEND: x11
@@ -402,6 +413,8 @@ jobs:
           go tool nsgo test -target macos ./internal/testhost/testdata/webhistory
       - name: Test native photo pick answers
         run: go tool nsgo test -target macos ./internal/testhost/testdata/pick
+      - name: Test native window visibility
+        run: go tool nsgo test -target macos -run TestWindowStateReadsNativeVisibility ./internal/testhost/testdata/windowstate
       - name: Test native radio and tab focus
         run: go tool nsgo test -target macos -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
       - name: Test composited captures
@@ -504,6 +517,8 @@ jobs:
         run: go tool nsgo test -run '^TestCanvasImageTint$' ./internal/platform/windows
       - name: Test native photo pick answers
         run: go tool nsgo test -target windows ./internal/testhost/testdata/pick
+      - name: Test native window visibility
+        run: go tool nsgo test -target windows -run TestWindowStateReadsNativeVisibility ./internal/testhost/testdata/windowstate
       - name: Test widget and Live Activity recording
         run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
       - name: Test native focus, styles, activation and label relationships

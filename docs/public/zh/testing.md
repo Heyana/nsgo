@@ -42,6 +42,8 @@ func TestMain(m *testing.M) {
 
 `app.Surfaces()` 列出已打开的窗口、面板和托盘视图，主窗口排在第一位，其余按打开顺序排列。`app.Surface("title:Settings")`、`app.Surface("id:settings-root")` 和 `app.Surface("index:1")` 分别按当前标题、根视图的测试 ID 和列表位置选取一个界面。选择器必须恰好匹配一个打开的界面。
 
+在 macOS、Windows 和 Linux 目标上，`app.Surface("id:palette").WindowState()` 等待应用稳定后，从 UI 线程读取原生窗口的 `Frame`、`Visible` 和 `Focused`。对比面板与原窗口的状态，可以确认显示 `NoActivate` 面板没有转移键盘焦点。无法读取原生位置时（如 Wayland），`Frame.Move` 为 false。无窗口测试和其他目标会跳过这一步，不会用应用发出的命令代替原生位置或焦点。
+
 界面提供 `App` 的视图查询、输入和手势步骤、媒体报告、截图、调整尺寸和等待，例如 `Exists`、`Texts`、`Enabled`、`Clear`、`Focus`、`Hover`、`RightClick`、`DropFiles`、`Resize` 和 `Settle`。它们选择对应窗口并复用相同的 `App` 行为；步骤和等待会使整个应用完成更新。`Post` 通过原始应用排队执行图上的工作，并在派发前检查选中的界面仍然打开。应用范围的时钟、服务桩、菜单和警告框应答仍使用原始 `App`。
 
 `Config` 返回打开时的 `nsgotest.SurfaceConfig`，`app.Opened` 也记录了这份配置。`Screenshot`、`CapturePNG` 和 `Capture` 在原生目标上截取该界面。`Close` 通过 `OnClosing` 请求关闭窗口，并返回窗口是否关闭。已关闭句柄的查询、步骤和排队任务都会失败，并从界面列表中移除；关闭父窗口也会关闭它的子窗口。这些步骤适用于无头测试和 macOS、Windows、Linux 测试宿主，并保留各步骤原有的目标支持。单界面的目标只列出主界面。
