@@ -998,8 +998,7 @@ type Layout struct {
 	made   sync.Once
 	height float64
 	strut  strutSpec
-	// frameOrigins, frameMetrics and strutted are populated for frame by
-	// prepareFrame (either eagerly in layout or lazily inside made.Do).
+	// frameOrigins, frameMetrics and strutted are populated for frame by prepareFrame (either eagerly in layout or lazily inside made.Do).
 	frameOrigins []CGPoint
 	frameMetrics []lineMetrics
 	strutted     bool
@@ -1043,10 +1042,7 @@ func (l *Layout) laid() uintptr {
 	return l.frame
 }
 
-// prepareFrame computes the strut-adjusted baselines and effective metrics
-// for l.frame. When any line is adjusted by the strut, l.strutted is set so
-// drawGlyphs draws each line at its adjusted baseline instead of calling
-// CTFrameDraw.
+// prepareFrame computes the strut-adjusted baselines and effective metrics for l.frame. When any line is adjusted by the strut, l.strutted is set so drawGlyphs draws each line at its adjusted baseline instead of calling CTFrameDraw.
 func (l *Layout) prepareFrame() {
 	if l.frame == 0 {
 		return
@@ -1219,10 +1215,7 @@ func releaseQueued() {
 	}
 }
 
-// placedMetrics returns l's lines, their strut-adjusted baselines from the
-// box's top, the UTF-16 offset each line's string range starts from (0, or
-// the rest's start for the truncated last line), and each line's effective
-// vertical metrics.
+// placedMetrics returns l's lines, their strut-adjusted baselines from the box's top, the UTF-16 offset each line's string range starts from (0, or the rest's start for the truncated last line), and each line's effective vertical metrics.
 func (l *Layout) placedMetrics() (lines []uintptr, baselines []CGPoint, bases []int, metrics []lineMetrics) {
 	if frame := l.laid(); frame != 0 {
 		arr := ctFrameGetLines(frame)
@@ -1248,9 +1241,7 @@ func (l *Layout) placedMetrics() (lines []uintptr, baselines []CGPoint, bases []
 	return lines, l.origins[:len(lines)], bases, l.metrics[:len(lines)]
 }
 
-// placed returns l's lines, their baselines from the box's top and the
-// UTF-16 offset each line's string range starts from: 0, or the rest's
-// start for the truncated last line.
+// placed returns l's lines, their baselines from the box's top and the UTF-16 offset each line's string range starts from: 0, or the rest's start for the truncated last line.
 func (l *Layout) placed() (lines []uintptr, baselines []CGPoint, bases []int) {
 	lines, baselines, bases, _ = l.placedMetrics()
 	return lines, baselines, bases

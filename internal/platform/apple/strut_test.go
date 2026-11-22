@@ -186,10 +186,7 @@ func lineBaseline(line driver.TextLine) float64 {
 	return float64(line.Bounds.Origin.Y + line.Ascender + leading/2)
 }
 
-// TestFontStrutMatchesMixedLineMetrics verifies that a line whose characters
-// all come from a later family in a fontFamily list keeps at least the first
-// family's ascent and descent, matching a mixed line across Measure, TextLines,
-// placed baselines, CaretRect, RangeRects, HitTest and IndexAt.
+// TestFontStrutMatchesMixedLineMetrics verifies that a line whose characters all come from a later family in a fontFamily list keeps at least the first family's ascent and descent, matching a mixed line across Measure, TextLines, placed baselines, CaretRect, RangeRects, HitTest and IndexAt.
 func TestFontStrutMatchesMixedLineMetrics(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -275,10 +272,7 @@ func TestFontStrutMatchesMixedLineMetrics(t *testing.T) {
 	}
 }
 
-// TestFontStrutMultiLineWrappingDrawingAndHitTesting checks multi-line wrapped
-// fallback-only text: every line stacks with the strut, drawn pixels land at
-// the strut-adjusted baselines (not CoreText's unadjusted frame origins), and
-// TextLines, CaretLayout and IndexAt agree on every line.
+// TestFontStrutMultiLineWrappingDrawingAndHitTesting checks multi-line wrapped fallback-only text: every line stacks with the strut, drawn pixels land at the strut-adjusted baselines (not CoreText's unadjusted frame origins), and TextLines, CaretLayout and IndexAt agree on every line.
 func TestFontStrutMultiLineWrappingDrawingAndHitTesting(t *testing.T) {
 	requireInstalledFamily(t, "Zapfino")
 	requireInstalledFamily(t, "PingFang SC")
@@ -334,9 +328,7 @@ func TestFontStrutMultiLineWrappingDrawingAndHitTesting(t *testing.T) {
 		}
 	}
 
-	// Verify actual rendered pixels: without strut, line 0 drew at y=21 (glyphs y~3..24)
-	// and line 2 drew at y=77 (glyphs y~59..80). With Zapfino strut, line 0 draws at y=38
-	// (glyphs y~19..42), line 1 at y=106 (glyphs y~87..110), line 2 at y=174 (glyphs y~155..178).
+	// Verify actual rendered pixels: without strut, line 0 drew at y=21 (glyphs y~3..24) and line 2 drew at y=77 (glyphs y~59..80). With Zapfino strut, line 0 draws at y=38 (glyphs y~19..42), line 1 at y=106 (glyphs y~87..110), line 2 at y=174 (glyphs y~155..178).
 	if dark, _ := inked(img, image.Rect(0, 0, int(wrapW), 14)); dark != 0 {
 		t.Errorf("found %d dark pixels in top strut padding y=[0,14): glyphs were drawn un-strutted", dark)
 	}
@@ -352,9 +344,7 @@ func TestFontStrutMultiLineWrappingDrawingAndHitTesting(t *testing.T) {
 	}
 }
 
-// TestFontStrutWithMaxLinesAndTruncation verifies that MaxLines truncation on
-// fallback-only text keeps the strut height and aligns Measure, Layout,
-// TextLines, CaretRect and IndexAt across all ellipsize modes.
+// TestFontStrutWithMaxLinesAndTruncation verifies that MaxLines truncation on fallback-only text keeps the strut height and aligns Measure, Layout, TextLines, CaretRect and IndexAt across all ellipsize modes.
 func TestFontStrutWithMaxLinesAndTruncation(t *testing.T) {
 	requireInstalledFamily(t, "Zapfino")
 	requireInstalledFamily(t, "PingFang SC")
@@ -399,10 +389,7 @@ func TestFontStrutWithMaxLinesAndTruncation(t *testing.T) {
 	}
 }
 
-// TestFontStrutWithLineHeight verifies explicit LineHeight interacts cleanly
-// with struts: fixed LineHeight keeps baselines aligned between primary and
-// fallback-only lines without exceeding LineHeight, while attachment-enabled
-// minLineHeight still respects the strut.
+// TestFontStrutWithLineHeight verifies explicit LineHeight interacts cleanly with struts: fixed LineHeight keeps baselines aligned between primary and fallback-only lines without exceeding LineHeight, while attachment-enabled minLineHeight still respects the strut.
 func TestFontStrutWithLineHeight(t *testing.T) {
 	requireInstalledFamily(t, "Zapfino")
 	requireInstalledFamily(t, "PingFang SC")
@@ -459,10 +446,7 @@ func TestFontStrutWithLineHeight(t *testing.T) {
 	}
 }
 
-// TestFontStrutKeepsTallerFallbackAndPlacesDecorationsAndAttachments verifies
-// that a taller fallback font is never shrunk to the strut, and that span
-// backgrounds, strikethroughs and inline attachments align with the
-// strut-adjusted baseline.
+// TestFontStrutKeepsTallerFallbackAndPlacesDecorationsAndAttachments verifies that a taller fallback font is never shrunk to the strut, and that span backgrounds, strikethroughs and inline attachments align with the strut-adjusted baseline.
 func TestFontStrutKeepsTallerFallbackAndPlacesDecorationsAndAttachments(t *testing.T) {
 	requireInstalledFamily(t, "Menlo")
 	requireInstalledFamily(t, "PingFang SC")

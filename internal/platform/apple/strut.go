@@ -4,17 +4,14 @@ package apple
 
 import "math"
 
-// strutSpec holds the primary font's strut metrics and paragraph line-height
-// constraints so a line whose runs all come from fallback faces keeps at least
-// the first family's ascent, descent and leading, matching CSS's strut.
+// strutSpec holds the primary font's strut metrics and paragraph line-height constraints so a line whose runs all come from fallback faces keeps at least the first family's ascent, descent and leading, matching CSS's strut.
 type strutSpec struct {
 	ascent, descent, leading float64
 	minLineHeight            float64
 	maxLineHeight            float64 // 0 when attachments allow lines to grow
 }
 
-// lineMetrics holds a line's typographic vertical bounds and whether a
-// paragraph line-height constraint clamped them.
+// lineMetrics holds a line's typographic vertical bounds and whether a paragraph line-height constraint clamped them.
 type lineMetrics struct {
 	ascent, descent, leading float64
 	clamped                  bool
@@ -36,9 +33,7 @@ func (m lineMetrics) belowStep() float64 {
 
 const strutEps = 1e-4
 
-// applyLineHeight applies CoreText's minimum/maximum line height adjustment
-// to a line's raw ascent and descent, matching CTFramesetter's half-leading
-// distribution.
+// applyLineHeight applies CoreText's minimum/maximum line height adjustment to a line's raw ascent and descent, matching CTFramesetter's half-leading distribution.
 func applyLineHeight(rawA, rawD, minLH, maxLH float64) (a, d float64, clamped bool) {
 	rA, rD := math.Round(rawA), math.Round(rawD)
 	h := rA + rD
@@ -55,9 +50,7 @@ func applyLineHeight(rawA, rawD, minLH, maxLH float64) (a, d float64, clamped bo
 	return a, target - a, true
 }
 
-// rawLineBounds returns the maximum unadjusted ascent, descent and leading
-// across line's glyph runs (including CTRunDelegate attachments), before
-// CTParagraphStyle's minimum/maximum line height is applied.
+// rawLineBounds returns the maximum unadjusted ascent, descent and leading across line's glyph runs (including CTRunDelegate attachments), before CTParagraphStyle's minimum/maximum line height is applied.
 func rawLineBounds(line uintptr) (ascent, descent, leading float64, ok bool) {
 	runs := ctLineGetGlyphRuns(line)
 	n := cfArrayGetCount(runs)
@@ -74,8 +67,7 @@ func rawLineBounds(line uintptr) (ascent, descent, leading float64, ok bool) {
 	return ascent, descent, leading, true
 }
 
-// lineMetricsFor returns line's effective vertical metrics with s's strut
-// enforced, its typographic width, and whether the strut changed its metrics.
+// lineMetricsFor returns line's effective vertical metrics with s's strut enforced, its typographic width, and whether the strut changed its metrics.
 func lineMetricsFor(line uintptr, s strutSpec) (eff lineMetrics, width float64, adjusted bool) {
 	var a, d, l float64
 	width = ctLineGetTypographicBounds(line, &a, &d, &l)
@@ -108,9 +100,7 @@ func lineMetricsFor(line uintptr, s strutSpec) (eff lineMetrics, width float64, 
 	return lineMetrics{ascent: effA, descent: effD, leading: effRawL, clamped: clamped}, width, true
 }
 
-// stackLines computes strut-adjusted top-down baseline y-coordinates and total
-// height from CoreText's top-down baselines ctY, effective metrics eff, and
-// per-line adjusted flags.
+// stackLines computes strut-adjusted top-down baseline y-coordinates and total height from CoreText's top-down baselines ctY, effective metrics eff, and per-line adjusted flags.
 func stackLines(ctY []float64, eff []lineMetrics, adj []bool) (y []float64, anyAdjusted bool, height float64) {
 	n := len(ctY)
 	if n == 0 {
@@ -151,10 +141,7 @@ func stackLines(ctY []float64, eff []lineMetrics, adj []bool) (y []float64, anyA
 	return y, true, framedHeight(y[n-1] + eff[n-1].descent)
 }
 
-// stackFrameLines reads the first n lines of frame (a CTFrame of height
-// frameHeight) and returns their strut-adjusted top-down baseline origins,
-// effective line metrics, whether any line was adjusted by the strut, the
-// total framed height, and the maximum non-trailing-whitespace line width.
+// stackFrameLines reads the first n lines of frame (a CTFrame of height frameHeight) and returns their strut-adjusted top-down baseline origins, effective line metrics, whether any line was adjusted by the strut, the total framed height, and the maximum non-trailing-whitespace line width.
 func stackFrameLines(frame, arr uintptr, n int, frameHeight float64, s strutSpec) (origins []CGPoint, metrics []lineMetrics, adjusted bool, height, width float64) {
 	if n == 0 {
 		return nil, nil, false, 0, 0
