@@ -3,13 +3,17 @@
 package apple
 
 import (
+	"fmt"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
+
+var accessibleTextTestClasses atomic.Uint64
 
 func TestAccessibleTextTraversesVisibleWrappersAndStopsAtText(t *testing.T) {
 	onMain(func() {
@@ -19,7 +23,7 @@ func TestAccessibleTextTraversesVisibleWrappersAndStopsAtText(t *testing.T) {
 			text, hidden bool
 		}
 		nodes := map[objc.ID]node{}
-		class := RegisterClass("NsgoTestAccessibleTextNode", Class("NSObject"), nil, []objc.MethodDef{
+		class := RegisterClass(fmt.Sprintf("NsgoTestAccessibleTextNode%d", accessibleTextTestClasses.Add(1)), Class("NSObject"), nil, []objc.MethodDef{
 			{Cmd: sel("subviews"), Fn: func(self objc.ID, _ objc.SEL) objc.ID { return nodes[self].children }},
 			{Cmd: sel("isHidden"), Fn: func(self objc.ID, _ objc.SEL) bool { return nodes[self].hidden }},
 			{Cmd: sel("name"), Fn: func(self objc.ID, _ objc.SEL) objc.ID { return NSString(nodes[self].name) }},
@@ -38,6 +42,7 @@ func TestAccessibleTextTraversesVisibleWrappersAndStopsAtText(t *testing.T) {
 				node.children.Send(selRelease)
 				view.Send(selRelease)
 			}
+			clear(nodes)
 		}()
 		first := newNode("First", true, false)
 		ignored := newNode("Ignored", true, false)
