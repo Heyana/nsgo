@@ -109,6 +109,7 @@ type devFlags struct {
 	hotReload *boolOverride
 	fps       bool
 	port      int
+	host      string
 	open      bool
 	device    string
 	team      string
@@ -189,6 +190,7 @@ func bindDevFlags(fs *flag.FlagSet) *devFlags {
 	f.hotReload = boolFlag(fs, "hot-reload", "rebuild and restart on changes (default: nsgo.yaml's dev.hot_reload, else true)")
 	fs.BoolVar(&f.fps, "fps", false, "start the app with --nsgo-fps, showing the performance monitor")
 	fs.IntVar(&f.port, "port", 8080, "the dev server's `port`, which serves the web target; the next free one when taken")
+	fs.StringVar(&f.host, "host", "", "the dev server's bind `address` (default: all interfaces; use 127.0.0.1 for loopback only)")
 	fs.BoolVar(&f.open, "open", true, "open the web target in the browser")
 	fs.StringVar(&f.device, "device", "", "the `device` to run on: an iPhone's name, UDID, serial or ECID, a simulator's name or UDID, or an adb serial or emulator's AVD name (default: the only one connected, or the booted simulator)")
 	fs.BoolVar(&f.release, "release", false, "build stripped release binaries, as nsgo build does, for measuring with -fps")
@@ -211,7 +213,7 @@ func bindDevFlags(fs *flag.FlagSet) *devFlags {
 // options are dev's options of the flags that name no nsgo.yaml value.
 func (f *devFlags) options() devOptions {
 
-	return devOptions{apply: f.apply, port: f.port, open: f.open, device: f.device, team: f.team, release: f.release, debug: f.debug, trace: f.trace,
+	return devOptions{apply: f.apply, port: f.port, host: f.host, open: f.open, device: f.device, team: f.team, release: f.release, debug: f.debug, trace: f.trace,
 		highlight: f.highlight, devtools: f.devtools, layout: string(f.layout), automation: f.auto, fps: f.fps, lang: f.lang, clip: f.clip, profile: f.profile}
 }
 

@@ -313,7 +313,7 @@ func TestWebDevClientKeepsItsToken(t *testing.T) {
 	if err := buildWeb(ctx, p, dir, true); err != nil {
 		t.Fatal(err)
 	}
-	s, err := startDevServer(0)
+	s, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func TestWebDevClientKeepsItsToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.close()
-	raw, err := b.call("", "Target.createTarget", map[string]any{"url": s.pageURL(fmt.Sprintf("http://localhost:%d", s.port), "/")})
+	raw, err := b.call("", "Target.createTarget", map[string]any{"url": s.pageURL(s.urlAt("localhost"), "/")})
 	if err != nil {
 		t.Fatal(err)
 	}

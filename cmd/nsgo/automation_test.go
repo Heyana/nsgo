@@ -23,7 +23,7 @@ import (
 // startHub starts a dev server on any port with an automation hub.
 func startHub(t *testing.T) *automationHub {
 	t.Helper()
-	srv, err := startDevServer(0)
+	srv, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -47,7 +47,7 @@ func TestDevProfileFlags(t *testing.T) {
 }
 
 func TestDevProfileUpload(t *testing.T) {
-	s, err := startDevServer(0)
+	s, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

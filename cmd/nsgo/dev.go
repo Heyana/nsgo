@@ -46,6 +46,7 @@ type app struct {
 type devOptions struct {
 	apply   func(*project)
 	port    int    // the dev server's, which the web target is served from
+	host    string // the dev server's bind address; empty listens on every interface
 	open    bool   // whether to open the web target in the browser
 	device  string // the iPhone, simulator or Android device to run on
 	team    string // the Apple developer team the iOS target signs with
@@ -113,7 +114,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			}
 		}
 	}
-	srv, err := startDevServer(opts.port)
+	srv, err := startDevServer(opts.host, opts.port)
 	if err != nil {
 		return err
 	}
@@ -126,6 +127,9 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		srv.mu.Unlock()
 	}
 	if opts.automation {
+		if ip := srv.addr.IP; !ip.IsUnspecified() && !ip.IsLoopback() {
+			return errors.New("-automation needs a loopback listener; omit -host or use a loopback address")
+		}
 		hub, err := newAutomationHub(srv, p.Dev.Target)
 		if err != nil {
 			return err
@@ -438,9 +442,9 @@ func splitSources(dirs []string) (rest, sources []string) {
 	return rest, sources
 }
 
-// devServer is what dev's builds connect to: it streams build results to the apps and pages it started, takes their reload requests and the commits -trace prints, and serves the web target. It listens on every interface, so a phone on the LAN reaches it, and answers only requests that name it by an address or this machine's name (ownHost), and, but for the pages' files, carry the run's token (handle).
+// devServer is what dev's builds connect to: it streams build results to the apps and pages it started, takes their reload requests and the commits -trace prints, and serves the web target. It answers only requests that name it by an address or this machine's name (ownHost), and, but for the pages' files, carry the run's token (handle).
 type devServer struct {
-	port    int
+	addr    *net.TCPAddr
 	srv     *http.Server
 	mux     *http.ServeMux
 	reloads chan struct{}
@@ -470,23 +474,28 @@ func (s *devServer) setBundles(b map[string]string) {
 	s.mu.Unlock()
 }
 
-// startDevServer listens on port, or the next free one after it; 0 takes
-// any.
-func startDevServer(port int) (*devServer, error) {
+// startDevServer listens on host and port, or the next free port on that
+// host; 0 takes any port and an empty host listens on all interfaces.
+func startDevServer(host string, port int) (*devServer, error) {
+	bind := net.JoinHostPort(host, strconv.Itoa(port))
+	addr, err := net.ResolveTCPAddr("tcp", bind)
+	if err != nil {
+		return nil, fmt.Errorf("resolve dev server address: %w", err)
+	}
 	token, err := newToken()
 	if err != nil {
 		return nil, err
 	}
-	var ln net.Listener
-	for p := port; p <= port+100; p++ {
-		if ln, err = net.Listen("tcp", fmt.Sprintf(":%d", p)); err == nil || port == 0 {
+	var ln *net.TCPListener
+	for ; addr.Port <= min(port+100, 65535); addr.Port++ {
+		if ln, err = net.ListenTCP("tcp", addr); err == nil || port == 0 {
 			break
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("no free port from %d: %w", port, err)
+		return nil, fmt.Errorf("listen for the dev server at %s: %w", bind, err)
 	}
-	s := &devServer{port: ln.Addr().(*net.TCPAddr).Port, mux: http.NewServeMux(), reloads: make(chan struct{}, 1), token: token,
+	s := &devServer{addr: ln.Addr().(*net.TCPAddr), mux: http.NewServeMux(), reloads: make(chan struct{}, 1), token: token,
 		clients: map[chan string]bool{}, pages: map[chan string]bool{}}
 	s.handle("/_nsgo/events", s.events)
 	s.handle("/_nsgo/profile", s.serveProfile)
@@ -631,15 +640,30 @@ func (s *devServer) serve(dir string) {
 }
 
 // url is the server's address on this machine.
-func (s *devServer) url() string { return fmt.Sprintf("http://127.0.0.1:%d", s.port) }
+func (s *devServer) url() string {
+	if s.addr.IP.IsUnspecified() {
+		return s.urlAt("127.0.0.1")
+	}
+	return (&neturl.URL{Scheme: "http", Host: s.addr.String()}).String()
+}
+
+func (s *devServer) urlAt(host string) string {
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(s.addr.Port))
+}
 
 // pageURL is the address of a page the server serves at base, as url or one of lanURLs, and path, with the run's token in its fragment, which the page reads and no request carries.
 func (s *devServer) pageURL(base, path string) string {
 	return base + path + "#nsgo-token=" + s.token
 }
 
-// lanURLs are the server's addresses on the machine's networks, the one the machine reaches other hosts through first: a phone is told the first, and a virtual network's (a VPN's, a container's) comes before the Wi-Fi's in the interfaces' order.
+// lanURLs are the addresses phones can reach. A specific bind address excludes all other addresses; a wildcard bind gives the outbound IPv4 address first.
 func (s *devServer) lanURLs() []string {
+	switch {
+	case s.addr.IP.IsLoopback():
+		return nil
+	case !s.addr.IP.IsUnspecified():
+		return []string{s.url()}
+	}
 	var ips []net.IP
 	addrs, _ := net.InterfaceAddrs()
 	for _, a := range addrs {
@@ -654,7 +678,7 @@ func (s *devServer) lanURLs() []string {
 	}
 	out := make([]string, len(ips))
 	for i, ip := range ips {
-		out[i] = fmt.Sprintf("http://%s:%d", ip, s.port)
+		out[i] = s.urlAt(ip.String())
 	}
 	return out
 }
@@ -958,9 +982,16 @@ func webSession(opts devOptions) session {
 			once.Do(func() {
 				opts.server.serve(p.cache("dev", "web"))
 				query := webQuery(opts.appFlags())
-				url := opts.server.pageURL(fmt.Sprintf("http://localhost:%d", opts.server.port), "/"+query)
+				base := opts.server.url()
+				if opts.server.addr.IP.IsUnspecified() {
+					base = opts.server.urlAt("localhost")
+				}
+				url := opts.server.pageURL(base, "/"+query)
 				note("%s", link(url))
 				for _, lan := range opts.server.lanURLs() {
+					if lan == base {
+						continue
+					}
 					detail("%s", link(opts.server.pageURL(lan, "/"+query)))
 				}
 				if opts.open {

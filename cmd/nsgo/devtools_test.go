@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -67,7 +68,7 @@ func request(t *testing.T, s *devServer, method, path, contentType, body, token 
 }
 
 func TestDevToolsServerPassesMessagesBothWays(t *testing.T) {
-	s, err := startDevServer(0)
+	s, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +147,7 @@ func TestDevServerTellsPhonesTheOutboundAddressFirst(t *testing.T) {
 	if out == nil || !out.IsPrivate() {
 		t.Skip("no private outbound address here")
 	}
-	s := &devServer{port: 8080}
+	s := &devServer{addr: &net.TCPAddr{IP: net.IPv4zero, Port: 8080}}
 	urls := s.lanURLs()
 	if len(urls) == 0 || urls[0] != "http://"+out.String()+":8080" {
 		t.Fatalf("lanURLs = %v, want %s first", urls, out)
@@ -155,7 +156,7 @@ func TestDevServerTellsPhonesTheOutboundAddressFirst(t *testing.T) {
 
 // Whatever reads the app's state, the build's or the project's, or changes them, answers only the run's token, from this machine as from the network, and no other site's page reads it.
 func TestDevServerTakesItsTokenOnly(t *testing.T) {
-	s, err := startDevServer(0)
+	s, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,12 +217,12 @@ func TestDevServerTakesItsTokenOnly(t *testing.T) {
 
 // A request naming the server by another name, as a site whose name was pointed at this machine sends from its pages, is refused, token or not; the machine's addresses and names are its own.
 func TestDevServerRefusesForeignHosts(t *testing.T) {
-	s, err := startDevServer(0)
+	s, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.close()
-	port := strconv.Itoa(s.port)
+	port := strconv.Itoa(s.addr.Port)
 	name, _ := os.Hostname()
 	for host, want := range map[string]int{
 		"evil.example:" + port:     http.StatusForbidden,
@@ -254,7 +255,7 @@ func TestDevServerRefusesForeignHosts(t *testing.T) {
 
 // TestDevTokenStaysOffCommandLines: no command nsgo dev runs carries the run's token, as every user of the machine may read commands' arguments. A target that passes the app no environment gets it from a file the build adds to the app's main package rather than from go build's -ldflags, which the linker's arguments repeat, and a page opens in the browser without its address on a command line.
 func TestDevTokenStaysOffCommandLines(t *testing.T) {
-	srv, err := startDevServer(0)
+	srv, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +341,7 @@ func TestDevPagesTakeTheTokenOutOfTheirAddress(t *testing.T) {
 	if _, err := findBrowser(); err != nil {
 		t.Skip(err)
 	}
-	s, err := startDevServer(0)
+	s, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

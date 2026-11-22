@@ -415,8 +415,8 @@ func androidExtras(flags []string) []string {
 func androidSession(opts devOptions) session {
 	return session{
 		build: func(ctx context.Context, p *project) error {
-			// The device reaches the dev server through adb reverse.
-			p.devURL, p.devToken = opts.server.url(), opts.server.token
+			// The app connects to the device's loopback, regardless of the host's bind address.
+			p.devURL, p.devToken = opts.server.urlAt("127.0.0.1"), opts.server.token
 			d, err := adbDevice(ctx, opts.device)
 			if err != nil {
 				return err
@@ -438,8 +438,14 @@ func androidSession(opts devOptions) session {
 			if err != nil {
 				return app{}, err
 			}
-			port := fmt.Sprintf("tcp:%d", opts.server.port)
-			if err := d.run(ctx, "reverse", port, port); err != nil {
+			addr := opts.server.addr
+			port := fmt.Sprintf("tcp:%d", addr.Port)
+			destination := port
+			if !addr.IP.IsUnspecified() {
+				// A port alone makes the ADB server dial localhost.
+				destination = "tcp:" + addr.String()
+			}
+			if err := d.run(ctx, "reverse", port, destination); err != nil {
 				return app{}, err
 			}
 			path := filepath.Join(p.cache("dev", "android"), p.Name+".apk")

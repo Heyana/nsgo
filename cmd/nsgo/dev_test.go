@@ -2,10 +2,13 @@ package main
 
 import (
 	"flag"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,6 +32,41 @@ func TestDevDebugOptions(t *testing.T) {
 	opts.release = true
 	if err := checkDevDebug(p, opts); err == nil || !strings.Contains(err.Error(), "-release") {
 		t.Fatalf("release debugging: %v", err)
+	}
+}
+
+func TestDevServerKeepsBindAddressWhenPortIsTaken(t *testing.T) {
+	busy, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	port := busy.Addr().(*net.TCPAddr).Port
+	if port == 65535 {
+		t.Skip("no higher port to try")
+	}
+
+	fs := flag.NewFlagSet("dev", flag.ContinueOnError)
+	f := bindDevFlags(fs)
+	if err := fs.Parse([]string{"-host", "127.0.0.1", "-port", strconv.Itoa(port)}); err != nil {
+		t.Fatal(err)
+	}
+	opts := f.options()
+	s, err := startDevServer(opts.host, opts.port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	if !s.addr.IP.Equal(net.IPv4(127, 0, 0, 1)) || s.addr.Port <= port {
+		t.Fatalf("listener = %s, want 127.0.0.1 on a port above %d", s.addr, port)
+	}
+	if urls := s.lanURLs(); len(urls) != 0 {
+		t.Errorf("a loopback listener advertised LAN addresses: %v", urls)
+	}
+	resp := request(t, s, "GET", "/_nsgo/devtools/", "", "", "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("DevTools at %s returned %s", s.url(), resp.Status)
 	}
 }
 

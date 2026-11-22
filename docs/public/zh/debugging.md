@@ -26,6 +26,8 @@ go tool nsgo dev -target watchos_simulator  # 在 Apple Watch 模拟器中
 go tool nsgo dev -target android            # 通过 adb 在连接的设备或模拟器上
 ```
 
+开发服务器默认监听所有网络接口。用 `-host 127.0.0.1` 只监听回环地址，Android 仍可通过 `adb reverse` 连接；也可以指定某个本机网卡的 IP 地址，只在该地址监听。要在 Apple 真机上使用开发功能，请选择设备能通过局域网访问的地址。
+
 `-h` 列出全部参数。
 
 ## Go 调试器

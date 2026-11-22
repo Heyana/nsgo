@@ -26,6 +26,8 @@ go tool nsgo dev -target watchos_simulator  # in the Apple Watch simulator
 go tool nsgo dev -target android            # on a connected device or emulator, over adb
 ```
 
+The dev server listens on all interfaces by default. Use `-host 127.0.0.1` to keep it on loopback, including when Android connects through `adb reverse`, or name a local interface's IP address to listen only there. Use an address reachable over the LAN for dev features on physical Apple devices.
+
 `-h` lists every flag.
 
 ## Go debugger

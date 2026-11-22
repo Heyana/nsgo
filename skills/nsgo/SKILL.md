@@ -34,6 +34,9 @@ Go 1.27.3 or later builds every target from a Mac, with Xcode for Apple's; nothi
 
 For a signed HarmonyOS HAP, configure `harmonyos.signing` and use the SDK, Java and environment passwords described in [Building](https://nsgo.dev/docs/building/#harmonyos).
 On `ios_simulator`, Go-only dev rebuilds of the main app replace the installed executable and relaunch. Changes to the app's resources, icon or `nsgo.yaml` reinstall it. [Running and debugging](https://nsgo.dev/docs/debugging.md)
+
+Use `-host 127.0.0.1` to bind the dev server to loopback only, including with Android's `adb reverse`.
+
 ## Writing an app
 
 ```go
