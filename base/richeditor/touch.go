@@ -51,6 +51,7 @@ const (
 type editMenuState struct {
 	kind     menuKind
 	from, to int
+	editable bool
 }
 
 // touchState holds a View's touch selection, handles, long-press sweep and edit menu state.
@@ -195,6 +196,8 @@ func (v *rv) touchFollow() {
 	}
 	if stale {
 		v.closeEditMenu()
+	} else if v.touch.menu.kind != menuClosed && v.touch.menu.editable != v.s.Editable() {
+		v.openEditMenu()
 	}
 }
 
@@ -582,6 +585,7 @@ func (v *rv) openEditMenu() {
 		Origin: core.Point{X: origin.Origin.X + core.Points(bounds.X), Y: origin.Origin.Y + core.Points(bounds.Y)},
 		Size:   core.Size{Width: core.Points(bounds.Width), Height: core.Points(bounds.Height)},
 	}
+	menu.editable = v.s.Editable()
 	v.touch.menu = menu
 	v.sinkRef.OpenEditMenu(page, actions)
 }

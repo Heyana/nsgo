@@ -113,3 +113,9 @@ search.Open()
 - [Images and icons](images.md): pictures and SVGs, in a text too.
 - [Styles and themes](styles.md): colors and text fields that inherit.
 - [Layout](layout.md): how a text takes its width.
+
+## Rich text editing
+
+`ui/richeditor.View` shows a `base/richeditor.Session` with the theme’s look; `base/richeditor.View` provides the behavior with app-supplied styles. On iOS and Android, a long press selects a word and a double tap does the same; drag the selection handles to extend the range across blocks. The native edit menu offers Copy and Select All, and Cut and Paste while the session is editable, as applicable to the selection and clipboard. `Session.SetEditable` also refreshes an open menu. Style the knobs with `Styles.SelectionHandle` or `Classes.SelectionHandle` on the base view.
+
+For a custom text control, focus a `core.Input` and call `Ref.OpenEditMenu(bounds, actions)` with bounds in surface points and a bitmask of `core.EditCut`, `EditCopy`, `EditPaste` and `EditSelectAll`. On iOS and Android, `Input.OnEditAction` receives Cut, Copy and Select All; Paste uses `Input.OnPaste`. Call `Ref.CloseEditMenu` to dismiss it.

@@ -86,6 +86,8 @@ Headless GPU tests can use `app.Surface("title:Inspector").GPUReadPixels("id:vie
 
 `nsgotest.UpdaterState(core.UpdaterState{...})` seeds updater capability and preferences before the first render, headless and on native targets. Set `app.Update` to supply each check result; preference changes are modeled without contacting an update feed.
 
+Headless tests inspect `app.EditMenu` and `app.EditMenuItems()`, choose an offered action with `app.ChooseEditAction(core.EditCopy)` and dismiss with `app.CloseEditMenu()`. Paste uses the test’s clipboard. `app.LongPressAt(selector, point)` holds a specific point; headless `app.Touch(selector, point).Hold(duration)` fires a long press before the finger lifts, allowing a subsequent `Move` to exercise selection sweeps. Menu records and action selection model behavior; use native acceptance to verify the system toolbar.
+
 ## Widgets and Live Activities
 
 `nsgotest.Widgets(true)` records what the app publishes with `widget.Update`. Read the latest timeline for each kind with `app.Widgets()`. An entry with no date gets the app's wall time. Use `nsgotest.Widgets(false)` to make `widget.Available()` false and have updates return `widget.ErrNoWidgets`.

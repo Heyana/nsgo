@@ -389,6 +389,30 @@ func TestTouchEditMenuActionsAndReadOnly(t *testing.T) {
 	}
 }
 
+func TestTouchEditMenuFollowsEditableChanges(t *testing.T) {
+	s := session(t, "one two three\n")
+	app := nsgotest.Start(t, view(s), phone(core.OSIOS))
+	app.Settle()
+	app.LongPressAt("id:rich-editor-content", contentPoint(t, app, s, 6))
+	for _, editable := range []bool{false, true, false} {
+		app.Post(func() { s.SetEditable(editable) })
+		app.Settle()
+		if app.EditMenu == nil {
+			t.Fatal("changing editability dismissed the selection menu")
+		}
+		want := core.EditCopy | core.EditSelectAll
+		if editable {
+			want |= core.EditCut | core.EditPaste
+		}
+		if got := app.EditMenu.Actions; got != want {
+			t.Fatalf("editable %t: menu offers %d, want %d", editable, got, want)
+		}
+		if got := selected(s); got != "two" {
+			t.Fatalf("editability change lost selection: %q", got)
+		}
+	}
+}
+
 func TestTouchSelectionDropsOnEditProgrammaticMoveAndBlur(t *testing.T) {
 	s := session(t, "hello world\n")
 	var ref richeditor.Ref

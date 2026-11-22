@@ -113,3 +113,9 @@ search.Open()
 - [图片与图标](images.md)：图片和 SVG，也可以放进文本。
 - [样式与主题](styles.md)：可继承的颜色和文本字段。
 - [布局](layout.md)：文本如何取得宽度。
+
+## 富文本编辑
+
+`ui/richeditor.View` 用主题外观显示 `base/richeditor.Session`；`base/richeditor.View` 提供行为，并采用应用传入的样式。在 iOS 和 Android 上，长按或双击选择一个词，拖动选区手柄可跨文本块扩展范围。原生编辑菜单根据选区和剪贴板提供适用的复制和全选操作，会话可编辑时还提供剪切和粘贴。`Session.SetEditable` 也会刷新已经打开的菜单。在 base 视图上，通过 `Styles.SelectionHandle` 或 `Classes.SelectionHandle` 设置手柄圆点的样式。
+
+自定义文本控件可先聚焦 `core.Input`，再调用 `Ref.OpenEditMenu(bounds, actions)`；边界以页面坐标中的点为单位，操作使用 `core.EditCut`、`EditCopy`、`EditPaste` 和 `EditSelectAll` 的位掩码。在 iOS 和 Android 上，剪切、复制和全选由 `Input.OnEditAction` 接收，粘贴通过 `Input.OnPaste`。调用 `Ref.CloseEditMenu` 关闭菜单。

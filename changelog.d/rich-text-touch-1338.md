@@ -1,3 +1,3 @@
 ### Added
 
-- Add touch selection with draggable start/end handles (`SelectionHandle`), long-press word sweep and native system edit menus (`Ref.OpenEditMenu`, `Input.OnEditAction` via `UIEditMenuInteraction` on iOS and floating `ActionMode` on Android) to `base/richeditor`, `ui/richeditor` and `nsgotest` (#1338).
+- Rich editors support touch selection handles and native edit menus on iOS and Android (#1338 by @houko).
