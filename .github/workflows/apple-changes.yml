@@ -2,7 +2,7 @@ name: Apple changes
 
 # Tells test.yml and check.yml whether a change can affect Apple's targets, so their Apple jobs skip a pull request that cannot. The jobs skip through their own if: rather than a workflow's paths filter, as a required check that never starts blocks the pull request, while a skipped job counts as passed.
 #
-# It answers true for every push, tag and manual run, and for a pull request unless every file it changes is a docs file or belongs to another platform alone. Anything not listed below as safe to skip, shared or new, runs the Apple jobs.
+# It answers true for every push, tag and manual run. For a pull request or a merge queue group it answers false only when every file the change touches is a docs file or belongs to another platform alone; anything not listed below as safe to skip, shared or new, runs the Apple jobs. A called workflow runs on its caller's event, so it sees merge_group wherever test.yml and check.yml trigger on it.
 
 on:
   workflow_call:
@@ -23,23 +23,32 @@ jobs:
       apple: ${{ steps.detect.outputs.apple }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         with:
           persist-credentials: false
-          # The merge commit and its first parent, the base: their difference is what the pull request changes.
-          fetch-depth: 2
+          # A pull request needs its merge commit and that commit's first parent, the base. A merge group built by rebasing holds one commit per pull request in the batch, so it needs the history back to the group's base; without blobs, which naming the changed files does not read.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
+          filter: blob:none
       - name: Decide whether the Apple jobs run
         id: detect
         env:
           EVENT: ${{ github.event_name }}
+          GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+          GROUP_HEAD: ${{ github.event.merge_group.head_sha }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" != pull_request ]; then
-            echo "apple=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           # Without --no-renames a file moved out of an Apple directory would list only its new path. A failing git diff fails this step, and the Apple jobs run unless the answer is false.
-          changed=$(git diff --name-only --no-renames HEAD^1 HEAD)
+          case "$EVENT" in
+            pull_request)
+              # The merge commit against its first parent is what the pull request changes.
+              changed=$(git diff --name-only --no-renames HEAD^1 HEAD) ;;
+            merge_group)
+              # The whole batch, not only its last rebased commit, which HEAD^1..HEAD would see.
+              changed=$(git diff --name-only --no-renames "$GROUP_BASE" "$GROUP_HEAD") ;;
+            *)
+              echo "apple=true" >> "$GITHUB_OUTPUT"
+              exit 0 ;;
+          esac
           apple=false
           while IFS= read -r path; do
             [ -n "$path" ] || continue
