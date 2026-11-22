@@ -36,6 +36,8 @@ ui.Dialog{
 
 `ui.Sheet` 是覆盖在变暗背景上的底部面板；点击背景、Escape 或返回会调用 `OnClose`。
 
+用 `Label` 或 `LabelFunc` 设置对话框的无障碍名称，用 `TestID` 在测试中查找面板。`LabelFunc` 跟随 signal 更新，保留已经打开的内容。设置 `CloseOnSwipe: true` 后，向下滑动超过关闭阈值也会调用 `OnClose`；在该回调中更新 `Open` 来关闭面板。
+
 设置 `Style` 或 `StyleFunc` 可以自定义表面的背景、圆角和内边距，同时保留拖拽条和安全区域处理。`StyleFunc` 会跟随它读取的 signal 更新。只设置 `CornerRadius` 而不设置 `CornerRadii` 时，四个角都会变圆，取代默认只圆顶部两角的样式。
 
 ```go preview=dialog/sheet height=320

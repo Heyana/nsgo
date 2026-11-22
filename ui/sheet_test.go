@@ -2,9 +2,71 @@ package ui
 
 import (
 	"testing"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
 )
+
+func TestSheetNamesItsDialog(t *testing.T) {
+	app, _ := start(t, phoneEnv, func(*core.Scope) core.Node {
+		return Sheet{Open: func() bool { return true }, Label: "Filters", TestID: "filters",
+			Children: []core.Node{core.Text{Content: "Filter choices"}}}
+	})
+	panel := app.Find("id:filters")
+	if panel.Props.Role != core.RoleDialog || app.Find("role:dialog Filters").ID != panel.ID {
+		t.Fatalf("sheet role = %v, label = %q", panel.Props.Role, panel.Props.Label)
+	}
+}
+
+func TestSheetLabelFuncKeepsItsOpenContent(t *testing.T) {
+	var label *core.Signal[string]
+	app, _ := start(t, phoneEnv, func(cx *core.Scope) core.Node {
+		label = core.NewSignal(cx, "Filters")
+		return Sheet{Open: func() bool { return true }, LabelFunc: label.Get, TestID: "filters",
+			Children: []core.Node{Input{Label: "Search", TestID: "query"}}}
+	})
+	panel := app.Find("role:dialog Filters")
+	app.Type("query", "draft")
+	field := app.Find("query")
+	focused := field.Focused
+	app.Post(func() { label.Set("Search filters") })
+	app.Settle()
+	if updated := app.Find("role:dialog Search filters"); updated.ID != panel.ID || updated.ID != app.Find("filters").ID {
+		t.Fatal("changing the accessible name replaced the sheet")
+	}
+	if updated := app.Find("query"); updated.ID != field.ID || updated.Text != "draft" || updated.Focused != focused {
+		t.Fatal("changing the accessible name reset its input")
+	}
+}
+
+func TestSheetCloseOnSwipe(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		enabled bool
+	}{{"default", false}, {"enabled", true}} {
+		t.Run(test.name, func(t *testing.T) {
+			var open *core.Signal[bool]
+			closed := 0
+			app, _ := start(t, phoneEnv, func(cx *core.Scope) core.Node {
+				open = core.NewSignal(cx, true)
+				return Sheet{Open: open.Get, CloseOnSwipe: test.enabled, TestID: "filters",
+					Style:    core.Style{Height: core.Pt(300)},
+					OnClose:  func() { closed++; open.Set(false) },
+					Children: []core.Node{core.Text{Content: "Filter choices", TestID: "choices"}}}
+			})
+			app.Advance(300 * time.Millisecond)
+			app.Drag("filters", core.Point{Y: 120})
+			app.Advance(250 * time.Millisecond)
+			if test.enabled {
+				if closed != 1 || app.Exists("choices") {
+					t.Fatalf("swipe closed %d times, content visible = %v", closed, app.Exists("choices"))
+				}
+			} else if closed != 0 || !app.Exists("choices") {
+				t.Fatalf("default sheet closed %d times, content visible = %v", closed, app.Exists("choices"))
+			}
+		})
+	}
+}
 
 func TestSheetStyleOverridesSurface(t *testing.T) {
 	app, _ := start(t, phoneEnv, func(*core.Scope) core.Node {

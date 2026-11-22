@@ -36,6 +36,8 @@ On touch sheets, `Bare` now removes the default grabber and content padding so `
 
 `ui.Sheet` is a panel at the bottom over a dimmed backdrop; a press on the backdrop, Escape or back calls `OnClose`.
 
+Set `Label` or `LabelFunc` for its accessible dialog name, and `TestID` to find the panel in tests. `LabelFunc` follows its signals without replacing the open content. `CloseOnSwipe: true` also calls `OnClose` after a downward swipe passes the closing threshold; update `Open` in that callback to close it.
+
 Set `Style` or `StyleFunc` to customize the surface's background, corner radii and padding while keeping the grabber and safe-area handling. `StyleFunc` follows the signals it reads. A `CornerRadius` without `CornerRadii` rounds every corner in place of the default rounded top.
 
 ```go preview=dialog/sheet height=320

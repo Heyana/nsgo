@@ -72,7 +72,7 @@ func sheetCard(cx *core.Scope) core.Node {
 	return Playground{Title: "Sheet", Note: tr.OverlayAPanelAtTheBottom(), Base: baseSheetForm(cx, side, swipe), Stage: func() core.Node {
 		return core.Group{
 			ui.Button{Text: tr.OverlayShowTheSheet(), Variant: ui.ButtonSecondary, OnPress: func() { open.Set(true) }},
-			ui.Sheet{Open: open.Get, OnClose: close, Children: []core.Node{
+			ui.Sheet{Open: open.Get, OnClose: close, CloseOnSwipe: swipe.Get(), Label: tr.OverlaySheet(), Children: []core.Node{
 				ui.Text(tr.OverlaySheet(), 15, ui.Semibold, colors.Text),
 				ui.Text(tr.OverlayTheBackdropEscapeAndBack(), 13, ui.Regular, colors.Muted),
 				ui.Button{Text: tr.OverlayDone(), OnPress: close},

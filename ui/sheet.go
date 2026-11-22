@@ -11,6 +11,12 @@ import (
 type Sheet struct {
 	Open    func() bool
 	OnClose func()
+	// CloseOnSwipe lets a downward drag ask to close the sheet.
+	CloseOnSwipe bool
+	// Label names the sheet for screen readers; LabelFunc follows the signals it reads.
+	Label     string
+	LabelFunc func() string
+	TestID    string
 	// Style merges over the sheet's surface style. A CornerRadius without CornerRadii rounds every corner in place of the default rounded top.
 	Style core.Style
 	// StyleFunc merges over Style and follows the signals it reads.
@@ -23,7 +29,11 @@ func (s Sheet) Render(cx *core.Scope) core.Node {
 	colors := ColorsOf(cx)
 	env := cx.Env()
 	return base.Sheet{
-		Open: s.Open,
+		Open:         s.Open,
+		Label:        s.Label,
+		LabelFunc:    s.LabelFunc,
+		TestID:       s.TestID,
+		CloseOnSwipe: s.CloseOnSwipe,
 		OnOpenChange: func(open bool, _ base.Reason) {
 			if !open {
 				s.OnClose()
