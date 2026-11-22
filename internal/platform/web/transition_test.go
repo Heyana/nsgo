@@ -51,8 +51,7 @@ func TestTransitionsRunBesideAnimatedValues(t *testing.T) {
 		t.Errorf("inline transition = %q, want opacity and background-color without transform", trCSS)
 	}
 
-	// Changing Opacity and Scale keeps CSS opacity transition and starts a
-	// frame-stepped transform transition for unbound Scale beside TranslateX.
+	// Changing Opacity and Scale keeps CSS opacity transition and starts a frame-stepped transform transition for unbound Scale beside TranslateX.
 	style.Opacity = 0.2
 	style.Transform.Scale = 0.5
 	s.mount(&driver.MountBatch{Root: 1, Items: []driver.MountItem{

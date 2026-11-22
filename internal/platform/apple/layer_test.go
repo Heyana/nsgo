@@ -117,8 +117,7 @@ func TestStyleLayerBoundRunsTransitionsOnUnboundProperties(t *testing.T) {
 	}
 
 	tr := driver.Transition{Duration: time.Second, Easing: driver.EaseOut}
-	// Translucent background stays on layer itself (no rim cover sublayer), so
-	// layer holds every transition key including backgroundColor.
+	// Translucent background stays on layer itself (no rim cover sublayer), so layer holds every transition key including backgroundColor.
 	start := driver.ViewStyle{
 		Opacity:      1,
 		Background:   driver.RGBA(0x112233, 0.5),
@@ -159,8 +158,7 @@ func TestStyleLayerBoundRunsTransitionsOnUnboundProperties(t *testing.T) {
 		t.Error("bound transform started a transition")
 	}
 
-	// An animated frame changing only TranslateX (with Transition cleared) takes the
-	// onlyMoves fast path and leaves all running transitions intact.
+	// An animated frame changing only TranslateX (with Transition cleared) takes the onlyMoves fast path and leaves all running transitions intact.
 	moved := next
 	moved.Transition = driver.Transition{}
 	moved.Transform.TranslateX = 40

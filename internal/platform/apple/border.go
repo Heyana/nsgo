@@ -47,9 +47,7 @@ type ring struct {
 // rings are the layers drawing per-side borders.
 var rings = map[objc.ID]*ring{}
 
-// setBorders draws vs's per-side borders on layer, or removes them when
-// its border is uniform. tr animates them when it lists borders, skipping
-// fill color transitions while PropBorderColor is bound.
+// setBorders draws vs's per-side borders on layer, or removes them when its border is uniform. tr animates them when it lists borders, skipping fill color transitions while PropBorderColor is bound.
 func setBorders(layer objc.ID, vs *driver.ViewStyle, tr *driver.Transition, bound uint16) {
 	r := rings[layer]
 	if vs.Borders == (driver.Edges{}) {

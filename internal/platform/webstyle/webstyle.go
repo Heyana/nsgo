@@ -98,8 +98,7 @@ func Transition(t driver.Transition) string {
 	return TransitionFor(t, 0)
 }
 
-// cssPropBound reports whether CSS property name is driven by bound
-// (AnimatedValues.Set).
+// cssPropBound reports whether CSS property name is driven by bound (AnimatedValues.Set).
 func cssPropBound(name string, bound uint16) bool {
 	switch name {
 	case "opacity":
@@ -116,9 +115,7 @@ func cssPropBound(name string, bound uint16) bool {
 	return false
 }
 
-// TransitionFor returns the CSS transition of t excluding the CSS properties
-// currently driven by bound (AnimatedValues.Set), so unbound properties keep
-// transitioning alongside animated values.
+// TransitionFor returns the CSS transition of t excluding the CSS properties currently driven by bound (AnimatedValues.Set), so unbound properties keep transitioning alongside animated values.
 func TransitionFor(t driver.Transition, bound uint16) string {
 	if t.Duration <= 0 {
 		return ""
@@ -137,11 +134,7 @@ func TransitionFor(t driver.Transition, bound uint16) string {
 	return strings.Join(parts, ", ")
 }
 
-// AnimatedInline returns the inline CSS properties for a view with base style
-// base and bound animated values vals. Only properties driven by vals are set
-// inline; unbound properties stay empty so the view's class and its CSS
-// transitions own them. When vals binds properties listed in base.Transition,
-// transition is narrowed to the unbound ones (or "none" when none remain).
+// AnimatedInline returns the inline CSS properties for a view with base style base and bound animated values vals. Only properties driven by vals are set inline; unbound properties stay empty so the view's class and its CSS transitions own them. When vals binds properties listed in base.Transition, transition is narrowed to the unbound ones (or "none" when none remain).
 func AnimatedInline(base driver.ViewStyle, vals driver.AnimatedValues) map[string]string {
 	style := map[string]string{
 		"opacity": "", "transform": "", "background-color": "", "box-shadow": "",
@@ -185,8 +178,7 @@ func AnimatedInline(base driver.ViewStyle, vals driver.AnimatedValues) map[strin
 			style["box-shadow"] = "none"
 		}
 	}
-	// A bound color fills every glyph, the spans' too, which inherit the fill
-	// color over their own.
+	// A bound color fills every glyph, the spans' too, which inherit the fill color over their own.
 	if vals.Has(driver.PropTextColor) {
 		style["-webkit-text-fill-color"] = Color(vals.TextColor)
 	}

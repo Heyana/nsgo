@@ -5,14 +5,9 @@ import (
 	"time"
 )
 
-// Backends that draw their own views (Windows, Linux) step a style
-// transition themselves: each frame shows the style MixStyles returns.
-// Apple and the web also use StyleTransition to step composite properties
-// (transform, or box-shadow on the web) when some sub-properties are bound
-// by AnimatedValues while others transition.
+// Backends that draw their own views (Windows, Linux) step a style transition themselves: each frame shows the style MixStyles returns. Apple and the web also use StyleTransition to step composite properties (transform, or box-shadow on the web) when some sub-properties are bound by AnimatedValues while others transition.
 
-// StyleTransition steps a subset of ViewStyle properties on a backend's
-// frame clock from one style to another.
+// StyleTransition steps a subset of ViewStyle properties on a backend's frame clock from one style to another.
 type StyleTransition struct {
 	from, to ViewStyle
 	start    time.Duration
@@ -22,10 +17,7 @@ type StyleTransition struct {
 	props    TransitionProperty
 }
 
-// StartStyleTransition starts, keeps or retargets a transition over props
-// from prevStyle to nextStyle at now, ignoring differences covered by anim.
-// It returns nil when nextStyle carries no transition for props or no
-// unbound property in props changed.
+// StartStyleTransition starts, keeps or retargets a transition over props from prevStyle to nextStyle at now, ignoring differences covered by anim. It returns nil when nextStyle carries no transition for props or no unbound property in props changed.
 func StartStyleTransition(prev *StyleTransition, prevStyle, nextStyle ViewStyle, now time.Duration, props TransitionProperty, anim AnimatedValues) *StyleTransition {
 	tr := nextStyle.Transition
 	if tr.Duration <= 0 || props == 0 {
@@ -39,8 +31,7 @@ func StartStyleTransition(prev *StyleTransition, prevStyle, nextStyle ViewStyle,
 	}
 	from := prevStyle
 	if prev != nil {
-		// Keep an in-flight transition running when its target for props did
-		// not change, updating non-props fields on to so At preserves them.
+		// Keep an in-flight transition running when its target for props did not change, updating non-props fields on to so At preserves them.
 		if prev.props == props {
 			if _, done := prev.At(now); !done {
 				a, b := MixStyles(prev.to, nextStyle, 0, props), MixStyles(prev.to, nextStyle, 1, props)
@@ -78,8 +69,7 @@ func (st *StyleTransition) At(now time.Duration) (ViewStyle, bool) {
 	return MixStyles(st.from, st.to, t, st.props), false
 }
 
-// sameStyleProps reports whether a and b match on props, comparing
-// Effects.Shadows by value rather than pointer.
+// sameStyleProps reports whether a and b match on props, comparing Effects.Shadows by value rather than pointer.
 func sameStyleProps(a, b ViewStyle, props TransitionProperty) bool {
 	if props&TransitionShadow != 0 {
 		var sa, sb []BoxShadow

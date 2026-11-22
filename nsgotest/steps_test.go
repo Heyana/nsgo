@@ -1359,8 +1359,7 @@ func TestTransitionsAndAnimatedValuesCoexist(t *testing.T) {
 		}
 	})
 	app.Press("id:box")
-	// OnTransitionEnd runs after the 200ms transition duration and the animated
-	// TranslateX reaches 80 without clobbering the unbound Opacity or Background.
+	// OnTransitionEnd runs after the 200ms transition duration and the animated TranslateX reaches 80 without clobbering the unbound Opacity or Background.
 	if ended != 1 {
 		t.Fatalf("OnTransitionEnd ran %d times, want 1", ended)
 	}

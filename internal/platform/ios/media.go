@@ -238,10 +238,7 @@ func (s *surface) applyAnimated() {
 	}, s.repinBound)
 }
 
-// updateTransformTransition starts, keeps or clears v's frame-stepped
-// transform transition when a transform property is bound alongside an
-// unbound transform change: Core Animation's single transform layer property
-// cannot run a transition and an animated value at once.
+// updateTransformTransition starts, keeps or clears v's frame-stepped transform transition when a transform property is bound alongside an unbound transform change: Core Animation's single transform layer property cannot run a transition and an animated value at once.
 func (v *view) updateTransformTransition(prev driver.ViewStyle) {
 	s := v.surface
 	styled := v.styled || v.born != s.batch
@@ -277,13 +274,10 @@ func (s *surface) stepTransitions(now time.Duration) {
 	}
 }
 
-// restyle draws v's style with its animated values and what a layout
-// animation does to it, without starting new transitions.
+// restyle draws v's style with its animated values and what a layout animation does to it, without starting new transitions.
 func (v *view) restyle() { v.restyleWith(false) }
 
-// restyleWith draws v's style with its animated values and layout appearance
-// animation. When transition is true (from ItemViewStyle), unbound properties
-// run v.style.Transition.
+// restyleWith draws v's style with its animated values and layout appearance animation. When transition is true (from ItemViewStyle), unbound properties run v.style.Transition.
 func (v *view) restyleWith(transition bool) { v.restyleAt(transition, v.surface.clock()) }
 
 func (v *view) restyleAt(transition bool, now time.Duration) {

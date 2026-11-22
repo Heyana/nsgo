@@ -59,9 +59,7 @@ func (s *surface) tick(stamp time.Duration) {
 
 func (s *surface) clock() time.Duration { return time.Duration(now() * float64(time.Millisecond)) }
 
-// compositeTransitionProps returns the composite CSS property groups that
-// overlap bound and therefore cannot rely on CSS transition alongside inline
-// animated values.
+// compositeTransitionProps returns the composite CSS property groups that overlap bound and therefore cannot rely on CSS transition alongside inline animated values.
 func compositeTransitionProps(bound uint16) driver.TransitionProperty {
 	var props driver.TransitionProperty
 	if bound&driver.AnimatedTransformMask != 0 {
@@ -73,9 +71,7 @@ func compositeTransitionProps(bound uint16) driver.TransitionProperty {
 	return props
 }
 
-// updateStyleTransition starts, keeps or clears v's frame-stepped transition
-// for composite CSS properties (transform, box-shadow) where some
-// sub-properties are bound by v.animated while others change with Transition.
+// updateStyleTransition starts, keeps or clears v's frame-stepped transition for composite CSS properties (transform, box-shadow) where some sub-properties are bound by v.animated while others change with Transition.
 func (s *surface) updateStyleTransition(v *view, prev driver.ViewStyle) {
 	styled := v.styled || v.born != s.batch
 	props := compositeTransitionProps(v.animated.Set)

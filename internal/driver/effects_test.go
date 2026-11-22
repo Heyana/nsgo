@@ -263,8 +263,7 @@ func TestStyleTransitionBesideBoundAnimatedProps(t *testing.T) {
 	if at, done := st.At(150 * time.Millisecond); done || math.Abs(float64(at.Transform.Scale-0.75)) > 1e-4 {
 		t.Fatalf("halfway: scale=%v done=%v, want 0.75 false", at.Transform.Scale, done)
 	}
-	// An unrelated Opacity change keeps the in-flight transition without
-	// resetting its start time, while updating non-transform fields on to.
+	// An unrelated Opacity change keeps the in-flight transition without resetting its start time, while updating non-transform fields on to.
 	faded := scaled
 	faded.Opacity = 0.2
 	kept := StartStyleTransition(st, scaled, faded, 150*time.Millisecond, TransitionTransform, anim)
@@ -287,8 +286,7 @@ func TestStyleTransitionBesideBoundAnimatedProps(t *testing.T) {
 	if at, done := retargeted.At(400 * time.Millisecond); !done || at.Transform.Scale != 1 {
 		t.Fatalf("retargeted end: scale=%v done=%v, want 1 true", at.Transform.Scale, done)
 	}
-	// Shadow group: unchanged box shadows by value (distinct pointers) do not
-	// trigger a no-op transition, while an unbound ShadowColor change does.
+	// Shadow group: unchanged box shadows by value (distinct pointers) do not trigger a no-op transition, while an unbound ShadowColor change does.
 	shadowAnim := AnimatedValues{Set: 1 << PropShadowRadius, ShadowRadius: 6}
 	s1 := ViewStyle{ShadowColor: RGB(0x000000), ShadowRadius: 2, Effects: &Effects{Shadows: []BoxShadow{{Blur: 4, Color: RGB(0x111111)}}}, Transition: tr}
 	s2 := ViewStyle{ShadowColor: RGB(0x000000), ShadowRadius: 12, Effects: &Effects{Shadows: []BoxShadow{{Blur: 4, Color: RGB(0x111111)}}}, Transition: tr}

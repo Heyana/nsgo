@@ -47,10 +47,7 @@ func StyleLayer(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID) {
 	StyleLayerBound(layer, was, vs, view, 0)
 }
 
-// StyleLayerBound draws vs with layer like StyleLayer, skipping Core
-// Animation transitions for properties named in bound (AnimatedValues.Set)
-// so bound animated values keep moving immediately while unbound properties
-// run vs.Transition.
+// StyleLayerBound draws vs with layer like StyleLayer, skipping Core Animation transitions for properties named in bound (AnimatedValues.Set) so bound animated values keep moving immediately while unbound properties run vs.Transition.
 func StyleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bound uint16) {
 	tr := vs.Transition
 	var keys []string
@@ -136,9 +133,7 @@ func StyleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bou
 	}
 }
 
-// ClearBoundAnimations removes active style transitions on layer (and its
-// border or cover sublayers) for properties named in bound, leaving
-// transitions on unbound properties running.
+// ClearBoundAnimations removes active style transitions on layer (and its border or cover sublayers) for properties named in bound, leaving transitions on unbound properties running.
 func ClearBoundAnimations(layer objc.ID, bound uint16) {
 	if bound == 0 {
 		return
@@ -178,13 +173,7 @@ func ClearBoundAnimations(layer objc.ID, bound uint16) {
 	}
 }
 
-// RestyleLayer draws vs with a layer that shows shown, the style
-// StyleLayer last drew there; with none it draws vs at once. When the two
-// differ only in opacity and transform, as an animation's frames do, it
-// sets just those: drawing every property again remade its colors,
-// shadow, filters and gradients each frame, and the window server drew
-// them all again. bound names the properties currently driven by animated
-// values or appearance motions, whose transitions are skipped.
+// RestyleLayer draws vs with a layer that shows shown, the style StyleLayer last drew there; with none it draws vs at once. When the two differ only in opacity and transform, as an animation's frames do, it sets just those: drawing every property again remade its colors, shadow, filters and gradients each frame, and the window server drew them all again. bound names the properties currently driven by animated values or appearance motions, whose transitions are skipped.
 func RestyleLayer(layer objc.ID, shown, vs *driver.ViewStyle, view objc.ID, bound uint16) {
 	if shown == nil && vs.Transition.Duration > 0 {
 		// A view's first style shows at once, as CSS transitions none.
@@ -208,9 +197,7 @@ func RestyleLayer(layer objc.ID, shown, vs *driver.ViewStyle, view objc.ID, boun
 	}
 }
 
-// onlyMoves reports whether b differs from a in its opacity and transform
-// alone (ignoring Transition, which RestyleLayer checks before calling it).
-// An opacity under filters is drawn with them on iOS (layoutFilters).
+// onlyMoves reports whether b differs from a in its opacity and transform alone (ignoring Transition, which RestyleLayer checks before calling it). An opacity under filters is drawn with them on iOS (layoutFilters).
 func onlyMoves(a, b *driver.ViewStyle) bool {
 	x, y := *a, *b
 	x.Transition, y.Transition = driver.Transition{}, driver.Transition{}
@@ -259,8 +246,7 @@ func setViewShadow(view objc.ID, sh driver.BoxShadow) {
 	ns.Send(selRelease)
 }
 
-// keyBound reports whether CALayer property k is currently driven by bound
-// (AnimatedValues.Set).
+// keyBound reports whether CALayer property k is currently driven by bound (AnimatedValues.Set).
 func keyBound(k string, bound uint16) bool {
 	switch k {
 	case "opacity":
@@ -279,8 +265,7 @@ func keyBound(k string, bound uint16) bool {
 	return false
 }
 
-// transitionKeys returns the CALayer keys of the properties a transition
-// animates, excluding any driven by bound.
+// transitionKeys returns the CALayer keys of the properties a transition animates, excluding any driven by bound.
 func transitionKeys(p driver.TransitionProperty, bound uint16) []string {
 	if p == 0 {
 		p = ^driver.TransitionProperty(0)

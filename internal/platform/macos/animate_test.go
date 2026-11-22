@@ -139,8 +139,7 @@ func TestTransitionsRunBesideAnimatedValues(t *testing.T) {
 			t.Fatalf("initial animated TranslateX = %v, want 15", v.drawn.Transform.TranslateX)
 		}
 
-		// Batch 2: change unbound Opacity, Background, BorderWidth, CornerRadius
-		// and unbound Transform.Scale while TranslateX stays bound.
+		// Batch 2: change unbound Opacity, Background, BorderWidth, CornerRadius and unbound Transform.Scale while TranslateX stays bound.
 		style.Opacity = 0.25
 		style.Background = driver.RGBA(0x446688, 0.9)
 		style.BorderWidth = 3
