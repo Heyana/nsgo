@@ -1,12 +1,14 @@
-# Picture in Picture on iOS
+# Picture in Picture on iOS and tvOS
 
 Issue [#54](https://github.com/nsgo-dev/nsgo/issues/54) has two paths: `core.Video` uses its native player, and `mobile.PictureInPicture` renders an independent NSGo tree into sample buffers. Both use `AVPictureInPictureController` through purego, with no Swift or C adapter. The user confirmed both paths, separate APIs from Android overlays, view-owned lifetimes, a retained background frame, playback callbacks, YAML arrays and programmatic starts with native controls on 2026-11-15.
 
 ## Video
 
-Set `Video.PictureInPicture`, follow `OnPictureInPicture`, and call `Ref.StartPictureInPicture` or `StopPictureInPicture` from an app control. `AutoPictureInPicture` explicitly permits automatic entry when the app backgrounds. iOS pauses a video that plays as the app enters the background (native-views.md), except one whose PiP plays it on: active, starting, or about to start automatically. `PictureInPictureState` distinguishes unsupported, supported but not possible, active and failed states. Repeated starts while starting or active, and stops while inactive, are idempotent. Starting before AVKit is ready reports an error; it does not wait silently.
+Set `Video.PictureInPicture`, follow `OnPictureInPicture`, and call `Ref.StartPictureInPicture` or `StopPictureInPicture` from an app control. `AutoPictureInPicture` explicitly permits automatic entry when an iOS app backgrounds; tvOS has no automatic-inline-entry API and ignores that option. iOS pauses a video that plays as the app enters the background (native-views.md), except one whose PiP plays it on: active, starting, or about to start automatically. `PictureInPictureState` distinguishes unsupported, supported but not possible, active and failed states. Repeated starts while starting or active, and stops while inactive, are idempotent. Starting before AVKit is ready reports an error; it does not wait silently.
 
 A video without controls uses its existing player layer. A controlled video has a second layer in `AVPlayerViewController.contentOverlayView`, between its video and its controls. AVPlayer vends video to one layer at a time, so a layer behind the native controller would disappear behind its empty video surface. A flexible host follows the overlay into full screen. The native controller's independent PiP button is disabled; the app's control and automatic policy use the one owned session, whose public stop operation NSGo can call.
+
+On tvOS, the video owns an `MPNowPlayingSession` containing its `AVPlayer`, automatically publishes its playback metadata and asks the session to become active when preparing or starting PiP. Both controlled and layer-only videos use the same managed PiP path. The Now Playing session stays with the player generation until PiP has stopped. Custom sample-buffer sessions remain unsupported on tvOS. NSH has no corresponding PiP subsystem; this follows Apple's [custom-player contract](https://developer.apple.com/documentation/avkit/adopting-picture-in-picture-in-a-custom-player).
 
 The PiP window's play, pause and skip act on the `AVPlayer` directly, as the inline controls do: the backend hears the player's rate change, keeps what the window did until the app's `Paused` changes, so an unrelated change such as `Muted` leaves it alone, and reports it through `Video.OnPause`, with `VideoPauseControls`, and `Video.OnPlay` ([videos](native-views.md#videos)). Player time remains in AVPlayer; `Ref.Seek` and the window's skip controls use that player.
 
@@ -38,10 +40,12 @@ apple:
     UIBackgroundModes: [audio]
 ```
 
-An iOS session missing `audio` reports a configuration error. Unsupported systems, including tvOS until its path is verified, report `Supported: false`. macOS, Android and web PiP remain in the roadmap. The app's existing network access check applies to video URLs. Custom content stays in the app; NSGo uploads and persists no frame. App Store review may reject non-video uses of custom PiP, as issue #54 records.
+An iOS session missing `audio` reports a configuration error. Video support on iOS and tvOS follows AVKit's device capability; unavailable systems report `Supported: false`. macOS, Android and web PiP remain in the roadmap. The app's existing network access check applies to video URLs. Custom content stays in the app; NSGo uploads and persists no frame. App Store review may reject non-video uses of custom PiP, as issue #54 records.
 
 ## Verification
 
 Core and headless tests exercise detached layout, changing content, ownership, support/readiness, duplicate commands, the window's play and pause, background state and restoration. Apple tests call real Objective-C delegate methods, including the `CMTimeRange` return and signed skip argument, invoke native blocks through their ABI, check deferred release, exercise back-pressure, and inspect the pixels of successive CoreVideo/CoreMedia frames. Plist tests cover arrays and escaping on every Apple template. `examples/pip` packages both paths with the required background mode.
 
-On the iOS simulator `examples/pip` launches with both paths, which report the unsupported state AVKit gives there (`isPictureInPictureSupported` is false). Native iPhone verification remains for entry and restoration, fullscreen controlled video, and continuous custom video with changing overlays in the background.
+On the tvOS 27 simulator, the bundled-video tests load both controlled and layer-only videos and report AVKit's `Supported: false` state. A native app-host test verifies the actual Now Playing session's player association and metadata policy, and that tvOS ignores automatic inline entry. These checks do not establish PiP entry.
+
+On the iOS simulator `examples/pip` launches with both paths, which report the unsupported state AVKit gives there (`isPictureInPictureSupported` is false). Physical Apple TV verification remains for entering, stopping and restoring video PiP; Apple's tvOS [sample requires a physical device](https://developer.apple.com/documentation/avkit/adopting-picture-in-picture-playback-in-tvos). Native iPhone verification remains for entry and restoration, fullscreen controlled video, and continuous custom video with changing overlays in the background.

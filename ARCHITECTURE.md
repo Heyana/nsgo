@@ -156,7 +156,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Remote push](docs/architecture/remote-push.md) | Remote notification tokens, payload delivery or provider adapters |
 | [Contacts and calendar](docs/architecture/contacts-calendar.md) | Contacts, calendars, events or their permissions, which are designed and not built |
 | [Location and motion](docs/architecture/location-motion.md) | Location fixes, motion samples or sensor permissions |
-| [Picture in Picture](docs/architecture/picture-in-picture.md) | iOS video or custom-content Picture in Picture |
+| [Picture in Picture](docs/architecture/picture-in-picture.md) | iOS or tvOS video Picture in Picture, or iOS custom content |
 | [Android floating windows](docs/architecture/android-floating-windows.md) | Android system overlays, service ownership or overlay permissions |
 | [Foldable displays](docs/architecture/foldable.md) | Hinge geometry, reserved regions or a hinge's state in the environment |
 | [Mention completion](docs/architecture/mention-completion.md) | `core.Suggest`, `base.SuggestList` or Composer's mentions |

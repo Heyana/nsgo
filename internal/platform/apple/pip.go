@@ -20,6 +20,7 @@ type PictureInPicture struct {
 	events                      atomic.Pointer[pipEvents]
 	controller, delegate, layer objc.ID
 	state                       driver.PictureInPictureState
+	automatic                   bool // the controller supports and has enabled automatic inline entry
 	snapshot                    atomic.Pointer[driver.PictureInPictureConfig]
 	custom, starting, closing   bool
 	observing                   bool
@@ -47,10 +48,6 @@ func pictureInPictureSupported() bool {
 	if runtime.GOOS != "ios" || !loadAVKit() {
 		return false
 	}
-	device := objc.ID(Class("UIDevice")).Send(sel("currentDevice"))
-	if objc.Send[int](device, sel("userInterfaceIdiom")) == 2 {
-		return false
-	} // tvOS is not yet verified
 	cls := Class("AVPictureInPictureController")
 	return cls != 0 && objc.Send[bool](objc.ID(cls), sel("isPictureInPictureSupported"))
 }
@@ -62,6 +59,10 @@ func NewPictureInPicture(layer objc.ID, dispatch func(driver.Event)) *PictureInP
 	p.events.Store(&pipEvents{dispatch: dispatch})
 	p.snapshot.Store(&driver.PictureInPictureConfig{})
 	p.state.Supported = pictureInPictureSupported()
+	// Custom sample-buffer playback on tvOS still needs native acceptance.
+	if p.custom && television() {
+		p.state.Supported = false
+	}
 	if !p.state.Supported {
 		p.report()
 		return p
@@ -139,8 +140,7 @@ func (p *PictureInPicture) ContinuesInBackground() bool {
 	if p.state.Active || p.starting || objc.Send[bool](p.controller, sel("isPictureInPictureActive")) {
 		return true
 	}
-	c := p.snapshot.Load()
-	return c != nil && c.Automatically && objc.Send[bool](p.controller, sel("isPictureInPicturePossible"))
+	return p.automatic && objc.Send[bool](p.controller, sel("isPictureInPicturePossible"))
 }
 
 // HoldAudio holds the shared audio session in the playback category PiP needs while the session lives, paused or not: mixing with other apps' audio for AudioSessionMixWithOthers, which a video asks for, and pausing it otherwise.
@@ -158,8 +158,15 @@ func (p *PictureInPicture) HoldAudio(session driver.AudioSession) {
 // an AVKit queue. Automatically is opt-in for either source kind.
 func (p *PictureInPicture) Configure(c driver.PictureInPictureConfig) {
 	p.snapshot.Store(&c)
+	p.automatic = false
 	if p.controller != 0 {
-		p.controller.Send(sel("setCanStartPictureInPictureAutomaticallyFromInline:"), c.Automatically)
+		// This public selector belongs to iOS; tvOS and macOS have no
+		// automatic-inline-entry API, even if the controller supports PiP.
+		auto := sel("setCanStartPictureInPictureAutomaticallyFromInline:")
+		if runtime.GOOS == "ios" && !television() && objc.Send[bool](p.controller, sel("respondsToSelector:"), auto) {
+			p.controller.Send(auto, c.Automatically)
+			p.automatic = c.Automatically
+		}
 		if p.custom {
 			p.configureTimebase(c)
 			p.controller.Send(sel("invalidatePlaybackState"))

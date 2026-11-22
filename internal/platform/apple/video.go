@@ -43,8 +43,9 @@ type Video struct {
 	hitTest           videoHitTest
 	made              bool
 	pip               *PictureInPicture
-	pipLayer          objc.ID // iOS: the second AVPlayerLayer a video with controls starts PiP from
-	pipHost           objc.ID // iOS: the view holding pipLayer in the controller's content overlay
+	pipLayer          objc.ID // UIKit: the second AVPlayerLayer a video with controls starts PiP from
+	pipHost           objc.ID // UIKit: the view holding pipLayer in the controller's content overlay
+	pipNowPlaying     objc.ID // tvOS: the session associating this generation's player with PiP
 	frame             pipVideo
 }
 
@@ -445,12 +446,15 @@ func (v *Video) close() {
 	}
 	v.timeToken, v.endToken, v.rateToken = 0, 0, 0
 	// The objects leave this Video before it opens again, but an active PiP session keeps its generation, the player and its layer or controller, until AVKit says it stopped.
-	player, layer, controller, pipLayer, pipHost := v.player, v.layer, v.controller, v.pipLayer, v.pipHost
-	v.player, v.pipLayer, v.pipHost = 0, 0, 0
+	player, layer, controller, pipLayer, pipHost, nowPlaying := v.player, v.layer, v.controller, v.pipLayer, v.pipHost, v.pipNowPlaying
+	v.player, v.pipLayer, v.pipHost, v.pipNowPlaying = 0, 0, 0, 0
 	if runtime.GOOS == "ios" {
 		v.layer, v.controller = 0, 0
 	}
 	release := func() {
+		if nowPlaying != 0 {
+			nowPlaying.Send(sel("release"))
+		}
 		if st != nil {
 			for _, resource := range []*videoResource{st.resource, st.audioResource} {
 				if resource != nil {
@@ -912,7 +916,7 @@ func (v *Video) configurePiP() {
 	if v.controller != 0 {
 		// One session owns this player. AVPlayerViewController has no public stop, and its own PiP button would start a second session nothing owns, so every start, an automatic one included, goes through the overlay's layer.
 		v.controller.Send(sel("setAllowsPictureInPicturePlayback:"), false)
-		if objc.Send[bool](v.controller, sel("respondsToSelector:"), sel("setCanStartPictureInPictureAutomaticallyFromInline:")) {
+		if !television() && objc.Send[bool](v.controller, sel("respondsToSelector:"), sel("setCanStartPictureInPictureAutomaticallyFromInline:")) {
 			v.controller.Send(sel("setCanStartPictureInPictureAutomaticallyFromInline:"), false)
 		}
 	}
@@ -924,6 +928,15 @@ func (v *Video) configurePiP() {
 		return
 	}
 	if v.pip == nil {
+		if television() && pictureInPictureSupported() {
+			v.pipNowPlaying = newTVNowPlaying(v.player)
+			if v.pipNowPlaying == 0 {
+				if v.Dispatch != nil {
+					v.Dispatch(pipStateEvent(driver.PictureInPictureState{Supported: true, Error: "the system could not create the video's Now Playing session"}))
+				}
+				return
+			}
+		}
 		layer := v.layer
 		if layer == 0 {
 			v.pipLayer = objc.ID(Class("AVPlayerLayer")).Send(sel("playerLayerWithPlayer:"), v.player).Send(sel("retain"))
@@ -939,6 +952,9 @@ func (v *Video) configurePiP() {
 // PictureInPictureCommand starts or stops the video's PiP session.
 func (v *Video) PictureInPictureCommand(command uint32) {
 	if v.pip != nil {
+		if command == driver.PictureInPictureStart && v.pipNowPlaying != 0 {
+			v.pipNowPlaying.Send(sel("becomeActiveIfPossibleWithCompletion:"), uintptr(0))
+		}
 		v.pip.Command(command)
 	} else if v.Dispatch != nil {
 		v.Dispatch(pipStateEvent(driver.PictureInPictureState{Supported: pictureInPictureSupported(), Error: "Picture in Picture needs an enabled video with a playable source"}))
@@ -947,9 +963,14 @@ func (v *Video) PictureInPictureCommand(command uint32) {
 
 // endPiP ends the video's PiP session and lets its extra layer go once the session stopped, leaving the video's own layer.
 func (v *Video) endPiP() {
-	layer, host := v.pipLayer, v.pipHost
-	v.pipLayer, v.pipHost = 0, 0
-	release := func() { releasePiPLayer(layer, host) }
+	layer, host, nowPlaying := v.pipLayer, v.pipHost, v.pipNowPlaying
+	v.pipLayer, v.pipHost, v.pipNowPlaying = 0, 0, 0
+	release := func() {
+		releasePiPLayer(layer, host)
+		if nowPlaying != 0 {
+			nowPlaying.Send(sel("release"))
+		}
+	}
 	if p := v.pip; p != nil {
 		v.pip = nil
 		p.Close(release)

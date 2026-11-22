@@ -4,6 +4,7 @@ package apple
 
 import (
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 	"unsafe"
@@ -13,6 +14,77 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/objcblock"
 )
+
+func TestPictureInPictureAutomaticEntryAvailability(t *testing.T) {
+	var configured bool
+	cls := RegisterClass("NsgoTestPiPAutomaticController", Class("NSObject"), nil, []objc.MethodDef{
+		{Cmd: sel("isPictureInPicturePossible"), Fn: func(objc.ID, objc.SEL) bool { return true }},
+		{Cmd: sel("isPictureInPictureActive"), Fn: func(objc.ID, objc.SEL) bool { return false }},
+		{Cmd: sel("setCanStartPictureInPictureAutomaticallyFromInline:"), Fn: func(_ objc.ID, _ objc.SEL, value bool) { configured = value }},
+	})
+	p := &PictureInPicture{controller: objc.ID(cls).Send(sel("new"))}
+	defer p.controller.Send(sel("release"))
+	p.Configure(driver.PictureInPictureConfig{Automatically: true})
+	want := runtime.GOOS == "ios" && !television()
+	if configured != want || p.ContinuesInBackground() != want {
+		t.Fatalf("automatic configuration = %v, background playback = %v, want %v", configured, p.ContinuesInBackground(), want)
+	}
+	p.Configure(driver.PictureInPictureConfig{})
+	if p.ContinuesInBackground() {
+		t.Fatal("disabling automatic entry kept inline playback alive in the background")
+	}
+	p.starting = true
+	if !p.ContinuesInBackground() {
+		t.Fatal("a starting session did not keep playback alive")
+	}
+}
+
+func TestPictureInPictureWithoutAutomaticEntrySelector(t *testing.T) {
+	cls := RegisterClass("NsgoTestPiPManualController", Class("NSObject"), nil, []objc.MethodDef{
+		{Cmd: sel("isPictureInPicturePossible"), Fn: func(objc.ID, objc.SEL) bool { return true }},
+		{Cmd: sel("isPictureInPictureActive"), Fn: func(objc.ID, objc.SEL) bool { return false }},
+	})
+	p := &PictureInPicture{controller: objc.ID(cls).Send(sel("new"))}
+	defer p.controller.Send(sel("release"))
+	p.Configure(driver.PictureInPictureConfig{Automatically: true})
+	if p.ContinuesInBackground() {
+		t.Fatal("an unsupported automatic-entry request kept inline playback alive")
+	}
+}
+
+func TestVideoPictureInPictureRetainsNowPlayingUntilStopped(t *testing.T) {
+	loadAVKit()
+	registerPiPDelegate()
+	cls := RegisterClass("NsgoTestPiPNowPlayingController", Class("NSObject"), nil, []objc.MethodDef{
+		{Cmd: sel("stopPictureInPicture"), Fn: func(objc.ID, objc.SEL) {}},
+		{Cmd: sel("setDelegate:"), Fn: func(objc.ID, objc.SEL, objc.ID) {}},
+	})
+	for _, closeVideo := range []bool{false, true} {
+		t.Run(fmt.Sprintf("close=%v", closeVideo), func(t *testing.T) {
+			// Keep a test reference so the count can be inspected after the
+			// video releases its own reference at the stop callback.
+			session := objc.ID(Class("NSObject")).Send(sel("new"))
+			defer session.Send(sel("release"))
+			p := &PictureInPicture{controller: objc.ID(cls).Send(sel("new")), state: driver.PictureInPictureState{Supported: true, Active: true}}
+			p.delegate = objc.ID(pipDelegateClass).Send(sel("new"))
+			pipDelegates.Store(p.delegate, p)
+			v := &Video{pip: p, pipNowPlaying: session.Send(sel("retain"))}
+			before := objc.Send[uint](session, sel("retainCount"))
+			if closeVideo {
+				v.close()
+			} else {
+				v.endPiP()
+			}
+			if v.pip != nil || v.pipNowPlaying != 0 || objc.Send[uint](session, sel("retainCount")) != before {
+				t.Fatal("closing the generation released its Now Playing session before PiP stopped")
+			}
+			p.delegate.Send(sel("pictureInPictureControllerDidStopPictureInPicture:"), p.controller)
+			if objc.Send[uint](session, sel("retainCount")) != before-1 {
+				t.Fatal("the stopped generation did not release its Now Playing session")
+			}
+		})
+	}
+}
 
 func TestPictureInPictureDelegateAndOwnership(t *testing.T) {
 	loadAVKit()
