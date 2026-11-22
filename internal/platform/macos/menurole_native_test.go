@@ -42,11 +42,7 @@ func menuRoleFallbackApp(title string) func(*core.Scope) core.Node {
 	}
 }
 
-// TestMenuRoleFallback chooses Edit menu role items that carry an OnSelect:
-// the focused field takes Select All, Undo and Redo, and a view leaves them to
-// OnSelect. Undo, Redo and Cut follow the field's history and selection even
-// while AppKit has no key window. Run owns AppKit's process lifetime, so the
-// test gets a process of its own.
+// TestMenuRoleFallback chooses Edit menu role items that carry an OnSelect: the focused field takes Select All, Undo and Redo, and a view leaves them to OnSelect. Undo, Redo and Cut follow the field's history and selection even while AppKit has no key window. Run owns AppKit's process lifetime, so the test gets a process of its own.
 func TestMenuRoleFallback(t *testing.T) {
 	if os.Getenv("NSGO_TEST_MENU_ROLE_PROCESS") != t.Name() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

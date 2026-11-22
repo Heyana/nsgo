@@ -1054,9 +1054,7 @@ func validateMenu(self objc.ID, _ objc.SEL, item objc.ID) bool {
 	return s.keyField() == 0
 }
 
-// validateRoleMenuItem asks the responder AppKit would use for an editing
-// role whether it can carry out the action, in the same window that choosing
-// the item uses. No editor leaves the item to the app's OnSelect fallback.
+// validateRoleMenuItem asks the responder AppKit would use for an editing role whether it can carry out the action, in the same window that choosing the item uses. No editor leaves the item to the app's OnSelect fallback.
 func (s *surface) validateRoleMenuItem(item objc.ID, role driver.MenuRole) bool {
 	action := sel(roleActions[role])
 	if action == 0 {
@@ -1206,8 +1204,7 @@ func menuRoleChosen(self objc.ID, _ objc.SEL, item objc.ID) {
 	s.engine.Dispatch(driver.Event{Kind: driver.EventMenu, Count: id})
 }
 
-// roleWindow is the window whose editor takes a menu role, for both validation
-// and dispatch. While the app is inactive, use the menu's own window.
+// roleWindow is the window whose editor takes a menu role, for both validation and dispatch. While the app is inactive, use the menu's own window.
 func (s *surface) roleWindow() objc.ID {
 	app := nsApp()
 	w := app.Send(sel("keyWindow"))
