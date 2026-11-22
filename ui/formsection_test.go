@@ -172,3 +172,49 @@ func cardRows(card *nsgotest.View) string {
 	}
 	return b.String()
 }
+
+func TestFormSectionOverridesActualChildDividerInsets(t *testing.T) {
+	headless(t)
+	var items *core.Signal[[]string]
+	var seen []string
+	app, _ := start(t, desktopEnv, func(cx *core.Scope) core.Node {
+		items = core.NewSignalFunc(cx, []string{"flush", "custom"}, nil)
+		rows := core.Each(items.Get, func(item string) string { return item }, func(_ *core.Scope, item func() string, _ func() int) core.Node {
+			return core.View{TestID: item(), Style: core.Style{Height: core.Pt(32)}}
+		})
+		return FormSection{TestID: "custom-insets", DividerInset: func(row core.Node) (core.Points, bool) {
+			if row, ok := row.(core.View); ok {
+				seen = append(seen, row.TestID)
+				if row.TestID == "flush" {
+					return 0, true
+				}
+				return 27, true
+			}
+			return 0, false
+		}, Children: []core.Node{FormRow{Title: "Automatic", Icon: lucide.Bell}, rows, FormRow{Title: "Last"}}}
+	})
+	check := func() {
+		t.Helper()
+		card := app.Find("custom-insets").Children[0]
+		for i, want := range []core.Points{formRowPad + formIconTile + formRowGap, 0, 27} {
+			if got := card.Children[2*i+1].Frame.Origin.X; got != want {
+				t.Fatalf("divider %d inset = %v, want %v", i, got, want)
+			}
+		}
+	}
+	check()
+	if strings.Join(seen, ",") != "flush,custom" {
+		t.Fatalf("callback rows = %v, want actual Each rows", seen)
+	}
+	app.Post(func() { items.Set([]string{"custom", "flush"}) })
+	app.Settle()
+	card := app.Find("custom-insets").Children[0]
+	if card.Children[3].Frame.Origin.X != 27 || card.Children[5].Frame.Origin.X != 0 {
+		t.Fatal("dividers did not keep their row's inset after reordering")
+	}
+	app.Post(func() { items.Set(nil) })
+	app.Settle()
+	if got := cardRows(app.Find("custom-insets").Children[0]); got != "r|r" {
+		t.Fatalf("empty Each left %q", got)
+	}
+}

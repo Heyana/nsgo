@@ -12,6 +12,10 @@ type FormSection struct {
 	// and follows the signals it reads.
 	CardStyle     core.Style
 	CardStyleFunc func() core.Style
+	// DividerInset overrides a row's hairline inset when it returns true.
+	// Zero is full width; false keeps the title alignment or 12-point default.
+	// It receives the actual row for each child of a core.Each.
+	DividerInset func(row core.Node) (inset core.Points, override bool)
 }
 
 // Render implements core.Node.
@@ -20,11 +24,11 @@ func (s FormSection) Render(cx *core.Scope) core.Node {
 	// Each row has its hairline below it, so a row from core.Each takes and keeps its own as rows come, go and move; the card's last view hides its hairline.
 	var rows []core.Node
 	for _, child := range s.Children {
-		if each, ok := core.AfterEachRow(child, func(_ *core.Scope, row core.Node) core.Node { return formDivider(colors, row) }); ok {
+		if each, ok := core.AfterEachRow(child, func(_ *core.Scope, row core.Node) core.Node { return s.formDivider(colors, row) }); ok {
 			rows = append(rows, each)
 			continue
 		}
-		rows = append(rows, child, formDivider(colors, child))
+		rows = append(rows, child, s.formDivider(colors, child))
 	}
 	var nodes []core.Node
 	if s.Title != "" {
@@ -50,8 +54,14 @@ func (s FormSection) Render(cx *core.Scope) core.Node {
 }
 
 // formDivider is the hairline below row, which hides as the card's last view.
-func formDivider(colors Colors, row core.Node) core.Node {
-	return core.View{Class: "last:hidden", Style: core.Style{Height: core.Pt(1), Margin: core.Edges{Left: formRowLead(row)}}, StyleFunc: Filled(colors.Line)}
+func (s FormSection) formDivider(colors Colors, row core.Node) core.Node {
+	inset := formRowLead(row)
+	if s.DividerInset != nil {
+		if value, override := s.DividerInset(row); override {
+			inset = value
+		}
+	}
+	return core.View{Class: "last:hidden", Style: core.Style{Height: core.Pt(1), Margin: core.Edges{Left: inset}}, StyleFunc: Filled(colors.Line)}
 }
 
 // The rows' metrics: their least height, their padding at the sides and

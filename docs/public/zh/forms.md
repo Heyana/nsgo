@@ -86,9 +86,11 @@ ui.NumberInput{Value: quantity.Get, OnChange: quantity.Set, Min: 1, Max: 99, Ste
 
 ## 分组行
 
-`ui.FormSection` 将各行放在同一张卡片上，标题在卡片上方，页脚在下方。`CardStyle` 可设置卡片的背景、边框和圆角。`CardStyleFunc` 在其上合并样式，并跟随读取的信号更新。
+`ui.FormSection` 将各行放在同一张卡片上，标题在卡片上方，页脚在下方。`CardStyle` 可设置卡片的背景、边框和圆角。`CardStyleFunc` 在其上合并样式，并跟随读取的信号更新。`DividerInset` 接收每个子行，包括 `core.Each` 创建的行：返回缩进值和 `true` 可覆盖该行的分隔线缩进，返回 `false` 则保留自动标题对齐（其他节点默认为 12 点）。缩进为零时分隔线铺满宽度。
 
-`ui.FormRow` 将 `Leading` 节点或图标底板放在标题前。用 `LeadingWidth` 为自定义节点预留宽度，使下方分隔线与标题对齐。预留宽度默认为 24 点。`TileSize` 同时调整图标底板、图标和圆角的大小。`TitleStyle` 和 `DetailStyle` 可覆盖两行的文字样式。
+`ui.FormRow` 将 `Leading` 节点或图标底板放在标题前。用 `LeadingWidth` 为自定义节点预留宽度，使下方分隔线与标题对齐。预留宽度默认为 24 点。`TileSize` 同时调整图标底板、图标和圆角的大小。`TitleStyle` 和 `DetailStyle` 可覆盖标题和详情的文字样式。`TitleMaxLines` 限制标题行数（零为不限），`MinHeight` 以点覆盖该行的最小高度，`Below` 在同一文字列内放置标题和详情下方的节点。`MinHeight` 为零时保留默认值：40 点，触屏设备上为 48 点。
+
+单选组可在 section 外包一层 `base.RadioGroup`，并为各行设置 `Role: core.RoleRadio`、`Checked` 和 `OnPress`。行通过 `base.Radio` 提供选中状态的无障碍信息、单一 Tab 停靠点和方向键选择；已选中的行再次按下时不触发操作。选中值由应用保存。
 
 ## 校验
 

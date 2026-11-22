@@ -24,7 +24,8 @@ const (
 
 // FormRow is a row of a FormSection: Leading or an Icon on a tile,
 // Title over Detail, then Value in the muted color and the Control.
-// With OnPress it is a button that darkens while pressed.
+// With OnPress it is a button; core.RoleRadio gives it base.Radio's controlled
+// selection and keyboard behavior within a base.RadioGroup.
 type FormRow struct {
 	Icon func() *core.SVG
 	// TileSize is the side of the icon tile in points, 24 when zero.
@@ -35,11 +36,21 @@ type FormRow struct {
 	LeadingWidth            core.Points
 	Title, Detail           string
 	TitleStyle, DetailStyle core.Style
-	Value                   func() string
-	Control                 core.Node
-	OnPress                 func()
-	Disabled                func() bool
-	Variant                 FormRowVariant
+	// Below follows the title and detail in their text column.
+	Below core.Node
+	// TitleMaxLines limits the title; zero leaves it unlimited.
+	TitleMaxLines int
+	// MinHeight overrides the row's minimum height in points; zero keeps its default.
+	MinHeight core.Points
+	// Role overrides the row's role. core.RoleRadio uses base.Radio behavior
+	// in a base.RadioGroup, with Checked supplying the controlled state.
+	Role     core.Role
+	Checked  func() bool
+	Value    func() string
+	Control  core.Node
+	OnPress  func()
+	Disabled func() bool
+	Variant  FormRowVariant
 	// Label names a pressable row for assistive technology, Title by
 	// default.
 	Label  string
@@ -70,12 +81,15 @@ func (r FormRow) Render(cx *core.Scope) core.Node {
 			CornerRadius: width / 4, BorderCurve: core.BorderCurveContinuous, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
 			StyleFunc: Filled(fill), Children: []core.Node{Icon(r.Icon, width*14/formIconTile, colors.OnAccent)}})
 	}
-	texts := []core.Node{core.Text{Content: r.Title, Style: TypeBody.Merge(r.TitleStyle),
+	texts := []core.Node{core.Text{Content: r.Title, MaxLines: r.TitleMaxLines, Style: TypeBody.Merge(r.TitleStyle),
 		StyleFunc: func() core.Style { return core.Style{Color: cmp.Or(r.TitleStyle.Color, tint())} }}}
 	if r.Detail != "" {
 		texts = append(texts, core.Text{Content: r.Detail,
 			Style:     core.Style{FontSize: 11.5, FontWeight: Regular, LineHeight: 15}.Merge(r.DetailStyle),
 			StyleFunc: func() core.Style { return core.Style{Color: cmp.Or(r.DetailStyle.Color, colors.Muted())} }})
+	}
+	if r.Below != nil {
+		texts = append(texts, r.Below)
 	}
 	children = append(children, core.View{Style: core.Style{Gap: 1, FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: texts})
 	if r.Value != nil {
@@ -86,20 +100,33 @@ func (r FormRow) Render(cx *core.Scope) core.Node {
 	if r.Control != nil {
 		children = append(children, core.View{Style: core.Style{FlexShrink: 0}, Children: []core.Node{r.Control}})
 	}
-	if r.OnPress != nil && r.Variant == FormRowDefault {
+	if r.OnPress != nil && r.Role != core.RoleRadio && r.Variant == FormRowDefault {
 		children = append(children, Icon(lucide.ChevronRight, 13, colors.Faint))
 	}
-	style := core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: formRowGap, MinHeight: core.Pt(formRowHeightFor(cx)),
+	style := core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: formRowGap, MinHeight: core.Pt(cmp.Or(r.MinHeight, formRowHeightFor(cx))),
 		Padding: core.Symmetric(6, formRowPad)}
-	if r.OnPress == nil {
-		return core.View{TestID: r.TestID, Style: style, Children: children}
-	}
 	label := r.Label
 	if label == "" {
 		label = r.Title
 	}
+	if r.Role == core.RoleRadio {
+		style.Disabled = Dimmed()
+		return base.Radio{Label: label, TestID: r.TestID, Checked: r.Checked, Disabled: r.Disabled,
+			OnChange: func(bool) {
+				if r.OnPress != nil {
+					r.OnPress()
+				}
+			}, Style: style, StyleFunc: func() core.Style { return core.Style{FocusVisible: FocusRing(cx, -2)} },
+			Children: children}
+	}
+	if r.OnPress == nil {
+		if r.Role == core.RoleNone {
+			label = ""
+		}
+		return core.View{TestID: r.TestID, Role: r.Role, Label: label, Style: style, Children: children}
+	}
 	style.Disabled = Dimmed()
-	return base.Button{Label: label, TestID: r.TestID, Disabled: r.Disabled, OnPress: func(core.PressEvent) { r.OnPress() },
+	return base.Button{Role: r.Role, Label: label, TestID: r.TestID, Disabled: r.Disabled, OnPress: func(core.PressEvent) { r.OnPress() },
 		Style: style,
 		StyleFunc: func() core.Style {
 			return core.Style{Active: &core.Style{Background: colors.Hover()}, FocusVisible: FocusRing(cx, -2)}

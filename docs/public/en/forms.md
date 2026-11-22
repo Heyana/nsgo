@@ -86,9 +86,11 @@ ui.NumberInput{Value: quantity.Get, OnChange: quantity.Set, Min: 1, Max: 99, Ste
 
 ## Grouped rows
 
-`ui.FormSection` puts its rows on a card, with the title above and footer below. Set `CardStyle` for the card’s background, border or corners. `CardStyleFunc` merges over it and follows the signals it reads.
+`ui.FormSection` puts its rows on a card, with the title above and footer below. Set `CardStyle` for the card’s background, border or corners. `CardStyleFunc` merges over it and follows the signals it reads. `DividerInset` receives each child row, including rows made by `core.Each`: return an inset and `true` to override its divider, or `false` to keep automatic title alignment (12 points for other nodes). An inset of zero makes a full-width divider.
 
-`ui.FormRow` places `Leading` or an icon tile before the title. Set `LeadingWidth` to reserve space for your node and align the divider below it with the title. The slot defaults to 24 points. Set `TileSize` to scale the icon tile, glyph and corners together. `TitleStyle` and `DetailStyle` override the typography of the two lines.
+`ui.FormRow` places `Leading` or an icon tile before the title. Set `LeadingWidth` to reserve space for your node and align the divider below it with the title. The slot defaults to 24 points. Set `TileSize` to scale the icon tile, glyph and corners together. `TitleStyle` and `DetailStyle` override the title and detail typography. `TitleMaxLines` caps the title (zero is unlimited), `MinHeight` overrides the row’s minimum height in points, and `Below` places a node after the title and detail in their text column. Zero `MinHeight` keeps the default: 40 points, or 48 on touch devices.
+
+For a single-choice set, wrap the section in `base.RadioGroup` and set each row’s `Role: core.RoleRadio`, `Checked` and `OnPress`. The row uses `base.Radio` for its checked and selected accessibility states, one Tab stop and arrow-key selection; pressing an already checked row does nothing. The app owns the chosen value.
 
 ## Validation
 
