@@ -101,8 +101,7 @@ func (t *testResult) failFor(why string) {
 	t.Output += why + "\n"
 }
 
-// testBuild holds compiler output until a package claims it, or the build's
-// event stream ends without a package failure, as go test -c can do.
+// testBuild holds compiler output until a package claims it, or the build's event stream ends without a package failure, as go test -c can do.
 type testBuild struct {
 	output           string
 	failed, attached bool

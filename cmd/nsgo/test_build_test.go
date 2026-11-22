@@ -62,8 +62,7 @@ func TestBuildFailuresWithoutPackageEvents(t *testing.T) {
 	}
 }
 
-// A separate test process captures the tool's console while it consumes the
-// actual Go compile-only event stream, which ends without package fail events.
+// A separate test process captures the tool's console while it consumes the actual Go compile-only event stream, which ends without package fail events.
 func TestCompileOnlyFailureIncludesDiagnostics(t *testing.T) {
 	const marker = "nsgoCompileOnlyMissing"
 	const helper = "NSGO_TEST_COMPILE_FAILURE_DIR"
