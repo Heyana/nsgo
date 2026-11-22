@@ -31,9 +31,9 @@ func untrackLiveWindow(id uint32, w *window) {
 	liveMu.Unlock()
 }
 
-// liveSurface returns surface id of graph as a test host's surface acts on it: the app's root window for 0 (a shown window for a root-view app, or the hidden root surface that answers app-level alerts and Jump List tasks for an app function), else the window or panel the app opened as id; nil for a tray icon, a surface gone or one another graph's engine runs. A window whose engine has not started yet has no graph to compare.
+// liveSurface returns surface id of graph as a test host's surface acts on it: the app's root window for 0 (a shown window for a root-view app, or the hidden root surface that answers app-level alerts and Jump List tasks for an app function), else the window or panel the app opened as id; nil for a tray icon, a surface gone or one another graph's engine runs. Graph 0, from a surface whose engine has not started, and a window without an engine yet match any graph.
 func liveSurface(graph int, id uint32) testhost.Surface {
-	if graph <= 0 {
+	if graph < 0 {
 		return nil
 	}
 	liveMu.Lock()
@@ -42,7 +42,7 @@ func liveSurface(graph int, id uint32) testhost.Surface {
 	if w == nil {
 		return nil
 	}
-	if g := w.engine.Graph(); g != 0 && g != graph {
+	if g := w.engine.Graph(); graph != 0 && g != 0 && g != graph {
 		return nil
 	}
 	if w.closed != nil {
