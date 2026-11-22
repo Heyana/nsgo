@@ -2,20 +2,21 @@
 
 package windows
 
-// Text inputs, as NSH's text_input.rs: an editor of the backend's own,
-// laid out with DirectWrite and drawn with Direct2D in the input's view at
-// the content box the core laid out (inside padding and border). There
-// are no child windows, so the editor clips, fades and transforms with its
-// view, joins the composition's layers, and whatever is drawn after it
-// covers it.
+// Text inputs: hosted through Windows' windowless RichEdit (ITextServices2
+// from msftedit.dll) and drawn with Direct2D (TxDrawD2D) into the view at the
+// content box the core laid out (inside padding and border). There are no
+// child windows, so the editor clips, fades and transforms with its view, joins
+// the composition's layers, and whatever is drawn after it covers it.
 //
-// The view draws its decoration like any other; the editor draws the
-// selection, the text or the placeholder, the IME's composition
-// (underlined, at the caret) and the caret, which blinks at the system's
-// rate on a window timer while a field has the focus of the active
-// window. The editing itself (text, selection, caret stops, words, undo)
-// is editModel (textedit.go); this file turns pointer, key, character and
-// IME messages into its operations and its changes into events.
+// RichEdit provides native editing, multi-level undo/redo, OS spell checking
+// (IMF_SPELLCHECKING), password masking (TXTBIT_USEPASSWORD), word boundaries,
+// and TSF/IMM32 input methods. The view draws its decoration like any other;
+// the host draws the placeholder while empty, RichEdit draws the text,
+// selection, spellcheck underlines and IME composition via TxDrawD2D, and the
+// host draws the delegated logical caret in the configured CaretColor (blinking
+// at the system's rate while the field has focus). When msftedit.dll or
+// ITextServices2 is unavailable (such as 32-bit x86 or unit tests without an
+// HWND), textInput falls back to editModel (textedit.go) + DirectWrite.
 //
 // Every user edit increments the field's edit count and reports
 // EventChangeText with it; a value from the engine based on an older count
@@ -183,6 +184,10 @@ type textInput struct {
 	// world is where the view was drawn last, for the pointer and the IME.
 	world matrix
 	drawn bool
+	// re is the windowless RichEdit host (ITextServices2) when available on
+	// a real window; reTried avoids retrying after a permanent failure.
+	re      *richEditHost
+	reTried bool
 }
 
 func newTextInput(w *window, v *view) *textInput {
@@ -201,8 +206,148 @@ func (in *textInput) editable() bool { return !in.config.Readonly && !in.config.
 
 func (in *textInput) masked() bool { return in.config.Masked && !in.config.Multiline }
 
-// release lets the editor's DirectWrite objects go.
+func (in *textInput) isComposing() bool {
+	return (in.re != nil && in.re.composing) || in.model.composing()
+}
+
+func (in *textInput) canUndo() bool {
+	if in.re != nil {
+		return in.re.canUndo()
+	}
+	return in.model.canUndo()
+}
+
+func (in *textInput) selectAll() {
+	if in.re != nil {
+		in.re.suppressNotify++
+		in.re.selectAll()
+		in.re.suppressNotify--
+		in.syncFromRichEdit()
+		return
+	}
+	in.model.selectAll()
+}
+
+// ensureRichEdit lazily creates the windowless RichEdit host once the input is
+// attached to a real Win32 HWND, seeding it with any text/selection set before
+// the window was ready.
+func (in *textInput) ensureRichEdit() *richEditHost {
+	if in == nil {
+		return nil
+	}
+	if in.re != nil {
+		return in.re
+	}
+	if in.reTried || in.w == nil || in.w.hwnd == 0 {
+		return nil
+	}
+	in.reTried = true
+	re := newRichEditHost(in)
+	if re == nil {
+		return nil
+	}
+	in.re = re
+	if in.model.text != "" {
+		re.setText(in.model.text)
+	}
+	s, e := in.model.selection()
+	re.setSel(driver.UTF16Units(in.model.text, s), driver.UTF16Units(in.model.text, e))
+	if in.focused && !in.w.inactive {
+		re.sendMessage(wmSetFocus, 0, 0)
+	}
+	return re
+}
+
+// syncFromRichEdit mirrors RichEdit's authoritative text, selection, and
+// multiline scroll metrics into in.model so UIA, speech, menus, and tests
+// observe consistent state.
+func (in *textInput) syncFromRichEdit() (textChanged, selChanged bool) {
+	if in == nil || in.re == nil {
+		return false, false
+	}
+	text := in.re.getText()
+	sU, eU := in.re.getSel()
+	sB := driver.UTF16Offset(text, sU)
+	eB := driver.UTF16Offset(text, eU)
+	textChanged = text != in.model.text
+	selChanged = sB != in.model.anchor || eB != in.model.caret
+	in.model.text = text
+	in.model.anchor = sB
+	in.model.caret = eB
+	if textChanged {
+		in.relayout()
+	}
+	if in.multiline() {
+		if pos, ch, ok := in.re.vScrollMetrics(); ok {
+			in.scroll = pos
+			in.contentHeight = ch
+		}
+	}
+	return textChanged, selChanged
+}
+
+// onRichEditChange handles RichEdit's EN_CHANGE notification for user-driven
+// edits (including TSF/IME commits and spellcheck replacements).
+func (in *textInput) onRichEditChange() {
+	if in == nil || in.w == nil {
+		return
+	}
+	changed, _ := in.syncFromRichEdit()
+	if changed {
+		in.fs.Edited(in.model.text)
+		in.w.uiaValueChanged(in)
+	}
+	in.reportSelection()
+	in.wakeCaret()
+	in.caretMoved()
+	in.w.placeIME()
+	if in.v != nil {
+		in.w.redrawView(in.v)
+	}
+}
+
+// onRichEditSelChange handles RichEdit's EN_SELCHANGE notification.
+func (in *textInput) onRichEditSelChange() {
+	if in == nil || in.w == nil {
+		return
+	}
+	in.syncFromRichEdit()
+	in.reportSelection()
+	in.caretMoved()
+	in.w.placeIME()
+	if in.v != nil {
+		in.w.redrawView(in.v)
+	}
+}
+
+// onRichEditScroll handles RichEdit's EN_VSCROLL / EN_HSCROLL notifications.
+func (in *textInput) onRichEditScroll() {
+	if in == nil || in.w == nil {
+		return
+	}
+	if in.re != nil && in.multiline() {
+		old := in.scroll
+		if pos, ch, ok := in.re.vScrollMetrics(); ok {
+			in.scroll = pos
+			in.contentHeight = ch
+		}
+		if in.scroll != old && in.v != nil {
+			in.w.showBar(in.v)
+		}
+	}
+	in.caretMoved()
+	if in.v != nil {
+		in.w.redrawView(in.v)
+	}
+}
+
+// release lets the editor's RichEdit host and DirectWrite objects go.
 func (in *textInput) release() {
+	if in.re != nil {
+		in.re.close()
+		in.re = nil
+	}
+	in.reTried = false
 	releaseAll(&in.layout, &in.hint, &in.format)
 	in.toLayout, in.fromLayout = nil, nil
 }
@@ -220,6 +365,9 @@ func (in *textInput) setSize(width, height float32) {
 		in.contentHeight = 0
 		releaseAll(&in.layout, &in.hint)
 		in.toLayout, in.fromLayout = nil, nil
+		if in.re != nil {
+			in.re.resize(width, height)
+		}
 	}
 }
 
@@ -439,6 +587,34 @@ func (in *textInput) scrollDelta(dy driver.Points) bool {
 	if !in.multiline() || dy == 0 {
 		return false
 	}
+	if in.re != nil {
+		if pos, ch, ok := in.re.vScrollMetrics(); ok {
+			in.scroll = pos
+			in.contentHeight = ch
+		}
+		maxScroll := max(in.contentHeight-in.height, 0)
+		if maxScroll <= 0 {
+			return false
+		}
+		to := min(max(in.scroll-float32(notches*wheelStep), 0), maxScroll)
+		if to == in.scroll || !in.re.setVScroll(to) {
+			return false
+		}
+		if pos, ch, ok := in.re.vScrollMetrics(); ok {
+			in.scroll = pos
+			in.contentHeight = ch
+		} else {
+			in.scroll = to
+		}
+		if in.w != nil && in.v != nil {
+			in.w.showBar(in.v)
+			in.w.redrawView(in.v)
+		}
+		if in.w != nil {
+			in.caretMoved()
+		}
+		return true
+	}
 	if in.contentHeight == 0 && in.w != nil {
 		if l := in.textLayout(); l != nil {
 			in.contentHeight = layoutMetrics(l).height
@@ -500,6 +676,9 @@ func caretAt(layout *comObject, pos uint32) (x, y, h float32) {
 
 // caretRect returns the caret's x, top and height in the content box.
 func (in *textInput) caretRect() (x, y, h float32, ok bool) {
+	if in.re != nil {
+		return in.re.caretRect()
+	}
 	layout := in.textLayout()
 	if layout == nil {
 		return 0, 0, 0, false
@@ -555,6 +734,21 @@ func (in *textInput) lineHit(end bool, lines int) int {
 
 // reveal scrolls the text so that the caret shows.
 func (in *textInput) reveal() {
+	if in.re != nil {
+		old := in.scroll
+		in.re.scrollCaret()
+		if in.multiline() {
+			if pos, ch, ok := in.re.vScrollMetrics(); ok {
+				in.scroll = pos
+				in.contentHeight = ch
+			}
+			if in.scroll != old && in.w != nil && in.v != nil {
+				in.w.showBar(in.v)
+			}
+		}
+		in.caretMoved()
+		return
+	}
 	layout := in.textLayout()
 	if layout == nil {
 		return
@@ -672,11 +866,39 @@ func (in *textInput) draw(p *painter, world matrix) {
 	if in.width <= 0 || in.height <= 0 {
 		return
 	}
+	cx, cy := float32(c.Origin.X), float32(c.Origin.Y)
+	if re := in.ensureRichEdit(); re != nil {
+		p.pushClipRect(in.clipRect())
+		defer p.pop()
+		if in.model.text == "" && !in.isComposing() {
+			if hint := in.placeholderLayout(); hint != nil {
+				y := cy + (in.height-layoutMetrics(hint).height)/2
+				if in.multiline() {
+					y = cy
+				}
+				p.dc.callPoint(rtDrawTextLayout, cx, y, hint.ptr(), p.solid(in.placeholderColor()).ptr(), d2dDrawTextEnableColorFont)
+			}
+		}
+		re.drawD2D(p, world)
+		if in.focused && in.active && in.caretOn && in.editable() && !in.config.HideCaret && (!in.model.hasSelection() || in.isComposing()) {
+			if x, y, h, ok := re.caretRect(); ok {
+				px := float32(math.Round(float64((cx+x)*p.scale))) / p.scale
+				p.fillRect(rectF{px, cy + y, px + caretWidth(), cy + y + h}, in.caretColor())
+			}
+		}
+		if in.multiline() {
+			if pos, ch, ok := re.vScrollMetrics(); ok {
+				in.scroll = pos
+				in.contentHeight = ch
+			}
+			in.drawScrollBar(p)
+		}
+		return
+	}
 	layout := in.textLayout()
 	if layout == nil {
 		return
 	}
-	cx, cy := float32(c.Origin.X), float32(c.Origin.Y)
 	// One line may be taller than its box: it stays centered and the
 	// view's bounds clip it. Several lines scroll inside the padding box so
 	// their text scrolls under the padding and the scroll bar runs along
@@ -733,18 +955,25 @@ func (in *textInput) draw(p *painter, world matrix) {
 		p.fillRect(rectF{x, oy + y, x + caretWidth(), oy + y + h}, in.caretColor())
 	}
 
-	if in.multiline() && in.v != nil && in.v.barAlpha > 0 {
-		if thumb, _, ok := in.bar().Indicator(); ok {
-			box := in.paddingBox()
-			bar := rectF{box.left + float32(thumb.Origin.X), box.top + float32(thumb.Origin.Y),
-				box.left + float32(thumb.Origin.X+thumb.Size.Width), box.top + float32(thumb.Origin.Y+thumb.Size.Height)}
-			radius := min(thumb.Size.Width, thumb.Size.Height) / 2
-			barColor := driver.RGBA(0x000000, 0.45*in.v.barAlpha)
-			if p.w.shownDark() {
-				barColor = driver.RGBA(0xffffff, 0.55*in.v.barAlpha)
-			}
-			p.fillRounded(bar, float32(radius), barColor)
+	if in.multiline() {
+		in.drawScrollBar(p)
+	}
+}
+
+func (in *textInput) drawScrollBar(p *painter) {
+	if in.v == nil || in.v.barAlpha <= 0 {
+		return
+	}
+	if thumb, _, ok := in.bar().Indicator(); ok {
+		box := in.paddingBox()
+		bar := rectF{box.left + float32(thumb.Origin.X), box.top + float32(thumb.Origin.Y),
+			box.left + float32(thumb.Origin.X+thumb.Size.Width), box.top + float32(thumb.Origin.Y+thumb.Size.Height)}
+		radius := min(thumb.Size.Width, thumb.Size.Height) / 2
+		barColor := driver.RGBA(0x000000, 0.45*in.v.barAlpha)
+		if p.w.shownDark() {
+			barColor = driver.RGBA(0xffffff, 0.55*in.v.barAlpha)
 		}
+		p.fillRounded(bar, float32(radius), barColor)
 	}
 }
 
@@ -805,6 +1034,11 @@ func (w *window) setFocus(in *textInput) {
 	if old != nil {
 		// Losing the focus commits what the IME composes, as Windows' own edit controls do. ImmNotifyIME delivers the result while old still has the focus, so its change and the composition's end precede the blur.
 		w.notifyComposition(cpsComplete)
+		if old.re != nil {
+			old.re.composing = false
+			old.re.sendMessage(wmKillFocus, 0, 0)
+			old.syncFromRichEdit()
+		}
 		old.focused = false
 		old.drag = dragNone
 		old.model.composition = nil
@@ -820,6 +1054,12 @@ func (w *window) setFocus(in *textInput) {
 		w.focus = in
 		in.focused = true
 		in.active = !w.inactive
+		if re := in.ensureRichEdit(); re != nil {
+			if !w.inactive {
+				re.sendMessage(wmSetFocus, 0, 0)
+			}
+			in.syncFromRichEdit()
+		}
 		in.wakeCaret()
 		in.reveal()
 		w.report(in.v, driver.Event{Kind: driver.EventFocus, ID: in.v.id})
@@ -844,7 +1084,7 @@ func (in *textInput) focusable() bool { return !in.config.Disabled && !in.v.dele
 func (w *window) tabTo(in *textInput) {
 	w.setFocus(in)
 	if in.focused {
-		in.model.selectAll()
+		in.selectAll()
 		in.afterEdit(false)
 	}
 }
@@ -1016,6 +1256,13 @@ func (w *window) windowFocus(focused bool) {
 		in.active = focused
 		in.drag = dragNone
 		in.caretOn = true
+		if in.re != nil {
+			if focused {
+				in.re.sendMessage(wmSetFocus, 0, 0)
+			} else {
+				in.re.sendMessage(wmKillFocus, 0, 0)
+			}
+		}
 		w.invalidate()
 	}
 	if focused {
@@ -1186,6 +1433,82 @@ func (w *window) ime(message uint32, wParam, lParam uintptr) (uintptr, bool) {
 	if in == nil {
 		return 0, false
 	}
+	if re := in.ensureRichEdit(); re != nil {
+		switch message {
+		case wmImeSetContext:
+			// RichEdit draws the inline composition itself through Direct2D.
+			re.sendMessage(wmImeSetContext, wParam, lParam&^iscShowUIComposit)
+			r, _, _ := defWindowProcW.Call(w.hwnd, uintptr(message), wParam, lParam&^iscShowUIComposit)
+			return r, true
+		case wmImeStartComposition:
+			re.composing = true
+			in.model.composition = &imeText{}
+			re.sendMessage(wmImeStartComposition, wParam, lParam)
+			w.placeIME()
+			return 0, true
+		case wmImeComposition:
+			var comp *imeText
+			w.withContext(func(himc uintptr) {
+				if lParam&gcsCompStr != 0 {
+					comp = readComposition(himc)
+				}
+			})
+			re.suppressNotify++
+			re.sendMessage(wmImeComposition, wParam, lParam)
+			re.suppressNotify--
+			changed, _ := in.syncFromRichEdit()
+			if changed {
+				in.fs.Edited(in.model.text)
+				w.uiaValueChanged(in)
+			}
+			if comp == nil || comp.text == "" {
+				comp = &imeText{}
+				re.composing = false
+			} else {
+				re.composing = true
+			}
+			in.model.composition = comp
+			in.reportSelection()
+			in.wakeCaret()
+			in.reveal()
+			in.compose()
+			w.invalidate()
+			w.placeIME()
+			return 0, true
+		case wmImeEndComposition:
+			re.suppressNotify++
+			re.sendMessage(wmImeEndComposition, wParam, lParam)
+			re.suppressNotify--
+			re.composing = false
+			in.model.composition = nil
+			changed, _ := in.syncFromRichEdit()
+			if changed {
+				in.fs.Edited(in.model.text)
+				w.uiaValueChanged(in)
+			}
+			in.reportSelection()
+			in.reveal()
+			in.compose()
+			w.invalidate()
+			return 0, true
+		case wmImeChar:
+			re.suppressNotify++
+			res, _ := re.sendMessage(wmImeChar, wParam, lParam)
+			re.suppressNotify--
+			changed, _ := in.syncFromRichEdit()
+			if changed {
+				in.afterEdit(true)
+			}
+			return res, true
+		case wmImeNotify, wmImeRequest:
+			res, ok := re.sendMessage(message, wParam, lParam)
+			if ok && message == wmImeRequest {
+				return res, true
+			}
+			return 0, false
+		}
+		return 0, false
+	}
 	switch message {
 	case wmImeSetContext:
 		// The composition is drawn in the field, not in the IME's window.
@@ -1276,6 +1599,18 @@ func (in *textInput) insert(text string) {
 	if !in.editable() {
 		return
 	}
+	if re := in.ensureRichEdit(); re != nil {
+		in.syncFromRichEdit()
+		s, e := in.model.selection()
+		if kept, ok, _ := in.fs.Insert(in.model.text, driver.UTF16Len(in.model.text[s:e]), text); ok {
+			re.suppressNotify++
+			re.replaceSel(kept, true)
+			re.suppressNotify--
+			changed, _ := in.syncFromRichEdit()
+			in.afterEdit(changed)
+		}
+		return
+	}
 	s, e := in.model.selection()
 	if kept, ok, _ := in.fs.Insert(in.model.text, driver.UTF16Len(in.model.text[s:e]), text); ok {
 		in.afterEdit(in.model.insert(kept))
@@ -1284,6 +1619,22 @@ func (in *textInput) insert(text string) {
 
 // selectRange is ItemSelection: start to end in UTF-16 units, clamped.
 func (in *textInput) selectRange(r driver.TextRange) {
+	if re := in.ensureRichEdit(); re != nil {
+		in.syncFromRichEdit()
+		maxU := driver.UTF16Len(in.model.text)
+		s := min(max(r.Start, 0), maxU)
+		e := min(max(r.End, s), maxU)
+		re.setSel(s, e)
+		in.syncFromRichEdit()
+		in.fs.SetSelection(in.selectionUnits())
+		if in.focused {
+			in.wakeCaret()
+			in.reveal()
+			in.w.placeIME()
+		}
+		in.w.invalidate()
+		return
+	}
 	t := in.model.text
 	in.model.selectRange(driver.UTF16Offset(t, max(r.Start, 0)), driver.UTF16Offset(t, max(r.End, r.Start)))
 	in.fs.SetSelection(in.selectionUnits())
@@ -1303,7 +1654,8 @@ func (in *textInput) compose() {
 	if m.composing() {
 		text = m.composition.text
 	}
-	if value, apply := in.fs.Compose(m.composing(), text, m.text); apply {
+	composing := in.isComposing()
+	if value, apply := in.fs.Compose(composing, text, m.text); apply {
 		in.setText(value)
 	}
 }
@@ -1357,6 +1709,9 @@ func (in *textInput) configure(c *driver.InputConfig) {
 	in.config = *c
 	in.fs.Config = *c
 	in.setSize(float32(c.Content.Size.Width), float32(c.Content.Size.Height))
+	if re := in.ensureRichEdit(); re != nil {
+		re.configure(old, *c)
+	}
 	if in.focused {
 		if c.Disabled {
 			in.w.setFocus(nil)
@@ -1375,6 +1730,28 @@ func (in *textInput) setValue(text string, count uint32) {
 }
 
 func (in *textInput) setText(text string) {
+	if in.re != nil {
+		if in.model.text == text && in.re.getText() == text {
+			return
+		}
+		open := in.model.composition != nil
+		in.model.setText(text)
+		if open {
+			in.model.composition = &imeText{}
+		}
+		in.re.setText(text)
+		caretU16 := driver.UTF16Units(text, in.model.caret)
+		in.re.setSel(caretU16, caretU16)
+		in.relayout()
+		if in.focused {
+			in.reveal()
+		}
+		in.w.uiaValueChanged(in)
+		if in.v != nil {
+			in.w.redrawView(in.v)
+		}
+		return
+	}
 	if in.model.text == text {
 		return
 	}
@@ -1446,11 +1823,36 @@ func (w *window) fieldDown(at driver.Point, clicks int, shift bool) bool {
 	if in == nil {
 		return false
 	}
-	if in.model.composition != nil {
+	if in.model.composition != nil || (in.re != nil && in.re.composing) {
 		// What is composed is kept, where it was typed.
 		w.notifyComposition(cpsComplete)
 	}
 	w.setFocus(in)
+	if re := in.ensureRichEdit(); re != nil {
+		wp := uintptr(mkLButton)
+		if shift {
+			wp |= mkShift
+		}
+		lp := re.packLocalPoint(at)
+		re.suppressNotify++
+		switch {
+		case clicks <= 1:
+			re.sendMessage(wmLButtonDown, wp, lp)
+			in.drag = dragChar
+		case clicks == 2 && !in.masked():
+			re.sendMessage(wmLButtonDblClk, wp, lp)
+			in.drag = dragWord
+		default:
+			re.selectAll()
+			in.drag = dragAll
+		}
+		re.suppressNotify--
+		in.syncFromRichEdit()
+		w.selecting = in
+		setCapture.Call(w.hwnd)
+		in.afterEdit(false)
+		return true
+	}
 	pos := in.hit(in.local(at))
 	m := &in.model
 	switch {
@@ -1479,6 +1881,18 @@ func (w *window) fieldMove(at driver.Point) {
 	if in == nil || in.drag == dragNone {
 		return
 	}
+	if in.re != nil {
+		wp := uintptr(mkLButton)
+		if keyDown(vkShift) {
+			wp |= mkShift
+		}
+		in.re.suppressNotify++
+		in.re.sendMessage(wmMouseMove, wp, in.re.packLocalPoint(at))
+		in.re.suppressNotify--
+		in.syncFromRichEdit()
+		in.afterEdit(false)
+		return
+	}
 	pos := in.hit(in.local(at))
 	m := &in.model
 	switch in.drag {
@@ -1500,10 +1914,16 @@ func (w *window) fieldMove(at driver.Point) {
 
 // fieldUp ends the press selecting in a field, reporting whether there
 // was one.
-func (w *window) fieldUp() bool {
+func (w *window) fieldUp(at driver.Point) bool {
 	in := w.selecting
 	if in == nil {
 		return false
+	}
+	if in.re != nil {
+		in.re.suppressNotify++
+		in.re.sendMessage(wmLButtonUp, 0, in.re.packLocalPoint(at))
+		in.re.suppressNotify--
+		in.syncFromRichEdit()
 	}
 	in.drag = dragNone
 	w.selecting = nil
@@ -1516,8 +1936,16 @@ func (w *window) fieldCursor() bool {
 	var at point
 	getCursorPos.Call(uintptr(unsafe.Pointer(&at)))
 	screenToClient.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))
-	if w.selecting == nil && w.fieldAt(w.point(at.X, at.Y)) == nil {
+	pt := w.point(at.X, at.Y)
+	in := w.selecting
+	if in == nil {
+		in = w.fieldAt(pt)
+	}
+	if in == nil {
 		return false
+	}
+	if in.re != nil && in.re.onSetCursor(pt) {
+		return true
 	}
 	ibeam, _, _ := loadCursorW.Call(0, idcIBeam)
 	setCursor.Call(ibeam)
@@ -1548,9 +1976,33 @@ func (w *window) fieldChar(unit uint16) {
 			text = append(text, r)
 		}
 	}
-	if len(text) > 0 {
-		in.insert(string(text))
+	if len(text) == 0 {
+		return
 	}
+	if re := in.ensureRichEdit(); re != nil {
+		if !in.editable() {
+			return
+		}
+		in.syncFromRichEdit()
+		s, e := in.model.selection()
+		kept, ok, whole := in.fs.Insert(in.model.text, driver.UTF16Len(in.model.text[s:e]), string(text))
+		if !ok {
+			return
+		}
+		re.suppressNotify++
+		if whole {
+			for _, u := range units {
+				re.sendMessage(wmChar, uintptr(u), 1)
+			}
+		} else {
+			re.replaceSel(kept, true)
+		}
+		re.suppressNotify--
+		changed, _ := in.syncFromRichEdit()
+		in.afterEdit(changed)
+		return
+	}
+	in.insert(string(text))
 }
 
 // fieldKey handles a key down for the focused field, reporting whether it
@@ -1565,6 +2017,9 @@ func (w *window) editKey(vk uintptr, ctrl, shift, alt bool) bool {
 	in := w.focusedField()
 	if in == nil {
 		return false
+	}
+	if re := in.ensureRichEdit(); re != nil {
+		return w.richEditKey(in, re, vk, ctrl, shift, alt)
 	}
 	m := &in.model
 	unit := unitChar
@@ -1662,6 +2117,158 @@ func (w *window) editKey(vk uintptr, ctrl, shift, alt bool) bool {
 	return false
 }
 
+// richEditKey dispatches a key event or synthetic menu/test command to
+// RichEdit's ITextServices2 while preserving NSGo's Return/Submit, Paste,
+// MaxLength, and synthetic modifier semantics.
+func (w *window) richEditKey(in *textInput, re *richEditHost, vk uintptr, ctrl, shift, alt bool) bool {
+	in.syncFromRichEdit()
+	m := &in.model
+	forward := func(msg uint32, wp uintptr) bool {
+		re.suppressNotify++
+		re.sendMessage(msg, wp, 1)
+		re.suppressNotify--
+		changed, _ := in.syncFromRichEdit()
+		in.afterEdit(changed)
+		return true
+	}
+	syncSel := func(f func()) bool {
+		f()
+		s, e := m.selection()
+		if m.anchor > m.caret {
+			re.setSel(driver.UTF16Units(m.text, e), driver.UTF16Units(m.text, s))
+		} else {
+			re.setSel(driver.UTF16Units(m.text, s), driver.UTF16Units(m.text, e))
+		}
+		in.syncFromRichEdit()
+		in.afterEdit(false)
+		return true
+	}
+	hwModsMatch := ctrl == keyDown(vkControl) && shift == keyDown(vkShift)
+	switch {
+	case (vk == vkLeft || vk == vkRight) && !alt:
+		if hwModsMatch {
+			return forward(wmKeyDown, vk)
+		}
+		unit := unitChar
+		if ctrl {
+			unit = unitWord
+		}
+		return syncSel(func() { m.step(unit, vk == vkRight, shift) })
+	case vk == vkHome || vk == vkEnd:
+		if hwModsMatch {
+			return forward(wmKeyDown, vk)
+		}
+		to := 0
+		if vk == vkEnd {
+			to = len(m.text)
+		}
+		if in.multiline() && !ctrl {
+			to = in.lineHit(vk == vkEnd, 0)
+		}
+		return syncSel(func() { m.moveTo(to, shift) })
+	case (vk == vkUp || vk == vkDown) && in.multiline():
+		return forward(wmKeyDown, vk)
+	case vk == vkBack || vk == vkDelete:
+		if !in.editable() {
+			return true
+		}
+		if vk == vkBack {
+			in.fs.Key("Backspace")
+		}
+		if vk == vkDelete && shift && !ctrl {
+			w.cut(in)
+			return true
+		}
+		if ctrl {
+			if keyDown(vkControl) {
+				return forward(wmKeyDown, vk)
+			}
+			// Synthetic Ctrl+Backspace / Ctrl+Delete: select the word range
+			// and replace with empty so RichEdit records a single undo step.
+			s, e := m.selection()
+			if s == e {
+				if vk == vkDelete {
+					e = m.boundary(m.caret, unitWord, true)
+				} else {
+					s = wordLeft(m.text, m.caret)
+				}
+			}
+			if s != e {
+				re.setSel(driver.UTF16Units(m.text, s), driver.UTF16Units(m.text, e))
+				re.suppressNotify++
+				re.replaceSel("", true)
+				re.suppressNotify--
+				changed, _ := in.syncFromRichEdit()
+				in.afterEdit(changed)
+			}
+			return true
+		}
+		if vk == vkBack {
+			// RichEdit deletes on the key's down, not on its character.
+			return forward(wmKeyDown, vkBack)
+		}
+		return forward(wmKeyDown, vkDelete)
+	case vk == vkReturn:
+		if in.isComposing() {
+			w.notifyComposition(cpsComplete)
+			return true
+		}
+		insert, blur := in.fs.Return(m.text, shift || alt)
+		switch {
+		case insert:
+			in.insert("\n")
+		case blur:
+			w.setFocus(nil)
+		}
+		return true
+	case ctrl && !alt:
+		switch {
+		case vk == 'A':
+			in.selectAll()
+			in.afterEdit(false)
+		case vk == 'C', vk == vkInsert && !shift:
+			w.copySelection(in)
+		case vk == 'X':
+			if in.editable() {
+				w.cut(in)
+			}
+		case vk == 'V':
+			if in.editable() {
+				w.paste(in)
+			}
+		case vk == 'Z' && !shift:
+			if in.editable() {
+				re.suppressNotify++
+				undone := re.undo()
+				re.suppressNotify--
+				if undone {
+					changed, _ := in.syncFromRichEdit()
+					in.afterEdit(changed)
+				}
+			}
+		case vk == 'Y', vk == 'Z':
+			if in.editable() {
+				re.suppressNotify++
+				redone := re.redo()
+				re.suppressNotify--
+				if redone {
+					changed, _ := in.syncFromRichEdit()
+					in.afterEdit(changed)
+				}
+			}
+		default:
+			return false
+		}
+		return true
+	case vk == vkInsert && shift && !ctrl:
+		if in.editable() {
+			w.paste(in)
+		}
+		return true
+	}
+	return false
+}
+
 // copySelection copies the selection, never a password's.
 func (w *window) copySelection(in *textInput) {
 	if !in.masked() && in.model.hasSelection() {
@@ -1674,6 +2281,14 @@ func (w *window) cut(in *textInput) {
 		return
 	}
 	w.copySelection(in)
+	if in.re != nil {
+		in.re.suppressNotify++
+		in.re.replaceSel("", true)
+		in.re.suppressNotify--
+		changed, _ := in.syncFromRichEdit()
+		in.afterEdit(changed)
+		return
+	}
 	in.afterEdit(in.model.delete(unitChar, false))
 }
 
@@ -1699,6 +2314,9 @@ func (w *window) fieldMenu(in *textInput, x, y int32) {
 	if w.focusedField() != in {
 		w.setFocus(in)
 	}
+	if in.re != nil {
+		in.syncFromRichEdit()
+	}
 	m := &in.model
 	editable, masked, selected := in.editable(), in.masked(), m.hasSelection()
 	s, e := m.selection()
@@ -1721,7 +2339,7 @@ func (w *window) fieldMenu(in *textInput, x, y int32) {
 	}
 	msgs := locales.In(w.language)
 	items := []item{
-		{msgs.Undo() + "\tCtrl+Z", editable && m.canUndo(), 'Z', true},
+		{msgs.Undo() + "\tCtrl+Z", editable && in.canUndo(), 'Z', true},
 		{},
 		{msgs.Cut() + "\tCtrl+X", editable && selected && !masked, 'X', true},
 		{msgs.Copy() + "\tCtrl+C", selected && !masked, 'C', true},

@@ -1062,7 +1062,7 @@ func uiaSetFieldValue(i *uiaIface, text *uint16) uintptr {
 		return uiaElementGone
 	}
 	in := v.field
-	in.model.selectAll()
+	in.selectAll()
 	in.insert(syscall.UTF16ToString(unsafe.Slice(text, wcslen(text))))
 	return sOK
 }
