@@ -689,7 +689,7 @@ func (sc *shownScanner) layout(size driver.Size) {
 		sc.band.top + scanCardPad + scanButtonH,
 	}
 	if sc.labelLayout == nil {
-		l, _ := alertText(scanCancelLabel(sc.w.language), driver.Font{Size: 14}, scanButtonW)
+		l, _ := alertText(scanCancelLabel(sc.w.language), driver.Font{Size: 14}, scanButtonW, sc.w.rtl)
 		if l != nil {
 			l.call(formatSetTextAlignment, dwAlignCenter)
 			l.call(formatSetParagraphAlignment, dwParagraphCenter)
