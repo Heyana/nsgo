@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/videoplay"
 )
 
 // video is a video view's <video>, as NSH's web backend has it: the
@@ -23,8 +24,7 @@ type video struct {
 	warned    bool // that the browser would not play before a gesture
 
 	paused, made bool
-	// completed keeps an ended element paused through unrelated props.
-	completed bool
+	playback     videoplay.State
 }
 
 // videoFit is the CSS object-fit of each resize mode.
@@ -54,8 +54,9 @@ func (s *surface) createVideo(v *view) {
 			Height: driver.Points(vd.el.Get("videoHeight").Float()),
 		}})
 	})
+	on("play", func() { s.videoPlayback(v) })
 	on("playing", func() {
-		vd.completed = false
+		vd.playback.Completed = false
 		s.videoBuffer(v, false)
 		vd.stopProgress()
 		if v.events.Has(driver.EventProgress) {
@@ -63,13 +64,14 @@ func (s *surface) createVideo(v *view) {
 		}
 	})
 	on("pause", func() {
+		s.videoPlayback(v)
 		vd.stopProgress()
 		s.videoProgress(v)
 	})
 	on("waiting", func() { s.videoBuffer(v, true) })
 	on("canplay", func() { s.videoBuffer(v, false) })
 	on("ended", func() {
-		vd.completed = true
+		vd.playback.Ended(false, vd.seconds("currentTime"))
 		vd.stopProgress()
 		s.videoProgress(v)
 		s.send(v, driver.Event{Kind: driver.EventEnd})
@@ -85,6 +87,19 @@ func (s *surface) createVideo(v *view) {
 			s.send(v, driver.Event{Kind: driver.EventError, Text: msg})
 		}
 	})
+}
+
+// videoPlayback follows the element’s current state, because queued DOM
+// events may describe an earlier app command. The end’s pause is EventEnd.
+func (s *surface) videoPlayback(v *view) {
+	vd := v.video
+	if vd.el.Get("ended").Bool() {
+		vd.playback.Ended(false, vd.seconds("currentTime"))
+		return
+	}
+	if ev, ok := vd.playback.Changed(!vd.el.Get("paused").Bool(), vd.paused, driver.VideoPauseControls); ok {
+		s.send(v, ev)
+	}
 }
 
 // seconds reads one of the element's times in seconds; NaN and the
@@ -125,9 +140,13 @@ func (s *surface) setVideo(v *view, c *driver.VideoConfig) {
 		url, _ = imageURL(driver.ImageSource{URI: c.Source})
 	}
 	playChanged := !vd.made || url != vd.src || c.Paused != vd.paused
+	// Native controls may change the element before its queued event runs.
+	if !playChanged {
+		s.videoPlayback(v)
+	}
 	vd.paused, vd.made = c.Paused, true
 	if url != vd.src {
-		vd.completed = false
+		vd.playback = videoplay.State{}
 		vd.src = url
 		if url != "" {
 			vd.el.Set("src", url)
@@ -147,16 +166,19 @@ func (s *surface) setVideo(v *view, c *driver.VideoConfig) {
 		fit = "contain"
 	}
 	setStyle(el, map[string]string{"object-fit": fit})
-	if c.Paused {
+	if !vd.playback.Configure(playChanged) {
+		return
+	}
+	if c.Paused || url == "" {
+		vd.playback.Applied(false)
 		el.Call("pause")
-	} else if url != "" && el.Get("paused").Bool() && (!vd.completed || playChanged) {
-		if vd.completed {
-			// The controls' scrubber may have moved it back, which plays on from there. The position is read here, as the scrubber sets it before the browser dispatches seeked.
+	} else if el.Get("paused").Bool() {
+		if vd.playback.Completed {
 			if d := vd.seconds("duration"); d > 0 && vd.seconds("currentTime") >= d {
 				el.Set("currentTime", 0)
 			}
-			vd.completed = false
 		}
+		vd.playback.Applied(true)
 		vd.play()
 	}
 }
@@ -168,7 +190,11 @@ func (vd *video) play() {
 	settled = js.FuncOf(func(_ js.Value, args []js.Value) any {
 		settled.Release()
 		// Browsers only start sound on their own after a user gesture.
-		if err := args[0]; err.Truthy() && err.Get("name").String() == "NotAllowedError" && !vd.warned {
+		err := args[0]
+		if err.Truthy() {
+			vd.playback.Applied(!vd.el.Get("paused").Bool())
+		}
+		if err.Truthy() && err.Get("name").String() == "NotAllowedError" && !vd.warned {
 			vd.warned = true
 			js.Global().Get("console").Call("warn",
 				"nsgo: the browser did not let the video play before a user gesture (muted videos can)")
@@ -181,11 +207,12 @@ func (vd *video) play() {
 // seek moves the video to t.
 func (vd *video) seek(t time.Duration) {
 	t = max(t, 0)
-	replay := vd.completed && t < vd.seconds("duration")
+	replay := vd.playback.Completed && t < vd.seconds("duration")
 	vd.el.Set("currentTime", t.Seconds())
 	if replay {
-		vd.completed = false
+		vd.playback.Completed = false
 		if !vd.paused {
+			vd.playback.Applied(true)
 			vd.play()
 		}
 	}

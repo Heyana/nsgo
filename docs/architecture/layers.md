@@ -74,6 +74,7 @@ nsgo
 │   │   ├── appimage                     Identifies an executable's own AppImage
 │   │   ├── picked, fontfile             Shared picked photos and font files
 │   │   ├── codescan                     Codes read in Go from camera frames, where the system reads none (Android)
+│   │   ├── videoplay                    App and platform ownership of video playback
 │   │   ├── queue, perfhud               Shared batches and readings
 │   │   └── canvastest, imageloadtest    Shared test drawings and HTTP client checks
 │   └── internal/audiosession            iOS's one audio session, shared with microphone

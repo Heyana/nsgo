@@ -36,6 +36,8 @@ core.View{
 
 带透明通道的视频会透出它后面的内容：macOS 上用 `.mov` 里带 alpha 的 HEVC（iOS 尚未验证），Linux 上用 WebM 里带 alpha 的 VP9，并需要 GStreamer 的 codecalpha 插件（`gstreamer1.0-plugins-bad`，Linux 安装包可以在 `nsgo.yaml` 里把它列为推荐依赖）。在 macOS、iOS、Windows 和 Linux 上，本地视频的透明通道无法保留时（Apple 平台上的 WebM、Linux 上的 HEVC，以及在 Windows 机器上验证 Media Foundation 的透明通道输出之前，Windows 上的任何格式），`OnError` 会说明原因，而不是把视频显示在不透明的方框里：这个错误是 `*core.MediaError`，其 `Reason` 为 `core.MediaErrorAlphaUnsupported`，应用可以据此改用自己的解码器播放这段视频。Android 和 Web 平台，以及各平台上的远程 URL，会按解码器的输出播放这类视频，可能是不透明的。
 
+在 Apple、Android、Windows、Linux 和 Web 平台，`OnPause` 和 `OnPlay` 会跟随内置控件。控件暂停时，`OnPause` 给出 `VideoPauseControls`。`Paused` 仅在打开来源或值变化时应用。调整音量、速度和布局会保留原生暂停或播放状态，包括控件在 `Paused` 仍为 true 时开始播放的情况。如果应用显示自己的播放按钮，将状态绑定到 `PausedFunc`，并在这些回调中更新它。
+
 `Rate` 设置播放速度，`RateFunc` 可在播放中调整速度。根据 `OnLoad` 返回的 `VideoInfo.RateChangeable` 决定是否显示倍速控件。在 Linux 上，安装 GstPlay 和 GStreamer 的 `scaletempo` 滤镜后，可调整支持跳转的视频的播放速度。备用播放器以 1 倍速播放。
 
 `Video.Headers` 可以设置 `Referer`、`User-Agent` 或 `Cookie` 等 HTTP 请求头，适用于 Android 上的视频 URL，以及 Linux、macOS、iOS 和 tvOS 上直接提供的 HTTP 文件，例如 MP4 或 MOV。视频挂载时会复制这个 map，`SourceFunc` 返回新的 URL 时仍使用同一组请求头。在 Apple 平台上，来源需要提供文件的字节长度，并在需要跳转时支持范围请求。播放器在同源重定向时保留设置的请求头。在 Apple 平台上，同一组请求头也用于直接提供的 HTTP `AudioSource` 文件。以 `.m3u` 或 `.m3u8` 结尾的播放列表 URL 使用原生加载器。

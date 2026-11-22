@@ -197,21 +197,21 @@ func (v *Video) applyPlayback(old driver.VideoConfig, reopened bool) {
 		}
 		// What the controls or the system did holds until Paused changes (videoPlayback). The player posts its rate change before it returns, so the state it reaches is recorded first.
 		switch {
-		case !play.configure(pausedChanged):
-			if play.playing && c.Rate != old.Rate {
+		case !play.Configure(pausedChanged):
+			if play.Playing && c.Rate != old.Rate {
 				v.status.asked()
 				v.player.Send(sel("setRate:"), c.Rate)
 			}
 		case c.Paused:
-			play.applied(false)
+			play.Applied(false)
 			v.status.asked()
 			v.player.Send(sel("pause"))
 		default:
 			// The controls' scrubber may have moved a completed player back: it plays on from there.
-			if play.rewinds(v.position()) || v.atEnd() {
+			if play.Rewinds(v.position()) || v.atEnd() {
 				v.player.Send(sel("seekToTime:"), cmTimeOf(0))
 			}
-			play.applied(true)
+			play.Applied(true)
 			v.status.asked()
 			v.player.Send(sel("setRate:"), c.Rate)
 		}
@@ -365,7 +365,7 @@ func (v *Video) installVideoItem(st *videoStatus, asset objc.ID) {
 		if v.status != st || v.player == 0 {
 			return
 		}
-		st.play.ended(v.config.Repeat, v.position())
+		st.play.Ended(v.config.Repeat, v.position())
 		v.Dispatch(driver.Event{Kind: driver.EventEnd})
 		if v.config.Repeat {
 			st.asked()
@@ -653,7 +653,7 @@ func (v *Video) watchSystemPauses(st *videoStatus) {
 		const began, shouldResume = 1, 1 // AVAudioSessionInterruptionTypeBegan, AVAudioSessionInterruptionOptionShouldResume
 		if notificationInt(note, "AVAudioSessionInterruptionTypeKey") == began {
 			v.systemPause(driver.VideoPauseInterruption)
-		} else if notificationInt(note, "AVAudioSessionInterruptionOptionKey")&shouldResume != 0 && st.play.resume() {
+		} else if notificationInt(note, "AVAudioSessionInterruptionOptionKey")&shouldResume != 0 && st.play.Resume() {
 			st.asked()
 			v.player.Send(sel("setRate:"), v.config.Rate)
 			v.rateChanged(driver.VideoPauseInterruption)
@@ -661,7 +661,7 @@ func (v *Video) watchSystemPauses(st *videoStatus) {
 	})
 	// iOS pauses a playing video as the app enters the background, reporting it as an audio-session interruption rather than AVPlayerRateDidChangeReasonAppBackgrounded, and plays it again as the app comes back. The backend pauses it first, for the background, so it stays paused as the design says, unless its Picture in Picture plays it on.
 	v.stopBackground = Observe(center, NSString("UIApplicationDidEnterBackgroundNotification"), func(objc.ID) {
-		if v.status == st && v.player != 0 && st.play.playing && !v.continuesInPictureInPicture() {
+		if v.status == st && v.player != 0 && st.play.Playing && !v.continuesInPictureInPicture() {
 			v.systemPause(videoPauseBackground)
 		}
 	})
@@ -718,8 +718,8 @@ func rateReason(note objc.ID) int {
 // systemPause pauses a playing player for reason, as the system is about to, and reports it: the session's notification may come before or after the player's own.
 func (v *Video) systemPause(reason int) {
 	st := v.status
-	st.play.expect(reason)
-	if st.play.playing {
+	st.play.Expect(reason)
+	if st.play.Playing {
 		st.asked()
 		v.player.Send(sel("pause"))
 	}
@@ -738,10 +738,10 @@ func (v *Video) settle(st *videoStatus) {
 func (v *Video) rateChanged(reason int) {
 	st := v.status
 	playing := objc.Send[float32](v.player, sel("rate")) != 0
-	if !playing && st.play.playing && v.atEnd() {
+	if !playing && st.play.Playing && v.atEnd() {
 		return
 	}
-	if ev, ok := st.play.changed(playing, v.config.Paused, reason); ok {
+	if ev, ok := st.play.Changed(playing, v.config.Paused, reason); ok {
 		v.followAudio()
 		v.requestPiPVideoFrame()
 		v.Dispatch(ev)
@@ -761,7 +761,7 @@ func (v *Video) position() time.Duration {
 
 // followAudio holds the video's audio session while it plays, and lets it go when it does not: the session follows what plays, not what is mounted.
 func (v *Video) followAudio() {
-	audioPlaying(v, v.config.AudioSession, v.player != 0 && v.status != nil && v.status.play.playing)
+	audioPlaying(v, v.config.AudioSession, v.player != 0 && v.status != nil && v.status.play.Playing)
 }
 
 // poll reports the player's state every 100ms until it loaded or failed,
@@ -830,9 +830,9 @@ func (v *Video) Seek(position time.Duration) {
 	}
 	if v.player != 0 {
 		play := &v.status.play
-		replay := play.completed && position < v.itemDuration()
+		replay := play.Completed && position < v.itemDuration()
 		if replay {
-			play.completed = false
+			play.Completed = false
 		}
 		zero := cmTimeOf(0)
 		if v.frame.output != 0 {
@@ -852,7 +852,7 @@ func (v *Video) Seek(position time.Duration) {
 			v.player.Send(sel("seekToTime:toleranceBefore:toleranceAfter:"), cmTimeOf(position), zero, zero)
 		}
 		if replay && !v.config.Paused {
-			play.applied(true)
+			play.Applied(true)
 			v.status.asked()
 			v.player.Send(sel("setRate:"), v.config.Rate)
 			v.followAudio()

@@ -518,6 +518,8 @@ jobs:
         run: go tool nsgo test -target windows ./internal/testhost/testdata/pick
       - name: Test native window visibility
         run: go tool nsgo test -target windows -run TestWindowStateReadsNativeVisibility ./internal/testhost/testdata/windowstate
+      - name: Test native video controls and retained playback
+        run: go tool nsgo test -run '^TestVideoControlsReportAndHoldPlayback$' ./internal/platform/windows
       - name: Test widget and Live Activity recording
         run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
       - name: Compare Direct2D atlas pixels in direct and cached drawing

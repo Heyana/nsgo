@@ -27,6 +27,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
 	"github.com/nsgo-dev/nsgo/internal/platform/videoalpha"
+	"github.com/nsgo-dev/nsgo/internal/platform/videoplay"
 )
 
 var (
@@ -136,8 +137,7 @@ type video struct {
 	// applied again once the metadata is known.
 	loaded, failed, buffering, playing bool
 
-	// completed holds the last frame until an explicit replay or seek.
-	completed bool
+	playback videoplay.State
 
 	config     driver.VideoConfig
 	configured bool
@@ -182,21 +182,31 @@ func (vd *video) configure(c *driver.VideoConfig) {
 	if reopen {
 		vd.open()
 	}
-	vd.playing = !c.Paused && (!vd.completed || reopen || c.Paused != old.Paused)
+	// The media thread may have paused before its posted event reaches us.
+	if !reopen && c.Paused == old.Paused && vd.loaded {
+		vd.playbackChanged()
+	}
+	apply := vd.playback.Configure(reopen || c.Paused != old.Paused)
+	if apply {
+		vd.playing = !c.Paused && !vd.failed
+	}
 	if e := vd.engine; e != nil {
-		if vd.playing && vd.completed {
+		if apply && vd.playing && vd.playback.Completed {
 			e.callDouble(meSetCurrentTime, 0)
-			vd.completed = false
+			vd.playback.Completed = false
 		}
 		e.call(meSetMuted, boolArg(c.Muted))
 		e.callDouble(meSetVolume, float64(min(max(c.Volume, 0), 1)))
 		e.call(meSetLoop, boolArg(c.Repeat))
 		e.callDouble(meSetDefaultPlaybackRate, float64(c.Rate))
 		e.callDouble(meSetPlaybackRate, float64(c.Rate))
-		if c.Paused {
-			e.call(mePause)
-		} else if vd.playing && !vd.failed {
-			e.call(mePlay)
+		if apply {
+			vd.playback.Applied(vd.playing)
+			if vd.playing {
+				e.call(mePlay)
+			} else {
+				e.call(mePause)
+			}
 		}
 		vd.setBuffering(vd.playing && !vd.loaded && !vd.failed)
 		if vd.playing {
@@ -278,7 +288,7 @@ func (vd *video) stop() {
 		vd.engine = nil
 	}
 	vd.loaded, vd.failed, vd.buffering = false, false, false
-	vd.completed = false
+	vd.playback = videoplay.State{}
 	vd.natural = [2]uint32{}
 	vd.wantFrame, vd.progressAt = time.Time{}, time.Time{}
 }
@@ -295,19 +305,22 @@ func (vd *video) close() {
 
 // seek jumps to position.
 func (vd *video) seek(position time.Duration) {
-	vd.seekTo(max(position.Seconds(), 0))
+	vd.seekTo(max(position.Seconds(), 0), false)
 }
 
 // seekTo jumps to t seconds and waits for its frame: in frame server mode
 // a seek completes as frames are asked for.
-func (vd *video) seekTo(t float64) {
+func (vd *video) seekTo(t float64, controls bool) {
 	if vd.engine == nil {
 		return
 	}
 	vd.engine.callDouble(meSetCurrentTime, t)
-	if vd.completed && t < finite(vd.engine.getDouble(meGetDuration)) {
-		vd.completed, vd.playing = false, !vd.config.Paused
+	if vd.playback.Completed && t < finite(vd.engine.getDouble(meGetDuration)) {
+		vd.playback.Completed, vd.playing = false, !vd.config.Paused
 		if vd.playing {
+			if !controls {
+				vd.playback.Applied(true)
+			}
 			vd.engine.call(mePlay)
 		}
 	}
@@ -346,6 +359,7 @@ func (vd *video) notified(serial uint64, event uint32, param1 uintptr, param2 ui
 		vd.wantFrame = time.Now().Add(videoFrameWait)
 		vd.pump()
 	case mediaPlaying:
+		vd.playbackChanged()
 		if vd.loaded {
 			vd.setBuffering(false)
 		}
@@ -362,10 +376,13 @@ func (vd *video) notified(serial uint64, event uint32, param1 uintptr, param2 ui
 		vd.wantFrame = time.Now().Add(videoFrameWait)
 		vd.pump()
 	case mediaPause:
+		vd.playbackChanged()
+		vd.progress()
 		vd.w.redrawAll()
 	case mediaEnded:
 		if !vd.config.Repeat {
-			vd.completed, vd.playing = true, false
+			vd.playback.Ended(false, seconds(finite(e.getDouble(meGetCurrentTime))))
+			vd.playing = false
 			vd.report(driver.Event{Kind: driver.EventEnd})
 		}
 		vd.w.redrawAll()
@@ -376,6 +393,23 @@ func (vd *video) notified(serial uint64, event uint32, param1 uintptr, param2 ui
 		vd.failed = true
 		vd.setBuffering(false)
 		vd.report(driver.Event{Kind: driver.EventError, Text: mediaErrorText(uint16(param1), int32(param2))})
+	}
+}
+
+// playbackChanged reads current state rather than a possibly queued notification.
+// A natural end reports EventEnd, and app commands were recorded before the call.
+func (vd *video) playbackChanged() {
+	if vd.engine == nil || vd.failed {
+		return
+	}
+	if uint32(vd.engine.call(meIsEnded)) != 0 {
+		vd.playback.Ended(vd.config.Repeat, seconds(finite(vd.engine.getDouble(meGetCurrentTime))))
+		vd.playing = false
+		return
+	}
+	vd.playing = vd.playingNow()
+	if ev, ok := vd.playback.Changed(vd.playing, vd.config.Paused, driver.VideoPauseControls); ok {
+		vd.report(ev)
 	}
 }
 
@@ -488,7 +522,7 @@ func (vd *video) press(x, width float32) {
 			e.call(mePause)
 		} else {
 			if uint32(e.call(meIsEnded)) != 0 {
-				vd.seekTo(0)
+				vd.seekTo(0, true)
 			}
 			e.call(mePlay)
 		}
@@ -518,7 +552,7 @@ func (vd *video) scrub(x, width float32) {
 	_, d := vd.times()
 	if vd.engine != nil && d > 0 && end > start {
 		f := float64(min(max((x-start)/(end-start), 0), 1))
-		vd.seekTo(f * d)
+		vd.seekTo(f*d, true)
 	}
 }
 

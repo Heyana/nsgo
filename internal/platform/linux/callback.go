@@ -80,6 +80,7 @@ var (
 	cbViewSnapshot     uintptr
 	cbViewContains     uintptr
 	cbVideoPrepared    uintptr
+	cbVideoPlaying     uintptr
 	cbVideoSize        uintptr
 	cbVideoEnded       uintptr
 	cbVideoError       uintptr
@@ -178,6 +179,7 @@ func init() {
 	cbViewSnapshot = newCallback(viewSnapshotCallback)
 	cbViewContains = newCallback(viewContainsCallback)
 	cbVideoPrepared = newCallback(videoPreparedCallback)
+	cbVideoPlaying = newCallback(videoPlayingCallback)
 	cbVideoSize = newCallback(videoSizeCallback)
 	cbVideoEnded = newCallback(videoEndedCallback)
 	cbVideoError = newCallback(videoErrorCallback)
