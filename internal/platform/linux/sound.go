@@ -113,6 +113,7 @@ var loadSound = sync.OnceValue(func() bool {
 	purego.RegisterLibFunc(&gstAppSrcEndOfStream, app, "gst_app_src_end_of_stream")
 	purego.RegisterLibFunc(&gstAppSinkTryPullSample, app, "gst_app_sink_try_pull_sample")
 	purego.RegisterLibFunc(&gstAppSinkIsEOS, app, "gst_app_sink_is_eos")
+	purego.RegisterLibFunc(&gObjectSetProperty, gobjectLib, "g_object_set_property")
 	var gerr uintptr
 	ok := gstInitCheck(0, 0, &gerr) != 0
 	if gerr != 0 {
@@ -325,6 +326,8 @@ type soundMixer struct {
 	pipeline, mixer, bus uintptr
 	voices               []soundVoice
 	pending              []soundPlayback
+	// tracks are the voices of players' decoded tracks, which the voice limit does not count.
+	tracks []*trackVoice
 	// knownLatency is the last live latency the pipeline answered.
 	knownLatency time.Duration
 	ended        func(uint32, uint32)
@@ -594,6 +597,9 @@ func (m *soundMixer) close() {
 		m.endPlayback(play)
 	}
 	m.voices, m.pending = nil, nil
+	for len(m.tracks) > 0 {
+		m.removeTrack(m.tracks[0])
+	}
 	gstObjectUnref(m.bus)
 	gstObjectUnref(m.mixer)
 	gstObjectUnref(m.pipeline)

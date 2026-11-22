@@ -14,13 +14,20 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
 )
 
-// linuxPlayer plays one source through GtkMediaFile on the GTK thread.
+// linuxPlayer plays one source through GtkMediaFile on the GTK thread, or a looping one's decoded track through the sound mixer (audiotrack.go).
 type linuxPlayer struct {
 	owner  *window
+	audio  *linuxAudio
 	id     uint32
 	source driver.ImageSource
 	stream uintptr
 	file   audioPlayerFile
+
+	// track is the decoded track, voice plays it and decoding cancels its decoding. noTrack says the track could not be decoded whole, so GtkMediaFile plays it; loadWanted that the player was asked to load.
+	track                       []byte
+	voice                       *trackVoice
+	decoding                    context.CancelFunc
+	noTrack, loadWanted, opened bool
 
 	volume    float32
 	loop      bool
@@ -81,8 +88,13 @@ func warnAudioRate(rate float32) {
 func (p *linuxPlayer) command(req *driver.AudioRequest) {
 	switch req.Command {
 	case driver.AudioPreload:
+		p.loadWanted = true
 		p.prepare()
 	case driver.AudioResume:
+		if p.fromTrack() {
+			p.resumeTrack()
+			return
+		}
 		p.wanted = true
 		if p.ended && !p.pendingSeek && !p.seeking {
 			p.position, p.pendingSeek = 0, true
@@ -96,22 +108,46 @@ func (p *linuxPlayer) command(req *driver.AudioRequest) {
 	case driver.AudioPause:
 		p.pause()
 	case driver.AudioSeek:
+		if p.track != nil && p.stream == 0 {
+			p.seeks++
+			p.appliedSeeks, p.ended = p.seeks, false
+			p.position = min(req.Position, p.duration)
+			if p.voice != nil {
+				p.startTrack()
+			}
+			p.report(driver.AudioProgress)
+			return
+		}
 		p.position, p.pendingSeek = req.Position, true
 		p.seeks++
 		p.applySeek()
 	case driver.AudioSet:
+		looped := p.loop != req.Loop
+		if p.voice != nil && looped {
+			p.trackPosition(time.Now())
+		}
 		p.volume, p.loop = req.Volume, req.Loop
 		warnAudioRate(req.Rate)
+		if v := p.voice; v != nil {
+			v.setVolume(p.volume)
+			// What the voice queued past now no longer follows the loop: a lap it should not play, or the end of a track it should repeat.
+			if looped && (p.loop && v.eos || !p.loop && v.lapAhead()) {
+				p.startTrack()
+			}
+		}
 		if p.stream != 0 {
 			gtkMediaStreamSetVolume(p.stream, float64(p.volume))
 			p.setStreamLoop()
+			if p.loop && p.loaded {
+				p.decodeTrack()
+			}
 		}
 	}
 }
 
-// setStreamLoop leaves a whole-track loop to the stream, which always restarts at 0; a loop with a start is a seek at the end, in tick, since the stream may know no duration yet to tell whether the start is inside it.
+// setStreamLoop leaves a whole-track loop to the stream, which always restarts at 0; a loop with a start is a seek at the end, in tick, since the stream may know no duration yet to tell whether the start is inside it, as is the end where a decoded track takes over.
 func (p *linuxPlayer) setStreamLoop() {
-	gtkMediaStreamSetLoop(p.stream, boolInt(p.loop && p.loopStart <= 0))
+	gtkMediaStreamSetLoop(p.stream, boolInt(p.loop && p.loopStart <= 0 && p.track == nil))
 }
 
 // loopFrom is where a looping player starts over: loopStart inside a known duration, else 0.
@@ -136,6 +172,10 @@ func (p *linuxPlayer) loopAgain() bool {
 }
 
 func (p *linuxPlayer) prepare() {
+	if p.fromTrack() {
+		p.decodeTrack()
+		return
+	}
 	if p.loading || p.stream != 0 {
 		return
 	}
@@ -203,6 +243,9 @@ func (p *linuxPlayer) openFile(source string) {
 }
 
 func (p *linuxPlayer) tick(now time.Time) bool {
+	if p.stream == 0 && p.track != nil {
+		return p.tickTrack(now)
+	}
 	if p.stream == 0 {
 		return p.loading
 	}
@@ -222,6 +265,7 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 			p.loaded = true
 			p.duration = micros(max(0, gtkMediaStreamGetDuration(p.stream)))
 			p.buffer(false)
+			p.opened = true
 			p.report(driver.AudioOpened)
 			p.applySeek()
 			p.play()
@@ -254,6 +298,16 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 		return false
 	}
 	if gtkMediaStreamGetEnded(p.stream) != 0 {
+		if p.loop && p.track != nil {
+			// The track decoded while the stream played: it takes over at the loop start.
+			p.dropStream()
+			p.laps++
+			p.duration = soundDuration(p.track)
+			p.position = p.loopFrom()
+			p.report(driver.AudioProgress)
+			p.startTrack()
+			return true
+		}
 		if p.loop && p.loopAgain() {
 			return true
 		}
@@ -295,6 +349,10 @@ func (p *linuxPlayer) play() {
 func (p *linuxPlayer) pause() {
 	if !p.playing && !p.wanted {
 		return
+	}
+	if p.voice != nil {
+		p.trackPosition(time.Now())
+		p.stopTrack()
 	}
 	p.wanted, p.playing = false, false
 	if p.stream != 0 {
@@ -343,6 +401,7 @@ func (p *linuxPlayer) buffer(buffering bool) {
 }
 
 func (p *linuxPlayer) fail(code, message string) {
+	p.stopTrack()
 	p.buffer(false)
 	p.pendingSeek = p.pendingSeek || p.seeking || p.position > 0
 	p.resetStream()
@@ -350,17 +409,28 @@ func (p *linuxPlayer) fail(code, message string) {
 }
 
 func (p *linuxPlayer) resetStream() {
+	p.dropStream()
+	p.loading, p.loaded, p.wanted, p.playing, p.ended, p.seeking = false, false, false, false, false, false
+}
+
+// dropStream frees the GTK stream and leaves the player's state as it is.
+func (p *linuxPlayer) dropStream() {
 	if p.stream != 0 {
 		gtkMediaStreamSetPlaying(p.stream, 0)
 		gtkMediaFileClear(p.stream)
 		gObjectUnref(p.stream)
 		p.stream = 0
 	}
-	p.loading, p.loaded, p.wanted, p.playing, p.ended, p.seeking = false, false, false, false, false, false
+	p.seeking = false
 }
 
 func (p *linuxPlayer) close() {
 	p.closed = true
+	if p.decoding != nil {
+		p.decoding()
+		p.decoding = nil
+	}
+	p.stopTrack()
 	p.resetStream()
 	p.file.close()
 }

@@ -93,7 +93,7 @@ func (w *window) audioCommand(id uint32, req *driver.AudioRequest) {
 	case driver.AudioUnload:
 		a.unload(id)
 	case driver.AudioOpen:
-		a.players[id] = &linuxPlayer{owner: w, id: id, source: req.Source, interval: req.ProgressInterval,
+		a.players[id] = &linuxPlayer{owner: w, audio: a, id: id, source: req.Source, interval: req.ProgressInterval,
 			volume: req.Volume, loop: req.Loop, loopStart: req.LoopStart, position: req.Position, pendingSeek: req.Position > 0}
 		warnAudioRate(req.Rate)
 	case driver.AudioClose:
@@ -308,7 +308,7 @@ func audioTick(handle uintptr) int32 {
 		a.mixer.startPending()
 		a.answerLatency(now)
 		a.mixer.feed(now)
-		if len(a.mixer.voices) == 0 && len(a.latencyReads) == 0 && now.Sub(a.lastPlay) > 2*time.Second {
+		if len(a.mixer.voices) == 0 && len(a.mixer.tracks) == 0 && len(a.latencyReads) == 0 && now.Sub(a.lastPlay) > 2*time.Second {
 			a.mixer.close()
 			a.mixer = nil
 		}

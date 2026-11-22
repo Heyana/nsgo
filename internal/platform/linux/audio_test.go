@@ -639,3 +639,130 @@ func TestLinuxAudioPlayerLoopsFromItsStart(t *testing.T) {
 		}
 	}
 }
+
+// levelTestWAV is 16-bit mono PCM at 48 kHz holding each level, from -1 to 1, for its duration in turn.
+func levelTestWAV(stretches ...struct {
+	d     time.Duration
+	level float64
+}) []byte {
+	const rate = 48000
+	var samples []int16
+	for _, s := range stretches {
+		for range int(s.d.Seconds() * rate) {
+			samples = append(samples, int16(s.level*32767))
+		}
+	}
+	data := audioTestWAV(0)
+	binary.LittleEndian.PutUint32(data[24:], rate)
+	binary.LittleEndian.PutUint32(data[28:], 2*rate)
+	for _, s := range samples {
+		data = binary.LittleEndian.AppendUint16(data, uint16(s))
+	}
+	binary.LittleEndian.PutUint32(data[4:], uint32(len(data)-8))
+	binary.LittleEndian.PutUint32(data[40:], uint32(2*len(samples)))
+	return data
+}
+
+// TestLinuxAudioPlayerLoopsWithoutGap records a looping player's decoded track in the mixed output: a 300 ms intro at one level, then a 300 ms body at another that repeats from the loop start, with no silence at the repeats and no intro after the first pass.
+func TestLinuxAudioPlayerLoopsWithoutGap(t *testing.T) {
+	w, _ := audioTestWindow(t)
+	const loopStart = 300 * time.Millisecond
+	type stretch = struct {
+		d     time.Duration
+		level float64
+	}
+	track := levelTestWAV(stretch{loopStart, 0.5}, stretch{300 * time.Millisecond, 0.25})
+	var p *linuxPlayer
+	var sink uintptr
+	w.onLoop(t, func() {
+		mixer := soundMixerTo("appsink name=output max-buffers=0")
+		if mixer == nil {
+			return
+		}
+		sink = gstBinGetByName(mixer.pipeline, cstr("output"))
+		w.audio = &linuxAudio{root: w, sounds: map[uint32]*linuxSound{}, players: map[uint32]*linuxPlayer{}, mixer: mixer, lastPlay: time.Now()}
+		p = &linuxPlayer{owner: w, audio: w.audio, id: 1, source: driver.ImageSource{Data: track}, volume: 1,
+			loop: true, loopStart: loopStart, interval: 20 * time.Millisecond}
+		w.audio.players[1] = p
+		p.command(&driver.AudioRequest{Command: driver.AudioResume})
+		w.audio.ensureTick()
+	})
+	if p == nil || sink == 0 {
+		t.Fatal("the native mixer did not open its test output")
+	}
+	defer w.onLoop(t, func() {
+		delete(w.audio.players, 1)
+		p.close()
+		gstObjectUnref(sink)
+		if w.audio.mixer != nil {
+			w.audio.mixer.close()
+			w.audio.mixer = nil
+		}
+	})
+
+	// Each run is a stretch of contiguous output buffers, from the first sound on.
+	var runs [][]float32
+	var next uint64
+	var recorded int
+	data := make([]byte, 0, 4096)
+	for deadline := time.Now().Add(8 * time.Second); recorded < 2*soundRate && time.Now().Before(deadline); {
+		sample := gstAppSinkTryPullSample(sink, uint64(20*time.Millisecond))
+		if sample == 0 {
+			continue
+		}
+		b := gstSampleGetBuffer(sample)
+		timing := (*gstSoundBuffer)(cPointer(b))
+		data = data[:gstBufferGetSize(b)]
+		if len(data) > 0 {
+			gstBufferExtract(b, 0, unsafe.Pointer(&data[0]), uintptr(len(data)))
+		}
+		pts, duration := timing.pts, timing.duration
+		gstMiniObjectUnref(sample)
+		if len(runs) == 0 || pts != next {
+			runs = append(runs, nil)
+		}
+		next = pts + duration
+		for frame := 0; frame+soundFrameBytes <= len(data); frame += soundFrameBytes {
+			v := math.Float32frombits(binary.LittleEndian.Uint32(data[frame:]))
+			run := &runs[len(runs)-1]
+			if len(*run) > 0 || math.Abs(float64(v)) > 0.05 {
+				*run = append(*run, v)
+				recorded++
+			}
+		}
+	}
+	var laps uint32
+	w.onLoop(t, func() { laps = p.laps })
+
+	longest := 0
+	introAgain := false
+	for _, run := range runs {
+		quiet, body := 0, 0
+		for _, v := range run {
+			level := math.Abs(float64(v))
+			switch {
+			case level <= 0.05:
+				quiet++
+				continue
+			case level < 0.35:
+				body++
+			case body > soundRate/100:
+				// 10 ms of the body went by, so this is the intro again.
+				introAgain = true
+			}
+			// Silence counts only between sounds, not after the last one.
+			longest = max(longest, quiet)
+			quiet = 0
+		}
+	}
+	t.Logf("recorded %v of the loop over %d laps, longest silence %v", trackTime(int64(recorded)), laps, trackTime(int64(longest)))
+	if recorded < 2*soundRate || laps < 4 {
+		t.Fatalf("recorded %v of the loop over %d laps, want 2s and at least 4 laps", trackTime(int64(recorded)), laps)
+	}
+	if gap := trackTime(int64(longest)); gap >= 5*time.Millisecond {
+		t.Fatalf("the loop fell silent for %v, want under 5 ms", gap)
+	}
+	if introAgain {
+		t.Fatal("a repeat played the intro again instead of starting at the loop start")
+	}
+}
