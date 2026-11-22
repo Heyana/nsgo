@@ -11,6 +11,22 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
+type geoClueRunKey struct {
+	w  *window
+	id uint32
+}
+
+type geoClueRun struct {
+	key  geoClueRunKey
+	req  driver.SensorRequest
+	stop chan struct{}
+}
+
+var geoClueRuns = struct {
+	sync.Mutex
+	m map[geoClueRunKey]*geoClueRun
+}{m: map[geoClueRunKey]*geoClueRun{}}
+
 const (
 	geoClueName       = "org.freedesktop.GeoClue2"
 	geoClueManager    = "/org/freedesktop/GeoClue2/Manager"
@@ -35,13 +51,36 @@ var (
 
 func handleGeoClue(w *window, it *driver.MountItem) {
 	req := *it.Sensor
+	key := geoClueRunKey{w: w, id: it.Count}
+	if req.Command == driver.SensorStop {
+		geoClueRuns.Lock()
+		run := geoClueRuns.m[key]
+		delete(geoClueRuns.m, key)
+		geoClueRuns.Unlock()
+		if run != nil {
+			close(run.stop)
+		}
+		return
+	}
 	if (req.Kind != driver.SensorLocation && req.Kind != driver.SensorBackgroundLocation) ||
 		(req.Command != driver.SensorReadPermission && req.Command != driver.SensorRequestPermission && req.Command != driver.SensorLocate && req.Command != driver.SensorWatchLocation) {
 		w.engine.Dispatch(driver.NoSensor(it))
 		return
 	}
-	if req.Command == driver.SensorWatchLocation || req.Kind == driver.SensorMotion {
+	if req.Kind == driver.SensorMotion {
 		w.engine.Dispatch(driver.NoSensor(it))
+		return
+	}
+	if req.Command == driver.SensorWatchLocation {
+		if req.Location.Background {
+			w.engine.Dispatch(driver.NoSensor(it))
+			return
+		}
+		run := &geoClueRun{key: key, req: req, stop: make(chan struct{})}
+		geoClueRuns.Lock()
+		geoClueRuns.m[key] = run
+		geoClueRuns.Unlock()
+		geoClueNext(run)
 		return
 	}
 	portalQueue() <- func() {
@@ -65,6 +104,42 @@ func handleGeoClue(w *window, it *driver.MountItem) {
 				return
 			}
 			w.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: it.Count, Data: &driver.SensorReport{Generation: req.Generation, Location: &fix, End: true}})
+		})
+	}
+}
+
+func geoClueNext(run *geoClueRun) {
+	portalQueue() <- func() {
+		fix, err := geoClueLocate()
+		run.key.w.post(func() {
+			geoClueRuns.Lock()
+			_, active := geoClueRuns.m[run.key]
+			geoClueRuns.Unlock()
+			if !active || run.key.w.closing {
+				return
+			}
+			if err != nil {
+				geoClueRuns.Lock()
+				delete(geoClueRuns.m, run.key)
+				geoClueRuns.Unlock()
+				run.key.w.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: run.key.id, Data: &driver.SensorReport{Generation: run.req.Generation, Error: "unavailable", End: true}})
+				close(run.stop)
+				return
+			}
+			if run.key.w.engine != nil {
+				run.key.w.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: run.key.id, Data: &driver.SensorReport{Generation: run.req.Generation, Location: &fix}})
+			}
+			interval := run.req.Location.Interval
+			if interval < time.Second {
+				interval = time.Second
+			}
+			time.AfterFunc(interval, func() {
+				select {
+				case <-run.stop:
+				default:
+					geoClueNext(run)
+				}
+			})
 		})
 	}
 }
