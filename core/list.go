@@ -394,7 +394,7 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 			refreshing: l.Refreshing, onRefresh: l.OnRefresh, onScroll: l.OnScroll, throttle: l.ScrollEventThrottle,
 			onDragStart: l.OnScrollDragStart, onDragEnd: l.OnScrollDragEnd,
 			onMomentum: l.OnMomentumStart, onMomentumEnd: l.OnMomentumEnd, onScrollEnd: l.OnScrollEnd})
-		t.bindScroll(cx, v, l.OffsetValues, l.PullValue)
+		t.rebind(v, boundValues{scroll: l.OffsetValues, pull: l.PullValue})
 		t.refreshBar(v)
 	}
 	if l.ContentOffset != (Point{}) {

@@ -268,7 +268,9 @@ const (
 	// surfaceState is the window's size and place in points, then the environment as msgEnvironment's; the first attaches the tree.
 	surfaceState = 1
 	// surfaceEnded is the end Java gave the overlay, an OverlayEnd* of driver's.
-	surfaceEnded = 2
+	surfaceEnded  = 2
+	surfaceDetach = 3
+	surfaceResync = 4
 )
 
 // What writeWindow sends of an overlay's ItemWindow, as Protocol.java's WINDOW_*: the commands an overlay takes, and windowNone for the rest, which it ignores.

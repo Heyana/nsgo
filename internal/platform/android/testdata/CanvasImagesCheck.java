@@ -178,6 +178,18 @@ public final class CanvasImagesCheck {
         draw(other, "same");
         Picture isolated = new Picture();
         other.complete("same", 1, isolated);
+        cache.keep("remount");
+        draw(cache, "remount");
+        int old = requests.get("remount");
+        Picture detachedPicture = new Picture();
+        cache.complete("remount", old, detachedPicture);
+        cache.clear();
+        check(detachedPicture.freed && cache.size() == 0, "detach retained pictures");
+        check(cache.isKept("remount"), "detach lost the graph's retained image");
+        draw(cache, "remount");
+        check(requests.get("remount") != old, "detach reused a request generation");
+        Picture stalePicture = new Picture();
+        check(!cache.complete("remount", old, stalePicture) && stalePicture.freed, "reattach accepted the old decoder's picture");
         cache.close(); cache.close();
         check(cache.size() == 0 && cache.acquire("closed") == null, "closed surface resurrected");
         check(!isolated.freed, "closing one surface freed another's image");

@@ -85,6 +85,21 @@ protected void onActivityResult(int request, int result, Intent data) {
 }
 ```
 
+To detach the native tree while keeping the Go app alive, retain an `NsgoEngine` in the host and attach its view explicitly:
+
+```java
+NsgoEngine engine = new NsgoEngine(context.getApplicationContext());
+app.attachToEngine(engine);
+// Before taking the view off screen:
+app.detachFromEngine();
+// Reuse the same view later:
+app.attachToEngine(engine);
+// When the host ends the app:
+engine.destroy();
+```
+
+Detach releases native children; reattachment restores current signals, input, focus, scroll position and drawings without rerunning components. Web pages and players are recreated from their app configuration. `stop()` only detaches an explicitly supplied engine. Each engine still retains its first view and its Activity and rejects another view, so handle configuration changes in that Activity; replacing it or showing independent views in one process is not supported yet.
+
 ## Desktop
 
 A Go host runs the platform's event loop and puts each view's `Handle` in its window. `nsgo.NewView` starts the app once the handle is in a window, so settings made before are in its first frame.

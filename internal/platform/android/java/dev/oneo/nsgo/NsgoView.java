@@ -194,6 +194,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private Gamepads gamepads;
     private boolean ownsEngine;
     private boolean attached;
+    private boolean attachmentWanted = true;
+    private final ViewAttachment attachment = new ViewAttachment();
+    private boolean clearingNativeTree;
     /** Whether a service or overlay keeps the app running off screen after its activity ends, and whether the app quit, which keeps nothing. */
     private boolean keptOffScreen, quit;
     // The engine's flags the app starts with (--nsgo-fps).
@@ -428,6 +431,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (startHeld) return;
         boolean first = false;
         if (!attached) {
+            if (!attachmentWanted) return;
             if (engine == null) {
                 engine = new NsgoEngine(getContext());
                 ownsEngine = true;
@@ -558,6 +562,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     public void attachToEngine(NsgoEngine next) {
         if (next == null) throw new NullPointerException("engine");
         if (!next.isAlive() && !next.canStart()) throw new IllegalStateException("the engine's process has ended: make a new engine");
+        attachmentWanted = true;
         if (engine != next) {
             if (engine != null) throw new IllegalStateException("this view already shows another engine's app");
             next.attach(this);
@@ -568,21 +573,56 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Takes this view off a host-owned engine's screen: back goes to the system again. The engine keeps the view, and through it its context, as the one it serves: the view still answers the app's text and applies its batches off screen, so the app runs on and the view shows it current when attached again. The view detaches itself as it leaves its window.
+     * Releases this view's native children and returns back to the system while its Go graph and process commands continue. Reattaching the same view reconstructs its current graph; queued view deltas from the old attachment are dropped. The engine still retains the view and its context until the process ends. The view detaches itself as it leaves its window.
      */
     public void detachFromEngine() {
+        attachmentWanted = false;
         if (!attached) return;
         attached = false;
+        attachment.detach();
         updateGestureRects();
         unregisterBack();
+        write(Protocol.SURFACE, java.nio.ByteBuffer.allocate(13).putInt(surface)
+                .put((byte) Protocol.SURFACE_DETACH).putLong(0).array());
+        clearNativeTree();
     }
 
     private void attachRunningEngine() {
         engine.attach(this);
         attached = true;
+        attachmentWanted = true;
+        long generation = attachment.attach();
         updateGestureRects();
         if (Build.VERSION.SDK_INT >= 33 && isAttachedToWindow() && backCallback == null) registerBack();
         host.start();
+        if (attachment.waiting()) {
+            sendSize(Protocol.RESIZE);
+            write(Protocol.SURFACE, java.nio.ByteBuffer.allocate(13).putInt(surface)
+                    .put((byte) Protocol.SURFACE_RESYNC).putLong(generation).array());
+        }
+    }
+
+    /** Releases this surface's widgets while its graph and text service live on. */
+    private void clearNativeTree() {
+        clearingNativeTree = true;
+        clearSelection();
+        setKeepScreenOn(false);
+        canvasImages.clear();
+        layoutCreate = layoutUpdate = layoutDelete = null;
+        ArrayList<Node> old = new ArrayList<>();
+        for (int i = 0; i < nodes.size(); i++) old.add(nodes.valueAt(i));
+        DataInputStream empty = new DataInputStream(new ByteArrayInputStream(new byte[0]));
+        for (Node n : old) {
+            try { apply(Protocol.ITEM_DELETE, n, empty, Collections.emptyMap()); }
+            catch (IOException impossible) { throw new AssertionError(impossible); }
+        }
+        for (Ghost ghost : ghosts) ghost.overlay.remove(ghost.view);
+        ghosts.clear();
+        created.clear();
+        touchViews.clear();
+        rootView = null;
+        removeAllViews();
+        clearingNativeTree = false;
     }
 
     /**
@@ -887,11 +927,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 case Protocol.BATCH: {
                     // Each batch names its surface: an overlay's goes to its view.
                     int to = message.readInt();
+                    boolean control = message.readInt() == 0;
+                    long generation = attachment.token();
                     SparseArray<Map<String, PixelFrame>> pixels = pendingPixels;
                     pendingPixels = null;
                     ui.post(() -> {
                         NsgoView view = to == 0 ? this : overlays.view(to);
-                        if (view != null) view.mount(payload, pixels);
+                        if (view != null && (view.primary != null || control || attachment.permits(generation))) view.mount(payload, pixels);
                     });
                     break;
                 }
@@ -1033,6 +1075,16 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     /** Takes a message of an extended kind (Protocol.EXT_*), on the pipe's reader like onMessage: message is past its kind byte, and payload still holds it. Protocol.readMessage refuses a kind isExtended lacks. */
     private void extended(int kind, DataInputStream message, byte[] payload) throws IOException {
         switch (kind) {
+            case Protocol.EXT_SURFACE_RESET: {
+                int to = message.readInt();
+                long generation = message.readLong();
+                if (to == surface && attachment.reset(generation)) {
+                    ui.post(() -> {
+                        if (attachment.permits(generation)) clearNativeTree();
+                    });
+                }
+                break;
+            }
             case Protocol.EXT_DISCOVERY: {
                 int to = message.readInt();
                 ui.post(() -> {
@@ -2121,6 +2173,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             int index, int phase, float vx, float vy, float value, WebNode.Navigation nav,
             long time, long duration, boolean buffering, String data, boolean finished,
             float pageX, float pageY, float positionX, float positionY, int mods) {
+        // Deleting native widgets must not blur or edit their live Go nodes.
+        if (primary == null && id != 0 && (clearingNativeTree || !attachment.permits(attachment.token()))) return;
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(bytes);
         try {
@@ -2168,7 +2222,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     /** Sends an event of kind about n if n reports that kind. */
     private void report(Node n, int kind, float x, float y, String text) {
-        if (n.has(kind)) event(kind, n.id, 0, x, y, text);
+        if (nodes.get(n.id) == n && n.has(kind)) event(kind, n.id, 0, x, y, text);
     }
 
     private void report(Node n, int kind) {
@@ -2832,6 +2886,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 && (!focusStop(focusedNode) || !inFocusScope(focused))) requestFocus();
         // Bindings and values change in batches too.
         applyAnimated();
+        setKeepScreenOn((primary != null || attached) && !displayHolds.isEmpty());
         if (animator.running()) startTicking();
         // The selection keeps to its texts, and goes with its area.
         if (selection != null) post(this::refreshSelection);
@@ -3155,7 +3210,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 int id = in.readInt();
                 boolean display = in.readUnsignedByte() != 0;
                 // Android folds visible views' requests into their window's FLAG_KEEP_SCREEN_ON.
-                if (display && displayHolds.add(id) && displayHolds.size() == 1) setKeepScreenOn(true);
+                if (display && displayHolds.add(id) && displayHolds.size() == 1) setKeepScreenOn(primary != null || attached);
                 break;
             }
             case Protocol.ITEM_RELEASE_AWAKE:

@@ -60,6 +60,9 @@ type Tree struct {
 	reports   []report
 	stacks    []*node
 
+	// remounting keeps logical focus while the next commit recreates views.
+	remounting bool
+
 	pointerLock     *pointerLock
 	nextPointerLock uint32
 
@@ -1815,9 +1818,7 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 			t.restyleGroup(n)
 		})
 	}
-	t.bindPan(cx, n, v.PanValues)
-	t.bindGestureValue(n, driver.AnimBindPinch, v.PinchValue)
-	t.bindGestureValue(n, driver.AnimBindRotation, v.RotationValue)
+	t.rebind(n, boundValues{pan: v.PanValues, pinch: v.PinchValue, rotation: v.RotationValue})
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
 	}
@@ -2202,7 +2203,7 @@ func (t *Tree) mountScroll(cx *Scope, parent *node, v Scroll) {
 		onMomentum: v.OnMomentumStart, onMomentumEnd: v.OnMomentumEnd, onScrollEnd: v.OnScrollEnd,
 		minZoom: v.MinZoomScale, maxZoom: v.MaxZoomScale, zoom: v.ZoomScale, zoomFunc: v.ZoomScaleFunc,
 		noBouncesZoom: v.NoBouncesZoom, noPinch: v.NoPinchZoom, centerContent: v.CenterContent})
-	t.bindScroll(cx, n, v.OffsetValues, v.PullValue)
+	t.rebind(n, boundValues{scroll: v.OffsetValues, pull: v.PullValue})
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
 	}

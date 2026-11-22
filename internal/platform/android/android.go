@@ -145,6 +145,8 @@ const (
 	extAssetRead = 9
 	// extDiscovery starts or stops an NSD operation on a surface (discovery.go, Discovery.java).
 	extDiscovery = 10
+	// extSurfaceReset tells Java that a full native tree of the surface's attachment generation follows: surface ID and generation (overlay.go, ViewAttachment.java).
+	extSurfaceReset = 11
 )
 
 // The parts of an image view's request msgImage carries.
@@ -1017,6 +1019,20 @@ func (s *surface) Mount(b *driver.MountBatch) {
 
 // mount sends the batch of v's tree to Java, which names its surface, and loads the image sources it changed.
 func (s *surface) mount(v *treeView, b *driver.MountBatch) {
+	if v.detached.Load() {
+		// Services keep running while the native tree is absent. A root of
+		// zero marks a control-only batch, safe for a detached runtime.
+		control := &driver.MountBatch{}
+		for _, it := range b.Items {
+			if it.ID == 0 {
+				control.Items = append(control.Items, it)
+			}
+		}
+		if len(control.Items) == 0 {
+			return
+		}
+		b = control
+	}
 	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutAuthSessions(v.id, s.withoutPermissions(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(withoutEffects(b))))))))
 	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
 	outsideBatch := func(it driver.MountItem) bool {
@@ -1091,6 +1107,7 @@ type treeView struct {
 	id uint32
 	// defaultsSent is set once a batch carried the defaults.
 	defaultsSent bool
+	detached     atomic.Bool
 	images       map[driver.NodeID]*imageView
 	// canvasPixels keeps the copies Java's mounted drawings hold, preventing their address-based keys from being reused.
 	canvasPixels map[driver.NodeID]map[string]*image.RGBA

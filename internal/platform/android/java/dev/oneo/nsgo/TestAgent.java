@@ -342,10 +342,47 @@ final class TestAgent {
                         .put("count", view.canvasImages.size())
                         .put("ready", view.canvasImages.ready(op.getString("key"))).toString());
                 return;
+            case "detach-view":
+                view.detachFromEngine();
+                view.testReply(id, "", viewState().toString());
+                return;
+            case "reattach-view":
+                view.attachToEngine((NsgoEngine) field(view, "engine"));
+                break;
+            case "view-state":
+                view.testReply(id, "", viewState().toString());
+                return;
             default:
                 throw new IllegalArgumentException("unknown step " + op);
         }
         view.testReply(id, "", "");
+    }
+
+    private static Object field(Object owner, String name) throws Exception {
+        java.lang.reflect.Field field = owner.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(owner);
+    }
+
+    /** Reads the real native tree, including while its Go graph is detached. */
+    private JSONObject viewState() throws Exception {
+        android.util.SparseArray<?> nodes = (android.util.SparseArray<?>) field(view, "nodes");
+        JSONArray text = new JSONArray(), inputs = new JSONArray();
+        int drawings = 0;
+        for (int i = 0; i < nodes.size(); i++) {
+            Object node = nodes.valueAt(i);
+            Object value = field(node, "text");
+            if (value instanceof String) text.put(value);
+            Object input = field(node, "field");
+            if (input instanceof android.widget.EditText) inputs.put(((android.widget.EditText) input).getText().toString());
+            Object canvas = field(node, "canvas");
+            if (canvas != null && field(canvas, "ops") != null) drawings++;
+        }
+        NsgoEngine engine = (NsgoEngine) field(view, "engine");
+        return new JSONObject().put("nodes", nodes.size()).put("children", view.getChildCount())
+                .put("alive", engine != null && engine.isAlive()).put("text", text).put("inputs", inputs)
+                .put("drawings", drawings).put("awake", view.getKeepScreenOn())
+                .put("displayHolds", ((java.util.Set<?>) field(view, "displayHolds")).size());
     }
 
     private void touch(long down, int action, float[] p) {

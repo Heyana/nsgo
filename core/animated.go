@@ -507,30 +507,6 @@ func (t *Tree) bindAnimated(n *node) {
 	}
 }
 
-func (t *Tree) bindPan(cx *Scope, n *node, xy AnimatedXY) {
-	if xy.X == nil && xy.Y == nil {
-		return
-	}
-	t.anim.add(driver.AnimationOp{Kind: driver.AnimBindPan, View: n.id, X: xy.idX(), Y: xy.idY()})
-}
-
-// bindGestureValue binds value v to view n's pinches or rotations.
-func (t *Tree) bindGestureValue(n *node, kind driver.AnimationOpKind, v *AnimatedValue) {
-	if v != nil {
-		t.anim.add(driver.AnimationOp{Kind: kind, View: n.id, Node: v.id})
-	}
-}
-
-func (t *Tree) bindScroll(cx *Scope, n *node, xy AnimatedXY, pull *AnimatedValue) {
-	if pull != nil {
-		t.anim.add(driver.AnimationOp{Kind: driver.AnimBindPull, View: n.id, Node: pull.id})
-	}
-	if xy.X == nil && xy.Y == nil {
-		return
-	}
-	t.anim.add(driver.AnimationOp{Kind: driver.AnimBindScroll, View: n.id, X: xy.idX(), Y: xy.idY()})
-}
-
 // boundValues are the animated values a view's gestures and scrolling
 // set.
 type boundValues struct {

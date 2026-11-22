@@ -163,9 +163,14 @@ final class CanvasImages<T> {
     synchronized void close() {
         if (closed) return;
         closed = true;
+        clear();
+        kept.clear();
+    }
+
+    /** Drops native pictures on detach while keeping request generations unique. */
+    synchronized void clear() {
         for (Map.Entry<String, Entry> item : entries.entrySet()) retire(item.getKey(), item.getValue());
         entries.clear();
-        kept.clear();
     }
 
     synchronized int size() { return entries.size(); }

@@ -46,6 +46,9 @@ func (t *Tree) commit(shared bool) *driver.MountBatch {
 		t.activated = nil
 		return nil
 	}
+	if t.remounting {
+		defer func() { t.remounting = false }()
+	}
 	if t.follower != nil {
 		// The automation's agent keeps batches past the next commit.
 		shared = false
@@ -919,7 +922,7 @@ func (t *Tree) emitParts(n *node) bool {
 			in.shown = in.value
 			add(driver.MountItem{Kind: driver.ItemInputValue, ID: n.id, Value: in.value, Count: in.count})
 		}
-		if first && in.autoFocus && t.mayMoveFocus(n.owner) {
+		if first && !t.remounting && in.autoFocus && t.mayMoveFocus(n.owner) {
 			t.command(driver.ItemFocus, n)
 		}
 		t.reportContentSize(n)

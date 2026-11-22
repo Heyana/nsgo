@@ -3,6 +3,8 @@
 package android
 
 import (
+	"log"
+
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/engine"
 )
@@ -88,6 +90,36 @@ func (o *overlay) attach() *engine.Engine {
 // surfaceReport takes a msgSurface, on the reader goroutine.
 func (s *surface) surfaceReport(r *reader) {
 	id, op := r.u32(), r.byte()
+	if id == 0 && (op == surfaceDetach || op == surfaceResync) {
+		generation := r.u64()
+		// The reset that ends a detach is an extended message. A runtime that sends these reads them; should one not, keep mounting as before rather than hold batches for a reset it cannot read.
+		if !s.extendedMessages.Load() {
+			return
+		}
+		if op == surfaceDetach {
+			s.main.detached.Store(true)
+			return
+		}
+		if s.engine != nil {
+			s.engine.Remount(func() {
+				for id, image := range s.main.images {
+					image.stop()
+					delete(s.main.images, id)
+				}
+				s.main.canvasPixels, s.main.shaderPixels = nil, nil
+				s.main.defaultsSent = false
+				s.main.detached.Store(false)
+				s.frameWanted.Store(false)
+				if err := s.sendExtended(extSurfaceReset, func(w *writer) {
+					w.u32(id)
+					w.u64(generation)
+				}); err != nil {
+					log.Printf("android surface reset: %v", err)
+				}
+			})
+		}
+		return
+	}
 	s.omu.Lock()
 	o := s.overlays[id]
 	ended := o == nil || o.ended

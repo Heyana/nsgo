@@ -444,7 +444,9 @@ final class InputField extends EditText {
             return;
         }
         pendingText = null;
-        if (count < this.count || text.contentEquals(getText())) return;
+        if (count < this.count) return;
+        this.count = count;
+        if (text.contentEquals(getText())) return;
         applying = true;
         known = text;
         int selection = getSelectionEnd();

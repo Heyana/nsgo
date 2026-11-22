@@ -354,6 +354,8 @@ type message struct {
 	// attach is the platform of an opened surface; detach ends it.
 	attach Platform
 	detach bool
+	// remount runs just before this surface's next complete native tree.
+	remount func()
 	// hidden is closed once the OnQuit handlers ran for a hidden app.
 	hidden chan struct{}
 }
@@ -433,6 +435,7 @@ type surface struct {
 	tree        *core.Tree
 	p           Platform
 	commit      func() *driver.MountBatch
+	remount     []func()
 }
 
 // destroyed is the batch that tells an opened surface's platform that its
@@ -539,13 +542,21 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 		return s
 	}
 	attach(tree, p)
+	mount := func(s *surface, b *driver.MountBatch) {
+		before := s.remount
+		s.remount = nil
+		for _, reset := range before {
+			reset()
+		}
+		s.p.Mount(b)
+	}
 	// commitOne applies what changed in s and records what it cost when a
 	// monitor measures or a trace hears; start is when the wake-up that
 	// led here began.
 	commitOne := func(s *surface, start time.Time) {
 		if perf == nil && trace == nil {
 			if b := s.commit(); b != nil {
-				s.p.Mount(b)
+				mount(s, b)
 			}
 			return
 		}
@@ -561,7 +572,7 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 		}
 		if perf == nil {
 			if b != nil {
-				s.p.Mount(b)
+				mount(s, b)
 			}
 			return
 		}
@@ -572,7 +583,7 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 			}
 			b.Sent = time.Now()
 			perf.RecordCommit(CommitTiming{App: app, Core: core, Items: len(b.Items)})
-			s.p.Mount(b)
+			mount(s, b)
 		}
 	}
 	// commit commits every attached surface, the first first, and ends
@@ -692,6 +703,9 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 			}
 			t := s.tree
 			switch {
+			case m.remount != nil:
+				t.Remount()
+				s.remount = append(s.remount, m.remount)
 			case m.detach:
 				if m.surface != 0 {
 					delete(surfaces, m.surface)
@@ -991,6 +1005,17 @@ func (e *Engine) Language() string {
 // Frame reports that the display frame the app asked for has begun. The
 // engine runs the callbacks waiting for it on its goroutine, then commits.
 func (e *Engine) Frame() { e.push(message{surface: e.surface, frame: true}) }
+
+// Remount recreates this surface's native views from the current graph. The
+// optional before callback runs on the engine goroutine immediately before
+// its complete batch is mounted, so a platform can reset its native tree in
+// the same ordered stream. Components and their state remain alive.
+func (e *Engine) Remount(before func()) {
+	if before == nil {
+		before = func() {}
+	}
+	e.push(message{surface: e.surface, remount: before})
+}
 
 // FrameAt is Frame for a frame whose time the display gave, on time.Now's base: when it shows, or when it began where the platform tells no more (core.Scope.RunFrameAt). driver.DisplayTime brings a platform's timestamp to that base.
 func (e *Engine) FrameAt(at time.Time) {
