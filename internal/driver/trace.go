@@ -130,6 +130,7 @@ var itemNames = map[ItemKind]string{
 	ItemCursorPoint:     "cursor-point",
 	ItemEditMenu:        "edit-menu",
 	ItemImageCacheLimit: "image-cache-limit",
+	ItemAppClipOverlay:  "app-clip-overlay",
 }
 
 // TraceLine is the item as traces print it: its kind, its view and what

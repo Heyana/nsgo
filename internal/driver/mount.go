@@ -412,6 +412,8 @@ const (
 	ItemImageCacheLimit
 	// ItemMiniProgramSignIn asks for a platform login code, answered by EventMiniProgramSignIn. On permits a host-account prompt on Douyin. Sent only where MiniProgramSignIn is available.
 	ItemMiniProgramSignIn
+	// ItemAppClipOverlay presents (On) or dismisses the calling scope's full-app recommendation. Count identifies its owner request and Value is bottom or bottom-raised. iOS App Clips alone send it.
+	ItemAppClipOverlay
 )
 
 // EditAction is an editing action of an input's touch edit menu (ItemEditMenu, EventEditAction).

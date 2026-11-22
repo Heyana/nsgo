@@ -307,6 +307,7 @@ func (s *surface) close() {
 		return
 	}
 	s.closed = true
+	s.dismissAppClipOverlay()
 	s.stopHapticPattern()
 	s.sensors.Close()
 	s.discovery.Close()

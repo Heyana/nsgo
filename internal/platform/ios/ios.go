@@ -176,6 +176,7 @@ type surface struct {
 	stops        []func()
 	closed       bool
 	gestureEdges driver.SystemGestureEdge
+	appClipOffer appClipOffer
 	// A standalone app's scene (sceneWillConnect): window is the UIWindow it shows in, 0 while its scene is disconnected, and controller its root view controller. session is the persistent identifier of the scene session it shows, "" once the system discarded it. scene numbers a scene beyond the first for the tree the engine opens it (EventOpenScene), and tree is that tree's ID once attached; ending says the engine destroyed the tree.
 	window, controller objc.ID
 	session            string
@@ -696,6 +697,7 @@ func (s *surface) endScene() {
 
 // detach takes the surface view out of its scene's window and lets the window go.
 func (s *surface) detach() {
+	s.dismissAppClipOverlay()
 	if s.window == 0 {
 		return
 	}
@@ -1321,6 +1323,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if !onTV() {
 				apple.RequestReview(s.activeWindowScene())
 			}
+			continue
+		case driver.ItemAppClipOverlay:
+			s.appClipOverlay(*it)
 			continue
 		case driver.ItemCheckForUpdates:
 			s.checkForUpdates(it.Count)

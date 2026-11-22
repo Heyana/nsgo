@@ -144,6 +144,10 @@ func main() { nsgo.Run(Root) }
 - Do nothing implicitly by device. Choose sizes and forms for a phone or a desktop explicitly, from the window's width, `pointer-fine:` / `pointer-coarse:` classes or the target, not by a component changing on its own.
 - Leave the pointer's arrow alone and give lists, tables and sidebars a selected look without hover or press: NSGo apps look native, not like web pages, on the web too.
 
+## App Clips
+
+An App Clip can request its full app's StoreKit recommendation from an explicit user action with `mobile.ShowAppClipOverlay(cx, mobile.AppClipOverlayBottom)` (or `AppClipOverlayBottomRaised`). Keep the returned dismissal function if needed; scope cleanup releases the request. It does nothing outside a native iOS App Clip and reports no offer/installation outcome. [App Clips](https://nsgo.dev/docs/building.md#app-clips)
+
 ## Words and configuration
 
 - Put every user-visible word in `locales/`, a YAML catalog per language in ICU MessageFormat beside `nsgo.yaml`, and call the generated functions (`locales.Greeting(cx, "Ada")`), never string literals. `dev`, `build` and `test` check catalogs and regenerate the functions; `go tool nsgo dev -lang en-XA` finds untranslated and cut text, `-lang ar-XB` right-to-left layout.

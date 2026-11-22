@@ -572,6 +572,8 @@ apple:
 
 未设置 `apple.app_group` 时，两者各自使用沙盒存储。启用该设置不会迁移此前保存在沙盒中的数据，仅有小组件的应用也保持原有存储位置。共享密钥应保存在钥匙串中，不要放入明文存储。咖啡馆示例会持久保存轻 App 的订单，并在完整应用中显示。
 
+在轻 App 中由用户主动触发 `mobile.ShowAppClipOverlay(cx, mobile.AppClipOverlayBottom)`，可请求 StoreKit 推荐它对应的完整应用。`AppClipOverlayBottomRaised` 为底栏留出空间。返回的函数关闭该请求；作用域清理也会关闭它，旧请求不会关闭新请求。在原生 iOS 轻 App 之外调用不产生效果。App Store 决定能否加载和显示推荐，因此这个调用不报告推荐已显示或应用已安装。轻 App 的任务应在不安装完整应用时也能完成。[Apple 的浮层说明](https://developer.apple.com/documentation/appclip/recommending-your-app-to-app-clip-users)
+
 ## 嵌入其他应用
 
 `-embed` 把应用打包给你自己的 iOS 或 Android 应用使用：一个 XCFramework（加 `-dynamic` 时由动态框架组成）或 AAR，通过其中的 `NSGoView` 或 `NsgoView` 显示应用。Go 桌面程序用 `nsgo.NewView` 显示应用，网页则用站点的 `nsgo.js`，其主机为页面所在的主机，或 `nsgo.yaml` 中 `web.host` 指定的主机。仓库中的 `examples/embed-*` 分别给出了示例；宿主侧见[嵌入](embedding.md)。

@@ -599,6 +599,8 @@ The clip and full app then share `cx.DataDir()` and `cx.Storage()` in the group�
 
 Without `apple.app_group`, each bundle keeps its own sandbox storage. Enabling the setting does not migrate data previously stored in those sandboxes, and widget-only apps keep their existing storage location. Keep shared secrets in the keychain rather than plain storage. The café example persists its clip’s order and displays it in the full app.
 
+From an explicit user action inside the clip, call `mobile.ShowAppClipOverlay(cx, mobile.AppClipOverlayBottom)` to ask StoreKit to recommend its corresponding full app. `AppClipOverlayBottomRaised` leaves room for a bottom bar. The returned function dismisses that request; scope cleanup also dismisses it, and an older request cannot dismiss a newer one. Calls outside a native iOS App Clip do nothing. The App Store decides whether it can load and display the recommendation, so the call reports neither a displayed offer nor an installation. Keep the clip's task usable without installing the full app. [Apple's overlay guidance](https://developer.apple.com/documentation/appclip/recommending-your-app-to-app-clip-users)
+
 ## Embed in another app
 
 `-embed` packages the app for an iOS or Android app of your own: an XCFramework, of dynamic frameworks with `-dynamic`, or an AAR whose `NSGoView` or `NsgoView` shows it. Go desktop programs show apps with `nsgo.NewView`, and web pages with the site's `nsgo.js`, whose host is the page's or the one `web.host` in `nsgo.yaml` names. The repository's `examples/embed-*` show each; [Embedding](embedding.md) covers the host side.
