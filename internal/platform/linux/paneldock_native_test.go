@@ -259,14 +259,26 @@ func TestUnavailableLayerShellKeepsDockedPanelsHidden(t *testing.T) {
 	if wantIssue == "" {
 		t.Skip("needs an isolated Wayland compositor and an unavailable layer-shell loader")
 	}
+	assertDockUnavailable(t, "", false, wantIssue)
+}
+
+func TestLayerShellMissingDisplayKeepsThePanelHidden(t *testing.T) {
+	if os.Getenv("NSGO_LAYER_SHELL_TEST") != "1" {
+		t.Skip("needs an isolated headless layer-shell compositor")
+	}
+	assertDockUnavailable(t, "nsgo-test-missing-output", true, "display is unavailable")
+}
+
+func assertDockUnavailable(t *testing.T, display string, available bool, wantIssue string) {
+	t.Helper()
 	issues := make(chan error, 1)
 	app := core.AppRoot(func(cx *core.Scope) {
 		cx.SetShutdownMode(core.ShutdownOnExplicit)
-		if cx.Env().CanDockPanels() {
-			t.Error("unavailable layer-shell reported a docking capability")
+		if cx.Env().CanDockPanels() != available {
+			t.Errorf("docking capability: want %v", available)
 		}
 		cx.OpenWindow(core.WindowOptions{Width: 120, Height: 60}, func(*core.Scope) core.Node { return core.View{} })
-		panel := cx.OpenPanel(core.PanelOptions{Width: 120, Height: 60, Dock: core.PanelDock{Edge: core.PlaceTop}}, func(*core.Scope) core.Node { return core.View{} })
+		panel := cx.OpenPanel(core.PanelOptions{Width: 120, Height: 60, Dock: core.PanelDock{Edge: core.PlaceTop, Display: display}}, func(*core.Scope) core.Node { return core.View{} })
 		if panel == nil {
 			issues <- fmt.Errorf("the panel could not be created")
 			return
