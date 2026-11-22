@@ -197,10 +197,7 @@ func (v *view) fitBackdrop(vs *driver.ViewStyle, w, h float64) {
 
 var selSetInteractive = sel("setInteractive:")
 
-// tintLayer is the CALayer that draws v's background above its backdrop
-// (UIVisualEffectView's contentView layer for backdropMaterial, or tintView's
-// layer over CABackdropLayer for backdropFiltered), or 0 when v has no tinted
-// backdrop.
+// tintLayer is the CALayer that draws v's background above its backdrop (UIVisualEffectView's contentView layer for backdropMaterial, or tintView's layer over CABackdropLayer for backdropFiltered), or 0 when v has no tinted backdrop.
 func (v *view) tintLayer() objc.ID {
 	if v.backdrop == 0 {
 		return 0
@@ -215,10 +212,7 @@ func (v *view) tintLayer() objc.ID {
 	}
 }
 
-// styleTint draws the background above the backdrop on tintLayer(), with the
-// same transition and presentation-value retargeting as the view's own layer.
-// Only color changes touch it, so frames moving other properties leave a tint's
-// transition alone. A background binding takes over immediately.
+// styleTint draws the background above the backdrop on tintLayer(), with the same transition and presentation-value retargeting as the view's own layer. Only color changes touch it, so frames moving other properties leave a tint's transition alone. A background binding takes over immediately.
 func (v *view) styleTint(vs *driver.ViewStyle) {
 	v.backdropTint.Style(v.tintLayer(), vs, v.animated.Has(driver.PropBackground))
 }

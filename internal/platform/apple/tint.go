@@ -8,26 +8,18 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// BackdropTint tracks and paints a view's background color on its backdrop's
-// tint layer (macOS's tint view or iOS's UIVisualEffectView contentView),
-// following background transitions and animated background values while leaving
-// an active tint transition alone on frames that animate other properties.
+// BackdropTint tracks and paints a view's background color on its backdrop's tint layer (macOS's tint view or iOS's UIVisualEffectView contentView), following background transitions and animated background values while leaving an active tint transition alone on frames that animate other properties.
 type BackdropTint struct {
 	color  driver.Color
 	styled bool
 }
 
-// Reset forgets the tint's styled state after the backdrop is removed or
-// rebuilt, so the next style paints immediately without starting a transition.
+// Reset forgets the tint's styled state after the backdrop is removed or rebuilt, so the next style paints immediately without starting a transition.
 func (t *BackdropTint) Reset() {
 	t.color, t.styled = 0, false
 }
 
-// Style updates layer with vs.Background, with the same transition and
-// presentation-value retargeting as a view's own layer. Only color changes
-// touch layer, so frames animating other properties leave an active tint
-// transition alone. When animatedBackground is true, the bound background value
-// takes over immediately and cancels any running background transition.
+// Style updates layer with vs.Background, with the same transition and presentation-value retargeting as a view's own layer. Only color changes touch layer, so frames animating other properties leave an active tint transition alone. When animatedBackground is true, the bound background value takes over immediately and cancels any running background transition.
 func (t *BackdropTint) Style(layer objc.ID, vs *driver.ViewStyle, animatedBackground bool) {
 	if layer == 0 {
 		return
@@ -52,10 +44,7 @@ func (t *BackdropTint) Style(layer objc.ID, vs *driver.ViewStyle, animatedBackgr
 	t.color, t.styled = vs.Background, true
 }
 
-// HandoffBackground copies from's currently displayed background color
-// (presentation color while transitioning, else model color) onto to without
-// animation so a background transition on to starts from what the tint showed
-// rather than from transparent.
+// HandoffBackground copies from's currently displayed background color (presentation color while transitioning, else model color) onto to without animation so a background transition on to starts from what the tint showed rather than from transparent.
 func HandoffBackground(from, to objc.ID) {
 	if from == 0 || to == 0 {
 		return
@@ -75,8 +64,7 @@ func HandoffBackground(from, to objc.ID) {
 	})
 }
 
-// ClearBackgroundAnimation cancels any running background color transition on
-// layer.
+// ClearBackgroundAnimation cancels any running background color transition on layer.
 func ClearBackgroundAnimation(layer objc.ID) {
 	if layer != 0 {
 		layer.Send(selRemoveAnimation, NSString("nsgo.backgroundColor"))

@@ -56,9 +56,7 @@ type view struct {
 	rasterStep float64
 	// axNodes are a canvas's named parts, its accessibility elements.
 	axNodes []objc.ID
-	// backdrop is the view's backdrop: a UIVisualEffectView for backdropMaterial
-	// or backdropGlass, or a holder UIView of backdropLayer (a CABackdropLayer)
-	// and tintView for backdropFiltered.
+	// backdrop is the view's backdrop: a UIVisualEffectView for backdropMaterial or backdropGlass, or a holder UIView of backdropLayer (a CABackdropLayer) and tintView for backdropFiltered.
 	backdrop, backdropLayer, tintView objc.ID
 	backdropKind                      backdropMode
 	glassInteractive                  bool

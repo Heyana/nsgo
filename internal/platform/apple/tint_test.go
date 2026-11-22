@@ -63,8 +63,7 @@ func TestBackdropTintTransitionsAndAnimatedBackgrounds(t *testing.T) {
 		t.Error("the tint transition lost its delay")
 	}
 
-	// An unrelated animated property frame (restyle with empty Transition, same Background)
-	// leaves the running tint transition intact.
+	// An unrelated animated property frame (restyle with empty Transition, same Background) leaves the running tint transition intact.
 	before := objc.Send[float64](anim, sel("beginTime"))
 	unrelated := style
 	unrelated.Opacity = 0.5
@@ -74,8 +73,7 @@ func TestBackdropTintTransitionsAndAnimatedBackgrounds(t *testing.T) {
 		t.Error("an unrelated animated property replaced or removed the tint transition")
 	}
 
-	// An animated background binding cancels an active transition even when its color
-	// already matches the model style's target color.
+	// An animated background binding cancels an active transition even when its color already matches the model style's target color.
 	sameTarget := style
 	sameTarget.Transition = driver.Transition{}
 	tint.Style(layer, &sameTarget, true)
@@ -169,8 +167,7 @@ func TestBackdropBackgroundHandoffAndClearOuterAnimation(t *testing.T) {
 		}
 	}
 
-	// Outer layer starts a background transition; entering blur mode cancels it
-	// so it cannot paint behind the blur.
+	// Outer layer starts a background transition; entering blur mode cancels it so it cannot paint behind the blur.
 	initial := driver.ViewStyle{Opacity: 1, Background: driver.RGB(0x112233)}
 	StyleLayer(outer, nil, &initial, 0)
 	next := driver.ViewStyle{
@@ -198,8 +195,7 @@ func TestBackdropBackgroundHandoffAndClearOuterAnimation(t *testing.T) {
 		t.Fatal("outer layer kept a background while blur was active")
 	}
 
-	// Removing the blur with the same background and a transition hands off the
-	// tint's color so outer does not flash from transparent to tintColor.
+	// Removing the blur with the same background and a transition hands off the tint's color so outer does not flash from transparent to tintColor.
 	HandoffBackground(tintLayer, outer)
 	assertColor(outer.Send(sel("backgroundColor")), tintColor)
 	sameWithTransition := driver.ViewStyle{
