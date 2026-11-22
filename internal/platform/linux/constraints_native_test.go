@@ -71,11 +71,17 @@ func TestWindowConstraintsPublishMaximumAndAllowNativeResize(t *testing.T) {
 		}
 	}
 	set(driver.WindowConstraints{MinWidth: 180, MinHeight: 100, MaxWidth: 400, MaxHeight: 300, NoMinimize: true})
+	// GDK rewrites WM_NORMAL_HINTS without a maximum when it next lays the window out, and the backend restores the maximum after that layout.
 	var hints nativeSizeHints
 	var supplied int
-	w.onLoop(t, func() { display, xid, _ = w.x11Window(); readHints(display, xid, &hints, &supplied) })
-	if hints.Flags&(1<<5) == 0 {
-		t.Fatalf("WM_NORMAL_HINTS flags=%#x have no maximum", hints.Flags)
+	for end := time.Now().Add(3 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		w.onLoop(t, func() { display, xid, _ = w.x11Window(); readHints(display, xid, &hints, &supplied) })
+		if hints.Flags&(1<<5) != 0 {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("WM_NORMAL_HINTS flags=%#x have no maximum", hints.Flags)
+		}
 	}
 	if bindDesktopXlib() {
 		x := &desktopXlib

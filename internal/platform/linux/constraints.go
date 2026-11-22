@@ -25,6 +25,7 @@ var (
 	gtkWidgetUnrealize, gtkWidgetMap         func(uintptr)
 	gtkWidgetActionSetEnabled                func(uintptr, *byte, int32)
 	gdkSurfaceGetWidth, gdkSurfaceGetHeight  func(uintptr) int32
+	gdkSurfaceGetFrameClock                  func(uintptr) uintptr
 	gtkWindowGetModal, gtkWindowGetResizable func(uintptr) int32
 	gtkWindowGetTransientFor                 func(uintptr) uintptr
 	gdkToplevelGetCapabilities               func(uintptr) uint32 // GTK 4.20+, optional
@@ -44,13 +45,16 @@ var (
 		}
 		purego.RegisterLibFunc(&gdkSurfaceGetWidth, gtkLib, "gdk_surface_get_width")
 		purego.RegisterLibFunc(&gdkSurfaceGetHeight, gtkLib, "gdk_surface_get_height")
+		purego.RegisterLibFunc(&gdkSurfaceGetFrameClock, gtkLib, "gdk_surface_get_frame_clock")
 	})
 	cbLimitsMapped            uintptr
+	cbLimitsLayout            uintptr
 	cbDecorationLayoutChanged uintptr
 )
 
 func init() {
 	cbLimitsMapped = newCallback(limitsMapped)
+	cbLimitsLayout = newCallback(limitsLayout)
 	cbDecorationLayoutChanged = newCallback(decorationLayoutChanged)
 }
 
@@ -118,6 +122,10 @@ func (w *window) updateDecorationLayout() {
 		if native != w.limits.native {
 			w.limits.native = native
 			gSignalConnect(native, "notify::state", cbDecorationLayoutChanged, w.handle)
+			// GDK rewrites WM_NORMAL_HINTS from GTK's geometry, without a maximum, when its frame clock lays the surface out after a size request or resizability change, which is after setConstraints returns. The surface connected to its clock's layout signal when it was created, so this handler runs after that write.
+			if clock := gdkSurfaceGetFrameClock(native); clock != 0 {
+				gSignalConnect(clock, "layout", cbLimitsLayout, w.handle)
+			}
 			if gdkToplevelGetCapabilities != nil {
 				gSignalConnect(native, "notify::capabilities", cbDecorationLayoutChanged, w.handle)
 			}
@@ -148,6 +156,15 @@ func limitsMapped(_, data uintptr) {
 	if w := windowOf(data); w != nil && !w.closing {
 		w.updateDecorationLayout()
 		w.applyMaximumHints()
+	}
+}
+
+// limitsLayout puts back the maximum that GDK's layout dropped from WM_NORMAL_HINTS.
+func limitsLayout(_, data uintptr) {
+	if w := windowOf(data); w != nil && !w.closing {
+		if c := w.chrome.constraints; c.MaxWidth > 0 || c.MaxHeight > 0 {
+			w.applyMaximumHints()
+		}
 	}
 }
 
