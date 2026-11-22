@@ -68,7 +68,7 @@ func TestMain(m *testing.M) {
 
 在无界面测试中，`app.KeyCode("KeyW")` 按一次物理键位，`KeyCodeDown` 和 `KeyCodeUp` 分别按住和释放。设置 `core.Environment.KeyCodeNames`（例如 `map[string]string{"KeyW": "z"}`）可以测试其他布局。未指定的键位使用美式布局。
 
-在 macOS、Windows、Linux 和 Web 上以 `-target` 运行时，`app.Select(selector, start, end)` 用原生文本框的编辑键（全选和方向键）移动它的选区，之后的输入、复制或粘贴都作用于测试指定的范围；消费这些键的绑定或应用菜单项会把它们拦下。手机目标还不能移动原生选区：在那里它只移动测试模型中的选区，文本框设置了 `OnSelectionChange` 时则跳过该测试。
+以 `-target` 运行时，`app.Select(selector, start, end)` 移动原生文本框的选区。偏移量以 UTF-16 单元计，超出文本的部分会截断，颠倒的端点会排序。iOS 和 Android 使用原生文本输入 API；HarmonyOS 使用文本框控制器，并等待原生选区回调。`OnSelectionChange` 正常执行；没有该回调时，测试模型也读取实际选区。macOS、Windows、Linux 和 Web 使用全选和方向键，消费这些键的绑定或应用菜单项会把它们拦下。随后输入和原生剪贴板编辑作用于该选区；HarmonyOS 的测试输入替换原生回调报告的范围，但其测试宿主还不会驱动原生剪贴板按键。
 
 在 Linux 和 Android 的无头测试中，可以用 `app.Installs` 检查交给安装器的软件包路径。设置 `app.InstallPackage` 可让模拟安装器返回错误。
 

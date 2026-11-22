@@ -161,6 +161,13 @@ type TabBarSurface interface {
 	SelectTab(id driver.NodeID, index int) error
 }
 
+// TextSelectionSurface moves the focused native field's selection in UTF-16
+// units and returns the range the field reports. Its normal selection callback
+// runs when subscribed; the returned range also updates models without one.
+type TextSelectionSurface interface {
+	SelectRange(selection driver.TextRange) (driver.TextRange, error)
+}
+
 // SharedItemsSurface delivers an incoming share to the app under test.
 type SharedItemsSurface interface {
 	ReceiveShare(items []driver.SharedItem)

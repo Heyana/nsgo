@@ -70,7 +70,7 @@ On a real target, `nsgotest.Environment` pins the appearance, locale, text size,
 
 In a headless test, `app.KeyCode("KeyW")` presses a physical position and `KeyCodeDown` and `KeyCodeUp` hold and release it separately. Set `core.Environment.KeyCodeNames`, for example `map[string]string{"KeyW": "z"}`, to exercise another layout. Unspecified positions use the US layout.
 
-Under `-target` on macOS, Windows, Linux and the web, `app.Select(selector, start, end)` moves the native field's selection with its editing keys, select-all and the arrows, so the next typing, copying or pasting acts on the range the test named; a binding or application-menu item that takes those keys takes them from it. Phone targets do not move the native selection yet: there it moves the test's model alone, and skips the test when the field has `OnSelectionChange`.
+Under `-target`, `app.Select(selector, start, end)` moves the native field's selection. Offsets are UTF-16 units, clipped to the text, with reversed endpoints ordered. iOS and Android use their native text-input APIs; HarmonyOS uses the field's controller and waits for its selection callback. `OnSelectionChange` runs normally, and the test model reads the actual range even without that callback. macOS, Windows, Linux and the web use select-all and editing arrows, so a binding or application-menu item that takes those keys takes them from the step. Typing and native clipboard edits then act on the selected range; HarmonyOS's test typing replaces its reported native range, while its test host does not yet drive native clipboard keys.
 
 Headless Linux and Android tests can check the package paths passed to the installer in `app.Installs`. Set `app.InstallPackage` to return an error from the simulated installer.
 

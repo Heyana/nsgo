@@ -438,7 +438,7 @@ func (s *surface) event(args []js.Value) {
 	case "weberror":
 		s.dispatch(driver.Event{Kind: driver.EventError, ID: id, Navigation: &driver.WebNavigation{URL: str(4)}})
 	case "selection":
-		s.dispatch(driver.Event{Kind: driver.EventSelectionChange, ID: id, Index: int(num(2)), Count: uint32(num(3))})
+		s.m.selectionChanged(id, driver.TextRange{Start: int(num(2)), End: int(num(3))})
 	case "alert":
 		// The host's alert answered: Count is the alert's ID and Index the
 		// button, or -1 for a cancelled one.

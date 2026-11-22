@@ -742,8 +742,7 @@ func (a *App) Paste(selector string, p driver.PasteEvent) {
 func (a *App) Select(selector string, start, end int) {
 	a.t.Helper()
 	v := a.inputStep(selector, "select")
-	// On the other targets the model alone moves, the native field keeping its selection, and a field that reports its selection skips the test (roadmap: native Select on phone targets).
-	if a.target != nil && keyedSelection(Target()) {
+	if a.target != nil {
 		a.target.selectRange(v, start, end)
 		a.done()
 		return

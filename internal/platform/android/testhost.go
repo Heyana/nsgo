@@ -136,6 +136,18 @@ func (t *testSurface) Type(text string) error {
 
 func (t *testSurface) Key(key string) error { return t.do(map[string]any{"op": "key", "key": key}) }
 
+func (t *testSurface) SelectRange(selection driver.TextRange) (driver.TextRange, error) {
+	data, err := t.ask(map[string]any{"op": "select-range", "start": selection.Start, "end": selection.End})
+	if err != nil {
+		return driver.TextRange{}, err
+	}
+	var actual driver.TextRange
+	if err := json.Unmarshal([]byte(data), &actual); err != nil {
+		return driver.TextRange{}, fmt.Errorf("native selection: %w", err)
+	}
+	return actual, nil
+}
+
 // Compose and Commit go through the focused field's InputConnection, as
 // an input method's composition does.
 func (t *testSurface) Compose(text string) error {

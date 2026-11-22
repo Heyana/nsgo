@@ -200,6 +200,18 @@ final class TestAgent {
             case "key":
                 key(op.getString("key"));
                 break;
+            case "select-range": {
+                View focused = activity().getCurrentFocus();
+                if (!(focused instanceof InputField)) throw new IllegalStateException("no text field has the keyboard focus");
+                InputField field = (InputField) focused;
+                EditorInfo info = new EditorInfo();
+                InputConnection connection = field.onCreateInputConnection(info);
+                if (connection == null || !connection.setSelection(op.getInt("start"), op.getInt("end"))) {
+                    throw new IllegalStateException("the focused field refused its native selection");
+                }
+                view.testReply(id, "", new JSONObject().put("Start", field.getSelectionStart()).put("End", field.getSelectionEnd()).toString());
+                return;
+            }
             case "editor-action": {
                 View focused = activity().getCurrentFocus();
                 EditorInfo info = new EditorInfo();

@@ -417,8 +417,8 @@ func TestKeysDownFollowsAHardwareKeyboard(t *testing.T) {
 
 // Select moves the native field's selection under a target, so the edit after it acts on the range the test named rather than at the field's own caret.
 func TestSelectMovesTheNativeSelection(t *testing.T) {
-	if !slices.Contains([]string{"macos", "windows", "linux", "web"}, nsgotest.Target()) {
-		t.Skip("headless, Type writes at the field's end, and the phones' test hosts move only the test's model")
+	if !slices.Contains([]string{"macos", "windows", "linux", "web", "ios", "ios_simulator", "android", "harmonyos"}, nsgotest.Target()) {
+		t.Skip("requires a native text field")
 	}
 	var selection atomic.Value
 	selection.Store(core.TextRange{})

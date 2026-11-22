@@ -136,18 +136,46 @@ func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 
 func (t *testSurface) Hover(driver.Point) error { return nil }
 
-// Type appends text to the focused field, as typing does.
+// Type replaces the native field's last reported selection, or appends before
+// the first selection callback, and updates the rendered field through the page.
 func (t *testSurface) Type(text string) error {
 	id := t.s.m.focused
 	v := t.s.m.views[id]
 	if v == nil || v.kind != driver.KindInput {
 		return errors.New("no text field has the keyboard focus")
 	}
-	value := v.value + text
+	selection := v.selection
+	if !v.selected {
+		selection.Start = driver.UTF16Len(v.value)
+		selection.End = selection.Start
+	}
+	start, end := driver.UTF16Offset(v.value, selection.Start), driver.UTF16Offset(v.value, selection.End)
+	value := v.value[:start] + text + v.value[end:]
 	t.s.m.edited(id, value)
 	// Type is a test-host shortcut for keyboard input. The engine receives the edit above, but ArkUI's TextInput has not emitted onChange, so update the native field through the page bridge as a real keyboard would show it.
 	t.s.bridge.Call("typeInput", int(id), value)
-	return nil
+	caret := driver.UTF16Len(value[:start+len(text)])
+	_, err := t.SelectRange(driver.TextRange{Start: caret, End: caret})
+	return err
+}
+
+// SelectRange uses the renderer's existing TextInputController selection path
+// and waits for ArkUI's own onTextSelectionChange to report the resulting range.
+func (t *testSurface) SelectRange(selection driver.TextRange) (driver.TextRange, error) {
+	id := t.s.m.focused
+	v := t.s.m.views[id]
+	if v == nil || v.kind != driver.KindInput {
+		return driver.TextRange{}, errors.New("no text field has the keyboard focus")
+	}
+	t.s.m.mount(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemSelection, ID: id, Selection: selection}}})
+	until := time.Now().Add(2 * time.Second)
+	for time.Now().Before(until) {
+		if v.selected && v.selection == selection {
+			return v.selection, nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return v.selection, errors.New("ArkUI did not report the requested native selection")
 }
 
 func (t *testSurface) Compose(string) error { return testhost.ErrNoInputMethod }

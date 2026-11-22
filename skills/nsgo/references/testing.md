@@ -56,6 +56,8 @@ Use `app.Post(func() { signal.Set(value) })` from a test or stubbed worker to qu
 
 A press can name a text field directly. Read `app.Find("id:field").Focused` after the step on macOS, Windows, Linux or headless, including when a press handler focuses the field.
 
+`Select(selector, start, end)` uses UTF-16 offsets. On iOS, Android and HarmonyOS targets it moves the native field's range and reads it back; selection callbacks no longer skip those tests. HarmonyOS typing replaces the reported range, but its test host still lacks native clipboard keys. Desktop and web targets retain their select-all/arrow-key path.
+
 Use `app.SelectTab("id:tabs", 1)` to choose the second item of a mounted `mobile.TabBar`. It works headless with an iOS or Android `Environment` and drives the native tab bar on iOS and Android targets.
 
 `Ref.Focus()` commands follow platform focus stops: text fields everywhere, plus enabled pressable and `Focusable` views on desktops, the web and Apple TV. Use a desktop or web `Environment` when a headless test exercises button focus. The `Focus` step reaches these desktop/web stops through Tab. Any of `OnPress`, `OnPressDown`, `OnPressUp` or `OnLongPress` makes a view a stop; Return or Space sends it the down, up and press events it handles.

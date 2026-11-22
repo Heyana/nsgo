@@ -56,6 +56,8 @@ type view struct {
 	style     driver.ViewStyle
 	text      *driver.TextContent
 	value     string
+	selection driver.TextRange
+	selected  bool // a native selection callback has supplied selection
 	// edits counts the user's edits, so a value the engine computed from an
 	// older edit is dropped instead of overwriting what was typed since.
 	edits   uint32
@@ -712,6 +714,13 @@ func (m *mounter) edited(id driver.NodeID, text string) {
 		v.edits++
 		v.value = text
 		m.s.dispatch(driver.Event{Kind: driver.EventChangeText, ID: id, Text: text, Count: v.edits})
+	}
+}
+
+func (m *mounter) selectionChanged(id driver.NodeID, selection driver.TextRange) {
+	if v := m.views[id]; v != nil {
+		v.selection, v.selected = selection, true
+		m.s.dispatch(driver.Event{Kind: driver.EventSelectionChange, ID: id, Index: selection.Start, Count: uint32(selection.End)})
 	}
 }
 

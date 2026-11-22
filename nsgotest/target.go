@@ -765,13 +765,27 @@ func keyedSelection(target string) bool {
 	return slices.Contains([]string{"macos", "windows", "linux", "web"}, target)
 }
 
-// selectRange moves a native field's selection through its keyboard: select all, collapse to the start, then a right arrow per character before start and a shifted one per character to end. The platform's own editing keys keep the field and the selection it reports in step, with no selection-change event made up. An arrow steps over a whole grapheme cluster while this counts code points, so a cluster of several, such as a letter and its combining mark or an emoji sequence, before end moves the range on.
+// selectRange moves the focused native field's UTF-16 selection through a host
+// selection API when available. Desktops and the web use select-all and editing
+// arrows; those arrows step by grapheme while this fallback counts code points.
 func (t *target) selectRange(v *View, start, end int) {
 	text := v.Text
 	start = min(max(start, 0), driver.UTF16Len(text))
 	end = min(max(end, 0), driver.UTF16Len(text))
 	if start > end {
 		start, end = end, start
+	}
+	if native, ok := t.surface.(testhost.TextSelectionSurface); ok {
+		selection, err := native.SelectRange(driver.TextRange{Start: start, End: end})
+		t.check(err)
+		// Read back the native range even when no application callback is
+		// subscribed. Later callbacks or controlled updates win as we settle.
+		v.Selection = selection
+		t.settle()
+		return
+	}
+	if !keyedSelection(Target()) {
+		t.a.t.Skipf("nsgotest: %s: the platform cannot move a native text selection", t.a.stepName)
 	}
 	t.check(t.surface.Key("mod+a"))
 	t.check(t.surface.Key("left"))
