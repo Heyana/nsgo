@@ -96,8 +96,7 @@ func (o observed) SetPreferredFrameRate(rate driver.FrameRateRange) {
 	setPreferredFrameRate(o.Platform, rate)
 }
 
-// platformGeometrySource unwraps test observers without advertising a native
-// capability that the wrapped platform does not implement.
+// platformGeometrySource unwraps test observers without advertising a native capability that the wrapped platform does not implement.
 func platformGeometrySource(p Platform) driver.GeometrySource {
 	for {
 		switch v := p.(type) {

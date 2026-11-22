@@ -10,8 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// LayerBounds measures the border box through Core Animation's presentation
-// hierarchy, including transforms and moving native scroll containers.
+// LayerBounds measures the border box through Core Animation's presentation hierarchy, including transforms and moving native scroll containers.
 func LayerBounds(layer, root objc.ID) (driver.Bounds, bool) {
 	m, size, ok := LayerGeometry(layer, root)
 	if !ok {
@@ -46,12 +45,10 @@ func LayerGeometry(layer, root objc.ID) (driver.Matrix3D, driver.Size, bool) {
 	return m, size, ok
 }
 
-// LayerGeometryAnimating asks only about animations that move the border
-// box; an opacity-only animation needs no geometry refresh.
+// LayerGeometryAnimating asks only about animations that move the border box; an opacity-only animation needs no geometry refresh.
 func LayerGeometryAnimating(layer objc.ID) bool { return layerGeometryAnimating(layer, false) }
 
-// LayerGeometryEnding reports finite geometry animations that an app test
-// waits for, leaving endless keyframes out of its settling barrier.
+// LayerGeometryEnding reports finite geometry animations that an app test waits for, leaving endless keyframes out of its settling barrier.
 func LayerGeometryEnding(layer objc.ID) bool { return layerGeometryAnimating(layer, true) }
 
 func layerGeometryAnimating(layer objc.ID, finite bool) bool {

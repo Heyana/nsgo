@@ -222,8 +222,7 @@ func (n *node) pointerMatrix() driver.Matrix3D {
 	return n.pointerMatrixAt(n.frame)
 }
 
-// pointerMatrixAt also serves DevTools' committed geometry, whose frame
-// includes the sticky shift applied by the native scroll view.
+// pointerMatrixAt also serves DevTools' committed geometry, whose frame includes the sticky shift applied by the native scroll view.
 func (n *node) pointerMatrixAt(frame Bounds) driver.Matrix3D {
 	m := n.sent.viewStyle.Matrix(frame.Size)
 	if parent := n.nativeParent(); parent != nil {

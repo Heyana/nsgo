@@ -5,8 +5,7 @@ import (
 	"math"
 )
 
-// ViewGeometry places a view in its native parent. Matrix acts in its
-// viewport before Frame places it; Offset scrolls its children.
+// ViewGeometry places a view in its native parent. Matrix acts in its viewport before Frame places it; Offset scrolls its children.
 type ViewGeometry struct {
 	Parent NodeID
 	Frame  Bounds
@@ -14,9 +13,7 @@ type ViewGeometry struct {
 	Offset Point
 }
 
-// GeometrySnapshot is the surface's displayed bounds after Version's
-// commit was applied; zero predates the first diagnostic barrier. Bounds
-// are immutable, unclipped, in surface points.
+// GeometrySnapshot is the surface's displayed bounds after Version's commit was applied; zero predates the first diagnostic barrier. Bounds are immutable, unclipped, in surface points.
 type GeometrySnapshot struct {
 	Version  uint64
 	Bounds   map[NodeID]Bounds
@@ -24,15 +21,12 @@ type GeometrySnapshot struct {
 	Sizes    map[NodeID]Size
 }
 
-// GeometrySource reports presentation geometry for DevTools. ObserveGeometry
-// must not block the engine; it reports on the native thread after mounts and
-// animation/scroll frames. A nil report ends observation.
+// GeometrySource reports presentation geometry for DevTools. ObserveGeometry must not block the engine; it reports on the native thread after mounts and animation/scroll frames. A nil report ends observation.
 type GeometrySource interface {
 	ObserveGeometry(report func(GeometrySnapshot))
 }
 
-// GeometryObserver coalesces native-thread snapshots. A surface only builds
-// them while Active; a new applied version is reported even if no box moved.
+// GeometryObserver coalesces native-thread snapshots. A surface only builds them while Active; a new applied version is reported even if no box moved.
 type GeometryObserver struct {
 	Version  uint64
 	report   func(GeometrySnapshot)
@@ -62,8 +56,7 @@ func (g *GeometryObserver) Notify(snapshot GeometrySnapshot) {
 	g.report(g.last)
 }
 
-// PointBounds encloses a projected border box's four corners. A box with a
-// point at infinity has no finite outline.
+// PointBounds encloses a projected border box's four corners. A box with a point at infinity has no finite outline.
 func PointBounds(points [4]Point) (Bounds, bool) {
 	x0, y0, x1, y1 := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
 	for _, p := range points {
@@ -82,16 +75,12 @@ func PointBounds(points [4]Point) (Bounds, bool) {
 	return box, true
 }
 
-// GeometryBounds projects every view's border box through its native
-// ancestors, flattening each viewport as IntoView does in reverse. It includes
-// transforms, perspective, native frame motion, sticky shifts and scrolling
-// supplied in views. Invalid or undisplayed planes have no finite box.
+// GeometryBounds projects every view's border box through its native ancestors, flattening each viewport as IntoView does in reverse. It includes transforms, perspective, native frame motion, sticky shifts and scrolling supplied in views. Invalid or undisplayed planes have no finite box.
 func GeometryBounds(views map[NodeID]ViewGeometry) map[NodeID]Bounds {
 	return ProjectGeometry(views).Bounds
 }
 
-// ProjectGeometry projects native viewports and retains their local-to-surface
-// matrices and sizes for transformed audit outlines and picking.
+// ProjectGeometry projects native viewports and retains their local-to-surface matrices and sizes for transformed audit outlines and picking.
 func ProjectGeometry(views map[NodeID]ViewGeometry) GeometrySnapshot {
 	matrices := make(map[NodeID]Matrix3D, len(views))
 	visiting := make(map[NodeID]bool)
@@ -159,9 +148,7 @@ func ProjectGeometry(views map[NodeID]ViewGeometry) GeometrySnapshot {
 	return out
 }
 
-// MatrixFromQuad maps a viewport to its four projected border corners.
-// It recovers a planar homography, including perspective, without guessing
-// the native animation's parameters or its start time.
+// MatrixFromQuad maps a viewport to its four projected border corners. It recovers a planar homography, including perspective, without guessing the native animation's parameters or its start time.
 func MatrixFromQuad(quad [4]Point, size Size) (Matrix3D, bool) {
 	if size.Width <= 0 || size.Height <= 0 {
 		return Matrix3D{}, false

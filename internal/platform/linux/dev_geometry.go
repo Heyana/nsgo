@@ -25,8 +25,7 @@ func (w *window) reportGeometry() {
 		if v.parent != nil {
 			ox, oy, parent = float32(v.parent.offset.X), float32(v.parent.offset.Y), v.parent.id
 		}
-		// placement is exactly the matrix passed to GTK's allocation, with
-		// the shown layout frame, sticky shift, transition and keyframe.
+		// placement is exactly the matrix passed to GTK's allocation, with the shown layout frame, sticky shift, transition and keyframe.
 		views[v.id] = driver.ViewGeometry{Parent: parent, Frame: driver.Bounds{Size: v.shownFrame().Size}, Matrix: v.placement(ox, oy)}
 	}
 	w.devGeometry.Notify(driver.ProjectGeometry(views))

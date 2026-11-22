@@ -15,9 +15,7 @@ type devGeometryState struct {
 	snapshot   driver.GeometrySnapshot
 }
 
-// SetDevGeometrySource connects internal/devtools to the platform's displayed
-// geometry. The engine installs it; observation starts only when bounds are
-// read and ends when the tree goes. Callbacks may arrive on the native thread.
+// SetDevGeometrySource connects internal/devtools to the platform's displayed geometry. The engine installs it; observation starts only when bounds are read and ends when the tree goes. Callbacks may arrive on the native thread.
 func (t *Tree) SetDevGeometrySource(watch func(func(driver.GeometrySnapshot))) {
 	state := t.devNative
 	if state != nil && state.requested && t.devSource != nil {
@@ -38,9 +36,7 @@ func (t *Tree) SetDevGeometrySource(watch func(func(driver.GeometrySnapshot))) {
 	}
 }
 
-// requestDevGeometry sends a versioned barrier even when an otherwise idle
-// app has no mount items. It separates already queued unobserved mounts from
-// the first snapshot whose node IDs the current tree can trust.
+// requestDevGeometry sends a versioned barrier even when an otherwise idle app has no mount items. It separates already queued unobserved mounts from the first snapshot whose node IDs the current tree can trust.
 func (t *Tree) requestDevGeometry() {
 	if t.devSource != nil {
 		t.devNative.pending, t.changed = true, true
@@ -79,8 +75,7 @@ func (t *Tree) observeDevGeometry() {
 	})
 }
 
-// acceptDevGeometry never takes an older tree's IDs for a view recreated
-// since that snapshot. Debug-only commits do not invalidate app geometry.
+// acceptDevGeometry never takes an older tree's IDs for a view recreated since that snapshot. Debug-only commits do not invalidate app geometry.
 func (t *Tree) acceptDevGeometry(snapshot driver.GeometrySnapshot) {
 	state := t.devGeometryState()
 	if snapshot.Version < state.snapshot.Version {
@@ -142,8 +137,7 @@ func (t *Tree) noteGeometryVersion(items []driver.MountItem) {
 	}
 }
 
-// devGeometry is the committed visual geometry before a native presentation
-// snapshot is available. Ref.Bounds keeps its layout-frame contract.
+// devGeometry is the committed visual geometry before a native presentation snapshot is available. Ref.Bounds keeps its layout-frame contract.
 
 func (t *Tree) devGeometry() map[NodeID]Bounds { return t.devGeometryFrame().Bounds }
 
@@ -235,8 +229,7 @@ func (t *Tree) devCommittedGeometryFrame() driver.GeometrySnapshot {
 	return driver.ProjectGeometry(views)
 }
 
-// hitDevWith uses native viewport matrices directly in surface coordinates;
-// the fallback retains the Go tracker for backends without feedback.
+// hitDevWith uses native viewport matrices directly in surface coordinates; the fallback retains the Go tracker for backends without feedback.
 func (t *Tree) hitDevWith(n *node, p Point, ok func(*node) bool) (NodeID, Point) {
 	if t.devSource == nil {
 		t.stepDevDrawn()
