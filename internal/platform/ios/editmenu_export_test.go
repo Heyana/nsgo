@@ -11,8 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-// NativeEditMenuLabelsForTest reads visible UIKit menu views in this app's
-// windows, rather than the unfiltered suggested actions or NSGo's menu model.
+// NativeEditMenuLabelsForTest reads visible UIKit menu views in this app's windows, rather than the unfiltered suggested actions or NSGo's menu model.
 func NativeEditMenuLabelsForTest() (labels []string) {
 	onMainSync(func() {
 		var visit func(objc.ID, bool)
@@ -40,8 +39,7 @@ func NativeEditMenuLabelsForTest() (labels []string) {
 	return
 }
 
-// ChooseNativeEditActionForTest invokes the menu's standard responder action
-// on its actual input after a test has verified UIKit visibly offered it.
+// ChooseNativeEditActionForTest invokes the menu's standard responder action on its actual input after a test has verified UIKit visibly offered it.
 func ChooseNativeEditActionForTest(action driver.EditAction) (chosen bool) {
 	onMainSync(func() {
 		var command objc.SEL

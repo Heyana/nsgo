@@ -204,9 +204,7 @@ func (g *Finger) Move(at driver.Point) {
 	g.a.done()
 }
 
-// Hold holds the finger still for d; if held past the view's DelayLongPress
-// (500 ms by default) without moving, it fires LongPress while the finger
-// remains down, so a subsequent Move can sweep after a long press.
+// Hold holds the finger still for d; if held past the view's DelayLongPress (500 ms by default) without moving, it fires LongPress while the finger remains down, so a subsequent Move can sweep after a long press.
 func (g *Finger) Hold(d time.Duration) {
 	g.a.t.Helper()
 	g.a.step("hold(%v)", d)

@@ -422,8 +422,7 @@ func (a *App) LongPress(selector string) {
 	a.done()
 }
 
-// LongPressAt holds a finger at a point in the view selector matches, in its
-// coordinates, as LongPress does its middle.
+// LongPressAt holds a finger at a point in the view selector matches, in its coordinates, as LongPress does its middle.
 func (a *App) LongPressAt(selector string, at driver.Point) {
 	a.t.Helper()
 	a.step("longPressAt(%s, %v, %v)", selector, at.X, at.Y)

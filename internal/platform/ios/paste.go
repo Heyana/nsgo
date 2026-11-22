@@ -78,10 +78,7 @@ func pasteMethods() []objc.MethodDef {
 	}
 }
 
-// editMenuOffers answers canPerformAction:withSender: while a component's
-// touch edit menu (ItemEditMenu) is open on the input: only the actions it
-// requested (Paste when the pasteboard holds something, checked without
-// reading it so iOS shows no paste banner).
+// editMenuOffers answers canPerformAction:withSender: while a component's touch edit menu (ItemEditMenu) is open on the input: only the actions it requested (Paste when the pasteboard holds something, checked without reading it so iOS shows no paste banner).
 func editMenuOffers(actions driver.EditAction, action objc.SEL) bool {
 	switch action {
 	case sel("cut:"):
@@ -112,8 +109,7 @@ func editMenuChose(editor objc.ID, action driver.EditAction) bool {
 	return true
 }
 
-// openEditMenu is ItemEditMenu: opens the system edit menu on the input's
-// editor clear of bounds (in the surface's points), offering actions.
+// openEditMenu is ItemEditMenu: opens the system edit menu on the input's editor clear of bounds (in the surface's points), offering actions.
 func (v *view) openEditMenu(bounds driver.Bounds, actions driver.EditAction) {
 	in := v.input
 	if in == nil || in.field == 0 {

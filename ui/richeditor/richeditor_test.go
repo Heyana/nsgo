@@ -86,8 +86,7 @@ func TestViewShowsAnInlineImage(t *testing.T) {
 	}
 }
 
-// TestViewTouchSelectionHandlesUseThemeAccent checks that ui/richeditor styles
-// touch selection handles with the theme accent and lets apps override them.
+// TestViewTouchSelectionHandlesUseThemeAccent checks that ui/richeditor styles touch selection handles with the theme accent and lets apps override them.
 func TestViewTouchSelectionHandlesUseThemeAccent(t *testing.T) {
 	s, err := richeditor.NewSession(richeditor.SessionConfig{
 		Extensions: richeditor.StarterKit(richeditor.StarterOptions{}),

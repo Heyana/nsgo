@@ -8,8 +8,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestEditMenuEncodesBoundsAndActions checks that ItemEditMenu encodes ID,
-// Frame and EditAction bits in the order NsgoView.java reads them.
+// TestEditMenuEncodesBoundsAndActions checks that ItemEditMenu encodes ID, Frame and EditAction bits in the order NsgoView.java reads them.
 func TestEditMenuEncodesBoundsAndActions(t *testing.T) {
 	bounds := driver.Bounds{
 		Origin: driver.Point{X: 12.5, Y: 34},

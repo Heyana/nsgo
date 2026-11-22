@@ -82,8 +82,7 @@ func rectContains(r Rect2, pt core.Point, slop float64) bool {
 	return x >= r.X-slop && x <= r.X+r.Width+slop && y >= r.Y-slop && y <= r.Y+r.Height+slop
 }
 
-// sweepSelection is the selection a long-press sweep makes from the pressed word
-// to the word under the finger: the pressed word and every word up to the finger's.
+// sweepSelection is the selection a long-press sweep makes from the pressed word to the word under the finger: the pressed word and every word up to the finger's.
 func sweepSelection(wordFrom, wordTo, atFrom, atTo int) (anchor, head int) {
 	switch {
 	case atTo > wordTo:
@@ -95,9 +94,7 @@ func sweepSelection(wordFrom, wordTo, atFrom, atTo int) (anchor, head int) {
 	}
 }
 
-// handleSelection is the selection dragging a handle to pos makes from the fixed end;
-// ok is false where it would collapse to empty (a handle stops at the other end until
-// the finger passes it).
+// handleSelection is the selection dragging a handle to pos makes from the fixed end; ok is false where it would collapse to empty (a handle stops at the other end until the finger passes it).
 func handleSelection(fixed, pos int) (anchor, head int, ok bool) {
 	if pos == fixed {
 		return 0, 0, false
@@ -105,8 +102,7 @@ func handleSelection(fixed, pos int) (anchor, head int, ok bool) {
 	return fixed, pos, true
 }
 
-// handleBox is the hit area of edge's handle over caret (the end's caret box in
-// the content box): the line's height plus knobRoom above the start or below the end.
+// handleBox is the hit area of edge's handle over caret (the end's caret box in the content box): the line's height plus knobRoom above the start or below the end.
 func handleBox(edge handleEdge, caret Rect2) Rect2 {
 	top := caret.Y
 	if edge == edgeStart {
@@ -120,8 +116,7 @@ func handleBox(edge handleEdge, caret Rect2) Rect2 {
 	}
 }
 
-// menuBoundsAroundHandles grows r vertically by knobRoom above and below so the
-// system edit menu leaves both handles' knobs free to touch.
+// menuBoundsAroundHandles grows r vertically by knobRoom above and below so the system edit menu leaves both handles' knobs free to touch.
 func menuBoundsAroundHandles(r Rect2) Rect2 {
 	return Rect2{
 		X:      r.X,
@@ -177,8 +172,7 @@ func (v *rv) hasTextHandles() bool {
 	return false
 }
 
-// touchFollow reconciles touch state when the session state changes: any change
-// to a different selection drops the touch selection, its handles and a stale menu.
+// touchFollow reconciles touch state when the session state changes: any change to a different selection drops the touch selection, its handles and a stale menu.
 func (v *rv) touchFollow() {
 	sel := v.s.State().Selection
 	if v.touch.hasRange && (v.touch.from != sel.From() || v.touch.to != sel.To()) {
@@ -206,9 +200,7 @@ func (v *rv) forgetTap() {
 	v.touch.tapCount = 0
 }
 
-// tap handles a tap on a touch screen: single tap places the caret (or reopens the
-// edit menu on the current touch selection / toggles it on the caret), double tap
-// selects a word and triple tap selects the textblock.
+// tap handles a tap on a touch screen: single tap places the caret (or reopens the edit menu on the current touch selection / toggles it on the caret), double tap selects a word and triple tap selects the textblock.
 func (v *rv) tap(pt, page core.Point, mods core.Modifiers, clicks int) {
 	now := v.cx.Now()
 	var n int
@@ -276,8 +268,7 @@ func (v *rv) tap(pt, page core.Point, mods core.Modifiers, clicks int) {
 	}
 }
 
-// longPress selects the word (or selectable leaf) under the finger, or places the
-// caret on blank space, arms a word-by-word sweep, and opens the edit menu on lift.
+// longPress selects the word (or selectable leaf) under the finger, or places the caret on blank space, arms a word-by-word sweep, and opens the edit menu on lift.
 func (v *rv) longPress(pt, _ core.Point) {
 	v.forgetTap()
 	v.sinkRef.Focus()
@@ -323,8 +314,7 @@ func (v *rv) longPress(pt, _ core.Point) {
 	v.bumpTouch()
 }
 
-// wordUnder returns the word (or inline leaf) at pos when pt lands on it,
-// rejecting whitespace and blank space past a line's end.
+// wordUnder returns the word (or inline leaf) at pos when pt lands on it, rejecting whitespace and blank space past a line's end.
 func (v *rv) wordUnder(pt core.Point, pos int) (int, int, bool) {
 	doc := v.s.State().Doc
 	r := doc.Resolve(pos)
@@ -546,8 +536,7 @@ func (v *rv) visibleSelectionBox() (Rect2, bool) {
 	return Rect2{X: b.X, Y: y0, Width: b.Width, Height: y1 - y0}, true
 }
 
-// openEditMenu opens the platform's touch edit menu on the sink clear of the
-// selection (including handle knobs when handles show) or at the caret.
+// openEditMenu opens the platform's touch edit menu on the sink clear of the selection (including handle knobs when handles show) or at the caret.
 func (v *rv) openEditMenu() {
 	st := v.s.State()
 	doc := st.Doc

@@ -41,9 +41,7 @@ type input struct {
 	lastScrollMax     driver.Points
 	lastScrollApplied uint32
 	scrollReported    bool
-	// editMenu is the touch edit menu ItemEditMenu opened on this input:
-	// offered actions (0 when closed), its generation, its target rect in
-	// the editor, and the UIEditMenuInteraction (iOS 16+).
+	// editMenu is the touch edit menu ItemEditMenu opened on this input: offered actions (0 when closed), its generation, its target rect in the editor, and the UIEditMenuInteraction (iOS 16+).
 	editMenu        driver.EditAction
 	editMenuGen     uint
 	editMenuRect    apple.CGRect

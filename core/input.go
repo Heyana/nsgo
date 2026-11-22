@@ -8,8 +8,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/layout"
 )
 
-// EditAction is an editing action of an input's touch edit menu
-// (Ref.OpenEditMenu, Input.OnEditAction).
+// EditAction is an editing action of an input's touch edit menu (Ref.OpenEditMenu, Input.OnEditAction).
 type EditAction = driver.EditAction
 
 const (
@@ -47,12 +46,7 @@ func (r *Ref) SetSelection(start, end int) {
 	r.t.changed = true
 }
 
-// OpenEditMenu opens the platform's touch edit menu on the element, a focused
-// text input, anchored clear of bounds in the surface's points and offering
-// actions (a bitmask of EditCut, EditCopy, EditPaste and EditSelectAll). On
-// iOS and Android, choosing Cut, Copy or Select All runs Input.OnEditAction,
-// and choosing Paste runs Input.OnPaste. Passing 0 closes any edit menu open
-// on the input.
+// OpenEditMenu opens the platform's touch edit menu on the element, a focused text input, anchored clear of bounds in the surface's points and offering actions (a bitmask of EditCut, EditCopy, EditPaste and EditSelectAll). On iOS and Android, choosing Cut, Copy or Select All runs Input.OnEditAction, and choosing Paste runs Input.OnPaste. Passing 0 closes any edit menu open on the input.
 func (r *Ref) OpenEditMenu(bounds Bounds, actions EditAction) {
 	if !r.placed() || r.n.input == nil {
 		return

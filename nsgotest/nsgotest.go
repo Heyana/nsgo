@@ -432,8 +432,7 @@ type App struct {
 	PopupMenu []MenuItem
 	PopupAt   core.Point
 	popupID   uint32
-	// EditMenu is the touch edit menu an input opened with Ref.OpenEditMenu;
-	// nil when none shows.
+	// EditMenu is the touch edit menu an input opened with Ref.OpenEditMenu; nil when none shows.
 	EditMenu *EditMenu
 	// AccessibilityFocus is the view the app last moved the screen
 	// reader's focus to.

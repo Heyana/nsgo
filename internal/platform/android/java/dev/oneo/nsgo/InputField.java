@@ -621,9 +621,7 @@ final class InputField extends EditText {
             editMenu.invalidateContentRect();
             return;
         }
-        // Start from the surface (or modal's root): a floating toolbar anchors
-        // to the view that started it, and an editor's hidden sink is a 1x1
-        // sliver at the caret.
+        // Start from the surface (or modal's root): a floating toolbar anchors to the view that started it, and an editor's hidden sink is a 1x1 sliver at the caret.
         View origin = getRootView() == host.getRootView() ? host : getRootView();
         editMenu = origin.startActionMode(new ActionMode.Callback2() {
             @Override

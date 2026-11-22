@@ -315,9 +315,7 @@ func (a *App) ClosePopup() {
 	a.Settle()
 }
 
-// EditMenuItems returns the visible labels of the touch edit menu an input
-// opened with Ref.OpenEditMenu, in platform order, omitting Paste while the
-// clipboard is empty (matching iOS and Android), or nil when none shows.
+// EditMenuItems returns the visible labels of the touch edit menu an input opened with Ref.OpenEditMenu, in platform order, omitting Paste while the clipboard is empty (matching iOS and Android), or nil when none shows.
 func (a *App) EditMenuItems() []string {
 	m := a.EditMenu
 	if m == nil {
@@ -344,10 +342,7 @@ func (a *App) EditMenuItems() []string {
 	return out
 }
 
-// ChooseEditAction chooses action from the touch edit menu an input opened
-// with Ref.OpenEditMenu and closes the menu: EditPaste pastes the model's
-// clipboard into the input (EventPaste), while EditCut, EditCopy and
-// EditSelectAll report EventEditAction to it.
+// ChooseEditAction chooses action from the touch edit menu an input opened with Ref.OpenEditMenu and closes the menu: EditPaste pastes the model's clipboard into the input (EventPaste), while EditCut, EditCopy and EditSelectAll report EventEditAction to it.
 func (a *App) ChooseEditAction(action core.EditAction) {
 	a.t.Helper()
 	m := a.EditMenu

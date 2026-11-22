@@ -406,12 +406,7 @@ const (
 	ItemHapticPattern
 	// ItemPageHead replaces the web document's scoped title and description. Sent only to a web backend; an embedded app leaves its host's head alone.
 	ItemPageHead
-	// ItemEditMenu opens or closes the platform's touch edit menu on input ID
-	// (UIEditMenuInteraction on iOS, a floating ActionMode on Android), anchored
-	// clear of Frame in the surface's points and offering the EditAction bits in
-	// Count; Count 0 closes any edit menu open on the input. Choosing Cut, Copy
-	// or Select All reports EventEditAction on ID with that action in Count;
-	// Paste runs the input's own paste (EventPaste).
+	// ItemEditMenu opens or closes the platform's touch edit menu on input ID (UIEditMenuInteraction on iOS, a floating ActionMode on Android), anchored clear of Frame in the surface's points and offering the EditAction bits in Count; Count 0 closes any edit menu open on the input. Choosing Cut, Copy or Select All reports EventEditAction on ID with that action in Count; Paste runs the input's own paste (EventPaste).
 	ItemEditMenu
 )
 

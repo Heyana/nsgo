@@ -11,8 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// TestEditMenuProtocolMatchesDriver checks that Protocol.java's edit menu item,
-// event and action bit constants match internal/driver.
+// TestEditMenuProtocolMatchesDriver checks that Protocol.java's edit menu item, event and action bit constants match internal/driver.
 func TestEditMenuProtocolMatchesDriver(t *testing.T) {
 	testhost.RequireSource(t)
 
