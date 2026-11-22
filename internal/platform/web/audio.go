@@ -188,14 +188,54 @@ func (a *webAudio) decodeTrack(ctx context.Context, source driver.ImageSource) j
 	if code != "" || len(data) == 0 || ctx.Err() != nil {
 		return js.Undefined()
 	}
+	bytes := audioBytes(data)
+	// decodeAudioData decodes the whole file before it tells the length, so a longer track is refused from its metadata first: 32 MiB of compressed audio can decode to most of a gigabyte.
+	if length, ok := trackLength(ctx, a.doc, bytes, driver.AudioType(data)); !ok || length > driver.MaxGaplessLoopDuration {
+		return js.Undefined()
+	}
 	if !a.decoder.Truthy() {
 		a.decoder = js.Global().Get("OfflineAudioContext").New(1, 1, 48000)
 	}
-	track, err := await(a.decoder.Call("decodeAudioData", audioBytes(data).Get("buffer")))
+	track, err := await(a.decoder.Call("decodeAudioData", bytes.Get("buffer")))
 	if err != nil || mediaTime(track.Get("duration")) > driver.MaxGaplessLoopDuration {
 		return js.Undefined()
 	}
 	return track
+}
+
+// trackLength reads an encoded track's duration from its metadata, in a detached audio element that loads only that. It is false when the browser cannot read the metadata or the length is unknown, as for a live stream.
+func trackLength(ctx context.Context, doc, bytes js.Value, kind string) (time.Duration, bool) {
+	g := js.Global()
+	url := g.Get("URL").Call("createObjectURL", g.Get("Blob").New([]any{bytes}, map[string]any{"type": kind}))
+	defer g.Get("URL").Call("revokeObjectURL", url)
+	el := doc.Call("createElement", "audio")
+	el.Set("preload", "metadata")
+	read := make(chan bool, 1)
+	answer := func(ok bool) {
+		select {
+		case read <- ok:
+		default:
+		}
+	}
+	var ls listeners
+	ls.on(el, "loadedmetadata", func(js.Value) { answer(true) })
+	ls.on(el, "error", func(js.Value) { answer(false) })
+	defer func() {
+		ls.release()
+		el.Call("removeAttribute", "src")
+		el.Call("load")
+	}()
+	el.Set("src", url)
+	select {
+	case ok := <-read:
+		seconds := el.Get("duration").Float()
+		if !ok || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+			return 0, false
+		}
+		return mediaTime(el.Get("duration")), true
+	case <-ctx.Done():
+		return 0, false
+	}
 }
 
 func (a *webAudio) soundBytes(ctx context.Context, source driver.ImageSource, limit int64) ([]byte, string, string) {

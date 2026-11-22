@@ -448,6 +448,62 @@ func TestWebAudioPlayer(t *testing.T) {
 	}
 }
 
+// TestWebAudioPlayerHandsOverToTrack turns a player's loop on after its element started: on one still loading, the loop decodes the track once the metadata loads; on one playing, the element plays on and the decoded track takes over at its end.
+func TestWebAudioPlayerHandsOverToTrack(t *testing.T) {
+	doc := js.Global().Get("document")
+	var reports []driver.AudioEvent
+	a := newWebAudio(doc, func(e driver.Event) { reports = append(reports, *e.Data.(*driver.AudioEvent)) }, false)
+	defer a.close()
+	const loopStart = 400 * time.Millisecond
+	open := func() *webAudioPlayer {
+		reports = nil
+		a.handle(1, &driver.AudioRequest{Command: driver.AudioOpen, Volume: 1, Rate: 1, LoopStart: loopStart,
+			ProgressInterval: 20 * time.Millisecond, Source: driver.ImageSource{Data: audioWAV(700 * time.Millisecond)}})
+		return a.players[1]
+	}
+	loop := &driver.AudioRequest{Command: driver.AudioSet, Volume: 1, Rate: 1, Loop: true}
+
+	p := open()
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioPreload})
+	if p.loaded {
+		t.Fatal("the element loaded before the test could turn the loop on")
+	}
+	a.handle(1, loop)
+	audioWait(t, "the track decoded once the element loaded", func() bool { return p.track.Truthy() })
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioClose})
+
+	p = open()
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioPreload})
+	audioWait(t, "the element to load", func() bool { return p.loaded })
+	pressAudio(t, doc, a, func() { a.handle(1, &driver.AudioRequest{Command: driver.AudioResume}) })
+	audioWait(t, "the element to play", func() bool { return p.playing })
+	a.handle(1, loop)
+	audioWait(t, "the decoded track", func() bool { return p.track.Truthy() })
+	if !p.el.Truthy() || p.node.Truthy() {
+		t.Fatal("the decoded track took over before the element's end")
+	}
+	audioWait(t, "two repeats", func() bool { return len(reports) > 0 && reports[len(reports)-1].Laps >= 2 })
+	if p.el.Truthy() || !p.node.Truthy() {
+		t.Fatal("the decoded track did not take over the loop")
+	}
+	if want := mediaTime(p.track.Get("duration")); p.duration != want {
+		t.Fatalf("the player kept the element's duration %v, want the track's %v", p.duration, want)
+	}
+	lapped := false
+	for _, e := range reports {
+		if e.Phase == driver.AudioEnded || e.Phase == driver.AudioFailure {
+			t.Fatalf("the handover reported %+v", e)
+		}
+		if e.Phase == driver.AudioProgress && e.Laps > 0 {
+			lapped = true
+		}
+		if lapped && e.Phase == driver.AudioProgress && e.Position < loopStart-50*time.Millisecond {
+			t.Fatalf("a repeat after the handover went back into the intro: %+v", e)
+		}
+	}
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioClose})
+}
+
 func TestWebAudioThroughApp(t *testing.T) {
 	doc := js.Global().Get("document")
 	mount := doc.Call("createElement", "div")

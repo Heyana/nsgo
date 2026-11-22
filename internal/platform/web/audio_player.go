@@ -176,6 +176,10 @@ func (p *webAudioPlayer) decodeTrack() {
 	if p.track.Truthy() || p.decode != nil || p.noTrack {
 		return
 	}
+	if p.el.Truthy() && p.loaded && p.duration > driver.MaxGaplessLoopDuration {
+		p.noTrack = true
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.decode = cancel
 	go func() {
@@ -353,6 +357,8 @@ func (p *webAudioPlayer) resumeTrack() {
 func (p *webAudioPlayer) startNode() {
 	a := p.audio
 	p.stopNode()
+	// The track's length can differ from the element's that played before it, as by an MP3's padding; the node loops at the track's.
+	p.duration = mediaTime(p.track.Get("duration"))
 	from := min(p.position, p.duration)
 	if p.loop && from >= p.duration {
 		from = p.loopFrom()
