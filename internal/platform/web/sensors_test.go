@@ -12,6 +12,46 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
+func TestWebLocationDeliversGeolocationFix(t *testing.T) {
+	g := js.Global()
+	nav := g.Get("navigator")
+	geo := g.Get("Object").New()
+	get := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		args[0].Invoke(map[string]any{
+			"coords":    map[string]any{"latitude": 35.6812, "longitude": 139.7671, "accuracy": 8, "altitude": 12, "altitudeAccuracy": 3, "speed": 4, "heading": 90},
+			"timestamp": 1700000000000,
+		})
+		return nil
+	})
+	defer get.Release()
+	geo.Set("getCurrentPosition", get)
+	motionTestProperty(t, nav, "geolocation", geo)
+
+	fixes := make(chan core.LocationFix, 1)
+	errors := make(chan error, 1)
+	s := open(func(cx *core.Scope) core.Node {
+		if _, err := cx.Locate(core.LocationOptions{}, func(fix core.LocationFix, err error) {
+			if err != nil {
+				errors <- err
+			} else {
+				fixes <- fix
+			}
+		}); err != nil {
+			errors <- err
+		}
+		return core.View{}
+	}, Options{}, nil)
+	defer s.engine.Close()
+	select {
+	case err := <-errors:
+		t.Fatal(err)
+	case fix := <-fixes:
+		if fix.Latitude != 35.6812 || fix.Longitude != 139.7671 || !fix.HorizontalAccuracy.Valid || fix.HorizontalAccuracy.Value != 8 || !fix.Timestamp.Equal(time.UnixMilli(1700000000000)) {
+			t.Errorf("location fix = %+v", fix)
+		}
+	}
+}
+
 func TestWebMotionDeliversAndDetaches(t *testing.T) {
 	g := js.Global()
 	nav := g.Get("navigator")

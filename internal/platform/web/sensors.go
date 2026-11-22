@@ -31,6 +31,16 @@ type motionStream struct {
 	sent    [3]bool
 }
 
+type locationService struct{ streams map[uint32]*locationStream }
+
+type locationStream struct {
+	req     driver.SensorRequest
+	watch   int
+	success js.Func
+	failure js.Func
+	packet  driver.SensorPacket
+}
+
 // motionBrowser reports hardware-class availability. iPadOS can identify
 // itself as a Mac in Safari's desktop browsing mode.
 func motionBrowser(g js.Value) (available, reverseAcceleration bool) {
@@ -48,6 +58,9 @@ func motionBrowser(g js.Value) (available, reverseAcceleration bool) {
 func (s *surface) sensor(it *driver.MountItem) {
 	id, req := it.Count, *it.Sensor
 	if req.Command == driver.SensorStop {
+		if stream := s.location.streams[id]; stream != nil && stream.req.Generation == req.Generation {
+			s.endLocation(id, stream)
+		}
 		if stream := s.motion.streams[id]; stream != nil && stream.req.Generation == req.Generation {
 			delete(s.motion.streams, id)
 			s.syncMotionListeners()
@@ -55,6 +68,10 @@ func (s *surface) sensor(it *driver.MountItem) {
 		return
 	}
 	g := js.Global()
+	if req.Kind != driver.SensorMotion {
+		s.locationSensor(id, req)
+		return
+	}
 	available, reverse := motionBrowser(g)
 	if req.Kind != driver.SensorMotion || !available {
 		s.engine.Dispatch(driver.NoSensor(it))
@@ -92,6 +109,151 @@ func (s *surface) sensor(it *driver.MountItem) {
 			s.syncMotionListeners()
 		})
 	}
+}
+
+func (s *surface) locationSensor(id uint32, req driver.SensorRequest) {
+	geo := js.Global().Get("navigator").Get("geolocation")
+	if !geo.Truthy() || req.Location.Background {
+		s.engine.Dispatch(driver.NoSensor(&driver.MountItem{Count: id, Sensor: &req}))
+		return
+	}
+	if req.Command == driver.SensorReadPermission {
+		s.locationPermission(func(status driver.SensorAuthorization) {
+			s.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: id, Data: &driver.SensorReport{Generation: req.Generation, Grant: &driver.SensorGrant{Authorization: status}, End: true}})
+		})
+		return
+	}
+	if req.Command == driver.SensorRequestPermission {
+		stream := &locationStream{req: req}
+		stream.success = js.FuncOf(func(js.Value, []js.Value) any {
+			s.endLocation(id, stream)
+			s.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: id, Data: &driver.SensorReport{Generation: req.Generation, Grant: &driver.SensorGrant{Authorization: driver.SensorGranted}, End: true}})
+			return nil
+		})
+		stream.failure = js.FuncOf(func(_ js.Value, args []js.Value) any {
+			status := driver.SensorDenied
+			if len(args) > 0 && args[0].Get("code").Int() != 1 {
+				status = driver.SensorUnavailable
+			}
+			s.endLocation(id, stream)
+			s.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: id, Data: &driver.SensorReport{Generation: req.Generation, Grant: &driver.SensorGrant{Authorization: status}, End: true}})
+			return nil
+		})
+		s.location.streams = ensureLocationStreams(s.location.streams)
+		s.location.streams[id] = stream
+		geo.Call("getCurrentPosition", stream.success, stream.failure, locationOptions(req.Location))
+		return
+	}
+	if req.Command != driver.SensorLocate && req.Command != driver.SensorWatchLocation {
+		return
+	}
+	stream := &locationStream{req: req}
+	stream.success = js.FuncOf(func(_ js.Value, args []js.Value) any {
+		if len(args) > 0 {
+			s.deliverLocation(id, stream, args[0])
+		}
+		if req.Command == driver.SensorLocate {
+			s.endLocation(id, stream)
+		}
+		return nil
+	})
+	stream.failure = js.FuncOf(func(_ js.Value, args []js.Value) any {
+		code := "unavailable"
+		if len(args) > 0 && args[0].Get("code").Int() == 1 {
+			code = "not-allowed"
+		}
+		s.endLocation(id, stream)
+		s.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: id, Data: &driver.SensorReport{Generation: req.Generation, Error: code, End: true}})
+		return nil
+	})
+	s.location.streams = ensureLocationStreams(s.location.streams)
+	s.location.streams[id] = stream
+	if req.Command == driver.SensorLocate {
+		geo.Call("getCurrentPosition", stream.success, stream.failure, locationOptions(req.Location))
+	} else {
+		stream.watch = geo.Call("watchPosition", stream.success, stream.failure, locationOptions(req.Location)).Int()
+	}
+}
+
+func ensureLocationStreams(streams map[uint32]*locationStream) map[uint32]*locationStream {
+	if streams == nil {
+		streams = make(map[uint32]*locationStream)
+	}
+	return streams
+}
+
+func locationOptions(opts driver.LocationOptions) map[string]any {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	maxAge := opts.MaxAge
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	return map[string]any{"enableHighAccuracy": opts.Accuracy > 0 && opts.Accuracy <= 50, "timeout": timeout.Milliseconds(), "maximumAge": maxAge.Milliseconds()}
+}
+
+func (s *surface) locationPermission(done func(driver.SensorAuthorization)) {
+	permissions := js.Global().Get("navigator").Get("permissions")
+	if !permissions.Truthy() {
+		done(driver.SensorNotAsked)
+		return
+	}
+	result, ok := tryCall(permissions, "query", map[string]any{"name": "geolocation"})
+	if !ok {
+		done(driver.SensorNotAsked)
+		return
+	}
+	then(result, func(status js.Value) {
+		switch status.Get("state").String() {
+		case "granted":
+			done(driver.SensorGranted)
+		case "denied":
+			done(driver.SensorDenied)
+		default:
+			done(driver.SensorNotAsked)
+		}
+	}, func(js.Value) { done(driver.SensorNotAsked) })
+}
+
+func (s *surface) deliverLocation(id uint32, stream *locationStream, position js.Value) {
+	if s.location.streams[id] != stream {
+		return
+	}
+	coords := position.Get("coords")
+	fix := driver.LocationFix{Latitude: coords.Get("latitude").Float(), Longitude: coords.Get("longitude").Float(), Timestamp: time.UnixMilli(int64(position.Get("timestamp").Int()))}
+	fix.HorizontalAccuracy = locationNumber(coords.Get("accuracy"))
+	fix.Altitude = locationNumber(coords.Get("altitude"))
+	fix.VerticalAccuracy = locationNumber(coords.Get("altitudeAccuracy"))
+	fix.Speed = locationNumber(coords.Get("speed"))
+	fix.Course = locationNumber(coords.Get("heading"))
+	if stream.req.Command == driver.SensorLocate {
+		s.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: id, Data: &driver.SensorReport{Generation: stream.req.Generation, Location: &fix}})
+		return
+	}
+	if stream.packet.Offer(driver.SensorReport{Generation: stream.req.Generation, Location: &fix}) {
+		s.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: id, Data: &stream.packet})
+	}
+}
+
+func locationNumber(value js.Value) driver.SensorNumber {
+	if value.Type() != js.TypeNumber || math.IsNaN(value.Float()) || math.IsInf(value.Float(), 0) {
+		return driver.SensorNumber{}
+	}
+	return driver.SensorNumber{Value: value.Float(), Valid: true}
+}
+
+func (s *surface) endLocation(id uint32, stream *locationStream) {
+	if s.location.streams[id] != stream {
+		return
+	}
+	delete(s.location.streams, id)
+	if stream.watch != 0 {
+		js.Global().Get("navigator").Get("geolocation").Call("clearWatch", stream.watch)
+	}
+	stream.success.Release()
+	stream.failure.Release()
 }
 
 func (s *surface) motionPermission(ask bool, answer func(driver.SensorAuthorization)) {
