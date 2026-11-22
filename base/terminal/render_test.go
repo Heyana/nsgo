@@ -183,7 +183,7 @@ func TestTerminalCursorBlink(t *testing.T) {
 		for _, want := range []bool{false, true} {
 			app.WaitUntil(2*time.Second, func() bool {
 				img := app.Capture()
-				s := float32(img.Bounds().Dx()) / 320
+				s := float32(img.Bounds().Dx()) / float32(app.Find("id:term").Bounds().Size.Width)
 				x, y := ref.v.padX+ref.v.cellW/2, ref.v.padY+ref.v.cellH/2
 				c := imagecolor.NRGBAModel.Convert(img.At(int(x*s), int(y*s))).(imagecolor.NRGBA)
 				return (c.R > 100) == want
@@ -215,7 +215,7 @@ func TestGraphicsPixels(t *testing.T) {
 		}}
 	}, nsgotest.Size(240, 220))
 	img := app.Capture()
-	scale := float64(img.Bounds().Dx()) / 240
+	scale := float64(img.Bounds().Dx()) / float64(app.Find("id:graphics").Bounds().Size.Width)
 	white := func(x, y float64) {
 		t.Helper()
 		c := imagecolor.NRGBAModel.Convert(img.At(int(math.Round(x*scale)), int(math.Round(y*scale)))).(imagecolor.NRGBA)
@@ -269,7 +269,8 @@ func TestTerminalPaddingPixels(t *testing.T) {
 			})
 			app.Advance(30 * time.Millisecond)
 			img := app.Capture()
-			scale := float64(img.Bounds().Dx()) / 320
+			width := float64(app.Find("id:term").Bounds().Size.Width)
+			scale := float64(img.Bounds().Dx()) / width
 			check := func(x, y float64, red bool) {
 				t.Helper()
 				c := imagecolor.NRGBAModel.Convert(img.At(int(x*scale), int(y*scale))).(imagecolor.NRGBA)
@@ -283,11 +284,11 @@ func TestTerminalPaddingPixels(t *testing.T) {
 			}
 			check(2, 2, tc.top)
 			check(2, 80, tc.mode != PaddingBackground)
-			check(318, 80, tc.mode != PaddingBackground)
+			check(width-2, 80, tc.mode != PaddingBackground)
 			if tc.top {
 				// A single-colored edge must have no dark seams between
 				// fractional cell widths, including the outermost corners.
-				for x := 2; x < 318; x++ {
+				for x := 2; x < int(width)-2; x++ {
 					check(float64(x), 2, true)
 				}
 			}
@@ -305,7 +306,7 @@ func TestGraphicsAtlasPixels(t *testing.T) {
 		runes = append(runes, r)
 	}
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return core.Canvas{Style: core.Style{Width: core.Pct(100), Height: core.Pct(100)}, Draw: func(d *core.Drawing, size core.Size) {
+		return core.Canvas{TestID: "atlas", Style: core.Style{Width: core.Pct(100), Height: core.Pct(100)}, Draw: func(d *core.Drawing, size core.Size) {
 			d.SetFillColor(core.RGB(0)).FillRect(0, 0, float32(size.Width), float32(size.Height))
 			for i, r := range runes {
 				drawGraphics(d, r, 12+float32(i%16)*20.5, 12+float32(i/16)*30.5, 20.5, 30.5, float32(cx.Env().PixelRatio()), core.RGB(0xffffff))
@@ -313,7 +314,7 @@ func TestGraphicsAtlasPixels(t *testing.T) {
 		}}
 	}, nsgotest.Size(360, 370))
 	img := app.Capture()
-	scale := float64(img.Bounds().Dx()) / 360
+	scale := float64(img.Bounds().Dx()) / float64(app.Find("id:atlas").Bounds().Size.Width)
 	for _, point := range []struct {
 		x, y  float64
 		white bool

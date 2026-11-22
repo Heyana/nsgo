@@ -28,7 +28,6 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 - For formulas receiving source in chunks, use `formula.View.SourceFunc` with `Streaming` or `StreamingFunc` to hide unfinished recovery ink, and clear the flag at completion so remaining errors show; a TextView `RenderMath` callback can return that view ([text](https://nsgo.dev/docs/text.md)).
 - Let `diagram.View` follow its container's width; `RenderDiagram: diagram.RenderDiagram` fits a TextView's Mermaid blocks to their viewport. Wide flowcharts can turn down while labels keep their size ([text](https://nsgo.dev/docs/text.md)).
 - For terminal rendering, `Options.CursorBlink` enables the default blink; programs may override it. `View.MinimumContrast` adjusts ordinary text and `PaddingColor` takes `PaddingBackground`, `PaddingExtend` or `PaddingExtendAlways`; TSX uses `cursorBlink`, `minimumContrast` and `paddingColor` ([Terminal](https://nsgo.dev/docs/terminal.md)).
-
 - Use `ui.ShellTab.TextFunc` and `ui.TabShell.LabelFunc` for a changing tab title and bar name, and set `Edge` (`mobile.TabBarLeading`, `mobile.TabBarTrailing` or `mobile.TabBarAutomatic`, reading `core.Env.VerticalBarEdge`) on `mobile.TabBar` or `ui.TabShell` to place the bar vertically along an edge.
 - Set `tabBarBackground`, `tabBarIdle`, `tabBarSelected` and `tabBarIndicator` as Android `mobile.TabBar` palette roles. A custom palette uses `Accent` for selected content by default.
 
