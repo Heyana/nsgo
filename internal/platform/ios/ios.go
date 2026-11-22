@@ -246,9 +246,9 @@ type surface struct {
 	changes []stackChange
 	// history is how many entries back goes through (ItemHistory).
 	history int
-	// modals are those shown, oldest first; focused is the explicitly focused view, or tvOS focus engine's, and focusBack the one to give it back to as a modal goes.
-	modals             []*view
-	focused, focusBack *view
+	// modals are those shown, oldest first; topmostCaptures are input-capturing Topmost overlays shown, oldest first; focusScope is the active capture overlay or modal (on an Apple TV); focused is the explicitly focused view, or tvOS focus engine's, and focusBack the one to give it back to as a scope goes.
+	modals, topmostCaptures        []*view
+	focusScope, focused, focusBack *view
 
 	// What a batch touched, finished once its frames are set.
 	images, presenting []*view
@@ -1546,6 +1546,14 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemViewProps:
 			v.setProps(it.ViewProps)
 			p := it.ViewProps
+			if isTopmostCaptureProps(v.props) {
+				if !slices.Contains(s.topmostCaptures, v) {
+					v.focusBefore = s.focused
+					s.topmostCaptures = append(s.topmostCaptures, v)
+				}
+			} else if len(s.topmostCaptures) > 0 {
+				s.topmostCaptures = slices.DeleteFunc(s.topmostCaptures, func(o *view) bool { return o == v })
+			}
 			v.activation, v.handoff, v.area, v.selectable = p.PanActivation, p.PanScrollHandoff, p.SelectionArea, p.Selectable
 			if v.selColor != p.SelectionColor {
 				v.selColor = p.SelectionColor
@@ -2089,16 +2097,23 @@ func pressesBegan(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
 	if app != nil && app.engine != nil && len(app.keys) > 0 {
 		focus := app.focusKeyUse()
 		apple.ForEach(presses, func(press objc.ID) {
-			key := press.Send(sel("key"))
-			if key == 0 || consumed {
+			if consumed {
 				return
 			}
-			name, ok := keyNames[objc.Send[int](key, sel("keyCode"))]
-			if !ok {
-				name = strings.ToLower(apple.GoString(key.Send(sel("charactersIgnoringModifiers"))))
+			var name string
+			var flags uint
+			if key := press.Send(sel("key")); key != 0 {
+				var ok bool
+				name, ok = keyNames[objc.Send[int](key, sel("keyCode"))]
+				if !ok {
+					name = strings.ToLower(apple.GoString(key.Send(sel("charactersIgnoringModifiers"))))
+				}
+				flags = objc.Send[uint](key, sel("modifierFlags"))
+			} else if onTV() {
+				name = remoteArrowName(objc.Send[int](press, sel("type")))
 			}
 			if name != "" {
-				id, consumed = driver.FindKey(app.keys, apple.KeyNames(name, objc.Send[uint](key, sel("modifierFlags"))),
+				id, consumed = driver.FindKey(app.keys, apple.KeyNames(name, flags),
 					focus, false)
 			}
 		})

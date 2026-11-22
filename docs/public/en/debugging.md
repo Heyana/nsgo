@@ -174,12 +174,15 @@ go tool nsgo dev -layout=bounds,grid=4
 
 `-layout` starts the app with DevTools' layout audit over it, which outlines every view: its border box in blue, the inner edge of its padding in green and the outer edge of its margin in orange, each cut where a scroll view or a view that clips hides it. `grid` draws a grid of 8 points, and `grid=N` one of N points, at least 4. Give the value after `=`: the flag alone means `bounds`.
 
-A readout in the bottom corner shows the window's size in points, with buttons that turn the boxes, the grid and the ruler on and off. While the ruler is on, presses pick two points instead of reaching the app, and the readout shows how far apart they are across and down; a third press starts again.
+A readout in the bottom corner shows the window's size in points, with buttons that turn the boxes, the grid and the ruler on and off. On Apple TV and other remote-only devices, focus reaches the readout's buttons so you can toggle them with the remote without leaving the app. While the ruler is on, presses pick two points instead of reaching the app, and the readout shows how far apart they are across and down; a third press starts again. On Apple TV or with a keyboard, directional arrows (or swiping the Siri Remote touchpad) move a crosshair across the screen and Select, Return or Space picks points, updating the distance live until the second point locks it.
 
 | Key | Effect |
 | --- | --- |
 | `Cmd+Option+Shift+L`, `Ctrl+Alt+Shift+L` | Shows or hides the audit, in a build with `-layout` |
-| `Esc`, back | Stops measuring |
+| Arrows, remote D-pad / swipe | Moves the ruler's crosshair by the grid step (8 pt by default) |
+| `Shift` + Arrows | Moves the ruler's crosshair by 1 pt |
+| Select, `Return`, `Space` | Picks the crosshair's point while measuring |
+| `Esc`, back, Menu | Stops measuring |
 
 If your app binds the same key, the app's binding wins. Without the key, as on a phone, run with `-devtools` too and show and hide the audit with DevTools' **Layout**; hide it to reach a control under the readout. The boxes follow transforms, layout animations, transitions and sticky offsets, and follow a scroll a frame behind it. Redrawing them costs every update time, so measure speed without them.
 

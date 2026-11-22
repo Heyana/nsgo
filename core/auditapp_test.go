@@ -12,10 +12,11 @@ import (
 
 // The layout audit's border and grid colors, as core draws them.
 var (
-	auditBorder = core.RGBA(0x3b82f6, 0.9)
-	auditMargin = core.RGBA(0xf97316, 0.8)
-	auditInside = core.RGBA(0x22c55e, 0.8)
-	auditGrid   = core.RGBA(0x269182, 0.16)
+	auditBorder      = core.RGBA(0x3b82f6, 0.9)
+	auditMargin      = core.RGBA(0xf97316, 0.8)
+	auditInside      = core.RGBA(0x22c55e, 0.8)
+	auditGrid        = core.RGBA(0x269182, 0.16)
+	auditCursorGuide = core.RGBA(0xd8508a, 0.35)
 )
 
 // auditSample is an app of a padded column with a button, an input and a popover that closes on presses outside it, which log what the app hears, under DevTools' overlay with the layout audit starting as layout says.
@@ -279,5 +280,203 @@ func TestDevToolsHearNoLayoutAuditWithoutTheOverlay(t *testing.T) {
 	app.Settle()
 	if !slices.Equal(shown, []bool{false}) {
 		t.Errorf("DevTools heard %v, want the audit hidden", shown)
+	}
+}
+
+func TestLayoutAuditReadoutTakesFocusOnTVAndSkipsTabOnDesktop(t *testing.T) {
+	var desktopLog []string
+	desktop := nsgotest.Start(t, auditSample(&desktopLog, core.LayoutAudit{Bounds: true}),
+		nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+	for _, id := range []string{"nsgo-layout-bounds", "nsgo-layout-grid", "nsgo-layout-measure"} {
+		if !desktop.Find("id:" + id).Props.NoFocus {
+			t.Errorf("desktop: %s is focusable, want out of Tab order", id)
+		}
+	}
+	desktop.Key("Tab")
+	desktop.Key("Tab")
+	desktop.Key("Tab")
+	for _, id := range []string{"nsgo-layout-bounds", "nsgo-layout-grid", "nsgo-layout-measure"} {
+		if desktop.Find("id:" + id).Focused {
+			t.Errorf("desktop Tab reached %s", id)
+		}
+	}
+
+	var tvLog []string
+	tv := nsgotest.Start(t, auditSample(&tvLog, core.LayoutAudit{Bounds: true}),
+		nsgotest.Environment(core.Environment{OS: core.OSIOS, Idiom: core.IdiomTV}))
+	for _, id := range []string{"nsgo-layout-bounds", "nsgo-layout-grid", "nsgo-layout-measure"} {
+		if tv.Find("id:" + id).Props.NoFocus {
+			t.Errorf("tvOS: %s is NoFocus, want focusable from the remote", id)
+		}
+	}
+	tv.Focus("id:nsgo-layout-bounds")
+	if !tv.Find("id:nsgo-layout-bounds").Focused {
+		t.Fatal("tvOS focus did not reach nsgo-layout-bounds")
+	}
+	if tv.Find("id:nsgo-layout-bounds").Style.Outline.Width <= 0 {
+		t.Error("focused readout button shows no focus outline")
+	}
+	tv.Key("Return")
+	if strokes(tv.Find("id:nsgo-layout-canvas").Ops, auditBorder) != 0 {
+		t.Error("Return on focused nsgo-layout-bounds did not hide boxes")
+	}
+	tv.Focus("id:nsgo-layout-grid")
+	tv.Key("Space")
+	if strokes(tv.Find("id:nsgo-layout-canvas").Ops, auditGrid) != 1 {
+		t.Error("Space on focused nsgo-layout-grid did not show grid")
+	}
+}
+
+func TestLayoutAuditRemoteRulerMeasuresAndRestoresFocus(t *testing.T) {
+	var log []string
+	app := nsgotest.Start(t, auditSample(&log, core.LayoutAudit{Bounds: true}),
+		nsgotest.Size(400, 400),
+		nsgotest.Environment(core.Environment{OS: core.OSIOS, Idiom: core.IdiomTV}))
+
+	app.Focus("id:nsgo-layout-measure")
+	app.Key("Return")
+	if !app.Exists("id:nsgo-layout-ruler") {
+		t.Fatal("activating nsgo-layout-measure did not open the ruler")
+	}
+	if !app.Find("id:nsgo-layout-ruler").Focused {
+		t.Fatal("opening the ruler on tvOS did not focus nsgo-layout-ruler")
+	}
+	for _, id := range []string{"nsgo-layout-bounds", "nsgo-layout-grid", "nsgo-layout-measure"} {
+		if !app.Find("id:" + id).Props.NoFocus {
+			t.Errorf("while measuring on tvOS, %s should not steal focus from the crosshair", id)
+		}
+	}
+	if strokes(app.Find("id:nsgo-layout-canvas").Ops, auditCursorGuide) == 0 {
+		t.Fatal("the remote ruler drew no crosshair guides")
+	}
+
+	// Move from center (200, 150) by +16 across, +8 down to (216, 158) and pick the first point with Select (Press at origin).
+	app.Key("Right")
+	app.Key("Right")
+	app.Key("Down")
+	app.Press("id:nsgo-layout-ruler")
+
+	// Move +26 across (3×8 + 2×1 fine) and +15 down (2×8 - 1 fine); readout updates live before pinning the second point.
+	app.Key("Right")
+	app.Key("Right")
+	app.Key("Right")
+	app.Key("Shift+Right")
+	app.Key("Shift+Right")
+	app.Key("Down")
+	app.Key("Down")
+	app.Key("Shift+Up")
+	if got := app.Find("id:nsgo-layout-measurement").Text; got != "↔ 26  ↕ 15" {
+		t.Fatalf("live measurement = %q, want %q", got, "↔ 26  ↕ 15")
+	}
+
+	// Pin the second point with Return; moving the crosshair afterward keeps the locked measurement.
+	app.Key("Return")
+	app.Key("Right")
+	if got := app.Find("id:nsgo-layout-measurement").Text; got != "↔ 26  ↕ 15" {
+		t.Fatalf("locked measurement = %q, want %q", got, "↔ 26  ↕ 15")
+	}
+
+	// A third pick (Space) starts a fresh measurement, and swiping/dragging moves the crosshair smoothly.
+	app.Key("Space")
+	if got := app.Find("id:nsgo-layout-measurement").Text; got != "↔ 0  ↕ 0" {
+		t.Fatalf("restarted measurement = %q, want %q", got, "↔ 0  ↕ 0")
+	}
+	app.Drag("id:nsgo-layout-ruler", driver.Point{X: 35, Y: 20})
+	if got := app.Find("id:nsgo-layout-measurement").Text; got != "↔ 35  ↕ 20" {
+		t.Fatalf("after pan measurement = %q, want %q", got, "↔ 35  ↕ 20")
+	}
+
+	if len(log) != 0 || !app.Exists("id:popover") {
+		t.Fatalf("log = %q, popover shown %v: remote ruler leaked input to the app", log, app.Exists("id:popover"))
+	}
+
+	// Menu (Back) exits the ruler, clears the measurement and crosshair, and restores focus to the measure button.
+	app.Back()
+	if app.Exists("id:nsgo-layout-ruler") || app.Exists("id:nsgo-layout-measurement") {
+		t.Fatal("Back did not leave the ruler and clear its measurement")
+	}
+	if strokes(app.Find("id:nsgo-layout-canvas").Ops, auditCursorGuide) != 0 {
+		t.Error("leaving the ruler kept crosshair guides drawn")
+	}
+	if !app.Find("id:nsgo-layout-measure").Focused {
+		t.Error("leaving the ruler did not restore focus to nsgo-layout-measure")
+	}
+
+	// Re-entering from the refocused measure button and leaving with Escape also restores focus without leaking Escape to the app.
+	app.Key("Return")
+	if !app.Find("id:nsgo-layout-ruler").Focused {
+		t.Fatal("re-entering the ruler did not focus nsgo-layout-ruler")
+	}
+	app.Key("Escape")
+	if len(log) != 0 || app.Exists("id:nsgo-layout-ruler") || !app.Find("id:nsgo-layout-measure").Focused {
+		t.Fatalf("Escape: log=%q, ruler=%v, measureFocused=%v", log, app.Exists("id:nsgo-layout-ruler"), app.Find("id:nsgo-layout-measure").Focused)
+	}
+}
+
+func TestLayoutAuditRemoteRulerFollowsGridStepAndWorksOverModal(t *testing.T) {
+	var log []string
+	var modal *core.Signal[bool]
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		modal = core.NewSignal(cx, true)
+		return core.Group{
+			core.Show{When: modal.Get, Then: func(cx *core.Scope) core.Node {
+				return core.Modal{TestID: "dialog", OnRequestClose: func(string) { log = append(log, "close"); modal.Set(false) },
+					Children: []core.Node{core.View{TestID: "modal-btn", Style: core.Style{Width: core.Pt(80), Height: core.Pt(30)}, OnPress: func(core.PressEvent) { log = append(log, "modal-press") }}}}
+			}},
+			core.UpdateHighlights{NoUpdates: true, Layout: core.LayoutAudit{Bounds: true, Grid: 12}},
+		}
+	}, nsgotest.Size(400, 300), nsgotest.Environment(core.Environment{OS: core.OSIOS, Idiom: core.IdiomTV}))
+
+	app.Focus("id:nsgo-layout-measure")
+	app.Key("Return")
+	if !app.Find("id:nsgo-layout-ruler").Focused {
+		t.Fatal("ruler did not take focus over open modal")
+	}
+	app.Key("Return")
+	app.Key("Right")
+	app.Key("Down")
+	app.Key("Down")
+	app.Key("Return")
+	if got := app.Find("id:nsgo-layout-measurement").Text; got != "↔ 12  ↕ 24" {
+		t.Fatalf("grid-stepped measurement = %q, want %q", got, "↔ 12  ↕ 24")
+	}
+	app.Back()
+	if app.Exists("id:nsgo-layout-ruler") || !app.Exists("id:dialog") || len(log) != 0 {
+		t.Fatalf("Back should close the ruler before the modal: ruler=%v dialog=%v log=%q", app.Exists("id:nsgo-layout-ruler"), app.Exists("id:dialog"), log)
+	}
+	app.Back()
+	if !slices.Equal(log, []string{"close"}) {
+		t.Errorf("second Back log = %q, want [close]", log)
+	}
+}
+
+func TestLayoutAuditKeyboardCrosshairOnDesktop(t *testing.T) {
+	var log []string
+	app := nsgotest.Start(t, auditSample(&log, core.LayoutAudit{Bounds: true}),
+		nsgotest.Size(400, 300),
+		nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+
+	app.Press("id:nsgo-layout-measure")
+	if strokes(app.Find("id:nsgo-layout-canvas").Ops, auditCursorGuide) != 0 {
+		t.Fatal("desktop pointer ruler drew crosshair guides before any arrow key")
+	}
+	app.Key("Right")
+	if strokes(app.Find("id:nsgo-layout-canvas").Ops, auditCursorGuide) == 0 {
+		t.Fatal("arrow key did not activate the crosshair on desktop")
+	}
+	app.Key("Return")
+	app.Key("Down")
+	app.Key("Return")
+	if got := app.Find("id:nsgo-layout-measurement").Text; got != "↔ 0  ↕ 8" {
+		t.Fatalf("keyboard measurement on desktop = %q, want %q", got, "↔ 0  ↕ 8")
+	}
+	// Switching back to pointer presses clears the crosshair and picks exact pointer points.
+	app.PressAt("id:nsgo-layout-ruler", driver.Point{X: 10, Y: 20})
+	app.PressAt("id:nsgo-layout-ruler", driver.Point{X: 60, Y: 50})
+	if strokes(app.Find("id:nsgo-layout-canvas").Ops, auditCursorGuide) != 0 {
+		t.Error("pointer press kept the keyboard crosshair active")
+	}
+	if got := app.Find("id:nsgo-layout-measurement").Text; got != "↔ 50  ↕ 30" {
+		t.Fatalf("pointer measurement = %q, want %q", got, "↔ 50  ↕ 30")
 	}
 }

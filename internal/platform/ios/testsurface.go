@@ -1061,7 +1061,7 @@ func (t *testSurface) keyDevice(w objc.ID, key string) error {
 		if !consumed && onTV() && !t.s.editing() {
 			switch parsed {
 			case "escape":
-				if t.s.history > 0 || t.s.topModal() != nil {
+				if tvMenuGoesBack(t.s.history, t.s.topModal() != nil, t.s.topmostCapture() != nil) {
 					t.s.engine.Dispatch(driver.Event{Kind: driver.EventBack})
 				}
 			}

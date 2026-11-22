@@ -262,3 +262,71 @@ func TestAuditGridStartsAtItsSmallestStep(t *testing.T) {
 		}
 	}
 }
+
+func TestAuditCursorStepMovementAndDisplay(t *testing.T) {
+	cx := testRoot(RootOptions{})
+	a := newLayoutAudit(cx, LayoutAudit{Bounds: true})
+	vp := Size{Width: 100, Height: 60}
+	if got := a.cursorStep(false); got != defaultAuditGrid {
+		t.Fatalf("default step = %v, want %v", got, defaultAuditGrid)
+	}
+	if got := a.cursorStep(true); got != 1 {
+		t.Fatalf("fine step = %v, want 1", got)
+	}
+	a.grid.Set(12)
+	if got := a.cursorStep(false); got != 12 {
+		t.Fatalf("grid step = %v, want 12", got)
+	}
+	// First move activates from viewport center (50, 30).
+	a.moveCursor(1, 0, false, vp)
+	if got := a.cursor.GetUntracked(); !got.active || got.at != (Point{X: 62, Y: 30}) {
+		t.Fatalf("after right move: %+v, want active at (62, 30)", got)
+	}
+	// Fine step moves 1 point and clamping keeps it inside viewport.
+	a.moveCursor(0, -1, true, vp)
+	if got := a.cursor.GetUntracked().at; got != (Point{X: 62, Y: 29}) {
+		t.Fatalf("after fine up: %v, want (62, 29)", got)
+	}
+	a.moveCursor(100, -100, false, vp)
+	if got := a.cursor.GetUntracked().at; got != (Point{X: 100, Y: 0}) {
+		t.Fatalf("clamped = %v, want (100, 0)", got)
+	}
+	// Displayed measurement previews live span while points == 1 and cursor is active.
+	a.pickCursor(vp)
+	a.moveCursor(-1, 1, false, vp)
+	dm := displayedMeasurement(a.m.GetUntracked(), a.cursor.GetUntracked())
+	if dm.points != 2 || dm.horizontal() != 12 || dm.vertical() != 12 {
+		t.Fatalf("live displayedMeasurement = %+v (dx=%v dy=%v), want 12×12", dm, dm.horizontal(), dm.vertical())
+	}
+	// Pinning the second point locks the measurement even if the cursor moves later.
+	a.pickCursor(vp)
+	a.moveCursor(-1, 0, false, vp)
+	dm = displayedMeasurement(a.m.GetUntracked(), a.cursor.GetUntracked())
+	if dm.points != 2 || dm.horizontal() != 12 || dm.vertical() != 12 {
+		t.Fatalf("locked displayedMeasurement = %+v (dx=%v dy=%v), want 12×12", dm, dm.horizontal(), dm.vertical())
+	}
+}
+
+func TestAuditCursorClampsOnResize(t *testing.T) {
+	h := newHost(t, Size{Width: 200, Height: 300}, func(cx *Scope) Node {
+		return Group{View{Style: Style{FlexGrow: 1}}, audit}
+	})
+	h.tree.SetEnvironment(Environment{OS: OSIOS, Idiom: IdiomTV})
+	h.commit()
+	a := h.tree.highlights.audit
+	a.toggleRuler()
+	h.commit()
+	if c := a.cursor.GetUntracked(); !c.active || c.at != (Point{X: 100, Y: 150}) {
+		t.Fatalf("initial remote cursor = %+v, want active at (100, 150)", c)
+	}
+	a.moveCursor(12, 18, false, Size{Width: 200, Height: 300})
+	h.commit()
+	if got := a.cursor.GetUntracked().at; got != (Point{X: 196, Y: 294}) {
+		t.Fatalf("moved cursor = %v, want (196, 294)", got)
+	}
+	h.tree.Resize(Size{Width: 120, Height: 80}, Geometry{})
+	h.commit()
+	if got := a.cursor.GetUntracked(); !got.active || got.at != (Point{X: 120, Y: 80}) {
+		t.Fatalf("resized cursor = %+v, want clamped to (120, 80)", got)
+	}
+}

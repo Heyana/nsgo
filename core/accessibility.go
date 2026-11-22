@@ -144,6 +144,7 @@ func (n *node) sentProps() driver.ViewProps {
 	p.Appearance = n.appearance
 	if n.hoist != nil {
 		p.TabAfter = n.hoist.tabAfter
+		p.Topmost = n.hoist.topmost()
 	}
 	if n.input != nil && n.input.config.Disabled {
 		p.Disabled = true

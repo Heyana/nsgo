@@ -1084,7 +1084,7 @@ func (a *App) canFocus(v *View) bool {
 			shown := a.shown()
 			for i := len(shown) - 1; i >= 0; i-- {
 				if shown[i].Kind == KindModal {
-					return v.within(shown[i])
+					return v.within(shown[i]) || v.upTo(func(u *View) bool { return u.Props.Topmost }) != nil
 				}
 			}
 			return true

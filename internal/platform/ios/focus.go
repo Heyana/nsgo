@@ -13,20 +13,8 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-// Focus on an Apple TV, as the desktops' keyboard focus: views that take
-// presses or are Focusable are the focus engine's items with the text
-// fields, unless disabled, hidden, NoFocus or under a newer modal. The
-// remote moves the focus, its select button presses the focused view and
-// holding it long-presses, and its Menu button goes back where the app
-// has somewhere to go back from, else leaves the app as tvOS's apps do.
-// A modal takes the focus as it comes and gives it back as it goes.
+// Focus on an Apple TV, as the desktops' keyboard focus: views that take presses or are Focusable are the focus engine's items with the text fields, unless disabled, hidden, NoFocus or under a newer modal or input-capturing Topmost overlay. The remote moves the focus, its select button presses the focused view and holding it long-presses, and its Menu button goes back where the app has somewhere to go back from, else leaves the app as tvOS's apps do. A modal or capture overlay takes the focus as it comes and gives it back as it goes.
 // iPhones and iPads use explicit first-responder focus for hardware keyboards; touches continue to press controls without focusing them.
-
-// UIPressType of the remote's buttons.
-const (
-	pressSelect = 4
-	pressMenu   = 5
-)
 
 // onTV reports whether the app runs on an Apple TV, whose UIKit lacks
 // what only touchscreens have and moves a focus instead.
@@ -203,10 +191,21 @@ func (v *view) focusable() bool {
 		v.kind == driver.KindInput || v.native.Send(sel("window")) == 0 || hiddenWithin(v.native) {
 		return false
 	}
-	if top := v.surface.topModal(); top != nil {
-		return objc.Send[bool](v.native, sel("isDescendantOfView:"), top.native)
+	capture := v.surface.topmostCapture()
+	inCapture := capture != nil && objc.Send[bool](v.native, sel("isDescendantOfView:"), capture.native)
+	top := v.surface.topModal()
+	inModal := top != nil && objc.Send[bool](v.native, sel("isDescendantOfView:"), top.native)
+	return tvFocusAllowed(inCapture, capture != nil, inModal, top != nil, v.inTopmostOverlay())
+}
+
+// inTopmostOverlay reports whether v lies inside a Topmost overlay.
+func (v *view) inTopmostOverlay() bool {
+	for n := v.native; n != 0 && n != v.surface.native; n = n.Send(selSuperview) {
+		if o := views[n]; o != nil && o.props.Topmost {
+			return true
+		}
 	}
-	return true
+	return false
 }
 
 // focusView moves tvOS's focus engine, or the first responder on iPhone and iPad. A plain UIView opens no software keyboard.
@@ -243,17 +242,41 @@ func (s *surface) topModal() *view {
 	return nil
 }
 
-// updateModals follows the modals a batch showed and closed, moving the
-// focus into the newest as it comes and back to what had it as it goes,
-// and focuses the views a batch brought when nothing has the focus.
+// topmostCapture is the newest visible input-capturing Topmost overlay shown in
+// the surface, such as the layout audit's ruler.
+func (s *surface) topmostCapture() *view {
+	for i := len(s.topmostCaptures) - 1; i >= 0; i-- {
+		if v := s.topmostCaptures[i]; s.views[v.id] == v && v.native.Send(sel("window")) != 0 &&
+			!hiddenWithin(v.native) && isTopmostCaptureProps(v.props) {
+			return v
+		}
+	}
+	return nil
+}
+
+// topFocusScope is the newest active capture overlay, else the newest modal.
+func (s *surface) topFocusScope() *view {
+	if c := s.topmostCapture(); c != nil {
+		return c
+	}
+	return s.topModal()
+}
+
+// updateModals follows the modals and capture overlays a batch showed and
+// closed, moving the focus into the newest as it comes and back to what had it
+// as it goes, and focuses the views a batch brought when nothing has the focus.
 func (s *surface) updateModals() {
 	// The newest modal as the last batch left them, which may be gone.
 	var top *view
 	if n := len(s.modals); n > 0 {
 		top = s.modals[n-1]
 	}
+	prev := s.focusScope
 	s.modals = slices.DeleteFunc(s.modals, func(v *view) bool {
 		return s.views[v.id] != v || v.native.Send(sel("window")) == 0
+	})
+	s.topmostCaptures = slices.DeleteFunc(s.topmostCaptures, func(v *view) bool {
+		return s.views[v.id] != v || !isTopmostCaptureProps(v.props)
 	})
 	for _, v := range s.presenting {
 		if s.views[v.id] == v && v.sheet == nil && !slices.Contains(s.modals, v) {
@@ -271,10 +294,12 @@ func (s *surface) updateModals() {
 		}
 		return
 	}
-	switch now := s.topModal(); {
-	case now != top:
-		if top != nil && !slices.Contains(s.modals, top) {
-			s.focusBack = top.focusBefore
+	now := s.topFocusScope()
+	s.focusScope = now
+	switch {
+	case now != prev:
+		if prev != nil && !slices.Contains(s.modals, prev) && !slices.Contains(s.topmostCaptures, prev) {
+			s.focusBack = prev.focusBefore
 		}
 		s.refocus(true)
 	case s.focused == nil || s.views[s.focused.id] != s.focused:
@@ -308,10 +333,10 @@ func (s *surface) refocus(moving bool) {
 }
 
 // preferredFocus is where the focus goes when the controller's view asks:
-// into the newest modal, back to what had it before one, else UIKit's
-// choice.
+// into the newest capture overlay or modal, back to what had it before one,
+// else UIKit's choice.
 func (s *surface) preferredFocus() objc.ID {
-	if top := s.topModal(); top != nil {
+	if top := s.topFocusScope(); top != nil {
 		return top.native
 	}
 	if b := s.focusBack; b != nil && s.views[b.id] == b && b.focusable() {
@@ -333,7 +358,7 @@ func controllerPreferredFocus(self objc.ID, cmd objc.SEL) objc.ID {
 
 // menuGoesBack reports whether the remote's Menu button in presses goes
 // back in s, rather than leaving the app: a screen is above another or a
-// modal is open (ItemHistory), or the focus is in a modal.
+// modal is open (ItemHistory), or the focus is in a modal or capture overlay.
 func (s *surface) menuGoesBack(presses objc.ID) bool {
-	return onTV() && hasPress(presses, pressMenu) && (s.history > 0 || s.topModal() != nil)
+	return onTV() && hasPress(presses, pressMenu) && tvMenuGoesBack(s.history, s.topModal() != nil, s.topmostCapture() != nil)
 }

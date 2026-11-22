@@ -1057,6 +1057,8 @@ type ViewProps struct {
 	// take it; the toolkits ordering it by their own trees (AppKit's key
 	// view loop, the browser's DOM) leave the overlay where it is.
 	TabAfter NodeID
+	// Topmost marks a Topmost overlay hoisted above modals on its host.
+	Topmost bool
 	// Appearance is the one its subtree forces (Scope.SetSubtreeAppearance),
 	// for the platform's views in it; AppearanceSystem follows the window.
 	Appearance Appearance

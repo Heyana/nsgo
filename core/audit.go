@@ -12,12 +12,15 @@ import (
 
 // The layout audit follows mygo-layout-audit (https://github.com/knothhe/mygo-layout-audit, MIT): its colors, its grid and its ruler.
 var (
-	auditMargin  = RGBA(0xf97316, 0.8)
-	auditContent = RGBA(0x22c55e, 0.8)
-	auditBorder  = RGBA(0x3b82f6, 0.9)
-	auditGrid    = RGBA(0x269182, 0.16)
-	auditRuler   = RGB(0xd8508a)
-	auditText    = RGB(0xf2f2f2)
+	auditMargin      = RGBA(0xf97316, 0.8)
+	auditContent     = RGBA(0x22c55e, 0.8)
+	auditBorder      = RGBA(0x3b82f6, 0.9)
+	auditGrid        = RGBA(0x269182, 0.16)
+	auditRuler       = RGB(0xd8508a)
+	auditCursorGuide = RGBA(0xd8508a, 0.35)
+	auditCursorHalo  = RGBA(0xffffff, 0.9)
+	auditText        = RGB(0xf2f2f2)
+	auditFocusStyle  = &Style{OutlineWidth: 2, OutlineColor: auditText, OutlineOffset: 1}
 )
 
 // auditKey shows and hides a layout audit that started showing: a chord apps seldom bind, as the app's newest binding of a key wins over it, unlike Mod+Shift+L, which NSGo's editor and gallery bind.
@@ -35,7 +38,7 @@ type LayoutAudit struct {
 	Grid   Points
 }
 
-// layoutAudit is DevTools' layout audit, on their overlay (UpdateHighlights). It draws every view's border, padding and margin boxes as DevTools read them (devBox), each clipped where its scroll views and clipping views cut it, a grid and a two-point ruler, with a readout in the bottom start corner inside the safe area: buttons for the boxes, the grid and the ruler, the surface's size and the measurement. nsgo dev -layout shows it, auditKey shows and hides it then, and DevTools do (devtools.Surface.Layout). Its boxes and grid take no pointer; the ruler takes the presses while it measures, so none reach the app, and Escape and back leave it before the app hears them. Resizing the surface clears the ruler's points. It is hidden from assistive technology and out of the Tab order, and says no words: only numbers in points and icons.
+// layoutAudit is DevTools' layout audit, on their overlay (UpdateHighlights). It draws every view's border, padding and margin boxes as DevTools read them (devBox), each clipped where its scroll views and clipping views cut it, a grid and a two-point ruler, with a readout in the bottom start corner inside the safe area: buttons for the boxes, the grid and the ruler, the surface's size and the measurement. nsgo dev -layout shows it, auditKey shows and hides it then, and DevTools do (devtools.Surface.Layout). Its boxes and grid take no pointer; the ruler takes the presses while it measures, so none reach the app, and Escape and back leave it before the app hears them. Where there is no pointer, as on an Apple TV, the readout's buttons take focus, and the ruler shows a crosshair moved by directional keys or a remote swipe and picked by Select, Enter or Space. Resizing the surface clears the ruler's points. It is hidden from assistive technology, stays out of the Tab order where a pointer is present, and says no words: only numbers in points and icons.
 type layoutAudit struct {
 	owner                *Scope
 	shown, bounds, ruler *Signal[bool]
@@ -43,6 +46,11 @@ type layoutAudit struct {
 	grid *Signal[Points]
 	step Points
 	m    *Signal[measurement]
+	// cursor is the remote- or keyboard-driven crosshair while the ruler measures.
+	cursor *Signal[rulerCursor]
+	// measureBtn is the non-measuring readout's ruler button, refocused when leaving the ruler in remote mode.
+	measureBtn   *Ref
+	restoreFocus bool
 	// frames changes after each commit that changed the boxes, while a drawing reads it (bumpAudit).
 	frames *Signal[uint64]
 	// watch hears whether the audit shows, for DevTools (devtools.Surface.WatchLayout).
@@ -59,7 +67,8 @@ func newLayoutAudit(cx *Scope, l LayoutAudit) *layoutAudit {
 		grid = max(l.Grid, minAuditGrid)
 	}
 	a := &layoutAudit{owner: cx, shown: NewSignal(cx, l.Bounds || grid > 0), bounds: NewSignal(cx, l.Bounds), ruler: NewSignal(cx, false),
-		grid: NewSignal(cx, grid), step: defaultAuditGrid, m: NewSignal(cx, measurement{}), frames: NewSignal(cx, uint64(0))}
+		grid: NewSignal(cx, grid), step: defaultAuditGrid, m: NewSignal(cx, measurement{}), cursor: NewSignal(cx, rulerCursor{}),
+		measureBtn: new(Ref), frames: NewSignal(cx, uint64(0))}
 	if grid > 0 {
 		a.step = grid
 	}
@@ -242,6 +251,79 @@ func (m measurement) pick(p Point, viewport Size) measurement {
 	return measurement{start: p, end: p, points: 1}
 }
 
+// rulerCursor is the remote- or keyboard-driven crosshair while the ruler measures.
+type rulerCursor struct {
+	at     Point
+	active bool
+}
+
+// centerPoint returns the center of size rounded to whole points.
+func centerPoint(size Size) Point {
+	return Point{
+		X: Points(math.Round(float64(size.Width / 2))),
+		Y: Points(math.Round(float64(size.Height / 2))),
+	}
+}
+
+// clampPoint keeps p within [0, size.Width] × [0, size.Height].
+func clampPoint(p Point, size Size) Point {
+	if p.X < 0 {
+		p.X = 0
+	} else if p.X > size.Width {
+		p.X = size.Width
+	}
+	if p.Y < 0 {
+		p.Y = 0
+	} else if p.Y > size.Height {
+		p.Y = size.Height
+	}
+	return p
+}
+
+// displayedMeasurement is the measurement shown on the canvas and readout: a completed two-point measurement, or while the crosshair is active after pinning the first point, the live span from start to the crosshair.
+func displayedMeasurement(m measurement, c rulerCursor) measurement {
+	if m.points == 1 && c.active {
+		return measurement{start: m.start, end: c.at, points: 2}
+	}
+	return m
+}
+
+// cursorStep is how far a directional key moves the crosshair: 1 point when fine, else the active grid's step, else defaultAuditGrid.
+func (a *layoutAudit) cursorStep(fine bool) Points {
+	if fine {
+		return 1
+	}
+	if g := a.grid.GetUntracked(); g > 0 {
+		return g
+	}
+	return defaultAuditGrid
+}
+
+// moveCursor moves the crosshair by (dx, dy) steps inside viewport, activating it from the last picked point or the viewport's center if it was inactive.
+func (a *layoutAudit) moveCursor(dx, dy Points, fine bool, viewport Size) {
+	step := a.cursorStep(fine)
+	c := a.cursor.GetUntracked()
+	at := c.at
+	if !c.active {
+		if m := a.m.GetUntracked(); m.points > 0 {
+			at = m.end
+		} else {
+			at = centerPoint(viewport)
+		}
+	}
+	next := clampPoint(Point{X: at.X + dx*step, Y: at.Y + dy*step}, viewport)
+	a.cursor.Set(rulerCursor{at: next, active: true})
+}
+
+// pickCursor picks the active crosshair's point.
+func (a *layoutAudit) pickCursor(viewport Size) {
+	c := a.cursor.GetUntracked()
+	if !c.active {
+		return
+	}
+	a.m.Set(a.m.GetUntracked().pick(c.at, viewport))
+}
+
 var auditCover = Style{Position: Absolute, Top: Pt(0), Left: Pt(0), Width: Pct(100), Height: Pct(100)}
 
 // auditHidden hides a view and what it holds from assistive technology.
@@ -255,6 +337,9 @@ func (t *Tree) auditLayer(a *layoutAudit) Node {
 			size := cx.Env().Window()
 			if seen != (Size{}) && size != seen {
 				a.m.Set(measurement{})
+				if c := a.cursor.GetUntracked(); c.active {
+					a.cursor.Set(rulerCursor{at: clampPoint(c.at, size), active: true})
+				}
 			}
 			seen = size
 		})
@@ -267,7 +352,7 @@ func (t *Tree) auditLayer(a *layoutAudit) Node {
 			} else {
 				a.stopTicking()
 			}
-			paintAudit(d, a.boxes, size, cx.Env().PixelRatio(), a.grid.Get(), a.m.Get())
+			paintAudit(d, a.boxes, size, cx.Env().PixelRatio(), a.grid.Get(), a.m.Get(), a.cursor.Get())
 		}
 		return View{TestID: "nsgo-layout-audit", PointerEvents: PointerEventsBoxNone, AccessibilityElementsHidden: auditHidden, Style: auditCover, Children: []Node{
 			Canvas{TestID: "nsgo-layout-canvas", Style: Style{Position: Absolute, Top: Pt(0), Left: Pt(0), Width: Pct(100), Height: Pct(100),
@@ -277,31 +362,109 @@ func (t *Tree) auditLayer(a *layoutAudit) Node {
 	}}
 }
 
-// measuring is the ruler's overlay: what takes the presses that pick its points, under the readout. Escape and back leave it.
+// measuring is the ruler's overlay: what takes the presses that pick its points, under the readout. Escape and back leave it; directional keys and (where there is no pointer) a remote pan move a crosshair and Select, Enter or Space pick its point.
 func (a *layoutAudit) measuring(cx *Scope) Node {
+	viewport := func() Size { return Untracked(cx, cx.Env().Window) }
+	remote := func() bool { return cx.Env().Pointer() == PointerNone }
+	rulerRef := new(Ref)
+	cx.Effect(func() {
+		if remote() {
+			if !a.cursor.GetUntracked().active {
+				a.cursor.Set(rulerCursor{at: centerPoint(viewport()), active: true})
+			}
+			cx.Post(func() {
+				if a.ruler.GetUntracked() {
+					rulerRef.Focus()
+				}
+			})
+		}
+	})
+	move := func(dx, dy Points, fine bool) func() {
+		return func() { a.moveCursor(dx, dy, fine, viewport()) }
+	}
 	cx.OnKeyWith("escape", KeyOptions{When: KeyAlways}, a.leaveRuler)
+	for _, dir := range []struct {
+		key    string
+		dx, dy Points
+	}{
+		{"left", -1, 0}, {"right", 1, 0}, {"up", 0, -1}, {"down", 0, 1},
+	} {
+		cx.OnKeyWith(dir.key, KeyOptions{When: KeyAlways, Repeat: true}, move(dir.dx, dir.dy, false))
+		cx.OnKeyWith("shift+"+dir.key, KeyOptions{When: KeyAlways, Repeat: true}, move(dir.dx, dir.dy, true))
+	}
+	pickAtCursor := func() { a.pickCursor(viewport()) }
+	cx.OnKeyWith("enter", KeyOptions{When: KeyAlways}, pickAtCursor)
+	cx.OnKeyWith("space", KeyOptions{When: KeyAlways}, pickAtCursor)
+
+	var panStart Point
+	rulerView := View{
+		TestID:    "nsgo-layout-ruler",
+		Ref:       rulerRef,
+		Focusable: remote,
+		Style: Style{Position: Absolute, Top: Pt(0), Left: Pt(0),
+			Width: Pct(100), Height: Pct(100), Cursor: CursorCrosshair},
+		OnPress: func(ev PressEvent) {
+			if Untracked(cx, remote) {
+				a.pickCursor(viewport())
+				return
+			}
+			a.cursor.Set(rulerCursor{})
+			a.m.Set(a.m.GetUntracked().pick(ev.PagePosition, viewport()))
+		},
+	}
+	if Untracked(cx, remote) {
+		rulerView.OnPan = func(ev PanEvent) {
+			vp := viewport()
+			if ev.Phase == GestureBegan {
+				c := a.cursor.GetUntracked()
+				if c.active {
+					panStart = c.at
+				} else {
+					panStart = centerPoint(vp)
+				}
+			}
+			next := clampPoint(Point{
+				X: Points(math.Round(float64(panStart.X + ev.Translation.X))),
+				Y: Points(math.Round(float64(panStart.Y + ev.Translation.Y))),
+			}, vp)
+			a.cursor.Set(rulerCursor{at: next, active: true})
+		}
+	}
 	return Overlay{Topmost: true, OnCancel: a.leaveRuler, Style: auditCover, Children: []Node{
 		View{AccessibilityElementsHidden: auditHidden, Style: auditCover, Children: []Node{
-			View{TestID: "nsgo-layout-ruler", NoFocus: true, Style: Style{Position: Absolute, Top: Pt(0), Left: Pt(0),
-				Width: Pct(100), Height: Pct(100), Cursor: CursorCrosshair},
-				OnPress: func(ev PressEvent) {
-					viewport := Untracked(cx, cx.Env().Window)
-					a.m.Set(a.m.GetUntracked().pick(ev.PagePosition, viewport))
-				}},
+			rulerView,
 			a.readout(cx),
 		}},
 	}}
 }
 
-// leaveRuler stops measuring and drops its points.
+// leaveRuler stops measuring and drops its points and crosshair.
 func (a *layoutAudit) leaveRuler() {
+	was := a.ruler.GetUntracked()
 	a.ruler.Set(false)
 	a.m.Set(measurement{})
+	a.cursor.Set(rulerCursor{})
+	if was && a.shown.GetUntracked() && Untracked(a.owner, a.owner.Env().Pointer) == PointerNone {
+		a.restoreFocus = true
+	}
 }
 
 // readout is the corner's chip: the boxes', the grid's and the ruler's buttons, the surface's size and the measurement.
 func (a *layoutAudit) readout(cx *Scope) Node {
 	text := Style{Color: auditText, FontSize: 11, FontVariant: FontTabularNums}
+	focusable := func() bool { return cx.Env().Pointer() == PointerNone && !a.ruler.Get() }
+	var measureRef *Ref
+	if !a.ruler.GetUntracked() {
+		measureRef = a.measureBtn
+		if a.restoreFocus {
+			a.restoreFocus = false
+			cx.Post(func() {
+				if a.shown.GetUntracked() && !a.ruler.GetUntracked() {
+					a.measureBtn.Focus()
+				}
+			})
+		}
+	}
 	return View{TestID: "nsgo-layout-readout",
 		StyleFunc: func() Style {
 			safe := cx.Env().SafeArea()
@@ -309,27 +472,28 @@ func (a *layoutAudit) readout(cx *Scope) Node {
 				AlignItems: AlignCenter, Gap: 6, Padding: Symmetric(3, 6), CornerRadius: 6, Background: RGBA(0x111111, 0.8)}
 		},
 		Children: []Node{
-			auditToggle("nsgo-layout-bounds", a.bounds.Get, func() { a.bounds.Set(!a.bounds.GetUntracked()) }, drawBoundsIcon),
-			auditToggle("nsgo-layout-grid", func() bool { return a.grid.Get() > 0 }, a.toggleGrid, drawGridIcon),
-			auditToggle("nsgo-layout-measure", a.ruler.Get, a.toggleRuler, drawRulerIcon),
+			auditToggle("nsgo-layout-bounds", nil, focusable, a.bounds.Get, func() { a.bounds.Set(!a.bounds.GetUntracked()) }, drawBoundsIcon),
+			auditToggle("nsgo-layout-grid", nil, focusable, func() bool { return a.grid.Get() > 0 }, a.toggleGrid, drawGridIcon),
+			auditToggle("nsgo-layout-measure", measureRef, focusable, a.ruler.Get, a.toggleRuler, drawRulerIcon),
 			Text{Style: text, ContentFunc: func() string {
 				w := cx.Env().Window()
 				return auditNumber(w.Width) + " × " + auditNumber(w.Height)
 			}},
-			Show{When: func() bool { return a.m.Get().points == 2 }, Then: func(cx *Scope) Node {
+			Show{When: func() bool { return displayedMeasurement(a.m.Get(), a.cursor.Get()).points == 2 }, Then: func(cx *Scope) Node {
 				return Text{TestID: "nsgo-layout-measurement", Style: text.Merge(Style{Color: auditRuler}), ContentFunc: func() string {
-					m := a.m.Get()
+					m := displayedMeasurement(a.m.Get(), a.cursor.Get())
 					return "↔ " + auditNumber(m.horizontal()) + "  ↕ " + auditNumber(m.vertical())
 				}}
 			}},
 		}}
 }
 
-// auditToggle is a readout's button: an icon, drawn by icon, on a lighter ground while on says so.
-func auditToggle(testID string, on func() bool, press func(), icon func(d *Drawing, size Size)) Node {
-	return View{TestID: testID, NoFocus: true, OnPress: func(PressEvent) { press() },
+// auditToggle is a readout's button: an icon, drawn by icon, on a lighter ground while on says so, focusable where focusable reports true.
+func auditToggle(testID string, ref *Ref, focusable func() bool, on func() bool, press func(), icon func(d *Drawing, size Size)) Node {
+	return View{TestID: testID, Ref: ref, Focusable: focusable, OnPress: func(PressEvent) { press() },
 		StyleFunc: func() Style {
-			s := Style{Width: Pt(20), Height: Pt(20), CornerRadius: 4, AlignItems: AlignCenter, JustifyContent: JustifyCenter}
+			s := Style{Width: Pt(20), Height: Pt(20), CornerRadius: 4, AlignItems: AlignCenter, JustifyContent: JustifyCenter,
+				Focus: auditFocusStyle}
 			if on() {
 				s.Background = RGBA(0xffffff, 0.22)
 			}
@@ -354,7 +518,12 @@ func (a *layoutAudit) toggleRuler() {
 		a.leaveRuler()
 		return
 	}
-	a.ruler.Set(true)
+	a.owner.Batch(func() {
+		if Untracked(a.owner, a.owner.Env().Pointer) == PointerNone {
+			a.cursor.Set(rulerCursor{at: centerPoint(Untracked(a.owner, a.owner.Env().Window)), active: true})
+		}
+		a.ruler.Set(true)
+	})
 }
 
 // auditNumber writes v in points with one decimal, none when it is whole.
@@ -362,8 +531,8 @@ func auditNumber(v Points) string {
 	return strings.TrimSuffix(strconv.FormatFloat(float64(v), 'f', 1, 32), ".0")
 }
 
-// paintAudit draws boxes, the grid of step grid (0 for none) and m over a surface of size at ratio device pixels a point. Boxes and the grid take one device pixel, inset half of one so it lands on the pixel grid.
-func paintAudit(d *Drawing, boxes []auditBox, size Size, ratio float32, grid Points, m measurement) {
+// paintAudit draws boxes, the grid of step grid (0 for none), m and cursor over a surface of size at ratio device pixels a point. Boxes and the grid take one device pixel, inset half of one so it lands on the pixel grid.
+func paintAudit(d *Drawing, boxes []auditBox, size Size, ratio float32, grid Points, m measurement, cursor rulerCursor) {
 	if ratio <= 0 {
 		ratio = 1
 	}
@@ -411,8 +580,11 @@ func paintAudit(d *Drawing, boxes []auditBox, size Size, ratio float32, grid Poi
 		d.SetStrokeColor(auditGrid)
 		d.Stroke()
 	}
-	if m.points > 0 {
-		paintRuler(d, m)
+	if dm := displayedMeasurement(m, cursor); dm.points > 0 {
+		paintRuler(d, dm)
+	}
+	if cursor.active {
+		paintRulerCursor(d, cursor, size)
 	}
 }
 
@@ -532,6 +704,41 @@ func paintRuler(d *Drawing, m measurement) {
 	if ey != sy {
 		pill(auditNumber(m.vertical()), ex+8, (sy+ey)/2, false)
 	}
+}
+
+// paintRulerCursor draws the remote- or keyboard-driven crosshair at c.at across size: faint full-viewport guides to align with distant edges, plus a contrasting haloed target ring and arms.
+func paintRulerCursor(d *Drawing, c rulerCursor, size Size) {
+	x, y := float32(c.at.X), float32(c.at.Y)
+	d.SetLineWidth(1)
+	d.SetStrokeColor(auditCursorGuide)
+	d.BeginPath()
+	d.MoveTo(0, y)
+	d.LineTo(float32(size.Width), y)
+	d.MoveTo(x, 0)
+	d.LineTo(x, float32(size.Height))
+	d.Stroke()
+	const gap, arm, radius = 3, 11, 6
+	drawTarget := func() {
+		d.BeginPath()
+		d.MoveTo(x-arm, y)
+		d.LineTo(x-gap, y)
+		d.MoveTo(x+gap, y)
+		d.LineTo(x+arm, y)
+		d.MoveTo(x, y-arm)
+		d.LineTo(x, y-gap)
+		d.MoveTo(x, y+gap)
+		d.LineTo(x, y+arm)
+		d.Stroke()
+		d.BeginPath()
+		d.Arc(x, y, radius, 0, 2*math.Pi, false)
+		d.Stroke()
+	}
+	d.SetLineWidth(3)
+	d.SetStrokeColor(auditCursorHalo)
+	drawTarget()
+	d.SetLineWidth(1.5)
+	d.SetStrokeColor(auditRuler)
+	drawTarget()
 }
 
 // drawBoundsIcon draws a box inside a box.
