@@ -2035,7 +2035,7 @@ func TestPreciseScrollDeliversTouchpadPhasesToOnWheel(t *testing.T) {
 
 	// Real mouse-wheel wheelTaken still scales by wheelNotch (99pt/notch) with GestureChanged.
 	events = nil
-	if !w.wheelTaken(at, 120, false) {
+	if !w.wheelTaken(at, 120, false, 0) {
 		t.Fatal("wheelTaken returned false for real wheel notch")
 	}
 	if len(events) != 1 || events[0].Phase != driver.GestureChanged || events[0].Precise || events[0].Delta != (driver.Point{Y: wheelNotch}) {

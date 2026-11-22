@@ -514,13 +514,13 @@ func scrollDecelerateCallback(controller uintptr, vx, vy float64, data uintptr) 
 		return
 	}
 	w.shieldScroll.reset()
-	w.wheelDecelerate(gtkEventControllerGetCurrentEventState(controller), vx, vy)
+	w.wheelDecelerate(gtkEventControllerGetCurrentEventState(controller), vx, vy, inPoints)
 }
 
 // wheelDecelerate ends a touchpad scroll whose fingers lifted at (vx, vy)
 // points per second, gliding the scroll view it moved or reporting the
-// end's velocity to a view taking OnWheel.
-func (w *window) wheelDecelerate(state uint32, vx, vy float64) {
+// end's velocity to a view taking OnWheel; a scroll view glides only for deltas inPoints, as a touchpad's are.
+func (w *window) wheelDecelerate(state uint32, vx, vy float64, inPoints bool) {
 	if state&gdkControl != 0 {
 		return
 	}
@@ -1678,7 +1678,7 @@ func (w *window) shieldScrollEvent(state uint32, at driver.Point, dx, dy float64
 			w.wheelEventKnown(state, at, dx, dy, true, gdkScrollEventGetUnit != nil)
 		}
 		if vx, vy, ok := w.shieldScroll.stop(evMS, now); ok {
-			w.wheelDecelerate(state, vx, vy)
+			w.wheelDecelerate(state, vx, vy, true)
 		}
 		return
 	}

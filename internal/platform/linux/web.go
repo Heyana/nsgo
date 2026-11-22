@@ -1486,5 +1486,5 @@ func webScrollDecelerateCallback(controller uintptr, vx, vy float64, data uintpt
 	at.X += v.web.pointer.X
 	at.Y += v.web.pointer.Y
 	w.lastPointer = at
-	w.wheelDecelerate(gtkEventControllerGetCurrentEventState(controller), vx, vy)
+	w.wheelDecelerate(gtkEventControllerGetCurrentEventState(controller), vx, vy, true)
 }
