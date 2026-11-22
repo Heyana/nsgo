@@ -249,7 +249,7 @@ jobs:
         run: go tool nsgo test -target web ./tsx/pkg
 
   android:
-    # GitHub's runners give the emulator KVM, which Depot's are not known to.
+    # The emulator needs KVM or Hypervisor.framework, which GitHub's runners have and Depot's lack.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
