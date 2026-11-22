@@ -268,6 +268,7 @@ type surface struct {
 	movers           map[*view]struct{} // views following mouse moves
 	inside           map[*view]struct{} // views whose tracking areas hold the mouse
 	webOver          *view              // web view under the pointer, left when covered and nudged when uncovered
+	webs             map[*view]struct{} // web views, whose tracking area owners pick keeps filtered (guardWebTracking)
 	root             driver.NodeID      // the root view's, which the batches name
 	// mouse is finger 0 of the views' touches; touched is the last NSEvent reported, which AppKit passes up the views.
 	mouse finger.Fingers
@@ -2482,6 +2483,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 			delete(views, v.web.View())
 			v.web.Configure(it.Web)
 			views[v.web.View()] = v
+			if s.webs == nil {
+				s.webs = map[*view]struct{}{}
+			}
+			s.webs[v] = struct{}{}
+			guardWebTracking(v.web.View())
 		case driver.ItemWebCommand:
 			if in, ok := it.Data.(*driver.WebInput); ok && it.WebCommand == driver.WebSendInput {
 				if web := v.web.View(); web != 0 {
@@ -2767,6 +2773,8 @@ func (s *surface) delete(v *view, kept bool) {
 		if s.webOver == v {
 			s.webOver = nil
 		}
+		delete(s.webs, v)
+		forgetWebTracking(v.web.View())
 		delete(views, v.web.View())
 		v.web.Close()
 	}
@@ -3299,6 +3307,10 @@ func (s *surface) pick(loc apple.CGPoint, always, moving bool) {
 		}
 		v.over = !v.over
 	}
+	// WebKit may add tracking areas after the web view was configured, as it joins the window.
+	for v := range s.webs {
+		guardWebTracking(v.web.View())
+	}
 	s.pickWeb(hit, up, loc, always, moving)
 	s.updateCursor(hit, up, loc, always)
 }
@@ -3313,7 +3325,7 @@ func webViewAt(hit, up objc.ID) *view {
 	return nil
 }
 
-// pickWeb keeps a WKWebView's hover and cursor aligned with overlays above it. WebKit's tracking area observer already drops moves when the window's hit test lands on a sibling overlay, but AppKit sends no mouseExited: while the pointer stays inside the web view's frame, leaving :hover set when an overlay covers it, and sends no mouseMoved: when an overlay closes under a resting pointer, leaving the overlay's cursor until the pointer moves.
+// pickWeb keeps a WKWebView's hover and cursor aligned with overlays above it. Its tracking area owners drop entries, moves and cursor updates while an overlay covers it (guardWebTracking), but AppKit sends no mouseExited: while the pointer stays inside the web view's frame, leaving :hover set when an overlay covers it, and sends no mouseMoved: when an overlay closes under a resting pointer, leaving the overlay's cursor until the pointer moves.
 func (s *surface) pickWeb(hit, up objc.ID, loc apple.CGPoint, always, moving bool) {
 	web := webViewAt(hit, up)
 	prev := s.webOver
