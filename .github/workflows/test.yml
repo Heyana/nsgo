@@ -53,11 +53,11 @@ jobs:
         run: go tool nsgo test -target ${{ matrix.target }} -junit "$RUNNER_TEMP/gallery.xml" -screenshots gallery-screenshots ./examples/gallery
       - name: Test formula layout and display wrapping
         run: go tool nsgo test -target ${{ matrix.target }} -screenshots formula-screenshots ./base/formula
-      - name: Run the many-sprite canvas scenario
+      - name: Run the many-sprite and mesh canvas scenarios
         env:
           NSGO_GALLERY_PERF: '1'
           NSGO_GALLERY_PERF_SECONDS: '3'
-        run: go tool nsgo test -target ${{ matrix.target }} -fps -run '^TestPerfCanvasSprites' ./examples/gallery
+        run: go tool nsgo test -target ${{ matrix.target }} -fps -run '^TestPerfCanvas(Sprites|Mesh)' ./examples/gallery
       - name: Keep results and screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -207,13 +207,13 @@ jobs:
           GSK_RENDERER: cairo
           PULSE_SINK: nsgo_test
         run: xvfb-run -a go tool nsgo test ./internal/platform/linux -run '^TestLinuxAudio' -- -count=1
-      - name: Run the many-sprite canvas scenario
+      - name: Run the many-sprite and mesh canvas scenarios
         env:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
           NSGO_GALLERY_PERF: '1'
           NSGO_GALLERY_PERF_SECONDS: '3'
-        run: xvfb-run -a go tool nsgo test -target linux -fps -run '^TestPerfCanvasSprites' ./examples/gallery
+        run: xvfb-run -a go tool nsgo test -target linux -fps -run '^TestPerfCanvas(Sprites|Mesh)' ./examples/gallery
       - name: Compare native Cairo atlas pixels
         env:
           GDK_BACKEND: x11
@@ -377,7 +377,7 @@ jobs:
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestDirectionMirrorsNativeControls$' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/websource || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/webhistory || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
-            go tool nsgo test -target android -device emulator-5554 -timeout 2m -fps -env NSGO_GALLERY_PERF=1 -env NSGO_GALLERY_PERF_SECONDS=3 -run '^TestPerfCanvasSprites' ./examples/gallery || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 3m -fps -env NSGO_GALLERY_PERF=1 -env NSGO_GALLERY_PERF_SECONDS=3 -run '^TestPerfCanvas(Sprites|Mesh)' ./examples/gallery || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidNativePackagedView$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/network || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
@@ -568,11 +568,11 @@ jobs:
         run: go tool nsgo test -run '^TestCanvasAtlasDrawsLikeImages$' ./internal/platform/windows
       - name: Test native focus, styles, activation and label relationships
         run: go tool nsgo test -run '^(TestRefFocusUsesNativeKeyboardStops|TestNativeLabeledByProvider)$' ./internal/platform/windows
-      - name: Run the many-sprite canvas scenario
+      - name: Run the many-sprite and mesh canvas scenarios
         env:
           NSGO_GALLERY_PERF: '1'
           NSGO_GALLERY_PERF_SECONDS: '3'
-        run: go tool nsgo test -target windows -fps -run '^TestPerfCanvasSprites' ./examples/gallery
+        run: go tool nsgo test -target windows -fps -run '^TestPerfCanvas(Sprites|Mesh)' ./examples/gallery
       - name: Test UI Automation property-changed events
         run: go tool nsgo test -run '^TestUIAPropertyChangedEvents$' ./internal/platform/windows
 

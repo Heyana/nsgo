@@ -1,6 +1,6 @@
 ### Added
 
-- Draw `Drawing.DrawVertices` meshes in mini programs (#1211).
+- Draw `Drawing.DrawVertices` meshes in mini programs with the web's canvas player, not yet checked in WeChat DevTools or on a device (#1211).
 
 ### Changed
 
