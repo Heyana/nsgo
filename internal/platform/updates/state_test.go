@@ -85,3 +85,28 @@ func TestLinuxOwnershipIsKnownBeforeTheFirstCheck(t *testing.T) {
 		t.Fatalf("unowned state=%+v", state)
 	}
 }
+
+func TestGooglePlayNativeUpdateEligibility(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		config Config
+		want   bool
+	}{
+		{"Play store", Config{Store: "com.android.vending", Channel: "store"}, true},
+		{"Play installer overrides direct", Config{Store: "com.android.vending", Channel: "direct", Feed: "https://example.invalid/feed"}, true},
+		{"other store", Config{Store: "com.example.store", Channel: "store"}, false},
+		{"side load", Config{Channel: "direct", Feed: "https://example.invalid/feed"}, false},
+		{"development", Config{Store: "com.android.vending", Development: true}, false},
+		{"disabled", Config{Store: "com.android.vending", Channel: "none"}, false},
+		{"Steam", Config{Store: "com.android.vending", Channel: "steam"}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.config.PlayUpdates(); got != test.want {
+				t.Fatalf("Play native eligibility = %v, want %v", got, test.want)
+			}
+			if test.config.Store != "" && test.config.Checks(false) {
+				t.Fatal("store install enabled the direct appcast or daily schedule")
+			}
+		})
+	}
+}

@@ -100,6 +100,8 @@ engine.destroy();
 
 Detach releases native children; reattachment restores current signals, input, focus, scroll position and drawings without rerunning components. Web pages and players are recreated from their app configuration. `stop()` only detaches an explicitly supplied engine. Each engine still retains its first view and its Activity and rejects another view, so handle configuration changes in that Activity; replacing it or showing independent views in one process is not supported yet.
 
+For Google Play update checks, add `com.google.android.play:app-update:2.1.0` to the Android host's Gradle dependencies. Preserve the AppUpdateManager, AppUpdateInfo, AppUpdateOptions and Tasks APIs that NSGo loads by name using the [runtime shrink rules](https://github.com/nsgo-dev/nsgo/blob/main/internal/platform/android/runtime/play-review.pro). The activity-result forwarding above also delivers update cancellation.
+
 ## Desktop
 
 A Go host runs the platform's event loop and puts each view's `Handle` in its window. `nsgo.NewView` starts the app once the handle is in a window, so settings made before are in its first frame.

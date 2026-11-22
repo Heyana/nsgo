@@ -5,7 +5,7 @@
 #
 # These are the artifacts NSGo cannot build with Go, so they are committed, but only by maintainers, in a bot/android-runtime pull request after a change to ../java or the runtime's build inputs merges; a pull request leaves them alone.
 # It needs a JDK 17+ and a recent d8: the SDK's cmdline-tools, or
-# build-tools 36+. Python 3 fetches checksum-pinned Play Review bytecode.
+# build-tools 36+. Python 3 fetches checksum-pinned Play Review and In-App Updates bytecode.
 # Set ANDROID_HOME to the SDK that holds them.
 set -eu
 
@@ -29,7 +29,7 @@ mkdir "$tmp/classes"
 # classes; d8 then reads the result with android.jar's stubs.
 javac -nowarn -Xlint:-options --release 17 -classpath "$jar" \
 	-d "$tmp/classes" "$dir"/../java/dev/oneo/nsgo/*.java
-# Standalone apps need the Play Review SDK; embedded hosts resolve it through
+# Standalone apps need the Play Review and In-App Updates SDKs; embedded hosts resolve it through
 # Gradle, so classes.jar below deliberately contains only NSGo's own classes.
 python3 "$dir/play_review.py" "$tmp/review"
 compile_review() {

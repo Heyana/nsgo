@@ -99,6 +99,8 @@ engine.destroy();
 
 分离会释放原生子视图；重新附加会恢复当前信号、输入、焦点、滚动位置和绘图，不重新运行组件。网页和播放器按应用配置重新创建。对显式传入的引擎，`stop()` 只分离视图。每个引擎仍保留最初的视图及其 Activity，并拒绝其他视图，因此仍需由该 Activity 处理配置变化；尚不支持替换 Activity 或在一个进程中显示独立视图。
 
+要检查 Google Play 更新，请把 `com.google.android.play:app-update:2.1.0` 加入 Android 宿主的 Gradle 依赖，并用[运行时的压缩规则](https://github.com/nsgo-dev/nsgo/blob/main/internal/platform/android/runtime/play-review.pro)保留 NSGo 按名称加载的 AppUpdateManager、AppUpdateInfo、AppUpdateOptions 和 Tasks API。上面的 Activity 结果转发也会传递用户取消更新的结果。
+
 ## 桌面
 
 Go 宿主运行平台的事件循环，把每个视图的 `Handle` 放进自己的窗口。`nsgo.NewView` 在 handle 进入窗口后启动应用，因此之前设置的选项会出现在第一帧。

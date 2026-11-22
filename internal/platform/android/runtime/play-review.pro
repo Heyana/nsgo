@@ -4,6 +4,25 @@
 -dontobfuscate
 -dontoptimize
 -keep class com.google.android.play.core.review.** { *; }
+# Keep only the framework Activity overload: AndroidX activity-result hosts
+# supply their own UI and are not part of NSGo's framework-only runtime.
+-keep class com.google.android.play.core.appupdate.AppUpdateManagerFactory {
+    public static *** create(android.content.Context);
+}
+-keep interface com.google.android.play.core.appupdate.AppUpdateManager {
+    public *** getAppUpdateInfo();
+    public boolean startUpdateFlowForResult(com.google.android.play.core.appupdate.AppUpdateInfo, android.app.Activity, com.google.android.play.core.appupdate.AppUpdateOptions, int);
+}
+-keep class com.google.android.play.core.appupdate.AppUpdateInfo {
+    public int updateAvailability();
+    public boolean isUpdateTypeAllowed(int);
+}
+-keep class com.google.android.play.core.appupdate.AppUpdateOptions {
+    public static *** newBuilder(int);
+}
+-keep class com.google.android.play.core.appupdate.AppUpdateOptions$Builder {
+    public *** build();
+}
 -keep class com.google.android.play.core.common.PlayCoreDialogWrapperActivity { *; }
 -keep class com.google.android.gms.tasks.Task { public *; }
 -keep interface com.google.android.gms.tasks.OnCompleteListener { *; }

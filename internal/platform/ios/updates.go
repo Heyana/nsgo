@@ -3,11 +3,8 @@
 package ios
 
 import (
-	"context"
-
 	"github.com/ebitengine/purego/objc"
 
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 	"github.com/nsgo-dev/nsgo/internal/platform/updates"
 )
@@ -34,17 +31,5 @@ func InstalledBy() string {
 // what it found. The bundle's identifier and version are the ones the
 // store lists, whatever signing gave them.
 func (s *surface) checkForUpdates(id uint32) {
-	c := updateConfig
-	bundle := objc.ID(apple.Class("NSBundle")).Send(sel("mainBundle"))
-	if v := bundle.Send(sel("bundleIdentifier")); v != 0 {
-		c.ID = apple.GoString(v)
-	}
-	if v := bundle.Send(sel("objectForInfoDictionaryKey:"), apple.NSString("CFBundleShortVersionString")); v != 0 {
-		c.Version = apple.GoString(v)
-	}
-	country := ""
-	if v := objc.ID(apple.Class("NSLocale")).Send(sel("currentLocale")).Send(sel("countryCode")); v != 0 {
-		country = apple.GoString(v)
-	}
-	updates.Answer(id, func(ctx context.Context) driver.Update { return updates.FindInAppStore(ctx, c, country) }, s.engine.Dispatch)
+	apple.CheckAppStore(updateConfig, false, id, s.engine.Dispatch)
 }

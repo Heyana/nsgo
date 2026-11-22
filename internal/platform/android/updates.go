@@ -14,7 +14,8 @@ import (
 // updateConfig is how the app Run runs updates. A check of an APK the
 // user installed reads the app's appcast through the runtime's HTTP, and
 // package updater hands a verified APK to Android's package installer; one
-// of an app a store installed checks nothing, as the store updates it.
+// of a Google Play app enters its native update flow, and other stores
+// answer as managed without reading an appcast.
 var updateConfig updates.Config
 
 // InstalledBy names the store that installed the app, which updates it,
@@ -31,6 +32,16 @@ func (s *surface) withoutUpdateChecks(id uint32, b *driver.MountBatch) *driver.M
 	c := updateConfig
 	for _, it := range b.Items {
 		if check(it) {
+			if c.PlayUpdates() && s.playUpdates.Load() {
+				err := s.sendExtended(extPlayUpdate, func(w *writer) {
+					w.u32(id)
+					w.u32(it.Count)
+				})
+				if err != nil {
+					s.answerPlayUpdate(id, it.Count, false, err.Error())
+				}
+				continue
+			}
 			updates.Answer(it.Count, func(ctx context.Context) driver.Update { return updates.Find(ctx, c) },
 				func(ev driver.Event) { s.dispatchTo(id, ev) })
 		}
@@ -51,4 +62,16 @@ func withoutDesktopItems(b *driver.MountBatch) *driver.MountBatch {
 	out := *b
 	out.Items = slices.DeleteFunc(slices.Clone(b.Items), desktop)
 	return &out
+}
+
+func (s *surface) playUpdateReply(r *reader) {
+	from, count, shown, failure := r.u32(), r.u32(), r.byte() != 0, r.str()
+	s.answerPlayUpdate(from, count, shown, failure)
+}
+
+func (s *surface) answerPlayUpdate(from, count uint32, shown bool, failure string) {
+	c := updateConfig
+	state := c.State(false)
+	u := driver.Update{App: c.App, Current: c.Version, Managed: state.Managed, Store: state.Store, Err: failure}
+	s.dispatchTo(from, driver.Event{Kind: driver.EventUpdate, Count: count, Finished: shown, Data: &u})
 }

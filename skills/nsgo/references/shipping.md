@@ -67,6 +67,8 @@ For Steam, upload the desktop target directories directly. Use `steam-launch.sh`
 
 Set `web.offline: true` in `nsgo.yaml` to cache a published web build and its packaged resources for offline launch. Serve the site over HTTPS or preview it with `go tool nsgo build -target web -run`. See [Offline web packages](https://nsgo.dev/docs/building.md#offline-web-packages).
 
+Mac App Store builds use Apple's lookup and native store page. A Google Play install's manual `updater.Check` enters Play's immediate update flow when allowed; other store installs stay managed, and no store install reads a direct appcast. Embedded Android hosts supply `com.google.android.play:app-update:2.1.0` and its [shrink rules](https://nsgo.dev/docs/embedding.md#android).
+
 Use `updater.CapabilityOf(cx)` to explain whether a copy updates itself, opens a page, is a development build, follows its channel or store, or has no updater; it makes no network request. Direct Linux copies owned by dpkg or pacman, or running from an AppImage, report `ManagedSelf`; other unpackaged copies report `ManagedPage`. Read `updater.Status(cx)` inside a binding for preferences, the available version, notes and last-check time. Persist runtime choices with `updater.SetAutomaticChecks`; `updater.SetAutomaticDownloads` and `updates.automatic_downloads` are macOS-only. See [Updates](https://nsgo.dev/docs/building.md#updates).
 
 ## Store listings

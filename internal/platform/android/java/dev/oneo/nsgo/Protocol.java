@@ -60,6 +60,7 @@ final class Protocol {
                 return true;
             case EXT_DISCOVERY:
             case EXT_SURFACE_RESET:
+            case EXT_PLAY_UPDATE:
                 return true;
             case EXT_ASSET_READ:
                 return true;
@@ -147,6 +148,9 @@ final class Protocol {
     static final int CAP_DISCOVER_SERVICES = 32;
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
+    /** Asks Google Play to offer an update: surface and request count. */
+    static final int EXT_PLAY_UPDATE = 12;
+    static final int CAP_PLAY_UPDATES = 128;
     /** The environment's third capability byte's bit for a device that plays timed vibration patterns (capHapticPatterns in protocol.go). */
     static final int CAP_HAPTIC_PATTERNS = 16;
     /** The environment's third capability byte's bit for a runtime that streams a FETCH_TO_FILE fetch to its file (Downloads.java), capFetchToFile in protocol.go: Go sends FETCH_TO_FILE only to a runtime with it. */
@@ -222,6 +226,8 @@ final class Protocol {
     static final int PHYSICAL_KEY = 30;
     /** Reports a resolved service, its removal or an error (discovery.go). */
     static final int DISCOVERY_REPLY = 40;
+    /** Answers EXT_PLAY_UPDATE: surface, request count, native UI shown, error. */
+    static final int PLAY_UPDATE_REPLY = 41;
     /** Streams a bundled file: its request ID, an ASSET_* status byte and the chunk or error text. */
     static final int ASSET_REPLY = 29;
     static final int ASSET_CHUNK = 0;

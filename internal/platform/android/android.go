@@ -135,6 +135,8 @@ const (
 	msgPhysicalKey = 30
 	// msgDiscoveryReply is a resolved service, its removal or an NSD error, answering extDiscovery (discovery.go).
 	msgDiscoveryReply = 40
+	// msgPlayUpdateReply answers extPlayUpdate with native UI ownership and failure.
+	msgPlayUpdateReply = 41
 	// msgAssetReply is one chunk or the final result of an extAssetRead.
 	msgAssetReply = 29
 	// msgAudioReport is a sound or player's status (audio.go).
@@ -164,6 +166,8 @@ const (
 	extDiscovery = 10
 	// extSurfaceReset tells Java that a full native tree of the surface's attachment generation follows: surface ID and generation (overlay.go, ViewAttachment.java).
 	extSurfaceReset = 11
+	// extPlayUpdate asks Google Play to check and offer its immediate update flow.
+	extPlayUpdate = 12
 	// extDownload carries a process-wide background download command as JSON, which NsgoEngine hands to BackgroundDownloadService.
 	extDownload = 5
 	// extGPUFrame submits an off-commit 3D GPU frame to GpuView.java, gpu.go's encoding.
@@ -203,6 +207,8 @@ type surface struct {
 	extendedMessages atomic.Bool
 	// fetchToFile is set once the runtime's environment says it streams a fetch to a file (capFetchToFile).
 	fetchToFile atomic.Bool
+	// playUpdates guards the newer extended command against an older runtime.
+	playUpdates atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -482,6 +488,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			env, third := readEnvironmentCapabilities(&r)
 			s.extendedMessages.Store(third&capExtendedMessages != 0)
 			s.fetchToFile.Store(third&capFetchToFile != 0)
+			s.playUpdates.Store(third&capPlayUpdates != 0)
 			if env.Equal(s.env) {
 				break
 			}
@@ -494,6 +501,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.surfaceReport(&r)
 		case msgFolderReply:
 			s.folderReply(&r)
+		case msgPlayUpdateReply:
+			s.playUpdateReply(&r)
 		case msgDiscoveryReply:
 			s.discoveryReply(&r)
 		case msgDiskSpaceReply:

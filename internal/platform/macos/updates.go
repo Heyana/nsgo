@@ -57,7 +57,11 @@ func startSparkle(c updates.Config) {
 }
 
 func sparkleStatus() driver.UpdaterState {
-	state := sparkleConfig.State(false)
+	appStore := sparkleConfig.Channel == "store"
+	state := sparkleConfig.State(appStore)
+	if appStore {
+		return state
+	}
 	state.NativePreferences = true
 	if sparkleFailure != "" {
 		state.Managed = driver.UpdateManagedUnavailable
@@ -99,6 +103,10 @@ func (s *surface) setUpdatePreference(p *driver.UpdatePreference) {
 }
 
 func (s *surface) checkForUpdates(background bool, id uint32) {
+	if sparkleConfig.Channel == "store" {
+		apple.CheckAppStore(sparkleConfig, true, id, s.engine.Dispatch)
+		return
+	}
 	state := sparkleStatus()
 	update := driver.Update{App: sparkleConfig.App, Current: sparkleConfig.Version, Managed: state.Managed, Store: state.Store, Err: sparkleFailure}
 	ev := driver.Event{Kind: driver.EventUpdate, Count: id, Data: &update}

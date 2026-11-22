@@ -553,6 +553,9 @@ const capHapticPatterns = 16
 // capFetchToFile is the third capability byte's bit for a runtime that streams a msgFetch with fetchToFile to a file (Protocol.CAP_FETCH_TO_FILE): one built before it reads the destination as the header count, so Go asks it for the whole body instead.
 const capFetchToFile = 64
 
+// capPlayUpdates identifies a runtime that reads extPlayUpdate.
+const capPlayUpdates = 128
+
 // capSpeech is the third capability byte's bit for a device and runtime that recognize speech through SpeechRecognizer on ItemSpeech (Protocol.CAP_SPEECH): one built before Speech.java reads as having no speech recognition.
 const capSpeech = 8
 

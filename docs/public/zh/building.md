@@ -353,15 +353,15 @@ updates:
 | 渠道 | 用于 | 构建出的包 |
 | --- | --- | --- |
 | `direct` | GitHub、网站，以及直接安装 Release 文件的 Homebrew cask 和 winget | 按上表自行更新 |
-| `store` | App Store、Mac App Store、Microsoft Store、Google Play、Flathub 和其他应用商店 | 即[商店包](#商店包)，不带更新组件；iOS 查询 App Store，不需要 key |
+| `store` | App Store、Mac App Store、Microsoft Store、Google Play、Flathub 和其他应用商店 | 即[商店包](#商店包)，不带自行下载安装的更新器；iOS 和 macOS 无需密钥，查询各自的 App Store，Google Play 安装的应用可调用 Play 的原生更新流程 |
 | `steam` | Steam | 生成由 Steam 更新的 [depot 目录](#steam-depot) |
 | `none` | Linux 发行版，以及重新打包应用的人 | 不检查更新 |
 
-应用商店会拒绝自行更新的应用，所以上传 `store` 构建，不要上传 direct 构建。包含 macOS 或 Windows 安装程序的每次 direct 发布还会写出 Homebrew cask（`dist/releases/homebrew/<name>.rb`，声明 `auto_updates true` 及已构建磁盘映像的校验和与下载地址）和 winget 多文件清单（`dist/releases/winget/<id>.yaml`、`<id>.installer.yaml` 和 `<id>.locale.en-US.yaml`，对应已构建的 NSIS 安装程序）。凡是系统能说明应用由谁安装的地方，应用也会检查：从 Google Play 或其他商店安装的 Android 应用、Flatpak 或 Snap，以及 TestFlight 构建都不检查，由各自的商店更新。
+应用商店会拒绝自行更新的应用，所以上传 `store` 构建，不要上传 direct 构建。包含 macOS 或 Windows 安装程序的每次 direct 发布还会写出 Homebrew cask（`dist/releases/homebrew/<name>.rb`，声明 `auto_updates true` 及已构建磁盘映像的校验和与下载地址）和 winget 多文件清单（`dist/releases/winget/<id>.yaml`、`<id>.installer.yaml` 和 `<id>.locale.en-US.yaml`，对应已构建的 NSIS 安装程序）。凡是系统能说明应用由谁安装的地方，应用也会检查：其他商店安装的 Android 应用、Flatpak 或 Snap，以及 TestFlight 构建都由各自的商店更新。Google Play 安装的应用手动调用 `updater.Check` 时，会请求 Play In-App Updates 在允许时提供即时更新流程；同意、下载、安装和重启均由 Play 处理，开发构建不会进入该流程。独立 Android 安装包自带 SDK，[嵌入宿主](embedding.md#android) 则通过 Gradle 提供。
 
 ### 在应用中检查
 
-`updater.Check(cx)` 如同“检查更新…”菜单项，检查并显示结果；`updater.CheckInBackground(cx)` 只在有新版本时提示，`updater.CheckDaily(cx)` 也是如此，但每天至多检查一次。`updater.Status(cx)` 在 Linux 和 Android 上读取实时下载与安装进度。`automatic` 开启时，Linux、Android 和 iOS 上的应用在启动时和用户回到应用时这样检查；检查失败（例如离线）时，一小时后再试。开发构建从不更新。 在 Steam 构建中，这三个函数不会触发更新检查。
+`updater.Check(cx)` 如同“检查更新…”菜单项，检查并显示结果；`updater.CheckInBackground(cx)` 只在有新版本时提示，`updater.CheckDaily(cx)` 也是如此，但每天至多检查一次。`updater.Status(cx)` 在 Linux 和 Android 上读取实时下载与安装进度。`automatic` 开启时，Linux、direct Android 构建及 Apple App Store 构建在启动时和用户回到应用时这样检查；检查失败（例如离线）时，一小时后再试。开发构建从不更新。 在 Steam 构建中，这三个函数不会触发更新检查。
 
 `updater.CapabilityOf(cx)` 无需网络请求即可说明此副本由谁更新：`ManagedSelf`、`ManagedPage`、`ManagedDevelopment`、`ManagedChannel`、`ManagedStore`（`Store` 给出商店名称），或 `ManagedUnavailable`。开发版本、禁用的渠道和商店安装会显示各自的原因；只有更新源错误、已打包的更新组件加载失败等实际故障才设置 `core.UpdateCheck.Err`。
 

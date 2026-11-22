@@ -12,7 +12,7 @@ import (
 // withUpdateChecks returns what Run runs, checking for updates in the
 // background at most once a day when nsgo.yaml's updates.automatic is on
 // and c has anything to check (Config.Checks), for the platforms whose
-// updater has no schedule of its own: Linux, Android and iOS. It checks as
+// updater has no schedule of its own: Linux, direct Android and Apple App Store builds. It checks as
 // the app starts and whenever the user comes back to it, as a phone's app
 // stays in memory for days, and never while the app is out of sight.
 func withUpdateChecks(root engine.App, app func(*core.Scope), c updates.Config, appStore bool) (engine.App, func(*core.Scope)) {

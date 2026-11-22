@@ -42,7 +42,7 @@ type Config struct {
 	// Store is what installed the app and updates it in nsgo.yaml's
 	// place, as the backend finds as the app starts: Google Play or
 	// another store on Android, Flatpak or Snap on Linux, TestFlight on
-	// iOS. The app then checks nothing.
+	// iOS. Store installs read no appcast; Google Play supports manual native checks.
 	Store string
 }
 
@@ -51,6 +51,13 @@ type Config struct {
 func (c Config) Checks(appStore bool) bool {
 	managed := c.State(appStore).Managed
 	return managed == driver.UpdateManagedSelf || managed == driver.UpdateManagedPage
+}
+
+// PlayUpdates reports whether a manual check may enter Google's native update
+// flow. Play keeps its own automatic schedule; other stores and disabled or
+// development builds never enter this SDK or fall back to an appcast.
+func (c Config) PlayUpdates() bool {
+	return c.Store == "com.android.vending" && !c.Development && c.Channel != "none" && c.Channel != "steam"
 }
 
 // AndroidStore names the store that installed an Android app, which
@@ -141,6 +148,21 @@ func FindMatching(ctx context.Context, c Config, match func(Item) bool) driver.U
 // its version there when that is newer than the running one. An app the
 // store does not list there has none newer.
 func FindInAppStore(ctx context.Context, c Config, country string) driver.Update {
+	return findInAppStore(ctx, c, country, "")
+}
+
+// FindInMacAppStore asks Apple's lookup API for a Mac app, whose entity
+// differs from the iPhone and iPad software returned by the default lookup.
+func FindInMacAppStore(ctx context.Context, c Config, country string) driver.Update {
+	update := findInAppStore(ctx, c, country, "desktopSoftware")
+	if page, err := url.Parse(update.URL); err == nil && (page.Hostname() == "apps.apple.com" || page.Hostname() == "itunes.apple.com") {
+		page.Scheme = "macappstore"
+		update.URL = page.String()
+	}
+	return update
+}
+
+func findInAppStore(ctx context.Context, c Config, country, entity string) driver.Update {
 	u := c.answer(true)
 	if !c.Checks(true) {
 		return u
@@ -150,6 +172,9 @@ func FindInAppStore(ctx context.Context, c Config, country string) driver.Update
 		return u
 	}
 	q := url.Values{"bundleId": {c.ID}}
+	if entity != "" {
+		q.Set("entity", entity)
+	}
 	if country != "" {
 		q.Set("country", strings.ToLower(country))
 	}

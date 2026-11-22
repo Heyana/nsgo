@@ -15,10 +15,11 @@ NSH's `nsh/updater` downloads, verifies and swaps in the next version itself. NS
 
 | Target | Updater |
 | --- | --- |
-| macOS | Sparkle's `SPUStandardUpdaterController`, started when Info.plist names a feed. Installing, it quits the app as `Quit` does |
+| macOS | Direct builds use Sparkle's `SPUStandardUpdaterController`, started when Info.plist names a feed; installing, it quits the app as `Quit` does. Store builds query the Mac App Store and offer its native page |
 | Windows | WinSparkle from beside the executable. It starts once the app has mounted, in the language the app shows (`updates.WinSparkleLanguage`): English or a translation WinSparkle ships, else the Windows UI language, WinSparkle's default. It takes the language only before it starts, so one the app switches to later shows from the next launch. Its can-shutdown callback waits for `OnQuitRequest` approval before launching the installer; its shutdown callback then finishes that approved quit |
-| Linux, Android | `internal/platform/updates` reads the target's appcast with the backend's HTTP client, verifies the package's SHA-256 and Ed25519 signature, then `updater` stages it and hands it to the platform installer |
-| iOS | The App Store's lookup by the bundle's ID in the locale's country, against `CFBundleShortVersionString` |
+| Linux, direct Android | `internal/platform/updates` reads the target's appcast with the backend's HTTP client, verifies the package's SHA-256 and Ed25519 signature, then `updater` stages it and hands it to the platform installer |
+| iOS, Mac App Store | Apple's lookup by the installed bundle's ID in the locale's country, against `CFBundleShortVersionString`; Mac requests `desktopSoftware` and returns a `macappstore` link (`apple.CheckAppStore`) |
+| Google Play | A manual check enters Play In-App Updates' immediate flow when allowed, so Play owns consent, downloading, installation and restart; other stores remain managed |
 
 ## State and preferences
 
@@ -27,10 +28,10 @@ NSH's `nsh/updater` downloads, verifies and swaps in the next version itself. NS
 | Managed | Copies |
 | --- | --- |
 | `ManagedSelf` | Direct macOS, Windows and Android builds; Linux where dpkg or pacman owns the executable, or it runs from an AppImage |
-| `ManagedPage` | iOS App Store builds; direct Linux copies outside Debian, Arch and AppImage installs |
+| `ManagedPage` | iOS and Mac App Store builds; direct Linux copies outside Debian, Arch and AppImage installs |
 | `ManagedDevelopment` | `nsgo dev`, `nsgo test` and plain Go builds |
-| `ManagedChannel` | `none`, Steam, and non-iOS `store` builds |
-| `ManagedStore` | Android store installers, Flatpak, Snap and TestFlight; `Store` names them |
+| `ManagedChannel` | `none`, Steam, and `store` builds outside Apple's App Stores |
+| `ManagedStore` | Android store installers, Flatpak, Snap and TestFlight; `Store` names them, and Google Play alone supports manual native checks |
 | `ManagedUnavailable` | Targets with no updater, or a configured native updater that failed to load |
 
 Linux resolves Debian or Arch package ownership, or the running AppImage, once at launch before the first feed request. A copy outside those formats, or a failed or timed-out ownership probe, gives the release's page.
@@ -43,14 +44,14 @@ Linux resolves Debian or Arch package ownership, or the running AppImage, once a
 
 While `updates.automatic` is on, Sparkle and WinSparkle check daily on their own schedule, where the user's choice in their settings wins over `nsgo.yaml`'s. Apps read and change that same choice through `Status` and `SetAutomaticChecks`.
 
-Linux, Android and iOS have no such schedule, so `nsgo.Run` calls `updater.CheckDaily` as the app starts and whenever it becomes active again, since a phone's app stays in memory for days. The persisted runtime preference, defaulting to `updates.automatic`, decides whether it checks. It checks in the background unless one ran within the day, so *Later* lasts the day across restarts, and tries a failed check again an hour later. The time lives in a storage partition of its own (`nsgo.updater`), which the app's `Storage` neither lists nor clears.
+Linux, direct Android and Apple App Store builds have no such schedule, so `nsgo.Run` calls `updater.CheckDaily` as the app starts and whenever it becomes active again, since a phone's app stays in memory for days. The persisted runtime preference, defaulting to `updates.automatic`, decides whether it checks. It checks in the background unless one ran within the day, so *Later* lasts the day across restarts, and tries a failed check again an hour later. The time lives in a storage partition of its own (`nsgo.updater`), which the app's `Storage` neither lists nor clears.
 
 ## Channels
 
 One platform reaches users through several channels, and the channel, not the platform, decides who updates the app. `updates.channel`, or `nsgo build -channel`, names it per build:
 
 - `direct`, the default with a key: the app's own downloads update themselves. macOS and Windows packages carry Sparkle and WinSparkle, and each release writes signed appcasts plus package manager manifests (`homebrew/<slug>.rb` with `auto_updates true` and `winget/` multi-file manifests) for the built macOS and Windows installers. On this channel the `macos_universal` target joins the two macOS architectures into one app with one DMG and feed.
-- `store`: a store or package manager updates the app. Packages carry no updater and no appcast; iOS still asks the App Store, which needs no key.
+- `store`: a store or package manager updates the app. Packages carry no self-updater or appcast. iOS and macOS ask their App Store without a key; Google Play installs support its native update flow when the app explicitly checks.
 - `steam`: Steam updates the depot. The desktop build uses `nsgo_steam` to omit the platform self-updater, the Linux package installer and downloader hook, and the automatic schedule. The public update checks compile as no-ops.
 - `none`: nothing checks, for packagers who repackage the app.
 
@@ -66,7 +67,7 @@ A store bans an app that carries a self-updater or sends its users to other down
 
 ## Who installed the app
 
-A build cannot know every channel it ends up in, so where the system says who installed the app, the backend checks that first, as the app starts, and leaves an app a store installed to that store (`Config.Store`): its checks answer with that store as the reason and the daily schedule never runs.
+A build cannot know every channel it ends up in, so where the system says who installed the app, the backend checks that first, as the app starts, and leaves an app a store installed to that store (`Config.Store`): its checks answer with that store as the reason and the daily schedule never runs. Google Play is the exception for a manual check: `android.withoutUpdateChecks` sends a capability-guarded extended message to `PlayUpdates.java`, whose reflected SDK reports failure or handles its own consent UI. The app never downloads an APK from its appcast for a store install.
 
 | Target | Sign | Store |
 | --- | --- | --- |
@@ -74,10 +75,11 @@ A build cannot know every channel it ends up in, so where the system says who in
 | Linux | `/.flatpak-info`, `SNAP` | Flatpak, Snap |
 | iOS | A receipt named `sandboxReceipt` | TestFlight and development builds on a device, whose versions the App Store does not list; the simulator still asks |
 
-Linux cannot tell a distribution's package from a downloaded one, so its packagers build with `-channel none`. macOS and Windows need no sign: their store packages are separate builds without an updater.
+Linux cannot tell a distribution's package from a downloaded one, so its packagers build with `-channel none`. macOS and Windows select their stores through the build channel, using separate packages without a self-updater. macOS checks its store; Windows remains managed by its channel.
 
 ## Limits
 
+- Play checks support the immediate flow only, preserve user cancellation, and resume a consented flow when its activity returns. Standalone runtime builds include the checksum-pinned Play In-App Updates SDK; embedding hosts supply it and retain its reflected entry points ([embedding](../public/en/embedding.md#android)).
 - The direct channel reads `releases/latest/download/` by default, so every release must carry the appcast of each target it updates: a target a release leaves out answers 404 until one carries it again.
 - WinSparkle saves `updates.automatic` as the user's choice on the first start, so a later change in `nsgo.yaml` reaches only new installs.
 - Linux asks `OnQuitRequest` before restarting after its package manager finishes. Cancellation keeps the current process running; a deferred answer can finish saving first. The package is already installed on disk. On Windows, WinSparkle waits on its worker thread for the same decision, leaving the app's main thread free; denial prevents installer launch, and cleanup releases an unanswered callback before joining the updater's workers. The approved shutdown bypasses a second close request, so a tray or window-close handler cannot strand an installer beside the old process.
@@ -96,4 +98,5 @@ Linux cannot tell a distribution's package from a downloaded one, so its package
 - Headless tests cover installing on Linux and Android: only signed packages are offered, multi-item Linux appcasts list `.deb`, `.pkg.tar.gz` and `.AppImage`, downloads stream to disk with progress reported via `updater.Status` and `SetTaskProgress` and clean up partial files on cancellation or bad SHA-256/Ed25519 signatures, Linux detects Debian, Arch (`.pkg.tar.gz`/`.pkg.tar.zst`) and AppImage installs, constructs `pkexec` commands and atomically replaces AppImages with executable bits and rollback on error, Android hands the APK to its installer, a failure offers the page, the install finishes after the scope that offered it is disposed, one runs at a time, and staged packages are removed. A native Linux fixture drove the install request through the engine with a fake `pkexec`, checking dpkg and pacman arguments, success, failure and cancelled authentication. Linux on the Steam channel and Chromium returned an unavailable service.
 - An installed Debian release fixture under an owned X display confirmed its native update prompt, streamed the signed 1.0.1 package to disk, installed it through real `pkexec dpkg` and restarted into a new process with the new version; the staged package was removed (2026-11-23). The fixture ran as root, so this does not verify a non-root Polkit authentication prompt.
 - An installed Flatpak fixture on GNOME 51 verifies the real sandbox marker, disables automatic checks for a direct-channel app, and returns Flatpak-managed answers for three explicit checks without fetching its appcast. Its instrumented transport has a positive direct-check control; the lower-level native test also verifies store policy before any ownership probe. See `internal/platform/linux/testdata/flatpak_updater`.
+- An owned Mac bundle fixture supplied its installed ID/version to the shared store check, and the public lookup and Launch Services resolution to `com.apple.AppStore` passed, as did the Android 35 runtime pipe through the real Play SDK to `ERROR_INSTALL_NOT_ALLOWED` (-6) on the unpublished fixture; JVM fixtures exercise availability, launch, resume, cancellation, duplicate replies, missing SDK and foreground loss (2026-11-23). A published Play app with two eligible versions and a Mac App Store-installed app remain unverified.
 - Not run yet: a Developer ID or notarized macOS update, Windows on arm64, a TestFlight build, native pacman/AppImage update-and-relaunch flows, or a physical Android phone. The opt-in `internal/testhost/testdata/installedupdates` fixture supports installed-package acceptance without replacing NSGo's updater or HTTP client.

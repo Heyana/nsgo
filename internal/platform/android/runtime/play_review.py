@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch pinned Play Review bytecode for build.sh, never for an app's build."""
+"""Fetch pinned Play Review and In-App Updates bytecode for build.sh, never for an app's build."""
 
 import hashlib
 import io
@@ -11,6 +11,7 @@ import zipfile
 
 # Google's Maven artifacts and the transitive versions in their POMs.
 ARTIFACTS = {
+    "com/google/android/play/app-update/2.1.0/app-update-2.1.0": "1565e9ef014f7cb7193f0462e4d817480aff4b333fc7f7e0052bb932cc28820d",
     "com/google/android/play/review/2.0.2/review-2.0.2": "1602026678231dba0f7482d1244e45ff83d9ff22fc8b6d6be8961228ac7a32dd",
     "com/google/android/play/core-common/2.0.4/core-common-2.0.4": "36400824014fc61d9379b13dd1ab13f6514847fb04347c0fdfe618bace78f3ed",
     "com/google/android/gms/play-services-tasks/18.2.0/play-services-tasks-18.2.0": "7f2aaa8f502068eaf54356ca92aec04271d6e7c416c52c45c0d23440fcbd1654",
@@ -26,7 +27,7 @@ def fetch(destination):
         with urllib.request.urlopen(url, timeout=60) as response:
             data = response.read()
         if hashlib.sha256(data).hexdigest() != checksum:
-            raise ValueError("Play Review checksum mismatch: " + artifact)
+            raise ValueError("Play SDK checksum mismatch: " + artifact)
         with zipfile.ZipFile(io.BytesIO(data)) as aar:
             # Only classes are compiler inputs. The app's manifest uses a
             # framework translucent theme for the SDK's empty wrapper Activity.
@@ -37,7 +38,7 @@ def fetch(destination):
             for label, span in json.loads(aar.read("third_party_licenses.json")).items():
                 notice = raw[span["start"]:span["start"] + span["length"]].decode().strip()
                 notices.add(label + "\n\n" + notice)
-    (destination / "NOTICE.txt").write_text("Play Review and its dependencies\n\n" + "\n\n".join(sorted(notices)) + "\n")
+    (destination / "NOTICE.txt").write_text("Play Review, In-App Updates and their dependencies\n\n" + "\n\n".join(sorted(notices)) + "\n")
 
 
 if __name__ == "__main__":

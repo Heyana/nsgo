@@ -283,3 +283,19 @@ func TestParseAppcastItemsAndFindMatching(t *testing.T) {
 		t.Fatalf("unmanaged match = %+v, want release page without download", unmanaged)
 	}
 }
+
+func TestFindInMacAppStoreSelectsMacSoftware(t *testing.T) {
+	asked := serve(t, 200, `{"results":[{"version":"2.0","trackId":123}]}`)
+	c := Config{App: "Hello", ID: "com.example.hello.mac", Version: "1.9", Channel: "store"}
+	got := FindInMacAppStore(t.Context(), c, "GB")
+	if got.Version != "2.0" || got.URL != "macappstore://apps.apple.com/app/id123" || got.Managed != driver.UpdateManagedPage {
+		t.Fatalf("Mac store update = %+v", got)
+	}
+	if len(*asked) != 1 || (*asked)[0] != "https://itunes.apple.com/lookup?bundleId=com.example.hello.mac&country=gb&entity=desktopSoftware" {
+		t.Fatalf("Mac lookup = %v", *asked)
+	}
+	c.Development = true
+	if got := FindInMacAppStore(t.Context(), c, "GB"); got.Managed != driver.UpdateManagedDevelopment || len(*asked) != 1 {
+		t.Fatalf("development lookup = %+v, requests %v", got, *asked)
+	}
+}

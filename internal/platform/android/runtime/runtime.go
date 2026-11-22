@@ -9,7 +9,7 @@ package runtime
 
 import _ "embed"
 
-// ClassesDex is the Java runtime and Play Review SDK compiled for Android, built by d8.
+// ClassesDex is the Java runtime and Play Review/In-App Updates SDKs compiled for Android, built by d8.
 //
 //go:embed classes.dex
 var ClassesDex []byte

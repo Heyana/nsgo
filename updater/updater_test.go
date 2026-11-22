@@ -188,3 +188,12 @@ func TestDailyChecksAfterTheClockGoesBack(t *testing.T) {
 		t.Errorf("checks %v, want one more with the clock two days back", app.UpdateChecks)
 	}
 }
+
+func TestStoreCheckFailureIsNotHiddenByManagement(t *testing.T) {
+	app := start(t, core.UpdateCheck{Managed: core.UpdaterStore, Store: "com.android.vending", Err: errors.New("Play update service unavailable")})
+	app.Press("text:Check")
+	alerts := app.Alerts()
+	if len(alerts) != 1 || !strings.Contains(alerts[0].Message, "Try again later") || strings.Contains(alerts[0].Message, "com.android.vending") {
+		t.Fatalf("failed store check alerts = %+v", alerts)
+	}
+}

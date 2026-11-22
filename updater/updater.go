@@ -1,12 +1,13 @@
 //go:build !nsgo_steam
 
 // Package updater keeps an app up to date the way its platform does. On
-// macOS and Windows, Sparkle and WinSparkle, which nsgo build bundles when
+// direct macOS and Windows builds, Sparkle and WinSparkle, which nsgo build bundles when
 // nsgo.yaml configures updates, read the app's appcast on their own
 // schedule, download a newer release, verify its EdDSA signature,
-// install it and restart the app. Linux and Android read the same appcast,
-// verify and install its package after the user confirms, and iOS asks the
-// App Store, once a day and whenever the user asks.
+// install it and restart the app. Linux and direct Android builds read the
+// same appcast and install its verified package after confirmation. Apple
+// App Store builds offer their store page; Google Play handles a manual
+// check with its native update flow.
 package updater
 
 import (
@@ -23,9 +24,10 @@ import (
 )
 
 // Check checks for a newer version now, as a Check for Updates… item
-// does, and shows what it finds: on macOS and Windows in Sparkle's and
-// WinSparkle's windows, on Linux and Android an alert that installs the
-// signed package after confirmation, elsewhere an alert that offers to open
+// does, and shows what it finds: on direct macOS and Windows in Sparkle's and
+// WinSparkle's windows, on Linux and direct Android an alert that installs the
+// signed package after confirmation, on Google Play its native update flow,
+// elsewhere an alert that offers to open
 // the newer version's page, says the app is up to date, or says the check
 // failed.
 func Check(cx *core.Scope) { check(cx, false, nil) }
@@ -49,7 +51,7 @@ const (
 // CheckDaily checks in the background, as CheckInBackground does, unless
 // it has within the last day, so a newer version is offered once a day
 // rather than at every start. Sparkle and WinSparkle keep such a schedule
-// of their own; on Linux, Android and iOS nsgo.Run calls CheckDaily as
+// of their own; on Linux, direct Android and Apple App Store builds nsgo.Run calls CheckDaily as
 // the app starts and as the user comes back to it when nsgo.yaml's
 // updates.automatic is on. A check that failed, as one offline does, is
 // tried again an hour later.
@@ -114,6 +116,12 @@ func check(cx *core.Scope, background bool, answered func(core.UpdateCheck)) {
 		msgs := locales.For(cx)
 		ok := []core.AlertAction{{Label: msgs.Ok(), Role: core.AlertDefault}}
 		switch {
+		case c.Err != nil:
+			log.Printf("updater: %v", c.Err)
+			if !background {
+				cx.ShowAlert(core.AlertConfig{Title: msgs.UpdateError(), Message: msgs.UpdateErrorMessage(),
+					Actions: ok, Cancelable: true}, func(int) {})
+			}
 		case c.Managed == ManagedDevelopment || c.Managed == ManagedChannel || c.Managed == ManagedStore:
 			if !background {
 				message := msgs.UpdateChannel()
@@ -124,12 +132,6 @@ func check(cx *core.Scope, background bool, answered func(core.UpdateCheck)) {
 					message = msgs.UpdateStore(c.Store)
 				}
 				cx.ShowAlert(core.AlertConfig{Title: msgs.UpdateError(), Message: message, Actions: ok, Cancelable: true}, func(int) {})
-			}
-		case c.Err != nil:
-			log.Printf("updater: %v", c.Err)
-			if !background {
-				cx.ShowAlert(core.AlertConfig{Title: msgs.UpdateError(), Message: msgs.UpdateErrorMessage(),
-					Actions: ok, Cancelable: true}, func(int) {})
 			}
 		case c.Version == "":
 			// The running version is the newest, so a package staged for an earlier update has been installed or is out of date. One still downloading or installing stays.

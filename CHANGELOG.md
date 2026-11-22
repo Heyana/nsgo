@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Offer Google Play's native update flow and the Mac App Store's app page from in-app update checks (#1421 by @houko).
+
 - Check and request camera and microphone permissions in Flatpak and Snap Linux sandboxes through the XDG Desktop Portal (`Camera`, `Device` and `PermissionStore`) and PipeWire native registry access (#1576).
 - Read QR codes and barcodes from a Mac's camera with `Scope.ScanCode` (#429 by @houko).
 - Read accelerometer, gyroscope and fused motion from mobile browsers (#1208 by @houko).

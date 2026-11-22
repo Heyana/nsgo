@@ -136,6 +136,8 @@ import org.json.JSONObject;
  * itself and draw edge to edge, as NsgoActivity does.
  */
 public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
+    private final PlayUpdates playUpdates = new PlayUpdates();
+
     private static final String TAG = "nsgo";
     private static final int DESTRUCTIVE = 0xffe53935;
 
@@ -592,6 +594,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
         environment();
         if (hasFocus && overlays != null) overlays.returned();
+        if (hasFocus) (primary == null ? this : primary).playUpdates.resume(activity());
         // The user may have changed RECORD_AUDIO in the system's settings; the first view tells the app.
         if (primary == null) recordingState();
     }
@@ -1219,6 +1222,26 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     /** Takes a message of an extended kind (Protocol.EXT_*), on the pipe's reader like onMessage: message is past its kind byte, and payload still holds it. Protocol.readMessage refuses a kind isExtended lacks. */
     private void extended(int kind, DataInputStream message, byte[] payload) throws IOException {
         switch (kind) {
+            case Protocol.EXT_PLAY_UPDATE: {
+                int from = message.readInt(), count = message.readInt();
+                ui.post(() -> {
+                    NsgoView view = from == surface ? this : overlays.view(from);
+                    if (view == null) return;
+                    playUpdates.check(view.activity(), (shown, error) -> {
+                        try {
+                            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                            DataOutputStream out = new DataOutputStream(bytes);
+                            out.writeInt(from);
+                            out.writeInt(count);
+                            out.writeBoolean(shown);
+                            Protocol.writeString(out, error);
+                            write(Protocol.PLAY_UPDATE_REPLY, bytes.toByteArray());
+                        } catch (IOException impossible) { throw new AssertionError(impossible); }
+                    });
+                });
+                break;
+            }
+
             case Protocol.EXT_SURFACE_RESET: {
                 int to = message.readInt();
                 long generation = message.readLong();
@@ -1431,8 +1454,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             LocalePrefs.read(formatLocale, hostLocale != null ? null : locale,
                     android.text.format.DateFormat.is24HourFormat(getContext()),
                     measurementSystem(formatLocale)).write(d);
-            // The second capability byte's bits are taken too: a third follows the locale settings, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, Protocol.CAP_SPEECH where the device recognizes speech, Protocol.CAP_DISCOVER_SERVICES and Protocol.CAP_FETCH_TO_FILE.
-            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES | Protocol.CAP_FETCH_TO_FILE | (hapticPatterns.available ? Protocol.CAP_HAPTIC_PATTERNS : 0)
+            // The second capability byte's bits are taken too: a third follows the locale settings, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, Protocol.CAP_SPEECH where the device recognizes speech, Protocol.CAP_DISCOVER_SERVICES and Protocol.CAP_FETCH_TO_FILE | Protocol.CAP_PLAY_UPDATES.
+            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES | Protocol.CAP_FETCH_TO_FILE | Protocol.CAP_PLAY_UPDATES | (hapticPatterns.available ? Protocol.CAP_HAPTIC_PATTERNS : 0)
                     | (Speech.available(getContext()) ? Protocol.CAP_SPEECH : 0)
                     | (GpuView.available(getContext()) ? Protocol.CAP_GPU : 0);
             d.writeByte(third);
@@ -1578,6 +1601,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * app's photo, and the documents UI's files, folders and saves.
      */
     public void activityResult(int request, int result, android.content.Intent data) {
+        (primary == null ? this : primary).playUpdates.activityResult(request);
         if (request == Services.PHOTO_REQUEST) {
             photoResult(result);
             return;
