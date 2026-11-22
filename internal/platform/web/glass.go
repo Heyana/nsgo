@@ -12,45 +12,18 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
 )
 
-// Liquid Glass (driver.ViewStyle.Glass) on the web uses Chrome's
-// HTML-in-Canvas (<canvas content="drawable">, drawElementImage,
-// requestPaint) together with a shared WebGL 2 glass shader matching
-// Windows' glass.go (MyGo's glass / macOS 27's NSGlassEffectView).
+// Liquid Glass (driver.ViewStyle.Glass) on the web uses Chrome's HTML-in-Canvas (<canvas content="drawable">, drawElementImage, requestPaint) together with a shared WebGL 2 glass shader matching Windows' glass.go (MyGo's glass / macOS 27's NSGlassEffectView).
 //
-// While at least one eligible glass view is mounted and the browser
-// exposes HTML-in-Canvas + WebGL 2, s.root.el moves inside a stage
-// <canvas content="drawable"> with attribute drawable, each eligible
-// glass view and any following sibling above it in paint order becomes
-// a flat (depth-1) drawable layer, and the stage's paint event:
-//   1. Draws s.root.el (which excludes nested drawables) and composites
-//      its visible descendant <canvas> elements (icons, charts, pixel
-//      images, shaders), which Chrome's drawElementImage omits or draws
-//      only in part.
-//   2. For each glass view in paint order: snapshots the stage behind
-//      it (with blur padding), runs the 2-pass separable Gaussian blur
-//      and glass refraction/tone/tint/rim shader in the shared WebGL 2
-//      context, draws the glass onto the stage, then draws the glass
-//      view's own DOM borders/children and descendant <canvas> elements
-//      on top.
-//   3. Draws any overlay sibling layer above the glass view in DOM
-//      order.
+// While at least one eligible glass view is mounted and the browser exposes HTML-in-Canvas + WebGL 2, s.root.el moves inside a stage <canvas content="drawable"> with attribute drawable, each eligible glass view and any following sibling above it in paint order becomes a flat (depth-1) drawable layer, and the stage's paint event:   1. Draws s.root.el (which excludes nested drawables) and composites      its visible descendant <canvas> elements (icons, charts, pixel      images, shaders), which Chrome's drawElementImage omits or draws      only in part.   2. For each glass view in paint order: snapshots the stage behind      it (with blur padding), runs the 2-pass separable Gaussian blur      and glass refraction/tone/tint/rim shader in the shared WebGL 2      context, draws the glass onto the stage, then draws the glass      view's own DOM borders/children and descendant <canvas> elements      on top.   3. Draws any overlay sibling layer above the glass view in DOM      order.
 //
-// Views under unsafe ancestors (blend mode, mask, translucent backdrop
-// filter, or nested glass — where Chrome hangs on nested drawables) or
-// non-upright transforms, and all glass views in browsers without
-// HTML-in-Canvas (Firefox, Safari, older Chrome), cleanly fall back to
-// CSS backdrop-filter blur + tint + inset rim without mounting the
-// stage canvas.
+// Views under unsafe ancestors (blend mode, mask, translucent backdrop filter, or nested glass — where Chrome hangs on nested drawables) or non-upright transforms, and all glass views in browsers without HTML-in-Canvas (Firefox, Safari, older Chrome), cleanly fall back to CSS backdrop-filter blur + tint + inset rim without mounting the stage canvas.
 
 const glassStageCSS = `.nsgo-glass-stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }`
 
-// glassSupportedFunc is overridden in tests to simulate browsers
-// without HTML-in-Canvas support.
+// glassSupportedFunc is overridden in tests to simulate browsers without HTML-in-Canvas support.
 var glassSupportedFunc = htmlInCanvasSupported
 
-// htmlInCanvasSupported reports whether the browser exposes
-// HTML-in-Canvas (content="drawable", requestPaint, drawElementImage)
-// and WebGL 2 for the glass shader.
+// htmlInCanvasSupported reports whether the browser exposes HTML-in-Canvas (content="drawable", requestPaint, drawElementImage) and WebGL 2 for the glass shader.
 func htmlInCanvasSupported() bool {
 	g := js.Global()
 	canvasCtor := g.Get("HTMLCanvasElement")
@@ -89,8 +62,7 @@ func hasProp(obj js.Value, name string) bool {
 	return js.Global().Get("Reflect").Call("has", obj, name).Bool()
 }
 
-// glassStage owns a surface's HTML-in-Canvas stage and shared WebGL 2
-// glass renderer.
+// glassStage owns a surface's HTML-in-Canvas stage and shared WebGL 2 glass renderer.
 type glassStage struct {
 	stage      js.Value // <canvas content="drawable" class="nsgo-glass-stage">
 	ctx        js.Value // 2D context of stage
@@ -113,8 +85,7 @@ type glassLayer struct {
 	view *view // non-nil for glass views, nil for overlay siblings
 }
 
-// glassGL is the surface's single shared WebGL 2 context for blurring
-// backdrop snapshots and running the Liquid Glass shader.
+// glassGL is the surface's single shared WebGL 2 context for blurring backdrop snapshots and running the Liquid Glass shader.
 type glassGL struct {
 	canvas   js.Value
 	gl       js.Value
@@ -183,8 +154,7 @@ void main() {
 }
 `
 
-// glassFragGLSL is the GLSL ES 3.00 port of Windows' glassHLSL
-// (internal/platform/windows/glass.go).
+// glassFragGLSL is the GLSL ES 3.00 port of Windows' glassHLSL (internal/platform/windows/glass.go).
 const glassFragGLSL = `#version 300 es
 precision highp float;
 uniform sampler2D uBackdrop;
@@ -382,8 +352,7 @@ func (g *glassGL) ensureTextures(w, h int) {
 	g.texW, g.texH = w, h
 }
 
-// render blurs src (bw by bh pixels) by sigma pixels and draws the
-// Liquid Glass shader for u into g.canvas.
+// render blurs src (bw by bh pixels) by sigma pixels and draws the Liquid Glass shader for u into g.canvas.
 func (g *glassGL) render(src js.Value, bw, bh int, padX, padY float64, u webstyle.GlassUniforms, sigma float64) bool {
 	if g == nil || g.failed || !g.gl.Truthy() || bw <= 0 || bh <= 0 {
 		return false
@@ -475,8 +444,7 @@ func (g *glassGL) release() {
 	g.texW, g.texH = 0, 0
 }
 
-// shownDark reports whether the surface currently renders in dark mode,
-// matching setAppearance's precedence (forced > hosted > system).
+// shownDark reports whether the surface currently renders in dark mode, matching setAppearance's precedence (forced > hosted > system).
 func (s *surface) shownDark() bool {
 	a := s.forced
 	if a == driver.AppearanceSystem {
@@ -502,8 +470,7 @@ func (s *surface) pixelRatio() float64 {
 	return 1
 }
 
-// syncGlassView registers or unregisters v when its ViewStyle changes
-// and marks the glass stage dirty for the end of the mount batch.
+// syncGlassView registers or unregisters v when its ViewStyle changes and marks the glass stage dirty for the end of the mount batch.
 func (s *surface) syncGlassView(v *view) {
 	want := v.style.Glass != driver.GlassNone
 	if !want && (s.glass == nil || !s.glass.views[v]) {
@@ -542,16 +509,14 @@ func (s *surface) removeGlassView(v *view) {
 	}
 }
 
-// markGlassDirty notes that DOM structure or styling changed while
-// glass views exist.
+// markGlassDirty notes that DOM structure or styling changed while glass views exist.
 func (s *surface) markGlassDirty() {
 	if s.glass != nil && len(s.glass.views) > 0 {
 		s.glass.dirty = true
 	}
 }
 
-// refreshGlassAppearance updates fallback CSS and schedules a shader
-// repaint when light/dark mode or pixel ratio changes.
+// refreshGlassAppearance updates fallback CSS and schedules a shader repaint when light/dark mode or pixel ratio changes.
 func (s *surface) refreshGlassAppearance() {
 	if s.glass == nil || len(s.glass.views) == 0 {
 		return
@@ -566,8 +531,7 @@ func (s *surface) refreshGlassAppearance() {
 	}
 }
 
-// glassEligible reports whether v can render through the HTML-in-Canvas
-// glass shader without risking a Chrome hang or self-capture.
+// glassEligible reports whether v can render through the HTML-in-Canvas glass shader without risking a Chrome hang or self-capture.
 func (s *surface) glassEligible(v *view) bool {
 	if v == nil || s.root == nil || v == s.root || s.view(v.id) != v {
 		return false
@@ -585,9 +549,7 @@ func (s *surface) glassEligible(v *view) bool {
 	if _, _, _, _, ok := webstyle.GlassBoxTransform(0, 0, 1, 1, &vs); !ok {
 		return false
 	}
-	// Walk ancestors between v and s.root: refuse any ancestor that
-	// triggers Chrome's nested-drawable hang (blend/mask/translucent
-	// backdrop) or nested glass.
+	// Walk ancestors between v and s.root: refuse any ancestor that triggers Chrome's nested-drawable hang (blend/mask/translucent backdrop) or nested glass.
 	for el := v.el.Get("parentElement"); el.Truthy() && !el.Equal(s.root.el); el = el.Get("parentElement") {
 		if anc := s.viewOf(el); anc != nil {
 			as := anc.style
@@ -602,8 +564,7 @@ func (s *surface) glassEligible(v *view) bool {
 	return true
 }
 
-// syncGlass reconciles the HTML-in-Canvas stage, layer drawables, and
-// each glass view's active/fallback CSS.
+// syncGlass reconciles the HTML-in-Canvas stage, layer drawables, and each glass view's active/fallback CSS.
 func (s *surface) syncGlass() {
 	g := s.glass
 	if g == nil {
@@ -661,10 +622,7 @@ func (s *surface) syncGlass() {
 		}
 	}
 
-	// Collect all depth-1 drawable layers inside s.root.el: every
-	// eligible glass view plus any following sibling of an ancestor
-	// along the path to s.root.el (overlays/modals/popups above glass)
-	// that does not contain an eligible glass view.
+	// Collect all depth-1 drawable layers inside s.root.el: every eligible glass view plus any following sibling of an ancestor along the path to s.root.el (overlays/modals/popups above glass) that does not contain an eligible glass view.
 	layerMap := make([]glassLayer, 0, len(eligible)*2)
 	hasLayer := func(el js.Value) bool {
 		for _, l := range layerMap {
@@ -740,8 +698,7 @@ func (s *surface) syncGlass() {
 	s.requestGlassPaint()
 }
 
-// activateGlassStage creates the HTML-in-Canvas stage and shared WebGL 2
-// renderer and moves s.root.el inside it.
+// activateGlassStage creates the HTML-in-Canvas stage and shared WebGL 2 renderer and moves s.root.el inside it.
 func (s *surface) activateGlassStage() bool {
 	g := s.glass
 	if g.active {
@@ -785,8 +742,7 @@ func (s *surface) activateGlassStage() bool {
 	})
 	stage.Call("addEventListener", "paint", g.paintFn)
 
-	// Place stage where s.root.el sits, then move s.root.el inside it
-	// (preserving scroll offsets and focus via moveBefore when available).
+	// Place stage where s.root.el sits, then move s.root.el inside it (preserving scroll offsets and focus via moveBefore when available).
 	s.host.Call("insertBefore", stage, s.root.el)
 	if canMove() && s.root.el.Get("isConnected").Bool() {
 		stage.Call("moveBefore", s.root.el, js.Null())
@@ -799,9 +755,7 @@ func (s *surface) activateGlassStage() bool {
 	return true
 }
 
-// teardownGlass removes the HTML-in-Canvas stage, restores s.root.el
-// directly under s.host, strips all drawable attributes, and releases
-// listeners and WebGL 2 resources.
+// teardownGlass removes the HTML-in-Canvas stage, restores s.root.el directly under s.host, strips all drawable attributes, and releases listeners and WebGL 2 resources.
 func (s *surface) teardownGlass() {
 	g := s.glass
 	if g == nil {
@@ -875,8 +829,7 @@ func (s *surface) requestGlassPaint() {
 	safeCall(func() { g.stage.Call("requestPaint") })
 }
 
-// paintGlassStage renders the app tree, nested <canvas> elements,
-// Liquid Glass shader surfaces, and overlays onto g.stage.
+// paintGlassStage renders the app tree, nested <canvas> elements, Liquid Glass shader surfaces, and overlays onto g.stage.
 func (s *surface) paintGlassStage() {
 	g := s.glass
 	if g == nil || !g.active || g.painting || s.root == nil {
@@ -948,8 +901,7 @@ func (s *surface) paintGlassStage() {
 		// Outer box shadows (drawElementImage clips drawables to their border box).
 		drawGlassOuterShadows(ctx, &vs, gx*dpr, gy*dpr, float64(u.Rect[2]), float64(u.Rect[3]), u.Radii, dpr)
 
-		// Snapshot blurred backdrop region behind v from the stage canvas
-		// as painted so far (excluding v itself and anything above v).
+		// Snapshot blurred backdrop region behind v from the stage canvas as painted so far (excluding v itself and anything above v).
 		sigma := float64(u.Blur) * dpr
 		pad := math.Min(math.Max(math.Ceil(sigma*2.5), 4), 64)
 		boxLeft, boxTop := gx*dpr, gy*dpr
@@ -986,8 +938,7 @@ func (s *surface) paintGlassStage() {
 	g.paintCount++
 }
 
-// layerLayoutOrigin computes el's untransformed layout top-left in CSS
-// pixels relative to the stage bounding rect sr using offsetParent.
+// layerLayoutOrigin computes el's untransformed layout top-left in CSS pixels relative to the stage bounding rect sr using offsetParent.
 func layerLayoutOrigin(el, sr js.Value) (x, y float64, ok bool) {
 	op := el.Get("offsetParent")
 	if !op.Truthy() {
@@ -999,12 +950,7 @@ func layerLayoutOrigin(el, sr js.Value) (x, y float64, ok bool) {
 	return x, y, true
 }
 
-// compositeLayerCanvases draws visible descendant <canvas> elements
-// belonging directly to layerEl (skipping nested drawable subtrees and
-// the glass stage itself) onto ctx. Chrome's drawElementImage omits
-// WebGL canvases and larger/scaled 2D canvases (icons, charts), so
-// compositing them here preserves every <canvas> in the app both on
-// screen and inside glass backdrops without recursion.
+// compositeLayerCanvases draws visible descendant <canvas> elements belonging directly to layerEl (skipping nested drawable subtrees and the glass stage itself) onto ctx. Chrome's drawElementImage omits WebGL canvases and larger/scaled 2D canvases (icons, charts), so compositing them here preserves every <canvas> in the app both on screen and inside glass backdrops without recursion.
 func (s *surface) compositeLayerCanvases(ctx, layerEl, sr js.Value, dpr float64) {
 	canvases := layerEl.Call("querySelectorAll", "canvas")
 	n := canvases.Length()
@@ -1040,8 +986,7 @@ func (s *surface) compositeLayerCanvases(ctx, layerEl, sr js.Value, dpr float64)
 	}
 }
 
-// insideNestedDrawable reports whether el sits inside a drawable
-// descendant of layerEl (other than layerEl itself).
+// insideNestedDrawable reports whether el sits inside a drawable descendant of layerEl (other than layerEl itself).
 func insideNestedDrawable(el, layerEl js.Value) bool {
 	for p := el; p.Truthy() && !p.Equal(layerEl); p = p.Get("parentElement") {
 		if p.Call("hasAttribute", "drawable").Bool() {
@@ -1051,8 +996,7 @@ func insideNestedDrawable(el, layerEl js.Value) bool {
 	return false
 }
 
-// canvasEffectiveAlpha returns the combined opacity of el and its
-// ancestors up to (and including) layerEl, or visible=false when hidden.
+// canvasEffectiveAlpha returns the combined opacity of el and its ancestors up to (and including) layerEl, or visible=false when hidden.
 func canvasEffectiveAlpha(el, layerEl js.Value) (alpha float64, visible bool) {
 	alpha = 1
 	g := js.Global()
@@ -1085,8 +1029,7 @@ func effectiveAncestorAlpha(el, rootEl js.Value) float64 {
 	return alpha
 }
 
-// clipAncestorOverflows intersects ctx's clip with every ancestor
-// between el and stopEl whose overflow clips its descendants.
+// clipAncestorOverflows intersects ctx's clip with every ancestor between el and stopEl whose overflow clips its descendants.
 func (s *surface) clipAncestorOverflows(ctx, el, stopEl, sr js.Value, dpr float64) {
 	g := js.Global()
 	stageLeft, stageTop := sr.Get("left").Float(), sr.Get("top").Float()
@@ -1116,9 +1059,7 @@ func (s *surface) clipAncestorOverflows(ctx, el, stopEl, sr js.Value, dpr float6
 	}
 }
 
-// drawGlassOuterShadows draws non-inset box shadows for a glass view
-// directly onto the stage canvas before the glass surface draws, since
-// drawElementImage clips a drawable element to its border box.
+// drawGlassOuterShadows draws non-inset box shadows for a glass view directly onto the stage canvas before the glass surface draws, since drawElementImage clips a drawable element to its border box.
 func drawGlassOuterShadows(ctx js.Value, vs *driver.ViewStyle, x, y, w, h float64, radii [4]float32, dpr float64) {
 	type shadowSpec struct {
 		ox, oy, blur, spread float64
@@ -1146,8 +1087,7 @@ func drawGlassOuterShadows(ctx js.Value, vs *driver.ViewStyle, x, y, w, h float6
 	if len(specs) == 0 {
 		return
 	}
-	// Draw each shadow from an offscreen-shifted shape so the interior
-	// fill never bleeds through the glass box.
+	// Draw each shadow from an offscreen-shifted shape so the interior fill never bleeds through the glass box.
 	const shift = 1e5
 	for _, sh := range specs {
 		sx, sy := x-sh.spread, y-sh.spread
@@ -1183,8 +1123,7 @@ func drawGlassOuterShadows(ctx js.Value, vs *driver.ViewStyle, x, y, w, h float6
 	}
 }
 
-// safeCall invokes fn and recovers any js.Error thrown by browser APIs
-// (such as drawElementImage on an element awaiting its first layout).
+// safeCall invokes fn and recovers any js.Error thrown by browser APIs (such as drawElementImage on an element awaiting its first layout).
 func safeCall(fn func()) {
 	defer func() { _ = recover() }()
 	fn()

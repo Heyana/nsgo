@@ -17,12 +17,7 @@ import (
 // Gradients arrive resolved against the box in fractions, so their CSS is
 // written again when the box changes size.
 
-// decorCSS appends the CSS of vs's shape and effects on a box of size;
-// what is at CSS's initial value it leaves out. When vs.Glass is set
-// and glassActive is true, the HTML-in-Canvas glass shader draws the
-// refracted backdrop, tint and specular rim so CSS omits backdrop-filter
-// and fallback rim; when glassActive is false, CSS falls back to
-// backdrop-filter plus an inset rim.
+// decorCSS appends the CSS of vs's shape and effects on a box of size; what is at CSS's initial value it leaves out. When vs.Glass is set and glassActive is true, the HTML-in-Canvas glass shader draws the refracted backdrop, tint and specular rim so CSS omits backdrop-filter and fallback rim; when glassActive is false, CSS falls back to backdrop-filter plus an inset rim.
 func decorCSS(c *cssText, vs *driver.ViewStyle, size driver.Size, glassActive, dark bool) {
 	c.add("border-radius", webstyle.Radius(vs))
 	if vs.ContinuousCorners {

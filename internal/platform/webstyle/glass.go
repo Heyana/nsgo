@@ -6,9 +6,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// GlassUniforms holds the shader parameters for Liquid Glass, matching
-// Windows' glass shader (internal/platform/windows/glass.go) and MyGo's
-// glass material measurements of macOS 27's NSGlassEffectView.
+// GlassUniforms holds the shader parameters for Liquid Glass, matching Windows' glass shader (internal/platform/windows/glass.go) and MyGo's glass material measurements of macOS 27's NSGlassEffectView.
 type GlassUniforms struct {
 	Rect  [4]float32 // x, y, width, height in output pixels
 	Radii [4]float32 // fitted corner radii in pixels: top-left, top-right, bottom-right, bottom-left
@@ -19,9 +17,7 @@ type GlassUniforms struct {
 	Blur  float32    // backdrop blur sigma in CSS points
 }
 
-// ComputeGlassUniforms computes the Liquid Glass shader parameters for a
-// box of w by h CSS points at device pixel scale. It returns false when
-// vs has no glass effect or the box has no area.
+// ComputeGlassUniforms computes the Liquid Glass shader parameters for a box of w by h CSS points at device pixel scale. It returns false when vs has no glass effect or the box has no area.
 func ComputeGlassUniforms(vs *driver.ViewStyle, w, h, scale float32, dark bool) (GlassUniforms, bool) {
 	if vs == nil || vs.Glass == driver.GlassNone || w <= 0 || h <= 0 {
 		return GlassUniforms{}, false
@@ -71,9 +67,7 @@ func ComputeGlassUniforms(vs *driver.ViewStyle, w, h, scale float32, dark bool) 
 	return u, true
 }
 
-// GlassFallbackBackdrop returns the CSS backdrop-filter for a glass view
-// when the glass shader is unavailable: the style's own BackdropFilters
-// when set, else a material blur matching GlassEffect.
+// GlassFallbackBackdrop returns the CSS backdrop-filter for a glass view when the glass shader is unavailable: the style's own BackdropFilters when set, else a material blur matching GlassEffect.
 func GlassFallbackBackdrop(vs *driver.ViewStyle) string {
 	if vs == nil {
 		return ""
@@ -93,9 +87,7 @@ func GlassFallbackBackdrop(vs *driver.ViewStyle) string {
 	}
 }
 
-// GlassFallbackTint returns the CSS background-color for a glass view
-// falling back to CSS: the view's own Background when set, else a subtle
-// translucent tint matching GlassEffect and appearance.
+// GlassFallbackTint returns the CSS background-color for a glass view falling back to CSS: the view's own Background when set, else a subtle translucent tint matching GlassEffect and appearance.
 func GlassFallbackTint(vs *driver.ViewStyle, dark bool) string {
 	if vs == nil {
 		return ""
@@ -119,8 +111,7 @@ func GlassFallbackTint(vs *driver.ViewStyle, dark bool) string {
 	}
 }
 
-// GlassFallbackRim returns a subtle inset specular rim box-shadow for a
-// glass view falling back to CSS, or "" when vs has no glass effect.
+// GlassFallbackRim returns a subtle inset specular rim box-shadow for a glass view falling back to CSS, or "" when vs has no glass effect.
 func GlassFallbackRim(vs *driver.ViewStyle, dark bool) string {
 	if vs == nil || vs.Glass == driver.GlassNone {
 		return ""
@@ -131,10 +122,7 @@ func GlassFallbackRim(vs *driver.ViewStyle, dark bool) string {
 	return "inset 0 0 0 1px rgba(255,255,255,0.45)"
 }
 
-// GlassBoxTransform checks whether vs's transform keeps the glass box
-// upright (axis-aligned, flat, no rotation/skew/perspective/matrix) and
-// returns its transformed CSS bounds (x, y, sw, sh) from layout origin
-// (lx, ly) and layout size (w, h).
+// GlassBoxTransform checks whether vs's transform keeps the glass box upright (axis-aligned, flat, no rotation/skew/perspective/matrix) and returns its transformed CSS bounds (x, y, sw, sh) from layout origin (lx, ly) and layout size (w, h).
 func GlassBoxTransform(lx, ly, w, h float64, vs *driver.ViewStyle) (x, y, sw, sh float64, ok bool) {
 	if w <= 0 || h <= 0 {
 		return 0, 0, 0, 0, false
@@ -160,10 +148,7 @@ func GlassBoxTransform(lx, ly, w, h float64, vs *driver.ViewStyle) (x, y, sw, sh
 	return x, y, sw, sh, true
 }
 
-// GlassUnsafeAncestor reports whether an ancestor view with style vs
-// makes placing a nested HTML-in-Canvas drawable inside it unsafe:
-// Chrome hangs when a nested drawable sits under blend/mask/translucent
-// backdrop layers, and nesting glass inside glass risks recursive capture.
+// GlassUnsafeAncestor reports whether an ancestor view with style vs makes placing a nested HTML-in-Canvas drawable inside it unsafe: Chrome hangs when a nested drawable sits under blend/mask/translucent backdrop layers, and nesting glass inside glass risks recursive capture.
 func GlassUnsafeAncestor(vs *driver.ViewStyle) bool {
 	if vs == nil {
 		return false

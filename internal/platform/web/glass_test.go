@@ -100,8 +100,7 @@ func TestGlassCapabilityDetection(t *testing.T) {
 	if !doc.Truthy() {
 		t.Skip("run with nsgo test -target web")
 	}
-	// Verify detection does not panic and agrees with HTMLCanvasElement /
-	// CanvasRenderingContext2D prototypes in this browser.
+	// Verify detection does not panic and agrees with HTMLCanvasElement / CanvasRenderingContext2D prototypes in this browser.
 	got := htmlInCanvasSupported()
 	cp := js.Global().Get("HTMLCanvasElement").Get("prototype")
 	p2d := js.Global().Get("CanvasRenderingContext2D").Get("prototype")
@@ -251,8 +250,7 @@ func TestGlassShaderRendering(t *testing.T) {
 		t.Errorf("backdrop right = %v, want blue", pxBlue)
 	}
 
-	// Inside the glass card on the red side (x=90, y=100): light regular glass
-	// lifts luminance well above raw red's green/blue = 0 (light tone curve + tint).
+	// Inside the glass card on the red side (x=90, y=100): light regular glass lifts luminance well above raw red's green/blue = 0 (light tone curve + tint).
 	lightGlass := stagePixelAt(s, 90, 100)
 	if lightGlass[3] < 250 {
 		t.Errorf("light glass alpha = %d, want opaque", lightGlass[3])
@@ -316,8 +314,7 @@ func TestGlassWithNestedCanvasesNoHang(t *testing.T) {
 	glassStyle.Glass = driver.GlassClear
 	glassStyle.CornerRadius = 12
 
-	// 100x100 drawing at DPR=2 produces a 200x200 bitmap (larger than Chrome's
-	// drawElementImage software canvas threshold, verifying manual canvas compositing).
+	// 100x100 drawing at DPR=2 produces a 200x200 bitmap (larger than Chrome's drawElementImage software canvas threshold, verifying manual canvas compositing).
 	bgDrawing := driver.NewDrawing(nil)
 	bgDrawing.SetFillColor(driver.RGB(0x00ffff)).FillRect(0, 0, 140, 140)
 
@@ -353,22 +350,19 @@ func TestGlassWithNestedCanvasesNoHang(t *testing.T) {
 		t.Errorf("backdrop canvas pixel = %v, want cyan (0,255,255)", rawCanvas)
 	}
 
-	// Glass over the cyan backdrop canvas (x=115, y=100) must transmit cyan,
-	// proving the backdrop <canvas> was captured into the glass shader!
+	// Glass over the cyan backdrop canvas (x=115, y=100) must transmit cyan, proving the backdrop <canvas> was captured into the glass shader!
 	glassOverCanvas := stagePixelAt(s, 115, 100)
 	if glassOverCanvas[1] < 150 || glassOverCanvas[2] < 150 {
 		t.Errorf("glass over cyan canvas = %v, want cyan refracted through glass", glassOverCanvas)
 	}
 
-	// Child <canvas> inside the glass card (x=80+100+20=200, y=40+40+20=100)
-	// must render bright yellow on top of the glass.
+	// Child <canvas> inside the glass card (x=80+100+20=200, y=40+40+20=100) must render bright yellow on top of the glass.
 	innerCanvas := stagePixelAt(s, 200, 100)
 	if innerCanvas[0] < 240 || innerCanvas[1] < 240 || innerCanvas[2] > 20 {
 		t.Errorf("child canvas inside glass = %v, want yellow (255,255,0)", innerCanvas)
 	}
 
-	// Also mount a WebGL 2 <canvas> behind the glass view to verify GPU
-	// canvases composite without dropping or hanging.
+	// Also mount a WebGL 2 <canvas> behind the glass view to verify GPU canvases composite without dropping or hanging.
 	glCanvas := s.doc.Call("createElement", "canvas")
 	glCanvas.Set("width", 100)
 	glCanvas.Set("height", 100)
@@ -410,8 +404,7 @@ func TestGlassUnsafeAncestorFallsBackWithoutHang(t *testing.T) {
 	rootStyle := driver.DefaultViewStyle
 	rootStyle.Background = driver.RGB(0x204060)
 
-	// Ancestor combining BlendMode + Mask: marking a descendant drawable
-	// would hang Chrome's HTML-in-Canvas paint recorder.
+	// Ancestor combining BlendMode + Mask: marking a descendant drawable would hang Chrome's HTML-in-Canvas paint recorder.
 	unsafeParent := driver.DefaultViewStyle
 	unsafeParent.BlendMode = driver.BlendMultiply
 	unsafeParent.Effects = &driver.Effects{
