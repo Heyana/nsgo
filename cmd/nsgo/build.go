@@ -1288,7 +1288,7 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 	if err != nil {
 		return err
 	}
-	app := webApp{Version: p.Version, Release: !dev, Wasm: "app.wasm", WasmSize: info.Size(), Base: base}
+	app := webApp{Version: p.Version, Release: !dev, UpdateChannel: p.Updates.Channel, Wasm: "app.wasm", WasmSize: info.Size(), Base: base}
 	// write puts data in dir, by its content's name in a release, and
 	// returns the name.
 	write := func(name string, data []byte) (string, error) {
@@ -1433,14 +1433,15 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 // webApp is a site's nsgo.json, which names the files of the app for the
 // loader, relative to itself.
 type webApp struct {
-	Version  string `json:"version,omitempty"`
-	Release  bool   `json:"release,omitempty"`
-	Base     string `json:"base,omitempty"`
-	Wasm     string `json:"wasm"`
-	WasmSize int64  `json:"wasmSize"`
-	Exec     string `json:"exec"`
-	Loader   string `json:"loader"`
-	Host     string `json:"host,omitempty"`
+	UpdateChannel string `json:"updateChannel,omitempty"`
+	Version       string `json:"version,omitempty"`
+	Release       bool   `json:"release,omitempty"`
+	Base          string `json:"base,omitempty"`
+	Wasm          string `json:"wasm"`
+	WasmSize      int64  `json:"wasmSize"`
+	Exec          string `json:"exec"`
+	Loader        string `json:"loader"`
+	Host          string `json:"host,omitempty"`
 	// Runtime is the script that gives the page's realm the runtime's
 	// programs, and Scripts the app's bundles: the loader runs them in the
 	// realm before the app starts, so a Content-Security-Policy needs no

@@ -106,6 +106,26 @@ func TestEmbeddedWebUpdatesAnswerUnavailable(t *testing.T) {
 	}
 }
 
+func TestWebUpdateChannelNoneRemainsDisabled(t *testing.T) {
+	if !js.Global().Get("document").Truthy() {
+		t.Skip("run with nsgo test -target web")
+	}
+	result := make(chan core.UpdateCheck, 1)
+	s := open(func(cx *core.Scope) core.Node {
+		cx.CheckForUpdates(false, func(found core.UpdateCheck) { result <- found })
+		return core.View{}
+	}, Options{UpdateConfig: `{"release":true,"wasm":"old.wasm","updateChannel":"none"}`}, nil)
+	defer s.engine.Close()
+	select {
+	case found := <-result:
+		if found.Managed != core.UpdaterChannel || found.Err != nil || found.Restart {
+			t.Fatalf("disabled answer=%+v", found)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("disabled check not answered")
+	}
+}
+
 func TestInstallUpdateReportsUnavailable(t *testing.T) {
 	doc := js.Global().Get("document")
 	if !doc.Truthy() {

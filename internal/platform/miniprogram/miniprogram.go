@@ -34,6 +34,11 @@ import (
 
 // Options configure the app.
 type Options struct {
+	// Name and Version identify the running app in update replies.
+	Name, Version string
+	// Development and UpdateChannel retain explicitly disabled build policy.
+	Development   bool
+	UpdateChannel string
 	// ID names the app's entries in the mini program's storage.
 	ID string
 	// Appearance is the appearance the app starts in.
@@ -61,10 +66,11 @@ type surface struct {
 	// files are images of bytes written for <image> to load, by key.
 	files map[string]string
 	// appearance is the one the app forces, AppearanceSystem for none.
-	appearance driver.Appearance
-	updateWaiters map[uint32]*time.Timer
+	appearance    driver.Appearance
+	updates       *miniUpdater
 	updateUnsub   js.Value
 	updateChanged js.Func
+	updateClose   js.Func
 }
 
 // Run runs app in the mini program's page. Call it from main; it does
@@ -86,10 +92,7 @@ func Run(app engine.App, opts Options) {
 	if id == "" {
 		id = "default"
 	}
-	updater := driver.UpdaterState{Managed: driver.UpdateManagedUnavailable, NativePreferences: true}
-	if u := bridge.Get("updates"); u.Truthy() && u.Get("supported").Truthy() {
-		updater.Managed = driver.UpdateManagedSelf
-	}
+	updater := s.initUpdates(opts)
 	s.engine = engine.Start(s, app, engine.Options{
 		Size: s.size(), Environment: s.env, Appearance: opts.Appearance,
 		Updater: updater,

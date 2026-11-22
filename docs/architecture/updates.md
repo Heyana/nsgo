@@ -23,7 +23,7 @@ NSH's `nsh/updater` downloads, verifies and swaps in the next version itself. NS
 
 ## Browser and mini-program releases
 
-The web loader passes its published descriptor to its own Go instance. A standalone page checks the current `nsgo.json` with HTTP caching disabled, coalesces concurrent requests, and bounds/aborts pending fetches. A changed immutable-file descriptor offers a reload even when its displayed version is unchanged. Embedded hosts own their lifetime and do not reload through this API. This path needs no appcast key; it runs when the app calls `updater.Check` or its background form, without a new automatic polling loop or preference setters.
+The web loader passes its published descriptor to its own Go instance. A standalone page checks the current `nsgo.json` with HTTP caching disabled, coalesces concurrent requests, and bounds/aborts pending fetches. A changed immutable-file descriptor offers a reload even when its displayed version is unchanged. Embedded hosts own their lifetime and do not reload through this API. This path needs no appcast key; an explicitly authored `none` or `steam` channel remains disabled, and development mini programs retain their development reason. It runs when the app calls `updater.Check` or its background form, without a new automatic polling loop or preference setters.
 
 Reloading does not force a waiting offline worker to activate under older live tabs. The active worker can serve verified immutable assets from the waiting release's cache while retaining the previous cache; normal activation still retires old caches after their clients close. A real two-release Chromium run verifies Later, confirmed reload into the new module, and a subsequent up-to-date check.
 

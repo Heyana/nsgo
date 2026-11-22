@@ -280,7 +280,7 @@ function start(page, host = mpHost()) {
     api: host.api,
     canSignIn: signin.available(config.platform, host.api),
     signIn: (options) => signin.signIn(config.platform, host.api, options),
-    updates: updateManager(host.api),
+    updates: updateManager(['none', 'steam'].includes(config.env?.NSGO_UPDATE_CHANNEL) ? null : host.api),
     pixelImages: config.platform === 'wechat' && typeof host.api.createSelectorQuery === 'function',
     pixelBuffer: pixels.buffer,
     showPixels: pixels.show,
@@ -334,6 +334,7 @@ function start(page, host = mpHost()) {
           send(name, id, ...rest)
         },
         stop() {
+          if (typeof bridge.closeUpdates === 'function') bridge.closeUpdates()
           stopped = true
           pixels.clear()
           if (frameTimer != null) host.clearTimeout(frameTimer)

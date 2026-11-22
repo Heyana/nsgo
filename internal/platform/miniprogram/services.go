@@ -51,7 +51,9 @@ func (s *surface) service(it *driver.MountItem) {
 	case driver.ItemCheckForUpdates:
 		s.checkForUpdates(it)
 	case driver.ItemQuit:
-		if it.On { s.applyUpdate() }
+		if it.On {
+			s.applyUpdate()
+		}
 	case driver.ItemAlert:
 		s.alert(it.Alert)
 	case driver.ItemSetClipboard:
@@ -134,49 +136,6 @@ func (s *surface) service(it *driver.MountItem) {
 	case driver.ItemCloseNotification, driver.ItemBadge:
 		// Nothing shows to close, and a mini program has no icon badge.
 	}
-}
-
-func (s *surface) checkForUpdates(it *driver.MountItem) {
-	u := s.bridge.Get("updates")
-	if it.UpdatePreference != nil {
-		s.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Data: &driver.UpdaterState{Managed: driver.UpdateManagedSelf, NativePreferences: true}})
-		return
-	}
-	if !u.Truthy() || !u.Get("supported").Truthy() {
-		s.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count: it.Count, Data: &driver.Update{Err: "updates unavailable"}})
-		return
-	}
-	if s.updateWaiters == nil { s.updateWaiters = map[uint32]*time.Timer{} }
-	s.updateWaiters[it.Count] = time.AfterFunc(30*time.Second, func() {
-		s.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count: it.Count, Data: &driver.Update{Err: "update check timed out"}})
-	})
-	if s.updateChanged.Value.IsUndefined() {
-		s.updateChanged = js.FuncOf(func(_ js.Value, _ []js.Value) any { s.updateChangedState(); return nil })
-		changed := u.Get("changed")
-		if changed.Type() == js.TypeFunction { s.updateUnsub = changed.Invoke(s.updateChanged) }
-	}
-	s.updateChangedState()
-}
-
-func (s *surface) updateChangedState() {
-	u := s.bridge.Get("updates")
-	for id, timer := range s.updateWaiters {
-		if u.Get("ready").Truthy() {
-			timer.Stop(); delete(s.updateWaiters, id)
-			s.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count:id, Data:&driver.Update{Restart:true, Managed:driver.UpdateManagedSelf}})
-		} else if err := u.Get("error"); err.Type() == js.TypeString && err.String() != "" {
-			timer.Stop(); delete(s.updateWaiters, id)
-			s.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count:id, Data:&driver.Update{Err:err.String()}})
-		} else if u.Get("checked").Truthy() && !u.Get("available").Truthy() {
-			timer.Stop(); delete(s.updateWaiters, id)
-			s.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count:id, Data:&driver.Update{Managed:driver.UpdateManagedSelf}})
-		}
-	}
-}
-
-func (s *surface) applyUpdate() {
-	u := s.bridge.Get("updates")
-	if u.Truthy() && u.Get("ready").Truthy() && u.Get("apply").Type() == js.TypeFunction { u.Call("apply") }
 }
 
 // miniProgramPermission is whether a mini program's platform keeps the permission name, by a scope of its own.

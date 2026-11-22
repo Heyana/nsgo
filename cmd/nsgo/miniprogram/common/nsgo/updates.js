@@ -10,6 +10,7 @@ function updateManager(api) {
     available: false,
     ready: false,
     error: '',
+    checkedAt: 0,
     changed: null,
     apply() { return false },
   }
@@ -32,7 +33,8 @@ function updateManager(api) {
     state.error = String(e && (e.errMsg || e.message) || e)
     return state
   }
-  if (!manager) return state
+  if (!manager || ['onCheckForUpdate', 'onUpdateReady', 'onUpdateFailed', 'applyUpdate']
+    .some((name) => typeof manager[name] !== 'function')) return state
   state.supported = true
   const listen = (name, f) => {
     try { if (typeof manager[name] === 'function') manager[name](f) } catch (e) {
@@ -42,6 +44,7 @@ function updateManager(api) {
   }
   listen('onCheckForUpdate', (r) => {
     state.checked = true
+    state.checkedAt = Date.now()
     state.available = !!(r && r.hasUpdate)
     state.ready = false
     state.error = ''
@@ -63,6 +66,7 @@ function updateManager(api) {
     if (!state.ready) return false
     try {
       if (typeof manager.applyUpdate !== 'function') return false
+      state.ready = false
       manager.applyUpdate()
       return true
     } catch (e) {

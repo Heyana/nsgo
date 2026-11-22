@@ -226,6 +226,9 @@ func writeMiniProgram(p *project, mp miniProgramPlatform, dir string, module []b
 	}
 	cfg := miniprogramConfig{Platform: mp.name, Wasm: "/" + miniprogramSubpackage + "/app.wasm.br", Subpackage: miniprogramSubpackage,
 		CustomNavigation: p.MiniProgram.CustomNavigation, Env: map[string]string{}}
+	if p.Updates.Channel != "" {
+		cfg.Env["NSGO_UPDATE_CHANNEL"] = p.Updates.Channel
+	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err

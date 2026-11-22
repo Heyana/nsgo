@@ -21,6 +21,7 @@ type webUpdates struct {
 	version       string
 	url           string
 	ready, closed bool
+	blocked       bool
 	abort         js.Value
 	last          time.Time
 	pending       []uint32
@@ -54,6 +55,11 @@ func (s *surface) initUpdates(opts Options) driver.UpdaterState {
 		base = s.doc.Get("baseURI").String()
 	}
 	s.updates = webUpdates{app: opts.Name, current: data, version: version, url: js.Global().Get("URL").New("nsgo.json", base).Get("href").String()}
+	var policy struct {
+		Channel string `json:"updateChannel"`
+	}
+	_ = json.Unmarshal(data, &policy)
+	s.updates.blocked = policy.Channel == "none" || policy.Channel == "steam"
 	return s.updateState()
 }
 
@@ -61,6 +67,9 @@ func (s *surface) updateState() driver.UpdaterState {
 	managed := driver.UpdateManagedUnavailable
 	if s.updates.current != nil {
 		managed = driver.UpdateManagedSelf
+	}
+	if s.updates.blocked {
+		managed = driver.UpdateManagedChannel
 	}
 	return driver.UpdaterState{Managed: managed, NativePreferences: true, LastCheck: s.updates.last}
 }
@@ -76,6 +85,10 @@ func (s *surface) checkForUpdates(it *driver.MountItem) {
 	}
 	id := it.Count
 	u := driver.Update{App: s.updates.app, Current: s.updates.version, Managed: s.updateState().Managed}
+	if s.updates.blocked {
+		s.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count: id, Data: &u})
+		return
+	}
 	if s.updates.current == nil {
 		u.Err = "updates: this page has no standalone release descriptor"
 		s.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count: id, Data: &u})

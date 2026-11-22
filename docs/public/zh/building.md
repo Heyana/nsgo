@@ -352,7 +352,7 @@ updates:
 | Linux、Android | 应用读取自己的 appcast，用户选择更新后将签名软件包流式下载到磁盘并校验，同时通过 `updater.Status` 与平台任务进度反馈进度，再通过 `pkexec dpkg`、`pkexec pacman`（`.pkg.tar.gz`/`.pkg.tar.zst`）、原子替换 AppImage 后重启，或交给 Android 的软件包安装器；其余安装方式或未签名的 appcast 改为打开该 Release 的页面 |
 | iOS | 应用查询负责更新它的 App Store，并打开其中的页面 |
 
-已发布的独立网页应用通过 `updater.Check(cx)` 比较当前版本与重新获取的 `nsgo.json`，确认后重新加载；版本号不变但构建文件变化也能被发现。此路径不需要 appcast 密钥，嵌入宿主自行管理重新加载。小程序使用平台的更新管理器，下载准备就绪后才重启。这些目标在应用调用 updater 时检查，小程序的检查和下载时机由平台决定，不提供自动检查偏好的设置。自行处理 `cx.CheckForUpdates` 时，用 `UpdateCheck.Restart` 判断可通过重启应用的更新；平台可能不提供版本名称。
+已发布的独立网页应用通过 `updater.Check(cx)` 比较当前版本与重新获取的 `nsgo.json`，确认后重新加载；版本号不变但构建文件变化也能被发现。此路径不需要 appcast 密钥；显式的 `none`/`steam` 渠道仍禁用检查，嵌入宿主自行管理重新加载。小程序使用平台的更新管理器，下载准备就绪后才重启。这些目标在应用调用 updater 时检查，小程序的检查和下载时机由平台决定，不提供自动检查偏好的设置。自行处理 `cx.CheckForUpdates` 时，用 `UpdateCheck.Restart` 判断可通过重启应用的更新；平台可能不提供版本名称。
 
 ### 渠道
 
