@@ -88,6 +88,7 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 	if w == nil || w.closing {
 		return
 	}
+	w.chrome.altAlone = false
 	w.hideMenuBar()
 	w.currentEvent = gtkEventControllerGetCurrentEvent(gesture)
 	defer func() { w.currentEvent = 0 }()
@@ -561,6 +562,14 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 	if w == nil {
 		return 0
 	}
+	if w.popover != 0 && gtkWidgetGetVisible(w.popover) != 0 {
+		// GTK's native menu keeps navigation, activation and dismissal keys.
+		w.chrome.altAlone = false
+		if _, repeat := w.held[keycode]; repeat && keyval == gdkF10 {
+			return 1
+		}
+		return 0
+	}
 	if keyval == gdkEscape && lockedPointer.owner == w {
 		w.releasePointer(true)
 		return 1
@@ -582,11 +591,11 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 		w.chrome.altAlone = false
 		return 1
 	}
-	w.menuBarKey(keyval, state, true)
-	if w.selectKey(keyval, state) {
+	if w.selectKey(keyval, state) || w.shortcut(keyval, state, repeat) || w.controlKey(keyval, state, repeat) {
+		w.chrome.altAlone = false
 		return 1
 	}
-	if w.shortcut(keyval, state, repeat) || w.controlKey(keyval, state, repeat) {
+	if w.menuBarKey(keyval, state, true, repeat) {
 		return 1
 	}
 	if (keyval == 0xff09 || keyval == 0xfe20) && state&(gdkControl|gdkAlt|gdkSuper|gdkMeta) == 0 && w.focusedWeb() == nil && w.tab(state&gdkShift != 0 || keyval == 0xfe20) {
@@ -1006,6 +1015,7 @@ func (w *window) keyUp(keycode, keyval, state uint32) {
 
 // releaseKeys reports every key held whose down was reported as coming up, with no modifiers, and forgets every key held, as the window loses the keyboard: their releases go to another window, and a key pressed again on return is a new press, not a repeat.
 func (w *window) releaseKeys() {
+	w.chrome.altAlone = false
 	for keycode, k := range w.held {
 		if k.reported && w.engine != nil {
 			w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, KeyCode: keyCode(keycode)})
@@ -1233,7 +1243,7 @@ func (w *window) shortcut(keyval, state uint32, repeat bool) bool {
 func keyReleasedCallback(controller uintptr, keyval, keycode, state uint32, data uintptr) {
 	if w := windowOf(data); w != nil {
 		w.keyUp(keycode, keyval, state)
-		w.menuBarKey(keyval, state, false)
+		w.menuBarKey(keyval, state, false, false)
 	}
 }
 

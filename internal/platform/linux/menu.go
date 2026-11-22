@@ -4,6 +4,7 @@ package linux
 
 import (
 	"fmt"
+	"unicode"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/menutext"
@@ -21,9 +22,104 @@ func (w *window) setMenu(entries []driver.MenuEntry) {
 	w.showMenuBar()
 }
 
+// menuPopups reports whether this window offers its application menu as a
+// popup instead of a bar, including while a hidden-title-bar window is full screen.
+func (w *window) menuPopups() bool {
+	return !w.embedded && len(w.chrome.menu) != 0 && w.chrome.titleBar == driver.TitleBarHidden && !(w.primary && w.opts.Hidden)
+}
+
+// popupApplicationMenu opens the application menu at the surface's leading
+// top corner. Request zero is internal: it has no PopupMenu close callback.
+func (w *window) popupApplicationMenu(entries []driver.MenuEntry) {
+	var at driver.Point
+	if w.dir == 2 { // GTK_TEXT_DIR_RTL
+		at.X = driver.Points(gtkWidgetGetWidth(w.surface))
+	}
+	w.showPopupMenu(entries, at, 0, true)
+}
+
+// restoreMenuFocus gives native menus' actions and dismissal back the editor
+// or view that owned the keyboard before opening. A retained widget may have
+// left the tree while the menu was open; only one still in this window returns.
+func (w *window) restoreMenuFocus() {
+	if !w.menuFocusPending {
+		return
+	}
+	focus := w.menuFocus
+	w.menuFocus, w.menuFocusPending = 0, false
+	if focus != 0 {
+		defer gObjectUnref(focus)
+	}
+	if w.closing {
+		return
+	}
+	top := w.toplevel()
+	var target uintptr
+	for p := focus; p != 0; p = gtkWidgetGetParent(p) {
+		if p == top {
+			target = focus
+			break
+		}
+	}
+	if top != 0 {
+		gtkWindowSetFocus(top, target)
+	}
+}
+
+// menuPopupKey follows Alt alone, F10 and top-level mnemonics in a window
+// with no bar. Other Alt chords, including the window manager's, keep their keys.
+func (w *window) menuPopupKey(keyval, state uint32, pressed, repeat bool) bool {
+	c := &w.chrome
+	alt := keyval == gdkAltL || keyval == gdkAltR
+	const other = gdkControl | gdkShift | gdkSuper | gdkMeta
+	switch {
+	case pressed && alt:
+		if !repeat {
+			c.altAlone = state&other == 0
+		}
+	case !pressed && alt:
+		alone := c.altAlone
+		c.altAlone = false
+		if alone {
+			w.popupApplicationMenu(c.menu)
+			return true
+		}
+	case pressed:
+		c.altAlone = false
+		if keyval == gdkF10 && state&(other|gdkAlt) == 0 {
+			if !repeat {
+				w.popupApplicationMenu(c.menu)
+			}
+			return true
+		}
+		if state&gdkAlt == 0 || state&(gdkControl|gdkSuper|gdkMeta) != 0 {
+			return false
+		}
+		key := unicode.ToLower(rune(keyLayoutAPI().unicode(keyval)))
+		for i := range c.menu {
+			e := &c.menu[i]
+			if e.Separator || e.Disabled || !shown(e) || menutext.Mnemonic(menutext.Label(w.language, e, "")) != key || key == 0 {
+				continue
+			}
+			if !repeat {
+				if len(e.Items) != 0 {
+					w.popupApplicationMenu(e.Items)
+				} else {
+					w.menuChosen(menuRef{id: e.ID, role: e.Role, notInText: e.NotInText})
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
 // showMenuBar builds the application menu as a GTK menu bar over the
 // surface, unless the title bar is hidden or the window is full screen.
 func (w *window) showMenuBar() {
+	if w.popover != 0 && w.popoverID == 0 {
+		gtkPopoverPopdown(w.popover)
+	}
 	if w.menuBar != 0 {
 		// Unparenting drops the bar's only reference.
 		gtkWidgetSetVisible(w.menuBar, 0)
@@ -210,6 +306,7 @@ func menuActivateCallback(action, parameter, data uintptr) {
 	if ref, ok := w.actionRefs[action]; ok {
 		w.menuChosen(ref)
 	} else if ref, ok := w.popupRefs[action]; ok {
+		w.restoreMenuFocus()
 		w.menuChosen(ref)
 	}
 }

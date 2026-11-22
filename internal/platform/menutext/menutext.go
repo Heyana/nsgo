@@ -4,6 +4,7 @@ package menutext
 import (
 	"github.com/nsgo-dev/nsgo/desktop/locales"
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"unicode"
 )
 
 // Label returns what e says in lang: its own label, or its role's when
@@ -71,4 +72,15 @@ func Label(lang string, e *driver.MenuEntry, app string) string {
 		return msgs.Help()
 	}
 	return e.Label
+}
+
+// Mnemonic returns the first letter or digit in label, lowercased, or zero
+// when it has neither. Labels have no access-key marker: '&' shows as itself.
+func Mnemonic(label string) rune {
+	for _, r := range label {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+	}
+	return 0
 }

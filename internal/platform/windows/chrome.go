@@ -889,7 +889,7 @@ func (w *window) menuChar(char uintptr) bool {
 	key := unicode.ToLower(rune(char))
 	for i := range w.chrome.menu {
 		e := &w.chrome.menu[i]
-		if e.Separator || e.Disabled || driver.MenuRoleUnsupported(e.Role, driver.OSWindows, speakAvailable()) || menuMnemonic(menutext.Label(w.language, e, "")) != key {
+		if e.Separator || e.Disabled || driver.MenuRoleUnsupported(e.Role, driver.OSWindows, speakAvailable()) || menutext.Mnemonic(menutext.Label(w.language, e, "")) != key {
 			continue
 		}
 		if len(e.Items) > 0 {
@@ -900,16 +900,6 @@ func (w *window) menuChar(char uintptr) bool {
 		return true
 	}
 	return false
-}
-
-// menuMnemonic returns the key that opens a top-level menu with Alt: its label's first letter or digit, lowercased, as NSGo's labels mark no access key ('&' shows as itself); zero when it has neither.
-func menuMnemonic(label string) rune {
-	for _, r := range label {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			return unicode.ToLower(r)
-		}
-	}
-	return 0
 }
 
 // showMenuBar shows the application menu as the window's menu bar, unless the title bar is hidden, the window is in full screen, the bar hides until Alt shows it or the window is a hidden root.

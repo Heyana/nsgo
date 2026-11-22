@@ -282,6 +282,8 @@ cx.OnQuit(func(ctx context.Context) { saveDraft(ctx) })
 
 `desktop.RegisterHotKey` 绑定全局快捷键，无论哪个应用在前台都生效，支持 macOS、Linux，以及用 `nsgo.Run(App)` 运行的 Windows 应用。它返回的句柄的 `State` 说明系统是否接受了它：系统答复前是 `HotKeyPending`，之后是 `HotKeyRegistered`；组合键已被其他注册占用时是 `HotKeyTaken`；按键或平台不支持全局快捷键时是 `HotKeyUnsupported`。快捷键录制器据此可以请用户换一个组合。在 macOS 上，只有应用自己已注册、或其他应用以独占方式注册的组合键才算被占用。在 Wayland 上由合成器请用户绑定快捷键，用户绑定后才是已注册；用户或合成器没有绑定的是已占用。测试中用 `nsgotest.HotKeyTaken` 和 `nsgotest.HotKeyUnsupported` 让组合键这样答复。
 
+使用 `desktop.TitleBarHidden` 时，Windows 和 Linux 会在单独按下并松开 Alt 或按下 F10 时弹出应用菜单。Alt 加顶层标签的第一个字母或数字会打开该子菜单或选择该命令，也支持非拉丁文字。应用绑定仍优先接收自己的按键；Shift+F10 仍用于上下文菜单，其他 Alt 组合键留给系统。Escape 关闭弹出菜单并恢复键盘焦点。
+
 ```go
 shortcut := desktop.RegisterHotKey(cx, "alt+space", launcher.Toggle)
 warning := core.Text{ContentFunc: func() string {

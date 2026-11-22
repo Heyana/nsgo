@@ -63,6 +63,7 @@ var (
 	gListModelGetNItems                       func(model uintptr) uint32
 	gListModelGetItem                         func(model uintptr, i uint32) uintptr
 	gtkPopoverMenuNewFromModel                func(model uintptr) uintptr
+	gtkPopoverMenuNewFromModelFull            func(model uintptr, flags uint32) uintptr
 	gtkPopoverSetPointingTo                   func(popover uintptr, rect *gdkRectangle)
 	gtkPopoverSetHasArrow                     func(popover uintptr, on int32)
 	gtkPopoverSetPosition                     func(popover uintptr, position int32)
@@ -120,6 +121,7 @@ func bindSystem() {
 	gtk(&gtkFileDialogSaveFinish, "gtk_file_dialog_save_finish")
 	gtk(&gtkDialogErrorQuark, "gtk_dialog_error_quark")
 	gtk(&gtkPopoverMenuNewFromModel, "gtk_popover_menu_new_from_model")
+	gtk(&gtkPopoverMenuNewFromModelFull, "gtk_popover_menu_new_from_model_full")
 	gtk(&gtkPopoverSetPointingTo, "gtk_popover_set_pointing_to")
 	gtk(&gtkPopoverSetHasArrow, "gtk_popover_set_has_arrow")
 	gtk(&gtkPopoverSetPosition, "gtk_popover_set_position")
@@ -567,8 +569,20 @@ func dialogError(gerr uintptr) error {
 // popupMenu shows entries as a GtkPopoverMenu pointing at p, one at a
 // time, and reports it closed.
 func (w *window) popupMenu(entries []driver.MenuEntry, p driver.Point, id uint32) {
+	w.showPopupMenu(entries, p, id, false)
+}
+
+// showPopupMenu shares the native menu and action path between a context menu
+// and the keyboard's application-menu popup. Keyboard menus select their first item.
+func (w *window) showPopupMenu(entries []driver.MenuEntry, p driver.Point, id uint32, keyboard bool) {
 	if w.popover != 0 {
 		gtkPopoverPopdown(w.popover) // reports the one before closed
+	}
+	if keyboard {
+		w.menuFocus, w.menuFocusPending = gtkWindowGetFocus(w.toplevel()), true
+		if w.menuFocus != 0 {
+			gObjectRefSink(w.menuFocus)
+		}
 	}
 	group := gSimpleActionGroupNew()
 	w.building = menuBuild{group: group, prefix: "popup.", refs: map[uintptr]menuRef{}}
@@ -578,10 +592,19 @@ func (w *window) popupMenu(entries []driver.MenuEntry, p driver.Point, id uint32
 	gtkWidgetInsertActionGroup(w.toplevel(), cstr("popup"), group)
 	gObjectUnref(group)
 	if menu == 0 {
-		w.engine.Dispatch(driver.Event{Kind: driver.EventMenuClosed, Count: id})
+		w.restoreMenuFocus()
+		if id != 0 {
+			w.engine.Dispatch(driver.Event{Kind: driver.EventMenuClosed, Count: id})
+		}
 		return
 	}
-	popover := gtkPopoverMenuNewFromModel(menu)
+	var popover uintptr
+	if keyboard {
+		const nested = 1 // GTK_POPOVER_MENU_NESTED
+		popover = gtkPopoverMenuNewFromModelFull(menu, nested)
+	} else {
+		popover = gtkPopoverMenuNewFromModel(menu)
+	}
 	gObjectUnref(menu)
 	if w.dir != 0 {
 		gtkWidgetSetDirection(popover, w.dir)
@@ -594,6 +617,9 @@ func (w *window) popupMenu(entries []driver.MenuEntry, p driver.Point, id uint32
 	w.popover, w.popoverID = popover, id
 	gSignalConnect(popover, "closed", cbPopoverClosed, w.handle)
 	gtkPopoverPopup(popover)
+	if keyboard {
+		gtkWidgetGrabFocus(popover)
+	}
 }
 
 // popoverClosedCallback reports a context menu closed, after the action
@@ -606,10 +632,13 @@ func popoverClosedCallback(popover, data uintptr) {
 	id := w.popoverID
 	if w.popover == popover {
 		w.popover, w.popoverID = 0, 0
+		if id == 0 {
+			w.restoreMenuFocus()
+		}
 	}
 	w.post(func() {
 		gtkWidgetUnparent(popover)
-		if !w.closing {
+		if !w.closing && id != 0 {
 			w.engine.Dispatch(driver.Event{Kind: driver.EventMenuClosed, Count: id})
 		}
 	})
@@ -718,7 +747,10 @@ const (
 // menuBarKey follows the keys that show an auto-hiding menu bar: Alt
 // pressed and released alone toggles it; Alt with another key and F10
 // show it for the menu they open. It reports whether it took the key.
-func (w *window) menuBarKey(keyval uint32, state uint32, pressed bool) bool {
+func (w *window) menuBarKey(keyval uint32, state uint32, pressed, repeat bool) bool {
+	if w.menuPopups() {
+		return w.menuPopupKey(keyval, state, pressed, repeat)
+	}
 	c := &w.chrome
 	if c.menuBar != driver.MenuBarAutoHide || c.menu == nil {
 		return false

@@ -65,3 +65,4 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 - Web canvases in a zoomed `core.Scroll` replay at the cumulative scroll zoom once it rests, up to four times the screen's pixel ratio, without rerunning `Draw` ([canvas](https://nsgo.dev/docs/canvas.md)).
 - Application-menu editing roles go to the focused editor before `OnSelect`. On macOS, Undo and Redo follow its history and Cut its selection, even while inactive; with no editor the fallback remains enabled ([services](https://nsgo.dev/docs/services/#lifecycle)).
 - Use `mobile.Immersive(cx, on)` for the window or set `StatusBar.Immersive` on a page or dialog. Read its system insets from `cx.Env().SafeArea()`.
+- A hidden Windows or Linux title bar keeps the application menu accessible through Alt alone, F10 and Alt plus a top-level label’s first letter or digit; app bindings still take precedence, and Escape restores keyboard focus ([services](https://nsgo.dev/docs/services.md)).

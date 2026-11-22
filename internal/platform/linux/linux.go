@@ -312,7 +312,10 @@ type window struct {
 	popover   uintptr
 	popoverID uint32
 	popupRefs map[uintptr]menuRef
-	trays     map[uint32]*linuxTray
+	// menuFocus retains the focus before a keyboard application-menu popup.
+	menuFocus        uintptr
+	menuFocusPending bool
+	trays            map[uint32]*linuxTray
 	// transparent is set while the window or panel is undecorated and clear wherever the app draws nothing (look.go).
 	transparent bool
 	// appearance is the one the app forces.
@@ -689,6 +692,7 @@ func (w *window) run() {
 // stop ends the engine, destroys the native components still showing
 // and frees the loop after run returns.
 func (w *window) stop() {
+	w.restoreMenuFocus()
 	if !w.closing {
 		w.engine.Close()
 	}
@@ -873,6 +877,7 @@ func (w *window) shutdown(forced bool) {
 		return
 	}
 	w.closing = true
+	w.restoreMenuFocus()
 	if forced {
 		w.engine.CloseForForcedQuit()
 		engine.SyncStorage()

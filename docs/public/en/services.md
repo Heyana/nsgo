@@ -282,6 +282,8 @@ cx.OnQuit(func(ctx context.Context) { saveDraft(ctx) })
 
 `desktop.RegisterHotKey` binds a global shortcut, which works while any app is frontmost, on macOS, on Linux and in a Windows app run with `nsgo.Run(App)`. Its handle's `State` says whether the system took it: `HotKeyPending` until it answers, then `HotKeyRegistered`, `HotKeyTaken` when another registration holds the combination, or `HotKeyUnsupported` for a key or a platform without global shortcuts, so a shortcut recorder can ask for another combination. On macOS a combination counts as taken only when the app holds it already or another app registered it exclusively. On Wayland the compositor asks the user to bind the shortcut: it is registered once they have, and taken when they or the compositor leave it out. In tests, `nsgotest.HotKeyTaken` and `nsgotest.HotKeyUnsupported` make combinations answer so.
 
+With `desktop.TitleBarHidden`, Windows and Linux offer the application menu as a popup on Alt pressed and released alone or F10. Alt with a top-level label’s first letter or digit opens that submenu or chooses that command, in the label’s script. App bindings keep their keys; Shift+F10 remains the context-menu key, and other Alt chords stay with the system. Escape closes the popup and restores keyboard focus.
+
 ```go
 shortcut := desktop.RegisterHotKey(cx, "alt+space", launcher.Toggle)
 warning := core.Text{ContentFunc: func() string {

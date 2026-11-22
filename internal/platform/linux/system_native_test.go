@@ -201,13 +201,13 @@ func TestServicesReachGTK(t *testing.T) {
 	cx.Post(func() { cx.SetMenuBar(core.MenuBarAutoHide) })
 	wait("the menu bar hiding", func() bool { return w.menuBar == 0 })
 	w.onLoop(t, func() {
-		w.menuBarKey(gdkAltL, 0, true)
-		w.menuBarKey(gdkAltL, gdkAlt, false)
+		w.menuBarKey(gdkAltL, 0, true, false)
+		w.menuBarKey(gdkAltL, gdkAlt, false, false)
 	})
 	wait("Alt showing the menu bar", func() bool { return w.menuBar != 0 })
 	w.onLoop(t, func() {
-		w.menuBarKey(gdkAltL, 0, true)
-		w.menuBarKey(gdkAltL, gdkAlt, false)
+		w.menuBarKey(gdkAltL, 0, true, false)
+		w.menuBarKey(gdkAltL, gdkAlt, false, false)
 	})
 	wait("Alt hiding the menu bar", func() bool { return w.menuBar == 0 })
 
