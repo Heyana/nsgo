@@ -233,6 +233,8 @@ type SurfaceConfig struct {
 	HideOnBlur bool
 	// NoActivate keeps a panel from ever taking the keyboard or activating the app, shown, focused or clicked.
 	NoActivate bool
+	// Dock attaches a panel to a display's usable edge instead of an anchor rectangle.
+	Dock PanelDock
 	// PointerEvents is where a window or a panel takes the pointer (WindowSetPointerEvents).
 	PointerEvents WindowPointerEvents
 	// Transparent opens a window without a background or frame, showing what is behind it wherever the app draws nothing (WindowSetTransparent), or has a panel draw nothing of its own, no background, frame or shadow, so only what the app draws shows; the platform reports whether either is so in Environment.WindowTransparent.

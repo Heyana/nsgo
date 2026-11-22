@@ -51,6 +51,20 @@ func (cx *Scope) CloseWindow() { cx.window(driver.WindowCommand{Action: driver.W
 // SetWindowFrame is the core's part of desktop.SetWindowFrame, which apps use.
 func (cx *Scope) SetWindowFrame(f WindowFrame) {
 	f.Width, f.Height = max(f.Width, 0), max(f.Height, 0)
+	if w := cx.CurrentWindow(); w != nil && w.edgeDocked {
+		if f.Width == 0 && f.Height == 0 {
+			return
+		}
+		size := cx.Env().Window()
+		if f.Width == 0 {
+			f.Width = size.Width
+		}
+		if f.Height == 0 {
+			f.Height = size.Height
+		}
+		cx.window(driver.WindowCommand{Action: driver.WindowFitSize, Frame: WindowFrame{Width: f.Width, Height: f.Height}})
+		return
+	}
 	cx.window(driver.WindowCommand{Action: driver.WindowSetFrame, Frame: f})
 }
 

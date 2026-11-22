@@ -245,6 +245,7 @@ type surface struct {
 	placement    driver.WindowPlacement
 	hideOnBlur   bool
 	noActivate   bool
+	dock         driver.PanelDock
 	// The app and how an embedded surface starts it once it is in a
 	// window; observed the window its observations follow.
 	app      engine.App
@@ -1288,7 +1289,8 @@ func (s *surface) environment() driver.Environment {
 		// The dictionary panel shows over the window the view is in.
 		CanLookUp: s.window != 0,
 		// The preview panel shows over the window too, where QuickLookUI loads; it takes its files from NSGo's app delegate (quickLookControl), which an embedding host's app does not have.
-		CanQuickLook: !s.embedded && s.window != 0 && quickLookAvailable(),
+		CanQuickLook:  !s.embedded && s.window != 0 && quickLookAvailable(),
+		CanDockPanels: !s.embedded,
 
 		// A transparent window or panel draws nothing of its own wherever it is (look.go, newPanel).
 		WindowTransparent: s.transparent,
@@ -1357,10 +1359,14 @@ func (s *surface) refresh() {
 	s.reportFrameWindow(env)
 	if !env.Equal(s.env) {
 		rescale := env.PixelRatio != s.env.PixelRatio
+		redock := s.dock.Edge != driver.WindowPlaceDefault && !slices.Equal(env.Displays, s.env.Displays)
 		s.env = env
 		s.engine.SetEnvironment(env)
 		if rescale {
 			s.rescale()
+		}
+		if redock && objc.Send[bool](s.window, sel("isVisible")) {
+			s.placeDockedPanel()
 		}
 	}
 }

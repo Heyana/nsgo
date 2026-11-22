@@ -328,6 +328,19 @@ desktop.RegisterHotKey(cx, "alt+space", lookup.Toggle)
 
 `desktop.NewTray` shows `TrayOptions.Title` beside its image or drawn view on macOS. For a custom popup, read `tray.ClickBounds()` inside `OnClick` or `Menu` and pass the available rectangle to `panel.ShowAt(bounds, core.PlaceBottom)`. It uses the same screen points as `Env.Displays` and includes the title. Bounds are unavailable before the first click, after removal, on Linux, and when the Windows shell cannot supply them. Each click replaces the previous bounds, so an unavailable result never reuses an old rectangle. Setting `TrayOptions.Panel` keeps the built-in click-to-toggle behavior instead.
 
+`PanelOptions.Dock` keeps a panel centered along a display's usable edge through `Show`, `Focus`, `Toggle` and content resizing. Set `Edge` to `core.PlaceTop`, `PlaceBottom`, `PlaceLeft` or `PlaceRight`, `Display` to an `Env.Displays` ID (empty for the primary display), and `Margin` to the distance from that edge in points. A docked panel cannot use `ShowAt` or `MoveTo`; `SetWindowFrame` changes only its size. A tray icon shows it at its dock rather than under the icon.
+
+```go
+panel := desktop.OpenPanel(cx, desktop.PanelOptions{
+	Width: 320, Height: 80, NoActivate: true,
+	Dock: desktop.PanelDock{Edge: core.PlaceBottom, Margin: 12},
+}, Candidates)
+panel.OnPlacementError(cx, func(err error) { /* offer another presentation */ })
+panel.Show()
+```
+
+`desktop.CanDockPanels(cx)` reports docking support separately from arbitrary window placement. macOS, Windows and X11 support it; Wayland needs the optional runtime library `libgtk4-layer-shell.so.0` and a compositor implementing `zwlr_layer_shell_v1`. NSGo loads that library before GTK; an embedding host that already loaded Wayland must preload gtk4-layer-shell before starting the host. A missing library, protocol or selected display leaves the panel hidden and calls `OnPlacementError`. A Wayland dock uses the top layer without reserving workspace: `NoActivate` leaves the keyboard with the current window, while a panel without it takes exclusive keyboard focus until hidden. Ordinary Wayland windows retain their usual compositor placement.
+
 A shortcut recorder lets the user choose such a key. A `Focusable` view's `OnKeyDown` hears each key that goes down while it has the focus, before the app's bindings, with the modifiers held, a modifier pressed alone included; returning `true` keeps the key from the bindings, so recording Command+S does not save. `KeyEvent.Shortcut` writes the press as `OnKey` and `RegisterHotKey` take it, each modifier by name ("ctrl+shift+k", "alt+space", "shift+meta+k" for Command+Shift+K), and "" for a modifier alone. Its `OnKeyUp` hears each of those keys come up, even after `OnKeyDown` consumed it or the focus moved, with the modifiers still held. Both work on macOS, Windows, Linux, the web, where the browser keeps the shortcuts it gives no page, Apple TV and in `nsgotest`; Android delivers hardware keyboard events to focused views asynchronously, so their `OnKeyDown` return value cannot consume the key. iPhone and iPad support polling hardware keys. A shortcut the app registered globally takes its key before the view, so a recorder unregisters it while it records.
 
 ```go

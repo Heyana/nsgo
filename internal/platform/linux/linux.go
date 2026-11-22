@@ -131,6 +131,9 @@ type window struct {
 	focused    bool
 	// noActivate keeps a panel from the focus (SurfaceConfig.NoActivate), which X11 does by leaving it unmanaged: no window manager places, decorates or focuses it. anchorBounds and panelSide are where core.Window.ShowAt last placed it, panelSide WindowPlaceDefault for nowhere.
 	noActivate   bool
+	dock         driver.PanelDock
+	dockLayer    bool
+	dockIssue    string
 	unmanaged    bool
 	anchorBounds driver.Bounds
 	panelSide    driver.WindowPlacement
@@ -544,11 +547,15 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 		child.opener = w.opener
 	}
 	child.kind, child.hideOnBlur, child.noActivate, child.opts = cfg.Kind, cfg.HideOnBlur, cfg.NoActivate, opts
+	child.dock = cfg.Dock
 	// Applied as the window maps (windowMappedCallback).
 	child.workspaces = cfg.Workspaces
 	child.createWindow(opts)
 	if child.parentWindow != nil {
 		gtkWindowSetTransientFor(child.win, child.parentWindow.win)
+	}
+	if cfg.Kind == driver.SurfacePanel {
+		child.setupDock()
 	}
 	child.applyLook(opts)
 	child.setupSettings()

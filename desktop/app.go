@@ -17,6 +17,8 @@ type (
 	WindowOptions = core.WindowOptions
 	// PanelOptions are a panel's size, whether it takes its content's, whether it hides as it loses the focus, whether it never takes it, whether it draws anything of its own, and where it takes the pointer.
 	PanelOptions = core.PanelOptions
+	// PanelDock keeps a panel centered along a display's usable edge.
+	PanelDock = core.PanelDock
 	// WindowClosing is a close the user asked for, which
 	// Window.OnClosing may cancel.
 	WindowClosing = core.WindowClosing
@@ -58,6 +60,10 @@ func OpenWindow(cx *core.Scope, opts WindowOptions, content func(cx *core.Scope)
 func OpenPanel(cx *core.Scope, opts PanelOptions, content func(cx *core.Scope) core.Node) *Window {
 	return cx.OpenPanel(opts, content)
 }
+
+// CanDockPanels reports whether PanelOptions.Dock can attach a panel to a
+// display's usable edge; a missing library or protocol on Wayland returns false.
+func CanDockPanels(cx *core.Scope) bool { return cx.Env().CanDockPanels() }
 
 // CurrentWindow returns the window cx is in, nil in the app's own scope.
 func CurrentWindow(cx *core.Scope) *Window { return cx.CurrentWindow() }

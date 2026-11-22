@@ -29,6 +29,7 @@ type SurfaceConfig struct {
 	Material                       core.WindowMaterial
 	Constraints                    core.WindowConstraints
 	HideOnBlur, NoActivate         bool
+	Dock                           core.PanelDock
 	PointerEvents                  core.WindowPointerEvents
 	Transparent, NoShadow          bool
 	SkipTaskbar                    bool
@@ -53,8 +54,24 @@ func surfaceRecord(c *driver.SurfaceConfig) SurfaceConfig {
 		Width: c.Width, Height: c.Height, Frame: c.Frame, Hidden: c.Hidden,
 		Focusable: c.Focusable, Passive: c.Passive, Accessible: c.Accessible,
 		Material: c.Material, Constraints: c.Constraints, HideOnBlur: c.HideOnBlur, NoActivate: c.NoActivate,
+		Dock:          core.PanelDock{Edge: dockEdge(c.Dock.Edge), Display: c.Dock.Display, Margin: c.Dock.Margin},
 		PointerEvents: c.PointerEvents, Transparent: c.Transparent, NoShadow: c.NoShadow, SkipTaskbar: c.SkipTaskbar,
 		Tray: c.Tray, Scene: c.Scene, Workspaces: c.Workspaces, Main: c.Main,
+	}
+}
+
+func dockEdge(edge driver.WindowPlacement) core.Placement {
+	switch edge {
+	case driver.WindowPlaceTop:
+		return core.PlaceTop
+	case driver.WindowPlaceBottom:
+		return core.PlaceBottom
+	case driver.WindowPlaceLeft:
+		return core.PlaceLeft
+	case driver.WindowPlaceRight:
+		return core.PlaceRight
+	default:
+		return core.PlaceDefault
 	}
 }
 

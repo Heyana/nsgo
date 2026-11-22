@@ -95,6 +95,10 @@ func (w *window) leaveUnmanaged() bool {
 
 // showPanel shows a panel beside at on side when side is set (core.Window.ShowAt), presenting it for the keyboard unless it never takes it. Where the panel cannot be placed it stays hidden and the app hears why. An unmanaged panel goes where it is placed before it maps, so it never shows elsewhere first, and to the upper middle of the primary display when unplaced, where no window manager places it.
 func (w *window) showPanel(at driver.Bounds, side driver.WindowPlacement) {
+	if w.dock.Edge != driver.WindowPlaceDefault {
+		w.showDockedPanel()
+		return
+	}
 	w.anchorBounds, w.panelSide = at, side
 	if (w.unmanaged || side != driver.WindowPlaceDefault && w.noActivate) && !w.placePanel() {
 		w.placementFailed()
@@ -160,6 +164,9 @@ func (w *window) placementFailed() {
 // fitPanel sizes a panel to width by height, the size its content takes (driver.WindowFitSize), rounded up to GTK's whole logical pixels so a size the core rounded to device pixels, a half point at scale 2, loses none of the content: GTK keeps its top left corner, and one that shows beside the rectangle ShowAt placed it at is placed there again at its new size, on X11.
 func (w *window) fitPanel(width, height driver.Points) {
 	gtkWindowSetDefaultSize(w.win, int32(math.Ceil(float64(width))), int32(math.Ceil(float64(height))))
+	if w.visible && w.dock.Edge != driver.WindowPlaceDefault {
+		w.placeDockedPanel()
+	}
 	if w.visible && w.panelSide != driver.WindowPlaceDefault {
 		w.placePanel()
 	}

@@ -378,6 +378,7 @@ type window struct {
 	startup       *packagedStartup
 	hideOnBlur    bool
 	noActivate    bool
+	dock          driver.PanelDock
 	visible       bool
 	// pointerMode is where the window takes the pointer (windowpointer.go).
 	pointerMode driver.WindowPointerEvents
@@ -1009,6 +1010,7 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	child.surfaceID = cfg.ID
 	child.parentWindow = w.surfaceWindow(cfg.Parent)
 	child.opts, child.hostWindow, child.kind, child.hideOnBlur, child.noActivate = opts, w, cfg.Kind, cfg.HideOnBlur, cfg.NoActivate
+	child.dock = cfg.Dock
 	child.visible = !opts.Hidden
 	child.trayID = cfg.Tray
 	child.chrome.constraints = opts.Constraints

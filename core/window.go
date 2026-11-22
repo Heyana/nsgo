@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"slices"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -68,6 +69,18 @@ type WindowOptions struct {
 	SkipTaskbar bool
 }
 
+// PanelDock is the core's part of desktop.PanelDock, which apps use to keep
+// a panel centered along a display's usable edge. Its zero value is undocked.
+type PanelDock struct {
+	// Edge is PlaceTop, PlaceBottom, PlaceLeft or PlaceRight; PlaceDefault disables docking.
+	Edge Placement
+	// Display is an Env.Displays ID, empty for the primary display. A missing
+	// explicit display is reported to Window.OnPlacementError.
+	Display string
+	// Margin is the distance from the usable edge in points; negative or nonfinite values become zero.
+	Margin Points
+}
+
 // PanelOptions are a panel's: the core's part of desktop.PanelOptions,
 // which apps use.
 type PanelOptions struct {
@@ -80,8 +93,13 @@ type PanelOptions struct {
 	// HideOnBlur hides the panel as it loses the focus, as a tray icon's
 	// panel or a launcher does.
 	HideOnBlur bool
-	// NoActivate keeps the panel from ever taking the keyboard or activating the app, shown, focused or clicked, so the app the user types in keeps its focus and caret, as an input method's candidate window or an on-screen keyboard needs. Focus and Toggle then only bring it to the front, and HideOnBlur never hides it, as it never has the focus to lose. Linux keeps it from the focus on X11 alone; a Wayland compositor gives it the focus as it shows.
+	// NoActivate keeps the panel from ever taking the keyboard or activating the app, shown, focused or clicked, so the app the user types in keeps its focus and caret, as an input method's candidate window or an on-screen keyboard needs. Focus and Toggle then only bring it to the front, and HideOnBlur never hides it, as it never has the focus to lose. Linux supports this on X11 and on a Wayland panel with Dock and layer-shell; an ordinary Wayland toplevel may take focus as it shows.
 	NoActivate bool
+	// Dock keeps the panel at a screen edge through Show, Focus, Toggle and
+	// content resizing. A docked panel cannot use ShowAt or MoveTo. Wayland
+	// needs gtk4-layer-shell and a supporting compositor; an unavailable
+	// dock is reported to Window.OnPlacementError and stays hidden.
+	Dock PanelDock
 	// Material is the material behind the content (WindowMaterial).
 	Material WindowMaterial
 	// PointerEvents is where the panel takes the pointer (SetWindowPointerEvents), from its first frame.
@@ -93,13 +111,14 @@ type PanelOptions struct {
 // Window, which OpenWindow returns where the platform opens no windows,
 // or once it closed.
 type Window struct {
-	t        *Tree
-	scope    *Scope
-	kind     driver.SurfaceKind
-	key      string
-	visible  *Signal[bool]
-	parent   *Window
-	children []*Window
+	t          *Tree
+	scope      *Scope
+	kind       driver.SurfaceKind
+	edgeDocked bool
+	key        string
+	visible    *Signal[bool]
+	parent     *Window
+	children   []*Window
 	// anchorBounds and placement are where ShowAt or MoveTo last asked a panel to go, placement WindowPlaceDefault for none: every later show, focus and toggle keeps them.
 	anchorBounds    Bounds
 	placement       driver.WindowPlacement
@@ -190,6 +209,13 @@ func (cx *Scope) OpenPanel(opts PanelOptions, content func(cx *Scope) Node) *Win
 	cfg := driver.SurfaceConfig{Kind: driver.SurfacePanel, Width: opts.Width, Height: opts.Height, Hidden: true,
 		HideOnBlur: opts.HideOnBlur, NoActivate: opts.NoActivate, Material: opts.Material,
 		PointerEvents: cx.windowPointer(opts.PointerEvents), Transparent: opts.Transparent}
+	if opts.Dock.Edge >= PlaceBottom && opts.Dock.Edge <= PlaceRight {
+		margin := opts.Dock.Margin
+		if math.IsNaN(float64(margin)) || math.IsInf(float64(margin), 0) {
+			margin = 0
+		}
+		cfg.Dock = driver.PanelDock{Edge: windowPlacement(opts.Dock.Edge), Display: opts.Dock.Display, Margin: max(margin, 0)}
+	}
 	w := rt.openSurface(cx, nil, cfg, content)
 	if opts.FitContent {
 		// Its first commit, which lays it out, sizes it before anything shows it.
@@ -207,7 +233,7 @@ func (rt *runtime) openSurface(owner *Scope, parent *Window, cfg driver.SurfaceC
 	rt.surfaceID++
 	t := newTree(s, app.text, rt.surfaceID)
 	cfg.ID = t.id
-	w := &Window{t: t, scope: s, kind: cfg.Kind, visible: NewSignal(s, !cfg.Hidden), parent: parent}
+	w := &Window{t: t, scope: s, kind: cfg.Kind, edgeDocked: cfg.Dock.Edge != driver.WindowPlaceDefault, visible: NewSignal(s, !cfg.Hidden), parent: parent}
 	if parent != nil {
 		cfg.Parent = parent.t.id
 		parent.children = append(parent.children, w)
@@ -319,6 +345,10 @@ func (w *Window) showAt(tray uint32) {
 	if w == nil || w.closed {
 		return
 	}
+	if w.edgeDocked {
+		w.Show()
+		return
+	}
 	w.visible.Set(true)
 	w.anchorBounds, w.placement = Bounds{}, driver.WindowPlaceDefault
 	w.command(driver.WindowCommand{Action: driver.WindowShow, Anchor: tray})
@@ -331,6 +361,9 @@ func (w *Window) ShowAt(anchor Bounds, placement Placement) error {
 	}
 	if w.kind != driver.SurfacePanel {
 		return Unavailable("only a panel can be placed beside a screen rectangle")
+	}
+	if w.edgeDocked {
+		return Unavailable("an edge-docked panel cannot be placed beside a screen rectangle")
 	}
 	w.anchorBounds, w.placement = anchor, windowPlacement(placement)
 	w.visible.Set(true)
@@ -345,6 +378,9 @@ func (w *Window) MoveTo(anchor Bounds, placement Placement) error {
 	}
 	if w.kind != driver.SurfacePanel {
 		return Unavailable("only a panel can be placed beside a screen rectangle")
+	}
+	if w.edgeDocked {
+		return Unavailable("an edge-docked panel cannot be placed beside a screen rectangle")
 	}
 	w.anchorBounds, w.placement = anchor, windowPlacement(placement)
 	w.command(driver.WindowCommand{Action: driver.WindowSetAnchor, AnchorBounds: w.anchorBounds, Placement: w.placement})
@@ -365,7 +401,7 @@ func windowPlacement(placement Placement) driver.WindowPlacement {
 	}
 }
 
-// OnPlacementError runs fn, under cx, when the platform cannot place the panel where ShowAt or MoveTo asked, as Linux cannot on Wayland, whose compositor places windows itself: the panel stays hidden and the app may show something else instead.
+// OnPlacementError runs fn, under cx, when the platform cannot place the panel where ShowAt, MoveTo or PanelOptions.Dock asked: the panel stays hidden and the app may show something else instead.
 func (w *Window) OnPlacementError(cx *Scope, fn func(error)) {
 	if w == nil || w.closed || cx == nil || fn == nil {
 		return

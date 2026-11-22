@@ -321,6 +321,19 @@ lookup := desktop.OpenPanel(cx, desktop.PanelOptions{Width: 380, Height: 520, Tr
 desktop.RegisterHotKey(cx, "alt+space", lookup.Toggle)
 ```
 
+`PanelOptions.Dock` 让面板在 `Show`、`Focus`、`Toggle` 和内容尺寸变化时，始终居中贴在显示器可用区域的一侧。`Edge` 取 `core.PlaceTop`、`PlaceBottom`、`PlaceLeft` 或 `PlaceRight`，`Display` 是 `Env.Displays` 的 ID（空字符串表示主显示器），`Margin` 是离该边缘的点数。停靠面板不能调用 `ShowAt` 或 `MoveTo`；`SetWindowFrame` 只改变其尺寸。托盘图标显示它时仍保持停靠位置。
+
+```go
+panel := desktop.OpenPanel(cx, desktop.PanelOptions{
+	Width: 320, Height: 80, NoActivate: true,
+	Dock: desktop.PanelDock{Edge: core.PlaceBottom, Margin: 12},
+}, Candidates)
+panel.OnPlacementError(cx, func(err error) { /* offer another presentation */ })
+panel.Show()
+```
+
+`desktop.CanDockPanels(cx)` 单独报告停靠能力。macOS、Windows 和 X11 支持它；Wayland 需要可选运行库 `libgtk4-layer-shell.so.0`，以及实现 `zwlr_layer_shell_v1` 的合成器。NSGo 在 GTK 之前加载该库；若嵌入宿主已加载 Wayland，就必须在启动宿主前预加载 gtk4-layer-shell。缺少库、协议或指定显示器时，面板保持隐藏并调用 `OnPlacementError`。Wayland 停靠面板位于 top 层，不占用工作区：`NoActivate` 让键盘继续归当前窗口，否则面板独占键盘焦点，直到隐藏。普通 Wayland 窗口仍由合成器按原有方式放置。
+
 快捷键录制控件让用户自己选这样的按键。`Focusable` 视图的 `OnKeyDown` 在它有焦点时、应用的绑定之前，收到每个按下的键和当时按住的修饰键，单独按下的修饰键也算；返回 `true` 让这个键不再交给绑定，所以录制 Command+S 时不会触发保存。`KeyEvent.Shortcut` 把按键写成 `OnKey` 和 `RegisterHotKey` 接受的形式，每个修饰键用自己的名字（"ctrl+shift+k"、"alt+space"，Command+Shift+K 是 "shift+meta+k"），单独的修饰键为 ""。它的 `OnKeyUp` 收到这些键各自抬起，即使 `OnKeyDown` 已消费该键或焦点已经移走，同时带着仍按住的修饰键。两者在 macOS、Windows、Linux、Web（浏览器不交给页面的快捷键仍归浏览器）、Apple TV 和 `nsgotest` 中可用；Android 异步向有焦点的视图报告硬件键盘事件，`OnKeyDown` 的返回值无法消费按键。iPhone 和 iPad 支持轮询硬件按键。应用自己注册的全局快捷键会先于视图拿到按键，所以录制期间要先注销它。
 
 ```go

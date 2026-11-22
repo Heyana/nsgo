@@ -32,6 +32,8 @@ func gtkDisplayReady() bool { return gtkInitCheck() != 0 && gdkDisplayGetDefault
 // openLibs loads the libraries, reporting which one is missing.
 func openLibs() error {
 	libsOnce.Do(func() {
+		// Its Wayland shim must precede GTK's libwayland dependency.
+		_ = loadLayerShell()
 		load := func(name string, candidates ...string) (uintptr, error) {
 			var last error
 			for _, candidate := range candidates {

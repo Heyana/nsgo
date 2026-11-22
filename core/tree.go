@@ -906,6 +906,9 @@ func (t *Tree) reportFit() {
 
 // SetEnvironment records what the platform reports about where the app runs.
 func (t *Tree) SetEnvironment(env Environment) {
+	if t.window != nil && t.window.edgeDocked {
+		env.CanPlaceWindows = false
+	}
 	previous := t.reported
 	t.reported = env
 	if t.hapticActive && (env.Lifecycle == LifecycleBackground || !env.HapticPatterns) {

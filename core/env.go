@@ -37,6 +37,7 @@ type Env struct {
 	canLockPointer          *Signal[bool]
 	canLookUp               *Signal[bool]
 	canQuickLook            *Signal[bool]
+	canDockPanels           *Signal[bool]
 	level, place            *Signal[bool]
 	workspaces              *Signal[bool]
 	hasWebView              *Signal[bool]
@@ -129,6 +130,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		canLockPointer:   NewSignal(cx, false),
 		canLookUp:        NewSignal(cx, false),
 		canQuickLook:     NewSignal(cx, false),
+		canDockPanels:    NewSignal(cx, false),
 		level:            NewSignal(cx, false),
 		place:            NewSignal(cx, false),
 		workspaces:       NewSignal(cx, false),
@@ -267,6 +269,7 @@ func (e *Env) set(v Environment) {
 	e.canQuickLook.Set(v.CanQuickLook)
 	e.level.Set(v.CanSetWindowLevel)
 	e.place.Set(v.CanPlaceWindows)
+	e.canDockPanels.Set(v.CanDockPanels)
 	e.workspaces.Set(v.CanSetWindowWorkspaces)
 	e.hasWebView.Set(v.HasWebView)
 	e.appleSignIn.Set(v.SignInWithApple)
@@ -377,6 +380,11 @@ func (e *Env) CanSetWindowLevel() bool { return e.level.Get() }
 
 // CanPlaceWindows reports whether SetWindowFrame places the scope's window where it says, an Android overlay's included: the core's part of desktop.CanPlaceWindows, which apps use.
 func (e *Env) CanPlaceWindows() bool { return e.place.Get() }
+
+// CanDockPanels reports whether desktop.PanelOptions.Dock can attach a panel
+// to a display's usable edge. Wayland needs gtk4-layer-shell and a compositor
+// implementing layer-shell; an explicit display must still be connected.
+func (e *Env) CanDockPanels() bool { return e.canDockPanels.Get() }
 
 // CanSetWindowWorkspaces reports whether SetWindowWorkspaces puts the scope's desktop window on the workspaces it names: the core's part of desktop.CanSetWindowWorkspaces, which apps use.
 func (e *Env) CanSetWindowWorkspaces() bool { return e.workspaces.Get() }

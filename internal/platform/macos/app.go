@@ -116,6 +116,7 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 	window.Send(sel("setReleasedWhenClosed:"), false)
 	s := newSurface(opts, false)
 	s.id, s.kind, s.hideOnBlur, s.noActivate = cfg.ID, cfg.Kind, cfg.HideOnBlur, cfg.NoActivate
+	s.dock = cfg.Dock
 	if o.test != nil {
 		// A test's app: its windows take the test's input without activating it, with a pointer of their own, and keep their alerts for the test to answer.
 		s.test, s.alerts, s.testPointer = o.test, map[uint32]shownAlert{}, &apple.CGPoint{X: -1e6, Y: -1e6}
@@ -269,7 +270,13 @@ func (s *surface) show(anchor uint32) {
 // showPanel shows a panel and gives it the keyboard, unless it never takes it: beside at on side when side is set (core.Window.ShowAt), else under tray icon anchor, else in the upper middle of the screen with the mouse, as Spotlight shows.
 func (s *surface) showPanel(anchor uint32, at driver.Bounds, side driver.WindowPlacement) {
 	s.anchor, s.anchorBounds, s.placement = anchor, at, side
-	s.movePanel(anchor, at, side)
+	if s.dock.Edge != driver.WindowPlaceDefault {
+		if !s.placeDockedPanel() {
+			return
+		}
+	} else {
+		s.movePanel(anchor, at, side)
+	}
 	s.orderPanelFront()
 }
 
@@ -329,6 +336,14 @@ func (s *surface) fitPanel(width, height driver.Points) {
 	frame.Size.Width += float64(width) - content.Width
 	frame.Size.Height += float64(height) - content.Height
 	frame.Origin.Y = top - frame.Size.Height
+	if s.dock.Edge != driver.WindowPlaceDefault && objc.Send[bool](w, sel("isVisible")) {
+		origin, ok := s.dockOrigin(frame.Size)
+		if !ok {
+			s.dockFailed()
+			return
+		}
+		frame.Origin = origin
+	}
 	if tr := trays[s.anchor]; objc.Send[bool](w, sel("isVisible")) && (s.placement != driver.WindowPlaceDefault || tr != nil && tr.item != 0) {
 		frame.Origin = panelOrigin(s.anchor, s.anchorBounds, s.placement, frame.Size)
 	}

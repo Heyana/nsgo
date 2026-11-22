@@ -1346,6 +1346,8 @@ func (w *window) fitPanel(width, height driver.Points) {
 	setWindowPos.Call(w.hwnd, 0, 0, 0, uintptr(w.px(width)), uintptr(w.px(height)), swpNoMove|swpNoZOrder|swpNoActivate)
 	switch {
 	case !w.visible:
+	case w.dock.Edge != driver.WindowPlaceDefault:
+		w.placeDockedPanel()
 	case w.placement != driver.WindowPlaceDefault:
 		w.placeBeside(w.anchorBounds, w.placement)
 	case w.anchor != 0:

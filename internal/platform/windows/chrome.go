@@ -324,7 +324,13 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		}
 		if w.kind == driver.SurfacePanel {
 			w.anchor, w.anchorBounds, w.placement = c.Anchor, c.AnchorBounds, c.Placement
-			w.placePanel(w.anchor, w.anchorBounds, w.placement)
+			if w.dock.Edge != driver.WindowPlaceDefault {
+				if !w.placeDockedPanel() {
+					break
+				}
+			} else {
+				w.placePanel(w.anchor, w.anchorBounds, w.placement)
+			}
 			w.orderFront()
 		} else {
 			// Without taking the focus from another app (core.Window.Show).
@@ -345,7 +351,13 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 			break
 		}
 		if w.kind == driver.SurfacePanel {
-			w.placePanel(w.anchor, w.anchorBounds, w.placement)
+			if w.dock.Edge != driver.WindowPlaceDefault {
+				if !w.placeDockedPanel() {
+					break
+				}
+			} else {
+				w.placePanel(w.anchor, w.anchorBounds, w.placement)
+			}
 		}
 		w.orderFront()
 	case driver.WindowSetMenuBar:

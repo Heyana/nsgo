@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -105,6 +106,7 @@ func (w *window) environment() driver.Environment {
 		FullScreen:            w.chrome.fullScreen,
 		Minimized:             w.minimized(),
 		WindowFrame:           w.windowFrame(),
+		CanDockPanels:         !w.embedded,
 		Lifecycle:             w.lifecycle(),
 		LowPowerMode:          lowPowerMode(),
 		Speak:                 speakAvailable(),
@@ -391,12 +393,16 @@ func (w *window) updateEnvironment() {
 	}
 	w.devFrame.changed(w)
 	dark := w.shownDark()
+	redock := w.dock.Edge != driver.WindowPlaceDefault && w.visible && !slices.Equal(env.Displays, w.env.Displays)
 	w.env = env
 	if w.shownDark() != dark {
 		w.darkTitleBar(w.shownDark())
 	}
 	w.engine.SetEnvironment(env)
 	w.updateAppSurface()
+	if redock {
+		w.placeDockedPanel()
+	}
 }
 
 func (w *window) reportFrameWindow() {

@@ -5,6 +5,7 @@ package linux
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"unsafe"
@@ -112,6 +113,7 @@ func (w *window) environment() driver.Environment {
 		FullScreen:       w.chrome.fullScreen,
 		Minimized:        minimized,
 		WindowFrame:      frame,
+		CanDockPanels:    w.canDockPanels(),
 		Lifecycle:        w.lifecycle(),
 		LowPowerMode:     lowPowerMode(),
 		Speak:            speakAvailable(),
@@ -479,9 +481,13 @@ func (w *window) updateEnvironment() {
 	if env.Equal(w.env) {
 		return
 	}
+	redock := w.dock.Edge != driver.WindowPlaceDefault && w.visible && !slices.Equal(env.Displays, w.env.Displays)
 	w.env = env
 	if w.engine != nil {
 		w.engine.SetEnvironment(env)
+	}
+	if redock {
+		w.placeDockedPanel()
 	}
 }
 
