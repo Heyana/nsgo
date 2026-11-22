@@ -487,7 +487,7 @@ func (e *Env) CanRequestReview() bool { return e.canRequestReview.Get() }
 // CanUseGameServices reports whether package gameservices reaches a platform game service here: Game Center on macOS, iOS and tvOS where GameKit loads, and Google Play Games Services on Android where available. Elsewhere gameservices calls answer ErrUnsupported without asking the platform.
 func (e *Env) CanUseGameServices() bool { return e.gameServices.Get() }
 
-// CanScheduleNotifications reports whether a Notification with a later At or a Repeat is scheduled here, for the system to show with the app's process ended: on macOS and iOS in an app bundle, Android, and Windows for one without a Repeat. Elsewhere ShowNotification answers false for one without asking the platform.
+// CanScheduleNotifications reports whether a Notification with a later At or a Repeat is scheduled here: natively (also after the app closes) on macOS, iOS and watchOS in an app bundle, Android and Windows, and while the app or page runs on Linux and the web where Notification is available. Elsewhere (tvOS and mini programs) ShowNotification answers false for one without asking the platform.
 func (e *Env) CanScheduleNotifications() bool { return e.scheduled.Get() }
 
 // CanMakeWindowsTransparent reports whether the scope's desktop window shows what is behind it while transparent (WindowOptions.Transparent, SetWindowTransparent): the core's part of desktop.CanMakeWindowsTransparent, which apps use.

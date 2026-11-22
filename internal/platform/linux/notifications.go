@@ -56,6 +56,66 @@ var notices struct {
 	app        map[uint32]string
 	window     *window
 	subscribed bool
+	scheduler  *linuxNotificationScheduler
+}
+
+func noticeScheduler() *linuxNotificationScheduler {
+	notices.mu.Lock()
+	defer notices.mu.Unlock()
+	if notices.scheduler == nil {
+		notices.scheduler = newLinuxNotificationScheduler(
+			func() bool {
+				bus := sessionBus()
+				if bus == 0 {
+					return false
+				}
+				reply := dbusCall(bus, notifyName, notifyPath, notifyIface, "GetServerInformation")
+				if reply == 0 {
+					return false
+				}
+				gVariantUnref(reply)
+				return true
+			},
+			func(appID string, n driver.Notification) bool {
+				bus := sessionBus()
+				return bus != 0 && showNotice(bus, appID, n)
+			},
+			closeShownNotices,
+			func(fn func()) { notifyQueue() <- fn },
+		)
+	}
+	return notices.scheduler
+}
+
+// stopScheduledNotifications stops all in-app notification timers as the app ends.
+func stopScheduledNotifications() {
+	notices.mu.Lock()
+	sched := notices.scheduler
+	notices.scheduler = nil
+	notices.mu.Unlock()
+	if sched != nil {
+		sched.Stop()
+	}
+}
+
+func closeShownNotices(id string) {
+	notices.mu.Lock()
+	var ids []uint32
+	if id == "" {
+		for _, sid := range notices.server {
+			ids = append(ids, sid)
+		}
+		clear(notices.server)
+	} else if sid, ok := notices.server[id]; ok {
+		ids = append(ids, sid)
+		delete(notices.server, id)
+	}
+	notices.mu.Unlock()
+	if bus := sessionBus(); bus != 0 {
+		for _, sid := range ids {
+			gVariantUnrefNonZero(dbusCall(bus, notifyName, notifyPath, notifyIface, "CloseNotification", gVariantNewUint32(sid)))
+		}
+	}
 }
 
 // notificationPermissionGuide answers a PermissionGuide (or check) for notifications on Linux from the notification daemon's availability.
@@ -107,26 +167,10 @@ func (w *window) notify(it *driver.MountItem) {
 			}
 			e.Dispatch(driver.Event{Kind: driver.EventNotification, Count: item.Count, Index: p})
 		case driver.ItemShowNotification:
-			shown := bus != 0 && showNotice(bus, appID, *item.Notification)
+			shown := noticeScheduler().Show(appID, *item.Notification)
 			e.Dispatch(driver.Event{Kind: driver.EventNotification, Count: item.Count, Finished: shown})
 		case driver.ItemCloseNotification:
-			notices.mu.Lock()
-			ids := []uint32{}
-			if item.Value == "" {
-				for _, id := range notices.server {
-					ids = append(ids, id)
-				}
-				clear(notices.server)
-			} else if id, ok := notices.server[item.Value]; ok {
-				ids = append(ids, id)
-				delete(notices.server, item.Value)
-			}
-			notices.mu.Unlock()
-			if bus != 0 {
-				for _, id := range ids {
-					gVariantUnrefNonZero(dbusCall(bus, notifyName, notifyPath, notifyIface, "CloseNotification", gVariantNewUint32(id)))
-				}
-			}
+			noticeScheduler().Close(item.Value)
 		case driver.ItemBadge:
 			setLauncherBadge(bus, appID, item.Count)
 		case driver.ItemTaskProgress:

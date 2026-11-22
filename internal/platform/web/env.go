@@ -225,6 +225,8 @@ func (s *surface) environment() driver.Environment {
 		AudioPlaybackControls: webAudioAvailable(),
 		HapticPatterns:        hapticPatternsAvailable(g.Get("navigator")),
 		GPU:                   webGPUAvailable(),
+		// Scheduled notifications are kept in memory while the page runs where Notification is available.
+		ScheduledNotifications: g.Get("Notification").Truthy(),
 		// Browsers on touch screens open the camera for an input's capture.
 		Camera:   w.pointerCoarse.Get("matches").Bool(),
 		ScanCode: scanCodeAvailable(),

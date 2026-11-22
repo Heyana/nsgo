@@ -26,7 +26,7 @@ err := cx.ShowNotification(core.Notification{ID: "sync", Title: "Synced", Body: 
 cx.CloseNotification("sync")
 ```
 
-`cx.CloseNotifications` removes every notification the app showed and cancels those it scheduled. On macOS, iOS, Windows and Android that includes those earlier runs left in Notification Center, Action Center or the shade; on Linux and the web it reaches only those this run showed. Call it as the app comes to the front when its window shows what they told:
+`cx.CloseNotifications` removes every notification the app showed and cancels those it scheduled. On macOS, iOS, watchOS, Windows and Android that includes those earlier runs left in Notification Center, Action Center or the shade; on Linux and the web it reaches only those this run showed or scheduled. Call it as the app comes to the front when its window shows what they told:
 
 ```go
 cx.Effect(func() {
@@ -39,7 +39,7 @@ cx.Effect(func() {
 
 ## Scheduling one
 
-A notification whose `At` is later than now is scheduled: the system shows it then, whether the app runs or not, and calling `cx.ShowNotification` again with its `ID` moves it, while `cx.CloseNotification` cancels it before it shows. `Repeat` shows it every day at `At`'s time of day, or every week on its weekday too, from the next such time, in the device's time zone. `cx.Env().CanScheduleNotifications()` says whether the platform schedules them: macOS and iOS apps in a bundle, Android and Windows, which schedules no `Repeat`. Elsewhere `done` answers false.
+A notification whose `At` is later than now is scheduled, and calling `cx.ShowNotification` again with its `ID` moves it, while `cx.CloseNotification` cancels it before it shows. `Repeat` shows it every day at `At`'s time of day, or every week on its weekday too, from the next such time, in the device's time zone. `cx.Env().CanScheduleNotifications()` says whether the platform schedules them: macOS, iOS and watchOS apps in a bundle, Android and Windows schedule them natively whether the app runs or not (with Windows chaining daily and weekly repeats while the app runs and rearming them on launch), while Linux and the web (where `Notification` is available) keep them while the app or page runs. Elsewhere (tvOS, whose center shows badges only, and mini programs) `done` answers false.
 
 ```go
 cx.ShowNotification(core.Notification{ID: "review", Title: "Cards to review", At: due}, nil)

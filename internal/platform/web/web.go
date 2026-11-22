@@ -106,10 +106,11 @@ func (c *clicks) down(p driver.Point, v *view) int {
 }
 
 type surface struct {
-	devGeometry driver.GeometryObserver
-	motion      motionService
-	doc         js.Value
-	host        js.Value
+	devGeometry   driver.GeometryObserver
+	motion        motionService
+	notifications *webNotificationScheduler
+	doc           js.Value
+	host          js.Value
 	// simulate is the OS the page runs as (Options.OS).
 	simulate driver.OS
 	// rtl is the app's direction (driver.ItemDirection), which alerts lay
@@ -2843,6 +2844,7 @@ func (s *surface) windowCommand(c *driver.WindowCommand) {
 		js.Global().Call("close")
 	case driver.WindowDestroy:
 		s.closeAudio()
+		s.closeNotifications()
 		s.clearDisplayHolds()
 		s.losePointerLock()
 	}
@@ -2868,6 +2870,7 @@ func (s *surface) listen() {
 	ls.on(js.Global(), "pagehide", func(e js.Value) {
 		if !e.Get("persisted").Truthy() {
 			s.closeAudio()
+			s.closeNotifications()
 		}
 	})
 	s.listenPointerLock(&ls)

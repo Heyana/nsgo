@@ -126,6 +126,9 @@ func (w *window) environment() driver.Environment {
 		AudioPlaybackControls: loadSound(),
 		CanQuickLook:          w.canQuickLook(),
 
+		// org.freedesktop.Notifications has no schedule, so scheduled notifications are kept while the app runs.
+		ScheduledNotifications: true,
+
 		// X11 positions windows and asks its window manager for stacking; a Wayland compositor chooses both for an ordinary toplevel.
 		CanPlaceWindows:        w.canPlace(),
 		CanSetWindowLevel:      w.canSetLevel(),

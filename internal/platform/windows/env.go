@@ -126,7 +126,7 @@ func (w *window) environment() driver.Environment {
 		CanReadFrontmostApp: true,
 		CustomCursor:        true,
 
-		// The toast notifier's schedule, which has no repeats.
+		// The toast notifier's schedule, with daily and weekly repeats chained while the app runs and rearmed on launch.
 		ScheduledNotifications: true,
 
 		// An embedding host owns its window, and the app's own surface and a tray icon's show in none, as on macOS.

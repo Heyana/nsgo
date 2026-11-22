@@ -367,6 +367,7 @@ type window struct {
 	batch        uint64  // batches applied
 	hwnd         uintptr
 	title        string
+	dataDir      string
 	saves        driver.SavePreflights
 	devFrame     devWindowFrame
 	devGeometry  driver.GeometryObserver
@@ -766,6 +767,7 @@ func Run(app engine.App, opts Options) {
 		single.setDelivery(func(args launch) { w.post(func() { w.launched(args) }) })
 	}
 	attachToastActivation(w, w.engine)
+	w.rearmToastRepeats()
 	if !opts.Hidden {
 		showWindow.Call(hwnd, swShow)
 	}
@@ -799,6 +801,7 @@ func (w *window) serveMessages() {
 			w.closeAudio()
 			unwatchFrontmost()
 			stopWinSparkle()
+			stopToastRepeats()
 			if !w.sessionEnding {
 				w.engine.Close()
 				engine.SyncStorage()
@@ -976,6 +979,7 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 		w.envPin = eopts.Pin
 		cache = eopts.CacheDir
 	}
+	w.dataDir = eopts.DataDir
 	imageload.UseDiskCache(cache)
 	w.cacheDir = cache
 	if opts.Perf && opts.test == nil || opts.test != nil && opts.test.options.FPS {

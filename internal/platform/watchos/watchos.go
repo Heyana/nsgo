@@ -207,6 +207,8 @@ func newSurface(root engine.App, opts Options) *surface {
 // runHost hands the host the bridge and runs its app on this thread.
 func runHost() {
 	apple.RegisterFonts(s.opts.Fonts)
+	// Before the SwiftUI app finishes launching, so a notification press that launched it is heard.
+	apple.WatchNotifications()
 	apple.ObserveProcessPower(func() {
 		thermal, lowPower := apple.ProcessPower()
 		if thermal != s.env.ThermalState || lowPower != s.env.LowPowerMode {
@@ -286,6 +288,8 @@ func (s *surface) start(test *testOpen) {
 	}
 	imageload.UseDiskCache(opts.CacheDir)
 	s.engine = engine.Start(s, s.app, opts)
+	e := s.engine
+	apple.SetNotificationPress(func(id string) { e.Dispatch(driver.Event{Kind: driver.EventNotificationPress, Text: id}) })
 }
 
 // environment is what the host told of the surface, with the system's.
@@ -296,6 +300,8 @@ func (s *surface) environment(scale float64, safe driver.Edges, flags uint32) dr
 	env.DeviceModel = apple.ModelIdentifier()
 	env.ThermalState = thermal
 	env.LowPowerMode = lowPower
+	// watchOS's notification center schedules once, daily and weekly notifications natively.
+	env.ScheduledNotifications = apple.NotificationsAvailable()
 	return env
 }
 
@@ -327,6 +333,15 @@ func hostLifecycle(state uint8) {
 			s.engine.Hide()
 		}
 	}
+}
+
+// notify carries out a notification's item through watchOS's UNUserNotificationCenter.
+func (s *surface) notify(it *driver.MountItem) {
+	dispatchWatchNotification(it, watchNotificationBackend{
+		permission: apple.NotificationPermission,
+		show:       apple.ShowNotification,
+		close:      apple.CloseNotification,
+	}, s.engine.Dispatch)
 }
 
 // RegisterFont implements the engine's font registration.
@@ -506,12 +521,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 			// The SwiftUI host asks nothing yet (docs/roadmap.md): what a watch keeps answers unknown.
 			driver.AnswerPermission(it.Count, *it.Permission, watchPermission, s.engine.Dispatch)
 			continue
-		case driver.ItemNotificationPermission, driver.ItemShowNotification:
-			// The SwiftUI host reaches no UNUserNotificationCenter yet (docs/roadmap.md): the permission answers unavailable and nothing shows.
-			s.engine.Dispatch(driver.NoNotification(it))
+		case driver.ItemNotificationPermission, driver.ItemShowNotification, driver.ItemCloseNotification:
+			s.notify(it)
 			continue
-		case driver.ItemCloseNotification, driver.ItemBadge:
-			// Nothing shows to close, and a watch app's icon has no badge.
+		case driver.ItemBadge:
+			// A watch app's icon has no badge.
 			continue
 		case driver.ItemReleaseOffscreen:
 			apple.ReleaseOffscreen(it.OffscreenID)

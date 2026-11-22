@@ -112,6 +112,7 @@ var toasts struct {
 	aumid    string
 	packaged bool
 	shown    map[string]*comObject
+	repeats  *toastRepeatManager
 }
 
 // hstring makes a WinRT string of s, which deleteHString frees.
@@ -503,10 +504,13 @@ func (w *window) showToast(n driver.Notification) bool {
 	if notifier == nil {
 		return false
 	}
-	unscheduleToast(notifier, n.ID)
 	if !n.At.IsZero() {
-		return scheduleToast(notifier, n)
+		return w.toastRepeats().Schedule(n)
 	}
+	if toasts.repeats != nil {
+		toasts.repeats.Cancel(n.ID)
+	}
+	unscheduleToast(notifier, n.ID)
 	launch := toastLaunch(n.ID)
 	doc := toastDocument(n, launch)
 	factory := activationFactory("Windows.UI.Notifications.ToastNotification", &iidToastFactory)
@@ -557,17 +561,87 @@ func (w *window) showToast(n driver.Notification) bool {
 	return true
 }
 
-// scheduleToast has the notifier show n as a toast tagged with its ID at its At, with the app's process ended too, and reports whether it took it. Windows has no daily or weekly schedule, only a snooze's, so a repeated one is refused. A press of it reaches the app through the toast activator alone, as no toast the app holds hears its Activated.
-func scheduleToast(notifier *comObject, n driver.Notification) bool {
-	if n.Repeat != driver.NotificationOnce {
-		return false
+// toastSchedulePath is where repeating scheduled toasts are persisted between
+// launches, or "" when the app has no data directory.
+func (w *window) toastSchedulePath() string {
+	dir := w.rootWindow().dataDir
+	if dir == "" {
+		return ""
 	}
+	return filepath.Join(dir, toastScheduleName)
+}
+
+// toastRepeats returns the process's repeating toast scheduler, creating it on
+// the main thread when first needed.
+func (w *window) toastRepeats() *toastRepeatManager {
+	if toasts.repeats != nil {
+		return toasts.repeats
+	}
+	root := w.rootWindow()
+	toasts.repeats = newToastRepeatManager(
+		w.toastSchedulePath(),
+		func(n driver.Notification) (time.Time, bool) {
+			notifier := root.toastNotifier()
+			if notifier == nil {
+				return time.Time{}, false
+			}
+			return scheduleToastOnce(notifier, n)
+		},
+		func(id string) {
+			if notifier := root.toastNotifier(); notifier != nil {
+				unscheduleToast(notifier, id)
+			}
+		},
+		func(fn func()) {
+			toastActivation.Lock()
+			target := toastActivation.window
+			toastActivation.Unlock()
+			if target == nil {
+				target = root
+			}
+			if target == nil || target.destroying {
+				return
+			}
+			target.post(func() {
+				comApartment()
+				fn()
+			})
+		},
+	)
+	return toasts.repeats
+}
+
+// rearmToastRepeats restores persisted repeating toasts on app launch without
+// creating the toast notifier when none are stored.
+func (w *window) rearmToastRepeats() {
+	path := w.toastSchedulePath()
+	if path == "" {
+		return
+	}
+	if _, err := os.Stat(path); err != nil {
+		return
+	}
+	comApartment()
+	w.toastRepeats().Rearm()
+}
+
+// stopToastRepeats stops in-process repeat timers as the app exits while
+// keeping upcoming scheduled toasts and persisted schedules intact.
+func stopToastRepeats() {
+	if toasts.repeats != nil {
+		toasts.repeats.Stop()
+		toasts.repeats = nil
+	}
+}
+
+// scheduleToastOnce has the notifier show n as a toast tagged with its ID at its At, with the app's process ended too, and reports the scheduled time and whether the notifier took it. A press of it reaches the app through the toast activator alone, as no toast the app holds hears its Activated.
+func scheduleToastOnce(notifier *comObject, n driver.Notification) (time.Time, bool) {
 	doc := toastDocument(n, toastLaunch(n.ID))
 	factory := activationFactory("Windows.UI.Notifications.ScheduledToastNotification", &iidScheduledToasts)
 	if doc == nil || factory == nil {
 		doc.release()
 		factory.release()
-		return false
+		return time.Time{}, false
 	}
 	// A DateTime by value: 100-nanosecond intervals since 1601 in UTC; the notifier refuses one that passed.
 	at := n.At
@@ -580,17 +654,17 @@ func scheduleToast(notifier *comObject, n driver.Notification) bool {
 	factory.release()
 	doc.release()
 	if failed(hr) {
-		return false
+		return time.Time{}, false
 	}
 	defer toast.release()
 	if !setToastIdentity(toast, &iidScheduledToast2, n.ID) {
-		return false
+		return time.Time{}, false
 	}
 	if failed(notifier.call(toastNotifierAddToSchedule, toast.ptr())) {
-		return false
+		return time.Time{}, false
 	}
 	removeToastHistory(n.ID, true)
-	return true
+	return at, true
 }
 
 // Both toast identity interfaces have Tag and Group setters in these slots.
@@ -654,6 +728,9 @@ func hstringText(h uintptr) string {
 
 // closeToast removes the toast tagged id from the screen, the action center and the notifier's schedule, and with an empty id every toast in the app's group, those of earlier runs included, which leaves other apps' toasts alone.
 func (w *window) closeToast(id string) {
+	if toasts.repeats != nil {
+		toasts.repeats.Cancel(id)
+	}
 	if id == "" {
 		for tag, old := range toasts.shown {
 			old.release()

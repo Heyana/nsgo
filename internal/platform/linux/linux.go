@@ -986,6 +986,7 @@ func (w *window) shutdown(forced bool) {
 	if w.primary {
 		// The app ends with this window: every hold goes, sent before the main loop returns.
 		endAwake(awakeEndTimeout)
+		stopScheduledNotifications()
 	} else {
 		w.releaseAllAwake()
 	}

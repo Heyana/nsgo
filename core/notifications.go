@@ -48,7 +48,7 @@ type Notification struct {
 	Title, Body string
 	// Silent shows it without the system's sound or vibration.
 	Silent bool
-	// At, when later than now (Scope.WallTime), schedules it to show then, whether the app runs or not, where Env.CanScheduleNotifications says the platform does; zero or earlier shows it at once.
+	// At, when later than now (Scope.WallTime), schedules it to show then, where Env.CanScheduleNotifications says the platform does (whether the app runs or not on macOS, iOS, watchOS, Android and Windows, and while the app or page runs on Linux and the web); zero or earlier shows it at once.
 	At time.Time
 	// Repeat shows it again and again, at At's time of day, its clock reading in At's location, which the device keeps to in its own time zone, and for NotificationWeekly on At's weekday: first at the next such time after now, whatever At's date. It needs At.
 	Repeat NotificationRepeat
@@ -138,17 +138,7 @@ func (cx *Scope) ShowNotification(n Notification, done func(shown bool)) error {
 
 // nextRepeat is the first time after now that a notification repeated as r shows: at's clock reading in its location, on at's weekday for a weekly one.
 func nextRepeat(at time.Time, r NotificationRepeat, now time.Time) time.Time {
-	now = now.In(at.Location())
-	next := time.Date(now.Year(), now.Month(), now.Day(), at.Hour(), at.Minute(), at.Second(), 0, at.Location())
-	step := 1
-	if r == NotificationWeekly {
-		step = 7
-		next = next.AddDate(0, 0, (int(at.Weekday())-int(next.Weekday())+7)%7)
-	}
-	if !next.After(now) {
-		next = next.AddDate(0, 0, step)
-	}
-	return next
+	return driver.NextNotificationRepeat(at, driver.NotificationRepeat(r), now.In(at.Location()))
 }
 
 // CloseNotification removes the notification called id, if it still shows, or keeps it from showing if it is scheduled.
@@ -159,7 +149,7 @@ func (cx *Scope) CloseNotification(id string) {
 	}
 }
 
-// CloseNotifications removes every notification ShowNotification showed or scheduled, also those earlier runs left where the system keeps them: on macOS, iOS, Windows and Android. Linux and the web reach only those this run showed. It leaves the app's other notifications alone, such as Android's Live Updates and its foreground services', and the badge.
+// CloseNotifications removes every notification ShowNotification showed or scheduled, also those earlier runs left where the system keeps them: on macOS, iOS, watchOS, Windows and Android. Linux and the web reach only those this run showed or scheduled. It leaves the app's other notifications alone, such as Android's Live Updates and its foreground services', and the badge.
 func (cx *Scope) CloseNotifications() {
 	if t := cx.tree(); t != nil && !cx.denied(serviceNotifications, "") {
 		// An empty Value, which CloseNotification never sends, means all.
