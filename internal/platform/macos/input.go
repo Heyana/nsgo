@@ -47,8 +47,7 @@ type input struct {
 	applying, clipping, editing, focusing bool
 	keyMods                               uint // of the key a text view handles
 	pendingSelection                      *driver.TextRange
-	// Multiline scrolling: applied counts ItemScrollTo commands applied;
-	// lastScroll* deduplicate bounds-change notifications.
+	// Multiline scrolling: applied counts ItemScrollTo commands applied; lastScroll* deduplicate bounds-change notifications.
 	scrollApplied     uint32
 	lastScroll        driver.Point
 	lastScrollMax     driver.Points

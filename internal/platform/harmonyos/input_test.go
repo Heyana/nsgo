@@ -10,8 +10,7 @@ import (
 )
 
 // TestInputSendsEditability checks that a field's input operation carries its
-// editability at o[13] and o[14], its padding (top, right, bottom, left) at
-// o[15]..o[18] (#1598), and whether it hides its scroll indicator at o[19] (#1596).
+// editability at o[13] and o[14], its padding (top, right, bottom, left) at o[15]..o[18] (#1598), and whether it hides its scroll indicator at o[19] (#1596).
 func TestInputSendsEditability(t *testing.T) {
 	pad := driver.Edges{Top: 18, Right: 20, Bottom: 22, Left: 12}
 	for _, c := range []driver.InputConfig{{Readonly: true}, {Disabled: true}, {Multiline: true, Padding: pad, HideIndicator: true}, {}} {

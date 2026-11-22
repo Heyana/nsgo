@@ -144,9 +144,7 @@ type CaretEvent struct {
 	PageBounds Bounds
 }
 
-// inputScrollContent returns the scrollable content size of multiline input n
-// relative to its frame: frame.Size plus any vertical text overflow beyond its
-// content box. Empty text never overflows.
+// inputScrollContent returns the scrollable content size of multiline input n relative to its frame: frame.Size plus any vertical text overflow beyond its content box. Empty text never overflows.
 func (t *Tree) inputScrollContent(n *node) Size {
 	in := n.input
 	size := n.frame.Size

@@ -273,8 +273,7 @@ func TestScrollbarTheme(t *testing.T) {
 	})
 }
 
-// TestMultilineInputScrollbarTheme draws a Scrollbar over a multiline Input,
-// follows scrolling, and drags its thumb to scroll the input's text (#1596).
+// TestMultilineInputScrollbarTheme draws a Scrollbar over a multiline Input, follows scrolling, and drags its thumb to scroll the input's text (#1596).
 func TestMultilineInputScrollbarTheme(t *testing.T) {
 	headless(t)
 	each(t, func(t *testing.T, e core.Environment) {

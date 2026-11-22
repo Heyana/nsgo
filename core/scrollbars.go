@@ -18,9 +18,7 @@ type ScrollbarMaker interface {
 }
 
 // SetScrollbars is the core's part of base.SetScrollbarTheme, which apps
-// use: m draws the bar of every scroll view, list and multiline input of the
-// surface that shows its indicator and has no bar of its own; nil gives them
-// the platform's back.
+// use: m draws the bar of every scroll view, list and multiline input of the surface that shows its indicator and has no bar of its own; nil gives them the platform's back.
 func (cx *Scope) SetScrollbars(m ScrollbarMaker) {
 	t := cx.tree()
 	if t == nil || t.bars == m {
@@ -34,8 +32,7 @@ func (cx *Scope) SetScrollbars(m ScrollbarMaker) {
 	}
 }
 
-// refreshBar has scroll view or multiline input n's bar be what it has now.
-// The host stays once made, empty while nothing draws a bar.
+// refreshBar has scroll view or multiline input n's bar be what it has now. The host stays once made, empty while nothing draws a bar.
 func (t *Tree) refreshBar(n *node) {
 	if n.input != nil {
 		t.refreshInputBar(n)
@@ -83,9 +80,7 @@ func (t *Tree) refreshInputBar(n *node) {
 	in.bar.Set(m)
 }
 
-// mountInputBarHost makes the view that holds multiline input n's bar. It is
-// laid out as its own root at n's frame size (layoutInputBars) so n stays a
-// leaf for text measurement, and stays fixed over n without sticky scrolling.
+// mountInputBarHost makes the view that holds multiline input n's bar. It is laid out as its own root at n's frame size (layoutInputBars) so n stays a leaf for text measurement, and stays fixed over n without sticky scrolling.
 func (t *Tree) mountInputBarHost(n *node) {
 	in := n.input
 	cx := n.owner

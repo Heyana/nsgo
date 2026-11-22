@@ -1237,8 +1237,7 @@ func screenInsetsOf(v, root *View, rootSafe driver.Edges) driver.Edges {
 	return in
 }
 
-// syncInputContent measures a multiline input's wrapped text height to match
-// core's scrollable content size relative to v.Frame.Size.
+// syncInputContent measures a multiline input's wrapped text height to match core's scrollable content size relative to v.Frame.Size.
 func (a *App) syncInputContent(v *View) {
 	if v == nil || v.Kind != KindInput {
 		return

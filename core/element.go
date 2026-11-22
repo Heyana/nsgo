@@ -416,8 +416,7 @@ type Input struct {
 	Multiline bool
 	// HideIndicator hides a multiline field's native scroll bar.
 	HideIndicator bool
-	// Bar draws a multiline field's scroll bar in place of the platform's
-	// indicator, over the app's (Scope.SetScrollbars).
+	// Bar draws a multiline field's scroll bar in place of the platform's indicator, over the app's (Scope.SetScrollbars).
 	Bar ScrollbarMaker
 	// MaxLength caps the text the user enters, in UTF-16 units; 0 sets
 	// no cap.
@@ -720,8 +719,7 @@ func (r *Ref) path() []int {
 	return path
 }
 
-// ScrollTo scrolls the element, a Scroll, List or multiline Input, so its
-// content's offset is at.
+// ScrollTo scrolls the element, a Scroll, List or multiline Input, so its content's offset is at.
 func (r *Ref) ScrollTo(at Point, animated bool) {
 	if !r.placed() {
 		return
@@ -739,8 +737,7 @@ func (r *Ref) ScrollTo(at Point, animated bool) {
 	}
 }
 
-// ScrollToEnd scrolls the element, a Scroll, List or multiline Input, to the
-// end of its content. A list keeps following the end as the rows there are
+// ScrollToEnd scrolls the element, a Scroll, List or multiline Input, to the end of its content. A list keeps following the end as the rows there are
 // measured, until the user scrolls away.
 func (r *Ref) ScrollToEnd(animated bool) {
 	if !r.placed() {

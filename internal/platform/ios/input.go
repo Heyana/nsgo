@@ -35,8 +35,7 @@ type input struct {
 	applying, clipping, lineBreak bool
 	// hardwareReturn keeps a physical Return's unhandled UIKit edit from being matched again as an unmodified software-keyboard action.
 	hardwareReturn bool
-	// Multiline scrolling: scrollApplied counts ItemScrollTo commands applied;
-	// lastScroll* deduplicate scrollViewDidScroll: notifications.
+	// Multiline scrolling: scrollApplied counts ItemScrollTo commands applied; lastScroll* deduplicate scrollViewDidScroll: notifications.
 	scrollApplied     uint32
 	lastScroll        driver.Point
 	lastScrollMax     driver.Points

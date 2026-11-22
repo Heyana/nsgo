@@ -20,8 +20,7 @@ import (
 // end, since setting the value would end the composition and commit the
 // text as typed.
 
-// fieldCSS colors placeholders that have a color and hides native scrollbars
-// when HideIndicator is set.
+// fieldCSS colors placeholders that have a color and hides native scrollbars when HideIndicator is set.
 const fieldCSS = `.nsgo-placeholder::placeholder { color: var(--nsgo-placeholder); opacity: 1; }
 .nsgo-no-bar::-webkit-scrollbar { display: none; }`
 

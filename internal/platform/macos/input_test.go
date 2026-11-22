@@ -664,10 +664,7 @@ func TestInputLanguageAndKoreanLineBreaking(t *testing.T) {
 	})
 }
 
-// TestMultilineInputScrollsAndReportsOffset verifies that a multiline input
-// hides its NSScroller when HideIndicator is set, keeps overlay children (such
-// as a Scrollbar host) above the NSScrollView even across editor switches,
-// accepts ItemScrollTo, and reports offset and scrollable size on EventScroll (#1596).
+// TestMultilineInputScrollsAndReportsOffset verifies that a multiline input hides its NSScroller when HideIndicator is set, keeps overlay children (such as a Scrollbar host) above the NSScrollView even across editor switches, accepts ItemScrollTo, and reports offset and scrollable size on EventScroll (#1596).
 func TestMultilineInputScrollsAndReportsOffset(t *testing.T) {
 	onMain(func() {
 		loadAppKit()

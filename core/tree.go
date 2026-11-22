@@ -336,9 +336,7 @@ type node struct {
 	// headerView is a view of a screen's system header: a layout root
 	// at its content size that the platform puts in the bar.
 	headerView bool
-	// inputBar is a multiline input's scrollbar host: laid out as its own
-	// root at the input's frame size so the input stays a leaf for text
-	// measurement, and drawn over the editor.
+	// inputBar is a multiline input's scrollbar host: laid out as its own root at the input's frame size so the input stays a leaf for text measurement, and drawn over the editor.
 	inputBar bool
 	panning  bool           // it follows pans: OnPan or PanValues
 	pinching bool           // it follows pinches: OnPinch or PinchValue
@@ -647,11 +645,9 @@ type inputNode struct {
 
 // scrollTracker tracks a scrollable view's offset and unapplied scroll commands.
 type scrollTracker struct {
-	// offset is the reported offset with the scrolls the platform had not
-	// applied yet replayed over it.
+	// offset is the reported offset with the scrolls the platform had not applied yet replayed over it.
 	offset Point
-	// issued counts the ItemScrollTo and ItemScrollBy items sent, and
-	// pending holds those a report has not shown applied, oldest first.
+	// issued counts the ItemScrollTo and ItemScrollBy items sent, and pending holds those a report has not shown applied, oldest first.
 	issued  uint32
 	applied uint32
 	pending []pendingScroll
@@ -669,9 +665,7 @@ func (st *scrollTracker) issue(to, animated bool, p Point) {
 	}
 }
 
-// report records an offset the platform reported after applying applied
-// scrolls: those it had not applied yet still count, so a report that
-// predates them does not move the content back.
+// report records an offset the platform reported after applying applied scrolls: those it had not applied yet still count, so a report that predates them does not move the content back.
 func (st *scrollTracker) report(p Point, applied uint32) {
 	st.applied = max(st.applied, applied)
 	k := 0
@@ -3008,8 +3002,7 @@ func appendNative(out []*node, children []*node) []*node {
 }
 
 // nativeChildren returns n's native children: the views it lays out, a
-// text's attachments, a multiline input's scrollbar host, then the overlays
-// and modals it hosts, last on top.
+// text's attachments, a multiline input's scrollbar host, then the overlays and modals it hosts, last on top.
 func (n *node) nativeChildren() []*node {
 	attached := n.text != nil && n.text.attachments > 0
 	inputBar := n.input != nil && n.input.barHost != nil && !n.input.barHost.deleted

@@ -32,10 +32,7 @@ const (
 	EventChangeText
 	// EventSubmitEditing is Return in a text field (Text).
 	EventSubmitEditing
-	// EventScroll carries a scroll view's or multiline input's offset (Point),
-	// the ItemScrollTo and ItemScrollBy items it applied since it was made
-	// (Count), its zoom scale (Value) when it zooms, and for a multiline input
-	// optionally its scrollable content size relative to its frame (Size).
+	// EventScroll carries a scroll view's or multiline input's offset (Point), the ItemScrollTo and ItemScrollBy items it applied since it was made (Count), its zoom scale (Value) when it zooms, and for a multiline input optionally its scrollable content size relative to its frame (Size).
 	EventScroll
 	// EventLoadStart, EventProgress (Loaded, Total), EventLoad (Size, the source's pixels), EventError (Text) and EventLoadEnd follow an image view's loading. A web view reports EventLoadStart and EventLoad with its Navigation, and EventError with the URL in Navigation and a *WebFailure in Data when the platform supplies a domain and code. A video reports EventLoadStart, EventLoad (Duration and Size, in points), EventProgress (Time and Duration) and EventError, with why it failed in Index (VideoErrorOther, ...).
 	EventLoadStart

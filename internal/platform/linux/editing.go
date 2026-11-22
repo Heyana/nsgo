@@ -282,8 +282,7 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 	purpose, hints := inputPurpose(in)
 	dir := gtkTextDir(in.Style.RTL)
 	if v.textView != 0 {
-		// GTK_POLICY_AUTOMATIC = 1, GTK_POLICY_NEVER = 2, GTK_POLICY_EXTERNAL = 3.
-		// EXTERNAL hides GTK's scrollbar while keeping scrolling enabled.
+		// GTK_POLICY_AUTOMATIC = 1, GTK_POLICY_NEVER = 2, GTK_POLICY_EXTERNAL = 3. EXTERNAL hides GTK's scrollbar while keeping scrolling enabled.
 		vpolicy := int32(1)
 		if in.HideIndicator {
 			vpolicy = 3
