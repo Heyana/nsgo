@@ -304,6 +304,8 @@ desktop.OpenPanel(cx, desktop.PanelOptions{Width: 600, Height: 400, PointerEvent
 
 在 macOS 和 Windows 上，绘制区域接收指针的窗口可为图片设置 `Image.HitTestAlpha`（TSX 中为 `hitTestAlpha`），取值大于 0 且不超过 1。例如，0.5 表示图片像素的不透明度至少为一半时才接收指针。这个阈值也适用于图片的 `OnPress`，而视图的背景或边框仍算作绘制区域。设为 0 时使用整个图片视图，Linux 上的图片以及桌面平台上的视频也都按整个视图判断。
 
+在 macOS 和 Windows 上，`desktop.NewTray` 可通过 `TrayOptions.View` 绘制实时图标。Windows 将视图的透明绘制结果缩放到通知区域的图标大小，并在视图变化或图片加载完成后更新；用 `TrayOptions.OnClick`、`Panel` 和 `Menu` 处理图标的操作。Linux 目前显示 PNG 图标，绘制托盘视图仍是目标。
+
 `desktop.OpenPanel` 打开一个面板，供这样的快捷键或托盘图标显示：浮在其他窗口之上的无边框窗口。与 `desktop.OpenWindow`、`desktop.NewTray`、`mobile.OpenOverlay`、`audio.NewPlayer`、`audio.LoadSound` 和 `core.NewHolder` 一样，它直接归你显式传入的 `cx` 所有，而不被当前运行中的回调所有者覆盖，因此在按钮的 `OnPress` 里传入应用作用域即可让打开的窗口、面板或播放器在按钮作用域销毁后继续存活；`Effect`、`Cleanup`、`AfterFunc`、`OnKey` 等响应式原语则归当前运行中的所有者，需要切换时用 `cx.Run`。弹出卡片画在带 `Transparent` 的面板上，面板自己不画背景、边框和阴影，只显示卡片的圆角和 `BoxShadow`，阴影要在面板内留出空间；`FitContent` 让面板在首次显示前、以及内容变化时取内容的大小，最大到 `Width` 和 `Height`。`desktop.Transparent` 说明面板此刻是否不绘制任何自身内容，对透明窗口也一样；`desktop.CanMakeWindowsTransparent` 只说明窗口能否透明。为 false 时，例如没有合成器的 Linux，要给内容加上背景。
 
 ```go

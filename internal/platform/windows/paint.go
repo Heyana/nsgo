@@ -420,6 +420,10 @@ func (w *window) paint() {
 
 // frame draws the whole tree into the swap chain and presents it.
 func (w *window) frame() {
+	if w.kind == driver.SurfaceTrayIcon && w.hostWindow != nil {
+		w.drawTray()
+		return
+	}
 	var client rect
 	getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&client)))
 	if client.empty() {

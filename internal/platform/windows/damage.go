@@ -72,13 +72,15 @@ func unknown(r rectF) bool { return math.IsInf(float64(r.left), -1) }
 // redrawAll has the next frame draw the whole window.
 func (w *window) redrawAll() {
 	w.damage.whole = true
-	if w.hwnd != 0 {
-		invalidateRect.Call(w.hwnd, 0, 0)
-	}
+	w.redrawPending()
 }
 
 // redrawPending has a frame draw what was queued.
 func (w *window) redrawPending() {
+	if w.kind == driver.SurfaceTrayIcon && w.hostWindow != nil {
+		w.queueTrayDraw()
+		return
+	}
 	if w.hwnd != 0 {
 		invalidateRect.Call(w.hwnd, 0, 0)
 	}
@@ -99,9 +101,7 @@ func (w *window) redrawView(v *view) {
 			d.old = append(d.old, v.tree)
 		}
 	}
-	if w.hwnd != 0 {
-		invalidateRect.Call(w.hwnd, 0, 0)
-	}
+	w.redrawPending()
 }
 
 // up returns the view v draws in.

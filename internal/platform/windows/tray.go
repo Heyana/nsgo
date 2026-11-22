@@ -81,6 +81,8 @@ type trayIcon struct {
 	icon    uintptr
 	private bool
 	added   bool
+	// drawn says icon comes from the attached view and wins over the PNG fallback.
+	drawn bool
 	// blurred is when a panel under it hid as it lost the focus to a press on the icon: the click that press ends does not show it again.
 	blurred time.Time
 }
@@ -100,9 +102,13 @@ func (w *window) applyTray(cfg driver.TrayConfig) {
 		tr = &trayIcon{}
 		w.trays[cfg.ID] = tr
 	}
-	oldCfg, oldIcon, oldPrivate := tr.cfg, tr.icon, tr.private
+	oldCfg, oldIcon, oldPrivate, oldDrawn := tr.cfg, tr.icon, tr.private, tr.drawn
 	tr.cfg = cfg
-	tr.icon, tr.private = trayHICON(cfg.Icon)
+	reused := cfg.View != 0 && cfg.View == oldCfg.View && tr.drawn
+	if !reused {
+		tr.icon, tr.private = trayHICON(cfg.Icon)
+		tr.drawn = false
+	}
 	data := w.trayData(cfg, tr.icon)
 	if tr.icon != 0 {
 		data.Flags |= nifIcon
@@ -113,21 +119,25 @@ func (w *window) applyTray(cfg driver.TrayConfig) {
 		op = nimAdd
 	}
 	if ok, _, _ := shellNotifyIcon.Call(uintptr(op), uintptr(unsafe.Pointer(&data))); ok == 0 {
-		if tr.private {
+		if tr.private && !reused {
 			destroyIcon.Call(tr.icon)
 		}
 		if op == nimAdd {
 			// Kept, to add again with its next change or once the taskbar exists (TaskbarCreated): the shell has no notification area before Explorer starts.
-			if oldPrivate && oldIcon != 0 {
-				destroyIcon.Call(oldIcon)
+			if !reused {
+				if oldPrivate && oldIcon != 0 {
+					destroyIcon.Call(oldIcon)
+				}
+				tr.icon, tr.private = 0, false
 			}
-			tr.icon, tr.private = 0, false
 			return
 		}
-		tr.cfg, tr.icon, tr.private = oldCfg, oldIcon, oldPrivate
+		if !reused {
+			tr.cfg, tr.icon, tr.private, tr.drawn = oldCfg, oldIcon, oldPrivate, oldDrawn
+		}
 		return
 	}
-	if oldPrivate && oldIcon != 0 {
+	if oldPrivate && oldIcon != 0 && !reused {
 		destroyIcon.Call(oldIcon)
 	}
 	if op == nimAdd {
@@ -292,20 +302,7 @@ func iconFromPNG(data []byte) uintptr {
 		return 0
 	}
 	const size = 32
-	bi := bitmapInfo{Width: size, Height: -size, Planes: 1, BitCount: 32}
-	bi.Size = uint32(unsafe.Sizeof(bi)) - 4
-	dc, _, _ := createCompatibleDC.Call(0)
-	if dc == 0 {
-		return 0
-	}
-	defer deleteDC.Call(dc)
-	var bits unsafe.Pointer
-	dib, _, _ := createDIBSection.Call(dc, uintptr(unsafe.Pointer(&bi)), 0, uintptr(unsafe.Pointer(&bits)), 0, 0)
-	if dib == 0 || bits == nil {
-		return 0
-	}
-	defer deleteObject.Call(dib)
-	pix := unsafe.Slice((*byte)(bits), size*size*4)
+	pix := make([]byte, size*size*4)
 	b := img.Bounds()
 	for y := range size {
 		sy := b.Min.Y + y*b.Dy()/size
@@ -319,7 +316,29 @@ func iconFromPNG(data []byte) uintptr {
 			pix[i+3] = byte(a / 0x100)
 		}
 	}
-	mask, _, _ := createBitmap.Call(size, size, 1, 1, 0)
+	return iconFromPixels(pix, size, size)
+}
+
+// iconFromPixels copies premultiplied BGRA pixels into a private HICON.
+func iconFromPixels(pix []byte, width, height int) uintptr {
+	if width <= 0 || height <= 0 || width*height > maxOffscreenPixels || len(pix) != width*height*4 {
+		return 0
+	}
+	bi := bitmapInfo{Width: int32(width), Height: -int32(height), Planes: 1, BitCount: 32}
+	bi.Size = uint32(unsafe.Sizeof(bi)) - 4
+	dc, _, _ := createCompatibleDC.Call(0)
+	if dc == 0 {
+		return 0
+	}
+	defer deleteDC.Call(dc)
+	var bits unsafe.Pointer
+	dib, _, _ := createDIBSection.Call(dc, uintptr(unsafe.Pointer(&bi)), 0, uintptr(unsafe.Pointer(&bits)), 0, 0)
+	if dib == 0 || bits == nil {
+		return 0
+	}
+	defer deleteObject.Call(dib)
+	copy(unsafe.Slice((*byte)(bits), len(pix)), pix)
+	mask, _, _ := createBitmap.Call(uintptr(width), uintptr(height), 1, 1, 0)
 	if mask == 0 {
 		return 0
 	}

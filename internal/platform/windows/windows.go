@@ -452,6 +452,9 @@ type window struct {
 	// popupShown are the items of the context menu tracking.
 	popupShown []driver.MenuEntry
 	trays      map[uint32]*trayIcon
+	// trayID links a hidden drawn-icon surface to its root's notification icon.
+	trayID          uint32
+	trayDrawPending bool
 	// menuOwner is the hidden window that owns the tray icons' menus of a shown root window.
 	menuOwner uintptr
 	// ownPerf is the performance monitor of a hidden root window, which the first window it opens shows.
@@ -968,8 +971,7 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	opts.Transparent, opts.NoShadow, opts.SkipTaskbar = cfg.Transparent && (cfg.Kind == driver.SurfaceWindow || cfg.Kind == driver.SurfacePanel), cfg.NoShadow,
 		cfg.SkipTaskbar && cfg.Kind == driver.SurfaceWindow
 	if cfg.Kind == driver.SurfaceTrayIcon {
-		// The notification-area icon does not yet host a drawn surface on
-		// Windows, so keep its attached tree out of sight.
+		// The tree is rendered into the notification icon, never a visible window.
 		opts.Hidden = true
 	}
 	child := newWindow(opts)
@@ -977,6 +979,7 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	child.parentWindow = w.surfaceWindow(cfg.Parent)
 	child.opts, child.hostWindow, child.kind, child.hideOnBlur, child.noActivate = opts, w, cfg.Kind, cfg.HideOnBlur, cfg.NoActivate
 	child.visible = !opts.Hidden
+	child.trayID = cfg.Tray
 	child.chrome.constraints = opts.Constraints
 	child.composeFor(opts.Material)
 	if opts.Transparent {
@@ -990,7 +993,7 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	if opts.SkipTaskbar {
 		ex |= wsExToolWindow
 	}
-	if cfg.Kind == driver.SurfacePanel {
+	if cfg.Kind == driver.SurfacePanel || cfg.Kind == driver.SurfaceTrayIcon {
 		style = wsPopup | wsClipChildren
 	}
 	if cfg.Kind != driver.SurfaceWindow {

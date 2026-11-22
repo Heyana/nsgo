@@ -1088,6 +1088,14 @@ func startAppWith(t *testing.T, app engine.App, opts Options) uintptr {
 		Run(app, opts)
 	}()
 	hwnd := waitForWindow(t, opts.Title, done)
+	// A hidden tray surface initially inherits the app's title. FindWindow
+	// can find it first; tests and cleanup must use the app's root HWND.
+	onMain(t, hwnd, func(w *window) {
+		for w.hostWindow != nil {
+			w = w.hostWindow
+		}
+		hwnd = w.hwnd
+	})
 	t.Cleanup(func() {
 		postMessageW.Call(hwnd, wmClose, 0, 0)
 		select {

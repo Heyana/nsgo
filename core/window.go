@@ -586,7 +586,8 @@ type TrayOptions struct {
 	Icon     []byte
 	Template bool
 	// View draws the icon instead, Width points wide (22 by default) and
-	// as tall as the menu bar, so it can change and move: on macOS.
+	// as tall as the menu bar, so it can change and move: on macOS. Windows
+	// rasterizes the view at the notification area's icon size.
 	View  func(cx *Scope) Node
 	Width Points
 	// Title is text beside the icon, on macOS; Tooltip shows on hover.

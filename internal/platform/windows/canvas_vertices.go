@@ -4,7 +4,6 @@ package windows
 
 import (
 	"math"
-	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/canvasmesh"
@@ -67,29 +66,7 @@ func (c *canvasPlayer) vertices(op *driver.DrawOp) {
 func (p *painter) offscreenTexture(e *offscreenEntry, off *driver.OffscreenCanvas) canvasmesh.Texture {
 	pw, ph := off.PixelSize()
 	if e.meshPixels == nil && pw > 0 && ph > 0 {
-		props := bitmapProperties1{format: dxgiFormatBGRA, alphaMode: d2dAlphaPremultiplied, dpiX: 96 * e.scale,
-			dpiY: 96 * e.scale, options: d2dBitmapCPURead | d2dBitmapCannotDraw}
-		var readable *comObject
-		if failed(p.dc.callSize(dcCreateBitmap, uint32(pw), uint32(ph), 0, 0, uintptr(unsafe.Pointer(&props)), uintptr(unsafe.Pointer(&readable)))) {
-			return canvasmesh.Texture{}
-		}
-		defer readable.release()
-		p.dc.call(rtFlush, 0, 0)
-		readable.call(bitmapCopyFromBitmap, 0, e.bitmap.ptr(), 0)
-		var mapped struct {
-			pitch uint32
-			bits  *byte
-		}
-		if failed(readable.call(bitmapMap, d2dMapRead, uintptr(unsafe.Pointer(&mapped)))) {
-			return canvasmesh.Texture{}
-		}
-		rows := unsafe.Slice(mapped.bits, int(mapped.pitch)*ph)
-		pix := make([]byte, pw*ph*4)
-		for y := range ph {
-			copy(pix[y*pw*4:(y+1)*pw*4], rows[y*int(mapped.pitch):])
-		}
-		readable.call(bitmapUnmap)
-		e.meshPixels = pix
+		e.meshPixels = bitmapPixels(p.dc, e.bitmap, uint32(pw), uint32(ph), e.scale)
 	}
 	return canvasmesh.Texture{Pix: e.meshPixels, Width: pw, Height: ph, Stride: pw * 4, Points: e.points, BGRA: true}
 }

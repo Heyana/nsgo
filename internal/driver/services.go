@@ -188,7 +188,7 @@ const (
 	// SurfacePanel is a borderless window that floats over the others, which takes the keyboard without activating the app where the platform can: a tray icon's or a launcher's; or, with NoActivate, never takes it.
 	SurfacePanel
 	// SurfaceTrayIcon is the view a tray icon draws itself with
-	// (TrayConfig.View), in the menu bar on macOS.
+	// (TrayConfig.View), in the macOS menu bar or rasterized on Windows.
 	SurfaceTrayIcon
 	// SurfaceOverlay is a window over other apps on Android
 	// (mobile.OpenOverlay): it takes touches but not the focus unless
