@@ -29,7 +29,7 @@ final class Protocol {
     static Message readMessage(DataInputStream in) throws IOException {
         int kind = in.read();
         if (kind == -1) return null;
-        if (kind < BATCH || kind > GAMEPAD_RUMBLE) throw invalidMessage("unexpected message kind " + kind);
+        if (kind < BATCH || kind > EXTENDED) throw invalidMessage("unexpected message kind " + kind);
         int length;
         try {
             length = in.readInt();
@@ -45,7 +45,20 @@ final class Protocol {
         } catch (EOFException e) {
             throw invalidMessage("incomplete message payload (expected " + length + " bytes)");
         }
+        if (kind == EXTENDED) {
+            if (length == 0) throw invalidMessage("extended message without its kind");
+            int extended = payload[0] & 0xff;
+            if (!isExtended(extended)) throw invalidMessage("unexpected extended message kind " + extended);
+        }
         return new Message(kind, payload);
+    }
+
+    /** Whether Go writes extended messages of this kind: each EXT_* constant has its case. */
+    static boolean isExtended(int kind) {
+        switch (kind) {
+            default:
+                return false;
+        }
     }
 
     private static IOException invalidMessage(String reason) {
@@ -91,6 +104,11 @@ final class Protocol {
 
     /** Starts or stops rumble on a game controller: device id, lowFreq, highFreq, durationMs (gamepad.go, Gamepads). */
     static final int GAMEPAD_RUMBLE = 27;
+
+    /** A message of an extended kind: an EXT_* byte, then that message's payload, which NsgoView.extended reads. The kinds stop here so that stray text on stdout is refused rather than read as a message; new Go-to-Java messages are extended kinds. */
+    static final int EXTENDED = 31;
+
+    // Extended kinds, the first byte of an EXTENDED message, kept in sync with android.go's ext* constants: each is EXT_NAME = n with n from 1 up, and has its case in isExtended.
 
 
     // Java to Go.

@@ -993,6 +993,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 case Protocol.TEXT_REQUEST:
                     text(message);
                     break;
+                case Protocol.EXTENDED:
+                    extended(message.readUnsignedByte(), message, payload);
+                    break;
                 case Protocol.SHADER_RELEASE: {
                     int[] ids = new int[message.readInt()];
                     for (int i = 0; i < ids.length; i++) ids[i] = message.readInt();
@@ -1013,6 +1016,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
         } catch (IOException e) {
             Log.w(TAG, "invalid message from app", e);
+        }
+    }
+
+    /** Takes a message of an extended kind (Protocol.EXT_*), on the pipe's reader like onMessage: message is past its kind byte, and payload still holds it. Protocol.readMessage refuses a kind isExtended lacks. */
+    private void extended(int kind, DataInputStream message, byte[] payload) throws IOException {
+        switch (kind) {
+            default:
+                Log.w(TAG, "unknown extended message " + kind);
         }
     }
 

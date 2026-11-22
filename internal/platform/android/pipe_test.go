@@ -116,3 +116,83 @@ func TestJavaReaderTakesWhatGoWrites(t *testing.T) {
 		t.Errorf("a payload over the most Java reads: %v", err)
 	}
 }
+
+// TestJavaExtendedKindsMatchGo holds Protocol.java's EXT_* constants, the kinds of msgExtended messages, to android.go's ext* constants, by name and number, and checks that Protocol.isExtended takes each of them, so that a kind renumbered on one side only, as a rebase does to kinds assigned in order, fails here rather than being read as another message.
+func TestJavaExtendedKindsMatchGo(t *testing.T) {
+	testhost.RequireSource(t)
+	read := func(path ...string) string {
+		data, err := os.ReadFile(filepath.Join(path...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	goSource, java := read("android.go"), read("java", "dev", "oneo", "nsgo", "Protocol.java")
+
+	block := regexp.MustCompile(`(?s)// Extended Go-to-Java message kinds[^\n]*\nconst \((.*?)\)`).FindStringSubmatch(goSource)
+	if block == nil {
+		t.Fatal("android.go has no extended message kinds")
+	}
+	goKinds := map[string]int{}
+	for _, m := range regexp.MustCompile(`\bext(\w+) += (\d+)`).FindAllStringSubmatch(block[1], -1) {
+		n, _ := strconv.Atoi(m[2])
+		goKinds[javaConstantName(m[1])] = n
+	}
+	javaKinds := map[string]int{}
+	for _, m := range regexp.MustCompile(`static final int EXT_(\w+) = (\d+);`).FindAllStringSubmatch(java, -1) {
+		n, _ := strconv.Atoi(m[2])
+		javaKinds[m[1]] = n
+	}
+	accepts := regexp.MustCompile(`(?s)static boolean isExtended\(int kind\) \{(.*?)\n    \}`).FindStringSubmatch(java)
+	if accepts == nil {
+		t.Fatal("Protocol.java has no isExtended")
+	}
+
+	seen := map[int]string{}
+	for name, n := range goKinds {
+		if n < 1 || n > 255 {
+			t.Errorf("android.go's extended kind %s is %d, outside 1 to 255", name, n)
+		}
+		if other, ok := seen[n]; ok {
+			t.Errorf("android.go's extended kinds %s and %s are both %d", other, name, n)
+		}
+		seen[n] = name
+		if got, ok := javaKinds[name]; !ok {
+			t.Errorf("Protocol.java has no EXT_%s for android.go's extended kind %d", name, n)
+		} else if got != n {
+			t.Errorf("Protocol.java's EXT_%s is %d, android.go's %d", name, got, n)
+		}
+	}
+	for name, n := range javaKinds {
+		if _, ok := goKinds[name]; !ok {
+			t.Errorf("Protocol.java's EXT_%s (%d) has no extended kind in android.go", name, n)
+		}
+		if !strings.Contains(accepts[1], "case EXT_"+name+":") {
+			t.Errorf("Protocol.isExtended does not take EXT_%s", name)
+		}
+	}
+
+	if got := javaConstantName("FrameRate"); got != "FRAME_RATE" {
+		t.Errorf("javaConstantName(FrameRate) = %s", got)
+	}
+	if got := javaConstantName("DNSServers"); got != "DNS_SERVERS" {
+		t.Errorf("javaConstantName(DNSServers) = %s", got)
+	}
+}
+
+// javaConstantName turns a Go name's camel case into Protocol.java's upper snake case: FrameRate is FRAME_RATE and DNSServers DNS_SERVERS.
+func javaConstantName(name string) string {
+	var b strings.Builder
+	for i, r := range name {
+		upper := r >= 'A' && r <= 'Z'
+		if i > 0 && upper {
+			prev := rune(name[i-1])
+			next := i+1 < len(name) && name[i+1] >= 'a' && name[i+1] <= 'z'
+			if prev >= 'a' && prev <= 'z' || prev >= '0' && prev <= '9' || prev >= 'A' && prev <= 'Z' && next {
+				b.WriteByte('_')
+			}
+		}
+		b.WriteRune(r)
+	}
+	return strings.ToUpper(b.String())
+}

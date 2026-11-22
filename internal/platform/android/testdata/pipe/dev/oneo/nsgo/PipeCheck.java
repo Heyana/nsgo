@@ -80,10 +80,10 @@ public final class PipeCheck {
         byte[] payload = new byte[]{0, 1, -1, 42};
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         // Consecutive frames preserve their boundaries and every current kind.
-        for (int kind = 1; kind <= Protocol.GAMEPAD_RUMBLE; kind++) bytes.write(frame(kind, payload.length, payload));
+        for (int kind = 1; kind < Protocol.EXTENDED; kind++) bytes.write(frame(kind, payload.length, payload));
         bytes.write(frame(13, 0, new byte[0]));
         DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()));
-        for (int kind = 1; kind <= Protocol.GAMEPAD_RUMBLE; kind++) {
+        for (int kind = 1; kind < Protocol.EXTENDED; kind++) {
             Protocol.Message message = Protocol.readMessage(in);
             check(message != null && message.kind == kind && Arrays.equals(message.payload, payload), "changed valid frame " + kind);
         }
@@ -92,7 +92,20 @@ public final class PipeCheck {
         for (String text : new String[]{"=== RUN   TestA\n", "--- FAIL: TestA\n", "    target.go:151: TestMain\n", "PASS\n", "FAIL\n"}) {
             refused(text.getBytes(StandardCharsets.UTF_8), "unexpected message kind");
         }
-        for (int kind : new int[]{0, Protocol.GAMEPAD_RUMBLE + 1, 255}) refused(frame(kind, 0, new byte[0]), "unexpected message kind");
+        for (int kind : new int[]{0, Protocol.EXTENDED + 1, 255}) refused(frame(kind, 0, new byte[0]), "unexpected message kind");
+        // An extended message is read whole when its kind is one Go writes, and refused like an unknown kind otherwise.
+        refused(frame(Protocol.EXTENDED, 0, new byte[0]), "extended message without its kind");
+        check(!Protocol.isExtended(0), "extended kind 0 accepted");
+        for (int extended = 0; extended <= 255; extended++) {
+            byte[] body = new byte[]{(byte) extended, 1, -1, 42};
+            byte[] framed = frame(Protocol.EXTENDED, body.length, body);
+            if (!Protocol.isExtended(extended)) {
+                refused(framed, "unexpected extended message kind " + extended);
+                continue;
+            }
+            Protocol.Message message = Protocol.readMessage(new DataInputStream(new ByteArrayInputStream(framed)));
+            check(message.kind == Protocol.EXTENDED && Arrays.equals(message.payload, body), "changed extended frame " + extended);
+        }
         for (int length : new int[]{64 * 1024 * 1024 + 1, Integer.MAX_VALUE, -1, Integer.MIN_VALUE}) {
             refused(frame(1, length, new byte[0]), "message length");
         }

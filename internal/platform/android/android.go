@@ -91,6 +91,8 @@ const (
 	msgTextRequest   = 26
 	// msgGamepadRumble starts or stops rumble on a connected game controller (gamepad.go, Gamepads.java).
 	msgGamepadRumble = 27
+	// msgExtended is a Go-to-Java message of an extended kind (ext* below): its sub-kind byte, then that message's payload (sendExtended). The kinds above stop at 31, the most Protocol.readMessage takes, so that stray text on stdout, whose first byte is a space or a letter, is refused rather than read as a message; slots 2, 3, 4, 7 and 12 belonged to retired messages a stale runtime could still read. Add new Go-to-Java messages as extended kinds.
+	msgExtended = 31
 
 	// Java to Go.
 	msgStart       = 1 // the view's size and the folds measured at it (readSize), as msgResize
@@ -132,6 +134,9 @@ const (
 	// msgPhysicalKey reports a hardware key and its scan code (keycodes.go).
 	msgPhysicalKey = 30
 )
+
+// Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
+const ()
 
 // The parts of an image view's request msgImage carries.
 const (
@@ -1302,6 +1307,14 @@ func imageScale(uri string) float32 {
 // send writes one message whose payload body writes, or none and an error when the payload is longer than Java reads, as an image's or a font's bytes can be.
 func (s *surface) send(kind byte, body func(w *writer)) error {
 	return s.sendBefore(kind, time.Time{}, body)
+}
+
+// sendExtended writes a msgExtended message of the extended kind ext, whose payload body writes after the sub-kind byte, as send does.
+func (s *surface) sendExtended(ext byte, body func(w *writer)) error {
+	return s.send(msgExtended, func(w *writer) {
+		w.byte(ext)
+		body(w)
+	})
 }
 
 func (s *surface) sendBefore(kind byte, deadline time.Time, body func(w *writer)) error {
