@@ -14,6 +14,9 @@ import (
 // newTerminal makes a terminal of opts, skipping where none runs.
 func newTerminal(t *testing.T, opts Options) *Terminal {
 	t.Helper()
+	if runtime.GOOS == "js" && opts.Conn == nil {
+		t.Skip("the browser runs remote sessions only")
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("runs /bin/sh")
 	}

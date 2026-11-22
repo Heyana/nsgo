@@ -7,12 +7,12 @@ import (
 )
 
 func TestSelectLibraryTargets(t *testing.T) {
-	selected, err := selectTargets("iossimulator-amd64,ioscatalyst-arm64,iossimulator-amd64")
-	if err != nil || len(selected) != 2 {
+	selected, err := selectTargets("js-wasm,iossimulator-amd64,ioscatalyst-arm64,js-wasm")
+	if err != nil || len(selected) != 3 {
 		t.Fatalf("selected %v: %v", selected, err)
 	}
-	if selected[0].zig != "x86_64-ios-simulator" || selected[1].zig != "aarch64-maccatalyst" {
-		t.Fatalf("wrong Apple targets: %+v", selected)
+	if selected[0].zig != "wasm32-freestanding" || selected[1].zig != "x86_64-ios-simulator" || selected[2].zig != "aarch64-maccatalyst" {
+		t.Fatalf("wrong browser/native targets: %+v", selected)
 	}
 	if _, err := selectTargets("missing-arm64"); err == nil {
 		t.Error("unknown target accepted")

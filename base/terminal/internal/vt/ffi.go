@@ -20,4 +20,6 @@ func call(fn uintptr, args ...uintptr) uintptr {
 
 func registerFunc(fptr any, addr uintptr) { purego.RegisterFunc(fptr, addr) }
 
-func newCallback(fn any) uintptr { return purego.NewCallback(fn) }
+func newCallback(_ string, fn any) uintptr { return purego.NewCallback(fn) }
+
+func setupPlatform() {}

@@ -742,10 +742,10 @@ func makeCallbacks() {
 	})
 	// A GhosttyMimeReader for PasteEvent, which the library never calls
 	// (it reads nothing for an event); it gives no data if it did.
-	cbNoRead = newCallback(func(_, _, _, _, _ uintptr) uintptr { return 0 })
-	cbWritePTY = newCallback(func(_, id, data, n uintptr) uintptr {
+	cbNoRead = newCallback("mime-reader", func(_, _, _, _, _ uintptr) uintptr { return 0 })
+	cbWritePTY = newCallback("viiii", func(_, id, data, n uintptr) uintptr {
 		if t := terminalOf(id); t != nil && t.effects.WritePTY != nil && n > 0 {
-			p := unsafe.Slice((*byte)(mem(data)), n)
+			p := foreignBytes(data, n)
 			if d := t.deferred; d != nil {
 				// A deferred read: what the library writes now is its
 				// refusal, which the read's answer replaces.
@@ -768,15 +768,15 @@ func makeCallbacks() {
 		}
 		return 0
 	})
-	cbClipboardRead = newCallback(func(_, id, req uintptr) uintptr {
-		r := (*clipboardRead)(mem(req))
+	cbClipboardRead = newCallback("viii", func(_, id, req uintptr) uintptr {
+		r := foreignValue[clipboardRead](req)
 		t := terminalOf(id)
 		if t == nil || t.effects.ClipboardRead == nil {
 			return 0 // refused by the library
 		}
 		var in ClipboardRead
 		in.List, in.Primary, in.Granted, in.CanRemember = r.list, r.location != 0, r.granted, r.canRemember
-		for _, m := range unsafe.Slice((*cString)(mem(r.mimes)), r.mimesLen) {
+		for _, m := range foreignSlice[cString](r.mimes, r.mimesLen) {
 			in.Mimes = append(in.Mimes, goString(m.ptr, m.len))
 		}
 		out, answer := t.effects.ClipboardRead(in)
@@ -827,39 +827,39 @@ func makeCallbacks() {
 		}
 		return 0
 	})
-	cbBell = newCallback(func(_, id uintptr) uintptr {
+	cbBell = newCallback("vii", func(_, id uintptr) uintptr {
 		if t := terminalOf(id); t != nil && t.effects.Bell != nil {
 			t.effects.Bell()
 		}
 		return 0
 	})
-	cbTitleChanged = newCallback(func(_, id uintptr) uintptr {
+	cbTitleChanged = newCallback("vii", func(_, id uintptr) uintptr {
 		if t := terminalOf(id); t != nil && t.effects.TitleChanged != nil {
 			t.effects.TitleChanged()
 		}
 		return 0
 	})
-	cbPwdChanged = newCallback(func(_, id uintptr) uintptr {
+	cbPwdChanged = newCallback("vii", func(_, id uintptr) uintptr {
 		if t := terminalOf(id); t != nil && t.effects.PwdChanged != nil {
 			t.effects.PwdChanged()
 		}
 		return 0
 	})
-	cbRenderHold = newCallback(func(_, id, held uintptr) uintptr {
+	cbRenderHold = newCallback("viii", func(_, id, held uintptr) uintptr {
 		if t := terminalOf(id); t != nil && t.effects.RenderHold != nil {
 			t.effects.RenderHold(cbool(held))
 		}
 		return 0
 	})
-	cbClipboardWrite = newCallback(func(_, id, req uintptr) uintptr {
-		w := (*clipboardWrite)(mem(req))
+	cbClipboardWrite = newCallback("viii", func(_, id, req uintptr) uintptr {
+		w := foreignValue[clipboardWrite](req)
 		reply := clipboardWriteReply{size: unsafe.Sizeof(clipboardWriteReply{}), result: 1} // denied
 		t := terminalOf(id)
 		if t != nil && t.effects.Clipboard != nil {
 			// No contents clears the clipboard; otherwise the first plain
 			// text, else the first text of another kind, is written.
 			text, found := "", w.contentsLen == 0
-			for _, c := range unsafe.Slice((*clipboardContent)(mem(w.contents)), w.contentsLen) {
+			for _, c := range foreignSlice[clipboardContent](w.contents, w.contentsLen) {
 				mime := goString(c.mime.ptr, c.mime.len)
 				if strings.HasPrefix(mime, "text/plain") || strings.HasPrefix(mime, "text/") && !found {
 					text, found = goString(c.data.ptr, c.data.len), true
@@ -875,16 +875,16 @@ func makeCallbacks() {
 		call(w.reply, req, uintptr(unsafe.Pointer(&reply)))
 		return 0
 	})
-	cbSize = newCallback(func(_, id, out uintptr) uintptr {
+	cbSize = newCallback("iiii", func(_, id, out uintptr) uintptr {
 		t := terminalOf(id)
 		if t == nil || t.effects.Size == nil {
 			return 0
 		}
 		cols, rows, cw, ch := t.effects.Size()
-		*(*sizeReport)(mem(out)) = sizeReport{rows: uint16(clamp16(rows)), columns: uint16(clamp16(cols)), cellWidth: uint32(max(cw, 1)), cellHeight: uint32(max(ch, 1))}
+		foreignWrite(out, sizeReport{rows: uint16(clamp16(rows)), columns: uint16(clamp16(cols)), cellWidth: uint32(max(cw, 1)), cellHeight: uint32(max(ch, 1))})
 		return 1
 	})
-	cbColorScheme = newCallback(func(_, id, out uintptr) uintptr {
+	cbColorScheme = newCallback("iiii", func(_, id, out uintptr) uintptr {
 		t := terminalOf(id)
 		if t == nil || t.effects.Dark == nil {
 			return 0
@@ -893,27 +893,27 @@ func makeCallbacks() {
 		if t.effects.Dark() {
 			v = 1
 		}
-		*(*int32)(mem(out)) = v
+		foreignWrite(out, v)
 		return 1
 	})
-	cbDeviceAttributes = newCallback(func(_, id, out uintptr) uintptr {
+	cbDeviceAttributes = newCallback("iiii", func(_, id, out uintptr) uintptr {
 		// As Ghostty answers: a VT220 with ANSI colors (DA1), of type 1
 		// and version 10 (DA2).
-		da := (*deviceAttributes)(mem(out))
-		*da = deviceAttributes{conformance: 62, numFeatures: 1, deviceType: 1, firmware: 10}
+		da := deviceAttributes{conformance: 62, numFeatures: 1, deviceType: 1, firmware: 10}
 		da.features[0] = 22
+		foreignWrite(out, da)
 		return 1
 	})
-	cbDesktopNotification = newCallback(func(_, id, req uintptr) uintptr {
+	cbDesktopNotification = newCallback("viii", func(_, id, req uintptr) uintptr {
 		if t := terminalOf(id); t != nil && t.effects.Notify != nil {
-			n := (*desktopNotification)(mem(req))
+			n := foreignValue[desktopNotification](req)
 			t.effects.Notify(goString(n.title.ptr, n.title.len), goString(n.body.ptr, n.body.len))
 		}
 		return 0
 	})
-	cbProgressReport = newCallback(func(_, id, req uintptr) uintptr {
+	cbProgressReport = newCallback("viii", func(_, id, req uintptr) uintptr {
 		if t := terminalOf(id); t != nil && t.effects.Progress != nil {
-			p := (*progressReport)(mem(req))
+			p := foreignValue[progressReport](req)
 			t.effects.Progress(int(p.state), int(p.progress))
 		}
 		return 0

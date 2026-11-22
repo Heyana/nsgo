@@ -1,5 +1,5 @@
 // Command libghostty builds libghostty-vt, Ghostty's terminal emulator as
-// a library, for every target base/terminal runs on, desktops and iOS, from
+// a library, for every target base/terminal runs on, desktops, iOS and the browser, from
 // Ghostty's sources at the commit it binds, and writes the themes that
 // Ghostty ships. Run it on a Mac with Xcode, from the repository's root:
 //
@@ -47,6 +47,7 @@ type libraryTarget struct {
 }
 
 var targets = []libraryTarget{
+	{"js", "wasm", "wasm32-freestanding", "ghostty-vt.wasm", "bin/ghostty-vt.wasm"},
 	{"darwin", "arm64", "aarch64-macos", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 	{"darwin", "amd64", "x86_64-macos", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 	// The glibc of Debian 10 and Ubuntu 20.04, and later.
@@ -96,7 +97,18 @@ func buildLibraries(src, zig string, selected []libraryTarget) {
 		}
 		defer os.RemoveAll(prefix)
 		log.Printf("building %s/%s", t.goos, t.goarch)
-		run(src, zig, "build", "-Demit-lib-vt", "-Dtarget="+t.zig, "-Doptimize=ReleaseFast", "-Dstrip=true", "--prefix", prefix)
+		optimize := "ReleaseFast"
+		buildSource := src
+		if t.goos == "js" {
+			optimize = "ReleaseSmall"
+			var cleanup func()
+			buildSource, cleanup, err = wasmSource(src)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer cleanup()
+		}
+		run(buildSource, zig, "build", "-Demit-lib-vt", "-Dtarget="+t.zig, "-Doptimize="+optimize, "-Dstrip=true", "--prefix", prefix)
 		built := filepath.Join(prefix, t.built)
 		if t.goos == "linux" {
 			// The build keeps the debug information of ELF libraries,
@@ -108,6 +120,11 @@ func buildLibraries(src, zig string, selected []libraryTarget) {
 			log.Fatal(err)
 		}
 		log.Printf("  %s %s", dst, copyFile(built, dst))
+		if t.goos == "js" {
+			if err := writeWasmLicense(buildSource, zig); err != nil {
+				log.Fatal(err)
+			}
+		}
 	}
 }
 

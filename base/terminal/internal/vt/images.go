@@ -197,7 +197,7 @@ func (t *Terminal) Image(id uint32) (Image, bool) {
 	}
 	call(fnKittyImageGet, img, imageDataLen, uintptr(unsafe.Pointer(&n)))
 	pixels := make([]byte, n)
-	copy(pixels, unsafe.Slice((*byte)(mem(p)), n))
+	copy(pixels, foreignBytes(p, n))
 	return Image{ID: id, Width: int(w), Height: int(h), Format: ImageFormat(format), Pixels: pixels, Generation: gen}, true
 }
 
@@ -228,13 +228,13 @@ func imageFits(w, h int) bool {
 // images sent as PNG (Kitty graphics, f=100), as grok sends them. A PNG
 // whose header gives it more pixels than Ghostty's limits take is refused
 // before it is decoded, as its size is the program's to claim; the pixels
-// are converted into the library's memory, with no copy of them between.
+// are converted into the library's memory through the platform adapter.
 func decodePNG() {
-	cb := newCallback(func(_, alloc, data, n, out uintptr) uintptr {
+	cb := newCallback("iiiiii", func(_, alloc, data, n, out uintptr) uintptr {
 		if data == 0 || n == 0 {
 			return 0
 		}
-		src := unsafe.Slice((*byte)(mem(data)), n)
+		src := foreignBytes(data, n)
 		cfg, err := png.DecodeConfig(bytes.NewReader(src))
 		if err != nil || !imageFits(cfg.Width, cfg.Height) {
 			return 0
@@ -253,13 +253,15 @@ func decodePNG() {
 		if p == 0 {
 			return 0
 		}
-		dst := &image.NRGBA{Pix: unsafe.Slice((*byte)(mem(p)), size), Stride: 4 * w, Rect: image.Rect(0, 0, w, h)}
-		if nrgba, ok := img.(*image.NRGBA); ok && nrgba.Stride == 4*w && b.Min == (image.Point{}) {
-			copy(dst.Pix, nrgba.Pix)
-		} else {
-			draw.Draw(dst, dst.Rect, img, b.Min, draw.Src)
-		}
-		*(*sysImage)(mem(out)) = sysImage{width: uint32(w), height: uint32(h), data: p, dataLen: size}
+		withForeignBytes(p, size, func(pixels []byte) {
+			dst := &image.NRGBA{Pix: pixels, Stride: 4 * w, Rect: image.Rect(0, 0, w, h)}
+			if nrgba, ok := img.(*image.NRGBA); ok && nrgba.Stride == 4*w && b.Min == (image.Point{}) {
+				copy(dst.Pix, nrgba.Pix)
+			} else {
+				draw.Draw(dst, dst.Rect, img, b.Min, draw.Src)
+			}
+		})
+		foreignWrite(out, sysImage{width: uint32(w), height: uint32(h), data: p, dataLen: size})
 		return 1
 	})
 	call(fnSysSet, sysDecodePNG, cb)

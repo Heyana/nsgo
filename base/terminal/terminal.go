@@ -3,7 +3,7 @@
 // terminal emulator, libghostty-vt, loaded at run time with no cgo.
 //
 // It runs programs on macOS, Linux and Windows, and remote sessions
-// (Options.Conn) there and on iOS; elsewhere New returns an error.
+// (Options.Conn) there, on iOS and in the browser; elsewhere New returns an error.
 // It does what terminals do: colors (16, 256 and 24-bit) and styles,
 // wide characters and grapheme clusters, a scrollback that reflows, the
 // alternate screen, the keyboard as programs ask (legacy sequences,
@@ -156,7 +156,7 @@ func Load() error {
 	return load.err
 }
 
-// LibraryPath returns the libghostty-vt the terminal loads, the first of: the file $NSGO_GHOSTTY_VT names; the one beside the executable, or in its iOS or Catalyst GhosttyVT.framework or macOS Frameworks; the build the package embeds for the platform, written once into the user's cache (<cache>/nsgo/libghostty-vt/<sha256>/).
+// LibraryPath returns the embedded module identity in a browser, or the libghostty-vt the native terminal loads, the first of: the file $NSGO_GHOSTTY_VT names; the one beside the executable, or in its iOS or Catalyst GhosttyVT.framework or macOS Frameworks; the build the package embeds for the platform, written once into the user's cache (<cache>/nsgo/libghostty-vt/<sha256>/).
 func LibraryPath() (string, error) { return library.Find() }
 
 // New makes a terminal running opts.Command, or connected to opts.Conn.
@@ -208,7 +208,7 @@ func New(opts Options) (*Terminal, error) {
 		t.run()
 		return t, nil
 	}
-	if runtime.GOOS == "ios" || runtime.GOOS == "android" {
+	if runtime.GOOS == "ios" || runtime.GOOS == "android" || runtime.GOOS == "js" {
 		t.rs.Free()
 		t.term.Free()
 		return nil, fmt.Errorf("terminal: %s runs no local programs; give Options.Conn a remote session", runtime.GOOS)

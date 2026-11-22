@@ -5,7 +5,7 @@ group: Core concepts
 order: 63
 ---
 
-`base/terminal` provides a session (`Terminal`) and its `View`. Desktops run local programs; iOS uses `Options.Conn`, an `io.ReadWriteCloser` connected to a remote program. The app owns the session and closes it when finished.
+`base/terminal` provides a session (`Terminal`) and its `View`. Desktops run local programs; iOS and browsers use `Options.Conn`, an `io.ReadWriteCloser` connected to a remote program. The app owns the session and closes it when finished.
 
 ```go
 t, err := terminal.New(terminal.Options{CursorBlink: true})
@@ -35,6 +35,12 @@ return terminal.View{
 | `PaddingExtendAlways` | Extend every edge without those exceptions |
 
 TSX apps import `tsx/terminal` for its effect to register `Terminal` in `nsgo/base`. The props are `cursorBlink`, `minimumContrast` and `paddingColor`; the latter accepts `background`, `extend` and `extend-always`. Appearance props can change while the session continues.
+
+## In a browser
+
+The app embeds the pinned libghostty-vt WebAssembly module and runs the same terminal view and input path. Building the app needs no Zig, native library installation or runtime download.
+
+Adapt the browser's WebSocket to `io.ReadWriteCloser`: send binary bytes and join or split incoming messages as a stream. The app and its server own authentication, reconnecting and any resize/control messages; NSGo consumes terminal bytes. The [browser acceptance fixture](https://github.com/nsgo-dev/nsgo/blob/main/internal/testhost/testdata/terminalweb/socket_js_test.go) shows a complete byte-stream adapter with close handling.
 
 ## Actions and zoom
 

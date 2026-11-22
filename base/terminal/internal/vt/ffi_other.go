@@ -1,4 +1,4 @@
-//go:build !(darwin || (linux && !android && (amd64 || arm64)) || (windows && (amd64 || arm64)))
+//go:build (js && (nsgominiprogram || nsgoharmony)) || (!js && !(darwin || (linux && !android && (amd64 || arm64)) || (windows && (amd64 || arm64))))
 
 package vt
 
@@ -15,4 +15,6 @@ func call(uintptr, ...uintptr) uintptr { panic("vt: libghostty-vt is not support
 
 func registerFunc(any, uintptr) {}
 
-func newCallback(any) uintptr { return 0 }
+func newCallback(string, any) uintptr { return 0 }
+
+func setupPlatform() {}

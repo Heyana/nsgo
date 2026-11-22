@@ -1,3 +1,5 @@
+//go:build !js || nsgominiprogram || nsgoharmony
+
 // Package library finds libghostty-vt for the terminal: the file
 // $NSGO_GHOSTTY_VT names, the one the nsgo tool put into the app, or on
 // desktops the build for the platform the package embeds, written once

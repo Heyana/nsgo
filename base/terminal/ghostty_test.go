@@ -3,6 +3,7 @@ package terminal
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -58,8 +59,11 @@ font-family = "Iosevka"
 }
 
 func TestGhosttyTheme(t *testing.T) {
-	config := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", config)
+	config := ""
+	if runtime.GOOS != "js" {
+		config = t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", config)
+	}
 	if len(ghosttyThemes) < 500 || !slices.IsSortedFunc(ghosttyThemes[:], func(a, b ghosttyTheme) int { return strings.Compare(a.name, b.name) }) {
 		t.Fatalf("%d themes, sorted: want hundreds", len(ghosttyThemes))
 	}
@@ -81,6 +85,14 @@ func TestGhosttyTheme(t *testing.T) {
 		if _, err := GhosttyTheme(bad); err == nil {
 			t.Errorf("%q found a theme", bad)
 		}
+	}
+
+	// User files are native; the browser uses the bundled catalogs.
+	if runtime.GOOS == "js" {
+		if names := GhosttyThemes(); !slices.Contains(names, "Catppuccin Latte") || len(names) != len(ghosttyThemes) {
+			t.Errorf("browser theme catalog: %d names", len(names))
+		}
+		return
 	}
 
 	// The user's themes come first, as in Ghostty.

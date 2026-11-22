@@ -5,7 +5,7 @@ group: 核心概念
 order: 63
 ---
 
-`base/terminal` 提供会话 `Terminal` 及其 `View`。桌面运行本地程序；iOS 使用 `Options.Conn`，即连接远程程序的 `io.ReadWriteCloser`。应用持有会话，并在结束时关闭它。
+`base/terminal` 提供会话 `Terminal` 及其 `View`。桌面运行本地程序；iOS 和浏览器使用 `Options.Conn`，即连接远程程序的 `io.ReadWriteCloser`。应用持有会话，并在结束时关闭它。
 
 ```go
 t, err := terminal.New(terminal.Options{CursorBlink: true})
@@ -35,6 +35,12 @@ return terminal.View{
 | `PaddingExtendAlways` | 延伸所有边缘，不应用上述例外 |
 
 TSX 应用通过副作用导入 `tsx/terminal`，将 `Terminal` 注册到 `nsgo/base`。对应属性为 `cursorBlink`、`minimumContrast` 和 `paddingColor`；后者接受 `background`、`extend` 或 `extend-always`。外观属性变化时，会话仍继续运行。
+
+## 在浏览器中
+
+应用内嵌固定版本的 libghostty-vt WebAssembly 模块，使用相同的终端视图和输入路径。构建应用无需 Zig、额外安装原生库，也不需要在运行时下载库。
+
+将浏览器的 WebSocket 适配为 `io.ReadWriteCloser`：发送二进制字节，并把收到的消息合并或拆分为连续字节流。认证、重连以及尺寸和控制消息由应用与服务器决定；NSGo 只处理终端字节。[浏览器验收用例](https://github.com/nsgo-dev/nsgo/blob/main/internal/testhost/testdata/terminalweb/socket_js_test.go) 提供了包含关闭处理的完整字节流适配器。
 
 ## 动作与缩放
 

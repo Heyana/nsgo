@@ -1,9 +1,7 @@
-// Package vt binds libghostty-vt, the terminal emulator of Ghostty, which
-// it loads at run time through purego: no cgo. It mirrors the structs of
-// the C API it passes, checks them against the layouts the library
-// describes (ghostty_type_json) as it loads, and reads packed cells by the
-// bit positions the library reports, so that a library of another version
-// fails to load instead of corrupting memory.
+// Package vt binds libghostty-vt, Ghostty's terminal emulator, through purego
+// on native targets and an embedded WebAssembly module in a browser: no cgo.
+// Native structs mirror its C ABI; the browser marshals the separate guest
+// memory. Both validate the library's type manifest before use.
 //
 // Nothing here is safe for concurrent use: callers serialize the calls on a
 // Terminal and on what is made from it.
@@ -197,6 +195,7 @@ func load(path string) error {
 	registerFunc(&selectionFormatAlloc, fnSelectionFormatAlloc)
 	registerFunc(&formatterTerminalNew, fnFormatterTerminalNew)
 	makeCallbacks()
+	setupPlatform()
 	decodePNG()
 	return nil
 }
@@ -264,24 +263,21 @@ func b2u(b bool) uintptr {
 	return 0
 }
 
-// mem converts an address the library gave into a pointer.
-func mem(p uintptr) unsafe.Pointer { return *(*unsafe.Pointer)(unsafe.Pointer(&p)) }
+// hostMemory addresses the host process only. Browser guest addresses must
+// go through the foreign-memory helpers.
+func hostMemory(p uintptr) unsafe.Pointer { return *(*unsafe.Pointer)(unsafe.Pointer(&p)) }
 
 // goString copies a string the library owns.
 func goString(p, n uintptr) string {
 	if p == 0 || n == 0 {
 		return ""
 	}
-	return string(unsafe.Slice((*byte)(mem(p)), n))
+	return string(foreignBytes(p, n))
 }
 
 // cStringAt copies a NUL-terminated string the library owns.
 func cStringAt(p uintptr) string {
-	n := uintptr(0)
-	for *(*byte)(unsafe.Add(mem(p), n)) != 0 {
-		n++
-	}
-	return goString(p, n)
+	return foreignCString(p)
 }
 
 // cell is the layout of the packed GhosttyCell, from the manifest.
@@ -299,12 +295,15 @@ func (f bitField) of(v uint64) uint64 { return v >> f.lsb & (1<<f.width - 1) }
 // manifest is what ghostty_type_json describes.
 type manifest struct {
 	ABI struct {
-		PointerSize int `json:"pointer_size"`
+		PointerSize int    `json:"pointer_size"`
+		UsizeSize   int    `json:"usize_size"`
+		Endian      string `json:"endian"`
 	} `json:"abi"`
 	Types map[string]typeInfo `json:"types"`
 }
 
 type typeInfo struct {
+	Type   string               `json:"type"`
 	Kind   string               `json:"kind"`
 	Size   uintptr              `json:"size"`
 	Fields map[string]fieldInfo `json:"fields"`
@@ -362,6 +361,10 @@ var enums = []struct {
 
 type fieldInfo struct {
 	Offset uintptr `json:"offset"`
+	Size   uintptr `json:"size"`
+	Type   string  `json:"type"`
+	Elem   string  `json:"elem"`
+	Count  uintptr `json:"count"`
 }
 
 type bitInfo struct {
@@ -392,7 +395,7 @@ func checkLayouts() error {
 	if err := json.Unmarshal([]byte(cStringAt(p)), &m); err != nil {
 		return fmt.Errorf("type manifest: %w", err)
 	}
-	return m.check()
+	return checkManifest(m)
 }
 
 func (m *manifest) check() error {

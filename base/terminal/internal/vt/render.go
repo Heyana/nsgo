@@ -254,7 +254,7 @@ func (r *RenderState) RowCells() []Cell {
 	if !r.rowGet(rowDataCellsRaw, unsafe.Pointer(&v)) || v.ptr == 0 {
 		return nil
 	}
-	raw := unsafe.Slice((*uint64)(mem(v.ptr)), v.len)
+	raw := foreignSlice[uint64](v.ptr, v.len)
 	r.raw = r.raw[:0]
 	for _, c := range raw {
 		var out Cell
