@@ -422,6 +422,15 @@ jobs:
           NSGO_SIMULATOR_E2E: "1"
         run: |
 
+          # The watchOS tests run beside the iOS ones: the organization has one runner of this kind, so a second job would queue behind this one, and the watch simulator's boot and build took more than two minutes of an otherwise serial step. They use their own simulator, which the iOS commands never pick, since nsgo picks among the target system's simulators only. Their output is printed when the step ends, and a failure fails the step.
+          watch_log="$RUNNER_TEMP/watchos.log"
+          (
+            set -e
+            go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos
+            go tool nsgo test -target watchos_simulator -timeout 1m ./internal/testhost/testdata/deviceidentity
+          ) > "$watch_log" 2>&1 &
+          watch_pid=$!
+          trap 'echo "::group::watchOS simulator tests"; cat "$watch_log"; echo "::endgroup::"' EXIT
           # Booting a simulator on a hosted runner takes from about three to ten minutes, and the three cases run in one package, so go test's default ten-minute limit can end the last case before it starts.
           go tool nsgo test -run '^(TestSimulatorProcessResults|TestIOSSimulatorDevEndToEnd)$' ./cmd/nsgo -- -timeout=25m
           go tool nsgo test -run '^TestIOSDocumentTypesEndToEnd$' ./cmd/nsgo -- -timeout=15m
@@ -437,8 +446,10 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/frameclock
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestPressAtFindsZoomedScrollContent$' ./internal/testhost/testdata/press
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audio
-          go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos
-          go tool nsgo test -target watchos_simulator -timeout 1m ./internal/testhost/testdata/deviceidentity
+          if ! wait "$watch_pid"; then
+            echo "::error::the watchOS simulator tests failed; their output is in the group below"
+            exit 1
+          fi
 
   windows:
     runs-on: depot-windows-2025-4
