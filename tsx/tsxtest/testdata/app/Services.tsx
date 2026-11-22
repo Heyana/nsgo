@@ -24,6 +24,26 @@ function Services() {
       const picked = await Picker.pickImages({ multiple: true, limit: 3 });
       status.set(picked.map(p => `${p.file.name}:${p.file.type}:${p.file.size}`).join(","));
     }}>Pick</Text>
+    <Text testID="can-take-photo" onPress={async () => {
+      status.set(`camera:${await Picker.canTakePhoto()}`);
+    }}>Check camera</Text>
+    <Text testID="photo" onPress={async () => {
+      try {
+        const photo = await Picker.takePhoto({ maxDimension: 1024, quality: 0.75 });
+        if (!photo) {
+          status.set("photo:cancelled");
+          return;
+        }
+        const bytes = new Uint8Array(await photo.file.arrayBuffer());
+        status.set(`photo:${photo.file.name}:${photo.file.type}:${photo.file.size}:${photo.size.width}x${photo.size.height}:${Array.from(bytes).join("-")}`);
+      } catch (e) {
+        status.set(`photo:error:${(e as Error).message}`);
+      }
+    }}>Take photo</Text>
+    <Text testID="photo-default" onPress={async () => {
+      const photo = await Picker.takePhoto();
+      status.set(photo ? `default:${photo.file.name}:${photo.file.size}` : "default:cancelled");
+    }}>Take default photo</Text>
     <Text testID="open" onPress={() => openUrl("https://example.com/docs")}>Open</Text>
     <Text testID="copy" onPress={() => Clipboard.writeText("copied")}>Copy</Text>
     <Text testID="menu" onPress={() => Menu.popup([

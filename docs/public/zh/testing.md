@@ -146,6 +146,8 @@ TSX 应用中用 `nsgo/test` 编写的 `*.test.tsx` 文件会随 Go 测试一起
 
 `open("App.tsx", { clock: {} })` 让应用运行在手动时钟上，由 `app.clock` 推进：`app.clock.runFor(ms)` 和 `app.wait(ms)` 一样逐帧推进，如同 `Advance`；`app.clock.fastForward(ms)` 一次跳到前面，如同 `FastForward`。`clock: { time }` 让 `Date.now()` 和 `new Date()` 从 `time`（一个 `Date` 或自 1970 年起的毫秒数）开始，之后用 `app.clock.setSystemTime(time)` 修改；两者都不移动计时器。不传 `clock` 时，无头应用的时间还会在 `waitFor` 和 `waitUntil` 等待期间逐帧流逝，和在设备上一样。
 
+`open("App.tsx", { camera: true })` 为测试环境提供相机，使 `Picker.canTakePhoto()` 返回 `true`，并让 `Picker.takePhoto` 记录到 `app.picks()`（带有 `camera: true`）并由 `app.onPick` 回答：返回单个 `PickFile` 或 `PickFile[]` 作为拍下的照片，返回 `null` 或 `[]` 表示取消，抛出错误则让 `Picker.takePhoto` 拒绝。不传 `camera: true` 时，`Picker.canTakePhoto()` 为 `false`，`Picker.takePhoto()` 会拒绝。
+
 不写测试文件也能驱动 TSX 应用：传入它的入口，并从标准输入提供步骤，写法与 `*.test.tsx` 测试的函数体相同，`app` 即该应用：
 
 ```sh

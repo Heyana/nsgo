@@ -39,6 +39,8 @@ export interface OpenOptions {
   clipboard?: string | null;
   /** Whether the platform recognizes speech: without it, Speech sessions end with "unavailable". */
   speech?: boolean | null;
+  /** Whether the platform has a camera: without it, Picker.canTakePhoto() is false and Picker.takePhoto() rejects. */
+  camera?: boolean | null;
 }
 /** A response open's network gives a request. */
 export interface StubResponse {
@@ -53,8 +55,8 @@ export interface StubResponse {
   delay?: number;
 }
 export interface StubRequest { method: string; url: string; headers: Record<string, string>; body: string | null }
-export interface Pick { multiple: boolean; limit: number; maxDimension: number | null; quality: number | null; format: "compatible" | "current" }
-export interface PickFile { name: string; /** Its media type; none: read from its name. */ type?: string | null; data: Uint8Array | ArrayBuffer | number[] }
+export interface Pick { multiple: boolean; limit: number; maxDimension: number | null; quality: number | null; format: "compatible" | "current"; /** True when the app asked for the camera (`Picker.takePhoto`). */ camera?: boolean }
+export interface PickFile { name: string; /** Its media type; none: read from its name. */ type?: string | null; data: Uint8Array | ArrayBuffer | number[]; /** Its size in pixels. */ size?: { width: number; height: number } | null }
 /** An action of the context menu the app shows; a submenu's after its label ("Share > Mail"). */
 export interface MenuEntry { label: string; disabled: boolean; checked?: boolean }
 /** The style of a span as the app resolved it; colors are #rrggbbaa. */
@@ -121,8 +123,9 @@ export declare class App {
   answer(index: number): void;
   /** Answers the dialogs from now on with the text of the button to press, or null to close them. */
   onDialog(handler: ((dialog: Dialog) => string | null) | null): void;
-  /** Answers the picks from now on with the files the user picks, or null to cancel. */
-  onPick(handler: ((pick: Pick) => PickFile[] | null) | null): void;
+  /** Answers photo picks and camera captures from now on with the files the user picks or the photo they take, or null to cancel; what the handler throws rejects `Picker.takePhoto`. */
+  onPick(handler: ((pick: Pick) => PickFile | PickFile[] | null) | null): void;
+  /** The photo picks and camera captures the app asked for, in order. */
   picks(): Pick[];
   /** The context menu showing, null when none is. */
   menu(): MenuEntry[] | null;

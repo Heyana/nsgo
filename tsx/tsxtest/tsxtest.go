@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"mime"
 	"net/http"
 	"path"
@@ -317,6 +318,9 @@ func (r *runner) open(call goja.FunctionCall) goja.Value {
 	if v := opt("speech"); v != nil {
 		env.Speech, envSet = v.ToBoolean(), true
 	}
+	if v := opt("camera"); v != nil {
+		env.Camera, envSet = v.ToBoolean(), true
+	}
 	if v := opt("platform"); v != nil {
 		env.OS, envSet = driver.OS(v.String()), true
 		if env.OS != driver.OSIOS && env.OS != driver.OSAndroid {
@@ -367,6 +371,38 @@ func (r *runner) open(call goja.FunctionCall) goja.Value {
 		text := v.String()
 		opts = append(opts, func(a *nsgotest.App) { a.Clipboard = text })
 	}
+	picks := &pickState{}
+	opts = append(opts, func(a *nsgotest.App) {
+		a.PickImages = func(p nsgotest.ImagePick) []driver.PickedFile {
+			rec := pick(p, false)
+			picks.recorded = append(picks.recorded, rec)
+			picks.images++
+			if picks.handler == nil {
+				return nil
+			}
+			res, err := picks.handler(goja.Undefined(), r.vm.ToValue(maps.Clone(rec)))
+			if err != nil {
+				panic(err)
+			}
+			return r.pickFiles(res)
+		}
+		a.TakePhoto = func(p nsgotest.ImagePick) (*driver.PickedFile, error) {
+			rec := pick(p, true)
+			picks.recorded = append(picks.recorded, rec)
+			if picks.handler == nil {
+				return nil, nil
+			}
+			res, err := picks.handler(goja.Undefined(), r.vm.ToValue(maps.Clone(rec)))
+			if err != nil {
+				return nil, errors.New(message(err))
+			}
+			files := r.pickFiles(res)
+			if len(files) == 0 {
+				return nil, nil
+			}
+			return &files[0], nil
+		}
+	})
 	net := &network{r: r}
 	opts = append(opts, func(a *nsgotest.App) { net.app = a })
 	if v := opt("network"); v == nil || v.String() != "live" {
@@ -393,9 +429,17 @@ func (r *runner) open(call goja.FunctionCall) goja.Value {
 	if err := tb.try(func() { app = nsgotest.Start(tb, tsx.WithFetcher(compiler.App(r.fsys, entry), net.fetch), opts...) }); err != nil {
 		_ = reject(r.jsError(err))
 	} else {
-		_ = resolve(r.app(app, tb, env, net, th, opt("clock") != nil))
+		_ = resolve(r.app(app, tb, env, net, th, picks, opt("clock") != nil))
 	}
 	return r.vm.ToValue(p)
+}
+
+// pickState records an app's photo picks and camera captures in order and holds
+// the test's onPick answer handler.
+type pickState struct {
+	recorded []map[string]any
+	images   int
+	handler  goja.Callable
 }
 
 // A stubResponse is what a route of open's network answers with.
@@ -602,7 +646,7 @@ func selector(s string) string {
 }
 
 // app is a JS App over an nsgotest app.
-func (r *runner) app(a *nsgotest.App, tb *appTB, env driver.Environment, net *network, th *testHost, manual bool) *goja.Object {
+func (r *runner) app(a *nsgotest.App, tb *appTB, env driver.Environment, net *network, th *testHost, picks *pickState, manual bool) *goja.Object {
 	o := r.vm.NewObject()
 	// An explicit clock leaves time under the test's control during waits.
 	until := func(timeout time.Duration, cond func() bool) {
@@ -770,9 +814,13 @@ func (r *runner) app(a *nsgotest.App, tb *appTB, env driver.Environment, net *ne
 		return a.Clipboard
 	})
 	read("picks", func(goja.FunctionCall) any {
-		out := []map[string]any{}
-		for _, p := range a.Picks {
-			out = append(out, pick(p))
+		for picks.images < len(a.Picks) {
+			picks.recorded = append(picks.recorded, pick(a.Picks[picks.images], false))
+			picks.images++
+		}
+		out := make([]map[string]any, len(picks.recorded))
+		for i, p := range picks.recorded {
+			out[i] = maps.Clone(p)
 		}
 		return out
 	})
@@ -820,31 +868,10 @@ func (r *runner) app(a *nsgotest.App, tb *appTB, env driver.Environment, net *ne
 	read("onPick", func(c goja.FunctionCall) any {
 		h, ok := goja.AssertFunction(c.Argument(0))
 		if !ok {
-			a.PickImages = nil
+			picks.handler = nil
 			return nil
 		}
-		a.PickImages = func(p nsgotest.ImagePick) []driver.PickedFile {
-			res, err := h(goja.Undefined(), r.vm.ToValue(pick(p)))
-			if err != nil {
-				panic(err)
-			}
-			if res == nil || goja.IsNull(res) || goja.IsUndefined(res) {
-				return nil
-			}
-			var files []driver.PickedFile
-			list := res.ToObject(r.vm)
-			for i := range int(list.Get("length").ToInteger()) {
-				f := list.Get(strconv.Itoa(i)).ToObject(r.vm)
-				pf := driver.PickedFile{Name: f.Get("name").String(), Data: r.bytes(f.Get("data"))}
-				if t := f.Get("type"); t != nil && !goja.IsUndefined(t) && !goja.IsNull(t) {
-					pf.MIME = t.String()
-				} else {
-					pf.MIME = mime.TypeByExtension(path.Ext(pf.Name))
-				}
-				files = append(files, pf)
-			}
-			return files
-		}
+		picks.handler = h
 		return nil
 	})
 	keyboard := r.vm.NewObject()
@@ -917,7 +944,7 @@ func dialog(d driver.AlertConfig) map[string]any {
 }
 
 // pick is a Pick as a test reads it.
-func pick(p nsgotest.ImagePick) map[string]any {
+func pick(p nsgotest.ImagePick, camera bool) map[string]any {
 	o := map[string]any{"multiple": p.Limit != 1, "limit": p.Limit, "maxDimension": nil, "quality": nil, "format": "compatible"}
 	if p.MaxDimension > 0 {
 		o["maxDimension"] = p.MaxDimension
@@ -928,7 +955,49 @@ func pick(p nsgotest.ImagePick) map[string]any {
 	if p.Format == driver.PickCurrent {
 		o["format"] = "current"
 	}
+	if camera {
+		o["camera"] = true
+	}
 	return o
+}
+
+// pickFiles reads a PickFile, a PickFile array or null from an onPick handler.
+func (r *runner) pickFiles(res goja.Value) []driver.PickedFile {
+	if res == nil || goja.IsNull(res) || goja.IsUndefined(res) {
+		return nil
+	}
+	obj := res.ToObject(r.vm)
+	if obj.ClassName() == "Array" {
+		n := int(obj.Get("length").ToInteger())
+		files := make([]driver.PickedFile, 0, n)
+		for i := range n {
+			item := obj.Get(strconv.Itoa(i))
+			if item == nil || goja.IsNull(item) || goja.IsUndefined(item) {
+				continue
+			}
+			files = append(files, r.pickFile(item.ToObject(r.vm)))
+		}
+		return files
+	}
+	return []driver.PickedFile{r.pickFile(obj)}
+}
+
+func (r *runner) pickFile(f *goja.Object) driver.PickedFile {
+	pf := driver.PickedFile{Data: r.bytes(f.Get("data"))}
+	if n := f.Get("name"); n != nil && !goja.IsUndefined(n) && !goja.IsNull(n) {
+		pf.Name = n.String()
+	}
+	if t := f.Get("type"); t != nil && !goja.IsUndefined(t) && !goja.IsNull(t) {
+		pf.MIME = t.String()
+	} else if pf.Name != "" {
+		pf.MIME = mime.TypeByExtension(path.Ext(pf.Name))
+	}
+	if s := f.Get("size"); s != nil && !goja.IsUndefined(s) && !goja.IsNull(s) {
+		var sz struct{ Width, Height float64 }
+		_ = r.vm.ExportTo(s, &sz)
+		pf.Size = driver.Size{Width: driver.Points(sz.Width), Height: driver.Points(sz.Height)}
+	}
+	return pf
 }
 
 // menuEntries are a context menu's actions, a submenu's after its label
@@ -965,11 +1034,17 @@ func (r *runner) bytes(v goja.Value) []byte {
 		return []byte(x)
 	}
 	o := v.ToObject(r.vm)
-	if buf, ok := o.Get("buffer").Export().(goja.ArrayBuffer); ok {
-		off, n := o.Get("byteOffset").ToInteger(), o.Get("byteLength").ToInteger()
-		return buf.Bytes()[off : off+n]
+	if b := o.Get("buffer"); b != nil && !goja.IsUndefined(b) && !goja.IsNull(b) {
+		if buf, ok := b.Export().(goja.ArrayBuffer); ok {
+			off, n := o.Get("byteOffset").ToInteger(), o.Get("byteLength").ToInteger()
+			return buf.Bytes()[off : off+n]
+		}
 	}
-	out := make([]byte, o.Get("length").ToInteger())
+	l := o.Get("length")
+	if l == nil || goja.IsUndefined(l) || goja.IsNull(l) {
+		return nil
+	}
+	out := make([]byte, l.ToInteger())
 	for i := range out {
 		out[i] = byte(o.Get(strconv.Itoa(i)).ToInteger())
 	}

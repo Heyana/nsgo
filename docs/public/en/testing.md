@@ -150,6 +150,8 @@ A TSX app's `*.test.tsx` files, written with `nsgo/test`, run with its Go tests.
 
 `open("App.tsx", { clock: {} })` runs the app on the manual clock, and `app.clock` moves it: `app.clock.runFor(ms)`, like `app.wait(ms)`, moves it a frame at a time, as `Advance` does, and `app.clock.fastForward(ms)` jumps ahead, as `FastForward` does. `clock: { time }` starts what `Date.now()` and `new Date()` read at `time`, a `Date` or milliseconds since 1970, and `app.clock.setSystemTime(time)` sets it later; neither moves a timer. Without `clock`, a headless app's time also passes while `waitFor` and `waitUntil` wait, a frame at a time, as it would on a device.
 
+`open("App.tsx", { camera: true })` gives the test environment a camera so `Picker.canTakePhoto()` resolves `true` and `Picker.takePhoto` is recorded in `app.picks()` (with `camera: true`) and answered by `app.onPick`: return a `PickFile` or `PickFile[]` for the taken photo, `null` or `[]` to cancel, or throw an error to reject `Picker.takePhoto`. Without `camera: true`, `Picker.canTakePhoto()` is `false` and `Picker.takePhoto()` rejects.
+
 To script a TSX app without a test file, pass its entry and the steps on standard input, written as a `*.test.tsx` test's body with `app` the app:
 
 ```sh
