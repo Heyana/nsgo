@@ -1375,9 +1375,10 @@ func (w *window) processGPUFrames() {
 	w.gpuQueue = nil
 	w.gpuMu.Unlock()
 
-	for _, frame := range frames {
+	for i, frame := range frames {
 		v := w.view(frame.ViewID)
 		if v == nil || v.deleted || v.gpuView == nil {
+			completeGPUFrame(frame)
 			// Complete any pending readbacks with an error if the view unmounted.
 			for _, op := range frame.Ops {
 				if op.Kind == driver.GPUOpReadTexture && w.engine != nil {
@@ -1399,11 +1400,23 @@ func (w *window) processGPUFrames() {
 		if v.gpuView.ctrl.Submit(frame) {
 			w.redrawView(v)
 		}
+		// Direct3D 11's immediate context has copied the frame's data, so its sender may reuse that memory (gpu.FrameFence).
+		completeGPUFrame(frame)
 		if !wasLost && v.gpuView.ctrl.lost {
+			for _, rest := range frames[i+1:] {
+				completeGPUFrame(rest)
+			}
 			// D3D11 device was removed during GPU submission; trigger window-wide recovery.
 			w.lost()
 			return
 		}
+	}
+}
+
+// completeGPUFrame runs frame's OnComplete, which releases the gpu.FrameFence its sender waits on.
+func completeGPUFrame(frame driver.GPUFrame) {
+	if frame.OnComplete != nil {
+		frame.OnComplete()
 	}
 }
 
@@ -1440,8 +1453,12 @@ func (w *window) releaseAllGPUViews() {
 	}
 	w.gpuViews = nil
 	w.gpuMu.Lock()
+	dropped := w.gpuQueue
 	w.gpuQueue = nil
 	w.gpuMu.Unlock()
+	for _, frame := range dropped {
+		completeGPUFrame(frame)
+	}
 }
 
 // drawGPU composites a KindGPU view's D3D11 swapchain texture through Direct2D.

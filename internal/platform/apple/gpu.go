@@ -149,11 +149,13 @@ func (l *GPULayer) Resize(w, h, scale float64) {
 func (l *GPULayer) Submit(frame driver.GPUFrame) {
 	r := l.render
 	if frame.Generation != 0 && frame.Generation != r.generation {
+		completeFrame(frame)
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
+		completeFrame(frame)
 		return
 	}
 	r.pending = append(r.pending, frame)
@@ -168,12 +170,23 @@ func (l *GPULayer) Release() {
 	l.Layer.Send(sel("removeFromSuperlayer"))
 	r := l.render
 	r.mu.Lock()
+	var dropped []driver.GPUFrame
 	if !r.closed {
 		r.closed = true
-		r.pending = nil
+		dropped, r.pending = r.pending, nil
 		close(r.wake)
 	}
 	r.mu.Unlock()
+	for _, frame := range dropped {
+		completeFrame(frame)
+	}
+}
+
+// completeFrame tells the frame's sender it is done with it, so a FrameFence waiting on it never outlives the frame (gpu.Device.BeginFrame).
+func completeFrame(frame driver.GPUFrame) {
+	if frame.OnComplete != nil {
+		frame.OnComplete()
+	}
 }
 
 func (r *gpuRender) fail(code driver.GPUErrorCode, format string, args ...any) {
@@ -446,6 +459,7 @@ func (p *gpuPipeline) state(depth uint) (objc.ID, error) {
 			l.Send(sel("setStride:"), uint(b.Stride))
 			if b.StepMode == driver.GPUStepInstance {
 				l.Send(sel("setStepFunction:"), uint(mtlVertexStepFunctionPerInstance))
+				l.Send(sel("setStepRate:"), uint(max(b.StepRate, 1)))
 			} else {
 				l.Send(sel("setStepFunction:"), uint(mtlVertexStepFunctionPerVertex))
 			}
@@ -570,11 +584,14 @@ func (r *gpuRender) run(frame driver.GPUFrame) {
 	}
 	ok := true
 	if f.cb != 0 {
-		r.commit(f.cb)
+		r.commit(f.cb, frame.OnComplete)
 		if len(f.readbacks) > 0 {
 			f.cb.Send(sel("waitUntilCompleted"))
 			ok = f.cb.Send(sel("status")) == mtlCommandBufferStatusCompleted
 		}
+	} else {
+		// Nothing reached the GPU, so the frame is done already.
+		completeFrame(frame)
 	}
 	for _, rb := range f.readbacks {
 		ev := &driver.GPUEvent{Kind: driver.GPUEventReadback, Generation: r.generation, ReadbackID: rb.id, Message: rb.failure}
@@ -1177,11 +1194,14 @@ func (r *gpuRender) present(f *frameRun) {
 	f.cb.Send(sel("presentDrawable:"), drawable)
 }
 
-// commit commits cb, reporting a failure the GPU meets running it.
-func (r *gpuRender) commit(cb objc.ID) {
+// commit commits cb, reporting a failure the GPU meets running it, and runs done, when set, once the GPU has finished with it, failed or not.
+func (r *gpuRender) commit(cb objc.ID, done func()) {
 	cb.Send(sel("retain"))
 	gen, emit := r.generation, r.emit
 	completed := objcblock.New(func(_ objc.Block, buffer objc.ID) {
+		if done != nil {
+			defer done()
+		}
 		if buffer.Send(sel("status")) != mtlCommandBufferStatusError {
 			return
 		}

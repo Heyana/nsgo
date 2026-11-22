@@ -50,11 +50,15 @@ func (s *GPUSurface) Disposed() bool {
 // Submit sends an off-commit driver.GPUFrame directly to the platform backend
 // without marking the shadow tree dirty or producing a MountBatch.
 func (s *GPUSurface) Submit(frame any) {
-	if s == nil || s.disposed || s.tree == nil || s.tree.gpuSubmit == nil {
-		return
-	}
 	f, ok := frame.(driver.GPUFrame)
 	if !ok {
+		return
+	}
+	if s == nil || s.disposed || s.tree == nil || s.tree.gpuSubmit == nil {
+		// A frame no backend will run is done, so a FrameFence waiting on it is released.
+		if f.OnComplete != nil {
+			f.OnComplete()
+		}
 		return
 	}
 	f.SurfaceID = s.tree.id

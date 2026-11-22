@@ -51,5 +51,7 @@ func (s *surface) releaseGPU(v *view) {
 func (s *surface) SubmitGPU(frame driver.GPUFrame) {
 	if l, ok := s.gpuLayers.Load(frame.ViewID); ok {
 		l.(*apple.GPULayer).Submit(frame)
+	} else if frame.OnComplete != nil {
+		frame.OnComplete() // no layer will run it
 	}
 }

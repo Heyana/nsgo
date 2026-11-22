@@ -10,6 +10,10 @@ import (
 
 // SubmitGPU implements engine.Platform: compiles any shaderir pipelines in frame to GLSL ES 3.00 and streams compact binary extGPUFrame payloads over the pipe to GpuView.java on the shared GL thread without triggering a UI view-tree commit.
 func (s *surface) SubmitGPU(frame driver.GPUFrame) {
+	// The frame's data is serialized onto the pipe here, so its sender may reuse that memory once this returns (gpu.FrameFence), sent or not.
+	if frame.OnComplete != nil {
+		defer frame.OnComplete()
+	}
 	for _, chunk := range splitGPUFrames(frame) {
 		var payload writer
 		if err := encodeGPUFrame(&payload, chunk); err != nil {

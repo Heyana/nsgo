@@ -1966,6 +1966,10 @@ func (s *surface) RequestFrame() {
 
 // SubmitGPU executes an off-commit GPUFrame directly on the target KindGPU view without triggering a UI view-tree commit.
 func (s *surface) SubmitGPU(frame driver.GPUFrame) {
+	// The frame's data is copied into WebGPU's or WebGL's queue as it is submitted, so its sender may reuse that memory now (gpu.FrameFence), whether or not a view took it.
+	if frame.OnComplete != nil {
+		defer frame.OnComplete()
+	}
 	v := s.view(frame.ViewID)
 	if v == nil || v.gpu == nil {
 		return
