@@ -70,7 +70,7 @@ func nameResourceID(icon bool) uint32 {
 // xmlResourceID is the first XML resource ID, following the optional launcher icon and app names in the resource table.
 func xmlResourceID(m Manifest) uint32 {
 	id := nameResourceID(m.Icon != nil)
-	if len(m.Names) > 0 {
+	if len(m.Names) > 0 || len(m.Widgets) > 0 {
 		id += 1 << 16
 	}
 	return id
@@ -90,6 +90,7 @@ func (m Manifest) xmlResources() []xmlResource {
 	if m.Game {
 		out = append(out, xmlResource{gameModeName, gameModeFile, gameModeConfig})
 	}
+	out = append(out, m.widgetXMLResources()...)
 	return out
 }
 
@@ -146,7 +147,7 @@ func valueForConfig(values []resValue, config []byte) (resValue, bool) {
 // iconResourceID and nameResourceID. The network policy, when enabled,
 // follows those types.
 func resources(m Manifest) []byte {
-	names, adaptive := m.Names, m.Adaptive
+	adaptive := m.Adaptive
 	var types []resType
 	if m.Icon != nil {
 		config := newConfig()
@@ -170,21 +171,25 @@ func resources(m Manifest) []byte {
 		}
 		types = append(types, resType{name: "mipmap", varies: configDensity, entries: entries})
 	}
-	if len(names) > 0 {
-		t := resType{name: "string", varies: configLocale, entries: []resEntry{{key: "app_name"}}}
-		langs := make([]string, 0, len(names))
-		for lang := range names {
-			if lang == "" || localeConfig(lang) != nil {
-				langs = append(langs, lang)
+	if strings := m.stringResources(); len(strings) > 0 {
+		t := resType{name: "string", varies: configLocale}
+		for _, resource := range strings {
+			entry := resEntry{key: resource.name}
+			langs := make([]string, 0, len(resource.values))
+			for lang := range resource.values {
+				if lang == "" || localeConfig(lang) != nil {
+					langs = append(langs, lang)
+				}
 			}
-		}
-		slices.Sort(langs)
-		for _, lang := range langs {
-			config := newConfig()
-			if lang != "" {
-				config = localeConfig(lang)
+			slices.Sort(langs)
+			for _, lang := range langs {
+				config := newConfig()
+				if lang != "" {
+					config = localeConfig(lang)
+				}
+				entry.values = append(entry.values, resValue{config, resource.values[lang]})
 			}
-			t.entries[0].values = append(t.entries[0].values, resValue{config, names[lang]})
+			t.entries = append(t.entries, entry)
 		}
 		types = append(types, t)
 	}
@@ -194,6 +199,13 @@ func resources(m Manifest) []byte {
 	}
 	if len(xmlEntries) > 0 {
 		types = append(types, resType{name: "xml", entries: xmlEntries})
+	}
+	if layouts := m.layoutResources(); len(layouts) > 0 {
+		t := resType{name: "layout"}
+		for _, res := range layouts {
+			t.entries = append(t.entries, resEntry{key: res.name, values: []resValue{{newConfig(), res.file}}})
+		}
+		types = append(types, t)
 	}
 	return table(m.Package, types)
 }

@@ -258,7 +258,7 @@ What package `widget` lacks of WidgetKit and ActivityKit, and of widgets and Liv
 | Live Updates by push | Firebase Cloud Messaging, [#1466](https://github.com/nsgo-dev/nsgo/issues/1466) | A server updates an Android activity as APNs does an iOS one, with `OnPushToken` giving the FCM token |
 | Vendors' islands | HyperOS focus notifications, HarmonyOS Live View Kit, ColorOS Fluid Cloud, OriginOS Atomic Island, [#1467](https://github.com/nsgo-dev/nsgo/issues/1467) | Activities show in the vendor's island where its system does not show Android 16's Live Updates there, as far as each lets apps in without a partnership |
 | Widgets of sandboxed Mac apps | `com.apple.security.application-groups`, [#1468](https://github.com/nsgo-dev/nsgo/issues/1468) | Store builds put both bundles on the shared App Group path and validate their macOS profiles, team, bundle IDs and group grants before signing; signed shared-container access and actual WidgetKit timeline display still need native acceptance with a matching macOS app/extension profile pair |
-| Widgets on Android | `AppWidgetProvider`, `RemoteViews`, [#1469](https://github.com/nsgo-dev/nsgo/issues/1469) | The same timelines show in App Widgets drawn by the Java runtime, with `classes.dex` rebuilt |
+| Android widget symbols and timer fonts | [#1469](https://github.com/nsgo-dev/nsgo/issues/1469) | Cover SF Symbol names beyond the portable glyph subset and native chronometer weight/design/italic styling; Android renders shared timelines, layout, text, images, shapes, progress and native timers through App Widgets |
 
 ## App Clips
 

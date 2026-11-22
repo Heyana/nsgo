@@ -54,8 +54,9 @@ func WriteBundle(w io.Writer, template []byte, m Manifest, files []File, key *Ke
 			all = append(all, file)
 		}
 	}
-	for _, resource := range m.xmlResources() {
-		data, err := protoElement(resource.node(), false, false)
+	for _, resource := range append(m.xmlResources(), m.layoutResources()...) {
+		root := resource.node()
+		data, err := protoElement(root, len(attrNames(root)) > 0, false)
 		if err != nil {
 			return err
 		}
@@ -200,6 +201,13 @@ func protoElement(n *node, root, icon bool) ([]byte, error) {
 // protoItem is the Item an android:* attribute compiles to; nil for a
 // string, which stays its value alone.
 func protoItem(name, value string, spec attrSpec, icon bool) ([]byte, error) {
+	if name == "label" && strings.HasPrefix(value, "@0x") {
+		id, err := parseResourceID(value)
+		if err != nil {
+			return nil, err
+		}
+		return pbBytes(nil, 1, pbVarint(nil, 2, uint64(id))), nil
+	}
 	if name == "label" && value == nameResource {
 		return pbBytes(nil, 1, pbVarint(nil, 2, uint64(nameResourceID(icon)))), nil
 	}
@@ -214,6 +222,8 @@ func protoItem(name, value string, spec attrSpec, icon bool) ([]byte, error) {
 	switch spec.kind {
 	case typeReference:
 		return pbBytes(nil, 1, pbVarint(nil, 2, uint64(v))), nil
+	case typeDimension:
+		prim = pbVarint(nil, 13, uint64(v))
 	case typeInt:
 		prim = pbVarint(nil, 6, uint64(int64(int32(v))))
 	case typeHex:
@@ -231,7 +241,7 @@ func protoItem(name, value string, spec attrSpec, icon bool) ([]byte, error) {
 // resourcesProto is the module's resource table, resources.pb, holding
 // what resources' binary table does.
 func resourcesProto(m Manifest) []byte {
-	names, adaptive := m.Names, m.Adaptive
+	adaptive := m.Adaptive
 	var types [][]byte
 	id := uint64(1)
 	if m.Icon != nil {
@@ -260,23 +270,27 @@ func resourcesProto(m Manifest) []byte {
 		types = append(types, protoTypeEntries(id, "mipmap", entries))
 		id++
 	}
-	if len(names) > 0 {
-		var langs []string
-		for lang := range names {
-			if lang == "" || localeConfig(lang) != nil {
-				langs = append(langs, lang)
+	if resources := m.stringResources(); len(resources) > 0 {
+		var entries []protoEntry
+		for _, resource := range resources {
+			var langs []string
+			for lang := range resource.values {
+				if lang == "" || localeConfig(lang) != nil {
+					langs = append(langs, lang)
+				}
 			}
-		}
-		slices.Sort(langs)
-		var values [][2][]byte
-		for _, lang := range langs {
-			var config []byte
-			if lang != "" {
-				config = pbString(nil, 3, lang)
+			slices.Sort(langs)
+			var values [][2][]byte
+			for _, lang := range langs {
+				var config []byte
+				if lang != "" {
+					config = pbString(nil, 3, lang)
+				}
+				values = append(values, [2][]byte{config, pbBytes(nil, 2, pbString(nil, 1, resource.values[lang]))})
 			}
-			values = append(values, [2][]byte{config, pbBytes(nil, 2, pbString(nil, 1, names[lang]))})
+			entries = append(entries, protoEntry{resource.name, values})
 		}
-		types = append(types, protoType(id, "string", "app_name", values))
+		types = append(types, protoTypeEntries(id, "string", entries))
 	}
 	var xmlEntries []protoEntry
 	for _, resource := range m.xmlResources() {
@@ -293,6 +307,15 @@ func resourcesProto(m Manifest) []byte {
 		types = append(types, protoType(xmlType, "xml", entry.key, entry.values))
 	default:
 		types = append(types, protoTypeEntries(xmlType, "xml", xmlEntries))
+	}
+	if layouts := m.layoutResources(); len(layouts) > 0 {
+		var entries []protoEntry
+		for _, res := range layouts {
+			file := pbString(nil, 1, res.file)
+			file = pbVarint(file, 2, 3)
+			entries = append(entries, protoEntry{res.name, [][2][]byte{{nil, pbBytes(nil, 5, file)}}})
+		}
+		types = append(types, protoTypeEntries(uint64(layoutResourceID(m)>>16&0xff), "layout", entries))
 	}
 	p := pbBytes(nil, 1, pbVarint(nil, 1, appPackageID))
 	p = pbString(p, 2, m.Package)

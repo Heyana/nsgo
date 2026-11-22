@@ -6,8 +6,8 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// View is an element of what a widget shows, which the widget extension
-// lays out and draws with SwiftUI: Text, Symbol, Image, Date, Column, Row,
+// View is an element of what a widget shows, which the Apple extension or
+// Android provider lays out and draws: Text, Symbol, Image, Date, Column, Row,
 // Stack, Spacer, Divider, Rectangle, Progress and Gauge. A nil View shows
 // nothing.
 //
@@ -25,7 +25,8 @@ type Text struct {
 }
 
 // Symbol shows one of Apple's SF Symbols by name, as "drop.fill", sized
-// by the font and colored by Style.Color.
+// by the font and colored by Style.Color. Android draws common portable
+// glyphs; use Image for other artwork that must show there.
 type Symbol struct {
 	Name  string
 	Style Style

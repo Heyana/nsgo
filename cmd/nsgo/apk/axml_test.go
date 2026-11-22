@@ -497,6 +497,21 @@ func TestEncodeManifestOverlay(t *testing.T) {
 // TestFrameworkAttributeIDs holds androidAttrs to the IDs of the SDK's public-final.xml, as the system reads a binary manifest's attributes by ID and ignores one under another's.
 func TestFrameworkAttributeIDs(t *testing.T) {
 	want := map[string]uint32{
+		"includeFontPadding":          0x0101015f,
+		"appComponentFactory":         0x0101057a,
+		"description":                 0x01010020,
+		"id":                          0x010100d0,
+		"layout_width":                0x010100f4,
+		"layout_height":               0x010100f5,
+		"scaleType":                   0x0101011d,
+		"initialLayout":               0x01010251,
+		"minWidth":                    0x0101013f,
+		"minHeight":                   0x01010140,
+		"updatePeriodMillis":          0x01010250,
+		"resizeMode":                  0x01010363,
+		"widgetCategory":              0x010103c4,
+		"targetCellWidth":             0x01010634,
+		"targetCellHeight":            0x01010635,
 		"versionCode":                 0x0101021b,
 		"versionName":                 0x0101021c,
 		"minSdkVersion":               0x0101020c,

@@ -7,7 +7,7 @@ order: 47
 
 ## A kind of widget
 
-Widgets show a glance of the app whether it runs or not: on the Home Screen and the Lock Screen of iPhones and iPads, and on the Mac's desktop and in Notification Center. A kind is one widget the system's gallery offers, with the families it comes in:
+Widgets show a glance of the app whether it runs or not: on the Home Screen and the Lock Screen of iPhones and iPads, on the Mac's desktop and in Notification Center, and in Android's launcher. A kind is one widget the system's gallery offers, with the families it comes in:
 
 ```yaml
 widgets:
@@ -18,7 +18,7 @@ widgets:
 # apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
-A widget extension draws it, which `build` and `dev` compile into the app with Xcode's Swift compiler ([Building and shipping](building.md#widgets-and-live-activities)). It runs none of the app's code, so a widget shows what the app wrote last, until it writes again.
+On Apple platforms, a widget extension draws it, which `build` and `dev` compile with Xcode's Swift compiler ([Building and shipping](building.md#widgets-and-live-activities)). On Android, the prebuilt Java runtime draws the same timeline as App Widgets. Both keep showing the published content when the app stops.
 
 For a sandboxed Mac App Store build, set `apple.app_group` and supply macOS provisioning profiles through `sign.macos_profile` and `sign.widgets_profile`. Both the app and `<id>.widgets` must belong to the same team and be entitled to that group. Timelines and images go in its shared container; direct and development macOS builds keep their existing home-directory location. [Store signing](building.md#store-packages) describes the build options.
 
@@ -26,7 +26,7 @@ For a sandboxed Mac App Store build, set `apple.app_group` and supply macOS prov
 
 ## A timeline
 
-`widget.Update` writes what the widgets of a kind show from now on, as a timeline of entries: the system shows the entry whose date passed last, then each later one at its date, without the app. A zero `Date` is now. Without entries, the widgets show the kind's name and description. An app in the foreground updates its widgets as often as it likes, and one in the background a few dozen times a day.
+`widget.Update` writes what the widgets of a kind show from now on, as a timeline of entries: the system shows the entry whose date passed last, then each later one at its date, without the app. A zero `Date` is now. Without entries, the widgets show the kind's name and description. On Apple platforms, an app in the foreground updates its widgets as often as it likes, and one in the background a few dozen times a day.
 
 ```go
 err := widget.Update("counter", widget.Entry{
@@ -37,7 +37,7 @@ err := widget.Update("counter", widget.Entry{
 })
 ```
 
-`Entry.Families` shows a family a view of its own in place of `Entry.View`, `Entry.Background` fills the widget behind it, past the margins the system keeps, and `Entry.URL` opens with the app when the widget is tapped. `widget.Update` reports `widget.ErrNoWidgets` in an app built without them, `widget.ErrUnsupported` elsewhere than macOS and iOS, and `widget.Available` says which before a write. It may run on any goroutine, before `nsgo.Run` too.
+`Entry.Families` shows a family a view of its own in place of `Entry.View`, `Entry.Background` fills the widget behind it, past the margins the system keeps, and `Entry.URL` opens with the app when the widget is tapped. `widget.Update` reports `widget.ErrNoWidgets` in an app built without them, `widget.ErrUnsupported` elsewhere than macOS, iOS and Android, and `widget.Available` says which before a write. It may run on any goroutine, before `nsgo.Run` too.
 
 ## Views
 
@@ -66,6 +66,12 @@ widget.Button{Action: "refresh", Children: []widget.View{
 ```
 
 Handle the action and call `widget.Update` before the handler returns, so the system's automatic timeline reload sees the result. The handler runs outside the views' goroutine; use `core.Scope.Post` to change views. This uses the same handler and intent as [Live Activities](live-activities.md), and needs only `widgets` in `nsgo.yaml`, without `live_activities`.
+
+## Android
+
+Add the widget from the launcher's widget picker and resize it there. The renderer selects a permitted family from its bounds: small below 240 points in both dimensions, medium from 240 across, large from 240 down, and extra-large from 500 across; if that family is not listed, it uses the first listed family. `Entry.URL` and `Style.Link` open the app through a scheme it declares in `url_schemes`. A link on a nested view takes precedence over its container's link.
+
+Future timeline entries use Android's inexact alarms, which the system may delay while the app is in the background. Timer views use native chronometers and tick without the app; they currently honor size and color, with custom font weight, design and italic styling still goals. Relative dates refresh on the system's schedule. The generic renderer supports text, images, layout, shapes, bars, rings and a set of common symbol glyphs; use `Image` for artwork that must match on both platforms. Arbitrary SF Symbol names remain an open Android goal. Android widget providers are generated for standalone APKs and AABs; embedded hosts receive none.
 
 ## Live Activities
 

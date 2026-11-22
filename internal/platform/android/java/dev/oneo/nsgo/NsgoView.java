@@ -873,6 +873,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         builder.command().addAll(flags);
         File data = storage != null ? storage : getContext().getFilesDir();
         builder.environment().put("NSGO_DATA_DIR", data.getAbsolutePath());
+        AppWidgets.prepare(getContext(), builder);
         builder.environment().put("NSGO_CACHE_DIR", getContext().getCacheDir().getAbsolutePath());
         if (!host.params.isEmpty()) builder.environment().put("NSGO_HOST_PARAMS", host.params);
         String installer = installer();

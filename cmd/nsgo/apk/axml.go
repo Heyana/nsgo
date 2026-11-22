@@ -16,6 +16,7 @@ import (
 
 // Manifest is what packaging fills into the runtime's manifest template.
 type Manifest struct {
+	Widgets []Widget
 	Package string
 	Label   string
 	// Names are the app's name in its languages, by BCP 47 tag, "" for
@@ -84,6 +85,7 @@ const (
 
 	typeReference = 0x01
 	typeString    = 0x03
+	typeDimension = 0x05
 	typeInt       = 0x10
 	typeHex       = 0x11
 	typeBool      = 0x12
@@ -104,6 +106,21 @@ type attrSpec struct {
 // androidAttrs are the attributes the runtime's manifest uses. An
 // attribute missing here fails the build instead of being dropped.
 var androidAttrs = map[string]attrSpec{
+	"includeFontPadding":  {16843103, typeBool, parseBool},
+	"appComponentFactory": {16844154, typeString, nil},
+	"description":         {16842784, typeReference, parseResourceID},
+	"id":                  {16842960, typeReference, parseResourceID},
+	"layout_width":        {16842996, typeInt, parseLayoutSize},
+	"layout_height":       {16842997, typeInt, parseLayoutSize},
+	"scaleType":           {16843037, typeInt, parseInt},
+	"initialLayout":       {16843345, typeReference, parseResourceID},
+	"minWidth":            {16843071, typeDimension, parseDP},
+	"minHeight":           {16843072, typeDimension, parseDP},
+	"updatePeriodMillis":  {16843344, typeInt, parseInt},
+	"resizeMode":          {16843619, typeInt, parseInt},
+	"widgetCategory":      {16843716, typeInt, parseInt},
+	"targetCellWidth":     {16844340, typeInt, parseInt},
+	"targetCellHeight":    {16844341, typeInt, parseInt},
 	"versionCode":         {0x0101021b, typeInt, parseInt},
 	"versionName":         {0x0101021c, typeString, nil},
 	"minSdkVersion":       {0x0101020c, typeInt, parseInt},
@@ -284,6 +301,9 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 		setAttr(app, androidNS, "label", nameResource)
 	} else {
 		setAttr(app, androidNS, "label", m.Label)
+	}
+	if err := addWidgets(app, m); err != nil {
+		return nil, err
 	}
 	if m.Theme != "" {
 		setAttr(app, androidNS, "theme", m.Theme)
@@ -632,6 +652,15 @@ func (e *encoder) element(n *node) error {
 			attr.id = spec.id
 			attr.name = e.str(a.Name.Local)
 			attr.kind = spec.kind
+			if a.Name.Local == "label" && strings.HasPrefix(a.Value, "@0x") {
+				attr.kind = typeReference
+				var err error
+				attr.data, err = parseResourceID(a.Value)
+				if err != nil {
+					return err
+				}
+				break
+			}
 			if a.Name.Local == "label" && a.Value == nameResource {
 				attr.kind, attr.data = typeReference, nameResourceID(e.icon)
 				break

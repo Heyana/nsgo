@@ -540,7 +540,7 @@ sign:
 
 ## 小组件与实时活动
 
-`build` 和 `dev` 会用 Xcode 的 Swift 编译器把绘制应用的小组件和实时活动的扩展编进 macOS 和 iOS 包，不需要单独的步骤。在 iOS 上，应用与小组件共享一个 App Group：用 `-run` 装到 iPhone 时，Xcode 会为两者签名并注册它；打 IPA 时需要为 `<id>` 和 `<id>.widgets` 都开启它，并用 `sign.widgets_profile` 为扩展签名。Android 16 把实时活动显示为 Live Update，不需要扩展。[小组件](widgets.md)和[实时活动](live-activities.md)介绍它们的配置和 API。
+`build` 和 `dev` 会用 Xcode 的 Swift 编译器把绘制应用的小组件和实时活动的扩展编进 macOS 和 iOS 包，不需要单独的步骤。在 iOS 上，应用与小组件共享一个 App Group：用 `-run` 装到 iPhone 时，Xcode 会为两者签名并注册它；打 IPA 时需要为 `<id>` 和 `<id>.widgets` 都开启它，并用 `sign.widgets_profile` 为扩展签名。Android 独立 APK 和 AAB 会根据 `widgets` 包含 App Widget 提供程序与资源，由预编译的 Java 运行时绘制时间线，应用构建无需 SDK 或 Java 编译器。Android 16 把实时活动显示为 Live Update，不需要扩展。[小组件](widgets.md)和[实时活动](live-activities.md)介绍它们的配置和 API。
 
 ## 轻 App（App Clip）
 

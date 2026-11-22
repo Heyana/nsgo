@@ -243,3 +243,24 @@ func TestAndroidOverlayDeclarations(t *testing.T) {
 		}
 	}
 }
+
+func TestAndroidWidgetLocalizations(t *testing.T) {
+	dir := t.TempDir()
+	locales := filepath.Join(dir, "locales")
+	writeFiles(t, locales, map[string]string{"en.yaml": "widgetName: Counter\nwidgetDescription: The current count\nplain: Translated kind\n", "zh.yaml": "widgetName: 计数\n"})
+	p := &project{Dir: dir, Widgets: []widgetKind{{Kind: "counter", Name: "widgetName", Description: "widgetDescription"}, {Kind: "plain"}}}
+	p.I18n.Dir, p.I18n.Source = locales, "en"
+	widgets, err := p.androidWidgets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if widgets[0].Names[""] != "Counter" || widgets[0].Names["zh"] != "计数" || widgets[0].Descriptions["zh"] != "The current count" {
+		t.Fatalf("localizations %+v", widgets[0])
+	}
+	if widgets[1].Names[""] != "plain" || len(widgets[1].Names) != 1 {
+		t.Fatalf("empty name translated its kind: %+v", widgets[1])
+	}
+	if !slices.Equal(widgets[1].Families, []string{"small", "medium", "large"}) {
+		t.Fatalf("families %v", widgets[1].Families)
+	}
+}

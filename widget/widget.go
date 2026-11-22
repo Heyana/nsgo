@@ -1,10 +1,10 @@
 // Package widget shows the app's content in widgets: on the Home Screen
 // and the Lock Screen of iPhones and iPads, and on the desktop and in
-// Notification Center of Macs (WidgetKit).
+// Notification Center of Macs (WidgetKit), and in Android App Widgets.
 //
 // The app lists the kinds of its widgets in nsgo.yaml (widgets), which
-// `nsgo build` and `nsgo dev` turn into a widget extension of the macOS
-// and iOS apps they make, and gives each kind what to show with Update: a
+// `nsgo build` and `nsgo dev` turn into a macOS/iOS widget extension or
+// Android App Widget providers, and gives each kind what to show with Update: a
 // timeline of views, which the system shows whether the app runs or not.
 //
 //	widget.Update("counter", widget.Entry{
@@ -14,7 +14,7 @@
 //		}},
 //	})
 //
-// The extension draws the views with SwiftUI and runs none of the app's code: a widget shows what the app wrote last, until it writes again, and a tap outside its Buttons opens the app. Update can be called from any goroutine, before nsgo.Run too. Elsewhere than macOS and iOS, and in an app not built with its widgets, it reports why it cannot show them. Like microphone, the package reaches the system directly and stands apart from the engine.
+// Apple extensions draw the views with SwiftUI and Android providers with the Java runtime, running none of the app's Go code: a widget shows what the app wrote last, until it writes again, and a tap outside its Buttons opens the app. Update can be called from any goroutine, before nsgo.Run too. Elsewhere than macOS, iOS and Android, and in an app not built with its widgets, it reports why it cannot show them. Like microphone, the package reaches the system directly and stands apart from the engine.
 //
 // The same extension draws the app's Live Activities on the Lock Screen
 // and in the Dynamic Island of iPhones, which Android 16 shows as Live
@@ -66,8 +66,8 @@ type Entry struct {
 }
 
 // ErrUnsupported is what Update reports where there are no widgets:
-// elsewhere than macOS and iOS.
-var ErrUnsupported = fmt.Errorf("widget: widgets need macOS or iOS: %w", errors.ErrUnsupported)
+// elsewhere than macOS, iOS and Android.
+var ErrUnsupported = fmt.Errorf("widget: widgets need macOS, iOS or Android: %w", errors.ErrUnsupported)
 
 // ErrNoWidgets is what Update reports in an app that has no widget
 // extension: one run with go run, or built without widgets in nsgo.yaml.
@@ -80,8 +80,9 @@ var kindPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 // kind is one of nsgo.yaml's widgets. Without entries, the widgets show
 // their placeholder: the kind's name and description.
 //
-// The system lets an app in the foreground update its widgets as often as
-// it likes, and one in the background a few dozen times a day.
+// On Apple platforms a foreground app can update as often as it likes,
+// and a background app a few dozen times a day. Android publishes file
+// changes at once and may defer future entries through its inexact alarms.
 func Update(kind string, entries ...Entry) error {
 	if !kindPattern.MatchString(kind) {
 		return fmt.Errorf("widget: %q is not a kind of widget: letters, digits, '.', '_' and '-', up to 64", kind)

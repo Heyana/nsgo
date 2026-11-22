@@ -187,7 +187,7 @@ func TestUpdate(t *testing.T) {
 	}
 	err := Update("counter", Entry{View: Text{Content: "1"}})
 	switch runtime.GOOS {
-	case "darwin", "ios":
+	case "darwin", "ios", "android":
 		// A test is no app built with its widgets.
 		if !errors.Is(err, ErrNoWidgets) || Available() {
 			t.Errorf("Update outside an app = %v, want ErrNoWidgets", err)

@@ -4,3 +4,11 @@ version: 0.1.0
 
 android:
   recording: true
+
+url_schemes: [nsgo-widget]
+
+widgets:
+  - kind: acceptance
+    name: Timeline acceptance
+    description: NSGo's Android App Widget regression fixture.
+    families: [small, medium, large]

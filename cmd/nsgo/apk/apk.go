@@ -30,7 +30,7 @@ func Write(w io.Writer, template []byte, m Manifest, files []File, key *Key) err
 		}
 		all = append(all, adaptive...)
 	}
-	for _, resource := range m.xmlResources() {
+	for _, resource := range append(m.xmlResources(), m.layoutResources()...) {
 		data, err := encodeXML(resource.node(), false)
 		if err != nil {
 			return err

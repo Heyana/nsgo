@@ -399,6 +399,12 @@ final class TestAgent {
             case "reattach-view":
                 view.attachToEngine((NsgoEngine) field(view, "engine"));
                 break;
+            case "widget-pin":
+                view.testReply(id, "", Boolean.toString(AppWidgets.pin(activity(),op.getString("kind"))));
+                return;
+            case "widget-probe":
+                view.testReply(id, "", AppWidgets.probe(activity(),op.getString("kind")).toString());
+                return;
             case "view-state":
                 view.testReply(id, "", viewState().toString());
                 return;

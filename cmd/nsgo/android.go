@@ -101,6 +101,9 @@ func releaseAndroidBundle(ctx context.Context, p *project, dir, target string, g
 // runtime, manifest and resources, then signs the resulting APK or App Bundle.
 func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 	write func(io.Writer, []byte, apk.Manifest, []apk.File, *apk.Key) error, goarches ...string) (string, error) {
+	if err := p.androidWidgetRuntime(androidruntime.ClassesDex); err != nil {
+		return "", err
+	}
 	classes, err := androidClassFiles(p)
 	if err != nil {
 		return "", err
@@ -172,7 +175,12 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 	if err != nil {
 		return "", err
 	}
+	widgets, err := p.androidWidgets()
+	if err != nil {
+		return "", err
+	}
 	err = write(f, androidruntime.Manifest, apk.Manifest{
+		Widgets:             widgets,
 		Package:             p.ID,
 		Label:               p.Name,
 		Names:               names.android(),
