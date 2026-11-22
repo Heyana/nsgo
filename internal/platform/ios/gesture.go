@@ -78,11 +78,7 @@ func registerGestures() {
 		{Cmd: sel("reset"), Fn: func(self objc.ID, cmd objc.SEL) {
 			apple.Super(self, cmd)
 			if g := gates[self]; g != nil {
-				if g.finger != 0 {
-					g.finger.Send(selRelease)
-					g.finger = 0
-				}
-				g.endHandoff()
+				g.release()
 			}
 		}},
 		// The pans of the scroll views around the view wait for the gate.
@@ -120,6 +116,24 @@ func (g *panGate) handOff(touch objc.ID) {
 		g.offset = driver.Points(max(objc.Send[apple.CGPoint](n, selContentOffset).Y+in.Top, 0))
 		handoffs[g.scroll] = g
 		return
+	}
+}
+
+// release lets go of the touch g follows and ends its handoff.
+func (g *panGate) release() {
+	if g.finger != 0 {
+		g.finger.Send(selRelease)
+		g.finger = 0
+	}
+	g.endHandoff()
+}
+
+// forgetGate forgets pan recognizer r, releasing what its gate holds, as
+// UIKit's reset of a recognizer removed mid-drag finds no gate left.
+func forgetGate(r objc.ID) {
+	if g := gates[r]; g != nil {
+		g.release()
+		delete(gates, r)
 	}
 }
 
@@ -182,7 +196,7 @@ func (v *view) setGestures(m driver.EventMask) {
 			(*r).Send(selRelease)
 		case !want && *r != 0:
 			v.native.Send(sel("removeGestureRecognizer:"), *r)
-			delete(gates, *r)
+			forgetGate(*r)
 			*r = 0
 		}
 	}

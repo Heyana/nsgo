@@ -1744,7 +1744,7 @@ func (s *surface) delete(v *view, kept bool) {
 	apple.ForgetTransform(v.native.Send(selLayer))
 	apple.ForgetDecor(v.native.Send(selLayer))
 	v.forgetContent()
-	delete(gates, v.pan)
+	forgetGate(v.pan)
 	v.layout.Release()
 	if v.image != nil {
 		v.image.Close()
