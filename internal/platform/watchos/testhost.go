@@ -22,6 +22,7 @@ func (host) Main(run func() int) {
 	hostReady = make(chan struct{})
 	ready := hostReady
 	s = newSurface(nil, Options{ID: "dev.nsgo.test"})
+	s.inputGate.isolated = true
 	token, marked := os.LookupEnv("NSGO_TEST_RUN")
 	if marked {
 		fmt.Printf("nsgo-test-start %s\n", token)

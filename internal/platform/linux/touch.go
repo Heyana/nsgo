@@ -28,6 +28,9 @@ func touchCallback(controller, event, data uintptr) int32 {
 	if w == nil || w.closing {
 		return 0
 	}
+	if w.ignoreTestInput() {
+		return 1
+	}
 	w.touchEvent(gdkEventGetEventType(event), gdkEventGetEventSequence(event), event)
 	return 0
 }

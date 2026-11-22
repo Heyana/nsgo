@@ -27,6 +27,7 @@ func (host) Main(run func() int) {
 	sceneReady = make(chan struct{})
 	runner = newSurface(nil, Options{ID: "dev.nsgo.test"})
 	scenes = []*surface{runner}
+	testInputFilter = scriptedTestInputAllowed
 	// devicectl on an iPhone and simctl in a simulator bridge the app's output but not its exit code: the tool's token marks where this run's output starts and what it exits with, as Android's host marks its log, even when the app ends before simctl attaches to it.
 	token, marked := os.LookupEnv("NSGO_TEST_RUN")
 	if marked {

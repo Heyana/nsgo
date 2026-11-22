@@ -892,6 +892,9 @@ func bufferMarkCallback(buffer uintptr, iter uintptr, mark uintptr, data uintptr
 // unless SubmitBehavior submits, and Shift or Alt with it always break.
 func areaKeyCallback(controller uintptr, keyval, keycode, state uint32, data uintptr) int32 {
 	w, v := editorOf(controller, data)
+	if w != nil && w.ignoreTestInput() {
+		return 1
+	}
 	if v == nil || keyval != gdkReturn && keyval != gdkKPEnter || v.fs.Composing() {
 		return 0
 	}

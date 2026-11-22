@@ -113,17 +113,19 @@ type boxKey struct {
 type surface struct {
 	sensors apple.Sensors
 
-	opts    Options
-	app     engine.App
-	engine  *engine.Engine
-	batches queue.Batches
-	batch   uint64
-	views   []*view
-	root    driver.NodeID
-	env     driver.Environment
-	started bool
-	size    driver.Size
-	epoch   time.Time
+	opts      Options
+	test      *testOpen
+	inputGate testInputGate
+	app       engine.App
+	engine    *engine.Engine
+	batches   queue.Batches
+	batch     uint64
+	views     []*view
+	root      driver.NodeID
+	env       driver.Environment
+	started   bool
+	size      driver.Size
+	epoch     time.Time
 
 	w writer
 	// dirty are the views whose look, ink or drawing changed since the
@@ -271,6 +273,7 @@ func (s *surface) start(test *testOpen) {
 	opts := engine.Options{ReadAsset: imageload.ReadAsset, Size: s.size, Environment: s.env, NetworkWatcher: apple.NetworkWatcher{}, Thread: apple.RaiseThread, Appearance: s.opts.Appearance,
 		Secrets: apple.Keychain{}}
 	opts.SetDirs(engine.AppDirs(s.opts.ID))
+	s.test = test
 	if test != nil {
 		size := opts.Size
 		opts.UseTest(test.options, &test.pin)
@@ -609,12 +612,14 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemScrollTo:
 			v.applied++
 			to := clampOffset(v, it.Point)
+			s.inputGate.expectScroll(uint32(v.id))
 			s.w.op(opScrollTo, v.id)
 			s.w.f64(float64(to.X), float64(to.Y))
 			s.w.flag(it.Animated && !s.env.ReduceMotion)
 		case driver.ItemScrollBy:
 			v.applied++
 			to := clampOffset(v, driver.Point{X: v.offset.X + it.Point.X, Y: v.offset.Y + it.Point.Y})
+			s.inputGate.expectScroll(uint32(v.id))
 			s.w.op(opScrollTo, v.id)
 			s.w.f64(float64(to.X), float64(to.Y))
 			s.w.flag(false)
@@ -695,6 +700,7 @@ func (s *surface) delete(v *view) {
 	if s.focused == v {
 		s.focused = nil
 	}
+	s.inputGate.forgetScroll(uint32(v.id))
 	s.w.op(opDelete, v.id)
 }
 
@@ -886,16 +892,10 @@ func (s *surface) sendAccess(v *view) {
 	s.w.access(v.id, a)
 }
 
-// Host.swift's scroll phases.
-const (
-	phaseOffset uint8 = iota
-	phaseDragging
-	phaseGliding
-	phaseRest
-	phaseAnimating
-)
-
 func hostScroll(id uint32, x, y float64, phase uint8) {
+	if s == nil || !s.inputGate.allowScroll(s.test != nil, id, phase) {
+		return
+	}
 	v := s.view(driver.NodeID(id))
 	if v == nil {
 		return
@@ -967,6 +967,9 @@ func (s *surface) alert(a *driver.AlertConfig) {
 }
 
 func hostAlert(id uint32, index int32) {
+	if s == nil || !s.inputGate.allowDirect(s.test != nil) {
+		return
+	}
 	if _, ok := s.alerts[id]; !ok {
 		return
 	}

@@ -110,6 +110,16 @@ func (t *testSurface) onLoop(fn func()) {
 	runOnThread(postLoopCall, 10*time.Second, "panic on the GTK thread", fn)
 }
 
+// scripted runs fn on the GTK thread inside a scripted input scope so test
+// input isolation allows the callbacks fn invokes.
+func (t *testSurface) scripted(fn func()) {
+	t.onLoop(func() {
+		t.w.inputGate.enter()
+		defer t.w.inputGate.leave()
+		fn()
+	})
+}
+
 func (t *testSurface) WindowSurface(id uint32) testhost.Surface {
 	var opened *window
 	t.onLoop(func() { opened = t.test.windows[id] })
@@ -151,7 +161,7 @@ func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Mod
 	if mods.Platform {
 		state |= gdkSuper
 	}
-	t.onLoop(func() {
+	t.scripted(func() {
 		t.focusAt(at)
 		// GTK's click gesture counts presses within the desktop's double-click time, 400 ms by default.
 		interval := 400 * time.Millisecond
@@ -168,12 +178,12 @@ func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Mod
 	if hold > 0 {
 		time.Sleep(hold + 50*time.Millisecond)
 	}
-	t.onLoop(func() { t.w.pointerUp(at) })
+	t.scripted(func() { t.w.pointerUp(at) })
 	return nil
 }
 
 func (t *testSurface) RightClick(at driver.Point) error {
-	t.onLoop(func() {
+	t.scripted(func() {
 		t.w.pointerDown(at, 3, 0, 0, 1)
 		t.w.pointerUp(at)
 	})
@@ -182,7 +192,7 @@ func (t *testSurface) RightClick(at driver.Point) error {
 
 // MouseDown implements testhost.MouseButtonSurface for all five mouse buttons.
 func (t *testSurface) MouseDown(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
-	t.onLoop(func() {
+	t.scripted(func() {
 		t.w.engine.InputModality(driver.ModalityPointer)
 		t.w.mouseButtonDown(button, at, mods)
 	})
@@ -191,7 +201,7 @@ func (t *testSurface) MouseDown(at driver.Point, button driver.MouseButton, mods
 
 // MouseUp implements testhost.MouseButtonSurface for all five mouse buttons.
 func (t *testSurface) MouseUp(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
-	t.onLoop(func() {
+	t.scripted(func() {
 		t.w.mouseButtonUp(button, at, mods)
 	})
 	return nil
@@ -210,7 +220,7 @@ func (t *testSurface) Drag(path []driver.Point) error {
 	if len(path) == 0 {
 		return errors.New("an empty drag")
 	}
-	t.onLoop(func() {
+	t.scripted(func() {
 		t.w.pointerDown(path[0], 1, 0, 0, 1)
 		dragBeginCallback(0, 0, 0, t.w.handle)
 	})
@@ -222,7 +232,7 @@ func (t *testSurface) Drag(path []driver.Point) error {
 		for i := 1; i <= n; i++ {
 			f := driver.Points(i) / driver.Points(n)
 			p := driver.Point{X: at.X + dx*f, Y: at.Y + dy*f}
-			t.onLoop(func() {
+			t.scripted(func() {
 				t.w.movePointer(p, gdkButton1)
 				dragUpdateCallback(0, float64(p.X-path[0].X), float64(p.Y-path[0].Y), t.w.handle)
 			})
@@ -230,7 +240,7 @@ func (t *testSurface) Drag(path []driver.Point) error {
 		}
 		at = to
 	}
-	t.onLoop(func() {
+	t.scripted(func() {
 		t.w.pointerUp(at)
 		dragEndCallback(0, float64(at.X-path[0].X), float64(at.Y-path[0].Y), t.w.handle)
 	})
@@ -246,16 +256,16 @@ func absPoints(v driver.Points) driver.Points {
 
 // Scroll turns the wheel 20 points at a time, 16 ms apart.
 func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
-	t.onLoop(func() {
+	t.scripted(func() {
 		t.w.stopWheelGlide()
 		t.w.wheelTaker = nil
 	})
 	n := int(max(absPoints(delta.X), absPoints(delta.Y))/20) + 1
 	for range n {
-		t.onLoop(func() { t.w.wheelEvent(0, at, float64(delta.X)/float64(n), float64(delta.Y)/float64(n), true) })
+		t.scripted(func() { t.w.wheelEvent(0, at, float64(delta.X)/float64(n), float64(delta.Y)/float64(n), true) })
 		time.Sleep(16 * time.Millisecond)
 	}
-	t.onLoop(func() {
+	t.scripted(func() {
 		if v := t.w.wheelTaker; v != nil && !v.deleted {
 			ev := t.w.wheelEventAt(v, at, 0)
 			ev.Phase, ev.Precise = driver.GestureEnded, true
@@ -267,7 +277,7 @@ func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 }
 
 func (t *testSurface) Hover(at driver.Point) error {
-	t.onLoop(func() {
+	t.scripted(func() {
 		if at.X < 0 || at.Y < 0 {
 			leaveCallback(0, t.w.handle)
 			return
@@ -321,7 +331,7 @@ func (t *testSurface) Type(text string) error {
 			continue
 		}
 		var err error
-		t.onLoop(func() {
+		t.scripted(func() {
 			v := t.focused()
 			if v == nil {
 				err = errors.New("no field has the keyboard")
@@ -354,7 +364,7 @@ func (t *testSurface) imWidget() (*view, uintptr, error) {
 // editors report an input method's: by their preedit-changed signal.
 func (t *testSurface) Compose(text string) error {
 	var err error
-	t.onLoop(func() {
+	t.scripted(func() {
 		var w uintptr
 		if _, w, err = t.imWidget(); err == nil {
 			gSignalEmitByName(w, cstr("preedit-changed"), cstr(text))
@@ -368,7 +378,7 @@ func (t *testSurface) Compose(text string) error {
 func (t *testSurface) Commit(text string) error {
 	loadEditing()
 	var err error
-	t.onLoop(func() {
+	t.scripted(func() {
 		var v *view
 		var w uintptr
 		if v, w, err = t.imWidget(); err != nil {
@@ -497,7 +507,7 @@ func (t *testSurface) key(name string, keyval, state uint32, press, release bool
 	loadEditing()
 	closing := false
 	identity := keyval | 1<<31
-	t.onLoop(func() {
+	t.scripted(func() {
 		// After the release, wait for the display server to have sent the events the key caused, which the loop's next turn handles before the turn below.
 		defer func() { gdkDisplaySync(gdkDisplayGetDefault()); closing = t.w.closing }()
 		if release {
@@ -604,7 +614,7 @@ func (t *testSurface) Answer(id uint32, index int) error {
 }
 
 func (t *testSurface) answer(id uint32, index int) (done bool, err error) {
-	t.onLoop(func() {
+	t.scripted(func() {
 		if !t.w.alerting || t.w.alertingID != id {
 			err = fmt.Errorf("no alert %d shows", id)
 			return

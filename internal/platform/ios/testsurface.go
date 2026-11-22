@@ -32,6 +32,40 @@ func onMainSync(fn func()) {
 	<-done
 }
 
+// scriptedInput tracks scripted IOHID events and synchronous scripted steps
+// for test input isolation (installed only by testhost.go; live automation
+// leaves testInputFilter nil). Accessed only on the main thread.
+var scriptedInput testInputGate
+
+// scriptedMainSync runs fn on the main thread inside a scripted input scope so
+// test input isolation accepts synchronous UIKit callbacks triggered by fn.
+func scriptedMainSync(fn func()) {
+	onMainSync(func() {
+		scriptedInput.enter()
+		defer scriptedInput.leave()
+		fn()
+	})
+}
+
+func scriptedTestInputAllowed(window, event objc.ID) bool {
+	kind := objc.Send[int](event, sel("type"))
+	var hidEvent uintptr
+	if objc.Send[bool](event, sel("respondsToSelector:"), sel("_hidEvent")) {
+		hidEvent = objc.Send[uintptr](event, sel("_hidEvent"))
+	}
+	var sender, ts uint64
+	hasHID := hidEvent != 0
+	if hasHID {
+		if hidGetSender != nil {
+			sender = hidGetSender(hidEvent)
+		}
+		if hidGetTimeStamp != nil {
+			ts = hidGetTimeStamp(hidEvent)
+		}
+	}
+	return scriptedInput.allowEvent(true, kind, uintptr(window), hasHID, sender, ts)
+}
+
 type testSurface struct {
 	s       *surface
 	test    *testOpen
@@ -124,6 +158,8 @@ var (
 	hidSetInteger    func(event uintptr, field uint32, value int64)
 	hidSetFloat      func(event uintptr, field uint32, value float64)
 	hidSetSender     func(event uintptr, sender uint64)
+	hidGetSender     func(event uintptr) uint64
+	hidGetTimeStamp  func(event uintptr) uint64
 	bksDigitizerInfo func(event uintptr, context uint32, gesturePossible, gestureChange uint8, display uintptr, initial float64, force float32)
 	machAbsoluteTime func() uint64
 )
@@ -156,6 +192,8 @@ func loadHID() error {
 	purego.RegisterLibFunc(&hidSetInteger, iokit, "IOHIDEventSetIntegerValue")
 	purego.RegisterLibFunc(&hidSetFloat, iokit, "IOHIDEventSetFloatValue")
 	purego.RegisterLibFunc(&hidSetSender, iokit, "IOHIDEventSetSenderID")
+	purego.RegisterLibFunc(&hidGetSender, iokit, "IOHIDEventGetSenderID")
+	purego.RegisterLibFunc(&hidGetTimeStamp, iokit, "IOHIDEventGetTimeStamp")
 	purego.RegisterLibFunc(&bksDigitizerInfo, bbs, "BKSHIDEventSetDigitizerInfo")
 	purego.RegisterLibFunc(&machAbsoluteTime, system, "mach_absolute_time")
 	hidLoaded = true
@@ -170,7 +208,7 @@ const (
 	fieldIntegrated   = 11<<16 | 25 // kIOHIDEventFieldDigitizerIsDisplayIntegrated
 	fieldMajorRadius  = 11<<16 | 20
 	fieldMinorRadius  = 11<<16 | 21
-	testSender        = 0x4e53_474f // "NSGO"
+	testSender        = testSenderID
 	keyboardUsagePage = 7
 )
 
@@ -178,6 +216,9 @@ const (
 func enqueue(w objc.ID, event uintptr) {
 	context := objc.Send[uint32](w, sel("_contextId"))
 	hidSetSender(event, testSender)
+	if testInputFilter != nil && hidGetTimeStamp != nil {
+		scriptedInput.rememberHID(uintptr(w), hidGetTimeStamp(event))
+	}
 	bksDigitizerInfo(event, context, 0, 0, 0, 0, 0)
 	objc.ID(apple.Class("UIApplication")).Send(sel("sharedApplication")).Send(sel("_enqueueHIDEvent:"), event)
 	apple.Release(event)
@@ -228,7 +269,7 @@ func enqueueTouch(w objc.ID, p driver.Point, ph phase) {
 // focusAt gives the text field at p in window w the focus: made touches leave the
 // first responder where it was, as UI test tools know.
 func focusAt(w objc.ID, p driver.Point) {
-	onMainSync(func() { focusAtOnMain(w, p) })
+	scriptedMainSync(func() { focusAtOnMain(w, p) })
 }
 
 func focusAtOnMain(w objc.ID, p driver.Point) {
@@ -373,7 +414,7 @@ func (t *testSurface) pressDevice(w objc.ID, at driver.Point, hold time.Duration
 		listensTouches bool
 		touchID        int
 	)
-	onMainSync(func() {
+	scriptedMainSync(func() {
 		if w == 0 || t.s == nil || t.s.engine == nil {
 			return
 		}
@@ -502,7 +543,7 @@ func (t *testSurface) pressDevice(w objc.ID, at driver.Point, hold time.Duration
 	})
 	if pressedView != nil || listensTouches {
 		time.Sleep(max(hold+50*time.Millisecond, 60*time.Millisecond))
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			if w == 0 || t.s == nil || t.s.engine == nil {
 				return
 			}
@@ -580,7 +621,7 @@ func (t *testSurface) dragDevice(w objc.ID, path []driver.Point) error {
 		lastTime       time.Time
 		vel            driver.Point
 	)
-	onMainSync(func() {
+	scriptedMainSync(func() {
 		if w == 0 || t.s == nil || t.s.engine == nil {
 			return
 		}
@@ -605,7 +646,7 @@ func (t *testSurface) dragDevice(w objc.ID, path []driver.Point) error {
 	})
 	for _, pt := range steps[1:] {
 		time.Sleep(16 * time.Millisecond)
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			if w == 0 || t.s == nil || t.s.engine == nil {
 				return
 			}
@@ -652,7 +693,7 @@ func (t *testSurface) dragDevice(w objc.ID, path []driver.Point) error {
 		})
 	}
 	last := steps[len(steps)-1]
-	onMainSync(func() {
+	scriptedMainSync(func() {
 		if w == 0 || t.s == nil || t.s.engine == nil {
 			return
 		}
@@ -696,7 +737,7 @@ func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 // scrollDevice moves the innermost UIScrollView under at that can scroll toward
 // delta (or dispatches EventWheel to a view listening for wheel input).
 func (t *testSurface) scrollDevice(w objc.ID, at, delta driver.Point) error {
-	onMainSync(func() {
+	scriptedMainSync(func() {
 		if w == 0 || t.s == nil || t.s.engine == nil {
 			return
 		}
@@ -787,7 +828,7 @@ func (t *testSurface) Type(text string) error {
 	}
 	onMainSync(typeLatin)
 	for _, r := range text {
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			if kb := keyboardImpl(); kb != 0 {
 				kb.Send(sel("addInputString:"), apple.NSString(string(r)))
 				return
@@ -806,7 +847,7 @@ func (t *testSurface) Type(text string) error {
 func (t *testSurface) typeDevice(w objc.ID, text string) error {
 	for _, r := range text {
 		s := string(r)
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			f := t.focusedEditor(w)
 			if f == 0 {
 				return
@@ -839,7 +880,7 @@ func (t *testSurface) Compose(text string) error {
 	if err != nil {
 		return err
 	}
-	onMainSync(func() {
+	scriptedMainSync(func() {
 		f := t.focusedEditor(w)
 		if f == 0 || !objc.Send[bool](f, sel("respondsToSelector:"), sel("setMarkedText:selectedRange:")) {
 			err = errors.New("no text input has the keyboard")
@@ -862,7 +903,7 @@ func (t *testSurface) Commit(text string) error {
 	if err != nil {
 		return err
 	}
-	onMainSync(func() {
+	scriptedMainSync(func() {
 		f := t.focusedEditor(w)
 		if f == 0 || !objc.Send[bool](f, sel("respondsToSelector:"), sel("unmarkText")) {
 			err = errors.New("no text input has the keyboard")
@@ -960,7 +1001,7 @@ func (t *testSurface) Key(key string) error {
 		if t.softwareKeyBinding("a", flags) {
 			return nil
 		}
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			if f := t.focusedEditor(w); f != 0 {
 				f.Send(sel("selectAll:"), objc.ID(0))
 			}
@@ -972,7 +1013,7 @@ func (t *testSurface) Key(key string) error {
 			return nil
 		}
 		var done bool
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			if kb := keyboardImpl(); kb != 0 && t.s.editing() && w.Send(sel("firstResponder")) != 0 {
 				kb.Send(sel("deleteFromInput"))
 				done = true
@@ -983,7 +1024,7 @@ func (t *testSurface) Key(key string) error {
 		}
 	case "enter", "return":
 		var done bool
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			// Only an editor's Return goes through the software keyboard; a focused pressable receives a hardware key through UIKit.
 			if !t.s.editing() {
 				return
@@ -1025,7 +1066,7 @@ func (t *testSurface) keyDevice(w objc.ID, key string) error {
 		if t.softwareKeyBinding("a", flags) {
 			return nil
 		}
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			if f := t.focusedEditor(w); f != 0 && objc.Send[bool](f, sel("respondsToSelector:"), sel("selectAll:")) {
 				f.Send(sel("selectAll:"), objc.ID(0))
 			}
@@ -1037,7 +1078,7 @@ func (t *testSurface) keyDevice(w objc.ID, key string) error {
 			return nil
 		}
 		var done bool
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			f := t.focusedEditor(w)
 			if f == 0 || !t.s.editing() {
 				return
@@ -1056,7 +1097,7 @@ func (t *testSurface) keyDevice(w objc.ID, key string) error {
 		}
 	case "enter", "return":
 		var done bool
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			if t.s.editing() {
 				f := t.focusedEditor(w)
 				if in := inputOf(f); in != nil {
@@ -1087,7 +1128,7 @@ func (t *testSurface) keyDevice(w objc.ID, key string) error {
 	if !ok {
 		return fmt.Errorf("unknown key %q", key)
 	}
-	onMainSync(func() {
+	scriptedMainSync(func() {
 		if t.s == nil || t.s.engine == nil {
 			return
 		}
@@ -1165,7 +1206,7 @@ func (t *testSurface) holdKeyDevice(key string, isDown bool) error {
 	if !ok {
 		return fmt.Errorf("unknown key %q", key)
 	}
-	onMainSync(func() {
+	scriptedMainSync(func() {
 		if t.s == nil || t.s.engine == nil {
 			return
 		}
@@ -1224,7 +1265,7 @@ func (t *testSurface) Back() error {
 // SelectTab selects the native tab bar's item at index, as tapping it would.
 func (t *testSurface) SelectTab(id driver.NodeID, index int) error {
 	var err error
-	onMainSync(func() {
+	scriptedMainSync(func() {
 		v := t.s.views[id]
 		if v == nil {
 			err = fmt.Errorf("no view has ID %d", id)
@@ -1244,7 +1285,7 @@ func (t *testSurface) SelectTab(id driver.NodeID, index int) error {
 func (t *testSurface) Answer(id uint32, index int) error {
 	if !t.useSimulatorHID() {
 		var err error
-		onMainSync(func() {
+		scriptedMainSync(func() {
 			shown, ok := t.s.alerts[id]
 			if !ok {
 				err = fmt.Errorf("no alert %d shows", id)

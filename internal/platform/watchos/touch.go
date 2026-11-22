@@ -49,6 +49,9 @@ const (
 )
 
 func hostTouch(phase uint8, x, y, t float64) {
+	if s == nil || !s.inputGate.allowDirect(s.test != nil) {
+		return
+	}
 	at := driver.Point{X: driver.Points(x), Y: driver.Points(y)}
 	switch phase {
 	case touchBegan:

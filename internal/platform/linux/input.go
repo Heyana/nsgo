@@ -85,7 +85,7 @@ type twoFinger struct {
 
 func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil || w.closing {
+	if w == nil || w.closing || w.ignoreTestInput() {
 		return
 	}
 	w.chrome.altAlone = false
@@ -214,7 +214,7 @@ func (w *window) pressEdge(kind driver.EventKind, at driver.Point) {
 
 func clickReleasedCallback(gesture uintptr, n int32, x, y float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil || w.closing {
+	if w == nil || w.closing || w.ignoreTestInput() {
 		return
 	}
 	w.pointerUp(driver.Point{X: driver.Points(x), Y: driver.Points(y)})
@@ -238,7 +238,7 @@ func (w *window) pointerUp(at driver.Point) {
 
 func motionCallback(controller uintptr, x, y float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil || lockedPointer.owner == w {
+	if w == nil || w.ignoreTestInput() || lockedPointer.owner == w {
 		return
 	}
 	var state uint32
@@ -253,7 +253,7 @@ func motionCallback(controller uintptr, x, y float64, data uintptr) {
 
 func leaveCallback(controller uintptr, data uintptr) {
 	w := windowOf(data)
-	if w == nil {
+	if w == nil || w.ignoreTestInput() {
 		return
 	}
 	w.pointerIn = false
@@ -269,7 +269,7 @@ func leaveCallback(controller uintptr, data uintptr) {
 
 func dragBeginCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil || w.panning == nil || w.panning.failed {
+	if w == nil || w.ignoreTestInput() || w.panning == nil || w.panning.failed {
 		return
 	}
 	w.panning.lastTime = time.Now()
@@ -277,7 +277,10 @@ func dragBeginCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) 
 
 func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	w := windowOf(data)
-	if w != nil && w.windowMove != nil {
+	if w == nil || w.ignoreTestInput() {
+		return
+	}
+	if w.windowMove != nil {
 		if math.Hypot(offsetX, offsetY) > windowMoveSlop {
 			w.moveWindow()
 		}
@@ -333,10 +336,11 @@ func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr)
 
 func dragEndCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	w := windowOf(data)
-	// GTK's click gesture may not report a release that moved, which ends a press that never moved the window too.
-	if w != nil {
-		w.windowMove = nil
+	if w == nil || w.ignoreTestInput() {
+		return
 	}
+	// GTK's click gesture may not report a release that moved, which ends a press that never moved the window too.
+	w.windowMove = nil
 	if w != nil && w.touchUp() {
 		return
 	}
@@ -414,7 +418,7 @@ func (w *window) cancelLongPress() { w.longPress++ }
 
 func zoomChangedCallback(gesture uintptr, scale float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil {
+	if w == nil || w.ignoreTestInput() {
 		return
 	}
 	w.reportTwoFinger(driver.EventPinch, float32(scale))
@@ -422,7 +426,7 @@ func zoomChangedCallback(gesture uintptr, scale float64, data uintptr) {
 
 func rotateChangedCallback(gesture uintptr, angle, delta float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil {
+	if w == nil || w.ignoreTestInput() {
 		return
 	}
 	w.reportTwoFinger(driver.EventRotation, float32(delta*math.Pi/180))
@@ -430,7 +434,7 @@ func rotateChangedCallback(gesture uintptr, angle, delta float64, data uintptr) 
 
 func gestureEndCallback(gesture uintptr, sequence uintptr, data uintptr) {
 	w := windowOf(data)
-	if w == nil {
+	if w == nil || w.ignoreTestInput() {
 		return
 	}
 	for _, g := range []*twoFinger{w.pinching, w.rotating} {
@@ -447,6 +451,9 @@ func scrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
 	if w == nil {
 		return 0
 	}
+	if w.ignoreTestInput() {
+		return 1
+	}
 	at := w.lastPointer
 	if w.controlAt(gtkWidgetPick(w.surface, float64(at.X), float64(at.Y), gtkPickDefault)) != nil {
 		return 0 // the page or the controls scroll themselves
@@ -459,7 +466,7 @@ func scrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
 // scrollBeginCallback follows fingers landing on the touchpad, which stop
 // its glide as a finger on a moving list does.
 func scrollBeginCallback(_, data uintptr) {
-	if w := windowOf(data); w != nil {
+	if w := windowOf(data); w != nil && !w.ignoreTestInput() {
 		w.shieldScroll.reset()
 		w.wheelBegin()
 	}
@@ -478,7 +485,7 @@ func (w *window) wheelBegin() {
 // milliseconds.
 func scrollDecelerateCallback(controller uintptr, vx, vy float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil || !controllerPoints(controller) {
+	if w == nil || w.ignoreTestInput() || !controllerPoints(controller) {
 		return
 	}
 	w.shieldScroll.reset()
@@ -578,6 +585,9 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 	w := windowOf(data)
 	if w == nil {
 		return 0
+	}
+	if w.ignoreTestInput() {
+		return 1
 	}
 	if w.popover != 0 && gtkWidgetGetVisible(w.popover) != 0 {
 		// GTK's native menu keeps navigation, activation and dismissal keys.
@@ -1258,7 +1268,7 @@ func (w *window) shortcut(keyval, state uint32, repeat bool) bool {
 }
 
 func keyReleasedCallback(controller uintptr, keyval, keycode, state uint32, data uintptr) {
-	if w := windowOf(data); w != nil {
+	if w := windowOf(data); w != nil && !w.ignoreTestInput() {
 		w.keyUp(keycode, keyval, state)
 		w.menuBarKey(keyval, state, false, false)
 	}
@@ -1269,7 +1279,13 @@ func keyReleasedCallback(controller uintptr, keyval, keycode, state uint32, data
 // new modifiers, so a view hears Control come and go under a still mouse.
 func modifiersCallback(controller uintptr, state uint32, data uintptr) int32 {
 	w := windowOf(data)
-	if w == nil || !w.pointerIn || state&gdkButtonsMask != 0 {
+	if w == nil {
+		return 0
+	}
+	if w.ignoreTestInput() {
+		return 1
+	}
+	if !w.pointerIn || state&gdkButtonsMask != 0 {
 		return 0
 	}
 	w.mouseMoved(state)
@@ -1444,6 +1460,9 @@ func shieldCallback(controller, event, data uintptr) int32 {
 	w := windowOf(data)
 	if w == nil || w.closing {
 		return 0
+	}
+	if w.ignoreTestGDKEvent(gdkEventGetEventType(event)) {
+		return 1
 	}
 	w.currentEvent = event
 	defer func() { w.currentEvent = 0 }()

@@ -12,6 +12,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.ContextThemeWrapper;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -178,7 +180,38 @@ public class NsgoActivity extends Activity {
     }
 
     @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (view != null && !view.inputGate.allowInput()) return true;
+        return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (view != null && !view.inputGate.allowInput()) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchKeyShortcutEvent(KeyEvent event) {
+        if (view != null && !view.inputGate.allowInput()) return true;
+        return super.dispatchKeyShortcutEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent ev) {
+        if (view != null && !view.inputGate.allowInput()) return true;
+        return super.dispatchGenericMotionEvent(ev);
+    }
+
+    @Override
+    public boolean dispatchTrackballEvent(MotionEvent ev) {
+        if (view != null && !view.inputGate.allowInput()) return true;
+        return super.dispatchTrackballEvent(ev);
+    }
+
+    @Override
     public void onBackPressed() {
+        if (view != null && !view.inputGate.allowInput()) return;
         // Back arrives here before API 33, or without predictive back.
         if (!view.back()) super.onBackPressed();
     }

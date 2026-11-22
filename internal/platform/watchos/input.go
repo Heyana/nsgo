@@ -89,6 +89,9 @@ const (
 )
 
 func hostText(id uint32, kind uint8, data *byte, n int) {
+	if s == nil || !s.inputGate.allowDirect(s.test != nil) {
+		return
+	}
 	v := s.view(driver.NodeID(id))
 	if v == nil || v.field == nil {
 		return

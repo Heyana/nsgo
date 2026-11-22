@@ -176,6 +176,7 @@ type surface struct {
 	session            string
 	scene, tree        uint32
 	discarded, ending  bool
+	test               *testOpen
 	// alerts are the alerts shown, by ID, kept for a test host or nsgo dev's
 	// automation to answer them.
 	alerts map[uint32]shownAlert
@@ -406,6 +407,9 @@ func loadUIKit() {
 	classWindow = register("NsgoWindow", apple.Class("UIWindow"), nil, []objc.MethodDef{
 		{Cmd: sel("nsgoKeyboardWindow:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { keyboardWindow = self }},
 		{Cmd: sel("sendEvent:"), Fn: func(self objc.ID, cmd objc.SEL, event objc.ID) {
+			if !iosInputAllowed(self, event) {
+				return
+			}
 			apple.Super(self, cmd, event)
 			if onWindowEvent != nil {
 				onWindowEvent(self, event)
@@ -549,6 +553,7 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 		s = runner
 	default:
 		s = newSurface(runner.app, Options{ID: runner.id, Components: runner.components, Appearance: runner.appearance})
+		s.test = runner.test
 		scenes = append(scenes, s)
 	}
 	s.session, s.discarded = id, false
@@ -749,6 +754,7 @@ func (s *surface) startEngine(test *testOpen) {
 		Secrets:        apple.Keychain{},
 	}
 	opts.SetDirs(engine.AppDirs(s.id))
+	s.test = test
 	if test != nil {
 		size := opts.Size
 		opts.UseTest(test.options, &test.pin)
@@ -1094,6 +1100,11 @@ func watcherBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	apple.Super(self, cmd, touches, event)
 	if v := views[self.Send(sel("view"))]; v != nil && v.surface.engine != nil {
 		s := v.surface
+		if !iosInputAllowed(s.window, event) {
+			const failed = 5
+			self.Send(sel("setState:"), failed)
+			return
+		}
 		s.engine.InputModality(driver.ModalityPointer)
 		apple.ForEach(touches, s.pressOutside)
 		apple.ForEach(touches, s.clearTouched)
@@ -2041,6 +2052,9 @@ func (v *view) pressable() bool {
 // ancestor.
 func touchesBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	v := views[self]
+	if v != nil && !iosInputAllowed(v.surface.window, event) {
+		return
+	}
 	// A secondary click of a pointer opens a context menu.
 	const secondary = 1 << 1
 	if v != nil && v.events.Has(driver.EventContextMenu) && objc.Send[uint](event, sel("buttonMask"))&secondary != 0 {
@@ -2063,6 +2077,9 @@ func touchesBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 
 func touchesCancelled(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	v := views[self]
+	if v != nil && !iosInputAllowed(v.surface.window, event) {
+		return
+	}
 	if v == nil || !v.pressable() {
 		apple.Super(self, cmd, touches, event)
 		return
@@ -2074,6 +2091,9 @@ func touchesCancelled(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 
 func touchesEnded(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	v := views[self]
+	if v != nil && !iosInputAllowed(v.surface.window, event) {
+		return
+	}
 	if v == nil || !v.pressable() {
 		apple.Super(self, cmd, touches, event)
 		return
@@ -2112,6 +2132,9 @@ var keyNames = map[int]string{
 // and passes the rest on.
 func pressesBegan(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
 	app := pressSurface(self)
+	if app != nil && !iosInputAllowed(app.window, event) {
+		return
+	}
 	if app != nil && typesKey(presses) {
 		app.engine.InputModality(driver.ModalityKeyboard)
 	}
@@ -2342,6 +2365,9 @@ func pressSurface(self objc.ID) *surface {
 // pressesEnded reports the held keys' ups and stops repeating a held key's binding.
 func pressesEnded(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
 	app := pressSurface(self)
+	if app != nil && !iosInputAllowed(app.window, event) {
+		return
+	}
 	if app != nil && app.engine != nil {
 		app.releasePresses(presses, event)
 	}

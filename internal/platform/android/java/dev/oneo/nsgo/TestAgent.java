@@ -270,23 +270,38 @@ final class TestAgent {
                 EditorInfo info = new EditorInfo();
                 InputConnection connection = focused == null ? null : focused.onCreateInputConnection(info);
                 if (connection == null) throw new IllegalStateException("no focused input connection");
-                if (op.optBoolean("hardware")) {
-                    // Enter delivered to the field by an IME, after the root's hardware-key stage.
-                    long now = SystemClock.uptimeMillis();
-                    int meta = op.optBoolean("shift") ? KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON : 0;
-                    focused.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0, meta));
-                    focused.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0, meta));
-                } else {
-                    connection.performEditorAction(info.imeOptions & EditorInfo.IME_MASK_ACTION);
+                view.inputGate.enterScripted();
+                try {
+                    if (op.optBoolean("hardware")) {
+                        // Enter delivered to the field by an IME, after the root's hardware-key stage.
+                        long now = SystemClock.uptimeMillis();
+                        int meta = op.optBoolean("shift") ? KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON : 0;
+                        focused.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0, meta));
+                        focused.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0, meta));
+                    } else {
+                        connection.performEditorAction(info.imeOptions & EditorInfo.IME_MASK_ACTION);
+                    }
+                } finally {
+                    view.inputGate.leaveScripted();
                 }
                 break;
             }
             case "back":
-                view.back();
+                view.inputGate.enterScripted();
+                try {
+                    view.back();
+                } finally {
+                    view.inputGate.leaveScripted();
+                }
                 break;
             case "answer": {
                 int alert = op.getInt("id");
-                answer(alert, op.getInt("index"));
+                view.inputGate.enterScripted();
+                try {
+                    answer(alert, op.getInt("index"));
+                } finally {
+                    view.inputGate.leaveScripted();
+                }
                 // The dialog calls its listener from its handler: the reply
                 // waits for the answer, which then reaches the app first.
                 long until = SystemClock.uptimeMillis() + 2000;
@@ -302,7 +317,12 @@ final class TestAgent {
                 return;
             }
             case "select-tab":
-                view.selectTestTab(op.getInt("id"), op.getInt("index"));
+                view.inputGate.enterScripted();
+                try {
+                    view.selectTestTab(op.getInt("id"), op.getInt("index"));
+                } finally {
+                    view.inputGate.leaveScripted();
+                }
                 break;
             case "recreate-activity":
                 activity().recreate();
@@ -402,10 +422,15 @@ final class TestAgent {
 
     /** A touch stamped at time with the meta state of the modifier keys held. */
     private void touch(long down, long time, int action, float[] p, int meta) {
-        MotionEvent e = MotionEvent.obtain(down, time, action, p[0], p[1], meta);
-        e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        activity().dispatchTouchEvent(e);
-        e.recycle();
+        view.inputGate.enterScripted();
+        try {
+            MotionEvent e = MotionEvent.obtain(down, time, action, p[0], p[1], meta);
+            e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            activity().dispatchTouchEvent(e);
+            e.recycle();
+        } finally {
+            view.inputGate.leaveScripted();
+        }
     }
 
     /**
@@ -463,20 +488,25 @@ final class TestAgent {
     private void type(String text) {
         Activity a = activity();
         KeyCharacterMap keys = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD);
-        for (int i = 0; i < text.length(); ) {
-            int cp = text.codePointAt(i);
-            String s = new String(Character.toChars(cp));
-            i += s.length();
-            KeyEvent[] events = cp == '\n' ? null : keys.getEvents(s.toCharArray());
-            if (cp == '\n') {
-                key("enter");
-            } else if (events != null) {
-                for (KeyEvent e : events) a.dispatchKeyEvent(e);
-            } else {
-                View f = a.getCurrentFocus();
-                InputConnection ic = f == null ? null : f.onCreateInputConnection(new EditorInfo());
-                if (ic != null) ic.commitText(s, 1);
+        view.inputGate.enterScripted();
+        try {
+            for (int i = 0; i < text.length(); ) {
+                int cp = text.codePointAt(i);
+                String s = new String(Character.toChars(cp));
+                i += s.length();
+                KeyEvent[] events = cp == '\n' ? null : keys.getEvents(s.toCharArray());
+                if (cp == '\n') {
+                    key("enter");
+                } else if (events != null) {
+                    for (KeyEvent e : events) a.dispatchKeyEvent(e);
+                } else {
+                    View f = a.getCurrentFocus();
+                    InputConnection ic = f == null ? null : f.onCreateInputConnection(new EditorInfo());
+                    if (ic != null) ic.commitText(s, 1);
+                }
             }
+        } finally {
+            view.inputGate.leaveScripted();
         }
     }
 
@@ -489,16 +519,21 @@ final class TestAgent {
         View f = activity().getCurrentFocus();
         InputConnection ic = f == null ? null : f.onCreateInputConnection(new EditorInfo());
         if (ic == null) throw new IllegalStateException("no field has the keyboard");
-        ic.beginBatchEdit();
-        if (commit) {
-            ic.commitText(text, 1);
-        } else if (text.isEmpty()) {
-            ic.setComposingText("", 1);
-            ic.finishComposingText();
-        } else {
-            ic.setComposingText(text, 1);
+        view.inputGate.enterScripted();
+        try {
+            ic.beginBatchEdit();
+            if (commit) {
+                ic.commitText(text, 1);
+            } else if (text.isEmpty()) {
+                ic.setComposingText("", 1);
+                ic.finishComposingText();
+            } else {
+                ic.setComposingText(text, 1);
+            }
+            ic.endBatchEdit();
+        } finally {
+            view.inputGate.leaveScripted();
         }
-        ic.endBatchEdit();
     }
 
     /** Reports the window's actual bar visibility, insets, and swipe behavior. */
@@ -560,13 +595,18 @@ final class TestAgent {
         Activity a = activity();
         KeyEvent down = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0);
         // A key with Control is offered to the keymap first, as NsgoView.dispatchKeyEvent offers it before the window's input stage tries it as a shortcut, so a KeyAlways binding takes Control+A before the field selects all. A consumed key is released at once so its consumed state cannot leak into the next test.
-        if ((meta & KeyEvent.META_CTRL_ON) != 0 && view.keyBindingShortcut(down)) {
-            view.keyBindingShortcut(new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
-            return;
+        view.inputGate.enterScripted();
+        try {
+            if ((meta & KeyEvent.META_CTRL_ON) != 0 && view.keyBindingShortcut(down)) {
+                view.keyBindingShortcut(new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
+                return;
+            }
+            if ((meta & KeyEvent.META_CTRL_ON) != 0 && a.dispatchKeyShortcutEvent(down)) return;
+            a.dispatchKeyEvent(down);
+            a.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
+        } finally {
+            view.inputGate.leaveScripted();
         }
-        if ((meta & KeyEvent.META_CTRL_ON) != 0 && a.dispatchKeyShortcutEvent(down)) return;
-        a.dispatchKeyEvent(down);
-        a.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
     }
 
     /** Taps the alert's button or list item for the action, or cancels it. */

@@ -183,6 +183,7 @@ const (
 	wsExNoActivate     = 0x08000000           // a click does not activate the window
 	wsExTopmost        = 0x00000008           // above every window that is not topmost
 	maNoActivate       = 3                    // MA_NOACTIVATE: a click goes to the window without activating it
+	maNoActivateAndEat = 4                    // MA_NOACTIVATEANDEAT: ignore a click without activating the window
 	cwUseDefault       = ^uintptr(0x7FFFFFFF) // CW_USEDEFAULT as a uintptr
 	gwlStyle           = ^uintptr(15)         // -16
 	swShow             = 5
@@ -353,7 +354,8 @@ func (v *view) detach() {
 }
 
 type window struct {
-	testID       uint32  // the opened test surface, 0 for a regular window
+	testID       uint32 // the opened test surface, 0 for a regular window
+	inputGate    testInputGate
 	surfaceID    uint32  // the engine surface, independent of the test host
 	parentWindow *window // WindowOptions.Parent, separate from the app service host
 	batch        uint64  // batches applied
@@ -801,6 +803,9 @@ func (w *window) serveMessages() {
 		}
 		// Shortcuts take key presses before they become characters, in the window the keys go to: this one or a surface the app opened.
 		if t := windows[m.Hwnd]; t != nil && (t == w || t.hostWindow == w) {
+			if t.ignoreTestInput(m.Message) {
+				continue
+			}
 			t.reportModality(m.Message, m.WParam)
 			if (m.Message == wmKeyDown || m.Message == wmSysKeyDown) && (t.keyDown(m.WParam, m.LParam) || t.shortcut(m.WParam, m.LParam)) {
 				// A consumed system key still counts as a key with Alt held.
@@ -1167,6 +1172,12 @@ func (v *View) Close() {
 		v.w.unobserveEmbeddedRoot()
 		destroyWindow.Call(v.w.hwnd)
 	}
+}
+
+// ignoreTestInput reports whether message is physical user input that a test
+// host window ignores outside a scripted testSurface step.
+func (w *window) ignoreTestInput(message uint32) bool {
+	return !w.inputGate.allow(w.opts.test != nil, message)
 }
 
 // testOpen is what a test host opens the app with: the test's options,
@@ -2456,6 +2467,12 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	}
 	if message == taskbarButtonCreated && taskbarButtonCreated != 0 {
 		w.taskbarButtonReady()
+		return 0
+	}
+	if w.ignoreTestInput(message) {
+		if message == wmMouseActivate {
+			return maNoActivateAndEat
+		}
 		return 0
 	}
 	if message == wmKeyDown && w.escapePointer(wParam) {

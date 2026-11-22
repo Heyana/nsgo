@@ -209,10 +209,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private boolean keptOffScreen, quit;
     // The engine's flags the app starts with (--nsgo-fps).
     private final ArrayList<String> flags = new ArrayList<>();
-    // The test nsgo test -target android runs, whether nsgo dev -automation drives the app, and the agent.
+    // The test nsgo test -target android runs, whether nsgo dev -automation drives the app, the agent, and the physical-input isolation gate.
     private String test;
     private boolean automation;
     private TestAgent agent;
+    final TestInputGate inputGate = new TestInputGate();
     // The alerts shown, by their ID, for the test agent to answer.
     final SparseArray<TestAgent.Alert> alerts = new SparseArray<>();
 
@@ -724,7 +725,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * Only a debuggable build takes one, so no other app can set them.
      */
     void setTest(String encoded) {
-        if (encoded != null && isDebuggable()) test = encoded;
+        if (encoded != null && isDebuggable()) {
+            test = encoded;
+            inputGate.setIsolated(true);
+        }
     }
 
     /**
@@ -2532,6 +2536,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * Reports back to the engine, which routes it to the topmost overlay, modal or stack. While the app runs it takes back even when nothing there does, for the engine cannot answer; false once the app ended or while the view is detached from its engine.
      */
     public boolean back() {
+        if (!inputGate.allowInput()) return true;
         if (!attached || engine == null || !engine.isAlive()) return false;
         event(Protocol.EVENT_BACK, 0, 0, 0, 0, "");
         return true;
@@ -2552,17 +2557,20 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * pops (ITEM_BACK_PREVIEW), which then follows the gesture.
      */
     void backStarted(float progress) {
+        if (!inputGate.allowInput()) return;
         backGesture = true;
         backProgress = progress;
         event(Protocol.EVENT_BACK_STARTED, 0, 0, 0, 0, "");
     }
 
     void backProgressed(float progress) {
+        if (!inputGate.allowInput()) return;
         backProgress = progress;
         if (backScreen != null) placeBack(backDrag(progress));
     }
 
     void backCancelled() {
+        if (!inputGate.allowInput()) return;
         backGesture = false;
         if (backScreen != null) settleBack(false);
         event(Protocol.EVENT_BACK_CANCELLED, 0, 0, 0, 0, "");
@@ -2570,6 +2578,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     /** The gesture went through: the screen leaves, then the engine pops it. */
     void backInvoked() {
+        if (!inputGate.allowInput()) return;
         backGesture = false;
         if (backScreen != null) {
             settleBack(true);
@@ -2683,6 +2692,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      */
     @Override
     public boolean dispatchTouchEvent(MotionEvent e) {
+        if (!inputGate.allowInput()) return true;
         boolean down = e.getActionMasked() == MotionEvent.ACTION_DOWN;
         if (down) modality(Protocol.MODALITY_POINTER);
         boolean mouseHandled = mouse.touch(e);
@@ -5048,6 +5058,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        if (!inputGate.allowInput()) return true;
         if (gamepads != null && gamepads.onKeyEvent(e)) return true;
         mouse.keyEvent(e);
         // A key the window delivers is the keyboard's input. An IME's action or committed Return, which a field offers to keyBinding, leaves the modality, as a software Return does on iOS.
@@ -5057,7 +5068,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     @Override
+    public boolean dispatchKeyShortcutEvent(KeyEvent e) {
+        if (!inputGate.allowInput()) return true;
+        return super.dispatchKeyShortcutEvent(e);
+    }
+
+    @Override
     public boolean dispatchGenericMotionEvent(MotionEvent e) {
+        if (!inputGate.allowInput()) return true;
         if (gamepads != null && gamepads.onGenericMotionEvent(e)) return true;
         return super.dispatchGenericMotionEvent(e);
     }
@@ -5199,6 +5217,18 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         n.view.setFocusable(stop);
         if (!n.view.hasFocus()) n.view.setFocusableInTouchMode(false);
         n.view.setDefaultFocusHighlightEnabled(false);
+    }
+
+    @Override
+    protected boolean dispatchHoverEvent(MotionEvent e) {
+        if (!inputGate.allowInput()) return true;
+        return super.dispatchHoverEvent(e);
+    }
+
+    @Override
+    public boolean dispatchTrackballEvent(MotionEvent e) {
+        if (!inputGate.allowInput()) return true;
+        return super.dispatchTrackballEvent(e);
     }
 
     /** The one matcher for hardware keys and Return delivered through an IME. */

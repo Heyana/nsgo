@@ -28,13 +28,23 @@ func onMainSync(fn func()) {
 	<-done
 }
 
+// scriptedOnMain runs fn on the main thread inside a scripted input scope so
+// test input isolation accepts the input callbacks fn triggers.
+func scriptedOnMain(fn func()) {
+	onMainSync(func() {
+		s.inputGate.enter()
+		defer s.inputGate.leave()
+		fn()
+	})
+}
+
 type testSurface struct{ test *testOpen }
 
 // touchAt sends a touch's phase at at, as the host does, on the main
 // thread.
 func touchAt(phase uint8, at driver.Point) {
 	t := time.Since(s.epoch).Seconds()
-	onMainSync(func() { hostTouch(phase, float64(at.X), float64(at.Y), t) })
+	scriptedOnMain(func() { hostTouch(phase, float64(at.X), float64(at.Y), t) })
 }
 
 func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Modifiers) error {
@@ -44,7 +54,7 @@ func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Mod
 	touchAt(touchBegan, at)
 	time.Sleep(max(hold+50*time.Millisecond, 60*time.Millisecond))
 	endedAt := time.Since(s.epoch).Seconds()
-	onMainSync(func() {
+	scriptedOnMain(func() {
 		// Resolve the tap's own focus change before touchEnded dispatches
 		// EventPress, so an OnPress handler's Ref.Focus() is never blurred
 		// afterward, and keep SwiftUI's FieldNode focus in sync on blur.
@@ -111,7 +121,7 @@ func (t *testSurface) Drag(path []driver.Point) error {
 // reports its offset as when the user scrolls it.
 func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 	var err error
-	onMainSync(func() {
+	scriptedOnMain(func() {
 		root := s.view(s.root)
 		if root == nil {
 			err = errors.New("nothing shows")
@@ -123,6 +133,7 @@ func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 			return
 		}
 		to := clampOffset(v, driver.Point{X: v.offset.X + delta.X, Y: v.offset.Y + delta.Y})
+		s.inputGate.expectScroll(uint32(v.id))
 		s.w.op(opScrollTo, v.id)
 		s.w.f64(float64(to.X), float64(to.Y))
 		s.w.flag(false)
@@ -138,7 +149,7 @@ func (t *testSurface) Hover(driver.Point) error { return nil }
 func (t *testSurface) Type(text string) error {
 	for _, r := range text {
 		var err error
-		onMainSync(func() {
+		scriptedOnMain(func() {
 			v := s.focused
 			if v == nil {
 				err = errors.New("no field has the focus")
@@ -161,7 +172,7 @@ func (t *testSurface) Commit(string) error  { return testhost.ErrNoInputMethod }
 // which deletes its last character; a watch has no other keys.
 func (t *testSurface) Key(key string) error {
 	var err error
-	onMainSync(func() {
+	scriptedOnMain(func() {
 		v := s.focused
 		if v == nil {
 			err = errors.New("no field has the focus")
@@ -190,7 +201,7 @@ func (t *testSurface) Back() error {
 // Answer answers the alert as its button would, and takes it away.
 func (t *testSurface) Answer(id uint32, index int) error {
 	var err error
-	onMainSync(func() {
+	scriptedOnMain(func() {
 		actions, ok := s.alerts[id]
 		if !ok {
 			err = fmt.Errorf("no alert %d shows", id)

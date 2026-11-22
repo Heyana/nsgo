@@ -107,14 +107,26 @@ func (t *testSurface) RequestClose() error {
 	return nil
 }
 
+// scripted runs fn on the window's thread inside a scripted input scope so
+// input isolation accepts the messages fn dispatches.
+func (t *testSurface) scripted(fn func()) {
+	t.onMain(func() {
+		t.w.inputGate.enter()
+		defer t.w.inputGate.leave()
+		fn()
+	})
+}
+
 // lParam is at, in client pixels, as mouse messages carry it.
 func (t *testSurface) lParam(at driver.Point) uintptr {
 	x, y := t.w.px(at.X), t.w.px(at.Y)
 	return uintptr(uint32(uint16(y))<<16 | uint32(uint16(x)))
 }
 
-func (t *testSurface) post(message, wParam uintptr, at driver.Point) {
-	postMessageW.Call(t.w.hwnd, message, wParam, t.lParam(at))
+func (t *testSurface) send(message, wParam uintptr, at driver.Point) {
+	t.scripted(func() {
+		hostSendMessage.Call(t.w.hwnd, message, wParam, t.lParam(at))
+	})
 }
 
 func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Modifiers) error {
@@ -127,7 +139,7 @@ func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Mod
 	}
 	// Send each message on the window's thread while its keyboard state holds the modifiers, so GetKeyState and native controls see them too.
 	send := func(message, buttons uintptr) {
-		t.onMain(func() {
+		t.scripted(func() {
 			var saved [256]byte
 			hostGetKeyboardState.Call(uintptr(unsafe.Pointer(&saved)))
 			state := saved
@@ -155,10 +167,10 @@ func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Mod
 }
 
 func (t *testSurface) RightClick(at driver.Point) error {
-	t.post(wmMouseMove, 0, at)
-	t.post(wmRButtonDown, mkRButton, at)
+	t.send(wmMouseMove, 0, at)
+	t.send(wmRButtonDown, mkRButton, at)
 	time.Sleep(30 * time.Millisecond)
-	t.post(hostRButtonUp, 0, at)
+	t.send(hostRButtonUp, 0, at)
 	return nil
 }
 
@@ -217,7 +229,7 @@ func (t *testSurface) mouseButtonStep(at driver.Point, button driver.MouseButton
 	default:
 		return fmt.Errorf("unsupported mouse button %s", button)
 	}
-	t.onMain(func() {
+	t.scripted(func() {
 		var saved [256]byte
 		hostGetKeyboardState.Call(uintptr(unsafe.Pointer(&saved)))
 		state := saved
@@ -249,8 +261,8 @@ func (t *testSurface) Drag(path []driver.Point) error {
 	if len(path) == 0 {
 		return errors.New("an empty drag")
 	}
-	t.post(wmMouseMove, 0, path[0])
-	t.post(wmLButtonDown, mkLButton, path[0])
+	t.send(wmMouseMove, 0, path[0])
+	t.send(wmLButtonDown, mkLButton, path[0])
 	time.Sleep(100 * time.Millisecond)
 	at := path[0]
 	for _, to := range path[1:] {
@@ -258,12 +270,12 @@ func (t *testSurface) Drag(path []driver.Point) error {
 		n := int(max(absPoints(dx), absPoints(dy))/10) + 1
 		for i := 1; i <= n; i++ {
 			f := driver.Points(i) / driver.Points(n)
-			t.post(wmMouseMove, mkLButton, driver.Point{X: at.X + dx*f, Y: at.Y + dy*f})
+			t.send(wmMouseMove, mkLButton, driver.Point{X: at.X + dx*f, Y: at.Y + dy*f})
 			time.Sleep(16 * time.Millisecond)
 		}
 		at = to
 	}
-	t.post(hostLButtonUp, 0, at)
+	t.send(hostLButtonUp, 0, at)
 	return nil
 }
 
@@ -271,22 +283,24 @@ func (t *testSurface) Drag(path []driver.Point) error {
 func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 	steps := preciseScrollSteps(delta)
 	var g preciseScroll
-	t.onMain(func() { g = t.w.beginPreciseScroll(at) })
+	t.scripted(func() { g = t.w.beginPreciseScroll(at) })
 	time.Sleep(16 * time.Millisecond)
 	for _, step := range steps {
-		t.onMain(func() { t.w.stepPreciseScroll(&g, at, step) })
+		t.scripted(func() { t.w.stepPreciseScroll(&g, at, step) })
 		time.Sleep(16 * time.Millisecond)
 	}
-	t.onMain(func() { t.w.endPreciseScroll(&g, at) })
+	t.scripted(func() { t.w.endPreciseScroll(&g, at) })
 	return nil
 }
 
 func (t *testSurface) Hover(at driver.Point) error {
 	if at.X < 0 || at.Y < 0 {
-		postMessageW.Call(t.w.hwnd, hostMouseLeave, 0, 0)
+		t.scripted(func() {
+			hostSendMessage.Call(t.w.hwnd, hostMouseLeave, 0, 0)
+		})
 		return nil
 	}
-	t.post(wmMouseMove, 0, at)
+	t.send(wmMouseMove, 0, at)
 	return nil
 }
 
@@ -299,7 +313,9 @@ func (t *testSurface) Type(text string) error {
 			continue
 		}
 		for _, u := range utf16.Encode([]rune{r}) {
-			postMessageW.Call(t.w.hwnd, wmChar, uintptr(u), 1)
+			t.scripted(func() {
+				hostSendMessage.Call(t.w.hwnd, wmChar, uintptr(u), 1)
+			})
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -435,7 +451,7 @@ func (t *testSurface) stroke(key string, down, up bool) error {
 	if err != nil {
 		return err
 	}
-	t.onMain(func() {
+	t.scripted(func() {
 		if !down && !t.held[k.vk] {
 			err = fmt.Errorf("key %q is not held", key)
 			return
@@ -511,12 +527,14 @@ func (t *testSurface) Answer(id uint32, index int) error {
 				return // not drawn yet
 			}
 			drawn = true
+			w.inputGate.enter()
+			defer w.inputGate.leave()
 			if index < 0 {
 				if !s.cancelable {
 					err = errors.New("the alert cannot be dismissed")
 					return
 				}
-				postMessageW.Call(w.hwnd, wmKeyDown, vkEscape, 1)
+				hostSendMessage.Call(w.hwnd, wmKeyDown, vkEscape, 1)
 				return
 			}
 			if index >= len(s.buttons) {
@@ -527,8 +545,8 @@ func (t *testSurface) Answer(id uint32, index int) error {
 			x := int32(float64((r.left+r.right)/2) * w.scale)
 			y := int32(float64((r.top+r.bottom)/2) * w.scale)
 			at := uintptr(uint32(y)<<16 | uint32(x)&0xffff)
-			postMessageW.Call(w.hwnd, wmLButtonDown, mkLButton, at)
-			postMessageW.Call(w.hwnd, wmLButtonUp, 0, at)
+			hostSendMessage.Call(w.hwnd, wmLButtonDown, mkLButton, at)
+			hostSendMessage.Call(w.hwnd, wmLButtonUp, 0, at)
 		})
 		if err != nil || drawn {
 			return err
