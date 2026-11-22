@@ -684,9 +684,7 @@ func (w *window) toggleMaximize() {
 	}
 }
 
-// setConstraints limits the surface's size, which the window's follows
-// around its menu bar and title bar. A fixed window takes its natural
-// size from the request; nonfixed X11 maximums use WM_NORMAL_HINTS.
+// setConstraints limits the surface's size, which the window's follows around its menu bar and title bar. A fixed window takes its natural size from the request; nonfixed X11 maximums use WM_NORMAL_HINTS.
 func (w *window) setConstraints(c driver.WindowConstraints) {
 	if w.win == 0 {
 		return

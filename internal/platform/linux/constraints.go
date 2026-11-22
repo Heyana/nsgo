@@ -54,8 +54,7 @@ func init() {
 	cbDecorationLayoutChanged = newCallback(decorationLayoutChanged)
 }
 
-// decorationLayout keeps the session's button placement while removing
-// controls the window does not allow.
+// decorationLayout keeps the session's button placement while removing controls the window does not allow.
 func decorationLayout(layout string, c driver.WindowConstraints) string {
 	sides := strings.Split(layout, ":")
 	for i, side := range sides {
@@ -90,8 +89,7 @@ func (w *window) updateWindowLimits() {
 	c := w.chrome.constraints
 	if w.limits.header == 0 && (c.NoMinimize || c.NoMaximize || c.NoResize) {
 		w.limits.header = gtkHeaderBarNew()
-		// GTK requires changing the titlebar while unrealized. Keeping
-		// this header afterward avoids further remaps when flags change.
+		// GTK requires changing the titlebar while unrealized. Keeping this header afterward avoids further remaps when flags change.
 		mapped := gtkWidgetGetMapped(w.win) != 0
 		if gtkWidgetGetRealized(w.win) != 0 {
 			w.limits.rewatchState = w.watchedRoot != 0
@@ -113,8 +111,7 @@ func (w *window) updateDecorationLayout() {
 	canMinimize, canMaximize := true, true
 	if native := gtkNativeGetSurface(w.win); native != 0 {
 		if w.limits.rewatchState {
-			// The GtkWindow survives the titlebar change, but its old
-			// GdkSurface and the state signal watched by mappedCallback do not.
+			// The GtkWindow survives the titlebar change, but its old GdkSurface and the state signal watched by mappedCallback do not.
 			gSignalConnectObj(native, cstr("notify::state"), cbActivity, w.surface, 0)
 			w.limits.rewatchState = false
 		}
@@ -184,9 +181,7 @@ var (
 	})
 )
 
-// applyMaximumHints augments GTK's minimum and resize hints with the
-// app's nonfixed maximum. X11 sizes include client decorations and use
-// physical pixels; NSGo's constraints name the content in logical points.
+// applyMaximumHints augments GTK's minimum and resize hints with the app's nonfixed maximum. X11 sizes include client decorations and use physical pixels; NSGo's constraints name the content in logical points.
 func (w *window) applyMaximumHints() {
 	if w.win == 0 || gtkWidgetGetMapped(w.win) == 0 || !bindX11SizeHints() {
 		return

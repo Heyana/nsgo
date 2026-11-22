@@ -260,10 +260,7 @@ func SetWindowPointerEvents(cx *core.Scope, p WindowPointerEvents) { cx.SetWindo
 //
 //	desktop.SetWindowConstraints(cx, desktop.WindowConstraints{MinWidth: 480, MinHeight: 320, NoMaximize: true})
 //
-// A window sets them as it opens with WindowOptions.Constraints, and the
-// main window with nsgo.WindowConstraints. Linux applies maximum sizes
-// through X11's window manager and filters GTK's native titlebar buttons.
-// Wayland supports fixed sizes, but nonfixed maximums remain unsupported.
+// A window sets them as it opens with WindowOptions.Constraints, and the main window with nsgo.WindowConstraints. Linux applies maximum sizes through X11's window manager and filters GTK's native titlebar buttons. Wayland supports fixed sizes, but nonfixed maximums remain unsupported.
 func SetWindowConstraints(cx *core.Scope, c WindowConstraints) { cx.SetWindowConstraints(c) }
 
 // OrderFront shows the window, restoring it when minimized or hidden,
