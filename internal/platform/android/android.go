@@ -143,6 +143,8 @@ const (
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
 const (
+	// extFrameRate sets the preferred callback rate of the named surface: its ID and a float in Hz.
+	extFrameRate = 1
 	// extAudioFile supplies a file staged for a sound or player (audio.go): surface, object, path, error code and message.
 	extAudioFile = 2
 	// extAssetRead reads a bundled file through the APK's AssetManager for assets.go: its request ID and the path under assets/.
@@ -1032,7 +1034,8 @@ func (s *surface) SetPreferredFrameRate(rate driver.FrameRateRange) {
 }
 
 func (s *surface) setFrameRate(id uint32, rate driver.FrameRateRange) {
-	s.send(msgFrameRate, func(w *writer) {
+	// A runtime that reads no extended messages keeps its default cadence (errNoExtendedMessages).
+	_ = s.sendExtended(extFrameRate, func(w *writer) {
 		w.u32(id)
 		w.float(rate.Preferred)
 	})

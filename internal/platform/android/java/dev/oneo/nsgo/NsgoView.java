@@ -1119,15 +1119,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     shadows.remove(id);
                     break;
                 }
-                case Protocol.FRAME_RATE: {
-                    int id = message.readInt();
-                    float rate = message.readFloat();
-                    ui.post(() -> {
-                        NsgoView view = id == 0 ? this : overlays.view(id);
-                        if (view != null) view.preferFrameRate(rate);
-                    });
-                    break;
-                }
                 default:
                     Log.w(TAG, "unknown message " + kind);
             }
@@ -1167,6 +1158,15 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 long id = message.readLong();
                 String path = Protocol.readString(message);
                 files.execute(() -> readAsset(id, path));
+                break;
+            }
+            case Protocol.EXT_FRAME_RATE: {
+                int id = message.readInt();
+                float rate = message.readFloat();
+                ui.post(() -> {
+                    NsgoView view = id == 0 ? this : overlays.view(id);
+                    if (view != null) view.preferFrameRate(rate);
+                });
                 break;
             }
             default:

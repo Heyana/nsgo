@@ -63,6 +63,8 @@ final class Protocol {
                 return true;
             case EXT_ASSET_READ:
                 return true;
+            case EXT_FRAME_RATE:
+                return true;
             default:
                 return false;
         }
@@ -109,9 +111,6 @@ final class Protocol {
 
     /** A correlated text request: request ID and operation. */
     static final int TEXT_REQUEST = 26;
-    /** Sets the surface's preferred frame rate: its ID and a float in Hz. */
-    static final int FRAME_RATE = 32;
-
     /** Starts or stops rumble on a game controller: device id, lowFreq, highFreq, durationMs (gamepad.go, Gamepads). */
     static final int GAMEPAD_RUMBLE = 27;
 
@@ -136,6 +135,8 @@ final class Protocol {
     static final int EXT_SURFACE_RESET = 11;
     /** The environment's third capability byte's bit for a device that plays timed vibration patterns (capHapticPatterns in protocol.go). */
     static final int CAP_HAPTIC_PATTERNS = 16;
+    /** Sets the surface's preferred frame rate: its ID and a float in Hz. */
+    static final int EXT_FRAME_RATE = 1;
 
     /** Reads a bundled file: its request ID and the path under assets/. */
     static final int EXT_ASSET_READ = 9;
