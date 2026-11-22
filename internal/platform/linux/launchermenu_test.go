@@ -13,8 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// TestLauncherQuicklistOverDBus exercises the actual exported object, including
-// a menu owned by a child surface and stale events after another surface sets it.
+// TestLauncherQuicklistOverDBus exercises the actual exported object, including a menu owned by a child surface and stale events after another surface sets it.
 func TestLauncherQuicklistOverDBus(t *testing.T) {
 	if testing.Short() || os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
 		t.Skip("needs GTK and a session bus")
@@ -167,8 +166,7 @@ func TestLauncherQuicklistOverDBus(t *testing.T) {
 	click(nested)
 	click(disabled)
 	wait(func() bool { return childClicks.Load() == 2 })
-	// Exercise a real consumer when installed; libdbusmenu coalesces events
-	// through EventGroup, as launcher clients do.
+	// Exercise a real consumer when installed; libdbusmenu coalesces events through EventGroup, as launcher clients do.
 	expectedChildClicks := int32(2)
 	if lib, err := purego.Dlopen("libdbusmenu-glib.so.4", purego.RTLD_NOW|purego.RTLD_LOCAL); err == nil {
 		var clientNew func(name, path *byte) uintptr
@@ -245,8 +243,7 @@ func TestLauncherQuicklistOverDBus(t *testing.T) {
 	if got := rootClicks.Load(); got != 2 {
 		t.Errorf("cleared selection dispatched: %d", got)
 	}
-	// An owner that closes while its menu is current must clear the native
-	// export even when its engine no longer sends its cleanup batch.
+	// An owner that closes while its menu is current must clear the native export even when its engine no longer sends its cleanup batch.
 	rootScope.Post(func() {
 		child = rootScope.OpenWindow(core.WindowOptions{Title: "latest quicklist owner", Hidden: true}, func(cx *core.Scope) core.Node {
 			cx.SetDockMenu([]core.MenuItem{{Label: "Latest", OnSelect: func() { childClicks.Add(1) }}})

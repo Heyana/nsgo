@@ -208,8 +208,7 @@ func menuArray(signature string, values []uintptr) uintptr {
 	return v
 }
 
-// eventMethod serves both individual events and the batches libdbusmenu clients
-// send. Unknown IDs are reported by EventGroup instead of reaching old actions.
+// eventMethod serves both individual events and the batches libdbusmenu clients send. Unknown IDs are reported by EventGroup instead of reaching old actions.
 func (m *dbusMenu) eventMethod(method string, params, invocation uintptr, event func(int32, string)) bool {
 	switch method {
 	case "Event":

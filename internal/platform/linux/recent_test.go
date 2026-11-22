@@ -18,8 +18,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// TestRecentFilesPreserveOtherApplications runs with fresh GLib XDG state: it
-// must never inspect or change the developer's actual recently-used.xbel.
+// TestRecentFilesPreserveOtherApplications runs with fresh GLib XDG state: it must never inspect or change the developer's actual recently-used.xbel.
 func TestRecentFilesPreserveOtherApplications(t *testing.T) {
 	if testing.Short() {
 		t.Skip("needs GTK")
@@ -128,8 +127,7 @@ func TestRecentFilesPreserveOtherApplications(t *testing.T) {
 	wait(func(items map[string][]registration) bool {
 		return len(items) == 3 && len(items[linuxFileURI(shared)]) == 1 && len(items[linuxFileURI(own)]) == 1
 	})
-	// GTK must construct a usable app launcher from our quoting and URI, even
-	// with apostrophes and percent signs in the executable's filename.
+	// GTK must construct a usable app launcher from our quoting and URI, even with apostrophes and percent signs in the executable's filename.
 	w.onLoop(t, func() {
 		var lookup func(manager uintptr, uri *byte, err *uintptr) uintptr
 		var createApp func(info uintptr, app *byte, err *uintptr) uintptr
@@ -191,8 +189,7 @@ func TestRecentFilesPreserveOtherApplications(t *testing.T) {
 	t.Log("recent-native-ok")
 }
 
-// A failed selective clear must never replace corrupt or unreadable history
-// with a newly empty file.
+// A failed selective clear must never replace corrupt or unreadable history with a newly empty file.
 func TestRecentClearKeepsMalformedHistory(t *testing.T) {
 	if err := openLibs(); err != nil {
 		t.Skip(err)

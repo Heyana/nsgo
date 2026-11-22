@@ -14,8 +14,7 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-// GtkRecentData mirrors GTK's public metadata structure. AppName is the stable
-// app ID rather than a window title, so another app never shares its history.
+// GtkRecentData mirrors GTK's public metadata structure. AppName is the stable app ID rather than a window title, so another app never shares its history.
 type gtkRecentData struct {
 	DisplayName, Description   *byte
 	MimeType, AppName, AppExec *byte
@@ -54,9 +53,7 @@ var (
 	})
 )
 
-// recentFile runs in mount order on GTK's thread, including a clear between two
-// adds. Emitting changed flushes GTK's pending write before accessing its XBEL,
-// and reloads it after a selective clear; no private GtkRecentManager ABI is used.
+// recentFile runs in mount order on GTK's thread, including a clear between two adds. Emitting changed flushes GTK's pending write before accessing its XBEL, and reloads it after a selective clear; no private GtkRecentManager ABI is used.
 func (w *window) recentFile(path string, clear bool) {
 	if w.opts.ID == "" {
 		return
@@ -92,8 +89,7 @@ func addRecentFile(manager uintptr, path, appID, executable string) error {
 	defer gFree(contentType)
 	mime := gContentTypeGetMimeType(contentType)
 	defer gFree(mime)
-	// XBEL's exec uses shell quoting, then expands %u to the URI. Escape
-	// executable percent signs too; %f would insert an unquoted path with spaces.
+	// XBEL's exec uses shell quoting, then expands %u to the URI. Escape executable percent signs too; %f would insert an unquoted path with spaces.
 	exec := desktopExecArg(executable) + " %u"
 	data := gtkRecentData{MimeType: cstr(goString(mime)), AppName: cstr(appID), AppExec: cstr(exec)}
 	if gtkRecentManagerAddFull(manager, cstr(uri), &data) == 0 {
@@ -102,9 +98,7 @@ func addRecentFile(manager uintptr, path, appID, executable string) error {
 	return nil
 }
 
-// clearRecentApplications removes only appID's registration. GTK's public remove
-// and purge calls remove other apps' registrations as well, so use GLib's public
-// bookmark API on the same file. Unshared documents disappear altogether.
+// clearRecentApplications removes only appID's registration. GTK's public remove and purge calls remove other apps' registrations as well, so use GLib's public bookmark API on the same file. Unshared documents disappear altogether.
 func clearRecentApplications(filename, appID string) error {
 	bookmark := gBookmarkFileNew()
 	defer gBookmarkFileFree(bookmark)

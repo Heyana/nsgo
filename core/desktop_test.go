@@ -210,8 +210,7 @@ func TestDockMenuFollowsItsOwner(t *testing.T) {
 	}
 }
 
-// Pending app icon menus follow call order across surfaces, even though the
-// app surface always commits before its child windows.
+// Pending app icon menus follow call order across surfaces, even though the app surface always commits before its child windows.
 func TestDockMenuPendingReplacementAcrossSurfaces(t *testing.T) {
 	cases := []struct {
 		name           string

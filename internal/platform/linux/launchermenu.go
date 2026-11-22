@@ -8,9 +8,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// launcherMenu is the app's quicklist on the same connection that emits its
-// LauncherEntry updates. The root surface owns its export, while owner is the
-// surface whose tree must hear EventDockMenu.
+// launcherMenu is the app's quicklist on the same connection that emits its LauncherEntry updates. The root surface owns its export, while owner is the surface whose tree must hear EventDockMenu.
 type launcherMenu struct {
 	bus          uintptr
 	path         string
