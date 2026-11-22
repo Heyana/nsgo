@@ -35,6 +35,11 @@ var (
 
 func handleGeoClue(w *window, it *driver.MountItem) {
 	req := *it.Sensor
+	if (req.Kind != driver.SensorLocation && req.Kind != driver.SensorBackgroundLocation) ||
+		(req.Command != driver.SensorReadPermission && req.Command != driver.SensorRequestPermission && req.Command != driver.SensorLocate && req.Command != driver.SensorWatchLocation) {
+		w.engine.Dispatch(driver.NoSensor(it))
+		return
+	}
 	if req.Command == driver.SensorWatchLocation || req.Kind == driver.SensorMotion {
 		w.engine.Dispatch(driver.NoSensor(it))
 		return
