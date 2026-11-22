@@ -531,8 +531,13 @@ func readEnvironment(r *reader) driver.Environment {
 	return env
 }
 
-// capExtendedMessages is the third capability byte's bit for a runtime that reads msgExtended messages (Protocol.CAP_EXTENDED_MESSAGES).
-const capExtendedMessages = 1
+// The third capability byte's bits, kept in sync with Protocol.java's CAP_* constants.
+const (
+	// capExtendedMessages is set by a runtime that reads msgExtended messages (Protocol.CAP_EXTENDED_MESSAGES).
+	capExtendedMessages = 1
+	// capGPU is set where the device runs the OpenGL ES 3.0 GPU view (GpuView.java), env.GPU.
+	capGPU = 4
+)
 
 // capDiscoverServices is the third capability byte's bit for a runtime that runs DNS-SD through NsdManager on extDiscovery messages (Protocol.CAP_DISCOVER_SERVICES).
 const capDiscoverServices = 32
@@ -620,7 +625,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 		env.LocaleSettings.MeasurementSystem = r.str()
 		env.LocaleSettings.TemperatureUnit = r.str()
 		env.LocaleSettings.Region = r.str()
-		// The second capability byte's bits are all taken too; a third follows the locale settings, before the display, so a runtime built before it, which ends here, reads as having none of them. Its bits: capExtendedMessages, capAudio, capSpeech, capHapticPatterns, capDiscoverServices and capFetchToFile.
+		// The second capability byte's bits are all taken too; a third follows the locale settings, before the display, so a runtime built before it, which ends here, reads as having none of them. Its bits: capGPU, capExtendedMessages, capAudio, capSpeech, capHapticPatterns, capDiscoverServices and capFetchToFile.
 		if len(r.buf) > 0 {
 			third = r.byte()
 		}
@@ -631,6 +636,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	env.AudioPlaybackControls = env.Audio
 	env.HapticPatterns = third&capHapticPatterns != 0
 	env.Speech = third&capSpeech != 0
+	env.GPU = third&capGPU != 0
 	// The display follows the third capability byte.
 	if len(r.buf) > 0 && r.byte() != 0 && len(r.buf) >= 20 {
 		id := r.u32()

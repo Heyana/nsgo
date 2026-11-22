@@ -69,6 +69,8 @@ final class Protocol {
                 return true;
             case EXT_DOWNLOAD:
                 return true;
+            case EXT_GPU_FRAME:
+                return true;
             default:
                 return false;
         }
@@ -107,7 +109,6 @@ final class Protocol {
 
     /** The requesting surface, the request's count and the app's data directory. */
     static final int DISK_SPACE = 23;
-
     /** Starts frame sampling (with or without a visible panel), or updates the panel. */
     static final int PERF_PANEL = 24;
 
@@ -127,6 +128,8 @@ final class Protocol {
     static final int CAP_AUDIO = 2;
     /** The third capability byte's bit for a device and runtime that recognize speech (Speech.java), capSpeech in protocol.go. */
     static final int CAP_SPEECH = 8;
+    /** The third capability byte's bit for a device that runs the OpenGL ES 3.0 GPU view (GpuView, capGPU in protocol.go). */
+    static final int CAP_GPU = 4;
 
     // Extended kinds, the first byte of an EXTENDED message, kept in sync with android.go's ext* constants: each is EXT_NAME = n with n from 1 up, and has its case in isExtended.
     /** A staged audio file, or a failure: surface, object, path, error code and message (audio.go, Audio.file). */
@@ -148,6 +151,8 @@ final class Protocol {
     static final int EXT_FRAME_RATE = 1;
     /** A process-wide background download command, JSON, which NsgoEngine hands to BackgroundDownloadService. */
     static final int EXT_DOWNLOAD = 5;
+    /** Submits an off-commit 3D GPU frame batch directly to a GpuView (gpu.go, GpuView). */
+    static final int EXT_GPU_FRAME = 3;
 
     /** Reads a bundled file: its request ID and the path under assets/. */
     static final int EXT_ASSET_READ = 9;
@@ -196,6 +201,8 @@ final class Protocol {
 
     /** Answers DISK_SPACE with its surface and count, an error ("" for none), total and allocatable bytes. */
     static final int DISK_SPACE_REPLY = 25;
+    /** What a GpuView reports: surface, view ID, event kind, generation and payload (gpu.go, GpuView). */
+    static final int GPU_EVENT = 34;
 
     /** Answers TEXT_REQUEST with its request ID, its operation, and the reply bytes or an error. */
     static final int TEXT_REPLY = 27;
@@ -383,6 +390,7 @@ final class Protocol {
     static final int ITEM_KEEP_IMAGE = 112;
     static final int ITEM_RELEASE_IMAGE = 113;
     static final int ITEM_REQUEST_REVIEW = 115;
+    static final int ITEM_GPU = 116;
     static final int ITEM_SAVE_PREFLIGHT_ANSWER = 117;
     static final int ITEM_SAVE_FILE_PREFLIGHT = 118;
     static final int ITEM_SYSTEM_GESTURES = 121;
@@ -431,6 +439,7 @@ final class Protocol {
     static final int KIND_VIDEO = 9;
     static final int KIND_NATIVE = 10;
     static final int KIND_SHADER = 11;
+    static final int KIND_GPU = 12;
 
     // Event kinds, as in core/events.go. An event mask holds 1 << kind.
     static final int EVENT_PRESS = 1;

@@ -1014,6 +1014,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             if (n.keyframer != null) n.keyframer.cancel();
             if (n.web != null) n.web.destroy();
             if (n.video != null) n.video.destroy();
+            if (n.gpu != null) n.gpu.destroy();
             if (n.embedded != null) n.embedded.destroy();
             n.embedded = null;
         }
@@ -1032,6 +1033,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private void destroyComponents() {
         for (int i = 0; i < nodes.size(); i++) {
             Node n = nodes.valueAt(i);
+            if (n.gpu != null) {
+                n.gpu.destroy();
+                n.gpu = null;
+            }
             if (n.embedded != null) {
                 n.embedded.destroy();
                 n.embedded = null;
@@ -1245,6 +1250,16 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             case Protocol.EXT_GAME_SERVICES:
                 gameServicesUnavailable(payload);
                 break;
+            case Protocol.EXT_GPU_FRAME: {
+                int to = message.readInt();
+                int viewId = message.readInt();
+                // GpuView reads the frame from its start, past the extended kind byte.
+                byte[] frame = Arrays.copyOfRange(payload, 1, payload.length);
+                if (!GpuView.dispatch(to, viewId, frame)) {
+                    ui.post(() -> GpuView.dispatch(to, viewId, frame));
+                }
+                break;
+            }
             default:
                 Log.w(TAG, "unknown extended message " + kind);
         }
@@ -1395,7 +1410,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     measurementSystem(formatLocale)).write(d);
             // The second capability byte's bits are taken too: a third follows the locale settings, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, Protocol.CAP_SPEECH where the device recognizes speech, Protocol.CAP_DISCOVER_SERVICES and Protocol.CAP_FETCH_TO_FILE.
             int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES | Protocol.CAP_FETCH_TO_FILE | (hapticPatterns.available ? Protocol.CAP_HAPTIC_PATTERNS : 0)
-                    | (Speech.available(getContext()) ? Protocol.CAP_SPEECH : 0);
+                    | (Speech.available(getContext()) ? Protocol.CAP_SPEECH : 0)
+                    | (GpuView.available(getContext()) ? Protocol.CAP_GPU : 0);
             d.writeByte(third);
             writeDisplay(d);
         } catch (IOException impossible) {
@@ -3285,6 +3301,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     n.headerScreen = null;
                 }
                 if (n.video != null) n.video.destroy();
+                if (n.gpu != null) n.gpu.destroy();
                 if (n.embedded != null) n.embedded.destroy();
                 if (n.modal >= 0) event(Protocol.EVENT_MODAL_DISMISSED, n.id, 0, 0, 0, "");
                 break;
@@ -3502,6 +3519,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             case Protocol.ITEM_RELEASE_IMAGE:
                 canvasImages.release(Protocol.readString(in));
                 break;
+            case Protocol.ITEM_GPU: {
+                int colorFormat = in.readUnsignedByte();
+                int depthFormat = in.readUnsignedByte();
+                int sampleCount = in.readInt();
+                if (n != null && n.gpu != null) n.gpu.configure(colorFormat, depthFormat, sampleCount);
+                break;
+            }
             case Protocol.ITEM_SET_CLIPBOARD:
                 clipboard().setPrimaryClip(ClipData.newPlainText("", Protocol.readString(in)));
                 break;
@@ -5709,6 +5733,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 n.children = (ViewGroup) view;
                 n.children.addView(n.shader, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
                 break;
+            case Protocol.KIND_GPU:
+                // A TextureView draws the 3D GPU surface on the shared GL thread;
+                // native children (HUD, buttons) sit above it in the same container.
+                n.gpu = new GpuView(context, surface, n.id, payload -> write(Protocol.GPU_EVENT, payload));
+                n.children = (ViewGroup) view;
+                n.children.addView(n.gpu, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+                break;
             case Protocol.KIND_SCROLL:
                 n.children = new Content(context);
                 scroller(n, false, false);
@@ -7188,6 +7219,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         CanvasNode canvas;
         ShaderNode shader;
         ShaderEffect effect;
+        GpuView gpu;
         WebNode web;
         VideoNode video;
         /** The view's background, the look it shows and the transition moving it. */

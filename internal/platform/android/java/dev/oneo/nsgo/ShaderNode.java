@@ -364,6 +364,40 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         return EGL14.eglMakeCurrent(display, pictureSurface, pictureSurface, context);
     }
 
+    /** Returns the shared GL thread handler, starting the thread and EGL context if needed. */
+    static Handler glHandler() {
+        start();
+        return gl;
+    }
+
+    /** Returns the shared EGL display (GL thread only). */
+    static EGLDisplay eglDisplay() { return display; }
+
+    /** Returns the shared OpenGL ES 3.0 EGL context (GL thread only). */
+    static EGLContext eglContext() { return context; }
+
+    /** Returns the shared EGL config with RGBA8 and depth buffer (GL thread only). */
+    static EGLConfig eglConfig() { return config; }
+
+    /** Reports whether initializing the shared OpenGL ES 3.0 context failed (GL thread only). */
+    static boolean glFailed() { return failed; }
+
+    /** Recreates the shared EGL context after EGL_CONTEXT_LOST (GL thread only). */
+    static void recreateContext() {
+        if (display != null && display != EGL14.EGL_NO_DISPLAY) {
+            EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT);
+            if (context != null && context != EGL14.EGL_NO_CONTEXT) {
+                EGL14.eglDestroyContext(display, context);
+            }
+            EGL14.eglTerminate(display);
+        }
+        display = null;
+        context = null;
+        config = null;
+        failed = false;
+        makeContext();
+    }
+
     private static void makeContext() {
         display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
         int[] version = new int[2];
@@ -371,16 +405,34 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
             failed = true;
             return;
         }
-        int[] attribs = {EGL14.EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */,
-                EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT | EGL14.EGL_PBUFFER_BIT, EGL14.EGL_RED_SIZE, 8,
-                EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8, EGL14.EGL_NONE};
+        // Prefer RGBA8 with a 24-bit depth (+ 8-bit stencil) buffer for 3D GpuView surfaces,
+        // falling back gracefully if a driver exposes fewer depth bits.
+        int[][] candidates = {
+            {EGL14.EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT | EGL14.EGL_PBUFFER_BIT, EGL14.EGL_RED_SIZE, 8,
+                    EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_DEPTH_SIZE, 24, EGL14.EGL_STENCIL_SIZE, 8, EGL14.EGL_NONE},
+            {EGL14.EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT | EGL14.EGL_PBUFFER_BIT, EGL14.EGL_RED_SIZE, 8,
+                    EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_DEPTH_SIZE, 24, EGL14.EGL_NONE},
+            {EGL14.EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT | EGL14.EGL_PBUFFER_BIT, EGL14.EGL_RED_SIZE, 8,
+                    EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_DEPTH_SIZE, 16, EGL14.EGL_NONE},
+            {EGL14.EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT | EGL14.EGL_PBUFFER_BIT, EGL14.EGL_RED_SIZE, 8,
+                    EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8, EGL14.EGL_NONE},
+        };
         EGLConfig[] configs = new EGLConfig[1];
         int[] n = new int[1];
-        if (!EGL14.eglChooseConfig(display, attribs, 0, configs, 0, 1, n, 0) || n[0] == 0) {
+        config = null;
+        for (int[] attribs : candidates) {
+            if (EGL14.eglChooseConfig(display, attribs, 0, configs, 0, 1, n, 0) && n[0] > 0) {
+                config = configs[0];
+                break;
+            }
+        }
+        if (config == null) {
             failed = true;
             return;
         }
-        config = configs[0];
         context = EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT,
                 new int[] {EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE}, 0);
         failed = context == EGL14.EGL_NO_CONTEXT;

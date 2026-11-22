@@ -143,6 +143,8 @@ const (
 	msgGameServicesReport = 31
 	// msgDownloadReport is a background download's progress or result, JSON (driver.ReportDownload).
 	msgDownloadReport = 36
+	// msgGPUEvent is what GpuView.java reports: ready, resize, deviceLost, error, or readback (gpu.go).
+	msgGPUEvent = 34
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
@@ -161,6 +163,8 @@ const (
 	extSurfaceReset = 11
 	// extDownload carries a process-wide background download command as JSON, which NsgoEngine hands to BackgroundDownloadService.
 	extDownload = 5
+	// extGPUFrame submits an off-commit 3D GPU frame to GpuView.java, gpu.go's encoding.
+	extGPUFrame = 3
 )
 
 // The parts of an image view's request msgImage carries.
@@ -512,6 +516,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.audioReport(&r)
 		case msgGameServicesReport:
 			driver.ReportGameServices(slices.Clone(payload))
+		case msgGPUEvent:
+			s.gpuEvent(&r)
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {
@@ -1058,8 +1064,6 @@ func (s *surface) RequestFrame() {
 	s.frameWanted.Store(true)
 	s.send(msgWantFrame, func(*writer) {})
 }
-
-func (s *surface) SubmitGPU(driver.GPUFrame) {}
 
 // SetPreferredFrameRate sets the window's refresh hint and callback
 // cadence in the Android runtime.
@@ -1625,6 +1629,8 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			} else {
 				w.u32(0) // no program
 			}
+		case driver.ItemGPU:
+			writeGPUViewConfig(w, it.GPU)
 		case driver.ItemSetClipboard, driver.ItemAnnounce, driver.ItemTitle, driver.ItemAccessibilityLabel,
 			driver.ItemKeepImage, driver.ItemReleaseImage:
 			w.str(it.Value)
