@@ -19,10 +19,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestDrawnTrayTracksItsView reads the native HICON made for a retained view,
-// changes that view, updates metadata, re-adds only this app's icon as
-// TaskbarCreated does, and removes it. Shell registration is checked separately;
-// no process restarts Explorer.
+// TestDrawnTrayTracksItsView reads the native HICON made for a retained view, changes that view, updates metadata, re-adds only this app's icon as TaskbarCreated does, and removes it. Shell registration is checked separately; no process restarts Explorer.
 func TestDrawnTrayTracksItsView(t *testing.T) {
 	if testing.Short() {
 		t.Skip("registers a native notification icon")
@@ -87,8 +84,7 @@ func TestDrawnTrayTracksItsView(t *testing.T) {
 		return ok
 	})
 	onMain(t, hwnd, func(w *window) {
-		// Remove just our shell registration, then use the production
-		// Explorer-restart path to re-add its cached drawn icon.
+		// Remove just our shell registration, then use the production Explorer-restart path to re-add its cached drawn icon.
 		data := w.trayData(w.trays[id].cfg, changed)
 		data.Size = uint32(unsafe.Sizeof(data))
 		shellNotifyIcon.Call(nimDelete, uintptr(unsafe.Pointer(&data)))
@@ -165,8 +161,7 @@ func TestDrawnTrayRefreshesAfterImageLoad(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the tray's image did not start loading")
 	}
-	// Release the image after its first incomplete frame, not as part of an
-	// engine commit. The native image completion must schedule the redraw.
+	// Release the image after its first incomplete frame, not as part of an engine commit. The native image completion must schedule the redraw.
 	nativeTrayWait(t, "the first transparent image-loading frame", func() bool {
 		var blank bool
 		onMain(t, hwnd, func(w *window) {

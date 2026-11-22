@@ -7,8 +7,7 @@ import (
 	"unsafe"
 )
 
-// queueTrayDraw coalesces invalidations on the hidden surface's own message
-// queue. Invalidating its HWND alone cannot paint it while it stays hidden.
+// queueTrayDraw coalesces invalidations on the hidden surface's own message queue. Invalidating its HWND alone cannot paint it while it stays hidden.
 func (w *window) queueTrayDraw() {
 	if w.hwnd == 0 || w.trayDrawPending || w.destroying {
 		return
@@ -22,9 +21,7 @@ func (w *window) queueTrayDraw() {
 	})
 }
 
-// drawTray paints the retained tree into an alpha bitmap at the shell's icon
-// size, without a swap chain or a visible window. Async image completions and
-// animated views invalidate this same surface, just as a visible tree does.
+// drawTray paints the retained tree into an alpha bitmap at the shell's icon size, without a swap chain or a visible window. Async image completions and animated views invalidate this same surface, just as a visible tree does.
 func (w *window) drawTray() {
 	owner := w.hostWindow
 	if owner == nil || w.trayID == 0 || w.canvasClosed {
@@ -98,8 +95,7 @@ func (w *window) drawTray() {
 		op = nimAdd
 	}
 	ok, _, _ := shellNotifyIcon.Call(uintptr(op), uintptr(unsafe.Pointer(&data)))
-	// Keep the latest rendered icon even before Explorer starts or while it
-	// restarts. TaskbarCreated can then publish it without another view change.
+	// Keep the latest rendered icon even before Explorer starts or while it restarts. TaskbarCreated can then publish it without another view change.
 	if tr.private && tr.icon != 0 {
 		destroyIcon.Call(tr.icon)
 	}

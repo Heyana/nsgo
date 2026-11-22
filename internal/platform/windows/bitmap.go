@@ -4,8 +4,7 @@ package windows
 
 import "unsafe"
 
-// bitmapPixels copies a Direct2D bitmap's premultiplied BGRA rows to Go memory.
-// A CPU-readable staging bitmap keeps mapped GPU storage out of its callers.
+// bitmapPixels copies a Direct2D bitmap's premultiplied BGRA rows to Go memory. A CPU-readable staging bitmap keeps mapped GPU storage out of its callers.
 func bitmapPixels(dc, source *comObject, width, height uint32, scale float32) []byte {
 	if width == 0 || height == 0 || uint64(width)*uint64(height) > maxOffscreenPixels {
 		return nil
