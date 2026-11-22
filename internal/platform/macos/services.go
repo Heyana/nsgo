@@ -699,11 +699,7 @@ func (s *surface) orderFront() {
 }
 
 // osVersion returns macOS's version.
-func osVersion() driver.OSVersion {
-	type version struct{ Major, Minor, Patch int }
-	v := objc.Send[version](objc.ID(apple.Class("NSProcessInfo")).Send(sel("processInfo")), sel("operatingSystemVersion"))
-	return driver.OSVersion{Major: v.Major, Minor: v.Minor}
-}
+func osVersion() driver.OSVersion { return apple.OSVersion() }
 
 // readPicked reads the file at path as a picked file.
 func readPicked(path string) (driver.PickedFile, bool) {

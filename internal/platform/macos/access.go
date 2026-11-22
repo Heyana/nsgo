@@ -225,12 +225,7 @@ func nsNumber(f float64) objc.ID {
 	return objc.ID(apple.Class("NSNumber")).Send(sel("numberWithDouble:"), f)
 }
 
-func nsOrNil(s string) objc.ID {
-	if s == "" {
-		return 0
-	}
-	return apple.NSString(s)
-}
+func nsOrNil(s string) objc.ID { return apple.OptionalNSString(s) }
 
 func axInvalidValue(invalid bool) objc.ID {
 	if invalid {
@@ -362,18 +357,12 @@ func (v *view) spokenLabel() string {
 }
 
 func collectText(native objc.ID, out *[]string) {
-	for _, c := range apple.Subviews(native) {
-		if objc.Send[bool](c, sel("isHidden")) {
-			continue
+	apple.CollectText(native, out, func(child objc.ID) (string, bool) {
+		if v := views[child]; v != nil && v.kind == driver.KindText {
+			return v.label(), true
 		}
-		if cv := views[c]; cv != nil && cv.kind == driver.KindText {
-			if l := cv.label(); l != "" {
-				*out = append(*out, l)
-			}
-			continue
-		}
-		collectText(c, out)
-	}
+		return "", false
+	})
 }
 
 // accessibilityLabel answers VoiceOver with spokenLabel, read when asked
@@ -693,18 +682,13 @@ func accessibilityAllowed(self objc.ID, cmd objc.SEL, selector objc.SEL) bool {
 }
 
 // accessibilityCustom runs the custom action whose label VoiceOver chose.
+// nsgo:allow-duplicate The callback resolves a backend-owned view; action lookup lives in apple.CustomAccessibilityAction.
 func accessibilityCustom(self objc.ID, _ objc.SEL, action objc.ID) bool {
 	v := views[self]
 	if v == nil {
 		return false
 	}
-	label := apple.GoString(action.Send(sel("name")))
-	for _, a := range v.props.ActionList() {
-		if a.Label == label || (a.Label == "" && a.Name == label) {
-			return v.action(a.Name)
-		}
-	}
-	return false
+	return apple.CustomAccessibilityAction(action, v.props.ActionList(), v.action)
 }
 
 // focusAccessibility moves VoiceOver to v, and keyboard focus to its stop.

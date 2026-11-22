@@ -387,3 +387,10 @@ func BundleName(lang string) string {
 	}
 	return ""
 }
+
+// OSVersion returns the host operating system's major and minor versions.
+func OSVersion() driver.OSVersion {
+	type version struct{ Major, Minor, Patch int }
+	v := objc.Send[version](objc.ID(Class("NSProcessInfo")).Send(sel("processInfo")), sel("operatingSystemVersion"))
+	return driver.OSVersion{Major: v.Major, Minor: v.Minor}
+}

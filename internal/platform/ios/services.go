@@ -428,11 +428,7 @@ func uiStyle(a driver.Appearance) int {
 }
 
 // osVersion returns iOS's version.
-func osVersion() driver.OSVersion {
-	type version struct{ Major, Minor, Patch int }
-	v := objc.Send[version](objc.ID(apple.Class("NSProcessInfo")).Send(sel("processInfo")), sel("operatingSystemVersion"))
-	return driver.OSVersion{Major: v.Major, Minor: v.Minor}
-}
+func osVersion() driver.OSVersion { return apple.OSVersion() }
 
 // onMac reports whether the app is an iPhone or iPad app running on a
 // Mac.

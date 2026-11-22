@@ -112,7 +112,7 @@ func (s *selection) OffsetAt(i int, p driver.Point) int {
 }
 
 func boxRect(b driver.Bounds) apple.CGRect {
-	return apple.Rect(float64(b.Origin.X), float64(b.Origin.Y), float64(b.Size.Width), float64(b.Size.Height))
+	return apple.BoundsRect(b)
 }
 
 // list finds the area's texts again, in document order, with their frames,

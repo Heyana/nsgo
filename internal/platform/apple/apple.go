@@ -210,3 +210,16 @@ func Modifiers(flags uint) driver.Modifiers {
 	return driver.Modifiers{Control: flags&control != 0, Alt: flags&option != 0, Shift: flags&shift != 0,
 		Platform: flags&command != 0}
 }
+
+// BoundsRect returns a Core Graphics rectangle for the driver's box.
+func BoundsRect(bounds driver.Bounds) CGRect {
+	return Rect(float64(bounds.Origin.X), float64(bounds.Origin.Y), float64(bounds.Size.Width), float64(bounds.Size.Height))
+}
+
+// OptionalNSString returns a string, or nil for an empty accessibility attribute.
+func OptionalNSString(s string) objc.ID {
+	if s == "" {
+		return 0
+	}
+	return NSString(s)
+}

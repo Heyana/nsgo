@@ -2682,13 +2682,9 @@ func (s *surface) finish() {
 // startImages starts the image loads a batch or a frame's layout asked
 // for, at the views' new sizes.
 func (s *surface) startImages() {
-	for _, v := range s.images {
-		if s.views[v.id] == v {
-			v.image.Start(float64(s.env.PixelRatio))
-		}
-	}
-	clear(s.images)
-	s.images = s.images[:0]
+	s.images = apple.StartImages(s.images, float64(s.env.PixelRatio), func(v *view) bool {
+		return s.views[v.id] == v
+	}, func(v *view, scale float64) { v.image.Start(scale) })
 }
 
 func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
