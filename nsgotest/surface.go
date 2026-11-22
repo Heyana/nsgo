@@ -89,6 +89,12 @@ func (s *Surface) Press(selector string) {
 	s.open().Press(selector)
 }
 
+// DragTo drags source onto target inside this surface.
+func (s *Surface) DragTo(source, target string) {
+	s.app.t.Helper()
+	s.open().DragTo(source, target)
+}
+
 // Type types into the matched field in this surface.
 func (s *Surface) Type(selector, text string) {
 	s.app.t.Helper()

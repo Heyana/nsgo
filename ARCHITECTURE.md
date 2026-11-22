@@ -16,6 +16,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `core` | `nsh-core` | The app's API: elements, styles, Tailwind classes, themes, the reactive graph and regions, services; the shadow tree, layout and text preparation |
 | `base` | `nsh-base` | Unstyled components, a file each: controls, popups, navigation, panels and tables ([components](docs/architecture/components.md)) |
 | `base/datatable`, `base/dock`, `base/plot`, `base/toast` | `nsh-base` | Complex components, a package each: a virtualized table, a dock, charts and toasts |
+| `base/dragdrop` | — (NSH's component-local drags) | Application values dragged between views in one window, through the shared responder ([interaction](docs/architecture/interaction.md#in-app-drags)) |
 | `base/commitgraph` | — | A Git history's revision graph: its layout, collapsed merges and a row's drawing ([commit graph](docs/architecture/components.md#commit-graph)) |
 | `base/camera` | — | A plane the user pans and zooms around the app's content ([camera](docs/architecture/components.md#camera)) |
 | `base/flow` | — | A directed diagram: its layered layout and orthogonal routes, for a camera to show ([flow diagram](docs/architecture/components.md#flow-diagram)) |

@@ -115,6 +115,12 @@ On Linux, `Ref.Focus` and `AutoFocus` place a newly focused single-line field's 
 
 `mobile.DeferSystemGestures` holds a surface's physical screen edges on iOS and named rectangles in surface points on Android. The core combines live requests from the surface's scopes into `ItemSystemGestures` and sends the revised preference as each hold starts or ends. UIKit reads the mask from the root or sheet controller after invalidation. An iOS embedding host can forward its `NSGoView`'s preference. Android 10 and later clip the rectangles to the view and convert them to pixels again as the view's size or density changes. Android keeps authority over mandatory gestures and limits the extent of exclusions. `nsgotest.App.SystemGestures` records the main surface's combined request. `nsgotest.Surface.SystemGestures` reads the request on a selected surface.
 
+## In-app drags
+
+`base/dragdrop.Area` connects `dragdrop.Source` and `dragdrop.Target` views in one window for application values. A source keeps its ordinary press, starts after four points by default, or opts into an explicit long press, samples `Data` once, and shows its `Preview` in a pointer-events-none overlay. A target is considered from the deepest committed hit outward; `Accept` may reject a value, and `OnEnter`, `OnMove`, `OnLeave` and `OnDrop` report the value in target-local and surface coordinates. Removing or disabling a target clears its entered state; removing or disabling the source, Escape, native cancellation or a drag that misses ends without a drop. The source's `OnEnd` receives the result, so an app can provide a menu or keyboard command for the same operation.
+
+`core.HitTest` resolves registered targets from last committed tree geometry, including transforms, scrolling, clipping, pointer-events and modal boundaries. Native animations are not sampled between commits ([roadmap](../roadmap.md#keyboard-popups-and-screen-readers)); acceptance is checked again on release. The core does not infer drag behavior from a device: activation mode belongs to the source. NSH's responder and component-local drags are the reference; the value-transfer API belongs in `base/dragdrop` so it shares those gestures without adding a look or a native wire message. A slice carries multiple selected values in one session. Apps retain a menu or keyboard action for the same operation.
+
 ## Gestures
 
 `View.OnPan`, `OnPinch` and `OnRotation` follow gestures the platform recognizes; they report to the engine, which merges each gesture's moves per turn and never its first or last report.

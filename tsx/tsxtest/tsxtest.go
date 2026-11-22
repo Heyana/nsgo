@@ -704,6 +704,7 @@ func (r *runner) app(a *nsgotest.App, tb *appTB, env driver.Environment, net *ne
 		_ = r.vm.ExportTo(c.Argument(1), &by)
 		a.Drag(sel(c), driver.Point{X: driver.Points(by.X), Y: driver.Points(by.Y)})
 	})
+	act("dragTo", func(c goja.FunctionCall) { a.DragTo(sel(c), selector(c.Argument(1).String())) })
 	act("rightClick", func(c goja.FunctionCall) { a.RightClick(sel(c)) })
 	act("hover", func(c goja.FunctionCall) { a.Hover(sel(c)) })
 	act("chooseMenuItem", func(c goja.FunctionCall) { a.ChoosePopup(strings.Split(c.Argument(0).String(), " > ")...) })

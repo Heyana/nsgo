@@ -98,6 +98,8 @@ export declare class App {
   clear(selector: string): Promise<void>;
   scroll(selector: string, distance: number): Promise<void>;
   drag(selector: string, by: DragBy): Promise<void>;
+  /** Drags the middle of source onto the middle of target; keep both visible. */
+  dragTo(source: string, target: string): Promise<void>;
   rightClick(selector: string): Promise<void>;
   hover(selector: string): Promise<void>;
   paste(selector: string, content: PasteContent): Promise<void>;

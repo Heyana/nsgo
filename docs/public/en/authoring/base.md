@@ -9,6 +9,8 @@ order: 73
 
 Controls such as `Button`, `Checkbox`, `Select`, `Slider` and `NumberInput` accept `Invalid: rejected.Get` to follow a validation signal. Style that state with `Class: "aria-invalid:border-red-500"` or `Style.AriaInvalid`. It updates accessibility and styles without disabling the control. Composite fields pass it to their real input and decorative parts; `ColorPicker` shares it with its controls.
 
+For application values dragged between views, use [`base/dragdrop`](../drag-drop.md): an area connects sources and targets while the app supplies their content, preview and appearance.
+
 ## Button
 
 `base.Button` takes its look from `Style` and its content from `Children`. `OnPress` runs on a completed press; `OnPressDown` and `OnPressUp` follow a press starting and ending, for feedback of your own.

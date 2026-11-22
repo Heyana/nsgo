@@ -65,6 +65,24 @@ func (a *App) Drag(selector string, path ...driver.Point) {
 	a.drag(v, start, path)
 }
 
+// DragTo drags the middle of source onto the middle of target, using the same
+// touch sequence as Drag. Both views must fit in the visible window; the step
+// does not synthesize a drop callback or scroll while the drag is held.
+func (a *App) DragTo(source, target string) {
+	a.t.Helper()
+	a.Settle()
+	a.step("dragTo(%s, %s)", source, target)
+	from := a.pick(source, "view", func(v *View) (*View, bool) { return v, true })
+	_, start := from.center()
+	if a.target != nil {
+		start = a.target.reveal(from)
+		a.Settle()
+	}
+	to := a.pick(target, "view", func(v *View) (*View, bool) { return v, true })
+	_, end := to.center()
+	a.drag(from, start, []driver.Point{{X: end.X - start.X, Y: end.Y - start.Y}})
+}
+
 // DragAt drags as Drag does from a point of the view selector matches,
 // in its coordinates, rather than its middle: for what a finger takes by
 // a part of its own, such as a selection's handle.
