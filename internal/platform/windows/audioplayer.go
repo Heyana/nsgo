@@ -46,6 +46,8 @@ type winAudioPlayer struct {
 	seeks, laps         uint32
 	position, duration  time.Duration
 	interval            time.Duration
+	// loopStart is where a loop starts over once the first pass ends.
+	loopStart time.Duration
 }
 
 func (p *winAudioPlayer) apply(r *driver.AudioRequest) {
@@ -332,7 +334,10 @@ func (p *winAudioPlayer) finished() {
 	p.stopTicker()
 	p.setBuffering(false)
 	if p.loop {
+		// A loop starts over at its LoopStart, with the short gap of a seek.
 		p.laps++
+		p.ended, p.seekQueued, p.position = false, true, driver.AudioLoopStart(p.loopStart, p.duration)
+		p.seek()
 		p.start()
 		return
 	}

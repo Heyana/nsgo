@@ -178,6 +178,11 @@ func (s *soundOutput) play(id uint32, sound *winSound, request *driver.AudioRequ
 	}
 	voice := v.voice
 	buffer := xaBuffer{flags: xaEndOfStream, size: sound.size, data: sound.data}
+	if request.Loop {
+		// LoopCount follows PlayBegin, PlayLength, LoopBegin and LoopLength, whose zeros loop the whole buffer. The buffer stays queued until the voice stops, so the voice never goes idle on its own.
+		const loopInfinite = 255 // XAUDIO2_LOOP_INFINITE
+		binary.LittleEndian.PutUint32(buffer.tail[16:], loopInfinite)
+	}
 	if failed(voice.callF(xaVoiceVolume, 1, f32(request.Volume), 0)) || failed(voice.callF(xaVoiceRate, 1, f32(request.Rate), 0)) || failed(s.pan(v, request.Pan)) ||
 		failed(voice.call(xaVoiceSubmit, uintptr(unsafe.Pointer(&buffer)), 0)) || failed(voice.call(xaVoiceStart, 0, 0)) {
 		voice.call(xaVoiceDestroy)

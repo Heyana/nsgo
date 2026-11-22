@@ -54,7 +54,7 @@ func (w *window) audioCommand(id uint32, r *driver.AudioRequest) {
 			p.close()
 		}
 		a.players[id] = &winAudioPlayer{a: a, id: id, source: r.Source, volume: r.Volume,
-			rate: r.Rate, loop: r.Loop, position: r.Position, interval: r.ProgressInterval}
+			rate: r.Rate, loop: r.Loop, loopStart: r.LoopStart, position: r.Position, interval: r.ProgressInterval}
 	case driver.AudioClose:
 		if p := a.players[id]; p != nil {
 			delete(a.players, id)
