@@ -99,6 +99,7 @@ func TestFileTypesRegisterInTheIOSPlist(t *testing.T) {
 		"<key>CFBundleTypeName</key><string>Document &amp; Notes</string>",
 		"<key>CFBundleTypeRole</key><string>Viewer</string>",
 		"<key>public.mime-type</key><array><string>application/x-nsgo-note</string></array>",
+		"<key>LSSupportsOpeningDocumentsInPlace</key><false/>",
 	} {
 		if !strings.Contains(extra, want) {
 			t.Errorf("iOS document declaration lacks %q", want)

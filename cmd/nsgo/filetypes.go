@@ -142,7 +142,12 @@ func (p *project) iosFileTypesPlist(sys *appleOS) string {
 	if sys != iOS || p.clipParent != "" {
 		return ""
 	}
-	return p.documentTypesPlist(false)
+	docs := p.documentTypesPlist(false)
+	if docs == "" {
+		return ""
+	}
+	// Opened documents arrive as copies (internal/platform/ios/openfiles.go), not in place; App Store Connect warns when an app declaring document types leaves this unset.
+	return docs + "\n\t<key>LSSupportsOpeningDocumentsInPlace</key><false/>"
 }
 
 func (p *project) documentTypesPlist(macIcons bool) string {
