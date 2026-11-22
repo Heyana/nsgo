@@ -60,3 +60,35 @@ func TestMoveBordersAboveBackdropLayer(t *testing.T) {
 	}
 	setBorders(layer, &driver.ViewStyle{}, &driver.Transition{})
 }
+
+func TestForgetBordersReleasesSideLayers(t *testing.T) {
+	var retainCount func(objc.ID) int
+	purego.RegisterLibFunc(&retainCount, load("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"), "CFGetRetainCount")
+	layer := objc.ID(objc.GetClass("CALayer")).Send(selNew)
+	defer layer.Send(selRelease)
+	setBorders(layer, &driver.ViewStyle{Borders: driver.Edges{Top: 1, Bottom: 2}, BorderColors: driver.EdgeColors{Top: driver.RGB(0xff0000), Bottom: driver.RGB(0x0000ff)}}, &driver.Transition{})
+	r := rings[layer]
+	if r == nil || r.sides[0] == 0 || r.sides[2] == 0 {
+		t.Fatal("per-side border did not create its side layers")
+	}
+	sides := []objc.ID{r.sides[0], r.sides[2]}
+	before := make([]int, len(sides))
+	for i, side := range sides {
+		side.Send(sel("retain"))
+		defer side.Send(selRelease)
+		before[i] = retainCount(side)
+	}
+	ForgetBorders(layer)
+	if rings[layer] != nil {
+		t.Fatal("ForgetBorders kept the ring")
+	}
+	for i, side := range sides {
+		if side.Send(sel("superlayer")) != 0 {
+			t.Errorf("side %d stayed in the layer tree", i)
+		}
+		// The layer tree's reference and the ring's are both gone.
+		if after := retainCount(side); after > before[i]-2 {
+			t.Errorf("side %d kept %d references, had %d with the ring's and the tree's", i, after, before[i])
+		}
+	}
+}

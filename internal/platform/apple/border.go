@@ -52,12 +52,7 @@ var rings = map[objc.ID]*ring{}
 func setBorders(layer objc.ID, vs *driver.ViewStyle, tr *driver.Transition) {
 	r := rings[layer]
 	if vs.Borders == (driver.Edges{}) {
-		if r != nil {
-			for i := range r.sides {
-				r.remove(i)
-			}
-			delete(rings, layer)
-		}
+		ForgetBorders(layer)
 		return
 	}
 	if r == nil {
@@ -81,7 +76,14 @@ func LayoutBorders(layer objc.ID) {
 }
 
 // ForgetBorders forgets the borders of a layer that is going away.
-func ForgetBorders(layer objc.ID) { delete(rings, layer) }
+func ForgetBorders(layer objc.ID) {
+	if r := rings[layer]; r != nil {
+		for i := range r.sides {
+			r.remove(i)
+		}
+		delete(rings, layer)
+	}
+}
 
 // MoveBorders rehomes a per-side border above a backdrop's layer while keeping the view's children above it. Passing zero puts it back on layer.
 func MoveBorders(layer, host objc.ID) {
