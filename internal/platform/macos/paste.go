@@ -67,16 +67,24 @@ func registerPaste() {
 				return true
 			},
 		}, {
+			// A window that fails to enter stays out: its children detach again (WillEnter attached them), the app hears it is not in full screen, and a request queued meanwhile runs.
 			Cmd: sel("windowDidFailToEnterFullScreen:"),
 			Fn: func(_ objc.ID, _ objc.SEL, window objc.ID) {
 				if s := windowSurface(window); s != nil {
+					s.fullScreenEntering = false
+					s.windowFullScreen = false
+					s.syncChildWindows()
+					s.refresh()
 					s.finishFullScreenTransition(true)
 				}
 			},
 		}, {
+			// A window that fails to exit stays in full screen. A request queued behind the exit, such as entering on another display, depended on it and is dropped, so that an exit AppKit reports later cannot start it before the window is out.
 			Cmd: sel("windowDidFailToExitFullScreen:"),
 			Fn: func(_ objc.ID, _ objc.SEL, window objc.ID) {
 				if s := windowSurface(window); s != nil {
+					s.fullScreenTransition.next = nil
+					s.refresh()
 					s.finishFullScreenTransition(false)
 				}
 			},
@@ -97,14 +105,6 @@ func registerPaste() {
 				s.commitMarked()
 				if s == nil || s.id == 0 {
 					apple.OnMain(finish)
-				}
-			},
-		}, {
-			Cmd: sel("windowDidFailToEnterFullScreen:"),
-			Fn: func(self objc.ID, _ objc.SEL, window objc.ID) {
-				if s := windowSurface(window); s != nil {
-					s.windowFullScreen = false
-					s.syncChildWindows()
 				}
 			},
 		}})

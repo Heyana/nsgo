@@ -47,8 +47,13 @@ func loadSuper() {
 }
 
 // RegisterClass registers an Objective-C class whose methods may call
-// SendSuper.
+// SendSuper. A selector defined twice panics naming it: the runtime refuses the second method with only its index, and the class is registered at launch, so every app would fail to start.
 func RegisterClass(name string, super objc.Class, protocols []*objc.Protocol, methods []objc.MethodDef) objc.Class {
+	if cmd, ok := duplicateSelector(methods); ok {
+		var selName func(objc.SEL) string
+		purego.RegisterLibFunc(&selName, load("/usr/lib/libobjc.A.dylib"), "sel_getName")
+		panic("apple: class " + name + " defines " + selName(cmd) + " twice")
+	}
 	if protocols == nil {
 		protocols = []*objc.Protocol{}
 	}
@@ -58,6 +63,18 @@ func RegisterClass(name string, super objc.Class, protocols []*objc.Protocol, me
 	}
 	ownClasses[c] = true
 	return c
+}
+
+// duplicateSelector returns a selector methods define more than once.
+func duplicateSelector(methods []objc.MethodDef) (objc.SEL, bool) {
+	seen := make(map[objc.SEL]bool, len(methods))
+	for _, m := range methods {
+		if seen[m.Cmd] {
+			return m.Cmd, true
+		}
+		seen[m.Cmd] = true
+	}
+	return 0, false
 }
 
 // ownClass returns the nearest class of self's that NSGo registered.

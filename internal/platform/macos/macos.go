@@ -221,6 +221,8 @@ type surface struct {
 	// surface the host's, 0 while it is in none.
 	window               objc.ID
 	fullScreenTransition fullScreenTransition
+	// fullScreenEntering is set from WillEnterFullScreen until the window entered or failed to. AppKit sets the full screen style mask as the transition starts, and an inactive app's window can still fail to enter, so the app hears full screen only once it is.
+	fullScreenEntering bool
 	// embedded is set for a host's view (NewView): the host owns the
 	// window, its chrome and the menu bar.
 	embedded bool
@@ -1245,7 +1247,7 @@ func (s *surface) environment() driver.Environment {
 		TitleBar:         s.titleBarArea(),
 		WindowMaterial:   s.material,
 		Maximized:        !s.embedded && objc.Send[bool](s.window, sel("isZoomed")),
-		FullScreen:       !s.embedded && s.window != 0 && objc.Send[uint](s.window, selStyleMask)&maskFullScreen != 0,
+		FullScreen:       !s.embedded && s.window != 0 && !s.fullScreenEntering && objc.Send[uint](s.window, selStyleMask)&maskFullScreen != 0,
 		Minimized:        s.window != 0 && objc.Send[bool](s.window, sel("isMiniaturized")),
 		WindowFrame:      s.windowFrame(),
 		Lifecycle:        s.lifecycle(),
@@ -1386,6 +1388,12 @@ func (s *surface) observe() {
 			if name == "NSWindowWillEnterFullScreenNotification" || name == "NSWindowWillExitFullScreenNotification" {
 				// A transition, however it started, settles before an explicit request runs.
 				s.fullScreenTransition.busy = true
+			}
+			switch name {
+			case "NSWindowWillEnterFullScreenNotification":
+				s.fullScreenEntering = true
+			case "NSWindowDidEnterFullScreenNotification", "NSWindowDidExitFullScreenNotification":
+				s.fullScreenEntering = false
 			}
 			s.refresh()
 			if name == "NSWindowDidEnterFullScreenNotification" || name == "NSWindowDidExitFullScreenNotification" {
