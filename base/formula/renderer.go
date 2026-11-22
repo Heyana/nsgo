@@ -10,6 +10,7 @@ import (
 
 	"github.com/caelyreth/untie"
 	"github.com/caelyreth/untie/display"
+	"github.com/caelyreth/untie/identity"
 	"github.com/caelyreth/untie/render"
 
 	"github.com/nsgo-dev/nsgo/core"
@@ -20,14 +21,14 @@ import (
 //go:embed fonts/NewCMMath-Book.otf
 var newCMMath []byte
 
-// Fonts are a renderer's fonts, OpenType files: Math, with a MATH table, lays the formulas out; Text, else Math, sets \text and \operatorname; and Fallbacks are tried in order for characters the others lack, such as a CJK font's. The app is responsible for their licenses.
+// Fonts are a renderer's fonts, OpenType files: Math, with a MATH table, lays the formulas out; Text, else Math, sets \text and \operatorname; and Fallbacks are tried in order for characters the others lack. Text runs these fonts cannot cover use the platform's system fonts. The app is responsible for its fonts' licenses.
 type Fonts struct {
 	Math      []byte
 	Text      []byte
 	Fallbacks [][]byte
 }
 
-// Renderer lays formulas out in one set of fonts and keeps the last layouts it made, as shapes ready to draw. It is safe for concurrent use, so the engines of a process share one.
+// Renderer lays formulas out in one set of fonts and keeps the last layouts it made, as shapes ready to draw. Missing text runs are measured and drawn by each View with its platform text engine. It is safe for concurrent use, so the engines of a process share one.
 type Renderer struct {
 	fonts  Fonts
 	engine func() (*untie.Engine, error)
@@ -103,22 +104,34 @@ type layout struct {
 	// description is what assistive technology reads, nil when the formula has none.
 	description *display.AltDescription
 	runs        []paintRun
+	// textExpr is retained only when a platform must supply missing text runs.
+	textExpr *untie.Expr
+	missing  []untie.MissingFallback
 	// failed is set when the formula could not be laid out at all, past its limits, or its renderer's fonts did not load: it shows its source.
 	failed bool
 	// drawn is set once runs and em are made, with the renderer's fonts.
 	drawn bool
 }
 
-// paintRun is a glyph path or a rule, filled in one paint. Rules keep their
-// snapping axis until drawing knows the final font size and display density.
+// paintRun is a glyph path, a rule or one system text run, filled in one paint. Rules keep their snapping axis until drawing knows the final font size and display density.
 type paintRun struct {
 	paint display.Paint
 	path  *core.Path
 	rect  untie.Rect
 	snap  display.SnapAxis
+	text  *systemRun
 }
 
 func (r paintRun) draw(d *core.Drawing, grid display.PixelGrid) {
+	if t := r.text; t != nil {
+		// Shape at the measured reference size too: browser fonts round advances differently at a one-point size.
+		d.Save()
+		d.Translate(t.x, t.y)
+		d.Scale(t.scale/referenceSize, t.scale/referenceSize)
+		d.FillText(t.text, 0, 0, t.font)
+		d.Restore()
+		return
+	}
 	if r.path != nil {
 		d.FillPath(r.path, core.NonZero)
 		return
@@ -186,13 +199,22 @@ func (r *Renderer) make(key layoutKey, draw bool) *layout {
 		l.failed = true
 		return l
 	}
+	if box.FontUsage.NeedsFallback() {
+		l.textExpr, l.missing = expr, box.FontUsage.Missing
+	}
+	l.drawBox(box, nil)
+	return l
+}
+
+// drawBox makes l's runs from box, keeping native text in the same order as Untie's shapes. A filled IR box in texts is only a positioning marker; it never reaches the canvas as a rectangle.
+func (l *layout) drawBox(box *untie.Box, texts map[identity.NodeID]systemRun) {
 	l.box = box
 	// The canvas holds the ink that reaches past the box (Box.Overflow) too: canvases clip on the web and Linux, so a narrower canvas would cut it.
 	b := box.Bounds()
 	l.em = core.EmBox{Width: b.Width / referenceSize, Ascent: -b.Y / referenceSize, Descent: (b.Height + b.Y) / referenceSize}
 	at := func(x, y float32) (float32, float32) { return (x - b.X) / referenceSize, (y - b.Y) / referenceSize }
 	var run *paintRun
-	err = render.Walk(box, func(c render.Command) error {
+	path := func(c render.Command) error {
 		if c.Kind == render.CommandRule {
 			x, y := at(c.Rect.X, c.Rect.Y)
 			l.runs = append(l.runs, paintRun{paint: c.Paint,
@@ -226,9 +248,19 @@ func (r *Renderer) make(key layoutKey, draw bool) *layout {
 			}
 		}
 		return nil
-	})
-	if err != nil {
-		l.failed = true
 	}
-	return l
+	for i, item := range box.Items {
+		if text, ok := texts[item.NodeID]; ok && item.Kind == display.ItemRule {
+			x, y := at(item.Rect.X, item.Rect.Y)
+			text.scale = item.Rect.Height / (text.metrics.Ascent + text.metrics.Descent)
+			text.x, text.y = x, y+text.metrics.Ascent*text.scale/referenceSize
+			l.runs = append(l.runs, paintRun{paint: item.Paint, text: &text})
+			run = nil
+			continue
+		}
+		if err := render.Walk(&untie.Box{Items: box.Items[i : i+1], Paths: box.Paths}, path); err != nil {
+			l.failed = true
+			return
+		}
+	}
 }

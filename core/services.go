@@ -279,6 +279,9 @@ func (t *Tree) FontsChanged() {
 	}
 	t.measures = newMeasureCache()
 	t.markAll()
+	if t.fontsRead != nil {
+		t.fontsRead.Set(t.fonts)
+	}
 	t.rt.maybeFlush()
 }
 

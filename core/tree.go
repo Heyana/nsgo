@@ -156,6 +156,8 @@ type Tree struct {
 	// fonts counts the fonts registered as the app runs: text prepared
 	// with fewer is prepared again.
 	fonts uint32
+	// fontsRead invalidates reactive Scope.MeasureText users when fonts change.
+	fontsRead *Signal[uint32]
 	// followers are the views that follow another's frame, and followMoved
 	// says what they follow changed.
 	followers   []*node

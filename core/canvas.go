@@ -244,11 +244,16 @@ func (t *Tree) refuseDrawingImagesOwner(owner *Scope, d *Drawing) {
 // MeasureText returns the advance width and the metrics of text's first
 // line in font, laid out by the platform's text engine as a canvas measures
 // it (Drawing.TextMetrics): a column fitted to its widest text, a
-// monospaced font's character width.
+// monospaced font's character width. In a reactive function it follows changes
+// to the available fonts.
 func (cx *Scope) MeasureText(text string, font Font) TextMetrics {
 	var engine driver.TextEngine
 	if t := cx.tree(); t != nil {
 		engine = t.text
+		if t.fontsRead == nil {
+			t.fontsRead = NewSignal(t.root, t.fonts)
+		}
+		t.fontsRead.Get()
 	}
 	return driver.NewDrawing(engine).TextMetrics(text, font)
 }

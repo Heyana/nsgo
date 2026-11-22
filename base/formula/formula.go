@@ -1,4 +1,4 @@
-// Package formula typesets math, written in TeX or Typst, with Untie (github.com/caelyreth/untie), and draws it as shapes in the font size and the text color it inherits: inline, on its text's baseline, or as a display formula of its own. Its font is New Computer Modern Math Book, embedded and loaded off the engine's goroutine as a formula first shows, or the app's through NewRenderer. textview.TextView draws its formulas so with RenderMath: formula.RenderMath.
+// Package formula typesets math, written in TeX or Typst, with Untie (github.com/caelyreth/untie), and draws it in the font size and the text color it inherits: inline, on its text's baseline, or as a display formula of its own. Its font is New Computer Modern Math Book, embedded and loaded off the engine's goroutine as a formula first shows, or the app's through NewRenderer. textview.TextView draws its formulas so with RenderMath: formula.RenderMath.
 package formula
 
 import (
@@ -113,7 +113,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 		if failed {
 			return &layout{key: key, failed: true}
 		}
-		return r.parsed(key, ok)
+		return r.withSystemText(r.parsed(key, ok), cx.MeasureText, cx.Env().Language())
 	}, func(a, b *layout) bool { return a == b })
 	failed := core.NewMemo(cx, func() bool { return lay.Get().failed })
 	msgs := func() locales.Messages { return locales.For(cx) }
@@ -133,6 +133,9 @@ func (v View) Render(cx *core.Scope) core.Node {
 		},
 		Else: func(cx *core.Scope) core.Node {
 			var current *layout
+			// constrained keeps this view's last wrapped layouts with their system text, made again when lay changes, as after a font or language change.
+			var constrainedFrom *layout
+			constrained := map[layoutKey]*layout{}
 			var measure func(core.Points, core.Points) core.EmBox
 			if v.Display {
 				measure = func(width, fontSize core.Points) core.EmBox {
@@ -154,8 +157,16 @@ func (v View) Render(cx *core.Scope) core.Node {
 						key := current.key
 						// Zero is Untie's unbounded sentinel, not min-content.
 						key.maxWidth = max(float32(width/fontSize)*referenceSize, .01)
-						if constrained := r.parsed(key, true); !constrained.failed {
-							current = constrained
+						if constrainedFrom != current || len(constrained) >= 16 {
+							constrainedFrom, constrained = current, map[layoutKey]*layout{}
+						}
+						wrapped, ok := constrained[key]
+						if !ok {
+							wrapped = r.withSystemText(r.parsed(key, true), cx.MeasureText, cx.Env().Language())
+							constrained[key] = wrapped
+						}
+						if !wrapped.failed {
+							current = wrapped
 						}
 					}
 					return current.em

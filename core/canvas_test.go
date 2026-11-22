@@ -6,6 +6,35 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
+func TestScopeTextMeasurementsFollowFontChanges(t *testing.T) {
+	registered := false
+	h := newHost(t, Size{Width: 400, Height: 100}, nil)
+	h.tree = NewTree(h.root, fontEngine{&registered})
+	h.tree.Resize(Size{Width: 400, Height: 100}, Geometry{})
+	measurements := 0
+	h.tree.Mount(func(cx *Scope) Node {
+		width := NewMemo(cx, func() float32 {
+			measurements++
+			return cx.MeasureText("hello", Font{Size: 20}).Width
+		})
+		return Canvas{TestID: "measured", EmFunc: func() EmBox {
+			return EmBox{Width: width.Get() / 20, Ascent: .8, Descent: .2}
+		}, Style: Style{FontSize: 20, AlignSelf: AlignStart}}
+	})
+	h.commit()
+	before := h.find("measured").frame.Size.Width
+	registered = true
+	h.tree.FontsChanged()
+	h.commit()
+	if got := h.find("measured").frame.Size.Width; got != before*2 || measurements != 2 {
+		t.Fatalf("font change left stale measurements: width=%v, before=%v, measurements=%d", got, before, measurements)
+	}
+	h.commit()
+	if measurements != 2 {
+		t.Fatal("idle commit measured the text again")
+	}
+}
+
 func TestCanvasDrawsAgainWhenFontsChange(t *testing.T) {
 	for _, async := range []bool{false, true} {
 		name := "RegisterFont"
