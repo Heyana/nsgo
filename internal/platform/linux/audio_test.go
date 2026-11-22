@@ -640,6 +640,182 @@ func TestLinuxAudioPlayerLoopsFromItsStart(t *testing.T) {
 	}
 }
 
+// audioTestPlayer is the window's only native player.
+func audioTestPlayer(t *testing.T, w *window) (p *linuxPlayer) {
+	t.Helper()
+	w.onLoop(t, func() {
+		if w.audio != nil {
+			for _, player := range w.audio.players {
+				p = player
+			}
+		}
+	})
+	if p == nil {
+		t.Fatal("the window has no native player")
+	}
+	return p
+}
+
+// awaitLoopsFrom reads progress until the player repeated twice, each repeat starting at loopStart.
+func awaitLoopsFrom(t *testing.T, progress <-chan time.Duration, ended <-chan struct{}, loopStart time.Duration) {
+	t.Helper()
+	var last time.Duration
+	laps := 0
+	deadline := time.After(8 * time.Second)
+	for laps < 2 {
+		select {
+		case pos := <-progress:
+			if pos < last {
+				if pos < loopStart-20*time.Millisecond {
+					t.Fatalf("a repeat started at %v, before the loop start %v", pos, loopStart)
+				}
+				laps++
+			}
+			last = pos
+		case <-ended:
+			t.Fatal("a looping player reported completion")
+		case <-deadline:
+			t.Fatalf("the player repeated %d times before the deadline", laps)
+		}
+	}
+}
+
+// TestLinuxAudioPlayerLoopsLongTrackBySeeking plays a track longer than a gapless loop decodes: GtkMediaFile streams it and seeks back to the loop start at its end.
+func TestLinuxAudioPlayerLoopsLongTrackBySeeking(t *testing.T) {
+	w, cx := audioTestWindow(t)
+	loopStart := driver.MaxGaplessLoopDuration
+	played, ended := make(chan error, 1), make(chan struct{}, 1)
+	progress := make(chan time.Duration, 256)
+	var player *core.AudioPlayer
+	cx.Post(func() {
+		player = cx.NewAudioPlayer(core.AudioSource{Data: audioTestWAV(loopStart + 1200*time.Millisecond)}, core.AudioPlayerOptions{
+			LoopStart: loopStart, ProgressInterval: 50 * time.Millisecond,
+			OnProgress: func(pos, _ time.Duration) { progress <- pos }, OnEnd: func() { ended <- struct{}{} },
+		})
+		player.Seek(loopStart + 900*time.Millisecond)
+		player.SetLoop(true)
+		player.Play(func(err error) { played <- err })
+	})
+	defer cx.Post(func() { player.Close() })
+	if err := awaitAudio(t, played); err != nil {
+		t.Fatal(err)
+	}
+	p := audioTestPlayer(t, w)
+	awaitLoopsFrom(t, progress, ended, loopStart)
+	w.onLoop(t, func() {
+		if !p.noTrack || p.track != nil || p.voice != nil || p.stream == 0 {
+			t.Error("a track too long to decode did not loop through GtkMediaFile")
+		}
+	})
+}
+
+// TestLinuxAudioPlayerOutlivesItsMixer closes the mixer under a looping player's decoded track, as an output error does when the system's audio device changes: the track plays on in a new mixer.
+func TestLinuxAudioPlayerOutlivesItsMixer(t *testing.T) {
+	w, cx := audioTestWindow(t)
+	const loopStart = 600 * time.Millisecond
+	played, ended, failed := make(chan error, 1), make(chan struct{}, 1), make(chan error, 1)
+	progress := make(chan time.Duration, 256)
+	var player *core.AudioPlayer
+	cx.Post(func() {
+		player = cx.NewAudioPlayer(core.AudioSource{Data: audioTestWAV(1200 * time.Millisecond)}, core.AudioPlayerOptions{
+			LoopStart: loopStart, ProgressInterval: 50 * time.Millisecond,
+			OnProgress: func(pos, _ time.Duration) { progress <- pos }, OnEnd: func() { ended <- struct{}{} },
+			OnError: func(err error) { failed <- err },
+		})
+		player.SetLoop(true)
+		player.Play(func(err error) { played <- err })
+	})
+	defer cx.Post(func() { player.Close() })
+	if err := awaitAudio(t, played); err != nil {
+		t.Fatal(err)
+	}
+	p := audioTestPlayer(t, w)
+	// A voice the output closes within trackRestartAfter fails the player, so the mixer closes after it.
+	var started time.Time
+	for deadline := time.Now().Add(4 * time.Second); started.IsZero(); time.Sleep(10 * time.Millisecond) {
+		w.onLoop(t, func() {
+			if p.voice != nil {
+				started = p.voice.started
+			}
+		})
+		if time.Now().After(deadline) {
+			t.Fatal("the looping player did not play its decoded track")
+		}
+	}
+	time.Sleep(time.Until(started.Add(trackRestartAfter + 100*time.Millisecond)))
+	var old *trackVoice
+	w.onLoop(t, func() {
+		old = p.voice
+		if old == nil || w.audio.mixer == nil {
+			t.Fatal("the looping player did not play its decoded track")
+		}
+		w.audio.mixer.close()
+		w.audio.mixer = nil
+	})
+	// Laps counted before the mixer closed do not count.
+	for len(progress) > 0 {
+		<-progress
+	}
+	awaitLoopsFrom(t, progress, ended, loopStart)
+	select {
+	case err := <-failed:
+		t.Fatalf("the player failed when its mixer closed: %v", err)
+	default:
+	}
+	w.onLoop(t, func() {
+		if p.voice == nil || p.voice == old || p.voice.gone || !p.playing {
+			t.Error("the player did not play on in a new mixer")
+		}
+	})
+}
+
+// TestLinuxAudioPlayerHandsOverToTrack turns the loop on while GtkMediaFile loads and plays: the track decodes while the stream plays, and takes over at the stream's end.
+func TestLinuxAudioPlayerHandsOverToTrack(t *testing.T) {
+	w, cx := audioTestWindow(t)
+	const loopStart = 600 * time.Millisecond
+	played, ended := make(chan error, 1), make(chan struct{}, 1)
+	progress := make(chan time.Duration, 256)
+	var player *core.AudioPlayer
+	cx.Post(func() {
+		player = cx.NewAudioPlayer(core.AudioSource{Data: audioTestWAV(1200 * time.Millisecond)}, core.AudioPlayerOptions{
+			LoopStart: loopStart, ProgressInterval: 50 * time.Millisecond,
+			OnProgress: func(pos, _ time.Duration) { progress <- pos }, OnEnd: func() { ended <- struct{}{} },
+		})
+		player.Play(func(err error) { played <- err })
+		player.SetLoop(true)
+	})
+	defer cx.Post(func() { player.Close() })
+	if err := awaitAudio(t, played); err != nil {
+		t.Fatal(err)
+	}
+	p := audioTestPlayer(t, w)
+	var streamed bool
+	w.onLoop(t, func() { streamed = p.stream != 0 })
+	if !streamed {
+		t.Fatal("the player did not start on GtkMediaFile")
+	}
+	for deadline := time.Now().Add(4 * time.Second); ; {
+		var decoded bool
+		w.onLoop(t, func() { decoded, streamed = p.track != nil, p.stream != 0 })
+		if decoded {
+			if !streamed {
+				t.Fatal("the decoded track took over before the stream's end")
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the looping player did not decode its track")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	awaitLoopsFrom(t, progress, ended, loopStart)
+	w.onLoop(t, func() {
+		if p.stream != 0 || p.voice == nil || p.duration != soundDuration(p.track) {
+			t.Error("the decoded track did not take over the loop")
+		}
+	})
+}
+
 // levelTestWAV is 16-bit mono PCM at 48 kHz holding each level, from -1 to 1, for its duration in turn.
 func levelTestWAV(stretches ...struct {
 	d     time.Duration

@@ -267,6 +267,10 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 			p.buffer(false)
 			p.opened = true
 			p.report(driver.AudioOpened)
+			// A loop turned on while the stream loaded decodes its track now, as AudioSet does on a loaded stream.
+			if p.loop {
+				p.decodeTrack()
+			}
 			p.applySeek()
 			p.play()
 		case !now.Before(p.loadDeadline):
@@ -401,11 +405,20 @@ func (p *linuxPlayer) buffer(buffering bool) {
 }
 
 func (p *linuxPlayer) fail(code, message string) {
+	// A decoding that finishes later would bring back the player the app was told failed.
+	p.cancelDecoding()
 	p.stopTrack()
 	p.buffer(false)
 	p.pendingSeek = p.pendingSeek || p.seeking || p.position > 0
 	p.resetStream()
 	p.owner.audioReport(p.id, driver.AudioEvent{Phase: driver.AudioFailure, Error: code, Message: message})
+}
+
+func (p *linuxPlayer) cancelDecoding() {
+	if p.decoding != nil {
+		p.decoding()
+		p.decoding = nil
+	}
 }
 
 func (p *linuxPlayer) resetStream() {
@@ -426,10 +439,7 @@ func (p *linuxPlayer) dropStream() {
 
 func (p *linuxPlayer) close() {
 	p.closed = true
-	if p.decoding != nil {
-		p.decoding()
-		p.decoding = nil
-	}
+	p.cancelDecoding()
 	p.stopTrack()
 	p.resetStream()
 	p.file.close()

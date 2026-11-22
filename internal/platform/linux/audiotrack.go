@@ -18,6 +18,9 @@ import (
 // trackPiece is the size of the pieces a track voice queues.
 const trackPiece = soundRate / 20
 
+// trackRestartAfter is how long a track voice plays before a closed mixer restarts it in a new one rather than failing the player.
+const trackRestartAfter = time.Second
+
 // trackVoice plays a player's decoded track through the mixer, from where it started on.
 type trackVoice struct {
 	bin, src, pad, appsrc, volume uintptr
@@ -183,6 +186,10 @@ func (p *linuxPlayer) decodeTrack() {
 	if p.track != nil || p.decoding != nil || p.noTrack {
 		return
 	}
+	if p.stream != 0 && p.loaded && p.duration > driver.MaxGaplessLoopDuration {
+		p.noTrack = true
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.decoding = cancel
 	source := p.source
@@ -292,6 +299,8 @@ func (p *linuxPlayer) startTrack() {
 		p.buffer(true)
 		return
 	}
+	// The track's length can differ from the stream's that played before it; the voice wraps at the track's.
+	p.duration = soundDuration(p.track)
 	from := min(p.position, p.duration)
 	if p.loop && from >= p.duration {
 		from = p.loopFrom()
@@ -352,10 +361,18 @@ func (p *linuxPlayer) tickTrack(now time.Time) bool {
 		}
 		return p.wanted
 	}
-	if p.voice.gone {
+	if v := p.voice; v.gone {
+		// The mixer closed under the voice, as when the system's output device changes. A new mixer plays on from where the voice was; a voice the output closed within its first second fails, so a broken output does not restart it on every tick.
+		p.trackPosition(now)
 		p.voice = nil
-		p.fail(driver.AudioFailed, "the audio output closed")
-		return false
+		if now.Sub(v.started) < trackRestartAfter {
+			p.fail(driver.AudioFailed, "the audio output closed")
+			return false
+		}
+		if p.wanted {
+			p.startTrack()
+		}
+		return p.wanted
 	}
 	lapped, done := p.trackPosition(now)
 	if done {

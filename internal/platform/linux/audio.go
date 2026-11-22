@@ -287,7 +287,12 @@ func (a *linuxAudio) unload(id uint32) {
 	}
 }
 
-var audioTickCallback = sync.OnceValue(func() uintptr { return purego.NewCallback(audioTick) })
+// audioTickCallback is set in init because audioTick reaches ensureTick, through a player decoding its track, which a package-level initializer cannot refer back to.
+var audioTickCallback func() uintptr
+
+func init() {
+	audioTickCallback = sync.OnceValue(func() uintptr { return purego.NewCallback(audioTick) })
+}
 
 func (a *linuxAudio) ensureTick() {
 	if a.timer == 0 {
