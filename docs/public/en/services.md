@@ -476,7 +476,7 @@ cx.Speak("Guten Morgen", core.Voice{Lang: "de-DE", Rate: 0.8}, func(stopped bool
 
 Set `audio.Voice.Loop` to repeat a sound playback until `Stop` or `Close`. For streamed music, set `audio.PlayerOptions.LoopStart` and call `SetLoop(true)`. The first pass includes the intro. Later passes start at the offset. A zero offset repeats the full track.
 
-On macOS 14 and iOS 17 or later, a finite track uses the native queue to prepare each repetition before the current one ends. Earlier Apple versions seek to the loop start when the current pass ends, with a short gap. On Linux and the web, a looping player decodes its whole track into memory and repeats it without a gap; a track over 32 MiB or 5 minutes, which would take more than about 115 MB decoded, seeks back at the end instead. On Windows and Android, a loop with a start seeks back to it at the end, with a short gap. On the web a looping player, like a sound, plays only after the user pressed something on the page.
+On macOS 14 and iOS 17 or later, a finite track uses the native queue to prepare each repetition before the current one ends. Earlier Apple versions seek to the loop start when the current pass ends, with a short gap. On Linux and the web, a looping player decodes a track of up to 32 MiB and 5 minutes into memory, about 23 MB a minute, and repeats it without a gap. On Linux a larger or longer track streams through its own decoder and repeats without a gap too; on the web it seeks back at the end, with a short gap. On Windows and Android, a loop with a start seeks back to it at the end, with a short gap. On the web a looping player, like a sound, plays only after the user pressed something on the page, and fails with `NotAllowed` before that.
 
 ## Biometrics
 
