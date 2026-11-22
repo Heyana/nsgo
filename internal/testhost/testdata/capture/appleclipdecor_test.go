@@ -9,8 +9,7 @@ import (
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
-// A text or canvas needs a clip around its content layer, including text ink
-// outside its layout box, while the styled layer retains its outer decoration.
+// A text, canvas or shader needs a clip around its content layer, including text ink outside its layout box, while the styled layer retains its outer decoration.
 func TestAppleContentClipKeepsOuterDecoration(t *testing.T) {
 	switch nsgotest.Target() {
 	case "macos", "ios", "ios_simulator", "tvos_simulator":
@@ -128,8 +127,7 @@ func TestAppleContentClipKeepsOuterDecoration(t *testing.T) {
 			})
 		}
 	}
-	// The content layer's frame includes the text's ink outside its box. A
-	// holder must neither crop that frame permanently nor leave it unclipped.
+	// The content layer's frame includes the text's ink outside its box. A holder must neither crop that frame permanently nor leave it unclipped.
 	for _, visible := range []bool{true, false, true} {
 		app.Post(func() { selected.Set(sample{kind: "text", corners: "shaped", visible: visible}) })
 		app.Settle()
