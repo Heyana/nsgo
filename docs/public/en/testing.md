@@ -80,6 +80,8 @@ Headless Linux and Android tests can check the package paths passed to the insta
 
 `app.Orientation` holds the active `Scope.RequestOrientation` mask. It is zero when the app uses its usual orientation policy.
 
+`View.Style` records a `nsgotest.ViewStyle`, and `View.Animated` records `nsgotest.AnimatedValues`. `app.Animated(selector)` applies bound values to the recorded base style. Effects and custom cursors retain their app-value identities; `Radii`, `Rounded`, `Rim` and `Matrix` keep the same geometry policies.
+
 `app.Find(selector).Kind` is a `nsgotest.ViewKind`; compare it with constants such as `nsgotest.KindText`, `KindInput`, `KindCanvas` or `KindGPU` when a test needs to inspect the mounted view form.
 
 Headless GPU tests can use `app.Surface("title:Inspector").GPUReadPixels("id:viewport")` for a window's software GPU pixels. `Surface.TriggerGPUDeviceLost` and `Surface.RestoreGPUDevice` simulate loss and recovery in that window, using its pixel ratio. Devices and readback callbacks stay separate even when view IDs repeat across windows; `app.GPUFrames()` records submissions across the whole app. These helpers operate on the headless software GPU model.

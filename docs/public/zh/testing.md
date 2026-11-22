@@ -80,6 +80,8 @@ func TestMain(m *testing.M) {
 
 `app.Orientation` 保存当前生效的 `Scope.RequestOrientation` 方向集合。使用应用原有的方向策略时，该值为零。
 
+`View.Style` 记录 `nsgotest.ViewStyle`，`View.Animated` 记录 `nsgotest.AnimatedValues`。`app.Animated(selector)` 将绑定值应用到记录的基础样式。效果和自定义光标保留其应用值标识；`Radii`、`Rounded`、`Rim` 和 `Matrix` 保持原有几何策略。
+
 `app.Find(selector).Kind` 的类型是 `nsgotest.ViewKind`。需要检查挂载视图的形式时，可将它与 `nsgotest.KindText`、`KindInput`、`KindCanvas` 或 `KindGPU` 等常量比较。
 
 无头 GPU 测试可用 `app.Surface("title:Inspector").GPUReadPixels("id:viewport")` 读取对应窗口的软件 GPU 像素。`Surface.TriggerGPUDeviceLost` 和 `Surface.RestoreGPUDevice` 模拟该窗口的设备丢失与恢复，并使用该窗口的像素比例。即使不同窗口中的视图 ID 相同，设备和回读回调也各自独立；`app.GPUFrames()` 记录整个应用的提交。这些辅助方法作用于无头软件 GPU 模型。

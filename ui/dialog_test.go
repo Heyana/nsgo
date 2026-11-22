@@ -7,7 +7,6 @@ import (
 
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -167,7 +166,7 @@ func uniform(r core.Points) core.Corners {
 }
 
 // shownCorners is the radius each corner of a view is drawn with.
-func shownCorners(s driver.ViewStyle) core.Corners {
+func shownCorners(s nsgotest.ViewStyle) core.Corners {
 	if s.Corners != (core.Corners{}) {
 		return s.Corners
 	}

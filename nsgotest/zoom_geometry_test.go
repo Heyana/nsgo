@@ -45,8 +45,8 @@ func TestZoomedScrollGeometryMatchesItsNativeViewport(t *testing.T) {
 		{"horizontal doubled", 2, true, driver.Point{X: 480}, driver.Size{Width: 360, Height: 80}, driver.Bounds{Origin: driver.Point{X: 240}, Size: driver.Size{Width: 120, Height: 80}}, driver.Point{X: 30, Y: 20}, driver.Point{X: 60, Y: 40}, 600},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			scroll := &View{ID: 1, Kind: KindScroll, Style: driver.DefaultViewStyle, Frame: driver.Bounds{Size: driver.Size{Width: 120, Height: 80}}, Content: c.content, ZoomScale: c.scale, Offset: c.offset, Scroll: driver.ScrollConfig{Horizontal: c.horizontal}}
-			child := &View{ID: 2, Parent: scroll, Kind: KindView, Style: driver.DefaultViewStyle, Frame: c.child}
+			scroll := &View{ID: 1, Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Size: driver.Size{Width: 120, Height: 80}}, Content: c.content, ZoomScale: c.scale, Offset: c.offset, Scroll: driver.ScrollConfig{Horizontal: c.horizontal}}
+			child := &View{ID: 2, Parent: scroll, Kind: KindView, Style: viewStyle(driver.DefaultViewStyle), Frame: c.child}
 			scroll.Children = []*View{child}
 			app := &App{views: map[driver.NodeID]*View{1: scroll, 2: child}, rootID: 1}
 			if got := child.pagePoint(c.local); got != c.page {
@@ -66,9 +66,9 @@ func TestZoomedScrollGeometryMatchesItsNativeViewport(t *testing.T) {
 }
 
 func TestNestedScrollZoomKeepsVisibilityAndLayoutBounds(t *testing.T) {
-	outer := &View{ID: 1, Kind: KindScroll, Style: driver.DefaultViewStyle, Frame: driver.Bounds{Origin: driver.Point{X: 10, Y: 20}, Size: driver.Size{Width: 400, Height: 300}}, ZoomScale: 0.5, Offset: driver.Point{X: 5, Y: 7}, Scroll: driver.ScrollConfig{Behavior: driver.ScrollBehavior{NoScroll: true}}}
-	inner := &View{ID: 2, Parent: outer, Kind: KindScroll, Style: driver.DefaultViewStyle, Frame: driver.Bounds{Origin: driver.Point{X: 100, Y: 80}, Size: driver.Size{Width: 120, Height: 80}}, ZoomScale: 2, Offset: driver.Point{Y: 320}, Scroll: driver.ScrollConfig{Behavior: driver.ScrollBehavior{NoScroll: true}}}
-	child := &View{ID: 3, Parent: inner, Kind: KindView, Style: driver.DefaultViewStyle, Frame: driver.Bounds{Origin: driver.Point{Y: 160}, Size: driver.Size{Width: 120, Height: 80}}}
+	outer := &View{ID: 1, Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Origin: driver.Point{X: 10, Y: 20}, Size: driver.Size{Width: 400, Height: 300}}, ZoomScale: 0.5, Offset: driver.Point{X: 5, Y: 7}, Scroll: driver.ScrollConfig{Behavior: driver.ScrollBehavior{NoScroll: true}}}
+	inner := &View{ID: 2, Parent: outer, Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Origin: driver.Point{X: 100, Y: 80}, Size: driver.Size{Width: 120, Height: 80}}, ZoomScale: 2, Offset: driver.Point{Y: 320}, Scroll: driver.ScrollConfig{Behavior: driver.ScrollBehavior{NoScroll: true}}}
+	child := &View{ID: 3, Parent: inner, Kind: KindView, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Origin: driver.Point{Y: 160}, Size: driver.Size{Width: 120, Height: 80}}}
 	outer.Children = []*View{inner}
 	inner.Children = []*View{child}
 	app := &App{views: map[driver.NodeID]*View{1: outer, 2: inner, 3: child}, rootID: 1}
@@ -97,9 +97,9 @@ func TestNestedScrollZoomKeepsVisibilityAndLayoutBounds(t *testing.T) {
 }
 
 func TestScrollZoomAppliesBeforeParentPerspective(t *testing.T) {
-	parent := &View{Kind: KindScroll, Style: driver.DefaultViewStyle, Frame: driver.Bounds{Size: driver.Size{Width: 120, Height: 80}}, ZoomScale: 2, Offset: driver.Point{Y: 320}}
+	parent := &View{Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Size: driver.Size{Width: 120, Height: 80}}, ZoomScale: 2, Offset: driver.Point{Y: 320}}
 	parent.Style.ChildPerspective = 500
-	child := &View{Parent: parent, Style: driver.DefaultViewStyle, Frame: driver.Bounds{Origin: driver.Point{Y: 160}, Size: driver.Size{Width: 120, Height: 80}}}
+	child := &View{Parent: parent, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Origin: driver.Point{Y: 160}, Size: driver.Size{Width: 120, Height: 80}}}
 	child.Style.Transform = driver.Transform{RotateY: 0.3}
 	point := driver.Point{X: 30, Y: 20}
 	expected := driver.ChildPerspective(500, parent.Frame.Size, driver.Point{}).Mul(parent.contentMatrix()).Mul(driver.Translate3D(0, 160, 0)).Mul(child.Style.Matrix(child.Frame.Size))

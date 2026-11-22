@@ -9,7 +9,7 @@ func allowedPublicDriverType(name string) bool {
 		"AccessibilityAction", "AccessibilityValue", "Accessible", "Affinity",
 		"AlertAction", "AlertConfig", "AlertRole", "AndroidEventMapper",
 		"AndroidPropMapper", "AndroidViewProp", "AnimatedArg", "AnimatedProp",
-		"AnimatedPropSetter", "AnimatedValues", "Animation", "AnimationKind",
+		"AnimatedPropSetter", "Animation", "AnimationKind",
 		"Appearance", "AtlasSprite", "AtlasSprites", "AttributedText", "AudioSession", "AutoCapitalize",
 		"AutoComplete", "BackdropMaterial", "BlendMode", "BorderStyle",
 		"Bounds", "BoxShadow", "CanvasGradient", "CanvasNode",
@@ -71,7 +71,7 @@ func allowedPublicDriverType(name string) bool {
 		"InputConfig", "ModalConfig", "PictureInPictureConfig", "ScreenConfig",
 		"ScrollConfig", "StickyCell",
 		"TouchGeometry", "VideoConfig",
-		"ViewStyle", "WebConfig":
+		"WebConfig":
 		return true
 	}
 	return false

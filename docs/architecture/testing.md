@@ -6,6 +6,8 @@
 
 Every batch goes to a model of the native views (`nsgotest/model.go`), which queries read and steps act on: frames, styles, props, texts with their spans, shadows and line limits, inputs, scroll offsets, the animated values gestures and scrolling drive (`Bound`, `AnimatedValue`), canvas nodes as child views, and what the app asked the platform for. Headless, the app runs on `core.ApproxTextEngine`, or the engine `TextEngine` gives, and a `core.ManualClock`; frames run only as the clock moves. Its platform plays audio as a test sets it where the environment says `Audio`: it records the sounds loaded and played (`Sounds`) and each player's commands (`Players`), decodes the durations `AudioDurations` gives, failing the rest with `Decode`, refuses plays with `NotAllowed` under `RefusePlayback`, and moves a player on only as the clock moves.
 
+Mounted looks and bound animation values use owned `nsgotest.ViewStyle` and `nsgotest.AnimatedValues` records. Explicit boundary mappings preserve app-value identities for effects and custom cursors; geometry helpers and animated application delegate to the existing driver policies.
+
 Mounted identity, accessibility and interaction settings use owned `nsgotest.ViewProps` records. Their label IDs, actions and ripple are copied when a mount batch arrives; policy helpers delegate to the private driver after explicit conversion.
 
 `View.Kind` uses owned `nsgotest.ViewKind` constants mapped from the mount protocol. The model converts picker, camera, scan and save requests into the records in `nsgotest/file_requests.go`. Answer hooks receive those records too, through the test host on a target for photo picks, captures and code scans.

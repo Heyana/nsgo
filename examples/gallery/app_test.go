@@ -1614,7 +1614,7 @@ func looks(v *nsgotest.View, drawings bool) []string {
 		// JSON follows the pointers in the styles.
 		look, err := json.Marshal(struct {
 			Kind  nsgotest.ViewKind
-			Style driver.ViewStyle
+			Style nsgotest.ViewStyle
 			Text  driver.TextStyle
 			Spans []driver.TextSpan
 			Ops   []paint

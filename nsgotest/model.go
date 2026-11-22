@@ -22,7 +22,7 @@ type View struct {
 	Frame    driver.Bounds
 	// ShownFrame is the frame the view shows now: mid layout transition or layout animation, or Frame when none is running.
 	ShownFrame driver.Bounds
-	Style      driver.ViewStyle
+	Style      ViewStyle
 	Props      ViewProps
 	Events     driver.EventMask
 	Text       string // a text view's text or a field's value
@@ -70,7 +70,7 @@ type View struct {
 	NativeCommands []NativeCommand
 	// Animated are the values of the animated properties bound to the
 	// view, which the model's animator steps with the clock.
-	Animated driver.AnimatedValues
+	Animated AnimatedValues
 	Focused  bool
 	// Selection is a field's selection, as the app last set it or Select
 	// moved it, in UTF-16 units.
@@ -161,11 +161,11 @@ func (a *App) AnimatedValue(node uint32) float64 {
 // Animated returns the style the view selector matches shows: its own,
 // with the animated values bound to it drawn over it as the platform's
 // animator has them.
-func (a *App) Animated(selector string) driver.ViewStyle {
+func (a *App) Animated(selector string) ViewStyle {
 	a.t.Helper()
 	v := a.Find(selector)
 	vals, _ := a.anim.Values(v.ID)
-	return vals.Apply(v.Style)
+	return animatedValues(vals).Apply(v.Style)
 }
 
 // NativeCommand is a command a native view received.
@@ -225,7 +225,7 @@ func (a *App) animate() {
 	}
 	a.anim.Changed(func(id driver.NodeID, vals driver.AnimatedValues) {
 		if v := a.views[id]; v != nil {
-			v.Animated = vals
+			v.Animated = animatedValues(vals)
 		}
 	})
 	a.anim.ChangedCanvases(func(id driver.NodeID) {
@@ -277,7 +277,7 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 	for i := range d.Nodes {
 		n := &d.Nodes[i]
 		v.Children = append(v.Children, &View{Kind: KindView, Parent: v, Frame: n.Bounds, Node: n,
-			Style: driver.ViewStyle{Opacity: 1},
+			Style: ViewStyle{Opacity: 1},
 			Props: ViewProps{Role: n.Role, Label: n.Label, TestID: n.TestID, Selected: n.Selected}})
 	}
 }
@@ -537,7 +537,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		}
 		switch it.Kind {
 		case driver.ItemCreate:
-			a.views[it.ID] = &View{ID: it.ID, Kind: viewKind(it.View), Style: driver.DefaultViewStyle, anim: a.anim}
+			a.views[it.ID] = &View{ID: it.ID, Kind: viewKind(it.View), Style: viewStyle(driver.DefaultViewStyle), anim: a.anim}
 			if created == nil {
 				created = map[driver.NodeID]bool{}
 			}
@@ -644,7 +644,7 @@ func (a *App) apply(b *driver.MountBatch) {
 				}
 			}
 		case driver.ItemViewStyle:
-			v.Style = *it.ViewStyle
+			v.Style = viewStyle(*it.ViewStyle)
 		case driver.ItemViewProps:
 			v.Props = viewProps(*it.ViewProps)
 		case driver.ItemAccessibilityLabel:

@@ -30,9 +30,6 @@ type (
 	Pictures = driver.Pictures
 	// AnimatedProp is a view property an animated node drives.
 	AnimatedProp = driver.AnimatedProp
-	// AnimatedValues are the bound properties of a view, as the animator last
-	// evaluated them.
-	AnimatedValues = driver.AnimatedValues
 	// Event is what a platform reports (App.Report).
 	Event = driver.Event
 	// SelectedRange is what one text of a selection area has selected, by its node and UTF-16 offsets, as Event.Ranges reports it.
@@ -73,8 +70,6 @@ type (
 	PictureInPictureConfig = driver.PictureInPictureConfig
 	// GPUDeviceLostReason describes why a simulated GPU device was lost.
 	GPUDeviceLostReason = driver.GPUDeviceLostReason
-	// ViewStyle is everything a platform draws for a view itself.
-	ViewStyle = driver.ViewStyle
 	// CustomCursor describes an image-based pointer cursor on desktops and the web.
 	CustomCursor = driver.CustomCursor
 	// WebConfig is everything a web view loads and allows (ItemWeb).
