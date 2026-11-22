@@ -161,6 +161,12 @@ jobs:
           GSK_RENDERER: cairo
           PULSE_SINK: nsgo_test
         run: xvfb-run -a go tool nsgo test -target linux -timeout 1m ./internal/testhost/testdata/audio
+      - name: Test Linux audio output
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          PULSE_SINK: nsgo_test
+        run: xvfb-run -a go tool nsgo test ./internal/platform/linux -run '^TestLinuxAudio' -- -count=1
       - name: Run the many-sprite canvas scenario
         env:
           GDK_BACKEND: x11
