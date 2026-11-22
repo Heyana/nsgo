@@ -101,7 +101,7 @@ func (w *window) environment() driver.Environment {
 		WindowMaterial:        w.material,
 		Maximized:             w.zoomed(),
 		FullScreen:            w.chrome.fullScreen,
-		Minimized:             isIconicWindow(w.owner()),
+		Minimized:             w.minimized(),
 		WindowFrame:           w.windowFrame(),
 		Lifecycle:             w.lifecycle(),
 		LowPowerMode:          lowPowerMode(),
@@ -319,8 +319,27 @@ func (w *window) updateAppSurface() {
 	}
 }
 
+// minimized reports whether the window, or an embedded view's ancestor root
+// window, is minimized.
+func (w *window) minimized() bool {
+	if w.embedded {
+		if state, ok := embeddedRoots.stateOf(w); ok {
+			return state.minimized
+		}
+		root := w.embeddedAncestorRoot()
+		return root != 0 && isIconicWindow(root)
+	}
+	return isIconicWindow(w.hwnd)
+}
+
 // windowLifecycle is the lifecycle of the window itself, an embedded view's root window's.
 func (w *window) windowLifecycle() driver.Lifecycle {
+	if w.embedded {
+		if state, ok := embeddedRoots.stateOf(w); ok {
+			return state.lifecycle()
+		}
+		return readEmbeddedRootState(w.embeddedAncestorRoot()).lifecycle()
+	}
 	root := w.owner()
 	if visible, _, _ := isWindowVisible.Call(root); visible == 0 || isIconicWindow(root) {
 		return driver.LifecycleBackground

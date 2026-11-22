@@ -406,7 +406,7 @@ A playing `Video` keeps the display on only on iOS, where `AVPlayer`'s `prevents
 | macOS | The app is hidden, or the window is not visible, miniaturized, or its `occlusionState` says none of it shows (covered, the screen locked) | The app is active | The window `isMiniaturized` |
 | iOS | `applicationState` is background | It is active: not under a call, the app switcher or Control Center | Never |
 | Android | `NsgoView`'s window is not visible | The window has the focus | Never |
-| Windows | The window, an embedded view's root window, is minimized or hidden | The app is active (`WM_ACTIVATEAPP`) | The window, an embedded view's root window, `IsIconic` |
+| Windows | The window, or an embedded view's subclassed `GA_ROOT` window, is minimized or hidden | The app is active (`WM_ACTIVATEAPP`), or an embedded view's `GA_ROOT` window is active (`WM_ACTIVATE`/`WM_ACTIVATEAPP`) | The window, or an embedded view's `GA_ROOT` window, `IsIconic` / `WM_SIZE` |
 | Linux | The surface is unmapped, or its toplevel minimized or suspended | One of the app's windows `is-active` | Its toplevel is `GDK_TOPLEVEL_STATE_MINIMIZED`, which X11 reports and Wayland's xdg-shell has no state for |
 | Web | The document is hidden | The document has the focus | Never |
 

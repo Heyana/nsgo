@@ -396,14 +396,15 @@ type window struct {
 	// the top-level window, its chrome and the message loop. app and
 	// opts start its engine once it first has a size. The skip flags drop
 	// characters the host translated before the child consumed their keys.
-	embedded    bool
-	app         engine.App
-	opts        Options
-	skipChar    bool
-	skipSysChar bool
-	engine      *engine.Engine
-	audio       *windowAudio
-	batches     queue.Batches
+	embedded     bool
+	observedRoot uintptr
+	app          engine.App
+	opts         Options
+	skipChar     bool
+	skipSysChar  bool
+	engine       *engine.Engine
+	audio        *windowAudio
+	batches      queue.Batches
 	// applying is set while batches are applied; resized is the commit
 	// at a size resize stopped waiting for, until it lands.
 	applying bool
@@ -1124,6 +1125,7 @@ func NewView(app engine.App, opts Options) (*View, error) {
 	}
 	w.hwnd = hwnd
 	windows[hwnd] = w
+	w.observeEmbeddedRoot()
 	w.updateIME()
 	w.configureGestures()
 	w.env = w.environment()
@@ -1150,6 +1152,7 @@ func (v *View) SetTokens(t engine.Tokens) { v.w.opts.Host.Settings.SetTokens(t) 
 // window.
 func (v *View) Close() {
 	if v.w.hwnd != 0 {
+		v.w.unobserveEmbeddedRoot()
 		destroyWindow.Call(v.w.hwnd)
 	}
 }
@@ -1188,6 +1191,9 @@ func (w *window) chromeItem(it *driver.MountItem) {
 func (w *window) owner() uintptr {
 	if !w.embedded {
 		return w.hwnd
+	}
+	if w.hwnd == 0 {
+		return 0
 	}
 	const gaRoot = 2
 	r, _, _ := getAncestor.Call(w.hwnd, gaRoot)
@@ -2392,6 +2398,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	w := windows[hwnd]
 	// A host's child window has no app until it has a size.
 	if w == nil || w.embedded && w.engine == nil && message != wmSize && message != wmDestroy {
+		if w != nil && w.embedded && message == wmWindowPosChanged {
+			w.syncEmbeddedRoot()
+		}
 		r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
 		return r
 	}
@@ -2594,7 +2603,14 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 				other.updateEnvironment()
 			}
 		}
+	case wmWindowPosChanged:
+		if w.embedded {
+			w.syncEmbeddedRoot()
+		}
 	case wmShowWindow:
+		if w.embedded {
+			w.syncEmbeddedRoot()
+		}
 		if w.engine != nil {
 			w.post(func() {
 				w.syncOwnedVisibility()
@@ -2603,6 +2619,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 	case wmSize:
 		w.post(w.syncOwnedVisibility)
+		if w.embedded {
+			w.syncEmbeddedRoot()
+		}
 		if wParam != sizeMinimized {
 			width, height := int32(lParam&0xffff), int32(lParam>>16&0xffff)
 			size := w.point(width, height)
@@ -2610,6 +2629,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			case w.engine != nil:
 				w.resize(driver.Size{Width: size.X, Height: size.Y})
 			case width > 0 && height > 0:
+				w.env = w.environment()
 				w.startEngine(w.app, w.opts, driver.Size{Width: size.X, Height: size.Y})
 			}
 		}
@@ -2907,6 +2927,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 	case wmDestroy:
 		w.startup.close()
+		w.unobserveEmbeddedRoot()
 		w.cancelColorPicker()
 		w.closeCustomCursors()
 		w.stopPower()
