@@ -62,6 +62,9 @@ type surface struct {
 	files map[string]string
 	// appearance is the one the app forces, AppearanceSystem for none.
 	appearance driver.Appearance
+	updateWaiters map[uint32]*time.Timer
+	updateUnsub   js.Value
+	updateChanged js.Func
 }
 
 // Run runs app in the mini program's page. Call it from main; it does
@@ -83,8 +86,13 @@ func Run(app engine.App, opts Options) {
 	if id == "" {
 		id = "default"
 	}
+	updater := driver.UpdaterState{Managed: driver.UpdateManagedUnavailable, NativePreferences: true}
+	if u := bridge.Get("updates"); u.Truthy() && u.Get("supported").Truthy() {
+		updater.Managed = driver.UpdateManagedSelf
+	}
 	s.engine = engine.Start(s, app, engine.Options{
 		Size: s.size(), Environment: s.env, Appearance: opts.Appearance,
+		Updater: updater,
 		Storage: engine.NewStorage(&storage{api: s.api, prefix: "nsgo:" + id + ":"}),
 		Secrets: s.secretsStore(),
 	})

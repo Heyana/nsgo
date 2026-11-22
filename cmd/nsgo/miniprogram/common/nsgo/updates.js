@@ -43,14 +43,19 @@ function updateManager(api) {
   listen('onCheckForUpdate', (r) => {
     state.checked = true
     state.available = !!(r && r.hasUpdate)
+    state.ready = false
+    state.error = ''
     notify()
   })
   listen('onUpdateReady', () => {
     state.ready = true
     state.available = true
+    state.error = ''
     notify()
   })
   listen('onUpdateFailed', (r) => {
+    state.ready = false
+    state.available = false
     state.error = String(r && (r.errMsg || r.message) || 'update failed')
     notify()
   })
