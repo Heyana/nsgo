@@ -46,7 +46,7 @@ d.DrawSVGIn(badge, 12, 12, 180, 60)
 
 位图缩放默认使用平滑采样。绘制像素画时，在 `DrawImage`、`DrawImageFrom` 或 `DrawAtlas` 前调用 `d.SetImageSmoothing(false)`，或在 TSX 中设置 `ctx.imageSmoothingEnabled = false`。`Save` 和 `Restore` 会与其余绘图状态一起保存和恢复此设置。Apple 平台、Windows、Linux、Android 和 Web 支持最近邻采样；HarmonyOS 和小程序也会应用它，但其输出尚未在设备上验证。
 
-`d.DrawVertices(image, vertices)` 绘制带纹理的网格。每三个连续的 `core.CanvasVertex` 构成一个三角形。`Position` 以画布点为单位，`TexCoord` 与 `DrawImageFrom` 一样以图像点为单位。每个顶点的 `Color` 会在三角形内插值后乘到纹理颜色上，零值保留纹理原色。修改顶点并重新记录绘图即可使网格变形。图像可以是任意 `ImageSource`，包括像素缓冲区和 `OffscreenImage` 的 `Source()`；Android 画布和小程序暂不绘制离屏图像。`SetImageSmoothing(false)` 同样作用于网格。Web 绘制任意网格时使用内联或同源图像。小程序用 Web 的播放器绘制网格，尚未在微信开发者工具或真机上验证。HarmonyOS 暂不绘制网格。
+`d.DrawVertices(image, vertices)` 绘制带纹理的网格。每三个连续的 `core.CanvasVertex` 构成一个三角形。`Position` 以画布点为单位，`TexCoord` 与 `DrawImageFrom` 一样以图像点为单位。每个顶点的 `Color` 会在三角形内插值后乘到纹理颜色上，零值保留纹理原色。修改顶点并重新记录绘图即可使网格变形。图像可以是任意 `ImageSource`，包括像素缓冲区和 `OffscreenImage` 的 `Source()`；Android 画布和小程序暂不绘制离屏图像。`SetImageSmoothing(false)` 同样作用于网格。Web 绘制任意网格时使用内联或同源图像。小程序用 Web 的播放器绘制网格，尚未在微信开发者工具或真机上验证。HarmonyOS 逐个裁剪三角形，按其仿射变换绘制图像；它应用每个三角形顶点的平均透明度，但不应用颜色着色，尚未在设备上验证。
 
 `DrawTintedImage`、`DrawTintedImageIn` 和 `DrawTintedImageFrom` 在合成前将图像的 sRGB 和透明度通道分别乘以着色颜色的对应通道。默认的 source-over 模式会透过透明像素显示背景。TSX 使用 `drawTintedImage(image, tint, ...args)`，坐标形式与 `drawImage` 相同。网页上的跨域图像须允许匿名 CORS 请求才能着色。HarmonyOS 可为来自字节或应用资源的图像着色，但尚未在设备上验证；像素缓冲区和离屏图像在 HarmonyOS 上暂不绘制。
 
