@@ -567,6 +567,8 @@ jobs:
         run: go tool nsgo test -run '^TestDevWindowFrameRestoresPlacementAndFullScreen$' ./internal/platform/windows -- -tags=nsgodev
       - name: Test WebView2 popup requests
         run: go tool nsgo test -run '^TestWebView2WindowRequests$' ./internal/platform/windows
+      - name: Test retained image bytes and current shader textures
+        run: go tool nsgo test -run '^(TestCanvasImageCacheByteBudgetAndReconfiguration|TestShaderViewsKeepOnlyTheirImages|TestShaderTextureCacheBoundsLRUPinsAndRelease)$' ./internal/platform/windows
       - name: Test pixel frames and animated images
         run: go tool nsgo test -run '^(TestPixelFramesShowEachFrame|TestAnimatedGIFAndSVGImagesDraw)$' ./internal/platform/windows
       - name: Test Windows owned-window visibility and minimization
