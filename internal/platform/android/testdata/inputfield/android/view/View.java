@@ -27,6 +27,10 @@ public class View {
 
     public View(Context context) { this.context = context; }
     public Context getContext() { return context; }
+    public View getRootView() { return this; }
+    public void getLocationOnScreen(int[] out) { out[0] = 0; out[1] = 0; }
+    public ActionMode startActionMode(ActionMode.Callback callback, int type) { return null; }
+    protected void onDetachedFromWindow() {}
     public Resources getResources() { return resources; }
     public void setBackground(Drawable bg) {}
     public void setPadding(int l, int t, int r, int b) {}

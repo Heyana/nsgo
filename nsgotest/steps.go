@@ -430,12 +430,12 @@ func (a *App) LongPressAt(selector string, at driver.Point) {
 	page := m.pagePoint(at)
 	v := a.viewAt(page, func(v *View) bool {
 		return v.Events.Has(driver.EventLongPress) || pressable(v) || v.Events.Has(driver.EventTouch) ||
-			v.Props.SelectionArea || v.Kind == driver.KindText && v.Props.Selectable == driver.SelectableOn
+			v.Props.SelectionArea || v.Kind == KindText && v.Props.Selectable == driver.SelectableOn
 	})
 	if v == nil {
 		v = m.upTo(func(v *View) bool {
 			return v.Events.Has(driver.EventLongPress) || pressable(v) || v.Events.Has(driver.EventTouch) ||
-				v.Props.SelectionArea || v.Kind == driver.KindText && v.Props.Selectable == driver.SelectableOn
+				v.Props.SelectionArea || v.Kind == KindText && v.Props.Selectable == driver.SelectableOn
 		})
 	}
 	if v == nil || m.disabled(v) {
