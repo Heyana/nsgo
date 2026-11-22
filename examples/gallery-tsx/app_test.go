@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -27,6 +28,28 @@ func startDesktop(t *testing.T) *nsgotest.App {
 		t.Skipf("needs a desktop window, which %s has not", target)
 	}
 	return nsgotest.Start(t, Root, nsgotest.Size(1080, 760))
+}
+
+func TestTextViewDrawsItsDiagram(t *testing.T) {
+	app := open(t, "TextView")
+	app.WaitUntil(5*time.Second, func() bool {
+		views := app.QueryMounted("id:textview-diagram")
+		if len(views) != 1 || views[0].Kind != nsgotest.KindCanvas {
+			return false
+		}
+		var texts []string
+		for _, op := range views[0].Ops {
+			if op.Kind == driver.DrawFillText {
+				texts = append(texts, op.Text)
+			}
+		}
+		return slices.Contains(texts, "Markdown") && slices.Contains(texts, "Native diagram")
+	})
+	if v := app.Find("id:textview-scroll"); v.Content.Height > v.Frame.Size.Height+1 {
+		app.Scroll("id:textview-scroll", 1000)
+	}
+	app.WaitFor("id:textview-diagram", 5*time.Second)
+	app.Screenshot("tsx-textview-diagram")
 }
 
 // startPhone starts the gallery at a phone's size, in its narrow layout.

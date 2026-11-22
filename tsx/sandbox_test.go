@@ -27,6 +27,7 @@ import (
 	"github.com/nsgo-dev/nsgo/tsx/pkg"
 
 	// NSGo's packages that register into its modules, for the sandbox's surface.
+	_ "github.com/nsgo-dev/nsgo/tsx/diagram"
 	_ "github.com/nsgo-dev/nsgo/tsx/diff"
 	_ "github.com/nsgo-dev/nsgo/tsx/editor"
 	_ "github.com/nsgo-dev/nsgo/tsx/terminal"

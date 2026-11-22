@@ -39,6 +39,17 @@ mount(App);
 
 TSX 从 `nsgo` 导入基本元素，从 `nsgo/base` 导入 `base` 的组件，从 `nsgo/gamepad` 读取游戏手柄（签名包需声明 `gamepad` 权限）；应用导入 `tsx/ui` 后，还能从 `nsgo/ui` 导入 `ui` 的组件；`examples/gallery-tsx` 展示了这些组件。
 
+在 Go 宿主中副作用导入 `github.com/nsgo-dev/nsgo/tsx/diagram`，并导入 `tsx/textview` 或 `tsx/ui`，即可从 `nsgo/base` 使用 Mermaid `Diagram`；未使用它的应用不会链接图表解析器。它接受 `source`、`fontSize`、部分 `theme`、`accessibilityLabel` 和常用样式属性。可以直接使用，也可以给 TextView 提供渲染函数：
+
+```tsx
+import { Diagram, TextView } from "nsgo/base";
+
+<TextView markdown={markdown}
+  renderDiagram={(code) => <Diagram source={code.code} errorClass="font-mono" />} />
+```
+
+`nsgo/ui` 的 TextView 也接受相同的 `renderDiagram`。其他语言的代码块继续使用原有渲染方式；无效的图表显示源码。
+
 ## 在 TSX 中使用 Go
 
 注册 Go 代码供 TSX 导入：

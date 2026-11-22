@@ -193,6 +193,7 @@ type declarer struct {
 var typePrefixes = map[string]string{
 	"github.com/nsgo-dev/nsgo/base/datatable": "DataTable",
 	"github.com/nsgo-dev/nsgo/base/diff":      "Diff",
+	"github.com/nsgo-dev/nsgo/base/diagram":   "Diagram",
 	"github.com/nsgo-dev/nsgo/base/dock":      "Dock",
 	"github.com/nsgo-dev/nsgo/base/editor":    "Editor",
 	"github.com/nsgo-dev/nsgo/base/plot":      "Plot",

@@ -262,6 +262,7 @@ nsgo/base.Command
 nsgo/base.ContextMenu
 nsgo/base.DataTable
 nsgo/base.DatePicker
+nsgo/base.Diagram
 nsgo/base.Dialog
 nsgo/base.DiffView
 nsgo/base.DockArea

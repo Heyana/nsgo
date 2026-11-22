@@ -39,6 +39,17 @@ mount(App);
 
 TSX imports the primitives from `nsgo`, `base`'s components from `nsgo/base`, game controllers from `nsgo/gamepad` (under the `gamepad` capability in signed packages) and `ui`'s from `nsgo/ui`, once the app imports `tsx/ui`; `examples/gallery-tsx` shows them.
 
+For Mermaid diagrams, import `github.com/nsgo-dev/nsgo/tsx/diagram` for its effect in the Go host, alongside `tsx/textview` or `tsx/ui`. This adds `Diagram` to `nsgo/base` without linking the diagram parser into apps that do not use it. It takes `source`, `fontSize`, a partial `theme`, `accessibilityLabel` and the usual styling props. Use it directly or supply a TextView renderer:
+
+```tsx
+import { Diagram, TextView } from "nsgo/base";
+
+<TextView markdown={markdown}
+  renderDiagram={(code) => <Diagram source={code.code} errorClass="font-mono" />} />
+```
+
+The same `renderDiagram` prop works on `nsgo/ui`'s TextView. A non-Mermaid code block keeps its usual renderer; an invalid diagram shows its source.
+
 `UrlScheme.url()` reads the tracked application address; `UrlScheme.setUrl(url, { history: "push" })` adds an address entry, or replaces it when options are omitted. `UrlScheme.on("change", fn)` observes browser back, forward and hash changes and returns an unsubscribe function. See [Application addresses](addresses.md) for routing, same-origin validation and deep-link hosting.
 
 ## Go from TSX
