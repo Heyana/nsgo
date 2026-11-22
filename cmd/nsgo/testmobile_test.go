@@ -59,6 +59,18 @@ func TestReadMarkedRunKeepsThisRunsOutput(t *testing.T) {
 	}
 }
 
+func TestReadMarkedRunEndsAtItsExitMarkWithoutAStart(t *testing.T) {
+	lines := strings.Join([]string{
+		"nsgo-test-exit old 1",
+		"scroll_test.go:13: checks a desktop mouse and touchpad, unavailable on android",
+		"nsgo-test-exit t1 0",
+	}, "\n")
+	code, err := readMarkedRun(strings.NewReader(lines), "t1", &strings.Builder{}, func() error { return errors.New("waited for the log to end") }, nil)
+	if err != nil || code != 0 {
+		t.Fatalf("code %d, err %v", code, err)
+	}
+}
+
 func TestReadMarkedRunWithoutAnExitMark(t *testing.T) {
 	ended := errors.New("ended")
 	if _, err := readMarkedRun(strings.NewReader("nsgo-test-start t1\n=== RUN TestA\n"), "t1", &strings.Builder{}, func() error { return ended }, nil); err != ended {
