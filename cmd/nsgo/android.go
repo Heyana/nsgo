@@ -126,6 +126,11 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 			return "", err
 		}
 		files = append(files, apk.File{Name: "lib/" + abi + "/libnsgo.so", Data: app})
+		if ghostty, err := androidGhosttyLibrary(ctx, p, goarch, abi); err != nil {
+			return "", err
+		} else if ghostty.Data != nil {
+			files = append(files, ghostty)
+		}
 		required, err := androidLibraries(ctx, p, goarch, app)
 		if err != nil {
 			return "", err
@@ -285,6 +290,29 @@ func androidGhosttyFile(dir, goarch, abi string) (apk.File, error) {
 }
 
 // androidLibraries are the device's libraries app, the app's linked executable for goarch, uses where the device has them: the window extensions for an app that reads its fold geometry, so no other app declares them. The name in the function table alone does not tell, as reflection may have kept it, so the app's sources must also select a Geometry.
+// androidGhosttyLibrary returns the prebuilt libghostty-vt for an app that
+// links base/terminal. Android's loader searches the APK's ABI directory, so
+// the library is a sibling of libnsgo.so rather than a Go-embedded payload.
+func androidGhosttyLibrary(ctx context.Context, p *project, goarch, abi string) (apk.File, error) {
+	dir, err := linkedDir(ctx, p, []string{"GOOS=android", "GOARCH=" + goarch, "CGO_ENABLED=0"}, ghosttyPackage)
+	if err != nil {
+		return apk.File{}, err
+	}
+	if dir == "" {
+		return apk.File{}, nil
+	}
+	return androidGhosttyFile(dir, goarch, abi)
+}
+
+func androidGhosttyFile(dir, goarch, abi string) (apk.File, error) {
+	path := filepath.Join(dir, "lib", "android-"+goarch, "libghostty-vt.so")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return apk.File{}, fmt.Errorf("base/terminal: read Android libghostty-vt: %w", err)
+	}
+	return apk.File{Name: "lib/" + abi + "/libghostty-vt.so", Data: data}, nil
+}
+
 func androidLibraries(ctx context.Context, p *project, goarch string, app []byte) ([]string, error) {
 	if !bytes.Contains(app, []byte(geometryReader)) {
 		return nil, nil

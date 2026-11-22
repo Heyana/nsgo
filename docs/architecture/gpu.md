@@ -348,7 +348,7 @@ NSGo runs Android apps as a Go executable started by a prebuilt Java runtime (`c
 
 Vulkan on Android is explicitly deferred to Stage 2 once workloads need compute shaders, read/write storage buffers, or lower CPU/pipe overhead than the Java GL thread provides. Two architectural prerequisites in NSGo must land first:
 
-1. **No-cgo bionic `dlopen` on arm64 Android**: `purego` currently loads shared libraries on Android only with cgo (the same blocker recorded in the [roadmap](../roadmap.md#terminal) for `libghostty-vt`). Loading `libvulkan.so` in `CGO_ENABLED=0` arm64 builds requires a Go bionic loader.
+1. **Cross-process surface sharing**: the Android backend still needs a safe Vulkan surface handoff between the Java runtime and Go before Vulkan can replace the OpenGL path. The no-cgo bionic loader is shared with `base/terminal` now.
 2. **Cross-process surface sharing**: Because the Go app runs in a child process while Android Activities own `Surface`/`ANativeWindow`, presenting Vulkan swapchains directly from Go requires passing an `ANativeWindow` / `Surface` over Binder or adopting the process-lifetime changes tracked in [#12](https://github.com/nsgo-dev/nsgo/issues/12).
 
 ## Target scope (Decision 4)

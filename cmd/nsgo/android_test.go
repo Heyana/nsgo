@@ -136,6 +136,27 @@ func TestFindNDKInTheSDK(t *testing.T) {
 	}
 }
 
+func TestAndroidGhosttyLibrary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lib", "android-arm64", "libghostty-vt.so")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte("ELF ghostty")
+	if err := os.WriteFile(path, want, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// linkedDir is deliberately bypassed here: this test exercises the APK
+	// path and ABI naming after dependency discovery has selected the package.
+	file, err := androidGhosttyFile(dir, "arm64", "arm64-v8a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Name != "lib/arm64-v8a/libghostty-vt.so" || !bytes.Equal(file.Data, want) {
+		t.Fatalf("Android Ghostty file = %+v, want ABI path and bytes", file)
+	}
+}
+
 // TestAndroidLibraries checks that only an app whose function table names the fold geometry's reader and whose sources select it declares the window extensions.
 func TestAndroidLibraries(t *testing.T) {
 	if libs, err := androidLibraries(t.Context(), nil, "arm64", []byte("\x00github.com/nsgo-dev/nsgo/core.(*Env).Window\x00")); libs != nil || err != nil {
