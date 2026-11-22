@@ -164,10 +164,7 @@ func TestMultilinePlaceholderAccessibility(t *testing.T) {
 	check("notes", "", true)
 }
 
-// TestPastePastMaxLengthAndUndo checks that pasting text longer than MaxLength
-// into both single-line UITextField and multiline UITextView clips on a
-// composed character sequence boundary, inserts cleanly, ignores further pastes
-// once full, and undoes without crashing UIKit's undo manager (#1565).
+// TestPastePastMaxLengthAndUndo checks that pasting text longer than MaxLength into both single-line UITextField and multiline UITextView clips on a composed character sequence boundary, inserts cleanly, ignores further pastes once full, and undoes without crashing UIKit's undo manager (#1565).
 func TestPastePastMaxLengthAndUndo(t *testing.T) {
 	const wait = 5 * time.Second
 	for _, tc := range []struct {

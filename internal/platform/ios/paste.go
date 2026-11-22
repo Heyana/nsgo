@@ -65,8 +65,7 @@ func pasteMethods() []objc.MethodDef {
 var readonlyRefuses = map[objc.SEL]bool{sel("cut:"): true, sel("paste:"): true, sel("pasteAndMatchStyle:"): true,
 	sel("delete:"): true, sel("replace:"): true, sel("_promptForReplace:"): true, sel("captureTextFromCamera:"): true}
 
-// pasteEvent reports a paste from pb into in when listened, returning any
-// already-read text and whether the editor should insert text.
+// pasteEvent reports a paste from pb into in when listened, returning any already-read text and whether the editor should insert text.
 func (in *input) pasteEvent(pb objc.ID) (text string, hasText, insert bool) {
 	if !in.fs.Events.Has(driver.EventPaste) {
 		return "", false, in.fs.Config.PasteBehavior == driver.PasteInsert
@@ -95,10 +94,7 @@ func (in *input) pasteEvent(pb objc.ID) (text string, hasText, insert bool) {
 	return p.Text, true, p.Text != "" && len(p.URIs) == 0 && in.fs.Config.PasteBehavior == driver.PasteInsert
 }
 
-// pasteText inserts text from pb (or the text already read by pasteEvent)
-// into in, clipped to MaxLength on a composed character sequence boundary,
-// asking the delegate and calling insertText: so UIKit registers an undo step
-// matching the inserted text rather than the unclipped pasteboard string.
+// pasteText inserts text from pb (or the text already read by pasteEvent) into in, clipped to MaxLength on a composed character sequence boundary, asking the delegate and calling insertText: so UIKit registers an undo step matching the inserted text rather than the unclipped pasteboard string.
 func (in *input) pasteText(pb objc.ID, text string, hasText bool) {
 	if !hasText {
 		ns := pb.Send(sel("string"))
@@ -122,9 +118,7 @@ func (in *input) pasteText(pb objc.ID, text string, hasText bool) {
 	in.field.Send(sel("insertText:"), apple.NSString(out))
 }
 
-// clipComposedUTF16 trims s to at most maxUnits UTF-16 code units without
-// splitting a composed character sequence (surrogate pairs, combining marks,
-// ZWJ emoji or CRLF).
+// clipComposedUTF16 trims s to at most maxUnits UTF-16 code units without splitting a composed character sequence (surrogate pairs, combining marks, ZWJ emoji or CRLF).
 func clipComposedUTF16(s string, maxUnits int) string {
 	if maxUnits <= 0 {
 		return ""

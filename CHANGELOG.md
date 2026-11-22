@@ -2,7 +2,6 @@
 
 ## [Unreleased]
 
-- Clip pastes past `MaxLength` (and single-line/submitting-multiline pastes) on iOS `UITextField` and `UITextView` at composed character sequence boundaries before inserting via `insertText:` so pasting and undoing never corrupts UIKit's undo manager (#1565).
 - Check and request camera and microphone permissions in Flatpak and Snap Linux sandboxes through the XDG Desktop Portal (`Camera`, `Device` and `PermissionStore`) and PipeWire native registry access (#1576).
 - Read QR codes and barcodes from a Mac's camera with `Scope.ScanCode` (#429 by @houko).
 - Read accelerometer, gyroscope and fused motion from mobile browsers (#1208 by @houko).

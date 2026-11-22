@@ -103,9 +103,7 @@ func InputAccessibilityForTest(testID string) (state InputAccessibilityState, ok
 	return state, ok
 }
 
-// InputPasteForTest puts text on the general pasteboard, focuses the mounted
-// input with testID, optionally sets its UTF-16 selection, and sends the native
-// paste: action to its editor on the main thread.
+// InputPasteForTest puts text on the general pasteboard, focuses the mounted input with testID, optionally sets its UTF-16 selection, and sends the native paste: action to its editor on the main thread.
 func InputPasteForTest(testID, text string, selRange *driver.TextRange) (got string, ok bool) {
 	onMainSync(func() {
 		for _, v := range runner.views {
@@ -129,9 +127,7 @@ func InputPasteForTest(testID, text string, selRange *driver.TextRange) (got str
 	return got, ok
 }
 
-// InputUndoForTest runs undo on the mounted input editor's NSUndoManager on
-// the main thread and returns the editor's resulting text and whether an undo
-// action was registered.
+// InputUndoForTest runs undo on the mounted input editor's NSUndoManager on the main thread and returns the editor's resulting text and whether an undo action was registered.
 func InputUndoForTest(testID string) (text string, canUndo, ok bool) {
 	onMainSync(func() {
 		for _, v := range runner.views {
