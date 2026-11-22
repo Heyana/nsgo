@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/ebitengine/purego/objc"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 func TestFileURLPathAndScope(t *testing.T) {
@@ -96,5 +98,33 @@ func TestAppleWebCancellation(t *testing.T) {
 		if got := appleWebCancellation(c.domain, c.code); got != c.want {
 			t.Errorf("appleWebCancellation(%q, %d) = %v, want %v", c.domain, c.code, got, c.want)
 		}
+	}
+}
+
+func TestClosingWebCancelsItsDownloads(t *testing.T) {
+	delegates := map[objc.ID]objc.ID{}
+	cancelled := map[objc.ID]bool{}
+	cls := RegisterClass("NsgoTestWebDownload", Class("NSObject"), nil, []objc.MethodDef{
+		{Cmd: sel("delegate"), Fn: func(self objc.ID, _ objc.SEL) objc.ID { return delegates[self] }},
+		{Cmd: sel("setDelegate:"), Fn: func(self objc.ID, _ objc.SEL, d objc.ID) { delegates[self] = d }},
+		{Cmd: sel("cancel:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { cancelled[self] = true }},
+	})
+	closing, other := objc.ID(Class("NSObject")).Send(sel("new")), objc.ID(Class("NSObject")).Send(sel("new"))
+	defer closing.Send(sel("release"))
+	defer other.Send(sel("release"))
+	mine, theirs := objc.ID(cls).Send(sel("new")), objc.ID(cls).Send(sel("new"))
+	mine.Send(sel("retain"))
+	defer mine.Send(sel("release"))
+	defer theirs.Send(sel("release"))
+	delegates[mine], delegates[theirs] = closing, other
+	downloads[mine], downloads[theirs] = &driver.WebDownload{ID: "mine"}, &driver.WebDownload{ID: "theirs"}
+	defer delete(downloads, theirs)
+
+	(&Web{handler: closing}).cancelDownloads()
+	if _, ok := downloads[mine]; ok || !cancelled[mine] || delegates[mine] != 0 {
+		t.Error("a closing web view's download was kept")
+	}
+	if _, ok := downloads[theirs]; !ok || cancelled[theirs] {
+		t.Error("a closing web view cancelled another view's download")
 	}
 }

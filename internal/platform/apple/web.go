@@ -362,7 +362,7 @@ func (w *Web) mayCapture(want driver.WebMedia) bool {
 }
 
 // downloads are the downloads running, by their WKDownload, each
-// retained until it ends.
+// retained until it ends or its web view closes.
 var (
 	downloads   = map[objc.ID]*driver.WebDownload{}
 	downloadSeq int
@@ -401,6 +401,19 @@ func (w *Web) download(d objc.ID, dl *driver.WebDownload) {
 	if dl.State != driver.WebDownloadStarted {
 		delete(downloads, d)
 		d.Send(sel("release"))
+	}
+}
+
+// cancelDownloads cancels and lets go the downloads w's handler
+// delegates, as w closes: once the handler goes, nothing would end them.
+func (w *Web) cancelDownloads() {
+	for d := range downloads {
+		if d.Send(sel("delegate")) == w.handler {
+			delete(downloads, d)
+			d.Send(sel("setDelegate:"), objc.ID(0))
+			d.Send(sel("cancel:"), objc.ID(0))
+			d.Send(sel("release"))
+		}
 	}
 }
 
@@ -812,6 +825,7 @@ func (w *Web) close() {
 		Send(sel("removeScriptMessageHandlerForName:"), NSString(messageHandler))
 	w.web.Send(sel("removeFromSuperview"))
 	w.web.Send(sel("release"))
+	w.cancelDownloads()
 	delete(webHandlers, w.handler)
 	delete(schemeHandlers, w.handler)
 	w.handler.Send(sel("release"))
