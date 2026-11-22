@@ -226,7 +226,6 @@ What `base/diagram` still lacks ([diagrams](architecture/components.md#diagrams)
 | --- | --- | --- |
 | Links and tooltips | `limumygo`'s `hit.go`, `scene.Item.Link` and `Tooltip`, [#1435](https://github.com/nsgo-dev/nsgo/issues/1435) | A press on an item with a link opens it as `TextView`'s links do, and the item under the pointer shows its tooltip |
 | Icons and images in diagrams | `layout.Options.Icons`, `scene.Picture`, [#1436](https://github.com/nsgo-dev/nsgo/issues/1436) | A node's `fa:` icon draws from an icon set the app gives, and its image loads as an `Image`'s does |
-| Diagrams that fit their view | `layout.Options.MaxWidth`, `KeepDirection`, [#1437](https://github.com/nsgo-dev/nsgo/issues/1437) | A diagram is laid out to the width its view has, turning a wide flowchart to run down, rather than scroll |
 
 ## Formulas
 

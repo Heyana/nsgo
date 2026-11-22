@@ -97,7 +97,7 @@ textview.TextView{
 
 源码分段到达时，为 `formula.View` 设置 `SourceFunc`，并设 `Streaming: true`，或让 `StreamingFunc` 读取应用的接收状态。这会在有效内容继续排版时隐藏可恢复错误和占位符的图形；接收完成后清除标记，显示仍然存在的错误。在 `TextView` 中，通过 `RenderMath` 返回这样的 `formula.View`，传入 `Math.TeX` 和 `Math.Display`，并让 `StreamingFunc` 读取同一接收状态。
 
-`mermaid` 代码块默认显示源码；应用传入 `base/diagram` 的 `RenderDiagram: diagram.RenderDiagram` 后，会用 limu 把它画成原生图表，支持流程图、时序图、类图、状态图、实体关系图、甘特图、饼图、思维导图、时间线等，使用平台字体，并随应用的浅色或深色外观切换。图比文本宽时可以横向滚动，复制时得到源码；仍在流式输出中的代码块会先显示为代码，写完后再画成图。在其他地方显示图表用 `diagram.View`。
+`mermaid` 代码块默认显示源码；应用传入 `base/diagram` 的 `RenderDiagram: diagram.RenderDiagram` 后，会用 limu 把它画成原生图表，支持流程图、时序图、类图、状态图、实体关系图、甘特图、饼图、思维导图、时间线等，使用平台字体，并随应用的浅色或深色外观切换。图表按文本的可用宽度布局，过宽的流程图会改为向下排列，标签字号保持不变；无法适配的图表仍可横向滚动。复制时得到源码；仍在流式输出中的代码块会先显示为代码，写完后再画成图。在其他地方显示图表用 `diagram.View`，它会随容器宽度的变化重新布局。
 
 在 `RenderDiagram` 回调中返回带有 `ThemeFunc` 的 `diagram.View`，可以让图表采用应用的 `ui` 调色板。这个函数在画布绘制时读取颜色，因此调色板或子树外观变化时会给现有视图重新着色。保持为零的颜色继续使用图表的默认值：
 

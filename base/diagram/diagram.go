@@ -12,10 +12,11 @@ import (
 	"github.com/firede/limu/style"
 
 	"github.com/nsgo-dev/nsgo/base/diagram/locales"
+	"github.com/nsgo-dev/nsgo/base/internal/diagramlayout"
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// View draws a Mermaid diagram at the size its layout gives, in points, with its labels in the platform's font at FontSize, scaled by the user's text size setting as text is. It colors itself with the appearance's theme, gray with a blue accent in light and in dark, and with what Theme sets over it. A diagram that does not parse, or cannot be laid out, shows its source as text in ErrorClass and ErrorStyle. Assistive technology reads it as an image, named by Label, else by the diagram's accTitle and accDescr, else as a diagram, in the language the app shows.
+// View draws a Mermaid diagram laid out to the width its container gives it, turning a wide flowchart to run down where it fits better. Labels use the platform's font at FontSize, scaled by the user's text size setting as text is. It colors itself with the appearance's theme, gray with a blue accent in light and in dark, and with what Theme sets over it. A diagram that does not parse, or cannot be laid out, shows its source as text in ErrorClass and ErrorStyle. Assistive technology reads it as an image, named by Label, else by the diagram's accTitle and accDescr, else as a diagram, in the language the app shows.
 type View struct {
 	// Source is the diagram's Mermaid text, as a mermaid code block holds it; SourceFunc follows what it reads.
 	Source     string
@@ -99,9 +100,10 @@ type laidOut struct {
 type layoutKey struct {
 	source string
 	size   float64
+	width  float64
 }
 
-// layouts keeps diagrams laid out by source and size, so a diagram a list shows again, or one each copy of a chat shows, is laid out once. A layout measures with the platform's text engine, which every diagram of the process shares.
+// layouts keeps diagrams laid out by source, font size and available width, so a diagram a list shows again, or one each copy of a chat shows, is laid out once at each width. A layout measures with the platform's text engine, which every diagram of the process shares.
 var layouts = struct {
 	sync.Mutex
 	m map[layoutKey]laidOut
@@ -110,9 +112,9 @@ var layouts = struct {
 // maxLayouts is how many layouts layouts keeps before it lets them all go.
 const maxLayouts = 256
 
-// lay parses and lays out source at size, measuring labels with m.
-func lay(source string, size float64, m *measurer) laidOut {
-	key := layoutKey{source: source, size: size}
+// lay parses and lays out source at size within width, measuring labels with m; zero width leaves it unbounded.
+func lay(source string, size, width float64, m *measurer) laidOut {
+	key := layoutKey{source: source, size: size, width: width}
 	layouts.Lock()
 	l, ok := layouts.m[key]
 	layouts.Unlock()
@@ -121,7 +123,7 @@ func lay(source string, size float64, m *measurer) laidOut {
 	}
 	d, err := limu.Parse(source, ldiagram.Options{})
 	if err == nil {
-		l.scene, err = d.Layout(&layout.Options{Measurer: m, FontSize: size})
+		l.scene, err = d.Layout(&layout.Options{Measurer: m, FontSize: size, MaxWidth: width})
 	}
 	l.err = err
 	layouts.Lock()
@@ -148,14 +150,44 @@ func (v View) Render(cx *core.Scope) core.Node {
 	}
 	m := newMeasurer(cx)
 	env := cx.Env()
-	laid := core.NewMemoFunc(cx, func() laidOut {
+	width := core.NewSignal(cx, core.Points(0))
+	viewport := diagramlayout.Width.Use(cx)
+	styles := func() core.Style {
+		s := v.Style
+		if v.StyleFunc != nil {
+			s = s.Merge(v.StyleFunc())
+		}
+		return s
+	}
+	layoutAt := func(width core.Points) laidOut {
 		src := source()
 		if src == "" {
 			return laidOut{err: errEmpty}
 		}
-		return lay(src, float64(size)*float64(env.FontScale()), m)
-	}, func(a, b laidOut) bool { return a.scene == b.scene && a.err == b.err })
-	failed := core.NewMemo(cx, func() bool { return laid.Get().err != nil })
+		return lay(src, float64(size)*float64(env.FontScale()), float64(width), m)
+	}
+	equal := func(a, b laidOut) bool { return a.scene == b.scene && a.err == b.err }
+	natural := core.NewMemoFunc(cx, func() laidOut { return layoutAt(0) }, equal)
+	laid := core.NewMemoFunc(cx, func() laidOut {
+		w := width.Get()
+		if viewport != nil && viewport() > 0 {
+			available := viewport()
+			w = available
+			// An attachment's containing block is unbounded, so resolve the app's width constraints against its actual viewport.
+			s := styles()
+			if !s.MaxWidth.IsAuto() {
+				w = s.MaxWidth.Resolve(available)
+			}
+			if !s.Width.IsAuto() {
+				w = min(w, s.Width.Resolve(available))
+			}
+			if !s.MinWidth.IsAuto() {
+				w = max(w, s.MinWidth.Resolve(available))
+			}
+		}
+		return layoutAt(max(0, w))
+	}, equal)
+	failed := core.NewMemo(cx, func() bool { return natural.Get().err != nil || laid.Get().err != nil })
 	msgs := func() locales.Messages { return locales.For(cx) }
 	return core.Show{
 		When: failed.Get,
@@ -164,15 +196,26 @@ func (v View) Render(cx *core.Scope) core.Node {
 		},
 		Else: func(cx *core.Scope) core.Node {
 			return core.Canvas{
-				Class: v.Class,
+				Class:    v.Class,
+				OnLayout: func(b core.Bounds) { width.Set(b.Size.Width) },
 				StyleFunc: func() core.Style {
-					s := v.Style
-					if v.StyleFunc != nil {
-						s = s.Merge(v.StyleFunc())
-					}
-					// The diagram's own size, which a container's stretch must not widen.
+					s := styles()
+					// Keep the unbounded preferred width so widening a container can restore the original direction after a narrow layout.
 					sc := laid.Get().scene
-					return core.Style{Width: core.Pt(core.Points(sc.Width)), Height: core.Pt(core.Points(sc.Height)), AlignSelf: core.AlignStart}.Merge(s)
+					most := core.Pct(100)
+					preferred := core.Points(natural.Get().scene.Width)
+					if viewport != nil && viewport() > 0 {
+						// An attachment has an independent viewport signal, so its intrinsic width can follow the fitted scene. A scene limu cannot fit still has room to scroll.
+						preferred = core.Points(sc.Width)
+						most = core.Pt(max(viewport(), preferred))
+						for _, length := range []*core.Length{&s.Width, &s.MinWidth, &s.MaxWidth} {
+							if _, percent := length.Percent(); percent {
+								*length = core.Pt(length.Resolve(viewport()))
+							}
+						}
+					}
+					return core.Style{Width: core.Pt(preferred), MaxWidth: most,
+						Height: core.Pt(core.Points(sc.Height)), AlignSelf: core.AlignStart}.Merge(s)
 				},
 				TestID: v.TestID,
 				LabelFunc: func() string {
@@ -186,8 +229,9 @@ func (v View) Render(cx *core.Scope) core.Node {
 					if sc == nil || sc.Width <= 0 || sc.Height <= 0 {
 						return
 					}
-					// A style that sets another size stretches the diagram to it.
-					d.Scale(float32(sz.Width)/float32(sc.Width), float32(sz.Height)/float32(sc.Height))
+					// Reflow keeps labels in their measured font size. Any room left after fitting centers the scene without stretching it.
+					d.Translate(max(0, (float32(sz.Width)-float32(sc.Width))/2), 0)
+					d.Scale(1, float32(sz.Height)/float32(sc.Height))
 					theme := v.Theme
 					if v.ThemeFunc != nil {
 						theme = v.ThemeFunc()

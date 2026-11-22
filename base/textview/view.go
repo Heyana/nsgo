@@ -479,20 +479,7 @@ func (r *renderer) blockAt(cx *core.Scope, b Block, live func() Block, first boo
 		return r.list(cx, b, items, depth, caret, at)
 	case CodeBlock:
 		if r.tv.RenderDiagram != nil && !caret && IsDiagram(b) {
-			// The diagram centers on a line as wide as the scroll at least, which a copy takes as the block's source between its fences.
-			diagram := r.selectable(core.Text{Style: core.Style{MinWidth: core.Pct(100), TextAlign: core.TextAlignCenter},
-				SelectionBlock: &core.SelectionBlock{
-					Kind:     core.SelectionBlockCode,
-					Language: b.Language,
-					Meta:     b.Meta,
-					Inlines:  []core.SelectionInline{{Kind: core.SelectionInlineText, Text: b.Code, UTF16Len: 1}},
-				},
-				Spans: []core.Span{
-					{Content: "```" + b.Language + "\n" + b.Code + "\n```", Attachment: r.tv.RenderDiagram(cx, b)},
-				}})
-			return after(core.View{Class: r.class(PartDiagramBlock), StyleFunc: func() core.Style { return r.style(PartDiagramBlock) }, Children: []core.Node{
-				core.Scroll{Horizontal: true, HideIndicator: r.tv.NoDiagramBlockScrollbar, Class: r.class(PartDiagramBlockScroll), StyleFunc: func() core.Style { return r.style(PartDiagramBlockScroll) }, Children: []core.Node{diagram}},
-			}})
+			return after(r.diagramBlock(b))
 		}
 		if r.tv.RenderCodeBlock != nil {
 			return after(r.tv.RenderCodeBlock(cx, b))
