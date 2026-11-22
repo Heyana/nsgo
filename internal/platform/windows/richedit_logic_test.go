@@ -27,8 +27,7 @@ func TestRichEditGUIDStrings(t *testing.T) {
 }
 
 func TestRichEditVtableLayout(t *testing.T) {
-	// ITextServices (IUnknown 0..2 + 18 methods = 21 slots) and ITextServices2
-	// (TxGetNaturalSize2 at 21, TxDrawD2D at 22 = 23 slots).
+	// ITextServices (IUnknown 0..2 + 18 methods = 21 slots) and ITextServices2 (TxGetNaturalSize2 at 21, TxDrawD2D at 22 = 23 slots).
 	if tsTxSendMessage != 3 || tsTxDraw != 4 || tsTxGetHScroll != 5 || tsTxGetVScroll != 6 ||
 		tsOnTxSetCursor != 7 || tsTxQueryHitPoint != 8 || tsOnTxInPlaceActivate != 9 ||
 		tsOnTxInPlaceDeactivate != 10 || tsOnTxUIActivate != 11 || tsOnTxUIDeactivate != 12 ||
@@ -42,8 +41,7 @@ func TestRichEditVtableLayout(t *testing.T) {
 			ts2TxGetNaturalSize2, ts2TxDrawD2D, ts2VtblSize)
 	}
 
-	// ITextHost (IUnknown 0..2 + 39 methods = 42 slots) and ITextHost2
-	// (12 methods 42..53 = 54 slots).
+	// ITextHost (IUnknown 0..2 + 39 methods = 42 slots) and ITextHost2 (12 methods 42..53 = 54 slots).
 	if thQueryInterface != 0 || thAddRef != 1 || thRelease != 2 ||
 		thTxGetDC != 3 || thTxReleaseDC != 4 || thTxShowScrollBar != 5 ||
 		thTxCreateCaret != 11 || thTxShowCaret != 12 || thTxSetCaretPos != 13 ||

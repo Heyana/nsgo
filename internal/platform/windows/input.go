@@ -2,21 +2,9 @@
 
 package windows
 
-// Text inputs: hosted through Windows' windowless RichEdit (ITextServices2
-// from msftedit.dll) and drawn with Direct2D (TxDrawD2D) into the view at the
-// content box the core laid out (inside padding and border). There are no
-// child windows, so the editor clips, fades and transforms with its view, joins
-// the composition's layers, and whatever is drawn after it covers it.
+// Text inputs: hosted through Windows' windowless RichEdit (ITextServices2 from msftedit.dll) and drawn with Direct2D (TxDrawD2D) into the view at the content box the core laid out (inside padding and border). There are no child windows, so the editor clips, fades and transforms with its view, joins the composition's layers, and whatever is drawn after it covers it.
 //
-// RichEdit provides native editing, multi-level undo/redo, OS spell checking
-// (IMF_SPELLCHECKING), password masking (TXTBIT_USEPASSWORD), word boundaries,
-// and TSF/IMM32 input methods. The view draws its decoration like any other;
-// the host draws the placeholder while empty, RichEdit draws the text,
-// selection, spellcheck underlines and IME composition via TxDrawD2D, and the
-// host draws the delegated logical caret in the configured CaretColor (blinking
-// at the system's rate while the field has focus). When msftedit.dll or
-// ITextServices2 is unavailable (such as 32-bit x86 or unit tests without an
-// HWND), textInput falls back to editModel (textedit.go) + DirectWrite.
+// RichEdit provides native editing, multi-level undo/redo, OS spell checking (IMF_SPELLCHECKING), password masking (TXTBIT_USEPASSWORD), word boundaries, and TSF/IMM32 input methods. The view draws its decoration like any other; the host draws the placeholder while empty, RichEdit draws the text, selection, spellcheck underlines and IME composition via TxDrawD2D, and the host draws the delegated logical caret in the configured CaretColor (blinking at the system's rate while the field has focus). When msftedit.dll or ITextServices2 is unavailable (such as 32-bit x86 or unit tests without an HWND), textInput falls back to editModel (textedit.go) + DirectWrite.
 //
 // Every user edit increments the field's edit count and reports
 // EventChangeText with it; a value from the engine based on an older count
@@ -184,8 +172,7 @@ type textInput struct {
 	// world is where the view was drawn last, for the pointer and the IME.
 	world matrix
 	drawn bool
-	// re is the windowless RichEdit host (ITextServices2) when available on
-	// a real window; reTried avoids retrying after a permanent failure.
+	// re is the windowless RichEdit host (ITextServices2) when available on a real window; reTried avoids retrying after a permanent failure.
 	re      *richEditHost
 	reTried bool
 }
@@ -228,9 +215,7 @@ func (in *textInput) selectAll() {
 	in.model.selectAll()
 }
 
-// ensureRichEdit lazily creates the windowless RichEdit host once the input is
-// attached to a real Win32 HWND, seeding it with any text/selection set before
-// the window was ready.
+// ensureRichEdit lazily creates the windowless RichEdit host once the input is attached to a real Win32 HWND, seeding it with any text/selection set before the window was ready.
 func (in *textInput) ensureRichEdit() *richEditHost {
 	if in == nil {
 		return nil
@@ -258,9 +243,7 @@ func (in *textInput) ensureRichEdit() *richEditHost {
 	return re
 }
 
-// syncFromRichEdit mirrors RichEdit's authoritative text, selection, and
-// multiline scroll metrics into in.model so UIA, speech, menus, and tests
-// observe consistent state.
+// syncFromRichEdit mirrors RichEdit's authoritative text, selection, and multiline scroll metrics into in.model so UIA, speech, menus, and tests observe consistent state.
 func (in *textInput) syncFromRichEdit() (textChanged, selChanged bool) {
 	if in == nil || in.re == nil {
 		return false, false
@@ -286,8 +269,7 @@ func (in *textInput) syncFromRichEdit() (textChanged, selChanged bool) {
 	return textChanged, selChanged
 }
 
-// onRichEditChange handles RichEdit's EN_CHANGE notification for user-driven
-// edits (including TSF/IME commits and spellcheck replacements).
+// onRichEditChange handles RichEdit's EN_CHANGE notification for user-driven edits (including TSF/IME commits and spellcheck replacements).
 func (in *textInput) onRichEditChange() {
 	if in == nil || in.w == nil {
 		return
@@ -2117,9 +2099,7 @@ func (w *window) editKey(vk uintptr, ctrl, shift, alt bool) bool {
 	return false
 }
 
-// richEditKey dispatches a key event or synthetic menu/test command to
-// RichEdit's ITextServices2 while preserving NSGo's Return/Submit, Paste,
-// MaxLength, and synthetic modifier semantics.
+// richEditKey dispatches a key event or synthetic menu/test command to RichEdit's ITextServices2 while preserving NSGo's Return/Submit, Paste, MaxLength, and synthetic modifier semantics.
 func (w *window) richEditKey(in *textInput, re *richEditHost, vk uintptr, ctrl, shift, alt bool) bool {
 	in.syncFromRichEdit()
 	m := &in.model
@@ -2183,8 +2163,7 @@ func (w *window) richEditKey(in *textInput, re *richEditHost, vk uintptr, ctrl, 
 			if keyDown(vkControl) {
 				return forward(wmKeyDown, vk)
 			}
-			// Synthetic Ctrl+Backspace / Ctrl+Delete: select the word range
-			// and replace with empty so RichEdit records a single undo step.
+			// Synthetic Ctrl+Backspace / Ctrl+Delete: select the word range and replace with empty so RichEdit records a single undo step.
 			s, e := m.selection()
 			if s == e {
 				if vk == vkDelete {

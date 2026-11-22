@@ -13,8 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestRichEditGUIDs verifies the windowless RichEdit interface GUIDs against
-// Windows' CLSIDFromString parser.
+// TestRichEditGUIDs verifies the windowless RichEdit interface GUIDs against Windows' CLSIDFromString parser.
 func TestRichEditGUIDs(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -36,10 +35,7 @@ func TestRichEditGUIDs(t *testing.T) {
 	}
 }
 
-// TestRichEditNativeEditingUndoMaskingScrollAndDraw exercises windowless
-// RichEdit (ITextServices2 + ITextHost2) end to end on a real Windows surface:
-// editing, selection, native undo/redo, password masking, spell-checking
-// options, multiline vertical scrolling, and Direct2D TxDrawD2D rendering.
+// TestRichEditNativeEditingUndoMaskingScrollAndDraw exercises windowless RichEdit (ITextServices2 + ITextHost2) end to end on a real Windows surface: editing, selection, native undo/redo, password masking, spell-checking options, multiline vertical scrolling, and Direct2D TxDrawD2D rendering.
 func TestRichEditNativeEditingUndoMaskingScrollAndDraw(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")
@@ -87,8 +83,7 @@ func TestRichEditNativeEditingUndoMaskingScrollAndDraw(t *testing.T) {
 		return nil
 	}
 
-	// 1. Plain input: verify ITextServices2 is active, spell checking enabled,
-	//    editing, selection, and native undo/redo work.
+	// 1. Plain input: verify ITextServices2 is active, spell checking enabled,    editing, selection, and native undo/redo work.
 	typeText(hwnd, "hello")
 	waitForTitle(t, hwnd, title+"|hello||", 5*time.Second)
 
@@ -126,8 +121,7 @@ func TestRichEditNativeEditingUndoMaskingScrollAndDraw(t *testing.T) {
 		}
 	})
 
-	// 2. Password input: verify TXTBIT_USEPASSWORD, bullet password char,
-	//    spell checking disabled, and copy blocked.
+	// 2. Password input: verify TXTBIT_USEPASSWORD, bullet password char,    spell checking disabled, and copy blocked.
 	onMain(t, hwnd, func(w *window) {
 		in := findField(w, "secret")
 		if in == nil {
@@ -153,8 +147,7 @@ func TestRichEditNativeEditingUndoMaskingScrollAndDraw(t *testing.T) {
 		}
 	})
 
-	// 3. Multiline input: NoAutoCorrect disables spell checking, scrolling works,
-	//    and TxDrawD2D renders cleanly during paint.
+	// 3. Multiline input: NoAutoCorrect disables spell checking, scrolling works,    and TxDrawD2D renders cleanly during paint.
 	onMain(t, hwnd, func(w *window) {
 		in := findField(w, "multi")
 		if in == nil {

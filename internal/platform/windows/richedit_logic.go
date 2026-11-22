@@ -155,13 +155,11 @@ const (
 	// Default password masking bullet U+2022.
 	richEditBullet uint16 = 0x2022
 
-	// RichEdit unlimited text cap (EM_EXLIMITTEXT treats 0 as 64KB, so
-	// pass MaxInt32-1 for unlimited fields).
+	// RichEdit unlimited text cap (EM_EXLIMITTEXT treats 0 as 64KB, so pass MaxInt32-1 for unlimited fields).
 	richEditUnlimitedLength uint32 = 0x7ffffffe
 )
 
-// RichEdit window messages, edit styles, language options, notifications,
-// and format flags from Richedit.h / WinUser.h.
+// RichEdit window messages, edit styles, language options, notifications, and format flags from Richedit.h / WinUser.h.
 const (
 	wmUser          uint32 = 0x0400
 	wmLButtonDblClk uint32 = 0x0203
@@ -340,10 +338,7 @@ type charFormatW struct {
 	faceName       [32]uint16
 }
 
-// charFormat2W is Win32 C++ CHARFORMAT2W (116 bytes under pshpack4).
-// Embedding charFormatW aligns wWeight at offset 92 to match MSVC's C++
-// inheritance layout (`struct CHARFORMAT2W : _charformatw`) that msftedit.dll
-// expects.
+// charFormat2W is Win32 C++ CHARFORMAT2W (116 bytes under pshpack4). Embedding charFormatW aligns wWeight at offset 92 to match MSVC's C++ inheritance layout (`struct CHARFORMAT2W : _charformatw`) that msftedit.dll expects.
 type charFormat2W struct {
 	charFormatW
 	weight         uint16
@@ -430,8 +425,7 @@ type sizeL struct {
 	cx, cy int32
 }
 
-// colorToColorRef converts an NSGo 0xRRGGBBAA color to a Win32 COLORREF
-// (0x00BBGGRR).
+// colorToColorRef converts an NSGo 0xRRGGBBAA color to a Win32 COLORREF (0x00BBGGRR).
 func colorToColorRef(c driver.Color) uint32 {
 	r := uint32(c>>24) & 0xff
 	g := uint32(c>>16) & 0xff
@@ -439,8 +433,7 @@ func colorToColorRef(c driver.Color) uint32 {
 	return r | g<<8 | b<<16
 }
 
-// dipsToTwips converts DIPs (1/96 inch) to twips (1/1440 inch).
-// 1440 / 96 = 15 twips per DIP.
+// dipsToTwips converts DIPs (1/96 inch) to twips (1/1440 inch). 1440 / 96 = 15 twips per DIP.
 func dipsToTwips(d float64) int32 {
 	return int32(math.Round(d * 15))
 }
@@ -453,8 +446,7 @@ func dipsToHimetric(d float64) int32 {
 	return int32(math.Round(d * 2540 / 96))
 }
 
-// richEditSingleLineYOffset returns the vertical centering offset in DIPs for
-// a single-line RichEdit whose line height is smaller than its content box.
+// richEditSingleLineYOffset returns the vertical centering offset in DIPs for a single-line RichEdit whose line height is smaller than its content box.
 func richEditSingleLineYOffset(boxHeight, lineHeight float32) float32 {
 	if boxHeight <= 0 || lineHeight <= 0 || lineHeight >= boxHeight {
 		return 0
@@ -462,8 +454,7 @@ func richEditSingleLineYOffset(boxHeight, lineHeight float32) float32 {
 	return (boxHeight - lineHeight) / 2
 }
 
-// richEditMasked reports whether cfg masks text with password bullets.
-// Multiline fields ignore Masked, matching the other NSGo backends.
+// richEditMasked reports whether cfg masks text with password bullets. Multiline fields ignore Masked, matching the other NSGo backends.
 func richEditMasked(cfg driver.InputConfig) bool {
 	return cfg.Masked && !cfg.Multiline
 }
@@ -475,9 +466,7 @@ func richEditEditable(cfg driver.InputConfig) bool {
 
 // richEditPropertyBits computes the ITextHost::TxGetPropertyBits value for cfg.
 func richEditPropertyBits(cfg driver.InputConfig) uint32 {
-	// Plain-text mode (TXTBIT_RICHTEXT omitted) keeps editing plain text while
-	// enabling Direct2D/DirectWrite rendering, selection hiding when inactive,
-	// and saving the selection across focus transitions.
+	// Plain-text mode (TXTBIT_RICHTEXT omitted) keeps editing plain text while enabling Direct2D/DirectWrite rendering, selection hiding when inactive, and saving the selection across focus transitions.
 	bits := txtBitD2DDWrite | txtBitHideSelection | txtBitSaveSelection | txtBitAllowBeep
 	if cfg.Multiline {
 		bits |= txtBitMultiline | txtBitWordWrap
@@ -491,10 +480,7 @@ func richEditPropertyBits(cfg driver.InputConfig) uint32 {
 	return bits
 }
 
-// richEditEditStyle returns the EM_SETEDITSTYLE (value, mask) pair for cfg:
-// TSF integration, logical caret delegation for Direct2D, proofing when spell
-// checking is active, RTL bidi support, and IME disabled for masked/readonly
-// fields.
+// richEditEditStyle returns the EM_SETEDITSTYLE (value, mask) pair for cfg: TSF integration, logical caret delegation for Direct2D, proofing when spell checking is active, RTL bidi support, and IME disabled for masked/readonly fields.
 func richEditEditStyle(cfg driver.InputConfig) (style, mask uint32) {
 	mask = sesUseCTF | sesCTFAllowEmbed | sesCTFAllowSmartTag | sesCTFAllowProofing |
 		sesLogicalCaret | sesNoIME | sesBidi | sesExtendBackColor
@@ -523,9 +509,7 @@ func richEditEditStyleEx(cfg driver.InputConfig) (style, mask uint32) {
 	return style, mask
 }
 
-// richEditLangOptions returns the EM_SETLANGOPTIONS flags for cfg.
-// Spell checking (IMF_SPELLCHECKING) is enabled on editable, unmasked fields
-// unless NoAutoCorrect is set.
+// richEditLangOptions returns the EM_SETLANGOPTIONS flags for cfg. Spell checking (IMF_SPELLCHECKING) is enabled on editable, unmasked fields unless NoAutoCorrect is set.
 func richEditLangOptions(cfg driver.InputConfig) uint32 {
 	opts := imfAutoFont | imfIMECancelComplete | imfIMEUIIntegration
 	if richEditEditable(cfg) && !richEditMasked(cfg) && !cfg.NoAutoCorrect {
@@ -542,8 +526,7 @@ func richEditScrollBars(cfg driver.InputConfig) uint32 {
 	return esAutoHScroll
 }
 
-// richEditWindowStyles returns the ITextHost2::TxGetWindowStyles (style, exStyle)
-// pair for cfg.
+// richEditWindowStyles returns the ITextHost2::TxGetWindowStyles (style, exStyle) pair for cfg.
 func richEditWindowStyles(cfg driver.InputConfig) (style, exStyle uint32) {
 	switch cfg.Style.Align {
 	case driver.TextAlignCenter:
@@ -594,8 +577,7 @@ func richEditPasswordChar(cfg driver.InputConfig) uint16 {
 	return 0
 }
 
-// buildCharFormat2W builds the default CHARFORMAT2W from cfg and the resolved
-// Windows font family name.
+// buildCharFormat2W builds the default CHARFORMAT2W from cfg and the resolved Windows font family name.
 func buildCharFormat2W(cfg driver.InputConfig, faceName string) charFormat2W {
 	s := cfg.Style
 	size := max(float64(s.Font.Size), 1)
@@ -672,10 +654,7 @@ func buildParaFormat2(cfg driver.InputConfig) paraFormat2 {
 	return pf
 }
 
-// richEditToNSGoText normalizes RichEdit's paragraph breaks (\r or \r\n) to
-// NSGo's Unix line breaks (\n). With GT_DEFAULT / TxGetText, RichEdit uses a
-// single \r per paragraph, preserving a 1:1 UTF-16 offset correspondence with
-// NSGo's \n.
+// richEditToNSGoText normalizes RichEdit's paragraph breaks (\r or \r\n) to NSGo's Unix line breaks (\n). With GT_DEFAULT / TxGetText, RichEdit uses a single \r per paragraph, preserving a 1:1 UTF-16 offset correspondence with NSGo's \n.
 func richEditToNSGoText(s string) string {
 	if !strings.ContainsRune(s, '\r') {
 		return s
@@ -684,8 +663,7 @@ func richEditToNSGoText(s string) string {
 	return strings.ReplaceAll(s, "\r", "\n")
 }
 
-// nsgoToRichEditText converts NSGo's line breaks (\n or \r\n) to RichEdit's
-// internal paragraph break (\r), preserving 1:1 UTF-16 code-unit offsets.
+// nsgoToRichEditText converts NSGo's line breaks (\n or \r\n) to RichEdit's internal paragraph break (\r), preserving 1:1 UTF-16 code-unit offsets.
 func nsgoToRichEditText(s string) string {
 	if !strings.ContainsAny(s, "\r\n") {
 		return s
@@ -694,8 +672,7 @@ func nsgoToRichEditText(s string) string {
 	return strings.ReplaceAll(s, "\n", "\r")
 }
 
-// richEditCaretState tracks the logical caret delegated by RichEdit in Direct2D
-// mode via TxCreateCaret / TxShowCaret / TxSetCaretPos / TxDestroyCaret.
+// richEditCaretState tracks the logical caret delegated by RichEdit in Direct2D mode via TxCreateCaret / TxShowCaret / TxSetCaretPos / TxDestroyCaret.
 type richEditCaretState struct {
 	created bool
 	visible bool
@@ -732,8 +709,7 @@ func (c *richEditCaretState) drawable() bool {
 	return c.created && c.visible && c.hasPos && c.flags&caretFlagNull == 0
 }
 
-// richEditScrollState tracks scroll bar metrics reported by RichEdit via
-// TxShowScrollBar / TxSetScrollRange / TxSetScrollPos.
+// richEditScrollState tracks scroll bar metrics reported by RichEdit via TxShowScrollBar / TxSetScrollRange / TxSetScrollPos.
 type richEditScrollState struct {
 	vShown bool
 	vMin   int32

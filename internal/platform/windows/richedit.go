@@ -2,17 +2,9 @@
 
 package windows
 
-// Windowless RichEdit (msftedit.dll) hosting via ITextServices2 and
-// ITextHost2, drawn into the view's Direct2D device context with TxDrawD2D.
+// Windowless RichEdit (msftedit.dll) hosting via ITextServices2 and ITextHost2, drawn into the view's Direct2D device context with TxDrawD2D.
 //
-// Editing, multi-level undo/redo, native OS spell checking (IMF_SPELLCHECKING),
-// password masking (TXTBIT_USEPASSWORD), selection, word breaks, and TSF/IMM32
-// input methods run through Windows' own RichEdit engine, without creating a
-// child HWND so the input clips, transforms, and layers with the rest of the
-// view tree. On architectures or environments where msftedit.dll or
-// ITextServices2 is unavailable (such as 32-bit x86, where ITextHost uses
-// __thiscall, or unit tests without a window), textInput falls back to
-// editModel + DirectWrite.
+// Editing, multi-level undo/redo, native OS spell checking (IMF_SPELLCHECKING), password masking (TXTBIT_USEPASSWORD), selection, word breaks, and TSF/IMM32 input methods run through Windows' own RichEdit engine, without creating a child HWND so the input clips, transforms, and layers with the rest of the view tree. On architectures or environments where msftedit.dll or ITextServices2 is unavailable (such as 32-bit x86, where ITextHost uses __thiscall, or unit tests without a window), textInput falls back to editModel + DirectWrite.
 
 import (
 	"math"
@@ -42,20 +34,16 @@ var (
 	iidTextHost2     = parseGUID(iidTextHost2Str)
 )
 
-// richEditTimerBase is the first Win32 timer ID reserved on a window for
-// RichEdit's TxSetTimer callbacks (window's own timers use 1..5).
+// richEditTimerBase is the first Win32 timer ID reserved on a window for RichEdit's TxSetTimer callbacks (window's own timers use 1..5).
 const richEditTimerBase uintptr = 0x1000
 
-// richEditTimerEntry maps a window timer ID back to a RichEdit host and its
-// internal timer ID.
+// richEditTimerEntry maps a window timer ID back to a RichEdit host and its internal timer ID.
 type richEditTimerEntry struct {
 	in     *textInput
 	richID uintptr
 }
 
-// richEditAvailable reports whether this process can host 64-bit windowless
-// RichEdit via msftedit.dll's CreateTextServices. On 32-bit x86, ITextHost and
-// ITextServices use __thiscall (this in ECX), so 32-bit falls back cleanly.
+// richEditAvailable reports whether this process can host 64-bit windowless RichEdit via msftedit.dll's CreateTextServices. On 32-bit x86, ITextHost and ITextServices use __thiscall (this in ECX), so 32-bit falls back cleanly.
 var richEditAvailable = sync.OnceValue(func() bool {
 	if unsafe.Sizeof(uintptr(0)) != 8 {
 		return false
@@ -63,8 +51,7 @@ var richEditAvailable = sync.OnceValue(func() bool {
 	return createTextServicesProc.Find() == nil
 })
 
-// richEditHost implements ITextHost and ITextHost2 for one textInput.
-// Its first field MUST be vtbl so its address is a valid COM interface pointer.
+// richEditHost implements ITextHost and ITextHost2 for one textInput. Its first field MUST be vtbl so its address is a valid COM interface pointer.
 type richEditHost struct {
 	vtbl *[th2VtblSize]uintptr
 	refs atomic.Int32
@@ -82,8 +69,7 @@ type richEditHost struct {
 	activated     bool
 	composing     bool
 
-	// suppressNotify silences re-entrant TxNotify callbacks while NSGo applies
-	// programmatic text/selection/config updates to RichEdit.
+	// suppressNotify silences re-entrant TxNotify callbacks while NSGo applies programmatic text/selection/config updates to RichEdit.
 	suppressNotify int
 
 	caret  richEditCaretState
@@ -156,8 +142,7 @@ func init() {
 	}
 }
 
-// newRichEditHost creates a windowless RichEdit ITextServices2 attached to in.
-// It returns nil if RichEdit/ITextServices2 is unavailable or in has no HWND.
+// newRichEditHost creates a windowless RichEdit ITextServices2 attached to in. It returns nil if RichEdit/ITextServices2 is unavailable or in has no HWND.
 func newRichEditHost(in *textInput) *richEditHost {
 	if in == nil || in.w == nil || in.w.hwnd == 0 || !richEditAvailable() {
 		return nil
@@ -209,8 +194,7 @@ func newRichEditHost(in *textInput) *richEditHost {
 	return h
 }
 
-// close shuts down the ITextServices2 instance, kills any active host timers,
-// and releases our reference on the host COM object.
+// close shuts down the ITextServices2 instance, kills any active host timers, and releases our reference on the host COM object.
 func (h *richEditHost) close() {
 	if h == nil {
 		return
@@ -350,8 +334,7 @@ func (h *richEditHost) resize(width, height float32) {
 	h.suppressNotify--
 }
 
-// getText reads the control's text via ITextServices::TxGetText and normalizes
-// paragraph breaks (\r -> \n) so UTF-16 offsets match 1:1.
+// getText reads the control's text via ITextServices::TxGetText and normalizes paragraph breaks (\r -> \n) so UTF-16 offsets match 1:1.
 func (h *richEditHost) getText() string {
 	if h == nil || h.ts2 == nil {
 		return ""
@@ -369,8 +352,7 @@ func (h *richEditHost) getText() string {
 	return richEditToNSGoText(string(utf16.Decode(units)))
 }
 
-// setText replaces the control's entire text programmatically without firing
-// user edit notifications and clears the undo stack.
+// setText replaces the control's entire text programmatically without firing user edit notifications and clears the undo stack.
 func (h *richEditHost) setText(text string) {
 	if h == nil || h.ts2 == nil {
 		return
@@ -386,8 +368,7 @@ func (h *richEditHost) setText(text string) {
 	h.sendMessage(emSetParaFormat, 0, uintptr(unsafe.Pointer(&h.pf)))
 }
 
-// replaceSel replaces the current selection with text, optionally recording an
-// undo step.
+// replaceSel replaces the current selection with text, optionally recording an undo step.
 func (h *richEditHost) replaceSel(text string, canUndo bool) {
 	if h == nil || h.ts2 == nil {
 		return
@@ -417,8 +398,7 @@ func (h *richEditHost) getSel() (start, end int) {
 	return s, e
 }
 
-// setSel sets the selection range in UTF-16 code units without firing user
-// notifications.
+// setSel sets the selection range in UTF-16 code units without firing user notifications.
 func (h *richEditHost) setSel(start, end int) {
 	if h == nil || h.ts2 == nil {
 		return
@@ -482,8 +462,7 @@ func (h *richEditHost) caretRect() (x, y, height float32, ok bool) {
 	return 0, h.yOffset, max(float32(h.in.config.Style.Font.Size)*1.25, 12), true
 }
 
-// vScrollMetrics returns the vertical scroll offset and total content height
-// in DIPs from RichEdit's TxGetVScroll.
+// vScrollMetrics returns the vertical scroll offset and total content height in DIPs from RichEdit's TxGetVScroll.
 func (h *richEditHost) vScrollMetrics() (pos, contentHeight float32, ok bool) {
 	if h == nil || h.ts2 == nil {
 		return 0, 0, false
@@ -506,8 +485,7 @@ func (h *richEditHost) vScrollMetrics() (pos, contentHeight float32, ok bool) {
 	return float32(max(posV-minV, 0)) / scale, total, true
 }
 
-// setVScroll scrolls RichEdit vertically to y DIPs and reports whether the
-// scroll offset changed.
+// setVScroll scrolls RichEdit vertically to y DIPs and reports whether the scroll offset changed.
 func (h *richEditHost) setVScroll(y float32) bool {
 	if h == nil || h.ts2 == nil {
 		return false
@@ -525,8 +503,7 @@ func (h *richEditHost) setVScroll(y float32) bool {
 	return after.Y != cur.Y
 }
 
-// packLocalPoint maps a client point (in window DIPs) into a packed WM_MOUSE*
-// lParam in RichEdit's local physical pixel coordinates.
+// packLocalPoint maps a client point (in window DIPs) into a packed WM_MOUSE* lParam in RichEdit's local physical pixel coordinates.
 func (h *richEditHost) packLocalPoint(at driver.Point) uintptr {
 	lx, ly := h.in.local(at)
 	s := h.scale()
@@ -591,8 +568,7 @@ func (h *richEditHost) onSetCursor(at driver.Point) bool {
 	return !failed(hr)
 }
 
-// drawD2D draws the RichEdit control into p.dc at the content box's origin
-// (shifted by yOffset for single-line centering).
+// drawD2D draws the RichEdit control into p.dc at the content box's origin (shifted by yOffset for single-line centering).
 func (h *richEditHost) drawD2D(p *painter, world matrix) bool {
 	if h == nil || h.ts2 == nil || h.in == nil || p == nil || p.dc == nil {
 		return false
@@ -609,8 +585,7 @@ func (h *richEditHost) drawD2D(p *painter, world matrix) bool {
 	bounds := h.clientRect()
 	hr := h.ts2.call(ts2TxDrawD2D, p.dc.ptr(), uintptr(unsafe.Pointer(&bounds)), 0, uintptr(uint32(txtViewActive)))
 
-	// TxDrawD2D may alter the render target's transform internally; force the
-	// painter to re-emit world on the next draw call.
+	// TxDrawD2D may alter the render target's transform internally; force the painter to re-emit world on the next draw call.
 	p.set = false
 	p.setTransform(world)
 
@@ -938,8 +913,7 @@ func reHostTxGetSysColor(h *richEditHost, nIndex uintptr) uintptr {
 			return uintptr(colorToColorRef(h.in.config.Style.Color))
 		case sysColorHighlight:
 			c := h.in.selectionColor()
-			// Blend translucent highlight colors over a light/dark base so the
-			// opaque COLORREF matches the configured selection tint.
+			// Blend translucent highlight colors over a light/dark base so the opaque COLORREF matches the configured selection tint.
 			if alpha := uint32(c & 0xff); alpha < 255 {
 				base := driver.RGB(0xffffff)
 				if h.in.w != nil && h.in.w.shownDark() {
