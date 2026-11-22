@@ -62,3 +62,7 @@ Android reuses each capture's buffers until its size changes and coalesces reque
 | Transitions run by a core node and started first in their batch | The platform's own clock for each change | The engine knows what changes; one protocol serves elements, pages and dialogs |
 | Animated nodes in lanes, stepped by the platform's `Animator` | The app setting the time and the pointer each frame | A shader animates with no engine work per frame |
 | A GPU surface per shader view; `nsgotest` models roles, lanes and starts | One renderer for the whole window | Platforms draw native views; the core's tests check lanes, not pixels |
+
+## Verification
+
+`go tool nsgo test -target <target> ./internal/testhost/testdata/shaderpixels` runs one shader across the native test hosts. It captures six versions of a rewritten 960×540 buffer through `image0`, then checks the displayed colors during 120 consecutive display-frame updates and reads the final version. Android captures a window with a live `TextureView` through PixelCopy so the test sees the GL layer. The macOS test uses an inverted marker to recognize AppKit's software redraw, which omits Metal layers.

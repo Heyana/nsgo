@@ -219,6 +219,14 @@ jobs:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
         run: xvfb-run -a go tool nsgo test -target linux -run '^TestCanvasAtlas(MatchesDrawImageFrom|Sampling)$' ./internal/testhost/testdata/capture
+      - name: Test Linux shader pixel frames
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/shaderpixels
+      - name: Test browser shader pixel frames
+        run: go tool nsgo test -target web ./internal/testhost/testdata/shaderpixels
       - name: Test browser empty web sources
         run: go tool nsgo test -target web -run '^TestEmptyWebSourceIsOpaque$' ./internal/platform/web
       - name: Test Linux owned-window visibility and minimization
@@ -373,6 +381,7 @@ jobs:
             NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidNativePackagedView$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/network || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/shaderpixels || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
 
   apple:
     needs: changes
@@ -449,6 +458,8 @@ jobs:
         run: go tool nsgo test -target macos -run TestWindowStateReadsNativeVisibility ./internal/testhost/testdata/windowstate
       - name: Test native radio and tab focus
         run: go tool nsgo test -target macos -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
+      - name: Test native shader pixel frames
+        run: go tool nsgo test -target macos -activate ./internal/testhost/testdata/shaderpixels
       - name: Test composited captures
         run: go tool nsgo test -target macos ./internal/testhost/testdata/capture
       - name: Test pull PCM audio
@@ -504,6 +515,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
           go tool nsgo test -target ios_simulator -timeout 1m ./testdata/devtools-geometry
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audiooutput
+          go tool nsgo test -target ios_simulator -timeout 2m ./internal/testhost/testdata/shaderpixels
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/testhost/testdata/deviceidentity
           go tool nsgo test -target watchos_simulator -timeout 1m ./testdata/devtools-geometry
@@ -572,6 +584,8 @@ jobs:
         run: go tool nsgo test -run '^TestWebView2WindowRequests$' ./internal/platform/windows
       - name: Test retained image bytes and current shader textures
         run: go tool nsgo test -run '^(TestCanvasImageCacheByteBudgetAndReconfiguration|TestShaderViewsKeepOnlyTheirImages|TestShaderTextureCacheBoundsLRUPinsAndRelease)$' ./internal/platform/windows
+      - name: Test Windows shader pixel frames
+        run: go tool nsgo test -target windows ./internal/testhost/testdata/shaderpixels
       - name: Test pixel frames and animated images
         run: go tool nsgo test -run '^(TestPixelFramesShowEachFrame|TestAnimatedGIFAndSVGImagesDraw)$' ./internal/platform/windows
       - name: Test Windows owned-window visibility and minimization
