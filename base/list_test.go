@@ -8,7 +8,6 @@ import (
 
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -146,20 +145,20 @@ func TestListMultipleSelectionChange(t *testing.T) {
 		l.OnSelectionChange = func(s *base.Selection) { changes = append(changes, s.Keys()) }
 		return l
 	})
-	press := func(label string, mods driver.Modifiers) func() {
+	press := func(label string, mods core.Modifiers) func() {
 		return func() {
 			row := app.Find("label:" + label)
-			if !row.Events.Has(driver.EventPress) {
+			if !row.Events.Has(nsgotest.EventPress) {
 				t.Fatalf("row %s takes no press", label)
 			}
-			app.Report(driver.Event{Kind: driver.EventPress, ID: row.ID, Count: 1, Modifiers: mods})
+			app.Report(nsgotest.Event{Kind: nsgotest.EventPress, ID: row.ID, Count: 1, Modifiers: mods})
 		}
 	}
 	step := selectionSteps(t, &sel, &changes)
 	step("a press", func() { app.Press("label:Apple") }, "Apple")
-	step("a Mod press", press("Cherry", driver.Modifiers{Platform: true}), "Apple", "Cherry")
-	step("a Control press", press("Apricot", driver.Modifiers{Control: true}), "Apple", "Cherry", "Apricot")
-	step("a Shift press", press("Banana", driver.Modifiers{Shift: true}), "Apricot", "Banana")
+	step("a Mod press", press("Cherry", core.Modifiers{Platform: true}), "Apple", "Cherry")
+	step("a Control press", press("Apricot", core.Modifiers{Control: true}), "Apple", "Cherry", "Apricot")
+	step("a Shift press", press("Banana", core.Modifiers{Shift: true}), "Apricot", "Banana")
 	step("down", func() { app.Key("down") }, "Blueberry")
 	step("shift+down", func() { app.Key("shift+down") }, "Blueberry", "Cherry")
 	step("mod+a", func() { app.Key("mod+a") }, "Apple", "Apricot", "Banana", "Blueberry", "Cherry")
@@ -167,8 +166,8 @@ func TestListMultipleSelectionChange(t *testing.T) {
 	step("space", func() { app.Key("space") }, "Apple", "Apricot", "Banana", "Blueberry")
 	app.Advance(time.Second)
 	step("typeahead", func() { app.Key("b") }, "Banana")
-	step("a Mod press after typeahead", press("Apricot", driver.Modifiers{Platform: true}), "Banana", "Apricot")
-	step("a Shift press that only reorders the rows", press("Banana", driver.Modifiers{Shift: true}))
+	step("a Mod press after typeahead", press("Apricot", core.Modifiers{Platform: true}), "Banana", "Apricot")
+	step("a Shift press that only reorders the rows", press("Banana", core.Modifiers{Shift: true}))
 	step("the app's SetRange", post(app, func() { sel.SetRange("Apple", "Banana", "Apple", "Apricot", "Banana") }))
 	step("the app's Toggle", post(app, func() { sel.Toggle("Cherry") }))
 }

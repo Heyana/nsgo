@@ -1060,7 +1060,7 @@ func TestDesktopLastWindowKeepsItsViewDuringAQuitRequest(t *testing.T) {
 		if !app.CloseWindow() || requested != 0 || app.Quits != 0 {
 			t.Fatalf("%v: closing a window with another open asked %d times and quit %d times", os, requested, app.Quits)
 		}
-		app.Report(driver.Event{Kind: driver.EventReopen})
+		app.Report(Event{Kind: driver.EventReopen})
 		other.Close()
 		app.Settle()
 		if app.Quits != 0 {
@@ -1111,7 +1111,7 @@ func TestStartAppKeepsTheAppsScope(t *testing.T) {
 		if chosen != 1 {
 			t.Fatalf("%v: the menu item ran %d times", os, chosen)
 		}
-		app.Report(driver.Event{Kind: driver.EventQuitRequest, Count: 1})
+		app.Report(Event{Kind: driver.EventQuitRequest, Count: 1})
 		if quits != 1 {
 			t.Fatalf("%v: the quit handler ran %d times", os, quits)
 		}

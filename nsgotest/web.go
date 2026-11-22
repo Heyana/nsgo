@@ -73,7 +73,8 @@ func (c *WebConfig) SourceNavigable(rawURL string) bool {
 // OpenWindowEvent returns the platform report for the page's request to open
 // another window, using the recorded navigation policy.
 func (c *WebConfig) OpenWindowEvent(r core.WebWindowRequest) Event {
-	return c.navigationPolicy().OpenWindowEvent(r)
+	ev := c.navigationPolicy().OpenWindowEvent(r)
+	return Event{Kind: ev.Kind, Text: ev.Text, Navigation: ev.Navigation, Data: ev.Data}
 }
 
 func (c *WebConfig) navigationPolicy() *driver.WebConfig {

@@ -6,7 +6,6 @@ import (
 
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -103,7 +102,7 @@ func TestAListLeavesAFocusedButtonItsKeys(t *testing.T) {
 		}}
 	}, nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
 	app.Focus("go")
-	app.Report(driver.Event{Kind: driver.EventPress, ID: app.Find("label:Cherry").ID, Count: 1})
+	app.Report(nsgotest.Event{Kind: nsgotest.EventPress, ID: app.Find("label:Cherry").ID, Count: 1})
 	if !slices.Equal(sel.Keys(), []any{"Cherry"}) || !app.Find("go").Focused {
 		t.Fatalf("after the press the selection is %v and the button focused %v", sel.Keys(), app.Find("go").Focused)
 	}

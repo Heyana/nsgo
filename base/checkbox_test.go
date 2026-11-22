@@ -5,7 +5,6 @@ import (
 
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -62,7 +61,7 @@ func TestCheckboxChangeEventKeepsThePress(t *testing.T) {
 	}
 	disabled.Set(true)
 	app.Settle()
-	app.Report(driver.Event{Kind: driver.EventPress, ID: app.Find("id:check").ID, Modifiers: mods})
+	app.Report(nsgotest.Event{Kind: nsgotest.EventPress, ID: app.Find("id:check").ID, Modifiers: mods})
 	if len(changes) != 0 || legacy != 0 {
 		t.Fatal("disabled checkbox reported a change")
 	}

@@ -126,6 +126,8 @@ go tool nsgo test
 
 首屏依赖日期的界面（例如今天到期的内容）用 `nsgotest.WallTime(t0)` 启动：首次渲染时 `cx.WallTime()` 就是 `t0`，保留它的时区，计时器仍按时钟自身的时间运行。`nsgotest.Clock(c)` 让应用运行在测试自己的时钟上，供应用之外的代码共用；`c.Advance` 推进它时，应用的计时器随之触发。在目标平台上用 `nsgotest.Measure()` 测量时，应用改为运行在系统时钟上，见下文。
 
+无现成步骤可用时，可在无窗口测试中调用 `app.Report(nsgotest.Event{Kind: nsgotest.EventPress, ID: view.ID})` 模拟平台事件。报告会复制切片、导航状态和可选的 `nsgotest.TouchGeometry` 快照；`Data` 保留测试提供的原生载荷。
+
 ## 在平台上运行
 
 测试可以在真实窗口中、用平台自己的输入运行。测试发现遵循目标平台的构建标签，即使包中也有跨平台文件，仍会包含仅适用于该目标的测试文件：

@@ -128,6 +128,8 @@ Headless, these waits advance the clock a frame at a time between checks. Start 
 
 A screen that depends on the date, such as what is due today, starts with `nsgotest.WallTime(t0)`: the first render's `cx.WallTime()` is `t0`, in its location, and timers keep running on the clock's own time. `nsgotest.Clock(c)` runs the app on a clock of the test's own, so code outside the app shares it; the app's timers fire as `c.Advance` moves it. A measurement on a target, started with `nsgotest.Measure()`, runs the app on the system's clock instead, as described below.
 
+For a headless platform report no step provides, call `app.Report(nsgotest.Event{Kind: nsgotest.EventPress, ID: view.ID})`. The report copies its slices, navigation state and optional `nsgotest.TouchGeometry` snapshot; `Data` keeps the test's native payload.
+
 ## Run on a platform
 
 Tests run in a real window with the platform's own input. Discovery follows the target's build tags, including target-only test files in otherwise portable packages:

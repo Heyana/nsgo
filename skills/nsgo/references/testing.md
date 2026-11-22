@@ -73,6 +73,8 @@ Use `app.SelectTab("id:tabs", 1)` to choose the second item of a mounted `mobile
 
 Use `app.Window` and `nsgotest.WindowAction` constants such as `nsgotest.WindowSetConstraints` to assert what the app asked of its main window. In headless tests, `app.Shares` records the files, text and anchor of each share request. Use `View.Web` to check a web view’s recorded settings, and `View.WebCommands` with `nsgotest.WebCommandKind` constants to check its requests.
 
+For a headless platform report no step provides, `app.Report` takes an owned `nsgotest.Event`; optional `nsgotest.TouchGeometry` supplies native hit targets and local positions. Reports copy their collections and geometry while retaining `Data` payload identity.
+
 Headless tests can press a physical position with `KeyCode("KeyW")` or hold and release it with `KeyCodeDown` and `KeyCodeUp`. Override `core.Environment.KeyCodeNames` to exercise a layout. Unspecified positions use the US layout.
 
 For headless GPU checks in another window, use `Surface.GPUReadPixels`, `Surface.TriggerGPUDeviceLost` and `Surface.RestoreGPUDevice`; devices, readbacks and recovery follow that window, including its pixel ratio. `App.GPUFrames` records every window's submissions.

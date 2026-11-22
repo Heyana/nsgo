@@ -30,12 +30,8 @@ type (
 	Pictures = driver.Pictures
 	// AnimatedProp is a view property an animated node drives.
 	AnimatedProp = driver.AnimatedProp
-	// Event is what a platform reports (App.Report).
-	Event = driver.Event
 	// SelectedRange is what one text of a selection area has selected, by its node and UTF-16 offsets, as Event.Ranges reports it.
 	SelectedRange = driver.SelectedRange
-	// TouchGeometry is an event's snapshot of native hit targets and local positions, indexed in the same order as Event.Touches.
-	TouchGeometry = driver.TouchGeometry
 	// EventKind is what a platform reports about a view.
 	EventKind = driver.EventKind
 	// EventMask is a set of event kinds.
