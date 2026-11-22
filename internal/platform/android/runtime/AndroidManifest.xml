@@ -21,6 +21,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- From API 30, TextToSpeech finds the system's speech engines and text selections find ACTION_PROCESS_TEXT apps only through these queries. -->
     <queries>
+        <package android:name="com.android.vending" />
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
@@ -45,6 +46,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Play Review's empty translucent host launches the store's card. -->
+        <activity
+            android:name="com.google.android.play.core.common.PlayCoreDialogWrapperActivity"
+            android:exported="false"
+            android:stateNotNeeded="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <!-- Serves the app's files to the apps it hands them to: the
              clipboard's image, a file it opens and the files it shares;
              nsgo build names its authority after the app's package. -->

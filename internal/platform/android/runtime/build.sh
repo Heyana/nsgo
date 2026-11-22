@@ -3,9 +3,10 @@
 # after changing it: the dex goes in apps' APKs, the jar in the libraries
 # nsgo build -embed makes for host apps.
 #
-# These are the artifacts NSGo cannot build with Go, so they are committed, but only by maintainers, in a bot/android-runtime pull request after a change to ../java merges; a pull request leaves them alone.
+# These are the artifacts NSGo cannot build with Go, so they are committed, but only by maintainers, in a bot/android-runtime pull request after a change to ../java or the runtime's build inputs merges; a pull request leaves them alone.
 # It needs a JDK 17+ and a recent d8: the SDK's cmdline-tools, or
-# build-tools 36+. Set ANDROID_HOME to the SDK that holds them.
+# build-tools 36+. Python 3 fetches checksum-pinned Play Review bytecode.
+# Set ANDROID_HOME to the SDK that holds them.
 set -eu
 
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -28,12 +29,27 @@ mkdir "$tmp/classes"
 # classes; d8 then reads the result with android.jar's stubs.
 javac -nowarn -Xlint:-options --release 17 -classpath "$jar" \
 	-d "$tmp/classes" "$dir"/../java/dev/oneo/nsgo/*.java
+# Standalone apps need the Play Review SDK; embedded hosts resolve it through
+# Gradle, so classes.jar below deliberately contains only NSGo's own classes.
+python3 "$dir/play_review.py" "$tmp/review"
+compile_review() {
+	if [ -x "$(dirname "$d8")/r8" ]; then
+		"$(dirname "$d8")/r8" "$@"
+	else
+		java -cp "$(dirname "$d8")/lib/d8.jar" com.android.tools.r8.R8 "$@"
+	fi
+}
+compile_review --release --classfile \
+	--lib "$jar" --pg-conf "$dir/play-review.pro" \
+	--output "$tmp/review.jar" "$tmp"/review/*.jar
 "$d8" --lib "$jar" --min-api 28 --output "$tmp" \
-	$(find "$tmp/classes" -name '*.class')
+	$(find "$tmp/classes" -name '*.class') "$tmp/review.jar"
 cp "$tmp/classes.dex" "$dir/classes.dex"
 # A host's build compiles against the jar and dexes it itself; no
 # timestamps, so a rebuild of the same code is the same jar.
-(cd "$tmp/classes" && find . -name '*.class' | LC_ALL=C sort > ../list && \
+mkdir -p "$tmp/classes/META-INF"
+cp "$tmp/review/NOTICE.txt" "$tmp/classes/META-INF/nsgo-play-review-NOTICE.txt"
+(cd "$tmp/classes" && find . -type f | LC_ALL=C sort > ../list && \
 	touch -t 200001010000.00 $(cat ../list) && \
 	jar --create --file "$dir/classes.jar" --no-manifest --date=2000-01-01T00:00:02Z @../list)
 echo "wrote $dir/classes.dex and $dir/classes.jar"

@@ -504,6 +504,7 @@ func TestFrameworkAttributeIDs(t *testing.T) {
 		"mimeType":                    0x01010026,
 		"scheme":                      0x01010027,
 		"exported":                    0x01010010,
+		"stateNotNeeded":              0x01010016,
 		"authorities":                 0x01010018,
 		"grantUriPermissions":         0x0101001b,
 		"theme":                       0x01010000,
@@ -642,5 +643,29 @@ func TestEncodeManifestServices(t *testing.T) {
 	}
 	if len(types) != 3 || types[RecordingService] != 0x80 || types[OverlayService] != 0x40000000 || types[LocationService] != 0x8 {
 		t.Errorf("services %#x, want %s of microphone (0x80), %s of specialUse (0x40000000) and %s of location (0x8)", types, RecordingService, OverlayService, LocationService)
+	}
+}
+
+func TestStoreReviewDialogManifest(t *testing.T) {
+	data, err := EncodeManifest(androidruntime.Manifest, Manifest{Package: "dev.oneo.nsgo.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := decodeXML(t, data)
+	var wrapper, store bool
+	doc.walk(func(n *xmlNode) {
+		if n.name == "package" && n.string(t, "name") == "com.android.vending" {
+			store = true
+		}
+		if n.name != "activity" || n.string(t, "name") != "com.google.android.play.core.common.PlayCoreDialogWrapperActivity" {
+			return
+		}
+		wrapper = true
+		if n.value(t, "exported") != 0 || n.value(t, "stateNotNeeded") == 0 || n.value(t, "theme") != 0x01030010 {
+			t.Error("Play Review wrapper lost its private, translucent, disposable activity configuration")
+		}
+	})
+	if !wrapper || !store {
+		t.Fatalf("Play Review wrapper = %v, Play Store visibility = %v", wrapper, store)
 	}
 }

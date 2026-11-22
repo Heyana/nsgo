@@ -518,9 +518,11 @@ cx.BiometricAvailability(func(kind core.BiometricKind) {
 
 ## 应用内评分
 
-在 macOS 和 iOS 上，`cx.RequestReview()` 向 App Store 请求显示应用内评分弹窗。在嵌入式 Android 应用中，它向 Google Play 发起请求。`cx.Env().CanRequestReview()` 表示此服务是否可用。商店自行决定是否显示以及何时显示，且不返回结果。请用开发构建验证 Apple 的评分弹窗，TestFlight 构建会隐藏它。
+在 macOS 和 iOS 上，`cx.RequestReview()` 向 App Store 请求显示应用内评分弹窗。在 Android 上，它向 Google Play 发起请求。`cx.Env().CanRequestReview()` 表示此服务是否可用。商店自行决定是否显示以及何时显示，且不返回结果。请用开发构建验证 Apple 的评分弹窗，TestFlight 构建会隐藏它。
 
-在 Android 上，将 `com.google.android.play:review:2.0.2` 加入嵌入 NSGo 的 Gradle 宿主，并在宿主清单的 `<queries>` 下添加 `<package android:name="com.android.vending" />`，使应用能够查询 Play 商店。如果宿主会压缩代码，请加入以下规则保留 NSGo 按名称加载的 Play Review 和 Tasks API。通过[内部应用分享](https://developer.android.com/guide/playcore/in-app-review/test)验证。NSGo 构建的独立 Android 安装包会报告此服务不可用。
+独立 Android 安装包包含 Play Review SDK、弹窗 Activity 和 Play 商店可见性查询，构建时无需 Android SDK 或 JDK。设备没有启用的 Play 商店时，此服务不可用。通过[内部应用分享](https://developer.android.com/guide/playcore/in-app-review/test)验证发行构建。
+
+嵌入 NSGo 时，将 `com.google.android.play:review:2.0.2` 加入 Gradle 宿主，并在宿主清单的 `<queries>` 下添加 `<package android:name="com.android.vending" />`，使应用能够查询 Play 商店。如果宿主会压缩代码，请加入以下规则保留 NSGo 按名称加载的 Play Review 和 Tasks API。
 
 ```proguard
 -keep class com.google.android.play.core.review.ReviewManagerFactory { *; }

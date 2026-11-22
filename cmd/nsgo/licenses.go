@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,6 +17,8 @@ import (
 	"sync"
 
 	"github.com/google/licenseclassifier/v2/assets"
+
+	androidruntime "github.com/nsgo-dev/nsgo/internal/platform/android/runtime"
 )
 
 const noticesName = "THIRD_PARTY_NOTICES.txt"
@@ -215,7 +218,14 @@ func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*
 		switch setting {
 		case "GOOS=android":
 			if sources[nsgoModule] != nil {
-				out.WriteString("NSGo's license below covers its Android Java runtime (classes.dex).\n")
+				out.WriteString("NSGo's license below covers its own Android Java classes.\n")
+				if !p.Build.embed {
+					notices, err := androidReviewNotices(androidruntime.ClassesJar)
+					if err != nil {
+						return "", err
+					}
+					out.WriteString(notices)
+				}
 			}
 		case "GOOS=js":
 			out.WriteString("The Go license below covers wasm_exec.js.\n")
@@ -327,4 +337,26 @@ func (policy licensePolicy) report(ctx context.Context, module, kind, reason str
 	}
 	warnIn(ctx, "%s %s", module, reason)
 	return nil
+}
+
+// androidReviewNotices reads the SDK notices kept with the rebuilt runtime.
+// Older committed runtimes have no SDK and therefore no notice entry.
+func androidReviewNotices(data []byte) (string, error) {
+	z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return "", fmt.Errorf("Android runtime notices: %w", err)
+	}
+	for _, file := range z.File {
+		if file.Name != "META-INF/nsgo-play-review-NOTICE.txt" {
+			continue
+		}
+		r, err := file.Open()
+		if err != nil {
+			return "", err
+		}
+		defer r.Close()
+		text, err := io.ReadAll(r)
+		return "\n" + string(text) + "\n", err
+	}
+	return "", nil
 }

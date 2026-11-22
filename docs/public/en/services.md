@@ -518,9 +518,11 @@ In a web app, call `desktop.ToggleFullScreen(cx)` from a press handler that open
 
 ## Store reviews
 
-`cx.RequestReview()` asks for an in-app rating prompt from the App Store on macOS and iOS, or Google Play in an embedded Android app. `cx.Env().CanRequestReview()` reports whether the service is available. The store decides whether and when to show the prompt and reports no result. Use a development build to test the Apple prompt. TestFlight builds suppress it.
+`cx.RequestReview()` asks for an in-app rating prompt from the App Store on macOS and iOS, or Google Play on Android. `cx.Env().CanRequestReview()` reports whether the service is available. The store decides whether and when to show the prompt and reports no result. Use a development build to test the Apple prompt. TestFlight builds suppress it.
 
-On Android, add `com.google.android.play:review:2.0.2` to the Gradle host that embeds NSGo. In the host's manifest, add `<package android:name="com.android.vending" />` under `<queries>` so the app can see the Play Store. If the host shrinks its code, preserve the Play Review and Tasks APIs with the rules below, as NSGo loads them by name. Test using [Internal App Sharing](https://developer.android.com/guide/playcore/in-app-review/test). Standalone NSGo Android packages report the service as unavailable.
+Standalone Android packages include the Play Review SDK, its dialog activity and Play Store visibility query; building them needs no Android SDK or JDK. A device with no enabled Play Store reports the service as unavailable. Test a released package using [Internal App Sharing](https://developer.android.com/guide/playcore/in-app-review/test).
+
+When embedding NSGo, add `com.google.android.play:review:2.0.2` to the Gradle host. In the host's manifest, add `<package android:name="com.android.vending" />` under `<queries>` so the app can see the Play Store. If the host shrinks its code, preserve the Play Review and Tasks APIs with the rules below, as NSGo loads them by name.
 
 ```proguard
 -keep class com.google.android.play.core.review.ReviewManagerFactory { *; }

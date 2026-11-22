@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,5 +188,25 @@ func TestLicenseNoticesWorkspaceModules(t *testing.T) {
 	p.Licenses.Allow = []string{"go.example/dep"}
 	if _, err := p.licenseNoticesFile(t.Context(), nil, tags, nil, ""); err != nil {
 		t.Fatalf("allowed replaced third-party module failed: %v", err)
+	}
+}
+
+func TestAndroidReviewNotices(t *testing.T) {
+	var data bytes.Buffer
+	z := zip.NewWriter(&data)
+	f, err := z.Create("META-INF/nsgo-play-review-NOTICE.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const notice = "Play Core Software Development Kit Terms of Service\nSDK license text\n"
+	if _, err := f.Write([]byte(notice)); err != nil {
+		t.Fatal(err)
+	}
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := androidReviewNotices(data.Bytes())
+	if err != nil || !strings.Contains(got, notice) {
+		t.Fatalf("SDK notices lost from packaged runtime: %q, %v", got, err)
 	}
 }

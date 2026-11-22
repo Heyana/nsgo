@@ -111,6 +111,7 @@ var androidAttrs = map[string]attrSpec{
 	"scheme":              {0x01010027, typeString, nil},
 	"label":               {0x01010001, typeString, nil},
 	"exported":            {0x01010010, typeBool, parseBool},
+	"stateNotNeeded":      {0x01010016, typeBool, parseBool},
 	"authorities":         {0x01010018, typeString, nil},
 	"grantUriPermissions": {0x0101001b, typeBool, parseBool},
 	"theme":               {0x01010000, typeReference, parseStyle},
@@ -162,6 +163,7 @@ const (
 // the framework's resource ID, which the SDK's aapt2 resolves; these stay
 // stable across Android versions.
 var styles = map[string]uint32{
+	"@android:style/Theme.Translucent.NoTitleBar":          0x01030010,
 	"@android:style/Theme.DeviceDefault.NoActionBar":       0x01030129,
 	"@android:style/Theme.DeviceDefault.Light.NoActionBar": 0x0103012c,
 }
