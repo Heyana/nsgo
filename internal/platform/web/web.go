@@ -108,6 +108,7 @@ func (c *clicks) down(p driver.Point, v *view) int {
 type surface struct {
 	devGeometry   driver.GeometryObserver
 	motion        motionService
+	location      locationService
 	notifications *webNotificationScheduler
 	doc           js.Value
 	host          js.Value
