@@ -6,8 +6,7 @@ import (
 	"unicode/utf16"
 )
 
-// This file builds on every system, so unit tests check Linux's pasted HTML
-// MIME matching, chunk capping and UTF-8/UTF-16 decoding on any host.
+// This file builds on every system, so unit tests check Linux's pasted HTML MIME matching, chunk capping and UTF-8/UTF-16 decoding on any host.
 
 const (
 	pasteHTMLChunk = 64 << 10 // 64 KiB per asynchronous GIO read
@@ -27,8 +26,7 @@ func hasPasteHTMLFormat(contains func(mime string) bool) bool {
 	return false
 }
 
-// appendPasteHTML appends chunk to dst up to pasteHTMLMax bytes and reports
-// whether the cap has been reached.
+// appendPasteHTML appends chunk to dst up to pasteHTMLMax bytes and reports whether the cap has been reached.
 func appendPasteHTML(dst, chunk []byte) ([]byte, bool) {
 	if len(dst) >= pasteHTMLMax {
 		return dst, true
@@ -40,10 +38,7 @@ func appendPasteHTML(dst, chunk []byte) ([]byte, bool) {
 	return dst, len(dst) >= pasteHTMLMax
 }
 
-// decodeClipboardHTML decodes raw bytes read from a Linux text/html clipboard
-// stream into UTF-8. Some X11 applications (notably Firefox) place UTF-16 with
-// a byte-order mark in text/html, while GTK/Chromium/Wayland applications
-// provide UTF-8 with an optional BOM and/or trailing NUL byte.
+// decodeClipboardHTML decodes raw bytes read from a Linux text/html clipboard stream into UTF-8. Some X11 applications (notably Firefox) place UTF-16 with a byte-order mark in text/html, while GTK/Chromium/Wayland applications provide UTF-8 with an optional BOM and/or trailing NUL byte.
 func decodeClipboardHTML(raw []byte) string {
 	if len(raw) == 0 {
 		return ""

@@ -63,9 +63,7 @@ func TestReadPasteHTML(t *testing.T) {
 	})
 }
 
-// TestPasteJavaRoundTrip compiles Protocol.java and PasteCheck.java on the JVM,
-// encodes paste payloads containing HTML (with newlines, tabs and Unicode),
-// URIs and files, and decodes the wire output through Go's readPaste.
+// TestPasteJavaRoundTrip compiles Protocol.java and PasteCheck.java on the JVM, encodes paste payloads containing HTML (with newlines, tabs and Unicode), URIs and files, and decodes the wire output through Go's readPaste.
 func TestPasteJavaRoundTrip(t *testing.T) {
 	javac, java := androidJDK(t)
 	dir := t.TempDir()

@@ -586,16 +586,9 @@ type Touch struct {
 	Changed bool
 }
 
-// PasteEvent is what the user pasted into an input, read from the
-// clipboard as they pasted: its HTML when the clipboard holds it, its
-// plain text (empty without any), files with their bytes, such as an
-// image copied in another app, and the file: URLs of local files copied
-// in a file manager.
+// PasteEvent is what the user pasted into an input, read from the clipboard as they pasted: its HTML when the clipboard holds it, its plain text (empty without any), files with their bytes, such as an image copied in another app, and the file: URLs of local files copied in a file manager.
 type PasteEvent struct {
-	// HTML is the same content with its formatting when the clipboard
-	// holds it (public.html on macOS and iOS, CF_HTML on Windows,
-	// text/html on Linux and the web, ClipData.Item.getHtmlText on
-	// Android).
+	// HTML is the same content with its formatting when the clipboard holds it (public.html on macOS and iOS, CF_HTML on Windows, text/html on Linux and the web, ClipData.Item.getHtmlText on Android).
 	HTML  string
 	Text  string
 	Files []PastedFile

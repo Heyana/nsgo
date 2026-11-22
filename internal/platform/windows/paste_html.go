@@ -7,8 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// This file builds on every system, so unit tests check Windows' CF_HTML
-// parsing on any host.
+// This file builds on every system, so unit tests check Windows' CF_HTML parsing on any host.
 
 const (
 	cfHTMLStartFragmentMarker = "<!--StartFragment-->"
@@ -17,13 +16,7 @@ const (
 
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
-// parseCFHTML extracts the pasted HTML from a Windows CF_HTML ("HTML Format")
-// clipboard buffer. CF_HTML wraps UTF-8 HTML with an ASCII header whose byte
-// offsets name the HTML document (StartHTML..EndHTML) and the pasted fragment
-// (StartFragment..EndFragment). Trailing NUL padding from GlobalSize is
-// trimmed before slicing, malformed or non-UTF-8-aligned offsets fall back to
-// the fragment comment markers, StartHTML..EndHTML, or the body after the
-// header, and raw HTML without a CF_HTML header is returned as-is.
+// parseCFHTML extracts the pasted HTML from a Windows CF_HTML ("HTML Format") clipboard buffer. CF_HTML wraps UTF-8 HTML with an ASCII header whose byte offsets name the HTML document (StartHTML..EndHTML) and the pasted fragment (StartFragment..EndFragment). Trailing NUL padding from GlobalSize is trimmed before slicing, malformed or non-UTF-8-aligned offsets fall back to the fragment comment markers, StartHTML..EndHTML, or the body after the header, and raw HTML without a CF_HTML header is returned as-is.
 func parseCFHTML(raw []byte) string {
 	if i := bytes.IndexByte(raw, 0); i >= 0 {
 		raw = raw[:i]

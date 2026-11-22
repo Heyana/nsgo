@@ -11,12 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// The caret and pastes of text inputs. The caret is GTK's own: the
-// entry's text widget computes its extents, a text view its cursor
-// locations. A paste is heard from the editor's paste-clipboard signal;
-// GDK reads clipboards asynchronously, so the paste is reported after
-// the text it inserts, with the clipboard's local files, else its image,
-// its HTML (text/html), and its text.
+// The caret and pastes of text inputs. The caret is GTK's own: the entry's text widget computes its extents, a text view its cursor locations. A paste is heard from the editor's paste-clipboard signal; GDK reads clipboards asynchronously, so the paste is reported after the text it inserts, with the clipboard's local files, else its image, its HTML (text/html), and its text.
 
 type gdkRectangle struct{ x, y, w, h int32 }
 
@@ -161,8 +156,7 @@ func pasteClipboardCallback(widget uintptr, data uintptr) {
 	}
 }
 
-// pasteHTMLOrText reads text/html asynchronously when offered, then reads plain
-// text and dispatches EventPaste.
+// pasteHTMLOrText reads text/html asynchronously when offered, then reads plain text and dispatches EventPaste.
 func (w *window) pasteHTMLOrText(p *pasting) {
 	if w.closing || w.paste != p {
 		return

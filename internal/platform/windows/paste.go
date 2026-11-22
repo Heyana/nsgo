@@ -55,16 +55,14 @@ func (w *window) pasteEvent(in *textInput) bool {
 	return p.Text != "" && in.config.PasteBehavior == driver.PasteInsert
 }
 
-// cfHTMLFormat returns the registered Win32 clipboard format ID for CF_HTML
-// ("HTML Format"), or 0 if registration fails.
+// cfHTMLFormat returns the registered Win32 clipboard format ID for CF_HTML ("HTML Format"), or 0 if registration fails.
 func cfHTMLFormat() uintptr {
 	name, _ := syscall.UTF16PtrFromString("HTML Format")
 	id, _, _ := registerClipboardFormatW.Call(uintptr(unsafe.Pointer(name)))
 	return id
 }
 
-// clipboardHTML returns the open clipboard's CF_HTML content, "" when it holds
-// none.
+// clipboardHTML returns the open clipboard's CF_HTML content, "" when it holds none.
 func clipboardHTML() string {
 	if cf := cfHTMLFormat(); cf != 0 {
 		if h, _, _ := getClipboardData.Call(cf); h != 0 {
