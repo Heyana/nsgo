@@ -770,7 +770,7 @@ func (w *window) createWindow(opts Options) {
 	gtkWindowSetTitle(w.win, cstr(title))
 	gtkWindowSetDefaultSize(w.win, int32(opts.Width), int32(opts.Height))
 	w.lastWidth, w.lastHeight = opts.Width, opts.Height
-	if opts.test != nil {
+	if opts.test != nil && w.kind != driver.SurfacePanel {
 		// A fixed size has tiling compositors float a test's window at the
 		// test's size instead of resizing it as another opens.
 		gtkWindowSetResizable(w.win, 0)

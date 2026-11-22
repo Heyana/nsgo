@@ -72,11 +72,13 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 		var m bool
 		host.onLoop(t, func() {
 			m = gtkWidgetGetMapped(p.win) != 0
-			if m {
-				gtkWindowSetResizable(p.win, 1)
-			}
+
 		})
 		return m
+	})
+	waitPixels(t, p, "the transparent card pixels", func(px pixels) bool {
+		q := px.at(px.width/2, px.height/2)
+		return q[0] > 80 && q[3] > 80
 	})
 	var d, x, r uintptr
 	var before driver.Point
@@ -91,8 +93,8 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 	})
 	ctl.s.Post(func() { ctl.h.Set(180) })
 	wait1394(t, "grow", func() bool {
-		var z, h int32
-		host.onLoop(t, func() { gtkWindowGetDefaultSize(p.win, &z, &h) })
+		var h int32
+		host.onLoop(t, func() { h = gtkWidgetGetHeight(p.surface) })
 		return h >= 180
 	})
 	var after driver.Point
@@ -102,8 +104,8 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 	}
 	ctl.s.Post(func() { ctl.h.Set(40) })
 	wait1394(t, "shrink", func() bool {
-		var z, h int32
-		host.onLoop(t, func() { gtkWindowGetDefaultSize(p.win, &z, &h) })
+		var h int32
+		host.onLoop(t, func() { h = gtkWidgetGetHeight(p.surface) })
 		return h <= 45
 	})
 }
