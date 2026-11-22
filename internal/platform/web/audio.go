@@ -36,7 +36,7 @@ type webSound struct {
 }
 
 type webSoundVoice struct {
-	sound                uint32
+	sound, playback      uint32
 	source, gain, panner js.Value
 	ended                js.Func
 }
@@ -85,7 +85,9 @@ func (a *webAudio) handle(id uint32, r *driver.AudioRequest) {
 	case driver.AudioLoad:
 		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
 	case driver.AudioPlay:
-		a.play(id, r.Volume, r.Rate, r.Pan, r.StartAt, r.Loop)
+		a.play(id, r)
+	case driver.AudioPlaybackSet, driver.AudioPlaybackStop:
+		a.controlPlayback(id, r)
 	case driver.AudioReadLatency:
 		a.report(id, driver.AudioEvent{Phase: driver.AudioLatency, Latency: a.outputLatency()})
 	case driver.AudioStop:
@@ -123,7 +125,11 @@ func (a *webAudio) resumeOutput() {
 		a.output = js.Global().Get("AudioContext").New()
 	}
 	if a.output.Get("state").String() != "running" {
-		a.output.Call("resume").Call("catch", ignore)
+		then(a.output.Call("resume"), func(js.Value) {}, func(js.Value) {
+			for len(a.voices) > 0 {
+				a.endVoice(a.voices[0], true)
+			}
+		})
 	}
 }
 
@@ -248,13 +254,15 @@ func audioBytes(data []byte) js.Value {
 	return bytes
 }
 
-func (a *webAudio) play(id uint32, volume, rate, pan float32, startAt time.Time, loop bool) {
+func (a *webAudio) play(id uint32, r *driver.AudioRequest) {
 	sound := a.sounds[id]
 	if sound == nil || !sound.buffer.Truthy() || !a.activated {
+		a.playbackEnded(id, r.Playback)
 		return
 	}
 	a.resumeOutput()
 	if !a.output.Truthy() {
+		a.playbackEnded(id, r.Playback)
 		return
 	}
 	if len(a.voices) >= driver.MaxSoundVoices {
@@ -263,15 +271,15 @@ func (a *webAudio) play(id uint32, volume, rate, pan float32, startAt time.Time,
 	source, gain := a.output.Call("createBufferSource"), a.output.Call("createGain")
 	source.Set("buffer", sound.buffer)
 	// A looping source repeats the whole decoded buffer and fires onended only once stopped.
-	source.Set("loop", loop)
-	source.Get("playbackRate").Set("value", rate)
-	gain.Get("gain").Set("value", volume)
+	source.Set("loop", r.Loop)
+	source.Get("playbackRate").Set("value", r.Rate)
+	gain.Get("gain").Set("value", r.Volume)
 	source.Call("connect", gain)
-	voice := &webSoundVoice{sound: id, source: source, gain: gain}
+	voice := &webSoundVoice{sound: id, playback: r.Playback, source: source, gain: gain}
 	// A centered voice skips the panner; browsers without StereoPannerNode play every voice centered.
-	if pan != 0 && a.output.Get("createStereoPanner").Type() == js.TypeFunction {
+	if r.Pan != 0 && a.output.Get("createStereoPanner").Type() == js.TypeFunction {
 		voice.panner = a.output.Call("createStereoPanner")
-		voice.panner.Get("pan").Set("value", pan)
+		voice.panner.Get("pan").Set("value", r.Pan)
 		gain.Call("connect", voice.panner)
 		voice.panner.Call("connect", a.output.Get("destination"))
 	} else {
@@ -283,8 +291,8 @@ func (a *webAudio) play(id uint32, volume, rate, pan float32, startAt time.Time,
 	})
 	source.Set("onended", voice.ended)
 	a.voices = append(a.voices, voice)
-	if !startAt.IsZero() && time.Until(startAt) > 0 {
-		source.Call("start", a.contextTime(startAt))
+	if !r.StartAt.IsZero() && time.Until(r.StartAt) > 0 {
+		source.Call("start", a.contextTime(r.StartAt))
 	} else {
 		source.Call("start")
 	}
@@ -318,8 +326,34 @@ func (a *webAudio) outputLatency() time.Duration {
 	return time.Duration(seconds * float64(time.Second))
 }
 
+func (a *webAudio) controlPlayback(id uint32, r *driver.AudioRequest) {
+	if r.Playback == 0 {
+		return
+	}
+	for _, voice := range a.voices {
+		if voice.sound == id && voice.playback == r.Playback {
+			if r.Command == driver.AudioPlaybackStop {
+				a.endVoice(voice, true)
+			} else {
+				voice.gain.Get("gain").Set("value", r.Volume)
+				voice.source.Get("playbackRate").Set("value", r.Rate)
+			}
+			return
+		}
+	}
+}
+
+func (a *webAudio) playbackEnded(sound, playback uint32) {
+	if playback != 0 {
+		a.report(sound, driver.AudioEvent{Phase: driver.AudioPlaybackEnded, Playback: playback})
+	}
+}
+
 func (a *webAudio) endVoice(voice *webSoundVoice, stop bool) {
 	i := slices.Index(a.voices, voice)
+	if i < 0 {
+		return
+	}
 	a.voices = slices.Delete(a.voices, i, i+1)
 	voice.source.Set("onended", js.Null())
 	voice.ended.Release()
@@ -331,6 +365,7 @@ func (a *webAudio) endVoice(voice *webSoundVoice, stop bool) {
 	if voice.panner.Truthy() {
 		voice.panner.Call("disconnect")
 	}
+	a.playbackEnded(voice.sound, voice.playback)
 }
 
 func (a *webAudio) stop(id uint32) {

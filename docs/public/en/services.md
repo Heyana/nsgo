@@ -612,11 +612,11 @@ audio.LoadSound(cx, audio.Source{URI: "asset:sounds/click.wav"}, func(click *aud
 })
 ```
 
-`audio.Voice` sets per-playback `Volume` (0 to 1, 0 as 1), `Rate` (0.5 to 2, 0 as 1) and `Pan` (-1 full left to 1 full right, 0 centered); values outside those ranges are clamped and NaN takes the default. `Sound.Stop` stops all playbacks of the sound and `Close` frees it, as its owning scope does when disposed. `Player` supports `Play`, `Preload`, `Pause`, `Seek`, `SetVolume`, `SetRate`, `SetLoop` and `Close`. macOS, iOS and the web play audio today, with WAV, AAC and MP3 supported there; Windows, Linux and Android still report `CanPlayAudio` false.
+`audio.Voice` sets per-playback `Volume` (0 to 1, 0 as 1), `Rate` (0.5 to 2, 0 as 1) and `Pan` (-1 full left to 1 full right, 0 centered); values outside those ranges are clamped and NaN takes the default. `Sound.Stop` stops all playbacks of the sound and `Close` frees it, as its owning scope does when disposed. `Player` supports `Play`, `Preload`, `Pause`, `Seek`, `SetVolume`, `SetRate`, `SetLoop` and `Close`. macOS, iOS, Linux and the web play audio today. Apple and browser backends support WAV, AAC and MP3. Linux uses GStreamer codecs, and its streamed player plays at 1×. Windows and Android still report `CanPlayAudio` false.
 
 Browsers require a user gesture for audible playback. Load short sounds ahead of time, then call `Sound.Play` after a click, tap or key press. A sound played before a gesture is silent. A player's `Play` callback receives `audio.NotAllowed` if the browser blocks playback. Retry from a user gesture.
 
-`Sound.Play` returns an `audio.Playback`, which on macOS and iOS can set its own volume and rate or stop independently. `Ended()` is reactive and becomes true when that playback finishes, stops, is displaced by the voice limit, or cannot start. Backends without individual controls return an ended handle.
+`Sound.Play` returns an `audio.Playback`, which on macOS, iOS and the web can set its own volume and rate or stop independently. `Ended()` is reactive and becomes true when that playback finishes, stops, is displaced by the voice limit, or cannot start. Backends without individual controls return an ended handle.
 
 Use `audio.Voice{Muted: true}` to start an effect silently and `playback.SetVolume(0)` to silence an active effect. For long audio, `audio.NewPlayer` streams a source and `player.SetMuted(true)` silences the output while playback continues. Unmuting restores the player's configured volume. `Voice.Volume` and `Player.SetVolume` use zero for default full volume.
 
