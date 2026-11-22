@@ -82,23 +82,36 @@ func testMovingGeometry(t *testing.T, layout, late bool) {
 	if math.Abs(float64(first.Bounds[0]-30)) > 1 {
 		t.Fatalf("initial transformed native bounds = %v, want x=30", first.Bounds)
 	}
+	// Sample until the native bounds are between the two ends. One sample at a fixed delay can land before the platform starts the animation, which on a busy runner takes a while after the change, and the ease-in curve barely moves at first.
 	middle := make(chan devtools.Node, 1)
+	var sampled devtools.Node
+	probe := func() {
+		for end := time.Now().Add(3 * time.Second); time.Now().Before(end); time.Sleep(15 * time.Millisecond) {
+			got := make(chan devtools.Node, 1)
+			surface.Post(func() { got <- read() })
+			node := <-got
+			sampled = node
+			if node.Bounds[0] > 31 && node.Bounds[0] < 69 {
+				middle <- node
+				return
+			}
+		}
+		close(middle)
+	}
 	app.Post(func() {
 		if layout {
 			scope.AnimateLayout(core.LayoutAnimation{Update: &core.LayoutTransition{Curve: core.LayoutEaseInEaseOut, Duration: 800 * time.Millisecond}})
 		}
 		moved.Set(true)
-		time.AfterFunc(200*time.Millisecond, func() {
-			surface.Post(func() { middle <- read() })
-		})
+		go probe()
 	})
 	app.Settle()
 	select {
-	case node := <-middle:
-		if node.Bounds[0] <= 31 || node.Bounds[0] >= 69 {
-			t.Fatalf("mid-transition native bounds = %v, want x between 30 and 70", node.Bounds)
+	case _, ok := <-middle:
+		if !ok {
+			t.Fatalf("native bounds never showed the transition's middle: last %v, want x between 30 and 70", sampled.Bounds)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("native transition probe did not reach the graph")
 	}
 	final := make(chan devtools.Node, 1)
