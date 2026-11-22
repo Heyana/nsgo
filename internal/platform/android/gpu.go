@@ -7,17 +7,12 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/shaderir/glsl"
 )
 
-// GPU view protocol encoding and decoding (docs/architecture/gpu.md, #1109).
-// This file builds on every OS so unit tests can verify GLSL ES 3.00 pipeline
-// compilation, binary GPU frame serialization, upload chunking, and GPU event
-// decoding without an Android device.
+// GPU view protocol encoding and decoding (docs/architecture/gpu.md, #1109). This file builds on every OS so unit tests can verify GLSL ES 3.00 pipeline compilation, binary GPU frame serialization, upload chunking, and GPU event decoding without an Android device.
 
-// maxGPUChunk bounds a single buffer upload op so large static meshes split
-// cleanly into sequential pipe messages under maxMessage (64 MiB).
+// maxGPUChunk bounds a single buffer upload op so large static meshes split cleanly into sequential pipe messages under maxMessage (64 MiB).
 const maxGPUChunk = 16 << 20
 
-// maxGPUFrameBudget bounds the raw payload bytes accumulated in one GPUFrame
-// message before flushing a preceding non-presenting batch.
+// maxGPUFrameBudget bounds the raw payload bytes accumulated in one GPUFrame message before flushing a preceding non-presenting batch.
 const maxGPUFrameBudget = maxMessage / 2
 
 // writeGPUViewConfig writes an ItemGPU payload as NsgoView.apply reads it.
@@ -31,9 +26,7 @@ func writeGPUViewConfig(w *writer, c *driver.GPUViewConfig) {
 	w.u32(uint32(max(cfg.SampleCount, 1)))
 }
 
-// compileGPUPipeline compiles a GPUPipelineDesc's shaderir stages into GLSL ES
-// 3.00 vertex and fragment sources plus flattened uniform block slots and
-// combined sampler pairs for Android's GpuView.java.
+// compileGPUPipeline compiles a GPUPipelineDesc's shaderir stages into GLSL ES 3.00 vertex and fragment sources plus flattened uniform block slots and combined sampler pairs for Android's GpuView.java.
 func compileGPUPipeline(desc *driver.GPUPipelineDesc) (glsl.PipelineSource, error) {
 	if desc == nil {
 		return glsl.PipelineSource{}, fmt.Errorf("android gpu: nil pipeline descriptor")
@@ -53,8 +46,7 @@ func compileGPUPipeline(desc *driver.GPUPipelineDesc) (glsl.PipelineSource, erro
 		return src, nil
 	}
 
-	// Separate vertex and fragment shaderir programs: compile each and merge
-	// their uniform block and combined-sampler binding tables deterministically.
+	// Separate vertex and fragment shaderir programs: compile each and merge their uniform block and combined-sampler binding tables deterministically.
 	vs, err := glsl.CompilePipeline(desc.Vertex.IR, glsl.GLSLVersionES300)
 	if err != nil {
 		return glsl.PipelineSource{}, fmt.Errorf("android gpu: compile vertex GLSL ES 3.00: %w", err)
@@ -93,9 +85,7 @@ func compileGPUPipeline(desc *driver.GPUPipelineDesc) (glsl.PipelineSource, erro
 	return merged, nil
 }
 
-// splitGPUFrames expands oversized buffer uploads into chunks <= maxGPUChunk
-// and splits multi-op frames so every encoded extGPUFrame stays safely below
-// maxMessage. Only the final frame preserves f.Copies, f.Passes, and f.Present.
+// splitGPUFrames expands oversized buffer uploads into chunks <= maxGPUChunk and splits multi-op frames so every encoded extGPUFrame stays safely below maxMessage. Only the final frame preserves f.Copies, f.Passes, and f.Present.
 func splitGPUFrames(f driver.GPUFrame) []driver.GPUFrame {
 	var expanded []driver.GPUResourceOp
 	for _, op := range f.Ops {
@@ -208,8 +198,7 @@ func opPayloadSize(op driver.GPUResourceOp) int {
 	return n
 }
 
-// encodeGPUFrame writes one driver.GPUFrame in the binary format GpuView.java
-// executes on the shared GL thread. Pipelines are compiled to GLSL ES 3.00 here.
+// encodeGPUFrame writes one driver.GPUFrame in the binary format GpuView.java executes on the shared GL thread. Pipelines are compiled to GLSL ES 3.00 here.
 func encodeGPUFrame(w *writer, f driver.GPUFrame) error {
 	w.u32(f.SurfaceID)
 	w.u32(uint32(f.ViewID))
@@ -514,8 +503,7 @@ func writeGPUPass(w *writer, pass *driver.GPUPass) {
 	}
 }
 
-// readGPUEvent decodes a msgGPUEvent sent by GpuView.java into a surface ID
-// and a driver.Event carrying *driver.GPUEvent.
+// readGPUEvent decodes a msgGPUEvent sent by GpuView.java into a surface ID and a driver.Event carrying *driver.GPUEvent.
 func readGPUEvent(r *reader) (uint32, driver.Event) {
 	surfID := r.u32()
 	viewID := driver.NodeID(r.u32())

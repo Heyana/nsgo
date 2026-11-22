@@ -8,10 +8,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// SubmitGPU implements engine.Platform: compiles any shaderir pipelines in
-// frame to GLSL ES 3.00 and streams compact binary extGPUFrame payloads over
-// the pipe to GpuView.java on the shared GL thread without triggering a UI
-// view-tree commit.
+// SubmitGPU implements engine.Platform: compiles any shaderir pipelines in frame to GLSL ES 3.00 and streams compact binary extGPUFrame payloads over the pipe to GpuView.java on the shared GL thread without triggering a UI view-tree commit.
 func (s *surface) SubmitGPU(frame driver.GPUFrame) {
 	for _, chunk := range splitGPUFrames(frame) {
 		var payload writer
