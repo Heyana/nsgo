@@ -43,7 +43,7 @@ base.Checkbox{
 
 The indicator takes its state from the box through `PartStates`, so `checked:` classes style it without making it a second stop.
 
-For modifiers, set `OnChangeEvent func(checked bool, press core.PressEvent)`. It replaces `OnChange` and leaves the value with the app; `press.Modifiers.Shift` lets a list select a range. Desktop and web Space/Return activation preserves modifiers unless an app shortcut handles the key first; on Windows, Alt with Space or Return goes to the window menu instead. In TSX, `onChangeEvent` receives `{ checked, press }`.
+For modifiers, set `OnChangeEvent func(checked bool, press core.PressEvent)`. It replaces `OnChange` and leaves the value with the app; `press.Modifiers.Shift` lets a list select a range. Space/Return activation on desktops, the web, Android and iOS/tvOS preserves modifiers unless an app shortcut handles the key first; on Windows, Alt with Space or Return goes to the window menu instead. In TSX, `onChangeEvent` receives `{ checked, press }`.
 
 ## Switch
 

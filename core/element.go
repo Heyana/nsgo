@@ -651,7 +651,7 @@ func (r *Ref) Frame() (Bounds, bool) {
 	return r.n.frame, true
 }
 
-// Focus moves keyboard focus to a text field or, on desktops, the web and Apple TV, an enabled pressable or Focusable view. Plain, hidden and NoFocus views and views below a modal do not take focus. Under a confined owner it does only as Scope.Confine allows. It does nothing in unplaced Holder content, with no focus deferred until it is placed again.
+// Focus moves keyboard focus to a text field or, on desktops, the web, Android and iOS/tvOS, an enabled pressable or Focusable view. Plain, hidden and NoFocus views and views below a modal do not take focus. Under a confined owner it does only as Scope.Confine allows. It does nothing in unplaced Holder content, with no focus deferred until it is placed again.
 func (r *Ref) Focus() {
 	if r.placed() && r.t.mayMoveFocus(r.n.owner) {
 		r.t.command(driver.ItemFocus, r.n)

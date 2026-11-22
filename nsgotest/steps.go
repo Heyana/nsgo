@@ -213,7 +213,7 @@ func (a *App) pressAt(v *View, at driver.Point, index int, mods driver.Modifiers
 	a.pressOutside(v, at)
 	// A pointer's press takes the keyboard focus off pressable views and moves it into an editable field it hits.
 	for _, o := range a.views {
-		if o.Focused && (o.Kind != KindInput || field && o != v) {
+		if o.Focused && (o.Kind != KindInput && a.tabs() || field && o != v) {
 			a.setFocus(o, false)
 			a.Settle()
 		}
@@ -992,13 +992,15 @@ func (a *App) press(key, code string) {
 			a.moveFocus(k == "shift+tab")
 			return
 		}
+	}
+	if a.env != nil && a.env.FocusesViews() {
 		name := parts[len(parts)-1]
 		// The keymap had the key first, including modified activations. Windows sends keys held with Alt as system keys, which go to the window menu rather than the focused view.
 		mods := a.keyModifiers(parts[:len(parts)-1])
 		if (name == "enter" || name == "space") && !(mods.Alt && a.env.OS == driver.OSWindows) {
 			// Return or Space press the pressable the keyboard focus is on, sending the down, up and press events it handles and taking the key even when it handles only a long press, as the platforms do.
 			for _, v := range a.shown() {
-				if v.Focused && v.Kind != KindInput && v.Events.Pressable() {
+				if v.Focused && v.Kind != KindInput && a.canFocus(v) && v.Events.Pressable() {
 					for _, kind := range []driver.EventKind{driver.EventPressDown, driver.EventPressUp, driver.EventPress} {
 						a.send(v, driver.Event{Kind: kind, Modifiers: mods})
 					}
@@ -1387,7 +1389,8 @@ func (a *App) keyNames(k string) []string {
 
 // tabs says whether Tab moves the keyboard focus between pressable views and fields, as on desktops and the web.
 func (a *App) tabs() bool {
-	return a.env != nil && a.env.FocusesViews()
+	return a.env != nil && a.env.FocusesViews() && a.env.OS != driver.OSAndroid &&
+		(a.env.OS != driver.OSIOS || a.env.Idiom == driver.IdiomTV)
 }
 
 // moveFocus moves the keyboard focus to the next Tab stop, or the

@@ -244,9 +244,7 @@ type surface struct {
 	changes []stackChange
 	// history is how many entries back goes through (ItemHistory).
 	history int
-	// On an Apple TV (focus.go): modals are those shown, oldest first;
-	// focused is the view with the focus, focusBack the one to give it
-	// back to as a modal goes.
+	// modals are those shown, oldest first; focused is the explicitly focused view, or tvOS focus engine's, and focusBack the one to give it back to as a modal goes.
 	modals             []*view
 	focused, focusBack *view
 
@@ -379,7 +377,7 @@ func loadUIKit() {
 	registerSelection()
 	registerContent()
 	registerCanvasNodes()
-	classView = register("NsgoView", uiView, nil, slices.Concat(common, pressMethods()))
+	classView = register("NsgoView", uiView, nil, slices.Concat(common, pressMethods(), keyboardResponderMethods()))
 	registerTextInput(slices.Concat(common, pressMethods()))
 	surfaceMethods = append(common,
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: surfaceLayout},
@@ -1606,6 +1604,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemBlur:
 			if v.input != nil {
 				v.input.field.Send(selResign)
+			} else if !onTV() && s.focused == v {
+				v.native.Send(selResign)
+				s.viewController().Send(selBecomeFirst)
 			}
 		}
 	}
@@ -1641,6 +1642,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 func (s *surface) finish() {
 	s.startImages()
 	s.updateModals()
+	if v := s.focused; !onTV() && v != nil && !v.focusable() {
+		v.native.Send(selResign)
+		s.viewController().Send(selBecomeFirst)
+	}
 	for _, v := range s.presenting {
 		if s.views[v.id] == v && v.native.Send(selSuperview) != 0 && !s.navigating(s.views[s.root]) {
 			h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
@@ -2092,7 +2097,18 @@ func pressesBegan(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
 		})
 	}
 	if !consumed {
-		apple.Super(self, cmd, presses, event)
+		activated := false
+		if app != nil && app.engine != nil {
+			apple.ForEach(presses, func(press objc.ID) {
+				if key := press.Send(sel("key")); key != 0 {
+					mods := app.heldModifiers(apple.Modifiers(objc.Send[uint](key, sel("modifierFlags"))))
+					activated = app.activateKey(pressesKey(key), mods) || activated
+				}
+			})
+		}
+		if !activated {
+			apple.Super(self, cmd, presses, event)
+		}
 		return
 	}
 	app.engine.Dispatch(driver.Event{Kind: driver.EventKey, Count: id})

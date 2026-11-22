@@ -20,7 +20,7 @@ import (
 // holding it long-presses, and its Menu button goes back where the app
 // has somewhere to go back from, else leaves the app as tvOS's apps do.
 // A modal takes the focus as it comes and gives it back as it goes.
-// iPhones and iPads keep their touches: none of this runs there.
+// iPhones and iPads use explicit first-responder focus for hardware keyboards; touches continue to press controls without focusing them.
 
 // UIPressType of the remote's buttons.
 const (
@@ -108,10 +108,62 @@ func pressMethods() []objc.MethodDef {
 // selects reports whether presses hold the select button and v, focused,
 // takes it.
 func (v *view) selects(presses objc.ID) bool {
-	return onTV() && v.pressable() && v.focusable() && hasPress(presses, pressSelect)
+	if !onTV() || !v.pressable() || !v.focusable() {
+		return false
+	}
+	remote := false
+	apple.ForEach(presses, func(p objc.ID) {
+		remote = remote || p.Send(sel("key")) == 0 && objc.Send[int](p, sel("type")) == pressSelect
+	})
+	return remote
 }
 
-// focusKeyUse returns the keys the focused view uses itself, which the keymap's bindings that yield them leave it (driver.FindKey): a field's editing keys, and on an Apple TV the focused view's, a pressable view's Return and Space or a slider's arrows.
+// keyboardResponderMethods let an explicitly focused pressable receive hardware keys on iPhone and iPad without adopting UITextInput or showing a keyboard.
+func keyboardResponderMethods() []objc.MethodDef {
+	return []objc.MethodDef{
+		{Cmd: sel("canBecomeFirstResponder"), Fn: func(self objc.ID, _ objc.SEL) bool {
+			v := views[self]
+			return v != nil && !onTV() && v.focusable()
+		}},
+		{Cmd: sel("becomeFirstResponder"), Fn: becomeKeyboardResponder},
+		{Cmd: sel("resignFirstResponder"), Fn: resignKeyboardResponder},
+	}
+}
+
+func becomeKeyboardResponder(self objc.ID, cmd objc.SEL) bool {
+	ok := apple.SendSuper[bool](self, cmd)
+	if v := views[self]; ok && v != nil && !onTV() && v.focusable() {
+		v.surface.focused = v
+		v.dispatch(driver.EventFocus)
+	}
+	return ok
+}
+
+func resignKeyboardResponder(self objc.ID, cmd objc.SEL) bool {
+	ok := apple.SendSuper[bool](self, cmd)
+	if v := views[self]; ok && v != nil && !onTV() && v.surface.focused == v {
+		v.surface.focused = nil
+		v.dispatch(driver.EventBlur)
+	}
+	return ok
+}
+
+// activateKey runs only after the keymap and never while a native editor has focus.
+func (s *surface) activateKey(name string, mods driver.Modifiers) bool {
+	if name != "enter" && name != "space" || s.editing() {
+		return false
+	}
+	v := s.focused
+	if v == nil || s.views[v.id] != v || !v.focusable() || !v.pressable() {
+		return false
+	}
+	for _, kind := range []driver.EventKind{driver.EventPressDown, driver.EventPressUp, driver.EventPress} {
+		v.report(driver.Event{Kind: kind, Index: -1, Count: 1, Modifiers: mods})
+	}
+	return true
+}
+
+// focusKeyUse returns the keys the focused view uses itself, which the keymap's bindings that yield them leave it (driver.FindKey): a field's editing keys, the focused view's, a pressable view's Return and Space or a slider's arrows.
 func (s *surface) focusKeyUse() driver.KeyUse {
 	if s.editing() {
 		return driver.KeyUseText
@@ -147,7 +199,7 @@ func (v *view) beginPress() {
 
 // focusable reports whether v may take the focus.
 func (v *view) focusable() bool {
-	if !onTV() || v.native == 0 || !v.props.FocusStop(v.events) ||
+	if v.native == 0 || !v.props.FocusStop(v.events) ||
 		v.kind == driver.KindInput || v.native.Send(sel("window")) == 0 || hiddenWithin(v.native) {
 		return false
 	}
@@ -157,8 +209,12 @@ func (v *view) focusable() bool {
 	return true
 }
 
-// focusView asks tvOS's focus engine to move to this stop. Touch-only UIKit continues to focus inputs, without opening a keyboard for views.
+// focusView moves tvOS's focus engine, or the first responder on iPhone and iPad. A plain UIView opens no software keyboard.
 func (s *surface) focusView(v *view) {
+	if !onTV() {
+		v.native.Send(selBecomeFirst)
+		return
+	}
 	system := objc.ID(apple.Class("UIFocusSystem")).Send(sel("focusSystemForEnvironment:"), v.native)
 	if system != 0 {
 		system.Send(sel("requestFocusUpdateToEnvironment:"), v.native)
@@ -191,9 +247,6 @@ func (s *surface) topModal() *view {
 // focus into the newest as it comes and back to what had it as it goes,
 // and focuses the views a batch brought when nothing has the focus.
 func (s *surface) updateModals() {
-	if !onTV() {
-		return
-	}
 	// The newest modal as the last batch left them, which may be gone.
 	var top *view
 	if n := len(s.modals); n > 0 {
@@ -207,6 +260,16 @@ func (s *surface) updateModals() {
 			v.focusBefore = s.focused
 			s.modals = append(s.modals, v)
 		}
+	}
+	if !onTV() {
+		// Keep the modal scope for explicit hardware-keyboard focus too.
+		if top != nil && !slices.Contains(s.modals, top) && !s.editing() &&
+			(s.focused == nil || s.views[s.focused.id] != s.focused) {
+			if back := top.focusBefore; back != nil && s.views[back.id] == back && back.focusable() {
+				s.focusView(back)
+			}
+		}
+		return
 	}
 	switch now := s.topModal(); {
 	case now != top:

@@ -10,7 +10,7 @@ func (p *ViewProps) FocusStop(events EventMask) bool {
 	return !p.Disabled && !p.NoFocus && (p.Focusable || events.Pressable())
 }
 
-// FocusesViews reports whether the platform supports keyboard focus on ordinary views beside text inputs. Mobile touch platforms focus inputs.
+// FocusesViews reports whether the platform supports keyboard focus on ordinary views beside text inputs. On mobile platforms this includes explicit Ref.Focus requests without changing how touches focus.
 func (e *Environment) FocusesViews() bool {
-	return e.OS == OSMacOS || e.OS == OSWindows || e.OS == OSLinux || e.OS == OSWeb || e.OS == OSIOS && e.Idiom == IdiomTV
+	return e.OS == OSMacOS || e.OS == OSWindows || e.OS == OSLinux || e.OS == OSWeb || e.OS == OSIOS || e.OS == OSAndroid
 }

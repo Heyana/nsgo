@@ -5,7 +5,7 @@ These are the rules NSGo's own `base` and `ui` follow, for components other apps
 ## Behavior and look
 
 - Keep each control's behavior, state and accessibility in an unstyled form that takes every style from its user part by part, as `base.Switch` does, and put looks in a styled form that wraps it, as `ui.Switch` does. What the styled form needs that the unstyled one lacks goes into the unstyled one, never into a second implementation.
-- Build on NSGo's `base` control when one exists instead of writing presses, focus and keyboard handling again; give it a look as `ui` does.
+- Build on NSGo's `base` control when one exists instead of writing presses, focus and keyboard handling again; give it a look as `ui` does. `Ref.Focus` and a button's `AutoFocus` also focus pressables on Android and iOS/tvOS for a hardware keyboard. Space and Return preserve modifiers after the keymap; touches do not move that focus. See [Keyboard focus](https://nsgo.dev/docs/accessibility.md#focus-and-the-keyboard).
 - A component with no behavior worth sharing, such as a badge, can be styled alone.
 - Keep components product-neutral: what only one app uses stays in that app.
 

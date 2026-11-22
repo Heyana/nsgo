@@ -500,7 +500,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (!hasFocus) releasePhysicalKeys();
+        if (!hasFocus) {
+            releasePhysicalKeys();
+            activationKeys.clear();
+        }
         environment();
         if (hasFocus && overlays != null) overlays.returned();
         // The user may have changed RECORD_AUDIO in the system's settings; the first view tells the app.
@@ -2769,6 +2772,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
         layoutCreate = layoutUpdate = layoutDelete = null;
         created.clear();
+        // A control hidden, disabled or covered by a modal no longer holds keys.
+        View focused = findFocus();
+        Node focusedNode = focused == null ? null : byView.get(focused);
+        if (focusedNode != null && focusedNode.field == null
+                && (!focusStop(focusedNode) || !inFocusScope(focused))) requestFocus();
         // Bindings and values change in batches too.
         applyAnimated();
         if (animator.running()) startTicking();
@@ -2924,11 +2932,16 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 if (n != null && n.field != null && n.field.requestFocus()) {
                     EditText field = n.field;
                     field.post(() -> ime.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT));
+                } else if (n != null && focusStop(n) && inFocusScope(n.view)) {
+                    n.view.setFocusableInTouchMode(true);
+                    if (!n.view.requestFocus()) n.view.setFocusableInTouchMode(false);
                 }
                 break;
             case Protocol.ITEM_BLUR:
                 if (n != null && n.field != null && n.field.hasFocus()) {
                     blurInput(n.field);
+                } else if (n != null && n.view.hasFocus()) {
+                    requestFocus();
                 }
                 break;
             case Protocol.ITEM_IMAGE: {
@@ -4458,7 +4471,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         // A key the window delivers is the keyboard's input. An IME's action or committed Return, which a field offers to keyBinding, leaves the modality, as a software Return does on iOS.
         if (e.getAction() == KeyEvent.ACTION_DOWN && !KeyEvent.isModifierKey(e.getKeyCode())) modality(Protocol.MODALITY_KEYBOARD);
         physicalKey(e);
-        return keyBinding(e) || super.dispatchKeyEvent(e);
+        return keyBinding(e) || activateKey(e) || super.dispatchKeyEvent(e);
     }
 
     @Override
@@ -4536,6 +4549,74 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     /** Lets the Android test agent offer a Control shortcut to the mounted keymap before native editor shortcuts. */
     boolean keyBindingShortcut(KeyEvent e) {
         return keyBinding(e);
+    }
+
+    /** Keys already used to activate a control: repeats and releases cannot activate it again. */
+    private final java.util.Set<Integer> activationKeys = new java.util.HashSet<>();
+
+    /** Return and Space activate the focused pressable after the keymap, preserving every modifier. */
+    private boolean activateKey(KeyEvent e) {
+        int code = e.getKeyCode();
+        if (e.getAction() == KeyEvent.ACTION_UP) return activationKeys.remove(code);
+        if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
+        if (activationKeys.contains(code)) return true;
+        if (code != KeyEvent.KEYCODE_ENTER && code != KeyEvent.KEYCODE_NUMPAD_ENTER && code != KeyEvent.KEYCODE_SPACE) return false;
+        View focused = findFocus();
+        Node n = focused == null ? null : byView.get(focused);
+        if (n == null || n.field != null || !focusStop(n) || !pressable(n) || !inFocusScope(focused)) return false;
+        activationKeys.add(code);
+        if (e.getRepeatCount() == 0) {
+            int mods = modifiers(e.getMetaState());
+            for (int kind : new int[]{Protocol.EVENT_PRESS_DOWN, Protocol.EVENT_PRESS_UP, Protocol.EVENT_PRESS}) {
+                if (n.has(kind)) event(kind, n.id, 1, 0, 0, "", 0, 0, -1, 0, 0, 0, 0, null, 0, 0, false, "",
+                        false, 0, 0, mods);
+            }
+        }
+        return true;
+    }
+
+    private static boolean pressable(Node n) {
+        return n.has(Protocol.EVENT_PRESS) || n.has(Protocol.EVENT_LONG_PRESS)
+                || n.has(Protocol.EVENT_PRESS_DOWN) || n.has(Protocol.EVENT_PRESS_UP);
+    }
+
+    private static boolean focusStop(Node n) {
+        return !n.disabled && !n.noFocus && (n.focusable || pressable(n));
+    }
+
+    /** The newest visible modal bounds keyboard focus as it bounds touch input. */
+    private View focusModal(View view) {
+        if (view == null || !view.isShown()) return null;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = group.getChildCount() - 1; i >= 0; i--) {
+                View modal = focusModal(group.getChildAt(i));
+                if (modal != null) return modal;
+            }
+        }
+        return view instanceof Layer ? view : null;
+    }
+
+    private boolean inFocusScope(View view) {
+        if (!view.isShown()) return false;
+        View modal = focusModal(rootView);
+        if (modal == null) return true;
+        for (View v = view; v != null; ) {
+            if (v == modal) return true;
+            android.view.ViewParent parent = v.getParent();
+            v = parent instanceof View ? (View) parent : null;
+        }
+        return false;
+    }
+
+    /** Native focus is reported independently of presses; touching a control still focuses no view. */
+    private void focusable(Node n) {
+        if (n.field != null) return;
+        boolean stop = focusStop(n);
+        if (!stop && n.view.hasFocus()) requestFocus();
+        n.view.setFocusable(stop);
+        if (!n.view.hasFocus()) n.view.setFocusableInTouchMode(false);
+        n.view.setDefaultFocusHighlightEnabled(false);
     }
 
     /** The one matcher for hardware keys and Return delivered through an IME. */
@@ -4770,6 +4851,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             ((CanvasNode) view).pictures = canvasImages;
         }
         byView.put(view, n);
+        view.setOnFocusChangeListener((v, focused) -> {
+            if (!focused) v.setFocusableInTouchMode(false);
+            report(n, focused ? Protocol.EVENT_FOCUS : Protocol.EVENT_BLUR);
+        });
         if (view instanceof Group) ((Group) view).node = n;
         switch (kind) {
             case Protocol.KIND_TEXT:
@@ -5301,6 +5386,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         view.setLongClickable(longPress);
         outside.remove(n);
         if (n.has(Protocol.EVENT_PRESS_OUTSIDE)) outside.add(n);
+        focusable(n);
     }
 
     private void props(Node n, DataInputStream in) throws IOException {
@@ -5310,6 +5396,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         n.selected = Protocol.flag(flags, 1);
         n.checked = Protocol.flag(flags, 2);
         n.mixed = Protocol.flag(flags, 3);
+        n.focusable = Protocol.flag(flags, 4);
+        n.noFocus = Protocol.flag(flags, 5);
         n.label = Protocol.readString(in);
         n.testID = Protocol.readString(in);
         n.activeX = in.readFloat();
@@ -5354,6 +5442,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         View view = n.accessible();
         // A text field's ItemInput enables it.
         if (n.field == null) view.setEnabled(!n.disabled);
+        focusable(n);
         view.setSelected(n.selected);
         view.setTag(n.testID.isEmpty() ? null : n.testID);
         // A dialog announces its label as it appears, an alert its content.
@@ -6232,7 +6321,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         boolean presented;
         long events;
         int role;
-        boolean disabled, selected, checked, mixed;
+        boolean disabled, selected, checked, mixed, focusable, noFocus;
         boolean invalid, labelPress;
         int labelFor;
         int[] labelledBy = new int[0];

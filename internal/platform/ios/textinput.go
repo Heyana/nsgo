@@ -178,9 +178,11 @@ func textInputMethods() []objc.MethodDef {
 	// backward 1.
 	back := func(direction int) bool { return direction == 1 || direction == 3 || direction == 4 }
 	return []objc.MethodDef{
-		{Cmd: sel("canBecomeFirstResponder"), Fn: func(self objc.ID, _ objc.SEL) bool { return textOf(self) != nil }},
+		{Cmd: sel("canBecomeFirstResponder"), Fn: func(self objc.ID, _ objc.SEL) bool {
+			return textOf(self) != nil || views[self] != nil && !onTV() && views[self].focusable()
+		}},
 		{Cmd: sel("becomeFirstResponder"), Fn: func(self objc.ID, cmd objc.SEL) bool {
-			ok := apple.SendSuper[bool](self, cmd)
+			ok := becomeKeyboardResponder(self, cmd)
 			if v := textOf(self); ok && v != nil {
 				// The surface shows one selection.
 				v.surface.clearSelection()
@@ -188,7 +190,7 @@ func textInputMethods() []objc.MethodDef {
 			return ok
 		}},
 		{Cmd: sel("resignFirstResponder"), Fn: func(self objc.ID, cmd objc.SEL) bool {
-			ok := apple.SendSuper[bool](self, cmd)
+			ok := resignKeyboardResponder(self, cmd)
 			if v := textOf(self); ok && v != nil {
 				v.changeSelection(0, 0, false)
 				if v.tsel.tokenizer != 0 {

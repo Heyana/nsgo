@@ -111,9 +111,9 @@ type targetUpdate struct {
 	event   driver.Event
 }
 
-// Desktop hosts settle native focus events with their input and mount queues. A focus request can be refused, so only the reported events change their model's focus.
+// Native hosts settle focus events with their input and mount queues. A focus request can be refused, so only the reported events change their model's focus.
 func (t *target) reportsNativeFocus() bool {
-	return t.live || slices.Contains([]string{"macos", "windows", "linux"}, Target())
+	return t.live || slices.Contains([]string{"macos", "windows", "linux", "ios", "ios_simulator", "tvos", "tvos_simulator", "android"}, Target())
 }
 
 // observe queues the next batch of a surface, including the app's own

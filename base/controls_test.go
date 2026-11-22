@@ -16,7 +16,7 @@ func TestButtonAutoFocusHonorsKeyboardStops(t *testing.T) {
 		name                    string
 		env                     core.Environment
 		disabled, noFocus, want bool
-	}{{"enabled", desktop, false, false, true}, {"disabled", desktop, true, false, false}, {"no-focus", desktop, false, true, false}, {"phone", phone, false, false, false}} {
+	}{{"enabled", desktop, false, false, true}, {"disabled", desktop, true, false, false}, {"no-focus", desktop, false, true, false}, {"phone", phone, false, false, true}} {
 		t.Run(c.name, func(t *testing.T) {
 			app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 				return base.Button{TestID: "action", AutoFocus: true, NoFocus: c.noFocus, OnPress: func(core.PressEvent) {},

@@ -914,7 +914,7 @@ func (t *testSurface) Key(key string) error {
 		}
 		var done bool
 		onMainSync(func() {
-			if kb := keyboardImpl(); kb != 0 && w.Send(sel("firstResponder")) != 0 {
+			if kb := keyboardImpl(); kb != 0 && t.s.editing() && w.Send(sel("firstResponder")) != 0 {
 				kb.Send(sel("deleteFromInput"))
 				done = true
 			}
@@ -925,12 +925,11 @@ func (t *testSurface) Key(key string) error {
 	case "enter", "return":
 		var done bool
 		onMainSync(func() {
-			// An Apple TV's keyboard Return is the remote's select button
-			// unless a field is being edited.
-			if onTV() && !t.s.editing() {
+			// Only an editor's Return goes through the software keyboard; a focused pressable receives a hardware key through UIKit.
+			if !t.s.editing() {
 				return
 			}
-			if kb := keyboardImpl(); kb != 0 && w.Send(sel("firstResponder")) != 0 {
+			if kb := keyboardImpl(); kb != 0 && t.s.editing() && w.Send(sel("firstResponder")) != 0 {
 				kb.Send(sel("addInputString:"), apple.NSString("\n"))
 				done = true
 			}
@@ -1056,15 +1055,11 @@ func (t *testSurface) keyDevice(w objc.ID, key string) error {
 				consumed = true
 			}
 		}
+		if !consumed {
+			consumed = t.s.activateKey(parsed, mods)
+		}
 		if !consumed && onTV() && !t.s.editing() {
 			switch parsed {
-			case "enter":
-				if v := t.s.focused; v != nil && int(v.id) < len(t.s.views) && t.s.views[v.id] == v && v.pressable() && v.focusable() {
-					v.pressAt = driver.Event{Index: -1, Count: 1}
-					v.pressed(driver.EventPressDown)
-					v.pressed(driver.EventPressUp)
-					v.pressed(driver.EventPress)
-				}
 			case "escape":
 				if t.s.history > 0 || t.s.topModal() != nil {
 					t.s.engine.Dispatch(driver.Event{Kind: driver.EventBack})
@@ -1144,7 +1139,11 @@ func (t *testSurface) holdKeyDevice(key string, isDown bool) error {
 			if !consumed && len(t.s.keys) > 0 {
 				if id, ok := driver.FindKey(t.s.keys, apple.KeyNames(parsed, flags), t.s.focusKeyUse(), false); ok {
 					t.s.engine.Dispatch(driver.Event{Kind: driver.EventKey, Count: id})
+					consumed = true
 				}
+			}
+			if !consumed && !wasHeld {
+				t.s.activateKey(parsed, mods)
 			}
 			return
 		}

@@ -2033,7 +2033,7 @@ func writeViewProps(w *writer, p *driver.ViewProps) {
 		role = driver.RoleDialog
 	}
 	w.byte(byte(role))
-	w.flags(p.Disabled, p.Selected, p.Checked, p.Indeterminate)
+	w.flags(p.Disabled, p.Selected, p.Checked, p.Indeterminate, p.Focusable, p.NoFocus)
 	w.str(p.Label)
 	w.str(p.TestID)
 	// Java decides when a drag activates the pan.

@@ -1046,6 +1046,13 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 		}
 	}
+	if a.target == nil && a.env != nil && (a.env.OS == driver.OSIOS || a.env.OS == driver.OSAndroid) {
+		for _, v := range a.views {
+			if v.Focused && v.Kind != KindInput && !a.canFocus(v) {
+				a.setFocus(v, false)
+			}
+		}
+	}
 	a.syncGPUViews(gpuConfigured, resized)
 	// When content shrinks or the viewport grows, pull an offset past the new end back after the batch's scroll commands keep the visible content in place.
 	for _, v := range resized {
@@ -1066,7 +1073,7 @@ func (a *App) canFocus(v *View) bool {
 	if v == nil || v.disabled(nil) {
 		return false
 	}
-	if v.Kind != KindInput && (!a.tabs() || !v.Props.FocusStop(v.Events)) {
+	if v.Kind != KindInput && (a.env == nil || !a.env.FocusesViews() || !v.Props.FocusStop(v.Events)) {
 		return false
 	}
 	for p := v; p != nil; p = p.Parent {
