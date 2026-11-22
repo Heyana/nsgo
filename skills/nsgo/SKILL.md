@@ -182,6 +182,8 @@ Use `go tool nsgo dev -profile cpu` or `-profile heap` for a Go profile, and `-p
 
 `go tool nsgo build` packages every target `nsgo.yaml` lists into `dist/`, installers and store packages into `dist/releases`. Read [references/shipping.md](references/shipping.md) before editing `nsgo.yaml`, icons, signing, updates or embedding. Use `updater.CapabilityOf` before offering update controls, and read `updater.Status` inside bindings for state and persisted preferences.
 
+When using `sign.sign_command`, return success after writing each PE output's embedded Authenticode signature. [Windows signing](https://nsgo.dev/docs/building.md#sign-windows-packages)
+
 For store ratings, call `cx.RequestReview()` where `cx.Env().CanRequestReview()` is true. Standalone Android packages include Play Review; embedded hosts supply it through Gradle. [Store reviews](https://nsgo.dev/docs/services.md#store-reviews)
 
 Use `go tool nsgo publish ios` with a signed IPA or `go tool nsgo publish macos` with a signed PKG to upload to TestFlight. [App Store Connect setup](https://nsgo.dev/docs/building.md#app-store-connect)

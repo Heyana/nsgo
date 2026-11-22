@@ -491,7 +491,7 @@ sign:
 
 ### 为 Windows 包签名
 
-不带 Authenticode 签名、或签名证书不被 SmartScreen 识别的 Windows 下载，打开前会收到警告。`sign.certificate` 是一个 `.pfx`，为可执行文件、命令行伴随程序、应用资源里自带的程序与库、以及安装包和其中的卸载器签名；密码来自 `NSGO_CERTIFICATE_PASSWORD`。签名在 Go 中生成，与 `signtool` 的结果相同，因此在 Mac 上不需要 Windows SDK：
+Authenticode 标识 Windows 下载的发布者；[SmartScreen 另行检查其信誉](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation)。`sign.certificate` 是一个 `.pfx`，为可执行文件、命令行伴随程序、应用资源里自带的程序与库、以及安装包和其中的卸载器签名；密码来自 `NSGO_CERTIFICATE_PASSWORD`。签名在 Go 中生成，与 `signtool` 的结果相同，因此在 Mac 上不需要 Windows SDK：
 
 ```yaml
 sign:
@@ -506,7 +506,9 @@ sign:
   sign_command: "signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a %1"
 ```
 
-在安装包里签卸载器需要 NSIS 3.08 或更高版本，且只能由 `.pfx` 完成，`sign.sign_command` 无法签卸载器。命令行可用 `-certificate`、`-sign-command` 和 `-timestamp-url` 指定这些值。
+`build` 会检查命令留下的嵌入式 Authenticode 签名：即使命令成功退出，只要应用可执行文件、命令行伴随程序、PE 资源或安装程序仍未签名，构建就会停止。
+
+安装包内卸载器的签名需要 NSIS 3.08 或更高版本；`sign.certificate` 只接受 `.pfx`，其他证书可通过 `sign.sign_command` 签名。命令行可用 `-certificate`、`-sign-command` 和 `-timestamp-url` 指定这些值。
 
 ### 公证
 

@@ -520,7 +520,7 @@ The keystore's passwords come from `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWO
 
 ### Sign Windows packages
 
-A Windows download that carries no Authenticode signature or one from a certificate SmartScreen does not know shows a warning before it opens. `sign.certificate`, a `.pfx`, signs the executable, the command companion, the programs and libraries the app's resources bring, and the installer with its uninstaller; its password comes from `NSGO_CERTIFICATE_PASSWORD`. The signatures are made in Go, as `signtool` makes them, so a Mac signs them without the Windows SDK:
+Authenticode identifies a Windows download's publisher; [SmartScreen checks its reputation separately](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation). `sign.certificate`, a `.pfx`, signs the executable, the command companion, the programs and libraries the app's resources bring, and the installer with its uninstaller; its password comes from `NSGO_CERTIFICATE_PASSWORD`. The signatures are made in Go, as `signtool` makes them, so a Mac signs them without the Windows SDK:
 
 ```yaml
 sign:
@@ -534,6 +534,8 @@ sign:
 sign:
   sign_command: "signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a %1"
 ```
+
+`build` stops if the command succeeds but leaves the app executable, command companion, a PE resource, or the setup executable without an embedded Authenticode signature.
 
 Signing the uninstaller inside the installer needs NSIS 3.08 or later, and a certificate that is not a `.pfx` cannot sign it through `sign.certificate`. `-certificate`, `-sign-command` and `-timestamp-url` set these from the command line.
 

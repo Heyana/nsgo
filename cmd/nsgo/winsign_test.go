@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -173,33 +174,71 @@ func TestSignsWindowsPackage(t *testing.T) {
 // A command signs the files instead, with %1 standing for each path, for a
 // certificate on a hardware token or in a cloud service.
 func TestSignsWithACommand(t *testing.T) {
-	dir := t.TempDir()
-	log := filepath.Join(dir, "signed.log")
-	command := "printf '%s\\n' %1 >> " + log
+	image := buildTestPE(t)
+	signed, err := authenticode.Sign(image, testWindowsKey(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "release with spaces")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(dir, "signed fixture.exe")
+	if err := os.WriteFile(fixture, signed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := "cp " + quoteArg(fixture) + " %1"
+	if isWindows() {
+		command = "copy /Y " + quoteArg(fixture) + " %1 >NUL"
+	}
 	p := &project{Dir: dir, Name: "App", Release: true}
 	p.Sign.SignCommand = command
 	s := windowsSignerOf(p)
 	if s == nil {
 		t.Fatal("no signer for a command")
 	}
-	paths := []string{filepath.Join(dir, "App.exe"), filepath.Join(dir, "App-setup.exe")}
-	for _, path := range paths {
-		if err := os.WriteFile(path, []byte("bytes"), 0o644); err != nil {
+	for _, name := range []string{"App.exe", "App-setup.exe"} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, image, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.signFile(t.Context(), path, true); err != nil {
 			t.Fatal(err)
 		}
-	}
-	data, err := os.ReadFile(log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range paths {
-		if !strings.Contains(string(data), path) {
-			t.Errorf("the command did not sign %s:\n%s", path, data)
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, signed) {
+			t.Errorf("the command did not write the signed %s", name)
 		}
 	}
+}
+
+func TestSigningCommandMustLeavePESignature(t *testing.T) {
+	command := "true"
+	if isWindows() {
+		command = "exit /b 0"
+	}
+	s := &windowsSigner{command: command}
+	t.Run("PE", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "unsigned app.exe")
+		if err := os.WriteFile(path, buildTestPE(t), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.signFile(t.Context(), path, true); err == nil || !strings.Contains(err.Error(), "Authenticode") {
+			t.Fatalf("a successful command left the PE unsigned: %v", err)
+		}
+	})
+	t.Run("non-PE container", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "package.msix")
+		if err := os.WriteFile(path, []byte("container fixture"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.signFile(t.Context(), path, false); err != nil {
+			t.Fatalf("a non-PE signing command was checked as Authenticode: %v", err)
+		}
+	})
 }
 
 func TestSigningWindowsIsChecked(t *testing.T) {

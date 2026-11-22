@@ -91,7 +91,19 @@ func (s *windowsSigner) load(p *project) error {
 // package that is not a PE image.
 func (s *windowsSigner) signFile(ctx context.Context, path string, pe bool) error {
 	if s.command != "" {
-		return s.run(ctx, path)
+		if err := s.run(ctx, path); err != nil {
+			return err
+		}
+		if pe {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("sign.sign_command: %w", err)
+			}
+			if !authenticode.Signed(data) {
+				return fmt.Errorf("sign.sign_command left %s without an Authenticode signature", filepath.Base(path))
+			}
+		}
+		return nil
 	}
 	if !pe {
 		return nil
@@ -107,8 +119,7 @@ func (s *windowsSigner) signFile(ctx context.Context, path string, pe bool) erro
 	return os.WriteFile(path, signed, 0o644)
 }
 
-// run signs path with sign.sign_command, and refuses one that leaves it
-// unsigned.
+// run invokes sign.sign_command for path.
 func (s *windowsSigner) run(ctx context.Context, path string) error {
 	line := strings.ReplaceAll(s.command, "%1", quoteArg(path))
 	cmd := shellCommand(line)
