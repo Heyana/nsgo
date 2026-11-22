@@ -179,10 +179,16 @@ func TestAutomationEndToEnd(t *testing.T) {
 	if moved := before - rowY(); moved < 1000 {
 		t.Fatalf("the list scrolled %g points of 1500", moved)
 	}
+	// Compare with the window's size now: the one listed first can be from before the window settled, as on Windows, where the menu bar the app sets after its first frame takes its height from the client area.
+	var now automation.WindowsResult
+	must(automation.Windows, automation.WindowsParams{}, &now)
+	if len(now.Windows) != 1 {
+		t.Fatalf("windows %+v", now)
+	}
 	var shot automation.ScreenshotResult
 	must(automation.Screenshot, automation.ScreenshotParams{}, &shot)
-	if shot.Width < int(ws.Windows[0].Width) || shot.Height < int(ws.Windows[0].Height) || len(shot.PNG) == 0 {
-		t.Fatalf("a %dx%d screenshot of a %gx%g window", shot.Width, shot.Height, ws.Windows[0].Width, ws.Windows[0].Height)
+	if shot.Width < int(now.Windows[0].Width) || shot.Height < int(now.Windows[0].Height) || len(shot.PNG) == 0 {
+		t.Fatalf("a %dx%d screenshot of a %gx%g window", shot.Width, shot.Height, now.Windows[0].Width, now.Windows[0].Height)
 	}
 }
 
