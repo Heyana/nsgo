@@ -1444,6 +1444,14 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.setAppearance(it.Appearance)
 			continue
 		case driver.ItemDirection:
+			// An embedding host owns its thread and process UI languages.
+			if !w.embedded {
+				forced := ""
+				if it.Forced {
+					forced = it.Language
+				}
+				setForcedUILanguage(forced)
+			}
 			if w.rtl != it.RTL || w.language != it.Language {
 				w.rtl, w.language = it.RTL, it.Language
 				if !w.embedded {

@@ -307,23 +307,25 @@ func TestSpokenWordsMatchJava(t *testing.T) {
 	}
 }
 
-// TestDirectionSaysTheWordsInTheAppsLanguage checks that ItemDirection carries TalkBack's words in the language the app shows, as NsgoView.apply reads them after the direction.
+// TestDirectionSaysTheWordsInTheAppsLanguage checks that ItemDirection carries TalkBack's words in the language the app shows and the forced language tag, as NsgoView.apply reads them after the direction.
 func TestDirectionSaysTheWordsInTheAppsLanguage(t *testing.T) {
 	english := spoken("en")
 	for _, c := range []struct {
 		lang      string
+		forced    bool
+		wantTag   string
 		rtl       bool
 		searchBox string
 		partly    string
 		separator string
 	}{
-		{"en", false, "search box", "partially checked", ", "},
-		{"zh-Hans", false, "搜索框", "部分选中", "，"},
-		{"zh-CN", false, "搜索框", "部分选中", "，"},
-		{"de", true, "search box", "partially checked", ", "},
+		{"en", false, "", false, "search box", "partially checked", ", "},
+		{"zh-Hans", true, "zh-Hans", false, "搜索框", "部分选中", "，"},
+		{"zh-CN", true, "zh-CN", false, "搜索框", "部分选中", "，"},
+		{"de", false, "", true, "search box", "partially checked", ", "},
 	} {
 		var w writer
-		writeDirection(&w, &driver.MountItem{Kind: driver.ItemDirection, RTL: c.rtl, Language: c.lang})
+		writeDirection(&w, &driver.MountItem{Kind: driver.ItemDirection, RTL: c.rtl, Language: c.lang, Forced: c.forced})
 		r := reader{w.buf}
 		if rtl := r.byte(); rtl != map[bool]byte{false: 0, true: 1}[c.rtl] {
 			t.Errorf("%s: direction %d", c.lang, rtl)
@@ -332,8 +334,12 @@ func TestDirectionSaysTheWordsInTheAppsLanguage(t *testing.T) {
 		for i := range words {
 			words[i] = r.str()
 		}
+		gotForced := r.str()
 		if len(r.buf) != 0 || len(words) != len(english) {
 			t.Fatalf("%s: %d words, %d bytes left", c.lang, len(words), len(r.buf))
+		}
+		if gotForced != c.wantTag {
+			t.Errorf("%s (forced=%v): forced tag = %q, want %q", c.lang, c.forced, gotForced, c.wantTag)
 		}
 		if words[2] != c.searchBox || words[13] != c.partly || words[len(words)-1] != c.separator {
 			t.Errorf("%s: a search box is %q, partially checked %q and separator %q", c.lang, words[2], words[13], words[len(words)-1])
@@ -342,6 +348,30 @@ func TestDirectionSaysTheWordsInTheAppsLanguage(t *testing.T) {
 			if s == "" || c.searchBox != english[2] && s == english[i] {
 				t.Errorf("%s: word %d is %q", c.lang, i, s)
 			}
+		}
+	}
+}
+
+func TestForcedLanguageEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		lang   string
+		forced bool
+		want   string
+	}{
+		{"de", false, ""},
+		{"", true, ""},
+		{"   ", true, ""},
+		{"de", true, "de"},
+		{"zh_Hans", true, "zh-Hans"},
+		{"  pt_BR ", true, "pt-BR"},
+		{"en-XA", true, ""},
+		{"ar-XB", true, ""},
+		{"en_xa", true, ""},
+		{"AR-xb", true, ""},
+	} {
+		got := forcedLanguage(&driver.MountItem{Language: tc.lang, Forced: tc.forced})
+		if got != tc.want {
+			t.Errorf("forcedLanguage(%q, forced=%v) = %q, want %q", tc.lang, tc.forced, got, tc.want)
 		}
 	}
 }

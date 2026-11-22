@@ -227,9 +227,10 @@ const (
 	// language (Language), and whether the app forces it (Forced,
 	// Scope.SetLocale): on its first commit and when any changes.
 	// Platforms whose own motion follows a direction, as iOS's navigation,
-	// take it, those that draw menus label them in the language, and Apple
-	// platforms keep a forced one for what the system says in later
-	// launches.
+	// take it, those that draw menus label them in the language, and
+	// standalone apps apply a forced one to what the system says in the
+	// app (from the next launch on Apple platforms, and immediately on
+	// Android 13+, Windows and Linux).
 	ItemDirection
 	// ItemPickScreenColor lets the user pick a color on the screen: the
 	// system's color sampler or the browser's EyeDropper, answered with

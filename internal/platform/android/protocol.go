@@ -325,7 +325,23 @@ func spoken(lang string) []string {
 	}
 }
 
-// writeDirection writes ItemDirection as NsgoView.apply reads it: the direction, then the spoken words in the language the app shows.
+// forcedLanguage returns the BCP 47 tag to apply as Android 13's per-app
+// locale, or "" when the app is not forcing a language or forces a pseudo
+// locale (which has no system localization).
+func forcedLanguage(it *driver.MountItem) string {
+	if !it.Forced {
+		return ""
+	}
+	lang := strings.ReplaceAll(strings.TrimSpace(it.Language), "_", "-")
+	if strings.EqualFold(lang, "en-XA") || strings.EqualFold(lang, "ar-XB") {
+		return ""
+	}
+	return lang
+}
+
+// writeDirection writes ItemDirection as NsgoView.apply reads it: the
+// direction, the spoken words in the language the app shows, then the
+// forced language for Android 13's per-app locale ("" when unforced).
 func writeDirection(w *writer, it *driver.MountItem) {
 	w.flags(it.RTL)
 	words := spoken(it.Language)
@@ -333,6 +349,7 @@ func writeDirection(w *writer, it *driver.MountItem) {
 	for _, s := range words {
 		w.str(s)
 	}
+	w.str(forcedLanguage(it))
 }
 
 // writer and reader are the protocol's encoding: big-endian, lengths

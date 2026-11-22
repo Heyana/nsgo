@@ -46,6 +46,7 @@ import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.StaticLayout;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -462,6 +463,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
         // A rotation or a display change moves an overlay's usable area: its window moves back onto it before it reports its frame.
         if (primary != null) primary.overlays.fit(this);
+        applyDirection();
         environment();
         if (primary == null) systemBars();
     }
@@ -759,6 +761,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         themed = null;
         if (engine != null && engine.isAlive()) attachRunningEngine();
         applyDirection();
+        applyForcedLanguage();
         applyOrientation();
     }
 
@@ -1098,7 +1101,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         boolean increaseContrast = Build.VERSION.SDK_INT >= 34 && uiMode != null && uiMode.getContrast() > 0f;
         boolean reader = accessibility.isTouchExplorationEnabled();
-        boolean rtl = config.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+        boolean standalone = first.activity() instanceof NsgoActivity;
+        boolean ownPin = hostLocale == null && standalone && AppLocale.isOwnPin(getContext());
+        java.util.Locale locale = hostLocale != null ? hostLocale : AppLocale.userLocale(getContext(), config, standalone);
+        boolean rtl = (hostLocale != null || ownPin)
+                ? TextUtils.getLayoutDirectionFromLocale(locale) == View.LAYOUT_DIRECTION_RTL
+                : config.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(bytes);
         try {
@@ -1125,7 +1133,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 idiom = Protocol.IDIOM_TV;
             }
             d.writeByte(idiom);
-            java.util.Locale locale = hostLocale != null ? hostLocale : config.getLocales().get(0);
             Protocol.writeString(d, locale.toLanguageTag());
             String deviceName = Settings.Global.getString(getContext().getContentResolver(), "device_name");
             Protocol.writeString(d, deviceName == null ? "" : deviceName);
@@ -1209,6 +1216,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private int direction = -1;
     /** What TalkBack announces for the roles and states it has no word of its own for, by Protocol.SPOKEN_*, in the language the app shows; empty before Go sends them. */
     private String[] spoken = new String[0];
+    /** The forced BCP 47 language tag sent by ITEM_DIRECTION ("" when following the user's). */
+    private String forcedLanguage = "";
+    private boolean hasForcedLanguage;
 
     /** The pick the photo picker answers. */
     private Services.Pick pick;
@@ -3235,7 +3245,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 String[] words = new String[in.readInt()];
                 for (int i = 0; i < words.length; i++) words[i] = Protocol.readString(in);
                 spoken = words;
+                forcedLanguage = Protocol.readString(in);
+                hasForcedLanguage = true;
                 applyDirection();
+                applyForcedLanguage();
                 break;
             }
             case Protocol.ITEM_QUIT: {
@@ -3868,6 +3881,16 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (activity instanceof NsgoActivity && activity.getWindow() != null) {
             activity.getWindow().getDecorView().setLayoutDirection(direction);
         }
+    }
+
+    /**
+     * Applies a standalone app's forced language to Android 13+'s per-app
+     * locale so system text selection menus and dialogs follow SetLocale.
+     * Embedded hosts own their own languages.
+     */
+    private void applyForcedLanguage() {
+        if (!hasForcedLanguage || primary != null || !(activity() instanceof NsgoActivity)) return;
+        AppLocale.pin(getContext(), forcedLanguage);
     }
 
     Activity activity() {

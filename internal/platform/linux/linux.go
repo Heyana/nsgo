@@ -1146,6 +1146,14 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemDirection:
 			w.setDirection(it.RTL)
+			// An embedding host owns its process locale.
+			if !w.embedded {
+				forced := ""
+				if it.Forced {
+					forced = it.Language
+				}
+				setForcedLanguage(forced)
+			}
 			if it.Language != w.language {
 				w.language = it.Language
 				if !w.embedded {

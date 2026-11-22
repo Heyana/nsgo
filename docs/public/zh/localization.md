@@ -22,7 +22,7 @@ appName:
 
 ## 语言
 
-`cx.SetLocale("de")` 选择语言，布局会按该语言的书写方向排列。
+`cx.SetLocale("de")` 选择语言，布局会按该语言的书写方向排列。在独立应用中，系统自身显示的文案（例如文本选择菜单、文件对话框和 GTK 控件）也会跟随所选语言（在 Android 13+、Windows 和 Linux 上立即生效，在 macOS 和 iOS 上从下次启动起生效）；`cx.SetLocale("")` 恢复跟随用户语言。
 
 ```sh
 go tool nsgo dev -lang en-XA

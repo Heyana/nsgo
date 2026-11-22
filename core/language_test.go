@@ -50,7 +50,12 @@ func TestDirectionWithoutCatalogs(t *testing.T) {
 }
 
 func TestPlatformHearsLanguage(t *testing.T) {
-	app := nsgotest.Start(t, languageApp("zh-Hans"), nsgotest.Environment(core.Environment{Locale: "en-US"}))
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return core.View{Children: []core.Node{
+			core.View{TestID: "force", OnPress: func(core.PressEvent) { cx.SetLocale("zh-Hans") }, Style: core.Style{Height: core.Pt(20)}},
+			core.View{TestID: "reset", OnPress: func(core.PressEvent) { cx.SetLocale("") }, Style: core.Style{Height: core.Pt(20)}},
+		}}
+	}, nsgotest.Environment(core.Environment{Locale: "en-US"}))
 	if app.Language != "en-US" {
 		t.Errorf("the system's: %q", app.Language)
 	}
@@ -60,6 +65,10 @@ func TestPlatformHearsLanguage(t *testing.T) {
 	app.Press("id:force")
 	if app.Language != "zh-Hans" || !app.LanguageForced {
 		t.Errorf("forced: %q, forced %v", app.Language, app.LanguageForced)
+	}
+	app.Press("id:reset")
+	if app.Language != "en-US" || app.LanguageForced {
+		t.Errorf("reset: %q, forced %v", app.Language, app.LanguageForced)
 	}
 }
 
