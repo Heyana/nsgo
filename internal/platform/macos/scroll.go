@@ -587,6 +587,9 @@ func (v *view) tickScroll(t time.Duration) bool {
 		}
 	case p.kind == awaitingMomentum && t-p.last > momentumWait:
 		s.phase = scrollPhase{}
+		if v.surface != nil && v.surface.wheels.momentum == v {
+			v.surface.wheels.momentum = nil
+		}
 		v.scrollEnded()
 	case p.kind == atRest && v.zooms():
 		v.clampZoom()

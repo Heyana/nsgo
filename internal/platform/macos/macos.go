@@ -1040,6 +1040,12 @@ func (s *surface) close() {
 	// The run loop holds the link, which holds the surface's view as its target, and so the whole tree.
 	invalidate(&s.link)
 	s.stopPassTimer()
+	if s.wheels.gesture != nil {
+		s.wheels.gesture.clearBegan()
+		s.wheels.gesture = nil
+	}
+	s.wheels.momentum = nil
+	s.wheels.momentumSwallowed = false
 	for _, stop := range s.stops {
 		stop()
 	}
@@ -1535,12 +1541,18 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 		s.commitPending()
 		s.pick(objc.Send[apple.CGPoint](event, selLocationInWindow), true, true)
 	case typeScrollWheel:
+		phase, momentum := objc.Send[uint](event, sel("phase")), objc.Send[uint](event, sel("momentumPhase"))
+		if momentum == 0 && phase&(phaseBegan|phaseMayBegin) != 0 {
+			s.endMomentum()
+			s.wheels.taker = nil
+		}
 		if len(s.armed) > 0 && s.wheelStarts(event) {
 			s.commitPending()
 		}
-		if s.wheelContinues(objc.Send[uint](event, sel("phase")), objc.Send[uint](event, sel("momentumPhase"))) {
-			s.wheelEvent(event)
-			return 0
+		if s.wheelContinues(phase, momentum) {
+			if s.wheelEvent(event) {
+				return 0
+			}
 		}
 	case typeKeyDown:
 		if !s.hasKeys() {

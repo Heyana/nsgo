@@ -34,6 +34,21 @@ type wheelGesture struct {
 	// held is set while it began with fingers resting and has not
 	// scrolled yet.
 	held bool
+	// owned is set once a scroll view of this surface took the gesture.
+	owned bool
+	// passed is set once a delta found no scroll view to take the gesture,
+	// so the rest of it goes to the host around an embedded surface.
+	passed bool
+	// began keeps a zero-delta phaseBegan event until the first delta
+	// decides whether the surface or its host takes the gesture.
+	began objc.ID
+}
+
+func (g *wheelGesture) clearBegan() {
+	if g != nil && g.began != 0 {
+		g.began.Send(selRelease)
+		g.began = 0
+	}
 }
 
 // wheels is what a surface's wheel events are doing.
@@ -41,6 +56,10 @@ type wheels struct {
 	gesture *wheelGesture
 	// momentum is the view the system's momentum after a gesture goes to.
 	momentum *view
+	// momentumSwallowed is set when a gesture the surface took ended in a
+	// snap, spring back or unmounted view, so the system's momentum for
+	// that gesture is dropped rather than passed on to an enclosing host.
+	momentumSwallowed bool
 	// latch is the view mouse wheel notches go to while they come within
 	// wheelLatch of last along the same axis and the pointer is over it.
 	latch      *view
@@ -73,10 +92,83 @@ func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
 	s.wheels.chain = s.scrollsAt(event)
 	if !s.wheelEvent(event) {
 		// What no view takes goes to the host's views around the surface.
-		if next := s.native.Send(sel("nextResponder")); next != 0 {
-			next.Send(cmd, event)
+		s.forwardScroll(cmd, event)
+	}
+}
+
+// forwardScroll passes a scroll event this surface did not take up the
+// responder chain past its root view, so an enclosing host view scrolls.
+func (s *surface) forwardScroll(cmd objc.SEL, event objc.ID) {
+	if s.native == 0 {
+		return
+	}
+	if next := s.native.Send(sel("nextResponder")); next != 0 {
+		next.Send(cmd, event)
+	}
+}
+
+// hostScrolls reports whether a responder enclosing an embedded surface
+// scrolls along the horizontal or vertical axis: an enclosing NSScrollView
+// whose document overflows its visible area along that axis, an enclosing
+// NSGo scroll view along that axis, or a custom host responder overriding
+// scrollWheel:.
+func (s *surface) hostScrolls(horizontal bool) bool {
+	if !s.embedded || s.native == 0 {
+		return false
+	}
+	scrollSel := sel("scrollWheel:")
+	scrollViewClass := objc.ID(apple.Class("NSScrollView"))
+	clipViewClass := objc.ID(apple.Class("NSClipView"))
+	windowClass := objc.ID(apple.Class("NSWindow"))
+	for r := s.native.Send(sel("nextResponder")); r != 0; r = r.Send(sel("nextResponder")) {
+		if v := views[r]; v != nil {
+			if v.sc != nil && !v.sc.config.Behavior.NoScroll && v.along(horizontal) {
+				return true
+			}
+			continue
+		}
+		if objc.Send[bool](r, sel("isKindOfClass:"), scrollViewClass) {
+			if clip := r.Send(sel("contentView")); clip != 0 {
+				doc := objc.Send[apple.CGRect](clip, sel("documentRect"))
+				vis := objc.Send[apple.CGRect](clip, sel("documentVisibleRect"))
+				if horizontal {
+					if doc.Size.Width > vis.Size.Width+0.5 {
+						return true
+					}
+				} else if doc.Size.Height > vis.Size.Height+0.5 {
+					return true
+				}
+			}
+			if objc.ID(scrollViewClass).Send(sel("instanceMethodForSelector:"), scrollSel) != r.Send(sel("methodForSelector:"), scrollSel) {
+				return true
+			}
+			continue
+		}
+		if objc.Send[bool](r, sel("isKindOfClass:"), clipViewClass) {
+			continue
+		}
+		isWin := objc.Send[bool](r, sel("isKindOfClass:"), windowClass)
+		if hostOverridesScrollWheel(r, scrollSel) {
+			return true
+		}
+		if isWin {
+			break
 		}
 	}
+	return false
+}
+
+func hostOverridesScrollWheel(r objc.ID, scrollSel objc.SEL) bool {
+	imp := r.Send(sel("methodForSelector:"), scrollSel)
+	if imp == 0 {
+		return false
+	}
+	for _, name := range []string{"NSResponder", "NSView", "NSWindow", "NSViewController", "NSWindowController", "NSApplication"} {
+		if cls := apple.Class(name); cls != 0 && objc.ID(cls).Send(sel("instanceMethodForSelector:"), scrollSel) == imp {
+			return false
+		}
+	}
+	return true
 }
 
 // wheelStarts reports whether a wheel event looks for a view to scroll,
@@ -100,11 +192,14 @@ func (s *surface) wheelStarts(event objc.ID) bool {
 func (s *surface) wheelContinues(phase, momentum uint) bool {
 	w := &s.wheels
 	if momentum != 0 {
-		return s.alive(w.momentum)
+		return w.momentumSwallowed || s.alive(w.momentum)
 	}
 	g := w.gesture
 	if g == nil {
 		return false
+	}
+	if g.passed {
+		return phase&(phaseEnded|phaseCancelled) != 0
 	}
 	return phase&(phaseEnded|phaseCancelled) != 0 || phase&phaseChanged != 0 && !g.held && s.alive(g.view)
 }
@@ -119,16 +214,14 @@ func (s *surface) wheelEvent(event objc.ID) bool {
 	at := eventTime(event)
 	switch {
 	case momentum != 0:
-		s.momentumEvent(momentum, dx, dy, at)
-		return true
+		return s.momentumEvent(momentum, dx, dy, at)
 	case phase == 0:
 		if !objc.Send[bool](event, sel("hasPreciseScrollingDeltas")) {
 			dx, dy = dx*wheelLine, dy*wheelLine // a mouse's lines
 		}
 		return s.wheelStep(dx, dy, at)
 	}
-	s.gestureEvent(phase, dx, dy, at)
-	return true
+	return s.gestureEvent(event, phase, dx, dy, at)
 }
 
 // scrollTarget returns the innermost scroll view of the chain that can
@@ -138,7 +231,7 @@ func (s *surface) wheelEvent(event objc.ID) bool {
 // take vertical wheels only where nothing around scrolls vertically.
 func (s *surface) scrollTarget(dx, dy driver.Points) *view {
 	horizontal := abs(dx) > abs(dy)
-	along := false
+	along := s.hostScrolls(horizontal)
 	for _, v := range s.wheels.chain {
 		along = along || v.along(horizontal)
 	}
@@ -152,10 +245,14 @@ func (s *surface) scrollTarget(dx, dy driver.Points) *view {
 
 // gestureTarget returns the view a trackpad gesture by (dx, dy) moves:
 // scrollTarget's, else, at the edges, the innermost along the gesture
-// that bounces, which stretches as on macOS.
+// that bounces, which stretches as on macOS unless an enclosing host
+// view scrolls along that axis.
 func (s *surface) gestureTarget(dx, dy driver.Points) *view {
 	if v := s.scrollTarget(dx, dy); v != nil {
 		return v
+	}
+	if s.hostScrolls(abs(dx) > abs(dy)) {
+		return nil
 	}
 	for _, v := range s.wheels.chain {
 		if v.canBounce(dx, dy) {
@@ -189,47 +286,66 @@ func (s *surface) wheelStep(dx, dy driver.Points, at time.Duration) bool {
 	return true
 }
 
-// gestureEvent follows a trackpad gesture's event in phase.
-func (s *surface) gestureEvent(phase uint, dx, dy driver.Points, at time.Duration) {
+// gestureEvent follows a trackpad gesture's event in phase, and reports
+// whether the surface took it.
+func (s *surface) gestureEvent(event objc.ID, phase uint, dx, dy driver.Points, at time.Duration) bool {
 	w := &s.wheels
 	if phase&phaseMayBegin != 0 {
 		// Fingers resting on the trackpad stop what moves; lifting them
 		// without scrolling ends that, as phaseCancelled.
 		s.endMomentum()
 		s.endGesture(false)
-		if len(w.chain) > 0 {
-			v := w.chain[0]
-			v.wheelBegin()
-			w.gesture = &wheelGesture{view: v, held: true}
-			w.gesture.velocity.Add(at, driver.Point{})
+		if len(w.chain) == 0 {
+			return false
 		}
-		return
+		v := w.chain[0]
+		v.wheelBegin()
+		w.gesture = &wheelGesture{view: v, held: true}
+		w.gesture.velocity.Add(at, driver.Point{})
+		return !s.embedded
 	}
 	if phase&phaseBegan != 0 {
 		s.endMomentum()
 		if w.gesture == nil || !w.gesture.held {
 			s.endGesture(false)
+			if len(w.chain) == 0 {
+				w.gesture = &wheelGesture{passed: true}
+				return false
+			}
 			w.gesture = &wheelGesture{}
 			w.gesture.velocity.Add(at, driver.Point{})
+		}
+		if dx == 0 && dy == 0 {
+			w.gesture.clearBegan()
+			if s.embedded {
+				w.gesture.began = event.Send(sel("retain"))
+			}
+			return true
 		}
 	}
 	if phase&(phaseBegan|phaseChanged) != 0 {
 		g := w.gesture
 		if g == nil {
-			s.wheelStep(dx, dy, at) // changes without a beginning: synthesized
-			return
+			return s.wheelStep(dx, dy, at) // changes without a beginning: synthesized
+		}
+		if g.passed {
+			return false
 		}
 		if dx == 0 && dy == 0 {
-			return
+			return true
 		}
 		if g.held {
 			// After resting fingers the scroll goes where it points: the
 			// view they rested on keeps it only if it scrolls that way.
 			if s.gestureTarget(dx, dy) == g.view {
 				g.held = false
+				g.owned = true
+				g.clearBegan()
 			} else {
+				began := g.began
+				g.began = 0
 				s.endGesture(false)
-				g = &wheelGesture{}
+				g = &wheelGesture{began: began}
 				g.velocity.Add(at, driver.Point{})
 				w.gesture = g
 			}
@@ -237,22 +353,78 @@ func (s *surface) gestureEvent(phase uint, dx, dy driver.Points, at time.Duratio
 		if !s.alive(g.view) {
 			g.view = s.gestureTarget(dx, dy)
 			if g.view == nil {
-				return
+				if g.owned {
+					return true
+				}
+				g.passed = true
+				if g.began != 0 {
+					saved := g.began
+					g.began = 0
+					if s.native.Send(sel("enclosingScrollView")) != 0 {
+						// Post this first delta event at the front of NSApp's queue so an
+						// enclosing NSScrollView's tracking loop (entered from saved) sees
+						// it in order before later phaseChanged and phaseEnded events.
+						app := nsApp()
+						app.Send(sel("postEvent:atStart:"), event, true)
+						s.forwardScroll(sel("scrollWheel:"), saved)
+						saved.Send(selRelease)
+						// If a responder ahead of NSScrollView handled saved without
+						// entering a tracking loop, dequeue event back and forward it now.
+						const scrollWheelMask = uint64(1 << 22)
+						mode := apple.NSString("kCFRunLoopDefaultMode")
+						past := objc.ID(apple.Class("NSDate")).Send(sel("distantPast"))
+						if app.Send(sel("nextEventMatchingMask:untilDate:inMode:dequeue:"), scrollWheelMask, past, mode, false) == event {
+							app.Send(sel("nextEventMatchingMask:untilDate:inMode:dequeue:"), scrollWheelMask, past, mode, true)
+							return false
+						}
+						// The host's tracking loop consumed the gesture through phaseEnded.
+						if w.gesture == g {
+							w.gesture = nil
+						}
+						return true
+					}
+					s.forwardScroll(sel("scrollWheel:"), saved)
+					saved.Send(selRelease)
+					return false
+				}
+				return false
 			}
+			g.owned = true
+			g.clearBegan()
 			g.view.wheelBegin()
 		}
+		g.owned = true
 		g.total.X, g.total.Y = g.total.X+dx, g.total.Y+dy
 		g.velocity.Add(at, g.total)
 		g.view.wheelBy(dx, dy, at)
+		return true
 	}
 	if phase&(phaseEnded|phaseCancelled) != 0 {
-		if g := w.gesture; g != nil {
-			g.velocity.Add(at, g.total)
+		g := w.gesture
+		if g == nil {
+			return false
 		}
-		if v := s.endGesture(true); v != nil {
-			w.momentum = v
+		if g.passed {
+			g.clearBegan()
+			w.gesture = nil
+			return false
 		}
+		held, owned := g.held, g.owned
+		g.velocity.Add(at, g.total)
+		v := s.endGesture(!held && phase&phaseEnded != 0)
+		if owned {
+			if v != nil {
+				w.momentum = v
+			} else {
+				w.momentumSwallowed = true
+			}
+			return true
+		}
+		// A held gesture in an embedded view forwarded phaseMayBegin to the
+		// host too, so pass the matching phaseCancelled on as well.
+		return !(s.embedded && held)
 	}
+	return true
 }
 
 // endGesture ends the trackpad gesture under way, let go at its velocity
@@ -260,7 +432,11 @@ func (s *surface) gestureEvent(phase uint, dx, dy driver.Points, at time.Duratio
 func (s *surface) endGesture(released bool) *view {
 	g := s.wheels.gesture
 	s.wheels.gesture = nil
-	if g == nil || !s.alive(g.view) {
+	if g == nil {
+		return nil
+	}
+	g.clearBegan()
+	if !s.alive(g.view) {
 		return nil
 	}
 	var vx, vy float32
@@ -272,15 +448,24 @@ func (s *surface) endGesture(released bool) *view {
 }
 
 // momentumEvent follows the system's momentum after a gesture, which goes
-// to the gesture's view.
-func (s *surface) momentumEvent(phase uint, dx, dy driver.Points, at time.Duration) {
-	v := s.wheels.momentum
+// to the gesture's view, and reports whether the surface took it.
+func (s *surface) momentumEvent(phase uint, dx, dy driver.Points, at time.Duration) bool {
+	w := &s.wheels
+	if w.momentumSwallowed {
+		if phase&(phaseEnded|phaseCancelled) != 0 {
+			w.momentumSwallowed = false
+		}
+		return true
+	}
+	v := w.momentum
 	if !s.alive(v) {
-		return
+		w.momentum = nil
+		return false
 	}
 	if phase&phaseBegan != 0 && !v.momentumBegin() {
-		s.wheels.momentum = nil // it springs back or snaps instead
-		return
+		w.momentum = nil // it springs back or snaps instead
+		w.momentumSwallowed = phase&(phaseEnded|phaseCancelled) == 0
+		return true
 	}
 	if phase&(phaseBegan|phaseChanged) != 0 && (dx != 0 || dy != 0) {
 		v.momentumBy(dx, dy, at)
@@ -288,6 +473,7 @@ func (s *surface) momentumEvent(phase uint, dx, dy driver.Points, at time.Durati
 	if phase&(phaseEnded|phaseCancelled) != 0 {
 		s.endMomentum()
 	}
+	return true
 }
 
 // endMomentum ends the system's momentum on its view: it ended, or the
@@ -295,6 +481,7 @@ func (s *surface) momentumEvent(phase uint, dx, dy driver.Points, at time.Durati
 func (s *surface) endMomentum() {
 	v := s.wheels.momentum
 	s.wheels.momentum = nil
+	s.wheels.momentumSwallowed = false
 	if s.alive(v) {
 		v.momentumEnd()
 	}
@@ -475,6 +662,7 @@ func (s *surface) forgetScroll(v *view) {
 	}
 	if w.momentum == v {
 		w.momentum = nil
+		w.momentumSwallowed = true
 	}
 	if w.latch == v {
 		w.latch = nil
