@@ -15,8 +15,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// frameXClient observes native geometry, focus and stacking through a separate
-// X connection. It never substitutes a window manager's replies.
+// frameXClient observes native geometry, focus and stacking through a separate X connection. It never substitutes a window manager's replies.
 type frameXClient struct {
 	display, root uintptr
 	translate     func(uintptr, uintptr, uintptr, int32, int32, *int32, *int32, *uintptr) int32
@@ -63,8 +62,7 @@ func (c *frameXClient) property(window uintptr, name string, typ uintptr) []uint
 	return slices.Clone(unsafe.Slice((*uintptr)(unsafe.Pointer(data)), count))
 }
 
-// outerPosition follows reparenting to the outermost frame window rather than
-// deriving its corner from the backend's frame property implementation.
+// outerPosition follows reparenting to the outermost frame window rather than deriving its corner from the backend's frame property implementation.
 func (c *frameXClient) outerPosition(window uintptr) driver.Point {
 	outer := window
 	for range 8 {
@@ -166,8 +164,7 @@ func TestWindowFrameMovesOnX11AndReportsNativeMoves(t *testing.T) {
 				return width == 260
 			})
 			waitAt(0, 0)
-			// An external native move must be reported without another app command or
-			// focus change. No window-manager placement restriction is bypassed.
+			// An external native move must be reported without another app command or focus change. No window-manager placement restriction is bypassed.
 			c.move(c.display, xid, int32(90*scale), int32(70*scale))
 			desktopXlib.sync(c.display, 0)
 			waitAt(90, 70)
@@ -178,8 +175,7 @@ func TestWindowFrameMovesOnX11AndReportsNativeMoves(t *testing.T) {
 				gtkWidgetSetVisible(w.win, 1)
 			})
 			waitAt(170, 110)
-			// A request below the native minimum must not leave a stale resize
-			// restoration that later takes back a user's move.
+			// A request below the native minimum must not leave a stale resize restoration that later takes back a user's move.
 			w.onLoop(t, func() { w.setConstraints(driver.WindowConstraints{MinWidth: 300}) })
 			waitFrameCondition(t, "native minimum width did not apply", func() bool {
 				var width int32

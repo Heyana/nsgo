@@ -684,8 +684,7 @@ func (w *window) setAppearance(a driver.Appearance) {
 	}
 }
 
-// setFrame sizes the window and positions it on X11 when Move is set.
-// A Wayland toplevel keeps the position its compositor chooses.
+// setFrame sizes the window and positions it on X11 when Move is set. A Wayland toplevel keeps the position its compositor chooses.
 func (w *window) setFrame(f driver.WindowFrame) {
 	var width, height int32
 	gtkWindowGetDefaultSize(w.win, &width, &height)
@@ -708,9 +707,7 @@ func (w *window) setFrame(f driver.WindowFrame) {
 	wantWidth, wantHeight := max(width, minWidth), max(height, minHeight)
 	if placed && gtkWidgetGetMapped(w.win) != 0 &&
 		(gtkWidgetGetWidth(w.win) != wantWidth || gtkWidgetGetHeight(w.win) != wantHeight) {
-		// GTK's native resize may shift a decorated window's outer corner
-		// according to its gravity. Restore the requested corner once the
-		// actual size arrives, including when only a dimension was given.
+		// GTK's native resize may shift a decorated window's outer corner according to its gravity. Restore the requested corner once the actual size arrives, including when only a dimension was given.
 		w.frameState.resize = &frameResize{position: position, size: driver.Size{Width: driver.Points(wantWidth), Height: driver.Points(wantHeight)}}
 	}
 	gtkWindowSetDefaultSize(w.win, width, height)

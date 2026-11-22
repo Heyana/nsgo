@@ -11,9 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// x11FrameState keeps a position requested while a window is hidden until its
-// map: a window manager may choose its own position when it first manages it.
-// Later maps keep the user's position unless the app asks for another one.
+// x11FrameState keeps a position requested while a window is hidden until its map: a window manager may choose its own position when it first manages it. Later maps keep the user's position unless the app asks for another one.
 type x11FrameState struct {
 	pending *driver.Point
 	mapped  bool
@@ -57,18 +55,13 @@ func watchX11Frames() {
 	})
 }
 
-// canPlace reports whether the app can position this surface's own window.
-// X11 manages a regular window and positions an unmanaged panel directly;
-// an embedded view, the app's hidden surface and a tray have no window to move.
+// canPlace reports whether the app can position this surface's own window. X11 manages a regular window and positions an unmanaged panel directly; an embedded view, the app's hidden surface and a tray have no window to move.
 func (w *window) canPlace() bool {
 	return w.win != 0 && !w.embedded && !(w.primary && w.opts.Hidden) &&
 		w.kind != driver.SurfaceTrayIcon && drawsOnX11() && bindX11Frames()
 }
 
-// framePosition reads the window's visual top left in the same logical screen
-// points as Env.Displays. XTranslateCoordinates accounts for reparenting by a
-// window manager. Server decorations extend beyond the client, while GTK's
-// invisible CSD shadows are inside it and do not belong to the visible frame.
+// framePosition reads the window's visual top left in the same logical screen points as Env.Displays. XTranslateCoordinates accounts for reparenting by a window manager. Server decorations extend beyond the client, while GTK's invisible CSD shadows are inside it and do not belong to the visible frame.
 func (w *window) framePosition() (driver.Point, bool) {
 	if !w.canPlace() {
 		return driver.Point{}, false
@@ -92,8 +85,7 @@ func (w *window) framePosition() (driver.Point, bool) {
 		Y: driver.Points(int64(y)+int64(gtk[2])-int64(wm[2])) / scale}, true
 }
 
-// x11FrameExtents reads EWMH's four CARDINAL extents: left, right, top, bottom.
-// Xlib expands each 32-bit property item into a native unsigned long.
+// x11FrameExtents reads EWMH's four CARDINAL extents: left, right, top, bottom. Xlib expands each 32-bit property item into a native unsigned long.
 func x11FrameExtents(display, xid uintptr, name string) [4]uint32 {
 	var actual, data uintptr
 	var format int32
@@ -110,10 +102,7 @@ func x11FrameExtents(display, xid uintptr, name string) [4]uint32 {
 	return [4]uint32{uint32(values[0]), uint32(values[1]), uint32(values[2]), uint32(values[3])}
 }
 
-// moveFrame places a window without activating it. A mapped managed window
-// uses EWMH's explicit NorthWestGravity, so x and y describe its outer corner
-// regardless of the client's gravity. With no EWMH window manager, or for an
-// unmanaged panel, XMoveWindow directly positions the native window.
+// moveFrame places a window without activating it. A mapped managed window uses EWMH's explicit NorthWestGravity, so x and y describe its outer corner regardless of the client's gravity. With no EWMH window manager, or for an unmanaged panel, XMoveWindow directly positions the native window.
 func (w *window) moveFrame(position driver.Point) {
 	display, xid, ok := w.x11Window()
 	if !ok {
@@ -171,8 +160,7 @@ type x11ConfigureEvent struct {
 	override       int32
 }
 
-// frameChangedCallback refreshes the environment after GDK processes a native
-// move or resize. One queued refresh per window coalesces a configure burst.
+// frameChangedCallback refreshes the environment after GDK processes a native move or resize. One queued refresh per window coalesces a configure burst.
 func frameChangedCallback(display, event, data uintptr) int32 {
 	const configureNotify = 22
 	ev := (*x11ConfigureEvent)(cPointer(event))
@@ -200,9 +188,7 @@ func frameChangedCallback(display, event, data uintptr) int32 {
 	return 0
 }
 
-// finishFrameResize runs after GTK has allocated the resized window. A native
-// configure event can precede that allocation, so it must not consume this
-// restoration while GTK still holds the old size.
+// finishFrameResize runs after GTK has allocated the resized window. A native configure event can precede that allocation, so it must not consume this restoration while GTK still holds the old size.
 func (w *window) finishFrameResize() {
 	if pending := w.frameState.resize; pending != nil &&
 		gtkWidgetGetWidth(w.win) == int32(pending.size.Width) && gtkWidgetGetHeight(w.win) == int32(pending.size.Height) {
