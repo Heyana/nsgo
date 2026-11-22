@@ -452,6 +452,15 @@ func readResize(r *reader) (driver.Size, driver.Geometry, *driver.Environment) {
 
 // readEnvironment reads the environment NsgoView.environment writes.
 func readEnvironment(r *reader) driver.Environment {
+	env, _ := readEnvironmentCapabilities(r)
+	return env
+}
+
+// capExtendedMessages is the third capability byte's bit for a runtime that reads msgExtended messages (Protocol.CAP_EXTENDED_MESSAGES).
+const capExtendedMessages = 1
+
+// readEnvironmentCapabilities reads the environment as readEnvironment does, with the third capability byte, which says what the runtime itself can do (cap* bits) rather than the device, so it stays out of driver.Environment.
+func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	env := driver.Environment{
 		OS:             driver.OSAndroid,
 		HasWebView:     true,
@@ -510,6 +519,7 @@ func readEnvironment(r *reader) driver.Environment {
 	case 2:
 		env.LowPowerMode = driver.LowPowerOn
 	}
+	var third byte
 	if len(r.buf) > 0 {
 		if first := int(r.byte()); first >= 1 && first <= 7 {
 			env.LocaleSettings.FirstDayOfWeek = first
@@ -518,14 +528,12 @@ func readEnvironment(r *reader) driver.Environment {
 		env.LocaleSettings.MeasurementSystem = r.str()
 		env.LocaleSettings.TemperatureUnit = r.str()
 		env.LocaleSettings.Region = r.str()
-		// The second capability byte's bits are all taken too; a third follows the locale settings, at the end of the message, so a runtime built before it, which ends here, reads as having none of them. Its bits: none assigned yet.
-		var third byte
+		// The second capability byte's bits are all taken too; a third follows the locale settings, at the end of the message, so a runtime built before it, which ends here, reads as having none of them. Its bits: capExtendedMessages.
 		if len(r.buf) > 0 {
 			third = r.byte()
 		}
-		_ = third
 	}
-	return env
+	return env, third
 }
 
 // writeWebCookies writes a msgCookies as NsgoView.cookies reads it: the surface, the request's count and its op, then what the op takes: each cookie to set as a URL it goes to and its Set-Cookie value, which CookieManager.setCookie takes, the URL whose cookies to list, or nothing to clear.

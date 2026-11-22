@@ -196,3 +196,40 @@ func javaConstantName(name string) string {
 	}
 	return strings.ToUpper(b.String())
 }
+
+// TestEnvironmentSaysTheRuntimeReadsExtendedMessages holds the environment's third capability byte to what sendExtended waits for: readEnvironmentCapabilities returns the byte a runtime writes, none for one built before it, Protocol.java's CAP_EXTENDED_MESSAGES is android.go's capExtendedMessages, and NsgoView.environment sets it.
+func TestEnvironmentSaysTheRuntimeReadsExtendedMessages(t *testing.T) {
+	testhost.RequireSource(t)
+	for _, c := range []struct {
+		third []byte
+		want  byte
+	}{{nil, 0}, {[]byte{0}, 0}, {[]byte{capExtendedMessages}, capExtendedMessages}, {[]byte{255}, 255}} {
+		var w writer
+		writeBaseEnvironment(&w, "en-US")
+		w.byte(1)
+		w.str("h23")
+		w.str("metric")
+		w.str("celsius")
+		w.str("US")
+		w.buf = append(w.buf, c.third...)
+		r := reader{w.buf}
+		if _, third := readEnvironmentCapabilities(&r); third != c.want || len(r.buf) != 0 {
+			t.Errorf("third byte %v: read %d with %d bytes left, want %d", c.third, third, len(r.buf), c.want)
+		}
+	}
+
+	read := func(path ...string) string {
+		data, err := os.ReadFile(filepath.Join(path...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	java, view := read("java", "dev", "oneo", "nsgo", "Protocol.java"), read("java", "dev", "oneo", "nsgo", "NsgoView.java")
+	if m := regexp.MustCompile(`static final int CAP_EXTENDED_MESSAGES = (\d+);`).FindStringSubmatch(java); m == nil || m[1] != strconv.Itoa(capExtendedMessages) {
+		t.Errorf("Protocol.java's CAP_EXTENDED_MESSAGES is %v, android.go's capExtendedMessages %d", m, capExtendedMessages)
+	}
+	if m := regexp.MustCompile(`int third = ([^;]*);`).FindStringSubmatch(view); m == nil || !strings.Contains(m[1], "Protocol.CAP_EXTENDED_MESSAGES") {
+		t.Errorf("NsgoView.environment's third capability byte is %v, without Protocol.CAP_EXTENDED_MESSAGES", m)
+	}
+}

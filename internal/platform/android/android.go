@@ -161,6 +161,8 @@ type surface struct {
 	// frameWanted is set while the app waits for a display frame, from
 	// its request until the runtime's answer.
 	frameWanted atomic.Bool
+	// extendedMessages is set once the runtime's environment says it reads msgExtended messages (capExtendedMessages), which a runtime built before them refuses as a corrupt pipe.
+	extendedMessages atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -397,7 +399,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 		case msgTextReply:
 			s.receiveText(&r)
 		case msgEnvironment:
-			env := readEnvironment(&r)
+			env, third := readEnvironmentCapabilities(&r)
+			s.extendedMessages.Store(third&capExtendedMessages != 0)
 			if env.Equal(s.env) {
 				break
 			}
@@ -1309,8 +1312,14 @@ func (s *surface) send(kind byte, body func(w *writer)) error {
 	return s.sendBefore(kind, time.Time{}, body)
 }
 
-// sendExtended writes a msgExtended message of the extended kind ext, whose payload body writes after the sub-kind byte, as send does.
+// errNoExtendedMessages is sendExtended's error for a runtime that does not read msgExtended messages, built before them; the caller does without the message.
+var errNoExtendedMessages = errors.New("the Android runtime does not read extended messages")
+
+// sendExtended writes a msgExtended message of the extended kind ext, whose payload body writes after the sub-kind byte, as send does. It writes nothing and returns errNoExtendedMessages until the runtime's environment, which comes before msgStart, has said it reads them, since a runtime built before them would end the pipe.
 func (s *surface) sendExtended(ext byte, body func(w *writer)) error {
+	if !s.extendedMessages.Load() {
+		return errNoExtendedMessages
+	}
 	return s.send(msgExtended, func(w *writer) {
 		w.byte(ext)
 		body(w)

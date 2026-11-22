@@ -107,6 +107,8 @@ final class Protocol {
 
     /** A message of an extended kind: an EXT_* byte, then that message's payload, which NsgoView.extended reads. The kinds stop here so that stray text on stdout is refused rather than read as a message; new Go-to-Java messages are extended kinds. */
     static final int EXTENDED = 31;
+    /** The environment's third capability byte's bit for a runtime that reads EXTENDED messages (capExtendedMessages in protocol.go): Go sends none to a runtime without it, which would refuse them as a corrupt pipe. */
+    static final int CAP_EXTENDED_MESSAGES = 1;
 
     // Extended kinds, the first byte of an EXTENDED message, kept in sync with android.go's ext* constants: each is EXT_NAME = n with n from 1 up, and has its case in isExtended.
 

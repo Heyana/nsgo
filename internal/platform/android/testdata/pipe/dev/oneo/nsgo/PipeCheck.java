@@ -96,6 +96,7 @@ public final class PipeCheck {
         // An extended message is read whole when its kind is one Go writes, and refused like an unknown kind otherwise.
         refused(frame(Protocol.EXTENDED, 0, new byte[0]), "extended message without its kind");
         check(!Protocol.isExtended(0), "extended kind 0 accepted");
+        check(Integer.bitCount(Protocol.CAP_EXTENDED_MESSAGES) == 1 && Protocol.CAP_EXTENDED_MESSAGES < 256, "CAP_EXTENDED_MESSAGES is not one bit of a byte");
         for (int extended = 0; extended <= 255; extended++) {
             byte[] body = new byte[]{(byte) extended, 1, -1, 42};
             byte[] framed = frame(Protocol.EXTENDED, body.length, body);
