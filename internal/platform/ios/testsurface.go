@@ -1003,9 +1003,7 @@ func (t *testSurface) keyDevice(w objc.ID, key string) error {
 				f := t.focusedEditor(w)
 				if in := inputOf(f); in != nil {
 					if !in.multiline {
-						if _, blur := in.fs.Return(in.text(), false); blur {
-							in.field.Send(selResign)
-						}
+						in.returnPressed()
 						done = true
 						return
 					}

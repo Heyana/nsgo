@@ -33,6 +33,9 @@ type input struct {
 	// applying is a change made here, clipping an insertion cut to
 	// maxLength, lineBreak a line break typed with a modifier.
 	applying, clipping, lineBreak bool
+	// hardwareReturn keeps a physical Return's unhandled UIKit edit from
+	// being matched again as an unmodified software-keyboard action.
+	hardwareReturn bool
 }
 
 var classField, classTextView objc.Class
@@ -47,9 +50,7 @@ func inputMethods() []objc.MethodDef {
 			if in == nil {
 				return false
 			}
-			if _, blur := in.fs.Return(in.text(), false); blur {
-				in.field.Send(selResign)
-			}
+			in.returnPressed()
 			return false
 		}},
 		{Cmd: sel("textFieldDidBeginEditing:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { inputAt(self).focusChanged(true) }},
@@ -82,9 +83,34 @@ func registerInput() {
 			in.fs.Key("Backspace")
 		}
 	}}
+	returnPress := objc.MethodDef{Cmd: sel("pressesBegan:withEvent:"), Fn: func(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
+		in := inputOf(self)
+		hardwareReturn := false
+		apple.ForEach(presses, func(p objc.ID) {
+			if key := p.Send(sel("key")); key != 0 {
+				code := objc.Send[int](key, sel("keyCode"))
+				hardwareReturn = hardwareReturn || code == 40 || code == 88 // Return, keypad Enter
+			}
+		})
+		if in == nil || !hardwareReturn {
+			apple.Super(self, cmd, presses, event)
+			return
+		}
+		in.hardwareReturn = true
+		defer func() { in.hardwareReturn = false }()
+		if _, composing := in.markedText(); composing {
+			apple.Super(self, cmd, presses, event)
+			return
+		}
+		// UITextField/UITextView can consume a physical Return before it
+		// reaches the controller: offer its actual modifiers first.
+		pressesBegan(self, cmd, presses, event)
+	}}
+	returnEnd := objc.MethodDef{Cmd: sel("pressesEnded:withEvent:"), Fn: pressesEnded}
+	returnCancel := objc.MethodDef{Cmd: sel("pressesCancelled:withEvent:"), Fn: pressesEnded}
 	classField = register("NsgoField", apple.Class("UITextField"), nil,
-		append(append([]objc.MethodDef{caretRect, deleteBackward}, pasteMethods()...), editorAccess()...))
-	classTextView = register("NsgoTextView", apple.Class("UITextView"), nil, append(append(pasteMethods(), editorAccess()...), caretRect, deleteBackward,
+		append(append([]objc.MethodDef{caretRect, deleteBackward, returnPress, returnEnd, returnCancel}, pasteMethods()...), editorAccess()...))
+	classTextView = register("NsgoTextView", apple.Class("UITextView"), nil, append(append(pasteMethods(), editorAccess()...), caretRect, deleteBackward, returnPress, returnEnd, returnCancel,
 		// Shift and Option with Return break the line of a text view whose
 		// Return submits, as chat apps do on hardware keyboards.
 		objc.MethodDef{Cmd: sel("keyCommands"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
@@ -368,6 +394,41 @@ func (in *input) focusChanged(focused bool) {
 	v.surface.refreshKeyCommands()
 }
 
+// takeSoftwareReturn offers one complete software-keyboard action to the
+// surface's current keymap, without changing input modality or starting a
+// hardware repeat timer. Native editing and composition keep their keys.
+func (in *input) takeSoftwareReturn() bool {
+	if in.hardwareReturn || in.applying || in.clipping || in.lineBreak || in.fs.Config.Readonly {
+		return false
+	}
+	v := views[in.field]
+	if v == nil || v.surface.engine == nil {
+		return false
+	}
+	id, ok := driver.FindKey(v.surface.keys, []string{"enter"}, driver.KeyUseText, false)
+	if ok {
+		v.surface.engine.Dispatch(driver.Event{Kind: driver.EventKey, Count: id})
+	}
+	return ok
+}
+
+// returnPressed is UITextFieldDelegate's Return action. A Return that
+// commits marked text belongs to the input method, before shortcuts too.
+func (in *input) returnPressed() {
+	if in.fs.Config.Readonly {
+		return
+	}
+	if _, composing := in.markedText(); composing {
+		return
+	}
+	if in.takeSoftwareReturn() {
+		return
+	}
+	if _, blur := in.fs.Return(in.text(), false); blur {
+		in.field.Send(selResign)
+	}
+}
+
 // shouldChange answers whether the editor may replace r with repl: Return
 // in a text view does what SubmitBehavior says, and an insertion is cut
 // to maxLength, the cut edit made here.
@@ -380,6 +441,9 @@ func (in *input) shouldChange(r apple.NSRange, repl string) bool {
 	}
 	if in.multiline && repl == "\n" && !in.lineBreak {
 		if _, composing := in.markedText(); !composing {
+			if in.takeSoftwareReturn() {
+				return false
+			}
 			insert, blur := in.fs.Return(in.text(), false)
 			if !insert {
 				if blur {

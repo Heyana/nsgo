@@ -25,6 +25,8 @@ ui.Input{
 
 `OnSelectionChange` and `OnCaretMove` report the selection and where the caret is, for a menu that opens at it. `Suggest`, a `core.Suggest`, follows a query after a trigger such as `@`, and a `ui.SuggestList` beside the field offers rows for it at the caret, which Up, Down, Return and a press choose from, as `chat.Composer`'s `Suggest` does for mentions. `OnKeyPress` hears each key, `OnPaste` what the user pastes, and `OnCompositionChange` follows an input method.
 
+On iOS and Android, `cx.OnKeyWith("enter", core.KeyOptions{When: core.KeyAlways}, handler)` takes a software Return before the field submits, blurs or inserts a newline. `KeyAuto` and `KeyNotEditing` leave it to `SubmitBehavior`; on iOS, a Return that commits marked text stays with the input method.
+
 ## Focus and the keyboard
 
 `Ref.Focus()` focuses a field or, on desktops, the web and Apple TV, an enabled pressable or `Focusable` view. `Ref.Blur()` clears only its own view's focus, and `cx.DismissKeyboard()` closes the software keyboard. `OnFocus` and `OnBlur` follow the focus, and `View.OnFocus`/`OnBlur` do the same for any focusable view. A focused view that leaves the tree, as its `Show` closes or its row goes, hears `OnBlur` once, after the commit that removed it or, when the platform reports the next focus first, before that view's `OnFocus`, and the views around it that stay hear `OnFocusOut`.

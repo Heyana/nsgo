@@ -25,6 +25,8 @@ ui.Input{
 
 `OnSelectionChange` 和 `OnCaretMove` 报告选区和光标位置，用于在光标处打开菜单。`Suggest`（一个 `core.Suggest`）跟随 `@` 这类触发字符之后的查询，字段旁的 `ui.SuggestList` 在光标处为它列出候选行，可用上下方向键、回车或点按选择，`chat.Composer` 的 `Suggest` 就这样补全提及。`OnKeyPress` 听到每个按键，`OnPaste` 听到粘贴内容，`OnCompositionChange` 跟随输入法组合。
 
+在 iOS 和 Android 上，`cx.OnKeyWith("enter", core.KeyOptions{When: core.KeyAlways}, handler)` 会先于文本框的提交、失焦或换行处理软件键盘的 Return。`KeyAuto` 和 `KeyNotEditing` 将它留给 `SubmitBehavior`；iOS 输入法用来确认组词的 Return 仍由输入法处理。
+
 ## 焦点与键盘
 
 `Ref.Focus()` 让文本框获得焦点，在桌面、Web 和 Apple TV 上也能聚焦启用的可按压或 `Focusable` 视图。`Ref.Blur()` 只清除自身视图的焦点，`cx.DismissKeyboard()` 关闭软件键盘。`OnFocus` 和 `OnBlur` 跟随焦点，`View.OnFocus`/`OnBlur` 对任何可聚焦视图做同样的事。获得焦点的视图离开树时（它所在的 `Show` 关闭或它所在的行被移除），会在移除它的那次提交之后收到一次 `OnBlur`（平台先报告下一个焦点时，则在那个视图的 `OnFocus` 之前），留下的外层视图收到 `OnFocusOut`。
