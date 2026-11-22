@@ -145,6 +145,18 @@ func (c *canvasImageCache[T]) complete(key string, bytes int64) {
 	}
 }
 
+// grow adds n bytes to key's entry, such as the pixels a mesh reads from a loaded image, and evicts if the cache is now over its limit.
+func (c *canvasImageCache[T]) grow(key string, n int64) {
+	e, ok := c.entries[key]
+	if !ok || n <= 0 {
+		return
+	}
+	e.bytes += n
+	if _, unkeptBytes := c.unkeptStats(); unkeptBytes > c.effectiveLimit() {
+		c.evict(0)
+	}
+}
+
 func (c *canvasImageCache[T]) len() int { return len(c.entries) }
 
 func (c *canvasImageCache[T]) unkeptStats() (count int, bytes int64) {

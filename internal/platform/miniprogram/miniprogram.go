@@ -29,6 +29,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/engine"
 	"github.com/nsgo-dev/nsgo/internal/platform/canvas2d"
+	"github.com/nsgo-dev/nsgo/internal/platform/canvasmesh"
 )
 
 // Options configure the app.
@@ -50,8 +51,10 @@ type surface struct {
 	env     driver.Environment
 	started time.Time
 	// canvas is the offscreen canvas drawings are drawn on, one at a time, and images what they draw, bounded by count and byte budget.
-	canvas      js.Value
-	images      canvasImageCache[*canvasImage]
+	canvas js.Value
+	images canvasImageCache[*canvasImage]
+	// meshCanvas is a second offscreen canvas, where meshes' textures are read and their rasters composited.
+	meshCanvas  js.Value
 	pixelImages bool
 	pixelFrames []canvasPixelFrame
 	pixelCount  int
@@ -301,6 +304,26 @@ func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size)
 		}
 		return im.img, float64(src.Density()), true
 	}
+	p.MeshCanvas = s.scratchMeshCanvas
+	p.Texture = func(src driver.ImageSource) canvasmesh.Texture {
+		switch {
+		case src.Pixels != nil:
+			return canvasmesh.RGBA(src.Pixels, src.Size)
+		case src.Offscreen != nil:
+			return canvasmesh.Texture{}
+		}
+		im := s.canvasImage(src, id)
+		if !im.loaded {
+			waiting = waiting || !im.failed
+			return canvasmesh.Texture{}
+		}
+		if !im.readTexture {
+			im.texture = canvas2d.ReadTexture(s.scratchMeshCanvas(), im.img, float64(src.Density()))
+			im.readTexture = true
+			s.images.grow(src.Key(), int64(len(im.texture.Pix)))
+		}
+		return im.texture
+	}
 	for i := range ops {
 		p.Play(&ops[i])
 	}
@@ -354,12 +377,14 @@ func (s *surface) canvasPixelFrame(pixels *image.RGBA) js.Value {
 	return canvas
 }
 
-// canvasImage is an image canvases draw, cached within the surface's count and byte bounds.
+// canvasImage is an image canvases draw, cached within the surface's count and byte bounds, and the pixels meshes sample, read once a mesh first draws it.
 type canvasImage struct {
 	img            js.Value
 	loaded, failed bool
 	onload         js.Func
 	onerror        js.Func
+	texture        canvasmesh.Texture
+	readTexture    bool
 }
 
 func (im *canvasImage) release() {
@@ -379,6 +404,15 @@ func (im *canvasImage) release() {
 		im.img.Set("onerror", js.Null())
 		im.img.Set("src", "")
 	}
+	im.texture = canvasmesh.Texture{}
+}
+
+// scratchMeshCanvas returns the offscreen canvas meshes use, creating it the first time.
+func (s *surface) scratchMeshCanvas() js.Value {
+	if !s.meshCanvas.Truthy() {
+		s.meshCanvas = s.api.Call("createOffscreenCanvas", map[string]any{"type": "2d", "width": 1, "height": 1})
+	}
+	return s.meshCanvas
 }
 
 // canvasImage returns src's image, loading it the first time; the

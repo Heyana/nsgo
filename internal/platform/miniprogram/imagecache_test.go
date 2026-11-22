@@ -82,3 +82,29 @@ func TestMounterRoutesImageCacheItemsToService(t *testing.T) {
 		t.Fatalf("service kinds = %v, want %v", h.services, want)
 	}
 }
+
+func TestMiniProgramCanvasImageCacheCountsMeshTexturePixels(t *testing.T) {
+	var evicted []string
+	var c canvasImageCache[string]
+	c.onEvict = func(v string) { evicted = append(evicted, v) }
+	c.setLimit(300)
+	c.addPending("a", "mp-a", 100)
+	c.complete("a", 100)
+	c.endPass()
+	c.addPending("b", "mp-b", 100)
+	c.complete("b", 100)
+
+	// A mesh reads b's pixels in the pass that draws it: b stays, and the older a goes to make room.
+	c.grow("b", 150)
+	if !slices.Equal(evicted, []string{"mp-a"}) {
+		t.Fatalf("evicted = %v, want [mp-a]", evicted)
+	}
+	if _, ok := c.peek("b"); !ok {
+		t.Fatal("the image a mesh is drawing was evicted")
+	}
+	c.grow("missing", 1000)
+	c.grow("b", -5)
+	if _, bytes := c.unkeptStats(); bytes != 250 {
+		t.Fatalf("bytes = %d, want 250", bytes)
+	}
+}
