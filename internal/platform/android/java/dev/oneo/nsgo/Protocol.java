@@ -486,6 +486,9 @@ final class Protocol {
     static final int EVENT_SCROLL_END = 60;
     static final int EVENT_WHEEL = 61;
     static final int EVENT_FILES = 62;
+    static final int EVENT_MODAL_SHOWN = 63;
+    static final int EVENT_MODAL_DISMISSED = 64;
+    static final int EVENT_SCREEN_INSETS = 65;
     static final int EVENT_INPUT_MODALITY = 75;
     static final int EVENT_NOTIFICATION = 76;
     static final int EVENT_NOTIFICATION_PRESS = 77;

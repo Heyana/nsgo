@@ -98,14 +98,18 @@ type Tree struct {
 	layoutAnim          *LayoutAnimation
 	fontScale           float32
 	// ratio is the device pixels per point layout rounds to.
-	ratio       float32
-	alerts      map[uint32]alertWait
-	waits       map[uint32]wait
-	auths       map[uint32]*authSession // the auth sessions waiting for the platform
-	imageInfos  map[uint32]imageInfoWait
-	keys        []*keyBinding
-	keyID       uint32
-	keysChanged bool
+	ratio      float32
+	alerts     map[uint32]alertWait
+	waits      map[uint32]wait
+	auths      map[uint32]*authSession // the auth sessions waiting for the platform
+	imageInfos map[uint32]imageInfoWait
+	// dismissing holds deleted modals awaiting EventModalDismissed or its fallback (awaitDismissal); their IDs stay out of free until then, so a report never reaches a node that reused one.
+	dismissing map[NodeID]dismissingModal
+	// lateDismissals are the deleted modals dismissFallback released before the platform reported them gone, whose report Dispatch drops if it still comes.
+	lateDismissals map[NodeID]bool
+	keys           []*keyBinding
+	keyID          uint32
+	keysChanged    bool
 	// held counts the keys down on the surface by name, from EventKeyDown and EventKeyUp, so both Shifts read as one "shift" until both are up; heldRead is what KeysDown reads, made by the first read, which asks the platform for every key (heldKeys).
 	held, heldCodes    map[string]int
 	heldRead, codeRead *Signal[[]string]
@@ -2396,9 +2400,21 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			}
 		}
 		return
-	case driver.EventRequestClose, driver.EventModalSize, driver.EventModalShown, driver.EventModalDismissed:
+	case driver.EventRequestClose, driver.EventModalSize, driver.EventModalShown:
 		if n := t.node(ev.ID); n != nil && n.hoist != nil && n.hoist.modal != nil {
 			t.modalEvent(n, ev)
+		}
+		return
+	case driver.EventModalDismissed:
+		if t.lateDismissals[ev.ID] {
+			// The fallback released this modal before its report came (awaitDismissal): the report has nothing left to do.
+			delete(t.lateDismissals, ev.ID)
+			return
+		}
+		if n := t.node(ev.ID); n != nil && n.hoist != nil && n.hoist.modal != nil {
+			t.modalEvent(n, ev)
+		} else {
+			t.finishDismissal(ev.ID)
 		}
 		return
 	case driver.EventAlert:

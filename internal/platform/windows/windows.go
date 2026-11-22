@@ -238,17 +238,18 @@ type paintStruct struct {
 
 // view is the main thread's copy of one mounted view.
 type view struct {
-	window   *window
-	id       driver.NodeID
-	kind     driver.ViewKind
-	parent   *view
-	children []*view
-	frame    driver.Bounds
-	style    driver.ViewStyle
-	events   driver.EventMask
-	props    driver.ViewProps
-	overflow driver.Bounds // where its children reach outside it (ItemOverflow)
-	deleted  bool
+	window    *window
+	id        driver.NodeID
+	kind      driver.ViewKind
+	parent    *view
+	children  []*view
+	frame     driver.Bounds
+	style     driver.ViewStyle
+	events    driver.EventMask
+	props     driver.ViewProps
+	overflow  driver.Bounds // where its children reach outside it (ItemOverflow)
+	deleted   bool
+	presented bool
 	// transformedKids is ItemOverflow's Transformed: a child may be drawn transformed, outside overflow.
 	transformedKids bool
 
@@ -1596,6 +1597,12 @@ func (w *window) apply(b *driver.MountBatch) {
 				}
 				p.children = slices.Insert(p.children, at, v)
 				v.parent = p
+				if v.kind == driver.KindModal && !v.presented {
+					v.presented = true
+					if w.engine != nil {
+						w.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: v.id})
+					}
+				}
 				if lb != nil && lb.created[v] {
 					lb.inserted = append(lb.inserted, v)
 				}
@@ -1606,8 +1613,13 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.animator.Forget(v.id)
 			w.forgetElements(v)
 			structure = true
+			isModal := v.kind == driver.KindModal
+			id := v.id
 			if !w.leave(v, lb) {
 				w.destroy(v)
+				if isModal && w.engine != nil {
+					w.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: id})
+				}
 			}
 		case driver.ItemOverflow:
 			v.overflow, v.transformedKids = it.Frame, it.Transformed

@@ -79,8 +79,13 @@ type View struct {
 	held      *driver.MountItem
 	// Screen is a screen's system header, sent where the environment
 	// has HeaderHeight; Modal a modal's config.
-	Screen driver.ScreenConfig
-	Modal  driver.ModalConfig
+	Screen         driver.ScreenConfig
+	hasScreen      bool
+	screenInsets   *driver.Edges
+	Modal          driver.ModalConfig
+	modalInsets    *driver.Edges
+	presented      bool
+	modalDismissed bool
 	// Drawing is a canvas's last drawing, and Ops its operations as the
 	// platform plays them now, with the values of the animated nodes its
 	// arguments are bound to.
@@ -503,6 +508,8 @@ func (a *App) apply(b *driver.MountBatch) {
 	}
 	var resized []*View
 	var gpuConfigured []*View
+	var modalInserted []*View
+	var screensChanged bool
 	for _, it := range b.Items {
 		v := a.views[it.ID]
 		if name := viewItemNames[it.Kind]; v == nil && (name != "" || it.ID != 0 && it.Kind != driver.ItemCreate) {
@@ -516,6 +523,13 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.views[it.ID] = &View{ID: it.ID, Kind: viewKind(it.View), Style: driver.DefaultViewStyle, anim: a.anim}
 		case driver.ItemDelete:
 			if v != nil {
+				if v.Kind == KindModal {
+					a.cancelModalPresent(it.ID)
+					if !v.modalDismissed {
+						v.modalDismissed = true
+						a.post(driver.Event{Kind: driver.EventModalDismissed, ID: it.ID})
+					}
+				}
 				v.detach()
 			}
 			a.anim.Forget(it.ID)
@@ -538,9 +552,17 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 			p.Children = append(p.Children[:at], append([]*View{v}, p.Children[at:]...)...)
 			v.Parent = p
+			if v.Kind == KindModal && !v.presented {
+				v.presented = true
+				modalInserted = append(modalInserted, v)
+			}
+			if v.hasScreen {
+				screensChanged = true
+			}
 		case driver.ItemFrame:
 			v.Frame = it.Frame
 			resized = append(resized, v)
+			screensChanged = true
 		case driver.ItemViewStyle:
 			v.Style = *it.ViewStyle
 		case driver.ItemViewProps:
@@ -996,6 +1018,8 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.StatusBar = StatusBarConfig{Style: it.StatusBar.Style, Hidden: it.StatusBar.Hidden, Animated: it.StatusBar.Animated}
 		case driver.ItemScreen:
 			v.Screen = *it.Screen
+			v.hasScreen = true
+			screensChanged = true
 		case driver.ItemModal:
 			v.Modal = *it.Modal
 		case driver.ItemDirection:
@@ -1082,6 +1106,113 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.post(driver.Event{Kind: driver.EventScroll, ID: v.ID, Point: at, Count: v.Applied})
 		}
 	}
+	for _, v := range modalInserted {
+		if a.views[v.ID] == v {
+			a.presentModal(v)
+		}
+	}
+	if screensChanged {
+		a.reportScreenInsets()
+	}
+}
+
+// presentModal reports EventModalShown once modal v's entrance animation ends, or at once when it has none.
+func (a *App) presentModal(v *View) {
+	if a.target != nil {
+		return
+	}
+	anim := v.Modal.Animation
+	if anim == driver.ModalSlide && a.env != nil && a.env.ReduceMotion {
+		anim = driver.ModalFade
+	}
+	d := anim.Duration()
+	if d <= 0 {
+		a.post(driver.Event{Kind: driver.EventModalShown, ID: v.ID})
+		return
+	}
+	if a.presenting == nil {
+		a.presenting = map[driver.NodeID]*modalWait{}
+	}
+	id := v.ID
+	tree := a.responseTree
+	var w *modalWait
+	w = &modalWait{}
+	a.presenting[id] = w
+	w.stop = a.Clock.AfterFunc(d, func() {
+		if a.presenting[id] == w {
+			delete(a.presenting, id)
+		}
+		if a.views[id] == v && !v.modalDismissed {
+			a.postTo(tree, driver.Event{Kind: driver.EventModalShown, ID: id})
+		}
+	})
+}
+
+func (a *App) cancelModalPresent(id driver.NodeID) {
+	if w, ok := a.presenting[id]; ok {
+		delete(a.presenting, id)
+		if w.stop != nil {
+			w.stop()
+		}
+	}
+}
+
+// reportScreenInsets reports EventScreenInsets for each visible screen whose effective insets changed, measured from its bounds in its host and header.
+func (a *App) reportScreenInsets() {
+	if a.target != nil {
+		return
+	}
+	root := a.views[a.rootID]
+	if root == nil {
+		return
+	}
+	var rootSafe driver.Edges
+	if a.env != nil {
+		rootSafe = a.env.SafeArea
+	}
+	for _, v := range a.views {
+		if v == nil || !v.hasScreen || v.Style.Hidden || v.Frame.Size.Width <= 0 || v.Frame.Size.Height <= 0 {
+			continue
+		}
+		in := screenInsetsOf(v, root, rootSafe)
+		if v.screenInsets != nil && *v.screenInsets == in {
+			continue
+		}
+		cp := in
+		v.screenInsets = &cp
+		a.post(driver.Event{Kind: driver.EventScreenInsets, ID: v.ID, Insets: in})
+	}
+}
+
+func screenInsetsOf(v, root *View, rootSafe driver.Edges) driver.Edges {
+	var ox, oy driver.Points
+	host := root
+	hostSafe := rootSafe
+	for p := v; p != nil && p != root; p = p.Parent {
+		if p != v && p.Kind == KindModal && p.modalInsets != nil {
+			host = p
+			hostSafe = *p.modalInsets
+			break
+		}
+		ox += p.Frame.Origin.X
+		oy += p.Frame.Origin.Y
+	}
+	hw, hh := host.Frame.Size.Width, host.Frame.Size.Height
+	w, h := v.Frame.Size.Width, v.Frame.Size.Height
+	in := driver.Edges{
+		Top:    max(0, hostSafe.Top-oy),
+		Left:   max(0, hostSafe.Left-ox),
+		Right:  max(0, hostSafe.Right-max(0, hw-(ox+w))),
+		Bottom: max(0, hostSafe.Bottom-max(0, hh-(oy+h))),
+	}
+	if !v.Screen.HeaderHidden {
+		if v.Screen.HeaderTransparent {
+			in.Top = v.Screen.HeaderHeight
+		} else {
+			in.Top = 0
+		}
+	}
+	return in
 }
 
 // canFocus follows the platform's imperative focus contract. A command to a plain view, a hidden stop or a view below a modal changes nothing.

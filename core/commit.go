@@ -327,7 +327,12 @@ func (t *Tree) commitRound() {
 		t.framesMoved = true
 	}
 	for _, id := range t.deleted {
+		n := t.nodes[id]
 		t.nodes[id] = nil
+		if n != nil && n.created && n.hoist != nil && n.hoist.modal != nil && !n.hoist.dismissReported {
+			t.awaitDismissal(id, n)
+			continue
+		}
 		t.free = append(t.free, id)
 	}
 	t.deleted = t.deleted[:0]

@@ -67,7 +67,7 @@ var unsupportedEvents = map[string]string{
 	"loading, media and animation": `EventLoadEnd EventDownload EventNative
 		EventNativeSize EventAnimation EventBuffer`,
 	"overlays, navigation and windows": `EventRequestClose EventModalSize
-		EventModalShown EventModalDismissed EventScreenHeader EventScreenInsets
+		EventScreenHeader
 		EventNavigationStateChange EventMenu EventMenuClosed EventMessage
 		EventBackStarted EventBackCancelled EventWindowClose
 		EventWindowHidden EventReopen EventOpenFiles`,

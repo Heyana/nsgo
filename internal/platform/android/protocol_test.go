@@ -1113,3 +1113,62 @@ func TestAndroidInputLanguageAndKoreanLineBreaking(t *testing.T) {
 		t.Error("Text.java does not configure StaticLayout LineBreakConfig for Korean")
 	}
 }
+
+// TestReadModalAndScreenInsetsEvents verifies that readEvent decodes EventModalShown, EventModalDismissed, and EventScreenInsets (unpacking top, right, bottom, left from the point and size fields), and that NsgoView.java emits all three events.
+func TestReadModalAndScreenInsetsEvents(t *testing.T) {
+	encodeEvent := func(kind driver.EventKind, id driver.NodeID, x, y, width, height driver.Points) []byte {
+		var w writer
+		w.u32(0)
+		w.byte(byte(kind))
+		w.u32(uint32(id))
+		w.u32(0)
+		w.points(x)
+		w.points(y)
+		w.str("")
+		w.points(width)
+		w.points(height)
+		w.u32(0)
+		w.byte(0)
+		w.points(0)
+		w.points(0)
+		w.float(0)
+		w.byte(0)
+		w.u64(0)
+		w.u64(0)
+		w.byte(0)
+		w.str("")
+		w.byte(0)
+		w.points(0)
+		w.points(0)
+		w.points(0)
+		w.points(0)
+		w.byte(0)
+		return w.buf
+	}
+	for _, kind := range []driver.EventKind{driver.EventModalShown, driver.EventModalDismissed} {
+		r := reader{encodeEvent(kind, 9, 0, 0, 0, 0)}
+		_, ev, _ := readEvent(&r)
+		if len(r.buf) != 0 || ev.Kind != kind || ev.ID != 9 {
+			t.Errorf("%v: decoded %+v (remaining %d)", kind, ev, len(r.buf))
+		}
+	}
+	r := reader{encodeEvent(driver.EventScreenInsets, 7, 88, 12, 34, 16)}
+	_, ev, _ := readEvent(&r)
+	want := driver.Edges{Top: 88, Right: 12, Bottom: 34, Left: 16}
+	if len(r.buf) != 0 || ev.Kind != driver.EventScreenInsets || ev.ID != 7 || ev.Insets != want ||
+		ev.Point != (driver.Point{}) || ev.Size != (driver.Size{}) {
+		t.Errorf("EventScreenInsets: decoded %+v, want insets %+v", ev, want)
+	}
+
+	testhost.RequireSource(t)
+	java, err := os.ReadFile(filepath.Join("java", "dev", "oneo", "nsgo", "NsgoView.java"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(java)
+	for _, sym := range []string{"Protocol.EVENT_MODAL_SHOWN", "Protocol.EVENT_MODAL_DISMISSED", "Protocol.EVENT_SCREEN_INSETS"} {
+		if !strings.Contains(src, sym) {
+			t.Errorf("NsgoView.java does not emit %s", sym)
+		}
+	}
+}

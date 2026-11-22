@@ -3,6 +3,7 @@ package core
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -458,7 +459,6 @@ func TestScreenHeaderSymbols(t *testing.T) {
 		t.Errorf("without symbols: %q, right %v", c.RightSymbols, c.Right)
 	}
 }
-
 func TestAndroidLargeTitleHeader(t *testing.T) {
 	env := Environment{OS: OSAndroid, SafeArea: Edges{Top: 24, Bottom: 16}, HeaderHeight: 64, LargeHeaderHeight: 152}
 	h := newPhone(t, env, func(cx *Scope) Node {
@@ -534,4 +534,144 @@ func TestScreenHeaderFontsFollowStyles(t *testing.T) {
 	check(24)
 	resize.Set(30)
 	check(30)
+}
+
+// TestModalLifecycleReports checks EventModalShown and EventModalDismissed, including dismissals reported after ItemDelete (holding the modal's ID out of reuse until EventModalDismissed arrives) and swipes reported before it.
+func TestModalLifecycleReports(t *testing.T) {
+	var open, extra *Signal[bool]
+	var log []string
+	h := newPhone(t, phone, func(cx *Scope) Node {
+		open = NewSignal(cx, true)
+		extra = NewSignal(cx, false)
+		return View{Style: Style{FlexGrow: 1}, Children: []Node{
+			Show{When: open.Get, Then: func(*Scope) Node {
+				return Modal{
+					TestID:      "m",
+					OnShown:     func() { log = append(log, "shown") },
+					OnDismissed: func() { log = append(log, "dismissed") },
+				}
+			}},
+			Show{When: extra.Get, Then: func(*Scope) Node { return View{TestID: "other"} }},
+		}}
+	})
+	h.commit()
+	modalID := h.find("m").id
+
+	// Duplicate EventModalShown fires OnShown only once.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: modalID})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: modalID})
+	if !slices.Equal(log, []string{"shown"}) {
+		t.Fatalf("after EventModalShown: log = %q, want [shown]", log)
+	}
+
+	// Removing the modal emits ItemDelete and holds modalID out of free until EventModalDismissed arrives, so a new view cannot reuse it meanwhile.
+	open.Set(false)
+	b := h.commit()
+	if !slices.ContainsFunc(b.Items, func(it driver.MountItem) bool { return it.Kind == driver.ItemDelete && it.ID == modalID }) {
+		t.Fatal("closing the modal did not emit ItemDelete")
+	}
+	extra.Set(true)
+	h.commit()
+	if got := h.find("other").id; got == modalID {
+		t.Fatalf("new view reused dismissing modal ID %d before EventModalDismissed", modalID)
+	}
+
+	// Late EventModalDismissed reaches OnDismissed once and frees modalID.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: modalID})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: modalID})
+	if !slices.Equal(log, []string{"shown", "dismissed"}) {
+		t.Fatalf("after EventModalDismissed: log = %q, want [shown dismissed]", log)
+	}
+
+	// Swipe-away: EventModalDismissed before ItemDelete fires once and does not double-fire when ItemDelete follows.
+	log = nil
+	open.Set(true)
+	h.commit()
+	sheetID := h.find("m").id
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: sheetID})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventRequestClose, ID: sheetID, Text: "swipe", Finished: true})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: sheetID})
+	open.Set(false)
+	h.commit()
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: sheetID})
+	if !slices.Equal(log, []string{"shown", "dismissed"}) {
+		t.Fatalf("after swipe-away: log = %q, want [shown dismissed]", log)
+	}
+}
+
+// TestModalDismissalFallback checks that a removed modal whose platform never reports it gone gets OnDismissed and frees its ID once its animation and dismissFallback have passed, that a report arriving after that changes nothing, and that a report within the bound stops the fallback.
+func TestModalDismissalFallback(t *testing.T) {
+	var open *Signal[bool]
+	var log []string
+	h := newPhone(t, phone, func(cx *Scope) Node {
+		open = NewSignal(cx, true)
+		return View{Style: Style{FlexGrow: 1}, Children: []Node{
+			Show{When: open.Get, Then: func(*Scope) Node {
+				return Modal{TestID: "m", Animation: ModalFade, OnDismissed: func() { log = append(log, "dismissed") }}
+			}},
+		}}
+	})
+	h.commit()
+	modalID := h.find("m").id
+	open.Set(false)
+	h.commit()
+	wait := ModalFade.Duration() + dismissFallback
+	h.clock.Advance(wait - time.Millisecond)
+	h.drain()
+	if len(log) != 0 || h.tree.dismissing[modalID].owners == nil {
+		t.Fatalf("before the fallback: log = %q, held = %v", log, h.tree.dismissing[modalID].owners != nil)
+	}
+	h.clock.Advance(time.Millisecond)
+	h.drain()
+	if !slices.Equal(log, []string{"dismissed"}) {
+		t.Fatalf("after the fallback: log = %q, want [dismissed]", log)
+	}
+	if _, held := h.tree.dismissing[modalID]; held || !slices.Contains(h.tree.free, modalID) {
+		t.Fatalf("the fallback kept modal ID %d: held = %v, free = %v", modalID, held, h.tree.free)
+	}
+	// The platform's report, coming late, is dropped once.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: modalID})
+	if !slices.Equal(log, []string{"dismissed"}) || h.tree.lateDismissals[modalID] {
+		t.Fatalf("after a late report: log = %q, tombstone = %v", log, h.tree.lateDismissals[modalID])
+	}
+
+	// A report within the bound stops the fallback: OnDismissed runs once.
+	log = nil
+	open.Set(true)
+	h.commit()
+	again := h.find("m").id
+	open.Set(false)
+	h.commit()
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: again})
+	h.clock.Advance(2 * wait)
+	h.drain()
+	if !slices.Equal(log, []string{"dismissed"}) || h.tree.lateDismissals[again] {
+		t.Fatalf("report then fallback time: log = %q, tombstone = %v", log, h.tree.lateDismissals[again])
+	}
+}
+
+// TestScreenInsetsEventOverridesDerived checks that EventScreenInsets replaces core's derived screen insets and updates readers reactively.
+func TestScreenInsetsEventOverridesDerived(t *testing.T) {
+	var insets Edges
+	h := newPhone(t, phone, func(cx *Scope) Node {
+		return Stack{Style: Style{FlexGrow: 1}, Children: []Node{
+			Screen{Title: "Home", TestID: "home", HeaderTransparent: true, Children: []Node{
+				Func(func(cx *Scope) Node {
+					cx.Effect(func() { insets = Insets(cx) })
+					return View{TestID: "body"}
+				}),
+			}},
+		}}
+	})
+	h.commit()
+	if want := (Edges{Top: 84, Bottom: 20}); insets != want {
+		t.Fatalf("derived insets = %+v, want %+v", insets, want)
+	}
+	screenID := h.find("home").id
+	want := Edges{Top: 92, Right: 12, Bottom: 34, Left: 12}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventScreenInsets, ID: screenID, Insets: want})
+	h.commit()
+	if insets != want {
+		t.Fatalf("reported insets = %+v, want %+v", insets, want)
+	}
 }

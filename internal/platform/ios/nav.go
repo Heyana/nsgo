@@ -38,6 +38,9 @@ type navBar struct {
 	// fit is the bar's height as UIKit sizes it, reported the one last
 	// told to the engine.
 	fit, reported driver.Points
+	// reportedInsets is the last EventScreenInsets sent for this screen.
+	reportedInsets driver.Edges
+	insetsSet      bool
 	// system is the UIKit bar button of the header's RightSystemItem,
 	// systemKind, made once per kind: a new one at every change would
 	// flash.
@@ -146,8 +149,10 @@ func registerNav() {
 			{Cmd: sel("presentationControllerDidDismiss:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
 				if v := sheets[self]; v != nil && v.sheet != nil {
 					v.sheet.gone = true
+					v.modalDismissed = true
 					s := v.surface
 					s.engine.Dispatch(driver.Event{Kind: driver.EventRequestClose, ID: v.id, Text: "swipe", Finished: true})
+					s.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: v.id})
 					s.updateOrientations()
 				}
 			}},
@@ -159,9 +164,18 @@ func registerNav() {
 		}...))
 }
 
-// navMethods are the views' methods for a screen's swipe back.
+// navMethods are the views' methods for a screen's swipe back and safe area.
 func navMethods() []objc.MethodDef {
-	return []objc.MethodDef{{Cmd: selEdgeSwipe, Fn: edgeSwiped}, {Cmd: selHeaderItem, Fn: headerItemPressed}}
+	return []objc.MethodDef{
+		{Cmd: selEdgeSwipe, Fn: edgeSwiped},
+		{Cmd: selHeaderItem, Fn: headerItemPressed},
+		{Cmd: sel("safeAreaInsetsDidChange"), Fn: func(self objc.ID, cmd objc.SEL) {
+			apple.Super(self, cmd)
+			if v := views[self]; v != nil && v.bar != nil {
+				v.surface.reportScreenInsets(v)
+			}
+		}},
+	}
 }
 
 // headerHeights measures a navigation bar on this device, as NSH does: its height, and with a large title the 52-point row large titles add. An Apple TV's bar is measured at the screen's width, and as tvOS draws no large titles, a large title's header is as tall as the bar.
@@ -321,6 +335,39 @@ func (s *surface) layoutBar(v *view) {
 		b.reported = bar
 		s.engine.Dispatch(driver.Event{Kind: driver.EventScreenHeader, ID: v.id, Value: float32(bar)})
 	}
+	s.reportScreenInsets(v)
+}
+
+// reportScreenInsets reports EventScreenInsets for screen v from UIKit's safeAreaInsets and the measured header bar when they change.
+func (s *surface) reportScreenInsets(v *view) {
+	b := v.bar
+	if b == nil || v.style.Hidden || v.native.Send(sel("window")) == 0 {
+		return
+	}
+	bounds := objc.Send[apple.CGRect](v.native, selBounds)
+	if bounds.Size.Width <= 0 || bounds.Size.Height <= 0 {
+		return
+	}
+	in := objc.Send[edgeInsets](v.native, sel("safeAreaInsets"))
+	got := driver.Edges{
+		Top:    driver.Points(in.Top),
+		Right:  driver.Points(in.Right),
+		Bottom: driver.Points(in.Bottom),
+		Left:   driver.Points(in.Left),
+	}
+	if !b.config.HeaderHidden {
+		if b.config.HeaderTransparent {
+			got.Top += s.expandedBar(v)
+		} else {
+			got.Top = 0
+		}
+	}
+	if b.insetsSet && got == b.reportedInsets {
+		return
+	}
+	b.insetsSet = true
+	b.reportedInsets = got
+	s.engine.Dispatch(driver.Event{Kind: driver.EventScreenInsets, ID: v.id, Insets: got})
 }
 
 // expandedBar is screen v's bar's height with its large title shown.
@@ -1011,9 +1058,22 @@ func (s *surface) presentSheet(v *view) {
 	ctrl.Send(sel("setModalInPresentation:"), c.NoCloseOnSwipe)
 	ctrl.Send(sel("setModalPresentationCapturesStatusBarAppearance:"), true)
 	ctrl.Send(sel("presentationController")).Send(selSetDeleg, ctrl)
-	v.sheet = &sheet{controller: ctrl}
+	sh := &sheet{controller: ctrl}
+	v.sheet = sh
 	sheets[ctrl] = v
-	s.topController().Send(sel("presentViewController:animated:completion:"), ctrl, c.Animation != driver.ModalNone, objc.ID(0))
+	id := v.id
+	top := s.topController()
+	if top == 0 {
+		s.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: id})
+		return
+	}
+	done := objcblock.New(func(objc.Block) {
+		if int(id) < len(s.views) && s.views[id] == v && v.sheet == sh && !sh.gone && !v.modalDismissed {
+			s.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: id})
+		}
+	})
+	top.Send(sel("presentViewController:animated:completion:"), ctrl, c.Animation != driver.ModalNone, done)
+	done.Release()
 }
 
 // dismissSheet takes modal v's sheet away, unless the user did.
@@ -1025,13 +1085,21 @@ func (s *surface) dismissSheet(v *view) {
 	v.sheet = nil
 	delete(sheets, sh.controller)
 	if !sh.gone {
+		sh.gone = true
+		v.modalDismissed = true
+		id := v.id
 		// Through the presenter, which dismisses what this sheet presents
 		// too.
 		from := sh.controller.Send(sel("presentingViewController"))
 		if from == 0 {
-			from = sh.controller
+			s.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: id})
+		} else {
+			done := objcblock.New(func(objc.Block) {
+				s.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: id})
+			})
+			from.Send(sel("dismissViewControllerAnimated:completion:"), v.modal.Animation != driver.ModalNone, done)
+			done.Release()
 		}
-		from.Send(sel("dismissViewControllerAnimated:completion:"), v.modal.Animation != driver.ModalNone, objc.ID(0))
 	}
 	sh.controller.Send(selRelease)
 }

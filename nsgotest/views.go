@@ -159,6 +159,9 @@ const (
 	EventAccessibilityAction   = driver.EventAccessibilityAction
 	EventRequestClose          = driver.EventRequestClose
 	EventModalSize             = driver.EventModalSize
+	EventModalShown            = driver.EventModalShown
+	EventModalDismissed        = driver.EventModalDismissed
+	EventScreenInsets          = driver.EventScreenInsets
 	EventMouseMove             = driver.EventMouseMove
 	EventTouch                 = driver.EventTouch
 	EventCaretMove             = driver.EventCaretMove

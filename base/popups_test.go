@@ -756,3 +756,77 @@ func TestSheetStartingAndEndingStyles(t *testing.T) {
 		t.Errorf("going, the panel's opacity is %v, want the ending style's", got)
 	}
 }
+
+// TestDialogOnOpenAndOnCloseFollowPlatformReports checks that base.Dialog's OnOpen and OnClose follow EventModalShown and EventModalDismissed from the platform rather than a component-side animation timer.
+func TestDialogOnOpenAndOnCloseFollowPlatformReports(t *testing.T) {
+	var open *core.Signal[bool]
+	var log []string
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		open = core.NewSignal(cx, false)
+		return base.Dialog{
+			Open:         open.Get,
+			Animation:    core.ModalSlide,
+			Presentation: core.ModalPageSheet,
+			OnOpenChange: func(o bool, r base.Reason) { log = append(log, r.String()); open.Set(o) },
+			OnOpen:       func() { log = append(log, "open") },
+			OnClose:      func() { log = append(log, "close") },
+			TestID:       "dialog",
+			Children:     []core.Node{core.Text{Content: "inside"}},
+		}
+	}, nsgotest.ManualFrames())
+
+	// Slide entrance takes 300 ms: OnOpen waits for the platform's EventModalShown.
+	open.Set(true)
+	app.Settle()
+	app.Advance(200 * time.Millisecond)
+	if len(log) != 0 {
+		t.Fatalf("OnOpen fired before slide entrance ended: %v", log)
+	}
+	app.Advance(100 * time.Millisecond)
+	if !slices.Equal(log, []string{"open"}) {
+		t.Fatalf("after slide entrance: log = %v, want [open]", log)
+	}
+
+	// Closing removes the modal; OnClose follows EventModalDismissed once.
+	open.Set(false)
+	app.Settle()
+	if !slices.Equal(log, []string{"open", "close"}) {
+		t.Fatalf("after close: log = %v, want [open close]", log)
+	}
+
+	// Closing before the entrance completes cancels EventModalShown and still reports OnClose once on dismissal.
+	log = nil
+	open.Set(true)
+	app.Settle()
+	app.Advance(100 * time.Millisecond)
+	open.Set(false)
+	app.Settle()
+	app.Advance(300 * time.Millisecond)
+	if !slices.Equal(log, []string{"close"}) {
+		t.Fatalf("closed mid-entrance: log = %v, want [close]", log)
+	}
+
+	// Swipe-away on an iOS sheet reports swipe and OnClose once.
+	log = nil
+	open.Set(true)
+	app.Settle()
+	app.Advance(300 * time.Millisecond)
+	app.SwipeClose("id:dialog")
+	if !slices.Equal(log, []string{"open", "swipe", "close"}) {
+		t.Fatalf("after swipe: log = %v, want [open swipe close]", log)
+	}
+
+	// Reduced motion turns ModalSlide into ModalFade (200 ms) on the backend, so OnOpen follows the backend's 200 ms presentation report.
+	log = nil
+	app.SetEnvironment(core.Environment{ReduceMotion: true})
+	open.Set(true)
+	app.Settle()
+	app.Advance(150 * time.Millisecond)
+	if len(log) != 0 {
+		t.Fatalf("reduced motion OnOpen fired early: %v", log)
+	}
+	app.Advance(50 * time.Millisecond)
+	if !slices.Equal(log, []string{"open"}) {
+		t.Fatalf("reduced motion OnOpen at 200ms: log = %v, want [open]", log)
+	}
+}

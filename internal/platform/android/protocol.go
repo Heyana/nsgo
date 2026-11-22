@@ -724,6 +724,11 @@ func readEvent(r *reader) (uint32, driver.Event, string) {
 		// A pan's page point comes in the pointer's page slot.
 		ev.PagePosition = ev.Page
 	}
+	if ev.Kind == driver.EventScreenInsets {
+		// A screen's insets come in the point (top, right) and size (bottom, left) slots.
+		ev.Insets = driver.Edges{Top: ev.Point.X, Right: ev.Point.Y, Bottom: ev.Size.Width, Left: ev.Size.Height}
+		ev.Point, ev.Size = driver.Point{}, driver.Size{}
+	}
 	mods := r.byte()
 	ev.Modifiers = driver.Modifiers{Control: mods&1 != 0, Alt: mods&2 != 0, Shift: mods&4 != 0, Platform: mods&8 != 0}
 	ev.Button = driver.MouseButton(r.byte())

@@ -318,6 +318,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         for (ShaderEffect effect : effects) effect.capture();
         return true;
     };
+    private int rootID;
 
     // Animation, on the UI thread: the graph, whether a frame callback is
     // posted and the app waits for it, the nodes whose frames move or which appear, and the views
@@ -450,6 +451,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             // A rotation's insets come before the size they go with, in the same traversal.
             holdEnvironment();
             updateAccessory();
+            reportAllScreenInsets();
             return insets;
         });
         // The keyboard's curve, duration and start as it begins to move,
@@ -3110,6 +3112,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         try {
             in.readInt();
             int root = in.readInt();
+            if (root != 0) rootID = root;
             layoutCreate = layoutUpdate = layoutDelete = null;
             if (in.readUnsignedByte() != 0) {
                 LayoutTransition create = LayoutTransition.read(in), update = LayoutTransition.read(in);
@@ -3172,6 +3175,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             perfWork += System.nanoTime() - begin;
             perfDirty = true;
         }
+        reportAllScreenInsets();
     }
 
     /**
@@ -3232,6 +3236,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 if (n.effect != null) endShaderEffect(n);
                 // Dropping the node drops its views, its text layout and its
                 // bitmaps. A view inside one fading out goes with it.
+                if (n.modal >= 0) n.view.animate().cancel();
                 if (!vanish(n) && !inGhost(n.view)) detach(n.view);
                 nodes.remove(n.id);
                 byView.remove(n.view);
@@ -3251,6 +3256,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 if (n.holder != null) detach(n.holder);
                 if (n.video != null) n.video.destroy();
                 if (n.embedded != null) n.embedded.destroy();
+                if (n.modal >= 0) event(Protocol.EVENT_MODAL_DISMISSED, n.id, 0, 0, 0, "");
                 break;
             case Protocol.ITEM_FRAME:
                 setFrame(n, new float[] {in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat()},
@@ -4211,6 +4217,50 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 event(Protocol.EVENT_SCREEN_HEADER, n.id, 0, 0, 0, "", 0, 0, 0, 0, 0, 0, bar, null);
             }
         }
+        reportScreenInsets(n);
+    }
+
+    /** Reports EventScreenInsets for every visible screen whose effective insets changed. */
+    private void reportAllScreenInsets() {
+        for (int i = 0; i < nodes.size(); i++) {
+            Node n = nodes.valueAt(i);
+            if (n != null && n.header != null) reportScreenInsets(n);
+        }
+    }
+
+    /** Reports EventScreenInsets for screen n from its bounds in the surface and its header. */
+    private void reportScreenInsets(Node n) {
+        if (n.header == null || n.frame == null || n.hidden || n.frame[2] <= 0 || n.frame[3] <= 0) return;
+        float rw = getWidth() / density, rh = getHeight() / density;
+        Node rootNode = nodes.get(rootID);
+        if ((rw <= 0 || rh <= 0) && rootNode != null && rootNode.frame != null) {
+            rw = rootNode.frame[2];
+            rh = rootNode.frame[3];
+        }
+        if (rw <= 0 || rh <= 0) return;
+        float ox = 0, oy = 0;
+        for (Node p = n; p != null && p.id != rootID; p = p.up) {
+            if (p.frame != null) {
+                ox += p.frame[0];
+                oy += p.frame[1];
+            }
+        }
+        float top = Math.max(0f, safeTop / density - oy);
+        float left = Math.max(0f, safeLeft / density - ox);
+        float right = Math.max(0f, safeRight / density - Math.max(0f, rw - (ox + n.frame[2])));
+        float bottom = Math.max(0f, safeBottom / density - Math.max(0f, rh - (oy + n.frame[3])));
+        if (!n.header.hidden()) {
+            if (n.header.transparent()) {
+                float bar = n.header.reported > 0 ? n.header.reported : Header.BAR;
+                top = top + bar;
+            } else {
+                top = 0f;
+            }
+        }
+        float[] prev = n.header.reportedInsets;
+        if (prev != null && prev[0] == top && prev[1] == right && prev[2] == bottom && prev[3] == left) return;
+        n.header.reportedInsets = new float[] {top, right, bottom, left};
+        event(Protocol.EVENT_SCREEN_INSETS, n.id, 0, top, right, "", bottom, left, 0);
     }
 
     /** Places n's view at frame f in points, rounding its edges to pixels. */
@@ -5313,19 +5363,29 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Animates a modal in as it is first inserted. Android's reduce-motion
-     * setting, no animations, makes either animation instant.
+     * Animates a modal in as it is first inserted and reports EVENT_MODAL_SHOWN
+     * once the entrance finishes (or at once when there is no animation).
+     * Android's reduce-motion setting, no animations, makes either animation instant.
      */
     private void present(Node n) {
         View view = n.view;
+        int id = n.id;
+        Runnable shown = () -> {
+            if (nodes.get(id) == n) {
+                event(Protocol.EVENT_MODAL_SHOWN, id, 0, 0, 0, "");
+            }
+        };
         if (n.modal == Protocol.MODAL_SLIDE) {
             ViewGroup.LayoutParams lp = view.getLayoutParams();
             view.setTranslationY(lp != null && lp.height > 0 ? lp.height : getHeight());
-            view.animate().translationY(0).setDuration(300).setInterpolator(new DecelerateInterpolator());
+            view.animate().translationY(0).setDuration(300).setInterpolator(new DecelerateInterpolator())
+                    .withEndAction(shown);
         } else if (n.modal == Protocol.MODAL_FADE) {
             float opacity = view.getAlpha();
             view.setAlpha(0);
-            view.animate().alpha(opacity).setDuration(200);
+            view.animate().alpha(opacity).setDuration(200).withEndAction(shown);
+        } else {
+            shown.run();
         }
     }
 

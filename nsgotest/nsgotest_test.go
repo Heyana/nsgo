@@ -1721,3 +1721,61 @@ func TestAdvanceRespectsPreferredFrameRate(t *testing.T) {
 		}
 	}
 }
+
+// TestHeadlessScreenInsets checks that the headless backend reports EventScreenInsets for native screens and updates them when the environment's safe area or a host modal's insets change.
+func TestHeadlessScreenInsets(t *testing.T) {
+	var opaque, transparent, hidden, inModal core.Edges
+	env := core.Environment{
+		OS:                core.OSIOS,
+		SafeArea:          core.Edges{Top: 44, Right: 8, Bottom: 34, Left: 8},
+		HeaderHeight:      44,
+		LargeHeaderHeight: 96,
+	}
+	app := Start(t, func(cx *core.Scope) core.Node {
+		watch := func(dst *core.Edges) core.Node {
+			return core.Func(func(cx *core.Scope) core.Node {
+				cx.Effect(func() { *dst = core.Insets(cx) })
+				return core.View{}
+			})
+		}
+		return core.View{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+			core.Stack{Style: core.Style{Height: core.Pt(150)}, Children: []core.Node{
+				core.Screen{Title: "Opaque", TestID: "opaque", Children: []core.Node{watch(&opaque)}},
+			}},
+			core.Stack{Style: core.Style{Height: core.Pt(150)}, Children: []core.Node{
+				core.Screen{Title: "Clear", TestID: "clear", HeaderTransparent: true, Children: []core.Node{watch(&transparent)}},
+			}},
+			core.Stack{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+				core.Screen{TestID: "hidden", HeaderHidden: true, Children: []core.Node{watch(&hidden)}},
+			}},
+			core.Modal{TestID: "sheet", Presentation: core.ModalPageSheet, Animation: core.ModalNone, Children: []core.Node{
+				core.Stack{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+					core.Screen{TestID: "modal-screen", HeaderHidden: true, Children: []core.Node{watch(&inModal)}},
+				}},
+			}},
+		}}
+	}, Size(390, 844), Environment(env))
+
+	if want := (core.Edges{Top: 0, Right: 8, Bottom: 0, Left: 8}); opaque != want {
+		t.Errorf("opaque screen insets = %+v, want %+v", opaque, want)
+	}
+	if want := (core.Edges{Top: 44, Right: 8, Bottom: 0, Left: 8}); transparent != want {
+		t.Errorf("transparent screen insets = %+v, want %+v", transparent, want)
+	}
+	if want := (core.Edges{Top: 0, Right: 8, Bottom: 34, Left: 8}); hidden != want {
+		t.Errorf("bottom hidden-header screen insets = %+v, want %+v", hidden, want)
+	}
+
+	// Updating the sheet's presented size and insets updates the screen inside it.
+	app.PresentModal("id:sheet", driver.Size{Width: 390, Height: 600}, driver.Edges{Bottom: 20})
+	if want := (core.Edges{Bottom: 20}); inModal != want {
+		t.Errorf("modal screen insets = %+v, want %+v", inModal, want)
+	}
+
+	// Changing the environment's safe area updates screens automatically.
+	env.SafeArea.Bottom = 50
+	app.SetEnvironment(env)
+	if want := (core.Edges{Top: 0, Right: 8, Bottom: 50, Left: 8}); hidden != want {
+		t.Errorf("hidden screen insets after safe-area update = %+v, want %+v", hidden, want)
+	}
+}

@@ -181,7 +181,7 @@ func (a *App) closeSurface(id uint32) {
 // surfaceWork reports whether any modeled headless surface needs another frame.
 func (a *App) surfaceWork() bool {
 	needsFrame := func(m *App) bool {
-		return m.anim.Ending() || m.tree.Pacing() || m.tree.PendingTransitionEnds()
+		return m.anim.Ending() || m.tree.Pacing() || m.tree.PendingTransitionEnds() || len(m.presenting) > 0
 	}
 	if needsFrame(a) {
 		return true

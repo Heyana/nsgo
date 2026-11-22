@@ -44,6 +44,8 @@ final class Header {
     private final float density;
     /** The bar's height last reported to the engine, in points. */
     float reported;
+    /** The screen insets last reported to the engine (top, right, bottom, left), in points. */
+    float[] reportedInsets;
     /** Whether the screen asked for a large title and trailing actions beside it, and how far it collapsed, in points. */
     private boolean large, rightWithLargeTitle;
     private View customTitle, trailing;
@@ -57,6 +59,8 @@ final class Header {
     private float measuredBar = BAR;
     /** The header area's height the core set, status bar included, in pixels. */
     private int full;
+    /** The header area's height the core set, in points. */
+    float heightPoints;
 
     /** The colors the core set, 0 for the theme's, and whether the bar is transparent. */
     private int background, titleColor, tint;
@@ -111,6 +115,9 @@ final class Header {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.TOP));
     }
 
+    /** Whether the header is hidden or transparent. */
+    boolean hidden() { return toolbar.getVisibility() != View.VISIBLE; }
+    boolean transparent() { return transparent; }
     /** Colors the bar: the core's colors, else the light or dark theme's, as the app shows. */
     void colors(boolean dark) {
         this.dark = dark;
@@ -151,6 +158,7 @@ final class Header {
         this.transparent = transparent;
         boolean hasTitleView = titleView != 0;
         if (!large) collapsed = 0;
+        heightPoints = height;
         full = Math.round(height * density);
 
         view.setVisibility(hidden ? View.GONE : View.VISIBLE);

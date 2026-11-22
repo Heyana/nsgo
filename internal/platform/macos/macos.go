@@ -2418,6 +2418,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.delete(v, kept)
 			if v.kind == driver.KindModal {
 				s.modalGone(v)
+				s.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: v.id})
 			}
 		case driver.ItemRemove:
 			v.up = nil
@@ -2638,9 +2639,19 @@ func (s *surface) apply(b *driver.MountBatch) {
 func (s *surface) finish() {
 	s.startImages()
 	for _, v := range s.presenting {
-		if s.views[v.id] == v && v.native.Send(selSuperview) != 0 && !s.navigating(v.up) {
-			h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
-			apple.AnimateIn(v.native.Send(selLayer), v.animation, h, s.env.ReduceMotion)
+		if s.views[v.id] == v && v.native.Send(selSuperview) != 0 {
+			id := v.id
+			shown := func() {
+				if int(id) < len(s.views) && s.views[id] == v {
+					s.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: id})
+				}
+			}
+			if s.navigating(v.up) {
+				shown()
+			} else {
+				h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
+				apple.AnimateIn(v.native.Send(selLayer), v.animation, h, s.env.ReduceMotion, shown)
+			}
 		}
 	}
 	clear(s.presenting)

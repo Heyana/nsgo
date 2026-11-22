@@ -387,3 +387,59 @@ func TestTextAndInputsSendLanguageAndKeepAll(t *testing.T) {
 		t.Errorf("single-line Japanese input fd = %s", fds[1])
 	}
 }
+
+func TestModalsReportShownAndDismissed(t *testing.T) {
+	m, h := mounted()
+	// ModalNone reports EventModalShown immediately upon insert.
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 4, View: driver.KindModal},
+		{Kind: driver.ItemModal, ID: 4, Modal: &driver.ModalConfig{Animation: driver.ModalNone}},
+		{Kind: driver.ItemInsert, ID: 4, Parent: 2},
+	}})
+	if len(h.events) != 1 || h.events[0].Kind != driver.EventModalShown || h.events[0].ID != 4 {
+		t.Fatalf("ModalNone events = %+v, want EventModalShown for 4", h.events)
+	}
+	// Deleting reports EventModalDismissed.
+	h.events = nil
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemDelete, ID: 4},
+	}})
+	if len(h.events) != 1 || h.events[0].Kind != driver.EventModalDismissed || h.events[0].ID != 4 {
+		t.Fatalf("delete events = %+v, want EventModalDismissed for 4", h.events)
+	}
+
+	// ModalFade waits for its 200ms animation on tick before reporting EventModalShown.
+	h.events = nil
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 5, View: driver.KindModal},
+		{Kind: driver.ItemModal, ID: 5, Modal: &driver.ModalConfig{Animation: driver.ModalFade}},
+		{Kind: driver.ItemInsert, ID: 5, Parent: 2},
+	}})
+	if len(h.events) != 0 {
+		t.Fatalf("ModalFade fired early: %+v", h.events)
+	}
+	m.tick(0)
+	m.tick(100 * time.Millisecond)
+	if len(h.events) != 0 {
+		t.Fatalf("ModalFade fired at 100ms: %+v", h.events)
+	}
+	m.tick(200 * time.Millisecond)
+	if len(h.events) != 1 || h.events[0].Kind != driver.EventModalShown || h.events[0].ID != 5 {
+		t.Fatalf("ModalFade at 200ms: %+v, want EventModalShown for 5", h.events)
+	}
+
+	// Deleting mid-entrance cancels EventModalShown and emits EventModalDismissed.
+	h.events = nil
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 6, View: driver.KindModal},
+		{Kind: driver.ItemModal, ID: 6, Modal: &driver.ModalConfig{Animation: driver.ModalFade}},
+		{Kind: driver.ItemInsert, ID: 6, Parent: 2},
+	}})
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemDelete, ID: 6},
+	}})
+	m.tick(500 * time.Millisecond)
+	if len(h.events) != 1 || h.events[0].Kind != driver.EventModalDismissed || h.events[0].ID != 6 {
+		t.Fatalf("deleted mid-entrance: %+v, want only EventModalDismissed for 6", h.events)
+	}
+}

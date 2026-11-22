@@ -90,42 +90,23 @@ func (d Dialog) Render(cx *core.Scope) core.Node {
 	}
 	motion := newPopupMotion(cx, st.open, parts.Part{Class: d.StartingClass, Style: d.StartingStyle},
 		parts.Part{Class: d.EndingClass, Style: d.EndingStyle})
-	// The platform presents the modal: OnOpen and OnClose follow once its
-	// animation would have ended, or as soon as a platform reports it
-	// shown or gone. A motion in the tree holds the modal for itself.
-	var stop func() bool
-	report := func(open bool) func() {
+	// OnOpen and OnClose follow the platform's presentation and dismissal reports (EventModalShown, EventModalDismissed); the core reports a removed modal dismissed itself when the platform's report does not come (core.Modal.OnDismissed). A motion in the tree holds the modal until its ending transition finishes.
+	disposed := false
+	cx.Cleanup(func() { disposed = true })
+	report := func(fn func()) func() {
+		if fn == nil {
+			return nil
+		}
 		return func() {
-			if stop != nil {
-				stop()
-				stop = nil
-			}
-			if f := map[bool]func(){true: d.OnOpen, false: d.OnClose}[open]; f != nil {
-				cx.Untrack(f)
+			if !disposed {
+				cx.Untrack(fn)
 			}
 		}
 	}
-	was := false
-	cx.Effect(func() {
-		open := motion.shown.Get()
-		if open == was {
-			return
-		}
-		was = open
-		if stop != nil {
-			stop()
-			stop = nil
-		}
-		if wait := d.Animation.Duration(); wait > 0 {
-			stop = cx.AfterFunc(wait, report(open))
-			return
-		}
-		report(open)()
-	})
 	m := core.Modal{Animation: d.Animation, TransitionShader: d.TransitionShader, Presentation: d.Presentation, NoCloseOnSwipe: d.NoCloseOnSwipe,
 		NoCloseOnEscape: d.NoCloseOnEscape, NoCloseOnBackdropPress: d.NoCloseOnBackdropPress,
 		IOS: d.IOS, Android: d.Android, StatusBar: d.StatusBar, StatusBarFunc: d.StatusBarFunc, Class: d.LayerClass,
-		OnShown: report(true), OnDismissed: report(false),
+		OnShown: report(d.OnOpen), OnDismissed: report(d.OnClose),
 		Style: core.Style{JustifyContent: core.JustifyCenter, AlignItems: core.AlignCenter}.Merge(d.LayerStyle)}
 	return modalLayer(st, motion, m, d)
 }

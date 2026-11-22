@@ -44,6 +44,8 @@ type mounter struct {
 	// lastKey is the last key pressed without a release between, so its
 	// auto-repeats are told apart from a fresh press.
 	lastKey driver.NodeID
+	// pending holds modal lifecycle events queued during a batch and dispatched once the batch's ops are flushed to the render layer.
+	pending []driver.Event
 }
 
 // view is what the render layer keeps for a view.
@@ -69,9 +71,13 @@ type view struct {
 	drawing *driver.Drawing
 	scroll  *driver.ScrollConfig
 	// modal is how the modal this view presents appears, when it is one.
-	modal   *driver.ModalConfig
-	content driver.Size
-	offset  driver.Point
+	modal     *driver.ModalConfig
+	presented bool
+	// screen is a screen's system header config, when it has one, and the last EventScreenInsets sent for it.
+	screen         *driver.ScreenConfig
+	reportedInsets *driver.Edges
+	content        driver.Size
+	offset         driver.Point
 	// applied counts the scrolls the engine asked for, which its event
 	// answers carry.
 	applied uint32
@@ -111,6 +117,16 @@ func (m *mounter) mount(b *driver.MountBatch) {
 	}
 	m.applyAnimated()
 	m.flush()
+	if len(m.pending) > 0 {
+		events := m.pending
+		m.pending = nil
+		if m.s != nil && m.s.engine != nil {
+			for _, ev := range events {
+				m.s.dispatch(ev)
+			}
+		}
+	}
+	m.reportScreenInsets()
 	if m.anim != nil && m.anim.Running() {
 		m.s.RequestFrame()
 	}
@@ -120,6 +136,57 @@ func (m *mounter) flush() {
 	if !m.o.empty() {
 		m.s.submit(m.o.bytes())
 		m.o.reset()
+	}
+}
+
+// reportScreenInsets reports EventScreenInsets for each visible screen whose effective insets changed.
+func (m *mounter) reportScreenInsets() {
+	if m.s == nil || m.s.engine == nil {
+		return
+	}
+	root := m.views[m.root]
+	if root == nil {
+		return
+	}
+	rw, rh := root.frame.Size.Width, root.frame.Size.Height
+	if rw <= 0 || rh <= 0 {
+		rw, rh = m.s.size0.Width, m.s.size0.Height
+	}
+	if rw <= 0 || rh <= 0 {
+		return
+	}
+	safe := m.s.env.SafeArea
+	for _, v := range m.views {
+		if v == nil || v.screen == nil || v.style.Hidden || v.frame.Size.Width <= 0 || v.frame.Size.Height <= 0 {
+			continue
+		}
+		var ox, oy driver.Points
+		for p := v; p != nil && p.id != m.root; p = m.views[p.parent] {
+			ox += p.frame.Origin.X
+			oy += p.frame.Origin.Y
+			if p.parent == 0 {
+				break
+			}
+		}
+		in := driver.Edges{
+			Top:    max(0, safe.Top-oy),
+			Left:   max(0, safe.Left-ox),
+			Right:  max(0, safe.Right-max(0, rw-(ox+v.frame.Size.Width))),
+			Bottom: max(0, safe.Bottom-max(0, rh-(oy+v.frame.Size.Height))),
+		}
+		if !v.screen.HeaderHidden {
+			if v.screen.HeaderTransparent {
+				in.Top = v.screen.HeaderHeight
+			} else {
+				in.Top = 0
+			}
+		}
+		if v.reportedInsets != nil && *v.reportedInsets == in {
+			continue
+		}
+		cp := in
+		v.reportedInsets = &cp
+		m.s.dispatch(driver.Event{Kind: driver.EventScreenInsets, ID: v.id, Insets: in})
 	}
 }
 
@@ -171,16 +238,27 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 			v.parent = it.Parent
 			m.order++
 			v.order = m.order
+			if v.kind == driver.KindModal && !v.presented {
+				v.presented = true
+				m.pending = append(m.pending, driver.Event{Kind: driver.EventModalShown, ID: v.id})
+			}
 		}
 		m.o.op("i", it.ID).num(float64(it.Parent)).num(float64(it.Before))
 	case driver.ItemRemove:
 		m.o.op("r", it.ID)
 	case driver.ItemDelete:
+		isModal := false
+		if v := m.views[it.ID]; v != nil && v.kind == driver.KindModal {
+			isModal = true
+		}
 		if m.anim != nil {
 			m.anim.Forget(it.ID)
 		}
 		delete(m.views, it.ID)
 		m.o.op("d", it.ID)
+		if isModal {
+			m.pending = append(m.pending, driver.Event{Kind: driver.EventModalDismissed, ID: it.ID})
+		}
 	case driver.ItemAnimation:
 		if m.anim != nil {
 			m.anim.Apply(it.Animation)
@@ -388,6 +466,10 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		m.o.op("wcmd", it.ID).num(float64(it.WebCommand)).str(it.Value)
 	case driver.ItemScreen:
 		if c := it.Screen; c != nil {
+			if v := m.views[it.ID]; v != nil {
+				cp := *c
+				v.screen = &cp
+			}
 			m.o.op("scr", it.ID).str(c.Title).boolean(c.HeaderHidden).
 				boolean(c.CanGoBack && !c.BackHidden).str(c.BackTitle).
 				num(float64(c.HeaderHeight)).boolean(c.HeaderTransparent).

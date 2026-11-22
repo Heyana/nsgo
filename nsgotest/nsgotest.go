@@ -574,6 +574,12 @@ type App struct {
 	noGPU     bool
 	gpuViews  map[driver.NodeID]*gpuViewState
 	gpuFrames []GPUFrameRecord
+	// presenting holds modals currently playing their entrance animation before EventModalShown is dispatched.
+	presenting map[driver.NodeID]*modalWait
+}
+
+type modalWait struct {
+	stop func() bool
 }
 
 // Start runs app, a root view, and settles it; the test's cleanup disposes it. Under `nsgo test -target` it opens the app on that platform instead, in the main window on macOS, as there nsgo.Run shows a root view. With a macOS Environment app shows in the main window, as nsgo.Run shows a root view there, which steps act on; with any other, Windows and Linux included, it fills the app's one surface, as nsgo.Run's does. An app run with its function is tested with StartApp.
@@ -1164,6 +1170,12 @@ func (a *App) SetEnvironment(env driver.Environment) {
 	} else {
 		a.env = &env
 		a.tree.SetEnvironment(env)
+	}
+	a.reportScreenInsets()
+	for _, s := range a.surfaceModels {
+		if s.model != a {
+			s.model.reportScreenInsets()
+		}
 	}
 	a.Settle()
 }

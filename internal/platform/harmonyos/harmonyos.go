@@ -226,11 +226,17 @@ func (s *surface) changed() {
 	if !env.Equal(s.env) {
 		s.env = env
 		s.engine.SetEnvironment(env)
+		if s.m != nil {
+			s.m.reportScreenInsets()
+		}
 	}
 	size := s.size()
 	if size != s.size0 {
 		s.size0 = size
 		s.engine.Resize(size, driver.Geometry{})
+		if s.m != nil {
+			s.m.reportScreenInsets()
+		}
 	}
 }
 

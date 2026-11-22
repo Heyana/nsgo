@@ -138,10 +138,21 @@ type mounter struct {
 	touches touches
 	// repaint are canvases whose drawing waits for an image.
 	repaint map[driver.NodeID]bool
+	// presenting holds modals currently playing their entrance keyframe animation until tick reaches their end and reports EventModalShown.
+	presenting map[driver.NodeID]modalPresent
+	now        time.Duration
+	hasNow     bool
+}
+
+type modalPresent struct {
+	view    *view
+	dur     time.Duration
+	started bool
+	end     time.Duration
 }
 
 func newMounter(h host) *mounter {
-	m := &mounter{h: h, repaint: map[driver.NodeID]bool{}}
+	m := &mounter{h: h, repaint: map[driver.NodeID]bool{}, presenting: map[driver.NodeID]modalPresent{}}
 	m.animator = driver.NewAnimator(h.dispatch)
 	return m
 }
@@ -290,6 +301,8 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		if v.pixelImage != nil {
 			m.h.imagePixels(v.id, nil)
 		}
+		isModal := v.kind == driver.KindModal
+		delete(m.presenting, v.id)
 		m.detach(v)
 		for _, c := range v.children {
 			c.parent = nil
@@ -302,6 +315,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		delete(m.repaint, v.id)
 		m.touches.forget(v)
 		m.o.op("d", v.id)
+		if isModal {
+			m.h.dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: v.id})
+		}
 	case driver.ItemFrame:
 		resized := v.frame.Size != it.Frame.Size
 		v.frame, v.framed = it.Frame, true
@@ -734,8 +750,7 @@ func (m *mounter) sendInput(v *view, c *driver.InputConfig) {
 	m.o.op("fd", v.id).raw(j.bytes())
 }
 
-// present animates a modal in as it is first inserted; reduced motion
-// fades what would slide.
+// present animates a modal in as it is first inserted and schedules EventModalShown for when the entrance finishes (or at once when none runs); reduced motion fades what would slide.
 func (m *mounter) present(v *view) {
 	anim := v.modal
 	if anim == driver.ModalSlide && m.reduce {
@@ -748,7 +763,16 @@ func (m *mounter) present(v *view) {
 	case driver.ModalFade:
 		m.o.op("ka", v.id).raw([]byte(`{"d":` + ms(driver.ModalFade.Duration()) +
 			`,"n":1,"f":[{"offset":0,"opacity":0,"ease":"ease-out"},{"offset":1,"opacity":1}]}`))
+	default:
+		m.h.dispatch(driver.Event{Kind: driver.EventModalShown, ID: v.id})
+		return
 	}
+	p := modalPresent{view: v, dur: anim.Duration()}
+	if m.hasNow {
+		p.started, p.end = true, m.now+p.dur
+	}
+	m.presenting[v.id] = p
+	m.startTicking()
 }
 
 // appear fades a view the batch inserts in, as its layout animation's
@@ -889,16 +913,30 @@ func (m *mounter) requestFrame() {
 // tick runs one frame at now, a monotonic time.
 func (m *mounter) tick(now time.Duration) {
 	m.ticking = false
+	m.now, m.hasNow = now, true
 	m.animator.Step(now)
 	m.applyAnimated()
 	m.flush()
+	for id, p := range m.presenting {
+		if !p.started {
+			p.started, p.end = true, now+p.dur
+			m.presenting[id] = p
+			continue
+		}
+		if now >= p.end {
+			delete(m.presenting, id)
+			if m.view(id) == p.view {
+				m.h.dispatch(driver.Event{Kind: driver.EventModalShown, ID: id})
+			}
+		}
+	}
 	if m.frameWanted {
 		m.frameWanted = false
 		if m.frame != nil {
 			m.frame()
 		}
 	}
-	if m.animator.Running() || m.frameWanted {
+	if m.animator.Running() || m.frameWanted || len(m.presenting) > 0 {
 		m.startTicking()
 	}
 }

@@ -360,14 +360,21 @@ func (a *App) HeaderBack(selector string) {
 // ("swipe").
 func (a *App) SwipeClose(selector string) {
 	a.t.Helper()
-	a.dispatch(driver.Event{Kind: driver.EventRequestClose, ID: a.modal(selector).ID, Text: "swipe", Finished: true})
+	m := a.modal(selector)
+	a.cancelModalPresent(m.ID)
+	m.modalDismissed = true
+	a.dispatch(driver.Event{Kind: driver.EventRequestClose, ID: m.ID, Text: "swipe", Finished: true})
+	a.dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: m.ID})
 }
 
 // PresentModal reports that the platform presents the modal around what
 // selector matches at size, with insets covered, as an iOS sheet does.
 func (a *App) PresentModal(selector string, size driver.Size, insets driver.Edges) {
 	a.t.Helper()
-	a.dispatch(driver.Event{Kind: driver.EventModalSize, ID: a.modal(selector).ID, Size: size, Insets: insets})
+	m := a.modal(selector)
+	cp := insets
+	m.modalInsets = &cp
+	a.dispatch(driver.Event{Kind: driver.EventModalSize, ID: m.ID, Size: size, Insets: insets})
 }
 
 // modal returns the modal selector matches or holds what it matches.

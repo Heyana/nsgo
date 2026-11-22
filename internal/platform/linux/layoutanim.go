@@ -20,10 +20,11 @@ type layoutAnim struct {
 	from      driver.Bounds
 	shown     driver.Bounds
 
-	fade      *driver.LayoutTransition // nil once the view is in
-	fadeStart time.Time
-	out       bool    // leaving: the view is dying
-	shownPart float64 // how much of the view shows, 0 to 1
+	fade       *driver.LayoutTransition // nil once the view is in
+	fadeStart  time.Time
+	out        bool    // leaving: the view is dying
+	presenting bool    // modal entrance: reports EventModalShown when finished
+	shownPart  float64 // how much of the view shows, 0 to 1
 }
 
 // layoutBatch is what applying a commit with a LayoutAnimation keeps.
@@ -75,10 +76,13 @@ var (
 	modalFade  = driver.LayoutTransition{Curve: driver.LayoutEaseOut, Property: driver.LayoutOpacity, Duration: 200 * time.Millisecond}
 )
 
-// present brings modal v in.
+// present brings modal v in and reports EventModalShown once its entrance finishes (or immediately when there is no animation).
 func (w *window) present(v *view) {
 	anim := v.modal
 	if w.navigating(w.view(w.root)) {
+		if w.engine != nil {
+			w.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: v.id})
+		}
 		return // the dialog's shader draws its coming
 	}
 	if anim == driver.ModalSlide && w.env.ReduceMotion {
@@ -90,11 +94,14 @@ func (w *window) present(v *view) {
 		l := w.layoutOf(v)
 		from := v.frame
 		from.Origin.Y += max(v.frame.Size.Height, 1)
-		l.move, l.moveStart, l.from, l.shown = &modalSlide, now, from, from
+		l.move, l.moveStart, l.from, l.shown, l.presenting = &modalSlide, now, from, from, true
 	case driver.ModalFade:
 		l := w.layoutOf(v)
-		l.fade, l.fadeStart, l.out, l.shownPart = &modalFade, now, false, 0
+		l.fade, l.fadeStart, l.out, l.shownPart, l.presenting = &modalFade, now, false, 0, true
 	default:
+		if w.engine != nil {
+			w.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: v.id})
+		}
 		return
 	}
 	w.moved(v)
@@ -292,7 +299,11 @@ func (w *window) stepLayout(now time.Time) bool {
 		}
 		w.moved(v)
 		if l.move == nil && l.fade == nil {
+			presenting := l.presenting
 			v.layout = nil
+			if presenting && !v.deleted && w.view(v.id) == v && w.engine != nil {
+				w.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: v.id})
+			}
 			continue
 		}
 		live = append(live, v)

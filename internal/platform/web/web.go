@@ -273,9 +273,11 @@ type view struct {
 	web         *webFrame       // a web view's
 	video       *video          // a video's
 	modal       driver.ModalAnimation
-	presented   bool // a modal was inserted once
-	hover       bool // pointerenter and pointerleave are listened to
-	moves       bool // pointermove is
+	presented   bool     // a modal was inserted once
+	presentAnim js.Value // running entrance Web Animation, if any
+	cancelAnim  func()   // cancels presentAnim and releases its callbacks
+	hover       bool     // pointerenter and pointerleave are listened to
+	moves       bool     // pointermove is
 	// canvasRatio is the pixels per point of the last replay, including scroll zoom.
 	canvasRatio float64
 	// canvasExact is whether the canvas is drawn with image-rendering: pixelated, which it is while its bitmap matches the screen pixels a zoomed scroll view shows it at.
@@ -1656,7 +1658,12 @@ func (s *surface) mount(b *driver.MountBatch) {
 			}
 			s.dom.forget(it.ID)
 			if v.kind == driver.KindModal {
+				if v.cancelAnim != nil {
+					v.cancelAnim()
+				}
 				defer s.uncover(v) // once the batch is in
+				id := v.id
+				defer s.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: id})
 			}
 			if v.track.Truthy() {
 				v.track.Call("remove")
@@ -2118,29 +2125,73 @@ func (v *view) unborder(b driver.Edges) {
 	}
 }
 
-// present animates a modal in as it is first inserted; reduced motion
-// fades what would slide.
+// present animates a modal in as it is first inserted and reports EventModalShown once its entrance finishes (or at once without one); reduced motion fades what would slide.
 func (s *surface) present(v *view) {
+	id := v.id
+	shown := func() {
+		if s.view(id) == v {
+			s.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: id})
+		}
+	}
 	anim := v.modal
 	if s.navigating(s.root) {
+		shown()
 		return // the dialog's shader draws its coming
 	}
 	if anim == driver.ModalSlide && s.env.ReduceMotion {
 		anim = driver.ModalFade
 	}
+	var wa js.Value
 	switch anim {
 	case driver.ModalSlide:
-		animate(v.el, map[string]any{"transform": "translateY(100%)"}, int(driver.ModalSlide.Duration().Milliseconds()), "cubic-bezier(0.2, 0.8, 0.2, 1)")
+		wa = animate(v.el, map[string]any{"transform": "translateY(100%)"}, int(driver.ModalSlide.Duration().Milliseconds()), "cubic-bezier(0.2, 0.8, 0.2, 1)")
 	case driver.ModalFade:
-		animate(v.el, map[string]any{"opacity": 0}, int(driver.ModalFade.Duration().Milliseconds()), "ease-out")
+		wa = animate(v.el, map[string]any{"opacity": 0}, int(driver.ModalFade.Duration().Milliseconds()), "ease-out")
+	default:
+		shown()
+		return
+	}
+	if !wa.Truthy() {
+		shown()
+		return
+	}
+	var finishFn, cancelFn js.Func
+	released := false
+	release := func() {
+		if released {
+			return
+		}
+		released = true
+		v.presentAnim = js.Undefined()
+		v.cancelAnim = nil
+		finishFn.Release()
+		cancelFn.Release()
+	}
+	finishFn = js.FuncOf(func(js.Value, []js.Value) any {
+		release()
+		shown()
+		return nil
+	})
+	cancelFn = js.FuncOf(func(js.Value, []js.Value) any {
+		release()
+		return nil
+	})
+	wa.Set("onfinish", finishFn)
+	wa.Set("oncancel", cancelFn)
+	v.presentAnim = wa
+	v.cancelAnim = func() {
+		a := v.presentAnim
+		release()
+		if a.Truthy() {
+			a.Call("cancel")
+		}
 	}
 }
 
-// animate runs el from the keyframe from to its own style. The animation
-// leaves nothing behind, so the style items set stays in charge.
-func animate(el js.Value, from map[string]any, ms int, easing string) {
+// animate runs el from the keyframe from to its own style and returns its Animation. The animation leaves nothing behind, so the style items set stays in charge.
+func animate(el js.Value, from map[string]any, ms int, easing string) js.Value {
 	from["offset"] = 0
-	el.Call("animate", []any{from}, map[string]any{"duration": ms, "easing": easing})
+	return el.Call("animate", []any{from}, map[string]any{"duration": ms, "easing": easing})
 }
 
 func (s *surface) setText(v *view, t *driver.TextContent) {

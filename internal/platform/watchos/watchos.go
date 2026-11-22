@@ -42,12 +42,13 @@ type Options struct {
 
 // view is the Go side of one node of the host's tree.
 type view struct {
-	s        *surface
-	id       driver.NodeID
-	kind     driver.ViewKind
-	parent   *view
-	children []*view
-	deleted  bool
+	s         *surface
+	id        driver.NodeID
+	kind      driver.ViewKind
+	parent    *view
+	children  []*view
+	deleted   bool
+	presented bool
 
 	frame    driver.Bounds
 	style    driver.ViewStyle
@@ -523,7 +524,12 @@ func (s *surface) apply(b *driver.MountBatch) {
 		}
 		switch it.Kind {
 		case driver.ItemDelete:
+			isModal := v.kind == driver.KindModal
+			id := v.id
 			s.delete(v)
+			if isModal {
+				s.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: id})
+			}
 		case driver.ItemRemove:
 			s.detach(v)
 			s.w.op(opRemove, v.id)
@@ -548,6 +554,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 			v.parent = p
 			s.recull = true
 			s.w.op(opInsert, v.id, p.id, it.Before)
+			if v.kind == driver.KindModal && !v.presented {
+				v.presented = true
+				s.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: v.id})
+			}
 			if lb != nil && lb.created[v.id] {
 				s.appear(v, lb)
 			}

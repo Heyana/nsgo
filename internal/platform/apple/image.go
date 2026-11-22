@@ -18,6 +18,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/imagedecode"
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
+	"github.com/nsgo-dev/nsgo/internal/platform/objcblock"
 )
 
 var (
@@ -852,9 +853,8 @@ func frameAnimation(d *decoded) objc.ID {
 	return anim
 }
 
-// AnimateIn presents a modal's layer as a asks: sliding up from distance
-// points below, or fading in. Reduced motion fades instead of sliding.
-func AnimateIn(layer objc.ID, a driver.ModalAnimation, distance float64, reduceMotion bool) {
+// AnimateIn presents a modal's layer as a asks: sliding up from distance points below, or fading in, and calls done once the entrance finishes (at once when there is no animation). Reduced motion fades instead of sliding.
+func AnimateIn(layer objc.ID, a driver.ModalAnimation, distance float64, reduceMotion bool, done func()) {
 	if a == driver.ModalSlide && reduceMotion {
 		a = driver.ModalFade
 	}
@@ -873,6 +873,19 @@ func AnimateIn(layer objc.ID, a driver.ModalAnimation, distance float64, reduceM
 		anim.Send(sel("setFromValue:"), number.Send(selNumberWithDouble, 0.0))
 		anim.Send(sel("setDuration:"), 0.2)
 	default:
+		if done != nil {
+			done()
+		}
+		return
+	}
+	if done != nil {
+		tx := objc.ID(Class("CATransaction"))
+		tx.Send(sel("begin"))
+		block := objcblock.New(func(objc.Block) { done() })
+		tx.Send(sel("setCompletionBlock:"), block)
+		layer.Send(selAddAnimation, anim, NSString("nsgoPresent"))
+		tx.Send(sel("commit"))
+		block.Release()
 		return
 	}
 	layer.Send(selAddAnimation, anim, NSString("nsgoPresent"))

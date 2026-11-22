@@ -241,7 +241,7 @@ func (s *surface) match(v, old *view, lb *layoutBatch) {
 // shrinks away, unless a view the batch deleted around it does, and its
 // classes until it is gone. It reports whether it kept it.
 func (s *surface) vanish(v *view, lb *layoutBatch) bool {
-	if lb == nil || lb.anim.Delete == nil || !v.el.Get("parentElement").Truthy() {
+	if lb == nil || lb.anim.Delete == nil || v.kind == driver.KindModal || !v.el.Get("parentElement").Truthy() {
 		return false
 	}
 	if g := v.el.Call("closest", "[data-nsgo-ghost]"); g.Truthy() {

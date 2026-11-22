@@ -3,6 +3,7 @@ package core
 import (
 	"math"
 	"slices"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -20,10 +21,12 @@ type hoistNode struct {
 	fixed  bool
 	placed OverlayPosition
 	// reported is a modal's size and insets when the platform presents
-	// it at a size of its own (EventModalSize); dismissed says the
-	// platform closed it, as when a sheet is swiped away.
-	reported  *Signal[*modalSize]
-	dismissed bool
+	// it at a size of its own (EventModalSize); dismissed says the platform closed it, as when a sheet is swiped away; shown and dismissReported keep OnShown and OnDismissed from firing twice; owners is the modal's scope chain at mount, since Scope disposal clears parent links before EventModalDismissed arrives.
+	reported        *Signal[*modalSize]
+	dismissed       bool
+	shown           bool
+	dismissReported bool
+	owners          []*Scope
 	// anchorBounds is an overlay's AnchorBounds, in the surface.
 	anchorBounds *Bounds
 	// covering says an overlay's CoverShown holds, and covered is where
@@ -146,6 +149,62 @@ func (t *Tree) followAnchoredOverlays() {
 type modalSize struct {
 	size   Size
 	insets Edges
+}
+
+// dismissingModal holds a deleted modal's OnDismissed handler until the platform reports EventModalDismissed, or until dismissFallback gives up waiting for it; stop cancels that fallback.
+type dismissingModal struct {
+	owners []*Scope
+	fn     func()
+	stop   func() bool
+}
+
+// dismissFallback is how long past its own animation a deleted modal waits for EventModalDismissed before the core releases it itself. The platform's report stays the signal, but a runtime that never sends it, such as an Android app still on a runtime built before the report existed or a host embedding an older one, must not keep the modal's node ID and owners forever or leave OnDismissed, and with it base.Dialog's OnClose, uncalled.
+const dismissFallback = time.Second
+
+// awaitDismissal holds deleted modal n's node ID and OnDismissed until the platform reports it gone (finishDismissal), or until its animation and dismissFallback have passed without a report.
+func (t *Tree) awaitDismissal(id NodeID, n *node) {
+	if t.dismissing == nil {
+		t.dismissing = map[NodeID]dismissingModal{}
+	}
+	d := dismissingModal{owners: n.hoist.owners, fn: n.hoist.modal.OnDismissed}
+	wait := n.hoist.modal.Animation.Duration() + dismissFallback
+	// The tree's root owns the timer, whatever computation is committing.
+	t.within(t.root, func() {
+		d.stop = t.root.AfterFunc(wait, func() {
+			if _, ok := t.dismissing[id]; !ok {
+				return
+			}
+			// The report may still come, late: Dispatch drops it once rather than let it reach whatever takes the ID next.
+			if t.lateDismissals == nil {
+				t.lateDismissals = map[NodeID]bool{}
+			}
+			t.lateDismissals[id] = true
+			t.finishDismissal(id)
+		})
+	})
+	t.dismissing[id] = d
+}
+
+// finishDismissal frees deleted modal id's node ID and runs its OnDismissed within the nearest of its owners still alive, once.
+func (t *Tree) finishDismissal(id NodeID) {
+	d, ok := t.dismissing[id]
+	if !ok {
+		return
+	}
+	delete(t.dismissing, id)
+	if d.stop != nil {
+		d.stop()
+	}
+	t.free = append(t.free, id)
+	if d.fn == nil {
+		return
+	}
+	for _, s := range d.owners {
+		if !s.disposed {
+			t.within(s, d.fn)
+			return
+		}
+	}
 }
 
 // modalHost returns the root view or the nearest modal around parent.
@@ -277,7 +336,11 @@ func (t *Tree) mountModal(cx *Scope, parent *node, m Modal) {
 		return
 	}
 	n := t.newNode(driver.KindModal, parent, cx)
-	t.hoist(n, &hoistNode{modal: &m, reported: NewSignal[*modalSize](cx, nil)})
+	var owners []*Scope
+	for s := n.owner; s != nil; s = s.parent {
+		owners = append(owners, s)
+	}
+	t.hoist(n, &hoistNode{modal: &m, reported: NewSignal[*modalSize](cx, nil), owners: owners})
 	// What it covers leaves the keymap (keyActive).
 	t.keysChanged = true
 	t.setClasses(n, m.Class)
@@ -388,19 +451,24 @@ func (t *Tree) modalInsets(n *node) Edges {
 	return t.modalArea(n, env.safe.GetUntracked(), env.os.GetUntracked()).insets
 }
 
-// modalEvent handles what the platform reports of modal n: the size it
-// presents it at, or a request to close it.
+// modalEvent handles what the platform reports of modal n: the size it presents it at, completion of presentation or dismissal, or a request to close it.
 func (t *Tree) modalEvent(n *node, ev driver.Event) {
 	h := n.hoist
-	switch f := h.modal.OnShown; ev.Kind {
+	switch ev.Kind {
 	case driver.EventModalShown:
-		if f != nil {
-			t.within(n.owner, f)
+		if !h.shown && !h.dismissReported {
+			h.shown = true
+			if f := h.modal.OnShown; f != nil {
+				t.within(n.owner, f)
+			}
 		}
 		return
 	case driver.EventModalDismissed:
-		if f := h.modal.OnDismissed; f != nil {
-			t.within(n.owner, f)
+		if !h.dismissReported {
+			h.dismissReported = true
+			if f := h.modal.OnDismissed; f != nil {
+				t.within(n.owner, f)
+			}
 		}
 		return
 	}

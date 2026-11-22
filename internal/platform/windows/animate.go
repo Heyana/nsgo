@@ -172,7 +172,7 @@ func (w *window) leave(v *view, lb *layoutBatch) bool {
 		w.retire(v)
 		return true
 	}
-	if lb == nil || lb.anim.Delete == nil || p == nil || p.deleted || !w.shown(v) || v.frame.Size == (driver.Size{}) {
+	if lb == nil || lb.anim.Delete == nil || v.kind == driver.KindModal || p == nil || p.deleted || !w.shown(v) || v.frame.Size == (driver.Size{}) {
 		return false
 	}
 	from := 1.0

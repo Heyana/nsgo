@@ -77,9 +77,10 @@ type view struct {
 	input *input       // an input's editor
 	inset driver.Bounds
 
-	image     *apple.ImageView
-	modal     driver.ModalConfig // a modal's
-	presented bool               // whether a modal was inserted yet
+	image          *apple.ImageView
+	modal          driver.ModalConfig // a modal's
+	presented      bool               // whether a modal was inserted yet
+	modalDismissed bool               // whether EventModalDismissed was reported
 	// focusBefore is what had the focus as a modal came (focus.go).
 	focusBefore *view
 	sheet       *sheet  // a modal presented as a sheet
@@ -1451,6 +1452,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if v.bar != nil {
 				s.touchStack(s.stackOf(v))
 				s.touchStack(s.views[it.Parent])
+				s.reportScreenInsets(v)
 			}
 			parent := s.views[it.Parent].children()
 			if it.Before == 0 {
@@ -1706,9 +1708,19 @@ func (s *surface) finish() {
 		s.viewController().Send(selBecomeFirst)
 	}
 	for _, v := range s.presenting {
-		if s.views[v.id] == v && v.native.Send(selSuperview) != 0 && !s.navigating(s.views[s.root]) {
-			h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
-			apple.AnimateIn(v.native.Send(selLayer), v.modal.Animation, h, s.env.ReduceMotion)
+		if s.views[v.id] == v && v.native.Send(selSuperview) != 0 {
+			id := v.id
+			shown := func() {
+				if int(id) < len(s.views) && s.views[id] == v && !v.modalDismissed {
+					s.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: id})
+				}
+			}
+			if s.navigating(s.views[s.root]) {
+				shown()
+			} else {
+				h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
+				apple.AnimateIn(v.native.Send(selLayer), v.modal.Animation, h, s.env.ReduceMotion, shown)
+			}
 		}
 	}
 	clear(s.presenting)
@@ -1792,6 +1804,9 @@ func (s *surface) delete(v *view, kept bool) {
 	if v.sheet != nil {
 		s.dismissSheet(v)
 		defer s.updateOrientations()
+	} else if v.kind == driver.KindModal && !v.modalDismissed {
+		v.modalDismissed = true
+		s.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: v.id})
 	}
 	if sl := s.slides[v]; sl != nil {
 		s.endSlide(sl)
