@@ -110,8 +110,7 @@ func (t *testSurface) onLoop(fn func()) {
 	runOnThread(postLoopCall, 10*time.Second, "panic on the GTK thread", fn)
 }
 
-// scripted runs fn on the GTK thread inside a scripted input scope so test
-// input isolation allows the callbacks fn invokes.
+// scripted runs fn on the GTK thread inside a scripted input scope so test input isolation allows the callbacks fn invokes.
 func (t *testSurface) scripted(fn func()) {
 	t.onLoop(func() {
 		t.w.inputGate.enter()

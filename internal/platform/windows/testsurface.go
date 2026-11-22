@@ -107,8 +107,7 @@ func (t *testSurface) RequestClose() error {
 	return nil
 }
 
-// scripted runs fn on the window's thread inside a scripted input scope so
-// input isolation accepts the messages fn dispatches.
+// scripted runs fn on the window's thread inside a scripted input scope so input isolation accepts the messages fn dispatches.
 func (t *testSurface) scripted(fn func()) {
 	t.onMain(func() {
 		t.w.inputGate.enter()

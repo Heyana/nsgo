@@ -1174,8 +1174,7 @@ func (v *View) Close() {
 	}
 }
 
-// ignoreTestInput reports whether message is physical user input that a test
-// host window ignores outside a scripted testSurface step.
+// ignoreTestInput reports whether message is physical user input that a test host window ignores outside a scripted testSurface step.
 func (w *window) ignoreTestInput(message uint32) bool {
 	return !w.inputGate.allow(w.opts.test != nil, message)
 }

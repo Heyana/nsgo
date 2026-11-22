@@ -5,9 +5,7 @@ import (
 	"testing"
 )
 
-// TestInputIsolation runs the Android Java runtime's TestInputGate checks on
-// the host JVM, verifying that test mode drops physical input outside scripted
-// TestAgent steps while normal / live-automation mode accepts all input.
+// TestInputIsolation runs the Android Java runtime's TestInputGate checks on the host JVM, verifying that test mode drops physical input outside scripted TestAgent steps while normal / live-automation mode accepts all input.
 func TestInputIsolation(t *testing.T) {
 	javac, java := androidJDK(t)
 	classes := t.TempDir()

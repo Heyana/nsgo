@@ -1,11 +1,6 @@
 package windows
 
-// testInputGate isolates a Windows test host's windows from physical user
-// input: while a window is opened by nsgotest (w.opts.test != nil), physical
-// mouse, pointer, touch, wheel, keyboard, gesture and context-menu messages
-// are ignored unless they are dispatched inside a scripted testSurface step.
-// Ordinary apps and live automation leave w.opts.test nil and accept all
-// input. Accessed only on the window's thread.
+// testInputGate isolates a Windows test host's windows from physical user input: while a window is opened by nsgotest (w.opts.test != nil), physical mouse, pointer, touch, wheel, keyboard, gesture and context-menu messages are ignored unless they are dispatched inside a scripted testSurface step. Ordinary apps and live automation leave w.opts.test nil and accept all input. Accessed only on the window's thread.
 type testInputGate struct {
 	depth int
 }
@@ -20,8 +15,7 @@ func (g *testInputGate) leave() {
 	}
 }
 
-// allow reports whether message may be processed on a window whose test-mode
-// isolation is isolated.
+// allow reports whether message may be processed on a window whose test-mode isolation is isolated.
 func (g *testInputGate) allow(isolated bool, message uint32) bool {
 	if !isolated || g.depth > 0 {
 		return true
@@ -29,9 +23,7 @@ func (g *testInputGate) allow(isolated bool, message uint32) bool {
 	return !isPhysicalInputMessage(message)
 }
 
-// isPhysicalInputMessage reports whether a Win32 message delivers physical
-// pointer, mouse, touch, wheel, keyboard, gesture or context-menu input rather
-// than window lifecycle, paint, focus, menu command or IME state messages.
+// isPhysicalInputMessage reports whether a Win32 message delivers physical pointer, mouse, touch, wheel, keyboard, gesture or context-menu input rather than window lifecycle, paint, focus, menu command or IME state messages.
 func isPhysicalInputMessage(message uint32) bool {
 	switch {
 	case message == 0x0021: // WM_MOUSEACTIVATE

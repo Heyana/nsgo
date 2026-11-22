@@ -1,11 +1,6 @@
 package linux
 
-// testInputGate isolates a Linux test host's GTK windows from physical user
-// input: while a window is opened by nsgotest (w.opts.test != nil), physical
-// pointer, touch, scroll, keyboard and gesture callbacks are ignored unless
-// they run inside a scripted testSurface step. Ordinary apps and live
-// automation leave w.opts.test nil and accept all input. Accessed only on the
-// GTK main thread.
+// testInputGate isolates a Linux test host's GTK windows from physical user input: while a window is opened by nsgotest (w.opts.test != nil), physical pointer, touch, scroll, keyboard and gesture callbacks are ignored unless they run inside a scripted testSurface step. Ordinary apps and live automation leave w.opts.test nil and accept all input. Accessed only on the GTK main thread.
 type testInputGate struct {
 	depth int
 }
@@ -20,14 +15,12 @@ func (g *testInputGate) leave() {
 	}
 }
 
-// allow reports whether a GTK input callback may run on a window whose
-// test-mode isolation is isolated.
+// allow reports whether a GTK input callback may run on a window whose test-mode isolation is isolated.
 func (g *testInputGate) allow(isolated bool) bool {
 	return !isolated || g.depth > 0
 }
 
-// allowGDKEvent reports whether a GDK event of type typ may pass through the
-// capture-phase shield on a window whose test-mode isolation is isolated.
+// allowGDKEvent reports whether a GDK event of type typ may pass through the capture-phase shield on a window whose test-mode isolation is isolated.
 func (g *testInputGate) allowGDKEvent(isolated bool, typ int32) bool {
 	if !isolated || g.depth > 0 {
 		return true
@@ -35,9 +28,7 @@ func (g *testInputGate) allowGDKEvent(isolated bool, typ int32) bool {
 	return !isPhysicalGDKEvent(typ)
 }
 
-// isPhysicalGDKEvent reports whether a GDK 4 GdkEventType delivers physical
-// pointer, touch, scroll, keyboard, touchpad or tablet-pad input rather than
-// window lifecycle, focus or drag-and-drop state events.
+// isPhysicalGDKEvent reports whether a GDK 4 GdkEventType delivers physical pointer, touch, scroll, keyboard, touchpad or tablet-pad input rather than window lifecycle, focus or drag-and-drop state events.
 func isPhysicalGDKEvent(typ int32) bool {
 	switch {
 	case typ >= 1 && typ <= 7: // GDK_MOTION_NOTIFY..GDK_LEAVE_NOTIFY

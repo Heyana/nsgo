@@ -1,7 +1,6 @@
 package ios
 
-// UIEventType values delivered to UIWindow.sendEvent: that carry physical
-// user input on iOS, iPadOS and tvOS.
+// UIEventType values delivered to UIWindow.sendEvent: that carry physical user input on iOS, iPadOS and tvOS.
 const (
 	uiEventTouches       = 0
 	uiEventMotion        = 1
@@ -15,9 +14,7 @@ const (
 	testSenderID = 0x4e53_474f // "NSGO"
 )
 
-// isPhysicalUIEventType reports whether kind is a UIKit UIEventType carrying
-// touch, pointer, hover, scroll, transform, hardware-key/remote or motion
-// input.
+// isPhysicalUIEventType reports whether kind is a UIKit UIEventType carrying touch, pointer, hover, scroll, transform, hardware-key/remote or motion input.
 func isPhysicalUIEventType(kind int) bool {
 	switch kind {
 	case uiEventTouches, uiEventMotion, uiEventRemoteControl, uiEventPresses,
@@ -28,12 +25,7 @@ func isPhysicalUIEventType(kind int) bool {
 	}
 }
 
-// testInputGate isolates iOS and tvOS test hosts from physical user input
-// while allowing both simulator IOHID events enqueued by testSurface (matched
-// by testSenderID or bounded (window, HID timestamp) history) and synchronous
-// scripted steps on physical devices (depth > 0). Ordinary apps and live
-// automation (nsgoautomation) never install the filter and accept all input.
-// Accessed only on the main thread.
+// testInputGate isolates iOS and tvOS test hosts from physical user input while allowing both simulator IOHID events enqueued by testSurface (matched by testSenderID or bounded (window, HID timestamp) history) and synchronous scripted steps on physical devices (depth > 0). Ordinary apps and live automation (nsgoautomation) never install the filter and accept all input. Accessed only on the main thread.
 type testInputGate struct {
 	depth       int
 	hid         [64]scriptedHID
@@ -76,9 +68,7 @@ func (g *testInputGate) hasHIDTimestamp(window uintptr, timestamp uint64) bool {
 	return false
 }
 
-// allowEvent reports whether a UIEvent of UIEventType kind on window may be
-// delivered when test-mode isolation is isolated. hasHID is true when the
-// event carries an underlying IOHIDEvent with sender and timestamp.
+// allowEvent reports whether a UIEvent of UIEventType kind on window may be delivered when test-mode isolation is isolated. hasHID is true when the event carries an underlying IOHIDEvent with sender and timestamp.
 func (g *testInputGate) allowEvent(isolated bool, kind int, window uintptr, hasHID bool, sender, timestamp uint64) bool {
 	if !isolated || !isPhysicalUIEventType(kind) {
 		return true

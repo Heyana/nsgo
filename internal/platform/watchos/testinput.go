@@ -9,19 +9,11 @@ const (
 	phaseAnimating
 )
 
-// testInputGate isolates the watchOS test host from physical touches, Digital
-// Crown / finger scrolls, SwiftUI text-field edits and alert taps while
-// allowing scripted testSurface steps and programmatic ScrollTo updates.
-// Ordinary apps and live automation (nsgoautomation) leave isolation off and
-// accept all input. Accessed only on the main thread.
+// testInputGate isolates the watchOS test host from physical touches, Digital Crown / finger scrolls, SwiftUI text-field edits and alert taps while allowing scripted testSurface steps and programmatic ScrollTo updates. Ordinary apps and live automation (nsgoautomation) leave isolation off and accept all input. Accessed only on the main thread.
 type testInputGate struct {
 	isolated bool
 	depth    int
-	// scrollSeen records scroll views that have reported their initial resting
-	// offset from SwiftUI layout; scrollExpected records those awaiting an
-	// opScrollTo update (from testSurface.Scroll or Ref.ScrollTo);
-	// scrollPhysical records those currently being dragged or rotated with the
-	// Digital Crown.
+	// scrollSeen records scroll views that have reported their initial resting offset from SwiftUI layout; scrollExpected records those awaiting an opScrollTo update (from testSurface.Scroll or Ref.ScrollTo); scrollPhysical records those currently being dragged or rotated with the Digital Crown.
 	scrollSeen     map[uint32]bool
 	scrollExpected map[uint32]bool
 	scrollPhysical map[uint32]bool
@@ -37,8 +29,7 @@ func (g *testInputGate) leave() {
 	}
 }
 
-// allowDirect reports whether a direct user-input callback (hostTouch,
-// hostText, hostAlert) may run when test-mode isolation is isolated.
+// allowDirect reports whether a direct user-input callback (hostTouch, hostText, hostAlert) may run when test-mode isolation is isolated.
 func (g *testInputGate) allowDirect(isolated bool) bool {
 	if !isolated && !g.isolated {
 		return true
@@ -46,8 +37,7 @@ func (g *testInputGate) allowDirect(isolated bool) bool {
 	return g.depth > 0
 }
 
-// expectScroll marks scroll view id as awaiting programmatic scroll callbacks
-// from an opScrollTo command sent to SwiftUI.
+// expectScroll marks scroll view id as awaiting programmatic scroll callbacks from an opScrollTo command sent to SwiftUI.
 func (g *testInputGate) expectScroll(id uint32) {
 	if g.scrollExpected == nil {
 		g.scrollExpected = map[uint32]bool{}
@@ -63,10 +53,7 @@ func (g *testInputGate) forgetScroll(id uint32) {
 	delete(g.scrollPhysical, id)
 }
 
-// allowScroll reports whether a hostScroll callback for scroll view id with
-// phase may run when test-mode isolation is isolated. Physical drags and
-// Digital Crown turns (phaseDragging, phaseGliding and offsets outside a
-// programmatic ScrollTo or initial layout) are rejected.
+// allowScroll reports whether a hostScroll callback for scroll view id with phase may run when test-mode isolation is isolated. Physical drags and Digital Crown turns (phaseDragging, phaseGliding and offsets outside a programmatic ScrollTo or initial layout) are rejected.
 func (g *testInputGate) allowScroll(isolated bool, id uint32, phase uint8) bool {
 	if (!isolated && !g.isolated) || g.depth > 0 {
 		return true

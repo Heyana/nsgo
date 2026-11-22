@@ -32,13 +32,10 @@ func onMainSync(fn func()) {
 	<-done
 }
 
-// scriptedInput tracks scripted IOHID events and synchronous scripted steps
-// for test input isolation (installed only by testhost.go; live automation
-// leaves testInputFilter nil). Accessed only on the main thread.
+// scriptedInput tracks scripted IOHID events and synchronous scripted steps for test input isolation (installed only by testhost.go; live automation leaves testInputFilter nil). Accessed only on the main thread.
 var scriptedInput testInputGate
 
-// scriptedMainSync runs fn on the main thread inside a scripted input scope so
-// test input isolation accepts synchronous UIKit callbacks triggered by fn.
+// scriptedMainSync runs fn on the main thread inside a scripted input scope so test input isolation accepts synchronous UIKit callbacks triggered by fn.
 func scriptedMainSync(fn func()) {
 	onMainSync(func() {
 		scriptedInput.enter()

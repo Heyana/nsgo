@@ -28,8 +28,7 @@ func onMainSync(fn func()) {
 	<-done
 }
 
-// scriptedOnMain runs fn on the main thread inside a scripted input scope so
-// test input isolation accepts the input callbacks fn triggers.
+// scriptedOnMain runs fn on the main thread inside a scripted input scope so test input isolation accepts the input callbacks fn triggers.
 func scriptedOnMain(fn func()) {
 	onMainSync(func() {
 		s.inputGate.enter()
