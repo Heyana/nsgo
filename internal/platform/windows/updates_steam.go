@@ -7,8 +7,9 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/updates"
 )
 
-func startWinSparkle(updates.Config, uintptr, func() string) {}
+func startWinSparkle(updates.Config, *window, func() string) {}
 func stopWinSparkle()                                        {}
+func answerUpdateQuit(*window, *driver.MountItem) bool       { return false }
 
 func (w *window) checkForUpdates(_ bool, id uint32) {
 	w.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count: id,

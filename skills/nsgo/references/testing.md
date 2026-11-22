@@ -76,6 +76,8 @@ Use `nsgotest.Widgets(true)` and `nsgotest.LiveActivities(true)` to inspect publ
 
 In headless Linux and Android tests, read `app.Installs` and set `app.InstallPackage` to simulate an installer error.
 
+Use `desktop.RequestRestart` when an app restart must honor its `OnQuitRequest` cancellation or deferred save. Headless tests can inspect `app.Restarts` after answering the handler. [Lifecycle](https://nsgo.dev/docs/services.md#lifecycle)
+
 ## On a platform
 
 Cleanup closes native context menus left open by an app, including between subtests in one process.

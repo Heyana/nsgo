@@ -150,6 +150,14 @@ func ClearRecentFiles(cx *core.Scope) { cx.ClearRecentFiles() }
 // dev, and in a view a host embeds, it only quits.
 func Restart(cx *core.Scope) { cx.Restart() }
 
+// RequestRestart asks the OnQuitRequest handlers before restarting. A
+// canceled request leaves the app running; a deferred one waits for its answer.
+func RequestRestart(cx *core.Scope) {
+	if IsAvailable(cx) {
+		cx.RequestRestart()
+	}
+}
+
 // RevealFile opens the file manager with path selected.
 func RevealFile(cx *core.Scope, path string, done func(error)) { cx.RevealFile(path, done) }
 

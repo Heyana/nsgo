@@ -760,7 +760,7 @@ func Run(app engine.App, opts Options) {
 	}
 	if opts.test == nil {
 		// Language waits for the app's mount, so WinSparkle starts in the language the app shows.
-		startWinSparkle(opts.Updates, hwnd, w.engine.Language)
+		startWinSparkle(opts.Updates, w, w.engine.Language)
 	}
 
 	var m msg
@@ -1455,7 +1455,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.finishQuit()
 			continue
 		case driver.ItemQuitResponse:
-			if it.On {
+			if !answerUpdateQuit(w, it) && it.On {
 				w.finishQuit()
 			}
 			continue

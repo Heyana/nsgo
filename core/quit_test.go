@@ -73,6 +73,41 @@ func TestQuitRequestRunsNewestFirstAndCanCancel(t *testing.T) {
 	}
 }
 
+func TestRequestRestartMarksTheProcessOnlyAfterApproval(t *testing.T) {
+	restarting.Store(false)
+	t.Cleanup(func() { restarting.Store(false) })
+	var cx *Scope
+	var answer func(bool)
+	cancel := true
+	h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node {
+		cx = c
+		cx.OnQuitRequest(func(q *QuitRequest) {
+			if cancel {
+				q.Cancel()
+			} else {
+				answer = q.Defer()
+			}
+		})
+		return View{}
+	})
+	h.commit()
+	cx.RequestRestart()
+	if it := command(h.commit(), driver.ItemQuit); it != nil || Restarting() {
+		t.Fatalf("canceled restart: command=%+v, restarting=%v", it, Restarting())
+	}
+	cancel = false
+	cx.RequestRestart()
+	if it := command(h.commit(), driver.ItemQuit); it != nil || Restarting() {
+		t.Fatalf("deferred restart: command=%+v, restarting=%v", it, Restarting())
+	}
+	answer(true)
+	answer(false)
+	h.drain()
+	if it := command(h.commit(), driver.ItemQuit); it == nil || !it.On || !Restarting() {
+		t.Fatalf("approved restart: command=%+v, restarting=%v", it, Restarting())
+	}
+}
+
 func TestQuitRequestCanceledReportsState(t *testing.T) {
 	q := &QuitRequest{}
 	if q.Canceled() {

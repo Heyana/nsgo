@@ -219,7 +219,7 @@ func downloadAndInstall(cx *core.Scope, c core.UpdateCheck) {
 			if err := os.Remove(path); err != nil {
 				log.Printf("updater: %v", err)
 			}
-			app.Restart()
+			app.RequestRestart()
 		}
 	})
 }

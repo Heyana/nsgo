@@ -70,6 +70,8 @@ The engine runs one graph with a tree per surface (`core.Tree`). Where the platf
 - `desktop.AddRecentFile` (`ItemRecentFile`) records a document the system offers again, which reaches `OnOpenFiles` when chosen, and `ClearRecentFiles` forgets the app's: `NSDocumentController` on macOS, `SHAddToRecentDocs` and `IApplicationDestinations` on Windows. Linux, phones and the web ignore them.
 - `SetLaunchAtLogin` and `LaunchAtLogin` register and read `SMAppService.mainAppService` on macOS 13 and later. On macOS 11 and 12 they use a per-user `~/Library/LaunchAgents/<bundle id>.plist` with `RunAtLoad`; both paths require a bundled app. Windows and Linux write a login entry of their own (below). `desktop.LaunchedAtLogin` reports whether this run came from the login item, using the launch Apple event or the `--nsgo-launched-at-login` argument the other entries start the app with, before the app's first function runs; reopens leave the reason unchanged. Tests inject it with `nsgotest.Environment(core.Environment{LaunchedAtLogin: true})`.
 
+`desktop.RequestRestart` asks the same quit request handlers and restarts only after approval, unlike the immediate `desktop.Restart`. Canceling it leaves the process's restart flag unchanged; a deferred decision sets that flag only when it approves.
+
 ## macOS
 
 `Run` waits for `applicationDidFinishLaunching:` to capture the login launch reason, then starts the engine on a surface in no window (`own`), which applies the app-level items: it opens surfaces, adds tray icons, registers shortcuts, sets the activation policy and the login item.

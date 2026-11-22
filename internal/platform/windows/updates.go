@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -22,21 +23,26 @@ import (
 // installer starts the new version.
 var winSparkle *syscall.DLL
 
-// updateWindow is the window WinSparkle's shutdown request closes, as
-// Quit does.
-var updateWindow uintptr
+var updateQuitOwner atomic.Pointer[updateQuit]
 
 // WinSparkle's callbacks, made once: it may call them from any thread.
 var (
-	canShutdown     = syscall.NewCallbackCDecl(func() uintptr { return 1 })
+	canShutdown = syscall.NewCallbackCDecl(func() uintptr {
+		if owner := updateQuitOwner.Load(); owner != nil && owner.ask() {
+			return 1
+		}
+		return 0
+	})
 	shutdownRequest = syscall.NewCallbackCDecl(func() uintptr {
-		postMessageW.Call(updateWindow, wmClose, 0, 0)
+		if owner := updateQuitOwner.Load(); owner != nil {
+			owner.shutdown()
+		}
 		return 0
 	})
 )
 
 // startWinSparkle starts WinSparkle on c's appcast, for the app's main window hwnd, in the language lang returns, the one the mounted app shows (engine.Language), which WinSparkle takes only before win_sparkle_init. lang waits for the app's mount on the UI thread, so it is asked only once WinSparkle is about to start: an app without updates, or without WinSparkle.dll, does not wait.
-func startWinSparkle(c updates.Config, hwnd uintptr, lang func() string) {
+func startWinSparkle(c updates.Config, w *window, lang func() string) {
 	if c.Feed == "" {
 		return
 	}
@@ -94,13 +100,19 @@ func startWinSparkle(c updates.Config, hwnd uintptr, lang func() string) {
 	}
 	call("win_sparkle_set_can_shutdown_callback", canShutdown)
 	call("win_sparkle_set_shutdown_request_callback", shutdownRequest)
+	winSparkle = dll
+	updateQuitOwner.Store(newUpdateQuit(w))
 	call("win_sparkle_init")
 	runtime.KeepAlive(keep)
-	winSparkle, updateWindow = dll, hwnd
 }
 
 // stopWinSparkle stops WinSparkle's checks and downloads as the app ends.
 func stopWinSparkle() {
+	// A callback may be waiting for a deferred app decision. Release it
+	// before cleanup joins WinSparkle's worker threads.
+	if owner := updateQuitOwner.Swap(nil); owner != nil {
+		owner.close()
+	}
 	if winSparkle == nil {
 		return
 	}

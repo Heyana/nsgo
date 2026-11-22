@@ -81,6 +81,17 @@ func (cx *Scope) RequestQuit() {
 	})
 }
 
+// RequestRestart is the core's part of desktop.RequestRestart. It asks the
+// quit request handlers before restarting, leaving the app running when a
+// handler cancels and waiting when one defers its answer.
+func (cx *Scope) RequestRestart() {
+	cx.rt.requestQuit(false, func(approved bool) {
+		if approved {
+			cx.Restart()
+		}
+	})
+}
+
 func (rt *runtime) quitRequest(id uint32, forced bool) {
 	rt.requestQuit(forced, func(quit bool) {
 		rt.app(driver.MountItem{Kind: driver.ItemQuitResponse, Count: id, On: quit})
