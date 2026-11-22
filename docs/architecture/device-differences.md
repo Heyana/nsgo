@@ -20,7 +20,7 @@ These swap one form for another on their own:
 | --- | --- | --- | --- |
 | `ui.Dialog` | Centered dialog, footer in a row | Bottom sheet, footer stacked | `ui.Touch` |
 | `ui.NumberInput` | Stacked chevrons, 22 points wide | A minus and a plus, each 28 points wide | `ui.Touch` |
-| `ui/commitgraph.View` | Refs, subject, author, hash and date | Refs and subject | Width under 560 points |
+| `ui/commitgraph.View` | Refs, subject, author, hash and date | Refs, subject and author's avatar | Width under 560 points |
 
 Menus, context menus and dropdowns (`base` and `ui`'s `Menu`, `ContextMenu`, `Select`, `Combobox` and `DatePicker`) are popups unless the app sets `Presentation` to `PresentSheet`, and `dock.Area` keeps its panels docked unless the app makes it `Compact`: neither `base` nor `ui` chooses those by device (decided by the user, 2026-11-12). `ui.MenuItem` rows follow the presentation: 26 points in a popup and 44 across a sheet, which also hides `Shortcut`.
 

@@ -59,8 +59,9 @@ type Commit struct {
 // View lists Commits, newest first with each after its children as
 // `git log --date-order` lists them, beside their revision graph. A merge's
 // node collapses or expands the commits it brings in. Rows narrower than
-// 560 points leave out the author, hash and date. Give it a height, or let
-// it fill what the app sizes.
+// 560 points show only the author's avatar after the subject, leaving out
+// the author's name, hash and date. Give it a height, or let it fill what
+// the app sizes.
 type View struct {
 	Commits func() []Commit
 	// Selection holds the chosen commits' hashes.
@@ -78,7 +79,8 @@ type View struct {
 	Style  core.Style
 }
 
-// narrowWidth is the width below which rows show only refs and subjects.
+// narrowWidth is the width below which rows show only refs, subjects and
+// avatars.
 const narrowWidth = 560
 
 // Render implements core.Node.
@@ -160,27 +162,36 @@ func (r commitRow) Render(cx *core.Scope) core.Node {
 					return ui.Icon(lucide.CornerDownLeft, 12, colors.Faint)
 				}},
 			}},
-			core.Show{When: r.wide, Then: func(cx *core.Scope) core.Node { return r.details(cx) }},
+			core.Show{When: r.wide, Then: func(cx *core.Scope) core.Node { return r.details(cx) },
+				Else: func(cx *core.Scope) core.Node {
+					return core.Show{When: func() bool { c := r.commit(); return c.Author != "" || c.Avatar != "" },
+						Then: func(cx *core.Scope) core.Node { return r.avatar(cx) }}
+				}},
 		}},
 	}}
+}
+
+// avatar is the author's picture, or their initial without one.
+func (r commitRow) avatar(cx *core.Scope) core.Node {
+	type author struct{ name, avatar string }
+	who := core.NewMemo(cx, func() author { return author{r.commit().Author, r.commit().Avatar} })
+	return core.Dynamic(func(cx *core.Scope) core.Node {
+		a := who.Get()
+		return ui.Avatar{Name: a.name, Image: core.ImageSource{URI: a.avatar}, Size: 16}
+	})
 }
 
 // details is a wide row's author, hash and date.
 func (r commitRow) details(cx *core.Scope) core.Node {
 	colors := ui.ColorsOf(cx)
-	type author struct{ name, avatar string }
-	who := core.NewMemo(cx, func() author { return author{r.commit().Author, r.commit().Avatar} })
 	muted := func(fn func() string, width core.Points, style core.Style) core.Node {
 		return core.Text{ContentFunc: fn, MaxLines: 1, StyleFunc: ui.Colored(colors.Muted),
 			Style: core.Style{FontSize: 12, Width: core.Pt(width), FlexShrink: 0}.Merge(style)}
 	}
 	return core.Group{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Width: core.Pt(140), FlexShrink: 0, Gap: 6}, Children: []core.Node{
-			core.Dynamic(func(cx *core.Scope) core.Node {
-				a := who.Get()
-				return ui.Avatar{Name: a.name, Image: core.ImageSource{URI: a.avatar}, Size: 16}
-			}),
-			core.Text{ContentFunc: func() string { return who.Get().name }, MaxLines: 1, StyleFunc: ui.Colored(colors.Muted),
+			r.avatar(cx),
+			core.Text{ContentFunc: func() string { return r.commit().Author }, MaxLines: 1, StyleFunc: ui.Colored(colors.Muted),
 				Style: core.Style{FontSize: 12, FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}},
 		}},
 		muted(func() string { return shortHash(r.commit()) }, 76, core.Style{FontFamily: ui.Mono}),

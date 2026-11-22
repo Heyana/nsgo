@@ -72,11 +72,31 @@ func TestViewCollapsesAMerge(t *testing.T) {
 	}
 }
 
-// TestViewLeavesOutDetailsWhenNarrow keeps refs and subjects on a phone.
+// TestViewLeavesOutDetailsWhenNarrow keeps refs, subjects and the author's
+// avatar on a phone, and no avatar for a row without an author.
 func TestViewLeavesOutDetailsWhenNarrow(t *testing.T) {
-	app := start(t, 390, history(5), View{})
-	if !app.Exists("text:Merge side") || app.Exists("text:merge12") {
+	commits := append([]Commit{{Hash: "changes", Parents: []string{"merge1234567"}, Subject: "Changes"}}, history(5)...)
+	app := start(t, 390, commits, View{})
+	if !app.Exists("text:Merge side") || app.Exists("text:merge12") || app.Exists("text:Ken") {
 		t.Fatal(app.Dump())
+	}
+	if avatar := app.Find("label:Ken"); avatar.Frame.Size.Width != 16 {
+		t.Fatal(app.Dump())
+	}
+	// The subject's box and the avatar, or the box alone.
+	if len(app.Find("text:Side work").Parent.Parent.Children) != 2 || len(app.Find("text:Changes").Parent.Parent.Children) != 1 {
+		t.Fatal(app.Dump())
+	}
+}
+
+// TestViewShowsDetailsWhenWide keeps the author's avatar and name, hash and
+// date in a wide row.
+func TestViewShowsDetailsWhenWide(t *testing.T) {
+	app := start(t, 900, history(5), View{})
+	for _, want := range []string{"label:Ken", "text:Ken", "text:side"} {
+		if !app.Exists(want) {
+			t.Fatalf("%s:\n%s", want, app.Dump())
+		}
 	}
 }
 
