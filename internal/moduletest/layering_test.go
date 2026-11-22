@@ -293,6 +293,10 @@ func checkLayer(t *testing.T, p listedPackage, tags string) {
 	}
 	isPortable := matchesAny(pkg, portable) && !matchesAny(pkg, unportable)
 	for _, imp := range p.Imports {
+		// Android arm64 terminal binding uses NSGo’s cgo-free purego subset.
+		if pkg == "base/terminal/internal/vt" && imp == modulePath+"/internal/purego" {
+			continue
+		}
 		if dep, ok := inModule(imp); ok {
 			if ruled && !matchesAny(dep, allowed) {
 				t.Errorf("%s imports %s across layers", p.ImportPath, imp)
