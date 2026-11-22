@@ -186,7 +186,7 @@ func Errors(report func(error)) Option {
 type seed map[string]string
 
 func (s seed) Load() (map[string]string, error) { return s, nil }
-func (seed) Write(driver.StorageChange)         {}
+func (seed) Write(core.StorageChange)           {}
 
 // AwakeHold is a keep-awake hold the app took: the ID its release names in AwakeReleases, and what it asked for.
 type AwakeHold struct {

@@ -134,6 +134,8 @@ Use `audio.NewOutput(cx, audio.OutputConfig{SampleRate: 48000, Channels: 2, Rend
 
 `cx.Store()` returns the underlying store, for a host that creates another root with `core.RootOptions.Storage`, such as one running a plugin on a goroutine of its own: both roots then share the app's entries and what is kept on the device. It is the whole store, not the partition `cx.ProvideStorage` gives code the app did not write.
 
+A host supplying its own persistence calls `core.NewStore(backend)` with a `core.StorageBackend`: `Load() (map[string]string, error)` loads once, and `Write(core.StorageChange)` receives changes in order. Switch on `change.Op` (`core.StorageSet`, `core.StorageRemove`, `core.StorageClear`) and use `change.Key` and `change.Value`. Pass `nil` for storage held only in memory.
+
 ```go
 store := cx.Storage()
 if tab, ok := store.GetItem("tab"); ok {

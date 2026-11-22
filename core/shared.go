@@ -320,10 +320,6 @@ type (
 	StatusBarStyle = driver.StatusBarStyle
 	// StickyCell is a sticky list cell and its travel, in its scroll view's main-axis offsets: from Start it moves with the offset, as far as End (which may be infinite). End below Start pins to the viewport's end with a negative shift.
 	StickyCell = driver.StickyCell
-	// StorageChange is a change to the entries, for the backend to keep.
-	StorageChange = driver.StorageChange
-	// StorageOp says what a StorageChange does.
-	StorageOp = driver.StorageOp
 	// SubmitBehavior is what Return does in a text field.
 	SubmitBehavior = driver.SubmitBehavior
 	// TextAlign aligns lines of text.
@@ -1119,12 +1115,6 @@ const (
 const (
 	Downstream = driver.Downstream
 	Upstream   = driver.Upstream
-)
-
-const (
-	StorageSet    = driver.StorageSet
-	StorageRemove = driver.StorageRemove
-	StorageClear  = driver.StorageClear
 )
 
 var (

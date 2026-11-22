@@ -99,7 +99,7 @@ func typesImporter(t *testing.T) (*token.FileSet, types.Importer) {
 // runtimeAPI is what the engine and nsgotest drive core's tree with. Apps
 // never call it, so the internal types it takes need no alias.
 var runtimeAPI = map[string]bool{
-	"core.Tree": true, "core.NewTree": true, "core.ApproxTextEngine": true, "core.NewStore": true,
+	"core.Tree": true, "core.NewTree": true, "core.ApproxTextEngine": true,
 }
 
 // TestPublicAPINamesNoInternalType checks the driver allowlist and requires

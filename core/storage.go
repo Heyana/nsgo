@@ -6,8 +6,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-
-	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 // StorageQuota is the most an app may keep, in UTF-8 bytes of its keys and
@@ -30,13 +28,41 @@ func (e *StorageFullError) Error() string {
 // Storage does not list or clear.
 const partitionMark = "\x00"
 
+// StorageOp says what a StorageChange does.
+type StorageOp uint8
+
+const (
+	// StorageSet sets Key to Value.
+	StorageSet StorageOp = iota
+	// StorageRemove removes Key.
+	StorageRemove
+	// StorageClear removes every entry.
+	StorageClear
+)
+
+// StorageChange is a change to the entries, for the backend to keep.
+type StorageChange struct {
+	Op         StorageOp
+	Key, Value string
+}
+
+// StorageBackend keeps a host's entries for NewStore.
+type StorageBackend interface {
+	// Load returns the entries kept, read once when the store is first used.
+	// An error starts the store empty and is logged.
+	Load() (map[string]string, error)
+	// Write keeps change. Calls are serialized in change order, on the
+	// goroutine that made each change. A backend that blocks writes elsewhere.
+	Write(change StorageChange)
+}
+
 // Store holds an app's entries in memory, loaded from its backend on first
 // use. Graphs given the same Store share its entries and quota, and each
 // sees the others' changes through its signals. Hosts make one per app
 // with NewStore and pass it in RootOptions.
 type Store struct {
 	mu       sync.Mutex
-	backend  driver.StorageBackend
+	backend  StorageBackend
 	entries  map[string]string
 	bytes    int
 	watchers []*storageWatch
@@ -44,7 +70,7 @@ type Store struct {
 
 // NewStore returns a store kept by backend, or only in memory when backend
 // is nil.
-func NewStore(backend driver.StorageBackend) *Store { return &Store{backend: backend} }
+func NewStore(backend StorageBackend) *Store { return &Store{backend: backend} }
 
 // load reads the backend's entries once. The caller holds mu.
 func (s *Store) load() {
@@ -109,11 +135,11 @@ func (s *Store) change(c StorageChange, from *runtime, part partition) (bool, er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.load()
-	if c.Op == driver.StorageClear && (part.prefix != "" || s.partitioned()) {
+	if c.Op == StorageClear && (part.prefix != "" || s.partitioned()) {
 		return s.clearPart(part.prefix, from), nil
 	}
 	switch c.Op {
-	case driver.StorageSet:
+	case StorageSet:
 		old, had := s.entries[c.Key]
 		if had && old == c.Value {
 			return false, nil
@@ -135,14 +161,14 @@ func (s *Store) change(c StorageChange, from *runtime, part partition) (bool, er
 			}
 		}
 		s.entries[c.Key], s.bytes = c.Value, n
-	case driver.StorageRemove:
+	case StorageRemove:
 		old, had := s.entries[c.Key]
 		if !had {
 			return false, nil
 		}
 		delete(s.entries, c.Key)
 		s.bytes -= len(c.Key) + len(old)
-	case driver.StorageClear:
+	case StorageClear:
 		if len(s.entries) == 0 {
 			return false, nil
 		}
@@ -190,7 +216,7 @@ func (s *Store) clearPart(prefix string, from *runtime) bool {
 	for _, k := range gone {
 		s.bytes -= len(k) + len(s.entries[k])
 		delete(s.entries, k)
-		s.tell(StorageChange{Op: driver.StorageRemove, Key: k}, from)
+		s.tell(StorageChange{Op: StorageRemove, Key: k}, from)
 	}
 	return len(gone) > 0
 }
@@ -229,7 +255,7 @@ func (w *storageWatch) key(k string) *Signal[uint64] {
 func (w *storageWatch) changed(c StorageChange) {
 	w.rt.root.Batch(func() {
 		w.all.Update(func(n uint64) uint64 { return n + 1 })
-		if c.Op == driver.StorageClear {
+		if c.Op == StorageClear {
 			for _, s := range w.keys {
 				s.Update(func(n uint64) uint64 { return n + 1 })
 			}
@@ -326,12 +352,12 @@ func (s Storage) GetItem(key string) (string, bool) {
 // SetItem sets key to value. It fails with a *StorageFullError when the
 // storage would grow past StorageQuota, keeping what it held.
 func (s Storage) SetItem(key, value string) error {
-	return s.apply(StorageChange{Op: driver.StorageSet, Key: s.part.prefix + key, Value: value})
+	return s.apply(StorageChange{Op: StorageSet, Key: s.part.prefix + key, Value: value})
 }
 
 // RemoveItem removes key.
 func (s Storage) RemoveItem(key string) {
-	s.apply(StorageChange{Op: driver.StorageRemove, Key: s.part.prefix + key})
+	s.apply(StorageChange{Op: StorageRemove, Key: s.part.prefix + key})
 }
 
 // Keys returns every key, sorted.
@@ -342,15 +368,15 @@ func (s Storage) Keys() []string {
 
 // Clear removes every entry.
 func (s Storage) Clear() {
-	s.apply(StorageChange{Op: driver.StorageClear})
+	s.apply(StorageChange{Op: StorageClear})
 }
 
 func (s Storage) apply(c StorageChange) error {
 	changed, err := s.store.change(c, s.watch.rt, s.part)
 	if changed {
-		if c.Op == driver.StorageClear {
+		if c.Op == StorageClear {
 			// A part cleared bumps every key's signal, as a clear does.
-			c = StorageChange{Op: driver.StorageClear}
+			c = StorageChange{Op: StorageClear}
 		}
 		s.watch.changed(c)
 	}

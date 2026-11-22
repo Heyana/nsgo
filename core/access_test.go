@@ -340,7 +340,7 @@ func TestProvideStoragePartitions(t *testing.T) {
 		t.Fatal("a partition's Clear did not clear only its own")
 	}
 	for _, c := range b.changes {
-		if c.Op == driver.StorageClear {
+		if c.Op == StorageClear {
 			t.Fatal("the backend was cleared whole")
 		}
 	}

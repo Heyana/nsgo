@@ -121,7 +121,7 @@ Style `Transition`s, animated values and layout animations run on the platform, 
 
 ## Storage and directories
 
-`Scope.Storage` follows NSH's `nsh/storage`: strings by key with a 5 MB quota, held in memory by a `Store` and loaded once from the platform's `StorageBackend`.
+`Scope.Storage` follows NSH's `nsh/storage`: strings by key with a 5 MB quota, held in memory by a `Store` and loaded once from its `core.StorageBackend`. Hosts pass a backend to `core.NewStore`; its `Write` takes owned `core.StorageChange` values and `core.StorageOp` constants. The engine adapts those changes to the platforms' private driver contract, keeping persistence messages out of the host API.
 
 `Scope.Store` returns the graph's `Store` so code that owns more than one root can pass the same store through `RootOptions.Storage`. The roots then share entries, change notifications, quota and the platform's persistence. It is the whole store, beneath any partition `ProvideStorage` gives an owner.
 

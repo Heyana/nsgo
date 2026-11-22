@@ -80,7 +80,33 @@ func appDirName(id string) string {
 
 // NewStorage returns a store kept by backend, for platforms that keep the
 // app's entries themselves, such as in the browser's localStorage.
-func NewStorage(backend driver.StorageBackend) *core.Store { return core.NewStore(backend) }
+func NewStorage(backend driver.StorageBackend) *core.Store {
+	if backend == nil {
+		return core.NewStore(nil)
+	}
+	return core.NewStore(storageBackend{backend})
+}
+
+// storageBackend adapts the platform's private persistence messages to the
+// host-facing contract core owns.
+type storageBackend struct {
+	driver.StorageBackend
+}
+
+func (b storageBackend) Write(c core.StorageChange) {
+	var op driver.StorageOp
+	switch c.Op {
+	case core.StorageSet:
+		op = driver.StorageSet
+	case core.StorageRemove:
+		op = driver.StorageRemove
+	case core.StorageClear:
+		op = driver.StorageClear
+	default:
+		return
+	}
+	b.StorageBackend.Write(driver.StorageChange{Op: op, Key: c.Key, Value: c.Value})
+}
 
 // OpenFileStorage returns the store kept in dir/storage.json: the one
 // already open in this process, so every engine of the app shares it, or
@@ -94,7 +120,7 @@ func OpenFileStorage(dir string) *core.Store {
 	}
 	f := &fileStorage{path: path}
 	f.idle = sync.NewCond(&f.mu)
-	s := core.NewStore(f)
+	s := NewStorage(f)
 	open[path] = s
 	files = append(files, f)
 	return s

@@ -6,8 +6,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 // recorder is a storage backend that loads kept and records changes.
@@ -65,7 +63,7 @@ func TestStorageLoadsOnceAndWritesChanges(t *testing.T) {
 	}
 	s.Clear()
 	s.Clear()
-	want := []StorageChange{{Op: driver.StorageSet, Key: "b", Value: "2"}, {Op: driver.StorageRemove, Key: "a"}, {Op: driver.StorageClear}}
+	want := []StorageChange{{Op: StorageSet, Key: "b", Value: "2"}, {Op: StorageRemove, Key: "a"}, {Op: StorageClear}}
 	if !slices.Equal(b.changes, want) {
 		t.Fatalf("changes = %v, want %v", b.changes, want)
 	}

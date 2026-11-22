@@ -131,6 +131,8 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 需要创建另一个 root 的宿主（例如在独立 goroutine 上运行插件）可以用 `cx.Store()` 获取底层 store，并将它传给 `core.RootOptions.Storage`，两个 root 会共享应用的条目和保存在设备上的数据。它是整个 store，而不是 `cx.ProvideStorage` 分给非应用自身代码的分区。
 
+宿主可用 `core.NewStore(backend)` 接入自己的持久化，实现 `core.StorageBackend`：`Load() (map[string]string, error)` 只加载一次，`Write(core.StorageChange)` 按顺序接收变更。根据 `change.Op`（`core.StorageSet`、`core.StorageRemove`、`core.StorageClear`）处理 `change.Key` 和 `change.Value`；传入 `nil` 则只保存在内存中。
+
 ```go
 store := cx.Storage()
 if tab, ok := store.GetItem("tab"); ok {

@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/core"
@@ -138,5 +139,49 @@ func TestHostDataDirMovesLogs(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, "system", d)); !os.IsNotExist(err) {
 			t.Fatalf("the system's %s directory was made: %v", d, err)
 		}
+	}
+}
+
+// platformStorageRecorder implements only the private platform contract.
+type platformStorageRecorder struct {
+	changes []driver.StorageChange
+}
+
+func (*platformStorageRecorder) Load() (map[string]string, error) {
+	return map[string]string{"kept": "old"}, nil
+}
+
+func (b *platformStorageRecorder) Write(c driver.StorageChange) {
+	b.changes = append(b.changes, c)
+}
+
+func TestStorageBackendAdaptsHostChanges(t *testing.T) {
+	backend := &platformStorageRecorder{}
+	s := graphOn(NewStorage(backend))
+	if v, ok := s.GetItem("kept"); !ok || v != "old" {
+		t.Fatalf("loaded value = %q, %v", v, ok)
+	}
+	if err := s.SetItem("new", "value"); err != nil {
+		t.Fatal(err)
+	}
+	s.RemoveItem("kept")
+	s.Clear()
+	want := []driver.StorageChange{
+		{Op: driver.StorageSet, Key: "new", Value: "value"},
+		{Op: driver.StorageRemove, Key: "kept"},
+		{Op: driver.StorageClear},
+	}
+	if !slices.Equal(backend.changes, want) {
+		t.Fatalf("platform changes = %#v, want %#v", backend.changes, want)
+	}
+
+	// No adapter is installed for an in-memory store.
+	memory := graphOn(NewStorage(nil))
+	if err := memory.SetItem("key", "value"); err != nil {
+		t.Fatal(err)
+	}
+	memory.Clear()
+	if len(memory.Keys()) != 0 {
+		t.Fatal("in-memory storage retained a cleared key")
 	}
 }
