@@ -9,6 +9,24 @@ var recordings struct {
 	queue   [][]byte
 	hear    func([]byte)
 	reports [][]byte
+	dir     string
+}
+
+// SetRecordingsDir sets the app's recordings directory (DataDir/recordings),
+// which package microphone uses for local WAV recordings on macOS, iOS,
+// Windows and Linux.
+func SetRecordingsDir(dir string) {
+	recordings.Lock()
+	recordings.dir = dir
+	recordings.Unlock()
+}
+
+// RecordingsDir returns the app's recordings directory, or "" if no engine
+// has configured one.
+func RecordingsDir() string {
+	recordings.Lock()
+	defer recordings.Unlock()
+	return recordings.dir
 }
 
 // SendRecording sends package microphone's msg to the recorder, once one has connected.

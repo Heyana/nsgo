@@ -36,21 +36,45 @@ func global(path, name string) objc.ID {
 	return **(**objc.ID)(unsafe.Pointer(&symbol))
 }
 
-// enterSession holds the shared AVAudioSession at the level that records, which internal/audiosession weighs against its other holders, such as a video playing, calling ended if an interruption or the app leaving the screen stops the recording. Its leave lets the session go off the caller's thread, as deactivating waits for the system.
-func enterSession(ended func()) (leave func(), err error) {
+// enterSession holds the shared AVAudioSession at the level that records, which internal/audiosession weighs against its other holders, such as a video playing, calling onInterrupt(true) when an interruption begins or the app leaves the screen and onInterrupt(false) when the interruption ends or the app returns. Its leave lets the session go off the caller's thread, as deactivating waits for the system.
+func enterSession(onInterrupt func(silenced bool)) (leave func(), err error) {
 	release, err := audiosession.Hold(audiosession.Recording)
 	if err != nil {
 		return nil, errSession
 	}
 	center := objc.ID(objc.GetClass("NSNotificationCenter")).Send(sel("defaultCenter"))
-	block := objcblock.New(func(objc.Block, objc.ID) { ended() })
+	interruptionTypeKey := global(foundationPath, "AVAudioSessionInterruptionTypeKey")
+	interruptionBlock := objcblock.New(func(_ objc.Block, notification objc.ID) {
+		silenced := true
+		if notification != 0 && interruptionTypeKey != 0 {
+			if info := notification.Send(sel("userInfo")); info != 0 {
+				if val := info.Send(sel("objectForKey:"), interruptionTypeKey); val != 0 {
+					// AVAudioSessionInterruptionTypeEnded == 0, Began == 1.
+					if objc.Send[uint](val, sel("unsignedIntegerValue")) == 0 {
+						silenced = false
+					}
+				}
+			}
+		}
+		onInterrupt(silenced)
+	})
+	bgBlock := objcblock.New(func(objc.Block, objc.ID) { onInterrupt(true) })
+	fgBlock := objcblock.New(func(objc.Block, objc.ID) { onInterrupt(false) })
+
 	var tokens []objc.ID
-	for _, name := range []objc.ID{global(foundationPath, "AVAudioSessionInterruptionNotification"),
-		global(uikitPath, "UIApplicationDidEnterBackgroundNotification")} {
+	add := func(name objc.ID, block objc.Block) {
+		if name == 0 {
+			return
+		}
 		token := center.Send(sel("addObserverForName:object:queue:usingBlock:"), name, objc.ID(0), objc.ID(0), block)
 		tokens = append(tokens, token.Send(sel("retain")))
 	}
-	block.Release()
+	add(global(foundationPath, "AVAudioSessionInterruptionNotification"), interruptionBlock)
+	add(global(uikitPath, "UIApplicationDidEnterBackgroundNotification"), bgBlock)
+	add(global(uikitPath, "UIApplicationWillEnterForegroundNotification"), fgBlock)
+	interruptionBlock.Release()
+	bgBlock.Release()
+	fgBlock.Release()
 	return func() {
 		for _, token := range tokens {
 			center.Send(sel("removeObserver:"), token)

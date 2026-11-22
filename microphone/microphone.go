@@ -1,4 +1,4 @@
-// Package microphone records the system's default input and builds on every target, reporting where it cannot record. Capture streams samples on macOS and iOS, which it reaches directly, as base/terminal does. RecordWAV writes a file on Android, where the runtime's foreground service records, which the package reaches through a channel of internal/driver outside any view, as a recording belongs to the process.
+// Package microphone records the system's default input and builds on every target, reporting where it cannot record. Capture streams 16-bit mono PCM on macOS, iOS, Windows and Linux, which it reaches directly, as base/terminal does. RecordWAV writes 16-bit PCM WAV files on macOS, iOS, Windows, Linux and Android; on Android the runtime's foreground service records, which the package reaches through a channel of internal/driver outside any view, as a recording belongs to the process.
 //
 // Apps check and ask for the microphone with core.Scope.PermissionStatus and core.Scope.RequestPermission of core.PermissionMicrophone; Allowed and Authorize share their implementation for code that records without an engine.
 package microphone
@@ -87,6 +87,8 @@ type Recording struct {
 	// levels wakes the goroutine delivering levels, for the one in pending.
 	levels   chan struct{}
 	stopOnce sync.Once
+	// stopFn stops a local in-process recording; nil sends a stop command over internal/driver.
+	stopFn func()
 
 	mu          sync.Mutex
 	file        File
@@ -103,7 +105,13 @@ func (r *Recording) Stop() {
 		return
 	default:
 	}
-	r.stopOnce.Do(func() { send(command{Op: "stop", ID: r.id}) })
+	r.stopOnce.Do(func() {
+		if r.stopFn != nil {
+			r.stopFn()
+		} else {
+			send(command{Op: "stop", ID: r.id})
+		}
+	})
 	<-r.ended
 }
 
@@ -135,7 +143,7 @@ func (r *Recording) Interrupted() bool {
 	return r.interrupted
 }
 
-// RecordWAV records 16-bit PCM WAV to the file name in the app's recordings directory, private storage the runtime keeps under the app's data directory, until it stops or ends by itself. The file goes under a temporary name until then, and its header follows what was written about once a second, so a file whose app was killed plays up to its last second; the next RecordWAV repairs it under its name and Earlier reports it, in that process or a later one, until the app takes it. It asks for the microphone as Authorize does and waits for the answer, so call it off the UI. On Android it records in the runtime's foreground service, through a hidden activity and the screen going off, and starts only while an activity of the app is visible, in an app whose nsgo.yaml sets android.recording; it reports ErrUnsupported elsewhere. From Android 13 the service's notification shows only once the user lets the app post notifications, so the first RecordWAV asks for POST_NOTIFICATIONS with RECORD_AUDIO, or alone where RECORD_AUDIO is granted; a user who refuses notifications still records, without a visible notification.
+// RecordWAV records 16-bit PCM WAV to the file name in the app's recordings directory, private storage under the app's data directory, until it stops or ends by itself. The file goes under a temporary name until then, and its header follows what was written about once a second, so a file whose app was killed plays up to its last second; the next RecordWAV repairs it under its name and Earlier reports it, in that process or a later one, until the app takes it. It asks for the microphone as Authorize does and waits for the answer, so call it off the UI. It records directly on macOS, iOS, Windows and Linux; on Android it records in the runtime's foreground service, through a hidden activity and the screen going off, and starts only while an activity of the app is visible, in an app whose nsgo.yaml sets android.recording; it reports ErrUnsupported elsewhere. From Android 13 the service's notification shows only once the user lets the app post notifications, so the first RecordWAV asks for POST_NOTIFICATIONS with RECORD_AUDIO, or alone where RECORD_AUDIO is granted; a user who refuses notifications still records, without a visible notification.
 func RecordWAV(name string, o RecordOptions) (*Recording, error) {
 	if name == "" || strings.ContainsAny(name, "/\\\x00") || strings.HasPrefix(name, ".") {
 		return nil, &fs.PathError{Op: "record", Path: name, Err: fs.ErrInvalid}
@@ -144,6 +152,9 @@ func RecordWAV(name string, o RecordOptions) (*Recording, error) {
 		return nil, errors.New("microphone: a WAV recording takes a rate of 0 or more and one or two channels")
 	}
 	if !reachable() {
+		if hasLocalRecorder {
+			return startLocalWAV(name, o)
+		}
 		return nil, ErrUnsupported
 	}
 	listen()
@@ -184,6 +195,12 @@ const minLevelInterval = 20
 
 // Earlier returns, once each, the recordings of earlier runs that ended unseen: ErrAbandoned's, whose Go process ended while the app's lived on, and ErrPartial's, whose app was killed, which a RecordWAV repaired. Their Ended is closed. The runtime keeps each one's record until Earlier returns it, so a recording a process heard of but did not take, as it ended first, is reported to the next process; one whose file the app deleted is not.
 func Earlier() []*Recording {
+	if !reachable() {
+		if hasLocalRecorder {
+			return localEarlier()
+		}
+		return nil
+	}
 	listen()
 	recorder.mu.Lock()
 	earlier := recorder.earlier

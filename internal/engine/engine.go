@@ -517,6 +517,9 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 			log.Printf("nsgo: the app's directory could not be made: %v", err)
 		}
 	}
+	if opts.DataDir != "" && opts.Observe == nil {
+		driver.SetRecordingsDir(filepath.Join(opts.DataDir, "recordings"))
+	}
 	// frames routes the app tree's frames to a window that can supply them. Every other surface asks its own platform, at its own cadence.
 	var frames frameRequests
 	requestFrame := func(id uint32) {

@@ -315,8 +315,8 @@ func TestAuthorizeThroughTheRecorder(t *testing.T) {
 }
 
 func TestRecordWAVWithoutARecorder(t *testing.T) {
-	if runtime.GOOS == "android" {
-		t.Skip("Android's runtime is always the recorder")
+	if runtime.GOOS == "android" || hasLocalRecorder {
+		t.Skip("this target records directly without an external recorder")
 	}
 	if _, err := RecordWAV("take.wav", RecordOptions{}); !errors.Is(err, ErrUnsupported) {
 		t.Errorf("RecordWAV = %v, want ErrUnsupported", err)

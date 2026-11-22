@@ -3,10 +3,12 @@
 package microphone
 
 import (
+	"errors"
 	"fmt"
 	"structs"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -158,17 +160,47 @@ func authorizeSystem() error {
 // system takes the microphone away, which Ended tells. It may wait for the user to answer the permission prompt, so call it off
 // the UI.
 func Capture(rate int, samples func([]int16)) (*Stream, error) {
+	if rate <= 0 {
+		return nil, errors.New("microphone: sample rate must be positive")
+	}
 	if err := authorizeSystem(); err != nil {
 		return nil, err
 	}
-	format := streamDescription{sampleRate: float64(rate), formatID: kAudioFormatLinearPCM,
-		formatFlags: kLinearPCMFormatSignedInt | kLinearPCMFormatPacked, bytesPerPacket: 2, framesPerPacket: 1,
-		bytesPerFrame: 2, channelsPerFrame: 1, bitsPerChannel: 16}
 	ended := make(chan struct{})
 	end := sync.OnceFunc(func() { close(ended) })
-	leave, err := enterSession(end)
+	stopQueue, _, err := openAudioQueue(rate, 1, bufferSeconds, bufferCount, samples, func(silenced bool) {
+		if silenced {
+			end()
+		}
+	})
 	if err != nil {
 		return nil, err
+	}
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			stopQueue()
+			end()
+		})
+	}
+	return &Stream{stop, ended}, nil
+}
+
+func openAudioQueue(rate, channels int, bufSec float64, bufCount int, samples func([]int16), onInterrupt func(bool)) (stop func(), resume func(), err error) {
+	frameBytes := uint32(channels * 2)
+	format := streamDescription{
+		sampleRate:       float64(rate),
+		formatID:         kAudioFormatLinearPCM,
+		formatFlags:      kLinearPCMFormatSignedInt | kLinearPCMFormatPacked,
+		bytesPerPacket:   frameBytes,
+		framesPerPacket:  1,
+		bytesPerFrame:    frameBytes,
+		channelsPerFrame: uint32(channels),
+		bitsPerChannel:   16,
+	}
+	leave, err := enterSession(onInterrupt)
+	if err != nil {
+		return nil, nil, err
 	}
 	r := &recording{samples: samples}
 	id := system.nextID.Add(1)
@@ -177,31 +209,70 @@ func Capture(rate int, samples func([]int16)) (*Stream, error) {
 	if status := system.newInput(&format, system.callback, id, 0, 0, 0, &queue); status != 0 {
 		system.recordings.Delete(id)
 		leave()
-		return nil, fmt.Errorf("microphone: AudioQueueNewInput: %d", status)
+		return nil, nil, fmt.Errorf("microphone: AudioQueueNewInput: %d", status)
 	}
-	var once sync.Once
-	stop := func() {
-		once.Do(func() {
+	var stopOnce sync.Once
+	stop = func() {
+		stopOnce.Do(func() {
 			r.stopped.Store(true)
 			system.stop(queue, true)
 			system.dispose(queue, true)
 			system.recordings.Delete(id)
 			leave()
-			end()
 		})
 	}
-	size := uint32(float64(rate)*bufferSeconds) * 2
-	for range bufferCount {
+	frames := max(256, int(float64(rate)*bufSec))
+	size := uint32(frames) * frameBytes
+	for range bufCount {
 		var buffer *queueBuffer
 		if status := system.allocate(queue, size, &buffer); status != 0 {
 			stop()
-			return nil, fmt.Errorf("microphone: AudioQueueAllocateBuffer: %d", status)
+			return nil, nil, fmt.Errorf("microphone: AudioQueueAllocateBuffer: %d", status)
 		}
 		system.enqueue(queue, buffer, 0, 0)
 	}
 	if status := system.start(queue, 0); status != 0 {
 		stop()
-		return nil, fmt.Errorf("microphone: AudioQueueStart: %d", status)
+		return nil, nil, fmt.Errorf("microphone: AudioQueueStart: %d", status)
 	}
-	return &Stream{stop, ended}, nil
+	resume = func() {
+		if !r.stopped.Load() {
+			system.start(queue, 0)
+		}
+	}
+	return stop, resume, nil
+}
+
+func openWAVCapture(rate, channels int, onSamples func([]int16), onInterrupt func(bool), _ func(error)) (*captureSession, error) {
+	channelList := []int{1}
+	if channels == 2 {
+		channelList = []int{2, 1}
+	}
+	rateList := []int{48000, 44100, 16000}
+	if rate > 0 {
+		rateList = []int{rate, 48000, 44100, 16000}
+	}
+	var lastErr error
+	for _, ch := range channelList {
+		for _, r := range rateList {
+			stop, resume, err := openAudioQueue(r, ch, 0.02, 4, onSamples, onInterrupt)
+			if err == nil {
+				return &captureSession{rate: r, channels: ch, stop: stop, resume: resume}, nil
+			}
+			lastErr = err
+		}
+	}
+	if lastErr == nil {
+		lastErr = ErrUnavailable
+	}
+	return nil, lastErr
+}
+
+// availableDiskSpace returns -1 on Apple targets so recording does not call
+// statfs or NSURLVolumeAvailableCapacity* without a privacy-manifest reason;
+// full disks are still reported as ErrNoSpace when a write returns ENOSPC.
+func availableDiskSpace(string) int64 { return -1 }
+
+func isNoSpaceError(err error) bool {
+	return errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT)
 }

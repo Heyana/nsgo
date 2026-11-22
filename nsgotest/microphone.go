@@ -245,21 +245,8 @@ func (m *Microphone) finish(code string) map[string]any {
 
 // header writes r's WAV header for what it holds; m.mu is held.
 func (m *Microphone) header(r *fakeRecording) {
-	data := uint32(r.frames) * uint32(r.channels) * 2
-	h := make([]byte, 44)
-	copy(h, "RIFF")
-	binary.LittleEndian.PutUint32(h[4:], 36+data)
-	copy(h[8:], "WAVEfmt ")
-	binary.LittleEndian.PutUint32(h[16:], 16)
-	binary.LittleEndian.PutUint16(h[20:], 1)
-	binary.LittleEndian.PutUint16(h[22:], uint16(r.channels))
-	binary.LittleEndian.PutUint32(h[24:], uint32(r.rate))
-	binary.LittleEndian.PutUint32(h[28:], uint32(r.rate*r.channels*2))
-	binary.LittleEndian.PutUint16(h[32:], uint16(r.channels*2))
-	binary.LittleEndian.PutUint16(h[34:], 16)
-	copy(h[36:], "data")
-	binary.LittleEndian.PutUint32(h[40:], data)
-	r.file.WriteAt(h, 0)
+	h := driver.WAVHeader(r.rate, r.channels, uint32(r.frames)*uint32(r.channels)*2)
+	r.file.WriteAt(h[:], 0)
 }
 
 func (m *Microphone) state() map[string]any {
