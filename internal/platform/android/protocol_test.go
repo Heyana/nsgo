@@ -627,3 +627,79 @@ func TestWriteScrollConfigEncodesEdges(t *testing.T) {
 		t.Fatalf("%d unexpected trailing bytes", len(r.buf))
 	}
 }
+
+// TestReadEventSelectionChange checks that EventSelectionChange from an Android selection area
+// decodes its text and area-relative box (and zero size/empty text when cleared) and that
+// NsgoView gates emission on Protocol.EVENT_SELECTION_CHANGE and scales by density (#1555).
+func TestReadEventSelectionChange(t *testing.T) {
+	encode := func(surface uint32, id driver.NodeID, text string, box driver.Bounds) []byte {
+		var w writer
+		w.u32(surface)
+		w.byte(byte(driver.EventSelectionChange))
+		w.u32(uint32(id))
+		w.u32(0) // count
+		w.points(box.Origin.X)
+		w.points(box.Origin.Y)
+		w.str(text)
+		w.points(box.Size.Width)
+		w.points(box.Size.Height)
+		w.u32(0)  // index
+		w.byte(0) // phase
+		w.points(0)
+		w.points(0)
+		w.float(0) // value
+		w.byte(0)  // no navigation
+		w.u64(0)   // time
+		w.u64(0)   // duration
+		w.byte(0)  // buffering
+		w.str("")  // data
+		w.byte(0)  // finished
+		w.points(0)
+		w.points(0)
+		w.points(0)
+		w.points(0)
+		w.byte(0) // mods
+		return w.buf
+	}
+	cases := []struct {
+		name    string
+		surface uint32
+		id      driver.NodeID
+		text    string
+		box     driver.Bounds
+	}{
+		{
+			name: "selected", surface: 0, id: 17, text: "alpha\nbeta",
+			box: driver.Bounds{Origin: driver.Point{X: 12.5, Y: 24}, Size: driver.Size{Width: 160, Height: 48}},
+		},
+		{
+			name: "cleared", surface: 2, id: 17, text: "",
+			box: driver.Bounds{},
+		},
+	}
+	for _, tc := range cases {
+		r := reader{encode(tc.surface, tc.id, tc.text, tc.box)}
+		from, ev, data := readEvent(&r)
+		if len(r.buf) != 0 || from != tc.surface || data != "" {
+			t.Fatalf("%s: from=%d data=%q remaining=%d", tc.name, from, data, len(r.buf))
+		}
+		if ev.Kind != driver.EventSelectionChange || ev.ID != tc.id || ev.Text != tc.text ||
+			ev.Point != tc.box.Origin || ev.Size != tc.box.Size || ev.Count != 0 || ev.Index != 0 || ev.Ranges != nil {
+			t.Errorf("%s: decoded %+v, want text=%q box=%+v", tc.name, ev, tc.text, tc.box)
+		}
+	}
+
+	testhost.RequireSource(t)
+	java, err := os.ReadFile(filepath.Join("java", "dev", "oneo", "nsgo", "NsgoView.java"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `n.has(Protocol.EVENT_SELECTION_CHANGE)`
+	if !strings.Contains(string(java), want) {
+		t.Errorf("NsgoView.java missing %q gate for selection reports", want)
+	}
+	wantCall := `event(Protocol.EVENT_SELECTION_CHANGE, n.id, 0, x / density, y / density, text, width / density, height / density, 0)`
+	if !strings.Contains(string(java), wantCall) {
+		t.Errorf("NsgoView.java missing %q", wantCall)
+	}
+}

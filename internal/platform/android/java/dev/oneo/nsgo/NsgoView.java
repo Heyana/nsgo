@@ -2416,7 +2416,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 long downTime = e.getDownTime();
                 selectLater = () -> {
                     selectLater = null;
-                    Selection s = new Selection(this, area);
+                    Selection s = new Selection(this, area, (text, bx, by, bw, bh) -> reportSelection(area, text, bx, by, bw, bh));
                     if (!s.selectWordAt(selectDownX, selectDownY)) return;
                     selection = s;
                     selectingTouch = true;
@@ -2515,6 +2515,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
         }
         return area;
+    }
+
+    /** Reports an area's selection change in points in the area when the area listens for it. */
+    private void reportSelection(View area, String text, int x, int y, int width, int height) {
+        Node n = byView.get(area);
+        if (n != null && n.has(Protocol.EVENT_SELECTION_CHANGE)) {
+            event(Protocol.EVENT_SELECTION_CHANGE, n.id, 0, x / density, y / density, text, width / density, height / density, 0);
+        }
     }
 
     /** Follows the selection's texts after a batch or a scroll. */

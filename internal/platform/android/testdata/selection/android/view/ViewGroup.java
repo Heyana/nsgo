@@ -11,6 +11,10 @@ public class ViewGroup extends View {
         super(context, 0, 0);
     }
 
+    public ViewGroup(Context context, int x, int y) {
+        super(context, x, y);
+    }
+
     public int getChildCount() { return children.size(); }
 
     public View getChildAt(int index) { return children.get(index); }

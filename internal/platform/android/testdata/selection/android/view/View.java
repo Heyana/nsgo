@@ -5,7 +5,8 @@ import android.content.Context;
 public class View {
     public static final int VISIBLE = 0;
     private final Context context;
-    private final int x, y;
+    private int x, y;
+    private boolean attached = true;
     ViewGroup parent;
 
     protected View(Context context, int x, int y) {
@@ -14,11 +15,20 @@ public class View {
         this.y = y;
     }
 
+    public void setLocation(int x, int y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    public void setAttached(boolean attached) {
+        this.attached = attached;
+    }
+
     public Context getContext() { return context; }
 
     public int getVisibility() { return VISIBLE; }
 
-    public boolean isAttachedToWindow() { return true; }
+    public boolean isAttachedToWindow() { return attached; }
 
     public ViewGroup getParent() { return parent; }
 

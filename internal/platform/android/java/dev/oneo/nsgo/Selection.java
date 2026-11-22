@@ -51,8 +51,14 @@ final class Selection {
         }
     }
 
+    /** Receives selection changes: the text selected and the box of the texts it touches, in the area's pixels; empty text and zero size for no selection. */
+    interface Listener {
+        void onSelectionChange(String text, int x, int y, int width, int height);
+    }
+
     private final ViewGroup host;
     final View area;
+    private final Listener listener;
     /** The area's texts in document order, and their content boxes in the host. */
     private final List<TextNode> texts = new ArrayList<>();
     private final List<Rect> boxes = new ArrayList<>();
@@ -61,11 +67,19 @@ final class Selection {
     private TextNode startText, endText;
     private final ImageView[] handles = new ImageView[2];
     private ActionMode toolbar;
-    private final int[] at = new int[2], hostAt = new int[2];
+    private final int[] at = new int[2], hostAt = new int[2], areaAt = new int[2];
+    /** The extent (in area pixels) and text last reported. */
+    private int toldX, toldY, toldWidth, toldHeight;
+    private String toldText = "";
 
     Selection(ViewGroup host, View area) {
+        this(host, area, null);
+    }
+
+    Selection(ViewGroup host, View area, Listener listener) {
         this.host = host;
         this.area = area;
+        this.listener = listener;
     }
 
     /** Lists the area's texts again, with their boxes in the host. */
@@ -73,6 +87,7 @@ final class Selection {
         texts.clear();
         boxes.clear();
         host.getLocationInWindow(hostAt);
+        area.getLocationInWindow(areaAt);
         walk(area);
     }
 
@@ -174,7 +189,10 @@ final class Selection {
     /** Selects every text of the area. */
     void selectAll() {
         list();
-        if (texts.isEmpty()) return;
+        if (texts.isEmpty()) {
+            clear();
+            return;
+        }
         int last = texts.size() - 1;
         set(new Position(0, 0), new Position(last, content(last).length()));
     }
@@ -201,7 +219,7 @@ final class Selection {
         show();
     }
 
-    /** Has each text draw its part, and places the handles and the toolbar. */
+    /** Has each text draw its part, reports any change, and places the handles and the toolbar. */
     private void show() {
         for (int i = 0; i < texts.size(); i++) {
             int from = 0, to = content(i).length();
@@ -213,6 +231,7 @@ final class Selection {
             }
             texts.get(i).select(from, to);
         }
+        tell();
         placeHandles();
         if (toolbar != null) toolbar.invalidateContentRect();
     }
@@ -245,6 +264,51 @@ final class Selection {
             t.finish();
         }
         start = end = null;
+        startText = endText = null;
+        tell();
+    }
+
+    /** Reports the selection's text and the box of the texts it touches, in the area's pixels, when either changed. */
+    private void tell() {
+        int left = 0, top = 0, right = 0, bottom = 0;
+        if (start != null) {
+            for (int i = start.text; i <= end.text; i++) {
+                CharSequence c = content(i);
+                int from = i == start.text ? start.offset : 0;
+                int to = i == end.text ? end.offset : c.length();
+                if (from >= to) continue;
+                Rect f = boxes.get(i);
+                if (bottom <= top) {
+                    left = f.left;
+                    top = f.top;
+                    right = f.right;
+                    bottom = f.bottom;
+                } else {
+                    left = Math.min(left, f.left);
+                    top = Math.min(top, f.top);
+                    right = Math.max(right, f.right);
+                    bottom = Math.max(bottom, f.bottom);
+                }
+            }
+        }
+        int x = 0, y = 0, width = 0, height = 0;
+        String selected = "";
+        if (bottom > top) {
+            x = left - (areaAt[0] - hostAt[0]);
+            y = top - (areaAt[1] - hostAt[1]);
+            width = right - left;
+            height = bottom - top;
+            selected = text();
+        }
+        if (x == toldX && y == toldY && width == toldWidth && height == toldHeight && selected.equals(toldText)) {
+            return;
+        }
+        toldX = x;
+        toldY = y;
+        toldWidth = width;
+        toldHeight = height;
+        toldText = selected;
+        if (listener != null) listener.onSelectionChange(selected, x, y, width, height);
     }
 
     /** The selected text: texts on one row joined by a tab, others by a line break; attachments left out. */
