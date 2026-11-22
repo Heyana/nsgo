@@ -19,25 +19,6 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-func TestHoldsWebCookiesSkipsWhatTheStoreDrops(t *testing.T) {
-	stored := []driver.WebCookie{{Name: "a", Value: "1", Domain: ".example.com", Path: "/"}, {Name: "b", Value: "2", Domain: "example.com"}}
-	for _, c := range []struct {
-		want []driver.WebCookie
-		held bool
-	}{
-		{[]driver.WebCookie{{Name: "a", Value: "1", Domain: "example.com"}, {Name: "b", Value: "2", Domain: "example.com", Path: "/"}}, true},
-		{[]driver.WebCookie{{Name: "a", Value: "0", Domain: ".example.com"}}, false},
-		{[]driver.WebCookie{{Name: "c", Value: "3", Domain: "example.com"}}, false},
-		// Replaced by the next, and expired.
-		{[]driver.WebCookie{{Name: "a", Value: "0", Domain: ".example.com"}, {Name: "a", Value: "1", Domain: ".example.com"}}, true},
-		{[]driver.WebCookie{{Name: "c", Value: "3", Domain: "example.com", Expires: time.Unix(1, 0)}}, true},
-	} {
-		if got := holdsWebCookies(stored, c.want); got != c.held {
-			t.Errorf("holdsWebCookies(%v) = %v, want %v", c.want, got, c.held)
-		}
-	}
-}
-
 // TestSetWebCookiesReachesThePagesLoadedAfter sets an HttpOnly session cookie, an HttpOnly one with an expiry and one of another path before any web view exists, which a hidden web view writes, then shows a web view and an Incognito one of a local server's pages: the server must hear the first two from the web view and none from the Incognito one, and the page's script must not see the HttpOnly ones. A second run of the app, with the same profile, sends the cookie with an expiry but not the session one. Each run is a process of its own, as WebView2 keeps one environment per profile and thread.
 func TestSetWebCookiesReachesThePagesLoadedAfter(t *testing.T) {
 	if testing.Short() {
@@ -103,9 +84,18 @@ func TestSetWebCookiesReachesThePagesLoadedAfter(t *testing.T) {
 	if strings.Contains(again, "sid=") {
 		t.Errorf("after a restart the web view sent Cookie %q, with the session cookie", again)
 	}
+	run("expire")
+	mu.Lock()
+	expired := heard["/expire"]
+	mu.Unlock()
+	if strings.Contains(expired, "keep=") {
+		t.Errorf("an expired write left the persistent cookie in Cookie %q", expired)
+	}
 }
 
-// cookieApp is a run of TestSetWebCookiesReachesThePagesLoadedAfter's app: "set" sets the cookies and loads /page and /incognito, "again" loads /again; the window's title says when it is done.
+// cookieApp is a run of TestSetWebCookiesReachesThePagesLoadedAfter's app:
+// "set" writes the cookies and loads /page and /incognito, "again" loads /again,
+// and "expire" removes the persistent cookie before loading /expire.
 func cookieApp(t *testing.T, phase string) {
 	server, value := os.Getenv("NSGO_TEST_SERVER"), os.Getenv("NSGO_TEST_VALUE")
 	host := strings.TrimPrefix(server, "http://")
@@ -117,13 +107,13 @@ func cookieApp(t *testing.T, phase string) {
 		failure, script := core.NewSignal(cx, ""), core.NewSignal(cx, "")
 		cx.Effect(func() {
 			want := 2
-			if phase == "again" {
+			if phase != "set" {
 				want = 1
 			}
 			switch {
 			case failure.Get() != "":
 				cx.SetTitle(title + "|" + failure.Get())
-			case loaded.Get() >= want && (phase == "again" || script.Get() != ""):
+			case loaded.Get() >= want && (phase != "set" || script.Get() != ""):
 				cx.SetTitle(title + "|done")
 			}
 		})
@@ -131,9 +121,19 @@ func cookieApp(t *testing.T, phase string) {
 		if phase == "set" {
 			cx.SetWebCookies([]core.WebCookie{
 				{Name: "sid", Value: value, Domain: host, HTTPOnly: true, SameSite: core.WebSameSiteLax},
-				{Name: "keep", Value: value, Domain: host, Path: "/", Expires: time.Now().Add(time.Hour), HTTPOnly: true},
+				{Name: "keep", Value: value, Domain: host, Path: "/", Expires: time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC), HTTPOnly: true},
 				{Name: "elsewhere", Value: value, Domain: host, Path: "/elsewhere"},
 			}, func(err error) {
+				if err != nil {
+					failure.Set(err.Error())
+					return
+				}
+				ready.Set(true)
+			})
+		}
+		if phase == "expire" {
+			cx.SetWebCookies([]core.WebCookie{{Name: "keep", Value: value, Domain: host, Path: "/",
+				Expires: time.Date(1601, time.January, 1, 0, 0, 0, 0, time.UTC)}}, func(err error) {
 				if err != nil {
 					failure.Set(err.Error())
 					return
@@ -148,8 +148,8 @@ func cookieApp(t *testing.T, phase string) {
 		}
 		return core.View{Style: core.Style{Width: driver.Pt(320), Height: driver.Pt(120), Direction: core.Row}, Children: []core.Node{
 			core.Show{When: ready.Get, Then: func(*core.Scope) core.Node {
-				if phase == "again" {
-					return core.WebView{Source: core.WebSrc(server + "/again"), Style: size, OnLoad: load}
+				if phase != "set" {
+					return core.WebView{Source: core.WebSrc(server + "/" + phase), Style: size, OnLoad: load}
 				}
 				return core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{
 					core.WebView{Source: core.WebSrc(server + "/page"), Style: size, OnLoad: load, OnMessage: message},

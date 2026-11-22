@@ -27,6 +27,7 @@ const (
 	cookieManagerCreateCookie      = 3
 	cookieManagerGetCookies        = 5
 	cookieManagerAddOrUpdateCookie = 6
+	cookieManagerDeleteByKey       = 9 // DeleteCookiesWithDomainAndPath
 
 	// ICoreWebView2_13, after ICoreWebView2_12's.
 	web13GetProfile = 105
@@ -312,8 +313,18 @@ func cookieManagerOf(web *comObject) *comObject {
 	return manager
 }
 
-// addWebCookie adds or replaces c in manager's store: a cookie without an expiry is a session one, as CreateCookie makes it.
+// addWebCookie adds or replaces c in manager's store, or removes its key when expired. A cookie without an expiry is a session one, as CreateCookie makes it.
 func addWebCookie(manager *comObject, c driver.WebCookie) error {
+	if !c.Expires.IsZero() && !c.Expires.After(time.Now()) {
+		// WebView2 refuses negative expiry times (except -1, a session
+		// cookie), so delete expired cookies by their key instead.
+		hr := manager.call(cookieManagerDeleteByKey, uintptr(unsafe.Pointer(wide(c.Name))),
+			uintptr(unsafe.Pointer(wide(c.Domain))), uintptr(unsafe.Pointer(wide(c.CookiePath()))))
+		if failed(hr) {
+			return hresultError("DeleteCookiesWithDomainAndPath "+c.Name, hr)
+		}
+		return nil
+	}
 	var cookie *comObject
 	hr := manager.call(cookieManagerCreateCookie, uintptr(unsafe.Pointer(wide(c.Name))), uintptr(unsafe.Pointer(wide(c.Value))),
 		uintptr(unsafe.Pointer(wide(c.Domain))), uintptr(unsafe.Pointer(wide(c.CookiePath()))), uintptr(unsafe.Pointer(&cookie)))
@@ -322,7 +333,7 @@ func addWebCookie(manager *comObject, c driver.WebCookie) error {
 	}
 	defer cookie.release()
 	if !c.Expires.IsZero() {
-		if hr := cookie.callDouble(cookiePutExpires, float64(c.Expires.UnixNano())/1e9); failed(hr) {
+		if hr := cookie.callDouble(cookiePutExpires, cookieExpirySeconds(c.Expires)); failed(hr) {
 			return hresultError("put_Expires", hr)
 		}
 	}
@@ -421,34 +432,6 @@ func listWebCookies(manager *comObject, done func([]driver.WebCookie, error)) {
 	}
 }
 
-// holdsWebCookies reports whether stored holds each of want that the store keeps, by its name, value, domain and path: not one that expired, which the store drops, nor one a later one of its name, domain and path replaces. A domain compares without its leading dot, which WebView2 may write either way for a domain cookie.
-func holdsWebCookies(stored, want []driver.WebCookie) bool {
-	same := func(a, b driver.WebCookie) bool {
-		return a.Name == b.Name && a.Host() == b.Host() && a.CookiePath() == b.CookiePath()
-	}
-	now := time.Now()
-	for i, c := range want {
-		replaced := false
-		for _, later := range want[i+1:] {
-			replaced = replaced || same(c, later)
-		}
-		if replaced || !c.Expires.IsZero() && c.Expires.Before(now) {
-			continue
-		}
-		found := false
-		for _, s := range stored {
-			if same(s, c) && s.Value == c.Value {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
 // webCookie reads an ICoreWebView2Cookie, whose domain has the leading dot of a cookie every host under it shares, as Chromium keeps it. WebView2's SameSite has no kind for a cookie set without the attribute, and reads such a one as one of the three, Lax by its documentation.
 func webCookie(cookie *comObject) driver.WebCookie {
 	flag := func(method int) bool {
@@ -459,7 +442,7 @@ func webCookie(cookie *comObject) driver.WebCookie {
 		Path: cookie.getString(cookieGetPath), Secure: flag(cookieGetIsSecure), HTTPOnly: flag(cookieGetIsHttpOnly)}
 	var expires float64
 	if !flag(cookieGetIsSession) && !failed(cookie.call(cookieGetExpires, uintptr(unsafe.Pointer(&expires)))) && expires > 0 {
-		c.Expires = time.Unix(0, int64(expires*1e9)).UTC()
+		c.Expires = cookieExpiryTime(expires)
 	}
 	var policy int32 = -1
 	if !failed(cookie.call(cookieGetSameSite, uintptr(unsafe.Pointer(&policy)))) {

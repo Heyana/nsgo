@@ -428,6 +428,8 @@ cx.SetWebCookies([]core.WebCookie{
 })
 ```
 
+To remove one cookie, write it again with the same name, domain and path and `Expires` in the past; a zero expiry makes a session cookie. Wait for the callback before loading a page that should observe the removal.
+
 The other way round, `cx.WebCookies` lists the store's cookies, HttpOnly ones and their domain, path, expiry and flags included, which `document.cookie` cannot read, whether or not a page of the site is showing: a `core.WebCookieFilter` picks those a request to a `URL` would send, or those of a `Domain` and every host under it, and the zero filter all of them. An app calling the site from Go with the user's sign-in, or showing where the user is signed in, reads them this way. `cx.ClearWebsiteData` signs the user out of every site: it removes the store's cookies, local and session storage, IndexedDB, service workers and caches, and done runs once they are gone. Android's `CookieManager` answers only the names and values a URL would send, so there only a `URL` filter lists, filling `Domain` with its host and leaving the other fields empty, and a `Domain` filter or the zero one answers `Unavailable`; clearing there leaves the HTTP cache. The web, tvOS and watchOS answer `Unavailable` to both.
 
 ```go

@@ -100,7 +100,8 @@ func webCookie(cookie objc.ID) driver.WebCookie {
 	if !flag("isSessionOnly") {
 		if at := cookie.Send(sel("expiresDate")); at != 0 {
 			seconds := objc.Send[float64](at, sel("timeIntervalSince1970"))
-			c.Expires = time.Unix(0, int64(seconds*1e9)).UTC()
+			whole := int64(seconds)
+			c.Expires = time.Unix(whole, int64((seconds-float64(whole))*1e9)).UTC()
 		}
 	}
 	switch str("sameSitePolicy") {
@@ -128,7 +129,8 @@ func httpCookie(c driver.WebCookie) objc.ID {
 	if c.Expires.IsZero() {
 		set("NSHTTPCookieDiscard", yes)
 	} else {
-		seconds := float64(c.Expires.UnixNano()) / 1e9
+		// Cookie dates extend beyond UnixNano's 1678–2262 range.
+		seconds := float64(c.Expires.Unix()) + float64(c.Expires.Nanosecond())/1e9
 		set("NSHTTPCookieExpires", objc.ID(Class("NSDate")).Send(sel("dateWithTimeIntervalSince1970:"), seconds))
 	}
 	if c.Secure {

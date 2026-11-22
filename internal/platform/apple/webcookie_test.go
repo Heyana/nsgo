@@ -72,3 +72,31 @@ func TestWebCookieReadsWhatHTTPCookieWrites(t *testing.T) {
 		}
 	})
 }
+
+func TestHTTPCookieExpiryOutsideNanoseconds(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		name    string
+		expires time.Time
+		future  bool
+	}{
+		{"expired", time.Date(1601, time.January, 1, 0, 0, 0, 0, time.UTC), false},
+		{"persistent", time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withPool(func() {
+				c := driver.WebCookie{Name: tc.name, Value: "fixture", Domain: ".example.com", Path: "/", Expires: tc.expires, Secure: true, HTTPOnly: true}
+				cookie := httpCookie(c)
+				if cookie == 0 {
+					t.Fatal("Foundation refused a valid cookie expiry")
+				}
+				got := webCookie(cookie)
+				// WebKit may cap a long-lived cookie's lifetime; its expiry must
+				// stay on the right side of now in both directions.
+				if got.Expires.IsZero() || got.Expires.After(now) != tc.future {
+					t.Fatalf("expiry %s became %s (want future %t)", tc.expires, got.Expires, tc.future)
+				}
+			})
+		})
+	}
+}
