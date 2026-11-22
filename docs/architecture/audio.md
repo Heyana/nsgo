@@ -73,7 +73,7 @@ An owner held to `core.Access` keeps the default limits within the engine's budg
 
 ## Sessions
 
-The engines' audio objects are per engine, but iOS has one `AVAudioSession` per process, which videos, speech, `microphone` and now audio all set. A shared package, `internal/audiosession`, holds it for all of them: it imports nothing of the module, so `microphone` and the Apple backend both import it (a rule of its own in `layering_test.go`, with `microphone`'s widened to it and the package added to `platformShared`), it guards its holders with a mutex, so the main thread, the audio workers and `microphone`'s caller may all call it, and it does nothing outside iOS. It replaced `apple/audiosession_ios.go`'s list and `speech_ios.go`'s and `microphone_ios.go`'s own copies, so a video that starts playing with a session of its own no longer takes it from a recording, which the roadmap's *Recording beside video on iOS* row checks on a device.
+The engines' audio objects are per engine, but iOS has one `AVAudioSession` per process, which videos, speech, `microphone` and audio all set. A shared package, `internal/audiosession`, holds it for all of them: it imports nothing of the module, so `microphone`, `audio` and the Apple backend all import it (a rule of its own in `layering_test.go`, with `microphone`'s widened to it and the package added to `platformShared`), it guards its holders with a mutex, so the main thread, the audio workers and `microphone`'s caller may all call it, and it does nothing outside iOS. It replaced `apple/audiosession_ios.go`'s list and `speech_ios.go`'s and `microphone_ios.go`'s own copies, so a video that starts playing with a session of its own no longer takes it from a recording, which the roadmap's *Recording beside video on iOS* row checks on a device.
 
 Each holder asks for a level, and the highest held sets the session:
 
@@ -83,6 +83,8 @@ Each holder asks for a level, and the highest held sets the session:
 4. Ambient, every sound and a player with `AudioSessionDefault`: `Ambient`, as NSH sets it, which mixes with other apps' audio and which the Ring/Silent switch and the screen lock silence.
 5. Kept, a video with `AudioSessionDefault`: the category from before the first holder, the app's own, kept active, since deactivating the session under a playing `AVPlayer` stops it, as a playing video switching to the default session did.
 6. None held: the category from before the first holder, then deactivation telling other apps they may play.
+
+An audio engine NSGo does not see, such as a player core's own `AudioQueue`, would otherwise play under whatever the session has, and setting the category itself would fight these holders. `audio.HoldSession(session)` holds the session for it as a playing player with that `AudioSession` does, at Ambient, Mixing or Playback, until its release; it needs no scope, so a library calls it from any goroutine. It reports nothing of interruptions or lost routes, which such an engine observes on `AVAudioSession` itself, and reactivates nothing after an interruption, as players do not; a goal for `audio.Output` (#1057). Android takes no audio focus for it.
 
 A video's `AudioSessionDefault` leaves the category to the app, as it did when it held nothing. Audio's is ambient instead because leaving the session alone would play under `SoloAmbient`, iOS's default category, which stops other apps' audio.
 

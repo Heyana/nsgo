@@ -101,7 +101,8 @@ var layers = []struct {
 	{"mobile/locales", []string{"core", "i18n"}},
 	{"mobile", []string{"core"}},
 	{"web", []string{"core"}},
-	{"audio", []string{"core"}},
+	// Audio holds iOS's audio session for a library's own output beside the backends' players.
+	{"audio", []string{"core", "internal/audiosession"}},
 	// Gamepads reach GameController on Apple (with objcblock), XInput on Windows, evdev on Linux, navigator.getGamepads on the web, and the driver's bridge on Android and nsgotest.
 	{"gamepad", []string{"core", "internal/driver", "internal/platform/objcblock"}},
 	{"gpu", []string{"core", "internal/driver", "internal/shader", "internal/shader/wgsl", "internal/shaderir/"}},
