@@ -4,35 +4,42 @@ package linux
 
 import (
 	"math"
-
-	"github.com/ebitengine/purego"
-	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/ebitengine/purego"
+
+	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-func translate1394(d, x, r uintptr) (int32, int32) {
-	var f func(uintptr, uintptr, uintptr, int32, int32, *int32, *int32, *uintptr) int32
-	lib, _ := purego.Dlopen("libX11.so.6", purego.RTLD_NOW|purego.RTLD_LOCAL)
+// xTranslateCoordinates is Xlib's XTranslateCoordinates, which reads where the X server put a window, bound once; nil where libX11 does not load.
+var xTranslateCoordinates = sync.OnceValue(func() func(display, src, dst uintptr, x, y int32, dx, dy *int32, child *uintptr) int32 {
+	lib, err := purego.Dlopen("libX11.so.6", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	if err != nil {
+		return nil
+	}
+	var f func(display, src, dst uintptr, x, y int32, dx, dy *int32, child *uintptr) int32
 	purego.RegisterLibFunc(&f, lib, "XTranslateCoordinates")
-	var a, b int32
-	f(d, x, r, 0, 0, &a, &b, new(uintptr))
-	return a, b
-}
-func wait1394(t *testing.T, s string, p func() bool) {
-	for d := time.Now().Add(5 * time.Second); time.Now().Before(d); time.Sleep(10 * time.Millisecond) {
-		if p() {
+	return f
+})
+
+// waitPanel polls ok for up to five seconds, failing the test with what it waited for.
+func waitPanel(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for end := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if ok() {
 			return
 		}
+		if time.Now().After(end) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
 	}
-	t.Fatal("timed out waiting for ", s)
 }
 
-// nativePixels1394 renders the complete GtkWindow snapshot, including the
-// root surface background and GTK's native render nodes. The software paint
-// helper used by most tests deliberately bypasses that layer.
-func nativePixels1394(t *testing.T, w *window) pixels {
+// panelSnapshotPixels renders the complete GtkWindow snapshot, including the root surface background and GTK's native render nodes, which the software paint helper most tests use bypasses.
+func panelSnapshotPixels(t *testing.T, w *window) pixels {
 	t.Helper()
 	var out pixels
 	w.onLoop(t, func() {
@@ -65,15 +72,17 @@ func nativePixels1394(t *testing.T, w *window) pixels {
 	return out
 }
 
+// TestTransparentFittedPanelKeepsItsAnchor shows a transparent fitted panel beside an anchor on X11 and checks its rounded card's pixels and that it stays beside the anchor, where driver.PlaceWindow puts it, as its content grows and shrinks.
 func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens windows")
 	}
-	ready := make(chan struct {
-		p *core.Window
-		h *core.Signal[driver.Points]
-		s *core.Scope
-	}, 1)
+	type control struct {
+		panel  *core.Window
+		height *core.Signal[driver.Points]
+		scope  *core.Scope
+	}
+	ready := make(chan control, 1)
 	app := core.AppRoot(func(cx *core.Scope) {
 		cx.SetShutdownMode(core.ShutdownOnExplicit)
 		h := core.NewSignal(cx, driver.Points(80))
@@ -82,17 +91,19 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 				return core.Style{Width: core.Pt(180), Height: core.Pt(h.Get()), Background: core.RGB(0x2255aa), CornerRadius: 12}
 			}}
 		})
-		ready <- struct {
-			p *core.Window
-			h *core.Signal[driver.Points]
-			s *core.Scope
-		}{p, h, cx}
+		ready <- control{p, h, cx}
 	})
-	host := startTestWindow(t, app, Options{Title: "nsgo-panel1394-host", Width: 100, Height: 80, Hidden: true})
+	host := startTestWindow(t, app, Options{Title: "nsgo-fitted-panel-host", Width: 100, Height: 80, Hidden: true})
 	defer host.onLoop(t, host.close)
 	ctl := <-ready
+	// Asking for the panel's X window would realize it at its first size, before the fitted size goes ahead of its show: tell X11 from the display instead.
+	var x11 bool
+	host.onLoop(t, func() { x11 = drawsOnX11() })
+	if !x11 || xTranslateCoordinates() == nil {
+		t.Skip("placing a panel beside its anchor needs X11")
+	}
 	var p *window
-	wait1394(t, "panel", func() bool {
+	waitPanel(t, "the panel", func() bool {
 		host.onLoop(t, func() {
 			windowHandles.Range(func(_, v any) bool {
 				w := v.(*window)
@@ -104,29 +115,20 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 		})
 		return p != nil && p.win != 0
 	})
-	var x11 bool
-	host.onLoop(t, func() {
-		_, _, x11 = p.x11Window()
-	})
-	if !x11 {
-		t.Skip("transparent fitted panel placement requires an X11 window manager")
-	}
-	if err := ctl.p.ShowAt(driver.Bounds{Origin: driver.Point{X: 300, Y: 180}, Size: driver.Size{Width: 40, Height: 24}}, core.PlaceRight); err != nil {
+	anchor := driver.Bounds{Origin: driver.Point{X: 300, Y: 180}, Size: driver.Size{Width: 40, Height: 24}}
+	if err := ctl.panel.ShowAt(anchor, core.PlaceRight); err != nil {
 		t.Fatal(err)
 	}
-	wait1394(t, "map", func() bool {
-		var m bool
-		host.onLoop(t, func() {
-			m = gtkWidgetGetMapped(p.win) != 0
-
-		})
-		return m
+	waitPanel(t, "the panel to map", func() bool {
+		var mapped bool
+		host.onLoop(t, func() { mapped = gtkWidgetGetMapped(p.win) != 0 })
+		return mapped
 	})
 	var composited bool
 	host.onLoop(t, func() { composited = p.environment().WindowTransparent })
 	var initial pixels
-	wait1394(t, "the native transparent card pixels", func() bool {
-		initial = nativePixels1394(t, p)
+	waitPanel(t, "the transparent card's pixels at its fitted size", func() bool {
+		initial = panelSnapshotPixels(t, p)
 		return initial.width == 180 && initial.height == 80
 	})
 	if q := initial.at(initial.width/2, initial.height/2); q[3] != 255 {
@@ -134,10 +136,9 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 	}
 	if composited {
 		clear, antialias := 0, 0
-		for y := 0; y < initial.height; y++ {
-			for x := 0; x < initial.width; x++ {
-				a := initial.at(x, y)[3]
-				switch {
+		for y := range initial.height {
+			for x := range initial.width {
+				switch a := initial.at(x, y)[3]; {
 				case a == 0:
 					clear++
 				case a < 255:
@@ -146,68 +147,71 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 			}
 		}
 		if clear == 0 || antialias == 0 {
-			t.Fatalf("transparent rounded panel has no clear/antialiased pixels: clear=%d antialias=%d", clear, antialias)
+			t.Fatalf("the transparent rounded panel has no clear or antialiased pixels: clear=%d antialias=%d", clear, antialias)
 		}
 	}
-	var d, x, r uintptr
-	anchor := driver.Bounds{Origin: driver.Point{X: 300, Y: 180}, Size: driver.Size{Width: 40, Height: 24}}
-	panelOrigin := func(size driver.Size) driver.Point {
-		var want driver.Point
-		host.onLoop(t, func() {
-			displays := p.environment().Displays
-			if len(displays) == 0 {
-				t.Fatal("the native test has no display")
-			}
-			area := displays[0].VisibleFrame
-			center := driver.Point{X: anchor.Origin.X + anchor.Size.Width/2, Y: anchor.Origin.Y + anchor.Size.Height/2}
-			for _, display := range displays {
-				if display.Frame.Contains(center) {
-					area = display.VisibleFrame
-					break
-				}
-			}
-			want, _ = driver.PlaceWindow(anchor, size, area, driver.WindowPlaceRight)
-		})
-		return want
-	}
-	nativeOrigin := func() driver.Point {
-		var got driver.Point
-		host.onLoop(t, func() {
-			a, b := translate1394(d, x, r)
-			got = driver.Point{X: driver.Points(a), Y: driver.Points(b)}
-		})
-		return got
-	}
-	assertPlacement := func(size driver.Size, label string) {
-		want := panelOrigin(size)
-		got := nativeOrigin()
-		var scale float64
-		host.onLoop(t, func() { scale = float64(max(gtkWidgetGetScaleFactor(p.win), 1)) })
-		want = driver.Point{X: driver.Points(math.Round(float64(want.X) * scale)), Y: driver.Points(math.Round(float64(want.Y) * scale))}
-		if got != want {
-			t.Errorf("%s panel origin = %v, want %v (scale %.1f)", label, got, want, scale)
-		}
-	}
+	var display, xid, root uintptr
 	host.onLoop(t, func() {
-		d, x, _ = p.x11Window()
-		r = x11LevelRoot(d)
+		display, xid, _ = p.x11Window()
+		root = x11LevelRoot(display)
 		if p.environment().WindowTransparent != displayComposites() {
 			t.Errorf("transparent=%v compositor=%v", p.environment().WindowTransparent, displayComposites())
 		}
 	})
-	assertPlacement(driver.Size{Width: 180, Height: 80}, "initial")
-	ctl.s.Post(func() { ctl.h.Set(180) })
-	wait1394(t, "grow", func() bool {
-		var width, height int32
-		host.onLoop(t, func() { width, height = gtkWidgetGetWidth(p.surface), gtkWidgetGetHeight(p.surface) })
-		return width == 180 && height == 180
-	})
-	assertPlacement(driver.Size{Width: 180, Height: 180}, "grown")
-	ctl.s.Post(func() { ctl.h.Set(40) })
-	wait1394(t, "shrink", func() bool {
-		var width, height int32
-		host.onLoop(t, func() { width, height = gtkWidgetGetWidth(p.surface), gtkWidgetGetHeight(p.surface) })
-		return width == 180 && height == 40
-	})
-	assertPlacement(driver.Size{Width: 180, Height: 40}, "shrunk")
+	// placed reports where the panel is, in device pixels on the root window, and where driver.PlaceWindow puts a panel of size beside the anchor.
+	placed := func(size driver.Size) (got, want driver.Point, ok bool) {
+		host.onLoop(t, func() {
+			displays := p.environment().Displays
+			if len(displays) == 0 {
+				return
+			}
+			area := displays[0].VisibleFrame
+			center := driver.Point{X: anchor.Origin.X + anchor.Size.Width/2, Y: anchor.Origin.Y + anchor.Size.Height/2}
+			for _, d := range displays {
+				if d.Frame.Contains(center) {
+					area = d.VisibleFrame
+					break
+				}
+			}
+			want, _ = driver.PlaceWindow(anchor, size, area, driver.WindowPlaceRight)
+			scale := float64(max(gtkWidgetGetScaleFactor(p.win), 1))
+			want = driver.Point{X: driver.Points(math.Round(float64(want.X) * scale)), Y: driver.Points(math.Round(float64(want.Y) * scale))}
+			var x, y int32
+			var child uintptr
+			xTranslateCoordinates()(display, xid, root, 0, 0, &x, &y, &child)
+			got, ok = driver.Point{X: driver.Points(x), Y: driver.Points(y)}, true
+		})
+		return got, want, ok
+	}
+	// The window manager may move the panel a turn after it resizes, so wait for the place rather than reading it once.
+	assertPlaced := func(size driver.Size, label string) {
+		t.Helper()
+		var got, want driver.Point
+		var ok bool
+		for end := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+			if got, want, ok = placed(size); !ok {
+				t.Fatal("the native test has no display")
+			}
+			if got == want || time.Now().After(end) {
+				break
+			}
+		}
+		if got != want {
+			t.Errorf("%s panel origin = %v, want %v", label, got, want)
+		}
+	}
+	surfaceSize := func(width, height int32) func() bool {
+		return func() bool {
+			var w, h int32
+			host.onLoop(t, func() { w, h = gtkWidgetGetWidth(p.surface), gtkWidgetGetHeight(p.surface) })
+			return w == width && h == height
+		}
+	}
+	assertPlaced(driver.Size{Width: 180, Height: 80}, "initial")
+	ctl.scope.Post(func() { ctl.height.Set(180) })
+	waitPanel(t, "the panel to grow", surfaceSize(180, 180))
+	assertPlaced(driver.Size{Width: 180, Height: 180}, "grown")
+	ctl.scope.Post(func() { ctl.height.Set(40) })
+	waitPanel(t, "the panel to shrink", surfaceSize(180, 40))
+	assertPlaced(driver.Size{Width: 180, Height: 40}, "shrunk")
 }
