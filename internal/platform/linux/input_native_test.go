@@ -425,3 +425,99 @@ func TestClicksRestartOnAReplacedView(t *testing.T) {
 		}
 	}
 }
+
+// TestCompositionCommitsBeforeBlur checks that both GtkEntry and GtkTextView
+// commit an uncommitted preedit and report OnCompositionChange{Composing:false}
+// before OnBlur without duplicating text an input method already committed (#1563).
+func TestCompositionCommitsBeforeBlur(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	for _, multiline := range []bool{false, true} {
+		for _, mode := range []string{"uncommitted", "committed", "disable", "readonly"} {
+			name := fmt.Sprintf("multiline=%t/%s", multiline, mode)
+			t.Run(name, func(t *testing.T) {
+				title := "nsgo-ime-blur-" + name
+				var root *core.Scope
+				var disabled, readonly *core.Signal[bool]
+				app := func(cx *core.Scope) core.Node {
+					root = cx
+					value := core.NewSignal(cx, "")
+					events := core.NewSignal(cx, "")
+					disabled = core.NewSignal(cx, false)
+					readonly = core.NewSignal(cx, false)
+					add := func(ev string) {
+						events.Update(func(old string) string {
+							if old == "" {
+								return ev
+							}
+							return old + "," + ev
+						})
+					}
+					cx.Effect(func() {
+						cx.SetTitle(fmt.Sprintf("%s|%s|%s", title, value.Get(), events.Get()))
+					})
+					return core.View{Style: core.Style{Width: driver.Pt(320), Height: driver.Pt(120), Padding: driver.All(10)}, Children: []core.Node{
+						core.Input{
+							Value:        value.Get,
+							Multiline:    multiline,
+							Disabled:     disabled.Get,
+							ReadonlyFunc: readonly.Get,
+							Style:        core.Style{Width: driver.Pt(300), Height: driver.Pt(60)},
+							OnChange:     func(v string) { value.Set(v); add("change") },
+							OnCompositionChange: func(c core.Composition) {
+								if c.Composing {
+									add("comp:" + c.Text)
+								} else {
+									add("end")
+								}
+							},
+							OnFocus: func() { add("focus") },
+							OnBlur:  func() { add("blur") },
+						},
+					}}
+				}
+				w := startTestWindow(t, app, Options{Title: title, Width: 320, Height: 120})
+				waitForTitle(t, w, title+"||")
+				var field *view
+				w.onLoop(t, func() {
+					for _, v := range w.entries {
+						if v.kind == driver.KindInput {
+							field = v
+							break
+						}
+					}
+					w.focusEntry(field)
+				})
+				waitForTitle(t, w, title+"||focus")
+				imWidget := func() uintptr {
+					if field.textView != 0 {
+						return field.textView
+					}
+					return gtkEditableGetDelegate(field.entry)
+				}
+				w.onLoop(t, func() {
+					gSignalEmitByName(imWidget(), cstr("preedit-changed"), cstr("ni"))
+				})
+				waitForTitle(t, w, title+"||focus,comp:ni")
+				switch mode {
+				case "uncommitted":
+					w.onLoop(t, func() { w.focusEntry(nil) })
+					waitForTitle(t, w, title+"|ni|focus,comp:ni,change,end,blur")
+				case "committed":
+					w.onLoop(t, func() {
+						w.commitEditorText(field, "你")
+						w.focusEntry(nil)
+					})
+					waitForTitle(t, w, title+"|你|focus,comp:ni,change,end,blur")
+				case "disable":
+					root.Post(func() { disabled.Set(true) })
+					waitForTitle(t, w, title+"|ni|focus,comp:ni,change,end,blur")
+				case "readonly":
+					root.Post(func() { readonly.Set(true) })
+					waitForTitle(t, w, title+"|ni|focus,comp:ni,change,end")
+				}
+			})
+		}
+	}
+}

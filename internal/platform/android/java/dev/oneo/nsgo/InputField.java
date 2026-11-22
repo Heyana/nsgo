@@ -278,14 +278,33 @@ final class InputField extends EditText {
 
     @Override
     protected void onFocusChanged(boolean focused, int direction, android.graphics.Rect previous) {
-        super.onFocusChanged(focused, direction, previous);
         if (!focused) {
-            // A composition does not outlive the focus.
-            clearComposingText();
-            syncComposition();
-        } else {
+            // A composition does not outlive the focus; end it before View's
+            // focus listener reports the blur.
+            endComposition();
+        }
+        super.onFocusChanged(focused, direction, previous);
+        if (focused) {
             post(this::caretMoved);
         }
+    }
+
+    /**
+     * Ends an active IME composition, keeping its text and reporting any
+     * unreported text change before the composition's end.
+     */
+    private void endComposition() {
+        clearComposingText();
+        Editable text = getText();
+        if (text != null) {
+            String current = text.toString();
+            if (!current.equals(known)) {
+                known = current;
+                count++;
+                listener.send(Protocol.EVENT_CHANGE_TEXT, count, 0, current, false);
+            }
+        }
+        syncComposition();
     }
 
     /**
@@ -323,6 +342,9 @@ final class InputField extends EditText {
             }
             type |= noAutoCorrect ? InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS : InputType.TYPE_TEXT_FLAG_AUTO_CORRECT;
             if (multiline) type |= InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+        }
+        if ((readonly || disabled) && inComposition) {
+            endComposition();
         }
         int selection = getSelectionEnd();
         // Before the input type: setSingleLine replaces a password's

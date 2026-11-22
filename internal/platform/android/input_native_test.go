@@ -3,6 +3,8 @@
 package android
 
 import (
+	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -175,5 +177,88 @@ func TestHardwareEnterWithoutBindingSubmits(t *testing.T) {
 	}
 	if i.automatic.Load() != 0 || i.submits.Load() != 2 || i.blurs.Load() != 0 || i.keyPresses.Load() != 2 {
 		t.Fatalf("hardware Enter: automatic=%d submits=%d blurs=%d key presses=%d", i.automatic.Load(), i.submits.Load(), i.blurs.Load(), i.keyPresses.Load())
+	}
+}
+
+// TestCompositionEndsBeforeBlur checks that blurring a composing InputField
+// reports OnCompositionChange{Composing:false} before OnBlur and keeps the
+// composed text (#1563).
+func TestCompositionEndsBeforeBlur(t *testing.T) {
+	var mu sync.Mutex
+	var events []string
+	var text string
+	focused := make(chan struct{}, 1)
+	blurred := make(chan struct{}, 1)
+	var root *core.Scope
+	ref := &core.Ref{}
+	record := func(ev string) {
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+	}
+	s, err := testhost.Current().Open(func(cx *core.Scope) core.Node {
+		root = cx
+		return core.Input{
+			Ref:       ref,
+			AutoFocus: true,
+			Style:     core.Style{Width: core.Pt(240), Height: core.Pt(60)},
+			OnFocus: func() {
+				record("focus")
+				select {
+				case focused <- struct{}{}:
+				default:
+				}
+			},
+			OnChange: func(v string) {
+				mu.Lock()
+				text = v
+				events = append(events, "change:"+v)
+				mu.Unlock()
+			},
+			OnCompositionChange: func(c core.Composition) {
+				if c.Composing {
+					record("comp:" + c.Text)
+				} else {
+					record("end")
+				}
+			},
+			OnBlur: func() {
+				record("blur")
+				select {
+				case blurred <- struct{}{}:
+				default:
+				}
+			},
+		}
+	}, testhost.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := s.(*testSurface)
+	select {
+	case <-focused:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the native input did not take the focus")
+	}
+	ts.Sync()
+	if err := ts.Compose("ni"); err != nil {
+		t.Fatal(err)
+	}
+	ts.Sync()
+	root.Post(ref.Blur)
+	select {
+	case <-blurred:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the native input did not blur")
+	}
+	ts.Sync()
+	mu.Lock()
+	gotEvents := slices.Clone(events)
+	gotText := text
+	mu.Unlock()
+	endIdx := slices.Index(gotEvents, "end")
+	blurIdx := slices.Index(gotEvents, "blur")
+	if gotText != "ni" || endIdx < 0 || blurIdx < 0 || endIdx > blurIdx {
+		t.Fatalf("text=%q events=%v, want text \"ni\" and \"end\" before \"blur\"", gotText, gotEvents)
 	}
 }

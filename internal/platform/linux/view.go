@@ -83,6 +83,7 @@ type view struct {
 	editorNum                     uint64  // names the editor's widgets for its CSS (editorName)
 	input                         driver.InputConfig
 	fs                            field.State
+	preedit                       preeditState
 	// setting is the window setting the text, not the user; clipping an
 	// insertion cut to maxLength.
 	setting, clipping bool

@@ -45,6 +45,7 @@ var (
 	gtkTextViewSetBottomMargin     func(uintptr, int32)
 	gtkTextViewSetLeftMargin       func(uintptr, int32)
 	gtkTextViewSetRightMargin      func(uintptr, int32)
+	gtkTextViewResetImContext      func(uintptr)
 	gtkTextBufferSetText           func(uintptr, *byte, int32)
 	gtkTextBufferGetText           func(uintptr, *textIter, *textIter, int32) uintptr
 	gtkTextBufferGetBounds         func(uintptr, *textIter, *textIter)
@@ -53,12 +54,14 @@ var (
 	gtkTextBufferSelectRange       func(uintptr, *textIter, *textIter)
 	gtkTextBufferInsert            func(uintptr, uintptr, *byte, int32)
 	gtkTextBufferInsertAtCursor    func(uintptr, *byte, int32)
+	gtkTextBufferDeleteSelection   func(uintptr, int32, int32) int32
 	gtkTextIterGetOffset           func(uintptr) int32
 	gtkScrolledWindowNew           func() uintptr
 	gtkScrolledWindowSetChild      func(uintptr, uintptr)
 	gtkScrolledWindowSetPolicy     func(uintptr, int32, int32)
 	gtkEditableGetSelectionBounds  func(uintptr, *int32, *int32) int32
 	gtkEditableInsertText          func(uintptr, *byte, int32, uintptr)
+	gtkEditableSetPosition         func(uintptr, int32)
 	gtkEditableGetDelegate         func(uintptr) uintptr
 	gtkEntrySetInputPurpose        func(uintptr, int32)
 	gtkEntrySetInputHints          func(uintptr, int32)
@@ -93,6 +96,7 @@ func bindEditing() {
 		{&gtkTextViewSetBottomMargin, "gtk_text_view_set_bottom_margin"},
 		{&gtkTextViewSetLeftMargin, "gtk_text_view_set_left_margin"},
 		{&gtkTextViewSetRightMargin, "gtk_text_view_set_right_margin"},
+		{&gtkTextViewResetImContext, "gtk_text_view_reset_im_context"},
 		{&gtkTextBufferSetText, "gtk_text_buffer_set_text"},
 		{&gtkTextBufferGetText, "gtk_text_buffer_get_text"},
 		{&gtkTextBufferGetBounds, "gtk_text_buffer_get_bounds"},
@@ -101,12 +105,14 @@ func bindEditing() {
 		{&gtkTextBufferSelectRange, "gtk_text_buffer_select_range"},
 		{&gtkTextBufferInsert, "gtk_text_buffer_insert"},
 		{&gtkTextBufferInsertAtCursor, "gtk_text_buffer_insert_at_cursor"},
+		{&gtkTextBufferDeleteSelection, "gtk_text_buffer_delete_selection"},
 		{&gtkTextIterGetOffset, "gtk_text_iter_get_offset"},
 		{&gtkScrolledWindowNew, "gtk_scrolled_window_new"},
 		{&gtkScrolledWindowSetChild, "gtk_scrolled_window_set_child"},
 		{&gtkScrolledWindowSetPolicy, "gtk_scrolled_window_set_policy"},
 		{&gtkEditableGetSelectionBounds, "gtk_editable_get_selection_bounds"},
 		{&gtkEditableInsertText, "gtk_editable_insert_text"},
+		{&gtkEditableSetPosition, "gtk_editable_set_position"},
 		{&gtkEditableGetDelegate, "gtk_editable_get_delegate"},
 		{&gtkEntrySetInputPurpose, "gtk_entry_set_input_purpose"},
 		{&gtkEntrySetInputHints, "gtk_entry_set_input_hints"},
@@ -215,6 +221,16 @@ func editorBounds(in *driver.InputConfig) driver.Bounds {
 // it on the first configuration and again when it becomes or stops being
 // multiline.
 func (w *window) configure(v *view, in *driver.InputConfig) {
+	if v.kind == driver.KindInput && v.entry != 0 && w.focus == v && !v.input.Readonly && !v.input.Disabled &&
+		(in.Disabled || in.Readonly || in.Multiline != (v.textView != 0)) {
+		// Commit any active preedit while the old config still allows edits,
+		// before turning disabled/read-only or rebuilding the editor.
+		if v.textView != 0 && v.preedit.Active() {
+			v.preedit.BeginForceFinish()
+			gtkTextViewResetImContext(v.textView)
+		}
+		w.finishPreedit(v)
+	}
 	v.input = *in
 	v.fs.Config = *in
 	if v.kind != driver.KindInput {
@@ -362,8 +378,14 @@ func (w *window) makeEditor(v *view, multiline bool) {
 		gSignalConnect(v.buffer, "delete-range", cbBufferDelete, w.handle)
 		gSignalConnect(v.buffer, "mark-set", cbBufferMark, w.handle)
 		gSignalConnect(v.textView, "preedit-changed", cbPreedit, w.handle)
-		gSignalConnect(v.textView, "notify::has-focus", cbEntryFocus, w.handle)
 		gSignalConnect(v.textView, "paste-clipboard", cbPasteClipboard, w.handle)
+		// Added after GtkTextView's own focus controller so GTK's focus-out
+		// tells the GtkIMContext to leave before our leave callback runs.
+		focus := gtkEventControllerFocusNew()
+		gSignalConnect(focus, "enter", cbEntryFocusEnter, w.handle)
+		gSignalConnect(focus, "leave", cbEntryFocusLeave, w.handle)
+		gtkWidgetAddController(v.textView, focus)
+		w.entries[focus] = v
 		keys := gtkEventControllerKeyNew()
 		gtkEventControllerSetPropagationPhase(keys, propagationPhaseCapture)
 		gSignalConnect(keys, "key-pressed", cbAreaKey, w.handle)
@@ -379,9 +401,15 @@ func (w *window) makeEditor(v *view, multiline bool) {
 		gSignalConnect(v.entry, "delete-text", cbEntryDelete, w.handle)
 		gSignalConnect(v.entry, "notify::cursor-position", cbEntrySelection, w.handle)
 		gSignalConnect(v.entry, "notify::selection-bound", cbEntrySelection, w.handle)
-		// The entry's text widget, not the entry, takes the focus.
+		// The entry's text widget, not the entry, takes the focus. Adding our
+		// focus controller after GtkText's own ensures GTK's focus-out runs
+		// gtk_im_context_focus_out before our leave callback commits or blurs.
 		if text := gtkEditableGetDelegate(v.entry); text != 0 {
-			gSignalConnect(text, "notify::has-focus", cbEntryFocus, w.handle)
+			focus := gtkEventControllerFocusNew()
+			gSignalConnect(focus, "enter", cbEntryFocusEnter, w.handle)
+			gSignalConnect(focus, "leave", cbEntryFocusLeave, w.handle)
+			gtkWidgetAddController(text, focus)
+			w.entries[focus] = v
 			gSignalConnect(text, "preedit-changed", cbPreedit, w.handle)
 			gSignalConnect(text, "paste-clipboard", cbPasteClipboard, w.handle)
 			w.entries[text] = v
@@ -404,6 +432,7 @@ func (w *window) dropEditor(v *view) {
 	if w.focus == v {
 		w.focus = nil
 	}
+	v.preedit.Reset()
 	for k, e := range w.entries {
 		if e == v {
 			delete(w.entries, k)
@@ -555,7 +584,9 @@ func (w *window) edited(v *view) {
 	if v.setting {
 		return
 	}
-	v.fs.Edited(w.editorText(v))
+	if v.fs.Edited(w.editorText(v)) {
+		v.preedit.Edited()
+	}
 	w.reportSelection(v)
 }
 
@@ -653,16 +684,71 @@ func entrySelectionCallback(entry uintptr, pspec uintptr, data uintptr) {
 	}
 }
 
+// editorHasFocus reports whether editor still owns keyboard focus. During
+// focus-out GTK updates the window's focus widget and clears has-focus
+// before or as GtkText/GtkTextView notifies its GtkIMContext, so a
+// preedit-changed("") from focus-out sees false while a user cancelling
+// preedit while focused sees true.
+func (w *window) editorHasFocus(v *view, editor uintptr) bool {
+	if w.focus != v || editor == 0 || gtkWidgetHasFocus(editor) == 0 {
+		return false
+	}
+	if top := w.toplevel(); top != 0 {
+		if f := gtkWindowGetFocus(top); f != editor && f != v.entry {
+			return false
+		}
+	}
+	return true
+}
+
+// commitEditorText inserts text over any selection or at the caret through
+// GTK's editing APIs so MaxLength, SingleLine and EventChangeText run normally.
+func (w *window) commitEditorText(v *view, text string) {
+	if text == "" || v.entry == 0 || v.input.Readonly || v.input.Disabled {
+		return
+	}
+	if v.textView != 0 {
+		gtkTextBufferDeleteSelection(v.buffer, 1, 1)
+		gtkTextBufferInsertAtCursor(v.buffer, cstr(text), -1)
+		return
+	}
+	gtkEditableDeleteSelection(v.entry)
+	at := gtkEditableGetPosition(v.entry)
+	gtkEditableInsertText(v.entry, cstr(text), int32(len(text)), uintptr(unsafe.Pointer(&at)))
+	gtkEditableSetPosition(v.entry, at)
+}
+
+// finishPreedit commits any uncommitted preedit text and ends the active
+// composition before the editor blurs or stops taking text.
+func (w *window) finishPreedit(v *view) {
+	if commit, _ := v.preedit.Finish(); commit != "" {
+		w.commitEditorText(v, commit)
+	}
+	if value, apply := v.fs.Compose(false, "", w.editorText(v)); apply {
+		w.setText(v, value)
+	}
+}
+
 // preeditCallback follows an input method's preedit: its end applies a
-// value the app set while it lasted.
+// value the app set while it lasted, or defers to leave when focus is going.
 func preeditCallback(widget uintptr, preedit uintptr, data uintptr) {
 	w, v := editorOf(widget, data)
 	if v == nil {
 		return
 	}
 	text := goString(preedit)
-	if value, apply := v.fs.Compose(text != "", text, w.editorText(v)); apply {
-		w.setText(v, value)
+	// Only defer to leave when v is the currently focused editor; otherwise
+	// no leave callback will follow to finish a deferred preedit.
+	focused := w.focus != v || w.editorHasFocus(v, widget)
+	switch v.preedit.Changed(text, focused) {
+	case preeditUpdate:
+		if value, apply := v.fs.Compose(true, text, w.editorText(v)); apply {
+			w.setText(v, value)
+		}
+	case preeditEnd:
+		if value, apply := v.fs.Compose(false, "", w.editorText(v)); apply {
+			w.setText(v, value)
+		}
 	}
 }
 
@@ -715,28 +801,31 @@ func areaKeyCallback(controller uintptr, keyval, keycode, state uint32, data uin
 	return 1
 }
 
-// entryFocusCallback reports an editor taking or losing keyboard focus.
-func entryFocusCallback(entry uintptr, pspec uintptr, data uintptr) {
-	w, v := editorOf(entry, data)
-	if v == nil {
+// entryFocusEnterCallback reports an editor taking keyboard focus.
+func entryFocusEnterCallback(controller, data uintptr) {
+	w, v := editorOf(controller, data)
+	if v == nil || w.focus == v {
 		return
 	}
-	if gtkWidgetHasFocus(entry) != 0 {
-		w.setControlFocus(nil)
-		w.focus = v
-		if v.events.Has(driver.EventFocus) {
-			w.engine.Dispatch(driver.Event{Kind: driver.EventFocus, ID: v.id})
-		}
-		w.caretMoved(v)
+	w.setControlFocus(nil)
+	w.focus = v
+	if v.events.Has(driver.EventFocus) {
+		w.engine.Dispatch(driver.Event{Kind: driver.EventFocus, ID: v.id})
+	}
+	w.caretMoved(v)
+}
+
+// entryFocusLeaveCallback reports an editor losing keyboard focus, after
+// GTK's own focus controller has notified the editor's GtkIMContext. Any
+// uncommitted preedit is committed and the composition ended before EventBlur.
+func entryFocusLeaveCallback(controller, data uintptr) {
+	w, v := editorOf(controller, data)
+	if v == nil || w.focus != v {
 		return
 	}
-	if w.focus == v {
-		w.focus = nil
-		if value, apply := v.fs.Compose(false, "", w.editorText(v)); apply {
-			w.setText(v, value)
-		}
-		if v.events.Has(driver.EventBlur) {
-			w.engine.Dispatch(driver.Event{Kind: driver.EventBlur, ID: v.id})
-		}
+	w.focus = nil
+	w.finishPreedit(v)
+	if v.events.Has(driver.EventBlur) {
+		w.engine.Dispatch(driver.Event{Kind: driver.EventBlur, ID: v.id})
 	}
 }
