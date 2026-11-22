@@ -53,12 +53,12 @@ func nativeString(value objc.ID) string {
 	if value == 0 {
 		return ""
 	}
-	p := objc.Send[uintptr](value, objc.RegisterName("UTF8String"))
+	p := objc.Send[*byte](value, objc.RegisterName("UTF8String"))
 	n := objc.Send[uintptr](value, objc.RegisterName("lengthOfBytesUsingEncoding:"), uintptr(4))
-	if p == 0 || n > 64*1024 {
+	if p == nil || n > 64*1024 {
 		return ""
 	}
-	return string(unsafe.Slice((*byte)(unsafe.Pointer(p)), int(n)))
+	return string(unsafe.Slice(p, int(n)))
 }
 
 func storeKitSession(t *testing.T) objc.ID {
