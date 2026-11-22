@@ -231,8 +231,8 @@ const (
 
 // Cell is a cell of a row.
 type Cell struct {
-	// Codepoint is the character, 0 for none; Grapheme reports more
-	// codepoints after it (CellGraphemes).
+	// Codepoint is the first character, 0 for none. Grapheme reports a
+	// cluster; CellGraphemes returns the whole cluster, Codepoint included.
 	Codepoint rune
 	Grapheme  bool
 	// Style identifies the cell's style (CellStyle) among the row's

@@ -46,6 +46,11 @@ type View struct {
 	// Padding is the room around the grid: 6 points across and 4 down
 	// when zero, none when negative.
 	Padding Padding
+	// PaddingColor chooses the background outside the grid.
+	PaddingColor PaddingColor
+	// MinimumContrast is the minimum text-to-cell contrast ratio, 1 to
+	// 21. Zero preserves colors. Graphics, emoji and images are unchanged.
+	MinimumContrast float64
 	// AutoFocus gives the view the keyboard focus as it mounts.
 	AutoFocus bool
 	// Transparent leaves the terminal's default background undrawn, so
@@ -100,6 +105,7 @@ func (p View) Render(cx *core.Scope) core.Node {
 		selected: core.NewSignal(cx, false), ctrlOn: core.NewSignal(cx, false), altOn: core.NewSignal(cx, false),
 		linkOn: core.NewSignal(cx, false),
 		bounds: core.NewSignal(cx, core.Bounds{}), rootRef: &core.Ref{}}
+	v.cursorBlink()
 	if p.Ref != nil {
 		p.Ref.v = v
 	}
@@ -203,6 +209,8 @@ type view struct {
 	sink, composing *core.Signal[string]
 	sent            string
 	focused         *core.Signal[bool]
+	cursor          *core.Signal[vt.Cursor]
+	cursorAlpha     *core.AnimatedValue
 	// content is the scroll layer's height, caret the sink's place.
 	content            *core.Signal[core.Points]
 	caret              *core.Signal[core.Point]
@@ -442,6 +450,7 @@ type frame struct {
 	anySel  bool
 	// composing is what an input method composes.
 	composing string
+	contrast  map[[2]core.Color]core.Color
 }
 
 // resolved is a cell's style with its colors resolved.
@@ -504,6 +513,9 @@ func (f *frame) paint(size core.Size) {
 		selection = color(f.colors.Foreground).Faded(0.3)
 	}
 	cur := rs.Cursor()
+	if cur != v.cursor.GetUntracked() {
+		v.cx.Post(func() { v.cursor.Set(cur) })
+	}
 	cursorColor := color(f.colors.Foreground)
 	if f.colors.HasCursor {
 		cursorColor = color(f.colors.Cursor)
@@ -514,7 +526,7 @@ func (f *frame) paint(size core.Size) {
 	}
 	var cursorRun run
 	def := resolved{fg: color(f.colors.Foreground), bg: bg}
-	cols, _ := rs.Size()
+	cols, rows := rs.Size()
 	var buf []rune
 	rs.Rows()
 	for y := 0; rs.NextRow(); y++ {
@@ -534,6 +546,7 @@ func (f *frame) paint(size core.Size) {
 			styles[c.Style] = r
 			return r
 		}
+		f.paddingRow(y, rows, cols, cells, styleOf, size)
 		// Backgrounds, then the selection, then the text over them.
 		var runs []run
 		var cur0 *run
@@ -552,7 +565,7 @@ func (f *frame) paint(size core.Size) {
 		spanX, spanEnd, spanC := 0, 0, core.Color(0)
 		flushSpan := func() {
 			if spanEnd > spanX {
-				d.SetFillColor(spanC).FillRect(ox+float32(spanX)*cw, ry, float32(spanEnd-spanX)*cw, ch)
+				pixelRect(d, spanC, ox+float32(spanX)*cw, ry, float32(spanEnd-spanX)*cw, ch, v.ratio)
 			}
 			spanEnd = spanX
 		}
@@ -584,6 +597,22 @@ func (f *frame) paint(size core.Size) {
 			if sel && x >= selA && x <= selB && f.th.SelectionText != 0 {
 				st.fg = f.th.SelectionText
 			}
+			if v.p.MinimumContrast > 1 && !graphicsRune(c.Codepoint) && !emojiRune(c.Codepoint) {
+				background := st.bg
+				if sel && x >= selA && x <= selB {
+					background = compositeColor(selection, background)
+				}
+				key := [2]core.Color{st.fg, background}
+				if f.contrast == nil {
+					f.contrast = make(map[[2]core.Color]core.Color)
+				}
+				adjusted, ok := f.contrast[key]
+				if !ok {
+					adjusted = minimumContrast(st.fg, background, v.p.MinimumContrast)
+					f.contrast[key] = adjusted
+				}
+				st.fg = adjusted
+			}
 			if st.underline != 0 {
 				ul := st.fg
 				if st.hasUl {
@@ -607,7 +636,7 @@ func (f *frame) paint(size core.Size) {
 			if c.Codepoint != 0 && !st.invisible {
 				buf = append(buf, c.Codepoint)
 				if c.Grapheme {
-					buf = rs.CellGraphemes(x, buf)
+					buf = rs.CellGraphemes(x, buf[:0])
 				}
 			}
 			if cur.Visible && cur.InView && cur.Y == y && cur.X == x {
@@ -638,7 +667,11 @@ func (f *frame) paint(size core.Size) {
 			d.SetFillColor(selection).FillRect(ox+float32(selA)*cw, ry, float32(selB-selA+1)*cw, ch)
 		}
 		for _, r := range runs {
-			d.SetFillColor(r.fg).FillText(string(r.text), ox+float32(r.x)*cw, ry+base, v.font(r.bold, r.italic))
+			x := ox + float32(r.x)*cw
+			if len(r.text) == 1 && drawGraphics(d, r.text[0], x, ry, cw, ch, v.ratio, r.fg) {
+				continue
+			}
+			d.SetFillColor(r.fg).FillText(string(r.text), x, ry+base, v.font(r.bold, r.italic))
 		}
 		for _, dc := range decos {
 			x0, x1 := ox+float32(dc.x0)*cw, ox+float32(dc.x1)*cw
@@ -657,9 +690,13 @@ func (f *frame) paint(size core.Size) {
 	}
 	if cur.Visible && cur.InView {
 		x, y := ox+float32(cur.X)*cw, oy+float32(cur.Y)*ch
+		d.Save()
+		if f.focused && cur.Blinking && f.composing == "" {
+			d.SetAlpha(1).Bind(core.ArgA, v.cursorAlpha)
+		}
 		d.SetFillColor(cursorColor)
 		switch {
-		case !f.focused:
+		case !f.focused || cur.Style == vt.CursorBlockHollow:
 			d.SetStrokeColor(cursorColor).SetLineWidth(1).StrokeRect(x+0.5, y+0.5, cw-1, ch-1)
 		case cur.Style == vt.CursorBar:
 			d.FillRect(x, y, max(1, cw/8), ch)
@@ -668,9 +705,12 @@ func (f *frame) paint(size core.Size) {
 		default:
 			d.FillRect(x, y, cw, ch)
 			if len(cursorRun.text) > 0 && cursorRun.text[0] != ' ' {
-				d.SetFillColor(cursorText).FillText(string(cursorRun.text), x, y+base, v.font(cursorRun.bold, cursorRun.italic))
+				if len(cursorRun.text) != 1 || !drawGraphics(d, cursorRun.text[0], x, y, cw, ch, v.ratio, cursorText) {
+					d.SetFillColor(cursorText).FillText(string(cursorRun.text), x, y+base, v.font(cursorRun.bold, cursorRun.italic))
+				}
 			}
 		}
+		d.Restore()
 		v.cx.Post(func() { v.caret.Set(core.Point{X: core.Points(x), Y: core.Points(y)}) })
 		// What an input method composes shows at the cursor, over the
 		// cells it will take: the sink shows nothing.

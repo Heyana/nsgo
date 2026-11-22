@@ -58,6 +58,9 @@ type Options struct {
 	Scrollback int
 	// Cursor is the cursor programs reset to: a block when zero.
 	Cursor CursorStyle
+	// CursorBlink sets the default blinking state. Programs
+	// can override it with DECSCUSR or DEC mode 12.
+	CursorBlink bool
 	// OnTitle, OnExit and OnBell run on a goroutine of the terminal when
 	// the program sets the title, ends or rings the bell.
 	OnTitle func(title string)
@@ -196,7 +199,7 @@ func New(opts Options) (*Terminal, error) {
 	default:
 		t.term.SetScrollback(10 << 20)
 	}
-	t.term.SetDefaultCursor(vtCursor(opts.Cursor), false)
+	t.term.SetDefaultCursor(vtCursor(opts.Cursor), opts.CursorBlink)
 	if t.rs, err = vt.NewRenderState(); err != nil {
 		t.term.Free()
 		return nil, err
@@ -557,7 +560,7 @@ func (t *Terminal) Feed(data []byte) { t.write(data) }
 func (t *Terminal) SetCursor(s CursorStyle) {
 	t.mu.Lock()
 	if t.term != nil {
-		t.term.SetDefaultCursor(vtCursor(s), false)
+		t.term.SetDefaultCursor(vtCursor(s), t.opts.CursorBlink)
 		t.term.Write([]byte("\x1b[0 q"))
 	}
 	t.mu.Unlock()

@@ -255,7 +255,6 @@ What `base/terminal` still lacks of a terminal app's features, Ghostty's the ref
 | Mouse reports and the wheel on full-screen programs | `mouse-reporting`, `mouse-scroll-multiplier`, [#1456](https://github.com/nsgo-dev/nsgo/issues/1456) | A program that takes the mouse gets presses, moves and the wheel as it asks, and the alternate screen gets the wheel as arrows |
 | Clipboard protocols | `clipboard-read`, `clipboard-write`, [#1458](https://github.com/nsgo-dev/nsgo/issues/1458) | Programs copy with OSC 52 and read the clipboard as the app allows, and the Kitty clipboard protocol offers pasted images |
 | Keybinds, zoom, the context menu and secondary clicks | `keybind`, `right-click-action`, [#1459](https://github.com/nsgo-dev/nsgo/issues/1459) | Ghostty's actions bind to keys over the defaults, zoom changes the font's size, and a secondary click shows Copy, Paste, Select All and Clear |
-| Drawn box characters, blinking and contrast | `cursor-style-blink`, `minimum-contrast`, `window-padding-color`, [#1460](https://github.com/nsgo-dev/nsgo/issues/1460) | Box drawing, blocks and Powerline's separators are drawn so lines join, the cursor blinks, and minimum contrast and padding colors apply |
 | Search, images and shell integration | Find, the Kitty graphics protocol, `shell-integration`, [#1461](https://github.com/nsgo-dev/nsgo/issues/1461) | A search highlights matches, programs show images, and OSC 133 prompts take Option+click to move the cursor |
 
 ## Widgets

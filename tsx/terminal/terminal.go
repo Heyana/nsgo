@@ -16,12 +16,13 @@ import (
 // starts another; the view's follow their props, the session going on.
 type Terminal struct {
 	// The session, as terminal.Options.
-	Command    []string
-	Dir        string
-	Env        []string
-	Conn       io.ReadWriteCloser
-	Scrollback int
-	Cursor     terminal.CursorStyle
+	Command     []string
+	Dir         string
+	Env         []string
+	Conn        io.ReadWriteCloser
+	Scrollback  int
+	Cursor      terminal.CursorStyle
+	CursorBlink bool
 	// OnTitle, OnExit and OnBell run as the program sets the title, ends
 	// or rings the bell.
 	OnTitle func(title string)
@@ -37,6 +38,8 @@ type Terminal struct {
 	FontFamily           func() string
 	FontSize             func() float64
 	PaddingX, PaddingY   func() float64
+	PaddingColor         func() terminal.PaddingColor
+	MinimumContrast      func() float64
 	AutoFocus            bool
 	Transparent          bool
 	NoKeyBar             func() bool
@@ -106,7 +109,7 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 			cx.Post(fn)
 		}
 	}
-	opts := terminal.Options{Command: p.Command, Dir: p.Dir, Env: p.Env, Conn: p.Conn, Scrollback: p.Scrollback, Cursor: p.Cursor}
+	opts := terminal.Options{Command: p.Command, Dir: p.Dir, Env: p.Env, Conn: p.Conn, Scrollback: p.Scrollback, Cursor: p.Cursor, CursorBlink: p.CursorBlink}
 	if p.OnTitle != nil {
 		opts.OnTitle = func(s string) { post(func() { p.OnTitle(s) }) }
 	}
@@ -143,6 +146,10 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 	}
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		var theme, dark *terminal.Theme
+		paddingColor := terminal.PaddingBackground
+		if p.PaddingColor != nil {
+			paddingColor = p.PaddingColor()
+		}
 		if name := read(p.Theme); name != "" {
 			theme, _ = terminal.GhosttyTheme(name)
 		}
@@ -151,6 +158,7 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 			dark, _ = terminal.GhosttyTheme(name)
 		}
 		return terminal.View{
+			PaddingColor: paddingColor, MinimumContrast: num(p.MinimumContrast),
 			Terminal: t, Theme: theme, DarkTheme: dark,
 			Font:      core.Font{Family: read(p.FontFamily), Size: core.Points(num(p.FontSize))},
 			Padding:   terminal.Padding{X: core.Points(num(p.PaddingX)), Y: core.Points(num(p.PaddingY))},
@@ -167,6 +175,7 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 func init() {
 	tsx.Register("nsgo/base", map[string]core.Node{"Terminal": Terminal{}},
 		tsx.Enum(map[string]terminal.CursorStyle{"block": terminal.CursorBlock, "bar": terminal.CursorBar, "underline": terminal.CursorUnderline}),
+		tsx.Enum(map[string]terminal.PaddingColor{"background": terminal.PaddingBackground, "extend": terminal.PaddingExtend, "extend-always": terminal.PaddingExtendAlways}),
 		// It starts programs, past any capability, so it is not SandboxSafe.
 		tsx.Event("OnTitle", "title"), tsx.Event("OnExit", "code"), tsx.Event("OnSizeChange", "cols", "rows"),
 	)
