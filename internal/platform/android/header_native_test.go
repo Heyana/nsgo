@@ -13,8 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// Native font and placement checks exercise Toolbar/TextView and real input;
-// the core and JVM tests cover the protocol and collapse math separately.
+// Native font and placement checks exercise Toolbar/TextView and real input; the core and JVM tests cover the protocol and collapse math separately.
 func TestNativeAndroidHeaderTitleStyles(t *testing.T) {
 	var cx *core.Scope
 	var mode *core.Signal[int]

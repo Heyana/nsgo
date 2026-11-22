@@ -857,11 +857,9 @@ type ScreenConfig struct {
 	HeaderHidden      bool
 	HeaderTransparent bool
 	LargeTitle        bool
-	// TitleFont and LargeTitleFont override the native title fonts; zero
-	// fields keep their platform defaults.
+	// TitleFont and LargeTitleFont override the native title fonts; zero fields keep their platform defaults.
 	TitleFont, LargeTitleFont Font
-	// RightWithLargeTitle moves Android's trailing view beside its large
-	// title, returning to the toolbar as the header collapses.
+	// RightWithLargeTitle moves Android's trailing view beside its large title, returning to the toolbar as the header collapses.
 	RightWithLargeTitle bool
 	// CanGoBack says a screen is below; BackHidden hides the back button
 	// to it, and BackTitle is its label.

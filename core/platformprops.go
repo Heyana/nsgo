@@ -54,8 +54,7 @@ type IOSScreenProps struct {
 
 // AndroidScreenProps are base.NavPage's Android header options, carried by Screen.
 type AndroidScreenProps struct {
-	// HeaderRightWithLargeTitle places HeaderRight beside the expanded
-	// title, moving it into the compact bar as the large title collapses.
+	// HeaderRightWithLargeTitle places HeaderRight beside the expanded title, moving it into the compact bar as the large title collapses.
 	HeaderRightWithLargeTitle bool
 }
 

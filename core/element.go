@@ -1015,10 +1015,7 @@ type Screen struct {
 	HeaderBackTitle string
 	HeaderStyle     Style
 	HeaderStyleFunc func() Style
-	// HeaderTitleStyle and HeaderLargeTitleStyle set the system header's
-	// compact and expanded title fonts: FontFamily, FontSize, FontWeight
-	// and FontStyle. Unset fields keep the platform's defaults. The Func
-	// forms merge over their static styles as the graph changes.
+	// HeaderTitleStyle and HeaderLargeTitleStyle set the system header's compact and expanded title fonts: FontFamily, FontSize, FontWeight and FontStyle. Unset fields keep the platform's defaults. The Func forms merge over their static styles as the graph changes.
 	HeaderTitleStyle, HeaderLargeTitleStyle         Style
 	HeaderTitleStyleFunc, HeaderLargeTitleStyleFunc func() Style
 	// HeaderClass gives the system header its colors as classes: bg-*, text-* for the title, tint-* for the buttons. HeaderStyle wins over them. The header has no siblings: peer-* variants are logged and ignored.

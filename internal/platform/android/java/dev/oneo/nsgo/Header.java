@@ -364,7 +364,7 @@ final class Header {
         void apply(TextView view, float defaultSize, Typeface defaultTypeface) {
             view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size > 0 ? size : defaultSize);
             view.setTypeface(family.isEmpty() && weight == 0 && !italic ? defaultTypeface
-                    : Text.typeface(family, weight > 0 ? weight : defaultTypeface.getWeight(), italic));
+                    : Text.typeface(family, weight > 0 ? weight : defaultTypeface != null ? defaultTypeface.getWeight() : 400, italic));
         }
     }
 
