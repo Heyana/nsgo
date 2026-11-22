@@ -12,9 +12,7 @@ type FormSection struct {
 	// and follows the signals it reads.
 	CardStyle     core.Style
 	CardStyleFunc func() core.Style
-	// DividerInset overrides a row's hairline inset when it returns true.
-	// Zero is full width; false keeps the title alignment or 12-point default.
-	// It receives the actual row for each child of a core.Each.
+	// DividerInset overrides a row's hairline inset when it returns true. Zero is full width; false keeps the title alignment or 12-point default. It receives the actual row for each child of a core.Each.
 	DividerInset func(row core.Node) (inset core.Points, override bool)
 }
 

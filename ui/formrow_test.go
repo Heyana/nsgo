@@ -1,9 +1,10 @@
 package ui
 
 import (
+	"testing"
+
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
-	"testing"
 )
 
 func TestFormRowTextColumnOptions(t *testing.T) {

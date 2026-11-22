@@ -22,10 +22,7 @@ const (
 	FormRowDanger
 )
 
-// FormRow is a row of a FormSection: Leading or an Icon on a tile,
-// Title over Detail, then Value in the muted color and the Control.
-// With OnPress it is a button; core.RoleRadio gives it base.Radio's controlled
-// selection and keyboard behavior within a base.RadioGroup.
+// FormRow is a row of a FormSection: Leading or an Icon on a tile, Title over Detail, then Value in the muted color and the Control. With OnPress it is a button; core.RoleRadio gives it base.Radio's controlled selection and keyboard behavior within a base.RadioGroup.
 type FormRow struct {
 	Icon func() *core.SVG
 	// TileSize is the side of the icon tile in points, 24 when zero.
@@ -42,8 +39,7 @@ type FormRow struct {
 	TitleMaxLines int
 	// MinHeight overrides the row's minimum height in points; zero keeps its default.
 	MinHeight core.Points
-	// Role overrides the row's role. core.RoleRadio uses base.Radio behavior
-	// in a base.RadioGroup, with Checked supplying the controlled state.
+	// Role overrides the row's role. core.RoleRadio uses base.Radio behavior in a base.RadioGroup, with Checked supplying the controlled state.
 	Role     core.Role
 	Checked  func() bool
 	Value    func() string
