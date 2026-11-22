@@ -9,6 +9,8 @@ order: 59
 
 `core.Canvas` 在引擎上记录 2D 绘图，再由平台播放，像网页的 `<canvas>`。`Draw` 会在它读取的 signal、画布尺寸或可用字体变化时再次运行，平台在主线程上绘制记录。用 `cx.RegisterFont` 加载的字体可用后，`Draw` 会再运行一次，文字和按 `TextMetrics` 算出的几何都随之更新。
 
+用 `Em` 或 `EmFunc` 让画布按继承字体的 em 定尺寸。内容高度随宽度变化时，`MeasureEm(width, fontSize)` 按可用宽度（点数，无约束时为 `core.Auto`）和解析后的字号返回 `EmBox`。它读取的 signal 会被跟踪；布局期间也会调用它，因此不能在里面修改 signal。`Ref.ContentBox()` 跟踪已挂载视图扣除内边距和边框后的布局区域，坐标相对于视图自身。
+
 ```go
 core.Canvas{
 	Style: core.Style{Height: core.Pt(220)},

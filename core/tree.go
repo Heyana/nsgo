@@ -266,6 +266,8 @@ type node struct {
 	parent   *node
 	children []*node
 	owner    *Scope
+	// contentBox is allocated only when a Ref observes its layout content box.
+	contentBox *Signal[Bounds]
 
 	responder *Responder // a view's part in the touch responder
 	follow    *following // what its frame follows (View.Follow)

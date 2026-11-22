@@ -660,6 +660,33 @@ func (r *Ref) ContentBounds() (Bounds, bool) {
 	return r.t.contentBounds(r.n), true
 }
 
+// ContentBox returns the layout content box in the view's own coordinates,
+// excluding padding and borders, and false while unmounted. It is tracked:
+// a layout or padding change reruns a function that reads it. base/textview
+// uses it to constrain display attachments to their scroll viewport.
+func (r *Ref) ContentBox() (Bounds, bool) {
+	if r == nil || r.n == nil || r.n.deleted {
+		return Bounds{}, false
+	}
+	n := r.n
+	if n.contentBox == nil {
+		n.contentBox = NewSignal(n.owner, n.layoutContentBox())
+	}
+	return n.contentBox.Get(), true
+}
+
+func (n *node) layoutContentBox() Bounds {
+	if n.hidden {
+		return Bounds{}
+	}
+	l := &n.lstate.Rounded
+	s := l.ContentBoxSize()
+	return Bounds{
+		Origin: Point{X: Points(l.Border.Left + l.Padding.Left), Y: Points(l.Border.Top + l.Padding.Top)},
+		Size:   Size{Width: Points(max(s.Width, 0)), Height: Points(max(s.Height, 0))},
+	}
+}
+
 // Frame returns the element's frame in its parent after the last commit,
 // as OnLayout receives it, and false while it is not mounted.
 func (r *Ref) Frame() (Bounds, bool) {

@@ -317,8 +317,8 @@ func TestRenderMath(t *testing.T) {
 	if len(scrolls) != 2 {
 		t.Fatalf("%d sideways scrolls, want one a display formula", len(scrolls))
 	}
-	if wide := scrolls[1]; wide.Content.Width <= wide.Frame.Size.Width {
-		t.Errorf("a wide formula's scroll holds %v in %v: it scrolls", wide.Content, wide.Frame.Size)
+	if wide := scrolls[1]; wide.Content.Width > wide.Frame.Size.Width+1 || wide.Frame.Size.Height <= scrolls[0].Frame.Size.Height {
+		t.Errorf("a breakable wide formula did not wrap: content=%v frame=%v short=%v", wide.Content, wide.Frame.Size, scrolls[0].Frame.Size)
 	}
 }
 

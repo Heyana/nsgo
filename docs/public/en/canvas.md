@@ -9,6 +9,8 @@ order: 59
 
 `core.Canvas` records 2D drawing on the engine and has the platform play it, as a web page's `<canvas>` does. `Draw` runs again when a signal it read, the canvas's size or the available fonts change, and the platform draws the recording on the main thread. A font loaded through `cx.RegisterFont` reruns `Draw` once available, updating both text and geometry based on `TextMetrics`.
 
+Use `Em` or `EmFunc` for a canvas sized in ems of its inherited font. For content whose height depends on width, `MeasureEm(width, fontSize)` returns an `EmBox` at the available width in points (`core.Auto` when unbounded) and the resolved font size. Its reads are tracked, and it also runs during layout, so keep it free of signal writes. `Ref.ContentBox()` tracks a mounted view's layout box inside padding and borders, in its own coordinates.
+
 ```go
 core.Canvas{
 	Style: core.Style{Height: core.Pt(220)},

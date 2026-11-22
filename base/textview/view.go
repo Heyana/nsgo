@@ -499,19 +499,7 @@ func (r *renderer) blockAt(cx *core.Scope, b Block, live func() Block, first boo
 	case Math:
 		if r.tv.RenderMath != nil {
 			b.Display = true
-			// The formula centers on a line as wide as the scroll at least, which a copy takes as its TeX between $$ fences.
-			formula := r.selectable(core.Text{Style: core.Style{MinWidth: core.Pct(100), TextAlign: core.TextAlignCenter},
-				SelectionBlock: &core.SelectionBlock{
-					Kind:    core.SelectionBlockMath,
-					TeX:     b.TeX,
-					Inlines: []core.SelectionInline{{Kind: core.SelectionInlineMath, Text: b.TeX, UTF16Len: 1}},
-				},
-				Spans: []core.Span{
-					{Content: "$$\n" + b.TeX + "\n$$", Attachment: r.tv.RenderMath(cx, b)},
-				}})
-			return after(core.View{Class: r.class(PartMathBlock), StyleFunc: func() core.Style { return r.style(PartMathBlock) }, Children: []core.Node{
-				core.Scroll{Horizontal: true, HideIndicator: r.tv.NoMathBlockScrollbar, Class: r.class(PartMathBlockScroll), StyleFunc: func() core.Style { return r.style(PartMathBlockScroll) }, Children: []core.Node{formula}},
-			}})
+			return after(r.mathBlock(b))
 		}
 		mathInlines := []core.SelectionInline{{Kind: core.SelectionInlineMath, Text: b.TeX}}
 		if caret {

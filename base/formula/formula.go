@@ -8,6 +8,7 @@ import (
 	"github.com/caelyreth/untie/display"
 
 	"github.com/nsgo-dev/nsgo/base/formula/locales"
+	"github.com/nsgo-dev/nsgo/base/internal/mathlayout"
 	"github.com/nsgo-dev/nsgo/core"
 )
 
@@ -49,7 +50,7 @@ type HitEvent struct {
 	Modifiers   core.Modifiers
 }
 
-// View draws a formula. It sizes itself in ems of the font size it inherits, following the user's text size as text does, and paints in the text color it inherits, keeping the colors the formula names (\color{red}). As a core.Span's attachment it sits on the line's baseline. With Display it is a formula on a line of its own: larger operators, and limits above and below. What failed to parse is marked in ErrorStyle's color, the text color without one; a formula past Untie's limits shows its source as text in ErrorClass and ErrorStyle. It keeps its size in a container that stretches its children, standing at the start of the cross axis unless its style sets AlignSelf. Until its renderer's font has loaded, it is an empty em square. Assistive technology reads it as an image labelled with what the formula says, in the language the app shows.
+// View draws a formula. It sizes itself in ems of the font size it inherits, following the user's text size as text does, and paints in the text color it inherits, keeping the colors the formula names (\color{red}). As a core.Span's attachment it sits on the line's baseline. With Display it is a formula on a line of its own: larger operators, and limits above and below. Display formulas wrap at safe relations and operators when wider than the available width; an unbreakable part keeps its overflow. What failed to parse is marked in ErrorStyle's color, the text color without one; a formula past Untie's limits shows its source as text in ErrorClass and ErrorStyle. It keeps its size in a container that stretches its children, standing at the start of the cross axis unless its style sets AlignSelf. Until its renderer's font has loaded, it is an empty em square. Assistive technology reads it as an image labelled with what the formula says, in the language the app shows.
 type View struct {
 	// Source is the formula without its delimiters ($…$); SourceFunc follows what it reads.
 	Source     string
@@ -122,6 +123,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 		}
 		return v.Diagnostics
 	}
+	viewport := mathlayout.Width.Use(cx)
 	// AlignSelf keeps a container's stretch from widening it, which its em box would follow in height too.
 	base := core.Style{Fill: core.PaintCurrentColor, AlignSelf: core.AlignStart}.Merge(v.Style)
 	return core.Show{
@@ -130,6 +132,38 @@ func (v View) Render(cx *core.Scope) core.Node {
 			return core.Text{ContentFunc: source, Class: v.ErrorClass, Style: v.ErrorStyle, TestID: v.TestID}
 		},
 		Else: func(cx *core.Scope) core.Node {
+			var current *layout
+			var measure func(core.Points, core.Points) core.EmBox
+			if v.Display {
+				measure = func(width, fontSize core.Points) core.EmBox {
+					current = lay.Get()
+					if !current.drawn {
+						return placeholder
+					}
+					// A text attachment is measured in unbounded space. Its
+					// block supplies the actual scroll viewport separately.
+					if viewport != nil {
+						if limit := viewport(); limit > 0 {
+							if width.IsAuto() || width > limit {
+								width = limit
+							}
+						} else {
+							width = core.Auto
+						}
+					}
+					if !width.IsAuto() && float32(width) < current.em.Width*float32(fontSize) {
+						key := current.key
+						// Zero is Untie's unbounded sentinel, not min-content.
+						key.maxWidth = max(float32(width/fontSize)*referenceSize, .01)
+						if constrained := r.parsed(key, true); !constrained.failed {
+							current = constrained
+						}
+					}
+					return current.em
+				}
+			}
+			// drawn is the layout Draw last painted, which a wrapped display formula picks by its width; hits map through the same geometry.
+			var drawn *layout
 			canvasSize := core.NewSignal(cx, core.Size{})
 			var pressed core.Point
 			pressedValid := false
@@ -137,7 +171,10 @@ func (v View) Render(cx *core.Scope) core.Node {
 				if v.OnHit == nil {
 					return
 				}
-				l := lay.Get()
+				l := drawn
+				if l == nil {
+					l = lay.Get()
+				}
 				p, ok := formulaPoint(l.box, canvasSize.GetUntracked(), point)
 				if !ok {
 					return
@@ -154,6 +191,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 				StyleFunc: v.StyleFunc,
 				OnLayout:  func(b core.Bounds) { canvasSize.Set(b.Size) },
 				TestID:    v.TestID,
+				MeasureEm: measure,
 				EmFunc: func() core.EmBox {
 					if l := lay.Get(); l.drawn {
 						return l.em
@@ -168,9 +206,13 @@ func (v View) Render(cx *core.Scope) core.Node {
 				},
 				Draw: func(d *core.Drawing, size core.Size) {
 					l := lay.Get()
+					if current != nil {
+						l = current
+					}
 					if !l.drawn || len(l.runs) == 0 {
 						return
 					}
+					drawn = l
 					scale := float32(size.Height) / (l.em.Ascent + l.em.Descent)
 					grid := display.PixelGrid{Scale: scale, PixelRatio: cx.Env().PixelRatio()}
 					d.Scale(scale, scale)

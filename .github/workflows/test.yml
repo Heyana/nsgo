@@ -51,6 +51,8 @@ jobs:
         run: echo "DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer" >> "$GITHUB_ENV"
       - name: Test gallery on the target
         run: go tool nsgo test -target ${{ matrix.target }} -junit "$RUNNER_TEMP/gallery.xml" -screenshots gallery-screenshots ./examples/gallery
+      - name: Test formula layout and display wrapping
+        run: go tool nsgo test -target ${{ matrix.target }} -screenshots formula-screenshots ./base/formula
       - name: Run the many-sprite canvas scenario
         env:
           NSGO_GALLERY_PERF: '1'
@@ -64,6 +66,7 @@ jobs:
           path: |
             ${{ runner.temp }}/gallery.xml
             gallery-screenshots
+            formula-screenshots
           if-no-files-found: warn
 
   test:

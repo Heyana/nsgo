@@ -58,7 +58,7 @@ func (n *node) Style() *layout.Style {
 }
 
 // Measure measures a leaf's content: its text, a field's line, an image's
-// declared size. Views and canvases have none.
+// declared size or an em canvas's measured box. Views have none.
 func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layout.AvailableSpace]) layout.Size[float32] {
 	var m Size
 	switch {
@@ -90,7 +90,26 @@ func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layo
 	case n.icon != nil:
 		m = fitNatural(n.icon.naturalSize(), known)
 	case n.canvas != nil && n.canvas.em != nil:
-		m = fitNatural(n.canvas.em.naturalSize(), known)
+		em := n.canvas.em
+		if em.measure == nil {
+			m = fitNatural(em.naturalSize(), known)
+			break
+		}
+		width := Auto
+		switch {
+		case available.Width.Kind == layout.SpaceDefinite:
+			width = Points(max(available.Width.Value, 0))
+		case known.Width.Valid:
+			width = Points(max(known.Width.Value, 0))
+		case available.Width.Kind == layout.SpaceMinContent:
+			width = 0
+		}
+		fs := em.fontSize
+		if fs <= 0 {
+			fs = DefaultFontSize
+		}
+		box := em.boxAt(width, fs)
+		m = Size{Width: Points(max(box.Width, 0)) * fs, Height: Points(max(box.Ascent, 0)+max(box.Descent, 0)) * fs}
 	case n.native != nil:
 		m = fitNatural(n.native.size, known)
 	default:
@@ -604,6 +623,12 @@ func (t *Tree) layoutRoot(root *node, space Size, fill bool) {
 // what depends on them, through n's subtree. n's own frame is set.
 func (t *Tree) syncFrames(n *node) {
 	t.syncContent(n)
+	if n.contentBox != nil {
+		box := n.layoutContentBox()
+		if n.contentBox.GetUntracked() != box {
+			t.within(n.owner, func() { n.contentBox.Set(box) })
+		}
+	}
 	n.layoutDirty = false
 	n.synced = n.lstate.Rounds()
 	mirror := n.rtl && n.scroll != nil && n.scroll.config.Horizontal

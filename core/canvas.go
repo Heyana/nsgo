@@ -38,6 +38,12 @@ type Canvas struct {
 	// Em sizes the canvas where its style sets no size, in ems of the font size it inherits, scaled by the user's text size setting as text is: Em.Width wide and Em.Ascent+Em.Descent high, so it grows with the text around it as an icon does. In a text's attachment aligned to the baseline (VerticalAlignBaseline), its baseline, Em.Descent ems above its bottom, sits on the line's, and the text's NoFontScaling and MaxFontSizeMultiplier hold it too. EmFunc follows what it reads, laying the canvas out again; base/formula sizes its formulas so.
 	Em     EmBox
 	EmFunc func() EmBox
+	// MeasureEm measures a width-aware em canvas, such as base/formula's
+	// display math, at width in points (Auto when unconstrained) and the
+	// resolved, scaled font size. It returns its box in ems without drawing.
+	// Em or EmFunc may supply its preferred box. Reads are tracked; the
+	// callback also runs during layout, so it must not change signals.
+	MeasureEm func(width, fontSize Points) EmBox
 }
 
 // EmBox is a canvas's natural size in ems of its font size (Canvas.Em): Width wide, reaching Ascent above its baseline and Descent below it.
@@ -53,6 +59,17 @@ type emNode struct {
 	box EmBox
 	// fontSize is the scaled font size it inherits, in points.
 	fontSize Points
+	measure  func(width, fontSize Points) EmBox
+}
+
+func (e *emNode) boxAt(width, fontSize Points) EmBox {
+	if e.measure == nil {
+		return e.box
+	}
+	if fontSize <= 0 {
+		fontSize = DefaultFontSize
+	}
+	return e.measure(width, fontSize)
 }
 
 // naturalSize is what an Em canvas measures without a style size.
@@ -64,13 +81,14 @@ func (e *emNode) naturalSize() Size {
 	return Size{Width: Points(max(e.box.Width, 0)) * fs, Height: Points(max(e.box.Ascent, 0)+max(e.box.Descent, 0)) * fs}
 }
 
-// descent is how far below its baseline the bottom of an Em canvas height high reaches: Em.Descent's share of it.
-func (e *emNode) descent(height Points) Points {
-	asc, desc := max(e.box.Ascent, 0), max(e.box.Descent, 0)
+// descentAt is the measured box's share below its first baseline.
+func (e *emNode) descentAt(size Size) Points {
+	box := e.boxAt(size.Width, e.fontSize)
+	asc, desc := max(box.Ascent, 0), max(box.Descent, 0)
 	if asc+desc <= 0 {
 		return 0
 	}
-	return height * Points(desc/(asc+desc))
+	return size.Height * Points(desc/(asc+desc))
 }
 
 // Render implements Node.
@@ -92,6 +110,10 @@ type canvasNode struct {
 	paintKey canvasPaintKey
 	// em sizes a canvas with Em or EmFunc.
 	em *emNode
+	// measureFont invalidates a width-aware recording even when fixed
+	// dimensions keep its frame unchanged after a font-size change.
+	measureFont *Signal[Points]
+	measured    EmBox
 	// frames are the copies of the pixels the drawing last sent draws, by the app's buffer and version.
 	frames map[pixelKey]*image.RGBA
 }
@@ -150,8 +172,11 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 	cn := &canvasNode{draw: c.Draw, size: NewSignal(cx, Size{})}
 	n.canvas = cn
 	t.canvases = append(t.canvases, n)
-	if c.Em.sized() || c.EmFunc != nil {
-		cn.em = &emNode{box: c.Em}
+	if c.Em.sized() || c.EmFunc != nil || c.MeasureEm != nil {
+		cn.em = &emNode{box: c.Em, measure: c.MeasureEm}
+	}
+	if c.MeasureEm != nil {
+		cn.measureFont = NewSignal(cx, Points(0))
 	}
 	if c.EmFunc != nil {
 		cx.renderEffect(func() {
@@ -163,6 +188,17 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 	}
 	cn.effect = cx.renderEffect(func() {
 		size := cn.size.Get()
+		if cn.measureFont != nil {
+			width := size.Width
+			if width <= 0 {
+				width = Auto
+			}
+			box := cn.em.boxAt(width, cn.measureFont.Get())
+			if box != cn.measured {
+				cn.measured = box
+				t.relayout(n)
+			}
+		}
 		if size == (Size{}) || cn.draw == nil {
 			return
 		}

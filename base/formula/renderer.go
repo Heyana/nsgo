@@ -87,6 +87,12 @@ type layoutKey struct {
 	source  string
 	dialect Dialect
 	display bool
+	// maxWidth is the display frame at referenceSize, zero when unbounded.
+	maxWidth float32
+}
+
+func (key layoutKey) style() untie.Style {
+	return untie.Style{Size: referenceSize, MaxWidth: key.maxWidth, Align: untie.AlignCenter}
 }
 
 // layout is a formula laid out: its size in ems and its shapes, in ems from its top left corner, in runs of one paint.
@@ -174,7 +180,7 @@ func (r *Renderer) make(key layoutKey, draw bool) *layout {
 		l.failed = true
 		return l
 	}
-	box, err := engine.LayoutContextWithOptions(context.Background(), expr, untie.Style{Size: referenceSize},
+	box, err := engine.LayoutContextWithOptions(context.Background(), expr, key.style(),
 		untie.LayoutOptions{Recovery: untie.RecoveryVisible})
 	if err != nil || box == nil {
 		l.failed = true

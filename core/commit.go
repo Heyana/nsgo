@@ -446,6 +446,9 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 			}
 			if fs := scaleText(inherited.textStyle(), scale).Font.Size; fs != em.fontSize {
 				em.fontSize = fs
+				if signal := n.canvas.measureFont; signal != nil {
+					t.within(n.owner, func() { signal.Set(fs) })
+				}
 				t.markLayout(n)
 			}
 		}
@@ -666,9 +669,9 @@ func (t *Tree) baselineDescent(w *node, align VerticalAlign) Points {
 	if c != w {
 		// Its frame in w's.
 		bottom := Points(l.Location.Y) + Points(l.Size.Height)
-		return max(h-bottom+c.canvas.em.descent(Points(l.Size.Height)), 0)
+		return max(h-bottom+c.canvas.em.descentAt(Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}), 0)
 	}
-	return c.canvas.em.descent(h)
+	return c.canvas.em.descentAt(Size{Width: Points(l.Size.Width), Height: h})
 }
 
 // firstTextBaseline returns the first laid-out text baseline in n's subtree, measured from n's top. It lets an inline view containing text participate in its surrounding line's baseline alignment.
