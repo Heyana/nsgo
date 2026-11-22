@@ -168,6 +168,9 @@ type window struct {
 	// The engine goroutine hands these to the main thread.
 	mu    sync.Mutex
 	tasks []func()
+	// applying prevents a size allocation caused while a mount batch is being
+	// applied from recursively draining the batch queue.
+	applying bool
 
 	// The main thread's. views is indexed by NodeID.
 	views []*view
@@ -257,11 +260,15 @@ type window struct {
 	barDrag      *barDrag // the bar the pointer drags
 	pinching     *twoFinger
 	// wheelTaker is the view with OnWheel a touchpad scroll goes to.
-	wheelTaker    *view
-	rotating      *twoFinger
-	closing       bool
-	lastWidth     driver.Points
-	lastHeight    driver.Points
+	wheelTaker *view
+	rotating   *twoFinger
+	closing    bool
+	lastWidth  driver.Points
+	lastHeight driver.Points
+	// resized is a commit the main thread stopped waiting for during a busy
+	// allocation. The next allocation observes its completion before waiting
+	// for the newer size.
+	resized       <-chan struct{}
 	started       bool
 	handle        uintptr
 	measureMap    [2]uintptr // the engine thread's Pango contexts, left to right and right to left
@@ -850,6 +857,19 @@ func applyCallback(data uintptr) int32 {
 	if w == nil {
 		return 0
 	}
+	w.applyBatches()
+	return 0
+}
+
+// applyBatches applies every mount batch currently queued for the window. A
+// resize may call this from GTK's allocation callback while it waits for the
+// engine's matching commit, so keep the drain re-entrancy safe.
+func (w *window) applyBatches() {
+	if w.applying {
+		return
+	}
+	w.applying = true
+	defer func() { w.applying = false }()
 	done := w.measuring(true)
 	for _, b := range w.batches.Drain() {
 		if w.hud != nil && !b.Sent.IsZero() {
@@ -858,7 +878,6 @@ func applyCallback(data uintptr) int32 {
 		driver.Apply(b, w.apply)
 	}
 	done()
-	return 0
 }
 
 func closeRequestCallback(win uintptr, data uintptr) int32 {

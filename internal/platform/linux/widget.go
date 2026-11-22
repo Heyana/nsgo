@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/ebitengine/purego"
 
@@ -335,11 +336,42 @@ func (w *window) allocateSurface(width, height int32) {
 	if size.Width != w.lastWidth || size.Height != w.lastHeight {
 		w.lastWidth, w.lastHeight = size.Width, size.Height
 		if w.engine != nil {
-			w.engine.Resize(size, driver.Geometry{})
+			w.resize(size)
 		}
 	}
 	if root := w.view(w.root); root != nil && root.widget != 0 && gtkWidgetGetParent(root.widget) == w.surface {
 		w.place(root, 0, 0)
+	}
+}
+
+// resizeWait bounds how long GTK's allocation waits for the engine, as the
+// macOS and Windows resize paths do.
+const resizeWait = 16 * time.Millisecond
+
+// resize reports the new size and applies its layout before GTK snapshots the
+// surface, when the engine commits within resizeWait. Mount queues batches
+// without waiting for the GTK thread; the completion channel means the batch
+// is ready to drain here. After a timeout, further allocations report their
+// sizes without waiting again until that commit arrives.
+func (w *window) resize(size driver.Size) {
+	if w.resized != nil {
+		select {
+		case <-w.resized:
+			w.resized = nil
+		default:
+		}
+	}
+	done := w.engine.ResizeAndWait(size, driver.Geometry{})
+	if w.resized != nil || w.applying {
+		return
+	}
+	timer := time.NewTimer(resizeWait)
+	defer timer.Stop()
+	select {
+	case <-done:
+		w.applyBatches()
+	case <-timer.C:
+		w.resized = done
 	}
 }
 

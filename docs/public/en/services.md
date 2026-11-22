@@ -303,6 +303,8 @@ warning := core.Text{ContentFunc: func() string {
 }}
 ```
 
+Desktop resizes on macOS, Windows and Linux wait up to 16 ms for the new layout before drawing. Keep reactive computations and event handlers quick so layout can meet that deadline; perform slow I/O on a goroutine and post results through `cx.Post`. A busy app continues resizing and shows its layout when it catches up.
+
 `desktop.SetWindowFrame` moves a window when `WindowFrame.Move` is true, using `X` and `Y` in points from the main screen's top left. Unset dimensions keep their current sizes. Check `desktop.CanPlaceWindows`: macOS, Windows and Linux on X11 support positioning; an ordinary Wayland toplevel keeps the compositor's position. `desktop.Frame` follows the native window's position on these desktops.
 
 Set `desktop.WindowOptions.Parent` to an open window of the app to close both when the parent closes. On desktops the child stays above its parent and follows it when it hides or minimizes; a child explicitly hidden stays hidden when the parent returns. On macOS it also centers over its parent when `Frame` is unset and follows it into full screen.
