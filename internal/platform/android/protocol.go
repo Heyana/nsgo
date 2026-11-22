@@ -551,6 +551,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	// Discovery travels in extended messages, so it needs both bits.
 	env.DiscoverServices = third&capDiscoverServices != 0 && third&capExtendedMessages != 0
 	env.Audio = third&capAudio != 0
+	env.AudioPlaybackControls = env.Audio
 	return env, third
 }
 

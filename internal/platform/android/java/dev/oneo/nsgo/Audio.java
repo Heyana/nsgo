@@ -26,7 +26,8 @@ import java.util.function.Consumer;
 final class Audio {
     // The driver's AudioCommand.
     private static final int LOAD = 0, PLAY = 1, STOP = 2, UNLOAD = 3, OPEN = 4,
-            PRELOAD = 5, RESUME = 6, PAUSE = 7, SEEK = 8, SET = 9, CLOSE = 10;
+            PRELOAD = 5, RESUME = 6, PAUSE = 7, SEEK = 8, SET = 9, CLOSE = 10,
+            PLAYBACK_SET = 12, PLAYBACK_STOP = 13;
     // The driver's AudioPhase.
     static final int LOADED = 0, OPENED = 1, PLAYING = 2, PAUSED = 3, PROGRESS = 4,
             BUFFER = 5, ENDED = 6, FAILURE = 7;
@@ -52,10 +53,11 @@ final class Audio {
 
     private static final class Voice {
         final Sound sound;
-        final int stream;
+        final int stream, playback;
         final long until;
-        Voice(Sound sound, int stream, long until) {
+        Voice(Sound sound, int playback, int stream, long until) {
             this.sound = sound;
+            this.playback = playback;
             this.stream = stream;
             this.until = until;
         }
@@ -80,6 +82,7 @@ final class Audio {
 
     void command(int owner, boolean visible, DataInputStream in) throws IOException {
         int id = in.readInt(), command = in.readUnsignedByte();
+        int playback = in.readInt();
         switch (command) {
             case LOAD: {
                 String source = source(in);
@@ -90,9 +93,15 @@ final class Audio {
             }
             case PLAY: {
                 float left = in.readFloat(), right = in.readFloat(), rate = in.readFloat();
-                play(sounds.get(id), left, right, rate);
+                play(sounds.get(id), playback, left, right, rate);
                 break;
             }
+            case PLAYBACK_SET:
+                setPlayback(id, playback, in.readFloat(), in.readFloat());
+                break;
+            case PLAYBACK_STOP:
+                stopPlayback(id, playback);
+                break;
             case STOP:
                 stop(sounds.get(id));
                 break;
@@ -236,7 +245,7 @@ final class Audio {
                         return;
                     }
                     ready.loaded = true;
-                    report(ready.owner, ready.id, LOADED, ready.duration, 0, ready.bytes, 0, 0, false, "", "");
+                    report(ready.owner, ready.id, LOADED, ready.duration, 0, ready.bytes, 0, 0, false, "", "", 0);
                 });
             }
             sound.sample = pool.load(file.getPath(), 1);
@@ -264,13 +273,24 @@ final class Audio {
         failure(sound.owner, sound.id, code, message);
     }
 
-    private void play(Sound sound, float left, float right, float rate) {
+    private void play(Sound sound, int playback, float left, float right, float rate) {
         if (sound == null || !sound.loaded) return;
         long now = SystemClock.elapsedRealtimeNanos();
-        voices.removeIf(voice -> voice.until <= now);
-        if (voices.size() == MAX_VOICES) pool.stop(voices.remove(0).stream);
+        for (int i = voices.size() - 1; i >= 0; i--) { Voice voice = voices.get(i); if (voice.until <= now) { voices.remove(i); if (voice.playback != 0) report(voice.sound.owner, voice.sound.id, ENDED, voice.sound.duration, 0, 0, 0, 0, false, "", "", voice.playback); } }
+        if (voices.size() == MAX_VOICES) { Voice old = voices.remove(0); pool.stop(old.stream); if (old.playback != 0) report(old.sound.owner, old.sound.id, ENDED, old.sound.duration, 0, 0, 0, 0, false, "", "", old.playback); }
         int stream = pool.play(sound.sample, left, right, 1, 0, rate);
-        if (stream != 0) voices.add(new Voice(sound, stream, now + (long) (sound.duration * 1000 / (double) rate)));
+        if (stream != 0) voices.add(new Voice(sound, playback, stream, now + (long) (sound.duration * 1000 / (double) rate)));
+        else if (playback != 0) report(sound.owner, sound.id, ENDED, 0, 0, 0, 0, 0, false, "", "", playback);
+    }
+
+    private void setPlayback(int id, int playback, float volume, float rate) {
+        for (Voice voice : voices) if (voice.sound.id == id && voice.playback == playback) {
+            pool.setVolume(voice.stream, volume, volume); pool.setRate(voice.stream, rate); return;
+        }
+    }
+
+    private void stopPlayback(int id, int playback) {
+        for (int i = voices.size() - 1; i >= 0; i--) { Voice voice = voices.get(i); if (voice.sound.id == id && voice.playback == playback) { pool.stop(voice.stream); voices.remove(i); report(voice.sound.owner, id, ENDED, 0, 0, 0, 0, 0, false, "", "", playback); return; } }
     }
 
     private void stop(Sound sound) {
@@ -280,6 +300,7 @@ final class Audio {
             if (voice.sound != sound) continue;
             pool.stop(voice.stream);
             voices.remove(i);
+            if (voice.playback != 0) report(voice.sound.owner, voice.sound.id, ENDED, voice.sound.duration, 0, 0, 0, 0, false, "", "", voice.playback);
         }
     }
 
@@ -331,16 +352,22 @@ final class Audio {
     }
 
     void failure(int owner, int id, String code, String message) {
-        report(owner, id, FAILURE, 0, 0, 0, 0, 0, false, code, message);
+        report(owner, id, FAILURE, 0, 0, 0, 0, 0, false, code, message, 0);
     }
 
     void report(int owner, int id, int phase, long duration, long position, long bytes,
             int seeks, int laps, boolean buffering, String code, String message) {
+        report(owner, id, phase, duration, position, bytes, seeks, laps, buffering, code, message, 0);
+    }
+
+    void report(int owner, int id, int phase, long duration, long position, long bytes,
+            int seeks, int laps, boolean buffering, String code, String message, int playback) {
         ByteArrayOutputStream data = new ByteArrayOutputStream(64);
         DataOutputStream d = new DataOutputStream(data);
         try {
             d.writeInt(owner);
             d.writeInt(id);
+            d.writeInt(playback);
             d.writeByte(phase);
             d.writeLong(duration);
             d.writeLong(position);

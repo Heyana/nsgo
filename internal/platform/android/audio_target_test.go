@@ -116,6 +116,9 @@ func TestNativeAndroidSound(t *testing.T) {
 			t.Fatalf("%s: short duration %v", format.name, got.sound.Duration())
 		}
 		app.Post(func() {
+			muted := got.sound.Play(core.SoundVoice{Muted: true})
+			muted.SetVolume(0.4)
+			muted.Stop()
 			got.sound.Play(core.SoundVoice{Volume: 0.2})
 			got.sound.Play(core.SoundVoice{Volume: 0.3, Rate: 1.5})
 			got.sound.Play(core.SoundVoice{Volume: 0.3, Pan: -1})
@@ -151,6 +154,8 @@ func TestNativeAndroidPlayer(t *testing.T) {
 		app.Post(func() {
 			p = cx.NewAudioPlayer(format.source, core.AudioPlayerOptions{OnEnd: func() { ends <- struct{}{} }})
 			p.SetRate(2)
+			p.SetVolume(0.25)
+			p.SetMuted(true)
 			p.Play(func(err error) { played <- err })
 		})
 		app.Settle()
