@@ -98,6 +98,7 @@ var (
 	gErrorFree            func(uintptr)
 	gSetPrgname           func(*byte)
 	gObjectUnref          func(uintptr)
+	gObjectRef            func(uintptr) uintptr
 	gObjectGetData        func(uintptr, *byte) uintptr
 	gObjectSetData        func(uintptr, *byte, uintptr)
 	gTypeIsA              func(uintptr, uintptr) int32
@@ -238,7 +239,7 @@ var (
 	gtkGestureGetDevice        func(uintptr) uintptr
 
 	gdkDisplayGetMonitorAtSurface func(uintptr, uintptr) uintptr
-
+	gdkMonitorGetRefreshRate      func(uintptr) int32
 	// Optional GDK functions, nil where GTK lacks them: the fractional monitor scale (GTK 4.14), and the work area GTK 4 has only for X11 monitors, where GTK was built with X11.
 	gdkMonitorGetScale       func(uintptr) float64
 	gdkX11MonitorGetType     func() uintptr
@@ -478,6 +479,7 @@ func bind() {
 	purego.RegisterLibFunc(&gVariantNewString, glibLib, "g_variant_new_string")
 	purego.RegisterLibFunc(&gVariantNewBoolean, glibLib, "g_variant_new_boolean")
 	purego.RegisterLibFunc(&gVariantUnref, glibLib, "g_variant_unref")
+	purego.RegisterLibFunc(&gObjectRef, gobjectLib, "g_object_ref")
 	purego.RegisterLibFunc(&gObjectUnref, gobjectLib, "g_object_unref")
 	purego.RegisterLibFunc(&gObjectGetData, gobjectLib, "g_object_get_data")
 	purego.RegisterLibFunc(&gObjectSetData, gobjectLib, "g_object_set_data")
@@ -605,6 +607,7 @@ func bind() {
 	purego.RegisterLibFunc(&gdkDisplayGetDefault, gtkLib, "gdk_display_get_default")
 	purego.RegisterLibFunc(&gdkDisplayGetMonitors, gtkLib, "gdk_display_get_monitors")
 	purego.RegisterLibFunc(&gdkDisplayGetMonitorAtSurface, gtkLib, "gdk_display_get_monitor_at_surface")
+	purego.RegisterLibFunc(&gdkMonitorGetRefreshRate, gtkLib, "gdk_monitor_get_refresh_rate")
 	purego.RegisterLibFunc(&gdkDisplayGetClipboard, gtkLib, "gdk_display_get_clipboard")
 	purego.RegisterLibFunc(&gdkClipboardSetText, gtkLib, "gdk_clipboard_set_text")
 	purego.RegisterLibFunc(&gdkClipboardReadTextAsync, gtkLib, "gdk_clipboard_read_text_async")

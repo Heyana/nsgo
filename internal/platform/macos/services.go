@@ -534,25 +534,46 @@ func screenFrames(selector string) []apple.CGRect {
 
 // displays returns AppKit's screens in the coordinate space used by WindowFrame: the primary screen's top left, with y growing down. The primary screen is the first of screens, the one with the menu bar; mainScreen is the one with the key window, which moves.
 func displays() []driver.DisplayInfo {
+	infos, _ := displaySnapshot(0)
+	return infos
+}
+
+func displaySnapshot(current objc.ID) ([]driver.DisplayInfo, string) {
 	screens := objc.ID(apple.Class("NSScreen")).Send(sel("screens"))
 	count := objc.Send[uint](screens, sel("count"))
 	if count == 0 {
-		return nil
+		return nil, ""
 	}
 	primary := screens.Send(sel("objectAtIndex:"), uint(0))
 	primaryFrame := objc.Send[apple.CGRect](primary, sel("frame"))
 	top := primaryFrame.Origin.Y + primaryFrame.Size.Height
 	out := make([]driver.DisplayInfo, 0, count)
+	currentID := ""
+	currentNumber := screenNumber(current)
 	for i := uint(0); i < count; i++ {
 		screen := screens.Send(sel("objectAtIndex:"), i)
 		frame := objc.Send[apple.CGRect](screen, sel("frame"))
 		visible := objc.Send[apple.CGRect](screen, sel("visibleFrame"))
+		number := screenNumber(screen)
+		id := strconv.FormatUint(uint64(number), 10)
+		if number == 0 {
+			id = strconv.FormatUint(uint64(i), 10)
+		}
+		if screen == current || number != 0 && number == currentNumber {
+			currentID = id
+		}
+		rate, maximum := displayRates(screen, number)
 		point := func(r apple.CGRect) driver.Bounds {
 			return driver.Bounds{Origin: driver.Point{X: driver.Points(r.Origin.X - primaryFrame.Origin.X), Y: driver.Points(top - r.Origin.Y - r.Size.Height)}, Size: driver.Size{Width: driver.Points(r.Size.Width), Height: driver.Points(r.Size.Height)}}
 		}
-		out = append(out, driver.DisplayInfo{ID: screenDisplayID(screen, i), Frame: point(frame), VisibleFrame: point(visible), Scale: float32(objc.Send[float64](screen, sel("backingScaleFactor"))), Main: screen == primary})
+		out = append(out, driver.DisplayInfo{ID: id, Frame: point(frame), VisibleFrame: point(visible), Scale: float32(objc.Send[float64](screen, sel("backingScaleFactor"))), Main: screen == primary, RefreshRate: rate, MaxRefreshRate: maximum})
 	}
-	return out
+	return out, currentID
+}
+
+func screenNumber(screen objc.ID) uint32 {
+	number := screen.Send(sel("deviceDescription")).Send(sel("objectForKey:"), apple.NSString("NSScreenNumber"))
+	return objc.Send[uint32](number, sel("unsignedIntValue"))
 }
 
 func screenDisplayID(screen objc.ID, index uint) string {

@@ -52,6 +52,7 @@ type Env struct {
 	locale, forced *Signal[string]
 	settings       *Signal[LocaleSettings]
 	displays       *Signal[*displayList]
+	display        *Signal[DisplayInfo]
 	systemRTL      *Signal[bool]
 	language       *Memo[string]
 	rtl            *Memo[bool]
@@ -145,6 +146,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		forced:           NewSignal(cx, ""),
 		settings:         NewSignal(cx, LocaleSettings{}),
 		displays:         NewSignal(cx, &displayList{}),
+		display:          NewSignal(cx, DisplayInfo{}),
 		os:               NewSignal(cx, OS("")),
 		version:          NewSignal(cx, OSVersion{}),
 		idiom:            NewSignal(cx, IdiomPhone),
@@ -281,6 +283,13 @@ func (e *Env) set(v Environment) {
 	if !slices.Equal(e.displays.GetUntracked().values, v.Displays) {
 		e.displays.Set(&displayList{values: slices.Clone(v.Displays)})
 	}
+	var display DisplayInfo
+	if v.DisplayID != "" {
+		if i := slices.IndexFunc(v.Displays, func(d DisplayInfo) bool { return d.ID == v.DisplayID }); i >= 0 {
+			display = v.Displays[i]
+		}
+	}
+	e.display.Set(display)
 	e.os.Set(v.OS)
 	e.version.Set(v.OSVersion)
 	e.appleKeys.Set(!v.Simulated && (v.OS == OSMacOS || v.OS == OSIOS) || v.AppleKeyboard)
@@ -522,11 +531,16 @@ func (e *Env) Locale() string {
 // not. Package i18n's Regional fills them in from the locale's region.
 func (e *Env) LocaleSettings() LocaleSettings { return e.settings.Get() }
 
-// Displays returns the desktop displays in screen coordinates. Frame is the
+// Displays returns the reported displays in screen coordinates. Frame is the
 // whole display, VisibleFrame is the area available to windows, Scale is
 // device pixels per point, and Main marks the primary display. It is empty
-// where the platform has no desktop display information.
+// where the platform has no display information.
 func (e *Env) Displays() []DisplayInfo { return slices.Clone(e.displays.Get().values) }
+
+// Display reports the window's current display. Bindings that read it
+// follow changes to that display and moves to a different one. It returns
+// the zero DisplayInfo where the platform has no current display.
+func (e *Env) Display() DisplayInfo { return e.display.Get() }
 
 // Language returns the language the app shows: of its catalogs'
 // languages, the one that suits Locale best, as SetLanguageMatch says;

@@ -15,9 +15,10 @@ type Environment struct {
 	DeviceName string
 	// DeviceModel is the device's hardware model, empty where it names none (core.Env.DeviceModel).
 	DeviceModel string
-	// Displays are the desktop's displays, in screen coordinates. They are
-	// empty on targets without desktop displays.
+	// Displays are the displays the platform reports, in screen coordinates.
 	Displays []DisplayInfo
+	// DisplayID names the surface's current display in Displays.
+	DisplayID string
 	// SafeArea is the part of each edge that system bars, notches and
 	// rounded corners cover.
 	SafeArea Edges

@@ -75,6 +75,7 @@ type highContrast struct {
 func (w *window) environment() driver.Environment {
 	locale := userLocale()
 	deviceName, deviceModel := deviceIdentity()
+	displays, displayID := w.displays()
 	return driver.Environment{
 		LaunchedAtLogin:       w.opts.LaunchedAtLogin,
 		DeviceName:            deviceName,
@@ -90,7 +91,8 @@ func (w *window) environment() driver.Environment {
 		Locale:                locale,
 		LocaleSettings:        localeSettings(),
 		KeyCodeNames:          w.keyboardCodeNames(),
-		Displays:              w.displays(),
+		Displays:              displays,
+		DisplayID:             displayID,
 		OS:                    driver.OSWindows,
 		HasWebView:            true,
 		CanSendInput:          true,
@@ -160,13 +162,39 @@ func highContrastEnabled() bool {
 }
 
 // displays reads the monitors in the virtual desktop, in the points monitorLayout lays them out in, as WindowFrame uses.
-func (w *window) displays() []driver.DisplayInfo {
+func (w *window) displays() ([]driver.DisplayInfo, string) {
 	placements := monitorLayout()
 	out := make([]driver.DisplayInfo, 0, len(placements))
+	current := w.currentMonitor()
+	currentID := ""
 	for _, placement := range placements {
-		out = append(out, placement.display)
+		display := placement.display
+		display.RefreshRate, display.MaxRefreshRate = displayRates(placement.info.Device)
+		if placement.monitor == current {
+			currentID = display.ID
+		}
+		out = append(out, display)
 	}
-	return out
+	return out, currentID
+}
+
+// currentMonitor follows the surface's top-level window, including a host's.
+func (w *window) currentMonitor() uintptr {
+	if hwnd := w.owner(); hwnd != 0 && !(w.primary && w.opts.Hidden) && w.kind != driver.SurfaceTrayIcon {
+		monitor, _, _ := monitorFromWindow.Call(hwnd, monitorDefaultNear)
+		return monitor
+	}
+	return 0
+}
+
+func (w *window) currentDisplayID() string {
+	info := monitorInfoEx{Size: uint32(unsafe.Sizeof(monitorInfoEx{}))}
+	if monitor := w.currentMonitor(); monitor != 0 {
+		if ok, _, _ := getMonitorInfoW.Call(monitor, uintptr(unsafe.Pointer(&info))); ok != 0 {
+			return monitorDisplayID(monitor, info.Device)
+		}
+	}
+	return ""
 }
 
 // monitorLayout reads the monitors, in physical pixels, with their DPI, and lays them out in points (layoutMonitors).
@@ -212,14 +240,17 @@ func layoutMonitors(all []foundMonitor, scales []float64) []displayPlacement {
 		bounds := func(r rect) driver.Bounds {
 			return driver.Bounds{Origin: p.point(r.Left, r.Top), Size: driver.Size{Width: driver.Points(float64(r.Right-r.Left) / p.scale), Height: driver.Points(float64(r.Bottom-r.Top) / p.scale)}}
 		}
-		id := syscall.UTF16ToString(item.info.Device[:])
-		if id == "" {
-			id = fmt.Sprintf("%x", item.monitor)
-		}
-		p.display = driver.DisplayInfo{ID: id, Frame: bounds(item.info.Monitor), VisibleFrame: bounds(item.info.Work), Scale: float32(p.scale), Main: item.info.Flags&1 != 0}
+		p.display = driver.DisplayInfo{ID: monitorDisplayID(item.monitor, item.info.Device), Frame: bounds(item.info.Monitor), VisibleFrame: bounds(item.info.Work), Scale: float32(p.scale), Main: item.info.Flags&1 != 0}
 		out = append(out, p)
 	}
 	return out
+}
+
+func monitorDisplayID(monitor uintptr, device [32]uint16) string {
+	if id := syscall.UTF16ToString(device[:]); id != "" {
+		return id
+	}
+	return fmt.Sprintf("%x", monitor)
 }
 
 // point converts a virtual desktop pixel position to points through the monitor.

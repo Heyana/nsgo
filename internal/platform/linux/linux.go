@@ -98,14 +98,16 @@ type testOpen struct {
 // window is one GTK window and the tree it shows. The engine's goroutine
 // reaches its main-thread half only through Mount and post.
 type window struct {
-	surfaceID    uint32  // the engine surface, independent of the test host
-	parentWindow *window // WindowOptions.Parent, separate from the app service opener
-	testID       uint32  // the opened test surface, 0 for a regular window
-	batch        uint64  // batches applied
-	win          uintptr // GtkWindow, 0 for an embedded surface
-	surface      uintptr // the NsgoView holding the root view
-	saves        driver.SavePreflights
-	saveDialogs  map[uintptr]*saveDialogPreflight
+	surfaceID       uint32  // the engine surface, independent of the test host
+	parentWindow    *window // WindowOptions.Parent, separate from the app service opener
+	testID          uint32  // the opened test surface, 0 for a regular window
+	batch           uint64  // batches applied
+	win             uintptr // GtkWindow, 0 for an embedded surface
+	surface         uintptr // the NsgoView holding the root view
+	saves           driver.SavePreflights
+	saveDialogs     map[uintptr]*saveDialogPreflight
+	monitorSurface  uintptr // retained GdkSurface whose monitor signals are connected
+	monitorHandlers [2]uint64
 	// primary is the backend's own surface. Opened surfaces share the GTK main loop, but closing one must not end the app.
 	primary bool
 	// opener is the app's own window for a surface the app opened, which goes when that window stops (stop).
@@ -935,6 +937,7 @@ func (w *window) shutdown(forced bool) {
 	w.closeAudio()
 	w.discovery.close()
 	w.releasePointer(false)
+	w.watchMonitorSurface(0)
 	w.closeCanvasImages()
 	w.closeHotKeys()
 

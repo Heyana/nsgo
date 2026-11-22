@@ -100,6 +100,7 @@ func (w *window) environment() driver.Environment {
 		KeyCodeNames:     w.keyboardCodeNames(),
 		LocaleSettings:   localeSettings(),
 		Displays:         displays(),
+		DisplayID:        w.currentDisplayID(),
 		OS:               driver.OSLinux,
 		CanLockPointer:   w.canLockPointer(),
 		HasWebView:       true,
@@ -235,7 +236,8 @@ func displays() []driver.DisplayInfo {
 		point := func(r gdkMonitorRectangle) driver.Bounds {
 			return driver.Bounds{Origin: driver.Point{X: driver.Points(float32(r.X)), Y: driver.Points(float32(r.Y))}, Size: driver.Size{Width: driver.Points(float32(r.Width)), Height: driver.Points(float32(r.Height))}}
 		}
-		out = append(out, driver.DisplayInfo{ID: monitorDisplayID(monitor), Frame: point(frame), VisibleFrame: point(visible), Scale: scale, Main: i == 0})
+		out = append(out, driver.DisplayInfo{ID: monitorDisplayID(monitor), Frame: point(frame), VisibleFrame: point(visible), Scale: scale, Main: i == 0,
+			RefreshRate: float64(max(0, gdkMonitorGetRefreshRate(monitor))) / 1000})
 		gObjectUnref(monitor)
 	}
 	return out
@@ -250,6 +252,53 @@ func monitorDisplayID(monitor uintptr) string {
 		}
 	}
 	return fmt.Sprintf("%x", monitor)
+}
+
+func (w *window) currentDisplayID() string {
+	var surface uintptr
+	if !w.closing && w.surface != 0 && !(w.primary && w.opts.Hidden) && w.kind != driver.SurfaceTrayIcon {
+		if native := gtkWidgetGetNative(w.surface); native != 0 {
+			surface = gtkNativeGetSurface(native)
+		}
+	}
+	w.watchMonitorSurface(surface)
+	display := gdkDisplayGetDefault()
+	if display == 0 || surface == 0 {
+		return ""
+	}
+	if monitor := gdkDisplayGetMonitorAtSurface(display, surface); monitor != 0 {
+		return monitorDisplayID(monitor)
+	}
+	return ""
+}
+
+// Keep the host surface alive until its handlers can be disconnected when the
+// view closes or changes hosts.
+func (w *window) watchMonitorSurface(surface uintptr) {
+	if surface == w.monitorSurface {
+		return
+	}
+	if w.monitorSurface != 0 {
+		for _, id := range w.monitorHandlers {
+			gSignalHandlerDisconnect(w.monitorSurface, id)
+		}
+		gObjectUnref(w.monitorSurface)
+	}
+	w.monitorSurface = surface
+	w.monitorHandlers = [2]uint64{}
+	if surface != 0 {
+		gObjectRef(surface)
+		w.monitorHandlers = [2]uint64{
+			gSignalConnect(surface, "enter-monitor", cbCurrentDisplayChanged, w.handle),
+			gSignalConnect(surface, "leave-monitor", cbCurrentDisplayChanged, w.handle),
+		}
+	}
+}
+
+func currentDisplayChangedCallback(_, _, data uintptr) {
+	if w := windowOf(data); w != nil && !w.closing {
+		w.updateEnvironment()
+	}
 }
 
 var watchedDisplays uintptr
@@ -269,7 +318,7 @@ func watchMonitor(monitor uintptr) {
 		return
 	}
 	gObjectSetData(monitor, key, 1)
-	for _, signal := range []string{"notify::geometry", "notify::scale", "notify::scale-factor", "invalidate"} {
+	for _, signal := range []string{"notify::geometry", "notify::scale", "notify::scale-factor", "notify::refresh-rate", "invalidate"} {
 		gSignalConnect(monitor, signal, cbDisplaysChanged, 0)
 	}
 }

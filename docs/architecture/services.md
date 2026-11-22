@@ -458,15 +458,18 @@ On Windows and Linux, a firmware placeholder such as `To Be Filled By O.E.M.` or
 
 ## Displays and locale settings
 
-`Env.Displays` is the desktop's list of `DisplayInfo` values. `Frame` is a display's whole area and `VisibleFrame` the area left for windows after the menu bar, Dock or taskbar; both use the same top-left, y-down screen coordinates as `desktop.SetWindowFrame`. `Scale` is device pixels per point and `Main` marks the primary display. On Windows a display's top left is its pixel offset from the primary display divided by the smallest display scale, and points within a display are its own scale's, so displays with different scales never overlap. The list changes when the platform reports a display arrangement change; on Linux a change only to an X11 work area, as a panel resized, shows at the next environment change. Phones and the web leave it empty; a view embedded in a desktop host reports the host machine's displays.
+`Env.Displays` lists the platform's `DisplayInfo` values. `Env.Display` follows the window's current display and the information it reports. `Frame` is the whole display and `VisibleFrame` the area left for windows where the system reports it. Desktop frames use the same top-left, y-down coordinates as `desktop.SetWindowFrame`. `Scale` is device pixels per point and `Main` marks the primary display. On Windows a display's top left is its pixel offset from the primary display divided by the smallest display scale, and points within a display are its own scale's, so displays with different scales never overlap. The list changes when the platform reports a display arrangement change. Linux reads an X11 work area change at the next environment update. An embedded view reads the display of its host window.
+
+`RefreshRate` is in Hz and `MaxRefreshRate` is the highest rate the platform reports. Zero means unavailable. On the web `RefreshRateEstimated` marks the median rate rounded to the nearest Hz from a short `requestAnimationFrame` sample. The browser reports only its current screen, and focus, visibility and screen or window changes restart measurement. `nsgotest.Environment` can set `Displays` and `DisplayID` together to pin both reads.
 
 | Target | Display source | Locale settings source |
 | --- | --- | --- |
-| macOS | `NSScreen.screens`, converted from AppKit's bottom-left coordinates | `NSLocale` and its calendar and date format preferences |
-| Windows | `EnumDisplayMonitors`, monitor work areas and per-monitor DPI | `GetLocaleInfoEx` for first weekday, hour cycle and measurement |
-| Linux | GDK's monitor model; X11 work areas, the whole monitor on Wayland, which reports none | the session's locale categories and GTK settings |
-| iOS, Web | no desktop displays | platform or browser locale settings where available |
-| Android | no desktop displays | format locale's Unicode extensions (`fw`, `mu`, `ms`), `Calendar`, `LocaleData` and `DateFormat.is24HourFormat` |
+| macOS | `NSScreen`, `NSWindow.screen` and `CGDisplayModeGetRefreshRate`. AppKit's panel limit supplies the rate when the current mode is variable | `NSLocale` and its calendar and date format preferences |
+| Windows | `EnumDisplayMonitors`, `MonitorFromWindow`, per-monitor DPI and `EnumDisplaySettingsW`. Supported modes at the active resolution and color depth give the maximum | `GetLocaleInfoEx` for first weekday, hour cycle and measurement |
+| Linux | GDK's monitor model and active refresh rate in millihertz. Surface monitor notifications follow moves. X11 supplies work areas | the session's locale categories and GTK settings |
+| iOS and tvOS | `UIScreen` and the window's screen. UIKit reports the panel's maximum frame rate | platform locale settings |
+| Android | The native view's `Display`, its active rate and the highest supported mode rate at the same resolution. The activity follows display changes | format locale's Unicode extensions (`fw`, `mu`, `ms`), `Calendar`, `LocaleData` and `DateFormat.is24HourFormat` |
+| Web | The browser's `screen` and measured animation frame callbacks | browser locale settings |
 
 `desktop.Monitors` reads `Env.Displays`. `desktop.CursorPoint` sends `ItemCursorPoint` to the desktop backend and receives one `EventCursorPoint` with the location in the same coordinates as the displays. macOS converts AppKit's `NSEvent.mouseLocation` from its primary screen's lower left. Windows converts `GetCursorPos` using the monitor under the pointer. Linux divides X11 root pixels by GDK's X11 scale. Wayland exposes surface-local positions, so the query reports unavailable, including in an app running under Xwayland. Hosts can withhold `core.AccessCursorPoint` from restricted scopes.
 

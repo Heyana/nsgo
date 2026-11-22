@@ -6,7 +6,7 @@ import "github.com/nsgo-dev/nsgo/internal/driver"
 // protocol, defines them; core aliases them so apps import core alone.
 
 type (
-	// DisplayInfo is one desktop display reported by Env.Displays.
+	// DisplayInfo describes a display reported by Env.Display and Env.Displays.
 	DisplayInfo = driver.DisplayInfo
 	// FrontmostAppInfo is the application in front on the desktop, which Scope.FrontmostApp returns: the core's part of desktop.FrontmostAppInfo.
 	FrontmostAppInfo = driver.FrontmostAppInfo

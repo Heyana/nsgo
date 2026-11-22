@@ -815,9 +815,12 @@ func (s *surface) environment() driver.Environment {
 	locale, rtl := apple.Locale()
 	deviceName, deviceModel := deviceIdentity()
 	thermal, lowPower := apple.ProcessPower()
+	displays, displayID := s.displaySnapshot()
 	env := driver.Environment{
 		DeviceName:  deviceName,
 		DeviceModel: deviceModel,
+		Displays:    displays,
+		DisplayID:   displayID,
 		SafeArea: driver.Edges{Top: driver.Points(in.Top), Right: driver.Points(in.Right),
 			Bottom: driver.Points(in.Bottom), Left: driver.Points(in.Left)},
 		KeyboardHeight:   s.keyboard,
@@ -917,7 +920,8 @@ func (s *surface) observe() {
 	on := func(name objc.ID, fn func(objc.ID)) { s.stops = append(s.stops, apple.Observe(center, name, fn)) }
 	for _, name := range []string{"UIContentSizeCategoryDidChangeNotification",
 		"UIAccessibilityReduceMotionStatusDidChangeNotification", "UIAccessibilityDarkerSystemColorsStatusDidChangeNotification",
-		"UIAccessibilityVoiceOverStatusDidChangeNotification"} {
+		"UIAccessibilityVoiceOverStatusDidChangeNotification", "UIScreenModeDidChangeNotification",
+		"UIScreenDidConnectNotification", "UIScreenDidDisconnectNotification"} {
 		on(apple.Global(uikitPath, name), refresh)
 	}
 	for name, state := range lifecycleNote {

@@ -32,6 +32,7 @@ import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.hardware.biometrics.BiometricPrompt;
 import android.hardware.biometrics.BiometricManager;
+import android.hardware.display.DisplayManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.net.LinkProperties;
@@ -238,6 +239,15 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     };
     private int safeTop, safeRight, safeBottom, safeLeft, keyboard;
     private byte[] environment;
+    private DisplayManager displayManager;
+    private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
+        @Override public void onDisplayAdded(int id) {}
+        @Override public void onDisplayRemoved(int id) {}
+        @Override public void onDisplayChanged(int id) {
+            Display display = getDisplay();
+            if (display != null && display.getDisplayId() == id) environment();
+        }
+    };
     /** Whether new insets wait for the layout of their traversal, which sends them with a new size if they bring one (sendSize), else alone as the frame draws. */
     private boolean environmentHeld;
     private final ViewTreeObserver.OnPreDrawListener heldEnvironment = new ViewTreeObserver.OnPreDrawListener() {
@@ -502,6 +512,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         updateGestureRects();
         if (preferredFrameRate > 0) refreshRateHint();
         if (!effects.isEmpty()) getViewTreeObserver().addOnPreDrawListener(drawEffects);
+        displayManager = getContext().getSystemService(DisplayManager.class);
+        if (displayManager != null) displayManager.registerDisplayListener(displayListener, ui);
         // Embedded hosts may already have a focused sibling; keep it there.
         if (getRootView().findFocus() == null) requestFocus();
         accessibility.addTouchExplorationStateChangeListener(screenReader);
@@ -572,6 +584,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         hapticPatterns.stop();
         getViewTreeObserver().removeOnPreDrawListener(drawEffects);
         for (ShaderEffect effect : effects) effect.detach();
+        if (displayManager != null) {
+            displayManager.unregisterDisplayListener(displayListener);
+            displayManager = null;
+        }
         releaseEnvironment();
         // An app waiting for the folds starts as the view leaves its window, as it would have without them.
         releaseStart();
@@ -1328,9 +1344,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             LocalePrefs.read(formatLocale, hostLocale != null ? null : locale,
                     android.text.format.DateFormat.is24HourFormat(getContext()),
                     measurementSystem(formatLocale)).write(d);
-            // The second capability byte's bits are taken too: a third ends the payload, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, and Protocol.CAP_DISCOVER_SERVICES.
+            // The second capability byte's bits are taken too: a third follows the locale settings, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads and does: Protocol.CAP_EXTENDED_MESSAGES, Protocol.CAP_AUDIO, as Audio plays on every device, and Protocol.CAP_DISCOVER_SERVICES.
             int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_AUDIO | Protocol.CAP_DISCOVER_SERVICES | (hapticPatterns.available ? Protocol.CAP_HAPTIC_PATTERNS : 0);
             d.writeByte(third);
+            writeDisplay(d);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -1373,6 +1390,26 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         } catch (Throwable ignored) {
         }
         return "";
+    }
+
+    private void writeDisplay(DataOutputStream d) throws IOException {
+        Display display = getDisplay();
+        d.writeBoolean(display != null);
+        if (display == null) return;
+        Display.Mode current = display.getMode();
+        float rate = current.getRefreshRate(), maximum = rate;
+        for (Display.Mode mode : display.getSupportedModes()) {
+            if (mode.getPhysicalWidth() == current.getPhysicalWidth() && mode.getPhysicalHeight() == current.getPhysicalHeight()) {
+                maximum = Math.max(maximum, mode.getRefreshRate());
+            }
+        }
+        android.graphics.Point size = new android.graphics.Point();
+        display.getRealSize(size);
+        d.writeInt(display.getDisplayId());
+        d.writeFloat(size.x / density);
+        d.writeFloat(size.y / density);
+        d.writeFloat(rate);
+        d.writeFloat(maximum);
     }
 
     /** The appearance the app forces, as driver.Appearance; 0 follows the system's. */

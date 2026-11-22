@@ -36,3 +36,30 @@ func TestDisplaysKeepReadersWhenUnchanged(t *testing.T) {
 		t.Fatalf("the reader ran %d more times for unchanged displays", runs-before)
 	}
 }
+
+func TestDisplayTracksTheWindowsDisplay(t *testing.T) {
+	displays := []core.DisplayInfo{{ID: "desk", RefreshRate: 60}, {ID: "fast", RefreshRate: 120, MaxRefreshRate: 144}}
+	env := core.Environment{Displays: displays, DisplayID: "desk"}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return core.Text{TestID: "display", ContentFunc: func() string {
+			d := cx.Env().Display()
+			return d.ID + ":" + strconv.FormatFloat(d.RefreshRate, 'f', -1, 64)
+		}}
+	}, nsgotest.Environment(env))
+	check := func(want string) {
+		t.Helper()
+		if got := app.Find("id:display").Text; got != want {
+			t.Fatalf("current display = %q, want %q", got, want)
+		}
+	}
+	check("desk:60")
+	env.DisplayID = "fast"
+	app.SetEnvironment(env)
+	check("fast:120")
+	env.Displays = []core.DisplayInfo{displays[0], {ID: "fast", RefreshRate: 144, MaxRefreshRate: 144}}
+	app.SetEnvironment(env)
+	check("fast:144")
+	env.Displays = env.Displays[:1]
+	app.SetEnvironment(env)
+	check(":0")
+}

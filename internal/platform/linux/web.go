@@ -50,7 +50,6 @@ var (
 	soupMessageHeadersIterNext                     func(uintptr, uintptr, uintptr) int32
 	gErrorNewLiteral                               func(uint32, int32, *byte) uintptr
 	gQuarkToString                                 func(uint32) uintptr
-	gObjectRef                                     func(uintptr) uintptr
 	gMemoryInputStreamNewFromBytes                 func(uintptr) uintptr
 	webkitWebViewGetBackgroundColor                func(uintptr, *[4]float32)
 	webkitNetworkSessionNew                        func(*byte, *byte) uintptr
@@ -182,7 +181,6 @@ func bindWebKit(webkit, jsc, soup uintptr) {
 	reg(&webkitURISchemeRequestFinishError, "webkit_uri_scheme_request_finish_error")
 	purego.RegisterLibFunc(&gErrorNewLiteral, glibLib, "g_error_new_literal")
 	purego.RegisterLibFunc(&gQuarkToString, glibLib, "g_quark_to_string")
-	purego.RegisterLibFunc(&gObjectRef, gobjectLib, "g_object_ref")
 	purego.RegisterLibFunc(&gMemoryInputStreamNewFromBytes, gioLib, "g_memory_input_stream_new_from_bytes")
 	reg(&webkitWebViewGetBackgroundColor, "webkit_web_view_get_background_color")
 	reg(&webkitNetworkSessionNew, "webkit_network_session_new")

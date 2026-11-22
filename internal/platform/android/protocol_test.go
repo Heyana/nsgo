@@ -20,6 +20,40 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
+func TestEnvironmentDisplayPayload(t *testing.T) {
+	var wire writer
+	wire.floats(0, 0, 0, 0, 0, 1, 2)
+	wire.byte(0)
+	wire.byte(0)
+	wire.byte(byte(driver.IdiomPhone))
+	wire.str("en-US")
+	wire.str("")
+	wire.str("")
+	wire.floats(44, 88)
+	wire.u32(32)
+	wire.byte(1) // thermal status
+	wire.byte(1) // power-save mode
+	wire.byte(0) // first day of week
+	for range 4 {
+		wire.str("") // hour cycle, measurement, temperature unit, region
+	}
+	old := reader{buf: wire.buf}
+	if env := readEnvironment(&old); env.DisplayID != "" || len(env.Displays) != 0 {
+		t.Fatalf("the old environment gained a display: %+v", env.Displays)
+	}
+	wire.byte(capExtendedMessages) // the third capability byte, which the display follows
+	wire.flags(true)
+	wire.u32(0)
+	wire.floats(480, 800, 60, 120)
+	packet := reader{buf: wire.buf}
+	got := readEnvironment(&packet)
+	frame := driver.Bounds{Size: driver.Size{Width: 480, Height: 800}}
+	want := []driver.DisplayInfo{{ID: "0", Frame: frame, VisibleFrame: frame, Scale: 2, Main: true, RefreshRate: 60, MaxRefreshRate: 120}}
+	if got.DisplayID != "0" || !slices.Equal(got.Displays, want) || len(packet.buf) != 0 {
+		t.Fatalf("display ID %q, displays %+v, trailing bytes %d", got.DisplayID, got.Displays, len(packet.buf))
+	}
+}
+
 // javaNames are the driver's names of the kinds Java names otherwise.
 var javaNames = map[string]string{"EventHoverIn": "EventMouseEnter", "EventHoverOut": "EventMouseLeave", "EventHoverMove": "EventMouseMove"}
 

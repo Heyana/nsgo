@@ -86,12 +86,13 @@ var (
 	cbVideoError       uintptr
 	cbVideoProgress    uintptr
 
-	cbSettingsChanged uintptr
-	cbDisplaysChanged uintptr
-	cbMenuActivate    uintptr
-	cbTick            uintptr
-	cbTickWatch       uintptr
-	cbYield           uintptr
+	cbSettingsChanged       uintptr
+	cbDisplaysChanged       uintptr
+	cbCurrentDisplayChanged uintptr
+	cbMenuActivate          uintptr
+	cbTick                  uintptr
+	cbTickWatch             uintptr
+	cbYield                 uintptr
 
 	cbNotificationAction    uintptr
 	cbNotificationClosed    uintptr
@@ -187,6 +188,7 @@ func init() {
 
 	cbSettingsChanged = newCallback(settingsChangedCallback)
 	cbDisplaysChanged = newCallback(displaysChangedCallback)
+	cbCurrentDisplayChanged = newCallback(currentDisplayChangedCallback)
 	cbMenuActivate = newCallback(menuActivateCallback)
 	cbTick = newCallback(tickCallback)
 	cbTickWatch = newCallback(tickWatchCallback)

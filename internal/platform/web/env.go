@@ -18,8 +18,10 @@ type watch struct {
 	resolution                                                  js.Value // matches ratio only
 	ratio                                                       float64
 	// probe is padded by the safe area and as wide as the root font size.
-	probe   js.Value
-	changed js.Func
+	probe            js.Value
+	changed          js.Func
+	refreshRate      float64
+	measuringDisplay bool
 	// settings are what Intl says of settingsFor's hours and weeks.
 	settingsFor string
 	settings    driver.LocaleSettings
@@ -71,14 +73,7 @@ func (s *surface) watchChanges() {
 		q.Call("addEventListener", "change", w.changed)
 	}
 	s.watchRatio(g.Get("devicePixelRatio").Float())
-	g.Call("addEventListener", "resize", w.changed)
 	g.Call("addEventListener", "languagechange", w.changed)
-	// The page's visibility and focus are the app's lifecycle.
-	g.Call("addEventListener", "focus", js.FuncOf(func(js.Value, []js.Value) any {
-		s.updateEnv()
-		s.readKeyboardLayout()
-		return nil
-	}))
 	if keyboard := g.Get("navigator").Get("keyboard"); keyboard.Truthy() && keyboard.Get("addEventListener").Type() == js.TypeFunction {
 		keyboard.Call("addEventListener", "layoutchange", js.FuncOf(func(js.Value, []js.Value) any {
 			s.readKeyboardLayout()
@@ -86,7 +81,25 @@ func (s *surface) watchChanges() {
 		}))
 	}
 	g.Call("addEventListener", "blur", w.changed)
-	s.doc.Call("addEventListener", "visibilitychange", w.changed)
+	// Visibility and focus determine the app's lifecycle and can also
+	// start a fresh display sample.
+	displayChanged := js.FuncOf(func(js.Value, []js.Value) any {
+		s.updateEnv()
+		s.measureDisplayRate()
+		return nil
+	})
+	g.Call("addEventListener", "resize", displayChanged)
+	g.Call("addEventListener", "focus", js.FuncOf(func(js.Value, []js.Value) any {
+		s.updateEnv()
+		s.readKeyboardLayout()
+		s.measureDisplayRate()
+		return nil
+	}))
+	s.doc.Call("addEventListener", "visibilitychange", displayChanged)
+	if screen := g.Get("screen"); screen.Truthy() && screen.Get("addEventListener").Type() == js.TypeFunction {
+		screen.Call("addEventListener", "change", displayChanged)
+	}
+	s.measureDisplayRate()
 	// A page that loses the focus or hides hears no key or mouse button come up, so every held one comes up then.
 	g.Call("addEventListener", "blur", js.FuncOf(func(js.Value, []js.Value) any {
 		s.releaseKeys(driver.Modifiers{}, true)
@@ -142,6 +155,7 @@ func (s *surface) watchRatio(ratio float64) {
 func (s *surface) updateEnv() {
 	if ratio := js.Global().Get("devicePixelRatio").Float(); ratio != s.watch.ratio {
 		s.watchRatio(ratio)
+		s.measureDisplayRate()
 	}
 	if env := s.environment(); !env.Equal(s.env) {
 		if env.Lifecycle == driver.LifecycleBackground || !env.HapticPatterns {
@@ -207,6 +221,7 @@ func (s *surface) environment() driver.Environment {
 			env.PageBaseURL = s.doc.Get("baseURI").String()
 		}
 	}
+	env.Displays, env.DisplayID = s.displaySnapshot()
 	if w.desktop.Get("matches").Bool() {
 		env.Idiom = driver.IdiomDesktop
 	}

@@ -1,6 +1,7 @@
 package testhost
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -20,5 +21,16 @@ func TestPinSetsTheTestsDisplaySettings(t *testing.T) {
 	preserved := Pin(driver.Environment{OS: driver.OSIOS, VerticalBarEdge: driver.VerticalBarLeading}, &driver.Environment{Dark: true})
 	if preserved.VerticalBarEdge != driver.VerticalBarLeading {
 		t.Errorf("platform vertical bar edge not preserved: %v", preserved.VerticalBarEdge)
+	}
+}
+
+func TestPinDisplay(t *testing.T) {
+	platform := driver.Environment{Displays: []driver.DisplayInfo{{ID: "platform", RefreshRate: 60}}, DisplayID: "platform"}
+	pin := driver.Environment{Displays: []driver.DisplayInfo{{ID: "test", RefreshRate: 120}}, DisplayID: "test"}
+	if got := Pin(platform, &pin); got.DisplayID != pin.DisplayID || !slices.Equal(got.Displays, pin.Displays) {
+		t.Errorf("pinned display = %q in %+v", got.DisplayID, got.Displays)
+	}
+	if got := Pin(platform, &driver.Environment{}); got.DisplayID != platform.DisplayID || !slices.Equal(got.Displays, platform.Displays) {
+		t.Errorf("platform display = %q in %+v", got.DisplayID, got.Displays)
 	}
 }

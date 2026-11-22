@@ -75,7 +75,7 @@ func PlaceWindow(anchor Bounds, size Size, area Bounds, side WindowPlacement) (P
 	return chosen, side
 }
 
-// DisplayInfo is one physical display in the desktop's screen coordinate space.
+// DisplayInfo describes a display in the platform's screen coordinate space.
 // Frame is its whole area; VisibleFrame is the area available to windows.
 // Scale is device pixels per point, and Main marks the primary display.
 type DisplayInfo struct {
@@ -84,6 +84,13 @@ type DisplayInfo struct {
 	VisibleFrame Bounds
 	Scale        float32
 	Main         bool
+	// RefreshRate is the active mode's rate in Hz, or the panel rate when
+	// the platform reports only that. Zero means the rate is unavailable.
+	RefreshRate float64
+	// MaxRefreshRate is the panel's maximum when the platform reports it.
+	MaxRefreshRate float64
+	// RefreshRateEstimated marks a rate measured from browser frame callbacks.
+	RefreshRateEstimated bool
 }
 
 // Contains reports whether p lies inside b.

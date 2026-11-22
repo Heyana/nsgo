@@ -7,6 +7,7 @@ import (
 	"image"
 	"math"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -612,7 +613,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 		env.LocaleSettings.MeasurementSystem = r.str()
 		env.LocaleSettings.TemperatureUnit = r.str()
 		env.LocaleSettings.Region = r.str()
-		// The second capability byte's bits are all taken too; a third follows the locale settings, at the end of the message, so a runtime built before it, which ends here, reads as having none of them. Its bits: capExtendedMessages, capAudio and capDiscoverServices.
+		// The second capability byte's bits are all taken too; a third follows the locale settings, before the display, so a runtime built before it, which ends here, reads as having none of them. Its bits: capExtendedMessages, capAudio and capDiscoverServices.
 		if len(r.buf) > 0 {
 			third = r.byte()
 		}
@@ -622,6 +623,14 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	env.Audio = third&capAudio != 0
 	env.AudioPlaybackControls = env.Audio
 	env.HapticPatterns = third&capHapticPatterns != 0
+	// The display follows the third capability byte.
+	if len(r.buf) > 0 && r.byte() != 0 && len(r.buf) >= 20 {
+		id := r.u32()
+		frame := driver.Bounds{Size: driver.Size{Width: r.points(), Height: r.points()}}
+		env.DisplayID = strconv.FormatUint(uint64(id), 10)
+		env.Displays = []driver.DisplayInfo{{ID: env.DisplayID, Frame: frame, VisibleFrame: frame,
+			Scale: env.PixelRatio, Main: id == 0, RefreshRate: float64(r.float()), MaxRefreshRate: float64(r.float())}}
+	}
 	return env, third
 }
 
