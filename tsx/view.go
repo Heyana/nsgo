@@ -217,7 +217,7 @@ func (p *Plugin) startCall(name string, args []any, done func(result any, err er
 	r.calls[dl] = struct{}{}
 	r.watch(dl)
 	owner := dl
-	if !r.deadlines && (!js.Properties().CanInterrupt || r.limits.Call <= 0) {
+	if !r.deadlines && r.onError == nil && (!js.Properties().CanInterrupt || r.limits.Call <= 0) {
 		owner = nil
 	}
 	p.cx.Run(func() { r.under(owner, func() { p.call(fn, args, dl) }) })

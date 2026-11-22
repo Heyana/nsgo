@@ -114,6 +114,8 @@ type runtime struct {
 	calls  map[*deadline]struct{}
 	// onStop belongs to the engine's goroutine.
 	onStop func(error)
+	// onError belongs to a plugin host; views keep their core boundary.
+	onError func(error)
 	// interrupted says the host stopped the runtime (interrupt), and hears so through the calls that fail: the JS it cut ends without a panic into the app's Catch.
 	interrupted atomic.Bool
 	// deadlines enables CallTotal. current owns the JS work running now, and sliceDeadline is the earliest total deadline in the current slice.
@@ -300,12 +302,25 @@ func (r *runtime) call(fn js.Value, args ...js.Value) js.Value {
 		if r.interrupted.Load() || cut {
 			return js.Undefined()
 		}
-		panic(r.failure(err))
+		r.callbackError(err)
+		return js.Undefined()
 	}
 	if v == nil {
 		return js.Undefined()
 	}
 	return v
+}
+
+// callbackError reports an uncaught plugin callback outside a waiting call.
+// Nested callbacks still throw back into JavaScript, and views and hosts
+// without a handler keep core's boundary/report path.
+func (r *runtime) callbackError(err error) {
+	err = r.failure(err)
+	if r.onError != nil && r.depth == 0 && (r.current == nil || r.current.done == nil) {
+		r.onError(err)
+		return
+	}
+	panic(err)
 }
 
 // invoke runs a function in a JS slice, reporting errors and whether an expired deadline already dealt with the error.

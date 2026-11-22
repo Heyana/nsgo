@@ -138,14 +138,34 @@ func (r *runtime) installTimers() {
 		p, resolve, _ := r.vm.NewPromise()
 		_ = resolve(js.Undefined())
 		then, _ := js.AssertFunction(r.vm.ToObject(r.vm.ToValue(p)).Get("then"))
-		_, _ = then(r.vm.ToValue(p), fn)
+		job, _ := then(r.vm.ToValue(p), fn)
+		if r.onError != nil {
+			// queueMicrotask reports an uncaught callback, rather than
+			// leaving the implementation promise silently rejected.
+			owner := r.current
+			catch, _ := js.AssertFunction(r.vm.ToObject(job).Get("catch"))
+			_, _ = catch(job, r.function(func(call js.FunctionCall) js.Value {
+				if owner != nil && owner.done != nil {
+					panic(arg(call, 0))
+				}
+				err := r.rejection(arg(call, 0))
+				r.cx.Post(func() { r.callbackError(err) })
+				return js.Undefined()
+			}))
+		}
 		return js.Undefined()
 	}))
 	// reportError reports an exception as an uncaught one, after the
 	// turn: the host shows it while the app runs on.
 	_ = r.vm.Set("reportError", r.function(func(call js.FunctionCall) js.Value {
 		thrown := arg(call, 0)
-		r.cx.Post(func() { panic(thrown) })
+		r.cx.Post(func() {
+			if r.onError != nil {
+				r.callbackError(r.rejection(thrown))
+				return
+			}
+			panic(thrown)
+		})
 		return js.Undefined()
 	}))
 

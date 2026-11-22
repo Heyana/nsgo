@@ -154,6 +154,11 @@ type Sandbox struct {
 	// OnStop runs once on the engine goroutine when the runtime stops,
 	// after any waiting plugin calls fail.
 	OnStop func(error)
+	// OnError receives a plugin's uncaught callback errors outside a
+	// waiting Call, on the engine goroutine. Nil keeps core's report or
+	// boundary behavior. Load errors and Call results return to their
+	// callers; views keep their core.Catch boundary.
+	OnError func(error)
 	// Storage names its partition of the app's storage and of its secrets (core.Scope.ProvideSecrets), which no one else's code sees; "" leaves it the app's.
 	Storage string
 	// WebUnisolated runs it on the web with the page's authority. The page's engine runs it in a realm of the page's origin, which reaches the page's own APIs (XMLHttpRequest, WebSocket, navigator, localStorage, the page's window) past Go, so there Capabilities and Grant hold only the requests the runtime and core make, and Storage's partition and a pkg.Trust kept in the page's storage are open to its code. Without it, a sandbox with Capabilities or Grant refuses to start on the web with ErrUnisolated. Other targets isolate it and ignore this.
@@ -267,6 +272,9 @@ func (s Sandbox) start(cx *core.Scope, name, src string) *runtime {
 	}
 	r.sandbox = &sandboxed{caps: s.Capabilities != nil || s.Grant != nil, modules: s.Modules}
 	r.exportView = s.exportView
+	if s.plugin {
+		r.onError = s.OnError
+	}
 	if limits.Stack < maxCallStack {
 		r.vm.SetMaxCallStackSize(limits.Stack)
 	}
@@ -582,8 +590,15 @@ func (r *runtime) within(budget time.Duration, fn func() error) (err error, cut 
 		}
 		if stop, ok := err.(*js.InterruptedError); ok && !r.interrupted.Load() && errors.Is(stop, ErrBudget) {
 			if owner != nil && (owner.done != nil || inJob && r.retainPromiseJobs) {
+				outsideCall := owner.done == nil && !owner.expired
 				r.expire(owner)
 				cut = true
+				if outsideCall && r.onError != nil {
+					// An interrupted reaction may outlive its settled call.
+					// Report after this entry unwinds, without failing a
+					// different call whose entry happened to drain its job.
+					r.cx.Post(func() { r.onError(ErrBudget) })
+				}
 				if inJob && r.retainPromiseJobs && owner != prev {
 					// The other owner's reaction interrupted the queue
 					// after this entry returned a value or threw.
@@ -616,8 +631,8 @@ func (r *runtime) resumePromiseJobs() {
 		r.vm.SetPromiseJobFilter(nil)
 		return
 	}
-	if err, cut := r.within(r.limits.Call, r.vm.DrainPromiseJobs); err != nil && !cut {
-		panic(r.failure(err))
+	if err, cut := r.within(r.limits.Call, r.vm.DrainPromiseJobs); err != nil && !cut && !r.interrupted.Load() {
+		r.callbackError(err)
 	}
 }
 

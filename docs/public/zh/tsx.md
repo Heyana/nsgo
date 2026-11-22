@@ -106,6 +106,8 @@ trust.Accept(p) // 运行之后，更旧的构建会被拒绝
 
 `Plugin.Interrupt` 可从任意 goroutine 停止插件的运行时，丢弃待处理的定时器，让进行中和之后的调用失败。`Plugin.Stopped()` 和 `Plugin.Err()` 也可以从任意 goroutine 读取。运行期间 `Err()` 返回 nil，停止后返回第一个停止原因。正常关闭插件或释放其所属作用域时，会先运行插件的清理函数，再以 `tsx.ErrPluginClosed` 停止。调用 `tsx.Load` 时设置 `Sandbox.OnStop`，可在仍在等待的调用失败后，在引擎 goroutine 上收到一次停止原因。
 
+加载函数插件时，可设置 `Sandbox.OnError` 接收仍在等待结果的 `Plugin.Call` 之外，定时器、动画帧、`queueMicrotask` 和 `reportError` 的未处理错误。各插件的处理函数在引擎 goroutine 上运行，宿主可据此归属错误，并在熔断时调用 `Plugin.Interrupt`。原生执行段超出预算时也会报告 `tsx.ErrBudget`，包括所属调用已经完成的 Promise 任务。普通回调错误不会停止插件。加载和调用结果的错误仍返回各自的调用方，视图仍使用 `core.Catch`；不设置处理函数时，保留现有的边界和应用错误报告行为。
+
 设置 `Sandbox.OnViewRuntime` 后，每个视图都会在入口模块运行前，在引擎 goroutine 上提供一个 `*tsx.ViewRuntime`。可以从任意 goroutine 调用 `Interrupt` 停止视图的工作，保留最后渲染的内容。`Stopped` 和 `Err` 报告停止状态，正常释放时返回 `tsx.ErrViewClosed`。`Sandbox.OnStop` 也会为视图报告一次停止原因。
 
 `Plugin.JSTime` 和 `ViewRuntime.JSTime` 报告原生运行时执行 JavaScript 的累计时长，包括当前正在执行的入口。两次执行之间的等待时间和注册的同步 Go 函数耗时不计入。浏览器在 NSGo 之外执行的 JavaScript 无法测量或打断，因此 `JSTime` 返回不可用，`Interrupt` 在宿主重新取得控制后停止后续 NSGo 回调。
