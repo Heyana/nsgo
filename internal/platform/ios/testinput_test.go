@@ -1,3 +1,5 @@
+//go:build !ios || nsgotest || nsgoautomation
+
 package ios
 
 import "testing"
