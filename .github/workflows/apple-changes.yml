@@ -1,0 +1,66 @@
+name: Apple changes
+
+# Tells test.yml and check.yml whether a change can affect Apple's targets, so their Apple jobs skip a pull request that cannot. The jobs skip through their own if: rather than a workflow's paths filter, as a required check that never starts blocks the pull request, while a skipped job counts as passed.
+#
+# It answers true for every push, tag and manual run, and for a pull request unless every file it changes is a docs file or belongs to another platform alone. Anything not listed below as safe to skip, shared or new, runs the Apple jobs.
+
+on:
+  workflow_call:
+    outputs:
+      apple:
+        description: "'false' when the change cannot affect Apple's targets, 'true' otherwise."
+        value: ${{ jobs.detect.outputs.apple }}
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      apple: ${{ steps.detect.outputs.apple }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          persist-credentials: false
+          # The merge commit and its first parent, the base: their difference is what the pull request changes.
+          fetch-depth: 2
+      - name: Decide whether the Apple jobs run
+        id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then
+            echo "apple=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Without --no-renames a file moved out of an Apple directory would list only its new path. A failing git diff fails this step, and the Apple jobs run unless the answer is false.
+          changed=$(git diff --name-only --no-renames HEAD^1 HEAD)
+          apple=false
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            case "$path" in
+              # Apple's own code wins over the directories below, so a _darwin.go or .m anywhere runs the jobs.
+              internal/platform/macos/* | internal/platform/ios/* | internal/platform/apple/* | internal/platform/tvos/* | internal/platform/watchos/* | internal/platform/objcblock/* | \
+                *_darwin.go | *_darwin_*.go | *_ios.go | *_ios_*.go | *.m | *.h | *.swift)
+                apple=true ;;
+              # Code that only other platforms run, Android's Java and runtime included, and the docs. The untagged Go in these directories still compiles for macOS in check.yml's Build and vet job.
+              internal/platform/android/* | internal/platform/windows/* | internal/platform/linux/* | internal/platform/web/* | internal/platform/harmonyos/* | internal/platform/miniprogram/* | \
+                docs/* | changelog.d/* | website/* | *.md)
+                ;;
+              *)
+                apple=true ;;
+            esac
+            if [ "$apple" = true ]; then
+              echo "$path can affect Apple's targets, so the Apple jobs run."
+              break
+            fi
+          done <<< "$changed"
+          if [ "$apple" = false ]; then
+            echo "::notice::Every changed file belongs to another platform or the docs, so the Apple jobs skip."
+          fi
+          echo "apple=$apple" >> "$GITHUB_OUTPUT"

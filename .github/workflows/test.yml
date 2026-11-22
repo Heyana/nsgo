@@ -1,6 +1,6 @@
 name: Test
 
-# Tests every package on Linux, Apple's backends on macOS, Android presses on an emulator, and native input regressions across desktops and the web. release.yml calls it before publishing a release.
+# Tests every package on Linux, Apple's backends on macOS, Android presses on an emulator, and native input regressions across desktops and the web. release.yml calls it before publishing a release. The Apple jobs skip a pull request that cannot affect Apple's targets (apple-changes.yml).
 on:
   push:
     branches:
@@ -21,18 +21,21 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Apple changes
+    uses: ./.github/workflows/apple-changes.yml
+
   gallery:
     name: Gallery (${{ matrix.target }})
+    needs: changes
+    # Gallery (web) is a required check, so it runs even when the changes job fails; macOS joins it unless the change cannot affect Apple's targets.
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: web
-            os: depot-ubuntu-24.04-4
-          - target: macos
-            # AVPlayer plays nothing on Depot's macOS runners.
-            os: macos-15-intel
-    runs-on: ${{ matrix.os }}
+        target: ${{ fromJSON(needs.changes.outputs.apple == 'false' && '["web"]' || '["web","macos"]') }}
+    # AVPlayer plays nothing on Depot's macOS runners.
+    runs-on: ${{ matrix.target == 'macos' && 'macos-15-intel' || 'depot-ubuntu-24.04-4' }}
     timeout-minutes: 30
     steps:
       - name: Check out
@@ -261,6 +264,9 @@ jobs:
             NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidNativePackagedView$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
 
   apple:
+    needs: changes
+    # Skips a pull request that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
+    if: ${{ !cancelled() && needs.changes.outputs.apple != 'false' }}
     # AVPlayer plays nothing on Depot's macOS runners, so the desktop backend stays on GitHub's; use its Intel pool while hosted arm64 capacity leaves jobs unallocated.
     runs-on: macos-15-intel
     timeout-minutes: 40
@@ -337,6 +343,9 @@ jobs:
           done
 
   apple-simulator:
+    needs: changes
+    # Skips a pull request that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
+    if: ${{ !cancelled() && needs.changes.outputs.apple != 'false' }}
     # Simulator packages are arm64; the Intel desktop job cannot run them.
     runs-on: depot-macos-15
     timeout-minutes: 40

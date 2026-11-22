@@ -1,6 +1,6 @@
 name: Check
 
-# Checks Go formatting and builds and vets every target; test.yml runs the tests.
+# Checks Go formatting and builds and vets every target; test.yml runs the tests. The Apple job skips a pull request that cannot affect Apple's targets (apple-changes.yml).
 on:
   pull_request:
   push:
@@ -19,6 +19,10 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Apple changes
+    uses: ./.github/workflows/apple-changes.yml
+
   format:
     name: Go formatting
     runs-on: depot-ubuntu-24.04
@@ -65,6 +69,9 @@ jobs:
 
   apple:
     name: Build and vet (Apple)
+    needs: changes
+    # Skips a pull request that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
+    if: ${{ !cancelled() && needs.changes.outputs.apple != 'false' }}
     runs-on: depot-macos-15
     timeout-minutes: 30
     steps:
