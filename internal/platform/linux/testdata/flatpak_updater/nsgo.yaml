@@ -1,0 +1,11 @@
+name: NSGoUpdater1419
+id: dev.nsgo.Updater1419
+version: 1.0.0
+build:
+  targets: [linux_x64]
+  installers: false
+updates:
+  channel: direct
+  feed: https://fixture.invalid/updates
+  key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  automatic: true
