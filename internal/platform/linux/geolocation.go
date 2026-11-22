@@ -43,6 +43,7 @@ var bindGeoClue = sync.OnceFunc(func() {
 	purego.RegisterLibFunc(&geoVariantNewVariant, glibLib, "g_variant_new_variant")
 	purego.RegisterLibFunc(&geoVariantGetDouble, glibLib, "g_variant_get_double")
 	purego.RegisterLibFunc(&geoVariantGetInt64, glibLib, "g_variant_get_int64")
+	purego.RegisterLibFunc(&geoVariantGetUint64, glibLib, "g_variant_get_uint64")
 })
 
 var geoClueBus = sync.OnceValue(func() uintptr {
@@ -69,6 +70,7 @@ var (
 	geoVariantNewVariant func(uintptr) uintptr
 	geoVariantGetDouble  func(uintptr) float64
 	geoVariantGetInt64   func(uintptr) int64
+	geoVariantGetUint64  func(uintptr) uint64
 )
 
 func handleGeoClue(w *window, it *driver.MountItem) {
@@ -263,27 +265,31 @@ func geoClueLocate(desktopID string) (driver.LocationFix, error) {
 	}
 	accuracy, _ := read("Accuracy")
 	timestamp := time.Now()
-	if raw, timestampErr := readInt64(bus, geoClueName, path, "Timestamp"); timestampErr == nil {
-		const unixToWindows100ns = int64(11644473600) * 10000000
-		if raw > unixToWindows100ns {
-			timestamp = time.Unix(0, (raw-unixToWindows100ns)*100)
-		}
+	if seconds, micros, timestampErr := readTimestamp(bus, geoClueName, path); timestampErr == nil {
+		timestamp = time.Unix(int64(seconds), int64(micros)*1000)
 	}
 	return driver.LocationFix{Latitude: lat, Longitude: lon, HorizontalAccuracy: driver.SensorNumber{Value: accuracy, Valid: accuracy >= 0}, Timestamp: timestamp}, nil
 }
 
-func readInt64(bus uintptr, name, path, property string) (int64, error) {
-	reply, err := dbusTry(bus, name, path, propertiesIF, "Get", gVariantNewString(cstr(geoClueLocationIF)), gVariantNewString(cstr(property)))
+func readTimestamp(bus uintptr, name, path string) (uint64, uint64, error) {
+	reply, err := dbusTry(bus, name, path, propertiesIF, "Get", gVariantNewString(cstr(geoClueLocationIF)), gVariantNewString(cstr("Timestamp")))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer gVariantUnref(reply)
 	value := geoTupleVariant(reply, 0)
 	if value == 0 {
-		return 0, errors.New("GeoClue property missing")
+		return 0, 0, errors.New("GeoClue timestamp missing")
 	}
 	defer gVariantUnref(value)
-	return geoVariantGetInt64(value), nil
+	if goString(gVariantGetTypeString(value)) != "(tt)" {
+		return 0, 0, errors.New("GeoClue timestamp has unexpected type")
+	}
+	seconds := gVariantGetChildValue(value, 0)
+	micros := gVariantGetChildValue(value, 1)
+	defer gVariantUnref(seconds)
+	defer gVariantUnref(micros)
+	return geoVariantGetUint64(seconds), geoVariantGetUint64(micros), nil
 }
 
 func geoTupleObjectPath(tuple uintptr, index int) string {

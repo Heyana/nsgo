@@ -43,7 +43,7 @@ class Location(dbus.service.Object):
 
     @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="ss", out_signature="v")
     def Get(self, interface, name):
-        values = {"Latitude": 35.6812, "Longitude": 139.7671, "Accuracy": 8.0, "Timestamp": dbus.Int64(0)}
+        values = {"Latitude": 35.6812, "Longitude": 139.7671, "Accuracy": 8.0, "Timestamp": dbus.Struct((dbus.UInt64(1700000000), dbus.UInt64(0)), signature="tt")}
         return values.get(name, 0.0)
 
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
