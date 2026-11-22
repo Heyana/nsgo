@@ -1,6 +1,7 @@
 package imageload
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"testing"
@@ -65,5 +66,28 @@ func TestEntryRoundTrip(t *testing.T) {
 	if err != nil || got.url != e.url || !got.stored.Equal(e.stored) || string(got.body) != string(e.body) ||
 		got.header.Get("ETag") != `"v1"` || len(got.header.Values("Cache-Control")) != 2 {
 		t.Fatalf("decoded %+v, %v", got, err)
+	}
+}
+
+func TestCopyStreamsWithProgress(t *testing.T) {
+	src := bytes.Repeat([]byte("chunk"), 16<<10)
+	var dst bytes.Buffer
+	var calls int
+	var lastLoaded, lastTotal int64
+	n, err := Copy(&dst, bytes.NewReader(src), int64(len(src)), func(loaded, total int64) {
+		if loaded < lastLoaded {
+			t.Errorf("progress went backwards: %d < %d", loaded, lastLoaded)
+		}
+		calls++
+		lastLoaded, lastTotal = loaded, total
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != int64(len(src)) || !bytes.Equal(dst.Bytes(), src) {
+		t.Fatalf("copied %d bytes, want %d", n, len(src))
+	}
+	if calls < 2 || lastLoaded != int64(len(src)) || lastTotal != int64(len(src)) {
+		t.Fatalf("progress calls=%d last=(%d,%d)", calls, lastLoaded, lastTotal)
 	}
 }

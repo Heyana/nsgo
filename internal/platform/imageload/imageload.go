@@ -216,6 +216,32 @@ func ReadAll(r io.Reader, total int64, progress Progress) ([]byte, error) {
 	}
 }
 
+// Copy streams r into w to its end, total bytes long or 0 when unknown,
+// calling progress as bytes are written: what a streaming HTTP client writes a
+// body to disk with.
+func Copy(w io.Writer, r io.Reader, total int64, progress Progress) (int64, error) {
+	buf := make([]byte, 32<<10)
+	var loaded int64
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return loaded, werr
+			}
+			loaded += int64(n)
+			if progress != nil {
+				progress(loaded, max(total, 0))
+			}
+		}
+		if err == io.EOF {
+			return loaded, nil
+		}
+		if err != nil {
+			return loaded, err
+		}
+	}
+}
+
 func decodeDataURI(uri string) ([]byte, error) {
 	meta, payload, ok := strings.Cut(uri[len("data:"):], ",")
 	if !ok {

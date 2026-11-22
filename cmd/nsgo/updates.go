@@ -490,25 +490,30 @@ func (p *project) updatesSecretKey() (ed25519.PrivateKey, error) {
 	return key, nil
 }
 
-// releaseInstaller moves target's installer, if any, into the releases
-// directory with its checksum, and writes the appcast offering it.
-func (p *project) releaseInstaller(target, path string) error {
-	if err := p.releaseAssets(path); err != nil || path == "" {
+// releaseInstaller moves target's installers, if any, into the releases
+// directory with their checksums, and writes the appcast offering them.
+func (p *project) releaseInstaller(target string, paths ...string) error {
+	if err := p.releaseAssets(paths...); err != nil {
 		return err
 	}
-	return p.writeAppcast(target, filepath.Join(p.releaseDir(), filepath.Base(path)))
-}
-
-// writeAppcast writes target's appcast into the releases directory, its
-// one item installer, a release file. macOS and Windows install only a
-// signed installer, so without the secret key their appcast is left out.
-func (p *project) writeAppcast(target, installer string) error {
-	if !p.updates() || installer == "" || !feedTarget(target) {
+	var released []string
+	for _, path := range paths {
+		if path != "" {
+			released = append(released, filepath.Join(p.releaseDir(), filepath.Base(path)))
+		}
+	}
+	if len(released) == 0 {
 		return nil
 	}
-	data, err := os.ReadFile(installer)
-	if err != nil {
-		return err
+	return p.writeAppcast(target, released...)
+}
+
+// writeAppcast writes target's appcast into the releases directory, listing
+// each installer in order. macOS and Windows install only a signed installer,
+// so without the secret key their appcast is left out.
+func (p *project) writeAppcast(target string, installers ...string) error {
+	if !p.updates() || len(installers) == 0 || !feedTarget(target) {
+		return nil
 	}
 	key, err := p.updatesSecretKey()
 	if err != nil {
@@ -523,24 +528,39 @@ func (p *project) writeAppcast(target, installer string) error {
 	if err != nil {
 		return err
 	}
-	item := appcastItem{name: name, version: p.Version, build: p.BundleVersion(), page: p.releasePage(), notes: p.Updates.notesHTML,
-		url: p.downloadURL(filepath.Base(installer)), os: system, length: len(data), sha256: fmt.Sprintf("%x", sha256.Sum256(data)), published: time.Now()}
-	if key != nil {
-		item.signature = base64.StdEncoding.EncodeToString(ed25519.Sign(key, data))
+	now := time.Now()
+	items := make([]appcastItem, 0, len(installers))
+	for _, installer := range installers {
+		if installer == "" {
+			continue
+		}
+		data, err := os.ReadFile(installer)
+		if err != nil {
+			return err
+		}
+		item := appcastItem{name: name, version: p.Version, build: p.BundleVersion(), page: p.releasePage(), notes: p.Updates.notesHTML,
+			url: p.downloadURL(filepath.Base(installer)), os: system, length: len(data), sha256: fmt.Sprintf("%x", sha256.Sum256(data)), published: now}
+		if key != nil {
+			item.signature = base64.StdEncoding.EncodeToString(ed25519.Sign(key, data))
+		}
+		if system == "windows" {
+			// The installer quits the app, installs quietly and starts the new
+			// version (nsis.go).
+			item.arguments = "/S /RELAUNCH"
+		}
+		items = append(items, item)
 	}
-	if system == "windows" {
-		// The installer quits the app, installs quietly and starts the new
-		// version (nsis.go).
-		item.arguments = "/S /RELAUNCH"
+	if len(items) == 0 {
+		return nil
 	}
 	path := filepath.Join(p.releaseDir(), appcastName(target))
-	if err := writeFile(path, item.feed()); err != nil {
+	if err := writeFile(path, appcastFeed(name, items)); err != nil {
 		return err
 	}
 	return p.releaseAssets(path)
 }
 
-// appcastItem is the one release an appcast lists.
+// appcastItem is one release package an appcast lists.
 type appcastItem struct {
 	name, version, build string
 	// page is the release's page, url its installer's download and os
@@ -557,33 +577,37 @@ type appcastItem struct {
 	published time.Time
 }
 
-// feed is the appcast listing it. Its versions are elements and the
-// enclosure's attributes both, which Sparkle's older readers take.
-func (it appcastItem) feed() []byte {
+// appcastFeed writes the Sparkle RSS appcast listing items. Each item's
+// versions are elements and the enclosure's attributes both, which Sparkle's
+// older readers take.
+func appcastFeed(title string, items []appcastItem) []byte {
 	var b bytes.Buffer
 	b.WriteString("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
 	b.WriteString("<rss version=\"2.0\" xmlns:sparkle=\"http://www.andymatuschak.org/xml-namespaces/sparkle\">\n  <channel>\n")
-	fmt.Fprintf(&b, "    <title>%s</title>\n", xmlText(it.name))
-	b.WriteString("    <item>\n")
-	fmt.Fprintf(&b, "      <title>%s</title>\n", xmlText(it.name+" "+it.version))
-	if it.page != "" {
-		fmt.Fprintf(&b, "      <link>%s</link>\n", xmlText(it.page))
+	fmt.Fprintf(&b, "    <title>%s</title>\n", xmlText(title))
+	for _, it := range items {
+		b.WriteString("    <item>\n")
+		fmt.Fprintf(&b, "      <title>%s</title>\n", xmlText(it.name+" "+it.version))
+		if it.page != "" {
+			fmt.Fprintf(&b, "      <link>%s</link>\n", xmlText(it.page))
+		}
+		if it.notes != "" {
+			// CDATA cannot hold its own end, so one in the notes ends a section and starts the next.
+			fmt.Fprintf(&b, "      <description><![CDATA[%s]]></description>\n", strings.ReplaceAll(it.notes, "]]>", "]]]]><![CDATA[>"))
+		}
+		fmt.Fprintf(&b, "      <pubDate>%s</pubDate>\n", it.published.UTC().Format(time.RFC1123Z))
+		fmt.Fprintf(&b, "      <sparkle:version>%s</sparkle:version>\n", xmlText(it.build))
+		fmt.Fprintf(&b, "      <sparkle:shortVersionString>%s</sparkle:shortVersionString>\n", xmlText(it.version))
+		fmt.Fprintf(&b, "      <enclosure url=\"%s\" length=\"%d\" type=\"application/octet-stream\" sparkle:os=\"%s\" sparkle:version=\"%s\" sparkle:shortVersionString=\"%s\" sparkle:sha256=\"%s\"",
+			xmlText(it.url), it.length, xmlText(it.os), xmlText(it.build), xmlText(it.version), xmlText(it.sha256))
+		if it.signature != "" {
+			fmt.Fprintf(&b, " sparkle:edSignature=\"%s\"", it.signature)
+		}
+		if it.arguments != "" {
+			fmt.Fprintf(&b, " sparkle:installerArguments=\"%s\"", xmlText(it.arguments))
+		}
+		b.WriteString("/>\n    </item>\n")
 	}
-	if it.notes != "" {
-		// CDATA cannot hold its own end, so one in the notes ends a section and starts the next.
-		fmt.Fprintf(&b, "      <description><![CDATA[%s]]></description>\n", strings.ReplaceAll(it.notes, "]]>", "]]]]><![CDATA[>"))
-	}
-	fmt.Fprintf(&b, "      <pubDate>%s</pubDate>\n", it.published.UTC().Format(time.RFC1123Z))
-	fmt.Fprintf(&b, "      <sparkle:version>%s</sparkle:version>\n", xmlText(it.build))
-	fmt.Fprintf(&b, "      <sparkle:shortVersionString>%s</sparkle:shortVersionString>\n", xmlText(it.version))
-	fmt.Fprintf(&b, "      <enclosure url=\"%s\" length=\"%d\" type=\"application/octet-stream\" sparkle:os=\"%s\" sparkle:version=\"%s\" sparkle:shortVersionString=\"%s\" sparkle:sha256=\"%s\"",
-		xmlText(it.url), it.length, xmlText(it.os), xmlText(it.build), xmlText(it.version), xmlText(it.sha256))
-	if it.signature != "" {
-		fmt.Fprintf(&b, " sparkle:edSignature=\"%s\"", it.signature)
-	}
-	if it.arguments != "" {
-		fmt.Fprintf(&b, " sparkle:installerArguments=\"%s\"", xmlText(it.arguments))
-	}
-	b.WriteString("/>\n    </item>\n  </channel>\n</rss>\n")
+	b.WriteString("  </channel>\n</rss>\n")
 	return b.Bytes()
 }

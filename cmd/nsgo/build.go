@@ -539,10 +539,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		if err != nil {
 			return err
 		}
-		if err := p.releaseAssets(pkg, appImage); err != nil {
-			return err
-		}
-		return p.releaseInstaller(target, deb)
+		return p.releaseInstaller(target, deb, pkg, appImage)
 	case "android_universal":
 		return releaseAndroidBundle(ctx, p, dir, target, "arm64", "amd64")
 	case "android_arm64", "android_x64":

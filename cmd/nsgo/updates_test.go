@@ -275,3 +275,56 @@ func TestUpdateAutomaticDownloadsDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteLinuxAppcastListsAllPackages(t *testing.T) {
+	p, key := updatingProject(t, "")
+	t.Setenv("NSGO_UPDATES_KEY", pkg.EncodeSecretKey(key))
+	if err := p.cleanReleaseDir(); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	files := map[string]string{
+		"hello-1.2.0-linux-x64.deb":        "deb-bytes",
+		"hello-1.2.0-linux-x64.pkg.tar.gz": "arch-bytes",
+		"hello-1.2.0-linux-x64.AppImage":   "appimage-bytes",
+	}
+	writeFiles(t, dir, files)
+	if err := p.releaseInstaller("linux_x64",
+		filepath.Join(dir, "hello-1.2.0-linux-x64.deb"),
+		filepath.Join(dir, "hello-1.2.0-linux-x64.pkg.tar.gz"),
+		filepath.Join(dir, "hello-1.2.0-linux-x64.AppImage"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(p.releaseDir(), "appcast-linux_x64.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := updates.ParseAppcastItems(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("Linux appcast has %d items, want 3", len(items))
+	}
+	// First item stays .deb for backwards compatibility with older Linux builds.
+	first, err := updates.ParseAppcast(data)
+	if err != nil || first != items[0] || !strings.HasSuffix(first.Download, ".deb") {
+		t.Fatalf("ParseAppcast = %+v, %v; want .deb first", first, err)
+	}
+	pub := key.Public().(ed25519.PublicKey)
+	wantOrder := []struct{ name, body string }{
+		{"hello-1.2.0-linux-x64.deb", "deb-bytes"},
+		{"hello-1.2.0-linux-x64.pkg.tar.gz", "arch-bytes"},
+		{"hello-1.2.0-linux-x64.AppImage", "appimage-bytes"},
+	}
+	for i, w := range wantOrder {
+		if !strings.HasSuffix(items[i].Download, "/"+w.name) || items[i].Size != int64(len(w.body)) {
+			t.Errorf("item[%d] = %+v, want %s", i, items[i], w.name)
+		}
+		sig, err := base64.StdEncoding.DecodeString(items[i].Signature)
+		if err != nil || !ed25519.Verify(pub, []byte(w.body), sig) {
+			t.Errorf("item[%d] signature invalid for %s", i, w.name)
+		}
+	}
+}

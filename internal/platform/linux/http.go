@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"runtime"
 	"strconv"
 	"sync"
@@ -17,9 +18,12 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
 )
 
-// Image downloads go through libsoup 3, which WebKitGTK and GNOME's
+// Image and update downloads go through libsoup 3, which WebKitGTK and GNOME's
 // apps share, with GIO's proxies and TLS.
-func init() { imageload.HTTP = httpGet }
+func init() {
+	imageload.HTTP = httpGet
+	imageload.HTTPToFile = httpGetToFile
+}
 
 var soup struct {
 	once sync.Once
@@ -79,10 +83,10 @@ func loadSoup() error {
 	return soup.err
 }
 
-// httpGet is imageload.HTTP: libsoup's synchronous API on one thread,
-// with a session of its own, as a session is used from the thread that
-// made it, and a GCancellable that ctx cancels.
-func httpGet(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+// httpDo runs a synchronous libsoup GET on one thread, with a session of its
+// own, as a session is used from the thread that made it, and a GCancellable
+// that ctx cancels. read consumes the response body stream before cleanup.
+func httpDo(ctx context.Context, url string, header imageload.Header, read func(resp *imageload.Response, body io.Reader, length int64) error) (*imageload.Response, error) {
 	if err := loadSoup(); err != nil {
 		return nil, err
 	}
@@ -137,12 +141,38 @@ func httpGet(ctx context.Context, url string, header imageload.Header, progress 
 		resp.Header.Add(goString(name), goString(value))
 	}
 	length, _ := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
-	var err error
-	resp.Body, err = imageload.ReadAll(soupBody{ctx, stream, cancellable}, length, progress)
-	if err != nil {
+	if err := read(resp, soupBody{ctx, stream, cancellable}, length); err != nil {
 		return nil, err
 	}
 	return resp, nil
+}
+
+// httpGet is imageload.HTTP: reads the full body into memory.
+func httpGet(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+	return httpDo(ctx, url, header, func(resp *imageload.Response, body io.Reader, length int64) error {
+		var err error
+		resp.Body, err = imageload.ReadAll(body, length, progress)
+		return err
+	})
+}
+
+// httpGetToFile is imageload.HTTPToFile: streams a 200 response directly to dst.
+func httpGetToFile(ctx context.Context, url string, header imageload.Header, dst string, progress imageload.Progress) (*imageload.Response, error) {
+	return httpDo(ctx, url, header, func(resp *imageload.Response, body io.Reader, length int64) error {
+		if resp.Status != 200 {
+			return nil
+		}
+		f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		if err != nil {
+			return err
+		}
+		_, copyErr := imageload.Copy(f, body, length, progress)
+		closeErr := f.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
+	})
 }
 
 // soupBody reads a response's stream.

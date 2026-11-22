@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ var signedNewer = core.UpdateCheck{App: "Hello", Current: "1.0", Version: "1.1",
 // when set, then stages the package or reports the download error.
 type stagedDownload struct {
 	release    chan struct{}
+	onDownload func(progress func(driver.UpdateDownloadProgress))
 	err        error
 	downloaded []string
 }
@@ -36,7 +38,10 @@ func fakeDownload(t *testing.T) *stagedDownload {
 	in := &stagedDownload{}
 	download := driver.UpdateDownload
 	t.Cleanup(func() { driver.UpdateDownload = download })
-	driver.UpdateDownload = func(_ context.Context, u driver.Update, dir string, _ func(driver.UpdateDownloadProgress)) (string, error) {
+	driver.UpdateDownload = func(_ context.Context, u driver.Update, dir string, progress func(driver.UpdateDownloadProgress)) (string, error) {
+		if in.onDownload != nil {
+			in.onDownload(progress)
+		}
 		if in.release != nil {
 			<-in.release
 		}
@@ -175,11 +180,14 @@ func TestFailedInstallsOfferThePage(t *testing.T) {
 			if !slices.Equal(app.OpenedURLs, []string{signedNewer.URL}) || app.Restarts != 0 {
 				t.Errorf("opened %v, restarts %d", app.OpenedURLs, app.Restarts)
 			}
+			if app.TaskProgress.State != core.TaskProgressNone {
+				t.Errorf("failed install left task progress %+v", app.TaskProgress)
+			}
 		})
 	}
 }
 
-// A package the platform cannot install itself, as an unsigned appcast's or an AppImage's, opens the page.
+// A package the platform cannot install itself, as an unsigned appcast's or an unmanaged binary's, opens the page.
 func TestUpdateWithoutAPackageOpensThePage(t *testing.T) {
 	in := fakeDownload(t)
 	app := startOn(t, driver.OSLinux, newer)
@@ -206,4 +214,87 @@ func TestInstallOutlivesTheScopeThatOffered(t *testing.T) {
 	page.Dispose()
 	close(in.release)
 	app.WaitUntil(5*time.Second, func() bool { return app.Restarts == 1 })
+}
+
+func TestUpdateReportsStreamingProgressAndResets(t *testing.T) {
+	in := fakeDownload(t)
+	in.release = make(chan struct{})
+	var closeOnce sync.Once
+	release := func() { closeOnce.Do(func() { close(in.release) }) }
+	t.Cleanup(release)
+	halfway := make(chan struct{})
+	in.onDownload = func(progress func(driver.UpdateDownloadProgress)) {
+		progress(driver.UpdateDownloadProgress{Loaded: 400, Total: 1000})
+		close(halfway)
+	}
+
+	var mu sync.Mutex
+	var observed updater.State
+	pkg := signedNewer
+	pkg.Size = 1000
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		cx.Effect(func() {
+			s := updater.Status(cx)
+			mu.Lock()
+			observed = s
+			mu.Unlock()
+		})
+		return base.Button{OnPress: func(core.PressEvent) { updater.Check(cx) },
+			Style: core.Style{Width: core.Pt(80), Height: core.Pt(30)}, Children: []core.Node{core.Text{Content: "Check"}}}
+	}, nsgotest.Size(300, 120), nsgotest.Environment(driver.Environment{OS: driver.OSLinux}))
+	app.Update = func(bool) core.UpdateCheck { return pkg }
+
+	current := func() updater.State {
+		mu.Lock()
+		defer mu.Unlock()
+		return observed
+	}
+	if s := current(); s.Phase != updater.PhaseIdle {
+		t.Fatalf("initial status = %+v, want idle", s)
+	}
+	app.Press("text:Check")
+	app.Answer(0)
+	<-halfway
+	app.WaitUntil(5*time.Second, func() bool {
+		s := current()
+		return s.Phase == updater.PhaseDownloading && s.Loaded == 400 && s.Total == 1000
+	})
+	if s := current(); s.Version != "1.1" || s.Fraction() != 0.4 {
+		t.Fatalf("mid-download status = %+v", s)
+	}
+	if app.TaskProgress.State != core.TaskProgressNormal || app.TaskProgress.Value != 0.4 {
+		t.Fatalf("mid-download task progress = %+v, want Normal 0.4", app.TaskProgress)
+	}
+	release()
+	app.WaitUntil(5*time.Second, func() bool { return app.Restarts == 1 })
+	if s := current(); s.Phase != updater.PhaseIdle {
+		t.Fatalf("final status = %+v, want idle", s)
+	}
+	if app.TaskProgress.State != core.TaskProgressNone {
+		t.Fatalf("final task progress = %+v, want None", app.TaskProgress)
+	}
+}
+
+func TestUpdateInstallsArchAndAppImagePackagesOnLinux(t *testing.T) {
+	for _, download := range []string{
+		"https://example.com/hello-1.1-linux-x64.pkg.tar.gz",
+		"https://example.com/hello-1.1-linux-x64.pkg.tar.zst",
+		"https://example.com/hello-1.1-linux-x64.AppImage",
+	} {
+		t.Run(filepath.Base(download), func(t *testing.T) {
+			fakeDownload(t)
+			pkg := signedNewer
+			pkg.Download = download
+			app := startOn(t, driver.OSLinux, pkg)
+			app.Press("text:Check")
+			app.Answer(0)
+			app.WaitUntil(5*time.Second, func() bool { return app.Restarts == 1 })
+			if len(app.Installs) != 1 || filepath.Base(app.Installs[0].Path) != filepath.Base(download) {
+				t.Fatalf("installs = %+v, want %s", app.Installs, filepath.Base(download))
+			}
+			if _, err := os.Stat(app.Installs[0].Path); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("staged package %s stayed: %v", app.Installs[0].Path, err)
+			}
+		})
+	}
 }

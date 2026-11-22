@@ -234,6 +234,10 @@ type runtime struct {
 	taskProgress     driver.TaskProgress
 	taskProgressFrom uint32
 	taskProgressSent bool
+	// updateState is the reactive download/install status of package updater's
+	// background self-update, created on first read or update.
+	updateState  *Signal[UpdateState]
+	updateActive atomic.Bool
 	// windows are the main window's options where the platform opens
 	// windows (RootOptions.Windows); surfaces the trees of the windows,
 	// panels and tray views opened, keyed those opened with a key.

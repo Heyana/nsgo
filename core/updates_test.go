@@ -55,3 +55,20 @@ func TestInstallUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateStateFraction(t *testing.T) {
+	for _, tc := range []struct {
+		state UpdateState
+		want  float64
+	}{
+		{UpdateState{}, 0},
+		{UpdateState{Loaded: 10, Total: 0}, 0},
+		{UpdateState{Loaded: 0, Total: 100}, 0},
+		{UpdateState{Loaded: 25, Total: 100}, 0.25},
+		{UpdateState{Loaded: 150, Total: 100}, 1},
+	} {
+		if got := tc.state.Fraction(); got != tc.want {
+			t.Errorf("Fraction(%+v) = %v, want %v", tc.state, got, tc.want)
+		}
+	}
+}

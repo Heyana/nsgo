@@ -4,6 +4,7 @@ import android.os.SystemClock;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -45,7 +46,8 @@ final class Downloads {
     /** Reads a FETCH message on the reader thread. */
     void message(DataInputStream in) throws IOException {
         int id = in.readInt();
-        if (in.readUnsignedByte() == Protocol.FETCH_CANCEL) {
+        int op = in.readUnsignedByte();
+        if (op == Protocol.FETCH_CANCEL) {
             Download d = running.get(id);
             if (d != null) {
                 d.cancelled = true;
@@ -55,14 +57,15 @@ final class Downloads {
             return;
         }
         String url = Protocol.readString(in);
+        String dst = op == Protocol.FETCH_TO_FILE ? Protocol.readString(in) : null;
         String[] headers = new String[2 * in.readInt()];
         for (int i = 0; i < headers.length; i++) headers[i] = Protocol.readString(in);
         Download d = new Download();
         running.put(id, d);
-        pool.execute(() -> run(id, d, url, headers));
+        pool.execute(() -> run(id, d, url, dst, headers));
     }
 
-    private void run(int id, Download d, String url, String[] headers) {
+    private void run(int id, Download d, String url, String dst, String[] headers) {
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url).openConnection();
@@ -73,8 +76,35 @@ final class Downloads {
             for (int i = 0; i < headers.length; i += 2) c.addRequestProperty(headers[i], headers[i + 1]);
             int status = c.getResponseCode();
             long total = Math.max(c.getContentLengthLong(), 0);
-            Body body = new Body((int) Math.min(total, 64 << 20));
             InputStream stream = status >= 400 ? c.getErrorStream() : c.getInputStream();
+            if (dst != null) {
+                long written = 0;
+                if (status == HttpURLConnection.HTTP_OK && stream != null) {
+                    try (InputStream s = stream; FileOutputStream file = new FileOutputStream(dst)) {
+                        byte[] buf = new byte[64 << 10];
+                        long last = SystemClock.uptimeMillis();
+                        for (int n; (n = s.read(buf)) > 0; ) {
+                            if (d.cancelled) return;
+                            file.write(buf, 0, n);
+                            written += n;
+                            long now = SystemClock.uptimeMillis();
+                            if (now - last >= 100) {
+                                last = now;
+                                progress(id, written, total);
+                            }
+                        }
+                    }
+                } else if (stream != null) {
+                    stream.close();
+                }
+                if (d.cancelled) return;
+                if (status == HttpURLConnection.HTTP_OK) {
+                    progress(id, written, total);
+                }
+                done(id, "", status, c.getHeaderFields(), new Body(0));
+                return;
+            }
+            Body body = new Body((int) Math.min(total, 64 << 20));
             if (stream != null) {
                 try (InputStream s = stream) {
                     byte[] buf = new byte[64 << 10];

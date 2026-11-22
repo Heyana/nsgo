@@ -330,7 +330,7 @@ updates:
 | --- | --- |
 | macOS | `build` 打进应用的 Sparkle 每天检查，提示新版本，下载磁盘映像，校验签名，安装并重启应用；默认的应用菜单里有「检查更新…」，自己设置菜单的应用用 `updater.Check` 加上这一项 |
 | Windows | 放在可执行文件旁的 WinSparkle 同样如此，WinSparkle 有该语言时用应用启动时显示的语言，并静默运行安装程序，由它启动新版本 |
-| Linux、Android | 应用读取自己的 appcast，用户选择更新后下载并校验签名软件包，通过 `pkexec dpkg` 安装后重启，或交给 Android 的软件包安装器；从 Arch 软件包或 AppImage 安装的应用，以及未签名的 appcast，改为打开该 Release 的页面 |
+| Linux、Android | 应用读取自己的 appcast，用户选择更新后将签名软件包流式下载到磁盘并校验，同时通过 `updater.Status` 与平台任务进度反馈进度，再通过 `pkexec dpkg`、`pkexec pacman`（`.pkg.tar.gz`/`.pkg.tar.zst`）、原子替换 AppImage 后重启，或交给 Android 的软件包安装器；其余安装方式或未签名的 appcast 改为打开该 Release 的页面 |
 | iOS | 应用查询负责更新它的 App Store，并打开其中的页面 |
 
 ### 渠道
@@ -348,7 +348,7 @@ updates:
 
 ### 在应用中检查
 
-`updater.Check(cx)` 如同“检查更新…”菜单项，检查并显示结果；`updater.CheckInBackground(cx)` 只在有新版本时提示，`updater.CheckDaily(cx)` 也是如此，但每天至多检查一次。`automatic` 开启时，Linux、Android 和 iOS 上的应用在启动时和用户回到应用时这样检查；检查失败（例如离线）时，一小时后再试。开发构建从不更新。 在 Steam 构建中，这三个函数不会触发更新检查。
+`updater.Check(cx)` 如同“检查更新…”菜单项，检查并显示结果；`updater.CheckInBackground(cx)` 只在有新版本时提示，`updater.CheckDaily(cx)` 也是如此，但每天至多检查一次。`updater.Status(cx)` 在 Linux 和 Android 上读取实时下载与安装进度。`automatic` 开启时，Linux、Android 和 iOS 上的应用在启动时和用户回到应用时这样检查；检查失败（例如离线）时，一小时后再试。开发构建从不更新。 在 Steam 构建中，这三个函数不会触发更新检查。
 
 `updater.CapabilityOf(cx)` 无需网络请求即可说明此副本由谁更新：`ManagedSelf`、`ManagedPage`、`ManagedDevelopment`、`ManagedChannel`、`ManagedStore`（`Store` 给出商店名称），或 `ManagedUnavailable`。开发版本、禁用的渠道和商店安装会显示各自的原因；只有更新源错误、已打包的更新组件加载失败等实际故障才设置 `core.UpdateCheck.Err`。
 

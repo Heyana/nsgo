@@ -357,7 +357,7 @@ updates:
 | --- | --- |
 | macOS | Sparkle, which `build` puts into the app, checks daily, offers the new version, downloads the disk image, checks its signature, installs it and restarts the app; the default app menu has Check for Updates…, which an app setting its own menu adds with `updater.Check` |
 | Windows | WinSparkle, beside the executable, does the same in the language the app shows as it starts, when WinSparkle has it, and runs the installer silently, which starts the new version |
-| Linux, Android | The app reads its appcast, and once the user chooses Update downloads and verifies the signed package and installs it through `pkexec dpkg`, restarting, or Android's package installer; an app from the Arch package or the AppImage, or an unsigned appcast, offers the release's page instead |
+| Linux, Android | The app reads its appcast, and once the user chooses Update streams and verifies the signed package directly to disk with progress reported (`updater.Status` and the platform task progress indicator), then installs it through `pkexec dpkg`, `pkexec pacman` (`.pkg.tar.gz`/`.pkg.tar.zst`), atomic AppImage replacement (restarting on Linux), or Android's package installer; installs outside those formats or an unsigned appcast offer the release's page instead |
 | iOS | The app asks the App Store, which updates it, and offers its page there |
 
 ### Channels
@@ -375,7 +375,7 @@ Stores reject apps that update themselves, so upload a `store` build, never a di
 
 ### Checking from the app
 
-`updater.Check(cx)` checks as a *Check for Updates…* menu item does, and shows what it finds; `updater.CheckInBackground(cx)` shows only a newer version, and `updater.CheckDaily(cx)` does that at most once a day. While `automatic` is on, the app checks that way on Linux, Android and iOS as it starts and whenever the user comes back to it; a check that fails, as one offline does, is tried again an hour later. Development builds never update. In Steam builds, these three functions do nothing.
+`updater.Check(cx)` checks as a *Check for Updates…* menu item does, and shows what it finds; `updater.CheckInBackground(cx)` shows only a newer version, and `updater.CheckDaily(cx)` does that at most once a day. `updater.Status(cx)` reads the live download and install progress on Linux and Android. While `automatic` is on, the app checks that way on Linux, Android and iOS as it starts and whenever the user comes back to it; a check that fails, as one offline does, is tried again an hour later. Development builds never update. In Steam builds, these three functions do nothing.
 
 `updater.CapabilityOf(cx)` reports how this copy updates without a network request: `ManagedSelf`, `ManagedPage`, `ManagedDevelopment`, `ManagedChannel`, `ManagedStore` (with its `Store` name), or `ManagedUnavailable`. A development build, disabled channel or store installation produces a reason-specific explanation when checked; `core.UpdateCheck.Err` is reserved for failures such as a bad feed or a bundled updater that cannot load.
 

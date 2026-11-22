@@ -215,3 +215,71 @@ func TestNotesText(t *testing.T) {
 		}
 	}
 }
+
+func TestParseAppcastItemsAndFindMatching(t *testing.T) {
+	multiFeed := `<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Hello</title>
+    <item>
+      <title>Hello 1.1</title>
+      <link>https://example.com/releases/1.1</link>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>1.1</sparkle:shortVersionString>
+      <enclosure url="https://example.com/hello-1.1-linux-x64.deb" length="10" sparkle:edSignature="old" sparkle:sha256="old"/>
+    </item>
+    <item>
+      <title>Hello 1.2</title>
+      <link>https://example.com/releases/1.2</link>
+      <sparkle:version>12</sparkle:version>
+      <sparkle:shortVersionString>1.2</sparkle:shortVersionString>
+      <enclosure url="https://example.com/hello-1.2-linux-x64.deb" length="100" sparkle:edSignature="sig-deb" sparkle:sha256="sha-deb"/>
+    </item>
+    <item>
+      <title>Hello 1.2</title>
+      <link>https://example.com/releases/1.2</link>
+      <sparkle:version>12</sparkle:version>
+      <sparkle:shortVersionString>1.2</sparkle:shortVersionString>
+      <enclosure url="https://example.com/hello-1.2-linux-x64.pkg.tar.gz" length="200" sparkle:edSignature="sig-arch" sparkle:sha256="sha-arch"/>
+    </item>
+    <item>
+      <title>Hello 1.2</title>
+      <link>https://example.com/releases/1.2</link>
+      <sparkle:version>12</sparkle:version>
+      <sparkle:shortVersionString>1.2</sparkle:shortVersionString>
+      <enclosure url="https://example.com/hello-1.2-linux-x64.AppImage" length="300" sparkle:edSignature="sig-appimage" sparkle:sha256="sha-appimage"/>
+    </item>
+  </channel>
+</rss>`
+	items, err := ParseAppcastItems([]byte(multiFeed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("ParseAppcastItems returned %d items, want 3", len(items))
+	}
+	if first, err := ParseAppcast([]byte(multiFeed)); err != nil || first != items[0] {
+		t.Fatalf("ParseAppcast = %+v, %v; want first item %+v", first, err, items[0])
+	}
+	serve(t, 200, multiFeed)
+	cfg := Config{App: "Hello", Version: "1.1", Build: "11", Feed: "https://example.com/appcast-linux_x64.xml", Key: "a2V5"}
+
+	arch := FindMatching(context.Background(), cfg, func(it Item) bool {
+		return LinuxPackageFormat(it.Download) == LinuxPackageArch
+	})
+	if arch.Download != "https://example.com/hello-1.2-linux-x64.pkg.tar.gz" || arch.Signature != "sig-arch" || arch.SHA256 != "sha-arch" || arch.Size != 200 {
+		t.Fatalf("arch match = %+v", arch)
+	}
+
+	appImg := FindMatching(context.Background(), cfg, func(it Item) bool {
+		return LinuxPackageFormat(it.Download) == LinuxPackageAppImage
+	})
+	if appImg.Download != "https://example.com/hello-1.2-linux-x64.AppImage" || appImg.Signature != "sig-appimage" || appImg.Size != 300 {
+		t.Fatalf("appimage match = %+v", appImg)
+	}
+
+	unmanaged := FindMatching(context.Background(), cfg, func(Item) bool { return false })
+	if unmanaged.Version != "1.2" || unmanaged.URL != "https://example.com/releases/1.2" || unmanaged.Download != "" {
+		t.Fatalf("unmanaged match = %+v, want release page without download", unmanaged)
+	}
+}

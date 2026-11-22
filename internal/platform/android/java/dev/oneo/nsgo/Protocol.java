@@ -258,6 +258,7 @@ final class Protocol {
     // has them.
     static final int FETCH_START = 0;
     static final int FETCH_CANCEL = 1;
+    static final int FETCH_TO_FILE = 2;
     static final int FETCHED_PROGRESS = 0;
     static final int FETCHED_DONE = 1;
 

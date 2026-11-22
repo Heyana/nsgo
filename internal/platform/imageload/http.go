@@ -16,6 +16,12 @@ import (
 // as App Transport Security.
 var HTTP func(ctx context.Context, url string, header Header, progress Progress) (*Response, error)
 
+// HTTPToFile streams an http(s) response body directly to dst on disk, calling
+// progress as bytes are written, and returns the response status and headers
+// with Body empty. Backends that install update packages set it alongside HTTP
+// so large downloads do not buffer whole files in memory.
+var HTTPToFile func(ctx context.Context, url string, header Header, dst string, progress Progress) (*Response, error)
+
 // Response is what HTTP returns: the status, the headers and the whole
 // body.
 type Response struct {

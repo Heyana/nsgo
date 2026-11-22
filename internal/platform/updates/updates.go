@@ -96,18 +96,37 @@ func Answer(id uint32, find func(context.Context) driver.Update, dispatch func(d
 // Find reads c's appcast and answers with its newest item when that is
 // newer than the running build.
 func Find(ctx context.Context, c Config) driver.Update {
+	return FindMatching(ctx, c, nil)
+}
+
+// FindMatching reads c's appcast and answers with its newest release when that
+// is newer than the running build. Among items of the newest build, it selects
+// the first signed item match accepts (or the first signed item when match is
+// nil) as the downloadable package; when none matches or the appcast is
+// unsigned, Download is left empty so the updater offers the release's page.
+func FindMatching(ctx context.Context, c Config, match func(Item) bool) driver.Update {
 	u := c.answer(false)
 	if !c.Checks(false) {
 		return u
 	}
 	body, err := get(ctx, c.Feed)
 	if err == nil {
-		var item Item
-		if item, err = ParseAppcast(body); err == nil && Newer(item.Build, c.build()) {
-			u.Version, u.URL, u.Notes = item.Version, item.Link, item.Notes
+		var items []Item
+		if items, err = ParseAppcastItems(body); err == nil && Newer(items[0].Build, c.build()) {
+			chosen := items[0]
+			u.Version, u.URL, u.Notes = chosen.Version, chosen.Link, chosen.Notes
 			// Only a package signed with the app's key is installed; an unsigned appcast, which a release built without NSGO_UPDATES_KEY writes, offers the release's page instead.
-			if item.Signature != "" && c.Key != "" && !c.PageOnly {
-				u.Download, u.Signature, u.SHA256, u.Key, u.Size = item.Download, item.Signature, item.SHA256, c.Key, item.Size
+			if c.Key != "" && !c.PageOnly {
+				for _, item := range items {
+					if item.Signature == "" || item.Download == "" {
+						continue
+					}
+					if match == nil || match(item) {
+						u.Version, u.URL, u.Notes = item.Version, item.Link, item.Notes
+						u.Download, u.Signature, u.SHA256, u.Key, u.Size = item.Download, item.Signature, item.SHA256, c.Key, item.Size
+						break
+					}
+				}
 			}
 		}
 	}
@@ -222,14 +241,25 @@ type appcast struct {
 	} `xml:"channel>item"`
 }
 
-// ParseAppcast reads an appcast's newest release: its item of the
+// ParseAppcast reads an appcast's newest release: its first item of the
 // highest build that names one and a page or download.
 func ParseAppcast(data []byte) (Item, error) {
+	items, err := ParseAppcastItems(data)
+	if err != nil {
+		return Item{}, err
+	}
+	return items[0], nil
+}
+
+// ParseAppcastItems reads all items of an appcast's newest release: every item
+// of the highest build that names a build and a page or download, in feed
+// order. Linux appcasts list one item per package format for the same build.
+func ParseAppcastItems(data []byte) ([]Item, error) {
 	var feed appcast
 	if err := xml.Unmarshal(data, &feed); err != nil {
-		return Item{}, fmt.Errorf("updates: the appcast: %w", err)
+		return nil, fmt.Errorf("updates: the appcast: %w", err)
 	}
-	var newest Item
+	var newest []Item
 	for _, it := range feed.Items {
 		item := Item{
 			Build:    first(it.Version, it.Enclosure.Version),
@@ -239,12 +269,17 @@ func ParseAppcast(data []byte) (Item, error) {
 		item.Version = first(it.ShortVersion, it.Enclosure.ShortVersion, item.Build)
 		item.Link = first(webURL(it.Link), webURL(it.Enclosure.URL))
 		item.Notes = NotesText(it.Description)
-		if item.Build != "" && item.Link != "" && (newest.Build == "" || Newer(item.Build, newest.Build)) {
-			newest = item
+		if item.Build == "" || item.Link == "" {
+			continue
+		}
+		if len(newest) == 0 || Newer(item.Build, newest[0].Build) {
+			newest = []Item{item}
+		} else if compare(item.Build, newest[0].Build) == 0 {
+			newest = append(newest, item)
 		}
 	}
-	if newest.Build == "" {
-		return Item{}, errors.New("updates: the appcast lists no release")
+	if len(newest) == 0 {
+		return nil, errors.New("updates: the appcast lists no release")
 	}
 	return newest, nil
 }

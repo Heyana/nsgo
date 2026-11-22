@@ -532,6 +532,7 @@ func (s *surface) startEngine(app engine.App, size driver.Size, g driver.Geometr
 		s.send(msgPerfPanel, func(w *writer) { w.flags(s.perf.showPanel) })
 	}
 	imageload.HTTP = s.httpGet
+	imageload.HTTPToFile = s.httpGetToFile
 	imageload.UseDiskCache(eopts.CacheDir)
 	s.engine = engine.Start(s, app, eopts)
 	close(s.started)

@@ -20,6 +20,7 @@ import (
 const (
 	fetchStart  = 0
 	fetchCancel = 1
+	fetchToFile = 2
 )
 
 // The parts of a msgFetched.
@@ -42,6 +43,16 @@ type download struct {
 
 // httpGet is imageload.HTTP: a msgFetch, and its answer.
 func (s *surface) httpGet(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+	return s.fetch(ctx, url, "", header, progress)
+}
+
+// httpGetToFile is imageload.HTTPToFile: streams the response body to dst in
+// the Java runtime so large update packages do not enter the Java heap or pipe.
+func (s *surface) httpGetToFile(ctx context.Context, url string, header imageload.Header, dst string, progress imageload.Progress) (*imageload.Response, error) {
+	return s.fetch(ctx, url, dst, header, progress)
+}
+
+func (s *surface) fetch(ctx context.Context, url, dst string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
 	f := &s.downloads
 	d := &download{progress: progress, done: make(chan *reader, 1)}
 	f.mu.Lock()
@@ -54,8 +65,14 @@ func (s *surface) httpGet(ctx context.Context, url string, header imageload.Head
 	f.mu.Unlock()
 	s.send(msgFetch, func(w *writer) {
 		w.u32(n)
-		w.byte(fetchStart)
-		w.str(url)
+		if dst != "" {
+			w.byte(fetchToFile)
+			w.str(url)
+			w.str(dst)
+		} else {
+			w.byte(fetchStart)
+			w.str(url)
+		}
 		count := 0
 		for _, vs := range header {
 			count += len(vs)
@@ -79,7 +96,7 @@ func (s *surface) httpGet(ctx context.Context, url string, header imageload.Head
 			resp.Header.Add(k, r.str())
 		}
 		resp.Body = r.bytes()
-		if progress != nil {
+		if dst == "" && progress != nil {
 			total, _ := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 			progress(int64(len(resp.Body)), max(total, 0))
 		}
