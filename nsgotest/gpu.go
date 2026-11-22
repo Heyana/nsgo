@@ -175,7 +175,13 @@ func (a *App) submitGPU(frame driver.GPUFrame) {
 	}
 	owner.gpuFrames = append(owner.gpuFrames, rec)
 
-	st := owner.gpuViews[frame.ViewID]
+	// Node IDs belong to a tree, so the surface selects the device map and the tree that must receive its errors and readbacks.
+	surface := owner.surfaceModels[frame.SurfaceID]
+	if surface == nil || surface.closed {
+		return
+	}
+	model := surface.model
+	st := model.gpuViews[frame.ViewID]
 	if st == nil || st.soft == nil || st.lost {
 		return
 	}
@@ -185,7 +191,7 @@ func (a *App) submitGPU(frame driver.GPUFrame) {
 	st.frames = append(st.frames, rec)
 	readbacks, err := st.soft.Submit(frame)
 	if err != nil {
-		owner.post(driver.Event{
+		model.postTo(model.tree, driver.Event{
 			Kind: driver.EventGPU,
 			ID:   frame.ViewID,
 			Data: &driver.GPUEvent{
@@ -198,7 +204,7 @@ func (a *App) submitGPU(frame driver.GPUFrame) {
 	}
 	for _, rb := range readbacks {
 		rb := rb
-		owner.post(driver.Event{
+		model.postTo(model.tree, driver.Event{
 			Kind: driver.EventGPU,
 			ID:   frame.ViewID,
 			Data: &driver.GPUEvent{
@@ -235,11 +241,7 @@ func (a *App) GPUReadPixels(selector string) (*image.RGBA, error) {
 	if v.Kind != KindGPU {
 		return nil, fmt.Errorf("nsgotest: view %q is %s, not gpu", selector, v.Kind)
 	}
-	owner := a
-	if a.owner != nil {
-		owner = a.owner
-	}
-	st := owner.gpuViews[v.ID]
+	st := a.gpuViews[v.ID]
 	if st == nil || st.soft == nil {
 		return nil, fmt.Errorf("nsgotest: gpu view %q has no active software surface", selector)
 	}
@@ -251,17 +253,13 @@ func (a *App) GPUReadPixels(selector string) (*image.RGBA, error) {
 func (a *App) TriggerGPUDeviceLost(selector string, reason GPUDeviceLostReason, message string) {
 	a.t.Helper()
 	v := a.Find(selector)
-	owner := a
-	if a.owner != nil {
-		owner = a.owner
-	}
-	st := owner.gpuViews[v.ID]
+	st := a.gpuViews[v.ID]
 	if st == nil {
 		a.t.Fatalf("nsgotest: view %q is not an active GPU view", selector)
 	}
 	st.lost = true
 	st.ready = false
-	owner.post(driver.Event{
+	a.post(driver.Event{
 		Kind: driver.EventGPU,
 		ID:   v.ID,
 		Data: &driver.GPUEvent{
@@ -279,20 +277,16 @@ func (a *App) TriggerGPUDeviceLost(selector string, reason GPUDeviceLostReason, 
 func (a *App) RestoreGPUDevice(selector string) {
 	a.t.Helper()
 	v := a.Find(selector)
-	owner := a
-	if a.owner != nil {
-		owner = a.owner
-	}
-	st := owner.gpuViews[v.ID]
+	st := a.gpuViews[v.ID]
 	if st == nil {
 		a.t.Fatalf("nsgotest: view %q is not an active GPU view", selector)
 	}
-	w, h := owner.gpuPixelSize(v)
+	w, h := a.gpuPixelSize(v)
 	st.lost = false
 	st.ready = true
 	st.generation++
 	st.soft = driver.NewGPUSoftwareDevice(w, h, st.cfg)
-	owner.post(driver.Event{
+	a.post(driver.Event{
 		Kind: driver.EventGPU,
 		ID:   v.ID,
 		Data: &driver.GPUEvent{

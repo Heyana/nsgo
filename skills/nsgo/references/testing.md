@@ -64,6 +64,8 @@ Use `app.Window` and `nsgotest.WindowAction` constants such as `nsgotest.WindowS
 
 Headless tests can press a physical position with `KeyCode("KeyW")` or hold and release it with `KeyCodeDown` and `KeyCodeUp`. Override `core.Environment.KeyCodeNames` to exercise a layout. Unspecified positions use the US layout.
 
+For headless GPU checks in another window, use `Surface.GPUReadPixels`, `Surface.TriggerGPUDeviceLost` and `Surface.RestoreGPUDevice`; devices, readbacks and recovery follow that window, including its pixel ratio. `App.GPUFrames` records every window's submissions.
+
 ## Tests without the network
 
 Use `app.AppleSignIn` or `app.PurchaseAnswer` when a test needs to answer Sign in with Apple or a purchase. The hooks receive `nsgotest.AppleSignInRequest` and `nsgotest.PurchaseRequest` records. [Services](https://nsgo.dev/docs/services.md)
