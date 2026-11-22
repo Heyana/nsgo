@@ -699,7 +699,8 @@ func TestAutomationSupportedTargets(t *testing.T) {
 		{"android", "darwin", true},
 		{"android", "linux", true},
 		{"android", "windows", true},
-		{"web", "darwin", false},
+		{"web", "darwin", true},
+		{"web", "linux", true},
 		{"ios_simulator", "darwin", true},
 		{"miniprogram_wechat", "darwin", false},
 	}
@@ -720,8 +721,10 @@ func TestCheckDevAutomation(t *testing.T) {
 		{"native", "windows", false, ""},
 		{"native", "linux", false, ""},
 		{"native", "linux", true, "-release"},
-		{"web", "darwin", false, "macOS, Windows, Linux, Android and Apple devices and simulators so far"},
-		{"web", "windows", false, "macOS, Windows, Linux, Android and Apple devices and simulators so far"},
+		{"web", "darwin", false, ""},
+		{"web", "windows", false, ""},
+		{"web", "linux", true, "-release"},
+		{"miniprogram_wechat", "darwin", false, "macOS, Windows, Linux, Android, the web and Apple devices and simulators so far"},
 		{"native", "darwin", true, "-release"},
 		{"native", "windows", true, "-release"},
 	} {

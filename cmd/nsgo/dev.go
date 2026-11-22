@@ -1070,7 +1070,7 @@ func webAutomationSession(opts devOptions) session {
 			mu.Unlock()
 			if b == nil {
 				query := webQuery(opts.appFlags())
-				url := opts.server.pageURL(fmt.Sprintf("http://localhost:%d", opts.server.port), "/"+query)
+				url := opts.server.pageURL(opts.server.urlAt("localhost"), "/"+query)
 				note("%s", link(url))
 				var err error
 				b, err = startBrowser(ctx)

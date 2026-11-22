@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"image/png"
 	"net/http/httptest"
 	"os"
@@ -318,7 +317,7 @@ printf '%s\n/devtools/browser/test\n' "$NSGO_TEST_BROWSER_PORT" > "$profile/DevT
 while [ ! -e "$NSGO_TEST_BROWSER_CLOSED" ]; do sleep 0.05; done
 `)
 
-	srv, err := startDevServer(0)
+	srv, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +333,7 @@ while [ ! -e "$NSGO_TEST_BROWSER_CLOSED" ]; do sleep 0.05; done
 	navMu.Lock()
 	firstNavs := append([]string(nil), navigated...)
 	navMu.Unlock()
-	wantURL := srv.pageURL(fmt.Sprintf("http://localhost:%d", srv.port), "/?nsgo-lang=de")
+	wantURL := srv.pageURL(srv.urlAt("localhost"), "/?nsgo-lang=de")
 	if len(firstNavs) != 1 || firstNavs[0] != wantURL {
 		t.Fatalf("navigated = %v, want [%s]", firstNavs, wantURL)
 	}
@@ -377,7 +376,7 @@ printf '%s\n/devtools/browser/test\n' "$NSGO_TEST_BROWSER_PORT" > "$profile/DevT
 sleep 0.2
 exit 7
 `)
-	srv, err := startDevServer(0)
+	srv, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +426,7 @@ func TestWebAutomationEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv, err := startDevServer(0)
+	srv, err := startDevServer("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +452,7 @@ func TestWebAutomationEndToEnd(t *testing.T) {
 	}
 	defer b.close()
 
-	pageURL := srv.pageURL(fmt.Sprintf("http://localhost:%d", srv.port), "/")
+	pageURL := srv.pageURL(srv.urlAt("localhost"), "/")
 	pg, cleanupPage, err := openWebAutomation(b, pageURL, &appConsole)
 	if err != nil {
 		t.Fatal(err)
