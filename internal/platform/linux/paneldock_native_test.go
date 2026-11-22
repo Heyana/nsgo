@@ -106,8 +106,7 @@ func TestX11DockedPanelsFollowNativeGeometry(t *testing.T) {
 	}
 }
 
-// TestLayerShellDocksPanelsOnMixedScaleOutputs captures only an explicitly
-// owned headless compositor, including the second output's actual 2x pixels.
+// TestLayerShellDocksPanelsOnMixedScaleOutputs captures only an explicitly owned headless compositor, including the second output's actual 2x pixels.
 func TestLayerShellDocksPanelsOnMixedScaleOutputs(t *testing.T) {
 	if os.Getenv("NSGO_LAYER_SHELL_TEST") != "1" {
 		t.Skip("needs an isolated headless layer-shell compositor and grim")
@@ -252,8 +251,7 @@ func TestLayerShellDocksPanelsOnMixedScaleOutputs(t *testing.T) {
 	}
 }
 
-// Run this opt-in fixture without the optional library, or with libwayland
-// preloaded as an embedding host can load it before NSGo starts.
+// Run this opt-in fixture without the optional library, or with libwayland preloaded as an embedding host can load it before NSGo starts.
 func TestUnavailableLayerShellKeepsDockedPanelsHidden(t *testing.T) {
 	wantIssue := os.Getenv("NSGO_LAYER_SHELL_UNAVAILABLE")
 	if wantIssue == "" {

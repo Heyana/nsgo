@@ -61,8 +61,7 @@ func OpenPanel(cx *core.Scope, opts PanelOptions, content func(cx *core.Scope) c
 	return cx.OpenPanel(opts, content)
 }
 
-// CanDockPanels reports whether PanelOptions.Dock can attach a panel to a
-// display's usable edge; a missing library or protocol on Wayland returns false.
+// CanDockPanels reports whether PanelOptions.Dock can attach a panel to a display's usable edge; a missing library or protocol on Wayland returns false.
 func CanDockPanels(cx *core.Scope) bool { return cx.Env().CanDockPanels() }
 
 // CurrentWindow returns the window cx is in, nil in the app's own scope.

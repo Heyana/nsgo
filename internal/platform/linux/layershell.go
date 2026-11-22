@@ -8,9 +8,7 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-// gtk4-layer-shell interposes libwayland calls. Load it before GTK loads
-// libwayland, as its linking.md requires; an embedding host that already
-// loaded libwayland without the shim cannot enable this optional feature.
+// gtk4-layer-shell interposes libwayland calls. Load it before GTK loads libwayland, as its linking.md requires; an embedding host that already loaded libwayland without the shim cannot enable this optional feature.
 type layerShellAPI struct {
 	supported        func() int32
 	initWindow       func(uintptr)
@@ -31,8 +29,7 @@ type layerShellLoad struct {
 }
 
 var loadLayerShell = sync.OnceValue(func() layerShellLoad {
-	// RTLD_NOLOAD is 4 in Linux's dynamic loader. Unlike a plain dlopen,
-	// this only observes whether the library is already loaded.
+	// RTLD_NOLOAD is 4 in Linux's dynamic loader. Unlike a plain dlopen, this only observes whether the library is already loaded.
 	const noLoad = 4
 	var lib uintptr
 	for _, name := range []string{"libgtk4-layer-shell.so.0", "libgtk4-layer-shell.so"} {

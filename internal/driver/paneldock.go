@@ -1,15 +1,13 @@
 package driver
 
-// PanelDock attaches a panel to an output's usable edge. A default Edge
-// leaves the panel's placement unchanged; Display is an optional display ID.
+// PanelDock attaches a panel to an output's usable edge. A default Edge leaves the panel's placement unchanged; Display is an optional display ID.
 type PanelDock struct {
 	Edge    WindowPlacement
 	Display string
 	Margin  Points
 }
 
-// DockWindow places a fixed-size panel along the selected display's usable
-// edge, centered on the other axis. An absent explicit display is unavailable.
+// DockWindow places a fixed-size panel along the selected display's usable edge, centered on the other axis. An absent explicit display is unavailable.
 func DockWindow(size Size, displays []DisplayInfo, dock PanelDock) (WindowFrame, bool) {
 	if dock.Edge == WindowPlaceDefault || dock.Edge > WindowPlaceRight || len(displays) == 0 || size.Width <= 0 || size.Height <= 0 {
 		return WindowFrame{}, false

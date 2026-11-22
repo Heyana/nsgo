@@ -13,9 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestEdgeDockedPanelsUseNativeMonitorWorkAreas drives core panels through
-// the real window harness. Expectations come from Win32 work-area pixels,
-// independently of DockWindow's logical-coordinate placement.
+// TestEdgeDockedPanelsUseNativeMonitorWorkAreas drives core panels through the real window harness. Expectations come from Win32 work-area pixels, independently of DockWindow's logical-coordinate placement.
 func TestEdgeDockedPanelsUseNativeMonitorWorkAreas(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens native panels")
@@ -59,9 +57,7 @@ func TestEdgeDockedPanelsUseNativeMonitorWorkAreas(t *testing.T) {
 			t.Fatal("the keyboard window did not open")
 		}
 	}
-	// An independent native control distinguishes an unavailable desktop
-	// from an NSGo show regression. A disconnected Windows session can
-	// keep even WS_VISIBLE windows invisible through their desktop parent.
+	// An independent native control distinguishes an unavailable desktop from an NSGo show regression. A disconnected Windows session can keep even WS_VISIBLE windows invisible through their desktop parent.
 	var controlVisible, keyboardVisible bool
 	var controlStyle uintptr
 	var controlError error
@@ -93,8 +89,7 @@ func TestEdgeDockedPanelsUseNativeMonitorWorkAreas(t *testing.T) {
 	if len(all) == 0 {
 		t.Fatal("Win32 reported no monitor work area")
 	}
-	// Check an explicit selection of every actual monitor and the default
-	// primary selection. No test invents a display the native API lacks.
+	// Check an explicit selection of every actual monitor and the default primary selection. No test invents a display the native API lacks.
 	type target struct {
 		on      displayPlacement
 		request string

@@ -69,13 +69,11 @@ type WindowOptions struct {
 	SkipTaskbar bool
 }
 
-// PanelDock is the core's part of desktop.PanelDock, which apps use to keep
-// a panel centered along a display's usable edge. Its zero value is undocked.
+// PanelDock is the core's part of desktop.PanelDock, which apps use to keep a panel centered along a display's usable edge. Its zero value is undocked.
 type PanelDock struct {
 	// Edge is PlaceTop, PlaceBottom, PlaceLeft or PlaceRight; PlaceDefault disables docking.
 	Edge Placement
-	// Display is an Env.Displays ID, empty for the primary display. A missing
-	// explicit display is reported to Window.OnPlacementError.
+	// Display is an Env.Displays ID, empty for the primary display. A missing explicit display is reported to Window.OnPlacementError.
 	Display string
 	// Margin is the distance from the usable edge in points; negative or nonfinite values become zero.
 	Margin Points
@@ -95,10 +93,7 @@ type PanelOptions struct {
 	HideOnBlur bool
 	// NoActivate keeps the panel from ever taking the keyboard or activating the app, shown, focused or clicked, so the app the user types in keeps its focus and caret, as an input method's candidate window or an on-screen keyboard needs. Focus and Toggle then only bring it to the front, and HideOnBlur never hides it, as it never has the focus to lose. Linux supports this on X11 and on a Wayland panel with Dock and layer-shell; an ordinary Wayland toplevel may take focus as it shows.
 	NoActivate bool
-	// Dock keeps the panel at a screen edge through Show, Focus, Toggle and
-	// content resizing. A docked panel cannot use ShowAt or MoveTo. Wayland
-	// needs gtk4-layer-shell and a supporting compositor; an unavailable
-	// dock is reported to Window.OnPlacementError and stays hidden.
+	// Dock keeps the panel at a screen edge through Show, Focus, Toggle and content resizing. A docked panel cannot use ShowAt or MoveTo. Wayland needs gtk4-layer-shell and a supporting compositor; an unavailable dock is reported to Window.OnPlacementError and stays hidden.
 	Dock PanelDock
 	// Material is the material behind the content (WindowMaterial).
 	Material WindowMaterial

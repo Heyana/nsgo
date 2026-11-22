@@ -381,9 +381,7 @@ func (e *Env) CanSetWindowLevel() bool { return e.level.Get() }
 // CanPlaceWindows reports whether SetWindowFrame places the scope's window where it says, an Android overlay's included: the core's part of desktop.CanPlaceWindows, which apps use.
 func (e *Env) CanPlaceWindows() bool { return e.place.Get() }
 
-// CanDockPanels reports whether desktop.PanelOptions.Dock can attach a panel
-// to a display's usable edge. Wayland needs gtk4-layer-shell and a compositor
-// implementing layer-shell; an explicit display must still be connected.
+// CanDockPanels reports whether desktop.PanelOptions.Dock can attach a panel to a display's usable edge. Wayland needs gtk4-layer-shell and a compositor implementing layer-shell; an explicit display must still be connected.
 func (e *Env) CanDockPanels() bool { return e.canDockPanels.Get() }
 
 // CanSetWindowWorkspaces reports whether SetWindowWorkspaces puts the scope's desktop window on the workspaces it names: the core's part of desktop.CanSetWindowWorkspaces, which apps use.
