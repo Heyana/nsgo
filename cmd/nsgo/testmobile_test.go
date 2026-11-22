@@ -156,8 +156,7 @@ exit 3
 	}
 }
 
-// devicectl bridges a native Go panic to stderr even when it succeeds as a
-// launcher. The actual process pipe must retain that diagnostic for the reader.
+// devicectl bridges a native Go panic to stderr even when it succeeds as a launcher. The actual process pipe must retain that diagnostic for the reader.
 func TestIOSDeviceTestPreservesPanicDiagnostics(t *testing.T) {
 	checkXcrun(t, `[ "$DEVICECTL_CHILD_NSGO_TEST_TARGET" = ios ] || exit 9
 printf 'nsgo-test-start %s\n' "$DEVICECTL_CHILD_NSGO_TEST_RUN"

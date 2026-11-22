@@ -14,9 +14,7 @@ type revealSurface struct {
 
 func (s revealSurface) Scroll(at, delta driver.Point) error { s.scroll(at, delta); return nil }
 
-// A native footer can cover a target whose center is inside its scroll view.
-// Both the model and the target must find a visible point, including for a
-// nested horizontal scroll whose gesture would otherwise land on the footer.
+// A native footer can cover a target whose center is inside its scroll view. Both the model and the target must find a visible point, including for a nested horizontal scroll whose gesture would otherwise land on the footer.
 func TestRevealMovesTargetAboveNativeFooter(t *testing.T) {
 	for _, tc := range []struct {
 		name                               string

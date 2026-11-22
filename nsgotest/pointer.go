@@ -786,9 +786,7 @@ func (a *App) BlurWindow() {
 	a.done()
 }
 
-// revealViewport excludes an unrelated native view covering a viewport edge,
-// such as a tab bar. Scroll gestures start in the remaining visible area;
-// an outer scroll can reveal an entirely covered inner viewport.
+// revealViewport excludes an unrelated native view covering a viewport edge, such as a tab bar. Scroll gestures start in the remaining visible area; an outer scroll can reveal an entirely covered inner viewport.
 func (a *App) revealViewport(v, scroll *View, at driver.Point) (driver.Bounds, bool) {
 	b := scroll.zoomedFrame()
 	for p := scroll.Parent; p != nil; p = p.Parent {

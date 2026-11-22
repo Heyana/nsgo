@@ -262,11 +262,10 @@ func iosDeviceTestRunner(ctx context.Context, p *project, sys *appleOS, dir stri
 	}, nil
 }
 
-// iosDeviceTestProcess connects both bridged app streams to the marked-run
-// reader: Go writes panic diagnostics to stderr, including failures before the
-// first test begins. Discarding stderr leaves only devicectl's exit status.
+// iosDeviceTestProcess connects both bridged app streams to the marked-run reader: Go writes panic diagnostics to stderr, including failures before the first test begins. Discarding stderr leaves only devicectl's exit status.
 func iosDeviceTestProcess(ctx context.Context, device, id, token string, args, env []string) (*exec.Cmd, io.ReadCloser, error) {
 	cmd := exec.CommandContext(ctx, "xcrun", append([]string{"devicectl", "device", "process", "launch", "--console",
+		// After --, devicectl takes the test's flags, as -test.run, for the app's rather than its own.
 		"--terminate-existing", "--device", device, id, "--"}, args...)...)
 	cmd.Env = append(os.Environ(), "DEVICECTL_CHILD_NSGO_TEST_RUN="+token)
 	for _, kv := range env {
