@@ -71,6 +71,7 @@ nsgo
 │   │   ├── imagedecode, imageload       Shared images
 │   │   ├── canvasmesh                   Shared triangle-mesh rasterizer of canvases without textured vertices
 │   │   ├── menutext, menuspeech         Shared menu labels and the Speech menu's read of a focused page
+│   │   ├── authscheme                   Shared private-scheme sign-ins in desktop browsers
 │   │   ├── loopback                     Shared loopback redirects of desktops' sign-ins
 │   │   ├── updates                      Shared update checks of Linux, Android and iOS
 │   │   ├── appimage                     Identifies an executable's own AppImage

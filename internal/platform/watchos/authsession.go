@@ -1,6 +1,10 @@
 package watchos
 
-import "github.com/nsgo-dev/nsgo/internal/driver"
+import (
+	"net/url"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
+)
 
 // authSessions prepares redirects in Go and sends the open/cancel to the SwiftUI host. The host retains each native session until its completion. Its methods run on the host's main thread.
 type authSessions struct{ pending map[uint32]*authRequest }
@@ -33,8 +37,13 @@ func (a *authSessions) handle(id uint32, r driver.AuthRequest, w *writer, dispat
 		w.byte(byte(driver.AuthOpen))
 		w.str(r.URL)
 		w.str(p.request.Scheme)
-		w.str(p.request.Host)
-		w.str(p.request.Path)
+		// The host's HTTPS callback matches the host and normalized path of the prepared redirect, as the Apple backend's does (httpsAuthCallback).
+		host, path := p.request.Host, p.request.Path
+		if u, err := url.Parse(driver.AuthRedirectURI(p.request)); err == nil && u.Host != "" {
+			host, path = u.Host, u.Path
+		}
+		w.str(host)
+		w.str(path)
 		w.flag(p.request.Ephemeral)
 	case driver.AuthCancel:
 		p := a.pending[id]

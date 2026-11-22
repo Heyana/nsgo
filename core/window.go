@@ -977,6 +977,8 @@ func (t *Tree) surfaceEvent(ev driver.Event) bool {
 			break
 		}
 		links, _ := ev.Data.([]string)
+		// Callbacks that auth sessions claim are theirs alone: they neither open as links nor become the app's address.
+		links = rt.openAuthLinks(links)
 		if len(links) != 0 {
 			t.rt.root.setAddressValue(links[len(links)-1])
 		}

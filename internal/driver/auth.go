@@ -1,6 +1,9 @@
 package driver
 
-import "strings"
+import (
+	"net/url"
+	"strings"
+)
 
 // AuthCommand is what an ItemAuthSession asks of its session.
 type AuthCommand uint8
@@ -49,6 +52,8 @@ const (
 type AuthEvent struct {
 	Phase    AuthPhase
 	Redirect string
+	// OpenLinks says EventOpenLinks carries this redirect's callback rather than a native session reporting AuthEnded. The core claims that URI across the app's surfaces until the session ends.
+	OpenLinks bool
 	// Callback is the URL the provider redirected to, query and fragment included.
 	Callback string
 	// Error is one of the Auth errors, "" for none, and Message what the platform said of a failure.
@@ -58,10 +63,11 @@ type AuthEvent struct {
 
 // AuthRedirectURI is the redirect of a session that the system catches by its scheme, r being its AuthStart: scheme:/path for an app's own scheme, https://host/path for an HTTPS one.
 func AuthRedirectURI(r AuthRequest) string {
-	if strings.EqualFold(r.Scheme, "https") {
-		return "https://" + r.Host + r.Path
-	}
-	return r.Scheme + ":" + r.Path
+	base := &url.URL{Scheme: strings.ToLower(r.Scheme), Host: r.Host}
+	u := base.ResolveReference(&url.URL{Path: r.Path})
+	// Keep private callbacks in scheme:/path form. A path starting with // needs the empty authority to keep those slashes in the path.
+	u.OmitHost = u.Host == "" && !strings.HasPrefix(u.Path, "//")
+	return u.String()
 }
 
 // AuthEnd is the event ending session id with err, one of the Auth errors, and message.

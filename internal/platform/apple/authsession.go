@@ -3,6 +3,7 @@
 package apple
 
 import (
+	"net/url"
 	"strings"
 	"sync"
 
@@ -116,9 +117,17 @@ func openWebAuth(id uint32, a *webAuth, rawURL string, dispatch func(driver.Even
 		})
 	})
 	defer done.Release()
-	session := objc.ID(Class("ASWebAuthenticationSession")).Send(sel("alloc"))
+	var callback objc.ID
 	if strings.EqualFold(a.request.Scheme, "https") {
-		callback := objc.ID(Class("ASWebAuthenticationSessionCallback")).Send(sel("callbackWithHTTPSHost:path:"), NSString(a.request.Host), NSString(a.request.Path))
+		callback = httpsAuthCallback(a.request)
+		if callback == 0 {
+			delete(webAuths, id)
+			dispatch(driver.AuthEnd(id, driver.AuthFailed, "the HTTPS callback URL is invalid"))
+			return
+		}
+	}
+	session := objc.ID(Class("ASWebAuthenticationSession")).Send(sel("alloc"))
+	if callback != 0 {
 		session = session.Send(sel("initWithURL:callback:completionHandler:"), u, callback, done)
 	} else {
 		session = session.Send(sel("initWithURL:callbackURLScheme:completionHandler:"), u, NSString(a.request.Scheme), done)
@@ -137,4 +146,13 @@ func openWebAuth(id uint32, a *webAuth, rawURL string, dispatch func(driver.Even
 		session.Send(selRelease)
 		dispatch(driver.AuthEnd(id, driver.AuthFailed, "ASWebAuthenticationSession did not start: the app may be in the background, or no window presents it"))
 	}
+}
+
+// httpsAuthCallback matches the same canonical path the prepared redirect gives the app, including escaping and dot segments, rather than the original text.
+func httpsAuthCallback(request driver.AuthRequest) objc.ID {
+	u, err := url.Parse(driver.AuthRedirectURI(request))
+	if err != nil {
+		return 0
+	}
+	return objc.ID(Class("ASWebAuthenticationSessionCallback")).Send(sel("callbackWithHTTPSHost:path:"), NSString(u.Host), NSString(u.Path))
 }
