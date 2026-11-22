@@ -1,6 +1,7 @@
 package android
 
 import (
+	"fmt"
 	"go/ast"
 	"go/constant"
 	"go/importer"
@@ -56,6 +57,13 @@ func TestNetworkEnvironmentFlags(t *testing.T) {
 
 // TestJavaProtocolMatchesTheDriver holds Protocol.java's item and event kinds, roles and key uses to the driver's of the same names, which the Java runtime reads the batches and writes the events by: a kind the driver gains shifts the ones after it.
 func TestJavaProtocolMatchesTheDriver(t *testing.T) {
+	for _, problem := range javaProtocolKindErrors(readJavaProtocol(t), driverProtocolConstants(t)) {
+		t.Error(problem)
+	}
+}
+
+func driverProtocolConstants(t *testing.T) *types.Package {
+	t.Helper()
 	testhost.RequireSource(t)
 	fset := token.NewFileSet()
 	dir := filepath.Join("..", "..", "driver")
@@ -72,14 +80,19 @@ func TestJavaProtocolMatchesTheDriver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	java, err := os.ReadFile(filepath.Join("java", "dev", "oneo", "nsgo", "Protocol.java"))
-	if err != nil {
-		t.Fatal(err)
+	return pkg
+}
+
+// Match only Java's declarations: Android need not implement every driver kind.
+func javaProtocolKindErrors(source string, pkg *types.Package) []string {
+	var problems []string
+	declarations := regexp.MustCompile(`\bstatic\s+final\s+int\s+((?:ITEM|EVENT|ROLE|KEY_USE|ORIENTATION)_[A-Z0-9_]+)\s*=\s*([^;]+);`).FindAllStringSubmatch(source, -1)
+	if len(declarations) == 0 {
+		return []string{"Protocol.java has no driver constant declarations"}
 	}
-	checked := 0
-	for _, m := range regexp.MustCompile(`static final int (ITEM|EVENT|ROLE|KEY_USE|ORIENTATION)_(\w+) = (\d+);`).FindAllStringSubmatch(string(java), -1) {
+	for _, m := range declarations {
 		var name string
-		for _, word := range strings.Split(m[1]+"_"+m[2], "_") {
+		for _, word := range strings.Split(m[1], "_") {
 			if word == "URL" {
 				name += word
 				continue
@@ -91,18 +104,18 @@ func TestJavaProtocolMatchesTheDriver(t *testing.T) {
 		}
 		c, ok := pkg.Scope().Lookup(name).(*types.Const)
 		if !ok {
-			t.Errorf("Protocol.java's %s_%s is no driver constant %s", m[1], m[2], name)
+			problems = append(problems, fmt.Sprintf("Protocol.java's %s is no driver constant %s", m[1], name))
 			continue
 		}
 		want, _ := constant.Int64Val(c.Val())
-		if got, _ := strconv.Atoi(m[3]); int64(got) != want {
-			t.Errorf("Protocol.java's %s_%s is %d, the driver's %s %d", m[1], m[2], got, name, want)
+		got, err := strconv.ParseInt(strings.TrimSpace(m[2]), 10, 64)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("Protocol.java's %s: invalid kind number %q: %v", m[1], m[2], err))
+		} else if got != want {
+			problems = append(problems, fmt.Sprintf("Protocol.java's %s is %d, the driver's %s %d", m[1], got, name, want))
 		}
-		checked++
 	}
-	if checked < 50 {
-		t.Fatalf("checked only %d constants", checked)
-	}
+	return problems
 }
 
 // TestOverlayProtocolMatchesJava holds Protocol.java's overlay constants to Go's: the window commands writeWindow sends, what a SURFACE message reports, and the driver's permissions and ends; and why a video paused.

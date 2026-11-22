@@ -140,7 +140,7 @@ Style `Transition`s, animated values and layout animations run on the platform, 
 
 ## Mount protocol
 
-The protocol is defined in `mount.go` and `events.go`. Backends apply items in order on the main thread, in one hop per batch. Android's Java runtime numbers the kinds in `Protocol.java`, which `TestJavaProtocolMatchesTheDriver` holds to the driver's by name, so a kind added to the driver means rebuilding `classes.dex`.
+The protocol is defined in `mount.go` and `events.go`. Backends apply items in order on the main thread, in one hop per batch. Android's Java runtime numbers the kinds in `Protocol.java`; `TestJavaProtocolMatchesTheDriver` checks every `ITEM_*` and `EVENT_*` declaration against the driver by name and number, including Java's hover names and the shared video event numbers. Driver kinds Android does not implement need no Java declaration; changes to Java's runtime are rebuilt into `classes.dex` by CI after merge.
 
 - IDs are dense and reused after the round drops a retired node's commands and emits `ItemDelete` for its created view, possibly later in the same batch; nodes discarded before creation wait for that round too, so their commands cannot reach a replacement. NSH's IDs instead grow monotonically.
 - Backends create a view in `driver.DefaultViewStyle`, with no props and an empty event mask, so a new view's `ItemViewStyle`, `ItemViewProps` and `ItemEvents` come only when they differ, as NSH's do: they were 2,646 of the 18,252 items opening the gallery's DataTable. A view's first style shows at once; one that changes from the default in a later batch transitions. Android's runtime takes the default style and props as Go encodes them from a surface's first batch, and starts each view it creates in them.

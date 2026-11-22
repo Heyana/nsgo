@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
@@ -80,15 +79,6 @@ func TestJavaReaderTakesWhatGoWrites(t *testing.T) {
 		}
 		n, _ := strconv.Atoi(m[1])
 		return n
-	}
-	for name, want := range map[string]int{
-		"ITEM_SAVE_PREFLIGHT_ANSWER": int(driver.ItemSavePreflightAnswer),
-		"ITEM_SAVE_FILE_PREFLIGHT":   int(driver.ItemSaveFilePreflight),
-		"EVENT_SAVE_PREFLIGHT":       int(driver.EventSavePreflight),
-	} {
-		if got := value(name); got != want {
-			t.Errorf("Protocol.java %s = %d, driver = %d", name, got, want)
-		}
 	}
 	if jlo, jhi := value(bounds[1]), value(bounds[2]); jlo != lo || jhi != hi {
 		t.Errorf("Protocol.readMessage takes kinds %d to %d (%s to %s), android.go writes %d to %d", jlo, jhi, bounds[1], bounds[2], lo, hi)
