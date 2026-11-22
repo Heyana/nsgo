@@ -28,8 +28,7 @@ import (
 // androidComponent is the activity the runtime starts for an app.
 const androidComponent = "/dev.oneo.nsgo.NsgoActivity"
 
-// androidAutomationExtra is the boolean launch intent extra that tells
-// NsgoActivity to create TestAgent in a debuggable build (TestAgent.java).
+// androidAutomationExtra is the boolean launch intent extra that tells NsgoActivity to create TestAgent in a debuggable build (TestAgent.java).
 const androidAutomationExtra = "nsgo.automation"
 
 // androidAPI is the manifest's minSdkVersion, so the NDK's clang targets
@@ -397,11 +396,7 @@ func parseKey(data []byte) (*apk.Key, error) {
 	return key, nil
 }
 
-// androidDebuggable reports whether the Android package for p sets
-// android:debuggable="true": test builds (nsgo test -target android) and
-// automation dev builds (nsgo dev -target android -automation) need it so the
-// runtime accepts their launch extras and starts TestAgent; release builds
-// never do.
+// androidDebuggable reports whether the Android package for p sets android:debuggable="true": test builds (nsgo test -target android) and automation dev builds (nsgo dev -target android -automation) need it so the runtime accepts their launch extras and starts TestAgent; release builds never do.
 func androidDebuggable(p *project) bool {
 	return p.testBinary || (p.Dev.Automation && !p.Release)
 }
@@ -422,8 +417,7 @@ func androidExtras(flags []string) []string {
 	return extras
 }
 
-// androidStartArgs returns the adb arguments that launch id's activity with
-// opts' engine flags and, under -automation, the automation extra.
+// androidStartArgs returns the adb arguments that launch id's activity with opts' engine flags and, under -automation, the automation extra.
 func androidStartArgs(id string, opts devOptions) []string {
 	args := append([]string{"shell", "am", "start", "-S", "-n", id + androidComponent}, androidExtras(opts.appFlags())...)
 	if opts.automation {
@@ -477,8 +471,7 @@ func androidSession(opts devOptions) session {
 				return app{}, err
 			}
 			removeReverse := func() {
-				// Only this run's rule: another app's dev server may use
-				// another port.
+				// Only this run's rule: another app's dev server may use another port.
 				d.run(context.Background(), "reverse", "--remove", port)
 			}
 			path := filepath.Join(p.cache("dev", "android"), p.Name+".apk")

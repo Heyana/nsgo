@@ -203,9 +203,7 @@ func TestFileSelectsGeometry(t *testing.T) {
 	}
 }
 
-// TestAndroidDebuggableBuilds ensures only test binaries and non-release
-// automation dev builds mark the APK debuggable, so release and ordinary builds
-// never instantiate TestAgent.
+// TestAndroidDebuggableBuilds ensures only test binaries and non-release automation dev builds mark the APK debuggable, so release and ordinary builds never instantiate TestAgent.
 func TestAndroidDebuggableBuilds(t *testing.T) {
 	cases := []struct {
 		name string
@@ -249,8 +247,7 @@ func TestAndroidDebuggableBuilds(t *testing.T) {
 	}
 }
 
-// TestAndroidAutomationStartArgs checks the am start intent extras for
-// automation and engine flags, and verifies the extra name matches TestAgent.java.
+// TestAndroidAutomationStartArgs checks the am start intent extras for automation and engine flags, and verifies the extra name matches TestAgent.java.
 func TestAndroidAutomationStartArgs(t *testing.T) {
 	plain := androidStartArgs("dev.example.app", devOptions{fps: true, lang: "de"})
 	wantPlain := []string{
@@ -280,8 +277,7 @@ func TestAndroidAutomationStartArgs(t *testing.T) {
 	}
 }
 
-// TestAndroidRuntimeIncludesAutomationExtra verifies classes.dex and
-// classes.jar were rebuilt after adding automation support.
+// TestAndroidRuntimeIncludesAutomationExtra verifies classes.dex and classes.jar were rebuilt after adding automation support.
 func TestAndroidRuntimeIncludesAutomationExtra(t *testing.T) {
 	for _, needle := range []string{androidAutomationExtra, "setAutomation"} {
 		if !bytes.Contains(androidruntime.ClassesDex, []byte(needle)) {
@@ -303,9 +299,7 @@ func TestAndroidRuntimeIncludesAutomationExtra(t *testing.T) {
 	}
 }
 
-// TestAndroidSessionAutomationOverADB drives androidSession.start and stop with
-// a fake adb executable to verify adb reverse setup/teardown and the
-// nsgo.automation launch intent extra.
+// TestAndroidSessionAutomationOverADB drives androidSession.start and stop with a fake adb executable to verify adb reverse setup/teardown and the nsgo.automation launch intent extra.
 func TestAndroidSessionAutomationOverADB(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses a POSIX shell stub for adb")

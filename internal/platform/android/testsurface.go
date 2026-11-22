@@ -14,9 +14,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// testSurface acts on the Android runtime's primary view through TestAgent.java
-// over the pipe, for the test host (testhost.go) and for nsgo dev -automation's
-// live surface (automation.go), where test is nil.
+// testSurface acts on the Android runtime's primary view through TestAgent.java over the pipe, for the test host (testhost.go) and for nsgo dev -automation's live surface (automation.go), where test is nil.
 type testSurface struct {
 	s    *surface
 	test *testOpen
@@ -145,8 +143,7 @@ func (t *testSurface) SelectRange(selection driver.TextRange) (driver.TextRange,
 	return actual, nil
 }
 
-// Compose and Commit go through the focused field's InputConnection, as
-// an input method's composition does.
+// Compose and Commit go through the focused field's InputConnection, as an input method's composition does.
 func (t *testSurface) Compose(text string) error {
 	return t.do(map[string]any{"op": "compose", "text": text})
 }
@@ -179,8 +176,7 @@ func (t *testSurface) Sync() {
 	}
 }
 
-// Animating compares where every view is, how far it scrolled and how
-// opaque it is with the last look: anything that moved animates.
+// Animating compares where every view is, how far it scrolled and how opaque it is with the last look: anything that moved animates.
 func (t *testSurface) Animating() bool {
 	sig, err := t.ask(map[string]any{"op": "signature"})
 	if err != nil {
@@ -220,6 +216,5 @@ func (t *testSurface) ReceiveShare(items []driver.SharedItem) {
 // ChooseDockMenu implements testhost.Surface: Android has no app icon menu.
 func (t *testSurface) ChooseDockMenu(uint32) error { return testhost.ErrNoMenu }
 
-// ChoosePopup implements testhost.Surface: the core shows no native
-// context menus here.
+// ChoosePopup implements testhost.Surface: the core shows no native context menus here.
 func (t *testSurface) ChoosePopup(uint32) error { return testhost.ErrNoMenu }

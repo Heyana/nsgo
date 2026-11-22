@@ -15,8 +15,7 @@ var (
 	live   *testSurface
 )
 
-// setLiveSurface wires the running app's primary surface to a testSurface so
-// nsgo dev -automation's agent can drive it through the runtime's TestAgent.
+// setLiveSurface wires the running app's primary surface to a testSurface so nsgo dev -automation's agent can drive it through the runtime's TestAgent.
 func setLiveSurface(s *surface) {
 	t := newTestSurface(s, nil)
 	liveMu.Lock()
@@ -39,8 +38,7 @@ func clearLiveSurface(s *surface) {
 	}
 }
 
-// liveSurface returns the running app's primary surface (0) once its engine has
-// started, or nil for other surfaces or before start.
+// liveSurface returns the running app's primary surface (0) once its engine has started, or nil for other surfaces or before start.
 func liveSurface(_ int, id uint32) testhost.Surface {
 	if id != 0 {
 		return nil

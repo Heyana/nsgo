@@ -12,11 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// TestAutomationProtocolMatchesJava checks Go/Java parity for Android automation:
-// the pipe message types (msgTest/TEST, msgTestReply/TEST_REPLY), the intent
-// extras in TestAgent.java and NsgoActivity.java, debuggable-only gating in
-// NsgoView.java, every step op sent by testsurface.go, and the build-tag split
-// keeping TestAgent/automation out of release builds.
+// TestAutomationProtocolMatchesJava checks Go/Java parity for Android automation: the pipe message types (msgTest/TEST, msgTestReply/TEST_REPLY), the intent extras in TestAgent.java and NsgoActivity.java, debuggable-only gating in NsgoView.java, every step op sent by testsurface.go, and the build-tag split keeping TestAgent/automation out of release builds.
 func TestAutomationProtocolMatchesJava(t *testing.T) {
 	testhost.RequireSource(t)
 	read := func(path ...string) string {
@@ -111,9 +107,7 @@ func TestAutomationProtocolMatchesJava(t *testing.T) {
 	}
 }
 
-// TestAutomationWireEncoding checks the msgTest request and msgTestReply
-// payload layout shared between Go (testsurface.go) and Java (TestAgent.handle,
-// NsgoView.testReply).
+// TestAutomationWireEncoding checks the msgTest request and msgTestReply payload layout shared between Go (testsurface.go) and Java (TestAgent.handle, NsgoView.testReply).
 func TestAutomationWireEncoding(t *testing.T) {
 	payload, err := json.Marshal(map[string]any{"op": "press", "x": 12.5, "y": 34.0, "hold": int64(0)})
 	if err != nil {
