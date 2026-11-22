@@ -125,15 +125,22 @@ func pasteInto(editor objc.ID) bool {
 	return p.Text != "" && len(p.URIs) == 0 && in.fs.Config.PasteBehavior == driver.PasteInsert
 }
 
-// pasted reads the general pasteboard as a paste: its text, its local
-// files, or else its image, as a PNG or a JPEG, which is what apps read.
+// pasted reads the general pasteboard as a paste.
 func pasted() *driver.PasteEvent {
-	pb := objc.ID(apple.Class("NSPasteboard")).Send(sel("generalPasteboard"))
+	return pasteFrom(generalPasteboard())
+}
+
+func pasteFrom(pb objc.ID) *driver.PasteEvent {
 	p := &driver.PasteEvent{HTML: apple.GoString(pb.Send(sel("stringForType:"), apple.NSString("public.html"))),
 		Text: apple.GoString(pb.Send(sel("stringForType:"), apple.NSString(pasteboardText))),
 		URIs: fileURLs(pb)}
 	if len(p.URIs) > 0 {
 		return p // a file's icon is no image of the user's
+	}
+	// A PNG or TIFF representation may contain only the first frame of a GIF.
+	if data := apple.Bytes(pb.Send(sel("dataForType:"), apple.NSString("com.compuserve.gif"))); len(data) > 0 {
+		p.Files = []driver.PastedFile{{MIME: "image/gif", Data: data}}
+		return p
 	}
 	t := availableType(pb, imageTypes)
 	if t == "" {
