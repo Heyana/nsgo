@@ -33,6 +33,10 @@ Widget timelines and Live Activities belong to the process, including calls made
 
 The headless model converts window and share requests to `nsgotest.WindowRequest` and `nsgotest.Share` as it applies batches. A window request names its action independently of the protocol's action numbers, and a share keeps a snapshot of its files, text and anchor.
 
+## Windowless native drawings
+
+On macOS, `PlatformTextEngine`, `RegisterFont` and `Render` expose native text measurement, process font registration and bitmap drawing through `nsgotest`, without starting a host. This is an NSGo addition beyond NSH's model: `nsgotest` may import the shared Apple player while `core` stays independent of backends. Rendering uses a private synchronous image resolver, never the main-thread canvas caches or dispatch queue, so it also works without an event loop. Each render releases its native images and bitmap and returns owned premultiplied RGBA pixels. It rejects unresolved animation slots and view paints, image errors, offscreen cycles and invalid or oversized dimensions. Windows, Linux and device services remain [roadmap](../roadmap.md#from-nsgos-issues) goals.
+
 The headless software GPU model keeps devices per surface, selecting both the device and its error/readback tree by `GPUFrame.SurfaceID`; node IDs alone repeat across windows. Device loss and recovery use that window's state and pixel ratio. `Surface` exposes `GPUReadPixels`, `TriggerGPUDeviceLost` and `RestoreGPUDevice`, while `App.GPUFrames` records submissions across all windows. Frames for removed surfaces cannot reach another window's device.
 
 ## Steps

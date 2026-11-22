@@ -5,6 +5,7 @@ package apple
 import (
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 
@@ -14,11 +15,13 @@ import (
 var (
 	cgOffscreenBitmapCreate    func(data uintptr, w, h, bits, row uintptr, space uintptr, info uint32) uintptr
 	cgBitmapContextCreateImage func(ctx uintptr) uintptr
+	cgOffscreenBitmapData      func(ctx uintptr) unsafe.Pointer
 )
 
 func loadOffscreen(cg uintptr) {
 	purego.RegisterLibFunc(&cgOffscreenBitmapCreate, cg, "CGBitmapContextCreate")
 	purego.RegisterLibFunc(&cgBitmapContextCreateImage, cg, "CGBitmapContextCreateImage")
+	purego.RegisterLibFunc(&cgOffscreenBitmapData, cg, "CGBitmapContextGetData")
 }
 
 // maxOffscreenPixels bounds a single offscreen bitmap (16 Mi pixels = 64 MiB).
