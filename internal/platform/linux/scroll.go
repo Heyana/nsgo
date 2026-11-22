@@ -220,30 +220,22 @@ func (w *window) stopWheelGlide() {
 // motion, a glide, a snap, an animated scroll or the wheel: it reports
 // EventScrollEnd, and the snapping diff clamps that follow v settle.
 func (w *window) restScroll(v *view) {
-	w.scrollEvent(v, driver.EventScrollEnd)
-	w.animator.Settle(v.id)
-	if w.animator.Running() {
-		w.startClock()
-	}
+	scrollbar.Rest(w.animator, v.id, func() { w.scrollEvent(v, driver.EventScrollEnd) }, w.startClock)
 }
 
 // settle moves snapping view v to where it rests after the user let it
 // go at velocity (points per millisecond along its axis).
 func (w *window) settle(v *view, velocity float32) {
-	to, ok := scrollbar.Settle(&v.scroll, v.frame.Size, v.size, v.offset, velocity)
-	if !ok || to == v.offset {
-		w.restScroll(v)
-		return
+	host := scrollbar.SettleHost{
+		Scroll: func(to driver.Point) { w.scrollTo(v, to) },
+		Animate: func(to driver.Point) {
+			v.scrolling = &scrollbar.OffsetAnimation{From: v.offset, To: to, Start: time.Now(), Momentum: true}
+			w.animate(v)
+		},
+		Event: func(kind driver.EventKind) { w.scrollEvent(v, kind) },
+		Rest:  func() { w.restScroll(v) },
 	}
-	w.scrollEvent(v, driver.EventMomentumStart)
-	if w.motionReduced() {
-		w.scrollTo(v, to)
-		w.scrollEvent(v, driver.EventMomentumEnd)
-		w.restScroll(v)
-		return
-	}
-	v.scrolling = &scrollbar.OffsetAnimation{From: v.offset, To: to, Start: time.Now(), Momentum: true}
-	w.animate(v)
+	host.Settle(&v.scroll, v.frame.Size, v.size, v.offset, velocity, w.motionReduced())
 }
 
 // releaseBar ends dragging the scroll bar: a snapping view settles.

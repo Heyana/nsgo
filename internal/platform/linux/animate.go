@@ -131,11 +131,7 @@ func (w *window) reportScroll(ev driver.Event) {
 	if w.engine == nil {
 		return
 	}
-	if w.frameWanted.Load() {
-		w.engine.DispatchBeforeFrame(ev)
-	} else {
-		w.engine.Dispatch(ev)
-	}
+	scrollbar.Report(w.engine, ev, w.frameWanted.Load())
 }
 
 // animatorReport hands what the animator reports to the engine.
