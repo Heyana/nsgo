@@ -98,6 +98,11 @@ function edgeEnd(start: number, size: number): number {
   return size > 0 ? start + size : 0;
 }
 
+// edgeFromRight is how far in from the right edge of a window width wide an avoid area that starts at start and spans size reaches, or 0 for an empty one.
+function edgeFromRight(start: number, size: number, width: number): number {
+  return size > 0 ? Math.max(0, width - start) : 0;
+}
+
 // mimeOf guesses a file's media type from its extension.
 function mimeOf(path: string): string {
   const dot = path.lastIndexOf('.');
@@ -1836,8 +1841,9 @@ struct Index {
         const width = this.win.getWindowProperties().windowRect.width;
         this.safeTop = Math.max(px2vp(bars.topRect.height), px2vp(edgeEnd(cut.topRect.top, cut.topRect.height)));
         this.renderer.safeTop = this.safeTop;
-        this.safeLeft = px2vp(edgeEnd(cut.leftRect.left, cut.leftRect.width));
-        this.safeRight = cut.rightRect.width > 0 ? px2vp(Math.max(0, width - cut.rightRect.left)) : 0;
+        // In landscape the system bars' side areas and the cutout's both inset the sides.
+        this.safeLeft = px2vp(Math.max(edgeEnd(bars.leftRect.left, bars.leftRect.width), edgeEnd(cut.leftRect.left, cut.leftRect.width)));
+        this.safeRight = px2vp(Math.max(edgeFromRight(bars.rightRect.left, bars.rightRect.width, width), edgeFromRight(cut.rightRect.left, cut.rightRect.width, width)));
         // A full-screen window's system bar area carries the status bar but
         // not the navigation indicator, whose own area is what the bottom of
         // the tree must stay above.
@@ -1974,24 +1980,28 @@ struct Index {
     setTimeout(() => { this.readEnv(); }, 0);
   }
 
-  // applyStatusBar gives the window the system bars the engine asked for. Immersive hides the status bar and the navigation indicator, and the system reveals them for a moment on an edge swipe; ending it shows them again. EntryAbility lays the window out full screen from the start, so the content already runs under the bars and the avoid areas readEnv reads report what they cover in either state.
+  // applyStatusBar gives the window the system bars the engine asked for. Immersive hides the status bar, the navigation bar and the navigation indicator; ending it shows them again, the status bar only if the engine does not hide it. Outside immersive mode the navigation bar stays, as three-button navigation needs it. EntryAbility lays the window out full screen from the start, so the content already runs under the bars and the avoid areas readEnv reads report what they cover in either state.
   applyStatusBar(): void {
     const w = this.win;
     if (w === undefined) {
       return;
     }
     const immersive = this.tree.sbImmersive;
-    const shown = immersive ? 'none' : (this.tree.sbHidden ? 'indicator' : 'status,indicator');
+    const hidden = this.tree.sbHidden;
+    const shown = immersive ? 'none' : (hidden ? 'navigation' : 'status,navigation');
     if (shown !== this.barsShown) {
       this.barsShown = shown;
+      // A request that fails is made again on the next batch or avoid area change.
       const failed = (e: Error): void => {
+        this.barsShown = '';
         console.error('NSGO harmony: system bars: ' + e);
       };
       try {
-        w.setWindowSystemBarEnable(immersive || this.tree.sbHidden ? [] : ['status']).catch(failed);
+        w.setWindowSystemBarEnable(immersive ? [] : (hidden ? ['navigation'] : ['status', 'navigation'])).catch(failed);
         w.setSpecificSystemBarEnabled('navigationIndicator', !immersive).catch(failed);
       } catch (e) {
-        failed(e as Error);
+        this.barsShown = '';
+        console.error('NSGO harmony: system bars: ' + e);
       }
     }
     try {
