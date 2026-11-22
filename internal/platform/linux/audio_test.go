@@ -3,6 +3,7 @@
 package linux
 
 import (
+	"context"
 	_ "embed"
 	"encoding/base64"
 	"encoding/binary"
@@ -882,7 +883,7 @@ func levelTestWAV(stretches ...struct {
 
 // TestLinuxAudioPlayerLoopsWithoutGap records a looping player's decoded track in the mixed output: a 300 ms intro at one level, then a 300 ms body at another that repeats from the loop start, with no silence at the repeats and no intro after the first pass.
 func TestLinuxAudioPlayerLoopsWithoutGap(t *testing.T) {
-	testLoopGap(t, func(p *linuxPlayer) {
+	testLoopGap(t, nil, func(p *linuxPlayer) {
 		if _, whole := p.track.(pcmTrack); !whole {
 			t.Error("the looping player did not decode its track whole")
 		}
@@ -894,14 +895,15 @@ func TestLinuxAudioPlayerStreamsLoopWithoutGap(t *testing.T) {
 	limit := trackDecodeLimit
 	trackDecodeLimit = 400 * time.Millisecond
 	t.Cleanup(func() { trackDecodeLimit = limit })
-	testLoopGap(t, func(p *linuxPlayer) {
+	testLoopGap(t, nil, func(p *linuxPlayer) {
 		if _, streamed := p.track.(*trackDecoder); !streamed {
 			t.Error("the looping player did not stream its track")
 		}
 	})
 }
 
-func testLoopGap(t *testing.T, check func(p *linuxPlayer)) {
+// testLoopGap records the loop's output; prepare, when set, readies the player on the GTK thread before it plays.
+func testLoopGap(t *testing.T, prepare func(p *linuxPlayer, track []byte), check func(p *linuxPlayer)) {
 	w, _ := audioTestWindow(t)
 	const loopStart = 300 * time.Millisecond
 	type stretch = struct {
@@ -921,6 +923,9 @@ func testLoopGap(t *testing.T, check func(p *linuxPlayer)) {
 		p = &linuxPlayer{owner: w, audio: w.audio, id: 1, source: driver.ImageSource{Data: track}, volume: 1,
 			loop: true, loopStart: loopStart, interval: 20 * time.Millisecond}
 		w.audio.players[1] = p
+		if prepare != nil {
+			prepare(p, track)
+		}
 		p.command(&driver.AudioRequest{Command: driver.AudioResume})
 		w.audio.ensureTick()
 	})
@@ -1004,5 +1009,161 @@ func testLoopGap(t *testing.T, check func(p *linuxPlayer)) {
 	}
 	if introAgain {
 		t.Fatal("a repeat played the intro again instead of starting at the loop start")
+	}
+}
+
+// lateLengthTrack is a decoded track that, like a stream GStreamer cannot tell the length of, knows its length only once it played to its end.
+type lateLengthTrack struct {
+	pcmTrack
+	ended bool
+}
+
+func (t *lateLengthTrack) frames(from, n int) ([]byte, bool, bool) {
+	pcm, end, ok := t.pcmTrack.frames(from, n)
+	t.ended = t.ended || end
+	return pcm, end, ok
+}
+
+func (t *lateLengthTrack) length() time.Duration {
+	if t.ended {
+		return t.pcmTrack.length()
+	}
+	return 0
+}
+
+// TestLinuxAudioPlayerLoopsTrackOfLateLength loops a track whose length is unknown until its end from the loop start, not from the intro.
+func TestLinuxAudioPlayerLoopsTrackOfLateLength(t *testing.T) {
+	testLoopGap(t, func(p *linuxPlayer, track []byte) {
+		pcm, _, _, message := decodeSound(context.Background(), track, time.Minute, trackDecodedBytes(time.Minute))
+		if message != "" {
+			t.Fatal(message)
+		}
+		p.track = &lateLengthTrack{pcmTrack: pcm}
+	}, func(p *linuxPlayer) {
+		if off := p.duration - 600*time.Millisecond; off > 5*time.Millisecond || off < -5*time.Millisecond {
+			t.Errorf("the player reports a duration of %v, want the 600ms the track's end told", p.duration)
+		}
+	})
+}
+
+// TestLinuxAudioPlayerKeepsKnownDuration keeps the duration a player knows when its track cannot tell its own yet.
+func TestLinuxAudioPlayerKeepsKnownDuration(t *testing.T) {
+	p := &linuxPlayer{duration: 2 * time.Second, track: &lateLengthTrack{pcmTrack: make(pcmTrack, soundFrameBytes)}}
+	if d := p.trackDuration(); d != 2*time.Second {
+		t.Fatalf("trackDuration = %v, want the known 2s", d)
+	}
+}
+
+// TestLinuxAudioTrackVoiceFollowsMixerClock moves a track voice's start on the Go clock to where the mixer's running time puts it, so that a voice whose Go clock drifted from the audio device's keeps its lead.
+func TestLinuxAudioTrackVoiceFollowsMixerClock(t *testing.T) {
+	w, _ := audioTestWindow(t)
+	var p *linuxPlayer
+	w.onLoop(t, func() {
+		mixer := soundMixerTo("fakesink sync=true")
+		if mixer == nil {
+			return
+		}
+		w.audio = &linuxAudio{root: w, sounds: map[uint32]*linuxSound{}, players: map[uint32]*linuxPlayer{}, mixer: mixer, lastPlay: time.Now()}
+		p = &linuxPlayer{owner: w, audio: w.audio, id: 1, source: driver.ImageSource{Data: audioTestWAV(time.Second)}, volume: 1,
+			loop: true, interval: 20 * time.Millisecond}
+		pcm, _, _, message := decodeSound(context.Background(), p.source.Data, time.Minute, trackDecodedBytes(time.Minute))
+		if message != "" {
+			t.Error(message)
+			return
+		}
+		p.track = pcmTrack(pcm)
+		w.audio.players[1] = p
+		p.command(&driver.AudioRequest{Command: driver.AudioResume})
+		w.audio.ensureTick()
+	})
+	if p == nil {
+		t.Fatal("the native mixer did not open its test output")
+	}
+	defer w.onLoop(t, func() {
+		delete(w.audio.players, 1)
+		p.close()
+		if w.audio.mixer != nil {
+			w.audio.mixer.close()
+			w.audio.mixer = nil
+		}
+	})
+	const drift = 300 * time.Millisecond
+	w.onLoop(t, func() {
+		if p.voice == nil {
+			t.Fatal("the player did not start a track voice")
+		}
+		p.voice.started = p.voice.started.Add(drift)
+	})
+	time.Sleep(200 * time.Millisecond)
+	w.onLoop(t, func() {
+		running := gstElementRunningTime(w.audio.mixer.pipeline)
+		if p.voice == nil || running == math.MaxUint64 {
+			t.Fatal("the track voice stopped")
+		}
+		want := time.Now().Add(p.voice.base - time.Duration(running))
+		if off := p.voice.started.Sub(want); off > 50*time.Millisecond || off < -50*time.Millisecond {
+			t.Fatalf("the voice's start is %v off the mixer's clock", off)
+		}
+	})
+}
+
+// TestLinuxAudioPlayerStreamsTrackThatDecodesSlowly streams a looping player's track that did not decode whole in time instead of looping it through GtkMediaFile.
+func TestLinuxAudioPlayerStreamsTrackThatDecodesSlowly(t *testing.T) {
+	deadline := soundDecodeDeadline
+	soundDecodeDeadline = 0
+	t.Cleanup(func() { soundDecodeDeadline = deadline })
+	w, _ := audioTestWindow(t)
+	var p *linuxPlayer
+	w.onLoop(t, func() {
+		w.audio = &linuxAudio{root: w, sounds: map[uint32]*linuxSound{}, players: map[uint32]*linuxPlayer{}}
+		p = &linuxPlayer{owner: w, audio: w.audio, id: 1, source: driver.ImageSource{Data: audioTestWAV(time.Second)}, volume: 1, loop: true}
+		w.audio.players[1] = p
+		p.decodeTrack()
+	})
+	defer w.onLoop(t, func() {
+		delete(w.audio.players, 1)
+		p.close()
+	})
+	for until := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		var decoding, noTrack bool
+		var track trackFrames
+		w.onLoop(t, func() { decoding, noTrack, track = p.decoding != nil, p.noTrack, p.track })
+		if !decoding {
+			if _, streamed := track.(*trackDecoder); !streamed || noTrack {
+				t.Fatalf("a track that did not decode in time got %T, noTrack %v, want a streaming decoder", track, noTrack)
+			}
+			return
+		}
+		if time.Now().After(until) {
+			t.Fatal("the track did not finish decoding")
+		}
+	}
+}
+
+// TestLinuxAudioTrackDecoderDrainsItsBus seeks a streaming decoder back and forth, as a loop does at each repeat, and leaves no messages on its bus.
+func TestLinuxAudioTrackDecoderDrainsItsBus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "track.wav")
+	if err := os.WriteFile(path, audioTestWAV(time.Second), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, message := openTrackDecoder(trackURI(path))
+	if d == nil {
+		t.Fatal(message)
+	}
+	defer d.close()
+	for i := range 8 {
+		if _, _, ok := d.frames(i%2*soundRate/2, trackPiece); !ok {
+			t.Fatal("the decoder failed")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if _, _, ok := d.frames(d.at, trackPiece); !ok {
+		t.Fatal("the decoder failed")
+	}
+	if message := gstBusPopFiltered(d.bus, gstMessageAny); message != 0 {
+		kind := (*gstMessageHeader)(cPointer(message)).kind
+		gstMiniObjectUnref(message)
+		t.Fatalf("the decoder left a message of type %#x on its bus", kind)
 	}
 }

@@ -310,7 +310,7 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 			// The track decoded while the stream played: it takes over at the loop start.
 			p.dropStream()
 			p.laps++
-			p.duration = p.track.length()
+			p.duration = p.trackDuration()
 			p.position = p.loopFrom()
 			p.report(driver.AudioProgress)
 			p.startTrack()

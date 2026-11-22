@@ -221,7 +221,7 @@ func decodeSound(ctx context.Context, b []byte, limit time.Duration, maxDecoded 
 		return nil, false, false, "GStreamer could not start decoding the sound"
 	}
 	maxBytes := int(math.Ceil(limit.Seconds()*soundRate)) * soundFrameBytes
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(soundDecodeDeadline)
 	for ctx.Err() == nil && time.Now().Before(deadline) {
 		sample := gstAppSinkTryPullSample(sink, uint64(50*time.Millisecond))
 		if sample != 0 {
@@ -256,8 +256,14 @@ func decodeSound(ctx context.Context, b []byte, limit time.Duration, maxDecoded 
 			return pcm, false, false, ""
 		}
 	}
-	return nil, false, false, "the sound did not decode in time"
+	return nil, false, false, soundDecodeTimeout
 }
+
+// soundDecodeTimeout is decodeSound's message for a sound that did not decode within soundDecodeDeadline.
+const soundDecodeTimeout = "the sound did not decode in time"
+
+// soundDecodeDeadline is how long decodeSound decodes before it gives up.
+var soundDecodeDeadline = 10 * time.Second
 
 func soundDuration(pcm []byte) time.Duration {
 	return time.Duration(len(pcm)/soundFrameBytes) * time.Second / soundRate

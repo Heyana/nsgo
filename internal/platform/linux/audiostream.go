@@ -19,6 +19,7 @@ const (
 	gstSeekFlush       = 1 << 0
 	gstSeekAccurate    = 1 << 1
 	gstStateChangeFail = 0
+	gstMessageAny      = ^uint32(0)
 )
 
 var (
@@ -30,7 +31,7 @@ var (
 type trackFrames interface {
 	// frames is up to n frames from frame from on, or none when none are ready yet; end says from is the end of the track, and !ok that the track cannot be read.
 	frames(from, n int) (pcm []byte, end, ok bool)
-	// length is the track's duration, or 0 when it is unknown.
+	// length is the track's duration, or 0 while it is unknown.
 	length() time.Duration
 	close()
 }
@@ -105,7 +106,8 @@ func openTrackDecoder(uri string) (*trackDecoder, string) {
 }
 
 func (d *trackDecoder) frames(from, n int) ([]byte, bool, bool) {
-	if d.failed {
+	if d.failed || d.busFailed() {
+		d.failed = true
 		return nil, false, false
 	}
 	if from != d.at {
@@ -120,11 +122,15 @@ func (d *trackDecoder) frames(from, n int) ([]byte, bool, bool) {
 	for len(d.pending) < want {
 		sample := gstAppSinkTryPullSample(d.sink, 0)
 		if sample == 0 {
-			if soundBusError(d.bus) != "" {
+			if d.busFailed() {
 				d.failed = true
 				return nil, false, false
 			}
 			if len(d.pending) == 0 && gstAppSinkIsEOS(d.sink) != 0 {
+				if d.duration == 0 {
+					// The end of the track is its exact length, which GStreamer could not tell before it.
+					d.duration = trackTime(int64(d.at))
+				}
 				return nil, true, true
 			}
 			break
@@ -166,7 +172,31 @@ func (d *trackDecoder) take(sample uintptr) {
 	}
 }
 
-func (d *trackDecoder) length() time.Duration { return d.duration }
+// busFailed drains the decoder's bus and says whether it held an error. Nothing else reads the bus, and each seek back to the loop start posts state, latency and tag messages, which would pile up for as long as the loop plays.
+func (d *trackDecoder) busFailed() bool {
+	failed := false
+	for {
+		message := gstBusPopFiltered(d.bus, gstMessageAny)
+		if message == 0 {
+			return failed
+		}
+		if (*gstMessageHeader)(cPointer(message)).kind == gstMessageError {
+			failed = true
+		}
+		gstMiniObjectUnref(message)
+	}
+}
+
+// length is the duration GStreamer reported, asked again while it is unknown, as for a source without a length or a format that tells it only once decoded further; the end of the track sets it exactly.
+func (d *trackDecoder) length() time.Duration {
+	if d.duration == 0 && d.pipeline != 0 {
+		var duration int64
+		if gstElementQueryDuration(d.pipeline, gstFormatTime, &duration) != 0 && duration > 0 {
+			d.duration = time.Duration(duration)
+		}
+	}
+	return d.duration
+}
 
 func (d *trackDecoder) close() {
 	if d.pipeline == 0 {
