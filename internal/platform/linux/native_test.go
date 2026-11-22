@@ -120,7 +120,8 @@ func startTestWindow(t *testing.T, app engine.App, opts Options) *window {
 	t.Cleanup(func() {
 		w := r.w
 		if !w.closing {
-			w.onLoop(t, func() { gtkWindowClose(w.win) })
+			// What the window's close-request does, which gtk_window_close skips for a window not realized yet: one whose first batch has not arrived, so it has not shown.
+			w.onLoop(t, w.requestClose)
 		}
 		select {
 		case <-done:

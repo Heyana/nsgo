@@ -72,7 +72,8 @@ func (t *testSurface) WindowSurface(id uint32) testhost.Surface {
 }
 
 func (t *testSurface) RequestClose() error {
-	t.onLoop(func() { gtkWindowClose(t.w.win) })
+	// What the window's close-request does, which gtk_window_close skips for a window not realized yet, as one is until its first batch shows it.
+	t.onLoop(t.w.requestClose)
 	return nil
 }
 

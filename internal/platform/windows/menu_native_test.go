@@ -962,3 +962,185 @@ func TestEditingRolesFallBackToOnSelect(t *testing.T) {
 		}
 	})
 }
+
+// TestMenuBarSyncsInPlace checks that setting the application menu again keeps the existing HMENU bar and submenu handles while updating item state, labels and commands in place.
+func TestMenuBarSyncsInPlace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	getItem := user32.NewProc("GetMenuItemInfoW")
+	getCount := user32.NewProc("GetMenuItemCount")
+	getString := user32.NewProc("GetMenuStringW")
+	const title = "nsgo-menu-sync-in-place"
+	var toggle func()
+	chosen := make(chan string, 4)
+	app := func(cx *core.Scope) core.Node {
+		checked := core.NewSignal(cx, true)
+		toggle = func() { cx.Post(func() { checked.Set(!checked.Get()) }) }
+		cx.Effect(func() {
+			on := checked.Get()
+			items := []core.MenuItem{
+				{Label: "Sidebar", Checkable: true, Checked: on, OnSelect: func() { chosen <- "Sidebar" }},
+				{Separator: true},
+				{Label: "Button", Disabled: !on, OnSelect: func() { chosen <- "Button" }},
+			}
+			if !on {
+				items = append(items, core.MenuItem{Label: "Link", OnSelect: func() { chosen <- "Link" }})
+			}
+			menus := []core.MenuItem{{Label: "View", Items: items}}
+			if !on {
+				menus = append(menus, core.MenuItem{Label: "Help", Items: []core.MenuItem{{Label: "Docs", OnSelect: func() { chosen <- "Docs" }}}})
+			}
+			cx.SetApplicationMenu(menus)
+			cx.SetTitle(fmt.Sprintf("%s|%v", title, on))
+		})
+		return core.View{Style: core.Style{Background: driver.RGB(0xffffff)}}
+	}
+	hwnd := startApp(t, title, app, 320, 200)
+	waitForTitle(t, hwnd, title+"|true", 5*time.Second)
+
+	readItem := func(menu uintptr, pos uint32) (menuItemInfo, string) {
+		mi := menuItemInfo{fMask: miimFType | miimState | miimID | miimSubMenu}
+		mi.cbSize = uint32(unsafe.Sizeof(mi))
+		getItem.Call(menu, uintptr(pos), 1, uintptr(unsafe.Pointer(&mi)))
+		buf := make([]uint16, 128)
+		getString.Call(menu, uintptr(pos), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), mfByPosition)
+		return mi, syscall.UTF16ToString(buf)
+	}
+
+	var bar1, viewSub1 uintptr
+	onMain(t, hwnd, func(w *window) {
+		bar1, _, _ = getMenu.Call(hwnd)
+		if bar1 == 0 || bar1 != w.chrome.bar {
+			t.Fatalf("bar1 = %#x, w.chrome.bar = %#x", bar1, w.chrome.bar)
+		}
+		mi, _ := readItem(bar1, 0)
+		viewSub1 = mi.hSubMenu
+		if viewSub1 == 0 {
+			t.Fatal("View submenu handle is 0")
+		}
+		sidebar, _ := readItem(viewSub1, 0)
+		if sidebar.fState&mfChecked == 0 {
+			t.Error("Sidebar should start checked")
+		}
+	})
+
+	toggle()
+	waitForTitle(t, hwnd, title+"|false", 5*time.Second)
+
+	var docsCmd uint16
+	onMain(t, hwnd, func(w *window) {
+		bar2, _, _ := getMenu.Call(hwnd)
+		if bar2 != bar1 || w.chrome.bar != bar1 {
+			t.Fatalf("menu bar HMENU changed from %#x to %#x", bar1, bar2)
+		}
+		if n, _, _ := getCount.Call(bar2); n != 2 {
+			t.Fatalf("top-level menu count = %d, want 2", n)
+		}
+		viewMI, _ := readItem(bar2, 0)
+		if viewMI.hSubMenu != viewSub1 {
+			t.Fatalf("View submenu HMENU changed from %#x to %#x", viewSub1, viewMI.hSubMenu)
+		}
+		sidebar, _ := readItem(viewSub1, 0)
+		if sidebar.fState&mfChecked != 0 {
+			t.Error("Sidebar stayed checked after in-place update")
+		}
+		button, _ := readItem(viewSub1, 2)
+		if button.fState&mfGrayed == 0 {
+			t.Error("Button was not disabled in place")
+		}
+		if _, label := readItem(viewSub1, 3); label != "Link" {
+			t.Errorf("added View[3] = %q, want Link", label)
+		}
+		helpMI, helpLabel := readItem(bar2, 1)
+		if helpLabel != "Help" || helpMI.hSubMenu == 0 {
+			t.Fatalf("added Help menu = %q (%#x)", helpLabel, helpMI.hSubMenu)
+		}
+		docsMI, docsLabel := readItem(helpMI.hSubMenu, 0)
+		if docsLabel != "Docs" {
+			t.Errorf("Help[0] = %q, want Docs", docsLabel)
+		}
+		docsCmd = uint16(docsMI.wID)
+		w.menuCommand(docsCmd)
+	})
+	select {
+	case got := <-chosen:
+		if got != "Docs" {
+			t.Errorf("menuCommand(%d) chose %q, want Docs", docsCmd, got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Docs command did not run")
+	}
+}
+
+// TestWindowShowsWithFirstBatch checks that a visible window stays hidden until its first mount batch applies and that a Hidden window stays hidden.
+func TestWindowShowsWithFirstBatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	t.Run("visible", func(t *testing.T) {
+		gate := make(chan struct{})
+		entered := make(chan struct{}, 1)
+		defer func() {
+			select {
+			case <-gate:
+			default:
+				close(gate)
+			}
+		}()
+		const title = "nsgo-first-batch-show"
+		hwnd := startAppWith(t, func(cx *core.Scope) core.Node {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-gate
+			cx.SetTitle(title + "|mounted")
+			return core.View{Style: core.Style{Background: driver.RGB(0xffffff)}}
+		}, Options{Title: title, Width: 240, Height: 160})
+
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("app function did not start")
+		}
+		onMain(t, hwnd, func(w *window) {
+			if visible, _, _ := isWindowVisible.Call(hwnd); visible != 0 {
+				t.Error("window showed before its first batch was applied")
+			}
+			if !w.showFirst.pending {
+				t.Error("showFirst was not pending before the first batch")
+			}
+		})
+		close(gate)
+		waitForTitle(t, hwnd, title+"|mounted", 5*time.Second)
+		// The title can change before the batch that mounts the view is applied.
+		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+			var shown, pending bool
+			onMain(t, hwnd, func(w *window) {
+				visible, _, _ := isWindowVisible.Call(hwnd)
+				shown, pending = visible != 0, w.showFirst.pending
+			})
+			if shown && !pending {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("window did not show after its first batch was applied (visible %v, pending %v)", shown, pending)
+			}
+		}
+	})
+
+	t.Run("hidden", func(t *testing.T) {
+		const hiddenTitle = "nsgo-first-batch-hidden"
+		hiddenHWND := startAppWith(t, func(cx *core.Scope) core.Node {
+			cx.SetTitle(hiddenTitle + "|mounted")
+			return core.View{Style: core.Style{Background: driver.RGB(0xffffff)}}
+		}, Options{Title: hiddenTitle, Width: 240, Height: 160, Hidden: true})
+		waitForTitle(t, hiddenHWND, hiddenTitle+"|mounted", 5*time.Second)
+		onMain(t, hiddenHWND, func(w *window) {
+			if visible, _, _ := isWindowVisible.Call(hiddenHWND); visible != 0 {
+				t.Error("hidden window showed after its first batch")
+			}
+		})
+	})
+}

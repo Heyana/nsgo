@@ -83,6 +83,13 @@ func TestEdgeDockedPanelsUseNativeMonitorWorkAreas(t *testing.T) {
 	if !controlVisible {
 		t.Skipf("native desktop cannot expose an independent Win32 control (style=%#x); real panel visibility and focus acceptance need an interactive Windows desktop", controlStyle)
 	}
+	// A window shows once its first batch is applied, which can come after it registers.
+	for deadline := time.Now().Add(5 * time.Second); !keyboardVisible && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		onMain(t, root, func(*window) {
+			shown, _, _ := isWindowVisible.Call(keyboard)
+			keyboardVisible = shown != 0
+		})
+	}
 	if !keyboardVisible {
 		t.Fatal("the NSGo keyboard window stayed hidden on a visible native desktop")
 	}

@@ -602,3 +602,166 @@ func TestEditingRolesFallBackToOnSelect(t *testing.T) {
 		}
 	})
 }
+
+// TestMenuBarSyncsInPlace checks that setting the application menu again keeps the GtkPopoverMenuBar, GMenu models, GSimpleActionGroup and unchanged-kind GSimpleActions while updating their state, enabled flag and labels in place.
+func TestMenuBarSyncsInPlace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	var (
+		getEnabled func(action uintptr) int32
+		getState   func(action uintptr) uintptr
+		getBool    func(v uintptr) int32
+		unref      func(v uintptr)
+	)
+	const title = "nsgo-menu-sync-in-place"
+	var toggle func()
+	app := func(cx *core.Scope) core.Node {
+		checked := core.NewSignal(cx, true)
+		toggle = func() { cx.Post(func() { checked.Set(!checked.Get()) }) }
+		cx.Effect(func() {
+			on := checked.Get()
+			items := []core.MenuItem{
+				{Label: "Sidebar", Checkable: true, Checked: on, OnSelect: func() {}},
+				{Separator: true},
+				{Label: "Button", Disabled: !on, OnSelect: func() {}},
+			}
+			if !on {
+				items = append(items, core.MenuItem{Label: "Link", OnSelect: func() {}})
+			}
+			menus := []core.MenuItem{{Label: "View", Items: items}}
+			if !on {
+				menus = append(menus, core.MenuItem{Label: "Help", Items: []core.MenuItem{{Label: "Docs", OnSelect: func() {}}}})
+			}
+			cx.SetApplicationMenu(menus)
+			cx.SetTitle(fmt.Sprintf("%s|%v", title, on))
+		})
+		return core.View{Style: core.Style{Width: driver.Pt(200), Height: driver.Pt(100)}}
+	}
+	w := startTestWindow(t, engine.App(app), Options{Title: title, Width: 240, Height: 120})
+	waitForTitle(t, w, title+"|true")
+	purego.RegisterLibFunc(&getEnabled, gioLib, "g_action_get_enabled")
+	purego.RegisterLibFunc(&getState, gioLib, "g_action_get_state")
+	purego.RegisterLibFunc(&getBool, glibLib, "g_variant_get_boolean")
+	purego.RegisterLibFunc(&unref, glibLib, "g_variant_unref")
+
+	var bar1, model1, group1, viewMenu1, sidebarAct1, buttonAct1 uintptr
+	w.onLoop(t, func() {
+		bar1, model1, group1 = w.menuBar, w.menuModel, w.actionGroup
+		if bar1 == 0 || model1 == 0 || group1 == 0 {
+			t.Fatalf("menu bar not initialized: bar=%#x model=%#x group=%#x", bar1, model1, group1)
+		}
+		viewMenu1 = w.menuTree[0].menu
+		sidebarAct1 = w.menuTree[0].sections[0].items[0].action
+		buttonAct1 = w.menuTree[0].sections[1].items[0].action
+		st := getState(sidebarAct1)
+		if st == 0 || getBool(st) == 0 {
+			t.Error("Sidebar should start checked")
+		}
+		if st != 0 {
+			unref(st)
+		}
+		if getEnabled(buttonAct1) == 0 {
+			t.Error("Button should start enabled")
+		}
+	})
+
+	toggle()
+	waitForTitle(t, w, title+"|false")
+
+	w.onLoop(t, func() {
+		if w.menuBar != bar1 || w.menuModel != model1 || w.actionGroup != group1 {
+			t.Fatalf("menu bar rebuilt: bar %#x->%#x model %#x->%#x group %#x->%#x",
+				bar1, w.menuBar, model1, w.menuModel, group1, w.actionGroup)
+		}
+		if len(w.menuTree) != 2 || w.menuTree[0].menu != viewMenu1 {
+			t.Fatalf("View submenu GMenu changed or Help not added: len=%d view=%#x", len(w.menuTree), w.menuTree[0].menu)
+		}
+		if got := w.menuTree[0].sections[0].items[0].action; got != sidebarAct1 {
+			t.Fatalf("Sidebar action replaced: %#x -> %#x", sidebarAct1, got)
+		}
+		if got := w.menuTree[0].sections[1].items[0].action; got != buttonAct1 {
+			t.Fatalf("Button action replaced: %#x -> %#x", buttonAct1, got)
+		}
+		st := getState(sidebarAct1)
+		if st == 0 || getBool(st) != 0 {
+			t.Error("Sidebar stayed checked after in-place update")
+		}
+		if st != 0 {
+			unref(st)
+		}
+		if getEnabled(buttonAct1) != 0 {
+			t.Error("Button was not disabled in place")
+		}
+		if len(w.actionRefs) != 4 {
+			t.Errorf("actionRefs count = %d, want 4 (Sidebar, Button, Link, Docs)", len(w.actionRefs))
+		}
+	})
+}
+
+// TestWindowShowsWithFirstBatch checks that a non-hidden window stays unshown until its first mount batch applies and that a Hidden window stays hidden.
+func TestWindowShowsWithFirstBatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	t.Run("visible", func(t *testing.T) {
+		gate := make(chan struct{})
+		entered := make(chan struct{}, 1)
+		defer func() {
+			select {
+			case <-gate:
+			default:
+				close(gate)
+			}
+		}()
+		const title = "nsgo-first-batch-show"
+		w := startTestWindow(t, func(cx *core.Scope) core.Node {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-gate
+			cx.SetTitle(title + "|mounted")
+			return core.View{Style: core.Style{Width: driver.Pt(200), Height: driver.Pt(100)}}
+		}, Options{Title: title, Width: 240, Height: 120})
+
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("app function did not start")
+		}
+		w.onLoop(t, func() {
+			if gtkWidgetGetVisible(w.win) != 0 {
+				t.Error("window showed before its first batch was applied")
+			}
+			if !w.showFirst.pending {
+				t.Error("showFirst was not pending before the first batch")
+			}
+		})
+		close(gate)
+		waitForTitle(t, w, title+"|mounted")
+		w.onLoop(t, func() {
+			if gtkWidgetGetVisible(w.win) == 0 {
+				t.Error("window did not show after its first batch was applied")
+			}
+			if w.showFirst.pending {
+				t.Error("showFirst stayed pending after the first batch")
+			}
+		})
+	})
+
+	t.Run("hidden", func(t *testing.T) {
+		const hiddenTitle = "nsgo-first-batch-hidden"
+		hidden := startTestWindow(t, func(cx *core.Scope) core.Node {
+			cx.SetTitle(hiddenTitle + "|mounted")
+			return core.View{Style: core.Style{Width: driver.Pt(200), Height: driver.Pt(100)}}
+		}, Options{Title: hiddenTitle, Width: 240, Height: 120, Hidden: true})
+		defer hidden.onLoop(t, hidden.close)
+		waitForTitle(t, hidden, hiddenTitle+"|mounted")
+		hidden.onLoop(t, func() {
+			if gtkWidgetGetVisible(hidden.win) != 0 {
+				t.Error("hidden window showed after its first batch")
+			}
+		})
+	})
+}

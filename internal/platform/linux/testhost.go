@@ -43,9 +43,6 @@ func (h *host) Main(run func() int) {
 		for req := range h.opens {
 			w.post(func() {
 				o, err := start(req.app, req.opts)
-				if err == nil && !req.opts.Hidden {
-					gtkWindowPresent(o.win)
-				}
 				req.reply <- openReply{o, err}
 			})
 		}

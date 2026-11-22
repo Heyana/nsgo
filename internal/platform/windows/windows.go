@@ -385,6 +385,8 @@ type window struct {
 	noActivate    bool
 	dock          driver.PanelDock
 	visible       bool
+	// showFirst waits for the first mount batch before showing a newly opened window or panel, so no empty frame flashes before the app mounts.
+	showFirst firstShow
 	// pointerMode is where the window takes the pointer (windowpointer.go).
 	pointerMode driver.WindowPointerEvents
 	focused     bool
@@ -771,9 +773,8 @@ func Run(app engine.App, opts Options) {
 	}
 	attachToastActivation(w, w.engine)
 	w.rearmToastRepeats()
-	if !opts.Hidden {
-		showWindow.Call(hwnd, swShow)
-	}
+	// Shown once its first batch is applied (presentFirst), so Windows does not reveal an unpainted window before the app's title bar, menu bar and first views arrive.
+	w.showFirst.arm(opts.Hidden)
 	if opts.test != nil {
 		opts.test.ready <- w
 	} else if opts.DockTask != "" {
@@ -1123,14 +1124,8 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	child.engine.Resize(driver.Size{Width: size.X, Height: size.Y}, driver.Geometry{})
 	child.engine.SetEnvironment(child.env)
 	child.reportFrameWindow()
-	if !opts.Hidden && child.parentVisible() {
-		if cfg.Kind == driver.SurfacePanel {
-			child.placePanel(0, driver.Bounds{}, driver.WindowPlaceDefault)
-			child.orderFront()
-		} else {
-			showWindow.Call(hwnd, swShow)
-		}
-	}
+	// Shown with its first batch (presentFirst), as on macOS, and only while its owner shows.
+	child.showFirst.arm(opts.Hidden || !child.parentVisible())
 }
 
 // View is an app in a child window of an embedding host's window, which
@@ -1880,6 +1875,23 @@ func (w *window) apply(b *driver.MountBatch) {
 	if structure {
 		w.structureChanged()
 	}
+	if w.showFirst.consume(w.destroying) {
+		w.presentFirst()
+	}
+}
+
+// presentFirst reveals an opened window or panel once its first mount batch has been applied; showing it paints that batch's frame. Drawing here would run inside the batch's application, which a frame must not.
+func (w *window) presentFirst() {
+	if w.hwnd == 0 {
+		return
+	}
+	w.visible = true
+	if w.kind == driver.SurfacePanel {
+		w.placePanel(w.anchor, w.anchorBounds, w.placement)
+		w.orderFront()
+		return
+	}
+	showWindow.Call(w.hwnd, swShow)
 }
 
 func (w *window) create(id driver.NodeID, kind driver.ViewKind) {

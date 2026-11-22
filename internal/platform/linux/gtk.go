@@ -255,6 +255,10 @@ var (
 	gMenuAppendSubmenu         func(uintptr, *byte, uintptr)
 	gMenuAppendItem            func(uintptr, uintptr)
 	gMenuAppendSection         func(uintptr, *byte, uintptr)
+	gMenuInsertSubmenu         func(uintptr, int32, *byte, uintptr)
+	gMenuInsertItem            func(uintptr, int32, uintptr)
+	gMenuInsertSection         func(uintptr, int32, *byte, uintptr)
+	gMenuRemove                func(uintptr, int32)
 	gMenuItemNew               func(*byte, *byte) uintptr
 	gMenuItemNewSubmenu        func(*byte, uintptr) uintptr
 	gMenuItemSetIcon           func(uintptr, uintptr)
@@ -266,6 +270,7 @@ var (
 	gSimpleActionNew           func(*byte, uintptr) uintptr
 	gSimpleActionNewStateful   func(name, parameterType *byte, state uintptr) uintptr
 	gSimpleActionSetEnabled    func(uintptr, int32)
+	gSimpleActionSetState      func(uintptr, uintptr)
 	gActionMapAddAction        func(uintptr, uintptr)
 	gSimpleActionGroupNew      func() uintptr
 	gtkWidgetInsertActionGroup func(uintptr, *byte, uintptr)
@@ -648,6 +653,10 @@ func bind() {
 	purego.RegisterLibFunc(&gMenuAppendSubmenu, gioLib, "g_menu_append_submenu")
 	purego.RegisterLibFunc(&gMenuAppendItem, gioLib, "g_menu_append_item")
 	purego.RegisterLibFunc(&gMenuAppendSection, gioLib, "g_menu_append_section")
+	purego.RegisterLibFunc(&gMenuInsertSubmenu, gioLib, "g_menu_insert_submenu")
+	purego.RegisterLibFunc(&gMenuInsertItem, gioLib, "g_menu_insert_item")
+	purego.RegisterLibFunc(&gMenuInsertSection, gioLib, "g_menu_insert_section")
+	purego.RegisterLibFunc(&gMenuRemove, gioLib, "g_menu_remove")
 	purego.RegisterLibFunc(&gMenuItemNew, gioLib, "g_menu_item_new")
 	purego.RegisterLibFunc(&gMenuItemNewSubmenu, gioLib, "g_menu_item_new_submenu")
 	purego.RegisterLibFunc(&gMenuItemSetIcon, gioLib, "g_menu_item_set_icon")
@@ -659,6 +668,7 @@ func bind() {
 	purego.RegisterLibFunc(&gSimpleActionNew, gioLib, "g_simple_action_new")
 	purego.RegisterLibFunc(&gSimpleActionNewStateful, gioLib, "g_simple_action_new_stateful")
 	purego.RegisterLibFunc(&gSimpleActionSetEnabled, gioLib, "g_simple_action_set_enabled")
+	purego.RegisterLibFunc(&gSimpleActionSetState, gioLib, "g_simple_action_set_state")
 	purego.RegisterLibFunc(&gActionMapAddAction, gioLib, "g_action_map_add_action")
 	purego.RegisterLibFunc(&gSimpleActionGroupNew, gioLib, "g_simple_action_group_new")
 	purego.RegisterLibFunc(&gtkWidgetInsertActionGroup, gtkLib, "gtk_widget_insert_action_group")

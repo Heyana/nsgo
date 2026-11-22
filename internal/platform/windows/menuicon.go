@@ -166,9 +166,10 @@ func freeBitmaps(handles []uintptr) {
 	}
 }
 
+// freeMenuBitmaps frees the HBITMAPs of the menu bar's items, which Windows does not free with the menu.
 func (w *window) freeMenuBitmaps() {
-	freeBitmaps(w.chrome.menuBitmaps)
-	w.chrome.menuBitmaps = nil
+	releaseWinMenuTree(win32MenuOps{w}, w.chrome.tree)
+	w.chrome.tree = nil
 }
 
 func menuHasTemplateIcon(entries []driver.MenuEntry) bool {
