@@ -422,6 +422,17 @@ func NewWeb(holder objc.ID) *Web {
 	return &Web{holder: holder}
 }
 
+// SetHolder moves the web view into holder, keeping its page and history.
+func (w *Web) SetHolder(holder objc.ID) {
+	if w.holder == holder {
+		return
+	}
+	w.holder = holder
+	if w.web != 0 {
+		fill(holder, w.web)
+	}
+}
+
 // View returns the WKWebView, 0 before the first Configure.
 func (w *Web) View() objc.ID { return w.web }
 

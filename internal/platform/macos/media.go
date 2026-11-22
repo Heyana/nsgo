@@ -50,7 +50,7 @@ func (s *surface) configureNative(v *view, c *driver.NativeConfig) {
 			const widthSizable, heightSizable = 2, 16
 			native.Send(sel("setAutoresizingMask:"), uint(widthSizable|heightSizable))
 			native.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
-			v.native.Send(selAddSubview, native)
+			v.children().Send(selAddSubview, native)
 			v.componentView = native
 			v.surface.directTree(native)
 		}

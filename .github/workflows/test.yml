@@ -382,7 +382,7 @@ jobs:
           go tool nsgo test -target ios_simulator -device "$ipad" -timeout 1m -run '^(TestScenesShowTreesOfTheirOwn|TestSceneDisconnectsWhileTheOtherRuns|TestSceneStatusBarAndOrientationsArePerScene|TestSceneKeyboardInsetFollowsFocus|TestTitledKeyCommandsUseUIKit)$' ./internal/platform/ios
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/websource
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/webhistory
-          go tool nsgo test -target ios_simulator -timeout 1m -run '^TestIOSCaptureIsSRGB$|^TestAppleContentClipKeepsOuterDecoration$' ./internal/testhost/testdata/capture
+          go tool nsgo test -target ios_simulator -timeout 1m -run '^Test(IOSCaptureIsSRGB|AppleContentClipKeepsOuterDecoration|AppleNativeClipKeepsOuterDecoration)$' ./internal/testhost/testdata/capture
           go tool nsgo test -target ios_simulator -timeout 1m -run '^Test(Scroll|List)PastItsEndComesBackToIt$' ./nsgotest
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/frameclock
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestPressAtFindsZoomedScrollContent$' ./internal/testhost/testdata/press

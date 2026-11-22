@@ -209,6 +209,7 @@ func (v *view) restyle() {
 func (v *view) styleLayer(vs *driver.ViewStyle) {
 	if v.holdClip(vs) {
 		// The holder clips the children: the view's own layer, its shadow and outline, stays unclipped.
+		v.native.Send(sel("setClipsToBounds:"), false)
 		drawn := *vs
 		drawn.Clip = false
 		vs = &drawn
@@ -528,7 +529,7 @@ func (s *surface) configureNative(v *view, c *driver.NativeConfig) {
 		}
 		if native != 0 {
 			native.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
-			v.native.Send(selAddSubview, native)
+			v.children().Send(selAddSubview, native)
 			v.componentView = native
 			s.directTree(native)
 		}

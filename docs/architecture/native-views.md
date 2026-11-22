@@ -12,6 +12,8 @@
 - NSGo keeps Go's zero values as defaults: `NoScroll` and `NoJavaScript` invert NSH's `scrollable` and `javaScriptEnabled`, and `window.nsgo` replaces `window.nsh`.
 - A restricted web view's top-level navigations are decided on the native backends by `driver.WebConfig`, from `WebHosts`, `AccessWebSchemes` and the schemes the app serves (`core/access.go`): `Navigable` for the page's own and `SourceNavigable` for the app's loads and history commands (see below). Apple, Windows and Android refuse them as they start (Android's `WebNode.navigable` mirrors `Navigable`); Linux refuses them before they commit, a page-made `data:` or `blob:` page at its main-frame response, but an `about:` page as it commits (see below). The web's iframe hides its page's navigations, so nothing holds them there.
 
+On macOS and iOS, a rounded `Overflow: Hidden` with an outer shadow or outline clips hosted native content in a separate holder, keeping the decoration visible. Adding it preserves the loaded web page and player; input focus and selection stay with the editor. Images and scroll views have the remaining limits described in [styles](styles.md#drawing).
+
 ## Web views
 
 On Linux, initialization checks whether the system bubblewrap can start WebKitGTK's sandbox under AppArmor's user namespace restriction. A failed probe uses the same placeholder as a missing WebKitGTK library, and cookie requests return the diagnostic. The check runs once, on the first use of WebKitGTK.

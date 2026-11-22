@@ -157,7 +157,7 @@ func (v *view) setEditor(multiline bool) {
 		// The placeholder is exposed on the text view itself (editorAccess), so its drawn label is not a separate VoiceOver stop.
 		label.Send(selSetIsAccessibilityElement, false)
 		label.Send(selSetAccessibilityElementsHidden, true)
-		v.native.Send(selAddSubview, label)
+		v.children().Send(selAddSubview, label)
 		label.Send(selRelease)
 		in.field, in.label = tv, label
 	} else {
@@ -168,7 +168,7 @@ func (v *view) setEditor(multiline bool) {
 		in.field = f
 	}
 	in.multiline = multiline
-	v.native.Send(selAddSubview, in.field)
+	v.children().Send(selAddSubview, in.field)
 	in.field.Send(selRelease)
 	views[in.field] = v
 	if in.bar != 0 {

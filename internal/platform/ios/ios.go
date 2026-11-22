@@ -1446,9 +1446,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 				v.sizeContent()
 			}
 			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
-			if v.kind == driver.KindScroll || v.kind == driver.KindVideo {
-				// A scroll view shows only what it scrolls to, and a video
-				// only its frame.
+			if v.kind == driver.KindScroll || v.kind == driver.KindVideo && !v.clipsInHolder(it.ViewStyle) {
+				// A scroll view shows only what it scrolls to, and a video only its frame unless a holder clips it for its decoration.
 				v.native.Send(sel("setClipsToBounds:"), true)
 			}
 			if v.image != nil {

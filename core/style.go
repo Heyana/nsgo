@@ -129,7 +129,7 @@ type Style struct {
 	// Visibility Hidden hides the node and what it holds from sight, the
 	// pointer and screen readers, keeping its place in layout.
 	Visibility Visibility
-	// Overflow Hidden clips children to the node's bounds and corners, and keeps their overflow out of an enclosing scroll view's content. The node's own outer shadows and outline stay outside the clip, as in CSS, on Windows, Linux and the web, and on Apple for views, texts, canvases, shaders, images and macOS scroll views. Android, Apple's other views (inputs, web, video and native views, and iOS scroll views) and an Apple image or scroll view whose corners differ in radius clip them too, which putting the clip on an inner view avoids, as ui.Dialog's Bare does.
+	// Overflow Hidden clips children to the node's bounds and corners, and keeps their overflow out of an enclosing scroll view's content. The node's own outer shadows and outline stay outside the clip, as in CSS, on Windows, Linux and the web, and on Apple for views, texts, canvases, shaders, inputs, web, video and native views, images and macOS scroll views. Android, iOS scroll views and an Apple image or scroll view whose corners differ in radius clip them too, which putting the clip on an inner view avoids, as ui.Dialog's Bare does.
 	// OverflowX and OverflowY override it per axis.
 	Overflow             Overflow
 	OverflowX, OverflowY Overflow

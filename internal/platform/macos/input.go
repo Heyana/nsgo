@@ -271,7 +271,7 @@ func (v *view) setEditor(multiline, masked bool) {
 		label.Send(selSetAccessibilityElement, false)
 		label.Send(sel("cell")).Send(selSetAccessibilityElement, false)
 		label.Send(sel("cell")).Send(sel("setWraps:"), true)
-		v.native.Send(selAddSubview, label)
+		v.children().Send(selAddSubview, label)
 		in.field, in.host, in.label = tv, scroll, label
 	} else {
 		class := classField
@@ -301,7 +301,7 @@ func (v *view) setEditor(multiline, masked bool) {
 		in.field, in.host = f, f
 	}
 	in.multiline, in.masked = multiline, masked && !multiline
-	v.native.Send(selAddSubview, in.host)
+	v.children().Send(selAddSubview, in.host)
 	in.host.Send(selRelease)
 	views[in.field], views[in.host] = v, v
 	if text != "" {

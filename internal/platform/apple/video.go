@@ -134,6 +134,26 @@ func NewVideo(holder objc.ID) *Video {
 	return &Video{holder: holder, status: &videoStatus{}}
 }
 
+// SetHolder moves the existing player layer or controls into holder.
+func (v *Video) SetHolder(holder objc.ID) {
+	if v.holder == holder {
+		return
+	}
+	v.holder = holder
+	WithoutAnimation(func() {
+		if v.shown != 0 {
+			fill(holder, v.shown)
+		}
+		if v.controller != 0 {
+			fill(holder, v.controller.Send(sel("view")))
+		}
+		if runtime.GOOS == "ios" && v.layer != 0 {
+			holder.Send(sel("layer")).Send(sel("addSublayer:"), v.layer)
+			v.Layout()
+		}
+	})
+}
+
 // View returns the AppKit view showing the player (macOS), 0 before one.
 func (v *Video) View() objc.ID { return v.shown }
 

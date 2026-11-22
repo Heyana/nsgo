@@ -115,13 +115,13 @@ func NewChildContainer(host, class objc.ID, layerBacked bool, child func(objc.ID
 			children = append(children, sub)
 		}
 	}
+	// Attach the destination first and let addSubview move each child within the same window, preserving a native editor's responder and selection.
+	host.Send(sel("addSubview:"), c)
 	for _, sub := range children {
 		sub.Send(sel("retain"))
-		sub.Send(sel("removeFromSuperview"))
 		c.Send(sel("addSubview:"), sub)
 		sub.Send(selRelease)
 	}
-	host.Send(sel("addSubview:"), c)
 	c.Send(selRelease)
 	return c
 }
