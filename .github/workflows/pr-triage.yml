@@ -3,14 +3,19 @@ name: Pull request triage
 # Path labels, a Conventional Commit title check and a size label for every pull request, forks included.
 #
 # pull_request_target runs with a write token so that fork pull requests can be labelled, and in exchange it must never check out or run the pull request's code. No job here checks anything out: the labeler reads .github/labeler.yml from the base branch through the API, and the title reaches the script only through the environment, never through ${{ }} interpolation.
+#
+# The title check is a required status check, so it also has to report on the merge queue's merge_group event. A merge group has no pull request title to read; the title was already checked on the pull request, and editing it there re-runs the check, so the job passes without doing anything there, and the label jobs do not run at all.
 
 on:
   pull_request_target:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   # Editing the title or body must not cancel the path and size jobs of a new push; each kind still replaces its own older run.
-  group: pr-triage-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && 'edited' || 'head' }}
+  # A merge group has no pull request number; its own gh-readonly-queue ref keeps it from cancelling another group's run.
+  group: pr-triage-${{ github.event.pull_request.number || github.ref }}-${{ github.event.action == 'edited' && 'edited' || 'head' }}
   cancel-in-progress: true
 
 permissions:
@@ -22,7 +27,7 @@ jobs:
   paths:
     name: Path labels
     # An edit of the title or body cannot change which files the pull request touches.
-    if: github.event.action != 'edited'
+    if: github.event_name == 'pull_request_target' && github.event.action != 'edited'
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -36,7 +41,12 @@ jobs:
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      # The job itself runs on merge_group so the required check reports success there.
+      - name: Pass in the merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "The title was checked on the pull request."
+      - if: github.event_name == 'pull_request_target'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TITLE: ${{ github.event.pull_request.title }}
         with:
@@ -95,7 +105,7 @@ jobs:
 
   size:
     name: Size label
-    if: github.event.action != 'edited'
+    if: github.event_name == 'pull_request_target' && github.event.action != 'edited'
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 5
     steps:
