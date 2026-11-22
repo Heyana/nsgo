@@ -239,6 +239,7 @@ interface CanvasOp {
   sp?: number[];
   v?: number[];
   va?: number[];
+  e?: number[];
 }
 
 interface CanvasGradientData {
@@ -2588,61 +2589,125 @@ struct CanvasView {
     ctx.globalAlpha = alpha;
   }
 
-  // drawVertices draws a mesh op's triangles, x, y, u, v at each corner:
-  // each clipped to itself, grown by half a pixel so neighbors leave no
-  // seam, and drawn from the image through the affine transform its
-  // corners make. A Path2D clips, so the drawing's own path is kept.
-  // Vertex colors play only as each triangle's mean alpha.
+  // drawVertices draws a mesh op's triangles, x, y, u, v at each corner, each clipped to itself and drawn from the image through the affine transform its corners make. A triangle whose texture coordinates meet at one point fills with that texel, and one whose coordinates lie on a line samples a quarter of an image pixel off it. An opaque triangle grows by half a device pixel along the edges it shares with another opaque one, the bits of `e`, so neighbors leave no seam; the mesh's outline and translucent triangles keep to their corners, since a strip drawn twice would show. A Path2D clips, so the drawing's own path is kept. Vertex colors play only as each triangle's mean alpha.
   private drawVertices(ctx: CanvasRenderingContext2D, pm: image.PixelMap, o: CanvasOp): void {
     const v = o.v ?? [];
     const alphas = o.va ?? [];
+    const seams = o.e ?? [];
     const d = density();
     const size = pm.getImageInfoSync().size;
     const nw = size.width / d;
     const nh = size.height / d;
-    const grow = 0.5 / d;
+    const m = ctx.getTransform();
+    const scale = Math.sqrt(Math.abs((m.scaleX ?? 1) * (m.scaleY ?? 1) - (m.rotateX ?? 0) * (m.rotateY ?? 0)));
+    const grow = scale > 0 ? 0.5 / (d * scale) : 0;
     const alpha = ctx.globalAlpha;
+    const xs: number[] = [0, 0, 0];
+    const ys: number[] = [0, 0, 0];
+    const us: number[] = [0, 0, 0];
+    const ts: number[] = [0, 0, 0];
     for (let i = 0; i + 11 < v.length; i += 12) {
-      const x0 = v[i], y0 = v[i + 1], u0 = v[i + 2], t0 = v[i + 3];
-      const x1 = v[i + 4], y1 = v[i + 5], u1 = v[i + 6], t1 = v[i + 7];
-      const x2 = v[i + 8], y2 = v[i + 9], u2 = v[i + 10], t2 = v[i + 11];
-      const du1 = u1 - u0, dt1 = t1 - t0, du2 = u2 - u0, dt2 = t2 - t0;
-      const det = du1 * dt2 - du2 * dt1;
-      if (det === 0) {
+      for (let k = 0; k < 3; k++) {
+        xs[k] = v[i + 4 * k];
+        ys[k] = v[i + 4 * k + 1];
+        us[k] = v[i + 4 * k + 2];
+        ts[k] = v[i + 4 * k + 3];
+      }
+      const a = alpha * (alphas[i / 12] ?? 1);
+      ctx.save();
+      ctx.clip(this.meshClip(xs, ys, a >= 1 ? (seams[i / 12] ?? 0) : 0, grow));
+      ctx.globalAlpha = a;
+      if (us[0] === us[1] && us[1] === us[2] && ts[0] === ts[1] && ts[1] === ts[2]) {
+        const sx = Math.min(Math.max(Math.floor(us[0] * d), 0), size.width - 1);
+        const sy = Math.min(Math.max(Math.floor(ts[0] * d), 0), size.height - 1);
+        const pad = 4 * grow;
+        const x = Math.min(xs[0], xs[1], xs[2]) - pad;
+        const y = Math.min(ys[0], ys[1], ys[2]) - pad;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(pm, sx, sy, 1, 1, x, y, Math.max(xs[0], xs[1], xs[2]) + pad - x, Math.max(ys[0], ys[1], ys[2]) + pad - y);
+        ctx.restore();
         continue;
       }
-      const dx1 = x1 - x0, dy1 = y1 - y0, dx2 = x2 - x0, dy2 = y2 - y0;
-      const a = (dx1 * dt2 - dx2 * dt1) / det;
-      const b = (dy1 * dt2 - dy2 * dt1) / det;
-      const c = (dx2 * du1 - dx1 * du2) / det;
-      const e = (dy2 * du1 - dy1 * du2) / det;
-      const cx = (x0 + x1 + x2) / 3;
-      const cy = (y0 + y1 + y2) / 3;
-      const path = new Path2D();
-      const xs = [x0, x1, x2];
-      const ys = [y0, y1, y2];
-      for (let k = 0; k < 3; k++) {
-        const len = Math.hypot(xs[k] - cx, ys[k] - cy);
-        const s = len > 0 ? grow / len : 0;
-        const px = xs[k] + (xs[k] - cx) * s;
-        const py = ys[k] + (ys[k] - cy) * s;
-        if (k === 0) {
-          path.moveTo(px, py);
-        } else {
-          path.lineTo(px, py);
+      let du1 = us[1] - us[0], dt1 = ts[1] - ts[0], du2 = us[2] - us[0], dt2 = ts[2] - ts[0];
+      let det = du1 * dt2 - du2 * dt1;
+      if (det === 0) {
+        // The corner between the other two moves off their line, so the transform is invertible.
+        let k = 0;
+        let far = -1;
+        for (let j = 0; j < 3; j++) {
+          const dist = Math.hypot(us[(j + 2) % 3] - us[(j + 1) % 3], ts[(j + 2) % 3] - ts[(j + 1) % 3]);
+          if (dist > far) {
+            far = dist;
+            k = j;
+          }
         }
+        const p = (k + 1) % 3;
+        const q = (k + 2) % 3;
+        const off = 0.25 / d / far;
+        us[k] -= (ts[q] - ts[p]) * off;
+        ts[k] += (us[q] - us[p]) * off;
+        du1 = us[1] - us[0];
+        dt1 = ts[1] - ts[0];
+        du2 = us[2] - us[0];
+        dt2 = ts[2] - ts[0];
+        det = du1 * dt2 - du2 * dt1;
       }
-      path.closePath();
-      ctx.save();
-      ctx.clip(path);
-      if (alphas.length > 0) {
-        ctx.globalAlpha = alpha * (alphas[i / 12] ?? 1);
-      }
+      const dx1 = xs[1] - xs[0], dy1 = ys[1] - ys[0], dx2 = xs[2] - xs[0], dy2 = ys[2] - ys[0];
+      const ma = (dx1 * dt2 - dx2 * dt1) / det;
+      const mb = (dy1 * dt2 - dy2 * dt1) / det;
+      const mc = (dx2 * du1 - dx1 * du2) / det;
+      const md = (dy2 * du1 - dy1 * du2) / det;
       ctx.imageSmoothingEnabled = o.n !== true;
-      ctx.transform(a, b, c, e, x0 - a * u0 - c * t0, y0 - b * u0 - e * t0);
+      ctx.transform(ma, mb, mc, md, xs[0] - ma * us[0] - mc * ts[0], ys[0] - mb * us[0] - md * ts[0]);
       ctx.drawImage(pm, 0, 0, nw, nh);
       ctx.restore();
     }
+  }
+
+  // meshClip is a triangle's path with each edge from corner k to the next moved out by grow where bit k of mask is set. Each corner moves to where its two edges' lines meet, at most four times grow on a sliver.
+  private meshClip(xs: number[], ys: number[], mask: number, grow: number): Path2D {
+    const area = (xs[1] - xs[0]) * (ys[2] - ys[0]) - (xs[2] - xs[0]) * (ys[1] - ys[0]);
+    const sign: number = area > 0 ? 1 : -1;
+    const nx: number[] = [0, 0, 0];
+    const ny: number[] = [0, 0, 0];
+    const off: number[] = [0, 0, 0];
+    for (let k = 0; k < 3; k++) {
+      const j = (k + 1) % 3;
+      const ex = xs[j] - xs[k];
+      const ey = ys[j] - ys[k];
+      const len = Math.hypot(ex, ey);
+      if (len > 0) {
+        nx[k] = sign * ey / len;
+        ny[k] = -sign * ex / len;
+      }
+      off[k] = ((mask >> k) & 1) !== 0 ? grow : 0;
+    }
+    const limit = 4 * grow;
+    const path = new Path2D();
+    for (let k = 0; k < 3; k++) {
+      const p = (k + 2) % 3;
+      let px = xs[k];
+      let py = ys[k];
+      const det = nx[p] * ny[k] - ny[p] * nx[k];
+      if ((off[p] !== 0 || off[k] !== 0) && det !== 0) {
+        let dx = (off[p] * ny[k] - off[k] * ny[p]) / det;
+        let dy = (nx[p] * off[k] - nx[k] * off[p]) / det;
+        const len = Math.hypot(dx, dy);
+        if (len > limit) {
+          dx *= limit / len;
+          dy *= limit / len;
+        }
+        px += dx;
+        py += dy;
+      }
+      if (k === 0) {
+        path.moveTo(px, py);
+      } else {
+        path.lineTo(px, py);
+      }
+    }
+    path.closePath();
+    return path;
   }
 
   // loadImage decodes an image op once; a repaint draws it when it comes.
