@@ -392,13 +392,14 @@ func gpuNewPipeline(p *driver.GPUPipelineDesc) (*gpuPipeline, error) {
 		gp.release()
 		return nil, fmt.Errorf("the Metal library lacks the pipeline's entry points")
 	}
+	// A pipeline without depth gets the descriptor's default, which always passes and writes nothing: Metal rejects a nil depth state.
+	d := objc.ID(Class("MTLDepthStencilDescriptor")).Send(selNew)
 	if ds := p.DepthStencil; ds != nil {
-		d := objc.ID(Class("MTLDepthStencilDescriptor")).Send(selNew)
 		d.Send(sel("setDepthCompareFunction:"), gpuCompare(ds.DepthCompare, 1))
 		d.Send(sel("setDepthWriteEnabled:"), ds.DepthWrite)
-		gp.depthState = mtlDevice.Send(sel("newDepthStencilStateWithDescriptor:"), d)
-		d.Send(selRelease)
 	}
+	gp.depthState = mtlDevice.Send(sel("newDepthStencilStateWithDescriptor:"), d)
+	d.Send(selRelease)
 	return gp, nil
 }
 
@@ -896,7 +897,8 @@ func (r *gpuRender) pass(f *frameRun, p *driver.GPUPass) {
 	desc := objc.ID(Class("MTLRenderPassDescriptor")).Send(sel("renderPassDescriptor"))
 	ps := passState{groups: map[uint32]driver.GPUCommand{}}
 	colors := p.ColorAttachments
-	if len(colors) == 0 {
+	// A pass with neither color nor depth draws into the view; a depth-only pass, such as a shadow map's, has no color attachment at all.
+	if len(colors) == 0 && p.DepthStencil == nil {
 		colors = []driver.GPUColorAttachment{{LoadOp: driver.GPULoadLoad}}
 	}
 	surface := false
@@ -943,7 +945,14 @@ func (r *gpuRender) pass(f *frameRun, p *driver.GPUPass) {
 		if ds.Texture == 0 {
 			depth, depthFresh = r.depth, r.freshDepth
 		}
+		if depth == nil && ds.Texture != 0 {
+			r.fail(driver.GPUErrorInvalidDescriptor, "a render pass's depth attachment is texture %d, which does not exist", ds.Texture)
+			return
+		}
 		if depth != nil {
+			if len(colors) == 0 {
+				ps.width, ps.height = mipSize(depth.desc, 0)
+			}
 			ps.depthFormat = gpuPixelFormat(depth.desc.Format)
 			a := desc.Send(sel("depthAttachment"))
 			a.Send(sel("setTexture:"), depth.object)
