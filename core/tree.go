@@ -995,6 +995,9 @@ func (t *Tree) within(o *Scope, fn func()) { t.rt.run(o, fn) }
 
 func (t *Tree) newNode(kind driver.ViewKind, parent *node, owner *Scope) *node {
 	n := &node{kind: kind, parent: parent, owner: owner, layoutDirty: true, childrenDirty: true, rtl: t.rtl}
+	if owner != nil && t.rt.workObserved {
+		n.lstate.BeginWork = owner.BeginWork
+	}
 	t.pointersMoved = t.pointerStyled
 	if kind != 0 {
 		if k := len(t.free); k > 0 {
@@ -1241,6 +1244,9 @@ func (t *Tree) node(id NodeID) *node {
 
 // mount appends what el builds under cx to parent's children.
 func (t *Tree) mount(cx *Scope, parent *node, el Node) {
+	if end := cx.BeginWork(); end != nil {
+		defer end()
+	}
 	t.checkTwins(el)
 	switch el := el.(type) {
 	case nil:

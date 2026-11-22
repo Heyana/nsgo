@@ -70,12 +70,17 @@ mount(() => <Text testID="runtime" onPress={() => n.set(n() + 1)}>{String(n())}<
 		t.Fatal("view runtime was not published")
 	}
 	before, supported := view.JSTime()
+	engineBefore, engineSupported := view.EngineTime()
 	app.Press("id:runtime")
 	if got := app.Find("id:runtime").Text; got != "1" {
 		t.Fatalf("before interruption the view showed %q", got)
 	}
 	if after, ok := view.JSTime(); supported != (runtime.GOOS != "js") || ok != supported || ok && (before <= 0 || after <= before) {
 		t.Fatalf("JSTime changed from %v to %v, supported %v", before, after, ok)
+	}
+
+	if after, ok := view.EngineTime(); engineSupported != supported || ok != supported || ok && (engineBefore < before || after <= engineBefore) {
+		t.Fatalf("EngineTime changed from %v to %v, supported %v", engineBefore, after, ok)
 	}
 
 	why := errors.New("test stopped the view")

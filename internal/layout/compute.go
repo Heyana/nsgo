@@ -217,13 +217,18 @@ func computeChildLayout(n Node, in layoutInput) layoutOutput {
 // computeNodeLayout is computeChildLayout for a block child, which shares
 // its parent's block formatting context when bctx is set.
 func computeNodeLayout(n Node, in layoutInput, bctx *blockContext) layoutOutput {
+	st := n.LayoutState()
+	if begin := st.BeginWork; begin != nil {
+		if end := begin(); end != nil {
+			defer end()
+		}
+	}
 	// An ancestor is display: none.
 	if in.runMode == performHiddenLayout {
-		n.LayoutState().hasLast = false
+		st.hasLast = false
 		return computeHiddenLayout(n)
 	}
 
-	st := n.LayoutState()
 	out, ok := st.cache.get(&in)
 	if !ok {
 		out = computeUncachedLayout(n, st, in, bctx)
@@ -389,6 +394,11 @@ var passes atomic.Uint64
 
 func roundLayout(n Node, cumulativeX, cumulativeY float32, ratio float64) {
 	st := n.LayoutState()
+	if begin := st.BeginWork; begin != nil {
+		if end := begin(); end != nil {
+			defer end()
+		}
+	}
 	u := st.Unrounded
 	l := u
 

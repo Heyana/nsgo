@@ -29,7 +29,7 @@
 - Send `core.Video.Headers` with Android video requests and direct HTTP videos on Linux, macOS, iOS and tvOS, including separate audio files on Apple (#681 by @houko).
 - Report same-document URL, history and title changes from WebView2 through `WebView.OnNavigationStateChange` (#113 by @houko).
 - Restore the main window’s last regular frame on macOS and Windows, its full-screen mode on Windows, and its regular size and full-screen mode on Linux across native Go rebuilds within a `dev` session (#658 by @houko).
-- Give TSX hosts stop notifications, per-runtime native JavaScript timing, deadline extensions and control of sandboxed views (#925 by @houko).
+- Give TSX hosts stop notifications, per-runtime native JavaScript and owned engine timing, deadline extensions and control of sandboxed views (#925 and #1838 by @houko).
 - Select system tabs with `nsgotest.App.SelectTab` headless and on iOS and Android targets (#1275 by @houko).
 - Apply backdrop color filters (brightness, contrast, grayscale, hue-rotate, invert, opacity, saturate and sepia) on iOS, alone or over a blur, through Core Animation's backdrop layer (#1543).
 - Prevent macOS web tests from leaking Chrome code-signature clones (#1725 by @houko).

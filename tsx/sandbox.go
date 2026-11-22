@@ -285,6 +285,16 @@ func (s Sandbox) start(cx *core.Scope, name, src string) *runtime {
 	props := js.Properties()
 	if !props.ReactionsAfterCommit && (s.plugin || s.OnViewRuntime != nil) {
 		r.clock = &executionClock{}
+		if !s.plugin && s.OnViewRuntime != nil {
+			r.work = &executionClock{}
+			cx.ObserveWork(func(active bool) {
+				if active {
+					r.work.enter()
+				} else {
+					r.work.leave()
+				}
+			})
+		}
 	}
 	if props.CanInterrupt && ((s.plugin && limits.Call > 0) || limits.CallTotal > 0) {
 		r.keepPromiseJobs()

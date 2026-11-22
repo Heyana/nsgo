@@ -84,6 +84,18 @@ func (v *ViewRuntime) JSTime() (time.Duration, bool) {
 	return v.r.executionTime()
 }
 
+// EngineTime reports elapsed engine work owned by the native view, including
+// its JavaScript, synchronous Go calls and scoped commit and layout work.
+// Like JSTime, it includes an active span and is safe from any goroutine.
+// Waiting between entries, host and sibling work, shared commit bookkeeping
+// and native drawing are excluded; the browser reports false.
+func (v *ViewRuntime) EngineTime() (time.Duration, bool) {
+	if v == nil || v.r == nil || v.r.work == nil {
+		return 0, false
+	}
+	return v.r.work.read(), true
+}
+
 // ErrViewClosed is the stop reason when a view's scope is disposed normally.
 var ErrViewClosed = errors.New("tsx: the view was closed")
 

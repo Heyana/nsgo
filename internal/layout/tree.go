@@ -23,6 +23,10 @@ type Node interface {
 // State is what layout keeps for a node: its results, its cache and the
 // out-of-flow boxes it positions. The zero State is ready to use.
 type State struct {
+	// BeginWork optionally attributes this node's recursive layout work.
+	// Its returned function restores the caller's attribution.
+	BeginWork func() func()
+
 	// Unrounded is the layout Compute last stored.
 	Unrounded Layout
 	// Rounded is Unrounded snapped to whole pixels by Round.

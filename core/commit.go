@@ -371,6 +371,9 @@ func (t *Tree) commitRound() {
 // changed text: in the nodes marked for it, and in every node inside one
 // whose inherited fields changed, or everywhere when force is set.
 func (t *Tree) resolve(n *node, inherited textFields, force bool) {
+	if end := n.owner.BeginWork(); end != nil {
+		defer end()
+	}
 	force = force || t.fullRound
 	// A text resolves its attachments itself.
 	self := force || n.unresolved || n.resolveKids && n.text != nil
@@ -796,6 +799,9 @@ func scaleText(ts driver.TextStyle, scale float32) driver.TextStyle {
 // only those marked, and reports whether n moved, resized or changed how
 // it shows, which its parent's overflow area follows.
 func (t *Tree) emit(n *node) bool {
+	if end := n.owner.BeginWork(); end != nil {
+		defer end()
+	}
 	self := n.dirty || t.fullRound
 	if !self && !n.dirtyKids {
 		return false

@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// executionClock measures elapsed time in VM entries. Its lock also lets
-// the host sample the current entry while the engine is busy.
+// executionClock measures elapsed work spans. Its lock also lets the host
+// sample an active span while the engine is busy.
 type executionClock struct {
 	mu      sync.Mutex
 	started time.Time
@@ -51,6 +51,9 @@ func (r *runtime) executionTime() (time.Duration, bool) {
 }
 
 func (r *runtime) measureJS(fn func() error) error {
+	if end := r.cx.BeginWork(); end != nil {
+		defer end()
+	}
 	if r.clock != nil && r.clock.enter() {
 		defer r.clock.leave()
 	}

@@ -41,6 +41,7 @@ type Scope struct {
 	catch    func(error)
 	ctx      context.Context
 	cancel   context.CancelFunc
+	work     *workObserver
 	comp     *computation // set when the scope is a computation's
 	// surf is the tree of the window the scope is in, inherited by what
 	// it owns; nil leaves it the graph's first.
@@ -151,6 +152,8 @@ const maxRuns = 1_000_000
 
 type runtime struct {
 	graphOwner
+	workObserved bool
+	activeWork   *workObserver
 	aborted      bool // fault recovery must never schedule another computation
 	checkCommits bool
 	classCache   parseCache[classSource, *classList]
@@ -613,7 +616,19 @@ func (rt *runtime) run(o *Scope, fn func()) {
 	rt.owner, rt.observer = o, nil
 	defer func() { rt.owner, rt.observer = prevOwner, prevObs }()
 	rt.batch++
+	end := rt.beginWork(o)
+	if end != nil {
+		defer func() {
+			if end != nil {
+				end()
+			}
+		}()
+	}
 	rt.guard(o, fn)
+	if end != nil {
+		end()
+		end = nil
+	}
 	rt.batch--
 	if rt.batch == 0 && !rt.flushing {
 		rt.flush()
@@ -821,6 +836,14 @@ func (c *computation) run() {
 	rt := c.rt
 	// The batch covers the disposal too, so a cleanup's write runs nothing before c has run again.
 	rt.batch++
+	end := c.Scope.BeginWork()
+	if end != nil {
+		defer func() {
+			if end != nil {
+				end()
+			}
+		}()
+	}
 	c.disposeOwned()
 	c.unlink()
 	c.state = clean
@@ -834,6 +857,10 @@ func (c *computation) run() {
 			changed = c.fn()
 		}
 	})
+	if end != nil {
+		end()
+		end = nil
+	}
 	// Its own time: what its writes run next, in maybeFlush, is theirs.
 	if rt.dev != nil {
 		rt.dev.ran(c, time.Since(began))

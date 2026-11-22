@@ -134,7 +134,7 @@ trust.Accept(p) // 运行之后，更旧的构建会被拒绝
 
 设置 `Sandbox.OnViewRuntime` 后，每个视图都会在入口模块运行前，在引擎 goroutine 上提供一个 `*tsx.ViewRuntime`。可以从任意 goroutine 调用 `Interrupt` 停止视图的工作，保留最后渲染的内容。`Stopped` 和 `Err` 报告停止状态，正常释放时返回 `tsx.ErrViewClosed`。`Sandbox.OnStop` 也会为视图报告一次停止原因。
 
-`Plugin.JSTime` 和 `ViewRuntime.JSTime` 报告原生运行时执行 JavaScript 的累计时长，包括当前正在执行的入口。两次执行之间的等待时间和注册的同步 Go 函数耗时不计入。浏览器在 NSGo 之外执行的 JavaScript 无法测量或打断，因此 `JSTime` 返回不可用，`Interrupt` 在宿主重新取得控制后停止后续 NSGo 回调。
+`Plugin.JSTime` 和 `ViewRuntime.JSTime` 报告原生运行时执行 JavaScript 的累计时长，包括当前正在执行的入口。两次执行之间的等待时间和注册的同步 Go 函数耗时不计入。`ViewRuntime.EngineTime` 还计入同步 Go 调用以及视图所属的响应式计算、挂载、提交和布局工作，包括当前尚未完成的工作；两次引擎执行之间的等待、宿主或其他视图的工作、共享提交管理工作和原生绘制不计入。两个计数器均可从任意 goroutine 读取。浏览器在 NSGo 之外执行的 JavaScript 无法测量或打断，因此两个计数器均返回不可用，`Interrupt` 在宿主重新取得控制后停止后续 NSGo 回调。
 
 Web 上暂时无法把包与页面隔离：包的代码能绕过它的权限，直接访问页面自己的网络、剪贴板和存储，信任库所在的存储也包括在内。因此在 Web 上 `tsx.View` 和 `tsx.Load` 会以 `tsx.ErrUnisolated` 拒绝运行包，除非设置 `Sandbox.WebUnisolated`，让它以页面的权限运行；这只适合你愿意像对待应用自身代码一样信任的包。
 

@@ -109,6 +109,7 @@ type runtime struct {
 	limits Limits
 	depth  int
 	clock  *executionClock
+	work   *executionClock
 	// stopMu guards sandbox.stopped; calls are the pending Plugin.Call callbacks on the engine's goroutine.
 	stopMu sync.Mutex
 	calls  map[*deadline]struct{}
