@@ -84,6 +84,7 @@ func geoClueLocate() (driver.LocationFix, error) {
 	if client == "" {
 		return driver.LocationFix{}, errors.New("GeoClue returned no client")
 	}
+	defer func() { gVariantUnrefNonZero(dbusCall(bus, geoClueName, client, geoClueClientIF, "Stop")) }()
 	if _, err = dbusTry(bus, geoClueName, client, propertiesIF, "Set", gVariantNewString(cstr(geoClueClientIF)), gVariantNewString(cstr("DesktopId")), geoVariantNewVariant(gVariantNewString(cstr("nsgo")))); err != nil {
 		return driver.LocationFix{}, err
 	}
