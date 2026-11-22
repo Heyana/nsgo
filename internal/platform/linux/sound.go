@@ -109,6 +109,8 @@ var loadSound = sync.OnceValue(func() bool {
 	bind(&gstQueryNewLatency, "gst_query_new_latency")
 	bind(&gstElementQuery, "gst_element_query")
 	bind(&gstQueryParseLatency, "gst_query_parse_latency")
+	bind(&gstElementSeekSimple, "gst_element_seek_simple")
+	bind(&gstElementQueryDuration, "gst_element_query_duration")
 	purego.RegisterLibFunc(&gstAppSrcPushBuffer, app, "gst_app_src_push_buffer")
 	purego.RegisterLibFunc(&gstAppSrcEndOfStream, app, "gst_app_src_end_of_stream")
 	purego.RegisterLibFunc(&gstAppSinkTryPullSample, app, "gst_app_sink_try_pull_sample")

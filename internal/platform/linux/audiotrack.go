@@ -2,13 +2,14 @@
 
 package linux
 
-// GtkMediaFile loops with a seek at the end of the track, which drops the output for a moment. A looping player decodes its whole track instead, within driver.MaxGaplessLoopBytes and driver.MaxGaplessLoopDuration, and plays it through the sound mixer, queuing sample-contiguous pieces that wrap from the end of the track to the loop start; once it has the track it plays every pass from it. A track it cannot decode whole loops through GtkMediaFile.
+// GtkMediaFile loops with a seek at the end of the track, which drops the output for a moment. A looping player decodes its whole track instead, within driver.MaxGaplessLoopBytes and driver.MaxGaplessLoopDuration, and plays it through the sound mixer, queuing sample-contiguous pieces that wrap from the end of the track to the loop start; once it has the track it plays every pass from it. A track over those limits streams through a decoder of its own instead (audiostream.go), and one GStreamer cannot read at all loops through GtkMediaFile.
 
 import (
 	"context"
 	"fmt"
 	"log"
 	"math"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -32,8 +33,8 @@ type trackVoice struct {
 	// pieces are the queued pieces whose start has not played yet, and the one playing first; played counts those whose start played.
 	pieces []trackVoicePiece
 	played int
-	// eos says the voice queued the end of the track; gone that the mixer closed it.
-	eos, gone bool
+	// eos says the voice queued the end of the track; gone that the mixer closed it; lap that the next piece it queues starts a lap.
+	eos, gone, lap bool
 }
 
 // trackVoicePiece is a queued piece of a track: frames from the track's frame from, at frame at of the voice, the first of a lap when lap.
@@ -119,26 +120,37 @@ func trackTime(n int64) time.Duration {
 	return time.Duration(n * int64(time.Second) / soundRate)
 }
 
-// fill queues the track from v.next until soundLoopAhead past now, wrapping to loopFrom at the end while loop, or queuing the end of the stream otherwise.
-func (v *trackVoice) fill(now time.Time, pcm []byte, loop bool, loopFrom int) bool {
-	frames := len(pcm) / soundFrameBytes
+// fill queues the track from v.next until soundLoopAhead past now, wrapping to loopFrom at the end while loop, or queuing the end of the stream otherwise. A streamed track may have no frames ready yet, as after its seek back to the loop start: the voice queues them on a later tick, from what it already queued.
+func (v *trackVoice) fill(now time.Time, track trackFrames, loop bool, loopFrom int) bool {
 	for !v.eos && trackTime(v.queued) < now.Sub(v.started)+soundLoopAhead {
-		lap := false
-		if v.next >= frames {
+		pcm, end, ok := track.frames(v.next, trackPiece)
+		if !ok {
+			return false
+		}
+		if end {
 			if !loop {
 				v.eos = true
 				return gstAppSrcEndOfStream(v.appsrc) == 0
 			}
-			v.next, lap = loopFrom, true
+			if v.lap {
+				// The loop has no frames past its start.
+				return true
+			}
+			v.next, v.lap = loopFrom, true
+			continue
 		}
-		n := min(trackPiece, frames-v.next)
+		n := len(pcm) / soundFrameBytes
+		if n == 0 {
+			return true
+		}
 		start := trackTime(v.queued)
-		if !pushSoundBuffer(v.appsrc, pcm[v.next*soundFrameBytes:(v.next+n)*soundFrameBytes], uint64(start), trackTime(v.queued+int64(n))-start) {
+		if !pushSoundBuffer(v.appsrc, pcm, uint64(start), trackTime(v.queued+int64(n))-start) {
 			return false
 		}
-		v.pieces = append(v.pieces, trackVoicePiece{at: v.queued, from: v.next, count: n, lap: lap})
+		v.pieces = append(v.pieces, trackVoicePiece{at: v.queued, from: v.next, count: n, lap: v.lap})
 		v.queued += int64(n)
 		v.next += n
+		v.lap = false
 	}
 	return true
 }
@@ -181,39 +193,57 @@ func (p *linuxPlayer) fromTrack() bool {
 	return p.track != nil || p.stream == 0 && !p.loading && (p.decoding != nil || p.loop && !p.noTrack)
 }
 
-// decodeTrack decodes the player's whole track on a worker for a gapless loop, unless it has it, is decoding it or could not. A stream that plays meanwhile plays on.
+// trackDecodeLimit is the longest track a looping player decodes whole; a longer one streams.
+var trackDecodeLimit = driver.MaxGaplessLoopDuration
+
+// decodeTrack decodes the player's whole track on a worker for a gapless loop, or opens a decoder that streams a track too large or too long to decode whole, unless it has the track, is decoding it or could not. A stream that plays meanwhile plays on.
 func (p *linuxPlayer) decodeTrack() {
 	if p.track != nil || p.decoding != nil || p.noTrack {
 		return
 	}
-	if p.stream != 0 && p.loaded && p.duration > driver.MaxGaplessLoopDuration {
-		p.noTrack = true
-		return
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.decoding = cancel
-	source := p.source
+	source, limit := p.source, trackDecodeLimit
+	// A stream known to be longer than the limit skips decoding it whole.
+	whole := p.stream == 0 || !p.loaded || p.duration <= limit
 	go func() {
-		b, code, _ := readSoundBytes(ctx, source, driver.MaxGaplessLoopBytes)
-		var pcm []byte
-		if code == "" {
-			var cut bool
-			var message string
-			if pcm, cut, message = decodeSound(ctx, b, driver.MaxGaplessLoopDuration); cut || message != "" {
-				pcm = nil
+		var track trackFrames
+		tooLarge := !whole
+		if whole {
+			b, code, _ := readSoundBytes(ctx, source, driver.MaxGaplessLoopBytes)
+			tooLarge = code == driver.AudioQuotaExceeded
+			if code == "" {
+				pcm, cut, message := decodeSound(ctx, b, limit)
+				tooLarge = cut
+				if !cut && message == "" {
+					track = pcmTrack(pcm)
+				}
+			}
+		}
+		if tooLarge && ctx.Err() == nil {
+			if uri := p.trackSourceURI(source); uri != "" {
+				if d, _ := openTrackDecoder(uri); d != nil {
+					track = d
+				}
 			}
 		}
 		if ctx.Err() != nil {
+			if track != nil {
+				track.close()
+			}
 			return
 		}
 		p.owner.post(func() {
 			// A closed player cancelled its decoding.
 			if p.closed || ctx.Err() != nil {
+				if track != nil {
+					track.close()
+				}
 				return
 			}
 			cancel()
 			p.decoding = nil
-			if pcm == nil {
+			if track == nil {
 				// GtkMediaFile plays the track, from a seek to where the player is.
 				p.noTrack = true
 				if p.stream == 0 && (p.wanted || p.loadWanted) {
@@ -221,7 +251,7 @@ func (p *linuxPlayer) decodeTrack() {
 					p.prepare()
 				}
 			} else {
-				p.adopt(pcm)
+				p.adopt(track)
 			}
 			if p.audio != nil {
 				p.audio.ensureTick()
@@ -230,9 +260,24 @@ func (p *linuxPlayer) decodeTrack() {
 	}()
 }
 
+// trackSourceURI is the URI a track decoder streams source from, staging bytes and data URLs in the player's file as GtkMediaFile does; it runs on the decoding worker.
+func (p *linuxPlayer) trackSourceURI(source driver.ImageSource) string {
+	if len(source.Data) == 0 && !strings.HasPrefix(source.URI, "data:") {
+		return trackURI(source.URI)
+	}
+	path := p.file.name()
+	if path == "" {
+		var code string
+		if path, code, _ = stageAudioPlayer(source); code != "" || !p.file.hold(path) {
+			return ""
+		}
+	}
+	return trackURI(path)
+}
+
 // adopt takes the decoded track. A stream that plays hands over to it at its end, the next loop start; otherwise the track takes over at once from the stream's position.
-func (p *linuxPlayer) adopt(pcm []byte) {
-	p.track = pcm
+func (p *linuxPlayer) adopt(track trackFrames) {
+	p.track = track
 	if p.stream != 0 && p.wanted {
 		p.setStreamLoop()
 		return
@@ -243,8 +288,8 @@ func (p *linuxPlayer) adopt(pcm []byte) {
 		}
 		p.dropStream()
 	}
-	p.loaded, p.duration = true, soundDuration(pcm)
-	p.position = min(p.position, p.duration)
+	p.loaded, p.duration = true, track.length()
+	p.position = p.clampPosition(p.position)
 	sought := p.appliedSeeks != p.seeks
 	p.pendingSeek, p.seeking, p.appliedSeeks = false, false, p.seeks
 	if !p.opened {
@@ -300,9 +345,9 @@ func (p *linuxPlayer) startTrack() {
 		return
 	}
 	// The track's length can differ from the stream's that played before it; the voice wraps at the track's.
-	p.duration = soundDuration(p.track)
-	from := min(p.position, p.duration)
-	if p.loop && from >= p.duration {
+	p.duration = p.track.length()
+	from := p.clampPosition(p.position)
+	if p.loop && p.duration > 0 && from >= p.duration {
 		from = p.loopFrom()
 	}
 	v.next = int(int64(from) * soundRate / int64(time.Second))
@@ -322,7 +367,7 @@ func (p *linuxPlayer) startTrack() {
 func (p *linuxPlayer) feed(now time.Time) bool {
 	loopFrom := int(int64(p.loopFrom()) * soundRate / int64(time.Second))
 	if !p.voice.fill(now, p.track, p.loop, loopFrom) {
-		p.fail(driver.AudioFailed, "GStreamer did not take the player's audio")
+		p.fail(driver.AudioFailed, "GStreamer did not play the player's audio")
 		return false
 	}
 	return true
@@ -331,9 +376,17 @@ func (p *linuxPlayer) feed(now time.Time) bool {
 // trackPosition reads the voice's position and counts the laps it started.
 func (p *linuxPlayer) trackPosition(now time.Time) (lapped, done bool) {
 	frame, laps, done := p.voice.advance(now)
-	p.position = min(trackTime(int64(frame)), p.duration)
+	p.position = p.clampPosition(trackTime(int64(frame)))
 	p.laps += laps
 	return laps > 0, done
+}
+
+// clampPosition keeps a position within a known duration; a streamed track may not know its own.
+func (p *linuxPlayer) clampPosition(position time.Duration) time.Duration {
+	if p.duration > 0 {
+		return min(position, p.duration)
+	}
+	return position
 }
 
 func (p *linuxPlayer) stopTrack() {

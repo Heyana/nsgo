@@ -680,8 +680,8 @@ func awaitLoopsFrom(t *testing.T, progress <-chan time.Duration, ended <-chan st
 	}
 }
 
-// TestLinuxAudioPlayerLoopsLongTrackBySeeking plays a track longer than a gapless loop decodes: GtkMediaFile streams it and seeks back to the loop start at its end.
-func TestLinuxAudioPlayerLoopsLongTrackBySeeking(t *testing.T) {
+// TestLinuxAudioPlayerStreamsLongTrack plays a track longer than a looping player decodes whole: its decoder streams it into the mixer and seeks back to the loop start at its end.
+func TestLinuxAudioPlayerStreamsLongTrack(t *testing.T) {
 	w, cx := audioTestWindow(t)
 	loopStart := driver.MaxGaplessLoopDuration
 	played, ended := make(chan error, 1), make(chan struct{}, 1)
@@ -703,8 +703,49 @@ func TestLinuxAudioPlayerLoopsLongTrackBySeeking(t *testing.T) {
 	p := audioTestPlayer(t, w)
 	awaitLoopsFrom(t, progress, ended, loopStart)
 	w.onLoop(t, func() {
-		if !p.noTrack || p.track != nil || p.voice != nil || p.stream == 0 {
-			t.Error("a track too long to decode did not loop through GtkMediaFile")
+		if _, streamed := p.track.(*trackDecoder); !streamed || p.voice == nil || p.stream != 0 {
+			t.Error("a track too long to decode whole did not stream into the mixer")
+		}
+	})
+}
+
+// TestLinuxAudioPlayerLoopsBySeekingWithoutTrack loops a player whose track GStreamer could not read for the mixer: GtkMediaFile plays it and seeks back to the loop start at its end.
+func TestLinuxAudioPlayerLoopsBySeekingWithoutTrack(t *testing.T) {
+	w, _ := audioTestWindow(t)
+	const loopStart = 600 * time.Millisecond
+	var p *linuxPlayer
+	w.onLoop(t, func() {
+		w.audio = &linuxAudio{root: w, sounds: map[uint32]*linuxSound{}, players: map[uint32]*linuxPlayer{}}
+		p = &linuxPlayer{owner: w, audio: w.audio, id: 1, source: driver.ImageSource{Data: audioTestWAV(1200 * time.Millisecond)}, volume: 1,
+			loop: true, loopStart: loopStart, interval: 20 * time.Millisecond, noTrack: true}
+		w.audio.players[1] = p
+		p.command(&driver.AudioRequest{Command: driver.AudioResume})
+		w.audio.ensureTick()
+	})
+	defer w.onLoop(t, func() {
+		delete(w.audio.players, 1)
+		p.close()
+	})
+	var last time.Duration
+	var laps uint32
+	for deadline := time.Now().Add(8 * time.Second); laps < 2; time.Sleep(10 * time.Millisecond) {
+		var position time.Duration
+		var playing, ended bool
+		w.onLoop(t, func() { position, laps, playing, ended = p.position, p.laps, p.playing, p.ended })
+		if ended {
+			t.Fatal("a looping player ended")
+		}
+		if playing && position < last && position < loopStart-20*time.Millisecond {
+			t.Fatalf("a repeat started at %v, before the loop start %v", position, loopStart)
+		}
+		last = position
+		if time.Now().After(deadline) {
+			t.Fatalf("the player repeated %d times before the deadline", laps)
+		}
+	}
+	w.onLoop(t, func() {
+		if p.track != nil || p.voice != nil || p.stream == 0 {
+			t.Error("a player without a track did not loop through GtkMediaFile")
 		}
 	})
 }
@@ -810,7 +851,7 @@ func TestLinuxAudioPlayerHandsOverToTrack(t *testing.T) {
 	}
 	awaitLoopsFrom(t, progress, ended, loopStart)
 	w.onLoop(t, func() {
-		if p.stream != 0 || p.voice == nil || p.duration != soundDuration(p.track) {
+		if p.stream != 0 || p.voice == nil || p.duration != p.track.length() {
 			t.Error("the decoded track did not take over the loop")
 		}
 	})
@@ -841,6 +882,26 @@ func levelTestWAV(stretches ...struct {
 
 // TestLinuxAudioPlayerLoopsWithoutGap records a looping player's decoded track in the mixed output: a 300 ms intro at one level, then a 300 ms body at another that repeats from the loop start, with no silence at the repeats and no intro after the first pass.
 func TestLinuxAudioPlayerLoopsWithoutGap(t *testing.T) {
+	testLoopGap(t, func(p *linuxPlayer) {
+		if _, whole := p.track.(pcmTrack); !whole {
+			t.Error("the looping player did not decode its track whole")
+		}
+	})
+}
+
+// TestLinuxAudioPlayerStreamsLoopWithoutGap records the same loop from a track over the limit a looping player decodes whole, which its decoder streams.
+func TestLinuxAudioPlayerStreamsLoopWithoutGap(t *testing.T) {
+	limit := trackDecodeLimit
+	trackDecodeLimit = 400 * time.Millisecond
+	t.Cleanup(func() { trackDecodeLimit = limit })
+	testLoopGap(t, func(p *linuxPlayer) {
+		if _, streamed := p.track.(*trackDecoder); !streamed {
+			t.Error("the looping player did not stream its track")
+		}
+	})
+}
+
+func testLoopGap(t *testing.T, check func(p *linuxPlayer)) {
 	w, _ := audioTestWindow(t)
 	const loopStart = 300 * time.Millisecond
 	type stretch = struct {
@@ -908,7 +969,10 @@ func TestLinuxAudioPlayerLoopsWithoutGap(t *testing.T) {
 		}
 	}
 	var laps uint32
-	w.onLoop(t, func() { laps = p.laps })
+	w.onLoop(t, func() {
+		laps = p.laps
+		check(p)
+	})
 
 	longest := 0
 	introAgain := false

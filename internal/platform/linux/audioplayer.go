@@ -23,8 +23,8 @@ type linuxPlayer struct {
 	stream uintptr
 	file   audioPlayerFile
 
-	// track is the decoded track, voice plays it and decoding cancels its decoding. noTrack says the track could not be decoded whole, so GtkMediaFile plays it; loadWanted that the player was asked to load.
-	track                       []byte
+	// track is the decoded or streamed track, voice plays it and decoding cancels its decoding. noTrack says GStreamer could not read the track for the mixer, so GtkMediaFile plays it; loadWanted that the player was asked to load.
+	track                       trackFrames
 	voice                       *trackVoice
 	decoding                    context.CancelFunc
 	noTrack, loadWanted, opened bool
@@ -62,6 +62,10 @@ func (f *audioPlayerFile) hold(path string) bool {
 	if f.closed {
 		os.Remove(path)
 		return false
+	}
+	// GtkMediaFile and a track decoder can each stage the bytes; the later copy replaces the earlier.
+	if f.path != "" && f.path != path {
+		os.Remove(f.path)
 	}
 	f.path = path
 	return true
@@ -111,7 +115,7 @@ func (p *linuxPlayer) command(req *driver.AudioRequest) {
 		if p.track != nil && p.stream == 0 {
 			p.seeks++
 			p.appliedSeeks, p.ended = p.seeks, false
-			p.position = min(req.Position, p.duration)
+			p.position = p.clampPosition(req.Position)
 			if p.voice != nil {
 				p.startTrack()
 			}
@@ -306,7 +310,7 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 			// The track decoded while the stream played: it takes over at the loop start.
 			p.dropStream()
 			p.laps++
-			p.duration = soundDuration(p.track)
+			p.duration = p.track.length()
 			p.position = p.loopFrom()
 			p.report(driver.AudioProgress)
 			p.startTrack()
@@ -441,6 +445,9 @@ func (p *linuxPlayer) close() {
 	p.closed = true
 	p.cancelDecoding()
 	p.stopTrack()
+	if p.track != nil {
+		p.track.close()
+	}
 	p.resetStream()
 	p.file.close()
 }
