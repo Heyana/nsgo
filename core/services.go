@@ -644,8 +644,8 @@ type SaveOptions struct {
 	Preflight bool
 	// Accept runs on the engine's goroutine after the user chooses where to
 	// save. A nil return approves the destination. If it returns an error,
-	// SaveFile leaves the destination untouched. On macOS and Windows,
-	// the dialog stays open for another choice when it can validate in place.
+	// SaveFile leaves the destination untouched. On macOS, Windows and
+	// Linux's in-process GTK chooser, the dialog stays open for another choice.
 	// Cancelling after a refusal reports the refused destination and error. Elsewhere a refusal
 	// completes the save with that destination and error.
 	// Android passes the chosen tree URI with the app's file name in its

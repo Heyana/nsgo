@@ -32,12 +32,11 @@ func TestSettingsToWatchIncludesColorScheme(t *testing.T) {
 }
 
 var (
-	gtkWindowGetToplevels        func() uintptr
-	gTypeNameFromInstance        func(instance uintptr) uintptr
-	gtkFileChooserSetFile        func(chooser, file, err uintptr) int32
-	gtkDialogResponse            func(dialog uintptr, response int32)
-	gtkFileChooserGetAction      func(chooser uintptr) int32
-	gtkFileChooserSetCurrentName func(chooser uintptr, name *byte)
+	gtkWindowGetToplevels   func() uintptr
+	gTypeNameFromInstance   func(instance uintptr) uintptr
+	gtkFileChooserSetFile   func(chooser, file, err uintptr) int32
+	gtkDialogResponse       func(dialog uintptr, response int32)
+	gtkFileChooserGetAction func(chooser uintptr) int32
 )
 
 func init() {
@@ -47,7 +46,6 @@ func init() {
 		purego.RegisterLibFunc(&gtkFileChooserSetFile, gtkLib, "gtk_file_chooser_set_file")
 		purego.RegisterLibFunc(&gtkDialogResponse, gtkLib, "gtk_dialog_response")
 		purego.RegisterLibFunc(&gtkFileChooserGetAction, gtkLib, "gtk_file_chooser_get_action")
-		purego.RegisterLibFunc(&gtkFileChooserSetCurrentName, gtkLib, "gtk_file_chooser_set_current_name")
 	}
 }
 
@@ -361,8 +359,13 @@ func TestFileDialogsReachGTK(t *testing.T) {
 	}
 	exportDir := t.TempDir()
 	copied := filepath.Join(exportDir, "copy.txt")
+	refused := filepath.Join(exportDir, "reserved.txt")
+	const refusal = "The app reserves this destination."
 	cx.Post(func() {
-		cx.SaveFile(core.SaveOptions{Name: "copy.txt", Path: notes, Start: exportDir, Accept: func(path string) error {
+		cx.SaveFile(core.SaveOptions{Name: "reserved.txt", Path: notes, Start: exportDir, Accept: func(path string) error {
+			if path == refused {
+				return fmt.Errorf("%s", refusal)
+			}
 			if path != copied {
 				return fmt.Errorf("preflight destination %q, want %q", path, copied)
 			}
@@ -371,6 +374,22 @@ func TestFileDialogsReachGTK(t *testing.T) {
 			status <- fmt.Sprintf("%v %q %v", saved, path, err)
 		})
 	})
+	var original uintptr
+	wait("the save dialog", func() bool { original = chooserDialog(); return original != 0 })
+	wait("the initial destination", func() bool { return saveDialogDestination(original) == refused })
+	w.onLoop(t, func() { gtkDialogResponse(original, dialogAccept) })
+	wait("the refusal inside the original dialog", func() bool {
+		p := w.saveDialogs[original]
+		return chooserDialog() == original && p != nil && gtkWidgetGetVisible(p.warning) != 0 && p.refusal.Text == refusal
+	})
+	if _, err := os.Stat(refused); !os.IsNotExist(err) {
+		t.Fatalf("the refused destination was touched: %v", err)
+	}
+	select {
+	case got := <-status:
+		t.Fatalf("refusal completed the save: %s", got)
+	default:
+	}
 	answer("copy.txt")
 	if s := next("the save"); s != fmt.Sprintf("true %q <nil>", copied) {
 		t.Errorf("saved %q", s)

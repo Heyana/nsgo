@@ -442,20 +442,24 @@ func configureFileDialog(dialog uintptr, title, button, start string) {
 	if button != "" {
 		gtkFileDialogSetAcceptLabel(dialog, cstr(button))
 	}
-	if start != "" {
-		if info, err := os.Stat(start); err == nil && info.IsDir() {
-			folder := gFileNewForPath(cstr(start))
-			if folder != 0 {
-				gtkFileDialogSetInitialFolder(dialog, folder)
-				gObjectUnref(folder)
-			}
-		}
+	if folder := dialogStartFolder(start); folder != 0 {
+		gtkFileDialogSetInitialFolder(dialog, folder)
+		gObjectUnref(folder)
 	}
 }
 
-// saveFile shows GtkFileDialog's save dialog suggesting r's name, then
+func dialogStartFolder(start string) uintptr {
+	if start != "" {
+		if info, err := os.Stat(start); err == nil && info.IsDir() {
+			return gFileNewForPath(cstr(start))
+		}
+	}
+	return 0
+}
+
+// showSaveFile shows GtkFileDialog's save dialog suggesting r's name, then
 // writes the file where the user chose off the main thread.
-func (w *window) saveFile(r driver.SaveRequest, id uint32) {
+func (w *window) showSaveFile(r driver.SaveRequest, id uint32) {
 	ev := driver.Event{Kind: driver.EventFiles, Count: id}
 	dialog := gtkFileDialogNew()
 	if dialog == 0 {
