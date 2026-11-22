@@ -14,7 +14,7 @@ require (
 	github.com/google/licenseclassifier/v2 v2.0.0
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/nsgo-dev/goja v0.1.0-nsgo.2.0.20261121173409-f05dab9a4261
+	github.com/nsgo-dev/goja v0.1.0-nsgo.2.0.20261122032045-fee2b34506fc
 	github.com/yuin/goldmark v1.8.7
 	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/image v0.48.0

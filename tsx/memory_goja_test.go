@@ -193,6 +193,20 @@ func TestMemoryMeteredUTF8PreservesUnpairedSurrogateReplacement(t *testing.T) {
 	}
 }
 
+func TestMemoryMetersReplacementCaptureStorage(t *testing.T) {
+	for _, replacement := range []string{`"y"`, `() => "y"`} {
+		r := limited(16 << 10)
+		_, err := r.vm.RunString(`try { RegExp.prototype[Symbol.replace].call({
+			flags: "", exec() { return { 0: "x", index: 0, length: 4096 }; }
+		}, "x", ` + replacement + `) } catch (_) {}`)
+		var interrupted *js.InterruptedError
+		var quota *core.Error
+		if !errors.As(err, &interrupted) || !errors.As(r.stoppedErr(), &quota) || quota.Code != core.CodeQuotaExceeded || quota.Resource != "memory" {
+			t.Errorf("replacement %s returned %v and stopped with %v, want the memory quota", replacement, err, r.stoppedErr())
+		}
+	}
+}
+
 // TestMemoryReadsSizesOnce holds a built-in to the size it was checked by when what it is given reads differently the second time, through a length getter, a proxy or a valueOf: each of these read 0 first and would then allocate from 16 MiB to over 1 GiB under a 1 MiB budget.
 func TestMemoryReadsSizesOnce(t *testing.T) {
 	const grows = `let c = 0; const o = { get length() { return c++ ? 1 << 24 : 0; } };`

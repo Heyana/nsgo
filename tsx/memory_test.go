@@ -1,8 +1,8 @@
 package tsx_test
 
 import (
+	"errors"
 	"runtime"
-	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -16,6 +16,14 @@ import (
 // memoryApp runs a sandboxed app whose press of "go" runs body, holding its built-ins to limit bytes, and returns it with what its boundary caught.
 func memoryApp(t *testing.T, body string, limit int) (*nsgotest.App, *error) {
 	t.Helper()
+	limits := tsx.DefaultLimits
+	limits.Call = 30 * time.Second
+	limits.Memory = limit
+	return memoryAppWithLimits(t, body, limits)
+}
+
+func memoryAppWithLimits(t *testing.T, body string, limits tsx.Limits) (*nsgotest.App, *error) {
+	t.Helper()
 	if runtime.GOOS == "js" {
 		t.Skip("the page's engine keeps its own heap, which Limits.Memory does not hold")
 	}
@@ -25,9 +33,6 @@ mount(() => <Text testID="go" onPress={() => { ` + body + ` }}>ok</Text>);`)}}, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	limits := tsx.DefaultLimits
-	limits.Call = 30 * time.Second
-	limits.Memory = limit
 	var failed error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return core.Catch{Try: tsx.Sandboxed("App.tsx", code, tsx.Sandbox{Limits: &limits}), Fallback: func(cx *core.Scope, err error, _ func()) core.Node {
@@ -41,7 +46,8 @@ mount(() => <Text testID="go" onPress={() => { ` + body + ` }}>ok</Text>);`)}}, 
 // stoppedAtMemory fails t unless err is the memory quota's.
 func stoppedAtMemory(t *testing.T, err error) {
 	t.Helper()
-	if core.ErrorCode(err) != core.CodeQuotaExceeded || !strings.Contains(err.Error(), "memory") {
+	var quota *core.Error
+	if !errors.As(err, &quota) || quota.Code != core.CodeQuotaExceeded || quota.Resource != "memory" {
 		t.Fatalf("ended with %v, want the memory quota", err)
 	}
 }
@@ -91,5 +97,20 @@ func TestSandboxMemoryIgnoresTheHostsAllocations(t *testing.T) {
 	hostSink = nil
 	if *failed != nil {
 		t.Fatalf("a bundle that allocates nothing ended with %v", *failed)
+	}
+}
+
+func TestSandboxMemoryDefaultLimitsStopBulkGrowth(t *testing.T) {
+	for name, body := range map[string]string{
+		"flat":    `new Array(1e4).fill(new Array(1e4).fill(0)).flat().length;`,
+		"concat":  `let a = new Array(1024).fill(0); for (;;) a = a.concat(a);`,
+		"spread":  `let a = new Array(1024).fill(0); for (;;) a = [...a, ...a];`,
+		"replace": `let s = "xx"; for (;;) s = s.replace(/x/g, s);`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, failed := memoryAppWithLimits(t, body, tsx.DefaultLimits)
+			app.Press("id:go")
+			stoppedAtMemory(t, *failed)
+		})
 	}
 }

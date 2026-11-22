@@ -3,6 +3,7 @@
 package js
 
 import (
+	"io"
 	"reflect"
 
 	"github.com/nsgo-dev/goja"
@@ -19,13 +20,15 @@ type String interface {
 	Value
 	Length() int
 	CharAt(int) uint16
+	Reader() io.RuneReader
 }
 
 type primitive struct{ raw goja.Value }
 type nativeString struct{ primitive }
 
-func (s nativeString) Length() int         { return s.raw.(goja.String).Length() }
-func (s nativeString) CharAt(i int) uint16 { return s.raw.(goja.String).CharAt(i) }
+func (s nativeString) Length() int           { return s.raw.(goja.String).Length() }
+func (s nativeString) CharAt(i int) uint16   { return s.raw.(goja.String).CharAt(i) }
+func (s nativeString) Reader() io.RuneReader { return s.raw.(goja.String).Reader() }
 
 func wrapValue(v goja.Value) Value {
 	switch v := v.(type) {

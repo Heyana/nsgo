@@ -18,7 +18,7 @@ import (
 	"github.com/nsgo-dev/nsgo/tsx/internal/js"
 )
 
-// A native sandbox budgets persistent storage from the built-ins wrapped here and goja's metered array and string allocations. They check each new backing store before allocating and charge its storage until Go finds it unreachable. A concatenation is charged for the rope node and the string it appends, and a rope for its flattened copy once, when it is flattened. This does not count the whole heap: ordinary objects and closures, stack storage, small allocations, and unmetered intrinsics and host API objects can still grow outside the budget. The browser keeps its own heap.
+// A native sandbox budgets persistent storage from the built-ins wrapped here and goja's metered array and string allocations, including replacement capture lists. They check each new backing store before allocating and charge its storage until Go finds it unreachable. A concatenation is charged for the rope node and the string it appends, and a rope for its flattened copy once, when it is flattened. This does not count the whole heap: ordinary objects and closures, stack storage, allocations below heldMin, Map/Set entries, property-enumeration arrays, split and JSON.parse results, string case-conversion copies, regexp metadata, and host API objects can still grow outside the budget. The browser keeps its own heap.
 
 // memory is what the built-ins hold for a sandbox.
 type memory struct {
@@ -160,7 +160,7 @@ func (r *runtime) limitMemory(limit int64) {
 			r.checkMemory(mul(to-from, valueSize))
 		}
 		r.callOrig(orig, this, []js.Value{call.Argument(0), start, end})
-		if !r.vm.ChargeArray(o) {
+		if !js.ChargeArray(r.vm, o) {
 			hold(r, o, mul(to, valueSize))
 		}
 		return o
@@ -207,7 +207,7 @@ func (r *runtime) limitMemory(limit int64) {
 	r.wrap(object(g, "Function", "prototype"), "apply", arguments(1))
 	r.wrap(object(g, "Reflect"), "apply", arguments(2))
 	r.wrap(object(g, "Reflect"), "construct", arguments(1))
-	r.vm.SetAllocationHooks(r.checkMemory, func(start *byte, bytes int64) { hold(r, start, bytes) })
+	js.SetAllocationHooks(r.vm, r.checkMemory, func(start *byte, bytes int64) { hold(r, start, bytes) })
 }
 
 // object is the object at path from o.
@@ -762,7 +762,7 @@ func (r *runtime) holdString(v js.Value) js.Value {
 
 // holdArray charges the values of v, an array a built-in made, and returns it.
 func (r *runtime) holdArray(v js.Value) js.Value {
-	if o, ok := v.(*js.Object); ok && !r.vm.ChargeArray(o) {
+	if o, ok := v.(*js.Object); ok && !js.ChargeArray(r.vm, o) {
 		hold(r, o, mul(r.lengthOf(o), valueSize))
 	}
 	return v

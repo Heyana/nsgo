@@ -102,9 +102,36 @@ func (r *Runtime) SetAsyncContextTracker(tracker AsyncContextTracker) {
 }
 
 func (r *Runtime) SetPromiseJobFilter(filter func(any) bool) { r.vm.SetPromiseJobFilter(filter) }
-func (r *Runtime) DrainPromiseJobs() error                   { return wrapError(r.vm.DrainPromiseJobs()) }
-func (r *Runtime) Interrupt(value any)                       { r.vm.Interrupt(value) }
-func (r *Runtime) ClearInterrupt()                           { r.vm.ClearInterrupt() }
+
+// SetAllocationHooks installs the native sandbox's storage meter. Translate
+// exceptions from callbacks just as native JavaScript functions do.
+func SetAllocationHooks(r *Runtime, check func(int64), charge func(*byte, int64)) {
+	var nativeCheck func(int64)
+	if check != nil {
+		nativeCheck = func(size int64) {
+			defer unwrapPanic()
+			check(size)
+		}
+	}
+	var nativeCharge func(*byte, int64)
+	if charge != nil {
+		nativeCharge = func(start *byte, size int64) {
+			defer unwrapPanic()
+			charge(start, size)
+		}
+	}
+	r.vm.SetAllocationHooks(nativeCheck, nativeCharge)
+}
+
+// ChargeArray accounts for storage a host wrapper checked before allocating.
+func ChargeArray(r *Runtime, value Value) bool {
+	defer wrapPanic()
+	return r.vm.ChargeArray(rawValue(value))
+}
+
+func (r *Runtime) DrainPromiseJobs() error { return wrapError(r.vm.DrainPromiseJobs()) }
+func (r *Runtime) Interrupt(value any)     { r.vm.Interrupt(value) }
+func (r *Runtime) ClearInterrupt()         { r.vm.ClearInterrupt() }
 
 // Close has no native resources to release on Goja.
 func (*Runtime) Close() {}
