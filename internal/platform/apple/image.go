@@ -107,7 +107,7 @@ type request struct {
 	scale    float64 // the image's pixels per point at its natural size
 	blur     float64 // points
 	sampling driver.ImageSampling
-	still bool    // decode only the first frame
+	still    bool // decode only the first frame
 }
 
 // pointsPerPixel returns how many points one pixel of a w×h image covers
