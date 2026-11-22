@@ -286,8 +286,7 @@ ui.SidebarShell.ResizeLabel ui.SidebarShell.RightResizeLabel ui.SidebarShell.Tog
 ui.Stepper.CompleteLabel ui.Toasts.CloseLabel ui.Tree.ToggleLabel
 `)
 
-// isTextProp also covers a part’s words, such as SearchPlaceholder and
-// IncrementLabel, so adding a prefix cannot bypass the reactive-text guard.
+// isTextProp also covers a part’s words, such as SearchPlaceholder and IncrementLabel, so adding a prefix cannot bypass the reactive-text guard.
 func isTextProp(name string) bool {
 	for _, suffix := range []string{"Label", "Title", "Description", "Hint", "Placeholder", "Text", "Footer", "Detail", "Empty"} {
 		if strings.HasSuffix(name, suffix) {

@@ -43,9 +43,7 @@ type NumberInput struct {
 	LabelFunc func() string
 	// ControlsRight is read as it is made.
 	ControlsRight bool
-	// Format writes a value it did not type, the shortest text that reads
-	// back as it when nil; Parse reads the field, as a number when nil.
-	// Changes to signals Format reads refresh the shown value outside editing.
+	// Format writes a value it did not type, the shortest text that reads back as it when nil; Parse reads the field, as a number when nil. Changes to signals Format reads refresh the shown value outside editing.
 	Format func(value float64) string
 	Parse  func(text string) (float64, bool)
 	// OnCommit leaves the field's text alone as the user types and takes
@@ -405,9 +403,7 @@ func (n NumberInput) Render(cx *core.Scope) core.Node {
 	}
 	focused := core.NewSignal(cx, false)
 	if n.Format != nil {
-		// Formatting may read the locale or another signal independently of
-		// Value. Defer rewriting an active draft until editing ends; retain an
-		// invalid draft when neither its held value nor its formatting changed.
+		// Formatting may read the locale or another signal independently of Value. Defer rewriting an active draft until editing ends; retain an invalid draft when neither its held value nor its formatting changed.
 		formatted := c.text.GetUntracked()
 		cx.Effect(func() {
 			if focused.Get() {

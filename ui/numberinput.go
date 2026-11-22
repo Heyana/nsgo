@@ -27,9 +27,7 @@ type NumberInput struct {
 	// Step is what the buttons, the keys and the scrub change the value
 	// by, and what it is rounded to from Min; 1 when 0.
 	Step float64
-	// Format writes the value, with as many decimals as Step has when
-	// nil; Parse reads it back, strconv.ParseFloat's when nil.
-	// Changes to signals Format reads refresh the shown value outside editing.
+	// Format writes the value, with as many decimals as Step has when nil; Parse reads it back, strconv.ParseFloat's when nil. Changes to signals Format reads refresh the shown value outside editing.
 	Format func(value float64) string
 	Parse  func(text string) (float64, bool)
 	// Leading is the scrub handle's icon, or LeadingText its text, such

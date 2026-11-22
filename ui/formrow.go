@@ -49,8 +49,7 @@ type FormRow struct {
 	OnPress  func()
 	Disabled func() bool
 	Variant  FormRowVariant
-	// Label names a pressable row for assistive technology, Title by
-	// default.
+	// Label names a pressable row for assistive technology, Title by default.
 	Label string
 	// LabelFunc binds an explicit accessible name; an empty name uses Title.
 	LabelFunc func() string
