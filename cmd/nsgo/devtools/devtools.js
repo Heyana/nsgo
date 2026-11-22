@@ -338,6 +338,7 @@ function onMessage(m) {
     case "surfaces": {
       const sel = $("surface");
       const ids = m.data || [];
+      const fresh = state.surface < 0;
       sel.replaceChildren(...ids.map((id, i) => el("option", { value: id }, i === 0 ? "Main window" : `Window ${id}`)));
       // The first surface the app has, unless the page shows one it still has; then what the tab shows of it.
       if (!ids.includes(state.surface) && ids.length) {
@@ -346,16 +347,34 @@ function onMessage(m) {
         showTab(state.tab);
       }
       sel.value = state.surface;
-      send({ op: "highlight", on: $("highlight").checked });
-      // The audit may show already, from nsgo dev -layout or the device's keys: the app tells.
-      send({ op: "watch-layout" });
+      if (fresh) {
+        send({ op: "highlight", on: $("highlight").checked });
+        // The audit may show already, from nsgo dev -layout or the device's keys: the app tells.
+        send({ op: "watch-layout" });
+      }
       break;
     }
     case "elements": if (m.surface === state.surface) { state.elements = m.data; renderElements(); } break;
     case "owners": state.owners = m.data; renderOwners(); break;
-    case "hover": { const r = state.rows.get(m.id); for (const x of state.rows.values()) x.row.style.outline = ""; if (r) { r.row.style.outline = "1px solid var(--accent)"; r.row.scrollIntoView({ block: "nearest" }); } break; }
-    case "picked": state.picking = false; $("pick").classList.remove("on"); showTab("elements"); send({ op: "elements" }); state.selected = m.id; setTimeout(() => select(m.id), 300); break;
-    case "layout": if (m.surface === state.surface) $("layout").checked = !!m.data; break;
+    case "hover": { if (m.surface !== state.surface) break; const r = state.rows.get(m.id); for (const x of state.rows.values()) x.row.style.outline = ""; if (r) { r.row.style.outline = "1px solid var(--accent)"; r.row.scrollIntoView({ block: "nearest" }); } break; }
+    case "picked": {
+      state.picking = false;
+      $("pick").classList.remove("on");
+      if (m.surface !== undefined && m.surface !== state.surface) {
+        state.surface = m.surface;
+        const sel = $("surface");
+        if (!Array.from(sel.options).some((o) => Number(o.value) === m.surface)) send({ op: "surfaces" });
+        sel.value = m.surface;
+        state.elements = null;
+        send({ op: "watch-layout" });
+      }
+      showTab("elements");
+      send({ op: "elements" });
+      state.selected = m.id;
+      setTimeout(() => select(m.id), 300);
+      break;
+    }
+    case "layout": if (m.surface === state.surface || m.surface < 0) $("layout").checked = !!m.data; break;
     case "step": addStep(m.step); break;
     case "set": if (m.error) alert(m.error); send({ op: "owners" }); break;
     case "hot": if (state.tab === "profiler") renderHot(m.hot); break;
@@ -400,7 +419,7 @@ for (const b of document.querySelectorAll("#tabs button")) b.addEventListener("c
 $("surface").addEventListener("change", (e) => { state.surface = Number(e.target.value); state.elements = null; showTab(state.tab); send({ op: "watch-layout" }); });
 $("pick").addEventListener("click", () => { state.picking = !state.picking; $("pick").classList.toggle("on", state.picking); send({ op: "pick", on: state.picking }); });
 $("highlight").addEventListener("change", (e) => send({ op: "highlight", on: e.target.checked }));
-// The app answers whether the audit shows, which a window without DevTools' overlay never does.
+// The app answers whether the audit shows.
 $("layout").addEventListener("change", (e) => { send({ op: "layout", on: e.target.checked }); send({ op: "watch-layout" }); });
 $("editor").value = localStorage.getItem("nsgo-devtools-editor") ?? "vscode";
 $("editor").addEventListener("change", (e) => { localStorage.setItem("nsgo-devtools-editor", e.target.value); renderElements(); renderOwners(); });

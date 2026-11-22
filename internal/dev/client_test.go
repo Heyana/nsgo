@@ -50,6 +50,8 @@ func TestDevClientStartsDevToolsOnceBeforeTheGraph(t *testing.T) {
 		devServer, devDevtools, devtools.ServerToken = "", "", ""
 		engine.Trace, driver.Applied = nil, nil
 		devtools.Enabled, driver.TraceCauses = false, false
+		devtools.MountOverlay = nil
+		devOverlays.Store(nil)
 	})
 
 	// As nsgo.Run does before it starts the engine.
@@ -421,12 +423,15 @@ func TestDevWrapOverlayAndDevToolsCommands(t *testing.T) {
 	devChannel = nil
 	start = sync.OnceFunc(func() {
 		startDevTools(server.URL)
+		startDevOverlay(devHighlight == "1", parseDevLayout(devLayout))
 	})
 	t.Cleanup(func() {
 		devServer, devDevtools, devHighlight, devLayout, devtools.ServerToken = prevServer, prevDevtools, prevHighlight, prevLayout, prevToken
 		start, devChannel = prevStart, prevChannel
 		engine.Trace, driver.Applied = nil, nil
 		devtools.Enabled, driver.TraceCauses = false, false
+		devtools.MountOverlay = nil
+		devOverlays.Store(nil)
 	})
 
 	Start()

@@ -354,13 +354,13 @@ func TestPickHitsTransformedAndStickyViewsWhereTheyDraw(t *testing.T) {
 	var picked uint32
 	h.tree.highlights.picked = func(id uint32) { picked = id }
 	h.tree.highlights.picking.Set(true)
-	h.tree.pickAt(Point{X: 120, Y: 70}, true)
+	h.tree.pickIn(h.tree.view, Point{X: 120, Y: 70}, true)
 	if NodeID(picked) != shifted.id {
 		t.Fatalf("picked at drawn point = %d, want shifted (%d)", picked, shifted.id)
 	}
 	picked = 0
 	h.tree.highlights.picking.Set(true)
-	h.tree.pickAt(Point{X: 20, Y: 20}, true)
+	h.tree.pickIn(h.tree.view, Point{X: 20, Y: 20}, true)
 	if NodeID(picked) == shifted.id {
 		t.Fatalf("picked at untransformed layout point hit shifted (%d)", shifted.id)
 	}
@@ -370,7 +370,7 @@ func TestPickHitsTransformedAndStickyViewsWhereTheyDraw(t *testing.T) {
 	h.commit()
 	picked = 0
 	h.tree.highlights.picking.Set(true)
-	h.tree.pickAt(Point{X: 50, Y: 115}, true)
+	h.tree.pickIn(h.tree.view, Point{X: 50, Y: 115}, true)
 	if NodeID(picked) != header.id {
 		t.Fatalf("picked at pinned sticky position = %d, want header (%d)", picked, header.id)
 	}

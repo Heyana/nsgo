@@ -313,8 +313,13 @@ func (t *Tree) Graph() int {
 // devSurface is a tree as DevTools read and drive it.
 type devSurface struct{ t *Tree }
 
-func (s *devSurface) ID() int                    { return int(s.t.id) }
-func (s *devSurface) Graph() int                 { return s.t.rt.dev.graph }
+func (s *devSurface) ID() int { return int(s.t.id) }
+func (s *devSurface) Graph() int {
+	if s.t.rt.dev == nil {
+		return 0
+	}
+	return s.t.rt.dev.graph
+}
 func (s *devSurface) Post(fn func())             { s.t.root.Post(fn) }
 func (s *devSurface) Highlight(on bool)          { s.highlights(func(h *highlights) { h.updates = on }) }
 func (s *devSurface) Follow(f devtools.Follower) { s.t.follower = f }
@@ -339,7 +344,7 @@ func (s *devSurface) WatchLayout(shown func(bool)) {
 }
 
 func (s *devSurface) Inspect(id uint32) {
-	s.highlights(func(h *highlights) { h.selected = s.t.node(NodeID(id)); h.inspect.Set(s.t.inspected(h.selected)) })
+	s.highlights(func(h *highlights) { h.setInspect(s.t, s.t.node(NodeID(id))) })
 }
 
 func (s *devSurface) Pick(on bool, hover, picked func(id uint32)) {
@@ -347,7 +352,7 @@ func (s *devSurface) Pick(on bool, hover, picked func(id uint32)) {
 		h.hover, h.picked = hover, picked
 		h.picking.Set(on)
 		if !on {
-			h.inspect.Set(inspection{})
+			h.clearInspect()
 		}
 	})
 }
@@ -364,6 +369,9 @@ func (s *devSurface) Record(on bool, step func(devtools.Step)) {
 
 func (s *devSurface) Set(signal uint64, value string) error {
 	d := s.t.rt.dev
+	if d == nil {
+		return fmt.Errorf("no signal %d", signal)
+	}
 	v := d.byID[signal]
 	switch {
 	case v == nil || v.gone():
@@ -375,6 +383,9 @@ func (s *devSurface) Set(signal uint64, value string) error {
 }
 
 func (s *devSurface) Hot(n int) []devtools.Computation {
+	if s.t.rt.dev == nil {
+		return nil
+	}
 	// Computations of one kind made at one site, as a list's rows' bindings, count as one.
 	runs := map[ranKey]*devtools.Computation{}
 	for c, dc := range s.t.rt.dev.comps {
@@ -409,15 +420,7 @@ func (s *devSurface) Hot(n int) []devtools.Computation {
 // ownedByDevTools reports whether o is in DevTools' own overlay's scope.
 func (s *devSurface) ownedByDevTools(o *Scope) bool {
 	h := s.t.highlights
-	if h == nil {
-		return false
-	}
-	for ; o != nil; o = o.parent {
-		if o == h.owner {
-			return true
-		}
-	}
-	return false
+	return h != nil && h.ownsScope(o)
 }
 
 func compKindName(k compKind) string {
@@ -556,6 +559,9 @@ const maxOwners = 4000
 // Owners returns the graph's owners from its root, the values and computations each holds; owners holding none and none under them are left out.
 func (s *devSurface) Owners() devtools.Owner {
 	d := s.t.rt.dev
+	if d == nil {
+		return devtools.Owner{Name: "root"}
+	}
 	d.sweep()
 	count := 0
 	var walk func(o *Scope) (devtools.Owner, bool)
@@ -585,7 +591,7 @@ func (s *devSurface) Owners() devtools.Owner {
 			out.Values = append(out.Values, devtools.Value{ID: v.id, Site: v.site, Type: v.typ, Text: text, Editable: v.set != nil, Readers: v.readers()})
 		}
 		for c := o.first; c != nil && count < maxOwners; c = c.next {
-			if h := s.t.highlights; h != nil && c == h.owner {
+			if h := s.t.highlights; h != nil && h.ownsScope(c) {
 				continue
 			}
 			if child, ok := walk(c); ok {

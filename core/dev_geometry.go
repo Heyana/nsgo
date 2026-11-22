@@ -101,23 +101,36 @@ func (t *Tree) acceptDevGeometry(snapshot driver.GeometrySnapshot) {
 		return
 	}
 	h := t.highlights
-	if h.selected == nil && len(h.boxes.GetUntracked()) == 0 && !h.audit.shown.GetUntracked() {
+	outlined := len(h.boxes.GetUntracked()) > 0
+	for _, sh := range h.sheets {
+		outlined = outlined || len(sh.boxes.GetUntracked()) > 0
+	}
+	if h.selected == nil && !outlined && !h.audit.shown.GetUntracked() {
 		return
 	}
-	if h.selected != nil && (h.selected.deleted || t.node(h.selected.id) != h.selected) {
-		h.selected = nil
+	selected := h.selected
+	if selected != nil && (selected.deleted || t.node(selected.id) != selected) {
+		selected = nil
 	}
-	h.inspect.Set(t.inspected(h.selected))
-	if len(h.boxes.GetUntracked()) > 0 {
-		h.boxes.Update(func(boxes []highlightBox) []highlightBox {
+	h.setInspect(t, selected)
+	// Each layer's outlines follow their views, a presented sheet's in the sheet's own space.
+	follow := func(sig *Signal[[]highlightBox], space driver.Matrix3D) {
+		if len(sig.GetUntracked()) == 0 {
+			return
+		}
+		sig.Update(func(boxes []highlightBox) []highlightBox {
 			out := append([]highlightBox(nil), boxes...)
 			for i := range out {
 				if n := out[i].target; n != nil && !n.deleted && t.node(n.id) == n {
-					out[i].bounds = app[n.id]
+					out[i].bounds = transformBounds(space, app[n.id])
 				}
 			}
 			return out
 		})
+	}
+	follow(h.boxes, driver.Identity3D)
+	for _, sh := range h.sheets {
+		follow(sh.boxes, t.devSpace(state.snapshot, sh.modal))
 	}
 	t.framesMoved, t.changed = true, true
 }

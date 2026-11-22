@@ -242,6 +242,8 @@ type Tree struct {
 	lastShared bool
 	// highlights, while an UpdateHighlights is mounted, outlines what each commit changed.
 	highlights *highlights
+	// devSurface is this tree's devtools.Surface, shared between devtools.Register and devtools.MountOverlay.
+	devSurface *devSurface
 	// record, while DevTools record a test, hears what the user does; devScrolls holds each scroll view's offset until the scroll is a step (devFlushScrolls).
 	record     func(devtools.Step)
 	devScrolls map[*node]Point
@@ -832,12 +834,15 @@ func newTree(root *Scope, text driver.TextEngine, id uint32) *Tree {
 	root.addCleanup(func() { t.discard(t.view) })
 	if root.rt.dev != nil {
 		// An app that opens windows has a first tree of its own that shows no view (RootOptions.Windows): DevTools pages leave it out, while the automation's agent follows it for the app's alerts and main menu.
-		s := &devSurface{t}
-		devtools.Register(s, root.rt.windows == nil || root.rt.tree != nil)
-		root.addCleanup(func() { devtools.Unregister(s) })
+		t.devSurface = &devSurface{t}
+		devtools.Register(t.devSurface, t.listed())
+		root.addCleanup(func() { devtools.Unregister(t.devSurface) })
 	}
 	return t
 }
+
+// listed reports whether t shows a view of its own, as DevTools list surfaces: every tree except the hidden app tree of an app that opens windows.
+func (t *Tree) listed() bool { return t.rt.windows == nil || t.id != 0 }
 
 // Mount builds what app returns as the root view's content.
 func (t *Tree) Mount(app func(cx *Scope) Node) {
@@ -845,6 +850,22 @@ func (t *Tree) Mount(app func(cx *Scope) Node) {
 		t.rt.rootView = app
 	}
 	t.within(t.root, func() {
+		if fn := devtools.MountOverlay; fn != nil && t.root.rt.post != nil && t.listed() && t.highlights == nil {
+			if t.devSurface == nil {
+				t.devSurface = &devSurface{t}
+			}
+			if raw, mounted, cleanup := fn(t.devSurface); raw != nil {
+				if n, ok := raw.(Node); ok {
+					t.mount(t.root, t.view, n)
+				}
+				if mounted != nil {
+					mounted()
+				}
+				if cleanup != nil {
+					t.root.addCleanup(cleanup)
+				}
+			}
+		}
 		t.mount(t.root, t.view, Func(app))
 	})
 }

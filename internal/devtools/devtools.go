@@ -14,6 +14,9 @@ const OverlayTestID = "nsgo-update-highlights"
 // Enabled has core record what DevTools show, and register its trees: nsgo's dev client sets it under nsgo dev -devtools, -automation and -trace, before any graph starts. While it is unset, core records nothing and pays one check where it would.
 var Enabled bool
 
+// MountOverlay, set by nsgo's dev client in nsgodev builds under -devtools, -highlight or -layout, returns the core.Node (core.UpdateHighlights) to mount on each listed surface s as its tree mounts, an optional mounted callback run right after it mounts, and an optional cleanup run when s's root scope disposes, all on s's graph goroutine. Leaving it nil in release builds keeps DevTools' overlay unlinked from core.
+var MountOverlay func(s Surface) (node any, mounted func(), cleanup func())
+
 // ScriptSite, which tsx sets while Enabled, is the line of TSX its JS runs now, through the bundles' source maps; ok is false while none runs. A site that falls in tsx's Go code takes it, so DevTools name the app's TSX rather than the Go that ran it.
 var ScriptSite func() (file string, line int, ok bool)
 

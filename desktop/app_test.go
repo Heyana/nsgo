@@ -7,6 +7,8 @@ import (
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/desktop"
+	"github.com/nsgo-dev/nsgo/internal/devtools"
+	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -192,5 +194,63 @@ func TestMenuIconsRecordedInMenus(t *testing.T) {
 	app.Settle()
 	if len(app.PopupMenu) != 1 || app.PopupMenu[0].Icon.SVG != svg {
 		t.Errorf("PopupMenu = %+v", app.PopupMenu)
+	}
+}
+
+// desktop.OpenWindow and desktop.OpenPanel each mount DevTools' overlay when devtools.MountOverlay is installed, and unregister cleanly on Close.
+func TestDesktopOpenWindowAndPanelMountDevToolsOverlay(t *testing.T) {
+	prev := devtools.MountOverlay
+	var mounted, cleaned []int
+	devtools.MountOverlay = func(s devtools.Surface) (any, func(), func()) {
+		return core.UpdateHighlights{NoUpdates: true, Layout: core.LayoutAudit{Bounds: true}},
+			func() { mounted = append(mounted, s.ID()) },
+			func() { cleaned = append(cleaned, s.ID()) }
+	}
+	t.Cleanup(func() { devtools.MountOverlay = prev })
+
+	root := core.NewRoot(core.RootOptions{Post: func(fn func()) { fn() }, Windows: &core.WindowOptions{Width: 400, Height: 300}})
+	app := core.NewTree(root, core.ApproxTextEngine{})
+	defer root.Dispose()
+
+	var mainWin, secWin, panel *desktop.Window
+	app.Mount(core.AppRoot(func(cx *core.Scope) {
+		mainWin = desktop.OpenWindow(cx, desktop.WindowOptions{Title: "Main"}, func(cx *core.Scope) core.Node {
+			return core.View{TestID: "main"}
+		})
+		desktop.SetMainWindow(cx, mainWin)
+		secWin = desktop.OpenWindow(cx, desktop.WindowOptions{Title: "Settings"}, func(cx *core.Scope) core.Node {
+			return core.View{TestID: "settings"}
+		})
+		panel = desktop.OpenPanel(cx, desktop.PanelOptions{Width: 280, Height: 180}, func(cx *core.Scope) core.Node {
+			return core.View{TestID: "panel"}
+		})
+	}))
+	app.Commit()
+
+	if len(mounted) != 3 {
+		t.Fatalf("mounted overlays on surfaces %v, want 3 (main window, secondary window, panel — excluding hidden app tree 0)", mounted)
+	}
+	if slices.Contains(mounted, 0) {
+		t.Fatalf("mounted overlay on hidden app coordinator tree 0: %v", mounted)
+	}
+	for _, s := range app.Surfaces() {
+		b := s.Commit()
+		foundOverlay := false
+		if b != nil {
+			for _, it := range b.Items {
+				if it.Kind == driver.ItemViewProps && it.ViewProps != nil && it.ViewProps.TestID == devtools.OverlayTestID {
+					foundOverlay = true
+				}
+			}
+		}
+		if !foundOverlay {
+			t.Errorf("surface %d (%v) did not mount DevTools' overlay", s.ID(), s.Window())
+		}
+	}
+
+	secWin.Close()
+	panel.Close()
+	if len(cleaned) != 2 {
+		t.Fatalf("cleaned up %v after closing secondary window and panel, want 2", cleaned)
 	}
 }

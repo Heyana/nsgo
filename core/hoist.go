@@ -371,6 +371,9 @@ func (t *Tree) mountModal(cx *Scope, parent *node, m Modal) {
 		for _, c := range m.Children {
 			t.mount(inner, n, c)
 		}
+		if h := t.highlights; h != nil && h.mountSheet != nil && (m.Presentation == ModalPageSheet || m.Presentation == ModalFormSheet) {
+			h.mountSheet(inner, n)
+		}
 	})
 }
 

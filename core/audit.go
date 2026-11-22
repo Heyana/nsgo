@@ -60,19 +60,20 @@ type layoutAudit struct {
 	boxes    []auditBox
 }
 
-// newLayoutAudit starts the audit as l says, under DevTools' overlay's scope cx, binding auditKey when it shows.
-func newLayoutAudit(cx *Scope, l LayoutAudit) *layoutAudit {
+// newLayoutAudit starts the audit as l says, under DevTools' overlay's scope cx, binding auditKey when l configures bounds or a grid.
+func newLayoutAudit(cx *Scope, l LayoutAudit, hidden bool) *layoutAudit {
 	grid := Points(0)
 	if l.Grid > 0 {
 		grid = max(l.Grid, minAuditGrid)
 	}
-	a := &layoutAudit{owner: cx, shown: NewSignal(cx, l.Bounds || grid > 0), bounds: NewSignal(cx, l.Bounds), ruler: NewSignal(cx, false),
+	configured := l.Bounds || grid > 0
+	a := &layoutAudit{owner: cx, shown: NewSignal(cx, configured && !hidden), bounds: NewSignal(cx, l.Bounds), ruler: NewSignal(cx, false),
 		grid: NewSignal(cx, grid), step: defaultAuditGrid, m: NewSignal(cx, measurement{}), cursor: NewSignal(cx, rulerCursor{}),
 		measureBtn: new(Ref), frames: NewSignal(cx, uint64(0))}
 	if grid > 0 {
 		a.step = grid
 	}
-	if a.shown.GetUntracked() {
+	if configured {
 		cx.OnKey(auditKey, func() { a.show(!a.shown.GetUntracked()) })
 	}
 	return a
@@ -153,20 +154,30 @@ type auditBox struct {
 
 // auditBoxes appends the box of each view the tree shows, from the root view, as DevTools list them (devChildren). It leaves out hidden views and what they hold (Display None, Visibility Hidden and attachments a text's line limit cuts off), the views the core makes for itself, such as scroll bars' hosts, what the platform shows apart from the surface (an input's accessory, a screen header's views and a sheet it presents) and modals that went.
 func (t *Tree) auditBoxes(out []auditBox) []auditBox {
+	return t.auditBoxesFrom(t.view, out)
+}
+
+// auditBoxesFrom appends the boxes of root and its shown views in root's coordinate space, leaving out nested platform-presented sheets and DevTools' own overlays. Displayed geometry is in the surface's coordinates, which a presented sheet's own space is moved from (devSpace).
+func (t *Tree) auditBoxesFrom(root *node, out []auditBox) []auditBox {
 	geometry := t.devGeometryFrame()
-	surface := Bounds{Size: t.view.frame.Size}
+	space := t.devSpace(geometry, root)
+	surface := Bounds{Size: root.frame.Size}
 	var visit func(n *node, clip Bounds, invisible bool)
 	visit = func(n *node, clip Bounds, invisible bool) {
-		if !audited(n) {
+		if n != root && !audited(n) {
 			return
 		}
-		if n.hoist != nil {
+		if n == root && (n.hidden || n.style.Display == DisplayNone) {
+			return
+		}
+		// An overlay or a modal is its host's native child, outside what clips and hides the views around it.
+		if n != root && n.hoist != nil {
 			clip, invisible = surface, false
 		}
 		// Visibility Hidden hides what a view holds too, as the native view does and as hit testing reads it.
 		invisible = invisible || n.style.Visibility == VisibilityHidden
-		m, size := geometry.Matrices[n.id], geometry.Sizes[n.id]
-		b := geometry.Bounds[n.id]
+		m, size := space.Mul(geometry.Matrices[n.id]), geometry.Sizes[n.id]
+		b := transformBounds(space, geometry.Bounds[n.id])
 		box := devBoxEdges(n)
 		if !invisible {
 			out = append(out, auditBox{bounds: b, clip: clip, box: box, matrix: m, size: size})
@@ -175,7 +186,7 @@ func (t *Tree) auditBoxes(out []auditBox) []auditBox {
 		inner := clipTo(clip, b, x, y)
 		t.devChildren(n, func(c *node) { visit(c, inner, invisible) })
 	}
-	visit(t.view, surface, false)
+	visit(root, surface, false)
 	return out
 }
 
@@ -320,10 +331,23 @@ func auditHidden() bool { return true }
 
 // auditLayer is the audit on DevTools' overlay while it shows: a canvas with the drawing, which takes no pointer, and the readout, or while the ruler measures, an overlay above it taking every press.
 func (t *Tree) auditLayer(a *layoutAudit) Node {
+	return t.auditLayerIn(a, t.view, nil, nil, &a.boxes)
+}
+
+// auditLayerIn is auditLayer scoped to root (the surface's root view or a platform-presented sheet modal), reading its size and safe-area insets from sizeFn and insetsFn (defaulting to Env.Window and Env.SafeArea).
+func (t *Tree) auditLayerIn(a *layoutAudit, root *node, sizeFn func() Size, insetsFn func() Edges, boxes *[]auditBox) Node {
 	return Show{When: a.shown.Get, Then: func(cx *Scope) Node {
+		getSize := sizeFn
+		if getSize == nil {
+			getSize = cx.Env().Window
+		}
+		getInsets := insetsFn
+		if getInsets == nil {
+			getInsets = cx.Env().SafeArea
+		}
 		var seen Size
 		cx.Effect(func() {
-			size := cx.Env().Window()
+			size := getSize()
 			if seen != (Size{}) && size != seen {
 				a.m.Set(measurement{})
 				if c := a.cursor.GetUntracked(); c.active {
@@ -333,27 +357,42 @@ func (t *Tree) auditLayer(a *layoutAudit) Node {
 			seen = size
 		})
 		draw := func(d *Drawing, size Size) {
-			a.boxes = a.boxes[:0]
+			*boxes = (*boxes)[:0]
 			if a.bounds.Get() {
 				a.frames.Get()
-				a.boxes = t.auditBoxes(a.boxes)
+				if root == t.view {
+					*boxes = t.auditBoxes(*boxes)
+				} else {
+					*boxes = t.auditBoxesFrom(root, *boxes)
+				}
 				a.keepTicking(t)
 			} else {
 				a.stopTicking()
 			}
-			paintAudit(d, a.boxes, size, cx.Env().PixelRatio(), a.grid.Get(), a.m.Get(), a.cursor.Get())
+			paintAudit(d, *boxes, size, cx.Env().PixelRatio(), a.grid.Get(), a.m.Get(), a.cursor.Get())
+		}
+		readout := a.readout
+		measuring := a.measuring
+		if sizeFn != nil || insetsFn != nil {
+			readout = func(cx *Scope) Node { return a.readoutIn(cx, getSize, getInsets) }
+			measuring = func(cx *Scope) Node { return a.measuringIn(cx, getSize, getInsets) }
 		}
 		return View{TestID: "nsgo-layout-audit", PointerEvents: PointerEventsBoxNone, AccessibilityElementsHidden: auditHidden, Style: auditCover, Children: []Node{
 			Canvas{TestID: "nsgo-layout-canvas", Style: Style{Position: Absolute, Top: Pt(0), Left: Pt(0), Width: Pct(100), Height: Pct(100),
 				PointerEvents: PointerEventsNone}, Draw: draw},
-			Show{When: a.ruler.Get, Then: a.measuring, Else: a.readout},
+			Show{When: a.ruler.Get, Then: measuring, Else: readout},
 		}}
 	}}
 }
 
 // measuring is the ruler's overlay: what takes the presses that pick its points, under the readout. Escape and back leave it; directional keys and (where there is no pointer) a remote pan move a crosshair and Select, Enter or Space pick its point.
 func (a *layoutAudit) measuring(cx *Scope) Node {
-	viewport := func() Size { return Untracked(cx, cx.Env().Window) }
+	return a.measuringIn(cx, cx.Env().Window, cx.Env().SafeArea)
+}
+
+// measuringIn is measuring over a layer of getSize's size whose safe area getInsets reports: the surface's, or a presented sheet's.
+func (a *layoutAudit) measuringIn(cx *Scope, getSize func() Size, getInsets func() Edges) Node {
+	viewport := func() Size { return Untracked(cx, getSize) }
 	remote := func() bool { return cx.Env().Pointer() == PointerNone }
 	rulerRef := new(Ref)
 	cx.Effect(func() {
@@ -422,7 +461,7 @@ func (a *layoutAudit) measuring(cx *Scope) Node {
 	return Overlay{Topmost: true, OnCancel: a.leaveRuler, Style: auditCover, Children: []Node{
 		View{AccessibilityElementsHidden: auditHidden, Style: auditCover, Children: []Node{
 			rulerView,
-			a.readout(cx),
+			a.readoutIn(cx, getSize, getInsets),
 		}},
 	}}
 }
@@ -440,6 +479,10 @@ func (a *layoutAudit) leaveRuler() {
 
 // readout is the corner's chip: the boxes', the grid's and the ruler's buttons, the surface's size and the measurement.
 func (a *layoutAudit) readout(cx *Scope) Node {
+	return a.readoutIn(cx, cx.Env().Window, cx.Env().SafeArea)
+}
+
+func (a *layoutAudit) readoutIn(cx *Scope, getSize func() Size, getInsets func() Edges) Node {
 	text := Style{Color: auditText, FontSize: 11, FontVariant: FontTabularNums}
 	focusable := func() bool { return cx.Env().Pointer() == PointerNone && !a.ruler.Get() }
 	var measureRef *Ref
@@ -456,7 +499,7 @@ func (a *layoutAudit) readout(cx *Scope) Node {
 	}
 	return View{TestID: "nsgo-layout-readout",
 		StyleFunc: func() Style {
-			safe := cx.Env().SafeArea()
+			safe := getInsets()
 			return Style{Position: Absolute, Left: Pt(safe.Left + 8), Bottom: Pt(safe.Bottom + 8), Direction: Row,
 				AlignItems: AlignCenter, Gap: 6, Padding: Symmetric(3, 6), CornerRadius: 6, Background: RGBA(0x111111, 0.8)}
 		},
@@ -465,7 +508,7 @@ func (a *layoutAudit) readout(cx *Scope) Node {
 			auditToggle("nsgo-layout-grid", nil, focusable, func() bool { return a.grid.Get() > 0 }, a.toggleGrid, drawGridIcon),
 			auditToggle("nsgo-layout-measure", measureRef, focusable, a.ruler.Get, a.toggleRuler, drawRulerIcon),
 			Text{Style: text, ContentFunc: func() string {
-				w := cx.Env().Window()
+				w := getSize()
 				return auditNumber(w.Width) + " × " + auditNumber(w.Height)
 			}},
 			Show{When: func() bool { return displayedMeasurement(a.m.Get(), a.cursor.Get()).points == 2 }, Then: func(cx *Scope) Node {

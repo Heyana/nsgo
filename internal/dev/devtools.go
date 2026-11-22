@@ -6,9 +6,11 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
@@ -131,24 +133,58 @@ func listenDevTools(server string, out *devOut) {
 	}
 }
 
-// runDevCommand runs c on its surface's graph and sends the page what it answers.
+// runDevCommand runs c on its surface's graph (or across every surface for shared overlay modes) and sends the page what it answers.
 func runDevCommand(c devCommand, out *devOut) {
-	if c.Op == "surfaces" {
+	ctrl := devOverlays.Load()
+	switch c.Op {
+	case "surfaces":
 		var ids []int
-		for _, s := range devtools.Surfaces() {
-			ids = append(ids, s.ID())
+		if ctrl != nil {
+			ids = ctrl.surfaceIDs(nil)
+		} else {
+			for _, s := range devtools.Surfaces() {
+				ids = append(ids, s.ID())
+			}
 		}
 		out.send(devMessage{Type: "surfaces", Data: ids})
 		return
+	case "highlight":
+		if ctrl != nil {
+			ctrl.setHighlight(c.On)
+			return
+		}
+	case "layout":
+		if ctrl != nil {
+			ctrl.setLayout(c.On, out)
+			return
+		}
+	case "watch-layout":
+		if ctrl != nil {
+			ctrl.watchLayout(out, c.Surface)
+			return
+		}
+	case "pick":
+		if ctrl != nil {
+			ctrl.setPick(c.On, out)
+			return
+		}
 	}
 	var s devtools.Surface
-	for _, x := range devtools.Surfaces() {
-		if x.ID() == c.Surface {
-			s = x
+	if ctrl != nil {
+		s = ctrl.findSurface(c.Surface)
+	} else {
+		for _, x := range devtools.Surfaces() {
+			if x.ID() == c.Surface {
+				s = x
+			}
 		}
 	}
 	if s == nil {
 		out.send(devMessage{Type: "error", Surface: c.Surface, Error: "no surface " + strconv.Itoa(c.Surface)})
+		return
+	}
+	if c.Op == "inspect" && ctrl != nil {
+		ctrl.inspect(s, c.ID)
 		return
 	}
 	reply := func(m devMessage) {
@@ -241,9 +277,325 @@ func (o *devOut) run() {
 	}
 }
 
-// withDevOverlay mounts DevTools' overlay over app, outlining commits from the start under -highlight and showing the layout audit as -layout says.
-func withDevOverlay(app engine.App, highlight bool, layout core.LayoutAudit) engine.App {
-	return func(cx *core.Scope) core.Node {
-		return core.Group{core.Func(app), core.UpdateHighlights{NoUpdates: !highlight, Layout: layout}}
+// devOverlays is the process-wide DevTools overlay controller, active under -highlight, -layout or -devtools.
+var devOverlays atomic.Pointer[overlayController]
+
+// startDevOverlay installs the shared DevTools overlay controller so every surface (main window, secondary windows, panels, overlays, scenes and embedded views) mounts its own overlay wired to it.
+func startDevOverlay(highlight bool, layout core.LayoutAudit) *overlayController {
+	c := newOverlayController(highlight, layout)
+	if devDevtools == "1" && devChannel != nil {
+		c.layoutOut = devChannel
 	}
+	devOverlays.Store(c)
+	devtools.MountOverlay = c.mount
+	return c
+}
+
+// overlayController shares DevTools' overlay state (highlight updates, Pick and the layout audit) across every surface of the process, including secondary windows, panels and separate embedded-view graphs.
+type overlayController struct {
+	mu             sync.Mutex
+	surfaces       []devtools.Surface
+	devIDs         map[devtools.Surface]int
+	highlight      bool
+	layoutSpec     core.LayoutAudit
+	layoutShown    bool
+	picking        bool
+	pickOut        *devOut
+	layoutOut      *devOut
+	hoverSurface   devtools.Surface
+	inspectSurface devtools.Surface
+}
+
+func newOverlayController(highlight bool, layout core.LayoutAudit) *overlayController {
+	return &overlayController{
+		devIDs:      map[devtools.Surface]int{},
+		highlight:   highlight,
+		layoutSpec:  layout,
+		layoutShown: layout.Bounds || layout.Grid > 0,
+	}
+}
+
+// mount returns the core.UpdateHighlights node to mount on listed surface s, a mounted callback that wires s into c, and a cleanup that unregisters s when its surface closes.
+func (c *overlayController) mount(s devtools.Surface) (node any, mounted func(), cleanup func()) {
+	c.mu.Lock()
+	highlight := c.highlight
+	layout := c.layoutSpec
+	layoutShown := c.layoutShown
+	c.mu.Unlock()
+
+	opts := core.UpdateHighlights{
+		NoUpdates:    !highlight,
+		Layout:       layout,
+		LayoutHidden: !layoutShown,
+	}
+
+	mounted = func() {
+		c.mu.Lock()
+		if !slices.Contains(c.surfaces, s) {
+			c.surfaces = append(c.surfaces, s)
+		}
+		sid := c.surfaceIDLocked(s)
+		curHighlight := c.highlight
+		curLayoutShown := c.layoutShown
+		picking := c.picking
+		pickOut := c.pickOut
+		c.mu.Unlock()
+
+		s.Highlight(curHighlight)
+		s.Layout(curLayoutShown)
+		s.WatchLayout(func(on bool) { c.onSurfaceLayout(s, on) })
+		if picking {
+			c.startPickOnSurface(s, sid, pickOut)
+		}
+		c.notifySurfaces(nil)
+	}
+
+	cleanup = func() {
+		c.mu.Lock()
+		c.surfaces = slices.DeleteFunc(c.surfaces, func(x devtools.Surface) bool { return x == s })
+		delete(c.devIDs, s)
+		if c.hoverSurface == s {
+			c.hoverSurface = nil
+		}
+		if c.inspectSurface == s {
+			c.inspectSurface = nil
+		}
+		c.mu.Unlock()
+		s.WatchLayout(nil)
+		c.notifySurfaces(s)
+	}
+
+	return opts, mounted, cleanup
+}
+
+// surfaceIDLocked returns a stable unique DevTools ID for s while it lives. Single-graph surfaces keep s.ID(); another graph's surface (such as a second nsgo.NewView) whose s.ID() is already taken gets the lowest unused positive ID.
+func (c *overlayController) surfaceIDLocked(s devtools.Surface) int {
+	if id, ok := c.devIDs[s]; ok {
+		return id
+	}
+	used := func(id int) bool {
+		for _, v := range c.devIDs {
+			if v == id {
+				return true
+			}
+		}
+		return false
+	}
+	if want := s.ID(); !used(want) {
+		c.devIDs[s] = want
+		return want
+	}
+	for id := 1; ; id++ {
+		if !used(id) {
+			c.devIDs[s] = id
+			return id
+		}
+	}
+}
+
+// surfaceID returns s's DevTools surface ID.
+func (c *overlayController) surfaceID(s devtools.Surface) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.surfaceIDLocked(s)
+}
+
+// surfaceIDs returns the DevTools IDs of all listed surfaces, excluding exclude.
+func (c *overlayController) surfaceIDs(exclude devtools.Surface) []int {
+	registered := devtools.Surfaces()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	seen := map[devtools.Surface]bool{}
+	var ids []int
+	for _, s := range registered {
+		if s == exclude || seen[s] {
+			continue
+		}
+		seen[s] = true
+		ids = append(ids, c.surfaceIDLocked(s))
+	}
+	for _, s := range c.surfaces {
+		if s == exclude || seen[s] {
+			continue
+		}
+		seen[s] = true
+		ids = append(ids, c.surfaceIDLocked(s))
+	}
+	return ids
+}
+
+// findSurface returns the live surface whose DevTools ID is id, or nil.
+func (c *overlayController) findSurface(id int) devtools.Surface {
+	registered := devtools.Surfaces()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, s := range registered {
+		if c.surfaceIDLocked(s) == id {
+			return s
+		}
+	}
+	for _, s := range c.surfaces {
+		if c.surfaceIDLocked(s) == id {
+			return s
+		}
+	}
+	return nil
+}
+
+// notifySurfaces pushes the updated surface list to connected DevTools pages.
+func (c *overlayController) notifySurfaces(exclude devtools.Surface) {
+	if devDevtools != "1" || devChannel == nil {
+		return
+	}
+	devChannel.send(devMessage{Type: "surfaces", Data: c.surfaceIDs(exclude)})
+}
+
+func (c *overlayController) setHighlight(on bool) {
+	c.mu.Lock()
+	c.highlight = on
+	targets := slices.Clone(c.surfaces)
+	c.mu.Unlock()
+	for _, x := range targets {
+		s := x
+		s.Post(func() { s.Highlight(on) })
+	}
+}
+
+func (c *overlayController) setLayout(on bool, out *devOut) {
+	c.mu.Lock()
+	c.layoutShown = on
+	if out != nil {
+		c.layoutOut = out
+	}
+	notify := c.layoutOut
+	targets := slices.Clone(c.surfaces)
+	c.mu.Unlock()
+	for _, x := range targets {
+		s := x
+		s.Post(func() { s.Layout(on) })
+	}
+	if notify != nil {
+		notify.send(devMessage{Type: "layout", Surface: -1, Data: on})
+	}
+}
+
+func (c *overlayController) watchLayout(out *devOut, surface int) {
+	c.mu.Lock()
+	c.layoutOut = out
+	shown := c.layoutShown
+	c.mu.Unlock()
+	if out != nil {
+		out.send(devMessage{Type: "layout", Surface: surface, Data: shown})
+	}
+}
+
+// onSurfaceLayout propagates a layout audit toggle (such as Mod+Alt+Shift+L in any surface) to every other surface and to DevTools.
+func (c *overlayController) onSurfaceLayout(from devtools.Surface, on bool) {
+	c.mu.Lock()
+	if on == c.layoutShown {
+		c.mu.Unlock()
+		return
+	}
+	c.layoutShown = on
+	others := make([]devtools.Surface, 0, len(c.surfaces))
+	for _, x := range c.surfaces {
+		if x != from {
+			others = append(others, x)
+		}
+	}
+	out := c.layoutOut
+	c.mu.Unlock()
+	for _, x := range others {
+		s := x
+		s.Post(func() { s.Layout(on) })
+	}
+	if out != nil {
+		out.send(devMessage{Type: "layout", Surface: -1, Data: on})
+	}
+}
+
+func (c *overlayController) setPick(on bool, out *devOut) {
+	c.mu.Lock()
+	c.picking = on
+	if on {
+		c.pickOut = out
+	} else {
+		c.hoverSurface = nil
+	}
+	type target struct {
+		s  devtools.Surface
+		id int
+	}
+	targets := make([]target, len(c.surfaces))
+	for i, s := range c.surfaces {
+		targets[i] = target{s: s, id: c.surfaceIDLocked(s)}
+	}
+	c.mu.Unlock()
+	for _, t := range targets {
+		t := t
+		if on {
+			t.s.Post(func() { c.startPickOnSurface(t.s, t.id, out) })
+		} else {
+			t.s.Post(func() { t.s.Pick(false, nil, nil) })
+		}
+	}
+}
+
+func (c *overlayController) startPickOnSurface(s devtools.Surface, sid int, out *devOut) {
+	s.Pick(true,
+		func(id uint32) {
+			c.mu.Lock()
+			prev := c.hoverSurface
+			if prev != s {
+				c.hoverSurface = s
+			} else {
+				prev = nil
+			}
+			c.mu.Unlock()
+			if prev != nil {
+				prev.Post(func() { prev.Inspect(0) })
+			}
+			if out != nil {
+				out.send(devMessage{Type: "hover", Surface: sid, ID: id})
+			}
+		},
+		func(id uint32) {
+			c.mu.Lock()
+			c.picking = false
+			c.hoverSurface = nil
+			c.inspectSurface = s
+			others := make([]devtools.Surface, 0, len(c.surfaces))
+			for _, x := range c.surfaces {
+				if x != s {
+					others = append(others, x)
+				}
+			}
+			c.mu.Unlock()
+			for _, x := range others {
+				other := x
+				other.Post(func() { other.Pick(false, nil, nil) })
+			}
+			if out != nil {
+				out.send(devMessage{Type: "picked", Surface: sid, ID: id})
+			}
+		},
+	)
+}
+
+func (c *overlayController) inspect(target devtools.Surface, id uint32) {
+	c.mu.Lock()
+	var prev devtools.Surface
+	if id != 0 {
+		if c.inspectSurface != nil && c.inspectSurface != target {
+			prev = c.inspectSurface
+		}
+		c.inspectSurface = target
+	} else if c.inspectSurface == target {
+		c.inspectSurface = nil
+	}
+	c.mu.Unlock()
+	if prev != nil {
+		prev.Post(func() { prev.Inspect(0) })
+	}
+	target.Post(func() { target.Inspect(id) })
 }

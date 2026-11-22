@@ -41,7 +41,7 @@ func devServerURL() (server string, page bool) {
 	return server, false
 }
 
-// Start has the server print each commit under -trace, starts DevTools under -devtools and serves -automation's agent. nsgo.Run and nsgo.NewView call it before any graph starts, for an app's function, a root view or an embedded view, as all read what it sets; it starts them once, however many views or engines the process runs.
+// Start has the server print each commit under -trace, starts DevTools under -devtools, mounts DevTools' overlay in every surface under -highlight, -layout or -devtools, and serves -automation's agent. nsgo.Run and nsgo.NewView call it before any graph starts, for an app's function, a root view or an embedded view, as all read what it sets; it starts them once, however many views or engines the process runs.
 func Start() { start() }
 
 var start = sync.OnceFunc(func() {
@@ -58,6 +58,9 @@ var start = sync.OnceFunc(func() {
 	if devDevtools == "1" {
 		startDevTools(server)
 	}
+	if devHighlight == "1" || devDevtools == "1" || devLayout != "" {
+		startDevOverlay(devHighlight == "1", parseDevLayout(devLayout))
+	}
 	startAutomation(server)
 })
 
@@ -68,9 +71,6 @@ func Wrap(app engine.App) engine.App {
 		return app
 	}
 	Start()
-	if devHighlight == "1" || devDevtools == "1" || devLayout != "" {
-		app = withDevOverlay(app, devHighlight == "1", parseDevLayout(devLayout))
-	}
 	if page {
 		return func(cx *core.Scope) core.Node {
 			cx.Effect(func() { showPageMessages(devlocales.For(cx)) })

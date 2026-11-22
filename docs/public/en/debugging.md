@@ -119,7 +119,7 @@ go tool nsgo dev -devtools
 
 `-devtools` opens DevTools in the browser, served by `nsgo dev` for every target, a phone's app too. It shows the running app as it runs:
 
-- **Elements**: the views in a tree. Each shows the component that built it, a link to its line in your editor, the selector a test finds it by, its classes, its bounds, its margin, border and padding as laid out, and the style it sets. Hovering a row draws its margin, padding and content in the app, as a browser's DevTools do, and **Pick** lets you press a view in the app to find it in the tree.
+- **Elements**: the views in a tree. Each shows the component that built it, a link to its line in your editor, the selector a test finds it by, its classes, its bounds, its margin, border and padding as laid out, and the style it sets. Hovering a row draws its margin, padding and content in the app, as a browser's DevTools do, and **Pick** lets you press a view in any window, panel, sheet or embedded view to find it in the tree.
 - **State**: the signals your code made, under the components and computations that own them, with their values, memos' values, and how many computations read each. A value no computation reads changes nothing on screen. Strings, booleans and numbers can be edited, so you can try a state without a code change. Values NSGo made for itself are behind **NSGo's own**.
 - **Profiler**: each commit's time, split into your code before it, the commit with its layout, and applying it on the platform's main thread. It also shows the lines whose writes caused the commit, and opens on the computations it ran, the longest first. A second list names the computations that ran most in the last second, by the line that made them. Android's runtime applies batches in its own Java code, so Android commits have no platform time.
 - **Recorder**: what you press, type, clear and scroll in the app, written as an `nsgotest` test file to copy into a `_test.go` file. In Elements, **Assert shown** and **Assert text** add a check of the selected view. A text check holds the text in the language the app showed it in, so record with the language your tests run in.
@@ -136,7 +136,7 @@ DevTools read the app through `nsgo dev`'s server, which listens on your network
 go tool nsgo dev -highlight
 ```
 
-`-highlight` outlines for half a second each view a commit changed, so an update that redraws more than it should shows on screen as you use the app. The outlines draw over the app and its modals. DevTools turn them on and off while the app runs.
+`-highlight` outlines for half a second each view a commit changed, so an update that redraws more than it should shows on screen as you use the app. The outlines draw over every window, panel, modal, iOS sheet and embedded view (`nsgo.NewView`). DevTools turn them on and off while the app runs.
 
 ```sh
 go tool nsgo dev -trace
@@ -177,7 +177,7 @@ go tool nsgo dev -layout
 go tool nsgo dev -layout=bounds,grid=4
 ```
 
-`-layout` starts the app with DevTools' layout audit over it, which outlines every view: its border box in blue, the inner edge of its padding in green and the outer edge of its margin in orange, each cut where a scroll view or a view that clips hides it. `grid` draws a grid of 8 points, and `grid=N` one of N points, at least 4. Give the value after `=`: the flag alone means `bounds`.
+`-layout` starts the app with DevTools' layout audit over every window, panel, iOS sheet and embedded view, which outlines every view: its border box in blue, the inner edge of its padding in green and the outer edge of its margin in orange, each cut where a scroll view or a view that clips hides it. `grid` draws a grid of 8 points, and `grid=N` one of N points, at least 4. Give the value after `=`: the flag alone means `bounds`.
 
 A readout in the bottom corner shows the window's size in points, with buttons that turn the boxes, the grid and the ruler on and off. On Apple TV and other remote-only devices, focus reaches the readout's buttons so you can toggle them with the remote without leaving the app. While the ruler is on, presses pick two points instead of reaching the app, and the readout shows how far apart they are across and down; a third press starts again. On Apple TV or with a keyboard, directional arrows (or swiping the Siri Remote touchpad) move a crosshair across the screen and Select, Return or Space picks points, updating the distance live until the second point locks it.
 
