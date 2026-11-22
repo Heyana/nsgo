@@ -185,6 +185,14 @@ func TestWebAudioSounds(t *testing.T) {
 		t.Fatal("stopping one sound interrupted a different sound")
 	}
 	audioWait(t, "natural voice completion", func() bool { return len(a.voices) == 0 })
+	if _, err := await(a.output.Call("close")); err != nil {
+		t.Fatal(err)
+	}
+	a.play(1, &driver.AudioRequest{Volume: 1, Rate: 1, Playback: 902})
+	audioWait(t, "refused output resume", func() bool {
+		e := reports[1]
+		return e.Phase == driver.AudioPlaybackEnded && e.Playback == 902 && len(a.voices) == 0
+	})
 	a.unload(2)
 	if a.sounds[2] != nil {
 		t.Fatal("unload left a decoded sound")
