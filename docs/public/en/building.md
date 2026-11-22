@@ -18,6 +18,7 @@ Everything to hand out lands in `dist/releases`, the only directory to look in:
 | In `dist/releases` | What |
 | --- | --- |
 | `*.dmg`, `*-setup.exe`, `*.deb`, `*.pkg.tar.gz`, `*.AppImage` | [Installers](#installers) for macOS, Windows and Linux |
+| `*.AppImage.zsync` | Delta update controls for AppImageUpdate and compatible launchers |
 | `*-ios.ipa`, `*-tvos.ipa`, `*.apk` | The iOS, tvOS and Android packages, for the stores or devices |
 | `*.pkg`, `*.msix`, `*.aab`, `*.tar.gz` and `flatpak/` | A `store` build's [store packages](#store-packages) |
 | `install.sh`, `install.ps1` | Scripts installing the app from [GitHub releases](#publish-on-github) |
@@ -191,6 +192,8 @@ windows:
 ```
 
 A background PNG with a twin twice its size, such as `DMGBackground@2x.png`, stays sharp on Retina screens. The app's icon sits a quarter in from the left, Applications a quarter in from the right, each with its name centered from top to bottom, where the built-in picture draws its arrow; leave room for them in a background of your own. The Linux packages have no pictures of their own; they install the app's icon. The AppImage needs FUSE, which most distributions have, and takes GTK 4 from the system, as the packages do; its runtime is downloaded once into the user cache.
+
+AppImages embed a `gh-releases-zsync` locator using `release.github` or the GitHub remote `origin`, selecting the latest stable release and this app’s architecture. Upload each `.AppImage` with its generated `.AppImage.zsync` file. For another host, set `linux.appimage_update` to `zsync|https://example.com/latest.AppImage.zsync`, a stable URL served with HTTP range support; it also accepts `gh-releases-zsync|owner|repo|latest-pre|name-*-linux-x64.AppImage.zsync` for a prerelease channel. An explicit empty string disables embedded discovery; without a GitHub repository or a configured locator it is empty too. The `.zsync` file is still generated, separately from the signed appcast.
 
 ## Store packages
 

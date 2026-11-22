@@ -18,6 +18,7 @@ go tool nsgo build
 | `dist/releases` 中 | 内容 |
 | --- | --- |
 | `*.dmg`、`*-setup.exe`、`*.deb`、`*.pkg.tar.gz`、`*.AppImage` | macOS、Windows 和 Linux 的[安装程序](#安装程序) |
+| `*.AppImage.zsync` | AppImageUpdate 和兼容启动器使用的差量更新控制文件 |
 | `*-ios.ipa`、`*-tvos.ipa`、`*.apk` | iOS、tvOS 和 Android 的包，用于商店或设备 |
 | `*.pkg`、`*.msix`、`*.aab`、`*.tar.gz` 和 `flatpak/` | `store` 构建的[商店包](#商店包) |
 | `install.sh`、`install.ps1` | 从 [GitHub Releases](#发布到-github) 安装应用的脚本 |
@@ -175,6 +176,8 @@ windows:
 ```
 
 背景 PNG 旁放一张两倍尺寸的同名图（例如 `DMGBackground@2x.png`），在 Retina 屏幕上就能保持清晰。应用图标位于距左边四分之一处，“应用程序”位于距右边四分之一处，图标连同下方的名称整体上下居中，内置图片的箭头就画在它们之间；自定义背景时请为它们留出位置。Linux 软件包没有专门的图片，安装的是应用图标。AppImage 需要 FUSE（大多数发行版自带），与软件包一样使用系统的 GTK 4；它的运行时首次构建时下载到用户缓存中。
+
+AppImage 根据 `release.github` 或 GitHub 远程 `origin` 嵌入 `gh-releases-zsync` 定位信息，选择最新稳定 Release 中对应应用和架构的文件。发布时把生成的 `.AppImage.zsync` 与 `.AppImage` 一起上传。使用其他服务器时，把 `linux.appimage_update` 设为 `zsync|https://example.com/latest.AppImage.zsync`，该稳定 URL 的服务器须支持 HTTP 范围请求；也可设为 `gh-releases-zsync|owner|repo|latest-pre|name-*-linux-x64.AppImage.zsync`，选择预发布频道。显式空字符串会禁用内嵌发现；既没有 GitHub 仓库也未配置定位信息时同样留空。无论是否内嵌定位信息，都会生成 `.zsync` 文件，与签名 appcast 分开。
 
 ## 商店包
 

@@ -30,7 +30,7 @@ var appImageRuntimes = map[string]pinned{
 
 // linuxPackageSuffixes name the packages written beside the Linux
 // package, which none of them holds.
-var linuxPackageSuffixes = []string{".deb", ".pkg.tar.gz", ".AppImage", ".tar.gz"}
+var linuxPackageSuffixes = []string{".deb", ".pkg.tar.gz", ".AppImage", ".AppImage.zsync", ".tar.gz"}
 
 // isLinuxPackage reports whether a file at the top of the Linux package
 // is one of the packages written from it.
@@ -43,32 +43,50 @@ func isLinuxPackage(rel string) bool {
 	return false
 }
 
-// buildAppImage writes the AppImage of the Linux package in dir, built for
-// arch, Go's, beside it, and returns its path.
-func buildAppImage(ctx context.Context, p *project, dir, arch string) (string, error) {
+// buildAppImage writes the AppImage of the Linux package in dir, built for arch, Go's, beside it, and returns its path and zsync control file.
+func buildAppImage(ctx context.Context, p *project, dir, arch string) (string, string, error) {
+	update, err := p.appImageUpdate(ctx, arch)
+	if err != nil {
+		return "", "", err
+	}
 	runtimePath, err := appImageRuntimes[arch].fetch(ctx)
 	if err != nil {
-		return "", fmt.Errorf("AppImage's runtime: %w", err)
+		return "", "", fmt.Errorf("AppImage's runtime: %w", err)
 	}
 	stage(ctx, "writing the AppImage")
 	entries, err := appDirEntries(p, dir)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	root, err := sqfsTree(entries)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	image, err := squashfs(root, uint32(time.Now().Unix()))
+	now := time.Now()
+	image, err := squashfs(root, uint32(now.Unix()))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	runtime, err := os.ReadFile(runtimePath)
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	if err := setAppImageUpdate(runtime, update); err != nil {
+		return "", "", err
 	}
 	path := filepath.Join(dir, p.releaseName("linux_"+goArchName(arch), ".AppImage"))
-	return path, os.WriteFile(path, append(runtime, image...), 0o755)
+	data := append(runtime, image...)
+	if err := os.WriteFile(path, data, 0o755); err != nil {
+		return "", "", err
+	}
+	control, err := zsyncControl(data, filepath.Base(path), now)
+	if err != nil {
+		return "", "", err
+	}
+	if err := os.WriteFile(path+".zsync", control, 0o644); err != nil {
+		return "", "", err
+	}
+	return path, path + ".zsync", nil
 }
 
 // appDirEntries are the AppImage's files: the Linux package in dir, with

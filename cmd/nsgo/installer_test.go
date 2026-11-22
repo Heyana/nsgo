@@ -241,12 +241,13 @@ func TestICOFiles(t *testing.T) {
 func TestLinuxPackages(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{
-		"App":                          "binary",
-		"fonts/a.ttf":                  "font",
-		"dev.example.app.png":          "icon",
-		"dev.example.app.desktop":      "entry",
-		"app-0.9.0-linux-x64.deb":      "old",
-		"app-0.9.0-linux-x64.AppImage": "old",
+		"App":                                "binary",
+		"fonts/a.ttf":                        "font",
+		"dev.example.app.png":                "icon",
+		"dev.example.app.desktop":            "entry",
+		"app-0.9.0-linux-x64.deb":            "old",
+		"app-0.9.0-linux-x64.AppImage":       "old",
+		"app-0.9.0-linux-x64.AppImage.zsync": "old-control",
 	})
 	os.Chmod(filepath.Join(dir, "App"), 0o755)
 	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0-rc.1"}
@@ -267,7 +268,7 @@ func TestLinuxPackages(t *testing.T) {
 			t.Errorf("packages lack %s", name)
 		}
 	}
-	for _, name := range []string{"opt/app/dev.example.app.png", "opt/app/dev.example.app.desktop", "opt/app/app-0.9.0-linux-x64.deb", "opt/app/app-0.9.0-linux-x64.AppImage"} {
+	for _, name := range []string{"opt/app/dev.example.app.png", "opt/app/dev.example.app.desktop", "opt/app/app-0.9.0-linux-x64.deb", "opt/app/app-0.9.0-linux-x64.AppImage", "opt/app/app-0.9.0-linux-x64.AppImage.zsync"} {
 		if _, ok := byName[name]; ok {
 			t.Errorf("packages install %s", name)
 		}

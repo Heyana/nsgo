@@ -284,15 +284,17 @@ func TestWriteLinuxAppcastListsAllPackages(t *testing.T) {
 	}
 	dir := t.TempDir()
 	files := map[string]string{
-		"hello-1.2.0-linux-x64.deb":        "deb-bytes",
-		"hello-1.2.0-linux-x64.pkg.tar.gz": "arch-bytes",
-		"hello-1.2.0-linux-x64.AppImage":   "appimage-bytes",
+		"hello-1.2.0-linux-x64.deb":            "deb-bytes",
+		"hello-1.2.0-linux-x64.pkg.tar.gz":     "arch-bytes",
+		"hello-1.2.0-linux-x64.AppImage":       "appimage-bytes",
+		"hello-1.2.0-linux-x64.AppImage.zsync": "delta-control",
 	}
 	writeFiles(t, dir, files)
 	if err := p.releaseInstaller("linux_x64",
 		filepath.Join(dir, "hello-1.2.0-linux-x64.deb"),
 		filepath.Join(dir, "hello-1.2.0-linux-x64.pkg.tar.gz"),
 		filepath.Join(dir, "hello-1.2.0-linux-x64.AppImage"),
+		filepath.Join(dir, "hello-1.2.0-linux-x64.AppImage.zsync"),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -306,6 +308,13 @@ func TestWriteLinuxAppcastListsAllPackages(t *testing.T) {
 	}
 	if len(items) != 3 {
 		t.Fatalf("Linux appcast has %d items, want 3", len(items))
+	}
+	control := filepath.Join(p.releaseDir(), "hello-1.2.0-linux-x64.AppImage.zsync")
+	if data, err := os.ReadFile(control); err != nil || string(data) != "delta-control" {
+		t.Fatalf("released AppImage control = %q, %v", data, err)
+	}
+	if data, err := os.ReadFile(control + ".sha256"); err != nil || !strings.HasSuffix(string(data), "  hello-1.2.0-linux-x64.AppImage.zsync\n") {
+		t.Fatalf("released control checksum = %q, %v", data, err)
 	}
 	// First item stays .deb for backwards compatibility with older Linux builds.
 	first, err := updates.ParseAppcast(data)

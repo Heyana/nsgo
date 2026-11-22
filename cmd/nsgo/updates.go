@@ -498,7 +498,8 @@ func (p *project) releaseInstaller(target string, paths ...string) error {
 	}
 	var released []string
 	for _, path := range paths {
-		if path != "" {
+		// AppImage's delta control ships beside it, but is no installer.
+		if path != "" && !strings.HasSuffix(path, ".AppImage.zsync") {
 			released = append(released, filepath.Join(p.releaseDir(), filepath.Base(path)))
 		}
 	}
