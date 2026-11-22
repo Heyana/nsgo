@@ -111,3 +111,48 @@ func TestMiniUpdaterRetainsDisabledBuildPolicy(t *testing.T) {
 		u.close()
 	}
 }
+
+func TestMiniUpdaterCloseWaitsForDispatch(t *testing.T) {
+	for _, operation := range []string{"check", "timeout", "publish"} {
+		t.Run(operation, func(t *testing.T) {
+			entered, release, delivered := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			u := newMiniUpdater("Fixture", "1", updateSnapshot{supported: true}, func(driver.Event) {
+				close(entered)
+				<-release
+				close(delivered)
+			})
+			defer u.close()
+			if operation == "timeout" {
+				u.check(1)
+			}
+			go func() {
+				switch operation {
+				case "check":
+					u.snapshot.checked = true
+					u.check(1)
+				case "timeout":
+					u.expire(1)
+				case "publish":
+					u.publish(updateSnapshot{supported: true, ready: true})
+				}
+			}()
+			<-entered
+			closed := make(chan struct{})
+			go func() { u.close(); close(closed) }()
+			// A callback already in flight must finish before close returns.
+			select {
+			case <-closed:
+				close(release)
+				t.Fatal("close returned while dispatch was still running")
+			case <-time.After(20 * time.Millisecond):
+			}
+			close(release)
+			<-closed
+			select {
+			case <-delivered:
+			default:
+				t.Fatal("close did not wait for event delivery")
+			}
+		})
+	}
+}

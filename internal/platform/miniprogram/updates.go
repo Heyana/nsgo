@@ -32,6 +32,10 @@ func newMiniUpdater(app, version string, snapshot updateSnapshot, dispatch func(
 func (u *miniUpdater) state() driver.UpdaterState {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	return u.stateLocked()
+}
+
+func (u *miniUpdater) stateLocked() driver.UpdaterState {
 	managed := driver.UpdateManagedUnavailable
 	if u.snapshot.supported {
 		managed = driver.UpdateManagedSelf
@@ -66,8 +70,8 @@ func (u *miniUpdater) answer() (driver.Update, bool) {
 
 func (u *miniUpdater) check(id uint32) {
 	u.mu.Lock()
+	defer u.mu.Unlock()
 	if u.closed {
-		u.mu.Unlock()
 		return
 	}
 	answer, terminal := u.answer()
@@ -75,31 +79,30 @@ func (u *miniUpdater) check(id uint32) {
 		if _, exists := u.pending[id]; !exists {
 			u.pending[id] = time.AfterFunc(30*time.Second, func() { u.expire(id) })
 		}
-		u.mu.Unlock()
 		return
 	}
-	u.mu.Unlock()
+	// Dispatch only queues an engine event. Keep it inside the close barrier
+	// so no timeout, snapshot or immediate answer can arrive after close.
 	u.dispatch(driver.Event{Kind: driver.EventUpdate, Count: id, Data: &answer})
 }
 
 func (u *miniUpdater) expire(id uint32) {
 	u.mu.Lock()
+	defer u.mu.Unlock()
 	timer, pending := u.pending[id]
 	if !pending || u.closed {
-		u.mu.Unlock()
 		return
 	}
 	delete(u.pending, id)
 	timer.Stop()
 	answer := driver.Update{App: u.app, Current: u.version, Managed: driver.UpdateManagedSelf, Err: "updates: platform update check timed out"}
-	u.mu.Unlock()
 	u.dispatch(driver.Event{Kind: driver.EventUpdate, Count: id, Data: &answer})
 }
 
 func (u *miniUpdater) publish(snapshot updateSnapshot) {
 	u.mu.Lock()
+	defer u.mu.Unlock()
 	if u.closed {
-		u.mu.Unlock()
 		return
 	}
 	u.snapshot = snapshot
@@ -112,8 +115,7 @@ func (u *miniUpdater) publish(snapshot updateSnapshot) {
 			delete(u.pending, id)
 		}
 	}
-	u.mu.Unlock()
-	state := u.state()
+	state := u.stateLocked()
 	u.dispatch(driver.Event{Kind: driver.EventUpdate, Data: &state})
 	for _, id := range ids {
 		u.dispatch(driver.Event{Kind: driver.EventUpdate, Count: id, Data: &answer})
