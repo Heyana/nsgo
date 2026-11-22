@@ -72,8 +72,7 @@ func TestVideoControlsReportAndHoldPlayback(t *testing.T) {
 	}
 	var iconName func(uintptr) uintptr
 	purego.RegisterLibFunc(&iconName, gtkLib, "gtk_button_get_icon_name")
-	// Activate GtkMediaControls’ own button, which must report through the
-	// stream’s notification and then core’s callbacks.
+	// Activate GtkMediaControls’ own button, which must report through the stream’s notification and then core’s callbacks.
 	control := func() {
 		var button uintptr
 		w.onLoop(t, func() {

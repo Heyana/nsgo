@@ -89,8 +89,7 @@ func (s *surface) createVideo(v *view) {
 	})
 }
 
-// videoPlayback follows the element’s current state, because queued DOM
-// events may describe an earlier app command. The end’s pause is EventEnd.
+// videoPlayback follows the element’s current state, because queued DOM events may describe an earlier app command. The end’s pause is EventEnd.
 func (s *surface) videoPlayback(v *view) {
 	vd := v.video
 	if vd.el.Get("ended").Bool() {

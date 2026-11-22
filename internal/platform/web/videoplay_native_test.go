@@ -13,8 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// Trusted pointer input drives the browser’s own play button on a real media
-// element, and core receives the resulting playback callbacks.
+// Trusted pointer input drives the browser’s own play button on a real media element, and core receives the resulting playback callbacks.
 func TestVideoControlsReportAndHoldPlayback(t *testing.T) {
 	wav := make([]byte, 44+16000*20)
 	copy(wav, "RIFF")

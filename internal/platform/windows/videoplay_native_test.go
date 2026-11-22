@@ -13,8 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// videoControlsClip has no audio, so media playback needs no sound endpoint.
-// Regenerate with:
+// videoControlsClip has no audio, so media playback needs no sound endpoint. Regenerate with:
 //
 // ffmpeg -f lavfi -i testsrc2=size=32x24:rate=12:duration=8 -an -c:v libx264 -pix_fmt yuv420p -movflags +faststart testdata/video-controls.mp4
 //

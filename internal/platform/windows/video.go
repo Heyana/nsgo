@@ -396,8 +396,7 @@ func (vd *video) notified(serial uint64, event uint32, param1 uintptr, param2 ui
 	}
 }
 
-// playbackChanged reads current state rather than a possibly queued notification.
-// A natural end reports EventEnd, and app commands were recorded before the call.
+// playbackChanged reads current state rather than a possibly queued notification. A natural end reports EventEnd, and app commands were recorded before the call.
 func (vd *video) playbackChanged() {
 	if vd.engine == nil || vd.failed {
 		return

@@ -26,8 +26,7 @@ type State struct {
 	resumable bool
 }
 
-// Configure reports whether to apply the app’s Paused: when it changed, or no
-// native control or completed frame holds the play state.
+// Configure reports whether to apply the app’s Paused: when it changed, or no native control or completed frame holds the play state.
 func (p *State) Configure(pausedChanged bool) bool {
 	if pausedChanged {
 		p.held, p.ok, p.resumable = false, false, false

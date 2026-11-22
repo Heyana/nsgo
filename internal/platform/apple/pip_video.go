@@ -125,7 +125,7 @@ func (v *Video) UpdatePictureInPictureFrame(background bool) bool {
 			Release(uintptr(pixel))
 		}
 	}
-	return v.status.play.playing || time.Now().Before(f.until)
+	return v.status.play.Playing || time.Now().Before(f.until)
 }
 
 func (v *Video) showPiPVideoFrame(pixel uintptr) {
