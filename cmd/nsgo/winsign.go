@@ -32,7 +32,7 @@ const defaultTimestampURL = "http://timestamp.digicert.com"
 type windowsSigner struct {
 	// command signs a file in place, %1 standing for its path.
 	command string
-	// key and stamp sign a PE image in Go.
+	// key and stamp sign PE images and MSIX packages in Go.
 	key   *authenticode.Key
 	stamp authenticode.Stamper
 }
@@ -86,9 +86,7 @@ func (s *windowsSigner) load(p *project) error {
 	return nil
 }
 
-// signFile signs one file in place: a PE image with the certificate, which
-// carries the image's digest, or any file with the command, such as a
-// package that is not a PE image.
+// signFile signs a PE image or MSIX package in place with the certificate, or asks the command to sign another format.
 func (s *windowsSigner) signFile(ctx context.Context, path string, pe bool) error {
 	if s.command != "" {
 		if err := s.run(ctx, path); err != nil {
@@ -105,14 +103,19 @@ func (s *windowsSigner) signFile(ctx context.Context, path string, pe bool) erro
 		}
 		return nil
 	}
-	if !pe {
+	if !pe && !strings.EqualFold(filepath.Ext(path), ".msix") {
 		return nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	signed, err := authenticode.Sign(data, s.key, s.stamp)
+	var signed []byte
+	if pe {
+		signed, err = authenticode.Sign(data, s.key, s.stamp)
+	} else {
+		signed, err = authenticode.SignMSIX(data, s.key, s.stamp)
+	}
 	if err != nil {
 		return fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}

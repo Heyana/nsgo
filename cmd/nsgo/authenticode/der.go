@@ -87,7 +87,9 @@ func boolean(v bool) []byte {
 // of one whose top bit would read as a negative number's sign.
 func integer(v *big.Int) []byte {
 	b := v.Bytes()
-	if len(b) > 0 && b[0]&0x80 != 0 {
+	if len(b) == 0 {
+		b = []byte{0}
+	} else if b[0]&0x80 != 0 {
 		b = append([]byte{0}, b...)
 	}
 	return der(0x02, b)

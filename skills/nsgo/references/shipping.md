@@ -60,6 +60,8 @@ Packages land in `dist/<name>-<version>-<target>`, and everything to hand out in
 
 Use the raw Git tag prefix in `release.tag_prefix`; generated install scripts encode it for GitHub download URLs. [GitHub releases](https://nsgo.dev/docs/building.md#publish-on-github)
 
+`sign.certificate` also signs the Store channel's MSIX in Go. For installation outside the Store, match the certificate subject to `windows.store.publisher` and use a certificate the receiving Windows machine trusts; without signing settings, the Store signs the uploaded package. See [Windows signing](https://nsgo.dev/docs/building.md#sign-windows-packages).
+
 On the store channel, `-target macos` and `-target macos_universal` write one universal Mac App Store PKG. `-target android_arm64,android_x64` writes one AAB for both ABIs and needs an NDK for x86_64 ([Building](https://nsgo.dev/docs/building.md#store-packages)).
 
 Android store builds require API 36 or higher. Record outstanding store questionnaires in `compliance` and declare Apple's export compliance in `apple.info` ([Store compliance](https://nsgo.dev/docs/building.md#store-compliance)).

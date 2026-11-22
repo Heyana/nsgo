@@ -113,7 +113,7 @@ func writeMSIX(files []msixFile) ([]byte, error) {
 	blockMap.WriteString(`<BlockMap xmlns="http://schemas.microsoft.com/appx/2010/blockmap" HashMethod="http://www.w3.org/2001/04/xmlenc#sha256">` + "\n")
 	add := func(name string, data []byte) (int, error) {
 		part := msixPartName(name)
-		h := &zip.FileHeader{Name: part, Method: zip.Store, CRC32: crc32.ChecksumIEEE(data),
+		h := &zip.FileHeader{Name: part, Method: zip.Store, CreatorVersion: 45, ReaderVersion: 20, CRC32: crc32.ChecksumIEEE(data),
 			CompressedSize64: uint64(len(data)), UncompressedSize64: uint64(len(data)),
 			// 1980-01-01, the earliest a ZIP's date holds, keeps builds alike.
 			ModifiedDate: 0x0021}

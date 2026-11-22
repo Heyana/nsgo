@@ -41,7 +41,7 @@ var (
 	oidTimestampToken   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 2, 14}
 )
 
-// Key is the identity an image is signed with.
+// Key is the identity a Windows file is signed with.
 type Key struct {
 	Private *rsa.PrivateKey
 	Cert    *x509.Certificate
@@ -75,13 +75,16 @@ func indirectData(sum [sha256.Size]byte) []byte {
 // SpcIndirectDataContent's contents, without the SEQUENCE header that
 // wraps them, as Authenticode's readers check it.
 func contentValue(content []byte) []byte {
-	return content[2+lengthSize(content[1:]):]
+	return content[1+lengthSize(content[1:]):]
 }
 
 // lengthSize is how many bytes a DER length at the start of b takes.
 func lengthSize(b []byte) int {
-	if len(b) == 0 || b[0]&0x80 == 0 {
+	if len(b) == 0 {
 		return 0
+	}
+	if b[0]&0x80 == 0 {
+		return 1
 	}
 	return 1 + int(b[0]&0x7f)
 }
@@ -89,14 +92,18 @@ func lengthSize(b []byte) int {
 // signedData is a PKCS #7 SignedData over sum, signed by key, carrying its
 // certificate chain and, with a stamper, a timestamp token.
 func signedData(sum [sha256.Size]byte, key *Key, stamp Stamper) ([]byte, error) {
-	if key.Private == nil || key.Cert == nil {
+	return signedContent(indirectData(sum), key, stamp)
+}
+
+// signedContent signs a format's SpcIndirectDataContent with the same CMS attributes and timestamp flow.
+func signedContent(content []byte, key *Key, stamp Stamper) ([]byte, error) {
+	if key == nil || key.Private == nil || key.Cert == nil {
 		return nil, errors.New("a Windows signature needs a certificate and its key")
 	}
 	public, ok := key.Cert.PublicKey.(*rsa.PublicKey)
 	if !ok || !public.Equal(&key.Private.PublicKey) {
 		return nil, errors.New("the certificate's key is not the one that signs")
 	}
-	content := indirectData(sum)
 	// The attributes the signature covers, in the order a SET OF holds
 	// them, since the signature covers their encoding.
 	attrs := setAttributes(signatureAttributes(content, time.Now()))

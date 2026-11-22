@@ -212,7 +212,7 @@ sign:
 
 未设置 `android.target_sdk` 时，运行时以 API 36 为目标。[Google Play](https://support.google.com/googleplay/android-developer/answer/11926878) 自 2026 年 8 月 31 日起要求新移动应用和更新以 API 36 为最低目标。低于 API 36 时，Android App Bundle 构建失败，独立 APK 构建发出警告后继续。
 
-没有小组件且未设置 `sign.macos_profile` 时，Mac 包不签名：它能在你的 Mac 上以沙盒方式运行，可用来测试沙盒，但无法上传。沙盒中的应用只能访问自己的容器、网络和用户选择的文件。带小组件的 store 构建需要 `<id>` 的 `sign.macos_profile`，以及 `<id>.widgets` 的 macOS `sign.widgets_profile`；两者必须属于同一团队，并授予 `apple.app_group`（默认 `group.<id>`）。应用与扩展都使用这个共享容器，不添加主目录例外。`-installers=false` 保留沙盒和 profile 签名，仅省略 `.pkg` 及安装器身份。用 Transporter 上传 `.pkg`，在 Partner Center 上传 `.msix`，在 Play Console 上传 `.aab`；Release 中有了清单引用的归档后，把 `flatpak/<id>.yml` 提交到 Flathub，也可以用 `flatpak-builder` 在本地构建。Windows 只安装已签名的 MSIX，商店之外安装需要签名，上架时由商店签名。
+没有小组件且未设置 `sign.macos_profile` 时，Mac 包不签名：它能在你的 Mac 上以沙盒方式运行，可用来测试沙盒，但无法上传。沙盒中的应用只能访问自己的容器、网络和用户选择的文件。带小组件的 store 构建需要 `<id>` 的 `sign.macos_profile`，以及 `<id>.widgets` 的 macOS `sign.widgets_profile`；两者必须属于同一团队，并授予 `apple.app_group`（默认 `group.<id>`）。应用与扩展都使用这个共享容器，不添加主目录例外。`-installers=false` 保留沙盒和 profile 签名，仅省略 `.pkg` 及安装器身份。用 Transporter 上传 `.pkg`，在 Partner Center 上传 `.msix`，在 Play Console 上传 `.aab`；Release 中有了清单引用的归档后，把 `flatpak/<id>.yml` 提交到 Flathub，也可以用 `flatpak-builder` 在本地构建。商店之外安装 MSIX 时，用 [`sign.certificate`](#为-windows-包签名) 签名；证书主题必须与 `windows.store.publisher` 一致，接收设备也必须信任证书。不配置签名时，由商店为上传的包签名。
 
 在 macOS 和 iOS 上，滚动视图的边缘效果（`Scroll.EdgeEffects`）、macOS 上没有指定 `IOS.BackdropMaterial` 的背景模糊 `Blur`，以及背景颜色滤镜（单独使用，或与没有指定 `IOS.BackdropMaterial` 的模糊组合使用）像 AppKit 和 UIKit 自己的材质与边缘效果一样，通过 Core Animation 的私有 `CABackdropLayer` 和 `CAFilter` 绘制，因为没有公开 API 能按半径模糊、让模糊程度在视图上渐变或对背景应用颜色矩阵。App Store 审核可能拒绝使用私有 API 的应用：NSGo 只在带边缘栏的滚动视图和这些背景滤镜中调用它们，但每个 macOS 和 iOS 构建都包含它们的名称。
 
@@ -503,7 +503,7 @@ sign:
 
 ### 为 Windows 包签名
 
-Authenticode 标识 Windows 下载的发布者；[SmartScreen 另行检查其信誉](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation)。`sign.certificate` 是一个 `.pfx`，为可执行文件、命令行伴随程序、应用资源里自带的程序与库、以及安装包和其中的卸载器签名；密码来自 `NSGO_CERTIFICATE_PASSWORD`。签名在 Go 中生成，与 `signtool` 的结果相同，因此在 Mac 上不需要 Windows SDK：
+Authenticode 标识 Windows 下载的发布者；[SmartScreen 另行检查其信誉](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation)。`sign.certificate` 是一个 `.pfx`，为可执行文件、命令行伴随程序、应用资源里自带的程序与库、安装包和其中的卸载器、以及 Store 渠道构建的 MSIX 签名；密码来自 `NSGO_CERTIFICATE_PASSWORD`。签名在 Go 中生成，与 `signtool` 的结果相同，因此在 Mac 上不需要 Windows SDK：
 
 ```yaml
 sign:

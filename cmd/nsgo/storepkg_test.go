@@ -91,6 +91,14 @@ func TestMSIXPackage(t *testing.T) {
 	read := map[string][]byte{}
 	for _, f := range z.File {
 		names = append(names, f.Name)
+		offset, err := f.DataOffset()
+		if err != nil {
+			t.Fatal(err)
+		}
+		local := int(offset) - 30 - len(f.Name) - len(f.Extra)
+		if got := binary.LittleEndian.Uint16(data[local+4:]); got != 20 || f.ReaderVersion != 20 || f.CreatorVersion != 45 {
+			t.Errorf("%s ZIP versions: local=%d central=%d creator=%d, want reader 20 and creator 45", f.Name, got, f.ReaderVersion, f.CreatorVersion)
+		}
 		if f.Method != zip.Store {
 			t.Errorf("%s is compressed", f.Name)
 		}
