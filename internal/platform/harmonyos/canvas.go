@@ -46,6 +46,8 @@ type canvasOp struct {
 	ImgKey string `json:"imgk,omitempty"`
 	// ImgData is the image's bytes, base64, when the drawing embeds them.
 	ImgData string `json:"imgd,omitempty"`
+	// Tint is the color a tinted DrawImage multiplies its source channels by, as driver.Color.
+	Tint *uint32 `json:"tint,omitempty"`
 	// Nearest is whether the image is drawn with smoothing off, each source pixel a hard-edged block (driver.ImageSamplingNearest).
 	Nearest bool `json:"n,omitempty"`
 	// Sprites packs an atlas's sprites, nine numbers each: the source rectangle's x, y, width and height in the image's points, the transform's SCos, SSin, TX and TY, and the opacity factor.
@@ -138,6 +140,10 @@ func canvasJSON(ops []driver.DrawOp, packed bool) string {
 				c.D = append([]float32(nil), (*o.Dash)...)
 			}
 		case driver.DrawImage:
+			if o.Tinted {
+				tint := uint32(o.Color)
+				c.Tint = &tint
+			}
 			if o.Image == nil {
 				continue
 			}
