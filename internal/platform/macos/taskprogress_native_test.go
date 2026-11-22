@@ -10,9 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-// Task progress is drawn into the real Dock tile and removed again when the
-// app clears it. This exercises AppKit's dockTile content view rather than
-// only the mount protocol and pure progress conversion tests.
+// Task progress is drawn into the real Dock tile and removed again when the app clears it. This exercises AppKit's dockTile content view rather than only the mount protocol and pure progress conversion tests.
 func TestTaskProgressDockTileNative(t *testing.T) {
 	onMain(func() {
 		loadAppKit()
