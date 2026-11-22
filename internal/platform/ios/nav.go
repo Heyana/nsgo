@@ -218,8 +218,13 @@ func navMethods() []objc.MethodDef {
 		{Cmd: selHeaderItem, Fn: headerItemPressed},
 		{Cmd: sel("safeAreaInsetsDidChange"), Fn: func(self objc.ID, cmd objc.SEL) {
 			apple.Super(self, cmd)
-			if v := views[self]; v != nil && v.bar != nil {
-				v.surface.reportScreenInsets(v)
+			if v := views[self]; v != nil {
+				if v.bar != nil {
+					v.surface.reportScreenInsets(v)
+				}
+				if self == v.surface.native {
+					v.surface.layoutChanged()
+				}
 			}
 		}},
 	}

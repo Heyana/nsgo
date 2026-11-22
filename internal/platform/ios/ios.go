@@ -216,6 +216,9 @@ type surface struct {
 	resizedScrolls []*view
 
 	keyboard driver.Points
+	// keyboardFrame is the last notified frame in the screen's coordinates;
+	// layout reprojects it as a scene or an embedded surface moves or resizes.
+	keyboardFrame apple.CGRect
 	// keyboardScroll is the scroll view keeping the focused input clear
 	// of the keyboard (keyboard.go).
 	keyboardScroll   *view
@@ -397,12 +400,6 @@ func loadUIKit() {
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: surfaceLayout},
 		objc.MethodDef{Cmd: selApply, Fn: surfaceApply},
 		objc.MethodDef{Cmd: selTick, Fn: surfaceTick},
-		objc.MethodDef{Cmd: sel("safeAreaInsetsDidChange"), Fn: func(self objc.ID, cmd objc.SEL) {
-			apple.Super(self, cmd)
-			if v := views[self]; v != nil {
-				v.surface.layoutChanged()
-			}
-		}},
 		objc.MethodDef{Cmd: sel("traitCollectionDidChange:"), Fn: func(self objc.ID, cmd objc.SEL, previous objc.ID) {
 			apple.Super(self, cmd, previous)
 			if v := views[self]; v != nil {
@@ -706,6 +703,7 @@ func (s *surface) detach() {
 	s.dropLink()
 	w := s.window
 	s.window = 0
+	s.keyboardFrame = apple.CGRect{}
 	s.setKeyboard(0, 0)
 	w.Send(selSetHidden, true)
 	w.Send(sel("setRootViewController:"), objc.ID(0))
@@ -2477,11 +2475,19 @@ func surfaceLayout(self objc.ID, cmd objc.SEL) {
 		s := v.surface
 		size := driver.Size{Width: driver.Points(b.Size.Width), Height: driver.Points(b.Size.Height)}
 		g := s.geometry(size)
+		height := s.keyboardOverlap()
+		keyboardChanged := s.keyboard != height
+		if keyboardChanged {
+			s.keyboard = height
+		}
 		if env := s.environment(); !env.Equal(s.env) {
 			s.env = env
 			s.engine.ResizeWithEnvironment(size, g, env)
 		} else {
 			s.engine.Resize(size, g)
+		}
+		if keyboardChanged {
+			s.keepFocusedClear()
 		}
 		if h := v.surface.hud; h != nil {
 			h.layout()

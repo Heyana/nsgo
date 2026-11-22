@@ -1432,8 +1432,28 @@ func gliding(v objc.ID) bool {
 	return false
 }
 
-// Resize does nothing: a phone's screen is the size it is.
-func (t *testSurface) Resize(driver.Size) error { return nil }
+// Resize changes the test host's UIWindow, not the system's scene.
+// Split View and Stage Manager still need system-driven acceptance.
+func (t *testSurface) Resize(size driver.Size) error {
+	if t.test == nil {
+		return errors.New("Resize is only for tests; the running app follows its scene's size")
+	}
+	if size.Width <= 0 || size.Height <= 0 || math.IsNaN(float64(size.Width)) || math.IsNaN(float64(size.Height)) || math.IsInf(float64(size.Width), 0) || math.IsInf(float64(size.Height), 0) {
+		return errors.New("Resize needs a finite positive width and height")
+	}
+	if _, err := t.window(); err != nil {
+		return err
+	}
+	onMainSync(func() {
+		frame := objc.Send[apple.CGRect](t.s.window, sel("frame"))
+		frame.Size = apple.CGSize{Width: float64(size.Width), Height: float64(size.Height)}
+		t.s.window.Send(selSetFrame, frame)
+		t.s.window.Send(sel("layoutIfNeeded"))
+		t.s.native.Send(selSetNeedsLayout)
+		t.s.native.Send(sel("layoutIfNeeded"))
+	})
+	return nil
+}
 
 func (t *testSurface) SetEnvironment(env driver.Environment) error {
 	if t.test == nil {

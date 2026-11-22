@@ -59,15 +59,28 @@ func (s *surface) keyboardMoved(note objc.ID, hiding bool) {
 	}
 	info := note.Send(sel("userInfo"))
 	get := func(key string) objc.ID { return info.Send(sel("objectForKey:"), apple.Global(uikitPath, key)) }
-	var height driver.Points
+	s.keyboardFrame = apple.CGRect{}
 	if frame := get("UIKeyboardFrameEndUserInfoKey"); !hiding && frame != 0 && (s.embedded || len(scenes) < 2 || w == activeKeyboardWindow()) {
-		end := objc.Send[apple.CGRect](frame, sel("CGRectValue"))
-		space := w.Send(sel("screen")).Send(sel("coordinateSpace"))
-		local := objc.Send[apple.CGRect](s.native, sel("convertRect:fromCoordinateSpace:"), end, space)
-		height = driver.Points(max(objc.Send[apple.CGRect](s.native, selBounds).Size.Height-local.Origin.Y, 0))
+		s.keyboardFrame = objc.Send[apple.CGRect](frame, sel("CGRectValue"))
 	}
 	seconds := objc.Send[float64](get("UIKeyboardAnimationDurationUserInfoKey"), sel("doubleValue"))
-	s.setKeyboard(height, time.Duration(seconds*float64(time.Second)))
+	s.setKeyboard(s.keyboardOverlap(), time.Duration(seconds*float64(time.Second)))
+}
+
+// keyboardOverlap measures the notified keyboard in the current surface, not
+// the surface's size and position when the notification arrived.
+func (s *surface) keyboardOverlap() driver.Points {
+	w := s.uiWindow()
+	if w == 0 || s.keyboardFrame.Size.Width <= 0 || s.keyboardFrame.Size.Height <= 0 {
+		return 0
+	}
+	space := w.Send(sel("screen")).Send(sel("coordinateSpace"))
+	local := objc.Send[apple.CGRect](s.native, sel("convertRect:fromCoordinateSpace:"), s.keyboardFrame, space)
+	b := objc.Send[apple.CGRect](s.native, selBounds)
+	if local.Origin.X >= b.Origin.X+b.Size.Width || local.Origin.X+local.Size.Width <= b.Origin.X {
+		return 0
+	}
+	return driver.Points(max(min(b.Origin.Y+b.Size.Height, local.Origin.Y+local.Size.Height)-max(b.Origin.Y, local.Origin.Y), 0))
 }
 
 func (s *surface) setKeyboard(height driver.Points, duration time.Duration) {
