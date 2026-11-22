@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	"os"
@@ -358,9 +359,10 @@ func archPackage(p *project, files []linuxPackageEntry, arch string) ([]byte, er
 		return nil, err
 	}
 	slug := p.packageSlug()
+	now := time.Unix(time.Now().Unix(), 0)
 	var info strings.Builder
 	fmt.Fprintf(&info, "pkgname = %s\npkgbase = %s\npkgver = %s-1\npkgdesc = %s\nbuilddate = %d\npackager = %s\nsize = %d\narch = %s\n",
-		slug, slug, archVersion(p.Version), name, time.Now().Unix(), p.maintainer(), linuxPackageSize(files), archLinuxArch[arch])
+		slug, slug, archVersion(p.Version), name, now.Unix(), p.maintainer(), linuxPackageSize(files), archLinuxArch[arch])
 	info.WriteString("depend = gtk4\n")
 	for _, dep := range p.Linux.Depends.Arch {
 		fmt.Fprintf(&info, "depend = %s\n", dep)
@@ -373,18 +375,78 @@ func archPackage(p *project, files []linuxPackageEntry, arch string) ([]byte, er
 	if p.linuxRegisters() {
 		entries = append(entries, linuxPackageEntry{name: ".INSTALL", data: []byte(archCacheScript), mode: 0o644})
 	}
-	return tarGz(entries, "")
+	mtree, err := archMtree(entries, now)
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, linuxPackageEntry{name: ".MTREE", data: mtree, mode: 0o644})
+	return tarGzAt(entries, "", now)
+}
+
+// archMtree writes ALPM-MTREEv2 (https://man.archlinux.org/man/ALPM-MTREEv2.5.en), gzip-compressed as pacman expects. It describes the metadata and payload, excluding itself, with the same timestamp as their tar headers.
+func archMtree(entries []linuxPackageEntry, now time.Time) ([]byte, error) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := fmt.Fprintln(gz, "#mtree"); err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		kind := "file"
+		if e.dir {
+			kind = "dir"
+		} else if e.link != "" {
+			kind = "link"
+		}
+		if _, err := fmt.Fprintf(gz, "%s type=%s uid=0 gid=0 mode=%o time=%d.0", mtreeEscape("./"+e.name), kind, e.mode, now.Unix()); err != nil {
+			return nil, err
+		}
+		switch kind {
+		case "file":
+			if _, err := fmt.Fprintf(gz, " size=%d sha256digest=%x", len(e.data), sha256.Sum256(e.data)); err != nil {
+				return nil, err
+			}
+		case "link":
+			if _, err := fmt.Fprintf(gz, " link=%s", mtreeEscape(e.link)); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := fmt.Fprintln(gz); err != nil {
+			return nil, err
+		}
+	}
+	if err := gz.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// mtreeEscape keeps paths and link targets to one token, encoding their bytes as mtree's three-digit octal escapes.
+func mtreeEscape(s string) string {
+	var out strings.Builder
+	for i := range len(s) {
+		b := s[i]
+		if b <= ' ' || b >= 0x7f || b == '\\' || b == '#' {
+			fmt.Fprintf(&out, "\\%03o", b)
+		} else {
+			out.WriteByte(b)
+		}
+	}
+	return out.String()
 }
 
 // tarGz is a gzip-compressed tar archive of entries owned by root, each
 // name after prefix.
 func tarGz(entries []linuxPackageEntry, prefix string) ([]byte, error) {
+	return tarGzAt(entries, prefix, time.Now())
+}
+
+func tarGzAt(entries []linuxPackageEntry, prefix string, now time.Time) ([]byte, error) {
 	var buf bytes.Buffer
 	gz, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
 	tw := tar.NewWriter(gz)
-	now := time.Now()
 	for _, e := range entries {
-		hdr := &tar.Header{Name: prefix + e.name, Mode: e.mode, ModTime: now, Uname: "root", Gname: "root",
+		// dpkg rejects PAX extended headers, which Go otherwise selects for Unicode names. GNU headers also support long paths and link targets.
+		hdr := &tar.Header{Format: tar.FormatGNU, Name: prefix + e.name, Mode: e.mode, ModTime: now, Uname: "root", Gname: "root",
 			Typeflag: tar.TypeReg, Size: int64(len(e.data))}
 		switch {
 		case e.dir:

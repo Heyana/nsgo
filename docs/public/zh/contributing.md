@@ -56,6 +56,8 @@ go tool nsgo test -target harmonyos -run TestHarmonyOSPages -timeout 10m ./examp
 
 在 Linux 桌面的 Wayland 会话中，用 `NSGO_TEST_GLOBAL_SHORTCUT_PORTAL=<已安装的桌面应用 ID> go tool nsgo test -run TestGlobalShortcutPortalWithPermission ./internal/platform/linux` 验收真实的全局快捷键门户。该 ID 必须有对应的 `.desktop` 条目。在合成器的提示中允许 Ctrl+Alt+K，再让另一个应用获得焦点并按下该快捷键；检查会等待注册成功和快捷键触发。未设置该环境变量时会跳过此项。
 
+Linux 宿主可用 Docker 时，运行 `go tool nsgo test -run '^TestLinuxPackagesNative$' -env NSGO_TEST_LINUX_PACKAGES=1 ./cmd/nsgo -- -timeout=20m`，在一次性 Debian、Ubuntu 和 Arch 容器中检查实际安装。测试下载官方镜像并在容器内安装 GTK 依赖，验证包数据库和已安装文件后卸载包，不使用宿主的包数据库。
+
 ## 发布版本
 
 下游项目需要带标签的版本，或维护者有可以发布的改动时，NSGo 会按需发布。为下游库请求发布时，请链接依赖的工作，并注明包含该库所需最后一项 NSGo 改动的提交。第一个包含该提交的发布标签，就是该库可以依赖的版本。
