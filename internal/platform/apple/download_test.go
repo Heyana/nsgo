@@ -143,8 +143,7 @@ func TestNativeDownloadPausesResumesAndReplays(t *testing.T) {
 				onMain(func() { closeHost(); open(); host.command(driver.DownloadCommand{Op: "resume", ID: update.ID}) })
 			}
 			if update.State == "completed" {
-				// Allow state transitions and scheduling delays while catching a
-				// report for every native network chunk sent to the engine.
+				// Allow state transitions and scheduling delays while catching a report for every native network chunk sent to the engine.
 				if limit := 10 + int(time.Since(started)/(100*time.Millisecond)); reports > limit {
 					t.Errorf("%d progress reports exceeded the %d report budget", reports, limit)
 				}
@@ -309,8 +308,7 @@ func TestDownloadBackgroundCompletionWaitsForItsOwnEventBatch(t *testing.T) {
 		previous := configuredDownloads
 		defer func() { configuredDownloads = previous }()
 		host := &downloadHost{identifier: "dev.nsgo.test.download.system", background: true, finishedEvents: true}
-		// This test delivers the UIKit callback after an earlier batch drained.
-		// open only needs a live session marker, and performs no network work.
+		// This test delivers the UIKit callback after an earlier batch drained. open only needs a live session marker, and performs no network work.
 		host.session = objc.ID(Class("NSObject")).Send(sel("new"))
 		defer host.session.Send(sel("release"))
 		configuredDownloads = &downloadManager{identifier: "dev.nsgo.test.download", background: true, hosts: map[string]*downloadHost{"system": host}}

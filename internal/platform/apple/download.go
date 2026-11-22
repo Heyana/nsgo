@@ -25,8 +25,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/objcblock"
 )
 
-// downloadHost and its delegates belong to the main queue. URLSession owns
-// the transfer; workers publish finished files without holding that queue.
+// downloadHost and its delegates belong to the main queue. URLSession owns the transfer; workers publish finished files without holding that queue.
 type downloadHost struct {
 	directory, identifier string
 	home                  string
@@ -59,18 +58,14 @@ var (
 	downloadDelegates     = map[objc.ID]*downloadHost{}
 )
 
-// Each exact pin has its own URLSession. A TLS connection trusted for a
-// pinned task must never carry a task that requires system trust or another
-// certificate, because URLSession can reuse an authenticated connection.
+// Each exact pin has its own URLSession. A TLS connection trusted for a pinned task must never carry a task that requires system trust or another certificate, because URLSession can reuse an authenticated connection.
 type downloadManager struct {
 	directory, identifier string
 	background            bool
 	hosts                 map[string]*downloadHost
 }
 
-// ConfigureDownloads connects the app-wide transfer channel. Background
-// sessions reconnect at launch when a previous transfer left a journal.
-// Call on the main thread before starting the app's engine.
+// ConfigureDownloads connects the app-wide transfer channel. Background sessions reconnect at launch when a previous transfer left a journal. Call on the main thread before starting the app's engine.
 func ConfigureDownloads(dataDir, identifier string, background bool) {
 	manager := &downloadManager{
 		directory: filepath.Join(dataDir, "nsgo-downloads"), identifier: identifier + ".nsgo.downloads",
@@ -135,9 +130,7 @@ func (m *downloadManager) command(command driver.DownloadCommand) {
 	}
 }
 
-// HandleDownloadEvents retains UIKit's background-session completion block
-// until the session's events and file publications have finished. It reports
-// whether the session identifier belongs to NSGo's transfer host.
+// HandleDownloadEvents retains UIKit's background-session completion block until the session's events and file publications have finished. It reports whether the session identifier belongs to NSGo's transfer host.
 func HandleDownloadEvents(identifier string, completion objc.ID) bool {
 	manager := configuredDownloads
 	if manager == nil || !manager.background {
@@ -172,8 +165,7 @@ func (h *downloadHost) open() error {
 		return err
 	}
 	if h.background {
-		// Resume data can contain credentials. Its private directory remains
-		// available to a background relaunch after the first device unlock.
+		// Resume data can contain credentials. Its private directory remains available to a background relaunch after the first device unlock.
 		attrs := JSONObject(map[string]string{"NSFileProtectionKey": "NSFileProtectionCompleteUntilFirstUserAuthentication"})
 		manager := objc.ID(Class("NSFileManager")).Send(sel("defaultManager"))
 		var failure objc.ID
@@ -480,8 +472,7 @@ func (h *downloadHost) publish(task *downloadTask) {
 	}()
 }
 
-// Keep the staged original until the terminal journal is durable. Repeating
-// this publication after a crash replaces the destination with the same file.
+// Keep the staged original until the terminal journal is durable. Repeating this publication after a crash replaces the destination with the same file.
 func publishDownload(source, destination, id string) error {
 	partial := filepath.Join(filepath.Dir(destination), ".nsgo-download-"+id+".part")
 	if err := os.Remove(partial); err != nil && !os.IsNotExist(err) {
@@ -628,8 +619,7 @@ func (h *downloadHost) restore() error {
 	return nil
 }
 
-// iOS changes an app's absolute container path during some installations.
-// Older journals can identify their former container from a destination.
+// iOS changes an app's absolute container path during some installations. Older journals can identify their former container from a destination.
 func downloadContainerHome(path string) string {
 	prefix, rest, ok := strings.Cut(path, "/Containers/Data/Application/")
 	if !ok {
@@ -756,8 +746,7 @@ func downloadCertificateMatches(pin string, der []byte, host string, now time.Ti
 	defer Release(trust)
 	anchors := objc.ID(Class("NSArray")).Send(sel("arrayWithObject:"), objc.ID(certificate))
 	date := objc.ID(Class("NSDate")).Send(sel("dateWithTimeIntervalSince1970:"), float64(now.Unix())+float64(now.Nanosecond())/1e9)
-	// The exact leaf is the sole anchor. Keep the SSL hostname and date
-	// policies while avoiding intermediate downloads and Go's TLS stack.
+	// The exact leaf is the sole anchor. Keep the SSL hostname and date policies while avoiding intermediate downloads and Go's TLS stack.
 	return api.setAnchors(trust, anchors) == 0 && api.setAnchorsOnly(trust, true) == 0 &&
 		api.setNetwork(trust, false) == 0 && api.setDate(trust, date) == 0 && api.evaluate(trust, 0)
 }

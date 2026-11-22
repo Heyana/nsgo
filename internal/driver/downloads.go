@@ -46,8 +46,7 @@ func SendDownload(command DownloadCommand) error {
 	return send(command)
 }
 
-// HearDownloads registers a listener of the host's reports. The callback
-// runs on the host's receiver and must return promptly.
+// HearDownloads registers a listener of the host's reports. The callback runs on the host's receiver and must return promptly.
 func HearDownloads(fn func(DownloadProgress)) func() {
 	downloads.Lock()
 	defer downloads.Unlock()
