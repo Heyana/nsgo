@@ -627,6 +627,9 @@ func (w *window) setupInputs() {
 	gtkWidgetAddController(w.surface, click)
 
 	motion := gtkEventControllerMotionNew()
+	// Wayland sends an enter at the crossing point without a motion event.
+	// Update hover and the cursor there even if the pointer then stays still.
+	gSignalConnect(motion, "enter", cbMotion, w.handle)
 	gSignalConnect(motion, "motion", cbMotion, w.handle)
 	gSignalConnect(motion, "leave", cbLeave, w.handle)
 	gtkWidgetAddController(w.surface, motion)
@@ -835,7 +838,7 @@ func (w *window) beginWindowDrag(button uint32, device uintptr, at driver.Point)
 	}
 	if control := hit(root, at, func(v *view) bool {
 		return v.events.Has(driver.EventPress) || v.events.Has(driver.EventPan) || v.kind == driver.KindInput || v.kind == driver.KindWeb
-	}); control != nil && descendant(control, drag) {
+	}); control != nil && control != drag && descendant(control, drag) {
 		return false
 	}
 	// A transparent window has no title bar whose double click maximizes it, as a desktop pet's must not, nor does a panel or a view a host embeds: they drag as for one click.
@@ -907,10 +910,10 @@ func (w *window) titleBarDoubleClick() {
 	}
 }
 
-// descendant reports whether v is child or below.
-func descendant(v, child *view) bool {
-	for p := child; p != nil; p = p.parent {
-		if p == v {
+// descendant reports whether v is the ancestor itself or lies below it.
+func descendant(v, ancestor *view) bool {
+	for p := v; p != nil; p = p.parent {
+		if p == ancestor {
 			return true
 		}
 	}
