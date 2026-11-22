@@ -22,6 +22,7 @@ func init() {
 	tsx.Optional[chat.Activity]("Status", "MaxHeight")
 	tsx.Optional[chat.Option]("Image")
 	tsx.Optional[chat.Chip]("Image")
+	tsx.Optional[chat.QuotaRow]("Pace")
 	tsx.Register(module, map[string]core.Node{
 		"Conversation": chat.Conversation{}, "FloatingConversation": chat.FloatingConversation{}, "GlassPanel": chat.GlassPanel{},
 		"Turn": chat.Turn{}, "Reasoning": chat.Reasoning{}, "Actions": chat.Actions{},

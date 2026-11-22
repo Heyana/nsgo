@@ -191,6 +191,8 @@ func init() {
 	tsx.Optional[ui.AvatarGroupMember]("Image")
 	tsx.Optional[ui.ToastContent]("Duration")
 	tsx.Optional[ui.Command]("Inset")
+	tsx.Optional[uiflow.Node]("Width", "Height")
+	tsx.Optional[uiflow.Edge]("Width")
 
 	openReason := tsx.Event("OnOpenChange", "open", "reason")
 	tsx.Register(module, map[string]core.Node{

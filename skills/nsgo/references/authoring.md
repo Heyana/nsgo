@@ -48,4 +48,5 @@ On HarmonyOS, use Go’s standard file APIs under `cx.DataDir()`, `cx.CacheDir()
 - Call `cx.SetPreferredFrameRate(core.FrameRateRange{Preferred: 30})` in a window to request its callback cadence. A zero range follows the display again. Use the time from `RequestAnimationFrame` for animation steps ([Animation](https://nsgo.dev/docs/animation.md)).
 
 - Test with `nsgotest` by role and text, in both appearances (`nsgotest.Environment`), look at it under `go tool nsgo dev -lang en-XA` for cut and untranslated words, and run `go tool nsgo check -target all` to vet every available Go/Xcode target. It lists unavailable Apple SDKs it skips; explicitly naming an Apple target keeps it required. In NSGo's repository target checks include the `nsgotest` hosts; name `harmonyos` explicitly to include its preview backend.
+- In TSX data, omit a flow node's `width`/`height` to measure its JSX content, an edge's `width` for the default stroke, and a quota row's `pace` to omit its pace mark.
 - Register Go components for TSX in an `init` function with `tsx.Register("example.com/chips", ...)`.
