@@ -289,3 +289,49 @@ func TestDrawBandsMatchOneWorker(t *testing.T) {
 		}
 	}
 }
+
+func TestDrawSkipsTrianglesBesideTheTarget(t *testing.T) {
+	pixels := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	pixels.SetRGBA(0, 0, color.RGBA{R: 255, A: 255})
+	tex := RGBA(pixels, driver.Size{})
+	op := driver.NewDrawing(nil).DrawVertices(driver.ImageSource{Pixels: pixels}, quad(0, 0, 4, 4, 1, 0)).Ops[0]
+	// The quad lies wholly right of a target at -100 and wholly left of one at 100, so its columns cross.
+	for _, x := range []float64{-100, 100} {
+		dst := Target{Width: 4, Height: 4, Stride: 16, Pix: make([]byte, 64), X: x, ScaleX: 2, ScaleY: 2}
+		Draw(dst, &op, tex)
+		if !bytes.Equal(dst.Pix, make([]byte, 64)) {
+			t.Errorf("a target at x %v drew pixels of a quad beside it", x)
+		}
+	}
+}
+
+func TestDrawClampsHugeTexCoordsToTheEdgeTexel(t *testing.T) {
+	red, blue := color.RGBA{R: 255, A: 255}, color.RGBA{B: 255, A: 255}
+	pixels := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	pixels.SetRGBA(0, 0, red)
+	pixels.SetRGBA(1, 0, blue)
+	tex := RGBA(pixels, driver.Size{})
+	for _, tc := range []struct {
+		name        string
+		left, right driver.Points
+		want        [4]color.RGBA
+	}{
+		{"far right", 1e12, 1e12, [4]color.RGBA{blue, blue, blue, blue}},
+		{"far left", -1e12, -1e12, [4]color.RGBA{red, red, red, red}},
+		{"across", -1e12, 1e12, [4]color.RGBA{red, red, blue, blue}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vertices := []driver.CanvasVertex{
+				vertexAt(0, 0, tc.left, 0, 0), vertexAt(4, 0, tc.right, 0, 0), vertexAt(4, 1, tc.right, 1, 0),
+				vertexAt(0, 0, tc.left, 0, 0), vertexAt(4, 1, tc.right, 1, 0), vertexAt(0, 1, tc.left, 1, 0),
+			}
+			op := driver.NewDrawing(nil).DrawVertices(driver.ImageSource{Pixels: pixels}, vertices).Ops[0]
+			out := Raster(&op, tex, 1)
+			for x, want := range tc.want {
+				if c := out.RGBAAt(x, 0); c != want {
+					t.Errorf("pixel %d = %v, want %v", x, c, want)
+				}
+			}
+		})
+	}
+}

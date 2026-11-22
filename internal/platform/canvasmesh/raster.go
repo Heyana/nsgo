@@ -222,6 +222,7 @@ type triangle struct {
 	du, dv     float64
 	dc         [4]float64
 	tinted     bool
+	wide       bool
 }
 
 func setup(tri [3]vertex, pw, ph int) (triangle, bool) {
@@ -241,6 +242,14 @@ func setup(tri [3]vertex, pw, ph int) (triangle, bool) {
 	}
 	t := triangle{a: a, b: b, c: c, e0: edgeOf(b, c), e1: edgeOf(c, a), e2: edgeOf(a, b), invArea: 1 / area, y0: y0, y1: y1,
 		x0: max(int(math.Floor(min(a.x, b.x, c.x))), 0), x1: min(int(math.Ceil(max(a.x, b.x, c.x))), pw)}
+	// A triangle wholly left or right of the target has no columns, and clipRow cannot make an empty interval from crossed bounds.
+	if t.x0 >= t.x1 {
+		return triangle{}, false
+	}
+	// Texel coordinates inside a triangle lie between its vertices' values, so bounding those keeps every value draw steps along a row within int64 at the fixed scale.
+	for _, x := range [...]float64{a.u, b.u, c.u, a.v, b.v, c.v} {
+		t.wide = t.wide || math.Abs(x) > maxTexel
+	}
 	alongX := func(a, b, c float64) float64 {
 		return (t.e0.stepX*a + t.e1.stepX*b + t.e2.stepX*c) * t.invArea
 	}
@@ -259,16 +268,25 @@ func setup(tri [3]vertex, pw, ph int) (triangle, bool) {
 // 32 fractional bits keep a row of 4096 steps within a millionth of a texel.
 const fixed = 1 << 32
 
+// maxTexel bounds the texel coordinates draw steps as fixed-point integers: between two covered pixels of a row they change by at most twice this, which times fixed stays below 2^63.
+const maxTexel = 1 << 29
+
 func (t *triangle) draw(dst Target, s *sampler, y0, y1 int) {
+	if t.wide {
+		t.drawWide(dst, s, y0, y1)
+		return
+	}
 	a, b, c := t.a, t.b, t.c
 	maxU, maxV := int64(s.Width-1)*fixed, int64(s.Height-1)*fixed
-	du, dv := int64(math.Round(t.du*fixed)), int64(math.Round(t.dv*fixed))
+	// A row of one pixel never adds the step, which a sliver can make arbitrarily large, so the clamp only keeps its conversion defined.
+	du := int64(math.Round(min(max(t.du, -2*maxTexel), 2*maxTexel) * fixed))
+	dv := int64(math.Round(min(max(t.dv, -2*maxTexel), 2*maxTexel) * fixed))
 	for y := y0; y < y1; y++ {
 		yf := float64(y) + .5
 		start, end := t.e0.clipRow(yf, t.x0, t.x1)
 		start, end = t.e1.clipRow(yf, start, end)
 		start, end = t.e2.clipRow(yf, start, end)
-		if start == end {
+		if start >= end {
 			continue
 		}
 		xf := float64(start) + .5
@@ -294,6 +312,34 @@ func (t *triangle) draw(dst Target, s *sampler, y0, y1 int) {
 			for k := range tint {
 				tint[k] += t.dc[k]
 			}
+		}
+	}
+}
+
+// drawWide draws a triangle whose texel coordinates are too large for draw's fixed-point steps, interpolating and clamping each pixel's in floating point so every architecture samples the same edge texel.
+func (t *triangle) drawWide(dst Target, s *sampler, y0, y1 int) {
+	a, b, c := t.a, t.b, t.c
+	maxU, maxV := float64(s.Width-1), float64(s.Height-1)
+	for y := y0; y < y1; y++ {
+		yf := float64(y) + .5
+		start, end := t.e0.clipRow(yf, t.x0, t.x1)
+		start, end = t.e1.clipRow(yf, start, end)
+		start, end = t.e2.clipRow(yf, start, end)
+		for x := start; x < end; x++ {
+			xf := float64(x) + .5
+			p, q, r := t.e0.at(xf, yf)*t.invArea, t.e1.at(xf, yf)*t.invArea, t.e2.at(xf, yf)*t.invArea
+			u := min(max(p*a.u+q*b.u+r*c.u, 0), maxU)
+			v := min(max(p*a.v+q*b.v+r*c.v, 0), maxV)
+			px := s.sample(int64(math.Round(u*fixed)), int64(math.Round(v*fixed)))
+			if t.tinted {
+				var tint [4]float64
+				for k := range tint {
+					tint[k] = p*a.color[k] + q*b.color[k] + r*c.color[k]
+				}
+				px = tintPixel(px, tint)
+			}
+			i := y*dst.Stride + x*4
+			blendPixel(dst.Pix[i:i+4:i+4], px)
 		}
 	}
 }
