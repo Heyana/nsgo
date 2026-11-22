@@ -55,6 +55,23 @@ func TestSurfaceConfigRecordsOpeningOptions(t *testing.T) {
 	}
 }
 
+func TestSurfaceConfigRecordsDockedPanel(t *testing.T) {
+	if Target() != "" {
+		t.Skip("checks the headless model")
+	}
+	app := StartApp(t, func(cx *core.Scope) {
+		cx.SetMainView(func(*core.Scope) core.Node { return core.View{} })
+		desktop.OpenPanel(cx, desktop.PanelOptions{Width: 220, Height: 80, NoActivate: true,
+			Dock: desktop.PanelDock{Edge: core.PlaceBottom, Display: "screen-2", Margin: 12}},
+			func(*core.Scope) core.Node { return core.View{} })
+	}, Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+	config := app.Surface("index:1").Config()
+	want := desktop.PanelDock{Edge: core.PlaceBottom, Display: "screen-2", Margin: 12}
+	if config.Dock != want || !config.NoActivate || config.Width != 220 || config.Height != 80 {
+		t.Fatalf("docked panel opened as %+v", config)
+	}
+}
+
 func TestStatusBarRecordsResolvedSettings(t *testing.T) {
 	if Target() != "" {
 		t.Skip("checks the headless model")
