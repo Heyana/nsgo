@@ -1461,6 +1461,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     | (GpuView.available(getContext()) ? Protocol.CAP_GPU : 0);
             d.writeByte(third);
             writeDisplay(d);
+            // Optional environment tail, after the display, for mobile.OpenedURL.
+            Protocol.writeString(d, first.openedURL);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -5380,11 +5382,17 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         event(Protocol.EVENT_NOTIFICATION_PRESS, 0, 0, 0, 0, id);
     }
 
+    /** The last accepted invocation, available even before the first mount. */
+    private String openedURL = "";
     private final ArrayList<String> linksEarly = new ArrayList<>();
     private final ArrayList<String> sharesEarly = new ArrayList<>();
 
-    /** Reports a URL opened by Android, after the engine's first batch if it is still starting. */
-    void openLink(String link) {
+    /** Reports a URL the host accepted from Android; holds its open event until the first batch while starting. */
+    public void openLink(String link) {
+        if (link == null || link.isEmpty()) return;
+        openedURL = link;
+        // On a warm link, update the tracked environment before OnOpenLinks. On a cold link, the initial environment carries it before rendering.
+        environment();
         if (!mounted) {
             linksEarly.add(link);
             return;

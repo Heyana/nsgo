@@ -270,7 +270,6 @@ What `app_clip` lacks of App Clips ([tool](architecture/tool.md#app-clips)).
 | Getting the full app | `SKOverlay.AppClipConfiguration`, [#1472](https://github.com/nsgo-dev/nsgo/issues/1472) | `mobile.ShowAppClipOverlay` makes a scoped purego StoreKit request with scene/engine ownership and cleanup; native configuration and bridge tests cover it, while a real signed App Clip displaying its corresponding App Store offer still needs acceptance |
 | Handing data to the full app | App groups, [#1473](https://github.com/nsgo-dev/nsgo/issues/1473) | Explicit `apple.app_group` shares the clip’s and app’s data and storage; real App Clip replacement by an installed full app remains to be verified with matching App Clip and parent provisioning profiles |
 | Links into the full app | `applinks:`, `CFBundleURLTypes`, [#1474](https://github.com/nsgo-dev/nsgo/issues/1474) | The full app takes universal links and URL schemes into `mobile.OpenedURL`, as the clip takes its invocation |
-| Opened links elsewhere | `Intent.getData`, `location.href`, [#1475](https://github.com/nsgo-dev/nsgo/issues/1475) | Android's App Links and the web page's address reach `mobile.OpenedURL` as iOS's links do, which reads "" there now |
 
 ## Picture in Picture
 

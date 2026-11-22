@@ -99,14 +99,10 @@ func IsAvailable(cx *core.Scope) bool {
 // its own package shows the clip's screens when it does.
 func IsAppClip(cx *core.Scope) bool { return cx.Env().AppClip() }
 
-// OpenedURL returns the web link that last opened the app: on iOS an App
-// Clip's invocation, such as https://example.com/order?table=12, which
-// says what the clip shows; "" when no link opened it, and elsewhere. It
-// changes as a link opens the running app again, so what reads it in a
-// component follows.
+// OpenedURL returns the last link that invoked the iOS or Android app, or the current address of a whole-page web app. It is available before the root renders and follows later invocations and browser address changes. It returns "" when no invocation was supplied or the surface is embedded in a containing page.
 func OpenedURL(cx *core.Scope) string { return cx.Env().OpenedURL() }
 
-// OnOpenLinks runs fn with links of the app's own URL schemes, which nsgo.yaml's url_schemes declares and the iOS and Android packages register, that the system asks the app to open. They reach the running app, and the link the app launched to open waits for the first handler. A link carries whatever the page that made it chose, so treat its contents as untrusted input and confirm with the user before acting on it. It is desktop.OnOpenLinks for phones, and either hears the same links.
+// OnOpenLinks runs fn with declared URL-scheme and associated HTTPS links the system asks the app to open. nsgo.yaml's url_schemes registers schemes, and app_links registers Android HTTPS hosts. They reach the running app, and the link the app launched to open waits for the first handler. A link carries whatever the page that made it chose, so treat its contents as untrusted input and confirm with the user before acting on it. It is desktop.OnOpenLinks for phones, and either hears the same links.
 func OnOpenLinks(cx *core.Scope, fn func(links []string)) { cx.OnOpenLinks(fn) }
 
 // SharedItem is text (Text) or a file (Path and Name) received from another

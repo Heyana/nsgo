@@ -1,0 +1,7 @@
+name: NSGo Opened Links 1475
+id: dev.nsgo.opened1475
+version: 0.1.0
+url_schemes: [nsgo1475]
+app_links: [links1475.example.com]
+build:
+  targets: [android_arm64, web]

@@ -3,10 +3,9 @@
 package web
 
 import (
-	"strconv"
+	"crypto/rand"
 	"strings"
 	"syscall/js"
-	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -50,6 +49,7 @@ func (s *surface) listenHistory(ls *listeners, whole bool) {
 	}
 	s.history.start(win, ls, func(change driver.PageAddressChange) {
 		if s.engine != nil {
+			s.updateEnv()
 			s.engine.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: &change})
 		}
 	})
@@ -57,7 +57,8 @@ func (s *surface) listenHistory(ls *listeners, whole bool) {
 
 func (h *history) start(win js.Value, ls *listeners, notify func(driver.PageAddressChange)) {
 	h.owned, h.win, h.notify = true, win, notify
-	h.session = strconv.FormatInt(time.Now().UnixNano(), 36)
+	// Browser clocks can give consecutive players the same timestamp.
+	h.session = rand.Text()
 	h.from, h.baseIndex = -1, -1
 	h.entries = []historyEntry{{url: h.url()}}
 	nav := win.Get("navigation")
@@ -160,7 +161,11 @@ func (h *history) push(depth int, url string) {
 }
 
 // setHistory applies one committed navigation/address change. Last address wins while history.go is pending; a requested push survives coalescing.
-func (s *surface) setHistory(depth int, address *driver.PageAddress) { s.history.set(depth, address) }
+func (s *surface) setHistory(depth int, address *driver.PageAddress) {
+	s.history.set(depth, address)
+	// pushState and replaceState emit no browser event. Report their address now too, so mobile.OpenedURL never waits for a focus or resize to catch up.
+	s.updateEnv()
+}
 func (h *history) set(depth int, address *driver.PageAddress) {
 	if !h.owned {
 		return

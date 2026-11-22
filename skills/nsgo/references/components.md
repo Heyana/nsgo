@@ -88,3 +88,5 @@ Android Live Activity actions reach `widget.OnAction` without opening the Activi
 `widget.Button` calls `widget.OnAction` from iOS 17 and macOS 14; register it before `nsgo.Run`, handle `Activity == nil` for a widget, and publish `widget.Update` before returning. See [Widgets](https://nsgo.dev/docs/widgets.md#buttons).
 
 `Text.AdjustsFontSizeToFit` shrinks formulas and other font-relative attachments with the text, respecting `MinimumFontScale`; explicit point sizes and padding stay as authored ([text](https://nsgo.dev/docs/text.md)).
+
+Use `mobile.OpenedURL(cx)` for an Android invocation or a whole-page web address available before rendering; it follows later links and browser address changes. Declare Android HTTPS hosts with `app_links` and serve their Digital Asset Links association files; embedded hosts own their filters. Keep authentication callbacks consumed before ordinary incoming-link handling. [App Links](https://nsgo.dev/docs/building.md#android-app-links).

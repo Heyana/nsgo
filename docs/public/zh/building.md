@@ -542,6 +542,18 @@ sign:
 
 `build` 和 `dev` 会用 Xcode 的 Swift 编译器把绘制应用的小组件和实时活动的扩展编进 macOS 和 iOS 包，不需要单独的步骤。在 iOS 上，应用与小组件共享一个 App Group：用 `-run` 装到 iPhone 时，Xcode 会为两者签名并注册它；打 IPA 时需要为 `<id>` 和 `<id>.widgets` 都开启它，并用 `sign.widgets_profile` 为扩展签名。Android 独立 APK 和 AAB 会根据 `widgets` 包含 App Widget 提供程序与资源，由预编译的 Java 运行时绘制时间线，应用构建无需 SDK 或 Java 编译器。Android 16 把实时活动显示为 Live Update，不需要扩展。[小组件](widgets.md)和[实时活动](live-activities.md)介绍它们的配置和 API。
 
+## Android App Links
+
+`app_links` 声明哪些 HTTPS 主机的链接可以打开完整 Android 应用：
+
+```yaml
+app_links: [example.com, shop.example.com]
+```
+
+APK 和 App Bundle 为每个主机声明带有 `autoVerify` 的可浏览 `ACTION_VIEW` 过滤器。只填写 DNS 主机名，不带协议、路径、端口、通配符或 IP 地址。在 `https://<host>/.well-known/assetlinks.json` 提供应用包名和签名证书指纹，Android 验证关联后才把链接交给应用；工具不会发布关联文件，配置方式见 [Android 验证指南](https://developer.android.com/training/app-links/verify-applinks)。嵌入式 Android 宿主自行声明过滤器，并把接受的链接交给它的 `NsgoView`。
+
+`mobile.OpenedURL(cx)` 在根组件第一次运行前就能读到调用链接，另一个链接打开运行中的应用时也会变化；`mobile.OnOpenLinks` 仍会收到每个接受的链接。整页 Web 应用通过 `mobile.OpenedURL` 读取当前页面地址，包括浏览器历史和片段变化；嵌入其他页面的应用不读取宿主页面的地址。还需要由应用写入地址时，使用 [`cx.AppURL`](addresses.md)。
+
 ## 轻 App（App Clip）
 
 轻 App 是 iOS 应用中的一小部分，用户从链接、App Clip 码或 NFC 标签打开它，无需安装应用。`app_clip` 把它编进 iOS 包，它有自己的 main 包，只链接自己显示的内容：

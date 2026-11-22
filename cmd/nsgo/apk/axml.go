@@ -26,6 +26,8 @@ type Manifest struct {
 	VersionCode int
 	// URLSchemes are the app's own links, registered on the launcher activity.
 	URLSchemes []string
+	// AppLinks are HTTPS hosts registered for Android's verified App Links.
+	AppLinks []string
 	// ShareTypes are the MIME types registered for incoming text and files.
 	ShareTypes []string
 	// Icon is the launcher icon, an IconSize PNG; nil keeps the system's.
@@ -129,6 +131,8 @@ var androidAttrs = map[string]attrSpec{
 	"launchMode":          {0x0101001d, typeInt, parseLaunchMode},
 	"mimeType":            {0x01010026, typeString, nil},
 	"scheme":              {0x01010027, typeString, nil},
+	"host":                {0x01010028, typeString, nil},
+	"autoVerify":          {0x010104ee, typeBool, parseBool},
 	"label":               {0x01010001, typeString, nil},
 	"exported":            {0x01010010, typeBool, parseBool},
 	"stateNotNeeded":      {0x01010016, typeBool, parseBool},
@@ -350,16 +354,22 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 			root.kids = slices.Insert(root.kids, slices.Index(root.kids, app), use)
 		}
 	}
-	if len(m.URLSchemes) > 0 || len(m.ShareTypes) > 0 {
+	if len(m.URLSchemes) > 0 || len(m.AppLinks) > 0 || len(m.ShareTypes) > 0 {
 		launcher := xml.Attr{Name: xml.Name{Space: androidNS, Local: "name"}, Value: "dev.oneo.nsgo.NsgoActivity"}
 		activity := child(app, "activity")
 		if activity == nil || !slices.Contains(activity.attrs, launcher) {
-			return nil, errors.New("manifest: no NsgoActivity for URL schemes or incoming shares")
+			return nil, errors.New("manifest: no NsgoActivity for URL schemes, App Links or incoming shares")
 		}
 		// Reuse the running app's task when a link or share comes from another app.
 		setAttr(activity, androidNS, "launchMode", "singleTask")
 		for _, scheme := range m.URLSchemes {
 			activity.kids = append(activity.kids, openLinkFilter(scheme))
+		}
+		for _, host := range m.AppLinks {
+			filter := openLinkFilter("https")
+			setAttr(filter, androidNS, "autoVerify", "true")
+			setAttr(child(filter, "data"), androidNS, "host", host)
+			activity.kids = append(activity.kids, filter)
 		}
 		if len(m.ShareTypes) > 0 {
 			activity.kids = append(activity.kids, shareFilter(m.ShareTypes))

@@ -569,6 +569,18 @@ sign:
 
 `build` and `dev` compile the extension that draws the app's widgets and Live Activities into the macOS and iOS packages with Xcode's Swift compiler, with no separate step. On iOS the app and its widgets share an app group: `-run` on an iPhone has Xcode sign both and register the group; for an IPA, enable it for both `<id>` and `<id>.widgets`, and sign the extension with `sign.widgets_profile`. Android standalone APKs and AABs include App Widget providers and resources from `widgets`; the prebuilt Java runtime draws their timelines with no SDK or Java compiler needed by app builds. Android 16 shows Live Activities as Live Updates, which need no extension. [Widgets](widgets.md) and [Live Activities](live-activities.md) cover their configuration and API.
 
+## Android App Links
+
+`app_links` names explicit HTTPS hosts whose links open the full Android app:
+
+```yaml
+app_links: [example.com, shop.example.com]
+```
+
+The APK and App Bundle declare a browsable `ACTION_VIEW` filter with `autoVerify` for each host. Use DNS hosts without a scheme, path, port, wildcard or IP address. Serve `https://<host>/.well-known/assetlinks.json` with the app's package ID and signing certificate fingerprint; Android verifies that association before routing links to the app. The tool does not publish association files; [Android's verification guide](https://developer.android.com/training/app-links/verify-applinks) describes their setup. An embedded Android host declares its own intent filters and forwards accepted links to its `NsgoView`.
+
+`mobile.OpenedURL(cx)` reads the accepted invocation before the first root render and changes when another link opens the running app. `mobile.OnOpenLinks` still hears each accepted link. A whole-page web app reads its current page address through `mobile.OpenedURL`, including browser history and hash changes; an app mounted inside another page reads no containing-page address. Use [`cx.AppURL`](addresses.md) when the app also writes its address.
+
 ## App Clips
 
 An App Clip is a small part of an iOS app that runs from a link, a code or an NFC tag without installing the app. `app_clip` builds one into the iOS package, from a main package of its own so it links only what it shows:

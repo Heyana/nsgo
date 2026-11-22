@@ -185,6 +185,8 @@ type project struct {
 	FileTypes []fileType `yaml:"file_types"`
 	// URLSchemes are the schemes of the app's own links, which its desktop, iOS and Android packages register.
 	URLSchemes []string `yaml:"url_schemes"`
+	// AppLinks are the HTTPS hosts associated with the full app on iOS and Android; the app's server supplies their association files.
+	AppLinks []string `yaml:"app_links"`
 	// Widgets are the kinds of the app's widgets, which nsgo build puts
 	// into its macOS and iOS packages as a widget extension (widgets.go).
 	Widgets []widgetKind `yaml:"widgets"`
@@ -483,6 +485,9 @@ func load(dir string) (*project, error) {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if err := p.validateURLSchemes(); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
+	}
+	if err := p.validateAppLinks(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if err := p.validateAndroidShareTypes(); err != nil {

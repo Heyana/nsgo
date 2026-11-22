@@ -142,9 +142,7 @@ type Environment struct {
 	// ThermalState and LowPowerMode describe system power constraints.
 	ThermalState ThermalState
 	LowPowerMode LowPowerMode
-	// AppClip says the app runs as an iOS App Clip, and OpenedURL is the
-	// web link that last opened it: the clip's invocation, or a universal
-	// link; "" when none did.
+	// AppClip says the app runs as an iOS App Clip, and OpenedURL is the link that last invoked the iOS or Android app, or the current address of a whole-page web app; "" when none was supplied.
 	AppClip   bool
 	OpenedURL string
 	// PageURL and PageBaseURL initialize the application address when the surface owns its browser history. Empty on other surfaces and targets.

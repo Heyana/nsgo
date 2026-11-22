@@ -76,6 +76,8 @@ func (s *surface) watchChanges() {
 	}
 	s.watchRatio(g.Get("devicePixelRatio").Float())
 	g.Call("addEventListener", "languagechange", w.changed)
+	g.Call("addEventListener", "hashchange", w.changed)
+	g.Call("addEventListener", "popstate", w.changed)
 	if keyboard := g.Get("navigator").Get("keyboard"); keyboard.Truthy() && keyboard.Get("addEventListener").Type() == js.TypeFunction {
 		keyboard.Call("addEventListener", "layoutchange", js.FuncOf(func(js.Value, []js.Value) any {
 			s.readKeyboardLayout()
@@ -246,6 +248,9 @@ func (s *surface) environment() driver.Environment {
 		AppleKeyboard:    apple,
 		Idiom:            driver.IdiomPhone,
 		FullScreen:       s.browserFullscreen(),
+	}
+	if s.whole {
+		env.OpenedURL = g.Get("location").Get("href").String()
 	}
 	if s.history.owned {
 		env.PageURL = g.Get("location").Get("href").String()

@@ -137,6 +137,9 @@ func TestPageAddressReloadStartsAtTheNamedAddress(t *testing.T) {
 	ls.release()
 	next := new(history)
 	next.start(win, ls, func(driver.PageAddressChange) {})
+	if next.session == old.session {
+		t.Fatal("reloaded players share the same history session")
+	}
 	if next.entries[0].url != origin+"/deep/link?film=42" || next.index != 0 {
 		t.Fatal(next.entries)
 	}

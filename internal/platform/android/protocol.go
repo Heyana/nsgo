@@ -670,6 +670,10 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 		env.Displays = []driver.DisplayInfo{{ID: env.DisplayID, Frame: frame, VisibleFrame: frame,
 			Scale: env.PixelRatio, Main: id == 0, RefreshRate: float64(r.float()), MaxRefreshRate: float64(r.float())}}
 	}
+	// Older runtimes end after the display; newer ones append the last accepted invocation so the first root render can read mobile.OpenedURL.
+	if len(r.buf) > 0 {
+		env.OpenedURL = r.str()
+	}
 	return env, third
 }
 

@@ -521,6 +521,8 @@ func TestFrameworkAttributeIDs(t *testing.T) {
 		"launchMode":                  0x0101001d,
 		"mimeType":                    0x01010026,
 		"scheme":                      0x01010027,
+		"host":                        0x01010028,
+		"autoVerify":                  0x010104ee,
 		"exported":                    0x01010010,
 		"stateNotNeeded":              0x01010016,
 		"authorities":                 0x01010018,

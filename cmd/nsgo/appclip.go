@@ -121,6 +121,7 @@ func (p *project) clipProject() *project {
 	c.Name, c.ID = p.AppClip.Name, p.AppClip.ID
 	c.Dir = p.resolve(p.AppClip.Main)
 	c.AppClip, c.Widgets, c.FileTypes, c.LiveActivities = nil, nil, nil, liveActivities{}
+	c.AppLinks = nil
 	// A clip, kept small, sells nothing: its app does.
 	c.Apple.Purchases = false
 	return &c
