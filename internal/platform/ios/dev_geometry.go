@@ -3,6 +3,8 @@
 package ios
 
 import (
+	"github.com/ebitengine/purego/objc"
+
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
@@ -15,32 +17,20 @@ func (s *surface) ObserveGeometry(report func(driver.GeometrySnapshot)) {
 }
 
 func (s *surface) reportGeometry() {
-	if !s.devGeometry.Active() {
-		return
-	}
-	root := s.native.Send(selLayer)
-	views := make(map[driver.NodeID]driver.ViewGeometry, len(s.views))
-	for _, v := range s.views {
-		if v != nil && v.native != 0 {
-			if m, size, ok := apple.LayerGeometry(v.native.Send(selLayer), root); ok {
-				views[v.id] = driver.ViewGeometry{Frame: driver.Bounds{Size: size}, Matrix: m}
-			}
-		}
-	}
-	s.devGeometry.Notify(driver.ProjectGeometry(views))
-	if s.geometryAnimating() {
+	if apple.ReportLayerGeometry(&s.devGeometry, s.native.Send(selLayer), s.nativeViews) {
 		s.startTicking()
 	}
 }
 
 func (s *surface) geometryAnimating() bool {
-	if !s.devGeometry.Active() {
-		return false
-	}
+	return apple.LayersAnimating(&s.devGeometry, s.nativeViews)
+}
+
+// nativeViews yields the surface's mounted views for the geometry helpers apple shares.
+func (s *surface) nativeViews(yield func(driver.NodeID, objc.ID) bool) {
 	for _, v := range s.views {
-		if v != nil && v.native != 0 && apple.LayerGeometryAnimating(v.native.Send(selLayer)) {
-			return true
+		if v != nil && v.native != 0 && !yield(v.id, v.native) {
+			return
 		}
 	}
-	return false
 }

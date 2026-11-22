@@ -330,3 +330,11 @@ func (v OSVersion) AtLeast(major, minor int) bool {
 
 // String returns v as major.minor.
 func (v OSVersion) String() string { return strconv.Itoa(v.Major) + "." + strconv.Itoa(v.Minor) }
+
+// Pinned is env as pin, a test's pinned preferences, has it, or env itself without a pin: what a backend renders with while it keeps the system's environment for later changes.
+func Pinned(env Environment, pin func(Environment) Environment) Environment {
+	if pin != nil {
+		return pin(env)
+	}
+	return env
+}

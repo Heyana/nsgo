@@ -2541,12 +2541,5 @@ func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	v.scrollEvent(driver.EventScroll)
 }
 
-// motionReduced uses a test's pinned preference for the renderer too; the
-// system's environment is kept intact for future preference changes.
-func (s *surface) motionReduced() bool {
-	env := s.env
-	if s.envPin != nil {
-		env = s.envPin(env)
-	}
-	return env.ReduceMotion
-}
+// motionReduced uses a test's pinned preference for the renderer too; the system's environment is kept intact for future preference changes.
+func (s *surface) motionReduced() bool { return driver.Pinned(s.env, s.envPin).ReduceMotion }

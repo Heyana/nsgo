@@ -90,3 +90,44 @@ func geometryAnimation(animation objc.ID, finite bool) bool {
 	}
 	return false
 }
+
+// NativeViews yields a surface's mounted views, each ID with its native view, for the geometry helpers below that macOS and iOS share.
+type NativeViews = func(yield func(driver.NodeID, objc.ID) bool)
+
+// ReportLayerGeometry sends observer the presented geometry of each view's layer in root's coordinates, when it observes, and reports whether a layer still animates its geometry, so the surface keeps its frames coming.
+func ReportLayerGeometry(observer *driver.GeometryObserver, root objc.ID, views NativeViews) bool {
+	if !observer.Active() {
+		return false
+	}
+	geometry := map[driver.NodeID]driver.ViewGeometry{}
+	for id, native := range views {
+		if m, size, ok := LayerGeometry(native.Send(objc.RegisterName("layer")), root); ok {
+			geometry[id] = driver.ViewGeometry{Frame: driver.Bounds{Size: size}, Matrix: m}
+		}
+	}
+	observer.Notify(driver.ProjectGeometry(geometry))
+	return LayersAnimating(observer, views)
+}
+
+// LayersAnimating reports whether, while observer observes, a view's layer still animates its geometry.
+func LayersAnimating(observer *driver.GeometryObserver, views NativeViews) bool {
+	if !observer.Active() {
+		return false
+	}
+	for _, native := range views {
+		if LayerGeometryAnimating(native.Send(objc.RegisterName("layer"))) {
+			return true
+		}
+	}
+	return false
+}
+
+// LayersEnding reports whether a view's layer runs a finite geometry animation, which a test waits for.
+func LayersEnding(views NativeViews) bool {
+	for _, native := range views {
+		if LayerGeometryEnding(native.Send(objc.RegisterName("layer"))) {
+			return true
+		}
+	}
+	return false
+}

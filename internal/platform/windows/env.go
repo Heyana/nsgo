@@ -536,12 +536,5 @@ func cursorPoint() (driver.Point, bool) {
 	return driver.Point{}, false
 }
 
-// motionReduced uses a test's pinned preference for the renderer too; the
-// system's environment is kept intact for future preference changes.
-func (w *window) motionReduced() bool {
-	env := w.env
-	if w.envPin != nil {
-		env = w.envPin(env)
-	}
-	return env.ReduceMotion
-}
+// motionReduced uses a test's pinned preference for the renderer too; the system's environment is kept intact for future preference changes.
+func (w *window) motionReduced() bool { return driver.Pinned(w.env, w.envPin).ReduceMotion }

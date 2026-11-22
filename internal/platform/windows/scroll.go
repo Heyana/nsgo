@@ -144,6 +144,7 @@ func (w *window) wheelZoom(p driver.Point, delta int16) bool {
 }
 
 // scrollEvent reports kind on scroll view v at its offset, if it listens.
+// nsgo:allow-duplicate the Linux and Windows views are distinct types; the body only forwards to the engine and the geometry observer.
 func (w *window) scrollEvent(v *view, kind driver.EventKind) {
 	defer w.reportGeometry()
 	if v.events.Has(kind) {
