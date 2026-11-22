@@ -502,6 +502,8 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 })
 ```
 
+`FinishTransaction` returns `PurchaseNotFound` for an already finished transaction, including one returned by `CurrentEntitlements`; a finished non-consumable remains owned.
+
 Register `OnPurchaseUpdate` as the app starts: updates that come before any handler wait for the first. `cx.CurrentEntitlements` answers what the user owns now, to unlock it at launch, and a Restore Purchases button calls `cx.SyncPurchases`, which may ask the user to sign in. `AccountToken` is a UUID of the app's own that the transaction and the App Store's server notifications carry. macOS sells only in a Mac App Store build, and an App Clip sells nothing; Android, watchOS, Windows, Linux, the web and mini programs answer `PurchasesUnavailable` for now. Test purchases with `nsgotest`, whose `Products`, `PurchaseAnswer`, `UpdatePurchase` and `UnfinishedTransactions` stand in for the store. `app.PurchaseRequests` records store operations as `nsgotest.PurchaseRequest` values. In TSX, the `Purchases` module needs the `purchases` capability: `purchase` resolves with `{ status: "purchased", transaction }`, `"pending"` or `"cancelled"`, and `on("update", listener)` hears updates.
 
 ## Interface orientation

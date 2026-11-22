@@ -1,0 +1,9 @@
+name: StoreKit Native Fixture
+id: dev.nsgo.test.storekit1367
+version: 0.1.0
+
+apple:
+  purchases: true
+
+dev:
+  target: ios_simulator

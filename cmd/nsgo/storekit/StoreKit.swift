@@ -9,9 +9,10 @@ public typealias NsgoStoreKitAnswer = @convention(c) (UInt32, UnsafePointer<UInt
 private let lock = NSLock()
 private var answer: NsgoStoreKitAnswer?
 private var updates: Task<Void, Never>?
-/// products and transactions are those the app was given, kept to buy and finish by ID.
+/// products are those the app was given, kept to buy by ID.
 private var products: [String: Product] = [:]
-private var transactions: [UInt64: Transaction] = [:]
+/// finishing reserves an unfinished transaction while its asynchronous finish runs.
+private var finishing: Set<UInt64> = []
 
 /// locked runs fn holding lock, as NSLocking's withLock does from iOS 16 and macOS 13.
 private func locked<T>(_ fn: () throws -> T) rethrows -> T {
@@ -99,7 +100,7 @@ public func nsgoStoreKitStart(_ fn: NsgoStoreKitAnswer) {
     if !listening {
         updates = Task.detached {
             for await result in Transaction.updates {
-                send(0, Answer(transaction: keep(result)))
+                send(0, Answer(transaction: transactionOut(result)))
             }
         }
     }
@@ -158,7 +159,7 @@ private func handle(_ r: Request) async throws -> Answer {
         }
         switch try await product.purchase(options: options) {
         case .success(let result):
-            return Answer(transaction: keep(result))
+            return Answer(transaction: transactionOut(result))
         case .pending:
             throw Failure(code: "pending")
         case .userCancelled:
@@ -170,23 +171,21 @@ private func handle(_ r: Request) async throws -> Answer {
         guard let id = UInt64(r.transaction ?? "") else {
             throw Failure(code: "notFound")
         }
-        var transaction = locked { transactions[id] }
-        if transaction == nil {
-            for await result in Transaction.unfinished where result.unsafePayloadValue.id == id {
-                transaction = result.unsafePayloadValue
-                break
-            }
-        }
-        guard let transaction else {
+        guard locked({ finishing.insert(id).inserted }) else {
             throw Failure(code: "notFound")
         }
-        await transaction.finish()
-        _ = locked { transactions.removeValue(forKey: id) }
-        return Answer()
+        defer { _ = locked { finishing.remove(id) } }
+        // Entitlements include finished purchases. Only StoreKit's unfinished
+        // sequence can tell whether this ID still needs delivery acknowledged.
+        for await result in Transaction.unfinished where result.unsafePayloadValue.id == id {
+            await result.unsafePayloadValue.finish()
+            return Answer()
+        }
+        throw Failure(code: "notFound")
     case "entitlements":
         var out: [TransactionOut] = []
         for await result in Transaction.currentEntitlements {
-            out.append(keep(result))
+            out.append(transactionOut(result))
         }
         return Answer(transactions: out)
     case "sync":
@@ -205,14 +204,13 @@ private func send(_ id: UInt32, _ a: Answer) {
     data.withUnsafeBytes { fn(id, $0.bindMemory(to: UInt8.self).baseAddress, $0.count) }
 }
 
-/// keep keeps a transaction to finish by its ID and writes it out with its JWS.
-private func keep(_ result: VerificationResult<Transaction>) -> TransactionOut {
+/// transactionOut writes a transaction with its JWS without changing its finish state.
+private func transactionOut(_ result: VerificationResult<Transaction>) -> TransactionOut {
     let t = result.unsafePayloadValue
     var verified = false
     if case .verified = result {
         verified = true
     }
-    locked { transactions[t.id] = t }
     var env = t.environmentStringRepresentation
     if #available(iOS 16.0, macOS 13.0, tvOS 16.0, *) {
         env = t.environment.rawValue
