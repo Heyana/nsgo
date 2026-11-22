@@ -56,7 +56,7 @@ go tool nsgo test -env GOOS=js -env GOARCH=wasm ./internal/platform/harmonyos \
 go tool nsgo test -target harmonyos -run TestHarmonyOSPages -timeout 10m ./examples/gallery
 ```
 
-On a Linux desktop, run the real global-shortcut portal acceptance check with `NSGO_TEST_GLOBAL_SHORTCUT_PORTAL=<installed-desktop-id> go tool nsgo test -run TestGlobalShortcutPortalWithPermission ./internal/platform/linux`. The ID must have a `.desktop` entry. Grant Ctrl+Alt+K in the compositor’s prompt, then press it with another application focused; the check waits for both registration and activation. It is skipped unless the environment variable is set.
+In a Wayland session on a Linux desktop, run the real global-shortcut portal acceptance check with `NSGO_TEST_GLOBAL_SHORTCUT_PORTAL=<installed-desktop-id> go tool nsgo test -run TestGlobalShortcutPortalWithPermission ./internal/platform/linux`. The ID must have a `.desktop` entry. Grant Ctrl+Alt+K in the compositor’s prompt, then press it with another application focused; the check waits for both registration and activation. It is skipped unless the environment variable is set.
 
 ## Releases
 

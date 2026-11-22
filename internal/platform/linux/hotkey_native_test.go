@@ -93,9 +93,7 @@ func TestGlobalShortcutsReachTheBackend(t *testing.T) {
 	}
 }
 
-// TestGlobalShortcutFromAnotherClient sends real XTest key presses while a
-// different X11 client owns keyboard focus. Disposing the registration returns
-// its key to that client instead of dispatching the app's callback.
+// TestGlobalShortcutFromAnotherClient sends real XTest key presses while a different X11 client owns keyboard focus. Disposing the registration returns its key to that client instead of dispatching the app's callback.
 func TestGlobalShortcutFromAnotherClient(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens X11 windows")
@@ -126,11 +124,14 @@ func TestGlobalShortcutFromAnotherClient(t *testing.T) {
 		t.Fatal("cannot open the other client's X11 connection")
 	}
 	defer x.closeDisplay(display)
+	var xtestEvent, xtestError, xtestMajor, xtestMinor int32
+	if xWebInput.queryExtension(display, &xtestEvent, &xtestError, &xtestMajor, &xtestMinor) == 0 {
+		t.Skip("needs the XTEST server extension")
+	}
 	other := x.createWindow(display, x.rootWindow(display), 0, 0, 100, 100, 0, 0, 0)
 	defer x.destroyWindow(display, other)
 	x.selectInput(display, other, 1) // KeyPressMask
-	// Map independently of a window manager, which may otherwise defer the
-	// MapRequest until after the test asks the server to focus this window.
+	// Map independently of a window manager, which may otherwise defer the MapRequest until after the test asks the server to focus this window.
 	x11ChangeWindowAttributes(display, other, x11CWOverrideRedirect, &x11WindowAttributes{overrideRedirect: 1})
 	xPointer.mapWindow(display, other)
 	x.sync(display, 0)
@@ -142,18 +143,28 @@ func TestGlobalShortcutFromAnotherClient(t *testing.T) {
 	if focus != other {
 		t.Fatalf("keyboard focus = %#x, want the other client %#x", focus, other)
 	}
+	codes := []uint32{uint32(xWebInput.keysymToKeycode(display, 0xffe3)), uint32(xWebInput.keysymToKeycode(display, 0xffe9)), uint32(xWebInput.keysymToKeycode(display, 'k'))}
+	for _, code := range codes {
+		if code == 0 {
+			t.Skip("the keymap lacks Control_L, Alt_L or k")
+		}
+	}
 	press := func() {
 		t.Helper()
-		codes := []uint32{uint32(xWebInput.keysymToKeycode(display, 0xffe3)), uint32(xWebInput.keysymToKeycode(display, 0xffe9)), uint32(xWebInput.keysymToKeycode(display, 'k'))}
+		// Release whatever went down even when a press fails, as XTest keeps fake keys held on the server after this client disconnects.
+		var down []uint32
+		defer func() {
+			for i := len(down) - 1; i >= 0; i-- {
+				xWebInput.fakeKey(display, down[i], 0, 0)
+			}
+			x.sync(display, 0)
+		}()
 		for _, code := range codes {
-			if code == 0 || xWebInput.fakeKey(display, code, 1, 0) == 0 {
+			if xWebInput.fakeKey(display, code, 1, 0) == 0 {
 				t.Fatal("XTest refused the key press")
 			}
+			down = append(down, code)
 		}
-		for i := len(codes) - 1; i >= 0; i-- {
-			xWebInput.fakeKey(display, codes[i], 0, 0)
-		}
-		x.sync(display, 0)
 	}
 	press()
 	select {

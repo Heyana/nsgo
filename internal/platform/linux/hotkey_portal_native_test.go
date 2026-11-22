@@ -10,9 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// TestGlobalShortcutPortalWithPermission is an opt-in acceptance check against
-// the desktop's real GlobalShortcuts portal. The operator grants the binding
-// and presses it while another window or the shell has the keyboard focus.
+// TestGlobalShortcutPortalWithPermission is an opt-in acceptance check against the desktop's real GlobalShortcuts portal. The operator grants the binding and presses it while another window or the shell has the keyboard focus.
 func TestGlobalShortcutPortalWithPermission(t *testing.T) {
 	appID := os.Getenv("NSGO_TEST_GLOBAL_SHORTCUT_PORTAL")
 	if appID == "" {

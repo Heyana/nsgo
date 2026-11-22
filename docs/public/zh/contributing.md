@@ -54,7 +54,7 @@ go tool nsgo test -env GOOS=js -env GOARCH=wasm ./internal/platform/harmonyos \
 go tool nsgo test -target harmonyos -run TestHarmonyOSPages -timeout 10m ./examples/gallery
 ```
 
-在 Linux 桌面上，用 `NSGO_TEST_GLOBAL_SHORTCUT_PORTAL=<已安装的桌面应用 ID> go tool nsgo test -run TestGlobalShortcutPortalWithPermission ./internal/platform/linux` 验收真实的全局快捷键门户。该 ID 必须有对应的 `.desktop` 条目。在合成器的提示中允许 Ctrl+Alt+K，再让另一个应用获得焦点并按下该快捷键；检查会等待注册成功和快捷键触发。未设置该环境变量时会跳过此项。
+在 Linux 桌面的 Wayland 会话中，用 `NSGO_TEST_GLOBAL_SHORTCUT_PORTAL=<已安装的桌面应用 ID> go tool nsgo test -run TestGlobalShortcutPortalWithPermission ./internal/platform/linux` 验收真实的全局快捷键门户。该 ID 必须有对应的 `.desktop` 条目。在合成器的提示中允许 Ctrl+Alt+K，再让另一个应用获得焦点并按下该快捷键；检查会等待注册成功和快捷键触发。未设置该环境变量时会跳过此项。
 
 ## 发布版本
 
