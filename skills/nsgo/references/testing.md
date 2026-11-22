@@ -114,8 +114,6 @@ With `-target web`, libraries that do not link the backend run headless inside t
 
 `NSGO_BROWSER` names the browser `-target web` runs. macOS discovery prefers an installed Chrome for Testing. Startup waits up to 30 seconds and reports the browser's error output on failure.
 
-For NSGo’s Linux portal acceptance check, set `NSGO_TEST_GLOBAL_SHORTCUT_PORTAL` to an installed test application’s desktop ID and run `go tool nsgo test -run TestGlobalShortcutPortalWithPermission ./internal/platform/linux`. Grant the binding and press Ctrl+Alt+K with another app focused; it is skipped without the environment variable ([development setup](https://nsgo.dev/docs/contributing.md#check-and-test)).
-
 ## TSX
 
 A TSX app's `*.test.tsx` files, written with `nsgo/test`, run with its Go tests under `go tool nsgo test`.

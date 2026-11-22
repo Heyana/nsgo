@@ -21,7 +21,12 @@ func TestGlobalShortcutPortalWithPermission(t *testing.T) {
 	const title = "nsgo-portal-hotkey"
 	fired := make(chan struct{}, 1)
 	w := startTestWindow(t, func(cx *core.Scope) core.Node {
-		h := cx.RegisterHotKey("ctrl+alt+k", func() { fired <- struct{}{} })
+		h := cx.RegisterHotKey("ctrl+alt+k", func() {
+			select {
+			case fired <- struct{}{}:
+			default:
+			}
+		})
 		cx.Effect(func() { cx.SetTitle(title + "|" + h.State().String()) })
 		return core.Text{Content: "Grant Ctrl+Alt+K, then press it outside this window."}
 	}, Options{ID: appID, Title: title, Width: 600, Height: 150})
