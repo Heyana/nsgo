@@ -71,6 +71,35 @@ func (n *node) fittedContent(c *driver.ScrollConfig) Size {
 	return size
 }
 
+// visibleScrollOffset replays only the moves the pending commands make at
+// once. An animated target is not a position until the platform reports it.
+// Zoom and refresh can give the platform different bounds from the layout.
+func (t *Tree) visibleScrollOffset(n *node) Point {
+	sc := n.scroll
+	if len(sc.pending) == 0 {
+		return sc.offset
+	}
+	p := sc.pending[0].before
+	for _, cmd := range sc.pending {
+		switch {
+		case !cmd.to:
+			p.X += cmd.p.X
+			p.Y += cmd.p.Y
+		case !cmd.animated && !sc.config.Zooms() && !sc.config.Refreshing:
+			c := sc.config
+			c.Behavior.ContentInset.Top += t.headerInset(n)
+			in := c.Behavior.ContentInset
+			content := n.fittedContent(&c)
+			if c.Horizontal {
+				p.X = min(max(cmd.p.X, -in.Left), max(-in.Left, content.Width+in.Right-n.frame.Size.Width))
+			} else {
+				p.Y = min(max(cmd.p.Y, -in.Top), max(-in.Top, content.Height+in.Bottom-n.frame.Size.Height))
+			}
+		}
+	}
+	return p
+}
+
 // bindScrollSpec configures scroll view n from s: its ScrollConfig, kept
 // up to date, its handlers and its initial offset.
 func (t *Tree) bindScrollSpec(cx *Scope, n *node, s scrollSpec) {

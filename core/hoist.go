@@ -136,6 +136,13 @@ func anchored(host *node) bool {
 	return false
 }
 
+func (t *Tree) followAnchoredOverlays() {
+	if anchored(t.view) || slices.ContainsFunc(t.frames, anchored) {
+		t.markLayout(t.view)
+		t.changed = true
+	}
+}
+
 type modalSize struct {
 	size   Size
 	insets Edges
@@ -542,8 +549,9 @@ func (t *Tree) covering(n *node, size Size) (Bounds, bool) {
 			return Bounds{}, false
 		}
 		if p.scroll != nil {
-			at.Origin.X -= p.scroll.offset.X
-			at.Origin.Y -= p.scroll.offset.Y
+			offset := t.visibleScrollOffset(p)
+			at.Origin.X -= offset.X
+			at.Origin.Y -= offset.Y
 		}
 		if p == n {
 			break
@@ -671,8 +679,9 @@ func (t *Tree) surfaceBounds(n *node) Bounds {
 		b.Origin.X += p.frame.Origin.X
 		b.Origin.Y += p.frame.Origin.Y
 		if p.scroll != nil {
-			b.Origin.X -= p.scroll.offset.X
-			b.Origin.Y -= p.scroll.offset.Y
+			offset := t.visibleScrollOffset(p)
+			b.Origin.X -= offset.X
+			b.Origin.Y -= offset.Y
 		}
 	}
 	return b

@@ -682,16 +682,17 @@ type scrollNode struct {
 // pendingScroll is a scroll the core sent and the platform has not shown
 // applied.
 type pendingScroll struct {
-	n      uint32
-	to     bool // an ItemScrollTo; else an ItemScrollBy
-	p      Point
-	before Point // predicted offset before this command, for cancellation
+	n        uint32
+	to       bool // an ItemScrollTo; else an ItemScrollBy
+	animated bool
+	p        Point
+	before   Point // predicted offset before this command, for cancellation
 }
 
 // issue records a scroll sent to the platform.
-func (sc *scrollNode) issue(to bool, p Point) {
+func (sc *scrollNode) issue(to, animated bool, p Point) {
 	sc.issued++
-	sc.pending = append(sc.pending, pendingScroll{n: sc.issued, to: to, p: p, before: sc.offset})
+	sc.pending = append(sc.pending, pendingScroll{n: sc.issued, to: to, animated: animated, p: p, before: sc.offset})
 	if to {
 		sc.offset = p
 	} else {
@@ -2721,10 +2722,7 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			if t.devDrawn != nil {
 				t.devDrawnScroll(n, ev.Point)
 			}
-			if anchored(t.view) || slices.ContainsFunc(t.frames, anchored) {
-				t.markLayout(t.view) // anchored overlays follow the scroll
-				t.changed = true
-			}
+			t.followAnchoredOverlays()
 			if t.auditRead != nil && t.auditRead() {
 				t.framesMoved, t.changed = true, true
 			}

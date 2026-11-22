@@ -1,11 +1,115 @@
 package core
 
 import (
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
+
+func TestAnchoredOverlayFollowsVisibleScrollOffset(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		offset   Point
+		animated bool
+		want     Points
+	}{
+		{name: "immediate", offset: Point{Y: 20}, want: 100},
+		{name: "clamped", offset: Point{X: 800, Y: 800}, want: 80},
+		{name: "animated", offset: Point{Y: 40}, animated: true, want: 130},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var scroll, anchor Ref
+			var moved *Signal[bool]
+			h := newHost(t, Size{Width: 300, Height: 300}, func(cx *Scope) Node {
+				moved = NewSignal(cx, false)
+				return View{Children: []Node{
+					Scroll{Ref: &scroll, Style: Style{Height: Pt(200)}, Children: []Node{
+						View{StyleFunc: func() Style {
+							if moved.Get() {
+								return Style{Height: Pt(110)}
+							}
+							return Style{Height: Pt(100)}
+						}},
+						View{Ref: &anchor, Style: Style{Height: Pt(20)}},
+						View{Style: Style{Height: Pt(120)}},
+					}},
+					Overlay{Anchor: &anchor, Placement: PlaceBottom, TestID: "popup",
+						Style: Style{Width: Pt(80), Height: Pt(30)}},
+				}}
+			})
+			h.commit()
+			popup := h.find("popup")
+			x := popup.frame.Origin.X
+			scroll.ScrollTo(tc.offset, tc.animated)
+			if tc.animated {
+				moved.Set(true)
+			}
+			check := func(batch *driver.MountBatch, want Points) {
+				t.Helper()
+				i := slices.IndexFunc(batch.Items, func(it driver.MountItem) bool {
+					return it.Kind == driver.ItemFrame && it.ID == popup.id
+				})
+				if i < 0 || batch.Items[i].Frame.Origin != (Point{X: x, Y: want}) {
+					t.Fatalf("popup did not move to (%v, %v) in this batch; frame = %v", x, want, popup.frame)
+				}
+			}
+			check(h.commit(), tc.want)
+			if tc.animated {
+				h.tree.Dispatch(driver.Event{Kind: driver.EventScroll, ID: scroll.n.id, Count: 1, Point: Point{Y: 6}})
+				check(h.commit(), 124)
+			}
+		})
+	}
+}
+
+func TestAnchoredOverlayFollowsListCompensationInTheSameBatch(t *testing.T) {
+	var scroll, anchor Ref
+	var keys *Signal[[]int]
+	h := newHost(t, Size{Width: 300, Height: 500}, func(cx *Scope) Node {
+		initial := make([]int, 100)
+		for i := range initial {
+			initial[i] = i
+		}
+		keys = NewSignalFunc(cx, initial, nil)
+		return View{Children: []Node{
+			List{Ref: &scroll, Style: Style{Height: Pt(400)}, EstimatedSize: 40,
+				Count: func() int { return len(keys.Get()) }, Key: func(i int) any { return keys.Get()[i] },
+				Row: func(cx *Scope, r ListRow) Node {
+					return Dynamic(func(*Scope) Node {
+						row := View{Style: Style{Height: Pt(40)}}
+						if keys.Get()[r.Index()] == 30 {
+							row.Ref = &anchor
+						}
+						return row
+					})
+				}},
+			Overlay{Anchor: &anchor, Placement: PlaceBottom, TestID: "popup",
+				Style: Style{Width: Pt(80), Height: Pt(30)}},
+		}}
+	})
+	h.commit()
+	h.tree.Dispatch(driver.Event{Kind: driver.EventScroll, ID: scroll.n.id, Point: Point{Y: 1000}})
+	h.commit()
+	popup := h.find("popup")
+	before := popup.frame.Origin
+	keys.Set(slices.Concat([]int{-5, -4, -3, -2, -1}, keys.Get()))
+	b := h.commit()
+	if !slices.ContainsFunc(b.Items, func(it driver.MountItem) bool {
+		return it.Kind == driver.ItemScrollBy && it.ID == scroll.n.id && it.Point.Y == 200
+	}) {
+		t.Fatal("the prepend did not emit a 200 pt compensation")
+	}
+	for _, it := range slices.Backward(b.Items) {
+		if it.Kind == driver.ItemFrame && it.ID == popup.id {
+			if got := it.Frame.Origin; got != before {
+				t.Fatalf("popup moved from %v to %v during List compensation", before, got)
+			}
+			break
+		}
+	}
+}
 
 // newOverlays runs app on a platform that opens no windows, as Android's: the first tree is the app's view, and the surfaces it opens commit on their own.
 func newOverlays(t *testing.T, os OS, app func(cx *Scope) Node) *windows {
