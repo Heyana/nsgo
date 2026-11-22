@@ -85,7 +85,8 @@ func startWindowPage(t *testing.T, access core.Access, web core.WebView) (*nsgot
 		return core.View{Style: container, OnPress: func(core.PressEvent) {}, Children: []core.Node{web}}
 	}, nsgotest.Size(240, 160))
 	click := func(y int) {
-		if nsgotest.Target() == "macos" {
+		// WebKit is a native child view on macOS and Linux, which the test hosts' presses go around, so its clicks are Ref.SendInput's trusted input.
+		if target == "macos" || target == "linux" {
 			scope.Post(func() { ref.SendInput(core.WebClick(12, core.Points(y))) })
 			return
 		}

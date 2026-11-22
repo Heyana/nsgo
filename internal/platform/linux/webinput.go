@@ -4,6 +4,7 @@ package linux
 
 import (
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -83,6 +84,9 @@ var bindX11WebInput = sync.OnceFunc(func() {
 	xWebInput.ready = true
 })
 
+// webInputDelivery bounds how long the X server and GTK take to deliver the events sendWebInput injects.
+const webInputDelivery = time.Second
+
 // canSendWebInput reports whether GDK draws on X11 with the XTest extension,
 // where sendWebInput can deliver trusted pointer and key input to WebKitGTK.
 func (w *window) canSendWebInput() bool {
@@ -114,6 +118,8 @@ func (w *window) sendWebInput(v *view, in driver.WebInput) {
 		return
 	}
 	gdk := gdkDisplayGetDefault()
+	// A test host ignores physical input outside its scripted steps, and XTest's events reach GTK as physical input after this returns.
+	w.inputGate.expectInjected(time.Now().Add(webInputDelivery))
 	switch in.Kind {
 	case driver.WebInputClick:
 		w.sendWebClick(v, page, gdk, display, xid, in.Point)
