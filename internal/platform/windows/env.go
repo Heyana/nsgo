@@ -93,6 +93,7 @@ func (w *window) environment() driver.Environment {
 		Displays:         w.displays(),
 		OS:               driver.OSWindows,
 		HasWebView:       true,
+		CanSendInput:     true,
 		CanLockPointer:   true,
 		OSVersion:        osVersion(),
 		Idiom:            driver.IdiomDesktop,

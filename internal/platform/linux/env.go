@@ -100,6 +100,7 @@ func (w *window) environment() driver.Environment {
 		OS:               driver.OSLinux,
 		CanLockPointer:   w.canLockPointer(),
 		HasWebView:       true,
+		CanSendInput:     w.canSendWebInput(),
 		OSVersion:        osVersion(),
 		Idiom:            driver.IdiomDesktop,
 		TitleBar:         w.titleBarArea(),

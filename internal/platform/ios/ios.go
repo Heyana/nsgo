@@ -826,7 +826,7 @@ func (s *surface) environment() driver.Environment {
 		AudioSchedule:    idiom != driver.IdiomTV && apple.AudioAvailable(),
 		Camera:           cameraAvailable(),
 		ScanCode:         cameraAvailable() && idiom != driver.IdiomTV,
-		CanSendInput:     false,
+		CanSendInput:     idiom != driver.IdiomTV,
 		HasWebView:       idiom != driver.IdiomTV,
 		SignInWithApple:  apple.AppleSignInAvailable(),
 		Purchases:        apple.PurchasesAvailable(),
@@ -1462,6 +1462,12 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemWeb:
 			v.web.Configure(it.Web)
 		case driver.ItemWebCommand:
+			if in, ok := it.Data.(*driver.WebInput); ok && it.WebCommand == driver.WebSendInput {
+				if web := v.web.View(); web != 0 {
+					sendWebInput(web, *in)
+				}
+				break
+			}
 			v.web.Command(it.WebCommand, it.Value, it.Data)
 		case driver.ItemPictureInPicture:
 			if v.pip == nil {

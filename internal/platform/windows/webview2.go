@@ -108,6 +108,7 @@ const (
 	// ICoreWebView2Controller, then ICoreWebView2Controller2 and 3
 	controllerPutIsVisible                       = 4
 	controllerPutBounds                          = 6
+	controllerGetZoomFactor                      = 7
 	controllerMoveFocus                          = 12
 	controllerAddMoveFocusRequested              = 13
 	controllerAddGotFocus                        = 15

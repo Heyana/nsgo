@@ -30,100 +30,102 @@ var (
 	webkitOnce sync.Once
 	webkitErr  error
 
-	webkitWebViewGetType                     func() uintptr
-	webkitWebViewGetContext                  func(uintptr) uintptr
-	webkitWebContextRegisterURIScheme        func(uintptr, *byte, uintptr, uintptr, uintptr)
-	webkitURISchemeRequestGetURI             func(uintptr) uintptr
-	webkitURISchemeRequestGetWebView         func(uintptr) uintptr
-	webkitURISchemeRequestGetHTTPMethod      func(uintptr) uintptr
-	webkitURISchemeRequestGetHTTPHeaders     func(uintptr) uintptr
-	webkitURISchemeResponseNew               func(uintptr, int64) uintptr
-	webkitURISchemeResponseSetStatus         func(uintptr, int32, *byte)
-	webkitURISchemeResponseSetContentType    func(uintptr, *byte)
-	webkitURISchemeResponseSetHTTPHeaders    func(uintptr, uintptr)
-	soupMessageHeadersNew                    func(int32) uintptr
-	webkitURISchemeRequestFinishError        func(uintptr, uintptr)
-	webkitURISchemeRequestFinishWithResponse func(uintptr, uintptr)
-	webkitWebContextGetSecurityManager       func(uintptr) uintptr
-	webkitSecurityManagerRegisterCORSScheme  func(uintptr, *byte)
-	soupMessageHeadersIterInit               func(uintptr, uintptr)
-	soupMessageHeadersIterNext               func(uintptr, uintptr, uintptr) int32
-	gErrorNewLiteral                         func(uint32, int32, *byte) uintptr
-	gQuarkToString                           func(uint32) uintptr
-	gObjectRef                               func(uintptr) uintptr
-	gMemoryInputStreamNewFromBytes           func(uintptr) uintptr
-	webkitWebViewGetBackgroundColor          func(uintptr, *[4]float32)
-	webkitNetworkSessionNew                  func(*byte, *byte) uintptr
-	webkitNetworkSessionNewEphemeral         func() uintptr
-	webkitNetworkSessionGetCookieManager     func(uintptr) uintptr
-	webkitDownloadGetWebView                 func(uintptr) uintptr
-	webkitDownloadGetRequest                 func(uintptr) uintptr
-	webkitDownloadSetDestination             func(uintptr, *byte)
-	webkitDownloadGetDestination             func(uintptr) uintptr
-	webkitDownloadGetReceivedDataLength      func(uintptr) uint64
-	webkitDownloadCancel                     func(uintptr)
-	webkitCookieManagerSetPersistent         func(uintptr, *byte, int32)
-	webkitWebViewGetUserContentManager       func(uintptr) uintptr
-	webkitWebViewGetSettings                 func(uintptr) uintptr
-	webkitWebViewSetBackgroundColor          func(uintptr, *[4]float32)
-	webkitWebViewSetIsMuted                  func(uintptr, int32)
-	webkitWebViewLoadURI                     func(uintptr, *byte)
-	webkitWebViewLoadRequest                 func(uintptr, uintptr)
-	webkitWebViewLoadHTML                    func(uintptr, *byte, *byte)
-	webkitWebViewReload                      func(uintptr)
-	webkitWebViewGoBack                      func(uintptr)
-	webkitWebViewGoToHistory                 func(uintptr, uintptr)
-	webkitWebViewGoForward                   func(uintptr)
-	webkitWebViewStopLoading                 func(uintptr)
-	webkitWebViewEvaluateJavascript          func(uintptr, *byte, int, *byte, *byte, uintptr, uintptr, uintptr)
-	webkitWebViewExecuteEditingCommand       func(uintptr, *byte)
-	webkitWebViewGetURI                      func(uintptr) uintptr
-	webkitWebViewGetMainResource             func(uintptr) uintptr
-	webkitWebViewGetTitle                    func(uintptr) uintptr
-	webkitWebViewIsLoading                   func(uintptr) int32
-	webkitWebViewCanGoBack                   func(uintptr) int32
-	webkitWebViewCanGoForward                func(uintptr) int32
-	webkitWebViewGetBackForwardList          func(uintptr) uintptr
-	webkitBackForwardListGetCurrentItem      func(uintptr) uintptr
-	webkitBackForwardListGetNthItem          func(uintptr, int32) uintptr
-	webkitBackForwardListGetBackItem         func(uintptr) uintptr
-	webkitBackForwardListGetForwardItem      func(uintptr) uintptr
-	webkitBackForwardListItemGetURI          func(uintptr) uintptr
-	webkitSettingsSetEnableJSMarkup          func(uintptr, int32)
-	webkitSettingsSetUserAgent               func(uintptr, *byte)
-	webkitSettingsGetUserAgent               func(uintptr) uintptr
-	webkitSettingsSetBackForwardGestures     func(uintptr, int32)
-	webkitSettingsSetEnableMediaStream       func(uintptr, int32)
-	webkitUserMediaRequestGetType            func() uintptr
-	webkitUserMediaIsForAudio                func(uintptr) int32
-	webkitUserMediaIsForVideo                func(uintptr) int32
-	webkitUserMediaIsForDisplay              func(uintptr) int32
-	webkitPermissionRequestAllow             func(uintptr)
-	webkitPermissionRequestDeny              func(uintptr)
-	webkitContentRegisterHandler             func(uintptr, *byte, *byte) int32
-	webkitContentUnregisterHandler           func(uintptr, *byte, *byte)
-	webkitContentAddScript                   func(uintptr, uintptr)
-	webkitContentRemoveAllScripts            func(uintptr)
-	webkitContentAddStyleSheet               func(uintptr, uintptr)
-	webkitContentRemoveAllStyleSheets        func(uintptr)
-	webkitUserScriptNew                      func(*byte, int32, int32, uintptr, uintptr) uintptr
-	webkitUserScriptUnref                    func(uintptr)
-	webkitUserStyleSheetNew                  func(*byte, int32, int32, uintptr, uintptr) uintptr
-	webkitUserStyleSheetUnref                func(uintptr)
-	webkitNetworkErrorQuark                  func() uint32
-	webkitPolicyErrorQuark                   func() uint32
-	webkitNavigationDecisionGetAction        func(uintptr) uintptr
-	webkitNavigationActionGetRequest         func(uintptr) uintptr
-	webkitNavigationActionGetType            func(uintptr) uint32
-	webkitNavigationActionIsUserGesture      func(uintptr) bool
-	webkitURIRequestNew                      func(*byte) uintptr
-	webkitURIRequestGetHTTPHeaders           func(uintptr) uintptr
-	webkitURIRequestGetURI                   func(uintptr) uintptr
-	webkitPolicyDecisionIgnore               func(uintptr)
-	webkitResponseDecisionGetRequest         func(uintptr) uintptr
-	webkitResponseDecisionIsMainFrame        func(uintptr) bool
-	webkitMessageHeadersAppend               func(uintptr, *byte, *byte)
-	jscValueToString                         func(uintptr) uintptr
+	webkitWebViewGetType                           func() uintptr
+	webkitWebViewGetContext                        func(uintptr) uintptr
+	webkitWebContextRegisterURIScheme              func(uintptr, *byte, uintptr, uintptr, uintptr)
+	webkitURISchemeRequestGetURI                   func(uintptr) uintptr
+	webkitURISchemeRequestGetWebView               func(uintptr) uintptr
+	webkitURISchemeRequestGetHTTPMethod            func(uintptr) uintptr
+	webkitURISchemeRequestGetHTTPHeaders           func(uintptr) uintptr
+	webkitURISchemeResponseNew                     func(uintptr, int64) uintptr
+	webkitURISchemeResponseSetStatus               func(uintptr, int32, *byte)
+	webkitURISchemeResponseSetContentType          func(uintptr, *byte)
+	webkitURISchemeResponseSetHTTPHeaders          func(uintptr, uintptr)
+	soupMessageHeadersNew                          func(int32) uintptr
+	webkitURISchemeRequestFinishError              func(uintptr, uintptr)
+	webkitURISchemeRequestFinishWithResponse       func(uintptr, uintptr)
+	webkitWebContextGetSecurityManager             func(uintptr) uintptr
+	webkitSecurityManagerRegisterCORSScheme        func(uintptr, *byte)
+	soupMessageHeadersIterInit                     func(uintptr, uintptr)
+	soupMessageHeadersIterNext                     func(uintptr, uintptr, uintptr) int32
+	gErrorNewLiteral                               func(uint32, int32, *byte) uintptr
+	gQuarkToString                                 func(uint32) uintptr
+	gObjectRef                                     func(uintptr) uintptr
+	gMemoryInputStreamNewFromBytes                 func(uintptr) uintptr
+	webkitWebViewGetBackgroundColor                func(uintptr, *[4]float32)
+	webkitNetworkSessionNew                        func(*byte, *byte) uintptr
+	webkitNetworkSessionNewEphemeral               func() uintptr
+	webkitNetworkSessionGetCookieManager           func(uintptr) uintptr
+	webkitDownloadGetWebView                       func(uintptr) uintptr
+	webkitDownloadGetRequest                       func(uintptr) uintptr
+	webkitDownloadSetDestination                   func(uintptr, *byte)
+	webkitDownloadGetDestination                   func(uintptr) uintptr
+	webkitDownloadGetReceivedDataLength            func(uintptr) uint64
+	webkitDownloadCancel                           func(uintptr)
+	webkitCookieManagerSetPersistent               func(uintptr, *byte, int32)
+	webkitWebViewGetUserContentManager             func(uintptr) uintptr
+	webkitWebViewGetSettings                       func(uintptr) uintptr
+	webkitWebViewSetBackgroundColor                func(uintptr, *[4]float32)
+	webkitWebViewSetIsMuted                        func(uintptr, int32)
+	webkitWebViewLoadURI                           func(uintptr, *byte)
+	webkitWebViewLoadRequest                       func(uintptr, uintptr)
+	webkitWebViewLoadHTML                          func(uintptr, *byte, *byte)
+	webkitWebViewReload                            func(uintptr)
+	webkitWebViewGoBack                            func(uintptr)
+	webkitWebViewGoToHistory                       func(uintptr, uintptr)
+	webkitWebViewGoForward                         func(uintptr)
+	webkitWebViewStopLoading                       func(uintptr)
+	webkitWebViewEvaluateJavascript                func(uintptr, *byte, int, *byte, *byte, uintptr, uintptr, uintptr)
+	webkitWebViewExecuteEditingCommand             func(uintptr, *byte)
+	webkitWebViewExecuteEditingCommandWithArgument func(uintptr, *byte, *byte)
+	webkitWebViewGetZoomLevel                      func(uintptr) float64
+	webkitWebViewGetURI                            func(uintptr) uintptr
+	webkitWebViewGetMainResource                   func(uintptr) uintptr
+	webkitWebViewGetTitle                          func(uintptr) uintptr
+	webkitWebViewIsLoading                         func(uintptr) int32
+	webkitWebViewCanGoBack                         func(uintptr) int32
+	webkitWebViewCanGoForward                      func(uintptr) int32
+	webkitWebViewGetBackForwardList                func(uintptr) uintptr
+	webkitBackForwardListGetCurrentItem            func(uintptr) uintptr
+	webkitBackForwardListGetNthItem                func(uintptr, int32) uintptr
+	webkitBackForwardListGetBackItem               func(uintptr) uintptr
+	webkitBackForwardListGetForwardItem            func(uintptr) uintptr
+	webkitBackForwardListItemGetURI                func(uintptr) uintptr
+	webkitSettingsSetEnableJSMarkup                func(uintptr, int32)
+	webkitSettingsSetUserAgent                     func(uintptr, *byte)
+	webkitSettingsGetUserAgent                     func(uintptr) uintptr
+	webkitSettingsSetBackForwardGestures           func(uintptr, int32)
+	webkitSettingsSetEnableMediaStream             func(uintptr, int32)
+	webkitUserMediaRequestGetType                  func() uintptr
+	webkitUserMediaIsForAudio                      func(uintptr) int32
+	webkitUserMediaIsForVideo                      func(uintptr) int32
+	webkitUserMediaIsForDisplay                    func(uintptr) int32
+	webkitPermissionRequestAllow                   func(uintptr)
+	webkitPermissionRequestDeny                    func(uintptr)
+	webkitContentRegisterHandler                   func(uintptr, *byte, *byte) int32
+	webkitContentUnregisterHandler                 func(uintptr, *byte, *byte)
+	webkitContentAddScript                         func(uintptr, uintptr)
+	webkitContentRemoveAllScripts                  func(uintptr)
+	webkitContentAddStyleSheet                     func(uintptr, uintptr)
+	webkitContentRemoveAllStyleSheets              func(uintptr)
+	webkitUserScriptNew                            func(*byte, int32, int32, uintptr, uintptr) uintptr
+	webkitUserScriptUnref                          func(uintptr)
+	webkitUserStyleSheetNew                        func(*byte, int32, int32, uintptr, uintptr) uintptr
+	webkitUserStyleSheetUnref                      func(uintptr)
+	webkitNetworkErrorQuark                        func() uint32
+	webkitPolicyErrorQuark                         func() uint32
+	webkitNavigationDecisionGetAction              func(uintptr) uintptr
+	webkitNavigationActionGetRequest               func(uintptr) uintptr
+	webkitNavigationActionGetType                  func(uintptr) uint32
+	webkitNavigationActionIsUserGesture            func(uintptr) bool
+	webkitURIRequestNew                            func(*byte) uintptr
+	webkitURIRequestGetHTTPHeaders                 func(uintptr) uintptr
+	webkitURIRequestGetURI                         func(uintptr) uintptr
+	webkitPolicyDecisionIgnore                     func(uintptr)
+	webkitResponseDecisionGetRequest               func(uintptr) uintptr
+	webkitResponseDecisionIsMainFrame              func(uintptr) bool
+	webkitMessageHeadersAppend                     func(uintptr, *byte, *byte)
+	jscValueToString                               func(uintptr) uintptr
 )
 
 // openWebKit loads WebKitGTK and JavaScriptCore and checks that the system
@@ -207,6 +209,8 @@ func bindWebKit(webkit, jsc, soup uintptr) {
 	reg(&webkitWebViewStopLoading, "webkit_web_view_stop_loading")
 	reg(&webkitWebViewEvaluateJavascript, "webkit_web_view_evaluate_javascript")
 	reg(&webkitWebViewExecuteEditingCommand, "webkit_web_view_execute_editing_command")
+	reg(&webkitWebViewExecuteEditingCommandWithArgument, "webkit_web_view_execute_editing_command_with_argument")
+	reg(&webkitWebViewGetZoomLevel, "webkit_web_view_get_zoom_level")
 	reg(&webkitWebViewGetURI, "webkit_web_view_get_uri")
 	reg(&webkitWebViewGetMainResource, "webkit_web_view_get_main_resource")
 	reg(&webkitWebViewGetTitle, "webkit_web_view_get_title")
@@ -900,6 +904,10 @@ func (w *window) webCommand(v *view, c driver.WebCommand, value string, data any
 		evaluate(page, driver.WebMessageScript(value))
 	case driver.WebInjectJavaScript:
 		evaluate(page, value)
+	case driver.WebSendInput:
+		if in, ok := data.(*driver.WebInput); ok && in != nil {
+			w.sendWebInput(v, *in)
+		}
 	case driver.WebLoad:
 		if src, ok := data.(*driver.WebSource); ok && src != nil {
 			v.web.source = *src

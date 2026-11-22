@@ -1200,6 +1200,10 @@ func (wv *webView) command(c driver.WebCommand, value string, data any) {
 		wv.execute(driver.WebMessageScript(value))
 	case driver.WebInjectJavaScript:
 		wv.execute(value)
+	case driver.WebSendInput:
+		if in, ok := data.(*driver.WebInput); ok && in != nil {
+			wv.sendInput(*in)
+		}
 	case driver.WebLoad:
 		if src, ok := data.(*driver.WebSource); ok && src != nil {
 			wv.source = *src
