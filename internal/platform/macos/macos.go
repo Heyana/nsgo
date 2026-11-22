@@ -1035,6 +1035,7 @@ func (s *surface) close() {
 			s.delete(v, true)
 		}
 	}
+	s.releaseGhosts()
 	s.closePopup()
 	// Its native objects go with it, and their addresses come back.
 	for id, v := range views {

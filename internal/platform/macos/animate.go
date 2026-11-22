@@ -583,13 +583,28 @@ func (s *surface) stepMotions(now time.Duration) {
 			layer.Send(sel("setOpacity:"), g.opacity*float32(1-p))
 		}
 		if end {
-			apple.ForgetTransform(layer)
-			g.native.Send(selRemoveFromSuperview)
-			g.native.Send(selRelease)
+			g.release()
 			continue
 		}
 		live = append(live, g)
 	}
 	clear(s.ghosts[len(live):])
 	s.ghosts = live
+}
+
+// release takes g's native view away and lets go of it.
+func (g *ghost) release() {
+	apple.ForgetTransform(g.native.Send(selLayer))
+	g.native.Send(selRemoveFromSuperview)
+	g.native.Send(selRelease)
+}
+
+// releaseGhosts lets go of the views still fading out as the surface
+// closes, as the ticks that would end them have stopped.
+func (s *surface) releaseGhosts() {
+	for _, g := range s.ghosts {
+		g.release()
+	}
+	clear(s.ghosts)
+	s.ghosts = nil
 }
