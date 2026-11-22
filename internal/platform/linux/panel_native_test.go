@@ -107,7 +107,8 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 		host.onLoop(t, func() {
 			windowHandles.Range(func(_, v any) bool {
 				w := v.(*window)
-				if !w.primary && w.kind == driver.SurfacePanel && !w.closing {
+				// Only this test's panel: an earlier test's may not have gone yet.
+				if w.opener == host && w.kind == driver.SurfacePanel && !w.closing {
 					p = w
 				}
 				return p == nil
@@ -116,7 +117,10 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 		return p != nil && p.win != 0
 	})
 	anchor := driver.Bounds{Origin: driver.Point{X: 300, Y: 180}, Size: driver.Size{Width: 40, Height: 24}}
-	if err := ctl.panel.ShowAt(anchor, core.PlaceRight); err != nil {
+	// The core's windows belong to the engine's goroutine: show the panel there, not from the test's.
+	shown := make(chan error, 1)
+	ctl.scope.Post(func() { shown <- ctl.panel.ShowAt(anchor, core.PlaceRight) })
+	if err := <-shown; err != nil {
 		t.Fatal(err)
 	}
 	waitPanel(t, "the panel to map", func() bool {
