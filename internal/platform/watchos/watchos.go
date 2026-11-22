@@ -113,6 +113,7 @@ type boxKey struct {
 
 type surface struct {
 	sensors apple.Sensors
+	auths   authSessions
 
 	opts        Options
 	test        *testOpen
@@ -237,6 +238,7 @@ func runHost() {
 		purego.NewCallback(hostAlert),
 		purego.NewCallback(hostLifecycle),
 		purego.NewCallback(hostSnapshot),
+		purego.NewCallback(hostAuth),
 	}
 	purego.SyscallN(connect, uintptr(unsafe.Pointer(&table[0])), uintptr(len(table)))
 	// The table is copied; the callbacks live as long as the process.
@@ -515,9 +517,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.engine.Dispatch(driver.NoWebCookies(it))
 			continue
 		case driver.ItemAuthSession:
-			// The SwiftUI host starts no ASWebAuthenticationSession yet (docs/roadmap.md).
-			if ev, ok := driver.NoAuthSession(it); ok {
-				s.engine.Dispatch(ev)
+			if it.Auth != nil {
+				s.auths.handle(it.Count, *it.Auth, &s.w, s.engine.Dispatch)
 			}
 			continue
 		case driver.ItemPermission:
@@ -1009,6 +1010,17 @@ func hostAlert(id uint32, index int32) {
 	}
 	delete(s.alerts, id)
 	s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: int(index)})
+}
+
+// hostAuth copies the callback or failure while the host's UTF-8 is alive.
+func hostAuth(id uint32, outcome uint8, data *byte, n int) {
+	value := ""
+	if data != nil && n > 0 {
+		value = string(unsafe.Slice(data, n))
+	}
+	if s != nil && s.engine != nil {
+		s.auths.finished(id, outcome, value, s.engine.Dispatch)
+	}
 }
 
 // openURL answers that url did not open: watchOS opens no URL for an

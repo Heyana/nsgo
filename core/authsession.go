@@ -27,7 +27,7 @@ func (e AuthError) Error() string { return "nsgo: auth session: " + string(e) }
 
 // AuthSessionOptions say what redirect an auth session catches.
 type AuthSessionOptions struct {
-	// Scheme is the app's own callback scheme, such as "com.example.app", which macOS's and iOS's session catches without the app registering it: the redirect is scheme:/path. "https" with Host catches an HTTPS redirect to the app's associated domain, from iOS 17.4 and macOS 14.4. Without one, desktops serve a loopback redirect, http://127.0.0.1:port/path on a random port, and the web one on the page's origin.
+	// Scheme is the app's own callback scheme, such as "com.example.app", which macOS's, iOS's and watchOS's session catches without the app registering it: the redirect is scheme:/path. "https" with Host catches an HTTPS redirect to the app's associated domain, from iOS 17.4, macOS 14.4 and watchOS 10.4. Without one, desktops serve a loopback redirect, http://127.0.0.1:port/path on a random port, and the web one on the page's origin.
 	Scheme string
 	Host   string
 	// Path is the redirect's path, "/" when empty. Web and desktop loopback redirects treat it as decoded text, escape it and resolve dot segments before reporting it.
@@ -49,7 +49,7 @@ type authSession struct {
 	ended bool
 }
 
-// AuthSession signs the user in with an OAuth provider in the system's authentication session (RFC 8252): it prepares the redirect opts say, asks url for the authorization URL to open with it, which is the redirect_uri the URL names, and calls done once with the URL the provider redirected to, its query holding the code and state, or with an AuthError: AuthCancelled when the user closes the session. The app makes the PKCE verifier and the state and checks them. macOS and iOS open ASWebAuthenticationSession; desktops otherwise open the default browser and serve the redirect on loopback, and the web a popup. Elsewhere, or for a redirect a platform cannot catch, done hears AuthUnavailable. cancel ends the session with AuthCancelled; a session outlives the owner that started it, done running under the root then, as other answers do.
+// AuthSession signs the user in with an OAuth provider in the system's authentication session (RFC 8252): it prepares the redirect opts say, asks url for the authorization URL to open with it, which is the redirect_uri the URL names, and calls done once with the URL the provider redirected to, its query holding the code and state, or with an AuthError: AuthCancelled when the user closes the session. The app makes the PKCE verifier and the state and checks them. macOS, iOS and watchOS open ASWebAuthenticationSession; desktops otherwise open the default browser and serve the redirect on loopback, and the web a popup. Elsewhere, or for a redirect a platform cannot catch, done hears AuthUnavailable. cancel ends the session with AuthCancelled; a session outlives the owner that started it, done running under the root then, as other answers do.
 func (cx *Scope) AuthSession(url func(redirect string) string, opts AuthSessionOptions, done func(callback string, err error)) (cancel func()) {
 	if done == nil {
 		done = func(string, error) {}

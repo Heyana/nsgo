@@ -1253,7 +1253,13 @@ func (s *surface) apply(b *driver.MountBatch) {
 			apple.HandleSpeech(it.Count, *it.Speech, s.engine.Dispatch)
 			continue
 		case driver.ItemAuthSession:
-			apple.HandleAuthSession(it.Count, *it.Auth, s.uiWindow, s.engine.Dispatch)
+			if onTV() {
+				if ev, ok := driver.NoAuthSession(it); ok {
+					s.engine.Dispatch(ev)
+				}
+			} else if it.Auth != nil {
+				apple.HandleAuthSession(it.Count, *it.Auth, s.uiWindow, s.engine.Dispatch)
+			}
 			continue
 		case driver.ItemSpeak:
 			apple.HandleSpeak(it.Count, *it.Speak, s.engine.Dispatch)

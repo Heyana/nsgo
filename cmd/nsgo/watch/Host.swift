@@ -10,6 +10,7 @@
 import SwiftUI
 import Observation
 import ImageIO
+import AuthenticationServices
 
 // MARK: The bridge
 
@@ -36,6 +37,9 @@ struct Bridge {
 	var lifecycle: @convention(c) (UInt8) -> Void
 	/// The PNG nsgo_watch_snapshot rendered.
 	var snapshot: @convention(c) (UnsafePointer<UInt8>?, Int) -> Void
+	/// Authentication session id ended: callback (0), cancelled (1), failed
+	/// (2) or unavailable (3), with a callback URL or error in UTF-8.
+	var auth: @convention(c) (UInt32, UInt8, UnsafePointer<UInt8>?, Int) -> Void
 }
 
 var bridge: Bridge?
@@ -44,7 +48,7 @@ var bridge: Bridge?
 /// order.
 @_cdecl("nsgo_watch_connect")
 public func nsgoWatchConnect(_ fns: UnsafePointer<UnsafeRawPointer>, _ n: Int) {
-	guard n >= 9 else { return }
+	guard n >= 10 else { return }
 	bridge = Bridge(
 		size: unsafeBitCast(fns[0], to: (@convention(c) (Double, Double, Double, Double, Double, Double, Double, UInt32) -> Void).self),
 		touch: unsafeBitCast(fns[1], to: (@convention(c) (UInt8, Double, Double, Double) -> Void).self),
@@ -54,7 +58,8 @@ public func nsgoWatchConnect(_ fns: UnsafePointer<UnsafeRawPointer>, _ n: Int) {
 		text: unsafeBitCast(fns[5], to: (@convention(c) (UInt32, UInt8, UnsafePointer<UInt8>?, Int) -> Void).self),
 		alert: unsafeBitCast(fns[6], to: (@convention(c) (UInt32, Int32) -> Void).self),
 		lifecycle: unsafeBitCast(fns[7], to: (@convention(c) (UInt8) -> Void).self),
-		snapshot: unsafeBitCast(fns[8], to: (@convention(c) (UnsafePointer<UInt8>?, Int) -> Void).self))
+		snapshot: unsafeBitCast(fns[8], to: (@convention(c) (UnsafePointer<UInt8>?, Int) -> Void).self),
+		auth: unsafeBitCast(fns[9], to: (@convention(c) (UInt32, UInt8, UnsafePointer<UInt8>?, Int) -> Void).self))
 }
 
 /// nsgo_watch_main runs the app on the calling thread, the main thread,
@@ -100,6 +105,65 @@ public func nsgoWatchTick(_ on: UInt8) {
 func sendText(_ id: UInt32, _ kind: UInt8, _ s: String) {
 	var s = s
 	s.withUTF8 { b in bridge?.text(id, kind, b.baseAddress, b.count) }
+}
+
+// MARK: Authentication
+
+/// The framework presents the watch's authentication UI itself. It has no
+/// presentationContextProvider on watchOS; the SwiftUI host owns its lifetime.
+final class AuthSessions {
+	private final class Entry { var session: ASWebAuthenticationSession? }
+	private var sessions: [UInt32: Entry] = [:]
+
+	func open(_ id: UInt32, url: String, scheme: String, host: String, path: String, ephemeral: Bool) {
+		cancel(id)
+		guard let url = URL(string: url), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+			report(id, 2, "ASWebAuthenticationSession needs an HTTP or HTTPS authorization URL")
+			return
+		}
+		let entry = Entry()
+		let completed: ASWebAuthenticationSession.CompletionHandler = { [weak self, weak entry] callback, error in
+			DispatchQueue.main.async {
+				guard let self, let entry, self.sessions[id] === entry else { return }
+				self.sessions.removeValue(forKey: id)
+				if let callback {
+					self.report(id, 0, callback.absoluteString)
+				} else if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
+					self.report(id, 1, "")
+				} else {
+					self.report(id, 2, error?.localizedDescription ?? "ASWebAuthenticationSession returned no callback")
+				}
+			}
+		}
+		let session: ASWebAuthenticationSession
+		if scheme.lowercased() == "https" {
+			if #available(watchOS 10.4, *) {
+				session = ASWebAuthenticationSession(url: url, callback: .https(host: host, path: path), completionHandler: completed)
+			} else {
+				report(id, 3, "HTTPS authentication callbacks need watchOS 10.4")
+				return
+			}
+		} else {
+			session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme, completionHandler: completed)
+		}
+		entry.session = session
+		sessions[id] = entry
+		session.prefersEphemeralWebBrowserSession = ephemeral
+		if !session.start(), sessions[id] === entry {
+			sessions.removeValue(forKey: id)
+			report(id, 2, "ASWebAuthenticationSession did not start")
+		}
+	}
+
+	func cancel(_ id: UInt32) {
+		let entry = sessions.removeValue(forKey: id)
+		entry?.session?.cancel()
+	}
+
+	private func report(_ id: UInt32, _ outcome: UInt8, _ value: String) {
+		var value = value
+		value.withUTF8 { bytes in bridge?.auth(id, outcome, bytes.baseAddress, bytes.count) }
+	}
 }
 
 // MARK: The tree
@@ -231,6 +295,7 @@ struct Alert: Identifiable {
 	static let shared = Store()
 
 	@ObservationIgnored var nodes: [UInt32: Node] = [:]
+	@ObservationIgnored private var authSessions = AuthSessions()
 	var root: Node?
 	var ticking = false
 	var alert: Alert?
@@ -241,7 +306,7 @@ struct Alert: Identifiable {
 	/// The ops Go writes, as watchos.go's op constants number them.
 	enum Op: UInt8 {
 		case create = 1, insert, remove, delete, frame, look, ink, redraw, scroll, scrollTo, input, focus, blur,
-			alert, root, lock, dismiss, cull, access
+			alert, root, lock, dismiss, cull, access, authSession
 	}
 
 	func apply(_ r: Reader) {
@@ -343,6 +408,14 @@ struct Alert: Identifiable {
 				if n.a11yLabel != label { n.a11yLabel = label }
 				if n.a11yHint != hint { n.a11yHint = hint }
 				if n.a11yValue != value { n.a11yValue = value }
+			case .authSession:
+				let id = r.u32(), command = r.u8()
+				if command == 1 {
+					let url = r.string(), scheme = r.string(), host = r.string(), path = r.string(), ephemeral = r.u8() != 0
+					authSessions.open(id, url: url, scheme: scheme, host: host, path: path, ephemeral: ephemeral)
+				} else if command == 2 {
+					authSessions.cancel(id)
+				}
 			}
 		}
 	}

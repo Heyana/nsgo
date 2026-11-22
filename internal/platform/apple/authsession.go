@@ -13,7 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/objcblock"
 )
 
-// Auth sessions for macOS and iOS through AuthenticationServices' ASWebAuthenticationSession, which shows the provider's page in a browser sheet sharing the user's Safari cookies (unless ephemeral) and ends once the page redirects to the app's callback scheme, which the app need not register. tvOS has no such session and answers unavailable.
+// Auth sessions for macOS and iOS through AuthenticationServices' ASWebAuthenticationSession, which shows the provider's page in a browser sheet sharing the user's Safari cookies (unless ephemeral) and ends once the page redirects to the app's callback scheme, which the app need not register. The iOS backend keeps tvOS unavailable rather than using its different authentication flow.
 
 const authenticationServicesPath = "/System/Library/Frameworks/AuthenticationServices.framework/AuthenticationServices"
 
