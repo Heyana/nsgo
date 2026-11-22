@@ -64,6 +64,16 @@ final class HeaderLayout {
         return clamp01((clamp01(fraction) - CROSSFADE) / (1f - CROSSFADE));
     }
 
+    /**
+     * Resolves the header container's ARGB background color: an explicit
+     * app-supplied color wins, else transparent (0) when HeaderTransparent is
+     * set, else the platform theme's background color.
+     */
+    static int backgroundColor(int customArgb, boolean transparent, int themeArgb) {
+        if (customArgb != 0) return customArgb;
+        return transparent ? 0 : themeArgb;
+    }
+
     /** Scales the alpha channel of an ARGB color by alpha in [0, 1]. */
     static int withAlpha(int argb, float alpha) {
         int a = Math.round(((argb >>> 24) & 0xff) * clamp01(alpha));

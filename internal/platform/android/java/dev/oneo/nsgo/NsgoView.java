@@ -2878,6 +2878,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 Scrolling.Config c = Scrolling.Config.read(in);
                 scroller(n, c.horizontal, c.zooms());
                 ((Scrolling.Scroller) n.scroller).configure(c);
+                if (n.view instanceof ScrollEdges) ((ScrollEdges) n.view).setEdges(c.edges);
                 n.insetTop = c.insetTop;
                 n.headerInset = c.horizontal ? 0 : c.headerInset;
                 break;
@@ -4696,7 +4697,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         View view = kind == Protocol.KIND_TEXT ? new TextNode(context)
                 : kind == Protocol.KIND_IMAGE ? new ImageNode(context)
                 : kind == Protocol.KIND_CANVAS ? new CanvasNode(context)
-                : kind == Protocol.KIND_SCROLL ? new FrameLayout(context)
+                : kind == Protocol.KIND_SCROLL ? new ScrollEdges(context, density)
                 : kind == Protocol.KIND_MODAL ? new Layer(context) : new Group(context);
         Node n = new Node(id, view);
         // Styles can arrive before Android lays the view out. Its pivot is relative to the actual size, so refresh it after a first layout or resize rather than retaining a pivot computed against zero bounds.
@@ -6024,6 +6025,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 }
                 if (moved) applyAnimated();
                 if (n.sticky != null) pinSticky(n);
+                if (n.view instanceof ScrollEdges && ((ScrollEdges) n.view).hasEdges()) n.view.invalidate();
                 scrollEvent(Protocol.EVENT_SCROLL, x, y, zoom);
             }
 

@@ -8,7 +8,7 @@ import (
 	"github.com/nsgo-dev/nsgo/icons/lucide"
 )
 
-// TestNavPage gives a page without a header of its own a themed one with a back button, below the status bar where the system has a header. On iOS and Android the system's header stands in for it, and on Android it is opaque in the surface's color, the page below it. A web build that runs as iOS has no system header, so it draws NavHeader.
+// TestNavPage gives a page without a header of its own a themed one with a back button, below the status bar where the system has a header. On iOS and Android the system's transparent header stands in for it over the page, which scrolls under it. A web build that runs as iOS has no system header, so it draws NavHeader.
 func TestNavPage(t *testing.T) {
 	android := phoneEnv
 	android.OS, android.HeaderHeight, android.LargeHeaderHeight, android.SafeArea = core.OSAndroid, 64, 152, core.Edges{Top: 47, Bottom: 34}
@@ -31,18 +31,18 @@ func TestNavPage(t *testing.T) {
 				t.Fatal("Android: the page still draws NavHeader")
 			}
 			c := app.Find("id:page-detail").Screen
-			if c.Title != "Detail detail" || c.HeaderHidden || c.HeaderTransparent || !c.CanGoBack || c.Right == 0 {
-				t.Fatalf("Android: system header = %+v, want an opaque one titled Detail detail with a back button and the trailing views", c)
+			if c.Title != "Detail detail" || c.HeaderHidden || !c.HeaderTransparent || !c.CanGoBack || c.Right == 0 {
+				t.Fatalf("Android: system header = %+v, want a transparent one titled Detail detail with a back button and the trailing views", c)
 			}
-			if c.Background != p.Surface || c.TitleColor != p.Text {
-				t.Fatalf("Android: header colors = %x on %x, want the text on the surface", c.TitleColor, c.Background)
+			if c.Background != 0 || c.TitleColor != p.Text || c.TintColor != p.Text {
+				t.Fatalf("Android: header colors = title %x tint %x on %x, want text %x on transparent (0)", c.TitleColor, c.TintColor, c.Background, p.Text)
 			}
 			// The bar, and the status bar past the padding of start's root.
 			if want := core.Points(64 + 47 - 16); c.HeaderHeight != want {
 				t.Fatalf("Android: header height = %v, want %v", c.HeaderHeight, want)
 			}
-			if got := app.Find("content-detail").Frame.Origin.Y; got != c.HeaderHeight {
-				t.Fatalf("Android: content top = %v, want below the header, at %v", got, c.HeaderHeight)
+			if got := app.Find("content-detail").Frame.Origin.Y; got != 0 {
+				t.Fatalf("Android: content top = %v, want 0 (under the transparent header)", got)
 			}
 			app.Find("Detail detail")
 			app.HeaderBack("id:page-detail")
@@ -114,17 +114,17 @@ func TestNavPageKeepsCustomHeader(t *testing.T) {
 }
 
 // TestNavInset leaves room for the header only where the content runs under
-// it, and the page's content starts under it there.
+// it, and the page's content starts under it there (both iOS and Android).
 func TestNavInset(t *testing.T) {
 	phone := phoneEnv
 	phone.HeaderHeight, phone.SafeArea = 44, core.Edges{Top: 47, Bottom: 34}
 	android := phone
-	android.OS = core.OSAndroid
+	android.OS, android.HeaderHeight = core.OSAndroid, 64
 	for _, c := range []struct {
 		env   core.Environment
 		inset core.Points // past the status bar, when above 0
 		top   core.Points
-	}{{phone, 1, 0}, {android, 0, 44 + 47 - 16}, {desktopEnv, 0, 44}} {
+	}{{phone, 1, 0}, {android, 1, 0}, {desktopEnv, 0, 44}} {
 		var inset core.Points
 		app, _ := start(t, c.env, func(cx *core.Scope) core.Node {
 			nav := base.NewNav(cx, "home")
@@ -143,5 +143,108 @@ func TestNavInset(t *testing.T) {
 		if got := app.Find("content").Frame.Origin.Y; got != c.top {
 			t.Fatalf("%v: content top = %v, want %v", c.env.OS, got, c.top)
 		}
+	}
+}
+
+// TestNavPageScrollUnderTransparentHeader verifies that both iOS and Android
+// lay a NavPage's scroll view under the transparent header, inset its initial
+// content below the header, and attach a top progressive-blur edge effect
+// covering the header height.
+func TestNavPageScrollUnderTransparentHeader(t *testing.T) {
+	iosEnv := phoneEnv
+	iosEnv.OS, iosEnv.HeaderHeight, iosEnv.SafeArea = core.OSIOS, 44, core.Edges{Top: 47, Bottom: 34}
+	androidEnv := phoneEnv
+	androidEnv.OS, androidEnv.HeaderHeight, androidEnv.LargeHeaderHeight, androidEnv.SafeArea = core.OSAndroid, 64, 152, core.Edges{Top: 47, Bottom: 34}
+
+	for _, e := range []core.Environment{iosEnv, androidEnv} {
+		t.Run(string(e.OS), func(t *testing.T) {
+			app, p := start(t, e, func(cx *core.Scope) core.Node {
+				nav := base.NewNav(cx, "home")
+				return nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, _ string, _ func() int) base.NavPage {
+					scroll := &core.Ref{}
+					return NavPage(cx, base.NavPage{
+						Title:  "Feed",
+						TestID: "page",
+						Children: []core.Node{
+							core.Scroll{
+								Ref:    scroll,
+								TestID: "feed",
+								Style:  core.Style{FlexGrow: 1},
+								Children: []core.Node{
+									core.View{Style: core.Style{Height: core.Pt(1200)}},
+								},
+							},
+						},
+					}, NavHeader{Scroll: scroll})
+				})
+			})
+			screen := app.Find("id:page").Screen
+			if !screen.HeaderTransparent || screen.Background != 0 {
+				t.Fatalf("%v: screen header = %+v, want transparent with unset background", e.OS, screen)
+			}
+			wantHeader := e.HeaderHeight + e.SafeArea.Top - 16
+			if screen.HeaderHeight != wantHeader {
+				t.Fatalf("%v: header height = %v, want %v", e.OS, screen.HeaderHeight, wantHeader)
+			}
+			feed := app.Find("id:feed")
+			if feed.Frame.Origin.Y != 0 {
+				t.Fatalf("%v: scroll top = %v, want 0 (scrolling under header)", e.OS, feed.Frame.Origin.Y)
+			}
+			if feed.Scroll.HeaderInset != wantHeader || feed.Scroll.Behavior.ContentInset.Top != wantHeader {
+				t.Fatalf("%v: scroll insets = (header=%v, top=%v), want %v", e.OS, feed.Scroll.HeaderInset, feed.Scroll.Behavior.ContentInset.Top, wantHeader)
+			}
+			topEdge := feed.Scroll.Edges[0]
+			if topEdge.Drawn() != core.EdgeEffectSoft {
+				t.Fatalf("%v: top edge drawn = %v, want soft", e.OS, topEdge.Drawn())
+			}
+			if wantExtent := wantHeader - navEdgeTail; topEdge.Extent != wantExtent {
+				t.Fatalf("%v: top edge extent = %v, want %v", e.OS, topEdge.Extent, wantExtent)
+			}
+			if topEdge.Band() != wantHeader {
+				t.Fatalf("%v: top edge band = %v, want %v", e.OS, topEdge.Band(), wantHeader)
+			}
+			if topEdge.Tint != p.Background {
+				t.Fatalf("%v: top edge tint = %x, want page background %x", e.OS, topEdge.Tint, p.Background)
+			}
+		})
+	}
+}
+
+// TestNavPagePreservesCustomHeaderBackground verifies that explicit custom
+// HeaderStyle / HeaderStyleFunc backgrounds survive ui.NavPage on Android and iOS.
+func TestNavPagePreservesCustomHeaderBackground(t *testing.T) {
+	customBg := core.RGB(0x112233)
+	customTitle := core.RGB(0xeeeeee)
+	for _, os := range []core.OS{core.OSAndroid, core.OSIOS} {
+		t.Run(string(os), func(t *testing.T) {
+			e := phoneEnv
+			e.OS = os
+			e.HeaderHeight = 64
+			app, p := start(t, e, func(cx *core.Scope) core.Node {
+				nav := base.NewNav(cx, "static", "dynamic")
+				return nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, route string, _ func() int) base.NavPage {
+					page := base.NavPage{Title: route, TestID: "page-" + route}
+					if route == "static" {
+						page.HeaderStyle = core.Style{Background: customBg, Color: customTitle}
+					} else {
+						page.HeaderStyleFunc = func() core.Style {
+							return core.Style{Background: customBg, Color: customTitle}
+						}
+					}
+					return NavPage(cx, page, NavHeader{})
+				})
+			})
+			c := app.Find("id:page-dynamic").Screen
+			if c.Background != customBg || c.TitleColor != customTitle || c.TintColor != p.Text {
+				t.Fatalf("%v dynamic: got bg=%x title=%x tint=%x, want bg=%x title=%x tint=%x",
+					os, c.Background, c.TitleColor, c.TintColor, customBg, customTitle, p.Text)
+			}
+			app.HeaderBack("id:page-dynamic")
+			c = app.Find("id:page-static").Screen
+			if c.Background != customBg || c.TitleColor != customTitle || c.TintColor != p.Text {
+				t.Fatalf("%v static: got bg=%x title=%x tint=%x, want bg=%x title=%x tint=%x",
+					os, c.Background, c.TitleColor, c.TintColor, customBg, customTitle, p.Text)
+			}
+		})
 	}
 }

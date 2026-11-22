@@ -102,5 +102,13 @@ public final class HeaderCheck {
         check(HeaderLayout.withAlpha(0xff112233, 0.5f) == 0x80112233, "withAlpha 0.5");
         check(HeaderLayout.withAlpha(0xff112233, 1f) == 0xff112233, "withAlpha 1");
         check(HeaderLayout.withAlpha(0x80112233, 0.5f) == 0x40112233, "withAlpha translucent");
+
+        // Header background resolution: custom background wins; else transparent=0, opaque=theme.
+        check(HeaderLayout.backgroundColor(0, true, 0xffffffff) == 0, "transparent default");
+        check(HeaderLayout.backgroundColor(0, false, 0xffffffff) == 0xffffffff, "opaque default light");
+        check(HeaderLayout.backgroundColor(0, false, 0xff000000) == 0xff000000, "opaque default dark");
+        check(HeaderLayout.backgroundColor(0xff112233, true, 0xffffffff) == 0xff112233, "transparent respects custom opaque bg");
+        check(HeaderLayout.backgroundColor(0x80112233, true, 0xffffffff) == 0x80112233, "transparent respects custom translucent bg");
+        check(HeaderLayout.backgroundColor(0xff112233, false, 0xffffffff) == 0xff112233, "opaque respects custom bg");
     }
 }

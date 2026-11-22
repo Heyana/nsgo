@@ -1424,31 +1424,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		case driver.ItemViewProps:
 			writeViewProps(w, it.ViewProps)
 		case driver.ItemScrollConfig:
-			c := it.Scroll
-			b := &c.Behavior
-			w.flags(c.Horizontal, c.HideIndicator)
-			w.flags(b.Paging, b.DisableIntervalMomentum, b.NoScroll, b.NoBounces, c.Refreshable, c.Refreshing,
-				c.NoBouncesZoom, c.NoPinchZoom)
-			w.flags(c.CenterContent)
-			w.points(b.SnapToInterval)
-			w.byte(byte(b.SnapToAlignment))
-			w.u32(uint32(len(b.SnapToOffsets)))
-			for _, o := range b.SnapToOffsets {
-				w.points(o)
-			}
-			w.float(b.Deceleration())
-			in := b.ContentInset
-			w.points(in.Top)
-			w.points(in.Right)
-			w.points(in.Bottom)
-			w.points(in.Left)
-			w.byte(byte(b.KeyboardDismissMode))
-			w.byte(byte(b.KeyboardShouldPersistTaps))
-			w.float(c.MinZoomScale)
-			w.float(c.MaxZoomScale)
-			w.float(c.ZoomScale)
-			w.points(b.RefreshIndicator)
-			w.points(c.HeaderInset)
+			writeScrollConfig(w, it.Scroll)
 		case driver.ItemScrollContent:
 			w.points(it.Size.Width)
 			w.points(it.Size.Height)

@@ -105,8 +105,9 @@ final class Header {
         int text = themeColor(context, android.R.attr.textColorPrimary, dark ? 0xffffffff : 0xff1f2328);
         resolvedTitleColor = titleColor != 0 ? Text.argb(titleColor) : text;
         largeTitle.setTextColor(resolvedTitleColor);
-        int fill = background != 0 ? Text.argb(background) : themeColor(context, android.R.attr.colorBackground, dark ? 0xff000000 : 0xffffffff);
-        view.setBackgroundColor(transparent ? 0 : fill);
+        int themeFill = themeColor(context, android.R.attr.colorBackground, dark ? 0xff000000 : 0xffffffff);
+        int customFill = background != 0 ? Text.argb(background) : 0;
+        view.setBackgroundColor(HeaderLayout.backgroundColor(customFill, transparent, themeFill));
         arrow.setColor(tint != 0 ? Text.argb(tint) : text);
         titleColorApplied = false;
         applyTitleState();

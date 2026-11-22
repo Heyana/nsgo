@@ -515,3 +515,72 @@ func TestWriteEditingEncodesPadding(t *testing.T) {
 		t.Fatalf("padding = %+v (%d bytes left), want %+v", got, len(r.buf), pad)
 	}
 }
+
+// TestWriteScrollConfigEncodesEdges checks that writeScrollConfig appends the
+// four scroll edge effects (top, right, bottom, left) after HeaderInset in the
+// order Scrolling.Config.read decodes them (#1608).
+func TestWriteScrollConfigEncodesEdges(t *testing.T) {
+	topTint, topLine := driver.RGB(0xfafafa), driver.RGBA(0x000000, 0.1)
+	botTint, botLine := driver.RGB(0x111111), driver.RGBA(0xffffff, 0.07)
+	cfg := &driver.ScrollConfig{
+		Behavior: driver.ScrollBehavior{
+			SnapToOffsets: []driver.Points{100, 200},
+			ContentInset:  driver.Edges{Top: 95, Bottom: 34},
+		},
+		MinZoomScale: 1,
+		MaxZoomScale: 1,
+		ZoomScale:    1,
+		HeaderInset:  95,
+		Edges: [4]driver.ScrollEdge{
+			// Top: Automatic with positive extent -> drawn soft (1).
+			{Effect: driver.EdgeEffectAutomatic, Extent: 71, Tint: topTint, Line: topLine},
+			// Right: Hidden even with extent -> drawn none (0).
+			{Effect: driver.EdgeEffectHidden, Extent: 40, Tint: topTint, Line: topLine},
+			// Bottom: Hard with positive extent -> drawn hard (2).
+			{Effect: driver.EdgeEffectHard, Extent: 56, Tint: botTint, Line: botLine},
+			// Left: Soft with 0 extent -> drawn none (0).
+			{Effect: driver.EdgeEffectSoft, Extent: 0, Tint: topTint, Line: topLine},
+		},
+	}
+	var w writer
+	writeScrollConfig(&w, cfg)
+	r := reader{w.buf}
+	// Skip header fields up to HeaderInset to verify full stream alignment.
+	_, _, _ = r.byte(), r.byte(), r.byte() // flags
+	_ = r.points()                         // SnapToInterval
+	_ = r.byte()                           // SnapToAlignment
+	if n := r.u32(); n != 2 {
+		t.Fatalf("snap offsets = %d, want 2", n)
+	}
+	_, _ = r.points(), r.points()
+	_ = r.float() // Deceleration
+	inTop, _, inBot, _ := r.points(), r.points(), r.points(), r.points()
+	if inTop != 95 || inBot != 34 {
+		t.Fatalf("insets = (%v, %v), want (95, 34)", inTop, inBot)
+	}
+	_, _ = r.byte(), r.byte() // keyboard dismiss, persist taps
+	_, _, _ = r.float(), r.float(), r.float()
+	_ = r.points() // RefreshIndicator
+	if hi := r.points(); hi != 95 {
+		t.Fatalf("headerInset = %v, want 95", hi)
+	}
+	// Top: soft (1)
+	if mode, ext, tint, line := r.byte(), r.points(), driver.Color(r.u32()), driver.Color(r.u32()); mode != 1 || ext != 71 || tint != topTint || line != topLine {
+		t.Fatalf("top edge = (mode=%d ext=%v tint=%#x line=%#x)", mode, ext, tint, line)
+	}
+	// Right: none (0)
+	if mode := r.byte(); mode != 0 {
+		t.Fatalf("right edge mode = %d, want 0", mode)
+	}
+	// Bottom: hard (2)
+	if mode, ext, tint, line := r.byte(), r.points(), driver.Color(r.u32()), driver.Color(r.u32()); mode != 2 || ext != 56 || tint != botTint || line != botLine {
+		t.Fatalf("bottom edge = (mode=%d ext=%v tint=%#x line=%#x)", mode, ext, tint, line)
+	}
+	// Left: none (0)
+	if mode := r.byte(); mode != 0 {
+		t.Fatalf("left edge mode = %d, want 0", mode)
+	}
+	if len(r.buf) != 0 {
+		t.Fatalf("%d unexpected trailing bytes", len(r.buf))
+	}
+}

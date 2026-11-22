@@ -12,9 +12,9 @@ const navEdgeTail core.Points = 24
 // systemHeader reports whether a page shows the platform's header, iOS's navigation bar or Android's toolbar, rather than NavHeader, which a watch and a web build that runs as them show: where mobile's system components show.
 func systemHeader(cx *core.Scope) bool { return mobile.IsAvailable(cx) }
 
-// transparentHeader reports whether the system's header lies over the page's content without a background, which scrolls under it with a progressive blur: iOS's. Android's stays opaque until it draws scroll edge effects.
+// transparentHeader reports whether the system's header lies over the page's content without a background, which scrolls under it with a progressive blur: iOS's and Android's.
 func transparentHeader(cx *core.Scope) bool {
-	return cx.Env().OS() == core.OSIOS && systemHeader(cx)
+	return systemHeader(cx)
 }
 
 // NavInset is the room to leave at the top of a page's content that does not scroll for a NavPage's system header, and 0 where the header takes room of its own. Scroll views under the header are inset already. It is tracked as the safe area changes.
@@ -34,7 +34,7 @@ type NavHeader struct {
 	BackLabel string
 	Leading   []core.Node
 	Trailing  []core.Node
-	// Scroll is the page's scroll view, ScrollFunc when it changes: under iOS's system header it blurs progressively toward the top.
+	// Scroll is the page's scroll view, ScrollFunc when it changes: under iOS's and Android's system headers it blurs progressively toward the top.
 	Scroll     *core.Ref
 	ScrollFunc func() *core.Ref
 	// Symbols has iOS's system header show its own buttons for what takes presses in Trailing, one each in order, as the back button is drawn.

@@ -24,6 +24,22 @@ func TestHeaderLayoutJava(t *testing.T) {
 	}
 }
 
+// TestScrollEdgeMathJava runs the Android scroll edge math on the host JVM,
+// verifying progressive blur levels, band and capture rects, hairline geometry,
+// mask gradients, and smoothstep tint stops match internal/driver/scroll.go.
+func TestScrollEdgeMathJava(t *testing.T) {
+	javac, java := androidJDK(t)
+	dir := t.TempDir()
+	if out, err := exec.CommandContext(t.Context(), javac, "-d", dir,
+		filepath.Join("java", "dev", "oneo", "nsgo", "ScrollEdgeMath.java"),
+		filepath.Join("testdata", "ScrollEdgeCheck.java")).CombinedOutput(); err != nil {
+		t.Fatalf("javac: %v\n%s", err, out)
+	}
+	if out, err := exec.CommandContext(t.Context(), java, "-cp", dir, "dev.oneo.nsgo.ScrollEdgeCheck").CombinedOutput(); err != nil {
+		t.Fatalf("java: %v\n%s", err, out)
+	}
+}
+
 // TestReadEnvironmentReadsAndroidHeaderHeights verifies that readEnvironment
 // preserves Android's Material 3 regular (64 dp) and large (152 dp) bar heights.
 func TestReadEnvironmentReadsAndroidHeaderHeights(t *testing.T) {

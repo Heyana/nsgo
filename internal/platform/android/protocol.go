@@ -658,6 +658,53 @@ func writeEditing(w *writer, in *driver.InputConfig) {
 	w.points(in.Padding.Left)
 }
 
+// writeScrollConfig writes ItemScrollConfig as Scrolling.Config.read reads it:
+// scroll behavior, insets, zoom limits, header inset, and each side's drawn
+// scroll edge effect (top, right, bottom, left): 0 for none, 1 for soft and 2
+// for hard, followed when drawn by the bar's extent in points and its tint and
+// hairline colors (RGBA).
+func writeScrollConfig(w *writer, c *driver.ScrollConfig) {
+	b := &c.Behavior
+	w.flags(c.Horizontal, c.HideIndicator)
+	w.flags(b.Paging, b.DisableIntervalMomentum, b.NoScroll, b.NoBounces, c.Refreshable, c.Refreshing,
+		c.NoBouncesZoom, c.NoPinchZoom)
+	w.flags(c.CenterContent)
+	w.points(b.SnapToInterval)
+	w.byte(byte(b.SnapToAlignment))
+	w.u32(uint32(len(b.SnapToOffsets)))
+	for _, o := range b.SnapToOffsets {
+		w.points(o)
+	}
+	w.float(b.Deceleration())
+	in := b.ContentInset
+	w.points(in.Top)
+	w.points(in.Right)
+	w.points(in.Bottom)
+	w.points(in.Left)
+	w.byte(byte(b.KeyboardDismissMode))
+	w.byte(byte(b.KeyboardShouldPersistTaps))
+	w.float(c.MinZoomScale)
+	w.float(c.MaxZoomScale)
+	w.float(c.ZoomScale)
+	w.points(b.RefreshIndicator)
+	w.points(c.HeaderInset)
+	for i := range c.Edges {
+		e := &c.Edges[i]
+		switch e.Drawn() {
+		case driver.EdgeEffectSoft:
+			w.byte(1)
+		case driver.EdgeEffectHard:
+			w.byte(2)
+		default:
+			w.byte(0)
+			continue
+		}
+		w.points(e.Extent)
+		w.u32(uint32(e.Tint))
+		w.u32(uint32(e.Line))
+	}
+}
+
 // readPaste reads the paste an EventPaste carries in its data: lines of
 // "uri\t" and a file: URL, or "file\t", a MIME type, a tab and the
 // bytes in base64.

@@ -31,7 +31,7 @@ On iOS and Android the platform draws the system's header from the page's title 
 
 Android uses a Material 3 top app bar. A regular bar is 64 dp with a 22 sp title. `HeaderLargeTitle` gives a 152 dp large bar with a 28 sp title that collapses into the regular bar as the scroll view at the top of the page scrolls its content under it, and expands as the content returns to the top.
 
-Give a page its own `Header` to replace `ui.NavHeader`. On iOS and Android it becomes the system header's title view, in place of `HeaderTitle`, beside the page's `HeaderLeft`, `HeaderRight` and the back button; it takes its content's size there, so give a search field or other growing view a width. Elsewhere it is drawn above the content. `ui.NavHeader.Scroll` still connects an iOS page's scrolling to its header's blur.
+Give a page its own `Header` to replace `ui.NavHeader`. On iOS and Android it becomes the system header's title view, in place of `HeaderTitle`, beside the page's `HeaderLeft`, `HeaderRight` and the back button; it takes its content's size there, so give a search field or other growing view a width. Elsewhere it is drawn above the content. `ui.NavHeader.Scroll` still connects an iOS or Android page's scrolling to its header's blur.
 
 `NoPopOnBack` keeps a page when back is pressed, `OnBackPress` hears the press and `NoPopOnSwipe` turns off iOS's swipe back. `cx.OnBackPress(func() bool)` gives the app a handler before the stack, for unsaved changes. `OnDismiss` reports that the user popped the page, and the stack removes it.
 

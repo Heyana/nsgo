@@ -53,6 +53,15 @@ final class Scrolling {
         float minZoom = 1, maxZoom = 1, zoom = 1;
         /** The height of the app's own refresh indicator; 0 shows the spinner. */
         float refreshIndicator;
+        /** Drawn scroll edge effects for top, right, bottom, left; null entries draw nothing. */
+        final Edge[] edges = new Edge[4];
+
+        /** One side's drawn scroll edge effect, colors in ARGB. */
+        static final class Edge {
+            int effect;
+            float extent;
+            int tint, line;
+        }
 
         boolean snaps() {
             return paging || interval > 0 || offsets.length > 0;
@@ -105,6 +114,19 @@ final class Scrolling {
             c.zoom = in.readFloat();
             c.refreshIndicator = in.readFloat();
             c.headerInset = in.readFloat();
+            for (int i = 0; i < 4; i++) {
+                int effect = in.readUnsignedByte();
+                if (effect != 0) {
+                    Edge e = new Edge();
+                    e.effect = effect;
+                    e.extent = in.readFloat();
+                    int tint = in.readInt();
+                    e.tint = (tint >>> 8) | (tint << 24);
+                    int line = in.readInt();
+                    e.line = (line >>> 8) | (line << 24);
+                    c.edges[i] = e;
+                }
+            }
             return c;
         }
     }
