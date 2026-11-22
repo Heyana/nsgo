@@ -404,7 +404,7 @@ func start(app engine.App, opts Options) (*window, error) {
 	runtime.LockOSThread()
 	registerFonts(opts.Fonts)
 	preferGLOnNvidia()
-	if gtkInitCheck() == 0 {
+	if !gtkDisplayReady() {
 		return nil, errors.New("no display; run the app in a desktop session or with xvfb-run")
 	}
 	if err := registerViewType(); err != nil {
@@ -570,7 +570,7 @@ func NewView(app engine.App, opts Options) (*View, error) {
 	}
 	runtime.LockOSThread()
 	registerFonts(opts.Fonts)
-	if gtkInitCheck() == 0 {
+	if !gtkDisplayReady() {
 		return nil, errors.New("no display")
 	}
 	if err := registerViewType(); err != nil {

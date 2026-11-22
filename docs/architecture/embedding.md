@@ -16,6 +16,8 @@ A view is one surface and one engine; `nsgo.Run` runs one engine with its loop, 
 
 The engine waits for its place so that the host's settings made before are in the app's first frame: `engine.HostSettings` keeps them until it starts. Once the engine stops, the backend destroys the native components still showing, since a stopped app deletes nothing: Android's runtime calls `NsgoComponent.destroy` as the process ends, and the Go process closes its own components when the pipe closes. A repeated `View.Close` does nothing on every desktop backend. On macOS the `NSView` is the host's until `View.Close` releases it: an engine that ends on a fault only stops the surface and takes the view out of its superview, and `Handle` returns 0 once the view is released. On Linux `View.Close` also takes the surface out of the process-wide registries and observers and releases its tree, text contexts and native references, leaving the widget in its parent for the host to remove.
 
+Linux checks GDK's default display after `gtk_init_check` in both standalone startup and `NewView`: GTK's initialization flag may stay true after opening its display failed. Repeated attempts with no display return their usual no-display error. An embedding host may later supply a valid GDK display and create a view; NSGo does not cache the earlier failure. Native subprocess tests cover repeated and mixed startup paths and a host-supplied X11 display.
+
 The host owns the window around a view:
 
 - Title, window commands, the menu bar and quitting are ignored. Dialogs and pickers belong to the top-level window.
