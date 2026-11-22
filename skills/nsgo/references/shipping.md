@@ -33,7 +33,7 @@ build:
   # ldflags: [-X main.releaseDate=2026-11-17]  # the app's own linker flags; -ldflags on build and test adds more
 # i18n: { dir: locales, source: en }
 # apple: { info: { NSCameraUsageDescription: Scans receipts. } }
-# release: { github: me/hello }
+# release: { github: me/hello, tag_prefix: v }
 # updates: { key: <public key from nsgo keygen> }
 # store: { dir: store }       # YAML and Markdown store listings per language
 # steam: { app_id: 480 }      # use your Steamworks App ID for native dev
@@ -55,6 +55,8 @@ go tool nsgo build -release-notes notes.md  # the release's notes, which the upd
 ```
 
 Packages land in `dist/<name>-<version>-<target>`, and everything to hand out in `dist/releases`, each file named `<name>-<version>-<system>-<arch>` with its `.sha256`. Direct releases with macOS or Windows installers also write a Homebrew cask (`dist/releases/homebrew/<slug>.rb`, with `auto_updates true`) and a winget multi-file manifest (`dist/releases/winget/`). Builds are release builds; `go tool nsgo dev -release` runs one with hot reload for measuring.
+
+Use the raw Git tag prefix in `release.tag_prefix`; generated install scripts encode it for GitHub download URLs. [GitHub releases](https://nsgo.dev/docs/building.md#publish-on-github)
 
 On the store channel, `-target macos` and `-target macos_universal` write one universal Mac App Store PKG. `-target android_arm64,android_x64` writes one AAB for both ABIs and needs an NDK for x86_64 ([Building](https://nsgo.dev/docs/building.md#store-packages)).
 

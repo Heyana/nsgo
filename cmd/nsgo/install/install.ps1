@@ -17,7 +17,7 @@ $name = @@NAME@@
 $slug = @@SLUG@@
 $version = if ($env:@@ENV@@_VERSION) { $env:@@ENV@@_VERSION } else { @@VERSION@@ }
 $version = $version -replace '^v', ''
-$base = if ($env:@@ENV@@_DOWNLOAD_URL) { $env:@@ENV@@_DOWNLOAD_URL } else { "https://github.com/$repository/releases/download/" + @@TAG_PREFIX@@ + $version }
+$base = if ($env:@@ENV@@_DOWNLOAD_URL) { $env:@@ENV@@_DOWNLOAD_URL } else { "https://github.com/$repository/releases/download/" + @@URL_TAG_PREFIX@@ + $version }
 
 $cpu = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 $arch = switch ($cpu) {

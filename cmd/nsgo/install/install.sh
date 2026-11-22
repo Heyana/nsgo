@@ -19,7 +19,8 @@ version="${@@ENV@@_VERSION:-}"
 [ -n "$version" ] || version=@@VERSION@@
 version="${version#v}"
 tag=@@TAG_PREFIX@@"$version"
-base="${@@ENV@@_DOWNLOAD_URL:-https://github.com/$repository/releases/download/$tag}"
+download_tag=@@URL_TAG_PREFIX@@"$version"
+base="${@@ENV@@_DOWNLOAD_URL:-https://github.com/$repository/releases/download/$download_tag}"
 
 fail() {
   echo "$name: $*" >&2

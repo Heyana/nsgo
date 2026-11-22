@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -196,14 +197,15 @@ func (p *project) writeInstallScripts(ctx context.Context, targets []string) err
 	}
 	slug := p.packageSlug()
 	values := map[string][2]string{
-		"REPOSITORY": {shQuote(repo), psQuote(repo)},
-		"NAME":       {shQuote(name), psQuote(name)},
-		"SLUG":       {shQuote(slug), psQuote(slug)},
-		"APP":        {shQuote(p.Name + ".app"), ""},
-		"VERSION":    {shQuote(p.Version), psQuote(p.Version)},
-		"TAG_PREFIX": {shQuote(p.tagPrefix()), psQuote(p.tagPrefix())},
-		"ENV":        {envName(slug), envName(slug)},
-		"GITHUB":     {repo, repo},
+		"REPOSITORY":     {shQuote(repo), psQuote(repo)},
+		"NAME":           {shQuote(name), psQuote(name)},
+		"SLUG":           {shQuote(slug), psQuote(slug)},
+		"APP":            {shQuote(p.Name + ".app"), ""},
+		"VERSION":        {shQuote(p.Version), psQuote(p.Version)},
+		"TAG_PREFIX":     {shQuote(p.tagPrefix()), psQuote(p.tagPrefix())},
+		"URL_TAG_PREFIX": {shQuote(url.PathEscape(p.tagPrefix())), psQuote(url.PathEscape(p.tagPrefix()))},
+		"ENV":            {envName(slug), envName(slug)},
+		"GITHUB":         {repo, repo},
 	}
 	var sh, ps []string
 	for key, v := range values {

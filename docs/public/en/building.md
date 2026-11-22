@@ -299,7 +299,7 @@ For local testing outside the Steam client, set `steam: {app_id: 480}` in `nsgo.
 
 ## Publish on GitHub
 
-When the build has a macOS, Windows or Linux target, `dist/releases` also holds `install.sh` and `install.ps1`, which install the app from the releases of the GitHub repository `release.github` names, else the one the app's Git remote `origin` is on; without either `build` writes none and says so. Upload its files, the top level without `miniprogram/`, to the release tagged `v<version>`:
+When the build has a macOS, Windows or Linux target, `dist/releases` also holds `install.sh` and `install.ps1`, which install the app from the releases of the GitHub repository `release.github` names, else the one the app's Git remote `origin` is on; without either `build` writes none and says so. Upload its files, the top level without `miniprogram/`, to the release tagged `v<version>` (`release.tag_prefix` replaces `v`; the scripts encode reserved URL characters in that prefix):
 
 ```sh
 gh release create v1.2.0 dist/releases/*.*
