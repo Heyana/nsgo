@@ -369,7 +369,7 @@ jobs:
 
           # Booting a simulator on a hosted runner takes from about three to ten minutes, and the three cases run in one package, so go test's default ten-minute limit can end the last case before it starts.
           go tool nsgo test -run '^(TestSimulatorProcessResults|TestIOSSimulatorDevEndToEnd)$' ./cmd/nsgo -- -timeout=25m
-          go tool nsgo test -target ios_simulator -timeout 1m -run '^(TestFoldGeometry|TestSceneReconnectKeepsTheEngine|TestIOSVideoSeekWithSeparateAudio|TestTabBarRetitlesUIKitItemsInPlace)$' ./internal/platform/ios
+          go tool nsgo test -target ios_simulator -timeout 1m -run '^(TestFoldGeometry|TestSceneReconnectKeepsTheEngine|TestIOSVideoSeekWithSeparateAudio|TestTabBarRetitlesUIKitItemsInPlace|TestRotationPublishesSizeAndSafeAreaTogether)$' ./internal/platform/ios
           # An iPhone shows one scene at a time, so the tests of several run on an iPad: the newest iOS runtime's first.
           ipad=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | contains("iOS"))] | sort_by(.key | split("-") | .[1:] | map(tonumber)) | reverse | map(.value[] | select(.deviceTypeIdentifier | contains("iPad"))) | first | .udid')
           go tool nsgo test -target ios_simulator -device "$ipad" -timeout 1m -run '^(TestScenesShowTreesOfTheirOwn|TestSceneDisconnectsWhileTheOtherRuns|TestSceneStatusBarAndOrientationsArePerScene|TestSceneKeyboardInsetFollowsFocus|TestTitledKeyCommandsUseUIKit)$' ./internal/platform/ios
