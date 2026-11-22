@@ -24,9 +24,7 @@ import (
 	"time"
 )
 
-// session is how dev builds and shows one target. start runs after each
-// successful build and returns the running app; close, when set, cleans up
-// session-wide resources such as an automation browser when dev ends.
+// session is how dev builds and shows one target. start runs after each successful build and returns the running app; close, when set, cleans up session-wide resources such as an automation browser when dev ends.
 type session struct {
 	build func(ctx context.Context, p *project) error
 	start func(ctx context.Context, p *project) (app, error)
@@ -258,8 +256,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			progress.done(fmt.Sprintf("built %s", p.Dev.Target), "")
 			stop()
 			stop, exited = func() {}, nil
-			// The web target only serves unless -automation starts its own browser;
-			// the others start an app, which may boot, install and launch on a device first.
+			// The web target only serves unless -automation starts its own browser; the others start an app, which may boot, install and launch on a device first.
 			var starting *Step
 			if p.Dev.Target != "web" || (opts.automation && !started) {
 				starting = begin("starting the app")
@@ -1008,9 +1005,7 @@ func linuxSession(opts devOptions) session {
 	}
 }
 
-// webSession serves the build from the dev server, whose page shows a
-// failed build and loads each new one. Under -automation it opens its own
-// headless browser over the DevTools protocol instead of the user's.
+// webSession serves the build from the dev server, whose page shows a failed build and loads each new one. Under -automation it opens its own headless browser over the DevTools protocol instead of the user's.
 func webSession(opts devOptions) session {
 	if opts.automation {
 		return webAutomationSession(opts)
@@ -1045,9 +1040,7 @@ func webSession(opts devOptions) session {
 	}
 }
 
-// webAutomationSession builds the web target and opens it in a headless browser
-// over the DevTools protocol with the nsgoTest binding installed, forwarding
-// console output to appConsole and keeping the browser across rebuilds.
+// webAutomationSession builds the web target and opens it in a headless browser over the DevTools protocol with the nsgoTest binding installed, forwarding console output to appConsole and keeping the browser across rebuilds.
 func webAutomationSession(opts devOptions) session {
 	var (
 		mu          sync.Mutex

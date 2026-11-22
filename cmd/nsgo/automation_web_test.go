@@ -21,8 +21,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/automation"
 )
 
-// mockCDPServer serves a fake Chrome DevTools Protocol WebSocket endpoint for
-// unit testing CDP page setup, binding dispatch, console forwarding and close.
+// mockCDPServer serves a fake Chrome DevTools Protocol WebSocket endpoint for unit testing CDP page setup, binding dispatch, console forwarding and close.
 type mockCDPServer struct {
 	srv *httptest.Server
 
@@ -407,9 +406,7 @@ exit 7
 	}
 }
 
-// TestWebAutomationEndToEnd builds testdata/automation as nsgo dev -target web -automation
-// does, opens it in a real headless Chromium browser over CDP with the nsgoTest binding,
-// and drives it end to end through the automation hub and nsgo mcp.
+// TestWebAutomationEndToEnd builds testdata/automation as nsgo dev -target web -automation does, opens it in a real headless Chromium browser over CDP with the nsgoTest binding, and drives it end to end through the automation hub and nsgo mcp.
 func TestWebAutomationEndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds an app for the web and drives it in a browser")

@@ -16,10 +16,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// A surface acting as the user does, with trusted browser input over the
-// nsgoTest CDP binding, for the test host (testhost.go) and for nsgo dev's
-// automation (automation.go), whose live surface is the running page's
-// surface with no test's options: test is nil.
+// A surface acting as the user does, with trusted browser input over the nsgoTest CDP binding, for the test host (testhost.go) and for nsgo dev's automation (automation.go), whose live surface is the running page's surface with no test's options: test is nil.
 
 type testSurface struct {
 	s    *surface
@@ -199,8 +196,7 @@ func (t *testSurface) PointerDelta(dx, dy float64) { t.s.pointerMotion(dx, dy) }
 
 func (t *testSurface) Sync() { t.s.engine.Sync() }
 
-// Animating counts the page's own finite animations too: transitions
-// and a screen sliding in.
+// Animating counts the page's own finite animations too: transitions and a screen sliding in.
 func (t *testSurface) Animating() bool {
 	if t.s.animator.Ending() || len(t.s.transitions) > 0 {
 		return true
@@ -239,6 +235,5 @@ func (t *testSurface) ChooseMenu(uint32) error { return testhost.ErrNoMenu }
 // ChooseDockMenu implements testhost.Surface: the web has no app icon menu.
 func (t *testSurface) ChooseDockMenu(uint32) error { return testhost.ErrNoMenu }
 
-// ChoosePopup implements testhost.Surface: the core shows no native
-// context menus here.
+// ChoosePopup implements testhost.Surface: the core shows no native context menus here.
 func (t *testSurface) ChoosePopup(uint32) error { return testhost.ErrNoMenu }
