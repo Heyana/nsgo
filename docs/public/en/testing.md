@@ -58,7 +58,7 @@ A surface has `App`'s view queries, input and gesture steps, media reports, capt
 
 After the app locks the pointer, `app.PointerDelta(dx, dy)` sends relative motion to the locked view. Headless tests enable it with `nsgotest.Environment(core.Environment{CanLockPointer: true})`. Escape releases the lock in both headless and target tests.
 
-A press can name a text field directly. Headless and on macOS, Windows and Linux, read `app.Find("id:field").Focused` immediately after the press, including when the pressed view's handler focuses the field.
+A press can name a text field directly. Headless and on every target, read `app.Find("id:field").Focused` immediately after the press, including when the pressed view's handler focuses the field.
 
 `app.SelectTab("id:tabs", 1)` selects the second item of a mounted `mobile.TabBar`. It works headless with an iOS or Android `Environment` and uses the native tab bar on iOS and Android targets. The index starts at zero and must match an existing item.
 

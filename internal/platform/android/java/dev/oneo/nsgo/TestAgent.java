@@ -184,7 +184,8 @@ final class TestAgent {
                 touch(down, SystemClock.uptimeMillis(), MotionEvent.ACTION_DOWN, p, held);
                 ui.postDelayed(() -> {
                     touch(down, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, p, held);
-                    view.testReply(id, "", "");
+                    // Wait for what the release posts, such as View.PerformClick, so OnPress reaches Go before the reply.
+                    ui.post(() -> view.testReply(id, "", ""));
                 }, hold);
                 return;
             }
@@ -618,12 +619,16 @@ final class TestAgent {
     }
 
     /**
-     * Where every shown view is, how far it scrolled and how opaque it
-     * is: the test compares two of these to see whether anything moves.
+     * Where every shown view is, how far it scrolled, how opaque it is
+     * and which view holds focus: the test compares two of these to see
+     * whether anything moved or shifted focus.
      */
     private String signature() {
+        Activity a = activity();
         StringBuilder b = new StringBuilder();
-        walk(activity().getWindow().getDecorView(), b);
+        View focused = a.getCurrentFocus();
+        b.append("f=").append(focused == null ? 0 : System.identityHashCode(focused)).append(';');
+        walk(a.getWindow().getDecorView(), b);
         return Integer.toHexString(b.toString().hashCode());
     }
 

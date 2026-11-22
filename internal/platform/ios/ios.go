@@ -405,6 +405,12 @@ func loadUIKit() {
 	classSurface = register("NsgoSurface", uiView, nil, surfaceMethods)
 	classWindow = register("NsgoWindow", apple.Class("UIWindow"), nil, []objc.MethodDef{
 		{Cmd: sel("nsgoKeyboardWindow:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { keyboardWindow = self }},
+		{Cmd: sel("sendEvent:"), Fn: func(self objc.ID, cmd objc.SEL, event objc.ID) {
+			apple.Super(self, cmd, event)
+			if onWindowEvent != nil {
+				onWindowEvent(self, event)
+			}
+		}},
 	})
 	classController = register("NsgoViewController", apple.Class("UIViewController"), nil, append(keyCommandMethods(), []objc.MethodDef{
 		{Cmd: sel("preferredScreenEdgesDeferringSystemGestures"), Fn: func(self objc.ID, _ objc.SEL) uint {

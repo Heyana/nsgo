@@ -146,6 +146,62 @@ func TestTargetSettleTakesFocusReportedAtItsLastNativeCheck(t *testing.T) {
 	}
 }
 
+func TestTargetFocusFollowsReportedEventsOnEveryTarget(t *testing.T) {
+	for _, targetName := range []string{"web", "ios_simulator", "tvos_simulator", "watchos_simulator", "android", "harmonyos"} {
+		t.Run(targetName, func(t *testing.T) {
+			a := Start(t, func(*core.Scope) core.Node {
+				return core.View{Children: []core.Node{
+					core.Input{TestID: "first"},
+					core.Input{TestID: "second"},
+				}}
+			})
+			t.Setenv("NSGO_TEST_TARGET", targetName)
+			first, second := a.Find("id:first"), a.Find("id:second")
+			tg := &target{a: a}
+			a.target = tg
+			defer func() { a.target = nil }()
+
+			// Focus requests do not mutate the target model before native focus events arrive.
+			tg.observe(0, &driver.MountBatch{Root: a.rootID, Items: []driver.MountItem{{Kind: driver.ItemFocus, ID: first.ID}}})
+			tg.drain()
+			if first.Focused || second.Focused {
+				t.Fatalf("ItemFocus mutated focus on %s: first=%v second=%v", targetName, first.Focused, second.Focused)
+			}
+
+			// A reported focus event moves focus into first.
+			tg.surfaceEvent(0, driver.Event{Kind: driver.EventFocus, ID: first.ID})
+			tg.drain()
+			if !first.Focused || second.Focused {
+				t.Fatalf("EventFocus did not focus first on %s: first=%v second=%v", targetName, first.Focused, second.Focused)
+			}
+
+			// Blur requests also wait for the platform's reported EventBlur.
+			tg.observe(0, &driver.MountBatch{Root: a.rootID, Items: []driver.MountItem{{Kind: driver.ItemBlur, ID: first.ID}}})
+			tg.drain()
+			if !first.Focused {
+				t.Fatalf("ItemBlur cleared focus on %s before EventBlur", targetName)
+			}
+
+			// A settle waits for animating() to finish queued mounts and takes the focus/blur events reported there.
+			tg.observe(0, &driver.MountBatch{Root: a.rootID, Items: []driver.MountItem{{Kind: driver.ItemFocus, ID: second.ID}}})
+			applied := false
+			tg.surface = settlingSurface{sync: func() {}, animating: func() bool {
+				if !applied {
+					applied = true
+					tg.surfaceEvent(0, driver.Event{Kind: driver.EventBlur, ID: first.ID})
+					tg.surfaceEvent(0, driver.Event{Kind: driver.EventFocus, ID: second.ID})
+					return true
+				}
+				return false
+			}}
+			tg.settle()
+			if !tg.quiet || first.Focused || !second.Focused {
+				t.Fatalf("settle on %s: quiet=%v first=%v second=%v", targetName, tg.quiet, first.Focused, second.Focused)
+			}
+		})
+	}
+}
+
 func TestTargetSettleBoundsABlockedEngineAndReusesItsWaiter(t *testing.T) {
 	tg, _, _ := settleFixture(t)
 	release := make(chan struct{})

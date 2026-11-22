@@ -356,3 +356,51 @@ func TestDataTableHeaderHitTestOnPhone(t *testing.T) {
 		t.Fatalf("non-sortable header label hit %q, want title-cell", got)
 	}
 }
+
+func TestHIDPressTrackerAndSurfaceBusy(t *testing.T) {
+	var tracker hidPressTracker
+	if tracker.pending(0) {
+		t.Fatal("zero serial reported pending")
+	}
+	id1 := tracker.mark(0x100)
+	if !tracker.pending(id1) {
+		t.Fatal("marked press release not reported pending")
+	}
+	// Another window's event must not clear our window's pending press.
+	tracker.delivered(0x200)
+	if !tracker.pending(id1) {
+		t.Fatal("unrelated window event cleared pending press")
+	}
+	tracker.delivered(0x100)
+	if tracker.pending(id1) {
+		t.Fatal("matching window touch end did not clear pending press")
+	}
+
+	id2 := tracker.mark(0x100)
+	if !tracker.pending(id2) {
+		t.Fatal("second marked press release not pending")
+	}
+	tracker.clear()
+	if tracker.pending(id2) {
+		t.Fatal("clear did not release pending press")
+	}
+
+	if testSurfaceBusy(0, false, 0, 0, false, false) {
+		t.Fatal("idle surface reported busy")
+	}
+	for _, tc := range []struct {
+		name string
+		busy bool
+	}{
+		{"queued mount batch", testSurfaceBusy(1, false, 0, 0, false, false)},
+		{"ending animator", testSurfaceBusy(0, true, 0, 0, false, false)},
+		{"layout motion", testSurfaceBusy(0, false, 1, 0, false, false)},
+		{"vanishing ghost", testSurfaceBusy(0, false, 0, 1, false, false)},
+		{"pending press release", testSurfaceBusy(0, false, 0, 0, true, false)},
+		{"window animation", testSurfaceBusy(0, false, 0, 0, false, true)},
+	} {
+		if !tc.busy {
+			t.Fatalf("%s: expected busy=true", tc.name)
+		}
+	}
+}

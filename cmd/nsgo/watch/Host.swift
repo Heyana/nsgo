@@ -553,7 +553,7 @@ struct FieldNode: View {
 				node.focused = on
 				sendText(node.id, on ? 2 : 3, node.text)
 			}
-			.onChange(of: node.focused) { _, on in
+			.onChange(of: node.focused, initial: true) { _, on in
 				if focus != on { focus = on }
 			}
 			Children(node: node)

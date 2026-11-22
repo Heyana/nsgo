@@ -35,8 +35,11 @@ type mounter struct {
 	// physical key events are matched against here.
 	keys []driver.KeyBinding
 	// focused is the view with the keyboard focus, for a shortcut that
-	// must not fire while an input edits text.
-	focused driver.NodeID
+	// must not fire while an input edits text; reportedFocus is the last
+	// focus reported to the engine so focus changes always pair blur and
+	// focus without duplicating echoed page events.
+	focused       driver.NodeID
+	reportedFocus driver.NodeID
 	// lastKey is the last key pressed without a release between, so its
 	// auto-repeats are told apart from a fresh press.
 	lastKey driver.NodeID
@@ -53,6 +56,7 @@ type view struct {
 	frame     driver.Bounds
 	order     uint32
 	pressable bool
+	disabled  bool
 	style     driver.ViewStyle
 	text      *driver.TextContent
 	value     string
@@ -396,6 +400,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		m.s.bridge.Call("announce", it.Value)
 	case driver.ItemViewProps:
 		if it.ViewProps != nil {
+			if v := m.views[it.ID]; v != nil {
+				v.disabled = it.ViewProps.Disabled
+			}
 			a := harmonyAccessOf(it.ViewProps)
 			m.o.op("vp", it.ID).str(it.ViewProps.TestID).num(float64(it.ViewProps.PointerEvents)).
 				str(a.label).str(a.desc).boolean(a.disabled).str(a.level).boolean(a.group)
@@ -411,6 +418,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 	case driver.ItemSelection:
 		m.o.op("sel", it.ID).num(float64(it.Selection.Start)).num(float64(it.Selection.End))
 	case driver.ItemFocus:
+		if v := m.views[it.ID]; v != nil && v.disabled {
+			break
+		}
 		// The page reports the focus too; the engine's own request keeps the
 		// mounter's idea of it right when no page event comes, as a test's
 		// synthesized press has none.
@@ -641,6 +651,9 @@ func (m *mounter) input(id driver.NodeID, c *driver.InputConfig) {
 	if c == nil {
 		return
 	}
+	if v := m.views[id]; v != nil {
+		v.disabled = c.Disabled
+	}
 	f := c.Style.Font
 	if f.Size == 0 {
 		f.Size = 16
@@ -706,6 +719,33 @@ func (m *mounter) refresh(id driver.NodeID) {
 		return
 	}
 	m.s.dispatch(driver.Event{Kind: driver.EventRefresh, ID: id, Point: v.offset, Count: v.applied})
+}
+
+// reportFocus reports that id took the native focus, blurring any previously
+// reported focused view first so the engine and test model never hold two.
+func (m *mounter) reportFocus(id driver.NodeID) {
+	if prev := m.reportedFocus; prev != 0 && prev != id {
+		m.reportedFocus = 0
+		m.s.dispatch(driver.Event{Kind: driver.EventBlur, ID: prev})
+	}
+	m.focused = id
+	if m.reportedFocus == id {
+		return
+	}
+	m.reportedFocus = id
+	m.s.dispatch(driver.Event{Kind: driver.EventFocus, ID: id})
+}
+
+// reportBlur reports that id lost the native focus.
+func (m *mounter) reportBlur(id driver.NodeID) {
+	if m.focused == id {
+		m.focused = 0
+	}
+	if m.reportedFocus != id {
+		return
+	}
+	m.reportedFocus = 0
+	m.s.dispatch(driver.Event{Kind: driver.EventBlur, ID: id})
 }
 
 // edited reports the user changing text field id's text, and remembers the

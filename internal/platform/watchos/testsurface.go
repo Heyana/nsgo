@@ -43,18 +43,35 @@ func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Mod
 	}
 	touchAt(touchBegan, at)
 	time.Sleep(max(hold+50*time.Millisecond, 60*time.Millisecond))
-	touchAt(touchEnded, at)
+	endedAt := time.Since(s.epoch).Seconds()
 	onMainSync(func() {
-		root := s.view(s.root)
-		if root == nil {
-			return
+		// Resolve the tap's own focus change before touchEnded dispatches
+		// EventPress, so an OnPress handler's Ref.Focus() is never blurred
+		// afterward, and keep SwiftUI's FieldNode focus in sync on blur.
+		if root := s.view(s.root); root != nil {
+			var focusedID, hitID driver.NodeID
+			var canFocus bool
+			if s.focused != nil {
+				focusedID = s.focused.id
+			}
+			if v := hit(root, at, func(v *view) bool { return v.field != nil }); v != nil {
+				hitID = v.id
+				canFocus = fieldCanFocus(v.field.Config)
+			}
+			act := resolvePressFocus(focusedID, hitID, canFocus)
+			if act.blur != 0 {
+				if prev := s.view(act.blur); prev != nil {
+					s.blurField(prev)
+				}
+				s.w.op(opBlur, act.blur)
+			}
+			if act.focus != 0 {
+				if next := s.view(act.focus); next != nil {
+					s.focusField(next)
+				}
+			}
 		}
-		// The host's TextField takes the tap that focuses a field.
-		if v := hit(root, at, func(v *view) bool { return v.field != nil }); v != nil {
-			s.focusField(v)
-		} else if s.focused != nil {
-			s.blurField(s.focused)
-		}
+		hostTouch(touchEnded, float64(at.X), float64(at.Y), endedAt)
 		s.flush()
 	})
 	return nil
@@ -211,12 +228,14 @@ func (t *testSurface) Screenshot() ([]byte, error) {
 func (t *testSurface) Animating() bool {
 	var busy bool
 	onMainSync(func() {
-		busy = s.animator.Ending() || len(s.motions) > 0
+		scrollBusy := false
 		for _, v := range s.views {
 			if v != nil && (v.phase == phaseGliding || v.phase == phaseAnimating) {
-				busy = true
+				scrollBusy = true
+				break
 			}
 		}
+		busy = testSurfaceBusy(s.batches.Len(), s.animator.Ending(), len(s.motions), scrollBusy)
 	})
 	return busy
 }

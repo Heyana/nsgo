@@ -152,9 +152,10 @@ func (s *surface) focusField(v *view) {
 }
 
 func (s *surface) blurField(v *view) {
-	if s.focused == v {
-		s.focused = nil
+	if s.focused != v {
+		return
 	}
+	s.focused = nil
 	v.report(driver.Event{Kind: driver.EventBlur})
 }
 

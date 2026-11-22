@@ -56,7 +56,7 @@ func TestMain(m *testing.M) {
 
 `PressAt` 的坐标是指定视图的视口内的点。无头模型和目标平台的测试模型在寻找点击目标、判断可见性和计算滚动范围时，都会计入滚动内容的缩放，包括嵌套缩放和小于 1 的比例。视图的 `Bounds()` 仍与 `Ref.Bounds` 一样，报告变换前的布局框。
 
-点击可以直接指定文本框。在无头测试以及 macOS、Windows 和 Linux 上，可以在点击返回后立即读取 `app.Find("id:field").Focused`，包括点击处理函数聚焦文本框的情况。
+点击可以直接指定文本框。在无头测试和各个目标平台上，可以在点击返回后立即读取 `app.Find("id:field").Focused`，包括点击处理函数聚焦文本框的情况。
 
 `app.SelectTab("id:tabs", 1)` 选择已挂载的 `mobile.TabBar` 的第二项。无界面测试使用 iOS 或 Android 的 `Environment`，iOS 和 Android 目标使用原生标签栏。索引从零开始，必须对应现有选项。
 

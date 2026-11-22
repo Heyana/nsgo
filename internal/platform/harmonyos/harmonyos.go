@@ -345,11 +345,9 @@ func (s *surface) event(args []js.Value) {
 	case "confirm":
 		s.dispatch(driver.Event{Kind: driver.EventSubmitEditing, ID: id, Text: str(4)})
 	case "focus":
-		s.m.focused = id
-		s.dispatch(driver.Event{Kind: driver.EventFocus, ID: id})
+		s.m.reportFocus(id)
 	case "blur":
-		s.m.focused = 0
-		s.dispatch(driver.Event{Kind: driver.EventBlur, ID: id})
+		s.m.reportBlur(id)
 	case "key":
 		s.m.key(id, int(num(2)), int(num(3)), str(4))
 	case "scroll":

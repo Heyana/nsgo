@@ -23,6 +23,9 @@ const keyboardMargin = 8
 // keyboardWindow receives the window on the active responder chain, on the main thread.
 var keyboardWindow objc.ID
 
+// onWindowEvent is installed by testsurface.go (nsgotest/nsgoautomation) to observe completed window events on the main thread.
+var onWindowEvent func(window, event objc.ID)
+
 func activeKeyboardWindow() objc.ID {
 	const foregroundActive = 0
 	var active objc.ID

@@ -86,9 +86,11 @@ func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Mod
 		t.s.m.press(id, driver.EventPress, at, mods)
 		// A field takes the keyboard focus as it does when a finger taps
 		// it, which the page reports from ArkUI's own focus.
-		if v := t.s.m.views[id]; v != nil && (v.kind == driver.KindInput || v.kind == driver.KindWeb) {
-			t.s.m.focused = id
-			t.s.dispatch(driver.Event{Kind: driver.EventFocus, ID: id})
+		if v := t.s.m.views[id]; v != nil && (v.kind == driver.KindInput || v.kind == driver.KindWeb) && !v.disabled {
+			t.s.m.reportFocus(id)
+			t.s.m.o.reset()
+			t.s.m.o.op("fo", id)
+			t.s.m.flush()
 		}
 		return nil
 	}

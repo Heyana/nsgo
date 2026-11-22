@@ -685,7 +685,8 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemPointerLock:
 			a.setPointerLock(it)
 		case driver.ItemFocus, driver.ItemBlur:
-			if a.target != nil && a.target.reportsNativeFocus() {
+			if a.target != nil {
+				// Target hosts settle native focus events; a focus request can be refused, so only reported focus and blur events change the model's focus.
 				continue
 			}
 			if it.Kind == driver.ItemBlur {

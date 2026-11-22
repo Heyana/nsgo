@@ -33,8 +33,9 @@ func onMainSync(fn func()) {
 }
 
 type testSurface struct {
-	s    *surface
-	test *testOpen
+	s       *surface
+	test    *testOpen
+	pressID int // last simulator HID press release marker, main thread only
 }
 
 var (
@@ -43,7 +44,39 @@ var (
 	deviceKeys = map[*surface]*deviceKeyState{}
 	// deviceTouchID numbers synthetic EventTouch contacts on physical devices.
 	deviceTouchID int
+	// hidPresses tracks simulator HID press releases across NsgoWindow.sendEvent:, main thread only.
+	hidPresses hidPressTracker
 )
+
+func init() {
+	onWindowEvent = func(window, event objc.ID) {
+		if event == 0 {
+			return
+		}
+		const eventTypeTouches = 0 // UIEventTypeTouches
+		if objc.Send[int](event, sel("type")) != eventTypeTouches {
+			return
+		}
+		touches := event.Send(sel("touchesForWindow:"), window)
+		if touches == 0 {
+			return
+		}
+		ended := false
+		apple.ForEach(touches, func(t objc.ID) {
+			const (
+				phaseEnded     = 3 // UITouchPhaseEnded
+				phaseCancelled = 4 // UITouchPhaseCancelled
+			)
+			ph := objc.Send[int](t, sel("phase"))
+			if ph == phaseEnded || ph == phaseCancelled {
+				ended = true
+			}
+		})
+		if ended {
+			hidPresses.delivered(uintptr(window))
+		}
+	}
+}
 
 func (s *surface) deviceKeyState() *deviceKeyState {
 	st := deviceKeys[s]
@@ -160,54 +193,67 @@ const (
 
 // touch is one finger at p, window w's points, in ph.
 func touch(w objc.ID, p driver.Point, ph phase) {
-	onMainSync(func() {
-		if w == 0 {
-			return
-		}
-		touching := uint8(0)
-		if ph != up {
-			touching = 1
-		}
-		mask := uint32(maskRange | maskTouch)
-		if ph == move {
-			mask = maskPosition
-		}
-		now := machAbsoluteTime()
-		hand := hidDigitizer(0, now, transducerHand, 0, 0, mask, 0, 0, 0, 0, 0, 0, touching, touching, 0)
-		if hand == 0 {
-			return
-		}
-		hidSetInteger(hand, fieldIntegrated, 1)
-		finger := hidFinger(0, now, 1, 2, mask, float64(p.X), float64(p.Y), 0, float64(touching), 0, touching, touching, 0)
-		if finger != 0 {
-			hidSetFloat(finger, fieldMajorRadius, 5)
-			hidSetFloat(finger, fieldMinorRadius, 5)
-			hidSetInteger(finger, fieldIntegrated, 1)
-			hidAppend(hand, finger, 0)
-			apple.Release(finger)
-		}
-		enqueue(w, hand)
-	})
+	onMainSync(func() { enqueueTouch(w, p, ph) })
+}
+
+func enqueueTouch(w objc.ID, p driver.Point, ph phase) {
+	if w == 0 {
+		return
+	}
+	touching := uint8(0)
+	if ph != up {
+		touching = 1
+	}
+	mask := uint32(maskRange | maskTouch)
+	if ph == move {
+		mask = maskPosition
+	}
+	now := machAbsoluteTime()
+	hand := hidDigitizer(0, now, transducerHand, 0, 0, mask, 0, 0, 0, 0, 0, 0, touching, touching, 0)
+	if hand == 0 {
+		return
+	}
+	hidSetInteger(hand, fieldIntegrated, 1)
+	finger := hidFinger(0, now, 1, 2, mask, float64(p.X), float64(p.Y), 0, float64(touching), 0, touching, touching, 0)
+	if finger != 0 {
+		hidSetFloat(finger, fieldMajorRadius, 5)
+		hidSetFloat(finger, fieldMinorRadius, 5)
+		hidSetInteger(finger, fieldIntegrated, 1)
+		hidAppend(hand, finger, 0)
+		apple.Release(finger)
+	}
+	enqueue(w, hand)
 }
 
 // focusAt gives the text field at p in window w the focus: made touches leave the
 // first responder where it was, as UI test tools know.
 func focusAt(w objc.ID, p driver.Point) {
-	onMainSync(func() {
-		if w == 0 {
-			return
-		}
-		hit := w.Send(sel("hitTest:withEvent:"), apple.CGPoint{X: float64(p.X), Y: float64(p.Y)}, objc.ID(0))
-		field, text := objc.ID(apple.Class("UITextField")), objc.ID(apple.Class("UITextView"))
-		for v := hit; v != 0; v = v.Send(sel("superview")) {
-			if objc.Send[bool](v, sel("isKindOfClass:"), field) || objc.Send[bool](v, sel("isKindOfClass:"), text) {
-				if !objc.Send[bool](v, sel("isFirstResponder")) && objc.Send[bool](v, sel("canBecomeFirstResponder")) {
-					v.Send(sel("becomeFirstResponder"))
-				}
-				return
+	onMainSync(func() { focusAtOnMain(w, p) })
+}
+
+func focusAtOnMain(w objc.ID, p driver.Point) {
+	if w == 0 {
+		return
+	}
+	hit := w.Send(sel("hitTest:withEvent:"), apple.CGPoint{X: float64(p.X), Y: float64(p.Y)}, objc.ID(0))
+	field, text := objc.ID(apple.Class("UITextField")), objc.ID(apple.Class("UITextView"))
+	for v := hit; v != 0; v = v.Send(sel("superview")) {
+		var ed objc.ID
+		switch {
+		case objc.Send[bool](v, sel("isKindOfClass:"), field) || objc.Send[bool](v, sel("isKindOfClass:"), text):
+			ed = v
+		default:
+			if nv := views[v]; nv != nil && nv.input != nil && nv.input.field != 0 {
+				ed = nv.input.field
 			}
 		}
-	})
+		if ed != 0 {
+			if !objc.Send[bool](ed, sel("isFirstResponder")) && objc.Send[bool](ed, sel("canBecomeFirstResponder")) {
+				ed.Send(sel("becomeFirstResponder"))
+			}
+			return
+		}
+	}
 }
 
 // focusedEditor returns the active first responder, or the focused NSGo input's editor.
@@ -307,8 +353,15 @@ func (t *testSurface) pressSimulatorHID(w objc.ID, at driver.Point, hold time.Du
 	}()
 	touch(w, at, down)
 	time.Sleep(max(hold+50*time.Millisecond, 60*time.Millisecond))
-	touch(w, at, up)
-	focusAt(w, at)
+	onMainSync(func() {
+		if hold == 0 && t.s != nil && !t.s.closed && !t.s.ending && len(t.s.alerts) == 0 &&
+			objc.Send[bool](w, selIsKindOf, objc.ID(classWindow)) &&
+			w.Send(sel("hitTest:withEvent:"), apple.CGPoint{X: float64(at.X), Y: float64(at.Y)}, objc.ID(0)) != 0 {
+			t.pressID = hidPresses.mark(uintptr(w))
+		}
+		enqueueTouch(w, at, up)
+		focusAtOnMain(w, at)
+	})
 	return nil
 }
 
@@ -355,6 +408,9 @@ func (t *testSurface) pressDevice(w objc.ID, at driver.Point, hold time.Duration
 				isAxElement:  objc.Send[bool](n, sel("isAccessibilityElement")),
 			}
 			if v := views[n]; v != nil && v.surface == t.s && v.id != 0 {
+				if v.input != nil && v.input.field != 0 {
+					node.isTextEditor = true
+				}
 				if _, ok := v.component.(*uiSwitch); ok {
 					node.isSwitch = true
 				}
@@ -375,6 +431,9 @@ func (t *testSurface) pressDevice(w objc.ID, at driver.Point, hold time.Duration
 		switch target.kind {
 		case devicePressFocusText:
 			ed := ids[target.index]
+			if v := views[ed]; v != nil && v.input != nil && v.input.field != 0 {
+				ed = v.input.field
+			}
 			if !objc.Send[bool](ed, sel("isFirstResponder")) && objc.Send[bool](ed, sel("canBecomeFirstResponder")) {
 				ed.Send(sel("becomeFirstResponder"))
 			}
@@ -1283,10 +1342,16 @@ func (t *testSurface) Sync() { t.s.engine.Sync() }
 func (t *testSurface) Animating() bool {
 	var busy bool
 	onMainSync(func() {
-		busy = t.s.animator.Ending()
-		if !busy && t.s.window != 0 {
-			busy = layersAnimating(t.s.window.Send(sel("layer"))) || gliding(t.s.window)
+		if t.s == nil {
+			return
 		}
+		// An alert or a closing scene can take queued touches outside NsgoWindow.
+		if t.s.closed || t.s.ending || len(t.s.alerts) > 0 {
+			hidPresses.clear()
+			t.pressID = 0
+		}
+		windowAnimating := t.s.window != 0 && (layersAnimating(t.s.window.Send(sel("layer"))) || gliding(t.s.window))
+		busy = testSurfaceBusy(t.s.batches.Len(), t.s.animator.Ending(), len(t.s.motions), len(t.s.ghosts), hidPresses.pending(t.pressID), windowAnimating)
 	})
 	return busy
 }

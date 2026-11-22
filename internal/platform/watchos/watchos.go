@@ -588,7 +588,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 				s.sendInput(v)
 			}
 		case driver.ItemFocus:
-			if v.field != nil {
+			if v.field != nil && fieldCanFocus(v.field.Config) {
 				s.w.op(opFocus, v.id)
 			}
 		case driver.ItemBlur:

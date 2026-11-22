@@ -321,3 +321,44 @@ func (st *deviceKeyState) modifiers() (mods driver.Modifiers, flags uint) {
 	}
 	return mods, flags
 }
+
+// hidPressTracker tracks synthetic simulator HID press releases posted to a
+// UIWindow until UIKit delivers their touch end/cancel through sendEvent:,
+// accessed only on the main thread.
+type hidPressTracker struct {
+	posted  int
+	handled int
+	target  uintptr
+}
+
+// mark records a press release enqueued to window w and returns its serial.
+func (p *hidPressTracker) mark(window uintptr) int {
+	p.posted++
+	p.target = window
+	return p.posted
+}
+
+// delivered records that UIKit finished dispatching a touch end/cancel on window w.
+func (p *hidPressTracker) delivered(window uintptr) {
+	if window != 0 && window == p.target && p.handled < p.posted {
+		p.handled = p.posted
+	}
+}
+
+// clear drops any pending press expectation (for example when an alert or closing window takes input).
+func (p *hidPressTracker) clear() {
+	p.handled = p.posted
+	p.target = 0
+}
+
+// pending reports whether serial has not yet been delivered.
+func (p *hidPressTracker) pending(serial int) bool {
+	return serial > p.handled
+}
+
+// testSurfaceBusy reports whether the iOS test host still has queued mount
+// batches, finite animations, layout motions, vanishing ghosts, or an
+// undelivered press release in flight.
+func testSurfaceBusy(queuedBatches int, animatorEnding bool, motions, ghosts int, pressPending, windowAnimating bool) bool {
+	return queuedBatches > 0 || animatorEnding || motions > 0 || ghosts > 0 || pressPending || windowAnimating
+}
