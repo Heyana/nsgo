@@ -1007,17 +1007,12 @@ func (a *App) Scroll(selector string, distance driver.Points) {
 	}
 	a.scrollEvent(v, driver.EventScrollDragStart)
 	f := &finger{}
-	// The app may shift the offset meanwhile (ScrollBy): each frame moves
-	// on from where the view is.
-	for frames := int(math.Abs(float64(to-start))/dragStep)*2 + 10; frames > 0; frames-- {
-		now := at()
-		if math.Abs(float64(to-now)) < 0.5 {
-			break
-		}
-		next := min(now+dragStep, to)
-		if to < now {
-			next = max(now-dragStep, to)
-		}
+	// Keep dragging from the current offset even if the app scrolls in between frames.
+	left := to - start
+	for frames := int(math.Abs(float64(left))/dragStep) + 1; frames > 0 && left != 0; frames-- {
+		step := min(max(left, -dragStep), dragStep)
+		left -= step
+		next := min(max(at()+step, 0), v.scrollEnd())
 		off := v.Offset
 		if v.Scroll.Horizontal {
 			off.X = next
