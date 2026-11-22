@@ -883,9 +883,7 @@ var (
 // maxCanvasImages bounds the unkept images kept, loaded or failed, and is exceeded only by loads under way, which are never evicted; the least recently drawn go first, but never one kept via KeepCanvasImage or drawn by the pass under way, so a pass drawing more keeps them all until a later pass draws others.
 const maxCanvasImages = 64
 
-// SetImageCacheLimit sets the encoded image byte budget for both imageload's
-// shared byte cache and Apple's canvas image cache, clamping negative values
-// to zero and evicting excess unkept entries immediately; main thread only.
+// SetImageCacheLimit sets the encoded image byte budget for both imageload's shared byte cache and Apple's canvas image cache, clamping negative values to zero and evicting excess unkept entries immediately; main thread only.
 func SetImageCacheLimit(maxBytes int64) {
 	if maxBytes < 0 {
 		maxBytes = 0
@@ -902,8 +900,7 @@ func endCanvasPass() {
 	canvasPass = canvasImageUse
 }
 
-// KeepCanvasImage pins key in the canvas and encoded image caches on behalf of
-// owner so it is never evicted while kept; main thread only.
+// KeepCanvasImage pins key in the canvas and encoded image caches on behalf of owner so it is never evicted while kept; main thread only.
 func KeepCanvasImage(owner any, key string) {
 	if key == "" {
 		return
@@ -986,9 +983,7 @@ func unkeptCanvasStats() (count int, bytes int64) {
 	return count, bytes
 }
 
-// evictCanvasImages evicts the least recently drawn unkept entries until
-// unkept+reserve <= maxCanvasImages and unkeptBytes <= canvasImageBytesLimit,
-// never evicting loads under way or entries drawn by the current pass.
+// evictCanvasImages evicts the least recently drawn unkept entries until unkept+reserve <= maxCanvasImages and unkeptBytes <= canvasImageBytesLimit, never evicting loads under way or entries drawn by the current pass.
 func evictCanvasImages(reserve int) {
 	unkept, unkeptBytes := unkeptCanvasStats()
 	for unkept+reserve > maxCanvasImages || unkeptBytes > canvasImageBytesLimit || (canvasImageBytesLimit == 0 && unkept > 0) {

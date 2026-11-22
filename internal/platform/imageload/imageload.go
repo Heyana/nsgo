@@ -68,10 +68,7 @@ var (
 	cache    = newLRU(driver.DefaultImageCacheLimit)
 )
 
-// SetCacheLimit sets the maximum number of unkept encoded image bytes kept in
-// memory. Negative values are clamped to zero. Excess unkept entries are
-// evicted immediately in least-recently-used order while kept entries remain
-// pinned until released.
+// SetCacheLimit sets the maximum number of unkept encoded image bytes kept in memory. Negative values are clamped to zero. Excess unkept entries are evicted immediately in least-recently-used order while kept entries remain pinned until released.
 func SetCacheLimit(maxBytes int64) {
 	mu.Lock()
 	cache.setLimit(maxBytes)
@@ -85,24 +82,21 @@ func CacheLimit() int64 {
 	return cache.limit
 }
 
-// CacheSize returns the total encoded image bytes currently cached in memory,
-// including kept entries.
+// CacheSize returns the total encoded image bytes currently cached in memory, including kept entries.
 func CacheSize() int64 {
 	mu.Lock()
 	defer mu.Unlock()
 	return cache.totalBytes
 }
 
-// UnkeptCacheSize returns the unkept encoded image bytes currently cached in
-// memory.
+// UnkeptCacheSize returns the unkept encoded image bytes currently cached in memory.
 func UnkeptCacheSize() int64 {
 	mu.Lock()
 	defer mu.Unlock()
 	return cache.unkeptBytes
 }
 
-// Keep pins key in the in-memory encoded image cache on behalf of owner so it
-// is not evicted while kept. Passing nil owner tracks an unowned pin.
+// Keep pins key in the in-memory encoded image cache on behalf of owner so it is not evicted while kept. Passing nil owner tracks an unowned pin.
 func Keep(owner any, key string) {
 	if key == "" {
 		return
@@ -112,8 +106,7 @@ func Keep(owner any, key string) {
 	mu.Unlock()
 }
 
-// Release releases one pin of key held by owner, immediately trimming excess
-// unkept entries once key is no longer pinned.
+// Release releases one pin of key held by owner, immediately trimming excess unkept entries once key is no longer pinned.
 func Release(owner any, key string) {
 	if key == "" {
 		return
@@ -123,8 +116,7 @@ func Release(owner any, key string) {
 	mu.Unlock()
 }
 
-// ReleaseOwner releases every pin held by owner (for example when a surface
-// closes) and trims any newly unkept excess entries.
+// ReleaseOwner releases every pin held by owner (for example when a surface closes) and trims any newly unkept excess entries.
 func ReleaseOwner(owner any) {
 	if owner == nil {
 		return
@@ -320,8 +312,7 @@ func decodeDataURI(uri string) ([]byte, error) {
 	return []byte(s), err
 }
 
-// lru is a byte-bounded least-recently-used cache whose pinned (kept) entries
-// stay out of eviction until released.
+// lru is a byte-bounded least-recently-used cache whose pinned (kept) entries stay out of eviction until released.
 type lru struct {
 	limit       int64
 	totalBytes  int64

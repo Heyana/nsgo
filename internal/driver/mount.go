@@ -408,8 +408,7 @@ const (
 	ItemPageHead
 	// ItemEditMenu opens or closes the platform's touch edit menu on input ID (UIEditMenuInteraction on iOS, a floating ActionMode on Android), anchored clear of Frame in the surface's points and offering the EditAction bits in Count; Count 0 closes any edit menu open on the input. Choosing Cut, Copy or Select All reports EventEditAction on ID with that action in Count; Paste runs the input's own paste (EventPaste).
 	ItemEditMenu
-	// ItemImageCacheLimit sets the maximum number of encoded image bytes kept in
-	// memory (Bytes). Negative values are clamped to zero by the core.
+	// ItemImageCacheLimit sets the maximum number of encoded image bytes kept in memory (Bytes). Negative values are clamped to zero by the core.
 	ItemImageCacheLimit
 )
 
@@ -433,8 +432,7 @@ type PageHead struct {
 	HasTitle, HasDescription bool
 }
 
-// DefaultImageCacheLimit is the default maximum number of encoded image bytes
-// kept in memory by the image cache (32 MiB).
+// DefaultImageCacheLimit is the default maximum number of encoded image bytes kept in memory by the image cache (32 MiB).
 const DefaultImageCacheLimit int64 = 32 << 20
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.

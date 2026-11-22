@@ -103,8 +103,7 @@ type shaderView struct {
 	dirty               bool
 	lanes               []float64
 	buf                 []byte
-	// images are the images' textures, bounded by count and byte budget, by
-	// ImageSource.Key; pictures what a WGSL program reads instead, an effect's (effect.go).
+	// images are the images' textures, bounded by count and byte budget, by ImageSource.Key; pictures what a WGSL program reads instead, an effect's (effect.go).
 	images   shaderTextureCache[*d3dImage]
 	bound    []string // keys read by the current draw
 	pictures [4]*pictureTex

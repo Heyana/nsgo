@@ -42,9 +42,7 @@ type glShaderView struct {
 	count   int // the images the program reads
 	lanes   []float64
 	buf     []byte
-	// textures are the images' textures, bounded by count and byte budget, by
-	// ImageSource.Key, with their sizes in pixels; pictures what a WGSL
-	// program reads instead, an effect's (effect.go).
+	// textures are the images' textures, bounded by count and byte budget, by ImageSource.Key, with their sizes in pixels; pictures what a WGSL program reads instead, an effect's (effect.go).
 	textures glTextureCache[glTexture]
 	bound    []string // keys read by the current draw
 	pictures [4]*glPicture
@@ -422,8 +420,7 @@ func (g *glShaderView) initTextures(w *window) {
 	}
 }
 
-// trimTextures updates the GL texture cache limit or trims newly unpinned
-// textures with the area's GL context made current.
+// trimTextures updates the GL texture cache limit or trims newly unpinned textures with the area's GL context made current.
 func (g *glShaderView) trimTextures(w *window, setLimit bool, maxBytes int64) {
 	if g.prog == 0 || g.area == 0 || gtkGLAreaGetError(g.area) != 0 {
 		if setLimit {

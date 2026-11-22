@@ -429,8 +429,7 @@ func (s *surface) refreshCanvasScale(root js.Value) {
 	}
 }
 
-// canvasImage is an image canvases draw, cached for the surface within its
-// count and byte bounds.
+// canvasImage is an image canvases draw, cached for the surface within its count and byte bounds.
 type canvasImage struct {
 	img         js.Value
 	url         string

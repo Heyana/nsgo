@@ -35,8 +35,7 @@ type glShader struct {
 	buf     []byte
 	bytes   js.Value // a Uint8Array as large as buf
 	failed  bool
-	// textures are the images' textures in this context, bounded by count and
-	// byte budget, by ImageSource.Key, and textureCount how many the program reads.
+	// textures are the images' textures in this context, bounded by count and byte budget, by ImageSource.Key, and textureCount how many the program reads.
 	textures     boundedImageCache[glTexture]
 	textureCount int
 	// pixels are the textures of the images that are pixels, by their place in Images: kept while their size stays and updated in place with each copy the core sends.

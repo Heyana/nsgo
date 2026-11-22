@@ -49,8 +49,7 @@ type surface struct {
 	engine  *engine.Engine
 	env     driver.Environment
 	started time.Time
-	// canvas is the offscreen canvas drawings are drawn on, one at a
-	// time, and images what they draw, bounded by count and byte budget.
+	// canvas is the offscreen canvas drawings are drawn on, one at a time, and images what they draw, bounded by count and byte budget.
 	canvas      js.Value
 	images      canvasImageCache[*canvasImage]
 	pixelImages bool
@@ -353,8 +352,7 @@ func (s *surface) canvasPixelFrame(pixels *image.RGBA) js.Value {
 	return canvas
 }
 
-// canvasImage is an image canvases draw, cached within the surface's count and
-// byte bounds.
+// canvasImage is an image canvases draw, cached within the surface's count and byte bounds.
 type canvasImage struct {
 	img            js.Value
 	loaded, failed bool

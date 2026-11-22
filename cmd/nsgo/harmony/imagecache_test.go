@@ -8,8 +8,7 @@ import (
 	"github.com/nsgo-dev/goja"
 )
 
-// Exercise the actual ArkTS cache, with synthetic PixelMaps whose release is
-// observable. A Go mirror would not catch changes in the shipped host.
+// Exercise the actual ArkTS cache, with synthetic PixelMaps whose release is observable. A Go mirror would not catch changes in the shipped host.
 func TestHostCanvasImageCache(t *testing.T) {
 	data, err := templates.ReadFile("templates/entry/src/main/ets/pages/Index.ets")
 	if err != nil {

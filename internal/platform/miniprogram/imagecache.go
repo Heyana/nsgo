@@ -6,13 +6,10 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// maxCanvasImages bounds the unkept encoded sources a mini program's offscreen
-// canvas image cache keeps, matching the native backends' 64-source ceiling.
+// maxCanvasImages bounds the unkept encoded sources a mini program's offscreen canvas image cache keeps, matching the native backends' 64-source ceiling.
 const maxCanvasImages = 64
 
-// canvasImageCache is a count- and byte-bounded LRU cache for mini-program
-// canvas images. Pinned entries (KeepImage), loads under way, and images drawn
-// in the current paint pass stay out of eviction until they finish or release.
+// canvasImageCache is a count- and byte-bounded LRU cache for mini-program canvas images. Pinned entries (KeepImage), loads under way, and images drawn in the current paint pass stay out of eviction until they finish or release.
 type canvasImageCache[T any] struct {
 	entries  map[string]*canvasImageEntry[T]
 	kept     map[string]int

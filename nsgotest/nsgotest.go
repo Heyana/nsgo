@@ -456,12 +456,9 @@ type App struct {
 	// ImageSizes are the pixel sizes of the images the model's platform
 	// loads, by URI, which answer Scope.ImageSize; others fail to load.
 	ImageSizes map[string]driver.Size
-	// ImageBytes are the encoded byte sizes of URI images the model's platform
-	// loads, by URI or ImageSource.Key, used when modeling SetImageCacheLimit.
-	// Inline ImageSource.Data sources automatically count len(Data) bytes.
+	// ImageBytes are the encoded byte sizes of URI images the model's platform loads, by URI or ImageSource.Key, used when modeling SetImageCacheLimit. Inline ImageSource.Data sources automatically count len(Data) bytes.
 	ImageBytes map[string]int64
-	// ImageCacheLimit is the encoded image cache memory budget last set with
-	// core.Scope.SetImageCacheLimit, defaulting to core.DefaultImageCacheLimit.
+	// ImageCacheLimit is the encoded image cache memory budget last set with core.Scope.SetImageCacheLimit, defaulting to core.DefaultImageCacheLimit.
 	ImageCacheLimit int64
 	// KeptImages maps each ImageSource.Key currently pinned with Scope.KeepImage
 	// to its active pin count.

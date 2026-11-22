@@ -6,14 +6,10 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// maxShaderTextures bounds the unkept GL textures a shader view keeps in GPU
-// memory, matching the canvas image cache's 64-source ceiling.
+// maxShaderTextures bounds the unkept GL textures a shader view keeps in GPU memory, matching the canvas image cache's 64-source ceiling.
 const maxShaderTextures = 64
 
-// glTextureCache is a count- and byte-bounded LRU cache for a shader view's
-// OpenGL textures. Kept (pinned) entries and textures used in the draw pass
-// under way stay out of eviction; evicted entries invoke release so
-// glDeleteTextures frees them while the area's GL context is current.
+// glTextureCache is a count- and byte-bounded LRU cache for a shader view's OpenGL textures. Kept (pinned) entries and textures used in the draw pass under way stay out of eviction; evicted entries invoke release so glDeleteTextures frees them while the area's GL context is current.
 type glTextureCache[T any] struct {
 	entries  map[string]*glTextureEntry[T]
 	use      uint64

@@ -149,12 +149,7 @@ func (cx *Scope) PrefetchImage(src ImageSource, done func(ok bool)) {
 // DefaultImageCacheLimit is the default retained image byte budget (32 MiB).
 const DefaultImageCacheLimit int64 = driver.DefaultImageCacheLimit
 
-// SetImageCacheLimit bounds the unkept bytes retained by each platform image
-// cache. Negative values become zero, disabling unkept retention. Encoded
-// caches count source bytes; browser sources of unknown length and shader
-// textures count four bytes per pixel. KeepImage pins, loads under way and
-// the current drawing pass may exceed the limit. This is not a cap on
-// decoded pixels or process memory.
+// SetImageCacheLimit bounds the unkept bytes retained by each platform image cache. Negative values become zero, disabling unkept retention. Encoded caches count source bytes; browser sources of unknown length and shader textures count four bytes per pixel. KeepImage pins, loads under way and the current drawing pass may exceed the limit. This is not a cap on decoded pixels or process memory.
 func (cx *Scope) SetImageCacheLimit(maxBytes int64) {
 	owner := cx.current()
 	t := owner.tree()

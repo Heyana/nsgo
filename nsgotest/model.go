@@ -1955,15 +1955,13 @@ func (a *App) KeptImage(src core.ImageSource) bool {
 	return a.KeptImages[src.Key()] > 0
 }
 
-// ImageCached reports whether src is currently held in the model's encoded
-// image cache (kept or within the byte budget set by SetImageCacheLimit).
+// ImageCached reports whether src is currently held in the model's encoded image cache (kept or within the byte budget set by SetImageCacheLimit).
 func (a *App) ImageCached(src core.ImageSource) bool {
 	_, ok := a.imageCache[src.Key()]
 	return ok
 }
 
-// ImageCacheBytes returns the total encoded bytes currently held in the
-// model's encoded image cache, including kept entries.
+// ImageCacheBytes returns the total encoded bytes currently held in the model's encoded image cache, including kept entries.
 func (a *App) ImageCacheBytes() int64 {
 	var total int64
 	for _, e := range a.imageCache {
@@ -1972,8 +1970,7 @@ func (a *App) ImageCacheBytes() int64 {
 	return total
 }
 
-// UnkeptImageCacheBytes returns the unkept encoded bytes currently held in the
-// model's encoded image cache.
+// UnkeptImageCacheBytes returns the unkept encoded bytes currently held in the model's encoded image cache.
 func (a *App) UnkeptImageCacheBytes() int64 {
 	var total int64
 	for k, e := range a.imageCache {
@@ -1984,15 +1981,13 @@ func (a *App) UnkeptImageCacheBytes() int64 {
 	return total
 }
 
-// CanvasImageCached reports whether src is currently held in the model's
-// canvas image cache (kept or within the 64-source and byte LRU bounds).
+// CanvasImageCached reports whether src is currently held in the model's canvas image cache (kept or within the 64-source and byte LRU bounds).
 func (a *App) CanvasImageCached(src core.ImageSource) bool {
 	_, ok := a.canvasImages[src.Key()]
 	return ok
 }
 
-// CanvasImageCacheBytes returns the total encoded bytes currently held in the
-// model's canvas image cache, including kept entries.
+// CanvasImageCacheBytes returns the total encoded bytes currently held in the model's canvas image cache, including kept entries.
 func (a *App) CanvasImageCacheBytes() int64 {
 	var total int64
 	for _, e := range a.canvasImages {

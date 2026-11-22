@@ -42,8 +42,7 @@ type canvasOp struct {
 	CO   int       `json:"co,omitempty"`
 	D    []float32 `json:"d,omitempty"`
 	Img  string    `json:"img,omitempty"`
-	// ImgKey is ImageSource.Key when the drawing embeds bytes, so KeepImage
-	// pins match inline byte sources as well as URIs.
+	// ImgKey is ImageSource.Key when the drawing embeds bytes, so KeepImage pins match inline byte sources as well as URIs.
 	ImgKey string `json:"imgk,omitempty"`
 	// ImgData is the image's bytes, base64, when the drawing embeds them.
 	ImgData string `json:"imgd,omitempty"`

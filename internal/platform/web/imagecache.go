@@ -6,14 +6,10 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// maxCanvasImages bounds the unkept encoded sources a surface's canvas and
-// shader caches retain, matching the native backends' 64-source ceiling.
+// maxCanvasImages bounds the unkept encoded sources a surface's canvas and shader caches retain, matching the native backends' 64-source ceiling.
 const maxCanvasImages = 64
 
-// boundedImageCache is a count- and byte-bounded LRU cache for web canvas
-// images and WebGL shader textures. Kept (pinned) entries, loads under way,
-// and entries drawn in the current pass stay out of eviction until they finish
-// or release.
+// boundedImageCache is a count- and byte-bounded LRU cache for web canvas images and WebGL shader textures. Kept (pinned) entries, loads under way, and entries drawn in the current pass stay out of eviction until they finish or release.
 type boundedImageCache[T any] struct {
 	entries      map[string]*imageCacheEntry[T]
 	kept         map[string]int

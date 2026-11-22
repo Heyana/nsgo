@@ -2217,10 +2217,7 @@ interface CanvasImageEntry {
   failed: boolean;
 }
 
-// CanvasImageCache bounds decoded canvas PixelMaps across the page by both
-// count (64 unkept entries) and encoded-byte budget (default 32 MiB), keeping
-// pinned (KeepImage) entries, in-flight decodes, and entries used in the
-// current paint pass out of eviction.
+// CanvasImageCache bounds decoded canvas PixelMaps across the page by both count (64 unkept entries) and encoded-byte budget (default 32 MiB), keeping pinned (KeepImage) entries, in-flight decodes, and entries used in the current paint pass out of eviction.
 class CanvasImageCache {
   private static readonly MAX_ENTRIES: number = 64;
   private entries: Map<string, CanvasImageEntry> = new Map();

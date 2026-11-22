@@ -6,14 +6,10 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// maxShaderTextures bounds the unkept textures a shader view keeps in GPU
-// memory, matching the canvas image cache's 64-source ceiling.
+// maxShaderTextures bounds the unkept textures a shader view keeps in GPU memory, matching the canvas image cache's 64-source ceiling.
 const maxShaderTextures = 64
 
-// shaderTextureCache is a count- and byte-bounded LRU cache for a shader view's
-// Direct3D textures. Kept (pinned) entries and textures used in the draw pass
-// under way stay out of eviction; evicted entries invoke release so their COM
-// resources are freed promptly.
+// shaderTextureCache is a count- and byte-bounded LRU cache for a shader view's Direct3D textures. Kept (pinned) entries and textures used in the draw pass under way stay out of eviction; evicted entries invoke release so their COM resources are freed promptly.
 type shaderTextureCache[T any] struct {
 	entries  map[string]*shaderTextureEntry[T]
 	use      uint64
@@ -77,8 +73,7 @@ func (c *shaderTextureCache[T]) put(key string, value T, bytes int64, isKept fun
 	c.evict(isKept)
 }
 
-// endPass ends the shader render pass so textures bound for that draw call may
-// be evicted on subsequent draws or immediately when the byte budget is zero.
+// endPass ends the shader render pass so textures bound for that draw call may be evicted on subsequent draws or immediately when the byte budget is zero.
 func (c *shaderTextureCache[T]) endPass(isKept func(string) bool) {
 	c.pass = c.use
 	if c.effectiveLimit() == 0 {
@@ -86,8 +81,7 @@ func (c *shaderTextureCache[T]) endPass(isKept func(string) bool) {
 	}
 }
 
-// setLimit updates the byte budget, clamping negative values to zero, and
-// immediately evicts excess unkept textures.
+// setLimit updates the byte budget, clamping negative values to zero, and immediately evicts excess unkept textures.
 func (c *shaderTextureCache[T]) setLimit(maxBytes int64, isKept func(string) bool) {
 	if maxBytes < 0 {
 		maxBytes = 0
