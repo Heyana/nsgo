@@ -176,6 +176,38 @@ func TestMSIXManifest(t *testing.T) {
 	}
 }
 
+func TestMSIXDeclaresDisabledStartupTask(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		p := &project{Name: "My App", ID: "dev.example.app", Version: "1.0.0"}
+		data, err := msixManifest(p, arch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var values struct {
+			Extensions []struct {
+				Category   string `xml:"Category,attr"`
+				Executable string `xml:"Executable,attr"`
+				EntryPoint string `xml:"EntryPoint,attr"`
+				Task       struct {
+					ID          string `xml:"TaskId,attr"`
+					Enabled     string `xml:"Enabled,attr"`
+					DisplayName string `xml:"DisplayName,attr"`
+				} `xml:"StartupTask"`
+			} `xml:"Applications>Application>Extensions>Extension"`
+		}
+		if err := xml.Unmarshal(data, &values); err != nil {
+			t.Fatal(err)
+		}
+		if len(values.Extensions) != 1 {
+			t.Fatalf("%s extensions: %+v", arch, values.Extensions)
+		}
+		e := values.Extensions[0]
+		if e.Category != "windows.startupTask" || e.Executable != "My App.exe" || e.EntryPoint != "Windows.FullTrustApplication" || e.Task.ID != "NSGoStartup" || e.Task.Enabled != "false" || e.Task.DisplayName != "My App" {
+			t.Fatalf("%s startup task %+v", arch, e)
+		}
+	}
+}
+
 // The SquashFS image's superblock finds its tables, and its first data
 // block is the first file's bytes, compressed.
 func TestSquashFS(t *testing.T) {

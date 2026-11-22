@@ -370,6 +370,7 @@ type window struct {
 	kind          driver.SurfaceKind
 	destroying    bool
 	sessionEnding bool
+	startup       *packagedStartup
 	hideOnBlur    bool
 	noActivate    bool
 	visible       bool
@@ -630,6 +631,7 @@ func (w *window) launched(args launch) {
 func Run(app engine.App, opts Options) {
 	comApartment()
 	if opts.test == nil {
+		opts.LaunchedAtLogin = opts.LaunchedAtLogin || packagedLoginLaunch()
 		setProcessAppUserModelID(opts.ID)
 	}
 	// The installer's and uninstaller's runs come first: handed off to a running copy, they would never stamp the shortcut or remove the registration.
@@ -1445,11 +1447,8 @@ func (w *window) apply(b *driver.MountBatch) {
 			p, ok := cursorPoint()
 			w.engine.Dispatch(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: p, Finished: ok})
 			continue
-		case driver.ItemLaunchAtLogin:
-			w.engine.Dispatch(driver.Event{Kind: driver.EventLaunchAtLogin, Count: it.Count, Finished: launchesAtLogin(w.opts.ID)})
-			continue
-		case driver.ItemSetLaunchAtLogin:
-			setLaunchAtLogin(it.On, w.opts.ID)
+		case driver.ItemLaunchAtLogin, driver.ItemSetLaunchAtLogin:
+			w.launchAtLoginItem(it)
 			continue
 		case driver.ItemDock:
 			// Windows has no Dock policy.
@@ -2907,6 +2906,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return r
 		}
 	case wmDestroy:
+		w.startup.close()
 		w.cancelColorPicker()
 		w.closeCustomCursors()
 		w.stopPower()

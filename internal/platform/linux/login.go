@@ -18,8 +18,8 @@ type loginEntry struct {
 	path, name, executable string
 }
 
-// errLoginSandboxed is why a Flatpak or Snap app cannot start at login: its sandbox gives it a config directory of its own, whose autostart folder no session reads, and reaching the session's needs the Background portal or snapd's autostart (roadmap).
-var errLoginSandboxed = errors.New("launch at login is not supported in a Flatpak or Snap sandbox yet")
+// errLoginPortal directs Flatpak commands to the asynchronous Background portal.
+var errLoginPortal = errors.New("Flatpak login registration requires the Background portal")
 
 // appLoginEntry is the entry for the app with ID id, or the executable's name for an app without one.
 func appLoginEntry(id, name, executable string) (loginEntry, error) {
@@ -122,12 +122,20 @@ func (e loginEntry) enabled() bool {
 
 // currentLoginEntry is the running app's entry.
 func currentLoginEntry(id, name string) (loginEntry, error) {
-	if InstalledBy() != "" {
-		return loginEntry{}, errLoginSandboxed
+	if InstalledBy() == "Flatpak" {
+		return loginEntry{}, errLoginPortal
 	}
 	executable, err := loginExecutable()
 	if err != nil {
 		return loginEntry{}, err
+	}
+	if InstalledBy() == "Snap" {
+		label, _ := os.ReadFile("/proc/self/attr/current")
+		instance := os.Getenv("SNAP_INSTANCE_NAME")
+		if instance == "" {
+			instance = os.Getenv("SNAP_NAME")
+		}
+		return snapLoginEntry(id, name, executable, os.Getenv("SNAP"), os.Getenv("SNAP_USER_DATA"), instance, string(label))
 	}
 	return appLoginEntry(id, name, executable)
 }

@@ -111,6 +111,7 @@ type window struct {
 	// opener is the app's own window for a surface the app opened, which goes when that window stops (stop).
 	opener     *window
 	session    *sessionMonitor
+	login      *portalLogin
 	kind       driver.SurfaceKind
 	hideOnBlur bool
 	visible    bool
@@ -906,6 +907,7 @@ func (w *window) shutdown(forced bool) {
 		engine.SyncStorage()
 	}
 	w.unwatchSession()
+	w.login.close()
 	w.closeAudio()
 	w.discovery.close()
 	w.releasePointer(false)
@@ -1159,11 +1161,8 @@ func (w *window) apply(b *driver.MountBatch) {
 			p, ok := cursorPoint()
 			w.engine.Dispatch(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: p, Finished: ok})
 			continue
-		case driver.ItemLaunchAtLogin:
-			w.engine.Dispatch(driver.Event{Kind: driver.EventLaunchAtLogin, Count: it.Count, Finished: launchesAtLogin(w.opts.ID, w.opts.Name)})
-			continue
-		case driver.ItemSetLaunchAtLogin:
-			setLaunchAtLogin(it.On, w.opts.ID, w.opts.Name)
+		case driver.ItemLaunchAtLogin, driver.ItemSetLaunchAtLogin:
+			w.launchAtLoginItem(it)
 			continue
 		case driver.ItemOpenSurface:
 			if it.Surface != nil {

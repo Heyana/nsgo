@@ -1,0 +1,12 @@
+name: nsgo-startup1389-test
+id: dev.nsgo.test.startup1389
+version: 1.0.0
+build:
+  targets: [windows_x64]
+windows:
+  store:
+    identity: NSGo.Startup1389.Test
+    publisher: "CN=NSGo Startup1389 Test, OID.2.25.311729368913984317654407730594956997722=1"
+    publisher_name: NSGo Verification
+updates:
+  channel: store

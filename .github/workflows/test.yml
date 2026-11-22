@@ -482,6 +482,8 @@ jobs:
         run: go tool nsgo test -target windows ./internal/testhost/testdata/keys
       - name: Test WinSparkle quit approval and callback cleanup
         run: go tool nsgo test -run '^TestWinSparkleQuit' ./internal/platform/windows -- -count=1
+      - name: Test unpackaged startup task failures
+        run: go tool nsgo test -run '^TestStartupTaskRejectsUnpackaged$' ./internal/platform/windows -- -count=1
       - name: Test system keys in embedded Windows views
         run: go tool nsgo test -run '^TestEmbeddedSystemKeysReachTheApp$' ./internal/platform/windows
       - name: Test native web sources and restricted history

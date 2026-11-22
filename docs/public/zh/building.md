@@ -342,6 +342,23 @@ updates:
 
 `updater.Check(cx)` 如同“检查更新…”菜单项，检查并显示结果；`updater.CheckInBackground(cx)` 只在有新版本时提示，`updater.CheckDaily(cx)` 也是如此，但每天至多检查一次。`automatic` 开启时，Linux、Android 和 iOS 上的应用在启动时和用户回到应用时这样检查；检查失败（例如离线）时，一小时后再试。开发构建从不更新。 在 Steam 构建中，这三个函数不会触发更新检查。
 
+## 登录时启动
+
+`desktop.SetLaunchAtLogin(cx, on)` 通过平台的登录机制登记应用，`desktop.LaunchAtLogin(cx, done)` 读取状态。当前工具构建的 MSIX 会自动声明一个默认禁用的启动任务；启用时遵循用户在“启动应用”中的开关和管理员策略。普通 Windows 和 Linux 安装仍使用 Run 注册表项和 XDG 自启动文件，macOS 使用应用包的原生登录服务。
+
+Flatpak 请求 Background portal，可能出现授权提示，无需开放宿主配置目录。随后读取状态会等待原生响应。该 portal 没有只读的自启动状态查询接口：Flatpak 只能返回本次运行中最后一次确认的结果，收到响应前为 false，无法获知应用外的改动，也无法在下次运行时恢复状态。
+
+由外部工具打包的 Snap 需要在应用上声明自启动文件名：
+
+```yaml
+apps:
+  app:
+    command: bin/app
+    autostart: app.desktop
+```
+
+NSGo 把该文件写到 `$SNAP_USER_DATA/.config/autostart`，由 snapd 通过应用的包装命令启动。`desktop.LaunchedAtLogin(cx)` 在应用构建前区分登录启动，也能识别 MSIX 的 StartupTask 激活。
+
 ## 文件类型
 
 `file_types` 登记应用能打开的文档：macOS 上从访达、程序坞和“打开方式”打开，Windows 上通过 NSIS 安装程序或 MSIX 出现在资源管理器的“打开方式”里，Linux 上通过 Debian、Arch、AppImage 和 Flatpak 包的桌面项登记，iOS 上通过“打开方式”导入：

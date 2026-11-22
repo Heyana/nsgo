@@ -364,6 +364,23 @@ Stores reject apps that update themselves, so upload a `store` build, never a di
 
 `updater.Check(cx)` checks as a *Check for Updates…* menu item does, and shows what it finds; `updater.CheckInBackground(cx)` shows only a newer version, and `updater.CheckDaily(cx)` does that at most once a day. While `automatic` is on, the app checks that way on Linux, Android and iOS as it starts and whenever the user comes back to it; a check that fails, as one offline does, is tried again an hour later. Development builds never update. In Steam builds, these three functions do nothing.
 
+## Launch at login
+
+`desktop.SetLaunchAtLogin(cx, on)` registers the app with the platform's login mechanism, and `desktop.LaunchAtLogin(cx, done)` reads it. An MSIX built by the current tool includes a disabled startup task automatically; enabling it respects the user's Startup apps switch and administrator policy. Ordinary Windows and Linux installs keep their Run value and XDG autostart entry. macOS uses the bundled app's native login service.
+
+Flatpak requests the Background portal, which may ask for consent, without granting access to host configuration files. A subsequent read waits for the native reply. The portal has no read-only startup query: Flatpak reads return only the last confirmed reply in this run, false before one, and cannot detect a change outside the app or recover the setting on the next run.
+
+An externally packaged Snap declares the autostart filename on its app:
+
+```yaml
+apps:
+  app:
+    command: bin/app
+    autostart: app.desktop
+```
+
+NSGo writes that filename under `$SNAP_USER_DATA/.config/autostart`, which snapd launches through the app's wrapper. `desktop.LaunchedAtLogin(cx)` distinguishes a login launch before the app builds, including an MSIX StartupTask activation.
+
 ## File types
 
 `file_types` registers the documents an app opens: from the Finder, the Dock and Open With on macOS, from Explorer's Open With through the NSIS installer or the MSIX on Windows, through the desktop entry of the Debian, Arch, AppImage and Flatpak packages on Linux, and through Open In on iOS:

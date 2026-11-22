@@ -22,8 +22,9 @@ const (
 
 var regDeleteValueW = advapi32.NewProc("RegDeleteValueW")
 
-// errLoginPackaged is why an MSIX app cannot start at login through the Run key: Windows keeps a package's writes under HKCU to the package, where Explorer never reads them, and a package declares a startup task in its manifest instead (roadmap).
-var errLoginPackaged = errors.New("launch at login is not supported in an MSIX package yet")
+// errLoginPackaged keeps Run-key helpers out of an MSIX's virtualized registry;
+// the window routes packaged requests through StartupTask instead.
+var errLoginPackaged = errors.New("MSIX login registration uses StartupTask")
 
 func registryError(result uintptr) error {
 	if result == 0 {

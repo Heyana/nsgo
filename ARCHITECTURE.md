@@ -47,6 +47,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `nsgotest` | `nsh-testing` | App tests, headless or on a platform, and the agent `nsgo dev -automation` drives a running app through ([testing](docs/architecture/testing.md)) |
 | `internal/automation` | — (MyGo's `plugins/automation`) | The requests the nsgo tool sends a running dev build's agent ([automation](docs/architecture/tool.md#automation)) |
 | `internal/testhost` | `nsh-testing`'s agent | A backend's test host for `nsgotest`: the main thread, native input, screenshots |
+| `internal/appstartup` | — | Packaged startup identities shared by the tool and native backends without linking the runtime |
 | `internal/mimeinfo` | — | Fixed extension/MIME tables shared by packaging and the driver, independent of the host's database |
 | `internal/driver` | `nsh-core`'s mount protocol | The mount protocol, events and `TextEngine`; what every backend runs, such as the `Animator` |
 | `internal/devtools` | — | What DevTools read from a running app's trees and send them; `core` draws their overlay, the layout audit's included ([tool](docs/architecture/tool.md#dev-loop)) |

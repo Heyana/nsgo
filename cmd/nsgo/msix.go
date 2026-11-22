@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+
+	"github.com/nsgo-dev/nsgo/internal/appstartup"
 )
 
 // A store build of a Windows target is the Microsoft Store's package,
@@ -263,6 +265,7 @@ var msixIdentityPattern = regexp.MustCompile(`[^A-Za-z0-9.-]+`)
 type msixData struct {
 	Identity, Publisher, PublisherName, Version, Arch string
 	Name, Description, Exe                            string
+	StartupTask                                       string
 	Languages                                         []string
 	FileTypes                                         []msixFileType
 	URLSchemes                                        []string
@@ -290,6 +293,7 @@ func msixManifest(p *project, arch string) ([]byte, error) {
 		Name:          name,
 		Description:   name,
 		Exe:           p.Name + ".exe",
+		StartupTask:   appstartup.WindowsTaskID,
 
 		DeviceCapabilities: p.Windows.DeviceCapabilities,
 	}
@@ -345,8 +349,9 @@ var msixManifestTemplate = template.Must(template.New("msix").Funcs(template.Fun
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 rescap">
+  IgnorableNamespaces="uap uap3 desktop rescap">
   <Identity Name="{{x .Identity}}" Publisher="{{x .Publisher}}" Version="{{.Version}}" ProcessorArchitecture="{{.Arch}}"/>
   <Properties>
     <DisplayName>{{x .Name}}</DisplayName>
@@ -365,8 +370,10 @@ var msixManifestTemplate = template.Must(template.New("msix").Funcs(template.Fun
     <Application Id="App" Executable="{{x .Exe}}" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements DisplayName="{{x .Name}}" Description="{{x .Description}}" BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png"/>
-{{- if or .FileTypes .URLSchemes}}
       <Extensions>
+        <desktop:Extension Category="windows.startupTask" Executable="{{x .Exe}}" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="{{x .StartupTask}}" Enabled="false" DisplayName="{{x .Name}}"/>
+        </desktop:Extension>
 {{- range .FileTypes}}
         <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="{{x .Name}}">
@@ -385,7 +392,6 @@ var msixManifestTemplate = template.Must(template.New("msix").Funcs(template.Fun
         </uap3:Extension>
 {{- end}}
       </Extensions>
-{{- end}}
     </Application>
   </Applications>
   <Capabilities>

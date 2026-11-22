@@ -148,11 +148,5 @@ func TestLoginEntryStartsTheAppImage(t *testing.T) {
 		t.Fatalf("AppImage entry = %+v, %v", e, err)
 	}
 	t.Setenv("APPIMAGE", "")
-	t.Setenv("SNAP", "/snap/demo/3")
-	if _, err := currentLoginEntry("dev.nsgo.demo", "Demo"); err != errLoginSandboxed {
-		t.Fatalf("a Snap's entry error = %v", err)
-	}
-	if launchesAtLogin("dev.nsgo.demo", "Demo") {
-		t.Fatal("a Snap launches at login")
-	}
+
 }

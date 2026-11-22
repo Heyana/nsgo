@@ -33,6 +33,7 @@ var layers = []struct {
 	{"widget", []string{"core", "internal/driver"}},
 	{"internal/woff", nil},
 	{"internal/mimeinfo", nil},
+	{"internal/appstartup", nil},
 	{"internal/cldr/", nil},
 	{"internal/cldr", nil},
 	{"internal/driver", []string{"internal/mimeinfo", "internal/shaderir"}},
@@ -120,13 +121,14 @@ var layers = []struct {
 	{"examples/", []string{"", "audio", "core", "base/", "ui/", "gpu", "mobile", "desktop", "desktop/locales", "gamepad", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},
 	// The nsgo tool links no component or runtime, so changing them does
 	// not build it again; it writes TSX declarations by running the app.
-	{"cmd/", []string{"core", "cmd/", "internal/automation", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},
+	{"cmd/", []string{"core", "cmd/", "internal/automation", "internal/appstartup", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},
 	{"tools/", []string{"core"}},
 }
 
 // platformShared is the code several backends share, with the shader
 // writers but not the compiler, which only the core links.
 var platformShared = []string{
+	"internal/appstartup",
 	"internal/audiosession", "internal/platform/apple", "internal/platform/canvas2d", "internal/platform/canvasmesh", "internal/platform/canvastest", "internal/platform/codescan", "internal/platform/field", "internal/platform/finger",
 	"internal/platform/appimage", "internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/loopback", "internal/platform/menutext", "internal/platform/objcblock", "internal/platform/perfhud", "internal/platform/picked", "internal/platform/privacy", "internal/platform/queue", "internal/platform/scrollbar", "internal/platform/speechd",
 	"internal/platform/ops", "internal/platform/textruns", "internal/platform/textselect", "internal/platform/updates", "internal/platform/videoalpha", "internal/platform/viewtree", "internal/platform/webstyle", "internal/shaderir/",
@@ -142,7 +144,7 @@ var owned = map[string][]string{
 
 // portable lists the packages that build unchanged for every target: no
 // purego, syscall or unsafe.
-var portable = []string{"core", "internal/automation", "internal/dev/locales", "internal/driver", "internal/mimeinfo", "internal/layout", "internal/shader", "internal/shader/wgsl", "internal/shaderir/", "internal/engine",
+var portable = []string{"core", "internal/automation", "internal/appstartup", "internal/dev/locales", "internal/driver", "internal/mimeinfo", "internal/layout", "internal/shader", "internal/shader/wgsl", "internal/shaderir/", "internal/engine",
 	"internal/testhost", "internal/cldr", "base/", "ui/", "i18n", "mobile", "audio", "gpu", "desktop", "desktop/locales", "icons/", "nsgotest", "tsx", "tsx/websrc", "updater", "updater/locales"}
 
 // unportable are the packages among portable's that reach the system: the

@@ -169,13 +169,13 @@ func TrashFile(cx *core.Scope, path string, done func(trashedAt string, err erro
 	cx.TrashFile(path, done)
 }
 
-// SetLaunchAtLogin has the system start the app as the user logs in, or no more. macOS takes only an app in a bundle, as nsgo build makes it: SMAppService registers it on macOS 13 and later, and a per-user LaunchAgent, which takes effect at the next login, on macOS 11 and 12. Windows writes the user's Run key and Linux an XDG autostart entry; an MSIX, Flatpak or Snap package cannot start at login yet. A failure is logged.
+// SetLaunchAtLogin has the system start the app as the user logs in, or no more. macOS takes only an app in a bundle, as nsgo build makes it: SMAppService registers it on macOS 13 and later, and a per-user LaunchAgent, which takes effect at the next login, on macOS 11 and 12. Windows uses the user's Run key, or StartupTask in an MSIX; Linux writes an XDG entry, uses Snap's declared autostart file, or requests Flatpak's Background portal. A portal may ask for consent, and Windows does not override a startup task disabled by the user or policy. A failure is logged.
 func SetLaunchAtLogin(cx *core.Scope, on bool) { cx.SetLaunchAtLogin(on) }
 
-// LaunchAtLogin calls done with whether the system starts the app at login: false where SetLaunchAtLogin cannot register it, and on Windows also while the user has the app turned off in Startup apps.
+// LaunchAtLogin calls done with whether the system starts the app at login: false where registration is unavailable, and on Windows while Startup apps or policy disables it. On Flatpak it reports only the last Background portal reply in this run, false before any reply: that portal has no read-only autostart query.
 func LaunchAtLogin(cx *core.Scope, done func(on bool)) { cx.LaunchAtLogin(done) }
 
-// LaunchedAtLogin reports whether the system started this run as a login item, as a tray app reads it to open no window then. It is known when the app's function first runs and stays the same for the run, reopens included; a restart (Restart) reports false. macOS reads the launch Apple event, or the LaunchAgent's marker on macOS 11 and 12, and Windows and Linux the marker their login entries start the app with; phones and the web report false. Tests set it with nsgotest.Environment(core.Environment{LaunchedAtLogin: true}).
+// LaunchedAtLogin reports whether the system started this run as a login item, as a tray app reads it to open no window then. It is known when the app's function first runs and stays the same for the run, reopens included; a restart (Restart) reports false. macOS reads the launch Apple event, or the LaunchAgent's marker on macOS 11 and 12, and Windows and Linux the marker their login entries start the app with, or the StartupTask activation kind in an MSIX; phones and the web report false. Tests set it with nsgotest.Environment(core.Environment{LaunchedAtLogin: true}).
 func LaunchedAtLogin(cx *core.Scope) bool { return cx.Env().LaunchedAtLogin() }
 
 // FrontmostAppInfo is the application in front on the desktop: its ID, its name, its process ID and whether its frontmost window is in full screen.
