@@ -15,8 +15,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Sushi owns the preview window. Calls run off GTK's thread, with only
-// the latest request pending while the service starts or loads a file.
+// Sushi owns the preview window. Calls run off GTK's thread, with only the latest request pending while the service starts or loads a file.
 type filePreview struct {
 	owner    *window
 	parent   string
@@ -139,8 +138,7 @@ func (w *window) closeQuickLook() {
 	}
 	var done chan struct{}
 	finishPreviewClose()
-	// An old protocol, or an unparented window, supplies no way to
-	// tell our preview from one another app has since opened.
+	// An old protocol, or an unparented window, supplies no way to tell our preview from one another app has since opened.
 	if p.protocol.selection && p.parent != "" {
 		previews.closingParent = p.parent
 		done = make(chan struct{})
@@ -151,13 +149,11 @@ func (w *window) closeQuickLook() {
 	previews.Unlock()
 	wakePreview()
 	if done != nil {
-		// Flush the external panel's close before the last GTK loop and
-		// process end; the IPC worker needs no callbacks from this thread.
+		// Flush the external panel's close before the last GTK loop and process end; the IPC worker needs no callbacks from this thread.
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
-			// Keep the queued close: a slow ShowFile may still return
-			// after this window is gone while other app windows remain.
+			// Keep the queued close: a slow ShowFile may still return after this window is gone while other app windows remain.
 		}
 	}
 }
@@ -230,8 +226,7 @@ func applyPreview() {
 		return
 	}
 	previews.Lock()
-	// ShowFile may reuse a window that was already visible when this
-	// client subscribed. Respect any explicit visibility signal in flight.
+	// ShowFile may reuse a window that was already visible when this client subscribed. Respect any explicit visibility signal in flight.
 	if previews.visibility == visibility {
 		previews.visible = true
 	}
@@ -269,8 +264,7 @@ func previewSelectionCallback(conn, sender, path, iface, signal, params, data ui
 	wakePreview()
 }
 
-// Use the service's signals: Sushi 50 advertises readable properties but
-// answers Get with an error. Its PropertiesChanged supplies both values.
+// Use the service's signals: Sushi 50 advertises readable properties but answers Get with an error. Its PropertiesChanged supplies both values.
 func previewPropertiesCallback(conn, sender, path, iface, signal, params, data uintptr) {
 	if goString(gVariantGetTypeString(params)) != "(sa{sv}as)" || variantString(params, 0) != previewV2 {
 		return
@@ -311,8 +305,7 @@ func previewPropertiesCallback(conn, sender, path, iface, signal, params, data u
 	wakePreview()
 }
 
-// A replacement service has no known parent or visible panel. Never
-// attribute its keys or Close to a window from the old process.
+// A replacement service has no known parent or visible panel. Never attribute its keys or Close to a window from the old process.
 func previewOwnerCallback(conn, sender, path, iface, signal, params, data uintptr) {
 	if goString(gVariantGetTypeString(params)) != "(sss)" || variantString(params, 0) != previewName {
 		return
@@ -325,8 +318,7 @@ func previewOwnerCallback(conn, sender, path, iface, signal, params, data uintpt
 	previews.Unlock()
 }
 
-// Preview startup and renderer discovery can take longer than the short
-// property queries dbusTry serves. This timeout runs only on the worker.
+// Preview startup and renderer discovery can take longer than the short property queries dbusTry serves. This timeout runs only on the worker.
 func previewCall(bus uintptr, iface, method string, args ...uintptr) (uintptr, error) {
 	var params uintptr
 	if len(args) == 0 {

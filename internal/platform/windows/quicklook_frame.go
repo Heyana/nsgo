@@ -9,9 +9,7 @@ import (
 	"unsafe"
 )
 
-// IPreviewHandlerFrame receives keys from the handler's separate process.
-// Its callbacks only post to the host: unloading a handler during its own
-// TranslateAccelerator RPC would reenter the handler while it uses its site.
+// IPreviewHandlerFrame receives keys from the handler's separate process. Its callbacks only post to the host: unloading a handler during its own TranslateAccelerator RPC would reenter the handler while it uses its site.
 type previewFrame struct {
 	vtbl  *[5]uintptr
 	refs  atomic.Int32
@@ -87,8 +85,7 @@ func previewFrameContext(f *previewFrame, info *previewFrameInfo) uintptr {
 		return ePointer
 	}
 	*info = previewFrameInfo{}
-	// The handler owns this table and frees it when its site is replaced.
-	// Medium-integrity handlers may use it to decide which keys to forward.
+	// The handler owns this table and frees it when its site is replaced. Medium-integrity handlers may use it to decide which keys to forward.
 	keys := [...]uint16{0x1b, 0x20, 0x25, 0x26, 0x27, 0x28}
 	var table [len(keys)]previewAccelerator
 	for i, key := range keys {
@@ -119,8 +116,7 @@ func previewFrameTranslate(f *previewFrame, m *msg) uintptr {
 	if hwnd == 0 || m.Message != wmKeyDown || !previewKey(m.WParam) {
 		return sFalse
 	}
-	// The site token rejects a queued key after another file has replaced
-	// the handler, even when the preview window itself is still the same.
+	// The site token rejects a queued key after another file has replaced the handler, even when the preview window itself is still the same.
 	if ok, _, _ := postMessageW.Call(hwnd, wmPreviewKey, m.WParam, f.token); ok == 0 {
 		return sFalse
 	}

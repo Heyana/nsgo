@@ -14,9 +14,7 @@ const (
 	previewV2   = "org.gnome.NautilusPreviewer2"
 )
 
-// previewProtocol is the previewer's introspected contract. Current Sushi
-// takes an activation token; earlier versions use three arguments, or an
-// X11 window ID instead of a parent handle. Reject other signatures.
+// previewProtocol is the previewer's introspected contract. Current Sushi takes an activation token; earlier versions use three arguments, or an X11 window ID instead of a parent handle. Reject other signatures.
 type previewProtocol struct {
 	iface, signature string
 	selection        bool
@@ -80,8 +78,7 @@ func previewProtocolOf(data string) (previewProtocol, bool) {
 
 func previewFileURI(path string) string { return (&url.URL{Scheme: "file", Path: path}).String() }
 
-// previewSelection maps GTK's directional events to the requested files,
-// stopping at the ends. A tab move is not a file-selection event.
+// previewSelection maps GTK's directional events to the requested files, stopping at the ends. A tab move is not a file-selection event.
 func previewSelection(index, count int, direction uint32) (int, bool) {
 	if count <= 0 {
 		return 0, false

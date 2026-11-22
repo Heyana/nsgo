@@ -61,8 +61,7 @@ func TestRegisteredTextPreviewHandler(t *testing.T) {
 	}
 }
 
-// TestPreviewFrameCOM checks the actual Win32 table ABI and invokes the
-// site's vtable, as a native handler does across COM's process boundary.
+// TestPreviewFrameCOM checks the actual Win32 table ABI and invokes the site's vtable, as a native handler does across COM's process boundary.
 func TestPreviewFrameCOM(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -103,8 +102,7 @@ func TestPreviewFrameCOM(t *testing.T) {
 	}
 }
 
-// TestNativePreviewSelectionAndClose uses the registered text previewer,
-// including its separate-process keyboard forwarding through our COM site.
+// TestNativePreviewSelectionAndClose uses the registered text previewer, including its separate-process keyboard forwarding through our COM site.
 func TestNativePreviewSelectionAndClose(t *testing.T) {
 	if testing.Short() {
 		t.Skip("uses the system's registered file preview handler")
@@ -167,8 +165,7 @@ func TestNativePreviewSelectionAndClose(t *testing.T) {
 		t.Helper()
 		var buf [1024]uint16
 		var count uintptr
-		// WM_GETTEXT is marshalled by Windows to the handler's native
-		// edit control, so this reads the rendered file, not our request.
+		// WM_GETTEXT is marshalled by Windows to the handler's native edit control, so this reads the rendered file, not our request.
 		ok, _, err := user32.NewProc("SendMessageTimeoutW").Call(focus(), 0x0d, uintptr(len(buf)),
 			uintptr(unsafe.Pointer(&buf[0])), 2, 2000, uintptr(unsafe.Pointer(&count)))
 		if ok == 0 {

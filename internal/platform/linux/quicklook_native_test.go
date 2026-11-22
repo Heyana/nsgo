@@ -16,9 +16,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// TestQuickLookWithSushi runs in a private Xvfb/D-Bus session with Sushi.
-// Its PNGs have disjoint colors: reading the native window's pixels proves
-// the requested file rendered, then changed, and the panel really closed.
+// TestQuickLookWithSushi runs in a private Xvfb/D-Bus session with Sushi. Its PNGs have disjoint colors: reading the native window's pixels proves the requested file rendered, then changed, and the panel really closed.
 func TestQuickLookWithSushi(t *testing.T) {
 	if os.Getenv("NSGO_TEST_SUSHI") != "1" {
 		t.Skip("needs Sushi in a private X11 and D-Bus session")
@@ -122,8 +120,7 @@ func TestQuickLookWithSushi(t *testing.T) {
 	}
 	show(1)
 	waitPixels("selected", true, false)
-	// Activate Sushi's own keyboard action. It emits SelectionEvent with
-	// the service's real wire type, which the backend must attribute.
+	// Activate Sushi's own keyboard action. It emits SelectionEvent with the service's real wire type, which the backend must attribute.
 	bindNotifications()
 	v := gVariantTypeNew(cstr("v"))
 	dict := gVariantTypeNew(cstr("{sv}"))
@@ -146,8 +143,7 @@ func TestQuickLookWithSushi(t *testing.T) {
 	waitPixels("owner-released", false, true)
 	show(0)
 	waitPixels("before-takeover", false, false)
-	// A different app may reuse this process-global service. An unparented
-	// ShowFile simulates its request without inventing a foreign window ID.
+	// A different app may reuse this process-global service. An unparented ShowFile simulates its request without inventing a foreign window ID.
 	previews.Lock()
 	protocol := previews.active.protocol
 	previews.Unlock()
@@ -164,9 +160,7 @@ func TestQuickLookWithSushi(t *testing.T) {
 	waitPixels("takeover-closed", false, true)
 }
 
-// xPreviewAttributes matches XWindowAttributes on NSGo's 64-bit Linux
-// targets. Captures select Sushi's own visible window by WM_CLASS, never
-// unrelated windows or the whole desktop.
+// xPreviewAttributes matches XWindowAttributes on NSGo's 64-bit Linux targets. Captures select Sushi's own visible window by WM_CLASS, never unrelated windows or the whole desktop.
 type xPreviewAttributes struct {
 	X, Y, Width, Height, Border, Depth          int32
 	Visual, Root                                uintptr
@@ -210,8 +204,7 @@ func captureSushi(t *testing.T) *image.RGBA {
 		t.Fatal("the native preview capture has no X display")
 	}
 	defer close(d)
-	// Hold other clients only while resolving and copying this window,
-	// preventing a close between XQueryTree and XGetImage.
+	// Hold other clients only while resolving and copying this window, preventing a close between XQueryTree and XGetImage.
 	grab(d)
 	grabbed := true
 	defer func() {

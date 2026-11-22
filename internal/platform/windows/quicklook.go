@@ -14,8 +14,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Windows' registered preview handlers, hosted out of process by COM's
-// preview surrogate, render into a native window the app supplies.
+// Windows' registered preview handlers, hosted out of process by COM's preview surrogate, render into a native window the app supplies.
 var (
 	iidPreviewHandler = parseGUID("8895B1C6-B41F-4C1C-A562-0D564250836F")
 	iidPreviewStream  = parseGUID("B824B49D-22AC-4161-AC8A-9916E8FA3F7F")
@@ -36,9 +35,7 @@ const (
 	previewTranslate = 9
 )
 
-// filePreviewHandler creates and initializes the handler registered for
-// path. Stream initialization is preferred, as Microsoft's host contract
-// requires; item and file initializers support the other native handlers.
+// filePreviewHandler creates and initializes the handler registered for path. Stream initialization is preferred, as Microsoft's host contract requires; item and file initializers support the other native handlers.
 func filePreviewHandler(path string, frame *previewFrame) (*comObject, error) {
 	const assocShellExtension = 16
 	var class [128]uint16
@@ -119,8 +116,7 @@ func initializePreview(handler *comObject, path string) error {
 	return errors.New("the preview handler has no supported initializer")
 }
 
-// filePreview is the app's native preview window. Its content belongs to
-// the registered handler; the host owns its size, file selection and life.
+// filePreview is the app's native preview window. Its content belongs to the registered handler; the host owns its size, file selection and life.
 type filePreview struct {
 	owner    *window
 	hwnd     uintptr
@@ -214,8 +210,7 @@ func (p *filePreview) show(index int) {
 		return
 	}
 	p.handler, p.frame = handler, frame
-	// A native RPC may pump messages that close or replace the preview.
-	// Keep this call's reference until it returns and check its generation.
+	// A native RPC may pump messages that close or replace the preview. Keep this call's reference until it returns and check its generation.
 	handler.addRef()
 	defer handler.release()
 	current := func() bool { return p.hwnd != 0 && p.handler == handler && p.revision == revision }
@@ -302,8 +297,7 @@ func previewWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uin
 	return r
 }
 
-// previewMessage handles the host's keys even when the handler's child
-// has focus, then offers other keyboard messages to the native handler.
+// previewMessage handles the host's keys even when the handler's child has focus, then offers other keyboard messages to the native handler.
 func previewMessage(m *msg) bool {
 	p := activePreview
 	if p == nil || m.Message < 0x100 || m.Message > 0x109 {
