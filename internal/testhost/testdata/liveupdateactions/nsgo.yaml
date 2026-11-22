@@ -1,0 +1,7 @@
+name: NSGo Actions 1465
+id: dev.nsgo.actions1465
+version: 0.1.0
+live_activities:
+  enabled: true
+build:
+  targets: [android_arm64]

@@ -454,7 +454,8 @@ func aarManifest(overlay bool, libraries []string) string {
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
-        </receiver>` + services + uses.String() + `
+        </receiver>
+        <receiver android:name="dev.oneo.nsgo.LiveUpdateReceiver" android:exported="false" />` + services + uses.String() + `
     </application>
 </manifest>
 `

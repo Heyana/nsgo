@@ -27,7 +27,8 @@ import org.json.JSONObject;
  * Each is tagged with its activity's ID, so the runtime finds those of
  * earlier runs, and reports LIVE_REPORT's state, whether they show and
  * which run, as it starts and after each change, and the presses of their
- * actions, which bring the app's activity back.
+ * actions, which reach the running Go process without bringing the app's
+ * activity back.
  */
 final class LiveUpdates {
     private LiveUpdates() {}
@@ -36,11 +37,12 @@ final class LiveUpdates {
     private static final String TAG = "nsgo.live:";
     private static final String KIND = "dev.oneo.nsgo.live.kind";
     private static final String PROMOTE = "android.requestPromotedOngoing";
-    /** The extras of the intent an action's press starts the activity with. */
+    /** The extras of the intent an action's press sends to LiveUpdateReceiver. */
+    static final String EXTRA_ENGINE = "dev.oneo.nsgo.live.engine";
     static final String EXTRA_ID = "dev.oneo.nsgo.live.id", EXTRA_ACTION = "dev.oneo.nsgo.live.action";
 
     /** Carries out a LIVE_UPDATE's message, on the UI thread. */
-    static void apply(Context context, Activity activity, byte[] message) {
+    static void apply(Context context, Activity activity, String engine, byte[] message) {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
         try {
@@ -52,7 +54,7 @@ final class LiveUpdates {
                 manager.cancel(tag, 0);
                 return;
             }
-            Notification.Builder b = builder(context, activity, manager, m, !end);
+            Notification.Builder b = builder(context, activity, engine, manager, m, !end);
             if (end) b.setTimeoutAfter(dismiss - System.currentTimeMillis());
             manager.notify(tag, 0, b.build());
         } catch (JSONException | RuntimeException e) {
@@ -60,7 +62,7 @@ final class LiveUpdates {
         }
     }
 
-    private static Notification.Builder builder(Context context, Activity activity, NotificationManager manager,
+    private static Notification.Builder builder(Context context, Activity activity, String engine, NotificationManager manager,
             JSONObject m, boolean ongoing) throws JSONException {
         if (manager.getNotificationChannel(CHANNEL) == null) {
             // Live Updates need an importance of default or more; they
@@ -83,7 +85,7 @@ final class LiveUpdates {
                 .setOnlyAlertOnce(!m.optBoolean("alert"))
                 .setCategory(Notification.CATEGORY_PROGRESS)
                 .addExtras(extras)
-                .setContentIntent(press(context, activity, id, null, m.optString("url")));
+                .setContentIntent(press(context, activity, engine, id, null, m.optString("url")));
         String body = m.optString("body");
         if (!body.isEmpty()) b.setContentText(body);
         long tint = m.optLong("tint");
@@ -116,28 +118,35 @@ final class LiveUpdates {
         for (int i = 0; actions != null && i < actions.length(); i++) {
             JSONObject a = actions.getJSONObject(i);
             b.addAction(new Notification.Action.Builder(Icon.createWithResource(context, icon), a.getString("title"),
-                    press(context, activity, id, a.getString("id"), null)).build());
+                    press(context, activity, engine, id, a.getString("id"), null)).build());
         }
         return b;
     }
 
     /**
-     * The intent a press sends: the app's activity, brought back if it
-     * runs, with the activity's ID and the action pressed, if any, and the
-     * content's URL as its data.
+     * The intent a press sends. An action is a broadcast to the runtime so a
+     * running Go process receives it without starting an Activity. A content
+     * press remains an Activity intent and may open the app with its URL.
      */
-    private static PendingIntent press(Context context, Activity activity, String id, String action, String url) {
+    static PendingIntent press(Context context, Activity activity, String engine, String id, String action, String url) {
+        if (action != null) {
+            Intent intent = new Intent(context, LiveUpdateReceiver.class);
+            intent.putExtra(EXTRA_ENGINE, engine);
+            intent.putExtra(EXTRA_ID, id);
+            intent.putExtra(EXTRA_ACTION, action);
+            // Extras and request-code hashes alone do not distinguish colliding IDs.
+            intent.setData(new Uri.Builder().scheme("nsgo-live-action").authority(engine)
+                    .appendPath(id).appendPath(action).build());
+            return PendingIntent.getBroadcast(context, 0, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        }
         Intent intent = activity != null ? new Intent(context, activity.getClass())
                 : context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         if (intent == null) intent = new Intent();
         intent.setPackage(context.getPackageName());
-        if (action != null) {
-            intent.putExtra(EXTRA_ID, id);
-            intent.putExtra(EXTRA_ACTION, action);
-        }
         if (url != null && !url.isEmpty()) intent.setData(Uri.parse(url));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        String key = id + "\u0000" + (action == null ? "" : action);
+        String key = id + "\u0000";
         return PendingIntent.getActivity(context, key.hashCode(), intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }

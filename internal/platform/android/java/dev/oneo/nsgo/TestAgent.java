@@ -160,6 +160,16 @@ final class TestAgent {
 
     private void run(int id, JSONObject op) throws Exception {
         switch (op.getString("op")) {
+            case "live-action-intents": {
+                Context context = view.getContext();
+                android.app.PendingIntent first = LiveUpdates.press(context, activity(), op.getString("owner"),
+                        op.getString("first"), op.getString("action"), null);
+                android.app.PendingIntent second = LiveUpdates.press(context, activity(), op.getString("otherOwner"),
+                        op.getString("second"), op.getString("otherAction"), null);
+                if (!first.isBroadcast() || !second.isBroadcast()) throw new IllegalStateException("action is not a broadcast");
+                view.testReply(id, "", Boolean.toString(first.equals(second)));
+                return;
+            }
             case "notification-intents": {
                 Context context = view.getContext();
                 Activity host = op.optBoolean("launcher") ? null : activity();

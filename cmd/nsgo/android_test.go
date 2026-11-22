@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/xml"
 	"go/parser"
 	"go/token"
 	"net"
@@ -178,6 +179,39 @@ func TestAndroidLibraries(t *testing.T) {
 	}
 	if m := aarManifest(false, nil); !strings.Contains(m, `android.intent.action.PROCESS_TEXT`) || !strings.Contains(m, `android:mimeType="text/plain"`) {
 		t.Errorf("the AAR's manifest lacks the ACTION_PROCESS_TEXT query:\n%s", m)
+	}
+}
+
+// Both package forms must keep action delivery private to the app's runtime.
+func TestAndroidLiveUpdateReceiverManifests(t *testing.T) {
+	data, err := os.ReadFile("../../internal/platform/android/runtime/AndroidManifest.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, manifest := range map[string]string{"APK": string(data), "AAR": aarManifest(false, nil)} {
+		var doc struct {
+			Application struct {
+				Receivers []struct {
+					Name     string `xml:"name,attr"`
+					Exported string `xml:"exported,attr"`
+				} `xml:"receiver"`
+			} `xml:"application"`
+		}
+		if err := xml.Unmarshal([]byte(manifest), &doc); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, r := range doc.Application.Receivers {
+			if r.Name == "dev.oneo.nsgo.LiveUpdateReceiver" {
+				found = true
+				if r.Exported != "false" {
+					t.Errorf("%s exports the action receiver", name)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s omits the action receiver", name)
+		}
 	}
 }
 

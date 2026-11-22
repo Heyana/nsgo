@@ -77,5 +77,9 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <!-- Live Update action presses reach the running Go process without starting NsgoActivity. -->
+        <receiver
+            android:name="dev.oneo.nsgo.LiveUpdateReceiver"
+            android:exported="false" />
     </application>
 </manifest>

@@ -50,7 +50,7 @@ widget.ActivityContent{
 
 ## Presses
 
-`widget.OnAction` runs the handler of an action's or a `widget.Button`'s press, with the activity and the action's ID. Set it in `main`, before `nsgo.Run`: on iOS the system starts the app in the background for a press, without its views, and holds the activity until the handler returns, so the handler updates it there; on Android a press opens the app. The handler runs on a goroutine of the system's, not the app's views', which it reaches through a `core.Scope`'s `Post`.
+`widget.OnAction` runs the handler of an action's or a `widget.Button`'s press, with the activity and the action's ID. Set it in `main`, before `nsgo.Run`: on iOS the system starts the app in the background for a press, without its views, and holds the activity until the handler returns, so the handler updates it there; on Android a press reaches the running Go process through the runtime receiver without opening its Activity. Actions need the engine that posted them to remain running; a stale action does nothing after that engine ends. The notification itself still opens the app when tapped. The handler runs on a goroutine of the system's, not the app's views', which it reaches through a `core.Scope`'s `Post`.
 
 ```go
 func main() {

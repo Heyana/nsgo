@@ -82,3 +82,5 @@ Formulas also render on watchOS. Their font loader retains its own parsed font a
 Terminal path links use the shell’s OSC 7 directory, or `terminal.Options.Dir` for a local shell before its first directory report. Quote paths with spaces; modifier-click opens existing local files/folders through `Scope.OpenFile`, and URL links use `Scope.OpenURL`. Remote authorities are not local paths. [Components](https://nsgo.dev/docs/ui.md)
 
 Mermaid diagrams use `diagram.View.Icons` to map names such as `"fa:fa-car"` to `*core.SVG` documents. Image nodes share the canvas image loader (HTTP(S), files and `asset:`); `constraint: "on"` preserves their proportions. A custom `RenderDiagram` callback can return a `diagram.View` with the app's icon map ([text](https://nsgo.dev/docs/text.md)).
+
+Android Live Activity actions reach `widget.OnAction` without opening the Activity while the posting engine runs; keep that engine alive for actions, and use the notification content tap to reopen the app. [Live Activities](https://nsgo.dev/docs/live-activities.md#presses).

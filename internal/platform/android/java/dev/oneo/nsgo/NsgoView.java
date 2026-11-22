@@ -1143,7 +1143,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     break;
                 case Protocol.LIVE_UPDATE:
                     ui.post(() -> {
-                        LiveUpdates.apply(getContext(), activity(), payload);
+                        LiveUpdates.apply(getContext(), activity(), engine.liveActionToken(), payload);
                         write(Protocol.LIVE_REPORT, LiveUpdates.state(getContext()));
                     });
                     break;

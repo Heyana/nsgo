@@ -50,7 +50,7 @@ widget.ActivityContent{
 
 ## 按下按钮
 
-`widget.OnAction` 运行按钮或 `widget.Button` 被按下时的处理函数，参数中带有实时活动和按钮的 ID。要在 `main` 中、`nsgo.Run` 之前设置它：在 iOS 上，系统会为一次按下在后台启动应用，不带任何视图，并在处理函数返回前保持这个实时活动，所以处理函数要在其中更新它；在 Android 上，按下会打开应用。处理函数运行在系统的 goroutine 上，而不是应用视图的 goroutine，需要视图时通过 `core.Scope` 的 `Post` 访问。
+`widget.OnAction` 运行按钮或 `widget.Button` 被按下时的处理函数，参数中带有实时活动和按钮的 ID。要在 `main` 中、`nsgo.Run` 之前设置它：在 iOS 上，系统会为一次按下在后台启动应用，不带任何视图，并在处理函数返回前保持这个实时活动，所以处理函数要在其中更新它；在 Android 上，应用进程运行时按下会通过运行时接收器送达 Go 进程，不打开 Activity；发布通知的引擎需要仍在运行，引擎结束后旧按钮不再响应；点击通知本身仍会打开应用。处理函数运行在系统的 goroutine 上，而不是应用视图的 goroutine，需要视图时通过 `core.Scope` 的 `Post` 访问。
 
 ```go
 func main() {

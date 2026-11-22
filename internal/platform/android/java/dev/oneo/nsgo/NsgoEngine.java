@@ -17,6 +17,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Arrays;
 import java.util.TimeZone;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Owns one NSGo process and its pipe. A host may keep this object in an Application or foreground service, so that the app runs on while the NsgoView showing it is detached from its Activity.
@@ -25,6 +27,9 @@ import java.util.TimeZone;
  */
 public final class NsgoEngine {
     private static final String TAG = "nsgo";
+    /** Running engines by lifetime token, so embedded apps never receive one another's actions. */
+    private static final ConcurrentHashMap<String, NsgoEngine> liveActions = new ConcurrentHashMap<>();
+    private final String liveActionToken = UUID.randomUUID().toString();
 
     /** Receives messages from the Go process on the engine reader thread. */
     interface Listener {
@@ -70,6 +75,7 @@ public final class NsgoEngine {
         String dir = builder.environment().get("NSGO_DATA_DIR");
         data = dir == null ? application.getFilesDir() : new File(dir);
         watchTimeZone();
+        liveActions.put(liveActionToken, this);
     }
 
     /**
@@ -165,6 +171,21 @@ public final class NsgoEngine {
         }
     }
 
+    /** Delivers a Live Update action without manufacturing an Activity. */
+    static boolean deliverLiveAction(String token, byte[] press) {
+        NsgoEngine engine = token == null ? null : liveActions.get(token);
+        return press != null && engine != null && engine.writeLiveAction(press);
+    }
+
+    /** Identifies this engine's notification actions for this process lifetime. */
+    String liveActionToken() { return liveActionToken; }
+
+    private synchronized boolean writeLiveAction(byte[] press) {
+        if (closed || process == null || !process.isAlive() || out == null) return false;
+        write(Protocol.LIVE_REPORT, press);
+        return true;
+    }
+
     /**
      * Stops the process and releases the pipe; it is safe to call twice. The bound view hears of it through onProcessEnded once the reader has passed it the last message, or at once if no reader runs.
      */
@@ -176,6 +197,7 @@ public final class NsgoEngine {
         synchronized (this) {
             if (closed) return;
             closed = true;
+            liveActions.remove(liveActionToken, this);
             if (out != null) {
                 try {
                     out.close();
@@ -220,6 +242,7 @@ public final class NsgoEngine {
             current = listener;
             listener = null;
             out = null;
+            liveActions.remove(liveActionToken, this);
             unwatchTimeZone();
         }
         if (current != null) {

@@ -17,7 +17,8 @@ import (
 // before. Package widget sends it each start, update and end as JSON
 // through the backend (driver.SendLiveUpdate), and hears what it reports:
 // whether the app may show them and which show, as it connects and as
-// they change, and the presses of their actions, which open the app.
+// they change, and the presses of their actions, delivered to their running engine without
+// opening its Activity.
 
 // liveUpdate is a message to the runtime.
 type liveUpdate struct {
