@@ -395,8 +395,7 @@ func TestPackageNativesRejectEscapingSymlinks(t *testing.T) {
 	}
 }
 
-// Opt in on macOS to exercise real Go binaries, lipo, codesign and the DMG.
-// The native inputs belong to NSGo; no external download or release is involved.
+// Opt in on macOS to exercise real Go binaries, lipo, codesign and the DMG. The native inputs belong to NSGo; no external download or release is involved.
 func TestPackageNativesMacUniversalE2E(t *testing.T) {
 	if runtime.GOOS != "darwin" || os.Getenv("NSGO_NATIVE_LIBRARY_E2E") != "1" {
 		t.Skip("set NSGO_NATIVE_LIBRARY_E2E=1 on macOS")

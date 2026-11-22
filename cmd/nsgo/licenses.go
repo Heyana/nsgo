@@ -180,8 +180,7 @@ func addLicensePackage(sources map[string]*licenseSource, pkg licensePackage) {
 		}
 		rel, relErr := filepath.Rel(root, pkg.Dir)
 		if root == "" || relErr != nil || !filepath.IsLocal(rel) {
-			// A vendored package can still report its original replacement's
-			// Module.Dir. Its selected files and notices belong to vendor.
+			// A vendored package can still report its original replacement's Module.Dir. Its selected files and notices belong to vendor.
 			root = pkg.Dir
 			if rel, ok := strings.CutPrefix(pkg.ImportPath, module.Path+"/"); ok {
 				for range strings.SplitSeq(rel, "/") {

@@ -189,8 +189,7 @@ func packageNativePath(root, name string) (string, error) {
 	return path, nil
 }
 
-// addPackageNatives runs for precisely the packages go list selected, with the
-// same target, tags and overlay as the executable. License policy stays per module.
+// addPackageNatives runs for precisely the packages go list selected, with the same target, tags and overlay as the executable. License policy stays per module.
 func (p *project) addPackageNatives(pkg licensePackage, target string, sources map[string]*licenseSource) error {
 	if target == "" || pkg.Dir == "" {
 		return nil
@@ -352,8 +351,7 @@ func verifyNativeChecksum(path, expected string) error {
 	return nil
 }
 
-// validateNativeBinary rejects a library for another OS or architecture before
-// signing or making an installer. A universal Mach-O may supply either slice.
+// validateNativeBinary rejects a library for another OS or architecture before signing or making an installer. A universal Mach-O may supply either slice.
 func validateNativeBinary(path, target string) error {
 	system, arch, _ := strings.Cut(target, "_")
 	switch system {
@@ -459,8 +457,7 @@ func (p *project) addNativeLibraries(ctx context.Context, target, dir string) er
 	return nil
 }
 
-// copyNativeLibrary hashes exactly the bytes copied, committing a complete file
-// only after its checksum matches. Large media libraries need no whole-file buffer.
+// copyNativeLibrary hashes exactly the bytes copied, committing a complete file only after its checksum matches. Large media libraries need no whole-file buffer.
 func copyNativeLibrary(src, dst, expected string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -493,8 +490,7 @@ func copyNativeLibrary(src, dst, expected string) error {
 	return os.Rename(out.Name(), dst)
 }
 
-// matchMacLibraries prevents a universal package from retaining an arm-only
-// library or silently dropping one supplied only for Intel.
+// matchMacLibraries prevents a universal package from retaining an arm-only library or silently dropping one supplied only for Intel.
 func matchMacLibraries(arm, intel string) error {
 	list := func(app string) ([]string, error) {
 		paths, err := filepath.Glob(filepath.Join(app, "Contents", "Frameworks", "*.dylib"))

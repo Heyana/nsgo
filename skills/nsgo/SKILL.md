@@ -38,6 +38,7 @@ For a signed HarmonyOS HAP, configure `harmonyos.signing` and use the SDK, Java 
 On `ios_simulator`, Go-only dev rebuilds of the main app replace the installed executable and relaunch. Changes to the app's resources, icon or `nsgo.yaml` reinstall it. [Running and debugging](https://nsgo.dev/docs/debugging.md)
 
 Use `-host 127.0.0.1` to bind the dev server to loopback only, including with Android's `adb reverse`.
+
 Go dependencies can ship prebuilt desktop shared libraries through their package's `nsgo-natives.yaml`: NSGo verifies checksums, bundles licenses, signs and includes them in installers without app configuration. Package authors declare target names, URL or local files, SHA-256 and license paths, and preserve these files with `go:embed` for vendoring. [Native libraries](https://nsgo.dev/docs/native-libraries.md) gives the contract and loading directories.
 
 ## Writing an app
