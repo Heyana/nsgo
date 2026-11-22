@@ -892,6 +892,12 @@ func windowsSession(opts devOptions) session {
 				if err != nil {
 					return err
 				}
+			} else {
+				// A debugged build reuses the project build directory; start it empty so no stale files remain.
+				os.RemoveAll(dir)
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					return err
+				}
 			}
 			if err := buildWindows(ctx, p, dir, runtime.GOARCH); err != nil {
 				os.RemoveAll(dir)
