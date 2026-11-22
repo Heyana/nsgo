@@ -8,6 +8,7 @@ public abstract class Drawable {
     public void setAutoMirrored(boolean mirrored) {}
     public boolean isAutoMirrored() { return false; }
     public int getLayoutDirection() { return 0; }
+    public boolean onLayoutDirectionChanged(int layoutDirection) { return false; }
     public void invalidateSelf() {}
     public Rect getBounds() { return new Rect(); }
     public int getIntrinsicWidth() { return -1; }
