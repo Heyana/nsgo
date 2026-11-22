@@ -126,10 +126,18 @@ func main() {
 	}
 
 	var deployed atomic.Bool
+	var disconnected atomic.Bool
 	var oldDownloads atomic.Int64
 	oldFiles := http.StripPrefix("/game/", http.FileServer(http.Dir(oldDir)))
 	newFiles := http.StripPrefix("/game/", http.FileServer(http.Dir(newDir)))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if disconnected.Load() {
+			conn, _, err := http.NewResponseController(w).Hijack()
+			if err == nil {
+				conn.Close()
+			}
+			return
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Security-Policy", strictPolicy)
 		if r.URL.Path == "/observer" {
@@ -236,6 +244,12 @@ func main() {
 	wait(current, readAsset(newApp), "new-generation")
 	wait(old, readAsset(oldApp), "old-generation")
 	wait(observer, `navigator.serviceWorker.getRegistration("/game/").then(r => r?.waiting?.state)`, "installed")
+	// The new page is still controlled by the old worker while the old tab
+	// lives. Both generations' verified assets must work without the server.
+	disconnected.Store(true)
+	wait(current, readAsset(newApp), "new-generation")
+	wait(old, readAsset(oldApp), "old-generation")
+	disconnected.Store(false)
 	closeTab(oldID)
 	closeTab(currentID)
 	wait(observer, `navigator.serviceWorker.getRegistration("/game/").then(r => r?.active?.state === "activated" && !r?.waiting)`, true)

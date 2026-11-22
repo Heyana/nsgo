@@ -9,7 +9,6 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
@@ -17,6 +16,7 @@ import (
 // Reloading fetches the new index without forcing a waiting offline worker to
 // activate underneath other live pages of the preceding release.
 type webUpdates struct {
+	app           string
 	current       []byte
 	version       string
 	url           string
@@ -53,7 +53,7 @@ func (s *surface) initUpdates(opts Options) driver.UpdaterState {
 	if base == "" {
 		base = s.doc.Get("baseURI").String()
 	}
-	s.updates = webUpdates{current: data, version: version, url: js.Global().Get("URL").New("nsgo.json", base).Get("href").String()}
+	s.updates = webUpdates{app: opts.Name, current: data, version: version, url: js.Global().Get("URL").New("nsgo.json", base).Get("href").String()}
 	return s.updateState()
 }
 
@@ -75,7 +75,7 @@ func (s *surface) checkForUpdates(it *driver.MountItem) {
 		return
 	}
 	id := it.Count
-	u := driver.Update{App: core.App().Name, Current: s.updates.version, Managed: s.updateState().Managed}
+	u := driver.Update{App: s.updates.app, Current: s.updates.version, Managed: s.updateState().Managed}
 	if s.updates.current == nil {
 		u.Err = "updates: this page has no standalone release descriptor"
 		s.engine.Dispatch(driver.Event{Kind: driver.EventUpdate, Count: id, Data: &u})

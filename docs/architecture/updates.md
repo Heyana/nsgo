@@ -11,7 +11,7 @@ NSH's `nsh/updater` downloads, verifies and swaps in the next version itself. NS
 - Where the platform's updater shows what it found in windows of its own, Sparkle's or WinSparkle's, the answer is `Finished` and `updater` shows nothing.
 - Elsewhere it carries a `driver.Update`: its typed management reason and store, a newer version and its page, none, or why the check failed. `updater` says it in an alert in its catalog's words and opens the page with `OpenURL`.
 - On Linux and Android the answer also names the newer version's package when it is signed with the app's key and, on Linux, matches how the running executable was installed (`dpkg` for `.deb`, `pacman` for `.pkg.tar.gz`/`.pkg.tar.zst`, or `APPIMAGE`/`APPDIR` for `.AppImage`). Choosing Update then runs `core.InstallUpdateInBackground` under the app's root scope, so it outlives the scope that asked: it streams the package directly to a temporary file in the cache's `nsgo.updater` within ten minutes while updating `updater.Status` and the platform task progress bar, checks its length, SHA-256 and Ed25519 signature from the streamed file, and hands it to Linux's installer (`pkexec dpkg`, `pkexec pacman`, or atomic AppImage swap) and restarts once it succeeds, or opens Android's package installer. A failure cleans up any partial file, resets progress, and says so in an alert that offers the page. Update chosen again while one runs is ignored, so a second run does not discard the package of the first, and a check that finds the app up to date meanwhile leaves it too. The staged package is removed once installed on Linux, and on Android by the next download or a check that finds the app up to date, as the installer reads it after it starts.
-- Web, mini programs and watchOS never answer: a page loads its newest version, and a watch app follows its iPhone app.
+- Watch apps follow their iPhone app. Standalone web releases compare the running file descriptor with a fresh `nsgo.json`; mini programs use their platform update manager. A prepared update sets `core.UpdateCheck.Restart`, including when the platform exposes no version label. Confirming requests a restart through quit handlers instead of opening an empty URL.
 
 | Target | Updater |
 | --- | --- |
@@ -20,6 +20,14 @@ NSH's `nsh/updater` downloads, verifies and swaps in the next version itself. NS
 | Linux, direct Android | `internal/platform/updates` reads the target's appcast with the backend's HTTP client, verifies the package's SHA-256 and Ed25519 signature, then `updater` stages it and hands it to the platform installer |
 | iOS, Mac App Store | Apple's lookup by the installed bundle's ID in the locale's country, against `CFBundleShortVersionString`; Mac requests `desktopSoftware` and returns a `macappstore` link (`apple.CheckAppStore`) |
 | Google Play | A manual check enters Play In-App Updates' immediate flow when allowed, so Play owns consent, downloading, installation and restart; other stores remain managed |
+
+## Browser and mini-program releases
+
+The web loader passes its published descriptor to its own Go instance. A standalone page checks the current `nsgo.json` with HTTP caching disabled, coalesces concurrent requests, and bounds/aborts pending fetches. A changed immutable-file descriptor offers a reload even when its displayed version is unchanged. Embedded hosts own their lifetime and do not reload through this API. This path needs no appcast key; it runs when the app calls `updater.Check` or its background form, without a new automatic polling loop or preference setters.
+
+Reloading does not force a waiting offline worker to activate under older live tabs. The active worker can serve verified immutable assets from the waiting release's cache while retaining the previous cache; normal activation still retires old caches after their clients close. A real two-release Chromium run verifies Later, confirmed reload into the new module, and a subsequent up-to-date check.
+
+The mini-program runtime captures `getUpdateManager` events before WebAssembly starts and retains their state. Checks wait for readiness, no-update or failure with a bounded timeout; confirming a ready update calls `applyUpdate`. No version is invented for managers that expose none. Missing APIs fail explicitly. JavaScript and Go bridge fixtures verify this contract; published vendor-client upgrade acceptance remains in the roadmap. NSH v0.6.1 has no equivalent browser/mini-program updater; this follows the host APIs while keeping NSGo's shared confirmation UI.
 
 ## State and preferences
 

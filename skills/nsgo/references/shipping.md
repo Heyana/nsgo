@@ -77,6 +77,8 @@ Use `updater.CapabilityOf(cx)` to explain whether a copy updates itself, opens a
 
 Publish each Linux `.AppImage` with its `.AppImage.zsync` sidecar. Embedded update discovery defaults to `release.github` or the GitHub remote `origin`; `linux.appimage_update` overrides it with a stable `zsync|https://…` URL or a `gh-releases-zsync` locator, and an explicit empty string disables discovery. Keep the URL stable and serve HTTP ranges. [AppImage updates](https://nsgo.dev/docs/building.md#installers)
 
+Published standalone web apps use `updater.Check` to compare their current descriptor with `nsgo.json` and confirm a reload. Mini programs use the host update manager and apply only ready updates; custom check handlers must accept `core.UpdateCheck.Restart` without a version label. Embedded hosts manage reloads themselves. See [Updates](https://nsgo.dev/docs/building.md#updates).
+
 ## Store listings
 
 Keep App Store and Google Play metadata as plain-text YAML and Markdown under `store/` (or `store.dir`): top-level `listing.yaml` (`version: 1`) and per-locale `<locale>/listing.yaml` (`version: 1`, unknown keys refused) plus optional `description.md`, `release_notes.md`, `promotional_text.md` and `screenshots/`.

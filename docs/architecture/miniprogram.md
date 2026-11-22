@@ -63,6 +63,8 @@ Alerts are the platform's modal or action sheet, the clipboard holds text, stora
 
 NSGo keeps this separate from `AuthSession`: these hosts neither open its authorization URL nor return an OAuth callback, so silently reusing that API would discard the app's URL/PKCE/state contract. Douyin's anonymous device code is never a signed-in user code. Its login is silent unless the app explicitly sets `MiniProgramSignInOptions.Prompt`; an unsigned host answers `MiniProgramSignInNotSignedIn`, and documented host-login cancellation code 113001 answers cancelled. Other failures return stable errors without credential-bearing host payloads. See [Douyin login](https://developer.open-douyin.com/docs/resource/zh-CN/mini-app/develop/api/open-interface/log-in/tt-login) and [Alipay authorization codes](https://pds.alipay.com/docs/miniprogram/mpdev/API_OpenAPI_getAuthCode).
 
+`nsgoMP.updates` retains the platform update manager's cold-start check, readiness and failure events before the Go module starts. `updater.Check` answers from that snapshot or waits for its terminal event; confirming a prepared update requests restart and calls the manager's `applyUpdate`. The runtime exposes no made-up version label. Managers missing the required methods answer unavailable. Published WeChat/QQ/Alipay/Douyin upgrades remain unverified; the runtime and Go bridge are covered by stand-ins.
+
 ## The package
 
 `WXWebAssembly` and its likes load only files of the code package, `.wasm.br` among them, and every platform holds each package to 2 MB, so the module goes in a subpackage of its own, which the page loads before it, and its size decides which apps fit:

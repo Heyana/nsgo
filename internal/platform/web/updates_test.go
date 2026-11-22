@@ -81,6 +81,31 @@ func TestWebReleaseChecksAndPreparedReload(t *testing.T) {
 	}
 }
 
+func TestEmbeddedWebUpdatesAnswerUnavailable(t *testing.T) {
+	doc := js.Global().Get("document")
+	if !doc.Truthy() {
+		t.Skip("run with nsgo test -target web")
+	}
+	mount := doc.Call("createElement", "div")
+	mount.Set("id", "nsgo-embedded-update")
+	doc.Get("body").Call("appendChild", mount)
+	defer mount.Call("remove")
+	result := make(chan core.UpdateCheck, 1)
+	s := open(func(cx *core.Scope) core.Node {
+		cx.CheckForUpdates(false, func(found core.UpdateCheck) { result <- found })
+		return core.View{}
+	}, Options{Mount: "#nsgo-embedded-update", UpdateConfig: `{"release":true,"wasm":"old.wasm"}`}, nil)
+	defer s.engine.Close()
+	select {
+	case found := <-result:
+		if found.Managed != core.UpdaterUnavailable || found.Err == nil || found.Restart {
+			t.Fatalf("embedded answer = %+v", found)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("embedded check was left unanswered")
+	}
+}
+
 func TestInstallUpdateReportsUnavailable(t *testing.T) {
 	doc := js.Global().Get("document")
 	if !doc.Truthy() {
