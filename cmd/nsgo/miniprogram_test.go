@@ -76,6 +76,27 @@ func runMiniProgramModule(t *testing.T, name string) *goja.Runtime {
 	return vm
 }
 
+func TestMiniProgramUpdateManagerLifecycle(t *testing.T) {
+	vm := runMiniProgramModule(t, "updates.js")
+	updateManager := vm.Get("module").ToObject(vm).Get("exports").ToObject(vm).Get("updateManager")
+	src, err := os.ReadFile("testdata/miniprogram_updates_test.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testModule := vm.NewObject()
+	vm.Set("module", testModule)
+	if _, err := vm.RunString(string(src)); err != nil {
+		t.Fatal(err)
+	}
+	fn, ok := goja.AssertFunction(testModule.Get("exports"))
+	if !ok {
+		t.Fatal("update lifecycle fixture did not export a function")
+	}
+	if _, err := fn(goja.Undefined(), updateManager); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // runTree runs the runtime's tree.js on goja and returns a function that
 // applies a batch of operations (JSON) and returns the page's setData
 // object as JSON.
