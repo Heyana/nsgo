@@ -1625,7 +1625,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			// A modal is a view; it appears without animation.
 		case driver.ItemCanvas:
 			held := w.uiaHeld(v)
+			had := len(v.canvasNodes())
 			v.drawing = it.Drawing
+			w.forgetParts(v.id, len(v.canvasNodes())+1, had)
 			w.uiaChanged(held)
 			w.animator.BindCanvas(v.id, it.Drawing.Slots)
 		case driver.ItemShader:

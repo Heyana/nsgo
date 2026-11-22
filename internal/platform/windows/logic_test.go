@@ -5,6 +5,7 @@ package windows
 import (
 	"image"
 	"math"
+	"slices"
 	"testing"
 	"time"
 	"unsafe"
@@ -1797,5 +1798,38 @@ func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
 	}
 	if scroll.glide == nil {
 		t.Fatal("NoScroll view had its glide cleared")
+	}
+}
+
+// TestCanvasPartsDropTheirElements gives a client's elements to a canvas's parts: a drawing with fewer parts drops those of the parts it lost, and deleting the canvas the rest.
+func TestCanvasPartsDropTheirElements(t *testing.T) {
+	w := &window{scale: 1, animator: driver.NewAnimator(func(driver.Event) {}), drops: map[*view]bool{}, hosts: map[*component]bool{}}
+	parts := func(n int) *driver.Drawing {
+		return &driver.Drawing{Nodes: make([]driver.CanvasNode, n)}
+	}
+	w.apply(&driver.MountBatch{Root: 1, Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 1, View: driver.KindView},
+		{Kind: driver.ItemCreate, ID: 2, View: driver.KindCanvas},
+		{Kind: driver.ItemInsert, ID: 2, Parent: 1},
+		{Kind: driver.ItemCanvas, ID: 2, Drawing: parts(3)},
+	}})
+	for part := range 4 {
+		w.element(2, part)
+	}
+	held := func() (parts []int) {
+		for part := range 4 {
+			if w.uia[uiaKey(2, part)] != nil {
+				parts = append(parts, part)
+			}
+		}
+		return parts
+	}
+	w.apply(&driver.MountBatch{Root: 1, Items: []driver.MountItem{{Kind: driver.ItemCanvas, ID: 2, Drawing: parts(1)}}})
+	if got := held(); !slices.Equal(got, []int{0, 1}) {
+		t.Fatalf("a drawing of one part leaves the elements of parts %v, want [0 1]", got)
+	}
+	w.apply(&driver.MountBatch{Root: 1, Items: []driver.MountItem{{Kind: driver.ItemDelete, ID: 2}}})
+	if got := held(); got != nil {
+		t.Fatalf("a deleted canvas leaves the elements of parts %v", got)
 	}
 }

@@ -1236,11 +1236,16 @@ func (v *view) canvasNodes() []driver.CanvasNode {
 
 // forgetElements disconnects the providers of a deleted view.
 func (w *window) forgetElements(v *view) {
+	w.forgetParts(v.id, 0, len(v.canvasNodes()))
+}
+
+// forgetParts disconnects the providers of view id's parts from through to: a deleted view's, or the canvas parts a new drawing no longer has. The last go first, as disconnecting a part asks for the view's element, which would come back once gone.
+func (w *window) forgetParts(id driver.NodeID, from, to int) {
 	if w.uia == nil {
 		return
 	}
-	for part := 0; part <= len(v.canvasNodes()); part++ {
-		k := uiaKey(v.id, part)
+	for part := to; part >= from; part-- {
+		k := uiaKey(id, part)
 		if e := w.uia[k]; e != nil {
 			if uiaDisconnectProvider.Find() == nil {
 				uiaDisconnectProvider.Call(uintptr(unsafe.Pointer(&e.simple)))
