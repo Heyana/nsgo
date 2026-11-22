@@ -45,6 +45,8 @@ func For(cx *core.Scope) Messages {
 // (tsx.RegisterMessages).
 var Parameters = map[string][]string{
 	"SettingsAppInfoValue":         {"version", "build", "development"},
+	"FoldPane":                     {"number"},
+	"FoldCount":                    {"number"},
 	"MenusViewState":               {"sidebar", "statusBar", "zoom"},
 	"SystemPurchased":              {"product"},
 	"SystemPurchaseUpdated":        {"product"},
@@ -245,6 +247,8 @@ var Parameters = map[string][]string{
 type Translation struct {
 	Texts                        map[string]string
 	SettingsAppInfoValue         func(version string, build string, development string) string
+	FoldPane                     func(number int) string
+	FoldCount                    func(number int) string
 	MenusViewState               func(sidebar string, statusBar string, zoom string) string
 	SystemPurchased              func(product string) string
 	SystemPurchaseUpdated        func(product string) string
@@ -550,6 +554,13 @@ const (
 	textDemoPhysicsDetail
 	textDemoCollapsingHeader
 	textDemoCollapsingHeaderDetail
+	textDemoFold
+	textDemoFoldDetail
+	textFoldAdd
+	textFoldUnknown
+	textFoldClosed
+	textFoldHalfOpen
+	textFoldOpen
 	textDemoSystem
 	textDemoSystemDetail
 	textDemoStorage
@@ -2870,6 +2881,13 @@ var keyOfText = [numTexts]string{
 	"demoPhysicsDetail",
 	"demoCollapsingHeader",
 	"demoCollapsingHeaderDetail",
+	"demoFold",
+	"demoFoldDetail",
+	"foldAdd",
+	"foldUnknown",
+	"foldClosed",
+	"foldHalfOpen",
+	"foldOpen",
 	"demoSystem",
 	"demoSystemDetail",
 	"demoStorage",
@@ -5188,6 +5206,13 @@ var textsEn = i18n.NewTexts(""+
 	"Drags and springs on the UI thread"+
 	"Collapsing header"+
 	"A header that shrinks to a bar as the page scrolls, headings sticking below it"+
+	"Foldable display"+
+	"This page places a pane in each usable region, clear of the hinge and system bars. Each pane keeps its count as the display folds."+
+	"Add one"+
+	"No hinge state reported"+
+	"Closed"+
+	"Half open"+
+	"Fully open"+
 	"System"+
 	"Status bar, alerts, the window, environment, timers, the clipboard, fetch"+
 	"Storage"+
@@ -7503,6 +7528,13 @@ var textsEn = i18n.NewTexts(""+
 		34,
 		17,
 		78,
+		16,
+		130,
+		7,
+		23,
+		6,
+		9,
+		10,
 		6,
 		73,
 		7,
@@ -9821,6 +9853,13 @@ var textsZhHans = i18n.NewTexts(""+
 	"在 UI 线程上运行的拖动和弹簧"+
 	"折叠标题栏"+
 	"随页面滚动缩成一条栏的标题，小标题吸附在其下方"+
+	"折叠屏"+
+	"此页面在每个可用区域中放置一个面板，避开铰链和系统栏。折叠屏幕时，每个面板保留自己的计数。"+
+	"加一"+
+	"未报告铰链状态"+
+	"已合上"+
+	"半展开"+
+	"完全展开"+
 	"系统"+
 	"状态栏、提示框、窗口、环境、定时器、剪贴板、网络请求"+
 	"存储"+
@@ -12136,6 +12175,13 @@ var textsZhHans = i18n.NewTexts(""+
 		40,
 		15,
 		69,
+		9,
+		135,
+		6,
+		21,
+		9,
+		9,
+		12,
 		6,
 		78,
 		6,
@@ -14401,6 +14447,12 @@ func Supply(lang string, t Translation) {
 	if t.SettingsAppInfoValue != nil {
 		s.SettingsAppInfoValue = t.SettingsAppInfoValue
 	}
+	if t.FoldPane != nil {
+		s.FoldPane = t.FoldPane
+	}
+	if t.FoldCount != nil {
+		s.FoldCount = t.FoldCount
+	}
 	if t.MenusViewState != nil {
 		s.MenusViewState = t.MenusViewState
 	}
@@ -15786,6 +15838,99 @@ func DemoCollapsingHeaderDetail(cx *core.Scope) string { return For(cx).DemoColl
 func (msgs Messages) DemoCollapsingHeaderDetail() string {
 	return msgs.text(textDemoCollapsingHeaderDetail)
 }
+
+// DemoFold says "Foldable display"
+// in the language the app shows under cx.
+func DemoFold(cx *core.Scope) string { return For(cx).DemoFold() }
+
+// DemoFold is the package's DemoFold in the language of msgs.
+func (msgs Messages) DemoFold() string { return msgs.text(textDemoFold) }
+
+// DemoFoldDetail says "This page places a pane in each usable region, clear of the hinge and system bars. Each pane keeps its count as the display folds."
+// in the language the app shows under cx.
+func DemoFoldDetail(cx *core.Scope) string { return For(cx).DemoFoldDetail() }
+
+// DemoFoldDetail is the package's DemoFoldDetail in the language of msgs.
+func (msgs Messages) DemoFoldDetail() string { return msgs.text(textDemoFoldDetail) }
+
+// FoldPane says "Pane {number, number}"
+// in the language the app shows under cx.
+func FoldPane(cx *core.Scope, number int) string { return For(cx).FoldPane(number) }
+
+// FoldPane is the package's FoldPane in the language of msgs.
+func (msgs Messages) FoldPane(number int) string {
+	if i18n.IsPseudo(msgs.lang) {
+		return i18n.Pseudo(msgs.lang, Messages{lang: Source, mark: true}.FoldPane(number))
+	}
+	for lang := msgs.lang; ; lang = i18n.Parent(lang) {
+		if f := supplied[lang].FoldPane; f != nil {
+			return f(number)
+		}
+		switch lang {
+		case "", "en":
+			return "Pane " + msgs.arg(i18n.FormatNumber("en", float64(number)))
+		case "zh-Hans":
+			return "面板 " + i18n.FormatNumber("zh-Hans", float64(number))
+		}
+	}
+}
+
+// FoldAdd says "Add one"
+// in the language the app shows under cx.
+func FoldAdd(cx *core.Scope) string { return For(cx).FoldAdd() }
+
+// FoldAdd is the package's FoldAdd in the language of msgs.
+func (msgs Messages) FoldAdd() string { return msgs.text(textFoldAdd) }
+
+// FoldCount says "Count: {number, number}"
+// in the language the app shows under cx.
+func FoldCount(cx *core.Scope, number int) string { return For(cx).FoldCount(number) }
+
+// FoldCount is the package's FoldCount in the language of msgs.
+func (msgs Messages) FoldCount(number int) string {
+	if i18n.IsPseudo(msgs.lang) {
+		return i18n.Pseudo(msgs.lang, Messages{lang: Source, mark: true}.FoldCount(number))
+	}
+	for lang := msgs.lang; ; lang = i18n.Parent(lang) {
+		if f := supplied[lang].FoldCount; f != nil {
+			return f(number)
+		}
+		switch lang {
+		case "", "en":
+			return "Count: " + msgs.arg(i18n.FormatNumber("en", float64(number)))
+		case "zh-Hans":
+			return "计数：" + i18n.FormatNumber("zh-Hans", float64(number))
+		}
+	}
+}
+
+// FoldUnknown says "No hinge state reported"
+// in the language the app shows under cx.
+func FoldUnknown(cx *core.Scope) string { return For(cx).FoldUnknown() }
+
+// FoldUnknown is the package's FoldUnknown in the language of msgs.
+func (msgs Messages) FoldUnknown() string { return msgs.text(textFoldUnknown) }
+
+// FoldClosed says "Closed"
+// in the language the app shows under cx.
+func FoldClosed(cx *core.Scope) string { return For(cx).FoldClosed() }
+
+// FoldClosed is the package's FoldClosed in the language of msgs.
+func (msgs Messages) FoldClosed() string { return msgs.text(textFoldClosed) }
+
+// FoldHalfOpen says "Half open"
+// in the language the app shows under cx.
+func FoldHalfOpen(cx *core.Scope) string { return For(cx).FoldHalfOpen() }
+
+// FoldHalfOpen is the package's FoldHalfOpen in the language of msgs.
+func (msgs Messages) FoldHalfOpen() string { return msgs.text(textFoldHalfOpen) }
+
+// FoldOpen says "Fully open"
+// in the language the app shows under cx.
+func FoldOpen(cx *core.Scope) string { return For(cx).FoldOpen() }
+
+// FoldOpen is the package's FoldOpen in the language of msgs.
+func (msgs Messages) FoldOpen() string { return msgs.text(textFoldOpen) }
 
 // DemoSystem says "System"
 // in the language the app shows under cx.

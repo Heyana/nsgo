@@ -164,6 +164,7 @@ func init() {
 			{"Patterns", m.DemoPatterns, m.DemoPatternsDetail, lucide.Component, componentsDemo},
 		}},
 		{"Platform", m.GroupPlatform, []demo{
+			{"Foldable display", m.DemoFold, m.DemoFoldDetail, lucide.Columns2, foldDemo},
 			{"System", m.DemoSystem, m.DemoSystemDetail, lucide.Cpu, systemDemo},
 			{"Storage", m.DemoStorage, m.DemoStorageDetail, lucide.Database, storageDemo},
 			{"Widgets", m.DemoWidgets, m.DemoWidgetsDetail, lucide.LayoutDashboard, widgetsDemo},
