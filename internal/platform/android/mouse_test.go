@@ -6,12 +6,7 @@ import (
 	"testing"
 )
 
-// TestMouseJava compiles and runs Mouse.java and Protocol.java on the host JVM
-// with minimal Android MotionEvent/KeyEvent/InputDevice stubs, verifying hover
-// enter/move/exit, ancestor chain transitions, modifiers and held-button
-// bitmask mapping, button-down mouse drags, modifier changes under a resting
-// pointer, PointerEvents/modal/disabled/deleted view handling, and TalkBack
-// touchscreen hover isolation (#1553).
+// TestMouseJava compiles and runs Mouse.java and Protocol.java on the host JVM with minimal Android MotionEvent/KeyEvent/InputDevice stubs, verifying hover enter/move/exit, ancestor chain transitions, modifiers and held-button bitmask mapping, button-down mouse drags, modifier changes under a resting pointer, PointerEvents/modal/disabled/deleted view handling, and TalkBack touchscreen hover isolation (#1553).
 func TestMouseJava(t *testing.T) {
 	javac, java := androidJDK(t)
 	classes := t.TempDir()

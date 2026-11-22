@@ -887,8 +887,7 @@ func TestReadEventSelectionChange(t *testing.T) {
 	}
 }
 
-// TestReadEventMouse checks that msgEvent decodes EventMouseEnter, EventMouseLeave
-// and EventMouseMove with local Point, Page, Modifiers and held MouseButton (#1553).
+// TestReadEventMouse checks that msgEvent decodes EventMouseEnter, EventMouseLeave and EventMouseMove with local Point, Page, Modifiers and held MouseButton (#1553).
 func TestReadEventMouse(t *testing.T) {
 	encode := func(surface uint32, kind driver.EventKind, id driver.NodeID, pt, page driver.Point, mods byte, button byte, includeButton bool) []byte {
 		var w writer
