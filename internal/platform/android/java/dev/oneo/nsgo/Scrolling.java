@@ -162,6 +162,14 @@ final class Scrolling {
         boolean handlesTap(float rawX, float rawY);
     }
 
+    /** A tap while the keyboard shows dismisses it, as KeyboardShouldPersistTaps says. */
+    private static void tapped(Config config, Host host, MotionEvent e) {
+        float x = e.getRawX(), y = e.getRawY();
+        if (config.taps == 1 || host.onInput(x, y)) return; // always
+        if (config.taps == 2 && host.handlesTap(x, y)) return; // handled
+        host.dismissKeyboard();
+    }
+
     /** A scroll view of the runtime: VScroll, HScroll or ZoomScroll. */
     interface Scroller {
         void configure(Config c);
@@ -416,7 +424,7 @@ final class Scrolling {
                             if (!momentum) event(Protocol.EVENT_SCROLL_END);
                         }
                     }
-                    if (tap) tapped(e);
+                    if (tap) tapped(config, host, e);
                     break;
             }
         }
@@ -425,14 +433,6 @@ final class Scrolling {
             dragging = true;
             event(Protocol.EVENT_SCROLL_DRAG_START);
             if (config.dismiss != 0) host.dismissKeyboard();
-        }
-
-        /** A tap while the keyboard shows dismisses it, as KeyboardShouldPersistTaps says. */
-        private void tapped(MotionEvent e) {
-            float x = e.getRawX(), y = e.getRawY();
-            if (config.taps == 1 || host.onInput(x, y)) return; // always
-            if (config.taps == 2 && host.handlesTap(x, y)) return; // handled
-            host.dismissKeyboard();
         }
 
         /** ScrollView flings at velocity, in pixels per second as the offset grows. */
@@ -587,7 +587,9 @@ final class Scrolling {
                 if (braking) return super.onTouchEvent(e);
             }
             boolean handled = super.dispatchTouchEvent(e);
-            if (e.getActionMasked() == MotionEvent.ACTION_UP || e.getActionMasked() == MotionEvent.ACTION_CANCEL) d.touching = false;
+            // A child may consume UP, bypassing onTouchEvent. after() clears
+            // touching, so the view-owned path can safely have called it already.
+            if (e.getActionMasked() == MotionEvent.ACTION_UP || e.getActionMasked() == MotionEvent.ACTION_CANCEL) d.after(e);
             return handled;
         }
 
@@ -660,7 +662,9 @@ final class Scrolling {
                 if (braking) return super.onTouchEvent(e);
             }
             boolean handled = super.dispatchTouchEvent(e);
-            if (e.getActionMasked() == MotionEvent.ACTION_UP || e.getActionMasked() == MotionEvent.ACTION_CANCEL) d.touching = false;
+            // A child may consume UP, bypassing onTouchEvent. after() clears
+            // touching, so the view-owned path can safely have called it already.
+            if (e.getActionMasked() == MotionEvent.ACTION_UP || e.getActionMasked() == MotionEvent.ACTION_CANCEL) d.after(e);
             return handled;
         }
 
@@ -734,7 +738,7 @@ final class Scrolling {
         private Config config = new Config();
         private float zoom = 1;
         private float lastX, lastY, downX, downY;
-        private boolean dragging, pinching, momentum;
+        private boolean dragging, pinching, momentum, tapping;
 
         ZoomScroll(Context context, Host host, float density, View content) {
             super(context);
@@ -882,6 +886,28 @@ final class Scrolling {
         public boolean canScrollVertically(int direction) {
             if (config.noScroll) return false;
             return direction > 0 ? getScrollY() < maxY() : getScrollY() > 0;
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent e) {
+            int action = e.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                tapping = !config.noScroll && flinger.isFinished() && !momentum;
+                downX = e.getX();
+                downY = e.getY();
+            } else if (action == MotionEvent.ACTION_MOVE) {
+                if (Math.hypot(e.getX() - downX, e.getY() - downY) > slop) tapping = false;
+            } else if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_CANCEL) {
+                tapping = false;
+            }
+            boolean handled = super.dispatchTouchEvent(e);
+            // The child can own the entire tap; panning and pinching are not taps.
+            if (action == MotionEvent.ACTION_UP) {
+                boolean tap = tapping;
+                tapping = false;
+                if (tap) tapped(config, host, e);
+            }
+            return handled;
         }
 
         @Override

@@ -1,8 +1,11 @@
 package chat
 
 import (
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -294,6 +297,7 @@ func TestComposerAutoFocus(t *testing.T) {
 // suggestStage is a composer whose Suggest offers the files a query starts, README.md and release.md unless given others, and whose OnSend clears the draft, beside another field.
 type suggestStage struct {
 	draft                     *core.Signal[string]
+	keyboardHeight            atomic.Int64
 	changes, sends, submitted int
 }
 
@@ -305,7 +309,16 @@ func startSuggest(t *testing.T, e core.Environment, files ...Suggestion) (*nsgot
 	}
 	app := start(t, e, func(cx *core.Scope) core.Node {
 		s.draft = core.NewSignal(cx, "")
+		cx.Effect(func() { s.keyboardHeight.Store(int64(cx.Env().KeyboardHeight())) })
 		return core.View{Children: []core.Node{
+			core.Scroll{
+				TestID: "keyboard-dismiss-control", Style: core.Style{Height: core.Pt(40)},
+				Behavior: core.ScrollBehavior{KeyboardShouldPersistTaps: core.KeyboardTapsNever},
+				Children: []core.Node{core.View{
+					TestID: "keyboard-dismiss-tap", NoFocus: true,
+					OnPress: func(core.PressEvent) {}, Style: core.Style{Height: core.Pt(40)},
+				}},
+			},
 			Composer{Draft: s.draft.Get, OnDraftChange: func(v string) { s.changes++; s.draft.Set(v) }, Label: "Message", SendLabel: "Send", SuggestLabel: "Files",
 				OnSend: func() { s.sends++; s.draft.Set("") },
 				Suggest: func(query string) []Suggestion {
@@ -398,8 +411,23 @@ func TestComposerSuggestions(t *testing.T) {
 
 // TestComposerSuggestionsTapOnAPhone chooses a row by tapping it, as a phone's software keyboard sends no arrow keys: the list's taps leave the keyboard up and its rows take no focus, so the field keeps the focus.
 func TestComposerSuggestionsTapOnAPhone(t *testing.T) {
+	target := os.Getenv("NSGO_TEST_TARGET")
+	if (runtime.GOOS == "ios" || runtime.GOOS == "android") && target == "" {
+		t.Fatal("mobile mention acceptance needs NSGo's native test host, not a headless simulator process")
+	}
+	nativePhone := strings.HasPrefix(target, "ios") || strings.HasPrefix(target, "android")
 	app, s := startSuggest(t, phoneEnv)
+	if nativePhone {
+		// Prove the real keyboard is present and the native dismissing tap works.
+		app.Focus("id:composer")
+		app.WaitUntil(10*time.Second, func() bool { return s.keyboardHeight.Load() > 0 })
+		app.Press("id:keyboard-dismiss-tap")
+		app.WaitUntil(10*time.Second, func() bool { return s.keyboardHeight.Load() == 0 && !app.Find("id:composer").Focused })
+	}
 	app.Type("id:composer", "@re")
+	if nativePhone {
+		app.WaitUntil(10*time.Second, func() bool { return s.keyboardHeight.Load() > 0 })
+	}
 	if taps := app.Find("role:listbox Files").Scroll.Behavior.KeyboardShouldPersistTaps; taps != core.KeyboardTapsHandled {
 		t.Fatalf("KeyboardShouldPersistTaps = %v", taps)
 	}
@@ -409,6 +437,16 @@ func TestComposerSuggestionsTapOnAPhone(t *testing.T) {
 	app.Press("role:option README.md")
 	if draft := s.draft.GetUntracked(); draft != "README.md" || app.Exists("id:composer-suggestions") || !app.Find("id:composer").Focused {
 		t.Fatalf("draft %q, list shown %v, field focused %v", draft, app.Exists("id:composer-suggestions"), app.Find("id:composer").Focused)
+	}
+	if nativePhone {
+		// Observe through a keyboard dismissal animation, which can outlive Press.
+		until := time.Now().Add(500 * time.Millisecond)
+		app.WaitUntil(2*time.Second, func() bool {
+			if s.keyboardHeight.Load() <= 0 || !app.Find("id:composer").Focused {
+				t.Fatal("accepting a mention dismissed the software keyboard or blurred the field")
+			}
+			return time.Now().After(until)
+		})
 	}
 }
 
