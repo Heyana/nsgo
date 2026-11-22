@@ -150,6 +150,8 @@ go tool nsgo test -target macos
 
 NSGo 的参数要写在目录之前：`go tool nsgo test -target web ./app`，而不是写在目录之后。无头运行时，`--` 之后的参数交给 `go test`。在目标上运行时，`--` 之后只支持 `-short`、`-count`、`-cpu`、`-parallel`、`-failfast` 和 `-fullpath`，例如 `go tool nsgo test -target web ./app -- -short -count=3`；其他 Go 测试参数会明确报错，包括此时应写在目录之前的 `-run` 和 `-timeout`。`-count=0` 不运行任何测试。链接 NSGo 原生宿主的测试按每个次数和 CPU 设置在新进程中重复运行，结果带 `[run N]`，截图保存在 `run-N` 子目录中，每次调用各有超时；库包保留 Go 在进程内的重复运行。
 
+使用 `tui` 目标测试时，需要交互式终端、链接 NSGo 后端，并由 `TestMain` 调用 `nsgotest.Main`。每个进程只打开一个应用，测试步骤经过终端的编辑、焦点、鼠标和键盘路径。测试输出会暂存到终端恢复之后再打印；PNG 截图使用固定字体绘制单元格。[终端目标](building.md#terminal)
+
 ## TSX 测试
 
 TSX 应用中用 `nsgo/test` 编写的 `*.test.tsx` 文件会随 Go 测试一起运行。

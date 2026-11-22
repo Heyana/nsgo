@@ -160,6 +160,8 @@ Put NSGo flags before the directory: `go tool nsgo test -target web ./app`, not 
 
 `app.Play(selector, core.VideoInfo{Duration: time.Second, RateChangeable: true})` reports a video load with its duration, natural size and playback-rate capability. Set `RateChangeable` to false to test a player whose speed controls are unavailable.
 
+On `tui`, tests require an interactive terminal, a linked NSGo backend and `TestMain` calling `nsgotest.Main`. Each process opens one application; its steps exercise terminal editing, focus, mouse and key routing. The test output is buffered until the terminal has been restored. PNG captures render the cells with a portable fixed face. [Terminal targets](building.md#terminal)
+
 ## TSX tests
 
 A TSX app's `*.test.tsx` files, written with `nsgo/test`, run with its Go tests.

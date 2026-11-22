@@ -41,6 +41,8 @@ Use `-host 127.0.0.1` to bind the dev server to loopback only, including with An
 
 Go dependencies can ship prebuilt desktop shared libraries through their package's `nsgo-natives.yaml`: NSGo verifies checksums, bundles licenses, signs and includes them in installers without app configuration. Package authors declare target names, URL or local files, SHA-256 and license paths, and preserve these files with `go:embed` for vendoring. [Native libraries](https://nsgo.dev/docs/native-libraries.md) gives the contract and loading directories.
 
+For terminal apps, use `go tool nsgo dev -target tui` and `go tool nsgo test -target tui` in an interactive terminal with `nsgotest.Main`. Choose cell-sized styles explicitly (8×16 points per cell); Control is `mod` on every host. Diagnostics go to `.nsgo/tui.log`; media/canvas/native hosted views are not implemented. [Terminal targets](https://nsgo.dev/docs/building.md#terminal)
+
 ## Writing an app
 
 ```go

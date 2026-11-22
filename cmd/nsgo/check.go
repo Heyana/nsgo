@@ -321,6 +321,8 @@ func targetSupportsAutomation(name string) bool {
 func vetEnv(ctx context.Context, target string) ([]string, error) {
 	os, arch, _ := strings.Cut(target, "_")
 	switch os {
+	case "tui":
+		return tuiEnv(target)
 	case "macos":
 		if target == "macos_universal" {
 			// The universal package builds the same Go source for both architectures and joins the binaries, so vet it once as arm64.

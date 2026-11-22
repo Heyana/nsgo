@@ -90,6 +90,8 @@ func validTag(tag string) bool {
 // targetTags are the tags target's build adds to the app's, as buildHarmony, watchos.go and miniprogram.go pass them: nsgoharmony for harmonyos, nsgowatch for watchos and watchos_simulator, and miniprogramTags for every miniprogram_<platform>.
 func targetTags(target string) []string {
 	switch os, _, _ := strings.Cut(target, "_"); os {
+	case "tui":
+		return []string{"nsgotui"}
 	case "harmonyos":
 		return []string{"nsgoharmony"}
 	case "watchos":

@@ -1,4 +1,4 @@
-//go:build linux && !nsgoembed
+//go:build linux && !nsgoembed && !nsgotui
 
 package backend
 

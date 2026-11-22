@@ -1,4 +1,4 @@
-//go:build !(darwin && !ios) && !windows && !(linux && !android)
+//go:build !nsgotui && !(darwin && !ios) && !windows && !(linux && !android)
 
 package backend
 

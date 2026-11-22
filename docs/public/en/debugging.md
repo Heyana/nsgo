@@ -18,6 +18,7 @@ On macOS and Windows, a native dev rebuild reopens the main view’s window at i
 `-target` runs it elsewhere, and `-device` picks the iPhone, Apple TV, Apple Watch, simulator or Android device by name, UDID or serial:
 
 ```sh
+go tool nsgo dev -target tui                # terminal cells; diagnostics in .nsgo/tui.log
 go tool nsgo dev -target web                # in the browser, at the address it prints, on -port (8080 by default)
 go tool nsgo dev -target ios_simulator      # in the iOS simulator
 go tool nsgo dev -target ios                # on the connected iPhone, signed by Xcode

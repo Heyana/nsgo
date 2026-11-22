@@ -271,6 +271,12 @@ func (m *machine) build(target string) verdict {
 
 // run says whether this machine runs target's apps, with what is missing.
 func (m *machine) run(target string) verdict {
+	if strings.HasPrefix(target, "tui_") {
+		if target != tuiTarget(m.goos, m.goarch) {
+			return elsewhere("runs on " + strings.TrimPrefix(target, "tui_"))
+		}
+		return yes().with("interactive terminal")
+	}
 	arch := goArchName(m.goarch)
 	if sys, sim, ok := appleOSOf(target); ok {
 		switch {

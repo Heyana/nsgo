@@ -18,6 +18,7 @@ go tool nsgo dev
 `-target` 在别处运行，`-device` 按名称、UDID 或序列号选择 iPhone、Apple TV、Apple Watch、模拟器或 Android 设备：
 
 ```sh
+go tool nsgo dev -target tui                # terminal cells; diagnostics in .nsgo/tui.log
 go tool nsgo dev -target web                # 在浏览器中，打开它打印的地址，端口为 -port（默认 8080）
 go tool nsgo dev -target ios_simulator      # 在 iOS 模拟器中
 go tool nsgo dev -target ios                # 在连接的 iPhone 上，由 Xcode 签名

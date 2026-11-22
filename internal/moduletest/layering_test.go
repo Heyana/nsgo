@@ -141,6 +141,7 @@ var platformShared = []string{
 
 // owned lists modules outside NSGo that only some packages may import, by module path: what is large enough that an app links it only by asking for what needs it (docs/architecture/layers.md, What an app links).
 var owned = map[string][]string{
+	"github.com/gdamore/tcell/v3": {"internal/platform/tui"},
 	// Untie and the font it lays out in, for the formulas apps ask for.
 	"github.com/caelyreth/untie": {"base/formula"},
 	// limu, which reads and lays out Mermaid, for the diagrams apps ask for.
@@ -177,7 +178,7 @@ var devImports = map[string][]string{"internal/dev": {"internal/dev/locales", "i
 var automationImports = map[string][]string{"internal/dev": {"nsgotest"}}
 
 // variantLayerTargets are the builds the nsgo tool makes with a variant's tag: nsgo watchos's, nsgo embed's iOS framework and nsgo miniprogram's.
-var variantLayerTargets = [][3]string{{"ios", "arm64", "nsgowatch"}, {"ios", "arm64", "nsgoembed"}, {"js", "wasm", "nsgominiprogram,nsgo_noshader"}}
+var variantLayerTargets = [][3]string{{"darwin", "arm64", "nsgotui"}, {"linux", "amd64", "nsgotui"}, {"windows", "amd64", "nsgotui"}, {"ios", "arm64", "nsgowatch"}, {"ios", "arm64", "nsgoembed"}, {"js", "wasm", "nsgominiprogram,nsgo_noshader"}}
 
 // devLayerTargets are the targets whose nsgo dev builds (the nsgodev tag) are checked too: the dev client's files differ only between the web and the rest.
 var devLayerTargets = [][2]string{{"darwin", "arm64"}, {"js", "wasm"}}

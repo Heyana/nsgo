@@ -1,4 +1,4 @@
-//go:build linux && !android
+//go:build linux && !android && !nsgotui
 
 package backend
 

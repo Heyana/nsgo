@@ -1,0 +1,6 @@
+name: Terminal
+id: dev.nsgo.terminal-example
+version: 0.1.0
+
+dev:
+  target: tui

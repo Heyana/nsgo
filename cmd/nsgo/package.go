@@ -205,6 +205,9 @@ func serveSite(ctx context.Context, dir string) error {
 
 // runnable reports whether this machine runs target's package with -run.
 func runnable(target string) bool {
+	if strings.HasPrefix(target, "tui_") {
+		return target == tuiTarget(runtime.GOOS, runtime.GOARCH)
+	}
 	arch := goArchName(runtime.GOARCH)
 	switch target {
 	case "web", "android_arm64", "android_x64":
@@ -269,6 +272,8 @@ func runHarmony(ctx context.Context, p *project, dir string, flags []string) err
 func runPackage(ctx context.Context, p *project, target, dir string) error {
 	event("run %s", target)
 	switch {
+	case strings.HasPrefix(target, "tui_"):
+		return runTUIExecutable(ctx, tuiBinary(p, dir, target))
 	case target == "harmonyos":
 		return runHarmony(ctx, p, dir, harmonyFlags())
 	case target == "web":

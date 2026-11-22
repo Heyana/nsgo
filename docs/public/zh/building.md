@@ -30,6 +30,16 @@ go tool nsgo build
 
 比原始模块更小时，网站会包含 `.wasm.br` 和 `.wasm.gz`。在支持预压缩的服务器上启用它，从原有的 `.wasm` URL 提供压缩模块，并设置 `Content-Type: application/wasm`、相应的 `Content-Encoding` 和 `Vary: Accept-Encoding`。原始模块可以部署到任何静态服务器。
 
+## Terminal
+
+在交互式终端中执行 `go tool nsgo dev -target tui`，即可运行应用。`go tool nsgo test -target tui` 通过 `nsgotest.Main` 在终端中运行测试，每个测试进程只打开一个应用。终端决定视口大小，每格对应 8×16 个布局点。应用显式选择自己的样式，组件保留通常的形态和尺寸。`examples/tui` 演示了输入框、按钮、快捷键和尺寸变化。
+
+通过 `go tool nsgo build -target tui_macos_arm64` 构建控制台程序，也可以选择 `tui_macos_x64`、`tui_windows_arm64`、`tui_windows_x64`、`tui_linux_arm64` 或 `tui_linux_x64`。构建和检查时，`tui` 组包含全部六个目标，`all` 也包含它们。各输出目录包含可执行文件和资源，不生成图形安装器；六个目标都只需要 Go。
+
+后端支持单元格文字、背景、实线边框、裁剪、滚动、焦点和文本编辑，使用终端的字体和颜色。在 Mac 上也以 Control 作为 `mod`。Ctrl+C 在编辑器中复制，在没有快捷键或编辑器接收时退出。带括号粘贴只插入文字，不触发快捷键；剪贴板只在进程内共享。画布、图像、媒体、原生托管组件、系统菜单和提示框、动画、缩放、双向文字塑形、头部或中部省略以及系统剪贴板桥接仍未实现。`base/terminal` 仍是图形应用中嵌入的终端控件。
+
+`nsgo dev` 占用终端期间，工具和应用的诊断输出写入 `.nsgo/tui.log`。退出会恢复屏幕、光标和终端模式。终端测试截图使用固定字体栅格化单元格，不截取模拟器的实际字体；固定字体缺少的 Unicode 字形应通过文字断言验证。
+
 ## nsgo.yaml
 
 ```yaml

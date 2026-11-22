@@ -836,6 +836,8 @@ func sessionFor(p *project, opts devOptions) (session, error) {
 			return linuxSession(opts), nil
 		}
 		return session{}, fmt.Errorf("native development runs on macOS, Windows and Linux; use -target web")
+	case "tui":
+		return tuiSession(opts), nil
 	case "web":
 		return webSession(opts), nil
 	case "ios", "tvos", "watchos":
@@ -850,7 +852,7 @@ func sessionFor(p *project, opts devOptions) (session, error) {
 		if mp, ok := miniProgramPlatformOf(p.Dev.Target); ok {
 			return miniprogramSession(mp, opts), nil
 		}
-		return session{}, fmt.Errorf("unknown dev target %q; use native, web, ios, ios_simulator, tvos, tvos_simulator, watchos, watchos_simulator, android or %s",
+		return session{}, fmt.Errorf("unknown dev target %q; use native, tui, web, ios, ios_simulator, tvos, tvos_simulator, watchos, watchos_simulator, android or %s",
 			p.Dev.Target, strings.Join(miniProgramTargets(), ", "))
 	}
 }

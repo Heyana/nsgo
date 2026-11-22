@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -194,6 +195,7 @@ func report(err error) {
 // screen is what is printed and the steps whose spinners are drawn below
 // it, a line each.
 type screen struct {
+	terminalLog io.Writer
 	sync.Mutex
 	steps []*Step
 	drawn int
@@ -247,6 +249,10 @@ func line(text string) { emit(margin + text) }
 func emit(text string) {
 	out.Lock()
 	defer out.Unlock()
+	if out.terminalLog != nil {
+		fmt.Fprintln(out.terminalLog, text)
+		return
+	}
 	out.clear()
 	fmt.Fprint(os.Stderr, text)
 	if !strings.HasSuffix(text, "\n") {
@@ -258,6 +264,9 @@ func emit(text string) {
 // clear removes the spinner lines, leaving the cursor at the start of the
 // first. The caller holds out's lock.
 func (o *screen) clear() {
+	if o.terminalLog != nil {
+		return
+	}
 	if o.drawn == 0 {
 		return
 	}
@@ -268,6 +277,9 @@ func (o *screen) clear() {
 // draw shows the running steps' spinners, a line each, or clears them when
 // none runs. The caller holds out's lock.
 func (o *screen) draw() {
+	if o.terminalLog != nil {
+		return
+	}
 	o.clear()
 	if len(o.steps) == 0 {
 		return

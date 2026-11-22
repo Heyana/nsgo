@@ -170,7 +170,9 @@ tests:
 }
 
 // needsTestHost reports whether target runs a test only through the platform's test host, which nsgotest.Main starts: Android's runtime reads its protocol from the test process's standard output, where go test would otherwise write its own lines, and the tool reads the test's output and exit code on Android and an iPhone between the marks the host writes (readMarkedRun).
-func needsTestHost(target string) bool { return target == "android" || target == "ios" }
+func needsTestHost(target string) bool {
+	return target == "android" || target == "ios" || target == "tui"
+}
 
 // testHostError says why a package's tests cannot run on a target that needs the test host, or with -activate, before the tool builds them: they do not link it, through github.com/nsgo-dev/nsgo, or declare no TestMain to start it from.
 func testHostError(target string, hosted, testMain bool) error {
@@ -228,6 +230,7 @@ var hostBackends = []string{
 	"github.com/nsgo-dev/nsgo/internal/platform/watchos",
 	"github.com/nsgo-dev/nsgo/internal/platform/web",
 	"github.com/nsgo-dev/nsgo/internal/platform/windows",
+	"github.com/nsgo-dev/nsgo/internal/platform/tui",
 }
 
 // goListFor runs go list with args on the package as target's test build
@@ -755,7 +758,7 @@ func sweepTargetBuilds(base string, now time.Time) {
 
 // testTargets are the names nsgo test -target accepts, as buildTargetRunner
 // runs them: one per OS, except the Apple simulators, which need Xcode.
-var testTargets = []string{"macos", "windows", "linux", "web", "ios", "ios_simulator", "tvos_simulator", "watchos_simulator", "android", "harmonyos"}
+var testTargets = []string{"macos", "windows", "linux", "tui", "web", "ios", "ios_simulator", "tvos_simulator", "watchos_simulator", "android", "harmonyos"}
 
 // checkTestTarget normalizes -target to the test target it runs on, and
 // checks -activate and the architecture it names, before runTests touches
@@ -787,6 +790,9 @@ func checkTestTarget(target string, activate bool) (string, error) {
 //
 // A desktop target whose OS is not this machine's is left to buildTargetRunner, which says where it runs: suggesting the plain name would only lead to that error (#716).
 func checkTestTargetArch(target, normalized string) error {
+	if normalized == "tui" {
+		return nil
+	}
 	if target == normalized || desktopTargetElsewhere(normalized) {
 		return nil
 	}
@@ -830,6 +836,12 @@ func hostTestArch() string {
 // test accepts (#589). Only the arch-qualified names build.go's targets
 // lists are accepted, so windows_foo, macos_ or linux_riscv64 are refused.
 func normalizeTestTarget(target string) (string, error) {
+	if strings.HasPrefix(target, "tui_") && slices.Contains(targets, target) {
+		if target != tuiTarget(runtime.GOOS, runtime.GOARCH) {
+			return "", fmt.Errorf("terminal tests run on this machine; use -target tui")
+		}
+		return "tui", nil
+	}
 	if slices.Contains(testTargets, target) {
 		return target, nil
 	}
@@ -855,6 +867,8 @@ func buildTargetRunner(ctx context.Context, p *project, dir string, opts testOpt
 		}, close: func() {}}
 	}
 	switch opts.target {
+	case "tui":
+		return tuiTestRunner(ctx, p, dir)
 	case "macos":
 		if runtime.GOOS != "darwin" {
 			return targetRunner{}, fmt.Errorf("the macos target runs on a Mac")

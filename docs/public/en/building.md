@@ -41,6 +41,16 @@ web:
 
 Serve the published directory over HTTPS, or use `go tool nsgo build -target web -run` on localhost. The service worker caches the page, WebAssembly, scripts and packaged resources. Online visits load the published version. After the installation succeeds and the previous release's tabs close, the latest release can launch from its cache. Requests for an app's online services still need a connection.
 
+## Terminal
+
+Run the app in an interactive terminal with `go tool nsgo dev -target tui`. `go tool nsgo test -target tui` runs its tests there through `nsgotest.Main`, one application per test process. The terminal controls the size: a cell represents 8 by 16 layout points. Choose your application's styles explicitly; components keep their ordinary forms and sizes. `examples/tui` demonstrates fields, buttons, shortcuts and resizing.
+
+Build a console executable with `go tool nsgo build -target tui_macos_arm64`, or the matching `tui_macos_x64`, `tui_windows_arm64`, `tui_windows_x64`, `tui_linux_arm64` or `tui_linux_x64`. The `tui` build/check group includes all six, and `all` includes them too. Each package directory contains the executable and resources; it has no GUI installer. All six build with Go alone.
+
+The backend supports cell text, backgrounds, solid borders, clipping, scrolling, focus and text editing. It uses the terminal's font and colors; Control is `mod`, including on a Mac. Ctrl+C copies inside an editor and exits when no binding or editor takes it. Bracketed paste inserts text without running shortcuts, and the clipboard is process-local. Canvas, images, media, native hosted components, system menus/alerts, animations, zoom, bidirectional shaping, head/middle ellipsis and a system clipboard bridge are not implemented yet. `base/terminal` remains the terminal control embedded in a GUI application.
+
+While `nsgo dev` owns the terminal, tool and application diagnostics go to `.nsgo/tui.log`. Exit restores the screen, cursor and terminal modes before returning to the shell. Terminal test screenshots rasterize the cells with a fixed portable font rather than capturing the emulator; use text assertions for Unicode glyphs missing from that face.
+
 ## nsgo.yaml
 
 ```yaml

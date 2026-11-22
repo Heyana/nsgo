@@ -1,6 +1,6 @@
 # Terminal
 
-`base/terminal` is a terminal for NSGo apps: a `View` that runs the user's shell, or any program, in a pseudo-terminal, with Ghostty's emulator, libghostty-vt, loaded at run time through purego. Ghostty is the reference for its behavior and names; NSH has no terminal. Read this before changing the package.
+`base/terminal` is a terminal for NSGo apps: a `View` that runs the user's shell, or any program, in a pseudo-terminal, with Ghostty's emulator, libghostty-vt, loaded at run time through purego. Ghostty is the reference for its behavior and names; NSH has no corresponding embedded control. Read this before changing the package.
 
 ## Packages
 
@@ -52,3 +52,19 @@ Where `Env.Desktop` is false:
 - The grid and the bar keep above the keyboard: the view's frame in the surface, its window's height and `Env.KeyboardHeight` give how far the keyboard covers its bottom, which an inner box leaves free, so the terminal has the rows above it.
 
 The gallery's Terminal demo (`examples/gallery/terminal.go`) sets each option beside the view, under its API's name, and shows what the shell reports. What the terminal does not do yet is in the [roadmap](../roadmap.md#terminal).
+
+## Backend
+
+![The terminal example after editing and resizing, captured with the test host's portable cell face at 480 by 320 points](../screenshots/terminal-backend.png)
+
+`internal/platform/tui` runs an application in the terminal itself, selected by `nsgotui`. It implements the same engine and mount protocol as the GUI backends. `base/terminal` remains the embedded terminal component above; it does not implement this backend.
+
+The terminal owns its dimensions. Each cell represents 8 by 16 layout points, regardless of its font; the text engine uses grapheme boundaries and display widths for wrapping, UTF-16 carets and selection geometry. Styles can set cell backgrounds, solid borders and text attributes. Frames, clipping, scroll offsets and static transforms share geometry with hit testing. Application text is sanitized before reaching tcell, so control characters cannot inject terminal commands. A text layout is immutable and needs no native resources when released.
+
+The application loop drains mount batches and input on one goroutine. It requests engine frames without blocking the engine, and restores the alternate screen, cursor and terminal modes on normal exit, interrupts and errors. Terminal Control is `mod`, including on a Mac, since the terminal application normally takes Command itself. Tab and Shift+Tab traverse controls; bindings precede editor actions and focused button activation. Bracketed paste inserts text into the focused editor without executing pasted shortcuts. Legacy keyboard protocols supply no key releases, so each press is reported as a down/up pair; advanced protocols retain their releases.
+
+`nsgo dev -target tui` builds a host console binary. While it runs, tool and application diagnostics append to `.nsgo/tui.log`, keeping output out of the cell display. The `tui` build/check group expands to `tui_macos_arm64`, `tui_macos_x64`, `tui_windows_arm64`, `tui_windows_x64`, `tui_linux_arm64` and `tui_linux_x64`. They use Go alone, without GTK or a Windows GUI subsystem. `nsgo test -target tui` requires a live terminal, a linked backend and `nsgotest.Main`; each test owns one application. Its steps use the same editor, pointer, key conversion and renderer as Run. PNG captures rasterize the cells with a fixed portable face rather than the emulator's font.
+
+NSH's `docs/dev/tui.md` and `nsh-platform-tui` module docs informed the fixed grid and host loop. NSGo deliberately keeps component forms and sizes explicit: no core/base component switches its presentation for the terminal. The application in `examples/tui` chooses its own cell-sized styles.
+
+This first backend draws views and text, edits fields and scrolls content. Canvas, images, media, native hosted components, system alerts and menus, layout animations, scroll snapping/inertia, modal focus trapping, zoom, bidirectional shaping, head/middle ellipsis and a system clipboard bridge remain goals. The clipboard is process-local; terminal bracketed paste still accepts text from the user's terminal. Use application views for terminal dialogs and menus, and text assertions for characters the portable PNG face does not contain. Windows console execution still needs native acceptance beyond cross-compilation.

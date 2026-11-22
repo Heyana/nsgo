@@ -533,7 +533,7 @@ func (a *App) Focus(selector string) {
 		switch {
 		case v.Props.NoFocus:
 			a.t.Fatalf("nsgotest: %q is NoFocus: it never takes the keyboard focus\n%s", selector, a.Dump())
-		case a.target != nil && !slices.Contains([]string{"macos", "windows", "linux", "web"}, Target()):
+		case a.target != nil && !slices.Contains([]string{"macos", "windows", "linux", "tui", "web"}, Target()):
 			a.t.Fatalf("nsgotest: %q is not a text field, and on %s only text fields take the keyboard focus; pressable views do on desktops and the web\n%s", selector, Target(), a.Dump())
 		case a.target == nil && !a.tabs():
 			a.t.Fatalf("nsgotest: %q is not a text field, and only text fields take the keyboard focus outside a desktop or web environment: give the test one with Environment\n%s", selector, a.Dump())

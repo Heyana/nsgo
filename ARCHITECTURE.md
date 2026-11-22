@@ -56,6 +56,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
 | `internal/shader`, `internal/shader/wgsl`, `internal/shaderir` | — (a fork of Ebitengine's Kage); `nsh-core`'s `shader` | The shader compilers: Go's syntax and WGSL checked into an IR, written as MSL, GLSL or HLSL ([shaders](docs/architecture/shaders.md)) |
 | `internal/engine` | `nsh-engine` | The engine goroutine: a mailbox, a batch per commit, storage files, the performance monitor |
+| `internal/platform/tui` | `nsh-platform-tui` | Terminal cells, fixed-grid text and terminal input under the `nsgotui` tag ([terminal backend](docs/architecture/terminal.md#backend)) |
 | `internal/platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
 | `internal/platform/*` | Platforms' shared code | What backends share: `apple` for macOS and iOS, `privacy` for their permissions, which `microphone` shares too, `webstyle` and `canvas2d` for the web and mini programs, `loopback` for desktops' sign-in redirects, images ([images](docs/architecture/images.md)), picked photos, process readings, update checks |
 | `examples/gallery` | `examples/gallery` | NSH's gallery in Go, with headless tests; the website runs its web build |
@@ -79,6 +80,7 @@ Every target builds on macOS with Go; iOS, tvOS and watchOS also need Xcode, and
 
 | Target | Package | Reaches the system through | Status |
 | --- | --- | --- | --- |
+| Terminal | `internal/platform/tui` | tcell in pure Go on macOS, Windows and Linux; `nsgotui` | Cell text, views, editing and input; [limits](docs/architecture/terminal.md#backend) |
 | macOS | `internal/platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
 | iOS | `internal/platform/ios` | The same; cgo only to link with Xcode's linker, and for an embedded framework's one export | Runs in the simulator and on devices; App Clips in the simulator |
 | tvOS | `internal/platform/ios` | iOS's backend linked with tvOS's SDK (Go's `GOOS=ios`), the remote moving a focus | Runs in the simulator |

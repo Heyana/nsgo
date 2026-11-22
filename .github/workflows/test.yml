@@ -682,3 +682,32 @@ jobs:
         env:
           NSGO_FILE_ASSOCIATIONS: '1'
         run: go tool nsgo test -run 'FileAssociations|FileTypes|NSIS' ./cmd/nsgo
+
+  terminal:
+    name: Terminal (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, macos]
+    runs-on: ${{ matrix.os == 'macos' && 'macos-15-intel' || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 15
+    env:
+      TERM: xterm-256color
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test terminal cells and input under a PTY
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = macos ]; then
+            script -q /dev/null go tool nsgo test -target tui ./examples/tui
+          else
+            script -q -e -c 'go tool nsgo test -target tui ./examples/tui' /dev/null
+          fi

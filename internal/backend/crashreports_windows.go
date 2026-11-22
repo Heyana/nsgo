@@ -1,4 +1,4 @@
-//go:build windows && !nsgoembed
+//go:build windows && !nsgoembed && !nsgotui
 
 package backend
 

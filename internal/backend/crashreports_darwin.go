@@ -1,4 +1,4 @@
-//go:build darwin && !nsgoembed
+//go:build darwin && !nsgoembed && !nsgotui
 
 package backend
 

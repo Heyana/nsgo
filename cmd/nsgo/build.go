@@ -313,6 +313,7 @@ var targets = []string{
 	"harmonyos",
 	"web",
 	"miniprogram_wechat", "miniprogram_qq", "miniprogram_alipay", "miniprogram_douyin",
+	"tui_macos_arm64", "tui_macos_x64", "tui_windows_arm64", "tui_windows_x64", "tui_linux_arm64", "tui_linux_x64",
 }
 
 // miniProgramGroup names every mini program target at once.
@@ -326,6 +327,13 @@ func expandTargets(names []string) ([]string, error) {
 		switch {
 		case name == "all":
 			expanded = goAndXcodeTargets()
+		case name == "tui":
+			expanded = nil
+			for _, t := range targets {
+				if strings.HasPrefix(t, "tui_") {
+					expanded = append(expanded, t)
+				}
+			}
 		case name == miniProgramGroup:
 			expanded = nil
 			for _, t := range targets {
@@ -390,6 +398,9 @@ func universalStoreTargets(targets []string) []string {
 }
 
 func buildTarget(ctx context.Context, p *project, target, dir string) error {
+	if strings.HasPrefix(target, "tui_") && !p.Build.embed {
+		return buildTUI(ctx, p, dir, target)
+	}
 	_, arch, _ := strings.Cut(target, "_")
 	if p.Build.embed {
 		switch target {
