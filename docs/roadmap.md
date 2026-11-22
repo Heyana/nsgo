@@ -146,6 +146,7 @@ What Windows and Linux still lack of what macOS opens for an app, and Android of
 
 | Item | Reference | Done when |
 | --- | --- | --- |
+| Editing menu validation on Windows and Linux | [#2018](https://github.com/nsgo-dev/nsgo/issues/2018), [menus](architecture/services.md#menus) | Undo, Redo and selection-dependent menu roles follow the focused editor’s history and selection; these backends currently dispatch editing roles without native menu validation |
 | Child windows on Windows and Linux | macOS's `WindowOptions.Parent` (#108), owned Win32 windows, `gtk_window_set_transient_for` | Native child windows open over their parent where the compositor allows placement, stay above it and follow its visibility. Closing the parent already closes its children on all desktop backends. |
 | Resizes that keep up on Windows and Linux | macOS's `surface.resize`, [#1375](https://github.com/nsgo-dev/nsgo/issues/1375) | Dragging a window's edge on Windows shows each size laid out, with no stretched frame nor strip of background while the app keeps within 16 ms, as `WM_SIZE` waits for the commit and draws it, built and not yet run on Windows (2026-11-18); Linux's widget waits the same way at a size allocation, where its size goes to the engine without a wait and GTK draws the last layout at the new size |
 | Panels that do not activate on Windows | `WS_EX_NOACTIVATE`; macOS's `NsgoPanel`, [#1376](https://github.com/nsgo-dev/nsgo/issues/1376) | A panel takes the keyboard without activating the app or taking the foreground from the app in front, as macOS's do |

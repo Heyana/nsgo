@@ -1045,7 +1045,7 @@ func validateMenu(self objc.ID, _ objc.SEL, item objc.ID) bool {
 	id := uint32(objc.Send[int](item, sel("tag")))
 	if s != nil {
 		if role, ok := s.roleFallback[id]; ok {
-			return validateRoleMenuItem(item, role)
+			return s.validateRoleMenuItem(item, role)
 		}
 	}
 	if s == nil || !s.notInText[id] || s.editingKeys[id] != 0 {
@@ -1055,14 +1055,23 @@ func validateMenu(self objc.ID, _ objc.SEL, item objc.ID) bool {
 }
 
 // validateRoleMenuItem asks the responder AppKit would use for an editing
-// role whether it can carry out the action. No responder leaves the item to
-// the app's OnSelect fallback.
-func validateRoleMenuItem(item objc.ID, role driver.MenuRole) bool {
+// role whether it can carry out the action, in the same window that choosing
+// the item uses. No editor leaves the item to the app's OnSelect fallback.
+func (s *surface) validateRoleMenuItem(item objc.ID, role driver.MenuRole) bool {
 	action := sel(roleActions[role])
 	if action == 0 {
 		return true
 	}
-	target := nsApp().Send(sel("targetForAction:to:from:"), action, objc.ID(0), objc.ID(0))
+	w := s.roleWindow()
+	var target objc.ID
+	if ws := windowSurface(w); ws != nil {
+		if !ws.edits(action) {
+			return true
+		}
+		target = w
+	} else {
+		target = nsApp().Send(sel("targetForAction:to:from:"), action, objc.ID(0), objc.ID(0))
+	}
 	if target == 0 {
 		return true
 	}
@@ -1180,15 +1189,8 @@ func menuRoleChosen(self objc.ID, _ objc.SEL, item objc.ID) {
 		return
 	}
 	app := nsApp()
-	w := app.Send(sel("keyWindow"))
-	if w == 0 {
-		w = app.Send(sel("mainWindow"))
-	}
+	w := s.roleWindow()
 	ws := windowSurface(w)
-	if w == 0 && !s.embedded {
-		// No window has the keyboard, as while the app is not active: the menu's own window.
-		w, ws = s.window, s
-	}
 	switch {
 	case ws == nil:
 		// A window of AppKit's own, such as a panel, edits by its responder.
@@ -1202,6 +1204,20 @@ func menuRoleChosen(self objc.ID, _ objc.SEL, item objc.ID) {
 		return
 	}
 	s.engine.Dispatch(driver.Event{Kind: driver.EventMenu, Count: id})
+}
+
+// roleWindow is the window whose editor takes a menu role, for both validation
+// and dispatch. While the app is inactive, use the menu's own window.
+func (s *surface) roleWindow() objc.ID {
+	app := nsApp()
+	w := app.Send(sel("keyWindow"))
+	if w == 0 {
+		w = app.Send(sel("mainWindow"))
+	}
+	if w == 0 && !s.embedded {
+		w = s.window
+	}
+	return w
 }
 
 // edits reports whether an editor in the surface's window takes an editing role's action: a field or a web view with the keyboard focus, or the surface's text selection for Copy (when something is selected) and Select All. A responder for the action does not settle it, since every window answers undo: and redo: and the surface answers copy: and selectAll: with no selection.
