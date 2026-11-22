@@ -77,6 +77,8 @@ type ViewProps struct {
 	// take it; the toolkits ordering it by their own trees (AppKit's key
 	// view loop, the browser's DOM) leave the overlay where it is.
 	TabAfter core.NodeID
+	// Topmost marks a Topmost overlay hoisted above modals on its host.
+	Topmost bool
 	// Appearance is the one its subtree forces (core.Scope.SetSubtreeAppearance),
 	// for the platform's views in it; AppearanceSystem follows the window.
 	Appearance core.Appearance
@@ -140,6 +142,7 @@ func viewProps(p driver.ViewProps) ViewProps {
 		NoFocus:          p.NoFocus,
 		Focusable:        p.Focusable,
 		TabAfter:         p.TabAfter,
+		Topmost:          p.Topmost,
 		Appearance:       p.Appearance,
 		PointerEvents:    p.PointerEvents,
 		HitSlop:          p.HitSlop,
@@ -184,6 +187,7 @@ func (p ViewProps) driverProps() driver.ViewProps {
 		NoFocus:          p.NoFocus,
 		Focusable:        p.Focusable,
 		TabAfter:         p.TabAfter,
+		Topmost:          p.Topmost,
 		Appearance:       p.Appearance,
 		PointerEvents:    p.PointerEvents,
 		HitSlop:          p.HitSlop,
