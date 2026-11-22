@@ -634,7 +634,7 @@ export declare const motions: Readonly<Record<MotionName, MotionPreset>>;
 export type { Bounds, Point, Size, Edges };
 
 /** Location and motion streams are scoped; stopping or disposing suppresses late callbacks. Durations and timestamps use milliseconds. */
-export type SensorPermissionKind = "location" | "backgroundLocation" | "motion";
+export type SensorPermissionKind = "location" | "backgroundLocation" | "motion" | "activityRecognition";
 /** A permission's status, as core.PermissionStatus names it. */
 export type SensorPermissionStatus = "prompt" | "granted" | "denied" | "unknown" | "not-gated" | "unavailable";
 export interface SensorVector { x: number; y: number; z: number }
@@ -656,12 +656,28 @@ export interface MotionSample {
   attitude: SensorQuaternion; headingReferenced: boolean; timestamp: number; interval: number; accuracy: number;
   gap: boolean; dropped: number;
 }
+/** Step count is cumulative from since (wall-clock milliseconds); resumed windows carry gap. */
+export interface StepSample { count: number; since: number; timestamp: number; distance: number | null; floorsAscended: number | null; floorsDescended: number | null; gap: boolean; dropped: number }
+/** Activity flags: stationary=1, walking=2, running=4, cycling=8, automotive=16, unknown=32. */
+export interface ActivitySample { kinds: number; confidence: 0 | 1 | 2 | 3; timestamp: number; gap: boolean; dropped: number }
+export interface PressureSample { pascals: number; relativeAltitude: number | null; timestamp: number; interval: number; gap: boolean; dropped: number }
+export interface GeofenceRegion { id: string; latitude: number; longitude: number; radius: number }
+export interface GeofenceOptions { regions: GeofenceRegion[]; background?: boolean; notificationTitle?: string; notificationBody?: string }
+export interface GeofenceSample { region: string; state: "unknown" | "inside" | "outside"; timestamp: number; gap: boolean; dropped: number }
+/** Duration is mandatory milliseconds. An OS execution lease may expire earlier. */
+export interface BackgroundMotionOptions extends MotionOptions { duration: number; notificationTitle?: string; notificationBody?: string }
 export declare const Sensors: {
   permission(kind: SensorPermissionKind): Promise<SensorPermissionStatus>;
   requestPermission(kind: SensorPermissionKind): Promise<SensorPermissionStatus>;
   locate(options?: LocationOptions): Promise<LocationFix>;
   watchLocation(options: LocationOptions, sample: (fix: LocationFix) => void, failed?: (error: Error) => void): () => void;
   watchMotion(options: MotionOptions, sample: (motion: MotionSample) => void, failed?: (error: Error) => void): () => void;
+  watchSteps(sample: (steps: StepSample) => void, failed?: (error: Error) => void): () => void;
+  watchActivity(sample: (activity: ActivitySample) => void, failed?: (error: Error) => void): () => void;
+  watchPressure(sample: (pressure: PressureSample) => void, failed?: (error: Error) => void): () => void;
+  watchGeofences(options: GeofenceOptions, sample: (state: GeofenceSample) => void, failed?: (error: Error) => void): () => void;
+  requestPreciseLocation(purpose: string): Promise<boolean>;
+  watchBackgroundMotion(options: BackgroundMotionOptions, sample: (motion: MotionSample) => void, failed?: (error: Error) => void): () => void;
 };
 
 /** The application's address; browser writes stay on the page's origin. */

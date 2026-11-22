@@ -793,3 +793,15 @@ In tests, enable game services with `nsgotest.Environment(core.Environment{CanUs
 - [Forms](forms.md): text fields and the keyboard.
 - [Embedding](embedding.md): services a host app gives its embedded app.
 - [Building and shipping](building.md): the permissions and files a package needs.
+
+### Fitness, regions and bounded motion
+
+`cx.WatchSteps`, `cx.WatchActivity` and `cx.WatchPressure` return scoped streams. Ask for `core.PermissionActivityRecognition` before steps/activity, and before pressure on Apple. Apple supplies all three through Core Motion; Android supplies step counters and pressure, and reports activity classification unavailable. Counts belong to the sample's `Since` window; resumed windows carry `Gap`. Pressure is in pascals, with optional relative altitude in meters. Missing distances, floors and altitude have `Valid` false.
+
+`cx.WatchGeofences` takes `core.GeofenceOptions` with one to twenty distinct `GeofenceRegion` circles (WGS 84 coordinates and radius in meters). It reports `GeofenceInside`, `GeofenceOutside` or `GeofenceUnknown` per region. `Background` requires background location access/declarations and Apple's Always authorization; Android also needs a notification title. Stop or disposal removes its registrations; no subscription survives process death.
+
+`cx.RequestPreciseLocation("route", done)` explicitly asks for precise authorization and answers a boolean, never a position. In `apple.info`, declare `NSLocationTemporaryUsageDescriptionDictionary: {route: Explains why this feature needs precision.}`. Android needs both coarse and fine permissions. A false answer may leave approximate location authorized.
+
+`cx.WatchBackgroundMotion(core.BackgroundMotionOptions{Motion: core.MotionOptions{}, Duration: 20 * time.Second, NotificationTitle: "Recording motion"}, sample, failed)` requests a finite live stream. It needs `AccessMotion` and `AccessBackgroundMotion`; TSX packages declare `motion` and `backgroundMotion`. iOS may expire its execution lease sooner. Android apps set `android.background_motion: true` and declare `FOREGROUND_SERVICE`; the nonsticky service stops within three minutes even if the requested duration is longer. Duration or OS expiry reports `SensorTimedOut`. Stop/disposal ends the provider and lease; nothing records after termination. Other targets report unavailable.
+
+TSX `Sensors` mirrors these six methods and uses milliseconds. Headless tests feed `FeedSteps`, `FeedActivity`, `FeedPressure` and `FeedGeofence`, and set `PreciseLocationAnswer` for accuracy requests. Physical fitness, region wake-up and suspended-background behavior still need device acceptance.

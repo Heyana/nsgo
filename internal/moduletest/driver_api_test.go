@@ -36,6 +36,8 @@ func allowedPublicDriverType(name string) bool {
 		"LocationOptions", "LowPowerMode", "Matrix3D", "MemorySecrets", "MenuBarMode",
 		"MenuIcon", "MenuRole", "ModalAnimation", "ModalPresentation", "Modifiers",
 		"MotionOptions", "MotionSample", "MotionSensors", "MouseButton",
+		"StepSample", "ActivityKinds", "ActivityConfidence", "ActivitySample",
+		"PressureSample", "GeofenceRegion", "GeofenceState", "GeofenceOptions", "GeofenceSample", "BackgroundMotionOptions",
 		"NativeComponent", "NativeComponents", "NativeContext", "NativeFactory", "Network",
 		"NodeID", "OS", "OSVersion", "ObjectPosition",
 		"Obstruction", "OfferPaymentMode", "Orientation", "Outline",

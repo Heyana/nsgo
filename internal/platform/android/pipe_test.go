@@ -302,7 +302,7 @@ func TestEnvironmentSaysTheRuntimeReadsExtendedMessages(t *testing.T) {
 		w.str("US")
 		w.buf = append(w.buf, c.third...)
 		r := reader{w.buf}
-		if _, third := readEnvironmentCapabilities(&r); third != c.want || len(r.buf) != 0 {
+		if _, third, _ := readEnvironmentCapabilities(&r); third != c.want || len(r.buf) != 0 {
 			t.Errorf("third byte %v: read %d with %d bytes left, want %d", c.third, third, len(r.buf), c.want)
 		}
 	}
@@ -319,7 +319,7 @@ func TestEnvironmentSaysTheRuntimeReadsExtendedMessages(t *testing.T) {
 		w.str("celsius")
 		w.str("US")
 		w.byte(c.third)
-		if env, _ := readEnvironmentCapabilities(&reader{w.buf}); env.DiscoverServices != c.want {
+		if env, _, _ := readEnvironmentCapabilities(&reader{w.buf}); env.DiscoverServices != c.want {
 			t.Errorf("third byte %d: DiscoverServices = %v, want %v", c.third, env.DiscoverServices, c.want)
 		}
 	}

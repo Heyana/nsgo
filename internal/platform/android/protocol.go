@@ -549,7 +549,7 @@ func readResize(r *reader) (driver.Size, driver.Geometry, *driver.Environment) {
 
 // readEnvironment reads the environment NsgoView.environment writes.
 func readEnvironment(r *reader) driver.Environment {
-	env, _ := readEnvironmentCapabilities(r)
+	env, _, _ := readEnvironmentCapabilities(r)
 	return env
 }
 
@@ -579,8 +579,11 @@ const capPlayUpdates = 128
 // capSpeech is the third capability byte's bit for a device and runtime that recognize speech through SpeechRecognizer on ItemSpeech (Protocol.CAP_SPEECH): one built before Speech.java reads as having no speech recognition.
 const capSpeech = 8
 
-// readEnvironmentCapabilities reads the environment as readEnvironment does, with the third capability byte, which says what the runtime itself can do (cap* bits) rather than the device, so it stays out of driver.Environment.
-func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
+// capExtendedSensors is the fourth capability byte's bit for a runtime that reads the scoped sensor kinds and commands (steps, activity, pressure, regions, precise-location and fitness requests) on the existing sensor messages (Protocol.CAP_EXTENDED_SENSORS): one built before it would read them as location requests, so Go answers them unavailable instead.
+const capExtendedSensors = 1
+
+// readEnvironmentCapabilities reads the environment as readEnvironment does, with the third and fourth capability bytes, which say what the runtime itself can do (cap* bits) rather than the device, so they stay out of driver.Environment.
+func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	env := driver.Environment{
 		OS:             driver.OSAndroid,
 		HasWebView:     true,
@@ -674,7 +677,12 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	if len(r.buf) > 0 {
 		env.OpenedURL = r.str()
 	}
-	return env, third
+	// The third capability byte's bits are all taken; a fourth ends the environment, so a runtime built before it, which ends at the opened URL, reads as having none of them. Its bits: capExtendedSensors.
+	var fourth byte
+	if len(r.buf) > 0 {
+		fourth = r.byte()
+	}
+	return env, third, fourth
 }
 
 // writeWebCookies writes a msgCookies as NsgoView.cookies reads it: the surface, the request's count and its op, then what the op takes: each cookie to set as a URL it goes to and its Set-Cookie value, which CookieManager.setCookie takes, the URL whose cookies to list, or nothing to clear.

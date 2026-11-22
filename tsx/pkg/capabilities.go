@@ -38,6 +38,7 @@ type Capabilities struct {
 	Location           bool `json:"location,omitempty"`
 	BackgroundLocation bool `json:"backgroundLocation,omitempty"`
 	Motion             bool `json:"motion,omitempty"`
+	BackgroundMotion   bool `json:"backgroundMotion,omitempty"`
 	// Host names the host's handlers host.call and host.post may reach:
 	// a name, a prefix ending in "*", or "*" for all.
 	Host []string `json:"host,omitempty"`
@@ -149,6 +150,8 @@ func ParseCapabilities(data []byte, strict bool) (c Capabilities, ignored []stri
 			err = json.Unmarshal(raw, &c.BackgroundLocation)
 		case "motion":
 			err = json.Unmarshal(raw, &c.Motion)
+		case "backgroundMotion":
+			err = json.Unmarshal(raw, &c.BackgroundMotion)
 		case "host":
 			if string(bytes.TrimSpace(raw)) == "true" {
 				c.Host = []string{"*"}
@@ -360,6 +363,7 @@ const (
 	capLocation           = "location"
 	capBackgroundLocation = "backgroundLocation"
 	capMotion             = "motion"
+	capBackgroundMotion   = "backgroundMotion"
 	capHost               = "host"
 )
 
@@ -424,6 +428,8 @@ func (c *Capabilities) Allows(permission, resource, method string) bool {
 		return c.BackgroundLocation
 	case capMotion:
 		return c.Motion
+	case capBackgroundMotion:
+		return c.BackgroundMotion
 	case capHost:
 		if !validHostName(resource) {
 			return false

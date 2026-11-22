@@ -1,0 +1,12 @@
+name: Sensor fixture
+id: dev.nsgo.sensorfixture1406
+version: 0.1.0
+android:
+  background_motion: true
+  permissions: [ACTIVITY_RECOGNITION, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION, FOREGROUND_SERVICE]
+apple:
+  info:
+    NSMotionUsageDescription: This fixture checks scoped motion streams.
+    NSLocationWhenInUseUsageDescription: This fixture uses only injected locations.
+    NSLocationTemporaryUsageDescriptionDictionary:
+      fixture: This fixture checks explicit accuracy requests.

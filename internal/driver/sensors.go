@@ -5,13 +5,19 @@ import (
 	"time"
 )
 
-// SensorKind identifies a provider and its separately requested authorization: core.PermissionLocation, PermissionBackgroundLocation and PermissionMotion.
+// SensorKind identifies a provider and its separately requested authorization: core.PermissionLocation, PermissionBackgroundLocation, PermissionMotion and PermissionActivityRecognition.
 type SensorKind uint8
 
 const (
 	SensorLocation SensorKind = iota
 	SensorBackgroundLocation
 	SensorMotion
+	SensorSteps
+	SensorActivity
+	SensorPressure
+	SensorGeofences
+	// SensorActivityPermission is the fitness authorization used by steps and activity.
+	SensorActivityPermission
 )
 
 // SensorAuthorization is a provider's current authorization, without prompting, which core answers as a core.PermissionStatus.
@@ -113,16 +119,26 @@ const (
 	SensorWatchLocation
 	SensorWatchMotion
 	SensorStop
+	SensorWatchSteps
+	SensorWatchActivity
+	SensorWatchPressure
+	SensorWatchGeofences
+	SensorRequestPreciseLocation
+	SensorWatchBackgroundMotion
 )
 
 // SensorRequest is scoped by Count and Generation. A restart uses a new
 // generation, so samples queued before a pause cannot enter a resumed stream.
 type SensorRequest struct {
-	Command    SensorCommand
-	Kind       SensorKind
-	Generation uint32
-	Location   LocationOptions
-	Motion     MotionOptions
+	Command          SensorCommand
+	Kind             SensorKind
+	Generation       uint32
+	Location         LocationOptions
+	Motion           MotionOptions
+	Geofences        GeofenceOptions
+	BackgroundMotion BackgroundMotionOptions
+	// Purpose is the declared temporary-accuracy purpose key on Apple platforms.
+	Purpose string
 }
 
 // SensorReport is a provider result. Errors are stable codes without data.
@@ -131,6 +147,11 @@ type SensorReport struct {
 	Grant      *SensorGrant
 	Location   *LocationFix
 	Motion     *MotionSample
+	Steps      *StepSample
+	Activity   *ActivitySample
+	Pressure   *PressureSample
+	Geofence   *GeofenceSample
+	Precise    *PreciseLocationAnswer
 	Error      string
 	End        bool
 }
@@ -155,6 +176,18 @@ func (p *SensorPacket) Offer(r SensorReport) bool {
 		}
 		if r.Location != nil && p.latest.Location != nil {
 			r.Location.Dropped += p.latest.Location.Dropped + 1
+		}
+		if r.Steps != nil && p.latest.Steps != nil {
+			r.Steps.Dropped += p.latest.Steps.Dropped + 1
+		}
+		if r.Activity != nil && p.latest.Activity != nil {
+			r.Activity.Dropped += p.latest.Activity.Dropped + 1
+		}
+		if r.Pressure != nil && p.latest.Pressure != nil {
+			r.Pressure.Dropped += p.latest.Pressure.Dropped + 1
+		}
+		if r.Geofence != nil && p.latest.Geofence != nil {
+			r.Geofence.Dropped += p.latest.Geofence.Dropped + 1
 		}
 	}
 	p.latest, p.pending = r, true

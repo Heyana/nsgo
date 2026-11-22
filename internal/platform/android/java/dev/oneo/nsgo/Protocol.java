@@ -146,6 +146,8 @@ final class Protocol {
     static final int DISCOVERY_STOP = 3;
     /** The environment's third capability byte's bit for a runtime that runs Discovery (capDiscoverServices in protocol.go). */
     static final int CAP_DISCOVER_SERVICES = 32;
+    /** The environment's fourth capability byte's bit for a runtime that reads the scoped sensor kinds and commands, fitness and precise-location requests included (capExtendedSensors in protocol.go). */
+    static final int CAP_EXTENDED_SENSORS = 1;
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
     /** Asks Google Play to offer an update: surface and request count. */

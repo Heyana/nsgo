@@ -35,8 +35,8 @@ import java.util.function.Supplier;
 
 /** Framework providers only: no Play services, implicit prompts or unbounded sample queues. */
 final class Sensors {
-    static final int LOCATION = 0, BACKGROUND = 1, MOTION = 2;
-    static final int READ = 0, ASK = 1, LOCATE = 2, WATCH_LOCATION = 3, WATCH_MOTION = 4, STOP = 5;
+    static final int LOCATION = 0, BACKGROUND = 1, MOTION = 2, STEPS = 3, ACTIVITY = 4, PRESSURE = 5, GEOFENCES = 6, ACTIVITY_PERMISSION = 7;
+    static final int READ = 0, ASK = 1, LOCATE = 2, WATCH_LOCATION = 3, WATCH_MOTION = 4, STOP = 5, WATCH_STEPS = 6, WATCH_ACTIVITY = 7, WATCH_PRESSURE = 8, WATCH_GEOFENCES = 9, PRECISE = 10, BACKGROUND_MOTION = 11;
     static final int NOT_ASKED = 0, GRANTED = 1, DENIED = 2, RESTRICTED = 3, UNAVAILABLE = 4;
     static final int PERMISSION_REQUEST = 0x6e7c;
     private final Context context;
@@ -51,9 +51,15 @@ final class Sensors {
     private final ArrayDeque<JSONObject> answers = new ArrayDeque<>();
     private final ExecutorService writer = Executors.newSingleThreadExecutor(r -> new Thread(r, "nsgo-sensors"));
     private boolean writing, closed;
+    private final SensorExtras extras;
 
     Sensors(Context context, Supplier<Activity> activity, NsgoEngine engine, Runnable backgroundEnded) {
         this.context = context.getApplicationContext(); this.activity = activity; this.engine = engine; this.backgroundEnded = backgroundEnded;
+        extras=new SensorExtras(this.context,ui,new SensorExtras.Sink(){
+            public boolean active(Run r){return !closed&&runs.get(r.id)==r;}
+            public void sample(Run r,String field,JSONObject value,String key){if(active(r))send(objectWith(report(r),field,value),r.id+":"+key);}
+            public void fail(Run r,String error){Sensors.this.fail(r,error);}
+        });
     }
 
     static final class Run {
@@ -66,6 +72,10 @@ final class Sensors {
         SensorEventListener motion;
         CancellationSignal cancellation;
         Object serviceToken;
+        JSONObject extra=new JSONObject();
+        SensorExtras.Watch extraWatch;
+        Runnable deadline;
+        long endNanos;
     }
 
     void handle(DataInputStream in) throws IOException {
@@ -77,10 +87,21 @@ final class Sensors {
         r.background = in.readBoolean(); r.title = Protocol.readString(in); r.body = Protocol.readString(in);
         r.mask = in.readUnsignedByte(); long motionInterval = in.readLong();
         if (r.kind == MOTION) r.interval = motionInterval;
+        if(r.command>=WATCH_STEPS){try{r.extra=new JSONObject(Protocol.readString(in));}catch(JSONException e){throw new IOException("invalid extended sensor options",e);}}
+        if(r.kind==GEOFENCES){JSONObject o=r.extra.optJSONObject("Geofences");if(o!=null){r.background=o.optBoolean("Background");r.title=o.optString("NotificationTitle");r.body=o.optString("NotificationBody");}}
+
         stop(r.id);
         if (closed) return;
         if (r.command == STOP) { send(objectWith(report(r), "End", true), null); return; }
         runs.put(r.id, r);
+        if(!SensorPolicy.validRequest(r.command,r.kind)){fail(r,"unavailable");return;}
+
+        if(r.command==PRECISE){
+            if(!declared(Manifest.permission.ACCESS_FINE_LOCATION)||!declared(Manifest.permission.ACCESS_COARSE_LOCATION)){fail(r,"not-configured");return;}
+            if(authorization(LOCATION)!=GRANTED){fail(r,"not-allowed");return;}
+            if(allowed(Manifest.permission.ACCESS_FINE_LOCATION)){grant(r);return;}
+            prompts.add(r);if(prompts.size()==1)prompt(r);return;
+        }
         if (r.command <= ASK) {
             if (r.command == READ || r.kind == MOTION || authorization(r.kind) == GRANTED || authorization(r.kind) == UNAVAILABLE) { grant(r); return; }
             prompts.add(r);
@@ -88,6 +109,14 @@ final class Sensors {
             return;
         }
         if (authorization(r.kind) != GRANTED) { fail(r, authorization(r.kind) == UNAVAILABLE ? "unavailable" : "not-allowed"); return; }
+
+        if(r.command==BACKGROUND_MOTION){startBackgroundMotion(r);return;}
+        if(r.kind==GEOFENCES&&r.background){
+            if(authorization(BACKGROUND)!=GRANTED){fail(r,"not-allowed");return;}
+            if(r.title.isEmpty()){fail(r,"not-configured");return;}
+            try{r.serviceToken=new Object();LocationService.add(context,r.serviceToken,r.title,r.body,()->fail(r,"failed"));}catch(RuntimeException e){fail(r,"failed");return;}
+        }
+        if(r.kind>=STEPS){extras.start(r);return;}
         if (r.kind == MOTION) startMotion(r); else startLocation(r);
     }
 
@@ -101,6 +130,16 @@ final class Sensors {
     }
 
     private int authorization(int kind) {
+
+        if(kind==ACTIVITY)return UNAVAILABLE;
+        if(kind==STEPS||kind==ACTIVITY_PERMISSION){
+            if(context.getSystemService(SensorManager.class)==null)return UNAVAILABLE;
+            if(Build.VERSION.SDK_INT<29)return GRANTED;
+            if(!declared(Manifest.permission.ACTIVITY_RECOGNITION))return UNAVAILABLE;
+            if(allowed(Manifest.permission.ACTIVITY_RECOGNITION))return GRANTED;
+            return context.getSharedPreferences("nsgo.sensors",Context.MODE_PRIVATE).getBoolean("asked."+ACTIVITY_PERMISSION,false)?DENIED:NOT_ASKED;
+        }
+        if(kind==PRESSURE)return context.getSystemService(SensorManager.class)==null?UNAVAILABLE:GRANTED;
         if (kind == MOTION) return context.getSystemService(SensorManager.class) == null ? UNAVAILABLE : GRANTED;
         if (context.getSystemService(LocationManager.class) == null) return UNAVAILABLE;
         if (kind == BACKGROUND) {
@@ -122,7 +161,7 @@ final class Sensors {
         if (runs.get(r.id) != r) { finishPrompt(); return; }
         Activity a = activity.get();
         if (a == null || r.kind == BACKGROUND && authorization(LOCATION) != GRANTED) { grant(r); finishPrompt(); return; }
-        context.getSharedPreferences("nsgo.sensors", Context.MODE_PRIVATE).edit().putBoolean("asked." + r.kind, true).apply();
+        context.getSharedPreferences("nsgo.sensors", Context.MODE_PRIVATE).edit().putBoolean("asked." + ((r.kind==STEPS||r.kind==ACTIVITY_PERMISSION)?ACTIVITY_PERMISSION:r.kind), true).apply();
         if (r.kind == BACKGROUND && Build.VERSION.SDK_INT >= 30 && declared(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
             // Android 11 removed "Allow all the time" from the runtime
             // prompt. Only this explicit API opens the app's settings.
@@ -131,6 +170,7 @@ final class Sensors {
             return;
         }
         String[] permissions;
+        if(r.kind==STEPS||r.kind==ACTIVITY_PERMISSION){permissions=new String[]{Manifest.permission.ACTIVITY_RECOGNITION};a.requestPermissions(permissions,PERMISSION_REQUEST);return;}
         if (r.kind == BACKGROUND && Build.VERSION.SDK_INT >= 29 && declared(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
             permissions = new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION};
         } else if (declared(Manifest.permission.ACCESS_FINE_LOCATION)) {
@@ -165,6 +205,9 @@ final class Sensors {
 
     private JSONObject report(Run r) { return object("id", r.id, "Generation", r.generation); }
     private void grant(Run r) {
+
+        if(runs.get(r.id)!=r)return;
+        if(r.command==PRECISE){send(objectWith(report(r),"Precise",object("Full",allowed(Manifest.permission.ACCESS_FINE_LOCATION)),"End",true),null);stopProvider(r);return;}
         JSONObject g = object("Authorization", authorization(r.kind));
         send(objectWith(report(r), "Grant", g, "End", true), null);
         stopProvider(r);
@@ -271,6 +314,7 @@ final class Sensors {
             public void onAccuracyChanged(Sensor sensor, int accuracy) {}
             public void onSensorChanged(SensorEvent e) {
                 if (runs.get(r.id) != r) return;
+                if(r.command==BACKGROUND_MOTION&&android.os.SystemClock.elapsedRealtimeNanos()>=r.endNanos){fail(r,"timeout");return;}
                 int type = e.sensor.getType(), bit;
                 if (type == Sensor.TYPE_GRAVITY) { gravity = vector(e.values); return; }
                 if (type == Sensor.TYPE_LINEAR_ACCELERATION) { acceleration = vector(e.values); return; }
@@ -305,16 +349,35 @@ final class Sensors {
         } catch (SecurityException e) { fail(r, "not-allowed"); }
     }
 
+
+    private void startBackgroundMotion(Run r){
+        JSONObject o=r.extra.optJSONObject("BackgroundMotion");
+        if(o==null||o.optLong("Duration")<=0){fail(r,"failed");return;}
+        if(!declared(Manifest.permission.FOREGROUND_SERVICE)||o.optString("NotificationTitle").isEmpty()){fail(r,"not-configured");return;}
+        try{
+            context.getPackageManager().getServiceInfo(new android.content.ComponentName(context,MotionService.class),0);
+            r.serviceToken=new Object();
+            MotionService.add(context,r.serviceToken,o.optString("NotificationTitle"),o.optString("NotificationBody"),()->fail(r,"failed"),()->fail(r,"timeout"));
+            long duration=Math.min(o.optLong("Duration"),180000000000L);
+            r.endNanos=android.os.SystemClock.elapsedRealtimeNanos()+duration;
+            r.deadline=()->{if(runs.get(r.id)==r)fail(r,"timeout");};ui.postDelayed(r.deadline,Math.max(1,duration/1000000));
+            startMotion(r);
+        }catch(android.content.pm.PackageManager.NameNotFoundException e){fail(r,"not-configured");}
+        catch(RuntimeException e){fail(r,"failed");}
+    }
+
     boolean hasBackground() { for (Run r : runs.values()) if (r.serviceToken != null) return true; return false; }
 
     private void stop(long id) { Run r = runs.get(id); if (r != null) stopProvider(r); }
     private void stopProvider(Run r) {
         runs.remove(r.id, r);
         if (r.cancellation != null) r.cancellation.cancel();
+        if(r.deadline!=null)ui.removeCallbacks(r.deadline);
+        if(r.extraWatch!=null){r.extraWatch.close();r.extraWatch=null;}
         if (r.location != null) context.getSystemService(LocationManager.class).removeUpdates(r.location);
         if (r.motion != null) context.getSystemService(SensorManager.class).unregisterListener(r.motion);
         if (r.serviceToken != null) {
-            LocationService.remove(context, r.serviceToken);
+            if(r.command==BACKGROUND_MOTION)MotionService.remove(context,r.serviceToken);else LocationService.remove(context, r.serviceToken);
             r.serviceToken = null;
             // Posted: the view may stop, which closes these sensors, and a closing Sensors ends nothing.
             if (!closed && !hasBackground()) ui.post(() -> { if (!closed) backgroundEnded.run(); });
@@ -338,7 +401,7 @@ final class Sensors {
         else {
             JSONObject old = samples.put(key, report);
             if (old != null) {
-                String field = report.has("Motion") ? "Motion" : "Location";
+                String field="Location";for(String candidate:new String[]{"Motion","Steps","Activity","Pressure","Geofence"})if(report.has(candidate)){field=candidate;break;}
                 JSONObject value = report.optJSONObject(field), previous = old.optJSONObject(field);
                 put(value, "Dropped", value.optLong("Dropped") + (previous == null ? 0 : previous.optLong("Dropped")) + 1);
             }
@@ -359,8 +422,8 @@ final class Sensors {
     }
 
     private static JSONObject vector(float[] v) { return object("X", v[0], "Y", v[1], "Z", v[2]); }
-    private static JSONObject number(double v, boolean valid) { return object("Value", v, "Valid", valid); }
-    private static void put(JSONObject object, String key, Object value) { try { object.put(key, value); } catch (JSONException e) { throw new IllegalArgumentException(e); } }
-    private static JSONObject objectWith(JSONObject out, Object... pairs) { for (int i = 0; i < pairs.length; i += 2) put(out, (String)pairs[i], pairs[i+1]); return out; }
-    private static JSONObject object(Object... pairs) { return objectWith(new JSONObject(), pairs); }
+    static JSONObject number(double v, boolean valid) { return object("Value", v, "Valid", valid); }
+    static void put(JSONObject object, String key, Object value) { try { object.put(key, value); } catch (JSONException e) { throw new IllegalArgumentException(e); } }
+    static JSONObject objectWith(JSONObject out, Object... pairs) { for (int i = 0; i < pairs.length; i += 2) put(out, (String)pairs[i], pairs[i+1]); return out; }
+    static JSONObject object(Object... pairs) { return objectWith(new JSONObject(), pairs); }
 }

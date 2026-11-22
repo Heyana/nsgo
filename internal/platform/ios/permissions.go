@@ -46,7 +46,7 @@ func (s *surface) permission(id uint32, r driver.PermissionRequest) {
 				return
 			}
 			settings = apple.GoString(apple.Global(uikitPath, "UIApplicationOpenNotificationSettingsURLString"))
-		} else if privacy.Status(r.Name) == driver.PermissionUnavailable {
+		} else if r.Name != driver.PermissionActivityRecognition && privacy.Status(r.Name) == driver.PermissionUnavailable {
 			opened(false)
 			return
 		}

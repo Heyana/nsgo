@@ -60,6 +60,11 @@ type SensorStream struct {
 	request              driver.SensorRequest
 	location             func(LocationFix)
 	motion               func(MotionSample)
+	steps                func(StepSample)
+	activity             func(ActivitySample)
+	pressure             func(PressureSample)
+	geofence             func(GeofenceSample)
+	precise              func(bool)
 	permission           func(driver.SensorGrant)
 	onError              func(error)
 	stopped, paused, gap bool
@@ -71,9 +76,10 @@ type SensorStream struct {
 
 // sensorPermissions are the sensors' kinds by their permissions, which PermissionStatus and RequestPermission ask the sensor service for.
 var sensorPermissions = map[Permission]driver.SensorKind{
-	PermissionLocation:           driver.SensorLocation,
-	PermissionBackgroundLocation: driver.SensorBackgroundLocation,
-	PermissionMotion:             driver.SensorMotion,
+	PermissionLocation:            driver.SensorLocation,
+	PermissionBackgroundLocation:  driver.SensorBackgroundLocation,
+	PermissionMotion:              driver.SensorMotion,
+	PermissionActivityRecognition: driver.SensorActivityPermission,
 }
 
 // sensorGate is gate's refusal of the sensor of kind, held to AccessLocation, AccessBackgroundLocation or AccessMotion.
@@ -81,7 +87,7 @@ func (cx *Scope) sensorGate(kind driver.SensorKind) error {
 	switch kind {
 	case driver.SensorBackgroundLocation:
 		return cx.gate(serviceBackgroundLocation, "")
-	case driver.SensorMotion:
+	case driver.SensorMotion, driver.SensorSteps, driver.SensorActivity, driver.SensorPressure, driver.SensorActivityPermission:
 		return cx.gate(serviceMotion, "")
 	}
 	return cx.gate(serviceLocation, "")
@@ -166,16 +172,10 @@ func (cx *Scope) locationSensor(opts LocationOptions, command driver.SensorComma
 
 // WatchMotion starts raw or fused sensors at the requested interval, clamped to 10 ms–1 s, under PermissionMotion, which it never asks for. Zero requests accelerometer at 20 ms. Samples use natural device axes, with +9.80665 m/s² on z face-up, and report dropped samples. Motion always pauses in background; it never keeps a process alive.
 func (cx *Scope) WatchMotion(opts MotionOptions, sample func(MotionSample), failed func(error)) (*SensorStream, error) {
-	if opts.Sensors == 0 {
-		opts.Sensors = SensorAccelerometer
+	opts, err := normalizeMotionOptions(opts)
+	if err != nil {
+		return nil, err
 	}
-	if opts.Sensors & ^(SensorAccelerometer|SensorGyroscope|SensorMagnetometer|SensorDeviceMotion) != 0 || opts.Interval < 0 {
-		return nil, fmt.Errorf("nsgo: invalid motion options")
-	}
-	if opts.Interval == 0 {
-		opts.Interval = 20 * time.Millisecond
-	}
-	opts.Interval = min(max(opts.Interval, 10*time.Millisecond), time.Second)
 	s, err := cx.newSensor(driver.SensorRequest{Kind: driver.SensorMotion, Command: driver.SensorWatchMotion, Motion: opts})
 	if err != nil {
 		return nil, err
@@ -191,11 +191,11 @@ func (cx *Scope) newSensor(r driver.SensorRequest) (*SensorStream, error) {
 		return nil, err
 	}
 	t := cx.tree()
-	if t == nil || cx.current().disposed {
+	if t == nil || cx.disposed {
 		return nil, SensorNotAvailable
 	}
 	t.alertID++
-	s := &SensorStream{tree: t, owner: cx.current(), id: t.alertID, request: r}
+	s := &SensorStream{tree: t, owner: cx, id: t.alertID, request: r}
 	if t.sensors == nil {
 		t.sensors = map[uint32]*SensorStream{}
 	}
@@ -206,26 +206,29 @@ func (cx *Scope) newSensor(r driver.SensorRequest) (*SensorStream, error) {
 
 func (s *SensorStream) followLifecycle(cx *Scope) {
 	s.paused = true
-	s.stopEffect = cx.Effect(func() {
-		pause := cx.Env().Lifecycle() == LifecycleBackground && !s.request.Location.Background
-		if s.stopped || pause == s.paused {
-			return
-		}
-		s.paused = pause
-		if pause {
-			s.gap = true
-			if s.stopTimer != nil {
-				s.stopTimer()
-				s.remaining = max(0, s.remaining-s.owner.Now().Sub(s.started))
+	s.tree.within(s.owner, func() {
+		s.stopEffect = cx.Effect(func() {
+			background := s.request.Location.Background || s.request.Geofences.Background || s.request.Command == driver.SensorWatchBackgroundMotion
+			pause := cx.Env().Lifecycle() == LifecycleBackground && !background
+			if s.stopped || pause == s.paused {
+				return
 			}
-			s.command(driver.SensorStop)
-		} else {
-			s.request.Generation++
-			s.send()
-			if s.request.Command == driver.SensorLocate {
-				s.tree.within(s.owner, s.armTimeout)
+			s.paused = pause
+			if pause {
+				s.gap = true
+				if s.stopTimer != nil {
+					s.stopTimer()
+					s.remaining = max(0, s.remaining-s.owner.Now().Sub(s.started))
+				}
+				s.command(driver.SensorStop)
+			} else {
+				s.request.Generation++
+				s.send()
+				if s.request.Command == driver.SensorLocate {
+					s.tree.within(s.owner, s.armTimeout)
+				}
 			}
-		}
+		})
 	})
 }
 
@@ -314,6 +317,30 @@ func (t *Tree) sensorEvent(ev driver.Event) {
 		m := *r.Motion
 		m.Gap, s.gap = m.Gap || s.gap, false
 		t.within(s.owner, func() { s.motion(m) })
+	}
+	if r.Steps != nil && s.steps != nil {
+		v := *r.Steps
+		v.Gap, s.gap = v.Gap || s.gap, false
+		t.within(s.owner, func() { s.steps(v) })
+	}
+	if r.Activity != nil && s.activity != nil {
+		v := *r.Activity
+		v.Gap, s.gap = v.Gap || s.gap, false
+		t.within(s.owner, func() { s.activity(v) })
+	}
+	if r.Pressure != nil && s.pressure != nil {
+		v := *r.Pressure
+		v.Gap, s.gap = v.Gap || s.gap, false
+		t.within(s.owner, func() { s.pressure(v) })
+	}
+	if r.Geofence != nil && s.geofence != nil {
+		v := *r.Geofence
+		v.Gap, s.gap = v.Gap || s.gap, false
+		t.within(s.owner, func() { s.geofence(v) })
+	}
+	if r.Precise != nil && s.precise != nil {
+		s.Stop()
+		t.within(s.owner, func() { s.precise(r.Precise.Full) })
 	}
 	if r.End {
 		s.Stop()

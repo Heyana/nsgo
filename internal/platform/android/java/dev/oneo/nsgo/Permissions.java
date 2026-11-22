@@ -87,7 +87,7 @@ final class Permissions {
 
     /** Whether name is one of the sensor permissions whose check/ask goes through Sensors.java but whose settings open here. */
     static boolean isSensor(String name) {
-        return "location".equals(name) || "background-location".equals(name) || "motion".equals(name);
+        return "location".equals(name) || "background-location".equals(name) || "motion".equals(name) || "activity-recognition".equals(name);
     }
 
     /** Required permissions for name: the mapped permissions declared in the manifest (empty when none declared). */

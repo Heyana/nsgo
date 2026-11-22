@@ -680,3 +680,15 @@ mobile.RequestOverlayPermission(cx, func(p core.OverlayPermission) {
 - [表单](forms.md)：文本框和键盘。
 - [嵌入](embedding.md)：宿主应用提供给嵌入应用的服务。
 - [构建与发布](building.md)：应用包需要的权限和文件。
+
+### 健身、区域与限时后台运动
+
+`cx.WatchSteps`、`cx.WatchActivity` 和 `cx.WatchPressure` 返回作用域拥有的流。步数和活动识别需要先请求 `core.PermissionActivityRecognition`，Apple 的气压也需要这一授权。Apple 通过 Core Motion 提供三者；Android 提供计步器和气压，活动分类明确返回不可用。计数属于样本的 `Since` 窗口，恢复后的新窗口带 `Gap`；气压单位为帕，可选相对高度单位为米，缺少的距离、楼层和高度以 `Valid: false` 表示。
+
+`cx.WatchGeofences` 接收 `core.GeofenceOptions` 中一到二十个 ID 不同的 `GeofenceRegion` 圆（WGS 84 经纬度、米制半径），分别报告区域的内、外或未知状态。`Background` 需要后台定位能力和声明，Apple 还需“始终”定位授权，Android 需通知标题。停止或销毁会移除自己的注册，进程终止后不会恢复原订阅。
+
+`cx.RequestPreciseLocation("route", done)` 明确请求精确定位授权，只返回布尔值，不返回位置。Apple 在 `apple.info` 声明 `NSLocationTemporaryUsageDescriptionDictionary: {route: 此功能需要精确定位的原因。}`，Android 同时声明粗略和精确权限；false 仍可能保留粗略授权。
+
+`cx.WatchBackgroundMotion` 接收 `core.BackgroundMotionOptions`，必须指定正数 `Duration`，另需 `AccessMotion` 和 `AccessBackgroundMotion`（TSX 包的 `motion` 和 `backgroundMotion`）。iOS 执行租约可提前到期；Android 设置 `android.background_motion: true`、声明 `FOREGROUND_SERVICE` 并提供通知标题，非粘性短服务最多运行三分钟。时限或系统租约到期报告 `SensorTimedOut`；停止、销毁或进程结束后不再采样。其他平台明确返回不可用。
+
+TSX `Sensors` 对应这六个接口，时间单位为毫秒。无界面测试用 `FeedSteps`、`FeedActivity`、`FeedPressure`、`FeedGeofence` 和 `PreciseLocationAnswer` 注入数据。真实健身传感器、区域唤醒及挂起后的后台行为仍需设备验收。

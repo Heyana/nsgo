@@ -171,13 +171,13 @@ func TestAndroidLibraries(t *testing.T) {
 			t.Errorf("an app that %s declares %v, want %v", c.name, libs, c.want)
 		}
 	}
-	if m := aarManifest(false, nil); strings.Contains(m, "uses-library") {
+	if m := aarManifest(false, nil, false); strings.Contains(m, "uses-library") {
 		t.Errorf("an AAR that reads no geometry declares a library:\n%s", m)
 	}
-	if m := aarManifest(false, []string{windowExtensions}); !strings.Contains(m, `<uses-library android:name="androidx.window.extensions" android:required="false" />`) {
+	if m := aarManifest(false, []string{windowExtensions}, false); !strings.Contains(m, `<uses-library android:name="androidx.window.extensions" android:required="false" />`) {
 		t.Errorf("the AAR's manifest lacks the window extensions:\n%s", m)
 	}
-	if m := aarManifest(false, nil); !strings.Contains(m, `android.intent.action.PROCESS_TEXT`) || !strings.Contains(m, `android:mimeType="text/plain"`) {
+	if m := aarManifest(false, nil, false); !strings.Contains(m, `android.intent.action.PROCESS_TEXT`) || !strings.Contains(m, `android:mimeType="text/plain"`) {
 		t.Errorf("the AAR's manifest lacks the ACTION_PROCESS_TEXT query:\n%s", m)
 	}
 }
@@ -188,7 +188,7 @@ func TestAndroidLiveUpdateReceiverManifests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, manifest := range map[string]string{"APK": string(data), "AAR": aarManifest(false, nil)} {
+	for name, manifest := range map[string]string{"APK": string(data), "AAR": aarManifest(false, nil, false)} {
 		var doc struct {
 			Application struct {
 				Receivers []struct {
@@ -419,5 +419,27 @@ func TestAndroidSessionAutomationOverADB(t *testing.T) {
 				t.Errorf("missing %q in adb calls:\n%s", wantStop, raw)
 			}
 		})
+	}
+}
+
+func TestBackgroundMotionAARIsExplicitAndNonExported(t *testing.T) {
+	for _, overlay := range []bool{false, true} {
+		for _, motion := range []bool{false, true} {
+			text := aarManifest(overlay, nil, motion)
+			if strings.Contains(text, apk.MotionService) != motion || strings.Contains(text, `android:foregroundServiceType="shortService"`) != motion {
+				t.Fatalf("motion service opt-in lost: overlay=%v motion=%v", overlay, motion)
+			}
+			count := strings.Count(text, `android:name="android.permission.FOREGROUND_SERVICE"`)
+			want := 0
+			if overlay || motion {
+				want = 1
+			}
+			if count != want {
+				t.Fatalf("%d foreground permissions, want %d", count, want)
+			}
+			if !strings.Contains(text, `android:name="dev.oneo.nsgo.SensorRegionReceiver" android:exported="false"`) {
+				t.Fatal("geofence receiver can be invoked by other apps")
+			}
+		}
 	}
 }

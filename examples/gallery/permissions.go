@@ -44,6 +44,8 @@ func permissionTitle(tr locales.Messages, p core.Permission) string {
 		return tr.PermissionLocation()
 	case core.PermissionBackgroundLocation:
 		return tr.PermissionBackgroundLocation()
+	case core.PermissionActivityRecognition:
+		return tr.PermissionActivityRecognition()
 	case core.PermissionMotion:
 		return tr.PermissionMotion()
 	case core.PermissionNotifications:

@@ -102,8 +102,14 @@ nsgo.Sensors
 nsgo.Sensors.locate
 nsgo.Sensors.permission
 nsgo.Sensors.requestPermission
+nsgo.Sensors.requestPreciseLocation
+nsgo.Sensors.watchActivity
+nsgo.Sensors.watchBackgroundMotion
+nsgo.Sensors.watchGeofences
 nsgo.Sensors.watchLocation
 nsgo.Sensors.watchMotion
+nsgo.Sensors.watchPressure
+nsgo.Sensors.watchSteps
 nsgo.Shader
 nsgo.ShaderEffect
 nsgo.ShaderTransition

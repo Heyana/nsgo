@@ -80,10 +80,12 @@ const (
 	AccessMiniProgramSignIn = "miniProgramSignIn"
 	// AccessHost is the host's handlers, by name (CallHost, PostHost).
 	AccessHost = "host"
-	// AccessLocation is the location fixes Locate and WatchLocation give and PermissionLocation, AccessBackgroundLocation a stream that goes on in the background and PermissionBackgroundLocation, and AccessMotion the motion samples WatchMotion gives and PermissionMotion: three independent grants.
+	// AccessLocation is the location fixes Locate and WatchLocation give and PermissionLocation, AccessBackgroundLocation a stream that goes on in the background and PermissionBackgroundLocation, and AccessMotion raw/fitness samples and their PermissionMotion and PermissionActivityRecognition grants.
 	AccessLocation           = "location"
 	AccessBackgroundLocation = "backgroundLocation"
 	AccessMotion             = "motion"
+	// AccessBackgroundMotion permits explicit finite background motion streams.
+	AccessBackgroundMotion = "backgroundMotion"
 	// AccessFrontmostApp is the application in front on the desktop (Scope.FrontmostApp and Scope.CanReadFrontmostApp), as it says what else the user runs.
 	AccessFrontmostApp = "frontmostApp"
 	// AccessServiceDiscovery is DNS-SD advertising and browsing by service type.
@@ -179,6 +181,7 @@ const (
 	serviceLocation           service = "location"
 	serviceBackgroundLocation service = "backgroundLocation"
 	serviceMotion             service = "motion"
+	serviceBackgroundMotion   service = "backgroundMotion"
 	serviceWebCookies         service = "webCookies"
 	serviceFrontmostApp       service = "frontmostApp"
 	serviceDiscovery          service = "serviceDiscovery"
@@ -220,6 +223,7 @@ var services = map[service]serviceRule{
 	serviceLocation:           {permission: AccessLocation},
 	serviceBackgroundLocation: {permission: AccessBackgroundLocation},
 	serviceMotion:             {permission: AccessMotion},
+	serviceBackgroundMotion:   {permission: AccessBackgroundMotion},
 	serviceWebCookies:         {permission: AccessWebView, method: AccessCookies},
 	serviceFrontmostApp:       {permission: AccessFrontmostApp},
 	serviceDiscovery:          {permission: AccessServiceDiscovery},

@@ -431,7 +431,7 @@ func writeIOSFrameworkHeaders(root, module, header string) error {
 }
 
 // aarManifest is the library's manifest, which a host's build merges into its own: the runtime starts the app from the native library directory, so native libraries must be extracted, the provider of the files the app hands other apps is named after the host's package, the receiver of scheduled notifications' alarms hears the boot to set them again, and the device's libraries the app uses (androidLibraries) are declared without being required. An app that shows overlays over other apps (androidOverlay) asks for SYSTEM_ALERT_WINDOW and declares the overlay's foreground service with its permissions, which no other library does.
-func aarManifest(overlay bool, libraries []string) string {
+func aarManifest(overlay bool, libraries []string, backgroundMotion bool) string {
 	perms, services := "", ""
 	if overlay {
 		perms = `
@@ -444,6 +444,14 @@ func aarManifest(overlay bool, libraries []string) string {
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="` + apk.OverlaySubtype + `" />
         </service>`
+	}
+	if backgroundMotion {
+		if !overlay {
+			perms += `
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />`
+		}
+		services += `
+        <service android:name="` + apk.MotionService + `" android:exported="false" android:foregroundServiceType="shortService" />`
 	}
 	var uses strings.Builder
 	for _, lib := range libraries {
@@ -480,7 +488,8 @@ func aarManifest(overlay bool, libraries []string) string {
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
-        <receiver android:name="dev.oneo.nsgo.LiveUpdateReceiver" android:exported="false" />` + services + uses.String() + `
+        <receiver android:name="dev.oneo.nsgo.LiveUpdateReceiver" android:exported="false" />
+        <receiver android:name="dev.oneo.nsgo.SensorRegionReceiver" android:exported="false" />` + services + uses.String() + `
     </application>
 </manifest>
 `
@@ -525,7 +534,7 @@ func buildAndroidAAR(ctx context.Context, p *project, dir, goarch string) error 
 		name string
 		data []byte
 	}{
-		{"AndroidManifest.xml", []byte(aarManifest(p.androidOverlay(), libraries))},
+		{"AndroidManifest.xml", []byte(aarManifest(p.androidOverlay(), libraries, p.Android.BackgroundMotion))},
 		{"classes.jar", androidruntime.ClassesJar},
 		{"R.txt", nil},
 		{"jni/" + abi + "/libnsgo.so", app},

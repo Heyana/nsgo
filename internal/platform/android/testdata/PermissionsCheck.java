@@ -346,11 +346,11 @@ public final class PermissionsCheck {
         assertEquals(1, host.settingsOpened, "settings opened for camera");
 
         // Sensor permissions -> opens.
-        for (String sensor : new String[] { "location", "background-location", "motion" }) {
+        for (String sensor : new String[] { "location", "background-location", "motion", "activity-recognition" }) {
             perms.handle(2, Protocol.PERMISSION_OPEN_SETTINGS, sensor, (c, s, o) -> out.add(new Recorded(c, s, o)));
             assertRecorded(out, out.size() - 1, 2, 0, true);
         }
-        assertEquals(4, host.settingsOpened, "settings opened for sensors");
+        assertEquals(5, host.settingsOpened, "settings opened for sensors");
 
         // Undeclared Android permission -> does not open.
         perms.handle(3, Protocol.PERMISSION_OPEN_SETTINGS, "microphone", (c, s, o) -> out.add(new Recorded(c, s, o)));
@@ -359,7 +359,7 @@ public final class PermissionsCheck {
         // Unsupported permission -> does not open.
         perms.handle(4, Protocol.PERMISSION_OPEN_SETTINGS, "reminders", (c, s, o) -> out.add(new Recorded(c, s, o)));
         assertRecorded(out, out.size() - 1, 4, 0, false);
-        assertEquals(4, host.settingsOpened, "unsupported did not open settings");
+        assertEquals(5, host.settingsOpened, "unsupported did not open settings");
 
         // Activity launch failure -> reports false.
         host.settingsSucceeds = false;

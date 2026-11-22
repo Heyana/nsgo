@@ -721,3 +721,38 @@ func TestStoreReviewDialogManifest(t *testing.T) {
 		t.Fatalf("Play Review wrapper = %v, Play Store visibility = %v", wrapper, store)
 	}
 }
+
+func TestEncodeManifestMotionServiceIsExplicit(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		data, err := EncodeManifest(androidruntime.Manifest, Manifest{Package: "dev.nsgo.sensorfixture", Motion: enabled, Permissions: []string{"android.permission.FOREGROUND_SERVICE"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc := decodeXML(t, data)
+		services, receivers, perms := 0, 0, 0
+		doc.walk(func(n *xmlNode) {
+			if n.name == "service" && n.string(t, "name") == MotionService {
+				services++
+				if n.value(t, "foregroundServiceType") != 0x800 || n.value(t, "exported") != 0 {
+					t.Error("motion service is exported or not shortService")
+				}
+			}
+			if n.name == "receiver" && n.string(t, "name") == SensorRegionReceiver {
+				receivers++
+				if n.value(t, "exported") != 0 {
+					t.Error("region receiver is exported")
+				}
+			}
+			if n.name == "uses-permission" && n.string(t, "name") == "android.permission.FOREGROUND_SERVICE" {
+				perms++
+			}
+		})
+		want := 0
+		if enabled {
+			want = 1
+		}
+		if services != want || receivers != 1 || perms != 1 {
+			t.Errorf("motion=%v services=%d receivers=%d FGS=%d", enabled, services, receivers, perms)
+		}
+	}
+}

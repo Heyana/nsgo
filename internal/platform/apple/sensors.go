@@ -31,9 +31,12 @@ type appleSensorRun struct {
 	closed                   bool
 	packets                  [5]driver.SensorPacket
 	motionFailure            atomic.Bool
+	extraStop                func()
+	regions                  map[string]*monitoredRegion
 }
 
 var locationRuns = map[objc.ID]*appleSensorRun{}
+var sensorLocationClass = func() objc.Class { return Class("CLLocationManager") }
 
 var loadLocation = sync.OnceValue(func() bool {
 	_, err := purego.Dlopen("/System/Library/Frameworks/CoreLocation.framework/CoreLocation", purego.RTLD_NOW|purego.RTLD_GLOBAL)
@@ -56,6 +59,38 @@ var locationDelegate = sync.OnceValue(func() objc.Class {
 		{Cmd: sel("locationManager:didChangeAuthorizationStatus:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID, _ int32) {
 			if run := locationRuns[self]; run != nil {
 				run.authorizationChanged()
+			}
+		}},
+		{Cmd: sel("locationManager:didEnterRegion:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID, region objc.ID) {
+			if r := locationRuns[self]; r != nil {
+				r.regionState(region, driver.GeofenceInside)
+			}
+		}},
+		{Cmd: sel("locationManager:didExitRegion:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID, region objc.ID) {
+			if r := locationRuns[self]; r != nil {
+				r.regionState(region, driver.GeofenceOutside)
+			}
+		}},
+		{Cmd: sel("locationManager:didDetermineState:forRegion:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID, state int, region objc.ID) {
+			if r := locationRuns[self]; r != nil {
+				switch state {
+				case 1:
+					r.regionState(region, driver.GeofenceInside)
+				case 2:
+					r.regionState(region, driver.GeofenceOutside)
+				default:
+					r.regionState(region, driver.GeofenceUnknown)
+				}
+			}
+		}},
+		{Cmd: sel("locationManager:didStartMonitoringForRegion:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID, region objc.ID) {
+			if r := locationRuns[self]; r != nil && !r.closed {
+				r.manager.Send(sel("requestStateForRegion:"), region)
+			}
+		}},
+		{Cmd: sel("locationManager:monitoringDidFailForRegion:withError:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID, _ objc.ID, _ objc.ID) {
+			if r := locationRuns[self]; r != nil && !r.closed {
+				r.fail("failed")
 			}
 		}},
 		{Cmd: sel("locationManager:didFailWithError:"), Fn: func(self objc.ID, _ objc.SEL, _, failure objc.ID) {
@@ -83,7 +118,7 @@ func locationGrant(manager objc.ID, background bool) driver.SensorGrant {
 	case 3, 4:
 		g.Authorization = driver.SensorGranted
 	}
-	if !objc.Send[bool](objc.ID(Class("CLLocationManager")), sel("locationServicesEnabled")) {
+	if !objc.Send[bool](objc.ID(sensorLocationClass()), sel("locationServicesEnabled")) {
 		g.Authorization = driver.SensorUnavailable
 	}
 	if background && !backgroundLocationDeclared() {
@@ -93,6 +128,9 @@ func locationGrant(manager objc.ID, background bool) driver.SensorGrant {
 }
 
 func backgroundLocationDeclared() bool {
+	if runtime.GOOS != "ios" {
+		return true
+	}
 	info := objc.ID(Class("NSBundle")).Send(sel("mainBundle")).Send(sel("infoDictionary"))
 	modes := info.Send(selObjectForKey, NSString("UIBackgroundModes"))
 	return modes != 0 && objc.Send[bool](modes, sel("isKindOfClass:"), Class("NSArray")) &&
@@ -123,17 +161,41 @@ func (s *Sensors) Handle(it *driver.MountItem, dispatch func(driver.Event), moti
 			run.unavailable()
 			return
 		}
+		if r.Command == driver.SensorWatchBackgroundMotion && !run.beginMotionLease() {
+			return
+		}
 		run.motion()
+		return
+	}
+	if r.Kind == driver.SensorSteps || r.Kind == driver.SensorActivity || r.Kind == driver.SensorPressure || r.Kind == driver.SensorActivityPermission {
+		if !motion {
+			run.unavailable()
+			return
+		}
+		run.advancedMotion()
+		return
+	}
+	if r.Kind != driver.SensorLocation && r.Kind != driver.SensorBackgroundLocation && r.Kind != driver.SensorGeofences || r.Kind == driver.SensorGeofences && !continuous {
+		run.unavailable()
 		return
 	}
 	if !loadLocation() {
 		run.unavailable()
 		return
 	}
-	run.manager = objc.ID(Class("CLLocationManager")).Send(sel("new"))
+	run.manager = objc.ID(sensorLocationClass()).Send(sel("new"))
+	if r.Command == driver.SensorRequestPreciseLocation {
+		run.requestAccuracy()
+		return
+	}
+	if r.Kind == driver.SensorGeofences {
+		run.geofences()
+		return
+	}
 	if r.Command <= driver.SensorRequestPermission {
 		grant := locationGrant(run.manager, r.Kind == driver.SensorBackgroundLocation)
-		if r.Command == driver.SensorReadPermission || grant.Authorization != driver.SensorNotAsked {
+		upgrade := r.Command == driver.SensorRequestPermission && r.Kind == driver.SensorBackgroundLocation && privacy.DeclaresUsage("NSLocationAlwaysAndWhenInUseUsageDescription") && objc.Send[int](run.manager, sel("authorizationStatus")) == 4 && responds(run.manager, "requestAlwaysAuthorization")
+		if r.Command == driver.SensorReadPermission || grant.Authorization != driver.SensorNotAsked && !upgrade {
 			run.grant(grant)
 			return
 		}
@@ -158,7 +220,7 @@ func (s *Sensors) Handle(it *driver.MountItem, dispatch func(driver.Event), moti
 		run.fail("unavailable")
 		return
 	}
-	if r.Location.Background {
+	if r.Location.Background && runtime.GOOS == "ios" {
 		if !backgroundLocationDeclared() || !responds(run.manager, "setAllowsBackgroundLocationUpdates:") {
 			run.fail("not-configured")
 			return
@@ -203,6 +265,10 @@ func (r *appleSensorRun) attachDelegate() {
 
 func (r *appleSensorRun) authorizationChanged() {
 	g := locationGrant(r.manager, r.r.Kind == driver.SensorBackgroundLocation)
+	if r.r.Kind == driver.SensorGeofences && r.r.Geofences.Background && objc.Send[int](r.manager, sel("authorizationStatus")) != 3 {
+		r.fail("not-allowed")
+		return
+	}
 	if r.r.Command <= driver.SensorRequestPermission {
 		if g.Authorization != driver.SensorNotAsked {
 			r.grant(g)
@@ -315,6 +381,10 @@ func (r *appleSensorRun) close() {
 		return
 	}
 	r.closed = true
+	if r.extraStop != nil {
+		r.extraStop()
+		r.extraStop = nil
+	}
 	delete(r.service.runs, r.id)
 	if r.delegate != 0 {
 		delete(locationRuns, r.delegate)

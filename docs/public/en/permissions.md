@@ -91,7 +91,7 @@ The app held out is its bundle, else its executable; `GuideOptions.App` names an
 | Android | The microphone, the camera, calendars, Bluetooth and the media library, where `android.permissions` declares them |
 | Apple Watch, mini programs | Notifications, location and motion through their services; the rest kept by the system is unknown for now |
 
-Location and motion permissions follow each [platform's sensors](services.md#location-and-motion), and `PermissionNotifications` follows [notifications](notifications.md). On mobile Safari, ask for `PermissionMotion` from a press handler.
+Location and motion permissions follow each [platform's sensors](services.md#location-and-motion), and `PermissionNotifications` follows [notifications](notifications.md). Fitness uses `PermissionActivityRecognition` (`ACTIVITY_RECOGNITION` on Android, `NSMotionUsageDescription` on Apple), including Apple pressure; raw Android motion remains separate. On mobile Safari, ask for `PermissionMotion` from a press handler.
 
 ## Testing
 

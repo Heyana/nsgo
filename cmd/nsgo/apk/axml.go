@@ -56,6 +56,8 @@ type Manifest struct {
 	Recording bool
 	// BackgroundDownloads declares the runtime's dataSync transfer service.
 	BackgroundDownloads bool
+	// Motion declares the finite shortService for explicit background motion.
+	Motion bool
 	// Location declares the runtime's LocationService, the location foreground service a background location stream runs in (core.LocationOptions.Background), for an app whose Permissions name FOREGROUND_SERVICE_LOCATION; an app without it declares no such service, which Google Play would ask it to justify.
 	Location bool
 	// Libraries are the shared libraries of the device the app uses where it has them, by name, as uses-library elements that do not require them.
@@ -179,10 +181,12 @@ var foregroundServiceTypes = map[string]uint32{
 
 // The runtime's foreground services: RecordingService is the one microphone.RecordWAV records in (Manifest.Recording), of the microphone type, OverlayService the one overlays over other apps take (Manifest.Overlay), of the specialUse type, LocationService the one background location streams run in (Manifest.Location), of the location type, and OverlaySubtype the subtype of its specialUse type, which stores read.
 const (
-	RecordingService = "dev.oneo.nsgo.RecordingService"
-	OverlayService   = "dev.oneo.nsgo.OverlayService"
-	LocationService  = "dev.oneo.nsgo.LocationService"
-	OverlaySubtype   = "Keeps a window the user opened over other apps showing"
+	RecordingService     = "dev.oneo.nsgo.RecordingService"
+	OverlayService       = "dev.oneo.nsgo.OverlayService"
+	LocationService      = "dev.oneo.nsgo.LocationService"
+	MotionService        = "dev.oneo.nsgo.MotionService"
+	SensorRegionReceiver = "dev.oneo.nsgo.SensorRegionReceiver"
+	OverlaySubtype       = "Keeps a window the user opened over other apps showing"
 )
 
 // styles are the framework styles a manifest may name. A reference needs
@@ -376,6 +380,9 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 		}
 	}
 	perms := m.Permissions
+	if m.Motion {
+		perms = append(slices.Clip(perms), "android.permission.FOREGROUND_SERVICE")
+	}
 	if m.Recording {
 		perms = append(slices.Clip(perms), recordingPermissions...)
 	}
@@ -404,6 +411,13 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 	if m.Location {
 		app.kids = append(app.kids, foregroundService(LocationService, "location"))
 	}
+	if m.Motion {
+		app.kids = append(app.kids, foregroundService(MotionService, "shortService"))
+	}
+	receiver := &node{name: xml.Name{Local: "receiver"}}
+	setAttr(receiver, androidNS, "name", SensorRegionReceiver)
+	setAttr(receiver, androidNS, "exported", "false")
+	app.kids = append(app.kids, receiver)
 	if m.Overlay {
 		service := foregroundService(OverlayService, "specialUse")
 		property := &node{name: xml.Name{Local: "property"}}

@@ -8,12 +8,18 @@ import (
 )
 
 type sensorRun struct {
-	request driver.SensorRequest
-	packets map[driver.MotionSensors]*driver.SensorPacket
+	request      driver.SensorRequest
+	packets      map[driver.MotionSensors]*driver.SensorPacket
+	extraPackets map[string]*driver.SensorPacket
 }
 
 // sensorPermission are the sensors' permissions, which the model keeps in Permissions as it does every permission.
-var sensorPermission = [...]core.Permission{driver.SensorLocation: core.PermissionLocation, driver.SensorBackgroundLocation: core.PermissionBackgroundLocation, driver.SensorMotion: core.PermissionMotion}
+var sensorPermission = map[driver.SensorKind]core.Permission{
+	driver.SensorLocation: core.PermissionLocation, driver.SensorBackgroundLocation: core.PermissionBackgroundLocation,
+	driver.SensorMotion: core.PermissionMotion, driver.SensorSteps: core.PermissionActivityRecognition,
+	driver.SensorActivity: core.PermissionActivityRecognition, driver.SensorPressure: core.PermissionMotion,
+	driver.SensorGeofences: core.PermissionLocation, driver.SensorActivityPermission: core.PermissionActivityRecognition,
+}
 
 // sensorAuthorization is how a platform's sensor service tells the permission status s.
 func sensorAuthorization(s core.PermissionStatus) driver.SensorAuthorization {
@@ -61,11 +67,15 @@ func (a *App) sensor(id uint32, r driver.SensorRequest) {
 		report(driver.SensorReport{Error: code, End: true})
 		return
 	}
-	if r.Location.Background {
+	if r.Location.Background || r.Geofences.Background {
 		if code := a.sensorRefusal(core.PermissionBackgroundLocation); code != "" {
 			report(driver.SensorReport{Error: code, End: true})
 			return
 		}
+	}
+	if r.Command == driver.SensorRequestPreciseLocation {
+		report(driver.SensorReport{Precise: &driver.PreciseLocationAnswer{Full: a.PreciseLocationAnswer}, End: true})
+		return
 	}
 	if r.Command == driver.SensorLocate && r.Location.MaxAge > 0 && a.LocationCache != nil {
 		f := *a.LocationCache

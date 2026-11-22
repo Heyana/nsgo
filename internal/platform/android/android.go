@@ -208,7 +208,8 @@ type surface struct {
 	// fetchToFile is set once the runtime's environment says it streams a fetch to a file (capFetchToFile).
 	fetchToFile atomic.Bool
 	// playUpdates guards the newer extended command against an older runtime.
-	playUpdates atomic.Bool
+	playUpdates     atomic.Bool
+	extendedSensors atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -485,10 +486,11 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 		case msgTextReply:
 			s.receiveText(&r)
 		case msgEnvironment:
-			env, third := readEnvironmentCapabilities(&r)
+			env, third, fourth := readEnvironmentCapabilities(&r)
 			s.extendedMessages.Store(third&capExtendedMessages != 0)
 			s.fetchToFile.Store(third&capFetchToFile != 0)
 			s.playUpdates.Store(third&capPlayUpdates != 0)
+			s.extendedSensors.Store(fourth&capExtendedSensors != 0)
 			if env.Equal(s.env) {
 				break
 			}
@@ -1134,6 +1136,7 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 		}
 		b = control
 	}
+	b = filterExtendedSensors(s.extendedSensors.Load(), b, func(ev driver.Event) { s.dispatchTo(v.id, ev) })
 	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutAuthSessions(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(b))))))
 	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
 	outsideBatch := func(it driver.MountItem) bool {

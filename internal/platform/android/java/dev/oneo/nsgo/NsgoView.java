@@ -1575,6 +1575,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             writeDisplay(d);
             // Optional environment tail, after the display, for mobile.OpenedURL.
             Protocol.writeString(d, first.openedURL);
+            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS.
+            d.writeByte(Protocol.CAP_EXTENDED_SENSORS);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }

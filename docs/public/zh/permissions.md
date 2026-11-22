@@ -107,3 +107,5 @@ app.Find("text:The microphone is off")
 
 - [通知](notifications.md)：通知自己的权限、角标和点按。
 - [构建与发布](building.md)：安装包声明的授权和能力。
+
+健身服务使用 `PermissionActivityRecognition`（Android 的 `ACTIVITY_RECOGNITION`，Apple 的 `NSMotionUsageDescription`），Apple 气压也需这一授权；Android 原始运动传感器权限保持独立。

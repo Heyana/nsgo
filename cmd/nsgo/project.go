@@ -202,6 +202,8 @@ type project struct {
 		Permissions []string `yaml:"permissions"`
 		TargetSDK   int      `yaml:"target_sdk"`
 		Recording   bool     `yaml:"recording"`
+		// BackgroundMotion declares the bounded shortService used by WatchBackgroundMotion.
+		BackgroundMotion bool `yaml:"background_motion"`
 
 		Classes []string `yaml:"classes"`
 		// ShareTypes are the MIME types the launcher accepts from the sharesheet.

@@ -48,6 +48,8 @@ const (
 	PermissionMotion Permission = driver.PermissionMotion
 	// PermissionNotifications is showing system notifications (ShowNotification) and, on iOS and once used on macOS, the app's icon badge: checking and asking follow NotificationPermission and RequestNotificationPermission under AccessNotifications, and OpenPermissionSettings opens the system's notification settings where the platform has a page for them.
 	PermissionNotifications Permission = driver.PermissionNotifications
+	// PermissionActivityRecognition authorizes steps and fitness classifications: NSMotionUsageDescription on Apple and ACTIVITY_RECOGNITION on Android 29+. It is separate from Android raw sensors, which need no runtime permission.
+	PermissionActivityRecognition Permission = driver.PermissionActivityRecognition
 )
 
 // PermissionAutomationOf returns the macOS Automation permission for controlling the app with bundleID (such as "com.apple.finder"), checked and asked through AEDeterminePermissionToAutomateTarget. An empty bundleID returns PermissionAutomation.
@@ -63,7 +65,7 @@ func Permissions() []Permission {
 	return []Permission{PermissionAccessibility, PermissionScreenRecording, PermissionInputMonitoring, PermissionFullDiskAccess,
 		PermissionAppManagement, PermissionDeveloperTools, PermissionAutomation, PermissionMicrophone, PermissionCamera,
 		PermissionContacts, PermissionCalendars, PermissionReminders, PermissionPhotos, PermissionBluetooth, PermissionMediaLibrary,
-		PermissionLocation, PermissionBackgroundLocation, PermissionMotion, PermissionNotifications}
+		PermissionLocation, PermissionBackgroundLocation, PermissionMotion, PermissionActivityRecognition, PermissionNotifications}
 }
 
 // PermissionStatus is whether the app has a Permission.

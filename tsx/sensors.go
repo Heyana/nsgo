@@ -21,6 +21,8 @@ func (r *runtime) sensors() js.Value {
 				key = core.PermissionBackgroundLocation
 			case "motion":
 				key = core.PermissionMotion
+			case "activityRecognition":
+				key = core.PermissionActivityRecognition
 			default:
 				panic(r.vm.NewTypeError("Sensors: unknown permission"))
 			}
@@ -84,6 +86,7 @@ func (r *runtime) sensors() js.Value {
 	}
 	_ = o.Set("watchLocation", r.function(watch(false)))
 	_ = o.Set("watchMotion", r.function(watch(true)))
+	r.extendedSensors(o)
 	return o
 }
 

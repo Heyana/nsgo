@@ -660,7 +660,7 @@ func TestReadEnvironmentHapticPatternsUseIndependentFlag(t *testing.T) {
 		w.str("celsius")
 		w.str("US")
 		w.byte(third)
-		env, _ := readEnvironmentCapabilities(&reader{w.buf})
+		env, _, _ := readEnvironmentCapabilities(&reader{w.buf})
 		if want := third&capHapticPatterns != 0; env.HapticPatterns != want {
 			t.Errorf("third capability byte %d: HapticPatterns = %v, want %v", third, env.HapticPatterns, want)
 		}
