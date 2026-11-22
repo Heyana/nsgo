@@ -405,6 +405,7 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 	loadResourceNames()
 	registerFonts(opts.Fonts)
 	doc := js.Global().Get("document")
+	relayAuthRedirect()
 	host := doc.Get("body")
 	if opts.Mount != "" {
 		host = doc.Call("querySelector", opts.Mount)

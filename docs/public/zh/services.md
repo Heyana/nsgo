@@ -449,7 +449,7 @@ cx.RequestAnimationFrame(loop)
 
 ## 登录
 
-`cx.AuthSession` 在系统的认证会话里用 OAuth 服务登录，而不是在网页视图里：macOS、iOS 和 watchOS 用 `ASWebAuthenticationSession`，Windows、Linux 以及没有设置 scheme 的 Mac 用默认浏览器，Web 用弹出窗口。协议由应用负责：它生成 PKCE 校验码和 state，为传给它的重定向地址拼出授权 URL，并在用 code 换令牌前检查回调。取消不算失败：`errors.Is(err, core.AuthCancelled)` 表示用户关闭了会话，或返回的 `cancel` 结束了它。
+`cx.AuthSession` 在系统的认证会话里用 OAuth 服务登录，而不是在网页视图里：macOS、iOS 和 watchOS 用 `ASWebAuthenticationSession`，Windows、Linux 以及没有设置 scheme 的 Mac 用默认浏览器，Web 用弹出窗口。在 Web 上，重定向页面还会通过同源 `BroadcastChannel` 交回回调地址，因此即使服务方的 `Cross-Origin-Opener-Policy` 切断了弹窗与页面的联系，登录也能完成。这样的弹窗在页面看来已经关闭，所以弹窗显示过服务方页面后再被关闭时，会话要等 5 分钟才以取消结束；请为会话提供取消按钮。协议由应用负责：它生成 PKCE 校验码和 state，为传给它的重定向地址拼出授权 URL，并在用 code 换令牌前检查回调。取消不算失败：`errors.Is(err, core.AuthCancelled)` 表示用户关闭了会话，或返回的 `cancel` 结束了它。
 
 ```go
 verifier, challenge, state := newPKCE() // 应用自己的实现
