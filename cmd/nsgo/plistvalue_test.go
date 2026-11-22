@@ -58,6 +58,19 @@ func TestSensorAppleInfoDictionaryAndLocationEntitlement(t *testing.T) {
 	if p.hardenedEntitlements()["com.apple.security.personal-information.location"] != true {
 		t.Fatal("location usage omitted hardened runtime entitlement")
 	}
+	if err := yaml.Unmarshal([]byte("apple:\n  info:\n    NSContactsUsageDescription: Find friends\n    NSPhotoLibraryUsageDescription: Pick photos\n    NSAppleEventsUsageDescription: Automate Finder\n"), &p); err != nil {
+		t.Fatal(err)
+	}
+	ents := p.hardenedEntitlements()
+	for _, key := range []string{
+		"com.apple.security.personal-information.addressbook",
+		"com.apple.security.personal-information.photos-library",
+		"com.apple.security.automation.apple-events",
+	} {
+		if ents[key] != true {
+			t.Errorf("missing hardened entitlement %s", key)
+		}
+	}
 	p.Apple.Info = nil
 	if len(p.hardenedEntitlements()) != 0 {
 		t.Fatal("empty build claims an entitlement")

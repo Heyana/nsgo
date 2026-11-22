@@ -41,6 +41,27 @@ func TestAnswerPermission(t *testing.T) {
 	if PhonePermission(PermissionAccessibility) != PermissionUnavailable {
 		t.Error("a phone keeps Accessibility")
 	}
+	for _, kept := range []string{PermissionContacts, PermissionPhotos, PermissionNotifications} {
+		if PhonePermission(kept) != PermissionUnknown {
+			t.Errorf("PhonePermission(%q) = %d, want PermissionUnknown", kept, PhonePermission(kept))
+		}
+	}
+	for _, macOnly := range []string{PermissionAutomation, PermissionAutomation + ":com.apple.finder"} {
+		if PhonePermission(macOnly) != PermissionUnavailable {
+			t.Errorf("PhonePermission(%q) = %d, want PermissionUnavailable", macOnly, PhonePermission(macOnly))
+		}
+	}
+}
+
+func TestAutomationTarget(t *testing.T) {
+	if id, ok := AutomationTarget("automation:com.apple.finder"); !ok || id != "com.apple.finder" {
+		t.Errorf("AutomationTarget(valid) = %q, %v", id, ok)
+	}
+	for _, invalid := range []string{"", "automation", "automation:", "automation: ", "automation:com.apple.finder ", "automation:a\nb", "camera:foo"} {
+		if id, ok := AutomationTarget(invalid); ok {
+			t.Errorf("AutomationTarget(%q) = %q, true; want false", invalid, id)
+		}
+	}
 }
 
 func TestTaskProgressBarFraction(t *testing.T) {

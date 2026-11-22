@@ -163,6 +163,7 @@ func TestPermissionStatusStrings(t *testing.T) {
 	}{
 		{core.PermissionNotAsked, "prompt", false},
 		{core.PermissionGranted, "granted", true},
+		{core.PermissionLimited, "limited", true},
 		{core.PermissionDenied, "denied", false},
 		{core.PermissionUnknown, "unknown", false},
 		{core.PermissionNotGated, "not-gated", true},
@@ -172,7 +173,93 @@ func TestPermissionStatusStrings(t *testing.T) {
 			t.Errorf("%d: %q allowed %v, want %q %v", c.s, c.s.String(), c.s.Allowed(), c.name, c.allowed)
 		}
 	}
-	if len(core.Permissions()) != 15 {
+	if len(core.Permissions()) != 19 {
 		t.Errorf("%d permissions", len(core.Permissions()))
+	}
+}
+
+func TestMorePermissionsContactsPhotosAutomationAndNotifications(t *testing.T) {
+	var scope *core.Scope
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		scope = cx
+		return core.View{}
+	})
+	finder := core.PermissionAutomationOf("com.apple.finder")
+	if finder != core.Permission("automation:com.apple.finder") {
+		t.Fatalf("PermissionAutomationOf = %q", finder)
+	}
+	if core.PermissionAutomationOf("") != core.PermissionAutomation {
+		t.Fatalf("PermissionAutomationOf(\"\") = %q", core.PermissionAutomationOf(""))
+	}
+
+	app.PermissionAnswers[core.PermissionPhotos] = core.PermissionLimited
+	app.PermissionAnswers[core.PermissionContacts] = core.PermissionGranted
+	app.PermissionAnswers[finder] = core.PermissionDenied
+	app.PermissionAnswers[core.PermissionNotifications] = core.PermissionGranted
+
+	var got []core.PermissionStatus
+	answer := func(s core.PermissionStatus) { got = append(got, s) }
+	// Invalid automation target keys are refused inline as unavailable.
+	scope.PermissionStatus(core.Permission("automation:"), answer)
+	scope.RequestPermission(core.Permission("automation:bad id"), answer)
+	scope.RequestPermission(core.PermissionPhotos, answer)
+	scope.RequestPermission(core.PermissionContacts, answer)
+	scope.RequestPermission(finder, answer)
+	scope.PermissionStatus(core.PermissionNotifications, answer)
+	scope.RequestPermission(core.PermissionNotifications, answer)
+	app.Settle()
+
+	want := []core.PermissionStatus{
+		core.PermissionUnavailable, core.PermissionUnavailable,
+		core.PermissionLimited, core.PermissionGranted, core.PermissionDenied,
+		core.PermissionNotAsked, core.PermissionGranted,
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("statuses %v, want %v", got, want)
+	}
+	if app.NotificationPermission != core.NotificationsGranted {
+		t.Errorf("NotificationPermission = %v, want NotificationsGranted", app.NotificationPermission)
+	}
+
+	// Limited access already satisfies GuidePermission and finishes at once.
+	var guided core.PermissionStatus
+	scope.GuidePermission(core.PermissionPhotos, core.PermissionGuideOptions{}, func(s core.PermissionStatus) { guided = s })
+	app.Settle()
+	if guided != core.PermissionLimited || app.Guide != "" {
+		t.Errorf("limited guide ended %v with active guide %q", guided, app.Guide)
+	}
+
+	// OpenPermissionSettings accepts both targeted automation and notifications.
+	var opened []bool
+	scope.OpenPermissionSettings(finder, func(ok bool) { opened = append(opened, ok) })
+	scope.OpenPermissionSettings(core.PermissionNotifications, func(ok bool) { opened = append(opened, ok) })
+	app.Settle()
+	if !slices.Equal(opened, []bool{true, true}) || !slices.Equal(app.PermissionSettings, []core.Permission{finder, core.PermissionNotifications}) {
+		t.Errorf("opened %v, settings %v", opened, app.PermissionSettings)
+	}
+}
+
+type refuseNotifications struct{}
+
+func (refuseNotifications) Allows(req core.AccessRequest) bool {
+	return req.Permission != core.AccessNotifications
+}
+func (refuseNotifications) WebHosts() []string { return nil }
+
+func TestNotificationPermissionHeldToAccessNotifications(t *testing.T) {
+	var got []core.PermissionStatus
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		cx.ProvideAccess(refuseNotifications{})
+		cx.PermissionStatus(core.PermissionNotifications, func(s core.PermissionStatus) { got = append(got, s) })
+		cx.RequestPermission(core.PermissionNotifications, func(s core.PermissionStatus) { got = append(got, s) })
+		return core.View{}
+	})
+	app.Settle()
+	want := []core.PermissionStatus{core.PermissionUnavailable, core.PermissionUnavailable}
+	if !slices.Equal(got, want) {
+		t.Fatalf("refused notifications answered %v, want %v", got, want)
+	}
+	if app.NotificationPermission != core.NotificationsNotAsked {
+		t.Errorf("refused request changed NotificationPermission to %v", app.NotificationPermission)
 	}
 }

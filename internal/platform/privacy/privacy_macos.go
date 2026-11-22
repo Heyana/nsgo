@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"structs"
 	"sync"
 	"unsafe"
 
@@ -16,6 +17,81 @@ import (
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
+
+const (
+	aeFrameworkPath              = "/System/Library/Frameworks/CoreServices.framework/Frameworks/AE.framework/AE"
+	aeTypeApplicationBundleID    = 0x62756e64 // 'bund'
+	aeTypeWildCard               = 0x2a2a2a2a // '****'
+	aeErrNotPermitted            = -1743      // errAEEventNotPermitted
+	aeErrWouldRequireUserConsent = -1744      // errAEEventWouldRequireUserConsent
+)
+
+// aeDesc matches macOS's 64-bit AEDesc (DescType descriptorType; AEDataStorage dataHandle;).
+type aeDesc struct {
+	_              structs.HostLayout
+	descriptorType uint32
+	dataHandle     uintptr
+}
+
+var ae struct {
+	once                                sync.Once
+	ok                                  bool
+	createDesc                          func(typeCode uint32, dataPtr *byte, dataSize int, result *aeDesc) int32
+	disposeDesc                         func(desc *aeDesc) int32
+	determinePermissionToAutomateTarget func(target *aeDesc, eventClass, eventID uint32, askUserIfNeeded bool) int32
+}
+
+func loadAE() bool {
+	ae.once.Do(func() {
+		lib, err := purego.Dlopen(aeFrameworkPath, purego.RTLD_NOW|purego.RTLD_GLOBAL)
+		if err != nil {
+			return
+		}
+		for _, f := range []struct {
+			fn   any
+			name string
+		}{
+			{&ae.createDesc, "AECreateDesc"},
+			{&ae.disposeDesc, "AEDisposeDesc"},
+			{&ae.determinePermissionToAutomateTarget, "AEDeterminePermissionToAutomateTarget"},
+		} {
+			p, err := purego.Dlsym(lib, f.name)
+			if err != nil {
+				return
+			}
+			purego.RegisterFunc(f.fn, p)
+		}
+		ae.ok = true
+	})
+	return ae.ok
+}
+
+func fromAEStatus(status int32) int {
+	switch status {
+	case 0:
+		return driver.PermissionGranted
+	case aeErrWouldRequireUserConsent:
+		return driver.PermissionNotAsked
+	case aeErrNotPermitted:
+		return driver.PermissionDenied
+	}
+	return driver.PermissionUnknown
+}
+
+// automationStatus checks, or with ask requests, macOS Automation permission for the running app with bundleID.
+// When ask is true, AEDeterminePermissionToAutomateTarget may block while the user answers the prompt, so callers must run it off the main thread.
+func automationStatus(bundleID string, ask bool) int {
+	if bundleID == "" || !loadAE() {
+		return driver.PermissionUnknown
+	}
+	b := []byte(bundleID)
+	var desc aeDesc
+	if ae.createDesc(aeTypeApplicationBundleID, &b[0], len(b), &desc) != 0 {
+		return driver.PermissionUnknown
+	}
+	defer ae.disposeDesc(&desc)
+	return fromAEStatus(ae.determinePermissionToAutomateTarget(&desc, aeTypeWildCard, aeTypeWildCard, ask))
+}
 
 // macOS keeps what only Macs have through the accessibility API (ApplicationServices) and CoreGraphics, whose functions are macOS 10.15's.
 var macOS struct {
@@ -76,16 +152,23 @@ func platformStatus(name string) int {
 		return granted(macOS.cgPreflightListenEventAccess())
 	case driver.PermissionFullDiskAccess:
 		return fullDiskAccess()
-	case driver.PermissionAppManagement, driver.PermissionDeveloperTools, driver.PermissionMediaLibrary:
+	case driver.PermissionAppManagement, driver.PermissionDeveloperTools, driver.PermissionAutomation, driver.PermissionMediaLibrary:
 		return driver.PermissionUnknown
+	}
+	if bundleID, ok := driver.AutomationTarget(name); ok {
+		return automationStatus(bundleID, false)
 	}
 	return driver.PermissionUnavailable
 }
 
-// platformAsks says Request answers name with platformRequest: what only Macs keep, whose prompts need no usage description, and the media library, which macOS never asks.
+// platformAsks says Request answers name with platformRequest: what only Macs keep synchronously, whose prompts need no usage description, and the permissions macOS never asks.
 func platformAsks(name string) bool {
 	switch name {
-	case driver.PermissionMicrophone, driver.PermissionCamera, driver.PermissionCalendars, driver.PermissionReminders, driver.PermissionBluetooth:
+	case driver.PermissionMicrophone, driver.PermissionCamera, driver.PermissionContacts,
+		driver.PermissionCalendars, driver.PermissionReminders, driver.PermissionPhotos, driver.PermissionBluetooth:
+		return false
+	}
+	if _, ok := driver.AutomationTarget(name); ok {
 		return false
 	}
 	return true
@@ -113,8 +196,14 @@ func platformRequest(name string) int {
 	return st
 }
 
-// platformAskOnce is never reached on macOS, whose own permissions platformAsks takes.
-func platformAskOnce(name string, answer func(int)) { answer(Status(name)) }
+// platformAskOnce asks asynchronously for targeted macOS Automation off the main thread.
+func platformAskOnce(name string, answer func(int)) {
+	if bundleID, ok := driver.AutomationTarget(name); ok {
+		go func() { answer(automationStatus(bundleID, true)) }()
+		return
+	}
+	answer(Status(name))
+}
 
 // fullDiskAccess reads what only apps with Full Disk Access read: TCC's database of the user, then Safari's files.
 func fullDiskAccess() int {

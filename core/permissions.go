@@ -22,14 +22,20 @@ const (
 	PermissionAppManagement Permission = driver.PermissionAppManagement
 	// PermissionDeveloperTools is running software that does not meet the system's security policy, on macOS, which never tells it (PermissionUnknown).
 	PermissionDeveloperTools Permission = driver.PermissionDeveloperTools
+	// PermissionAutomation is automating another app through Apple Events on macOS; PermissionAutomationOf names the target app by its bundle ID, as macOS grants Automation per target app. Bare PermissionAutomation opens Privacy & Security's Automation pane and checks as PermissionUnknown. Asking needs NSAppleEventsUsageDescription in apple.info.
+	PermissionAutomation Permission = driver.PermissionAutomation
 	// PermissionMicrophone is recording; asking needs NSMicrophoneUsageDescription in apple.info and RECORD_AUDIO in android.permissions.
 	PermissionMicrophone Permission = driver.PermissionMicrophone
 	// PermissionCamera is the camera; asking needs NSCameraUsageDescription in apple.info and CAMERA in android.permissions.
 	PermissionCamera Permission = driver.PermissionCamera
+	// PermissionContacts is the user's contacts; asking needs NSContactsUsageDescription in apple.info. On iOS 18 and later, partial access reads as PermissionLimited.
+	PermissionContacts Permission = driver.PermissionContacts
 	// PermissionCalendars is the user's calendars; asking needs NSCalendarsFullAccessUsageDescription from macOS 14 and iOS 17, NSCalendarsUsageDescription before, and READ_CALENDAR and WRITE_CALENDAR in android.permissions.
 	PermissionCalendars Permission = driver.PermissionCalendars
 	// PermissionReminders is the user's reminders; asking needs NSRemindersFullAccessUsageDescription from macOS 14 and iOS 17, NSRemindersUsageDescription before.
 	PermissionReminders Permission = driver.PermissionReminders
+	// PermissionPhotos is the user's photo library; asking needs NSPhotoLibraryUsageDescription in apple.info. Partial access reads as PermissionLimited.
+	PermissionPhotos Permission = driver.PermissionPhotos
 	// PermissionBluetooth is Bluetooth devices; asking needs NSBluetoothAlwaysUsageDescription in apple.info and BLUETOOTH_CONNECT (API 31+) or BLUETOOTH (API 28–30) in android.permissions.
 	PermissionBluetooth Permission = driver.PermissionBluetooth
 	// PermissionMediaLibrary is Media & Apple Music: iOS tells and asks it (NSAppleMusicUsageDescription), Android tells and asks READ_MEDIA_AUDIO (API 33+) or READ_EXTERNAL_STORAGE (API 28–32) in android.permissions, and macOS never tells it.
@@ -40,13 +46,24 @@ const (
 	PermissionBackgroundLocation Permission = driver.PermissionBackgroundLocation
 	// PermissionMotion covers accelerometer, gyroscope, magnetometer and fused readings (WatchMotion). Apple requires NSMotionUsageDescription on iOS and watchOS from 27.2. Android grants it. Mobile browsers can ask for it from a user gesture.
 	PermissionMotion Permission = driver.PermissionMotion
+	// PermissionNotifications is showing system notifications (ShowNotification) and, on iOS and once used on macOS, the app's icon badge: checking and asking follow NotificationPermission and RequestNotificationPermission under AccessNotifications, and OpenPermissionSettings opens the system's notification settings where the platform has a page for them.
+	PermissionNotifications Permission = driver.PermissionNotifications
 )
 
-// Permissions returns every Permission, in the order of macOS's Privacy & Security, then the sensors'.
+// PermissionAutomationOf returns the macOS Automation permission for controlling the app with bundleID (such as "com.apple.finder"), checked and asked through AEDeterminePermissionToAutomateTarget. An empty bundleID returns PermissionAutomation.
+func PermissionAutomationOf(bundleID string) Permission {
+	if bundleID == "" {
+		return PermissionAutomation
+	}
+	return Permission(driver.PermissionAutomation + ":" + bundleID)
+}
+
+// Permissions returns every Permission, in the order of macOS's Privacy & Security, then the sensors' and notifications.
 func Permissions() []Permission {
 	return []Permission{PermissionAccessibility, PermissionScreenRecording, PermissionInputMonitoring, PermissionFullDiskAccess,
-		PermissionAppManagement, PermissionDeveloperTools, PermissionMicrophone, PermissionCamera, PermissionCalendars,
-		PermissionReminders, PermissionBluetooth, PermissionMediaLibrary, PermissionLocation, PermissionBackgroundLocation, PermissionMotion}
+		PermissionAppManagement, PermissionDeveloperTools, PermissionAutomation, PermissionMicrophone, PermissionCamera,
+		PermissionContacts, PermissionCalendars, PermissionReminders, PermissionPhotos, PermissionBluetooth, PermissionMediaLibrary,
+		PermissionLocation, PermissionBackgroundLocation, PermissionMotion, PermissionNotifications}
 }
 
 // PermissionStatus is whether the app has a Permission.
@@ -61,19 +78,23 @@ const (
 	PermissionDenied PermissionStatus = driver.PermissionDenied
 	// PermissionUnknown is a permission the system keeps but cannot tell without asking, or that the platform's backend cannot tell yet.
 	PermissionUnknown PermissionStatus = driver.PermissionUnknown
-	// PermissionNotGated is a permission the system does not keep from this app, which may use what it guards: on Linux outside a sandbox, and on Windows for all but the microphone and the camera.
+	// PermissionNotGated is a permission the system does not keep from this app, which may use what it guards: on Linux outside a sandbox, and on Windows for all but the microphone, the camera and notifications.
 	PermissionNotGated PermissionStatus = driver.PermissionNotGated
 	// PermissionUnavailable is a permission the platform has no such thing for, such as Accessibility on iOS or the web, a key that names none, or one the current owner's Access does not grant AccessPermissions for.
 	PermissionUnavailable PermissionStatus = driver.PermissionUnavailable
+	// PermissionLimited is partial access granted by the user, such as selected photos or selected contacts on Apple platforms. Allowed reports true.
+	PermissionLimited PermissionStatus = driver.PermissionLimited
 )
 
-// String returns "prompt", "granted", "denied", "unknown", "not-gated" or "unavailable".
+// String returns "prompt", "granted", "limited", "denied", "unknown", "not-gated" or "unavailable".
 func (s PermissionStatus) String() string {
 	switch s {
 	case PermissionNotAsked:
 		return "prompt"
 	case PermissionGranted:
 		return "granted"
+	case PermissionLimited:
+		return "limited"
 	case PermissionDenied:
 		return "denied"
 	case PermissionNotGated:
@@ -84,8 +105,10 @@ func (s PermissionStatus) String() string {
 	return "unknown"
 }
 
-// Allowed reports whether the app may use what the permission guards: PermissionGranted or PermissionNotGated.
-func (s PermissionStatus) Allowed() bool { return s == PermissionGranted || s == PermissionNotGated }
+// Allowed reports whether the app may use what the permission guards: PermissionGranted, PermissionLimited or PermissionNotGated.
+func (s PermissionStatus) Allowed() bool {
+	return s == PermissionGranted || s == PermissionLimited || s == PermissionNotGated
+}
 
 // PermissionStatus answers done with whether the app has p, without asking the user.
 func (cx *Scope) PermissionStatus(p Permission, done func(PermissionStatus)) {
@@ -127,6 +150,17 @@ func (cx *Scope) permission(p Permission, command driver.PermissionCommand, answ
 		}
 		return
 	}
+	// Notifications' permission is the notification service's to tell and ask, held to AccessNotifications; only its settings open as the others' do.
+	if p == PermissionNotifications && command != driver.PermissionOpenSettings {
+		if t == nil || cx.denied(serviceNotifications, "") {
+			refused()
+			return
+		}
+		cx.notificationPermission(command == driver.PermissionAsk, func(np NotificationPermission) {
+			answered(driver.Event{Index: int(notificationStatus(np))})
+		})
+		return
+	}
 	if t == nil || !p.known() || cx.denied(servicePermissions, string(p)) {
 		refused()
 		return
@@ -134,7 +168,12 @@ func (cx *Scope) permission(p Permission, command driver.PermissionCommand, answ
 	t.request(cx, driver.MountItem{Kind: driver.ItemPermission, Permission: &driver.PermissionRequest{Command: command, Name: string(p)}}, answered)
 }
 
-func (p Permission) known() bool { return slices.Contains(Permissions(), p) }
+func (p Permission) known() bool {
+	if _, ok := driver.AutomationTarget(string(p)); ok {
+		return true
+	}
+	return slices.Contains(Permissions(), p)
+}
 
 // PermissionGuideOptions are desktop.GuidePermission's.
 type PermissionGuideOptions struct {

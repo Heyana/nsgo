@@ -296,6 +296,33 @@ func iconImage(icon uintptr) *image.NRGBA {
 	return img
 }
 
+// notificationSetting reads the toast notifier's setting on the main thread's STA.
+func (w *window) notificationSetting() int {
+	comApartment()
+	if n := w.toastNotifier(); n != nil {
+		// NotificationSetting: Enabled, then the ways it is turned off.
+		var setting int32
+		if !failed(n.call(toastNotifierSetting, uintptr(unsafe.Pointer(&setting)))) {
+			if setting == 0 {
+				return driver.NotificationsGranted
+			}
+			return driver.NotificationsDenied
+		}
+	}
+	return driver.NotificationsUnavailable
+}
+
+// notificationPermissionStatus is notificationSetting mapped to a driver.Permission* status.
+func (w *window) notificationPermissionStatus() int {
+	switch w.notificationSetting() {
+	case driver.NotificationsGranted:
+		return driver.PermissionGranted
+	case driver.NotificationsDenied:
+		return driver.PermissionDenied
+	}
+	return driver.PermissionUnavailable
+}
+
 // notify carries out a notification's item on the main thread, in the
 // single-threaded apartment WinRT and the shell's objects need there.
 func (w *window) notify(it *driver.MountItem) {
@@ -303,18 +330,7 @@ func (w *window) notify(it *driver.MountItem) {
 	e, id := w.engine, it.Count
 	switch it.Kind {
 	case driver.ItemNotificationPermission:
-		p := driver.NotificationsUnavailable
-		if n := w.toastNotifier(); n != nil {
-			// NotificationSetting: Enabled, then the ways it is turned off.
-			var setting int32
-			if !failed(n.call(toastNotifierSetting, uintptr(unsafe.Pointer(&setting)))) {
-				p = driver.NotificationsDenied
-				if setting == 0 {
-					p = driver.NotificationsGranted
-				}
-			}
-		}
-		e.Dispatch(driver.Event{Kind: driver.EventNotification, Count: id, Index: p})
+		e.Dispatch(driver.Event{Kind: driver.EventNotification, Count: id, Index: w.notificationSetting()})
 	case driver.ItemShowNotification:
 		e.Dispatch(driver.Event{Kind: driver.EventNotification, Count: id, Finished: w.showToast(*it.Notification)})
 	case driver.ItemCloseNotification:

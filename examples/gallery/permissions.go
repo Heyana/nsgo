@@ -24,14 +24,20 @@ func permissionTitle(tr locales.Messages, p core.Permission) string {
 		return tr.PermissionAppManagement()
 	case core.PermissionDeveloperTools:
 		return tr.PermissionDeveloperTools()
+	case core.PermissionAutomation:
+		return tr.PermissionAutomation()
 	case core.PermissionMicrophone:
 		return tr.PermissionMicrophone()
 	case core.PermissionCamera:
 		return tr.PermissionCamera()
+	case core.PermissionContacts:
+		return tr.PermissionContacts()
 	case core.PermissionCalendars:
 		return tr.PermissionCalendars()
 	case core.PermissionReminders:
 		return tr.PermissionReminders()
+	case core.PermissionPhotos:
+		return tr.PermissionPhotos()
 	case core.PermissionBluetooth:
 		return tr.PermissionBluetooth()
 	case core.PermissionLocation:
@@ -40,6 +46,8 @@ func permissionTitle(tr locales.Messages, p core.Permission) string {
 		return tr.PermissionBackgroundLocation()
 	case core.PermissionMotion:
 		return tr.PermissionMotion()
+	case core.PermissionNotifications:
+		return tr.PermissionNotifications()
 	}
 	return tr.PermissionMediaLibrary()
 }

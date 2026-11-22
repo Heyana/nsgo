@@ -7,7 +7,7 @@ order: 49
 
 ## 检查和请求
 
-系统替用户保管着应用的一些能力，由用户授予：手机和 Mac 上的麦克风、相机、日历、提醒事项、蓝牙、媒体资料库和定位，手机上的运动与后台定位，以及 macOS 上的辅助功能、录屏、输入监控、完全磁盘访问权限、App 管理和开发者工具。`core.Permissions()` 以 `core.Permission` 键列出它们。`cx.PermissionStatus` 不打扰用户地回答应用是否已有某项权限，`cx.RequestPermission` 在系统有弹窗且尚未询问过时用系统弹窗请求。请在用户做需要该权限的操作时再请求。面容 ID 和触控 ID 不在其中：`cx.BiometricAvailability` 回答它们是否可用，`cx.AuthenticateBiometric` 用它们自己的弹窗请求。
+系统替用户保管着应用的一些能力，由用户授予：手机和 Mac 上的麦克风、相机、通讯录、日历、提醒事项、照片、蓝牙、媒体资料库、定位和通知，手机上的运动与后台定位，以及 macOS 上的辅助功能、录屏、输入监控、完全磁盘访问权限、App 管理、开发者工具和控制其他应用的自动化权限（[定位与运动](services.md#定位与运动)、[通知](notifications.md)）。`core.Permissions()` 以 `core.Permission` 键列出它们。`cx.PermissionStatus` 不打扰用户地回答应用是否已有某项权限，`cx.RequestPermission` 在系统有弹窗且尚未询问过时用系统弹窗请求。请在用户做需要该权限的操作时再请求。面容 ID 和触控 ID 不在其中：`cx.BiometricAvailability` 回答它们是否可用，`cx.AuthenticateBiometric` 用它们自己的弹窗请求。
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -17,16 +17,19 @@ cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
 })
 ```
 
+在 macOS 上，自动化权限按目标应用分别授予：传入 `core.PermissionAutomationOf("com.apple.finder")` 可按 bundle ID 检查或请求控制正在运行的目标应用；传入 `core.PermissionAutomation` 则用于打开系统设置的自动化面板。目标应用未运行时回答 `PermissionUnknown`。
+
 | 状态 | `String()` | 含义 |
 | --- | --- | --- |
 | `PermissionNotAsked` | `prompt` | 尚未询问：请求会显示系统弹窗 |
 | `PermissionGranted` | `granted` | 应用已有该权限 |
+| `PermissionLimited` | `limited` | 部分访问权限，例如选定的照片或联系人 |
 | `PermissionDenied` | `denied` | 已被拒绝，只能在系统设置中更改 |
 | `PermissionUnknown` | `unknown` | 系统保管该权限，但系统或平台不告知 |
 | `PermissionNotGated` | `not-gated` | 没有什么限制应用使用它，例如在 Linux 上 |
 | `PermissionUnavailable` | `unavailable` | 平台没有这项权限 |
 
-`Allowed` 对已授予和不受限都为真。macOS 在用户打开之前对辅助功能、录屏和输入监控都回答已拒绝，因为请求只会把应用列进对应面板；录屏的授权要等应用重新启动后才能读到。
+`Allowed` 对已授予、部分访问和不受限都为真。macOS 在用户打开之前对辅助功能、录屏和输入监控都回答已拒绝，因为请求只会把应用列进对应面板；录屏的授权要等应用重新启动后才能读到。
 
 ## 用途说明
 
@@ -37,10 +40,13 @@ apple:
   info:
     NSMicrophoneUsageDescription: 录制你的语音笔记。
     NSCameraUsageDescription: 扫描你对准的二维码。
+    NSContactsUsageDescription: 查找已在使用此应用的朋友。
     NSCalendarsFullAccessUsageDescription: 把你的预订加入日历。   # macOS 14 和 iOS 17 起；之前为 NSCalendarsUsageDescription
     NSRemindersFullAccessUsageDescription: 把任务变成提醒事项。   # 之前为 NSRemindersUsageDescription
+    NSPhotoLibraryUsageDescription: 从图库导入照片。
     NSBluetoothAlwaysUsageDescription: 查找你的耳机。
     NSAppleMusicUsageDescription: 播放你的资料库。                # iOS
+    NSAppleEventsUsageDescription: 在访达中显示文件。             # macOS 自动化
 android:
   permissions:
     - RECORD_AUDIO
@@ -57,7 +63,7 @@ windows:
 
 ## 打开设置
 
-`cx.OpenPermissionSettings` 打开授予某项权限的页面，并回答是否打开：macOS 上是“隐私与安全性”中该权限的面板，iOS 和 Android 上是“设置”中本应用的页面，Windows 上是麦克风或相机的页面。
+`cx.OpenPermissionSettings` 打开授予某项权限的页面，并回答是否打开：macOS 上是“隐私与安全性”中该权限的面板（包括自动化、通讯录、照片和定位服务）或“通知”，iOS 上是“设置”中本应用的页面（通知从 iOS 16 起直接打开通知设置页），Android 上是“设置”中本应用的页面，Windows 上是麦克风、相机或通知的页面。
 
 ## 引导用户
 
@@ -75,19 +81,19 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 
 | 平台 | 能读取和请求的权限 |
 | --- | --- |
-| macOS | 全部权限；App 管理、开发者工具和媒体与 Apple Music 为未知 |
-| iOS | 麦克风、相机、日历、提醒事项、蓝牙和媒体资料库 |
-| Windows | 麦克风和相机，但从不弹窗请求；其余不受限 |
-| Linux | 沙盒外不受限；在 Flatpak 和 Snap 中通过桌面 Portal 读取和请求相机，通过 Portal 与 PipeWire 读取和请求麦克风 |
-| Web | 麦克风和相机，在 Firefox 中为未知 |
+| macOS | 全部权限（自动化通过 `PermissionAutomationOf` 按运行中的目标应用检查与请求，打包应用还支持通知）；不含目标的自动化、App 管理、开发者工具和媒体与 Apple Music 为未知；运动为不可用 |
+| iOS | 麦克风、相机、通讯录、日历、提醒事项、照片（支持 `PermissionLimited`）、蓝牙、媒体资料库、定位、运动和通知 |
+| Windows | 麦克风、相机和通知，但从不弹窗请求；其余不受限 |
+| Linux | 沙盒外不受限；通知反映通知服务是否响应；在 Flatpak 和 Snap 中通过桌面 Portal 读取和请求相机，通过 Portal 与 PipeWire 读取和请求麦克风 |
+| Web | 麦克风和相机（在 Firefox 中为未知）、通知以及移动浏览器上的运动 |
 | Android | 在 `android.permissions` 中声明了的麦克风、相机、日历、蓝牙和媒体资料库 |
-| Apple Watch、小程序 | 目前为未知 |
+| Apple Watch、小程序 | 通知、定位和运动走各自服务；其余系统保管的权限目前为未知 |
 
-定位和运动权限在有对应传感器的平台上都能读取和请求，包括 Android 和 Apple Watch，其他平台为不可用。
+定位和运动权限在有对应传感器的平台上都能读取和请求，`PermissionNotifications` 与[通知](notifications.md)一致。在移动 Safari 上，请在点按处理函数中请求 `PermissionMotion`。
 
 ## 测试
 
-`nsgotest` 用它的模型回答：`app.Permissions` 保存每项权限的状态，初始为尚未询问；请求尚未询问的权限时，状态变为 `app.PermissionAnswers` 中给它的值，没有时为已授予。`app.PermissionSettings` 列出打开过的设置，`app.Guide` 是正在显示的引导，`app.GrantPermission` 和 `app.CloseGuide` 会结束它。
+`nsgotest` 用它的模型回答：`app.Permissions` 保存每项权限的状态，初始为尚未询问；请求尚未询问的权限时，状态变为 `app.PermissionAnswers` 中给它的值，没有时为已授予。`PermissionNotifications` 与 `app.NotificationPermission` 和 `app.NotificationAnswer` 保持同步。`app.PermissionSettings` 列出打开过的设置，`app.Guide` 是正在显示的引导，`app.GrantPermission` 和 `app.CloseGuide` 会结束它。
 
 ```go
 app.PermissionAnswers[core.PermissionMicrophone] = core.PermissionDenied

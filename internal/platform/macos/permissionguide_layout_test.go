@@ -10,22 +10,49 @@ import (
 )
 
 func TestPrivacyPanes(t *testing.T) {
-	for _, name := range []string{driver.PermissionAccessibility, driver.PermissionScreenRecording, driver.PermissionInputMonitoring,
-		driver.PermissionFullDiskAccess, driver.PermissionAppManagement, driver.PermissionDeveloperTools, driver.PermissionMicrophone,
-		driver.PermissionCamera, driver.PermissionCalendars, driver.PermissionReminders, driver.PermissionBluetooth, driver.PermissionMediaLibrary} {
+	dragPanes := []string{
+		driver.PermissionAccessibility, driver.PermissionScreenRecording, driver.PermissionInputMonitoring,
+		driver.PermissionFullDiskAccess, driver.PermissionAppManagement, driver.PermissionDeveloperTools,
+		driver.PermissionBluetooth, driver.PermissionMediaLibrary,
+	}
+	noDragPanes := []string{
+		driver.PermissionAutomation, driver.PermissionAutomation + ":com.apple.finder",
+		driver.PermissionMicrophone, driver.PermissionCamera, driver.PermissionContacts,
+		driver.PermissionCalendars, driver.PermissionReminders, driver.PermissionPhotos,
+		driver.PermissionLocation, driver.PermissionBackgroundLocation, driver.PermissionNotifications,
+	}
+	for _, name := range append(slices.Clone(dragPanes), noDragPanes...) {
 		if privacySettingsURL(name) == "" {
 			t.Errorf("%s has no pane", name)
 		}
-		want := !slices.Contains([]string{driver.PermissionMicrophone, driver.PermissionCamera, driver.PermissionCalendars, driver.PermissionReminders}, name)
+		want := slices.Contains(dragPanes, name)
 		if takesDrag(name) != want {
-			t.Errorf("%s takes a drag: %v", name, !want)
+			t.Errorf("%s takes a drag: %v, want %v", name, !want, want)
 		}
 	}
 	if got := privacySettingsURL(driver.PermissionAccessibility); got != "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" {
 		t.Errorf("accessibility's pane: %s", got)
 	}
+	if got := privacySettingsURL(driver.PermissionAutomation + ":com.apple.finder"); got != "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation" {
+		t.Errorf("automation target pane: %s", got)
+	}
+	if got := privacySettingsURL(driver.PermissionContacts); got != "x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts" {
+		t.Errorf("contacts pane: %s", got)
+	}
+	if got := privacySettingsURL(driver.PermissionPhotos); got != "x-apple.systempreferences:com.apple.preference.security?Privacy_Photos" {
+		t.Errorf("photos pane: %s", got)
+	}
+	if got := privacySettingsURL(driver.PermissionLocation); got != "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices" {
+		t.Errorf("location pane: %s", got)
+	}
+	if got := privacySettingsURL(driver.PermissionNotifications); got != "x-apple.systempreferences:com.apple.preference.notifications" {
+		t.Errorf("notifications pane: %s", got)
+	}
 	if privacySettingsURL("nope") != "" {
 		t.Error("an unknown key has a pane")
+	}
+	if !guidePermissionAllowed(driver.PermissionGranted) || !guidePermissionAllowed(driver.PermissionLimited) || guidePermissionAllowed(driver.PermissionDenied) {
+		t.Error("guidePermissionAllowed did not accept granted and limited only")
 	}
 	if got := appDisplayName("/Applications/My App.app/"); got != "My App" {
 		t.Errorf("app name %q", got)

@@ -13,22 +13,33 @@ import (
 
 // privacyAnchors are the anchors of the panes of System Settings' Privacy & Security, which x-apple.systempreferences:com.apple.preference.security?anchor opens.
 var privacyAnchors = map[string]string{
-	driver.PermissionAccessibility:   "Privacy_Accessibility",
-	driver.PermissionScreenRecording: "Privacy_ScreenCapture",
-	driver.PermissionInputMonitoring: "Privacy_ListenEvent",
-	driver.PermissionFullDiskAccess:  "Privacy_AllFiles",
-	driver.PermissionAppManagement:   "Privacy_AppBundles",
-	driver.PermissionDeveloperTools:  "Privacy_DevTools",
-	driver.PermissionMicrophone:      "Privacy_Microphone",
-	driver.PermissionCamera:          "Privacy_Camera",
-	driver.PermissionCalendars:       "Privacy_Calendars",
-	driver.PermissionReminders:       "Privacy_Reminders",
-	driver.PermissionBluetooth:       "Privacy_Bluetooth",
-	driver.PermissionMediaLibrary:    "Privacy_Media",
+	driver.PermissionAccessibility:      "Privacy_Accessibility",
+	driver.PermissionScreenRecording:    "Privacy_ScreenCapture",
+	driver.PermissionInputMonitoring:    "Privacy_ListenEvent",
+	driver.PermissionFullDiskAccess:     "Privacy_AllFiles",
+	driver.PermissionAppManagement:      "Privacy_AppBundles",
+	driver.PermissionDeveloperTools:     "Privacy_DevTools",
+	driver.PermissionAutomation:         "Privacy_Automation",
+	driver.PermissionMicrophone:         "Privacy_Microphone",
+	driver.PermissionCamera:             "Privacy_Camera",
+	driver.PermissionContacts:           "Privacy_Contacts",
+	driver.PermissionCalendars:          "Privacy_Calendars",
+	driver.PermissionReminders:          "Privacy_Reminders",
+	driver.PermissionPhotos:             "Privacy_Photos",
+	driver.PermissionBluetooth:          "Privacy_Bluetooth",
+	driver.PermissionMediaLibrary:       "Privacy_Media",
+	driver.PermissionLocation:           "Privacy_LocationServices",
+	driver.PermissionBackgroundLocation: "Privacy_LocationServices",
 }
 
 // privacySettingsURL is the URL of the pane that gives the permission name, "" for none.
 func privacySettingsURL(name string) string {
+	if name == driver.PermissionNotifications {
+		return "x-apple.systempreferences:com.apple.preference.notifications"
+	}
+	if _, ok := driver.AutomationTarget(name); ok {
+		name = driver.PermissionAutomation
+	}
 	anchor, ok := privacyAnchors[name]
 	if !ok {
 		return ""
@@ -39,10 +50,12 @@ func privacySettingsURL(name string) string {
 // takesDrag says the list of the permission's pane takes an app dragged into it; the others list only the apps that asked with the system's prompt.
 func takesDrag(name string) bool {
 	switch name {
-	case driver.PermissionMicrophone, driver.PermissionCamera, driver.PermissionCalendars, driver.PermissionReminders:
-		return false
+	case driver.PermissionAccessibility, driver.PermissionScreenRecording, driver.PermissionInputMonitoring,
+		driver.PermissionFullDiskAccess, driver.PermissionAppManagement, driver.PermissionDeveloperTools,
+		driver.PermissionBluetooth, driver.PermissionMediaLibrary:
+		return true
 	}
-	return true
+	return false
 }
 
 // appDisplayName is what the panel calls the app at path: its file's name without its extension.

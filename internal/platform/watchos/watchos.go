@@ -971,9 +971,10 @@ func (s *surface) openURL(_ string, request uint32) {
 	s.engine.Dispatch(driver.Event{Kind: driver.EventOpenURL, Count: request})
 }
 
-// watchPermission is whether watchOS keeps the permission name: a watch has no camera and no media library.
+// watchPermission is whether watchOS keeps the permission name: a watch has no camera, photo library, media library, or wired notifications.
 func watchPermission(name string) int {
-	if name == driver.PermissionCamera || name == driver.PermissionMediaLibrary {
+	switch name {
+	case driver.PermissionCamera, driver.PermissionPhotos, driver.PermissionMediaLibrary, driver.PermissionNotifications:
 		return driver.PermissionUnavailable
 	}
 	return driver.PhonePermission(name)

@@ -7,7 +7,7 @@ order: 49
 
 ## Checking and asking
 
-The system keeps some of what an app may do for the user to give: the microphone, the camera, calendars, reminders, Bluetooth, the media library and location on phones and Macs, motion and location in the background on phones, and on macOS also Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management and Developer Tools ([location and motion](services.md#location-and-motion)). `core.Permissions()` lists them as `core.Permission` keys. `cx.PermissionStatus` answers whether the app has one without asking, and `cx.RequestPermission` asks with the system's prompt where it has one and has not asked yet. Ask as the user does something that needs the permission. Face ID and Touch ID are not among them: `cx.BiometricAvailability` tells them and `cx.AuthenticateBiometric` asks with their own prompt ([biometrics](services.md#biometrics)).
+The system keeps some of what an app may do for the user to give: the microphone, the camera, contacts, calendars, reminders, photos, Bluetooth, the media library, location and notifications on phones and Macs, motion and location in the background on phones, and on macOS also Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools and Automation of another app ([location and motion](services.md#location-and-motion), [notifications](notifications.md)). `core.Permissions()` lists them as `core.Permission` keys. `cx.PermissionStatus` answers whether the app has one without asking, and `cx.RequestPermission` asks with the system's prompt where it has one and has not asked yet. Ask as the user does something that needs the permission. Face ID and Touch ID are not among them: `cx.BiometricAvailability` tells them and `cx.AuthenticateBiometric` asks with their own prompt ([biometrics](services.md#biometrics)).
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -17,16 +17,19 @@ cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
 })
 ```
 
+On macOS, Automation is granted per target app: pass `core.PermissionAutomationOf("com.apple.finder")` to check or ask for a running target app by its bundle ID, or `core.PermissionAutomation` to open the Automation pane in System Settings. A target app that is not running answers `PermissionUnknown`.
+
 | Status | `String()` | Meaning |
 | --- | --- | --- |
 | `PermissionNotAsked` | `prompt` | Not asked yet: a request shows the system's prompt |
 | `PermissionGranted` | `granted` | The app has it |
+| `PermissionLimited` | `limited` | Partial access, such as selected photos or contacts |
 | `PermissionDenied` | `denied` | Refused; only the system's settings change it |
 | `PermissionUnknown` | `unknown` | Kept, but the system or the platform does not tell it |
 | `PermissionNotGated` | `not-gated` | Nothing keeps it from the app, as on Linux |
 | `PermissionUnavailable` | `unavailable` | The platform has no such thing |
 
-`Allowed` is true for granted and not gated. macOS answers Accessibility, Screen Recording and Input Monitoring denied until the user turns them on, as asking only lists the app in their pane, and tells a Screen Recording grant once the app starts again.
+`Allowed` is true for granted, limited and not gated. macOS answers Accessibility, Screen Recording and Input Monitoring denied until the user turns them on, as asking only lists the app in their pane, and tells a Screen Recording grant once the app starts again.
 
 ## Usage descriptions
 
@@ -37,10 +40,13 @@ apple:
   info:
     NSMicrophoneUsageDescription: Records your voice notes.
     NSCameraUsageDescription: Scans the codes you point it at.
+    NSContactsUsageDescription: Finds friends who already use the app.
     NSCalendarsFullAccessUsageDescription: Adds your bookings to your calendar.  # macOS 14 and iOS 17; NSCalendarsUsageDescription before
     NSRemindersFullAccessUsageDescription: Turns tasks into reminders.            # NSRemindersUsageDescription before
+    NSPhotoLibraryUsageDescription: Imports photos from your library.
     NSBluetoothAlwaysUsageDescription: Finds your headphones.
     NSAppleMusicUsageDescription: Plays your library.                            # iOS
+    NSAppleEventsUsageDescription: Reveals files in Finder.                      # macOS Automation
 android:
   permissions:
     - RECORD_AUDIO
@@ -57,7 +63,7 @@ On Android, each permission must be listed in `nsgo.yaml`'s `android.permissions
 
 ## Opening the settings
 
-`cx.OpenPermissionSettings` opens the page that gives a permission and answers whether one opened: Privacy & Security at the permission's pane on macOS, the app's page in Settings on iOS and Android, and the microphone's or the camera's page on Windows.
+`cx.OpenPermissionSettings` opens the page that gives a permission and answers whether one opened: Privacy & Security at the permission's pane (including Automation, Contacts, Photos and Location Services) or Notifications on macOS, the app's page in Settings (or its Notifications page from iOS 16) on iOS, the app's page in Settings on Android, and the microphone's, camera's or notifications' page on Windows.
 
 ## Guiding the user
 
@@ -75,19 +81,19 @@ The app held out is its bundle, else its executable; `GuideOptions.App` names an
 
 | Platform | What it tells and asks |
 | --- | --- |
-| macOS | Every permission; App Management, Developer Tools and Media & Apple Music are unknown |
-| iOS | The microphone, the camera, calendars, reminders, Bluetooth and the media library |
-| Windows | The microphone and the camera, which it never asks for; the rest is not gated |
-| Linux | Not gated outside sandboxes; in Flatpak and Snap, the camera through the desktop portal and the microphone through the portal and PipeWire |
-| Web | The microphone and the camera, unknown in Firefox |
+| macOS | Every permission (Automation per running target app via `PermissionAutomationOf`, plus notifications for bundled apps); bare Automation, App Management, Developer Tools and Media & Apple Music are unknown; motion is unavailable |
+| iOS | The microphone, the camera, contacts, calendars, reminders, photos (with `PermissionLimited`), Bluetooth, the media library, location, motion and notifications |
+| Windows | The microphone, the camera and notifications, which it never prompts for; the rest is not gated |
+| Linux | Not gated outside sandboxes; notifications reflect whether a notification server answers; in Flatpak and Snap, the camera through the desktop portal and the microphone through the portal and PipeWire |
+| Web | The microphone and the camera (unknown in Firefox), notifications, and motion on mobile browsers |
 | Android | The microphone, the camera, calendars, Bluetooth and the media library, where `android.permissions` declares them |
-| Apple Watch, mini programs | Unknown for now |
+| Apple Watch, mini programs | Notifications, location and motion through their services; the rest kept by the system is unknown for now |
 
-Location and motion permissions follow each [platform's sensors](services.md#location-and-motion). On mobile Safari, ask for `PermissionMotion` from a press handler.
+Location and motion permissions follow each [platform's sensors](services.md#location-and-motion), and `PermissionNotifications` follows [notifications](notifications.md). On mobile Safari, ask for `PermissionMotion` from a press handler.
 
 ## Testing
 
-`nsgotest` answers from its model: `app.Permissions` holds each status, not asked at first, and a request of one not asked makes it `app.PermissionAnswers`' for it, else granted. `app.PermissionSettings` lists the settings opened and `app.Guide` the guide showing, which `app.GrantPermission` and `app.CloseGuide` end.
+`nsgotest` answers from its model: `app.Permissions` holds each status, not asked at first, and a request of one not asked makes it `app.PermissionAnswers`' for it, else granted. `PermissionNotifications` stays in sync with `app.NotificationPermission` and `app.NotificationAnswer`. `app.PermissionSettings` lists the settings opened and `app.Guide` the guide showing, which `app.GrantPermission` and `app.CloseGuide` end.
 
 ```go
 app.PermissionAnswers[core.PermissionMicrophone] = core.PermissionDenied

@@ -733,12 +733,21 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemCheckForUpdates:
 			a.checkForUpdates(&it)
 		case driver.ItemNotificationPermission:
-			if it.On && a.NotificationPermission == core.NotificationsNotAsked {
-				a.NotificationPermission = cmp.Or(a.NotificationAnswer, core.NotificationsGranted)
+			perm := a.notificationPermission()
+			if it.On && perm == core.NotificationsNotAsked {
+				ans := a.NotificationAnswer
+				if ans == core.NotificationsNotAsked {
+					if pa, ok := a.PermissionAnswers[core.PermissionNotifications]; ok && pa != core.PermissionNotAsked {
+						ans = permissionToNotification(pa)
+					}
+				}
+				perm = cmp.Or(ans, core.NotificationsGranted)
 			}
-			a.post(driver.Event{Kind: driver.EventNotification, Count: it.Count, Index: int(a.NotificationPermission)})
+			a.NotificationPermission = perm
+			a.Permissions[core.PermissionNotifications] = notificationToPermission(perm)
+			a.post(driver.Event{Kind: driver.EventNotification, Count: it.Count, Index: int(perm)})
 		case driver.ItemShowNotification:
-			shown := a.NotificationPermission == core.NotificationsGranted
+			shown := a.notificationPermission() == core.NotificationsGranted
 			if shown {
 				d := it.Notification
 				n := core.Notification{ID: d.ID, Title: d.Title, Body: d.Body, Silent: d.Silent, At: d.At, Repeat: core.NotificationRepeat(d.Repeat)}
@@ -1222,10 +1231,47 @@ func (a *App) setWebCookies(id uint32, cookies []core.WebCookie) {
 	a.post(ev)
 }
 
+func permissionToNotification(s core.PermissionStatus) core.NotificationPermission {
+	switch s {
+	case core.PermissionNotAsked:
+		return core.NotificationsNotAsked
+	case core.PermissionGranted, core.PermissionLimited, core.PermissionNotGated:
+		return core.NotificationsGranted
+	case core.PermissionDenied:
+		return core.NotificationsDenied
+	}
+	return core.NotificationsUnavailable
+}
+
+func notificationToPermission(p core.NotificationPermission) core.PermissionStatus {
+	switch p {
+	case core.NotificationsNotAsked:
+		return core.PermissionNotAsked
+	case core.NotificationsGranted:
+		return core.PermissionGranted
+	case core.NotificationsDenied:
+		return core.PermissionDenied
+	}
+	return core.PermissionUnavailable
+}
+
+func (a *App) notificationPermission() core.NotificationPermission {
+	if a.NotificationPermission != core.NotificationsNotAsked {
+		return a.NotificationPermission
+	}
+	if s, ok := a.Permissions[core.PermissionNotifications]; ok && s != core.PermissionNotAsked {
+		return permissionToNotification(s)
+	}
+	return core.NotificationsNotAsked
+}
+
 // permission answers an ItemPermission from Permissions, as a platform whose system keeps every permission does.
 func (a *App) permission(it *driver.MountItem) {
 	r := it.Permission
 	p := core.Permission(r.Name)
+	if p == core.PermissionNotifications && a.Permissions[p] == core.PermissionNotAsked && a.NotificationPermission != core.NotificationsNotAsked {
+		a.Permissions[p] = notificationToPermission(a.NotificationPermission)
+	}
 	switch r.Command {
 	case driver.PermissionCheck:
 	case driver.PermissionAsk:
@@ -1267,6 +1313,9 @@ func (a *App) endGuide() {
 func (a *App) GrantPermission(p core.Permission) {
 	a.t.Helper()
 	a.Permissions[p] = core.PermissionGranted
+	if p == core.PermissionNotifications {
+		a.NotificationPermission = core.NotificationsGranted
+	}
 	if a.Guide == p {
 		a.endGuide()
 	}

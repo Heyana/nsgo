@@ -189,10 +189,51 @@ func guideDefaultApp() string {
 	return path
 }
 
+func notificationPermissionStatus(np int) int {
+	switch np {
+	case driver.NotificationsNotAsked:
+		return driver.PermissionNotAsked
+	case driver.NotificationsGranted:
+		return driver.PermissionGranted
+	case driver.NotificationsDenied:
+		return driver.PermissionDenied
+	}
+	return driver.PermissionUnavailable
+}
+
+func guidePermissionAllowed(st int) bool {
+	return st == driver.PermissionGranted || st == driver.PermissionLimited
+}
+
+// pollGuideStatus reads name's status on the guide tracker's background goroutine.
+func pollGuideStatus(name string) int {
+	if name != driver.PermissionNotifications {
+		return privacy.Status(name)
+	}
+	ch := make(chan int, 1)
+	apple.NotificationPermission(false, func(np int) { ch <- notificationPermissionStatus(np) })
+	select {
+	case st := <-ch:
+		return st
+	case <-time.After(time.Second):
+		return driver.PermissionUnknown
+	}
+}
+
 // guidePermission opens System Settings at the pane of r's permission and follows it until the app has the permission, the user closes the panel or System Settings, or the guide is stopped; the engine hears the status then. Nothing to give answers at once.
 func (s *surface) guidePermission(id uint32, r driver.PermissionRequest) {
-	st := privacy.Status(r.Name)
-	if st == driver.PermissionGranted || st == driver.PermissionUnavailable || !loadGuide() || !openSystemURL(privacySettingsURL(r.Name)) {
+	if r.Name == driver.PermissionNotifications {
+		apple.NotificationPermission(false, func(np int) {
+			apple.OnMain(func() { s.startGuide(id, r, notificationPermissionStatus(np)) })
+		})
+		return
+	}
+	s.startGuide(id, r, privacy.Status(r.Name))
+}
+
+func (s *surface) startGuide(id uint32, r driver.PermissionRequest, st int) {
+	u := privacySettingsURL(r.Name)
+	if guidePermissionAllowed(st) || st == driver.PermissionUnavailable || u == "" || !loadGuide() || !openSystemURL(u) {
 		s.engine.Dispatch(driver.Event{Kind: driver.EventPermission, Count: id, Index: st})
 		return
 	}
@@ -277,7 +318,7 @@ func (g *permissionGuide) track() {
 		front   bool
 	)
 	for tick := 0; ; tick++ {
-		if tick%guideStatusTicks == 0 && privacy.Status(g.name) == driver.PermissionGranted {
+		if tick%guideStatusTicks == 0 && guidePermissionAllowed(pollGuideStatus(g.name)) {
 			break
 		}
 		pid, frontmost := settingsProcess()
@@ -308,7 +349,7 @@ func (g *permissionGuide) track() {
 		}
 		break
 	}
-	g.finish(privacy.Status(g.name))
+	g.finish(pollGuideStatus(g.name))
 }
 
 // finish ends the guide with status, answering its request unless its surface is gone, and has the main thread close its panel.

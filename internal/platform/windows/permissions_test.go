@@ -31,4 +31,10 @@ func TestConsentStatus(t *testing.T) {
 	if status, _ := permissionStatus(driver.PermissionAccessibility); status != driver.PermissionNotGated {
 		t.Errorf("Accessibility on Windows: %d", status)
 	}
+	if got := permissionPage(driver.PermissionNotifications); got != "ms-settings:notifications" {
+		t.Errorf("notifications settings page: %q", got)
+	}
+	if got := permissionPage(driver.PermissionAutomation); got != "" {
+		t.Errorf("automation settings page: %q, want empty", got)
+	}
 }

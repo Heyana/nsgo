@@ -79,6 +79,18 @@ func (cx *Scope) RequestNotificationPermission(done func(NotificationPermission)
 	cx.notificationPermission(true, done)
 }
 
+func notificationStatus(p NotificationPermission) PermissionStatus {
+	switch p {
+	case NotificationsNotAsked:
+		return PermissionNotAsked
+	case NotificationsGranted:
+		return PermissionGranted
+	case NotificationsDenied:
+		return PermissionDenied
+	}
+	return PermissionUnavailable
+}
+
 func (cx *Scope) notificationPermission(ask bool, done func(NotificationPermission)) {
 	t := cx.tree()
 	if t == nil || cx.denied(serviceNotifications, "") {

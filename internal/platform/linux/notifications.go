@@ -58,6 +58,22 @@ var notices struct {
 	subscribed bool
 }
 
+// notificationPermissionGuide answers a PermissionGuide (or check) for notifications on Linux from the notification daemon's availability.
+func (w *window) notificationPermissionGuide(id uint32) {
+	bindNotifications()
+	e := w.engine
+	notifyQueue() <- func() {
+		st := driver.PermissionUnavailable
+		if bus := sessionBus(); bus != 0 {
+			if reply := dbusCall(bus, notifyName, notifyPath, notifyIface, "GetServerInformation"); reply != 0 {
+				gVariantUnref(reply)
+				st = driver.PermissionGranted
+			}
+		}
+		e.Dispatch(driver.Event{Kind: driver.EventPermission, Count: id, Index: st})
+	}
+}
+
 // notify carries out a notification's item: the calls go to the server
 // off the main thread, one item at a time and in order.
 func (w *window) notify(it *driver.MountItem) {

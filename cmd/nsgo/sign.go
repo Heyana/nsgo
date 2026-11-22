@@ -234,7 +234,7 @@ func (p *project) macSignArgs(path string) []string {
 	return append(args, path)
 }
 
-// hardenedEntitlements are what the hardened runtime denies unless the app claims it, as the Info.plist entries apple.info gives ask for: the microphone, the camera, the calendars, whose entitlement reminders share, and location.
+// hardenedEntitlements are what the hardened runtime denies unless the app claims it, as the Info.plist entries apple.info gives ask for: the microphone, the camera, contacts, the calendars (whose entitlement reminders share), the photo library, location and Apple Events.
 func (p *project) hardenedEntitlements() map[string]any {
 	ents := map[string]any{}
 	described := p.appleInfoDescribes
@@ -244,11 +244,20 @@ func (p *project) hardenedEntitlements() map[string]any {
 	if described("NSCameraUsageDescription") {
 		ents["com.apple.security.device.camera"] = true
 	}
+	if described("NSContactsUsageDescription") {
+		ents["com.apple.security.personal-information.addressbook"] = true
+	}
 	if described("NSCalendarsFullAccessUsageDescription", "NSCalendarsUsageDescription", "NSRemindersFullAccessUsageDescription", "NSRemindersUsageDescription") {
 		ents["com.apple.security.personal-information.calendars"] = true
 	}
+	if described("NSPhotoLibraryUsageDescription") {
+		ents["com.apple.security.personal-information.photos-library"] = true
+	}
 	if described("NSLocationUsageDescription", "NSLocationWhenInUseUsageDescription", "NSLocationAlwaysAndWhenInUseUsageDescription") {
 		ents["com.apple.security.personal-information.location"] = true
+	}
+	if described("NSAppleEventsUsageDescription") {
+		ents["com.apple.security.automation.apple-events"] = true
 	}
 	return ents
 }

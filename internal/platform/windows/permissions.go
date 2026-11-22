@@ -72,6 +72,19 @@ func permissionStatus(name string) (status int, byDevice bool) {
 	return status, strings.EqualFold(machine, "Deny")
 }
 
+const notificationsSettingsPage = "ms-settings:notifications"
+
+// permissionPage is the Settings URI that switches the permission name, "" for none.
+func permissionPage(name string) string {
+	if name == driver.PermissionNotifications {
+		return notificationsSettingsPage
+	}
+	if c, ok := windowsCapabilities[name]; ok {
+		return c.page
+	}
+	return ""
+}
+
 // permission carries out an ItemPermission numbered id.
 func (w *window) permission(id uint32, r driver.PermissionRequest) {
 	answer := func(status int) {
@@ -79,11 +92,15 @@ func (w *window) permission(id uint32, r driver.PermissionRequest) {
 	}
 	switch r.Command {
 	case driver.PermissionCheck, driver.PermissionAsk:
+		if r.Name == driver.PermissionNotifications {
+			answer(w.notificationPermissionStatus())
+			return
+		}
 		status, _ := permissionStatus(r.Name)
 		answer(status)
 	case driver.PermissionOpenSettings:
-		c, ok := windowsCapabilities[r.Name]
-		w.engine.Dispatch(driver.Event{Kind: driver.EventPermission, Count: id, Finished: ok && w.shellOpenURL(c.page)})
+		page := permissionPage(r.Name)
+		w.engine.Dispatch(driver.Event{Kind: driver.EventPermission, Count: id, Finished: page != "" && w.shellOpenURL(page)})
 	case driver.PermissionGuide:
 		w.guidePermission(id, r.Name)
 	case driver.PermissionStopGuide:
@@ -122,9 +139,15 @@ func (g *permissionGuide) end() { g.stopOnce.Do(func() { close(g.stop) }) }
 
 // guidePermission starts a guide numbered id of the permission name, answering at once what Settings cannot change: a permission it has no page of, one the app has, and one the device's switch keeps.
 func (w *window) guidePermission(id uint32, name string) {
-	status, byDevice := permissionStatus(name)
-	c, ok := windowsCapabilities[name]
-	if !ok || status == driver.PermissionGranted || byDevice || !w.shellOpenURL(c.page) {
+	var status int
+	var byDevice bool
+	if name == driver.PermissionNotifications {
+		status = w.notificationPermissionStatus()
+	} else {
+		status, byDevice = permissionStatus(name)
+	}
+	page := permissionPage(name)
+	if page == "" || status == driver.PermissionGranted || status == driver.PermissionUnavailable || byDevice || !w.shellOpenURL(page) {
 		w.engine.Dispatch(driver.Event{Kind: driver.EventPermission, Count: id, Index: status})
 		return
 	}
@@ -158,8 +181,10 @@ func (g *permissionGuide) track() {
 	defer ticker.Stop()
 	started, seen := time.Now(), false
 	for {
-		if status, _ := permissionStatus(g.name); status == driver.PermissionGranted {
-			break
+		if g.name != driver.PermissionNotifications {
+			if status, _ := permissionStatus(g.name); status == driver.PermissionGranted {
+				break
+			}
 		}
 		running := processRunning(settingsProcess)
 		if running {
@@ -182,6 +207,12 @@ func (g *permissionGuide) track() {
 	quiet := g.quiet
 	guideMu.Unlock()
 	if !quiet {
+		if g.name == driver.PermissionNotifications {
+			g.w.post(func() {
+				g.w.engine.Dispatch(driver.Event{Kind: driver.EventPermission, Count: g.id, Index: g.w.notificationPermissionStatus()})
+			})
+			return
+		}
 		status, _ := permissionStatus(g.name)
 		g.w.engine.Dispatch(driver.Event{Kind: driver.EventPermission, Count: g.id, Index: status})
 	}

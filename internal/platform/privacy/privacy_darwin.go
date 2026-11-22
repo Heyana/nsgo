@@ -18,17 +18,25 @@ import (
 // The frameworks that keep the permissions phones and Macs share, loaded as one is first asked about.
 const (
 	avFoundationPath  = "/System/Library/Frameworks/AVFoundation.framework/AVFoundation"
+	contactsPath      = "/System/Library/Frameworks/Contacts.framework/Contacts"
 	eventKitPath      = "/System/Library/Frameworks/EventKit.framework/EventKit"
+	photosPath        = "/System/Library/Frameworks/Photos.framework/Photos"
 	coreBluetoothPath = "/System/Library/Frameworks/CoreBluetooth.framework/CoreBluetooth"
+	coreLocationPath  = "/System/Library/Frameworks/CoreLocation.framework/CoreLocation"
 )
 
-// The statuses of TCC as AVFoundation, EventKit and CoreBluetooth number them; MediaPlayer swaps denied and restricted, which tell the same.
+// The statuses of TCC as AVFoundation, Contacts, EventKit, Photos and CoreBluetooth number them; MediaPlayer swaps denied and restricted, which tell the same.
 const (
 	tccNotDetermined = 0
 	tccAuthorized    = 3
+	tccLimited       = 4
+
+	cnEntityTypeContacts = 0
 
 	ekEntityTypeEvent    = 0
 	ekEntityTypeReminder = 1
+
+	phAccessLevelReadWrite = 2
 )
 
 // pollInterval is how often a request the system answers with no callback looks at the status again, and pollLimit how long it waits for the user.
@@ -39,8 +47,9 @@ const (
 
 var (
 	frameworks sync.Map // path → whether it loaded
-	// eventStore and centralManager are kept: a request dies with its store, and CoreBluetooth asks while its manager lives.
+	// contactStore, eventStore and centralManager are kept: a request dies with its store, and CoreBluetooth asks while its manager lives.
 	requestMu      sync.Mutex
+	contactStore   objc.ID
 	eventStore     objc.ID
 	centralManager objc.ID
 )
@@ -97,6 +106,14 @@ func fromTCC(v int) int {
 	return driver.PermissionUnknown
 }
 
+// fromTCCLimited is fromTCC where raw 4 is limited access (PHAuthorizationStatusLimited, CNAuthorizationStatusLimited).
+func fromTCCLimited(v int) int {
+	if v == tccLimited {
+		return driver.PermissionLimited
+	}
+	return fromTCC(v)
+}
+
 func granted(ok bool) int {
 	if ok {
 		return driver.PermissionGranted
@@ -113,12 +130,30 @@ func Status(name string) int {
 			return driver.PermissionUnavailable
 		}
 		return fromTCC(objc.Send[int](device, sel("authorizationStatusForMediaType:"), media))
+	case driver.PermissionContacts:
+		store := contactStoreClass()
+		if store == 0 {
+			return driver.PermissionUnavailable
+		}
+		return fromTCCLimited(objc.Send[int](store, sel("authorizationStatusForEntityType:"), cnEntityTypeContacts))
 	case driver.PermissionCalendars, driver.PermissionReminders:
 		store := eventStoreClass()
 		if store == 0 {
 			return driver.PermissionUnavailable
 		}
 		return fromTCC(objc.Send[int](store, sel("authorizationStatusForEntityType:"), entityType(name)))
+	case driver.PermissionPhotos:
+		lib := photoLibraryClass()
+		if lib == 0 {
+			return driver.PermissionUnavailable
+		}
+		if responds(lib, "authorizationStatusForAccessLevel:") {
+			return fromTCCLimited(objc.Send[int](lib, sel("authorizationStatusForAccessLevel:"), phAccessLevelReadWrite))
+		}
+		if responds(lib, "authorizationStatus") {
+			return fromTCCLimited(objc.Send[int](lib, sel("authorizationStatus")))
+		}
+		return driver.PermissionUnavailable
 	case driver.PermissionBluetooth:
 		if !loaded(coreBluetoothPath) {
 			return driver.PermissionUnavailable
@@ -128,6 +163,8 @@ func Status(name string) int {
 			return driver.PermissionUnknown
 		}
 		return fromTCC(objc.Send[int](cb, sel("authorization")))
+	case driver.PermissionLocation, driver.PermissionBackgroundLocation:
+		return locationStatus(name == driver.PermissionBackgroundLocation)
 	}
 	return platformStatus(name)
 }
@@ -143,7 +180,7 @@ func Request(name string, answer func(status int)) {
 		answer(st)
 		return
 	}
-	if key := usageKey(name); !DeclaresUsage(key) {
+	if key := usageKey(name); key != "" && !DeclaresUsage(key) {
 		log.Printf("nsgo: requesting %s needs %s in the app's Info.plist (nsgo.yaml's apple.info)", name, key)
 		answer(driver.PermissionUnavailable)
 		return
@@ -153,6 +190,16 @@ func Request(name string, answer func(status int)) {
 		device, media := captureDevice(name)
 		block := objcblock.New(func(objc.Block, bool) { answer(Status(name)) })
 		device.Send(sel("requestAccessForMediaType:completionHandler:"), media, block)
+		block.Release()
+	case driver.PermissionContacts:
+		requestMu.Lock()
+		if contactStore == 0 {
+			contactStore = contactStoreClass().Send(sel("alloc")).Send(sel("init"))
+		}
+		store := contactStore
+		requestMu.Unlock()
+		block := objcblock.New(func(objc.Block, bool, objc.ID) { answer(Status(name)) })
+		store.Send(sel("requestAccessForEntityType:completionHandler:"), cnEntityTypeContacts, block)
 		block.Release()
 	case driver.PermissionCalendars, driver.PermissionReminders:
 		requestMu.Lock()
@@ -169,6 +216,15 @@ func Request(name string, answer func(status int)) {
 			store.Send(sel("requestFullAccessToRemindersWithCompletion:"), block)
 		default:
 			store.Send(sel("requestAccessToEntityType:completion:"), entityType(name), block)
+		}
+		block.Release()
+	case driver.PermissionPhotos:
+		lib := photoLibraryClass()
+		block := objcblock.New(func(_ objc.Block, status int) { answer(fromTCCLimited(status)) })
+		if responds(lib, "requestAuthorizationForAccessLevel:handler:") {
+			lib.Send(sel("requestAuthorizationForAccessLevel:handler:"), phAccessLevelReadWrite, block)
+		} else {
+			lib.Send(sel("requestAuthorization:"), block)
 		}
 		block.Release()
 	case driver.PermissionBluetooth:
@@ -218,6 +274,8 @@ func usageKey(name string) string {
 		return "NSMicrophoneUsageDescription"
 	case driver.PermissionCamera:
 		return "NSCameraUsageDescription"
+	case driver.PermissionContacts:
+		return "NSContactsUsageDescription"
 	case driver.PermissionCalendars:
 		if fullAccess() {
 			return "NSCalendarsFullAccessUsageDescription"
@@ -228,10 +286,15 @@ func usageKey(name string) string {
 			return "NSRemindersFullAccessUsageDescription"
 		}
 		return "NSRemindersUsageDescription"
+	case driver.PermissionPhotos:
+		return "NSPhotoLibraryUsageDescription"
 	case driver.PermissionBluetooth:
 		return "NSBluetoothAlwaysUsageDescription"
 	case driver.PermissionMediaLibrary:
 		return "NSAppleMusicUsageDescription"
+	}
+	if _, ok := driver.AutomationTarget(name); ok {
+		return "NSAppleEventsUsageDescription"
 	}
 	return ""
 }
@@ -258,6 +321,73 @@ func captureDevice(name string) (device, media objc.ID) {
 		return 0, 0
 	}
 	return device, media
+}
+
+// contactStoreClass is CNContactStore, 0 where the system has no Contacts framework, as tvOS has not.
+func contactStoreClass() objc.ID {
+	if !loaded(contactsPath) {
+		return 0
+	}
+	store := class("CNContactStore")
+	if !responds(store, "authorizationStatusForEntityType:") {
+		return 0
+	}
+	return store
+}
+
+// photoLibraryClass is PHPhotoLibrary, 0 where the system has no Photos framework.
+func photoLibraryClass() objc.ID {
+	if !loaded(photosPath) {
+		return 0
+	}
+	return class("PHPhotoLibrary")
+}
+
+// locationStatus reads CLLocationManager's authorization status without asking, matching apple/sensors.go.
+func locationStatus(background bool) int {
+	if !loaded(coreLocationPath) {
+		return driver.PermissionUnavailable
+	}
+	cl := class("CLLocationManager")
+	if cl == 0 {
+		return driver.PermissionUnavailable
+	}
+	if responds(cl, "locationServicesEnabled") && !objc.Send[bool](cl, sel("locationServicesEnabled")) {
+		return driver.PermissionUnavailable
+	}
+	if background && !backgroundLocationDeclared() {
+		return driver.PermissionUnavailable
+	}
+	if !responds(cl, "authorizationStatus") {
+		return driver.PermissionUnknown
+	}
+	switch objc.Send[int](cl, sel("authorizationStatus")) {
+	case 0:
+		return driver.PermissionNotAsked
+	case 1, 2:
+		return driver.PermissionDenied
+	case 3, 4:
+		return driver.PermissionGranted
+	}
+	return driver.PermissionUnknown
+}
+
+func backgroundLocationDeclared() bool {
+	info := class("NSBundle").Send(sel("mainBundle")).Send(sel("infoDictionary"))
+	if info == 0 {
+		return false
+	}
+	declared := false
+	withString("UIBackgroundModes", func(key objc.ID) {
+		modes := info.Send(sel("objectForKey:"), key)
+		if modes == 0 || !objc.Send[bool](modes, sel("isKindOfClass:"), class("NSArray")) {
+			return
+		}
+		withString("location", func(loc objc.ID) {
+			declared = objc.Send[bool](modes, sel("containsObject:"), loc)
+		})
+	})
+	return declared
 }
 
 // eventStoreClass is EKEventStore, 0 where the system has no EventKit, as tvOS has not.

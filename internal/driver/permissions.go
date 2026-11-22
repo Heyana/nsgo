@@ -1,5 +1,7 @@
 package driver
 
+import "strings"
+
 // The permissions an ItemPermission names (PermissionRequest.Name), as core.Permission's values.
 const (
 	PermissionAccessibility   = "accessibility"
@@ -8,17 +10,36 @@ const (
 	PermissionFullDiskAccess  = "full-disk-access"
 	PermissionAppManagement   = "app-management"
 	PermissionDeveloperTools  = "developer-tools"
+	PermissionAutomation      = "automation"
 	PermissionMicrophone      = "microphone"
 	PermissionCamera          = "camera"
+	PermissionContacts        = "contacts"
 	PermissionCalendars       = "calendars"
 	PermissionReminders       = "reminders"
+	PermissionPhotos          = "photos"
 	PermissionBluetooth       = "bluetooth"
 	PermissionMediaLibrary    = "media-library"
-	// The sensors' permissions, which core asks the sensor service for (ItemSensor) rather than sending ItemPermission, except to open their settings.
+	// The sensors' permissions, which core asks the sensor service for (ItemSensor) rather than sending ItemPermission, except to open their settings or guide.
 	PermissionLocation           = "location"
 	PermissionBackgroundLocation = "background-location"
 	PermissionMotion             = "motion"
+	// PermissionNotifications is the notification service's permission, which core asks through ItemNotificationPermission rather than ItemPermission, except to open its settings or guide.
+	PermissionNotifications = "notifications"
 )
+
+// AutomationTarget splits a macOS Automation permission key targeting a specific app ("automation:<bundleID>").
+func AutomationTarget(name string) (bundleID string, ok bool) {
+	rest, has := strings.CutPrefix(name, PermissionAutomation+":")
+	if !has || rest == "" {
+		return "", false
+	}
+	for i := range len(rest) {
+		if rest[i] <= ' ' || rest[i] >= 0x7f {
+			return "", false
+		}
+	}
+	return rest, true
+}
 
 // The statuses EventPermission answers with (Index), as core.PermissionStatus.
 const (
@@ -28,6 +49,7 @@ const (
 	PermissionUnknown
 	PermissionNotGated
 	PermissionUnavailable
+	PermissionLimited
 )
 
 // PermissionCommand is what an ItemPermission asks.
@@ -66,11 +88,11 @@ func AnswerPermission(id uint32, r PermissionRequest, status func(name string) i
 	}
 }
 
-// PhonePermission is whether a phone's or a watch's system keeps the permission name, PermissionUnknown for one it keeps, for the backends that cannot tell it yet: the six only Macs keep are PermissionUnavailable.
+// PhonePermission is whether a phone's or a watch's system keeps the permission name, PermissionUnknown for one it keeps, for the backends that cannot tell it yet: the ones only Macs keep are PermissionUnavailable.
 func PhonePermission(name string) int {
 	switch name {
-	case PermissionMicrophone, PermissionCamera, PermissionCalendars, PermissionReminders, PermissionBluetooth, PermissionMediaLibrary,
-		PermissionLocation, PermissionBackgroundLocation, PermissionMotion:
+	case PermissionMicrophone, PermissionCamera, PermissionContacts, PermissionCalendars, PermissionReminders, PermissionPhotos,
+		PermissionBluetooth, PermissionMediaLibrary, PermissionLocation, PermissionBackgroundLocation, PermissionMotion, PermissionNotifications:
 		return PermissionUnknown
 	}
 	return PermissionUnavailable

@@ -2710,15 +2710,19 @@ const (
 	textPermissionFullDiskAccess
 	textPermissionAppManagement
 	textPermissionDeveloperTools
+	textPermissionAutomation
 	textPermissionMicrophone
 	textPermissionCamera
+	textPermissionContacts
 	textPermissionCalendars
 	textPermissionReminders
+	textPermissionPhotos
 	textPermissionBluetooth
 	textPermissionMediaLibrary
 	textPermissionLocation
 	textPermissionBackgroundLocation
 	textPermissionMotion
+	textPermissionNotifications
 	textDemoCamera
 	textDemoCameraDetail
 	textCameraLabel
@@ -5024,15 +5028,19 @@ var keyOfText = [numTexts]string{
 	"permissionFullDiskAccess",
 	"permissionAppManagement",
 	"permissionDeveloperTools",
+	"permissionAutomation",
 	"permissionMicrophone",
 	"permissionCamera",
+	"permissionContacts",
 	"permissionCalendars",
 	"permissionReminders",
+	"permissionPhotos",
 	"permissionBluetooth",
 	"permissionMediaLibrary",
 	"permissionLocation",
 	"permissionBackgroundLocation",
 	"permissionMotion",
+	"permissionNotifications",
 	"demoCamera",
 	"demoCameraDetail",
 	"cameraLabel",
@@ -7336,15 +7344,19 @@ var textsEn = i18n.NewTexts(""+
 	"Full Disk Access"+
 	"App Management"+
 	"Developer Tools"+
+	"Automation"+
 	"Microphone"+
 	"Camera"+
+	"Contacts"+
 	"Calendars"+
 	"Reminders"+
+	"Photos"+
 	"Bluetooth"+
 	"Media & Apple Music"+
 	"Location"+
 	"Background location"+
 	"Motion"+
+	"Notifications"+
 	"Camera"+
 	"A board the page lays out itself, panned and zoomed on a camera, with its own toolbar and a flow diagram among its screens"+
 	"A board of screens and the checkout flow. Drag to pan, and use the wheel or pinch to zoom."+
@@ -9646,14 +9658,18 @@ var textsEn = i18n.NewTexts(""+
 		14,
 		15,
 		10,
+		10,
 		6,
+		8,
 		9,
 		9,
+		6,
 		9,
 		19,
 		8,
 		19,
 		6,
+		13,
 		6,
 		122,
 		90,
@@ -11957,15 +11973,19 @@ var textsZhHans = i18n.NewTexts(""+
 	"完全磁盘访问权限"+
 	"App管理"+
 	"开发者工具"+
+	"自动化"+
 	"麦克风"+
 	"相机"+
+	"通讯录"+
 	"日历"+
 	"提醒事项"+
+	"照片"+
 	"蓝牙"+
 	"媒体与Apple Music"+
 	"定位"+
 	"后台定位"+
 	"运动"+
+	"通知"+
 	"画布"+
 	"页面自己排布的画板，放在可平移缩放的相机上，带自己的工具栏，界面之间还有一张流程图"+
 	"包含几个界面和结账流程的画板。拖动平移，滚轮或捏合缩放。"+
@@ -14267,13 +14287,17 @@ var textsZhHans = i18n.NewTexts(""+
 		9,
 		15,
 		9,
+		9,
 		6,
+		9,
 		6,
 		12,
+		6,
 		6,
 		20,
 		6,
 		12,
+		6,
 		6,
 		6,
 		123,
@@ -36560,6 +36584,13 @@ func (msgs Messages) PermissionDeveloperTools() string {
 	return msgs.text(textPermissionDeveloperTools)
 }
 
+// PermissionAutomation says "Automation"
+// in the language the app shows under cx.
+func PermissionAutomation(cx *core.Scope) string { return For(cx).PermissionAutomation() }
+
+// PermissionAutomation is the package's PermissionAutomation in the language of msgs.
+func (msgs Messages) PermissionAutomation() string { return msgs.text(textPermissionAutomation) }
+
 // PermissionMicrophone says "Microphone"
 // in the language the app shows under cx.
 func PermissionMicrophone(cx *core.Scope) string { return For(cx).PermissionMicrophone() }
@@ -36574,6 +36605,13 @@ func PermissionCamera(cx *core.Scope) string { return For(cx).PermissionCamera()
 // PermissionCamera is the package's PermissionCamera in the language of msgs.
 func (msgs Messages) PermissionCamera() string { return msgs.text(textPermissionCamera) }
 
+// PermissionContacts says "Contacts"
+// in the language the app shows under cx.
+func PermissionContacts(cx *core.Scope) string { return For(cx).PermissionContacts() }
+
+// PermissionContacts is the package's PermissionContacts in the language of msgs.
+func (msgs Messages) PermissionContacts() string { return msgs.text(textPermissionContacts) }
+
 // PermissionCalendars says "Calendars"
 // in the language the app shows under cx.
 func PermissionCalendars(cx *core.Scope) string { return For(cx).PermissionCalendars() }
@@ -36587,6 +36625,13 @@ func PermissionReminders(cx *core.Scope) string { return For(cx).PermissionRemin
 
 // PermissionReminders is the package's PermissionReminders in the language of msgs.
 func (msgs Messages) PermissionReminders() string { return msgs.text(textPermissionReminders) }
+
+// PermissionPhotos says "Photos"
+// in the language the app shows under cx.
+func PermissionPhotos(cx *core.Scope) string { return For(cx).PermissionPhotos() }
+
+// PermissionPhotos is the package's PermissionPhotos in the language of msgs.
+func (msgs Messages) PermissionPhotos() string { return msgs.text(textPermissionPhotos) }
 
 // PermissionBluetooth says "Bluetooth"
 // in the language the app shows under cx.
@@ -36626,6 +36671,13 @@ func PermissionMotion(cx *core.Scope) string { return For(cx).PermissionMotion()
 
 // PermissionMotion is the package's PermissionMotion in the language of msgs.
 func (msgs Messages) PermissionMotion() string { return msgs.text(textPermissionMotion) }
+
+// PermissionNotifications says "Notifications"
+// in the language the app shows under cx.
+func PermissionNotifications(cx *core.Scope) string { return For(cx).PermissionNotifications() }
+
+// PermissionNotifications is the package's PermissionNotifications in the language of msgs.
+func (msgs Messages) PermissionNotifications() string { return msgs.text(textPermissionNotifications) }
 
 // DemoCamera says "Camera"
 // in the language the app shows under cx.

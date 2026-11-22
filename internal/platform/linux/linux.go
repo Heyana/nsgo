@@ -1127,6 +1127,10 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.applyHotKeys(it.Keys)
 			continue
 		case driver.ItemPermission:
+			if it.Permission.Name == driver.PermissionNotifications && it.Permission.Command != driver.PermissionOpenSettings && it.Permission.Command != driver.PermissionStopGuide {
+				w.notificationPermissionGuide(it.Count)
+				continue
+			}
 			w.permission(it.Count, *it.Permission)
 			continue
 		case driver.ItemKeepAwake:
