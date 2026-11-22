@@ -247,6 +247,7 @@ type window struct {
 	hovered      hover.Tracker // the views under it that follow hovers
 	pointerState uint32        // its modifiers and buttons at its last move
 	shielding    bool          // a press kept from a hosted control goes on
+	shieldScroll shieldScroll  // a touchpad scroll kept from a hosted control goes on
 	panning      *pan
 	bars         []*view  // the scroll views under the pointer, which show their bars
 	barDrag      *barDrag // the bar the pointer drags
@@ -879,6 +880,7 @@ func (w *window) shutdown(forced bool) {
 	}
 	w.closing = true
 	w.restoreMenuFocus()
+	w.shieldScroll.reset()
 	if forced {
 		w.engine.CloseForForcedQuit()
 		engine.SyncStorage()
@@ -1493,6 +1495,15 @@ func (w *window) delete(v *view) {
 	w.hovered.Forget(v.id)
 	if w.cursorText == v {
 		w.cursorText = nil
+	}
+	if w.wheeled == v {
+		if v.glide == w.wheelMotion {
+			w.wheelMotion = nil
+		}
+		w.wheeled = nil
+	}
+	if w.wheelTaker == v {
+		w.wheelTaker = nil
 	}
 	v.detach()
 	for _, c := range v.children {

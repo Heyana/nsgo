@@ -325,6 +325,7 @@ type web struct {
 	source        driver.WebSource             // what the pending or last load shows: the config's, or Ref.Load's
 	background    [4]float32                   // WebKit's own, for views without an opaque one
 	pointer       driver.Point                 // where the pointer is in the page
+	scroll        uintptr                      // capture scroll controller for NoScroll pages
 
 	lastNavigation   driver.WebNavigation
 	navigationQueued bool
@@ -411,10 +412,15 @@ func (w *window) configureWeb(v *view, c *driver.WebConfig) {
 		// Wheels over a page that does not scroll go to the scroll views
 		// around it (webScrollCallback).
 		webkitContentRemoveAllStyleSheets(wv.content)
+		var scrollFlags int32
 		if c.NoScroll {
+			scrollFlags = scrollBothAxes | scrollKinetic
 			sheet := webkitUserStyleSheetNew(cstr(webNoScroll), webkitTopFrame, webkitUserStyle, 0, 0)
 			webkitContentAddStyleSheet(wv.content, sheet)
 			webkitUserStyleSheetUnref(sheet)
+		}
+		if wv.scroll != 0 {
+			gtkEventControllerScrollSetFlags(wv.scroll, scrollFlags)
 		}
 	}
 	settings := webkitWebViewGetSettings(wv.widget)
@@ -547,10 +553,17 @@ func (w *window) makeWeb(v *view) {
 	motion := gtkEventControllerMotionNew()
 	w.connect(v, motion, "motion", cbWebMotion)
 	gtkWidgetAddController(wv.widget, motion)
-	scroll := gtkEventControllerScrollNew(3) // both axes
+	var scrollFlags int32
+	if wv.config.NoScroll {
+		scrollFlags = scrollBothAxes | scrollKinetic
+	}
+	scroll := gtkEventControllerScrollNew(scrollFlags)
 	gtkEventControllerSetPropagationPhase(scroll, propagationPhaseCapture)
 	w.connect(v, scroll, "scroll", cbWebScroll)
+	w.connect(v, scroll, "scroll-begin", cbWebScrollBegin)
+	w.connect(v, scroll, "decelerate", cbWebScrollDecelerate)
 	gtkWidgetAddController(wv.widget, scroll)
+	wv.scroll = scroll
 }
 
 // registerWebSchemes registers the schemes wv's app serves on its page's WebKitWebContext, which every page of the process shares, so a scheme is registered once for every view that serves it.
@@ -1447,9 +1460,32 @@ func webScrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
 	if v == nil || !v.web.config.NoScroll {
 		return 0
 	}
+	w.shieldScroll.reset()
 	at := w.frameAt(v)
 	at.X += v.web.pointer.X
 	at.Y += v.web.pointer.Y
 	w.wheelEvent(gtkEventControllerGetCurrentEventState(controller), at, dx, dy, controllerPoints(controller))
 	return 1
+}
+
+func webScrollBeginCallback(controller, data uintptr) {
+	w, v := webOf(data, controller)
+	if v == nil || !v.web.config.NoScroll {
+		return
+	}
+	w.shieldScroll.reset()
+	w.wheelBegin()
+}
+
+func webScrollDecelerateCallback(controller uintptr, vx, vy float64, data uintptr) {
+	w, v := webOf(data, controller)
+	if v == nil || !v.web.config.NoScroll || !controllerPoints(controller) {
+		return
+	}
+	w.shieldScroll.reset()
+	at := w.frameAt(v)
+	at.X += v.web.pointer.X
+	at.Y += v.web.pointer.Y
+	w.lastPointer = at
+	w.wheelDecelerate(gtkEventControllerGetCurrentEventState(controller), vx, vy)
 }

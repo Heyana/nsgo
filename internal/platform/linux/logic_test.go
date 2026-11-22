@@ -835,3 +835,229 @@ func TestFontMetricsStayBounded(t *testing.T) {
 		t.Error("the latest metric is not cached")
 	}
 }
+
+func TestShieldedTouchpadScrollGlidesAndInterrupts(t *testing.T) {
+	var events []driver.Event
+	eng := engine.Start(noopPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{
+		Event: func(_ uint32, ev driver.Event) { events = append(events, ev) },
+	})
+	t.Cleanup(eng.Close)
+
+	visible := driver.ViewStyle{Opacity: 1}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 400}}}
+	scroll := &view{
+		id:     2,
+		style:  visible,
+		kind:   driver.KindScroll,
+		parent: root,
+		frame:  driver.Bounds{Size: driver.Size{Width: 300, Height: 400}},
+		size:   driver.Size{Width: 300, Height: 10000},
+		events: 1<<driver.EventMomentumStart | 1<<driver.EventMomentumEnd | 1<<driver.EventScrollEnd,
+	}
+	root.children = []*view{scroll}
+	w := &window{
+		engine:   eng,
+		root:     root.id,
+		views:    []*view{nil, root, scroll},
+		animator: driver.NewAnimator(func(driver.Event) {}),
+		ticking:  true,
+	}
+	count := func(kind driver.EventKind) int {
+		n := 0
+		for _, ev := range events {
+			if ev.Kind == kind {
+				n++
+			}
+		}
+		return n
+	}
+
+	at := driver.Point{X: 100, Y: 100}
+	now := time.Now()
+
+	// 1. Shielded smooth surface-unit scroll deltas followed by a stop event
+	// glide past the deltas, decelerate smoothly, and come to rest.
+	w.shieldScrollEvent(0, at, 0, 16, true, true, false, 1000, now)
+	w.shieldScrollEvent(0, at, 0, 16, true, true, false, 1008, now.Add(8*time.Millisecond))
+	w.shieldScrollEvent(0, at, 0, 16, true, true, false, 1016, now.Add(16*time.Millisecond))
+	w.shieldScrollEvent(0, at, 0, 0, true, true, true, 1016, now.Add(16*time.Millisecond))
+	if scroll.offset.Y != 48 {
+		t.Fatalf("offset after deltas = %v, want 48", scroll.offset.Y)
+	}
+	if scroll.glide == nil || w.wheelMotion == nil {
+		t.Fatal("shielded touchpad stop did not start wheel glide")
+	}
+	if count(driver.EventMomentumStart) != 1 {
+		t.Fatalf("momentum start count = %d, want 1", count(driver.EventMomentumStart))
+	}
+	startOffset := scroll.offset.Y
+	stepTime := time.Now()
+	prevStep := driver.Points(0)
+	prevPos := startOffset
+	done := false
+	for i := 1; i <= 400; i++ {
+		if !w.stepGlide(scroll, stepTime.Add(time.Duration(i)*16*time.Millisecond)) {
+			done = true
+			break
+		}
+		step := scroll.offset.Y - prevPos
+		if i > 2 && step > prevStep+0.01 {
+			t.Fatalf("glide step %d accelerated: %v > %v", i, step, prevStep)
+		}
+		prevStep, prevPos = step, scroll.offset.Y
+	}
+	if !done {
+		t.Fatal("glide did not finish")
+	}
+	if scroll.offset.Y <= startOffset+200 {
+		t.Fatalf("glided to %v, want well past %v", scroll.offset.Y, startOffset)
+	}
+	if scroll.glide != nil || w.wheelMotion != nil {
+		t.Fatal("completed glide left glide or wheelMotion set")
+	}
+	if count(driver.EventMomentumEnd) != 1 || count(driver.EventScrollEnd) != 1 {
+		t.Fatalf("end events: momentumEnd=%d scrollEnd=%d, want 1/1", count(driver.EventMomentumEnd), count(driver.EventScrollEnd))
+	}
+
+	// 2. Touchpad hold (fingers landing over the shield) interrupts an active glide.
+	events = nil
+	w.shieldScrollEvent(0, at, 0, 16, true, true, false, 2000, now)
+	w.shieldScrollEvent(0, at, 0, 16, true, true, false, 2008, now.Add(8*time.Millisecond))
+	w.shieldScrollEvent(0, at, 0, 0, true, true, true, 2008, now.Add(8*time.Millisecond))
+	if scroll.glide == nil || w.wheelMotion == nil {
+		t.Fatal("second shielded flick did not start glide")
+	}
+	w.shieldTouchpadHold(gdkTouchpadPhaseBegin, 2040, now.Add(40*time.Millisecond))
+	if scroll.glide != nil || w.wheelMotion != nil {
+		t.Fatal("shielded touchpad hold did not stop active glide")
+	}
+	if count(driver.EventMomentumEnd) != 1 {
+		t.Fatalf("momentum end after hold = %d, want 1", count(driver.EventMomentumEnd))
+	}
+	// Lifting fingers without scrolling clears the hold without starting a glide.
+	w.shieldTouchpadHold(gdkTouchpadPhaseEnd, 2080, now.Add(80*time.Millisecond))
+	if w.shieldScroll.active || scroll.glide != nil {
+		t.Fatal("hold end without deltas left tracker active or started glide")
+	}
+
+	// 3. A new shielded scroll without a hold also stops an active glide.
+	events = nil
+	w.shieldScrollEvent(0, at, 0, 16, true, true, false, 3000, now)
+	w.shieldScrollEvent(0, at, 0, 16, true, true, false, 3008, now.Add(8*time.Millisecond))
+	w.shieldScrollEvent(0, at, 0, 0, true, true, true, 3008, now.Add(8*time.Millisecond))
+	if scroll.glide == nil {
+		t.Fatal("third shielded flick did not start glide")
+	}
+	w.shieldScrollEvent(0, at, 0, 10, true, true, false, 3050, now.Add(50*time.Millisecond))
+	if scroll.glide != nil || w.wheelMotion != nil {
+		t.Fatal("new shielded scroll did not stop previous glide")
+	}
+	if count(driver.EventMomentumEnd) != 1 {
+		t.Fatalf("momentum end after new scroll = %d, want 1", count(driver.EventMomentumEnd))
+	}
+	// Pausing before stop ends cleanly without gliding.
+	w.shieldScrollEvent(0, at, 0, 0, true, true, true, 3250, now.Add(250*time.Millisecond))
+	if scroll.glide != nil || w.wheelMotion != nil {
+		t.Fatal("paused stop unexpectedly started glide")
+	}
+
+	// 4. Discrete mouse wheel and Control+scroll never start a glide.
+	w.shieldScrollEvent(0, at, 0, 1, false, false, false, 4000, now)
+	if w.shieldScroll.active || scroll.glide != nil {
+		t.Fatal("discrete wheel activated shieldScroll or started glide")
+	}
+	w.shieldScrollEvent(gdkControl, at, 0, 16, true, true, false, 4100, now)
+	w.shieldScrollEvent(gdkControl, at, 0, 16, true, true, false, 4108, now.Add(8*time.Millisecond))
+	w.shieldScrollEvent(gdkControl, at, 0, 0, true, true, true, 4108, now.Add(8*time.Millisecond))
+	if w.shieldScroll.active || scroll.glide != nil {
+		t.Fatal("Control+scroll activated shieldScroll or started glide")
+	}
+
+	// 5. Shift swaps axes so vertical touchpad flicks glide a horizontal scroll view.
+	scroll.scroll.Horizontal = true
+	scroll.size = driver.Size{Width: 10000, Height: 400}
+	scroll.offset = driver.Point{}
+	w.shieldScrollEvent(gdkShift, at, 0, 16, true, true, false, 5000, now)
+	w.shieldScrollEvent(gdkShift, at, 0, 16, true, true, false, 5008, now.Add(8*time.Millisecond))
+	w.shieldScrollEvent(gdkShift, at, 0, 0, true, true, true, 5008, now.Add(8*time.Millisecond))
+	if scroll.offset.X != 32 || scroll.glide == nil {
+		t.Fatalf("Shift horizontal scroll: offset.X=%v glide=%v, want 32 and non-nil", scroll.offset.X, scroll.glide != nil)
+	}
+	w.stopWheelGlide()
+
+	// 6. ReduceMotion suppresses gliding.
+	w.env.ReduceMotion = true
+	w.shieldScrollEvent(gdkShift, at, 0, 16, true, true, false, 6000, now)
+	w.shieldScrollEvent(gdkShift, at, 0, 16, true, true, false, 6008, now.Add(8*time.Millisecond))
+	w.shieldScrollEvent(gdkShift, at, 0, 0, true, true, true, 6008, now.Add(8*time.Millisecond))
+	if scroll.glide != nil {
+		t.Fatal("ReduceMotion did not suppress shielded glide")
+	}
+}
+
+func TestShieldedTouchpadScrollOnWheelAndCleanup(t *testing.T) {
+	var events []driver.Event
+	eng := engine.Start(noopPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{
+		Event: func(_ uint32, ev driver.Event) { events = append(events, ev) },
+	})
+	t.Cleanup(eng.Close)
+
+	visible := driver.ViewStyle{Opacity: 1}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 400}}}
+	taker := &view{
+		id:     2,
+		style:  visible,
+		kind:   driver.KindView,
+		parent: root,
+		frame:  driver.Bounds{Size: driver.Size{Width: 300, Height: 400}},
+		events: 1 << driver.EventWheel,
+	}
+	root.children = []*view{taker}
+	w := &window{
+		engine:   eng,
+		root:     root.id,
+		views:    []*view{nil, root, taker},
+		animator: driver.NewAnimator(func(driver.Event) {}),
+		ticking:  true,
+	}
+
+	at := driver.Point{X: 50, Y: 60}
+	now := time.Now()
+	w.shieldScrollEvent(0, at, 0, 12, true, true, false, 1000, now)
+	w.shieldScrollEvent(0, at, 0, 12, true, true, false, 1008, now.Add(8*time.Millisecond))
+	w.shieldScrollEvent(0, at, 0, 12, true, true, false, 1016, now.Add(16*time.Millisecond))
+	w.shieldScrollEvent(0, at, 0, 0, true, true, true, 1016, now.Add(16*time.Millisecond))
+
+	if len(events) != 4 {
+		t.Fatalf("wheel events = %d, want 4 (3 changed + 1 ended)", len(events))
+	}
+	end := events[3]
+	if end.Kind != driver.EventWheel || end.Phase != driver.GestureEnded || !end.Precise {
+		t.Fatalf("end event = %+v, want precise EventWheel GestureEnded", end)
+	}
+	if math.Abs(float64(end.Velocity.Y)-(-1500)) > 5 {
+		t.Fatalf("end Velocity.Y = %v, want ~-1500", end.Velocity.Y)
+	}
+	if w.wheelTaker != nil {
+		t.Fatal("wheelTaker was not cleared after GestureEnded")
+	}
+
+	// Paused lift over OnWheel still sends GestureEnded with zero velocity.
+	events = nil
+	w.shieldScrollEvent(0, at, 0, 12, true, true, false, 2000, now)
+	w.shieldScrollEvent(0, at, 0, 12, true, true, false, 2008, now.Add(8*time.Millisecond))
+	w.shieldScrollEvent(0, at, 0, 0, true, true, true, 2200, now.Add(200*time.Millisecond))
+	if len(events) != 3 || events[2].Phase != driver.GestureEnded || events[2].Velocity != (driver.Point{}) {
+		t.Fatalf("paused OnWheel events = %+v, want final GestureEnded with zero velocity", events)
+	}
+
+	// pointerDown resets an in-progress shieldScroll cleanly.
+	w.shieldScrollEvent(0, at, 0, 12, true, true, false, 3000, now)
+	if !w.shieldScroll.active {
+		t.Fatal("shieldScroll should be active")
+	}
+	w.pointerDown(at, 1, 0, 0, 1)
+	if w.shieldScroll.active {
+		t.Fatal("pointerDown did not reset shieldScroll")
+	}
+}

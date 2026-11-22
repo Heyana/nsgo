@@ -172,6 +172,9 @@ func (w *window) stepGlide(v *view, now time.Time) bool {
 	scrollbar.SetAlong(&v.scroll, &offset, at)
 	w.moveOffset(v, offset)
 	if done {
+		if v.glide == w.wheelMotion {
+			w.wheelMotion = nil
+		}
 		v.glide = nil
 		w.scrollEvent(v, driver.EventMomentumEnd)
 		w.restScroll(v)

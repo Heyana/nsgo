@@ -1825,6 +1825,55 @@ func TestTouchpadGlides(t *testing.T) {
 	waitForTitle(t, w, fmt.Sprintf("%s|3|%v", title, end))
 }
 
+// TestShieldedTouchpadGlides drives a touchpad scroll through the
+// hosted-view shield path (no GtkEventControllerScroll involved): the
+// scroll view glides on after the stop event, and a shielded touchpad
+// hold stops the glide in place.
+func TestShieldedTouchpadGlides(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-" + t.Name()
+	app := func(cx *core.Scope) core.Node {
+		offset, ended := core.NewSignal(cx, driver.Points(0)), core.NewSignal(cx, 0)
+		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("%s|%d|%v", title, ended.Get(), offset.Get())) })
+		return core.Scroll{HideIndicator: true, OnScroll: func(e core.ScrollEvent) { offset.Set(e.Offset.Y) },
+			OnMomentumEnd: func(core.ScrollEvent) { ended.Update(func(n int) int { return n + 1 }) },
+			Style:         core.Style{Width: driver.Pt(100), Height: driver.Pt(100)},
+			Children:      []core.Node{core.View{Style: core.Style{Height: driver.Pt(100000)}}}}
+	}
+	w := startTestWindow(t, app, Options{Title: title, Width: 100, Height: 100})
+	waitForTitle(t, w, title+"|0|0")
+	flick := func(base uint32, stopWithHold bool) {
+		w.onLoop(t, func() {
+			now := time.Now()
+			at := driver.Point{X: 20, Y: 20}
+			w.shieldScrollEvent(0, at, 0, 16, true, true, false, base, now)
+			w.shieldScrollEvent(0, at, 0, 16, true, true, false, base+8, now.Add(8*time.Millisecond))
+			w.shieldScrollEvent(0, at, 0, 16, true, true, false, base+16, now.Add(16*time.Millisecond))
+			w.shieldScrollEvent(0, at, 0, 0, true, true, true, base+16, now.Add(16*time.Millisecond))
+			if stopWithHold {
+				w.shieldTouchpadHold(gdkTouchpadPhaseBegin, base+24, now.Add(24*time.Millisecond))
+				w.shieldTouchpadHold(gdkTouchpadPhaseEnd, base+32, now.Add(32*time.Millisecond))
+			}
+		})
+	}
+	flick(1000, false)
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.HasPrefix(w.titleOf(t), title+"|1|") {
+		if time.Now().After(deadline) {
+			t.Fatalf("window title = %q, want the shielded glide ended", w.titleOf(t))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	var at float64
+	if _, err := fmt.Sscanf(strings.TrimPrefix(w.titleOf(t), title+"|1|"), "%g", &at); err != nil || at < 200 {
+		t.Fatalf("shielded glide reached %v (%v), want well past the deltas' 48", at, err)
+	}
+	flick(2000, true)
+	waitForTitle(t, w, fmt.Sprintf("%s|2|%v", title, at+48))
+}
+
 // TestWheelSettlesOnPagesWithinInsets turns the wheel over a paging
 // scroll view with a content inset: it settles on the next page once the
 // wheel rests, reporting the momentum, and the inset widens its offsets.

@@ -118,6 +118,7 @@ func (w *window) onEntry(v *view, at driver.Point) bool {
 func (w *window) pointerDown(at driver.Point, button uint32, device uintptr, state uint32, clicks int) {
 	// Test input enters here without GTK's legacy controller. A press after a key must still report pointer input and hide focus rings.
 	w.engine.InputModality(driver.ModalityPointer)
+	w.shieldScroll.reset()
 	w.lastPointer, w.pressConsumed, w.pressedDown, w.windowMove = at, false, false, nil
 	if button == 1 && !isTouch(device) {
 		root := w.view(w.root)
@@ -450,6 +451,7 @@ func scrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
 	if w.controlAt(gtkWidgetPick(w.surface, float64(at.X), float64(at.Y), gtkPickDefault)) != nil {
 		return 0 // the page or the controls scroll themselves
 	}
+	w.shieldScroll.reset()
 	w.wheelEvent(gtkEventControllerGetCurrentEventState(controller), at, dx, dy, controllerPoints(controller))
 	return 1
 }
@@ -458,9 +460,17 @@ func scrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
 // its glide as a finger on a moving list does.
 func scrollBeginCallback(_, data uintptr) {
 	if w := windowOf(data); w != nil {
-		w.stopWheelGlide()
-		w.wheelTaker = nil // the scroll finds its view anew
+		w.shieldScroll.reset()
+		w.wheelBegin()
 	}
+}
+
+// wheelBegin stops any touchpad glide in flight and forgets the previous
+// scroll's targets so the new gesture finds its view anew.
+func (w *window) wheelBegin() {
+	w.stopWheelGlide()
+	w.wheeled = nil
+	w.wheelTaker = nil // the scroll finds its view anew
 }
 
 // scrollDecelerateCallback follows a touchpad's fingers lifting at a
@@ -471,7 +481,14 @@ func scrollDecelerateCallback(controller uintptr, vx, vy float64, data uintptr) 
 	if w == nil || !controllerPoints(controller) {
 		return
 	}
-	state := gtkEventControllerGetCurrentEventState(controller)
+	w.shieldScroll.reset()
+	w.wheelDecelerate(gtkEventControllerGetCurrentEventState(controller), vx, vy)
+}
+
+// wheelDecelerate ends a touchpad scroll whose fingers lifted at (vx, vy)
+// points per second, gliding the scroll view it moved or reporting the
+// end's velocity to a view taking OnWheel.
+func (w *window) wheelDecelerate(state uint32, vx, vy float64) {
 	if state&gdkControl != 0 {
 		return
 	}
@@ -1408,7 +1425,11 @@ const (
 	gdkButtonRelease = 3
 	gdkScrollEvent   = 15
 	gdkTouchBegin    = 17
+	gdkTouchpadHold  = 28
 	gdkScrollSmooth  = 4
+
+	gdkTouchpadPhaseBegin = 0
+	gdkTouchpadPhaseEnd   = 2
 
 	scrollBothAxes       = 3 // GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES
 	scrollKinetic        = 8 // GTK_EVENT_CONTROLLER_SCROLL_KINETIC
@@ -1439,8 +1460,9 @@ func (w *window) shield(event uintptr) bool {
 	typ := gdkEventGetEventType(event)
 	if typ == gdkButtonPress || typ == gdkTouchBegin {
 		w.engine.InputModality(driver.ModalityPointer)
+		w.shieldScroll.reset()
 	}
-	if typ != gdkMotionNotify && typ != gdkButtonPress && typ != gdkButtonRelease && typ != gdkScrollEvent {
+	if typ != gdkMotionNotify && typ != gdkButtonPress && typ != gdkButtonRelease && typ != gdkScrollEvent && typ != gdkTouchpadHold {
 		return false
 	}
 	at, ok := w.eventPoint(event)
@@ -1484,25 +1506,35 @@ func (w *window) shield(event uintptr) bool {
 	if typ == gdkButtonRelease || typ == gdkMotionNotify && gdkEventGetModifierState(event)&gdkButtonsMask != 0 {
 		return false // drags that began in the control stay with it
 	}
-	if !w.hostsControls() {
-		return false
-	}
-	v := w.controlAt(gtkWidgetPick(w.surface, float64(at.X), float64(at.Y), gtkPickDefault))
-	if v == nil {
-		return false
-	}
-	if root := w.view(w.root); root != nil && hit(root, at, func(*view) bool { return true }) == v {
-		return false
+	shielded := false
+	if w.hostsControls() {
+		if v := w.controlAt(gtkWidgetPick(w.surface, float64(at.X), float64(at.Y), gtkPickDefault)); v != nil {
+			if root := w.view(w.root); root == nil || hit(root, at, func(*view) bool { return true }) != v {
+				shielded = true
+			}
+		}
 	}
 	switch typ {
-	case gdkMotionNotify:
-		w.movePointer(at, gdkEventGetModifierState(event))
-	case gdkButtonPress:
-		w.shielding = true
-		w.pointerDown(at, gdkButtonEventGetButton(event), gdkEventGetDevice(event), gdkEventGetModifierState(event), 1)
+	case gdkTouchpadHold:
+		if !shielded && !w.shieldScroll.active {
+			return false
+		}
+		phase := gdkTouchpadEventGetGesturePhase(event)
+		if !shielded {
+			if phase == gdkTouchpadPhaseBegin {
+				w.shieldScroll.reset()
+			}
+			return false
+		}
+		w.shieldTouchpadHold(phase, gdkEventGetTime(event), time.Now())
+		return true
 	case gdkScrollEvent:
+		if !shielded && !w.shieldScroll.active {
+			return false
+		}
+		dir := gdkScrollEventGetDirection(event)
 		var dx, dy float64
-		switch gdkScrollEventGetDirection(event) {
+		switch dir {
 		case gdkScrollSmooth:
 			gdkScrollEventGetDeltas(event, &dx, &dy)
 		case 0:
@@ -1514,11 +1546,86 @@ func (w *window) shield(event uintptr) bool {
 		case 3:
 			dx = 1
 		}
-		w.lastPointer = at
+		isStop := dir == gdkScrollSmooth && gdkScrollEventIsStop(event) != 0
 		points := gdkScrollEventGetUnit != nil && gdkScrollEventGetUnit(event) == gdkScrollUnitSurface
-		w.wheelEvent(gdkEventGetModifierState(event), at, dx, dy, points)
+		evMS := gdkEventGetTime(event)
+		now := time.Now()
+		if !shielded {
+			if !w.shieldScroll.latched(evMS, now, false, isStop) || (!isStop && (dir != gdkScrollSmooth || !points)) {
+				w.shieldScroll.reset()
+				return false
+			}
+		}
+		w.shieldScrollEvent(gdkEventGetModifierState(event), at, dx, dy, dir == gdkScrollSmooth, points, isStop, evMS, now)
+		return true
+	}
+	if !shielded {
+		return false
+	}
+	switch typ {
+	case gdkMotionNotify:
+		w.movePointer(at, gdkEventGetModifierState(event))
+	case gdkButtonPress:
+		w.shielding = true
+		w.pointerDown(at, gdkButtonEventGetButton(event), gdkEventGetDevice(event), gdkEventGetModifierState(event), 1)
 	}
 	return true
+}
+
+// shieldTouchpadHold handles a GDK_TOUCHPAD_HOLD event intercepted by
+// the shield: fingers landing stop any active glide and seed the
+// shielded scroll tracker; lifting them without scrolling resets it.
+func (w *window) shieldTouchpadHold(phase int32, evMS uint32, now time.Time) {
+	switch phase {
+	case gdkTouchpadPhaseBegin:
+		w.wheelBegin()
+		w.shieldScroll.hold(evMS, now)
+	case gdkTouchpadPhaseEnd:
+		if !w.shieldScroll.moved {
+			w.shieldScroll.reset()
+		}
+	}
+}
+
+// shieldScrollEvent handles a GDK_SCROLL event intercepted by the
+// shield: smooth surface-unit events accumulate release velocity and
+// glide (or end OnWheel) when their stop event arrives, matching the
+// surface's GtkEventControllerScroll.
+func (w *window) shieldScrollEvent(state uint32, at driver.Point, dx, dy float64, smooth, points, isStop bool, evMS uint32, now time.Time) {
+	w.lastPointer = at
+	if state&gdkControl != 0 {
+		w.shieldScroll.reset()
+		if !isStop || dx != 0 || dy != 0 {
+			w.wheelEvent(state, at, dx, dy, points)
+		}
+		return
+	}
+	if !smooth {
+		w.shieldScroll.reset()
+		w.wheelEvent(state, at, dx, dy, points)
+		return
+	}
+	if isStop {
+		if points && (dx != 0 || dy != 0) {
+			if w.shieldScroll.delta(evMS, now, dx, dy) {
+				w.wheelBegin()
+			}
+			w.wheelEvent(state, at, dx, dy, true)
+		}
+		if vx, vy, ok := w.shieldScroll.stop(evMS, now); ok {
+			w.wheelDecelerate(state, vx, vy)
+		}
+		return
+	}
+	if !points {
+		w.shieldScroll.reset()
+		w.wheelEvent(state, at, dx, dy, false)
+		return
+	}
+	if w.shieldScroll.delta(evMS, now, dx, dy) {
+		w.wheelBegin()
+	}
+	w.wheelEvent(state, at, dx, dy, true)
 }
 
 // eventPoint returns where event happened in the surface's points.

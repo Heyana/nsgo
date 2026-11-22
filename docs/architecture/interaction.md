@@ -138,7 +138,7 @@ Windows shows the overlay scroll indicator for user scrolling and its momentum, 
 | iOS | Two scroll-only `UIPanGestureRecognizer`s: continuous for a trackpad, discrete for a wheel | The continuous one | The view's own, from the end's `Velocity` |
 | Web | The `wheel` event before the page's scroll handling, prevented | Pixels smaller than a notch | The browser's momentum, as more changes |
 | Windows | `WM_MOUSEWHEEL` and `WM_MOUSEHWHEEL` before the scroll views | Turns of less than a notch | The system's, as more turns |
-| Linux | The scroll controller before the scroll views; a touchpad keeps its view until `decelerate` | GTK's surface unit, or deltas of points before 4.8 | The view's own, from the end's `Velocity` |
+| Linux | The scroll controller (or hosted-view shield) before the scroll views; a touchpad keeps its view until `decelerate` or `gdk_scroll_event_is_stop` | GTK's surface unit, or deltas of points before 4.8 | The view's own, from the end's `Velocity` |
 | Android | `ACTION_SCROLL` generic motions on the view | `SOURCE_TOUCHPAD` | None yet |
 
 ## File drops

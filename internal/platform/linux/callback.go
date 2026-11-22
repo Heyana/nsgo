@@ -57,6 +57,8 @@ var (
 	cbWebButton              uintptr
 	cbWebMotion              uintptr
 	cbWebScroll              uintptr
+	cbWebScrollBegin         uintptr
+	cbWebScrollDecelerate    uintptr
 	cbWebDownloadStarted     uintptr
 	cbWebDownloadDestination uintptr
 	cbWebDownloadReceived    uintptr
@@ -152,6 +154,8 @@ func init() {
 	cbWebButton = newCallback(webButtonCallback)
 	cbWebMotion = newCallback(webMotionCallback)
 	cbWebScroll = newCallback(webScrollCallback)
+	cbWebScrollBegin = newCallback(webScrollBeginCallback)
+	cbWebScrollDecelerate = newCallback(webScrollDecelerateCallback)
 	cbWebDownloadStarted = newCallback(webDownloadStartedCallback)
 	cbWebDownloadDestination = newCallback(webDownloadDestinationCallback)
 	cbWebDownloadReceived = newCallback(webDownloadReceivedCallback)

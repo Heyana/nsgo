@@ -445,57 +445,60 @@ func roundedRect(x, y, width, height, r float32) gskRoundedRect {
 
 // The bindings of NsgoView and its drawing.
 var (
-	gTypeQueryFn                 func(uintptr, *gTypeQuery)
-	gTypeRegisterStaticSimple    func(uintptr, *byte, uint32, uintptr, uint32, uintptr, uint32) uintptr
-	gTypeClassPeekParent         func(uintptr) uintptr
-	gInitiallyUnownedGetType     func() uintptr
-	gtkWidgetGetType             func() uintptr
-	gtkWidgetSetParent           func(uintptr, uintptr)
-	gtkWidgetUnparent            func(uintptr)
-	gtkWidgetInsertBefore        func(uintptr, uintptr, uintptr)
-	gtkWidgetGetFirstChild       func(uintptr) uintptr
-	gtkWidgetGetNextSibling      func(uintptr) uintptr
-	gtkWidgetAllocate            func(uintptr, int32, int32, int32, uintptr)
-	gtkWidgetMeasure             func(uintptr, int32, int32, *int32, *int32, *int32, *int32)
-	gtkWidgetSnapshotChild       func(uintptr, uintptr, uintptr)
-	gtkWidgetSetChildVisible     func(uintptr, int32)
-	gtkWidgetGetChildVisible     func(uintptr) int32
-	gtkWidgetPick                func(uintptr, float64, float64, int32) uintptr
-	gtkWidgetComputePoint        func(uintptr, uintptr, *graphenePoint, *graphenePoint) int32
-	gtkWidgetComputeBounds       func(uintptr, uintptr, *grapheneRect) int32
-	gtkWidgetPaintableNew        func(uintptr) uintptr
-	gtkNativeGetSurfaceTransform func(uintptr, *float64, *float64)
-	gdkPaintableSnapshot         func(uintptr, uintptr, float64, float64)
-	gtkSnapshotNew               func() uintptr
-	gtkSnapshotFreeToNode        func(uintptr) uintptr
-	gtkSnapshotAppendColor       func(uintptr, *gdkRGBA, *grapheneRect)
-	gtkSnapshotAppendCairo       func(uintptr, *grapheneRect) uintptr
-	gtkSnapshotAppendBorder      func(uintptr, *gskRoundedRect, *[4]float32, *[4]gdkRGBA)
-	gtkSnapshotAppendOutset      func(uintptr, *gskRoundedRect, *gdkRGBA, float32, float32, float32, float32)
-	gtkSnapshotPushRoundedClip   func(uintptr, *gskRoundedRect)
-	gtkSnapshotPushOpacity       func(uintptr, float64)
-	gtkSnapshotPushClip          func(uintptr, *grapheneRect)
-	gtkSnapshotPushBlur          func(uintptr, float64)
-	gtkSnapshotPushShadow        func(uintptr, *gskShadow, uintptr)
-	gtkSnapshotPop               func(uintptr)
-	gtkSnapshotPushBlend         func(uintptr, int32)
-	gtkSnapshotAppendNode        func(uintptr, uintptr)
-	gtkSnapshotAppendLayout      func(uintptr, uintptr, *gdkRGBA)
-	gtkSnapshotSave              func(uintptr)
-	gtkSnapshotTranslate         func(uintptr, *graphenePoint)
-	gtkSnapshotRestore           func(uintptr)
-	gskRenderNodeDraw            func(uintptr, uintptr)
-	gskRenderNodeUnref           func(uintptr)
-	gskTransformTranslate        func(uintptr, *graphenePoint) uintptr
-	gtkEventControllerLegacyNew  func() uintptr
-	gdkEventGetEventType         func(uintptr) int32
-	gdkEventGetPosition          func(uintptr, *float64, *float64) int32
-	gdkEventGetModifierState     func(uintptr) uint32
-	gdkEventGetDevice            func(uintptr) uintptr
-	gdkButtonEventGetButton      func(uintptr) uint32
-	gdkScrollEventGetDirection   func(uintptr) int32
-	gdkScrollEventGetDeltas      func(uintptr, *float64, *float64)
-	gdkScrollEventGetUnit        func(uintptr) int32 // from GTK 4.8
+	gTypeQueryFn                    func(uintptr, *gTypeQuery)
+	gTypeRegisterStaticSimple       func(uintptr, *byte, uint32, uintptr, uint32, uintptr, uint32) uintptr
+	gTypeClassPeekParent            func(uintptr) uintptr
+	gInitiallyUnownedGetType        func() uintptr
+	gtkWidgetGetType                func() uintptr
+	gtkWidgetSetParent              func(uintptr, uintptr)
+	gtkWidgetUnparent               func(uintptr)
+	gtkWidgetInsertBefore           func(uintptr, uintptr, uintptr)
+	gtkWidgetGetFirstChild          func(uintptr) uintptr
+	gtkWidgetGetNextSibling         func(uintptr) uintptr
+	gtkWidgetAllocate               func(uintptr, int32, int32, int32, uintptr)
+	gtkWidgetMeasure                func(uintptr, int32, int32, *int32, *int32, *int32, *int32)
+	gtkWidgetSnapshotChild          func(uintptr, uintptr, uintptr)
+	gtkWidgetSetChildVisible        func(uintptr, int32)
+	gtkWidgetGetChildVisible        func(uintptr) int32
+	gtkWidgetPick                   func(uintptr, float64, float64, int32) uintptr
+	gtkWidgetComputePoint           func(uintptr, uintptr, *graphenePoint, *graphenePoint) int32
+	gtkWidgetComputeBounds          func(uintptr, uintptr, *grapheneRect) int32
+	gtkWidgetPaintableNew           func(uintptr) uintptr
+	gtkNativeGetSurfaceTransform    func(uintptr, *float64, *float64)
+	gdkPaintableSnapshot            func(uintptr, uintptr, float64, float64)
+	gtkSnapshotNew                  func() uintptr
+	gtkSnapshotFreeToNode           func(uintptr) uintptr
+	gtkSnapshotAppendColor          func(uintptr, *gdkRGBA, *grapheneRect)
+	gtkSnapshotAppendCairo          func(uintptr, *grapheneRect) uintptr
+	gtkSnapshotAppendBorder         func(uintptr, *gskRoundedRect, *[4]float32, *[4]gdkRGBA)
+	gtkSnapshotAppendOutset         func(uintptr, *gskRoundedRect, *gdkRGBA, float32, float32, float32, float32)
+	gtkSnapshotPushRoundedClip      func(uintptr, *gskRoundedRect)
+	gtkSnapshotPushOpacity          func(uintptr, float64)
+	gtkSnapshotPushClip             func(uintptr, *grapheneRect)
+	gtkSnapshotPushBlur             func(uintptr, float64)
+	gtkSnapshotPushShadow           func(uintptr, *gskShadow, uintptr)
+	gtkSnapshotPop                  func(uintptr)
+	gtkSnapshotPushBlend            func(uintptr, int32)
+	gtkSnapshotAppendNode           func(uintptr, uintptr)
+	gtkSnapshotAppendLayout         func(uintptr, uintptr, *gdkRGBA)
+	gtkSnapshotSave                 func(uintptr)
+	gtkSnapshotTranslate            func(uintptr, *graphenePoint)
+	gtkSnapshotRestore              func(uintptr)
+	gskRenderNodeDraw               func(uintptr, uintptr)
+	gskRenderNodeUnref              func(uintptr)
+	gskTransformTranslate           func(uintptr, *graphenePoint) uintptr
+	gtkEventControllerLegacyNew     func() uintptr
+	gdkEventGetEventType            func(uintptr) int32
+	gdkEventGetPosition             func(uintptr, *float64, *float64) int32
+	gdkEventGetModifierState        func(uintptr) uint32
+	gdkEventGetDevice               func(uintptr) uintptr
+	gdkEventGetTime                 func(uintptr) uint32
+	gdkButtonEventGetButton         func(uintptr) uint32
+	gdkScrollEventGetDirection      func(uintptr) int32
+	gdkScrollEventGetDeltas         func(uintptr, *float64, *float64)
+	gdkScrollEventIsStop            func(uintptr) int32
+	gdkScrollEventGetUnit           func(uintptr) int32 // from GTK 4.8
+	gdkTouchpadEventGetGesturePhase func(uintptr) int32
 )
 
 // bindWidget registers the bindings of NsgoView; bind calls it.
@@ -549,10 +552,13 @@ func bindWidget() {
 	gtk(&gdkEventGetPosition, "gdk_event_get_position")
 	gtk(&gdkEventGetModifierState, "gdk_event_get_modifier_state")
 	gtk(&gdkEventGetDevice, "gdk_event_get_device")
+	gtk(&gdkEventGetTime, "gdk_event_get_time")
 	gtk(&gdkButtonEventGetButton, "gdk_button_event_get_button")
 	gtk(&gdkScrollEventGetDirection, "gdk_scroll_event_get_direction")
 	gtk(&gdkScrollEventGetDeltas, "gdk_scroll_event_get_deltas")
+	gtk(&gdkScrollEventIsStop, "gdk_scroll_event_is_stop")
 	if _, err := purego.Dlsym(gtkLib, "gdk_scroll_event_get_unit"); err == nil {
 		gtk(&gdkScrollEventGetUnit, "gdk_scroll_event_get_unit")
 	}
+	gtk(&gdkTouchpadEventGetGesturePhase, "gdk_touchpad_event_get_gesture_phase")
 }
