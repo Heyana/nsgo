@@ -6,7 +6,7 @@
 
 Every batch goes to a model of the native views (`nsgotest/model.go`), which queries read and steps act on: frames, styles, props, texts with their spans, shadows and line limits, inputs, scroll offsets, the animated values gestures and scrolling drive (`Bound`, `AnimatedValue`), canvas nodes as child views, and what the app asked the platform for. Headless, the app runs on `core.ApproxTextEngine`, or the engine `TextEngine` gives, and a `core.ManualClock`; frames run only as the clock moves. Its platform plays audio as a test sets it where the environment says `Audio`: it records the sounds loaded and played (`Sounds`) and each player's commands (`Players`), decodes the durations `AudioDurations` gives, failing the rest with `Decode`, refuses plays with `NotAllowed` under `RefusePlayback`, and moves a player on only as the clock moves.
 
-The model converts picker, camera, scan and save requests into the records in `nsgotest/file_requests.go`. Answer hooks receive those records too, through the test host on a target for photo picks, captures and code scans.
+`View.Kind` uses owned `nsgotest.ViewKind` constants mapped from the mount protocol. The model converts picker, camera, scan and save requests into the records in `nsgotest/file_requests.go`. Answer hooks receive those records too, through the test host on a target for photo picks, captures and code scans.
 
 Selectors (`nsgotest/selector.go`) name what a user sees, as Playwright's: `id:`, `label:`, `text:` (a substring, or a field's text or its placeholder while empty; in quotes, `text:"Save"`, the whole text or a span's), `role:<role> <name>`, `view:<node>`, and a bare string as a test ID, else a label, else a whole text. `label:`, `text:` and a role's name take `/regexp/flags`.
 

@@ -71,8 +71,6 @@ type (
 	VideoHeaders = driver.VideoHeaders
 	// PictureInPictureConfig describes a detached custom session.
 	PictureInPictureConfig = driver.PictureInPictureConfig
-	// ViewKind is the kind of native view a node mounts.
-	ViewKind = driver.ViewKind
 	// GPUDeviceLostReason describes why a simulated GPU device was lost.
 	GPUDeviceLostReason = driver.GPUDeviceLostReason
 	// ViewProps is a view's accessibility and identity.
@@ -178,21 +176,6 @@ const (
 	PictureBackdrop        = driver.PictureBackdrop
 	PictureFrom            = driver.PictureFrom
 	PictureTo              = driver.PictureTo
-)
-
-const (
-	KindView   = driver.KindView
-	KindText   = driver.KindText
-	KindInput  = driver.KindInput
-	KindScroll = driver.KindScroll
-	KindImage  = driver.KindImage
-	KindModal  = driver.KindModal
-	KindCanvas = driver.KindCanvas
-	KindWeb    = driver.KindWeb
-	KindVideo  = driver.KindVideo
-	KindNative = driver.KindNative
-	KindShader = driver.KindShader
-	KindGPU    = driver.KindGPU
 )
 
 const (

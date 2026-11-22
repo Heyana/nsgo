@@ -43,7 +43,7 @@ func TestViewLaysOutAndPaints(t *testing.T) {
 		return core.View{Style: core.Style{AlignItems: core.AlignStretch}, Children: []core.Node{View{TestID: "d", Source: flowchart}}}
 	}, nsgotest.Size(800, 600))
 	d := app.Find("id:d")
-	if d.Kind != driver.KindCanvas {
+	if d.Kind != nsgotest.KindCanvas {
 		t.Fatalf("the diagram shows as %v", d.Kind)
 	}
 	size := d.Frame.Size
@@ -147,7 +147,7 @@ func TestViewFallsBackToItsSource(t *testing.T) {
 	if v.TextStyle.Color != core.RGB(0xff0000) {
 		t.Errorf("the source shows in %v, want ErrorStyle's color", v.TextStyle.Color)
 	}
-	if app.Find("id:empty").Kind != driver.KindText {
+	if app.Find("id:empty").Kind != nsgotest.KindText {
 		t.Error("an empty diagram draws a canvas")
 	}
 }
@@ -173,7 +173,7 @@ func TestEveryKindDraws(t *testing.T) {
 	}, nsgotest.Size(800, 600))
 	for id := range sources {
 		v := app.Find("id:" + id)
-		if v.Kind != driver.KindCanvas || len(v.Ops) == 0 || v.Frame.Size.Width <= 0 {
+		if v.Kind != nsgotest.KindCanvas || len(v.Ops) == 0 || v.Frame.Size.Width <= 0 {
 			t.Errorf("the %s diagram shows as %v with %d operations, %v", id, v.Kind, len(v.Ops), v.Frame.Size)
 		}
 	}
@@ -196,13 +196,13 @@ func TestRenderDiagram(t *testing.T) {
 	app.Screenshot("diagram-textview")
 	label := app.Find("label:Diagram")
 	text := label
-	for text.Kind != driver.KindText {
+	for text.Kind != nsgotest.KindText {
 		text = text.Parent
 	}
 	if want := "```mermaid\n" + flowchart + "\n```"; text.Spans[0].Copy != want {
 		t.Errorf("the diagram copies as %q, want %q", text.Spans[0].Copy, want)
 	}
-	if text.TextStyle.Align != core.TextAlignCenter || text.Parent.Kind != driver.KindScroll || !text.Parent.Scroll.Horizontal {
+	if text.TextStyle.Align != core.TextAlignCenter || text.Parent.Kind != nsgotest.KindScroll || !text.Parent.Scroll.Horizontal {
 		t.Errorf("the diagram's text aligns %v in a %v: it centers in a sideways scroll", text.TextStyle.Align, text.Parent.Kind)
 	}
 	if !app.Exists("text:x := 1") {

@@ -1403,7 +1403,7 @@ func TestAppearanceRestylesInPlace(t *testing.T) {
 					app.WaitUntil(10*time.Second, func() bool {
 						// A formula draws nothing until its font has loaded.
 						for _, v := range views(app.Find("id:document")) {
-							if v.Kind == driver.KindCanvas && len(v.Ops) == 0 {
+							if v.Kind == nsgotest.KindCanvas && len(v.Ops) == 0 {
 								return false
 							}
 						}
@@ -1606,7 +1606,7 @@ func looks(v *nsgotest.View, drawings bool) []string {
 		}
 		// JSON follows the pointers in the styles.
 		look, err := json.Marshal(struct {
-			Kind  driver.ViewKind
+			Kind  nsgotest.ViewKind
 			Style driver.ViewStyle
 			Text  driver.TextStyle
 			Spans []driver.TextSpan
@@ -2156,7 +2156,7 @@ func TestTextViewFormulas(t *testing.T) {
 		return core.Scroll{TestID: "page", Children: []core.Node{markdownCard(cx)}}
 	}, nsgotest.Size(700, 800), nsgotest.Environment(desktopEnv))
 	sixty := app.WaitFor("label:60", 10*time.Second)
-	if sixty.Kind != driver.KindCanvas {
+	if sixty.Kind != nsgotest.KindCanvas {
 		t.Errorf("$60$ shows as %v, not typeset", sixty.Kind)
 	}
 	paragraph := sixty.Parent.Parent
@@ -2180,7 +2180,7 @@ func TestTextViewDiagram(t *testing.T) {
 		return core.Scroll{TestID: "page", Children: []core.Node{markdownCard(cx)}}
 	}, nsgotest.Size(700, 800), nsgotest.Environment(desktopEnv))
 	d := app.Find("label:Diagram")
-	if d.Kind != driver.KindCanvas || d.Frame.Size.Width <= d.Frame.Size.Height {
+	if d.Kind != nsgotest.KindCanvas || d.Frame.Size.Width <= d.Frame.Size.Height {
 		t.Fatalf("the diagram shows as %v, %v: a left-to-right flowchart", d.Kind, d.Frame.Size)
 	}
 	var words []string

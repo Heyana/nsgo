@@ -200,7 +200,7 @@ func (a *App) shownWith(unsized bool) []*View {
 		if v.Style.Hidden {
 			return
 		}
-		if v.Kind == driver.KindModal {
+		if v.Kind == KindModal {
 			origin, c, placed = driver.Point{}, window, true
 		}
 		b := v.Frame
@@ -208,13 +208,13 @@ func (a *App) shownWith(unsized bool) []*View {
 		b.Origin.Y += origin.Y
 		if placed || b.Size.Width > 0 && b.Size.Height > 0 && c.shows(b) {
 			out = append(out, v)
-		} else if unsized && (v.Kind == driver.KindImage || v.Kind == driver.KindNative) && c.shows(driver.Bounds{Origin: b.Origin, Size: driver.Size{Width: max(b.Size.Width, 1), Height: max(b.Size.Height, 1)}}) {
+		} else if unsized && (v.Kind == KindImage || v.Kind == KindNative) && c.shows(driver.Bounds{Origin: b.Origin, Size: driver.Size{Width: max(b.Size.Width, 1), Height: max(b.Size.Height, 1)}}) {
 			out = append(out, v)
 		}
 		inner := c
 		content := b.Origin
 		switch {
-		case v.Kind == driver.KindScroll:
+		case v.Kind == KindScroll:
 			content.X -= v.Offset.X
 			content.Y -= v.Offset.Y
 			switch {
@@ -253,7 +253,7 @@ func (a *App) shownWith(unsized bool) []*View {
 		if v.Screen != (driver.ScreenConfig{}) && !v.Screen.HeaderHidden {
 			extra = append(extra, v.Screen.Left, v.Screen.Right, v.Screen.TitleView)
 		}
-		if v.Focused && v.Kind == driver.KindInput {
+		if v.Focused && v.Kind == KindInput {
 			extra = append(extra, v.Input.Accessory)
 		}
 		for _, id := range extra {
@@ -273,7 +273,7 @@ func (a *App) byLayerWith(unsized bool) []*View {
 	views := a.shownWith(unsized)
 	var top *View
 	for _, v := range views {
-		if v.Kind == driver.KindModal {
+		if v.Kind == KindModal {
 			top = v
 		}
 	}
@@ -419,9 +419,9 @@ func (v *View) showsText(m textMatch) bool {
 	switch {
 	case v.Node != nil:
 		return m.matches(v.Node.Label)
-	case v.Kind == driver.KindText:
+	case v.Kind == KindText:
 		return m.matches(driver.VisibleText(v.Text, v.Spans)) || v.spanAt(m) >= 0
-	case v.Kind == driver.KindInput:
+	case v.Kind == KindInput:
 		return v.Text != "" && m.matches(v.Text) || v.Text == "" && v.Input.Placeholder != "" && m.matches(v.Input.Placeholder)
 	}
 	return false
@@ -445,7 +445,7 @@ func (v *View) textWithin() string {
 	var b strings.Builder
 	var walk func(*View)
 	walk = func(v *View) {
-		if v.Kind == driver.KindText {
+		if v.Kind == KindText {
 			if b.Len() > 0 {
 				b.WriteByte(' ')
 			}
@@ -465,7 +465,7 @@ func roleName(r driver.Role) string { return driver.RoleName(r) }
 // when nil), takes no input.
 func (v *View) disabled(until *View) bool {
 	for p := v; p != nil; p = p.Parent {
-		if p.Props.Disabled || p.Kind == driver.KindInput && p.Input.Disabled {
+		if p.Props.Disabled || p.Kind == KindInput && p.Input.Disabled {
 			return true
 		}
 		if p == until {

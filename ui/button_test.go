@@ -5,7 +5,6 @@ import (
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/icons/lucide"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -127,7 +126,7 @@ func TestButtonBusy(t *testing.T) {
 			return core.Point{X: b.Origin.X + b.Size.Width/2, Y: b.Origin.Y + b.Size.Height/2}
 		}
 		for _, v := range views(save) {
-			if v.Kind == driver.KindCanvas {
+			if v.Kind == nsgotest.KindCanvas {
 				if got, want := center(v.Bounds()), center(save.Bounds()); got != want {
 					t.Fatalf("spinner centered at %v, want the button's center %v", got, want)
 				}

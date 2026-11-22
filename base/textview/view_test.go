@@ -10,7 +10,6 @@ import (
 	"github.com/nsgo-dev/nsgo/base/textview"
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/i18n"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -302,14 +301,14 @@ func TestTextViewScrollsDisplayFormulasAtTheBlocksEdge(t *testing.T) {
 			}}
 	}, nsgotest.Size(300, 200))
 	text := app.Find("id:formula")
-	for text.Kind != driver.KindText {
+	for text.Kind != nsgotest.KindText {
 		text = text.Parent
 	}
 	if text.Spans[0].Copy != "$$\nx^2\n$$" {
 		t.Errorf("the display formula copies as %q", text.Spans[0].Copy)
 	}
 	scroll := text.Parent
-	if scroll.Kind != driver.KindScroll || !scroll.Scroll.Horizontal {
+	if scroll.Kind != nsgotest.KindScroll || !scroll.Scroll.Horizontal {
 		t.Fatalf("the formula's text is in a %v, not a sideways scroll", scroll.Kind)
 	}
 	if scroll.Scroll.HideIndicator {
@@ -336,14 +335,14 @@ func TestTextViewHidesDisplayFormulasScrollBarsWithNoMathBlockScrollbar(t *testi
 			}}
 	})
 	scroll := app.Find("id:formula")
-	for scroll.Kind != driver.KindScroll {
+	for scroll.Kind != nsgotest.KindScroll {
 		scroll = scroll.Parent
 	}
 	if !scroll.Scroll.HideIndicator {
 		t.Errorf("NoMathBlockScrollbar leaves the display formula's scroll bar showing")
 	}
 	code := app.Find("text:code")
-	for code.Kind != driver.KindScroll {
+	for code.Kind != nsgotest.KindScroll {
 		code = code.Parent
 	}
 	if code.Scroll.HideIndicator {

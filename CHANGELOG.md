@@ -46,7 +46,7 @@
 - Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support and bundled GTK 4 on Linux x64 (#1227 and #1290 by @houko).
 - Expose physical keyboard positions and layout labels for game controls (#1242 by @houko).
 - Build one universal Mac App Store package or dual-ABI Android App Bundle when both platform architectures are selected (#1231 by @houko).
-- Record window and share requests as `nsgotest.WindowRequest` and `nsgotest.Share`, with window action constants in `nsgotest` (#181 by @houko).
+- Record window and share requests as `nsgotest.WindowRequest` and `nsgotest.Share`, with window action and mounted view kind constants in `nsgotest` (#181 by @houko).
 - Keep a read-only input's text selectable and copyable on macOS and iOS, the latter with no keyboard, stop edits at once in a macOS field made read-only while it is edited, and make `Readonly` and `Disabled` stop edits on HarmonyOS, which ignored them.
 - Keep macOS presses inside a Liquid Glass view, such as `chat.EffortPicker`'s panel, reaching the app after the first, as AppKit swallowed the release of a press it passed up through the glass.
 - Keep a `base/plot` line's or area's canvas within the plot's height past its edges, where values far outside the y domain, as a history emptied while its axis moves, made it millions of points tall and crashed Linux apps, which now skip a canvas Cairo cannot hold.

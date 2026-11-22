@@ -5,7 +5,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/base/textview"
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
 // TestTextView draws Markdown in the theme, under the app's own styles.
@@ -47,11 +47,11 @@ func TestTextViewMathBlock(t *testing.T) {
 		t.Errorf("a formula's TeX is %v, want the code's %v", got, TypeCode.FontSize)
 	}
 	text := app.Find("id:formula")
-	for text.Kind != driver.KindText {
+	for text.Kind != nsgotest.KindText {
 		text = text.Parent
 	}
 	scroll, block := text.Parent, text.Parent.Parent
-	if scroll.Kind != driver.KindScroll || scroll.Frame.Size.Width != block.Frame.Size.Width || block.Style.Background == 0 {
+	if scroll.Kind != nsgotest.KindScroll || scroll.Frame.Size.Width != block.Frame.Size.Width || block.Style.Background == 0 {
 		t.Errorf("a %v %v wide in a block %v wide with background %x: the scroll fills the block that has the background", scroll.Kind, scroll.Frame.Size.Width, block.Frame.Size.Width, block.Style.Background)
 	}
 	if got := text.Frame.Origin; got.X != 12 || got.Y != 12 {

@@ -19,7 +19,7 @@ func pressable(v *View) bool {
 	return v.Events.Has(driver.EventPress) || v.Events.Has(driver.EventPressDown)
 }
 
-func primaryPressTarget(v *View) bool { return v.Kind == driver.KindInput || pressable(v) }
+func primaryPressTarget(v *View) bool { return v.Kind == KindInput || pressable(v) }
 
 // pointerPressable includes touch listeners and responders, which can take a tap without becoming keyboard stops.
 func pointerPressable(v *View) bool {
@@ -31,8 +31,8 @@ func focusable(v *View) bool {
 	if v.disabled(nil) || v.Props.NoFocus {
 		return false
 	}
-	return v.Kind == driver.KindInput && !v.Input.Readonly ||
-		v.Kind != driver.KindInput && v.Props.FocusStop(v.Events)
+	return v.Kind == KindInput && !v.Input.Readonly ||
+		v.Kind != KindInput && v.Props.FocusStop(v.Events)
 }
 
 // systemSwitch returns the system switch (core.SystemSwitch) selector matches headless, where it shows with no size as the platform sizes it, or nil.
@@ -41,7 +41,7 @@ func (a *App) systemSwitch(selector string) *View {
 	if a.target != nil || err != nil {
 		return nil
 	}
-	if m := a.resolveWith(sel, true); len(m) == 1 && m[0].Kind == driver.KindNative && m[0].Component == driver.SwitchComponent {
+	if m := a.resolveWith(sel, true); len(m) == 1 && m[0].Kind == KindNative && m[0].Component == driver.SwitchComponent {
 		return m[0]
 	}
 	return nil
@@ -54,7 +54,7 @@ func (a *App) systemSwitch(selector string) *View {
 // selector names in a text with pressable spans.
 func (a *App) pressTarget(selector string) (v *View, at driver.Point, index int) {
 	a.t.Helper()
-	if m := a.Query(selector); a.target != nil && len(m) == 1 && m[0].Kind == driver.KindNative {
+	if m := a.Query(selector); a.target != nil && len(m) == 1 && m[0].Kind == KindNative {
 		return m[0], a.target.reveal(m[0]), 0
 	}
 	if v := a.systemSwitch(selector); v != nil {
@@ -93,7 +93,7 @@ func (a *App) pressTarget(selector string) (v *View, at driver.Point, index int)
 	if a.target != nil {
 		at = a.target.reveal(match)
 	}
-	if v == match && v.Kind == driver.KindText && len(v.Spans) > 0 {
+	if v == match && v.Kind == KindText && len(v.Spans) > 0 {
 		index = a.charsAt(selector, v)
 	}
 	return v, at, index
@@ -188,7 +188,7 @@ func modifierNames(mods driver.Modifiers) string {
 // pressAt presses v at the surface point at.
 func (a *App) pressAt(v *View, at driver.Point, index int, mods driver.Modifiers) {
 	a.t.Helper()
-	field := v.Kind == driver.KindInput && focusable(v)
+	field := v.Kind == KindInput && focusable(v)
 	if a.target != nil {
 		if field {
 			a.target.prepareKeyboard()
@@ -197,7 +197,7 @@ func (a *App) pressAt(v *View, at driver.Point, index int, mods driver.Modifiers
 		a.done()
 		return
 	}
-	if v.Kind == driver.KindNative && v.Component == driver.SwitchComponent {
+	if v.Kind == KindNative && v.Component == driver.SwitchComponent {
 		// The system switch takes the press itself, as on a target, and reports the value it flips to.
 		if v.NativeProps["disabled"] == true || v.disabled(nil) {
 			a.t.Fatalf("nsgotest: the system switch is disabled: a pressable view that takes no input\n%s", a.Dump())
@@ -213,7 +213,7 @@ func (a *App) pressAt(v *View, at driver.Point, index int, mods driver.Modifiers
 	a.pressOutside(v, at)
 	// A pointer's press takes the keyboard focus off pressable views and moves it into an editable field it hits.
 	for _, o := range a.views {
-		if o.Focused && (o.Kind != driver.KindInput || field && o != v) {
+		if o.Focused && (o.Kind != KindInput || field && o != v) {
 			a.setFocus(o, false)
 			a.Settle()
 		}
@@ -321,7 +321,7 @@ func (a *App) viewAt(p driver.Point, ok func(*View) bool) *View {
 		if !mapped {
 			return nil
 		}
-		self, children := driver.ReachView(v.Frame.Size, &v.Props, driver.Bounds{}, !s.Clip && v.Kind != driver.KindScroll, local)
+		self, children := driver.ReachView(v.Frame.Size, &v.Props, driver.Bounds{}, !s.Clip && v.Kind != KindScroll, local)
 		if children {
 			inner := driver.Point{X: local.X + v.Offset.X, Y: local.Y + v.Offset.Y}
 			for i := len(v.Children) - 1; i >= 0; i-- {
@@ -379,14 +379,14 @@ func (a *App) LongPress(selector string) {
 	v := a.pick(selector, "pressable view", func(m *View) (*View, bool) {
 		t := m.upTo(func(v *View) bool {
 			return v.Events.Has(driver.EventLongPress) || pressable(v) || v.Events.Has(driver.EventTouch) ||
-				v.Props.SelectionArea || v.Kind == driver.KindText && v.Props.Selectable == driver.SelectableOn
+				v.Props.SelectionArea || v.Kind == KindText && v.Props.Selectable == driver.SelectableOn
 		})
 		match = m
 		return t, t != nil && !m.disabled(t)
 	})
 	_, at := v.center()
 	index := 0
-	if v == match && v.Kind == driver.KindText && len(v.Spans) > 0 {
+	if v == match && v.Kind == KindText && len(v.Spans) > 0 {
 		index = a.charsAt(selector, v)
 	}
 	if a.target != nil {
@@ -445,7 +445,7 @@ func (a *App) RightClick(selector string) {
 func (a *App) inputStep(selector, step string) *View {
 	a.t.Helper()
 	a.step("%s(%s)", step, selector)
-	isInput := func(v *View) bool { return v.Kind == driver.KindInput }
+	isInput := func(v *View) bool { return v.Kind == KindInput }
 	v := a.pick(selector, "text field", func(m *View) (*View, bool) {
 		t := m.downTo(isInput)
 		return t, t != nil && !t.disabled(nil) && !t.Input.Readonly
@@ -471,8 +471,8 @@ func (a *App) inputStep(selector, step string) *View {
 func (a *App) Focus(selector string) {
 	a.t.Helper()
 	a.step("focus(%s)", selector)
-	isInput := func(v *View) bool { return v.Kind == driver.KindInput }
-	isStop := func(v *View) bool { return v.Kind != driver.KindInput && (v.Events.Pressable() || v.Props.Focusable) }
+	isInput := func(v *View) bool { return v.Kind == KindInput }
+	isStop := func(v *View) bool { return v.Kind != KindInput && (v.Events.Pressable() || v.Props.Focusable) }
 	v := a.pick(selector, "focusable view", func(m *View) (*View, bool) {
 		// A field in the match comes first, as Focus took fields only before it took other stops.
 		t := m.downTo(isInput)
@@ -482,9 +482,9 @@ func (a *App) Focus(selector string) {
 		if t == nil {
 			t = m.downTo(isStop)
 		}
-		return t, t != nil && !t.disabled(nil) && (t.Kind != driver.KindInput || !t.Input.Readonly)
+		return t, t != nil && !t.disabled(nil) && (t.Kind != KindInput || !t.Input.Readonly)
 	})
-	if v.Kind != driver.KindInput {
+	if v.Kind != KindInput {
 		switch {
 		case v.Props.NoFocus:
 			a.t.Fatalf("nsgotest: %q is NoFocus: it never takes the keyboard focus\n%s", selector, a.Dump())
@@ -496,7 +496,7 @@ func (a *App) Focus(selector string) {
 	}
 	if !v.Focused {
 		switch {
-		case v.Kind != driver.KindInput:
+		case v.Kind != KindInput:
 			a.tabTo(selector, v)
 		case a.target != nil:
 			a.target.focusField(v)
@@ -767,7 +767,7 @@ func (a *App) SelectTab(selector string, index int) {
 		}
 	}
 	v := a.FindMounted(selector)
-	if v.Component != driver.TabBarComponent || v.Kind != driver.KindNative {
+	if v.Component != driver.TabBarComponent || v.Kind != KindNative {
 		a.t.Fatalf("nsgotest: %s: %q is not a mobile.TabBar", a.stepName, selector)
 	}
 	if v.disabled(nil) || v.upTo(func(p *View) bool { return p.Style.Hidden }) != nil {
@@ -999,7 +999,7 @@ func (a *App) press(key, code string) {
 		if (name == "enter" || name == "space") && !(mods.Alt && a.env.OS == driver.OSWindows) {
 			// Return or Space press the pressable the keyboard focus is on, sending the down, up and press events it handles and taking the key even when it handles only a long press, as the platforms do.
 			for _, v := range a.shown() {
-				if v.Focused && v.Kind != driver.KindInput && v.Events.Pressable() {
+				if v.Focused && v.Kind != KindInput && v.Events.Pressable() {
 					for _, kind := range []driver.EventKind{driver.EventPressDown, driver.EventPressUp, driver.EventPress} {
 						a.send(v, driver.Event{Kind: kind, Modifiers: mods})
 					}
@@ -1015,7 +1015,7 @@ func (a *App) press(key, code string) {
 		name, shift = rest, true
 	}
 	for _, v := range a.views {
-		if !v.Focused || v.Kind != driver.KindInput || v.Input.Readonly || v.Input.Disabled {
+		if !v.Focused || v.Kind != KindInput || v.Input.Readonly || v.Input.Disabled {
 			continue
 		}
 		if slices.Contains(names, "mod+a") {
@@ -1077,7 +1077,7 @@ func (a *App) menuShortcut(names []string) (driver.MenuEntry, bool) {
 	}
 	editing := false
 	for _, v := range a.views {
-		if v.Focused && (v.Kind == driver.KindInput || v.Kind == driver.KindWeb) {
+		if v.Focused && (v.Kind == KindInput || v.Kind == KindWeb) {
 			editing = true
 			break
 		}
@@ -1135,9 +1135,9 @@ func (a *App) menuEdit(role driver.MenuRole) bool {
 			continue
 		}
 		switch {
-		case v.Kind == driver.KindWeb:
+		case v.Kind == KindWeb:
 			a.t.Fatalf("nsgotest: the menu role %q in a web view's page is not modelled headless", role.Label())
-		case v.Kind == driver.KindInput && !v.Input.Readonly && !v.Input.Disabled:
+		case v.Kind == KindInput && !v.Input.Readonly && !v.Input.Disabled:
 			a.editField(v, role)
 			return true
 		}
@@ -1203,7 +1203,7 @@ func (a *App) keyDown(k, name, code, identity string, repeat bool) bool {
 		if !v.Focused {
 			continue
 		}
-		if v.Kind == driver.KindInput || v.Kind == driver.KindWeb {
+		if v.Kind == KindInput || v.Kind == KindWeb {
 			editing = true
 		} else if v.Events.Has(driver.EventKeyDown) && focused == nil {
 			focused = v
@@ -1342,7 +1342,7 @@ func (a *App) focusKeyUse() driver.KeyUse {
 	var use driver.KeyUse
 	for _, v := range a.views {
 		if v.Focused {
-			use |= driver.FocusKeyUse(v.Kind, v.Props.Role, v.Events.Pressable())
+			use |= driver.FocusKeyUse(v.Kind.driverKind(), v.Props.Role, v.Events.Pressable())
 		}
 	}
 	return use

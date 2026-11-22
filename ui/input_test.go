@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -110,7 +109,7 @@ func TestComboboxKeepsChevronInset(t *testing.T) {
 				if field != nil {
 					return
 				}
-				if child.Kind == driver.KindInput {
+				if child.Kind == nsgotest.KindInput {
 					field = child
 					return
 				}

@@ -60,7 +60,7 @@ func TestProgressRingLineWidth(t *testing.T) {
 	})
 	var widths []float32
 	for _, child := range views(app.Find("ring")) {
-		if child.Kind != driver.KindCanvas {
+		if child.Kind != nsgotest.KindCanvas {
 			continue
 		}
 		for _, op := range child.Ops {
@@ -77,7 +77,7 @@ func TestProgressRingLineWidth(t *testing.T) {
 // canvasStrokes are the stroke colors of the first canvas from v down, in order.
 func canvasStrokes(v *nsgotest.View) []core.Color {
 	for _, child := range views(v) {
-		if child.Kind != driver.KindCanvas {
+		if child.Kind != nsgotest.KindCanvas {
 			continue
 		}
 		var out []core.Color

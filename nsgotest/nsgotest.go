@@ -1294,7 +1294,7 @@ func (a *App) Query(selector string) []*View {
 func (a *App) Texts() []string {
 	var out []string
 	for _, v := range a.byLayer() {
-		if v.Kind == driver.KindText {
+		if v.Kind == KindText {
 			out = append(out, v.Text)
 		}
 	}
@@ -1321,7 +1321,7 @@ func (a *App) Span(selector string) driver.TextSpan {
 	}
 	last := sel.parts[len(sel.parts)-1]
 	v := a.Find(selector)
-	if v.Kind != driver.KindText || last.kind != "text" {
+	if v.Kind != KindText || last.kind != "text" {
 		a.t.Fatalf("nsgotest: %q names no characters of a text; end it in text:", selector)
 	}
 	at := -1

@@ -213,7 +213,7 @@ func edgeInks(t *testing.T, app *nsgotest.App) (strokes, fills, erases []ink) {
 	var canvas *nsgotest.View
 	var find func(v *nsgotest.View)
 	find = func(v *nsgotest.View) {
-		if v.Kind == driver.KindCanvas && canvas == nil {
+		if v.Kind == nsgotest.KindCanvas && canvas == nil {
 			canvas = v
 		}
 		for _, c := range v.Children {

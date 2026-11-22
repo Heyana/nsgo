@@ -102,7 +102,7 @@ func (a *App) drag(v *View, start driver.Point, path []driver.Point) {
 		if f.press == nil && (pressable(p) || p.Events.Has(driver.EventLongPress)) && !v.disabled(p) {
 			f.press = p
 		}
-		inScroll = inScroll || p != v && p.Kind == driver.KindScroll && !p.Scroll.Behavior.NoScroll
+		inScroll = inScroll || p != v && p.Kind == KindScroll && !p.Scroll.Behavior.NoScroll
 	}
 	a.touchAt(driver.GestureBegan, start, 0)
 	a.pressOutside(v, start)
@@ -281,7 +281,7 @@ func (a *App) startDrag(f *finger, t driver.Point) {
 				return
 			}
 		}
-		if v.Kind == driver.KindScroll && !v.Scroll.Behavior.NoScroll && v.Scroll.Horizontal != vertical &&
+		if v.Kind == KindScroll && !v.Scroll.Behavior.NoScroll && v.Scroll.Horizontal != vertical &&
 			driver.Points(math.Hypot(float64(t.X), float64(t.Y))) >= driver.DefaultPanSlop && a.canScroll(v, t) {
 			if f.reporting {
 				// The scroll view takes the touches over.
@@ -720,7 +720,7 @@ func (a *App) reveal(v *View) driver.Point {
 		_, at := v.center()
 		moved := false
 		for p := v.Parent; p != nil; p = p.Parent {
-			if p.Kind != driver.KindScroll || p.Scroll.Behavior.NoScroll {
+			if p.Kind != KindScroll || p.Scroll.Behavior.NoScroll {
 				continue
 			}
 			local := p.localPoint(at)
@@ -780,7 +780,7 @@ func (a *App) SelectTextRange(selector, from string, start int, to string, end i
 	texts := areaTextsOf(v)
 	index := func(sel string) *View {
 		return a.pick(selector+" >> "+sel, "text", func(m *View) (*View, bool) {
-			if m.Kind != driver.KindText {
+			if m.Kind != KindText {
 				return nil, false
 			}
 			return m, true
@@ -815,7 +815,7 @@ func areaTextsOf(area *View) areaTexts {
 	var texts areaTexts
 	var walk func(*View)
 	walk = func(n *View) {
-		if n.Kind == driver.KindText {
+		if n.Kind == KindText {
 			f := n.surfaceFrame()
 			f.Origin.X -= origin.X
 			f.Origin.Y -= origin.Y
@@ -981,7 +981,7 @@ func (a *App) setHovered(next []*View, at driver.Point) {
 func (a *App) Scroll(selector string, distance driver.Points) {
 	a.t.Helper()
 	a.step("scroll(%s, %v)", selector, distance)
-	isScroll := func(v *View) bool { return v.Kind == driver.KindScroll }
+	isScroll := func(v *View) bool { return v.Kind == KindScroll }
 	v := a.pick(selector, "scroll view", func(m *View) (*View, bool) {
 		t := m.upTo(isScroll)
 		if t == nil {

@@ -888,7 +888,7 @@ func (g *agent) screenshot(p *automation.ScreenshotParams) (any, *automation.Err
 
 // scrollViewOf is the scroll view Scroll scrolls for selector.
 func scrollViewOf(a *App, selector string) *View {
-	isScroll := func(v *View) bool { return v.Kind == driver.KindScroll }
+	isScroll := func(v *View) bool { return v.Kind == KindScroll }
 	return a.pick(selector, "scroll view", func(m *View) (*View, bool) {
 		t := m.upTo(isScroll)
 		if t == nil {
@@ -925,12 +925,12 @@ func outline(a *App, all, bounds bool) string {
 			return
 		}
 		// A text whose words name the element around it, a button's, says nothing more.
-		if shown[v] && (all || listed(v) && !(named && v.Kind == driver.KindText && (v.Props.Role == driver.RoleNone || v.Props.Role == driver.RoleText) && v.Props.TestID == "")) {
+		if shown[v] && (all || listed(v) && !(named && v.Kind == KindText && (v.Props.Role == driver.RoleNone || v.Props.Role == driver.RoleText) && v.Props.TestID == "")) {
 			b.WriteString(strings.Repeat("  ", depth))
 			b.WriteString(line(element(v, bounds)))
 			b.WriteByte('\n')
 			depth++
-			named = v.Props.Role != driver.RoleNone && v.Props.Label == "" && v.Kind != driver.KindText
+			named = v.Props.Role != driver.RoleNone && v.Props.Label == "" && v.Kind != KindText
 		}
 		for _, c := range v.Children {
 			walk(c, depth, named)
@@ -945,9 +945,9 @@ func outline(a *App, all, bounds bool) string {
 // listed reports whether a snapshot lists v when it lists the named views alone.
 func listed(v *View) bool {
 	switch {
-	case v.Props.Role != driver.RoleNone, v.Props.TestID != "", v.Props.Label != "", v.Kind == driver.KindInput:
+	case v.Props.Role != driver.RoleNone, v.Props.TestID != "", v.Props.Label != "", v.Kind == KindInput:
 		return true
-	case v.Kind == driver.KindText:
+	case v.Kind == KindText:
 		return strings.TrimSpace(driver.VisibleText(v.Text, v.Spans)) != ""
 	}
 	return false
@@ -957,17 +957,17 @@ func listed(v *View) bool {
 func element(v *View, bounds bool) automation.Element {
 	e := automation.Element{Ref: fmt.Sprintf("view:%d", v.ID), Role: roleName(v.Props.Role), Name: v.Props.Label, TestID: v.Props.TestID}
 	if e.Role == "" {
-		e.Role = map[driver.ViewKind]string{driver.KindText: "text", driver.KindInput: "textbox", driver.KindScroll: "scroll",
-			driver.KindImage: "image", driver.KindModal: "modal", driver.KindCanvas: "canvas", driver.KindWeb: "web",
-			driver.KindVideo: "video", driver.KindNative: "native", driver.KindShader: "shader", driver.KindGPU: "gpu"}[v.Kind]
+		e.Role = map[ViewKind]string{KindText: "text", KindInput: "textbox", KindScroll: "scroll",
+			KindImage: "image", KindModal: "modal", KindCanvas: "canvas", KindWeb: "web",
+			KindVideo: "video", KindNative: "native", KindShader: "shader", KindGPU: "gpu"}[v.Kind]
 		if e.Role == "" {
 			e.Role = "view"
 		}
 	}
 	switch {
-	case v.Kind == driver.KindText:
+	case v.Kind == KindText:
 		e.Text = driver.VisibleText(v.Text, v.Spans)
-	case v.Kind == driver.KindInput:
+	case v.Kind == KindInput:
 		e.Text = v.Text
 		if e.Name == "" {
 			e.Name = v.Input.Placeholder

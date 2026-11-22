@@ -6,7 +6,6 @@ import (
 
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -139,7 +138,7 @@ func TestInvalidPartsStyleWithoutReportingValidation(t *testing.T) {
 			var fields int
 			var visit func(*nsgotest.View)
 			visit = func(v *nsgotest.View) {
-				if v.Kind == driver.KindInput {
+				if v.Kind == nsgotest.KindInput {
 					fields++
 					if v.Props.Invalid != invalid {
 						t.Errorf("%s field invalid=%v, want %v", id, v.Props.Invalid, invalid)
@@ -175,7 +174,7 @@ func TestColorPickerSharesInvalidWithItsParts(t *testing.T) {
 			var controls int
 			var visit func(*nsgotest.View)
 			visit = func(v *nsgotest.View) {
-				if v.Kind == driver.KindInput || v.Props.Role == core.RoleAdjustable || v.Props.Role == core.RoleButton {
+				if v.Kind == nsgotest.KindInput || v.Props.Role == core.RoleAdjustable || v.Props.Role == core.RoleButton {
 					controls++
 					if v.Props.Invalid != invalid {
 						t.Errorf("%s accessible part invalid=%v, want %v", id, v.Props.Invalid, invalid)

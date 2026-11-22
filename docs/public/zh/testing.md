@@ -72,6 +72,8 @@ func TestMain(m *testing.M) {
 
 `app.Orientation` 保存当前生效的 `Scope.RequestOrientation` 方向集合。使用应用原有的方向策略时，该值为零。
 
+`app.Find(selector).Kind` 的类型是 `nsgotest.ViewKind`。需要检查挂载视图的形式时，可将它与 `nsgotest.KindText`、`KindInput`、`KindCanvas` 或 `KindGPU` 等常量比较。
+
 ## 小组件和实时活动
 
 `nsgotest.Widgets(true)` 记录应用通过 `widget.Update` 发布的内容。用 `app.Widgets()` 读取每类小组件的最新时间线。条目没有指定日期时，使用应用的墙钟时间。`nsgotest.Widgets(false)` 让 `widget.Available()` 返回 false，并让更新返回 `widget.ErrNoWidgets`。

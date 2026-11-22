@@ -16,7 +16,7 @@ import (
 // View is the model of one native view, as the last batch left it.
 type View struct {
 	ID       driver.NodeID
-	Kind     driver.ViewKind
+	Kind     ViewKind
 	Parent   *View
 	Children []*View
 	Frame    driver.Bounds
@@ -258,7 +258,7 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 	v.Children = kept
 	for i := range d.Nodes {
 		n := &d.Nodes[i]
-		v.Children = append(v.Children, &View{Kind: driver.KindView, Parent: v, Frame: n.Bounds, Node: n,
+		v.Children = append(v.Children, &View{Kind: KindView, Parent: v, Frame: n.Bounds, Node: n,
 			Style: driver.ViewStyle{Opacity: 1},
 			Props: driver.ViewProps{Role: n.Role, Label: n.Label, TestID: n.TestID, Selected: n.Selected}})
 	}
@@ -513,7 +513,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		}
 		switch it.Kind {
 		case driver.ItemCreate:
-			a.views[it.ID] = &View{ID: it.ID, Kind: it.View, Style: driver.DefaultViewStyle, anim: a.anim}
+			a.views[it.ID] = &View{ID: it.ID, Kind: viewKind(it.View), Style: driver.DefaultViewStyle, anim: a.anim}
 		case driver.ItemDelete:
 			if v != nil {
 				v.detach()
@@ -1049,7 +1049,7 @@ func (a *App) apply(b *driver.MountBatch) {
 	a.syncGPUViews(gpuConfigured, resized)
 	// When content shrinks or the viewport grows, pull an offset past the new end back after the batch's scroll commands keep the visible content in place.
 	for _, v := range resized {
-		if v.Kind != driver.KindScroll || v.Scroll.Zooms() || a.views[v.ID] != v {
+		if v.Kind != KindScroll || v.Scroll.Zooms() || a.views[v.ID] != v {
 			continue
 		}
 		end := v.clamp(v.Offset)
@@ -1066,7 +1066,7 @@ func (a *App) canFocus(v *View) bool {
 	if v == nil || v.disabled(nil) {
 		return false
 	}
-	if v.Kind != driver.KindInput && (!a.tabs() || !v.Props.FocusStop(v.Events)) {
+	if v.Kind != KindInput && (!a.tabs() || !v.Props.FocusStop(v.Events)) {
 		return false
 	}
 	for p := v; p != nil; p = p.Parent {
@@ -1076,7 +1076,7 @@ func (a *App) canFocus(v *View) bool {
 		if p.ID == a.rootID {
 			shown := a.shown()
 			for i := len(shown) - 1; i >= 0; i-- {
-				if shown[i].Kind == driver.KindModal {
+				if shown[i].Kind == KindModal {
 					return v.within(shown[i])
 				}
 			}
@@ -1430,7 +1430,7 @@ func (a *App) Dump() string {
 		if v.Props.TestID != "" {
 			fmt.Fprintf(&b, " id=%s", v.Props.TestID)
 		}
-		if v.Kind == driver.KindText || v.Kind == driver.KindInput {
+		if v.Kind == KindText || v.Kind == KindInput {
 			fmt.Fprintf(&b, " %q", v.Text)
 		}
 		b.WriteByte('\n')

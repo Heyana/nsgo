@@ -268,7 +268,7 @@ func TestRenderMath(t *testing.T) {
 	narrow := app.Find("label:x squared")
 	block := narrow.Parent.Parent // the attachment's view in its text
 	text := block
-	for text.Kind != driver.KindText {
+	for text.Kind != nsgotest.KindText {
 		text = text.Parent
 	}
 	if text.Spans[0].Copy != "$$\nx^2\n$$" {
@@ -281,7 +281,7 @@ func TestRenderMath(t *testing.T) {
 	var scrolls []*nsgotest.View
 	var walk func(v *nsgotest.View)
 	walk = func(v *nsgotest.View) {
-		if v.Kind == driver.KindScroll && v.Scroll.Horizontal {
+		if v.Kind == nsgotest.KindScroll && v.Scroll.Horizontal {
 			scrolls = append(scrolls, v)
 		}
 		for _, c := range v.Children {

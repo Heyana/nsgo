@@ -109,7 +109,7 @@ func (a *App) syncGPUViews(configured []*View, resized []*View) {
 		}
 	}
 	for _, v := range resized {
-		if v == nil || v.Kind != driver.KindGPU || readyNow[v.ID] || a.views[v.ID] != v {
+		if v == nil || v.Kind != KindGPU || readyNow[v.ID] || a.views[v.ID] != v {
 			continue
 		}
 		a.resizeGPUView(v)
@@ -117,7 +117,7 @@ func (a *App) syncGPUViews(configured []*View, resized []*View) {
 }
 
 func (a *App) resizeGPUView(v *View) {
-	if a.target != nil || v == nil || v.Kind != driver.KindGPU {
+	if a.target != nil || v == nil || v.Kind != KindGPU {
 		return
 	}
 	st := a.gpuViews[v.ID]
@@ -232,7 +232,7 @@ func (a *App) GPUReadPixels(selector string) (*image.RGBA, error) {
 	if v == nil {
 		return nil, fmt.Errorf("nsgotest: no view matches %q", selector)
 	}
-	if v.Kind != driver.KindGPU {
+	if v.Kind != KindGPU {
 		return nil, fmt.Errorf("nsgotest: view %q is %s, not gpu", selector, v.Kind)
 	}
 	owner := a

@@ -399,7 +399,7 @@ func (a *App) applyPlatformEvent(ev driver.Event) {
 		v.Text = ev.Text
 	case driver.EventSelectionChange:
 		// A field's; a selection area's carries its text instead.
-		if v.Kind == driver.KindInput {
+		if v.Kind == KindInput {
 			v.Selection = driver.TextRange{Start: ev.Index, End: int(ev.Count)}
 		}
 	}
@@ -650,7 +650,7 @@ func (t *target) reveal(v *View) driver.Point {
 		var hider *View
 		var box driver.Bounds
 		for p := v.Parent; p != nil; p = p.Parent {
-			if p.Kind == driver.KindScroll && !p.Scroll.Behavior.NoScroll {
+			if p.Kind == KindScroll && !p.Scroll.Behavior.NoScroll {
 				b := p.surfaceFrame()
 				if at.X < b.Origin.X || at.Y < b.Origin.Y || at.X >= b.Origin.X+b.Size.Width || at.Y >= b.Origin.Y+b.Size.Height {
 					hider, box = p, b

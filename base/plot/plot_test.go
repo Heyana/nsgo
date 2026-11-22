@@ -17,7 +17,7 @@ func canvases(app *nsgotest.App, selector string) []*nsgotest.View {
 	var out []*nsgotest.View
 	var walk func(v *nsgotest.View)
 	walk = func(v *nsgotest.View) {
-		if v.Kind == driver.KindCanvas {
+		if v.Kind == nsgotest.KindCanvas {
 			out = append(out, v)
 		}
 		for _, c := range v.Children {

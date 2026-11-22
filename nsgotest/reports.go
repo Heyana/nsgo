@@ -375,7 +375,7 @@ func (a *App) modal(selector string) *View {
 	a.t.Helper()
 	v := a.Find(selector)
 	for m := v; m != nil; m = m.Parent {
-		if m.Kind == driver.KindModal {
+		if m.Kind == KindModal {
 			return m
 		}
 	}
@@ -586,7 +586,7 @@ func (a *App) DropFiles(selector string, uris ...string) {
 			if p.Events.Has(driver.EventFileDrop) {
 				return p, !p.disabled(nil)
 			}
-			if p.Kind == driver.KindModal {
+			if p.Kind == KindModal {
 				break
 			}
 		}
