@@ -8,10 +8,7 @@ type watchNotificationBackend struct {
 	close      func(id string)
 }
 
-// dispatchWatchNotification routes notification commands on watchOS to Apple's
-// UNUserNotificationCenter (which supports immediate and scheduled once, daily
-// and weekly local notifications). Badge items remain no-ops because watchOS
-// app icons have no badge.
+// dispatchWatchNotification routes notification commands on watchOS to Apple's UNUserNotificationCenter (which supports immediate and scheduled once, daily and weekly local notifications). Badge items remain no-ops because watchOS app icons have no badge.
 func dispatchWatchNotification(it *driver.MountItem, b watchNotificationBackend, dispatch func(driver.Event)) {
 	id := it.Count
 	switch it.Kind {

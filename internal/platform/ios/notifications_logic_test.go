@@ -33,8 +33,7 @@ func TestIOSAndTVOSNotificationDispatch(t *testing.T) {
 	}
 	dispatch := func(ev driver.Event) { events = append(events, ev) }
 
-	// On tvOS: permission is unavailable, show answers false without calling
-	// UNMutableNotificationContent setters, close is a no-op, badge still works.
+	// On tvOS: permission is unavailable, show answers false without calling UNMutableNotificationContent setters, close is a no-op, badge still works.
 	n := driver.Notification{ID: "tv", Title: "TV", At: time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)}
 	dispatchIOSNotification(true, &driver.MountItem{Kind: driver.ItemNotificationPermission, Count: 1, On: true}, backend, dispatch)
 	dispatchIOSNotification(true, &driver.MountItem{Kind: driver.ItemShowNotification, Count: 2, Notification: &n}, backend, dispatch)

@@ -8,12 +8,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// System notifications through the page's Notification API, and the badge
-// of an installed web app's icon through navigator.setAppBadge. A page
-// whose browser has no Notification, or shows them only from a service
-// worker, as Chrome on Android, answers unavailable or fails to show.
-// Scheduled notifications are kept in memory while the page runs, because
-// browsers have no standard background schedule API.
+// System notifications through the page's Notification API, and the badge of an installed web app's icon through navigator.setAppBadge. A page whose browser has no Notification, or shows them only from a service worker, as Chrome on Android, answers unavailable or fails to show. Scheduled notifications are kept in memory while the page runs, because browsers have no standard background schedule API.
 
 // shownNotifications are the notifications the page shows, by ID, which
 // one of the same ID and CloseNotification close.
@@ -61,8 +56,7 @@ func (s *surface) showWebNotification(n driver.Notification) bool {
 	}
 	endNotification(n.ID)
 	shown := func() (note js.Value, ok bool) {
-		// The constructor throws where only a service worker shows
-		// them.
+		// The constructor throws where only a service worker shows them.
 		defer func() { ok = recover() == nil }()
 		return api.New(n.Title, map[string]any{"body": n.Body, "tag": n.ID, "silent": n.Silent}), true
 	}

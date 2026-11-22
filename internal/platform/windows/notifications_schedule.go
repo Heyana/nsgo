@@ -50,11 +50,7 @@ func (p persistedToast) notification() driver.Notification {
 	}
 }
 
-// toastRepeatManager chains Windows' single-shot ScheduledToastNotification
-// into daily and weekly repeating schedules. The upcoming occurrence is always
-// placed on Windows' ToastNotifier so it still fires after the app exits; while
-// the app runs, a timer queues the next occurrence right after the current one
-// fires, and Rearm restores persisted repeats on the next launch.
+// toastRepeatManager chains Windows' single-shot ScheduledToastNotification into daily and weekly repeating schedules. The upcoming occurrence is always placed on Windows' ToastNotifier so it still fires after the app exits; while the app runs, a timer queues the next occurrence right after the current one fires, and Rearm restores persisted repeats on the next launch.
 type toastRepeatManager struct {
 	mu           sync.Mutex
 	path         string
@@ -86,9 +82,7 @@ func (m *toastRepeatManager) now() time.Time {
 	return time.Now()
 }
 
-// Schedule schedules n on Windows' ToastNotifier, replacing any existing
-// notification with the same ID. For daily and weekly repeats, it also persists
-// the schedule and arms the in-app chain timer.
+// Schedule schedules n on Windows' ToastNotifier, replacing any existing notification with the same ID. For daily and weekly repeats, it also persists the schedule and arms the in-app chain timer.
 func (m *toastRepeatManager) Schedule(n driver.Notification) bool {
 	if n.ID == "" || n.At.IsZero() {
 		return false
@@ -152,8 +146,7 @@ func (m *toastRepeatManager) Schedule(n driver.Notification) bool {
 	return true
 }
 
-// Cancel removes id (or every repeating schedule when id is empty) from memory
-// and persisted storage, stopping its chain timer.
+// Cancel removes id (or every repeating schedule when id is empty) from memory and persisted storage, stopping its chain timer.
 func (m *toastRepeatManager) Cancel(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -171,19 +164,14 @@ func (m *toastRepeatManager) Cancel(id string) {
 	}
 }
 
-// Stop stops every in-process repeat timer without touching Windows' scheduled
-// toasts or the persisted schedule file, so upcoming toasts still fire after
-// the app exits and the next launch rearms future repeats.
+// Stop stops every in-process repeat timer without touching Windows' scheduled toasts or the persisted schedule file, so upcoming toasts still fire after the app exits and the next launch rearms future repeats.
 func (m *toastRepeatManager) Stop() {
 	m.mu.Lock()
 	m.sched.Close()
 	m.mu.Unlock()
 }
 
-// Rearm loads persisted repeating schedules from disk, advances any whose
-// scheduled occurrence passed while the app was closed, places each upcoming
-// occurrence on Windows' ToastNotifier and arms its chain timer. If no schedule
-// file exists or it has no items, Rearm returns without touching the notifier.
+// Rearm loads persisted repeating schedules from disk, advances any whose scheduled occurrence passed while the app was closed, places each upcoming occurrence on Windows' ToastNotifier and arms its chain timer. If no schedule file exists or it has no items, Rearm returns without touching the notifier.
 func (m *toastRepeatManager) Rearm() {
 	items := m.load()
 	if len(items) == 0 {

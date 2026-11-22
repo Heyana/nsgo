@@ -90,9 +90,7 @@ func (s *surface) readClipboard(it *driver.MountItem) {
 	s.engine.Dispatch(ev)
 }
 
-// notify carries out a notification's item through the notification
-// center; the badge needs the permission, and before iOS 16 is the
-// application's. On tvOS, the center supports badges only.
+// notify carries out a notification's item through the notification center; the badge needs the permission, and before iOS 16 is the application's. On tvOS, the center supports badges only.
 func (s *surface) notify(it *driver.MountItem) {
 	switch it.Kind {
 	case driver.ItemNotificationPermission, driver.ItemShowNotification, driver.ItemCloseNotification, driver.ItemBadge:

@@ -7,19 +7,13 @@ import (
 	"time"
 )
 
-// NextNotificationRepeat returns the first wall time strictly after now
-// matching at's clock reading (in at's location), and at's weekday for
-// NotificationWeekly, evaluated in now's location. It returns the zero time
-// for NotificationOnce or an unknown repeat.
+// NextNotificationRepeat returns the first wall time strictly after now matching at's clock reading (in at's location), and at's weekday for NotificationWeekly, evaluated in now's location. It returns the zero time for NotificationOnce or an unknown repeat.
 func NextNotificationRepeat(at time.Time, r NotificationRepeat, now time.Time) time.Time {
 	h, m, s := at.Clock()
 	return NextClockRepeat(h, m, s, at.Weekday(), r, now)
 }
 
-// NextClockRepeat returns the first wall time strictly after now matching
-// hour:minute:second (and weekday for NotificationWeekly) in now's location.
-// Constructing the date from calendar offsets avoids wall-clock drift across
-// daylight saving transitions.
+// NextClockRepeat returns the first wall time strictly after now matching hour:minute:second (and weekday for NotificationWeekly) in now's location. Constructing the date from calendar offsets avoids wall-clock drift across daylight saving transitions.
 func NextClockRepeat(hour, minute, second int, weekday time.Weekday, r NotificationRepeat, now time.Time) time.Time {
 	if r != NotificationDaily && r != NotificationWeekly {
 		return time.Time{}
@@ -57,9 +51,7 @@ type scheduledNotification struct {
 	timer   NotificationTimer
 }
 
-// NotificationScheduler keeps scheduled notifications in memory while the app
-// runs, invoking Fire as each wall time arrives and re-arming daily and weekly
-// repeats. It is safe for concurrent use.
+// NotificationScheduler keeps scheduled notifications in memory while the app runs, invoking Fire as each wall time arrives and re-arming daily and weekly repeats. It is safe for concurrent use.
 type NotificationScheduler struct {
 	mu       sync.Mutex
 	entries  map[string]*scheduledNotification
@@ -68,10 +60,7 @@ type NotificationScheduler struct {
 	clearSeq uint64
 	closed   bool
 
-	// Fire runs outside the scheduler's lock when a scheduled notification
-	// comes due. nextAt is the next scheduled time for repeating notifications
-	// and zero for NotificationOnce. Async handlers can check Canceled(n.ID, seq)
-	// before delivering.
+	// Fire runs outside the scheduler's lock when a scheduled notification comes due. nextAt is the next scheduled time for repeating notifications and zero for NotificationOnce. Async handlers can check Canceled(n.ID, seq) before delivering.
 	Fire func(n Notification, nextAt time.Time, seq uint64)
 
 	// Now returns the current wall time; defaults to time.Now.
@@ -80,15 +69,11 @@ type NotificationScheduler struct {
 	// AfterFunc schedules fn to run after d; defaults to time.AfterFunc.
 	AfterFunc func(d time.Duration, fn func()) NotificationTimer
 
-	// MaxStep caps each timer wait so suspend/resume, wall-clock jumps and
-	// JavaScript's 32-bit setTimeout limit are handled without drift. Zero uses
-	// one minute; a negative duration disables chunking.
+	// MaxStep caps each timer wait so suspend/resume, wall-clock jumps and JavaScript's 32-bit setTimeout limit are handled without drift. Zero uses one minute; a negative duration disables chunking.
 	MaxStep time.Duration
 }
 
-// Schedule schedules n for its At (and repeats for Daily/Weekly), replacing
-// any pending notification with the same ID. It returns the entry's sequence
-// number and whether it was scheduled.
+// Schedule schedules n for its At (and repeats for Daily/Weekly), replacing any pending notification with the same ID. It returns the entry's sequence number and whether it was scheduled.
 func (s *NotificationScheduler) Schedule(n Notification) (uint64, bool) {
 	if n.ID == "" || n.At.IsZero() {
 		return 0, false
@@ -124,9 +109,7 @@ func (s *NotificationScheduler) Schedule(n Notification) (uint64, bool) {
 	return seq, true
 }
 
-// Cancel cancels the pending notification called id, or every pending
-// notification when id is empty. It reports whether any pending notification
-// was removed.
+// Cancel cancels the pending notification called id, or every pending notification when id is empty. It reports whether any pending notification was removed.
 func (s *NotificationScheduler) Cancel(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -158,16 +141,14 @@ func (s *NotificationScheduler) Cancel(id string) bool {
 	return true
 }
 
-// Canceled reports whether the scheduled notification with id and sequence seq
-// has since been canceled, replaced, cleared or closed.
+// Canceled reports whether the scheduled notification with id and sequence seq has since been canceled, replaced, cleared or closed.
 func (s *NotificationScheduler) Canceled(id string, seq uint64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.closed || s.clearSeq > seq || s.canceled[id] > seq
 }
 
-// Pending returns a snapshot of the currently pending notifications, sorted by
-// scheduled time then ID.
+// Pending returns a snapshot of the currently pending notifications, sorted by scheduled time then ID.
 func (s *NotificationScheduler) Pending() []Notification {
 	s.mu.Lock()
 	defer s.mu.Unlock()

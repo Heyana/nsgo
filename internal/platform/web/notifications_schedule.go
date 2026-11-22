@@ -6,9 +6,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// webNotificationScheduler keeps scheduled notifications in memory while the
-// page runs, delivering each through the browser Notification API when its wall
-// time arrives because browsers have no standard notification schedule API.
+// webNotificationScheduler keeps scheduled notifications in memory while the page runs, delivering each through the browser Notification API when its wall time arrives because browsers have no standard notification schedule API.
 type webNotificationScheduler struct {
 	sched      driver.NotificationScheduler
 	permitted  func() bool
@@ -30,9 +28,7 @@ func newWebNotificationScheduler(
 	return s
 }
 
-// Show displays n immediately when At is zero, or schedules it while the page
-// runs when At is set. It returns false without permission and cancels any
-// previously scheduled notification with the same ID.
+// Show displays n immediately when At is zero, or schedules it while the page runs when At is set. It returns false without permission and cancels any previously scheduled notification with the same ID.
 func (s *webNotificationScheduler) Show(n driver.Notification) bool {
 	if s.permitted != nil && !s.permitted() {
 		return false
@@ -45,8 +41,7 @@ func (s *webNotificationScheduler) Show(n driver.Notification) bool {
 	return ok
 }
 
-// Close cancels pending scheduled notifications (id, or all when id is empty)
-// and closes any currently shown notifications.
+// Close cancels pending scheduled notifications (id, or all when id is empty) and closes any currently shown notifications.
 func (s *webNotificationScheduler) Close(id string) {
 	s.sched.Cancel(id)
 	if s.closeShown != nil {

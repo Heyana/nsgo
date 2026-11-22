@@ -9,17 +9,12 @@ type iosNotificationBackend struct {
 	badge      func(count uint32)
 }
 
-// canScheduleIOSNotifications reports whether local notification scheduling is
-// available for idiom: tvOS's UNUserNotificationCenter supports app icon badges
-// only and shows no local alerts or banners.
+// canScheduleIOSNotifications reports whether local notification scheduling is available for idiom: tvOS's UNUserNotificationCenter supports app icon badges only and shows no local alerts or banners.
 func canScheduleIOSNotifications(idiom driver.Idiom, centerAvailable bool) bool {
 	return idiom != driver.IdiomTV && centerAvailable
 }
 
-// dispatchIOSNotification routes notification commands on iOS, iPadOS and tvOS.
-// On tvOS, UNUserNotificationCenter supports badges only (alert title, body and
-// sound APIs are prohibited), so permission and show requests answer with
-// driver.NoNotification while badge updates still run.
+// dispatchIOSNotification routes notification commands on iOS, iPadOS and tvOS. On tvOS, UNUserNotificationCenter supports badges only (alert title, body and sound APIs are prohibited), so permission and show requests answer with driver.NoNotification while badge updates still run.
 func dispatchIOSNotification(tv bool, it *driver.MountItem, b iosNotificationBackend, dispatch func(driver.Event)) {
 	id := it.Count
 	switch it.Kind {

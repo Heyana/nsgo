@@ -8,9 +8,7 @@ import (
 )
 
 func TestMiniProgramNotificationsUnavailable(t *testing.T) {
-	// Mini programs have no local system notification API (subscription messages
-	// are server-pushed only), so ScheduledNotifications stays false and requests
-	// answer via driver.NoNotification.
+	// Mini programs have no local system notification API (subscription messages are server-pushed only), so ScheduledNotifications stays false and requests answer via driver.NoNotification.
 	var env driver.Environment
 	deviceOS(&env, "ios")
 	if env.ScheduledNotifications {

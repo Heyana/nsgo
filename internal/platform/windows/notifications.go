@@ -561,8 +561,7 @@ func (w *window) showToast(n driver.Notification) bool {
 	return true
 }
 
-// toastSchedulePath is where repeating scheduled toasts are persisted between
-// launches, or "" when the app has no data directory.
+// toastSchedulePath is where repeating scheduled toasts are persisted between launches, or "" when the app has no data directory.
 func (w *window) toastSchedulePath() string {
 	dir := w.rootWindow().dataDir
 	if dir == "" {
@@ -571,8 +570,7 @@ func (w *window) toastSchedulePath() string {
 	return filepath.Join(dir, toastScheduleName)
 }
 
-// toastRepeats returns the process's repeating toast scheduler, creating it on
-// the main thread when first needed.
+// toastRepeats returns the process's repeating toast scheduler, creating it on the main thread when first needed.
 func (w *window) toastRepeats() *toastRepeatManager {
 	if toasts.repeats != nil {
 		return toasts.repeats
@@ -611,8 +609,7 @@ func (w *window) toastRepeats() *toastRepeatManager {
 	return toasts.repeats
 }
 
-// rearmToastRepeats restores persisted repeating toasts on app launch without
-// creating the toast notifier when none are stored.
+// rearmToastRepeats restores persisted repeating toasts on app launch without creating the toast notifier when none are stored.
 func (w *window) rearmToastRepeats() {
 	path := w.toastSchedulePath()
 	if path == "" {
@@ -625,8 +622,7 @@ func (w *window) rearmToastRepeats() {
 	w.toastRepeats().Rearm()
 }
 
-// stopToastRepeats stops in-process repeat timers as the app exits while
-// keeping upcoming scheduled toasts and persisted schedules intact.
+// stopToastRepeats stops in-process repeat timers as the app exits while keeping upcoming scheduled toasts and persisted schedules intact.
 func stopToastRepeats() {
 	if toasts.repeats != nil {
 		toasts.repeats.Stop()

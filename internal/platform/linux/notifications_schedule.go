@@ -7,9 +7,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// linuxNotificationScheduler keeps scheduled notifications in memory while the
-// Linux app runs, delivering each to org.freedesktop.Notifications when its
-// wall time arrives because the desktop notification server offers no schedule.
+// linuxNotificationScheduler keeps scheduled notifications in memory while the Linux app runs, delivering each to org.freedesktop.Notifications when its wall time arrives because the desktop notification server offers no schedule.
 type linuxNotificationScheduler struct {
 	mu         sync.Mutex
 	appIDs     map[string]string
@@ -37,9 +35,7 @@ func newLinuxNotificationScheduler(
 	return s
 }
 
-// Show displays n immediately when At is zero, or schedules it while the app
-// runs when At is set. Showing or scheduling an ID cancels any pending
-// scheduled notification of the same ID.
+// Show displays n immediately when At is zero, or schedules it while the app runs when At is set. Showing or scheduling an ID cancels any pending scheduled notification of the same ID.
 func (s *linuxNotificationScheduler) Show(appID string, n driver.Notification) bool {
 	s.mu.Lock()
 	delete(s.appIDs, n.ID)
@@ -62,8 +58,7 @@ func (s *linuxNotificationScheduler) Show(appID string, n driver.Notification) b
 	return ok
 }
 
-// Close cancels scheduled notifications (id, or all when id is empty) and
-// closes any currently shown notifications.
+// Close cancels scheduled notifications (id, or all when id is empty) and closes any currently shown notifications.
 func (s *linuxNotificationScheduler) Close(id string) {
 	s.mu.Lock()
 	s.sched.Cancel(id)
