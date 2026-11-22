@@ -2604,5 +2604,5 @@ systemSensorsStop: Stop sensors
 systemSensorsAccelerometer: Accelerometer
 systemSensorsFused: Fused motion
 
-demoEmojiPicker: Emoji picker
+demoEmojiPicker: "EmojiPicker"
 demoEmojiPickerDetail: Search emoji by localized names and choose a skin tone

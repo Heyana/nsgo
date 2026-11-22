@@ -7392,7 +7392,7 @@ var textsEn = i18n.NewTexts(""+
 	"Stop sensors"+
 	"Accelerometer"+
 	"Fused motion"+
-	"Emoji picker"+
+	"EmojiPicker"+
 	"Search emoji by localized names and choose a skin tone",
 	[]uint16{
 		7,
@@ -9707,7 +9707,7 @@ var textsEn = i18n.NewTexts(""+
 		12,
 		13,
 		12,
-		12,
+		11,
 		54,
 	})
 
@@ -36910,7 +36910,7 @@ func SystemSensorsFused(cx *core.Scope) string { return For(cx).SystemSensorsFus
 // SystemSensorsFused is the package's SystemSensorsFused in the language of msgs.
 func (msgs Messages) SystemSensorsFused() string { return msgs.text(textSystemSensorsFused) }
 
-// DemoEmojiPicker says "Emoji picker"
+// DemoEmojiPicker says "EmojiPicker"
 // in the language the app shows under cx.
 func DemoEmojiPicker(cx *core.Scope) string { return For(cx).DemoEmojiPicker() }
 
