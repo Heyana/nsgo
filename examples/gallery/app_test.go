@@ -2131,15 +2131,15 @@ func TestSystemPermissionsInTheBackground(t *testing.T) {
 	}
 }
 
-// TestSystemPermissionsOnTheWeb reads the page's permissions: the microphone and the camera through the Permissions API, the rest collapsed into one note.
+// TestSystemPermissionsOnTheWeb reads the page's permissions: the microphone and the camera through the Permissions API, notifications through Notification.permission, the rest collapsed into one note.
 func TestSystemPermissionsOnTheWeb(t *testing.T) {
 	if nsgotest.Target() != "web" {
 		t.Skip("checks the web's Permissions API")
 	}
 	app := startDesktop(t)
 	open(app, "System")
-	app.WaitFor("text:Not on this platform: Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools, Calendars, Reminders, Bluetooth, Media & Apple Music", 10*time.Second)
-	for _, p := range []core.Permission{core.PermissionMicrophone, core.PermissionCamera} {
+	app.WaitFor("text:Not on this platform: Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools, Automation, Contacts, Calendars, Reminders, Photos, Bluetooth, Media & Apple Music, Location, Background location, Motion", 10*time.Second)
+	for _, p := range []core.Permission{core.PermissionMicrophone, core.PermissionCamera, core.PermissionNotifications} {
 		app.WaitUntil(10*time.Second, func() bool {
 			s := app.Find("id:permission-" + string(p)).Text
 			return s == "prompt" || s == "granted" || s == "denied"
