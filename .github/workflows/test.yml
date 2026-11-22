@@ -1,10 +1,7 @@
 name: Test
 
-# Tests every package on Linux, Apple's backends on macOS, Android presses on an emulator, and native input regressions across desktops and the web. release.yml calls it before publishing a release. The Apple jobs skip a pull request that cannot affect Apple's targets (apple-changes.yml).
+# Tests every package on Linux, Apple's backends on macOS, Android presses on an emulator, and native input regressions across desktops and the web. It does not run again on main, which takes the commits the merge queue tested as they are. release.yml calls it before publishing a release. The Apple jobs skip a pull request that cannot affect Apple's targets (apple-changes.yml).
 on:
-  push:
-    branches:
-      - main
   pull_request:
   # The merge queue tests each pull request on top of the ones ahead of it before it lands on main.
   merge_group:
@@ -12,9 +9,9 @@ on:
   workflow_dispatch:
   workflow_call:
 
-# A pull request's newer push cancels its older run; every commit on main gets a run of its own, as runs that wait for a macOS runner would otherwise be replaced by the next commit's before they finish. A merge group's run is keyed on its own gh-readonly-queue branch, so it never cancels or is cancelled by another.
+# A pull request's newer push cancels its older run. A merge group's run is keyed on its own gh-readonly-queue branch, so it never cancels or is cancelled by another.
 concurrency:
-  group: test-${{ github.event_name }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref_name }}
+  group: test-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -405,7 +402,7 @@ jobs:
 
   apple-simulator:
     needs: changes
-    # Runs only in the merge queue and on push, never on a pull request: the organization has one depot-macos-15 runner, and pull request runs queued ahead of merge groups made every group time out. A skipped job counts as passed, so the pull request still reaches the queue, and an Apple failure there removes it from the batch. In the queue it still skips a change that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
+    # Runs only in the merge queue, by hand and for a release, never on a pull request: the organization has one depot-macos-15 runner, and pull request runs queued ahead of merge groups made every group time out. A skipped job counts as passed, so the pull request still reaches the queue, and an Apple failure there removes it from the batch. In the queue it still skips a change that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
     if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.apple != 'false' }}
     runs-on: depot-macos-15
     timeout-minutes: 40
