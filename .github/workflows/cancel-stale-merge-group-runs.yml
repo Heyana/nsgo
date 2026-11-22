@@ -1,0 +1,64 @@
+name: Cancel stale merge group runs
+
+# Cancels the unfinished runs of merge groups the merge queue has dropped. When a group is invalidated (an entry ahead of it fails or leaves the queue, or a pull request jumps the queue), GitHub builds new groups on fresh gh-readonly-queue branches but leaves the old groups' runs queued or running. Enough of them pile up that new groups' runs sit pending with no jobs until the queue's check timeout nearly expires, so this sweeps them on a schedule and whenever a new group starts.
+#
+# A run is stale when its head commit is no longer the head commit of any merge queue entry. The live set is read after the runs are listed, so a group created in between is never mistaken for a dropped one, and runs younger than five minutes are left for the next sweep in case the queue's API lags behind its branches. If the merge queue cannot be read, nothing is cancelled. This workflow is not a required check; on merge_group it never cancels its own group's runs.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+concurrency:
+  group: cancel-stale-merge-group-runs
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel:
+    name: Cancel runs of dropped merge groups
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Cancel stale merge group runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          NAME: ${{ github.event.repository.name }}
+          GROUP_HEAD: ${{ github.event.merge_group.head_sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # id and head sha of every unfinished merge_group run at least five minutes old, other than this one.
+          runs=$(for status in queued in_progress pending waiting; do
+            gh api --paginate -X GET "repos/$REPO/actions/runs" \
+              -f event=merge_group -f status="$status" -f per_page=100 \
+              --jq '.workflow_runs[] | select((.id | tostring) != env.RUN_ID and (.created_at | fromdateiso8601) < (now - 300)) | "\(.id) \(.head_sha)"'
+          done | sort -u)
+          if [ -z "$runs" ]; then
+            echo "No unfinished merge group runs"
+            exit 0
+          fi
+          # The head commits of the queue's current entries; set -e stops here if the query fails, before anything is cancelled. A missing mergeQueue is treated as a failure too, since it would otherwise make every run look stale.
+          # shellcheck disable=SC2016 # $owner, $name and $endCursor are GraphQL variables.
+          query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { mergeQueue(branch: "main") { entries(first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { headCommit { oid } } } } } }'
+          live=$(gh api graphql --paginate -f query="$query" -F owner="$OWNER" -F name="$NAME" \
+            --jq 'if .data.repository.mergeQueue == null then error("no merge queue on main") else .data.repository.mergeQueue.entries.nodes[].headCommit.oid // empty end')
+          echo "Checking $(wc -l <<<"$runs") unfinished runs against $(grep -c . <<<"$live" || true) merge group heads"
+          echo "$runs" | while read -r id sha; do
+            if [ "$sha" = "$GROUP_HEAD" ] || grep -qxF "$sha" <<<"$live"; then
+              continue
+            fi
+            # A run may finish between listing and cancelling, and GitHub then answers 409.
+            if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null 2>&1; then
+              echo "Cancelled run $id of dropped merge group $sha"
+            else
+              echo "Run $id already finished or cannot be cancelled; skipping"
+            fi
+          done
