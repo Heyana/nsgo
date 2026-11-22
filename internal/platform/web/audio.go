@@ -203,7 +203,10 @@ func (a *webAudio) decodeTrack(ctx context.Context, source driver.ImageSource) j
 	return track
 }
 
-// trackLength reads an encoded track's duration from its metadata, in a detached audio element that loads only that. It is false when the browser cannot read the metadata or the length is unknown, as for a live stream.
+// trackLengthWait bounds how long trackLength waits for the metadata of a track already in memory.
+var trackLengthWait = 5 * time.Second
+
+// trackLength reads an encoded track's duration from its metadata, in a detached audio element that loads only that. It is false when the browser cannot read the metadata or the length is unknown, as for a live stream, and when the metadata does not load within trackLengthWait, as where a browser loads nothing for an element that has not played.
 func trackLength(ctx context.Context, doc, bytes js.Value, kind string) (time.Duration, bool) {
 	g := js.Global()
 	url := g.Get("URL").Call("createObjectURL", g.Get("Blob").New([]any{bytes}, map[string]any{"type": kind}))
@@ -226,6 +229,9 @@ func trackLength(ctx context.Context, doc, bytes js.Value, kind string) (time.Du
 		el.Call("load")
 	}()
 	el.Set("src", url)
+	el.Call("load")
+	wait := time.NewTimer(trackLengthWait)
+	defer wait.Stop()
 	select {
 	case ok := <-read:
 		seconds := el.Get("duration").Float()
@@ -234,6 +240,8 @@ func trackLength(ctx context.Context, doc, bytes js.Value, kind string) (time.Du
 		}
 		return mediaTime(el.Get("duration")), true
 	case <-ctx.Done():
+		return 0, false
+	case <-wait.C:
 		return 0, false
 	}
 }

@@ -13,7 +13,7 @@ import (
 
 // webAudioPlayer streams in a browser audio element. Its generation guards late play-promise replies after a pause or a fresh element.
 //
-// A looping player decodes its whole track into an AudioBuffer, within driver.MaxGaplessLoopBytes and driver.MaxGaplessLoopDuration, and plays it from an AudioBufferSourceNode, whose loop repeats from the loop start without a gap; once it has the track it plays every pass from it. A track it cannot decode whole loops through the element, with the gap of a seek.
+// A looping player decodes its whole track into an AudioBuffer, within driver.MaxGaplessLoopBytes and driver.MaxGaplessLoopDuration, and plays it from an AudioBufferSourceNode, whose loop repeats from the loop start without a gap; once it has the track it plays every pass from it at rate 1. A node's playbackRate shifts the pitch, while the element's keeps it, so at any other rate the element plays, as does a track it cannot decode whole, with the gap of a seek at each repeat.
 type webAudioPlayer struct {
 	audio                                                   *webAudio
 	id                                                      uint32
@@ -58,17 +58,38 @@ func (p *webAudioPlayer) apply(r *driver.AudioRequest) {
 			p.readPosition()
 		}
 		p.volume, p.rate, p.loop = r.Volume, r.Rate, r.Loop
+		if p.rate != 1 && !p.el.Truthy() && (p.node.Truthy() || p.wanted) {
+			p.leaveTrack()
+			return
+		}
 		p.settings()
 	}
 }
 
-// fromTrack says the player plays from its decoded track, or waits for the track it decodes instead of loading the element.
+// trackPlays says the decoded track plays in place of the element: at rate 1 only, since a node's playbackRate shifts the pitch.
+func (p *webAudioPlayer) trackPlays() bool {
+	return p.track.Truthy() && p.rate == 1
+}
+
+// leaveTrack hands a player that plays, or waits to play, from its track over to the element when its rate moves away from 1, so that the pitch stays.
+func (p *webAudioPlayer) leaveTrack() {
+	wanted := p.wanted
+	p.stopNode()
+	p.stopTimer()
+	p.buffer(false)
+	p.wanted, p.playing = false, false
+	if wanted {
+		p.resume()
+	}
+}
+
+// fromTrack says the player plays from its decoded track, or waits for the track it decodes instead of loading the element. At a rate other than 1 the element plays.
 func (p *webAudioPlayer) fromTrack() bool {
-	return p.track.Truthy() || !p.el.Truthy() && (p.decode != nil || p.loop && !p.noTrack)
+	return p.rate == 1 && (p.track.Truthy() || !p.el.Truthy() && (p.decode != nil || p.loop && !p.noTrack))
 }
 
 func (p *webAudioPlayer) preload() bool {
-	if p.track.Truthy() {
+	if p.trackPlays() {
 		p.loaded = true
 		return true
 	}
@@ -130,7 +151,7 @@ func (p *webAudioPlayer) preload() bool {
 			return
 		}
 		if p.loop {
-			if p.track.Truthy() && p.output() {
+			if p.trackPlays() && p.output() {
 				// The track decoded while the element played: it takes over at the loop start.
 				p.laps++
 				p.position = p.loopFrom()
@@ -211,11 +232,13 @@ func (p *webAudioPlayer) trackFailed() {
 	p.preload()
 }
 
-// adopt takes the decoded track. An element that plays hands over to it at its end, the next loop start; otherwise the track takes over at once from the element's position.
+// adopt takes the decoded track. An element that plays hands over to it at its end, the next loop start, and one at a rate other than 1 keeps playing; otherwise the track takes over at once from the element's position.
 func (p *webAudioPlayer) adopt(track js.Value) {
 	p.track = track
-	if p.el.Truthy() && p.wanted {
-		p.output()
+	if p.el.Truthy() && (p.wanted || p.rate != 1) {
+		if p.wanted {
+			p.output()
+		}
 		p.settings()
 		return
 	}
@@ -231,6 +254,10 @@ func (p *webAudioPlayer) adopt(track js.Value) {
 		p.report(driver.AudioOpened)
 	}
 	if p.wanted {
+		if p.rate != 1 {
+			p.leaveTrack()
+			return
+		}
 		if !p.output() {
 			p.fail(driver.AudioUnavailable, "the browser did not open an audio output")
 			return
@@ -252,7 +279,7 @@ func (p *webAudioPlayer) settings() {
 		p.el.Set("volume", p.volume)
 		p.el.Set("playbackRate", p.rate)
 		// The element's own loop is seamless but always restarts at 0, so a loop that starts later restarts from the ended event, as does one the decoded track takes over at the end.
-		p.el.Set("loop", p.loop && p.loopFrom() == 0 && !p.track.Truthy())
+		p.el.Set("loop", p.loop && p.loopFrom() == 0 && !p.trackPlays())
 		if p.loop && p.loaded {
 			p.decodeTrack()
 		}
@@ -294,10 +321,12 @@ func (p *webAudioPlayer) resume() {
 		p.resumeTrack()
 		return
 	}
+	// An ended player starts over from 0, also in an element it loads in place of its track.
+	restart := p.ended
 	if !p.preload() {
 		return
 	}
-	if p.ended {
+	if restart {
 		p.ended = false
 		p.position = 0
 		p.el.Set("currentTime", 0)

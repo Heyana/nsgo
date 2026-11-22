@@ -389,7 +389,7 @@ func TestWebAudioPlayer(t *testing.T) {
 	// A loop with a start plays its intro once and then repeats from LoopStart, never ending.
 	const loopStart = 400 * time.Millisecond
 	reports = nil
-	a.handle(1, &driver.AudioRequest{Command: driver.AudioOpen, Volume: 0.25, Rate: 2, Loop: true, LoopStart: loopStart,
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioOpen, Volume: 0.25, Rate: 1, Loop: true, LoopStart: loopStart,
 		ProgressInterval: 20 * time.Millisecond, Source: driver.ImageSource{Data: audioWAV(700 * time.Millisecond)}})
 	p = a.players[1]
 	send(driver.AudioPreload)
@@ -415,7 +415,7 @@ func TestWebAudioPlayer(t *testing.T) {
 			t.Fatalf("a repeat went back into the intro: %+v", e)
 		}
 	}
-	a.handle(1, &driver.AudioRequest{Command: driver.AudioSet, Volume: 0.25, Rate: 2})
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioSet, Volume: 0.25, Rate: 1})
 	wait(driver.AudioEnded, nil)
 	send(driver.AudioClose)
 
@@ -711,4 +711,90 @@ func TestWebAudioPlayerLoopsWithoutGap(t *testing.T) {
 	if introAgain {
 		t.Fatal("a repeat played the intro again instead of starting at the loop start")
 	}
+}
+
+// TestWebAudioPlayerLoopKeepsPitch plays a looping player at a rate other than 1 through the element, whose playbackRate keeps the pitch where a buffer source node's shifts it, and hands it back to the decoded track at rate 1.
+func TestWebAudioPlayerLoopKeepsPitch(t *testing.T) {
+	doc := js.Global().Get("document")
+	var reports []driver.AudioEvent
+	a := newWebAudio(doc, func(e driver.Event) { reports = append(reports, *e.Data.(*driver.AudioEvent)) }, false)
+	defer a.close()
+	set := func(rate float32) {
+		a.handle(1, &driver.AudioRequest{Command: driver.AudioSet, Volume: 1, Rate: rate, Loop: true})
+	}
+	open := func(rate float32) *webAudioPlayer {
+		reports = nil
+		a.handle(1, &driver.AudioRequest{Command: driver.AudioOpen, Volume: 1, Rate: rate, Loop: true,
+			ProgressInterval: 20 * time.Millisecond, Source: driver.ImageSource{Data: audioWAV(400 * time.Millisecond)}})
+		return a.players[1]
+	}
+	keepsPitch := func(p *webAudioPlayer, rate float64) {
+		t.Helper()
+		if p.node.Truthy() || !p.el.Truthy() {
+			t.Fatalf("a looping player at %v played from a buffer source node, which shifts the pitch", rate)
+		}
+		if got := p.el.Get("playbackRate").Float(); math.Abs(got-rate) > 1e-6 {
+			t.Fatalf("the element plays at %v, want %v", got, rate)
+		}
+		if p.el.Get("preservesPitch").Type() == js.TypeBoolean && !p.el.Get("preservesPitch").Bool() {
+			t.Fatal("the element does not keep the pitch")
+		}
+	}
+
+	// A player opened at 1.5 plays through the element though its track decoded.
+	p := open(1.5)
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioPreload})
+	audioWait(t, "the decoded track", func() bool { return p.track.Truthy() })
+	pressAudio(t, doc, a, func() { a.handle(1, &driver.AudioRequest{Command: driver.AudioResume}) })
+	audioWait(t, "the element to play", func() bool { return p.playing })
+	keepsPitch(p, 1.5)
+	// Back at 1 the decoded track takes over at the element's end.
+	set(1)
+	audioWait(t, "the decoded track to take over", func() bool { return p.node.Truthy() })
+	if p.el.Truthy() {
+		t.Fatal("the element kept playing beside the decoded track")
+	}
+	// Away from 1 again, the element takes over from the node's position.
+	set(0.75)
+	if p.node.Truthy() || !p.el.Truthy() {
+		t.Fatal("the node kept playing at 0.75")
+	}
+	audioWait(t, "the element to play again", func() bool { return p.playing })
+	keepsPitch(p, 0.75)
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioPause})
+	for _, e := range reports {
+		if e.Phase == driver.AudioEnded || e.Phase == driver.AudioFailure {
+			t.Fatalf("changing the rate reported %+v", e)
+		}
+	}
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioClose})
+
+	// A player paused on its track resumes at 1.5 through the element.
+	p = open(1)
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioPreload})
+	audioWait(t, "the decoded track", func() bool { return p.track.Truthy() && p.loaded })
+	set(1.5)
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioResume})
+	audioWait(t, "the element to play", func() bool { return p.playing })
+	keepsPitch(p, 1.5)
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioClose})
+}
+
+// TestWebAudioPlayerTrackLengthTimesOut loops a track whose metadata does not load in time through the element instead of waiting for it.
+func TestWebAudioPlayerTrackLengthTimesOut(t *testing.T) {
+	defer func(wait time.Duration) { trackLengthWait = wait }(trackLengthWait)
+	trackLengthWait = time.Nanosecond
+	doc := js.Global().Get("document")
+	var reports []driver.AudioEvent
+	a := newWebAudio(doc, func(e driver.Event) { reports = append(reports, *e.Data.(*driver.AudioEvent)) }, false)
+	defer a.close()
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioOpen, Volume: 1, Rate: 1, Loop: true,
+		Source: driver.ImageSource{Data: audioWAV(400 * time.Millisecond)}})
+	p := a.players[1]
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioPreload})
+	audioWait(t, "the element to load", func() bool { return p.loaded })
+	if !p.noTrack || p.track.Truthy() || p.decode != nil || !p.el.Truthy() {
+		t.Fatal("a track whose length did not load in time did not loop through the element")
+	}
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioClose})
 }
