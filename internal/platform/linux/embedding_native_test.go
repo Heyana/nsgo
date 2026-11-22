@@ -210,3 +210,80 @@ func TestTextContextsReleaseTheirFontMaps(t *testing.T) {
 		}
 	})
 }
+
+func TestEmbeddedViewCloseReleasesLeavingViews(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	host := startTestWindow(t, func(*core.Scope) core.Node { return core.View{} }, Options{Width: 200, Height: 200})
+	var embedded *View
+	host.onLoop(t, func() {
+		var err error
+		embedded, err = NewView(func(*core.Scope) core.Node { return core.View{} }, Options{})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		gtkWidgetSetSizeRequest(embedded.Handle(), 160, 100)
+		gtkBoxAppend(host.box, embedded.Handle())
+	})
+	if embedded == nil {
+		t.Fatal("the embedded view did not open")
+	}
+	surface := embedded.Handle()
+	t.Cleanup(func() { host.onLoop(t, func() { gtkWidgetUnparent(surface) }) })
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		var ready bool
+		host.onLoop(t, func() { ready = embedded.w.view(embedded.w.root) != nil })
+		if ready {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the embedded app did not mount")
+		}
+	}
+	host.onLoop(t, func() {
+		w := embedded.w
+		leaving, inner := driver.NodeID(len(w.views)), driver.NodeID(len(w.views)+1)
+		frame := driver.Bounds{Size: driver.Size{Width: 40, Height: 30}}
+		w.apply(&driver.MountBatch{Root: w.root, Items: []driver.MountItem{
+			{Kind: driver.ItemCreate, ID: leaving, View: driver.KindView},
+			{Kind: driver.ItemFrame, ID: leaving, Frame: frame},
+			{Kind: driver.ItemInsert, ID: leaving, Parent: w.root},
+			{Kind: driver.ItemCreate, ID: inner, View: driver.KindView},
+			{Kind: driver.ItemFrame, ID: inner, Frame: frame},
+			{Kind: driver.ItemInsert, ID: inner, Parent: leaving},
+		}})
+		var views []*view
+		var widgets []uintptr
+		for _, id := range []driver.NodeID{leaving, inner} {
+			v := w.view(id)
+			if v == nil || v.widget == 0 {
+				t.Errorf("view %d did not mount", id)
+				return
+			}
+			views, widgets = append(views, v), append(widgets, v.widget)
+		}
+		w.apply(&driver.MountBatch{Root: w.root, LayoutAnimation: &driver.LayoutAnimation{
+			Delete: &driver.LayoutTransition{Duration: time.Hour},
+		}, Items: []driver.MountItem{
+			{Kind: driver.ItemDelete, ID: leaving},
+			{Kind: driver.ItemDelete, ID: inner},
+		}})
+		if !slices.Contains(w.layouts, views[0]) || !views[0].dying || !views[1].dying {
+			t.Fatal("the deleted view is not leaving")
+		}
+		embedded.Close()
+		if len(w.layouts) != 0 {
+			t.Error("the closed surface keeps its layout animations")
+		}
+		for i, v := range views {
+			if v.widget != 0 || v.dying {
+				t.Errorf("leaving view %d was not released", v.id)
+			}
+			if _, ok := lookupWidget(widgets[i]); ok {
+				t.Errorf("leaving view %d remains in the widget table", v.id)
+			}
+		}
+	})
+}

@@ -916,6 +916,14 @@ func (w *window) destroy() {
 
 // releaseSurface releases a stopped surface's tree, process-wide registrations and native references. An embedded surface leaves its parent widget and the host's window to the host.
 func (w *window) releaseSurface() {
+	// The views still leaving are in w.layouts alone, and the tick that would bury them stopped with the surface.
+	for _, v := range w.layouts {
+		if v.dying {
+			w.bury(v)
+		}
+	}
+	clear(w.layouts)
+	w.layouts = nil
 	for _, v := range w.views {
 		if v != nil {
 			w.delete(v)
