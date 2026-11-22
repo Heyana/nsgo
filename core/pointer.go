@@ -219,9 +219,15 @@ func (n *node) mayTransform() bool {
 
 // pointerMatrix is the transform sent to the platform, with a parent's perspective about the same viewport center the backend uses.
 func (n *node) pointerMatrix() driver.Matrix3D {
-	m := n.sent.viewStyle.Matrix(n.frame.Size)
+	return n.pointerMatrixAt(n.frame)
+}
+
+// pointerMatrixAt also serves DevTools' committed geometry, whose frame
+// includes the sticky shift applied by the native scroll view.
+func (n *node) pointerMatrixAt(frame Bounds) driver.Matrix3D {
+	m := n.sent.viewStyle.Matrix(frame.Size)
 	if parent := n.nativeParent(); parent != nil {
-		at := n.frame.Origin
+		at := frame.Origin
 		if parent.scroll != nil {
 			at.X -= parent.scroll.offset.X
 			at.Y -= parent.scroll.offset.Y

@@ -212,7 +212,8 @@ type surface struct {
 	childAttached    bool
 	windowFullScreen bool
 
-	batch uint64 // batches applied
+	batch       uint64 // batches applied
+	devGeometry driver.GeometryObserver
 	// stickyBound are the scroll views with sticky cells whose insets
 	// follow animated values.
 	stickyBound scrollbar.StickyBindings[*view]
@@ -282,7 +283,8 @@ type surface struct {
 		kind  int
 		time  float64
 	}
-	env driver.Environment
+	env    driver.Environment
+	envPin func(driver.Environment) driver.Environment
 	// material is the material behind the app's views, effect the view
 	// that shows it.
 	material driver.WindowMaterial
@@ -2144,11 +2146,13 @@ func (s *surface) RequestFrame() {
 }
 
 func (s *surface) apply(b *driver.MountBatch) {
+	s.devGeometry.Begin(b.GeometryVersion)
+	defer func() { s.devGeometry.End(); s.reportGeometry() }()
 	defer func() { s.openFrame = driver.WindowFrame{} }()
 	s.batch++
 	var focus []driver.MountItem
 	var lb *layoutBatch
-	if b.LayoutAnimation != nil && !s.env.ReduceMotion {
+	if b.LayoutAnimation != nil && !s.motionReduced() {
 		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[driver.NodeID]bool{}, deleted: map[objc.ID]bool{}}
 	}
 	for i := range b.Items {
@@ -2664,7 +2668,7 @@ func (s *surface) finish() {
 				shown()
 			} else {
 				h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
-				apple.AnimateIn(v.native.Send(selLayer), v.animation, h, s.env.ReduceMotion, shown)
+				apple.AnimateIn(v.native.Send(selLayer), v.animation, h, s.motionReduced(), shown)
 			}
 		}
 	}
@@ -3877,4 +3881,14 @@ func (s *surface) applyBatches(budget time.Duration, alone bool) {
 	if s.frameWanted.Load() && !s.ticking || len(s.waiting) > 0 {
 		s.startTicking()
 	}
+}
+
+// motionReduced uses a test's pinned preference for the renderer too; the
+// system's environment is kept intact for future preference changes.
+func (s *surface) motionReduced() bool {
+	env := s.env
+	if s.envPin != nil {
+		env = s.envPin(env)
+	}
+	return env.ReduceMotion
 }

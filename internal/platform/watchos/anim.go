@@ -71,7 +71,7 @@ func (s *surface) setStyle(v *view, st *driver.ViewStyle) {
 	v.style, v.styled, v.trans = *st, true, nil
 	s.touched(v)
 	t := st.Transition
-	if !styled || t.Duration <= 0 || s.env.ReduceMotion {
+	if !styled || t.Duration <= 0 || s.motionReduced() {
 		return
 	}
 	props := t.Properties

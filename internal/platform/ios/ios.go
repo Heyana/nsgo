@@ -155,7 +155,8 @@ type surface struct {
 	sensors   apple.Sensors
 	discovery apple.Discovery
 
-	batch uint64 // batches applied
+	batch       uint64 // batches applied
+	devGeometry driver.GeometryObserver
 	// hinge is the latest a UIHingeInteraction reported (watchHinge).
 	hinge hingeReading
 	// regionClock follows the sizes the reserved regions are read at (geometry).
@@ -209,6 +210,7 @@ type surface struct {
 	pipFramePending bool
 	fingers         fingers // the touches reported
 	env             driver.Environment
+	envPin          func(driver.Environment) driver.Environment
 
 	// resizedScrolls are checked after the current batch or animation step.
 	resizedScrolls []*view
@@ -769,6 +771,7 @@ func (s *surface) startEngine(test *testOpen) {
 	if test != nil {
 		size := opts.Size
 		opts.UseTest(test.options, &test.pin)
+		s.envPin = opts.Pin
 		// A phone's screen is what it is.
 		opts.Size = size
 		s.alerts = map[uint32]shownAlert{}
@@ -1190,6 +1193,8 @@ func (s *surface) foreground() bool {
 }
 
 func (s *surface) apply(b *driver.MountBatch) {
+	s.devGeometry.Begin(b.GeometryVersion)
+	defer func() { s.devGeometry.End(); s.reportGeometry() }()
 	var restored []func()
 	keysChanged := false
 	defer func() {
@@ -1199,7 +1204,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 	}()
 	s.batch++
 	var lb *layoutBatch
-	if b.LayoutAnimation != nil && !s.env.ReduceMotion {
+	if b.LayoutAnimation != nil && !s.motionReduced() {
 		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[driver.NodeID]bool{}, deleted: map[objc.ID]bool{}}
 	}
 	s.coverScreens(b.Items)
@@ -1730,7 +1735,7 @@ func (s *surface) finish() {
 				shown()
 			} else {
 				h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
-				apple.AnimateIn(v.native.Send(selLayer), v.modal.Animation, h, s.env.ReduceMotion, shown)
+				apple.AnimateIn(v.native.Send(selLayer), v.modal.Animation, h, s.motionReduced(), shown)
 			}
 		}
 	}
@@ -2534,4 +2539,14 @@ func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 	v.surface.followLargeTitle(v, offset.Y)
 	v.scrollEvent(driver.EventScroll)
+}
+
+// motionReduced uses a test's pinned preference for the renderer too; the
+// system's environment is kept intact for future preference changes.
+func (s *surface) motionReduced() bool {
+	env := s.env
+	if s.envPin != nil {
+		env = s.envPin(env)
+	}
+	return env.ReduceMotion
 }

@@ -90,6 +90,9 @@ func (v *drawnView) baseStyle() driver.ViewStyle {
 
 // ensureDevDrawn lazily creates t.devDrawn and seeds any views already committed.
 func (t *Tree) ensureDevDrawn() *devDrawn {
+	if t.devSource != nil {
+		return nil
+	}
 	if t.devDrawn != nil {
 		return t.devDrawn
 	}

@@ -484,6 +484,7 @@ These items wait for community contributions, and a change to one backend record
 
 | Android blurs | `styles.md` (`backdropFilter`), [#1605](https://github.com/nsgo-dev/nsgo/issues/1605) | From Android 12, a backdrop filter blurs what the view's parent drew under it through a `RenderNode` and a `RenderEffect` |
 | DevTools' overlay everywhere | [#1616](https://github.com/nsgo-dev/nsgo/issues/1616) | `nsgo dev` mounts DevTools' overlay, its update outlines, Pick and the layout audit, in every surface of a dev build, `desktop.OpenWindow`'s windows, panels and `nsgo.NewView`'s embedded views too, where only `Run`'s root view and `SetMainView`'s have it now, and inside the sheets iOS presents (`ModalPageSheet`, `ModalFormSheet`), which the audit leaves out and draws under now |
+| Native DevTools geometry everywhere | [#1619](https://github.com/nsgo-dev/nsgo/issues/1619) | HarmonyOS needs presentation matrices and viewport sizes returned through `nsgoHarmony` after ArkUI animation and scroll frames; its bridge currently sends events and frame stamps but no geometry. Mini programs need render-layer presentation queries and feedback to Go, whose logic layer has no DOM; DevTools itself waits on #1617. Both retain the Go-side tracker until those bridges exist |
 | The layout audit checked on targets | [#1620](https://github.com/nsgo-dev/nsgo/issues/1620) | `nsgo dev -layout` is checked by hand on Windows, Linux, the web, iOS, Android, tvOS and watchOS, where only its headless tests ran, as it was on macOS (2026-11-15) |
 
 ## TSX and dynamic delivery

@@ -305,6 +305,7 @@ var clipOverflow = func() func() string {
 // scrollEvent reports kind on scroll view v at its offset and zoom, after
 // the move it has waiting (scrollSoon).
 func (s *surface) scrollEvent(v *view, kind driver.EventKind) {
+	defer s.reportGeometry()
 	if v.sc.due && kind != driver.EventScroll {
 		v.sc.due = false
 		s.scrollEvent(v, driver.EventScroll)

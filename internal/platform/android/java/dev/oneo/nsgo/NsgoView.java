@@ -340,6 +340,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private float preferredFrameRate;
     private long lastFrameSent;
     private double requestedFramePeriod;
+    private boolean geometryObserved;
+    private long geometryVersion;
+    private byte[] lastGeometry;
+    private final android.view.ViewTreeObserver.OnPreDrawListener geometryDraw = () -> {
+        reportGeometry();
+        return true;
+    };
     private final LinkedHashSet<Node> moving = new LinkedHashSet<>();
     private final ArrayList<Ghost> ghosts = new ArrayList<>();
     private final Set<View> ghostViews = new HashSet<>();
@@ -1162,6 +1169,15 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                             view.frameWanted = true;
                             view.startTicking();
                         }
+                    });
+                    break;
+                }
+                case Protocol.GEOMETRY: {
+                    int to = message.readInt();
+                    boolean on = message.readBoolean();
+                    ui.post(() -> {
+                        NsgoView view = to == 0 ? this : overlays.view(to);
+                        if (view != null) view.observeGeometry(on);
                     });
                     break;
                 }
@@ -3184,6 +3200,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     apply(kind, nodes.get(id), in, frames == null ? Collections.emptyMap() : frames);
                 }
             }
+            // Optional footer: old runtimes ignore it, and pixel-only
+            // follow-up batches retain the last committed version.
+            if (in.available() >= 8) geometryVersion = in.readLong();
         } catch (IOException e) {
             Log.e(TAG, "bad batch", e);
         }
@@ -3210,6 +3229,102 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             perfDirty = true;
         }
         reportAllScreenInsets();
+        reportGeometry();
+    }
+
+    private void observeGeometry(boolean on) {
+        lastGeometry = null;
+        if (geometryObserved != on) {
+            geometryObserved = on;
+            android.view.ViewTreeObserver observer = getViewTreeObserver();
+            if (observer.isAlive()) {
+                if (on) observer.addOnPreDrawListener(geometryDraw);
+                else observer.removeOnPreDrawListener(geometryDraw);
+            }
+        }
+        reportGeometry();
+    }
+
+    /** The native viewport's current matrix to screen coordinates, on every supported API. */
+    private Matrix geometryMatrix(View view, java.util.IdentityHashMap<View, Matrix> cache) {
+        Matrix previous = cache.get(view);
+        if (previous != null) return previous;
+        Matrix matrix = new Matrix();
+        if (view.getParent() instanceof View) {
+            View parent = (View) view.getParent();
+            matrix.set(geometryMatrix(parent, cache));
+            matrix.preTranslate(-parent.getScrollX(), -parent.getScrollY());
+        } else {
+            int[] screen = new int[2];
+            view.getLocationOnScreen(screen);
+            float[] origin = {0, 0};
+            view.getMatrix().mapPoints(origin);
+            matrix.preTranslate(screen[0] - view.getLeft() - origin[0],
+                    screen[1] - view.getTop() - origin[1]);
+        }
+        matrix.preTranslate(view.getLeft(), view.getTop());
+        matrix.preConcat(view.getMatrix());
+        cache.put(view, matrix);
+        return matrix;
+    }
+
+    /** Native pre-draw includes property animators, layout motion and sticky cells. */
+    private void reportGeometry() {
+        if (!geometryObserved) return;
+        ArrayList<float[]> boxes = new ArrayList<>();
+        ArrayList<Integer> ids = new ArrayList<>();
+        java.util.IdentityHashMap<View, Matrix> matrices = new java.util.IdentityHashMap<>();
+        Matrix inverse = new Matrix();
+        if (!geometryMatrix(this, matrices).invert(inverse)) return;
+        for (int i = 0; i < nodes.size(); i++) {
+            Node n = nodes.valueAt(i);
+            View view = n.view;
+            if (view.getVisibility() != VISIBLE) continue;
+            float[] box = {Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY,
+                    Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY};
+            float[] corners = {0, 0, view.getWidth(), 0,
+                    view.getWidth(), view.getHeight(), 0, view.getHeight()};
+            geometryMatrix(view, matrices).mapPoints(corners);
+            inverse.mapPoints(corners);
+            boolean valid = true;
+            for (int at = 0; at < corners.length; at += 2) {
+                float[] p = {corners[at], corners[at + 1]};
+                if (!Float.isFinite(p[0]) || !Float.isFinite(p[1])) {
+                    valid = false;
+                    break;
+                }
+                box[0] = Math.min(box[0], p[0]);
+                box[1] = Math.min(box[1], p[1]);
+                box[2] = Math.max(box[2], p[0]);
+                box[3] = Math.max(box[3], p[1]);
+            }
+            if (valid) {
+                ids.add(n.id);
+                boxes.add(new float[] {box[0] / density, box[1] / density,
+                        (box[2] - box[0]) / density, (box[3] - box[1]) / density,
+                        corners[0] / density, corners[1] / density, corners[2] / density, corners[3] / density,
+                        corners[4] / density, corners[5] / density, corners[6] / density, corners[7] / density,
+                        view.getWidth() / density, view.getHeight() / density});
+            }
+        }
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeInt(surface);
+            out.writeLong(geometryVersion);
+            out.writeInt(boxes.size());
+            for (int i = 0; i < boxes.size(); i++) {
+                out.writeInt(ids.get(i));
+                for (float value : boxes.get(i)) out.writeFloat(value);
+            }
+            byte[] payload = bytes.toByteArray();
+            if (!Arrays.equals(lastGeometry, payload)) {
+                lastGeometry = payload;
+                write(Protocol.GEOMETRY_REPORT, payload);
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "geometry snapshot", e);
+        }
     }
 
     /**

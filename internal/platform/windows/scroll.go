@@ -145,6 +145,7 @@ func (w *window) wheelZoom(p driver.Point, delta int16) bool {
 
 // scrollEvent reports kind on scroll view v at its offset, if it listens.
 func (w *window) scrollEvent(v *view, kind driver.EventKind) {
+	defer w.reportGeometry()
 	if v.events.Has(kind) {
 		w.engine.Dispatch(driver.Event{Kind: kind, ID: v.id, Point: v.offset, Value: v.zoomValue(), Count: v.applied})
 	}
@@ -204,7 +205,7 @@ func (w *window) settle(v *view, velocity float32) {
 		return
 	}
 	w.scrollEvent(v, driver.EventMomentumStart)
-	if w.env.ReduceMotion {
+	if w.motionReduced() {
 		w.scrollTo(v, to)
 		w.scrollEvent(v, driver.EventMomentumEnd)
 		w.restScroll(v)

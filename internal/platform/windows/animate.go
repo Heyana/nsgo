@@ -78,7 +78,7 @@ type layoutBatch struct {
 // layoutBatch returns what b animates, or nil when it animates nothing:
 // it has no LayoutAnimation, or the user turned animation effects off.
 func (w *window) layoutBatch(b *driver.MountBatch) *layoutBatch {
-	if b.LayoutAnimation == nil || w.env.ReduceMotion {
+	if b.LayoutAnimation == nil || w.motionReduced() {
 		return nil
 	}
 	return &layoutBatch{anim: b.LayoutAnimation, now: time.Now(), created: map[*view]bool{}}
@@ -269,7 +269,7 @@ func (w *window) setStyle(v *view, s *driver.ViewStyle) {
 	}
 	v.style, v.styled, v.transition = *s, true, nil
 	t := s.Transition
-	if !styled || t.Duration <= 0 || w.env.ReduceMotion {
+	if !styled || t.Duration <= 0 || w.motionReduced() {
 		return
 	}
 	props := t.Properties
@@ -288,7 +288,7 @@ func (w *window) setStyle(v *view, s *driver.ViewStyle) {
 // scrollAnimated scrolls v to offset over a moment, or at once when the
 // user turned animation effects off.
 func (w *window) scrollAnimated(v *view, offset driver.Point) {
-	if w.env.ReduceMotion {
+	if w.motionReduced() {
 		w.scrollTo(v, offset)
 		return
 	}
@@ -439,6 +439,7 @@ func (w *window) ticked() {
 
 // tick moves every animation to now, runs the frame clients and repaints.
 func (w *window) tick() {
+	defer w.reportGeometry()
 	now := time.Now()
 	frames := w.frames
 	w.frames = nil

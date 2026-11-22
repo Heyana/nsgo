@@ -153,40 +153,29 @@ type auditBox struct {
 
 // auditBoxes appends the box of each view the tree shows, from the root view, as DevTools list them (devChildren). It leaves out hidden views and what they hold (Display None, Visibility Hidden and attachments a text's line limit cuts off), the views the core makes for itself, such as scroll bars' hosts, what the platform shows apart from the surface (an input's accessory, a screen header's views and a sheet it presents) and modals that went.
 func (t *Tree) auditBoxes(out []auditBox) []auditBox {
-	t.stepDevDrawn()
+	geometry := t.devGeometryFrame()
 	surface := Bounds{Size: t.view.frame.Size}
-	var visit func(n, parent *node, parentContentM driver.Matrix3D, clip Bounds, invisible bool)
-	visit = func(n, parent *node, parentContentM driver.Matrix3D, clip Bounds, invisible bool) {
+	var visit func(n *node, clip Bounds, invisible bool)
+	visit = func(n *node, clip Bounds, invisible bool) {
 		if !audited(n) {
 			return
 		}
-		// An overlay or a modal is its host's native child, outside what clips and hides the views around it.
 		if n.hoist != nil {
 			clip, invisible = surface, false
 		}
-		if np := n.nativeParent(); np != parent {
-			parent = np
-			if np == nil {
-				parentContentM = driver.Identity3D
-			} else {
-				pm, _ := t.drawnMatrix(np)
-				parentContentM = pm.Mul(scrollContentMatrix(np))
-			}
-		}
 		// Visibility Hidden hides what a view holds too, as the native view does and as hit testing reads it.
 		invisible = invisible || n.style.Visibility == VisibilityHidden
-		m, size := t.drawnMatrixWith(n, parent, parentContentM)
-		b := transformBounds(m, Bounds{Size: size})
+		m, size := geometry.Matrices[n.id], geometry.Sizes[n.id]
+		b := geometry.Bounds[n.id]
 		box := devBoxEdges(n)
 		if !invisible {
 			out = append(out, auditBox{bounds: b, clip: clip, box: box, matrix: m, size: size})
 		}
 		x, y := n.clips()
 		inner := clipTo(clip, b, x, y)
-		contentM := m.Mul(scrollContentMatrix(n))
-		t.devChildren(n, func(c *node) { visit(c, n, contentM, inner, invisible) })
+		t.devChildren(n, func(c *node) { visit(c, inner, invisible) })
 	}
-	visit(t.view, nil, driver.Identity3D, surface, false)
+	visit(t.view, surface, false)
 	return out
 }
 

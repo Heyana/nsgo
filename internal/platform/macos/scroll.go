@@ -624,6 +624,7 @@ func (v *view) tickScroll(t time.Duration) bool {
 // with that frame: the engine handles both in one pass, where a report
 // that woke it on its own cost a second pass and commit every frame.
 func (v *view) reportScroll() {
+	defer v.surface.reportGeometry()
 	s := v.sc
 	if !s.report {
 		return

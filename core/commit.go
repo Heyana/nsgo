@@ -60,7 +60,7 @@ func (t *Tree) commit(shared bool) *driver.MountBatch {
 	t.items = t.items[:0]
 	t.commits++
 	t.commitStart = t.rt.clock.Now()
-	if t.devDrawn != nil || devtools.Enabled || t.highlights != nil {
+	if t.devSource == nil && (t.devDrawn != nil || devtools.Enabled || t.highlights != nil) {
 		t.ensureDevDrawn().beginCommit()
 	}
 	t.resetPace()
@@ -102,15 +102,17 @@ func (t *Tree) commit(shared bool) *driver.MountBatch {
 		// What ran since the graph last committed is this commit's, sent or not, so a later commit does not claim it. Writes that changed no tree wait for the next tree that changes.
 		causes = t.rt.takeCauses()
 	}
-	if len(t.items) == 0 {
+	if len(t.items) == 0 && (t.devNative == nil || !t.devNative.pending) {
 		return nil
 	}
 	if t.devDrawn != nil {
 		t.syncDevDrawn(t.commitStart)
 	}
+	t.noteGeometryVersion(t.items)
 	if t.highlights != nil {
 		t.noteChanges(t.items)
 	}
+	t.noteGeometryVersion(t.items)
 	t.lastItems, t.lastShared = len(t.items), shared
 	items := t.items
 	if !shared {
@@ -118,6 +120,10 @@ func (t *Tree) commit(shared bool) *driver.MountBatch {
 		t.shrinkItems(len(t.items))
 	}
 	b := &driver.MountBatch{Root: t.view.id, Items: items, LayoutAnimation: t.layoutAnim, Causes: causes}
+	if t.devNative != nil && t.devNative.requested {
+		b.GeometryVersion = uint64(t.commits)
+		t.devNative.pending = false
+	}
 	t.layoutAnim = nil
 	if f := t.follower; f != nil {
 		f.Batch(b)

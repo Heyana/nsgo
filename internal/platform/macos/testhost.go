@@ -69,6 +69,7 @@ func startTest(app engine.App, opts Options, test *testWindow) *surface {
 		Secrets: apple.Keychain{}, Windows: &engine.WindowOptions{Title: opts.Title, Width: opts.Width, Height: opts.Height}}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
 	eopts.UseTest(test.options, &test.pin)
+	s.envPin = eopts.Pin
 	imageload.UseDiskCache(eopts.CacheDir)
 	s.engine = engine.Start(s, app, eopts)
 	observeApp()

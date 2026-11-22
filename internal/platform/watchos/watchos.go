@@ -114,19 +114,21 @@ type boxKey struct {
 type surface struct {
 	sensors apple.Sensors
 
-	opts      Options
-	test      *testOpen
-	inputGate testInputGate
-	app       engine.App
-	engine    *engine.Engine
-	batches   queue.Batches
-	batch     uint64
-	views     []*view
-	root      driver.NodeID
-	env       driver.Environment
-	started   bool
-	size      driver.Size
-	epoch     time.Time
+	opts        Options
+	test        *testOpen
+	inputGate   testInputGate
+	app         engine.App
+	engine      *engine.Engine
+	batches     queue.Batches
+	batch       uint64
+	devGeometry driver.GeometryObserver
+	views       []*view
+	root        driver.NodeID
+	env         driver.Environment
+	envPin      func(driver.Environment) driver.Environment
+	started     bool
+	size        driver.Size
+	epoch       time.Time
 
 	w writer
 	// dirty are the views whose look, ink or drawing changed since the
@@ -278,6 +280,7 @@ func (s *surface) start(test *testOpen) {
 	if test != nil {
 		size := opts.Size
 		opts.UseTest(test.options, &test.pin)
+		s.envPin = opts.Pin
 		// A watch's screen is what it is.
 		opts.Size = size
 	}
@@ -375,6 +378,7 @@ func (s *surface) tick(on bool) {
 
 // hostFrame steps a frame of the host's TimelineView, whose date, when the frame shows, is shown seconds since 2001 on the wall clock.
 func hostFrame(shown float64) {
+	defer s.reportGeometry()
 	now := time.Since(s.epoch)
 	s.animator.Step(now)
 	s.applyAnimated()
@@ -426,9 +430,11 @@ func (s *surface) touched(v *view) {
 }
 
 func (s *surface) apply(b *driver.MountBatch) {
+	s.devGeometry.Begin(b.GeometryVersion)
+	defer func() { s.devGeometry.End(); s.reportGeometry() }()
 	s.batch++
 	var lb *layoutBatch
-	if b.LayoutAnimation != nil && !s.env.ReduceMotion {
+	if b.LayoutAnimation != nil && !s.motionReduced() {
 		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[driver.NodeID]bool{}}
 	}
 	for i := range b.Items {
@@ -625,7 +631,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.inputGate.expectScroll(uint32(v.id))
 			s.w.op(opScrollTo, v.id)
 			s.w.f64(float64(to.X), float64(to.Y))
-			s.w.flag(it.Animated && !s.env.ReduceMotion)
+			s.w.flag(it.Animated && !s.motionReduced())
 		case driver.ItemScrollBy:
 			v.applied++
 			to := clampOffset(v, driver.Point{X: v.offset.X + it.Point.X, Y: v.offset.Y + it.Point.Y})
@@ -953,6 +959,7 @@ func hostScroll(id uint32, x, y float64, phase uint8) {
 }
 
 func (v *view) scrollEvent(kind driver.EventKind) {
+	defer v.s.reportGeometry()
 	v.report(driver.Event{Kind: kind, Point: v.offset, Count: v.applied})
 }
 
@@ -1016,4 +1023,14 @@ func (s *surface) unsupported(it *driver.MountItem) {
 		kind = driver.EventPick
 	}
 	s.engine.Dispatch(driver.Event{Kind: kind, Count: it.Count, Text: errUnsupported})
+}
+
+// motionReduced uses a test's pinned preference for the renderer too; the
+// system's environment is kept intact for future preference changes.
+func (s *surface) motionReduced() bool {
+	env := s.env
+	if s.envPin != nil {
+		env = s.envPin(env)
+	}
+	return env.ReduceMotion
 }

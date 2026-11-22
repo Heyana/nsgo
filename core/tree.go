@@ -166,7 +166,9 @@ type Tree struct {
 	bumpAudit   func()
 	tickAudit   func()
 	// devDrawn tracks drawn geometry (transforms, animations, transitions, sticky shifts) while DevTools or their overlay read bounds; nil in release builds.
-	devDrawn *devDrawn
+	devDrawn  *devDrawn
+	devNative *devGeometryState
+	devSource func(func(driver.GeometrySnapshot))
 	// edgeBars are the views that are bars over a scroll view's side, and
 	// edgeScrolls the scroll views they last reached into.
 	edgeBars, edgeScrolls []*node

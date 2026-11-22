@@ -367,6 +367,7 @@ type window struct {
 	title        string
 	saves        driver.SavePreflights
 	devFrame     devWindowFrame
+	devGeometry  driver.GeometryObserver
 
 	powerNotification uintptr
 	// primary is the backend's own surface. Opened surfaces share its engine
@@ -434,6 +435,7 @@ type window struct {
 	customCursors *customCursorCache
 	colorPicker   *winColorPicker
 	env           driver.Environment // the last reported
+	envPin        func(driver.Environment) driver.Environment
 	alerts        []driver.AlertConfig
 	alerting      bool
 	// alertShown is the alert showing, for a test host to answer; alert
@@ -966,6 +968,7 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	eopts.SetDirs(data, cache, logs)
 	if opts.test != nil {
 		eopts.UseTest(opts.test.options, &opts.test.pin)
+		w.envPin = eopts.Pin
 		cache = eopts.CacheDir
 	}
 	imageload.UseDiskCache(cache)
@@ -1338,6 +1341,8 @@ func (w *window) view(id driver.NodeID) *view {
 }
 
 func (w *window) apply(b *driver.MountBatch) {
+	w.devGeometry.Begin(b.GeometryVersion)
+	defer func() { w.devGeometry.End(); w.reportGeometry() }()
 	w.batch++
 	var rescroll, loads []*view
 	structure := false // views came or went, for UI Automation

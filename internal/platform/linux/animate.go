@@ -61,7 +61,7 @@ func (w *window) setStyle(v *view, s *driver.ViewStyle) {
 	v.style, v.styled, v.transition = *s, true, nil
 	w.setCursor(v)
 	t := s.Transition
-	if !styled || t.Duration <= 0 || w.env.ReduceMotion {
+	if !styled || t.Duration <= 0 || w.motionReduced() {
 		return
 	}
 	props := t.Properties
@@ -80,7 +80,7 @@ func (w *window) setStyle(v *view, s *driver.ViewStyle) {
 // scrollAnimated scrolls v to offset over a moment, or at once when the
 // user turned animation effects off.
 func (w *window) scrollAnimated(v *view, offset driver.Point) {
-	if w.env.ReduceMotion {
+	if w.motionReduced() {
 		w.scrollTo(v, offset)
 		return
 	}
@@ -280,6 +280,7 @@ func (w *window) step(v *view, now time.Time) bool {
 
 // tick moves every animation to now and repaints, and runs the frame the app waits for at at, the zero time for the engine's clock; fromFrameClock says the frame clock's callback runs it, rather than the timer standing in for it.
 func (w *window) tick(at time.Time, fromFrameClock bool) {
+	defer w.reportGeometry()
 	now := time.Now()
 	live := w.animating[:0]
 	for _, v := range w.animating {

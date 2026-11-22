@@ -115,6 +115,8 @@ final class Protocol {
     /** The shader programs no view draws any more: their count, then each one's number (ShaderNode.release). */
     static final int SHADER_RELEASE = 25;
 
+    /** Enables native DevTools border-box snapshots on a surface. */
+    static final int GEOMETRY = 37;
     /** A correlated text request: request ID and operation. */
     static final int TEXT_REQUEST = 26;
     /** Starts or stops rumble on a game controller: device id, lowFreq, highFreq, durationMs (gamepad.go, Gamepads). */
@@ -223,6 +225,8 @@ final class Protocol {
 
     /** A sound or player report (Audio.java, audio.go). */
     static final int AUDIO_REPORT = 33;
+    /** Surface, applied commit version, and native border boxes in points. */
+    static final int GEOMETRY_REPORT = 38;
 
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;

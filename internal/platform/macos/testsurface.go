@@ -1103,7 +1103,7 @@ func (t *testSurface) Animating() bool {
 	onMainSync(func() {
 		// Batches waiting for a frame have not shown yet, nor scrolls
 		// their offsets.
-		busy = t.s.animator.Ending() || len(t.s.motions) > 0 || len(t.s.transitions) > 0 || len(t.s.ghosts) > 0 || t.s.held() || t.s.scrollsMoving()
+		busy = t.s.animator.Ending() || len(t.s.motions) > 0 || len(t.s.transitions) > 0 || len(t.s.ghosts) > 0 || t.s.held() || t.s.scrollsMoving() || t.s.geometryEnding()
 		// A context menu can consume queued events in its tracking loop, while the step must return so the test can choose the menu item.
 		if t.s.tracking {
 			t.pressID = 0

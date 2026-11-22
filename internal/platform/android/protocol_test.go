@@ -228,7 +228,7 @@ func TestJavaMessagesMatchTheBackend(t *testing.T) {
 		return string(data)
 	}
 	goSource, java := read("android.go"), read("java", "dev", "oneo", "nsgo", "Protocol.java")
-	for goName, javaName := range map[string]string{"msgRecording": "RECORDING", "msgAssetReply": "ASSET_REPLY", "msgRecordingReport": "RECORDING_REPORT", "msgCookies": "COOKIES", "msgCookiesSet": "COOKIES_SET", "msgCanvasImage": "CANVAS_IMAGE", "msgCanvasRequest": "CANVAS_REQUEST", "msgPixelFrame": "PIXEL_FRAME", "msgDiskSpace": "DISK_SPACE", "msgDiskSpaceReply": "DISK_SPACE_REPLY", "msgPerfPanel": "PERF_PANEL", "msgPerfFrame": "PERF_FRAME", "msgDiscoveryReply": "DISCOVERY_REPLY", "msgShaderRelease": "SHADER_RELEASE", "msgDownloadReport": "DOWNLOAD_REPORT", "msgGPUEvent": "GPU_EVENT"} {
+	for goName, javaName := range map[string]string{"msgGeometryReport": "GEOMETRY_REPORT", "msgGeometry": "GEOMETRY", "msgRecording": "RECORDING", "msgAssetReply": "ASSET_REPLY", "msgRecordingReport": "RECORDING_REPORT", "msgCookies": "COOKIES", "msgCookiesSet": "COOKIES_SET", "msgCanvasImage": "CANVAS_IMAGE", "msgCanvasRequest": "CANVAS_REQUEST", "msgPixelFrame": "PIXEL_FRAME", "msgDiskSpace": "DISK_SPACE", "msgDiskSpaceReply": "DISK_SPACE_REPLY", "msgPerfPanel": "PERF_PANEL", "msgPerfFrame": "PERF_FRAME", "msgDiscoveryReply": "DISCOVERY_REPLY", "msgShaderRelease": "SHADER_RELEASE", "msgDownloadReport": "DOWNLOAD_REPORT", "msgGPUEvent": "GPU_EVENT"} {
 		g := regexp.MustCompile(`\b` + goName + ` += (\d+)`).FindStringSubmatch(goSource)
 		j := regexp.MustCompile(`static final int ` + javaName + ` = (\d+);`).FindStringSubmatch(java)
 		if g == nil || j == nil || g[1] != j[1] {

@@ -45,9 +45,8 @@ func (t *Tree) inspected(n *node) inspection {
 	if n == nil {
 		return inspection{}
 	}
-	t.stepDevDrawn()
 	l := &n.lstate.Rounded
-	return inspection{bounds: t.drawnBounds(n),
+	return inspection{bounds: t.devGeometry()[n.id],
 		margin: [4]Points{Points(l.Margin.Top), Points(l.Margin.Right), Points(l.Margin.Bottom), Points(l.Margin.Left)},
 		borderPadding: [4]Points{Points(l.Border.Top + l.Padding.Top), Points(l.Border.Right + l.Padding.Right),
 			Points(l.Border.Bottom + l.Padding.Bottom), Points(l.Border.Left + l.Padding.Left)}}
@@ -70,9 +69,10 @@ type highlights struct {
 	boxes *Signal[[]highlightBox]
 	next  uint64
 	// updates is whether commits are outlined: DevTools turn it off and on.
-	updates bool
-	inspect *Signal[inspection]
-	picking *Signal[bool]
+	updates  bool
+	inspect  *Signal[inspection]
+	selected *node
+	picking  *Signal[bool]
 	// hover and picked hear the views the pointer is over and the one pressed while picking.
 	hover, picked func(id uint32)
 	audit         *layoutAudit
@@ -80,6 +80,7 @@ type highlights struct {
 
 type highlightBox struct {
 	id     uint64
+	target *node
 	bounds Bounds
 }
 
@@ -133,11 +134,12 @@ func (t *Tree) pickAt(p Point, pressed bool) {
 		return
 	}
 	t.stepDevDrawn()
-	id, _ := t.hitDrawnWith(t.view, p, func(n *node) bool { return !h.owns(n) })
+	id, _ := t.hitDevWith(t.view, p, func(n *node) bool { return !h.owns(n) })
 	n := t.node(id)
 	if n == nil {
 		return
 	}
+	h.selected = n
 	h.inspect.Set(t.inspected(n))
 	if pressed {
 		h.picking.Set(false)
@@ -161,7 +163,8 @@ func (t *Tree) noteChanges(items []driver.MountItem) {
 	if !h.updates {
 		return
 	}
-	var boxes []Bounds
+	var boxes []highlightBox
+	geometry := t.devGeometry()
 	seen := map[NodeID]bool{}
 	for i := range items {
 		it := &items[i]
@@ -173,8 +176,8 @@ func (t *Tree) noteChanges(items []driver.MountItem) {
 		if n == nil || n.deleted || h.owns(n) {
 			continue
 		}
-		if b := t.drawnBounds(n); b.Size.Width > 0 && b.Size.Height > 0 {
-			boxes = append(boxes, b)
+		if b := geometry[n.id]; b.Size.Width > 0 && b.Size.Height > 0 {
+			boxes = append(boxes, highlightBox{target: n, bounds: b})
 		}
 	}
 	if len(boxes) > 0 {
@@ -194,7 +197,7 @@ func (h *highlights) owns(n *node) bool {
 }
 
 // show adds an outline for each of bounds, and takes them away after highlightFor.
-func (h *highlights) show(bounds []Bounds) {
+func (h *highlights) show(bounds []highlightBox) {
 	// DevTools may have turned outlines off since the commit posted them, as the page's Highlight updates does.
 	if !h.updates {
 		return
@@ -203,7 +206,8 @@ func (h *highlights) show(bounds []Bounds) {
 	added := make([]highlightBox, len(bounds))
 	for i, b := range bounds {
 		h.next++
-		added[i] = highlightBox{id: h.next, bounds: b}
+		b.id = h.next
+		added[i] = b
 	}
 	h.boxes.Update(func(bs []highlightBox) []highlightBox { return append(slices.Clip(bs), added...) })
 	h.owner.AfterFunc(highlightFor, func() {

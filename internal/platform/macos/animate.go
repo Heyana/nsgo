@@ -244,6 +244,7 @@ func (s *surface) framePeriod() time.Duration {
 
 // tick steps one frame: the native animations first, then the frame the app waits for, at the time the display link's frame shows where linked says the link ticks, and at the engine's where a timer stands in for it.
 func (s *surface) tick(period time.Duration, linked bool) {
+	defer s.reportGeometry()
 	last := s.ticked
 	s.ticked = time.Now()
 	dirty := s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 || len(s.ghosts) > 0 || len(s.images) > 0 || len(s.live) > 0
@@ -309,7 +310,7 @@ func (s *surface) tick(period time.Duration, linked bool) {
 // animation graph, a layout animation, or a scroll view moving or fading
 // its indicator. Batches wait for the start of a frame meanwhile.
 func (s *surface) animating() bool {
-	return s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 || len(s.ghosts) > 0 || len(s.live) > 0
+	return s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 || len(s.ghosts) > 0 || len(s.live) > 0 || s.geometryAnimating()
 }
 
 // held reports whether batches wait for a frame.

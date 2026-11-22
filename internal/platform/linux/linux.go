@@ -119,6 +119,7 @@ type window struct {
 	saveDialogs     map[uintptr]*saveDialogPreflight
 	monitorSurface  uintptr // retained GdkSurface whose monitor signals are connected
 	monitorHandlers [2]uint64
+	devGeometry     driver.GeometryObserver
 	// primary is the backend's own surface. Opened surfaces share the GTK main loop, but closing one must not end the app.
 	primary bool
 	// opener is the app's own window for a surface the app opened, which goes when that window stops (stop).
@@ -174,7 +175,8 @@ type window struct {
 	box     uintptr // the window content: menu bar and surface
 	menuBar uintptr
 
-	env driver.Environment
+	env    driver.Environment
+	envPin func(driver.Environment) driver.Environment
 
 	engine  *engine.Engine
 	batches queue.Batches
@@ -509,6 +511,7 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	eopts.SetDirs(engine.AppDirs(opts.ID))
 	if opts.test != nil {
 		eopts.UseTest(opts.test.options, &opts.test.pin)
+		w.envPin = eopts.Pin
 	}
 	imageload.UseDiskCache(eopts.CacheDir)
 	if opts.Perf && opts.test == nil || opts.test != nil && opts.test.options.FPS {
@@ -1080,6 +1083,8 @@ func (w *window) view(id driver.NodeID) *view {
 
 // apply applies one commit's items.
 func (w *window) apply(b *driver.MountBatch) {
+	w.devGeometry.Begin(b.GeometryVersion)
+	defer func() { w.devGeometry.End(); w.reportGeometry() }()
 	w.batch++
 	var rescroll, loads, labels, removed []*view
 	type focusChange struct {

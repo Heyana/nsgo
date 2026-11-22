@@ -96,6 +96,22 @@ func (o observed) SetPreferredFrameRate(rate driver.FrameRateRange) {
 	setPreferredFrameRate(o.Platform, rate)
 }
 
+// platformGeometrySource unwraps test observers without advertising a native
+// capability that the wrapped platform does not implement.
+func platformGeometrySource(p Platform) driver.GeometrySource {
+	for {
+		switch v := p.(type) {
+		case observed:
+			p = v.Platform
+		case observedFonts:
+			p = v.Platform
+		default:
+			source, _ := p.(driver.GeometrySource)
+			return source
+		}
+	}
+}
+
 func (o observed) Mount(b *driver.MountBatch) {
 	o.observe(o.surface, b)
 	if o.clipboard != nil || o.takePhoto != nil || o.scanCode != nil || o.diskSpace != nil {
@@ -574,6 +590,9 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 	attach := func(t *core.Tree, p Platform) *surface {
 		s := &surface{id: t.ID(), tree: t, p: p, commit: t.Commit}
 		t.SetGPUSubmitter(p.SubmitGPU)
+		if source := platformGeometrySource(p); source != nil {
+			t.SetDevGeometrySource(source.ObserveGeometry)
+		}
 		if _, ok := p.(SharedMounter); ok && opts.Observe == nil {
 			s.commit = t.CommitShared
 		}

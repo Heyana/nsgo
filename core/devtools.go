@@ -339,7 +339,7 @@ func (s *devSurface) WatchLayout(shown func(bool)) {
 }
 
 func (s *devSurface) Inspect(id uint32) {
-	s.highlights(func(h *highlights) { h.inspect.Set(s.t.inspected(s.t.node(NodeID(id)))) })
+	s.highlights(func(h *highlights) { h.selected = s.t.node(NodeID(id)); h.inspect.Set(s.t.inspected(h.selected)) })
 }
 
 func (s *devSurface) Pick(on bool, hover, picked func(id uint32)) {
@@ -438,14 +438,14 @@ var kindNames = map[driver.ViewKind]string{
 
 // Elements returns the tree's views from its root, leaving out DevTools' own.
 func (s *devSurface) Elements() devtools.Node {
-	s.t.stepDevDrawn()
+	geometry := s.t.devGeometry()
 	var walk func(n *node) []devtools.Node
 	walk = func(n *node) []devtools.Node {
 		var out []devtools.Node
-		s.t.devChildren(n, func(c *node) { out = append(out, s.element(c, walk)) })
+		s.t.devChildren(n, func(c *node) { out = append(out, s.element(c, walk, geometry)) })
 		return out
 	}
-	return s.element(s.t.view, walk)
+	return s.element(s.t.view, walk, geometry)
 }
 
 // devChildren calls visit with each of n's children as DevTools list them, the layout audit too: through those that are no view to the views they hold, leaving out deleted views and DevTools' own.
@@ -463,8 +463,8 @@ func (t *Tree) devChildren(n *node, visit func(*node)) {
 }
 
 // devBox is n's box as DevTools show it, the layout audit too: its drawn border box in the surface, and its margin, border and padding as laid out.
-func (t *Tree) devBox(n *node) (Bounds, devtools.Box) {
-	return t.drawnBounds(n), devBoxEdges(n)
+func (t *Tree) devBox(n *node, geometry map[NodeID]Bounds) (Bounds, devtools.Box) {
+	return geometry[n.id], devBoxEdges(n)
 }
 
 func devBoxEdges(n *node) devtools.Box {
@@ -473,9 +473,9 @@ func devBoxEdges(n *node) devtools.Box {
 		Border: fourSides(l.Border.Top, l.Border.Right, l.Border.Bottom, l.Border.Left), Padding: fourSides(l.Padding.Top, l.Padding.Right, l.Padding.Bottom, l.Padding.Left)}
 }
 
-func (s *devSurface) element(n *node, walk func(*node) []devtools.Node) devtools.Node {
+func (s *devSurface) element(n *node, walk func(*node) []devtools.Node, geometry map[NodeID]Bounds) devtools.Node {
 	t := s.t
-	b, box := t.devBox(n)
+	b, box := t.devBox(n, geometry)
 	e := devtools.Node{ID: uint32(n.id), Kind: kindNames[n.kind], TestID: n.props.TestID, Role: driver.RoleName(n.props.Role),
 		Label: n.props.Label, Bounds: [4]float32{float32(b.Origin.X), float32(b.Origin.Y), float32(b.Size.Width), float32(b.Size.Height)},
 		Hidden: n.hidden || n.style.Display == DisplayNone, Style: styleProps(n.style), Selector: selectorFor(n), Box: box}

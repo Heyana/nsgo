@@ -89,6 +89,7 @@ const (
 	// msgShaderRelease lists the shader programs no view draws any more, which Java forgets and deletes. A prior runtime logs it as unknown.
 	msgShaderRelease = 25
 	msgTextRequest   = 26
+	msgGeometry      = 37 // optional DevTools observation
 	// msgGamepadRumble starts or stops rumble on a connected game controller (gamepad.go, Gamepads.java).
 	msgGamepadRumble = 27
 	// msgExtended is a Go-to-Java message of an extended kind (ext* below): its sub-kind byte, then that message's payload (sendExtended). The kinds above stop at 31, the most Protocol.readMessage takes, so that stray text on stdout, whose first byte is a space or a letter, is refused rather than read as a message; slots 2, 3, 4, 7 and 12 belonged to retired messages a stale runtime could still read. Add new Go-to-Java messages as extended kinds.
@@ -144,7 +145,8 @@ const (
 	// msgDownloadReport is a background download's progress or result, JSON (driver.ReportDownload).
 	msgDownloadReport = 36
 	// msgGPUEvent is what GpuView.java reports: ready, resize, deviceLost, error, or readback (gpu.go).
-	msgGPUEvent = 34
+	msgGPUEvent       = 34
+	msgGeometryReport = 38 // displayed border boxes of one native surface
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
@@ -174,7 +176,9 @@ const (
 )
 
 type surface struct {
-	sensorReports sensorReports
+	sensorReports   sensorReports
+	geometryMu      sync.Mutex
+	geometryReports map[uint32]func(driver.GeometrySnapshot)
 
 	mu      sync.Mutex // guards out and buf
 	out     *os.File
@@ -352,6 +356,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 		}
 		r := reader{payload}
 		switch kind {
+		case msgGeometryReport:
+			s.receiveGeometry(payload)
 		case msgStart:
 			size, folds := readSize(&r)
 			g := foldGeometry(size, folds)
@@ -1870,6 +1876,11 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 				w.str(it.Value)
 			}
 		}
+	}
+	if b.GeometryVersion != 0 {
+		// An optional footer keeps earlier runtimes and their batch decoder
+		// compatible while the runtime workflow rebuilds the new observer.
+		w.u64(b.GeometryVersion)
 	}
 }
 

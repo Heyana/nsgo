@@ -35,6 +35,7 @@ func (s *surface) startTicking() {
 }
 
 func (s *surface) tick(stamp time.Duration) {
+	defer s.reportGeometry()
 	s.ticking = false
 	s.animator.Step(stamp)
 	s.applyAnimatedAt(stamp)
@@ -52,7 +53,7 @@ func (s *surface) tick(stamp time.Duration) {
 			s.engine.FrameAt(driver.DisplayTime(stamp, time.Duration(now()*float64(time.Millisecond))))
 		}
 	}
-	if s.animator.Running() || len(s.transitions) > 0 || s.frameWanted {
+	if s.animator.Running() || len(s.transitions) > 0 || s.frameWanted || s.geometryAnimating() {
 		s.startTicking()
 	}
 }

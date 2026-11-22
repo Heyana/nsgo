@@ -185,7 +185,7 @@ A readout in the bottom corner shows the window's size in points, with buttons t
 | Select, `Return`, `Space` | Picks the crosshair's point while measuring |
 | `Esc`, back, Menu | Stops measuring |
 
-If your app binds the same key, the app's binding wins. Without the key, as on a phone, run with `-devtools` too and show and hide the audit with DevTools' **Layout**; hide it to reach a control under the readout. The boxes follow transforms, layout animations, transitions and sticky offsets, and follow a scroll a frame behind it. Redrawing them costs every update time, so measure speed without them.
+If your app binds the same key, the app's binding wins. Without the key, as on a phone, run with `-devtools` too and show and hide the audit with DevTools' **Layout**; hide it to reach a control under the readout. Native backends and the web read presentation matrices so bounds, Pick and the audit follow displayed transforms, animation and scrolling; watchOS follows its affine drawing. HarmonyOS and mini programs retain the Go-side tracker until their render layers report geometry. Redrawing them costs every update time, so measure speed without them.
 
 ## Speed
 

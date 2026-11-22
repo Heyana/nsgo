@@ -37,7 +37,7 @@ type layoutBatch struct {
 // newLayoutBatch returns the batch's layout animation, or nil when it
 // has none or the user turned animation effects off.
 func (w *window) newLayoutBatch(b *driver.MountBatch) *layoutBatch {
-	if b.LayoutAnimation == nil || w.env.ReduceMotion {
+	if b.LayoutAnimation == nil || w.motionReduced() {
 		return nil
 	}
 	return &layoutBatch{anim: b.LayoutAnimation, at: time.Now(), created: map[driver.NodeID]bool{}}
@@ -85,7 +85,7 @@ func (w *window) present(v *view) {
 		}
 		return // the dialog's shader draws its coming
 	}
-	if anim == driver.ModalSlide && w.env.ReduceMotion {
+	if anim == driver.ModalSlide && w.motionReduced() {
 		anim = driver.ModalFade
 	}
 	now := time.Now()

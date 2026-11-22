@@ -106,9 +106,10 @@ func (c *clicks) down(p driver.Point, v *view) int {
 }
 
 type surface struct {
-	motion motionService
-	doc    js.Value
-	host   js.Value
+	devGeometry driver.GeometryObserver
+	motion      motionService
+	doc         js.Value
+	host        js.Value
 	// simulate is the OS the page runs as (Options.OS).
 	simulate driver.OS
 	// rtl is the app's direction (driver.ItemDirection), which alerts lay
@@ -1444,6 +1445,8 @@ func (s *surface) Mount(b *driver.MountBatch) { driver.Apply(b, s.mount) }
 
 // mount applies b to the page at once, which runs on its one thread.
 func (s *surface) mount(b *driver.MountBatch) {
+	s.devGeometry.Begin(b.GeometryVersion)
+	defer func() { s.devGeometry.End(); s.reportGeometry() }()
 	defer collectLater()
 	s.batch++
 	var lb *layoutBatch

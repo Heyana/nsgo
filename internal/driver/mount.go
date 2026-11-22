@@ -694,6 +694,9 @@ func (a *Animator) StickyShift(c StickyCell, offset Points) Points {
 type MountBatch struct {
 	Root  NodeID
 	Items []MountItem
+	// GeometryVersion identifies the committed tree for DevTools' native
+	// geometry snapshots. Zero when no displayed geometry was requested.
+	GeometryVersion uint64
 	// LayoutAnimation, when set, animates the batch's frame changes,
 	// insertions and removals on the platform (Scope.AnimateLayout).
 	LayoutAnimation *LayoutAnimation

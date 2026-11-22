@@ -420,6 +420,7 @@ func subviews(view objc.ID) []objc.ID {
 
 // scrollEvent reports kind on scroll view v at its offset and zoom.
 func (v *view) scrollEvent(kind driver.EventKind) {
+	defer v.surface.reportGeometry()
 	if kind == driver.EventScrollEnd {
 		// At rest: the values that snap as a scroll ends settle.
 		s := v.surface

@@ -147,7 +147,7 @@ func (w *window) touchUp() bool {
 	w.scrollEvent(v, driver.EventScrollDragEnd)
 	lo, hi := scrollbar.Limits(c, v.frame.Size, v.size, v.refreshing)
 	velocity := t.drag.Velocity(c)
-	if w.env.ReduceMotion {
+	if w.motionReduced() {
 		velocity = 0
 	}
 	m := scrollbar.Release(c, v.frame.Size, v.size, v.offset, velocity, lo, hi, time.Now())

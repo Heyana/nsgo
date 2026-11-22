@@ -250,6 +250,11 @@ jobs:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
         run: xvfb-run -a go tool nsgo test -target linux -timeout 1m ./internal/testhost/testdata/frameclock
+      - name: Test Linux DevTools presentation bounds
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+        run: xvfb-run -a go tool nsgo test -target linux -timeout 1m ./testdata/devtools-geometry
       - name: Test native radio and tab focus
         env:
           GDK_BACKEND: x11
@@ -280,6 +285,8 @@ jobs:
         run: go tool nsgo test -target web -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
       - name: Test Chromium display frame timestamps
         run: go tool nsgo test -target web -timeout 1m ./internal/testhost/testdata/frameclock
+      - name: Test browser DevTools presentation bounds
+        run: go tool nsgo test -target web -timeout 1m ./testdata/devtools-geometry
       - name: Test browser package trust persistence
         run: go tool nsgo test -target web ./tsx/pkg
 
@@ -336,10 +343,12 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
+          disable-animations: false
           ndk: 27.2.12479018
           script: |
             NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidProcessExitResults$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/frameclock || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 2m ./testdata/devtools-geometry || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestGreets$' ./examples/hello || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/press || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestStandaloneReviewSDKClasses$' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
@@ -404,6 +413,8 @@ jobs:
         run: go tool nsgo test ./internal/platform/macos
       - name: Test native input isolation
         run: go tool nsgo test -target macos ./testdata/inputisolation
+      - name: Test macOS DevTools presentation bounds
+        run: go tool nsgo test -target macos -timeout 1m ./testdata/devtools-geometry
       - name: Test keyboard activation
         env:
           NSGO_TARGET_E2E: "1"
@@ -483,8 +494,10 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestPressAtFindsZoomedScrollContent$' ./internal/testhost/testdata/press
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audio
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
+          go tool nsgo test -target ios_simulator -timeout 1m ./testdata/devtools-geometry
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/testhost/testdata/deviceidentity
+          go tool nsgo test -target watchos_simulator -timeout 1m ./testdata/devtools-geometry
 
   windows:
     runs-on: depot-windows-2025-4
@@ -512,6 +525,8 @@ jobs:
         run: go tool nsgo test -run '^TestStartupTaskRejectsUnpackaged$' ./internal/platform/windows -- -count=1
       - name: Test native file preview rendering and keyboard forwarding
         run: go tool nsgo test -run '^(TestRegisteredTextPreviewHandler|TestPreviewFrameCOM|TestNativePreviewSelectionAndClose)$' ./internal/platform/windows -- -count=1 -timeout=90s
+      - name: Test Windows DevTools presentation bounds
+        run: go tool nsgo test -target windows -timeout 1m ./testdata/devtools-geometry
       - name: Test system keys in embedded Windows views
         run: go tool nsgo test -run '^TestEmbeddedSystemKeysReachTheApp$' ./internal/platform/windows
       - name: Test native web sources and restricted history

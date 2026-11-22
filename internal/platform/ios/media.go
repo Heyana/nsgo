@@ -167,6 +167,7 @@ func surfaceTick(self objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func (s *surface) tick() {
+	defer s.reportGeometry()
 	if s.perf != nil {
 		s.perf.Vsync(time.Now(), time.Duration(objc.Send[float64](s.link, sel("duration"))*float64(time.Second)))
 		defer s.measuring(s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 || len(s.ghosts) > 0 || s.frameWanted.Load())()
@@ -206,7 +207,7 @@ func (s *surface) tick() {
 	}
 	apple.YieldFrame()
 	// A monitor closes a frame at every refresh.
-	if !s.pipFramePending && !s.animator.Running() && len(s.motions) == 0 && len(s.transitions) == 0 && len(s.ghosts) == 0 && !s.frameWanted.Load() && s.perf == nil {
+	if !s.pipFramePending && !s.animator.Running() && len(s.motions) == 0 && len(s.transitions) == 0 && len(s.ghosts) == 0 && !s.frameWanted.Load() && s.perf == nil && !s.geometryAnimating() {
 		s.stopTicking()
 		// The app asked for a frame as the clock stopped, seeing it still
 		// ticking.
