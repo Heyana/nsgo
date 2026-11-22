@@ -57,8 +57,7 @@ func (n *node) Style() *layout.Style {
 	return &n.lstyle
 }
 
-// Measure measures a leaf's content: its text, a field's line, an image's
-// declared size or an em canvas's measured box. Views have none.
+// Measure measures a leaf's content: its text, a field's line, an image's declared size or an em canvas's measured box. Views have none.
 func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layout.AvailableSpace]) layout.Size[float32] {
 	var m Size
 	switch {

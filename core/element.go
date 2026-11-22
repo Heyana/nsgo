@@ -660,10 +660,7 @@ func (r *Ref) ContentBounds() (Bounds, bool) {
 	return r.t.contentBounds(r.n), true
 }
 
-// ContentBox returns the layout content box in the view's own coordinates,
-// excluding padding and borders, and false while unmounted. It is tracked:
-// a layout or padding change reruns a function that reads it. base/textview
-// uses it to constrain display attachments to their scroll viewport.
+// ContentBox returns the layout content box in the view's own coordinates, excluding padding and borders, and false while unmounted. It is tracked: a layout or padding change reruns a function that reads it. base/textview uses it to constrain display attachments to their scroll viewport.
 func (r *Ref) ContentBox() (Bounds, bool) {
 	if r == nil || r.n == nil || r.n.deleted {
 		return Bounds{}, false

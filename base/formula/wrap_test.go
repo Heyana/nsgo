@@ -26,8 +26,7 @@ func TestDisplayLayoutsKeepTheirWidthConstraintsSeparate(t *testing.T) {
 	if r.parsed(key, true) != wide || r.parsed(natural.key, true) != natural {
 		t.Fatal("a constrained layout replaced another frame in the renderer cache")
 	}
-	// With no safe operator to cut, preserve the full ink and let a
-	// containing scroll handle it instead of clipping or shrinking it.
+	// With no safe operator to cut, preserve the full ink and let a containing scroll handle it instead of clipping or shrinking it.
 	unbreakable := r.parsed(layoutKey{source: `abcdefghijklmnopqrstuv`, display: true, maxWidth: 100}, true)
 	if unbreakable.failed || unbreakable.em.Width <= 1 {
 		t.Fatalf("unbreakable formula lost its overflow: %+v", unbreakable.em)

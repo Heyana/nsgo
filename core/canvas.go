@@ -38,11 +38,7 @@ type Canvas struct {
 	// Em sizes the canvas where its style sets no size, in ems of the font size it inherits, scaled by the user's text size setting as text is: Em.Width wide and Em.Ascent+Em.Descent high, so it grows with the text around it as an icon does. In a text's attachment aligned to the baseline (VerticalAlignBaseline), its baseline, Em.Descent ems above its bottom, sits on the line's, and the text's NoFontScaling and MaxFontSizeMultiplier hold it too. EmFunc follows what it reads, laying the canvas out again; base/formula sizes its formulas so.
 	Em     EmBox
 	EmFunc func() EmBox
-	// MeasureEm measures a width-aware em canvas, such as base/formula's
-	// display math, at width in points (Auto when unconstrained) and the
-	// resolved, scaled font size. It returns its box in ems without drawing.
-	// Em or EmFunc may supply its preferred box. Reads are tracked; the
-	// callback also runs during layout, so it must not change signals.
+	// MeasureEm measures a width-aware em canvas, such as base/formula's display math, at width in points (Auto when unconstrained) and the resolved, scaled font size. It returns its box in ems without drawing. Em or EmFunc may supply its preferred box. Reads are tracked; the callback also runs during layout, so it must not change signals.
 	MeasureEm func(width, fontSize Points) EmBox
 }
 
@@ -110,8 +106,7 @@ type canvasNode struct {
 	paintKey canvasPaintKey
 	// em sizes a canvas with Em or EmFunc.
 	em *emNode
-	// measureFont invalidates a width-aware recording even when fixed
-	// dimensions keep its frame unchanged after a font-size change.
+	// measureFont invalidates a width-aware recording even when fixed dimensions keep its frame unchanged after a font-size change.
 	measureFont *Signal[Points]
 	measured    EmBox
 	// frames are the copies of the pixels the drawing last sent draws, by the app's buffer and version.

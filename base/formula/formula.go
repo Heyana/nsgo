@@ -140,8 +140,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 					if !current.drawn {
 						return placeholder
 					}
-					// A text attachment is measured in unbounded space. Its
-					// block supplies the actual scroll viewport separately.
+					// A text attachment is measured in unbounded space. Its block supplies the actual scroll viewport separately.
 					if viewport != nil {
 						if limit := viewport(); limit > 0 {
 							if width.IsAuto() || width > limit {
