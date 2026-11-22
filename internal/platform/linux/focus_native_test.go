@@ -501,3 +501,142 @@ func TestCoveredFocusIsForgottenWhenItGoes(t *testing.T) {
 		})
 	}
 }
+
+func TestTabStopsStayFocusableWithoutInitialMapFocus(t *testing.T) {
+	const title = "nsgo-focusable-stops"
+	var root *core.Scope
+	var disabled, roving, modalOpen *core.Signal[bool]
+	w := startTestWindow(t, func(cx *core.Scope) core.Node {
+		root = cx
+		focused := core.NewSignal(cx, "none")
+		disabled = core.NewSignal(cx, false)
+		roving = core.NewSignal(cx, true)
+		modalOpen = core.NewSignal(cx, false)
+		cx.Effect(func() {
+			cx.SetTitle(fmt.Sprintf("%s|%s|%v|%v|%v", title, focused.Get(), disabled.Get(), roving.Get(), modalOpen.Get()))
+		})
+		return core.View{Style: core.Style{Width: core.Pt(220), Height: core.Pt(220)}, Children: []core.Node{
+			core.Input{TestID: "field", Style: core.Style{Height: core.Pt(30)},
+				OnFocus: func() { focused.Set("field") }},
+			core.View{TestID: "button", Disabled: disabled.Get, Style: core.Style{Width: core.Pt(100), Height: core.Pt(30)},
+				OnFocus: func() { focused.Set("button") },
+				OnPress: func(core.PressEvent) {}},
+			core.View{TestID: "explicit", Focusable: roving.Get, Style: core.Style{Width: core.Pt(100), Height: core.Pt(30)},
+				OnFocus: func() { focused.Set("explicit") }},
+			core.View{TestID: "plain", Style: core.Style{Width: core.Pt(100), Height: core.Pt(30)}},
+			core.View{TestID: "nofocus", NoFocus: true, Style: core.Style{Width: core.Pt(100), Height: core.Pt(30)},
+				OnPress: func(core.PressEvent) {}},
+			core.Show{When: modalOpen.Get, Then: func(*core.Scope) core.Node {
+				return core.Modal{Children: []core.Node{
+					core.View{TestID: "modal-stop", Style: core.Style{Width: core.Pt(100), Height: core.Pt(30)},
+						OnPress: func(core.PressEvent) {}},
+				}}
+			}},
+		}}
+	}, Options{Title: title, Width: 220, Height: 220})
+	waitForTitle(t, w, title+"|none|false|true|false")
+
+	viewByID := func(id string) *view {
+		for _, v := range w.views {
+			if v != nil && !v.deleted && v.props.TestID == id {
+				return v
+			}
+		}
+		return nil
+	}
+	checkFocusable := func(stage string, id string, want bool) {
+		t.Helper()
+		v := viewByID(id)
+		if v == nil {
+			t.Errorf("%s: missing view %q", stage, id)
+			return
+		}
+		widget := v.widget
+		if v.kind == driver.KindInput {
+			if gtkWidgetGetFocusable(v.widget) != 0 {
+				t.Errorf("%s: input %q outer widget is focusable", stage, id)
+			}
+			widget = w.inputFocusWidget(v)
+		}
+		if got := gtkWidgetGetFocusable(widget) != 0; got != want {
+			t.Errorf("%s: %q focusable = %v, want %v", stage, id, got, want)
+		}
+	}
+
+	// Initial map: no widget takes spurious focus, while every active Tab stop is focusable.
+	w.onLoop(t, func() {
+		if f := gtkWindowGetFocus(w.toplevel()); f != 0 || w.focusedView() != nil {
+			t.Errorf("initial window map focused %#x (%v), want none", f, w.focusedView())
+		}
+		checkFocusable("initial", "field", true)
+		checkFocusable("initial", "button", true)
+		checkFocusable("initial", "explicit", true)
+		checkFocusable("initial", "plain", false)
+		checkFocusable("initial", "nofocus", false)
+
+		// Hiding and presenting the window again must not steal initial focus onto a stop.
+		gtkWidgetSetVisible(w.win, 0)
+		gtkWidgetSetVisible(w.win, 1)
+		gtkWindowPresent(w.win)
+		if f := gtkWindowGetFocus(w.toplevel()); f != 0 || w.focusedView() != nil {
+			t.Errorf("re-presenting window focused %#x (%v), want none", f, w.focusedView())
+		}
+
+		// Tabbing across stops keeps every stop focusable after focus moves on.
+		if !w.tab(false) || w.focusedView() == nil || w.focusedView().props.TestID != "field" {
+			t.Error("first Tab did not focus field")
+		}
+		checkFocusable("field focused", "button", true)
+		checkFocusable("field focused", "explicit", true)
+
+		if !w.tab(false) || w.focusedView() == nil || w.focusedView().props.TestID != "button" {
+			t.Error("second Tab did not focus button")
+		}
+		checkFocusable("button focused", "field", true)
+		checkFocusable("button focused", "button", true)
+		checkFocusable("button focused", "explicit", true)
+
+		if !w.tab(false) || w.focusedView() == nil || w.focusedView().props.TestID != "explicit" {
+			t.Error("third Tab did not focus explicit")
+		}
+		checkFocusable("explicit focused", "button", true)
+		checkFocusable("explicit focused", "explicit", true)
+	})
+
+	// Disabling button and clearing roving focusable removes GTK focusable immediately.
+	root.Post(func() {
+		disabled.Set(true)
+		roving.Set(false)
+	})
+	waitForTitle(t, w, title+"|explicit|true|false|false")
+	w.onLoop(t, func() {
+		checkFocusable("disabled+roving-off", "field", true)
+		checkFocusable("disabled+roving-off", "button", false)
+		checkFocusable("disabled+roving-off", "explicit", false)
+	})
+
+	// Re-enabling stops and opening a modal restricts focusability to the modal.
+	root.Post(func() {
+		disabled.Set(false)
+		roving.Set(true)
+		modalOpen.Set(true)
+	})
+	waitForTitle(t, w, title+"|explicit|false|true|true")
+	w.waitForModals(t, 1)
+	w.onLoop(t, func() {
+		checkFocusable("modal open", "field", false)
+		checkFocusable("modal open", "button", false)
+		checkFocusable("modal open", "explicit", false)
+		checkFocusable("modal open", "modal-stop", true)
+	})
+
+	// Closing the modal restores outer stops as focusable.
+	root.Post(func() { modalOpen.Set(false) })
+	waitForTitle(t, w, title+"|explicit|false|true|false")
+	w.waitForModals(t, 0)
+	w.onLoop(t, func() {
+		checkFocusable("modal closed", "field", true)
+		checkFocusable("modal closed", "button", true)
+		checkFocusable("modal closed", "explicit", true)
+	})
+}

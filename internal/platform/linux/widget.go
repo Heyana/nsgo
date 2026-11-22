@@ -36,6 +36,7 @@ const (
 	widgetClassSize   = objectClassSize + 34*8
 	offDispose        = 40 // GObjectClass.dispose
 	offSizeAllocate   = objectClassSize + 8*8
+	offFocus          = objectClassSize + 15*8
 	offSnapshot       = objectClassSize + 23*8
 	offContains       = objectClassSize + 24*8
 	gtkPickDefault    = 0
@@ -147,6 +148,7 @@ func viewClassInitCallback(class, data uintptr) {
 	parentDispose = *(*uintptr)(cPointer(parent + offDispose))
 	setSlot(class, offDispose, cbViewDispose)
 	setSlot(class, offSizeAllocate, cbViewSizeAllocate)
+	setSlot(class, offFocus, cbViewFocus)
 	setSlot(class, offSnapshot, cbViewSnapshot)
 	setSlot(class, offContains, cbViewContains)
 }
@@ -174,6 +176,14 @@ func viewSizeAllocateCallback(widget uintptr, width, height, baseline int32) {
 		r.w.allocateView(r.v)
 	}
 	r.w.revealDue = true
+}
+
+// viewFocusCallback declines GTK's directional focus traversal (such as
+// GtkWindow's initial focus on mapping and arrow-key keynav) so NSGo owns
+// focus placement and Tab order while every active Tab stop stays focusable
+// for GTK and AT-SPI.
+func viewFocusCallback(widget uintptr, direction int32) int32 {
+	return 0
 }
 
 func viewSnapshotCallback(widget, snapshot uintptr) {

@@ -391,6 +391,7 @@ func (w *window) makeEditor(v *view, multiline bool) {
 	// Hosted in the input's widget, after its children, at its content.
 	gtkWidgetSetParent(v.entry, v.widget)
 	w.entries[v.entry] = v
+	v.editorFocusable = w.inputFocusWidget(v) != 0
 	if v.provider == 0 {
 		v.provider = gtkCssProviderNew()
 		gtkStyleContextAddForDisplay(gdkDisplayGetDefault(), v.provider, 800)
@@ -416,6 +417,7 @@ func (w *window) dropEditor(v *view) {
 		}
 	}
 	v.textView, v.buffer = 0, 0
+	v.editorFocusable = false
 	v.editorPlaceholder.reset()
 }
 
@@ -565,6 +567,7 @@ func (w *window) focusedEntry() *view { return w.focus }
 func (w *window) focusEntry(v *view) {
 	w.setControlFocus(nil)
 	if v != nil && v.entry != 0 {
+		w.setEditorFocusable(v, true)
 		if v.textView != 0 {
 			gtkWidgetGrabFocus(v.textView)
 		} else {

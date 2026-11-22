@@ -403,3 +403,213 @@ func probeMultilinePlaceholderATSPI(t *testing.T, wantPlaceholder string) {
 		}
 	}
 }
+
+const (
+	focusableButtonLabel   = "NSGo focusable stop button"
+	focusableRovingLabel   = "NSGo focusable stop roving"
+	focusablePlainLabel    = "NSGo focusable stop plain"
+	focusableNoFocusLabel  = "NSGo focusable stop nofocus"
+	focusableDisabledLabel = "NSGo focusable stop disabled"
+)
+
+// TestAccessibilityFocusableStopsReachATSPI verifies that AT-SPI exposes every
+// active Tab stop with ATSPI_STATE_FOCUSABLE even while unfocused (without
+// giving a button initial focus on window map), keeps non-stops non-focusable,
+// and updates AT-SPI when a roving stop toggles off (#1552).
+func TestAccessibilityFocusableStopsReachATSPI(t *testing.T) {
+	if phase := os.Getenv("NSGO_TEST_FOCUSABLE_PHASE"); phase != "" {
+		probeFocusableStopsATSPI(t, phase)
+		return
+	}
+	if os.Getenv("NSGO_TEST_ACCESS_PROCESS") != t.Name() {
+		bus, err := exec.LookPath("dbus-run-session")
+		if err != nil {
+			t.Skip("needs dbus-run-session")
+		}
+		cmd := exec.Command(bus, "--", os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v", "-test.timeout=45s")
+		cmd.Env = append(os.Environ(), "NSGO_TEST_ACCESS_PROCESS="+t.Name(), "GTK_A11Y=atspi")
+		runAccessibilityProcess(t, cmd)
+		return
+	}
+	var setRoving func(bool)
+	w := startTestWindow(t, func(cx *core.Scope) core.Node {
+		roving := core.NewSignal(cx, true)
+		setRoving = func(on bool) { cx.Post(func() { roving.Set(on) }) }
+		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("focusable-a11y|%v", roving.Get())) })
+		return core.View{
+			Style: core.Style{Width: core.Pt(220), Height: core.Pt(220)},
+			Children: []core.Node{
+				core.View{
+					Role:    core.RoleButton,
+					Label:   focusableButtonLabel,
+					Style:   core.Style{Width: core.Pt(180), Height: core.Pt(30)},
+					OnPress: func(core.PressEvent) {},
+				},
+				core.View{
+					Role:      core.RoleButton,
+					Label:     focusableRovingLabel,
+					Focusable: roving.Get,
+					Style:     core.Style{Width: core.Pt(180), Height: core.Pt(30)},
+				},
+				core.View{
+					Role:  core.RoleGroup,
+					Label: focusablePlainLabel,
+					Style: core.Style{Width: core.Pt(180), Height: core.Pt(30)},
+				},
+				core.View{
+					Role:    core.RoleButton,
+					Label:   focusableNoFocusLabel,
+					NoFocus: true,
+					Style:   core.Style{Width: core.Pt(180), Height: core.Pt(30)},
+					OnPress: func(core.PressEvent) {},
+				},
+				core.View{
+					Role:     core.RoleButton,
+					Label:    focusableDisabledLabel,
+					Disabled: func() bool { return true },
+					Style:    core.Style{Width: core.Pt(180), Height: core.Pt(30)},
+					OnPress:  func(core.PressEvent) {},
+				},
+			},
+		}
+	}, Options{Title: "focusable-a11y", Width: 240, Height: 240})
+	waitForTitle(t, w, "focusable-a11y|true")
+
+	w.onLoop(t, func() {
+		if f := gtkWindowGetFocus(w.toplevel()); f != 0 {
+			t.Fatalf("window map focused %#x, want no initial focus", f)
+		}
+	})
+	probe := func(phase string) {
+		t.Helper()
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v", "-test.timeout=15s")
+		cmd.Env = append(os.Environ(), "NSGO_TEST_FOCUSABLE_PHASE="+phase)
+		runAccessibilityProcess(t, cmd)
+	}
+	probe("initial")
+
+	w.onLoop(t, func() {
+		if !w.tab(false) {
+			t.Fatal("Tab did not focus the first button stop")
+		}
+	})
+	probe("focused")
+
+	setRoving(false)
+	waitForTitle(t, w, "focusable-a11y|false")
+	probe("roving-off")
+}
+
+func probeFocusableStopsATSPI(t *testing.T, phase string) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	lib, err := purego.Dlopen("libatspi.so.0", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	if err != nil {
+		t.Skip("needs libatspi: ", err)
+	}
+	var (
+		init     func() int32
+		desktop  func(int32) uintptr
+		name     func(uintptr, *uintptr) uintptr
+		count    func(uintptr, *uintptr) int32
+		child    func(uintptr, int32, *uintptr) uintptr
+		states   func(uintptr) uintptr
+		contains func(uintptr, int32) int32
+		clear    func(uintptr)
+		retain   func(uintptr) uintptr
+	)
+	purego.RegisterLibFunc(&init, lib, "atspi_init")
+	purego.RegisterLibFunc(&desktop, lib, "atspi_get_desktop")
+	purego.RegisterLibFunc(&name, lib, "atspi_accessible_get_name")
+	purego.RegisterLibFunc(&count, lib, "atspi_accessible_get_child_count")
+	purego.RegisterLibFunc(&child, lib, "atspi_accessible_get_child_at_index")
+	purego.RegisterLibFunc(&states, lib, "atspi_accessible_get_state_set")
+	purego.RegisterLibFunc(&contains, lib, "atspi_state_set_contains")
+	purego.RegisterLibFunc(&clear, lib, "atspi_accessible_clear_cache")
+	purego.RegisterLibFunc(&retain, gobjectLib, "g_object_ref")
+	if init() != 0 {
+		t.Fatal("AT-SPI could not connect to the private bus")
+	}
+
+	type wantState struct {
+		focusable bool
+		focused   bool
+	}
+	want := map[string]wantState{
+		focusableButtonLabel:   {focusable: true, focused: phase != "initial"},
+		focusableRovingLabel:   {focusable: phase != "roving-off", focused: false},
+		focusablePlainLabel:    {focusable: false, focused: false},
+		focusableNoFocusLabel:  {focusable: false, focused: false},
+		focusableDisabledLabel: {focusable: false, focused: false},
+	}
+
+	var collect func(uintptr, int, map[string]uintptr)
+	collect = func(node uintptr, depth int, found map[string]uintptr) {
+		if node == 0 || depth > 12 {
+			return
+		}
+		clear(node)
+		s := name(node, nil)
+		got := goString(s)
+		gFree(s)
+		if _, ok := want[got]; ok && found[got] == 0 {
+			retain(node)
+			found[got] = node
+		}
+		for i, n := int32(0), count(node, nil); i < n; i++ {
+			c := child(node, i, nil)
+			collect(c, depth+1, found)
+			if c != 0 {
+				gObjectUnref(c)
+			}
+		}
+	}
+
+	found := map[string]uintptr{}
+	for deadline := time.Now().Add(10 * time.Second); len(found) < len(want); time.Sleep(20 * time.Millisecond) {
+		root := desktop(0)
+		collect(root, 0, found)
+		if root != 0 {
+			gObjectUnref(root)
+		}
+		if len(found) < len(want) && time.Now().After(deadline) {
+			for k, n := range found {
+				gObjectUnref(n)
+				delete(found, k)
+			}
+			t.Fatalf("phase %s: found %d of %d accessible nodes on AT-SPI", phase, len(found), len(want))
+		}
+	}
+	defer func() {
+		for _, n := range found {
+			gObjectUnref(n)
+		}
+	}()
+
+	// AtspiStateType's stable protocol values.
+	const focusableState, focusedState = 11, 12
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		allMatch := true
+		var lastMismatch string
+		for label, exp := range want {
+			node := found[label]
+			clear(node)
+			set := states(node)
+			gotFocusable := contains(set, focusableState) != 0
+			gotFocused := contains(set, focusedState) != 0
+			gObjectUnref(set)
+			if gotFocusable != exp.focusable || gotFocused != exp.focused {
+				allMatch = false
+				lastMismatch = fmt.Sprintf("%q: focusable=%v focused=%v, want focusable=%v focused=%v",
+					label, gotFocusable, gotFocused, exp.focusable, exp.focused)
+				break
+			}
+		}
+		if allMatch {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("phase %s: %s", phase, lastMismatch)
+		}
+	}
+}

@@ -53,9 +53,12 @@ type view struct {
 	presented bool
 
 	// access is what GTK was last told of the view, and parts a canvas's
-	// named parts (access.go).
-	access accessState
-	parts  []canvasPart
+	// named parts (access.go). focusable and editorFocusable cache what
+	// gtk_widget_set_focusable last set on widget and its hosted input editor.
+	access          accessState
+	parts           []canvasPart
+	focusable       bool
+	editorFocusable bool
 
 	// A scroll view's configuration, content size and offset.
 	scroll driver.ScrollConfig

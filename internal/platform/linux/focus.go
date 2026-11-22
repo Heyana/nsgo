@@ -9,27 +9,19 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Focus stays in the newest modal. Ordinary widgets become focusable only when Tab or an explicit command chooses them, so GTK's automatic focus on mapping a window does not focus a button on the app's behalf.
-func (w *window) focusScope() *view {
-	root := w.view(w.root)
-	scope := root
-	var walk func(*view)
-	walk = func(v *view) {
-		if v.style.Hidden {
-			return
-		}
-		if v.kind == driver.KindModal {
-			scope = v
-		}
-		for _, c := range v.children {
-			walk(c)
-		}
-	}
-	if root != nil {
-		walk(root)
-	}
-	return scope
+// Focus stays in the newest modal. Every active Tab stop keeps GTK focusable
+// enabled so AT-SPI reports it as focusable to screen readers such as Orca;
+// NsgoView's focus vfunc declines GTK's directional traversal so mapping a
+// window does not focus a button or field on the app's behalf.
+func (v *view) focusKind() driver.ViewKind { return v.kind }
+func (v *view) focusHidden() bool          { return v.style.Hidden }
+func (v *view) focusDeleted() bool         { return v.deleted }
+func (v *view) focusChildren() []*view     { return v.children }
+func (v *view) focusStopSelf() bool {
+	return viewCanFocusStop(v.kind, &v.props, v.events, v.input.Disabled)
 }
+
+func (w *window) focusScope() *view { return activeFocusScope(w.view(w.root)) }
 
 // focusableView reports whether v is a keyboard stop: an enabled field or a stop view that shows within the newest modal.
 func (w *window) focusableView(v *view) bool { return w.focusableIn(v, w.focusScope()) }
@@ -46,13 +38,81 @@ func (w *window) focusableIn(v, scope *view) bool {
 		}
 		inside = inside || p == scope
 		if p == w.view(w.root) {
-			if v.kind == driver.KindInput {
-				return inside && !v.props.Disabled && !v.input.Disabled
-			}
-			return inside && v.props.FocusStop(v.events)
+			return inside && v.focusStopSelf()
 		}
 	}
 	return false
+}
+
+// inputFocusWidget returns the native GTK widget that takes keyboard focus for
+// a KindInput view: its GtkTextView when multiline, or its GtkEntry delegate.
+func (w *window) inputFocusWidget(v *view) uintptr {
+	if v == nil || v.entry == 0 {
+		return 0
+	}
+	if v.textView != 0 {
+		return v.textView
+	}
+	return gtkEditableGetDelegate(v.entry)
+}
+
+func (w *window) setViewFocusable(v *view, on bool) {
+	if v == nil || v.widget == 0 || v.focusable == on {
+		return
+	}
+	v.focusable = on
+	gtkWidgetSetFocusable(v.widget, boolInt(on))
+}
+
+func (w *window) setEditorFocusable(v *view, on bool) {
+	if v == nil || v.editorFocusable == on {
+		return
+	}
+	editor := w.inputFocusWidget(v)
+	if editor == 0 {
+		v.editorFocusable = false
+		return
+	}
+	v.editorFocusable = on
+	gtkWidgetSetFocusable(editor, boolInt(on))
+}
+
+func (w *window) clearFocusableSubtree(v *view) {
+	if v == nil || v.deleted {
+		return
+	}
+	w.setViewFocusable(v, false)
+	w.setEditorFocusable(v, false)
+	for _, c := range v.children {
+		w.clearFocusableSubtree(c)
+	}
+}
+
+func (w *window) inRootTree(v *view) bool {
+	root := w.view(w.root)
+	if root == nil {
+		return false
+	}
+	for p := v; p != nil; p = p.parent {
+		if p == root {
+			return true
+		}
+	}
+	return false
+}
+
+// syncFocusable updates GTK's focusable flag across the mounted tree (and
+// clears any views detached from it) so AT-SPI matches the active Tab stops.
+func (w *window) syncFocusable(detached []*view) {
+	for _, v := range detached {
+		if v != nil && !v.deleted && !w.inRootTree(v) {
+			w.clearFocusableSubtree(v)
+		}
+	}
+	syncFocusTree(w.view(w.root), func(v *view, viewFocus, editorFocus bool) {
+		w.setViewFocusable(v, viewFocus)
+		w.setEditorFocusable(v, editorFocus)
+	})
 }
 
 func (w *window) focusedView() *view {
@@ -72,6 +132,7 @@ func (w *window) focusCommand(v *view, selectionSet bool) {
 		return
 	}
 	w.setControlFocus(nil)
+	w.setEditorFocusable(v, true)
 	if gtkEntryGrabFocusWithoutSelecting(v.entry) != 0 && !selectionSet {
 		end := int32(utf8.RuneCountInString(w.editorText(v)))
 		gtkEditableSelectRegion(v.entry, end, end)
@@ -87,7 +148,7 @@ func (w *window) focusView(v *view) {
 		w.focusEntry(v)
 		return
 	}
-	gtkWidgetSetFocusable(v.widget, 1)
+	w.setViewFocusable(v, true)
 	if gtkWidgetGrabFocus(v.widget) != 0 {
 		w.setControlFocus(v)
 	}
@@ -100,7 +161,6 @@ func (w *window) setControlFocus(v *view) {
 	}
 	w.controlFocus = v
 	if old != nil && !old.deleted {
-		gtkWidgetSetFocusable(old.widget, 0)
 		if old.events.Has(driver.EventBlur) {
 			w.engine.Dispatch(driver.Event{Kind: driver.EventBlur, ID: old.id})
 		}

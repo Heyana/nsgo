@@ -210,8 +210,18 @@ func (w *window) retireInner(v *view) {
 	}
 	if w.focus == v {
 		w.focus = nil
-		gtkWindowSetFocus(w.toplevel(), 0)
+		if top := w.toplevel(); top != 0 {
+			gtkWindowSetFocus(top, 0)
+		}
 	}
+	if w.controlFocus == v {
+		w.setControlFocus(nil)
+		if top := w.toplevel(); top != 0 {
+			gtkWindowSetFocus(top, 0)
+		}
+	}
+	w.setViewFocusable(v, false)
+	w.setEditorFocusable(v, false)
 	if v.video != nil {
 		w.stopProgress(v.video)
 	}

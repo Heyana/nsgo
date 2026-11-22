@@ -69,6 +69,7 @@ var (
 	cbViewClassInit    uintptr
 	cbViewDispose      uintptr
 	cbViewSizeAllocate uintptr
+	cbViewFocus        uintptr
 	cbViewSnapshot     uintptr
 	cbViewContains     uintptr
 	cbVideoPrepared    uintptr
@@ -163,6 +164,7 @@ func init() {
 	cbViewClassInit = newCallback(viewClassInitCallback)
 	cbViewDispose = newCallback(viewDisposeCallback)
 	cbViewSizeAllocate = newCallback(viewSizeAllocateCallback)
+	cbViewFocus = newCallback(viewFocusCallback)
 	cbViewSnapshot = newCallback(viewSnapshotCallback)
 	cbViewContains = newCallback(viewContainsCallback)
 	cbVideoPrepared = newCallback(videoPreparedCallback)
