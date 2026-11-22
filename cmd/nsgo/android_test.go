@@ -6,6 +6,7 @@ import (
 	"context"
 	"go/parser"
 	"go/token"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -341,7 +342,7 @@ func TestAndroidSessionAutomationOverADB(t *testing.T) {
 			opts := devOptions{
 				automation: tc.automation,
 				fps:        true,
-				server:     &devServer{port: 9123, token: "tok"},
+				server:     &devServer{addr: &net.TCPAddr{IP: net.IPv4zero, Port: 9123}, token: "tok"},
 			}
 			s := androidSession(opts)
 			running, err := s.start(context.Background(), p)
