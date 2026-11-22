@@ -300,6 +300,7 @@ func (t *Tree) commitRound() {
 		t.placeTabStops(f)
 	}
 	t.sendSticky()
+	t.fitAttachmentTexts(t.view)
 	t.sizeCanvases()
 	clear(t.laidOut)
 	t.laidOut = t.laidOut[:0]
@@ -631,6 +632,7 @@ func (t *Tree) sizeAttachments(n *node, inherited textFields, scale float32, for
 		}
 		t.resolve(w, inherited, force)
 		if w.layoutDirty {
+			n.text.fitStale = true
 			t.layoutRoot(w, Size{Width: attachmentSpace, Height: attachmentSpace}, false)
 			t.syncFrames(w)
 			l := &w.lstate.Rounded
@@ -749,7 +751,7 @@ func (t *Tree) placeAttachments(n *node, l driver.TextLayout) {
 		if ok {
 			b.Origin.X += n.text.shownBox.Origin.X
 			b.Origin.Y += n.text.shownBox.Origin.Y
-			t.setFrame(w, Bounds{Origin: b.Origin, Size: w.attach.size})
+			t.setFrame(w, Bounds{Origin: b.Origin, Size: w.attach.shownSize()})
 		}
 	}
 }
@@ -1067,7 +1069,7 @@ func (t *Tree) layoutText(n *node) *driver.TextContent {
 		tn.fitted = nil
 	}
 	if tn.fit {
-		if fitted, ok := fitText(t.text, text, box.Size, tn.minScale); ok {
+		if fitted, ok := fitText(t.text, text, box.Size, tn.minScale, nil); ok {
 			tn.fitted = t.text.Prepare(&fitted)
 			prepared, text = tn.fitted, &fitted
 		}
@@ -1076,6 +1078,10 @@ func (t *Tree) layoutText(n *node) *driver.TextContent {
 		// Unwrapped lines overflow the box.
 		box.Size.Width = max(box.Size.Width, ceil(prepared.Measure(Auto).Width, t.ratio))
 	}
+	return makeTextContent(text, prepared, box)
+}
+
+func makeTextContent(text *driver.AttributedText, prepared driver.PreparedText, box Bounds) *driver.TextContent {
 	l := prepared.Layout(box.Size)
 	return &driver.TextContent{
 		Text: text.Text, Layout: l, Content: box, Style: text.Style, Spans: text.Spans, Shadow: text.Shadow,
@@ -1115,10 +1121,13 @@ func (t *Tree) emitText(n *node) {
 // scaled down, to no less than least of them, until it fits size within
 // its line limit: the largest scale that fits, by bisection, as NSH's
 // Paragraph::fit. It reports false when text fits as it is.
-func fitText(engine driver.TextEngine, text *driver.AttributedText, size Size, least float32) (driver.AttributedText, bool) {
+func fitText(engine driver.TextEngine, text *driver.AttributedText, size Size, least float32, attachments func(float32) []driver.TextAttachment) (driver.AttributedText, bool) {
 	scaled := func(scale float32) driver.AttributedText {
 		s := *text
 		s.Style = fitStyle(s.Style, scale)
+		if attachments != nil {
+			s.Attachments = attachments(scale)
+		}
 		s.Spans = append([]driver.TextSpan(nil), text.Spans...)
 		for i := range s.Spans {
 			s.Spans[i].Style = fitStyle(s.Spans[i].Style, scale)

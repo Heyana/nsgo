@@ -330,7 +330,8 @@ type Text struct {
 	NoFontScaling         bool
 	MaxFontSizeMultiplier float32
 	// AdjustsFontSizeToFit shrinks the text's fonts, line heights and
-	// letter spacing, down to MinimumFontScale of them (at least 0.1),
+	// letter spacing, and font-relative attachments such as Canvas.Em,
+	// down to MinimumFontScale of them (at least 0.1),
 	// until it fits its box and MaxLines.
 	AdjustsFontSizeToFit bool
 	MinimumFontScale     float32

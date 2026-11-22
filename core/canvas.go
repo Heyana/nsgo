@@ -35,7 +35,7 @@ type Canvas struct {
 	Label     string
 	LabelFunc func() string
 	TestID    string
-	// Em sizes the canvas where its style sets no size, in ems of the font size it inherits, scaled by the user's text size setting as text is: Em.Width wide and Em.Ascent+Em.Descent high, so it grows with the text around it as an icon does. In a text's attachment aligned to the baseline (VerticalAlignBaseline), its baseline, Em.Descent ems above its bottom, sits on the line's, and the text's NoFontScaling and MaxFontSizeMultiplier hold it too. EmFunc follows what it reads, laying the canvas out again; base/formula sizes its formulas so.
+	// Em sizes the canvas where its style sets no size, in ems of the font size it inherits, scaled by the user's text size setting as text is: Em.Width wide and Em.Ascent+Em.Descent high, so it grows with the text around it as an icon does. In a text's attachment aligned to the baseline (VerticalAlignBaseline), its baseline, Em.Descent ems above its bottom, sits on the line's, and the text's NoFontScaling and MaxFontSizeMultiplier hold it too. AdjustsFontSizeToFit shrinks its font-relative size with the text. EmFunc follows what it reads, laying the canvas out again; base/formula sizes its formulas so.
 	Em     EmBox
 	EmFunc func() EmBox
 	// MeasureEm measures a width-aware em canvas, such as base/formula's display math, at width in points (Auto when unconstrained) and the resolved, scaled font size. It returns its box in ems without drawing. Em or EmFunc may supply its preferred box. Reads are tracked; the callback also runs during layout, so it must not change signals.
@@ -56,6 +56,8 @@ type emNode struct {
 	// fontSize is the scaled font size it inherits, in points.
 	fontSize Points
 	measure  func(width, fontSize Points) EmBox
+	// fitFontSize is a containing fitted text's effective size; zero keeps fontSize.
+	fitFontSize Points
 }
 
 func (e *emNode) boxAt(width, fontSize Points) EmBox {

@@ -23,7 +23,7 @@ The core does what needs no engine, as NSH's does:
 - `TextTransform` changes the case of each span's characters as they are joined.
 - A text's own multiplier caps the user's text size (`NoFontScaling`, `MaxFontSizeMultiplier`).
 - `TextAlignVertical` moves the content box down to the text's measured height.
-- `AdjustsFontSizeToFit` bisects a scale, down to `MinimumFontScale`, at which the untruncated text fits the box and its line limit, as NSH's `Paragraph::fit`. Only the final layout uses that text; layout measures the text as written.
+- `AdjustsFontSizeToFit` bisects a scale, down to `MinimumFontScale`, at which the untruncated text fits the box and its line limit, as NSH's `Paragraph::fit`. Only the final layout uses that text; layout measures the text as written. Font-relative attachments (`Canvas.Em` and icons) take the selected scale too, including their baseline descent, while point sizes and padding stay as authored. Candidate attachment layouts have independent layout states, and only the selected geometry is applied before canvases record their drawings; the natural measurements remain available when the text grows again.
 - `Text.OnTextLayout` runs after the commit with the lines a `LineLayout` reports: UTF-8 ranges, boxes in the content box, and the metrics of the font each line starts in.
 
 The engines draw the rest:

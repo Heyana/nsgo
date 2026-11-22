@@ -456,6 +456,10 @@ type textNode struct {
 	baseline *textBaseline
 	// attachments counts the spans that are attachments.
 	attachments int
+	// Fitted attachment layouts keep the natural layout intact while drawing at the fitted font.
+	fitTrees []*fittedAttachmentNode
+	fitText  driver.AttributedText
+	fitStale bool
 	// selectable is the text's own Selectable, over the UserSelect it
 	// inherits.
 	selectable Selectable
@@ -604,6 +608,9 @@ type attachNode struct {
 	align   VerticalAlign
 	descent Points
 	cut     bool // cut off by the text's line limit
+	// fitSize is the selected visual size when fitScale is positive.
+	fitSize  Size
+	fitScale float32
 }
 
 type inputNode struct {

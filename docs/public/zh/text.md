@@ -17,7 +17,7 @@ core.Text{Content: "Hello from NSGo", Style: core.Style{
 }}
 ```
 
-`Content` 是固定内容，`ContentFunc` 跟随 signal，因此会变化的文本在函数里读取它。`MaxLines` 限制显示的行数，`EllipsizeMode` 在开头、中间或结尾截断，`WhiteSpaceNoWrap` 让段落保持一行。`AdjustsFontSizeToFit` 会缩小文本，直到它放进盒子和行数限制。
+`Content` 是固定内容，`ContentFunc` 跟随 signal，因此会变化的文本在函数里读取它。`MaxLines` 限制显示的行数，`EllipsizeMode` 在开头、中间或结尾截断，`WhiteSpaceNoWrap` 让段落保持一行。`AdjustsFontSizeToFit` 会缩小文本，直到它放进盒子和行数限制，最小缩放为 `MinimumFontScale`（至少 0.1）。公式等随字号变化的附件会一起缩小，空间足够时恢复原来的大小；明确指定的点数尺寸和内边距保持原值。
 
 文本字段像 CSS 一样继承：位于设置了 `FontSize`、`Color` 或 `LineHeight` 的视图中的文本会采用这些值，除非自己设置。`TextAlign`、`TextTransform`、`LetterSpacing`、`TextDecoration`、`TextDecorationStyle`、`TextDecorationColor`，以及 `TextShadowColor`、`TextShadowOffset` 和 `TextShadowRadius` 设置行与字形的样式。
 

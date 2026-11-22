@@ -85,3 +85,5 @@ Mermaid diagrams use `diagram.View.Icons` to map names such as `"fa:fa-car"` to 
 
 Android Live Activity actions reach `widget.OnAction` without opening the Activity while the posting engine runs; keep that engine alive for actions, and use the notification content tap to reopen the app. [Live Activities](https://nsgo.dev/docs/live-activities.md#presses).
 `widget.Button` calls `widget.OnAction` from iOS 17 and macOS 14; register it before `nsgo.Run`, handle `Activity == nil` for a widget, and publish `widget.Update` before returning. See [Widgets](https://nsgo.dev/docs/widgets.md#buttons).
+
+`Text.AdjustsFontSizeToFit` shrinks formulas and other font-relative attachments with the text, respecting `MinimumFontScale`; explicit point sizes and padding stay as authored ([text](https://nsgo.dev/docs/text.md)).

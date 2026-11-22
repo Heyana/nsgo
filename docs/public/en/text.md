@@ -17,7 +17,7 @@ core.Text{Content: "Hello from NSGo", Style: core.Style{
 }}
 ```
 
-`Content` is fixed and `ContentFunc` follows a signal, so a text that changes reads it inside the function. `MaxLines` limits the lines shown, `EllipsizeMode` cuts the rest at its head, middle or tail, and `WhiteSpaceNoWrap` keeps a paragraph on one line. `AdjustsFontSizeToFit` shrinks the text until it fits its box and its line limit.
+`Content` is fixed and `ContentFunc` follows a signal, so a text that changes reads it inside the function. `MaxLines` limits the lines shown, `EllipsizeMode` cuts the rest at its head, middle or tail, and `WhiteSpaceNoWrap` keeps a paragraph on one line. `AdjustsFontSizeToFit` shrinks the text until it fits its box and its line limit, down to `MinimumFontScale` (at least 0.1). Formulas and other font-relative attachments shrink with it and return to their natural size when space permits; explicit point sizes and padding keep their authored values.
 
 Text fields inherit as CSS does: a text inside a view with `FontSize`, `Color` or `LineHeight` takes them unless it sets its own. `TextAlign`, `TextTransform`, `LetterSpacing`, `TextDecoration`, `TextDecorationStyle`, `TextDecorationColor` and `TextShadowColor`, `TextShadowOffset` and `TextShadowRadius` style the lines and the glyphs.
 
