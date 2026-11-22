@@ -1005,6 +1005,9 @@ func (s *surface) close() {
 	s.discovery.Close()
 	delete(surfaces, s)
 	s.stopTicking()
+	if s.hud != nil {
+		s.hud.stop()
+	}
 	// The run loop holds the link, which holds the surface's view as its target, and so the whole tree.
 	invalidate(&s.link)
 	s.stopPassTimer()

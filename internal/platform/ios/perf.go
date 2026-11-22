@@ -104,6 +104,11 @@ func (h *hud) run() {
 
 // update shows the latest readings.
 func (h *hud) update() {
+	select {
+	case <-h.done:
+		return
+	default:
+	}
 	h.snapshot = h.monitor.Snapshot()
 	h.label.Send(sel("setText:"), apple.NSString(h.snapshot.Readings()))
 	h.layout()
@@ -122,6 +127,14 @@ func (h *hud) layout() {
 	h.trace.Send(selSetFrame, apple.Rect(pad, pad, width-2*pad, graph))
 	h.label.Send(selSetFrame, apple.Rect(pad, 2*pad+graph, width-2*pad, fit.Height))
 	h.s.native.Send(sel("bringSubviewToFront:"), h.panel)
+}
+
+// stop removes the panel and stops sampling, as its surface closes.
+func (h *hud) stop() {
+	close(h.done)
+	delete(perfTraces, h.trace)
+	h.panel.Send(selRemoveFromSuperview)
+	h.s.perf, h.s.hud = nil, nil
 }
 
 // drawPerfTrace draws a panel's trace; UIKit's context is y down.

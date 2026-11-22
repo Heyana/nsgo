@@ -306,6 +306,9 @@ func (s *surface) close() {
 	s.sensors.Close()
 	s.discovery.Close()
 	s.dropLink()
+	if s.hud != nil {
+		s.hud.stop()
+	}
 	for _, stop := range s.stops {
 		stop()
 	}
