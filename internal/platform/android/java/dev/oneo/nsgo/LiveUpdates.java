@@ -19,16 +19,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * Package widget's Live Activities as notifications, which Go starts,
- * updates and ends with LIVE_UPDATE's JSON (widget/activity_android.go):
- * Live Updates from Android 16, promoted to the top of the shade, the
- * Lock Screen and a chip of the status bar with Status, a ProgressStyle
- * bar and a chronometer, and ongoing notifications with a bar before.
- * Each is tagged with its activity's ID, so the runtime finds those of
- * earlier runs, and reports LIVE_REPORT's state, whether they show and
- * which run, as it starts and after each change, and the presses of their
- * actions, which reach the running Go process without bringing the app's
- * activity back.
+ * Package widget's Live Activities as notifications, which Go starts, updates and ends with LIVE_UPDATE's JSON (widget/activity_android.go): Live Updates from Android 16, promoted to the top of the shade, the Lock Screen and a chip of the status bar with Status, a ProgressStyle bar and a chronometer, and ongoing notifications with a bar before. Each is tagged with its activity's ID, so the runtime finds those of earlier runs, and reports LIVE_REPORT's state, whether they show and which run, as it starts and after each change, and the presses of their actions, which reach the running Go process without bringing the app's activity back.
  */
 final class LiveUpdates {
     private LiveUpdates() {}
@@ -124,9 +115,7 @@ final class LiveUpdates {
     }
 
     /**
-     * The intent a press sends. An action is a broadcast to the runtime so a
-     * running Go process receives it without starting an Activity. A content
-     * press remains an Activity intent and may open the app with its URL.
+     * The intent a press sends. An action is a broadcast to the runtime so a running Go process receives it without starting an Activity. A content press remains an Activity intent and may open the app with its URL.
      */
     static PendingIntent press(Context context, Activity activity, String engine, String id, String action, String url) {
         if (action != null) {

@@ -1,11 +1,4 @@
-// Command widgets is a counter whose widgets show its count: on the Mac's
-// desktop and in Notification Center, and on the Home Screen and the Lock
-// Screen of an iPhone or an iPad. Each change writes the widgets' timeline
-// with package widget, and the medium widget counts down to the next hour,
-// which the system shows without the app. Its Live Activity shows the
-// count on the Lock Screen and in the Dynamic Island, or as a Live Update
-// on Android, with buttons that change it without opening the app on iOS
-// and while the posting engine runs on Android.
+// Command widgets is a counter whose widgets show its count: on the Mac's desktop and in Notification Center, and on the Home Screen and the Lock Screen of an iPhone or an iPad. Each change writes the widgets' timeline with package widget, and the medium widget counts down to the next hour, which the system shows without the app. Its Live Activity shows the count on the Lock Screen and in the Dynamic Island, or as a Live Update on Android, with buttons that change it without opening the app on iOS and while the posting engine runs on Android.
 package main
 
 import (

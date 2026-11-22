@@ -4997,8 +4997,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     private void answerPermission(long count) {
-        // A permission callback may immediately start a Live Activity. Its
-        // cached availability must be updated before the callback can run.
+        // A permission callback may immediately start a Live Activity. Its cached availability must be updated before the callback can run.
         write(Protocol.LIVE_REPORT, LiveUpdates.state(getContext()));
         event(Protocol.EVENT_NOTIFICATION, 0, count, 0, 0, "", 0, 0, Notifications.permission(getContext()));
     }

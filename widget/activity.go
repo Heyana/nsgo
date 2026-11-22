@@ -52,9 +52,7 @@ type ActivityContent struct {
 	// Progress, from 0 to 1, shows as a bar when ShowProgress is set.
 	Progress     float64
 	ShowProgress bool
-	// Actions are buttons under the content, whose presses OnAction hears:
-	// without opening the app on iOS 17 and later, and through the runtime
-	// receiver while the posting engine runs on Android. Three at most.
+	// Actions are buttons under the content, whose presses OnAction hears: without opening the app on iOS 17 and later, and through the runtime receiver while the posting engine runs on Android. Three at most.
 	Actions []ActivityAction
 	// URL opens with the app when the activity is tapped; without it, a tap
 	// only opens the app.

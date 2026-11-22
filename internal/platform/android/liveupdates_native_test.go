@@ -51,8 +51,7 @@ func TestLiveUpdateActionsKeepOwnerAndFullIdentity(t *testing.T) {
 	}
 }
 
-// A notification permission callback may immediately start an activity. Its
-// cached Live Update availability must already reflect the permission reply.
+// A notification permission callback may immediately start an activity. Its cached Live Update availability must already reflect the permission reply.
 func TestLiveUpdateStatePrecedesPermissionCallback(t *testing.T) {
 	if target := os.Getenv("NSGO_TEST_TARGET"); target != "android" {
 		t.Fatalf("requires nsgo test -target android, got %q", target)

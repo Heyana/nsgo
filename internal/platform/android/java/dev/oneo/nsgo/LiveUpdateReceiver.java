@@ -10,7 +10,6 @@ public final class LiveUpdateReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (intent == null) return;
         NsgoEngine.deliverLiveAction(intent.getStringExtra(LiveUpdates.EXTRA_ENGINE), LiveUpdates.press(intent));
-        // A receiver must not launch an Activity as a notification trampoline.
-        // Stale presses are dropped when the posting engine has ended.
+        // A receiver must not launch an Activity as a notification trampoline. Stale presses are dropped when the posting engine has ended.
     }
 }

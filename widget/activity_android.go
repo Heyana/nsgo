@@ -11,14 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// On Android, the runtime shows activities as notifications
-// (LiveUpdates.java): Live Updates from Android 16, promoted to the top of
-// the shade and a chip of the status bar, and ongoing notifications
-// before. Package widget sends it each start, update and end as JSON
-// through the backend (driver.SendLiveUpdate), and hears what it reports:
-// whether the app may show them and which show, as it connects and as
-// they change, and the presses of their actions, delivered to their running engine without
-// opening its Activity.
+// On Android, the runtime shows activities as notifications (LiveUpdates.java): Live Updates from Android 16, promoted to the top of the shade and a chip of the status bar, and ongoing notifications before. Package widget sends it each start, update and end as JSON through the backend (driver.SendLiveUpdate), and hears what it reports: whether the app may show them and which show, as it connects and as they change, and the presses of their actions, delivered to their running engine without opening its Activity.
 
 // liveUpdate is a message to the runtime.
 type liveUpdate struct {
