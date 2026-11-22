@@ -34,6 +34,60 @@ func lengthenResizeWait() (restore func()) {
 	return func() { resizeWait = old }
 }
 
+// TestWindowDestroyDuringAllocationWaitsForGTK applies an opened window's WindowDestroy from the batches its resize drains inside GTK's size_allocate: the window outlives the allocation, which still holds its surface, and goes once the main loop runs again.
+func TestWindowDestroyDuringAllocationWaitsForGTK(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	app := core.AppRoot(func(cx *core.Scope) {
+		cx.SetShutdownMode(core.ShutdownOnExplicit)
+		cx.OpenWindow(core.WindowOptions{Title: "nsgo-destroyed", Width: 160, Height: 120}, resizeTestApp)
+	})
+	w := startTestWindow(t, app, Options{Title: "nsgo-app", Width: 120, Height: 80, Hidden: true})
+	defer w.onLoop(t, w.close)
+	var opened *window
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		w.onLoop(t, func() {
+			windowHandles.Range(func(_, v any) bool {
+				if o := v.(*window); !o.primary && !o.embedded && o.win != 0 && o.kind == driver.SurfaceWindow && o.view(o.root) != nil {
+					opened = o
+				}
+				return opened == nil
+			})
+		})
+		if opened != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the window did not open")
+		}
+	}
+	w.onLoop(t, func() {
+		defer lengthenResizeWait()()
+		opened.batches.Push(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemWindow, Window: &driver.WindowCommand{Action: driver.WindowDestroy}}}})
+		gtkWidgetAllocate(opened.surface, 220, 150, -1, 0)
+		if !opened.destroyPending {
+			t.Fatal("the allocation did not apply the queued WindowDestroy")
+		}
+		if opened.win == 0 || opened.surface == 0 {
+			t.Error("WindowDestroy released the surface GTK was allocating")
+		}
+	})
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		var gone bool
+		w.onLoop(t, func() {
+			_, registered := windowHandles.Load(opened.handle)
+			gone = opened.win == 0 && opened.surface == 0 && !registered
+		})
+		if gone {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the window was not destroyed after the allocation returned")
+		}
+	}
+}
+
 func resizeTestApp(cx *core.Scope) core.Node {
 	return core.View{Style: core.Style{FlexGrow: 1, Background: core.RGB(0xff0000)}, Children: []core.Node{
 		core.View{TestID: "edge", StyleFunc: func() core.Style {

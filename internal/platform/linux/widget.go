@@ -317,6 +317,9 @@ func (w *window) showWidget(v *view) {
 // allocateSurface reports the size GTK gave the surface and places the
 // root view in it.
 func (w *window) allocateSurface(width, height int32) {
+	// What the resize drains must not destroy the surface GTK is allocating (requestDestroy).
+	w.allocating++
+	defer func() { w.allocating-- }()
 	if w.limits.watched {
 		w.applyMaximumHints()
 	}

@@ -170,6 +170,10 @@ type window struct {
 	tasks []func()
 	// applying prevents a size allocation caused while a mount batch is being applied from recursively draining the batch queue.
 	applying bool
+	// allocating counts the surface's size allocations in progress, which drain mount batches as they resize (resize).
+	allocating int
+	// destroyPending is a WindowDestroy applied during an allocation, which the main loop carries out once GTK has returned from it (requestDestroy).
+	destroyPending bool
 
 	// The main thread's. views is indexed by NodeID.
 	views []*view
@@ -867,6 +871,10 @@ func (w *window) applyBatches() {
 	defer func() { w.applying = false }()
 	done := w.measuring(true)
 	for _, b := range w.batches.Drain() {
+		if w.destroyPending {
+			// Nothing follows the surface's last item.
+			break
+		}
 		if w.hud != nil && !b.Sent.IsZero() {
 			w.hud.monitor.RecordLatency(time.Since(b.Sent))
 		}
@@ -971,6 +979,18 @@ func (w *window) destroy() {
 	}
 	w.close()
 	w.releaseSurface()
+}
+
+// requestDestroy carries out WindowDestroy: at once, or, while GTK allocates the surface and a resize drains its batches, from the main loop after the allocation returns, as destroying the window would free the surface under GTK's own call. A destroy already pending is not posted again, and one whose window went first (stop) finds no handle to run on.
+func (w *window) requestDestroy() {
+	if w.allocating == 0 {
+		w.destroy()
+		return
+	}
+	if !w.destroyPending {
+		w.destroyPending = true
+		w.post(w.destroy)
+	}
 }
 
 // releaseSurface releases a stopped surface's tree, process-wide registrations and native references. An embedded surface leaves its parent widget and the host's window to the host.
@@ -1244,7 +1264,7 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu:
 			if it.Kind == driver.ItemWindow && it.Window != nil && it.Window.Action == driver.WindowDestroy {
 				// Nothing follows the surface's last item.
-				w.destroy()
+				w.requestDestroy()
 				return
 			}
 			// An embedding host owns its window and menus.
