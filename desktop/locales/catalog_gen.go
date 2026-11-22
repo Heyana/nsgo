@@ -119,9 +119,20 @@ const (
 	textRoleColumnHeader
 	textRoleCell
 	textRoleSpinButton
+	textRoleListBox
+	textRoleOption
+	textRoleComboBox
+	textRoleGroup
+	textRoleRegion
+	textRoleNavigation
+	textRoleTree
+	textRoleTreeItem
+	textRoleToolbar
 	textStatePartiallyChecked
 	textStateExpanded
 	textStateCollapsed
+	textStatePressed
+	textStateBusy
 	textSpokenSeparator
 	numTexts
 )
@@ -184,9 +195,20 @@ var keyOfText = [numTexts]string{
 	"roleColumnHeader",
 	"roleCell",
 	"roleSpinButton",
+	"roleListBox",
+	"roleOption",
+	"roleComboBox",
+	"roleGroup",
+	"roleRegion",
+	"roleNavigation",
+	"roleTree",
+	"roleTreeItem",
+	"roleToolbar",
 	"statePartiallyChecked",
 	"stateExpanded",
 	"stateCollapsed",
+	"statePressed",
+	"stateBusy",
 	"spokenSeparator",
 }
 
@@ -247,9 +269,20 @@ var textsEn = i18n.NewTexts(""+
 	"column header"+
 	"cell"+
 	"spin button"+
+	"list box"+
+	"option"+
+	"combo box"+
+	"group"+
+	"region"+
+	"navigation"+
+	"tree"+
+	"tree item"+
+	"toolbar"+
 	"partially checked"+
 	"expanded"+
 	"collapsed"+
+	"pressed"+
+	"busy"+
 	", ",
 	[]uint16{
 		4,
@@ -307,9 +340,20 @@ var textsEn = i18n.NewTexts(""+
 		13,
 		4,
 		11,
+		8,
+		6,
+		9,
+		5,
+		6,
+		10,
+		4,
+		9,
+		7,
 		17,
 		8,
 		9,
+		7,
+		4,
 		2,
 	})
 
@@ -370,9 +414,20 @@ var textsZhHans = i18n.NewTexts(""+
 	"列标题"+
 	"单元格"+
 	"微调按钮"+
+	"列表框"+
+	"选项"+
+	"组合框"+
+	"分组"+
+	"区域"+
+	"导航"+
+	"树形视图"+
+	"树形项"+
+	"工具栏"+
 	"部分选中"+
 	"已展开"+
 	"已收起"+
+	"已按下"+
+	"忙碌"+
 	"，",
 	[]uint16{
 		6,
@@ -430,9 +485,20 @@ var textsZhHans = i18n.NewTexts(""+
 		9,
 		9,
 		12,
+		9,
+		6,
+		9,
+		6,
+		6,
+		6,
 		12,
 		9,
 		9,
+		12,
+		9,
+		9,
+		9,
+		6,
 		3,
 	})
 
@@ -1128,6 +1194,87 @@ func (msgs Messages) StateLevel(level string) string {
 	}
 }
 
+// RoleListBox says "list box"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a list of selectable options as.
+func RoleListBox(cx *core.Scope) string { return For(cx).RoleListBox() }
+
+// RoleListBox is the package's RoleListBox in the language of msgs.
+func (msgs Messages) RoleListBox() string { return msgs.text(textRoleListBox) }
+
+// RoleOption says "option"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces an option in a list box as.
+func RoleOption(cx *core.Scope) string { return For(cx).RoleOption() }
+
+// RoleOption is the package's RoleOption in the language of msgs.
+func (msgs Messages) RoleOption() string { return msgs.text(textRoleOption) }
+
+// RoleComboBox says "combo box"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a select trigger or editable combo box as.
+func RoleComboBox(cx *core.Scope) string { return For(cx).RoleComboBox() }
+
+// RoleComboBox is the package's RoleComboBox in the language of msgs.
+func (msgs Messages) RoleComboBox() string { return msgs.text(textRoleComboBox) }
+
+// RoleGroup says "group"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a group of related elements as.
+func RoleGroup(cx *core.Scope) string { return For(cx).RoleGroup() }
+
+// RoleGroup is the package's RoleGroup in the language of msgs.
+func (msgs Messages) RoleGroup() string { return msgs.text(textRoleGroup) }
+
+// RoleRegion says "region"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a landmark region of a page as.
+func RoleRegion(cx *core.Scope) string { return For(cx).RoleRegion() }
+
+// RoleRegion is the package's RoleRegion in the language of msgs.
+func (msgs Messages) RoleRegion() string { return msgs.text(textRoleRegion) }
+
+// RoleNavigation says "navigation"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a navigation landmark as.
+func RoleNavigation(cx *core.Scope) string { return For(cx).RoleNavigation() }
+
+// RoleNavigation is the package's RoleNavigation in the language of msgs.
+func (msgs Messages) RoleNavigation() string { return msgs.text(textRoleNavigation) }
+
+// RoleTree says "tree"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a tree view as.
+func RoleTree(cx *core.Scope) string { return For(cx).RoleTree() }
+
+// RoleTree is the package's RoleTree in the language of msgs.
+func (msgs Messages) RoleTree() string { return msgs.text(textRoleTree) }
+
+// RoleTreeItem says "tree item"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces an item in a tree view as.
+func RoleTreeItem(cx *core.Scope) string { return For(cx).RoleTreeItem() }
+
+// RoleTreeItem is the package's RoleTreeItem in the language of msgs.
+func (msgs Messages) RoleTreeItem() string { return msgs.text(textRoleTreeItem) }
+
+// RoleToolbar says "toolbar"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a toolbar of controls as.
+func RoleToolbar(cx *core.Scope) string { return For(cx).RoleToolbar() }
+
+// RoleToolbar is the package's RoleToolbar in the language of msgs.
+func (msgs Messages) RoleToolbar() string { return msgs.text(textRoleToolbar) }
+
 // StatePartiallyChecked says "partially checked"
 // in the language the app shows under cx.
 //
@@ -1154,6 +1301,24 @@ func StateCollapsed(cx *core.Scope) string { return For(cx).StateCollapsed() }
 
 // StateCollapsed is the package's StateCollapsed in the language of msgs.
 func (msgs Messages) StateCollapsed() string { return msgs.text(textStateCollapsed) }
+
+// StatePressed says "pressed"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces a toggle button that is pressed as.
+func StatePressed(cx *core.Scope) string { return For(cx).StatePressed() }
+
+// StatePressed is the package's StatePressed in the language of msgs.
+func (msgs Messages) StatePressed() string { return msgs.text(textStatePressed) }
+
+// StateBusy says "busy"
+// in the language the app shows under cx.
+//
+// What Android's screen reader announces an element that is loading or busy as.
+func StateBusy(cx *core.Scope) string { return For(cx).StateBusy() }
+
+// StateBusy is the package's StateBusy in the language of msgs.
+func (msgs Messages) StateBusy() string { return msgs.text(textStateBusy) }
 
 // SpokenSeparator says ", "
 // in the language the app shows under cx.

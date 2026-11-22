@@ -2100,22 +2100,6 @@ func writeDecor(w *writer, v *driver.ViewStyle) {
 	writeKeyframes(w, v.Animation)
 }
 
-// writeStyle writes a text style in the format Text.Style reads.
-func writeStyle(w *writer, t *driver.TextStyle) {
-	w.str(firstFamily(t.Font.Family))
-	w.str(t.Font.Language)
-	w.points(t.Font.Size)
-	w.u16(uint16(t.Font.Weight))
-	w.u32(uint32(t.Color))
-	w.points(t.LineHeight)
-	w.points(t.LetterSpacing)
-	w.byte(byte(t.Align))
-	w.flags(t.Font.Italic,
-		t.Decoration&driver.TextDecorationUnderline != 0,
-		t.Decoration&driver.TextDecorationLineThrough != 0, t.RTL)
-	w.byte(byte(t.Font.Variant))
-}
-
 // writeBackgroundInset writes either points or a fraction of the box's height.
 func writeBackgroundInset(w *writer, inset driver.Length) {
 	if percent, ok := inset.Percent(); ok {

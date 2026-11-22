@@ -329,7 +329,26 @@ func spoken(lang string) []string {
 		m.RoleTable(), m.RoleGrid(), m.RoleRow(), m.RoleColumnHeader(), m.RoleCell(),
 		m.StatePartiallyChecked(), m.StateExpanded(), m.StateCollapsed(), m.SpokenSeparator(),
 		m.RoleSpinButton(), m.RoleHeadingLevel("{level}"), m.StateLevel("{level}"),
+		m.RoleListBox(), m.RoleOption(), m.RoleComboBox(), m.RoleGroup(), m.RoleRegion(), m.RoleNavigation(),
+		m.RoleTree(), m.RoleTreeItem(), m.RoleToolbar(),
+		m.StatePressed(), m.StateBusy(),
 	}
+}
+
+// writeStyle writes a text style in the format Text.Style reads, sending the full CSS fontFamily list for Java's Typeface.CustomFallbackBuilder chain.
+func writeStyle(w *writer, t *driver.TextStyle) {
+	w.str(t.Font.Family)
+	w.str(t.Font.Language)
+	w.points(t.Font.Size)
+	w.u16(uint16(t.Font.Weight))
+	w.u32(uint32(t.Color))
+	w.points(t.LineHeight)
+	w.points(t.LetterSpacing)
+	w.byte(byte(t.Align))
+	w.flags(t.Font.Italic,
+		t.Decoration&driver.TextDecorationUnderline != 0,
+		t.Decoration&driver.TextDecorationLineThrough != 0, t.RTL)
+	w.byte(byte(t.Font.Variant))
 }
 
 // writeViewProps writes a view's props as NsgoView.props reads it.
@@ -340,7 +359,8 @@ func writeViewProps(w *writer, p *driver.ViewProps) {
 		role = driver.RoleDialog
 	}
 	w.byte(byte(role))
-	w.flags(p.Disabled, p.Selected, p.Checked, p.Indeterminate, p.Focusable, p.NoFocus)
+	// Pressed and Busy take the byte's free bits 6 and 7, which a runtime that predates them ignores.
+	w.flags(p.Disabled, p.Selected, p.Checked, p.Indeterminate, p.Focusable, p.NoFocus, p.Pressed, p.Busy)
 	w.str(p.Label)
 	w.str(p.TestID)
 	// Java decides when a drag activates the pan.

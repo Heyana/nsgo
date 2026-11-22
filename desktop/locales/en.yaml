@@ -142,6 +142,33 @@ stateLevel:
   description: What Android's screen reader announces a nested item's level, such as a tree item's depth, as; level is the item's level, from 1.
   placeholders:
     level: { type: String }
+roleListBox:
+  message: "list box"
+  description: What Android's screen reader announces a list of selectable options as.
+roleOption:
+  message: "option"
+  description: What Android's screen reader announces an option in a list box as.
+roleComboBox:
+  message: "combo box"
+  description: What Android's screen reader announces a select trigger or editable combo box as.
+roleGroup:
+  message: "group"
+  description: What Android's screen reader announces a group of related elements as.
+roleRegion:
+  message: "region"
+  description: What Android's screen reader announces a landmark region of a page as.
+roleNavigation:
+  message: "navigation"
+  description: What Android's screen reader announces a navigation landmark as.
+roleTree:
+  message: "tree"
+  description: What Android's screen reader announces a tree view as.
+roleTreeItem:
+  message: "tree item"
+  description: What Android's screen reader announces an item in a tree view as.
+roleToolbar:
+  message: "toolbar"
+  description: What Android's screen reader announces a toolbar of controls as.
 statePartiallyChecked:
   message: "partially checked"
   description: What Android's screen reader announces a checkbox in its mixed state as, checked for some of the items it stands for.
@@ -151,6 +178,12 @@ stateExpanded:
 stateCollapsed:
   message: "collapsed"
   description: What Android's screen reader announces an expandable element that hides its content as.
+statePressed:
+  message: "pressed"
+  description: What Android's screen reader announces a toggle button that is pressed as.
+stateBusy:
+  message: "busy"
+  description: What Android's screen reader announces an element that is loading or busy as.
 spokenSeparator:
   message: ", "
   description: The separator Android's screen reader reads between a node's localized state parts.

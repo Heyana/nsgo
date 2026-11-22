@@ -1,9 +1,14 @@
 package dev.oneo.nsgo;
 
+import android.content.res.AssetManager;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.text.LineBreakConfig;
+import android.graphics.fonts.Font;
+import android.graphics.fonts.FontFamily;
+import android.graphics.fonts.FontStyle;
+import android.graphics.fonts.SystemFonts;
 import android.os.Build;
 import android.text.Layout;
 import android.text.SpannableString;
@@ -18,10 +23,20 @@ import android.text.style.MetricAffectingSpan;
 import android.text.style.ReplacementSpan;
 import android.view.Gravity;
 import java.io.DataInputStream;
+import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Text the engine prepares, measures and lays out on the reader thread, all
@@ -34,50 +49,282 @@ final class Text {
         final int weight;
         final boolean italic;
         final Typeface typeface;
+        /** An android.graphics.fonts.Font on API 29+, or null on API 28. */
+        final Object font;
 
-        Face(int weight, boolean italic, Typeface typeface) {
+        Face(int weight, boolean italic, Typeface typeface, Object font) {
             this.weight = weight;
             this.italic = italic;
             this.typeface = typeface;
+            this.font = font;
         }
     }
 
-    /** The app's fonts by family: those it starts with, then those it registers as it runs. */
-    private static final java.util.Map<String, java.util.List<Face>> fonts = new java.util.concurrent.ConcurrentHashMap<>();
+    /** The app's fonts by lowercase family name: those it starts with, then those it registers as it runs. */
+    private static final Map<String, List<Face>> fonts = new ConcurrentHashMap<>();
+    /** Cached FontFamily objects built for registered app families on API 29+. */
+    private static final Map<String, Object> appFamilies = new ConcurrentHashMap<>();
+    /** Bounded cache of resolved Typefaces keyed by family list, weight and slant. */
+    private static final Map<String, Typeface> typefaceCache = new ConcurrentHashMap<>();
+    private static final int MAX_TYPEFACE_CACHE = 256;
 
     /** Adds a face of the app's fonts under its family. */
     static void register(String family, int weight, boolean italic, Typeface typeface) {
-        fonts.computeIfAbsent(family, k -> new java.util.concurrent.CopyOnWriteArrayList<>())
-                .add(new Face(weight, italic, typeface));
+        register(family, weight, italic, typeface, null);
+    }
+
+    /** Adds a face of the app's fonts under its family, with an optional API 29+ Font for fallback chains. */
+    static void register(String family, int weight, boolean italic, Typeface typeface, Object font) {
+        if (family == null || family.isEmpty()) return;
+        String key = family.toLowerCase(Locale.ROOT);
+        fonts.computeIfAbsent(key, k -> new CopyOnWriteArrayList<>())
+                .add(new Face(weight, italic, typeface, font));
+        appFamilies.remove(key);
+        typefaceCache.clear();
+    }
+
+    /** Builds an API 29+ Font from an asset for fallback chains, or null on API 28 or failure. */
+    static Object assetFont(AssetManager assets, String path, int weight, boolean italic) {
+        return Build.VERSION.SDK_INT >= 29 ? Api29.fontFromAsset(assets, path, weight, italic) : null;
+    }
+
+    /** Builds an API 29+ Font from a file for fallback chains, or null on API 28 or failure. */
+    static Object fileFont(File file, int weight, boolean italic) {
+        return Build.VERSION.SDK_INT >= 29 ? Api29.fontFromFile(file, weight, italic) : null;
     }
 
     /**
-     * The typeface of a font: its family, the system's when empty, at
-     * weight, italic or not. A family of the app's fonts takes its nearest
-     * face, the slant first, then synthesizes what that face lacks.
+     * Resolves a CSS fontFamily list at weight and slant. On API 29+, builds a Typeface.CustomFallbackBuilder chain so glyphs missing from earlier families fall back through the remaining families in order; on API 28, selects the first available family in the list.
      */
-    static Typeface typeface(String family, int weight, boolean italic) {
+    static Typeface typeface(String familyList, int weight, boolean italic) {
         weight = Math.max(1, Math.min(weight, 1000));
-        java.util.List<Face> faces = fonts.get(family);
-        if (faces != null && !faces.isEmpty()) {
-            Face best = null;
-            for (Face f : faces) {
-                if (best == null) {
-                    best = f;
-                    continue;
+        String raw = familyList == null ? "" : familyList;
+        String cacheKey = raw + '\0' + weight + '\0' + (italic ? '1' : '0');
+        Typeface cached = typefaceCache.get(cacheKey);
+        if (cached != null) return cached;
+
+        List<FontFallback.Entry> entries = FontFallback.parse(raw);
+        Typeface resolved;
+        if (entries.isEmpty()) {
+            resolved = Typeface.create(Typeface.DEFAULT, weight, italic);
+        } else if (entries.size() == 1 && entries.get(0).generic) {
+            resolved = Typeface.create(genericBase(entries.get(0).name), weight, italic);
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            resolved = Api29.resolve(entries, weight, italic);
+        } else {
+            resolved = resolveLegacy(entries, weight, italic);
+        }
+        if (typefaceCache.size() >= MAX_TYPEFACE_CACHE) typefaceCache.clear();
+        typefaceCache.put(cacheKey, resolved);
+        return resolved;
+    }
+
+    private static Typeface genericBase(String name) {
+        if (name == null || name.isEmpty() || FontFallback.SANS_SERIF.equals(name)) return Typeface.DEFAULT;
+        if (FontFallback.SERIF.equals(name)) return Typeface.SERIF;
+        if (FontFallback.MONOSPACE.equals(name)) return Typeface.MONOSPACE;
+        return Typeface.create(name, Typeface.NORMAL);
+    }
+
+    private static Typeface legacyAppFace(String name, int weight, boolean italic) {
+        List<Face> faces = fonts.get(name.toLowerCase(Locale.ROOT));
+        if (faces == null || faces.isEmpty()) return null;
+        Face best = null;
+        for (Face f : faces) {
+            if (best == null) {
+                best = f;
+                continue;
+            }
+            boolean slant = f.italic == italic, bestSlant = best.italic == italic;
+            if (slant != bestSlant) {
+                if (slant) best = f;
+            } else if (Math.abs(f.weight - weight) < Math.abs(best.weight - weight)) {
+                best = f;
+            }
+        }
+        if (best.weight == weight && best.italic == italic) return best.typeface;
+        return Typeface.create(best.typeface, weight, italic);
+    }
+
+    private static boolean isSystemAlias(String name) {
+        if (name == null || name.isEmpty()) return false;
+        Typeface tf = Typeface.create(name, Typeface.NORMAL);
+        return tf != null && !tf.equals(Typeface.DEFAULT);
+    }
+
+    /** API 28 fallback: picks the first registered, generic or installed family in preference order. */
+    private static Typeface resolveLegacy(List<FontFallback.Entry> entries, int weight, boolean italic) {
+        for (FontFallback.Entry e : entries) {
+            if (e.generic) {
+                return Typeface.create(genericBase(e.name), weight, italic);
+            }
+            Typeface app = legacyAppFace(e.name, weight, italic);
+            if (app != null) return app;
+            if (isSystemAlias(e.name)) {
+                return Typeface.create(Typeface.create(e.name, Typeface.NORMAL), weight, italic);
+            }
+        }
+        return Typeface.create(Typeface.DEFAULT, weight, italic);
+    }
+
+    /** Isolated API 29+ CustomFallbackBuilder and SystemFonts integration so API 28 never verifies these classes. */
+    private static final class Api29 {
+        private static volatile Map<String, FontFamily> systemIndex;
+
+        static Object fontFromAsset(AssetManager assets, String path, int weight, boolean italic) {
+            try {
+                return new Font.Builder(assets, path)
+                        .setWeight(clampWeight(weight))
+                        .setSlant(italic ? FontStyle.FONT_SLANT_ITALIC : FontStyle.FONT_SLANT_UPRIGHT)
+                        .build();
+            } catch (IOException | RuntimeException e) {
+                return null;
+            }
+        }
+
+        static Object fontFromFile(File file, int weight, boolean italic) {
+            try {
+                return new Font.Builder(file)
+                        .setWeight(clampWeight(weight))
+                        .setSlant(italic ? FontStyle.FONT_SLANT_ITALIC : FontStyle.FONT_SLANT_UPRIGHT)
+                        .build();
+            } catch (IOException | RuntimeException e) {
+                return null;
+            }
+        }
+
+        private static int clampWeight(int weight) {
+            return Math.max(FontStyle.FONT_WEIGHT_MIN, Math.min(weight, FontStyle.FONT_WEIGHT_MAX));
+        }
+
+        static Typeface resolve(List<FontFallback.Entry> entries, int weight, boolean italic) {
+            FontFallback.Lookup<FontFamily> lookup = new FontFallback.Lookup<FontFamily>() {
+                @Override
+                public FontFamily appFamily(String name) {
+                    return Api29.appFamily(name);
                 }
-                boolean slant = f.italic == italic, bestSlant = best.italic == italic;
-                if (slant != bestSlant) {
-                    if (slant) best = f;
-                } else if (Math.abs(f.weight - weight) < Math.abs(best.weight - weight)) {
-                    best = f;
+
+                @Override
+                public FontFamily systemFamily(String name) {
+                    return systemFamilies().get(name.toLowerCase(Locale.ROOT));
+                }
+
+                @Override
+                public FontFamily genericFamily(String genericName) {
+                    Map<String, FontFamily> sys = systemFamilies();
+                    for (String candidate : FontFallback.genericCandidates(genericName)) {
+                        FontFamily fam = sys.get(candidate.toLowerCase(Locale.ROOT));
+                        if (fam != null) return fam;
+                    }
+                    return null;
+                }
+
+                @Override
+                public boolean isSystemAlias(String name) {
+                    return Text.isSystemAlias(name);
+                }
+            };
+            int maxCustom = Typeface.CustomFallbackBuilder.getMaxCustomFallbackCount();
+            FontFallback.Plan<FontFamily> plan = FontFallback.plan(entries, maxCustom, lookup);
+            if (plan.custom.isEmpty()) {
+                // Handle registered app fonts that lacked an API 29 Font object, or single generic/alias families.
+                for (FontFallback.Entry e : entries) {
+                    if (e.generic) break;
+                    Typeface app = legacyAppFace(e.name, weight, italic);
+                    if (app != null) return app;
+                }
+                return Typeface.create(genericBase(plan.systemFallback), weight, italic);
+            }
+            Typeface.CustomFallbackBuilder builder = new Typeface.CustomFallbackBuilder(plan.custom.get(0));
+            for (int i = 1; i < plan.custom.size(); i++) {
+                builder.addCustomFallback(plan.custom.get(i));
+            }
+            int slant = italic ? FontStyle.FONT_SLANT_ITALIC : FontStyle.FONT_SLANT_UPRIGHT;
+            builder.setStyle(new FontStyle(clampWeight(weight), slant));
+            builder.setSystemFallback(plan.systemFallback);
+            return builder.build();
+        }
+
+        private static FontFamily appFamily(String name) {
+            String key = name.toLowerCase(Locale.ROOT);
+            Object cached = appFamilies.get(key);
+            if (cached instanceof FontFamily) return (FontFamily) cached;
+            List<Face> faces = fonts.get(key);
+            if (faces == null || faces.isEmpty()) return null;
+            Map<Long, Font> unique = new LinkedHashMap<>();
+            for (Face f : faces) {
+                if (!(f.font instanceof Font)) continue;
+                Font font = (Font) f.font;
+                FontStyle st = font.getStyle();
+                long styleKey = (((long) st.getWeight()) << 32) | (st.getSlant() & 0xffffffffL);
+                unique.put(styleKey, font);
+            }
+            if (unique.isEmpty()) return null;
+            FontFamily built = buildFamily(new ArrayList<>(unique.values()));
+            if (built != null) appFamilies.put(key, built);
+            return built;
+        }
+
+        private static Map<String, FontFamily> systemFamilies() {
+            Map<String, FontFamily> existing = systemIndex;
+            if (existing != null) return existing;
+            synchronized (Api29.class) {
+                if (systemIndex != null) return systemIndex;
+                Map<String, Map<Long, Font>> grouped = new HashMap<>();
+                Set<Font> available = SystemFonts.getAvailableFonts();
+                if (available != null) {
+                    for (Font font : available) {
+                        List<String> names = Collections.emptyList();
+                        if (Build.VERSION.SDK_INT >= 31) {
+                            try {
+                                names = FontFallback.readFamilyNames(Api31.buffer(font), font.getTtcIndex());
+                            } catch (RuntimeException ignored) {
+                                names = Collections.emptyList();
+                            }
+                        }
+                        if (names.isEmpty() && font.getFile() != null) {
+                            names = FontFallback.readFamilyNames(font.getFile(), font.getTtcIndex());
+                        }
+                        if (names.isEmpty()) continue;
+                        FontStyle st = font.getStyle();
+                        long styleKey = (((long) st.getWeight()) << 32) | (st.getSlant() & 0xffffffffL);
+                        for (String name : names) {
+                            String key = name.toLowerCase(Locale.ROOT);
+                            Map<Long, Font> byStyle = grouped.computeIfAbsent(key, k -> new LinkedHashMap<>());
+                            byStyle.putIfAbsent(styleKey, font);
+                        }
+                    }
+                }
+                Map<String, FontFamily> built = new HashMap<>(grouped.size());
+                for (Map.Entry<String, Map<Long, Font>> entry : grouped.entrySet()) {
+                    FontFamily fam = buildFamily(new ArrayList<>(entry.getValue().values()));
+                    if (fam != null) built.put(entry.getKey(), fam);
+                }
+                systemIndex = built;
+                return built;
+            }
+        }
+
+        private static FontFamily buildFamily(List<Font> list) {
+            if (list.isEmpty()) return null;
+            FontFamily.Builder builder = null;
+            for (Font f : list) {
+                try {
+                    if (builder == null) builder = new FontFamily.Builder(f);
+                    else builder.addFont(f);
+                } catch (IllegalArgumentException ignored) {
+                    // Duplicate style inside a family: skip.
                 }
             }
-            if (best.weight == weight && best.italic == italic) return best.typeface;
-            return Typeface.create(best.typeface, weight, italic);
+            return builder == null ? null : builder.build();
         }
-        Typeface base = family.isEmpty() ? Typeface.DEFAULT : Typeface.create(family, Typeface.NORMAL);
-        return Typeface.create(base, weight, italic);
+    }
+
+    /** Isolated API 31 Font.getBuffer call so API 29-30 never soft-verify it. */
+    private static final class Api31 {
+        static ByteBuffer buffer(Font font) {
+            return font.getBuffer();
+        }
     }
 
     private Text() {}

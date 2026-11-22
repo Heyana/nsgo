@@ -135,7 +135,7 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 			// The point the recorder placed the text at.
 			arg(driver.ArgX, op.X+op.X1)
 			arg(driver.ArgY, op.Y+op.Y1)
-			w.str(firstFamily(op.Font.Family))
+			w.str(op.Font.Family)
 			w.points(op.Font.Size)
 			w.u16(uint16(op.Font.Weight))
 			w.flags(op.Font.Italic)
@@ -225,9 +225,7 @@ func writeAtlas(w *writer, op *driver.DrawOp) {
 	}
 }
 
-// firstFamily is the family Java sets a fontFamily list in: the first,
-// the system's for a generic one. Java takes the rest from the system's
-// fallback, not the list (docs/roadmap.md).
+// firstFamily is the family writeHeaderFont sends a native header's fontFamily list as: the first, the system's for a generic one, so that an empty family keeps the header's own typeface. Text and drawings send the whole list, which Text.typeface falls back through.
 func firstFamily(list string) string {
 	families := driver.FontFamilies(list)
 	if len(families) == 0 {
