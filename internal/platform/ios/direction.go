@@ -8,13 +8,22 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-// UISemanticContentAttribute's forced directions.
+// UISemanticContentAttribute's forced directions and NSWritingDirection's values.
 const (
 	semanticLTR = 3
 	semanticRTL = 4
+	writingLTR  = 0
+	writingRTL  = 1
 )
 
 var selSetSemantic = sel("setSemanticContentAttribute:")
+
+func uiWritingDirection(rtl bool) int {
+	if rtl {
+		return writingRTL
+	}
+	return writingLTR
+}
 
 // applyDirection lays UIKit's views out in the app's direction, as its
 // language is written, whatever the system's: the bars, fields, alerts
@@ -26,6 +35,11 @@ func (s *surface) applyDirection() {
 		objc.ID(apple.Class("UIView")).Send(sel("appearance")).Send(selSetSemantic, s.semantic())
 	}
 	s.directTree(s.native)
+	for _, v := range s.views {
+		if v != nil && v.bar != nil {
+			s.setSwipeBack(v)
+		}
+	}
 }
 
 func (s *surface) semantic() int {
@@ -39,6 +53,7 @@ func (s *surface) semantic() int {
 func (s *surface) direct(v objc.ID) {
 	if s.directed && v != 0 {
 		v.Send(selSetSemantic, s.semantic())
+		v.Send(selSetNeedsLayout)
 	}
 }
 
@@ -48,6 +63,7 @@ func (s *surface) directTree(v objc.ID) {
 		return
 	}
 	v.Send(selSetSemantic, s.semantic())
+	v.Send(selSetNeedsLayout)
 	subs := v.Send(sel("subviews"))
 	n := objc.Send[uint](subs, sel("count"))
 	for i := uint(0); i < n; i++ {

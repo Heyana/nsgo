@@ -27,6 +27,8 @@ const (
 // Bar is a scroll view's scroll bar.
 type Bar struct {
 	Horizontal bool
+	// RTL places a vertical scroll bar on the left edge instead of the right.
+	RTL bool
 	// Frame is the scroll view's size, Content its content's and Offset
 	// how far the content is scrolled.
 	Frame, Content driver.Size
@@ -60,7 +62,11 @@ func (b Bar) Thumb() (driver.Bounds, bool) {
 		return driver.Bounds{Origin: driver.Point{X: at, Y: b.Frame.Height - Inset - Thickness},
 			Size: driver.Size{Width: length, Height: Thickness}}, true
 	}
-	return driver.Bounds{Origin: driver.Point{X: b.Frame.Width - Inset - Thickness, Y: at},
+	x := b.Frame.Width - Inset - Thickness
+	if b.RTL {
+		x = Inset
+	}
+	return driver.Bounds{Origin: driver.Point{X: x, Y: at},
 		Size: driver.Size{Width: Thickness, Height: length}}, true
 }
 
@@ -78,7 +84,11 @@ func (b Bar) Indicator() (rect driver.Bounds, travel driver.Points, ok bool) {
 		rect = driver.Bounds{Origin: driver.Point{X: start, Y: b.Frame.Height - Inset - Thickness},
 			Size: driver.Size{Width: length, Height: Thickness}}
 	} else {
-		rect = driver.Bounds{Origin: driver.Point{X: b.Frame.Width - Inset - Thickness, Y: start},
+		x := b.Frame.Width - Inset - Thickness
+		if b.RTL {
+			x = Inset
+		}
+		rect = driver.Bounds{Origin: driver.Point{X: x, Y: start},
 			Size: driver.Size{Width: Thickness, Height: length}}
 	}
 	return rect, frame - 2*IndicatorMargin - length, true
@@ -92,6 +102,9 @@ func (b Bar) Contains(p driver.Point) bool {
 	}
 	if b.Horizontal {
 		return p.Y >= b.Frame.Height-Grab
+	}
+	if b.RTL {
+		return p.X <= Grab
 	}
 	return p.X >= b.Frame.Width-Grab
 }

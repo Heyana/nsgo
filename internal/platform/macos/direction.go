@@ -2,15 +2,32 @@
 
 package macos
 
-import "github.com/ebitengine/purego/objc"
+import (
+	"github.com/ebitengine/purego/objc"
 
-// NSUserInterfaceLayoutDirection's directions.
-const (
-	layoutLTR = 0
-	layoutRTL = 1
+	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
 
-var selSetLayoutDirection = sel("setUserInterfaceLayoutDirection:")
+// NSUserInterfaceLayoutDirection's and NSWritingDirection's values.
+const (
+	layoutLTR  = 0
+	layoutRTL  = 1
+	writingLTR = 0
+	writingRTL = 1
+)
+
+var (
+	selLayoutDirection     = sel("userInterfaceLayoutDirection")
+	selSetLayoutDirection  = sel("setUserInterfaceLayoutDirection:")
+	selSetWritingDirection = sel("setBaseWritingDirection:")
+)
+
+func nsWritingDirection(rtl bool) int {
+	if rtl {
+		return writingRTL
+	}
+	return writingLTR
+}
 
 func (s *surface) layoutDirection() int {
 	if s.rtl {
@@ -26,11 +43,27 @@ func (s *surface) directTree(v objc.ID) {
 	if !s.directed || v == 0 {
 		return
 	}
-	v.Send(selSetLayoutDirection, s.layoutDirection())
+	want := s.layoutDirection()
+	if objc.Send[int](v, selLayoutDirection) != want {
+		v.Send(selSetLayoutDirection, want)
+	}
 	subs := v.Send(sel("subviews"))
 	n := objc.Send[uint](subs, sel("count"))
 	for i := uint(0); i < n; i++ {
 		s.directTree(subs.Send(sel("objectAtIndex:"), i))
+	}
+}
+
+// inheritLayoutDirection propagates a view's userInterfaceLayoutDirection to
+// subviews AppKit adds lazily (such as NSTextField's internal label subview).
+func inheritLayoutDirection(self objc.ID, cmd objc.SEL, sub objc.ID) {
+	apple.Super(self, cmd, sub)
+	if sub == 0 {
+		return
+	}
+	want := objc.Send[int](self, selLayoutDirection)
+	if objc.Send[int](sub, selLayoutDirection) != want {
+		sub.Send(selSetLayoutDirection, want)
 	}
 }
 

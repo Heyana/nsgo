@@ -177,3 +177,21 @@ func TestIndicatorDragMovesTheContentByTheThumb(t *testing.T) {
 		t.Fatalf("pressing the middle scrolls to %v, want 150", got.Y)
 	}
 }
+
+func TestVerticalBarMirrorsInRTL(t *testing.T) {
+	b := Bar{RTL: true, Frame: driver.Size{Width: 100, Height: 300}, Content: driver.Size{Width: 100, Height: 600}}
+	thumb, ok := b.Thumb()
+	if !ok || thumb.Origin.X != Inset {
+		t.Fatalf("RTL thumb = %v %v, want X=%v", thumb, ok, Inset)
+	}
+	ind, _, ok := b.Indicator()
+	if !ok || ind.Origin.X != Inset {
+		t.Fatalf("RTL indicator = %v %v, want X=%v", ind, ok, Inset)
+	}
+	if !b.Contains(driver.Point{X: 4, Y: 20}) {
+		t.Fatal("RTL vertical bar does not contain left edge")
+	}
+	if b.Contains(driver.Point{X: 96, Y: 20}) {
+		t.Fatal("RTL vertical bar still hits right edge")
+	}
+}

@@ -275,6 +275,9 @@ func (in *textInput) makeLayout(units []uint16, align uintptr) *comObject {
 	}
 	layout.call(formatSetTextAlignment, align)
 	s := in.config.Style
+	if s.RTL {
+		layout.call(formatSetReadingDirection, dwReadingRTL)
+	}
 	if lineHeight := float32(s.LineHeight); lineHeight > 0 {
 		// On the layout, which copied the format's spacing as it was made: lines on a uniform pitch, the font centered in each, as a text's (text.go).
 		m := metricsOf(s.Font)
@@ -318,6 +321,9 @@ func (in *textInput) textLayout() *comObject {
 		if in.multiline() {
 			// Lines align in the layout; one line aligns in origin.
 			align = dwAlignment(in.config.Style.Align)
+		} else if in.config.Style.RTL {
+			// In a 1e6-wide unwrapped RTL layout, trailing keeps glyphs at x=0 so origin places them cleanly.
+			align = dwAlignTrailing
 		}
 		in.layout = in.makeLayout(units, align)
 	}
@@ -354,11 +360,17 @@ func layoutMetrics(layout *comObject) textMetrics {
 }
 
 // xAlign is where the text goes across the field: 0 left, 1 right.
-func xAlign(a driver.TextAlign) float32 {
+func xAlign(a driver.TextAlign, rtl bool) float32 {
 	switch a {
 	case driver.TextAlignCenter:
 		return 0.5
 	case driver.TextAlignEnd:
+		if rtl {
+			return 0
+		}
+		return 1
+	}
+	if rtl {
 		return 1
 	}
 	return 0
@@ -404,6 +416,7 @@ func (in *textInput) bar() scrollbar.Bar {
 	box := in.paddingBox()
 	p := in.config.Padding
 	return scrollbar.Bar{
+		RTL:     in.w != nil && in.w.rtl,
 		Frame:   driver.Size{Width: driver.Points(box.right - box.left), Height: driver.Points(box.bottom - box.top)},
 		Content: driver.Size{Width: driver.Points(in.width), Height: driver.Points(in.contentHeight) + p.Top + p.Bottom},
 		Offset:  driver.Point{Y: driver.Points(in.scroll)},
@@ -461,7 +474,7 @@ func (in *textInput) origin(layout *comObject) (x, y float32) {
 	y = (in.height - m.height) / 2
 	if textW+caret <= in.width {
 		in.scroll = 0
-		x = max(min((in.width-textW)*xAlign(in.config.Style.Align), in.width-textW-caret), 0)
+		x = max(min((in.width-textW)*xAlign(in.config.Style.Align, in.config.Style.RTL), in.width-textW-caret), 0)
 		return x, y
 	}
 	in.scroll = min(max(in.scroll, 0), textW+caret-in.width)
@@ -1647,14 +1660,14 @@ func (w *window) fieldMenu(in *textInput, x, y int32) {
 	defer destroyMenu.Call(menu)
 	for i, it := range items {
 		if it.label == "" {
-			appendMenuW.Call(menu, mfSeparator, 0, 0)
+			insertSeparator(menu, uint32(i))
 			continue
 		}
-		flags := w.menuFlags()
+		var state uint32
 		if !it.enabled {
-			flags |= mfGrayed
+			state |= mfsGrayed
 		}
-		appendMenuW.Call(menu, flags, uintptr(i+1), uintptr(unsafe.Pointer(wide(it.label))))
+		insertMenuItem(menu, uint32(i), w.menuTypeFlags(), state, uint32(i+1), 0, it.label)
 	}
 	at := point{x, y}
 	clientToScreen.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))

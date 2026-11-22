@@ -1551,7 +1551,7 @@ func (w *window) create(id driver.NodeID, kind driver.ViewKind) {
 	}
 	// A new view has the default style and no props or events: the core
 	// sends them only when they differ.
-	v := &view{id: id, kind: kind, style: driver.DefaultViewStyle, born: w.batch}
+	v := &view{win: w, id: id, kind: kind, style: driver.DefaultViewStyle, born: w.batch}
 	v.widget = w.newViewWidget(v)
 	w.views[id] = v
 }

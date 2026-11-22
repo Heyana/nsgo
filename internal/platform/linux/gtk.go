@@ -162,6 +162,7 @@ var (
 	gtkWidgetActivateAction                func(uintptr, *byte, uintptr) int32
 	gtkWidgetGetDefaultDirection           func() int32
 	gtkWidgetSetDefaultDirection           func(int32)
+	gtkWidgetGetDirection                  func(uintptr) int32
 	gtkWidgetSetDirection                  func(uintptr, int32)
 	gtkWidgetSetSizeRequest                func(uintptr, int32, int32)
 	gtkWidgetSetHexpand                    func(uintptr, int32)
@@ -542,6 +543,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWidgetActivateAction, gtkLib, "gtk_widget_activate_action")
 	purego.RegisterLibFunc(&gtkWidgetGetDefaultDirection, gtkLib, "gtk_widget_get_default_direction")
 	purego.RegisterLibFunc(&gtkWidgetSetDefaultDirection, gtkLib, "gtk_widget_set_default_direction")
+	purego.RegisterLibFunc(&gtkWidgetGetDirection, gtkLib, "gtk_widget_get_direction")
 	purego.RegisterLibFunc(&gtkWidgetSetDirection, gtkLib, "gtk_widget_set_direction")
 	purego.RegisterLibFunc(&gtkWidgetSetSizeRequest, gtkLib, "gtk_widget_set_size_request")
 	purego.RegisterLibFunc(&gtkWidgetSetHexpand, gtkLib, "gtk_widget_set_hexpand")

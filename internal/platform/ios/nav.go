@@ -189,7 +189,7 @@ func (s *surface) configureScreen(v *view, c *driver.ScreenConfig) {
 		b = &navBar{}
 		b.bar = objc.ID(apple.Class("UINavigationBar")).Send(selNew)
 		b.bar.Send(selSetDeleg, navDelegate)
-		s.direct(b.bar)
+		s.directTree(b.bar)
 		const flexibleWidth = 2
 		b.bar.Send(sel("setAutoresizingMask:"), flexibleWidth)
 		if objc.Send[bool](b.bar, sel("respondsToSelector:"), sel("setPreferredBehavioralStyle:")) {
@@ -235,6 +235,7 @@ func (s *surface) configureScreen(v *view, c *driver.ScreenConfig) {
 		b.bar.Send(sel("setItems:animated:"), array, false)
 		array.Send(selRelease)
 	}
+	s.directTree(b.bar)
 	s.styleBar(b, c)
 	s.layoutBar(v)
 	v.native.Send(sel("bringSubviewToFront:"), b.bar)

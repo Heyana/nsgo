@@ -266,8 +266,8 @@ final class Text {
         int gravity() {
             switch (align) {
                 case Protocol.ALIGN_CENTER: return Gravity.CENTER_HORIZONTAL;
-                case Protocol.ALIGN_END: return Gravity.END;
-                default: return Gravity.START;
+                case Protocol.ALIGN_END: return rtl ? Gravity.LEFT : Gravity.RIGHT;
+                default: return rtl ? Gravity.RIGHT : Gravity.LEFT;
             }
         }
     }

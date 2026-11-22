@@ -267,8 +267,11 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 	gtkWidgetQueueAllocate(v.widget)
 	editable := boolInt(!in.Readonly && !in.Disabled)
 	purpose, hints := inputPurpose(in)
+	dir := gtkTextDir(in.Style.RTL)
 	if v.textView != 0 {
 		tv := v.textView
+		directTree(v.entry, dir)
+		gtkWidgetSetDirection(v.hint, dir)
 		gtkTextViewSetEditable(tv, editable)
 		gtkTextViewSetCursorVisible(tv, boolInt(!in.HideCaret && !in.Readonly))
 		gtkTextViewSetInputPurpose(tv, purpose)
@@ -279,11 +282,18 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 		gtkTextViewSetLeftMargin(tv, int32(math.Round(float64(p.Left))))
 		gtkTextViewSetRightMargin(tv, int32(math.Round(float64(p.Right))))
 		justify, x := int32(0), float32(0)
+		if in.Style.RTL {
+			justify, x = 1, 1
+		}
 		switch in.Style.Align {
 		case driver.TextAlignCenter:
 			justify, x = 2, 0.5
 		case driver.TextAlignEnd:
-			justify, x = 1, 1
+			if in.Style.RTL {
+				justify, x = 0, 0
+			} else {
+				justify, x = 1, 1
+			}
 		}
 		gtkTextViewSetJustification(tv, justify)
 		gtkLabelSetText(v.hint, cstr(in.Placeholder))
@@ -293,6 +303,7 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 		w.updateEditorPlaceholder(v)
 		w.updateHint(v)
 	} else {
+		directTree(v.entry, dir)
 		gtkEntrySetPlaceholderText(v.entry, cstr(in.Placeholder))
 		gtkEntrySetVisibility(v.entry, boolInt(!in.Masked))
 		gtkEditableSetEditable(v.entry, editable)

@@ -606,7 +606,7 @@ func (w *window) showPopupMenu(entries []driver.MenuEntry, p driver.Point, id ui
 	}
 	gObjectUnref(menu)
 	if w.dir != 0 {
-		gtkWidgetSetDirection(popover, w.dir)
+		directTree(popover, w.dir)
 	}
 	gtkWidgetSetParent(popover, w.surface)
 	gtkPopoverSetHasArrow(popover, 0)

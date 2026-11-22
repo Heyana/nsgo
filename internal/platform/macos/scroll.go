@@ -1179,7 +1179,7 @@ func (v *view) thumbRect() (driver.Bounds, driver.Points, bool) {
 func (v *view) bar() scrollbar.Bar {
 	s := v.sc
 	z := driver.Points(s.zoom)
-	return scrollbar.Bar{Horizontal: s.config.Horizontal, Frame: v.frame.Size,
+	return scrollbar.Bar{Horizontal: s.config.Horizontal, RTL: v.surface != nil && v.surface.rtl, Frame: v.frame.Size,
 		Content: driver.Size{Width: s.content.Width * z, Height: s.content.Height * z}, Offset: s.at, Inset: s.config.Behavior.ContentInset}
 }
 
@@ -1197,7 +1197,11 @@ func (v *view) grabsThumb(p driver.Point) bool {
 	if v.sc.config.Horizontal {
 		along, across, start, length, edge = p.X, p.Y, r.Origin.X, r.Size.Width, v.frame.Size.Height
 	}
-	return across >= edge-thumbGrab && across <= edge && along >= start-thumbSlop && along <= start+length+thumbSlop
+	inEdge := across >= edge-thumbGrab && across <= edge
+	if !v.sc.config.Horizontal && v.surface != nil && v.surface.rtl {
+		inEdge = across >= 0 && across <= thumbGrab
+	}
+	return inEdge && along >= start-thumbSlop && along <= start+length+thumbSlop
 }
 
 // thumbBegin starts the mouse dragging the indicator.

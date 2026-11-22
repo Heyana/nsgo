@@ -1078,7 +1078,8 @@ func TestInputHelpers(t *testing.T) {
 	if got := revealAxis(40, 100, 50, 30); got != 40 {
 		t.Fatalf("reveal shown = %v", got)
 	}
-	if xAlign(driver.TextAlignCenter) != 0.5 || xAlign(driver.TextAlignEnd) != 1 || xAlign(0) != 0 {
+	if xAlign(driver.TextAlignCenter, false) != 0.5 || xAlign(driver.TextAlignEnd, false) != 1 || xAlign(0, false) != 0 ||
+		xAlign(driver.TextAlignCenter, true) != 0.5 || xAlign(driver.TextAlignEnd, true) != 0 || xAlign(0, true) != 1 {
 		t.Fatal("xAlign")
 	}
 }

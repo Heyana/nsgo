@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"runtime"
 	"strings"
 	"unicode"
 	"unsafe"
@@ -42,7 +43,7 @@ var (
 	getMonitorInfoW        = user32.NewProc("GetMonitorInfoW")
 	createMenu             = user32.NewProc("CreateMenu")
 	createPopupMenu        = user32.NewProc("CreatePopupMenu")
-	appendMenuW            = user32.NewProc("AppendMenuW")
+	insertMenuItemW        = user32.NewProc("InsertMenuItemW")
 	setMenu                = user32.NewProc("SetMenu")
 	destroyMenu            = user32.NewProc("DestroyMenu")
 	drawMenuBar            = user32.NewProc("DrawMenuBar")
@@ -100,7 +101,25 @@ const (
 	// mfRightOrder lays a menu out right to left: its items' text, and
 	// the bar's and its submenus' order.
 	mfRightOrder = 0x2000
+
+	miimState   = 0x0001
+	miimID      = 0x0002
+	miimSubMenu = 0x0004
+	miimString  = 0x0040
+	miimFType   = 0x0100
+	mfsGrayed   = 0x0003
+	mfsChecked  = 0x0008
 )
+
+// winMenuItemInfo is Win32's MENUITEMINFOW, used with InsertMenuItemW so
+// MFT_RIGHTORDER and MFT_RADIOCHECK are passed through fType officially.
+type winMenuItemInfo struct {
+	cbSize, fMask, fType, fState, wID    uint32
+	hSubMenu, hbmpChecked, hbmpUnchecked uintptr
+	dwItemData, dwTypeData               uintptr
+	cch                                  uint32
+	hbmpItem                             uintptr
+}
 
 // The caption buttons: 32 point squares 4 apart, their
 // glyphs 10, as Windows' own are at 96 DPI, centered in the app's bar
@@ -955,13 +974,44 @@ func (w *window) showMenuBar() {
 	drawMenuBar.Call(w.hwnd)
 }
 
-// menuFlags are the flags of every item of a menu: right to left in an
-// app laid out so, whatever the system's direction.
-func (w *window) menuFlags() uintptr {
+// menuTypeFlags are the MFT_* flags of every item of a menu: right to left in
+// an app laid out so, whatever the system's direction.
+func (w *window) menuTypeFlags() uint32 {
 	if w.rtl {
 		return mfString | mfRightOrder
 	}
 	return mfString
+}
+
+// insertSeparator appends a separator to menu at position pos.
+func insertSeparator(menu uintptr, pos uint32) {
+	mi := winMenuItemInfo{
+		cbSize: uint32(unsafe.Sizeof(winMenuItemInfo{})),
+		fMask:  miimFType,
+		fType:  mfSeparator,
+	}
+	insertMenuItemW.Call(menu, uintptr(pos), 1, uintptr(unsafe.Pointer(&mi)))
+}
+
+// insertMenuItem appends a labeled item or submenu to menu at position pos.
+func insertMenuItem(menu uintptr, pos uint32, fType, fState, id uint32, sub uintptr, label string) {
+	title := wide(label)
+	mi := winMenuItemInfo{
+		cbSize:     uint32(unsafe.Sizeof(winMenuItemInfo{})),
+		fMask:      miimFType | miimState | miimString,
+		fType:      fType,
+		fState:     fState,
+		dwTypeData: uintptr(unsafe.Pointer(title)),
+	}
+	if sub != 0 {
+		mi.fMask |= miimSubMenu
+		mi.hSubMenu = sub
+	} else {
+		mi.fMask |= miimID
+		mi.wID = id
+	}
+	insertMenuItemW.Call(menu, uintptr(pos), 1, uintptr(unsafe.Pointer(&mi)))
+	runtime.KeepAlive(title)
 }
 
 // popupFlags are TrackPopupMenuEx's flags of a context menu, which opens
@@ -981,7 +1031,7 @@ func (w *window) appendMenu(menu uintptr, entries []driver.MenuEntry) {
 
 // appendMenuTo appends entries to menu, numbering their commands by their index in refs plus one, and returns how many items it appended. A separator goes between items only, so the roles Windows leaves out leave no separator at either end, and a submenu left with no items is left out too.
 func (w *window) appendMenuTo(menu uintptr, entries []driver.MenuEntry, refs *[]menuRef) int {
-	n, separate := 0, false
+	n, pos, separate := 0, uint32(0), false
 	for i := range entries {
 		e := &entries[i]
 		switch {
@@ -992,9 +1042,10 @@ func (w *window) appendMenuTo(menu uintptr, entries []driver.MenuEntry, refs *[]
 			continue
 		}
 		label := strings.ReplaceAll(menutext.Label(w.language, e, ""), "&", "&&")
-		flags := w.menuFlags()
+		fType := w.menuTypeFlags()
+		var fState uint32
 		if e.Disabled {
-			flags |= mfGrayed
+			fState |= mfsGrayed
 		}
 		var sub uintptr
 		if len(e.Items) > 0 {
@@ -1008,24 +1059,26 @@ func (w *window) appendMenuTo(menu uintptr, entries []driver.MenuEntry, refs *[]
 			}
 		}
 		if separate {
-			appendMenuW.Call(menu, mfSeparator, 0, 0)
+			insertSeparator(menu, pos)
+			pos++
 			separate = false
 		}
 		if sub != 0 {
-			appendMenuW.Call(menu, flags|mfPopup, sub, uintptr(unsafe.Pointer(wide(label))))
+			insertMenuItem(menu, pos, fType, fState, 0, sub, label)
 		} else {
 			if k := shortcutOf(e); k != "" {
 				label += "\t" + shortcutLabel(k)
 			}
 			if e.Checked {
-				flags |= mfChecked
+				fState |= mfsChecked
 			}
 			if e.Radio {
-				flags |= mfRadioCheck
+				fType |= mfRadioCheck
 			}
 			*refs = append(*refs, menuRef{e.ID, e.Role, e.NotInText})
-			appendMenuW.Call(menu, flags, uintptr(len(*refs)), uintptr(unsafe.Pointer(wide(label))))
+			insertMenuItem(menu, pos, fType, fState, uint32(len(*refs)), 0, label)
 		}
+		pos++
 		n++
 	}
 	return n

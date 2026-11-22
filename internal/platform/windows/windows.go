@@ -1504,9 +1504,16 @@ func (w *window) apply(b *driver.MountBatch) {
 				setForcedUILanguage(forced)
 			}
 			if w.rtl != it.RTL || w.language != it.Language {
+				rtlChanged := w.rtl != it.RTL
 				w.rtl, w.language = it.RTL, it.Language
 				if !w.embedded {
 					w.showMenuBar()
+				}
+				if rtlChanged {
+					if w.alert != nil {
+						w.alert.resetLayouts()
+					}
+					w.redrawAll()
 				}
 			}
 			continue
@@ -2161,7 +2168,7 @@ func (v *view) bar() scrollbar.Bar {
 	if v.kind == driver.KindInput && v.field != nil && v.field.multiline() {
 		return v.field.bar()
 	}
-	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, Frame: v.frame.Size, Content: v.size, Offset: v.offset,
+	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, RTL: v.window != nil && v.window.rtl, Frame: v.frame.Size, Content: v.size, Offset: v.offset,
 		Inset: v.scroll.Behavior.ContentInset}
 }
 

@@ -64,11 +64,11 @@ The app lays out in the direction its language is written in (`core.Env.RTL`): r
 
 | Backend | What mirrors |
 | --- | --- |
-| iOS | Every UIKit view of the surface, its navigation bars, tab bars, fields, alerts and native components, by `semanticContentAttribute`, which a standalone app's `UIView` appearance proxy gives the views UIKit makes later; the navigation's slides and edge swipe |
-| Android | The view's tree by `setLayoutDirection`, headers and the back gesture's motion with it, alerts, and an `NsgoActivity`'s window |
-| macOS | The surface's AppKit views, fields and scroll bars by `userInterfaceLayoutDirection`, and its menus; the title bar stays as the system lays it out |
-| Windows | Menus, the bar's and context menus (`MFT_RIGHTORDER`, `TPM_LAYOUTRTL`); the title bar stays |
-| Linux | GTK's default direction, which its menus and widgets follow; an embedded surface its own widgets |
+| iOS | Every UIKit view of the surface, its navigation bars, tab bars, fields (alignment and base writing direction), alerts and native components, by `semanticContentAttribute`, which a standalone app's `UIView` appearance proxy gives the views UIKit makes later; the navigation's slides and edge swipe |
+| Android | The view's tree by `setLayoutDirection`, headers and their back arrow, tab bars, `Switch`, fields (gravity and `textDirection`), the back gesture's motion, alerts, and an `NsgoActivity`'s window |
+| macOS | The surface's AppKit views, fields (alignment, base writing direction and lazily added label subviews), scroll bars, alerts and native components by `userInterfaceLayoutDirection`, and its application, Dock, tray and popup menus; the title bar stays as the system lays it out |
+| Windows | Menus, the bar's and context menus (`InsertMenuItemW` with `MFT_RIGHTORDER`, `TPM_LAYOUTRTL`), inputs (DirectWrite reading direction and alignment), alerts (reading direction, button order and arrow navigation), and vertical scroll bars; the title bar stays |
+| Linux | GTK's default direction, which its menus, alerts and widgets follow; fields (direction, `GtkTextView` justification and placeholder `xalign`), popup menus, vertical scroll bars, and an embedded surface's own widget subtree |
 | Web | Alerts; fields take the direction of their text |
 
 An embedded surface leaves the host's views as they are.

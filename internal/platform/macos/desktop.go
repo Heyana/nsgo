@@ -597,6 +597,7 @@ func (s *surface) setDockMenu(entries []driver.MenuEntry) {
 	}
 	s.ensureMenuTarget()
 	dockMenu.menu, dockMenu.target = s.dockSubmenu("", entries), s
+	s.directMenu(dockMenu.menu)
 }
 
 // clearDockMenu leaves the app with the system's Dock items alone.
@@ -750,6 +751,9 @@ func syncMenuItem(it, next objc.ID) {
 func (s *surface) relabelMenus() {
 	if s.language != defaultLanguage {
 		rebuildDefaultMenu(s.language)
+	}
+	if defaultMenu != 0 {
+		s.directMenu(defaultMenu)
 	}
 	if s.menu != 0 {
 		s.setMenu(s.menuEntries)

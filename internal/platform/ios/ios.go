@@ -1670,6 +1670,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 	s.root = b.Root
 	if root := s.views[b.Root]; root.native.Send(selSuperview) != s.native {
 		s.native.Send(selAddSubview, root.native)
+		s.directTree(root.native)
 	}
 	s.slideStacks()
 	s.finish()
@@ -1745,7 +1746,6 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 		v.native = objc.ID(classView).Send(selNew)
 	}
 	v.native.Send(selSetOpaque, false)
-	s.direct(v.native)
 	switch kind {
 	case driver.KindText, driver.KindCanvas:
 		v.newContent()
@@ -1765,6 +1765,7 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 	case driver.KindShader:
 		v.newShader()
 	}
+	s.directTree(v.native)
 	if kind == driver.KindText {
 		v.updateAccessibility() // a text is an element without props
 	}

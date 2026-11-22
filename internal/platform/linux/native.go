@@ -58,6 +58,9 @@ func (w *window) setHostedChild(v *view, h *hosted, child uintptr) {
 	if child != 0 {
 		gObjectRefSink(child)
 		gtkWidgetSetParent(child, v.widget)
+		if w.embedded && w.dir != 0 {
+			directTree(child, w.dir)
+		}
 		gtkWidgetQueueAllocate(v.widget)
 	}
 }

@@ -79,6 +79,18 @@ public final class Switch extends CompoundButton {
     }
 
     @Override
+    public void onRtlPropertiesChanged(int layoutDirection) {
+        super.onRtlPropertiesChanged(layoutDirection);
+        invalidate();
+    }
+
+    /** Center x of the switch thumb: right when on in LTR, mirrored left when on in RTL. */
+    static float thumbCenterX(float left, float trackW, float off, float thumb, boolean checked, boolean rtl) {
+        float minX = left + off + thumb / 2f, maxX = left + trackW - off - thumb / 2f;
+        return (checked != rtl) ? maxX : minX;
+    }
+
+    @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         float w = getWidth(), h = getHeight();
@@ -105,8 +117,8 @@ public final class Switch extends CompoundButton {
         float offThumb = dp(size.equals("small") ? 16 : 16);
         float onThumb = dp(size.equals("large") ? 24 : 24);
         float thumb = isChecked() ? onThumb : offThumb;
-        float minX = left + off + thumb / 2f, maxX = left + trackW - off - thumb / 2f;
-        float cx = isChecked() ? maxX : minX;
+        boolean rtl = getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+        float cx = thumbCenterX(left, trackW, off, thumb, isChecked(), rtl);
         paint.setColor(isChecked() ? 0xffffffff : (dark ? 0xffcac4d0 : 0xff79747e));
         if (!isEnabled()) paint.setColor(disabledColor(paint.getColor(), dark ? 0xff49454f : 0xffe6e0e9));
         canvas.drawCircle(cx, top + trackH / 2f, thumb / 2f, paint);

@@ -438,6 +438,12 @@ final class Header {
         }
 
         @Override
+        public boolean onLayoutDirectionChanged(int layoutDirection) {
+            invalidateSelf();
+            return true;
+        }
+
+        @Override
         public void draw(Canvas canvas) {
             canvas.save();
             canvas.translate(getBounds().left, getBounds().top);

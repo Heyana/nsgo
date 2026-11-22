@@ -171,6 +171,7 @@ func (s *surface) trayMenu(id uint32, entries []driver.MenuEntry, popup uint32) 
 	}
 	s.ensureMenuTarget()
 	menu := s.submenu("", entries)
+	s.directMenu(menu)
 	apple.OnMain(func() {
 		// The status item tracks its own menu, under its button, which
 		// returns once it closed.

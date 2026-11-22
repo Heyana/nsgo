@@ -2042,6 +2042,10 @@ func (s *surface) alert(a *driver.AlertConfig) {
 		hidden.Send(sel("setKeyEquivalent:"), apple.NSString("\x1b"))
 		hidden.Send(sel("setHidden:"), true)
 	}
+	if s.directed {
+		alert.Send(sel("layout"))
+		s.directTree(alert.Send(sel("window")).Send(sel("contentView")))
+	}
 	id := a.ID
 	answer := func(response int) {
 		const firstButton = 1000
@@ -2296,8 +2300,16 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.applyAppearance()
 			continue
 		case driver.ItemDirection:
+			changed := !s.directed || s.rtl != it.RTL
 			s.rtl, s.directed = it.RTL, true
 			s.directTree(s.native)
+			if changed {
+				for _, v := range s.views {
+					if v != nil && v.sc != nil {
+						v.updateOverlay()
+					}
+				}
+			}
 			// An embedding host owns its menu bar and its languages.
 			if !s.embedded {
 				pinned := ""
@@ -2313,6 +2325,12 @@ func (s *surface) apply(b *driver.MountBatch) {
 				}
 			}
 			s.directMenu(s.menu)
+			if !s.embedded && defaultMenu != 0 {
+				s.directMenu(defaultMenu)
+			}
+			if dockMenu.target == s && dockMenu.menu != 0 {
+				s.directMenu(dockMenu.menu)
+			}
 			continue
 		case driver.ItemQuit:
 			// A test's app leaves its quit to the test's model (App.Quits): the test host's loop runs the test's other apps and the test itself.
@@ -2573,6 +2591,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 	s.root = b.Root
 	if root := s.views[b.Root]; root.native.Send(selSuperview) != s.native {
 		s.native.Send(selAddSubview, root.native)
+		s.directTree(root.native)
 	}
 	s.finish()
 	for _, it := range focus {

@@ -97,7 +97,7 @@ func (w *window) showAlert() {
 // showAlertWindow shows a hidden root window as the window of an alert the app asked from its own scope, which has no window to show it over, as macOS runs such an alert app-modal: sized to the alert's card and in front.
 func (w *window) showAlertWindow(s *shownAlert) {
 	const margin = 16
-	s.layout(driver.Size{Width: alertMaxW + 2*margin})
+	s.layout(driver.Size{Width: alertMaxW + 2*margin}, w.rtl)
 	w.placeNew(alertMaxW+2*margin, driver.Points(s.card.bottom-s.card.top)+2*margin, true)
 	w.alertWindow = true
 	w.orderFront()
@@ -133,8 +133,18 @@ func (w *window) answerAlert(index int) {
 	}
 }
 
+// resetLayouts drops cached text layouts so the alert rebuilds them on the next
+// layout pass (for example after the app's direction changes).
+func (s *shownAlert) resetLayouts() {
+	releaseAll(&s.title, &s.message)
+	for i := range s.buttonLayouts {
+		releaseAll(&s.buttonLayouts[i])
+	}
+	s.buttonLayouts = nil
+}
+
 // alertText makes a layout of text in font, wrapped at width.
-func alertText(text string, font driver.Font, width float32) (*comObject, float32) {
+func alertText(text string, font driver.Font, width float32, rtl bool) (*comObject, float32) {
 	format := textFormat(font)
 	if format == nil || text == "" {
 		releaseAll(&format)
@@ -149,21 +159,24 @@ func alertText(text string, font driver.Font, width float32) (*comObject, float3
 		return nil, 0
 	}
 	layout.call(formatSetWordWrapping, dwWrap)
+	if rtl {
+		layout.call(formatSetReadingDirection, dwReadingRTL)
+	}
 	var m textMetrics
 	layout.call(layoutGetMetrics, uintptr(unsafe.Pointer(&m)))
 	return layout, m.height
 }
 
-// layoutAlert places the alert's parts in a surface of size, making its
+// layout places the alert's parts in a surface of size, making its
 // texts' layouts at the card's width.
-func (s *shownAlert) layout(size driver.Size) {
+func (s *shownAlert) layout(size driver.Size, rtl bool) {
 	width := float32(min(max(float64(size.Width)-32, alertMinW), alertMaxW))
 	inner := width - 2*alertPad
 	if s.title == nil && s.message == nil && s.buttonLayouts == nil {
-		s.title, s.titleH = alertText(s.config.Title, driver.Font{Size: 20, Weight: driver.FontWeightSemibold}, inner)
-		s.message, s.messageH = alertText(s.config.Message, driver.Font{Size: 14}, inner)
+		s.title, s.titleH = alertText(s.config.Title, driver.Font{Size: 20, Weight: driver.FontWeightSemibold}, inner, rtl)
+		s.message, s.messageH = alertText(s.config.Message, driver.Font{Size: 14}, inner, rtl)
 		for _, l := range s.labels {
-			b, _ := alertText(l, driver.Font{Size: 14}, 1e4)
+			b, _ := alertText(l, driver.Font{Size: 14}, 1e4, rtl)
 			if b != nil {
 				b.call(formatSetTextAlignment, dwAlignCenter)
 				b.call(formatSetParagraphAlignment, dwParagraphCenter)
@@ -198,6 +211,9 @@ func (s *shownAlert) layout(size driver.Size) {
 		}
 		bw := (inner - float32((n-1)*alertSpacing)) / float32(n)
 		x := left + alertPad + float32(i)*(bw+alertSpacing)
+		if rtl {
+			x = left + width - alertPad - bw - float32(i)*(bw+alertSpacing)
+		}
 		s.buttons = append(s.buttons, rectF{x, s.band.top + alertPad, x + bw, s.band.top + alertPad + alertButtonH})
 	}
 	for i, l := range s.buttonLayouts {
@@ -221,7 +237,7 @@ func (p *painter) drawAlert(size driver.Size) {
 	if s == nil {
 		return
 	}
-	s.layout(size)
+	s.layout(size, p.w.rtl)
 	dark := p.w.env.Dark
 	text, card, band, button, border := driver.RGB(0x1a1a1a), driver.RGB(0xffffff), driver.RGB(0xf3f3f3),
 		driver.RGB(0xfbfbfb), driver.RGBA(0x000000, 0.08)
@@ -349,10 +365,22 @@ func (w *window) alertKey(vk uintptr) bool {
 		} else {
 			s.focus = (s.focus + 1) % n
 		}
-	case vkLeft, vkUp:
+	case vkUp:
 		s.focus = max(s.focus-1, 0)
-	case vkRight, vkDown:
+	case vkDown:
 		s.focus = min(s.focus+1, n-1)
+	case vkLeft:
+		if w.rtl && !(s.config.Sheet && n > 1) {
+			s.focus = min(s.focus+1, n-1)
+		} else {
+			s.focus = max(s.focus-1, 0)
+		}
+	case vkRight:
+		if w.rtl && !(s.config.Sheet && n > 1) {
+			s.focus = max(s.focus-1, 0)
+		} else {
+			s.focus = min(s.focus+1, n-1)
+		}
 	}
 	w.redrawAll()
 	return true

@@ -18,6 +18,7 @@ import (
 // view is the main thread's copy of one mounted view, drawn by its
 // widget.
 type view struct {
+	win       *window
 	widget    uintptr // NsgoView
 	id        driver.NodeID
 	kind      driver.ViewKind
@@ -382,7 +383,7 @@ type barDrag struct {
 
 // bar returns a scroll view's scroll bar.
 func (v *view) bar() scrollbar.Bar {
-	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, Frame: v.frame.Size, Content: v.size, Offset: v.offset,
+	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, RTL: v.win != nil && v.win.dir == gtkTextDirRTL, Frame: v.frame.Size, Content: v.size, Offset: v.offset,
 		Inset: v.scroll.Behavior.ContentInset}
 }
 

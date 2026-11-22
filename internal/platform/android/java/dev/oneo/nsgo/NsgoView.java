@@ -5835,6 +5835,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
         // A field's one line stays centered in its box.
         field.setLineHeights(field.multiline() ? Math.round(style.lineHeight) : 0, placeholder);
+        field.setTextDirection(style.rtl ? View.TEXT_DIRECTION_RTL : View.TEXT_DIRECTION_LTR);
         field.setGravity(style.gravity() | (field.multiline() ? Gravity.TOP : Gravity.CENTER_VERTICAL));
         ViewGroup parent = (ViewGroup) n.view;
         if (field.multiline()) {
