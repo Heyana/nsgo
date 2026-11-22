@@ -725,10 +725,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * Only a debuggable build takes one, so no other app can set them.
      */
     void setTest(String encoded) {
-        if (encoded != null && isDebuggable()) {
-            test = encoded;
-            inputGate.setIsolated(true);
-        }
+        if (encoded != null && isDebuggable()) test = encoded;
+        if (test != null) inputGate.setIsolated(true);
     }
 
     /**
