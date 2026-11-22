@@ -588,4 +588,6 @@ apple:
 
 ## 嵌入其他应用
 
+导入 `base/terminal` 的应用也会附带 libghostty-vt：Windows 和 Linux 包将库放在可执行文件旁，macOS 和 iOS 则将其签入应用的框架目录。[嵌入](embedding.md)介绍了 iOS 宿主使用的配套 XCFramework。
+
 `-embed` 把应用打包给你自己的 iOS 或 Android 应用使用：一个 XCFramework（加 `-dynamic` 时由动态框架组成）或 AAR，通过其中的 `NSGoView` 或 `NsgoView` 显示应用。Go 桌面程序用 `nsgo.NewView` 显示应用，网页则用站点的 `nsgo.js`，其主机为页面所在的主机，或 `nsgo.yaml` 中 `web.host` 指定的主机。仓库中的 `examples/embed-*` 分别给出了示例；宿主侧见[嵌入](embedding.md)。

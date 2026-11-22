@@ -6,7 +6,8 @@
 // The builds in lib/ come from Ghostty's sources at the commit the
 // terminal binds, built by `go run ./tools/libghostty`. The nsgo tool
 // signs them into iOS apps as GhosttyVT.framework and into macOS apps'
-// Frameworks.
+// Frameworks, stages it beside Windows and Linux executables, and supplies an
+// iOS host's companion GhosttyVT.xcframework.
 package library
 
 import (
@@ -31,15 +32,8 @@ func Find() (string, error) {
 		return p, nil
 	}
 	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		paths := []string{filepath.Join(dir, "Frameworks", "GhosttyVT.framework", "GhosttyVT")}
-		if name != "" {
-			paths = append(paths, filepath.Join(dir, "..", "Frameworks", name), filepath.Join(dir, name))
-		}
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				return p, nil
-			}
+		if path := findInApp(exe); path != "" {
+			return path, nil
 		}
 	}
 	if embedded == nil {
@@ -86,4 +80,23 @@ func extract() (string, error) {
 		return "", fmt.Errorf("terminal: writing libghostty-vt: %w", err)
 	}
 	return path, nil
+}
+
+// findInApp searches the host bundle as well as a standalone executable's directory.
+// Catalyst uses a macOS bundle layout even though its terminal takes the iOS path.
+func findInApp(executable string) string {
+	dir := filepath.Dir(executable)
+	paths := []string{
+		filepath.Join(dir, "Frameworks", "GhosttyVT.framework", "GhosttyVT"),
+		filepath.Join(dir, "..", "Frameworks", "GhosttyVT.framework", "GhosttyVT"),
+	}
+	if name != "" {
+		paths = append(paths, filepath.Join(dir, "..", "Frameworks", name), filepath.Join(dir, name))
+	}
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			return path
+		}
+	}
+	return ""
 }

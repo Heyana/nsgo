@@ -154,7 +154,7 @@ func Load() error {
 
 // LibraryPath returns the libghostty-vt the terminal loads, the first of:
 // the file $NSGO_GHOSTTY_VT names; the one beside the executable, or in
-// its macOS bundle's Frameworks or Resources; the build the package
+// its iOS or Catalyst GhosttyVT.framework or macOS Frameworks; the build the package
 // embeds for the platform, written once into the user's cache
 // (<cache>/nsgo/libghostty-vt/<sha256>/).
 func LibraryPath() (string, error) { return library.Find() }

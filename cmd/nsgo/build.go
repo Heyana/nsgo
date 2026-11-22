@@ -1017,7 +1017,7 @@ func buildWindows(ctx context.Context, p *project, dir, arch string) error {
 	if err := addWinSparkle(ctx, p, dir, arch); err != nil {
 		return err
 	}
-	return p.addNativeLibraries(ctx, "windows_"+goArchName(arch), dir)
+	return addDesktopLibraries(ctx, p, dir, "windows", arch)
 }
 
 // buildLinux writes <dir>/<name> with the resources and icon beside it.
@@ -1033,7 +1033,7 @@ func buildLinux(ctx context.Context, p *project, dir, arch string) error {
 	if err := writeLinuxIcon(p, dir); err != nil {
 		return err
 	}
-	return p.addNativeLibraries(ctx, "linux_"+goArchName(arch), dir)
+	return addDesktopLibraries(ctx, p, dir, "linux", arch)
 }
 
 // buildFPS is -fps: the site starts its app with --nsgo-fps, which a page

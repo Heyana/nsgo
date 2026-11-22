@@ -325,7 +325,10 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 	if err := os.MkdirAll(resources, 0o755); err != nil {
 		return err
 	}
-	return copyResources(p, resources)
+	if err := copyResources(p, resources); err != nil {
+		return err
+	}
+	return addIOSEmbeddedLibraries(ctx, p, dir, tmp, minimum)
 }
 
 // iosLinks are a static library's module map's link lines: what Go's
@@ -354,20 +357,18 @@ func writeIOSHeaders(dir, header, modulemap string) error {
 // its binary left to the caller: iOS's flat, Mac Catalyst's in macOS's
 // versioned layout. It returns the bundle's path.
 func writeIOSFramework(slice, module, id, header, minimum string, catalyst bool) (string, error) {
+	return writeFrameworkBundle(slice, module, id, header, minimum, catalyst)
+}
+
+// writeFrameworkBundle writes a dynamic framework bundle; an empty header
+// makes a runtime-only framework, loaded through purego.
+func writeFrameworkBundle(slice, module, id, header, minimum string, catalyst bool) (string, error) {
 	fw := filepath.Join(slice, module+".framework")
 	root := fw
 	if catalyst {
 		root = filepath.Join(fw, "Versions/A")
 	}
-	modulemap := fmt.Sprintf("framework module %s {\n\tumbrella header \"NSGo.h\"\n\texport *\n}\n", module)
-	if err := writeIOSHeaders(filepath.Join(root, "Headers"), header, ""); err != nil {
-		return "", err
-	}
-	os.Remove(filepath.Join(root, "Headers", "module.modulemap"))
-	if err := os.MkdirAll(filepath.Join(root, "Modules"), 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(filepath.Join(root, "Modules", "module.modulemap"), []byte(modulemap), 0o644); err != nil {
+	if err := writeIOSFrameworkHeaders(root, module, header); err != nil {
 		return "", err
 	}
 	plistDir := root
@@ -396,13 +397,38 @@ func writeIOSFramework(slice, module, id, header, minimum string, catalyst bool)
 	}
 	if catalyst {
 		for link, to := range map[string]string{"Versions/Current": "A", module: "Versions/Current/" + module,
-			"Headers": "Versions/Current/Headers", "Modules": "Versions/Current/Modules", "Resources": "Versions/Current/Resources"} {
+			"Resources": "Versions/Current/Resources"} {
 			if err := os.Symlink(to, filepath.Join(fw, link)); err != nil {
 				return "", err
 			}
 		}
+		if header != "" {
+			for _, name := range []string{"Headers", "Modules"} {
+				if err := os.Symlink("Versions/Current/"+name, filepath.Join(fw, name)); err != nil {
+					return "", err
+				}
+			}
+		}
 	}
 	return fw, nil
+}
+
+func writeIOSFrameworkHeaders(root, module, header string) error {
+	if header == "" {
+		return nil
+	}
+	modulemap := fmt.Sprintf("framework module %s {\n\tumbrella header \"NSGo.h\"\n\texport *\n}\n", module)
+	if err := writeIOSHeaders(filepath.Join(root, "Headers"), header, ""); err != nil {
+		return err
+	}
+	os.Remove(filepath.Join(root, "Headers", "module.modulemap"))
+	if err := os.MkdirAll(filepath.Join(root, "Modules"), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(root, "Modules", "module.modulemap"), []byte(modulemap), 0o644); err != nil {
+		return err
+	}
+	return nil
 }
 
 // aarManifest is the library's manifest, which a host's build merges into its own: the runtime starts the app from the native library directory, so native libraries must be extracted, the provider of the files the app hands other apps is named after the host's package, the receiver of scheduled notifications' alarms hears the boot to set them again, and the device's libraries the app uses (androidLibraries) are declared without being required. An app that shows overlays over other apps (androidOverlay) asks for SYSTEM_ALERT_WINDOW and declares the overlay's foreground service with its permissions, which no other library does.
@@ -478,6 +504,10 @@ func buildAndroidAAR(ctx context.Context, p *project, dir, goarch string) error 
 	if err != nil {
 		return err
 	}
+	ghostty, err := androidGhosttyLibrary(ctx, p, goarch, abi)
+	if err != nil {
+		return err
+	}
 	stage(ctx, "packaging the AAR")
 	f, err := os.Create(filepath.Join(dir, p.Name+".aar"))
 	if err != nil {
@@ -502,6 +532,11 @@ func buildAndroidAAR(ctx context.Context, p *project, dir, goarch string) error 
 		{"jni/" + abi + "/libnsgo.so", app},
 	} {
 		if err := add(e.name, e.data); err != nil {
+			return err
+		}
+	}
+	if ghostty.Name != "" {
+		if err := add("jni/"+strings.TrimPrefix(ghostty.Name, "lib/"), ghostty.Data); err != nil {
 			return err
 		}
 	}

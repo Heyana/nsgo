@@ -2,6 +2,8 @@
 
 NSGo apps run inside apps of their own: Go desktop programs make views with `nsgo.NewView`, and iOS and Android apps link the framework and library `nsgo build -embed` makes. NSH's design is in `nsh/docs/dev/embedding.md`. Read this before changing views, the host channel, `-embed` packages or the iOS and Android faces.
 
+An app linking `base/terminal` also receives a runtime-only `GhosttyVT.xcframework` beside its app XCFramework, with the same device, simulator and Catalyst architectures. Hosts embed and sign the companion for static and dynamic apps; the terminal discovers its framework in flat iOS and versioned Catalyst host bundles. An arm64 AAR includes `jni/arm64-v8a/libghostty-vt.so` beside `libnsgo.so` once #1452 supplies its Android prebuild; its loader and device acceptance belong to that issue.
+
 ## Views
 
 A view is one surface and one engine; `nsgo.Run` runs one engine with its loop, whose windows are surfaces of it ([application and windows](application.md)). A host makes as many as it likes, in one window or several, so backends keep a surface's state on the surface. What is the process's by nature stays process-wide: the standalone app's runner, window and controller, registries keyed by native object (views, widgets, menu targets), observers that report to every live surface, fonts, the image cache and file storage per data directory.

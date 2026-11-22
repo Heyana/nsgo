@@ -19,6 +19,8 @@ iOS 构建写出 `<Name>.xcframework` 和 `<Name>Resources`；Android 构建写�
 
 ## iOS
 
+应用导入 `base/terminal` 时，构建还会在应用框架旁生成 `GhosttyVT.xcframework`。无论应用框架是静态还是 `-dynamic` 动态形式，都要将此配套框架加入宿主目标并选择 **Embed & Sign**。它包含真机、Intel 和 Apple 芯片模拟器及 Mac Catalyst 的库；保留 `GhosttyVT.framework` 名称。
+
 把框架作为静态库加入应用目标（不要嵌入），把资源目录作为文件夹引用加入，然后 `import <Name>`。在应用启动时、第一个视图之前调用一次 `NSGoStart()`。静态库的代码属于宿主应用，因此由宿主应用的隐私清单声明 NSGo 用到的需要理由的 API：用户默认设置（`CA92.1`）、文件时间戳（`C617.1`）和系统启动时间（`35F9.1`）；`-dynamic` 框架则在自己的 `PrivacyInfo.xcprivacy` 中声明它们。
 
 ```swift
@@ -50,6 +52,8 @@ view.register(component: "host.badge") { context in Badge(context) }
 `NSGoView` 在进入窗口后启动应用，在释放或收到 `stop()` 时停止。启动值要在进入窗口前设置，其余值可以随时改变。处理器、组件和回调在主线程运行，回复可以从任意线程稍后到达。视图控制器可以转发视图的 `preferredStatusBarStyle`、`prefersStatusBarHidden` 和 `prefersHomeIndicatorAutoHidden`，以跟随它的系统栏设置。
 
 ## Android
+
+arm64 应用导入 `base/terminal` 时，AAR 会将 `jni/arm64-v8a/libghostty-vt.so` 放在 `libnsgo.so` 旁；宿主须保留本地库提取设置。Android 预编译库和终端加载器依赖 [#1452](https://github.com/nsgo-dev/nsgo/issues/1452)；目前没有 x86_64 终端库。
 
 把 AAR 加入应用模块，并让原生库被解压，以便运行时找到它们：
 

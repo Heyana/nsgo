@@ -153,3 +153,91 @@ func copyLibrary(src, dst string) error {
 	}
 	return os.WriteFile(dst, data, 0o755)
 }
+
+// addDesktopLibraries places terminal and package-declared libraries beside the
+// executable before signing and installer assembly.
+func addDesktopLibraries(ctx context.Context, p *project, dir, system, arch string) error {
+	env := []string{"GOOS=" + system, "GOARCH=" + arch, "CGO_ENABLED=0"}
+	source, err := linkedDir(ctx, p, env, ghosttyPackage)
+	if err != nil {
+		return err
+	}
+	target := system + "_" + goArchName(arch)
+	if source != "" {
+		name := "libghostty-vt.so"
+		if system == "windows" {
+			name = "ghostty-vt.dll"
+		}
+		source = filepath.Join(source, "lib", system+"-"+arch, name)
+		if err := validateNativeBinary(source, target); err != nil {
+			return fmt.Errorf("libghostty-vt: %w", err)
+		}
+		if err := copyLibrary(source, filepath.Join(dir, name)); err != nil {
+			return err
+		}
+	}
+	return p.addNativeLibraries(ctx, target, dir)
+}
+
+// addIOSEmbeddedLibraries supplies the host with a companion XCFramework
+// whenever its app links the terminal, for static and dynamic embedding alike.
+func addIOSEmbeddedLibraries(ctx context.Context, p *project, dir, tmp, minimum string) error {
+	args := []string{"-create-xcframework"}
+	for _, sl := range iosSlices {
+		var libraries []string
+		for _, arch := range sl.archs {
+			env := []string{"GOOS=" + sl.goos, "GOARCH=" + arch, "CGO_ENABLED=1"}
+			tags := []string{"nsgoembed"}
+			if sl.catalyst {
+				tags = append(tags, "ios")
+			}
+			source, err := linkedDir(ctx, p, env, ghosttyPackage, tags...)
+			if err != nil {
+				return err
+			}
+			if source == "" {
+				continue
+			}
+			platform := "ios"
+			if sl.catalyst {
+				platform = "ioscatalyst"
+			} else if sl.sdk == "iphonesimulator" {
+				platform = "iossimulator"
+			}
+			libraries = append(libraries, filepath.Join(source, "lib", platform+"-"+arch, "libghostty-vt.dylib"))
+		}
+		if len(libraries) == 0 {
+			continue
+		}
+		fw, err := writeFrameworkBundle(filepath.Join(tmp, "ghostty", sl.sdk), "GhosttyVT", p.ID+".ghosttyvt", "", frameworkMinimum(minimum, sl.catalyst), sl.catalyst)
+		if err != nil {
+			return err
+		}
+		binary, install := filepath.Join(fw, "GhosttyVT"), "@rpath/"+ghosttyFramework+"/GhosttyVT"
+		if sl.catalyst {
+			binary = filepath.Join(fw, "Versions/A/GhosttyVT")
+			install = "@rpath/" + ghosttyFramework + "/Versions/A/GhosttyVT"
+		}
+		if err := run(ctx, "lipo", append([]string{"-create", "-output", binary}, libraries...)...); err != nil {
+			return err
+		}
+		if err := run(ctx, "install_name_tool", "-id", install, binary); err != nil {
+			return err
+		}
+		if err := run(ctx, "codesign", "--force", "--sign", "-", fw); err != nil {
+			return err
+		}
+		args = append(args, "-framework", fw)
+	}
+	if len(args) > 1 && embedModule(p) == "GhosttyVT" {
+		return fmt.Errorf("the app framework name GhosttyVT conflicts with the terminal companion: choose another app name")
+	}
+	framework := filepath.Join(dir, "GhosttyVT.xcframework")
+	if err := os.RemoveAll(framework); err != nil {
+		return err
+	}
+	if len(args) == 1 {
+		return nil
+	}
+	return run(ctx, "xcodebuild", append(args, "-output", framework)...)
+}

@@ -19,6 +19,8 @@ The iOS build writes `<Name>.xcframework` and `<Name>Resources`; the Android bui
 
 ## iOS
 
+When the app imports `base/terminal`, the build also writes `GhosttyVT.xcframework` beside the app framework. Add this companion to the host target with **Embed & Sign**, for both static and `-dynamic` app frameworks. It contains device, Intel and Apple silicon simulator, and Mac Catalyst libraries; keep its `GhosttyVT.framework` name.
+
 Add the framework to the app target as a static library (do not embed it) and the resources folder as a folder reference, then `import <Name>`. Call `NSGoStart()` once as the app launches, before the first view. The static library's code is the host app's, so the host's privacy manifest declares the required-reason APIs NSGo uses: user defaults (`CA92.1`), file timestamps (`C617.1`) and system boot time (`35F9.1`); a `-dynamic` framework carries them in its own `PrivacyInfo.xcprivacy`.
 
 ```swift
@@ -51,6 +53,8 @@ view.register(component: "host.badge") { context in Badge(context) }
 The host can also return the view's `preferredScreenEdgesDeferringSystemGestures` from its controller to forward `mobile.DeferSystemGestures`.
 
 ## Android
+
+For an arm64 app importing `base/terminal`, the AAR includes `jni/arm64-v8a/libghostty-vt.so` beside `libnsgo.so`; the host keeps native-library extraction enabled. The Android prebuild and terminal loader require [#1452](https://github.com/nsgo-dev/nsgo/issues/1452); x86_64 terminal libraries are not available yet.
 
 Add the AAR to the app module and package native libraries extracted, so the runtime finds them:
 

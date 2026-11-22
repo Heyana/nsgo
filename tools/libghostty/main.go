@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -28,6 +29,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -38,11 +40,13 @@ const commit = "befcdfd2c3a1cb24d9ec886e93c95b2b5daa7028"
 // libDir is where the libraries go, by GOOS-GOARCH.
 const libDir = "base/terminal/internal/library/lib"
 
-var targets = []struct {
+type libraryTarget struct {
 	goos, goarch, zig string
 	// name is the library's file; built is where Zig puts it.
 	name, built string
-}{
+}
+
+var targets = []libraryTarget{
 	{"darwin", "arm64", "aarch64-macos", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 	{"darwin", "amd64", "x86_64-macos", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 	// The glibc of Debian 10 and Ubuntu 20.04, and later.
@@ -54,12 +58,16 @@ var targets = []struct {
 	// framework.
 	{"ios", "arm64", "aarch64-ios", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 	{"iossimulator", "arm64", "aarch64-ios-simulator", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
+	{"iossimulator", "amd64", "x86_64-ios-simulator", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
+	{"ioscatalyst", "arm64", "aarch64-maccatalyst", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
+	{"ioscatalyst", "amd64", "x86_64-maccatalyst", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 }
 
 func main() {
 	log.SetFlags(0)
 	src := flag.String("src", "", "a checkout of Ghostty at the commit (cloned into the user's cache when empty)")
 	themes := flag.Bool("themes", false, "only write the themes")
+	targetNames := flag.String("target", "all", "comma-separated library targets (goos-goarch), or all")
 	flag.Parse()
 	if _, err := os.Stat("base/terminal"); err != nil {
 		log.Fatal("run it from the repository's root")
@@ -68,18 +76,27 @@ func main() {
 		writeThemes(*src)
 		return
 	}
+	selected, err := selectTargets(*targetNames)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if *src == "" {
 		*src = checkout()
 	}
 	zig := zigFor(*src)
-	for _, t := range targets {
+	buildLibraries(*src, zig, selected)
+	writeThemes(*src)
+}
+
+func buildLibraries(src, zig string, selected []libraryTarget) {
+	for _, t := range selected {
 		prefix, err := os.MkdirTemp("", "libghostty-vt-")
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer os.RemoveAll(prefix)
 		log.Printf("building %s/%s", t.goos, t.goarch)
-		run(*src, zig, "build", "-Demit-lib-vt", "-Dtarget="+t.zig, "-Doptimize=ReleaseFast", "-Dstrip=true", "--prefix", prefix)
+		run(src, zig, "build", "-Demit-lib-vt", "-Dtarget="+t.zig, "-Doptimize=ReleaseFast", "-Dstrip=true", "--prefix", prefix)
 		built := filepath.Join(prefix, t.built)
 		if t.goos == "linux" {
 			// The build keeps the debug information of ELF libraries,
@@ -92,7 +109,6 @@ func main() {
 		}
 		log.Printf("  %s %s", dst, copyFile(built, dst))
 	}
-	writeThemes(*src)
 }
 
 // cacheDir is NSGo's directory in the user's cache.
@@ -254,4 +270,23 @@ func stripELF(path string) string {
 		log.Fatal(err)
 	}
 	return stripped
+}
+
+func selectTargets(names string) ([]libraryTarget, error) {
+	var selected []libraryTarget
+	for _, name := range strings.Split(names, ",") {
+		name = strings.TrimSpace(name)
+		if name == "all" {
+			selected = append([]libraryTarget(nil), targets...)
+			continue
+		}
+		index := slices.IndexFunc(targets, func(t libraryTarget) bool { return t.goos+"-"+t.goarch == name })
+		if index < 0 {
+			return nil, fmt.Errorf("unknown library target %q", name)
+		}
+		if !slices.Contains(selected, targets[index]) {
+			selected = append(selected, targets[index])
+		}
+	}
+	return selected, nil
 }
