@@ -24,7 +24,11 @@ func TestWebMuteSuspendsMedia(t *testing.T) {
 	var window objc.ID
 	t.Cleanup(func() {
 		onMain(func() {
-			web.Close()
+			// The test made the view itself, without make's handler and observers, which Close would remove.
+			if web.web != 0 {
+				web.web.Send(sel("stopLoading"))
+				web.web.Send(sel("release"))
+			}
 			window.Send(sel("close"))
 			window.Send(sel("release"))
 		})
