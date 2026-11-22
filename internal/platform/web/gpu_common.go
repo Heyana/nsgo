@@ -38,8 +38,7 @@ type gpuProbeCaps struct {
 	ForceWebGL2     bool
 }
 
-// selectGPUBackend chooses WebGPU when available and initialized, falling back
-// automatically to WebGL 2 when WebGPU is absent, forced off, or fails init.
+// selectGPUBackend chooses WebGPU when available and initialized, falling back automatically to WebGL 2 when WebGPU is absent, forced off, or fails init.
 func selectGPUBackend(caps gpuProbeCaps) gpuBackendKind {
 	if !caps.ForceWebGL2 && caps.HasNavigatorGPU && caps.WebGPUAdapterOK && caps.WebGPUDeviceOK {
 		return gpuBackendWebGPU
@@ -50,8 +49,7 @@ func selectGPUBackend(caps gpuProbeCaps) gpuBackendKind {
 	return gpuBackendNone
 }
 
-// gpuEnvSupported reports Env.GPU for the web backend: true whenever either
-// WebGPU or WebGL 2 is available in the browser.
+// gpuEnvSupported reports Env.GPU for the web backend: true whenever either WebGPU or WebGL 2 is available in the browser.
 func gpuEnvSupported(hasNavigatorGPU, hasWebGL2 bool) bool {
 	return hasNavigatorGPU || hasWebGL2
 }
@@ -759,20 +757,17 @@ func glIndexType(f driver.GPUIndexFormat) (glType uint32, elemBytes uint64) {
 	return glUnsignedShort, 2
 }
 
-// glViewportY converts a top-left-origin viewport Y + height into OpenGL's
-// bottom-left-origin viewport Y.
+// glViewportY converts a top-left-origin viewport Y + height into OpenGL's bottom-left-origin viewport Y.
 func glViewportY(y, height float32, targetH int) int {
 	return targetH - int(math.Round(float64(y+height)))
 }
 
-// glScissorY converts a top-left-origin scissor Y + height into OpenGL's
-// bottom-left-origin scissor Y.
+// glScissorY converts a top-left-origin scissor Y + height into OpenGL's bottom-left-origin scissor Y.
 func glScissorY(y, height int32, targetH int) int {
 	return targetH - int(y+height)
 }
 
-// glFlipRowsRGBA flips an RGBA image vertically in place (converting bottom-up
-// WebGL readPixels output into top-down image.RGBA order).
+// glFlipRowsRGBA flips an RGBA image vertically in place (converting bottom-up WebGL readPixels output into top-down image.RGBA order).
 func glFlipRowsRGBA(pix []byte, width, height int) {
 	rowBytes := width * 4
 	if rowBytes <= 0 || height <= 1 || len(pix) < rowBytes*height {
@@ -788,10 +783,7 @@ func glFlipRowsRGBA(pix []byte, width, height int) {
 	}
 }
 
-// stripRowPadding copies width*height pixels of bytesPerPixel bytes out of a
-// padded WebGPU readback buffer (bytesPerRow aligned to 256) into a tightly
-// packed byte slice, swizzling BGRA -> RGBA when swizzleBGRA is true and
-// bytesPerPixel == 4.
+// stripRowPadding copies width*height pixels of bytesPerPixel bytes out of a padded WebGPU readback buffer (bytesPerRow aligned to 256) into a tightly packed byte slice, swizzling BGRA -> RGBA when swizzleBGRA is true and bytesPerPixel == 4.
 func stripRowPadding(src []byte, width, height, bytesPerPixel, bytesPerRow int, swizzleBGRA bool) []byte {
 	if width <= 0 || height <= 0 || bytesPerPixel <= 0 {
 		return nil
@@ -819,8 +811,7 @@ func stripRowPaddingRGBA(src []byte, width, height, bytesPerRow int, swizzleBGRA
 	return stripRowPadding(src, width, height, 4, bytesPerRow, swizzleBGRA)
 }
 
-// mipDim returns the dimension of mip level m for a base texture size, clamped
-// to at least 1 per the WebGPU and WebGL 2 specifications.
+// mipDim returns the dimension of mip level m for a base texture size, clamped to at least 1 per the WebGPU and WebGL 2 specifications.
 func mipDim(base, mip uint32) uint32 {
 	if base == 0 {
 		return 1
@@ -832,8 +823,7 @@ func mipDim(base, mip uint32) uint32 {
 	return d
 }
 
-// isSwapchainPass reports whether pass targets the default canvas swapchain
-// rather than offscreen render-target textures (including depth-only passes).
+// isSwapchainPass reports whether pass targets the default canvas swapchain rather than offscreen render-target textures (including depth-only passes).
 func isSwapchainPass(pass driver.GPUPass) bool {
 	if len(pass.ColorAttachments) > 0 {
 		return pass.ColorAttachments[0].Texture == 0
@@ -841,8 +831,7 @@ func isSwapchainPass(pass driver.GPUPass) bool {
 	return pass.DepthStencil == nil || pass.DepthStencil.Texture == 0
 }
 
-// clampScissorRect clamps signed scissor coordinates to non-negative unsigned
-// values required by WebGPU's setScissorRect.
+// clampScissorRect clamps signed scissor coordinates to non-negative unsigned values required by WebGPU's setScissorRect.
 func clampScissorRect(x, y, w, h int32) (uint32, uint32, uint32, uint32) {
 	if x < 0 {
 		w += x
@@ -1012,8 +1001,7 @@ type gpuResourceCounts struct {
 	Pipelines        int
 }
 
-// gpuViewController manages the portable lifecycle, pixel sizing, generation
-// tracking, and resource accounting for one mounted KindGPU view.
+// gpuViewController manages the portable lifecycle, pixel sizing, generation tracking, and resource accounting for one mounted KindGPU view.
 type gpuViewController struct {
 	viewID        driver.NodeID
 	cfg           driver.GPUViewConfig
@@ -1074,8 +1062,7 @@ func gpuPixelDimensions(cssW, cssH driver.Points, pixelRatio float32) (int, int)
 	return w, h
 }
 
-// resize updates the controller's physical pixel dimensions and returns a
-// GPUEventResize when the view is already ready and the size changed.
+// resize updates the controller's physical pixel dimensions and returns a GPUEventResize when the view is already ready and the size changed.
 func (c *gpuViewController) resize(cssW, cssH driver.Points, pixelRatio float32) (w, h int, changed bool, ev *driver.GPUEvent) {
 	c.cssWidth, c.cssHeight = cssW, cssH
 	if pixelRatio > 0 {
@@ -1105,8 +1092,7 @@ func (c *gpuViewController) beginInit() bool {
 	return true
 }
 
-// markReady transitions to Ready, bumps the device generation, and returns the
-// GPUEventDeviceReady payload (nil if already destroyed).
+// markReady transitions to Ready, bumps the device generation, and returns the GPUEventDeviceReady payload (nil if already destroyed).
 func (c *gpuViewController) markReady(backend gpuBackendKind, surfaceFmt driver.GPUTextureFormat, limits driver.GPULimits, features driver.GPUFeatures) *driver.GPUEvent {
 	if c.state == gpuStateDestroyed {
 		return nil
@@ -1132,8 +1118,7 @@ func (c *gpuViewController) markReady(backend gpuBackendKind, surfaceFmt driver.
 	}
 }
 
-// markLost transitions to Lost, clears tracked live resources, and returns the
-// GPUEventDeviceLost payload (nil if not currently Ready or already Destroyed).
+// markLost transitions to Lost, clears tracked live resources, and returns the GPUEventDeviceLost payload (nil if not currently Ready or already Destroyed).
 func (c *gpuViewController) markLost(reason driver.GPUDeviceLostReason, message string) *driver.GPUEvent {
 	if c.state == gpuStateDestroyed || c.state == gpuStateLost {
 		return nil
@@ -1161,8 +1146,7 @@ func (c *gpuViewController) makeError(code driver.GPUErrorCode, message string) 
 	}
 }
 
-// acceptFrame checks whether frame targets the live generation and records
-// resource create/destroy ops for leak accounting.
+// acceptFrame checks whether frame targets the live generation and records resource create/destroy ops for leak accounting.
 func (c *gpuViewController) acceptFrame(frame driver.GPUFrame) bool {
 	if c.state != gpuStateReady {
 		return false
@@ -1227,8 +1211,7 @@ func (c *gpuViewController) destroy() {
 	c.clearTrackedResources()
 }
 
-// resolveDynamicOffsets returns the ordered dynamic offsets for a bind group
-// layout's entries that declare HasDynamicOffset.
+// resolveDynamicOffsets returns the ordered dynamic offsets for a bind group layout's entries that declare HasDynamicOffset.
 func resolveDynamicOffsets(layout []driver.GPUBindGroupLayoutEntry, dynamicOffsets []uint32) map[uint32]uint32 {
 	if len(dynamicOffsets) == 0 || len(layout) == 0 {
 		return nil

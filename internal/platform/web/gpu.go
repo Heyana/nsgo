@@ -10,8 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// gpuForceWebGL2, when true (or when globalThis.__nsgoForceWebGL2 is truthy),
-// skips WebGPU and forces the automatic WebGL 2 fallback path for testing.
+// gpuForceWebGL2, when true (or when globalThis.__nsgoForceWebGL2 is truthy), skips WebGPU and forces the automatic WebGL 2 fallback path for testing.
 var gpuForceWebGL2 bool
 
 var (
@@ -19,9 +18,7 @@ var (
 	gpuAvailVal  bool
 )
 
-// webGPUAvailable reports whether the browser supports either WebGPU
-// (navigator.gpu) or WebGL 2 on a <canvas>. Cached once to avoid leaking
-// limited browser WebGL contexts.
+// webGPUAvailable reports whether the browser supports either WebGPU (navigator.gpu) or WebGL 2 on a <canvas>. Cached once to avoid leaking limited browser WebGL contexts.
 func webGPUAvailable() bool {
 	gpuAvailOnce.Do(func() {
 		g := js.Global()
@@ -80,8 +77,7 @@ type gpuBackend interface {
 	destroy()
 }
 
-// gpuView owns the dedicated <canvas>, lifecycle state machine, active backend
-// (WebGPU primary or WebGL 2 fallback), and js.Func callbacks for one KindGPU view.
+// gpuView owns the dedicated <canvas>, lifecycle state machine, active backend (WebGPU primary or WebGL 2 fallback), and js.Func callbacks for one KindGPU view.
 type gpuView struct {
 	s         *surface
 	v         *view
@@ -91,12 +87,10 @@ type gpuView struct {
 	needsInit bool
 	listeners listeners
 
-	// pendingFuncs tracks all in-flight Promise and callback js.Funcs so every
-	// one is released on settlement or when the view unmounts.
+	// pendingFuncs tracks all in-flight Promise and callback js.Funcs so every one is released on settlement or when the view unmounts.
 	pendingFuncs map[*js.Func]struct{}
 
-	// onEvent is an optional package-internal test observer invoked alongside
-	// engine.Dispatch when emitEvent fires.
+	// onEvent is an optional package-internal test observer invoked alongside engine.Dispatch when emitEvent fires.
 	onEvent func(*driver.GPUEvent)
 }
 
@@ -244,8 +238,7 @@ func (g *gpuView) releaseFunc(f *js.Func) {
 	}
 }
 
-// promiseThen attaches resolve/reject handlers to a JS Promise, guaranteeing
-// both js.Funcs are released as soon as the promise settles or on unmount.
+// promiseThen attaches resolve/reject handlers to a JS Promise, guaranteeing both js.Funcs are released as soon as the promise settles or on unmount.
 func (g *gpuView) promiseThen(p js.Value, onResolve func(js.Value), onReject func(js.Value)) {
 	if !p.Truthy() || g.ctrl.state == gpuStateDestroyed {
 		if onReject != nil {
@@ -290,10 +283,7 @@ func (g *gpuView) release() {
 	g.ctrl.destroy()
 	g.listeners.release()
 	if g.backend != nil {
-		// Destroying a WebGPU device resolves device.lost and rejects any
-		// pending mapAsync promises; their promiseThen handlers see
-		// gpuStateDestroyed, clean up late objects, and release their js.Funcs
-		// upon settlement without invoking a released callback.
+		// Destroying a WebGPU device resolves device.lost and rejects any pending mapAsync promises; their promiseThen handlers see gpuStateDestroyed, clean up late objects, and release their js.Funcs upon settlement without invoking a released callback.
 		g.backend.destroy()
 		g.backend = nil
 	}

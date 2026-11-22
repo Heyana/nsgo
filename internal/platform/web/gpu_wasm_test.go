@@ -20,11 +20,7 @@ func packF32(vals ...float32) []byte {
 	return out
 }
 
-// TestWebGPUViewWebGL2FallbackAndTeardown mounts a KindGPU view on a real
-// <canvas>, forces the WebGL 2 fallback path, clears and draws an off-commit
-// frame, verifies readback and resize, exercises webglcontextlost/restored,
-// and confirms complete resource and js.Func cleanup on unmount.
-// Run in a browser with: nsgo test -target web ./internal/platform/web
+// TestWebGPUViewWebGL2FallbackAndTeardown mounts a KindGPU view on a real <canvas>, forces the WebGL 2 fallback path, clears and draws an off-commit frame, verifies readback and resize, exercises webglcontextlost/restored, and confirms complete resource and js.Func cleanup on unmount. Run in a browser with: nsgo test -target web ./internal/platform/web
 func TestWebGPUViewWebGL2FallbackAndTeardown(t *testing.T) {
 	doc := js.Global().Get("document")
 	if !doc.Truthy() {
@@ -69,9 +65,7 @@ func TestWebGPUViewWebGL2FallbackAndTeardown(t *testing.T) {
 		t.Fatalf("canvas size = %dx%d, want 64x64", g.canvas.Get("width").Int(), g.canvas.Get("height").Int())
 	}
 
-	// Submit an off-commit frame that uploads a textured fullscreen triangle +
-	// identity MVP uniform buffer, renders it to an offscreen render target,
-	// clears the swapchain to a known color, and reads back both surfaces.
+	// Submit an off-commit frame that uploads a textured fullscreen triangle + identity MVP uniform buffer, renders it to an offscreen render target, clears the swapchain to a known color, and reads back both surfaces.
 	gen := g.ctrl.generation
 	vbufData := packF32(
 		-1, -1, 0, 0, 0,
@@ -298,10 +292,7 @@ func TestWebGPUViewWebGL2FallbackAndTeardown(t *testing.T) {
 	}
 }
 
-// TestWebGPUPrimaryOrAutoFallbackReadback exercises the unforced default path:
-// WebGPU primary when navigator.gpu yields an adapter+device, or automatic
-// WebGL 2 fallback otherwise, verifying offscreen render + readback and clean
-// js.Func release on unmount.
+// TestWebGPUPrimaryOrAutoFallbackReadback exercises the unforced default path: WebGPU primary when navigator.gpu yields an adapter+device, or automatic WebGL 2 fallback otherwise, verifying offscreen render + readback and clean js.Func release on unmount.
 func TestWebGPUPrimaryOrAutoFallbackReadback(t *testing.T) {
 	doc := js.Global().Get("document")
 	if !doc.Truthy() {

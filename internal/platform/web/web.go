@@ -215,8 +215,7 @@ type surface struct {
 	// shading are the shader views to draw once the batch or the frame
 	// is applied.
 	shading []*view
-	// gpuInitDue are newly configured KindGPU views awaiting backend initialization
-	// once the mount batch's frames are applied.
+	// gpuInitDue are newly configured KindGPU views awaiting backend initialization once the mount batch's frames are applied.
 	gpuInitDue []*view
 	// mouse is where the mouse last moved over the host, in client
 	// coordinates, while mouseIn.
@@ -1948,8 +1947,7 @@ func (s *surface) RequestFrame() {
 	s.startTicking()
 }
 
-// SubmitGPU executes an off-commit GPUFrame directly on the target KindGPU view
-// without triggering a UI view-tree commit.
+// SubmitGPU executes an off-commit GPUFrame directly on the target KindGPU view without triggering a UI view-tree commit.
 func (s *surface) SubmitGPU(frame driver.GPUFrame) {
 	v := s.view(frame.ViewID)
 	if v == nil || v.gpu == nil {
