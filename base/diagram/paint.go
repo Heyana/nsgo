@@ -17,14 +17,16 @@ const miterLimit = 4
 
 // painter draws a scene's items on a canvas, in the scene's units.
 type painter struct {
-	d    *core.Drawing
-	look *style.Look
-	m    *measurer
+	d      *core.Drawing
+	look   *style.Look
+	m      *measurer
+	icons  map[string]*core.SVG
+	images map[string]core.Size
 }
 
 // paint draws sc on d, in the order of its items, in look's colors, measuring its labels' spans with m.
-func paint(d *core.Drawing, sc *scene.Scene, look *style.Look, m *measurer) {
-	p := painter{d: d, look: look, m: m}
+func paint(d *core.Drawing, sc *scene.Scene, look *style.Look, m *measurer, icons map[string]*core.SVG, images map[string]core.Size) {
+	p := painter{d: d, look: look, m: m, icons: icons, images: images}
 	for i := range sc.Items {
 		it := &sc.Items[i]
 		if !look.Draws(string(it.Role)) {
@@ -33,6 +35,7 @@ func paint(d *core.Drawing, sc *scene.Scene, look *style.Look, m *measurer) {
 		s := look.Resolve(string(it.Role), it.Style, it.Author)
 		p.parts(it, s)
 		p.ends(it, s)
+		p.picture(it, s)
 		p.label(it, s)
 	}
 }
@@ -232,6 +235,7 @@ func (p painter) label(it *scene.Item, s style.Resolved) {
 	}
 	type run struct {
 		text       string
+		icon       string
 		font       core.Font
 		x, y, w    float64
 		underlined bool
@@ -246,6 +250,9 @@ func (p painter) label(it *scene.Item, s style.Resolved) {
 			}
 			size /= 1.2
 		}
+		if sp.Icon != "" {
+			return run{icon: sp.Icon, w: sp.Width}
+		}
 		return run{text: sp.Text, font: font(size, sp.Face), y: dy, w: p.m.Width(sp.Text, size, sp.Face&(text.Bold|text.Italic|text.Mono)), underlined: sp.Face&text.Underline != 0}
 	}
 	top := it.At.Y - l.Height/2
@@ -255,7 +262,7 @@ func (p painter) label(it *scene.Item, s style.Resolved) {
 		runs = runs[:0]
 		width := 0.0
 		for _, sp := range line {
-			if sp.Text == "" {
+			if sp.Text == "" && sp.Icon == "" {
 				continue
 			}
 			r := set(sp)
@@ -273,12 +280,19 @@ func (p painter) label(it *scene.Item, s style.Resolved) {
 		}
 		if haloed {
 			for _, r := range runs {
-				d.StrokeText(r.text, float32(x+r.x), float32(r.y), r.font)
+				if r.icon == "" {
+					d.StrokeText(r.text, float32(x+r.x), float32(r.y), r.font)
+				}
 			}
 		}
 		d.SetFillColor(c)
 		for _, r := range runs {
-			d.FillText(r.text, float32(x+r.x), float32(r.y), r.font)
+			if r.icon != "" {
+				side := l.Size * 1.1
+				p.icon(r.icon, scene.Rect{X: x + r.x, Y: top + l.LineHeight/2 - side/2, W: side, H: side}, s)
+			} else {
+				d.FillText(r.text, float32(x+r.x), float32(r.y), r.font)
+			}
 			if r.underlined {
 				// A fifteenth of the size thick and a tenth of it below the baseline.
 				d.FillRect(float32(x+r.x), float32(r.y+float64(r.font.Size)/10), float32(r.w), float32(max(1, float64(r.font.Size)/15)))

@@ -3,6 +3,9 @@ package diagram
 
 import (
 	"errors"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/firede/limu"
@@ -27,6 +30,8 @@ type View struct {
 	Theme *Theme
 	// ThemeFunc follows the colors it reads. Returning nil keeps the appearance's defaults. Theme and ThemeFunc are mutually exclusive.
 	ThemeFunc func() *Theme
+	// Icons supplies SVG documents by the names used in the source, such as "fa:fa-car". Missing or nil entries leave icons out. Render snapshots the map; SVGs may be shared with core.Icon.
+	Icons map[string]*core.SVG
 	// Label is what assistive technology reads in place of the diagram's title and description.
 	Label     string
 	Class     string
@@ -101,9 +106,10 @@ type layoutKey struct {
 	source string
 	size   float64
 	width  float64
+	icons  string
 }
 
-// layouts keeps diagrams laid out by source, font size and available width, so a diagram a list shows again, or one each copy of a chat shows, is laid out once at each width. A layout measures with the platform's text engine, which every diagram of the process shares.
+// layouts keeps diagrams laid out by source, font size, available width and available icons, so a diagram a list shows again, or one each copy of a chat shows, is laid out once at each width. A layout measures with the platform's text engine, which every diagram of the process shares.
 var layouts = struct {
 	sync.Mutex
 	m map[layoutKey]laidOut
@@ -112,9 +118,9 @@ var layouts = struct {
 // maxLayouts is how many layouts layouts keeps before it lets them all go.
 const maxLayouts = 256
 
-// lay parses and lays out source at size within width, measuring labels with m; zero width leaves it unbounded.
-func lay(source string, size, width float64, m *measurer) laidOut {
-	key := layoutKey{source: source, size: size, width: width}
+// lay parses and lays out source at size within width, measuring labels with m and reserving room for the icons available; zero width leaves it unbounded.
+func lay(source string, size, width float64, m *measurer, icons map[string]*core.SVG, iconKey string) laidOut {
+	key := layoutKey{source: source, size: size, width: width, icons: iconKey}
 	layouts.Lock()
 	l, ok := layouts.m[key]
 	layouts.Unlock()
@@ -123,7 +129,11 @@ func lay(source string, size, width float64, m *measurer) laidOut {
 	}
 	d, err := limu.Parse(source, ldiagram.Options{})
 	if err == nil {
-		l.scene, err = d.Layout(&layout.Options{Measurer: m, FontSize: size, MaxWidth: width})
+		l.scene, err = d.Layout(&layout.Options{
+			Measurer: m, FontSize: size, MaxWidth: width,
+			Icons:        func(name string) bool { return icons[name] != nil },
+			ImageSchemes: []string{"http", "https", "asset", "file", "blob"},
+		})
 	}
 	l.err = err
 	layouts.Lock()
@@ -149,6 +159,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 		size = defaultFontSize
 	}
 	m := newMeasurer(cx)
+	icons, iconKey := snapshotIcons(v.Icons)
 	env := cx.Env()
 	width := core.NewSignal(cx, core.Points(0))
 	viewport := diagramlayout.Width.Use(cx)
@@ -164,7 +175,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 		if src == "" {
 			return laidOut{err: errEmpty}
 		}
-		return lay(src, float64(size)*float64(env.FontScale()), float64(width), m)
+		return lay(src, float64(size)*float64(env.FontScale()), float64(width), m, icons, iconKey)
 	}
 	equal := func(a, b laidOut) bool { return a.scene == b.scene && a.err == b.err }
 	natural := core.NewMemoFunc(cx, func() laidOut { return layoutAt(0) }, equal)
@@ -187,6 +198,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 		}
 		return layoutAt(max(0, w))
 	}, equal)
+	images := pictureSizes(cx, func() *scene.Scene { return laid.Get().scene })
 	failed := core.NewMemo(cx, func() bool { return natural.Get().err != nil || laid.Get().err != nil })
 	msgs := func() locales.Messages { return locales.For(cx) }
 	return core.Show{
@@ -236,7 +248,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 					if v.ThemeFunc != nil {
 						theme = v.ThemeFunc()
 					}
-					paint(d, sc, theme.look(env.Dark()), m)
+					paint(d, sc, theme.look(env.Dark()), m, icons, images())
 				},
 			}
 		},
@@ -278,4 +290,24 @@ func defaultTheme(dark bool) *style.Theme {
 		Radius:      4,
 		StrokeWidth: 1,
 	}
+}
+
+// snapshotIcons keeps an app's map out of cached layouts. Only the available names affect label geometry; documents are drawn from this view, never retained by the layout cache.
+func snapshotIcons(in map[string]*core.SVG) (map[string]*core.SVG, string) {
+	out := make(map[string]*core.SVG, len(in))
+	names := make([]string, 0, len(in))
+	for name, svg := range in {
+		if svg != nil {
+			out[name] = svg
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	var key strings.Builder
+	for _, name := range names {
+		key.WriteString(strconv.Itoa(len(name)))
+		key.WriteByte(':')
+		key.WriteString(name)
+	}
+	return out, key.String()
 }

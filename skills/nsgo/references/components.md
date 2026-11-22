@@ -80,3 +80,5 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 Formulas also render on watchOS. Their font loader retains its own parsed font and byte copy; simulator memory readings do not establish a physical watch's available headroom. Measure the app on its target watch before budgeting memory ([text](https://nsgo.dev/docs/text.md)).
 
 Terminal path links use the shell’s OSC 7 directory, or `terminal.Options.Dir` for a local shell before its first directory report. Quote paths with spaces; modifier-click opens existing local files/folders through `Scope.OpenFile`, and URL links use `Scope.OpenURL`. Remote authorities are not local paths. [Components](https://nsgo.dev/docs/ui.md)
+
+Mermaid diagrams use `diagram.View.Icons` to map names such as `"fa:fa-car"` to `*core.SVG` documents. Image nodes share the canvas image loader (HTTP(S), files and `asset:`); `constraint: "on"` preserves their proportions. A custom `RenderDiagram` callback can return a `diagram.View` with the app's icon map ([text](https://nsgo.dev/docs/text.md)).
