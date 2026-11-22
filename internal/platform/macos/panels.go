@@ -9,8 +9,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/objcblock"
 )
 
-// panelWindow returns the surface's window while a sheet of it can be
-// seen. Occlusion by another window alone does not detach a sheet.
+// panelWindow returns the surface's window while a sheet of it can be seen. Occlusion by another window alone does not detach a sheet.
 func (s *surface) panelWindow() objc.ID {
 	w := s.window
 	if s.closed || w == 0 || s.kind == driver.SurfaceTrayIcon ||
@@ -28,8 +27,7 @@ func (s *surface) panelWindow() objc.ID {
 	return 0
 }
 
-// beginFilePanel presents a picker or save dialog without tying it to a
-// window the user cannot see. Both AppKit APIs copy the completion block.
+// beginFilePanel presents a picker or save dialog without tying it to a window the user cannot see. Both AppKit APIs copy the completion block.
 func (s *surface) beginFilePanel(panel objc.ID, answer func(int)) {
 	if s.filePanels == nil {
 		s.filePanels = map[objc.ID]struct{}{}
@@ -53,8 +51,7 @@ func (s *surface) beginFilePanel(panel objc.ID, answer func(int)) {
 	}
 }
 
-// A standalone NSAlert owns a nested modal loop. Queue subsequent alerts
-// until that loop returns, so another surface cannot nest its modal alert.
+// A standalone NSAlert owns a nested modal loop. Queue subsequent alerts until that loop returns, so another surface cannot nest its modal alert.
 var standaloneAlerts struct {
 	running bool
 	pending []func()
@@ -66,9 +63,7 @@ func queueStandaloneAlert(show func()) {
 		return
 	}
 	standaloneAlerts.running = true
-	// A main-dispatch-queue block cannot drain that same serial queue in
-	// runModal. The run loop's own block leaves engine mounts and test-host
-	// calls free to execute while the alert waits for its answer.
+	// A main-dispatch-queue block cannot drain that same serial queue in runModal. The run loop's own block leaves engine mounts and test-host calls free to execute while the alert waits for its answer.
 	block := objcblock.New(func(_ objc.Block) {
 		defer func() { standaloneAlerts.running = false }()
 		for len(standaloneAlerts.pending) > 0 {
@@ -85,8 +80,7 @@ func queueStandaloneAlert(show func()) {
 	block.Release()
 }
 
-// closeDialogs cancels only this surface's dialogs, including a standalone
-// alert's modal loop; queued alerts observe closed before showing.
+// closeDialogs cancels only this surface's dialogs, including a standalone alert's modal loop; queued alerts observe closed before showing.
 func (s *surface) closeDialogs() {
 	for panel := range s.filePanels {
 		panel.Send(sel("cancel:"), objc.ID(0))

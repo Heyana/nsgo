@@ -229,8 +229,7 @@ func (s *surface) share(r driver.ShareRequest, id uint32) {
 	s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id, Finished: true})
 }
 
-// pickImages shows an open panel for the
-// images r asks for, then prepares the ones chosen off the main thread.
+// pickImages shows an open panel for the images r asks for, then prepares the ones chosen off the main thread.
 func (s *surface) pickImages(r driver.PickRequest, id uint32) {
 	if s.test != nil && s.test.options.PickImages != nil {
 		s.test.options.PickImages(r, func(files []driver.PickedFile) {
@@ -277,8 +276,7 @@ func (s *surface) pickImages(r driver.PickRequest, id uint32) {
 	})
 }
 
-// pickFiles shows an open panel for the files
-// r offers and answers with their paths.
+// pickFiles shows an open panel for the files r offers and answers with their paths.
 func (s *surface) pickFiles(r driver.FilesRequest, id uint32) {
 	panel := objc.ID(apple.Class("NSOpenPanel")).Send(sel("openPanel"))
 	panel.Send(sel("setCanChooseFiles:"), true)
@@ -299,8 +297,7 @@ func (s *surface) pickFiles(r driver.FilesRequest, id uint32) {
 	})
 }
 
-// pickDirectories shows an open panel for
-// folders and answers with their paths.
+// pickDirectories shows an open panel for folders and answers with their paths.
 func (s *surface) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 	panel := objc.ID(apple.Class("NSOpenPanel")).Send(sel("openPanel"))
 	panel.Send(sel("setCanChooseFiles:"), false)
@@ -354,8 +351,7 @@ func savePanel(r driver.SaveRequest) objc.ID {
 	return panel
 }
 
-// saveFile shows a save panel for the file r
-// suggests, then saves it where the user chose off the main thread.
+// saveFile shows a save panel for the file r suggests, then saves it where the user chose off the main thread.
 func (s *surface) saveFile(r driver.SaveRequest, id uint32) {
 	panel := savePanel(r)
 	panel.Send(sel("retain"))

@@ -1,13 +1,6 @@
 //go:build darwin && !ios
 
-// Package macos is NSGo's AppKit backend: one flipped, layer-backed NSView
-// per node, styled through its CALayer, with text the engine laid out
-// with CoreText drawn on the main thread and images decoded off it, and
-// an optional NSVisualEffectView material behind the window's content.
-// Alerts are sheets of visible windows or standalone modal dialogs;
-// Escape, Cmd-[, Option-Left and the
-// mouse's back button go back. It calls AppKit through purego, so it
-// builds without cgo.
+// Package macos is NSGo's AppKit backend: one flipped, layer-backed NSView per node, styled through its CALayer, with text the engine laid out with CoreText drawn on the main thread and images decoded off it, and an optional NSVisualEffectView material behind the window's content. Alerts are sheets of visible windows or standalone modal dialogs; Escape, Cmd-[, Option-Left and the mouse's back button go back. It calls AppKit through purego, so it builds without cgo.
 package macos
 
 import (
@@ -369,8 +362,7 @@ type surface struct {
 	// The performance monitor and the panel that shows it.
 	perf *engine.PerfMonitor
 	hud  *hud
-	// alerts are pending and shown alerts, canceled on close and answerable
-	// by a test host or nsgo dev's automation.
+	// alerts are pending and shown alerts, canceled on close and answerable by a test host or nsgo dev's automation.
 	alerts map[uint32]shownAlert
 	// filePanels are the surface's native open/save panels, canceled on close.
 	filePanels map[objc.ID]struct{}
@@ -1960,8 +1952,7 @@ func (s *surface) pressOutside(event objc.ID) {
 	}
 }
 
-// alert shows a as a sheet of a visible window, else on its own. The
-// Cancel action answers Escape; its answer goes to the engine as EventAlert.
+// alert shows a as a sheet of a visible window, else on its own. The Cancel action answers Escape; its answer goes to the engine as EventAlert.
 func (s *surface) alert(a *driver.AlertConfig) {
 	alert := objc.ID(apple.Class("NSAlert")).Send(selNew)
 	alert.Send(sel("setMessageText:"), apple.NSString(a.Title))

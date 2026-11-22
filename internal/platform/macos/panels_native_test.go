@@ -35,9 +35,7 @@ func TestPanelsRemainVisibleWithoutAnOnscreenOwnerNative(t *testing.T) {
 		nsApp().Send(sel("setActivationPolicy:"), policyRegular)
 		nsApp().Send(sel("finishLaunching"))
 		states := []string{"visible", "hidden", "minimized", "offscreen", "windowless"}
-		// A raw test binary launched over SSH cannot necessarily activate or
-		// hide itself. Exercise application hiding in the registered .app
-		// fixture; every window visibility state runs in ordinary tests too.
+		// A raw test binary launched over SSH cannot necessarily activate or hide itself. Exercise application hiding in the registered .app fixture; every window visibility state runs in ordinary tests too.
 		if os.Getenv("NSGO_TEST_PANELS_APP_HIDDEN") == "1" {
 			states = append(states, "app-hidden")
 		} else {
