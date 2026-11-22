@@ -31,9 +31,7 @@ func testLinuxMenuPNG(t *testing.T, w, h int, c color.NRGBA) []byte {
 	return buf.Bytes()
 }
 
-// A serialized GMenu icon is insufficient: GTK normally hides it beside text.
-// Open real native menus and check the image and label are mapped and allocated,
-// while native model buttons still provide focus, check/radio state and actions.
+// A serialized GMenu icon is insufficient: GTK normally hides it beside text. Open real native menus and check the image and label are mapped and allocated, while native model buttons still provide focus, check/radio state and actions.
 func TestMenuIconsAreVisibleInNativeRows(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")

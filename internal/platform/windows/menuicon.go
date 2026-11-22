@@ -47,8 +47,7 @@ func (w *window) menuIconSize() int {
 	return max(16, min(64, int(math.Round(16*scale))))
 }
 
-// menuIconPixels decodes, fits and optionally tints icon into a size×size
-// premultiplied BGRA pixel buffer, or returns nil when empty or invalid.
+// menuIconPixels decodes, fits and optionally tints icon into a size×size premultiplied BGRA pixel buffer, or returns nil when empty or invalid.
 func menuIconPixels(icon driver.MenuIcon, size int, dark bool) []byte {
 	if icon.Empty() || size <= 0 {
 		return nil
@@ -119,9 +118,7 @@ func decodeWindowsMenuIcon(icon driver.MenuIcon, size int) *imagedecode.Image {
 	return img
 }
 
-// menuIconBitmap creates a 32-bit premultiplied BGRA HBITMAP for icon at w's
-// DPI. The caller owns the returned HBITMAP and must free it with DeleteObject
-// after the menu that references it is destroyed.
+// menuIconBitmap creates a 32-bit premultiplied BGRA HBITMAP for icon at w's DPI. The caller owns the returned HBITMAP and must free it with DeleteObject after the menu that references it is destroyed.
 func (w *window) menuIconBitmap(icon driver.MenuIcon) uintptr {
 	size := w.menuIconSize()
 	dark := w != nil && w.shownDark()

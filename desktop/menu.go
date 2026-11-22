@@ -8,8 +8,7 @@ type (
 	// menu's top-level items are the menu bar's menus; on macOS the first
 	// is the app menu.
 	MenuItem = core.MenuItem
-	// MenuIcon is an icon shown beside a native menu item on macOS, Windows
-	// and Linux.
+	// MenuIcon is an icon shown beside a native menu item on macOS, Windows and Linux.
 	MenuIcon = core.MenuIcon
 	// MenuRole is a standard menu item the platform carries out, labelling
 	// it and giving it its usual shortcut when the item has none of its own.

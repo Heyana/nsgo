@@ -10,9 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// RasterizeSVG draws a parsed *driver.SVG into a width×height premultiplied
-// bitmap in layout (BGRA or RGBA), painting currentColor with color (black
-// when zero), fitted and centered while preserving aspect ratio.
+// RasterizeSVG draws a parsed *driver.SVG into a width×height premultiplied bitmap in layout (BGRA or RGBA), painting currentColor with color (black when zero), fitted and centered while preserving aspect ratio.
 func RasterizeSVG(s *driver.SVG, width, height int, color driver.Color, layout Layout) (*Image, error) {
 	if s == nil || width <= 0 || height <= 0 || width > MaxSide || height > MaxSide || width*height > MaxPixels {
 		return nil, errors.New("imagedecode: invalid SVG raster size")
@@ -36,9 +34,7 @@ func RasterizeSVG(s *driver.SVG, width, height int, color driver.Color, layout L
 	}, nil
 }
 
-// FitPremultiplied fits a premultiplied 4-byte-per-pixel image (RGBA or BGRA)
-// into a dstW×dstH buffer, centered with its aspect ratio preserved. Area
-// averaging is used when downscaling and bilinear interpolation when upscaling.
+// FitPremultiplied fits a premultiplied 4-byte-per-pixel image (RGBA or BGRA) into a dstW×dstH buffer, centered with its aspect ratio preserved. Area averaging is used when downscaling and bilinear interpolation when upscaling.
 func FitPremultiplied(pix []byte, srcW, srcH, dstW, dstH int) []byte {
 	if srcW <= 0 || srcH <= 0 || dstW <= 0 || dstH <= 0 || len(pix) < srcW*srcH*4 {
 		return nil
@@ -147,8 +143,7 @@ func clampByte(v float64) byte {
 	return byte(n)
 }
 
-// TintPremultiplied replaces the RGB channels of a premultiplied bitmap with
-// color scaled by each pixel's alpha, preserving alpha.
+// TintPremultiplied replaces the RGB channels of a premultiplied bitmap with color scaled by each pixel's alpha, preserving alpha.
 func TintPremultiplied(pix []byte, layout Layout, color driver.Color) {
 	r := uint32((color >> 24) & 0xff)
 	g := uint32((color >> 16) & 0xff)

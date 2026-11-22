@@ -24,8 +24,7 @@ type menuIconEntry struct {
 	image objc.ID // retained NSImage, or 0 on decode failure
 }
 
-// menuIconCache keeps decoded menu NSImages on the main thread, bounded by
-// maxMenuIcons, releasing evicted images so menu rebuilds never leak.
+// menuIconCache keeps decoded menu NSImages on the main thread, bounded by maxMenuIcons, releasing evicted images so menu rebuilds never leak.
 var menuIconCache = struct {
 	order   *list.List
 	entries map[string]*list.Element
@@ -75,8 +74,7 @@ func clearMenuIconCache() {
 	clear(menuIconCache.entries)
 }
 
-// applyMenuIcon attaches icon to an NSMenuItem when icon is non-empty and
-// decodes cleanly.
+// applyMenuIcon attaches icon to an NSMenuItem when icon is non-empty and decodes cleanly.
 func applyMenuIcon(it objc.ID, icon driver.MenuIcon) {
 	if img := menuIconNSImage(icon); img != 0 {
 		it.Send(sel("setImage:"), img)
@@ -87,9 +85,7 @@ func applyMenuIcon(it objc.ID, icon driver.MenuIcon) {
 	}
 }
 
-// menuIconNSImage returns a cached 16×16pt NSImage for icon, or 0 when empty
-// or invalid. The cache retains ownership; callers attach it with setImage:,
-// which takes its own retain.
+// menuIconNSImage returns a cached 16×16pt NSImage for icon, or 0 when empty or invalid. The cache retains ownership; callers attach it with setImage:, which takes its own retain.
 func menuIconNSImage(icon driver.MenuIcon) objc.ID {
 	if icon.Empty() {
 		return 0

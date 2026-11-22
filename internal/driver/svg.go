@@ -162,8 +162,7 @@ func (s *SVG) drawAt(d *Drawing, x, y, w, h float32, color Color) {
 	d.Ops = append(d.Ops, DrawOp{Kind: DrawRestore})
 }
 
-// Monochrome reports whether every painted operation in s uses currentColor
-// (Color 0) with no gradients, as icon packs such as lucide do.
+// Monochrome reports whether every painted operation in s uses currentColor (Color 0) with no gradients, as icon packs such as lucide do.
 func (s *SVG) Monochrome() bool {
 	if s == nil {
 		return false

@@ -30,8 +30,7 @@ func (w *window) menuIconSize() int {
 	return max(16, min(64, int(math.Round(16*scale))))
 }
 
-// attachMenuIcon attaches icon to a GMenuItem via a GBytesIcon (which
-// implements g_icon_serialize so GMenuModel stores it for GtkPopoverMenu).
+// attachMenuIcon attaches icon to a GMenuItem via a GBytesIcon (which implements g_icon_serialize so GMenuModel stores it for GtkPopoverMenu).
 func (w *window) attachMenuIcon(item uintptr, icon driver.MenuIcon) {
 	if item == 0 || icon.Empty() {
 		return
@@ -53,11 +52,7 @@ func (w *window) attachMenuIcon(item uintptr, icon driver.MenuIcon) {
 	gObjectUnref(gicon)
 }
 
-// showMenuIcons keeps GTK's native menu rows, including their labels, actions,
-// check/radio indicators and accessibility. GtkModelButton normally hides its
-// image alongside text; show the GBytesIcon images NSGo supplied, using public
-// widget/image APIs without depending on the private row type or child order.
-// Menus and their submenus are constructed before this walk and rebuilt together.
+// showMenuIcons keeps GTK's native menu rows, including their labels, actions, check/radio indicators and accessibility. GtkModelButton normally hides its image alongside text; show the GBytesIcon images NSGo supplied, using public widget/image APIs without depending on the private row type or child order. Menus and their submenus are constructed before this walk and rebuilt together.
 func showMenuIcons(widget uintptr) {
 	if widget == 0 {
 		return
@@ -78,15 +73,13 @@ func showMenuIcons(widget uintptr) {
 }
 
 func menuIconVisibleCallback(image, spec, data uintptr) {
-	// GTK can reapply its visibility policy when updating the label or shortcut.
-	// Setting an already visible widget does not emit another notification.
+	// GTK can reapply its visibility policy when updating the label or shortcut. Setting an already visible widget does not emit another notification.
 	if gtkWidgetGetVisible(image) == 0 {
 		gtkWidgetSetVisible(image, 1)
 	}
 }
 
-// menuIconPNG decodes, fits, optionally tints and encodes icon as a size×size
-// PNG suitable for GBytesIcon and com.canonical.dbusmenu icon-data.
+// menuIconPNG decodes, fits, optionally tints and encodes icon as a size×size PNG suitable for GBytesIcon and com.canonical.dbusmenu icon-data.
 func menuIconPNG(icon driver.MenuIcon, size int, dark bool) []byte {
 	if icon.Empty() || size <= 0 {
 		return nil

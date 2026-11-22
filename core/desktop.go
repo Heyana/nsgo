@@ -172,8 +172,7 @@ func (cx *Scope) SetSkipTaskbar(on bool) {
 // desktop.MenuItem.
 type MenuItem struct {
 	Label string
-	// Icon is an optional icon shown beside the item in native menus on
-	// macOS, Windows and Linux.
+	// Icon is an optional icon shown beside the item in native menus on macOS, Windows and Linux.
 	Icon MenuIcon
 	// Shortcut is in OnKey's form, such as "mod+n".
 	Shortcut  string

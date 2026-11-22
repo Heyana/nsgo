@@ -39,8 +39,7 @@ var (
 	nativeMenuIconProbeClass objc.Class
 )
 
-// Render a real popup while AppKit is tracking it, rather than merely checking
-// that NSMenuItem retains an NSImage (which AppKit 27 can leave hidden).
+// Render a real popup while AppKit is tracking it, rather than merely checking that NSMenuItem retains an NSImage (which AppKit 27 can leave hidden).
 func TestMenuIconDrawsInNativePopup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a native menu")

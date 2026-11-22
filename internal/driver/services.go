@@ -699,14 +699,7 @@ func (r MenuRole) HoldsMenu() bool {
 	return r == MenuServices || r == MenuWindowMenu || r == MenuHelpMenu
 }
 
-// MenuIcon is an icon shown beside a native menu item on macOS, Windows
-// and Linux. Data holds encoded image bytes (PNG, JPEG, GIF, WebP or SVG),
-// as TrayConfig.Icon takes; Source holds any ImageSource (asset, file or
-// data URI, bytes or Pixels); SVG holds a parsed vector icon such as
-// lucide.Folder(). When more than one is set, SVG takes precedence over
-// Data, and Data over Source. Template draws a monochrome icon in the
-// menu's text color, adapting to light and dark appearance (and selection
-// on macOS); a monochrome SVG icon is treated as a template by default.
+// MenuIcon is an icon shown beside a native menu item on macOS, Windows and Linux. Data holds encoded image bytes (PNG, JPEG, GIF, WebP or SVG), as TrayConfig.Icon takes; Source holds any ImageSource (asset, file or data URI, bytes or Pixels); SVG holds a parsed vector icon such as lucide.Folder(). When more than one is set, SVG takes precedence over Data, and Data over Source. Template draws a monochrome icon in the menu's text color, adapting to light and dark appearance (and selection on macOS); a monochrome SVG icon is treated as a template by default.
 type MenuIcon struct {
 	// Data is encoded image bytes (PNG, JPEG, GIF, WebP or SVG).
 	Data []byte
@@ -723,8 +716,7 @@ func (m MenuIcon) Empty() bool {
 	return m.SVG == nil && len(m.Data) == 0 && m.Source.Empty()
 }
 
-// IsTemplate reports whether m should be tinted with the menu's text color:
-// Template is set, or SVG uses currentColor exclusively.
+// IsTemplate reports whether m should be tinted with the menu's text color: Template is set, or SVG uses currentColor exclusively.
 func (m MenuIcon) IsTemplate() bool {
 	return m.Template || (m.SVG != nil && m.SVG.Monochrome())
 }
@@ -751,8 +743,7 @@ func (m MenuIcon) Key() string {
 	}
 }
 
-// Clone returns a copy of m whose byte slices, pixel buffer and variant map
-// do not alias m's.
+// Clone returns a copy of m whose byte slices, pixel buffer and variant map do not alias m's.
 func (m MenuIcon) Clone() MenuIcon {
 	out := m
 	if len(m.Data) > 0 {

@@ -5,8 +5,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// MenuItem records an application, Dock or context menu item as the
-// test sees it, including the resolved label, icon and shortcut.
+// MenuItem records an application, Dock or context menu item as the test sees it, including the resolved label, icon and shortcut.
 type MenuItem struct {
 	Label     string
 	Icon      core.MenuIcon
