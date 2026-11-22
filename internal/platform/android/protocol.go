@@ -501,6 +501,12 @@ func readEnvironment(r *reader) driver.Environment {
 		env.LocaleSettings.MeasurementSystem = r.str()
 		env.LocaleSettings.TemperatureUnit = r.str()
 		env.LocaleSettings.Region = r.str()
+		// The second capability byte's bits are all taken too; a third follows the locale settings, at the end of the message, so a runtime built before it, which ends here, reads as having none of them. Its bits: none assigned yet.
+		var third byte
+		if len(r.buf) > 0 {
+			third = r.byte()
+		}
+		_ = third
 	}
 	return env
 }

@@ -1152,6 +1152,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             LocalePrefs.read(formatLocale, hostLocale != null ? null : locale,
                     android.text.format.DateFormat.is24HourFormat(getContext()),
                     measurementSystem(formatLocale)).write(d);
+            // The second capability byte's bits are taken too: a third ends the payload, where readEnvironment reads it only if a runtime wrote it. Its bits: none assigned yet.
+            int third = 0;
+            d.writeByte(third);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }

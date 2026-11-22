@@ -122,6 +122,28 @@ func TestReadEnvironmentLocaleSettings(t *testing.T) {
 		}
 	})
 
+	t.Run("third capability byte is read when the runtime writes it", func(t *testing.T) {
+		want := driver.LocaleSettings{FirstDayOfWeek: 1, HourCycle: "h23", MeasurementSystem: "metric", TemperatureUnit: "celsius", Region: "US"}
+		for _, third := range [][]byte{nil, {0}, {255}} {
+			var w writer
+			writeBaseEnvironment(&w, "en-US")
+			w.byte(1)
+			w.str("h23")
+			w.str("metric")
+			w.str("celsius")
+			w.str("US")
+			w.buf = append(w.buf, third...)
+			r := reader{w.buf}
+			env := readEnvironment(&r)
+			if len(r.buf) != 0 {
+				t.Errorf("third byte %v: %d bytes left unread", third, len(r.buf))
+			}
+			if env.LocaleSettings != want {
+				t.Errorf("third byte %v: LocaleSettings = %+v, want %+v", third, env.LocaleSettings, want)
+			}
+		}
+	})
+
 	t.Run("resize carries locale settings", func(t *testing.T) {
 		var w writer
 		w.floats(412, 915)
