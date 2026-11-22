@@ -94,12 +94,15 @@ func contextLinks(contexts objc.ID) []string {
 // takeConnectionLinks keeps the links a scene's connection options open it with, as a link of the app's scheme launches it.
 func takeConnectionLinks(options objc.ID) {
 	if options != 0 {
-		launchLinks = append(launchLinks, contextLinks(options.Send(sel("URLContexts")))...)
+		contexts := options.Send(sel("URLContexts"))
+		launchLinks = append(launchLinks, contextLinks(contexts)...)
+		importContextFiles(contexts)
 	}
 }
 
-// sceneOpenURLContexts is the scene delegate's scene:openURLContexts:, as a link of the app's scheme opens the running app.
+// sceneOpenURLContexts is the scene delegate's scene:openURLContexts:, for documents and links opened while the app runs.
 func sceneOpenURLContexts(_ objc.ID, _ objc.SEL, _, contexts objc.ID) {
+	importContextFiles(contexts)
 	links := contextLinks(contexts)
 	if len(links) == 0 {
 		return

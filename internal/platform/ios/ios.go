@@ -697,6 +697,7 @@ func (s *surface) reconnect(scene objc.ID) {
 	}
 	if runner.engine != nil {
 		runner.sendLaunchLinks()
+		runner.sendLaunchFiles()
 	}
 	if s.perf != nil || s.frameWanted.Load() || s.animator.Running() || len(s.motions) > 0 {
 		s.startTicking()
@@ -755,6 +756,7 @@ func (s *surface) startEngine(test *testOpen) {
 	apple.SetNotificationPress(func(id string) { e.Dispatch(driver.Event{Kind: driver.EventNotificationPress, Text: id}) })
 	apple.SetPurchaseUpdates(e.Dispatch)
 	s.sendLaunchLinks()
+	s.sendLaunchFiles()
 	s.observe()
 	// Scenes that connected before the engine started, as iPadOS restores a test host's, open their trees now.
 	for _, o := range scenes {

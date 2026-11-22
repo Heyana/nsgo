@@ -100,9 +100,10 @@ func RequestQuit(cx *core.Scope) {
 
 // OnOpenFiles runs fn with the paths of files the system asks the app to
 // open: the file types nsgo.yaml's file_types declares, opened from the
-// Finder, the Dock or Open With, and on Windows and Linux the files named
-// on the command line. Files the app launched to open wait for the first
-// handler.
+// Finder, the Dock or Open With, on Windows and Linux the files named
+// on the command line, and on iOS temporary copies imported through the
+// scene delegate. Move iOS imports into cx.DataDir() to preserve them. Files the
+// app launched to open wait for the first handler.
 func OnOpenFiles(cx *core.Scope, fn func(paths []string)) { cx.OnOpenFiles(fn) }
 
 // OnOpenLinks runs fn with links of the app's own URL schemes, which nsgo.yaml's url_schemes declares and the macOS, Windows and Linux packages register, that the system asks the app to open: clicked in a browser or another app, or opened with open, start or xdg-open. They reach the running app, on Windows and Linux through its one-instance claim, which brings its window to the front if it shows and does not run OnReopen; the link the app launched to open waits for the first handler. On Windows and Linux any link the app is started with arrives, as a development build registers no scheme, so check the scheme; on Windows a launch that names a link opens no files with it, as the shell does not escape a link's quotes. A link carries whatever the page that made it chose, so treat its contents as untrusted input and confirm with the user before acting on it.

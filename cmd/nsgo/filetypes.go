@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// fileType is a kind of document the app opens, which nsgo.yaml's file_types lists and desktop packages register with the system. Opening one reaches desktop.OnOpenFiles.
+// fileType is a kind of document the app opens, which nsgo.yaml's file_types lists and desktop and iOS packages register with the system. Opening one reaches desktop.OnOpenFiles.
 type fileType struct {
 	// Name is what the Finder, Explorer and Linux file managers call such a file.
 	Name       string   `yaml:"name"`
@@ -19,7 +19,7 @@ type fileType struct {
 	// default. The app declares, and owns, a type under its own ID; any
 	// other it imports, ranking as an alternative to its owner's app.
 	ID string `yaml:"id"`
-	// Icon is an .icns or a square PNG for its files, relative to
+	// Icon is an .icns or a square PNG for its macOS files, relative to
 	// nsgo.yaml; without it, the Finder draws the app's icon on a page.
 	Icon string `yaml:"icon"`
 	// Role is editor, the default, or viewer.
@@ -133,7 +133,19 @@ func (p *project) writeFileTypeIcons(resources string) error {
 
 // fileTypesPlist is the Info.plist entries that register the file types:
 // the documents the app opens, and the types it declares or imports.
-func (p *project) fileTypesPlist() string {
+func (p *project) fileTypesPlist() string { return p.documentTypesPlist(true) }
+
+// iosFileTypesPlist registers documents for a full iOS app. The tool
+// leaves these declarations out of Apple TV and App Clip bundles.
+// Document icons currently use the app icon on iOS; .icns keys are macOS's.
+func (p *project) iosFileTypesPlist(sys *appleOS) string {
+	if sys != iOS || p.clipParent != "" {
+		return ""
+	}
+	return p.documentTypesPlist(false)
+}
+
+func (p *project) documentTypesPlist(macIcons bool) string {
 	if len(p.FileTypes) == 0 {
 		return ""
 	}
@@ -152,7 +164,7 @@ func (p *project) fileTypesPlist() string {
 		fmt.Fprintf(&docs, "\t\t\t<key>CFBundleTypeRole</key><string>%s</string>\n", role)
 		fmt.Fprintf(&docs, "\t\t\t<key>LSHandlerRank</key><string>%s</string>\n", rank)
 		fmt.Fprintf(&docs, "\t\t\t<key>LSItemContentTypes</key><array><string>%s</string></array>\n", xmlText(f.ID))
-		if name := f.iconName(); name != "" {
+		if name := f.iconName(); macIcons && name != "" {
 			fmt.Fprintf(&docs, "\t\t\t<key>CFBundleTypeIconFile</key><string>%s</string>\n", xmlText(name))
 		}
 		docs.WriteString("\t\t</dict>\n")
@@ -165,7 +177,7 @@ func (p *project) fileTypesPlist() string {
 		fmt.Fprintf(decls, "\t\t\t<key>UTTypeIdentifier</key><string>%s</string>\n", xmlText(f.ID))
 		fmt.Fprintf(decls, "\t\t\t<key>UTTypeDescription</key><string>%s</string>\n", xmlText(f.Name))
 		fmt.Fprintf(decls, "\t\t\t<key>UTTypeConformsTo</key>%s\n", plistStrings(conforms))
-		if name := f.iconName(); name != "" {
+		if name := f.iconName(); macIcons && name != "" {
 			fmt.Fprintf(decls, "\t\t\t<key>UTTypeIconFile</key><string>%s</string>\n", xmlText(name))
 		}
 		fmt.Fprintf(decls, "\t\t\t<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key>%s",

@@ -1,0 +1,11 @@
+name: NSGoDocuments
+id: dev.nsgo.documents1385
+version: 0.1.0
+file_types:
+  - name: NSGo Test Document
+    extensions: [nsgo1385doc]
+    conforms: [public.data]
+url_schemes: [nsgo1385documents]
+apple:
+  info:
+    CFBundleDisplayName: NSGo Documents

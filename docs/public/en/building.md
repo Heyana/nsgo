@@ -366,14 +366,14 @@ Stores reject apps that update themselves, so upload a `store` build, never a di
 
 ## File types
 
-`file_types` registers the documents an app opens: from the Finder, the Dock and Open With on macOS, from Explorer's Open With through the NSIS installer or the MSIX on Windows, and through the desktop entry of the Debian, Arch, AppImage and Flatpak packages on Linux:
+`file_types` registers the documents an app opens: from the Finder, the Dock and Open With on macOS, from Explorer's Open With through the NSIS installer or the MSIX on Windows, through the desktop entry of the Debian, Arch, AppImage and Flatpak packages on Linux, and through Open In on iOS:
 
 ```yaml
 file_types:
   - name: Flow File
     extensions: [flow]
     # id: dev.example.hello.flow   # <id>.<first extension> by default; another's ID imports its type
-    # icon: assets/Flow.icns       # or a square PNG
+    # icon: assets/Flow.icns       # macOS document icon; or a square PNG
     # role: viewer                 # editor by default
     # conforms: [public.json]      # public.data by default
     # mime: [application/json]     # existing MIME types; otherwise inferred on Linux
@@ -381,11 +381,13 @@ file_types:
 
 The Windows installer adds the app to Open With without replacing the user's default, and removes its registrations on upgrade and uninstall. Linux names the MIME types of common extensions from a fixed table, and gives an unknown extension of the app's own type `application/x-<type id>` with a shared MIME-info definition. `mime` names existing types instead; an imported type whose extension the table lacks needs it. Running an AppImage registers nothing: a desktop integration tool installs its entry and definitions.
 
-The app hears the files with `desktop.OnOpenFiles`, including a later Windows or Linux launch while it is running. Files that launched the app wait for the first handler:
+The app hears the files with `desktop.OnOpenFiles`, including a later Windows or Linux launch while it is running and iOS scene document opens. Files that launched the app wait for the first handler:
 
 ```go
 desktop.OnOpenFiles(cx, func(paths []string) { open(paths[0]) })
 ```
+
+On iOS, regular documents are imported into app-owned temporary files with their original names. File-provider reads are coordinated off the UI thread, and their security scopes end before the handler runs. Move an import into `cx.DataDir()` to keep it; edits affect the copy. iOS uses the app's document icon; `icon` applies on macOS. App Clips and tvOS packages register no document types. File opens stay separate from `OnOpenLinks`.
 
 `desktop.AddRecentFile(cx, path)` lists a document the user opened in the Dock menu and File › Open Recent, whose choice reaches the same handler, and `desktop.ClearRecentFiles` forgets them.
 

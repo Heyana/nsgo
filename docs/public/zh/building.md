@@ -344,14 +344,14 @@ updates:
 
 ## 文件类型
 
-`file_types` 登记应用能打开的文档：macOS 上从访达、程序坞和“打开方式”打开，Windows 上通过 NSIS 安装程序或 MSIX 出现在资源管理器的“打开方式”里，Linux 上通过 Debian、Arch、AppImage 和 Flatpak 包的桌面项登记：
+`file_types` 登记应用能打开的文档：macOS 上从访达、程序坞和“打开方式”打开，Windows 上通过 NSIS 安装程序或 MSIX 出现在资源管理器的“打开方式”里，Linux 上通过 Debian、Arch、AppImage 和 Flatpak 包的桌面项登记，iOS 上通过“打开方式”导入：
 
 ```yaml
 file_types:
   - name: Flow File
     extensions: [flow]
     # id: dev.example.hello.flow   # 默认为 <id>.<第一个扩展名>；用别人的 ID 则导入该类型
-    # icon: assets/Flow.icns       # 或正方形 PNG
+    # icon: assets/Flow.icns       # macOS 文档图标；也可用正方形 PNG
     # role: viewer                 # 默认为 editor
     # conforms: [public.json]      # 默认为 public.data
     # mime: [application/json]     # 已有的 MIME 类型；省略时 Linux 自行推断
@@ -359,11 +359,13 @@ file_types:
 
 Windows 安装程序把应用加进“打开方式”，不替换用户的默认程序，并在升级和卸载时移除自己的登记。Linux 用固定的表查出常见扩展名的 MIME 类型；应用自有类型中表里没有的扩展名得到 `application/x-<类型 ID>` 和一份共享 MIME-info 定义。`mime` 改用已有的类型；导入的类型若有表里没有的扩展名，必须写它。只运行 AppImage 不会登记任何东西，要由桌面集成工具安装它的桌面项和定义。
 
-应用用 `desktop.OnOpenFiles` 接收这些文件，在 Windows 和 Linux 上也包括应用运行时再次启动所带的文件。启动应用时带来的文件会等到第一个处理函数注册：
+应用用 `desktop.OnOpenFiles` 接收这些文件，在 Windows 和 Linux 上也包括应用运行时再次启动所带的文件，在 iOS 上包括场景收到的文档。启动应用时带来的文件会等到第一个处理函数注册：
 
 ```go
 desktop.OnOpenFiles(cx, func(paths []string) { open(paths[0]) })
 ```
+
+iOS 把普通文档导入为应用自有的临时文件，保留原来的文件名。读取文件提供程序时会在 UI 线程之外协调访问，并在处理函数执行前结束安全作用域。要长期保留，请把导入文件移到 `cx.DataDir()`；编辑只影响副本。iOS 使用应用的文档图标，`icon` 只用于 macOS。App Clip 和 tvOS 包不登记文档类型。文件不会混入 `OnOpenLinks`。
 
 `desktop.AddRecentFile(cx, path)` 把用户打开过的文档列进 Dock 菜单和“文件 › 打开最近使用”，选中后同样交给这个处理函数；`desktop.ClearRecentFiles` 清除这些记录。
 

@@ -223,6 +223,9 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 	if schemes := p.iosURLSchemesPlist(sys); schemes != "" {
 		extra += "\n" + schemes
 	}
+	if documents := p.iosFileTypesPlist(sys); documents != "" {
+		extra += "\n" + documents
+	}
 	if err := writePlist(filepath.Join(app, "Info.plist"), p, sys.plist, extra); err != nil {
 		return "", err
 	}

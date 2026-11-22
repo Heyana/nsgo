@@ -175,8 +175,8 @@ type project struct {
 		// Privacy adds the app's required-reason APIs, tracking settings and collected data to PrivacyInfo.xcprivacy.
 		Privacy privacySettings `yaml:"privacy"`
 	} `yaml:"apple"`
-	// FileTypes are the kinds of documents the app opens, which its macOS
-	// package registers (filetypes.go).
+	// FileTypes are the kinds of documents the app opens, which desktop
+	// and full iOS packages register (filetypes.go).
 	FileTypes []fileType `yaml:"file_types"`
 	// URLSchemes are the schemes of the app's own links, which its desktop, iOS and Android packages register.
 	URLSchemes []string `yaml:"url_schemes"`

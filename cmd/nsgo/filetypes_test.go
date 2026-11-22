@@ -84,3 +84,40 @@ func TestFileTypesAreChecked(t *testing.T) {
 func yamlItems(s string) string {
 	return "  " + strings.ReplaceAll(s, "\n", "\n  ") + "\n"
 }
+
+func TestFileTypesRegisterInTheIOSPlist(t *testing.T) {
+	p := &project{Name: "Documents", ID: "dev.nsgo.documents", FileTypes: []fileType{
+		{Name: "Document & Notes", ID: "dev.nsgo.documents.note", Extensions: []string{"note"}, MIME: []string{"application/x-nsgo-note"}, Icon: "note.icns"},
+		{Name: "Plain text", ID: "public.plain-text", Extensions: []string{"txt"}, Role: "viewer", Conforms: []string{"public.text"}},
+	}}
+	extra := p.iosFileTypesPlist(iOS)
+	for _, want := range []string{
+		"<key>CFBundleDocumentTypes</key>",
+		"<key>UTExportedTypeDeclarations</key>",
+		"<key>UTImportedTypeDeclarations</key>",
+		"<key>LSItemContentTypes</key><array><string>dev.nsgo.documents.note</string></array>",
+		"<key>CFBundleTypeName</key><string>Document &amp; Notes</string>",
+		"<key>CFBundleTypeRole</key><string>Viewer</string>",
+		"<key>public.mime-type</key><array><string>application/x-nsgo-note</string></array>",
+	} {
+		if !strings.Contains(extra, want) {
+			t.Errorf("iOS document declaration lacks %q", want)
+		}
+	}
+	if strings.Contains(extra, ".icns") || strings.Contains(extra, "CFBundleTypeIconFile") || strings.Contains(extra, "UTTypeIconFile") {
+		t.Fatal("the iOS bundle declared macOS document icons")
+	}
+	if !strings.Contains(p.fileTypesPlist(), "dev.nsgo.documents.note.icns") {
+		t.Fatal("the macOS document icon was lost")
+	}
+	if got := p.iosFileTypesPlist(tvOS); got != "" {
+		t.Fatalf("an Apple TV declared documents: %s", got)
+	}
+	p.clipParent = "dev.nsgo.parent"
+	if got := p.iosFileTypesPlist(iOS); got != "" {
+		t.Fatalf("an App Clip declared documents: %s", got)
+	}
+	if got := (&project{}).iosFileTypesPlist(iOS); got != "" {
+		t.Fatalf("an app without file types declared documents: %s", got)
+	}
+}
