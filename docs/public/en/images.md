@@ -46,9 +46,9 @@ core.Image{ResizeMode: core.Contain, SourceFunc: func() core.ImageSource {
 }}
 ```
 
-NSGo copies the pixels when the commit that carries a new `Version` runs, so the app may write the next frame from its next `RequestAnimationFrame` callback; a decoder on a goroutine of its own writes into a second buffer and posts the swap. The same `Version` is not drawn again. `cx.ImageSize` answers a pixel source at once with its buffer's size. A `core.Canvas` draws pixels with `DrawImage`, copied the same way, on every platform but HarmonyOS and mini programs. A `core.Shader`'s `Images` take pixels the same way, so a shader can filter a frame the app writes, such as an emulator's screen, on every platform that draws shaders.
+NSGo copies the pixels when the commit that carries a new `Version` runs, so the app may write the next frame from its next `RequestAnimationFrame` callback; a decoder on a goroutine of its own writes into a second buffer and posts the swap. The same `Version` is not drawn again. `cx.ImageSize` answers a pixel source at once with its buffer's size. A `core.Canvas` draws pixels with `DrawImage`, copied the same way, on every platform but HarmonyOS; mini programs require a WeChat 2D canvas. A `core.Shader`'s `Images` take pixels the same way, so a shader can filter a frame the app writes, such as an emulator's screen, on every platform that draws shaders.
 
-macOS, iOS, tvOS, watchOS, Android, Windows and Linux draw the pixels directly. The web shows an image view's pixels through a PNG made once per version, loaded as a new image, so the view is blank between versions until it loads; the web's canvases draw the pixels directly. HarmonyOS and mini programs do not show pixels yet.
+Apple platforms, Android, Windows, Linux and the web update pixel images directly, and WeChat mini programs use a 2D canvas. HarmonyOS does not show pixels yet.
 
 ## Resources and scales
 
@@ -61,7 +61,7 @@ core.Image{Source: core.ImageSource{
 }}
 ```
 
-`Placeholder` shows a source while the picture loads, and `FadeDuration` fades the loaded picture in over it; 0 lets the platform choose, and a nanosecond shows it at once. `OnLoadStart`, `OnProgress`, `OnLoad`, `OnError` and `OnLoadEnd` follow the load. `cx.ImageSize` reads a source's size in pixels without showing it, `cx.PrefetchImage` downloads one into the cache, `cx.SetImageCacheLimit` sets the in-memory encoded image byte budget (default `core.DefaultImageCacheLimit`, 32 MiB; negative values clamp to 0), and `cx.KeepImage` pins an atlas or texture out of cache eviction until its returned `release` runs or its scope disposes. Native backends keep remote images in a disk cache of their own.
+`Placeholder` shows a source while the picture loads, and `FadeDuration` fades the loaded picture in over it; 0 lets the platform choose, and a nanosecond shows it at once. `OnLoadStart`, `OnProgress`, `OnLoad`, `OnError` and `OnLoadEnd` follow the load. `cx.ImageSize` reads a source's size in pixels without showing it, `cx.PrefetchImage` downloads one into the cache, `cx.SetImageCacheLimit` sets the in-memory encoded image byte budget (default `core.DefaultImageCacheLimit`, 32 MiB; negative values clamp to 0), and `cx.KeepImage` pins an atlas or texture out of cache eviction until its returned `release` runs or its scope disposes. The limit applies to each cache, excluding pins, loads under way and the current drawing pass; it does not cap decoded pixels, process memory or browser caching. Zero disables unkept retention. Native backends keep remote images in a disk cache of their own.
 
 ## Animated and vector images
 

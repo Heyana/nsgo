@@ -453,18 +453,24 @@ func (s *surface) scratchCanvas(width, height int) js.Value {
 	return c
 }
 
-func (im *canvasImage) release() {
-	if im == nil {
-		return
-	}
+func (im *canvasImage) releaseListeners() {
 	if !im.onload.Value.IsUndefined() {
+		im.img.Call("removeEventListener", "load", im.onload)
 		im.onload.Release()
 		im.onload = js.Func{}
 	}
 	if !im.onerror.Value.IsUndefined() {
+		im.img.Call("removeEventListener", "error", im.onerror)
 		im.onerror.Release()
 		im.onerror = js.Func{}
 	}
+}
+
+func (im *canvasImage) release() {
+	if im == nil {
+		return
+	}
+	im.releaseListeners()
 	if im.img.Truthy() {
 		im.img.Call("removeAttribute", "src")
 	}
@@ -473,6 +479,7 @@ func (im *canvasImage) release() {
 		im.url, im.object = "", false
 	}
 	im.waiting = nil
+	im.texture = canvasmesh.Texture{}
 }
 
 func (s *surface) keepCanvasImage(key string) {
@@ -535,14 +542,7 @@ func (s *surface) loadCanvasImage(src driver.ImageSource, v *view, readable bool
 		encodedBytes := int64(len(src.Data))
 		s.canvasImages.addPending(key, im, encodedBytes)
 		finish := func(loaded bool) {
-			if !im.onload.Value.IsUndefined() {
-				im.onload.Release()
-				im.onload = js.Func{}
-			}
-			if !im.onerror.Value.IsUndefined() {
-				im.onerror.Release()
-				im.onerror = js.Func{}
-			}
+			im.releaseListeners()
 			cur, ok := s.canvasImages.peek(key)
 			if !ok || cur != im {
 				return

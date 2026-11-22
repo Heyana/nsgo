@@ -317,3 +317,56 @@ func TestCanvasImageCacheKeepPinsOutOfBudget(t *testing.T) {
 		t.Fatalf("%d cached after releasing %d kept images, want %d", len(w.canvasImages), len(keptMany), maxCanvasImages)
 	}
 }
+
+// Byte pressure releases the decoded native resource even below the source-count bound.
+func TestCanvasImageCacheByteBudgetAndReconfiguration(t *testing.T) {
+	if err := openLibs(); err != nil {
+		t.Skip(err)
+	}
+	w := &window{animator: driver.NewAnimator(nil), env: driver.Environment{PixelRatio: 1}}
+	defer w.closeCanvasImages()
+	sources := canvastest.CacheSources(5)
+	limit := 2 * int64(len(sources[len(sources)-1].Data))
+	w.setCanvasImageCacheLimit(limit)
+	load := func(src driver.ImageSource) *imageSlot {
+		t.Helper()
+		s := w.canvasImage(src, &view{deleted: true})
+		for deadline := time.Now().Add(5 * time.Second); s.load != nil; {
+			w.runTasks()
+			if time.Now().After(deadline) {
+				t.Fatal("image load timed out")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if s.pic == nil || s.surfaceOf(0) == 0 {
+			t.Fatal("no decoded native image")
+		}
+		w.endCanvasPass()
+		return s
+	}
+	freed := func(slot *imageSlot) bool { return slot.pic == nil && slot.surface == 0 }
+	w.keepCanvasImage(sources[0].Key())
+	pinned := load(sources[0])
+	old := load(sources[1])
+	for _, src := range sources[2:] {
+		load(src)
+		_, bytes := w.unkeptCanvasStats()
+		if bytes > limit {
+			t.Fatalf("%d unkept bytes above %d", bytes, limit)
+		}
+	}
+	if w.canvasImages[sources[1].Key()] != nil || !freed(old) {
+		t.Fatal("byte pressure retained the old native resource")
+	}
+	if w.canvasImages[sources[0].Key()] != pinned || freed(pinned) {
+		t.Fatal("kept image was evicted")
+	}
+	w.setCanvasImageCacheLimit(0)
+	if len(w.canvasImages) != 1 {
+		t.Fatalf("zero limit retained %d images", len(w.canvasImages))
+	}
+	w.releaseCanvasImage(sources[0].Key())
+	if len(w.canvasImages) != 0 || !freed(pinned) {
+		t.Fatal("last pin release retained the native resource")
+	}
+}

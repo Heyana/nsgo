@@ -2209,6 +2209,7 @@ struct NodeImageView {
 // CanvasView replays a canvas's drawing into ArkUI's Canvas. The engine
 // sends the whole drawing again when it changes, and the canvas redraws.
 interface CanvasImageEntry {
+  waiting: Array<() => void>;
   pm?: image.PixelMap;
   bytes: number;
   used: number;
@@ -2287,7 +2288,14 @@ class CanvasImageCache {
     this.use++;
     const reserve = this.isKept(key) ? 0 : 1;
     this.evict(reserve);
-    this.entries.set(key, { bytes: 0, used: this.use, pending: true, failed: false });
+    this.entries.set(key, { waiting: [], bytes: 0, used: this.use, pending: true, failed: false });
+  }
+
+  wait(key: string, redraw: () => void): void {
+    const e = this.entries.get(key);
+    if (e !== undefined && e.pending && e.waiting.indexOf(redraw) < 0) {
+      e.waiting.push(redraw);
+    }
   }
 
   complete(key: string, pm: image.PixelMap, bytes: number): void {
@@ -2300,6 +2308,9 @@ class CanvasImageCache {
     e.bytes = bytes < 0 ? 0 : bytes;
     e.pending = false;
     e.failed = false;
+    const waiting = e.waiting;
+    e.waiting = [];
+    waiting.forEach((redraw) => { redraw(); });
     if (this.unkeptBytes() > this.limitBytes || this.limitBytes === 0) {
       this.evict(0);
     }
@@ -2312,6 +2323,7 @@ class CanvasImageCache {
     }
     e.pending = false;
     e.failed = true;
+    e.waiting = [];
     if (this.limitBytes === 0) {
       this.evict(0);
     }
@@ -2372,8 +2384,13 @@ struct CanvasView {
   @Prop @Watch('paint') drawing: string = '';
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
   private ready: boolean = false;
+  private redraw: () => void = () => { this.paint(); };
 
   aboutToAppear(): void {
+  }
+
+  aboutToDisappear(): void {
+    this.ready = false;
   }
 
   // roundRect adds a rounded rectangle to the current path.
@@ -2415,6 +2432,7 @@ struct CanvasView {
   // loadImage decodes an image op once; a repaint draws it when it comes.
   private loadImage(key: string, uri: string, data: string): void {
     if (canvasImageCache.has(key)) {
+      canvasImageCache.wait(key, this.redraw);
       return;
     }
     if (data === '' && !uri.startsWith('asset:')) {
@@ -2424,6 +2442,7 @@ struct CanvasView {
       return;
     }
     canvasImageCache.addPending(key);
+    canvasImageCache.wait(key, this.redraw);
     this.decodeImage(key, uri, data);
   }
 
@@ -2441,7 +2460,6 @@ struct CanvasView {
       const pm = await source.createPixelMap();
       source.release();
       canvasImageCache.complete(key, pm, bytes.byteLength);
-      this.paint();
     } catch (e) {
       canvasImageCache.fail(key);
       console.error('NSGO harmony: canvas image failed: ' + e);

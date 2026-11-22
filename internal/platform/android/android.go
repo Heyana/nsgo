@@ -1195,9 +1195,9 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 		case driver.ItemImageCacheLimit:
 			imageload.SetCacheLimit(it.Bytes)
 		case driver.ItemKeepImage:
-			imageload.Keep(v.id, it.Value)
+			imageload.Keep(v, it.Value)
 		case driver.ItemReleaseImage:
-			imageload.Release(v.id, it.Value)
+			imageload.Release(v, it.Value)
 		}
 	}
 }

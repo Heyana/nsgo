@@ -46,9 +46,9 @@ core.Image{ResizeMode: core.Contain, SourceFunc: func() core.ImageSource {
 }}
 ```
 
-NSGo 在带着新 `Version` 的提交运行时复制像素，所以应用可以在下一次 `RequestAnimationFrame` 回调中写下一帧；在自己的 goroutine 上解码的解码器应写入第二个缓冲区，再把交换投递过来。相同的 `Version` 不会重新绘制。`cx.ImageSize` 对像素来源立即返回缓冲区的尺寸。`core.Canvas` 用 `DrawImage` 绘制像素，复制方式相同，除 HarmonyOS 和小程序外的平台都支持。`core.Shader` 的 `Images` 也以同样的方式接受像素，所以着色器可以处理应用写入的帧（例如模拟器的画面），在所有绘制着色器的平台上都可以。
+NSGo 在带着新 `Version` 的提交运行时复制像素，所以应用可以在下一次 `RequestAnimationFrame` 回调中写下一帧；在自己的 goroutine 上解码的解码器应写入第二个缓冲区，再把交换投递过来。相同的 `Version` 不会重新绘制。`cx.ImageSize` 对像素来源立即返回缓冲区的尺寸。`core.Canvas` 用 `DrawImage` 绘制像素，复制方式相同，除 HarmonyOS 外的平台都支持；小程序需要微信的 2D 画布。`core.Shader` 的 `Images` 也以同样的方式接受像素，所以着色器可以处理应用写入的帧（例如模拟器的画面），在所有绘制着色器的平台上都可以。
 
-macOS、iOS、tvOS、watchOS、Android、Windows 和 Linux 直接绘制像素。Web 的图片视图通过每个版本生成一次的 PNG 显示像素，并把它当作新图片加载，所以两个版本之间视图会空白，直到新图片加载完成；Web 的画布直接绘制像素。HarmonyOS 和小程序暂不显示像素。
+Apple 平台、Android、Windows、Linux 和 Web 直接更新像素图片，微信小程序使用 2D 画布。HarmonyOS 暂不显示像素。
 
 ## 资源与像素密度
 
@@ -61,7 +61,7 @@ core.Image{Source: core.ImageSource{
 }}
 ```
 
-`Placeholder` 在图片加载时显示另一个来源，`FadeDuration` 让加载好的图片在其上淡入；0 由平台决定，纳秒则立即显示。`OnLoadStart`、`OnProgress`、`OnLoad`、`OnError` 和 `OnLoadEnd` 跟随加载过程。`cx.ImageSize` 不显示图片就能读取它的像素尺寸，`cx.PrefetchImage` 把它下载到缓存，`cx.SetImageCacheLimit` 设置内存中保留的编码图片字节上限（默认 `core.DefaultImageCacheLimit`，32 MiB；负值会钳制为 0），`cx.KeepImage` 在返回的 `release` 调用或作用域销毁前把图集或纹理固定在缓存中免受淘汰。原生后端会把远程图片保存在磁盘缓存中。
+`Placeholder` 在图片加载时显示另一个来源，`FadeDuration` 让加载好的图片在其上淡入；0 由平台决定，纳秒则立即显示。`OnLoadStart`、`OnProgress`、`OnLoad`、`OnError` 和 `OnLoadEnd` 跟随加载过程。`cx.ImageSize` 不显示图片就能读取它的像素尺寸，`cx.PrefetchImage` 把它下载到缓存，`cx.SetImageCacheLimit` 设置内存中保留的编码图片字节上限（默认 `core.DefaultImageCacheLimit`，32 MiB；负值会钳制为 0），`cx.KeepImage` 在返回的 `release` 调用或作用域销毁前把图集或纹理固定在缓存中免受淘汰。上限分别应用于各缓存，不包括固定的图片、正在加载的图片和当前绘制批次；它不限制解码后的像素、进程内存或浏览器缓存。0 禁用未固定图片的保留。原生后端会把远程图片保存在磁盘缓存中。
 
 ## 动图与矢量图
 

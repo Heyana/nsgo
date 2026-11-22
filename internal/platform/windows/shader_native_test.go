@@ -162,8 +162,8 @@ func Fragment(dst vec4, pos vec2) vec4 {
 			t.Fatal(hresultError("EndDraw", hr))
 		}
 		g.dc.call(dcSetTarget, 0)
-		if len(v.shaderView.images) != 1 || v.shaderView.images[img.Key()] == nil {
-			t.Errorf("the view keeps %d textures, want only its image's", len(v.shaderView.images))
+		if v.shaderView.images.len() != 1 || v.shaderView.images.entries[img.Key()] == nil {
+			t.Errorf("the view keeps %d textures, want only its image's", v.shaderView.images.len())
 		}
 	}
 }

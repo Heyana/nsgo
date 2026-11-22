@@ -110,7 +110,7 @@ func (s *surface) forget(o *overlay) {
 	s.releasePrograms()
 	s.canvasRequests.closeSurface(o.view.id)
 	s.audioFiles.closeSurface(o.view.id)
-	imageload.ReleaseOwner(o.view.id)
+	imageload.ReleaseOwner(&o.view)
 	s.closeSurfaceNatives(o.view.id)
 }
 

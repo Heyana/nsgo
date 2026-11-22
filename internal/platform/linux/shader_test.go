@@ -133,8 +133,8 @@ func Fragment(dst vec4, pos vec2) vec4 {
 	}
 	waitPixels(t, w, "the blue image", func(p pixels) bool { px := p.at(50, 50); return px[0] > 0xf0 && px[2] < 0x10 })
 	w.onLoop(t, func() {
-		if _, ok := g.textures[images[1].Key()]; len(g.textures) != 1 || !ok {
-			t.Errorf("the view keeps %d textures, want only its image's", len(g.textures))
+		if _, ok := g.textures.entries[images[1].Key()]; g.textures.len() != 1 || !ok {
+			t.Errorf("the view keeps %d textures, want only its image's", g.textures.len())
 		}
 	})
 }
