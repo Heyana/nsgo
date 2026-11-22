@@ -104,6 +104,13 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 		})
 		return p != nil && p.win != 0
 	})
+	var x11 bool
+	host.onLoop(t, func() {
+		_, _, x11 = p.x11Window()
+	})
+	if !x11 {
+		t.Skip("transparent fitted panel placement requires an X11 window manager")
+	}
 	if err := ctl.p.ShowAt(driver.Bounds{Origin: driver.Point{X: 300, Y: 180}, Size: driver.Size{Width: 40, Height: 24}}, core.PlaceRight); err != nil {
 		t.Fatal(err)
 	}
