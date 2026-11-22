@@ -13,7 +13,7 @@ func allowedPublicDriverType(name string) bool {
 		"Appearance", "AtlasSprite", "AtlasSprites", "AttributedText", "AudioSession", "AutoCapitalize",
 		"AutoComplete", "BackdropMaterial", "BlendMode", "BorderStyle",
 		"Bounds", "BoxShadow", "CanvasGradient", "CanvasNode",
-		"Caret", "Channel", "ClipboardImage", "CodeKind",
+		"Caret", "Channel", "ClipboardImage", "ClipboardItem", "ClipboardRepresentation", "CodeKind",
 		"Color", "ColorMatrix", "ColorSpace", "ColorStop",
 		"CompositeOp", "Corners", "Cursor", "Curve",
 		"CustomCursor", "DecayConfig", "Directory", "DisplayInfo",
