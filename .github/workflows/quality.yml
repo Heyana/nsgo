@@ -74,7 +74,7 @@ jobs:
 
   android-runtime:
     name: Android runtime binaries
-    # android-runtime.yml rebuilds classes.dex and classes.jar on main and commits them through its own pull request; one from anywhere else makes every other Android pull request conflict, as Git cannot merge binaries.
+    # Maintainers rebuild classes.dex and classes.jar from main and commit them in a bot/android-runtime pull request; one from anywhere else makes every other Android pull request conflict, as Git cannot merge binaries.
     if: github.event_name == 'pull_request'
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 5
@@ -93,6 +93,6 @@ jobs:
           runtime=internal/platform/android/runtime
           changed=$(git diff --name-only HEAD^1 HEAD -- "$runtime/classes.dex" "$runtime/classes.jar" | tr '\n' ' ')
           if [ -n "$changed" ]; then
-            # A warning while pull requests opened before android-runtime.yml still carry the binaries; it becomes an error once they have merged or dropped them.
-            echo "::warning::This pull request changes ${changed}which android-runtime.yml rebuilds and commits after merge. Drop them with: git checkout origin/main -- $runtime/classes.dex $runtime/classes.jar"
+            # A warning while pull requests opened before this check still carry the binaries; it becomes an error once they have merged or dropped them.
+            echo "::warning::This pull request changes ${changed}which maintainers rebuild in a bot/android-runtime pull request after merge. Drop them with: git checkout origin/main -- $runtime/classes.dex $runtime/classes.jar"
           fi

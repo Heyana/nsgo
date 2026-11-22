@@ -3,7 +3,7 @@
 # after changing it: the dex goes in apps' APKs, the jar in the libraries
 # nsgo build -embed makes for host apps.
 #
-# These are the artifacts NSGo cannot build with Go, so they are committed, but only by .github/workflows/android-runtime.yml after a change to ../java merges; a pull request leaves them alone.
+# These are the artifacts NSGo cannot build with Go, so they are committed, but only by maintainers, in a bot/android-runtime pull request after a change to ../java merges; a pull request leaves them alone.
 # It needs a JDK 17+ and a recent d8: the SDK's cmdline-tools, or
 # build-tools 36+. Set ANDROID_HOME to the SDK that holds them.
 set -eu

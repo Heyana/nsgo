@@ -4,7 +4,7 @@
 // nsgo build -embed makes. The nsgo tool embeds them, so packaging needs
 // neither a JDK nor the Android SDK.
 //
-// The Java runtime cannot be built with Go, so classes.dex and classes.jar are committed. Pull requests change only ../java: CI builds them with build.sh for its tests, and .github/workflows/android-runtime.yml commits the rebuilt files to main after merge. Run build.sh to try a change on a device, without committing what it writes.
+// The Java runtime cannot be built with Go, so classes.dex and classes.jar are committed. Pull requests change only ../java: CI builds them with build.sh for its tests, and maintainers commit the rebuilt files to main in a bot/android-runtime pull request. Run build.sh to try a change on a device, without committing what it writes.
 package runtime
 
 import _ "embed"

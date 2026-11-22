@@ -219,7 +219,7 @@ jobs:
           # The JDK the committed runtime is built with, so a rebuild of unchanged Java gives the same bytes.
           java-version: '21'
       - name: Build the Android runtime from this commit's Java
-        # Pull requests no longer commit classes.dex and classes.jar (android-runtime.yml commits them after merge), so the emulator tests package a runtime built from the sources under test rather than the committed one.
+        # Pull requests no longer commit classes.dex and classes.jar (maintainers commit them in a bot/android-runtime pull request after merge), so the emulator tests package a runtime built from the sources under test rather than the committed one.
         run: |
           set -euo pipefail
           runtime=internal/platform/android/runtime
@@ -229,7 +229,7 @@ jobs:
           fi
           "$runtime/build.sh"
           if ! git diff --quiet -- "$runtime/classes.dex" "$runtime/classes.jar"; then
-            echo "::notice::The committed Android runtime differs from this commit's Java; the tests use the rebuilt one, which android-runtime.yml commits after merge."
+            echo "::notice::The committed Android runtime differs from this commit's Java; the tests use the rebuilt one, which maintainers commit in a bot/android-runtime pull request after merge."
           fi
       - name: Keep the built Android runtime
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
