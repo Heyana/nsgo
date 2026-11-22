@@ -3,11 +3,7 @@
 // desktops the build for the platform the package embeds, written once
 // into the user's cache.
 //
-// The builds in lib/ come from Ghostty's sources at the commit the
-// terminal binds, built by `go run ./tools/libghostty`. The nsgo tool
-// signs them into iOS apps as GhosttyVT.framework and into macOS apps'
-// Frameworks, stages it beside Windows and Linux executables, and supplies an
-// iOS host's companion GhosttyVT.xcframework.
+// The builds in lib/ come from Ghostty's sources at the commit the terminal binds, built by `go run ./tools/libghostty`. The nsgo tool signs them into iOS apps as GhosttyVT.framework and into macOS apps' Frameworks, stages it beside Windows and Linux executables, and supplies an iOS host's companion GhosttyVT.xcframework.
 package library
 
 import (
@@ -82,8 +78,7 @@ func extract() (string, error) {
 	return path, nil
 }
 
-// findInApp searches the host bundle as well as a standalone executable's directory.
-// Catalyst uses a macOS bundle layout even though its terminal takes the iOS path.
+// findInApp searches the host bundle as well as a standalone executable's directory. Catalyst uses a macOS bundle layout even though its terminal takes the iOS path.
 func findInApp(executable string) string {
 	dir := filepath.Dir(executable)
 	paths := []string{

@@ -154,8 +154,7 @@ func copyLibrary(src, dst string) error {
 	return os.WriteFile(dst, data, 0o755)
 }
 
-// addDesktopLibraries places terminal and package-declared libraries beside the
-// executable before signing and installer assembly.
+// addDesktopLibraries places terminal and package-declared libraries beside the executable before signing and installer assembly.
 func addDesktopLibraries(ctx context.Context, p *project, dir, system, arch string) error {
 	env := []string{"GOOS=" + system, "GOARCH=" + arch, "CGO_ENABLED=0"}
 	source, err := linkedDir(ctx, p, env, ghosttyPackage)
@@ -179,8 +178,7 @@ func addDesktopLibraries(ctx context.Context, p *project, dir, system, arch stri
 	return p.addNativeLibraries(ctx, target, dir)
 }
 
-// addIOSEmbeddedLibraries supplies the host with a companion XCFramework
-// whenever its app links the terminal, for static and dynamic embedding alike.
+// addIOSEmbeddedLibraries supplies the host with a companion XCFramework whenever its app links the terminal, for static and dynamic embedding alike.
 func addIOSEmbeddedLibraries(ctx context.Context, p *project, dir, tmp, minimum string) error {
 	args := []string{"-create-xcframework"}
 	for _, sl := range iosSlices {

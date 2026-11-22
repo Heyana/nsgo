@@ -152,11 +152,7 @@ func Load() error {
 	return load.err
 }
 
-// LibraryPath returns the libghostty-vt the terminal loads, the first of:
-// the file $NSGO_GHOSTTY_VT names; the one beside the executable, or in
-// its iOS or Catalyst GhosttyVT.framework or macOS Frameworks; the build the package
-// embeds for the platform, written once into the user's cache
-// (<cache>/nsgo/libghostty-vt/<sha256>/).
+// LibraryPath returns the libghostty-vt the terminal loads, the first of: the file $NSGO_GHOSTTY_VT names; the one beside the executable, or in its iOS or Catalyst GhosttyVT.framework or macOS Frameworks; the build the package embeds for the platform, written once into the user's cache (<cache>/nsgo/libghostty-vt/<sha256>/).
 func LibraryPath() (string, error) { return library.Find() }
 
 // New makes a terminal running opts.Command, or connected to opts.Conn.

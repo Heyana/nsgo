@@ -11,6 +11,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -228,9 +229,7 @@ const geometryReader = "github.com/nsgo-dev/nsgo/core.(*Env).Geometry"
 // nsgoInternal is the import path prefix of NSGo's internal packages.
 const nsgoInternal = "github.com/nsgo-dev/nsgo/internal/"
 
-// androidGhosttyLibrary returns the prebuilt libghostty-vt for an app that
-// links base/terminal. Android's loader searches the APK's ABI directory, so
-// the library is a sibling of libnsgo.so rather than a Go-embedded payload.
+// androidGhosttyLibrary returns the prebuilt libghostty-vt for an app that links base/terminal. Android's loader searches the APK's ABI directory, so the library is a sibling of libnsgo.so rather than a Go-embedded payload.
 func androidGhosttyLibrary(ctx context.Context, p *project, goarch, abi string) (apk.File, error) {
 	dir, err := linkedDir(ctx, p, []string{"GOOS=android", "GOARCH=" + goarch, "CGO_ENABLED=0"}, ghosttyPackage)
 	if err != nil {
@@ -245,6 +244,10 @@ func androidGhosttyLibrary(ctx context.Context, p *project, goarch, abi string) 
 func androidGhosttyFile(dir, goarch, abi string) (apk.File, error) {
 	path := filepath.Join(dir, "lib", "android-"+goarch, "libghostty-vt.so")
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Until #1452 commits an Android prebuild the package has none for this ABI; the AAR builds without it, as before, rather than failing every embedded app that links the terminal.
+		return apk.File{}, nil
+	}
 	if err != nil {
 		return apk.File{}, fmt.Errorf("base/terminal: read Android libghostty-vt: %w", err)
 	}

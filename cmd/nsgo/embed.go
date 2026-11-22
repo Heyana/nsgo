@@ -360,8 +360,7 @@ func writeIOSFramework(slice, module, id, header, minimum string, catalyst bool)
 	return writeFrameworkBundle(slice, module, id, header, minimum, catalyst)
 }
 
-// writeFrameworkBundle writes a dynamic framework bundle; an empty header
-// makes a runtime-only framework, loaded through purego.
+// writeFrameworkBundle writes a dynamic framework bundle; an empty header makes a runtime-only framework, loaded through purego.
 func writeFrameworkBundle(slice, module, id, header, minimum string, catalyst bool) (string, error) {
 	fw := filepath.Join(slice, module+".framework")
 	root := fw

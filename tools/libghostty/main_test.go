@@ -22,8 +22,7 @@ func TestSelectLibraryTargets(t *testing.T) {
 	}
 }
 
-// TestRebuildSelectedLibraries invokes the generator's real build path through
-// nsgo test. Source and compiler are explicit so native rebuilds remain opt-in.
+// TestRebuildSelectedLibraries invokes the generator's real build path through nsgo test. Source and compiler are explicit so native rebuilds remain opt-in.
 func TestRebuildSelectedLibraries(t *testing.T) {
 	names := os.Getenv("NSGO_GHOSTTY_REBUILD_TARGETS")
 	if names == "" {

@@ -76,8 +76,7 @@ func TestDesktopTerminalLibrariesFollowLinkedPackage(t *testing.T) {
 	}
 }
 
-// TestTerminalDesktopPackageLoads builds and runs the host's real package with an
-// empty cache. LibraryPath plus the live emulator prove the sidecar was selected.
+// TestTerminalDesktopPackageLoads builds and runs the host's real package with an empty cache. LibraryPath plus the live emulator prove the sidecar was selected.
 func TestTerminalDesktopPackageLoads(t *testing.T) {
 	if os.Getenv("NSGO_TERMINAL_PACKAGE_NATIVE") != "1" {
 		t.Skip("set NSGO_TERMINAL_PACKAGE_NATIVE=1 on a Linux or Windows host")
