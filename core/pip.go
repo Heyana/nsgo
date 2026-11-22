@@ -164,13 +164,15 @@ func (r *Ref) pictureInPictureCommand(command uint32) {
 		return
 	}
 	p := r.n.pip
+	supported := pictureInPicturePlatform(r.n.owner)
 	if r.n.video != nil && r.n.video.config.PictureInPicture {
 		p = r.n.video.pip
+		supported = videoPictureInPicturePlatform(r.n.owner)
 	}
 	if p == nil {
 		return
 	}
-	if !pictureInPicturePlatform(r.n.owner) {
+	if !supported {
 		if p.state != nil {
 			p.state(PictureInPictureState{})
 		}
@@ -182,4 +184,8 @@ func (r *Ref) pictureInPictureCommand(command uint32) {
 
 func pictureInPicturePlatform(cx *Scope) bool {
 	return cx.Env().OS() == OSIOS && cx.Env().Idiom() != IdiomWatch
+}
+
+func videoPictureInPicturePlatform(cx *Scope) bool {
+	return cx.Env().OS() == OSMacOS || pictureInPicturePlatform(cx)
 }

@@ -2158,6 +2158,12 @@ func (s *surface) apply(b *driver.MountBatch) {
 	s.devGeometry.Begin(b.GeometryVersion)
 	defer func() { s.devGeometry.End(); s.reportGeometry() }()
 	defer func() { s.openFrame = driver.WindowFrame{} }()
+	var restored []func()
+	defer func() {
+		for _, done := range restored {
+			done()
+		}
+	}()
 	s.batch++
 	var focus []driver.MountItem
 	var lb *layoutBatch
@@ -2167,6 +2173,15 @@ func (s *surface) apply(b *driver.MountBatch) {
 	for i := range b.Items {
 		it := &b.Items[i]
 		switch it.Kind {
+		case driver.ItemPictureInPictureCommand:
+			if it.Count == driver.PictureInPictureRestored {
+				restored = append(restored, apple.PictureInPictureRestoreCompletion(uint32(it.Before)))
+			} else if int(it.ID) < len(s.views) {
+				if v := s.views[it.ID]; v != nil && v.video != nil {
+					v.video.PictureInPictureCommand(it.Count)
+				}
+			}
+			continue
 		case driver.ItemCreate:
 			for len(s.views) <= int(it.ID) {
 				s.views = append(s.views, nil)

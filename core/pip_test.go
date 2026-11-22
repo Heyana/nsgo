@@ -130,3 +130,36 @@ func TestVideoPictureInPictureKeepsItsOptions(t *testing.T) {
 		t.Fatalf("states %v, pauses %v", states, pauses)
 	}
 }
+
+func TestMacVideoPictureInPictureCommands(t *testing.T) {
+	var video, custom Ref
+	var states []PictureInPictureState
+	h := newHost(t, Size{Width: 320, Height: 240}, func(cx *Scope) Node {
+		return View{Children: []Node{
+			Video{Ref: &video, Source: "asset:video.mp4", PictureInPicture: true,
+				OnPictureInPicture: func(s PictureInPictureState) { states = append(states, s) }},
+			PictureInPicture{Ref: &custom},
+		}}
+	})
+	h.tree.SetEnvironment(Environment{OS: OSMacOS})
+	h.commit()
+	if len(states) != 0 {
+		t.Fatalf("core reported Mac video unsupported before its backend answered: %v", states)
+	}
+	video.StartPictureInPicture()
+	video.StopPictureInPicture()
+	custom.StartPictureInPicture()
+	b := h.commit()
+	var commands []uint32
+	for _, item := range b.Items {
+		if item.Kind == driver.ItemPictureInPictureCommand {
+			if item.ID != video.n.id {
+				t.Fatal("Mac custom content sent a native PiP command")
+			}
+			commands = append(commands, item.Count)
+		}
+	}
+	if len(commands) != 2 || commands[0] != driver.PictureInPictureStart || commands[1] != driver.PictureInPictureStop {
+		t.Fatalf("Mac video commands = %v", commands)
+	}
+}

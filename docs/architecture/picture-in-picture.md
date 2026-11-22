@@ -1,12 +1,12 @@
-# Picture in Picture on iOS and tvOS
+# Picture in Picture
 
-Issue [#54](https://github.com/nsgo-dev/nsgo/issues/54) has two paths: `core.Video` uses its native player, and `mobile.PictureInPicture` renders an independent NSGo tree into sample buffers. Both use `AVPictureInPictureController` through purego, with no Swift or C adapter. The user confirmed both paths, separate APIs from Android overlays, view-owned lifetimes, a retained background frame, playback callbacks, YAML arrays and programmatic starts with native controls on 2026-11-15.
+Issue [#54](https://github.com/nsgo-dev/nsgo/issues/54) has two paths: `core.Video` uses its native player, and `mobile.PictureInPicture` renders an independent NSGo tree into sample buffers. Video also supports macOS. Both use `AVPictureInPictureController` through purego, with no Swift or C adapter. The user confirmed both paths, separate APIs from Android overlays, view-owned lifetimes, a retained background frame, playback callbacks, YAML arrays and programmatic starts with native controls on 2026-11-15.
 
 ## Video
 
 Set `Video.PictureInPicture`, follow `OnPictureInPicture`, and call `Ref.StartPictureInPicture` or `StopPictureInPicture` from an app control. `AutoPictureInPicture` explicitly permits automatic entry when an iOS app backgrounds; tvOS has no automatic-inline-entry API and ignores that option. iOS pauses a video that plays as the app enters the background (native-views.md), except one whose PiP plays it on: active, starting, or about to start automatically. `PictureInPictureState` distinguishes unsupported, supported but not possible, active and failed states. Repeated starts while starting or active, and stops while inactive, are idempotent. Starting before AVKit is ready reports an error; it does not wait silently.
 
-A video without controls uses its existing player layer. A controlled video has a second layer in `AVPlayerViewController.contentOverlayView`, between its video and its controls. AVPlayer vends video to one layer at a time, so a layer behind the native controller would disappear behind its empty video surface. A flexible host follows the overlay into full screen. The native controller's independent PiP button is disabled; the app's control and automatic policy use the one owned session, whose public stop operation NSGo can call.
+A video without controls uses its existing player layer. A controlled video has a second layer in `AVPlayerViewController.contentOverlayView`, between its video and its controls. AVPlayer vends video to one layer at a time, so a layer behind the native controller would disappear behind its empty video surface. A flexible host follows the overlay into full screen. On macOS the same source layer lives in `AVPlayerView.contentOverlayView` in an AppKit host; an uncontrolled video uses its own player layer. The iOS controller's independent PiP button is disabled; the app's control and automatic policy use the one owned session, whose public stop operation NSGo can call.
 
 On tvOS, the video owns an `MPNowPlayingSession` containing its `AVPlayer`, automatically publishes its playback metadata and asks the session to become active when preparing or starting PiP. Both controlled and layer-only videos use the same managed PiP path. The Now Playing session stays with the player generation until PiP has stopped. Custom sample-buffer sessions remain unsupported on tvOS. NSH has no corresponding PiP subsystem; this follows Apple's [custom-player contract](https://developer.apple.com/documentation/avkit/adopting-picture-in-picture-in-a-custom-player).
 
@@ -28,11 +28,11 @@ A session belongs to its view. Deleting the view stops PiP; its controller, dele
 
 Restoration queues an event on the engine and holds the native completion block. The resulting mount batch reserves the completion, applies all its changes and then acknowledges success, including when it removed the owner. Deletion before an acknowledgement or a five-second timeout answers false; each block is called and released once.
 
-The shared audio coordinator (`internal/audiosession`) holds the playback category while PiP is enabled, including while paused, and restores the previous category after its last owner leaves. A video's session mixes with other apps' audio when its `AudioSession` is `AudioSessionMixWithOthers`, as the video does while it plays, and pauses theirs otherwise; whether AVKit starts PiP with the mixing option is checked on a device with the rest. A custom session does not record or request microphone access. Mixing a silent custom session with another app's audio still needs device verification; the current session uses the playback category without mixing.
+On iOS, the shared audio coordinator (`internal/audiosession`) holds the playback category while PiP is enabled, including while paused, and restores the previous category after its last owner leaves. A video's session mixes with other apps' audio when its `AudioSession` is `AudioSessionMixWithOthers`, as the video does while it plays, and pauses theirs otherwise; whether AVKit starts PiP with the mixing option is checked on a device with the rest. A custom session does not record or request microphone access. Mixing a silent custom session with another app's audio still needs device verification; the current session uses the playback category without mixing.
 
 ## Configuration
 
-Declare background playback in the app or embedding host's Info.plist. `apple.info` now accepts scalar values and arrays, preserving existing strings:
+On iOS, declare background playback in the app or embedding host's Info.plist. macOS needs no background mode and ignores automatic entry, which AVKit exposes only on iOS. `apple.info` now accepts scalar values and arrays, preserving existing strings:
 
 ```yaml
 apple:
@@ -40,11 +40,13 @@ apple:
     UIBackgroundModes: [audio]
 ```
 
-An iOS session missing `audio` reports a configuration error. Video support on iOS and tvOS follows AVKit's device capability; unavailable systems report `Supported: false`. macOS, Android and web PiP remain in the roadmap. The app's existing network access check applies to video URLs. Custom content stays in the app; NSGo uploads and persists no frame. App Store review may reject non-video uses of custom PiP, as issue #54 records.
+An iOS session missing `audio` reports a configuration error. Video support on iOS and tvOS follows AVKit's device capability, and macOS video uses the same controller; unavailable systems report `Supported: false`. Android and web PiP remain in the roadmap. Custom content remains iOS-only. The app's existing network access check applies to video URLs. Custom content stays in the app; NSGo uploads and persists no frame. App Store review may reject non-video uses of custom PiP, as issue #54 records.
 
 ## Verification
 
 Core and headless tests exercise detached layout, changing content, ownership, support/readiness, duplicate commands, the window's play and pause, background state and restoration. Apple tests call real Objective-C delegate methods, including the `CMTimeRange` return and signed skip argument, invoke native blocks through their ABI, check deferred release, exercise back-pressure, and inspect the pixels of successive CoreVideo/CoreMedia frames. Plist tests cover arrays and escaping on every Apple template. `examples/pip` packages both paths with the required background mode.
+
+Mac native tests open a real player window and enter and leave PiP with and without native controls, including duplicate commands and replacing an active source. Ownership tests retain retiring source views through the native stop callback when the source or controls change. Window-scoped Core Graphics and ScreenCaptureKit captures return a black PiP panel on the Mac runner while the inline view shows AVKit's PiP placeholder; changing-frame visual acceptance and the native return button remain in the roadmap.
 
 On the tvOS 27 simulator, the bundled-video tests load both controlled and layer-only videos and report AVKit's `Supported: false` state. A native app-host test verifies the actual Now Playing session's player association and metadata policy, and that tvOS ignores automatic inline entry. These checks do not establish PiP entry.
 

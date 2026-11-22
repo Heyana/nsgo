@@ -45,7 +45,7 @@ type cmTimeRange struct {
 }
 
 func pictureInPictureSupported() bool {
-	if runtime.GOOS != "ios" || !loadAVKit() {
+	if !loadAVKit() {
 		return false
 	}
 	cls := Class("AVPictureInPictureController")
@@ -59,8 +59,8 @@ func NewPictureInPicture(layer objc.ID, dispatch func(driver.Event)) *PictureInP
 	p.events.Store(&pipEvents{dispatch: dispatch})
 	p.snapshot.Store(&driver.PictureInPictureConfig{})
 	p.state.Supported = pictureInPictureSupported()
-	// Custom sample-buffer playback on tvOS still needs native acceptance.
-	if p.custom && television() {
+	// Custom sample-buffer playback is iOS-only: macOS has no custom-content path and tvOS still needs native acceptance.
+	if p.custom && (runtime.GOOS != "ios" || television()) {
 		p.state.Supported = false
 	}
 	if !p.state.Supported {
@@ -69,7 +69,7 @@ func NewPictureInPicture(layer objc.ID, dispatch func(driver.Event)) *PictureInP
 	}
 	bundle := objc.ID(Class("NSBundle")).Send(sel("mainBundle"))
 	modes := bundle.Send(sel("objectForInfoDictionaryKey:"), NSString("UIBackgroundModes"))
-	if modes == 0 || !objc.Send[bool](modes, sel("containsObject:"), NSString("audio")) {
+	if runtime.GOOS == "ios" && (modes == 0 || !objc.Send[bool](modes, sel("containsObject:"), NSString("audio"))) {
 		p.fail("Picture in Picture requires apple.info.UIBackgroundModes: [audio]")
 		return p
 	}

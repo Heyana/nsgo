@@ -43,8 +43,8 @@ type Video struct {
 	hitTest           videoHitTest
 	made              bool
 	pip               *PictureInPicture
-	pipLayer          objc.ID // UIKit: the second AVPlayerLayer a video with controls starts PiP from
-	pipHost           objc.ID // UIKit: the view holding pipLayer in the controller's content overlay
+	pipLayer          objc.ID // the second AVPlayerLayer a video with controls starts PiP from
+	pipHost           objc.ID // the view holding pipLayer in the controls' content overlay
 	pipNowPlaying     objc.ID // tvOS: the session associating this generation's player with PiP
 	frame             pipVideo
 }
@@ -447,9 +447,13 @@ func (v *Video) close() {
 	v.timeToken, v.endToken, v.rateToken = 0, 0, 0
 	// The objects leave this Video before it opens again, but an active PiP session keeps its generation, the player and its layer or controller, until AVKit says it stopped.
 	player, layer, controller, pipLayer, pipHost, nowPlaying := v.player, v.layer, v.controller, v.pipLayer, v.pipHost, v.pipNowPlaying
+	var shown objc.ID
 	v.player, v.pipLayer, v.pipHost, v.pipNowPlaying = 0, 0, 0, 0
 	if runtime.GOOS == "ios" {
 		v.layer, v.controller = 0, 0
+	} else if p := v.pip; p != nil && (p.starting || p.state.Active) {
+		shown = v.shown
+		v.shown, v.layer = 0, 0
 	}
 	release := func() {
 		if nowPlaying != 0 {
@@ -469,6 +473,8 @@ func (v *Video) close() {
 		}
 		if runtime.GOOS == "ios" {
 			releasePlayerViews(layer, controller)
+		} else if shown != 0 {
+			releaseMacPlayerView(shown, layer)
 		}
 		releasePiPLayer(pipLayer, pipHost)
 	}
@@ -507,16 +513,10 @@ func (v *Video) show() {
 		}
 		return
 	}
-	if v.shown != 0 {
-		delete(macControlledVideos, v.shown)
-		v.shown.Send(sel("removeFromSuperview"))
-		v.shown.Send(sel("release"))
-		v.shown = 0
-	}
-	if v.layer != 0 {
-		v.layer.Send(sel("release"))
-		v.layer = 0
-	}
+	retired, layer := v.shown, v.layer
+	delete(macControlledVideos, retired)
+	v.shown, v.layer = 0, 0
+	v.endPiPThen(func() { releaseMacPlayerView(retired, layer) })
 	if v.player == 0 {
 		return
 	}
@@ -906,9 +906,6 @@ func (v *Video) Close() {
 
 // configurePiP gives a video with PictureInPicture its PiP session: from its own player layer, or, with controls, from a second layer in the controller's content overlay that code can start and stop.
 func (v *Video) configurePiP() {
-	if runtime.GOOS != "ios" {
-		return
-	}
 	if v.frame.owner != nil {
 		return
 	}
@@ -941,7 +938,11 @@ func (v *Video) configurePiP() {
 		if layer == 0 {
 			v.pipLayer = objc.ID(Class("AVPlayerLayer")).Send(sel("playerLayerWithPlayer:"), v.player).Send(sel("retain"))
 			layer = v.pipLayer
-			v.pipHost = newPiPPlayerHost(v.controller.Send(sel("contentOverlayView")), layer)
+			controls := v.controller
+			if runtime.GOOS != "ios" {
+				controls = v.shown
+			}
+			v.pipHost = newPiPPlayerHost(controls.Send(sel("contentOverlayView")), layer)
 		}
 		v.pip = NewPictureInPicture(layer, v.Dispatch)
 	}
@@ -963,6 +964,10 @@ func (v *Video) PictureInPictureCommand(command uint32) {
 
 // endPiP ends the video's PiP session and lets its extra layer go once the session stopped, leaving the video's own layer.
 func (v *Video) endPiP() {
+	v.endPiPThen(nil)
+}
+
+func (v *Video) endPiPThen(done func()) {
 	layer, host, nowPlaying := v.pipLayer, v.pipHost, v.pipNowPlaying
 	v.pipLayer, v.pipHost, v.pipNowPlaying = 0, 0, 0
 	release := func() {
@@ -970,12 +975,26 @@ func (v *Video) endPiP() {
 		if nowPlaying != 0 {
 			nowPlaying.Send(sel("release"))
 		}
+		if done != nil {
+			done()
+		}
 	}
 	if p := v.pip; p != nil {
 		v.pip = nil
 		p.Close(release)
 	} else {
 		release()
+	}
+}
+
+// releaseMacPlayerView retires a source view once AVKit has finished returning to it.
+func releaseMacPlayerView(shown, layer objc.ID) {
+	if shown != 0 {
+		shown.Send(sel("removeFromSuperview"))
+		shown.Send(sel("release"))
+	}
+	if layer != 0 {
+		layer.Send(sel("release"))
 	}
 }
 

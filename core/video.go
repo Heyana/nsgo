@@ -40,13 +40,13 @@ type Video struct {
 	// without Controls or an asset track transform once a frame is decoded.
 	// Zero counts the whole video view.
 	HitTestAlpha float32
-	// PictureInPicture enables iOS and tvOS Picture in Picture: Ref.StartPictureInPicture and StopPictureInPicture start and stop it, and the video holds the playback audio session from then on, paused or not. Other targets report Supported false through OnPictureInPicture. What the PiP window plays and pauses is reported by OnPlay and OnPause.
+	// PictureInPicture enables video Picture in Picture on iOS, tvOS and macOS: Ref.StartPictureInPicture and StopPictureInPicture start and stop it, and on iOS and tvOS the video holds the playback audio session from then on, paused or not. Other targets report Supported false through OnPictureInPicture. What the PiP window plays and pauses is reported by OnPlay and OnPause.
 	PictureInPicture bool
 	// AutoPictureInPicture lets iOS start PiP on its own as the app goes to the background while the video plays.
 	AutoPictureInPicture bool
 	// OnPictureInPicture receives the session's state as it changes: whether the platform supports PiP, whether it can start now, whether it is active, and why a start failed.
 	OnPictureInPicture func(PictureInPictureState)
-	// OnPictureInPictureRestore runs when the user returns to the app from the PiP window, so the app can show the video's page again; iOS restores its interface once the commit that follows is applied.
+	// OnPictureInPictureRestore runs when the user returns to the app from the PiP window, so the app can show the video's page again; the system restores its interface once the commit that follows is applied.
 	OnPictureInPictureRestore func()
 	// ProgressInterval is the time between OnProgress calls while the
 	// video plays: 250 milliseconds when 0, and at least 16.
@@ -164,9 +164,9 @@ func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
 		vn.pip = &pictureInPictureNode{state: v.OnPictureInPicture, restore: v.OnPictureInPictureRestore}
 	}
 	n.video = vn
-	if v.PictureInPicture && !pictureInPicturePlatform(cx) {
+	if v.PictureInPicture && !videoPictureInPicturePlatform(cx) {
 		t.reports = append(t.reports, report{owner: n, fn: func() {
-			if !pictureInPicturePlatform(cx) && v.OnPictureInPicture != nil {
+			if !videoPictureInPicturePlatform(cx) && v.OnPictureInPicture != nil {
 				v.OnPictureInPicture(PictureInPictureState{})
 			}
 		}})
