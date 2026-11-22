@@ -137,8 +137,7 @@ func TestAudioOutputFactoryOpensWithoutCanPlayAudio(t *testing.T) {
 	})
 	tree := NewTree(root, eng)
 	tree.Resize(Size{Width: 100, Height: 100}, Geometry{})
-	// Leave Environment.Audio false (like Web before ItemAudio lands) and verify
-	// driver.AudioOutputFactory still opens.
+	// Leave Environment.Audio false (like Web before ItemAudio lands) and verify driver.AudioOutputFactory still opens.
 	var out *AudioOutput
 	var openErr error
 	var interrupted []error

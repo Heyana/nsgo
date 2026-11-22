@@ -135,10 +135,7 @@ func TestWebPCMPositionFlushPauseResume(t *testing.T) {
 	if err := st.start(); err != nil {
 		t.Fatal(err)
 	}
-	// Schedule 3 slices of 10 frames each (10ms each at 1000 Hz):
-	// slice 0: [100ms, 110ms) produced 10
-	// slice 1: [110ms, 120ms) produced 2 (short fill -> 8 frames silence)
-	// slice 2: [120ms, 130ms) produced 10
+	// Schedule 3 slices of 10 frames each (10ms each at 1000 Hz): slice 0: [100ms, 110ms) produced 10 slice 1: [110ms, 120ms) produced 2 (short fill -> 8 frames silence) slice 2: [120ms, 130ms) produced 10
 	if start := st.timeline.schedule(0.100, 10, 10); start != 0.100 {
 		t.Fatalf("slice 0 start = %v, want 0.100", start)
 	}
@@ -163,9 +160,7 @@ func TestWebPCMPositionFlushPauseResume(t *testing.T) {
 	if fJit != 5 || !atJit.Equal(at1) {
 		t.Fatalf("jitter went backwards: frames=%d at=%v", fJit, atJit)
 	}
-	// At 112ms: 12 frames played (10 from slice 0 + 2 from slice 1).
-	// Remaining client frames: 0 from slice 1 (produced=2, played=2) + 10 from slice 2 = 10.
-	// Also put 4 client frames into ring buffer.
+	// At 112ms: 12 frames played (10 from slice 0 + 2 from slice 1). Remaining client frames: 0 from slice 1 (produced=2, played=2) + 10 from slice 2 = 10. Also put 4 client frames into ring buffer.
 	st.ring.write(make([]float32, 8), 4, 4)
 	dropped := st.flush(0.112, t0.Add(112*time.Millisecond))
 	if dropped != 14 {

@@ -21,8 +21,7 @@ var (
 	errWebPCMContextGone = errors.New("nsgo: audio: Web Audio context closed")
 )
 
-// webPCMGeometry holds the derived frame counts and scheduling cadence for a
-// Web pull PCM stream.
+// webPCMGeometry holds the derived frame counts and scheduling cadence for a Web pull PCM stream.
 type webPCMGeometry struct {
 	sampleRate     int
 	channels       int
@@ -109,11 +108,7 @@ func secToNanos(sec float64) int64 {
 	return int64(math.Round(sec * float64(time.Second)))
 }
 
-// webOutputClock resolves the audio presentation clock (in AudioContext
-// seconds) and corresponding wall-clock reference from AudioContext.currentTime
-// and AudioContext.getOutputTimestamp(). When getOutputTimestamp reports a
-// valid positive contextTime it is preferred; otherwise currentTime minus
-// outputLatency is used.
+// webOutputClock resolves the audio presentation clock (in AudioContext seconds) and corresponding wall-clock reference from AudioContext.currentTime and AudioContext.getOutputTimestamp(). When getOutputTimestamp reports a valid positive contextTime it is preferred; otherwise currentTime minus outputLatency is used.
 func webOutputClock(curSec, tsContextSec, tsPerfMs, perfNowMs, outputLatencySec float64, wallNow time.Time) (float64, time.Time) {
 	if math.IsNaN(curSec) || math.IsInf(curSec, 0) || curSec < 0 {
 		curSec = 0
@@ -143,9 +138,7 @@ type pcmRingChunk struct {
 	produced int
 }
 
-// pcmRing is a fixed-capacity circular buffer of interleaved Float32 samples
-// that preserves per-chunk client-produced frame counts so Flush reports only
-// discarded client frames and never counts underrun silence.
+// pcmRing is a fixed-capacity circular buffer of interleaved Float32 samples that preserves per-chunk client-produced frame counts so Flush reports only discarded client frames and never counts underrun silence.
 type pcmRing struct {
 	samples        []float32
 	channels       int
@@ -237,9 +230,7 @@ type webPCMSlice struct {
 	produced int64
 }
 
-// webPCMTimeline tracks chunks submitted to Web Audio on the AudioContext
-// timeline and computes monotonic presented frame counts and discarded pending
-// client frames on Flush/Pause.
+// webPCMTimeline tracks chunks submitted to Web Audio on the AudioContext timeline and computes monotonic presented frame counts and discarded pending client frames on Flush/Pause.
 type webPCMTimeline struct {
 	sampleRate    int
 	base          int64
@@ -345,10 +336,7 @@ func (t *webPCMTimeline) aheadFrames(nowSec float64) int {
 	return int((aheadNs*int64(t.sampleRate) + int64(time.Second) - 1) / int64(time.Second))
 }
 
-// webPCMState encapsulates the platform-independent state machine for Web pull
-// PCM output: ring buffering, short-fill silence padding, underrun accounting,
-// monotonic position tracking, flush/pause/close transitions, latency reporting
-// and AudioContext statechange interruption classification.
+// webPCMState encapsulates the platform-independent state machine for Web pull PCM output: ring buffering, short-fill silence padding, underrun accounting, monotonic position tracking, flush/pause/close transitions, latency reporting and AudioContext statechange interruption classification.
 type webPCMState struct {
 	geom        webPCMGeometry
 	ring        *pcmRing
@@ -404,8 +392,7 @@ func (s *webPCMState) close(nowSec float64, wallNow time.Time) bool {
 	return true
 }
 
-// pullIntoRing invokes render for one chunk, zero-pads any short fill,
-// increments underruns on short fill, and pushes the chunk into the ring buffer.
+// pullIntoRing invokes render for one chunk, zero-pads any short fill, increments underruns on short fill, and pushes the chunk into the ring buffer.
 func (s *webPCMState) pullIntoRing(render func([]float32) int) (frames, produced int, underrun bool) {
 	frames = s.geom.chunkFrames
 	if s.ring.free() < frames {
@@ -458,10 +445,7 @@ func (s *webPCMState) latency(baseSec, outputSec, nowSec float64) time.Duration 
 	return hw + buf
 }
 
-// onContextState updates statechange tracking for an AudioContext state name
-// ("running", "suspended", "interrupted", "closed") and reports whether the
-// transition is an unexpected interruption that should pause the stream and
-// notify OnInterrupt.
+// onContextState updates statechange tracking for an AudioContext state name ("running", "suspended", "interrupted", "closed") and reports whether the transition is an unexpected interruption that should pause the stream and notify OnInterrupt.
 func (s *webPCMState) onContextState(state string) (bool, error) {
 	if state == "running" {
 		s.seenRunning = true
@@ -483,17 +467,14 @@ func (s *webPCMState) onContextState(state string) (bool, error) {
 	return false, nil
 }
 
-// encodeInterleavedFloat32LE encodes interleaved Float32 samples into
-// little-endian bytes for bulk transfer to a JS Float32Array via CopyBytesToJS.
+// encodeInterleavedFloat32LE encodes interleaved Float32 samples into little-endian bytes for bulk transfer to a JS Float32Array via CopyBytesToJS.
 func encodeInterleavedFloat32LE(dst []byte, src []float32) {
 	for i, v := range src {
 		binary.LittleEndian.PutUint32(dst[i*4:], math.Float32bits(v))
 	}
 }
 
-// encodePlanarChannelFloat32LE extracts one channel from interleaved Float32
-// samples into little-endian bytes for AudioBuffer.copyToChannel in the
-// AudioBufferSourceNode fallback path.
+// encodePlanarChannelFloat32LE extracts one channel from interleaved Float32 samples into little-endian bytes for AudioBuffer.copyToChannel in the AudioBufferSourceNode fallback path.
 func encodePlanarChannelFloat32LE(dst []byte, interleaved []float32, channel, channels, frames int) {
 	for i := range frames {
 		v := interleaved[i*channels+channel]

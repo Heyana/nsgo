@@ -49,10 +49,7 @@ func jsTry(fn func()) (err error) {
 	return nil
 }
 
-// webPCMWorkletJS is the inline AudioWorkletProcessor registered via a Blob URL.
-// It consumes interleaved Float32 chunks pushed over its MessagePort from Go,
-// outputs silence when paused or starved, and posts progress back so Go can
-// refill the ring buffer promptly.
+// webPCMWorkletJS is the inline AudioWorkletProcessor registered via a Blob URL. It consumes interleaved Float32 chunks pushed over its MessagePort from Go, outputs silence when paused or starved, and posts progress back so Go can refill the ring buffer promptly.
 const webPCMWorkletJS = `
 class NsgoPCMProcessor extends AudioWorkletProcessor {
 	constructor(options) {
@@ -166,10 +163,7 @@ class NsgoPCMProcessor extends AudioWorkletProcessor {
 registerProcessor('nsgo-pcm-output', NsgoPCMProcessor);
 `
 
-// OpenAudioOutput opens a paused pull PCM stream backed by Web Audio's
-// AudioContext + AudioWorkletNode, falling back to scheduled
-// AudioBufferSourceNodes when AudioWorklet is unavailable (such as non-secure
-// contexts) or when the browser's AudioContext sample rate differs.
+// OpenAudioOutput opens a paused pull PCM stream backed by Web Audio's AudioContext + AudioWorkletNode, falling back to scheduled AudioBufferSourceNodes when AudioWorklet is unavailable (such as non-secure contexts) or when the browser's AudioContext sample rate differs.
 func (*surface) OpenAudioOutput(c driver.AudioOutputConfig) (driver.AudioOutput, error) {
 	return openWebAudioOutput(c)
 }
