@@ -1,7 +1,13 @@
 package android
 
 import (
+	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -119,14 +125,9 @@ func TestJavaExtendedKindsMatchGo(t *testing.T) {
 	}
 	goSource, java := read("android.go"), read("java", "dev", "oneo", "nsgo", "Protocol.java")
 
-	block := regexp.MustCompile(`(?s)// Extended Go-to-Java message kinds[^\n]*\nconst \((.*?)\)`).FindStringSubmatch(goSource)
-	if block == nil {
-		t.Fatal("android.go has no extended message kinds")
-	}
-	goKinds := map[string]int{}
-	for _, m := range regexp.MustCompile(`\bext(\w+) += (\d+)`).FindAllStringSubmatch(block[1], -1) {
-		n, _ := strconv.Atoi(m[2])
-		goKinds[javaConstantName(m[1])] = n
+	goKinds, err := goExtendedKinds(goSource)
+	if err != nil {
+		t.Fatal(err)
 	}
 	javaKinds := map[string]int{}
 	for _, m := range regexp.MustCompile(`static final int EXT_(\w+) = (\d+);`).FindAllStringSubmatch(java, -1) {
@@ -168,6 +169,78 @@ func TestJavaExtendedKindsMatchGo(t *testing.T) {
 	if got := javaConstantName("DNSServers"); got != "DNS_SERVERS" {
 		t.Errorf("javaConstantName(DNSServers) = %s", got)
 	}
+}
+
+// TestGoExtendedKindsReadsTheWholeBlock checks goExtendedKinds on comments a pattern match would stop at, such as a parenthesis inside the block, and on the constants around it, which are not extended kinds.
+func TestGoExtendedKindsReadsTheWholeBlock(t *testing.T) {
+	src := `package android
+
+const msgOther = 3
+
+// Extended Go-to-Java message kinds, the sub-kind byte (see msgExtended).
+const (
+	// extFrameRate sets the display's frame rate (see Display.setFrameRate).
+	extFrameRate = 1
+	// extDNSServers asks for the DNS servers (a list).
+	extDNSServers = 0x2
+)
+
+// The parts of an image (placeholder or source).
+const (
+	extNotAKind = 9
+)
+`
+	got, err := goExtendedKinds(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]int{"FRAME_RATE": 1, "DNS_SERVERS": 2}; !maps.Equal(got, want) {
+		t.Errorf("goExtendedKinds = %v, want %v", got, want)
+	}
+	if _, err := goExtendedKinds("package android\n\nconst extFoo = 1\n"); err == nil {
+		t.Error("goExtendedKinds found a block in a source without one")
+	}
+	if _, err := goExtendedKinds("package android\n\n// Extended Go-to-Java message kinds.\nconst (\n\textFoo = 1 << 2\n)\n"); err == nil {
+		t.Error("goExtendedKinds took a kind that is not a number")
+	}
+}
+
+// goExtendedKinds parses android.go's source and returns the ext* constants of the const declaration documented as the extended Go-to-Java message kinds, by Protocol.java's names for them (EXT_ less): parsing rather than matching text, so a comment in the block, parentheses and all, cannot cut it short.
+func goExtendedKinds(src string) (map[string]int, error) {
+	file, err := parser.ParseFile(token.NewFileSet(), "android.go", src, parser.ParseComments)
+	if err != nil {
+		return nil, err
+	}
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST || gen.Doc == nil || !strings.HasPrefix(gen.Doc.Text(), "Extended Go-to-Java message kinds") {
+			continue
+		}
+		kinds := map[string]int{}
+		for _, spec := range gen.Specs {
+			vs := spec.(*ast.ValueSpec)
+			for i, name := range vs.Names {
+				if !strings.HasPrefix(name.Name, "ext") {
+					continue
+				}
+				var lit ast.Expr
+				if i < len(vs.Values) {
+					lit = vs.Values[i]
+				}
+				b, ok := lit.(*ast.BasicLit)
+				if !ok || b.Kind != token.INT {
+					return nil, fmt.Errorf("android.go's extended kind %s is not a number", name.Name)
+				}
+				n, err := strconv.ParseInt(b.Value, 0, 64)
+				if err != nil {
+					return nil, fmt.Errorf("android.go's extended kind %s: %v", name.Name, err)
+				}
+				kinds[javaConstantName(strings.TrimPrefix(name.Name, "ext"))] = int(n)
+			}
+		}
+		return kinds, nil
+	}
+	return nil, errors.New("android.go has no extended message kinds")
 }
 
 // javaConstantName turns a Go name's camel case into Protocol.java's upper snake case: FrameRate is FRAME_RATE and DNSServers DNS_SERVERS.
