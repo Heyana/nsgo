@@ -108,6 +108,14 @@ final class TestAgent {
 
     private void run(int id, JSONObject op) throws Exception {
         switch (op.getString("op")) {
+            case "notification-intents": {
+                Context context = view.getContext();
+                Activity host = op.optBoolean("launcher") ? null : activity();
+                android.app.PendingIntent first = Notifications.pressIntent(context, host, op.getString("first"));
+                android.app.PendingIntent second = Notifications.pressIntent(context, host, op.getString("second"));
+                view.testReply(id, "", Boolean.toString(first.equals(second)));
+                return;
+            }
             case "press": {
                 float[] p = window(op.getDouble("x"), op.getDouble("y"));
                 long hold = Math.max(op.optLong("hold"), 0) + 50;

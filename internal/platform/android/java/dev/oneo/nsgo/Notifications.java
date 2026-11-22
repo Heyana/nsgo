@@ -275,11 +275,14 @@ final class Notifications {
      * The intent a press sends: the app's activity, brought back if it
      * runs, with the notification's ID.
      */
-    private static PendingIntent pressIntent(Context context, Activity activity, String id) {
+    static PendingIntent pressIntent(Context context, Activity activity, String id) {
         Intent intent = activity != null ? new Intent(context, activity.getClass())
                 : context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         if (intent == null) intent = new Intent();
         intent.setPackage(context.getPackageName());
+        // PendingIntent ignores extras when matching an earlier intent. The
+        // complete ID keeps Java hash collisions from redirecting a press.
+        intent.setData(Uri.fromParts("nsgo-notification", id, null));
         intent.putExtra(EXTRA, id);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         return PendingIntent.getActivity(context, id.hashCode(), intent,

@@ -47,7 +47,7 @@ cx.ShowNotification(core.Notification{ID: "habit", Title: "练习",
 	At: time.Date(2026, 1, 1, 9, 0, 0, 0, time.Local), Repeat: core.NotificationDaily}, nil)
 ```
 
-手机处于低电耗模式时，Android 可能在定时通知的时间过后几分钟才显示它；需要准时显示的应用（如闹钟）要在 `android.permissions` 中列出 `android.permission.SCHEDULE_EXACT_ALARM`，从 Android 12 起由用户在系统设置中授予；或者列出 `USE_EXACT_ALARM`，Google Play 只允许闹钟和日历应用使用它。被强行停止的 Android 应用，它的定时通知要等到下次启动时才会显示。
+手机处于低电耗模式时，Android 可能在定时通知的时间过后几分钟才显示它；需要准时显示的应用（如闹钟）要在 `android.permissions` 中列出 `android.permission.SCHEDULE_EXACT_ALARM`，从 Android 12 起由用户在系统设置中授予；或者列出 `USE_EXACT_ALARM`，Google Play 只允许闹钟和日历应用使用它。被强行停止的 Android 应用，它的定时通知要等到下次启动时才会显示。验证进程结束后的投递时，先等 `ShowNotification` 回调返回 true，再结束应用进程，不要强行停止整个应用包。
 
 ## 点按
 

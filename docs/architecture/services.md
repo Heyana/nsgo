@@ -283,6 +283,10 @@ A `Notification` with an `At` later than the wall time is scheduled: the system 
 | Web | The page's `Notification` | The page's | Its `onclick`, focusing the window | `close` on each this page showed | `navigator.setAppBadge` for an installed web app |
 | watchOS, mini programs | None ([roadmap](../roadmap.md#apple-watch)) | Unavailable | — | — | None |
 
+Android press intents use the complete notification ID in their URI as well as the callback extra: `PendingIntent` ignores extras when matching, and a Java hash alone aliases IDs such as `Aa` and `BB`. Both immediate notifications and the receiver’s scheduled notifications use this identity. `TestNotificationPressIntentsKeepCollidingIDs` compares real pending intents on Android for colliding, repeated and Unicode IDs, through both the active-activity and cold-launch paths; it posts no notifications.
+
+On 2026-11-22, the Android pending-intent regression failed for `Aa` and `BB` before the URI fix and passed afterward on an API 35 emulator and a physical Pixel 3 XL on API 31. The owned API 35 emulator restored the one-minute and moved schedules after a reboot, showed both without Go running, omitted the cancelled ID, and cold-started the fixture with `move1356` on a press. With exact-alarm access granted, its alarm window was zero and the one-minute notification posted 64 ms after its deadline. Without that access, in deep Doze with no Go process, it posted at the end of its roughly 45-second inexact window (72 ms of scheduling jitter); the moved request showed afterward and cancellation stayed absent. `internal/testhost/testdata/schedulednotifications` keeps the app and reproduction steps. Delivery on a physical Android phone, iPhone delivery and press handling, bundled macOS delivery and Windows delivery still need acceptance: the iPhone’s authorization did not complete, the Mac’s permission remained not asked, and no Windows session was reachable.
+
 An app that shows in its window what its notifications told clears them as it comes to the front:
 
 ```go

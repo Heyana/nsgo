@@ -1,0 +1,11 @@
+name: ScheduledNotifications
+id: dev.nsgo.test.scheduled1356
+version: 0.1.0
+updates:
+  channel: none
+build:
+  installers: false
+android:
+  permissions:
+    - android.permission.POST_NOTIFICATIONS
+    - android.permission.SCHEDULE_EXACT_ALARM

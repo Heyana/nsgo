@@ -47,7 +47,7 @@ cx.ShowNotification(core.Notification{ID: "habit", Title: "Practice",
 	At: time.Date(2026, 1, 1, 9, 0, 0, 0, time.Local), Repeat: core.NotificationDaily}, nil)
 ```
 
-Android may show a scheduled notification some minutes after its time while the phone dozes; an app that needs it on the minute, such as an alarm clock, lists `android.permission.SCHEDULE_EXACT_ALARM` in `android.permissions`, which the user grants in the system's settings from Android 12, or `USE_EXACT_ALARM`, which Google Play allows only alarm and calendar apps. A force-stopped Android app's notifications wait until it next starts.
+Android may show a scheduled notification some minutes after its time while the phone dozes; an app that needs it on the minute, such as an alarm clock, lists `android.permission.SCHEDULE_EXACT_ALARM` in `android.permissions`, which the user grants in the system's settings from Android 12, or `USE_EXACT_ALARM`, which Google Play allows only alarm and calendar apps. A force-stopped Android app's notifications wait until it next starts. To test delivery after process death, wait for `ShowNotification` to answer true, then kill its processes without force-stopping the package.
 
 ## Presses
 
