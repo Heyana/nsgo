@@ -3,6 +3,7 @@
 package web
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -29,15 +30,19 @@ func (s *surface) authSession(id uint32, r driver.AuthRequest) {
 	switch r.Command {
 	case driver.AuthStart:
 		loc := js.Global().Get("location")
-		redirect := loc.Get("origin").String() + r.Path
+		path := (&url.URL{Path: r.Path}).EscapedPath()
+		redirect := loc.Get("origin").String() + path
 		switch {
 		case r.Scheme == "":
 		case strings.EqualFold(r.Scheme, "https") && strings.EqualFold(r.Host, loc.Get("host").String()):
-			redirect = "https://" + loc.Get("host").String() + r.Path
+			redirect = "https://" + loc.Get("host").String() + path
 		default:
 			dispatch(driver.AuthEnd(id, driver.AuthUnavailable, "the web catches only redirects to the page's own origin"))
 			return
 		}
+		// Navigation serializes Unicode and resolves dot segments. Give the app
+		// that same URL, so follow compares the actual callback to its redirect.
+		redirect = js.Global().Get("URL").New(redirect).Get("href").String()
 		popup := js.Global().Call("open", "", "nsgo-auth-"+strconv.FormatUint(uint64(id), 10), "popup,width=520,height=680")
 		if !popup.Truthy() {
 			dispatch(driver.AuthEnd(id, driver.AuthFailed, "the browser blocked the sign-in popup: start a session from a press"))

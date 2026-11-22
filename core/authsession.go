@@ -30,7 +30,9 @@ type AuthSessionOptions struct {
 	// Scheme is the app's own callback scheme, such as "com.example.app", which macOS's and iOS's session catches without the app registering it: the redirect is scheme:/path. "https" with Host catches an HTTPS redirect to the app's associated domain, from iOS 17.4 and macOS 14.4. Without one, desktops serve a loopback redirect, http://127.0.0.1:port/path on a random port, and the web one on the page's origin.
 	Scheme string
 	Host   string
-	// Path is the redirect's path, "/" when empty.
+	// Path is the redirect's path, "/" when empty. Web and desktop loopback
+	// redirects treat it as decoded text, escape it and resolve dot segments
+	// before reporting it.
 	Path string
 	// Ephemeral asks the session to share no cookies or data with the user's browser (prefersEphemeralWebBrowserSession), where the platform can.
 	Ephemeral bool

@@ -80,6 +80,37 @@ func TestLoopbackCancelStopsListening(t *testing.T) {
 	}
 }
 
+func TestLoopbackNormalizesCallbackPaths(t *testing.T) {
+	for _, test := range []struct{ path, encoded string }{
+		{"/登录/戻る", "/%E7%99%BB%E5%BD%95/%E6%88%BB%E3%82%8B"},
+		{"/auth/../callback", "/callback"},
+		{"/literal%2Fcallback", "/literal%252Fcallback"},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			var sessions Sessions
+			defer sessions.Close()
+			evs := make(events, 4)
+			sessions.Handle(1, driver.AuthRequest{Command: driver.AuthStart, Path: test.path}, nil, "Done", evs.dispatch)
+			redirect := evs.next(t).Redirect
+			if !strings.HasSuffix(redirect, test.encoded) {
+				t.Fatalf("redirect %q does not end in %q", redirect, test.encoded)
+			}
+			callback := redirect + "?code=synthetic&state=synthetic%2Bstate"
+			response, err := http.Get(callback)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("callback returned %d", response.StatusCode)
+			}
+			if report := evs.next(t); report.Callback != callback || report.Error != "" {
+				t.Fatalf("callback report %+v", report)
+			}
+		})
+	}
+}
+
 func TestLoopbackFailsWithoutABrowser(t *testing.T) {
 	var s Sessions
 	evs := make(events, 4)

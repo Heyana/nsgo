@@ -443,6 +443,8 @@ cx.AuthSession(func(redirect string) string {
 
 The redirect is `com.example.app:/oauth2redirect` where the system's session catches the scheme, which the app need not declare, and `http://127.0.0.1:<port>/oauth2redirect` on the desktops' loopback, so register both with the provider, often as clients of their own. Leave `Scheme` empty for loopback alone, or set it to `https` with `Host` for the app's associated domain, which iOS 17.4 and macOS 14.4 catch. A closed browser tab tells a loopback session nothing, so give it a `Timeout` or a cancel button. `Ephemeral` asks macOS and iOS not to share the browser's cookies. Android, tvOS, watchOS and mini programs answer `core.AuthUnavailable` for now. In TSX, `AuthSession.start(url, options)` needs the `auth_session` capability and gives a session whose `result` resolves with the callback, or null once cancelled.
 
+Use the exact redirect passed to the authorization URL function. Web and desktop loopback redirects encode Unicode paths and resolve dot segments before the function receives them; a loopback `Path` is decoded text, so a literal `%` is escaped too.
+
 An app whose web views should be signed in as the user already is elsewhere, such as in their own browser, writes the cookies of that sign-in with `cx.SetWebCookies`, HttpOnly ones included, which page scripts cannot set, then loads the pages: done runs once the store holds them. The store is the persistent one every web view of the app shares, so cookies with an `Expires` outlive the app; Incognito views do not see them, except on Android, which keeps one store per app. The web, tvOS and watchOS answer `Unavailable`.
 
 ```go
