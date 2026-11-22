@@ -218,14 +218,6 @@ The [games plan (#1047)](https://github.com/nsgo-dev/nsgo/issues/1047) targets m
 
 [Steam verification (#1228)](https://github.com/nsgo-dev/nsgo/issues/1228), [Runtime 3 depot](https://repo.steampowered.com/steamrt3/images/3.0.20261110.268881/), [Runtime 4 depot](https://repo.steampowered.com/steamrt4/images/4.0.20261021.265997/)
 
-## Diagrams
-
-What `base/diagram` still lacks ([diagrams](architecture/components.md#diagrams)), limu's `limumygo` the reference.
-
-| Item | Reference | Done when |
-| --- | --- | --- |
-| Links and tooltips | `limumygo`'s `hit.go`, `scene.Item.Link` and `Tooltip`, [#1435](https://github.com/nsgo-dev/nsgo/issues/1435) | A press on an item with a link opens it as `TextView`'s links do, and the item under the pointer shows its tooltip |
-
 ## Formulas
 
 What `base/formula` still lacks ([formulas](architecture/components.md#formulas)), Untie's and MyGo's adapter the references.

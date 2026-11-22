@@ -267,7 +267,7 @@ go tool nsgo test -target watchos_simulator -device <owned-UUID> -env NSGO_FORMU
 | A box stroked grown by half its width, lines stroked in pieces, halos drawn as glyphs in sixteen directions | Paths stroked as SVG strokes them, text stroked for halos | NSGo's canvas strokes as SVG does |
 | `Options.Scale`, `Fonts` of its own | The scene's size in points, the platform's fonts measured through the text engine | Diagrams follow the text size and the platform's text as text does |
 | Icons and images delegated to host callbacks | App-supplied SVGs and the shared image loader | Reuse NSGo's vector drawing, cache and access policy |
-| Hovered and clicked items, links and tooltips | None yet | Left for later ([roadmap](../roadmap.md#diagrams)) |
+| Hovered and clicked items, links and tooltips | `scene.Item` hit tests against the canvas, as `limumygo`'s `hit.go` does | A press opens an item's link through `Scope.OpenURL`, and the item under the pointer shows its tooltip |
 
 ## Resizable panels
 

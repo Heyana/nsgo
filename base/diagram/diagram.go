@@ -207,9 +207,21 @@ func (v View) Render(cx *core.Scope) core.Node {
 			return core.Text{ContentFunc: source, Class: v.ErrorClass, Style: v.ErrorStyle, TestID: v.TestID}
 		},
 		Else: func(cx *core.Scope) core.Node {
-			return core.Canvas{
-				Class:    v.Class,
-				OnLayout: func(b core.Bounds) { width.Set(b.Size.Width) },
+			hovered := core.NewSignal[*scene.Item](cx, nil)
+			canvasSize := core.NewSignal(cx, core.Size{})
+			// at maps a point in the canvas to the scene as Draw places it: centered across any room left after fitting, and stretched only vertically.
+			at := func(p core.Point) *scene.Item {
+				sc := laid.Get().scene
+				sz := canvasSize.GetUntracked()
+				if sc == nil || sc.Width <= 0 || sc.Height <= 0 || sz.Width <= 0 || sz.Height <= 0 {
+					return nil
+				}
+				x := float64(p.X) - max(0, (float64(sz.Width)-sc.Width)/2)
+				return itemAt(sc, scene.Point{X: x, Y: float64(p.Y) * sc.Height / float64(sz.Height)}, 4)
+			}
+			// The view around the canvas takes the canvas's size and the pointer's moves for tooltips; the canvas fills it and takes presses for links, so a diagram without links is no focus stop.
+			return core.View{
+				Class: v.Class,
 				StyleFunc: func() core.Style {
 					s := styles()
 					// Keep the unbounded preferred width so widening a container can restore the original direction after a narrow layout.
@@ -229,27 +241,56 @@ func (v View) Render(cx *core.Scope) core.Node {
 					return core.Style{Width: core.Pt(preferred), MaxWidth: most,
 						Height: core.Pt(core.Points(sc.Height)), AlignSelf: core.AlignStart}.Merge(s)
 				},
-				TestID: v.TestID,
-				LabelFunc: func() string {
-					if v.Label != "" {
-						return v.Label
+				OnMouseMove: func(e core.MouseEvent) {
+					it := at(e.Position)
+					if it == nil || it.Tooltip == "" {
+						it = nil
 					}
-					return label(msgs(), laid.Get().scene)
+					hovered.Set(it)
 				},
-				Draw: func(d *core.Drawing, sz core.Size) {
-					sc := laid.Get().scene
-					if sc == nil || sc.Width <= 0 || sc.Height <= 0 {
-						return
-					}
-					// Reflow keeps labels in their measured font size. Any room left after fitting centers the scene without stretching it.
-					d.Translate(max(0, (float32(sz.Width)-float32(sc.Width))/2), 0)
-					d.Scale(1, float32(sz.Height)/float32(sc.Height))
-					theme := v.Theme
-					if v.ThemeFunc != nil {
-						theme = v.ThemeFunc()
-					}
-					paint(d, sc, theme.look(env.Dark()), m, icons, images())
+				OnMouseLeave: func(core.MouseEvent) { hovered.Set(nil) },
+				Tooltip: diagramTooltip{
+					open: func() bool { return hovered.Get() != nil },
+					text: func() string {
+						if it := hovered.Get(); it != nil {
+							return it.Tooltip
+						}
+						return ""
+					},
 				},
+				Children: []core.Node{core.Canvas{
+					Style: core.Style{Width: core.Pct(100), Height: core.Pct(100)},
+					OnLayout: func(b core.Bounds) {
+						width.Set(b.Size.Width)
+						canvasSize.Set(b.Size)
+					},
+					OnPress: func(e core.PressEvent) {
+						if it := at(e.Position); it != nil && it.Link != "" {
+							cx.OpenURL(it.Link, nil)
+						}
+					},
+					TestID: v.TestID,
+					LabelFunc: func() string {
+						if v.Label != "" {
+							return v.Label
+						}
+						return label(msgs(), laid.Get().scene)
+					},
+					Draw: func(d *core.Drawing, sz core.Size) {
+						sc := laid.Get().scene
+						if sc == nil || sc.Width <= 0 || sc.Height <= 0 {
+							return
+						}
+						// Reflow keeps labels in their measured font size. Any room left after fitting centers the scene without stretching it.
+						d.Translate(max(0, (float32(sz.Width)-float32(sc.Width))/2), 0)
+						d.Scale(1, float32(sz.Height)/float32(sc.Height))
+						theme := v.Theme
+						if v.ThemeFunc != nil {
+							theme = v.ThemeFunc()
+						}
+						paint(d, sc, theme.look(env.Dark()), m, icons, images())
+					},
+				}},
 			}
 		},
 	}

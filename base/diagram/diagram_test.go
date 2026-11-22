@@ -1,12 +1,15 @@
 package diagram
 
 import (
+	"os"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/firede/limu/style"
 
+	_ "github.com/nsgo-dev/nsgo"
 	"github.com/nsgo-dev/nsgo/base/textview"
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/i18n"
@@ -68,6 +71,44 @@ func TestViewLaysOutAndPaints(t *testing.T) {
 		t.Errorf("label %q, want what a diagram is called without a title", got)
 	}
 	app.Screenshot("diagram-flowchart")
+}
+
+func TestDiagramLinksOpenAndTooltipsFollowItems(t *testing.T) {
+	source := "flowchart LR\n  A[Open] \n  click A \"https://example.com/help\" \"Open help\""
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return View{TestID: "d", Source: source}
+	}, nsgotest.Environment(core.Environment{Idiom: core.IdiomDesktop, OS: core.OSMacOS}))
+	d := app.Find("id:d")
+	center := driver.Point{X: driver.Points(d.Frame.Size.Width / 2), Y: driver.Points(d.Frame.Size.Height / 2)}
+	app.HoverAt("id:d", center)
+	app.Advance(600 * time.Millisecond)
+	if !app.Exists("text:Open help") {
+		t.Fatalf("linked item's tooltip did not show:\n%s", app.Dump())
+	}
+	app.PressAt("id:d", center)
+	if got := app.OpenedURLs; len(got) != 1 || got[0] != "https://example.com/help" {
+		t.Fatalf("opened URLs = %v, want the diagram link", got)
+	}
+}
+
+func TestDiagramLinksOnMacOSTarget(t *testing.T) {
+	if target := os.Getenv("NSGO_TEST_TARGET"); target != "macos" {
+		t.Skipf("native interaction requires NSGO_TEST_TARGET=macos, got %q", target)
+	}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return View{TestID: "d", Source: "flowchart LR\n  A[Open]\n  click A \"https://example.com/native\" \"Native help\""}
+	}, nsgotest.Environment(core.Environment{Idiom: core.IdiomDesktop, OS: core.OSMacOS}))
+	d := app.Find("id:d")
+	center := driver.Point{X: driver.Points(d.Frame.Size.Width / 2), Y: driver.Points(d.Frame.Size.Height / 2)}
+	app.HoverAt("id:d", center)
+	app.Advance(600 * time.Millisecond)
+	if !app.Exists("text:Native help") {
+		t.Fatalf("native target did not show the item's tooltip:\n%s", app.Dump())
+	}
+	app.PressAt("id:d", center)
+	if got := app.OpenedURLs; len(got) != 1 || got[0] != "https://example.com/native" {
+		t.Fatalf("native target opened URLs = %v", got)
+	}
 }
 
 // A label's spans are drawn in their faces: a bold span in bold, as it was measured.
@@ -210,7 +251,7 @@ func TestRenderDiagram(t *testing.T) {
 	if !app.Exists("text:x := 1") {
 		t.Error("a go code block does not show its code")
 	}
-	streaming.Set(true)
+	app.Post(func() { streaming.Set(true) })
 	app.Settle()
 	if app.Exists("label:Diagram") {
 		t.Error("a mermaid block streaming in draws before it is complete")
