@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -31,6 +31,14 @@ func (p *project) sandboxEntitlements() map[string]any {
 		ents["com.apple.security.device.bluetooth"] = true
 	}
 	maps.Copy(ents, p.MacOS.Entitlements)
+	if len(p.Widgets) > 0 {
+		groups, _ := ents["com.apple.security.application-groups"].([]any)
+		groups = slices.Clone(groups)
+		if !slices.Contains(groups, any(p.appGroup())) {
+			groups = append(groups, p.appGroup())
+		}
+		ents["com.apple.security.application-groups"] = groups
+	}
 	return ents
 }
 
@@ -46,14 +54,35 @@ func releaseMacStorePackage(ctx context.Context, p *project, app, dir, arch stri
 // buildMacStorePackage signs app for the Mac App Store and writes its
 // installer package into dir, returning the package's path.
 func buildMacStorePackage(ctx context.Context, p *project, app, dir, arch string) (string, error) {
-	if len(p.Widgets) > 0 {
-		return "", errors.New("the Mac App Store's sandboxed apps cannot share widgets' timelines yet; build without widgets")
+	team, err := signMacStoreApp(ctx, p, app)
+	if err != nil {
+		return "", err
+	}
+	installer := ""
+	if team != "" {
+		if installer, err = p.installerIdentity(ctx, team); err != nil {
+			return "", err
+		}
+	}
+	stage(ctx, "packaging for the Mac App Store")
+	pkg := filepath.Join(dir, p.releaseName("macos_"+arch, ".pkg"))
+	args := []string{"--component", app, "/Applications"}
+	if installer != "" {
+		args = append(args, "--sign", installer)
+	}
+	return pkg, run(ctx, "productbuild", append(args, pkg)...)
+}
+
+// signMacStoreApp applies sandbox and profile signatures even when an app build omits its installer. It returns the team for installer signing.
+func signMacStoreApp(ctx context.Context, p *project, app string) (string, error) {
+	if len(p.Widgets) > 0 && (p.Sign.MacOSProfile == "" || p.Sign.WidgetsProfile == "") {
+		return "", fmt.Errorf("sandboxed widgets need sign.macos_profile and sign.widgets_profile granting app group %s", p.appGroup())
 	}
 	if !p.Game && p.MacOSCategory() == "" {
 		detailIn(ctx, "set macos.category, which the Mac App Store requires, such as public.app-category.productivity")
 	}
 	ents := p.sandboxEntitlements()
-	identity, installer := "-", ""
+	identity, team := "-", ""
 	if p.Sign.MacOSProfile == "" {
 		detailIn(ctx, "unsigned: set sign.macos_profile to upload it to the Mac App Store")
 		if p.Apple.SignInWithApple {
@@ -73,7 +102,11 @@ func buildMacStorePackage(ctx context.Context, p *project, app, dir, arch string
 		if !profileAllows(appID, p.ID) {
 			return "", fmt.Errorf("the provisioning profile is for %s, not %s", appID, p.ID)
 		}
-		team, _ := granted["com.apple.developer.team-identifier"].(string)
+		groups, _ := granted["com.apple.security.application-groups"].([]any)
+		if len(p.Widgets) > 0 && !slices.Contains(groups, any(p.appGroup())) {
+			return "", fmt.Errorf("the provisioning profile does not grant widget app group %s", p.appGroup())
+		}
+		team, _ = granted["com.apple.developer.team-identifier"].(string)
 		ents["com.apple.application-identifier"] = signedAppID(appID, p.ID)
 		ents["com.apple.developer.team-identifier"] = team
 		if err := p.claimSignInWithApple(ents, granted); err != nil {
@@ -85,8 +118,10 @@ func buildMacStorePackage(ctx context.Context, p *project, app, dir, arch string
 		if identity, err = profileIdentity(ctx, profile); err != nil {
 			return "", err
 		}
-		if installer, err = p.installerIdentity(ctx, team); err != nil {
-			return "", err
+		if len(p.Widgets) > 0 {
+			if err := signMacStoreWidgets(ctx, p, app, team); err != nil {
+				return "", err
+			}
 		}
 	}
 	path, err := writeEntitlements(ents)
@@ -104,13 +139,7 @@ func buildMacStorePackage(ctx context.Context, p *project, app, dir, arch string
 	if err := run(ctx, "codesign", "--force", "--sign", identity, "--entitlements", path, app); err != nil {
 		return "", err
 	}
-	stage(ctx, "packaging for the Mac App Store")
-	pkg := filepath.Join(dir, p.releaseName("macos_"+arch, ".pkg"))
-	args := []string{"--component", app, "/Applications"}
-	if installer != "" {
-		args = append(args, "--sign", installer)
-	}
-	return pkg, run(ctx, "productbuild", append(args, pkg)...)
+	return team, nil
 }
 
 // installerIdentity is the identity that signs the store's installer

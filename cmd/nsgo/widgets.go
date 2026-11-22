@@ -260,7 +260,7 @@ func (w widgetKind) families() []string {
 	return w.Families
 }
 
-// appGroup is the app group the iOS app shares with its widgets or App Clip.
+// appGroup is the app group iOS and provisioned Mac App Store apps share with their widgets, and the iOS app with its App Clip.
 func (p *project) appGroup() string {
 	if p.Apple.AppGroup != "" {
 		return p.Apple.AppGroup
@@ -272,6 +272,11 @@ func (p *project) appGroup() string {
 // the user's home.
 func (p *project) macWidgetsPath() string {
 	return filepath.Join("Library", "Application Support", p.ID, "Widgets")
+}
+
+// macWidgetsUseAppGroup selects the shared container required by sandboxed Mac App Store builds. Direct and development builds retain their existing home-directory path, which needs no provisioning profile.
+func (p *project) macWidgetsUseAppGroup() bool {
+	return p.Release && p.channel() == channelStore
 }
 
 // widgetPlist returns the entries of the app's Info.plist that tell
@@ -290,6 +295,9 @@ func (p *project) widgetPlist(ios bool) string {
 		return s
 	case ios || len(p.Widgets) == 0:
 		return ""
+	}
+	if p.macWidgetsUseAppGroup() {
+		return "<key>" + widgetGroupKey + "</key><string>" + xmlText(p.appGroup()) + "</string>"
 	}
 	return "<key>" + widgetPathKey + "</key><string>" + xmlText(p.macWidgetsPath()) + "</string>"
 }
@@ -655,11 +663,16 @@ func addMacWidgets(ctx context.Context, p *project, app, arch string) error {
 	if err := copyLibrary(w.exe, filepath.Join(contents, "MacOS", widgetsExec)); err != nil {
 		return err
 	}
-	info, err := widgetsInfo(p, map[string]any{
-		widgetPathKey:                p.macWidgetsPath(),
+	platform := map[string]any{
 		"CFBundleSupportedPlatforms": []any{"MacOSX"},
 		"LSMinimumSystemVersion":     "11.0",
-	})
+	}
+	if p.macWidgetsUseAppGroup() {
+		platform[widgetGroupKey] = p.appGroup()
+	} else {
+		platform[widgetPathKey] = p.macWidgetsPath()
+	}
+	info, err := widgetsInfo(p, platform)
 	if err != nil {
 		return err
 	}
@@ -687,16 +700,15 @@ func macWidgetsAppex(app string) string {
 	return filepath.Join(app, "Contents", "PlugIns", widgetsAppex)
 }
 
-// signMacWidgets signs a macOS bundle's widget extension, which WidgetKit
-// runs in the App Sandbox, allowed to read the timelines through a
-// read-only exception for their directory. It signs before the app, whose
-// signature seals it, and the app is signed without --deep, which would
-// sign it again without these entitlements.
+// signMacWidgets signs a macOS bundle's widget extension, which WidgetKit runs in the App Sandbox, using a home-directory read exception for direct/development builds or the shared group of a store build, which signMacStoreWidgets later authorizes with a profile. It signs before the app, whose signature seals it, and the app is signed without --deep, which would sign it again without these entitlements.
 func signMacWidgets(ctx context.Context, p *project, appex, identity string) error {
-	ents, err := writeEntitlements(map[string]any{
-		"com.apple.security.app-sandbox":                                            true,
-		"com.apple.security.temporary-exception.files.home-relative-path.read-only": []any{"/" + filepath.ToSlash(p.macWidgetsPath()) + "/"},
-	})
+	values := map[string]any{"com.apple.security.app-sandbox": true}
+	if p.macWidgetsUseAppGroup() {
+		values["com.apple.security.application-groups"] = []any{p.appGroup()}
+	} else {
+		values["com.apple.security.temporary-exception.files.home-relative-path.read-only"] = []any{"/" + filepath.ToSlash(p.macWidgetsPath()) + "/"}
+	}
+	ents, err := writeEntitlements(values)
 	if err != nil {
 		return err
 	}

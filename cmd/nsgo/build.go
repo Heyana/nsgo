@@ -426,7 +426,8 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		}
 		if p.channel() == channelStore {
 			if !p.installers() {
-				return nil
+				_, err := signMacStoreApp(ctx, p, app)
+				return err
 			}
 			return releaseMacStorePackage(ctx, p, app, dir, arch)
 		}
@@ -605,7 +606,8 @@ func buildMacUniversal(ctx context.Context, p *project, dir string) error {
 	}
 	if p.channel() == channelStore {
 		if !p.installers() {
-			return signUniversalAdHoc(ctx, p, app)
+			_, err := signMacStoreApp(ctx, p, app)
+			return err
 		}
 		return releaseMacStorePackage(ctx, p, app, dir, "universal")
 	}

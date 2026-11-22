@@ -59,6 +59,15 @@ func TestKindsSwift(t *testing.T) {
 	if got := p.widgetPlist(false); got != "<key>NSGoWidgetsPath</key><string>Library/Application Support/dev.example.app/Widgets</string>" {
 		t.Errorf("macOS plist = %s", got)
 	}
+	p.Updates.Channel = channelStore
+	p.Release = true
+	if got := p.widgetPlist(false); got != "<key>NSGoAppGroup</key><string>group.dev.example.app</string>" {
+		t.Errorf("store macOS plist = %s", got)
+	}
+	p.Release = false
+	if got := p.widgetPlist(false); !strings.Contains(got, "NSGoWidgetsPath") || strings.Contains(got, "NSGoAppGroup") {
+		t.Errorf("development macOS plist needs its unprovisioned path: %s", got)
+	}
 	if (&project{}).widgetPlist(true) != "" {
 		t.Error("an app without widgets says where their timelines are")
 	}

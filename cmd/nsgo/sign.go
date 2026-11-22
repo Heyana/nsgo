@@ -33,8 +33,7 @@ type signing struct {
 	// Profile is the provisioning profile the iOS package carries and
 	// takes its entitlements from; wildcard profiles sign the app's ID.
 	Profile string `yaml:"profile"`
-	// WidgetsProfile is the provisioning profile of the iOS package's
-	// widget extension, <id>.widgets, granting the app group.
+	// WidgetsProfile is the provisioning profile of an iOS or Mac App Store package's widget extension, <id>.widgets, granting the app group.
 	WidgetsProfile string `yaml:"widgets_profile"`
 	// ClipProfile is the provisioning profile of the iOS package's App
 	// Clip, app_clip.id.
@@ -82,7 +81,7 @@ type signFlags struct {
 func (f *signFlags) bind(fs *flag.FlagSet) {
 	f.identity = stringFlag(fs, "sign", "the macOS and iOS codesign `identity` (default: nsgo.yaml's sign.identity, else ad hoc on macOS and the profile's in the keychain on iOS)")
 	f.profile = stringFlag(fs, "profile", "the iOS provisioning `profile` (default: nsgo.yaml's sign.profile)")
-	f.widgetsProfile = stringFlag(fs, "widgets-profile", "the iOS widget extension's provisioning `profile` (default: nsgo.yaml's sign.widgets_profile)")
+	f.widgetsProfile = stringFlag(fs, "widgets-profile", "the iOS or Mac App Store widget extension's provisioning `profile` (default: nsgo.yaml's sign.widgets_profile)")
 	f.clipProfile = stringFlag(fs, "clip-profile", "the iOS App Clip's provisioning `profile` (default: nsgo.yaml's sign.clip_profile)")
 	f.macOSProfile = stringFlag(fs, "macos-profile", "the Mac App Store provisioning `profile` (default: nsgo.yaml's sign.macos_profile)")
 	f.installer = stringFlag(fs, "installer", "the Mac Installer Distribution `identity` (default: nsgo.yaml's sign.installer)")

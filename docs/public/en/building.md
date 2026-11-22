@@ -226,7 +226,7 @@ sign:
 
 The runtime targets API 36 when `android.target_sdk` is unset. An Android App Bundle build fails below API 36, which [Google Play requires](https://support.google.com/googleplay/android-developer/answer/11926878) for new mobile apps and updates from August 31, 2026. A standalone APK build warns and continues.
 
-Set `sign.macos_profile` to sign the Mac package for upload. The unsigned package still runs in the sandbox, which lets you test access to the app's container, the network and the files the user picks. Store builds currently refuse widgets because they cannot share timelines from the sandbox. Upload the `.msix` in Partner Center and the `.aab` in Play Console. Submit `flatpak/<id>.yml` to Flathub once the release holds the archives it names. `flatpak-builder` builds it locally too. Windows installs an MSIX outside the Store only when it is signed, which the Store does.
+Set `sign.macos_profile` to sign the Mac package for upload. Without widgets, the unsigned package still runs in the sandbox, which lets you test access to the app's container, the network and the files the user picks. A store build with widgets requires both `sign.macos_profile` for `<id>` and a macOS `sign.widgets_profile` for `<id>.widgets`, from the same team and granting `apple.app_group` (default `group.<id>`). Both bundles use that shared container; no home-directory exception is added. `-installers=false` keeps the sandbox and profile signatures while omitting the `.pkg` and its installer identity. Upload the `.msix` in Partner Center and the `.aab` in Play Console. Submit `flatpak/<id>.yml` to Flathub once the release holds the archives it names. `flatpak-builder` builds it locally too. Windows installs an MSIX outside the Store only when it is signed, which the Store does.
 
 On macOS and iOS, a scroll view's edge effects (`Scroll.EdgeEffects`), macOS backdrop blurs with no `IOS.BackdropMaterial`, and backdrop color filters (alone, or over a blur with no `IOS.BackdropMaterial`) draw through Core Animation's private `CABackdropLayer` and `CAFilter`, as AppKit's and UIKit's own materials and edge effects do, since no public API blurs by a radius, varies a blur across a view, or applies a backdrop color matrix. App Store review may reject apps that use private APIs: NSGo calls them only for scroll views with edge bars and those backdrop filters, but every macOS and iOS build contains their names.
 
@@ -522,7 +522,7 @@ sign:
   profile: assets/AppStore.mobileprovision  # signs the IPA
   keystore: assets/release.p12              # signs APKs, with key_alias
   certificate: assets/codesign.pfx          # signs the Windows app and its installer
-  # widgets_profile: assets/Widgets.mobileprovision  # signs the IPA's widget extension
+  # widgets_profile: assets/Widgets.mobileprovision  # the iOS extension's profile; use a macOS profile for a Mac App Store build
   # clip_profile: assets/Clip.mobileprovision        # signs the IPA's App Clip
 ```
 

@@ -15,10 +15,12 @@ widgets:
     name: Counter                 # shown in the system's gallery of widgets
     description: Shows the count.
     families: [small, medium, circular]  # also large, extra_large, rectangular and inline
-# apple: { app_group: group.dev.example.hello }  # the iOS app group, group.<id> by default
+# apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
 A widget extension draws it, which `build` and `dev` compile into the app with Xcode's Swift compiler ([Building and shipping](building.md#widgets-and-live-activities)). It runs none of the app's code, so a widget shows what the app wrote last, until it writes again.
+
+For a sandboxed Mac App Store build, set `apple.app_group` and supply macOS provisioning profiles through `sign.macos_profile` and `sign.widgets_profile`. Both the app and `<id>.widgets` must belong to the same team and be entitled to that group. Timelines and images go in its shared container; direct and development macOS builds keep their existing home-directory location. [Store signing](building.md#store-packages) describes the build options.
 
 `name` and `description` may name messages in the app's catalogs. When they do, the widget gallery and the placeholder use the user's language, falling back to the source catalog's text when a translation is missing. A value that is not a catalog key is shown verbatim.
 

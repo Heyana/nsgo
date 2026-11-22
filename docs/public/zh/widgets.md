@@ -15,10 +15,12 @@ widgets:
     name: Counter                 # 显示在系统的小组件库中
     description: Shows the count.
     families: [small, medium, circular]  # 另有 large、extra_large、rectangular 和 inline
-# apple: { app_group: group.dev.example.hello }  # iOS 的 App Group，默认为 group.<id>
+# apple: { app_group: group.dev.example.hello }  # 共享 App Group，默认为 group.<id>
 ```
 
 小组件由小组件扩展绘制，`build` 和 `dev` 用 Xcode 的 Swift 编译器把它编进应用（[构建与发布](building.md#小组件与实时活动)）。扩展不运行应用的任何代码，因此小组件显示应用最后写入的内容，直到它再次写入。
+
+Mac App Store 的沙盒构建使用 `apple.app_group`，并通过 `sign.macos_profile` 和 `sign.widgets_profile` 提供 macOS 描述文件。应用和 `<id>.widgets` 必须属于同一团队，并获准使用该组。时间线与图片写入共享容器；直接分发和开发构建继续使用原有主目录路径。[商店签名](building.md#商店包)介绍构建选项。
 
 `name` 和 `description` 可以使用应用目录中的消息键。这样小组件库和占位内容会使用用户的语言，缺少翻译时回退到源语言目录中的文本。不是消息键的值会按原文显示。
 

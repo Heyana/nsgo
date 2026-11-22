@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,10 @@ func TestSandboxEntitlements(t *testing.T) {
 		if ents[key] != true {
 			t.Errorf("the sandbox lacks %s", key)
 		}
+	}
+	p.Widgets = []widgetKind{{Kind: "counter"}}
+	if got, ok := p.sandboxEntitlements()["com.apple.security.application-groups"].([]any); !ok || !slices.Equal(got, []any{"group." + p.ID}) {
+		t.Errorf("widget sandbox app groups = %#v", got)
 	}
 	if _, ok := ents["com.apple.security.device.camera"]; ok {
 		t.Error("the sandbox claims the camera unasked")

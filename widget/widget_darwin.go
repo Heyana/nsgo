@@ -32,15 +32,7 @@ func available() bool {
 	return err == nil
 }
 
-// On macOS and iOS (the darwin build constraint holds for both), the
-// bundle's Info.plist, which nsgo build writes, says where the app and
-// its widget extension keep the timelines: in the container of the app
-// group they share (appGroupKey), or on macOS in a directory of the
-// user's home (widgetsPathKey), which the extension, in the App Sandbox,
-// may read. WidgetKit's WidgetCenter, which reloads widgets, and
-// ActivityKit have no Objective-C interface: a library of Swift that nsgo
-// build puts among the bundle's frameworks calls them (kitLibraries),
-// loaded as the app first needs it.
+// On macOS and iOS (the darwin build constraint holds for both), the bundle's Info.plist, which nsgo build writes, says where the app and its widget extension keep the timelines: in the container of the app group they share (appGroupKey), or for direct and development macOS builds in a directory of the user's home (widgetsPathKey), which the extension, in the App Sandbox, may read. WidgetKit's WidgetCenter, which reloads widgets, and ActivityKit have no Objective-C interface: a library of Swift that nsgo build puts among the bundle's frameworks calls them (kitLibraries), loaded as the app first needs it.
 
 const (
 	appGroupKey    = "NSGoAppGroup"
