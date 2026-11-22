@@ -745,10 +745,7 @@ func (v *view) release(velocity, snapVelocity float32) {
 	s.phase.user = s.phase.kind == easing
 }
 
-// keepScrollStart keeps a scroll view resting at its start there across a
-// ContentInset change, retaining any active refresh room. Keeping the previous
-// RefreshIndicator height lets a simultaneous indicator-height change ease in
-// configureScroll instead of jumping.
+// keepScrollStart keeps a scroll view resting at its start there across a ContentInset change, retaining any active refresh room. Keeping the previous RefreshIndicator height lets a simultaneous indicator-height change ease in configureScroll instead of jumping.
 func keepScrollStart(oldCfg, newCfg *driver.ScrollConfig, refreshing bool, at driver.Point) driver.Point {
 	if newCfg.Behavior.ContentInset == oldCfg.Behavior.ContentInset {
 		return at
