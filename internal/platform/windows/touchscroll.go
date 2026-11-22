@@ -29,11 +29,7 @@ import (
 // scroll view's from the down.
 type touchScroll struct {
 	pointer uint32
-	views   []*view
-	drags   []*scrollbar.TouchDrag
-	taken   *view
-	drag    *scrollbar.TouchDrag
-	braked  bool
+	*scrollbar.TouchSession[*view]
 }
 
 // touchPointer follows a touch's pointer messages for the scroll views;
@@ -77,71 +73,47 @@ func (w *window) touchDown(pointer uint32, at driver.Point) bool {
 		return false
 	}
 	under := scrollsAt(root, at, nil)
-	t := &touchScroll{pointer: pointer}
-	now := time.Now()
-	for i := len(under) - 1; i >= 0; i-- {
-		v := under[i]
-		if v.scroll.Behavior.NoScroll {
-			continue
-		}
-		if v.glide != nil || v.scrolling != nil {
-			w.interruptScroll(v)
-			t.braked = true
-		}
-		t.views = append(t.views, v)
-		t.drags = append(t.drags, scrollbar.NewTouchDrag(at, scrollbar.Along(&v.scroll, v.offset), now))
+	session := scrollbar.NewTouchSession(under, at, time.Now(), w.touchHost())
+	if session == nil {
+		return false
 	}
-	if len(t.views) > 0 {
-		w.touching = t
-	}
-	return t.braked
+	w.touching = &touchScroll{pointer: pointer, TouchSession: session}
+	return session.Braked
 }
 
 // touchMove follows the finger to at; it reports whether a scroll view
 // has it.
+// nsgo:allow-duplicate The native window owns the session pointer; drag arbitration and offsets live in scrollbar.TouchSession.
 func (w *window) touchMove(at driver.Point) bool {
-	t := w.touching
-	if t == nil {
+	if w.touching == nil {
 		return false
 	}
-	if t.taken == nil {
-		if !t.braked && (w.pan != nil && w.pan.active || w.blockNative) {
-			// A pan, or a touch responder that blocks them, keeps the scroll views from the touch.
-			w.touching = nil
-			return false
-		}
-		for i, v := range t.views {
-			if !v.deleted && t.drags[i].Claims(&v.scroll, at) {
-				t.taken, t.drag = v, t.drags[i]
-				break
-			}
-		}
-		if t.taken == nil {
-			return t.braked
-		}
-		// The touch is the view's: no press, long press, pan or fingers.
-		if !t.braked {
-			w.pressCancel()
-			w.panLost()
-			w.cancelTouches()
-			releaseCapture.Call()
-		}
-		w.scrollEvent(t.taken, driver.EventScrollDragStart)
-	}
-	v := t.taken
-	if v.deleted {
+	handled, keep := w.touching.Move(at, time.Now(), w.touchHost())
+	if !keep {
 		w.touching = nil
-		return true
 	}
-	c := &v.scroll
-	w.showBar(v)
-	raw := t.drag.Move(c, at, time.Now())
-	lo, hi := scrollbar.Limits(c, v.frame.Size, v.size, v.refreshing)
-	viewport := scrollbar.Along(c, driver.Point{X: v.frame.Size.Width, Y: v.frame.Size.Height})
-	offset := v.offset
-	scrollbar.SetAlong(c, &offset, scrollbar.Dragged(raw, lo, hi, viewport, !c.Behavior.NoBounces))
-	w.moveOffset(v, offset)
-	return true
+	return handled
+}
+
+func (w *window) touchHost() scrollbar.TouchHost[*view] {
+	return scrollbar.TouchHost[*view]{
+		State: func(v *view) scrollbar.TouchView {
+			return scrollbar.TouchView{Config: &v.scroll, Offset: v.offset, Frame: v.frame.Size,
+				Content: v.size, Deleted: v.deleted, Moving: v.glide != nil || v.scrolling != nil, Refreshing: v.refreshing}
+		},
+		Interrupt: w.interruptScroll, Move: w.moveOffset,
+		Blocked: w.pan != nil && w.pan.active || w.blockNative,
+		Show:    w.showBar,
+		Begin: func(v *view, braked bool) {
+			if !braked {
+				w.pressCancel()
+				w.panLost()
+				w.cancelTouches()
+				releaseCapture.Call()
+			}
+			w.scrollEvent(v, driver.EventScrollDragStart)
+		},
+	}
 }
 
 // touchUp lets the finger go: the view it dragged glides, snaps or
@@ -153,17 +125,17 @@ func (w *window) touchUp() bool {
 	if t == nil {
 		return false
 	}
-	if t.taken == nil || t.taken.deleted {
-		return t.braked
+	if t.Taken == nil || t.Taken.deleted {
+		return t.Braked
 	}
-	v, c := t.taken, &t.taken.scroll
-	if t.drag.Refreshes(c, v.refreshing) {
+	v, c := t.Taken, &t.Taken.scroll
+	if t.Drag.Refreshes(c, v.refreshing) {
 		v.refreshing = true
 		w.scrollEvent(v, driver.EventRefresh)
 	}
 	w.scrollEvent(v, driver.EventScrollDragEnd)
 	lo, hi := scrollbar.Limits(c, v.frame.Size, v.size, v.refreshing)
-	velocity := t.drag.Velocity(c)
+	velocity := t.Drag.Velocity(c)
 	if w.motionReduced() {
 		velocity = 0
 	}
@@ -243,7 +215,7 @@ func (w *window) refreshChanged(v *view) {
 	}
 	v.refreshing = on
 	top := -c.Behavior.ContentInset.Top
-	held := w.touching != nil && w.touching.taken == v
+	held := w.touching != nil && w.touching.Taken == v
 	switch {
 	case on && v.offset.Y <= top+0.5 && !held:
 		w.glideTo(v, top-c.Behavior.RefreshInset())

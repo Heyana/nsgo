@@ -157,18 +157,19 @@ func (w *window) scrollEvent(v *view, kind driver.EventKind) {
 
 // interruptScroll stops v's snap, zoom animation or the glide a finger let go of, which ends its momentum: the app's ScrollTo, the wheel or the bar takes over, as a finger on the view does (touchDown).
 func (w *window) interruptScroll(v *view) {
-	if sc := v.scrolling; sc != nil && sc.Momentum {
-		w.scrollEvent(v, driver.EventMomentumEnd)
+	host := scrollbar.InterruptHost{
+		Momentum:       v.scrolling != nil && v.scrolling.Momentum,
+		ClearAnimation: func() { v.scrolling, v.zooming = nil, nil },
+		Gliding:        v.glide != nil,
+		Event:          func(kind driver.EventKind) { w.scrollEvent(v, kind) },
+		ClearGlide: func() {
+			if v.glide == w.wheelMotion {
+				w.wheelMotion = nil
+			}
+			v.glide = nil
+		},
 	}
-	v.scrolling = nil
-	v.zooming = nil
-	if v.glide != nil {
-		if v.glide == w.wheelMotion {
-			w.wheelMotion = nil
-		}
-		v.glide = nil
-		w.scrollEvent(v, driver.EventMomentumEnd)
-	}
+	host.Interrupt()
 }
 
 // wheelTurned follows a wheel turn that moved snapping view v by d; the
