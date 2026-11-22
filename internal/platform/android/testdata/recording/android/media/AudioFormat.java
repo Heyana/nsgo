@@ -4,7 +4,8 @@ public final class AudioFormat {
     int rate, mask;
     public static final class Builder {
         private final AudioFormat value = new AudioFormat();
-        public Builder setSampleRate(int r) { value.rate = r; return this; }
+        /** Android refuses a rate outside the range a format describes. */
+        public Builder setSampleRate(int r) { if (r < 4000 || r > 192000) throw new IllegalArgumentException("rate " + r); value.rate = r; return this; }
         public Builder setChannelMask(int m) { value.mask = m; return this; }
         public Builder setEncoding(int e) { return this; }
         public AudioFormat build() { return value; }

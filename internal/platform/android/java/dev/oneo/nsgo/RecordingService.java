@@ -96,18 +96,6 @@ public final class RecordingService extends Service {
         for (byte[] record : records) engine.write(Protocol.RECORDING_REPORT, record);
     }
 
-    /** Keeps an ended process's terminal record, of the file at path, until the app takes it, and hands it to the engine that connected since; the next one to connect hears it otherwise. */
-    private static void orphan(Recorder r, String path, byte[] record) {
-        NsgoEngine to = null;
-        synchronized (RecordingService.class) {
-            keep(path, record);
-            // Decided with connected's reading of the journal, so that no record waits for a process that connected already. The engine's lock never takes this one.
-            if (heir != null && heir != r.owner && heir.isAlive()) to = heir;
-        }
-        // Written outside the lock, as a pipe Go does not read may block.
-        if (to != null) to.write(Protocol.RECORDING_REPORT, record);
-    }
-
     /** Keeps the terminal record of the file at path in its directory's journal; the caller holds RecordingService.class. */
     private static void keep(String path, byte[] record) {
         try {
@@ -198,16 +186,6 @@ public final class RecordingService extends Service {
             r.orphaned = true;
         }
         r.end("abandoned", "");
-    }
-
-    /** Lets the app record again once r's file is done, and stops the service it ran in. */
-    private static void released(Recorder r) {
-        RecordingService s;
-        synchronized (RecordingService.class) {
-            if (current == r) current = null;
-            s = service;
-        }
-        if (s != null) new Handler(Looper.getMainLooper()).post(s::idle);
     }
 
     @Override
@@ -492,8 +470,8 @@ public final class RecordingService extends Service {
                                 .setAudioFormat(new AudioFormat.Builder().setSampleRate(r)
                                         .setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(mask).build())
                                 .setBufferSizeInBytes(Math.max(min, r / 2 * frame)).build();
-                    } catch (UnsupportedOperationException e) {
-                        // build() throws rather than return a record it could not initialize, so the next format is tried.
+                    } catch (UnsupportedOperationException | IllegalArgumentException e) {
+                        // build() throws rather than return a record it could not initialize, and AudioFormat.Builder refuses a rate outside the range it describes even where getMinBufferSize sized a buffer for it, so the next format is tried.
                         failure = String.valueOf(e.getMessage());
                     }
                 }
@@ -627,27 +605,39 @@ public final class RecordingService extends Service {
             }
         }
 
-        /** Reports the end, with the file of frames at rate and channels when one was written, to the owner or, its process gone, to the next one; then lets the app record again. */
+        /** Lets the app record again once the file is done and stops the service it ran in, then reports the end, with the file of frames at rate and channels when one was written, to the owner or, its process gone, to the next one. */
         private void report(int rate, int channels, long frames, boolean renamed) {
             String c, d;
             synchronized (this) {
                 c = code;
                 d = detail;
             }
-            // Read once, as ownerEnded may set it at any time.
-            boolean gone;
-            synchronized (RecordingService.class) {
-                gone = orphaned;
-            }
-            Json end = new Json().put("type", gone ? "earlier" : "ended").put("id", id).put("error", c).put("detail", d);
             String path = (renamed ? target : part).getAbsolutePath();
-            if (rate > 0) {
-                end.put("path", path).put("rate", rate).put("channels", channels).put("frames", frames);
+            byte[] end;
+            boolean gone;
+            NsgoEngine to = null;
+            RecordingService s;
+            synchronized (RecordingService.class) {
+                // Read once, as ownerEnded may set it at any time.
+                gone = orphaned;
+                Json j = new Json().put("type", gone ? "earlier" : "ended").put("id", id).put("error", c).put("detail", d);
+                if (rate > 0) {
+                    j.put("path", path).put("rate", rate).put("channels", channels).put("frames", frames);
+                }
+                end = json(j);
+                // Nothing reports what nobody recorded. An ended process's record is kept until the app takes it and goes to the engine that connected since, decided with connected's reading of the journal so that no record waits for a process that connected already; the next one to connect hears it otherwise.
+                if (gone && rate > 0) {
+                    keep(path, end);
+                    if (heir != null && heir != owner && heir.isAlive()) to = heir;
+                }
+                // Released before anyone hears the end, so neither a start made on hearing it nor a pipe Go does not read finds the app still recording.
+                if (current == this) current = null;
+                s = service;
             }
-            // Nothing reports what nobody recorded.
-            if (gone && rate > 0) orphan(this, path, json(end));
-            released(this);
-            sender.finish(gone ? null : json(end));
+            if (s != null) new Handler(Looper.getMainLooper()).post(s::idle);
+            // Written outside the lock, as a pipe Go does not read may block. The engine's lock never takes this one.
+            if (to != null) to.write(Protocol.RECORDING_REPORT, end);
+            sender.finish(gone ? null : end);
         }
     }
 

@@ -24,11 +24,14 @@ public final class RecordingServiceCheck {
             return;
         }
         formatBusyAndStop();
+        outOfRangeRate();
+        levelCadence();
         permissionAndServiceRefusal();
         starvationAndReadFailure();
         interruption(false);
         interruption(true);
         processDeathAndRepair();
+        blockedHeirDoesNotHoldTheMicrophone();
         blockedReportsKeepTheirOwner();
     }
 
@@ -60,6 +63,52 @@ public final class RecordingServiceCheck {
         wav(file, 48000, 1);
         check(AudioRecord.latest.released && !Service.foreground, "stop leaked capture or service");
         check(!Files.exists(part), "stop kept the temporary file");
+    }
+
+    private static void outOfRangeRate() throws Exception {
+        NsgoEngine owner = owner();
+        AudioRecord.anyRate = true;
+        RecordingService.start(new Context(), owner, start(1, "fast.wav", false).put("rate", 1_000_000).put("channels", 1));
+        await(() -> owner.report("started") != null || owner.report("ended") != null, "out-of-range start");
+        check(owner.report("started") != null && owner.report("started").contains("\"rate\":48000"),
+                "an out-of-range rate did not fall back to the device's: " + owner.report("ended"));
+        Path part = owner.recordings().toPath().resolve(".fast.wav.part");
+        await(() -> size(part) > 12000, "fallback PCM");
+        RecordingService.stop(owner, 1);
+        drained(owner);
+        check(owner.report("ended").contains("\"rate\":48000"), "the end reported another rate than the file's");
+        wav(owner.recordings().toPath().resolve("fast.wav"), 48000, 1);
+    }
+
+    private static void levelCadence() throws Exception {
+        NsgoEngine owner = owner();
+        int[] reads = {0};
+        // Each read holds 20 ms of 48 kHz audio, so a 100 ms level follows every fifth. The reader waits until the level before was heard, as the sender keeps only the latest one Go has not taken.
+        AudioRecord.beforeRead = () -> {
+            int want = reads[0]++ / 5;
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (levels(owner).size() < want && System.nanoTime() < deadline) {
+                try { Thread.sleep(1); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+            }
+        };
+        RecordingService.start(new Context(), owner, start(1, "levels.wav", false).put("level", 100));
+        await(() -> levels(owner).size() >= 20, "two seconds of levels");
+        AudioRecord.beforeRead = null;
+        RecordingService.stop(owner, 1);
+        drained(owner);
+        java.util.List<String> heard = levels(owner);
+        for (int i = 0; i < 20; i++) {
+            // Samples of 0x0101 have a peak and RMS of 257/32768.
+            check(heard.get(i).contains("\"frames\":" + (i + 1) * 4800 + ",") && heard.get(i).contains("\"peak\":" + 257 / 32768.0)
+                    && heard.get(i).contains("\"rms\":" + 257 / 32768.0), "level " + i + " is not the next 100 ms: " + heard.get(i));
+        }
+        wav(owner.recordings().toPath().resolve("levels.wav"), 48000, 1);
+    }
+
+    private static java.util.List<String> levels(NsgoEngine owner) {
+        synchronized (owner.reports) {
+            return owner.reports.stream().filter(r -> r.contains("\"type\":\"level\"")).toList();
+        }
     }
 
     private static void permissionAndServiceRefusal() throws Exception {
@@ -156,6 +205,39 @@ public final class RecordingServiceCheck {
         Path repaired = dead.recordings().toPath().resolve("partial.wav");
         wav(repaired, 48000, 1);
         check(Files.size(repaired) == 1044 && !Files.exists(partial), "partial frame was not repaired");
+    }
+
+    private static void blockedHeirDoesNotHoldTheMicrophone() throws Exception {
+        NsgoEngine dead = owner();
+        RecordingService.start(new Context(), dead, start(1, "orphaned.wav", false));
+        Path part = dead.recordings().toPath().resolve(".orphaned.wav.part");
+        await(() -> size(part) > 12000, "orphaned PCM");
+        // The next process connects before the file finishes, and its Go does not read its pipe yet.
+        NsgoEngine heir = new NsgoEngine(dead.recordings());
+        heir.blocked = true;
+        RecordingService.connected(heir);
+        dead.alive = false;
+        RecordingService.ownerEnded(dead);
+        check(heir.writing.await(2, TimeUnit.SECONDS), "the connected process did not hear the orphaned recording");
+        Path file = dead.recordings().toPath().resolve("orphaned.wav");
+        wav(file, 48000, 1);
+        NsgoEngine next = owner();
+        RecordingService.start(new Context(), next, start(1, "next.wav", false));
+        await(() -> next.report("started") != null || next.report("ended") != null, "start beside a blocked heir");
+        check(next.report("started") != null, "a blocked heir kept the app recording: " + next.report("ended"));
+        RecordingService.stop(next, 1);
+        drained(next);
+        heir.writable.countDown();
+        drained(dead);
+        await(() -> heir.report("earlier") != null, "the heir's record");
+        check(heir.report("earlier").contains("\"error\":\"abandoned\"") && heir.report("earlier").contains(file.toString()),
+                "the heir heard another record");
+        // Until the app takes it, the journal keeps it for the next process too.
+        NsgoEngine later = new NsgoEngine(dead.recordings());
+        RecordingService.connected(later);
+        check(later.report("earlier") != null && later.report("earlier").contains("\"error\":\"abandoned\""),
+                "the journal let go of a record nobody took");
+        RecordingService.taken(file.toString());
     }
 
     private static void blockedReportsKeepTheirOwner() throws Exception {
