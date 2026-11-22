@@ -3187,11 +3187,7 @@ func cursorUpdate(self objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 }
 
-// pick follows what is under the mouse at loc, a point of the window:
-// the views hovered and the cursor. AppKit's tracking areas and cursor
-// rects would find a view through the overlays above it; the hit test
-// does not. moving is true when AppKit is about to deliver the mouse
-// move itself.
+// pick follows what is under the mouse at loc, a point of the window: the views hovered and the cursor. AppKit's tracking areas and cursor rects would find a view through the overlays above it; the hit test does not. moving is true when AppKit is about to deliver the mouse move itself.
 func (s *surface) pick(loc apple.CGPoint, always, moving bool) {
 	up := s.native.Send(selSuperview)
 	if s.window == 0 || up == 0 {
@@ -3223,13 +3219,7 @@ func webViewAt(hit, up objc.ID) *view {
 	return nil
 }
 
-// pickWeb keeps a WKWebView's hover and cursor aligned with overlays above
-// it. WebKit's tracking area observer already drops moves when the window's
-// hit test lands on a sibling overlay, but AppKit sends no mouseExited:
-// while the pointer stays inside the web view's frame, leaving :hover set
-// when an overlay covers it, and sends no mouseMoved: when an overlay
-// closes under a resting pointer, leaving the overlay's cursor until the
-// pointer moves.
+// pickWeb keeps a WKWebView's hover and cursor aligned with overlays above it. WebKit's tracking area observer already drops moves when the window's hit test lands on a sibling overlay, but AppKit sends no mouseExited: while the pointer stays inside the web view's frame, leaving :hover set when an overlay covers it, and sends no mouseMoved: when an overlay closes under a resting pointer, leaving the overlay's cursor until the pointer moves.
 func (s *surface) pickWeb(hit, up objc.ID, loc apple.CGPoint, always, moving bool) {
 	web := webViewAt(hit, up)
 	prev := s.webOver
@@ -3245,8 +3235,7 @@ func (s *surface) pickWeb(hit, up objc.ID, loc apple.CGPoint, always, moving boo
 	}
 }
 
-// leaveWeb sends a synthetic exit outside v's WKWebView to its tracking area
-// owners so the page clears :hover when an overlay covers it.
+// leaveWeb sends a synthetic exit outside v's WKWebView to its tracking area owners so the page clears :hover when an overlay covers it.
 func (s *surface) leaveWeb(v *view) {
 	if v.web == nil {
 		return
@@ -3263,10 +3252,7 @@ func (s *surface) leaveWeb(v *view) {
 	sendWebTracking(w, enteredAndExited, sel("mouseExited:"), ev)
 }
 
-// enterWeb tells v's WKWebView tracking area owners that the pointer entered
-// at loc (for when the pointer crossed off a covering overlay without leaving
-// the web view's frame) and, if sendMove, also sends a move so a still
-// pointer uncovered by a closing overlay restores :hover and its cursor.
+// enterWeb tells v's WKWebView tracking area owners that the pointer entered at loc (for when the pointer crossed off a covering overlay without leaving the web view's frame) and, if sendMove, also sends a move so a still pointer uncovered by a closing overlay restores :hover and its cursor.
 func (s *surface) enterWeb(v *view, loc apple.CGPoint, sendMove bool) {
 	if v.web == nil {
 		return
@@ -3290,8 +3276,7 @@ func (s *surface) enterWeb(v *view, loc apple.CGPoint, sendMove bool) {
 	}
 }
 
-// sendWebTracking delivers ev to each distinct owner of w's tracking areas
-// carrying opt that responds to cmd.
+// sendWebTracking delivers ev to each distinct owner of w's tracking areas carrying opt that responds to cmd.
 func sendWebTracking(w objc.ID, opt uint, cmd objc.SEL, ev objc.ID) {
 	areas := w.Send(sel("trackingAreas"))
 	n := objc.Send[uint](areas, selCount)

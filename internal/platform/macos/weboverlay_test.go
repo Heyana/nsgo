@@ -59,12 +59,7 @@ func takeTestTrackingEvents() []recordedWebTracking {
 	return out
 }
 
-// TestWebViewUnderOverlayPickAndTracking verifies surface.pick, hitAt,
-// cursorAt, and pickWeb against a real WKWebView covered by a sibling overlay
-// view: covered points hit and take the overlay's cursor without hovering the
-// web view, covering a hovered web view exits it outside its bounds,
-// uncovering it under a resting pointer re-enters and moves it, and deleting
-// a hovered web view clears webOver.
+// TestWebViewUnderOverlayPickAndTracking verifies surface.pick, hitAt, cursorAt, and pickWeb against a real WKWebView covered by a sibling overlay view: covered points hit and take the overlay's cursor without hovering the web view, covering a hovered web view exits it outside its bounds, uncovering it under a resting pointer re-enters and moves it, and deleting a hovered web view clears webOver.
 func TestWebViewUnderOverlayPickAndTracking(t *testing.T) {
 	onMain(func() {
 		loadAppKit()
@@ -117,9 +112,7 @@ func TestWebViewUnderOverlayPickAndTracking(t *testing.T) {
 			}
 		}()
 
-		// Attach a recording tracking area to the WKWebView so we observe the
-		// exact synthetic events pickWeb delivers to WKWebView's tracking area
-		// owners without depending on WindowServer screen-lock state.
+		// Attach a recording tracking area to the WKWebView so we observe the exact synthetic events pickWeb delivers to WKWebView's tracking area owners without depending on WindowServer screen-lock state.
 		obs := objc.ID(registerTestTrackingObserver()).Send(selNew)
 		defer obs.Send(selRelease)
 		const enteredAndExited, mouseMovedOpt, activeAlways, inVisibleRect = 0x01, 0x02, 0x80, 0x200
@@ -142,8 +135,7 @@ func TestWebViewUnderOverlayPickAndTracking(t *testing.T) {
 		coveredPt := toWin(75, 100)
 		uncoveredPt := toWin(225, 100)
 
-		// 1. Covered by overlay: hitAt lands on overlay, cursorAt owns Crosshair,
-		// webViewAt is nil, and pick sends nothing to WKWebView.
+		// 1. Covered by overlay: hitAt lands on overlay, cursorAt owns Crosshair, webViewAt is nil, and pick sends nothing to WKWebView.
 		hitCov := s.hitAt(coveredPt)
 		if hitCov != overlayV.native {
 			t.Fatalf("covered hitAt = %#x, want overlay %#x", uintptr(hitCov), uintptr(overlayV.native))
@@ -162,9 +154,7 @@ func TestWebViewUnderOverlayPickAndTracking(t *testing.T) {
 			t.Fatalf("covered pick dispatched %+v, want none", evs)
 		}
 
-		// 2. Uncovered half (moving=true): hitAt lands in WKWebView, cursorAt
-		// yields to WebKit (own=false), and pick primes mouseEntered: without a
-		// duplicate mouseMoved:.
+		// 2. Uncovered half (moving=true): hitAt lands in WKWebView, cursorAt yields to WebKit (own=false), and pick primes mouseEntered: without a duplicate mouseMoved:.
 		hitUncov := s.hitAt(uncoveredPt)
 		if got := webViewAt(hitUncov, up); got != webV {
 			t.Fatalf("uncovered webViewAt = %v, want webV", got)
@@ -180,8 +170,7 @@ func TestWebViewUnderOverlayPickAndTracking(t *testing.T) {
 			t.Fatalf("uncovered moving pick dispatched %+v, want [enter at %+v]", evs, uncoveredPt)
 		}
 
-		// 3. Move back onto covering overlay: pick clears webOver and sends
-		// mouseExited: at a point outside WKWebView's bounds.
+		// 3. Move back onto covering overlay: pick clears webOver and sends mouseExited: at a point outside WKWebView's bounds.
 		s.pick(coveredPt, true, true)
 		if s.webOver != nil {
 			t.Fatalf("re-covered webOver = %v, want nil", s.webOver)
@@ -195,9 +184,7 @@ func TestWebViewUnderOverlayPickAndTracking(t *testing.T) {
 			t.Fatalf("mouseExited: local point = %+v, want outside WKWebView bounds", localExit)
 		}
 
-		// 4. Overlay closes under a resting pointer at (75, 100) (pickHere):
-		// pick sets webOver and sends both mouseEntered: and mouseMoved: at
-		// coveredPt so the page restores :hover and its cursor without a move.
+		// 4. Overlay closes under a resting pointer at (75, 100) (pickHere): pick sets webOver and sends both mouseEntered: and mouseMoved: at coveredPt so the page restores :hover and its cursor without a move.
 		overlayV.native.Send(selSetHidden, true)
 		p := coveredPt
 		s.testPointer = &p
@@ -210,9 +197,7 @@ func TestWebViewUnderOverlayPickAndTracking(t *testing.T) {
 			t.Fatalf("uncovered resting pick dispatched %+v, want [enter, move at %+v]", evs, coveredPt)
 		}
 
-		// 5. Overlay opens again under the resting pointer: pick exits webV,
-		// and a cursorUpdate: sent to WKWebView routes through its superview
-		// back to surface.pickHere without re-hovering webV.
+		// 5. Overlay opens again under the resting pointer: pick exits webV, and a cursorUpdate: sent to WKWebView routes through its superview back to surface.pickHere without re-hovering webV.
 		overlayV.native.Send(selSetHidden, false)
 		s.pickHere()
 		if s.webOver != nil {
@@ -246,11 +231,7 @@ func TestWebViewUnderOverlayPickAndTracking(t *testing.T) {
 	})
 }
 
-// TestWebViewUnderOverlayIgnoresHoverAndCursor checks in a live macOS window
-// that a WKWebView covered by an overlay takes no hover events or cursor
-// updates from its own tracking area or async page cursor changes, clears
-// :hover when covered, and restores hover and its page cursor once uncovered.
-// Run owns AppKit's process lifetime, so the test runs in a process of its own.
+// TestWebViewUnderOverlayIgnoresHoverAndCursor checks in a live macOS window that a WKWebView covered by an overlay takes no hover events or cursor updates from its own tracking area or async page cursor changes, clears :hover when covered, and restores hover and its page cursor once uncovered. Run owns AppKit's process lifetime, so the test runs in a process of its own.
 func TestWebViewUnderOverlayIgnoresHoverAndCursor(t *testing.T) {
 	if os.Getenv("NSGO_TEST_WEB_PROCESS") != t.Name() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -529,8 +510,7 @@ window.nsgo.postMessage('ready');
 		}
 		popMsgs()
 
-		// 1. Covered by overlay from the start: WKWebView's own tracking area
-		// must take no hover events and must not override the overlay's cursor.
+		// 1. Covered by overlay from the start: WKWebView's own tracking area must take no hover events and must not override the overlay's cursor.
 		var topmost, liveCursor bool
 		var stepErr error
 		onMainSync(func() {
@@ -575,10 +555,7 @@ window.nsgo.postMessage('ready');
 			return
 		}
 
-		// 2. Move onto uncovered right half (default cursor = arrow) without a
-		// new AppKit mouseEntered: (the pointer stayed inside WKWebView's
-		// frame): pickWeb primes mouseEntered:, page hovers, and cursor resets
-		// from crosshair to arrow.
+		// 2. Move onto uncovered right half (default cursor = arrow) without a new AppKit mouseEntered: (the pointer stayed inside WKWebView's frame): pickWeb primes mouseEntered:, page hovers, and cursor resets from crosshair to arrow.
 		onMainSync(func() {
 			var pt apple.CGPoint
 			pt, topmost, liveCursor = placePointer(225, 100)
@@ -611,9 +588,7 @@ window.nsgo.postMessage('ready');
 		}
 		popMsgs()
 
-		// 3. Move from uncovered WKWebView back onto the covering overlay:
-		// WKWebView must leave :hover on right, take no hover on left, and
-		// keep the overlay's crosshair cursor.
+		// 3. Move from uncovered WKWebView back onto the covering overlay: WKWebView must leave :hover on right, take no hover on left, and keep the overlay's crosshair cursor.
 		onMainSync(func() {
 			var pt apple.CGPoint
 			pt, topmost, liveCursor = placePointer(75, 100)
@@ -651,9 +626,7 @@ window.nsgo.postMessage('ready');
 			}
 		}
 
-		// 4. Close overlay while the pointer rests at (75, 100) with no mouse
-		// move: left (<a style="cursor:pointer">) must automatically hover and
-		// take the pointing hand cursor.
+		// 4. Close overlay while the pointer rests at (75, 100) with no mouse move: left (<a style="cursor:pointer">) must automatically hover and take the pointing hand cursor.
 		appScope.Post(func() { showOverlay.Set(false) })
 		if err := waitCovered(75, 100, false); err != nil {
 			done <- result{err: err}
@@ -678,10 +651,7 @@ window.nsgo.postMessage('ready');
 		}
 		popMsgs()
 
-		// 5. Re-open overlay over the resting hovered link with no mouse move:
-		// WKWebView must clear :hover, switch back to the overlay's crosshair,
-		// and ignore both JS cursor mutations and tracking-area moves while
-		// covered.
+		// 5. Re-open overlay over the resting hovered link with no mouse move: WKWebView must clear :hover, switch back to the overlay's crosshair, and ignore both JS cursor mutations and tracking-area moves while covered.
 		appScope.Post(func() { showOverlay.Set(true) })
 		if err := waitCovered(75, 100, true); err != nil {
 			done <- result{err: err}
@@ -729,8 +699,7 @@ window.nsgo.postMessage('ready');
 			}
 		}
 
-		// 6. Close overlay again under the resting pointer: WKWebView resumes
-		// hover and shows the updated 'grab' (openHand) cursor.
+		// 6. Close overlay again under the resting pointer: WKWebView resumes hover and shows the updated 'grab' (openHand) cursor.
 		appScope.Post(func() { showOverlay.Set(false) })
 		if err := waitCovered(75, 100, false); err != nil {
 			done <- result{err: err}
