@@ -121,6 +121,10 @@ nsgo.Storage.keys
 nsgo.Storage.removeItem
 nsgo.Storage.setItem
 nsgo.Text
+nsgo.UrlScheme
+nsgo.UrlScheme.on
+nsgo.UrlScheme.setUrl
+nsgo.UrlScheme.url
 nsgo.Video
 nsgo.View
 nsgo.WebView

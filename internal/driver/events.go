@@ -258,7 +258,7 @@ const (
 	EventHotKeyState
 	// EventAuthSession reports auth session Count (Data, an *AuthEvent).
 	EventAuthSession
-	// EventOpenLinks reports links of the app's own URL schemes the system asks the app to open (Data, a []string of URLs): clicked elsewhere, or the one it launched to open.
+	// EventOpenLinks reports links of the app's own URL schemes the system asks the app to open (Data, a []string of URLs): clicked elsewhere, or the one it launched to open. The browser reports address traversals as *PageAddressChange through the same application hand-off.
 	EventOpenLinks
 	// EventSignInWithApple answers ItemSignInWithApple or ItemAppleCredentialState Count: Data an *AppleCredential or Index a credential's state, else Text why it failed (AppleSignInCancelled, ...).
 	EventSignInWithApple

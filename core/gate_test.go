@@ -97,7 +97,7 @@ var exempt = map[string][]string{
 		"SetTitle", "DismissKeyboard", "Announce", "SetScrollbars", "WatchScroll", "PopupMenu", "ShowAlert", "RegisterFont",
 		"SetTheme", "SetSubtreeAppearance", "SetAppearance", "SetLocale", "SelectInputSource", "RestoreInputSource",
 		"ServeScheme", "ServeSchemeRequest"},
-	"the app's windows, menus, lifecycle and hand-offs to the system, which no capability holds": {"SetTitleBar",
+	"the app's windows, menus, lifecycle and hand-offs to the system, which no capability holds": {"AppURL", "SetAppURL", "OnAppURLChange", "SetTitleBar",
 		"MinimizeWindow", "ToggleMaximize", "ToggleFullScreen", "SetFullScreen", "CloseWindow", "SetWindowFrame", "SetWindowLevel",
 		"SetWindowWorkspaces", "SetWindowConstraints", "OrderFront", "SetMenuBar", "SetWindowControls", "SetWindowMaterial", "SetWindowTransparent",
 		"SetWindowShadow", "SetSkipTaskbar", "RequestOrientation",

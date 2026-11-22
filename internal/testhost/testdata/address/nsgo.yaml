@@ -1,0 +1,5 @@
+name: Address acceptance
+id: dev.nsgo.test.address
+version: 0.1.0
+web:
+  base: /

@@ -140,6 +140,9 @@ type Environment struct {
 	// link; "" when none did.
 	AppClip   bool
 	OpenedURL string
+	// PageURL and PageBaseURL initialize the application address when the
+	// surface owns its browser history. Empty on other surfaces and targets.
+	PageURL, PageBaseURL string
 	// LaunchedAtLogin says the system started this run as a login item. It stays the same throughout the run, including subsequent reopens.
 	LaunchedAtLogin bool
 	// FrontmostApp is the application in front on the desktop, the app itself included, and CanReadFrontmostApp says the platform follows it: on macOS, Windows and Linux on X11. FrontmostApp is zero where CanReadFrontmostApp is false.

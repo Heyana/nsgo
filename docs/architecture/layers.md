@@ -171,6 +171,7 @@ Backends exchange view and service messages with `core` through the engine, so `
 
 - `Applied` lets the dev trace time a backend applying a batch through `driver.Apply`.
 - `BlobFile` lets the web backend bind a blob URL to a readable file with its metadata.
+- `ResolvePageAddress` lets the web backend validate and canonicalize an app address with the browser's URL parser before the core updates its address or history.
 - `UpdateDownload` lets `core.DownloadUpdate` use the platform HTTP client without a surface. It verifies and stages the package before installation is requested through the engine.
 
 Portable packages build unchanged for every target, with no purego, `syscall` or `unsafe`: `core`, `base` but for `base/terminal`, `ui`, `i18n`, `mobile`, `audio`, `desktop`, `icons`, `tsx`, `nsgotest`, `internal/automation`, `internal/driver`, `internal/appstartup`, `internal/mimeinfo`, `internal/layout`, `internal/testhost`, the shader compilers and `internal/engine`. No package has cgo files or hand-written C.

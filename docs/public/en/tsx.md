@@ -39,6 +39,8 @@ mount(App);
 
 TSX imports the primitives from `nsgo`, `base`'s components from `nsgo/base` and `ui`'s from `nsgo/ui`, once the app imports `tsx/ui`; `examples/gallery-tsx` shows them.
 
+`UrlScheme.url()` reads the tracked application address; `UrlScheme.setUrl(url, { history: "push" })` adds an address entry, or replaces it when options are omitted. `UrlScheme.on("change", fn)` observes browser back, forward and hash changes and returns an unsubscribe function. See [Application addresses](addresses.md) for routing, same-origin validation and deep-link hosting.
+
 ## Go from TSX
 
 Register Go for TSX to import:

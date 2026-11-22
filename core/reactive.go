@@ -259,6 +259,7 @@ type runtime struct {
 	reopens  []*reopenHandler
 	// opens hear the files the system opens with the app, and links the app's own links (desktop.OnOpenLinks).
 	opens, links openQueue[string]
+	address      *appAddress
 	shares       openQueue[[]driver.SharedItem]
 	// dock is the app icon's menu, the one a surface set last.
 	dock     dockMenu

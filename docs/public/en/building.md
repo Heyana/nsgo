@@ -452,6 +452,8 @@ android:
 
 APK and App Bundle builds register those types for both single and multiple items. Register [`mobile.OnShared`](services.md#opening-links-and-files) to receive each share.
 
+For a web app with path-based addresses, set `web.base` to its deployment directory (`/` or `/my-app/`) and configure your production server to serve `index.html` for application routes. The development server already provides that fallback for HTML navigation requests. Assets remain relative to that fixed HTML base when a deep link is reloaded. See [Application addresses](addresses.md).
+
 ## Mini programs
 
 ```sh

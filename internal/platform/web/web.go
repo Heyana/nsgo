@@ -1559,7 +1559,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 			// the browser's back is its own.
 			continue
 		case driver.ItemHistory:
-			s.setHistory(int(it.Count))
+			s.setHistory(int(it.Count), it.Address)
 			continue
 		case driver.ItemOrientation:
 			s.setOrientation(driver.Orientation(it.Count))

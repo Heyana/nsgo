@@ -217,3 +217,32 @@ mount(null, null, {config:%s}).catch(e => { window.failure = e.message; });`, tc
 		})
 	}
 }
+
+func TestWebFilesServesAddressRoutesAndDeploymentBase(t *testing.T) {
+	dir := t.TempDir()
+	for file, data := range map[string]string{"index.html": "app entry", "nsgo.json": `{"base":"/my-app/"}`, "page.css": "body{}"} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := webFiles(dir)
+	for _, c := range []struct {
+		path, accept, method string
+		status               int
+		body                 string
+	}{
+		{"/my-app/films/42", "text/html", "GET", 200, "app entry"},
+		{"/my-app/page.css", "text/css", "GET", 200, "body{}"},
+		{"/my-app/missing.js", "*/*", "GET", 404, ""},
+		{"/my-app/films/42", "application/json", "GET", 404, ""},
+		{"/my-app/films/42", "text/html", "POST", 404, ""},
+	} {
+		req := httptest.NewRequest(c.method, c.path, nil)
+		req.Header.Set("Accept", c.accept)
+		out := httptest.NewRecorder()
+		handler.ServeHTTP(out, req)
+		if out.Code != c.status || c.body != "" && out.Body.String() != c.body {
+			t.Errorf("%s %s=>%d %q", c.method, c.path, out.Code, out.Body.String())
+		}
+	}
+}

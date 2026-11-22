@@ -148,6 +148,8 @@ type project struct {
 	Web struct {
 		Host    string `yaml:"host"`
 		Offline bool   `yaml:"offline"`
+		// Base fixes assets to an absolute deployment path for deep links.
+		Base string `yaml:"base"`
 	} `yaml:"web"`
 	// MiniProgram is the mini program targets': AppID holds the mini
 	// program's on each platform (wechat, qq, alipay, douyin), and

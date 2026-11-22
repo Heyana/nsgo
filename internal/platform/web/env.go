@@ -201,6 +201,12 @@ func (s *surface) environment() driver.Environment {
 		Idiom:            driver.IdiomPhone,
 		FullScreen:       s.browserFullscreen(),
 	}
+	if s.history.owned {
+		env.PageURL = g.Get("location").Get("href").String()
+		if base := s.doc.Call("querySelector", "base[href]"); base.Truthy() {
+			env.PageBaseURL = s.doc.Get("baseURI").String()
+		}
+	}
 	if w.desktop.Get("matches").Bool() {
 		env.Idiom = driver.IdiomDesktop
 	}

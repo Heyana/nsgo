@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -48,7 +50,38 @@ func writeWebWasmCopies(path string, data []byte) error {
 func webFiles(dir string) http.Handler {
 	root := http.Dir(dir)
 	files := http.FileServer(root)
+	var config webApp
+	if data, err := os.ReadFile(dir + "/nsgo.json"); err == nil {
+		_ = json.Unmarshal(data, &config)
+	}
+	base := config.Base
+	if parsed, err := url.Parse(base); err == nil {
+		base = parsed.Path
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if base != "" && base != "/" && strings.HasPrefix(r.URL.Path, base) {
+			clone := r.Clone(r.Context())
+			u := *r.URL
+			u.Path, u.RawPath = "/"+strings.TrimPrefix(r.URL.Path, base), ""
+			clone.URL = &u
+			r = clone
+		}
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && strings.Contains(r.Header.Get("Accept"), "text/html") {
+			f, err := root.Open(r.URL.Path)
+			if err == nil {
+				f.Close()
+			} else if os.IsNotExist(err) {
+				f, err = root.Open("index.html")
+				if err == nil {
+					defer f.Close()
+					if stat, err := f.Stat(); err == nil {
+						w.Header().Set("Content-Type", "text/html; charset=utf-8")
+						http.ServeContent(w, r, "index.html", stat.ModTime(), f)
+						return
+					}
+				}
+			}
+		}
 		if strings.HasSuffix(r.URL.Path, ".wasm") && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 			w.Header().Add("Vary", "Accept-Encoding")
 			if serveEncodedWasm(w, r, root) {

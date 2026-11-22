@@ -906,6 +906,7 @@ func (t *Tree) SetEnvironment(env Environment) {
 	if t.hapticActive && (env.Lifecycle == LifecycleBackground || !env.HapticPatterns) {
 		t.setHapticPattern(nil)
 	}
+	t.updateAppAddress(previous, env)
 	e := t.root.Env()
 	safe, headers := e.safe.GetUntracked(), e.headers
 	// In one batch, so what reads the environment sees all of it new.
@@ -935,6 +936,7 @@ func environmentNeedsFullRound(previous, env Environment) bool {
 	previous.LowPowerMode = env.LowPowerMode
 	previous.Network = env.Network
 	previous.HapticPatterns = env.HapticPatterns
+	previous.PageURL, previous.PageBaseURL = env.PageURL, env.PageBaseURL
 	return !previous.Equal(env)
 }
 

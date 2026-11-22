@@ -663,3 +663,10 @@ export declare const Sensors: {
   watchLocation(options: LocationOptions, sample: (fix: LocationFix) => void, failed?: (error: Error) => void): () => void;
   watchMotion(options: MotionOptions, sample: (motion: MotionSample) => void, failed?: (error: Error) => void): () => void;
 };
+
+/** The application's address; browser writes stay on the page's origin. */
+export declare const UrlScheme: {
+  url(): string | null;
+  setUrl(url: string, options?: { history?: "replace" | "push" }): void;
+  on(event: "change", listener: (change: { url: string; reason: "back" | "forward" | "address" }) => void): () => void;
+};

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io/fs"
 	"maps"
 	"os"
@@ -1213,6 +1214,10 @@ func (p *project) harmonySigner(ctx context.Context) (*harmony.Signer, error) {
 // for good, and tells the runtime the name each resource got; a dev build
 // keeps the names and follows nsgo dev's server.
 func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
+	base, err := p.webBase()
+	if err != nil {
+		return err
+	}
 	wasm := filepath.Join(dir, "app.wasm")
 	offline := !dev && p.Web.Offline
 	var published []string
@@ -1262,14 +1267,14 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 	if err != nil {
 		return err
 	}
-	page := map[string]any{"Name": p.Name, "Reload": dev,
+	page := map[string]any{"Name": p.Name, "Reload": dev, "Base": html.EscapeString(base),
 		"Color": appearanceColor(p.Appearance), "Appearance": p.Appearance}
 	// app is nsgo.json: what the loader needs to show the app.
 	info, err := os.Stat(wasm)
 	if err != nil {
 		return err
 	}
-	app := webApp{Wasm: "app.wasm", WasmSize: info.Size()}
+	app := webApp{Wasm: "app.wasm", WasmSize: info.Size(), Base: base}
 	// write puts data in dir, by its content's name in a release, and
 	// returns the name.
 	write := func(name string, data []byte) (string, error) {
@@ -1414,6 +1419,7 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 // webApp is a site's nsgo.json, which names the files of the app for the
 // loader, relative to itself.
 type webApp struct {
+	Base     string `json:"base,omitempty"`
 	Wasm     string `json:"wasm"`
 	WasmSize int64  `json:"wasmSize"`
 	Exec     string `json:"exec"`
@@ -1496,6 +1502,9 @@ var indexHTML = template.Must(template.New("index").Parse(`<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>{{.Name}}</title>
+{{- if .Base}}
+<base href="{{.Base}}">
+{{- end}}
 {{- if .Appearance}}
 <meta name="color-scheme" content="{{.Appearance}}">
 {{- end}}

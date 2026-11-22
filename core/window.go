@@ -941,7 +941,14 @@ func (t *Tree) surfaceEvent(ev driver.Event) bool {
 		paths, _ := ev.Data.([]string)
 		t.within(t.root, func() { rt.opens.open(rt, paths) })
 	case driver.EventOpenLinks:
+		if change, ok := ev.Data.(*driver.PageAddressChange); ok && change != nil {
+			t.pageAddressChanged(*change)
+			break
+		}
 		links, _ := ev.Data.([]string)
+		if len(links) != 0 {
+			t.rt.root.setAddressValue(links[len(links)-1])
+		}
 		t.within(t.root, func() { rt.links.open(rt, links) })
 	case driver.EventShared:
 		if items, _ := ev.Data.([]driver.SharedItem); len(items) != 0 {

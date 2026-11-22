@@ -409,9 +409,8 @@ func (t *Tree) showTop(n *node) {
 	}
 }
 
-// emitHistory sends ItemHistory when the screens above the stacks' first
-// and the modals shown changed in number, or after a back.
-func (t *Tree) emitHistory() {
+// historyDepth counts shown screens above each stack's first and modals.
+func (t *Tree) historyDepth() int {
 	depth := 0
 	for _, s := range t.stacks {
 		if !s.hidden {
@@ -428,11 +427,27 @@ func (t *Tree) emitHistory() {
 		}
 	}
 	modals(t.view)
-	if depth == t.history && !t.historyAgain {
+	return depth
+}
+
+// emitHistory commits navigation depth and the application address together.
+func (t *Tree) emitHistory() {
+	depth := t.historyDepth()
+	a := t.rt.address
+	addressed := a != nil && a.tree == t && a.page != ""
+	if depth == t.history && !t.historyAgain && (!addressed || a.pending == nil) {
 		return
 	}
 	t.history, t.historyAgain = depth, false
-	t.items = append(t.items, driver.MountItem{Kind: driver.ItemHistory, Count: uint32(depth)})
+	item := driver.MountItem{Kind: driver.ItemHistory, Count: uint32(depth)}
+	if addressed {
+		item.Address = a.pending
+		if item.Address == nil {
+			item.Address = &driver.PageAddress{URL: a.value.GetUntracked()}
+		}
+		a.pending = nil
+	}
+	t.items = append(t.items, item)
 }
 
 // markScreens marks the screens of stack n whose header config changed,

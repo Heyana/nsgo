@@ -539,6 +539,9 @@ type MountItem struct {
 	Size   Size     // ItemScrollContent
 	Value  string   // ItemInputValue
 	Count  uint32   // ItemInputValue
+	// Address is ItemHistory's optional application address, applied after
+	// reconciling Count's navigation depth. Push asks for an entry of its own.
+	Address *PageAddress
 	// Transition, when set, moves an ItemFrame's view from where it shows
 	// to Frame, as a batch's LayoutAnimation Update does, which wins.
 	Transition *LayoutTransition
