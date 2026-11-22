@@ -659,6 +659,8 @@ jobs:
       - name: Test UI Automation property-changed events
         run: go tool nsgo test -run '^TestUIAPropertyChangedEvents$' ./internal/platform/windows
 
+      - name: Test native clipboard representations
+        run: go tool nsgo test -run '^TestNativeClipboardItems$' ./internal/platform/windows
       - name: Test the save dialog's starting folder
         run: go tool nsgo test -run '^TestSaveDialogStartsInFolder$' ./internal/platform/windows
       - name: Test native dev window frame and full screen
