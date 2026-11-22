@@ -414,6 +414,17 @@ func (n *node) layoutStyle() layout.Style {
 			l.Size.Width = layout.Px(float32(a.width))
 			l.MinSize.Width, l.MaxSize.Width = layout.Auto, layout.Auto
 		}
+		if n.headerView && n.parent != nil && n.parent.screen != nil && n.parent.screen.view == n {
+			sn := n.parent.screen
+			if sn.titleLaidWidth > 0 {
+				if sn.titleFills {
+					l.Size.Width = layout.Px(float32(sn.titleLaidWidth))
+					l.MinSize.Width, l.MaxSize.Width = layout.Auto, layout.Auto
+				} else {
+					l.MaxSize.Width = layout.Px(float32(sn.titleLaidWidth))
+				}
+			}
+		}
 	}
 	return l
 }

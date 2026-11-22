@@ -36,8 +36,12 @@ type navBar struct {
 	// scrolled under it.
 	collapsed bool
 	// fit is the bar's height as UIKit sizes it, reported the one last
-	// told to the engine.
-	fit, reported driver.Points
+	// told to the engine; titleWidth is the room between the bar's ends
+	// last reported for TitleView, barWidth the width the bar last laid
+	// out at, and titleWrap the NsgoTitleView currently attached to item.
+	fit, reported, titleWidth driver.Points
+	barWidth                  float64
+	titleWrap                 objc.ID
 	// reportedInsets is the last EventScreenInsets sent for this screen.
 	reportedInsets driver.Edges
 	insetsSet      bool
@@ -68,13 +72,22 @@ type affineTransform struct {
 
 var identity = affineTransform{A: 1, D: 1}
 
+// titleWrapState connects an NsgoTitleView wrapper to its header view and screen.
+type titleWrapState struct {
+	view   *view
+	screen *view
+	fills  bool
+	size   driver.Size
+}
+
 var (
-	classNavDelegate, classSheet objc.Class
-	navDelegate                  objc.ID // one delegate for every bar
-	bars                         = map[objc.ID]*view{}
-	sheets                       = map[objc.ID]*view{}
-	selEdgeSwipe                 = sel("nsgoEdgeSwipe:")
-	selHeaderItem                = sel("nsgoHeaderItem:")
+	classNavDelegate, classSheet, classTitleView objc.Class
+	navDelegate                                  objc.ID // one delegate for every bar
+	bars                                         = map[objc.ID]*view{}
+	sheets                                       = map[objc.ID]*view{}
+	titleWraps                                   = map[objc.ID]*titleWrapState{}
+	selEdgeSwipe                                 = sel("nsgoEdgeSwipe:")
+	selHeaderItem                                = sel("nsgoHeaderItem:")
 )
 
 // UIInterfaceOrientationMask of each core orientation.
@@ -104,6 +117,43 @@ func registerNav() {
 			}},
 		})
 	navDelegate = objc.ID(classNavDelegate).Send(selNew)
+	classTitleView = register("NsgoTitleView", apple.Class("UIView"), nil, []objc.MethodDef{
+		{Cmd: sel("intrinsicContentSize"), Fn: func(self objc.ID, _ objc.SEL) apple.CGSize {
+			tw := titleWraps[self]
+			if tw == nil || tw.view == nil {
+				return apple.CGSize{}
+			}
+			var barWidth float64
+			if tw.screen != nil && tw.screen.bar != nil {
+				barWidth = tw.screen.bar.barWidth
+			}
+			w, h := titleWrapIntrinsicSize(tw.view.frame.Size, barWidth, tw.fills)
+			return apple.CGSize{Width: w, Height: h}
+		}},
+		{Cmd: sel("sizeThatFits:"), Fn: func(self objc.ID, _ objc.SEL, size apple.CGSize) apple.CGSize {
+			tw := titleWraps[self]
+			if tw == nil || tw.view == nil {
+				return apple.CGSize{}
+			}
+			var barWidth float64
+			if tw.screen != nil && tw.screen.bar != nil {
+				barWidth = tw.screen.bar.barWidth
+			}
+			w, h := titleWrapFitSize(tw.view.frame.Size, size.Width, barWidth, tw.fills)
+			return apple.CGSize{Width: w, Height: h}
+		}},
+		{Cmd: sel("layoutSubviews"), Fn: func(self objc.ID, cmd objc.SEL) {
+			apple.Super(self, cmd)
+			tw := titleWraps[self]
+			if tw == nil || tw.view == nil || tw.screen == nil || tw.screen.bar == nil {
+				return
+			}
+			bw := objc.Send[apple.CGRect](self, selBounds).Size.Width
+			if w, ok := reportedTitleWidth(bw, tw.view.frame.Size.Width, tw.screen.surface.env.PixelRatio, tw.fills); ok {
+				tw.screen.surface.reportTitleWidth(tw.screen, w)
+			}
+		}},
+	})
 	classSheet = register("NsgoSheetController", apple.Class("UIViewController"),
 		[]*objc.Protocol{objc.GetProtocol("UIAdaptivePresentationControllerDelegate")}, append(keyCommandMethods(), []objc.MethodDef{
 			{Cmd: sel("viewDidLayoutSubviews"), Fn: func(self objc.ID, cmd objc.SEL) {
@@ -235,7 +285,16 @@ func (s *surface) configureScreen(v *view, c *driver.ScreenConfig) {
 	} else {
 		b.item.Send(sel("setRightBarButtonItem:"), s.rightItem(v, c))
 	}
-	b.item.Send(sel("setTitleView:"), s.headerWrap(c.TitleView))
+	b.barWidth = objc.Send[apple.CGRect](v.native, selBounds).Size.Width
+	wrap := s.titleWrap(v, c.TitleView, c.TitleFills)
+	if b.titleWrap != wrap {
+		if oldTw := titleWraps[b.titleWrap]; oldTw != nil && oldTw.screen == v {
+			oldTw.screen = nil
+		}
+		b.titleWrap = wrap
+		b.titleWidth = 0
+		b.item.Send(sel("setTitleView:"), wrap)
+	}
 	if !b.itemsSet || old.CanGoBack != c.CanGoBack {
 		b.itemsSet = true
 		items := []objc.ID{b.item}
@@ -324,6 +383,16 @@ func (s *surface) showLargeTitle(b *navBar) {
 func (s *surface) layoutBar(v *view) {
 	b := v.bar
 	w := objc.Send[apple.CGRect](v.native, selBounds).Size.Width
+	if w != b.barWidth {
+		b.barWidth = w
+		if tw := titleWraps[b.titleWrap]; tw != nil {
+			if tw.fills {
+				b.titleWrap.Send(sel("invalidateIntrinsicContentSize"))
+			} else {
+				b.titleWidth = 0
+			}
+		}
+	}
 	if !b.config.LargeTitle {
 		if fit := objc.Send[apple.CGSize](b.bar, sel("sizeThatFits:"), apple.CGSize{Width: w}); fit.Height > 0 {
 			b.fit = driver.Points(fit.Height)
@@ -368,6 +437,22 @@ func (s *surface) reportScreenInsets(v *view) {
 	b.insetsSet = true
 	b.reportedInsets = got
 	s.engine.Dispatch(driver.Event{Kind: driver.EventScreenInsets, ID: v.id, Insets: got})
+}
+
+// reportTitleWidth tells the engine the width UIKit left for screen v's
+// TitleView between its bar's leading and trailing items.
+func (s *surface) reportTitleWidth(v *view, width driver.Points) {
+	b := v.bar
+	if b == nil || b.config.HeaderHidden || width <= 0 || width == b.titleWidth {
+		return
+	}
+	b.titleWidth = width
+	s.engine.Dispatch(driver.Event{
+		Kind:  driver.EventScreenHeader,
+		ID:    v.id,
+		Value: float32(s.expandedBar(v)),
+		Size:  driver.Size{Width: width},
+	})
 }
 
 // expandedBar is screen v's bar's height with its large title shown.
@@ -557,10 +642,73 @@ func (s *surface) headerWrap(id driver.NodeID) objc.ID {
 	return v.headerWrap
 }
 
+// titleWrap returns the NsgoTitleView the navigation item holds for
+// screen's TitleView id. Auto Layout sizes it from intrinsicContentSize:
+// expanded across the room between the bar's ends when fills is set, or
+// at its content's size otherwise.
+func (s *surface) titleWrap(screen *view, id driver.NodeID, fills bool) objc.ID {
+	if int(id) >= len(s.views) || s.views[id] == nil {
+		return 0
+	}
+	v := s.views[id]
+	var tw *titleWrapState
+	if v.headerWrap == 0 {
+		w := objc.ID(classTitleView).Send(selNew)
+		w.Send(sel("setTranslatesAutoresizingMaskIntoConstraints:"), false)
+		w.Send(selAddSubview, v.native)
+		v.headerWrap = w
+		tw = &titleWrapState{view: v, screen: screen, fills: fills, size: v.frame.Size}
+		titleWraps[w] = tw
+		s.applyTitleWrapPriorities(w, fills)
+		w.Send(sel("invalidateIntrinsicContentSize"))
+	} else {
+		tw = titleWraps[v.headerWrap]
+		if tw == nil {
+			tw = &titleWrapState{view: v, screen: screen, fills: fills, size: v.frame.Size}
+			titleWraps[v.headerWrap] = tw
+		}
+		changed := tw.fills != fills
+		tw.screen = screen
+		tw.fills = fills
+		if changed {
+			if screen.bar != nil {
+				screen.bar.titleWidth = 0
+			}
+			s.applyTitleWrapPriorities(v.headerWrap, fills)
+			v.headerWrap.Send(sel("invalidateIntrinsicContentSize"))
+			if up := v.headerWrap.Send(selSuperview); up != 0 {
+				up.Send(selSetNeedsLayout)
+			}
+		}
+		s.sizeHeaderWrap(v)
+	}
+	return v.headerWrap
+}
+
+func (s *surface) applyTitleWrapPriorities(w objc.ID, fills bool) {
+	const horizontal, vertical = 0, 1
+	hug, comp := titleWrapPriorities(fills)
+	w.Send(sel("setContentHuggingPriority:forAxis:"), hug, horizontal)
+	w.Send(sel("setContentCompressionResistancePriority:forAxis:"), comp, horizontal)
+	w.Send(sel("setContentHuggingPriority:forAxis:"), float32(750), vertical)
+	w.Send(sel("setContentCompressionResistancePriority:forAxis:"), float32(750), vertical)
+}
+
 func (s *surface) sizeHeaderWrap(v *view) {
 	w := v.headerWrap
-	f := objc.Send[apple.CGRect](w, sel("frame"))
 	size := v.frame.Size
+	if tw := titleWraps[w]; tw != nil {
+		if !titleWrapNeedsRelayout(tw.size, size, tw.fills) {
+			return
+		}
+		tw.size = size
+		w.Send(sel("invalidateIntrinsicContentSize"))
+		if up := w.Send(selSuperview); up != 0 {
+			up.Send(selSetNeedsLayout)
+		}
+		return
+	}
+	f := objc.Send[apple.CGRect](w, sel("frame"))
 	w.Send(selSetFrame, apple.Rect(f.Origin.X, f.Origin.Y, float64(size.Width), float64(size.Height)))
 	w.Send(sel("invalidateIntrinsicContentSize"))
 	if up := w.Send(selSuperview); up != 0 {

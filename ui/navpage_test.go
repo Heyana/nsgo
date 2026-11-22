@@ -248,3 +248,81 @@ func TestNavPagePreservesCustomHeaderBackground(t *testing.T) {
 		})
 	}
 }
+
+func TestNavPageHeaderFillsSystemBar(t *testing.T) {
+	for _, os := range []core.OS{core.OSMacOS, core.OSIOS, core.OSAndroid} {
+		t.Run(string(os), func(t *testing.T) {
+			e := desktopEnv
+			e.OS = os
+			if os == core.OSIOS || os == core.OSAndroid {
+				e.Idiom, e.HeaderHeight = core.IdiomPhone, 44
+			}
+			app, _ := start(t, e, func(cx *core.Scope) core.Node {
+				nav := base.NewNav(cx, "search")
+				return nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, _ string, _ func() int) base.NavPage {
+					return NavPage(cx, base.NavPage{
+						Title:  "Search",
+						TestID: "page-search",
+						Header: core.View{TestID: "search-bar", Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
+							core.View{Style: core.Style{Width: core.Pt(16), Height: core.Pt(16)}},
+							Input{TestID: "search-input", Placeholder: "Search", Style: core.Style{FlexGrow: 1}},
+						}},
+						HeaderLeft:  core.View{Style: core.Style{Width: core.Pt(32), Height: core.Pt(24)}},
+						HeaderRight: core.View{Style: core.Style{Width: core.Pt(40), Height: core.Pt(24)}},
+						Children:    []core.Node{core.View{Style: core.Style{FlexGrow: 1}}},
+					}, NavHeader{})
+				})
+			})
+			bar := app.Find("id:search-bar")
+			input := app.Find("id:search-input")
+			if os == core.OSIOS || os == core.OSAndroid {
+				c := app.Find("id:page-search").Screen
+				if c.TitleView == 0 || !c.TitleFills {
+					t.Fatalf("%v: screen = %+v, want TitleView with TitleFills=true", os, c)
+				}
+				// Phone window is 390pt minus 32pt padding from start = 358pt screen; minus 32pt left and 40pt right = 286pt.
+				if bar.Frame.Size.Width != 286 {
+					t.Fatalf("%v: search-bar width = %v, want 286", os, bar.Frame.Size.Width)
+				}
+				if input.Frame.Size.Width != 286-24 {
+					t.Fatalf("%v: search-input width = %v, want 262", os, input.Frame.Size.Width)
+				}
+			} else {
+				// Desktop window is 1000pt minus 32pt padding = 968pt.
+				if bar.Frame.Size.Width != 968 || input.Frame.Size.Width != 968-24 {
+					t.Fatalf("%v: bar=%v input=%v, want 968 and 944", os, bar.Frame.Size.Width, input.Frame.Size.Width)
+				}
+			}
+		})
+	}
+}
+
+func TestNavPageIntrinsicHeaderStaysCompact(t *testing.T) {
+	for _, os := range []core.OS{core.OSIOS, core.OSAndroid} {
+		t.Run(string(os), func(t *testing.T) {
+			e := phoneEnv
+			e.OS, e.HeaderHeight = os, 44
+			app, _ := start(t, e, func(cx *core.Scope) core.Node {
+				nav := base.NewNav(cx, "custom")
+				return nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, _ string, _ func() int) base.NavPage {
+					return NavPage(cx, base.NavPage{
+						Title:  "Custom",
+						TestID: "page-custom",
+						Header: core.View{TestID: "badge", Style: core.Style{Direction: core.Row, Gap: 6}, Children: []core.Node{
+							core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10)}},
+							core.View{Style: core.Style{Width: core.Pt(60), Height: core.Pt(20)}},
+						}},
+						Children: []core.Node{core.View{Style: core.Style{FlexGrow: 1}}},
+					}, NavHeader{})
+				})
+			})
+			c := app.Find("id:page-custom").Screen
+			if c.TitleView == 0 || c.TitleFills {
+				t.Fatalf("%v: screen = %+v, want TitleFills=false for intrinsic header", os, c)
+			}
+			if got := app.Find("id:badge").Frame.Size.Width; got != 76 {
+				t.Fatalf("%v: intrinsic header width = %v, want 76", os, got)
+			}
+		})
+	}
+}

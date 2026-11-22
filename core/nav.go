@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/layout"
 )
 
 // A stack shows its last screen that has not been popped. Back pops the
@@ -13,9 +14,12 @@ import (
 // Where the platform reports header heights (iOS, Android), a screen has
 // the system header, as NSH's do: the platform draws it over the top of
 // the screen's view from ItemScreen, the core pads the content below it,
-// and the header views are layout roots of their own at their content
-// size that the platform puts in the bar. Elsewhere the screen's Header
-// is its first child.
+// and the header views are layout roots of their own that the platform
+// puts in the bar. HeaderLeft and HeaderRight take their content's size;
+// HeaderTitle fills the room between the bar's ends when its views grow
+// or ask for a share of the width, and otherwise takes its content's
+// size bounded by that room. Elsewhere the screen's Header is its first
+// child.
 
 type screenNode struct {
 	screen *Screen
@@ -42,10 +46,19 @@ type screenNode struct {
 	top         *Signal[Points] // header, for a transparent header's insets
 	// reported are the insets the platform reported, nil before it does.
 	reported *Signal[*Edges]
-	// measured is the bar the platform measured, 0 before it does.
+	// measured is the bar height the platform measured, 0 before it does.
 	measured Points
-	sent     driver.ScreenConfig
-	sentOK   bool
+	// titleWidth is the room between the bar's ends the platform measured
+	// for HeaderTitle, 0 before it does, and titleScreenWidth is the screen
+	// width when it was recorded.
+	titleWidth       Points
+	titleScreenWidth Points
+	// titleLaidWidth and titleFills are the width and fill mode HeaderTitle
+	// was last laid out with.
+	titleLaidWidth Points
+	titleFills     bool
+	sent           driver.ScreenConfig
+	sentOK         bool
 }
 
 func (t *Tree) mountStack(cx *Scope, parent *node, s Stack) {
@@ -189,7 +202,9 @@ func (t *Tree) mountHeaderView(cx *Scope, screen *node, el Node) *node {
 	return n
 }
 
-// layoutHeaderViews lays each header view out at its content size.
+// layoutHeaderViews lays each header view out: HeaderLeft and HeaderRight
+// at their content size, and HeaderTitle in the room between the bar's
+// ends, filling it when its views grow or take a percentage width.
 func (t *Tree) layoutHeaderViews() {
 	live := t.headerViews[:0]
 	for _, n := range t.headerViews {
@@ -197,16 +212,150 @@ func (t *Tree) layoutHeaderViews() {
 			continue
 		}
 		live = append(live, n)
+		space := Size{Width: attachmentSpace, Height: attachmentSpace}
+		if n.parent != nil && n.parent.screen != nil && n.parent.screen.view == n {
+			sn := n.parent.screen
+			fills := headerTitleFills(n)
+			room := t.titleRoom(n.parent, fills)
+			if fills != sn.titleFills {
+				sn.titleFills = fills
+				n.lstyleOK = false
+				t.markLayout(n)
+				t.mark(n.parent)
+			}
+			if room != sn.titleLaidWidth {
+				sn.titleLaidWidth = room
+				n.lstyleOK = false
+				t.markLayout(n)
+			}
+			if room > 0 {
+				space.Width = room
+			}
+		}
 		if !n.layoutDirty {
 			continue
 		}
-		t.layoutRoot(n, Size{Width: attachmentSpace, Height: attachmentSpace}, false)
+		t.layoutRoot(n, space, false)
 		l := &n.lstate.Rounded
 		t.setFrame(n, Bounds{Size: Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}})
 		t.syncFrames(n)
 	}
 	clear(t.headerViews[len(live):])
 	t.headerViews = live
+}
+
+// titleRoom is the horizontal room available to screen's HeaderTitle: the
+// width the platform measured between the bar's ends, or an estimate from
+// the screen's width less HeaderLeft and HeaderRight before it reports.
+func (t *Tree) titleRoom(screen *node, fills bool) Points {
+	sn := screen.screen
+	sw := screen.frame.Size.Width
+	if !fills && sn.titleWidth > 0 && sn.titleScreenWidth > 0 && sw > 0 && sw != sn.titleScreenWidth {
+		// Drop a prior compression clamp when the screen resized so a
+		// non-filling title can expand again on wider layouts.
+		sn.titleWidth = 0
+		sn.titleScreenWidth = 0
+	}
+	if sn.titleWidth > 0 {
+		return sn.titleWidth
+	}
+	w := sw
+	if w <= 0 {
+		w = t.size.Width
+	}
+	if sn.left != nil && !sn.left.deleted {
+		w -= sn.left.frame.Size.Width
+	}
+	if sn.right != nil && !sn.right.deleted {
+		w -= sn.right.frame.Size.Width
+	}
+	return max(w, 0)
+}
+
+// headerTitleFills reports whether HeaderTitle root holds a view that
+// expands across the room between the system header's ends: a direct child
+// with FlexGrow, a horizontal flex container with growing children, auto
+// horizontal margins or space distribution, a percentage width or
+// min-width, or a grid with flexible or percentage columns, outside any
+// ancestor with a fixed width of its own.
+func headerTitleFills(root *node) bool {
+	for _, c := range root.flatChildren() {
+		if c.deleted || c.style.Display == DisplayNone || c.style.Position == Absolute || c.style.Position == Fixed {
+			continue
+		}
+		if c.style.FlexGrow > 0 || nodeFillsWidth(c) {
+			return true
+		}
+	}
+	return false
+}
+
+func nodeFillsWidth(n *node) bool {
+	s := &n.style
+	if s.Display == DisplayNone || s.Position == Absolute || s.Position == Fixed {
+		return false
+	}
+	if _, ok := s.Width.Percent(); ok {
+		return true
+	}
+	if _, ok := s.MinWidth.Percent(); ok {
+		return true
+	}
+	if !s.Width.IsAuto() {
+		return false
+	}
+	if s.Display == DisplayGrid && gridFillsWidth(n) {
+		return true
+	}
+	isRow := s.Display != DisplayBlock && s.Display != DisplayGrid &&
+		(s.Direction == Row || s.Direction == RowReverse || (s.Direction == 0 && s.RowByDefault))
+	if isRow {
+		switch s.JustifyContent {
+		case JustifyEnd, JustifySpaceBetween, JustifySpaceAround, JustifySpaceEvenly, JustifyStretch:
+			return true
+		}
+	}
+	for _, c := range n.flatChildren() {
+		if c.deleted || c.style.Display == DisplayNone || c.style.Position == Absolute || c.style.Position == Fixed {
+			continue
+		}
+		if isRow {
+			if c.style.FlexGrow > 0 || c.style.AutoMargin&(SideLeft|SideRight) != 0 {
+				return true
+			}
+			if _, ok := c.style.FlexBasis.Percent(); ok {
+				return true
+			}
+		}
+		if nodeFillsWidth(c) {
+			return true
+		}
+	}
+	return false
+}
+
+func gridFillsWidth(n *node) bool {
+	trackFills := func(ts layout.TrackSizing) bool {
+		return ts.Max.Unit == layout.UnitFr || ts.Max.Unit == layout.UnitPercent ||
+			ts.Max.Unit == layout.UnitFitContentPercent || ts.Min.Unit == layout.UnitPercent
+	}
+	for _, comp := range n.Style().GridTemplateColumns {
+		if comp.Repeat != nil {
+			if comp.Repeat.Count == layout.AutoFill || comp.Repeat.Count == layout.AutoFit {
+				return true
+			}
+			for _, ts := range comp.Repeat.Tracks {
+				if trackFills(ts) {
+					return true
+				}
+			}
+			continue
+		}
+		if trackFills(comp.Track) {
+			return true
+		}
+	}
+	return false
 }
 
 // emitHeaderViews sends the header views before the tree's, so the
@@ -286,12 +435,25 @@ func (t *Tree) headerInset(n *node) Points {
 	return max(screen.screen.header-top, 0)
 }
 
-// screenHeader records the bar the platform measured for screen n.
-func (t *Tree) screenHeader(n *node, h Points) {
-	if sn := n.screen; sn != nil && sn.measured != h {
+// screenHeader records the bar height and available HeaderTitle width
+// the platform measured for screen n.
+func (t *Tree) screenHeader(n *node, h, titleWidth Points) {
+	sn := n.screen
+	if sn == nil {
+		return
+	}
+	if h > 0 && sn.measured != h {
 		sn.measured = h
 		t.markLayout(t.view)
 		t.mark(n)
+	}
+	if titleWidth > 0 && sn.titleWidth != titleWidth {
+		sn.titleWidth = titleWidth
+		sn.titleScreenWidth = n.frame.Size.Width
+		if sn.view != nil && !sn.view.deleted {
+			t.markLayout(sn.view)
+			t.mark(sn.view)
+		}
 	}
 }
 
@@ -327,6 +489,7 @@ func (t *Tree) screenConfig(n *node) driver.ScreenConfig {
 		Left:              headerID(sn.left),
 		Right:             headerID(sn.right),
 		TitleView:         headerID(sn.view),
+		TitleFills:        sn.titleFills,
 		Header:            headerID(sn.bar),
 		HeaderHeight:      sn.header,
 

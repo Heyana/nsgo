@@ -3258,7 +3258,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 if (n.animator != null) n.animator.cancel();
                 if (n.keyframer != null) n.keyframer.cancel();
                 if (n.web != null) n.web.destroy();
-                if (n.holder != null) detach(n.holder);
+                if (n.holder != null) {
+                    detach(n.holder);
+                    n.headerScreen = null;
+                }
                 if (n.video != null) n.video.destroy();
                 if (n.embedded != null) n.embedded.destroy();
                 if (n.modal >= 0) event(Protocol.EVENT_MODAL_DISMISSED, n.id, 0, 0, 0, "");
@@ -4261,16 +4264,26 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 float[] f = item.frame;
                 Header.size(item.holder, f != null ? px(f[2]) : 1, f != null ? px(f[3]) : 1);
             }
+            item.headerScreen = n;
             return item.holder;
         });
-        // The bar as the toolbar lays out what it holds, for the core to
-        // keep the content below.
-        if (n.header.view.getVisibility() == View.VISIBLE) {
-            float bar = n.header.measure(n.frame != null ? px(n.frame[2]) : getWidth());
-            if (bar != n.header.reported) {
-                n.header.reported = bar;
-                event(Protocol.EVENT_SCREEN_HEADER, n.id, 0, 0, 0, "", 0, 0, 0, 0, 0, 0, bar, null);
-            }
+        measureHeader(n);
+    }
+
+    /**
+     * Measures screen n's toolbar and reports its bar height and filling
+     * titleView width to the engine when either changed.
+     */
+    private void measureHeader(Node n) {
+        if (n.header == null || n.header.view.getVisibility() != View.VISIBLE) return;
+        int width = n.frame != null ? px(n.frame[2]) : getWidth();
+        if (width <= 0) return;
+        float bar = n.header.measure(width);
+        float titleWidth = n.header.titleWidth();
+        if (bar != n.header.reported || titleWidth != n.header.reportedTitleWidth) {
+            n.header.reported = bar;
+            n.header.reportedTitleWidth = titleWidth;
+            event(Protocol.EVENT_SCREEN_HEADER, n.id, 0, 0, 0, "", titleWidth, 0, 0, 0, 0, 0, bar, null);
         }
         reportScreenInsets(n);
     }
@@ -4323,6 +4336,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         n.frame = f;
         if (n.holder != null) {
             Header.size(n.holder, px(f[0] + f[2]) - px(f[0]), px(f[1] + f[3]) - px(f[1]));
+            if (n.headerScreen != null && nodes.get(n.headerScreen.id) == n.headerScreen) {
+                measureHeader(n.headerScreen);
+            }
+        }
+        if (n.header != null) {
+            measureHeader(n);
         }
         if (n == accessoryShown) {
             placeAccessory();
@@ -7166,9 +7185,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         boolean embedTried;
         /** A native view's animated props. */
         Embedded.Bound bound;
-        /** A screen's system header, and the holder of a header view in one. */
+        /** A screen's system header, the holder of a header view in one, and that screen. */
         Header header;
         Header.Holder holder;
+        Node headerScreen;
 
         Node(int id, View view) {
             this.id = id;

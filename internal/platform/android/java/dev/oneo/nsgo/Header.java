@@ -42,10 +42,14 @@ final class Header {
     private final TextView largeTitle;
     private final BackArrow arrow;
     private final float density;
-    /** The bar's height last reported to the engine, in points. */
+    /** The bar's height and filling titleView width last reported to the engine, in points. */
     float reported;
     /** The screen insets last reported to the engine (top, right, bottom, left), in points. */
     float[] reportedInsets;
+    float reportedTitleWidth;
+    /** The titleView's holder, if any, and whether it fills the room between the ends. */
+    private View titleHolder;
+    private boolean titleFills;
     /** Whether the screen asked for a large title and trailing actions beside it, and how far it collapsed, in points. */
     private boolean large, rightWithLargeTitle;
     private View customTitle, trailing;
@@ -145,6 +149,8 @@ final class Header {
         large = Protocol.flag(flags, 2);
         boolean canGoBack = Protocol.flag(flags, 3), backHidden = Protocol.flag(flags, 4);
         rightWithLargeTitle = Protocol.flag(flags, 7);
+        // A second flags byte follows the first, which is full.
+        titleFills = Protocol.flag(in.readUnsignedByte(), 0);
         String backTitle = Protocol.readString(in);
         int background = in.readInt(), titleColor = in.readInt(), tint = in.readInt();
         int left = in.readInt(), right = in.readInt(), titleView = in.readInt();
@@ -171,14 +177,16 @@ final class Header {
         boolean back = canGoBack && !backHidden;
         toolbar.setNavigationIcon(back ? arrow : null);
         toolbar.setNavigationContentDescription(back ? upDescription(backTitle) : null);
-        // The header views: the core sized them, the toolbar places them.
+        // The header views: the core sized left and right, and a filling
+        // titleView takes MATCH_PARENT after both ends are measured so
+        // Toolbar leaves it the exact room between them.
+        if (titleHolder instanceof Holder) ((Holder) titleHolder).fills = false;
         for (int i = toolbar.getChildCount() - 1; i >= 0; i--) {
             if (toolbar.getChildAt(i) instanceof Holder) toolbar.removeViewAt(i);
         }
         if (trailing != null && trailing.getParent() == view) view.removeView(trailing);
         trailing = null;
-        add(wrap, left, Gravity.START);
-        customTitle = add(wrap, titleView, Gravity.START);
+        add(wrap, left, Gravity.START, false);
         int reserved = 0;
         if (large && rightWithLargeTitle && right != 0) {
             trailing = wrap.apply(right);
@@ -192,7 +200,9 @@ final class Header {
                 view.addView(trailing, p);
                 reserved = width + Math.round(28 * density);
             }
-        } else add(wrap, right, Gravity.END);
+        } else add(wrap, right, Gravity.END, false);
+        // The title goes in last, so a filling one takes the room the ends leave.
+        customTitle = titleHolder = add(wrap, titleView, Gravity.START, titleFills);
         toolbar.setContentInsetsRelative(toolbar.getContentInsetStart(), Math.max(toolbarEndInset, reserved));
         largeTitle.setPaddingRelative(Math.round(HeaderLayout.LARGE_PADDING_HORIZONTAL * density), 0,
                 Math.max(Math.round(HeaderLayout.LARGE_PADDING_HORIZONTAL * density), reserved),
@@ -340,13 +350,35 @@ final class Header {
         return HeaderLayout.expandedBar(large, bar, largeHeight);
     }
 
-    private View add(IntFunction<View> wrap, int id, int gravity) {
+    /**
+     * The room the toolbar left for its filling titleView during the last
+     * measure, in points, or 0 when no filling titleView is set.
+     */
+    float titleWidth() {
+        if (titleHolder == null || !titleFills) return 0;
+        int w = titleHolder.getMeasuredWidth();
+        return w > 0 ? w / density : 0;
+    }
+
+    private View add(IntFunction<View> wrap, int id, int gravity, boolean fills) {
         View holder = id != 0 ? wrap.apply(id) : null;
         if (holder == null) return null;
         if (holder.getParent() instanceof ViewGroup) ((ViewGroup) holder.getParent()).removeView(holder);
-        ViewGroup.LayoutParams size = holder.getLayoutParams();
+        int w = 1, h = 1;
+        if (holder instanceof Holder) {
+            Holder hh = (Holder) holder;
+            hh.fills = fills;
+            w = hh.width;
+            h = hh.height;
+        } else {
+            ViewGroup.LayoutParams size = holder.getLayoutParams();
+            if (size != null) {
+                w = Math.max(1, size.width);
+                h = Math.max(1, size.height);
+            }
+        }
         Toolbar.LayoutParams p = new Toolbar.LayoutParams(
-                size != null ? Math.max(1, size.width) : 1, size != null ? Math.max(1, size.height) : 1,
+                fills ? ViewGroup.LayoutParams.MATCH_PARENT : w, h,
                 gravity | Gravity.CENTER_VERTICAL);
         if (gravity == Gravity.END) p.setMarginEnd(Math.round(12 * density));
         toolbar.addView(holder, p);
@@ -378,13 +410,23 @@ final class Header {
 
     /** Sizes the holder of a header view to its frame, in pixels. */
     static void size(View holder, int width, int height) {
+        int w = Math.max(1, width);
+        int h = Math.max(1, height);
+        boolean fills = false;
+        if (holder instanceof Holder) {
+            Holder hh = (Holder) holder;
+            hh.width = w;
+            hh.height = h;
+            fills = hh.fills;
+        }
+        int lw = fills ? ViewGroup.LayoutParams.MATCH_PARENT : w;
         ViewGroup.LayoutParams p = holder.getLayoutParams();
         if (p == null) {
-            holder.setLayoutParams(new FrameLayout.LayoutParams(width, height));
+            holder.setLayoutParams(new FrameLayout.LayoutParams(lw, h));
             return;
         }
-        p.width = width;
-        p.height = height;
+        p.width = lw;
+        p.height = h;
         holder.setLayoutParams(p);
     }
 
@@ -409,8 +451,11 @@ final class Header {
         return v.data;
     }
 
-    /** Holds a header view at its frame's size, where the toolbar puts it. */
+    /** Holds a header view at its frame's size, or MATCH_PARENT width when filling, where the toolbar puts it. */
     static final class Holder extends FrameLayout {
+        boolean fills;
+        int width = 1, height = 1;
+
         Holder(Context context) {
             super(context);
             setClipChildren(false);

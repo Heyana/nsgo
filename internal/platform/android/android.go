@@ -1771,6 +1771,8 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			c := it.Screen
 			w.str(c.Title)
 			w.flags(c.HeaderHidden, c.HeaderTransparent, c.LargeTitle, c.CanGoBack, c.BackHidden, c.NoPopOnSwipe, c.NoPopOnBack, c.RightWithLargeTitle)
+			// The first byte is full: a second carries the flags added since.
+			w.flags(c.TitleFills)
 			w.str(c.BackTitle)
 			w.u32(uint32(c.Background))
 			w.u32(uint32(c.TitleColor))

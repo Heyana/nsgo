@@ -2392,7 +2392,7 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		return
 	case driver.EventScreenHeader:
 		if n := t.node(ev.ID); n != nil && n.screen != nil {
-			t.screenHeader(n, Points(ev.Value))
+			t.screenHeader(n, Points(ev.Value), ev.Size.Width)
 		}
 		return
 	case driver.EventScreenInsets:

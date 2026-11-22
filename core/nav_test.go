@@ -675,3 +675,159 @@ func TestScreenInsetsEventOverridesDerived(t *testing.T) {
 		t.Fatalf("reported insets = %+v, want %+v", insets, want)
 	}
 }
+
+func TestScreenHeaderTitleFillsRoom(t *testing.T) {
+	cases := []struct {
+		name  string
+		title Node
+		probe string
+		wantW func(room Points) Points
+	}{
+		{
+			name: "row with growing search field",
+			title: View{TestID: "row", Style: Style{Direction: Row, Gap: 8}, Children: []Node{
+				View{Style: Style{Width: Pt(20), Height: Pt(20)}},
+				View{TestID: "field", Style: Style{FlexGrow: 1, Height: Pt(28)}},
+			}},
+			probe: "field",
+			wantW: func(room Points) Points { return room - 28 },
+		},
+		{
+			name:  "view that only grows",
+			title: View{TestID: "grow", Style: Style{FlexGrow: 1, Height: Pt(28)}},
+			probe: "grow",
+			wantW: func(room Points) Points { return room },
+		},
+		{
+			name:  "percentage width (w-full)",
+			title: View{TestID: "full", Class: "w-full", Style: Style{Height: Pt(28)}},
+			probe: "full",
+			wantW: func(room Points) Points { return room },
+		},
+		{
+			name: "space-between row",
+			title: View{TestID: "bar", Style: Style{Direction: Row, JustifyContent: JustifySpaceBetween}, Children: []Node{
+				View{Style: Style{Width: Pt(24), Height: Pt(24)}},
+				View{Style: Style{Width: Pt(24), Height: Pt(24)}},
+			}},
+			probe: "bar",
+			wantW: func(room Points) Points { return room },
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newPhone(t, phone, func(cx *Scope) Node {
+				return Stack{Style: Style{FlexGrow: 1}, Children: []Node{
+					Screen{
+						Title:       "Search",
+						TestID:      "screen",
+						HeaderLeft:  View{Style: Style{Width: Pt(40), Height: Pt(24)}},
+						HeaderRight: View{Style: Style{Width: Pt(50), Height: Pt(24)}},
+						HeaderTitle: tc.title,
+					},
+				}}
+			})
+			b := h.commit()
+			screen := h.find("screen")
+			c := screenItems(b)[screen.id]
+			if c.TitleView == 0 || !c.TitleFills {
+				t.Fatalf("screen config = %+v, want TitleView with TitleFills=true", c)
+			}
+			// Initial estimate before the platform measures the bar: 300 - 40 - 50 = 210.
+			if got, want := h.find(tc.probe).frame.Size.Width, tc.wantW(210); got != want {
+				t.Fatalf("initial %s width = %v, want %v", tc.probe, got, want)
+			}
+			// Platform reports the exact room between the bar's ends (and bar height).
+			h.tree.Dispatch(driver.Event{Kind: driver.EventScreenHeader, ID: screen.id, Value: 50, Size: Size{Width: 180}})
+			b2 := h.commit()
+			if got := screenItems(b2)[screen.id].HeaderHeight; got != 90 {
+				t.Errorf("header height after report = %v, want 90", got)
+			}
+			if got, want := h.find(tc.probe).frame.Size.Width, tc.wantW(180); got != want {
+				t.Fatalf("after platform report: %s width = %v, want %v", tc.probe, got, want)
+			}
+			// Platform widens the room (e.g. rotation or trailing button removed).
+			h.tree.Dispatch(driver.Event{Kind: driver.EventScreenHeader, ID: screen.id, Size: Size{Width: 240}})
+			h.commit()
+			if got, want := h.find(tc.probe).frame.Size.Width, tc.wantW(240); got != want {
+				t.Fatalf("after widen report: %s width = %v, want %v", tc.probe, got, want)
+			}
+		})
+	}
+}
+
+func TestScreenHeaderTitleIntrinsicAndToggle(t *testing.T) {
+	// Fixed-width view containing a growing child stays fixed-width (TitleFills=false).
+	h := newPhone(t, phone, func(cx *Scope) Node {
+		return Stack{Style: Style{FlexGrow: 1}, Children: []Node{
+			Screen{
+				Title:  "Fixed",
+				TestID: "fixed",
+				HeaderTitle: View{TestID: "box", Style: Style{Width: Pt(120), Direction: Row}, Children: []Node{
+					View{TestID: "inner", Style: Style{FlexGrow: 1, Height: Pt(24)}},
+				}},
+			},
+		}}
+	})
+	b := h.commit()
+	if c := screenItems(b)[h.find("fixed").id]; c.TitleFills {
+		t.Fatalf("fixed-width title with growing child set TitleFills=true: %+v", c)
+	}
+	if got := h.find("box").frame.Size.Width; got != 120 {
+		t.Fatalf("box width = %v, want 120", got)
+	}
+	if got := h.find("inner").frame.Size.Width; got != 120 {
+		t.Fatalf("inner width = %v, want 120", got)
+	}
+
+	// Dynamic toggle between an intrinsic title and a filling search row updates TitleFills.
+	var searching *Signal[bool]
+	h2 := newPhone(t, phone, func(cx *Scope) Node {
+		searching = NewSignal(cx, false)
+		return Stack{Style: Style{FlexGrow: 1}, Children: []Node{
+			Screen{
+				Title:  "Toggle",
+				TestID: "toggle",
+				HeaderTitle: Show{
+					When: searching.Get,
+					Then: func(*Scope) Node {
+						return View{TestID: "search-row", Style: Style{Direction: Row}, Children: []Node{
+							View{TestID: "search-field", Style: Style{FlexGrow: 1, Height: Pt(28)}},
+						}}
+					},
+					Else: func(*Scope) Node {
+						return View{TestID: "compact", Style: Style{Direction: Row, Gap: 6}, Children: []Node{
+							View{Style: Style{Width: Pt(10), Height: Pt(10)}},
+							View{Style: Style{Width: Pt(50), Height: Pt(18)}},
+						}}
+					},
+				},
+			},
+		}}
+	})
+	screen := h2.find("toggle")
+	if c := screenItems(h2.commit())[screen.id]; c.TitleFills {
+		t.Fatalf("compact title set TitleFills=true: %+v", c)
+	}
+	if got := h2.find("compact").frame.Size.Width; got != 66 {
+		t.Fatalf("compact width = %v, want 66", got)
+	}
+
+	searching.Set(true)
+	if c, ok := screenItems(h2.commit())[screen.id]; !ok || !c.TitleFills {
+		t.Fatalf("after enabling search: screen config = %+v (ok=%v), want TitleFills=true", c, ok)
+	}
+	h2.tree.Dispatch(driver.Event{Kind: driver.EventScreenHeader, ID: screen.id, Size: Size{Width: 210}})
+	h2.commit()
+	if got := h2.find("search-field").frame.Size.Width; got != 210 {
+		t.Fatalf("search-field width = %v, want 210", got)
+	}
+
+	searching.Set(false)
+	if c, ok := screenItems(h2.commit())[screen.id]; !ok || c.TitleFills {
+		t.Fatalf("after disabling search: screen config = %+v (ok=%v), want TitleFills=false", c, ok)
+	}
+	if got := h2.find("compact").frame.Size.Width; got != 66 {
+		t.Fatalf("compact width after toggle back = %v, want 66", got)
+	}
+}

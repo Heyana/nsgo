@@ -1813,6 +1813,9 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	delete(s.tops, v)
 	if b := v.bar; b != nil {
+		if tw := titleWraps[b.titleWrap]; tw != nil && tw.screen == v {
+			tw.screen = nil
+		}
 		delete(bars, b.bar)
 		b.bar.Send(selRelease)
 		b.item.Send(selRelease)
@@ -1822,6 +1825,7 @@ func (s *surface) delete(v *view, kept bool) {
 		}
 	}
 	if v.headerWrap != 0 {
+		delete(titleWraps, v.headerWrap)
 		v.headerWrap.Send(selRemoveFromSuperview)
 		v.headerWrap.Send(selRelease)
 	}
