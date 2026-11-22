@@ -281,7 +281,6 @@ What `app_clip` lacks of App Clips ([tool](architecture/tool.md#app-clips)).
 | Item | Reference | Done when |
 | --- | --- | --- |
 | A clip on an iPhone | `startIOSDeviceClip`, [#1470](https://github.com/nsgo-dev/nsgo/issues/1470) | `nsgo dev -target ios -clip <url>` signs, installs and opens the clip on an iPhone with a paid team, and its QR code opens it through Local Experiences; it is written but unchecked, as only a personal team was at hand |
-| Clips in apps Xcode signs | `signIOSApp`'s project, [#1471](https://github.com/nsgo-dev/nsgo/issues/1471) | Xcode's project gets an App Clip target embedded in the app's, so `nsgo dev -target ios` and `-run` on an iPhone keep the clip they now leave out |
 | Getting the full app | `SKOverlay.AppClipConfiguration`, [#1472](https://github.com/nsgo-dev/nsgo/issues/1472) | `mobile` shows the App Store's overlay offering the full app from a clip, through purego |
 | Handing data to the full app | App groups, [#1473](https://github.com/nsgo-dev/nsgo/issues/1473) | Explicit `apple.app_group` shares the clip’s and app’s data and storage; real App Clip replacement by an installed full app remains to be verified with matching App Clip and parent provisioning profiles |
 | Links into the full app | `applinks:`, `CFBundleURLTypes`, [#1474](https://github.com/nsgo-dev/nsgo/issues/1474) | The full app takes universal links and URL schemes into `mobile.OpenedURL`, as the clip takes its invocation |

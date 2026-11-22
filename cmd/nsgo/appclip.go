@@ -299,6 +299,44 @@ func startIOSClip(ctx context.Context, p *project, udid, app, url string, env []
 		"xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process", udid, p.AppClip.ID)
 }
 
+// xcodeClipEntitlements associates either a standalone or embedded clip with
+// the same parent. Xcode fills the signing team's AppIdentifierPrefix.
+func (p *project) xcodeClipEntitlements() map[string]any {
+	ents := map[string]any{
+		"com.apple.developer.on-demand-install-capable":      true,
+		"com.apple.developer.parent-application-identifiers": []any{"$(AppIdentifierPrefix)" + p.clipParent},
+	}
+	if p.clipStorageGroup() != "" {
+		ents["com.apple.security.application-groups"] = []any{p.appGroup()}
+	}
+	if domains := p.parentClip.Domains; len(domains) > 0 {
+		ents["com.apple.developer.associated-domains"] = clipDomains(domains)
+	}
+	if p.Apple.SignInWithApple {
+		ents[signInWithAppleEntitlement] = signInWithApple()
+	}
+	return ents
+}
+
+// iosClipSignScript copies the Go-built clip into the product its own target
+// signs. The parent's embedding phase copies that signed product afterward.
+const iosClipSignScript = `set -e
+app="$CODESIGNING_FOLDER_PATH"
+mkdir -p "$app"
+for file in "$SRCROOT/unsigned/AppClips/$FULL_PRODUCT_NAME"/*; do
+	name=$(basename "$file")
+	case "$name" in
+		Info.plist|PkgInfo|_CodeSignature|embedded.mobileprovision) continue ;;
+	esac
+	cp -R "$file" "$app/"
+done
+chmod +x "$app/$EXECUTABLE_NAME"
+for fw in "$app"/Frameworks/*.framework; do
+	[ -d "$fw" ] && codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" "$fw"
+done
+true
+`
+
 // startIOSDeviceClip signs the App Clip of the app built at bundle for
 // device with Xcode, working in work, installs it alone, as Xcode runs a
 // clip's scheme, and launches it opened from url. Its link then opens it

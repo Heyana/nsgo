@@ -477,6 +477,39 @@ func installOnIOSDevice(ctx context.Context, p *project, sys *appleOS, app, work
 // a script that copies the app's build product into Xcode's, which Xcode
 // then signs; work is Xcode's intermediate and output directory.
 func signIOSApp(ctx context.Context, p *project, sys *appleOS, app, work, team string, device iosDevice) (string, error) {
+	project, err := writeIOSSigningProject(p, sys, app, work, team)
+	if err != nil {
+		return "", err
+	}
+	products := filepath.Join(work, "products")
+	productsArg := "CONFIGURATION_BUILD_DIR=" + products
+	if sys == iOS && p.AppClip != nil {
+		productsArg = "NSGO_SIGNED_PRODUCTS_DIR=" + products
+	}
+	event("sign for %s with Xcode", device.Name)
+	if err := runXcodebuild(ctx,
+		"-project", project,
+		"-target", "Nsgo",
+		"-configuration", "Release",
+		"-destination", "platform="+sys.name+",id="+device.UDID,
+		"-allowProvisioningUpdates",
+		"-allowProvisioningDeviceRegistration",
+		productsArg,
+		"SYMROOT="+filepath.Join(work, "build"),
+		"OBJROOT="+filepath.Join(work, "obj"),
+		"build"); err != nil {
+		return "", err
+	}
+	signed := filepath.Join(products, p.Name+".app")
+	if _, err := os.Stat(signed); err != nil {
+		return "", fmt.Errorf("Xcode did not sign the app: %w", err)
+	}
+	return signed, nil
+}
+
+// writeIOSSigningProject gives each embedded product its own signing target,
+// while the build phases copy the binaries Go and the widget compiler made.
+func writeIOSSigningProject(p *project, sys *appleOS, app, work, team string) (string, error) {
 	project := filepath.Join(work, "Nsgo.xcodeproj")
 	if err := os.RemoveAll(work); err != nil {
 		return "", err
@@ -498,30 +531,28 @@ func signIOSApp(ctx context.Context, p *project, sys *appleOS, app, work, team s
 	if p.clipParent != "" {
 		// Xcode registers an App Clip's App ID under its parent's from
 		// these entitlements, and fills in the team's prefix.
-		ents := map[string]any{
-			"com.apple.developer.on-demand-install-capable":      true,
-			"com.apple.developer.parent-application-identifiers": []any{"$(AppIdentifierPrefix)" + p.clipParent},
-		}
-		if p.clipStorageGroup() != "" {
-			ents["com.apple.security.application-groups"] = []any{p.appGroup()}
-		}
-		if domains := p.parentClip.Domains; len(domains) > 0 {
-			ents["com.apple.developer.associated-domains"] = clipDomains(domains)
-		}
-		if p.Apple.SignInWithApple {
-			ents[signInWithAppleEntitlement] = signInWithApple()
-		}
-		if err := os.WriteFile(filepath.Join(work, "Clip.entitlements"), encodePlist(ents), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(work, "Clip.entitlements"), encodePlist(p.xcodeClipEntitlements()), 0o644); err != nil {
 			return "", err
 		}
 		data["Entitlements"] = "Clip.entitlements"
 	}
 	if p.clipParent == "" {
-		if ents := p.xcodeEntitlements(data["Widgets"] != "", sys == iOS && p.AppClip != nil); len(ents) > 0 {
+		if ents := p.xcodeEntitlements(data["Widgets"] != "", data["Clip"] != ""); len(ents) > 0 {
 			if err := os.WriteFile(filepath.Join(work, "App.entitlements"), encodePlist(ents), 0o644); err != nil {
 				return "", err
 			}
 			data["Entitlements"] = "App.entitlements"
+		}
+	}
+	if data["Clip"] != "" {
+		info, err := os.ReadFile(filepath.Join(iosClipApp(p, app), "Info.plist"))
+		if err != nil {
+			return "", err
+		}
+		for name, content := range map[string][]byte{"Clip-Info.plist": info, "Clip.entitlements": encodePlist(p.clipProject().xcodeClipEntitlements())} {
+			if err := os.WriteFile(filepath.Join(work, name), content, 0o644); err != nil {
+				return "", err
+			}
 		}
 	}
 	if data["Widgets"] != "" {
@@ -547,29 +578,7 @@ func signIOSApp(ctx context.Context, p *project, sys *appleOS, app, work, team s
 	if err != nil {
 		return "", err
 	}
-	products := filepath.Join(work, "products")
-	if p.AppClip != nil {
-		warnIn(ctx, "the App Clip is left out: Xcode signs the app alone for devices; nsgo dev -clip runs the clip alone, and nsgo build -target ios with sign.profile and sign.clip_profile keeps it")
-	}
-	event("sign for %s with Xcode", device.Name)
-	if err := runXcodebuild(ctx,
-		"-project", project,
-		"-target", "Nsgo",
-		"-configuration", "Release",
-		"-destination", "platform="+sys.name+",id="+device.UDID,
-		"-allowProvisioningUpdates",
-		"-allowProvisioningDeviceRegistration",
-		"CONFIGURATION_BUILD_DIR="+products,
-		"SYMROOT="+filepath.Join(work, "build"),
-		"OBJROOT="+filepath.Join(work, "obj"),
-		"build"); err != nil {
-		return "", err
-	}
-	signed := filepath.Join(products, p.Name+".app")
-	if _, err := os.Stat(signed); err != nil {
-		return "", fmt.Errorf("Xcode did not sign the app: %w", err)
-	}
-	return signed, nil
+	return project, nil
 }
 
 // iosProjectData fills iosProject in for p on sys, signed by team: an
@@ -599,10 +608,17 @@ func iosProjectData(p *project, sys *appleOS, team string) map[string]string {
 		data["WidgetsID"] = p.ID + ".widgets"
 		data["WidgetsScript"] = iosWidgetsScript
 	}
+	if sys == iOS && p.AppClip != nil && p.clipParent == "" {
+		data["Clip"] = "1"
+		data["ClipName"], data["ClipID"] = p.AppClip.Name, p.AppClip.ID
+		data["ClipApp"] = p.AppClip.Name + ".app"
+		data["ClipMinimum"] = p.clipProject().IOSMinimum()
+		data["ClipScript"] = iosClipSignScript
+	}
 	return data
 }
 
-// xcodeEntitlements are what an app signed by Xcode claims, which its automatic signing registers: the app group it shares with widgets or its App Clip and Sign in with Apple when apple.sign_in_with_apple asks for it.
+// xcodeEntitlements are the capabilities Xcode registers for the app: the app group it shares with its widgets or, with an explicit apple.app_group, its embedded clip, the clip's association and optional Sign in with Apple.
 func (p *project) xcodeEntitlements(widgets, clip bool) map[string]any {
 	ents := map[string]any{}
 	if widgets || clip && p.clipStorageGroup() != "" {
@@ -610,6 +626,9 @@ func (p *project) xcodeEntitlements(widgets, clip bool) map[string]any {
 	}
 	if p.Apple.SignInWithApple {
 		ents[signInWithAppleEntitlement] = signInWithApple()
+	}
+	if clip {
+		ents["com.apple.developer.associated-appclip-app-identifiers"] = []any{"$(AppIdentifierPrefix)" + p.AppClip.ID}
 	}
 	return ents
 }
@@ -631,8 +650,7 @@ chmod +x "$appex/$EXECUTABLE_NAME"
 
 // iosSignScript replaces Xcode's empty app with the Go build's contents,
 // except its Info.plist, which Xcode processes itself, the widget
-// extension, which its own target signs, and the App Clip, which Xcode's
-// project has no target to sign.
+// extension and the App Clip, which their own targets sign and embed.
 const iosSignScript = `set -e
 app="$CODESIGNING_FOLDER_PATH"
 mkdir -p "$app"
@@ -1045,14 +1063,23 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 {{- if .Widgets}}
 		AA0000000000000000000010 /* Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Widgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 {{- end}}
+{{- if .Clip}}
+		AA0000000000000000000020 /* App Clip */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = {{pbx .ClipApp}}; sourceTree = BUILT_PRODUCTS_DIR; };
+{{- end}}
 /* End PBXFileReference section */
-{{- if .Widgets}}
+{{- if or .Widgets .Clip}}
 
 /* Begin PBXBuildFile section */
+{{- if .Widgets}}
 		AA0000000000000000000011 /* Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000010 /* Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+{{- end}}
+{{- if .Clip}}
+		AA0000000000000000000021 /* App Clip in Embed App Clips */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000020 /* App Clip */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+{{- end}}
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+{{- if .Widgets}}
 		AA000000000000000000001A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AA0000000000000000000007 /* Project object */;
@@ -1060,9 +1087,20 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 			remoteGlobalIDString = AA0000000000000000000013;
 			remoteInfo = Widgets;
 		};
+{{- end}}
+{{- if .Clip}}
+		AA000000000000000000002A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000007 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000023;
+			remoteInfo = Clip;
+		};
+{{- end}}
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+{{- if .Widgets}}
 		AA0000000000000000000012 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1074,6 +1112,20 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+{{- end}}
+{{- if .Clip}}
+		AA0000000000000000000022 /* Embed App Clips */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/AppClips";
+			dstSubfolderSpec = 16;
+			files = (
+				AA0000000000000000000021 /* App Clip in Embed App Clips */,
+			);
+			name = "Embed App Clips";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+{{- end}}
 /* End PBXCopyFilesBuildPhase section */
 {{- end}}
 
@@ -1094,6 +1146,14 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 {{- end}}
+{{- if .Clip}}
+		AA0000000000000000000025 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+{{- end}}
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -1103,6 +1163,9 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 				AA0000000000000000000001 /* Nsgo.app */,
 {{- if .Widgets}}
 				AA0000000000000000000010 /* Widgets.appex */,
+{{- end}}
+{{- if .Clip}}
+				AA0000000000000000000020 /* App Clip */,
 {{- end}}
 			);
 			sourceTree = "<group>";
@@ -1119,12 +1182,18 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 {{- if .Widgets}}
 				AA0000000000000000000012 /* Embed Foundation Extensions */,
 {{- end}}
+{{- if .Clip}}
+				AA0000000000000000000022 /* Embed App Clips */,
+{{- end}}
 			);
 			buildRules = (
 			);
 			dependencies = (
 {{- if .Widgets}}
 				AA0000000000000000000019 /* PBXTargetDependency */,
+{{- end}}
+{{- if .Clip}}
+				AA0000000000000000000029 /* PBXTargetDependency */,
 {{- end}}
 			);
 			name = Nsgo;
@@ -1148,6 +1217,22 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 			productName = Widgets;
 			productReference = AA0000000000000000000010 /* Widgets.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+{{- end}}
+{{- if .Clip}}
+		AA0000000000000000000023 /* Clip */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000026 /* Build configuration list for Clip */;
+			buildPhases = (
+				AA0000000000000000000024 /* Copy the App Clip */,
+				AA0000000000000000000025 /* Frameworks */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = Clip;
+			productName = Clip;
+			productReference = AA0000000000000000000020 /* App Clip */;
+			productType = "com.apple.product-type.application.on-demand-install-capable";
 		};
 {{- end}}
 /* End PBXNativeTarget section */
@@ -1180,6 +1265,9 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 				AA0000000000000000000004 /* Nsgo */,
 {{- if .Widgets}}
 				AA0000000000000000000013 /* Widgets */,
+{{- end}}
+{{- if .Clip}}
+				AA0000000000000000000023 /* Clip */,
 {{- end}}
 			);
 		};
@@ -1218,15 +1306,38 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 			shellScript = {{pbx .WidgetsScript}};
 		};
 {{- end}}
+{{- if .Clip}}
+		AA0000000000000000000024 /* Copy the App Clip */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = ();
+			name = "Copy the App Clip";
+			outputPaths = ();
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = {{pbx .ClipScript}};
+		};
+{{- end}}
 /* End PBXShellScriptBuildPhase section */
-{{- if .Widgets}}
+{{- if or .Widgets .Clip}}
 
 /* Begin PBXTargetDependency section */
+{{- if .Widgets}}
 		AA0000000000000000000019 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = AA0000000000000000000013 /* Widgets */;
 			targetProxy = AA000000000000000000001A /* PBXContainerItemProxy */;
 		};
+{{- end}}
+{{- if .Clip}}
+		AA0000000000000000000029 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000023 /* Clip */;
+			targetProxy = AA000000000000000000002A /* PBXContainerItemProxy */;
+		};
+{{- end}}
 /* End PBXTargetDependency section */
 {{- end}}
 
@@ -1236,6 +1347,8 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
+				NSGO_SIGNED_PRODUCTS_DIR = "$(SYMROOT)/products";
+				CONFIGURATION_BUILD_DIR = "$(NSGO_SIGNED_PRODUCTS_DIR)";
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				{{.Deployment}} = {{.Minimum}};
 				SDKROOT = {{.SDK}};
@@ -1247,6 +1360,8 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
+				NSGO_SIGNED_PRODUCTS_DIR = "$(SYMROOT)/products";
+				CONFIGURATION_BUILD_DIR = "$(NSGO_SIGNED_PRODUCTS_DIR)";
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				{{.Deployment}} = {{.Minimum}};
 				SDKROOT = {{.SDK}};
@@ -1325,6 +1440,44 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 			name = Release;
 		};
 {{- end}}
+{{- if .Clip}}
+		AA0000000000000000000027 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Clip.entitlements;
+				CONFIGURATION_BUILD_DIR = "$(NSGO_SIGNED_PRODUCTS_DIR)/AppClipProducts";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = {{pbx .Team}};
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				INFOPLIST_FILE = "Clip-Info.plist";
+				{{.Deployment}} = {{.ClipMinimum}};
+				PRODUCT_BUNDLE_IDENTIFIER = {{pbx .ClipID}};
+				PRODUCT_NAME = {{pbx .ClipName}};
+				SDKROOT = {{.SDK}};
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = {{pbx .Families}};
+			};
+			name = Debug;
+		};
+		AA0000000000000000000028 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Clip.entitlements;
+				CONFIGURATION_BUILD_DIR = "$(NSGO_SIGNED_PRODUCTS_DIR)/AppClipProducts";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = {{pbx .Team}};
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				INFOPLIST_FILE = "Clip-Info.plist";
+				{{.Deployment}} = {{.ClipMinimum}};
+				PRODUCT_BUNDLE_IDENTIFIER = {{pbx .ClipID}};
+				PRODUCT_NAME = {{pbx .ClipName}};
+				SDKROOT = {{.SDK}};
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = {{pbx .Families}};
+			};
+			name = Release;
+		};
+{{- end}}
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1352,6 +1505,17 @@ var iosProject = template.Must(template.New("ios").Funcs(template.FuncMap{"pbx":
 			buildConfigurations = (
 				AA0000000000000000000017 /* Debug */,
 				AA0000000000000000000018 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+{{- end}}
+{{- if .Clip}}
+		AA0000000000000000000026 /* Build configuration list for Clip */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000027 /* Debug */,
+				AA0000000000000000000028 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

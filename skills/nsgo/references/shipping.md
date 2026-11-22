@@ -43,6 +43,8 @@ A flag replaces the value it names (`-target`, `-version`, `-output`, or the sig
 
 Set `game: true` for game classification and Game Mode metadata, and `gamepad: true` when the app supports a hardware gamepad. See [Games](https://nsgo.dev/docs/building.md#games).
 
+An iOS app with `app_clip` keeps its clip when Xcode automatically signs `dev` or `build -run`; it needs a paid-team account and provisioning for both targets. `dev -clip <url>` runs the clip alone; use `-release` if development symbols exceed the QR size limit. [App Clips](https://nsgo.dev/docs/building.md#app-clips).
+
 ## Build
 
 ```sh
