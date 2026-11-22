@@ -24,8 +24,7 @@ type View struct {
 	FontSize core.Points
 	// Theme colors the diagram over the appearance's theme: Pele's light theme in light, and its gray counterpart in dark, with the same blue accent as NSGo's own look.
 	Theme *Theme
-	// ThemeFunc follows the colors it reads. Returning nil keeps the
-	// appearance's defaults. Theme and ThemeFunc are mutually exclusive.
+	// ThemeFunc follows the colors it reads. Returning nil keeps the appearance's defaults. Theme and ThemeFunc are mutually exclusive.
 	ThemeFunc func() *Theme
 	// Label is what assistive technology reads in place of the diagram's title and description.
 	Label     string
