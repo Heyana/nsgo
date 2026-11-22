@@ -35,6 +35,9 @@ func TestCanvasImageTint(t *testing.T) {
 			if s.name == "offscreen" && nsgotest.Target() == "android" {
 				t.Skip("Android's canvases draw no offscreen images yet")
 			}
+			if s.name != "encoded" && nsgotest.Target() == "harmonyos" {
+				t.Skip("HarmonyOS's canvases draw only images from bytes or the app's resources yet")
+			}
 			var scope *core.Scope
 			app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 				scope = cx
