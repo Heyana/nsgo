@@ -242,8 +242,7 @@ func (s *surface) topModal() *view {
 	return nil
 }
 
-// topmostCapture is the newest visible input-capturing Topmost overlay shown in
-// the surface, such as the layout audit's ruler.
+// topmostCapture is the newest visible input-capturing Topmost overlay shown in the surface, such as the layout audit's ruler.
 func (s *surface) topmostCapture() *view {
 	for i := len(s.topmostCaptures) - 1; i >= 0; i-- {
 		if v := s.topmostCaptures[i]; s.views[v.id] == v && v.native.Send(sel("window")) != 0 &&
@@ -262,9 +261,7 @@ func (s *surface) topFocusScope() *view {
 	return s.topModal()
 }
 
-// updateModals follows the modals and capture overlays a batch showed and
-// closed, moving the focus into the newest as it comes and back to what had it
-// as it goes, and focuses the views a batch brought when nothing has the focus.
+// updateModals follows the modals and capture overlays a batch showed and closed, moving the focus into the newest as it comes and back to what had it as it goes, and focuses the views a batch brought when nothing has the focus.
 func (s *surface) updateModals() {
 	// The newest modal as the last batch left them, which may be gone.
 	var top *view
@@ -332,9 +329,7 @@ func (s *surface) refocus(moving bool) {
 	})
 }
 
-// preferredFocus is where the focus goes when the controller's view asks:
-// into the newest capture overlay or modal, back to what had it before one,
-// else UIKit's choice.
+// preferredFocus is where the focus goes when the controller's view asks: into the newest capture overlay or modal, back to what had it before one, else UIKit's choice.
 func (s *surface) preferredFocus() objc.ID {
 	if top := s.topFocusScope(); top != nil {
 		return top.native
