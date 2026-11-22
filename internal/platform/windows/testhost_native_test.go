@@ -176,9 +176,7 @@ func TestTestHostCommitsCompositionBeforeBlur(t *testing.T) {
 	}
 }
 
-// TestTestHostPreciseScroll verifies that testSurface.Scroll delivers exact
-// point distances and touchpad phases to OnWheel as well as exact point
-// distances to both vertical and horizontal native scroll views.
+// TestTestHostPreciseScroll verifies that testSurface.Scroll delivers exact point distances and touchpad phases to OnWheel as well as exact point distances to both vertical and horizontal native scroll views.
 func TestTestHostPreciseScroll(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")

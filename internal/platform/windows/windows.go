@@ -1916,8 +1916,7 @@ func (w *window) moveOffset(v *view, offset driver.Point) {
 // for a notch: three lines of 33 points, as browsers scroll about 100.
 const wheelNotch driver.Points = 99
 
-// wheelTarget returns the innermost view with OnWheel under p unless a scroll
-// view lies inside it.
+// wheelTarget returns the innermost view with OnWheel under p unless a scroll view lies inside it.
 func wheelTarget(root *view, p driver.Point) *view {
 	under, _ := viewsAt(root, p, func(v *view) bool { return v.kind == driver.KindScroll || v.events.Has(driver.EventWheel) }, nil)
 	if len(under) == 0 {
@@ -1997,9 +1996,7 @@ func (v *view) scrollCandidate() scrollCandidate {
 	}
 }
 
-// wheelPointsTarget chooses the innermost scroll view in under that can move
-// by delta (offset change in points), returning the view, its clamped target
-// offset, and whether a lone horizontal view fell back to delta.Y.
+// wheelPointsTarget chooses the innermost scroll view in under that can move by delta (offset change in points), returning the view, its clamped target offset, and whether a lone horizontal view fell back to delta.Y.
 func wheelPointsTarget(under []*view, delta driver.Point) (*view, driver.Point, bool) {
 	if len(under) == 0 {
 		return nil, driver.Point{}, false
@@ -2023,8 +2020,7 @@ func wheelTurn(under []*view, notches driver.Points, tilt bool) (*view, driver.P
 	return v, to
 }
 
-// preciseScroll tracks the latched target of one precise point-distance scroll
-// gesture (GestureBegan -> GestureChanged* -> GestureEnded).
+// preciseScroll tracks the latched target of one precise point-distance scroll gesture (GestureBegan -> GestureChanged* -> GestureEnded).
 type preciseScroll struct {
 	wheel    *view // latched OnWheel view
 	scroll   *view // latched native scroll view
@@ -2032,9 +2028,7 @@ type preciseScroll struct {
 	web      bool  // scrollable WebView2 under the pointer took the gesture
 }
 
-// beginPreciseScroll starts a precise touchpad-style scroll gesture at at.
-// An OnWheel view under at (not covered by a scroll view or scrollable WebView)
-// claims the gesture and receives GestureBegan with Precise set.
+// beginPreciseScroll starts a precise touchpad-style scroll gesture at at. An OnWheel view under at (not covered by a scroll view or scrollable WebView) claims the gesture and receives GestureBegan with Precise set.
 func (w *window) beginPreciseScroll(at driver.Point) preciseScroll {
 	w.applyBatches()
 	if len(w.webs) > 0 && w.scale > 0 {
@@ -2053,8 +2047,7 @@ func (w *window) beginPreciseScroll(at driver.Point) preciseScroll {
 	return preciseScroll{}
 }
 
-// stepPreciseScroll delivers one precise scroll step of offset delta (positive
-// right and down) at at to the latched target of g.
+// stepPreciseScroll delivers one precise scroll step of offset delta (positive right and down) at at to the latched target of g.
 func (w *window) stepPreciseScroll(g *preciseScroll, at, delta driver.Point) {
 	if g.web {
 		px, py := w.px(at.X), w.px(at.Y)
@@ -2108,8 +2101,7 @@ func (w *window) stepPreciseScroll(g *preciseScroll, at, delta driver.Point) {
 	w.applyWheelScroll(v, to)
 }
 
-// endPreciseScroll ends a precise scroll gesture, delivering GestureEnded to
-// a latched OnWheel view if it is still mounted.
+// endPreciseScroll ends a precise scroll gesture, delivering GestureEnded to a latched OnWheel view if it is still mounted.
 func (w *window) endPreciseScroll(g *preciseScroll, at driver.Point) {
 	if v := g.wheel; v != nil {
 		g.wheel = nil

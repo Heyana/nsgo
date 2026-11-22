@@ -266,10 +266,7 @@ func (t *testSurface) Drag(path []driver.Point) error {
 	return nil
 }
 
-// Scroll delivers a precise touchpad-style scroll gesture at at by delta
-// (the scroll-offset change in points, opposite to content movement): it
-// begins, moves at most 20 points every 16 ms, and ends without momentum,
-// carrying exact point distances to both native scroll views and OnWheel.
+// Scroll delivers a precise touchpad-style scroll gesture at at by delta (the scroll-offset change in points, opposite to content movement): it begins, moves at most 20 points every 16 ms, and ends without momentum, carrying exact point distances to both native scroll views and OnWheel.
 func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 	steps := preciseScrollSteps(delta)
 	var g preciseScroll

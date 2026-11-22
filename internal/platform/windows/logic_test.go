@@ -1967,8 +1967,7 @@ func TestPreciseScrollDeliversTouchpadPhasesToOnWheel(t *testing.T) {
 		ticking:  true,
 	}
 
-	// Scroll over wheelView (outside innerScroll): OnWheel takes it before outerScroll,
-	// with GestureBegan -> GestureChanged* -> GestureEnded, Precise: true, and exact inverted Delta.
+	// Scroll over wheelView (outside innerScroll): OnWheel takes it before outerScroll, with GestureBegan -> GestureChanged* -> GestureEnded, Precise: true, and exact inverted Delta.
 	at := driver.Point{X: 150, Y: 120}
 	offsetDelta := driver.Point{X: -40, Y: -60}
 	g := w.beginPreciseScroll(at)

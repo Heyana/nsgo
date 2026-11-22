@@ -376,8 +376,7 @@ func (in *textInput) wheelScroll(notches driver.Points) bool {
 	return in.scrollDelta(-notches * wheelStep)
 }
 
-// scrollDelta scrolls a multiline editor vertically by dy points (positive down)
-// and reports whether its offset changed.
+// scrollDelta scrolls a multiline editor vertically by dy points (positive down) and reports whether its offset changed.
 func (in *textInput) scrollDelta(dy driver.Points) bool {
 	if !in.multiline() || dy == 0 {
 		return false

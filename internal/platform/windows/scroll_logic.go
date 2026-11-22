@@ -7,12 +7,10 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 )
 
-// wheelStep is how far one notch of a mouse wheel scrolls a native scroll view
-// or multiline editor.
+// wheelStep is how far one notch of a mouse wheel scrolls a native scroll view or multiline editor.
 const wheelStep driver.Points = 48
 
-// preciseScrollStepMax is the farthest one step of a precise test scroll moves
-// along either axis, matching macOS and Linux.
+// preciseScrollStepMax is the farthest one step of a precise test scroll moves along either axis, matching macOS and Linux.
 const preciseScrollStepMax driver.Points = 20
 
 func absPoints(v driver.Points) driver.Points {
@@ -22,8 +20,7 @@ func absPoints(v driver.Points) driver.Points {
 	return v
 }
 
-// preciseScrollSteps splits a total scroll-offset delta into steps of at most
-// preciseScrollStepMax along either axis whose sum equals delta.
+// preciseScrollSteps splits a total scroll-offset delta into steps of at most preciseScrollStepMax along either axis whose sum equals delta.
 func preciseScrollSteps(delta driver.Point) []driver.Point {
 	n := int(max(absPoints(delta.X), absPoints(delta.Y))/preciseScrollStepMax) + 1
 	steps := make([]driver.Point, n)
@@ -42,8 +39,7 @@ func preciseScrollSteps(delta driver.Point) []driver.Point {
 	return steps
 }
 
-// wheelNotchDelta converts a mouse wheel's notches (positive away from the user
-// or tilted right) into the scroll-offset delta in points.
+// wheelNotchDelta converts a mouse wheel's notches (positive away from the user or tilted right) into the scroll-offset delta in points.
 func wheelNotchDelta(notches driver.Points, tilt bool) driver.Point {
 	if notches == 0 {
 		return driver.Point{}
@@ -54,8 +50,7 @@ func wheelNotchDelta(notches driver.Points, tilt bool) driver.Point {
 	return driver.Point{Y: -notches * wheelStep}
 }
 
-// wheelPointsToUnits converts a point delta into signed Win32 wheel units
-// (120 per wheelStep) for forwarding to hosted WebView2 pages.
+// wheelPointsToUnits converts a point delta into signed Win32 wheel units (120 per wheelStep) for forwarding to hosted WebView2 pages.
 func wheelPointsToUnits(points driver.Points) int16 {
 	u := math.Round(float64(points) * 120 / float64(wheelStep))
 	if u > math.MaxInt16 {
@@ -67,9 +62,7 @@ func wheelPointsToUnits(points driver.Points) int16 {
 	return int16(u)
 }
 
-// preciseWheelEvent builds a touchpad EventWheel for a precise scroll gesture
-// phase. offsetDelta is the scroll-offset change (positive right and down),
-// which is inverted into Event.Delta (content movement, positive right and down).
+// preciseWheelEvent builds a touchpad EventWheel for a precise scroll gesture phase. offsetDelta is the scroll-offset change (positive right and down), which is inverted into Event.Delta (content movement, positive right and down).
 func preciseWheelEvent(id driver.NodeID, phase driver.GesturePhase, local, page, offsetDelta driver.Point, mods driver.Modifiers) driver.Event {
 	ev := driver.Event{
 		Kind:      driver.EventWheel,
@@ -91,8 +84,7 @@ func preciseWheelEvent(id driver.NodeID, phase driver.GesturePhase, local, page,
 	return ev
 }
 
-// scrollCandidate is the geometry and configuration of a native scroll view
-// considered for a wheel or precise scroll.
+// scrollCandidate is the geometry and configuration of a native scroll view considered for a wheel or precise scroll.
 type scrollCandidate struct {
 	scroll  driver.ScrollConfig
 	frame   driver.Size
@@ -100,10 +92,7 @@ type scrollCandidate struct {
 	offset  driver.Point
 }
 
-// scrollCandidateOffset applies offset delta to c along its axis, clamped to
-// its content and insets, and reports whether the offset moved. When
-// horizontalFallback is true, a horizontal view takes delta.Y if delta.X is
-// zero, matching vertical wheel turns over a lone horizontal scroll view.
+// scrollCandidateOffset applies offset delta to c along its axis, clamped to its content and insets, and reports whether the offset moved. When horizontalFallback is true, a horizontal view takes delta.Y if delta.X is zero, matching vertical wheel turns over a lone horizontal scroll view.
 func scrollCandidateOffset(c scrollCandidate, delta driver.Point, horizontalFallback bool) (driver.Point, bool) {
 	if c.scroll.Behavior.NoScroll {
 		return c.offset, false
@@ -128,11 +117,7 @@ func scrollCandidateOffset(c scrollCandidate, delta driver.Point, horizontalFall
 	return to, to != c.offset
 }
 
-// pickScrollCandidate returns the index of the innermost scroll candidate in
-// under (outermost first) that can move by delta, its next clamped offset, and
-// whether a lone horizontal view fell back to delta.Y. Views along the dominant
-// scroll axis take the scroll first; horizontal views take a vertical scroll
-// only where no vertical view is in under.
+// pickScrollCandidate returns the index of the innermost scroll candidate in under (outermost first) that can move by delta, its next clamped offset, and whether a lone horizontal view fell back to delta.Y. Views along the dominant scroll axis take the scroll first; horizontal views take a vertical scroll only where no vertical view is in under.
 func pickScrollCandidate(under []scrollCandidate, delta driver.Point) (index int, to driver.Point, fallback bool) {
 	if delta.X == 0 && delta.Y == 0 {
 		return -1, driver.Point{}, false
