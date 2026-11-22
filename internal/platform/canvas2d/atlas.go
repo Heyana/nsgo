@@ -46,7 +46,7 @@ func (p *Player) atlas(op *driver.DrawOp) {
 	if op.Image == nil || op.Atlas == nil {
 		return
 	}
-	img, density, ok := p.Image(*op.Image)
+	img, density, ok := p.Image(*op.Image, false)
 	if !ok {
 		return
 	}
