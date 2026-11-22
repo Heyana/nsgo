@@ -71,13 +71,20 @@ func TestStoreKitSubscriptionAndRefundJSON(t *testing.T) {
 	}
 }
 
+func TestStoreKitPresentationIsRequestScoped(t *testing.T) {
+	data, err := json.Marshal(storeKitRequest{Command: driver.PurchaseManageSubscriptions.String(), Presentation: 0x1234})
+	if err != nil || string(data) != `{"command":"manageSubscriptions","presentation":4660}` {
+		t.Fatalf("request %s, %v", data, err)
+	}
+}
+
 // A process whose bundle has no library, as a test's has not, has no purchases, and answers a request unavailable.
 func TestPurchasesUnavailableWithoutTheLibrary(t *testing.T) {
 	if PurchasesAvailable() {
 		t.Skip("this process's bundle has NSGoStoreKit")
 	}
 	var got driver.Event
-	HandlePurchase(&driver.MountItem{Kind: driver.ItemPurchase, Count: 4, Purchase: &driver.PurchaseRequest{Command: driver.PurchaseEntitlements}}, func(ev driver.Event) { got = ev })
+	HandlePurchase(&driver.MountItem{Kind: driver.ItemPurchase, Count: 4, Purchase: &driver.PurchaseRequest{Command: driver.PurchaseEntitlements}}, 0, func(ev driver.Event) { got = ev })
 	if a, _ := got.Data.(*driver.PurchaseAnswer); got.Kind != driver.EventPurchase || got.Count != 4 || a == nil || a.Error != driver.PurchasesUnavailable {
 		t.Fatalf("answer %+v", got)
 	}

@@ -538,6 +538,8 @@ apple:
 
 显示商店给出的价格 `DisplayPrice`，不要显示应用自己定的价格：商店按各地区自行定价。一次购买只回答一次，给出交易或错误：用户关闭面板时是 `core.PurchaseCancelled`，等待批准（如「询问购买」）时是 `core.PurchasePending`，其余是附带商店原话的 `core.PurchaseFailed`，其他平台上是 `PurchasesUnavailable`。把交易的 `Signed`（商店签名的 JWS）交给应用的服务器验证，交付所购内容，再完成这笔交易；未完成的交易每次启动时商店都会再次交给应用。
 
+`cx.ManageSubscriptions` 打开 Apple 的订阅管理界面（iOS 为系统面板，macOS 和 tvOS 为 App Store 订阅页面）。`cx.RequestRefund` 为交易发起退款请求，并回答 `core.RefundSuccess` 或 `core.RefundCancelled`。
+
 ```go
 cx.OnPurchaseUpdate(func(t core.Transaction) { // 续订、获批的购买、其他设备上的购买、退款，以及启动时未完成的交易
 	verifyAndDeliver(t.Signed, func() { cx.FinishTransaction(t.ID, nil) })

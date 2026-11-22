@@ -121,13 +121,13 @@ func SetPurchaseUpdates(fn func(driver.Event)) {
 }
 
 // HandlePurchase carries out an ItemPurchase, answering through dispatch.
-func HandlePurchase(it *driver.MountItem, dispatch func(driver.Event)) {
+func HandlePurchase(it *driver.MountItem, anchor objc.ID, dispatch func(driver.Event)) {
 	if !loadStoreKit() {
 		dispatch(driver.Event{Kind: driver.EventPurchase, Count: it.Count, Data: &driver.PurchaseAnswer{Error: driver.PurchasesUnavailable}})
 		return
 	}
 	r := it.Purchase
-	req := storeKitRequest{Command: r.Command.String(), IDs: r.IDs, Product: r.Product, AccountToken: r.AccountToken, Quantity: r.Quantity, Transaction: r.Transaction}
+	req := storeKitRequest{Command: r.Command.String(), IDs: r.IDs, Product: r.Product, AccountToken: r.AccountToken, Quantity: r.Quantity, Transaction: r.Transaction, Presentation: uint64(anchor)}
 	if o := r.Offer; o != nil {
 		req.Offer = &storeKitOffer{ID: o.ID, KeyID: o.KeyID, Nonce: o.Nonce, Signature: o.Signature, Timestamp: o.Timestamp}
 	}
@@ -159,6 +159,7 @@ type storeKitRequest struct {
 	Quantity     int            `json:"quantity,omitempty"`
 	Offer        *storeKitOffer `json:"offer,omitempty"`
 	Transaction  string         `json:"transaction,omitempty"`
+	Presentation uint64         `json:"presentation,omitempty"`
 }
 
 // storeKitOffer is a promotional offer as the library reads it, the signature in base64 as Swift's JSONDecoder reads Data.

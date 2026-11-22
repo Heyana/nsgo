@@ -1315,7 +1315,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			apple.HandleAppleSignIn(it, s.native.Send(sel("window")), s.engine.Dispatch)
 			continue
 		case driver.ItemPurchase:
-			apple.HandlePurchase(it, s.engine.Dispatch)
+			apple.HandlePurchase(it, s.activeWindowScene(), s.engine.Dispatch)
 			continue
 		case driver.ItemRequestReview:
 			if !onTV() {

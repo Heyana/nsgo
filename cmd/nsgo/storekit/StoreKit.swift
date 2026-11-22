@@ -35,6 +35,12 @@ private struct Request: Decodable {
     var quantity: Int?
     var offer: Offer?
     var transaction: String?
+    var presentation: UInt64?
+}
+
+private func presentationObject(_ raw: UInt64?) -> AnyObject? {
+    guard let raw, raw != 0, let pointer = UnsafeRawPointer(bitPattern: UInt(raw)) else { return nil }
+    return Unmanaged<AnyObject>.fromOpaque(pointer).takeUnretainedValue()
 }
 
 private struct Offer: Decodable {
@@ -199,7 +205,7 @@ private func handle(_ r: Request) async throws -> Answer {
         return Answer()
     case "manageSubscriptions":
 #if os(iOS)
-        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+        guard let scene = presentationObject(r.presentation) as? UIWindowScene else {
             throw Failure(code: "failed", message: "no active window scene")
         }
         try await AppStore.showManageSubscriptions(in: scene)
@@ -217,12 +223,12 @@ private func handle(_ r: Request) async throws -> Answer {
     case "refund":
         guard let id = UInt64(r.transaction ?? "") else { throw Failure(code: "failed", message: "invalid transaction") }
 #if os(iOS)
-        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+        guard let scene = presentationObject(r.presentation) as? UIWindowScene else {
             throw Failure(code: "failed", message: "no active window scene")
         }
         let status = try await Transaction.beginRefundRequest(for: id, in: scene)
 #elseif os(macOS)
-        guard let controller = NSApp.keyWindow?.contentViewController else {
+        guard let controller = presentationObject(r.presentation) as? NSViewController else {
             throw Failure(code: "failed", message: "no active window controller")
         }
         let status = try await Transaction.beginRefundRequest(for: id, in: controller)
