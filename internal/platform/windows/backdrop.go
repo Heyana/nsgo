@@ -20,6 +20,19 @@ import (
 
 var iidD2D1Bitmap = parseGUID("a2296057-ea42-4099-983b-539fb6505426")
 
+// backdropTarget reports the pixel size and alpha mode of the current
+// bitmap render target, or false when none is known.
+func (p *painter) backdropTarget() (width, height uint32, premultiplied, ok bool) {
+	if p.targetWidth > 0 && p.targetHeight > 0 {
+		return p.targetWidth, p.targetHeight, p.targetAlpha, true
+	}
+	sw := p.w.swap
+	if sw == nil {
+		return 0, 0, false, false
+	}
+	return sw.width, sw.height, sw.composed, true
+}
+
 // backdrop returns a copy of what the target holds, or nil when it holds
 // no pixels to copy.
 func (p *painter) backdrop() *comObject {
@@ -34,15 +47,15 @@ func (p *painter) backdrop() *comObject {
 		return nil
 	}
 	bitmap.release()
-	sw := p.w.swap
-	if sw == nil {
+	w, h, premultiplied, ok := p.backdropTarget()
+	if !ok {
 		return nil
 	}
 	// A copy takes the target's format, its alpha mode included.
-	props := targetProperties(p.scale, sw.composed)
+	props := targetProperties(p.scale, premultiplied)
 	props.options = 0
 	var copied *comObject
-	if failed(p.dc.callSize(dcCreateBitmap, max(sw.width, 1), max(sw.height, 1), 0, 0, uintptr(unsafe.Pointer(&props)),
+	if failed(p.dc.callSize(dcCreateBitmap, max(w, 1), max(h, 1), 0, 0, uintptr(unsafe.Pointer(&props)),
 		uintptr(unsafe.Pointer(&copied)))) {
 		return nil
 	}
@@ -52,6 +65,50 @@ func (p *painter) backdrop() *comObject {
 		copied.call(bitmapCopyFromBitmap, 0, target.ptr(), 0)
 	})
 	return copied
+}
+
+// copyBackdropInto copies what the current target holds behind the view
+// into dst (a target bitmap) under toDst, mapping target DIPs into dst's
+// DIPs, in one flatten pass. It reports false when the target holds no
+// pixels to copy.
+func (p *painter) copyBackdropInto(dst *comObject, toDst matrix) bool {
+	var target *comObject
+	p.dc.call(dcGetTarget, uintptr(unsafe.Pointer(&target)))
+	if target == nil {
+		return false
+	}
+	defer target.release()
+	bitmap := target.query(&iidD2D1Bitmap)
+	if bitmap == nil {
+		return false
+	}
+	bitmap.release()
+	w, h, premultiplied, ok := p.backdropTarget()
+	if !ok {
+		return false
+	}
+	props := targetProperties(p.scale, premultiplied)
+	props.options = 0
+	var copied *comObject
+	if failed(p.dc.callSize(dcCreateBitmap, max(w, 1), max(h, 1), 0, 0, uintptr(unsafe.Pointer(&props)),
+		uintptr(unsafe.Pointer(&copied)))) {
+		return false
+	}
+	defer copied.release()
+	p.flatten(func() {
+		p.dc.call(rtFlush, 0, 0)
+		copied.call(bitmapCopyFromBitmap, 0, target.ptr(), 0)
+		p.dc.call(dcSetTarget, dst.ptr())
+		m := p.m
+		p.setTransform(identity)
+		var clear colorF
+		p.dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
+		p.setTransform(toDst)
+		p.dc.call(dcDrawImage, copied.ptr(), 0, 0, d2dInterpolationLinear, 0)
+		p.dc.call(dcSetTarget, target.ptr())
+		p.setTransform(m)
+	})
+	return true
 }
 
 // drawBackdrop draws what is behind the view through its backdrop

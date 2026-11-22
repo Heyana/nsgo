@@ -1061,3 +1061,56 @@ func TestShieldedTouchpadScrollOnWheelAndCleanup(t *testing.T) {
 		t.Fatal("pointerDown did not reset shieldScroll")
 	}
 }
+
+func TestBackdropPath(t *testing.T) {
+	root := &view{id: 1, frame: driver.Bounds{Size: driver.Size{Width: 400, Height: 300}},
+		style: driver.ViewStyle{Opacity: 1}}
+	scroll := &view{id: 2, parent: root,
+		frame:  driver.Bounds{Origin: driver.Point{X: 20, Y: 30}, Size: driver.Size{Width: 200, Height: 150}},
+		offset: driver.Point{X: 5.4, Y: 10.6}, // rounds to (5, 11) as allocateView does
+		style:  driver.ViewStyle{Opacity: 1}}
+	host := &view{id: 3, parent: scroll,
+		frame: driver.Bounds{Origin: driver.Point{X: 40, Y: 50}, Size: driver.Size{Width: 80, Height: 60}},
+		style: driver.ViewStyle{Opacity: 1, Transform: driver.Transform{Scale: 2}}}
+	detached := &view{id: 4, frame: driver.Bounds{Size: driver.Size{Width: 10, Height: 10}},
+		style: driver.ViewStyle{Opacity: 1}}
+
+	if _, _, ok := backdropPath(nil, host); ok {
+		t.Error("backdropPath(nil, host) succeeded")
+	}
+	if _, _, ok := backdropPath(root, nil); ok {
+		t.Error("backdropPath(root, nil) succeeded")
+	}
+	if _, _, ok := backdropPath(root, root); ok {
+		t.Error("backdropPath(root, root) succeeded; root has no backdrop")
+	}
+	if _, _, ok := backdropPath(root, detached); ok {
+		t.Error("backdropPath(root, detached) succeeded")
+	}
+
+	path, surfaceToHost, ok := backdropPath(root, host)
+	if !ok {
+		t.Fatal("backdropPath(root, host) returned ok=false")
+	}
+	if len(path) != 2 || path[root] != scroll || path[scroll] != host {
+		t.Fatalf("path = %v, want root->scroll->host", path)
+	}
+	// Verify surfaceToHost is the exact inverse of host's composed placement.
+	hostToSurface := root.placement(0, 0).Mul(scroll.placement(0, 0)).Mul(host.placement(5, 11))
+	for _, pt := range [][2]float64{{0, 0}, {40, 30}, {80, 60}, {-10, -5}} {
+		sx, sy := hostToSurface.Apply(pt[0], pt[1])
+		hx, hy := surfaceToHost.Apply(sx, sy)
+		if !closeTo(hx, pt[0]) || !closeTo(hy, pt[1]) {
+			t.Errorf("local (%g,%g) -> surface (%g,%g) -> local (%g,%g)", pt[0], pt[1], sx, sy, hx, hy)
+		}
+	}
+
+	// Verify singular matrix (zero scale) is rejected cleanly.
+	collapsed := &view{id: 6, parent: root,
+		frame: driver.Bounds{Size: driver.Size{Width: 10, Height: 10}},
+		style: driver.ViewStyle{Opacity: 1}}
+	collapsed.layout = &layoutAnim{fade: &driver.LayoutTransition{Property: driver.LayoutScale}, shownPart: 0}
+	if _, _, ok := backdropPath(root, collapsed); ok {
+		t.Error("backdropPath with zero layout scale succeeded")
+	}
+}

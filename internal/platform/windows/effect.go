@@ -19,8 +19,9 @@ import (
 // offscreen as it starts, before its batch is applied. A view's own
 // effect hosts on it, a screen shader's on the root view. While an
 // effect shows the window draws whole frames, as its pictures reach past
-// the areas a change damages. The backdrop is not pictured: it reads as
-// transparent.
+// the areas a change damages. For a program that reads sample_backdrop,
+// what the target holds behind the host is copied into its backdrop
+// picture before the host draws itself.
 
 // effect is a view's effect, transition or navigation shader.
 type effect struct {
@@ -38,17 +39,18 @@ type effect struct {
 type pictureTex struct {
 	tex, srv, bitmap *comObject
 	pw, ph           uint32
+	scale            float32
 	generation       uint64
 }
 
 func (pt *pictureTex) release() {
 	releaseAll(&pt.bitmap, &pt.srv, &pt.tex)
-	pt.pw, pt.ph = 0, 0
+	pt.pw, pt.ph, pt.scale = 0, 0, 0
 }
 
 // make sizes the picture's texture and bitmap for pw by ph pixels.
 func (pt *pictureTex) make(g *gfx, scale float32, pw, ph uint32) bool {
-	if pt.tex != nil && pt.pw == pw && pt.ph == ph && pt.generation == gfxGeneration {
+	if pt.tex != nil && pt.pw == pw && pt.ph == ph && pt.scale == scale && pt.generation == gfxGeneration {
 		return true
 	}
 	pt.release()
@@ -74,7 +76,7 @@ func (pt *pictureTex) make(g *gfx, scale float32, pw, ph uint32) bool {
 		pt.release()
 		return false
 	}
-	pt.pw, pt.ph, pt.generation = pw, ph, gfxGeneration
+	pt.pw, pt.ph, pt.scale, pt.generation = pw, ph, scale, gfxGeneration
 	return true
 }
 
@@ -97,6 +99,9 @@ func (w *window) setEffect(v *view, sh *driver.Shader) {
 	fx.shader = sh
 	fx.sv.shader, fx.sv.dirty = sh, true
 	w.animator.BindShader(v.id, sh.Nodes)
+	if sh.Pictures&driver.PictureBackdrop == 0 {
+		fx.pics[1].release()
+	}
 	if sh.Role.Transitions() {
 		switch {
 		case sh.Running && fx.hasBefore:
@@ -173,6 +178,7 @@ func (w *window) startTransition(v *view) {
 	dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
 	dc.call(rtBeginDraw)
 	p := newPainter(w, g)
+	p.targetWidth, p.targetHeight, p.targetAlpha = pw, ph, true
 	clear := colorF{}
 	p.setTransform(identity)
 	dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
@@ -194,6 +200,43 @@ func (p *painter) drawChildren(v *view, world matrix) {
 	for _, c := range v.children {
 		f := frameOf(c)
 		p.draw(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y)
+	}
+}
+
+// backdropTransform returns the matrix mapping target DIPs into a
+// backdrop picture's DIPs for a host placed at world with ov points of
+// overflow on each side.
+func backdropTransform(world matrix, ov float64) matrix {
+	return world.invert().then(translation(ov, ov))
+}
+
+// pictureBackdrop copies what the current target holds behind host into
+// e's backdrop picture (pics[1]), before host draws itself. Nothing lies
+// behind the root view, so its backdrop stays empty (transparent).
+func (p *painter) pictureBackdrop(e, host *view, world matrix) {
+	fx := e.fx
+	sh := fx.shader
+	if sh == nil || sh.Pictures&driver.PictureBackdrop == 0 || host == p.w.view(p.w.root) {
+		fx.pics[1].release()
+		return
+	}
+	if p.g.program(sh.Program) == nil {
+		return
+	}
+	ov := float32(sh.Overflow)
+	size := frameOf(host).Size
+	w, h := float32(size.Width)+2*ov, float32(size.Height)+2*ov
+	pw, ph := uint32(math.Ceil(float64(w*p.scale))), uint32(math.Ceil(float64(h*p.scale)))
+	if pw == 0 || ph == 0 {
+		fx.pics[1].release()
+		return
+	}
+	pic := &fx.pics[1]
+	if !pic.make(p.g, p.scale, pw, ph) {
+		return
+	}
+	if !p.copyBackdropInto(pic.bitmap, backdropTransform(world, float64(ov))) {
+		pic.release()
 	}
 }
 
@@ -239,7 +282,9 @@ func (p *painter) drawEffect(e, host *view, world matrix) bool {
 			p.dc.call(dcGetTarget, uintptr(unsafe.Pointer(&target)))
 			p.dc.call(dcSetTarget, pic.bitmap.ptr())
 			pushed, split, m := p.pushed, p.split, p.m
+			tw, th, ta := p.targetWidth, p.targetHeight, p.targetAlpha
 			p.pushed, p.split = nil, nil
+			p.targetWidth, p.targetHeight, p.targetAlpha = pw, ph, true
 			p.setTransform(identity)
 			clear := colorF{}
 			p.dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
@@ -248,6 +293,7 @@ func (p *painter) drawEffect(e, host *view, world matrix) bool {
 				p.pop()
 			}
 			p.pushed, p.split = pushed, split
+			p.targetWidth, p.targetHeight, p.targetAlpha = tw, th, ta
 			p.dc.call(dcSetTarget, target.ptr())
 			target.release()
 			p.m = m

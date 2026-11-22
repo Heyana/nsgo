@@ -21,7 +21,9 @@ import (
 // is taken as it starts, before its batch is applied. A view's own effect
 // hosts on it, a screen shader's on the root view; the host draws again
 // whenever a frame moved anything or a batch changed what it pictures.
-// The backdrop is not pictured: it reads as transparent.
+// For a program that reads sample_backdrop, the surface is snapshotted
+// up to the host (walking ancestors directly to leave GTK's cached
+// render nodes untouched) and rendered into the backdrop picture.
 
 // effect is a view's effect, transition or navigation shader.
 type effect struct {
@@ -76,6 +78,8 @@ var (
 	gdkTextureGetWidth       func(uintptr) int32
 	gdkTextureGetHeight      func(uintptr) int32
 	gtkSnapshotScale         func(uintptr, float32, float32)
+	gtkSnapshotTransform     func(uintptr, uintptr)
+	gskTransformUnref        func(uintptr)
 	effectsBound             bool
 )
 
@@ -90,6 +94,8 @@ func bindEffects() {
 	purego.RegisterLibFunc(&gdkTextureGetWidth, gtkLib, "gdk_texture_get_width")
 	purego.RegisterLibFunc(&gdkTextureGetHeight, gtkLib, "gdk_texture_get_height")
 	purego.RegisterLibFunc(&gtkSnapshotScale, gtkLib, "gtk_snapshot_scale")
+	purego.RegisterLibFunc(&gtkSnapshotTransform, gtkLib, "gtk_snapshot_transform")
+	purego.RegisterLibFunc(&gskTransformUnref, gtkLib, "gsk_transform_unref")
 }
 
 // setEffect gives v its effect, transition or navigation shader, or takes
@@ -125,6 +131,9 @@ func (w *window) setEffect(v *view, sh *driver.Shader) {
 	fx.shader = sh
 	fx.gl.shader = sh
 	w.animator.BindShader(v.id, sh.Nodes)
+	if sh.Pictures&driver.PictureBackdrop == 0 {
+		fx.pics[1].w, fx.pics[1].h = 0, 0
+	}
 	if sh.Role.Transitions() {
 		switch {
 		case sh.Running && fx.hasBefore:
@@ -258,6 +267,87 @@ func (w *window) childrenNode(host *view, ov float64, skip uintptr) (node uintpt
 	return gtkSnapshotFreeToNode(snap), pw, ph
 }
 
+// backdropPath builds the map from each ancestor of host (starting at
+// root) to the child leading to host, and the transform mapping
+// surface points into host's local points. It reports false when host
+// is root, not under root, or its transform has no inverse.
+func backdropPath(root, host *view) (map[*view]*view, driver.Matrix3D, bool) {
+	if root == nil || host == nil || host == root {
+		return nil, driver.Identity3D, false
+	}
+	var chain []*view
+	for p := host; p != nil; p = p.parent {
+		chain = append(chain, p)
+		if p == root {
+			break
+		}
+	}
+	if len(chain) == 0 || chain[len(chain)-1] != root {
+		return nil, driver.Identity3D, false
+	}
+	path := make(map[*view]*view, len(chain)-1)
+	m := root.placement(0, 0)
+	for i := len(chain) - 1; i > 0; i-- {
+		parent, child := chain[i], chain[i-1]
+		path[parent] = child
+		ox, oy := float32(math.Round(float64(parent.offset.X))), float32(math.Round(float64(parent.offset.Y)))
+		m = m.Mul(child.placement(ox, oy))
+	}
+	inv, ok := m.Invert()
+	if !ok {
+		return nil, driver.Identity3D, false
+	}
+	return path, inv, true
+}
+
+// backdropNode snapshots what the window drew behind host, scaled to
+// pixels, into a node pw by ph pixels covering host's box and ov points
+// around it; 0 where there is nothing to draw. Ancestors along the path
+// from root to host are snapshotted directly so GTK's cached render
+// nodes are not re-entered or replaced.
+func (w *window) backdropNode(host *view, ov float64) (node uintptr, pw, ph int) {
+	root := w.view(w.root)
+	if w.surface == 0 || root == nil || root.widget == 0 {
+		return 0, 0, 0
+	}
+	path, surfaceToHost, ok := backdropPath(root, host)
+	if !ok {
+		return 0, 0, 0
+	}
+	scale := float64(max(gtkWidgetGetScaleFactor(host.widget), 1))
+	size := host.shownFrame().Size
+	pw = min(int(math.Ceil((float64(size.Width)+2*ov)*scale)), 4096)
+	ph = min(int(math.Ceil((float64(size.Height)+2*ov)*scale)), 4096)
+	if pw <= 0 || ph <= 0 {
+		return 0, 0, 0
+	}
+	snap := gtkSnapshotNew()
+	gtkSnapshotScale(snap, float32(scale), float32(scale))
+	gtkSnapshotTranslate(snap, &graphenePoint{float32(ov), float32(ov)})
+	if t := gskMatrixTransform(0, surfaceToHost); t != 0 {
+		gtkSnapshotTransform(snap, t)
+		gskTransformUnref(t)
+	}
+	prevStop, prevPath, prevStopped := w.backdropStop, w.backdropPath, w.backdropStopped
+	w.backdropStop, w.backdropPath, w.backdropStopped = host, path, false
+	defer func() {
+		w.backdropStop, w.backdropPath, w.backdropStopped = prevStop, prevPath, prevStopped
+	}()
+	rect := grapheneRect{0, 0, float32(gtkWidgetGetWidth(w.surface)), float32(gtkWidgetGetHeight(w.surface))}
+	c := rgba(background(root))
+	gtkSnapshotAppendColor(snap, &c, &rect)
+	if gtkWidgetGetParent(root.widget) == w.surface {
+		gtkSnapshotSave(snap)
+		if t := gskMatrixTransform(0, root.placement(0, 0)); t != 0 {
+			gtkSnapshotTransform(snap, t)
+			gskTransformUnref(t)
+		}
+		w.snapshotView(root, snap)
+		gtkSnapshotRestore(snap)
+	}
+	return gtkSnapshotFreeToNode(snap), pw, ph
+}
+
 // render renders node with host's window's renderer into pic.
 func (w *window) render(pic *glPicture, host *view, node uintptr, pw, ph int) bool {
 	native := gtkWidgetGetNative(host.widget)
@@ -296,6 +386,12 @@ func (w *window) snapshotEffect(e, host *view, snap uintptr) bool {
 	if gtkGLAreaGetError(fx.gl.area) != 0 {
 		return false
 	}
+	if w.backdropStop != nil {
+		// Capturing another view's backdrop: reuse this effect's area as
+		// already rendered without mutating state or nesting captures.
+		gtkWidgetSnapshotChild(host.widget, fx.gl.area, snap)
+		return true
+	}
 	live := -1
 	switch {
 	case sh.Role.Transitions():
@@ -309,21 +405,45 @@ func (w *window) snapshotEffect(e, host *view, snap uintptr) bool {
 	case sh.Pictures&driver.PictureContent != 0:
 		live = 0
 	}
-	if live >= 0 && (fx.stale || sh.Role.Transitions()) {
+	wantsBackdrop := sh.Pictures&driver.PictureBackdrop != 0 && host != w.view(w.root)
+	if !wantsBackdrop {
+		fx.pics[1].w, fx.pics[1].h = 0, 0
+	}
+	var contentNode, backdropNode uintptr
+	var cw, ch, bw, bh int
+	if (live >= 0 || wantsBackdrop) && (fx.stale || sh.Role.Transitions()) {
 		fx.stale = false
-		// The children's nodes are taken as GTK draws them, and rendered
+		// The render nodes are taken as GTK draws them, and rendered
 		// after the frame: the renderer is GTK's own during it.
-		node, pw, ph := w.childrenNode(host, sh.Overflow, fx.gl.area)
-		if node != 0 {
-			pic := &fx.pics[live]
-			w.post(func() {
-				defer gskRenderNodeUnref(node)
-				if e.fx == fx && fx.host == host && !host.deleted {
-					w.render(pic, host, node, pw, ph)
-					gtkGLAreaQueueRender(fx.gl.area)
-				}
-			})
+		if live >= 0 {
+			contentNode, cw, ch = w.childrenNode(host, sh.Overflow, fx.gl.area)
 		}
+		if wantsBackdrop {
+			backdropNode, bw, bh = w.backdropNode(host, sh.Overflow)
+			if backdropNode == 0 {
+				fx.pics[1].w, fx.pics[1].h = 0, 0
+			}
+		}
+	}
+	if contentNode != 0 || backdropNode != 0 {
+		liveSlot := live
+		w.post(func() {
+			if contentNode != 0 {
+				defer gskRenderNodeUnref(contentNode)
+			}
+			if backdropNode != 0 {
+				defer gskRenderNodeUnref(backdropNode)
+			}
+			if e.fx == fx && fx.host == host && !host.deleted {
+				if contentNode != 0 {
+					w.render(&fx.pics[liveSlot], host, contentNode, cw, ch)
+				}
+				if backdropNode != 0 {
+					w.render(&fx.pics[1], host, backdropNode, bw, bh)
+				}
+				gtkGLAreaQueueRender(fx.gl.area)
+			}
+		})
 	}
 	fx.gl.pictures = [4]*glPicture{&fx.pics[0], &fx.pics[1], &fx.pics[2], &fx.pics[3]}
 	gtkGLAreaQueueRender(fx.gl.area)

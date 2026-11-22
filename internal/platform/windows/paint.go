@@ -140,6 +140,12 @@ type painter struct {
 	// (damage.go).
 	areas    []rectF
 	areaClip int
+	// targetWidth, targetHeight and targetAlpha describe the current
+	// bitmap render target in pixels when known (swap chain, composition
+	// layer, effect picture, or offscreen test target), so backdrop
+	// copies match its size and alpha mode.
+	targetWidth, targetHeight uint32
+	targetAlpha               bool
 }
 
 // composed is a web view a pass reached.
@@ -358,6 +364,7 @@ func (p *painter) realize() {
 		return
 	}
 	s.layers = append(s.layers, len(p.composed))
+	p.targetWidth, p.targetHeight, p.targetAlpha = s.width, s.height, true
 	p.flatten(func() {
 		if hr := p.dc.call(rtEndDraw, 0, 0); failed(hr) && s.ended == 0 {
 			s.ended = hr
@@ -474,6 +481,7 @@ func (w *window) frame() {
 	dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
 	dc.call(rtBeginDraw)
 	p := newPainter(w, g)
+	p.targetWidth, p.targetHeight, p.targetAlpha = w.swap.width, w.swap.height, w.swap.composed
 	// A window with web views or a material has a composition: the base
 	// target is the window's own swap chain, and web views split the pass
 	// into layers above it.
@@ -640,8 +648,12 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 		return
 	}
 	s, opacity, world := pl.s, pl.opacity, pl.world
+	// Drawn above a web view reached before it, if any.
+	p.realize()
+	if e := p.w.effectOn(v); e != nil {
+		p.pictureBackdrop(e, v, world)
+	}
 	if pl.filters || !pl.flat {
-		p.realize()
 		p.setTransform(world)
 		if opacity < 1 {
 			p.pushLayer(opacity, nil)
@@ -659,8 +671,6 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 		}
 		return
 	}
-	// Drawn above a web view reached before it, if any.
-	p.realize()
 	p.setTransform(world)
 	if opacity < 1 {
 		p.pushLayer(opacity, nil)

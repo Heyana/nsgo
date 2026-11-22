@@ -1890,3 +1890,44 @@ func TestCanvasPartsDropTheirElements(t *testing.T) {
 		t.Fatalf("a deleted canvas leaves the elements of parts %v", got)
 	}
 }
+
+func TestBackdropTransformAndTarget(t *testing.T) {
+	// A translated host with overflow maps its local points (x, y) from
+	// target DIPs to (x + ov, y + ov) in the backdrop picture's DIPs.
+	cases := []struct {
+		name  string
+		world matrix
+		ov    float64
+	}{
+		{"translated", translation(40, 25), 0},
+		{"translated_overflow", translation(40, 25), 12},
+		{"scaled_translated", scaling(2, 1.5).then(translation(30, 10)), 8},
+		{"rotated", matrix{a: 0, b: 1, c: -1, d: 0, e: 100, f: 50}, 6},
+	}
+	for _, tc := range cases {
+		toPic := backdropTransform(tc.world, tc.ov)
+		for _, pt := range [][2]float64{{0, 0}, {10, 20}, {-tc.ov, -tc.ov}} {
+			tx, ty := tc.world.apply(pt[0], pt[1])
+			px, py := toPic.apply(tx, ty)
+			if !closeTo(px, pt[0]+tc.ov) || !closeTo(py, pt[1]+tc.ov) {
+				t.Errorf("%s: local (%g,%g) -> target (%g,%g) -> pic (%g,%g), want (%g,%g)",
+					tc.name, pt[0], pt[1], tx, ty, px, py, pt[0]+tc.ov, pt[1]+tc.ov)
+			}
+		}
+	}
+
+	// backdropTarget prefers the painter's explicit target size and alpha
+	// mode, falling back to the window's swap chain when unset.
+	p := &painter{w: &window{}}
+	if _, _, _, ok := p.backdropTarget(); ok {
+		t.Fatal("backdropTarget succeeded with no target and no swap chain")
+	}
+	p.w.swap = &swapChain{width: 320, height: 200, composed: true}
+	if w, h, alpha, ok := p.backdropTarget(); !ok || w != 320 || h != 200 || !alpha {
+		t.Fatalf("swap fallback = (%d, %d, %v, %v), want (320, 200, true, true)", w, h, alpha, ok)
+	}
+	p.targetWidth, p.targetHeight, p.targetAlpha = 64, 48, false
+	if w, h, alpha, ok := p.backdropTarget(); !ok || w != 64 || h != 48 || alpha {
+		t.Fatalf("explicit target = (%d, %d, %v, %v), want (64, 48, false, true)", w, h, alpha, ok)
+	}
+}

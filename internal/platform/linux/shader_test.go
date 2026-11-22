@@ -138,3 +138,49 @@ func Fragment(dst vec4, pos vec2) vec4 {
 		}
 	})
 }
+
+// TestShaderEffectReadsBackdrop opens a window with a red left half and blue
+// right half behind a ShaderEffect whose WGSL shader swaps the red and blue
+// channels of sample_backdrop(uv), and verifies the rendered pixels show blue
+// on the left and red on the right (reading what is behind the view rather
+// than transparency or the host's own background).
+func TestShaderEffectReadsBackdrop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	prog := core.MustCompileWGSL(`
+fn shade(uv: vec2f) -> vec4f {
+	let b = sample_backdrop(uv);
+	return vec4f(b.b, b.g, b.r, b.a);
+}
+`)
+	title := "nsgo-native-" + t.Name()
+	app := func(cx *core.Scope) core.Node {
+		cx.SetTitle(title)
+		return core.View{
+			Style: core.Style{Width: driver.Pt(200), Height: driver.Pt(100), Background: driver.RGB(0xffffff)},
+			Children: []core.Node{
+				core.View{Style: core.Style{Position: core.Absolute, Left: driver.Pt(0), Top: driver.Pt(0),
+					Width: driver.Pt(100), Height: driver.Pt(100), Background: driver.RGB(0xff0000)}},
+				core.View{Style: core.Style{Position: core.Absolute, Left: driver.Pt(100), Top: driver.Pt(0),
+					Width: driver.Pt(100), Height: driver.Pt(100), Background: driver.RGB(0x0000ff)}},
+				core.ShaderEffect{
+					Program: prog,
+					Style: core.Style{Position: core.Absolute, Left: driver.Pt(20), Top: driver.Pt(10),
+						Width: driver.Pt(160), Height: driver.Pt(80), Background: driver.RGB(0x00ff00)},
+				},
+			},
+		}
+	}
+	w := startTestWindow(t, app, Options{Title: title, Width: 200, Height: 100})
+	waitForTitle(t, w, title)
+	waitPixels(t, w, "the backdrop-reading effect's swapped blue left half and red right half", func(p pixels) bool {
+		// Inside effect left (red behind -> swapped blue) and right (blue behind -> swapped red).
+		left, right := p.at(60, 50), p.at(140, 50)
+		// Outside effect on the left remains original red.
+		outside := p.at(10, 50)
+		return left[0] > 0xf0 && left[1] < 0x10 && left[2] < 0x10 &&
+			right[2] > 0xf0 && right[1] < 0x10 && right[0] < 0x10 &&
+			outside[2] > 0xf0 && outside[0] < 0x10
+	})
+}

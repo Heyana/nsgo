@@ -174,22 +174,28 @@ type window struct {
 	root  driver.NodeID
 	// effects are the views with an effect, a transition or a navigation
 	// shader (effect.go).
-	effects        map[*view]bool
-	entries        map[uintptr]*view
-	natives        map[uintptr]*view // by the objects of hosted widgets
-	appID          string
-	keys           []driver.KeyBinding
-	hotKeys        *globalHotKeys
-	colorPick      *portalColorPick
-	discovery      avahiDiscovery
-	held           map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
-	heldKeys       bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
-	heldMouse      bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
-	mouseHeld      map[driver.MouseButton]heldMouseBtn // mouse buttons reported going down and not yet up
-	mouseClicks    map[driver.MouseButton]buttonClicks
-	keyLayoutGroup int32
-	animating      []*view
-	ticking        bool
+	effects map[*view]bool
+	// backdropStop is the effect host being pictured for sample_backdrop,
+	// backdropPath maps each ancestor from root down to the child leading
+	// to it, and backdropStopped marks that snapshotView reached it.
+	backdropStop    *view
+	backdropPath    map[*view]*view
+	backdropStopped bool
+	entries         map[uintptr]*view
+	natives         map[uintptr]*view // by the objects of hosted widgets
+	appID           string
+	keys            []driver.KeyBinding
+	hotKeys         *globalHotKeys
+	colorPick       *portalColorPick
+	discovery       avahiDiscovery
+	held            map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
+	heldKeys        bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
+	heldMouse       bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
+	mouseHeld       map[driver.MouseButton]heldMouseBtn // mouse buttons reported going down and not yet up
+	mouseClicks     map[driver.MouseButton]buttonClicks
+	keyLayoutGroup  int32
+	animating       []*view
+	ticking         bool
 	// tickID is the surface's tick callback and watchID the timer watching it while the clock runs; ticked is when the frame clock last ticked.
 	tickID, watchID uint32
 	ticked          time.Time
@@ -1659,6 +1665,9 @@ func (w *window) moveOffset(v *view, offset driver.Point) {
 	if v.widget != 0 {
 		gtkWidgetQueueAllocate(v.widget)
 		gtkWidgetQueueDraw(v.widget)
+	}
+	if len(w.effects) > 0 {
+		w.staleEffects()
 	}
 	if w.animator.Scroll(v.id, offset) {
 		w.showAnimated()

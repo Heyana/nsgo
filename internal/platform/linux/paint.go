@@ -113,10 +113,14 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 	}
 	w.snapshotContent(v, s, cur)
 	drawn := false
-	if e := w.effectOn(v); e != nil {
+	if e := w.effectOn(v); e != nil && (w.backdropStop == nil || w.backdropPath[v] == nil) {
 		drawn = w.snapshotEffect(e, v, cur)
 	}
 	for c := gtkWidgetGetFirstChild(v.widget); c != 0 && !drawn; c = gtkWidgetGetNextSibling(c) {
+		if w.backdropStop != nil && c == w.backdropStop.widget {
+			w.backdropStopped = true
+			break
+		}
 		if c == v.fxArea {
 			continue // drawn only while its effect shows
 		}
@@ -127,8 +131,11 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 			continue
 		}
 		cur = w.snapshotChild(v, c, cur, clip, &sh)
+		if w.backdropStopped {
+			break
+		}
 	}
-	if v.kind == driver.KindScroll {
+	if !w.backdropStopped && v.kind == driver.KindScroll {
 		snapshotEdges(v, cur)
 		snapshotSpinner(v, cur, time.Now())
 		if w.showsBar(v) {
@@ -138,9 +145,11 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 	if clip {
 		gtkSnapshotPop(cur)
 	}
-	snapshotBorder(cur, &sh, s)
-	if o := s.Outline; o.Visible() && width > 0 && height > 0 {
-		sh.stroke(cur, -(o.Offset + o.Width/2), o.Width, o.Color, o.Style)
+	if !w.backdropStopped {
+		snapshotBorder(cur, &sh, s)
+		if o := s.Outline; o.Visible() && width > 0 && height > 0 {
+			sh.stroke(cur, -(o.Offset + o.Width/2), o.Width, o.Color, o.Style)
+		}
 	}
 	if blends {
 		if node := gtkSnapshotFreeToNode(cur); node != 0 {
@@ -191,7 +200,7 @@ func blendingChild(v *view) bool {
 func (w *window) snapshotChild(v *view, c, cur uintptr, clip bool, sh *shape) uintptr {
 	mode := w.blendOf(c)
 	if mode == 0 {
-		gtkWidgetSnapshotChild(v.widget, c, cur)
+		w.snapshotChildWidget(v, c, cur)
 		return cur
 	}
 	if clip {
@@ -208,7 +217,7 @@ func (w *window) snapshotChild(v *view, c, cur uintptr, clip bool, sh *shape) ui
 	if clip {
 		sh.pushClip(cur)
 	}
-	gtkWidgetSnapshotChild(v.widget, c, cur)
+	w.snapshotChildWidget(v, c, cur)
 	if clip {
 		gtkSnapshotPop(cur)
 	}
@@ -217,6 +226,24 @@ func (w *window) snapshotChild(v *view, c, cur uintptr, clip bool, sh *shape) ui
 		sh.pushClip(cur)
 	}
 	return cur
+}
+
+// snapshotChildWidget snapshots child widget c of v into snap: walking
+// directly into the next ancestor on backdropPath without touching
+// GTK's cached render nodes, and delegating other children to GTK.
+func (w *window) snapshotChildWidget(v *view, c, snap uintptr) {
+	if next := w.backdropPath[v]; next != nil && next.widget == c {
+		ox, oy := float32(math.Round(float64(v.offset.X))), float32(math.Round(float64(v.offset.Y)))
+		gtkSnapshotSave(snap)
+		if t := gskMatrixTransform(0, next.placement(ox, oy)); t != 0 {
+			gtkSnapshotTransform(snap, t)
+			gskTransformUnref(t)
+		}
+		w.snapshotView(next, snap)
+		gtkSnapshotRestore(snap)
+		return
+	}
+	gtkWidgetSnapshotChild(v.widget, c, snap)
 }
 
 // snapshotInsets draws the inset shadows inside the padding box, the
