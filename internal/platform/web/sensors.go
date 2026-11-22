@@ -68,8 +68,12 @@ func (s *surface) sensor(it *driver.MountItem) {
 		return
 	}
 	g := js.Global()
-	if req.Kind != driver.SensorMotion {
+	if req.Kind == driver.SensorLocation || req.Kind == driver.SensorBackgroundLocation {
 		s.locationSensor(id, req)
+		return
+	}
+	if req.Kind != driver.SensorMotion {
+		s.engine.Dispatch(driver.NoSensor(it))
 		return
 	}
 	available, reverse := motionBrowser(g)
