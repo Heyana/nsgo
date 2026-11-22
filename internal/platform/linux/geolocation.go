@@ -108,14 +108,22 @@ func handleGeoClue(w *window, it *driver.MountItem) {
 		return
 	}
 	portalQueue() <- func() {
-		if req.Command <= driver.SensorRequestPermission {
-			err := geoClueAvailable()
+		if req.Command == driver.SensorReadPermission {
 			w.post(func() {
 				if !w.closing {
-					status := driver.SensorGranted
-					if err != nil {
-						status = driver.SensorUnavailable
-					}
+					w.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: it.Count, Data: &driver.SensorReport{Generation: req.Generation, Grant: &driver.SensorGrant{Authorization: driver.SensorNotAsked}, End: true}})
+				}
+			})
+			return
+		}
+		if req.Command == driver.SensorRequestPermission {
+			_, err := geoClueLocate(w.opts.ID)
+			status := driver.SensorGranted
+			if err != nil {
+				status = driver.SensorDenied
+			}
+			w.post(func() {
+				if !w.closing {
 					w.engine.Dispatch(driver.Event{Kind: driver.EventSensor, Count: it.Count, Data: &driver.SensorReport{Generation: req.Generation, Grant: &driver.SensorGrant{Authorization: status}, End: true}})
 				}
 			})
@@ -179,17 +187,6 @@ func geoClueNext(run *geoClueRun) {
 			})
 		})
 	}
-}
-
-func geoClueAvailable() error {
-	bindGeoClue()
-	bus := geoClueBus()
-	if bus == 0 {
-		return errors.New("system bus unavailable")
-	}
-	reply, err := dbusTry(bus, geoClueName, geoClueManager, geoClueManagerIF, "GetClient")
-	gVariantUnrefNonZero(reply)
-	return err
 }
 
 func geoClueLocate(desktopID string) (driver.LocationFix, error) {
