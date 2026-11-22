@@ -97,6 +97,21 @@ Formulas (`$…$`, `$$…$$`) show their TeX until the app passes `RenderMath: f
 
 A `mermaid` code block shows its source until the app passes `RenderDiagram: diagram.RenderDiagram` from `base/diagram`, which draws it as a native diagram, with limu: flowcharts, sequence, class, state and entity relationship diagrams, Gantt charts, pies, mind maps, timelines and more, in the platform's font, light or dark as the app shows. It scrolls sideways when wider than the text, a copy takes its source, and a block still streaming in shows as code until it is complete. `diagram.View` shows a diagram anywhere else.
 
+To give diagrams your `ui` palette, return a `diagram.View` with `ThemeFunc` from your `RenderDiagram` callback. The function reads colors as the canvas draws, so a palette or subtree appearance change recolors the existing view. Colors left zero keep the diagram's defaults.
+
+```go
+func drawDiagram(cx *core.Scope, code textview.CodeBlock) core.Node {
+	colors := ui.ColorsOf(cx)
+	return diagram.View{Source: code.Code, ThemeFunc: func() *diagram.Theme {
+		return &diagram.Theme{
+			Text: colors.Text(), Surface: colors.Surface(), Border: colors.Border(),
+			Line: colors.Muted(), Accent: colors.Accent(), Critical: colors.Danger(),
+		}
+	}}
+}
+// ui.TextView{Markdown: source, RenderDiagram: drawDiagram}
+```
+
 `textview.Parse` reads Markdown and `textview.ParseHTML` reads HTML into blocks the app can also build. `Options.Streaming` repairs a document that arrives in pieces, closing what its end leaves open and holding back a last line whose meaning the next characters decide, such as a list marker alone, so a reply never flashes markers as text, and `StreamingCaret` draws a caret at its end, for a reply written as it streams.
 
 A `textview.Search` finds text across the views that join it, through their `Search` field or `textview.ProvideSearch` above them. `SetQuery`, `Open` and `Close` drive it from a find bar, `Count` and `Selected` say where it is, and `Next` and `Previous` step through its matches in reading order. The views mark each match with `PartSearch` and the selected one with `PartSearchSelected`, for the app's styles to color, scroll it into view, and leave the user's selection alone.

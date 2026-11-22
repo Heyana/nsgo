@@ -24,6 +24,7 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 ## Using them well
 
 - Give a text attachment's span `Content` for selections to copy in its place; empty content omits it ([text](https://nsgo.dev/docs/text.md#runs-and-links)).
+- For diagrams in an app's palette, return `base/diagram.View` with `ThemeFunc` from the text view's `RenderDiagram` callback and build its `diagram.Theme` from `ui.ColorsOf(cx)` inside that function ([text](https://nsgo.dev/docs/text.md#documents)).
 - Use `ui.ShellTab.TextFunc` and `ui.TabShell.LabelFunc` for a changing tab title and bar name, and set `Edge` (`mobile.TabBarLeading`, `mobile.TabBarTrailing` or `mobile.TabBarAutomatic`, reading `core.Env.VerticalBarEdge`) on `mobile.TabBar` or `ui.TabShell` to place the bar vertically along an edge.
 - Set `tabBarBackground`, `tabBarIdle`, `tabBarSelected` and `tabBarIndicator` as Android `mobile.TabBar` palette roles. A custom palette uses `Accent` for selected content by default.
 

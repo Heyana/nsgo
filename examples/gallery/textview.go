@@ -6,7 +6,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nsgo-dev/nsgo/base/diagram"
 	"github.com/nsgo-dev/nsgo/base/formula"
 	"github.com/nsgo-dev/nsgo/base/textview"
 	"github.com/nsgo-dev/nsgo/base/textview/highlight"
@@ -175,7 +174,7 @@ func streamingCard(cx *core.Scope) core.Node {
 					Animation: core.KeyframeAnimation{Keyframes: core.KeyframesPulse}}, StyleFunc: ui.Filled(colors.Accent)}
 			}
 			return textview.TextView{MarkdownFunc: streamed.Get, StyleOf: readingStyles(cx), Options: textview.Options{Streaming: on}, StreamingCaret: caret,
-				Selectable: true, Highlighter: highlight.New(cx), RenderMath: formula.RenderMath, RenderDiagram: diagram.RenderDiagram, CodeBlockActions: []textview.CodeAction{{ID: textview.CopyAction, Label: tr.TextviewCopyCode()}}, RenderCodeBlockAction: copyAction, TestID: "streamed"}
+				Selectable: true, Highlighter: highlight.New(cx), RenderMath: formula.RenderMath, RenderDiagram: renderThemedDiagram, CodeBlockActions: []textview.CodeAction{{ID: textview.CopyAction, Label: tr.TextviewCopyCode()}}, RenderCodeBlockAction: copyAction, TestID: "streamed"}
 		}),
 		core.Dynamic(func(*core.Scope) core.Node {
 			l := tr.TextviewStreamIt()
@@ -192,7 +191,7 @@ func markdownCard(cx *core.Scope) core.Node {
 	pressed := core.NewSignal(cx, tr.TextviewNothingYet())
 	viewing := core.NewSignal(cx, textview.Image{})
 	return Card{Title: tr.TextviewMarkdown(), Description: tr.TextviewCommonmarkAndGithubSTables(), Children: []core.Node{
-		textview.TextView{Markdown: tvMarkdown, StyleOf: readingStyles(cx), Selectable: true, TestID: "document", Highlighter: highlight.New(cx), RenderMath: formula.RenderMath, RenderDiagram: diagram.RenderDiagram,
+		textview.TextView{Markdown: tvMarkdown, StyleOf: readingStyles(cx), Selectable: true, TestID: "document", Highlighter: highlight.New(cx), RenderMath: formula.RenderMath, RenderDiagram: renderThemedDiagram,
 			CodeBlockActions: []textview.CodeAction{{ID: textview.CopyAction, Label: tr.TextviewCopyCode()}}, RenderCodeBlockAction: copyAction,
 			OnLinkPress: func(e textview.LinkPressEvent) { pressed.Set(e.URL) }, OnImagePress: viewing.Set},
 		Caption{Label: tr.TextviewLinkPressed(), Note: pressed.Get},
@@ -204,7 +203,7 @@ func htmlCard(cx *core.Scope) core.Node {
 	tr := locales.For(cx)
 	viewing := core.NewSignal(cx, textview.Image{})
 	return Card{Title: tr.TextviewHtml(), Description: tr.TextviewAnArticlePageSectionsFigures(), Children: []core.Node{
-		textview.TextView{HTML: tvHTML, StyleOf: readingStyles(cx), Selectable: true, Highlighter: highlight.New(cx), RenderMath: formula.RenderMath, RenderDiagram: diagram.RenderDiagram, OnImagePress: viewing.Set, TestID: "html"},
+		textview.TextView{HTML: tvHTML, StyleOf: readingStyles(cx), Selectable: true, Highlighter: highlight.New(cx), RenderMath: formula.RenderMath, RenderDiagram: renderThemedDiagram, OnImagePress: viewing.Set, TestID: "html"},
 		imageViewer(cx, viewing.Get, func() { viewing.Set(textview.Image{}) }),
 	}}
 }
@@ -260,7 +259,7 @@ func extensionsCard(cx *core.Scope) core.Node {
 		return core.RGB(0x059669)
 	}
 	return Card{Title: tr.TextviewExtensions(), Description: tr.TextviewMentionsAChartBlockA(), Children: []core.Node{
-		textview.TextView{Markdown: tvExtended, StyleOf: readingStyles(cx), RenderMath: formula.RenderMath, RenderDiagram: diagram.RenderDiagram,
+		textview.TextView{Markdown: tvExtended, StyleOf: readingStyles(cx), RenderMath: formula.RenderMath, RenderDiagram: renderThemedDiagram,
 			Extensions: []textview.Extension{
 				{Name: "mention", Pattern: mentionPattern},
 				{Name: "chart", Language: "chart"},

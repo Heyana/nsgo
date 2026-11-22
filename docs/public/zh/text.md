@@ -97,6 +97,21 @@ textview.TextView{
 
 `mermaid` 代码块默认显示源码；应用传入 `base/diagram` 的 `RenderDiagram: diagram.RenderDiagram` 后，会用 limu 把它画成原生图表，支持流程图、时序图、类图、状态图、实体关系图、甘特图、饼图、思维导图、时间线等，使用平台字体，并随应用的浅色或深色外观切换。图比文本宽时可以横向滚动，复制时得到源码；仍在流式输出中的代码块会先显示为代码，写完后再画成图。在其他地方显示图表用 `diagram.View`。
 
+在 `RenderDiagram` 回调中返回带有 `ThemeFunc` 的 `diagram.View`，可以让图表采用应用的 `ui` 调色板。这个函数在画布绘制时读取颜色，因此调色板或子树外观变化时会给现有视图重新着色。保持为零的颜色继续使用图表的默认值：
+
+```go
+func drawDiagram(cx *core.Scope, code textview.CodeBlock) core.Node {
+	colors := ui.ColorsOf(cx)
+	return diagram.View{Source: code.Code, ThemeFunc: func() *diagram.Theme {
+		return &diagram.Theme{
+			Text: colors.Text(), Surface: colors.Surface(), Border: colors.Border(),
+			Line: colors.Muted(), Accent: colors.Accent(), Critical: colors.Danger(),
+		}
+	}}
+}
+// ui.TextView{Markdown: source, RenderDiagram: drawDiagram}
+```
+
 `textview.Parse` 读取 Markdown，`textview.ParseHTML` 读取 HTML，得到应用也可以自己构建的块。`Options.Streaming` 修复仍在到达的文档：补全末尾未闭合的语法，并暂缓显示含义还要由后续字符决定的最后一行，例如单独的列表标记，让回复不会把标记闪成文本；`StreamingCaret` 在末尾绘制光标，适合逐字生成的回复。
 
 `textview.Search` 在加入它的各个视图里查找文本，视图通过 `Search` 字段或上层的 `textview.ProvideSearch` 加入。查找栏用 `SetQuery`、`Open` 和 `Close` 驱动它，`Count` 和 `Selected` 给出位置，`Next` 和 `Previous` 按阅读顺序逐个切换匹配。视图给每个匹配加上 `PartSearch`，给选中的匹配再加 `PartSearchSelected`，颜色由应用的样式决定；视图还会把选中的匹配滚动到视野内，并且不改动用户的选择。

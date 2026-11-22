@@ -5,7 +5,6 @@ import (
 	"github.com/nsgo-dev/nsgo/icons/lucide"
 	"strings"
 
-	"github.com/nsgo-dev/nsgo/base/diagram"
 	"github.com/nsgo-dev/nsgo/base/formula"
 	"github.com/nsgo-dev/nsgo/base/textview"
 	"github.com/nsgo-dev/nsgo/base/textview/highlight"
@@ -165,7 +164,7 @@ func chatMarkdown(md func() string, streaming func() bool) core.Node {
 					c = caret(cx)
 				}
 				return textview.TextView{MarkdownFunc: md, Options: textview.Options{Streaming: on}, StreamingCaret: c, Selectable: true, NoCodeBlockScrollbar: true, NoMathBlockScrollbar: true, NoDiagramBlockScrollbar: true,
-					StyleOf: chatStyles(cx), Highlighter: hl, RenderMath: formula.RenderMath, RenderDiagram: diagram.RenderDiagram, CodeBlockActions: []textview.CodeAction{{ID: textview.CopyAction, Label: tr.ChatCopyCode()}}, RenderCodeBlockAction: copyAction,
+					StyleOf: chatStyles(cx), Highlighter: hl, RenderMath: formula.RenderMath, RenderDiagram: renderThemedDiagram, CodeBlockActions: []textview.CodeAction{{ID: textview.CopyAction, Label: tr.ChatCopyCode()}}, RenderCodeBlockAction: copyAction,
 					OnImagePress: func(im textview.Image) { used.Set(true); viewing.Set(im) }}
 			}),
 			core.Show{When: used.Get, Then: func(cx *core.Scope) core.Node {

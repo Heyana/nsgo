@@ -24,6 +24,9 @@ type View struct {
 	FontSize core.Points
 	// Theme colors the diagram over the appearance's theme: Pele's light theme in light, and its gray counterpart in dark, with the same blue accent as NSGo's own look.
 	Theme *Theme
+	// ThemeFunc follows the colors it reads. Returning nil keeps the
+	// appearance's defaults. Theme and ThemeFunc are mutually exclusive.
+	ThemeFunc func() *Theme
 	// Label is what assistive technology reads in place of the diagram's title and description.
 	Label     string
 	Class     string
@@ -186,7 +189,11 @@ func (v View) Render(cx *core.Scope) core.Node {
 					}
 					// A style that sets another size stretches the diagram to it.
 					d.Scale(float32(sz.Width)/float32(sc.Width), float32(sz.Height)/float32(sc.Height))
-					paint(d, sc, v.Theme.look(env.Dark()), m)
+					theme := v.Theme
+					if v.ThemeFunc != nil {
+						theme = v.ThemeFunc()
+					}
+					paint(d, sc, theme.look(env.Dark()), m)
 				},
 			}
 		},
