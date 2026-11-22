@@ -15,12 +15,7 @@ const (
 	springCritTol         = 1e-5
 )
 
-// springParams resolves a LayoutSpring's natural period (in seconds) and
-// damping ratio (zeta). When Response > 0 it is used directly; otherwise a
-// positive Duration is mapped to the physical response whose settling
-// envelope matches Duration; when neither is set, Response defaults to
-// 500 ms. DampingRatio takes precedence over Damping, defaulting to 1
-// (critically damped).
+// springParams resolves a LayoutSpring's natural period (in seconds) and damping ratio (zeta). When Response > 0 it is used directly; otherwise a positive Duration is mapped to the physical response whose settling envelope matches Duration; when neither is set, Response defaults to 500 ms. DampingRatio takes precedence over Damping, defaulting to 1 (critically damped).
 func (tr *LayoutTransition) springParams() (responseSec, zeta float64) {
 	zeta = tr.DampingRatio
 	if zeta <= 0 && tr.Damping > 0 {
@@ -61,12 +56,7 @@ func (tr *LayoutTransition) springParams() (responseSec, zeta float64) {
 	return resp.Seconds(), zeta
 }
 
-// evalSpring1D evaluates the exact analytical solution of a 1D damped
-// harmonic oscillator y” + 2*zeta*w0*y' + w0^2*y = 0 at time t >= 0 (seconds),
-// where y = x - target, starting from displacement y0 and velocity v0
-// (units per second). It returns y(t), v(t) and whether both |y| <= eps and
-// |v|/w0 <= eps (an energy bound guaranteeing future displacement stays near
-// rest).
+// evalSpring1D evaluates the exact analytical solution of a 1D damped harmonic oscillator y” + 2*zeta*w0*y' + w0^2*y = 0 at time t >= 0 (seconds), where y = x - target, starting from displacement y0 and velocity v0 (units per second). It returns y(t), v(t) and whether both |y| <= eps and |v|/w0 <= eps (an energy bound guaranteeing future displacement stays near rest).
 func evalSpring1D(y0, v0, w0, zeta, t, eps float64) (y, v float64, settled bool) {
 	if t <= 0 {
 		if math.Abs(y0) <= eps && math.Abs(v0)/w0 <= eps {
@@ -108,8 +98,7 @@ func evalSpring1D(y0, v0, w0, zeta, t, eps float64) (y, v float64, settled bool)
 	return y, v, false
 }
 
-// springSettleDuration returns the time it takes a unit step from rest to
-// settle under tr's spring physics.
+// springSettleDuration returns the time it takes a unit step from rest to settle under tr's spring physics.
 func (tr *LayoutTransition) springSettleDuration() time.Duration {
 	respSec, zeta := tr.springParams()
 	w0 := 2 * math.Pi / respSec
@@ -142,11 +131,7 @@ func (tr *LayoutTransition) springSettleDuration() time.Duration {
 	return time.Duration(math.Ceil(secs * float64(time.Second)))
 }
 
-// LayoutMotion tracks a view's frame moving under a LayoutTransition.
-// For LayoutSpring, all four frame components (x, y, width, height) evolve
-// independently by exact spring physics until they settle, and Retarget
-// preserves the last frame's position and velocity so mid-flight changes
-// flow smoothly without snapping or restarting from zero velocity.
+// LayoutMotion tracks a view's frame moving under a LayoutTransition. For LayoutSpring, all four frame components (x, y, width, height) evolve independently by exact spring physics until they settle, and Retarget preserves the last frame's position and velocity so mid-flight changes flow smoothly without snapping or restarting from zero velocity.
 type LayoutMotion struct {
 	tr    LayoutTransition
 	start time.Duration
@@ -159,8 +144,7 @@ type LayoutMotion struct {
 	done  bool
 }
 
-// StartLayoutMotion starts a frame motion from from to to under tr at clock
-// time now.
+// StartLayoutMotion starts a frame motion from from to to under tr at clock time now.
 func StartLayoutMotion(from, to Bounds, tr LayoutTransition, now time.Duration) LayoutMotion {
 	fv, tv := boundsToVec(from), boundsToVec(to)
 	m := LayoutMotion{
@@ -175,9 +159,7 @@ func StartLayoutMotion(from, to Bounds, tr LayoutTransition, now time.Duration) 
 	return m
 }
 
-// Retarget redirects m to a new target frame to under tr at clock time now.
-// It first advances m to now so the new motion begins from m's exact current
-// position and (when tr is LayoutSpring) current velocity.
+// Retarget redirects m to a new target frame to under tr at clock time now. It first advances m to now so the new motion begins from m's exact current position and (when tr is LayoutSpring) current velocity.
 func (m *LayoutMotion) Retarget(to Bounds, tr LayoutTransition, now time.Duration) {
 	if !m.done {
 		m.Step(now)
@@ -216,8 +198,7 @@ func (m *LayoutMotion) Retarget(to Bounds, tr LayoutTransition, now time.Duratio
 	}
 }
 
-// Step advances m to clock time now, returning the shown frame and whether
-// the motion has finished.
+// Step advances m to clock time now, returning the shown frame and whether the motion has finished.
 func (m *LayoutMotion) Step(now time.Duration) (Bounds, bool) {
 	if m.done {
 		return m.shown, true
@@ -279,8 +260,7 @@ func (m *LayoutMotion) Target() Bounds { return vecToBounds(m.to) }
 // Transition is the LayoutTransition driving m.
 func (m *LayoutMotion) Transition() LayoutTransition { return m.tr }
 
-// Velocity is the last evaluated velocity (x, y, width, height) in points
-// per second.
+// Velocity is the last evaluated velocity (x, y, width, height) in points per second.
 func (m *LayoutMotion) Velocity() [4]float64 { return m.vel }
 
 // Done reports whether m has settled at its target.

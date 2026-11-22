@@ -573,8 +573,7 @@ var (
 	LayoutEaseInEaseOutPreset = allLayout(driver.LayoutTransition{Curve: driver.LayoutEaseInEaseOut, Duration: 300 * time.Millisecond})
 	// LayoutLinearPreset moves every change at constant speed over 500 ms.
 	LayoutLinearPreset = allLayout(driver.LayoutTransition{Curve: driver.LayoutLinear, Duration: 500 * time.Millisecond})
-	// LayoutSpringPreset springs frames (response 250 ms, damping ratio 0.4)
-	// until they settle and fades views linearly.
+	// LayoutSpringPreset springs frames (response 250 ms, damping ratio 0.4) until they settle and fades views linearly.
 	LayoutSpringPreset = LayoutAnimation{
 		Create: &driver.LayoutTransition{Curve: driver.LayoutLinear, Duration: 700 * time.Millisecond},
 		Update: &driver.LayoutTransition{Curve: driver.LayoutSpring, Response: 250 * time.Millisecond, DampingRatio: 0.4},

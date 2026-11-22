@@ -129,9 +129,7 @@ func TestLayoutSpringRetargetPreservesVelocity(t *testing.T) {
 		t.Fatalf("retarget snapped from %v to %v", mid, atRetarget)
 	}
 
-	// One short step later, preserved +X velocity must carry X briefly past
-	// mid.Origin.X before curving smoothly back toward 0, while Y moves from 0
-	// toward 150.
+	// One short step later, preserved +X velocity must carry X briefly past mid.Origin.X before curving smoothly back toward 0, while Y moves from 0 toward 150.
 	app.Advance(8 * time.Millisecond)
 	after := app.Find("id:box").ShownFrame
 	if after.Origin.X <= mid.Origin.X {

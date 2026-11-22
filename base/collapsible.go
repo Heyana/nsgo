@@ -6,16 +6,14 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// revealResponse is gpui-component's critically damped reveal spring's
-// response.
+// revealResponse is gpui-component's critically damped reveal spring's response.
 const revealResponse = 180 * time.Millisecond
 
 // revealTransition springs the frames a reveal moves, critically damped,
 // as a height should not overshoot.
 var revealTransition = core.LayoutTransition{Curve: core.LayoutSpring, Response: revealResponse, DampingRatio: 1}
 
-// revealSpringFor returns the reveal spring for height: revealResponse,
-// slower for a taller height as it travels further, up to twice as long.
+// revealSpringFor returns the reveal spring for height: revealResponse, slower for a taller height as it travels further, up to twice as long.
 func revealSpringFor(height core.Points) core.LayoutTransition {
 	tr := revealTransition
 	tr.Response = min(revealResponse+time.Duration(height)*time.Millisecond/6, 2*revealResponse)

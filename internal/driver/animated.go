@@ -305,20 +305,11 @@ type LayoutAnimation struct {
 // LayoutTransition is how one kind of change animates.
 type LayoutTransition struct {
 	Curve LayoutCurve
-	// Response is LayoutSpring's undamped natural period, as gpui-base's
-	// Spring: stiffness k = (2π/Response)², mass 1. When Curve is
-	// LayoutSpring, the spring runs by its physics until it settles rather
-	// than for Duration. When Response is 0 and Duration is positive,
-	// Response is derived from Duration and the damping ratio so
-	// duration-based spring configs settle in about that time; when both
-	// are 0, Response defaults to 500 ms.
+	// Response is LayoutSpring's undamped natural period, as gpui-base's Spring: stiffness k = (2π/Response)², mass 1. When Curve is LayoutSpring, the spring runs by its physics until it settles rather than for Duration. When Response is 0 and Duration is positive, Response is derived from Duration and the damping ratio so duration-based spring configs settle in about that time; when both are 0, Response defaults to 500 ms.
 	Response time.Duration
-	// DampingRatio is LayoutSpring's damping ratio (ζ): < 1 underdamped
-	// (overshoots), 1 critically damped, > 1 overdamped. When 0, Damping is
-	// used if positive, else 1 (critically damped).
+	// DampingRatio is LayoutSpring's damping ratio (ζ): < 1 underdamped (overshoots), 1 critically damped, > 1 overdamped. When 0, Damping is used if positive, else 1 (critically damped).
 	DampingRatio float64
-	// Damping is LayoutSpring's damping ratio when DampingRatio is 0, kept
-	// for React Native-style spring configs.
+	// Damping is LayoutSpring's damping ratio when DampingRatio is 0, kept for React Native-style spring configs.
 	Damping float32
 	// Bezier is LayoutBezier's curve.
 	Bezier Curve
@@ -336,8 +327,7 @@ const (
 	LayoutEaseIn
 	LayoutEaseOut
 	LayoutEaseInEaseOut
-	// LayoutSpring springs by its physics (Response and DampingRatio),
-	// running until it settles rather than for a duration.
+	// LayoutSpring springs by its physics (Response and DampingRatio), running until it settles rather than for a duration.
 	LayoutSpring
 	// LayoutKeyboard is the software keyboard's own curve, timed from
 	// when the keyboard started to move where the platform knows it.
@@ -360,9 +350,7 @@ const (
 	LayoutScale
 )
 
-// At returns the transition's progress at elapsed time since the change,
-// and whether it is done. A spring may overshoot 1 and runs until it settles
-// rather than stopping at Duration.
+// At returns the transition's progress at elapsed time since the change, and whether it is done. A spring may overshoot 1 and runs until it settles rather than stopping at Duration.
 func (tr *LayoutTransition) At(elapsed time.Duration) (float64, bool) {
 	if tr.Curve == LayoutSpring {
 		if elapsed <= tr.Delay {
@@ -401,8 +389,7 @@ func (tr *LayoutTransition) At(elapsed time.Duration) (float64, bool) {
 	return x, false
 }
 
-// End is when the transition is done: Delay + Duration for timed curves,
-// or Delay plus the unit-step settling time for LayoutSpring.
+// End is when the transition is done: Delay + Duration for timed curves, or Delay plus the unit-step settling time for LayoutSpring.
 func (tr *LayoutTransition) End() time.Duration {
 	if tr.Curve == LayoutSpring {
 		return tr.Delay + tr.springSettleDuration()

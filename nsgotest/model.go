@@ -20,8 +20,7 @@ type View struct {
 	Parent   *View
 	Children []*View
 	Frame    driver.Bounds
-	// ShownFrame is the frame the view shows now: mid layout transition or
-	// layout animation, or Frame when none is running.
+	// ShownFrame is the frame the view shows now: mid layout transition or layout animation, or Frame when none is running.
 	ShownFrame driver.Bounds
 	Style      driver.ViewStyle
 	Props      driver.ViewProps
@@ -209,8 +208,7 @@ var webCommandKinds = map[driver.WebCommand]WebCommandKind{
 	driver.WebLoad:             WebLoad,
 }
 
-// animate steps the animator and any running layout motions to the clock and
-// records the values they moved.
+// animate steps the animator and any running layout motions to the clock and records the values they moved.
 func (a *App) animate() {
 	now := a.Clock.Now().Sub(a.start)
 	if a.anim.Running() {

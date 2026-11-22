@@ -287,8 +287,7 @@ func TestLayoutAnimationRidesTheNextBatch(t *testing.T) {
 	if p, done := LayoutSpringPreset.Update.At(700 * time.Millisecond); !over || p != 1 || !done {
 		t.Fatalf("spring: overshot %v, end %v %v", over, p, done)
 	}
-	// Physics spring takes Response and DampingRatio and runs until settled
-	// rather than stopping at Duration.
+	// Physics spring takes Response and DampingRatio and runs until settled rather than stopping at Duration.
 	crit := LayoutTransition{Curve: LayoutSpring, Response: 200 * time.Millisecond, DampingRatio: 1, Duration: 20 * time.Millisecond}
 	if p, done := crit.At(20 * time.Millisecond); done || p <= 0 || p >= 1 {
 		t.Fatalf("critically damped spring at 20 ms: %v %v", p, done)

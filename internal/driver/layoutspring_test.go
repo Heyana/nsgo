@@ -82,8 +82,7 @@ func TestLayoutSpringRegimes(t *testing.T) {
 }
 
 func TestLayoutSpringRunsUntilSettledIgnoringDuration(t *testing.T) {
-	// Even if Duration is short (50 ms), a physics spring with Response 400 ms
-	// and low damping ratio must keep running past 50 ms until it actually settles.
+	// Even if Duration is short (50 ms), a physics spring with Response 400 ms and low damping ratio must keep running past 50 ms until it actually settles.
 	tr := LayoutTransition{
 		Curve:        LayoutSpring,
 		Response:     400 * time.Millisecond,
@@ -105,9 +104,7 @@ func TestLayoutSpringRunsUntilSettledIgnoringDuration(t *testing.T) {
 }
 
 func TestEvalSpring1DVelocityAndSemigroup(t *testing.T) {
-	// Verify analytical velocity matches finite-difference derivative and
-	// restarting from (y(t1), v(t1)) reproduces (y(t1+t2), v(t1+t2)) exactly
-	// across all three damping regimes.
+	// Verify analytical velocity matches finite-difference derivative and restarting from (y(t1), v(t1)) reproduces (y(t1+t2), v(t1+t2)) exactly across all three damping regimes.
 	const w0 = 2 * math.Pi / 0.3
 	const dt = 1e-6
 	for _, tc := range []struct {
@@ -174,8 +171,7 @@ func TestLayoutMotionRetargetPreservesPositionAndVelocity(t *testing.T) {
 		t.Fatalf("retarget did not preserve X velocity: got %v, want %v", m.Velocity()[0], velBefore[0])
 	}
 
-	// 8 ms after reversing target, positive momentum must carry X slightly
-	// further forward (> posBefore.Origin.X) before turning around toward 0!
+	// 8 ms after reversing target, positive momentum must carry X slightly further forward (> posBefore.Origin.X) before turning around toward 0!
 	posAfter, done := m.Step(56 * time.Millisecond)
 	if done {
 		t.Fatal("settled immediately after retarget")

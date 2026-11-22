@@ -214,9 +214,7 @@ func (s *surface) computedBounds(v *view) driver.Bounds {
 	}
 }
 
-// moveFrame animates v from where it shows to the item's frame, when the
-// batch animates layout or the item carries a transition. It reports whether
-// it placed v's frame itself (for physics springs driven on rAF).
+// moveFrame animates v from where it shows to the item's frame, when the batch animates layout or the item carries a transition. It reports whether it placed v's frame itself (for physics springs driven on rAF).
 func (s *surface) moveFrame(v *view, it *driver.MountItem, lb *layoutBatch) bool {
 	tr := it.Transition
 	if lb != nil && lb.anim.Update != nil && !lb.created[v.id] {
