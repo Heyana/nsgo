@@ -4,12 +4,14 @@ import android.content.Context;
 
 public class View {
     public static final int VISIBLE = 0;
+    public static final int INVISIBLE = 4;
     public static final int GONE = 8;
     public static final int LAYOUT_DIRECTION_RTL = 1;
     public static final int TEXT_ALIGNMENT_VIEW_START = 5;
     public static final int IMPORTANT_FOR_ACCESSIBILITY_AUTO = 0;
     public static final int IMPORTANT_FOR_ACCESSIBILITY_YES = 1;
     public static final int IMPORTANT_FOR_ACCESSIBILITY_NO = 2;
+    public static final int IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS = 4;
 
     public interface OnClickListener {
         void onClick(View v);
@@ -38,6 +40,7 @@ public class View {
     public void setLayoutParams(ViewGroup.LayoutParams p) { this.layoutParams = p; }
     public void setOutlineProvider(Object o) {}
     public void setTranslationZ(float z) {}
+    public void setTranslationY(float y) {}
     public void setVisibility(int v) { this.visibility = v; }
     public int getVisibility() { return visibility; }
     public void setBackgroundColor(int c) {}

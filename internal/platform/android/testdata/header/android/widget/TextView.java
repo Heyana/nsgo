@@ -11,4 +11,7 @@ public class TextView extends View {
     public void setEllipsize(TextUtils.TruncateAt where) {}
     public void setTextColor(int color) {}
     public void setText(CharSequence text) {}
+    public android.graphics.Typeface getTypeface() { return null; }
+    public void setTypeface(android.graphics.Typeface typeface) {}
+    public int getLineHeight() { return 0; }
 }

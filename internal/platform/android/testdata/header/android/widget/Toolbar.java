@@ -22,6 +22,9 @@ public class Toolbar extends ViewGroup {
     public void setNavigationContentDescription(CharSequence s) {}
     public void setTitle(CharSequence title) {}
     public void setTitleTextColor(int color) {}
+    public int getContentInsetStart() { return 0; }
+    public int getContentInsetEnd() { return 0; }
+    public void setContentInsetsRelative(int start, int end) {}
 
     @Override
     protected void onMeasure(int widthSpec, int heightSpec) {

@@ -66,7 +66,7 @@ func TestReadEnvironmentReadsAndroidHeaderHeights(t *testing.T) {
 	}
 }
 
-// TestScreenItemEncodesTitleFills verifies that ItemScreen writes TitleFills as bit 7 of the header flags byte so Header.java reads it accurately.
+// TestScreenItemEncodesTitleFills verifies that ItemScreen writes TitleFills as bit 0 of the second header flags byte, after the first byte's eight flags, so Header.java reads it accurately.
 func TestScreenItemEncodesTitleFills(t *testing.T) {
 	for _, fills := range []bool{false, true} {
 		var w writer
@@ -82,7 +82,8 @@ func TestScreenItemEncodesTitleFills(t *testing.T) {
 			HeaderHeight:      64,
 		}
 		w.str(c.Title)
-		w.flags(c.HeaderHidden, c.HeaderTransparent, c.LargeTitle, c.CanGoBack, c.BackHidden, c.NoPopOnSwipe, c.NoPopOnBack, c.TitleFills)
+		w.flags(c.HeaderHidden, c.HeaderTransparent, c.LargeTitle, c.CanGoBack, c.BackHidden, c.NoPopOnSwipe, c.NoPopOnBack, c.RightWithLargeTitle)
+		w.flags(c.TitleFills)
 		w.str(c.BackTitle)
 		w.u32(uint32(c.Background))
 		w.u32(uint32(c.TitleColor))
@@ -97,12 +98,12 @@ func TestScreenItemEncodesTitleFills(t *testing.T) {
 			t.Fatalf("title = %q, want Search", title)
 		}
 		flags := r.byte()
-		gotFills := flags&(1<<7) != 0
-		if gotFills != fills {
-			t.Fatalf("flags = %08b: bit 7 = %v, want %v", flags, gotFills, fills)
+		if flags&(1<<1) == 0 || flags&(1<<3) == 0 || flags&(1<<7) != 0 {
+			t.Fatalf("flags = %08b: want transparent and canGoBack only", flags)
 		}
-		if flags&(1<<1) == 0 || flags&(1<<3) == 0 {
-			t.Fatalf("flags = %08b: lost transparent/canGoBack bits", flags)
+		more := r.byte()
+		if gotFills := more&1 != 0; gotFills != fills || more&^1 != 0 {
+			t.Fatalf("second flags = %08b: TitleFills = %v, want %v", more, gotFills, fills)
 		}
 		if back := r.str(); back != "Home" {
 			t.Fatalf("backTitle = %q, want Home", back)
@@ -130,10 +131,12 @@ func TestHeaderJavaTitleFills(t *testing.T) {
 		if canGoBack {
 			flags |= 1 << 3
 		}
-		if titleFills {
-			flags |= 1 << 7
-		}
 		buf.WriteByte(flags)
+		var more byte
+		if titleFills {
+			more |= 1
+		}
+		buf.WriteByte(more)
 		writeStr("Back")
 		_ = binary.Write(&buf, binary.BigEndian, int32(0)) // background
 		_ = binary.Write(&buf, binary.BigEndian, int32(0)) // titleColor
@@ -142,6 +145,13 @@ func TestHeaderJavaTitleFills(t *testing.T) {
 		_ = binary.Write(&buf, binary.BigEndian, right)
 		_ = binary.Write(&buf, binary.BigEndian, titleView)
 		_ = binary.Write(&buf, binary.BigEndian, float32(64))
+		// The compact and large title fonts, all defaults.
+		for range 2 {
+			writeStr("")
+			_ = binary.Write(&buf, binary.BigEndian, float32(0))
+			_ = binary.Write(&buf, binary.BigEndian, uint16(0))
+			buf.WriteByte(0)
+		}
 		return buf.Bytes()
 	}
 

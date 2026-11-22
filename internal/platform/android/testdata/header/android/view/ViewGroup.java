@@ -39,4 +39,5 @@ public class ViewGroup extends View {
         if (v != null) v.parent = null;
     }
     public void setClipChildren(boolean clip) {}
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {}
 }
