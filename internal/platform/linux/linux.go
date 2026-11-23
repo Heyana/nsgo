@@ -97,8 +97,12 @@ func (w *window) ignoreTestGDKEvent(event uintptr) bool {
 	return !w.inputGate.allowGDKEvent(w.opts.test != nil, gdkEventGetEventType(event)) && !isTestWebInputEvent(event)
 }
 
-func (w *window) ignoreTestInputEvent(event uintptr) bool {
-	return w.ignoreTestInput() && !isTestWebInputEvent(event)
+// ignoreTestInputEvent reports whether the event controller's current physical event should be ignored on an isolated test window, unless it is a trusted web input event the test host injected. Scripted steps call the callbacks with no controller, and are let through before the controller is read.
+func (w *window) ignoreTestInputEvent(controller uintptr) bool {
+	if !w.ignoreTestInput() {
+		return false
+	}
+	return controller == 0 || !isTestWebInputEvent(gtkEventControllerGetCurrentEvent(controller))
 }
 
 // testOpen is what a test host opens the app with: the test's options and
