@@ -174,6 +174,16 @@ func TestInputMethodCommitAndSinkCandidates(t *testing.T) {
 
 			// 1. Single-line input composing live conversion, then moving focus to another input.
 			clearLog()
+			if err := waitFor("test window active and key", func() bool {
+				var ok bool
+				syncMain(func() {
+					ok = objc.Send[bool](nsApp(), sel("isActive")) &&
+						objc.Send[bool](live.window, sel("isKeyWindow"))
+				})
+				return ok
+			}); err != nil {
+				return err
+			}
 			key("mod+1")
 			if err := waitFor("single focused", func() bool {
 				var ok bool
