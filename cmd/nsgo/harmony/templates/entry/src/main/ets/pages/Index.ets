@@ -4058,10 +4058,17 @@ class Renderer {
   }
 
   image(v: VNode, node: FrameNode): void {
-    if (this.shown.get(v.id) !== v.src) {
+    // A view showing pixels has no data and no asset, so this node draws it: from the copy its last 'ip' op sent, which pv counts, or from its URI once the pixels stop.
+    const copy = viewPixels.get(v.id)?.cur;
+    const shown = copy !== undefined ? '\u0000px:' + v.pv : v.src;
+    if (this.shown.get(v.id) !== shown) {
       const im = node as typeNode.Image;
-      im.initialize(v.src);
-      this.shown.set(v.id, v.src);
+      if (copy !== undefined) {
+        im.initialize(copy);
+      } else {
+        im.initialize(v.src);
+      }
+      this.shown.set(v.id, shown);
     }
     const a = typeNode.getAttribute(node, 'Image');
     if (a !== undefined) {

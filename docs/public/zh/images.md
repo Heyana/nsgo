@@ -48,7 +48,7 @@ core.Image{ResizeMode: core.Contain, SourceFunc: func() core.ImageSource {
 
 NSGo 在带着新 `Version` 的提交运行时复制像素，所以应用可以在下一次 `RequestAnimationFrame` 回调中写下一帧；在自己的 goroutine 上解码的解码器应写入第二个缓冲区，再把交换投递过来。相同的 `Version` 不会重新绘制。`cx.ImageSize` 对像素来源立即返回缓冲区的尺寸。`core.Canvas` 用 `DrawImage` 绘制像素，复制方式相同，所有平台都支持；小程序需要微信的 2D 画布。`core.Shader` 的 `Images` 也以同样的方式接受像素，所以着色器可以处理应用写入的帧（例如模拟器的画面），在所有绘制着色器的平台上都可以。
 
-Apple 平台、Android、Windows、Linux 和 Web 直接更新像素图片，微信小程序使用 2D 画布。HarmonyOS 为每个版本生成 `PixelMap`，尚未在设备上验证。
+Apple 平台、Android、Windows、Linux 和 Web 直接更新像素图片，微信小程序使用 2D 画布。HarmonyOS 为每个版本生成 `PixelMap`，已在设备上验证；它的副本经字符串桥传递，因此每帧改写的大缓冲区在那里远低于 60 fps（[像素缓冲区](https://github.com/nsgo-dev/nsgo/blob/main/docs/architecture/images.md#pixel-buffers)）。
 
 ## 资源与像素密度
 
