@@ -5848,6 +5848,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) {
             return String.valueOf((char) ('0' + code - KeyEvent.KEYCODE_0));
         }
+        // The keypad's digits are digits, as on the other platforms, whether or not Num Lock makes them type one.
+        if (code >= KeyEvent.KEYCODE_NUMPAD_0 && code <= KeyEvent.KEYCODE_NUMPAD_9) {
+            return String.valueOf((char) ('0' + code - KeyEvent.KEYCODE_NUMPAD_0));
+        }
         if (code >= KeyEvent.KEYCODE_F1 && code <= KeyEvent.KEYCODE_F12) return "f" + (code - KeyEvent.KEYCODE_F1 + 1);
         switch (code) {
             case KeyEvent.KEYCODE_ENTER: case KeyEvent.KEYCODE_NUMPAD_ENTER: return "enter";
