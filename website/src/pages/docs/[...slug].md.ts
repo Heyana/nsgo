@@ -1,11 +1,10 @@
 import type { APIRoute, GetStaticPaths } from 'astro';
-import type { Doc } from '../../lib/docs';
-import { llmsDocs, pageMarkdown } from '../../lib/llms';
+import { llmsDocs, pageMarkdown, type Doc } from '../../lib/llms';
 
 // Each English page as Markdown at /docs/<id>.md, the first at /docs/index.md.
 export const getStaticPaths: GetStaticPaths = async () => {
-  const { docs } = await llmsDocs();
-  return docs.map((doc) => ({ params: { slug: doc.id }, props: { doc } }));
+  const docs = await llmsDocs();
+  return docs.map((doc) => ({ params: { slug: doc.page.file.replace(/(.)\/index$/, '$1') }, props: { doc } }));
 };
 
 export const GET: APIRoute = ({ props }) =>

@@ -1,0 +1,729 @@
+/* nsgo.dev's own parts over nsgo-website's look: the platforms beside the
+   hero, the gallery's screens, how it works, the docs' live previews and the
+   benchmarks. Colors come from the package's tokens.css. */
+
+:root {
+  --nsgo-gradient: linear-gradient(135deg, #4da3ff, #007aff);
+  --nsgo-dev: #e2b27a;
+  --nsgo-shadow-sm: none;
+  --nsgo-shadow-lg: 0 40px 80px -32px rgb(0 0 0 / 80%);
+}
+
+:root[data-theme='light'] {
+  --nsgo-dev: #b26b00;
+  --nsgo-shadow-sm: 0 1px 2px rgb(16 24 40 / 5%);
+  --nsgo-shadow-lg: 0 2px 6px rgb(16 24 40 / 5%), 0 40px 80px -32px rgb(16 24 40 / 28%);
+}
+
+/* The gallery's screens: a desktop window and a phone before it, each in
+   both appearances, of which the page's shows. A hidden lazy image is never
+   fetched. */
+
+:root[data-theme='light'] [data-screen-theme='dark'],
+:root:not([data-theme='light']) [data-screen-theme='light'] {
+  display: none;
+}
+
+.stage {
+  position: relative;
+  margin-top: 0;
+  padding: 0 64px 40px 0;
+}
+
+.stage__desktop {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: var(--nsgo-shadow-lg);
+}
+
+.stage__desktop img {
+  width: 100%;
+  height: auto;
+}
+
+.stage__phone {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: min(25%, 260px);
+  padding: 9px;
+  border-radius: 42px;
+  background: #0c0d10;
+  box-shadow: var(--nsgo-shadow-lg);
+}
+
+:root:not([data-theme='light']) .stage__phone {
+  outline: 1px solid var(--border-strong);
+}
+
+.stage__phone img {
+  width: 100%;
+  height: auto;
+  border-radius: 34px;
+}
+
+/* The platforms beside the copy, each a tile in the shape of the device or
+   surface it runs on, placed on a board of 480 by 300 units (`--u`). They
+   rise in one after another, then take turns being lit, each the same size
+   lit or not. */
+.board {
+  --u: 1px;
+  display: grid;
+  justify-items: center;
+}
+
+.tiles {
+  position: relative;
+  width: calc(480 * var(--u));
+  height: calc(300 * var(--u));
+}
+
+.tile {
+  --tone: var(--border-strong);
+  position: absolute;
+  top: calc(var(--y) * var(--u));
+  left: calc(var(--x) * var(--u));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(var(--w) * var(--u));
+  height: calc(var(--h) * var(--u));
+  padding: 0 calc(12 * var(--u));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--nsgo-shadow-sm);
+  cursor: default;
+  transition:
+    border-color 0.35s ease,
+    box-shadow 0.35s ease,
+    transform 0.35s ease;
+}
+
+.tile::before,
+.tile::after {
+  position: absolute;
+  content: '';
+  transition: background-color 0.35s ease;
+}
+
+.tile svg {
+  flex: none;
+  color: var(--muted);
+  transition: color 0.35s ease;
+}
+
+.tile__name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: max(10.5px, calc(13.5 * var(--u)));
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Windows, a browser and a television show their name at the bottom. */
+.tile--window,
+.tile--browser,
+.tile--tv {
+  align-items: flex-end;
+  padding-bottom: calc(12 * var(--u));
+}
+
+/* A window's title bar, its controls on the side its system puts them. */
+.tile--window::before,
+.tile--browser::before {
+  inset: 0 0 auto;
+  height: 18px;
+  border-bottom: 1px solid var(--border);
+  --dot: radial-gradient(circle, var(--tone) 2.5px, transparent 3px);
+  background:
+    var(--dot) 6px 0 / 9px 18px no-repeat,
+    var(--dot) 15px 0 / 9px 18px no-repeat,
+    var(--dot) 24px 0 / 9px 18px no-repeat;
+}
+
+.tile--controls-right::before {
+  background:
+    var(--dot) calc(100% - 6px) 0 / 9px 18px no-repeat,
+    var(--dot) calc(100% - 15px) 0 / 9px 18px no-repeat,
+    var(--dot) calc(100% - 24px) 0 / 9px 18px no-repeat;
+}
+
+/* A browser's address field. */
+.tile--browser::after {
+  top: 5px;
+  right: 10px;
+  left: 40px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+/* Phones, an App Clip's round code and a watch stack their icon over
+   their name. */
+.tile--phone,
+.tile--clip,
+.tile--watch {
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+}
+
+/* A phone keeps its content below its speaker. */
+.tile--phone {
+  padding-top: 12px;
+  border-radius: calc(18 * var(--u));
+}
+
+/* A phone's name may break before its "OS" where the tile is too narrow for it, as HarmonyOS's is. */
+.tile--phone .tile__name {
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+}
+
+.tile--phone::before {
+  top: 7px;
+  left: 50%;
+  width: 18px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--tone);
+  transform: translateX(-50%);
+}
+
+.tile--clip {
+  border-radius: 50%;
+}
+
+.tile--clip .tile__name {
+  font-size: max(9.5px, calc(10.5 * var(--u)));
+}
+
+.tile--watch {
+  border-radius: calc(20 * var(--u));
+}
+
+.tile--watch .tile__name {
+  font-size: max(9px, calc(12 * var(--u)));
+}
+
+.tile--watch::after {
+  top: 30%;
+  right: -4px;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--tone);
+}
+
+.tile--tv {
+  border-radius: 8px;
+}
+
+.tile--tv::after {
+  bottom: -7px;
+  left: 50%;
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--tone);
+  transform: translateX(-50%);
+}
+
+/* A mini program's capsule, like the button its host puts on every one. */
+.tile--capsule {
+  justify-content: center;
+  padding: 0 calc(8 * var(--u));
+  border-radius: 999px;
+}
+
+.tile.is-lit {
+  --tone: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 10px 26px -12px rgb(0 122 255 / 50%);
+  transform: translateY(-3px);
+}
+
+.tile.is-lit svg {
+  color: var(--accent);
+}
+
+/* An experimental platform's mark follows its name, and its tip opens
+   above the tile while it is pointed at or focused, right-aligned so it
+   stays on the board. */
+.tile__mark {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--nsgo-dev);
+}
+
+.tile__tip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 14px);
+  z-index: 1;
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  box-shadow: var(--shadow);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    visibility 0.15s;
+}
+
+.tile:hover,
+.tile:focus-visible {
+  z-index: 1;
+}
+
+.tile:hover .tile__tip,
+.tile:focus-visible .tile__tip {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+/* The line naming what draws the lit platform: every platform's line
+   sits in one place, so changing lines never moves the page. Beside the
+   copy it hangs under the board, so the board alone centres on the copy. */
+.board {
+  position: relative;
+}
+
+.board__lines {
+  position: absolute;
+  top: calc(100% + 24px);
+  right: 0;
+  left: 0;
+  display: grid;
+  justify-items: center;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.board__line {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s ease;
+}
+
+.board__line.is-lit {
+  opacity: 1;
+  transform: none;
+}
+
+.board__line strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.board__line span {
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tile {
+    animation: tile-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: calc(0.15s + var(--i) * 0.06s);
+  }
+
+  @keyframes tile-rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+}
+
+@media (max-width: 63.99rem) {
+  .board {
+    margin-top: 8px;
+  }
+
+  .board__lines {
+    position: static;
+    margin-top: 24px;
+  }
+}
+
+@media (max-width: 720px) {
+  .stage {
+    padding: 0 36px 32px 0;
+  }
+
+  .stage__phone {
+    width: 34%;
+    padding: 5px;
+    border-radius: 24px;
+  }
+
+  .stage__phone img {
+    border-radius: 20px;
+  }
+}
+
+@media (max-width: 560px) {
+  .board {
+    --u: calc((100vw - 48px) / 480);
+  }
+
+  .tile {
+    gap: 4px;
+  }
+
+  .tile__name {
+    font-size: 10px;
+  }
+
+  .tile svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .tile--phone {
+    gap: 3px;
+  }
+
+  .tile--phone .tile__name {
+    line-height: 1.1;
+  }
+}
+
+/* How it works: the app, the engine and the platform, with updates
+   flowing between them. */
+
+
+.flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px minmax(0, 1fr) 140px minmax(0, 1fr);
+  align-items: center;
+}
+
+.flow__node {
+  display: grid;
+  gap: 6px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.flow__node--engine {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--bg), var(--bg)) padding-box,
+    var(--nsgo-gradient) border-box;
+  border-width: 1.5px;
+  box-shadow:
+    var(--shadow),
+    0 0 0 6px var(--accent-soft);
+}
+
+.flow__label {
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.flow__node strong {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.flow__node ul {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.flow__node li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+.flow__node li::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: skewX(-10deg);
+}
+
+.flow__link {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 0 8px;
+}
+
+.flow__track {
+  position: relative;
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+
+.flow__track i {
+  position: absolute;
+  top: 0;
+  left: -30%;
+  width: 30%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--nsgo-gradient);
+  animation: flow 2.4s linear infinite;
+}
+
+.flow__track i:nth-child(2) {
+  animation-delay: 0.8s;
+}
+
+.flow__track i:nth-child(3) {
+  animation-delay: 1.6s;
+}
+
+@keyframes flow {
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow__track i {
+    display: none;
+  }
+}
+
+.flow__caption {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .flow {
+    grid-template-columns: 1fr;
+    max-width: 440px;
+    margin-inline: auto;
+  }
+
+  .flow__link {
+    height: 72px;
+    grid-template-columns: 2px auto;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+
+  .flow__track {
+    width: 2px;
+    height: 100%;
+  }
+
+  .flow__track i {
+    top: -30%;
+    left: 0;
+    width: 100%;
+    height: 30%;
+    animation-name: flow-down;
+  }
+
+  @keyframes flow-down {
+    to {
+      top: 100%;
+    }
+  }
+}
+
+/* A live preview of the docs sits on the code block it runs, which joins it
+   below past the script that mounts it (src/lib/live.mjs). The app fills the box; until it runs, the box says why it is
+   empty. */
+.live {
+  position: relative;
+  height: var(--live-height);
+  margin-top: 1.25rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 0.625rem 0.625rem 0 0;
+  background: var(--surface);
+}
+
+.live[data-status]:not(.is-running)::before {
+  content: attr(data-status);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.sl-markdown-content .live + script + .expressive-code {
+  margin-top: 0;
+}
+
+.sl-markdown-content .live + script + .expressive-code :is(.frame, .frame pre) {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* The Chinese headline is one long phrase a line, which the package's size
+   breaks before its last character beside the platforms. */
+:root[lang|='zh'] .hero .headline {
+  font-size: clamp(2.25rem, 1.4rem + 3vw, 3.5rem);
+}
+
+/* The text art behind the hero (HeroField.astro), fading toward the
+   hero's edges. */
+.home .hero {
+  position: relative;
+  isolation: isolate;
+}
+
+.hero-field {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  pointer-events: none;
+  mask-image: radial-gradient(120% 90% at 50% 45%, #000 50%, transparent 100%);
+}
+
+.hero-field canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0.26;
+}
+
+:root[data-theme='light'] .hero-field canvas {
+  opacity: 0.22;
+}
+
+/* The home page's code stops at about the height of the words beside it,
+   lower than the package's cap for code. */
+.home .usage-code .expressive-code pre {
+  max-height: 26rem;
+}
+
+/* The workflow (Workflow.astro): four steps in a row on wide screens, each
+   with its command at its foot. */
+.workflow {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 40rem) {
+  .workflow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 64rem) {
+  .workflow {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.workflow__step {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.workflow__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.workflow__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.workflow__n {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.workflow__step h3 {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 650;
+}
+
+.workflow__step p {
+  flex: 1;
+  margin: 0.375rem 0 1.25rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.workflow__step code {
+  display: block;
+  overflow-x: auto;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.workflow__step code span {
+  color: var(--faint);
+  user-select: none;
+}

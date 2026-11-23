@@ -1,6 +1,6 @@
+import { getEntry, type CollectionEntry } from 'astro:content';
 import { fromMarkdown } from 'mdast-util-from-markdown';
-import { getDocs, groupDocs, type Doc } from './docs';
-import { links } from '../site';
+import { docGroups, englishPages, type DocPage } from './docs';
 
 // The English docs as Markdown for language models: /llms.txt lists the
 // pages, /llms-full.txt holds them all and /docs/<id>.md holds one. Links
@@ -8,17 +8,33 @@ import { links } from '../site';
 // and code blocks lose the site's marks (`preview=`, `program`).
 
 const site = 'https://nsgo.dev';
+const repo = 'https://github.com/nsgo-dev/nsgo';
+const links = {
+  roadmap: `${repo}/blob/main/docs/roadmap.md`,
+  releases: `${repo}/releases`,
+  architecture: `${repo}/blob/main/ARCHITECTURE.md`,
+};
 
-/** The Markdown copy of a page, such as https://nsgo.dev/docs/testing.md. */
-export function markdownUrl(id: string): string {
-  // The loader names authoring/index.md `authoring`, as the site's pages do.
-  return `${site}/docs/${id === 'index' ? id : id.replace(/\/index$/, '')}.md`;
+/** A page with its entry of the docs collection. */
+export interface Doc {
+  page: DocPage;
+  entry: CollectionEntry<'docs'>;
 }
 
-/** The English docs in the sidebar's order, with their groups. */
-export async function llmsDocs() {
-  const docs = await getDocs('en');
-  return { docs, groups: groupDocs(docs) };
+/** The Markdown copy of a page by its file below en/, such as https://nsgo.dev/docs/testing.md. */
+export function markdownUrl(file: string): string {
+  return `${site}/docs/${file === 'index' ? file : file.replace(/\/index$/, '')}.md`;
+}
+
+/** The English docs in the sidebar's order. */
+export async function llmsDocs(): Promise<Doc[]> {
+  return Promise.all(
+    englishPages().map(async (page) => {
+      const entry = await getEntry('docs', page.slug);
+      if (!entry) throw new Error(`No docs entry for ${page.slug}`);
+      return { page, entry };
+    }),
+  );
 }
 
 /** A page as Markdown: its title, description and body. */
@@ -30,13 +46,11 @@ export function pageMarkdown(doc: Doc): string {
 }
 
 /** /llms.txt: what NSGo is, then every page by group. */
-export function llmsIndex(groups: ReturnType<typeof groupDocs>): string {
-  const sections = groups.map((group) => {
-    const items = group.docs.map((doc) => {
-      const { title, description } = doc.entry.data;
-      return `- [${title}](${markdownUrl(doc.id)})${description ? `: ${description}` : ''}`;
-    });
-    return `## ${group.title ?? 'Overview'}\n\n${items.join('\n')}`;
+export function llmsIndex(): string {
+  const { pages, groups } = docGroups();
+  const sections = [{ title: 'Overview', pages }, ...groups.map((group) => ({ title: group.label.en, pages: group.pages }))].map((group) => {
+    const items = group.pages.map(({ file, title, description }) => `- [${title}](${markdownUrl(file)})${description ? `: ${description}` : ''}`);
+    return `## ${group.title}\n\n${items.join('\n')}`;
   });
   return [
     '# NSGo',
@@ -51,7 +65,7 @@ export function llmsIndex(groups: ReturnType<typeof groupDocs>): string {
       '',
       `- [Live demo](${site}/gallery/): every component, running in the browser`,
       `- [Roadmap](${links.roadmap}): what is not implemented yet, by target`,
-      `- [Changelog](${links.changelog})`,
+      `- [Releases](${links.releases})`,
       `- [Architecture](${links.architecture}): how the engine works, for contributors`,
     ].join('\n'),
   ].join('\n\n') + '\n';
@@ -59,7 +73,7 @@ export function llmsIndex(groups: ReturnType<typeof groupDocs>): string {
 
 /** /llms-full.txt: every page, each after its URL. */
 export function llmsFull(docs: Doc[]): string {
-  const pages = docs.map((doc) => `---\n\nSource: ${markdownUrl(doc.id)}\n\n${pageMarkdown(doc).trimEnd()}`);
+  const pages = docs.map((doc) => `---\n\nSource: ${markdownUrl(doc.page.file)}\n\n${pageMarkdown(doc).trimEnd()}`);
   return `# NSGo documentation\n\n${pages.join('\n\n')}\n`;
 }
 
@@ -104,7 +118,7 @@ function absolute(href: string, from: string): string {
   if (file.startsWith('docs/public/en/') && file.endsWith('.md')) {
     return `${markdownUrl(file.slice('docs/public/en/'.length, -'.md'.length))}${anchor}`;
   }
-  return `${links.repo}/blob/main/${file}${anchor}`;
+  return `${repo}/blob/main/${file}${anchor}`;
 }
 
 /** resolve joins a relative path to the directory of the file at from. */

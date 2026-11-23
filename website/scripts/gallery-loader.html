@@ -109,18 +109,18 @@
       }
     </style>
     <script>
-      // The theme comes from the URL, otherwise from the site's stored one,
-      // light unless dark or the system's, so the page never paints in the
-      // wrong appearance before the app starts.
+      // The theme comes from the URL, otherwise from the site's stored one
+      // (Starlight's starlight-theme), the system's unless light or dark, so
+      // the page never paints in the wrong appearance before the app starts.
       (function () {
         var params = new URLSearchParams(location.search);
         var theme = params.get('theme');
         if (theme !== 'light' && theme !== 'dark') {
           var stored = null;
           try {
-            stored = localStorage.getItem('nsgo-theme');
+            stored = localStorage.getItem('starlight-theme');
           } catch (error) {}
-          var dark = stored === 'dark' || (stored === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          var dark = stored === 'dark' || (stored !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
           theme = dark ? 'dark' : 'light';
         }
         document.documentElement.dataset.theme = theme;

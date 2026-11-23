@@ -1,0 +1,46 @@
+---
+// Real screens of the gallery: its desktop layout in a window and its phone
+// layout before it, in the page's language and both appearances, of which
+// the site's shows. They are src/assets/screens/<layout>-<lang>-<theme>.jpg,
+// which `bun run screenshots` retakes.
+interface Props {
+  lang: string;
+}
+const lang = Astro.props.lang === 'zh' ? 'zh' : 'en';
+
+const alts = {
+  en: {
+    desktop: 'The NSGo gallery’s Stocks demo in its desktop layout, on the web backend',
+    phone: 'The NSGo gallery’s components in its phone layout, on the web backend',
+  },
+  zh: {
+    desktop: 'NSGo Gallery 的股票演示，桌面布局，运行在 Web 后端',
+    phone: 'NSGo Gallery 的组件列表，手机布局，运行在 Web 后端',
+  },
+}[lang];
+
+const files = import.meta.glob<{ default: ImageMetadata }>('../../assets/screens/*.jpg', { eager: true });
+const screens = (layout: 'desktop' | 'phone') =>
+  (['light', 'dark'] as const).map((theme) => {
+    const file = files[`../../assets/screens/${layout}-${lang}-${theme}.jpg`];
+    if (!file) throw new Error(`src/assets/screens/${layout}-${lang}-${theme}.jpg is missing: run \`bun run screenshots\``);
+    return { theme, image: file.default };
+  });
+---
+
+<section class="screens">
+  <div class="container">
+    <div class="stage">
+    <figure class="stage__desktop">
+      {screens('desktop').map(({ theme, image }) => (
+        <img src={image.src} width={image.width} height={image.height} alt={alts.desktop} data-screen-theme={theme} loading="lazy" />
+      ))}
+    </figure>
+    <figure class="stage__phone">
+      {screens('phone').map(({ theme, image }) => (
+        <img src={image.src} width={image.width} height={image.height} alt={alts.phone} data-screen-theme={theme} loading="lazy" />
+      ))}
+    </figure>
+    </div>
+  </div>
+</section>

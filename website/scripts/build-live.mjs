@@ -6,7 +6,8 @@
 // imports are this checkout's, and is the tool's site with its wasm
 // compressed (web-build.mjs), whose nsgo.json the docs' pages read.
 //
-// public/live/ is generated: do not edit it.
+// public/live/ is generated, with boxes.js, the script that mounts the
+// boxes: do not edit it.
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fromMarkdown } from 'mdast-util-from-markdown';
@@ -96,3 +97,13 @@ func Root(cx *core.Scope) core.Node {
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
+
+// The script the boxes load, which mounts them (src/scripts/live.ts).
+const mount = await Bun.build({
+  entrypoints: [path.join(website, 'src', 'scripts', 'live.ts')],
+  outdir: path.join(website, 'public', 'live'),
+  naming: 'boxes.js',
+  target: 'browser',
+  minify: true,
+});
+if (!mount.success) throw new AggregateError(mount.logs, 'Bundling src/scripts/live.ts failed');

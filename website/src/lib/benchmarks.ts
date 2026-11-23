@@ -2,7 +2,7 @@
 // file a desktop in benchmark/results/, and what the frameworks offer,
 // which the page compares in a table.
 
-import type { Lang } from '../site';
+type Lang = 'en' | 'zh';
 
 export type FrameworkId = 'nsgo' | 'mygo' | 'nsh' | 'gpui' | 'gpui-fast';
 

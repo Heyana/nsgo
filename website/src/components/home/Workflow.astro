@@ -1,0 +1,52 @@
+---
+// The workflow: the four steps of the nsgo tool side by side, each with the
+// command that takes it.
+import { KIcon, SectionHead } from 'nsgo-website/components';
+
+interface Props {
+  lang: string;
+}
+
+const words = {
+  en: {
+    eyebrow: 'Workflow',
+    title: 'One tool, from first line to store.',
+    text: 'nsgo creates, runs, tests and packages apps. It installs with Go and runs wherever Go does.',
+    steps: ['Create', 'Run', 'Test', 'Ship'],
+    texts: ['A Go, TSX or mixed app.', 'Hot reload on every save.', 'Headless or in a native window.', 'Signed packages for each target.'],
+  },
+  zh: {
+    eyebrow: '工作流',
+    title: '一个工具，从第一行代码到上架',
+    text: 'nsgo 负责创建、运行、测试和打包应用。它随 Go 安装，在 Go 能运行的地方都能运行。',
+    steps: ['创建', '运行', '测试', '发布'],
+    texts: ['Go、TSX 或混合应用。', '每次保存都热重载。', '无窗口或原生窗口中运行。', '为每个目标打出签名的包。'],
+  },
+}[Astro.props.lang === 'zh' ? 'zh' : 'en'];
+
+const steps = [
+  { icon: 'folder-plus', color: '#6366f1', command: 'init' },
+  { icon: 'play', color: '#14b8a6', command: 'dev' },
+  { icon: 'test-tube', color: '#d97706', command: 'test' },
+  { icon: 'package-check', color: '#ec4899', command: 'build' },
+].map((step, i) => ({ ...step, title: words.steps[i], text: words.texts[i] }));
+---
+
+<section class="section" id="workflow">
+  <div class="container">
+    <SectionHead eyebrow={words.eyebrow} title={words.title} text={words.text} />
+    <ol class="workflow">
+      {steps.map((step, i) => (
+        <li class="workflow__step" data-kubai-trigger>
+          <div class="workflow__top">
+            <span class="workflow__icon"><KIcon name={step.icon} size={22} color={step.color} /></span>
+            <span class="workflow__n">{String(i + 1).padStart(2, '0')}</span>
+          </div>
+          <h3>{step.title}</h3>
+          <p>{step.text}</p>
+          <code><span>$</span> go tool nsgo {step.command}</code>
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>

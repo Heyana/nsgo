@@ -1,0 +1,230 @@
+---
+// A faint text art behind the hero: a WebGL2 shader lays a grid of
+// characters, drawn in the site's monospace font, in the muted text color:
+// a dot in every cell, heavier characters where slow, broad noise rises. It clears behind the hero's words and its platforms, moves itself
+// to the back of the hero it is placed in, draws only while on screen,
+// holds still for readers who ask for less motion, and leaves nothing where
+// WebGL2 is missing.
+---
+
+<nsgo-hero-field class="hero-field" aria-hidden="true"><canvas></canvas></nsgo-hero-field>
+
+<script>
+  /** The characters, lightest first. */
+  const ramp = ['.', ':', '-', '=', '+', '*', '#'];
+
+  const vertex = `#version 300 es
+in vec2 p;
+void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
+
+  const fragment = `#version 300 es
+precision highp float;
+uniform vec2 res;
+uniform float time;
+uniform vec2 cell;
+uniform vec2 pointer;
+uniform vec4 words;
+uniform vec4 picture;
+uniform vec3 color;
+uniform sampler2D atlas;
+uniform float glyphs;
+out vec4 outColor;
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.55;
+  for (int i = 0; i < 3; i++) { v += a * noise(p); p = p * 2.1 + vec2(3.1, 7.7); a *= 0.45; }
+  return v;
+}
+// How far p is outside the rectangle r: its center, then its half size.
+float outside(vec2 p, vec4 r) {
+  vec2 q = abs(p - r.xy) - r.zw;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+}
+
+void main() {
+  vec2 at = floor(gl_FragCoord.xy / cell);
+  vec2 center = (at + 0.5) * cell;
+  vec2 uv = center / res.y;
+  float t = time * 0.012;
+
+  float v = fbm(uv * 2.4 + vec2(t, t * 0.4));
+  float d = distance(center, pointer) / res.y;
+  v += 0.12 * exp(-d * d * 30.0);
+
+  // Clear behind the words and the platforms, fading over a few rows.
+  float fade = cell.y * 5.0;
+  float mask = smoothstep(0.0, fade, outside(center, words)) * smoothstep(0.0, fade, outside(center, picture));
+  // A faint dot everywhere, thickening into the heavier characters where
+  // the noise rises.
+  float g = (0.12 + 0.88 * smoothstep(0.38, 0.95, v)) * mask;
+  if (g < 0.1) discard;
+
+  float index = min(floor(g * glyphs), glyphs - 1.0);
+  vec2 local = fract(gl_FragCoord.xy / cell);
+  float on = texture(atlas, vec2((index + local.x) / glyphs, 1.0 - local.y)).a;
+  float a = on * (0.35 + 0.65 * g);
+  outColor = vec4(color * a, a);
+}`;
+
+  class HeroField extends HTMLElement {
+    connectedCallback() {
+      // The field sits behind the whole hero, not the picture it is placed in.
+      const hero = this.closest<HTMLElement>('.hero');
+      if (hero && this.parentElement !== hero) {
+        hero.prepend(this);
+        return;
+      }
+      if (this.dataset.ready) return;
+      this.dataset.ready = '1';
+      const canvas = this.querySelector('canvas')!;
+      const gl = canvas.getContext('webgl2', { premultipliedAlpha: true, antialias: false });
+      if (!gl) return;
+      const shader = (type: number, source: string) => {
+        const s = gl.createShader(type)!;
+        gl.shaderSource(s, source);
+        gl.compileShader(s);
+        return s;
+      };
+      const program = gl.createProgram()!;
+      gl.attachShader(program, shader(gl.VERTEX_SHADER, vertex));
+      gl.attachShader(program, shader(gl.FRAGMENT_SHADER, fragment));
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return;
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      const p = gl.getAttribLocation(program, 'p');
+      gl.enableVertexAttribArray(p);
+      gl.vertexAttribPointer(p, 2, gl.FLOAT, false, 0, 0);
+      const u = (name: string) => gl.getUniformLocation(program, name);
+      const [res, time, cell, pointer, words, picture, color, glyphs] = [
+        'res',
+        'time',
+        'cell',
+        'pointer',
+        'words',
+        'picture',
+        'color',
+        'glyphs',
+      ].map(u);
+      gl.uniform1f(glyphs, ramp.length);
+      gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+      // The muted text color, read again when the theme changes.
+      const readColor = () => {
+        const probe = document.createElement('span');
+        probe.style.color = getComputedStyle(this).getPropertyValue('--muted');
+        this.append(probe);
+        const [r, g, b] = getComputedStyle(probe).color.match(/[\d.]+/g)!.map(Number);
+        probe.remove();
+        gl.uniform3f(color, r / 255, g / 255, b / 255);
+      };
+
+      const dpr = () => Math.min(devicePixelRatio, 2);
+      // The characters side by side, one cell of the grid each, in the
+      // canvas's pixels.
+      const drawAtlas = () => {
+        const r = dpr();
+        const w = Math.round(9 * r);
+        const h = Math.round(16 * r);
+        const text = document.createElement('canvas');
+        text.width = w * ramp.length;
+        text.height = h;
+        const c = text.getContext('2d')!;
+        const font = getComputedStyle(this).getPropertyValue('--font-mono').trim() || 'monospace';
+        c.font = `${Math.round(12 * r)}px ${font}`;
+        c.fillStyle = '#fff';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        ramp.forEach((ch, i) => c.fillText(ch, (i + 0.5) * w, h / 2));
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, text);
+        gl.uniform2f(cell, w, h);
+      };
+
+      // A part of the hero, a little larger than it, as a rectangle in the
+      // canvas's pixels from its bottom left: its center, then its half size.
+      const area = (el: Element | null | undefined, box: DOMRect, r: number): [number, number, number, number] => {
+        if (!el) return [-1e5, -1e5, 0, 0];
+        const b = el.getBoundingClientRect();
+        const pad = 24;
+        return [
+          (b.left + b.width / 2 - box.left) * r,
+          (box.bottom - b.top - b.height / 2) * r,
+          (b.width / 2 + pad) * r,
+          (b.height / 2 + pad) * r,
+        ];
+      };
+      const resize = () => {
+        const r = dpr();
+        canvas.width = Math.round(this.clientWidth * r);
+        canvas.height = Math.round(this.clientHeight * r);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.uniform2f(res, canvas.width, canvas.height);
+        drawAtlas();
+        const box = canvas.getBoundingClientRect();
+        gl.uniform4f(words, ...area(hero?.querySelector('.hero-copy'), box, r));
+        gl.uniform4f(picture, ...area(hero?.querySelector('.board'), box, r));
+      };
+
+      // The pointer, eased toward where it is, in the canvas's pixels.
+      const far = -1e5;
+      let want = { x: far, y: far };
+      let have = { ...want };
+      const host = hero ?? this;
+      host.addEventListener('pointermove', (e) => {
+        const box = canvas.getBoundingClientRect();
+        want = { x: (e.clientX - box.left) * dpr(), y: (box.bottom - e.clientY) * dpr() };
+        if (have.x === far) have = { ...want };
+      });
+      host.addEventListener('pointerleave', () => (want = { x: far, y: far }));
+
+      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const draw = (ms: number) => {
+        have.x += (want.x - have.x) * 0.06;
+        have.y += (want.y - have.y) * 0.06;
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.uniform1f(time, ms / 1000);
+        gl.uniform2f(pointer, have.x, have.y);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      };
+      readColor();
+      resize();
+      new MutationObserver(() => {
+        readColor();
+        if (still) draw(0);
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+      new ResizeObserver(() => {
+        resize();
+        if (still) draw(0);
+      }).observe(this);
+
+      let frame = 0;
+      const loop = (ms: number) => {
+        draw(ms);
+        frame = requestAnimationFrame(loop);
+      };
+      if (still) {
+        draw(0);
+        return;
+      }
+      new IntersectionObserver(([entry]) => {
+        cancelAnimationFrame(frame);
+        if (entry.isIntersecting) frame = requestAnimationFrame(loop);
+      }).observe(this);
+    }
+  }
+  customElements.define('nsgo-hero-field', HeroField);
+</script>

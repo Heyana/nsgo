@@ -36,30 +36,3 @@ func Root(cx *core.Scope) core.Node {
 }
 
 func main() { nsgo.Run(Root) }`;
-
-export const tsxApp = `import { mount, signal, Text, View } from "nsgo";
-
-function App() {
-  const count = signal(0);
-  return (
-    <View class="gap-3 p-6">
-      <Text>Pressed {count()} times</Text>
-      <View
-        class="self-start rounded-lg bg-blue-500 px-3.5 py-1.5"
-        onPress={() => count.update((n) => n + 1)}
-      >
-        <Text class="text-white">Press me</Text>
-      </View>
-    </View>
-  );
-}
-
-mount(App);`;
-
-export const goTest = `func TestMain(m *testing.M) { nsgotest.Main(m) }
-
-func TestPress(t *testing.T) {
-	app := nsgotest.Start(t, Root)
-	app.Press("text:Press me")
-	app.Find("text:Pressed 1 times")
-}`;

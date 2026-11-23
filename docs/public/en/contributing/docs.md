@@ -25,7 +25,7 @@ Link between pages with relative `.md` links (`[Testing](testing.md#run-on-a-pla
 
 ## The website
 
-The website is an Astro site in `website/`. It needs [Bun](https://bun.com) 1.4 or later:
+The website in `website/` is built by [nsgo-website](https://github.com/nsgo-dev/nsgo-website), an Astro integration, from the settings in `website/site.config.ts`. It needs [Bun](https://bun.com) 1.4 or later:
 
 ```sh
 cd website

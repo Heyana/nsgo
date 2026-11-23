@@ -3,23 +3,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run gallery && bun run live && astro dev",
-    "build": "bun run gallery && bun run live && astro check && astro build && pagefind --site dist",
+    "dev": "bun run gallery && bun run live && astro dev --ignore-lock",
+    "build": "bun run gallery && bun run live && astro check && astro build",
     "preview": "astro preview",
     "gallery": "bun scripts/build-gallery.mjs",
     "live": "bun scripts/build-live.mjs",
     "typecheck": "astro check",
     "screenshots": "bun scripts/screenshots.mjs",
-    "share-cards": "bun scripts/share-cards.mjs"
+    "share-cards": "nsgo-website-share-cards"
   },
   "dependencies": {
     "@astrojs/markdown-satteri": "^0.4.8",
-    "astro": "^7.4.10",
-    "mdast-util-from-markdown": "^2.1.0"
+    "astro": "^7.4.13",
+    "mdast-util-from-markdown": "^2.1.0",
+    "nsgo-website": "github:nsgo-dev/nsgo-website"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",
-    "pagefind": "^1.6.0",
     "typescript": "^6.0.3"
   }
 }

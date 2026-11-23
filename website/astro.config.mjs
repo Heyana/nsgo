@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { defineConfig } from 'astro/config';
 import { satteri } from '@astrojs/markdown-satteri';
+import nsgoWebsite from 'nsgo-website';
+import site from './site.config.ts';
 import { docLinks } from './src/lib/doc-links.mjs';
 import { livePreviews } from './src/lib/live.mjs';
 
@@ -27,19 +29,16 @@ const publicIndexes = {
   },
 };
 
-// The site is deployed at the root of nsgo.dev on GitHub Pages. Every
-// page is static; English is at the base and Chinese under zh/. The docs
-// are the repository's docs/public/, whose marked code blocks run above
-// themselves.
+// The site is deployed at the root of nsgo.dev on GitHub Pages and built by
+// nsgo-website from site.config.ts: English at the base and Chinese under
+// zh/. The docs are the repository's docs/public/, whose relative .md links
+// become the site's and whose marked code blocks run above themselves.
 export default defineConfig({
   site: 'https://nsgo.dev',
   base,
-  trailingSlash: 'always',
-  devToolbar: { enabled: false },
   vite: { plugins: [publicIndexes] },
   markdown: {
-    // Shiki's CSS-variables theme lets the site's tokens color code.
-    shikiConfig: { theme: 'css-variables' },
     processor: satteri({ mdastPlugins: [docLinks({ base }), livePreviews({ base })] }),
   },
+  integrations: [nsgoWebsite(site)],
 });

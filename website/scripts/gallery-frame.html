@@ -491,16 +491,16 @@
       }
     </style>
     <script>
-      // The theme comes from the URL, otherwise from the site's stored preference (src/scripts/theme.ts): light, dark or the system's, light when there is none, as the loader's does, so the page and the app never disagree before the app starts.
+      // The theme comes from the URL, otherwise from the site's stored preference (Starlight's starlight-theme): light, dark or, when there is none, the system's, as the loader's does, so the page and the app never disagree before the app starts.
       (function () {
         var params = new URLSearchParams(location.search);
         var theme = params.get('theme');
         if (theme !== 'light' && theme !== 'dark') {
           var stored = null;
           try {
-            stored = localStorage.getItem('nsgo-theme');
+            stored = localStorage.getItem('starlight-theme');
           } catch (error) {}
-          var dark = stored === 'dark' || (stored === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          var dark = stored === 'dark' || (stored !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
           theme = dark ? 'dark' : 'light';
         }
         document.documentElement.dataset.theme = theme;
@@ -647,16 +647,16 @@
           return root.dataset.theme === 'dark' ? 'dark' : 'light';
         }
 
-        // preference is the theme the page follows: the URL's, otherwise the site's stored light, dark or system, light when there is none.
+        // preference is the theme the page follows: the URL's, otherwise the site's stored light or dark, the system's when there is none.
         function preference() {
           var value = params.get('theme');
           if (value === 'light' || value === 'dark') return value;
           try {
-            value = localStorage.getItem('nsgo-theme');
+            value = localStorage.getItem('starlight-theme');
           } catch (error) {
             value = null;
           }
-          return value === 'dark' || value === 'system' ? value : 'light';
+          return value === 'dark' || value === 'light' ? value : 'system';
         }
 
         // setTheme shows the theme and tells the running app, which follows without a reload.
@@ -787,7 +787,7 @@
         themeButton.addEventListener('click', function () {
           var next = theme() === 'dark' ? 'light' : 'dark';
           try {
-            localStorage.setItem('nsgo-theme', next);
+            localStorage.setItem('starlight-theme', next);
           } catch (error) {}
           if (params.has('theme')) {
             params.set('theme', next);

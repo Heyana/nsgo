@@ -39,21 +39,33 @@ export function programId(code) {
   return createHash('sha256').update(code).digest('hex').slice(0, 12);
 }
 
-// livePreviews puts an empty box before each marked block, which the
-// docs' pages mount the block's app in (src/scripts/live.ts). A Sätteri
-// mdast plugin.
+// The boxes' words while their app loads and when it fails, by the page's
+// language.
+const status = {
+  en: { loading: 'Loading the preview…', failed: 'The preview could not start.' },
+  zh: { loading: '正在加载预览…', failed: '预览无法启动。' },
+};
+
+// livePreviews puts an empty box before each marked block, which
+// public/live/boxes.js, built from src/scripts/live.ts with the app, mounts
+// the block's app in; the box loads that script, which runs once a page
+// however many boxes load it. A Sätteri mdast plugin.
 export function livePreviews({ base }) {
-  return () => ({
-    name: 'nsgo-live-previews',
-    code(node, ctx) {
-      if (node.lang !== 'go') return;
-      const live = parseLive(node.meta);
-      if (!live) return;
-      const param = live.kind === 'preview' ? `data-demo="${live.demo}"` : `data-program="${programId(node.value)}"`;
-      ctx.insertBefore(node, {
-        type: 'html',
-        value: `<div class="live live--${live.kind}" data-live="${base}live/" ${param} style="--live-height: ${live.height}px"></div>`,
-      });
-    },
-  });
+  return (context) => {
+    const file = context.fileURL?.pathname ?? '';
+    const words = status[file.includes('/docs/public/zh/') ? 'zh' : 'en'];
+    return {
+      name: 'nsgo-live-previews',
+      code(node, ctx) {
+        if (node.lang !== 'go') return;
+        const live = parseLive(node.meta);
+        if (!live) return;
+        const param = live.kind === 'preview' ? `data-demo="${live.demo}"` : `data-program="${programId(node.value)}"`;
+        ctx.insertBefore(node, {
+          type: 'html',
+          value: `<div class="live live--${live.kind}" data-live="${base}live/" ${param} data-loading="${words.loading}" data-failed="${words.failed}" style="--live-height: ${live.height}px"></div><script type="module" src="${base}live/boxes.js"></script>`,
+        });
+      },
+    };
+  };
 }

@@ -1,7 +1,11 @@
 ---
-import Icon from '../../components/Icon.astro';
-import { copies } from '../../copy';
-import Layout from '../../layouts/Layout.astro';
+// The Benchmarks page, in English at benchmarks/ and in Chinese at
+// zh/benchmarks/: benchmark/results/ as bar charts, a table of where each
+// framework runs, and how it is all measured.
+import { ActionButton, Page } from 'nsgo-website/components';
+import 'nsgo-website/styles/home.css';
+import Icon from './Icon.astro';
+import { benchmarkCopies } from '../lib/benchmark-copy';
 import {
   caseIds,
   desktops,
@@ -16,14 +20,15 @@ import {
   type FrameworkId,
   type Measure,
   type Results,
-} from '../../lib/benchmarks';
-import { langOf, langPaths, links } from '../../site';
-import '../../styles/benchmarks.css';
+} from '../lib/benchmarks';
+import '../styles/benchmarks.css';
 
-export const getStaticPaths = () => langPaths('benchmarks');
-
-const lang = langOf(Astro.params.lang);
-const copy = copies[lang].benchmarks;
+interface Props {
+  lang: 'en' | 'zh';
+}
+const { lang } = Astro.props;
+const copy = benchmarkCopies[lang];
+const repo = 'https://github.com/nsgo-dev/nsgo';
 const first = desktops.find((d) => results[d.id])?.id ?? desktops[0].id;
 
 /** A chart: a bar a framework, and its value; bars of two parts stack. */
@@ -97,7 +102,8 @@ const date = (iso: string) =>
   new Date(iso).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 ---
 
-<Layout lang={lang} page="benchmarks" path="benchmarks/" title={copy.title} description={copy.description}>
+<Page lang={lang} title={copy.title} description={copy.description}>
+<div class="bench">
   <section class="bench-hero">
     <div class="container">
       <h1>{copy.heading}</h1>
@@ -252,19 +258,14 @@ const date = (iso: string) =>
           <p>{copy.fair.body}</p>
         </div>
         <div class="bench-fair__actions">
-          <a class="btn btn--secondary" href={links.benchmark} target="_blank" rel="noopener noreferrer">
-            {copy.method.source}
-            <Icon name="github" size={14} />
-          </a>
-          <a class="btn btn--primary" href={links.issues} target="_blank" rel="noopener noreferrer">
-            {copy.fair.action}
-            <Icon name="arrow" size={14} />
-          </a>
+          <ActionButton lang={lang} index={1} action={{ label: copy.method.source, href: `${repo}/tree/main/benchmark`, icon: 'github' }} />
+          <ActionButton lang={lang} index={0} action={{ label: copy.fair.action, href: `${repo}/issues` }} />
         </div>
       </aside>
     </div>
   </section>
-</Layout>
+</div>
+</Page>
 
 <script>
   // Every case's switch shows one desktop's results, all of them at once.

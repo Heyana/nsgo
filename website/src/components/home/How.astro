@@ -1,0 +1,59 @@
+---
+// How it works: the app, the engine and the platform, with updates flowing
+// between them.
+import { SectionHead } from 'nsgo-website/components';
+
+interface Props {
+  lang: string;
+}
+
+const how = {
+  en: {
+    eyebrow: 'How it works',
+    title: 'Go owns the app. The platform draws it.',
+    text: 'No embedded browser and no custom renderer sit between your app and the screen: each update crosses to the main thread once, as one batch of only what changed.',
+    nodes: [
+      { label: 'Your app', title: 'Go or TSX', items: ['Components', 'Signals', 'Styles and Tailwind'] },
+      { label: 'NSGo engine', title: 'In Go', items: ['Reactive graph', 'Flexbox and grid', 'Text preparation'] },
+      { label: 'The platform', title: 'Native views', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['renders', 'one batch per commit'],
+  },
+  zh: {
+    eyebrow: '工作原理',
+    title: 'Go 掌管应用，平台负责绘制',
+    text: '应用和屏幕之间没有内嵌浏览器，也没有自绘渲染器：每次更新只跨到主线程一次，一批只带变化的部分。',
+    nodes: [
+      { label: '你的应用', title: 'Go 或 TSX', items: ['组件', 'signal', '样式与 Tailwind'] },
+      { label: 'NSGo 引擎', title: '运行在 Go 中', items: ['响应式图', 'flexbox 与 grid', '文本准备'] },
+      { label: '平台', title: '原生视图', items: ['AppKit · UIKit', 'Android View', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['渲染', '每次提交一批'],
+  },
+}[Astro.props.lang === 'zh' ? 'zh' : 'en'];
+---
+
+<section class="section" id="how">
+  <div class="container">
+    <SectionHead eyebrow={how.eyebrow} title={how.title} text={how.text} />
+    <ol class="flow">
+      {how.nodes.map((node, index) => (
+        <>
+          <li class:list={['flow__node', { 'flow__node--engine': index === 1 }]}>
+            <span class="flow__label">{node.label}</span>
+            <strong>{node.title}</strong>
+            <ul>
+              {node.items.map((item) => <li>{item}</li>)}
+            </ul>
+          </li>
+          {index < how.links.length && (
+            <li class="flow__link" aria-hidden="true">
+              <span class="flow__track"><i></i><i></i><i></i></span>
+              <span class="flow__caption">{how.links[index]}</span>
+            </li>
+          )}
+        </>
+      ))}
+    </ol>
+  </div>
+</section>

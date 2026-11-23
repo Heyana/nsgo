@@ -2,8 +2,10 @@
 // demo or program of the docs' one app once it nears the window. The
 // app's wasm is fetched, decompressed and compiled once a page, and each
 // box runs a Go program of its own, in the site's appearance and the
-// page's language.
-import { currentTheme } from './theme';
+// page's language. scripts/build-live.mjs bundles it as public/live/boxes.js.
+
+/** The appearance Starlight shows, which its theme menu sets on the root. */
+const currentTheme = () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
 
 interface Config {
   exec: string;
@@ -55,7 +57,7 @@ function load(dir: string): Promise<App> {
   return app;
 }
 
-async function start(box: HTMLElement, locale: string, failed: string) {
+async function start(box: HTMLElement) {
   try {
     const app = await load(box.dataset.live!);
     const player = await app.mount(box, app.url, {
@@ -63,14 +65,14 @@ async function start(box: HTMLElement, locale: string, failed: string) {
       module: app.module,
       params: box.dataset.program ? { program: box.dataset.program } : { demo: box.dataset.demo },
       appearance: currentTheme(),
-      locale,
+      locale: document.documentElement.lang || 'en',
     });
     players.push(player);
     box.classList.add('is-running');
   } catch (error) {
     console.error(error);
     box.classList.add('is-failed');
-    box.dataset.status = failed;
+    box.dataset.status = box.dataset.failed ?? '';
   }
 }
 
@@ -80,27 +82,17 @@ const observer = new IntersectionObserver(
       if (!entry.isIntersecting) continue;
       const box = entry.target as HTMLElement;
       observer.unobserve(box);
-      const prose = box.closest<HTMLElement>('.prose');
-      void start(box, prose?.dataset.locale ?? 'en', prose?.dataset.liveFailed ?? '');
+      void start(box);
     }
   },
   { rootMargin: '400px 0px' },
 );
 
-// mountLive mounts the boxes in root as they near the window.
-export function mountLive(root: ParentNode) {
-  root.querySelectorAll<HTMLElement>('.live').forEach((box) => {
-    box.dataset.status = box.closest<HTMLElement>('.prose')?.dataset.liveLoading ?? '';
-    observer.observe(box);
-  });
-}
-
-// hasLive reports whether an app runs or starts on the page. A Go program
-// cannot be stopped, so a page with one is left by loading the next.
-export function hasLive() {
-  return apps.size > 0;
-}
-
-document.addEventListener('nsgo-theme', () => {
-  for (const player of players) player.setAppearance(currentTheme());
+document.querySelectorAll<HTMLElement>('.live').forEach((box) => {
+  box.dataset.status = box.dataset.loading ?? '';
+  observer.observe(box);
 });
+
+new MutationObserver(() => {
+  for (const player of players) player.setAppearance(currentTheme());
+}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });

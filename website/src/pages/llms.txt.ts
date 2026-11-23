@@ -1,7 +1,6 @@
 import type { APIRoute } from 'astro';
-import { llmsDocs, llmsIndex } from '../lib/llms';
+import { llmsIndex } from '../lib/llms';
 
-export const GET: APIRoute = async () => {
-  const { groups } = await llmsDocs();
-  return new Response(llmsIndex(groups), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+export const GET: APIRoute = () => {
+  return new Response(llmsIndex(), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 };

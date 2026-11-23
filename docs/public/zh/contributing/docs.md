@@ -25,7 +25,7 @@ order: 21
 
 ## 网站
 
-网站是 `website/` 中的 Astro 站点，需要 [Bun](https://bun.com) 1.4 或更新版本：
+`website/` 中的网站由 Astro 集成 [nsgo-website](https://github.com/nsgo-dev/nsgo-website) 按 `website/site.config.ts` 中的设置构建，需要 [Bun](https://bun.com) 1.4 或更新版本：
 
 ```sh
 cd website
