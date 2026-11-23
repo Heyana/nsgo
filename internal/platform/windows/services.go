@@ -27,6 +27,7 @@ var (
 	globalFree       = kernel32.NewProc("GlobalFree")
 	globalLock       = kernel32.NewProc("GlobalLock")
 	globalUnlock     = kernel32.NewProc("GlobalUnlock")
+	lstrlenW         = kernel32.NewProc("lstrlenW")
 	rtlMoveMemory    = kernel32.NewProc("RtlMoveMemory")
 )
 
