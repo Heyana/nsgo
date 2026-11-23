@@ -54,6 +54,39 @@ func TestJavaAudioPhasesMatchDriver(t *testing.T) {
 	}
 }
 
+// TestJavaAudioTakesEveryCommandGoSends holds Audio.command to the batch Go writes: each driver.AudioCommand that mount does not answer itself (withoutAudioLatencyReads) has a constant of the same number and a case, as the runtime drops a whole batch over an audio command it does not know.
+func TestJavaAudioTakesEveryCommandGoSends(t *testing.T) {
+	testhost.RequireSource(t)
+	data, err := os.ReadFile("java/dev/oneo/nsgo/Audio.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	_, body, ok := strings.Cut(source, "void command(")
+	if !ok {
+		t.Fatal("Audio.java has no command method")
+	}
+	body, _, _ = strings.Cut(body, "default:")
+	for c := driver.AudioCommand(0); c.String() != "audio-command"; c++ {
+		b := &driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemAudio, Count: 1, Audio: &driver.AudioRequest{Command: c}}}}
+		if len(withoutAudioLatencyReads(b, func(driver.Event) {}).Items) == 0 {
+			continue
+		}
+		name := strings.ToUpper(strings.ReplaceAll(c.String(), "-", "_"))
+		match := regexp.MustCompile(`\b` + name + ` = (\d+)`).FindStringSubmatch(source)
+		if match == nil {
+			t.Errorf("Audio.java has no %s command (driver %d), which Go sends", name, c)
+			continue
+		}
+		if got, _ := strconv.Atoi(match[1]); driver.AudioCommand(got) != c {
+			t.Errorf("Audio.java %s = %d, driver = %d", name, got, c)
+		}
+		if !regexp.MustCompile(`\bcase ` + name + `\b`).MatchString(body) {
+			t.Errorf("Audio.command has no case for %s, which Go sends", name)
+		}
+	}
+}
+
 func runJavaEngineCheck(t *testing.T, check string) {
 	t.Helper()
 	javac, java := androidJDK(t)
