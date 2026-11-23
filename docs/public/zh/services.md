@@ -644,9 +644,9 @@ cx.BiometricAvailability(func(kind core.BiometricKind) {
 
 ## 界面方向
 
-在全屏播放器的作用域内调用 `cx.RequestOrientation(core.OrientationLandscape)`，可请求 iOS、Android 或浏览器将界面切换到横屏。仍存活的作用域中，最新的请求生效。作用域结束后，恢复上一个请求，或者回到应用原有的方向策略。
+在全屏播放器的作用域内调用 `cx.RequestOrientation(core.OrientationLandscape)`，可请求 iOS、Android、HarmonyOS 或浏览器将界面切换到横屏。仍存活的作用域中，最新的请求生效。作用域结束后，恢复上一个请求，或者回到应用原有的方向策略。
 
-在 iOS 16 及更新版本上，请求可立即旋转界面。在较早的 iOS 版本上，请求限制下次系统旋转可选的方向。已显示的模态视图的 `IOS.SupportedOrientations` 优先。Android 无法表达某些横竖屏的组合，此时会固定到其中一个方向，优先保留当前方向。在大屏幕或多窗口模式下，Android 可能忽略方向请求。
+在 iOS 16 及更新版本上，请求可立即旋转界面。在较早的 iOS 版本上，请求限制下次系统旋转可选的方向。已显示的模态视图的 `IOS.SupportedOrientations` 优先。Android 和 HarmonyOS 无法表达某些横竖屏的组合，此时会固定到其中一个方向，优先保留当前方向。在大屏幕或多窗口模式下，Android 可能忽略方向请求。
 
 在 Web 应用中，从打开播放器作用域的按压回调调用 `desktop.ToggleFullScreen(cx)`。浏览器在这次按压后进入全屏，NSGo 随后应用播放器的方向请求。离开全屏会释放方向锁。浏览器控制台会报告不支持和被拒绝的操作。
 

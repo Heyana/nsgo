@@ -688,9 +688,9 @@ Register `OnPurchaseUpdate` as the app starts: updates that come before any hand
 
 ## Interface orientation
 
-Call `cx.RequestOrientation(core.OrientationLandscape)` in a full-screen player's scope to ask iOS, Android or the browser for landscape. The latest request whose scope is alive takes effect. When that scope ends, the previous request resumes or the app returns to its usual orientation policy.
+Call `cx.RequestOrientation(core.OrientationLandscape)` in a full-screen player's scope to ask iOS, Android, HarmonyOS or the browser for landscape. The latest request whose scope is alive takes effect. When that scope ends, the previous request resumes or the app returns to its usual orientation policy.
 
-On iOS 16 and later the request can rotate the interface immediately. On older iOS versions it restricts the next system rotation. A presented modal's `IOS.SupportedOrientations` takes precedence. On Android, a mix of portrait and landscape directions that the system cannot represent is reduced to one allowed direction, preferring the one already shown. Android may disregard orientation requests in large-screen or multi-window modes.
+On iOS 16 and later the request can rotate the interface immediately. On older iOS versions it restricts the next system rotation. A presented modal's `IOS.SupportedOrientations` takes precedence. On Android and HarmonyOS, a mix of portrait and landscape directions that the system cannot represent is reduced to one allowed direction, preferring the one already shown. Android may disregard orientation requests in large-screen or multi-window modes.
 
 In a web app, call `desktop.ToggleFullScreen(cx)` from a press handler that opens the player's scope. The browser enters full screen from the press, then NSGo applies the player's orientation request. Leaving full screen releases the lock. The browser console reports unsupported operations and refusals.
 

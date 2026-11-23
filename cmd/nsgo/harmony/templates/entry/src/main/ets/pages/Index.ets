@@ -485,6 +485,9 @@ class Tree {
   sbImmersive: boolean = false;
   // sbSent is set by a batch that carries the status bar, so the page makes a failed system bar request again for it.
   sbSent: boolean = false;
+  // orientation is the driver.Orientation mask the app asks for, zero for its usual policy, and orientationSent is set by a batch that carries it.
+  orientation: number = 0;
+  orientationSent: boolean = false;
   // appMode is the driver.Appearance the app shows in.
   appMode: number = 0;
   // layoutMs and layoutCurve are this batch's layout animation, which a
@@ -628,6 +631,9 @@ class Tree {
         this.sbHidden = o[3] as boolean;
         this.sbImmersive = o[4] as boolean;
         this.sbSent = true;
+      } else if (code === 'or') {
+        this.orientation = o[2] as number;
+        this.orientationSent = true;
       } else if (code === 'la') {
         this.layoutMs = o[2] as number;
         this.layoutCurve = o[3] as number;
@@ -1885,6 +1891,8 @@ struct Index {
       const w: window.Window = await window.getLastWindow(ctx);
       this.win = w;
       this.readEnv();
+      // A request that arrived before the window applies now.
+      this.applyOrientation();
       w.on('avoidAreaChange', () => {
         this.readEnv();
       });
@@ -2004,6 +2012,7 @@ struct Index {
     this.renderer.apply(ops);
     this.applyStatusBar();
     this.applyAppearance();
+    this.applyOrientation();
     // readEnv counts the bars' areas only outside immersive mode, so the safe area is read again when it starts or ends.
     if (this.tree.sbImmersive !== immersive) {
       setTimeout(() => { this.readEnv(); }, 0);
@@ -2106,6 +2115,38 @@ struct Index {
     } catch (e) {
       console.error('NSGO harmony: status bar: ' + e);
     }
+  }
+
+  // applyOrientation asks the window for the orientations the engine's latest request allows, as Android's launcher activity does: both directions of an axis or all four rotate with the device, all four only while the rotation lock is off, and a set that names no axis whole keeps the direction shown if it may, else takes one in the same axis. Zero returns to the usual policy. The window's size change brings the new size and safe area to the engine.
+  applyOrientation(): void {
+    const w = this.win;
+    if (w === undefined || !this.tree.orientationSent) {
+      return;
+    }
+    this.tree.orientationSent = false;
+    const mask = this.tree.orientation;
+    const portrait = 1, upsideDown = 2, left = 4, right = 8;
+    const bothPortrait = portrait | upsideDown, landscape = left | right;
+    let o = window.Orientation.UNSPECIFIED;
+    if (mask === bothPortrait) {
+      o = window.Orientation.AUTO_ROTATION_PORTRAIT;
+    } else if (mask === landscape) {
+      o = window.Orientation.AUTO_ROTATION_LANDSCAPE;
+    } else if (mask === (bothPortrait | landscape)) {
+      o = window.Orientation.AUTO_ROTATION_RESTRICTED;
+    } else if (mask !== 0) {
+      // display.Rotation counts clockwise quarter turns: Orientation.LANDSCAPE, which puts the device's top on the left as Android's SCREEN_ORIENTATION_LANDSCAPE does, shows as the third and LANDSCAPE_INVERTED as the first.
+      const rotation = display.getDefaultDisplaySync().rotation;
+      const current = [portrait, right, upsideDown, left][rotation] ?? portrait;
+      const sameAxis = mask & ((current & bothPortrait) !== 0 ? bothPortrait : landscape);
+      const allowed = (current & mask) !== 0 ? current : (sameAxis !== 0 ? sameAxis : mask);
+      const chosen = allowed & -allowed;
+      o = chosen === portrait ? window.Orientation.PORTRAIT : (chosen === upsideDown ? window.Orientation.PORTRAIT_INVERTED :
+        (chosen === left ? window.Orientation.LANDSCAPE : window.Orientation.LANDSCAPE_INVERTED));
+    }
+    w.setPreferredOrientation(o).catch((e: Error) => {
+      console.error('NSGO harmony: orientation failed: ' + e.message);
+    });
   }
 
   // frame hands the engine a display frame with when it shows, in nanoseconds on displaySync's clock.
