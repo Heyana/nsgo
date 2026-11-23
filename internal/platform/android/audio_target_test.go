@@ -331,3 +331,38 @@ looped:
 	}
 	step(p.Close)
 }
+
+// TestNativeAndroidOutputLatency reads the output latency, which Android cannot report: the answer comes at once as unknown, and the batch that asked still reaches the runtime, which keeps playing sounds.
+func TestNativeAndroidOutputLatency(t *testing.T) {
+	app, cx := startAudioTest(t)
+	type answer struct {
+		latency time.Duration
+		known   bool
+	}
+	answers := make(chan answer, 1)
+	app.Post(func() {
+		cx.AudioOutputLatency(func(latency time.Duration, known bool) { answers <- answer{latency, known} })
+	})
+	app.Settle()
+	select {
+	case a := <-answers:
+		if a.latency != 0 || a.known {
+			t.Fatalf("output latency = %v, %v; want 0, false", a.latency, a.known)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the output latency was never answered")
+	}
+	loaded := make(chan error, 1)
+	app.Post(func() {
+		cx.LoadSound(core.AudioSource{Data: silentAudioWAV(200 * time.Millisecond)}, func(sound *core.Sound, err error) {
+			if sound != nil {
+				sound.Close()
+			}
+			loaded <- err
+		})
+	})
+	app.Settle()
+	if err := awaitAudio(t, loaded); err != nil {
+		t.Fatal(err)
+	}
+}
