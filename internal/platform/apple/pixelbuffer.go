@@ -12,7 +12,7 @@ const pixelBGRA = uint32(0x42475241) // kCVPixelFormatType_32BGRA
 
 var (
 	pixelBuffersLoaded  sync.Once
-	pixelFormatKey      uintptr
+	cvPixelFormatKey    uintptr
 	cvPixelBufferLock   func(uintptr, uint64) int32
 	cvPixelBufferUnlock func(uintptr, uint64) int32
 	cvPixelBufferBase   func(uintptr) uintptr
@@ -24,7 +24,7 @@ var (
 
 func loadPixelBuffers() {
 	cv := load("/System/Library/Frameworks/CoreVideo.framework/CoreVideo")
-	pixelFormatKey = constant(cv, "kCVPixelBufferPixelFormatTypeKey")
+	cvPixelFormatKey = constant(cv, "kCVPixelBufferPixelFormatTypeKey")
 	reg := purego.RegisterLibFunc
 	reg(&cvPixelBufferLock, cv, "CVPixelBufferLockBaseAddress")
 	reg(&cvPixelBufferUnlock, cv, "CVPixelBufferUnlockBaseAddress")

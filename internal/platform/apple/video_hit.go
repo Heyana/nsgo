@@ -78,7 +78,7 @@ func (v *Video) makeHitTestOutput() {
 	}
 	pixelBuffersLoaded.Do(loadPixelBuffers)
 	format := objc.ID(Class("NSNumber")).Send(sel("numberWithUnsignedInt:"), pixelBGRA)
-	attributes := objc.ID(Class("NSDictionary")).Send(sel("dictionaryWithObject:forKey:"), format, objc.ID(pixelFormatKey))
+	attributes := objc.ID(Class("NSDictionary")).Send(sel("dictionaryWithObject:forKey:"), format, objc.ID(cvPixelFormatKey))
 	output := objc.ID(Class("AVPlayerItemVideoOutput")).Send(sel("alloc")).Send(sel("initWithPixelBufferAttributes:"), attributes)
 	if output != 0 {
 		item.Send(sel("addOutput:"), output)
