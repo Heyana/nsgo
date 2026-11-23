@@ -11,8 +11,9 @@ import (
 
 // TagInput is a field of bordered chips that edits a list of tags: each
 // with a remove button, then the text being typed, which Return, a comma
-// or leaving the field adds as a tag. Backspace in the empty field removes
-// the last tag. Tags are trimmed, and empty ones and repeats dropped.
+// or leaving the field adds as a tag, keeping the focus in the field on
+// Return to type the next. Backspace in the empty field removes the last
+// tag. Tags are trimmed, and empty ones and repeats dropped.
 type TagInput struct {
 	Tags     func() []string
 	OnChange func(tags []string)
@@ -103,7 +104,8 @@ func (in TagInput) Render(cx *core.Scope) core.Node {
 			}
 			draft.Set(s)
 		},
-		OnSubmit: func(s string) { draft.Set(add(s)) },
+		SubmitBehavior: core.SubmitBehaviorSubmit,
+		OnSubmit:       func(s string) { draft.Set(add(s)) },
 		OnKeyPress: func(key string) {
 			if key == "Backspace" && draft.GetUntracked() == "" {
 				if all := core.Untracked(cx, tags); len(all) > 0 {

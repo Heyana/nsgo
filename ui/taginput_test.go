@@ -7,7 +7,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// TestTagInput adds tags on Return and at commas, drops repeats, removes
+// TestTagInput adds tags on Return, keeping the focus, and at commas, drops repeats, removes
 // one from its button and the last with Backspace in the empty field.
 func TestTagInput(t *testing.T) {
 	each(t, func(t *testing.T, e core.Environment) {
@@ -26,6 +26,9 @@ func TestTagInput(t *testing.T) {
 		}
 		app.Type("label:Tags", "go")
 		app.Submit("label:Tags")
+		if !app.Find("label:Tags").Focused {
+			t.Fatal("the field lost the focus on Return")
+		}
 		app.Type("label:Tags", "ui, design, bad, docs")
 		if got := tags.Get(); !slices.Equal(got, []string{"design", "go", "ui"}) {
 			t.Fatalf("tags = %v, want design, go and ui", got)
