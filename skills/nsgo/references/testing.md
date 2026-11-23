@@ -77,7 +77,7 @@ Use `app.Window` and `nsgotest.WindowAction` constants such as `nsgotest.WindowS
 
 For a headless platform report no step provides, `app.Report` takes an owned `nsgotest.Event`; optional `nsgotest.TouchGeometry` supplies native hit targets and local positions. Reports copy their collections and geometry while retaining `Data` payload identity.
 
-Headless tests can press a physical position with `KeyCode("KeyW")` or hold and release it with `KeyCodeDown` and `KeyCodeUp`. Override `core.Environment.KeyCodeNames` to exercise a layout. Unspecified positions use the US layout.
+`KeyCode("KeyW")` presses a physical position and `KeyCodeDown` / `KeyCodeUp` hold and release it. Headless, override `core.Environment.KeyCodeNames` to exercise a layout (unspecified positions use the US layout); under `-target` on macOS, Windows, Linux and the web the platform's current layout names the key, and iOS, Android and HarmonyOS report the US layout's key. watchOS and mini programs skip them.
 
 For native headless canvas pixels on macOS, use `nsgotest.Render` on a recorded `Drawing`. Pass `nsgotest.TextEngine(nsgotest.PlatformTextEngine())` to match CoreText metrics, and call `nsgotest.RegisterFont` before starting the app. Rendering waits for images, returns errors and requires resolved view paints and animation slots; other targets return `nsgotest.ErrNoPlayer`. [Windowless drawings](https://nsgo.dev/docs/testing.md#drawings-without-a-window)
 

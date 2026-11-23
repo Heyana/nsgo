@@ -78,7 +78,7 @@ func TestMain(m *testing.M) {
 
 `KeyDown` 和 `KeyUp` 也可驱动 Android 的原生硬件按键路径及 HarmonyOS 的 Go 按键桥接。在 Android 和显式聚焦的 iPhone/iPad 视图中，`OnKeyDown` 先于绑定及原生激活运行；消费了按下的键仍会收到 `OnKeyUp`，焦点移动后释放仍送达原视图，`core.KeysDown` 跟踪原生编辑器之外的按住按键。Android 异步等待消费结果，UI 无需阻塞；窗口失焦、销毁或两秒内未收到答案时清空待处理按键，不再重放其原生动作。HarmonyOS 跟踪已报告的按键并可阻止 Go 绑定，但宿主尚无普通视图的原生焦点，也不能在异步桥接返回后阻止 ArkUI 已执行的动作。
 
-`app.KeyCode("KeyW")` 按一次物理键位，`KeyCodeDown` 和 `KeyCodeUp` 分别按住和释放。在无界面测试中，设置 `core.Environment.KeyCodeNames`（例如 `map[string]string{"KeyW": "z"}`）可以测试其他布局；未指定的键位使用美式布局。使用 `-target` 时，平台自己的按键事件携带该键位（例如扫描码或键码）以及美式布局在该位置的按键，因此右侧修饰键和小键盘数字能与左侧修饰键和数字行区分开。无法按物理键位的目标（例如 watchOS）会跳过测试。
+`app.KeyCode("KeyW")` 按一次物理键位，`KeyCodeDown` 和 `KeyCodeUp` 分别按住和释放。在无界面测试中，设置 `core.Environment.KeyCodeNames`（例如 `map[string]string{"KeyW": "z"}`）可以测试其他布局；未指定的键位使用美式布局。使用 `-target` 时，平台自己的按键事件携带该键位（例如扫描码或键码），因此右侧修饰键和小键盘数字能与左侧修饰键和数字行区分开。在 macOS、Windows、Linux 和 Web 上，按键名称遵循平台当前的键盘布局，因此 AZERTY 布局下 `KeyW` 为 `z`；iOS、Android 和 HarmonyOS 报告美式布局在该位置的按键。同时被 `KeyDown` 和 `KeyCodeDown` 按住的修饰键，要等两者都释放后才会抬起。无法按物理键位的目标（例如 watchOS）会跳过测试。
 
 以 `-target` 运行时，`app.Select(selector, start, end)` 移动原生文本框的选区。偏移量以 UTF-16 单元计，超出文本的部分会截断，颠倒的端点会排序。iOS 和 Android 使用原生文本输入 API；HarmonyOS 使用文本框控制器，并等待原生选区回调。`OnSelectionChange` 正常执行；没有该回调时，测试模型也读取实际选区。macOS、Windows、Linux 和 Web 使用全选和方向键，消费这些键的绑定或应用菜单项会把它们拦下。随后输入和原生剪贴板编辑作用于该选区；HarmonyOS 的测试输入替换原生回调报告的范围，但其测试宿主还不会驱动原生剪贴板按键。
 

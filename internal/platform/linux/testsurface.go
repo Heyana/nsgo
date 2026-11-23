@@ -29,8 +29,18 @@ type testSurface struct {
 	clicks testhost.Clicks
 	// field is the field a press last focused: GTK reports the focus only while the window is active, which a test cannot ask.
 	field *view
-	// mods are the state bits of the modifier keys KeyDown holds, which every key after them carries until their KeyUp.
+	// mods are the state bits of the modifier keys KeyDown and KeyCodeDown hold, which every key after them carries until their up (holdMods).
 	mods uint32
+	// heldNames are the keyvals of the modifier keys KeyDown holds by name.
+	heldNames map[uint32]bool
+	// heldCodes are the physical positions KeyCodeDown holds, with the keyval and name each went down with.
+	heldCodes map[string]heldPosition
+}
+
+// heldPosition is a position KeyCodeDown holds: the keyval and key name it went down with, which its up carries again.
+type heldPosition struct {
+	keyval uint32
+	name   string
 }
 
 // focused is the field with the keyboard.
@@ -423,8 +433,12 @@ func (t *testSurface) KeyDown(key string) error {
 	}
 	// GDK's state at a modifier's press holds only the modifiers before it.
 	err = t.key(name, keyval, t.mods, true, false)
-	if m, ok := modifierKeyvals[keyval]; ok {
-		t.mods |= m.bit
+	if _, ok := modifierKeyvals[keyval]; ok {
+		if t.heldNames == nil {
+			t.heldNames = map[uint32]bool{}
+		}
+		t.heldNames[keyval] = true
+		t.holdMods()
 	}
 	return err
 }
@@ -437,9 +451,8 @@ func (t *testSurface) KeyUp(key string) error {
 	}
 	// GDK's state at a modifier's release still holds it.
 	state := t.mods
-	if m, ok := modifierKeyvals[keyval]; ok {
-		t.mods &^= m.bit
-	}
+	delete(t.heldNames, keyval)
+	t.holdMods()
 	return t.key(name, keyval, state, false, true)
 }
 
@@ -448,30 +461,47 @@ func (t *testSurface) key(name string, keyval, state uint32, press, release bool
 	return t.keyAt(name, keyval, keyval|1<<31, state, press, release)
 }
 
-// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held, as KeyDown holds a key, with the position's XKB keycode.
+// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held, as KeyDown holds a key, with the position's XKB keycode and the keyval the active keyboard layout gives it, as a real keyboard's key carries, so the window names it as the layout does; a modifier's position joins every key after it until its KeyCodeUp.
 func (t *testSurface) KeyCodeDown(code, name string) error {
-	keyval, keycode, err := positionKey(code, name)
+	keyval, keycode, name, err := t.positionKey(code, name)
 	if err != nil {
 		return err
 	}
-	err = t.keyAt(strings.ToLower(name), keyval, keycode, t.mods, true, false)
-	if m, ok := modifierKeyvals[keyval]; ok {
-		t.mods |= m.bit
+	// GDK's state at a modifier's press holds only the modifiers before it.
+	err = t.keyAt(name, keyval, keycode, t.mods, true, false)
+	if t.heldCodes == nil {
+		t.heldCodes = map[string]heldPosition{}
 	}
+	t.heldCodes[code] = heldPosition{keyval, name}
+	t.holdMods()
 	return err
 }
 
-// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
+// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up with the keyval it went down with.
 func (t *testSurface) KeyCodeUp(code, name string) error {
-	keyval, keycode, err := positionKey(code, name)
+	keyval, keycode, name, err := t.positionKey(code, name)
 	if err != nil {
 		return err
 	}
-	state := t.mods
-	if m, ok := modifierKeyvals[keyval]; ok {
-		t.mods &^= m.bit
+	if held, ok := t.heldCodes[code]; ok {
+		keyval, name = held.keyval, held.name
 	}
-	return t.keyAt(strings.ToLower(name), keyval, keycode, state, false, true)
+	delete(t.heldCodes, code)
+	// GDK's state at a modifier's release still holds it.
+	state := t.mods
+	t.holdMods()
+	return t.keyAt(name, keyval, keycode, state, false, true)
+}
+
+// holdMods sets mods from the modifier keys KeyDown and KeyCodeDown hold, so a modifier stays held while any key holds it, by name or by position.
+func (t *testSurface) holdMods() {
+	t.mods = 0
+	for keyval := range t.heldNames {
+		t.mods |= modifierKeyvals[keyval].bit
+	}
+	for _, held := range t.heldCodes {
+		t.mods |= modifierKeyvals[held.keyval].bit
+	}
 }
 
 // positionKeyvals are the keyvals of positions whose US key names another position's: the right-hand modifiers and the keypad's digits and point, which Num Lock types.
@@ -481,17 +511,24 @@ var positionKeyvals = map[string]uint32{
 	"Numpad5": gdkKP0 + 5, "Numpad6": gdkKP0 + 6, "Numpad7": gdkKP0 + 7, "Numpad8": gdkKP0 + 8, "Numpad9": gdkKP0 + 9,
 }
 
-// positionKey returns the keyval name, the US layout's key at the position code, types, or the position's own (positionKeyvals), and the position's XKB keycode.
-func positionKey(code, name string) (keyval, keycode uint32, err error) {
+// positionKey returns the keyval and key name for the position code, with its XKB keycode: the position's own keyval where its US key names another position's (positionKeyvals), else the one the active keyboard layout gives the keycode, else the one name, the US layout's key there, types.
+func (t *testSurface) positionKey(code, name string) (keyval, keycode uint32, _ string, err error) {
 	pc, ok := driver.KeyPositionCodes(code)
 	if !ok || pc.XKB == 0 {
-		return 0, 0, fmt.Errorf("an XKB keyboard has no %s key", code)
+		return 0, 0, "", fmt.Errorf("an XKB keyboard has no %s key", code)
 	}
+	keycode = uint32(pc.XKB)
 	if v, ok := positionKeyvals[code]; ok {
-		return v, uint32(pc.XKB), nil
+		return v, keycode, strings.ToLower(name), nil
+	}
+	t.onLoop(func() { keyval = t.w.layoutKeyval(keycode) })
+	if keyval != 0 {
+		if n := keyName(keyval, false); n != "" {
+			return keyval, keycode, n, nil
+		}
 	}
 	_, keyval, err = parseOneKey(name)
-	return keyval, uint32(pc.XKB), err
+	return keyval, keycode, strings.ToLower(name), err
 }
 
 // keyAt is key with the hardware keycode GTK reports, the identity its press and release share.

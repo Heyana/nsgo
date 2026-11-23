@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"syscall/js"
 	"time"
@@ -152,14 +153,26 @@ func (t *testSurface) KeyDown(key string) error {
 // KeyUp implements testhost.KeyHoldSurface.
 func (t *testSurface) KeyUp(key string) error { return t.do(map[string]any{"op": "keyUp", "key": key}) }
 
-// KeyCodeDown implements testhost.KeyCodeSurface: the browser's key event for name, the US layout's key at the physical position code, goes down with code as its KeyboardEvent.code, and stays held.
+// KeyCodeDown implements testhost.KeyCodeSurface: the browser's key event goes down with the physical position code as its KeyboardEvent.code, named as the browser's keyboard layout map names the key there, or else by name, the US layout's key there, and stays held.
 func (t *testSurface) KeyCodeDown(code, name string) error {
-	return t.do(map[string]any{"op": "keyCodeDown", "key": name, "position": code})
+	return t.do(map[string]any{"op": "keyCodeDown", "key": layoutKeyName(code, name), "position": code})
 }
 
 // KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
 func (t *testSurface) KeyCodeUp(code, name string) error {
-	return t.do(map[string]any{"op": "keyCodeUp", "key": name, "position": code})
+	return t.do(map[string]any{"op": "keyCodeUp", "key": layoutKeyName(code, name), "position": code})
+}
+
+// layoutKeyName names the key at a physical position as the browser's keyboard layout map does, which holds the keys that type, or else as name does.
+func layoutKeyName(code, name string) string {
+	if keyboard := js.Global().Get("navigator").Get("keyboard"); keyboard.Truthy() && keyboard.Get("getLayoutMap").Type() == js.TypeFunction {
+		if layout, err := await(keyboard.Call("getLayoutMap")); err == nil && layout.Truthy() {
+			if key := layout.Call("get", code); key.Type() == js.TypeString && key.String() != "" && key.String() != " " {
+				return strings.ToLower(key.String())
+			}
+		}
+	}
+	return name
 }
 
 // Compose and Commit go through the browser's input method path.

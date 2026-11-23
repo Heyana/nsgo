@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // webTestPage runs the test binary in the page: its arguments and
@@ -302,10 +303,10 @@ func runWebTest(ctx context.Context, b *cdp, base string, args, env []string, ou
 type webPage struct {
 	b       *cdp
 	session string
-	// heldMu guards held, the modifiers bitmask of the modifier keys the keyDown op holds, which every key event after it carries, down, the physical keys it holds, and buttons, the held mouse button bitmask.
+	// heldMu guards held, the modifiers bitmask of the modifier keys the keyDown op holds, which every key event after it carries, down, the physical keys it holds with the modifier bit of each, and buttons, the held mouse button bitmask.
 	heldMu  sync.Mutex
 	held    int
-	down    map[string]bool
+	down    map[string]int
 	buttons int
 }
 
@@ -614,10 +615,10 @@ func positionWebKey(code, name string) (k cdpKey, location int, _ string, _ erro
 func (p *webPage) holdDown(k cdpKey, location int, name string) error {
 	p.heldMu.Lock()
 	if p.down == nil {
-		p.down = map[string]bool{}
+		p.down = map[string]int{}
 	}
-	repeat := p.down[heldCode(k)]
-	p.down[heldCode(k)] = true
+	_, repeat := p.down[heldCode(k)]
+	p.down[heldCode(k)] = modifierBit(k.key)
 	p.held |= modifierBit(k.key)
 	mods := p.held
 	p.heldMu.Unlock()
@@ -639,12 +640,16 @@ func (p *webPage) keyUp(key string) error {
 // holdUp lets k, which holdDown held, come up, as keyUp does.
 func (p *webPage) holdUp(k cdpKey, location int, key string) error {
 	p.heldMu.Lock()
-	if !p.down[heldCode(k)] {
+	if _, held := p.down[heldCode(k)]; !held {
 		p.heldMu.Unlock()
 		return fmt.Errorf("%q is not held", key)
 	}
 	delete(p.down, heldCode(k))
-	p.held &^= modifierBit(k.key)
+	// A modifier stays held while its other key is, as KeyDown of its name and KeyCodeDown of its other side can hold both.
+	p.held = 0
+	for _, bit := range p.down {
+		p.held |= bit
+	}
 	mods := p.held
 	p.heldMu.Unlock()
 	return p.sendKeyUp(k, location, mods)
@@ -683,7 +688,7 @@ func parseWebKey(key string) (k cdpKey, name string, mods int, err error) {
 		}
 	}
 	k, ok := cdpKeys[name]
-	if !ok && len(name) == 1 {
+	if !ok && utf8.RuneCountInString(name) == 1 {
 		c := name[0]
 		switch {
 		case c >= 'a' && c <= 'z':

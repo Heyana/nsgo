@@ -56,33 +56,58 @@ func (s *surface) keyboardCodeNames() map[string]string {
 		return s.env.KeyCodeNames
 	}
 	s.keyLayoutID, s.keyLayoutType = key, typ
+	return layoutCodeNames(source, typ)
+}
+
+// layoutCodeNames names the physical keys of an input source's keyboard layout, of keyboard type typ, as keyName names them: a key of keyNames or a modifier by its name, and another by the character it types without modifiers.
+func layoutCodeNames(source uintptr, typ uint8) map[string]string {
 	names := map[string]string{}
-	if data := tis.name(source, api.property); data != 0 {
-		layout := api.bytes(data)
-		for code := range uint16(128) {
-			position := driver.AppKitKeyCode(code)
-			if position == "" {
-				continue
-			}
-			if name := keyNames[code]; name != "" {
-				names[position] = name
-				continue
-			}
-			if modifier, ok := modifierKeys[code]; ok {
-				names[position] = modifier.name
-				continue
-			}
-			const display, noDeadKeys = 3, 1
-			var dead uint32
-			var chars [8]uint16
-			var n int
-			if api.translate(layout, code, display, 0, uint32(typ), noDeadKeys, &dead, len(chars), &n, &chars[0]) == 0 && n > 0 && n <= len(chars) {
-				runes := utf16.Decode(chars[:n])
-				if unicode.IsPrint(runes[0]) {
-					names[position] = strings.ToLower(string(runes))
-				}
+	for code := range uint16(128) {
+		position := driver.AppKitKeyCode(code)
+		if position == "" {
+			continue
+		}
+		if name := keyNames[code]; name != "" {
+			names[position] = name
+			continue
+		}
+		if modifier, ok := modifierKeys[code]; ok {
+			names[position] = modifier.name
+			continue
+		}
+		if chars := layoutChars(source, typ, code); chars != "" {
+			if runes := []rune(chars); unicode.IsPrint(runes[0]) {
+				names[position] = strings.ToLower(chars)
 			}
 		}
 	}
 	return names
+}
+
+// layoutChars returns what the key with AppKit key code code types without modifiers in an input source's keyboard layout, of keyboard type typ, a dead key's own character included, or "" for none.
+func layoutChars(source uintptr, typ uint8, code uint16) string {
+	api := keyboardLayout()
+	data := inputSources().name(source, api.property)
+	if data == 0 {
+		return ""
+	}
+	const display, noDeadKeys = 3, 1
+	var dead uint32
+	var chars [8]uint16
+	var n int
+	if api.translate(api.bytes(data), code, display, 0, uint32(typ), noDeadKeys, &dead, len(chars), &n, &chars[0]) != 0 || n <= 0 || n > len(chars) {
+		return ""
+	}
+	return string(utf16.Decode(chars[:n]))
+}
+
+// currentLayoutChars returns what the key with AppKit key code code types without modifiers in the current keyboard layout, as a real keyboard's key there does.
+func currentLayoutChars(code uint16) string {
+	api := keyboardLayout()
+	source := api.current()
+	if source == 0 {
+		return ""
+	}
+	defer apple.Release(source)
+	return layoutChars(source, api.typeOf(), code)
 }

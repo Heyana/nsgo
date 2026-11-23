@@ -879,7 +879,7 @@ func (t *target) hold(key string, down bool) {
 	t.check(s.KeyDown(key))
 }
 
-// releaseHeld lets every key KeyDown and mouse button MouseDown still holds come up as the test ends, other keys before modifiers, so neither the platform nor, on the web, the page keeps one held into the next app the test process opens, such as a later subtest's. A key or button a window that has closed held is gone with it; such an up's error is ignored.
+// releaseHeld lets every key KeyDown or KeyCodeDown and mouse button MouseDown still holds come up as the test ends, every other key, by name or by position, before any modifier, so neither the platform nor, on the web, the page keeps one held into the next app the test process opens, such as a later subtest's, and each key comes up with the modifiers it went down with. A key or button a window that has closed held is gone with it; such an up's error is ignored.
 func (t *target) releaseHeld() {
 	if s, ok := t.surface.(testhost.MouseButtonSurface); ok {
 		for b := driver.MouseButtonLeft; b <= driver.MouseButtonForward; b++ {
@@ -889,31 +889,31 @@ func (t *target) releaseHeld() {
 		}
 	}
 	t.heldButtons = nil
-	if s, ok := t.surface.(testhost.KeyHoldSurface); ok {
-		names := slices.Sorted(maps.Keys(t.held))
-		for _, modifiers := range []bool{false, true} {
+	names := slices.Sorted(maps.Keys(t.held))
+	codes := slices.Sorted(maps.Keys(t.heldCodes))
+	byName, _ := t.surface.(testhost.KeyHoldSurface)
+	byCode, _ := t.surface.(testhost.KeyCodeSurface)
+	for _, modifiers := range []bool{false, true} {
+		if byName != nil {
 			for _, name := range names {
 				if modifierKey(name) == modifiers {
-					_ = s.KeyUp(t.held[name])
+					_ = byName.KeyUp(t.held[name])
+				}
+			}
+		}
+		if byCode != nil {
+			for _, code := range codes {
+				if modifierKey(t.heldCodes[code]) == modifiers {
+					_ = byCode.KeyCodeUp(code, t.heldCodes[code])
 				}
 			}
 		}
 	}
 	t.held = nil
-	if s, ok := t.surface.(testhost.KeyCodeSurface); ok {
-		codes := slices.Sorted(maps.Keys(t.heldCodes))
-		for _, modifiers := range []bool{false, true} {
-			for _, code := range codes {
-				if modifierKey(t.heldCodes[code]) == modifiers {
-					_ = s.KeyCodeUp(code, t.heldCodes[code])
-				}
-			}
-		}
-	}
 	t.heldCodes = nil
 }
 
-// holdCode presses the physical position code, with the key name the US layout puts there, and holds it, or lets it come up, where the surface presses positions (testhost.KeyCodeSurface); elsewhere the test skips.
+// holdCode presses the physical position code, with the key name the US layout puts there for a host whose layout names no key there, and holds it, or lets it come up, where the surface presses positions (testhost.KeyCodeSurface); elsewhere the test skips.
 func (t *target) holdCode(code, name string, down bool) {
 	t.a.t.Helper()
 	s, ok := t.surface.(testhost.KeyCodeSurface)

@@ -94,7 +94,7 @@ jobs:
       - name: Install native test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb openbox pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin libdbusmenu-glib4 avahi-daemon dbus openbox gnome-sushi sway
+          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb x11-xkb-utils openbox pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin libdbusmenu-glib4 avahi-daemon dbus openbox gnome-sushi sway
       - name: Allow WebKit's sandbox on the runner
         run: |
           # Ubuntu restricts unprivileged user namespaces. Grant bubblewrap that permission so WebKit can keep its sandbox enabled.
@@ -164,6 +164,7 @@ jobs:
         env:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
+          NSGO_TEST_XKB_LAYOUTS: '1'
         run: xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/keys
       - name: Test native window state and non-activating panels
         env:
@@ -585,6 +586,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/websource
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/webhistory
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/deviceidentity
+          go tool nsgo test -target ios_simulator -timeout 1m -run '^TestKeyCodesFollowPositionsOnIOS$' ./internal/testhost/testdata/keys
           go tool nsgo test -target ios_simulator -timeout 2m -run '^Test(IOSCaptureIsSRGB|Apple(Content|Native|Image|Scroll)ClipKeepsOuterDecoration)$' ./internal/testhost/testdata/capture
           go tool nsgo test -target ios_simulator -timeout 1m -run '^Test(Scroll|List)PastItsEndComesBackToIt$' ./nsgotest
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/frameclock
@@ -629,6 +631,8 @@ jobs:
         run: |
           tests=$(grep -ho '^func Test[A-Za-z0-9_]*' internal/platform/windows/logic_test.go internal/platform/windows/*_logic_test.go | sed 's/^func //' | paste -sd '|')
           go tool nsgo test -run "^($tests)\$" ./internal/platform/windows -- -count=1
+      - name: Test physical key names on AZERTY and QWERTZ layouts and modifier sides
+        run: go tool nsgo test -run '^(TestLayoutCodeNamesFollowTheLayout|TestTestHostKeyPositionsHoldTheirOwnSide)$' ./internal/platform/windows -- -count=1
       - name: Test WinSparkle quit approval and callback cleanup
         run: go tool nsgo test -run '^TestWinSparkleQuit' ./internal/platform/windows -- -count=1
       - name: Test unpackaged startup task failures

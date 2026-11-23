@@ -51,14 +51,7 @@ func (w *window) keyboardCodeNames() map[string]string {
 		return nil
 	}
 	api := keyLayoutAPI()
-	group := w.keyLayoutGroup
-	if api.active != nil {
-		if seat := api.defaultSeat(display); seat != 0 {
-			if keyboard := api.keyboard(seat); keyboard != 0 {
-				group = api.active(keyboard)
-			}
-		}
-	}
+	group := w.layoutGroup(display)
 	names := map[string]string{}
 	for code := range uint16(256) {
 		position := driver.XKBKeyCode(code)
@@ -78,6 +71,32 @@ func (w *window) keyboardCodeNames() map[string]string {
 		}
 	}
 	return names
+}
+
+// layoutGroup is the index of the keyboard's active layout, or the one its last key went by where GDK cannot tell.
+func (w *window) layoutGroup(display uintptr) int32 {
+	api := keyLayoutAPI()
+	if api.active != nil {
+		if seat := api.defaultSeat(display); seat != 0 {
+			if keyboard := api.keyboard(seat); keyboard != 0 {
+				return api.active(keyboard)
+			}
+		}
+	}
+	return w.keyLayoutGroup
+}
+
+// layoutKeyval returns the keyval the active keyboard layout gives a hardware keycode without modifiers, as a real key's press carries, or 0 for none.
+func (w *window) layoutKeyval(keycode uint32) uint32 {
+	display := gdkDisplayGetDefault()
+	if display == 0 {
+		return 0
+	}
+	var keyval uint32
+	if keyLayoutAPI().translate(display, keycode, 0, w.layoutGroup(display), &keyval, nil, nil, nil) == 0 {
+		return 0
+	}
+	return keyval
 }
 
 // keyCode returns the position for a hardware keycode. The test host uses synthetic identities outside this range for its layout-dependent presses.

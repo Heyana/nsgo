@@ -24,6 +24,49 @@ type testSurface struct {
 	test *testOpen
 	// held are the keys KeyDown holds, by virtual key; the window's thread reads and writes it.
 	held map[uintptr]bool
+	// heldCodes are the physical positions KeyCodeDown holds, with the virtual keys of each; the window's thread reads and writes it.
+	heldCodes map[string]heldCode
+}
+
+// heldCode is a position KeyCodeDown holds: the virtual key the window hears for it, the one GetKeyState reads for both sides of a modifier, and its sided virtual key, which GetKeyState reads for that side alone.
+type heldCode struct{ vk, sided uintptr }
+
+// holds reports whether KeyDown or KeyCodeDown holds the virtual key vk.
+func (t *testSurface) holds(vk uintptr) bool {
+	if t.held[vk] {
+		return true
+	}
+	for _, held := range t.heldCodes {
+		if held.vk == vk {
+			return true
+		}
+	}
+	return false
+}
+
+// holdsSide reports whether a held key holds one side of a modifier, the sided virtual key: a position at that side, or the modifier KeyDown holds by name, which holds its left-hand key (sidedKeys).
+func (t *testSurface) holdsSide(sided uintptr) bool {
+	for _, held := range t.heldCodes {
+		if held.sided == sided {
+			return true
+		}
+	}
+	for vk, left := range sidedKeys {
+		if left == sided && t.held[vk] {
+			return true
+		}
+	}
+	return false
+}
+
+// setHeld writes into a keyboard state whether the keys KeyDown and KeyCodeDown hold keep vk down, and for a modifier each of its sides, so one holder coming up leaves the sides the others hold.
+func (t *testSurface) setHeld(state *[256]byte, vk uintptr) {
+	setBit(state, vk, t.holds(vk))
+	for sided, unsided := range unsidedKeys {
+		if unsided == vk {
+			setBit(state, sided, t.holdsSide(sided))
+		}
+	}
 }
 
 var (
@@ -367,8 +410,6 @@ var virtualKeys = map[string]uintptr{
 type keyStroke struct {
 	vk                     uintptr
 	ctrl, shift, alt, meta bool
-	// scan is the key's scan code and extended bit, in lParam's bits 16 to 24, for a key pressed by its position; 0 leaves them to the window, which then names the position from the virtual key.
-	scan uintptr
 }
 
 // parseKey reads a key a test names, a chord's modifiers before it ("mod+shift+k").
@@ -410,17 +451,21 @@ func parseKey(key string) (keyStroke, error) {
 // sidedKeys are the left-hand virtual keys GetKeyState also reads for a modifier, which a held modifier holds too.
 var sidedKeys = map[uintptr]uintptr{vkShift: vkLShift, vkControl: 0xA2, vkMenu: 0xA4}
 
-// setKey holds vk in a keyboard state, or lets it up.
+// setKey holds vk in a keyboard state, with a modifier's left-hand key, or lets it up.
 func setKey(state *[256]byte, vk uintptr, down bool) {
 	for _, code := range []uintptr{vk, sidedKeys[vk]} {
-		if code == 0 {
-			continue
+		if code != 0 {
+			setBit(state, code, down)
 		}
-		if down {
-			state[code] |= 0x80
-		} else {
-			state[code] &^= 0x80
-		}
+	}
+}
+
+// setBit holds the one virtual key vk in a keyboard state, or lets it up.
+func setBit(state *[256]byte, vk uintptr, down bool) {
+	if down {
+		state[vk] |= 0x80
+	} else {
+		state[vk] &^= 0x80
 	}
 }
 
@@ -433,51 +478,12 @@ func (t *testSurface) KeyDown(key string) error { return t.stroke(key, true, fal
 // KeyUp lets a key KeyDown holds come up.
 func (t *testSurface) KeyUp(key string) error { return t.stroke(key, false, true) }
 
-// stroke sends key going down, coming up, or both, keeping the keys KeyDown holds in the thread's keyboard state between calls, as GetKeyState reads a real keyboard's. A chord's modifiers are held for its key alone.
+// stroke sends key going down, coming up, or both, keeping the keys KeyDown and KeyCodeDown hold in the thread's keyboard state between calls, as GetKeyState reads a real keyboard's. A chord's modifiers are held for its key alone.
 func (t *testSurface) stroke(key string, down, up bool) error {
 	k, err := parseKey(key)
 	if err != nil {
 		return err
 	}
-	return t.strokeKey(k, key, down, up)
-}
-
-// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held, as KeyDown holds a key, its message carrying the position's scan code.
-func (t *testSurface) KeyCodeDown(code, name string) error { return t.strokeCode(code, name, true) }
-
-// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
-func (t *testSurface) KeyCodeUp(code, name string) error { return t.strokeCode(code, name, false) }
-
-// positionKeys are the virtual keys of positions whose US key names another position's: the keypad's digits and point, which Num Lock types, and the right Windows key.
-var positionKeys = map[string]uintptr{
-	"Numpad0": 0x60, "Numpad1": 0x61, "Numpad2": 0x62, "Numpad3": 0x63, "Numpad4": 0x64,
-	"Numpad5": 0x65, "Numpad6": 0x66, "Numpad7": 0x67, "Numpad8": 0x68, "Numpad9": 0x69,
-	"NumpadDecimal": 0x6E, "MetaRight": vkRWin,
-}
-
-// strokeCode presses or releases the physical position code: the virtual key name, the US layout's key there, has, or the position's own (positionKeys), with the position's scan code and extended bit in lParam.
-func (t *testSurface) strokeCode(code, name string, down bool) error {
-	pc, ok := driver.KeyPositionCodes(code)
-	if !ok || pc.Windows == 0 {
-		return fmt.Errorf("a Windows keyboard has no %s key", code)
-	}
-	k, err := parseKey(name)
-	if err != nil {
-		return err
-	}
-	if vk, ok := positionKeys[code]; ok {
-		k.vk = vk
-	}
-	k.scan = uintptr(pc.Windows&0xff) << 16
-	if pc.Windows&0xff00 == 0xe000 {
-		k.scan |= 1 << 24
-	}
-	return t.strokeKey(k, name, down, !down)
-}
-
-// strokeKey presses k, named key, and lets it come up, as stroke does.
-func (t *testSurface) strokeKey(k keyStroke, key string, down, up bool) error {
-	var err error
 	t.scripted(func() {
 		if !down && !t.held[k.vk] {
 			err = fmt.Errorf("key %q is not held", key)
@@ -489,36 +495,119 @@ func (t *testSurface) strokeKey(k keyStroke, key string, down, up bool) error {
 		var base [256]byte
 		hostGetKeyboardState.Call(uintptr(unsafe.Pointer(&base)))
 		state := base
-		setKey(&state, vkControl, k.ctrl || t.held[vkControl])
-		setKey(&state, vkShift, k.shift || t.held[vkShift])
-		setKey(&state, vkMenu, k.alt || t.held[vkMenu])
-		setKey(&state, vkLWin, k.meta || t.held[vkLWin])
+		// The chord's own modifiers are down for its key; the others are as the held keys leave them.
+		for _, m := range []struct {
+			vk    uintptr
+			chord bool
+		}{{vkControl, k.ctrl}, {vkShift, k.shift}, {vkMenu, k.alt}, {vkLWin, k.meta}} {
+			if m.chord {
+				setKey(&state, m.vk, true)
+			} else {
+				t.setHeld(&state, m.vk)
+			}
+		}
 		if down {
 			// A modifier pressed alone is down as its own key goes down.
 			setKey(&state, k.vk, true)
 			hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&state)))
-			lParam := 1 | k.scan
+			lParam := uintptr(1)
 			if t.held[k.vk] {
 				lParam |= 1 << 30
 			}
 			t.held[k.vk] = true
 			w := t.w
-			if !w.keyDown(k.vk, lParam) && !w.shortcut(k.vk, lParam) && (w.focusedField() == nil || !w.editKey(k.vk, k.ctrl || t.held[vkControl], k.shift || t.held[vkShift], k.alt || t.held[vkMenu])) {
+			if !w.keyDown(k.vk, lParam) && !w.shortcut(k.vk, lParam) && (w.focusedField() == nil || !w.editKey(k.vk, k.ctrl || t.holds(vkControl), k.shift || t.holds(vkShift), k.alt || t.holds(vkMenu))) {
 				hostSendMessage.Call(w.hwnd, wmKeyDown, k.vk, lParam)
 			}
 		}
 		if up {
-			setKey(&state, k.vk, false)
-			hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&state)))
 			delete(t.held, k.vk)
-			hostSendMessage.Call(t.w.hwnd, hostKeyUp, k.vk, 1<<31|1<<30|1|k.scan)
+			t.setHeld(&state, k.vk)
+			hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&state)))
+			hostSendMessage.Call(t.w.hwnd, hostKeyUp, k.vk, 1<<31|1<<30|1)
 		}
-		// The chord's modifiers come up with its key; the keys KeyDown holds stay down.
-		for _, vk := range []uintptr{vkControl, vkShift, vkMenu, vkLWin} {
-			setKey(&base, vk, t.held[vk])
+		// The chord's modifiers come up with its key; the keys KeyDown and KeyCodeDown hold stay down.
+		for _, vk := range []uintptr{vkControl, vkShift, vkMenu, vkLWin, k.vk} {
+			t.setHeld(&base, vk)
 		}
-		setKey(&base, k.vk, t.held[k.vk])
 		hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&base)))
+	})
+	return err
+}
+
+// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held, as KeyDown holds a key, its message carrying the position's scan code and the virtual key the active keyboard layout gives it, as a real keyboard's does, so the window names it as the layout does; a position already held goes down again as an auto-repeat.
+func (t *testSurface) KeyCodeDown(code, name string) error { return t.strokeCode(code, name, true) }
+
+// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
+func (t *testSurface) KeyCodeUp(code, name string) error { return t.strokeCode(code, name, false) }
+
+// positionKeys are the virtual keys of positions whose key the layout's scan code mapping does not tell apart: the keypad's digits and point, which Num Lock types, and the right Windows key.
+var positionKeys = map[string]uintptr{
+	"Numpad0": 0x60, "Numpad1": 0x61, "Numpad2": 0x62, "Numpad3": 0x63, "Numpad4": 0x64,
+	"Numpad5": 0x65, "Numpad6": 0x66, "Numpad7": 0x67, "Numpad8": 0x68, "Numpad9": 0x69,
+	"NumpadDecimal": 0x6E, "MetaRight": vkRWin,
+}
+
+// strokeCode sends the physical position code going down or coming up, in the order Key's stroke does, with the modifiers KeyDown and KeyCodeDown hold in the thread's keyboard state: its virtual key is the position's own (positionKeys), else the one the active keyboard layout maps its scan code to, else the one name, the US layout's key there, has; lParam carries the scan code and extended bit.
+func (t *testSurface) strokeCode(code, name string, down bool) error {
+	pc, ok := driver.KeyPositionCodes(code)
+	if !ok || pc.Windows == 0 {
+		return fmt.Errorf("a Windows keyboard has no %s key", code)
+	}
+	var err error
+	t.scripted(func() {
+		sided, ok := positionKeys[code]
+		if !ok {
+			layout, _, _ := activeKeyboardLayout.Call(0)
+			const scanToVirtualKeyEx = 3
+			sided, _, _ = keyCodeVirtualKey.Call(uintptr(pc.Windows), scanToVirtualKeyEx, layout)
+		}
+		if sided == 0 {
+			k, perr := parseKey(name)
+			if perr != nil {
+				err = perr
+				return
+			}
+			sided = k.vk
+		}
+		vk := sided
+		if u, ok := unsidedKeys[sided]; ok {
+			vk = u
+		}
+		lParam := uintptr(1) | uintptr(pc.Windows&0xff)<<16
+		if pc.Windows&0xff00 == 0xe000 {
+			lParam |= 1 << 24
+		}
+		if !down {
+			if _, held := t.heldCodes[code]; !held {
+				err = fmt.Errorf("key %q is not held", code)
+				return
+			}
+			delete(t.heldCodes, code)
+		}
+		var state [256]byte
+		hostGetKeyboardState.Call(uintptr(unsafe.Pointer(&state)))
+		if down {
+			if _, held := t.heldCodes[code]; held {
+				lParam |= 1 << 30
+			}
+			if t.heldCodes == nil {
+				t.heldCodes = map[string]heldCode{}
+			}
+			t.heldCodes[code] = heldCode{vk, sided}
+			state[sided] |= 0x80
+			state[vk] |= 0x80
+			hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&state)))
+			w := t.w
+			if !w.keyDown(vk, lParam) && !w.shortcut(vk, lParam) && (w.focusedField() == nil || !w.editKey(vk, t.holds(vkControl), t.holds(vkShift), t.holds(vkMenu))) {
+				hostSendMessage.Call(w.hwnd, wmKeyDown, vk, lParam)
+			}
+			return
+		}
+		t.setHeld(&state, vk)
+		setBit(&state, sided, t.holdsSide(sided) || t.holds(sided))
+		hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&state)))
+		hostSendMessage.Call(t.w.hwnd, hostKeyUp, vk, lParam|1<<31|1<<30)
 	})
 	return err
 }

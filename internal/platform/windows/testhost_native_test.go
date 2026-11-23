@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -274,5 +277,75 @@ func TestTestHostPreciseScroll(t *testing.T) {
 	mu.Unlock()
 	if math.Abs(float64(gotH.X-75)) > 0.5 {
 		t.Fatalf("horizontal scroll offset = %v, want X 75", gotH)
+	}
+}
+
+// TestTestHostKeyPositionsHoldTheirOwnSide holds Shift by its right-hand position and by name, with keys pressed between, and checks that GetKeyState reads each side of Shift down only while a key holding that side does: the right-hand position never holds the left-hand Shift, and Shift's name never the right-hand one. It then activates the French (AZERTY) layout on the window's thread, where the key at QWERTY's W position goes down as the layout's Z (#1242).
+func TestTestHostKeyPositionsHoldTheirOwnSide(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	hwnd := startApp(t, "nsgo-key-positions", func(*core.Scope) core.Node { return core.View{Style: core.Style{FlexGrow: 1}} }, 200, 100)
+	var ts *testSurface
+	onMain(t, hwnd, func(w *window) { ts = &testSurface{w: w} })
+	step := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	shifts := func(when string, left, right bool) {
+		t.Helper()
+		var l, r, either bool
+		onMain(t, hwnd, func(*window) { l, r, either = keyDown(vkLShift), keyDown(vkRShift), keyDown(vkShift) })
+		if l != left || r != right || either != (left || right) {
+			t.Errorf("%s: GetKeyState reads the left, right and either Shift %v, %v, %v, want %v, %v, %v", when, l, r, either, left, right, left || right)
+		}
+	}
+	step(ts.KeyCodeDown("ShiftRight", "shift"))
+	shifts("ShiftRight held", false, true)
+	step(ts.Key("a"))
+	shifts("a pressed with ShiftRight held", false, true)
+	step(ts.KeyCodeUp("ShiftRight", "shift"))
+	shifts("ShiftRight up", false, false)
+	step(ts.KeyDown("shift"))
+	step(ts.KeyCodeDown("ShiftRight", "shift"))
+	shifts("shift and ShiftRight held", true, true)
+	step(ts.KeyUp("shift"))
+	shifts("shift up, ShiftRight held", false, true)
+	step(ts.Key("a"))
+	shifts("a pressed with ShiftRight held", false, true)
+	step(ts.KeyCodeUp("ShiftRight", "shift"))
+	shifts("both up", false, false)
+
+	n, _, _ := getKeyboardLayoutList.Call(0, 0)
+	enabled := make([]uintptr, n)
+	if n > 0 {
+		n, _, _ = getKeyboardLayoutList.Call(n, uintptr(unsafe.Pointer(&enabled[0])))
+		enabled = enabled[:n]
+	}
+	klid, err := syscall.UTF16PtrFromString("0000040C")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const klfNoTellShell = 0x80
+	french, _, _ := loadKeyboardLayoutW.Call(uintptr(unsafe.Pointer(klid)), klfNoTellShell)
+	if french == 0 {
+		t.Skip("Windows cannot load the French keyboard layout")
+	}
+	if !slices.Contains(enabled, french) {
+		t.Cleanup(func() { unloadKeyboardLayout.Call(french) })
+	}
+	var previous uintptr
+	onMain(t, hwnd, func(*window) { previous, _, _ = activateKeyboardLayout.Call(french, 0) })
+	t.Cleanup(func() {
+		onMain(t, hwnd, func(*window) { activateKeyboardLayout.Call(previous, 0) })
+	})
+	step(ts.KeyCodeDown("KeyW", "w"))
+	var z, w bool
+	onMain(t, hwnd, func(*window) { z, w = keyDown('Z'), keyDown('W') })
+	step(ts.KeyCodeUp("KeyW", "w"))
+	if !z || w {
+		t.Errorf("on AZERTY, KeyW holds Z %v and W %v, want Z alone", z, w)
 	}
 }

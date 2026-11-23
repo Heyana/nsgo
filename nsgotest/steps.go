@@ -968,7 +968,7 @@ func (a *App) KeyUp(key string) {
 	a.done()
 }
 
-// KeyCode presses and releases a physical position, such as KeyW. A headless test names the key with the test environment's KeyCodeNames or the US layout. On a target the platform's own event carries the position and the key the US layout puts there; a target that cannot press a position skips the test.
+// KeyCode presses and releases a physical position, such as KeyW. A headless test names the key with the test environment's KeyCodeNames or the US layout. On a target the platform's own event carries the position; on macOS, Windows, Linux and the web the platform's current keyboard layout names the key, so KeyW is "z" on AZERTY, and elsewhere the US layout does. A target that cannot press a position skips the test.
 func (a *App) KeyCode(code string) {
 	a.t.Helper()
 	a.step("keyCode(%s)", code)
@@ -1015,7 +1015,7 @@ func (a *App) KeyCodeUp(code string) {
 	a.done()
 }
 
-// physicalKeyName names the key at a physical position: on a target, the US layout's, which the platform's event carries; headless, the test environment's KeyCodeNames or the US layout's.
+// physicalKeyName names the key at a physical position: on a target, the US layout's, which a host whose layout names no key there reports; headless, the test environment's KeyCodeNames or the US layout's.
 func (a *App) physicalKeyName(code string) string {
 	a.t.Helper()
 	if a.target == nil {

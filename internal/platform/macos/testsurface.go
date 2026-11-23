@@ -73,8 +73,10 @@ type testSurface struct {
 	hovered []objc.ID
 	clicks  testhost.Clicks
 	pressID int // the last press's marker, read and written on the main thread
-	// heldFlags are the flags of the modifiers KeyDown holds, which every key after it carries until their KeyUp.
+	// heldFlags are the flags of the modifiers KeyDown and KeyCodeDown hold, which every key after them carries until their up (holdModifier).
 	heldFlags uint
+	// heldModifiers are the modifier keys held, by key code, by KeyDown of the modifier's name, which holds its left-hand key (byName), or by KeyCodeDown of its position (byPosition). A key stays down while either holds it.
+	heldModifiers map[uint16]struct{ byName, byPosition bool }
 	// heldCodes are the key codes of the keys other than a modifier that KeyDown holds, whose next KeyDown is their auto-repeat.
 	heldCodes map[uint16]bool
 }
@@ -889,12 +891,7 @@ func (t *testSurface) KeyCodeDown(code, name string) error { return t.holdCode(c
 // KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
 func (t *testSurface) KeyCodeUp(code, name string) error { return t.holdCode(code, name, false) }
 
-// rightModifiers are the flags a right-hand modifier sets while held: the side's device bit in place of the left one's.
-var rightModifiers = map[string]uint{
-	"ShiftRight": flagShift | 0x04, "ControlRight": flagControl | 0x2000, "AltRight": flagOption | 0x40, "MetaRight": flagCommand | 0x10,
-}
-
-// holdCode is hold for a physical position: AppKit's key code is the position's, with the characters name, the US layout's key there, types.
+// holdCode is hold for a physical position: AppKit's key code is the position's, with the characters the current keyboard layout types there, as a real keyboard's key does, or else those of name, the US layout's key there. A modifier's position holds its own side.
 func (t *testSurface) holdCode(code, name string, down bool) error {
 	t.follow()
 	if err := t.keyboard(); err != nil {
@@ -904,27 +901,58 @@ func (t *testSurface) holdCode(code, name string, down bool) error {
 	if !ok || pc.Mac == 0xffff {
 		return fmt.Errorf("a Mac keyboard has no %s key", code)
 	}
+	if _, ok := modifierKeys[pc.Mac]; ok {
+		t.holdModifier(pc.Mac, down, true)
+		return nil
+	}
 	k, err := testKeyNamed(strings.ToLower(name), name)
 	if err != nil {
 		return err
 	}
 	k.code = pc.Mac
-	if flags, ok := rightModifiers[code]; ok {
-		k.modifier = flags
+	if _, named := keyNames[pc.Mac]; !named {
+		if chars := currentLayoutChars(pc.Mac); chars != "" {
+			k.chars = chars
+		}
 	}
 	t.holdKey(k, down)
 	return nil
 }
 
-// holdKey sends k going down or coming up, with the modifiers KeyDown holds.
+// modifierFlags are the device-independent flag of each modifier, by its name, which either of its keys holds.
+var modifierFlags = map[string]uint{"shift": flagShift, "ctrl": flagControl, "alt": flagOption, "meta": flagCommand}
+
+// holdModifier has KeyDown (byPosition false) or KeyCodeDown hold the modifier key code, or let it go, and sends the key going down or coming up where that changes whether the key is held: a key KeyDown and KeyCodeDown both hold comes up once both let it go. The modifier's flags stay held while any of its keys is.
+func (t *testSurface) holdModifier(code uint16, down, byPosition bool) {
+	h := t.heldModifiers[code]
+	was := h.byName || h.byPosition
+	if byPosition {
+		h.byPosition = down
+	} else {
+		h.byName = down
+	}
+	if t.heldModifiers == nil {
+		t.heldModifiers = map[uint16]struct{ byName, byPosition bool }{}
+	}
+	if h.byName || h.byPosition {
+		t.heldModifiers[code] = h
+	} else {
+		delete(t.heldModifiers, code)
+	}
+	t.heldFlags = 0
+	for held := range t.heldModifiers {
+		m := modifierKeys[held]
+		t.heldFlags |= modifierFlags[m.name] | m.flag
+	}
+	if was != (h.byName || h.byPosition) {
+		t.modifier(code, t.heldFlags)
+	}
+}
+
+// holdKey sends k, a key KeyDown names, going down or coming up, with the modifiers KeyDown and KeyCodeDown hold.
 func (t *testSurface) holdKey(k testKey, down bool) {
 	if k.modifier != 0 {
-		if down {
-			t.heldFlags |= k.modifier
-		} else {
-			t.heldFlags &^= k.modifier
-		}
-		t.modifier(k.code, t.heldFlags)
+		t.holdModifier(k.code, down, false)
 		return
 	}
 	if !down {

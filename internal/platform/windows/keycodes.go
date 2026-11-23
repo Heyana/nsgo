@@ -26,6 +26,11 @@ func (w *window) keyboardCodeNames() map[string]string {
 		return w.env.KeyCodeNames
 	}
 	w.keyLayout = layout
+	return layoutCodeNames(layout)
+}
+
+// layoutCodeNames names the physical keys of a keyboard layout as heldName names them: a key by the character it types without modifiers, and another, such as a modifier or an arrow, by its virtual key's name.
+func layoutCodeNames(layout uintptr) map[string]string {
 	names := map[string]string{}
 	for _, prefix := range []uint16{0, 0xe000} {
 		for code := range uint16(128) {
@@ -36,6 +41,9 @@ func (w *window) keyboardCodeNames() map[string]string {
 			}
 			const scanToVirtualKey = 3
 			vk, _, _ := keyCodeVirtualKey.Call(uintptr(scan), scanToVirtualKey, layout)
+			if unsided, ok := unsidedKeys[vk]; ok {
+				vk = unsided
+			}
 			var state [256]byte
 			var chars [8]uint16
 			const keepKeyboardState = 4
@@ -49,3 +57,6 @@ func (w *window) keyboardCodeNames() map[string]string {
 	}
 	return names
 }
+
+// unsidedKeys are the virtual keys a key message carries for each side's virtual key of a modifier, which MapVirtualKeyEx gives a modifier's scan code.
+var unsidedKeys = map[uintptr]uintptr{vkLShift: vkShift, vkRShift: vkShift, 0xA2: vkControl, 0xA3: vkControl, 0xA4: vkMenu, 0xA5: vkMenu}

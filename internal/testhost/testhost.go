@@ -144,7 +144,7 @@ type KeyHoldSurface interface {
 	KeyUp(key string) error
 }
 
-// KeyCodeSurface is a surface that presses a physical position, named as KeyboardEvent.code (KeyW), and holds it (KeyCodeDown) or lets it come up (KeyCodeUp): the platform's event carries the position's own code, and the key the US layout puts there, as name sets it, so the app reads both KeyEvent.Code and KeyEvent.Key.
+// KeyCodeSurface is a surface that presses a physical position, named as KeyboardEvent.code (KeyW), and holds it (KeyCodeDown) or lets it come up (KeyCodeUp): the platform's event carries the position's own code, so the app reads KeyEvent.Code, and a key name. On macOS, Windows, Linux and the web the platform's current keyboard layout names the key, as it does a real keyboard's, so KeyW is "z" on AZERTY, and name, the US layout's key there, is used only where the layout gives none; the other hosts report name. A modifier held both by KeyDown of its name and by KeyCodeDown of a position stays down until both let it go.
 type KeyCodeSurface interface {
 	KeyCodeDown(code, name string) error
 	KeyCodeUp(code, name string) error
