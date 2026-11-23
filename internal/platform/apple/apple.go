@@ -112,12 +112,9 @@ func constant(lib uintptr, name string) uintptr {
 	return **(**uintptr)(unsafe.Pointer(&addr))
 }
 
-var coreGraphics uintptr
-
 func init() {
 	cf := load("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
 	cg := load("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
-	coreGraphics = cg
 	registerSyscall(&cfRelease, cf, "CFRelease")
 	registerSyscall(&cfRetain, cf, "CFRetain")
 	purego.RegisterLibFunc(&cfStringCreateWithBytes, cf, "CFStringCreateWithBytes")
@@ -131,6 +128,8 @@ func init() {
 	loadText(cf, cg)
 	loadSystem()
 	loadImage(cf, cg)
+	loadCanvas(cg)
+	loadCanvasLayer(cg)
 	loadBorders(cg)
 	qc := load("/System/Library/Frameworks/QuartzCore.framework/QuartzCore")
 	purego.RegisterLibFunc(&caCurrentMediaTime, qc, "CACurrentMediaTime")

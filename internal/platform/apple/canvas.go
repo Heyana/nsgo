@@ -9,7 +9,6 @@ import (
 	"math"
 	"slices"
 	"structs"
-	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -89,12 +88,6 @@ func (m affine) invert() affine {
 		X: (m.C*m.Y - m.D*m.X) / det, Y: (m.B*m.X - m.A*m.Y) / det}
 }
 
-var canvasOnce sync.Once
-
-func ensureCanvas() {
-	canvasOnce.Do(func() { loadCanvas(coreGraphics) })
-}
-
 func loadCanvas(cg uintptr) {
 	reg := purego.RegisterLibFunc
 	reg(&cgContextRotateCTM, cg, "CGContextRotateCTM")
@@ -162,7 +155,6 @@ func loadCanvas(cg uintptr) {
 // when Core Animation flipped the context and up when flip did: draw
 // learns which as baseUp.
 func DrawTopDown(ctx uintptr, height float64, flip bool, draw func(baseUp bool)) {
-	ensureCanvas()
 	cgContextSaveGState(ctx)
 	defer cgContextRestoreGState(ctx)
 	if flip {
@@ -259,7 +251,6 @@ func PlayOver(ctx uintptr, ops []driver.DrawOp, split driver.CanvasSplit, host C
 	if ctx == 0 {
 		return
 	}
-	ensureCanvas()
 	newPlayer(ctx, ops, split, host).run()
 }
 

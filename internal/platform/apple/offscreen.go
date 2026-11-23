@@ -72,7 +72,6 @@ func ReleaseOffscreen(id uint64) {
 // off.Drawing only on first use or when off.Version changes. The caller must
 // call Release on the returned image when non-zero.
 func offscreenImage(src driver.ImageSource, host CanvasHost) (img uintptr, width, height float64, points driver.Size, waited bool) {
-	ensureCanvas()
 	off := src.Offscreen
 	if off == nil {
 		return 0, 0, 0, driver.Size{}, false
