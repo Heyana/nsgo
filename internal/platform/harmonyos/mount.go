@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
 	"io"
 	"log"
 	"strings"
@@ -71,7 +72,9 @@ type view struct {
 	// older edit is dropped instead of overwriting what was typed since.
 	edits   uint32
 	drawing *driver.Drawing
-	scroll  *driver.ScrollConfig
+	// pixels is the pixel copy an image view shows, sent once per copy (driver.CopyPixels keeps one per version).
+	pixels *image.RGBA
+	scroll *driver.ScrollConfig
 	// modal is how the modal this view presents appears, when it is one.
 	modal     *driver.ModalConfig
 	presented bool
@@ -84,6 +87,24 @@ type view struct {
 	// answers carry.
 	applied   uint32
 	multiline bool
+}
+
+// imagePixels sends an image view the pixel copy it shows, as its width, height and premultiplied RGBA in base64, when the copy changed; a view that stops showing pixels gets an empty one, so the host lets its PixelMap go.
+func (m *mounter) imagePixels(it *driver.MountItem) {
+	var px *image.RGBA
+	if it.Image != nil {
+		px = it.Image.Source.Pixels
+	}
+	v := m.views[it.ID]
+	if v == nil || v.pixels == px {
+		return
+	}
+	v.pixels = px
+	if px == nil {
+		m.o.op("ip", it.ID).num(0).num(0).str("")
+		return
+	}
+	m.o.op("ip", it.ID).num(float64(px.Rect.Dx())).num(float64(px.Rect.Dy())).str(base64.StdEncoding.EncodeToString(px.Pix))
 }
 
 func newMounter(s *surface) *mounter {
@@ -319,6 +340,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 				fit = "none"
 			}
 		}
+		m.imagePixels(it)
 		m.o.op("im", it.ID).str(src).str(fit).str(data).boolean(nearest)
 	case driver.ItemInputValue:
 		// A value the engine computed before the user's latest edit is

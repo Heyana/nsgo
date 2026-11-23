@@ -37,8 +37,10 @@ On macOS and Windows, `Image.HitTestAlpha` travels with `ImageConfig`. In a pain
 | Linux | Premultiplied BGRA, a Cairo ARGB32 surface | The same | `glTexSubImage2D` in the area's context |
 | Web | One `<canvas>` per picture, updated with straight RGBA via `putImageData` and sized to the fitted rectangle with CSS | A cached `<canvas>` for each recent copy, filled through the same upload path | `texSubImage2D` from a `Uint8Array` kept for the image |
 | Android | Premultiplied RGBA through the pipe before the batch, copied into the view's mutable `Bitmap` of the frame's size with `copyPixelsFromBuffer` | The same transfer for new copies, with bitmaps held by the drawing and reused by size | The bytes with the `ItemShader`, only for a copy Java lacks, at most 32 MiB of them in a batch (immediately following shader-only batches send copies that did not fit), and `glTexSubImage2D` on the GL thread |
-| HarmonyOS | Not shown | Not drawn | No shaders |
+| HarmonyOS | Premultiplied RGBA in base64 with an `ip` op for each copy, made into a `PixelMap` with `createPixelMapSync`; the previous one is released when the next replaces it | The bytes with the first op of a drawing that draws a copy, kept as a `PixelMap` in the canvas image cache under a key for each copy | No shaders |
 | Mini programs | WeChat's 2D canvas node holds the current frame, updated with `putImageData`. QQ, Douyin and Alipay have no canvas view binding | Cached offscreen canvases filled with `putImageData`, replayed into the drawing's picture | No shaders |
+
+HarmonyOS carries the bytes through ArkWeb's JavaScript proxy, which takes strings, so a copy travels as base64, a third larger than its pixels. Its cost and its frames are not yet measured or checked on an emulator or device.
 
 On Android, each new copy is a separate pipe message, subject to the pipe's 64 MiB per-message limit. The reader stages the bytes and the next batch copies them into the bitmaps on the UI thread before drawing. Style updates and drawings that keep the same copy send no pixel bytes.
 

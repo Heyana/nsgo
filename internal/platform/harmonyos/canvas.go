@@ -5,6 +5,8 @@ package harmonyos
 import (
 	"encoding/base64"
 	"encoding/json"
+	"image"
+	"strconv"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
@@ -56,16 +58,58 @@ type canvasOp struct {
 	V  []float32 `json:"v,omitempty"`
 	VA []float32 `json:"va,omitempty"`
 	E  []int     `json:"e,omitempty"`
+	// Pixels is a pixel buffer's premultiplied RGBA, base64, PW by PH pixels, sent with the first op of a drawing that draws its copy; ImgKey names the copy, so later ops and drawings find it in the host's canvas image cache.
+	Pixels string `json:"pxd,omitempty"`
+	PW     int    `json:"pw,omitempty"`
+	PH     int    `json:"ph,omitempty"`
 }
 
-// image names the op's image and whether it is sampled nearest.
-func (c *canvasOp) image(o *driver.DrawOp) {
+// image names the op's image and whether it is sampled nearest. sent holds the pixel copies the drawing's earlier ops carried, which this op only names.
+func (c *canvasOp) image(o *driver.DrawOp, sent map[*image.RGBA]bool) {
 	c.Img = o.Image.URI
-	if len(o.Image.Data) > 0 {
+	if px := o.Image.Pixels; px != nil {
+		c.ImgKey = canvasPixelKeys.key(px)
+		if !sent[px] {
+			sent[px] = true
+			c.Pixels = base64.StdEncoding.EncodeToString(px.Pix)
+			c.PW, c.PH = px.Rect.Dx(), px.Rect.Dy()
+		}
+	} else if len(o.Image.Data) > 0 {
 		c.ImgKey = o.Image.Key()
 		c.ImgData = base64.StdEncoding.EncodeToString(o.Image.Data)
 	}
 	c.Nearest = o.Sampling == driver.ImageSamplingNearest
+}
+
+// canvasPixelKeys names the pixel copies canvases draw. Only the engine goroutine, which mounts, uses it.
+var canvasPixelKeys pixelKeys
+
+// pixelKeys names pixel copies for the host's canvas image cache, the same copy by the same key in every drawing. The core keeps a copy for as long as its version is drawn (driver.CopyPixels), so a copy is its version. It remembers the last 16 copies it named, which keeps their memory from being reused by another copy; one that drops out is named anew if it is drawn again, and the host then decodes it again, which costs time but never draws another copy.
+type pixelKeys struct {
+	named []namedPixels
+	next  uint64
+}
+
+type namedPixels struct {
+	pixels *image.RGBA
+	key    string
+}
+
+func (k *pixelKeys) key(px *image.RGBA) string {
+	for i, n := range k.named {
+		if n.pixels == px {
+			copy(k.named[i:], k.named[i+1:])
+			k.named[len(k.named)-1] = n
+			return n.key
+		}
+	}
+	k.next++
+	n := namedPixels{px, "px:" + strconv.FormatUint(k.next, 10)}
+	if len(k.named) == 16 {
+		k.named = append(k.named[:0], k.named[1:]...)
+	}
+	k.named = append(k.named, n)
+	return n.key
 }
 
 // atlasSprites packs an atlas for the host's player, which draws every sprite from one decoded image in one op, as canvas2d's player does.
@@ -100,6 +144,7 @@ type stop struct {
 // canvasJSON serializes a drawing for the host. packed says the host plays an atlas from one op (deviceData.CanvasAtlas); a host built before that op, such as an older committed prebuilt host, gets each sprite expanded into the image ops it has always played.
 func canvasJSON(ops []driver.DrawOp, packed bool) string {
 	out := make([]canvasOp, 0, len(ops))
+	sent := map[*image.RGBA]bool{}
 	alpha := float32(1)
 	var saved []float32
 	for i := range ops {
@@ -158,16 +203,16 @@ func canvasJSON(ops []driver.DrawOp, packed bool) string {
 			if o.Image == nil {
 				continue
 			}
-			c.image(o)
+			c.image(o, sent)
 		case driver.DrawAtlas:
 			if o.Image == nil || o.Atlas == nil || len(*o.Atlas) == 0 {
 				continue
 			}
 			if !packed {
-				out = appendAtlas(out, o, alpha)
+				out = appendAtlas(out, o, alpha, sent)
 				continue
 			}
-			c.image(o)
+			c.image(o, sent)
 			c.Sprites = atlasSprites(*o.Atlas)
 		}
 		out = append(out, c)
@@ -180,9 +225,9 @@ func canvasJSON(ops []driver.DrawOp, packed bool) string {
 }
 
 // appendAtlas replays an atlas through the image ops every host plays: a save, the sprite's transform, its alpha and the image, then a restore.
-func appendAtlas(out []canvasOp, op *driver.DrawOp, alpha float32) []canvasOp {
+func appendAtlas(out []canvasOp, op *driver.DrawOp, alpha float32, sent map[*image.RGBA]bool) []canvasOp {
 	img := canvasOp{K: int(driver.DrawImage)}
-	img.image(op)
+	img.image(op, sent)
 	for _, sprite := range *op.Atlas {
 		t, b := sprite.Transform, sprite.Rect
 		x, h := float32(b.Origin.X), float32(b.Size.Height)
@@ -197,6 +242,8 @@ func appendAtlas(out []canvasOp, op *driver.DrawOp, alpha float32) []canvasOp {
 			img,
 			canvasOp{K: int(driver.DrawRestore)},
 		)
+		// The first sprite carries a pixel copy's bytes; the rest name it.
+		img.Pixels, img.PW, img.PH = "", 0, 0
 	}
 	return out
 }

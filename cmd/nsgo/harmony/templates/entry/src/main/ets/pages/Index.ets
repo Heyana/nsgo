@@ -207,6 +207,10 @@ interface CanvasOp {
   k: number;
   imgk?: string;
   imgd?: string;
+  // pxd is a pixel copy's premultiplied RGBA, base64, pw by ph pixels, with the first op of a drawing that draws it.
+  pxd?: string;
+  pw?: number;
+  ph?: number;
   tint?: number;
   x?: number;
   y?: number;
@@ -358,6 +362,8 @@ class VNode {
   fit: string = 'cover';
   data: string = '';
   nearest: boolean = false;
+  // pv counts the pixel copies an image view was sent ('ip'); the copy itself is in viewPixels.
+  pv: number = 0;
   // A canvas's drawing, as operations to replay.
   drawing: string = '';
   // A web view's page, whether its scripts run, and the command it waits for.
@@ -679,6 +685,7 @@ class Tree {
         this.geometry = true;
         this.detach(v);
         if (code === 'd') {
+          setViewPixels(id, 0, 0, '');
           this.nodes.delete(id);
           this.sticky.delete(id);
           this.gone.push(id);
@@ -758,6 +765,9 @@ class Tree {
           v.fit = o[3] as string;
           v.data = o[4] as string;
           v.nearest = o[5] as boolean;
+        } else if (code === 'ip') {
+          setViewPixels(id, o[2] as number, o[3] as number, o[4] as string);
+          v.pv++;
         } else if (code === 'cv') {
           v.drawing = o[2] as string;
         } else if (code === 'tr') {
@@ -2220,6 +2230,50 @@ struct Index {
   }
 }
 
+// pixelMapOf makes a PixelMap of a pixel copy, w by h premultiplied RGBA in base64, or undefined when it cannot.
+function pixelMapOf(w: number, h: number, data: string): image.PixelMap | undefined {
+  if (w <= 0 || h <= 0 || data === '') {
+    return undefined;
+  }
+  try {
+    const bytes = new util.Base64Helper().decodeSync(data);
+    const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return image.createPixelMapSync(buf, {
+      size: { width: w, height: h },
+      srcPixelFormat: image.PixelMapFormat.RGBA_8888,
+      pixelFormat: image.PixelMapFormat.RGBA_8888,
+      alphaType: image.AlphaType.PREMUL
+    });
+  } catch (e) {
+    console.error('NSGO harmony: pixels failed: ' + e);
+    return undefined;
+  }
+}
+
+// ViewPixels is the pixel copy an image view shows and the one it showed before, released only once a newer copy replaces it, since the Image may still be drawing it.
+interface ViewPixels {
+  cur?: image.PixelMap;
+  prev?: image.PixelMap;
+}
+
+const viewPixels: Map<number, ViewPixels> = new Map();
+
+// setViewPixels gives a view the copy an 'ip' op sends; an empty one, or the view's deletion, releases what it held.
+function setViewPixels(id: number, w: number, h: number, data: string): void {
+  const held: ViewPixels = viewPixels.get(id) ?? {};
+  const pm = pixelMapOf(w, h, data);
+  if (pm === undefined) {
+    held.prev?.release();
+    held.cur?.release();
+    viewPixels.delete(id);
+    return;
+  }
+  held.prev?.release();
+  held.prev = held.cur;
+  held.cur = pm;
+  viewPixels.set(id, held);
+}
+
 // NodeImageView draws an image the engine mounted, from the bytes it embeds
 // (base64, decoded into a PixelMap), from the app's resources ("asset:",
 // read out of the HAP's rawfile directory) or from the URI the app gave.
@@ -2229,7 +2283,11 @@ struct NodeImageView {
   @Prop @Watch('reload') fit: string = 'cover';
   @Prop @Watch('reload') data: string = '';
   @Prop nearest: boolean = false;
+  // vid is the view's id and pv counts the pixel copies it was sent, which viewPixels holds.
+  @Prop vid: number = 0;
+  @Prop @Watch('reload') pv: number = 0;
   @State pixels: image.PixelMap | undefined = undefined;
+  private showsCopy: boolean = false;
 
   aboutToAppear(): void {
     this.decode();
@@ -2240,6 +2298,16 @@ struct NodeImageView {
   }
 
   async decode(): Promise<void> {
+    const copy = viewPixels.get(this.vid)?.cur;
+    if (copy !== undefined) {
+      this.pixels = copy;
+      this.showsCopy = true;
+      return;
+    }
+    if (this.showsCopy) {
+      this.pixels = undefined;
+      this.showsCopy = false;
+    }
     if (this.data !== '') {
       try {
         const bytes = new util.Base64Helper().decodeSync(this.data);
@@ -2942,9 +3010,19 @@ struct CanvasView {
           if (key === '') {
             break;
           }
+          if (o.pxd !== undefined && !canvasImageCache.has(key)) {
+            const copy = pixelMapOf(o.pw ?? 0, o.ph ?? 0, o.pxd);
+            if (copy !== undefined) {
+              canvasImageCache.addPending(key);
+              canvasImageCache.complete(key, copy, (o.pw ?? 0) * (o.ph ?? 0) * 4);
+            }
+          }
           const pm = canvasImageCache.get(key);
           if (pm === undefined) {
-            this.loadImage(key, uri, data);
+            // A pixel copy comes with its drawing's bytes, so there is nothing to load.
+            if (o.pxd === undefined && !key.startsWith('px:')) {
+              this.loadImage(key, uri, data);
+            }
             break;
           }
           if (o.k === 41) {
@@ -3204,7 +3282,7 @@ struct SpanTextView {
 }
 
 @Builder function imageBuilder(v: VNode) {
-  NodeImageView({ src: v.src, fit: v.fit, data: v.data, nearest: v.nearest })
+  NodeImageView({ src: v.src, fit: v.fit, data: v.data, nearest: v.nearest, vid: v.id, pv: v.pv })
 }
 
 @Builder function canvasBuilder(v: VNode) {

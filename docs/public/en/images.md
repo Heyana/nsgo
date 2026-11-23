@@ -46,9 +46,9 @@ core.Image{ResizeMode: core.Contain, SourceFunc: func() core.ImageSource {
 }}
 ```
 
-NSGo copies the pixels when the commit that carries a new `Version` runs, so the app may write the next frame from its next `RequestAnimationFrame` callback; a decoder on a goroutine of its own writes into a second buffer and posts the swap. The same `Version` is not drawn again. `cx.ImageSize` answers a pixel source at once with its buffer's size. A `core.Canvas` draws pixels with `DrawImage`, copied the same way, on every platform but HarmonyOS; mini programs require a WeChat 2D canvas. A `core.Shader`'s `Images` take pixels the same way, so a shader can filter a frame the app writes, such as an emulator's screen, on every platform that draws shaders.
+NSGo copies the pixels when the commit that carries a new `Version` runs, so the app may write the next frame from its next `RequestAnimationFrame` callback; a decoder on a goroutine of its own writes into a second buffer and posts the swap. The same `Version` is not drawn again. `cx.ImageSize` answers a pixel source at once with its buffer's size. A `core.Canvas` draws pixels with `DrawImage`, copied the same way, on every platform; mini programs require a WeChat 2D canvas. A `core.Shader`'s `Images` take pixels the same way, so a shader can filter a frame the app writes, such as an emulator's screen, on every platform that draws shaders.
 
-Apple platforms, Android, Windows, Linux and the web update pixel images directly, and WeChat mini programs use a 2D canvas. HarmonyOS does not show pixels yet.
+Apple platforms, Android, Windows, Linux and the web update pixel images directly, and WeChat mini programs use a 2D canvas. HarmonyOS makes a `PixelMap` of each version, not yet checked on a device.
 
 ## Resources and scales
 
