@@ -1,3 +1,0 @@
-### Added
-
-- Add GPU compute shaders (`@compute @workgroup_size`, compute built-ins), read/write storage buffers (`var<storage, read>`, `var<storage, read_write>`), storage textures (`texture_storage_2d`, `textureStore`), `gpu.ComputePipeline`, `Encoder.BeginComputePass` (`Dispatch` / `DispatchIndirect`), `Device.ReadBuffer`, `Features.StorageTextures`, `Device.SupportsCompute()` (with `ErrUnsupported` where compute is unavailable), MSL/HLSL/GLSL 4.30/GLSL ES 3.10/WGSL compute emitters, and compute execution on the software device used by `gpu.NewSoftwareRenderer` and `nsgotest`; native backends report `Features.Compute` false for now (#1234).

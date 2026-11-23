@@ -1,4 +1,0 @@
-### Added
-
-- Add `gpu` device/context loss and app-suspension handling (`ViewProps.OnDeviceRestored`, `OnSuspend`, `OnResume`, `RetainResources`, `Device.Epoch`/`IsLost`/`IsSuspended`, `ReasonDeviceRemoved`/`ReasonContextLost`/`ReasonSurfaceDestroyed`, lifecycle background submission gating in `gpu.View` and `core.GPUSurface`, opt-in retained resource auto-restoration, and `nsgotest` helpers `TriggerGPUDeviceLostWithReason` and `TriggerGPUSurfaceRotation`) (#1238).
-- Add persistent JSON `gpu.PipelineCache` (with deterministic SHA-256 pipeline key hashing, compiled MSL/HLSL/GLSL/GLES/WGSL artifact storage, and backend binary archive blob storage) plus asynchronous precompilation (`Device.CreatePipelineAsync`, `Device.PrecompilePipelines`, `Pipeline.Ready`) so second launches reuse cached pipelines and first draws do not hitch (#1239).

@@ -2,6 +2,340 @@
 
 ## [Unreleased]
 
+- Add the Android OpenGL ES 3.0 `gpu.View` backend (`GpuView.java` on `TextureView` and the shared GL thread with depth buffer, retained buffers/textures/samplers/FBOs/VAOs/pipelines, Go-side GLSL ES 3.00 pipeline compilation, off-commit binary GPU frame streaming, and `Env.SupportsGPU()` / `EventGPU` reporting) (#1109 by @houko).
+- Draw `gpu.View` pipelines with Metal on macOS and iOS, with persistent buffers, textures, samplers and bind groups, depth and multisampled surfaces, and texture and surface readback (#1105 by @houko).
+- Add package `cloud` for provider-neutral cloud key-value and file/snapshot storage (iCloud KV store and ubiquity containers on macOS and iOS, Google Play Games Saved Games bridge on Android, `ErrUnavailable` elsewhere), `core.Env.CanUseCloudStorage`, `nsgo.yaml` `cloud:`/`icloud:` Apple entitlements in `nsgo build`, and an isolated per-app in-memory cloud store in `nsgotest` with change and conflict simulation (#1241).
+- Add package `gameservices` and `core.Env.CanUseGameServices` for platform player authentication, achievements, leaderboards and native overlays via purego GameKit on macOS/iOS/tvOS and the Go side of an Android Play Games runtime bridge, with an isolated per-app fake in `nsgotest` (#1129).
+- Add the `nsgo/gamepad` TSX module (`supported`, `pads`, `state`, `Button`, `Axis`) and its TypeScript declarations, gated by the `gamepad` capability (`core.AccessGamepad`) (#1116).
+- Add opt-in gamepad focus navigation (`gamepad.EnableFocusNavigation`, `gamepad.CaptureInput`, `core.MoveFocus`, `core.ActivateFocused`, `core.TriggerBack`) so D-pad and left stick traverse native focus stops, South activates, East triggers back, and mounted gameplay views can pause navigation cleanly (#1123).
+- Document game input, drawing, audio, frame-timing and `Env` capabilities per secondary target (HarmonyOS, mini programs, watchOS and tvOS) in `docs/roadmap.md`, fix `Env` capability reporting on tvOS (`CanRecognizeSpeech` false; ignore `RequestOrientation`), HarmonyOS (`HasWebView` true) and mobile mini programs (`CanTakePhoto` true when `chooseMedia` is available), and add unit tests for each target's `Env` contract (#1117).
+- Add compressed GPU texture formats (`BC1`, `BC3`, `BC7`, `ETC2`, `ASTC 4x4`) with capability queries, block-size validation, and pure-Go headless decoding, per-pass GPU timing queries (`PassTiming`, `TimestampQuery`, `RenderPassDesc.TimingLabel`, `Frame.PassTimings`, `ViewProps.OnPassTimings`), and GPU debug labels, groups, and markers stripped at zero cost in release builds (#1195, #1196, #1240).
+- Add GPU compute shaders (`@compute @workgroup_size`, compute built-ins), read/write storage buffers (`var<storage, read>`, `var<storage, read_write>`), storage textures (`texture_storage_2d`, `textureStore`), `gpu.ComputePipeline`, `Encoder.BeginComputePass` (`Dispatch` / `DispatchIndirect`), `Device.ReadBuffer`, `Features.StorageTextures`, `Device.SupportsCompute()` (with `ErrUnsupported` where compute is unavailable), MSL/HLSL/GLSL 4.30/GLSL ES 3.10/WGSL compute emitters, and compute execution on the software device used by `gpu.NewSoftwareRenderer` and `nsgotest`; native backends report `Features.Compute` false for now (#1234).
+- Add cubemaps (`texture_cube<f32>`, `gpu.CubeFacePosX`–`CubeFaceNegZ`, `Device.WriteCubeFaceRGBA`), 2D texture arrays (`texture_2d_array<f32>` with layer arguments), and mip chains (`Device.WriteTextureRegion` for sub-rectangles, `Device.WriteTextureMip`, `gpu.MaxMipLevels`, `gpu.MipSize`, `gpu.DownsampleRGBA2x`, `gpu.GenerateMipChainRGBA`, `Limits.MaxTextureArrayLayers`) with layer and LOD overloads of `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureLoad` and `textureDimensions` in WGSL and the MSL/HLSL/GLSL emitters. `Device.GenerateMipmaps` and `SamplerDesc.MinLOD`/`MaxLOD` clamps run on the software device used by `gpu.NewSoftwareRenderer` and `nsgotest`; the native backends report `Features.MipmapGeneration` false (build the chain with `GenerateMipChainRGBA` and upload it with `WriteTextureMip`) and do not clamp LOD yet (#1190, #1194).
+- Add GPU instanced drawing (`VertexStepInstance`, `VertexBufferLayout.StepRate`, `@builtin(instance_index)` across WGSL/MSL/HLSL/GLSL emitters and software rasterization, `DrawInstanced` and `DrawIndexedInstanced` with `firstInstance`) and stall-free per-frame buffer pipelining (`ViewProps.FramesInFlight` / `Device.FramesInFlight`, `Device.CreateRingBuffer` with aligned `Alloc`/`Write` and dynamic uniform offsets in `SetBindGroup`, and `FrameFence` / `BeginFrame` / `EndFrame` slot synchronization) (#1193, #1237). (#1193, #1237 by @houko).
+- Add the Linux OpenGL 3.3 Core / OpenGL ES 3.0 `gpu.View` backend on `GtkGLArea` through `libepoxy` and `purego`, supporting depth-buffered 3D rendering, VBO/IBO/UBO/VAO/texture/sampler/offscreen FBO resources, combined sampler pairs, off-commit `SubmitGPU`, async readback, and unrealize cleanup (#1107).
+- Add `gpu` device/context loss and app-suspension handling (`ViewProps.OnDeviceRestored`, `OnSuspend`, `OnResume`, `RetainResources`, `Device.Epoch`/`IsLost`/`IsSuspended`, `ReasonDeviceRemoved`/`ReasonContextLost`/`ReasonSurfaceDestroyed`, lifecycle background submission gating in `gpu.View` and `core.GPUSurface`, opt-in retained resource auto-restoration, and `nsgotest` helpers `TriggerGPUDeviceLostWithReason` and `TriggerGPUSurfaceRotation`) (#1238).
+- Add persistent JSON `gpu.PipelineCache` (with deterministic SHA-256 pipeline key hashing, compiled MSL/HLSL/GLSL/GLES/WGSL artifact storage, and backend binary archive blob storage) plus asynchronous precompilation (`Device.CreatePipelineAsync`, `Device.PrecompilePipelines`, `Pipeline.Ready`) so second launches reuse cached pipelines and first draws do not hitch (#1239).
+- Add 4x MSAA render targets with pass-end and explicit resolves (`SampleCount: 4`, `RenderTarget.Resolve`, `ResolveTarget`, `Encoder.ResolveTexture`, recorded as a resolve pass) gated by `Features.MSAA4x`, pipeline stencil testing (per-face `StencilFaceState`, read/write masks, `RenderPass.ClearStencil`, `DepthBiasClamp`) gated by `Features.StencilTest`, blend presets (`BlendOpaque`, `BlendPremultipliedAlpha`, `BlendAdditive`, `BlendMultiply`) and `ColorWriteNone`, up to four color targets (MRT) across WGSL/`shaderir` and the MSL/HLSL/GLSL/WGSL emitters bounded by `Limits.MaxColorAttachments`, and the extended formats `FormatRG11B10Float`, `FormatR32Float`, `FormatRGBA32Float`, `FormatBGRA8UnormSRGB` and `FormatStencil8` gated by `Features.ExtendedFormats` and `Device.SupportsFormat`, with HDR float storage and sRGB conversion in the software device used by `gpu.NewSoftwareRenderer`, `NewSoftwareRendererWithConfig` and `nsgotest`; native backends report `Features.StencilTest` and `Features.ExtendedFormats` false and `MaxColorAttachments` 1 for now (#1192, #1235, #1236).
+- Support offscreen color, color+depth, and depth-only `gpu.RenderTarget` passes (`LoadClear`/`LoadLoad`), readable `texture_depth_2d` textures (`textureSample`, `textureSampleLevel`, `textureLoad`, depth copy and readback), and shadow-map comparison samplers (`sampler_comparison`, `textureSampleCompare`, `textureSampleCompareLevel`, 2x2 PCF, and depth bias) across `gpu`, `internal/shader/wgsl`, `internal/shaderir` MSL/HLSL/GLSL/WGSL emitters, and the headless software renderer (#1189, #1191).
+- Add the Windows Direct3D 11 backend for `gpu.View` via pure-Go `syscall` COM vtables and `D3DCompile`, compositing GPU surfaces through Direct2D with off-commit `SubmitGPU` frames, 16-byte-aligned constant buffers, `DXGI_FORMAT_D32_FLOAT` depth testing, device-removed recovery, and COM release on unmount (#1106 by @houko).
+- Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support (#1227 by @houko).
+- Add the web `gpu.View` backend (`internal/platform/web`) with WebGPU (`navigator.gpu` + WGSL) primary rendering and automatic WebGL 2 (`GLSL ES 3.00`) fallback on `<canvas>`, supporting off-commit `SubmitGPU`, full retained resource lifecycles, offscreen/MSAA/depth passes, async readback, `GPUDevice.lost` and `webglcontextlost`/`webglcontextrestored` recovery, and `Env.SupportsGPU()` detection (#1108).
+- `gpu.RenderTarget.Valid` and `Epoch` work for depth-only render targets: `Valid` checks every attachment the target has, and `Epoch` falls back to the depth attachment, so a depth-only shadow-map target is no longer reported invalid (#2184).
+- Keep headless GPU frames, readbacks and device recovery in their owning windows with `Surface` device helpers (#1887 by @houko).
+- Upload built web and desktop packages to itch.io with `nsgo publish itch` (#1561 by @houko).
+- Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support and bundled GTK 4 on Linux x64 (#1227 and #1290 by @houko).
+- Expose physical keyboard positions and layout labels for game controls (#1242 by @houko).
+- Add package `gamepad` (`Pads`, `State`, `Family`, `DetectFamily`, `Rumble`, `StopRumble`, `RumbleEvent`, W3C Standard Gamepad button and axis constants), controller family / USB vendor & product ID / rumble support across macOS, iOS, Windows, Linux, Android and the web, `core.Env.SupportsGamepads`, and `nsgotest` fake gamepad helpers (`ConnectGamepad`, `SetGamepadInfo`, `DisconnectGamepad`, `SetGamepadButton`, `SetGamepadAxis`, `GamepadRumbles`, `LastGamepadRumble`) (#1049, #1203, #1204).
+- Add package `gamepad` (`Pads`, `State`, W3C Standard Gamepad button and axis constants), `core.Env.SupportsGamepads`, platform backends on macOS, iOS, Windows, Linux, Android and the web, and `nsgotest` fake gamepad helpers (`ConnectGamepad`, `DisconnectGamepad`, `SetGamepadButton`, `SetGamepadAxis`) (#1049).
+- Add the portable `gpu` package (`gpu.View`, buffers, textures, samplers, render targets, bind groups, and pipelines), vertex+fragment WGSL/`shaderir` compilation and MSL/HLSL/GLSL/WGSL emitters, off-commit `engine.Platform.SubmitGPU`, and headless `nsgotest` software 3D rasterization with `App.GPUFrames` and `App.GPUReadPixels` (#1059, #1110).
+- Declare game classification, Game Mode and optional gamepad support with `game` and `gamepad` in `nsgo.yaml` (#1217 by @houko).
+
+## [0.3.0] - 2026-11-23
+
+### Highlights
+
+- **Sound and media on every desktop and phone.** `audio.Sound` and `audio.Player` play on Windows, Linux, Android and the web as on Apple, with per-playback control, gapless loops, scheduling on the audio clock and pull-based PCM through `audio.NewOutput`; microphones record on Windows and Linux, and videos play in native Picture in Picture on macOS, tvOS, Android and the web.
+- **Cameras, sensors and devices.** `Scope.ScanCode` reads codes on macOS, Windows, Linux and Android, `Scope.TakePhoto` shows a camera on the desktops, speech recognition reaches Android and Windows, and apps read motion in mobile browsers, network state, thermal pressure, display refresh rates, foldable hinges and local DNS-SD services.
+- **Publishing from the tool.** `nsgo publish` uploads to App Store Connect for TestFlight and to Google Play with text store listings and pre-upload checks; builds write Flatpak bundles, signed MSIX packages, AppImage updates, Homebrew casks and winget manifests, universal Mac and dual-ABI Android packages, and Play Asset Delivery and Background Assets packs.
+- **Agents and debugging.** `nsgo dev -automation` and `nsgo mcp` drive Linux, web and mini program builds and take an app's own MCP tools; `nsgo dev` adds `-debug` under Delve, `-profile`, `-preview` and Android host rebuilds, and DevTools' overlay mounts in every window, panel, embedded view and sheet.
+- **Terminals.** NSGo apps run in terminal cells on macOS, Windows and Linux, and terminal views gain Kitty images, OSC 52 clipboard access, mouse protocols, search and remote sessions in the browser through libghostty-vt.
+- **Components.** `ui/editor`, an emoji picker, `base/dragdrop`, vertical sliders and progress bars, richer form rows, and Mermaid diagrams and TeX or Typst formulas in TSX.
+- **Platform fidelity.** Backdrop filters on Android and iOS, Android shader effects, Material 3 app bars and launcher widgets, Liquid Glass on the web, right-to-left mirroring of native controls on every desktop and phone, and smoother text, scrolling and input methods across the backends.
+- **Memory.** Closed windows, removed views, overlays, navigation stacks, shaders and downloads free what they held instead of keeping it for the app's lifetime.
+
+### All changes
+
+- Video Picture in Picture in supporting web browsers, with native state callbacks and view-owned sessions (#1479 by @houko).
+- Play short sounds and stream long audio on Android through `audio.LoadSound` and `audio.Player` (#1097 by @houko).
+- Sign in through Android Custom Tabs or the browser with app-owned callback schemes, lifecycle cancellation and PKCE/state data preserved for the app (#1397 by @houko).
+- Draw `BackdropFilters` on Android 12 and later: a view's blur and color filters apply to what is behind it, clipped to its rounded corners (#1605).
+- Add `nsgo dev -target android -android-host`, which reconnects Go rebuilds to the installed Activity over adb (#661 by @houko).
+- Report Android mouse enter, leave and move events with view and page coordinates, modifier keys and held mouse button across hover, button-down drags and resting modifier changes while respecting `PointerEvents`, modal boundaries and deleted views (#1553).
+- Check and request Android runtime permissions (`RECORD_AUDIO`, `CAMERA`, `READ_CALENDAR`/`WRITE_CALENDAR`, `BLUETOOTH_CONNECT`/`BLUETOOTH`, `READ_MEDIA_AUDIO`/`READ_EXTERNAL_STORAGE`) through `checkSelfPermission`, `requestPermissions` and `permissionResult` with persisted asked state, and open the app's settings page via `ACTION_APPLICATION_DETAILS_SETTINGS` (#1575).
+- Describe the NSH 0.4.0 accessibility roles (`listbox`, `option`, `combobox`, `group`, `region`, `navigation`, `tree`, `treeitem`, `toolbar`, `menuitemcheckbox`, `menuitemradio`) and localized `pressed` and `busy` states in Android's `NsgoView`, and resolve CSS `fontFamily` fallback lists through `Typeface.CustomFallbackBuilder` on Android API 29+ (#1547).
+- Stop rounded view fills under uniform solid borders on Android so fills do not bleed past rounded edges (#1558).
+- Draw view and screen shader effects and transitions on Android 10 and later (#1220 by @houko).
+- Report `EventSelectionChange` from Android selection areas (`Selection.java` / `NsgoView.java`) with the selected text and the area-relative bounding box of the texts it touches when the area listens for `OnTextSelection`, deduplicating unchanged updates and reporting clears so `DiffView` frames follow text selection on Android (#1555).
+- Play an Android video in native Picture in Picture with playback controls, explicit automatic entry, and state and restoration callbacks (#1478 by @houko).
+- Populate `WebError.Domain` (`"android.webkit.WebViewClient"`) and `Code` from `WebResourceError.getErrorCode()` on Android web view load failures while leaving access refusals empty (#1586).
+- Show widget timelines in Android launchers with scheduled entries, images, native timers and links (#1469 by @houko).
+- Let Go apps and libraries register scoped MCP tools for `nsgo dev -automation` and call the same handlers in tests (#1285 by @houko).
+- Recommend an App Clip's full app with a scoped native StoreKit overlay through `mobile.ShowAppClipOverlay` (#1472 by @houko).
+- Embed AppImage update locators and publish zsync controls for AppImageUpdate and compatible launchers (#1417 by @houko).
+- Enforce CSS-style font struts on macOS and iOS so lines rendered wholly in fallback families of a `FontFamily` list keep at least the primary family's ascent, descent and leading consistently across measurement, drawing, decorations, attachments, line boxes, carets and hit testing (#305, #1550).
+- Let a library's own audio output hold iOS's shared audio session at a player's levels with `audio.HoldSession` (#1931 by @oneo-me).
+- Loop individual sound playbacks and start each music repeat after the intro (#1221 by @houko).
+- Add `audio.NewOutput` for pull-based PCM playback on macOS, iOS, Android and the web (#1057, #1249 by @houko).
+- Play pull-based PCM with `audio.NewOutput` on Windows through shared-mode, event-driven WASAPI (#1251 by @houko).
+- Control individual sound playbacks on macOS, iOS, Linux and the web and mute audio players without pausing (#1088 by @houko).
+- `nsgo dev -automation` and `nsgo mcp` drive mini programs (`miniprogram_wechat`, `miniprogram_qq`, `miniprogram_alipay`, `miniprogram_douyin`) in their developer tools' simulators, over the dev client's existing connection to the dev server (#1431 by @houko).
+- Download files in the background on iOS and Android and in process on macOS with progress, pause and resume, and optional certificate pinning (#452 by @houko).
+- Add per-draw canvas image tinting in Go and TSX (#1111 by @houko).
+- Save and restore native clipboard representations and detect clipboard changes on macOS and Windows (#264 by @houko).
+- End active IME compositions before reporting `OnBlur` on Android (`InputField`) and commit uncommitted preedit text before ending composition and blurring on Linux (`GtkEntry` and `GtkTextView`) without duplicating text already committed by IBus or Fcitx (#1563).
+- Ship command-line programs beside desktop apps with `commands`, built from Go packages, with the app's linker flags, identity and their own `ldflags`, signed with the app, linked into `/usr/bin` by the Linux packages and into Homebrew's `bin` by its cask, and put on the user's `Path` by the Windows installer with `windows.path` (#2203 by @txchen).
+- Preview files through Windows registered handlers and Linux's GNOME Sushi service (#1372 by @houko).
+- Update Windows and Linux application menu bars in place when `SetApplicationMenu` is called again and defer showing Windows and Linux windows until their first mount batch is applied, matching macOS (#1554).
+- Bind the `nsgo dev` server to a specific address with `-host` (#2001).
+- Build mini programs with the dev client under `nsgo dev`, over each platform's request API without linking `net/http`, so `-devtools`, `-highlight`, `-layout` and `-trace` reach mini programs (#1617).
+- Mount DevTools' overlay (update highlights, Pick and the layout audit) in every surface of an `nsgo dev` build — including `desktop.OpenWindow` secondary windows, `desktop.OpenPanel` panels, `nsgo.NewView` embedded views and iOS `ModalPageSheet`/`ModalFormSheet` sheets — synchronized through a shared controller and cleanly unregistered on surface close (#1616).
+- Open Mermaid diagram links on press and show item tooltips while the pointer rests over them (#1435).
+- Draw app-supplied SVG icons and loaded images in Mermaid diagrams (#1436 by @houko).
+- Follow the app's scoped palette in Mermaid diagrams without replacing their views (#1439 by @houko).
+- Report display refresh rates and follow the window's current display through `Env.Display` (#1213 by @houko).
+- Keep panels docked to a display edge on macOS, Windows, X11 and Wayland compositors with gtk4-layer-shell support (#1377 by @houko).
+- Pass unconsumed mouse wheel, trackpad gesture and momentum scroll events from an embedded macOS view up the AppKit responder chain so enclosing host scroll views scroll naturally (#1613).
+- Search and choose emoji by localized names in `base.EmojiPicker` and themed `ui.EmojiPicker`, with category navigation, recent entries and skin tones (#1337 by @houko).
+- Set full screen explicitly on a chosen desktop display or through a web press with `desktop.SetFullScreen` (#1214 by @houko).
+- Draw `Drawing.DrawVertices` meshes in mini programs with the web's canvas player, not yet checked in WeChat DevTools or on a device (#1211).
+- Write installable Flatpak bundles in Go alongside store archives and builder manifests (#1416 by @houko).
+- Add a foldable-display gallery page with explicit region placement and persistent pane counters (#1432 by @houko).
+- Support leading, trailing, and automatic (`core.Env.VerticalBarEdge`) vertical edge placement on `mobile.TabBar` and `ui.TabShell`, with iOS vertical bar support and `nsgotest.VerticalBarEdge` testing helpers (#1433).
+- Follow the language forced by `Scope.SetLocale` in system UI words (text selection menus, file dialogs and GTK widgets) in standalone apps on Android 13+ (`LocaleManager.setApplicationLocales`), Windows (`SetThreadPreferredUILanguages`/`SetProcessPreferredUILanguages`) and Linux (`LANGUAGE`/`LC_MESSAGES` and GNU gettext cache invalidation) (#1614).
+- Add content below the text, title line limits, minimum height and radio selection to `ui.FormRow`, and per-child divider insets to `ui.FormSection` (#1841 by @houko).
+- Wrap display formulas to their available width at the inherited font size (#1444 by @houko).
+- Report formula source hits, nearest carets and overlapping diagnostics through `formula.View.OnHit` (#1448).
+- Hide unfinished formula recovery ink with `Streaming` and `StreamingFunc` while source updates its layout (#1445 by @houko).
+- Follow frontmost applications through Wayland's foreign-toplevel protocol (#1393 by @houko).
+- Track full-app iOS link invocations before mount and during later delivery with explicit universal-link hosts in `app_links` (#1474 by @houko).
+- Add `nsgo publish -target android -track` to upload App Bundles to Google Play with a version check (#1230 by @houko).
+- Play timed haptic patterns on iOS, Android and web browsers with vibration on Android (#1205 by @houko).
+- Draw canvas atlases on HarmonyOS from one op instead of an image op per sprite (#1103 by @houko).
+- Draw `Drawing.DrawVertices` meshes on HarmonyOS, with each triangle's average vertex alpha and no color tint, not yet checked on a device (#1211).
+- Sample images and meshes on HarmonyOS with the nearest texel after `SetImageSmoothing(false)` (#1211).
+- Tint canvas images from bytes or the app's resources on HarmonyOS with `DrawTintedImage`, not yet checked on a device (#2003 by @houko).
+- Support immersive full-screen requests on HarmonyOS, hiding the status bar, navigation bar and navigation indicator (#1124 by @houko).
+- Apply nearest-neighbor sampling to Canvas images and Image views on HarmonyOS and to Image views in mini programs, for pixel art, though their output is not yet checked on devices (#1209 by @houko).
+- Show pixel buffers in HarmonyOS image views and draw them on HarmonyOS canvases (#1101 by @houko).
+- Let Go apps on HarmonyOS use the standard library to read and write files in their sandbox directories (#477 by @houko).
+- Let `Screen.HeaderTitle` and `ui.NavPage`'s own `Header` fill the room between the iOS and Android system header's ends when their views grow or use percentage widths while keeping content-sized titles compact (#1610).
+- Skip hidden spans' glyphs, color emoji, decoration lines and shadows when drawing across Apple, Windows, Linux, Android and mini program text engines, and leave hidden spans out of Android text selection copies (#1590).
+- Let apps bound retained image bytes with `Scope.SetImageCacheLimit` while preserving `KeepImage` pins (#1344 by @houko).
+- Support immersive full-screen requests on iOS and Android (#1124 by @houko).
+- Add `core.Style.GlassInteractive` (`glassInteractive` in TSX) for interactive Liquid Glass press feedback on macOS 27 (`NSGlassEffectView.effectIsInteractive`) and iOS 26 (`UIGlassEffect.isInteractive`), routing hit testing through the glass content view while keeping `OnPress` and pressable children working (#1637).
+- Animate iOS backdrop blur tints across background transitions and animated background values on `UIVisualEffectView`'s content view while keeping the outer layer clear (#1542).
+- Register iOS document types and deliver imported files through `OnOpenFiles` (#1385 by @houko).
+- Composite iOS video and app-drawn subtitles in custom Picture in Picture (#970 by @houko).
+- Render `mobile.TabBarItem.SVG` as a template image in iOS's native `UITabBar` where `Icon` names no SF Symbol, so `ui.TabShell` uses the system tab bar for SVG-only tabs on iOS (#1528).
+- Expose resolved visible-label names, hints, hidden states and disabled/invalid states to native screen readers on watchOS, mini programs and HarmonyOS (#1593).
+- Apply `Style.Language` to text inputs across Apple, Android, Windows, Linux, the web and mini programs, set language-specific font stacks and `lang` on mini programs' text and inputs, and break Korean lines between words (`word-break: keep-all`) across every backend (#1548).
+- Make the layout audit readout focusable on Apple TV and drive the ruler with a remote- and keyboard-controlled crosshair (#1618).
+- Drive `LayoutSpring` layout transitions by exact damped harmonic oscillator physics (`LayoutTransition.Response` and `DampingRatio` across underdamped, critically damped and overdamped regimes), running until settled rather than cutting off at a duration and preserving both position and velocity on mid-flight retargets across macOS, iOS, Windows, Linux, watchOS, Android, web and `nsgotest` (`View.ShownFrame`), with `response` and `dampingRatio` in TSX (#1341).
+- Expose `View.AccessibilityLevel` to screen readers on macOS, iOS, Windows, Linux and Android and preserve `RoleSpinButton` with increment/decrement actions on native iOS and Android text fields (#1594).
+- Drive Linux apps with `nsgo dev -automation` and `nsgo mcp` (#1286 by @houko).
+- Open application menus from the keyboard in Linux windows with hidden title bars (#1387 by @houko).
+- Track touchpad scroll release velocity through the Linux hosted-view shield (and enable kinetic scrolling on `NoScroll` WebKitGTK views) so shielded touchpad scrolls glide and report `OnWheel` end velocities like the surface's own, and stop on touchpad hold or new input (#1545).
+- Linux app icon quicklists and app-specific recent document history (#1386 by @houko).
+- Keep every active Linux Tab stop marked focusable in GTK so AT-SPI and Orca see all stops as focusable while declining GTK's directional focus traversal on `NsgoView` so mapping a window does not focus a control on the app's behalf (#1552).
+- Ship the app's AppStream metadata in the Debian and Arch packages and the AppImage, and install the files of `linux.share` under `/usr/share` in them (#2200 by @txchen).
+- Play videos in native Picture in Picture on macOS (#1477 by @houko).
+- Clear macOS `WKWebView` hover when covered by an overlay and restore page hover and cursor once uncovered (#1612).
+- Add subscription management and transaction refund requests to the Apple purchases service (#1368 by @houko).
+- Request short-lived WeChat, QQ, Douyin and Alipay mini program login codes for server-side exchange (#1402 by @houko).
+- Report modal presentation and dismissal (`EventModalShown`, `EventModalDismissed`) and native screen insets (`EventScreenInsets`) across every backend so `base.Dialog`'s `OnOpen` and `OnClose` follow the platform instead of an animation timer (#1599).
+- Add `PermissionContacts`, `PermissionPhotos` (with `PermissionLimited` for partial access), `PermissionAutomation` / `PermissionAutomationOf` (macOS `AEDeterminePermissionToAutomateTarget`), and `PermissionNotifications` to `core.Permission`, with Apple `CNContactStore`, `PHPhotoLibrary`, `CLLocationManager`, `CMMotionManager.authorizationStatus` and notification/settings support across platforms (#1577).
+- Index localized MSIX display names and scaled logos with a Go-written Windows resource index (#1415 by @houko).
+- Support scroll offset reporting, `Ref.ScrollTo`/`Ref.ScrollToEnd`, `Input.OnScroll`, `Input.HideIndicator`, `Input.Bar` (`scrollbar={theme}` in TSX), and `Scope.SetScrollbars`/`base.SetScrollbarTheme` on multiline `Input`s across macOS, iOS, Windows, Linux, Android, web, HarmonyOS, and `nsgotest` (#1596).
+- Show SVG and image icons in native desktop menus with `desktop.MenuItem.Icon` and record them in menu snapshots (#1343 by @houko).
+- Observe native desktop window frames, visibility and keyboard focus in `nsgotest` (#1377 by @houko).
+- Publish the app's media information and transport controls to macOS Now Playing through `core.Scope.SetNowPlaying` (#1084 by @houko).
+- Add `nsgotest` `ClickTray`, `ClickTrayIndex` and `ClickTrayTitle` steps that click a live tray icon by opening order or title in headless desktop tests, with optional icon bounds, and let `ChoosePopup` pick from the tray's menu (#2051).
+- Android packages declare verified HTTPS App Link hosts with `app_links` (#1475 by @houko).
+- Direct desktop releases write a Homebrew cask (`dist/releases/homebrew/<slug>.rb`) with `auto_updates true` and a winget multi-file manifest (`dist/releases/winget/`) for built macOS and Windows installers (#1422).
+- Bundle Go dependencies' declared desktop native libraries and licenses before signing and making installers (#1722 by @houko).
+- Configure independent Windows, Linux and Android icons and optional Android cleartext HTTP (#1349 by @houko).
+- Login registration through MSIX startup tasks, Flatpak's Background portal and Snap autostart metadata (#1389 by @houko).
+- Populate `PasteEvent.HTML` (`onPaste`'s `html`) from the clipboard on Windows (`CF_HTML`), Linux (`text/html` via GTK 4 / GDK) and Android (`ClipData.Item.getHtmlText`), matching macOS, iOS and the web (#1559 by @houko).
+- Set light and dark launch backgrounds and centered images for iOS and Android 12 or later with `launch_screen` (#1219 by @houko).
+- `Scope.TakePhoto` shows a camera on macOS, Windows and Linux. It uses the same camera preview as `ScanCode`, with a Take Photo button (#1569 by @houko).
+- Support `Picker.takePhoto` in `nsgo/test` TSX tests with `open(..., { camera: true })`, recording camera captures in `app.picks()` (`camera: true`) and answering, cancelling, or rejecting them through `app.onPick` (#1572).
+- Enable native video Picture in Picture sessions on tvOS (#1476 by @houko).
+- Let each surface request a display frame rate for `RequestAnimationFrame` and `Animate` with `Scope.SetPreferredFrameRate` (#1212 by @houko).
+- Publish semantic web headings and links with scoped page titles and descriptions (#1347 by @houko).
+- Add `LabelFunc` and `HintFunc` to `base.Radio`, so a `ui.FormRow` radio's bound title now updates its accessible name in place (#2059).
+- Read bundled `asset:` files asynchronously from Go with `Scope.ReadAsset` (#1224 by @houko).
+- Support `microphone.Capture` on Windows (WASAPI) and Linux (PulseAudio/PipeWire with ALSA fallback) and `microphone.RecordWAV` on macOS, iOS, Windows and Linux with shared RIFF/WAVE encoding, metering and partial-file repair (#1573).
+- Rich editors support touch selection handles and native edit menus on iOS and Android (#1338 by @houko).
+- Capture a mounted view or its surface asynchronously as a PNG with `Scope.Capture` (#1243 by @houko).
+- Share Mac App Store widget timelines through a provisioned App Group and sign both sandboxed bundles even when omitting the installer (#1468 by @houko).
+- Support `Scope.ScanCode` and `Env.CanScanCode` on Windows (WinRT `MediaCapture` with `codescan`), Linux (the desktop portal's `Camera` with GStreamer `pipewiresrc` and `codescan`) and the web (`getUserMedia` with `BarcodeDetector`) (#1570 by @houko).
+- Repeat daily and weekly scheduled toast notifications on Windows (chaining `ScheduledToastNotification` while running and rearming persisted schedules on launch), schedule notifications natively through `UNUserNotificationCenter` on watchOS, keep scheduled notifications while the app or page runs on Linux and the web, and guard tvOS notification calls to badge-only support (#1540).
+- Add scoped region, step, activity, pressure, precise-authorization and bounded background-motion services with explicit permissions and TSX bindings (#1406 by @houko).
+- Show a touch-draggable scroll handle on overflowing vertical and horizontal scroll views on iOS and Android, with headless `nsgotest` handle inspection and scrubbing through `App.ScrollHandle` (#1340).
+- Read `expo-secure-store` encrypted `SharedPreferences` entries (AES-GCM and legacy hybrid RSA) on Android, claim `keychain-access-groups` from `macos.entitlements` in Developer ID macOS builds, and store secrets in WeChat mini programs' platform-encrypted storage (`encrypt: true`) while keeping `ErrSecretsUnavailable` on the web and other mini programs (#1581).
+- Offer Look Up, Translate, Share, Speech and macOS Services on secondary-clicked selections on macOS, and installed `ACTION_PROCESS_TEXT` apps in Android's floating selection toolbar (#1556).
+- Read selectable area and `textview.TextView` selections as Markdown and HTML, preserving parsed blocks and inline formatting (#1336 by @houko).
+- Keep zoomed text and canvases sharp beyond Apple: redraw Android texts and canvases in half-steps up to 4×, replay web canvases under style transforms and draw only the visible slice past 4096 × 4096 pixels, and add scroll zoom plus sharp canvas rasterization on Windows and Linux (#561, #1606 by @houko).
+- Sign Windows MSIX packages with `sign.certificate` in Go (#1414 by @houko).
+- Let Go apps configure the engine's sound limits with `audio.SetSoundLimits`, honored on macOS, iOS, Linux, Windows, Android and the web (#1222 by @houko).
+- Support `Scope.StartSpeech` on Android (`android.speech.SpeechRecognizer` with `RECORD_AUDIO` permission handling), Windows (WinRT `Windows.Media.SpeechRecognition.SpeechRecognizer` and `ContinuousRecognitionSession`) and the web (`SpeechRecognition` / `webkitSpeechRecognition`, reporting `unavailable` when absent) (#1584).
+- In-app store rating requests in standalone Android packages (#1246 by @houko).
+- Package large assets as Play Asset Delivery modules and Apple Background Assets, with an API to open available pack files (#1232 by @houko).
+- Offer Google Play's native update flow and the Mac App Store's app page from in-app update checks (#1421 by @houko).
+- Give `nsgotest.Surface` window-local queries, input, gestures, reports, captures, sizing, waits and queued posts (#1839 by @houko).
+- Bind terminal actions over default keys, zoom the grid and choose secondary-click clipboard actions or a localized context menu (#1459 by @houko).
+- Run NSGo apps in terminal cells on macOS, Windows and Linux (#1345 by @houko).
+- Support app-permitted OSC 52 clipboard reads and writes and Kitty text/PNG paste snapshots in Go and TSX terminal views (#1458 by @houko).
+- Terminal box drawing, blocks and Powerline separators, cursor blinking, minimum text contrast and extended padding colors (#1460 by @houko).
+- Report terminal mouse input and alternate-screen wheel keys in the program's requested protocol (#1456 by @houko).
+- Open existing terminal paths with modifier-click relative to the shell’s working directory (#1457 by @houko).
+- Render terminal search colors and Kitty images and move the cursor with Option-click in OSC 133 command input (#1461 by @houko).
+- Run remote terminal sessions in the browser with libghostty-vt WebAssembly (#1455 by @houko).
+- Add `nsgotest.App.DoublePress`, and run `Pan` and, where the target has native pinch input, `Pinch` on targets (#1043 by @houko).
+- Isolate Windows, Linux, iOS, tvOS, watchOS and Android test hosts from physical user input while accepting scripted `nsgotest` steps and keeping ordinary apps and live `nsgoautomation` unaffected (#1531).
+- Settle native focus after `nsgotest` presses across web, iOS, tvOS, watchOS, Android and HarmonyOS test hosts, modeling target focus solely from reported platform focus and blur events (#1532).
+- Update `time.Local` live when the system time zone changes on Windows (`WM_TIMECHANGE`/`WM_SETTINGCHANGE`, `GetDynamicTimeZoneInformation` and `icu.dll`/CLDR mapping with DST-aware TZif synthesis), Linux (`inotify` on `/etc/localtime` and `/etc/timezone` plus `org.freedesktop.timedate1` `Timezone` changes) and the web (`Intl.DateTimeFormat().resolvedOptions().timeZone` and `Date` offset checks on focus, visibility, `pageshow`, `languagechange` and a visible-only timer) (#1539).
+- Run `Style.Transition` on unbound style properties beside `Style.Animated` bindings on macOS, iOS and the web without clobbering either animation (#1541).
+- Expose each tray click's screen bounds through `Tray.ClickBounds` on macOS and Windows, and fit macOS tray titles beside drawn icons (#1390 by @houko).
+- Deliver trusted web view input (`Ref.SendInput`, with `Env.CanSendInput`) on Windows (WebView2 `SendMouseInput` and `Input.dispatchKeyEvent`), Linux (WebKitGTK via X11 XTest and `InsertText` fallback) and iOS (`WKWebView` via `UITouch`/`UIEvent`, `UIKey`/`UIPress`/`UIPressesEvent` and `insertText:`) (#1587).
+- Typeset TeX and Typst formulas in TSX through optional Formula registration and TextView renderers (#1441 by @houko).
+- Draw Mermaid diagrams in TSX with opt-in `Diagram` registration and TextView renderers (#1438 by @houko).
+- Load and play sounds in TSX with `nsgo/audio`, where signed packages keep the default sound quotas whatever the Go app raised and a sandbox holds at most `Limits.Sounds` (256) loads pending or open (#1222 by @houko).
+- Expose tracked updater state, persisted automatic-check preferences and typed installation capabilities without a network check (#32 by @houko).
+- Stream Linux and Android update downloads directly to disk with live progress via `updater.Status` and platform task progress, verifying size, SHA-256 and Ed25519 signatures from the staged file (#1420).
+- Support direct Arch Linux (`.pkg.tar.gz`, `.pkg.tar.zst`) updates via `pkexec pacman` and atomic in-place AppImage self-updates with multi-package Linux appcasts (#1420).
+- Drag application values between views with `base/dragdrop` and test transfers with `DragTo` (#1823 by @houko).
+- System authentication sessions with callback schemes, associated HTTPS callbacks and cancellation on watchOS (#1400 by @houko).
+- Read and update application addresses with browser history, reloadable links and an explicit web asset base (#1346 by @houko).
+- Drive web dev builds through a managed Chromium browser with `nsgo dev -automation` and `nsgo mcp` (#1424 by @houko).
+- Draw Liquid Glass on the web through NSGo's glass shader over Chrome's HTML-in-Canvas stage with descendant `<canvas>` compositing and safe CSS `backdrop-filter` fallback where HTML-in-Canvas is unsupported or an ancestor makes nested drawables unsafe (#1611).
+- Web sensor services now deliver geolocation fixes through `navigator.geolocation`, including one-shot and watched requests (#1404 by @houko).
+- Offer confirmed reloads for published web releases and restarts for prepared mini-program updates (#1423 by @houko).
+- Support `var<private>` globals, user-defined `struct` types, non-square matrices (`mat2x3` through `mat4x3`), `determinant`, and the bit-counting, packing/unpacking, `modf` and `frexp` built-ins in WGSL shaders across the GLSL, MSL and HLSL writers (#1535).
+- Run widget button actions through App Intents on iOS and macOS (#1463 by @houko).
+- Render canvas recordings with native text and registered fonts in windowless macOS tests (#565 by @houko).
+- Play and control short `audio.Sound` effects and streaming `audio.Player` tracks on Windows (#1095 by @houko).
+- Draw live Windows tray views with transparency and updates from reactive changes and image loading (#1382 by @houko).
+- Follow an embedded Windows view's ancestor root window (`GA_ROOT`) minimize, restore, visibility, activation and reparenting in `Env.Lifecycle` and `Env.Minimized` through a ref-counted `comctl32.dll` window subclass (#1588).
+- Picture what the window drew behind an effect host for WGSL `sample_backdrop` on Windows (copying the Direct2D target behind the host before it draws itself) and Linux (snapshotting the surface up to the host into a GSK render node), matching macOS, iOS and the web (#1534).
+- Host Windows `Input` fields through windowless RichEdit (`ITextServices2` / `ITextHost2` in `msftedit.dll`) drawn into Direct2D with `TxDrawD2D`, delegating editing, undo/redo, OS spell checking, password masking and TSF/IMM32 input methods to Windows with fallback to the DirectWrite editor when unavailable (#1560).
+- Deliver precise point-distance scroll steps and touchpad gesture phases (`GestureBegan`, `GestureChanged`, `GestureEnded`) to both native scroll views and `View.OnWheel` in Windows test host scrolls (#1533).
+- Overlay `ui.NavPage`'s Android toolbar transparently over the page with content scrolling under a progressive `RenderEffect` blur on Android 12+ (and a translucent gradient scrim on older versions), matching iOS while respecting explicit custom header backgrounds (#1608).
+- Show the author's avatar at the end of a commit graph's narrow rows (#1973 by @oneo-me).
+- DevTools' bounds, Pick, highlights and layout audit boxes follow transforms, layout animations, transitions and sticky offsets (#1619).
+- Draw a deforming 1,000-triangle mesh at about twice the frame rate on macOS, compositing meshes at the device's pixels on Apple platforms and the web (#1211).
+- Loop music players on Linux and the web without a gap at each repeat, decoding tracks up to 32 MiB and 5 minutes into memory (about 23 MB a minute) and, on Linux, streaming longer ones; a looping player on the web now plays only after a user gesture on the page and fails with `NotAllowed` before it, and at a rate other than 1 still seeks back at the end, keeping its pitch (#1221 by @houko).
+- Android web views refuse pending capture requests after their devices are removed from `Media`, the page leaves or the request is canceled (#1335 by @houko).
+- Keep shadows and outlines around clipped Android content, including restyled views with native ripple feedback (#1362 by @houko).
+- `nsgo test` on Android ends a test at its exit mark when the device log lost its start mark, instead of waiting five minutes (#2056 by @oneo-me).
+- Preserve formula source and omit hidden spans when copying Android selections (#1440 by @houko).
+- Android Live Update action presses reach a running app without opening its Activity (#1465 by @houko).
+- Android notification-permission callbacks observe current Live Activity availability (#1465 by @houko).
+- `audio.OutputLatency` on Android answers at once with an unknown latency instead of never calling back, and its query no longer makes the runtime drop the batch with an unknown audio command (#2182 by @houko).
+- Keep Android WAV recordings and completion reports alive through Activity recreation and finalize failed partial writes as playable WAV files (#38 by @houko).
+- Android recordings fall back to the device's sample rate when the rate asked for is outside what `AudioFormat` describes, rather than ending as unavailable, and a recording whose Go process ended no longer keeps the app recording while the next process's pipe is full (#1574 by @houko).
+- Apply Android scroll keyboard tap policies to taps consumed by children, including mention rows (#1355 by @houko).
+- Release the shader programs no view draws on Android, in Go, the runtime and the GPU (#1949 by @oneo-me).
+- Measure Android text at each surface's density and free its cached layouts when the surface closes (#173 by @houko).
+- Let Android text measurement pass large image and file transfers on the runtime pipe (#173 by @houko).
+- Release Android widgets on `NsgoView.detachFromEngine` and restore the same view from its live Go graph on reattachment (#1378 by @houko).
+- Share persistent data between an iOS App Clip and its full app through explicit `apple.app_group` (#1473 by @houko).
+- Keep App Clips in iPhone apps automatically signed by Xcode (#1471 by @houko).
+- Release the side layers of per-side borders when a view is deleted on macOS and iOS (#1941 by @oneo-me).
+- Keep the shadows and outlines of texts, canvases and shaders outside their clipping on macOS and iOS (#1362 by @houko).
+- Release the views still fading out when a surface closes on macOS and iOS (#1965 by @oneo-me).
+- Keep outer shadows and outlines around clipped inputs, web views, videos and native components on macOS and iOS (#1362 by @houko).
+- Stop the performance HUD and release what it holds when its surface closes on macOS and iOS (#1955 by @oneo-me).
+- Keep outer shadows and outlines around clipped images and scrolling content with differing corner radii on macOS and iOS (#1362 by @houko).
+- Cancel and release a web view's downloads when it closes mid-download on macOS and iOS (#1953 by @oneo-me).
+- Keep packaged Apple apps’ diagnostics in the unified log under their bundle identifier (#1348 by @houko).
+- Web and desktop loopback sign-in callbacks with Unicode paths or dot segments complete after URL normalization (#1396 by @houko).
+- Install Linux packages with Unicode paths and include the Arch manifest for installed-file integrity checks (#1410 by @houko).
+- Preserve presence-only clipboard formats and expose native format names without copying payloads (#2216 by @houko).
+- Catch desktop OAuth callbacks through an app's registered URL scheme on Windows and Linux, preserving unrelated links and cancellation (#1399 by @houko).
+- Propagate `Fatal`, `FailNow`, `SkipNow` and panics from Windows `onMain` and Linux `onLoop` test helpers back to the test goroutine immediately while keeping the window and shared GTK threads alive for cleanup and later tests (#410, #1530).
+- Report device models on watchOS, HarmonyOS and mini programs (#1371 by @houko).
+- Follow native animation and scroll frames in DevTools bounds, Pick and quad outlines (#1619 by @houko).
+- Wait for finite native transform transitions in macOS app tests (#1619 by @houko).
+- Honor pinned motion preferences in native app-test renderers (#1619 by @houko).
+- Fit Mermaid diagrams to their view's width, turning wide flowcharts downward without stretching their labels (#1437 by @houko).
+- Let steps and waits under `nsgo test -target` move the test's clock while a style transition waits for its `OnTransitionEnd`, as they do headless, so a dialog or popover closed through its `EndingStyle` leaves the screen instead of staying and taking presses.
+- Measure wrapped items in flex columns at their fitted width to keep them from overlapping the next item (#2220 by @iFwu).
+- Align thin formula rules to whole device pixels (#1450 by @houko).
+- Render CJK and other unsupported formula text with system fonts (#1446 by @houko).
+- Shrink formulas with text that uses `AdjustsFontSizeToFit` (#1447 by @houko).
+- Free removed navigation stacks and views whose part shows the focus, such as a command palette's, which stayed in memory with their whole subtree each time they were shown and hidden (#1939 by @oneo-me).
+- Resolve hosted Windows app identities and follow AppKit fullscreen presentation changes (#1393 by @houko).
+- Draw HarmonyOS text inputs in their style's font family, italic style, line height and alignment, as other targets do (#1597).
+- Report the display cutout and the system bars' side areas in the HarmonyOS safe area, so landscape has left and right insets (#1124 by @houko).
+- Keep the three-button navigation bar on HarmonyOS outside immersive mode, and hide only the status bar for `Hidden` (#1124 by @houko).
+- Download GitHub releases whose tag prefixes contain URL-reserved characters in the install scripts (#1411 by @houko).
+- Release the touch and scroll handoff of a pan removed mid-drag on iOS, which kept its view alive and pinned the scroll view to its top (#1951 by @oneo-me).
+- Clip pastes past `MaxLength` (and single-line/submitting-multiline pastes) on iOS `UITextField` and `UITextView` at composed character sequence boundaries before inserting via `insertText:` so pasting and undoing never corrupts UIKit's undo manager (#1565).
+- Match iOS software Return shortcuts before input submission, blur or newline insertion (#1351 by @houko).
+- Re-measure iOS's native `UITabBar` (`mobile.TabBar`) on window attachment, placement, safe area, layout and trait changes instead of baking in the key window's bottom safe area once at creation (#1529).
+- Keep iOS keyboard insets current through window resizes and support native test-window resizing (#1434 by @houko).
+- Measure `MaxLines`-truncated text boxes accurately on Windows (applying DirectWrite's height trim before reading width and keeping offered width for soft-wrapped cuts), mini programs (truncating the remaining text of the last paragraph for both `Measure` and `Layout`, including multi-line head/middle cuts) and HarmonyOS (applying `MaxLines` in Go over the host's `measure` bridge) (#1549).
+- Show a Linux fitted panel at its content's size when it was realized before its first fit, as reading its X11 window does (#2096 by @houko).
+- Return no-display errors from repeated Linux startup and embedded-view creation after GTK display initialization fails (#2020 by @houko).
+- Pending app icon menus follow the latest setter across windows (#1386 by @houko).
+- Release the views still animating out when a window or embedded view closes on Linux (#1943 by @oneo-me).
+- Closing an audio player while it seeks no longer aborts a Linux app (#2082 by @oneo-me).
+- Preserve physical-input isolation while Linux target tests deliver trusted WebView input (#2103 by @houko).
+- Honor window frame positions and report native window moves on Linux under X11 (#1379 by @houko).
+- Apply nonfixed X11 window maximums and remove forbidden minimize/maximize buttons from Linux native titlebars (#1381 by @houko).
+- Fix Linux window dragging inside pressable ancestors and hover when the pointer enters a window (#1380 by @houko).
+- Keep a keyed `List` row in place when rows are prepended while the viewport starts in its header (#1920 by @iFwu).
+- Show macOS file dialogs and alerts independently when their owner is out of sight, keeping the main queue responsive and canceling dialogs when the owner closes (#1395 by @houko).
+- Report the end of an input method composition when it drops its marked text on macOS (#2219 by @iFwu).
+- Follow the focused editor’s history and selection when enabling macOS editing menu roles with an app fallback (#2018 by @houko).
+- Report the original GIF in an input's `OnPaste` on macOS, even when the pasteboard also offers a still image (#1923 by @iFwu).
+- Commit marked input-method text (including live conversion) and end the `NSTextInputContext` session before macOS inputs lose focus, turn read-only/disabled, or resign key, and fall back to the input's screen rect in `firstRectForCharacterRange:actualRange:` so IME candidates open beside the caret of point-wide editor sinks rather than at the screen's corner (#1562).
+- Keep the macOS multiline caret, selection and candidate anchor at the font's height when the app sets taller lines (#1927 by @iFwu).
+- Retain a macOS scroll view's refresh indicator room across `ContentInset` changes while resting at the refresh indicator, matching Windows and Linux (#1546).
+- Let a read-only single-line field in a WeChat mini program focus, select and copy, putting back the value Go holds after an edit; a read-only multiline WeChat field and Alipay's read-only fields stay disabled, as those hosts cannot undo an edit (#1508).
+- Preserve hardware keyboard modifiers when Space or Return activates a focused pressable on Android and iOS/tvOS (#1350 by @houko).
+- Give mobile editing tests the keymap before native Backspace and select-all actions, preserving Android Control shortcuts and iOS software editing (#1354 by @houko).
+- Mirror native controls, menus, alerts, text inputs and vertical scroll bars across macOS, iOS, Android, Windows and Linux when the app switches between LTR and RTL, with native platform direction tests across all five backends (#1615).
+- Style native compact and large navigation titles and place Android header actions beside a large title without losing a custom compact title (#1842 by @houko).
+- Let a focused view's `OnKeyDown` consume Android hardware keys before the keymap, activation and native dispatch, with each key reaching the app once, and order HarmonyOS's key bridge so view callbacks run before its Go keymap and releases reach the view that heard the down (#1352 by @houko).
+- Keep phone gallery tests on native tabs, reveal controls above native bars and retain iPhone test panic diagnostics (#1453 by @houko).
+- Move native text selections in iOS, Android and HarmonyOS target tests (#1353 by @houko).
+- Keep Android notification presses tied to their full IDs when two IDs share a Java hash (#1356 by @houko).
+- Keep a list's scroll anchoring during a headless `nsgotest.App.Scroll` drag (#1919 by @iFwu).
+- Target zoomed scroll content correctly in test pointer steps and visibility checks with scaled scroll limits (#2000 by @houko).
+- Android invocations and whole-page browser addresses reach `mobile.OpenedURL` before rendering and on later changes (#1475 by @houko).
+- Browser history distinguishes players started within the same clock tick (#1475 by @houko).
+- Keep overlays beside their anchors when an app scrolls or a List adjusts its offset (#1925 by @iFwu).
+- Keep desktop.WindowOptions.Parent windows above and following their parent's visibility on Windows and Linux (#1840 by @houko).
+- Honor Apple package minimum versions without lowering runtime requirements (#1349 by @houko).
+- Preserve a video's playback-rate capability when nsgotest.App.Play reports its load (#1837 by @houko).
+- Attribute a function plugin's uncaught callbacks and native slice-budget errors to its `Sandbox.OnError` handler (#1877 by @houko).
+- Update number and code input labels and formatting, select search text, form text and spinner labels in place (#1861 by @houko).
+- Open location and motion permission panes on macOS (#1405 by @houko).
+- Draw an Android shader's first frame when its surface becomes ready after the frame arrived, where it stayed blank until the next update (#1115 by @houko).
+- Release the textures of the images a shader view no longer reads on Windows and Linux, such as an offscreen canvas's earlier versions (#1945 by @oneo-me).
+- Forward `ui.Sheet` labels, test IDs and swipe-to-close to `base.Sheet` (#1843 by @houko).
+- Bound Linux's font metric caches, release the macOS color sampler's handler after each pick, and stop keeping removed views and pointers in Linux and web animation and gesture lists (#1961 by @oneo-me).
+- Paint wrapped span backgrounds, rounded corners and vertical insets on HarmonyOS and mini programs (#1373 by @houko).
+- Reject repeated StoreKit transaction finishes after reading entitlements (#1367 by @houko).
+- Terminal combining marks and emoji repeating their base character (#1460 by @houko).
+- Deliver macOS mouse-button releases and preserve terminal motion deduplication (#1456 by @houko).
+- Include libghostty-vt beside Windows and Linux executables in arm64 AARs and as a companion XCFramework for embedded iOS and Mac Catalyst apps (#1454 by @houko).
+- Report compiler diagnostics in the console and JUnit when compile-only test builds fail (#2026 by @houko).
+- Snapshot presentation touch targets and local coordinates under bound transforms on HarmonyOS and mini programs, and report `OnTouch` and touch responder events on watchOS (#1527).
+- Keep transparent Linux windows and panels clear around their content, and honor `NoShadow` on Windows windows with a hidden title bar without changing the system frame of others (#1392 by @houko).
+- Allow omitted flow dimensions, edge width and quota pace in generated TSX types (#2122 by @houko).
+- Refuse unavailable tvOS photo, web and clipboard operations safely (#1484 by @houko).
+- Ask quit request handlers before Linux and Windows updater relaunches (#1836 by @houko).
+- Report Windows, Linux and browser video controls’ pauses and plays while preserving their state through unrelated settings changes (#1358 by @houko).
+- Authentication sessions on tvOS answer unavailable before requesting an authorization URL (#1400 by @houko).
+- Web OAuth sign-ins complete when the provider's Cross-Origin-Opener-Policy cuts the popup off from the page: the redirect page hands its callback back over a same-origin `BroadcastChannel`, and a popup that reads as closed after showing the provider waits up to 5 minutes for it instead of ending the session cancelled at once (#1401 by @houko).
+- Delete the web backend's style rules no view or span shows anymore, including those of views that faded away, so the page's style sheet no longer grows for the whole session (#1947 by @oneo-me).
+- Release a web notification's callbacks when it is replaced, closed or dismissed, not only when it is clicked, and forget one the user dismissed (#1957 by @oneo-me).
+- Edit → Speech → Start Speaking on Windows and Linux reads the selection of a focused web view, or the text of its focused text control, where it read nothing (#1388 by @houko).
+- Apple and Windows web views correctly handle expired and long-lived cookies (#1363 by @houko).
+- Harden `WebView.OnDownload` on Windows (WebView2 `DownloadStarting` failure reporting, closed-view cancellation, stat byte-count fallback and COM lifecycle tests) and Android (`DownloadListener` redirect-safe header/cookie isolation, view-close cancellation, out-of-memory error handling and JVM/protocol tests) (#1585).
+- Fix and verify `View.OnWheel`, pinch `Position` across all gesture phases, and Android touchpad scroll momentum glide across iOS (fixing swapped `UIScrollTypeMask` continuous/discrete masks and scroll-view precedence), Android (`WheelScroll` release-velocity tracking and transformed pinch unprojection), Windows, Linux (`gtk_gesture_get_bounding_box_center` and touchpad phases) and the web (#1607).
+- Keep Linux window resizes synchronized with the layout commit for up to 16 ms, avoiding stale frames during responsive drags (#1375 by @houko).
+- Keep Alt-modified Windows key messages routed to the focused view and shortcut handlers.
+- Keep a Windows window's content at the size the app asked for when its menu bar attaches, growing the window by the bar and shrinking it again when the bar goes.
+- Keep complete notification IDs through Windows toast presses, replacement and cancellation (#1332 by @houko).
+- Take the app's folder off the user's `Path` on Windows only when an installer added that folder, keeping an entry the user had across uninstalls and upgrades to another folder (#2199 by @txchen).
+- Reject signing commands that leave Windows programs unsigned (#1409 by @houko).
+- Release the UI Automation elements of canvas parts a redraw or deletion removes on Windows (#1959 by @oneo-me).
+- Treat Go workspace modules as the app's own code in `nsgo build` license notices, including their license files when present without checking them as unknown or copyleft third-party dependencies (#1814).
 - Check and request camera and microphone permissions in Flatpak and Snap Linux sandboxes through the XDG Desktop Portal (`Camera`, `Device` and `PermissionStore`) and PipeWire native registry access (#1576).
 - Read QR codes and barcodes from a Mac's camera with `Scope.ScanCode` (#429 by @houko).
 - Read accelerometer, gyroscope and fused motion from mobile browsers (#1208 by @houko).
@@ -9,7 +343,6 @@
 - Expose a multiline input's current placeholder on its native editor on iOS (`UITextView` `accessibilityHint` while empty) and Linux (`GtkTextView` `GTK_ACCESSIBLE_PROPERTY_PLACEHOLDER`), following updates and clearing while keeping the visual placeholder label out of VoiceOver and AT-SPI (#1595).
 - Expose `AXInvalid` (`"true"`/`"false"`) on macOS accessible views, input editors and switches and post `AXInvalidStatusChanged` when validation state changes (#1592).
 - Add `mobile.DeferSystemGestures` for scoped iOS edge deferral and Android touch exclusion rectangles (#1218 by @houko).
-- Upload built web and desktop packages to itch.io with `nsgo publish itch` (#1561 by @houko).
 - Check target API, Apple privacy and encryption declarations, and release questionnaires during store builds (#1566 by @houko).
 - Draw text decoration lines and text shadows that extend past a text's layout box on Android, Windows and Linux unless clipped by `OverflowHidden` (#1604).
 - Show Android frame, commit and native text round-trip timings with `nsgo dev -fps` (#173 by @houko).
@@ -43,8 +376,6 @@
 - Run native desktop apps under Delve with `nsgo dev -debug`, reusing the debugger address across Go rebuilds (#662 by @houko).
 - Run the shared JavaScript API and TSX runtime suites in Chromium CI with browser DevTools reporting TSX source lines (#185 by @houko).
 - Bind `desktop.OpenWindow`, `desktop.OpenPanel`, `desktop.NewTray`, `mobile.OpenOverlay`, `audio.NewPlayer`, `audio.LoadSound` and `nsgo.SetMainView` to the explicit `*core.Scope` passed rather than the running handler's owner, so opening a window or audio player with the app's scope from a button or menu handler no longer closes it when that button's scope disposes (#1259 by @henry-wm).
-- Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support and bundled GTK 4 on Linux x64 (#1227 and #1290 by @houko).
-- Expose physical keyboard positions and layout labels for game controls (#1242 by @houko).
 - Build one universal Mac App Store package or dual-ABI Android App Bundle when both platform architectures are selected (#1231 by @houko).
 - Record window and share requests as `nsgotest.WindowRequest` and `nsgotest.Share`, with window action and mounted view kind constants and owned mounted view props, styles, animation records and platform reports in `nsgotest` and host storage contracts owned by `core` (#181 by @houko).
 - Keep a read-only input's text selectable and copyable on macOS and iOS, the latter with no keyboard, stop edits at once in a macOS field made read-only while it is edited, and make `Readonly` and `Disabled` stop edits on HarmonyOS, which ignored them.
@@ -54,9 +385,6 @@
 - Add `ui.ProgressRing.StartAngle` and `CounterClockwise` to start the arc anywhere and run it, or an indeterminate ring's turn, counterclockwise.
 - Add `View.OnMouseDown`, `View.OnMouseUp`, `core.MouseButtonEvent`, `core.MouseButtonsDown`, `core.MouseButtonHeld`, and `MouseDown`/`MouseUp`/`BlurWindow` steps in nsgotest for all five mouse buttons with focus-loss clearing on macOS, Windows, Linux and the web (#1207).
 - Add `core.OffscreenImage` (`cx.NewOffscreenImage`), rendering a `core.Drawing` once into a retained offscreen image cached by `(ID, Version)` across Apple, Windows, Linux, web and `nsgotest` and re-rendered only on `Invalidate`, `Resize` or font changes (#1210).
-- Add package `gamepad` (`Pads`, `State`, `Family`, `DetectFamily`, `Rumble`, `StopRumble`, `RumbleEvent`, W3C Standard Gamepad button and axis constants), controller family / USB vendor & product ID / rumble support across macOS, iOS, Windows, Linux, Android and the web, `core.Env.SupportsGamepads`, and `nsgotest` fake gamepad helpers (`ConnectGamepad`, `SetGamepadInfo`, `DisconnectGamepad`, `SetGamepadButton`, `SetGamepadAxis`, `GamepadRumbles`, `LastGamepadRumble`) (#1049, #1203, #1204).
-- Add package `gamepad` (`Pads`, `State`, W3C Standard Gamepad button and axis constants), `core.Env.SupportsGamepads`, platform backends on macOS, iOS, Windows, Linux, Android and the web, and `nsgotest` fake gamepad helpers (`ConnectGamepad`, `DisconnectGamepad`, `SetGamepadButton`, `SetGamepadAxis`) (#1049).
-- Add the portable `gpu` package (`gpu.View`, buffers, textures, samplers, render targets, bind groups, and pipelines), vertex+fragment WGSL/`shaderir` compilation and MSL/HLSL/GLSL/WGSL emitters, off-commit `engine.Platform.SubmitGPU`, and headless `nsgotest` software 3D rasterization with `App.GPUFrames` and `App.GPUReadPixels` (#1059, #1110).
 - Add `ui/editor`, `base/editor`'s code editor in ui's colors and code type, following the theme, with the app's styles merged over it part by part.
 - Highlight every row of a soft-wrapped line in `base/editor`'s selections and matches, whose rows before the last showed nothing.
 - Draw `ui.Button`'s primary, secondary and ghost variants without a rim, and fill the secondary one with the text's color at a low opacity instead of an opaque gray.
@@ -65,7 +393,6 @@
 - Follow system thermal pressure and low-power mode through `Env` (#1216 by @houko).
 - Show WebAssembly download progress before web apps start and package Brotli and gzip copies of the module (#1233 by @houko).
 - Read the global pointer position in desktop display coordinates on macOS, Windows and X11 with `desktop.CursorPoint` (#1183 by @houko).
-- Declare game classification, Game Mode and optional gamepad support with `game` and `gamepad` in `nsgo.yaml` (#1217 by @houko).
 - Keep the display awake through `Scope.KeepAwake` on Android and in visible web pages (#1215 by @houko).
 - Bundle third-party license notices with built apps and expose them through `core.ThirdPartyNotices` (#1244 by @houko).
 - Enable offline launch and versioned resource caching for published web apps with `web.offline` (#1245 by @houko).
