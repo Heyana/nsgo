@@ -5,7 +5,7 @@ group: Components
 order: 33
 ---
 
-`ui.Input` is the platform's text field in `ui`'s look, one line unless `Multiline`. It has `base.Input`'s fields, as every styled field does; `ui.Field` is the same field with no size of its own, in a rim that does not follow the pointer or the focus.
+`ui.Input` is the platform's text field in `ui`'s look, one line unless `Multiline`. It has `base.Input`'s fields, as every styled field does; `ui.Field` is the same field with no size of its own, in a rim that does not follow the pointer or the focus; `core.Transparent` in its `Background` and `core.Zero` in its `BorderWidth` turn the box off, for text that reads as plain text but edits.
 
 ```go preview=input/basic
 name := core.NewSignal(cx, "")
@@ -44,10 +44,12 @@ ui.Input{Masked: true, Value: password.Get, OnChange: password.Set,
 ui.Input{Placeholder: "Bundle ID", InputSource: "com.apple.keylayout.ABC"}
 ```
 
-`Style` merges over the field's look, and `StyleFunc` over that: what they set, such as the height, the padding, the font or a color, replaces `ui`'s, and the rest stays. The rim darkens under the pointer and takes the accent while focused as long as neither sets `BorderColor` or `Hover`.
+`Style` merges over the field's look, and `StyleFunc` over that: what they set, such as the height, the padding, the font or a color, replaces `ui`'s, and the rest stays. The rim darkens under the pointer and takes the accent while focused as long as neither sets `BorderColor` or `Hover`. A zero `Padding` leaves `ui`'s; `core.Zero`, a length that is set, takes it away (`Padding: core.All(core.Zero)`).
 
 ```go
 ui.Input{Placeholder: "Filter", Style: core.Style{Height: core.Pt(ui.SizeSmall.Height()), FontSize: 12}}
+ui.Field{DefaultValue: "Untitled", Style: core.Style{FontSize: 24, FontWeight: ui.Bold,
+	Background: core.Transparent, BorderWidth: core.Zero}}
 ```
 
 ## Focus and events

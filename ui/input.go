@@ -5,7 +5,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// Input is the platform's text field with base.Input's fields, styled as a text box 28 pt tall with 13 pt text, or Multiline growing from three lines: its rim darker under the pointer and the accent while focused. Its Style and then its StyleFunc merge over that look, so the focus and hover rims stay while neither sets BorderColor or Hover.
+// Input is the platform's text field with base.Input's fields, styled as a text box 28 pt tall with 13 pt text, or Multiline growing from three lines: its rim darker under the pointer and the accent while focused. Its Style and then its StyleFunc merge over that look, so the focus and hover rims stay while neither sets BorderColor or Hover. Its Padding replaces ui's 10 points a side, and core.Zero takes it away.
 type Input base.Input
 
 // Render implements core.Node.

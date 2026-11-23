@@ -5,7 +5,7 @@ group: 组件
 order: 33
 ---
 
-`ui.Input` 是 `ui` 外观的平台文本框，除非设置 `Multiline`，否则只有一行。它的字段与 `base.Input` 相同，所有带样式的输入框都是如此；`ui.Field` 是同一种输入框，没有自己的尺寸，边框不随指针和焦点变化。
+`ui.Input` 是 `ui` 外观的平台文本框，除非设置 `Multiline`，否则只有一行。它的字段与 `base.Input` 相同，所有带样式的输入框都是如此；`ui.Field` 是同一种输入框，没有自己的尺寸，边框不随指针和焦点变化；在它的 `Background` 设置 `core.Transparent`、在 `BorderWidth` 设置 `core.Zero` 可关掉外框，用于看起来是纯文本、却可以编辑的文字。
 
 ```go preview=input/basic
 name := core.NewSignal(cx, "")
@@ -44,10 +44,12 @@ ui.Input{Masked: true, Value: password.Get, OnChange: password.Set,
 ui.Input{Placeholder: "Bundle ID", InputSource: "com.apple.keylayout.ABC"}
 ```
 
-`Style` 合并在输入框的外观之上，`StyleFunc` 再合并在它之上：它们设置的高度、内边距、字体或颜色等取代 `ui` 的，其余保持不变。只要两者都不设置 `BorderColor` 或 `Hover`，边框在指针下仍会加深，获得焦点时仍显示强调色。
+`Style` 合并在输入框的外观之上，`StyleFunc` 再合并在它之上：它们设置的高度、内边距、字体或颜色等取代 `ui` 的，其余保持不变。只要两者都不设置 `BorderColor` 或 `Hover`，边框在指针下仍会加深，获得焦点时仍显示强调色。为零的 `Padding` 保留 `ui` 的内边距；`core.Zero` 是一个已设置的长度，可以去掉它（`Padding: core.All(core.Zero)`）。
 
 ```go
 ui.Input{Placeholder: "Filter", Style: core.Style{Height: core.Pt(ui.SizeSmall.Height()), FontSize: 12}}
+ui.Field{DefaultValue: "Untitled", Style: core.Style{FontSize: 24, FontWeight: ui.Bold,
+	Background: core.Transparent, BorderWidth: core.Zero}}
 ```
 
 ## 焦点与事件

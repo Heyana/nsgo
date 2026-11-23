@@ -125,3 +125,18 @@ func TestComboboxKeepsChevronInset(t *testing.T) {
 		}
 	})
 }
+
+// TestInputPaddingOff drops ui's padding with core.Zero, so the text
+// starts at the field's edge.
+func TestInputPaddingOff(t *testing.T) {
+	each(t, func(t *testing.T, e core.Environment) {
+		app, _ := start(t, e, func(cx *core.Scope) core.Node {
+			return core.View{Style: core.Style{Width: core.Pt(240)}, Children: []core.Node{
+				Input{TestID: "flush", Style: core.Style{Padding: core.All(core.Zero)}},
+			}}
+		})
+		if x := app.Find("flush").Input.Content.Origin.X; x > 1 {
+			t.Fatalf("text starts %v in, want at the edge", x)
+		}
+	})
+}
