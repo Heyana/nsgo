@@ -46,6 +46,8 @@ type InputConfig struct {
 	HideCaret   bool
 	// PasteBehavior says whether a paste inserts its text.
 	PasteBehavior core.PasteBehavior
+	// HideIndicator hides a multiline input's native scroll bar.
+	HideIndicator bool
 }
 
 func inputConfig(c driver.InputConfig) InputConfig {
@@ -74,6 +76,7 @@ func inputConfig(c driver.InputConfig) InputConfig {
 		AccentColor:        c.AccentColor,
 		HideCaret:          c.HideCaret,
 		PasteBehavior:      c.PasteBehavior,
+		HideIndicator:      c.HideIndicator,
 	}
 }
 

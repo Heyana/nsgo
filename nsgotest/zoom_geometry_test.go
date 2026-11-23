@@ -45,7 +45,7 @@ func TestZoomedScrollGeometryMatchesItsNativeViewport(t *testing.T) {
 		{"horizontal doubled", 2, true, driver.Point{X: 480}, driver.Size{Width: 360, Height: 80}, driver.Bounds{Origin: driver.Point{X: 240}, Size: driver.Size{Width: 120, Height: 80}}, driver.Point{X: 30, Y: 20}, driver.Point{X: 60, Y: 40}, 600},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			scroll := &View{ID: 1, Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Size: driver.Size{Width: 120, Height: 80}}, Content: c.content, ZoomScale: c.scale, Offset: c.offset, Scroll: driver.ScrollConfig{Horizontal: c.horizontal}}
+			scroll := &View{ID: 1, Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Size: driver.Size{Width: 120, Height: 80}}, Content: c.content, ZoomScale: c.scale, Offset: c.offset, Scroll: ScrollConfig{Horizontal: c.horizontal}}
 			child := &View{ID: 2, Parent: scroll, Kind: KindView, Style: viewStyle(driver.DefaultViewStyle), Frame: c.child}
 			scroll.Children = []*View{child}
 			app := &App{views: map[driver.NodeID]*View{1: scroll, 2: child}, rootID: 1}
@@ -66,8 +66,8 @@ func TestZoomedScrollGeometryMatchesItsNativeViewport(t *testing.T) {
 }
 
 func TestNestedScrollZoomKeepsVisibilityAndLayoutBounds(t *testing.T) {
-	outer := &View{ID: 1, Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Origin: driver.Point{X: 10, Y: 20}, Size: driver.Size{Width: 400, Height: 300}}, ZoomScale: 0.5, Offset: driver.Point{X: 5, Y: 7}, Scroll: driver.ScrollConfig{Behavior: driver.ScrollBehavior{NoScroll: true}}}
-	inner := &View{ID: 2, Parent: outer, Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Origin: driver.Point{X: 100, Y: 80}, Size: driver.Size{Width: 120, Height: 80}}, ZoomScale: 2, Offset: driver.Point{Y: 320}, Scroll: driver.ScrollConfig{Behavior: driver.ScrollBehavior{NoScroll: true}}}
+	outer := &View{ID: 1, Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Origin: driver.Point{X: 10, Y: 20}, Size: driver.Size{Width: 400, Height: 300}}, ZoomScale: 0.5, Offset: driver.Point{X: 5, Y: 7}, Scroll: ScrollConfig{Behavior: driver.ScrollBehavior{NoScroll: true}}}
+	inner := &View{ID: 2, Parent: outer, Kind: KindScroll, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Origin: driver.Point{X: 100, Y: 80}, Size: driver.Size{Width: 120, Height: 80}}, ZoomScale: 2, Offset: driver.Point{Y: 320}, Scroll: ScrollConfig{Behavior: driver.ScrollBehavior{NoScroll: true}}}
 	child := &View{ID: 3, Parent: inner, Kind: KindView, Style: viewStyle(driver.DefaultViewStyle), Frame: driver.Bounds{Origin: driver.Point{Y: 160}, Size: driver.Size{Width: 120, Height: 80}}}
 	outer.Children = []*View{inner}
 	inner.Children = []*View{child}

@@ -23,6 +23,8 @@ type VideoConfig struct {
 	ProgressInterval     time.Duration
 	AudioSource          string
 	AudioSession         core.AudioSession
+	// HitTestAlpha passes the pointer through video pixels below it in painted windows; 0 disables it.
+	HitTestAlpha float32
 }
 
 func videoConfig(c driver.VideoConfig) VideoConfig {
@@ -41,5 +43,6 @@ func videoConfig(c driver.VideoConfig) VideoConfig {
 		ProgressInterval:     c.ProgressInterval,
 		AudioSource:          c.AudioSource,
 		AudioSession:         c.AudioSession,
+		HitTestAlpha:         c.HitTestAlpha,
 	}
 }

@@ -27,7 +27,7 @@ func (v *View) scrollHandle() driver.ScrollHandle {
 func (a *App) scrollHandleOf(v *View) (driver.ScrollHandle, bool) {
 	if v == nil || v.Kind != KindScroll ||
 		!driver.HasTouchScrollHandle(a.currentEnv()) ||
-		!driver.ScrollHandleEnabled(&v.Scroll) {
+		!driver.ScrollHandleEnabled(v.Scroll.scrollConfig()) {
 		return driver.ScrollHandle{}, false
 	}
 	h := v.scrollHandle()

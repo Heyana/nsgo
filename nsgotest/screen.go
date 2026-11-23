@@ -46,30 +46,40 @@ type ScreenConfig struct {
 	HeaderHeight core.Points
 	// Animation is how the screen enters and leaves.
 	Animation core.ScreenAnimation
+	// TitleFont and LargeTitleFont override the native title fonts; zero fields keep their platform defaults.
+	TitleFont, LargeTitleFont core.Font
+	// RightWithLargeTitle moves Android's trailing view beside its large title, returning to the toolbar as the header collapses.
+	RightWithLargeTitle bool
+	// TitleFills lets TitleView expand to fill the room between the bar's ends.
+	TitleFills bool
 }
 
 func screenConfig(c driver.ScreenConfig) ScreenConfig {
 	return ScreenConfig{
-		Title:             c.Title,
-		HeaderHidden:      c.HeaderHidden,
-		HeaderTransparent: c.HeaderTransparent,
-		LargeTitle:        c.LargeTitle,
-		CanGoBack:         c.CanGoBack,
-		BackHidden:        c.BackHidden,
-		BackTitle:         c.BackTitle,
-		OwnBackTitle:      c.OwnBackTitle,
-		NoPopOnSwipe:      c.NoPopOnSwipe,
-		NoPopOnBack:       c.NoPopOnBack,
-		Background:        c.Background,
-		TitleColor:        c.TitleColor,
-		TintColor:         c.TintColor,
-		Left:              c.Left,
-		Right:             c.Right,
-		TitleView:         c.TitleView,
-		Header:            c.Header,
-		RightSystemItem:   c.RightSystemItem,
-		RightSymbols:      c.RightSymbols,
-		HeaderHeight:      c.HeaderHeight,
-		Animation:         c.Animation,
+		Title:               c.Title,
+		HeaderHidden:        c.HeaderHidden,
+		HeaderTransparent:   c.HeaderTransparent,
+		LargeTitle:          c.LargeTitle,
+		CanGoBack:           c.CanGoBack,
+		BackHidden:          c.BackHidden,
+		BackTitle:           c.BackTitle,
+		OwnBackTitle:        c.OwnBackTitle,
+		NoPopOnSwipe:        c.NoPopOnSwipe,
+		NoPopOnBack:         c.NoPopOnBack,
+		Background:          c.Background,
+		TitleColor:          c.TitleColor,
+		TintColor:           c.TintColor,
+		Left:                c.Left,
+		Right:               c.Right,
+		TitleView:           c.TitleView,
+		Header:              c.Header,
+		RightSystemItem:     c.RightSystemItem,
+		RightSymbols:        c.RightSymbols,
+		HeaderHeight:        c.HeaderHeight,
+		Animation:           c.Animation,
+		TitleFont:           c.TitleFont,
+		LargeTitleFont:      c.LargeTitleFont,
+		RightWithLargeTitle: c.RightWithLargeTitle,
+		TitleFills:          c.TitleFills,
 	}
 }
