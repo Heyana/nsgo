@@ -1029,6 +1029,8 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	}
 	child := newWindow(opts)
 	child.surfaceID = cfg.ID
+	// The engine pins the environment of every surface it attaches, so a window reads its reduced motion as the app does: a test's pin, not the machine's setting.
+	child.envPin = w.envPin
 	child.parentWindow = w.surfaceWindow(cfg.Parent)
 	child.opts, child.hostWindow, child.kind, child.hideOnBlur, child.noActivate = opts, w, cfg.Kind, cfg.HideOnBlur, cfg.NoActivate
 	child.dock = cfg.Dock

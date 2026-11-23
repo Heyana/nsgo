@@ -2241,3 +2241,20 @@ func TestOffscreenCanvasScaleFollowsWorldTransform(t *testing.T) {
 		t.Fatalf("at-budget offscreenScale = %v, want 2", got)
 	}
 }
+
+// A test's pinned ReduceMotion: false wins over the machine's Reduce Motion, as a test host's windows read the app's pinned environment.
+func TestPinnedMotionWinsOverTheMachines(t *testing.T) {
+	for _, pinned := range []bool{false, true} {
+		w := &window{animator: driver.NewAnimator(nil), env: driver.Environment{ReduceMotion: true}, ticking: true,
+			envPin: func(env driver.Environment) driver.Environment { env.ReduceMotion = pinned; return env }}
+		scroll := &view{id: 1, kind: driver.KindScroll, frame: driver.Bounds{Size: driver.Size{Width: 200, Height: 200}},
+			size: driver.Size{Width: 400, Height: 400}, style: driver.ViewStyle{Opacity: 1}}
+		w.views = []*view{nil, scroll}
+		w.root = 1
+		scroll.scroll = driver.ScrollConfig{MinZoomScale: 0.5, MaxZoomScale: 4, ZoomScale: 1}
+		w.zoomTo(scroll, &driver.ZoomRequest{Scale: 3}, true)
+		if animated := scroll.zooming != nil; animated == pinned {
+			t.Errorf("pinned ReduceMotion %v: animated zoom %v", pinned, animated)
+		}
+	}
+}

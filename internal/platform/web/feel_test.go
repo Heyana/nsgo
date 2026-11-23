@@ -86,3 +86,22 @@ func TestSpanCursorShowsOverItsCharacters(t *testing.T) {
 		}
 	}
 }
+
+// A test's pinned ReduceMotion: false wins over the browser's prefers-reduced-motion, as the page reads the app's pinned environment: the alert fades in. Run in a browser: nsgo test -target web.
+func TestPinnedMotionWinsOverTheBrowsers(t *testing.T) {
+	doc := js.Global().Get("document")
+	if !doc.Truthy() {
+		t.Skip("no document here: run with nsgo test -target web")
+	}
+	for _, pinned := range []bool{false, true} {
+		s := &surface{doc: doc, envPin: func(env driver.Environment) driver.Environment { env.ReduceMotion = pinned; return env }}
+		s.env.ReduceMotion = true
+		s.showAlert(&driver.AlertConfig{ID: 1, Title: "Title", Actions: []driver.AlertAction{{Label: "OK", Role: driver.AlertDefault}}})
+		a := s.alerts[0]
+		animated := a.layer.Call("getAnimations").Length() > 0
+		a.layer.Call("remove")
+		if animated == pinned {
+			t.Errorf("pinned ReduceMotion %v: the alert animated %v", pinned, animated)
+		}
+	}
+}

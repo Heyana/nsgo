@@ -157,7 +157,7 @@ func (s *surface) showAlert(c *driver.AlertConfig) {
 	})
 	s.alerts = append(s.alerts, a)
 	a.buttons[focus].Call("focus")
-	if !s.env.ReduceMotion {
+	if !s.motionReduced() {
 		animate(a.layer, map[string]any{"opacity": 0}, 150, "ease-out")
 	}
 }

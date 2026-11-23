@@ -116,6 +116,8 @@ type surface struct {
 	notifications *webNotificationScheduler
 	doc           js.Value
 	host          js.Value
+	// envPin turns the page's environment into the app's, a test's pinned one under a test host; nil outside one.
+	envPin func(driver.Environment) driver.Environment
 	// simulate is the OS the page runs as (Options.OS).
 	simulate driver.OS
 	// rtl is the app's direction (driver.ItemDirection), which alerts lay
@@ -455,6 +457,7 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 		eopts.Host = connectHost(opts.Host, s.setHostEnvironment)
 	} else {
 		eopts.UseTest(test.options, &test.pin)
+		s.envPin = eopts.Pin
 		// The page's size, which the test sets, is the surface's.
 		eopts.Size = s.size()
 		if test.options.FPS {
@@ -1461,7 +1464,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 	defer collectLater()
 	s.batch++
 	var lb *layoutBatch
-	if b.LayoutAnimation != nil && !s.env.ReduceMotion {
+	if b.LayoutAnimation != nil && !s.motionReduced() {
 		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[driver.NodeID]bool{}}
 	}
 	var scrolls []scrollTo
@@ -2242,7 +2245,7 @@ func (s *surface) present(v *view) {
 		shown()
 		return // the dialog's shader draws its coming
 	}
-	if anim == driver.ModalSlide && s.env.ReduceMotion {
+	if anim == driver.ModalSlide && s.motionReduced() {
 		anim = driver.ModalFade
 	}
 	var wa js.Value

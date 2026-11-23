@@ -97,7 +97,7 @@ func (w *window) zoomTo(v *view, r *driver.ZoomRequest, animated bool) {
 	if r.Center != nil {
 		center = *r.Center
 	}
-	if !animated || w.env.ReduceMotion {
+	if !animated || w.motionReduced() {
 		at := scrollbar.ClampZoomOffset(&v.scroll, v.frame.Size, v.size, scrollbar.OffsetFor(center, focus, target), target)
 		v.zoom = target
 		w.moveOffset(v, at)

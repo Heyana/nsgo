@@ -77,7 +77,7 @@ func compositeTransitionProps(bound uint16) driver.TransitionProperty {
 func (s *surface) updateStyleTransition(v *view, prev driver.ViewStyle) {
 	styled := v.styled || v.born != s.batch
 	props := compositeTransitionProps(v.animated.Set)
-	if !styled || props == 0 || s.env.ReduceMotion {
+	if !styled || props == 0 || s.motionReduced() {
 		v.styleTr = nil
 		delete(s.transitions, v)
 		return

@@ -203,6 +203,9 @@ func (s *surface) updateEnv() {
 	}
 }
 
+// motionReduced is the app's reduced motion: the page's, or what a test pins over it.
+func (s *surface) motionReduced() bool { return driver.Pinned(s.env, s.envPin).ReduceMotion }
+
 // environment reads the page's environment.
 func (s *surface) environment() driver.Environment {
 	g, w := js.Global(), &s.watch
