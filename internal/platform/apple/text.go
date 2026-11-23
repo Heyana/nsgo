@@ -1393,6 +1393,7 @@ func FillRects(ctx uintptr, rects []CGRect, color uintptr) {
 	if ctx == 0 || len(rects) == 0 {
 		return
 	}
+	ensureCanvas()
 	cgContextSaveGState(ctx)
 	cgContextSetFillColor(ctx, color)
 	for _, r := range rects {
