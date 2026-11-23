@@ -133,18 +133,27 @@ func TestInputMethodCommitAndSinkCandidates(t *testing.T) {
 			}
 			return fmt.Errorf("window %q did not appear", title)
 		}
+		// key presses the binding name once the window's keymap holds it: the window shows before its first keymap is mounted, and a key sent before then reaches no binding.
 		key := func(name string) {
-			syncMain(func() {
-				if live == nil {
-					finish()
+			for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+				sent := false
+				syncMain(func() {
+					if live == nil {
+						finish()
+						sent = true
+						return
+					}
+					for _, b := range live.keys {
+						if b.Key == name {
+							live.engine.Dispatch(driver.Event{Kind: driver.EventKey, Count: b.ID})
+							sent = true
+						}
+					}
+				})
+				if sent || time.Now().After(deadline) {
 					return
 				}
-				for _, b := range live.keys {
-					if b.Key == name {
-						live.engine.Dispatch(driver.Event{Kind: driver.EventKey, Count: b.ID})
-					}
-				}
-			})
+			}
 		}
 		waitFor := func(desc string, cond func() bool) error {
 			deadline := time.Now().Add(5 * time.Second)
