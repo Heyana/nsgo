@@ -1,9 +1,5 @@
 #!/bin/sh
-# Rebuilds this directory's host skeleton from ../templates: the ArkTS
-# host, compiled by hvigor. These are the parts NSGo cannot build with Go,
-# so they are committed. Needs hvigorw on PATH and OHOS_BASE_SDK_HOME set
-# to an OpenHarmony SDK with API 26 (26.0.0), matching the templates'
-# compile and target SDK versions. hvigor reads the SDK by API directory.
+# Rebuilds this directory's host skeleton from ../templates: the ArkTS host, compiled by hvigor. These are the parts NSGo cannot build with Go, so they are committed. Needs hvigorw 6.26.x on PATH and OHOS_BASE_SDK_HOME set to an OpenHarmony SDK with API 26 (26.0.0), matching the templates' compile and target SDK versions. The working toolchain is the 7.0-Release x86_64 SDK from https://repo.huaweicloud.com/openharmony/os/7.0-Release/ and @ohos/hvigor@6.26.20 with @ohos/hvigor-ohos-plugin@6.26.20. hvigor reads the SDK by its full API directory, so the extracted components belong in "$OHOS_BASE_SDK_HOME/26.0.0/". On Apple silicon, use an x86_64 Linux builder or install Rosetta for x86_64 SDK tools.
 #
 # The bundle name is the first argument, a fixed-length placeholder by
 # default. The compiled bytecode names each module <bundle>/<module>/<path>;
