@@ -162,6 +162,7 @@ func loadCanvas(cg uintptr) {
 // when Core Animation flipped the context and up when flip did: draw
 // learns which as baseUp.
 func DrawTopDown(ctx uintptr, height float64, flip bool, draw func(baseUp bool)) {
+	ensureCanvas()
 	cgContextSaveGState(ctx)
 	defer cgContextRestoreGState(ctx)
 	if flip {
