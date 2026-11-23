@@ -1144,3 +1144,64 @@ func TestWindowShowsWithFirstBatch(t *testing.T) {
 		})
 	})
 }
+
+// TestMenuBarKeepsContentSize checks that the window grows by its menu bar as the bar attaches, so the content keeps the size the app asked for, and shrinks back as it goes, its top left staying put.
+func TestMenuBarKeepsContentSize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	const title = "nsgo-menu-bar-size"
+	var setMenu func(bool)
+	app := func(cx *core.Scope) core.Node {
+		on := core.NewSignal(cx, false)
+		setMenu = func(v bool) { cx.Post(func() { on.Set(v) }) }
+		cx.Effect(func() {
+			if on.Get() {
+				cx.SetApplicationMenu([]core.MenuItem{{Label: "File", Items: []core.MenuItem{{Label: "Open", OnSelect: func() {}}}}})
+			} else {
+				cx.SetApplicationMenu(nil)
+			}
+			cx.SetTitle(fmt.Sprintf("%s|%v", title, on.Get()))
+		})
+		return core.View{Style: core.Style{Background: driver.RGB(0xffffff)}}
+	}
+	hwnd := startApp(t, title, app, 320, 200)
+	waitForTitle(t, hwnd, title+"|false", 5*time.Second)
+	read := func() (client, outer rect, bar uintptr) {
+		onMain(t, hwnd, func(w *window) {
+			getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
+			getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&outer)))
+			bar = w.chrome.bar
+		})
+		return
+	}
+	var want rect
+	onMain(t, hwnd, func(w *window) { want = rect{Right: w.px(320), Bottom: w.px(200)} })
+	client0, outer0, _ := read()
+	if client0 != want {
+		t.Fatalf("client area without a menu bar = %+v, want %+v", client0, want)
+	}
+
+	setMenu(true)
+	waitForTitle(t, hwnd, title+"|true", 5*time.Second)
+	client1, outer1, bar := read()
+	if bar == 0 {
+		t.Fatal("the menu bar did not attach")
+	}
+	if client1 != want {
+		t.Errorf("client area with a menu bar = %+v, want %+v", client1, want)
+	}
+	if outer1.Left != outer0.Left || outer1.Top != outer0.Top || outer1.Bottom-outer1.Top <= outer0.Bottom-outer0.Top {
+		t.Errorf("window with a menu bar = %+v, want it grown downward from %+v", outer1, outer0)
+	}
+
+	setMenu(false)
+	waitForTitle(t, hwnd, title+"|false", 5*time.Second)
+	client2, outer2, bar := read()
+	if bar != 0 {
+		t.Fatal("the menu bar did not go")
+	}
+	if client2 != want || outer2 != outer0 {
+		t.Errorf("without the menu bar again: client %+v, window %+v; want %+v, %+v", client2, outer2, want, outer0)
+	}
+}

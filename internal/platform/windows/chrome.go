@@ -30,24 +30,26 @@ import (
 //     field handles itself.
 
 var (
-	setWindowPos           = user32.NewProc("SetWindowPos")
-	isZoomed               = user32.NewProc("IsZoomed")
-	getDpiForWindow        = user32.NewProc("GetDpiForWindow")
-	getSystemMetricsForDpi = user32.NewProc("GetSystemMetricsForDpi")
-	trackMouseEvent        = user32.NewProc("TrackMouseEvent")
-	getWindowPlacement     = user32.NewProc("GetWindowPlacement")
-	setWindowPlacement     = user32.NewProc("SetWindowPlacement")
-	monitorFromWindow      = user32.NewProc("MonitorFromWindow")
-	monitorFromRect        = user32.NewProc("MonitorFromRect")
-	getMonitorInfoW        = user32.NewProc("GetMonitorInfoW")
-	createMenu             = user32.NewProc("CreateMenu")
-	createPopupMenu        = user32.NewProc("CreatePopupMenu")
-	insertMenuItemW        = user32.NewProc("InsertMenuItemW")
-	setMenu                = user32.NewProc("SetMenu")
-	destroyMenu            = user32.NewProc("DestroyMenu")
-	deleteMenu             = user32.NewProc("DeleteMenu")
-	drawMenuBar            = user32.NewProc("DrawMenuBar")
-	dwmGetWindowAttribute  = dwmapi.NewProc("DwmGetWindowAttribute")
+	setWindowPos             = user32.NewProc("SetWindowPos")
+	isZoomed                 = user32.NewProc("IsZoomed")
+	getDpiForWindow          = user32.NewProc("GetDpiForWindow")
+	getSystemMetricsForDpi   = user32.NewProc("GetSystemMetricsForDpi")
+	trackMouseEvent          = user32.NewProc("TrackMouseEvent")
+	getWindowPlacement       = user32.NewProc("GetWindowPlacement")
+	setWindowPlacement       = user32.NewProc("SetWindowPlacement")
+	monitorFromWindow        = user32.NewProc("MonitorFromWindow")
+	monitorFromRect          = user32.NewProc("MonitorFromRect")
+	getMonitorInfoW          = user32.NewProc("GetMonitorInfoW")
+	createMenu               = user32.NewProc("CreateMenu")
+	createPopupMenu          = user32.NewProc("CreatePopupMenu")
+	insertMenuItemW          = user32.NewProc("InsertMenuItemW")
+	setMenu                  = user32.NewProc("SetMenu")
+	destroyMenu              = user32.NewProc("DestroyMenu")
+	deleteMenu               = user32.NewProc("DeleteMenu")
+	adjustWindowRectEx       = user32.NewProc("AdjustWindowRectEx")
+	adjustWindowRectExForDpi = user32.NewProc("AdjustWindowRectExForDpi")
+	drawMenuBar              = user32.NewProc("DrawMenuBar")
+	dwmGetWindowAttribute    = dwmapi.NewProc("DwmGetWindowAttribute")
 )
 
 const (
@@ -200,6 +202,8 @@ type chrome struct {
 	// and altAlone while Alt is down with no other key.
 	menuBar                      driver.MenuBarMode
 	revealed, menuOpen, altAlone bool
+	// barExtra is how many pixels the window grew for the menu bar, so its content keeps its height (fitMenuBar).
+	barExtra int32
 }
 
 // hidden reports whether the title bar is hidden now: full screen has
@@ -999,6 +1003,7 @@ func (w *window) menuChar(char uintptr) bool {
 
 // showMenuBar shows the application menu as the window's menu bar, unless the title bar is hidden, the window is in full screen or transparent, the bar hides until Alt shows it or the window is a hidden root. A bar already shown is updated in place, so setting the menu again (such as checking an item) neither flickers the bar nor closes a menu the user has open.
 func (w *window) showMenuBar() {
+	defer w.fitMenuBar()
 	c := &w.chrome
 	shown := c.menuBar == driver.MenuBarShown || c.revealed || c.menuOpen
 	// A hidden root only ever shows as an app-modal alert's window (showAlertWindow), which must not offer the app's menus while the alert waits.
@@ -1036,6 +1041,40 @@ func (w *window) showMenuBar() {
 	c.bar, c.tree, c.entries = bar, next, refs
 	setMenu.Call(w.hwnd, bar)
 	drawMenuBar.Call(w.hwnd)
+}
+
+// fitMenuBar keeps the content the size the app asked for as the menu bar attaches, changes height or goes: the window grows by the bar's height and shrinks back without it, its top left staying put. A bar Alt reveals with MenuBarAutoHide shows over the content instead, as it soon hides again. A maximized, minimized or full-screen window keeps its size, and so does the extra it already has.
+func (w *window) fitMenuBar() {
+	c := &w.chrome
+	target := int32(0)
+	if c.bar != 0 && c.menuBar == driver.MenuBarShown {
+		target = w.menuBarHeight()
+	}
+	if target == c.barExtra || c.fullScreen || w.zoomed() || isIconicWindow(w.hwnd) {
+		return
+	}
+	var outer rect
+	getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&outer)))
+	height := outer.Bottom - outer.Top + target - c.barExtra
+	c.barExtra = target
+	setWindowPos.Call(w.hwnd, 0, 0, 0, uintptr(outer.Right-outer.Left), uintptr(height), swpNoMove|swpNoZOrder|swpNoActivate)
+}
+
+// menuBarHeight is how many pixels the menu bar takes from the client area, all its rows: how much taller the window's frame is than the frame its style has without a menu.
+func (w *window) menuBarHeight() int32 {
+	var outer, client rect
+	getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&outer)))
+	getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&client)))
+	style, _, _ := getWindowLongPtrW.Call(w.hwnd, gwlStyle)
+	ex, _, _ := getWindowLongPtrW.Call(w.hwnd, gwlExStyle)
+	var frame rect
+	if adjustWindowRectExForDpi.Find() == nil {
+		dpi, _, _ := getDpiForWindow.Call(w.hwnd)
+		adjustWindowRectExForDpi.Call(uintptr(unsafe.Pointer(&frame)), style, 0, ex, dpi)
+	} else {
+		adjustWindowRectEx.Call(uintptr(unsafe.Pointer(&frame)), style, 0, ex)
+	}
+	return max(outer.Bottom-outer.Top-client.Bottom-(frame.Bottom-frame.Top), 0)
 }
 
 // menuIconLook is what the menu's icons' pixels depend on besides the icons: their size at the window's DPI and the appearance a template icon is tinted for.

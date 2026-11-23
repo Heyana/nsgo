@@ -184,7 +184,7 @@ func TestAutomationEndToEnd(t *testing.T) {
 	if moved := before - rowY(); moved < 1000 {
 		t.Fatalf("the list scrolled %g points of 1500", moved)
 	}
-	// Compare with the window's size now: the one listed first can be from before the window settled, as on Windows, where the menu bar the app sets after its first frame takes its height from the client area.
+	// Compare with the window's size now: the one listed first can be from before the window settled, as on Windows, where the window grows by the menu bar the app sets after its first frame.
 	var now automation.WindowsResult
 	must(automation.Windows, automation.WindowsParams{}, &now)
 	if len(now.Windows) != 1 {
