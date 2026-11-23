@@ -107,45 +107,52 @@ func bmpOfDIB(dib []byte) []byte {
 	if colors == 0 && bpp <= 8 {
 		colors = 1 << bpp
 	}
-	// A BMP file's header is the 40-byte BITMAPINFOHEADER, whose fields come
-	// first in the BITMAPV4/V5HEADER (108 or 124 bytes) an app's DIB may carry,
-	// as .NET's clipboard image does: the wider rest goes, and the pixels that
-	// followed it move up.
-	info := append(make([]byte, 0, 40), dib[:40]...)
-	binary.LittleEndian.PutUint32(info, 40)
-	pixels := dib[headerSize:]
-	if compression == 3 {
-		// BI_BITFIELDS: the masks start at byte 40 of the header. A 40-byte
-		// V3 header has no room for them, so the three masks sit between the
-		// header and the pixels; the wider V4/V5 headers keep the masks,
-		// including the alpha mask at bytes 52-56, inside the header.
-		var masks []byte
-		if headerSize == 40 {
-			if len(dib) < 52 {
+
+	var body []byte
+	bodyHeader := headerSize
+	if headerSize == 40 {
+		info := append(make([]byte, 0, 40), dib[:40]...)
+		pixels := dib[40:]
+		if compression == 3 {
+			// A 40-byte BITMAPINFOHEADER puts the three BI_BITFIELDS masks
+			// between the header and the pixels, which golang.org/x/image/bmp
+			// refuses unless normalized to BI_RGB without the 12-byte gap.
+			if len(dib) < 52 || bpp != 32 || !bgraMasks(dib[40:52]) {
 				return nil
 			}
 			pixels = dib[52:]
-			masks = dib[40:52]
-		} else {
-			if headerSize < 52 {
-				return nil
-			}
-			masks = dib[40:headerSize]
+			binary.LittleEndian.PutUint32(info[16:], 0)
 		}
-		// The reader takes 32-bit BI_RGB only: plain BGRA pixels say the same
-		// without masks, which Windows puts on every bitmap it copies.
-		if bpp != 32 || !bgraMasks(masks) {
+		body = append(info, pixels...)
+	} else if compression == 3 {
+		// V4/V5 headers keep the four masks inside bytes 40..56. Keep the
+		// wider header intact when alpha is 0xff000000 so x/image/bmp
+		// preserves transparency (allowAlpha = infoLen > 40); only rewrite
+		// to a 40-byte BI_RGB header for alpha-mask-0 (BGRX), which x/image
+		// refuses as BI_BITFIELDS.
+		if headerSize < 56 || bpp != 32 || !bgraMasks(dib[40:headerSize]) {
 			return nil
 		}
-		binary.LittleEndian.PutUint32(info[16:], 0)
+		if binary.LittleEndian.Uint32(dib[52:56]) == 0 {
+			info := append(make([]byte, 0, 40), dib[:40]...)
+			binary.LittleEndian.PutUint32(info, 40)
+			binary.LittleEndian.PutUint32(info[16:], 0)
+			bodyHeader = 40
+			body = append(info, dib[headerSize:]...)
+		} else {
+			body = dib
+		}
+	} else {
+		// Keep wider V4/V5 BI_RGB headers intact so x/image/bmp retains alpha.
+		body = dib
 	}
-	offset := 14 + len(info) + int(colors)*4
-	file := make([]byte, 14, 14+len(info)+len(pixels))
+
+	offset := 14 + int(bodyHeader) + int(colors)*4
+	file := make([]byte, 14, 14+len(body))
 	file[0], file[1] = 'B', 'M'
-	binary.LittleEndian.PutUint32(file[2:], uint32(14+len(info)+len(pixels)))
+	binary.LittleEndian.PutUint32(file[2:], uint32(14+len(body)))
 	binary.LittleEndian.PutUint32(file[10:], uint32(offset))
-	file = append(file, info...)
-	return append(file, pixels...)
+	return append(file, body...)
 }
 
 // bgraMasks reports whether the masks are the plain blue, green, red and
