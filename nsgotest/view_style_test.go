@@ -2,6 +2,7 @@ package nsgotest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -13,7 +14,7 @@ func TestMountedStylesKeepValuesAndSharedAppResources(t *testing.T) {
 	native := driver.ViewStyle{Background: core.RGB(0xffffff), Opacity: 0.8, CornerRadius: 20,
 		BorderWidth: 4, BorderColor: core.RGB(0), Transform: core.Transform{TranslateX: 4, TranslateY: 5},
 		Effects: effects, CursorImage: cursor, Elevation: 7, Glass: core.GlassRegular}
-	model := &App{t: t, views: map[driver.NodeID]*View{}}
+	model := &App{t: t, Clock: core.NewManualClock(time.Unix(0, 0)), views: map[driver.NodeID]*View{}}
 	model.apply(&driver.MountBatch{Items: []driver.MountItem{
 		{Kind: driver.ItemCreate, ID: 1, View: driver.KindView},
 		{Kind: driver.ItemViewStyle, ID: 1, ViewStyle: &native},
