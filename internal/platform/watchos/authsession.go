@@ -2,9 +2,7 @@ package watchos
 
 import "github.com/nsgo-dev/nsgo/internal/driver"
 
-// authSessions prepares redirects in Go and sends the open/cancel to the
-// SwiftUI host. The host retains each native session until its completion.
-// Its methods run on the host's main thread.
+// authSessions prepares redirects in Go and sends the open/cancel to the SwiftUI host. The host retains each native session until its completion. Its methods run on the host's main thread.
 type authSessions struct{ pending map[uint32]*authRequest }
 
 type authRequest struct {
@@ -49,8 +47,7 @@ func (a *authSessions) handle(id uint32, r driver.AuthRequest, w *writer, dispat
 	}
 }
 
-// finished reads the host's outcome: callback (0), cancelled (1), failed (2)
-// or unavailable (3). Late completions of a cancelled request are ignored.
+// finished reads the host's outcome: callback (0), cancelled (1), failed (2) or unavailable (3). Late completions of a cancelled request are ignored.
 func (a *authSessions) finished(id uint32, outcome uint8, value string, dispatch func(driver.Event)) {
 	p := a.pending[id]
 	if p == nil || !p.opened {

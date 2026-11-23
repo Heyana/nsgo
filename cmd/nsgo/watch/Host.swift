@@ -37,8 +37,7 @@ struct Bridge {
 	var lifecycle: @convention(c) (UInt8) -> Void
 	/// The PNG nsgo_watch_snapshot rendered.
 	var snapshot: @convention(c) (UnsafePointer<UInt8>?, Int) -> Void
-	/// Authentication session id ended: callback (0), cancelled (1), failed
-	/// (2) or unavailable (3), with a callback URL or error in UTF-8.
+	/// Authentication session id ended: callback (0), cancelled (1), failed (2) or unavailable (3), with a callback URL or error in UTF-8.
 	var auth: @convention(c) (UInt32, UInt8, UnsafePointer<UInt8>?, Int) -> Void
 }
 
@@ -109,8 +108,7 @@ func sendText(_ id: UInt32, _ kind: UInt8, _ s: String) {
 
 // MARK: Authentication
 
-/// The framework presents the watch's authentication UI itself. It has no
-/// presentationContextProvider on watchOS; the SwiftUI host owns its lifetime.
+/// The framework presents the watch's authentication UI itself. It has no presentationContextProvider on watchOS; the SwiftUI host owns its lifetime.
 final class AuthSessions {
 	private final class Entry { var session: ASWebAuthenticationSession? }
 	private var sessions: [UInt32: Entry] = [:]
