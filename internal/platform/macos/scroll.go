@@ -1190,25 +1190,35 @@ func (v *view) bar() scrollbar.Bar {
 		Content: driver.Size{Width: s.content.Width * z, Height: s.content.Height * z}, Offset: s.at, Inset: s.config.Behavior.ContentInset}
 }
 
+func (v *view) onThumbTrack(p driver.Point) bool {
+	w, h := v.frame.Size.Width, v.frame.Size.Height
+	if p.X < 0 || p.X > w || p.Y < 0 || p.Y > h {
+		return false
+	}
+	if v.sc.config.Horizontal {
+		return p.Y >= h-thumbGrab
+	}
+	if v.surface != nil && v.surface.rtl {
+		return p.X <= thumbGrab
+	}
+	return p.X >= w-thumbGrab
+}
+
 // grabsThumb reports whether a mouse press at p, in the view, grabs the
 // indicator, faded out or not: on the desktop it is a scroll bar.
 func (v *view) grabsThumb(p driver.Point) bool {
-	if !v.indicates() || v.sc.config.Behavior.NoScroll {
+	if !v.indicates() || v.sc.config.Behavior.NoScroll || !v.onThumbTrack(p) {
 		return false
 	}
 	r, _, ok := v.thumbRect()
 	if !ok {
 		return false
 	}
-	along, across, start, length, edge := p.Y, p.X, r.Origin.Y, r.Size.Height, v.frame.Size.Width
+	along, start, length := p.Y, r.Origin.Y, r.Size.Height
 	if v.sc.config.Horizontal {
-		along, across, start, length, edge = p.X, p.Y, r.Origin.X, r.Size.Width, v.frame.Size.Height
+		along, start, length = p.X, r.Origin.X, r.Size.Width
 	}
-	inEdge := across >= edge-thumbGrab && across <= edge
-	if !v.sc.config.Horizontal && v.surface != nil && v.surface.rtl {
-		inEdge = across >= 0 && across <= thumbGrab
-	}
-	return inEdge && along >= start-thumbSlop && along <= start+length+thumbSlop
+	return along >= start-thumbSlop && along <= start+length+thumbSlop
 }
 
 // thumbBegin starts the mouse dragging the indicator.
@@ -1259,21 +1269,28 @@ var whenScrolling struct {
 	read time.Time
 }
 
-// hovered shows the indicator while the pointer is over the view, unless
-// the user shows it only while scrolling.
-func (v *view) hovered() {
+// hovered shows the indicator at the edge, unless the user shows it only while scrolling.
+func (v *view) hovered(event objc.ID) {
+	if event == 0 || !v.indicates() || v.sc.config.Behavior.NoScroll {
+		return
+	}
+	loc := objc.Send[apple.CGPoint](event, selLocationInWindow)
+	p := objc.Send[apple.CGPoint](v.native, selConvertPoint, loc, objc.ID(0))
+	if !v.onThumbTrack(driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)}) {
+		return
+	}
 	if time.Since(whenScrolling.read) > time.Second {
 		defaults := objc.ID(apple.Class("NSUserDefaults")).Send(sel("standardUserDefaults"))
 		whenScrolling.on = apple.GoString(defaults.Send(sel("stringForKey:"), apple.NSString("AppleShowScrollBars"))) == "WhenScrolling"
 		whenScrolling.read = time.Now()
 	}
-	s := v.sc
-	if whenScrolling.on || !v.indicates() || s.config.Behavior.NoScroll {
+	if whenScrolling.on {
 		return
 	}
 	if _, _, ok := v.thumbRect(); !ok {
 		return
 	}
+	s := v.sc
 	s.shown = mediaTime()
 	if s.alpha == 1 {
 		return

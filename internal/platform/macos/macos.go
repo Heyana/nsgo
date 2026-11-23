@@ -3767,7 +3767,7 @@ func mouseEntered(self objc.ID, _ objc.SEL, event objc.ID) {
 	}
 	v.surface.inside[v] = struct{}{}
 	if v.sc != nil {
-		v.hovered()
+		v.hovered(event)
 	}
 	if !v.over && (event == 0 || covers(v, v.surface.hitAt(objc.Send[apple.CGPoint](event, selLocationInWindow)))) {
 		v.over = true
@@ -3801,7 +3801,7 @@ func mouseMoved(self objc.ID, _ objc.SEL, event objc.ID) {
 	}
 	defer v.surface.measuring(false)()
 	if v.sc != nil {
-		v.hovered()
+		v.hovered(event)
 	}
 	if !v.over {
 		return
