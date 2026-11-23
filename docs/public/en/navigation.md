@@ -43,7 +43,7 @@ Give a page its own `Header` to replace `ui.NavHeader`. On iOS and Android it be
 
 Call `mobile.Immersive(cx, true)` to request full screen for the window and `mobile.Immersive(cx, false)` to return to its regular system-bar settings. For a page or dialog, use `StatusBar: core.StatusBarSetting{Immersive: core.ToggleOn}` to request it while that layer is shown. In TSX, use `statusBar={{ immersive: true }}` on a page or dialog, or `status_bar: { immersive: true }` in `nsgo.yaml` for the window default.
 
-On Android an edge swipe briefly shows the status and navigation bars. On HarmonyOS the window asks the system to hide the status bar, the three-button navigation bar and the navigation indicator. On iOS the status bar hides and UIKit decides when to hide or reveal the home indicator. `cx.Env().SafeArea()` continues to report the insets the system provides, including display cutouts.
+On Android an edge swipe briefly shows the status and navigation bars. On HarmonyOS the window asks the system to hide the status bar, the three-button navigation bar and the navigation indicator. On iOS the status bar hides and UIKit decides when to hide or reveal the home indicator. `cx.Env().SafeArea()` continues to report the insets the system provides, including display cutouts. On HarmonyOS with three-button navigation in landscape, the system reports the buttons' area along the bottom edge while it draws them along a side, so the safe area can leave room at the bottom while the buttons cover the side.
 
 ## Modals
 
