@@ -441,8 +441,7 @@ type App struct {
 	Quits         int
 	Restarts      int
 	BackUnhandled int
-	// PopupMenu is the context menu the app shows with PopupMenu, at
-	// PopupAt; nil once it closed.
+	// PopupMenu is the context menu the app shows with PopupMenu, at PopupAt, or a tray icon's menu, with a zero PopupAt; nil once it closed.
 	PopupMenu []MenuItem
 	PopupAt   core.Point
 	popupID   uint32
@@ -518,6 +517,8 @@ type App struct {
 	menuTree  *core.Tree
 	dockTree  *core.Tree
 	popupTree *core.Tree
+	trays     map[uint32]trayRecord
+	trayOrder []uint32
 	// quitRequests numbers the requests a Quit menu role or RequestQuit sends, for the test's app.
 	quitRequests uint32
 
@@ -604,6 +605,12 @@ type App struct {
 	gpuFrames    []GPUFrameRecord
 	// presenting holds modals currently playing their entrance animation before EventModalShown is dispatched.
 	presenting map[driver.NodeID]*modalWait
+}
+
+type trayRecord struct {
+	id      uint32
+	title   string
+	removed bool
 }
 
 type modalWait struct {

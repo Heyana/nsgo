@@ -50,6 +50,8 @@ A surface has `App`'s view queries, input and gesture steps, media reports, capt
 
 `app.Menu`, `app.DockMenu` and `app.PopupMenu` expose `nsgotest.MenuItem` snapshots with labels, roles, check state and nested items. Use the corresponding choose step with a path of labels to invoke an item.
 
+`app.ClickTray("index:0", core.MouseButtonLeft)` or `app.ClickTray("title:Tools", core.MouseButtonRight)` reports a click on a live tray icon in a headless desktop test. `ClickTrayIndex` and `ClickTrayTitle` are convenience forms. Pass one `core.Bounds` after the button when the test needs to model a platform-reported icon rectangle. Without it, `Tray.ClickBounds` is unavailable. A tray menu is then available to `ChoosePopup`.
+
 `Drag` cancels the press under the pointer once it moves more than 8 points from where it went down. The same rule applies to the web, so a drag that returns to its starting view does not fire `OnPress`. `app.DragTo("id:source", "id:target")` drags between the views' centers through the normal touch responder; a selected surface has `DragTo` too, and TSX tests use `await app.dragTo("id:source", "id:target")`. Keep both views visible: the step does not scroll during the drag or call a drop handler directly. See [Drag and drop](drag-drop.md).
 
 `app.KeyCommands()` lists the titled keyboard shortcuts that can fire with the current focus and visible views. It reports the key, title and group headless and on a target.

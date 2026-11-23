@@ -40,6 +40,8 @@ func TestMain(m *testing.M) {
 
 `app.Menu`、`app.DockMenu` 和 `app.PopupMenu` 提供 `nsgotest.MenuItem` 快照，其中包含标签、角色、勾选状态和子菜单项。调用对应的选择步骤并传入标签路径，即可选择菜单项。
 
+无头桌面测试中，`app.ClickTray("index:0", core.MouseButtonLeft)` 或 `app.ClickTray("title:Tools", core.MouseButtonRight)` 报告对一个已打开托盘图标的点击，`ClickTrayIndex` 和 `ClickTrayTitle` 是它的简便写法。需要模拟平台报告的图标矩形时，在按钮之后传入一个 `core.Bounds`；不传时 `Tray.ClickBounds` 不可用。托盘菜单随后可用 `ChoosePopup` 选择。
+
 已挂载的图片、输入框、模态框、屏幕、滚动视图、视频和画中画设置使用 `nsgotest` 的配置记录。`View.Sticky` 保存 `nsgotest.StickyCell` 值。模型收到一批更新时，会复制图片变体映射和滚动相关列表。
 
 `app.Surfaces()` 列出已打开的窗口、面板和托盘视图，主窗口排在第一位，其余按打开顺序排列。`app.Surface("title:Settings")`、`app.Surface("id:settings-root")` 和 `app.Surface("index:1")` 分别按当前标题、根视图的测试 ID 和列表位置选取一个界面。选择器必须恰好匹配一个打开的界面。

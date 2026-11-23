@@ -1089,6 +1089,24 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 			a.popupMenu, a.PopupMenu = it.Menu, menuItems(it.Menu)
 			a.PopupAt, a.popupID, a.popupTree = it.Point, it.Count, a.responseTree
+		case driver.ItemTray:
+			if a.trays == nil {
+				a.trays = make(map[uint32]trayRecord)
+			}
+			tray := it.Tray
+			if tray == nil {
+				break
+			}
+			if _, exists := a.trays[tray.ID]; !exists {
+				a.trayOrder = append(a.trayOrder, tray.ID)
+			}
+			a.trays[tray.ID] = trayRecord{id: tray.ID, title: tray.Title, removed: tray.Removed}
+		case driver.ItemTrayMenu:
+			if a.popupID != 0 {
+				a.postTo(a.popupTree, driver.Event{Kind: driver.EventMenuClosed, Count: a.popupID})
+			}
+			a.popupMenu, a.PopupMenu = it.Menu, menuItems(it.Menu)
+			a.PopupAt, a.popupID, a.popupTree = core.Point{}, it.Count, a.responseTree
 		case driver.ItemDiskSpace:
 			a.post(driver.DiskSpaceEvent(it.Count, a.diskSpace.Space, a.diskSpace.Err))
 		case driver.ItemImageInfo:

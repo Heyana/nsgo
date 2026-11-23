@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -241,6 +242,77 @@ func (a *App) ChooseDockMenu(path ...string) {
 		}
 		items = found.Items
 	}
+}
+
+// ClickTray reports a primary or secondary click on a tray icon. selector is index:N in the order icons were opened, or title:Title for a tray's title. Headless clicks have no icon bounds unless bounds supplies one rectangle. The click's menu, when any, can be chosen with ChoosePopup.
+func (a *App) ClickTray(selector string, button core.MouseButton, bounds ...core.Bounds) {
+	a.t.Helper()
+	if len(bounds) > 1 {
+		a.t.Fatalf("nsgotest: ClickTray takes at most one bounds value")
+	}
+	if button != core.MouseButtonLeft && button != core.MouseButtonRight {
+		a.t.Fatalf("nsgotest: ClickTray button must be left or right")
+	}
+	if a.target != nil {
+		a.t.Skip("nsgotest: ClickTray runs headless only until a tray test-host surface is available")
+	}
+	kind, value, ok := strings.Cut(selector, ":")
+	if !ok || (kind != "index" && kind != "title") {
+		a.t.Fatalf("nsgotest: invalid tray selector %q: use title: or index:", selector)
+	}
+	var found bool
+	var id uint32
+	switch kind {
+	case "index":
+		index, err := strconv.Atoi(value)
+		if err != nil || index < 0 {
+			a.t.Fatalf("nsgotest: invalid tray index %q", value)
+		}
+		for _, trayID := range a.trayOrder {
+			tray, exists := a.trays[trayID]
+			if !exists || tray.removed {
+				continue
+			}
+			if index == 0 {
+				id, found = trayID, true
+				break
+			}
+			index--
+		}
+	case "title":
+		for _, trayID := range a.trayOrder {
+			tray, exists := a.trays[trayID]
+			if !exists || tray.removed || tray.title != value {
+				continue
+			}
+			if found {
+				a.t.Fatalf("nsgotest: tray selector %q matched more than one icon", selector)
+			}
+			id, found = trayID, true
+		}
+	}
+	if !found {
+		a.t.Fatalf("nsgotest: tray selector %q matched no open icon", selector)
+	}
+	var data any
+	if len(bounds) == 1 {
+		data = bounds[0]
+	}
+	index := 0
+	if button == core.MouseButtonRight {
+		index = 1
+	}
+	a.dispatch(driver.Event{Kind: driver.EventTray, Count: id, Index: index, Data: data})
+}
+
+// ClickTrayIndex clicks the live tray icon at index in opening order.
+func (a *App) ClickTrayIndex(index int, button core.MouseButton, bounds ...core.Bounds) {
+	a.ClickTray("index:"+strconv.Itoa(index), button, bounds...)
+}
+
+// ClickTrayTitle clicks the live tray icon with title.
+func (a *App) ClickTrayTitle(title string, button core.MouseButton, bounds ...core.Bounds) {
+	a.ClickTray("title:"+title, button, bounds...)
 }
 
 // OpenLinks asks the app to open links, as the system does with a link of one of its URL schemes (url_schemes), or one a second launch on Windows and Linux names. The first registered desktop.OnOpenLinks or mobile.OnOpenLinks handler takes any waiting links. Runs headless and on iOS and Android targets.
