@@ -836,14 +836,16 @@ func (in *input) unfocus() {
 }
 
 // focus focuses the input with the caret at the end, where AppKit would
-// select a field's whole text.
+// select a field's whole text, unless a selection set before waits for
+// the focus.
 func (in *input) focus() {
 	w := in.field.Send(selWindow)
 	if w == 0 || in.focused {
 		return
 	}
+	pending := in.pendingSelection != nil
 	w.Send(selMakeFirstResponer, in.field)
-	if e := in.editor(); e != 0 && !in.multiline {
+	if e := in.editor(); e != 0 && !in.multiline && !pending {
 		n := objc.Send[uint](e.Send(selString), selLength)
 		e.Send(selSetSelRange, apple.NSRange{Location: n})
 	}
