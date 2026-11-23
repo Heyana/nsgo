@@ -60,8 +60,9 @@ type signing struct {
 	Notarize string `yaml:"notarize"`
 	// Certificate is a Windows code signing certificate: the .pfx (PKCS
 	// #12) whose key and chain sign the executable, the command companion,
-	// the resources' programs and libraries, and the installer and its
-	// uninstaller, which keeps SmartScreen from warning users.
+	// the app's commands, the resources' programs and libraries, and the
+	// installer and its uninstaller, which keeps SmartScreen from warning
+	// users.
 	// NSGO_CERTIFICATE_PASSWORD gives its password. SignCommand signs a
 	// file instead, for a certificate on a hardware token or in a cloud
 	// service, %1 standing for the file's path.
@@ -143,10 +144,11 @@ func releaseKey(ctx context.Context, p *project) (*apk.Key, error) {
 	return key, nil
 }
 
-// signMacApp signs a macOS package with sign.identity, its libraries and
-// Sparkle first so the app's signature seals them. macOS keeps the permissions it
-// grants a program signed by an identity across builds, and loses them
-// with each new ad hoc signature, which stays without an identity.
+// signMacApp signs a macOS package with sign.identity, its libraries,
+// Sparkle, widgets and commands first so the app's signature seals them.
+// macOS keeps the permissions it grants a program signed by an identity
+// across builds, and loses them with each new ad hoc signature, which
+// stays without an identity.
 func signMacApp(ctx context.Context, p *project, app string) error {
 	if p.Apple.SignInWithApple {
 		warnIn(ctx, "Sign in with Apple is left out: macOS grants it only with a provisioning profile, which only store builds (sign.macos_profile) embed")
@@ -169,6 +171,9 @@ func signMacApp(ctx context.Context, p *project, app string) error {
 		if err := signMacWidgets(ctx, p, appex, p.Sign.Identity); err != nil {
 			return err
 		}
+	}
+	if err := p.signMacCommands(ctx, app, p.macSignArgs); err != nil {
+		return err
 	}
 	args := p.macSignArgs(app)
 	if ents := p.macSignEntitlements(); len(ents) > 0 {

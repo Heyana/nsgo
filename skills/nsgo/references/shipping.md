@@ -34,6 +34,7 @@ build:
 # i18n: { dir: locales, source: en }
 # apple: { info: { NSCameraUsageDescription: Scans receipts. } }
 # linux: { share: packaging/share }  # files the Linux packages install under /usr/share, such as metainfo/<id>.metainfo.xml
+# commands: [{ name: hello-cli, package: ./cmd/hello-cli }]  # command-line programs the desktop packages ship beside the app; windows: { path: true } puts them on Path
 # release: { github: me/hello, tag_prefix: v }
 # updates: { key: <public key from nsgo keygen> }
 # store: { dir: store }       # YAML and Markdown store listings per language

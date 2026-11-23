@@ -198,6 +198,12 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		}
 		stage(ctx, "finding sources")
 		dirs := sourceDirs(p.Dir, pkgs)
+		// The commands the desktop packages hold rebuild them too.
+		for _, c := range p.Commands {
+			if cmdPkgs, err := p.appPackages(ctx, c.Package); err == nil {
+				dirs = append(dirs, sourceDirs(p.Dir, cmdPkgs)...)
+			}
+		}
 
 		if p.Dev.Target == "android" {
 			for _, path := range p.Android.Classes {

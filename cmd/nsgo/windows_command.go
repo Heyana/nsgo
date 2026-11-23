@@ -173,6 +173,11 @@ func buildWindowsCommand(ctx context.Context, p *project, dir, arch string, syso
 	return nil
 }
 
+// windowsPath reports whether the Windows installer puts the app's folder on the user's Path for windows.path, which the Microsoft Store's MSIX, installing where no console's command lookup finds it, leaves alone.
+func (p *project) windowsPath() bool {
+	return p.Windows.Path && p.channel() != channelStore
+}
+
 // windowsCommandLine reports whether Windows builds write the command companion: with windows.command_line, but not for the Microsoft Store, whose MSIX installs where no console's command lookup finds it.
 func (p *project) windowsCommandLine() bool {
 	return p.Windows.CommandLine && p.channel() != channelStore

@@ -705,7 +705,15 @@ func signUniversalAdHoc(ctx context.Context, p *project, app string) error {
 	if err != nil {
 		return err
 	}
+	if err := p.signMacCommands(ctx, app, adHocSignArgs); err != nil {
+		return err
+	}
 	return run(ctx, "codesign", "--force", "--sign", "-", app)
+}
+
+// adHocSignArgs are codesign's arguments signing path ad hoc.
+func adHocSignArgs(path string) []string {
+	return []string{"--force", "--sign", "-", path}
 }
 
 // goArch maps x64, the name packages use, to Go's amd64.
@@ -993,14 +1001,20 @@ func buildMacApp(ctx context.Context, p *project, dir, arch string) (string, err
 	if err := addSparkle(ctx, p, app); err != nil {
 		return "", err
 	}
+	if err := p.addCommands(ctx, "macos_"+goArchName(arch), filepath.Join(app, "Contents", "MacOS")); err != nil {
+		return "", err
+	}
 	stage(ctx, "signing")
 	if err := addMacLibraries(ctx, p, app, arch); err != nil {
+		return "", err
+	}
+	if err := p.signMacCommands(ctx, app, adHocSignArgs); err != nil {
 		return "", err
 	}
 	return app, run(ctx, "codesign", "--force", "--sign", "-", app)
 }
 
-// buildWindows writes <dir>/<name>.exe with the icon and version linked in, and the resources beside it with WinSparkle.dll where the app updates.
+// buildWindows writes <dir>/<name>.exe with the icon and version linked in, and the resources beside it with WinSparkle.dll where the app updates and the app's commands.
 func buildWindows(ctx context.Context, p *project, dir, arch string) error {
 	syso, removeResources, err := writeWindowsResources(ctx, p, arch)
 	defer removeResources()
@@ -1026,10 +1040,13 @@ func buildWindows(ctx context.Context, p *project, dir, arch string) error {
 	if err := addWinSparkle(ctx, p, dir, arch); err != nil {
 		return err
 	}
-	return addDesktopLibraries(ctx, p, dir, "windows", arch)
+	if err := addDesktopLibraries(ctx, p, dir, "windows", arch); err != nil {
+		return err
+	}
+	return p.addCommands(ctx, "windows_"+goArchName(arch), dir)
 }
 
-// buildLinux writes <dir>/<name> with the resources and icon beside it.
+// buildLinux writes <dir>/<name> with the resources, icon and the app's commands beside it.
 func buildLinux(ctx context.Context, p *project, dir, arch string) error {
 	if err := goBuild(ctx, p, filepath.Join(dir, p.Name),
 		[]string{"GOOS=linux", "GOARCH=" + arch, "CGO_ENABLED=0"}); err != nil {
@@ -1042,7 +1059,10 @@ func buildLinux(ctx context.Context, p *project, dir, arch string) error {
 	if err := writeLinuxIcon(p, dir); err != nil {
 		return err
 	}
-	return addDesktopLibraries(ctx, p, dir, "linux", arch)
+	if err := addDesktopLibraries(ctx, p, dir, "linux", arch); err != nil {
+		return err
+	}
+	return p.addCommands(ctx, "linux_"+goArchName(arch), dir)
 }
 
 // buildFPS is -fps: the site starts its app with --nsgo-fps, which a page

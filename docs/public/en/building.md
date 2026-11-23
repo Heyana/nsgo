@@ -100,7 +100,9 @@ build:
 # android: { background_downloads: true }  # dataSync foreground service for cx.Download
 # android: { background_motion: true }  # explicit finite motion shortService; streams also need a notification title
 # android: { loopback_cleartext: true }  # allow plain HTTP to loopback in the APK and App Bundle
+# commands: [{ name: hello-cli, package: ./cmd/hello-cli }]  # command-line programs the desktop packages ship beside the app: see Commands
 # windows: { command_line: true }  # add <name>.com, a console companion that forwards arguments and streams to <name>.exe; not in store builds
+# windows: { path: true }  # the installer puts the app's folder on the user's Path, so consoles find its commands
 # windows: { publisher: Example Ltd }  # the company the Windows executable's details, its installer and the uninstall entry name; else windows.store.publisher_name
 # linux: { maintainer: "Jane Doe <jane@example.com>" }  # the Linux packages' maintainer, else the app's name
 # linux: { categories: [Office, Dictionary] }  # the freedesktop menu categories of the app's desktop entry, at least one a main category such as Office, Utility or Game, else menus file it under Other; your own start with X-
@@ -185,6 +187,31 @@ Apps that import `base/terminal` also ship libghostty-vt: Windows and Linux pack
 
 A dependency can declare prebuilt desktop shared libraries in `nsgo-natives.yaml`. NSGo verifies their SHA-256, copies them into the app before signing and includes them in installers; the app author runs no extra step. [Native libraries](native-libraries.md) describes the package author's format and loading paths.
 
+## Commands
+
+An app can ship command-line programs beside its desktop executable, such as a CLI working on the app's data. List them under `commands`, each built from a Go main package:
+
+```yaml
+commands:
+  - name: hello-cli             # the file's name, hello-cli.exe on Windows
+    package: ./cmd/hello-cli    # a main package, built for each desktop target with CGO_ENABLED=0 and build.tags
+    ldflags: [-X main.channel=beta]  # its own linker flags, after build.ldflags
+windows:
+  path: true                    # the installer puts the app's folder on the user's Path
+```
+
+A name is letters, digits, `-` and `_`, and may not be the app's executable, its Linux command, `Uninstall`, `AppRun` or another command's in any case. `macos_universal` joins the two macOS builds of each command, as it joins the app's.
+
+A package links with `build.ldflags` and `-ldflags`, then its own `ldflags`, whose `-X` values win, then the app's identity, so `core.App()` gives the command the name, ID, version and build number of `nsgo.yaml`, as it gives the app. A command that does not import `core` takes the version with `-X`, such as `-ldflags "-X main.version=1.2.0"` on `build`, which the app and its commands both take.
+
+| Package | Commands |
+| --- | --- |
+| macOS | In `Contents/MacOS`, signed before the app as it is, as `<id>.<command>`: ad hoc, or with `sign.identity`, the hardened runtime and a timestamp, so the app [notarizes](#notarize), but without the app's entitlements. The disk image puts nothing on `PATH`; the [Homebrew cask](#channels) links each command, and a user may link `/Applications/<name>.app/Contents/MacOS/<command>` themselves |
+| Windows | `<command>.exe` beside `<name>.exe`, [signed](#sign-windows-packages) as it is, which the installer installs and its uninstaller removes; with `windows.path` the installer also puts the folder on the user's `Path`, as `windows.command_line` does, so consoles opened after installing find the commands. A command an update renames or drops stays in the folder, as a file the app no longer ships does, since the uninstaller removes only what its version installed |
+| Linux | In `/opt/<slug>` with a `/usr/bin/<command>` link that the `.deb` and Arch package own, so removing the package removes it, and dpkg and pacman refuse to install over another package's; the AppImage holds them beside the app and puts nothing on `PATH` |
+
+The installers, their checksums and the [update](#updates) appcasts carry the commands as they carry the app's other files, so an update replaces them with the app. [Store packages](#store-packages) leave them out, as the Mac App Store's sandbox, the MSIX and the Flatpak run only the app's own executable.
+
 ## Installers
 
 For the desktop targets, `build` writes what users install the app from into `dist/releases`, each with a `.sha256` checksum:
@@ -193,7 +220,7 @@ For the desktop targets, `build` writes what users install the app from into `di
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`, a disk image showing the app, an arrow and a link to Applications to drag it to, signed with `sign.identity` and [notarized](#notarize) |
 | Windows | `<name>-<version>-windows-<arch>-setup.exe`, an [NSIS](https://nsis.sourceforge.io) installer that installs for the user, again in the folder the user chose before, closing the app if it runs, with a Start menu shortcut, an optional desktop one and an uninstaller that removes only what it installed, [signed with `sign.certificate`](#sign-windows-packages) where the app signs Windows packages; `windows.command_line` also installs the `.com` companion and puts the app's folder on the user's `Path`, so consoles opened after installing run the app's command, while Win+R, which finds the companion too, starts the app and closes the console it opened; the uninstaller takes the folder off `Path` only if an installer added it, never an entry you had |
-| Linux | `<name>-<version>-linux-<arch>.deb` for Debian and Ubuntu, and `<name>-<version>-linux-<arch>.pkg.tar.gz` for Arch Linux, which install the app in `/opt/<name>` with a command, its desktop entry and icon (the Arch package includes `.MTREE` for `pacman -Qkk`), and `<name>-<version>-linux-<arch>.AppImage`, which runs on any distribution without installing |
+| Linux | `<name>-<version>-linux-<arch>.deb` for Debian and Ubuntu, and `<name>-<version>-linux-<arch>.pkg.tar.gz` for Arch Linux, which install the app in `/opt/<slug>` with a command, links to its [commands](#commands), its desktop entry and icon (the Arch package includes `.MTREE` for `pacman -Qkk`), and `<name>-<version>-linux-<arch>.AppImage`, which runs on any distribution without installing |
 
 The Windows installer needs NSIS's compiler, 3.06 or later, on a Mac `brew install makensis`, so a Mac builds every installer; without it `build` leaves the script, `<name>.nsi`, in the package, which compiles anywhere as it is. The installer speaks the languages of the app's catalogs that NSIS translates, Simplified and Traditional Chinese included, picking the system's. `-installers=false` or `build.installers: false` builds the packages alone.
 
@@ -438,7 +465,7 @@ The channel decides who updates the app. `-channel` replaces `updates.channel` f
 | `steam` | Steam | Produce [depot directories](#steam-depots) that Steam updates |
 | `none` | Linux distributions and anyone who repackages the app | Check nothing |
 
-Stores reject apps that update themselves, so upload a `store` build, never a direct one. Each direct release with macOS or Windows installers also writes a Homebrew cask (`dist/releases/homebrew/<name>.rb`, declaring `auto_updates true`, checksums and download URLs for the built disk images) and a winget multi-file manifest (`dist/releases/winget/<id>.yaml`, `<id>.installer.yaml` and `<id>.locale.en-US.yaml` for the built NSIS installers). Wherever the system tells who installed the app, the app checks that too: an Android app from another store, a Flatpak or Snap, and a TestFlight build leave updates to that store. A manual `updater.Check` in a Google Play install asks Play In-App Updates to offer its immediate flow when allowed; Play handles consent, downloading, installation and restart. Development builds never enter that flow. Standalone Android packages bundle the SDK; [embedding hosts](embedding.md#android) supply it through Gradle.
+Stores reject apps that update themselves, so upload a `store` build, never a direct one. Each direct release with macOS or Windows installers also writes a Homebrew cask (`dist/releases/homebrew/<name>.rb`, declaring `auto_updates true`, checksums and download URLs for the built disk images, and a `binary` link to each of the app's [commands](#commands)) and a winget multi-file manifest (`dist/releases/winget/<id>.yaml`, `<id>.installer.yaml` and `<id>.locale.en-US.yaml` for the built NSIS installers). Wherever the system tells who installed the app, the app checks that too: an Android app from another store, a Flatpak or Snap, and a TestFlight build leave updates to that store. A manual `updater.Check` in a Google Play install asks Play In-App Updates to offer its immediate flow when allowed; Play handles consent, downloading, installation and restart. Development builds never enter that flow. Standalone Android packages bundle the SDK; [embedding hosts](embedding.md#android) supply it through Gradle.
 
 ### Checking from the app
 

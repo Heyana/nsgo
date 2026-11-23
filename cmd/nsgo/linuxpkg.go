@@ -22,9 +22,9 @@ import (
 // one, <slug>-<version>-linux-<arch>.pkg.tar.gz, named as the release's
 // other files are, since dpkg and pacman read the package's name and
 // version from inside it. Both install the package's
-// directory in /opt/<slug>, a link to the app in /usr/bin, its desktop
-// entry, its AppStream metadata, its icon in the hicolor theme and the
-// files of linux.share under /usr/share.
+// directory in /opt/<slug>, a link to the app in /usr/bin and one to each
+// of its commands, its desktop entry, its AppStream metadata, its icon in
+// the hicolor theme and the files of linux.share under /usr/share.
 
 // linuxPackageEntry is a file, directory or link a Linux package
 // installs, by its path from the root.
@@ -216,6 +216,11 @@ func linuxPackageFiles(p *project, dir string) ([]linuxPackageEntry, error) {
 	}
 	mkdir("usr/bin")
 	files = append(files, linuxPackageEntry{name: "usr/bin/" + slug, link: "/" + opt + "/" + p.Name, mode: 0o777})
+	// The packages own the links, so removing them removes the links too.
+	for _, path := range p.commandFiles(dir, "linux") {
+		name := filepath.Base(path)
+		files = append(files, linuxPackageEntry{name: "usr/bin/" + name, link: "/" + opt + "/" + name, mode: 0o777})
+	}
 
 	share, err := p.linuxShareFiles()
 	if err != nil {

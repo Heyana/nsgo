@@ -189,6 +189,8 @@ type project struct {
 	URLSchemes []string `yaml:"url_schemes"`
 	// AppLinks are the HTTPS hosts associated with the full app on iOS and Android; the app's server supplies their association files.
 	AppLinks []string `yaml:"app_links"`
+	// Commands are command-line programs the app's desktop packages ship beside its executable (commands.go).
+	Commands []command `yaml:"commands"`
 	// Widgets are the kinds of the app's widgets, which nsgo build puts
 	// into its macOS and iOS packages as a widget extension (widgets.go).
 	Widgets []widgetKind `yaml:"widgets"`
@@ -241,9 +243,10 @@ type project struct {
 		Category      string         `yaml:"category"`
 		Entitlements  map[string]any `yaml:"entitlements"`
 	} `yaml:"macos"`
-	// Windows is the Windows target's options: CommandLine adds a .com console companion beside the GUI executable, while InstallerIcon and UninstallerIcon, an .ico or a square PNG, are the icons of the setup program and the uninstaller, else the app's. DeviceCapabilities are the devices a store build's MSIX declares the app uses, such as microphone and webcam, which Windows asks the user for and keeps under the package's name. Publisher is who publishes the app, the CompanyName of its executables and its installer and the publisher of its uninstall entry, else Store's publisher name. Store is the Microsoft Store's package identity, as Partner Center lists it, which a store build's MSIX carries (msix.go): the package's name, its publisher (CN=...) and the publisher's display name.
+	// Windows is the Windows target's options: CommandLine adds a .com console companion beside the GUI executable, and it or Path has the installer put the app's folder on the user's Path, so consoles find the companion and the app's commands, while InstallerIcon and UninstallerIcon, an .ico or a square PNG, are the icons of the setup program and the uninstaller, else the app's. DeviceCapabilities are the devices a store build's MSIX declares the app uses, such as microphone and webcam, which Windows asks the user for and keeps under the package's name. Publisher is who publishes the app, the CompanyName of its executables and its installer and the publisher of its uninstall entry, else Store's publisher name. Store is the Microsoft Store's package identity, as Partner Center lists it, which a store build's MSIX carries (msix.go): the package's name, its publisher (CN=...) and the publisher's display name.
 	Windows struct {
 		CommandLine        bool     `yaml:"command_line"`
+		Path               bool     `yaml:"path"`
 		Publisher          string   `yaml:"publisher"`
 		InstallerIcon      string   `yaml:"installer_icon"`
 		UninstallerIcon    string   `yaml:"uninstaller_icon"`
@@ -509,6 +512,9 @@ func load(dir string) (*project, error) {
 	if err := p.validateAppLinks(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
+	if err := p.validateCommands(); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
+	}
 	if err := p.validateAndroidShareTypes(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
@@ -600,14 +606,19 @@ func (p *project) appLdflags() string {
 // corePath is package core's, which holds the app's identity (core.App).
 const corePath = "github.com/nsgo-dev/nsgo/core"
 
+// identityLdflags are the -X flags building nsgo.yaml's name, ID, version and build number into core.App, which the app and its commands take.
+func (p *project) identityLdflags() string {
+	return strings.Join([]string{xflag(corePath+".appName", p.Name), xflag(corePath+".appID", p.ID),
+		xflag(corePath+".appVersion", p.Version), xflag(corePath+".appBuild", p.BundleVersion())}, " ")
+}
+
 // ldflags builds nsgo.yaml's name, ID, version and build number into
 // core.App, and passes the rest of what nsgo.Run takes from it.
 func (p *project) ldflags(extra ...string) string {
 	const pkg = "github.com/nsgo-dev/nsgo"
 	// The dev client, which nsgo.Run starts in dev builds.
 	const devPkg = pkg + "/internal/dev"
-	flags := strings.Join([]string{xflag(corePath+".appName", p.Name), xflag(corePath+".appID", p.ID),
-		xflag(corePath+".appVersion", p.Version), xflag(corePath+".appBuild", p.BundleVersion())}, " ")
+	flags := p.identityLdflags()
 	// The linker keeps the last -X of a variable, so the app's flags go first and cannot replace the tool's.
 	if app := p.appLdflags(); app != "" {
 		flags = app + " " + flags

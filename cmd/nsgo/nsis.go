@@ -173,7 +173,7 @@ type nsisData struct {
 	Publisher, Copyright string
 	// ARM64 has the installer refuse other systems.
 	ARM64 bool
-	// Command has the installer put its folder on the user's Path, for the command companion, and the uninstaller take it off.
+	// Command has the installer put its folder on the user's Path, for the command companion and the app's commands, and the uninstaller take it off.
 	Command bool
 	// SignUninstaller is the command that signs the uninstaller makensis
 	// writes, which a signed app needs signed too; empty when the app
@@ -208,8 +208,8 @@ func nsisScript(ctx context.Context, p *project, dir, arch string) (*nsisData, e
 		Publisher:    p.windowsPublisher(),
 		Copyright:    p.Copyright,
 		ARM64:        arch == "arm64",
-		Command:      p.windowsCommandLine(),
-		Excludes:     []string{p.Name + ".nsi", "*-setup.exe"},
+		Command:      p.windowsCommandLine() || p.windowsPath(),
+		Excludes:     []string{p.Name + ".nsi", nsisSetupName(p, arch)},
 	}
 	if p.signingWindows() && p.Release {
 		command, env, err := uninstallerSignCommand(ctx, p)
@@ -508,7 +508,7 @@ FunctionEnd
 !insertmacro RemoveURLSchemes ""
 !insertmacro RemoveURLSchemes "un."
 
-; UserPath puts the folder $R0 on the user's Path, with the app's command companion, or takes it off when $R1 is "1", leaving the script's exit code in $R2: 3 when it added a folder that was not there, 4 when the folder is off Path, and anything else, empty without PowerShell, when it failed.
+; UserPath puts the folder $R0 on the user's Path, with the app's command companion and commands, or takes it off when $R1 is "1", leaving the script's exit code in $R2: 3 when it added a folder that was not there, 4 when the folder is off Path, and anything else, empty without PowerShell, when it failed.
 !macro UserPath un
 Function ${un}UserPath
   Push $0

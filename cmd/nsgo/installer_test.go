@@ -64,7 +64,7 @@ func TestNSISScript(t *testing.T) {
 	pkg := filepath.Join(dir, "pkg")
 	writeFiles(t, pkg, map[string]string{
 		"MyApp.exe": "exe", "fonts/a$b.ttf": "font", "MyApp.nsi": "old",
-		"myapp-0.9.0-windows-x64-setup.exe": "old",
+		"helper-setup.exe": "a program of the app's",
 	})
 	p := &project{Dir: dir, Name: "MyApp", ID: "dev.example.app", Version: "1.2.0-beta.1"}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "en"
@@ -90,7 +90,8 @@ func TestNSISScript(t *testing.T) {
 		`InstallDir "$LOCALAPPDATA\Programs\My App"`,
 		`InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\dev.example.app" "InstallLocation"`,
 		`WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\dev.example.app" "InstallLocation" "$INSTDIR"`,
-		`File /r /x "MyApp.nsi" /x "*-setup.exe" "*"`,
+		`File /r /x "MyApp.nsi" /x "myapp-1.2.0-beta.1-windows-arm64-setup.exe" "*"`,
+		`Delete "$INSTDIR\helper-setup.exe"`,
 		`LangString NSGO_SHORTCUT ${LANG_SimpChinese} "创建桌面快捷方式"`,
 		`LangString NSGO_RUNNING ${LANG_Japanese} "My App は実行中です。終了して続行しますか？"`,
 		`CreateShortCut "$SMPROGRAMS\My App.lnk" "$INSTDIR\MyApp.exe"`,
@@ -108,7 +109,7 @@ func TestNSISScript(t *testing.T) {
 			t.Errorf("script lacks %s", want)
 		}
 	}
-	for _, unwanted := range []string{`Delete "$INSTDIR\MyApp.nsi"`, `myapp-0.9.0`, `RMDir /r`} {
+	for _, unwanted := range []string{`Delete "$INSTDIR\MyApp.nsi"`, `RMDir /r`} {
 		if strings.Contains(script, unwanted) {
 			t.Errorf("script holds %s", unwanted)
 		}

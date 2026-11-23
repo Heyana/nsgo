@@ -23,7 +23,8 @@ import (
 // manifests into the releases directory for the platforms that built
 // installers:
 //   - homebrew/<slug>.rb: a Homebrew cask with auto_updates true for the
-//     release's macOS disk images (universal, dual-arch or single-arch).
+//     release's macOS disk images (universal, dual-arch or single-arch),
+//     linking the app's commands onto Homebrew's PATH.
 //   - winget/<id>.yaml, <id>.installer.yaml and <id>.locale.en-US.yaml:
 //     a winget multi-file manifest (schema 1.9.0) for the release's
 //     Windows NSIS installers.
@@ -152,6 +153,8 @@ type homebrewCask struct {
 	Desc     string
 	Homepage string
 	App      string
+	// Binaries are the app's commands, which the cask links onto Homebrew's PATH.
+	Binaries []string
 	ZapTrash []string
 }
 
@@ -186,6 +189,11 @@ func (p *project) writeHomebrewCask(ctx context.Context, targets []string, base 
 		Homepage: p.manifestHomepage(ctx),
 		App:      p.Name + ".app",
 		ZapTrash: homebrewZapTrash(p.ID),
+	}
+	if p.commandsIncluded() {
+		for _, c := range p.Commands {
+			cask.Binaries = append(cask.Binaries, c.Name)
+		}
 	}
 	preferUni := hasUni && (slices.Contains(targets, "macos_universal") || (!hasArm && !hasX64))
 	switch {
@@ -266,6 +274,9 @@ func renderHomebrewCask(c homebrewCask) []byte {
 	}
 	b.WriteString("  depends_on :macos\n\n")
 	fmt.Fprintf(&b, "  app %s\n", rubyString(c.App))
+	for _, name := range c.Binaries {
+		fmt.Fprintf(&b, "  binary \"#{appdir}/%s\"\n", rubyEscape(c.App+"/Contents/MacOS/"+name))
+	}
 	if len(c.ZapTrash) > 0 {
 		b.WriteString("\n  zap trash: [\n")
 		for _, path := range c.ZapTrash {

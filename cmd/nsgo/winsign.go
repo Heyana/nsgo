@@ -158,7 +158,11 @@ func (s *windowsSigner) signWindowsPackage(ctx context.Context, p *project, dir 
 		return err
 	}
 	stage(ctx, "signing")
-	for _, name := range []string{p.Name + ".exe", p.Name + ".com"} {
+	names := []string{p.Name + ".exe", p.Name + ".com"}
+	for _, c := range p.Commands {
+		names = append(names, commandFile(c.Name, "windows"))
+	}
+	for _, name := range names {
 		path := filepath.Join(dir, name)
 		if _, err := os.Stat(path); err != nil {
 			continue
@@ -168,13 +172,13 @@ func (s *windowsSigner) signWindowsPackage(ctx context.Context, p *project, dir 
 		}
 		detailIn(ctx, "signed %s", name)
 	}
-	return s.signWindowsResources(ctx, dir, p.Name)
+	return s.signWindowsResources(ctx, dir, names)
 }
 
 // signWindowsResources signs the PE images among a package's files, such
 // as helper programs and native libraries, that carry no signature of
-// their own, the app's executable and companion aside.
-func (s *windowsSigner) signWindowsResources(ctx context.Context, dir, name string) error {
+// their own, the app's executables, which names lists, aside.
+func (s *windowsSigner) signWindowsResources(ctx context.Context, dir string, names []string) error {
 	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -184,7 +188,7 @@ func (s *windowsSigner) signWindowsResources(ctx context.Context, dir, name stri
 		default:
 			return nil
 		}
-		if path == filepath.Join(dir, name+".exe") || path == filepath.Join(dir, name+".com") {
+		if slices.ContainsFunc(names, func(name string) bool { return path == filepath.Join(dir, name) }) {
 			return nil
 		}
 		data, err := os.ReadFile(path)
