@@ -5,8 +5,10 @@ package windows
 import (
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -46,7 +48,24 @@ func TestAListScrolledEveryFrameWakesTheEngineOnceAFrame(t *testing.T) {
 	var passes float32
 	onMain(t, hwnd, func(w *window) { passes = w.hud.monitor.Snapshot().Passes })
 	n := frames.Load() - from
+	if n < 20 && !sessionActive() {
+		t.Skipf("the session is not active, where DWM composed only %d frames in a second", n)
+	}
 	if n < 20 || passes > float32(n+n/10+2) {
 		t.Errorf("%d frames took %.0f engine passes, want about one a frame", n, passes)
 	}
+}
+
+// sessionActive reports whether the process's session is connected (WTSActive). DWM composes a disconnected session's desktop a few times a second, so DwmFlush paces the frame clock that slowly there.
+func sessionActive() bool {
+	query := syscall.NewLazyDLL("wtsapi32.dll").NewProc("WTSQuerySessionInformationW")
+	free := syscall.NewLazyDLL("wtsapi32.dll").NewProc("WTSFreeMemory")
+	const currentServer, currentSession, connectState, active = 0, ^uintptr(0), 8, 0
+	var buf *int32
+	var size uint32
+	if ok, _, _ := query.Call(currentServer, currentSession, connectState, uintptr(unsafe.Pointer(&buf)), uintptr(unsafe.Pointer(&size))); ok == 0 || buf == nil {
+		return true
+	}
+	defer free.Call(uintptr(unsafe.Pointer(buf)))
+	return *buf == active
 }
