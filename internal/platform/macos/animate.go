@@ -327,7 +327,7 @@ func (v *view) updateTransformTransition(prev driver.ViewStyle) {
 	if m := s.motions[v]; m != nil && m.Appear != nil && m.Appear.Property == driver.LayoutScale {
 		bound |= 1 << driver.PropScale
 	}
-	if !styled || bound&driver.AnimatedTransformMask == 0 || s.env.ReduceMotion {
+	if !styled || bound&driver.AnimatedTransformMask == 0 || s.motionReduced() {
 		v.transformTr = nil
 		delete(s.transitions, v)
 		return

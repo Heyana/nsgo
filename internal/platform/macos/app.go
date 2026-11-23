@@ -90,6 +90,7 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 	if cfg.Kind == driver.SurfaceTrayIcon {
 		s := newSurface(opts, true)
 		s.id, s.kind, s.tray = cfg.ID, cfg.Kind, cfg.Tray
+		s.envPin = o.envPin
 		s.attach(o.engine)
 		if tr := trays[cfg.Tray]; tr != nil {
 			tr.show(s)
@@ -121,6 +122,8 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 	window.Send(sel("setReleasedWhenClosed:"), false)
 	s := newSurface(opts, false)
 	s.id, s.kind, s.hideOnBlur, s.noActivate = cfg.ID, cfg.Kind, cfg.HideOnBlur, cfg.NoActivate
+	// The engine pins the environment of every surface it attaches, so a window reads its reduced motion as the app does: a test's pin, not the machine's setting.
+	s.envPin = o.envPin
 	s.dock = cfg.Dock
 	if o.test != nil {
 		// A test's app: its windows take the test's input without activating it, with a pointer of their own, and keep their alerts for the test to answer.
