@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -72,15 +73,18 @@ var soundDecoder = sync.OnceValue(func() chan func(error) {
 	return jobs
 })
 
-func (a *windowAudio) load(id uint32, src driver.ImageSource, maxBytes int64, limit time.Duration) {
+// xaMaxBufferBytes is XAUDIO2_MAX_BUFFER_BYTES, the most PCM one XAudio2 buffer holds, which bounds a raised decoded size limit.
+const xaMaxBufferBytes = 0x80000000
+
+// load fetches and decodes sound id within the engine's limits: maxBytes encoded, limit of its duration and maxDecoded bytes of PCM, the defaults where zero.
+func (a *windowAudio) load(id uint32, src driver.ImageSource, maxBytes, maxDecoded int64, limit time.Duration) {
 	if limit <= 0 {
 		limit = driver.MaxSoundDuration
 	}
-	limit = min(limit, driver.MaxSoundDuration)
 	if maxBytes <= 0 {
 		maxBytes = driver.MaxSoundBytes
 	}
-	maxBytes = min(maxBytes, driver.MaxSoundBytes)
+	maxDecoded = min(cmp.Or(maxDecoded, driver.MaxDecodedBytes), xaMaxBufferBytes)
 	ctx, cancel := context.WithCancel(context.Background())
 	a.loading[id] = cancel
 	go func() {
@@ -116,7 +120,7 @@ func (a *windowAudio) load(id uint32, src driver.ImageSource, maxBytes int64, li
 		})
 		stopFetch()
 		if oversized.Load() || int64(len(data)) > maxBytes {
-			complete(decodedSound{}, audioFailure(driver.AudioQuotaExceeded, "the sound has more than 8 MiB"))
+			complete(decodedSound{}, audioFailure(driver.AudioQuotaExceeded, fmt.Sprintf("the sound exceeds its limit of %d encoded bytes", maxBytes)))
 			return
 		}
 		if err != nil {
@@ -135,7 +139,7 @@ func (a *windowAudio) load(id uint32, src driver.ImageSource, maxBytes int64, li
 				complete(decodedSound{}, audioFailure(driver.AudioUnavailable, startErr.Error()))
 				return
 			}
-			pcm, ev, err := decodeWindowsSound(data, src.URI, limit)
+			pcm, ev, err := decodeWindowsSound(data, src.URI, limit, maxDecoded)
 			if err != nil {
 				ev = audioFailure(driver.AudioDecode, err.Error())
 			}
@@ -158,7 +162,8 @@ type decodedSound struct {
 	data   []byte
 }
 
-func decodeWindowsSound(data []byte, name string, limit time.Duration) (decodedSound, driver.AudioEvent, error) {
+// decodeWindowsSound decodes at most limit of data to float PCM. A sound whose PCM within limit would exceed maxDecoded bytes reports QuotaExceeded and keeps none.
+func decodeWindowsSound(data []byte, name string, limit time.Duration, maxDecoded int64) (decodedSound, driver.AudioEvent, error) {
 	var pcm decodedSound
 	var event driver.AudioEvent
 	reader, err := soundReader(data, name)
@@ -208,10 +213,13 @@ func decodeWindowsSound(data []byte, name string, limit time.Duration) (decodedS
 				maxBytes = int(limit*time.Duration(actual.rate)/time.Second) * frameBytes
 				readFormat = false
 			}
-			cut, err := pcm.appendSample(sample, int(format.channels)*4, maxBytes)
+			cut, large, err := pcm.appendSample(sample, int(format.channels)*4, maxBytes, maxDecoded)
 			sample.release()
 			if err != nil {
 				return decodedSound{}, event, err
+			}
+			if large {
+				return decodedSound{}, audioFailure(driver.AudioQuotaExceeded, "the sound exceeds its decoded size limit"), nil
 			}
 			if cut {
 				return decodedSound{}, driver.AudioEvent{Phase: driver.AudioLoaded, Duration: limit, Cut: true}, nil
@@ -298,21 +306,25 @@ func getSoundFormat(reader *comObject) (soundFormat, error) {
 	return format, nil
 }
 
-func (s *decodedSound) appendSample(sample *comObject, stride, capBytes int) (bool, error) {
+// appendSample appends the frames of sample that fit in capBytes, the duration limit's PCM. It reports cut when frames are left over, and large, appending none, when they would take s past maxDecoded bytes.
+func (s *decodedSound) appendSample(sample *comObject, stride, capBytes int, maxDecoded int64) (cut, large bool, err error) {
 	var buffer *comObject
 	if hr := sample.call(mfSampleBuffer, uintptr(unsafe.Pointer(&buffer))); failed(hr) || buffer == nil {
-		return false, hresultError("cannot read decoded audio", hr)
+		return false, false, hresultError("cannot read decoded audio", hr)
 	}
 	defer buffer.release()
 	var data *byte
 	var size uint32
 	if hr := buffer.call(mfBufferLock, uintptr(unsafe.Pointer(&data)), 0, uintptr(unsafe.Pointer(&size))); failed(hr) {
-		return false, hresultError("cannot lock decoded audio", hr)
+		return false, false, hresultError("cannot lock decoded audio", hr)
 	}
 	defer buffer.call(mfBufferUnlock)
 	frameBytes := int(s.format.channels) * 4
 	frames := int(size) / stride
 	count := min(frames, (capBytes-len(s.data))/frameBytes)
+	if int64(len(s.data))+int64(max(count, 0)*frameBytes) > maxDecoded {
+		return false, true, nil
+	}
 	if count > 0 {
 		pcm := unsafe.Slice(data, count*stride)
 		if stride == frameBytes {
@@ -323,5 +335,5 @@ func (s *decodedSound) appendSample(sample *comObject, stride, capBytes int) (bo
 			}
 		}
 	}
-	return count < frames, nil
+	return count < frames, false, nil
 }

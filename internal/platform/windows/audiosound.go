@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"slices"
@@ -57,6 +58,8 @@ type soundVoice struct {
 	voice           *comObject
 	format          soundFormat
 	sound, playback uint32
+	// restricted marks a playback of a scope held to core.Access, which counts against driver.MaxSoundVoices among the restricted playbacks whatever the engine's limit.
+	restricted bool
 	// matrix is XAudio2's default output matrix into a mastering voice of two or more channels, one row of format.channels levels per output channel, which Voice.Pan scales; nil for a mono output, which takes no pan.
 	matrix []float32
 }
@@ -155,6 +158,29 @@ func (v soundVoice) idle() bool {
 	return binary.LittleEndian.Uint32(state[pointerBytes:]) == 0
 }
 
+// voiceToRetire is the index of the voice a playback retires before it starts, -1 for none: the oldest restricted playback when a restricted one would pass driver.MaxSoundVoices of them, else at limit voices (driver.MaxSoundVoices when 0), idle ones included, the oldest idle voice or the oldest playback. A reaped voice, which has no sound, is idle.
+func voiceToRetire(voices []soundVoice, restricted bool, limit int) int {
+	if restricted {
+		oldest, n := -1, 0
+		for i, v := range voices {
+			if v.sound != 0 && v.restricted {
+				if n == 0 {
+					oldest = i
+				}
+				n++
+			}
+		}
+		if n >= driver.MaxSoundVoices {
+			return oldest
+		}
+	}
+	if len(voices) < max(1, cmp.Or(limit, driver.MaxSoundVoices)) {
+		return -1
+	}
+	return max(0, slices.IndexFunc(voices, func(v soundVoice) bool { return v.sound == 0 }))
+}
+
+// play starts a playback of sound id within the request's playback limit; a limit lowered while voices play retires the oldest until the new playback fits.
 func (s *soundOutput) play(id uint32, sound *winSound, request *driver.AudioRequest) bool {
 	s.reap()
 	var v soundVoice
@@ -165,13 +191,11 @@ func (s *soundOutput) play(id uint32, sound *winSound, request *driver.AudioRequ
 			break
 		}
 	}
+	for i := voiceToRetire(s.voices, request.Restricted, request.MaxPlaybacks); i >= 0; i = voiceToRetire(s.voices, request.Restricted, request.MaxPlaybacks) {
+		s.retire(s.voices[i])
+		s.voices = slices.Delete(s.voices, i, i+1)
+	}
 	if v.voice == nil {
-		if len(s.voices) == driver.MaxSoundVoices {
-			// Reclaim an idle voice before replacing the oldest playback.
-			i := max(0, slices.IndexFunc(s.voices, soundVoice.idle))
-			s.retire(s.voices[i])
-			s.voices = slices.Delete(s.voices, i, i+1)
-		}
 		v = s.newVoice(sound.format)
 		if v.voice == nil {
 			return false
@@ -189,7 +213,7 @@ func (s *soundOutput) play(id uint32, sound *winSound, request *driver.AudioRequ
 		voice.call(xaVoiceDestroy)
 		return false
 	}
-	v.sound, v.playback = id, request.Playback
+	v.sound, v.playback, v.restricted = id, request.Playback, request.Restricted
 	s.voices = append(s.voices, v)
 	return true
 }

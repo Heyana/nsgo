@@ -42,7 +42,7 @@ func (w *window) audioCommand(id uint32, r *driver.AudioRequest) {
 	a := w.audio
 	switch r.Command {
 	case driver.AudioLoad:
-		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
+		a.load(id, r.Source, r.MaxBytes, r.MaxDecodedBytes, r.MaxDuration)
 	case driver.AudioPlay:
 		a.play(id, r)
 	case driver.AudioPlaybackSet, driver.AudioPlaybackStop:

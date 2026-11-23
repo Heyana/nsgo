@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"cmp"
 	_ "embed"
 	"encoding/binary"
 	"errors"
@@ -72,12 +73,18 @@ func TestWindowsAudioDecodesAndCapsSounds(t *testing.T) {
 		cap  time.Duration
 		cut  bool
 		bad  bool
+		// decoded is the decoded size limit, driver.MaxDecodedBytes when 0, and large says the sound exceeds it.
+		decoded int64
+		large   bool
 	}{
-		{"tone.wav", audioTestWAV(250 * time.Millisecond), time.Second, false, false},
-		{"tone.m4a", testAAC, time.Second, false, false},
-		{"tone.mp3", testMP3, time.Second, false, false},
-		{"cut.wav", audioTestWAV(250 * time.Millisecond), 100 * time.Millisecond, true, false},
-		{"invalid.bin", []byte("this is not audio"), time.Second, false, true},
+		{name: "tone.wav", data: audioTestWAV(250 * time.Millisecond), cap: time.Second},
+		{name: "tone.m4a", data: testAAC, cap: time.Second},
+		{name: "tone.mp3", data: testMP3, cap: time.Second},
+		{name: "cut.wav", data: audioTestWAV(250 * time.Millisecond), cap: 100 * time.Millisecond, cut: true},
+		{name: "invalid.bin", data: []byte("this is not audio"), cap: time.Second, bad: true},
+		// A raised duration limit keeps a sound past the default 5 seconds.
+		{name: "raised.wav", data: audioTestWAV(6 * time.Second), cap: 10 * time.Second},
+		{name: "large.wav", data: audioTestWAV(250 * time.Millisecond), cap: time.Second, decoded: 1024, large: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			type decodeResult struct {
@@ -92,7 +99,7 @@ func TestWindowsAudioDecodesAndCapsSounds(t *testing.T) {
 					done <- decodeResult{err: startErr}
 					return
 				}
-				pcm, ev, err := decodeWindowsSound(tc.data, tc.name, tc.cap)
+				pcm, ev, err := decodeWindowsSound(tc.data, tc.name, tc.cap, cmp.Or(tc.decoded, driver.MaxDecodedBytes))
 				done <- decodeResult{pcm, ev, err}
 			}:
 			case <-time.After(10 * time.Second):
@@ -105,12 +112,24 @@ func TestWindowsAudioDecodesAndCapsSounds(t *testing.T) {
 				}
 				return
 			}
+			if tc.large {
+				if r.err != nil || r.ev.Error != driver.AudioQuotaExceeded || len(r.pcm.data) != 0 {
+					t.Fatalf("sound beyond the decoded size limit: %+v, %d bytes, %v", r.ev, len(r.pcm.data), r.err)
+				}
+				return
+			}
 			if r.err != nil || r.ev.Cut != tc.cut {
 				t.Fatalf("decode = %+v, %v", r.ev, r.err)
 			}
 			if tc.cut {
 				if len(r.pcm.data) != 0 || r.ev.Duration != tc.cap {
 					t.Fatalf("cut sound kept %d bytes over %v", len(r.pcm.data), r.ev.Duration)
+				}
+				return
+			}
+			if tc.name == "raised.wav" {
+				if r.ev.Duration < 6*time.Second-time.Millisecond || r.ev.Duration > 6*time.Second+time.Millisecond {
+					t.Fatalf("sound within a raised duration limit decoded %v", r.ev.Duration)
 				}
 				return
 			}
@@ -126,6 +145,57 @@ func TestWindowsAudioDecodesAndCapsSounds(t *testing.T) {
 				t.Fatalf("decoded samples do not contain a tone: peak %g", loudest)
 			}
 		})
+	}
+}
+
+// TestWindowsSoundVoiceLimits follows the voices play keeps through voiceToRetire, without an output device: a raised limit keeps more voices, restricted playbacks stay within the default cap among themselves, a lowered limit retires the oldest, and an idle voice goes before a playing one.
+func TestWindowsSoundVoiceLimits(t *testing.T) {
+	var voices []soundVoice
+	var retired []uint32
+	playback := uint32(0)
+	play := func(restricted bool, limit int) {
+		for i := voiceToRetire(voices, restricted, limit); i >= 0; i = voiceToRetire(voices, restricted, limit) {
+			retired = append(retired, voices[i].playback)
+			voices = slices.Delete(voices, i, i+1)
+		}
+		playback++
+		voices = append(voices, soundVoice{sound: 1, playback: playback, restricted: restricted})
+	}
+	for range driver.MaxSoundVoices + 1 {
+		play(false, 0)
+	}
+	if len(voices) != driver.MaxSoundVoices || !slices.Equal(retired, []uint32{1}) {
+		t.Fatalf("default limit kept %d voices and retired %v", len(voices), retired)
+	}
+	const raised = driver.MaxSoundVoices + 8
+	for len(voices) < raised {
+		play(false, raised)
+	}
+	if len(retired) != 1 {
+		t.Fatalf("a raised limit retired %v", retired)
+	}
+	for range driver.MaxSoundVoices + 1 {
+		play(true, raised*2)
+	}
+	restricted := 0
+	for _, v := range voices {
+		if v.restricted {
+			restricted++
+		}
+	}
+	if restricted != driver.MaxSoundVoices || len(voices) != raised+driver.MaxSoundVoices || retired[1] != raised+2 {
+		t.Fatalf("restricted voices = %d of %d, retired %v; want %d of %d", restricted, len(voices), retired, driver.MaxSoundVoices, raised+driver.MaxSoundVoices)
+	}
+	play(false, 4)
+	if len(voices) != 4 || voices[3].playback != playback {
+		t.Fatalf("voices after lowering the limit = %d, want 4", len(voices))
+	}
+	// A reaped voice, idle in the pool, is reclaimed before the oldest playback.
+	voices[2].sound, voices[2].playback = 0, 0
+	oldest := voices[0].playback
+	play(false, 4)
+	if len(voices) != 4 || voices[0].playback != oldest {
+		t.Fatalf("a full output retired its oldest playback over an idle voice: %+v", voices)
 	}
 }
 
@@ -190,6 +260,13 @@ func TestWindowsAudioOverlapsAndStopsVoices(t *testing.T) {
 	a.stop(1)
 	if len(a.output.voices) != driver.MaxSoundVoices {
 		t.Fatal("the oldest voice survived the cap or stopping one sound interrupted another")
+	}
+	// A raised engine limit keeps more native voices.
+	for range 8 {
+		a.play(2, &driver.AudioRequest{Volume: 0.05, Rate: 1.4, MaxPlaybacks: driver.MaxSoundVoices + 8})
+	}
+	if len(a.output.voices) != driver.MaxSoundVoices+8 {
+		t.Fatalf("voices at a raised limit = %d, want %d", len(a.output.voices), driver.MaxSoundVoices+8)
 	}
 	a.stop(2)
 	if len(a.output.voices) != 0 {
