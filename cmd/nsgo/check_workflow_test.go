@@ -9,7 +9,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// check.yml splits -target all between a Linux job and a Mac one, as Apple's targets need Xcode, so a target added to targets must join one of its lists or no workflow vets it. The Linux job also names the HarmonyOS preview, which all leaves out, so its nsgoharmony backend is vetted too.
+// check.yml splits -target all between a Linux job and a Mac one, as Apple's targets need Xcode, so a target added to targets must join one of its lists or no workflow vets it. The Linux job also names the HarmonyOS preview, which all leaves out, so its nsgoharmony backend is vetted too, and the tui group, which stands for every terminal target.
 func TestCheckWorkflowVetsEveryTargetOnce(t *testing.T) {
 	data, err := os.ReadFile("../../.github/workflows/check.yml")
 	if err != nil {
@@ -27,7 +27,14 @@ func TestCheckWorkflowVetsEveryTargetOnce(t *testing.T) {
 	for _, job := range workflow.Jobs {
 		for _, step := range job.Steps {
 			if list, ok := strings.CutPrefix(step.Run, "go tool nsgo check -target "); ok {
-				got = append(got, strings.Split(strings.TrimSpace(list), ",")...)
+				// A group such as tui stands for its targets, as nsgo check expands it; each name expands on its own so a target listed twice still shows twice.
+				for _, name := range strings.Split(strings.TrimSpace(list), ",") {
+					expanded, err := expandTargets([]string{name})
+					if err != nil {
+						t.Fatal(err)
+					}
+					got = append(got, expanded...)
+				}
 			}
 		}
 	}
