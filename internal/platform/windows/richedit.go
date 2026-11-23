@@ -462,11 +462,17 @@ func (h *richEditHost) caretRect() (x, y, height float32, ok bool) {
 	return 0, h.yOffset, max(float32(h.in.config.Style.Font.Size)*1.25, 12), true
 }
 
-// vScrollMetrics returns the vertical scroll offset and total content height in DIPs from RichEdit's TxGetVScroll.
+// vScrollMetrics returns the vertical scroll offset and total content height in DIPs. The offset is EM_GETSCROLLPOS's. Windowless RichEdit keeps no scroll range of its own unless it shows a scroll bar through the host, which NSGo draws itself, so TxGetVScroll and TxSetScrollRange report none (as on Windows 11 26300): the content height is measured from where the text ends instead, unless TxGetVScroll does report a range.
 func (h *richEditHost) vScrollMetrics() (pos, contentHeight float32, ok bool) {
 	if h == nil || h.ts2 == nil {
 		return 0, 0, false
 	}
+	scale := float32(h.scale())
+	var cur point
+	if _, sent := h.sendMessage(emGetScrollPos, 0, uintptr(unsafe.Pointer(&cur))); !sent {
+		return 0, 0, false
+	}
+	pos = float32(max(cur.Y, 0)) / scale
 	var minV, maxV, posV, pageV, enabled int32
 	hr := h.ts2.call(tsTxGetVScroll,
 		uintptr(unsafe.Pointer(&minV)),
@@ -474,15 +480,33 @@ func (h *richEditHost) vScrollMetrics() (pos, contentHeight float32, ok bool) {
 		uintptr(unsafe.Pointer(&posV)),
 		uintptr(unsafe.Pointer(&pageV)),
 		uintptr(unsafe.Pointer(&enabled)))
-	if failed(hr) {
-		return 0, 0, false
+	if !failed(hr) && maxV > minV {
+		return pos, max(float32(maxV-minV)/scale, h.height), true
 	}
-	scale := float32(h.scale())
-	total := float32(max(maxV-minV, 0)) / scale
-	if total < h.height {
-		total = h.height
+	return pos, max(h.textBottom(cur.Y)/scale, h.height), true
+}
+
+// textBottom returns the bottom of the text's last line in RichEdit's unscrolled physical pixels, given the current vertical scroll position scrollY: the top of the position after the last character plus that line's height.
+func (h *richEditHost) textBottom(scrollY int32) float32 {
+	lines, _ := h.sendMessage(emGetLineCount, 0, 0)
+	end, _ := h.sendMessage(emLineIndex, uintptr(max(int(lines)-1, 0)), 0)
+	var last point
+	h.sendMessage(emPosFromChar, uintptr(unsafe.Pointer(&last)), end)
+	lineH := float32(0)
+	if lines > 1 {
+		prev, _ := h.sendMessage(emLineIndex, uintptr(lines-2), 0)
+		var above point
+		h.sendMessage(emPosFromChar, uintptr(unsafe.Pointer(&above)), prev)
+		lineH = float32(last.Y - above.Y)
 	}
-	return float32(max(posV-minV, 0)) / scale, total, true
+	if lineH <= 0 {
+		lineH = float32(h.in.config.Style.LineHeight)
+		if lineH <= 0 {
+			lineH = max(float32(h.in.config.Style.Font.Size)*1.25, 12)
+		}
+		lineH *= float32(h.scale())
+	}
+	return float32(last.Y+scrollY) + lineH
 }
 
 // setVScroll scrolls RichEdit vertically to y DIPs and reports whether the scroll offset changed.

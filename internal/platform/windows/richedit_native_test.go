@@ -132,9 +132,17 @@ func TestRichEditNativeEditingUndoMaskingScrollAndDraw(t *testing.T) {
 		if re == nil {
 			t.Fatal("secret field missing RichEdit host")
 		}
-		if ch, ok := re.sendMessage(emGetPasswordChar, 0, 0); !ok || uint16(ch) != richEditBullet {
-			t.Errorf("secret EM_GETPASSWORDCHAR = %#x (ok=%v), want %#x", ch, ok, richEditBullet)
+		// Windowless RichEdit answers EM_GETPASSWORDCHAR with 0 whatever the host's TxGetPasswordChar says, so check what it lays out: masked, narrow and wide letters end at the same place, as bullets do.
+		end := func(text string) int32 {
+			re.setText(text)
+			var pt point
+			re.sendMessage(emPosFromChar, uintptr(unsafe.Pointer(&pt)), uintptr(len(text)))
+			return pt.X
 		}
+		if narrow, wide := end("iiiiii"), end("WWWWWW"); narrow != wide || narrow <= 0 {
+			t.Errorf("secret text ends at %d for iiiiii and %d for WWWWWW, want the same bullets' width", narrow, wide)
+		}
+		re.setText("")
 		if opts, ok := re.sendMessage(emGetLangOptions, 0, 0); !ok || uint32(opts)&imfSpellChecking != 0 {
 			t.Errorf("secret EM_GETLANGOPTIONS = %#x, must not enable spell checking", opts)
 		}
