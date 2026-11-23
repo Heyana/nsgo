@@ -10,8 +10,9 @@ import (
 
 // Dialog is a modal surface over a dimmed app and a sheet from the bottom
 // on touch screens: a title, a description, the app's children and its
-// Footer of actions. On desktops it pops in and fades out
-// does, centered across and with two thirds of the spare height below it.
+// Footer of actions. On desktops it pops in and fades out, centered
+// across and above the middle, nearer to it the more of the window's
+// height it takes.
 type Dialog struct {
 	Open         func() bool
 	OnOpenChange func(open bool, reason base.Reason)
@@ -127,8 +128,14 @@ func (d Dialog) Render(cx *core.Scope) core.Node {
 		body = []core.Node{core.View{Style: core.Style{Overflow: core.Hidden, FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)},
 			StyleFunc: func() core.Style { return bareClip(d.surfaceStyle(dialogShape)) }, Children: body}}
 	}
-	spacer := func(grow float32) core.View {
-		return core.View{Style: core.Style{FlexGrow: grow, MinHeight: core.Pt(0)}, PointerEvents: core.PointerEventsNone}
+	// The spacers measure the spare height, from which the next layout parts it so that the fuller the window, the closer to the middle (dialogAbove).
+	above, below := core.NewSignal(cx, core.Points(0)), core.NewSignal(cx, core.Points(0))
+	spacer := func(height *core.Signal[core.Points], share func(float32) float32) core.View {
+		return core.View{PointerEvents: core.PointerEventsNone, OnLayout: func(b core.Bounds) { height.Set(b.Size.Height) },
+			StyleFunc: func() core.Style {
+				part := dialogAbove(above.Get()+below.Get(), cx.Env().Window().Height, dialogInset(cx, d.Inset))
+				return core.Style{FlexGrow: share(part), MinHeight: core.Pt(0)}
+			}}
 	}
 	return base.Dialog{Open: d.Open, OnOpenChange: d.OnOpenChange, OnClose: d.OnClose, OnConfirm: d.OnConfirm, Animation: core.ModalNone, NoCloseOnEscape: d.NoCloseOnEscape,
 		Role: d.Role, Label: label, LabelFunc: labelFunc, AccessibilityDescription: d.Description, AccessibilityDescriptionFunc: d.DescriptionFunc,
@@ -141,7 +148,8 @@ func (d Dialog) Render(cx *core.Scope) core.Node {
 			return d.surfaceStyle(finish.Over(dialogShape.Merge(core.Style{Background: Alpha(finish.Background, 0.96), Color: colors.Text(),
 				MaxWidth: core.Pt(max(0, window.Width-2*inset)), MaxHeight: core.Pt(max(0, window.Height-2*inset)), FlexShrink: 0})))
 		},
-		LayerStyle: core.Style{JustifyContent: core.JustifyStart}, Before: []core.Node{spacer(1)}, After: []core.Node{spacer(2), dialogDragStrip(cx)},
+		LayerStyle: core.Style{JustifyContent: core.JustifyStart}, Before: []core.Node{spacer(above, func(f float32) float32 { return f })},
+		After:    []core.Node{spacer(below, func(f float32) float32 { return 1 - f }), dialogDragStrip(cx)},
 		Children: body, TestID: d.TestID}
 }
 
@@ -196,6 +204,18 @@ var (
 	dialogStarting = core.Style{Opacity: core.Alpha(0), Transform: core.Transform{Scale: 0.96, TranslateY: 8}}
 	dialogEnding   = core.Style{Opacity: core.Alpha(0), Transform: core.Transform{Scale: 0.98}}
 )
+
+// dialogAbove is the part of the spare height above a dialog in a window
+// of height window: a third while the dialog is small against the most it
+// may take within inset, rising to a half, centering it, as it fills that.
+func dialogAbove(spare, window, inset core.Points) float32 {
+	room := window - 2*inset
+	if room <= 0 {
+		return 0.5
+	}
+	fill := min(max(1-float32((spare-2*inset)/room), 0), 1)
+	return 1.0/3 + fill/6
+}
 
 // dialogInset is how far a dialog stays from the window's edges: inset, 20
 // when 0, at least the title bar the app draws in.

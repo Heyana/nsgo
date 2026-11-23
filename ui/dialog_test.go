@@ -65,6 +65,25 @@ func TestDialog(t *testing.T) {
 	})
 }
 
+// TestDialogPlacement keeps a short dialog near a third of the spare
+// height from the window's top, nearer the middle the taller it is, and
+// centers one that fills the window within its inset.
+func TestDialogPlacement(t *testing.T) {
+	for _, c := range []struct {
+		height core.Points
+		above  float32
+	}{{0, 1.0 / 3}, {360, 1.0/3 + 0.5/6}, {720, 0.5}} {
+		app, _ := start(t, desktopEnv, func(*core.Scope) core.Node {
+			return Dialog{Open: func() bool { return true }, Bare: true, TestID: "dialog", Style: core.Style{Width: core.Pt(300), Height: core.Pt(c.height)}}
+		})
+		d := app.Find("dialog")
+		spare := 760 - d.Frame.Size.Height
+		if got := float32(d.Frame.Origin.Y / spare); got < c.above-0.01 || got > c.above+0.01 {
+			t.Errorf("a %v-point dialog has %v of the spare height above it, want %v", c.height, got, c.above)
+		}
+	}
+}
+
 func TestDialogTitleActions(t *testing.T) {
 	for _, e := range []core.Environment{desktopEnv, phoneEnv} {
 		t.Run(string(e.OS), func(t *testing.T) {
