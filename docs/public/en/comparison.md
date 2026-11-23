@@ -42,7 +42,7 @@ NSGo's place among UI frameworks comes from three choices: apps are written in G
 
 ## Weaknesses
 
-- **Early.** 0.1.0 is the first release, and the API is not stable yet; the [roadmap](https://github.com/nsgo-dev/nsgo/blob/main/docs/roadmap.md) lists what is missing, such as more than one window on Windows and Linux, and a heap limit for TSX delivered at run time.
+- **Early.** 0.1.0 is the first release, and the API is not stable yet; the [roadmap](https://github.com/nsgo-dev/nsgo/blob/main/docs/roadmap.md) lists what is missing, such as a heap limit for TSX delivered at run time.
 - **A small ecosystem.** Few third-party components, examples or answers online, next to Flutter, React Native or Qt.
 - **Platforms differ.** Native views mean small differences between platforms, so an app needs checking on each. A framework that draws itself looks the same everywhere.
 - **Its own bridges.** On Android the Go program runs beside the Java runtime and talks to it over pipes, and on Linux users need GTK 4.14 or newer.
