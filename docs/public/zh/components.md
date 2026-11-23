@@ -119,3 +119,9 @@ core.Text{Content: "Done", Class: "self-start rounded-full bg-zinc-100 px-3 py-1
 `desktop.SetWindowLevel` 让窗口保持在其他窗口之上（比如计时器或桌面宠物），或置于其下；`desktop.SetWindowFrame` 移动窗口并调整大小。`desktop.CanSetWindowLevel` 和 `desktop.CanPlaceWindows` 说明它们在窗口的 scope 中是否生效：macOS、Windows 和 Linux 的 X11 下二者都生效；普通 Wayland 顶层窗口的层叠和位置由合成器决定，二者均不支持。
 
 用 `desktop.WindowOptions{Transparent: true}` 打开的窗口，或用 `nsgo.WindowTransparent()` 打开的主窗口，没有背景和边框，应用不绘制的地方都会露出桌面，适合桌面宠物或小组件；带 `Desktop.WindowDrag` 的视图可以拖动它。`NoShadow` 去掉系统阴影，`SkipTaskbar` 让窗口不出现在 Windows 任务栏和 Alt+Tab 以及 X11 的任务列表中；之后可以用 `desktop.SetWindowTransparent`、`SetWindowShadow` 和 `SetSkipTaskbar` 修改它们。Windows 只能在以透明方式打开的窗口中切换透明，这种窗口没有阴影；Wayland 没有让窗口不出现在任务列表中的提示。`desktop.CanMakeWindowsTransparent` 和 `desktop.CanSkipTaskbar` 说明它们在窗口的 scope 中是否生效：Windows 上透明需要 DirectComposition，Linux 上需要合成器（没有合成器的 X11 不支持）；在 macOS 上用 `desktop.SetDockVisible` 让应用不出现在程序坞中。
+
+## 终端
+
+导入 `base/terminal`，使用 `terminal.New(terminal.Options{Conn: conn})` 连接远程字节流，或设置 `Command` 在 macOS、Linux、Windows 上运行本地程序。通过 `terminal.View{Terminal: session}` 显示终端，会话结束时调用 `Close`。`Options.ImageLimit` 限制 Kitty 图像存储的字节数：零使用 64 MiB，负值禁用图像。程序可以发送 RGB、RGBA、PNG 图像和 Unicode 占位符布局。
+
+调用 `Search(text)` 高亮屏幕和滚动历史中的匹配项，通过 `SearchNext` 和 `SearchPrevious` 切换，使用 `EndSearch` 清除。`Options.OnSearch` 报告 `SearchStatus`；`Theme.Search`、`SearchText`、`SearchSelected` 和 `SearchSelectedText` 设置匹配颜色。发送 OSC 133 标记的 shell 支持在当前命令输入区内通过 Alt/Option 单击移动光标。NSGo 不会安装 shell 集成脚本。

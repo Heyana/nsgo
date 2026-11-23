@@ -17,9 +17,7 @@ type Theme struct {
 	// opaque, when unset. SelectionText colors the selected text: its own
 	// colors when unset.
 	Selection, SelectionText core.Color
-	// Search, SearchText, SearchSelected and SearchSelectedText are
-	// Ghostty's search colors, which theme files set; the view does not
-	// search yet.
+	// Search, SearchText, SearchSelected and SearchSelectedText are the backgrounds and foregrounds of search matches and the current match. Unset colors use gold backgrounds and black text.
 	Search, SearchText, SearchSelected, SearchSelectedText core.Color
 	// Palette holds the 16 colors of programs: black, red, green, yellow,
 	// blue, magenta, cyan and white, then their bright kinds.

@@ -21,6 +21,7 @@ type Terminal struct {
 	Env         []string
 	Conn        io.ReadWriteCloser
 	Scrollback  int
+	ImageLimit  int64
 	Cursor      terminal.CursorStyle
 	CursorBlink bool
 	// OnTitle, OnExit and OnBell run as the program sets the title, ends
@@ -122,7 +123,7 @@ func (p Terminal) Render(cx *core.Scope) core.Node {
 			cx.Post(fn)
 		}
 	}
-	opts := terminal.Options{Command: p.Command, Dir: p.Dir, Env: p.Env, Conn: p.Conn, Scrollback: p.Scrollback, Cursor: p.Cursor, CursorBlink: p.CursorBlink}
+	opts := terminal.Options{Command: p.Command, Dir: p.Dir, Env: p.Env, Conn: p.Conn, Scrollback: p.Scrollback, ImageLimit: p.ImageLimit, Cursor: p.Cursor, CursorBlink: p.CursorBlink}
 	if p.OnTitle != nil {
 		opts.OnTitle = func(s string) { post(func() { p.OnTitle(s) }) }
 	}

@@ -23,6 +23,8 @@ type Terminal struct {
 	// library writes for it, a Kitty protocol EPERM, is dropped, as the
 	// read of a terminal that is not the one to answer.
 	silent bool
+	// promptInput is true between OSC 133 input-start and output/prompt markers.
+	promptInput bool
 	// deferred is the clipboard read the embedder answers later: the
 	// library's refusal, which follows the read's effect, is held back
 	// and captured in it.
@@ -141,6 +143,7 @@ const (
 	optTerminfoName        = 37
 	optResizePullBack      = 40
 	optRenderHold          = 41
+	optSemanticPrompt      = 42
 
 	dataCols           = 1
 	dataRows           = 2
@@ -155,6 +158,7 @@ const (
 	dataColorFgDefault = 22 // the same, defaults alone
 	dataViewportActive = 32
 	dataMode           = 37
+	dataCursorAtPrompt = 39
 	dataMouseShape     = 41
 )
 
@@ -188,6 +192,7 @@ func NewTerminal(cols, rows int, effects Effects) (*Terminal, error) {
 	t.setValue(optDeviceAttributes, cbDeviceAttributes)
 	t.setValue(optDesktopNotification, cbDesktopNotification)
 	t.setValue(optProgressReport, cbProgressReport)
+	t.setValue(optSemanticPrompt, cbSemanticPrompt)
 	// Images of the Kitty graphics protocol are refused until SetImageLimit
 	// takes them, so that programs fall back to something else.
 	t.SetImageLimit(0)
@@ -260,7 +265,10 @@ func (t *Terminal) Cursor() (x, y int) {
 }
 
 // Reset resets the terminal fully (RIS).
-func (t *Terminal) Reset() { call(fnTerminalReset, t.h) }
+func (t *Terminal) Reset() {
+	t.promptInput = false
+	call(fnTerminalReset, t.h)
+}
 
 // SetColors sets the default colors, which programs may change: the
 // foreground, the background, the cursor's (nil for the text's) and the
@@ -543,6 +551,18 @@ func (t *Terminal) CellWide(ref GridRef) Wide {
 	return Wide(cell.wide.of(raw))
 }
 
+// CellIsInput reports whether OSC 133 marks a cell as shell input.
+func (t *Terminal) CellIsInput(ref GridRef) bool {
+	var raw uint64
+	return ok(call(fnGridRefCell, uintptr(unsafe.Pointer(&ref)), uintptr(unsafe.Pointer(&raw)))) && cell.semantic.of(raw) == 1
+}
+
+// CursorAtPrompt reports whether OSC 133 places the cursor in the current shell prompt or input. Alternate-screen programs never qualify.
+func (t *Terminal) CursorAtPrompt() bool {
+	var at bool
+	return t.get(dataCursorAtPrompt, unsafe.Pointer(&at)) == nil && at
+}
+
 // Hyperlink returns the URI of the hyperlink (OSC 8) of a cell, or "".
 func (t *Terminal) Hyperlink(ref GridRef) string {
 	var buf [512]byte
@@ -703,10 +723,17 @@ func clamp16(v int) int { return max(1, min(v, 0xFFFF)) }
 // The callbacks of every terminal, made once: purego's are never freed.
 var (
 	cbWritePTY, cbBell, cbTitleChanged, cbPwdChanged, cbRenderHold, cbClipboardWrite, cbClipboardRead, cbSize,
-	cbColorScheme, cbDeviceAttributes, cbDesktopNotification, cbProgressReport, cbNoRead uintptr
+	cbColorScheme, cbDeviceAttributes, cbDesktopNotification, cbProgressReport, cbSemanticPrompt, cbNoRead uintptr
 )
 
 func makeCallbacks() {
+	cbSemanticPrompt = newCallback(func(_, id, req uintptr) uintptr {
+		if t := terminalOf(id); t != nil && req != 0 {
+			p := (*semanticPrompt)(mem(req))
+			t.promptInput = p.kind == 2
+		}
+		return 0
+	})
 	// A GhosttyMimeReader for PasteEvent, which the library never calls
 	// (it reads nothing for an event); it gives no data if it did.
 	cbNoRead = newCallback(func(_, _, _, _, _ uintptr) uintptr { return 0 })
@@ -906,3 +933,6 @@ func cBytes(b []byte) cString {
 	}
 	return cString{ptr: uintptr(unsafe.Pointer(&b[0])), len: uintptr(len(b))}
 }
+
+// CursorInInput reports an active OSC 133 command-input phase at the cursor.
+func (t *Terminal) CursorInInput() bool { return t.promptInput && t.CursorAtPrompt() && !t.AltScreen() }

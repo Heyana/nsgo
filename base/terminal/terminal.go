@@ -56,6 +56,8 @@ type Options struct {
 	// Scrollback is about how many bytes of output to keep above the
 	// screen: 10 MB when zero, none when negative.
 	Scrollback int
+	// ImageLimit bounds Kitty graphics storage in bytes: 64 MiB when zero, disabled when negative.
+	ImageLimit int64
 	// Cursor is the cursor programs reset to: a block when zero.
 	Cursor CursorStyle
 	// CursorBlink sets the default blinking state. Programs
@@ -180,6 +182,11 @@ func New(opts Options) (*Terminal, error) {
 		return nil, err
 	}
 	t.term.SetTerminfoName("xterm-256color")
+	limit := opts.ImageLimit
+	if limit == 0 {
+		limit = 64 << 20
+	}
+	t.term.SetImageLimit(uint64(max(limit, 0)))
 	// Grapheme clusters take the cells of their width, as in Ghostty.
 	t.term.SetModeDefault(vt.ModeGraphemes, true)
 	switch {

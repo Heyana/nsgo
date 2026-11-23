@@ -233,6 +233,15 @@ type progressReport struct {
 	progress int8
 }
 
+// semanticPrompt is a GhosttyTerminalSemanticPrompt.
+type semanticPrompt struct {
+	size             uintptr
+	kind, promptKind int32
+	hasExitCode      bool
+	exitCode         int32
+	command, error   cString
+}
+
 // deviceAttributes is a GhosttyDeviceAttributes.
 type deviceAttributes struct {
 	conformance                        uint16
@@ -273,6 +282,7 @@ func layouts() map[string]layout {
 		pa  paste
 		dn  desktopNotification
 		pr  progressReport
+		sp  semanticPrompt
 		da  deviceAttributes
 		fo  formatterOptions
 	)
@@ -345,6 +355,7 @@ func layouts() map[string]layout {
 		"GhosttyMimeReader":                  {unsafe.Sizeof(mimeReader{}), map[string]uintptr{"read": 0, "userdata": unsafe.Offsetof(mimeReader{}.userdata)}},
 		"GhosttyTerminalDesktopNotification": {unsafe.Sizeof(dn), map[string]uintptr{"title": unsafe.Offsetof(dn.title), "body": unsafe.Offsetof(dn.body)}},
 		"GhosttyTerminalProgressReport":      {unsafe.Sizeof(pr), map[string]uintptr{"state": unsafe.Offsetof(pr.state), "progress": unsafe.Offsetof(pr.progress)}},
+		"GhosttyTerminalSemanticPrompt":      {unsafe.Sizeof(sp), map[string]uintptr{"kind": unsafe.Offsetof(sp.kind), "prompt_kind": unsafe.Offsetof(sp.promptKind), "has_exit_code": unsafe.Offsetof(sp.hasExitCode), "exit_code": unsafe.Offsetof(sp.exitCode), "command": unsafe.Offsetof(sp.command), "error": unsafe.Offsetof(sp.error)}},
 		"GhosttyDeviceAttributes":            {unsafe.Sizeof(da), map[string]uintptr{"primary": 0, "secondary": unsafe.Offsetof(da.deviceType), "tertiary": unsafe.Offsetof(da.unitID)}},
 		"GhosttyRenderStateRowId":            {unsafe.Sizeof(RowID{}), map[string]uintptr{"bits": 0}},
 		"GhosttyFormatterTerminalOptions": {unsafe.Sizeof(fo), map[string]uintptr{

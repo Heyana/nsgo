@@ -209,6 +209,8 @@ func (p View) Render(cx *core.Scope) core.Node {
 
 // view is a View's state, on the engine's goroutine.
 type view struct {
+	graphics   []graphic
+	imageCache map[uint32]graphicImage
 	// searched is the status OnSearch was last told; matches are the
 	// search's spans the viewport shows, in matchBuf's memory.
 	searched SearchStatus
@@ -245,12 +247,14 @@ type view struct {
 	// mouse is over while hovered, armed that the key opening links is
 	// held, linkOn that the mouse shows a hand as a press would open link,
 	// and pressedLink the URL a press on a link opens as it ends there.
-	link        link
-	hover       [2]int
-	hovered     bool
-	armed       bool
-	linkOn      *core.Signal[bool]
-	pressedLink string
+	link                         link
+	hover                        [2]int
+	hovered                      bool
+	armed                        bool
+	linkOn                       *core.Signal[bool]
+	pressedLink                  string
+	promptPress                  gridCell
+	promptPressed, promptDragged bool
 
 	// The grid as the last drawing laid it out, in points.
 	cellW, cellH, padX, padY float32
@@ -346,8 +350,11 @@ func (v *view) draw(d *core.Drawing, size core.Size) {
 		t.term.SetMode(vt.ModeSyncOutput, false)
 		t.held = false
 	}
+	searching := t.find.drive(t.term)
+	searched := t.find.status
 	if !t.held {
 		t.rs.Update(t.term)
+		v.snapshotGraphics()
 		// Output and scrolling move what is under the mouse.
 		v.findLink()
 	}
@@ -355,13 +362,12 @@ func (v *view) draw(d *core.Drawing, size core.Size) {
 		v.reported = [2]int{cols, rows}
 		cx.Post(func() { v.p.OnSizeChange(cols, rows) })
 	}
-	searching := t.find.drive(t.term)
-	searched := t.find.status
-	cols, rows := t.term.Size()
-	v.matches, v.matchBuf = t.viewportMatches(v.matches, v.matchBuf, cols, rows)
+	if !t.held {
+		cols, rows := t.term.Size()
+		v.matches, v.matchBuf = t.viewportMatches(v.matches, v.matchBuf, cols, rows)
+	}
 	fr := frame{v: v, d: d, rs: t.rs, th: th, focused: focused, composing: composing}
 	fr.paint(size)
-	fr.paintMatches()
 	t.mu.Unlock()
 	if searched != v.searched {
 		v.searched = searched
@@ -378,23 +384,35 @@ func (v *view) draw(d *core.Drawing, size core.Size) {
 	v.follow(size)
 }
 
-// paintMatches marks the matches of the search the viewport shows.
-func (f *frame) paintMatches() {
-	v, th := f.v, f.th
-	or := func(c, fallback core.Color) core.Color {
-		if c != 0 {
-			return c
+// searchColors returns the match colors under a cell, including the configured foreground. Search backgrounds are painted before glyphs and the cursor.
+func (f *frame) searchColors(x, y int) (bg, fg core.Color, matched bool) {
+	for _, m := range f.matchRows[y] {
+		if x < m.x0 || x > m.x1 {
+			continue
 		}
-		return fallback
-	}
-	match := or(th.Search, core.RGB(0xffe082)).Faded(0.45)
-	selected := or(th.SearchSelected, core.RGB(0xf2a57e)).Faded(0.6)
-	for _, m := range v.matches {
-		c := match
+		bg, fg = f.th.Search, f.th.SearchText
 		if m.selected {
-			c = selected
+			bg, fg = f.th.SearchSelected, f.th.SearchSelectedText
 		}
-		f.d.SetFillColor(c).FillRect(v.padX+float32(m.x0)*v.cellW, v.padY+float32(m.y)*v.cellH, float32(m.x1-m.x0+1)*v.cellW, v.cellH)
+		if bg == 0 {
+			bg = core.RGB(0xffe082)
+			if m.selected {
+				bg = core.RGB(0xf2a57e)
+			}
+		}
+		if fg == 0 {
+			fg = core.RGB(0x000000)
+		}
+		return bg, fg, true
+	}
+	return 0, 0, false
+}
+
+func (f *frame) paintMatches(y int) {
+	v := f.v
+	for _, m := range f.matchRows[y] {
+		bg, _, _ := f.searchColors(m.x0, y)
+		f.d.SetFillColor(bg).FillRect(v.padX+float32(m.x0)*v.cellW, v.padY+float32(y)*v.cellH, float32(m.x1-m.x0+1)*v.cellW, v.cellH)
 	}
 }
 
@@ -464,13 +482,14 @@ func (v *view) scrolled(e core.ScrollEvent) {
 
 // frame draws one frame.
 type frame struct {
-	v       *view
-	d       *core.Drawing
-	rs      *vt.RenderState
-	th      *Theme
-	colors  vt.Colors
-	focused bool
-	anySel  bool
+	v         *view
+	d         *core.Drawing
+	rs        *vt.RenderState
+	th        *Theme
+	colors    vt.Colors
+	matchRows map[int][]matchSpan
+	focused   bool
+	anySel    bool
 	// composing is what an input method composes.
 	composing string
 	contrast  map[[2]core.Color]core.Color
@@ -523,6 +542,10 @@ type run struct {
 func (f *frame) paint(size core.Size) {
 	v, d, rs := f.v, f.d, f.rs
 	f.colors = rs.Colors()
+	f.matchRows = make(map[int][]matchSpan)
+	for _, m := range v.matches {
+		f.matchRows[m.y] = append(f.matchRows[m.y], m)
+	}
 	cw, ch := v.cellW, v.cellH
 	ox, oy := v.padX, v.padY
 	m := d.TextMetrics("M", v.font(false, false))
@@ -531,6 +554,7 @@ func (f *frame) paint(size core.Size) {
 	if !v.p.Transparent {
 		d.SetFillColor(bg).FillRect(0, 0, float32(size.Width), float32(size.Height))
 	}
+	f.paintGraphics(0, 0)
 	selection := f.th.Selection
 	if selection == 0 {
 		selection = color(f.colors.Foreground).Faded(0.3)
@@ -636,6 +660,12 @@ func (f *frame) paint(size core.Size) {
 				}
 				st.fg = adjusted
 			}
+			if _, fg, matched := f.searchColors(x, y); matched {
+				st.fg = fg
+			}
+			if c.Codepoint == kittyPlaceholder {
+				continue
+			}
 			if st.underline != 0 {
 				ul := st.fg
 				if st.hasUl {
@@ -685,10 +715,12 @@ func (f *frame) paint(size core.Size) {
 			}
 		}
 		flushSpan()
+		f.paintGraphics(1, y)
 		if sel {
 			f.anySel = true
 			d.SetFillColor(selection).FillRect(ox+float32(selA)*cw, ry, float32(selB-selA+1)*cw, ch)
 		}
+		f.paintMatches(y)
 		for _, r := range runs {
 			x := ox + float32(r.x)*cw
 			if len(r.text) == 1 && drawGraphics(d, r.text[0], x, ry, cw, ch, v.ratio, r.fg) {
@@ -711,6 +743,7 @@ func (f *frame) paint(size core.Size) {
 			}
 		}
 	}
+	f.paintGraphics(2, 0)
 	if cur.Visible && cur.InView {
 		x, y := ox+float32(cur.X)*cw, oy+float32(cur.Y)*ch
 		d.Save()
@@ -1049,10 +1082,19 @@ func (v *view) pressDown(e core.PressEvent) {
 		return
 	}
 	col, row, px, py := v.cellAt(e.Position)
+	v.promptPressed, v.promptDragged = false, false
 	if v.opensLinks(e.Modifiers) {
 		if l := t.linkAt(col, row); l.url != "" {
 			v.pressedLink = l.url
 			return
+		}
+	}
+	if e.Modifiers.Alt && !e.Modifiers.Control && !e.Modifiers.Platform && !e.Modifiers.Shift {
+		if _, _, inside := v.promptCell(e.Position); inside {
+			if _, ok := t.promptDistance(col, row); ok {
+				v.promptPress, v.promptPressed = gridCell{col, row}, true
+				return
+			}
 		}
 	}
 	v.hovered = false
@@ -1082,6 +1124,11 @@ func (v *view) mouseMove(e core.MouseEvent) {
 	if t == nil {
 		return
 	}
+	if v.promptPressed {
+		col, row, inside := v.promptCell(e.Position)
+		v.promptDragged = !inside || v.promptDragged || v.promptPress != (gridCell{col, row})
+		return
+	}
 	if v.selecting {
 		v.lastMouse = e.Position
 		t.mu.Lock()
@@ -1108,6 +1155,9 @@ func (v *view) mouseMove(e core.MouseEvent) {
 }
 
 func (v *view) mouseLeave(core.MouseEvent) {
+	if v.promptPressed {
+		v.promptDragged = true
+	}
 	t := v.t
 	if t == nil {
 		return
@@ -1169,6 +1219,14 @@ func (v *view) dragTo(p core.Point) {
 
 func (v *view) pressUp(e core.PressEvent) {
 	t := v.t
+	if v.promptPressed {
+		v.promptPressed = false
+		col, row, inside := v.promptCell(e.Position)
+		if inside && !v.promptDragged && v.promptPress == (gridCell{col, row}) {
+			v.movePrompt(col, row)
+		}
+		return
+	}
 	if url := v.pressedLink; url != "" && t != nil {
 		v.pressedLink = ""
 		col, row, _, _ := v.cellAt(e.Position)

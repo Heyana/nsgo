@@ -286,7 +286,7 @@ func cStringAt(p uintptr) string {
 
 // cell is the layout of the packed GhosttyCell, from the manifest.
 var cell struct {
-	tag, codepoint, styleID, wide, hyperlink bitField
+	tag, codepoint, styleID, wide, hyperlink, semantic bitField
 	// paletteIndex, r, g and b are the content of cells holding only a
 	// background color.
 	paletteIndex, r, g, b bitField
@@ -328,6 +328,10 @@ var enums = []struct {
 	{"GhosttyRenderStateCursorVisualStyle", "BLOCK_HOLLOW", int64(CursorBlockHollow)},
 	{"GhosttyRenderStateDirty", "FULL", int64(Full)},
 	{"GhosttyTerminalData", "KITTY_GRAPHICS", dataKittyGraphics},
+	{"GhosttyTerminalData", "CURSOR_AT_PROMPT", dataCursorAtPrompt},
+	{"GhosttyTerminalOption", "SEMANTIC_PROMPT", optSemanticPrompt},
+	{"GhosttySemanticPromptKind", "INPUT_START", 2},
+	{"GhosttyCellSemanticContent", "INPUT", 1},
 	{"GhosttyTerminalData", "COLOR_FOREGROUND", dataColorFg},
 	{"GhosttyTerminalData", "COLOR_FOREGROUND_DEFAULT", dataColorFgDefault},
 	{"GhosttyTerminalData", "KITTY_KEYBOARD_FLAGS", dataKittyKeyboardFlags},
@@ -447,6 +451,7 @@ func (m *manifest) check() error {
 	field(&cell.styleID, "style_id")
 	field(&cell.wide, "wide")
 	field(&cell.hyperlink, "hyperlink")
+	field(&cell.semantic, "semantic_content")
 	arm(&cell.codepoint, "CODEPOINT", "codepoint")
 	arm(&cell.paletteIndex, "BG_COLOR_PALETTE", "index")
 	arm(&cell.r, "BG_COLOR_RGB", "r")

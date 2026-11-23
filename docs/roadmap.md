@@ -242,7 +242,7 @@ What `base/terminal` still lacks of a terminal app's features, Ghostty's the ref
 | The web | [#1455](https://github.com/nsgo-dev/nsgo/issues/1455) | A page runs a remote session over a WebSocket with libghostty-vt built for WebAssembly, which the browser runs, through the binding's calls |
 | Mouse reports and the wheel on full-screen programs | `mouse-reporting`, `mouse-scroll-multiplier`, [#1456](https://github.com/nsgo-dev/nsgo/issues/1456) | A program that takes the mouse gets presses, moves and the wheel as it asks, and the alternate screen gets the wheel as arrows |
 | Keybinds, zoom, the context menu and secondary clicks | `keybind`, `right-click-action`, [#1459](https://github.com/nsgo-dev/nsgo/issues/1459) | Shared view actions override defaults while focused and not composing, zoom resizes the grid in place, and secondary clicks offer Copy, Paste, Select All and Clear or a clipboard policy; headless and native macOS regressions cover them, with native Windows/Linux menu acceptance still to run |
-| Search, images and shell integration | Find, the Kitty graphics protocol, `shell-integration`, [#1461](https://github.com/nsgo-dev/nsgo/issues/1461) | A search highlights matches, programs show images, and OSC 133 prompts take Option+click to move the cursor |
+| Images relative to Unicode placements | Kitty graphics, [#1461](https://github.com/nsgo-dev/nsgo/issues/1461) | Resolve the viewport positions of relative placements rooted in virtual Unicode placements; search highlights, ordinary and Unicode image placements, and OSC 133 Option+click are implemented |
 
 ## Widgets
 
