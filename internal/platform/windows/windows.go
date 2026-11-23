@@ -394,6 +394,11 @@ type window struct {
 	anchor       uint32
 	anchorBounds driver.Bounds
 	placement    driver.WindowPlacement
+	// level is where the window stacks among the others (setLevel). A panel
+	// starts at the floating level, above the ordinary windows, which it keeps
+	// when it shows or fronts; SetWindowLevel(WindowLevelNormal) moves it back
+	// among them, and it stays there.
+	level driver.WindowLevel
 	// language is what the menus say (driver.ItemDirection).
 	language string
 	// loopback are the auth sessions the default browser shows.
@@ -1007,6 +1012,18 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 
 // openSurface creates an opened window on the backend's message loop and
 // attaches its tree to the same engine. The root window owns the loop; a
+// panelExStyle is the extended style a SurfacePanel opens with: it floats
+// above the ordinary windows whether or not it takes the focus, and a panel
+// that never takes it (SurfaceConfig.NoActivate) says so too. The app moves
+// a panel off the floating level with SetWindowLevel(WindowLevelNormal),
+// which clears the topmost style (setLevel).
+func panelExStyle(noActivate bool) uintptr {
+	if noActivate {
+		return wsExTopmost | wsExNoActivate
+	}
+	return wsExTopmost
+}
+
 // child surface only owns its HWND and engine surface.
 func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	opts := w.opts
@@ -1052,13 +1069,17 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	if cfg.Kind == driver.SurfacePanel || cfg.Kind == driver.SurfaceTrayIcon {
 		style = wsPopup | wsClipChildren
 	}
+	if cfg.Kind == driver.SurfacePanel {
+		// A panel floats above ordinary windows, as desktop.OpenPanel's floating
+		// panel does on macOS: without the topmost style a maximized window in
+		// front buries it whole, and the app looks gone while it still runs.
+		// One that never takes the focus (SurfaceConfig.NoActivate) also says so.
+		ex |= panelExStyle(cfg.NoActivate)
+		child.level = driver.WindowLevelFloating
+	}
 	if cfg.Kind != driver.SurfaceWindow {
 		// Panels, as tray flyouts, have no taskbar button or Alt+Tab entry.
 		ex |= wsExToolWindow
-		if cfg.Kind == driver.SurfacePanel && cfg.NoActivate {
-			// One that never takes the focus stays above the window it serves, which keeps it.
-			ex |= wsExNoActivate | wsExTopmost
-		}
 	}
 	frame := rect{Right: child.px(opts.Width), Bottom: child.px(opts.Height)}
 	if cfg.Kind == driver.SurfaceWindow {

@@ -1312,9 +1312,13 @@ func isIconicWindow(hwnd uintptr) bool {
 }
 
 // setLevel puts the window above the others, among them, or at the
-// bottom, where activating it raises it again.
+// bottom, where activating it raises it again. A panel starts at the
+// floating level, and stays at the level the app sets here: one the app
+// moves back among the ordinary windows shows there, not above them
+// (orderFront).
 func (w *window) setLevel(level driver.WindowLevel) {
 	const flags = swpNoMove | swpNoSize | swpNoActivate
+	w.level = level
 	switch level {
 	case driver.WindowLevelFloating:
 		setWindowPos.Call(w.hwnd, hwndTopmost, 0, 0, 0, 0, flags)
@@ -1324,6 +1328,22 @@ func (w *window) setLevel(level driver.WindowLevel) {
 	default:
 		setWindowPos.Call(w.hwnd, hwndNoTopmost, 0, 0, 0, 0, flags)
 	}
+}
+
+// raisesTopmost reports whether a window showing or fronting goes back to the
+// top of the topmost windows: a panel floats there, above the ordinary
+// windows, unless the app set another level for it (setLevel).
+func (w *window) raisesTopmost() bool {
+	return w.kind == driver.SurfacePanel && w.level == driver.WindowLevelFloating
+}
+
+// raiseTopmost puts the window at the top of the topmost windows, without
+// taking the focus.
+func (w *window) raiseTopmost() {
+	if !w.raisesTopmost() {
+		return
+	}
+	setWindowPos.Call(w.hwnd, hwndTopmost, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
 }
 
 // placePanel moves a panel beside the rectangle beside on side when side is set (core.Window.ShowAt), inside the work area of the monitor that holds its center, else beside tray icon anchor, else, with no anchor or none the shell places, to the upper middle of the monitor with the pointer, as macOS shows it.
@@ -1452,11 +1472,11 @@ func (w *window) placeBeside(at driver.Bounds, side driver.WindowPlacement) bool
 	return true
 }
 
-// orderFront shows the window, restored when minimized, in front and focused. A panel that never takes the focus (SurfaceConfig.NoActivate) shows at the top of the topmost windows instead, leaving the foreground window and its keyboard focus as they are.
+// orderFront shows the window, restored when minimized, in front and focused. A panel floats above the ordinary windows, as desktop.OpenPanel's panel does on macOS, and keeps there when it shows or fronts; one that never takes the focus (SurfaceConfig.NoActivate) shows at the top of the topmost windows instead, leaving the foreground window and its keyboard focus as they are. A panel the app moved to another level (setLevel) shows at that level.
 func (w *window) orderFront() {
 	if w.kind == driver.SurfacePanel && w.noActivate {
 		showWindow.Call(w.hwnd, swShowNA)
-		setWindowPos.Call(w.hwnd, hwndTopmost, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
+		w.raiseTopmost()
 		return
 	}
 	if isIconicWindow(w.hwnd) {
@@ -1464,6 +1484,7 @@ func (w *window) orderFront() {
 	} else {
 		showWindow.Call(w.hwnd, swShow)
 	}
+	w.raiseTopmost()
 	bringWindowToTop.Call(w.hwnd)
 	setForegroundWindow.Call(w.hwnd)
 }
