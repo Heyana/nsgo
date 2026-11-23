@@ -56,10 +56,14 @@ func holdMainLoop() (release func()) {
 // TestMain runs the main thread's run loop while a test holds it, as an app does: OnMain, the players' time observers and their notifications run there.
 func TestMain(m *testing.M) {
 	mainLoop.wake = make(chan struct{}, 1)
-	go func() { os.Exit(m.Run()) }()
 	if _, err := purego.Dlopen("/System/Library/Frameworks/Foundation.framework/Foundation", purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil {
 		panic(err)
 	}
+	// AppKit must install its Core Animation support before any test creates a CALayer; loading it after a layer exists breaks NSView backing layers.
+	if _, err := purego.Dlopen("/System/Library/Frameworks/AppKit.framework/AppKit", purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil {
+		panic(err)
+	}
+	go func() { os.Exit(m.Run()) }()
 	loop := objc.ID(Class("NSRunLoop")).Send(sel("mainRunLoop"))
 	// A run loop with no port to wait on returns at once.
 	loop.Send(sel("addPort:forMode:"), objc.ID(Class("NSMachPort")).Send(sel("port")), NSString("kCFRunLoopDefaultMode"))

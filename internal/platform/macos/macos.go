@@ -350,9 +350,9 @@ type surface struct {
 	frameWanted atomic.Bool
 	fullRate    atomic.Bool
 	stepping    bool // while tick steps a frame, up to the frame it reports
-	motions     map[*view]*motion
+	motions     map[*view]*apple.LayoutMotion
 	transitions map[*view]bool
-	ghosts      []*ghost
+	ghosts      []*apple.LayoutGhost
 	components  driver.NativeComponents
 	unknown     map[string]bool // component names warned about
 	dragTarget  *view           // the view files are dragged over
@@ -970,7 +970,7 @@ var defaultLanguage string
 // newSurface makes a surface's view at opts' size; embedded is set for a
 // host's view.
 func newSurface(opts Options, embedded bool) *surface {
-	s := &surface{epoch: time.Now(), motions: map[*view]*motion{}, movers: map[*view]struct{}{},
+	s := &surface{epoch: time.Now(), motions: map[*view]*apple.LayoutMotion{}, movers: map[*view]struct{}{},
 		inside:     map[*view]struct{}{},
 		components: opts.Components, embedded: embedded, appearance: opts.Appearance, opts: opts}
 	s.appName = opts.Title
@@ -2159,7 +2159,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 	var focus []driver.MountItem
 	var lb *layoutBatch
 	if b.LayoutAnimation != nil && !s.motionReduced() {
-		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[driver.NodeID]bool{}, deleted: map[objc.ID]bool{}}
+		lb = &layoutBatch{Animation: b.LayoutAnimation, Created: map[driver.NodeID]bool{}, Deleted: map[objc.ID]bool{}}
 	}
 	for i := range b.Items {
 		it := &b.Items[i]
@@ -2170,7 +2170,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 			s.views[it.ID] = s.create(it.View, it.ID)
 			if lb != nil {
-				lb.created[it.ID] = true
+				lb.Created[it.ID] = true
 			}
 			continue
 		case driver.ItemAnimation:

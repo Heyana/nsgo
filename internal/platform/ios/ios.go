@@ -289,9 +289,9 @@ type surface struct {
 	// full rate, which serves it without a hop to the main thread.
 	frameWanted atomic.Bool
 	fullRate    atomic.Bool
-	motions     map[*view]*motion
+	motions     map[*view]*apple.LayoutMotion
 	transitions map[*view]bool
-	ghosts      []*ghost
+	ghosts      []*apple.LayoutGhost
 	components  driver.NativeComponents
 	unknown     map[string]bool
 	// accessories are the inputs each InputAccessoryView rides above.
@@ -532,7 +532,7 @@ func Run(root engine.App, opts Options) {
 // newSurface is the surface the scene shows root in; a test host's has no
 // root until the test opens one.
 func newSurface(root engine.App, opts Options) *surface {
-	s := &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, tops: map[*view]*view{}, slides: map[*view]*slide{}, appearance: opts.Appearance,
+	s := &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*apple.LayoutMotion{}, tops: map[*view]*view{}, slides: map[*view]*slide{}, appearance: opts.Appearance,
 		components: opts.Components, unknown: map[string]bool{}, accessories: map[driver.NodeID]*view{}, ownTexts: map[driver.NodeID]*view{},
 		perfOn: opts.Perf}
 	if automationBuild {
@@ -1204,7 +1204,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 	s.batch++
 	var lb *layoutBatch
 	if b.LayoutAnimation != nil && !s.motionReduced() {
-		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[driver.NodeID]bool{}, deleted: map[objc.ID]bool{}}
+		lb = &layoutBatch{Animation: b.LayoutAnimation, Created: map[driver.NodeID]bool{}, Deleted: map[objc.ID]bool{}}
 	}
 	s.coverScreens(b.Items)
 	for i := range b.Items {
@@ -1216,7 +1216,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 			s.views[it.ID] = s.create(it.View, it.ID)
 			if lb != nil {
-				lb.created[it.ID] = true
+				lb.Created[it.ID] = true
 			}
 			continue
 		case driver.ItemPictureInPictureCommand:

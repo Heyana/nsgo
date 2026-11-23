@@ -19,23 +19,6 @@ import (
 
 var selTick = sel("nsgoTick:")
 
-// motion is a view's part of a layout animation: its frame moving, or
-// the view appearing.
-type motion struct {
-	frame       *driver.LayoutMotion
-	appear      *driver.LayoutTransition
-	appearStart time.Duration
-}
-
-// ghost is a view a layout animation removes, left in place while it
-// fades or shrinks away, then released.
-type ghost struct {
-	native  objc.ID
-	opacity float32
-	tr      *driver.LayoutTransition
-	start   time.Duration
-}
-
 func (s *surface) clock() time.Duration {
 	if s.epoch.IsZero() {
 		s.epoch = time.Now()
@@ -243,7 +226,7 @@ func (v *view) updateTransformTransition(prev driver.ViewStyle) {
 	s := v.surface
 	styled := v.styled || v.born != s.batch
 	bound := v.animated.Set
-	if m := s.motions[v]; m != nil && m.appear != nil && m.appear.Property == driver.LayoutScale {
+	if m := s.motions[v]; m != nil && m.Appear != nil && m.Appear.Property == driver.LayoutScale {
 		bound |= 1 << driver.PropScale
 	}
 	if !styled || bound&driver.AnimatedTransformMask == 0 || s.env.ReduceMotion {
@@ -298,9 +281,9 @@ func (v *view) restyleAt(transition bool, now time.Duration) {
 	if !transition {
 		vs.Transition = driver.Transition{}
 	}
-	if m := v.surface.motions[v]; m != nil && m.appear != nil {
-		p, _ := m.appear.At(now - m.appearStart)
-		if m.appear.Property == driver.LayoutScale {
+	if m := v.surface.motions[v]; m != nil && m.Appear != nil {
+		p, _ := m.Appear.At(now - m.AppearStart)
+		if m.Appear.Property == driver.LayoutScale {
 			sx, sy := vs.Transform.Scales()
 			vs.Transform.ScaleX, vs.Transform.ScaleY = sx*float32(p), sy*float32(p)
 			bound |= 1 << driver.PropScale
@@ -339,46 +322,28 @@ func (v *view) styleLayer(vs *driver.ViewStyle, bound uint16) {
 	v.drawn, v.styled = drawn, true
 }
 
-type layoutBatch struct {
-	anim    *driver.LayoutAnimation
-	created map[driver.NodeID]bool
-	deleted map[objc.ID]bool
+// layoutHost binds the surface's views, placement and clock to the layout animations apple shares with UIKit and AppKit.
+func (s *surface) layoutHost() apple.LayoutHost[*view] {
+	return apple.LayoutHost[*view]{
+		Motions: s.motions, Ghosts: &s.ghosts,
+		ID:     func(v *view) driver.NodeID { return v.id },
+		Native: func(v *view) objc.ID { return v.native },
+		Framed: func(v *view) bool { return v.framed },
+		Frame:  func(v *view) driver.Bounds { return v.frame },
+		Shift:  func(v *view) driver.Point { return v.shift },
+		Place:  (*view).place, Restyle: (*view).restyle,
+		Now: s.clock, Tick: s.startTicking,
+		Start:   s.layoutStart,
+		Disable: func(v *view) { v.native.Send(sel("setUserInteractionEnabled:"), false) },
+	}
 }
 
-// setFrame moves v to the item's frame, animating from where it shows now when
-// the batch animates layout or the item carries a transition.
+// layoutBatch is what a batch with a layout animation tracks.
+type layoutBatch = apple.LayoutBatch
+
+// setFrame moves v to the item's frame, animating from where it shows now when the batch animates layout or the item carries a transition.
 func (s *surface) setFrame(v *view, it *driver.MountItem, lb *layoutBatch) {
-	f := it.Frame
-	m := s.motions[v]
-	target := v.frame
-	if m != nil && m.frame != nil {
-		target = m.frame.Target()
-	}
-	if f == target && v.framed {
-		return
-	}
-	tr := it.Transition
-	if lb != nil && lb.anim.Update != nil && !lb.created[v.id] {
-		tr = lb.anim.Update
-	}
-	if tr != nil && v.framed {
-		if m == nil {
-			m = &motion{}
-			s.motions[v] = m
-		}
-		if m.frame != nil {
-			m.frame.Retarget(f, *tr, s.clock())
-		} else {
-			lm := driver.StartLayoutMotion(v.frame, f, *tr, s.layoutStart(tr))
-			m.frame = &lm
-		}
-		s.startTicking()
-		return
-	}
-	if m != nil {
-		m.frame = nil
-	}
-	v.place(f)
+	s.layoutHost().SetFrame(v, it, lb)
 }
 
 // place sets v's frame and what follows it. Bounds and center, unlike
@@ -445,145 +410,38 @@ func (v *view) place(f driver.Bounds) {
 	}
 }
 
+// appear starts v appearing, as the batch that created it animates.
 func (s *surface) appear(v *view, lb *layoutBatch, parent driver.NodeID) {
-	if lb == nil || lb.anim.Create == nil || !lb.created[v.id] || lb.created[parent] {
-		return
-	}
-	m := s.motions[v]
-	if m == nil {
-		m = &motion{}
-		s.motions[v] = m
-	}
-	m.appear, m.appearStart = lb.anim.Create, s.clock()
-	s.startTicking()
+	s.layoutHost().Appear(v, lb, parent)
 }
 
-// match moves v, which the batch created, from where old, which it
-// deletes, shows in v's parent, on the batch's Update rather than
-// appearing, and hides old at once (driver.ItemMatch).
+// match moves v, which the batch created, from where old, which it deletes, shows in v's parent, on the batch's Update rather than appearing, and hides old at once (driver.ItemMatch).
 func (s *surface) match(v, old *view, lb *layoutBatch) {
-	if lb == nil || lb.anim.Update == nil || old == nil || !old.framed || !v.framed {
-		return
-	}
-	up := v.native.Send(selSuperview)
-	if up == 0 || old.native.Send(selSuperview) == 0 {
-		return
-	}
-	r := objc.Send[apple.CGRect](up, sel("convertRect:fromView:"), objc.Send[apple.CGRect](old.native, selBounds), old.native)
-	from := driver.Bounds{
-		Origin: driver.Point{X: driver.Points(r.Origin.X) - v.shift.X, Y: driver.Points(r.Origin.Y) - v.shift.Y},
-		Size:   driver.Size{Width: driver.Points(r.Size.Width), Height: driver.Points(r.Size.Height)},
-	}
-	old.native.Send(selSetHidden, true)
-	m := s.motions[v]
-	if m == nil {
-		m = &motion{}
-		s.motions[v] = m
-	}
-	to := v.frame
-	m.appear = nil
-	lm := driver.StartLayoutMotion(from, to, *lb.anim.Update, s.layoutStart(lb.anim.Update))
-	m.frame = &lm
-	v.place(from)
-	v.restyle()
-	s.startTicking()
+	s.layoutHost().Match(v, old, lb)
 }
 
+// vanish keeps a deleted view's native in place, fading or shrinking it away, unless an ancestor the batch deleted already does. It reports whether it kept the view.
 func (s *surface) vanish(v *view, lb *layoutBatch) bool {
-	if lb == nil || lb.anim.Delete == nil || !v.framed {
-		return false
-	}
-	up := v.native.Send(selSuperview)
-	if up == 0 {
-		return false
-	}
-	for n := up; n != 0; n = n.Send(selSuperview) {
-		if lb.deleted[n] {
-			return false
-		}
-	}
-	lb.deleted[v.native] = true
-	v.native.Send(sel("retain"))
-	v.native.Send(sel("setUserInteractionEnabled:"), false)
-	s.ghosts = append(s.ghosts, &ghost{native: v.native, opacity: objc.Send[float32](v.native.Send(selLayer), sel("opacity")),
-		tr: lb.anim.Delete, start: s.clock()})
-	s.startTicking()
-	return true
+	return s.layoutHost().Vanish(v, lb)
 }
 
+// inGhost reports whether native is inside a view going away, which keeps its subviews until it goes.
 func (s *surface) inGhost(native objc.ID) bool {
-	if len(s.ghosts) == 0 {
-		return false
-	}
-	for n := native.Send(selSuperview); n != 0; n = n.Send(selSuperview) {
-		for _, g := range s.ghosts {
-			if g.native == n {
-				return true
-			}
-		}
-	}
-	return false
+	return apple.InLayoutGhost(s.ghosts, native)
 }
 
+// stepMotions moves the layout animations to now.
 func (s *surface) stepMotions(now time.Duration) {
-	for v, m := range s.motions {
-		if s.views[v.id] != v {
-			delete(s.motions, v)
-			continue
-		}
-		done := true
-		if m.frame != nil {
-			shown, end := m.frame.Step(now)
-			v.place(shown)
-			if end {
-				m.frame = nil
-			} else {
-				done = false
-			}
-		}
-		if m.appear != nil {
-			if _, end := m.appear.At(now - m.appearStart); end {
-				m.appear = nil
-			} else {
-				done = false
-			}
-			v.restyle()
-		}
-		if done {
-			delete(s.motions, v)
-		}
-	}
-	live := s.ghosts[:0]
-	for _, g := range s.ghosts {
-		p, end := g.tr.At(now - g.start)
-		layer := g.native.Send(selLayer)
-		if g.tr.Property == driver.LayoutScale {
-			apple.SetTransform(layer, driver.Transform{Scale: float32(max(1-p, 0.0001))})
-		} else {
-			layer.Send(sel("setOpacity:"), g.opacity*float32(1-p))
-		}
-		if end {
-			g.release()
-			continue
-		}
-		live = append(live, g)
-	}
-	clear(s.ghosts[len(live):])
-	s.ghosts = live
-}
-
-// release takes g's native view away and lets go of it.
-func (g *ghost) release() {
-	apple.ForgetTransform(g.native.Send(selLayer))
-	g.native.Send(selRemoveFromSuperview)
-	g.native.Send(selRelease)
+	s.ghosts = apple.StepLayoutMotions(now, s.motions, s.ghosts, func(v *view) bool {
+		return s.views[v.id] == v
+	}, (*view).place, (*view).restyle)
 }
 
 // releaseGhosts lets go of the views still fading out as the surface
 // closes, as the ticks that would end them have stopped.
 func (s *surface) releaseGhosts() {
 	for _, g := range s.ghosts {
-		g.release()
+		g.Release()
 	}
 	clear(s.ghosts)
 	s.ghosts = nil

@@ -84,7 +84,7 @@ func TestClosingASurfaceReleasesItsGhosts(t *testing.T) {
 		start := retained()
 		// What vanish does as a layout animation deletes the view.
 		leaving.Send(sel("retain"))
-		s.ghosts = append(s.ghosts, &ghost{native: leaving, opacity: 1, tr: &driver.LayoutTransition{Curve: driver.LayoutLinear, Duration: time.Hour}})
+		s.ghosts = append(s.ghosts, apple.NewLayoutGhost(leaving, &driver.LayoutTransition{Curve: driver.LayoutLinear, Duration: time.Hour}, 0))
 		drained(s.close)
 		if len(s.ghosts) != 0 {
 			t.Error("a closed surface keeps the views fading out of it")
