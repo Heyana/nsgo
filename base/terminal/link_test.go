@@ -126,6 +126,9 @@ func TestPathUsesShellDirectory(t *testing.T) {
 }
 
 func TestViewOpensPaths(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("paths require a local filesystem")
+	}
 	term := pathTerminal(t)
 	dir := t.TempDir()
 	file := filepath.Join(dir, "路径")

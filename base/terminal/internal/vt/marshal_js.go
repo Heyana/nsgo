@@ -42,8 +42,7 @@ func (s *wasmCall) marshal(host uintptr, typ string, count uintptr) uintptr {
 	return guest
 }
 
-// children copies the host-owned buffers referenced by ABI structs. Other
-// pointers (terminal handles, grid references, callbacks) remain guest values.
+// children copies the host-owned buffers referenced by ABI structs. Other pointers (terminal handles, grid references, callbacks) remain guest values.
 func (s *wasmCall) children(a *wasmAllocation, dst, src []byte, typ string, hostBase uintptr) {
 	t := wasm.host.Types[typ]
 	if t.Kind != "struct" {

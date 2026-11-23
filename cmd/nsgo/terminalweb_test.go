@@ -23,8 +23,7 @@ import (
 	terminalview "github.com/nsgo-dev/nsgo/base/terminal"
 )
 
-// TestTerminalBrowserSession runs a real local shell in a PTY and transports
-// its mirror over a real WebSocket to the browser's own libghostty-vt module.
+// TestTerminalBrowserSession runs a real local shell in a PTY and transports its mirror over a real WebSocket to the browser's own libghostty-vt module.
 func TestTerminalBrowserSession(t *testing.T) {
 	if testing.Short() || runtime.GOOS == "windows" {
 		t.Skip("runs /bin/sh and a browser")

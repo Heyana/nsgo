@@ -20,8 +20,7 @@ func abiSize(m manifest, name string) uintptr {
 	return m.Types[name].Size
 }
 
-// convertABI copies values, never addresses Go memory from guest pointers. A
-// pointer remains an opaque guest address until an explicit memory access.
+// convertABI copies values, never addresses Go memory from guest pointers. A pointer remains an opaque guest address until an explicit memory access.
 func convertABI(dst, src []byte, name string, to, from manifest) {
 	t, ok := from.Types[name]
 	if !ok || t.Kind != "struct" {

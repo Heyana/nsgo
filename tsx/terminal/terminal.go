@@ -29,8 +29,7 @@ type Terminal struct {
 	OnTitle func(title string)
 	OnExit  func(code int)
 	OnBell  func()
-	// Unavailable renders when its session cannot start, such as a browser session without Conn, with
-	// why.
+	// Unavailable renders when its session cannot start, such as a browser session without Conn, with why.
 	Unavailable func(message string) core.Node
 
 	// The view, as terminal.View: Theme and DarkTheme name Ghostty's

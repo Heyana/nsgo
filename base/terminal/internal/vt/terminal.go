@@ -733,10 +733,9 @@ var (
 )
 
 func makeCallbacks() {
-	cbSemanticPrompt = newCallback(func(_, id, req uintptr) uintptr {
+	cbSemanticPrompt = newCallback("viii", func(_, id, req uintptr) uintptr {
 		if t := terminalOf(id); t != nil && req != 0 {
-			p := (*semanticPrompt)(mem(req))
-			t.promptInput = p.kind == 2
+			t.promptInput = foreignValue[semanticPrompt](req).kind == 2
 		}
 		return 0
 	})

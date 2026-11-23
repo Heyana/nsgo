@@ -224,11 +224,7 @@ func imageFits(w, h int) bool {
 	return w > 0 && h > 0 && w <= maxImageSide && h <= maxImageSide && 4*w*h <= maxImageBytes
 }
 
-// decodePNG gives the library a PNG decoder, without which it refuses
-// images sent as PNG (Kitty graphics, f=100), as grok sends them. A PNG
-// whose header gives it more pixels than Ghostty's limits take is refused
-// before it is decoded, as its size is the program's to claim; the pixels
-// are converted into the library's memory through the platform adapter.
+// decodePNG gives the library a PNG decoder, without which it refuses images sent as PNG (Kitty graphics, f=100), as grok sends them. A PNG whose header gives it more pixels than Ghostty's limits take is refused before it is decoded, as its size is the program's to claim; the pixels are converted into the library's memory through the platform adapter.
 func decodePNG() {
 	cb := newCallback("iiiiii", func(_, alloc, data, n, out uintptr) uintptr {
 		if data == 0 || n == 0 {

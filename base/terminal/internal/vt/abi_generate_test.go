@@ -8,9 +8,7 @@ import (
 	"testing"
 )
 
-// TestWriteWasmHostABI records the 64-bit C ABI the shared Go structs mirror.
-// The browser uses it to marshal the separate 32-bit guest ABI. Rebuild it with
-// the pinned native library whenever the binding's commit changes.
+// TestWriteWasmHostABI records the 64-bit C ABI the shared Go structs mirror. The browser uses it to marshal the separate 32-bit guest ABI. Rebuild it with the pinned native library whenever the binding's commit changes.
 func TestWriteWasmHostABI(t *testing.T) {
 	path := os.Getenv("NSGO_GHOSTTY_ABI_OUT")
 	if path == "" {

@@ -48,8 +48,7 @@ func checkManifest(m manifest) error {
 	return nil
 }
 
-// Every memory access obtains the current ArrayBuffer: any guest allocation
-// can grow memory and detach all previously obtained JavaScript views.
+// Every memory access obtains the current ArrayBuffer: any guest allocation can grow memory and detach all previously obtained JavaScript views.
 func foreignBytes(p, n uintptr) []byte {
 	if n == 0 {
 		return nil
@@ -146,6 +145,8 @@ func foreignType[T any]() string {
 		return "GhosttyTerminalDesktopNotification"
 	case progressReport:
 		return "GhosttyTerminalProgressReport"
+	case semanticPrompt:
+		return "GhosttyTerminalSemanticPrompt"
 	case sysImage:
 		return "GhosttySysImage"
 	}

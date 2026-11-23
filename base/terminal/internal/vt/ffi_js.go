@@ -71,8 +71,7 @@ func call(fn uintptr, args ...uintptr) uintptr {
 	defer func() {
 		wasm.depth--
 		wasm.calls++
-		// Wasm has no asynchronous Go preemption. Long bursts must let
-		// finalizers release JavaScript references, outside guest callbacks.
+		// Wasm has no asynchronous Go preemption. Long bursts must let finalizers release JavaScript references, outside guest callbacks.
 		if wasm.depth == 0 && wasm.calls >= 256 {
 			wasm.calls = 0
 			runtime.Gosched()
@@ -147,8 +146,7 @@ func registerFunc(pointer any, fn uintptr) {
 	}
 }
 
-// newCallback installs a typed Wasm trampoline in the guest's function table.
-// A JavaScript function alone is not a valid table entry.
+// newCallback installs a typed Wasm trampoline in the guest's function table. A JavaScript function alone is not a valid table entry.
 func newCallback(signature string, callback any) uintptr {
 	noRead := signature == "mime-reader"
 	if noRead {
@@ -210,8 +208,7 @@ func callbackModule(signature string) []byte {
 	return module
 }
 
-// Browser modules have no OS entropy source. Supply the C API's secure random
-// effect through Go's browser crypto adapter, never through Math.random.
+// Browser modules have no OS entropy source. Supply the C API's secure random effect through Go's browser crypto adapter, never through Math.random.
 func setupPlatform() {
 	callback := newCallback("iiii", func(_, data, n uintptr) uintptr {
 		bytes := make([]byte, n)

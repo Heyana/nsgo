@@ -10,10 +10,7 @@ import (
 	"strings"
 )
 
-// wasmSource prepares the pinned source in an independent temporary tree. The
-// pinned release disables graphics on freestanding targets. The browser has
-// the C API's PNG/entropy effects, but no files: enable graphics and reject
-// file-based image media. Native builds and the checkout remain unchanged.
+// wasmSource prepares the pinned source in an independent temporary tree. The pinned release disables graphics on freestanding targets. The browser has the C API's PNG/entropy effects, but no files: enable graphics and reject file-based image media. Native builds and the checkout remain unchanged.
 func wasmSource(src string) (string, func(), error) {
 	dir, err := os.MkdirTemp("", "libghostty-wasm-source-")
 	if err != nil {

@@ -1,7 +1,4 @@
-// Command libghostty builds libghostty-vt, Ghostty's terminal emulator as
-// a library, for every target base/terminal runs on, desktops, iOS and the browser, from
-// Ghostty's sources at the commit it binds, and writes the themes that
-// Ghostty ships. Run it on a Mac with Xcode, from the repository's root:
+// Command libghostty builds libghostty-vt, Ghostty's terminal emulator as a library, for every target base/terminal runs on, desktops, iOS and the browser, from Ghostty's sources at the commit it binds, and writes the themes that Ghostty ships. Run it on a Mac with Xcode, from the repository's root:
 //
 //	go run ./tools/libghostty
 //

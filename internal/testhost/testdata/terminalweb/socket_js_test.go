@@ -10,9 +10,7 @@ import (
 	"syscall/js"
 )
 
-// socket is the app's byte-stream adapter. A WebSocket message boundary has no
-// meaning to a terminal; reads may split or join messages. Resize/control
-// messages are the app/server's protocol, independent of terminal.Options.Conn.
+// socket is the app's byte-stream adapter. A WebSocket message boundary has no meaning to a terminal; reads may split or join messages. Resize/control messages are the app/server's protocol, independent of terminal.Options.Conn.
 type socket struct {
 	ws        js.Value
 	mu        sync.Mutex

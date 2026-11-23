@@ -47,7 +47,7 @@ func wasmParameters(name string, args []uintptr) []wasmParameter {
 		if typ != "" {
 			return one(2, typ)
 		}
-		if args[1] == optUserdata || args[1] == optWritePTY || args[1] == optBell || args[1] == optTitleChanged || args[1] == optPwdChanged || args[1] == optRenderHold || args[1] == optClipboardWrite || args[1] == optClipboardRead || args[1] == optSize || args[1] == optColorScheme || args[1] == optDeviceAttributes || args[1] == optDesktopNotification || args[1] == optProgressReport {
+		if args[1] == optUserdata || args[1] == optWritePTY || args[1] == optBell || args[1] == optTitleChanged || args[1] == optPwdChanged || args[1] == optRenderHold || args[1] == optClipboardWrite || args[1] == optClipboardRead || args[1] == optSize || args[1] == optColorScheme || args[1] == optDeviceAttributes || args[1] == optDesktopNotification || args[1] == optProgressReport || args[1] == optSemanticPrompt {
 			return nil
 		}
 	case "ghostty_terminal_get":

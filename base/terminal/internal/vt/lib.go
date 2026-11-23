@@ -1,7 +1,4 @@
-// Package vt binds libghostty-vt, Ghostty's terminal emulator, through purego
-// on native targets and an embedded WebAssembly module in a browser: no cgo.
-// Native structs mirror its C ABI; the browser marshals the separate guest
-// memory. Both validate the library's type manifest before use.
+// Package vt binds libghostty-vt, Ghostty's terminal emulator, through purego on native targets and an embedded WebAssembly module in a browser: no cgo. Native structs mirror its C ABI; the browser marshals the separate guest memory. Both validate the library's type manifest before use.
 //
 // Nothing here is safe for concurrent use: callers serialize the calls on a
 // Terminal and on what is made from it.
@@ -263,8 +260,7 @@ func b2u(b bool) uintptr {
 	return 0
 }
 
-// hostMemory addresses the host process only. Browser guest addresses must
-// go through the foreign-memory helpers.
+// hostMemory addresses the host process only. Browser guest addresses must go through the foreign-memory helpers.
 func hostMemory(p uintptr) unsafe.Pointer { return *(*unsafe.Pointer)(unsafe.Pointer(&p)) }
 
 // goString copies a string the library owns.
