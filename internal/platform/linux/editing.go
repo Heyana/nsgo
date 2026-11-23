@@ -213,6 +213,9 @@ func entryStyle(v *view) string {
 	if f.Italic {
 		fmt.Fprintf(&b, "%s { font-style: italic; }\n", all)
 	}
+	if s := in.Style.LetterSpacing; s != 0 {
+		fmt.Fprintf(&b, "%s { letter-spacing: %.3fpx; }\n", all, float64(s))
+	}
 	// A text view's lines, as a text's (text.go): Pango centers the font in each. A field's one line stays centered in its box.
 	if in.Multiline && in.Style.LineHeight > 0 {
 		fmt.Fprintf(&b, "%s { line-height: %.3fpx; }\n", all, float64(in.Style.LineHeight))

@@ -567,6 +567,83 @@ func TestPointWideSinkCandidateRect(t *testing.T) {
 	})
 }
 
+// TestInputLetterSpacing checks that single-line and multiline inputs space their text, what is typed and their placeholders by Style.LetterSpacing, as a text is, and that a field keeps the spacing once editing ends.
+func TestInputLetterSpacing(t *testing.T) {
+	onMain(func() {
+		loadAppKit()
+		kernKey := apple.NSString("NSKern")
+		kernAt := func(str objc.ID) float64 {
+			if objc.Send[uint](str, selLength) == 0 {
+				return 0
+			}
+			return objc.Send[float64](str.Send(sel("attribute:atIndex:effectiveRange:"), kernKey, uint(0), uintptr(0)), sel("doubleValue"))
+		}
+		window := objc.ID(apple.Class("NSWindow")).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
+			apple.Rect(0, 0, 400, 200), uint(0), uint(2), false)
+		window.Send(sel("setReleasedWhenClosed:"), false)
+		defer window.Send(selRelease)
+		s := &surface{views: make([]*view, 3), animator: driver.NewAnimator(func(driver.Event) {})}
+		style := driver.TextStyle{Font: driver.Font{Size: 22, Weight: 500}, Color: driver.RGB(0), LetterSpacing: 10}
+
+		single := s.create(driver.KindInput, 1)
+		s.views[single.id] = single
+		defer s.delete(single, false)
+		single.input.fs.Dispatch = func(driver.Event) {}
+		window.Send(sel("contentView")).Send(selAddSubview, single.native)
+		single.native.Send(selSetFrame, apple.Rect(0, 0, 300, 46))
+		single.configure(&driver.InputConfig{Placeholder: "000000", Style: style, Content: driver.Bounds{Size: driver.Size{Width: 300, Height: 46}}})
+		if got := kernAt(single.input.field.Send(sel("placeholderAttributedString"))); got != 10 {
+			t.Errorf("single-line placeholder kern = %v, want 10", got)
+		}
+		single.input.replaceText("12")
+		if got := kernAt(single.input.field.Send(sel("attributedStringValue"))); got != 10 {
+			t.Errorf("single-line unfocused value kern = %v, want 10", got)
+		}
+		single.input.focus()
+		e := single.input.editor()
+		if e == 0 {
+			t.Fatal("the field has no editor while focused")
+		}
+		if got := objc.Send[float64](e.Send(sel("typingAttributes")).Send(sel("objectForKey:"), kernKey), sel("doubleValue")); got != 10 {
+			t.Errorf("single-line field editor typing kern = %v, want 10", got)
+		}
+		e.Send(sel("insertText:"), apple.NSString("3"))
+		window.Send(sel("makeFirstResponder:"), objc.ID(0))
+		// The field restyles its text once the focus has moved, on the next turn of the run loop.
+		objc.ID(apple.Class("NSRunLoop")).Send(sel("mainRunLoop")).Send(sel("runUntilDate:"), objc.ID(apple.Class("NSDate")).Send(sel("dateWithTimeIntervalSinceNow:"), 0.05))
+		if got := apple.GoString(single.input.field.Send(selStringValue)); got != "123" {
+			t.Fatalf("single-line value after editing = %q, want 123", got)
+		}
+		if got := kernAt(single.input.field.Send(sel("attributedStringValue"))); got != 10 {
+			t.Errorf("single-line value kern after editing = %v, want 10", got)
+		}
+
+		multi := s.create(driver.KindInput, 2)
+		s.views[multi.id] = multi
+		defer s.delete(multi, false)
+		window.Send(sel("contentView")).Send(selAddSubview, multi.native)
+		multi.native.Send(selSetFrame, apple.Rect(0, 50, 300, 100))
+		mc := driver.InputConfig{Multiline: true, Placeholder: "000000", Style: style, Content: driver.Bounds{Size: driver.Size{Width: 300, Height: 100}}}
+		multi.configure(&mc)
+		if got := kernAt(multi.input.label.Send(sel("attributedStringValue"))); got != 10 {
+			t.Errorf("multiline placeholder kern = %v, want 10", got)
+		}
+		multi.input.replaceText("12")
+		tv := multi.input.field
+		if got := objc.Send[float64](tv.Send(sel("typingAttributes")).Send(sel("objectForKey:"), kernKey), sel("doubleValue")); got != 10 {
+			t.Errorf("multiline typing kern = %v, want 10", got)
+		}
+		if got := kernAt(tv.Send(selTextStorage)); got != 10 {
+			t.Errorf("multiline text kern = %v, want 10", got)
+		}
+		mc.Style.LetterSpacing = 0
+		multi.configure(&mc)
+		if got := kernAt(tv.Send(selTextStorage)); got != 0 {
+			t.Errorf("multiline text kern without letter spacing = %v, want none", got)
+		}
+	})
+}
+
 // TestInputLanguageAndKoreanLineBreaking checks that single-line and multiline inputs carry Style.Language on their text, typing attributes and placeholders, and that Korean multiline inputs set NSLineBreakStrategyHangulWordPriority and break between words.
 func TestInputLanguageAndKoreanLineBreaking(t *testing.T) {
 	onMain(func() {

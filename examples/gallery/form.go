@@ -341,7 +341,7 @@ func formDemo(cx *core.Scope) core.Node {
 			formField(fieldProps{label: tr.FormOffset(), hint: label(tr.FormDarkKeyboardIos())},
 				base.Input{IOS: core.IOSInputProps{KeyboardAppearance: core.KeyboardAppearanceDark}, Placeholder: "-12.5"}),
 			formField(fieldProps{label: tr.FormVerificationCode(), hint: func() string { return fmt.Sprintf("%d/6", len(code.Get())) }, next: refs[8]},
-				base.Input{Ref: refs[7], TestID: "code", Value: code.Get, OnChange: code.Set, KeyboardType: core.KeyboardNumber, MaxLength: 6, Placeholder: "······",
+				base.Input{Ref: refs[7], TestID: "code", Value: code.Get, OnChange: code.Set, KeyboardType: core.KeyboardNumber, MaxLength: 6, Placeholder: "000000",
 					Style: core.Style{LetterSpacing: 10, FontSize: 22, FontWeight: ui.Medium, TextAlign: core.TextAlignCenter}}),
 		}}
 	}

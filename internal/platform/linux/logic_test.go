@@ -428,11 +428,11 @@ func TestMenuHelpers(t *testing.T) {
 func TestEntryStyleCarriesTheTextStyle(t *testing.T) {
 	v := &view{id: 4, editorNum: 4, input: driver.InputConfig{Style: driver.TextStyle{
 		Font:  driver.Font{Family: "Noto Sans", Size: 15, Weight: driver.FontWeightBold, Italic: true},
-		Color: driver.RGB(0x123456), Align: driver.TextAlignEnd,
+		Color: driver.RGB(0x123456), Align: driver.TextAlignEnd, LetterSpacing: 2.5,
 	}, PlaceholderColor: driver.RGB(0xff0000), SelectionColor: driver.RGB(0x00ff00)}}
 	css := entryStyle(v)
 	for _, want := range []string{"transparent", "#nsgo-input-4 *", "placeholder", "rgba(255,0,0,1.000)", "selection { background-color: rgba(0,255,0,0.302)", "caret-color: rgba(0,255,0", `font-family: "Noto Sans"`, "font-size: 15.000px", "font-weight: 700",
-		"font-style: italic", "rgba(18,52,86"} {
+		"font-style: italic", "#nsgo-input-4-hint { letter-spacing: 2.500px", "rgba(18,52,86"} {
 		if !strings.Contains(css, want) {
 			t.Errorf("CSS lacks %q:\n%s", want, css)
 		}

@@ -422,6 +422,23 @@ const (
 // LanguageAttr is CoreText's kCTLanguageAttributeName, which selects language-specific Han glyph forms, fallback fonts and line breaking.
 func LanguageAttr() objc.ID { return objc.ID(attrLanguage) }
 
+// SetKern gives a mutable dictionary of AppKit's or UIKit's text attributes the letter spacing of a core.Text, NSKernAttributeName being kCTKernAttributeName. A kern of 0 would turn the font's own kerning off, so 0 sets none.
+func SetKern(attrs objc.ID, spacing driver.Points) {
+	if spacing != 0 {
+		attrs.Send(sel("setObject:forKey:"), nsNumber(float64(spacing)), objc.ID(attrKern))
+	}
+}
+
+// KernStorage gives the n UTF-16 units of a text view's storage the letter spacing of SetKern.
+func KernStorage(storage objc.ID, n uint, spacing driver.Points) {
+	r := NSRange{Length: n}
+	if spacing != 0 {
+		storage.Send(sel("addAttribute:value:range:"), objc.ID(attrKern), nsNumber(float64(spacing)), r)
+	} else {
+		storage.Send(sel("removeAttribute:range:"), objc.ID(attrKern), r)
+	}
+}
+
 // runAttributes returns a new dictionary of what st sets per character:
 // font, color, letter spacing and underline, plus extra keys and values.
 // An underline CoreText cannot draw is drawn from the lines instead. The caller releases

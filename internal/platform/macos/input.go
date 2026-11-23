@@ -115,6 +115,7 @@ func registerInput() {
 				return
 			}
 			if !in.stillEditing() {
+				in.restyleField()
 				in.focusChanged(false)
 				return
 			}
@@ -122,6 +123,7 @@ func registerInput() {
 			// the window's first responder: ask again once the focus moved.
 			apple.OnMain(func() {
 				if v := views[in.field]; v != nil && v.input == in && !in.stillEditing() {
+					in.restyleField()
 					in.focusChanged(false)
 				}
 			})
@@ -447,7 +449,7 @@ func (in *input) setText(text string) {
 		}
 	default:
 		c := &in.fs.Config
-		setFieldText(in.field, text, in.field.Send(sel("font")), in.field.Send(sel("textColor")), nsTextAlignment(c.Style.Align, c.Style.RTL), c.Style.Font.Language, c.Style.RTL, in.masked)
+		setFieldText(in.field, text, in.field.Send(sel("font")), in.field.Send(sel("textColor")), nsTextAlignment(c.Style.Align, c.Style.RTL), c.Style.Font.Language, c.Style.LetterSpacing, c.Style.RTL, in.masked)
 	}
 }
 
@@ -504,15 +506,26 @@ func (in *input) styleLines() {
 	c := &in.fs.Config
 	font := apple.Font(c.Style.Font)
 	defer apple.Release(font)
-	in.setLineStyle(objc.ID(font), nsColor(c.Style.Color), c.Style.LineHeight, nsTextAlignment(c.Style.Align, c.Style.RTL), c.Style.Font.Language, c.Style.RTL)
+	in.setLineStyle(objc.ID(font), nsColor(c.Style.Color), c.Style.LineHeight, nsTextAlignment(c.Style.Align, c.Style.RTL), c.Style.Font.Language, c.Style.LetterSpacing, c.Style.RTL)
 }
 
-// styleFieldEditor applies the single-line field's font, color and language to its active field editor's typing attributes and text storage.
+// restyleField gives a field's text its language and letter spacing again once editing ends, as the field takes the field editor's text without them.
+func (in *input) restyleField() {
+	c := &in.fs.Config
+	if in.multiline || in.masked || (c.Style.Font.Language == "" && c.Style.LetterSpacing == 0) {
+		return
+	}
+	if cur := apple.GoString(in.field.Send(selStringValue)); cur != "" {
+		setFieldText(in.field, cur, in.field.Send(sel("font")), in.field.Send(sel("textColor")), nsTextAlignment(c.Style.Align, c.Style.RTL), c.Style.Font.Language, c.Style.LetterSpacing, c.Style.RTL, false)
+	}
+}
+
+// styleFieldEditor applies the single-line field's font, color, language and letter spacing to its active field editor's typing attributes and text storage.
 func (in *input) styleFieldEditor(e objc.ID) {
 	c := &in.fs.Config
 	font := apple.Font(c.Style.Font)
 	defer apple.Release(font)
-	styleFieldEditor(e, objc.ID(font), nsColor(c.Style.Color), nsTextAlignment(c.Style.Align, c.Style.RTL), c.Style.Font.Language, c.Style.RTL)
+	styleFieldEditor(e, objc.ID(font), nsColor(c.Style.Color), nsTextAlignment(c.Style.Align, c.Style.RTL), c.Style.Font.Language, c.Style.LetterSpacing, c.Style.RTL)
 }
 
 func (in *input) updatePlaceholder() {
@@ -990,14 +1003,14 @@ func (v *view) configure(c *driver.InputConfig) {
 		in.label.Send(selSetTextColor, nsColor(placeholderColor(c)))
 		in.label.Send(selSetAlignment, align)
 		in.label.Send(sel("cell")).Send(selSetWritingDirection, writing)
-		setPlaceholderLabel(in.label, c.Placeholder, objc.ID(font), placeholderColor(c), align, c.Style.LineHeight, lang, c.Style.RTL)
-		in.setLineStyle(objc.ID(font), nsColor(c.Style.Color), c.Style.LineHeight, align, lang, c.Style.RTL)
+		setPlaceholderLabel(in.label, c.Placeholder, objc.ID(font), placeholderColor(c), align, c.Style.LineHeight, lang, c.Style.LetterSpacing, c.Style.RTL)
+		in.setLineStyle(objc.ID(font), nsColor(c.Style.Color), c.Style.LineHeight, align, lang, c.Style.LetterSpacing, c.Style.RTL)
 	} else {
 		in.field.Send(selSetEnabled, !c.Disabled)
 		// A read-only field still selects and copies: turning editing off turns selecting off with it, and the field editor of a field being edited keeps what it had.
 		in.field.Send(sel("setSelectable:"), !c.Disabled)
 		in.field.Send(sel("cell")).Send(selSetWritingDirection, writing)
-		setPlaceholder(in.field, c.Placeholder, objc.ID(font), placeholderColor(c), align, lang, c.Style.RTL)
+		setPlaceholder(in.field, c.Placeholder, objc.ID(font), placeholderColor(c), align, lang, c.Style.LetterSpacing, c.Style.RTL)
 		if e := in.field.Send(selCurrentEditor); e != 0 {
 			e.Send(selSetEditable, !c.Readonly && !c.Disabled)
 			e.Send(selSetFont, objc.ID(font))
@@ -1007,11 +1020,11 @@ func (v *view) configure(c *driver.InputConfig) {
 			e.Send(selSetDefaultParagraph, para)
 			para.Send(selRelease)
 			if !in.masked {
-				styleFieldEditor(e, objc.ID(font), nsColor(c.Style.Color), align, lang, c.Style.RTL)
+				styleFieldEditor(e, objc.ID(font), nsColor(c.Style.Color), align, lang, c.Style.LetterSpacing, c.Style.RTL)
 			}
 		} else if !in.masked {
 			if cur := apple.GoString(in.field.Send(selStringValue)); cur != "" {
-				setFieldText(in.field, cur, objc.ID(font), nsColor(c.Style.Color), align, lang, c.Style.RTL, false)
+				setFieldText(in.field, cur, objc.ID(font), nsColor(c.Style.Color), align, lang, c.Style.LetterSpacing, c.Style.RTL, false)
 			}
 		}
 		setContentType(in.field, c.AutoComplete, in.masked)
@@ -1072,13 +1085,18 @@ func setLanguageAttr(attrs objc.ID, language string) {
 	}
 }
 
-func applyStorageLanguage(tv objc.ID, language string) {
-	a := textAttrs()
-	if tv == 0 || a.language == 0 {
+// applyStorageAttrs gives a text view's text its language and letter spacing.
+func applyStorageAttrs(tv objc.ID, language string, kern driver.Points) {
+	if tv == 0 {
 		return
 	}
-	if n := objc.Send[uint](tv.Send(selString), selLength); n > 0 {
-		storage := tv.Send(selTextStorage)
+	n := objc.Send[uint](tv.Send(selString), selLength)
+	if n == 0 {
+		return
+	}
+	storage := tv.Send(selTextStorage)
+	apple.KernStorage(storage, n, kern)
+	if a := textAttrs(); a.language != 0 {
 		if language != "" {
 			storage.Send(selAddAttribute, a.language, apple.NSString(driver.KeepAllLanguage(language)), apple.NSRange{Length: n})
 		} else {
@@ -1087,8 +1105,8 @@ func applyStorageLanguage(tv objc.ID, language string) {
 	}
 }
 
-// styleFieldEditor gives a single-line field editor its text's font, color and language.
-func styleFieldEditor(tv, font, color objc.ID, align int, language string, rtl bool) {
+// styleFieldEditor gives a single-line field editor its text's font, color, language and letter spacing.
+func styleFieldEditor(tv, font, color objc.ID, align int, language string, kern driver.Points, rtl bool) {
 	a := textAttrs()
 	if tv == 0 || font == 0 || color == 0 || a.font == 0 || a.color == 0 {
 		return
@@ -1102,14 +1120,15 @@ func styleFieldEditor(tv, font, color objc.ID, align int, language string, rtl b
 		para.Send(selRelease)
 	}
 	setLanguageAttr(attrs, language)
+	apple.SetKern(attrs, kern)
 	tv.Send(selSetTypingAttributes, attrs)
-	applyStorageLanguage(tv, language)
+	applyStorageAttrs(tv, language, kern)
 }
 
-// setFieldText sets an unfocused single-line field's string, carrying its language attribute when set so non-system fonts still pick the language's glyph forms.
-func setFieldText(f objc.ID, text string, font, color objc.ID, align int, language string, rtl, masked bool) {
+// setFieldText sets an unfocused single-line field's string, carrying its language attribute when set so non-system fonts still pick the language's glyph forms, and its letter spacing.
+func setFieldText(f objc.ID, text string, font, color objc.ID, align int, language string, kern driver.Points, rtl, masked bool) {
 	a := textAttrs()
-	if masked || language == "" || font == 0 || color == 0 || a.font == 0 || a.color == 0 || a.language == 0 {
+	if masked || (language == "" && kern == 0) || font == 0 || color == 0 || a.font == 0 || a.color == 0 || a.language == 0 {
 		f.Send(selSetString, apple.NSString(text))
 		return
 	}
@@ -1122,14 +1141,15 @@ func setFieldText(f objc.ID, text string, font, color objc.ID, align int, langua
 		para.Send(selRelease)
 	}
 	setLanguageAttr(attrs, language)
+	apple.SetKern(attrs, kern)
 	str := objc.ID(apple.Class("NSAttributedString")).Send(selAlloc).Send(
 		sel("initWithString:attributes:"), apple.NSString(text), attrs)
 	f.Send(sel("setAttributedStringValue:"), str)
 	str.Send(selRelease)
 }
 
-// setLineStyle gives the text view's current and future text the input's alignment, line height and language.
-func (in *input) setLineStyle(font, color objc.ID, lineHeight driver.Points, align int, language string, rtl bool) {
+// setLineStyle gives the text view's current and future text the input's alignment, line height, language and letter spacing.
+func (in *input) setLineStyle(font, color objc.ID, lineHeight driver.Points, align int, language string, kern driver.Points, rtl bool) {
 	tv := in.field
 	a := textAttrs()
 	if tv == 0 || font == 0 || color == 0 || a.font == 0 || a.color == 0 || a.paragraph == 0 {
@@ -1159,17 +1179,18 @@ func (in *input) setLineStyle(font, color objc.ID, lineHeight driver.Points, ali
 	attrs.Send(sel("setObject:forKey:"), color, a.color)
 	attrs.Send(sel("setObject:forKey:"), para, a.paragraph)
 	setLanguageAttr(attrs, language)
+	apple.SetKern(attrs, kern)
 	tv.Send(selSetTypingAttributes, attrs)
 	if n := objc.Send[uint](tv.Send(selString), selLength); n > 0 {
 		tv.Send(selTextStorage).Send(selAddAttribute, a.paragraph, para, apple.NSRange{Length: n})
 	}
-	applyStorageLanguage(tv, language)
+	applyStorageAttrs(tv, language, kern)
 	para.Send(selRelease)
 	tv.Send(sel("invalidateTextContainerOrigin"))
 }
 
-// setPlaceholder gives a field its placeholder in its font, color, alignment and language: an attributed placeholder keeps to the start otherwise.
-func setPlaceholder(f objc.ID, text string, font objc.ID, color driver.Color, align int, language string, rtl bool) {
+// setPlaceholder gives a field its placeholder in its font, color, alignment, language and letter spacing: an attributed placeholder keeps to the start otherwise.
+func setPlaceholder(f objc.ID, text string, font objc.ID, color driver.Color, align int, language string, kern driver.Points, rtl bool) {
 	a := textAttrs()
 	if a.font == 0 || a.color == 0 {
 		f.Send(selSetPlaceholder, apple.NSString(text))
@@ -1184,16 +1205,17 @@ func setPlaceholder(f objc.ID, text string, font objc.ID, color driver.Color, al
 		para.Send(selRelease)
 	}
 	setLanguageAttr(attrs, language)
+	apple.SetKern(attrs, kern)
 	str := objc.ID(apple.Class("NSAttributedString")).Send(selAlloc).Send(
 		sel("initWithString:attributes:"), apple.NSString(text), attrs)
 	f.Send(sel("setPlaceholderAttributedString:"), str)
 	str.Send(selRelease)
 }
 
-// setPlaceholderLabel sets a text view's placeholder label, its lines as tall as the text view's and in its language.
-func setPlaceholderLabel(label objc.ID, text string, font objc.ID, color driver.Color, align int, lineHeight driver.Points, language string, rtl bool) {
+// setPlaceholderLabel sets a text view's placeholder label, its lines as tall as the text view's, in its language and letter spacing.
+func setPlaceholderLabel(label objc.ID, text string, font objc.ID, color driver.Color, align int, lineHeight driver.Points, language string, kern driver.Points, rtl bool) {
 	a := textAttrs()
-	if (lineHeight <= 0 && language == "") || a.font == 0 || a.color == 0 || a.paragraph == 0 {
+	if (lineHeight <= 0 && language == "" && kern == 0) || a.font == 0 || a.color == 0 || a.paragraph == 0 {
 		label.Send(selSetString, apple.NSString(text))
 		return
 	}
@@ -1203,6 +1225,7 @@ func setPlaceholderLabel(label objc.ID, text string, font objc.ID, color driver.
 	attrs.Send(sel("setObject:forKey:"), nsColor(color), a.color)
 	attrs.Send(sel("setObject:forKey:"), para, a.paragraph)
 	setLanguageAttr(attrs, language)
+	apple.SetKern(attrs, kern)
 	str := objc.ID(apple.Class("NSAttributedString")).Send(selAlloc).Send(
 		sel("initWithString:attributes:"), apple.NSString(text), attrs)
 	label.Send(sel("setAttributedStringValue:"), str)
