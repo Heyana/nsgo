@@ -110,11 +110,15 @@ func (s *surface) forget(o *overlay) {
 		s.drawWith(&o.view, id, nil)
 	}
 	s.releasePrograms()
-	s.canvasRequests.closeSurface(o.view.id)
+	if cr := canvasReqs.Load(); cr != nil {
+		cr.closeSurface(&s.canvasRequests, o.view.id)
+	}
 	s.audioFiles.closeSurface(o.view.id)
 	s.soundVoices.closeSurface(o.view.id)
 	imageload.ReleaseOwner(&o.view)
-	s.closeSurfaceNatives(o.view.id)
+	if nh := natives.Load(); nh != nil {
+		nh.closeSurface(s, o.view.id)
+	}
 }
 
 // attach attaches o's tree as Java first reports its window and returns its Engine, on the reader goroutine, which started the first surface's.

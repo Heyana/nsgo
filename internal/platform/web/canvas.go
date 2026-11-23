@@ -360,7 +360,9 @@ func (s *surface) followTransform(v *view, animated bool) {
 		return
 	}
 	v.stopTransformRaster()
-	s.refreshCanvasScale(v.el)
+	if ch := canvases.Load(); ch != nil {
+		ch.refreshScale(s, v.el)
+	}
 }
 
 // rasterAfterTransform keeps CSS scaling cheap during a transform animation or transition, then replays canvases inside v once it rests.
@@ -369,7 +371,9 @@ func (s *surface) rasterAfterTransform(v *view, waitMs int) {
 		v.rasterEnd = js.FuncOf(func(js.Value, []js.Value) any {
 			v.rasterTimer = js.Undefined()
 			if s.view(v.id) == v {
-				s.refreshCanvasScale(v.el)
+				if ch := canvases.Load(); ch != nil {
+					ch.refreshScale(s, v.el)
+				}
 			}
 			return nil
 		})
@@ -405,7 +409,9 @@ func (s *surface) checkSlicedCanvases() {
 			continue
 		}
 		if !v.canvasTile.contains(vis) {
-			s.paint(v)
+			if ch := canvases.Load(); ch != nil {
+				ch.paint(s, v)
+			}
 		}
 	}
 }
@@ -557,7 +563,9 @@ func (s *surface) loadCanvasImage(src driver.ImageSource, v *view, readable bool
 					case w.kind == driver.KindShader:
 						s.shadeLater(w)
 					default:
-						s.paint(w)
+						if ch := canvases.Load(); ch != nil {
+							ch.paint(s, w)
+						}
 					}
 				}
 			}

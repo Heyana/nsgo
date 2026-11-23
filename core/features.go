@@ -2,8 +2,7 @@ package core
 
 import "github.com/nsgo-dev/nsgo/internal/driver"
 
-// unwrapPlatform unwraps platform wrappers (such as engine's observed) without
-// the wrapper referencing any optional feature enabler interface.
+// unwrapPlatform unwraps platform wrappers (such as engine's observed) without the wrapper referencing any optional feature enabler interface.
 func unwrapPlatform(te driver.TextEngine) any {
 	var p any = te
 	for {

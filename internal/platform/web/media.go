@@ -42,11 +42,15 @@ func (s *surface) tick(stamp time.Duration) {
 	s.stepTransitions(stamp)
 	s.stepLayoutMotions(stamp)
 	if s.animator.Running() || len(s.transitions) > 0 || len(s.layoutMotions) > 0 {
-		s.staleEffects()
+		if sh := shaders.Load(); sh != nil {
+			sh.staleEffects(s)
+		}
 		s.requestGlassPaint()
 	}
-	s.changedShaders()
-	s.drawShaders()
+	if sh := shaders.Load(); sh != nil {
+		sh.changedShaders(s)
+		sh.drawShaders(s)
+	}
 	if s.frameWanted {
 		s.frameWanted = false
 		if s.engine != nil {
@@ -153,8 +157,12 @@ func (s *surface) applyAnimatedAt(at time.Duration) {
 		s.writeAnimatedStyle(v, at)
 		s.followTransform(v, true)
 	})
-	s.changedCanvases()
-	s.changedNatives()
+	if ch := canvases.Load(); ch != nil {
+		ch.changedCanvases(s)
+	}
+	if nh := natives.Load(); nh != nil {
+		nh.changedNatives(s)
+	}
 	s.replaceBound()
 	if len(s.slicedCanvases) > 0 {
 		s.checkSlicedCanvases()

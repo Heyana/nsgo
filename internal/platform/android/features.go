@@ -1,4 +1,4 @@
-//go:build android
+//go:build android || nsgoandroidhost
 
 package android
 
@@ -9,9 +9,8 @@ import (
 )
 
 type shaderOps struct {
-	withoutEffects func(*driver.MountBatch) *driver.MountBatch
-	track          func(*surface, *treeView, *driver.MountBatch) ([]shaderItem, []driver.MountItem)
-	write          func(*writer, *driver.Shader, shaderItem)
+	track func(*surface, *treeView, *driver.MountBatch) ([]shaderItem, []driver.MountItem)
+	write func(*writer, *driver.Shader, shaderItem)
 }
 
 type canvasOps struct {
@@ -73,9 +72,8 @@ func (*surface) EnableShaders() {
 		return
 	}
 	shaders.Store(&shaderOps{
-		withoutEffects: withoutEffects,
-		track:          (*surface).trackShaders,
-		write:          writeShader,
+		track: (*surface).trackShaders,
+		write: writeShader,
 	})
 }
 
@@ -107,7 +105,7 @@ func (*surface) EnableWebView() {
 	webViews.Store(&webViewOps{
 		withoutCookies: (*surface).withoutWebCookies,
 		cookiesSet:     (*surface).webCookiesSet,
-		writeWeb:       writeWeb,
+		writeWeb:       writeWebConfig,
 		writeCommand:   writeWebCommand,
 	})
 }
@@ -131,27 +129,6 @@ func (*overlay) EnableVideo()   { (*surface)(nil).EnableVideo() }
 func (*overlay) EnableWebView() { (*surface)(nil).EnableWebView() }
 func (*overlay) EnableNative()  { (*surface)(nil).EnableNative() }
 
-func writeWeb(w *writer, c *driver.WebConfig) {
-	w.str(c.Source.Src)
-	w.str(c.Source.HTML)
-	w.str(c.Source.BaseURL)
-	w.str(c.InjectedJavaScript)
-	// WebNode runs its bridge first, so the app's script can post.
-	w.str(c.InjectedJavaScriptBeforeContent)
-	w.str(c.UserAgent)
-	w.str(c.UserAgentSuffix)
-	// Android has no back and forward swipes.
-	w.flags(c.NoScroll, c.NoJavaScript, c.Restricted, c.Incognito, c.Media&driver.WebMicrophone != 0, c.Media&driver.WebCamera != 0, c.PinchZoom)
-	w.str(c.Hosts)
-	w.str(c.Schemes)
-	w.str(c.DownloadDir)
-	w.u32(uint32(len(c.Headers)))
-	for name, value := range c.Headers {
-		w.str(name)
-		w.str(value)
-	}
-}
-
 func writeWebCommand(w *writer, it *driver.MountItem) {
 	w.byte(byte(it.WebCommand))
 	if it.WebCommand == driver.WebPostMessage {
@@ -173,7 +150,7 @@ func writeWebCommand(w *writer, it *driver.MountItem) {
 
 func writeVideo(w *writer, c *driver.VideoConfig) {
 	w.str(c.Source)
-	w.flags(c.Paused, c.Muted, c.Repeat, c.Controls)
+	w.flags(c.Paused, c.Muted, c.Repeat, c.Controls, c.PictureInPicture, c.AutoPictureInPicture)
 	w.float(c.Volume)
 	w.float(c.Rate)
 	w.byte(byte(c.ResizeMode - driver.Cover)) // Java's are 0-based
@@ -197,8 +174,7 @@ func writeNative(w *writer, it *driver.MountItem, n nativeItem) {
 		w.str(p.Name)
 		w.str(jsonValue(p.Value))
 	}
-	// The props animated nodes drive, when they changed: Java
-	// hands the view their values on the frames they change.
+	// The props animated nodes drive, when they changed: Java hands the view their values on the frames they change.
 	w.flags(it.Native.Bind)
 	if it.Native.Bind {
 		w.u32(uint32(len(it.Native.Bindings)))

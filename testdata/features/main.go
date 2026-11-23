@@ -1,6 +1,4 @@
-// Command features constructs a shader, canvas, video, web view and native
-// component: linked_test.go checks that each backend links their code when an
-// app uses them.
+// Command features constructs a shader, canvas, video, web view and native component: linked_test.go checks that each backend links their code when an app uses them.
 package main
 
 import (

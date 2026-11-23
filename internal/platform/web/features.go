@@ -1,4 +1,4 @@
-//go:build js && wasm && !nsgominiprogram
+//go:build js && wasm
 
 package web
 
@@ -18,6 +18,7 @@ type shaderOps struct {
 	shadeLater      func(*surface, *view)
 	changedShaders  func(*surface)
 	drawShaders     func(*surface)
+	draw            func(*surface, *view)
 	staleEffects    func(*surface)
 	release         func(*surface, *view)
 }
@@ -72,6 +73,7 @@ func (*surface) EnableShaders() {
 		shadeLater:      (*surface).shadeLater,
 		changedShaders:  (*surface).changedShaders,
 		drawShaders:     (*surface).drawShaders,
+		draw:            (*surface).drawShader,
 		staleEffects:    (*surface).staleEffects,
 		release: func(s *surface, v *view) {
 			s.endEffect(v)

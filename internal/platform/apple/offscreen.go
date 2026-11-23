@@ -46,8 +46,7 @@ var (
 	decodeOffscreen    atomic.Pointer[func(driver.ImageSource, request) decoded]
 )
 
-// EnableCanvas wires offscreen-canvas decoding for ImageView so offscreen
-// rendering (and Play) link only into apps that use canvases or offscreens.
+// EnableCanvas wires offscreen-canvas decoding for ImageView so offscreen rendering (and Play) link only into apps that use canvases or offscreens.
 func EnableCanvas() {
 	if decodeOffscreen.Load() != nil {
 		return

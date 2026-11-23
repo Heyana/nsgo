@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall/js"
 	"time"
 
@@ -289,9 +290,27 @@ func fingers(list js.Value) []finger {
 	return out
 }
 
+// canvasPainter holds paintDrawing once core constructs a Canvas or Icon, so mini programs that never draw a canvas drop internal/platform/canvas2d.
+var canvasPainter atomic.Pointer[func(*surface, driver.NodeID, []driver.DrawOp, driver.Size) string]
+
+func (*surface) EnableCanvas() {
+	if canvasPainter.Load() != nil {
+		return
+	}
+	fn := (*surface).paintDrawing
+	canvasPainter.Store(&fn)
+}
+
 // paint draws ops on the offscreen canvas and returns the picture as a
 // data URL, "" while an image they draw loads.
 func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size) string {
+	if fn := canvasPainter.Load(); fn != nil {
+		return (*fn)(s, id, ops, size)
+	}
+	return ""
+}
+
+func (s *surface) paintDrawing(id driver.NodeID, ops []driver.DrawOp, size driver.Size) string {
 	ratio := float64(s.env.PixelRatio)
 	if ratio <= 0 {
 		ratio = 2

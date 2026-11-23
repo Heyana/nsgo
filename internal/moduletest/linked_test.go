@@ -20,20 +20,72 @@ var unlinked = map[string][]string{
 	"": {
 		// Images download through the system's HTTP client (imageload.HTTP).
 		"net/http", "crypto/tls", "crypto/x509",
-		// Shaders compile when an app makes one: no package variable,
-		// init or element case of its own reaches the compilers.
+		// Shaders compile when an app makes one: no package variable, init or element case of its own reaches the compilers. The target writers (msl, hlsl, glsl) still link with each backend's GPU views, which are not gated on use.
 		"github.com/nsgo-dev/nsgo/internal/shader", "github.com/nsgo-dev/nsgo/internal/shader/wgsl", "go/parser",
 		// Only nsgo dev -automation's builds link the agent and what tests run on.
 		"testing", "github.com/nsgo-dev/nsgo/nsgotest", "github.com/nsgo-dev/nsgo/internal/automation",
 		// Only builds tagged nsgotui (nsgo -target tui) link the terminal backend and its cell library.
 		"github.com/nsgo-dev/nsgo/internal/platform/tui", "github.com/gdamore/tcell/v3",
 	},
-	// The page decodes and encodes images with the browser's codecs.
-	"js": {"image/png", "image/jpeg", "image/gif", "golang.org/x/image/webp", "golang.org/x/image/draw"},
+	// The page decodes and encodes images with the browser's codecs, and links its 2D canvas player only when an app draws a canvas or icon.
+	"js": {
+		"image/png", "image/jpeg", "image/gif", "golang.org/x/image/webp", "golang.org/x/image/draw",
+		"github.com/nsgo-dev/nsgo/internal/platform/canvas2d",
+	},
+	// Android's DNS resolver links only when an app uses Go networking of its own.
+	"android": {"net"},
 	// Only Android reads its resources from a zip, the APK.
 	"darwin":  {"archive/zip"},
 	"windows": {"archive/zip"},
 	"linux":   {"archive/zip"},
+}
+
+// featureSymbols names each backend's entry points for shaders, canvases, videos, web views and native components. Minimal apps must link none of them; testdata/features must link all of them.
+var featureSymbols = map[string][]string{
+	"darwin": {
+		"github.com/nsgo-dev/nsgo/internal/platform/apple.NewShaderLayer",
+		"github.com/nsgo-dev/nsgo/internal/platform/apple.PlayOver",
+		"github.com/nsgo-dev/nsgo/internal/platform/apple.(*Video).Configure",
+		"github.com/nsgo-dev/nsgo/internal/platform/apple.(*Web).Configure",
+		"github.com/nsgo-dev/nsgo/internal/platform/macos.(*surface).configureNative",
+	},
+	"windows": {
+		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).setShader",
+		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*painter).canvas",
+		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*video).configure",
+		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).newWeb",
+		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).setNative",
+	},
+	"linux": {
+		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).setShader",
+		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).snapshotCanvas",
+		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).configureVideo",
+		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).configureWeb",
+		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).configureNative",
+	},
+	"android": {
+		"github.com/nsgo-dev/nsgo/internal/platform/android.writeShader",
+		"github.com/nsgo-dev/nsgo/internal/platform/android.writeDrawing",
+		"github.com/nsgo-dev/nsgo/internal/platform/android.writeVideo",
+		"github.com/nsgo-dev/nsgo/internal/platform/android.writeWebConfig",
+		"github.com/nsgo-dev/nsgo/internal/platform/android.writeNative",
+	},
+	"js": {
+		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).setShader",
+		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).paint",
+		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).setVideo",
+		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).setWeb",
+		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).configureNative",
+	},
+}
+
+// featurePackages names the optional packages testdata/features must link per target.
+var featurePackages = map[string][]string{
+	"darwin":  {"github.com/nsgo-dev/nsgo/internal/shaderir/msl"},
+	"windows": {"github.com/nsgo-dev/nsgo/internal/shaderir/hlsl"},
+	"linux":   {"github.com/nsgo-dev/nsgo/internal/shaderir/glsl"},
+	"android": {"github.com/nsgo-dev/nsgo/internal/shaderir/glsl"},
+	"js":      {"github.com/nsgo-dev/nsgo/internal/shaderir/glsl", "github.com/nsgo-dev/nsgo/internal/platform/canvas2d"},
 }
 
 // linkTargets are the targets the link tests build for.
@@ -64,10 +116,15 @@ func TestMinimalAppLinks(t *testing.T) {
 	for _, target := range linkTargets {
 		t.Run(target[0]+"_"+target[1], func(t *testing.T) {
 			t.Parallel()
-			linked := linkedPackages(t, target[0], target[1], "")
+			linked, syms := linkedPackagesAndSymbolsOf(t, moduleRoot+"/testdata/minimal", target[0], target[1], "")
 			for _, pkg := range append(unlinked[""], unlinked[target[0]]...) {
 				if linked[pkg] {
 					t.Errorf("an app showing one text links %s", pkg)
+				}
+			}
+			for _, sym := range featureSymbols[target[0]] {
+				if syms[sym] {
+					t.Errorf("an app showing one text links %s", sym)
 				}
 			}
 		})
@@ -115,6 +172,40 @@ func TestAutomationAppLinks(t *testing.T) {
 		if linked[pkg] {
 			t.Errorf("a release app that registers an automation tool links %s", pkg)
 		}
+	}
+}
+
+// TestFeatureAppLinks verifies that an app constructing a shader, canvas, video, web view and native component links each backend's implementation for all of them.
+func TestFeatureAppLinks(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("needs the go command")
+	}
+	for _, target := range linkTargets {
+		t.Run(target[0]+"_"+target[1], func(t *testing.T) {
+			t.Parallel()
+			linked, syms := linkedPackagesAndSymbolsOf(t, moduleRoot+"/testdata/features", target[0], target[1], "")
+			for _, pkg := range featurePackages[target[0]] {
+				if !linked[pkg] {
+					t.Errorf("feature app does not link %s", pkg)
+				}
+			}
+			for _, sym := range featureSymbols[target[0]] {
+				if !syms[sym] {
+					t.Errorf("feature app does not link %s", sym)
+				}
+			}
+		})
+	}
+}
+
+// TestAndroidDNSLinks verifies that building for Android with nsgo_android_dns (which nsgo build adds when an app imports net) links Android's DNS resolver.
+func TestAndroidDNSLinks(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("needs the go command")
+	}
+	linked := linkedPackages(t, "android", "arm64", "nsgo_android_dns")
+	if !linked["net"] {
+		t.Error("android build with nsgo_android_dns does not link net")
 	}
 }
 

@@ -60,8 +60,8 @@ func (s *surface) container(host *view) objc.ID {
 	if host.contentLayer != 0 {
 		host.attachContentLayer(host.contentLayer)
 	}
-	if host.shader != nil {
-		host.attachContentLayer(host.shader.Layer)
+	if sl := host.shaderLayer(); sl != nil {
+		host.attachContentLayer(sl.Layer)
 	}
 	if host.web != nil {
 		host.web.SetHolder(c)

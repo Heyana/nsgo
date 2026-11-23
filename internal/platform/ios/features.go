@@ -3,6 +3,7 @@
 package ios
 
 import (
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -136,6 +137,7 @@ func (*surface) EnableVideo() {
 			v.video.Dispatch = v.report
 			v.video.Parent = s.viewController()
 			v.native.Send(sel("setClipsToBounds:"), true)
+			s.videos = append(s.videos, v)
 		},
 		configure: func(v *view, c *driver.VideoConfig) {
 			if v.video != nil {
@@ -160,6 +162,7 @@ func (*surface) EnableVideo() {
 		close: func(v *view) {
 			if v.video != nil {
 				v.video.Close()
+				v.surface.videos = slices.DeleteFunc(v.surface.videos, func(video *view) bool { return video == v })
 			}
 		},
 	})
@@ -180,9 +183,16 @@ func (*surface) EnableWebView() {
 			}
 		},
 		command: func(v *view, it *driver.MountItem) {
-			if v.web != nil {
-				v.web.Command(it.WebCommand, it.Value, it.Data)
+			if v.web == nil {
+				return
 			}
+			if in, ok := it.Data.(*driver.WebInput); ok && it.WebCommand == driver.WebSendInput {
+				if web := v.web.View(); web != 0 {
+					sendWebInput(web, *in)
+				}
+				return
+			}
+			v.web.Command(it.WebCommand, it.Value, it.Data)
 		},
 		cookies: apple.WebCookies,
 		close: func(v *view) {

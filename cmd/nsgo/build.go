@@ -903,9 +903,7 @@ func (p *project) devTokenFile() (string, error) {
 	return f.Name(), nil
 }
 
-// androidDNSTag adds nsgo_android_dns when building an Android app whose own
-// packages or dependencies import net, so Android's DNS resolver links only
-// into apps that use Go networking (docs/architecture/layers.md, What an app links).
+// androidDNSTag adds nsgo_android_dns when building an Android app whose own packages or dependencies import net, so Android's DNS resolver links only into apps that use Go networking (docs/architecture/layers.md, What an app links).
 func androidDNSTag(ctx context.Context, p *project, env, tags []string) ([]string, error) {
 	if !slices.Contains(env, "GOOS=android") || slices.Contains(tags, "nsgo_android_dns") ||
 		slices.Contains(tags, "nsgodev") || slices.Contains(tags, "nsgotest") {

@@ -1459,7 +1459,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.speak(it.Count, *it.Speak)
 			continue
 		case driver.ItemWebCookies:
-			w.webCookies(it.Count, *it.Cookies)
+			if wh := webViews.Load(); wh != nil {
+				wh.cookies(w, it.Count, *it.Cookies)
+			}
 			continue
 		case driver.ItemDiscovery:
 			w.handleDiscovery(it)
@@ -1487,7 +1489,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.releaseAwake(it.Count)
 			continue
 		case driver.ItemReleaseOffscreen:
-			w.releaseOffscreen(it.OffscreenID)
+			if ch := canvases.Load(); ch != nil {
+				ch.releaseOffscreen(w, it.OffscreenID)
+			}
 			continue
 		case driver.ItemCheckForUpdates:
 			if it.UpdatePreference != nil {
@@ -1605,11 +1609,15 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemKeepImage:
 			imageload.Keep(w, it.Value)
-			w.keepCanvasImage(it.Value)
+			if ch := canvases.Load(); ch != nil {
+				ch.keepImage(w, it.Value)
+			}
 			continue
 		case driver.ItemReleaseImage:
 			imageload.Release(w, it.Value)
-			w.releaseCanvasImage(it.Value)
+			if ch := canvases.Load(); ch != nil {
+				ch.releaseImage(w, it.Value)
+			}
 			continue
 		case driver.ItemAudio:
 			w.audioCommand(it.Count, it.Audio)
@@ -1718,8 +1726,8 @@ func (w *window) apply(b *driver.MountBatch) {
 				recursor = true
 			}
 			w.setStyle(v, it.ViewStyle)
-			if v.web != nil {
-				v.web.restyle()
+			if wh := webViews.Load(); wh != nil {
+				wh.restyle(v)
 			}
 			if v.kind == driver.KindImage {
 				// Untinted, an animation plays again.
@@ -1803,10 +1811,12 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.uiaChanged(held)
 			w.animator.BindCanvas(v.id, it.Drawing.Slots)
 		case driver.ItemShader:
-			if v.kind == driver.KindShader && it.Shader != nil && it.Shader.Role == driver.ShaderFill {
-				w.setShader(v, it.Shader)
-			} else {
-				w.setEffect(v, it.Shader)
+			if sh := shaders.Load(); sh != nil {
+				if v.kind == driver.KindShader && it.Shader != nil && it.Shader.Role == driver.ShaderFill {
+					sh.setShader(w, v, it.Shader)
+				} else {
+					sh.setEffect(w, v, it.Shader)
+				}
 			}
 		case driver.ItemGPU:
 			if v.kind == driver.KindGPU && it.GPU != nil {
@@ -1814,40 +1824,42 @@ func (w *window) apply(b *driver.MountBatch) {
 				gpuConfigured = append(gpuConfigured, v)
 			}
 		case driver.ItemShaderTransition:
-			w.startTransition(v)
+			if sh := shaders.Load(); sh != nil {
+				sh.startTransition(w, v)
+			}
 		case driver.ItemShaderInput:
 			if v.fx != nil {
 				w.redrawAll()
 			}
 		case driver.ItemWeb:
 			if v.kind == driver.KindWeb && it.Web != nil {
-				if v.web == nil {
-					v.web = w.newWeb(v, it.Web)
+				if wh := webViews.Load(); wh != nil {
+					wh.configure(w, v, it.Web)
 				}
-				v.web.configure(it.Web)
 			}
 		case driver.ItemWebCommand:
-			if v.web != nil {
-				v.web.command(it.WebCommand, it.Value, it.Data)
+			if wh := webViews.Load(); wh != nil {
+				wh.command(v, it)
 			}
 		case driver.ItemVideo:
 			if v.kind == driver.KindVideo && it.Video != nil {
-				if v.video == nil {
-					v.video = &video{w: w, v: v}
+				if vh := videos.Load(); vh != nil {
+					vh.configure(w, v, it.Video)
 				}
-				v.video.configure(it.Video)
 			}
 		case driver.ItemVideoSeek:
-			if v.video != nil {
-				v.video.seek(it.Time)
+			if vh := videos.Load(); vh != nil {
+				vh.seek(v, it.Time)
 			}
 		case driver.ItemNative:
 			if v.kind == driver.KindNative && it.Native != nil {
-				w.setNative(v, it.Native)
+				if nh := natives.Load(); nh != nil {
+					nh.setNative(w, v, it.Native)
+				}
 			}
 		case driver.ItemNativeCommand:
-			if c := v.component; c != nil && c.c != nil {
-				c.c.Command(it.Value, it.Data)
+			if nh := natives.Load(); nh != nil {
+				nh.command(v, it.Value, it.Data)
 			}
 		case driver.ItemScrollBy:
 			v.applied++
@@ -1893,7 +1905,9 @@ func (w *window) apply(b *driver.MountBatch) {
 		}
 	}
 	// The batch's web views asked for their environments' app schemes.
-	startWebEnvironments()
+	if wh := webViews.Load(); wh != nil {
+		wh.startEnvs()
+	}
 	w.syncGPUViews(gpuConfigured, gpuResized)
 	// Focus once the batch placed the fields.
 	for _, f := range focus {
@@ -1989,13 +2003,15 @@ func (w *window) destroy(v *view) {
 	}
 	v.shadow.release()
 	v.shadow = nil
-	v.shaderView.release()
+	if sh := shaders.Load(); sh != nil {
+		sh.release(w, v)
+	}
 	v.gpuView.release()
-	w.endEffect(v)
 	v.glass.release()
-	v.shaderView = nil
 	v.gpuView = nil
-	v.canvasCache.release()
+	if ch := canvases.Load(); ch != nil {
+		ch.releaseView(v)
+	}
 	for _, sh := range v.boxShadows {
 		sh.release()
 	}
@@ -2035,17 +2051,14 @@ func (w *window) release(v *view) {
 		}
 		v.field.release()
 	}
-	if v.web != nil {
-		v.web.close()
-		v.web = nil
+	if wh := webViews.Load(); wh != nil {
+		wh.closeView(v)
 	}
-	if v.video != nil {
-		v.video.close()
-		v.video = nil
+	if vh := videos.Load(); vh != nil {
+		vh.close(v)
 	}
-	if v.component != nil {
-		w.closeComponent(v.component)
-		v.component = nil
+	if nh := natives.Load(); nh != nil {
+		nh.closeView(w, v)
 	}
 }
 
@@ -3185,7 +3198,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.releasePointer(false)
 		w.closeAudio()
 		w.freeMenuBitmaps()
-		w.closeCanvasImages()
+		if ch := canvases.Load(); ch != nil {
+			ch.closeWindow(w)
+		}
 		w.removeTrays()
 		w.unregisterHotKeys()
 		endWindowGuide(w)
@@ -3196,15 +3211,14 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if uiaReturnRawElementProvider.Find() == nil {
 			uiaReturnRawElementProvider.Call(hwnd, 0, 0, 0)
 		}
-		for wv := range w.webs {
-			wv.close()
+		if wh := webViews.Load(); wh != nil {
+			wh.closeWindow(w)
 		}
-		w.closeCookieView()
 		w.revokeDrop()
 		w.closeShare()
 		w.closeSpeech()
-		for c := range w.hosts {
-			w.closeComponent(c)
+		if nh := natives.Load(); nh != nil {
+			nh.closeWindow(w)
 		}
 		w.releaseAllGPUViews()
 		if w.primary {
@@ -3241,8 +3255,8 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.updateAppSurface()
 		return 0
 	case wmMove:
-		for wv := range w.webs {
-			wv.moved()
+		if wh := webViews.Load(); wh != nil {
+			wh.moved(w)
 		}
 		if w.engine != nil {
 			if w.currentDisplayID() != w.env.DisplayID {

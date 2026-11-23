@@ -11,10 +11,18 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// atlasPlayer loops in the JS host so the Go/JS boundary costs one call
-// per atlas. Hosts that disallow generated functions use the same drawing
-// operations through syscall/js.
-var atlasPlayer = sync.OnceValue(func() (fn js.Value) {
+var (
+	atlasOnce sync.Once
+	atlasFn   js.Value
+)
+
+// atlasPlayer loops in the JS host so the Go/JS boundary costs one call per atlas. Hosts that disallow generated functions use the same drawing operations through syscall/js. It is made on first use, with no package initializer, so an app that draws no canvas does not link this package (TestMinimalAppLinks).
+func atlasPlayer() js.Value {
+	atlasOnce.Do(func() { atlasFn = newAtlasPlayer() })
+	return atlasFn
+}
+
+func newAtlasPlayer() (fn js.Value) {
 	defer func() {
 		if recover() != nil {
 			fn = js.Undefined()
@@ -40,7 +48,7 @@ for (let i = 0; i < bytes.byteLength; i += 36) {
 }
 ctx.globalAlpha = alpha;
 `)
-})
+}
 
 func (p *Player) atlas(op *driver.DrawOp) {
 	if op.Image == nil || op.Atlas == nil {

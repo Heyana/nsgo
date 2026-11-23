@@ -113,8 +113,8 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 	}
 	w.snapshotContent(v, s, cur)
 	drawn := false
-	if e := w.effectOn(v); e != nil && (w.backdropStop == nil || w.backdropPath[v] == nil) {
-		drawn = w.snapshotEffect(e, v, cur)
+	if sh := shaders.Load(); sh != nil {
+		drawn = sh.snapshotEffect(w, v, cur)
 	}
 	for c := gtkWidgetGetFirstChild(v.widget); c != 0 && !drawn; c = gtkWidgetGetNextSibling(c) {
 		if w.backdropStop != nil && c == w.backdropStop.widget {
@@ -282,7 +282,9 @@ func (w *window) snapshotContent(v *view, s *driver.ViewStyle, snap uintptr) {
 	case v.kind == driver.KindImage && (v.source.pic != nil || v.placeholder.pic != nil):
 		w.snapshotImage(v, s.TintColor, snap, width, height)
 	case v.kind == driver.KindCanvas && v.drawing != nil:
-		w.snapshotCanvas(v, snap, width, height)
+		if ch := canvases.Load(); ch != nil {
+			ch.snapshotCanvas(w, v, snap, width, height)
+		}
 	}
 	if l, ok := v.text.(*textLayout); ok && l != nil && l.text != "" {
 		// Glyphs and decoration lines may paint past their view's box.

@@ -58,8 +58,8 @@ func (s *surface) captureFrame(id driver.NodeID, answer func([]byte, error)) {
 		if v == nil || !root.Call("contains", v.el).Bool() {
 			continue
 		}
-		if v.gl != nil && v.gl.shader != nil {
-			s.drawShader(v)
+		if sh := shaders.Load(); sh != nil && v.gl != nil && v.gl.shader != nil {
+			sh.draw(s, v)
 		}
 		if im := v.image; im != nil && im.tint == 0 {
 			for _, picture := range []*picture{&im.placeholder, &im.source} {

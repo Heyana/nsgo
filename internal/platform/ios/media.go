@@ -165,10 +165,12 @@ func (s *surface) tick() {
 		s.pullBackResizedScrolls()
 		s.applyAnimated()
 	})
-	if s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 {
-		s.staleEffects()
+	if sh := shaders.Load(); sh != nil {
+		if s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 {
+			sh.staleEffects(s)
+		}
+		sh.drawShaders(s)
 	}
-	s.drawShaders()
 	if contentAnimated {
 		s.dirtyPictureInPictures()
 	}
@@ -216,7 +218,11 @@ func (s *surface) applyAnimated() {
 			delete(s.transitions, v)
 		}
 		v.restyle()
-	}, (*view).redraw, (*view).redrawAnimated, func(v *view) driver.NativeComponent {
+	}, (*view).redraw, func(v *view) {
+		if ch := canvases.Load(); ch != nil {
+			ch.redrawAnimated(v)
+		}
+	}, func(v *view) driver.NativeComponent {
 		return v.component
 	}, s.repinBound)
 }
@@ -396,10 +402,14 @@ func (v *view) place(f driver.Bounds) {
 		v.surface.images = append(v.surface.images, v)
 	}
 	if v.video != nil {
-		v.video.Layout()
+		if vh := videos.Load(); vh != nil {
+			vh.layout(v)
+		}
 	}
 	if v.shader != nil {
-		v.sizeShader()
+		if sh := shaders.Load(); sh != nil {
+			sh.sizeShader(v)
+		}
 	}
 	if v.gpu != nil {
 		v.sizeGPU()

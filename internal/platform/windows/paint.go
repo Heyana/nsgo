@@ -539,8 +539,14 @@ func (w *window) frame() {
 		w.lost()
 		return
 	}
-	w.composedPlaced(p.composed, layers)
-	w.placeComponents(p.components)
+	if wh := webViews.Load(); wh != nil {
+		wh.composedPlaced(w, p.composed, layers)
+	} else if w.composition != nil {
+		w.composition.arrange(nil, layers)
+	}
+	if nh := natives.Load(); nh != nil {
+		nh.placeComponents(w, p.components)
+	}
 }
 
 // composedPlaced tells the web views the frame just shown drew where they
@@ -774,33 +780,27 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 		p.drawImage(v, s.TintColor, p.w.imageBox(s, width, height))
 	case driver.KindCanvas:
 		if v.drawing != nil {
-			p.canvas(v, width, height)
+			if ch := canvases.Load(); ch != nil {
+				ch.draw(p, v, width, height)
+			}
 		}
 	case driver.KindShader:
-		p.drawShader(v, width, height)
+		if sh := shaders.Load(); sh != nil {
+			sh.drawShader(p, v, width, height)
+		}
 	case driver.KindGPU:
 		p.drawGPU(v, width, height)
 	case driver.KindWeb:
-		if wv := v.web; wv != nil && wv.composed() {
-			corners := float32(0)
-			if s.Clip {
-				corners = radius
-			}
-			p.compose(wv, world, width, height, corners)
-		} else if wv != nil && wv.failed {
-			p.drawWebPlaceholder(width, height)
+		if wh := webViews.Load(); wh != nil {
+			wh.draw(p, v, world, width, height, radius, s.Clip)
 		}
 	case driver.KindVideo:
-		if v.video != nil {
-			p.drawVideo(v.video, width, height)
+		if vh := videos.Load(); vh != nil {
+			vh.draw(p, v, width, height)
 		}
 	case driver.KindNative:
-		if c := v.component; c != nil && c.hwnd != 0 {
-			corners := float32(0)
-			if s.Clip {
-				corners = radius
-			}
-			p.placeComponent(c, world, width, height, corners)
+		if nh := natives.Load(); nh != nil {
+			nh.placeComponent(p, v, world, width, height, radius, s.Clip)
 		}
 	case driver.KindInput:
 		if v.field != nil {
@@ -853,7 +853,7 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 			}
 		}
 	}
-	if e := p.w.effectOn(v); e == nil || !p.drawEffect(e, v, world) {
+	if sh := shaders.Load(); sh == nil || !sh.drawEffect(p, v, world) {
 		for i, c := range v.children {
 			drawLeaving(i)
 			f := frameOf(c)

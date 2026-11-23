@@ -248,8 +248,8 @@ func (w *window) retireInner(v *view) {
 	}
 	w.setViewFocusable(v, false)
 	w.setEditorFocusable(v, false)
-	if v.video != nil {
-		w.stopProgress(v.video)
+	if vh := videos.Load(); vh != nil {
+		vh.stopProgress(w, v)
 	}
 }
 

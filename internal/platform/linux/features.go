@@ -84,7 +84,7 @@ func (*window) EnableShaders() {
 			staleEffects:    (*window).staleEffects,
 			snapshotEffect: func(w *window, v *view, cur uintptr) bool {
 				e := w.effectOn(v)
-				return e != nil && w.snapshotEffect(e, v, cur)
+				return e != nil && (w.backdropStop == nil || w.backdropPath[v] == nil) && w.snapshotEffect(e, v, cur)
 			},
 			effectArea: (*window).effectArea,
 			release: func(w *window, v *view) {
@@ -125,6 +125,7 @@ func (*window) EnableCanvas() {
 func (*window) EnableVideo() {
 	videoOnce.Do(func() {
 		cbVideoPrepared = newCallback(videoPreparedCallback)
+		cbVideoPlaying = newCallback(videoPlayingCallback)
 		cbVideoSize = newCallback(videoSizeCallback)
 		cbVideoEnded = newCallback(videoEndedCallback)
 		cbVideoError = newCallback(videoErrorCallback)
@@ -168,6 +169,8 @@ func (*window) EnableWebView() {
 		cbWebButton = newCallback(webButtonCallback)
 		cbWebMotion = newCallback(webMotionCallback)
 		cbWebScroll = newCallback(webScrollCallback)
+		cbWebScrollBegin = newCallback(webScrollBeginCallback)
+		cbWebScrollDecelerate = newCallback(webScrollDecelerateCallback)
 		cbWebDownloadStarted = newCallback(webDownloadStartedCallback)
 		cbWebDownloadDestination = newCallback(webDownloadDestinationCallback)
 		cbWebDownloadReceived = newCallback(webDownloadReceivedCallback)

@@ -1656,7 +1656,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 			s.touch.blocked = it.ID != 0
 			continue
 		case driver.ItemReleaseOffscreen:
-			s.releaseOffscreen(it.OffscreenID)
+			if ch := canvases.Load(); ch != nil {
+				ch.releaseOffscreen(s, it.OffscreenID)
+			}
 			continue
 		}
 		v := s.view(it.ID)
@@ -1700,7 +1702,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 			s.appear(v, lb, it.Parent)
 			if v.framed && v.el.Get("isConnected").Bool() {
 				// Kept content can move between scroll views without a new drawing, and a new subtree's canvases drew before it reached the page. A subtree still being assembled waits for its root's insert, so each canvas is checked once.
-				s.refreshCanvasScale(v.el)
+				if ch := canvases.Load(); ch != nil {
+					ch.refreshScale(s, v.el)
+				}
 			}
 			s.markGlassDirty()
 		case driver.ItemRemove:
@@ -1808,10 +1812,14 @@ func (s *surface) mount(b *driver.MountBatch) {
 					v.image.draw(v.size)
 				}
 				if v.kind == driver.KindCanvas {
-					s.paint(v)
+					if ch := canvases.Load(); ch != nil {
+						ch.paint(s, v)
+					}
 				}
 				if v.kind == driver.KindShader {
-					s.shadeLater(v)
+					if sh := shaders.Load(); sh != nil {
+						sh.shadeLater(s, v)
+					}
 				}
 				if v.kind == driver.KindGPU && v.gpu != nil {
 					s.resizeGPU(v)
@@ -1835,10 +1843,12 @@ func (s *surface) mount(b *driver.MountBatch) {
 				s.animator.Touch(v.id)
 			}
 		case driver.ItemNative:
-			s.configureNative(v, it.Native)
+			if nh := natives.Load(); nh != nil {
+				nh.configure(s, v, it.Native)
+			}
 		case driver.ItemNativeCommand:
-			if v.component != nil {
-				v.component.Command(it.Value, it.Data)
+			if nh := natives.Load(); nh != nil {
+				nh.command(v, it.Value, it.Data)
 			}
 		case driver.ItemText:
 			s.setText(v, it.Text)
@@ -1847,16 +1857,22 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemImage:
 			s.setImage(v, it.Image)
 		case driver.ItemWeb:
-			s.setWeb(v, it.Web)
+			if wh := webViews.Load(); wh != nil {
+				wh.setWeb(s, v, it.Web)
+			}
 		case driver.ItemWebCommand:
-			s.webCommand(v, it.WebCommand, it.Value, it.Data)
+			if wh := webViews.Load(); wh != nil {
+				wh.command(s, v, it.WebCommand, it.Value, it.Data)
+			}
 		case driver.ItemVideo:
 			if v.video != nil {
-				s.setVideo(v, it.Video)
+				if vh := videos.Load(); vh != nil {
+					vh.setVideo(s, v, it.Video)
+				}
 			}
 		case driver.ItemVideoSeek:
-			if v.video != nil {
-				v.video.seek(it.Time)
+			if vh := videos.Load(); vh != nil {
+				vh.seek(v, it.Time)
 			}
 		case driver.ItemPictureInPictureCommand:
 			if v.video != nil {
@@ -1866,16 +1882,22 @@ func (s *surface) mount(b *driver.MountBatch) {
 			v.modal = it.Modal.Animation
 		case driver.ItemCanvas:
 			if v.kind == driver.KindCanvas {
-				s.setDrawing(v, it.Drawing)
+				if ch := canvases.Load(); ch != nil {
+					ch.setDrawing(s, v, it.Drawing)
+				}
 			}
 		case driver.ItemShader:
-			if v.gl != nil && it.Shader != nil && it.Shader.Role == driver.ShaderFill {
-				s.setShader(v, it.Shader)
-			} else {
-				s.setEffect(v, it.Shader)
+			if sh := shaders.Load(); sh != nil {
+				if v.gl != nil && it.Shader != nil && it.Shader.Role == driver.ShaderFill {
+					sh.setShader(s, v, it.Shader)
+				} else {
+					sh.setEffect(s, v, it.Shader)
+				}
 			}
 		case driver.ItemShaderTransition:
-			s.startTransition(v)
+			if sh := shaders.Load(); sh != nil {
+				sh.startTransition(s, v)
+			}
 		case driver.ItemShaderInput:
 			if v.fx != nil {
 				v.fx.stale = true
@@ -1978,7 +2000,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 		}
 	}
 	s.applyAnimated()
-	s.changedShaders()
+	if sh := shaders.Load(); sh != nil {
+		sh.changedShaders(s)
+	}
 	if s.glass != nil {
 		if s.glass.dirty {
 			s.syncGlass()
@@ -2052,9 +2076,13 @@ func (s *surface) create(id driver.NodeID, kind driver.ViewKind) *view {
 	case driver.KindImage:
 		s.createImage(v)
 	case driver.KindWeb:
-		s.createWeb(v)
+		if wh := webViews.Load(); wh != nil {
+			wh.create(s, v)
+		}
 	case driver.KindVideo:
-		s.createVideo(v)
+		if vh := videos.Load(); vh != nil {
+			vh.create(s, v)
+		}
 	case driver.KindModal:
 		v.el.Call("setAttribute", "aria-modal", "true")
 	case driver.KindCanvas:
@@ -2062,7 +2090,9 @@ func (s *surface) create(id driver.NodeID, kind driver.ViewKind) *view {
 		setStyle(v.inner, map[string]string{"width": "100%", "height": "100%"})
 		v.el.Call("appendChild", v.inner)
 	case driver.KindShader:
-		s.createShader(v)
+		if sh := shaders.Load(); sh != nil {
+			sh.create(s, v)
+		}
 	case driver.KindGPU:
 		s.createGPU(v)
 	case driver.KindScroll:
@@ -2096,9 +2126,13 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 		case driver.KindScroll:
 			v.placeContent()
 		case driver.KindCanvas:
-			s.paint(v)
+			if ch := canvases.Load(); ch != nil {
+				ch.paint(s, v)
+			}
 		case driver.KindShader:
-			s.shadeLater(v)
+			if sh := shaders.Load(); sh != nil {
+				sh.shadeLater(s, v)
+			}
 		case driver.KindGPU:
 			s.resizeGPU(v)
 		}

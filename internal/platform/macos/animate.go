@@ -257,10 +257,12 @@ func (s *surface) tick(period time.Duration, linked bool) {
 		s.stepTransitions(now)
 		s.applyAnimated()
 	})
-	if dirty || selecting {
-		s.staleEffects()
+	if sh := shaders.Load(); sh != nil {
+		if dirty || selecting {
+			sh.staleEffects(s)
+		}
+		sh.drawShaders(s)
 	}
-	s.drawShaders()
 	s.startImages()
 	if len(s.motions) > 0 {
 		s.revisit()
@@ -316,7 +318,11 @@ func (s *surface) applyAnimated() {
 			delete(s.transitions, v)
 		}
 		v.restyle()
-	}, (*view).redraw, (*view).redrawAnimated, func(v *view) driver.NativeComponent {
+	}, (*view).redraw, func(v *view) {
+		if ch := canvases.Load(); ch != nil {
+			ch.redrawAnimated(v)
+		}
+	}, func(v *view) driver.NativeComponent {
 		return v.component
 	}, s.repinBound)
 }
