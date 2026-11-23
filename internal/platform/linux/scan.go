@@ -15,9 +15,10 @@ import (
 	"github.com/nsgo-dev/nsgo/desktop/locales"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/codescan"
+	"github.com/nsgo-dev/nsgo/internal/platform/picked"
 )
 
-// Scanning a code on Linux: the XDG Desktop Portal's Camera interface (org.freedesktop.portal.Camera) checks whether a camera is present (IsCameraPresent), asks the user for access (AccessCamera), and returns a PipeWire file descriptor (OpenPipeWireRemote). GStreamer's pipewiresrc pulls BGRA frames from that stream into a modal GTK 4 window while codescan decodes QR codes and barcodes off the main thread.
+// Scanning a code on Linux: the XDG Desktop Portal's Camera interface (org.freedesktop.portal.Camera) checks whether a camera is present (IsCameraPresent), asks the user for access (AccessCamera), and returns a PipeWire file descriptor (OpenPipeWireRemote). GStreamer's pipewiresrc pulls BGRA frames from that stream into a modal GTK 4 window while codescan decodes QR codes and barcodes off the main thread. TakePhoto shows the same camera with a button that takes the frame shown as the photo.
 
 const (
 	cameraPortalIface = "org.freedesktop.portal.Camera"
@@ -58,6 +59,7 @@ var scanAPI struct {
 	// Static purego callbacks
 	cbPortalResponse uintptr
 	cbCancelClicked  uintptr
+	cbShutterClicked uintptr
 	cbCloseRequest   uintptr
 	cbKeyPressed     uintptr
 }
@@ -66,9 +68,10 @@ var (
 	scanProbeOnce sync.Once
 	scanProbeOK   bool
 
-	// Test hooks for capability and pipeline checks.
+	// Test hooks for capability and pipeline checks, and for the portal's access to the camera.
 	scanCameraAvailable = cameraAvailable
 	scanGSTAvailable    = scanGSTReady
+	scanAccessCamera    = (*window).accessCamera
 )
 
 // bindScanCamera loads the GDBus, GStreamer, and GTK symbols used by the code scanner.
@@ -117,6 +120,7 @@ func bindScanCamera() bool {
 		}
 		scanAPI.cbPortalResponse = newCallback(scanPortalResponse)
 		scanAPI.cbCancelClicked = newCallback(scanCancelClicked)
+		scanAPI.cbShutterClicked = newCallback(scanShutterClicked)
 		scanAPI.cbCloseRequest = newCallback(scanCloseRequest)
 		scanAPI.cbKeyPressed = newCallback(scanKeyPressed)
 		scanAPI.ok = true
@@ -194,14 +198,22 @@ func scanPortalResponseMessage(code uint32) string {
 	}
 }
 
-// codeScanner holds the state of an active Linux camera scan.
+// codeScanner holds the state of an active Linux camera: a scan, or with photo a TakePhoto.
 type codeScanner struct {
 	w        *window
 	id       uint32
 	req      driver.ScanRequest
+	photo    *driver.PickRequest
 	done     atomic.Bool
 	reading  atomic.Bool
 	lastScan atomic.Int64
+
+	// The frame shown last, which the shutter takes as the photo; written by pullFrames.
+	frameMu      sync.Mutex
+	frame        []byte
+	frameW       int
+	frameH       int
+	shutterShown atomic.Bool
 
 	// Portal request subscription, owned by GTK main thread.
 	bus        uintptr
@@ -210,6 +222,7 @@ type codeScanner struct {
 	// GTK dialog widgets, owned by GTK main thread.
 	dialog  uintptr
 	picture uintptr
+	shutter uintptr
 }
 
 // scanCode starts a Linux camera scan via the desktop portal and GStreamer.
@@ -225,12 +238,29 @@ func (w *window) scanCode(r driver.ScanRequest, id uint32) {
 		fail("GStreamer pipewiresrc is unavailable")
 		return
 	}
+	w.openCamera(&codeScanner{w: w, id: id, req: r})
+}
+
+// takePhoto shows the scanner's camera with a shutter for TakePhoto, which answers id with the frame shown as a JPEG.
+func (w *window) takePhoto(r driver.PickRequest, id uint32) {
+	if !scanGSTAvailable() {
+		w.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: id, Text: driver.NoCamera})
+		return
+	}
+	w.openCamera(&codeScanner{w: w, id: id, photo: &r})
+}
+
+// openCamera asks the portal for the camera and shows sc's preview once granted, ending a camera already showing.
+func (w *window) openCamera(sc *codeScanner) {
 	if w.scanner != nil {
 		w.finishScanner(w.scanner, nil, "")
 	}
-	sc := &codeScanner{w: w, id: id, req: r}
 	w.scanner = sc
+	scanAccessCamera(w, sc)
+}
 
+// accessCamera asks the desktop portal for access to the camera for sc, whose Response (scanPortalResponse) opens its stream.
+func (w *window) accessCamera(sc *codeScanner) {
 	appID := w.appID
 	portalQueue() <- func() {
 		bus := portalBus(appID)
@@ -394,9 +424,18 @@ func (sc *codeScanner) startPipelineAndDialog(fd int32) {
 	scanAPI.widgetSetMarginBot(bar, 12)
 	scanAPI.widgetSetMarginInit(bar, 16)
 	scanAPI.widgetSetMarginEnd(bar, 16)
-	cancelBtn := scanAPI.buttonNewWithLabel(cstr(locales.In(sc.w.language).Cancel()))
+	msgs := locales.In(sc.w.language)
+	cancelBtn := scanAPI.buttonNewWithLabel(cstr(msgs.Cancel()))
 	gSignalConnect(cancelBtn, "clicked", scanAPI.cbCancelClicked, sc.w.handle)
 	gtkBoxAppend(bar, cancelBtn)
+	if sc.photo != nil {
+		gtkWindowSetTitle(win, cstr(msgs.TakePhoto()))
+		// The shutter waits for the first frame.
+		sc.shutter = scanAPI.buttonNewWithLabel(cstr(msgs.TakePhoto()))
+		gtkWidgetSetSensitive(sc.shutter, 0)
+		gSignalConnect(sc.shutter, "clicked", scanAPI.cbShutterClicked, sc.w.handle)
+		gtkBoxAppend(bar, sc.shutter)
+	}
 	gtkBoxAppend(vbox, bar)
 
 	gtkWindowSetChild(win, vbox)
@@ -471,6 +510,20 @@ func (sc *codeScanner) pullFrames(pipeline, sink, bus uintptr, fd int32) {
 			}
 		})
 
+		if sc.photo != nil {
+			sc.frameMu.Lock()
+			sc.frame, sc.frameW, sc.frameH = pix, width, height
+			sc.frameMu.Unlock()
+			if sc.shutterShown.CompareAndSwap(false, true) {
+				sc.w.post(func() {
+					if !sc.done.Load() && sc.shutter != 0 {
+						gtkWidgetSetSensitive(sc.shutter, 1)
+					}
+				})
+			}
+			continue
+		}
+
 		// Decode at most every scanDecodeInterval without stacking decodes.
 		now := time.Now().UnixNano()
 		if now-sc.lastScan.Load() < int64(scanDecodeInterval) || !sc.reading.CompareAndSwap(false, true) {
@@ -525,6 +578,39 @@ func scanCancelClicked(_, data uintptr) {
 	}
 }
 
+func scanShutterClicked(_, data uintptr) {
+	if w := windowOf(data); w != nil && w.scanner != nil {
+		w.shootPhoto(w.scanner)
+	}
+}
+
+// shootPhoto ends sc's camera and answers its TakePhoto with the frame shown last, encoded off the main thread.
+func (w *window) shootPhoto(sc *codeScanner) {
+	if sc.photo == nil {
+		return
+	}
+	sc.frameMu.Lock()
+	pix, width, height := sc.frame, sc.frameW, sc.frameH
+	sc.frameMu.Unlock()
+	if len(pix) == 0 || !w.endScanner(sc) {
+		return
+	}
+	r, id, eng := *sc.photo, sc.id, w.engine
+	if eng == nil {
+		return
+	}
+	go func() {
+		photo, err := picked.Photo(r, pix, width, height, width*4)
+		ev := driver.Event{Kind: driver.EventPick, Count: id}
+		if err != nil {
+			ev.Text = err.Error()
+		} else {
+			ev.Data = []driver.PickedFile{photo}
+		}
+		eng.Dispatch(ev)
+	}()
+}
+
 func scanCloseRequest(_, data uintptr) int32 {
 	if w := windowOf(data); w != nil && w.scanner != nil {
 		w.finishScanner(w.scanner, nil, "")
@@ -542,10 +628,24 @@ func scanKeyPressed(_, keyval, _, _, data uintptr) int32 {
 	return 0
 }
 
-// finishScanner tears down sc once on the GTK main thread and dispatches EventPick.
+// finishScanner tears down sc once on the GTK main thread and dispatches EventPick: with code for a scan, and with nothing when the user closed the camera.
 func (w *window) finishScanner(sc *codeScanner, code *driver.ScannedCode, errText string) {
-	if sc == nil || !sc.done.CompareAndSwap(false, true) {
+	if !w.endScanner(sc) {
 		return
+	}
+	ev := driver.Event{Kind: driver.EventPick, Count: sc.id, Text: errText}
+	if code != nil {
+		ev.Data = code
+	}
+	if w.engine != nil {
+		w.engine.Dispatch(ev)
+	}
+}
+
+// endScanner tears down sc on the GTK main thread, reporting whether it had not ended already.
+func (w *window) endScanner(sc *codeScanner) bool {
+	if sc == nil || !sc.done.CompareAndSwap(false, true) {
+		return false
 	}
 	if sc.requestSub != 0 && sc.bus != 0 {
 		gDBusConnectionSignalUnsubscribe(sc.bus, sc.requestSub)
@@ -555,18 +655,13 @@ func (w *window) finishScanner(sc *codeScanner, code *driver.ScannedCode, errTex
 		dialog := sc.dialog
 		sc.dialog = 0
 		sc.picture = 0
+		sc.shutter = 0
 		gtkWindowDestroy(dialog)
 	}
 	if w.scanner == sc {
 		w.scanner = nil
 	}
-	ev := driver.Event{Kind: driver.EventPick, Count: sc.id, Text: errText}
-	if code != nil {
-		ev.Data = code
-	}
-	if w.engine != nil {
-		w.engine.Dispatch(ev)
-	}
+	return true
 }
 
 // closeScanner cancels any active scanner when window w closes.

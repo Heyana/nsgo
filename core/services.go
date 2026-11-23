@@ -454,7 +454,7 @@ var ErrNoCamera = errors.New("core: no camera to take a photo with")
 // or with nil when they cancelled; err says what failed, such as a
 // refused permission or ErrNoCamera. iOS shows UIImagePickerController
 // and needs NSCameraUsageDescription in the app's Info.plist; Android
-// starts the camera app, and the web a file chooser that offers it.
+// starts the camera app, and the web a file chooser that offers it. The desktops show ScanCode's camera preview with a button that takes the photo: macOS in an AppKit sheet with AVCapturePhotoOutput, needing NSCameraUsageDescription as iOS does, and Windows (MediaCapture) and Linux (the desktop Camera portal with GStreamer pipewiresrc) in a modal over the window, encoding the frame shown as the JPEG.
 func (cx *Scope) TakePhoto(o PhotoOptions, done func(photo *PickedFile, err error)) {
 	t := cx.tree()
 	if t == nil || cx.denied(servicePicker, "") {
@@ -469,6 +469,10 @@ func (cx *Scope) TakePhoto(o PhotoOptions, done func(photo *PickedFile, err erro
 	r := driver.PickRequest{Limit: 1, MaxDimension: max(o.MaxDimension, 0), Quality: min(max(o.Quality, 0), 1)}
 	t.request(cx, driver.MountItem{Kind: driver.ItemTakePhoto, Pick: &r}, func(ev driver.Event) {
 		if done == nil {
+			return
+		}
+		if ev.Text == driver.NoCamera {
+			done(nil, ErrNoCamera)
 			return
 		}
 		if ev.Text != "" {

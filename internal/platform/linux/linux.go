@@ -1209,6 +1209,9 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemScanCode:
 			w.scanCode(*it.Scan, it.Count)
 			continue
+		case driver.ItemTakePhoto:
+			w.takePhoto(*it.Pick, it.Count)
+			continue
 		case driver.ItemPickFiles:
 			w.pickFiles(*it.Files, it.Count)
 			continue

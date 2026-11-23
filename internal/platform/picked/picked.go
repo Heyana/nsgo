@@ -4,12 +4,13 @@
 // applies a JPEG's EXIF orientation, scales what is larger than the
 // request's MaxDimension and encodes again what needs it, as NSH's
 // pickers do; Apple platforms, Android and the web do the same with their
-// own codecs.
+// own codecs. It also encodes the photos Windows and Linux take from their cameras' frames (Photo).
 package picked
 
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"image"
 	"image/draw"
 	"image/gif"
@@ -55,6 +56,33 @@ func ReadFiles(r driver.PickRequest, paths []string) []driver.PickedFile {
 		files = append(files, f)
 	}
 	return Prepare(r, files)
+}
+
+// Photo encodes a camera frame of BGRA pixels, stride bytes a row, as the JPEG photo r asks for: scaled to its MaxDimension and at its quality. Windows and Linux take photos as frames of the preview their code scanners show.
+func Photo(r driver.PickRequest, pix []byte, width, height, stride int) (driver.PickedFile, error) {
+	if width <= 0 || height <= 0 || stride < width*4 || len(pix) < stride*(height-1)+width*4 {
+		return driver.PickedFile{}, errors.New("the camera's frame is incomplete")
+	}
+	frame := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		src, dst := pix[y*stride:y*stride+width*4], frame.Pix[y*frame.Stride:]
+		for x := 0; x < width*4; x += 4 {
+			dst[x], dst[x+1], dst[x+2], dst[x+3] = src[x+2], src[x+1], src[x], 0xff
+		}
+	}
+	var m image.Image = frame
+	size := r.ScaledSize(driver.Size{Width: driver.Points(width), Height: driver.Points(height)})
+	if w, h := int(size.Width), int(size.Height); w != width || h != height {
+		dst := image.NewRGBA(image.Rect(0, 0, w, h))
+		xdraw.CatmullRom.Scale(dst, dst.Bounds(), frame, frame.Bounds(), xdraw.Src, nil)
+		m = dst
+	}
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, m, &jpeg.Options{Quality: int(r.JPEGQuality()*100 + 0.5)}); err != nil {
+		return driver.PickedFile{}, err
+	}
+	return driver.PickedFile{Name: "photo.jpg", MIME: "image/jpeg", Data: out.Bytes(),
+		Size: driver.Size{Width: driver.Points(m.Bounds().Dx()), Height: driver.Points(m.Bounds().Dy())}}, nil
 }
 
 func prepare(r driver.PickRequest, f *driver.PickedFile) {

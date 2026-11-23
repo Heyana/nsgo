@@ -35,6 +35,9 @@ exitFullScreen: "Exit Full Screen"
 close: "Close"
 cancel: "Cancel"
 scanCode: "Scan Code"
+takePhoto:
+  message: "Take Photo"
+  description: The title of the desktop camera that TakePhoto shows, and its button that takes the photo.
 guideDrag:
   message: "Drag {app} to the list above to allow {permission}."
   description: The macOS guide's panel under System Settings, which holds the app for the user to drag into the list of a privacy pane; app is the app's name and permission the pane's title, both shown in bold.

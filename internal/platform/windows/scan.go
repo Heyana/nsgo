@@ -12,9 +12,10 @@ import (
 	"github.com/nsgo-dev/nsgo/desktop/locales"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/codescan"
+	"github.com/nsgo-dev/nsgo/internal/platform/picked"
 )
 
-// Scanning a code on Windows: WinRT's MediaCapture opens the default video capture device in CPU memory mode and streams BGRA8 frames through a MediaFrameReader; a modal card drawn in Direct2D shows the live preview with a Cancel button while codescan decodes frames off the UI thread.
+// Scanning a code on Windows: WinRT's MediaCapture opens the default video capture device in CPU memory mode and streams BGRA8 frames through a MediaFrameReader; a modal card drawn in Direct2D shows the live preview with a Cancel button while codescan decodes frames off the UI thread. TakePhoto shows the same card with a button that takes the frame shown as the photo.
 
 var (
 	mf                  = syscall.NewLazyDLL("mf.dll")
@@ -125,9 +126,10 @@ var (
 	mfScanStartupOnce sync.Once
 	mfScanStartupOK   bool
 
-	// Test hooks for capability and permission checks.
+	// Test hooks for capability and permission checks, and for starting the camera.
 	scanCameraAvailable = cameraAvailable
 	scanPermissionState = permissionStatus
+	scanStartCapture    = (*shownScanner).startCapture
 )
 
 // cameraAvailable reports whether Media Foundation enumerates at least one video capture device and WinRT's MediaCapture class can be reached.
@@ -198,6 +200,7 @@ type shownScanner struct {
 	w        *window
 	id       uint32
 	req      driver.ScanRequest
+	photo    *driver.PickRequest // TakePhoto's request, nil for a scan
 	done     atomic.Bool
 	reading  atomic.Bool
 	lastScan atomic.Int64 // UnixNano of last decode attempt
@@ -221,15 +224,19 @@ type shownScanner struct {
 	bitmapSeq uint64
 
 	// UI state on the UI thread.
-	labelLayout *comObject
-	card        rectF
-	preview     rectF
-	band        rectF
-	cancelBtn   rectF
-	hover       bool
-	pressed     bool
-	restore     *textInput
-	ownWindow   bool
+	labelLayout   *comObject
+	shutterLayout *comObject
+	card          rectF
+	preview       rectF
+	band          rectF
+	cancelBtn     rectF
+	shutterBtn    rectF
+	hover         bool
+	pressed       bool
+	// shutterHover and shutterPressed are hover and pressed for TakePhoto's shutter.
+	shutterHover, shutterPressed bool
+	restore                      *textInput
+	ownWindow                    bool
 }
 
 // scanCode starts a Windows camera scan for r and answers id with EventPick.
@@ -249,10 +256,30 @@ func (w *window) scanCode(r driver.ScanRequest, id uint32) {
 		fail("camera access denied")
 		return
 	}
+	w.openCamera(&shownScanner{w: w, id: id, req: r})
+}
+
+// takePhoto shows the scanner's camera with a shutter for TakePhoto, which answers id with the frame shown as a JPEG.
+func (w *window) takePhoto(r driver.PickRequest, id uint32) {
+	fail := func(why string) {
+		w.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: id, Text: why})
+	}
+	if !scanCameraAvailable() {
+		fail(driver.NoCamera)
+		return
+	}
+	if status, _ := scanPermissionState(driver.PermissionCamera); status == driver.PermissionDenied {
+		fail("camera access denied")
+		return
+	}
+	w.openCamera(&shownScanner{w: w, id: id, photo: &r})
+}
+
+// openCamera shows sc's card over the window and starts its capture, ending a camera already showing.
+func (w *window) openCamera(sc *shownScanner) {
 	if w.scanner != nil {
 		w.finishScanner(w.scanner, nil, "")
 	}
-	sc := &shownScanner{w: w, id: id, req: r}
 	w.scanner = sc
 	if in := w.focusedField(); in != nil {
 		sc.restore = in
@@ -265,7 +292,7 @@ func (w *window) scanCode(r driver.ScanRequest, id uint32) {
 		w.orderFront()
 	}
 	w.redrawAll()
-	sc.startCapture()
+	scanStartCapture(sc)
 }
 
 // startCapture activates MediaCapture with CPU BGRA8 frame reading.
@@ -588,6 +615,9 @@ func (sc *shownScanner) onFrameArrived() {
 			sc.w.redrawAll()
 		}
 	})
+	if sc.photo != nil {
+		return
+	}
 
 	// Decode at most every scanDecodeInterval, never stacking decodes.
 	now := time.Now().UnixNano()
@@ -636,13 +666,54 @@ func closeAndRelease(o *comObject) {
 	o.release()
 }
 
-// finishScanner ends sc once, releases resources, restores focus and dispatches EventPick.
+// finishScanner ends sc once, releases resources, restores focus and dispatches EventPick: with code for a scan, and with nothing when the user closed the camera.
 func (w *window) finishScanner(sc *shownScanner, code *driver.ScannedCode, errText string) {
-	if sc == nil || !sc.done.CompareAndSwap(false, true) {
+	if !w.endScanner(sc) {
 		return
 	}
+	ev := driver.Event{Kind: driver.EventPick, Count: sc.id, Text: errText}
+	if code != nil {
+		ev.Data = code
+	}
+	if w.engine != nil {
+		w.engine.Dispatch(ev)
+	}
+}
+
+// shootPhoto ends sc's camera and answers its TakePhoto with the frame shown last, encoded off the UI thread. It does nothing before a frame shows.
+func (w *window) shootPhoto(sc *shownScanner) {
+	if sc.photo == nil {
+		return
+	}
+	sc.frameMu.Lock()
+	pix, width, height := sc.framePix, sc.frameW, sc.frameH
+	sc.frameMu.Unlock()
+	if len(pix) == 0 || !w.endScanner(sc) {
+		return
+	}
+	r, id, eng := *sc.photo, sc.id, w.engine
+	if eng == nil {
+		return
+	}
+	go func() {
+		photo, err := picked.Photo(r, pix, width, height, width*4)
+		ev := driver.Event{Kind: driver.EventPick, Count: id}
+		if err != nil {
+			ev.Text = err.Error()
+		} else {
+			ev.Data = []driver.PickedFile{photo}
+		}
+		eng.Dispatch(ev)
+	}()
+}
+
+// endScanner ends sc, releasing its camera and card and giving the focus back, and reports whether it had not ended already.
+func (w *window) endScanner(sc *shownScanner) bool {
+	if sc == nil || !sc.done.CompareAndSwap(false, true) {
+		return false
+	}
 	sc.stopCapture()
-	releaseAll(&sc.bitmap, &sc.labelLayout)
+	releaseAll(&sc.bitmap, &sc.labelLayout, &sc.shutterLayout)
 	if w.scanner == sc {
 		w.scanner = nil
 	}
@@ -656,13 +727,7 @@ func (w *window) finishScanner(sc *shownScanner, code *driver.ScannedCode, errTe
 		showWindow.Call(w.hwnd, swHide)
 	}
 	w.redrawAll()
-	ev := driver.Event{Kind: driver.EventPick, Count: sc.id, Text: errText}
-	if code != nil {
-		ev.Data = code
-	}
-	if w.engine != nil {
-		w.engine.Dispatch(ev)
-	}
+	return true
 }
 
 // endWindowScanner cancels any active scanner when w is destroyed.
@@ -672,7 +737,7 @@ func endWindowScanner(w *window) {
 	}
 }
 
-// layout places the scanner card, preview box, and Cancel button inside size.
+// layout places the scanner card, preview box, and Cancel button inside size, and TakePhoto's shutter at the trailing end with Cancel before it.
 func (sc *shownScanner) layout(size driver.Size) {
 	width := float32(min(max(float64(size.Width)-32, 320), scanCardW))
 	previewH := float32(min(max(float64(size.Height)-float64(scanBandH)-32, 180), scanPreviewH))
@@ -682,21 +747,29 @@ func (sc *shownScanner) layout(size driver.Size) {
 	sc.card = rectF{left, top, left + width, top + totalH}
 	sc.preview = rectF{left, top, left + width, top + previewH}
 	sc.band = rectF{left, top + previewH, left + width, top + totalH}
-	sc.cancelBtn = rectF{
-		left + width - scanCardPad - scanButtonW,
-		sc.band.top + scanCardPad,
-		left + width - scanCardPad,
-		sc.band.top + scanCardPad + scanButtonH,
+	button := func(right float32) rectF {
+		return rectF{right - scanButtonW, sc.band.top + scanCardPad, right, sc.band.top + scanCardPad + scanButtonH}
 	}
-	if sc.labelLayout == nil {
-		l, _ := alertText(scanCancelLabel(sc.w.language), driver.Font{Size: 14}, scanButtonW, sc.w.rtl)
+	sc.cancelBtn = button(left + width - scanCardPad)
+	if sc.photo != nil {
+		sc.shutterBtn = sc.cancelBtn
+		sc.cancelBtn = button(sc.shutterBtn.left - scanCardPad/2)
+	}
+	label := func(text string) *comObject {
+		l, _ := alertText(text, driver.Font{Size: 14}, scanButtonW, sc.w.rtl)
 		if l != nil {
 			l.call(formatSetTextAlignment, dwAlignCenter)
 			l.call(formatSetParagraphAlignment, dwParagraphCenter)
 			l.callF(layoutSetMaxWidth, 1, f32(scanButtonW))
 			l.callF(layoutSetMaxHeight, 1, f32(scanButtonH))
 		}
-		sc.labelLayout = l
+		return l
+	}
+	if sc.labelLayout == nil {
+		sc.labelLayout = label(scanCancelLabel(sc.w.language))
+	}
+	if sc.photo != nil && sc.shutterLayout == nil {
+		sc.shutterLayout = label(locales.In(sc.w.language).TakePhoto())
 	}
 }
 
@@ -724,19 +797,36 @@ func (p *painter) drawScanner(size driver.Size) {
 	}
 
 	p.fillRect(rectF{sc.card.left, sc.band.top, sc.card.right, sc.band.top + 1}, border)
-	fill := button
-	switch {
-	case sc.pressed && sc.hover:
-		fill = fill&^0xff | fill&0xff*8/10
-	case sc.hover:
-		fill = fill&^0xff | fill&0xff*9/10
+	drawButton := func(r rectF, label *comObject, hover, pressed bool, text driver.Color) {
+		fill := button
+		switch {
+		case pressed && hover:
+			fill = fill&^0xff | fill&0xff*8/10
+		case hover:
+			fill = fill&^0xff | fill&0xff*9/10
+		}
+		p.fillRounded(rectF{r.left - 1, r.top - 1, r.right + 1, r.bottom + 1}, 5, border)
+		p.fillRounded(r, 4, fill)
+		if label != nil {
+			p.dc.callPoint(rtDrawTextLayout, r.left, r.top, label.ptr(), p.solid(text).ptr(), d2dDrawTextEnableColorFont)
+		}
 	}
-	r := sc.cancelBtn
-	p.fillRounded(rectF{r.left - 1, r.top - 1, r.right + 1, r.bottom + 1}, 5, border)
-	p.fillRounded(r, 4, fill)
-	if sc.labelLayout != nil {
-		p.dc.callPoint(rtDrawTextLayout, r.left, r.top, sc.labelLayout.ptr(), p.solid(text).ptr(), d2dDrawTextEnableColorFont)
+	drawButton(sc.cancelBtn, sc.labelLayout, sc.hover, sc.pressed, text)
+	if sc.photo != nil {
+		// The shutter is dimmed until a frame shows.
+		shutterText := text
+		if !sc.hasFrame() {
+			shutterText = shutterText&^0xff | shutterText&0xff*4/10
+		}
+		drawButton(sc.shutterBtn, sc.shutterLayout, sc.shutterHover, sc.shutterPressed, shutterText)
 	}
+}
+
+// hasFrame reports whether a camera frame has shown, which the shutter takes.
+func (sc *shownScanner) hasFrame() bool {
+	sc.frameMu.Lock()
+	defer sc.frameMu.Unlock()
+	return len(sc.framePix) > 0
 }
 
 // previewBitmap uploads the latest BGRA8 camera frame into a Direct2D bitmap.
@@ -779,8 +869,13 @@ func fitAspect(box rectF, srcW, srcH float32) rectF {
 	return rectF{x, y, x + dw, y + dh}
 }
 
-func (sc *shownScanner) hitCancel(p driver.Point) bool {
-	r := sc.cancelBtn
+func (sc *shownScanner) hitCancel(p driver.Point) bool { return hitRect(sc.cancelBtn, p) }
+
+func (sc *shownScanner) hitShutter(p driver.Point) bool {
+	return sc.photo != nil && hitRect(sc.shutterBtn, p)
+}
+
+func hitRect(r rectF, p driver.Point) bool {
 	return float32(p.X) >= r.left && float32(p.X) < r.right && float32(p.Y) >= r.top && float32(p.Y) < r.bottom
 }
 
@@ -790,22 +885,25 @@ func (w *window) scannerMouse(message uint32, at driver.Point) bool {
 	if sc == nil {
 		return false
 	}
-	hover := sc.hitCancel(at)
+	hover, shutterHover := sc.hitCancel(at), sc.hitShutter(at)
 	switch message {
 	case wmLButtonDown:
-		sc.pressed = hover
+		sc.pressed, sc.shutterPressed = hover, shutterHover
 		setCapture.Call(w.hwnd)
 	case wmLButtonUp:
-		pressed := sc.pressed
-		sc.pressed = false
+		pressed, shutterPressed := sc.pressed, sc.shutterPressed
+		sc.pressed, sc.shutterPressed = false, false
 		releaseCapture.Call()
 		if pressed && hover {
 			w.finishScanner(sc, nil, "")
 			return true
 		}
+		if shutterPressed && shutterHover {
+			w.shootPhoto(sc)
+		}
 	}
-	if hover != sc.hover || message != wmMouseMove {
-		sc.hover = hover
+	if hover != sc.hover || shutterHover != sc.shutterHover || message != wmMouseMove {
+		sc.hover, sc.shutterHover = hover, shutterHover
 		w.redrawAll()
 	}
 	return true
@@ -817,8 +915,11 @@ func (w *window) scannerKey(vk uintptr) bool {
 	if sc == nil {
 		return false
 	}
-	switch vk {
-	case vkEscape, vkReturn, vkSpace:
+	switch {
+	case sc.photo != nil && (vk == vkReturn || vk == vkSpace):
+		// The shutter is TakePhoto's default button.
+		w.shootPhoto(sc)
+	case vk == vkEscape || vk == vkReturn || vk == vkSpace:
 		w.finishScanner(sc, nil, "")
 	}
 	return true

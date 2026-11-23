@@ -112,6 +112,7 @@ func (w *window) environment() driver.Environment {
 		Speech:                speechAvailable(),
 		Speak:                 speakAvailable(),
 		ScanCode:              scanCameraAvailable(),
+		Camera:                scanCameraAvailable(),
 		Gamepads:              true,
 		Audio:                 audioAvailable(),
 		AudioPlaybackControls: audioAvailable(),

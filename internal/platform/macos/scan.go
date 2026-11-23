@@ -22,30 +22,46 @@ var (
 )
 
 // AppKit and metadata callbacks run on main. AVFoundation starts and
-// stops the capture session on a worker.
+// stops the capture session on a worker. With photo the scanner is TakePhoto's camera: its output is an AVCapturePhotoOutput and a shutter takes the photo.
 type scanner struct {
 	s       *surface
 	id      uint32
 	request driver.ScanRequest
+	photo   *driver.PickRequest
 
 	parent, window, delegate objc.ID
 	session, output          objc.ID
+	shutter                  objc.ID // TakePhoto's button, enabled once the session runs
+	shooting                 bool
 	stop                     func()
 }
 
 func (s *surface) scanCode(r driver.ScanRequest, id uint32) {
+	s.openCamera(&scanner{s: s, id: id, request: r}, "scanning a code")
+}
+
+// takePhoto shows the scanner's camera with a shutter, which answers id with the photo it takes.
+func (s *surface) takePhoto(r driver.PickRequest, id uint32) {
+	s.openCamera(&scanner{s: s, id: id, photo: &r}, "taking a photo")
+}
+
+// openCamera has the user allow the camera and shows scan's, or answers with why it cannot; doing names what it is for in the log.
+func (s *surface) openCamera(scan *scanner, doing string) {
 	if s.scanner != nil {
-		s.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: id, Text: "a scanner is already open for this surface"})
+		s.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: scan.id, Text: "a camera is already open for this surface"})
 		return
 	}
-	scan := &scanner{s: s, id: id, request: r}
 	s.scanner = scan
 	if apple.ScanCamera() == 0 {
-		scan.finish(nil, driver.NoScanCamera)
+		why := driver.NoScanCamera
+		if scan.photo != nil {
+			why = driver.NoCamera
+		}
+		scan.finish(nil, why)
 		return
 	}
 	if !privacy.DeclaresUsage("NSCameraUsageDescription") {
-		log.Print("nsgo: scanning a code needs NSCameraUsageDescription in the app's Info.plist (nsgo.yaml's apple.info)")
+		log.Printf("nsgo: %s needs NSCameraUsageDescription in the app's Info.plist (nsgo.yaml's apple.info)", doing)
 		scan.finish(nil, "the app declares no NSCameraUsageDescription")
 		return
 	}
@@ -66,10 +82,20 @@ func (s *surface) scanCode(r driver.ScanRequest, id uint32) {
 func (sc *scanner) present() {
 	device := apple.ScanCamera()
 	if device == 0 {
-		sc.finish(nil, driver.NoScanCamera)
+		why := driver.NoScanCamera
+		if sc.photo != nil {
+			why = driver.NoCamera
+		}
+		sc.finish(nil, why)
 		return
 	}
-	session, output, why := apple.NewScanCapture(device, sc.request)
+	var session, output objc.ID
+	var why string
+	if sc.photo != nil {
+		session, output, why = apple.NewPhotoCapture(device)
+	} else {
+		session, output, why = apple.NewScanCapture(device, sc.request)
+	}
 	if why != "" {
 		sc.finish(nil, why)
 		return
@@ -78,7 +104,9 @@ func (sc *scanner) present() {
 	scannerOnce.Do(registerScanner)
 	sc.delegate = objc.ID(scannerDelegate).Send(selNew)
 	scanners[sc.delegate] = sc
-	output.Send(sel("setMetadataObjectsDelegate:queue:"), sc.delegate, apple.MainQueue())
+	if sc.photo == nil {
+		output.Send(sel("setMetadataObjectsDelegate:queue:"), sc.delegate, apple.MainQueue())
+	}
 	sc.showWindow()
 }
 
@@ -124,7 +152,11 @@ func (sc *scanner) makeWindow() objc.ID {
 	w := objc.ID(apple.Class("NSWindow")).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
 		apple.Rect(0, 0, width, height+footer), uint(titled|closable), uint(nsBackingStoreBuffered), false)
 	w.Send(sel("setReleasedWhenClosed:"), false)
-	w.Send(sel("setTitle:"), apple.NSString(msgs.ScanCode()))
+	title := msgs.ScanCode()
+	if sc.photo != nil {
+		title = msgs.TakePhoto()
+	}
+	w.Send(sel("setTitle:"), apple.NSString(title))
 	w.Send(selSetDelegate, sc.delegate)
 	content := w.Send(sel("contentView"))
 
@@ -138,13 +170,24 @@ func (sc *scanner) makeWindow() objc.ID {
 	content.Send(sel("addSubview:"), view)
 	view.Send(selRelease)
 
-	cancel := objc.ID(apple.Class("NSButton")).Send(sel("buttonWithTitle:target:action:"), apple.NSString(msgs.Cancel()),
-		sc.delegate, sel("cancel:"))
-	cancel.Send(sel("setKeyEquivalent:"), apple.NSString("\x1b"))
-	cancel.Send(sel("sizeToFit"))
-	size := objc.Send[apple.CGRect](cancel, sel("frame")).Size
-	cancel.Send(selSetFrame, apple.Rect(width-buttonInset-size.Width, (footer-size.Height)/2, size.Width, size.Height))
-	content.Send(sel("addSubview:"), cancel)
+	// Buttons line up from the trailing edge: TakePhoto's shutter, then Cancel.
+	right := float64(width - buttonInset)
+	button := func(title, action, key string) objc.ID {
+		b := objc.ID(apple.Class("NSButton")).Send(sel("buttonWithTitle:target:action:"), apple.NSString(title), sc.delegate, sel(action))
+		b.Send(sel("setKeyEquivalent:"), apple.NSString(key))
+		b.Send(sel("sizeToFit"))
+		size := objc.Send[apple.CGRect](b, sel("frame")).Size
+		b.Send(selSetFrame, apple.Rect(right-size.Width, (footer-size.Height)/2, size.Width, size.Height))
+		right -= size.Width + 8
+		content.Send(sel("addSubview:"), b)
+		return b
+	}
+	if sc.photo != nil {
+		sc.shutter = button(msgs.TakePhoto(), "shutter:", "\r")
+		sc.shutter.Send(sel("setEnabled:"), false)
+		w.Send(sel("setDefaultButtonCell:"), sc.shutter.Send(sel("cell")))
+	}
+	cancel := button(msgs.Cancel(), "cancel:", "\x1b")
 	w.Send(sel("setInitialFirstResponder:"), cancel)
 	return w
 }
@@ -153,19 +196,71 @@ func (sc *scanner) start() {
 	if sc.s.scanner != sc || sc.stop != nil {
 		return
 	}
-	sc.stop = apple.StartScanCapture(sc.session, func() { sc.finish(nil, "the camera cannot be used") })
+	running := func() {
+		if sc.s.scanner == sc && sc.shutter != 0 && !sc.shooting {
+			sc.shutter.Send(sel("setEnabled:"), true)
+		}
+	}
+	sc.stop = apple.StartCapture(sc.session, running, func() { sc.finish(nil, "the camera cannot be used") })
+}
+
+// shoot asks the photo output for a photo, which photoTaken answers.
+func (sc *scanner) shoot() {
+	if sc.photo == nil || sc.shooting || sc.s.scanner != sc {
+		return
+	}
+	sc.shooting = true
+	sc.shutter.Send(sel("setEnabled:"), false)
+	sc.output.Send(sel("capturePhotoWithSettings:delegate:"), objc.ID(apple.Class("AVCapturePhotoSettings")).Send(sel("photoSettings")), sc.delegate)
+}
+
+// photoTaken ends the camera and answers TakePhoto with data, the photo's file, upright and prepared as it asks, or with why it failed.
+func (sc *scanner) photoTaken(data []byte, why string) {
+	if sc.s.scanner != sc {
+		return
+	}
+	if why == "" && len(data) == 0 {
+		why = "the camera took no photo"
+	}
+	r, id, closed := *sc.photo, sc.id, sc.s.closed
+	sc.end()
+	if closed {
+		return
+	}
+	if why != "" {
+		sc.s.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: id, Text: why})
+		return
+	}
+	// PreparePicked turns it upright as it encodes it again at the quality asked for.
+	r.Quality = r.JPEGQuality()
+	f := apple.PreparePicked(r, driver.PickedFile{Name: "photo.jpg", Data: data})
+	sc.s.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: id, Data: []driver.PickedFile{f}})
 }
 
 func (sc *scanner) finish(code *driver.ScannedCode, why string) {
 	if sc.s.scanner != sc {
 		return
 	}
+	sc.end()
+	if !sc.s.closed {
+		ev := driver.Event{Kind: driver.EventPick, Count: sc.id, Text: why}
+		if code != nil {
+			ev.Data = code
+		}
+		sc.s.engine.Dispatch(ev)
+	}
+}
+
+// end closes the camera's window and stops its session.
+func (sc *scanner) end() {
 	sc.s.scanner = nil
 	if sc.delegate != 0 {
 		delete(scanners, sc.delegate)
 	}
 	if sc.output != 0 {
-		sc.output.Send(sel("setMetadataObjectsDelegate:queue:"), objc.ID(0), objc.ID(0))
+		if sc.photo == nil {
+			sc.output.Send(sel("setMetadataObjectsDelegate:queue:"), objc.ID(0), objc.ID(0))
+		}
 		sc.output.Send(selRelease)
 	}
 	if sc.window != 0 {
@@ -185,18 +280,11 @@ func (sc *scanner) finish(code *driver.ScannedCode, why string) {
 	} else if sc.session != 0 {
 		sc.session.Send(selRelease)
 	}
-	if !sc.s.closed {
-		ev := driver.Event{Kind: driver.EventPick, Count: sc.id, Text: why}
-		if code != nil {
-			ev.Data = code
-		}
-		sc.s.engine.Dispatch(ev)
-	}
 }
 
 func registerScanner() {
 	var protocols []*objc.Protocol
-	for _, name := range []string{"AVCaptureMetadataOutputObjectsDelegate", "NSWindowDelegate"} {
+	for _, name := range []string{"AVCaptureMetadataOutputObjectsDelegate", "AVCapturePhotoCaptureDelegate", "NSWindowDelegate"} {
 		if p := objc.GetProtocol(name); p != nil {
 			protocols = append(protocols, p)
 		}
@@ -231,6 +319,32 @@ func registerScanner() {
 			if sc := scanners[self]; sc != nil {
 				sc.finish(nil, "")
 			}
+		},
+	}, {
+		Cmd: sel("shutter:"),
+		Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
+			if sc := scanners[self]; sc != nil {
+				sc.shoot()
+			}
+		},
+	}, {
+		// AVFoundation answers on a queue of its own.
+		Cmd: sel("captureOutput:didFinishProcessingPhoto:error:"),
+		Fn: func(self objc.ID, _ objc.SEL, _, photo, err objc.ID) {
+			var data []byte
+			why := ""
+			if err != 0 {
+				if why = apple.GoString(err.Send(sel("localizedDescription"))); why == "" {
+					why = "the camera could not take the photo"
+				}
+			} else if photo != 0 {
+				data = apple.Bytes(photo.Send(sel("fileDataRepresentation")))
+			}
+			apple.OnMain(func() {
+				if sc := scanners[self]; sc != nil {
+					sc.photoTaken(data, why)
+				}
+			})
 		},
 	}})
 }

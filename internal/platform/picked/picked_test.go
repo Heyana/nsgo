@@ -45,6 +45,46 @@ func picture(w, h int) *image.RGBA {
 	return m
 }
 
+// TestPhotoEncodesTheFrame encodes a BGRA camera frame whose rows are padded: the JPEG keeps its colors, in RGB, and is scaled to MaxDimension.
+func TestPhotoEncodesTheFrame(t *testing.T) {
+	const width, height, stride = 8, 4, 40
+	pix := make([]byte, stride*height)
+	for y := range height {
+		for x := range width {
+			// Blue in BGRA order, its alpha left 0 as some cameras do.
+			pix[y*stride+x*4] = 255
+		}
+	}
+	for _, c := range []struct {
+		r    driver.PickRequest
+		size driver.Size
+	}{
+		{driver.PickRequest{Limit: 1}, driver.Size{Width: 8, Height: 4}},
+		{driver.PickRequest{Limit: 1, MaxDimension: 4, Quality: 0.5}, driver.Size{Width: 4, Height: 2}},
+	} {
+		f, err := Photo(c.r, pix, width, height, stride)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.MIME != "image/jpeg" || f.Name != "photo.jpg" || f.Size != c.size {
+			t.Errorf("%+v: the photo is %s %s %v", c.r, f.Name, f.MIME, f.Size)
+		}
+		m, err := jpeg.Decode(bytes.NewReader(f.Data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b := m.Bounds(); b.Dx() != int(c.size.Width) || b.Dy() != int(c.size.Height) {
+			t.Errorf("%+v: the JPEG is %v", c.r, b)
+		}
+		if r, g, b, _ := m.At(1, 1).RGBA(); r > 0x2000 || g > 0x2000 || b < 0xd000 {
+			t.Errorf("%+v: a blue pixel reads %x %x %x", c.r, r, g, b)
+		}
+	}
+	if _, err := Photo(driver.PickRequest{}, pix[:stride*3], width, height, stride); err == nil {
+		t.Error("a short frame was encoded")
+	}
+}
+
 func TestPrepare(t *testing.T) {
 	photo := withOrientation(t, picture(40, 20), 6)
 	if got := orientation(photo); got != 6 {

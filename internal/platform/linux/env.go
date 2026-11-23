@@ -118,6 +118,7 @@ func (w *window) environment() driver.Environment {
 		LowPowerMode:     lowPowerMode(),
 		Speak:            speakAvailable(),
 		ScanCode:         scanCameraAvailable(),
+		Camera:           scanCameraAvailable(),
 		Gamepads:         true,
 		Audio:            loadSound(),
 		DiscoverServices: true,

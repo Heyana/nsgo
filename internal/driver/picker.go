@@ -22,6 +22,9 @@ const MaxPicked = 100
 // request gives none.
 const DefaultPickQuality = 0.9
 
+// NoCamera is the EventPick Text of an ItemTakePhoto whose camera became unavailable before it could show, which core answers with ErrNoCamera.
+const NoCamera = "this device has no camera to take a photo with"
+
 // PickRequest is a pick as the platform carries it out.
 type PickRequest struct {
 	// Limit is the most images the user picks: 1 for a single pick, at

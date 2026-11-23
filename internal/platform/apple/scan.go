@@ -115,17 +115,50 @@ func CodeFromMetadata(objects objc.ID, r driver.ScanRequest) *driver.ScannedCode
 	return code
 }
 
+// NewPhotoCapture configures a session to take photos with device, for macOS's TakePhoto, which shows the scanner's camera. The caller owns the returned session and photo output.
+func NewPhotoCapture(device objc.ID) (session, output objc.ID, why string) {
+	if Class("AVCapturePhotoOutput") == 0 {
+		return 0, 0, "the camera cannot take photos"
+	}
+	input := objc.ID(Class("AVCaptureDeviceInput")).Send(sel("deviceInputWithDevice:error:"), device, objc.ID(0))
+	session = objc.ID(Class("AVCaptureSession")).Send(sel("new"))
+	if input == 0 || !objc.Send[bool](session, sel("canAddInput:"), input) {
+		session.Send(sel("release"))
+		return 0, 0, "the camera cannot be used"
+	}
+	if preset := NSString("AVCaptureSessionPresetPhoto"); objc.Send[bool](session, sel("canSetSessionPreset:"), preset) {
+		session.Send(sel("setSessionPreset:"), preset)
+	}
+	session.Send(sel("addInput:"), input)
+	output = objc.ID(Class("AVCapturePhotoOutput")).Send(sel("new"))
+	if !objc.Send[bool](session, sel("canAddOutput:"), output) {
+		output.Send(sel("release"))
+		session.Send(sel("release"))
+		return 0, 0, "the camera cannot take photos"
+	}
+	session.Send(sel("addOutput:"), output)
+	return session, output, ""
+}
+
 // StartScanCapture takes ownership of session and starts it off the main
 // thread. Stop releases the session after startup returns, so a quick
 // cancellation cannot leave the camera running. Failed runs on main.
 func StartScanCapture(session objc.ID, failed func()) (stop func()) {
+	return StartCapture(session, nil, failed)
+}
+
+// StartCapture is StartScanCapture that also runs running on main once the session runs.
+func StartCapture(session objc.ID, running, failed func()) (stop func()) {
 	started := make(chan struct{})
 	go withPool(func() {
 		session.Send(sel("startRunning"))
-		running := objc.Send[bool](session, sel("isRunning"))
+		ok := objc.Send[bool](session, sel("isRunning"))
 		close(started)
-		if !running && failed != nil {
+		switch {
+		case !ok && failed != nil:
 			OnMain(failed)
+		case ok && running != nil:
+			OnMain(running)
 		}
 	})
 	return func() {

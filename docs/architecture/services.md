@@ -84,11 +84,14 @@ Windows checks the registry first because the shell asks the user for an app for
 
 | Target | Camera | Permission |
 | --- | --- | --- |
+| macOS | The scanner's sheet (`scan.go`) with a shutter, the sheet's default button, which an `AVCapturePhotoOutput` (`apple.NewPhotoCapture`) on the default video device answers, enabled once the session runs; prepared with `apple.PreparePicked`, which turns it upright; `Env.CanTakePhoto` is `Env.CanScanCode`'s `apple.ScanCamera` | `AVCaptureDevice`'s, asked once through `privacy`, as the scanner's; the Info.plist declares `NSCameraUsageDescription`, without which a photo fails |
+| Windows | The scanner's Direct2D card over `MediaCapture`'s BGRA8 frames with a shutter, the default button for Return and Space, that takes the frame shown, which `picked.Photo` encodes; `Env.CanTakePhoto` is `Env.CanScanCode`'s camera check | The capability consent store's `webcam`, as the scanner's |
+| Linux | The scanner's modal GTK 4 window over the desktop portal's `Camera` and GStreamer `pipewiresrc` with a shutter, enabled at the first frame, that takes the frame shown, which `picked.Photo` encodes; `Env.CanTakePhoto` is `Env.CanScanCode`'s `IsCameraPresent` probe, and TakePhoto fails with `ErrNoCamera` (`driver.NoCamera`) where GStreamer lacks `pipewiresrc` | The portal's `AccessCamera`, as the scanner's |
 | iOS | `UIImagePickerController`, where `isSourceTypeAvailable` says the device has a camera, which the simulator has not | `AVCaptureDevice`'s, asked once; the Info.plist declares `NSCameraUsageDescription` (`nsgo.yaml`'s `apple.info`), without which a photo fails, since the system would end the app as it asks |
 | Android | `ACTION_IMAGE_CAPTURE`, where the device has `FEATURE_CAMERA_ANY`; the camera app writes into a file of the cache's `nsgo-camera`, the only files `FileProvider` opens for writing, which Java prepares and deletes | None, unless the manifest asks for `CAMERA`, which the camera app then needs granted: Java asks for it first (`permissionResult`) |
 | Web | `<input type=file capture=environment>` on touch screens (`pointer: coarse`), which mobile browsers open as the camera; prepared with the browser's codecs | The browser's |
 
-The desktops show no camera ([roadmap](../roadmap.md#finish-the-existing-platforms)).
+Windows and Linux take the frame the preview shows, at the camera's preview resolution, rather than a still from a separate photo pipeline.
 
 ## Scanning a code
 

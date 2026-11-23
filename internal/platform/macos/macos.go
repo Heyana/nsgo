@@ -1243,6 +1243,7 @@ func (s *surface) environment() driver.Environment {
 
 		DiscoverServices:   true,
 		ScanCode:           apple.ScanCamera() != 0,
+		Camera:             apple.ScanCamera() != 0,
 		Speech:             apple.SpeechAvailable(),
 		Speak:              apple.SpeakAvailable(),
 		Audio:              apple.AudioAvailable(),
@@ -2277,6 +2278,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemScanCode:
 			s.scanCode(*it.Scan, it.Count)
+			continue
+		case driver.ItemTakePhoto:
+			s.takePhoto(*it.Pick, it.Count)
 			continue
 		case driver.ItemPickFiles:
 			s.pickFiles(*it.Files, it.Count)

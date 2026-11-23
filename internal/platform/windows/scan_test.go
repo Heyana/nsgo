@@ -124,3 +124,65 @@ func TestScanCodeErrorsAndLifecycle(t *testing.T) {
 		t.Fatalf("decoded event = %+v", ev)
 	}
 }
+
+// TestTakePhotoTakesTheFrameShown runs TakePhoto with the camera's capture stubbed out: without a camera it fails with driver.NoCamera, the shutter takes nothing before a frame shows and then answers with the frame as a JPEG scaled to MaxDimension, Return is the shutter, and Escape answers with no photo.
+func TestTakePhotoTakesTheFrameShown(t *testing.T) {
+	origAvail, origPerm, origStart := scanCameraAvailable, scanPermissionState, scanStartCapture
+	t.Cleanup(func() { scanCameraAvailable, scanPermissionState, scanStartCapture = origAvail, origPerm, origStart })
+	scanStartCapture = func(*shownScanner) {}
+	scanPermissionState = func(string) (int, bool) { return driver.PermissionGranted, false }
+	events := make(chan driver.Event, 4)
+	eng := engine.Start(scanStubPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{
+		Event: func(_ uint32, e driver.Event) {
+			if e.Kind == driver.EventPick {
+				events <- e
+			}
+		},
+	})
+	defer eng.Close()
+	wait := func() driver.Event {
+		t.Helper()
+		select {
+		case ev := <-events:
+			return ev
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for EventPick")
+			return driver.Event{}
+		}
+	}
+	w := &window{engine: eng}
+
+	scanCameraAvailable = func() bool { return false }
+	w.takePhoto(driver.PickRequest{Limit: 1}, 1)
+	if ev := wait(); ev.Count != 1 || ev.Text != driver.NoCamera || w.scanner != nil {
+		t.Fatalf("no camera answers %+v", ev)
+	}
+
+	scanCameraAvailable = func() bool { return true }
+	w.takePhoto(driver.PickRequest{Limit: 1, MaxDimension: 4}, 2)
+	sc := w.scanner
+	if sc == nil || sc.photo == nil {
+		t.Fatal("TakePhoto opened no camera")
+	}
+	w.shootPhoto(sc)
+	if w.scanner != sc {
+		t.Fatal("the shutter closed the camera before a frame showed")
+	}
+	sc.framePix, sc.frameW, sc.frameH = make([]byte, 8*4*4), 8, 4
+	if !w.scannerKey(vkReturn) || w.scanner != nil {
+		t.Fatal("Return did not take the photo")
+	}
+	ev := wait()
+	files, _ := ev.Data.([]driver.PickedFile)
+	if ev.Count != 2 || ev.Text != "" || len(files) != 1 || files[0].MIME != "image/jpeg" || files[0].Size != (driver.Size{Width: 4, Height: 2}) {
+		t.Fatalf("the shutter answers %+v", ev)
+	}
+
+	w.takePhoto(driver.PickRequest{Limit: 1}, 3)
+	if !w.scannerKey(vkEscape) || w.scanner != nil {
+		t.Fatal("Escape did not close the camera")
+	}
+	if ev := wait(); ev.Count != 3 || ev.Data != nil || ev.Text != "" {
+		t.Fatalf("Escape answers %+v", ev)
+	}
+}

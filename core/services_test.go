@@ -375,6 +375,12 @@ func TestTakePhoto(t *testing.T) {
 	if answered != 4 || got != nil || gotErr == nil || gotErr.Error() != "camera access denied" {
 		t.Fatalf("a failure answers %+v, %v", got, gotErr)
 	}
+	cx.TakePhoto(PhotoOptions{}, take)
+	it = command(h.commit(), driver.ItemTakePhoto)
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPick, Count: it.Count, Text: driver.NoCamera})
+	if answered != 5 || got != nil || !errors.Is(gotErr, ErrNoCamera) {
+		t.Fatalf("a camera gone before it showed answers %+v, %v", got, gotErr)
+	}
 }
 
 func TestPickFiles(t *testing.T) {
