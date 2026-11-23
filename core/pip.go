@@ -189,7 +189,7 @@ func pictureInPicturePlatform(cx *Scope) bool {
 // Video backends may offer PiP without custom-content sessions.
 func videoPictureInPicturePlatform(cx *Scope) bool {
 	switch cx.Env().OS() {
-	case OSMacOS, OSWeb:
+	case OSMacOS, OSWeb, OSAndroid:
 		return true
 	}
 	return pictureInPicturePlatform(cx)

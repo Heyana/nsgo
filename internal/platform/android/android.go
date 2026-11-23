@@ -214,6 +214,8 @@ type surface struct {
 	extendedSensors atomic.Bool
 	// authSessions is set once the runtime's environment says it reads ItemAuthSession (capAuthSession); until then Go answers sessions unavailable.
 	authSessions atomic.Bool
+	// videoPiP is set once the runtime's environment says it answers native video PiP commands (capVideoPiP); until then Go reports PiP unsupported.
+	videoPiP atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -497,6 +499,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.playUpdates.Store(third&capPlayUpdates != 0)
 			s.extendedSensors.Store(fourth&capExtendedSensors != 0)
 			s.authSessions.Store(fourth&capAuthSession != 0)
+			s.videoPiP.Store(fourth&capVideoPiP != 0)
 			if env.Equal(s.env) {
 				break
 			}
@@ -1132,6 +1135,7 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 		out.Items = slices.DeleteFunc(slices.Clone(b.Items), outsideBatch)
 		b = &out
 	}
+	s.reportUnsupportedPiP(v.id, b)
 	s.canvasRequests.update(v.id, b)
 	var frames []pixelFrame
 	requests, loads := s.trackImages(v, b, &frames)
@@ -1525,6 +1529,10 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		if kind == driver.ItemSaveFile && it.Save.Preflight {
 			kind = driver.ItemSaveFilePreflight
 		}
+		if kind == driver.ItemPictureInPictureCommand {
+			// Existing runtimes safely consume and ignore this native command.
+			kind = driver.ItemNativeCommand
+		}
 		w.byte(byte(kind))
 		w.u32(uint32(it.ID))
 		switch it.Kind {
@@ -1836,7 +1844,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		case driver.ItemVideo:
 			c := it.Video
 			w.str(c.Source)
-			w.flags(c.Paused, c.Muted, c.Repeat, c.Controls)
+			w.flags(c.Paused, c.Muted, c.Repeat, c.Controls, c.PictureInPicture, c.AutoPictureInPicture)
 			w.float(c.Volume)
 			w.float(c.Rate)
 			w.byte(byte(c.ResizeMode - driver.Cover)) // Java's are 0-based
@@ -1847,6 +1855,9 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 				w.str(name)
 				w.str(value)
 			}
+		case driver.ItemPictureInPictureCommand:
+			w.str(driver.PictureInPictureEventName)
+			w.str(pictureInPictureCommandJSON(it.Count, uint32(it.Before)))
 		case driver.ItemVideoSeek:
 			w.u64(uint64(it.Time.Milliseconds()))
 		case driver.ItemNative:

@@ -7,6 +7,32 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
+func TestAndroidVideoPictureInPictureKeepsCustomContentUnsupported(t *testing.T) {
+	for _, video := range []bool{true, false} {
+		var ref Ref
+		states := 0
+		h := newHost(t, Size{Width: 400, Height: 300}, func(cx *Scope) Node {
+			if video {
+				return Video{Ref: &ref, PictureInPicture: true, OnPictureInPicture: func(PictureInPictureState) { states++ }}
+			}
+			return PictureInPicture{Ref: &ref, OnState: func(PictureInPictureState) { states++ }}
+		})
+		h.tree.SetEnvironment(Environment{OS: OSAndroid})
+		h.commit()
+		ref.StartPictureInPicture()
+		batch := h.commit()
+		commands := 0
+		for _, item := range batch.Items {
+			if item.Kind == driver.ItemPictureInPictureCommand {
+				commands++
+			}
+		}
+		if video && (commands != 1 || states != 0) || !video && (commands != 0 || states == 0) {
+			t.Fatalf("video %v: commands %d, unsupported states %d", video, commands, states)
+		}
+	}
+}
+
 func TestPictureInPictureHasIndependentLayoutAndOwner(t *testing.T) {
 	var ref Ref
 	var visible *Signal[bool]

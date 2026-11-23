@@ -755,6 +755,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             activationKeys.clear();
         }
         environment();
+        videoPictureInPicture.windowChanged();
         if (hasFocus && overlays != null) overlays.returned();
         if (hasFocus) (primary == null ? this : primary).playUpdates.resume(activity());
         // The user may have changed RECORD_AUDIO in the system's settings; the first view tells the app.
@@ -765,6 +766,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     @Override
     protected void onWindowVisibilityChanged(int visibility) {
         super.onWindowVisibilityChanged(visibility);
+        if (videoPictureInPicture != null) videoPictureInPicture.windowChanged();
         if (visibility != View.VISIBLE && hapticPatterns != null) hapticPatterns.stop();
         environment();
         if (measuring && visibility == View.VISIBLE) startTicking();
@@ -774,11 +776,36 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     @Override
     public void onVisibilityAggregated(boolean visible) {
         super.onVisibilityAggregated(visible);
-        if (!visible) pauseAudio();
+        if (!visible) {
+            pauseAudio();
+            if (videoPictureInPicture != null && !videoPictureInPicture.isActive()) pauseVideos();
+        }
+    }
+
+    private final VideoPictureInPicture videoPictureInPicture = new VideoPictureInPicture(this);
+
+    /** Forward the hosting Activity's PiP callback, including in embedded hosts. */
+    public void onPictureInPictureModeChanged(boolean active) {
+        videoPictureInPicture.modeChanged(active);
+    }
+
+    /** Forward the hosting Activity's onUserLeaveHint for automatic PiP on Android 11 and earlier. */
+    public void onUserLeaveHint() { videoPictureInPicture.userLeaving(); }
+
+    /** Forward Android 15's early PiP transition callback to hide inline UI during the animation. */
+    public void onPictureInPictureTransition(boolean entering) {
+        if (entering) videoPictureInPicture.transitioning();
     }
 
     private boolean audioVisible() {
         return isAttachedToWindow() && isShown() && getWindowVisibility() == View.VISIBLE;
+    }
+
+    private void pauseVideos() {
+        for (int i = 0; i < nodes.size(); i++) {
+            Node node = nodes.valueAt(i);
+            if (node.video != null) node.video.backgroundPause();
+        }
     }
 
     private void pauseAudio() {
@@ -1675,8 +1702,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             writeDisplay(d);
             // Optional environment tail, after the display, for mobile.OpenedURL.
             Protocol.writeString(d, first.openedURL);
-            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS and Protocol.CAP_AUTH_SESSION.
-            d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION);
+            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS, Protocol.CAP_AUTH_SESSION and Protocol.CAP_VIDEO_PIP.
+            d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -3516,6 +3543,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             perfWork += System.nanoTime() - begin;
             perfDirty = true;
         }
+        videoPictureInPicture.mounted();
         reportAllScreenInsets();
         reportGeometry();
     }
@@ -4265,7 +4293,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             case Protocol.ITEM_NATIVE_COMMAND: {
                 String name = Protocol.readString(in);
                 Object args = Embedded.parse(Protocol.readString(in));
-                if (n.embedded != null) {
+                if (n.video != null && VideoPictureInPicture.EVENT.equals(name)) {
+                    videoPictureInPicture.command(n.video, args);
+                } else if (n.embedded != null) {
                     n.embedded.command(name, args);
                     nativeSize(n);
                 }
@@ -6166,6 +6196,16 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     @Override
                     public boolean wants(int k) {
                         return n.has(k);
+                    }
+
+                    @Override public void pictureInPictureChanged(VideoNode video) {
+                        videoPictureInPicture.changed(video);
+                    }
+
+                    @Override public void pictureInPictureState(String json) {
+                        if (n.has(Protocol.EVENT_NATIVE))
+                            event(Protocol.EVENT_NATIVE, n.id, 0, 0, 0, VideoPictureInPicture.EVENT,
+                                    0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, json, false);
                     }
 
                     @Override

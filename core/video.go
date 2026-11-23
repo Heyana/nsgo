@@ -40,9 +40,9 @@ type Video struct {
 	// without Controls or an asset track transform once a frame is decoded.
 	// Zero counts the whole video view.
 	HitTestAlpha float32
-	// PictureInPicture enables video Picture in Picture on iOS, tvOS, macOS and supporting web browsers: Ref.StartPictureInPicture and StopPictureInPicture start and stop it, and on iOS and tvOS the video holds the playback audio session from then on, paused or not. Other targets report Supported false through OnPictureInPicture. What the PiP window plays and pauses is reported by OnPlay and OnPause.
+	// PictureInPicture enables video Picture in Picture on iOS, tvOS, macOS, Android and supporting web browsers: Ref.StartPictureInPicture and StopPictureInPicture start and stop it, and on iOS and tvOS the video holds the playback audio session from then on, paused or not. Other targets report Supported false through OnPictureInPicture. What the PiP window plays and pauses is reported by OnPlay and OnPause.
 	PictureInPicture bool
-	// AutoPictureInPicture lets iOS start PiP on its own as the app goes to the background while the video plays.
+	// AutoPictureInPicture lets the platform start PiP on its own as the app goes to the background while the video plays.
 	AutoPictureInPicture bool
 	// OnPictureInPicture receives the session's state as it changes: whether the platform supports PiP, whether it can start now, whether it is active, and why a start failed.
 	OnPictureInPicture func(PictureInPictureState)

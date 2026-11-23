@@ -1,6 +1,7 @@
 package dev.oneo.nsgo;
 
 import android.app.Activity;
+import android.app.PictureInPictureUiState;
 import android.content.Intent;
 import android.content.MutableContextWrapper;
 import android.content.pm.ActivityInfo;
@@ -241,6 +242,24 @@ public class NsgoActivity extends Activity {
     public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (view != null) view.permissionResult(request, permissions, results);
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean active, Configuration config) {
+        super.onPictureInPictureModeChanged(active, config);
+        if (view != null) view.onPictureInPictureModeChanged(active);
+    }
+
+    @Override
+    public void onPictureInPictureUiStateChanged(PictureInPictureUiState state) {
+        super.onPictureInPictureUiStateChanged(state);
+        if (Build.VERSION.SDK_INT >= 35 && view != null) view.onPictureInPictureTransition(state.isTransitioningToPip());
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (view != null) view.onUserLeaveHint();
     }
 
     /** Ends the app with the activity unless an overlay, a background location stream or a recording keeps it running for the next activity. */

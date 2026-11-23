@@ -1,6 +1,6 @@
 # Picture in Picture
 
-Issue [#54](https://github.com/nsgo-dev/nsgo/issues/54) has two paths: `core.Video` uses its native player, and `mobile.PictureInPicture` renders an independent NSGo tree into sample buffers. Video also supports macOS, and the web uses the browser's standard video PiP API. Both use `AVPictureInPictureController` through purego, with no Swift or C adapter. The user confirmed both paths, separate APIs from Android overlays, view-owned lifetimes, a retained background frame, playback callbacks, YAML arrays and programmatic starts with native controls on 2026-11-15.
+Issue [#54](https://github.com/nsgo-dev/nsgo/issues/54) has two paths: `core.Video` uses its native player, and `mobile.PictureInPicture` renders an independent NSGo tree into sample buffers. Video also supports macOS, and the web uses the browser's standard video PiP API. On Apple platforms both use `AVPictureInPictureController` through purego, with no Swift or C adapter. Android video uses its Activity and MediaPlayer. The user confirmed both paths, separate APIs from Android overlays, view-owned lifetimes, a retained background frame, playback callbacks, YAML arrays and programmatic starts with native controls on 2026-11-15.
 
 ## Video
 
@@ -19,6 +19,16 @@ The PiP window's play, pause and skip act on the `AVPlayer` directly, as the inl
 Each video owns only its element's session. Repeated requests are serialized; stopping a pending start, replacing or clearing its source, disabling PiP and deletion invalidate the request. A late successful entry exits instead of reviving stale content. Exit never stops another element's session. Clearing a source resets the media element so old metadata cannot leave `Possible` true.
 
 Web PiP shows the browser's video surface. Custom NSGo content, automatic background entry and interface restoration callbacks remain iOS-only; no Document Picture-in-Picture or browser-specific prefixed API is used. A browser without the standard API reports unsupported.
+
+## Android video
+
+`core.Video` uses the same state, commands and restoration callback as iOS; detached custom content stays unsupported. `VideoPictureInPicture.java` owns the Activity’s one session and moves the selected video’s TextureView into a full-window host, preserving its MediaPlayer and the inline tree. Returning restores that view’s parent and layout; deleting the video stops the session and releases the player. Native mode callbacks report `Active`, and source readiness plus the Activity’s visibility and focus report `Possible`. Refused starts report an error; repeated starts and stops are idempotent.
+
+The packaged Activity declares `supportsPictureInPicture` and handles the size/orientation configuration changes. Automatic entry requires `AutoPictureInPicture` and a prepared, playing video: Android 12+ gets `setAutoEnterEnabled`, Android 15’s transition callback prepares the video presentation early, and older systems enter from `onUserLeaveHint`. The native MediaSession plays, pauses and seeks the same player; control pauses report `VideoPauseControls`. Android has no public exit-PiP method, so `StopPictureInPicture` expands the same Activity through a reorder-to-front intent. The returning Activity reports restoration to the graph.
+
+The pipe keeps old runtimes compatible: the video’s existing flag byte carries the two PiP flags, and a reserved `ItemNativeCommand` carries session commands, which an old runtime safely consumes and ignores. Capability bit `capVideoPiP`/`CAP_VIDEO_PIP` distinguishes a runtime that answers those commands; Go reports unsupported when it is absent. Native state is an `EventNative` with the existing `PictureInPictureEvent` payload.
+
+An embedding host declares the same manifest capability and forwards its Activity’s mode-change and user-leave callbacks to `NsgoView.onPictureInPictureModeChanged` and `onUserLeaveHint`; on Android 15+, it also forwards `isTransitioningToPip()` to `onPictureInPictureTransition`.
 
 ## Custom content
 
@@ -48,7 +58,7 @@ apple:
     UIBackgroundModes: [audio]
 ```
 
-An iOS session missing `audio` reports a configuration error. Video support on iOS and tvOS follows AVKit's device capability, and macOS video uses the same controller; unavailable systems report `Supported: false`. The web supports video in browsers offering the standard API. Android PiP remains in the roadmap. Custom content remains iOS-only. The app's existing network access check applies to video URLs. Custom content stays in the app; NSGo uploads and persists no frame. App Store review may reject non-video uses of custom PiP, as issue #54 records.
+An iOS session missing `audio` reports a configuration error. Video support on iOS and tvOS follows AVKit's device capability, and macOS video uses the same controller; unavailable systems report `Supported: false`. The web supports video in browsers offering the standard API. Android video uses the Activity's PiP window. Custom content remains iOS-only. The app's existing network access check applies to video URLs. Custom content stays in the app; NSGo uploads and persists no frame. App Store review may reject non-video uses of custom PiP, as issue #54 records.
 
 ## Verification
 

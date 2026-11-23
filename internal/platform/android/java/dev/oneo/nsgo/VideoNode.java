@@ -45,6 +45,9 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
 
         void report(int kind, String text, long time, long duration, int width, int height, int index,
                 boolean buffering);
+
+        default void pictureInPictureChanged(VideoNode video) {}
+        default void pictureInPictureState(String json) {}
     }
 
     private final Context context;
@@ -54,11 +57,14 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
     private String source;
     private Map<String, String> headers = Collections.emptyMap();
     private boolean prepared;
+    private boolean surfacePlaying;
     /** A non-repeating end stays stopped until an explicit replay, seek or source change. */
     private boolean completed;
     /** A seek that moved a completed player back has not landed yet: it plays, if paused is false, once it does. */
     private boolean replaying;
     private boolean paused, muted, repeat;
+    private boolean pictureInPicture, automaticPictureInPicture, disposed;
+    private long pictureInPictureGeneration;
     /** Whether the player plays or not is the controls' or the system's, not paused, until paused changes: each such play or pause is reported once. resumable is a pause for a transient loss of the audio focus, which plays on when the focus comes back. */
     private boolean held, resumable;
     private float volume = 1, rate = 1;
@@ -114,6 +120,8 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         muted = Protocol.flag(flags, 1);
         repeat = Protocol.flag(flags, 2);
         boolean controls = Protocol.flag(flags, 3);
+        pictureInPicture = Protocol.flag(flags, 4);
+        automaticPictureInPicture = Protocol.flag(flags, 5);
         this.volume = volume;
         this.rate = rate;
         progressInterval = interval;
@@ -148,9 +156,11 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         } else {
             apply();
         }
+        reporter.pictureInPictureChanged(this);
     }
 
     private void open() {
+        pictureInPictureGeneration++;
         release();
         if (source == null) return;
         MediaPlayer p = new MediaPlayer();
@@ -167,6 +177,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
             videoWidth = w;
             videoHeight = h;
             fit();
+            reporter.pictureInPictureChanged(this);
         });
         p.setOnCompletionListener(mp -> {
             if (mp != player) return;
@@ -307,6 +318,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
             }
         }
         updateFocus();
+        reporter.pictureInPictureChanged(this);
     }
 
     /** Holds audio focus while a playback video plays, and only then: other apps pause while it plays and resume once it pauses, ends or goes. Speech pauses rather than ducks when another app takes the focus, and plays on when it comes back unless the app changed paused meanwhile; the focus is kept for that. */
@@ -388,6 +400,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         if (p == null || !prepared || !p.isPlaying()) return;
         report(Protocol.EVENT_PROGRESS, "", p.getCurrentPosition(), p.getDuration(), 0, 0, false);
         postDelayed(progress, Math.max(16, progressInterval));
+        reporter.pictureInPictureChanged(this);
     }
 
     void seek(long millis) {
@@ -455,6 +468,9 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
 
     /** Stops the player and frees it and the surface. */
     void destroy() {
+        disposed = true;
+        pictureInPicture = automaticPictureInPicture = false;
+        reporter.pictureInPictureChanged(this);
         if (controller != null) controller.hide();
         release();
         if (surface != null) {
@@ -463,13 +479,33 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         }
     }
 
+    long pictureInPictureGeneration() { return pictureInPictureGeneration; }
+    boolean pictureInPictureEnabled() { return pictureInPicture && !disposed; }
+    boolean automaticPictureInPicture() { return automaticPictureInPicture; }
+    boolean pictureInPictureReady() { return prepared && surface != null && videoWidth > 0 && videoHeight > 0; }
+    boolean disposed() { return disposed; }
+    int pictureWidth() { return videoWidth; }
+    int pictureHeight() { return videoHeight; }
+    void hideControls() { if (controller != null) controller.hide(); }
+    void backgroundPause() { platformPause(Protocol.VIDEO_PAUSE_INTERRUPTION, false); }
+    void pictureInPictureState(String json) { reporter.pictureInPictureState(json); }
+
     // TextureView.SurfaceTextureListener
 
     @Override
     public void onSurfaceTextureAvailable(SurfaceTexture st, int width, int height) {
         surface = new Surface(st);
-        if (player != null) player.setSurface(surface);
+        if (player != null) {
+            player.setSurface(surface);
+            // Moving the TextureView can stop a video-only player while
+            // its output is absent. Preserve the play state the app or
+            // native controls owned before the move.
+            if (surfacePlaying && prepared && !completed && !replaying && !player.isPlaying()) player.start();
+        }
+        surfacePlaying = false;
+        apply();
         fit();
+        reporter.pictureInPictureChanged(this);
     }
 
     @Override
@@ -479,11 +515,13 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
 
     @Override
     public boolean onSurfaceTextureDestroyed(SurfaceTexture st) {
+        surfacePlaying = player != null && prepared && player.isPlaying();
         if (player != null) player.setSurface(null);
         if (surface != null) {
             surface.release();
             surface = null;
         }
+        reporter.pictureInPictureChanged(this);
         return true;
     }
 

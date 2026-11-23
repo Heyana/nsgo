@@ -280,7 +280,7 @@ The iOS video and independent-tree paths of #54 and macOS video PiP are implemen
 | Video with app-drawn captions | `examples/pip`, [#970](https://github.com/nsgo-dev/nsgo/issues/970) | Verify continuous video and changing captions on an iPhone in background PiP, along with play, pause, seek and restoration |
 | PiP on tvOS | `AVPictureInPictureController`, [#1476](https://github.com/nsgo-dev/nsgo/issues/1476) | Verify video entry, stop and restoration on a physical Apple TV; the native player/Now Playing session path is implemented, while custom sample-buffer PiP remains unsupported |
 | macOS visual acceptance | `AVPictureInPictureController`, [#1477](https://github.com/nsgo-dev/nsgo/issues/1477) | Verify changing video pixels and the native return button on a Mac; native entry, exit, duplicate commands and active source replacement pass, but window-scoped captures of the PiP panel return black on the test runner |
-| PiP on Android | `Activity.enterPictureInPictureMode`, [#1478](https://github.com/nsgo-dev/nsgo/issues/1478) | An Android app's activity enters PiP showing its video, with the same states as on iOS |
+| PiP on Android | `Activity.enterPictureInPictureMode`, [#1478](https://github.com/nsgo-dev/nsgo/issues/1478) | Native video PiP, state callbacks, restoration and system controls are implemented; an owned API 35 emulator verifies entry, animated frames, pause/play controls and expansion, while a physical Android device remains for follow-up |
 
 ## Apple TV
 

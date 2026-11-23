@@ -41,6 +41,9 @@ func TestEncodeManifest(t *testing.T) {
 	}
 
 	app := root.child(t, "application")
+	if app.child(t, "activity").value(t, "supportsPictureInPicture") == 0 {
+		t.Fatal("the launcher must permit explicitly requested video PiP")
+	}
 	if got := app.value(t, "supportsRtl"); got == 0 {
 		t.Fatal("standalone native views must support RTL")
 	}
@@ -535,6 +538,7 @@ func TestFrameworkAttributeIDs(t *testing.T) {
 		"isGame":                      0x010103f4,
 		"resource":                    0x01010025,
 		"extractNativeLibs":           0x010104ea,
+		"supportsPictureInPicture":    0x010104f7,
 		"supportsRtl":                 0x010103af,
 		"enableOnBackInvokedCallback": 0x0101066c,
 		"foregroundServiceType":       0x01010599,

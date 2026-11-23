@@ -167,6 +167,12 @@ func (s *surface) nativeEvent(surface uint32, id driver.NodeID, name, data strin
 	if e == nil {
 		return
 	}
+	if name == driver.PictureInPictureEventName {
+		if event, ok := readPictureInPictureEvent(data); ok {
+			e.Dispatch(driver.Event{Kind: driver.EventNative, ID: id, Text: name, Data: event})
+		}
+		return
+	}
 	s.cmu.Lock()
 	v := s.natives[nativeKey{surface, id}]
 	if v != nil && v.host {

@@ -585,6 +585,9 @@ const capExtendedSensors = 1
 // capAuthSession is the fourth capability byte's bit for a runtime that reads ItemAuthSession and opens Custom Tabs for it (Protocol.CAP_AUTH_SESSION): mount items carry no length, so one built before AuthSession.java would misread the rest of the batch, and Go answers its sessions unavailable instead.
 const capAuthSession = 2
 
+// capVideoPiP is the fourth capability byte's bit for a runtime that answers native video PiP commands, sent as ItemNativeCommand, which an older runtime consumes and ignores (Protocol.CAP_VIDEO_PIP): without it Go reports PiP unsupported.
+const capVideoPiP = 4
+
 // readEnvironmentCapabilities reads the environment as readEnvironment does, with the third and fourth capability bytes, which say what the runtime itself can do (cap* bits) rather than the device, so they stay out of driver.Environment.
 func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	env := driver.Environment{
