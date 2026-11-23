@@ -64,7 +64,7 @@
       placeholder="{{node.fd.ph}}"
       placeholder-style="{{node.fd.phs}}"
       maxlength="{{node.fd.max}}"
-      disabled="{{node.fd.off || (node.ax && node.ax.d)}}"
+      disabled="{{node.fd.off || node.fd.ro || (node.ax && node.ax.d)}}"
       focus="{{node.fo}}"
       aria-role="{{node.ax ? node.ax.r : ''}}"
       aria-label="{{node.ax ? node.ax.l : ''}}"

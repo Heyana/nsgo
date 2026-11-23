@@ -386,6 +386,13 @@ func TestTextAndInputsSendLanguageAndKeepAll(t *testing.T) {
 	if !strings.Contains(fds[1], `"lang":"ja"`) || strings.Contains(fds[1], "word-break:keep-all;") || !strings.Contains(fds[1], "Hiragino Sans") {
 		t.Errorf("single-line Japanese input fd = %s", fds[1])
 	}
+
+	readonly := &driver.InputConfig{Readonly: true, Placeholder: "copy me"}
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemInput, ID: 5, Input: readonly}}})
+	fds = h.ops("fd")
+	if len(fds) < 3 || !strings.Contains(fds[len(fds)-1], `"ro":true`) || strings.Contains(fds[len(fds)-1], `"off":true`) {
+		t.Fatalf("readonly input fd = %v, want ro=true and off=false", fds)
+	}
 }
 
 func TestModalsReportShownAndDismissed(t *testing.T) {

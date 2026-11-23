@@ -21,7 +21,7 @@ ui.Input{
 }
 ```
 
-`Masked` 隐藏字符，`Readonly` 阻止编辑但文本仍可选中和复制，`Disabled` 停用字段，`Multiline` 让文本换行并随之增长，除非样式指定了尺寸。多行字段的各行及其占位文字都按样式的 `LineHeight` 排布，字体在每行中居中，与 `core.Text` 一致；单行字段的那一行在其高度内居中。`KeyboardType` 选择软件键盘（`core.KeyboardEmail`、`core.KeyboardNumber`、`core.KeyboardURL` 等），`AutoComplete` 告诉系统字段内容以便自动填充，`MaxLength` 限制用户输入的 UTF-16 单元数。`AutoCapitalize` 和 `NoAutoCorrect` 调整键盘行为。
+`Masked` 隐藏字符，`Readonly` 阻止编辑但文本仍可选中和复制（在小程序中仅限微信的单行字段：微信的多行字段和支付宝的字段会像 `Disabled` 一样停用，因为这些宿主无法撤销编辑），`Disabled` 停用字段，`Multiline` 让文本换行并随之增长，除非样式指定了尺寸。多行字段的各行及其占位文字都按样式的 `LineHeight` 排布，字体在每行中居中，与 `core.Text` 一致；单行字段的那一行在其高度内居中。`KeyboardType` 选择软件键盘（`core.KeyboardEmail`、`core.KeyboardNumber`、`core.KeyboardURL` 等），`AutoComplete` 告诉系统字段内容以便自动填充，`MaxLength` 限制用户输入的 UTF-16 单元数。`AutoCapitalize` 和 `NoAutoCorrect` 调整键盘行为。
 
 `OnSelectionChange` 和 `OnCaretMove` 报告选区和光标位置，用于在光标处打开菜单。`Suggest`（一个 `core.Suggest`）跟随 `@` 这类触发字符之后的查询，字段旁的 `ui.SuggestList` 在光标处为它列出候选行，可用上下方向键、回车或点按选择，`chat.Composer` 的 `Suggest` 就这样补全提及。`OnKeyPress` 听到每个按键，`OnPaste` 听到粘贴内容，`OnCompositionChange` 跟随输入法组合。
 

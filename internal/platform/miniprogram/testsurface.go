@@ -201,6 +201,10 @@ func (t *liveSurface) Type(text string) error {
 			err = errors.New("the focused field is disabled")
 			return
 		}
+		if v.inputReadonly {
+			err = errors.New("the focused field is read-only")
+			return
+		}
 		for _, r := range text {
 			var next string
 			if v.selectedAll {
@@ -248,6 +252,10 @@ func (t *liveSurface) Key(key string) error {
 		case "backspace":
 			if v.inputDisabled {
 				err = errors.New("the focused field is disabled")
+				return
+			}
+			if v.inputReadonly {
+				err = errors.New("the focused field is read-only")
 				return
 			}
 			if v.selectedAll {

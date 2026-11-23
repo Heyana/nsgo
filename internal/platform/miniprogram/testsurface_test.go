@@ -171,6 +171,34 @@ func TestLiveSurfaceInputTypeClearSubmitAndKeys(t *testing.T) {
 	}
 }
 
+func TestLiveSurfaceReadonlyInputCanFocusAndSelect(t *testing.T) {
+	m, h := mounted()
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 4, View: driver.KindInput},
+		{Kind: driver.ItemInsert, ID: 4, Parent: 1},
+		frame(4, 10, 200, 200, 40),
+		{Kind: driver.ItemInput, ID: 4, Input: &driver.InputConfig{Readonly: true}},
+		{Kind: driver.ItemInputValue, ID: 4, Value: "copy me"},
+		{Kind: driver.ItemEvents, ID: 4, Events: maskOf(driver.EventFocus, driver.EventChangeText)},
+	}})
+	s := &liveSurface{m: m}
+	if err := s.Press(driver.Point{X: 50, Y: 220}, 0, driver.Modifiers{}); err != nil {
+		t.Fatal(err)
+	}
+	if m.focused == nil || m.focused.id != 4 || len(h.events) != 1 || h.events[0].Kind != driver.EventFocus {
+		t.Fatalf("readonly focus = view %v events %+v", m.focused, h.events)
+	}
+	if err := s.Type("blocked"); err == nil {
+		t.Fatal("Type on read-only input succeeded")
+	}
+	if err := s.Key("mod+a"); err != nil {
+		t.Fatal(err)
+	}
+	if !m.view(4).selectedAll {
+		t.Fatal("read-only input did not remain selectable")
+	}
+}
+
 func TestLiveSurfaceScrollAndDrag(t *testing.T) {
 	m, h := mounted()
 	m.mount(&driver.MountBatch{Items: []driver.MountItem{

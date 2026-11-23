@@ -107,6 +107,7 @@ type view struct {
 	value         string
 	inputConfig   *driver.InputConfig
 	inputDisabled bool
+	inputReadonly bool
 	maxLength     int
 	selectedAll   bool
 	// A canvas's drawing.
@@ -421,7 +422,8 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		m.sendText(v)
 	case driver.ItemInput:
 		v.inputConfig = it.Input
-		v.inputDisabled = it.Input.Disabled || it.Input.Readonly
+		v.inputDisabled = it.Input.Disabled
+		v.inputReadonly = it.Input.Readonly
 		v.maxLength = it.Input.MaxLength
 		m.sendInput(v, it.Input)
 	case driver.ItemInputValue:
@@ -775,7 +777,7 @@ func (m *mounter) sendInput(v *view, c *driver.InputConfig) {
 	submit := c.Submit()
 	j.str("css", css).str("ph", c.Placeholder).str("phs", "color:"+webstyle.Color(ph)+";"+fontCSS(c.Style.Font)).
 		boolean("pw", c.Masked).str("type", kind).boolean("ml", c.Multiline).num("max", float64(maxLength)).
-		boolean("off", c.Disabled || c.Readonly).str("confirm", confirm).
+		boolean("off", c.Disabled).boolean("ro", c.Readonly).str("confirm", confirm).
 		boolean("hold", submit == driver.SubmitBehaviorSubmit).
 		boolean("nl", c.Multiline && submit == driver.SubmitBehaviorNewline).
 		num("x", float64(c.Content.Origin.X-b.Left)).num("y", float64(c.Content.Origin.Y-b.Top)).

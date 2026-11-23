@@ -88,7 +88,10 @@ Component({
     onRefresh() {
       this.send('refresh', this.id())
     },
+    // The template disables a read-only field, as Alipay's onInput cannot put the value back and node is a prop the component does not own; should an input arrive anyway, Go does not hear it.
     onInput(e) {
+      const node = this.props.node
+      if (node && node.fd && node.fd.ro) return
       this.send('input', this.id(), e.detail.value)
     },
     onConfirm(e) {

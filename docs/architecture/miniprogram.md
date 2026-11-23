@@ -53,7 +53,7 @@ WeChat DevTools is refreshed with `cli close --project <dir>` followed by `cli a
 
 Taps go to the innermost view that takes them (`catchtap`), presses going down and up to the innermost that follows them (`mut-bind`), and touches to every view that follows them: the runtime numbers each touch event, so the views it bubbles through add nothing, and a finger belongs to the view it went down on. A pan that fails on vertical drags leaves them to the scroll views around it; others capture the drags they start (`catchtouchmove`), as a mini program cannot decide on a drag as it moves.
 
-Text fields are WeChat's `input` and `textarea` in their content box, which leave the page in place (`adjust-position`) and report the keyboard's height to the environment instead. Scroll views are `scroll-view`s in enhanced mode, reporting drags, their offsets and an end 150 ms after the last.
+Text fields are WeChat's `input` and `textarea` in their content box, which leave the page in place (`adjust-position`) and report the keyboard's height to the environment instead. A read-only field is an enabled WeChat `input`, so it focuses, selects and copies, whose `bindinput` returns the value Go holds, which WeChat puts back in place of the edit, so Go hears no input; WeChat's `textarea` ignores that return and Alipay's `onInput` has none, and `node` is a prop the Alipay component cannot set, so a read-only `textarea` and Alipay's fields are disabled, as before. The `ro` flag travels apart from `off`. Scroll views are `scroll-view`s in enhanced mode, reporting drags, their offsets and an end 150 ms after the last.
 
 ## Services
 

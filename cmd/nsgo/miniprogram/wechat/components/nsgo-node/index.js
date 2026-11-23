@@ -109,11 +109,15 @@ Component({
     onRefresh() {
       this.send('refresh', this.id())
     },
+    // A read-only field is an enabled input, so it focuses, selects and copies, and bindinput returns the value Go holds, which WeChat puts back in the input in place of the edit (a textarea ignores the return, so the template disables a read-only one instead). Go hears no input, and a confirm carries the held value.
     onInput(e) {
+      const node = this.data.node
+      if (node && node.fd && node.fd.ro) return node.v || ''
       this.send('input', this.id(), e.detail.value)
     },
     onConfirm(e) {
-      this.send('confirm', this.id(), e.detail.value)
+      const node = this.data.node
+      this.send('confirm', this.id(), node && node.fd && node.fd.ro ? node.v || '' : e.detail.value)
     },
     onFocus() {
       this.send('focus', this.id())
