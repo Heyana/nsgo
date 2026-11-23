@@ -34,10 +34,10 @@ func TestEdgeDockedPanelKeepsItsPlacementContract(t *testing.T) {
 	if !inside.Env().CanDockPanels() || inside.Env().CanPlaceWindows() {
 		t.Fatal("a docked panel did not distinguish docking from arbitrary placement")
 	}
-	inside.SetWindowFrame(WindowFrame{X: 999, Y: 999, Move: true, Width: 200})
+	inside.SetWindowFrame(WindowFrame{X: 999, Y: 999, Move: true, Width: 200, Animated: true})
 	w.commit()
 	commands = w.take(panel.t.id, driver.ItemWindow)
-	if len(commands) != 1 || commands[0].Window.Action != driver.WindowFitSize || commands[0].Window.Frame != (WindowFrame{Width: 200, Height: 60}) {
+	if len(commands) != 1 || commands[0].Window.Action != driver.WindowFitSize || commands[0].Window.Frame != (WindowFrame{Width: 200, Height: 60, Animated: true}) {
 		t.Fatalf("docked size change: %+v", commands)
 	}
 }

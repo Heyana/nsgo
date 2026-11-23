@@ -19,20 +19,20 @@ func (s *surface) dockOrigin(size apple.CGSize) (apple.CGPoint, bool) {
 }
 
 func (s *surface) placeDockedPanel() bool {
+	s.panelMotion.Stop()
 	frame := objc.Send[apple.CGRect](s.window, sel("frame"))
 	origin, ok := s.dockOrigin(frame.Size)
 	if !ok {
 		s.dockFailed()
 		return false
 	}
-	if frame.Origin != origin {
-		s.window.Send(sel("setFrameOrigin:"), origin)
-	}
+	frame.Origin = origin
+	s.applyPanelFrame(frame)
 	return true
 }
 
 func (s *surface) dockFailed() {
-	s.window.Send(sel("orderOut:"), objc.ID(0))
+	s.hidePanel(false)
 	if s.engine != nil {
 		s.engine.Dispatch(driver.Event{Kind: driver.EventWindowPlacementFailed, Text: "the docked panel's display is unavailable"})
 	}

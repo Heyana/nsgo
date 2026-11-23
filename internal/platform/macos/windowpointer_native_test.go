@@ -116,11 +116,11 @@ func TestWindowPointerEventsFollowTheMode(t *testing.T) {
 				toWindow := sel("convertPoint:toView:")
 				onPet := objc.Send[apple.CGPoint](pet.native, toWindow, apple.CGPoint{X: 100, Y: 100}, objc.ID(0))
 				beside := objc.Send[apple.CGPoint](s.native, toWindow, apple.CGPoint{X: 500, Y: 300}, objc.ID(0))
-				if !s.paintedAt(onPet) {
+				if !s.paintedHit(s.hitAt(onPet)) {
 					err = errors.New("a painted window finds nothing painted over its pet")
 					return
 				}
-				if s.paintedAt(beside) {
+				if s.paintedHit(s.hitAt(beside)) {
 					err = errors.New("a painted window finds something painted where nothing draws")
 					return
 				}
@@ -128,11 +128,11 @@ func TestWindowPointerEventsFollowTheMode(t *testing.T) {
 					return objc.Send[apple.CGPoint](v.native, toWindow, apple.CGPoint{X: x, Y: y}, objc.ID(0))
 				}
 				transparent := at(alpha, 25, 25)
-				if s.paintedAt(transparent) || s.paintedAt(at(alpha, 75, 75)) {
+				if s.paintedHit(s.hitAt(transparent)) || s.paintedHit(s.hitAt(at(alpha, 75, 75))) {
 					err = errors.New("a painted window took the pointer below the image threshold")
 					return
 				}
-				if !s.paintedAt(at(alpha, 75, 25)) || !s.paintedAt(at(defaultImage, 25, 25)) {
+				if !s.paintedHit(s.hitAt(at(alpha, 75, 25))) || !s.paintedHit(s.hitAt(at(defaultImage, 25, 25))) {
 					err = errors.New("a painted window let the pointer through an opaque or default image")
 					return
 				}
@@ -221,10 +221,11 @@ func TestWindowPointerUsesVideoAlpha(t *testing.T) {
 					return objc.Send[apple.CGPoint](v.native, sel("convertPoint:toView:"),
 						apple.CGPoint{X: x, Y: y}, objc.ID(0))
 				}
-				transparent = s.paintedAt(point(alpha, 36, 12))
-				letterbox = s.paintedAt(point(alpha, 12, 48))
-				opaque = s.paintedAt(point(alpha, 72, 48))
-				unfiltered = s.paintedAt(point(defaultVideo, 36, 12))
+				transparent = s.paintedHit(s.hitAt(point(alpha, 36, 12)))
+				letterbox = s.paintedHit(s.hitAt(point(alpha, 12, 48)))
+				// The clip's opaque square is in its middle, not at the top edge.
+				opaque = s.paintedHit(s.hitAt(point(alpha, 72, 48)))
+				unfiltered = s.paintedHit(s.hitAt(point(defaultVideo, 36, 12)))
 				checked = true
 			})
 			<-barrier

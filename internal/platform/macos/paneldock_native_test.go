@@ -101,6 +101,21 @@ func TestEdgeDockedPanelUsesNativeScreenFrames(t *testing.T) {
 				c.cx.Post(func() { c.cx.SetWindowFrame(core.WindowFrame{Width: size.Width, Height: size.Height}) })
 				check(float64(size.Width), float64(size.Height))
 			}
+			if c.dock.Edge == driver.WindowPlaceRight {
+				panel.envPin = func(env driver.Environment) driver.Environment {
+					env.ReduceMotion = false
+					return env
+				}
+				before := objc.Send[apple.CGRect](panel.window, sel("frame"))
+				panel.command(&driver.WindowCommand{Action: driver.WindowFitSize, Frame: driver.WindowFrame{Width: 150, Height: 64, Animated: true}})
+				if got := objc.Send[apple.CGRect](panel.window, sel("frame")); got != before {
+					t.Fatalf("%s animated fit moved the panel before its first frame: %+v to %+v", title, before, got)
+				}
+				panel.stepPanelFrame(time.Now().Add(200 * time.Millisecond))
+				check(150, 64)
+				c.cx.Post(func() { c.cx.SetWindowFrame(core.WindowFrame{Width: 80, Height: 40, Animated: true}) })
+				check(80, 40)
+			}
 			c.cx.Post(c.panel.Hide)
 			if !settle(func() bool { return !objc.Send[bool](panel.window, sel("isVisible")) }) {
 				t.Fatal("the native panel stayed visible after Hide")

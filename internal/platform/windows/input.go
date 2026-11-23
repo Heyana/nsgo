@@ -1225,6 +1225,7 @@ func (w *window) windowFocus(focused bool) {
 	if focused {
 		w.focused = true
 	} else if w.kind == driver.SurfacePanel && w.hideOnBlur && w.visible && w.focused {
+		w.cancelPanelFrame()
 		w.visible = false
 		showWindow.Call(w.hwnd, swHide)
 		if w.hostWindow != nil && w.anchor != 0 {

@@ -425,6 +425,8 @@ Desktop resizes on macOS, Windows and Linux wait up to 16 ms for the new layout 
 
 `desktop.SetWindowFrame` moves a window when `WindowFrame.Move` is true, using `X` and `Y` in points from the main screen's top left. Unset dimensions keep their current sizes. Check `desktop.CanPlaceWindows`: macOS, Windows and Linux on X11 support positioning; an ordinary Wayland toplevel keeps the compositor's position. `desktop.Frame` follows the native window's position on these desktops.
 
+On macOS and Windows, `WindowFrame{Animated: true}` eases a visible panel to its new frame, including a docked panel's size. Hidden panels and reduced motion apply the new frame immediately. Ordinary macOS windows use AppKit's animation.
+
 Set `desktop.WindowOptions.Parent` to an open window of the app to close both when the parent closes. On desktops the child stays above its parent and follows it when it hides or minimizes; a child explicitly hidden stays hidden when the parent returns. On macOS it also centers over its parent when `Frame` is unset and follows it into full screen.
 
 `WindowOptions.NoShadow` and `desktop.SetWindowShadow(cx, false)` also take the shadow from a Windows window whose title bar is hidden, which draws its own chrome; a window with the system's title bar keeps its frame and shadow, as does a Linux window its window manager decorates, where `NoShadow` only clears the shadow of GTK's own decorations.
@@ -442,6 +444,8 @@ In a painted macOS window, `Video.HitTestAlpha` (TSX `hitTestAlpha`) applies the
 `desktop.NewTray` can draw a live icon with `TrayOptions.View` on macOS and Windows. Windows fits the view's transparent rendering to the notification area's icon size and updates it when the view changes or an image finishes loading; use `TrayOptions.OnClick`, `Panel` and `Menu` for its actions. Linux currently shows PNG icons; drawing its tray view remains a goal.
 
 `desktop.OpenPanel` opens a panel such a shortcut or a tray icon shows: a borderless window above the others. Like `desktop.OpenWindow`, `desktop.NewTray`, `mobile.OpenOverlay`, `audio.NewPlayer`, `audio.LoadSound` and `core.NewHolder`, it belongs directly to the `cx` you pass rather than the running handler's owner, so passing the app's scope from a button's `OnPress` keeps the window, panel or player alive after that button's scope goes; reactive primitives (`Effect`, `Cleanup`, `AfterFunc`, `OnKey`) instead belong to the running owner, which `cx.Run` switches. A popup card draws itself on a panel with `Transparent`, which has no background, frame or shadow of its own, so the card's rounded corners and `BoxShadow` are all that shows, with room for the shadow inside the panel; `FitContent` sizes the panel to its content, up to `Width` and `Height`, before it first shows and as the content changes. `desktop.Transparent` says whether the panel draws nothing of its own now, as it does for a transparent window, where `desktop.CanMakeWindowsTransparent` only says whether a window could be: where it is false, as on Linux without a compositor, give the content a background.
+
+On macOS, a panel without `Transparent` uses square corners when either dimension is below 24 points and restores its rounded corners at normal sizes.
 
 ```go
 lookup := desktop.OpenPanel(cx, desktop.PanelOptions{Width: 380, Height: 520, Transparent: true, FitContent: true, HideOnBlur: true}, Card)

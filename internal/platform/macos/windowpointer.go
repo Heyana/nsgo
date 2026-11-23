@@ -47,6 +47,13 @@ func (s *surface) setPointerEvents(mode driver.WindowPointerEvents) {
 		s.stopPassTimer()
 		s.ignoreMouse(false)
 	}
+	if s.kind == driver.SurfacePanel {
+		if s.pointer.ignoring {
+			s.repickPanel()
+		} else {
+			s.queuePanelRepick()
+		}
+	}
 }
 
 // ignoreMouse tells the window whether to let mouse events through.
@@ -88,6 +95,15 @@ func (s *surface) stopPassTimer() {
 
 // passUnpainted lets the mouse through while the pointer is over nothing painted, by the hit test of the views under it. A button held keeps what the window does, so a drag that began on a view goes on to its end and one from another app passes over the window.
 func (s *surface) passUnpainted() {
+	loc := objc.Send[apple.CGPoint](s.window, sel("mouseLocationOutsideOfEventStream"))
+	if s.kind == driver.SurfacePanel && s.testPointer != nil {
+		loc = *s.testPointer
+	}
+	s.passUnpaintedAt(loc)
+}
+
+// passUnpaintedAt returns the hit if it checked the window's pass-through.
+func (s *surface) passUnpaintedAt(loc apple.CGPoint) (objc.ID, bool) {
 	if len(s.pointer.videos) > 0 && objc.Send[bool](s.window, sel("isVisible")) {
 		for video := range s.pointer.videos {
 			if video.SampleHitTestAlpha() {
@@ -95,22 +111,23 @@ func (s *surface) passUnpainted() {
 			}
 		}
 	}
-	loc := objc.Send[apple.CGPoint](s.window, sel("mouseLocationOutsideOfEventStream"))
 	if s.pointer.tested && loc == s.pointer.at && s.batch == s.pointer.batch && !s.ticking && !s.pointer.animatedImage {
-		return
+		return 0, false
 	}
 	if !objc.Send[bool](s.window, sel("isVisible")) ||
 		objc.Send[uint](objc.ID(apple.Class("NSEvent")), sel("pressedMouseButtons")) != 0 {
-		return
+		return 0, false
 	}
 	s.pointer.at, s.pointer.batch, s.pointer.tested = loc, s.batch, true
 	s.pointer.animatedImage = false
-	s.ignoreMouse(!s.paintedAt(loc))
+	hit := s.hitAt(loc)
+	s.ignoreMouse(!s.paintedHit(hit))
+	return hit, true
 }
 
-// paintedAt reports whether a view under loc, a point of the window, takes the pointer in a painted window: the view the hit test finds, or one of the views it is in (driver.Painted).
-func (s *surface) paintedAt(loc apple.CGPoint) bool {
-	hit := s.hitAt(loc)
+// paintedHit reports whether hit or an ancestor takes the pointer in a
+// painted window (driver.Painted).
+func (s *surface) paintedHit(hit objc.ID) bool {
 	stop := s.native.Send(selSuperview)
 	for n := hit; n != 0 && n != stop; n = n.Send(selSuperview) {
 		if v := views[n]; v != nil && driver.Painted(v.kind, &v.style, v.events, v.windowDrag) {

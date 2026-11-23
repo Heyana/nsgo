@@ -152,6 +152,7 @@ func (s *surface) command(c *driver.WindowCommand) {
 	case driver.WindowSetFullScreen:
 		s.setFullScreen(c.On, c.DisplayID)
 	case driver.WindowClose:
+		s.panelMotion.Stop()
 		w.Send(sel("performClose:"), objc.ID(0))
 	case driver.WindowSetFrame:
 		s.setWindowFrame(c.Frame)
@@ -215,16 +216,19 @@ func (s *surface) command(c *driver.WindowCommand) {
 		}
 	case driver.WindowFitSize:
 		if s.kind == driver.SurfacePanel {
-			s.fitPanel(c.Frame.Width, c.Frame.Height)
+			s.fitPanel(c.Frame)
 		}
 	case driver.WindowSetAnchor:
 		if s.kind != driver.SurfacePanel {
 			break
 		}
 		s.anchorBounds, s.placement = c.AnchorBounds, c.Placement
+		s.panelMotion.Stop()
 		// Moving a panel that shows leaves the key window as it is.
 		if c.Placement != driver.WindowPlaceDefault && objc.Send[bool](s.window, sel("isVisible")) {
-			s.window.Send(sel("setFrameOrigin:"), placePanel(c.AnchorBounds, objc.Send[apple.CGRect](s.window, sel("frame")).Size, c.Placement))
+			frame := objc.Send[apple.CGRect](s.window, sel("frame"))
+			frame.Origin = placePanel(c.AnchorBounds, frame.Size, c.Placement)
+			s.applyPanelFrame(frame)
 		}
 	}
 }
@@ -274,6 +278,9 @@ func (s *surface) setConstraints(c driver.WindowConstraints) {
 }
 
 func (s *surface) applyTitleBar() {
+	if s.kind == driver.SurfacePanel {
+		return // Panels manage their own titlebar for rounding the frame.
+	}
 	w := s.window
 	hidden := s.titleBar == driver.TitleBarHidden
 	mask := objc.Send[uint](w, sel("styleMask"))

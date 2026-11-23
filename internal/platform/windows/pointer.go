@@ -11,6 +11,7 @@ package windows
 // goes on as before: presses and gestures for the engine.
 
 import (
+	"runtime"
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -18,8 +19,10 @@ import (
 )
 
 var (
-	getMessageTime = user32.NewProc("GetMessageTime")
-	getCursorPos   = user32.NewProc("GetCursorPos")
+	getMessageTime  = user32.NewProc("GetMessageTime")
+	getCursorPos    = user32.NewProc("GetCursorPos")
+	windowFromPoint = user32.NewProc("WindowFromPoint")
+	getCapture      = user32.NewProc("GetCapture")
 )
 
 const (
@@ -217,6 +220,86 @@ func (w *window) hostedMove(x, y int32, time uint32) bool {
 		wv.mouse(-1, false, px, py, time)
 	}
 	return false
+}
+
+// pointerScreenPosition keeps scripted test input separate from the real
+// cursor. The recorded screen point stays still between scripted moves.
+func (w *window) pointerScreenPosition() (point, bool) {
+	if w.kind == driver.SurfacePanel && w.opts.test != nil {
+		return w.testPanelPointer, w.testPanelPointerSet
+	}
+	var at point
+	ok, _, _ := getCursorPos.Call(uintptr(unsafe.Pointer(&at)))
+	return at, ok != 0
+}
+
+func windowAtScreenPoint(at point) uintptr {
+	// WindowFromPoint takes POINT by value, in two stack slots on 386
+	// and one register on the 64-bit targets.
+	if runtime.GOARCH == "386" {
+		hwnd, _, _ := windowFromPoint.Call(uintptr(at.X), uintptr(at.Y))
+		return hwnd
+	}
+	hwnd, _, _ := windowFromPoint.Call(uintptr(uint64(uint32(at.X)) | uint64(uint32(at.Y))<<32))
+	return hwnd
+}
+
+// repickPanelHover tracks the view that moved under a still pointer.
+// Only hover state follows the frame; this sends no mouse move or drag.
+func (w *window) repickPanelHover() {
+	if w.engine == nil || w.hwnd == 0 || lockedPointer.owner == w || w.popupTracking || w.alert != nil || w.scanner != nil {
+		return
+	}
+	at, ok := w.panelHoverPoint()
+	if !ok {
+		if w.pointerIn {
+			w.mouseLeft()
+		}
+		return
+	}
+	if w.opts.test != nil {
+		w.pointer, w.pointerIn = w.point(at.X, at.Y), true
+		w.hoverViews()
+	} else {
+		w.pointerMoved(at.X, at.Y)
+	}
+	w.hoverBars(w.pointer)
+}
+
+func (w *window) panelHoverPoint() (point, bool) {
+	if w.pointerMode == driver.WindowPointerNone || !w.panelFrameVisible() {
+		return point{}, false
+	}
+	at, ok := w.pointerScreenPosition()
+	if !ok {
+		return point{}, false
+	}
+	client := at
+	var bounds rect
+	if ok, _, _ := screenToClient.Call(w.hwnd, uintptr(unsafe.Pointer(&client))); ok == 0 {
+		return point{}, false
+	}
+	if ok, _, _ := getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&bounds))); ok == 0 ||
+		client.X < bounds.Left || client.X >= bounds.Right || client.Y < bounds.Top || client.Y >= bounds.Bottom {
+		return point{}, false
+	}
+	if w.canPassUnpainted() {
+		// The pass-through timer may still describe the previous frame.
+		w.passPointer(!w.paintedAt(w.point(client.X, client.Y)))
+	}
+	ex, _, _ := getWindowLongPtrW.Call(w.hwnd, gwlExStyle)
+	if ex&(wsExLayered|wsExTransparent) == wsExLayered|wsExTransparent {
+		return point{}, false
+	}
+	if w.opts.test == nil {
+		capture, _, _ := getCapture.Call()
+		if capture != 0 && capture != w.hwnd || windowAtScreenPoint(at) != w.hwnd {
+			return point{}, false
+		}
+	}
+	// A window drag area is non-client to Windows even inside client pixels.
+	hit := uintptr(uint32(uint16(at.X)) | uint32(uint16(at.Y))<<16)
+	return client, w.hwnd != 0 && w.ncHitTest(hit) == htClient
 }
 
 // mouseLeft follows the mouse out of the client area.

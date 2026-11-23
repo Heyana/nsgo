@@ -62,7 +62,7 @@ func (cx *Scope) SetWindowFrame(f WindowFrame) {
 		if f.Height == 0 {
 			f.Height = size.Height
 		}
-		cx.window(driver.WindowCommand{Action: driver.WindowFitSize, Frame: WindowFrame{Width: f.Width, Height: f.Height}})
+		cx.window(driver.WindowCommand{Action: driver.WindowFitSize, Frame: WindowFrame{Width: f.Width, Height: f.Height, Animated: f.Animated}})
 		return
 	}
 	cx.window(driver.WindowCommand{Action: driver.WindowSetFrame, Frame: f})

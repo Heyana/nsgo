@@ -345,7 +345,8 @@ type WindowFrame struct {
 	X, Y          Points
 	Move          bool
 	Width, Height Points
-	// Animated animates the change with macOS's resize animation.
+	// Animated eases frames of visible panels on macOS and Windows, unless
+	// reduced motion is on. Other macOS windows use AppKit's resize animation.
 	Animated bool
 }
 

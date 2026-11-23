@@ -63,6 +63,7 @@ const (
 	wmNCLButtonUp     = 0x00A2
 	wmNCLButtonDblClk = 0x00A3
 	wmNCMouseLeave    = 0x02A2
+	wmEnterSizeMove   = 0x0231
 
 	htClient      = 1
 	htCaption     = 2
@@ -313,6 +314,7 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 	case driver.WindowSetFullScreen:
 		w.setFullScreen(c.On, c.DisplayID)
 	case driver.WindowClose:
+		w.cancelPanelFrame()
 		w.destroying = true
 		w.visible = false
 		postMessageW.Call(w.hwnd, wmClose, 0, 0)
@@ -330,12 +332,17 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 			} else {
 				w.placePanel(w.anchor, w.anchorBounds, w.placement)
 			}
+			// Placement can apply another batch through the native resize.
+			if !w.visible || w.destroying || w.hwnd == 0 {
+				break
+			}
 			w.orderFront()
 		} else {
 			// Without taking the focus from another app (core.Window.Show).
 			showWindow.Call(w.hwnd, swShowNA)
 		}
 	case driver.WindowHide:
+		w.cancelPanelFrame()
 		w.visible = false
 		showWindow.Call(w.hwnd, swHide)
 	case driver.WindowSetFrame:
@@ -356,6 +363,9 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 				}
 			} else {
 				w.placePanel(w.anchor, w.anchorBounds, w.placement)
+			}
+			if !w.visible || w.destroying || w.hwnd == 0 {
+				break
 			}
 		}
 		w.orderFront()
@@ -389,13 +399,14 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		}
 	case driver.WindowFitSize:
 		if w.kind == driver.SurfacePanel {
-			w.fitPanel(c.Frame.Width, c.Frame.Height)
+			w.fitPanel(c.Frame)
 		}
 	case driver.WindowSetAnchor:
 		if w.kind == driver.SurfacePanel {
 			w.anchorBounds, w.placement = c.AnchorBounds, c.Placement
 			// Moving a panel that shows changes neither the z-order nor the focus.
 			if w.visible && w.placement != driver.WindowPlaceDefault {
+				w.cancelPanelFrame()
 				w.placeBeside(w.anchorBounds, w.placement)
 			}
 		}
@@ -486,6 +497,7 @@ func (w *window) minMaxInfo(lParam uintptr) {
 
 func (w *window) minimize() {
 	if !w.chrome.constraints.NoMinimize {
+		w.cancelPanelFrame()
 		w.showFirst.cancel()
 		showWindow.Call(w.hwnd, swMinimize)
 	}
@@ -496,10 +508,12 @@ func (w *window) toggleMaximize() {
 		return
 	}
 	if w.zoomed() {
+		w.cancelPanelFrame()
 		w.showFirst.cancel()
 		w.visible = true
 		showWindow.Call(w.hwnd, swRestore)
 	} else if !w.chrome.constraints.NoMaximize {
+		w.cancelPanelFrame()
 		w.showFirst.cancel()
 		w.visible = true
 		showWindow.Call(w.hwnd, swMaximize)
@@ -533,6 +547,7 @@ func (w *window) setFullScreen(on bool, displayID string) {
 		if r, _, _ := getMonitorInfoW.Call(monitor, uintptr(unsafe.Pointer(&mi))); r == 0 {
 			return
 		}
+		w.cancelPanelFrame()
 		if !c.fullScreen {
 			c.savedPlace = windowPlacement{}
 			c.savedPlace.Length = uint32(unsafe.Sizeof(c.savedPlace))
@@ -552,6 +567,7 @@ func (w *window) setFullScreen(on bool, displayID string) {
 		if !c.fullScreen {
 			return
 		}
+		w.cancelPanelFrame()
 		c.fullScreen, c.fullScreenMonitor = false, 0
 		setWindowLongPtrW.Call(w.hwnd, gwlStyle, c.savedStyle)
 		w.showMenuBar()

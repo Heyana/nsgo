@@ -431,6 +431,11 @@ type window struct {
 	scale    float64 // pixels per point
 	// placing is set while setWindowPosAt moves the window to pixels it chose (wmDPIChanged).
 	placing bool
+	// Frame motion belongs to panels; a newer frame request can land in synchronous WM_SIZE.
+	panelMotion      driver.PanelFrameMotion
+	panelFrameSerial uint64
+	panelStepping    bool
+	panelHoverLayout bool // re-pick after a resize layout that missed the frame
 
 	// What other goroutines hand the main thread.
 	mu       sync.Mutex
@@ -574,6 +579,9 @@ type window struct {
 	held      uintptr // the buttons the last mouse move held down
 	pointer   driver.Point
 	pointerIn bool
+	// A test panel's scripted pointer stays at its screen position as the panel moves.
+	testPanelPointer    point
+	testPanelPointerSet bool
 
 	// The field with the keyboard focus, the one a modal took it from,
 	// the one a press is selecting in, and whether the window lacks the
@@ -909,9 +917,10 @@ func (w *window) placeAt(f driver.WindowFrame) {
 
 // setWindowPosAt moves and sizes the window to a rect in the virtual desktop's pixels that it chose itself, so a DPI change the move causes keeps it (wmDPIChanged).
 func (w *window) setWindowPosAt(x, y, cx, cy int32) {
+	placing := w.placing
 	w.placing = true
 	setWindowPos.Call(w.hwnd, 0, uintptr(x), uintptr(y), uintptr(cx), uintptr(cy), swpNoZOrder|swpNoActivate)
-	w.placing = false
+	w.placing = placing
 }
 
 // composeFor has a window opening with material m draw through DirectComposition behind its backdrop, where the system has both.
@@ -1902,7 +1911,14 @@ func (w *window) apply(b *driver.MountBatch) {
 	w.checkControlFocus()
 	w.placeIME()
 	// Views that moved, appeared or went under a still pointer.
-	w.hoverViews()
+	if !w.panelStepping {
+		if w.panelHoverLayout {
+			w.panelHoverLayout = false
+			w.repickPanelHover()
+		} else {
+			w.hoverViews()
+		}
+	}
 	if recursor {
 		w.refreshCursor()
 	}
@@ -2379,8 +2395,12 @@ func (w *window) hoverViews() {
 			under = append(under, v.id)
 		}
 	}
+	events := w.hovered.Move(under)
+	if len(events) == 0 {
+		return
+	}
 	mods, button := modifiers(), hover.Pressed(uint32(w.held), mouseButtons)
-	for _, e := range w.hovered.Move(under) {
+	for _, e := range events {
 		if v := w.view(e.ID); v != nil {
 			e.Point = v.surfacePoint(w.pointer)
 			e.Page, e.Modifiers, e.Button = w.pointer, mods, button
@@ -2642,6 +2662,11 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 	}
 	if message == wmMouseMove {
+		if w.opts.test != nil && w.kind == driver.SurfacePanel {
+			at := point{int32(int16(lParam)), int32(int16(lParam >> 16))}
+			ok, _, _ := clientToScreen.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))
+			w.testPanelPointer, w.testPanelPointerSet = at, ok != 0
+		}
 		w.held = wParam
 		w.pointerMoved(int32(int16(lParam&0xffff)), int32(int16(lParam>>16&0xffff)))
 		w.mouseMoved()
@@ -2670,6 +2695,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmPointerCaptureChanged:
 		w.touchFinger(message, wParam, lParam)
 	case wmMouseLeave:
+		w.testPanelPointerSet = false
 		w.mouseLeft()
 		return 0
 	case wmSetCursor:
@@ -2768,6 +2794,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
 			if size := w.point(client.Right, client.Bottom); size.X > 0 && size.Y > 0 {
 				w.engine.Resize(driver.Size{Width: size.X, Height: size.Y}, driver.Geometry{})
+				if w.panelStepping {
+					w.panelHoverLayout = true
+				}
 			}
 			w.updateEnvironment()
 		}
@@ -2791,10 +2820,21 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			}
 		}
 	case wmWindowPosChanged:
+		if w.kind == driver.SurfacePanel && lParam != 0 {
+			pos := *(**windowPos)(unsafe.Pointer(&lParam))
+			const noGeometryChange = swpNoMove | swpNoSize
+			if w.visible && pos.Flags&swpHideWindow != 0 ||
+				!w.placing && w.panelMotion.Active() && pos.Flags&noGeometryChange != noGeometryChange {
+				w.cancelPanelFrame()
+			}
+		}
 		if w.embedded {
 			w.syncEmbeddedRoot()
 		}
 	case wmShowWindow:
+		if wParam == 0 && w.visible {
+			w.cancelPanelFrame()
+		}
 		if w.embedded {
 			w.syncEmbeddedRoot()
 		}
@@ -2805,6 +2845,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			}) // once the window shows or hides
 		}
 	case wmSize:
+		if wParam == sizeMinimized {
+			w.cancelPanelFrame()
+		}
 		w.post(w.syncOwnedVisibility)
 		if w.embedded {
 			w.syncEmbeddedRoot()
@@ -2900,6 +2943,8 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		} else {
 			w.mouseButtonUp(btn, at)
 		}
+	case wmEnterSizeMove:
+		w.cancelPanelFrame()
 	case wmMouseMove:
 		w.setHover(0) // off the caption buttons
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
@@ -3121,6 +3166,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return r
 		}
 	case wmDestroy:
+		w.cancelPanelFrame()
 		w.startup.close()
 		w.unobserveEmbeddedRoot()
 		w.closeQuickLook()

@@ -238,15 +238,19 @@ type surface struct {
 	loopback loopback.Sessions
 	// id is the surface's tree for a surface the app opened, of kind;
 	// tray is the tray icon a SurfaceTrayIcon draws, anchor the one a panel last showed under, and anchorBounds and placement where core.Window.ShowAt last placed it, placement WindowPlaceDefault for nowhere. hideOnBlur hides a panel as it loses the focus, and noActivate keeps it from ever taking it.
-	id           uint32
-	kind         driver.SurfaceKind
-	tray         uint32
-	anchor       uint32
-	anchorBounds driver.Bounds
-	placement    driver.WindowPlacement
-	hideOnBlur   bool
-	noActivate   bool
-	dock         driver.PanelDock
+	id                uint32
+	kind              driver.SurfaceKind
+	tray              uint32
+	anchor            uint32
+	anchorBounds      driver.Bounds
+	placement         driver.WindowPlacement
+	hideOnBlur        bool
+	noActivate        bool
+	dock              driver.PanelDock
+	panelMotion       driver.PanelFrameMotion
+	settingPanelFrame bool          // inside a native style/geometry change
+	panelRepick       bool          // pick after that change and the batch's layout
+	panelRepickAfter  time.Duration // frame submission awaiting a native hover pick
 	// The app and how an embedded surface starts it once it is in a
 	// window; observed the window its observations follow.
 	app      engine.App
@@ -1029,6 +1033,7 @@ func (s *surface) close() {
 		return
 	}
 	s.closed = true
+	s.panelMotion.Stop()
 	s.closeDialogs()
 
 	s.releaseChildWindows()
@@ -1361,7 +1366,7 @@ func (s *surface) backingScale() float32 {
 // refresh lays the title bar out again and reports the environment to the
 // engine if it changed.
 func (s *surface) refresh() {
-	if s == nil || s.engine == nil {
+	if s == nil || s.engine == nil || s.settingPanelFrame {
 		return
 	}
 	if lockedPointer.owner == s && !s.canHoldPointer() {
@@ -1456,7 +1461,7 @@ func (s *surface) observe() {
 
 	// Keys and mouse buttons held as the window stops being key come up for the app: their ups go to the window that is key now, or to none.
 	s.stops = append(s.stops, apple.Observe(center, apple.Global(appKitPath, "NSWindowDidResignKeyNotification"), func(note objc.ID) {
-		if note.Send(sel("object")) == s.window {
+		if note.Send(sel("object")) == s.window && !s.settingPanelFrame {
 			s.commitMarked()
 			s.releaseKeys()
 			s.releaseMouseButtons()
@@ -2677,7 +2682,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 	s.refreshSelection()
 	if s.repick {
 		s.repick = false
-		s.contentMoved(false)
+		if !s.panelRepick && s.panelRepickAfter == 0 {
+			s.contentMoved(false)
+		}
 	}
 	apple.WithoutAnimation(func() {
 		if lb != nil {
@@ -2700,6 +2707,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 				s.finishFullScreenTransition(false)
 			}
 		}
+	}
+	if s.panelRepick {
+		s.panelRepick = false
+		s.pickHere()
 	}
 }
 
@@ -3353,12 +3364,20 @@ func cursorUpdate(self objc.ID, _ objc.SEL, _ objc.ID) {
 // pick follows what is under the mouse at loc, a point of the window: the views hovered and the cursor. AppKit's tracking areas and cursor rects would find a view through the overlays above it; the hit test does not. moving is true when AppKit is about to deliver the mouse move itself.
 func (s *surface) pick(loc apple.CGPoint, always, moving bool) {
 	up := s.native.Send(selSuperview)
-	if s.window == 0 || up == 0 {
+	if s.window == 0 || up == 0 || s.settingPanelFrame {
 		return
 	}
 	hit := s.hitAt(loc)
+	s.pickHit(hit, up, loc, always, moving)
+}
+
+func (s *surface) pickHit(hit, up objc.ID, loc apple.CGPoint, always, moving bool) {
 	for v := range s.inside {
-		switch over := covers(v, hit); {
+		over := covers(v, hit)
+		if !over && s.kind == driver.SurfacePanel {
+			delete(s.inside, v)
+		}
+		switch {
 		case over && !v.over:
 			v.mouseAt(driver.EventMouseEnter, loc)
 		case !over && v.over:
@@ -3367,6 +3386,21 @@ func (s *surface) pick(loc apple.CGPoint, always, moving bool) {
 			continue
 		}
 		v.over = !v.over
+	}
+	if s.kind == driver.SurfacePanel {
+		// Frame changes can put views under a resting pointer before
+		// AppKit sends a tracking-area entry. Follow the native hit's
+		// ancestors, including scroll views' own tracking areas.
+		for n := hit; n != 0 && n != up; n = n.Send(selSuperview) {
+			if v := views[n]; v != nil && v.native == n && v.hover != 0 && !v.over {
+				s.inside[v] = struct{}{}
+				v.over = true
+				if v.sc != nil {
+					v.hovered()
+				}
+				v.mouseAt(driver.EventMouseEnter, loc)
+			}
+		}
 	}
 	// WebKit may add tracking areas after the web view was configured, as it joins the window.
 	for v := range s.webs {
@@ -3525,13 +3559,21 @@ func repickIn(t, at time.Duration, applying bool) time.Duration {
 
 // pickHere is pick where the mouse is now.
 func (s *surface) pickHere() {
-	if s.window != 0 {
-		at := objc.Send[apple.CGPoint](s.window, sel("mouseLocationOutsideOfEventStream"))
-		if s.testPointer != nil {
-			at = *s.testPointer
+	if s.window != 0 && !s.settingPanelFrame {
+		at := s.windowMouseLocation()
+		if s.kind == driver.SurfacePanel {
+			s.pickPanel(at, false)
+			return
 		}
 		s.pick(at, false, false)
 	}
+}
+
+func (s *surface) windowMouseLocation() apple.CGPoint {
+	if s.testPointer != nil {
+		return *s.testPointer
+	}
+	return objc.Send[apple.CGPoint](s.window, sel("mouseLocationOutsideOfEventStream"))
 }
 
 // later runs fn on the main thread after d, unless the surface closed.
@@ -3716,6 +3758,10 @@ func mouseEntered(self objc.ID, _ objc.SEL, event objc.ID) {
 		v.mouse(driver.EventMouseEnter, event)
 		return
 	}
+	if event != 0 && v.surface.kind == driver.SurfacePanel {
+		v.surface.repickPanel()
+		return
+	}
 	v.surface.inside[v] = struct{}{}
 	if v.sc != nil {
 		v.hovered()
@@ -3810,6 +3856,10 @@ func mouseExited(self objc.ID, _ objc.SEL, event objc.ID) {
 		v.mouse(driver.EventMouseLeave, event)
 		return
 	}
+	if event != 0 && v.surface.kind == driver.SurfacePanel {
+		v.surface.repickPanel()
+		return
+	}
 	delete(v.surface.inside, v)
 	if v.over {
 		v.over = false
@@ -3829,7 +3879,7 @@ func surfaceSetFrameSize(self objc.ID, cmd objc.SEL, size apple.CGSize) {
 	if v != nil {
 		s = v.surface
 	}
-	if s != nil {
+	if s != nil && !s.settingPanelFrame {
 		// What waited goes first, as the resize's own commit follows it.
 		// An animated resize, such as zooming from the title bar, steps the
 		// frame in a loop that runs no run loop sources until it ends, so
@@ -3840,7 +3890,7 @@ func surfaceSetFrameSize(self objc.ID, cmd objc.SEL, size apple.CGSize) {
 		defer s.measuring(false)()
 	}
 	apple.Super(self, cmd, size)
-	if s != nil && s.engine != nil {
+	if s != nil && s.engine != nil && !s.settingPanelFrame {
 		s.resize(driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)})
 	}
 	if s != nil && s.hud != nil {

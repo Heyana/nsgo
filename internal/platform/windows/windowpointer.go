@@ -68,18 +68,28 @@ func (w *window) passPointer(on bool) {
 
 // passUnpainted lets the pointer through while it is over nothing painted, by the hit test of the views under it. A button held keeps what the window does, so a drag that began on a view goes on to its end and one from another app passes over the window.
 func (w *window) passUnpainted() {
-	if w.pointerMode != driver.WindowPointerPainted || mouseButtonDown() {
+	if !w.canPassUnpainted() {
 		return
 	}
 	if r, _, _ := isWindowVisible.Call(w.hwnd); r == 0 {
 		return
 	}
-	var at point
-	if r, _, _ := getCursorPos.Call(uintptr(unsafe.Pointer(&at))); r == 0 {
+	at, ok := w.pointerScreenPosition()
+	if !ok {
 		return
 	}
 	screenToClient.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))
 	w.passPointer(!w.paintedAt(w.point(at.X, at.Y)))
+}
+
+func (w *window) canPassUnpainted() bool {
+	if w.pointerMode != driver.WindowPointerPainted {
+		return false
+	}
+	if w.kind == driver.SurfacePanel && w.opts.test != nil {
+		return w.held&(mkLButton|mkRButton|mkMButton|mkXButton1|mkXButton2) == 0
+	}
+	return !mouseButtonDown()
 }
 
 // paintedAt reports whether a view under p, in the window's points, takes the pointer in a painted window: the innermost view there, or one of the views it is in (driver.Painted).

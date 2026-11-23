@@ -234,7 +234,7 @@ func SetFullScreen(cx *core.Scope, on bool, displayID ...string) { cx.SetFullScr
 // OnClosing handlers may keep it, and the app ends by its shutdown mode.
 func CloseWindow(cx *core.Scope) { cx.CloseWindow() }
 
-// SetWindowFrame moves and sizes the window: f's top left corner is in points from the main screen's top left on every platform, and fields it leaves out keep their values, so a window given only a new height keeps its top edge. macOS animates the change when f asks. Linux sets the size GTK keeps for the window and positions it on X11; a Wayland compositor places an ordinary toplevel itself; CanPlaceWindows says whether the position moves the window.
+// SetWindowFrame moves and sizes the window: f's top left corner is in points from the main screen's top left on every platform, and fields it leaves out keep their values, so a window given only a new height keeps its top edge. Animated eases visible panels on macOS and Windows unless reduced motion is on; other macOS windows use AppKit's resize animation. Linux sets the size GTK keeps for the window and positions it on X11; a Wayland compositor places an ordinary toplevel itself; CanPlaceWindows says whether the position moves the window.
 func SetWindowFrame(cx *core.Scope, f WindowFrame) { cx.SetWindowFrame(f) }
 
 // SetWindowLevel puts the window at level among the others. macOS floats it at NSFloatingWindowLevel, or sinks it to the desktop's icons on every space; Windows makes it topmost, or puts it at the bottom of the z-order; Linux on X11 asks the window manager for _NET_WM_STATE_ABOVE or _NET_WM_STATE_BELOW, again each time the window shows. A Wayland compositor stacks its windows itself, and where CanSetWindowLevel is false the level does nothing.

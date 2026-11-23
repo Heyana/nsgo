@@ -379,6 +379,10 @@ warning := core.Text{ContentFunc: func() string {
 
 macOS、Windows 和 Linux 上调整桌面窗口大小时，绘制前最多等待 16 毫秒的新布局。让响应式计算和事件处理保持轻快，布局才能赶上这个期限；耗时的 I/O 放到 goroutine 中，再通过 `cx.Post` 交回结果。应用繁忙时窗口仍可调整大小，赶上后再显示新布局。
 
+当 `WindowFrame.Move` 为 true 时，`desktop.SetWindowFrame` 用 `X` 和 `Y` 移动窗口，坐标以主显示器左上角为原点，单位是点。未指定的宽高保持不变。用 `desktop.CanPlaceWindows` 检查能否移动窗口：macOS、Windows 和 Linux 的 X11 支持，普通 Wayland 顶层窗口则由合成器定位。`desktop.Frame` 跟随这些桌面平台的实际窗口位置。
+
+在 macOS 和 Windows 上，`WindowFrame{Animated: true}` 让可见面板平滑过渡到新位置和尺寸，也适用于停靠面板的尺寸变化。面板隐藏或启用减少动态效果时直接应用新尺寸和位置。macOS 的普通窗口仍使用 AppKit 动画。
+
 将 `desktop.WindowOptions.Parent` 设为同一应用中打开的窗口，父窗口关闭时子窗口也会关闭。在桌面平台上，子窗口位于父窗口上方，并随父窗口隐藏或最小化；主动隐藏的子窗口不会随父窗口恢复而重新显示。在 macOS 上，未设置 `Frame` 时子窗口还会在父窗口上居中打开，并随父窗口进入全屏。
 
 `WindowOptions.NoShadow` 和 `desktop.SetWindowShadow(cx, false)` 也会去掉 Windows 上隐藏标题栏、自绘窗口外观的窗口的阴影；使用系统标题栏的窗口保留其边框和阴影。Linux 上由窗口管理器装饰的窗口同样保留，`NoShadow` 只清除 GTK 自身装饰的阴影。
@@ -396,6 +400,8 @@ desktop.OpenPanel(cx, desktop.PanelOptions{Width: 600, Height: 400, PointerEvent
 在 macOS 和 Windows 上，`desktop.NewTray` 可通过 `TrayOptions.View` 绘制实时图标。Windows 将视图的透明绘制结果缩放到通知区域的图标大小，并在视图变化或图片加载完成后更新；用 `TrayOptions.OnClick`、`Panel` 和 `Menu` 处理图标的操作。Linux 目前显示 PNG 图标，绘制托盘视图仍是目标。
 
 `desktop.OpenPanel` 打开一个面板，供这样的快捷键或托盘图标显示：浮在其他窗口之上的无边框窗口。与 `desktop.OpenWindow`、`desktop.NewTray`、`mobile.OpenOverlay`、`audio.NewPlayer`、`audio.LoadSound` 和 `core.NewHolder` 一样，它直接归你显式传入的 `cx` 所有，而不被当前运行中的回调所有者覆盖，因此在按钮的 `OnPress` 里传入应用作用域即可让打开的窗口、面板或播放器在按钮作用域销毁后继续存活；`Effect`、`Cleanup`、`AfterFunc`、`OnKey` 等响应式原语则归当前运行中的所有者，需要切换时用 `cx.Run`。弹出卡片画在带 `Transparent` 的面板上，面板自己不画背景、边框和阴影，只显示卡片的圆角和 `BoxShadow`，阴影要在面板内留出空间；`FitContent` 让面板在首次显示前、以及内容变化时取内容的大小，最大到 `Width` 和 `Height`。`desktop.Transparent` 说明面板此刻是否不绘制任何自身内容，对透明窗口也一样；`desktop.CanMakeWindowsTransparent` 只说明窗口能否透明。为 false 时，例如没有合成器的 Linux，要给内容加上背景。
+
+在 macOS 上，未设置 `Transparent` 的面板在宽或高小于 24 点时使用直角，恢复到正常尺寸后重新使用圆角。
 
 ```go
 lookup := desktop.OpenPanel(cx, desktop.PanelOptions{Width: 380, Height: 520, Transparent: true, FitContent: true, HideOnBlur: true}, Card)

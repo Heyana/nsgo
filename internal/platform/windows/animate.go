@@ -3,9 +3,11 @@
 package windows
 
 import (
+	"math"
 	"slices"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
@@ -339,6 +341,73 @@ func (w *window) onFrame(fn func(now time.Time) bool) {
 	w.startClock()
 }
 
+func (w *window) cancelPanelFrame() {
+	if w.kind == driver.SurfacePanel {
+		w.panelFrameSerial++
+		w.panelMotion.Stop()
+	}
+}
+
+func (w *window) panelFrameVisible() bool {
+	if w.hwnd == 0 || !w.visible || w.destroying || isIconicWindow(w.hwnd) || !w.parentVisible() {
+		return false
+	}
+	shown, _, _ := isWindowVisible.Call(w.hwnd)
+	return shown != 0
+}
+
+func panelFrameBounds(r rect) driver.Bounds {
+	return driver.Bounds{
+		Origin: driver.Point{X: driver.Points(r.Left), Y: driver.Points(r.Top)},
+		Size:   driver.Size{Width: driver.Points(r.Right - r.Left), Height: driver.Points(r.Bottom - r.Top)},
+	}
+}
+
+// setPanelFrame takes the native pixels chosen by the placement, including
+// the destination monitor's scale, and animates only a panel already shown.
+func (w *window) setPanelFrame(current, target rect, animated bool) {
+	if animated && w.panelFrameVisible() && !w.motionReduced() {
+		if w.panelMotion.Start(panelFrameBounds(current), panelFrameBounds(target), time.Now()) {
+			w.startClock()
+		}
+		return
+	}
+	w.panelMotion.Stop()
+	if current != target {
+		w.movePanel(target.Left, target.Top, target.Right-target.Left, target.Bottom-target.Top)
+	}
+}
+
+func (w *window) stepPanelFrame(now time.Time) {
+	if w.panelStepping || !w.panelMotion.Active() {
+		return
+	}
+	if !w.panelFrameVisible() {
+		w.cancelPanelFrame()
+		return
+	}
+	frame, _ := w.panelMotion.Step(now, w.motionReduced())
+	// Round edges, rather than origin and size separately, so a docked
+	// panel keeps its outer edge even on half-pixel frames.
+	r := rect{
+		Left:   int32(math.Round(float64(frame.Origin.X))),
+		Top:    int32(math.Round(float64(frame.Origin.Y))),
+		Right:  int32(math.Round(float64(frame.Origin.X) + float64(frame.Size.Width))),
+		Bottom: int32(math.Round(float64(frame.Origin.Y) + float64(frame.Size.Height))),
+	}
+	var current rect
+	if ok, _, _ := getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&current))); ok == 0 || r == current {
+		return
+	}
+	// WM_SIZE can apply newer frame commands synchronously. Publish the step
+	// before entering it; on return only re-pick against the frame now shown.
+	w.panelStepping = true
+	w.setWindowPosAt(r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top)
+	w.panelStepping = false
+	w.panelHoverLayout = w.panelHoverLayout || w.resized != nil
+	w.repickPanelHover()
+}
+
 // frameClock follows the compositor, as NSH's ticker does: a goroutine
 // waits for each composition (DwmFlush) and posts wmTick, one at a time,
 // while the window animates, and parks while it does not. A timer's
@@ -424,7 +493,7 @@ func (c *frameClock) close() { close(c.done) }
 
 // startClock starts the frame clock, which tick stops when nothing
 // animates: no transition, scroll or layout animation, no animated value
-// running and no frame client.
+// running, no moving panel, and no frame client.
 func (w *window) startClock() {
 	if w.ticking {
 		return
@@ -462,6 +531,17 @@ func (w *window) ticked() {
 func (w *window) tick() {
 	defer w.reportGeometry()
 	now := time.Now()
+	if w.panelMotion.Active() {
+		frameTime := w.clock.frameTime()
+		if frameTime.IsZero() {
+			frameTime = now
+		}
+		w.stepPanelFrame(frameTime)
+		// Changing the frame can apply a batch that closes the panel.
+		if w.hwnd == 0 {
+			return
+		}
+	}
 	frames := w.frames
 	w.frames = nil
 	for _, fn := range frames {
@@ -551,7 +631,7 @@ func (w *window) tick() {
 	// A monitor closes a frame at every composition. A frame the engine
 	// asks for as the clock stops either finds it stopped and starts it, or
 	// keeps it going here.
-	if len(live) == 0 && len(w.frames) == 0 && !w.animator.Running() && w.hud == nil {
+	if len(live) == 0 && len(w.frames) == 0 && !w.animator.Running() && !w.panelMotion.Active() && w.hud == nil {
 		w.clockOn.Store(false)
 		if w.frameWanted.Load() {
 			w.clockOn.Store(true)

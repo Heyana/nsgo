@@ -1279,11 +1279,20 @@ func (w *window) windowFrame() driver.WindowFrame {
 // screen's top left, which is the virtual screen's origin, in the
 // window's pixels.
 func (w *window) setWindowFrame(f driver.WindowFrame) {
-	if w.chrome.fullScreen {
+	panel := w.kind == driver.SurfacePanel
+	if w.chrome.fullScreen || panel && w.destroying {
 		return
 	}
+	if panel {
+		w.panelFrameSerial++
+	}
+	serial := w.panelFrameSerial
 	if w.zoomed() || isIconicWindow(w.hwnd) {
 		showWindow.Call(w.hwnd, swRestore)
+		if w.panelFrameSerial != serial {
+			return
+		}
+		f.Animated = false
 	}
 	var r rect
 	getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&r)))
@@ -1302,6 +1311,10 @@ func (w *window) setWindowFrame(f driver.WindowFrame) {
 	}
 	if f.Height > 0 {
 		cy = px(f.Height)
+	}
+	if panel {
+		w.setPanelFrame(r, rect{x, y, x + cx, y + cy}, f.Animated)
+		return
 	}
 	w.setWindowPosAt(x, y, cx, cy)
 }
@@ -1348,6 +1361,7 @@ func (w *window) raiseTopmost() {
 
 // placePanel moves a panel beside the rectangle beside on side when side is set (core.Window.ShowAt), inside the work area of the monitor that holds its center, else beside tray icon anchor, else, with no anchor or none the shell places, to the upper middle of the monitor with the pointer, as macOS shows it.
 func (w *window) placePanel(anchor uint32, beside driver.Bounds, side driver.WindowPlacement) {
+	w.cancelPanelFrame()
 	if side != driver.WindowPlaceDefault && w.placeBeside(beside, side) {
 		return
 	}
@@ -1376,12 +1390,33 @@ func (w *window) placePanel(anchor uint32, beside driver.Bounds, side driver.Win
 }
 
 // fitPanel sizes a panel to width by height points, the size its content takes (driver.WindowFitSize), keeping its top left corner: one that shows beside the rectangle ShowAt placed it at, or beside its tray icon, is placed there again at its new size.
-func (w *window) fitPanel(width, height driver.Points) {
-	setWindowPos.Call(w.hwnd, 0, 0, 0, uintptr(w.px(width)), uintptr(w.px(height)), swpNoMove|swpNoZOrder|swpNoActivate)
+func (w *window) fitPanel(f driver.WindowFrame) {
+	if w.destroying {
+		return
+	}
+	var current rect
+	getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&current)))
+	w.panelFrameSerial++
+	serial := w.panelFrameSerial
+	target := rect{current.Left, current.Top, current.Left + w.px(f.Width), current.Top + w.px(f.Height)}
+	if w.visible && w.dock.Edge != driver.WindowPlaceDefault {
+		if docked, ok := w.dockedPanelFrame(f.Width, f.Height); ok {
+			w.setPanelFrame(current, docked, f.Animated)
+			return
+		}
+		// Keep the requested size for a later show, but don't jump while visible.
+		w.panelMotion.Stop()
+		w.dockPlacementFailed()
+		if w.panelFrameSerial == serial && w.hwnd != 0 && !w.destroying && !w.visible {
+			w.setPanelFrame(current, target, false)
+		}
+		return
+	}
+	w.setPanelFrame(current, target, false)
+	if serial != w.panelFrameSerial || !w.visible {
+		return
+	}
 	switch {
-	case !w.visible:
-	case w.dock.Edge != driver.WindowPlaceDefault:
-		w.placeDockedPanel()
 	case w.placement != driver.WindowPlaceDefault:
 		w.placeBeside(w.anchorBounds, w.placement)
 	case w.anchor != 0:
@@ -1406,7 +1441,11 @@ func (w *window) panelPixels(monitor uintptr) (width, height int32, ok bool) {
 
 // movePanel moves and sizes the panel to the pixels it chose on its monitor, which a DPI change the move causes keeps (setWindowPosAt), then lays it out at the scale it has there: a hidden window may move to a monitor of another scale without a WM_DPICHANGED.
 func (w *window) movePanel(x, y, width, height int32) {
+	serial := w.panelFrameSerial
 	w.setWindowPosAt(x, y, width, height)
+	if w.panelFrameSerial != serial {
+		return
+	}
 	dpi, _, _ := getDpiForWindow.Call(w.hwnd)
 	if dpi == 0 || float64(dpi)/96 == w.scale {
 		return

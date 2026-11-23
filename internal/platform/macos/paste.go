@@ -103,6 +103,9 @@ func registerPaste() {
 			Fn: func(self objc.ID, _ objc.SEL, note objc.ID) {
 				s := windowSurface(note.Send(sel("object")))
 				s.commitMarked()
+				if s != nil {
+					s.panelMotion.Stop()
+				}
 				if s == nil || s.id == 0 {
 					apple.OnMain(finish)
 				}
