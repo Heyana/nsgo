@@ -490,9 +490,11 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 	case driver.ItemVideoSeek:
 		m.o.op("vseek", it.ID).num(it.Time.Seconds())
 	case driver.ItemWeb:
-		if it.Web != nil {
-			m.o.op("web", it.ID).str(it.Web.Source.Src).boolean(it.Web.NoJavaScript)
+		if c := it.Web; c != nil {
+			m.o.op("web", it.ID).str(c.Source.Src).boolean(c.NoJavaScript).str(c.InjectedJavaScriptBeforeContent).str(c.InjectedJavaScript)
 		}
+	case driver.ItemWebCookies:
+		m.s.dispatch(driver.NoWebCookies(it))
 	case driver.ItemWebCommand:
 		m.o.op("wcmd", it.ID).num(float64(it.WebCommand)).str(it.Value)
 	case driver.ItemScreen:

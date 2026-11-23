@@ -398,7 +398,7 @@ func (s *surface) event(args []js.Value) {
 	case "webloadstart":
 		s.dispatch(driver.Event{Kind: driver.EventLoadStart, ID: id, Navigation: &driver.WebNavigation{URL: str(4), Loading: true}})
 	case "webload":
-		s.dispatch(driver.Event{Kind: driver.EventLoad, ID: id, Navigation: &driver.WebNavigation{URL: str(4)}})
+		s.dispatch(driver.Event{Kind: driver.EventLoad, ID: id, Navigation: &driver.WebNavigation{URL: str(4), Title: str(5)}})
 	case "weberror":
 		s.dispatch(driver.Event{Kind: driver.EventError, ID: id, Navigation: &driver.WebNavigation{URL: str(4)}})
 	case "selection":

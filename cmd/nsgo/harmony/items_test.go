@@ -45,7 +45,7 @@ var unsupportedItems = map[string]string{
 	"web only":           `ItemPageHead`,
 	// Services main added after this target, which no HarmonyOS kit answers here yet.
 	"services added since": `ItemAuthSession ItemPurchase ItemSensor ItemSpeak
-		ItemWebCookies ItemLookUp ItemPictureInPicture ItemPictureInPictureCommand
+		ItemLookUp ItemPictureInPicture ItemPictureInPictureCommand
 
 		ItemScanCode ItemReleaseOffscreen
 
@@ -82,7 +82,7 @@ var unsupportedEvents = map[string]string{
 
 	"services added since": `EventAuthSession EventOpenLinks EventShared EventPurchase
 
-		EventPurchaseUpdate EventSensor EventSpeak EventWebCookies EventGPU EventSavePreflight EventDiscovery EventEditAction`,
+		EventPurchaseUpdate EventSensor EventSpeak EventGPU EventSavePreflight EventDiscovery EventEditAction`,
 	// The app hears neither: the core sends no audio where the environment
 	// says none, and asks about a quit only where the platform ends apps
 	// itself.

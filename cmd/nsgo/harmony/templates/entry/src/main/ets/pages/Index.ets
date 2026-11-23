@@ -377,9 +377,11 @@ class VNode {
   pv: number = 0;
   // A canvas's drawing, as operations to replay.
   drawing: string = '';
-  // A web view's page, whether its scripts run, and the command it waits for.
+  // A web view's page, whether its scripts run, the scripts injected before and after its content, and the command it waits for.
   webSrc: string = '';
   noJS: boolean = false;
+  webBefore: string = '';
+  webAfter: string = '';
   webCmd: number = 0;
   webCmdValue: string = '';
   // webController is the web view's, made with the node.
@@ -817,6 +819,8 @@ class Tree {
         } else if (code === 'web') {
           v.webSrc = o[2] as string;
           v.noJS = o[3] as boolean;
+          v.webBefore = o[4] as string;
+          v.webAfter = o[5] as string;
         } else if (code === 'wcmd') {
           v.webCmd = o[2] as number;
           v.webCmdValue = o[3] as string;
@@ -2203,10 +2207,13 @@ struct Index {
     this.controller.runJavaScript('nsgoEvent("zoom",' + id + ',' + z + ',' + x + ',' + y + ')');
   }
 
-  send(name: string, id: number, x: number, y: number, text: string): void {
+  send(name: string, id: number, x: number, y: number, text: string, detail: string = ''): void {
     let js = 'nsgoEvent("' + name + '",' + id + ',' + x + ',' + y;
-    if (text !== '') {
-      js += ',"' + text.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+    if (text !== '' || detail !== '') {
+      js += ',' + JSON.stringify(text);
+    }
+    if (detail !== '') {
+      js += ',' + JSON.stringify(detail);
     }
     js += ')';
     this.controller.runJavaScript(js);
@@ -3182,35 +3189,49 @@ struct VideoView {
       })
   }
 }
-// WebView draws a web view's page: the engine gives it a URL and its
-// commands, and the page reports loading back.
+// webHooks is what a web view's ArkWeb hooks are set from, which ArkWeb takes only as the view is made: whether its scripts run and the scripts injected before and after its content.
+function webHooks(v: VNode): string {
+  return JSON.stringify([v.noJS, v.webBefore, v.webAfter]);
+}
+
+// WebView draws a web view's page: the engine gives it a URL, the scripts to inject and its commands, and the page reports loading back.
 @Component
 struct WebView {
   v: VNode = new VNode();
   c: webview.WebviewController | undefined = undefined;
   host: Index | undefined = undefined;
 
+  // scripts are the ArkWeb script items for an injected script. ArkWeb runs them in every frame whose URL matches, so the script runs only in the main frame, inside a block, as on Windows.
+  scripts(script: string): ScriptItem[] {
+    if (this.v.noJS || script === '') {
+      return [];
+    }
+    return [{ script: 'if (window === window.top) {\n' + script + '\n}', scriptRules: ['*'] }];
+  }
+
+  // currentHost is the host while this Web is still the view's, since a replaced or removed Web can still have a navigation callback pending.
+  currentHost(): Index | undefined {
+    const host = this.host;
+    if (host !== undefined && host.tree.at(this.v.id)?.webController === this.c) {
+      return host;
+    }
+    return undefined;
+  }
+
   build() {
     if (this.c !== undefined) {
       Web({ src: this.v.webSrc, controller: this.c })
         .javaScriptAccess(!this.v.noJS)
-        .onPageBegin(() => {
-          const host = this.host;
-          if (host !== undefined) {
-            host.send('webloadstart', this.v.id, 0, 0, this.v.webSrc);
-          }
+        .javaScriptOnDocumentStart(this.scripts(this.v.webBefore))
+        .javaScriptOnDocumentEnd(this.scripts(this.v.webAfter))
+        .onPageBegin((e: OnPageBeginEvent) => {
+          this.currentHost()?.send('webloadstart', this.v.id, 0, 0, e.url);
         })
-        .onPageEnd(() => {
-          const host = this.host;
-          if (host !== undefined) {
-            host.send('webload', this.v.id, 0, 0, this.v.webSrc);
-          }
+        .onPageEnd((e: OnPageEndEvent) => {
+          this.currentHost()?.send('webload', this.v.id, 0, 0, e.url, this.c?.getTitle() ?? '');
         })
         .onErrorReceive((e: OnErrorReceiveEvent) => {
-          const host = this.host;
-          if (host !== undefined) {
-            host.send('weberror', this.v.id, 0, 0, e.request.getRequestUrl());
-          }
+          this.currentHost()?.send('weberror', this.v.id, 0, 0, e.request.getRequestUrl());
         })
     }
   }
@@ -3472,6 +3493,8 @@ class Renderer {
   // webControllers are the web views' controllers, which commands use.
   webControllers: Map<number, webview.WebviewController> = new Map();
   webShown: Map<number, string> = new Map();
+  // webHooksShown are the hooks each web view's ArkWeb view was made with (webHooks).
+  webHooksShown: Map<number, string> = new Map();
   videoShown: Map<number, string> = new Map();
   // headers are the system headers the screens draw, and their builders.
   headers: Map<number, FrameNode> = new Map();
@@ -3601,6 +3624,7 @@ class Renderer {
     this.leaves.delete(id);
     this.webControllers.delete(id);
     this.webShown.delete(id);
+    this.webHooksShown.delete(id);
     this.videoShown.delete(id);
     this.headers.delete(id);
     this.headerBuilders.delete(id);
@@ -3659,6 +3683,8 @@ class Renderer {
       const c = new webview.WebviewController();
       v.webController = c;
       this.webControllers.set(v.id, c);
+      this.webHooksShown.set(v.id, webHooks(v));
+      this.webShown.set(v.id, v.webSrc);
       return this.leaf(v, KIND_WEB);
     }
     if (v.kind === KIND_VIDEO) {
@@ -3675,7 +3701,8 @@ class Renderer {
     return s;
   }
 
-  leaf(v: VNode, kind: number): FrameNode | null {
+  // leaf builds the view of a leaf kind in a Stack of its own, or in box, which holds the view the leaf replaces.
+  leaf(v: VNode, kind: number, container?: FrameNode): FrameNode | null {
     const ui = this.ui;
     if (ui === undefined) {
       return null;
@@ -3701,7 +3728,7 @@ class Renderer {
     // it keeps the frame of the parent's top left corner and the view lands
     // there whatever the engine laid out. A Stack of its own holds the frame
     // and the view fills it.
-    const box = typeNode.createNode(ui, 'Stack');
+    const box = container ?? typeNode.createNode(ui, 'Stack');
     const ba = typeNode.getAttribute(box, 'Stack');
     if (ba !== undefined) {
       ba.alignContent(Alignment.TopStart);
@@ -3797,6 +3824,21 @@ class Renderer {
         b.update(v);
       }
     } else if (v.kind === KIND_WEB) {
+      if (this.webHooksShown.get(v.id) !== webHooks(v)) {
+        // ArkWeb takes its script and JavaScript hooks only as a Web is made, and a new source can start loading before changed modifiers apply, so a new Web loads the source with them, starting a new history.
+        const old = this.leaves.get(v.id);
+        const drawn = old?.getFrameNode();
+        if (drawn !== undefined && drawn !== null) {
+          node.removeChild(drawn);
+        }
+        old?.dispose();
+        const c = new webview.WebviewController();
+        v.webController = c;
+        this.webControllers.set(v.id, c);
+        this.webHooksShown.set(v.id, webHooks(v));
+        this.webShown.set(v.id, v.webSrc);
+        this.leaf(v, KIND_WEB, node);
+      }
       const b = this.leaves.get(v.id);
       const c = this.webControllers.get(v.id);
       if (b !== undefined && c !== undefined) {
