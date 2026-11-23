@@ -545,14 +545,12 @@ func (in *input) changed() {
 	in.caretMoved()
 }
 
-// selectionMoved hears the editor's selection change. Marking text does
-// not report the change of the text, but moves the selection: a text an
-// input method marks is reported from here.
+// selectionMoved also reports edits made without textDidChange, such as marking text or dropping it by marking nothing.
 func (in *input) selectionMoved() {
 	if in == nil {
 		return
 	}
-	if _, ok := in.markedText(); ok && !in.applying && in.text() != in.fs.Known() {
+	if _, ok := in.markedText(); (ok || in.fs.Composing()) && !in.applying && in.text() != in.fs.Known() {
 		in.changed()
 		return
 	}
