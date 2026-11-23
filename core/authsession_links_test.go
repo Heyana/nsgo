@@ -62,6 +62,16 @@ func TestAuthSessionCompletesFromItsOwnSchemeLink(t *testing.T) {
 	if calls != 1 || result != callback || !slices.Equal(ordinary, unrelated) {
 		t.Fatalf("calls=%d callback=%q ordinary=%v", calls, result, ordinary)
 	}
+	// The callback carries the provider's code: it must not become the app's address either.
+	if got := h.root.AppURL(); got != unrelated[len(unrelated)-1] {
+		t.Fatalf("app address %q, want the last ordinary link", got)
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: []string{"other:/next"}})
+	prepareBrowserAuth(t, h.root, AuthSessionOptions{Scheme: "com.example.app", Path: "/only"}, func(string, error) {})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: []string{"com.example.app:/only?code=secret"}})
+	if got := h.root.AppURL(); got != "other:/next" {
+		t.Fatalf("a claimed callback alone became the app address %q", got)
+	}
 	// A late native answer cannot answer again, and a late link is ordinary.
 	h.tree.Dispatch(driver.Event{Kind: driver.EventAuthSession, Count: id, Data: &driver.AuthEvent{Phase: driver.AuthEnded, Callback: callback}})
 	h.tree.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: []string{callback}})
