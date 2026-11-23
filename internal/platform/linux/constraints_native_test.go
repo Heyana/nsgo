@@ -3,6 +3,7 @@
 package linux
 
 import (
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -70,19 +71,24 @@ func TestWindowConstraintsPublishMaximumAndAllowNativeResize(t *testing.T) {
 			}
 		}
 	}
-	set(driver.WindowConstraints{MinWidth: 180, MinHeight: 100, MaxWidth: 400, MaxHeight: 300, NoMinimize: true})
-	// GDK rewrites WM_NORMAL_HINTS without a maximum when it next lays the window out, and the backend restores the maximum after that layout.
-	var hints nativeSizeHints
-	var supplied int
-	for end := time.Now().Add(3 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		w.onLoop(t, func() { display, xid, _ = w.x11Window(); readHints(display, xid, &hints, &supplied) })
-		if hints.Flags&(1<<5) != 0 {
-			break
-		}
-		if time.Now().After(end) {
-			t.Fatalf("WM_NORMAL_HINTS flags=%#x have no maximum", hints.Flags)
+	const maximum = 1 << 5 // PMaxSize
+	// awaitHints waits for the hints a constraint change publishes as the window is next allocated, which setConstraints does not wait for.
+	awaitHints := func(what string, ok func(nativeSizeHints) bool) {
+		t.Helper()
+		var hints nativeSizeHints
+		var supplied int
+		for end := time.Now().Add(3 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+			w.onLoop(t, func() { display, xid, _ = w.x11Window(); readHints(display, xid, &hints, &supplied) })
+			if ok(hints) {
+				return
+			}
+			if time.Now().After(end) {
+				t.Fatalf("WM_NORMAL_HINTS flags=%#x max=%dx%d have no %s", hints.Flags, hints.MaxWidth, hints.MaxHeight, what)
+			}
 		}
 	}
+	set(driver.WindowConstraints{MinWidth: 180, MinHeight: 100, MaxWidth: 400, MaxHeight: 300, NoMinimize: true})
+	awaitHints("maximum", func(h nativeSizeHints) bool { return h.Flags&maximum != 0 })
 	if bindDesktopXlib() {
 		x := &desktopXlib
 		var actual uintptr
@@ -110,9 +116,11 @@ func TestWindowConstraintsPublishMaximumAndAllowNativeResize(t *testing.T) {
 	requestSize(60, 40)
 	awaitSize(180, 100)
 	set(driver.WindowConstraints{MaxWidth: 240})
+	awaitHints("maximum width alone", func(h nativeSizeHints) bool { return h.Flags&maximum != 0 && h.MaxHeight == math.MaxInt32 })
 	requestSize(800, 400)
 	awaitSize(240, 400)
 	set(driver.WindowConstraints{})
+	awaitHints("cleared maximum", func(h nativeSizeHints) bool { return h.Flags&maximum == 0 })
 	requestSize(600, 450)
 	awaitSize(600, 450)
 }
