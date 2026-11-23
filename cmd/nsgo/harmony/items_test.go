@@ -39,9 +39,10 @@ var unsupportedItems = map[string]string{
 		ItemSetLaunchAtLogin ItemOpenSurface ItemQuit ItemTray ItemTrayMenu
 		ItemWindow ItemHotKeys ItemQuitResponse ItemDockMenu ItemRecentFile
 		ItemQuickLook ItemCursorPoint ItemPointerLock`,
-	"Apple only":        `ItemAppleCredentialState ItemSignInWithApple`,
-	"Android wire only": `ItemSaveFilePreflight`,
-	"web only":          `ItemPageHead`,
+	"Apple only":         `ItemAppleCredentialState ItemSignInWithApple ItemAppClipOverlay`,
+	"Android wire only":  `ItemSaveFilePreflight`,
+	"mini programs only": `ItemMiniProgramSignIn`,
+	"web only":           `ItemPageHead`,
 	// Services main added after this target, which no HarmonyOS kit answers here yet.
 	"services added since": `ItemAuthSession ItemPurchase ItemSensor ItemSpeak
 		ItemWebCookies ItemLookUp ItemPictureInPicture ItemPictureInPictureCommand
@@ -75,7 +76,8 @@ var unsupportedEvents = map[string]string{
 		EventWindowEnded`,
 	"system and desktop": `EventTray EventHotKey EventLaunchAtLogin EventSpeech
 		EventQuitRequest EventDockMenu EventHotKeyState EventWindowPlacementFailed EventCursorPoint`,
-	"Apple only": `EventSignInWithApple EventOpenScene`,
+	"Apple only":         `EventSignInWithApple EventOpenScene`,
+	"mini programs only": `EventMiniProgramSignIn`,
 	// Services main added after this target, which no HarmonyOS kit answers here yet.
 
 	"services added since": `EventAuthSession EventOpenLinks EventShared EventPurchase
