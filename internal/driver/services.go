@@ -550,6 +550,8 @@ const (
 	ClipboardReadItems
 	// ClipboardReadChangeCount reads the platform's clipboard sequence number.
 	ClipboardReadChangeCount
+	// ClipboardReadFormats reads native format names without copying payloads.
+	ClipboardReadFormats
 )
 
 // MaxClipboardImage is the most bytes of a PNG a clipboard read returns:
@@ -911,6 +913,14 @@ func (c *MemoryClipboard) Take(it *MountItem) (ev Event, answer, taken bool) {
 			ev.Data = ClipboardResult{Items: items, Err: err}
 		case ClipboardReadChangeCount:
 			ev.Data = ClipboardResult{ChangeCount: c.ChangeCount}
+		case ClipboardReadFormats:
+			var formats []string
+			for _, item := range c.snapshot() {
+				for _, rep := range item.Representations {
+					formats = append(formats, rep.Type)
+				}
+			}
+			ev.Data = ClipboardResult{Formats: formats}
 		}
 		return ev, true, true
 	default:

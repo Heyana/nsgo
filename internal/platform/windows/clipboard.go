@@ -118,7 +118,8 @@ func (w *window) readClipboardItems() ([]driver.ClipboardItem, error) {
 		}
 		h, _, _ := getClipboardData.Call(format)
 		if h == 0 {
-			continue // a delayed-rendered format its owner failed to render; keep the others
+			reps = append(reps, driver.ClipboardRepresentation{Type: name})
+			continue // retain presence-only and delayed-rendered format markers
 		}
 		const gmemInvalidHandle = 0x8000
 		if flags, _, _ := globalFlags.Call(h); flags == gmemInvalidHandle {
@@ -139,6 +140,29 @@ func (w *window) readClipboardItems() ([]driver.ClipboardItem, error) {
 		return nil, nil
 	}
 	return []driver.ClipboardItem{{Representations: reps}}, nil
+}
+
+func (w *window) clipboardFormats() ([]string, error) {
+	if ok, _, err := openClipboard.Call(w.hwnd); ok == 0 {
+		return nil, fmt.Errorf("open clipboard: %w", err)
+	}
+	defer closeClipboard.Call()
+	var formats []string
+	for format := uintptr(0); ; {
+		setLastError.Call(0)
+		next, _, err := enumClipboardFormats.Call(format)
+		if next == 0 {
+			if err != syscall.Errno(0) {
+				return nil, fmt.Errorf("enumerate clipboard formats: %w", err)
+			}
+			break
+		}
+		format = next
+		if name := clipboardFormatName(format); name != "" {
+			formats = append(formats, name)
+		}
+	}
+	return formats, nil
 }
 
 func (w *window) writeClipboardItems(items []driver.ClipboardItem) error {

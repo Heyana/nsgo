@@ -91,6 +91,9 @@ func (s *surface) readClipboard(it *driver.MountItem) {
 		ev.Data = driver.ClipboardResult{Items: items, Err: err}
 	case driver.ClipboardReadChangeCount:
 		ev.Data = driver.ClipboardResult{ChangeCount: pasteboardChangeCount(pb)}
+	case driver.ClipboardReadFormats:
+		formats, err := clipboardFormats(pb)
+		ev.Data = driver.ClipboardResult{Formats: formats, Err: err}
 	}
 	s.engine.Dispatch(ev)
 }

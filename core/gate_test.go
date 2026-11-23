@@ -58,6 +58,7 @@ var gated = map[string]service{
 	"ReadClipboardItems":            serviceClipboard,
 	"WriteClipboardItems":           serviceClipboard,
 	"ClipboardChangeCount":          serviceClipboard,
+	"ClipboardFormats":              serviceClipboard,
 	"PickImages":                    servicePicker,
 	"TakePhoto":                     servicePicker,
 	"ScanCode":                      servicePicker,

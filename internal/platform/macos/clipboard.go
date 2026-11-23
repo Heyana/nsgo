@@ -30,7 +30,8 @@ func readClipboardItems(pb objc.ID) ([]driver.ClipboardItem, error) {
 			data := object.Send(sel("dataForType:"), kind)
 			name := apple.GoString(kind)
 			if data == 0 {
-				continue // the owner could not provide this type; keep the ones it did
+				reps = append(reps, driver.ClipboardRepresentation{Type: name})
+				continue // retain presence-only and deferred format markers
 			}
 			n := objc.Send[uint](data, sel("length"))
 			if n > remaining {
@@ -47,6 +48,24 @@ func readClipboardItems(pb objc.ID) ([]driver.ClipboardItem, error) {
 		return nil, errors.New("the clipboard changed while it was being read")
 	}
 	return items, nil
+}
+
+func clipboardFormats(pb objc.ID) ([]string, error) {
+	native := pb.Send(sel("pasteboardItems"))
+	var formats []string
+	seen := make(map[string]bool)
+	for i := range objc.Send[uint](native, sel("count")) {
+		object := native.Send(sel("objectAtIndex:"), i)
+		types := object.Send(sel("types"))
+		for j := range objc.Send[uint](types, sel("count")) {
+			name := apple.GoString(types.Send(sel("objectAtIndex:"), j))
+			if name != "" && !seen[name] {
+				seen[name] = true
+				formats = append(formats, name)
+			}
+		}
+	}
+	return formats, nil
 }
 
 func writeClipboardItems(pb objc.ID, items []driver.ClipboardItem) error {

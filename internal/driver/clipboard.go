@@ -23,6 +23,7 @@ type ClipboardRepresentation struct {
 // ClipboardResult is an EventClipboard for the item, write or change-count request.
 type ClipboardResult struct {
 	Items       []ClipboardItem
+	Formats     []string
 	ChangeCount int64
 	Err         error
 }

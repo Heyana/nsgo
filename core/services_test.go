@@ -32,16 +32,19 @@ func TestClipboardReads(t *testing.T) {
 	var cx *Scope
 	h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node { cx = c; return View{} })
 	h.commit()
+	h.tree.SetEnvironment(Environment{ClipboardItems: true})
 	var text string
 	var has, hasImage bool
 	var img ClipboardImage
 	var ok bool
 	var files []string
+	var formats []string
 	cx.ReadClipboard(func(s string) { text = s })
 	cx.HasClipboardText(func(b bool) { has = b })
 	cx.ReadClipboardImage(func(i ClipboardImage, o bool, _ error) { img, ok = i, o })
 	cx.HasClipboardImage(func(b bool) { hasImage = b })
 	cx.ReadClipboardFiles(func(u []string) { files = u })
+	cx.ClipboardFormats(func(v []string) { formats = v })
 	cx.SetClipboardImage([]byte{1, 2, 3})
 	b := h.commit()
 	var reads []driver.MountItem
@@ -51,7 +54,7 @@ func TestClipboardReads(t *testing.T) {
 		}
 	}
 	want := []driver.ClipboardRead{driver.ClipboardReadText, driver.ClipboardReadHasText, driver.ClipboardReadImage,
-		driver.ClipboardReadHasImage, driver.ClipboardReadFiles}
+		driver.ClipboardReadHasImage, driver.ClipboardReadFiles, driver.ClipboardReadFormats}
 	if len(reads) != len(want) {
 		t.Fatalf("reads = %+v", reads)
 	}
@@ -62,6 +65,11 @@ func TestClipboardReads(t *testing.T) {
 	}
 	if it := command(b, driver.ItemSetClipboardImage); it == nil || !slices.Equal(it.Data.([]byte), []byte{1, 2, 3}) {
 		t.Fatalf("set image = %+v", it)
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: reads[len(reads)-1].Count,
+		Data: driver.ClipboardResult{Formats: []string{"public.utf8-plain-text", "public.png"}}})
+	if !slices.Equal(formats, []string{"public.utf8-plain-text", "public.png"}) {
+		t.Fatalf("formats = %v", formats)
 	}
 	answers := []driver.Event{
 		{Text: "hi"}, {Finished: true}, {Data: &driver.ClipboardImage{PNG: []byte{9}, Size: Size{Width: 2, Height: 3}}},

@@ -70,6 +70,23 @@ func (cx *Scope) ClipboardChangeCount(done func(int64)) {
 	})
 }
 
+// ClipboardFormats calls done with native format names currently offered by the clipboard, without copying their payloads. It answers an empty slice when the clipboard is empty or the platform cannot name its formats.
+func (cx *Scope) ClipboardFormats(done func([]string)) {
+	t, err := cx.clipboardItemsTree()
+	if err != nil {
+		done(nil)
+		return
+	}
+	t.request(cx, driver.MountItem{Kind: driver.ItemReadClipboard, Clipboard: driver.ClipboardReadFormats}, func(ev driver.Event) {
+		result, ok := ev.Data.(driver.ClipboardResult)
+		if !ok || result.Err != nil {
+			done(nil)
+			return
+		}
+		done(result.Formats)
+	})
+}
+
 func (cx *Scope) clipboardItemsTree() (*Tree, error) {
 	if err := cx.gate(serviceClipboard, ""); err != nil {
 		return nil, err

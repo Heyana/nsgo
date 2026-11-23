@@ -33,7 +33,7 @@ cx.ReadClipboard(func(text string) { pasted.Set(text) })
 cx.SetClipboard("Hello")
 ```
 
-On macOS and Windows, `ReadClipboardItems` gives a snapshot of all available byte representations up to 48 MiB. Each item carries ordered `ClipboardRepresentation` values with a native `Type` and its raw `Data`. To restore a snapshot, pass it to `WriteClipboardItems` together with an optional callback that receives the write error. An empty slice clears the clipboard. Compare values from `ClipboardChangeCount` for equality to detect a new copy, including when the copied text is identical.
+On macOS and Windows, `ReadClipboardItems` gives a snapshot of all available byte representations up to 48 MiB. Each item carries ordered `ClipboardRepresentation` values with a native `Type` and its raw `Data`, including presence-only formats with empty data. `ClipboardFormats` lists native format names without copying their payloads. To restore a snapshot, pass it to `WriteClipboardItems` together with an optional callback that receives the write error. An empty slice clears the clipboard. Compare values from `ClipboardChangeCount` for equality to detect a new copy, including when the copied text is identical.
 
 macOS keeps the item boundaries and pasteboard type names. Windows uses one item and preserves byte-backed Win32 names such as `CF_HDROP` and registered formats such as `Rich Text Format`. It combines items with distinct formats on write and uses a zero byte for an empty payload. GDI handles, owner-display formats and private numeric format IDs are omitted. On other platforms, the read and write callbacks receive `CodeUnavailable` and the count callback receives `-1`.
 

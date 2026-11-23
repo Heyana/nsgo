@@ -90,6 +90,9 @@ func (w *window) readClipboard(it *driver.MountItem) {
 		ev.Data = driver.ClipboardResult{Items: items, Err: err}
 	case driver.ClipboardReadChangeCount:
 		ev.Data = driver.ClipboardResult{ChangeCount: clipboardChangeCount()}
+	case driver.ClipboardReadFormats:
+		formats, err := w.clipboardFormats()
+		ev.Data = driver.ClipboardResult{Formats: formats, Err: err}
 	case driver.ClipboardReadHasImage:
 		ev.Finished = !formatAvailable(cfHDrop) && (formatAvailable(pngFormat()) || formatAvailable(cfDIB))
 	case driver.ClipboardReadFiles, driver.ClipboardReadImage:
