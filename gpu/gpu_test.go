@@ -1236,6 +1236,36 @@ func TestShadowMapDepthTextureComparisonSampler(t *testing.T) {
 	}
 }
 
+func TestRenderTargetValidityUsesEveryAttachment(t *testing.T) {
+	sr := gpu.NewSoftwareRenderer(8, 8, gpu.FormatDepth24Plus)
+	dev := sr.Device()
+	depthOnly, err := dev.CreateRenderTarget(nil, gpu.RenderTargetDesc{Width: 8, Height: 8, DepthFormat: gpu.FormatDepth32Float})
+	if err != nil {
+		t.Fatalf("CreateRenderTarget depth-only: %v", err)
+	}
+	colorOnly, err := dev.CreateRenderTarget(nil, gpu.RenderTargetDesc{Width: 8, Height: 8, ColorFormat: gpu.FormatRGBA8Unorm})
+	if err != nil {
+		t.Fatalf("CreateRenderTarget color-only: %v", err)
+	}
+	colorDepth, err := dev.CreateRenderTarget(nil, gpu.RenderTargetDesc{Width: 8, Height: 8, ColorFormat: gpu.FormatRGBA8Unorm, DepthFormat: gpu.FormatDepth32Float})
+	if err != nil {
+		t.Fatalf("CreateRenderTarget color+depth: %v", err)
+	}
+	for name, target := range map[string]*gpu.RenderTarget{
+		"depth-only":  depthOnly,
+		"color-only":  colorOnly,
+		"color+depth": colorDepth,
+	} {
+		if !target.Valid() || target.Epoch() != dev.Epoch() {
+			t.Errorf("%s: Valid=%v Epoch=%d, want valid at device epoch %d", name, target.Valid(), target.Epoch(), dev.Epoch())
+		}
+	}
+	depthOnly.Close()
+	if depthOnly.Valid() {
+		t.Fatal("closed depth-only target remained valid")
+	}
+}
+
 func TestHeadlessViewShadowMapEndToEnd(t *testing.T) {
 	depthMod := gpu.MustCompileWGSL(shadowDepthPassWGSL)
 	litMod := gpu.MustCompileWGSL(shadowLitPassWGSL)

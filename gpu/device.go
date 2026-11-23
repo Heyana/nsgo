@@ -574,23 +574,39 @@ type RenderTarget struct {
 	closed  bool
 }
 
-// Epoch returns the device epoch of the render target's color attachment.
+// Epoch returns the device epoch of the render target's attachment.
 func (rt *RenderTarget) Epoch() uint32 {
-	if rt == nil || rt.Color == nil {
+	if rt == nil {
 		return 0
 	}
-	return rt.Color.Epoch()
+	if rt.Color != nil {
+		return rt.Color.Epoch()
+	}
+	if rt.Depth != nil {
+		return rt.Depth.Epoch()
+	}
+	if rt.Resolve != nil {
+		return rt.Resolve.Epoch()
+	}
+	return 0
 }
 
 // Valid reports whether rt is open and its underlying textures are valid.
 func (rt *RenderTarget) Valid() bool {
-	if rt == nil || rt.closed || rt.Color == nil || !rt.Color.Valid() {
+	if rt == nil || rt.closed {
 		return false
 	}
-	if rt.Resolve != nil && !rt.Resolve.Valid() {
-		return false
+	hasAttachment := false
+	for _, texture := range []*Texture{rt.Color, rt.Resolve, rt.Depth} {
+		if texture == nil {
+			continue
+		}
+		hasAttachment = true
+		if !texture.Valid() {
+			return false
+		}
 	}
-	if rt.Depth != nil && !rt.Depth.Valid() {
+	if !hasAttachment {
 		return false
 	}
 	return true
