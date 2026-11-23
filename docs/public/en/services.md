@@ -519,7 +519,7 @@ Use `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 
 
 ## Displays
 
-`cx.Env().Display()` returns the window's current `core.DisplayInfo` and updates bindings when the window moves to another display. `cx.Env().Displays()` lists the displays the platform reports. `RefreshRate` and `MaxRefreshRate` are in Hz, with zero for an unavailable rate. iOS reports the panel's maximum. The web reports the current screen and marks its frame callback measurement with `RefreshRateEstimated`. In tests, set `Displays` and `DisplayID` through `nsgotest.Environment`.
+`cx.Env().Display()` returns the window's current `core.DisplayInfo` and updates bindings when the window moves to another display. `cx.Env().Displays()` lists the displays the platform reports. `RefreshRate` and `MaxRefreshRate` are in Hz, with zero for an unavailable rate. iOS reports the panel's maximum. HarmonyOS reports the window's display, its current rate and its highest supported rate. The web reports the current screen and marks its frame callback measurement with `RefreshRateEstimated`. In tests, set `Displays` and `DisplayID` through `nsgotest.Environment`.
 
 ## Speaking text
 

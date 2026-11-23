@@ -1,6 +1,10 @@
 package harmonyos
 
-import "github.com/nsgo-dev/nsgo/internal/driver"
+import (
+	"strconv"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
+)
 
 // This file builds on every system so tests can verify the HarmonyOS environment capability contract without the js/wasm runtime.
 
@@ -22,6 +26,15 @@ type deviceData struct {
 	OpenedURL string
 	// CanvasAtlas says the host's canvas player draws an atlas from one op; a host built before it leaves it out.
 	CanvasAtlas bool
+	// Display is the display the window is on: its ID, size in points, whether it is the default display, its current refresh rate and the highest it supports, in Hz. A host built before it leaves it out.
+	Display *displayData
+}
+
+type displayData struct {
+	ID                          int
+	Width, Height               float64
+	Main                        bool
+	RefreshRate, MaxRefreshRate float64
 }
 
 // buildEnvironment updates prev from the ArkTS host's deviceData snapshot.
@@ -50,6 +63,13 @@ func buildEnvironment(env driver.Environment, d deviceData) driver.Environment {
 	env.OSVersion = driver.OSVersion{Major: d.OSMajor, Minor: d.OSMinor}
 	env.OpenedURL = d.OpenedURL
 	env.DeviceModel = d.DeviceModel
+	env.DisplayID, env.Displays = "", nil
+	if v := d.Display; v != nil {
+		frame := driver.Bounds{Size: driver.Size{Width: driver.Points(v.Width), Height: driver.Points(v.Height)}}
+		env.DisplayID = strconv.Itoa(v.ID)
+		env.Displays = []driver.DisplayInfo{{ID: env.DisplayID, Frame: frame, VisibleFrame: frame, Scale: env.PixelRatio,
+			Main: v.Main, RefreshRate: v.RefreshRate, MaxRefreshRate: v.MaxRefreshRate}}
+	}
 	if d.Language != "" {
 		env.Locale = d.Language
 	} else {

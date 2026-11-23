@@ -461,7 +461,7 @@ cx.RequestAnimationFrame(loop)
 
 ## 显示器
 
-`cx.Env().Display()` 返回窗口当前所在的 `core.DisplayInfo`，窗口移到另一台显示器时会更新绑定。`cx.Env().Displays()` 列出平台报告的显示器。`RefreshRate` 和 `MaxRefreshRate` 的单位为 Hz，无法获取时为零。iOS 提供面板最高刷新率。Web 提供当前屏幕，并用 `RefreshRateEstimated` 标记通过帧回调测得的估算值。测试中可通过 `nsgotest.Environment` 设置 `Displays` 和 `DisplayID`。
+`cx.Env().Display()` 返回窗口当前所在的 `core.DisplayInfo`，窗口移到另一台显示器时会更新绑定。`cx.Env().Displays()` 列出平台报告的显示器。`RefreshRate` 和 `MaxRefreshRate` 的单位为 Hz，无法获取时为零。iOS 提供面板最高刷新率。HarmonyOS 提供窗口所在的显示器、当前刷新率和支持的最高刷新率。Web 提供当前屏幕，并用 `RefreshRateEstimated` 标记通过帧回调测得的估算值。测试中可通过 `nsgotest.Environment` 设置 `Displays` 和 `DisplayID`。
 
 ## 登录
 

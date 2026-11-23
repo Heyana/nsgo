@@ -182,6 +182,17 @@ interface Device {
   OpenedURL: string;
   // CanvasAtlas tells Go this player draws an atlas from one op (case 41).
   CanvasAtlas: boolean;
+  Display: DisplayData;
+}
+
+// DisplayData is the display the window is on, in deviceData's Display.
+interface DisplayData {
+  ID: number;
+  Width: number;
+  Height: number;
+  Main: boolean;
+  RefreshRate: number;
+  MaxRefreshRate: number;
 }
 
 // CanvasOp is one drawing operation the engine sent: internal/driver's
@@ -1880,6 +1891,13 @@ struct Index {
       w.on('windowSizeChange', () => {
         this.readEnv();
       });
+      // The window moving to another display, or its display changing mode or rate, changes the display the engine reports.
+      w.on('displayIdChange', () => {
+        this.readEnv();
+      });
+      display.on('change', () => {
+        this.readEnv();
+      });
     } catch (e) {
       console.error('NSGO harmony: window failed: ' + e);
     }
@@ -1924,6 +1942,24 @@ struct Index {
     this.applyStatusBar();
   }
 
+  // displayData describes the display the window is on, the default display until the window is known. supportedRefreshRates is ascending; a system before API 20 leaves it out, and the highest rate reads as unknown.
+  displayData(main: display.Display): DisplayData {
+    let d = main;
+    const id = this.win?.getWindowProperties().displayId;
+    if (id !== undefined && id !== main.id) {
+      try {
+        d = display.getDisplayByIdSync(id);
+      } catch (e) {
+        console.error('NSGO harmony: display ' + id + ' failed: ' + e);
+      }
+    }
+    const rates = d.supportedRefreshRates ?? [];
+    return {
+      ID: d.id, Width: px2vp(d.width), Height: px2vp(d.height), Main: d.id === main.id,
+      RefreshRate: d.refreshRate, MaxRefreshRate: rates.length > 0 ? rates[rates.length - 1] : 0
+    };
+  }
+
   deviceJSON(): string {
     const d = display.getDefaultDisplaySync();
     const config = this.hostCtx?.config;
@@ -1957,7 +1993,8 @@ struct Index {
       RTL: i18n.isRTL(locale), ScreenReader: screenReader,
       Lifecycle: AppStorage.get<number>('nsgoLifecycle') ?? 0,
       OpenedURL: launch.url ?? '',
-      CanvasAtlas: true
+      CanvasAtlas: true,
+      Display: this.displayData(d)
     };
     return JSON.stringify(out);
   }
