@@ -126,9 +126,9 @@ func TestNSISScript(t *testing.T) {
 	}
 	script = out.String()
 	for _, want := range []string{
-		"WriteUninstaller \"$INSTDIR\\Uninstall.exe\"\n  Call UserPath\n",
-		"Call un.CloseApp\n  Call un.UserPath\n",
-		`SetEnvironmentVariable(t "NSGO_PATH_REMOVE", t "1")`,
+		"WriteUninstaller \"$INSTDIR\\Uninstall.exe\"\n  Call AddUserPath\n",
+		"  Call un.RemoveOwnedPath\n",
+		`SetEnvironmentVariable(t "NSGO_PATH_REMOVE", t "$R1")`,
 		`$$k.SetValue('Path', ($$p -join ';'), 'ExpandString')`,
 		`SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000`,
 	} {
@@ -213,6 +213,11 @@ func TestNSISCompiles(t *testing.T) {
 	}
 	if info, err := os.Stat(setup); err != nil || info.Size() == 0 {
 		t.Fatalf("no installer: %v", err)
+	}
+	// With the Path functions too.
+	p.Windows.CommandLine = true
+	if _, err := buildNSIS(t.Context(), p, dir, "x64"); err != nil {
+		t.Fatal(err)
 	}
 }
 

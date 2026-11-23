@@ -304,12 +304,20 @@ const nsisCloseApp = `$$d = $$env:NSGO_APP_DIR.TrimEnd('\') + '\'; ` +
 
 // nsisUserPath updates the user's Path for the command companion without
 // expanding existing environment references or truncating long values.
-const nsisUserPath = `$$d = $$env:NSGO_APP_DIR.TrimEnd('\\'); ` +
+// Adding, it exits 3 when it added the folder, which was not there, so the
+// installer records that it owns the entry (nsisPathOwned); removing, it
+// exits 4 once the folder is off Path, so the record goes only then. Any
+// failure stops it with another code.
+const nsisUserPath = `$$ErrorActionPreference = 'Stop'; $$d = $$env:NSGO_APP_DIR.TrimEnd('\\'); ` +
 	`$$k = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment'); ` +
 	`$$p = @(([string]$$k.GetValue('Path', '', 'DoNotExpandEnvironmentNames')) -split ';' | Where-Object { $$_ }); ` +
 	`$$o = @($$p | Where-Object { $$_.TrimEnd('\\') -ne $$d }); ` +
-	`if ($$env:NSGO_PATH_REMOVE) { if ($$o.Count -eq $$p.Count) { exit 0 }; $$p = $$o } else { if ($$o.Count -lt $$p.Count) { exit 0 }; $$p += $$d }; ` +
-	`if ($$p.Count) { $$k.SetValue('Path', ($$p -join ';'), 'ExpandString') } else { $$k.DeleteValue('Path', $$false) }`
+	`if ($$env:NSGO_PATH_REMOVE) { if ($$o.Count -eq $$p.Count) { exit 4 }; $$p = $$o } else { if ($$o.Count -lt $$p.Count) { exit 0 }; $$p += $$d }; ` +
+	`if ($$p.Count) { $$k.SetValue('Path', ($$p -join ';'), 'ExpandString') } else { $$k.DeleteValue('Path', $$false) }; ` +
+	`if ($$env:NSGO_PATH_REMOVE) { exit 4 }; exit 3`
+
+// nsisPathOwned is the uninstall entry's value naming the folder an installer put on the user's Path, which stays through upgrades to the same folder, so the uninstaller, or an upgrade to another folder or that no longer asks for one, takes off only that folder, never an entry the user had. An installation from before the record has none, so its folder stays on Path.
+const nsisPathOwned = "NsgoPathAddedDir"
 
 var nsisTemplate = template.Must(template.New("nsi").Funcs(template.FuncMap{
 	"q": nsisString,
@@ -323,10 +331,11 @@ var nsisTemplate = template.Must(template.New("nsi").Funcs(template.FuncMap{
 	"cmd": func(parts ...string) string {
 		return "'" + strings.ReplaceAll(strings.Join(parts, ""), "'", `$\'`) + "'"
 	},
-	"quad":     nsisVersion,
-	"close":    func() string { return nsisCloseApp },
-	"userPath": func() string { return nsisUserPath },
-	"amp":      func(s string) string { return strings.ReplaceAll(s, "&", "&&") },
+	"quad":      nsisVersion,
+	"close":     func() string { return nsisCloseApp },
+	"userPath":  func() string { return nsisUserPath },
+	"pathOwned": func() string { return nsisPathOwned },
+	"amp":       func(s string) string { return strings.ReplaceAll(s, "&", "&&") },
 }).Parse(`; Written by nsgo build. Compile with NSIS 3.06 or later: makensis -INPUTCHARSET UTF8 {{.Exe}}.nsi
 Unicode true
 ; RemoveFileTypes keeps an extension's key while it holds another app's values, and DeleteRegKey /ifempty only checks values from NSIS 3.06: an older compiler's uninstaller would delete them.
@@ -498,31 +507,71 @@ FunctionEnd
 !macroend
 !insertmacro RemoveURLSchemes ""
 !insertmacro RemoveURLSchemes "un."
-{{- if .Command}}
 
-; Put the command companion's folder on the user's Path and remove it on uninstall.
+; UserPath puts the folder $R0 on the user's Path, with the app's command companion, or takes it off when $R1 is "1", leaving the script's exit code in $R2: 3 when it added a folder that was not there, 4 when the folder is off Path, and anything else, empty without PowerShell, when it failed.
 !macro UserPath un
 Function ${un}UserPath
   Push $0
-  Push $1
+  StrCpy $R2 ""
   StrCpy $0 "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
   IfFileExists $0 +2
   StrCpy $0 "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
   IfFileExists $0 0 done
-  System::Call 'Kernel32::SetEnvironmentVariable(t "NSGO_APP_DIR", t "$INSTDIR")'
-!if "${un}" == "un."
-  System::Call 'Kernel32::SetEnvironmentVariable(t "NSGO_PATH_REMOVE", t "1")'
-!endif
+  System::Call 'Kernel32::SetEnvironmentVariable(t "NSGO_APP_DIR", t "$R0")'
+  System::Call 'Kernel32::SetEnvironmentVariable(t "NSGO_PATH_REMOVE", t "$R1")'
   nsExec::Exec ` + "`" + `"$0" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "{{userPath}}"` + "`" + `
-  Pop $1
+  Pop $R2
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
   done:
-  Pop $1
   Pop $0
 FunctionEnd
 !macroend
 !insertmacro UserPath ""
 !insertmacro UserPath "un."
+
+; RemoveOwnedPath takes the folder the uninstall entry records an installer put on the user's Path off it, that folder alone, and forgets it once it is off; a removal that fails keeps the record, for the next upgrade or the uninstaller to try again. An installation from before the record has none, so its folder stays.
+!macro RemoveOwnedPath un
+Function ${un}RemoveOwnedPath
+  Push $R0
+  Push $R1
+  Push $R2
+  ReadRegStr $R0 HKCU {{q .UninstallKey}} "{{pathOwned}}"
+  StrCmp $R0 "" done
+  StrCpy $R1 "1"
+  Call ${un}UserPath
+  StrCmp $R2 "4" 0 done
+  DeleteRegValue HKCU {{q .UninstallKey}} "{{pathOwned}}"
+  done:
+  Pop $R2
+  Pop $R1
+  Pop $R0
+FunctionEnd
+!macroend
+!insertmacro RemoveOwnedPath ""
+!insertmacro RemoveOwnedPath "un."
+{{- if .Command}}
+
+; AddUserPath puts $INSTDIR on the user's Path. A folder an earlier installation added elsewhere comes off first, and while it fails to, the record keeps naming it and $INSTDIR stays off Path; a folder already on Path is the user's, unless the record names it, and is never recorded.
+Function AddUserPath
+  Push $R0
+  Push $R1
+  Push $R2
+  ReadRegStr $R0 HKCU {{q .UninstallKey}} "{{pathOwned}}"
+  StrCmp $R0 $INSTDIR add
+  Call RemoveOwnedPath
+  ReadRegStr $R0 HKCU {{q .UninstallKey}} "{{pathOwned}}"
+  StrCmp $R0 "" 0 done
+  add:
+  StrCpy $R0 $INSTDIR
+  StrCpy $R1 ""
+  Call UserPath
+  StrCmp $R2 "3" 0 done
+  WriteRegStr HKCU {{q .UninstallKey}} "{{pathOwned}}" $INSTDIR
+  done:
+  Pop $R2
+  Pop $R1
+  Pop $R0
+FunctionEnd
 {{- end}}
 
 Section
@@ -531,7 +580,10 @@ Section
   File /r{{range .Excludes}} /x {{q .}}{{end}} "*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 {{- if .Command}}
-  Call UserPath
+  Call AddUserPath
+{{- else}}
+  ; An earlier version may have put the folder on Path.
+  Call RemoveOwnedPath
 {{- end}}
   Call RemoveFileTypes
 {{- range .FileTypes}}
@@ -588,16 +640,22 @@ FunctionEnd
 
 Section "Uninstall"
   Call un.CloseApp
-{{- if .Command}}
-  Call un.UserPath
-{{- end}}
+  ; An uninstaller left in a folder an upgrade moved from removes its own files alone: the registrations, shortcuts and Path are the installation's now in InstallLocation.
+  ReadRegStr $0 HKCU {{q .UninstallKey}} "InstallLocation"
+  StrCmp $0 $INSTDIR 0 files
+  Call un.RemoveOwnedPath
   Call un.RemoveFileTypes
   Call un.RemoveURLSchemes
   ; Remove the per-user toast COM registration before deleting the EXE.
   ExecWait {{cmd (path "$INSTDIR\\" .Exe) " --nsgo-unregister-toast"}}
   Delete {{path "$SMPROGRAMS\\" .Name ".lnk"}}
   Delete {{path "$DESKTOP\\" .Name ".lnk"}}
+  ; A folder whose removal from Path failed keeps its record, for a later installation to take off.
+  ReadRegStr $0 HKCU {{q .UninstallKey}} "{{pathOwned}}"
   DeleteRegKey HKCU {{q .UninstallKey}}
+  StrCmp $0 "" files
+  WriteRegStr HKCU {{q .UninstallKey}} "{{pathOwned}}" $0
+  files:
   ; What the installer put there alone, never the folder's other files.
 {{- range .Files}}
   Delete {{path "$INSTDIR\\" .}}

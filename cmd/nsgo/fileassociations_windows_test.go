@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -215,5 +216,118 @@ func openAssociation(t *testing.T, progID, file string) {
 	if state, err := windows.WaitForSingleObject(info.Process, 10000); err != nil || state != windows.WAIT_OBJECT_0 {
 		windows.TerminateProcess(info.Process, 1)
 		t.Fatalf("document app did not exit: %d, %v", state, err)
+	}
+}
+
+// TestNSISPathOwnershipNative installs a windows.command_line package and checks that its installers and uninstallers take off the user's Path only the folder an installer added: never an entry the user had, the old folder on a move, and nothing from an uninstaller the move left behind. The user's Path is restored afterwards.
+func TestNSISPathOwnershipNative(t *testing.T) {
+	if os.Getenv("NSGO_FILE_ASSOCIATIONS") == "" {
+		t.Skip("set NSGO_FILE_ASSOCIATIONS=1 to test NSIS install and uninstall")
+	}
+	if nsisCompiler() == "" {
+		t.Fatal("native Path verification needs NSIS")
+	}
+	env, err := registry.OpenKey(registry.CURRENT_USER, "Environment", registry.QUERY_VALUE|registry.SET_VALUE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, kind, savedErr := env.GetStringValue("Path")
+	dir, pkg := t.TempDir(), t.TempDir()
+	a, b := filepath.Join(t.TempDir(), "app a"), filepath.Join(t.TempDir(), "app b")
+	p := &project{Dir: dir, Name: "Path App", ID: fmt.Sprintf("dev.nsgo.path.%d", time.Now().UnixNano()), Version: "1.0.0", Release: true}
+	p.Windows.CommandLine = true
+	t.Cleanup(func() {
+		defer env.Close()
+		var err error
+		switch {
+		case savedErr != nil:
+			if err = env.DeleteValue("Path"); errors.Is(err, registry.ErrNotExist) {
+				err = nil
+			}
+		case kind == registry.EXPAND_SZ:
+			err = env.SetExpandStringValue("Path", saved)
+		default:
+			err = env.SetStringValue("Path", saved)
+		}
+		if err != nil {
+			t.Errorf("restoring the user's Path: %v", err)
+		}
+		exec.Command("reg", "delete", `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\`+p.ID, "/f").Run()
+	})
+	writeFiles(t, dir, map[string]string{
+		"go.mod":  "module pathownershiptest\n\ngo 1.27.3\n",
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+	if err := goBuild(t.Context(), p, filepath.Join(pkg, p.Name+".exe"), []string{"CGO_ENABLED=0"}); err != nil {
+		t.Fatal(err)
+	}
+	setup, err := buildNSIS(t.Context(), p, pkg, "x64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(name string, cmd *exec.Cmd) {
+		t.Helper()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, out)
+		}
+		// The uninstaller finishes from a copy of itself after the process that started it exits.
+		time.Sleep(2 * time.Second)
+	}
+	install := func(folder string) {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), setup)
+		// NSIS requires /D to be last and unquoted, even with spaces.
+		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `"` + setup + `" /S /D=` + folder}
+		run("install", cmd)
+	}
+	uninstall := func(folder string) {
+		t.Helper()
+		run("uninstall", exec.CommandContext(t.Context(), filepath.Join(folder, "Uninstall.exe"), "/S"))
+	}
+	onPath := func(folder string) bool {
+		t.Helper()
+		path, _, err := env.GetStringValue("Path")
+		if err != nil {
+			return false
+		}
+		for _, entry := range strings.Split(path, ";") {
+			if strings.EqualFold(strings.TrimRight(entry, `\`), folder) {
+				return true
+			}
+		}
+		return false
+	}
+	set := func(entries ...string) {
+		t.Helper()
+		if err := env.SetExpandStringValue("Path", strings.Join(entries, ";")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A folder the user had on Path stays after the uninstall.
+	set(saved, a)
+	install(a)
+	uninstall(a)
+	if !onPath(a) {
+		t.Error("the uninstaller removed the user's own Path entry")
+	}
+
+	// The installer adds the folder, a move takes it off for the new one, the uninstaller the move left behind keeps the new one, and the new uninstaller removes it.
+	set(saved)
+	install(a)
+	if !onPath(a) {
+		t.Fatal("the installer did not put its folder on Path")
+	}
+	install(b)
+	if onPath(a) || !onPath(b) {
+		t.Errorf("after moving, Path holds the old folder %v and the new one %v", onPath(a), onPath(b))
+	}
+	uninstall(a)
+	if !onPath(b) {
+		t.Error("the moved-from uninstaller removed the installation's Path entry")
+	}
+	uninstall(b)
+	if onPath(b) {
+		t.Error("the uninstaller left its folder on Path")
 	}
 }
