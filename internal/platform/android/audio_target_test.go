@@ -207,6 +207,23 @@ func TestNativeAndroidPlaybackControls(t *testing.T) {
 	if !ended(voices[1]) || ended(voices[2]) {
 		t.Fatal("stopping one handle changed a sibling playback")
 	}
+	// A lowered engine limit stops the oldest playbacks until the next one fits, in the batch that plays it.
+	step(sound.Stop)
+	var limitErr error
+	step(func() { limitErr = cx.SetSoundLimits(core.SoundLimits{MaxPlaybacks: 2}) })
+	if limitErr != nil {
+		t.Fatal(limitErr)
+	}
+	limited := make([]*core.Playback, 3)
+	step(func() {
+		for i := range limited {
+			limited[i] = sound.Play(core.SoundVoice{Muted: true, Rate: .5})
+		}
+	})
+	app.WaitUntil(time.Second, func() bool { return ended(limited[0]) })
+	if ended(limited[1]) || ended(limited[2]) {
+		t.Fatal("a playback limit of 2 ended more than the oldest of 3 playbacks")
+	}
 	step(sound.Close)
 }
 

@@ -454,7 +454,7 @@ Call the returned function to release the lock. Escape, a window losing focus, o
 
 ## Sound limits
 
-Use `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` before loading sounds to change the engine's limits. `MaxEncodedBytes`, `MaxDecodedBytes` and `MaxPlaybacks` can also be set. Zero fields use the defaults of 8 MiB encoded and 5 seconds per sound, 64 sources, 16 MiB decoded across sounds, and 32 overlapping playbacks per output. Existing sounds stay loaded and count toward the new limits. Restricted scopes keep the default limits within the engine's budget.
+Use `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` before loading sounds to change the engine's limits. `MaxEncodedBytes`, `MaxDecodedBytes` and `MaxPlaybacks` can also be set. Zero fields use the defaults of 8 MiB encoded and 5 seconds per sound, 64 sources, 16 MiB decoded across sounds, and 32 overlapping playbacks per output. Existing sounds stay loaded and count toward the new limits. Restricted scopes keep the default limits within the engine's budget. Android's SoundPool plays at most 32 sounds at once and decodes at most 1 MiB of each, whatever the limits.
 
 ## Full screen
 

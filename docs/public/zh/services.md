@@ -586,7 +586,7 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 
 ## 音效限制
 
-加载音效前，可以调用 `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` 调整引擎的限制。也可以设置 `MaxEncodedBytes`、`MaxDecodedBytes` 和 `MaxPlaybacks`。零值使用默认限制：单个音效编码后最多 8 MiB、时长最多 5 秒，引擎最多 64 个音源、解码后总计最多 16 MiB，每个输出最多同时播放 32 路。已加载的音效会继续计入新的限制。受限作用域在引擎预算内继续使用默认限制。
+加载音效前，可以调用 `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` 调整引擎的限制。也可以设置 `MaxEncodedBytes`、`MaxDecodedBytes` 和 `MaxPlaybacks`。零值使用默认限制：单个音效编码后最多 8 MiB、时长最多 5 秒，引擎最多 64 个音源、解码后总计最多 16 MiB，每个输出最多同时播放 32 路。已加载的音效会继续计入新的限制。受限作用域在引擎预算内继续使用默认限制。无论限制如何设置，Android 的 SoundPool 最多同时播放 32 路，每个音效解码后最多 1 MiB。
 
 ## 朗读文本
 
