@@ -87,7 +87,7 @@ The app held out is its bundle, else its executable; `GuideOptions.App` names an
 | iOS | The microphone, the camera, contacts, calendars, reminders, photos (with `PermissionLimited`), Bluetooth, the media library, location, motion and notifications |
 | Windows | The microphone, the camera and notifications, which it never prompts for; the rest is not gated |
 | Linux | Not gated outside sandboxes; notifications reflect whether a notification server answers; in Flatpak and Snap, the camera through the desktop portal and the microphone through the portal and PipeWire |
-| Web | The microphone and the camera (unknown in Firefox), notifications, and motion on mobile browsers |
+| Web | The microphone and the camera (unknown in Firefox), notifications, location (not background location), and motion on mobile browsers |
 | Android | The microphone, the camera, calendars, Bluetooth and the media library, where `android.permissions` declares them |
 | Apple Watch, mini programs | Notifications, location and motion through their services; the rest kept by the system is unknown for now |
 

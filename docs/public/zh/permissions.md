@@ -87,7 +87,7 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 | iOS | 麦克风、相机、通讯录、日历、提醒事项、照片（支持 `PermissionLimited`）、蓝牙、媒体资料库、定位、运动和通知 |
 | Windows | 麦克风、相机和通知，但从不弹窗请求；其余不受限 |
 | Linux | 沙盒外不受限；通知反映通知服务是否响应；在 Flatpak 和 Snap 中通过桌面 Portal 读取和请求相机，通过 Portal 与 PipeWire 读取和请求麦克风 |
-| Web | 麦克风和相机（在 Firefox 中为未知）、通知以及移动浏览器上的运动 |
+| Web | 麦克风和相机（在 Firefox 中为未知）、通知、位置（不含后台位置）以及移动浏览器上的运动 |
 | Android | 在 `android.permissions` 中声明了的麦克风、相机、日历、蓝牙和媒体资料库 |
 | Apple Watch、小程序 | 通知、定位和运动走各自服务；其余系统保管的权限目前为未知 |
 

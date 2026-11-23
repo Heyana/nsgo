@@ -68,7 +68,8 @@ func (s *surface) sensor(it *driver.MountItem) {
 		return
 	}
 	g := js.Global()
-	if req.Kind == driver.SensorLocation || req.Kind == driver.SensorBackgroundLocation {
+	// A page cannot locate the user once it is in the background, so background location is unavailable, its status included, rather than the foreground geolocation permission.
+	if req.Kind == driver.SensorLocation {
 		s.locationSensor(id, req)
 		return
 	}
