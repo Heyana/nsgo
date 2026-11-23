@@ -243,8 +243,8 @@ func axAddAttr(names objc.ID, name string) objc.ID {
 
 // accessElement is the control's exposed element, an input's cell or text editor rather than its container.
 func (v *view) accessElement() objc.ID {
-	if sw := switchViewOf(v.component); sw != 0 {
-		return sw
+	if s, ok := v.component.(*nsSwitch); ok {
+		return s.view
 	}
 	if in := v.input; in != nil {
 		if in.multiline {
@@ -331,7 +331,7 @@ func (v *view) setLabel(label string) {
 		return
 	}
 	v.props.Label = label
-	if switchViewOf(v.component) != 0 {
+	if _, ok := v.component.(*nsSwitch); ok {
 		v.updateAccessibility()
 	}
 	v.announceLive(label)
@@ -573,12 +573,12 @@ func (v *view) announceLive(text string) {
 // updateAccessibility sets v's attributes from its props, events and text.
 func (v *view) updateAccessibility() {
 	native, p := v.native, &v.props
-	if sw := switchViewOf(v.component); sw != 0 {
+	if s, ok := v.component.(*nsSwitch); ok {
 		native.Send(selSetAccessibilityElement, false)
 		v.axElement = false
-		setSwitchInvalid(v.component, p.Invalid)
-		sw.Send(sel("setAccessibilityLabel:"), nsOrNil(p.Label))
-		sw.Send(sel("setAccessibilityTitleUIElement:"), v.titleUIElement())
+		s.invalid = p.Invalid
+		s.view.Send(sel("setAccessibilityLabel:"), nsOrNil(p.Label))
+		s.view.Send(sel("setAccessibilityTitleUIElement:"), v.titleUIElement())
 		return
 	}
 	role := v.axRole()

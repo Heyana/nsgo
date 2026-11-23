@@ -74,9 +74,7 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 	apple.DrawTopDown(ctx, f.Size.Height, !apple.MsgBool(layer, selContentsAreFlipped), func(baseUp bool) {
 		apple.TranslateCTM(ctx, -f.Origin.X, -f.Origin.Y)
 		if v.drawing != nil {
-			if ch := canvases.Load(); ch != nil {
-				ch.paint(v, ctx, layer, baseUp)
-			}
+			v.paintCanvas(ctx, layer, baseUp)
 			return
 		}
 		box := v.box
@@ -217,9 +215,7 @@ func (s *surface) revisit() {
 // applied.
 func (v *view) display() {
 	if v.shader != nil {
-		if sh := shaders.Load(); sh != nil {
-			sh.shadeLater(v.surface, v)
-		}
+		v.surface.shadeLater(v)
 		return
 	}
 	apple.Msg(v.drawLayer(), selSetNeedsDisplayLayer)
@@ -233,9 +229,7 @@ func (v *view) display() {
 // rounded: Core Animation then blends the corners' edges a level apart.
 func (v *view) sizeContent() {
 	if v.shader != nil {
-		if sh := shaders.Load(); sh != nil {
-			sh.sizeShader(v)
-		}
+		v.sizeShader()
 	}
 	if v.gpu != nil {
 		v.sizeGPU()
@@ -276,9 +270,7 @@ func (v *view) contentFrame() apple.CGRect {
 func (s *surface) rescale() {
 	for _, v := range s.views {
 		if v != nil && v.shader != nil {
-			if sh := shaders.Load(); sh != nil {
-				sh.sizeShader(v)
-			}
+			v.sizeShader()
 		}
 		if v != nil && v.gpu != nil {
 			v.sizeGPU()
@@ -296,6 +288,7 @@ func (v *view) forgetContent() {
 	if v.contentLayer != 0 {
 		delete(drawers, v.contentLayer)
 	}
+	v.canvas.set(nil)
 }
 
 // A canvas draws at once on the main thread, as NSH's does, unless it
@@ -366,20 +359,11 @@ func (c *canvasPaint) count(now time.Time) {
 // layer; such a canvas draws at once, where its layer is made.
 func (c *canvasPaint) keeps() bool { return c.split.At > 0 && c.painted >= stablePaints }
 
-func (v *view) canvasState() *canvasPaint {
-	cp, _ := v.canvas.(*canvasPaint)
-	return cp
-}
-
 // paintCanvas plays v's drawing into ctx, its content layer's top-down
 // context, over the layer of its static part where it keeps one, and
 // sets where the next paint happens.
 func (v *view) paintCanvas(ctx uintptr, layer objc.ID, baseUp bool) {
-	c := v.canvasState()
-	if c == nil {
-		c = &canvasPaint{}
-		v.canvas = c
-	}
+	c := &v.canvas
 	c.count(time.Now())
 	ops := v.surface.animator.CanvasOps(v.id, v.drawing)
 	host := apple.CanvasHost{Ratio: v.contentScale(), Redraw: v.redraw, Owner: v, BaseUp: baseUp}
@@ -400,8 +384,8 @@ func (v *view) paintCanvas(ctx uintptr, layer objc.ID, baseUp bool) {
 // staticLayer returns the layer of v's static part at its size, made
 // once the drawing was painted stablePaints times, or nil.
 func (v *view) staticLayer(ctx uintptr, ops []driver.DrawOp, w, h float64, host apple.CanvasHost) *apple.CanvasLayer {
-	c := v.canvasState()
-	if c == nil || c.split.At == 0 || c.split.At >= len(ops) {
+	c := &v.canvas
+	if c.split.At == 0 || c.split.At >= len(ops) {
 		return nil
 	}
 	scale := v.contentScale()

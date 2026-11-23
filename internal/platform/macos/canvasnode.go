@@ -40,9 +40,6 @@ func (v *view) setCanvasNodes(nodes []driver.CanvasNode) {
 		el.Send(selRelease)
 	}
 	v.axNodes = v.axNodes[:0]
-	if len(nodes) > 0 && canvasNodeClass == 0 {
-		registerCanvasNodes()
-	}
 	for _, n := range nodes {
 		el := objc.ID(canvasNodeClass).Send(selNew)
 		role := roles[n.Role]

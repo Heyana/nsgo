@@ -12,11 +12,6 @@ import (
 // size or the animated nodes its lanes follow change, and only while some
 // of it can be seen. The frame clock runs while those nodes animate.
 
-func (v *view) shaderLayer() *apple.ShaderLayer {
-	sl, _ := v.shader.(*apple.ShaderLayer)
-	return sl
-}
-
 // newShader gives a shader view its Metal layer, or none where the
 // machine has no Metal device.
 func (v *view) newShader() {
@@ -33,11 +28,10 @@ func (v *view) newShader() {
 
 // setShader gives v what it draws and binds its animated lanes.
 func (s *surface) setShader(v *view, sh *driver.Shader) {
-	sl := v.shaderLayer()
-	if sl == nil {
+	if v.shader == nil {
 		return
 	}
-	sl.Set(sh)
+	v.shader.Set(sh)
 	s.animator.BindShader(v.id, sh.Nodes)
 	v.redraw()
 }
@@ -45,15 +39,11 @@ func (s *surface) setShader(v *view, sh *driver.Shader) {
 // sizeShader keeps v's Metal layer over its bounds at the window's scale,
 // drawing it again.
 func (v *view) sizeShader() {
-	sl := v.shaderLayer()
-	if sl == nil {
-		return
-	}
 	w, h := float64(v.frame.Size.Width), float64(v.frame.Size.Height)
 	apple.WithoutAnimation(func() {
-		sl.Layer.Send(selSetFrame, apple.Rect(0, 0, w, h))
+		v.shader.Layer.Send(selSetFrame, apple.Rect(0, 0, w, h))
 	})
-	sl.Resize(w, h, float64(v.surface.env.PixelRatio))
+	v.shader.Resize(w, h, float64(v.surface.env.PixelRatio))
 	v.redraw()
 }
 
@@ -81,8 +71,8 @@ func (s *surface) drawShaders() {
 		}
 	})
 	for _, v := range s.shading {
-		if sl := v.shaderLayer(); s.views[v.id] == v && sl != nil {
-			sl.Draw(func(lanes []float64) { s.animator.ShaderLanes(v.id, lanes) })
+		if s.views[v.id] == v && v.shader != nil {
+			v.shader.Draw(func(lanes []float64) { s.animator.ShaderLanes(v.id, lanes) })
 		}
 	}
 	clear(s.shading)
