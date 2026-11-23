@@ -783,7 +783,7 @@ Call `gamepad.EnableFocusNavigation(cx)` to opt into navigating native focus sto
 
 ## Audio timing
 
-Use `audio.Now(cx)` as the clock for timed playback. Set `audio.Voice.StartAt` to a future time when `audio.CanSchedule(cx)` is true. Call `audio.OutputLatency(cx, func(latency time.Duration, known bool) { ... })` for the active output route. macOS, iOS, Linux and the web support timed starts. The callback's `known` value tells whether the route reported a latency.
+Use `audio.Now(cx)` as the clock for timed playback. Set `audio.Voice.StartAt` to a future time when `audio.CanSchedule(cx)` is true. Call `audio.OutputLatency(cx, func(latency time.Duration, known bool) { ... })` for the active output route. macOS, iOS, Linux and the web support timed starts; on Windows and Android `CanSchedule` is false and a `StartAt` plays at once. The callback's `known` value tells whether the route reported a latency, which Windows and Android do not.
 
 ## Game services
 
