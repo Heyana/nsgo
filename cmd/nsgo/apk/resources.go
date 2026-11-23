@@ -141,12 +141,7 @@ func valueForConfig(values []resValue, config []byte) (resValue, bool) {
 	return resValue{}, false
 }
 
-// resources is the resource table an APK carries: the launcher icon
-// @mipmap/ic_launcher when icon, at xxxhdpi in iconFile, and the app's
-// name @string/app_name in each language of names, by BCP 47 tag, ""
-// for the default, when names has any. The manifest refers to them by
-// iconResourceID and nameResourceID. The network policy and launch screen,
-// when present, follow those types.
+// resources is the resource table an APK carries: the launcher icon @mipmap/ic_launcher when icon, at xxxhdpi in iconFile, and the app's name @string/app_name in each language of names, by BCP 47 tag, "" for the default, when names has any. The manifest refers to them by iconResourceID and nameResourceID. The XML resources, the widgets' layouts and the launch screen, when present, follow those types.
 func resources(m Manifest) []byte {
 	adaptive := m.Adaptive
 	var types []resType

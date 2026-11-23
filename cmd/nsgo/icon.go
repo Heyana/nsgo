@@ -656,8 +656,7 @@ func compileIcon(ctx context.Context, input, out, platform, minimum string, idio
 	return compileAssets(ctx, []string{input}, iconAssetName(input), out, platform, minimum, idioms)
 }
 
-// compileAssets writes actool's output to out and caches it by tool version,
-// arguments and source files. name is empty for catalogs without an icon.
+// compileAssets writes actool's output to out and caches it by tool version, arguments and source files. name is empty for catalogs without an icon.
 func compileAssets(ctx context.Context, inputs []string, name, out, platform, minimum string, idioms []string) (string, error) {
 	args := []string{"--platform", platform, "--minimum-deployment-target", minimum}
 	if name != "" {
@@ -722,8 +721,7 @@ func compileAssets(ctx context.Context, inputs []string, name, out, platform, mi
 	})
 }
 
-// runActool compiles inputs into dir: the catalog and icon files in files,
-// and the partial Info.plist naming the icon when present.
+// runActool compiles inputs into dir: the catalog and icon files in files, and the partial Info.plist naming the icon when present.
 func runActool(ctx context.Context, inputs []string, dir string, args []string, icon bool) error {
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return err

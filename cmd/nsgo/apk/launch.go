@@ -2,15 +2,13 @@ package apk
 
 import "encoding/binary"
 
-// LaunchScreen holds the launcher activity's splash screen and its night
-// overrides. The framework theme can pin the selected appearance.
+// LaunchScreen holds the launcher activity's splash screen and its night overrides. The framework theme can pin the selected appearance.
 type LaunchScreen struct {
 	Light LaunchAppearance
 	Dark  LaunchAppearance
 }
 
-// LaunchAppearance holds an opaque ARGB color and a PNG for the splash screen.
-// Zero and nil leave the default or corresponding light entry in effect.
+// LaunchAppearance holds an opaque ARGB color and a PNG for the splash screen. Zero and nil leave the default or corresponding light entry in effect.
 type LaunchAppearance struct {
 	Background uint32
 	Image      []byte
@@ -137,8 +135,7 @@ func launchValues(m Manifest) ([]launchVariant, []launchDrawable) {
 	if parent == 0 {
 		parent = deviceDarkTheme
 	}
-	// Older Android releases inherit the existing theme. The new attributes
-	// only appear in configurations for the releases that introduced them.
+	// Older Android releases inherit the existing theme. The new attributes only appear in configurations for the releases that introduced them.
 	variants := []launchVariant{{style: resStyle{parent: parent}}}
 	if m.Theme == "" {
 		parent = deviceLightTheme
@@ -164,8 +161,7 @@ func appendLaunchVariants(variants []launchVariant, parent, background, iconID u
 	}
 	variants = append(variants, launchVariant{launchConfig{sdk: 31, night: night}, style})
 	if iconID != 0 {
-		// Request the custom icon even for starts where Android 13 and
-		// later would normally show only the background.
+		// Request the custom icon even for starts where Android 13 and later would normally show only the background.
 		style.items = append(style.items, resStyleItem{launchBehaviorAttr, typeInt, 1}) // icon_preferred
 		variants = append(variants, launchVariant{launchConfig{sdk: 33, night: night}, style})
 	}

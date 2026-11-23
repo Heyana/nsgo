@@ -132,3 +132,60 @@ func TestLaunchScreenPinnedAppearance(t *testing.T) {
 		}
 	}
 }
+
+// With widgets, the launch screen's types follow their XML and layout types, and the launcher activity's theme names the style there.
+func TestLaunchScreenFollowsWidgetLayouts(t *testing.T) {
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := Manifest{
+		Package: "dev.nsgo.launchwidgets", Label: "Launch", VersionCode: 1,
+		Icon: []byte("launcher"), Names: map[string]string{"": "Launch"},
+		Widgets: []Widget{{Kind: "counter", Names: map[string]string{"": "Counter"}, Families: []string{"small"}}},
+		Launch:  &LaunchScreen{Light: LaunchAppearance{Background: 0xff14a7cd, Image: []byte("light")}},
+	}
+	// mipmap 1, string 2, xml 3, layout 4, then style 5 and drawable 6.
+	const styleID = 0x7f050000
+	if got := launchStyleID(m); got != styleID || got != layoutResourceID(m)+1<<16 {
+		t.Fatalf("launch style %#x, want %#x after the layouts at %#x", got, styleID, layoutResourceID(m))
+	}
+	var buf bytes.Buffer
+	if err := Write(&buf, androidruntime.Manifest, m, nil, key); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := archive.Open("AndroidManifest.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(f)
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	activity := decodeXML(t, data).root.child(t, "application").child(t, "activity")
+	if attr := activity.attr(t, "theme"); attr.kind != typeReference || attr.data != styleID {
+		t.Errorf("launcher theme = %+v, want reference to %#x", attr, styleID)
+	}
+	aapt2, err := tool("aapt2")
+	if err != nil {
+		return
+	}
+	path := filepath.Join(t.TempDir(), "launch.apk")
+	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.CommandContext(t.Context(), aapt2, "dump", "resources", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("aapt2 dump resources: %v\n%s", err, out)
+	}
+	for _, want := range []string{"0x7f040000 layout/nsgo_widget", "0x7f050000 style/NsgoLaunchScreen", "0x7f060000 drawable/nsgo_launch_image"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("aapt2 could not find %q in the resource table:\n%s", want, out)
+		}
+	}
+}

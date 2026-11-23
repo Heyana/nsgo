@@ -105,8 +105,7 @@ func readLaunchImage(path string) (image.Image, error) {
 	return img, nil
 }
 
-// launchPNG fits the image inside a centered square while preserving its
-// proportions. On Android, the extra transparent border sits under the mask.
+// launchPNG fits the image inside a centered square while preserving its proportions. On Android, the extra transparent border sits under the mask.
 func launchPNG(img image.Image, canvas, limit int) []byte {
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	side := max(w, h)
