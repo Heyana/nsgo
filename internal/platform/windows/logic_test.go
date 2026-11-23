@@ -1727,10 +1727,13 @@ func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
 	})
 	t.Cleanup(eng.Close)
 
-	root := &view{id: 1, kind: driver.KindView, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 400}}}
+	// Hit testing passes through views with zero opacity, the zero ViewStyle's.
+	visible := driver.ViewStyle{Opacity: 1}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 400}}}
 	scroll := &view{
 		id:     2,
 		kind:   driver.KindScroll,
+		style:  visible,
 		parent: root,
 		frame:  driver.Bounds{Size: driver.Size{Width: 300, Height: 400}},
 		size:   driver.Size{Width: 300, Height: 2000},
