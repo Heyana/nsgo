@@ -1,4 +1,4 @@
-//go:build (js && (nsgominiprogram || nsgoharmony)) || (!js && !(darwin || (linux && !android && (amd64 || arm64)) || (windows && (amd64 || arm64))))
+//go:build (js && (nsgominiprogram || nsgoharmony)) || (!js && !(darwin || (linux && !android && (amd64 || arm64)) || (windows && (amd64 || arm64)) || (android && arm64)))
 
 package vt
 

@@ -2,7 +2,7 @@
 // user's shell, or any program, in a pseudo-terminal, with Ghostty's
 // terminal emulator, libghostty-vt, loaded at run time with no cgo.
 //
-// It runs programs on macOS, Linux and Windows, and remote sessions (Options.Conn) there, on iOS and in the browser; elsewhere New returns an error. It does what terminals do: colors (16, 256 and 24-bit) and styles, wide characters and grapheme clusters, a scrollback that reflows, the alternate screen, the keyboard as programs ask (legacy sequences, modifyOtherKeys or the Kitty keyboard protocol), bracketed paste, the title (OSC 0 and 2) and the working directory (OSC 7).
+// It runs programs on macOS, Linux and Windows, and remote sessions (Options.Conn) there, on iOS, Android and in the browser; elsewhere New returns an error. It does what terminals do: colors (16, 256 and 24-bit) and styles, wide characters and grapheme clusters, a scrollback that reflows, the alternate screen, the keyboard as programs ask (legacy sequences, modifyOtherKeys or the Kitty keyboard protocol), bracketed paste, the title (OSC 0 and 2) and the working directory (OSC 7).
 package terminal
 
 import (

@@ -161,7 +161,7 @@ A line means "imports". `internal/moduletest/layering_test.go` checks the graph 
 - `updater` imports only `core` and its catalogs; `internal/backend` imports it, to check as the app starts where the platform's updater keeps no schedule.
 - `ui` imports `base`, `core`, `mobile`, `desktop` and the icons; `base` never imports it.
 - `tsx/tsxtest` is the one package that imports both `tsx` and `nsgotest`, and `tsx/ui` with the packages below it the TSX packages that import `ui`. `tsx/internal/js`, the engines' API, imports nothing of NSGo's, and on the web reaches the page through `syscall/js`.
-- `base/terminal` is the one package of `base` that is not portable: it loads native libghostty-vt through purego or an embedded browser WebAssembly module, runs programs on desktops and remote sessions there, on iOS and in the browser, and elsewhere builds to report that it cannot (`unportable` in `layering_test.go`).
+- `base/terminal` is the one package of `base` that is not portable: it loads native libghostty-vt through purego or an embedded browser WebAssembly module, runs programs on desktops and remote sessions there, on iOS and Android and in the browser, and elsewhere builds to report that it cannot (`unportable` in `layering_test.go`).
 
 ## Why core and backends do not meet
 

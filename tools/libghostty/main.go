@@ -12,6 +12,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"crypto/sha256"
 	"debug/elf"
 	"encoding/binary"
@@ -21,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,6 +52,9 @@ var targets = []libraryTarget{
 	// The glibc of Debian 10 and Ubuntu 20.04, and later.
 	{"linux", "amd64", "x86_64-linux-gnu.2.28", "libghostty-vt.so", "lib/libghostty-vt.so"},
 	{"linux", "arm64", "aarch64-linux-gnu.2.28", "libghostty-vt.so", "lib/libghostty-vt.so"},
+	// Android's bionic sysroot comes from the pinned NDK below; unlike the
+	// desktop Linux builds, this is loaded from an APK's ABI directory.
+	{"android", "arm64", "aarch64-linux-android", "libghostty-vt.so", "lib/libghostty-vt.so"},
 	{"windows", "amd64", "x86_64-windows-gnu", "ghostty-vt.dll", "bin/ghostty-vt.dll"},
 	{"windows", "arm64", "aarch64-windows-gnu", "ghostty-vt.dll", "bin/ghostty-vt.dll"},
 	// iOS's are not embedded: the nsgo tool signs them into apps as a
@@ -105,9 +110,15 @@ func buildLibraries(src, zig string, selected []libraryTarget) {
 			}
 			defer cleanup()
 		}
-		run(buildSource, zig, "build", "-Demit-lib-vt", "-Dtarget="+t.zig, "-Doptimize="+optimize, "-Dstrip=true", "--prefix", prefix)
+		args := []string{"build", "-Demit-lib-vt", "-Dtarget=" + t.zig, "-Doptimize=" + optimize, "-Dstrip=true", "--prefix", prefix}
+		if t.goos == "android" {
+			ndk := androidNDK()
+			runEnv(buildSource, []string{"ANDROID_NDK_HOME=" + ndk}, zig, args...)
+		} else {
+			run(buildSource, zig, args...)
+		}
 		built := filepath.Join(prefix, t.built)
-		if t.goos == "linux" {
+		if t.goos == "linux" || t.goos == "android" {
 			// The build keeps the debug information of ELF libraries,
 			// four fifths of them.
 			built = stripELF(built)
@@ -201,9 +212,105 @@ func zigFor(src string) string {
 	return zig
 }
 
-func run(dir, name string, args ...string) {
+const androidNDKVersion = "28.2.13676358"
+
+type androidNDKArchive struct {
+	name, sha1 string
+}
+
+var androidNDKArchives = map[string]androidNDKArchive{
+	"darwin":  {"android-ndk-r28c-darwin.zip", "fc20a6bf15a30fb3428c9b60a7308793a362dc6d"},
+	"linux":   {"android-ndk-r28c-linux.zip", "a7b54a5de87fecd125a17d54f73c446199e72a64"},
+	"windows": {"android-ndk-r28c-windows.zip", "086bba43ff2f5eb0e387b15c8278bb4e0d89ba1d"},
+}
+
+func androidNDK() string {
+	for _, dir := range androidNDKCandidates() {
+		if isDir(dir) {
+			return dir
+		}
+	}
+	archive, ok := androidNDKArchives[runtime.GOOS]
+	if !ok {
+		log.Fatalf("Ghostty's Android library needs an NDK on %s", runtime.GOOS)
+	}
+	dir := filepath.Join(cacheDir(), "android-ndk-"+androidNDKVersion)
+	if isDir(dir) {
+		return dir
+	}
+	parent, err := os.MkdirTemp(cacheDir(), "android-ndk-")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.RemoveAll(parent)
+	zipPath := filepath.Join(parent, archive.name)
+	log.Printf("downloading Android NDK %s", androidNDKVersion)
+	download(zipPath, "https://dl.google.com/android/repository/"+archive.name, archive.sha1)
+	run(parent, "unzip", "-q", zipPath)
+	root := filepath.Join(parent, strings.TrimSuffix(archive.name, ".zip"))
+	if err := os.Rename(root, dir); err != nil {
+		log.Fatal(err)
+	}
+	return dir
+}
+
+func androidNDKCandidates() []string {
+	var out []string
+	if dir := os.Getenv("ANDROID_NDK_HOME"); dir != "" {
+		out = append(out, dir)
+	}
+	if dir := os.Getenv("ANDROID_NDK_ROOT"); dir != "" && dir != os.Getenv("ANDROID_NDK_HOME") {
+		out = append(out, dir)
+	}
+	for _, sdk := range []string{os.Getenv("ANDROID_HOME"), os.Getenv("ANDROID_SDK_ROOT"), filepath.Join(os.Getenv("HOME"), "Library", "Android", "sdk"), filepath.Join(os.Getenv("HOME"), "Android", "Sdk")} {
+		if sdk == "" {
+			continue
+		}
+		out = append(out, filepath.Join(sdk, "ndk", androidNDKVersion))
+	}
+	return out
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func download(path, url, wantSHA1 string) {
+	res, err := http.Get(url)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		log.Fatalf("%s: %s", url, res.Status)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	h := sha1.New()
+	_, copyErr := io.Copy(io.MultiWriter(f, h), res.Body)
+	closeErr := f.Close()
+	if copyErr != nil {
+		log.Fatal(copyErr)
+	}
+	if closeErr != nil {
+		log.Fatal(closeErr)
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); got != wantSHA1 {
+		log.Fatalf("%s does not have the SHA-1 the Android repository gives (%s)", url, got)
+	}
+}
+
+func run(dir, name string, args ...string) { runEnv(dir, nil, name, args...) }
+
+func runEnv(dir string, env []string, name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	if len(env) != 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("%s %s: %v", name, strings.Join(args, " "), err)

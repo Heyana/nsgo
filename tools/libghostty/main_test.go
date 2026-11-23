@@ -6,6 +6,44 @@ import (
 	"testing"
 )
 
+func TestAndroidNDKCandidates(t *testing.T) {
+	sdk := t.TempDir()
+	t.Setenv("ANDROID_NDK_HOME", filepath.Join(sdk, "explicit"))
+	t.Setenv("ANDROID_NDK_ROOT", filepath.Join(sdk, "root"))
+	t.Setenv("ANDROID_HOME", filepath.Join(sdk, "android-home"))
+	t.Setenv("ANDROID_SDK_ROOT", filepath.Join(sdk, "sdk-root"))
+	t.Setenv("HOME", filepath.Join(sdk, "home"))
+	got := androidNDKCandidates()
+	want := []string{
+		filepath.Join(sdk, "explicit"),
+		filepath.Join(sdk, "root"),
+		filepath.Join(sdk, "android-home", "ndk", androidNDKVersion),
+		filepath.Join(sdk, "sdk-root", "ndk", androidNDKVersion),
+		filepath.Join(sdk, "home", "Library", "Android", "sdk", "ndk", androidNDKVersion),
+		filepath.Join(sdk, "home", "Android", "Sdk", "ndk", androidNDKVersion),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Android NDK candidates = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("candidate %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestAndroidNDKArchivePins(t *testing.T) {
+	for _, host := range []string{"darwin", "linux", "windows"} {
+		archive, ok := androidNDKArchives[host]
+		if !ok || archive.name == "" || len(archive.sha1) != 40 {
+			t.Errorf("Android NDK archive for %s = %+v", host, archive)
+		}
+	}
+	if _, ok := androidNDKArchives["plan9"]; ok {
+		t.Error("Android NDK has an unsupported host archive")
+	}
+}
+
 func TestSelectLibraryTargets(t *testing.T) {
 	selected, err := selectTargets("js-wasm,iossimulator-amd64,ioscatalyst-arm64,js-wasm")
 	if err != nil || len(selected) != 3 {
