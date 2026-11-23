@@ -258,3 +258,18 @@ func TestNumberInputSpinButtonAndLevels(t *testing.T) {
 		}
 	}
 }
+
+func TestRadioLabelAndHintFuncsUpdateInPlace(t *testing.T) {
+	var label, hint *core.Signal[string]
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		label, hint = core.NewSignal(cx, "Plan A"), core.NewSignal(cx, "Choose a plan")
+		return base.Radio{TestID: "radio", Style: core.Style{Height: core.Pt(20)}, LabelFunc: label.Get, HintFunc: hint.Get}
+	})
+	before := app.Find("id:radio").ID
+	app.Post(func() { label.Set("Plan B"); hint.Set("Updated hint") })
+	app.Settle()
+	v := app.Find("id:radio")
+	if v.ID != before || v.Props.Label != "Plan B" || v.Props.Hint != "Updated hint" {
+		t.Fatalf("radio after update = %+v on %v, want updated props on %v", v.Props, v.ID, before)
+	}
+}

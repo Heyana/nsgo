@@ -26,7 +26,9 @@ type Radio struct {
 	StyleFunc func() core.Style
 	Children  []core.Node
 	Label     string
+	LabelFunc func() string
 	Hint      string
+	HintFunc  func() string
 	TestID    string
 	// HitSlop is how far outside the radio presses count.
 	HitSlop core.Edges
@@ -42,7 +44,7 @@ func (r Radio) Render(cx *core.Scope) core.Node {
 			r.OnChange(true)
 		}
 	}
-	return rovingView(cx, core.View{Class: r.Class, Style: r.Style, StyleFunc: r.StyleFunc, Ref: r.Ref, LabelledBy: r.LabelledBy, Role: core.RoleRadio, Label: r.Label, Hint: r.Hint, TestID: r.TestID, OnLayout: r.OnLayout, Tooltip: r.Tooltip, HitSlop: r.HitSlop,
+	return rovingView(cx, core.View{Class: r.Class, Style: r.Style, StyleFunc: r.StyleFunc, Ref: r.Ref, LabelledBy: r.LabelledBy, Role: core.RoleRadio, Label: r.Label, LabelFunc: r.LabelFunc, Hint: r.Hint, HintFunc: r.HintFunc, TestID: r.TestID, OnLayout: r.OnLayout, Tooltip: r.Tooltip, HitSlop: r.HitSlop,
 		// Checked and selected both: some screen readers read one, some
 		// the other, as gpui-base's Radio states toggled and selected.
 		Disabled: r.Disabled, Invalid: r.Invalid, Checked: r.Checked, Selected: r.Checked,

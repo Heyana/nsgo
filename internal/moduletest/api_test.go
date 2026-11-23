@@ -246,7 +246,7 @@ base.ColorSlider.Label base.ColorSwatch.Label base.Combobox.Label base.Combobox.
 base.Command.Label base.Command.Placeholder base.CommandEntry.Label base.CommandEntry.Description
 base.CommandItem.Label base.CommandItem.Description base.DatePicker.Label base.DatePreset.Label
 base.Link.Label base.Link.Hint base.List.Label
-base.Pagination.Label base.Radio.Label base.Radio.Hint base.RadioGroup.Label base.ResizeHandle.Label
+base.Pagination.Label base.RadioGroup.Label base.ResizeHandle.Label
 base.Scrollbar.Label base.ScrollbarLook.Label base.SelectEntry.Title base.SelectGroup.Title
 base.SelectItem.Title base.Submenu.Label base.SuggestItem.Label base.SuggestList.Label base.Switch.Hint
 base.Table.Label base.TimeField.Label base.TimeFieldSegmentEntry.Label base.Toggle.Label base.Toggle.Hint

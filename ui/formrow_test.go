@@ -77,3 +77,21 @@ func TestFormRowRadioUsesControlledGroupBehavior(t *testing.T) {
 		t.Fatal("arrow navigation did not skip the disabled row and select a")
 	}
 }
+
+func TestFormRowRadioTitleFuncUpdatesAccessibleName(t *testing.T) {
+	headless(t)
+	var title *core.Signal[string]
+	app, _ := start(t, desktopEnv, func(cx *core.Scope) core.Node {
+		title = core.NewSignal(cx, "Plan A")
+		return base.RadioGroup{Children: []core.Node{
+			FormRow{TestID: "radio", Role: core.RoleRadio, TitleFunc: title.Get, Checked: func() bool { return true }},
+		}}
+	})
+	before := app.Find("id:radio").ID
+	app.Post(func() { title.Set("Plan B") })
+	app.Settle()
+	v := app.Find("id:radio")
+	if v.ID != before || v.Props.Label != "Plan B" {
+		t.Fatalf("radio after title update = %+v on %v, want updated label on %v", v.Props, v.ID, before)
+	}
+}

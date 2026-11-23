@@ -108,12 +108,8 @@ func (r FormRow) Render(cx *core.Scope) core.Node {
 		Padding: core.Symmetric(6, formRowPad)}
 	label, labelFunc := textBinding(r.Label, r.LabelFunc, r.Title, r.TitleFunc)
 	if r.Role == core.RoleRadio {
-		// base.Radio takes a fixed Label, so a bound name is read once as the row mounts.
-		if labelFunc != nil {
-			label = core.Untracked(cx, labelFunc)
-		}
 		style.Disabled = Dimmed()
-		return base.Radio{Label: label, TestID: r.TestID, Checked: r.Checked, Disabled: r.Disabled,
+		return base.Radio{Label: label, LabelFunc: labelFunc, TestID: r.TestID, Checked: r.Checked, Disabled: r.Disabled,
 			OnChange: func(bool) {
 				if r.OnPress != nil {
 					r.OnPress()
