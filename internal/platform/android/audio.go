@@ -5,6 +5,7 @@ package android
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -147,7 +148,7 @@ func audioTempFile(src driver.ImageSource, limit int64) (path, code, message str
 	if limit > 0 && len(src.Data) == 0 {
 		_, payload, _ := strings.Cut(src.URI, ",")
 		if int64(len(payload)) > 3*limit {
-			return "", driver.AudioQuotaExceeded, "the sound has more than 8 MiB"
+			return "", driver.AudioQuotaExceeded, fmt.Sprintf("the sound exceeds its limit of %d encoded bytes", limit)
 		}
 	}
 	data, err := imageload.Load(context.Background(), src, nil)
@@ -155,7 +156,7 @@ func audioTempFile(src driver.ImageSource, limit int64) (path, code, message str
 		return "", driver.AudioNotSupported, err.Error()
 	}
 	if limit > 0 && int64(len(data)) > limit {
-		return "", driver.AudioQuotaExceeded, "the sound has more than 8 MiB"
+		return "", driver.AudioQuotaExceeded, fmt.Sprintf("the sound exceeds its limit of %d encoded bytes", limit)
 	}
 	f, err := os.CreateTemp("", "nsgo-audio-*")
 	if err != nil {
@@ -220,8 +221,11 @@ func (s *surface) audioReport(r *reader) {
 		Error:     r.str(),
 		Message:   r.str(),
 	}
-	if report.Phase == driver.AudioLoaded || report.Phase == driver.AudioFailure {
+	switch report.Phase {
+	case driver.AudioLoaded, driver.AudioFailure:
 		s.audioFiles.drop(key, true)
+	case driver.AudioPlaybackEnded:
+		s.soundVoices.ended(key.id, report.Playback)
 	}
 	s.dispatchTo(key.surface, driver.Event{Kind: driver.EventAudio, Count: key.id, Data: report})
 }

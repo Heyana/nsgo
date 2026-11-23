@@ -219,6 +219,7 @@ type surface struct {
 
 	canvasRequests canvasRequests // mounts and cache misses, on separate goroutines
 	audioFiles     audioFiles     // the byte sources staged for the runtime
+	soundVoices    soundVoices    // the sound playbacks the runtime's SoundPool plays
 
 	// On the engine goroutine.
 	// main is the activity's view, the first surface; requests is the last image request number, across surfaces.
@@ -1144,6 +1145,7 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 	b = filterExtendedSensors(s.extendedSensors.Load(), b, func(ev driver.Event) { s.dispatchTo(v.id, ev) })
 	b = filterAuthSessions(s.authSessions.Load(), b, func(ev driver.Event) { s.dispatchTo(v.id, ev) })
 	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(b)))))
+	b = s.soundVoices.limit(v.id, b)
 	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
 	outsideBatch := func(it driver.MountItem) bool {
 		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile ||

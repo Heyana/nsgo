@@ -226,7 +226,7 @@ final class Audio {
                 int channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
                 if (duration < 0 || rate <= 0 || channels <= 0) break;
                 if (duration > sound.maxDuration) {
-                    reportSoundFailure(sound, "quota-exceeded", "the sound is longer than 5 seconds");
+                    reportSoundFailure(sound, "quota-exceeded", "the sound is longer than its limit of " + sound.maxDuration / 1000 + " ms");
                     return;
                 }
                 double bytes = Math.ceil(duration * (double) rate / 1000000) * channels * 2;
