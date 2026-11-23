@@ -184,14 +184,26 @@ func TestConsumedAltChordKeepsMenusClosed(t *testing.T) {
 						return true
 					}}
 			}, 300, 200)
-			onMain(t, hwnd, func(w *window) {
-				w.applyBatches()
-				for _, v := range w.views {
-					if v != nil && v.props.TestID == "recorder" {
-						w.focusView(v)
+			// startApp returns once the window exists, which can be before the engine commits its first batch; focus the recorder once that batch has mounted it.
+			deadline := time.Now().Add(5 * time.Second)
+			for focused := false; !focused; {
+				onMain(t, hwnd, func(w *window) {
+					w.applyBatches()
+					for _, v := range w.views {
+						if v != nil && !v.deleted && v.props.TestID == "recorder" {
+							w.focusView(v)
+						}
 					}
+					v := w.focusedView()
+					focused = v != nil && v.props.TestID == "recorder"
+				})
+				if !focused {
+					if time.Now().After(deadline) {
+						t.Fatal("the recorder did not mount and take the focus")
+					}
+					time.Sleep(10 * time.Millisecond)
 				}
-			})
+			}
 			for _, key := range []struct {
 				vk   uintptr
 				want string
