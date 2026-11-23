@@ -96,13 +96,19 @@ type view struct {
 	transformedKids bool
 	layout          *TextLayout
 	text            *driver.TextContent
-	// A scroll view's offset, the scrolls it applied and sticky cells.
-	offset  driver.Point
-	applied uint32
-	sticky  []driver.StickyCell
-	// A text field's edits by the user and the value it shows.
-	edits uint32
-	value string
+	// A scroll view's offset, content size, axis, the scrolls it applied and sticky cells.
+	offset      driver.Point
+	contentSize driver.Size
+	horizontal  bool
+	applied     uint32
+	sticky      []driver.StickyCell
+	// A text field's edits by the user, the value it shows, its configuration and whether the automation selected all of it.
+	edits         uint32
+	value         string
+	inputConfig   *driver.InputConfig
+	inputDisabled bool
+	maxLength     int
+	selectedAll   bool
 	// A canvas's drawing.
 	drawing    *driver.Drawing
 	pixelImage *driver.ImageConfig
@@ -125,6 +131,10 @@ type mounter struct {
 	root     driver.NodeID
 	modals   []*view
 	blocking *view
+	// focused is the text field with the focus, alerts the alerts showing by ID and viewport the page's size, which nsgo dev -automation reads (testsurface.go).
+	focused  *view
+	alerts   map[uint32]*driver.AlertConfig
+	viewport driver.Size
 	o        ops
 	animator *driver.Animator
 	// ticking is set while a frame is asked for.
@@ -152,9 +162,19 @@ type modalPresent struct {
 }
 
 func newMounter(h host) *mounter {
-	m := &mounter{h: h, repaint: map[driver.NodeID]bool{}, presenting: map[driver.NodeID]modalPresent{}}
+	m := &mounter{h: h, alerts: map[uint32]*driver.AlertConfig{}, repaint: map[driver.NodeID]bool{}, presenting: map[driver.NodeID]modalPresent{}}
 	m.animator = driver.NewAnimator(h.dispatch)
 	return m
+}
+
+// answerAlert dispatches an alert's answer once, forgetting the alert so a later native dismissal or duplicate call cannot answer it twice.
+func (m *mounter) answerAlert(id uint32, index int) bool {
+	if _, ok := m.alerts[id]; !ok {
+		return false
+	}
+	delete(m.alerts, id)
+	m.h.dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: index})
+	return true
 }
 
 func (m *mounter) view(id driver.NodeID) *view {
@@ -251,6 +271,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 	v := m.view(it.ID)
 	if v == nil {
 		if it.ID == 0 {
+			if it.Kind == driver.ItemAlert && it.Alert != nil {
+				m.alerts[it.Alert.ID] = it.Alert
+			}
 			m.h.service(it)
 		}
 		return
@@ -310,6 +333,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		m.views[it.ID] = nil
 		if m.blocking == v {
 			m.blocking = nil
+		}
+		if m.focused == v {
+			m.focused = nil
 		}
 		m.animator.Forget(v.id)
 		delete(m.repaint, v.id)
@@ -394,6 +420,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		v.layout, _ = it.Text.Layout.(*TextLayout)
 		m.sendText(v)
 	case driver.ItemInput:
+		v.inputConfig = it.Input
+		v.inputDisabled = it.Input.Disabled || it.Input.Readonly
+		v.maxLength = it.Input.MaxLength
 		m.sendInput(v, it.Input)
 	case driver.ItemInputValue:
 		// A value the app set before the user's latest edit is stale; one
@@ -402,14 +431,20 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 			return
 		}
 		v.value = it.Value
+		v.selectedAll = false
 		m.o.op("iv", v.id).str(it.Value)
 	case driver.ItemFocus:
+		m.focused = v
 		m.o.op("fo", v.id).boolean(true)
 	case driver.ItemBlur:
+		if m.focused == v {
+			m.focused = nil
+		}
 		m.o.op("fo", v.id).boolean(false)
 	case driver.ItemSelection:
 		m.o.op("sel", v.id).num(float64(it.Selection.Start)).num(float64(it.Selection.End))
 	case driver.ItemScrollConfig:
+		v.horizontal = it.Scroll.Horizontal
 		var cfg object
 		cfg.boolean("h", it.Scroll.Horizontal).boolean("hide", it.Scroll.HideIndicator).
 			boolean("rf", it.Scroll.Refreshable).boolean("rt", it.Scroll.Refreshing).
@@ -417,6 +452,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 			boolean("paging", it.Scroll.Behavior.Paging)
 		m.o.op("sc", v.id).raw(cfg.bytes())
 	case driver.ItemScrollContent:
+		v.contentSize = it.Size
 		m.o.op("ss", v.id).pt(it.Size.Width).pt(it.Size.Height)
 	case driver.ItemScrollTo:
 		v.applied++
@@ -1048,6 +1084,14 @@ func (m *mounter) edited(id driver.NodeID, text string) {
 // field reports a text field's focus, blur or submit.
 func (m *mounter) field(id driver.NodeID, kind driver.EventKind, text string) {
 	if v := m.view(id); v != nil {
+		switch kind {
+		case driver.EventFocus:
+			m.focused = v
+		case driver.EventBlur:
+			if m.focused == v {
+				m.focused = nil
+			}
+		}
 		m.send(v, driver.Event{Kind: kind, Text: text})
 	}
 }

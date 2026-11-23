@@ -152,7 +152,9 @@ func miniProgramPermission(name string) int {
 // one, which its own cancel button is.
 func (s *surface) alert(c *driver.AlertConfig) {
 	answer := func(index int) {
-		s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: c.ID, Index: index})
+		s.mu.Lock()
+		s.m.answerAlert(c.ID, index)
+		s.mu.Unlock()
 	}
 	cancel := -1
 	for i, a := range c.Actions {

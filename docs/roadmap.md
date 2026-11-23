@@ -392,11 +392,7 @@ What NSGo's own [#57](https://github.com/nsgo-dev/nsgo/issues/57) asks for, whic
 
 ## Automation
 
-What `nsgo dev -automation` and `nsgo mcp` still lack ([tool](architecture/tool.md#automation)). NSH has no counterpart; MyGo's `plugins/automation` is the reference.
-
-| Item | Reference | Done when |
-| --- | --- | --- |
-| Mini programs | `internal/backend/run_miniprogram.go`, [#1431](https://github.com/nsgo-dev/nsgo/issues/1431) | `nsgo dev -automation` on a mini-program target drives the app in its developer tool's simulator, with the token in the build as `devServer` is, where it now refuses those targets |
+What `nsgo dev -automation` and `nsgo mcp` still lack ([tool](architecture/tool.md#automation)). NSH has no counterpart; MyGo's `plugins/automation` is the reference. They drive every target `nsgo dev` runs but `tui`.
 
 ## Finish the existing platforms
 

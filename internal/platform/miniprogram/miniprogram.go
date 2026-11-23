@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall/js"
 	"time"
 
@@ -47,6 +48,7 @@ type Options struct {
 
 // surface is the app's page: the engine's platform.
 type surface struct {
+	mu     sync.Mutex
 	bridge js.Value
 	// api is the platform's APIs, with WeChat's names and options.
 	api     js.Value
@@ -88,17 +90,20 @@ func Run(app engine.App, opts Options) {
 	s.appearance = opts.Appearance
 	s.env = s.environment()
 	s.m.reduce = s.env.ReduceMotion
+	size := s.size()
+	s.m.viewport = size
 	id := opts.ID
 	if id == "" {
 		id = "default"
 	}
 	updater := s.initUpdates(opts)
 	s.engine = engine.Start(s, app, engine.Options{
-		Size: s.size(), Environment: s.env, Appearance: opts.Appearance,
+		Size: size, Environment: s.env, Appearance: opts.Appearance,
 		Updater: updater,
 		Storage: engine.NewStorage(&storage{api: s.api, prefix: "nsgo:" + id + ":"}),
 		Secrets: s.secretsStore(),
 	})
+	s.registerAutomation()
 	s.bridge.Set("event", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		s.event(args)
 		return nil
@@ -126,7 +131,11 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText { return
 func (s *surface) MountsAtOnce() {}
 
 // Mount implements engine.Platform.
-func (s *surface) Mount(b *driver.MountBatch) { driver.Apply(b, s.m.mount) }
+func (s *surface) Mount(b *driver.MountBatch) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	driver.Apply(b, s.m.mount)
+}
 
 // RequestFrame implements engine.Platform.
 func (s *surface) RequestFrame()             { s.m.requestFrame() }
@@ -179,12 +188,16 @@ func (s *surface) changed() {
 		s.m.reduce = env.ReduceMotion
 		s.engine.SetEnvironment(env)
 	}
-	s.engine.Resize(s.size(), driver.Geometry{})
+	size := s.size()
+	s.m.viewport = size
+	s.engine.Resize(size, driver.Geometry{})
 }
 
 // event handles what the runtime reports: its name, the view's ID, then
 // what the event carries.
 func (s *surface) event(args []js.Value) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	name := args[0].String()
 	arg := func(i int) js.Value {
 		if i < len(args) {
@@ -259,7 +272,7 @@ func (s *surface) event(args []js.Value) {
 		}
 		s.engine.SetEnvironment(s.env)
 	case "alert":
-		s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: uint32(arg(2).Int()), Index: arg(3).Int()})
+		s.m.answerAlert(uint32(arg(2).Int()), arg(3).Int())
 	}
 }
 
@@ -451,6 +464,9 @@ func (s *surface) canvasImage(src driver.ImageSource, id driver.NodeID) *canvasI
 			im.onerror.Release()
 			im.onerror = js.Func{}
 		}
+		// The automation's goroutine reads the mounter under mu too (testsurface.go).
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		cur, exists := s.images.peek(key)
 		if !exists || cur != im {
 			return

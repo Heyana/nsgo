@@ -406,10 +406,18 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 			t.Errorf("%s android -release: %v", goos, err)
 		}
 	}
-	for _, target := range []string{"miniprogram_wechat"} {
-		if err := automationTargetError(target, "darwin", false); err == nil {
-			t.Errorf("darwin %s unexpectedly allowed", target)
+	for _, target := range miniProgramTargets() {
+		for _, goos := range []string{"darwin", "linux", "windows"} {
+			if err := automationTargetError(target, goos, false); err != nil {
+				t.Errorf("%s %s: %v", goos, target, err)
+			}
 		}
+		if err := automationTargetError(target, "darwin", true); err == nil || !strings.Contains(err.Error(), "-release") {
+			t.Errorf("darwin %s -release: %v", target, err)
+		}
+	}
+	if err := automationTargetError("native", "freebsd", false); err == nil {
+		t.Error("freebsd native unexpectedly allowed")
 	}
 }
 
@@ -702,7 +710,9 @@ func TestAutomationSupportedTargets(t *testing.T) {
 		{"web", "darwin", true},
 		{"web", "linux", true},
 		{"ios_simulator", "darwin", true},
-		{"miniprogram_wechat", "darwin", false},
+		{"miniprogram_wechat", "darwin", true},
+		{"miniprogram_alipay", "linux", true},
+		{"native", "freebsd", false},
 	}
 	for _, tc := range cases {
 		if got := automationSupported(tc.target, tc.hostOS); got != tc.want {
@@ -724,7 +734,9 @@ func TestCheckDevAutomation(t *testing.T) {
 		{"web", "darwin", false, ""},
 		{"web", "windows", false, ""},
 		{"web", "linux", true, "-release"},
-		{"miniprogram_wechat", "darwin", false, "macOS, Windows, Linux, Android, the web and Apple devices and simulators so far"},
+		{"miniprogram_qq", "linux", false, ""},
+		{"miniprogram_wechat", "darwin", true, "-release"},
+		{"native", "freebsd", false, "macOS, Windows, Linux, Android, the web, mini programs and Apple devices and simulators so far"},
 		{"native", "darwin", true, "-release"},
 		{"native", "windows", true, "-release"},
 	} {

@@ -310,6 +310,9 @@ func targetSupportsAutomation(name string) bool {
 	if strings.HasPrefix(name, "android_") {
 		return true
 	}
+	if _, ok := miniProgramPlatformOf(name); ok {
+		return true
+	}
 	switch name {
 	case "macos_arm64", "macos_x64", "macos_universal", "linux_arm64", "linux_x64", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
 		return true

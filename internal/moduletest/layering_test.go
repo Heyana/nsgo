@@ -223,6 +223,7 @@ func TestLayering(t *testing.T) {
 	check("ios", "arm64", "nsgowatch,nsgodev,nsgoautomation")
 	check("linux", "amd64", "nsgodev,nsgoautomation")
 	check("js", "wasm", "nsgodev,nsgoautomation")
+	check("js", "wasm", "nsgominiprogram,nsgo_noshader,nsgodev,nsgoautomation")
 }
 
 type listedPackage struct {

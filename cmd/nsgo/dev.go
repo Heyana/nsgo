@@ -331,6 +331,9 @@ func automationTargetError(target, goos string, release bool) error {
 	if target == "android" {
 		return nil
 	}
+	if _, ok := miniProgramPlatformOf(target); ok {
+		return nil
+	}
 	if goos == "windows" && target == "native" {
 		return nil
 	}
@@ -345,7 +348,7 @@ func automationTargetError(target, goos string, release bool) error {
 			return nil
 		}
 	}
-	return errors.New("-automation drives macOS, Windows, Linux, Android, the web and Apple devices and simulators so far: use -target android or web, run it on Windows or Linux with -target native, or on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
+	return errors.New("-automation drives macOS, Windows, Linux, Android, the web, mini programs and Apple devices and simulators so far: use -target android, web, miniprogram_wechat, miniprogram_qq, miniprogram_alipay or miniprogram_douyin, run it on Windows or Linux with -target native, or on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
 }
 
 // checkDevAutomation reports why nsgo dev -automation cannot drive target on goos, or nil when it can.

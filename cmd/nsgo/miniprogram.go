@@ -135,9 +135,14 @@ func buildMiniProgram(ctx context.Context, p *project, mp miniProgramPlatform, d
 		}
 	}
 	if len(module) > packageLimit {
-		return fmt.Errorf("the module is %s compressed, past the %s a mini program's package holds; "+
-			"leave out what the app does not show on phones, such as the editor, the terminal or TSX",
-			formatSize(int64(len(module))), formatSize(packageLimit))
+		// nsgo dev -automation links its agent, which the developer tool's simulator may still load past the limit; builds without it leave it out.
+		if !p.Dev.Automation || p.Release {
+			return fmt.Errorf("the module is %s compressed, past the %s a mini program's package holds; "+
+				"leave out what the app does not show on phones, such as the editor, the terminal or TSX",
+				formatSize(int64(len(module))), formatSize(packageLimit))
+		}
+		warnIn(ctx, "the module with -automation's agent is %s compressed, past the %s %s's package holds; builds without -automation leave the agent out",
+			formatSize(int64(len(module))), formatSize(packageLimit), mp.title)
 	}
 	stage(ctx, "writing the project")
 	if err := writeMiniProgram(p, mp, dir, module); err != nil {

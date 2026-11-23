@@ -295,3 +295,46 @@ func TestIOSPrivateAutomationLookupsAreGated(t *testing.T) {
 		t.Errorf("watchos test files = %v", watchTest)
 	}
 }
+
+// TestMiniProgramAutomationIsGated verifies that mini-program automation hooks (automation.go and testsurface.go) compile only with nsgoautomation and stay absent from release and plain dev builds.
+func TestMiniProgramAutomationIsGated(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("needs the go command")
+	}
+	listFiles := func(pkg, tags string) []string {
+		t.Helper()
+		cmd := exec.Command("go", "list", "-tags="+tags, "-json=GoFiles", pkg)
+		cmd.Dir = moduleRoot
+		cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0", "GOFLAGS=")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("go list -tags=%s %s: %v\n%s", tags, pkg, err, out)
+		}
+		var p struct{ GoFiles []string }
+		if err := json.Unmarshal(out, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p.GoFiles
+	}
+	for _, tags := range []string{"nsgominiprogram,nsgo_noshader", "nsgominiprogram,nsgo_noshader,nsgodev"} {
+		files := listFiles("./internal/platform/miniprogram", tags)
+		for _, forbidden := range []string{"automation.go", "testsurface.go"} {
+			if slices.Contains(files, forbidden) {
+				t.Errorf("miniprogram tags=%q compiled %s", tags, forbidden)
+			}
+		}
+		if !slices.Contains(files, "automation_off.go") {
+			t.Errorf("miniprogram tags=%q did not compile automation_off.go", tags)
+		}
+	}
+	autoFiles := listFiles("./internal/platform/miniprogram", "nsgominiprogram,nsgo_noshader,nsgodev,nsgoautomation")
+	if !slices.Contains(autoFiles, "automation.go") || !slices.Contains(autoFiles, "testsurface.go") || slices.Contains(autoFiles, "automation_off.go") {
+		t.Errorf("miniprogram automation files = %v", autoFiles)
+	}
+	linked := linkedPackages(t, "js", "wasm", "nsgominiprogram,nsgo_noshader")
+	for _, pkg := range []string{"testing", "github.com/nsgo-dev/nsgo/nsgotest", "github.com/nsgo-dev/nsgo/internal/automation", "net/http", "image/png"} {
+		if linked[pkg] {
+			t.Errorf("release minimal mini-program build unexpectedly links %s", pkg)
+		}
+	}
+}
