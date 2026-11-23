@@ -810,7 +810,9 @@ func (m *mounter) input(id driver.NodeID, c *driver.InputConfig) {
 		boolean(c.Readonly).boolean(c.Disabled).
 		num(float64(c.Padding.Top)).num(float64(c.Padding.Right)).
 		num(float64(c.Padding.Bottom)).num(float64(c.Padding.Left)).
-		boolean(c.HideIndicator)
+		boolean(c.HideIndicator).
+		str(f.Family).boolean(f.Italic).num(float64(c.Style.LineHeight)).
+		num(float64(c.Style.Align))
 }
 
 // scrollTo scrolls a scroll view to offset, as the app asked.

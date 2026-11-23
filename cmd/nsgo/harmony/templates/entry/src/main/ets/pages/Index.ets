@@ -758,6 +758,10 @@ class Tree {
           v.inH = o[12] as number;
           v.readonly = o[13] as boolean;
           v.disabled = o[14] as boolean;
+          v.family = o[20] as string;
+          v.italic = o[21] as boolean;
+          v.lh = o[22] as number;
+          v.align = o[23] as number;
         } else if (code === 'iv') {
           v.value = o[2] as string;
         } else if (code === 'im') {
@@ -3972,9 +3976,12 @@ class Renderer {
     if (v.multiline) {
       // A field as tall as a page is not a line as tall as a page: using its whole height as lineHeight drops the glyphs into the middle. A single line is centered in the content box.
       node.commonAttribute.align(Alignment.TopStart);
-      a.lineHeight(Math.max(v.fs * 1.4, 1));
     }
-    a.fontSize(v.fs).fontColor(v.color)
+    a.fontSize(v.fs).fontWeight(v.fw).fontColor(v.color)
+      .fontFamily(v.family)
+      .fontStyle(v.italic ? FontStyle.Italic : FontStyle.Normal)
+      .textAlign(v.align === 1 ? TextAlign.Center :
+        (v.align === 2 ? TextAlign.End : TextAlign.Start))
       .type(v.masked ? InputType.Password : InputType.Normal)
       .enabled(!(v.disabled || v.propDisabled))
       // A read-only field still focuses, selects and copies; it only refuses what the user would insert or delete.
@@ -4021,6 +4028,11 @@ class Renderer {
           host.send('selection', v.id, start, end, '');
         }
       });
+    // A zero line height follows the platform's font metrics. Multiline fields still use a readable default when the style leaves it unset.
+    const lineHeight = v.lh > 0 ? v.lh : (v.multiline ? Math.max(v.fs * 1.4, 1) : 0);
+    if (lineHeight > 0) {
+      a.lineHeight(lineHeight);
+    }
     // An unset placeholder color is the platform's, as on the other targets.
     if (v.phColor !== '') {
       a.placeholderColor(v.phColor);

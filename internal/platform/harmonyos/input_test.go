@@ -9,19 +9,24 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// TestInputSendsEditability checks that a field's input operation carries its
-// editability at o[13] and o[14], its padding (top, right, bottom, left) at o[15]..o[18] (#1598), and whether it hides its scroll indicator at o[19] (#1596).
+// TestInputSendsEditability checks that a field's input operation carries its editability at o[13] and o[14], its padding (top, right, bottom, left) at o[15]..o[18] (#1598), whether it hides its scroll indicator at o[19] (#1596), and its font family, italic style, line height and alignment at o[20]..o[23] (#1597).
 func TestInputSendsEditability(t *testing.T) {
 	pad := driver.Edges{Top: 18, Right: 20, Bottom: 22, Left: 12}
-	for _, c := range []driver.InputConfig{{Readonly: true}, {Disabled: true}, {Multiline: true, Padding: pad, HideIndicator: true}, {}} {
+	for _, c := range []driver.InputConfig{
+		{Readonly: true},
+		{Disabled: true},
+		{Multiline: true, Padding: pad, HideIndicator: true},
+		{Style: driver.TextStyle{Font: driver.Font{Family: "Avenir", Italic: true}, LineHeight: 28, Align: driver.TextAlignCenter}},
+		{},
+	} {
 		m := &mounter{views: map[driver.NodeID]*view{}}
 		m.input(4, &c)
 		var got [][]any
 		if err := json.Unmarshal(m.o.bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
-		if len(got) != 1 || len(got[0]) != 20 || got[0][0] != "in" {
-			t.Fatalf("input operations %v, want one in with 18 arguments", got)
+		if len(got) != 1 || len(got[0]) != 24 || got[0][0] != "in" {
+			t.Fatalf("input operations %v, want one in with 22 arguments", got)
 		}
 		o := got[0]
 		if o[13] != c.Readonly || o[14] != c.Disabled || o[19] != c.HideIndicator {
@@ -31,6 +36,11 @@ func TestInputSendsEditability(t *testing.T) {
 		if o[15] != float64(c.Padding.Top) || o[16] != float64(c.Padding.Right) ||
 			o[17] != float64(c.Padding.Bottom) || o[18] != float64(c.Padding.Left) {
 			t.Errorf("padding %v %v %v %v, want %+v", o[15], o[16], o[17], o[18], c.Padding)
+		}
+		if o[20] != c.Style.Font.Family || o[21] != c.Style.Font.Italic ||
+			o[22] != float64(c.Style.LineHeight) || o[23] != float64(c.Style.Align) {
+			t.Errorf("style %v %v %v %v, want %q %v %v %v", o[20], o[21], o[22], o[23],
+				c.Style.Font.Family, c.Style.Font.Italic, c.Style.LineHeight, c.Style.Align)
 		}
 	}
 }
