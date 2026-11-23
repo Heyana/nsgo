@@ -532,28 +532,134 @@ final class Services {
         Uri uri = DocumentsContract.buildDocumentUriUsingTree(Uri.parse(tree), document);
         ByteBuffer buf = ByteBuffer.allocate(n);
         try {
-            try (android.os.ParcelFileDescriptor fd = resolver.openFileDescriptor(uri, "r");
-                    FileChannel ch = new FileInputStream(fd.getFileDescriptor()).getChannel()) {
-                while (buf.hasRemaining() && ch.read(buf, off + buf.position()) > 0) {}
+            try (android.os.ParcelFileDescriptor fd = resolver.openFileDescriptor(uri, "r")) {
+                if (fd == null) throw new IOException("no file descriptor for " + uri);
+                try (FileChannel ch = new FileInputStream(fd.getFileDescriptor()).getChannel()) {
+                    while (buf.hasRemaining() && ch.read(buf, off + buf.position()) > 0) {}
+                }
             } catch (IOException e) {
                 // A pipe, which cannot read in place.
-                buf.clear();
-                try (InputStream in = resolver.openInputStream(uri)) {
-                    if (in == null) throw new IOException("no stream for " + uri);
-                    for (long skip = off; skip > 0; ) {
-                        long s = in.skip(skip);
-                        if (s <= 0) return new byte[0];
-                        skip -= s;
-                    }
-                    for (int r; buf.hasRemaining() && (r = in.read(buf.array(), buf.position(), buf.remaining())) > 0; ) {
-                        buf.position(buf.position() + r);
-                    }
-                }
+                return readDocumentStream(context, uri, off, n);
             }
         } catch (RuntimeException e) {
             throw new IOException(e.getMessage(), e);
         }
         return java.util.Arrays.copyOf(buf.array(), buf.position());
+    }
+
+    /**
+     * Opens a tree's document once so repeated reads reuse its provider
+     * descriptor until closed. Providers whose descriptor is a non-seekable
+     * pipe fall back to stream reads after retiring that descriptor.
+     */
+    static FolderHandles.Document openDocument(Context context, String tree, String document) throws IOException {
+        ContentResolver resolver = context.getContentResolver();
+        Uri uri = DocumentsContract.buildDocumentUriUsingTree(Uri.parse(tree), document);
+        try {
+            android.os.ParcelFileDescriptor fd = resolver.openFileDescriptor(uri, "r");
+            if (fd == null) throw new IOException("no file descriptor for " + uri);
+            return new OpenDocument(context.getApplicationContext(), uri, fd);
+        } catch (RuntimeException e) {
+            throw new IOException(e.getMessage(), e);
+        }
+    }
+
+    private static byte[] readDocumentStream(Context context, Uri uri, long off, int n) throws IOException {
+        byte[] buf = new byte[n];
+        int pos = 0;
+        try (InputStream in = context.getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new IOException("no stream for " + uri);
+            for (long skip = off; skip > 0; ) {
+                long s = in.skip(skip);
+                if (s <= 0) {
+                    if (in.read() < 0) return new byte[0];
+                    s = 1;
+                }
+                skip -= s;
+            }
+            for (int r; pos < n && (r = in.read(buf, pos, n - pos)) > 0; ) {
+                pos += r;
+            }
+        } catch (RuntimeException e) {
+            throw new IOException(e.getMessage(), e);
+        }
+        return java.util.Arrays.copyOf(buf, pos);
+    }
+
+    private static final class OpenDocument implements FolderHandles.Document {
+        private final Context context;
+        private final Uri uri;
+        private android.os.ParcelFileDescriptor fd;
+        private FileInputStream in;
+        private FileChannel ch;
+        private boolean streamOnly;
+        private boolean closed;
+
+        OpenDocument(Context context, Uri uri, android.os.ParcelFileDescriptor fd) {
+            this.context = context;
+            this.uri = uri;
+            this.fd = fd;
+            this.in = new FileInputStream(fd.getFileDescriptor());
+            this.ch = this.in.getChannel();
+        }
+
+        @Override
+        public byte[] read(long off, int n) throws IOException {
+            FileChannel channel;
+            synchronized (this) {
+                if (closed) throw new IOException("document closed");
+                channel = streamOnly ? null : ch;
+            }
+            if (channel != null) {
+                ByteBuffer buf = ByteBuffer.allocate(n);
+                try {
+                    while (buf.hasRemaining() && channel.read(buf, off + buf.position()) > 0) {}
+                    return java.util.Arrays.copyOf(buf.array(), buf.position());
+                } catch (java.nio.channels.ClosedByInterruptException e) {
+                    throw e;
+                } catch (IOException e) {
+                    if (Thread.currentThread().isInterrupted()) throw e;
+                    // A pipe, which cannot read in place: retire the descriptor once and read from a stream.
+                    synchronized (this) {
+                        if (closed) throw e;
+                        streamOnly = true;
+                        closeDescriptorLocked();
+                    }
+                } catch (RuntimeException e) {
+                    throw new IOException(e.getMessage(), e);
+                }
+            }
+            return readDocumentStream(context, uri, off, n);
+        }
+
+        @Override
+        public void close() {
+            synchronized (this) {
+                if (closed) return;
+                closed = true;
+                closeDescriptorLocked();
+            }
+        }
+
+        private void closeDescriptorLocked() {
+            FileInputStream stream = in;
+            android.os.ParcelFileDescriptor pfd = fd;
+            ch = null;
+            in = null;
+            fd = null;
+            if (stream != null) {
+                try {
+                    stream.close();
+                } catch (IOException ignored) {
+                }
+            }
+            if (pfd != null) {
+                try {
+                    pfd.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
     }
 
     /** Starts the documents UI to create a document named name of type mime. */

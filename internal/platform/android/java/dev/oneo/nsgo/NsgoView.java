@@ -173,6 +173,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         t.setDaemon(true);
         return t;
     });
+    /** Open document descriptors for picked folders, released on close or teardown. */
+    private final FolderHandles folderHandles = new FolderHandles((tree, document) ->
+            Services.openDocument(getContext().getApplicationContext(), tree, document));
     /** Nodes reporting presses outside them, on the UI thread. */
     private final ArrayList<Node> outside = new ArrayList<>();
     /** Mounted nodes with backdrop filters and the containers above them, which draw what is behind those nodes for them to blur, on the UI thread. */
@@ -1193,6 +1196,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         canvasImages.close();
         decoder.shutdownNow();
         files.shutdownNow();
+        folderHandles.closeAll();
         // An ended process hears no answer, and a late grant starts nothing.
         recordingStarts.clear();
         recordingAsks.clear();
@@ -1234,6 +1238,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         canvasImages.close();
         decoder.shutdownNow();
         files.shutdownNow();
+        folderHandles.closeAll();
         destroyNodes();
     }
 
@@ -1688,8 +1693,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             writeDisplay(d);
             // Optional environment tail, after the display, for mobile.OpenedURL.
             Protocol.writeString(d, first.openedURL);
-            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS, Protocol.CAP_AUTH_SESSION, Protocol.CAP_VIDEO_PIP and Protocol.CAP_CAPTURE.
-            d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP | Protocol.CAP_CAPTURE);
+            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS, Protocol.CAP_AUTH_SESSION, Protocol.CAP_VIDEO_PIP, Protocol.CAP_CAPTURE and Protocol.CAP_FOLDER_HANDLES.
+            d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP | Protocol.CAP_CAPTURE | Protocol.CAP_FOLDER_HANDLES);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -2404,8 +2409,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
     /**
      * Answers a FOLDER message off the reader thread: lists a folder of a
-     * tree the user picked or reads part of its file, as folders.go asks,
-     * its answer after the request's number and an error, "" for none.
+     * tree the user picked, or opens, reads or closes its file, as folders.go
+     * asks, its answer after the request's number and an error, "" for none.
      */
     private void folder(DataInputStream in) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -2414,16 +2419,32 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         try {
             id = in.readInt();
             int op = in.readUnsignedByte();
-            String tree = Protocol.readString(in), document = Protocol.readString(in);
             ByteArrayOutputStream body = new ByteArrayOutputStream();
             DataOutputStream b = new DataOutputStream(body);
             Context context = getContext().getApplicationContext();
             try {
                 if (op == Protocol.FOLDER_LIST) {
+                    String tree = Protocol.readString(in), document = Protocol.readString(in);
                     Services.listFolder(context, tree, document, b);
-                } else {
+                } else if (op == Protocol.FOLDER_OPEN) {
+                    String tree = Protocol.readString(in), document = Protocol.readString(in);
+                    b.writeInt(folderHandles.open(tree, document));
+                } else if (op == Protocol.FOLDER_READ_HANDLE) {
+                    int handle = in.readInt();
                     long off = in.readLong();
-                    byte[] read = Services.readDocument(context, tree, document, off, in.readInt());
+                    int n = in.readInt();
+                    if (n < 0 || n > Protocol.MAX_MESSAGE_SIZE) throw new IOException("invalid read length " + n);
+                    byte[] read = folderHandles.read(handle, off, n);
+                    b.writeInt(read.length);
+                    b.write(read);
+                } else if (op == Protocol.FOLDER_CLOSE) {
+                    folderHandles.close(in.readInt());
+                } else {
+                    String tree = Protocol.readString(in), document = Protocol.readString(in);
+                    long off = in.readLong();
+                    int n = in.readInt();
+                    if (n < 0 || n > Protocol.MAX_MESSAGE_SIZE) throw new IOException("invalid read length " + n);
+                    byte[] read = Services.readDocument(context, tree, document, off, n);
                     b.writeInt(read.length);
                     b.write(read);
                 }

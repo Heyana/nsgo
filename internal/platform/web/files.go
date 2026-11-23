@@ -263,6 +263,34 @@ func (b *blobReader) Seek(offset int64, whence int) (int64, error) {
 	return offset, nil
 }
 
+func (b *blobReader) ReadAt(p []byte, off int64) (int, error) {
+	if off < 0 {
+		return 0, errors.New("negative offset")
+	}
+	if len(p) == 0 {
+		return 0, nil
+	}
+	var total int
+	for len(p) > 0 {
+		if off >= b.size {
+			return total, io.EOF
+		}
+		n := min(int64(len(p)), b.size-off, 1<<20)
+		buf, err := await(b.blob.Call("slice", off, off+n).Call("arrayBuffer"))
+		if err != nil {
+			return total, err
+		}
+		got := js.CopyBytesToGo(p, js.Global().Get("Uint8Array").New(buf))
+		total += got
+		off += int64(got)
+		p = p[got:]
+		if got == 0 {
+			return total, io.EOF
+		}
+	}
+	return total, nil
+}
+
 func (*blobReader) Close() error { return nil }
 
 // jsError is a rejection's reason as an error.

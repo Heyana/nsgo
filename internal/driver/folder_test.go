@@ -121,3 +121,50 @@ func TestDirectoryFS(t *testing.T) {
 		t.Errorf("a folder without a path is named %q", got[0].Name)
 	}
 }
+
+// seekOnlyFile implements io.ReadSeekCloser without io.ReaderAt.
+type seekOnlyFile struct{ r *bytes.Reader }
+
+func (f seekOnlyFile) Read(p []byte) (int, error)                { return f.r.Read(p) }
+func (f seekOnlyFile) Seek(off int64, whence int) (int64, error) { return f.r.Seek(off, whence) }
+func (seekOnlyFile) Close() error                                { return nil }
+
+func TestFolderFSReaderAt(t *testing.T) {
+	// A source whose opened files implement io.ReaderAt exposes it through FolderFS and TreeFS.
+	fsys := TreeFS([]TreeFile{{Path: "track.flac", Size: 10, Open: openBytes("0123456789")}})
+	f, err := fsys.Open("track.flac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ra, ok := f.(io.ReaderAt)
+	if !ok {
+		t.Fatal("opened TreeFS file does not implement io.ReaderAt")
+	}
+	var head [2]byte
+	if n, err := f.Read(head[:]); err != nil || n != 2 || string(head[:]) != "01" {
+		t.Fatalf("Read = %d, %q, %v", n, head, err)
+	}
+	var mid [4]byte
+	if n, err := ra.ReadAt(mid[:], 4); err != nil || n != 4 || string(mid[:]) != "4567" {
+		t.Fatalf("ReadAt = %d, %q, %v", n, mid, err)
+	}
+	// ReadAt must not disturb the sequential read cursor.
+	var next [2]byte
+	if n, err := f.Read(next[:]); err != nil || n != 2 || string(next[:]) != "23" {
+		t.Fatalf("Read after ReadAt = %d, %q, %v", n, next, err)
+	}
+
+	// A source whose opened files do not implement io.ReaderAt stays without it.
+	plain := TreeFS([]TreeFile{{Path: "plain.txt", Size: 4, Open: func() (io.ReadSeekCloser, error) {
+		return seekOnlyFile{bytes.NewReader([]byte("abcd"))}, nil
+	}}})
+	pf, err := plain.Open("plain.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pf.Close()
+	if _, ok := pf.(io.ReaderAt); ok {
+		t.Fatal("opened file without io.ReaderAt unexpectedly implements io.ReaderAt")
+	}
+}

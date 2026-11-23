@@ -230,6 +230,8 @@ type surface struct {
 	captures atomic.Bool
 	// videoPiP is set once the runtime's environment says it answers native video PiP commands (capVideoPiP); until then Go reports PiP unsupported.
 	videoPiP atomic.Bool
+	// folderHandles is set once the runtime's environment says it keeps opened document descriptors across folder reads (capFolderHandles).
+	folderHandles atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -542,6 +544,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.authSessions.Store(fourth&capAuthSession != 0)
 			s.captures.Store(fourth&capCapture != 0)
 			s.videoPiP.Store(fourth&capVideoPiP != 0)
+			s.folderHandles.Store(fourth&capFolderHandles != 0)
 			// The bulk hello waits for the first environment, which says whether the runtime reads extended messages: one that does not keeps both sides on complete messages (errNoExtendedMessages).
 			if s.extendedMessages.Load() && s.bulkHello.CompareAndSwap(false, true) {
 				_ = s.sendExtended(extBulk, func(*writer) {})

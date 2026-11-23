@@ -591,6 +591,9 @@ const capVideoPiP = 4
 // capCapture is the fourth capability byte's bit for a runtime that reads ItemCapture and answers it with msgCaptureReply (Protocol.CAP_CAPTURE): mount items carry no length, so one built before SurfaceCapture.java would misread the rest of the batch, and Go answers its captures unavailable instead.
 const capCapture = 8
 
+// capFolderHandles is the fourth capability byte's bit for a runtime that keeps opened document descriptors across folder reads (Protocol.CAP_FOLDER_HANDLES): an older runtime treats every folder op other than folderList as a stateless folderRead, so Go opens handles only when this bit is set.
+const capFolderHandles = 16
+
 // readEnvironmentCapabilities reads the environment as readEnvironment does, with the third and fourth capability bytes, which say what the runtime itself can do (cap* bits) rather than the device, so they stay out of driver.Environment.
 func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	env := driver.Environment{
@@ -688,7 +691,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	if len(r.buf) > 0 {
 		env.OpenedURL = r.str()
 	}
-	// The third capability byte's bits are all taken; a fourth ends the environment, so a runtime built before it, which ends at the opened URL, reads as having none of them. Its bits: capExtendedSensors, capAuthSession, capVideoPiP and capCapture.
+	// The third capability byte's bits are all taken; a fourth ends the environment, so a runtime built before it, which ends at the opened URL, reads as having none of them. Its bits: capExtendedSensors, capAuthSession, capVideoPiP, capCapture and capFolderHandles.
 	var fourth byte
 	if len(r.buf) > 0 {
 		fourth = r.byte()

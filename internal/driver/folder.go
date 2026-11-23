@@ -65,7 +65,11 @@ func (f *folderFS) Open(name string) (fs.File, error) {
 	if err != nil {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
 	}
-	return &folderFile{ReadSeekCloser: r, e: e}, nil
+	file := folderFile{ReadSeekCloser: r, e: e}
+	if ra, ok := r.(io.ReaderAt); ok {
+		return &folderFileAt{folderFile: file, ReaderAt: ra}, nil
+	}
+	return &file, nil
 }
 
 func (f *folderFS) ReadDir(name string) ([]fs.DirEntry, error) {
@@ -174,6 +178,11 @@ type folderFile struct {
 }
 
 func (f *folderFile) Stat() (fs.FileInfo, error) { return folderInfo{f.e}, nil }
+
+type folderFileAt struct {
+	folderFile
+	io.ReaderAt
+}
 
 type folderDir struct {
 	fs   *folderFS

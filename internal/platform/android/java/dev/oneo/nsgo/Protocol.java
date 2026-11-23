@@ -239,6 +239,8 @@ final class Protocol {
     static final int CAP_VIDEO_PIP = 4;
     /** The fourth capability byte's bit for a runtime that reads ITEM_CAPTURE and answers it with CAPTURE_REPLY (capCapture in protocol.go); Go sends the item only to a runtime that sets it. */
     static final int CAP_CAPTURE = 8;
+    /** The fourth capability byte's bit for a runtime that keeps opened document descriptors across FOLDER_OPEN, FOLDER_READ_HANDLE and FOLDER_CLOSE (capFolderHandles in protocol.go); Go opens handles only on a runtime that sets it. */
+    static final int CAP_FOLDER_HANDLES = 16;
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
     /** Answers a PHYSICAL_KEY down that asked: surface, request and whether the focused view consumed it (HardwareKeys). */
@@ -407,6 +409,9 @@ final class Protocol {
     // What a FOLDER message asks, as folders.go has them.
     static final int FOLDER_LIST = 0;
     static final int FOLDER_READ = 1;
+    static final int FOLDER_OPEN = 2;
+    static final int FOLDER_READ_HANDLE = 3;
+    static final int FOLDER_CLOSE = 4;
 
     // What a FETCH message asks and the parts of a FETCHED, as fetch.go
     // has them.
