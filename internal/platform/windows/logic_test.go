@@ -951,6 +951,18 @@ func TestStartSpeakingReadsTheSelection(t *testing.T) {
 	}
 }
 
+// TestSelectionAnswerDecodesExecuteScript decodes what ExecuteScript answers speakSelection's script with, the JSON of its [n, text], and refuses anything else.
+func TestSelectionAnswerDecodesExecuteScript(t *testing.T) {
+	if n, text, ok := selectionAnswer(`[3,"日本語 \"page\""]`); !ok || n != 3 || text != `日本語 "page"` {
+		t.Errorf("the answer decoded as %d %q %v", n, text, ok)
+	}
+	for _, answer := range []string{"null", `"page"`, "[3]", `[3,"a","b"]`, `["3","page"]`, `[3,null]`, ""} {
+		if _, _, ok := selectionAnswer(answer); ok {
+			t.Errorf("%q decoded as an answer", answer)
+		}
+	}
+}
+
 func editModelOf(text string) *editModel {
 	m := &editModel{}
 	m.setText(text)

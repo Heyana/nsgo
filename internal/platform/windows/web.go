@@ -49,6 +49,7 @@ package windows
 
 import (
 	"cmp"
+	"encoding/json"
 	"maps"
 	"net/url"
 	"os"
@@ -62,6 +63,7 @@ import (
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/menuspeech"
 )
 
 var webBridge = driver.WebBridge("function (d) { window.chrome.webview.postMessage(d); }")
@@ -78,6 +80,9 @@ type webView struct {
 	web        *comObject // ICoreWebView2
 	settings   *comObject // ICoreWebView2Settings
 	executed   *comHandler
+	// spoken answers speakSelection's scripts, and speech is the Start Speaking whose read is pending, 0 for none.
+	spoken *comHandler
+	speech uint64
 	// cookieRequests are the cookie requests running through this view (webcookie.go), by count, each restarting elsewhere if the view closes first, as WebView2 then calls none of their handlers.
 	cookieRequests map[uint32]func()
 
@@ -301,6 +306,7 @@ func (wv *webView) controllerReady(comp *comObject) {
 	wv.serveSchemes()
 	wv.listenInput()
 	wv.executed = newHandler(&iidExecuteScriptCompleted, nil)
+	wv.spoken = newHandler(&iidExecuteScriptCompleted, wv.selectionRead)
 	wv.ready = true
 	wv.paintBackground()
 	wv.shown = false
@@ -478,6 +484,8 @@ func (wv *webView) listen() {
 		var id uint64
 		a.call(navigationStartingGetNavigationId, uintptr(unsafe.Pointer(&id)))
 		wv.starting, wv.started, wv.aborted = nav.URL, id, 0
+		// A selection read before the navigation is of a page going away.
+		wv.speech = 0
 		wv.loading = true
 		if own {
 			wv.ownStarted = id
@@ -1234,6 +1242,39 @@ func (wv *webView) execute(script string) {
 	wv.web.call(webExecuteScript, uintptr(unsafe.Pointer(wide(script))), wv.executed.ptr())
 }
 
+// speakSelection reads the page's selection for Start Speaking n. ExecuteScript answers with the script's value as JSON, here n and menuspeech.WebSelection's string, rather than through the page's messages; selectionRead speaks it only if n is still the Speech menu's last action and the view has neither closed nor started another navigation.
+func (wv *webView) speakSelection(n uint64) {
+	if wv.spoken == nil {
+		return
+	}
+	wv.speech = n
+	script := "[" + strconv.FormatUint(n, 10) + ", " + menuspeech.WebSelection + "]"
+	wv.web.call(webExecuteScript, uintptr(unsafe.Pointer(wide(script))), wv.spoken.ptr())
+}
+
+// selectionRead is ICoreWebView2ExecuteScriptCompletedHandler's Invoke for speakSelection's scripts.
+func (wv *webView) selectionRead(hr uintptr, result unsafe.Pointer) {
+	if wv.closed || failed(hr) || result == nil {
+		return
+	}
+	n, text, ok := selectionAnswer(wideString((*uint16)(result)))
+	if !ok || n == 0 || wv.speech != n || menuSpeech.Load() != n {
+		return
+	}
+	wv.speech = 0
+	menuSay(wv.w, text)
+}
+
+// selectionAnswer decodes speakSelection's answer, the JSON of [n, text].
+func selectionAnswer(answer string) (n uint64, text string, ok bool) {
+	var parts []json.RawMessage
+	var s *string
+	if json.Unmarshal([]byte(answer), &parts) != nil || len(parts) != 2 || json.Unmarshal(parts[0], &n) != nil || json.Unmarshal(parts[1], &s) != nil || s == nil {
+		return 0, "", false
+	}
+	return n, *s, true
+}
+
 // restyle follows the view's new style.
 func (wv *webView) restyle() {
 	wv.paintBackground()
@@ -1415,6 +1456,10 @@ func (wv *webView) close() {
 	if wv.executed != nil {
 		wv.executed.release()
 		wv.executed = nil
+	}
+	if wv.spoken != nil {
+		wv.spoken.release()
+		wv.spoken = nil
 	}
 	if wv.portal != nil {
 		wv.portal.release()

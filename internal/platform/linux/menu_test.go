@@ -414,6 +414,112 @@ func TestStartSpeakingReadsTheFocusedField(t *testing.T) {
 	}
 }
 
+// TestStartSpeakingReadsTheFocusedPage runs Start Speaking with a WebKitGTK page focused: it reads the selection in the page's text area through WebKit's evaluation of a script, a second Start or a Stop drops a read still pending, and the page's own messages keep reaching the app throughout. It runs in a process of its own, as the other native WebKit tests do.
+func TestStartSpeakingReadsTheFocusedPage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	if os.Getenv("NSGO_TEST_MENU_WEB") != t.Name() {
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+		dir := t.TempDir()
+		cmd.Env = append(os.Environ(), "NSGO_TEST_MENU_WEB="+t.Name(),
+			"XDG_DATA_HOME="+filepath.Join(dir, "data"), "XDG_CACHE_HOME="+filepath.Join(dir, "cache"))
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log := string(out)
+			if strings.Contains(log, "bwrap: Creating new namespace failed: Operation not permitted") &&
+				strings.Contains(log, "Failed to fully launch dbus-proxy") {
+				t.Skip("WebKitGTK could not start its sandbox because bubblewrap was denied a user namespace")
+			}
+			t.Fatalf("%v\n%s", err, out)
+		}
+		if strings.Contains(string(out), "--- SKIP: "+t.Name()+" ") {
+			t.Skipf("%s", out)
+		}
+		return
+	}
+	if err := openWebKit(); err != nil {
+		t.Skip(err)
+	}
+	speechAs(t, true)
+	heard := make(chan driver.SpeakRequest, 8)
+	was := menuSpeak
+	menuSpeak = func(_ uint32, r driver.SpeakRequest, _ func(driver.Event)) { heard <- r }
+	t.Cleanup(func() { menuSpeak = was })
+	const title = "nsgo-menu-web-speech"
+	// The page selects "page" in its text area and posts a count every 50ms.
+	const page = `<!doctype html><textarea id=f>hello page</textarea><script>
+const f = document.getElementById('f');
+f.focus();
+f.setSelectionRange(6, 10);
+let n = 0;
+setInterval(() => nsgo.postMessage('tick:' + (++n)), 50);
+</script>`
+	app := func(cx *core.Scope) core.Node {
+		last := core.NewSignal(cx, "")
+		cx.Effect(func() { cx.SetTitle(title + "|" + last.Get()) })
+		return core.WebView{Source: core.WebHTML(page, ""), OnMessage: func(data string) { last.Set(data) },
+			Style: core.Style{Width: driver.Pt(240), Height: driver.Pt(120)}}
+	}
+	w := startTestWindow(t, app, Options{ID: "nsgo-test-web-speech", Title: title, Width: 280, Height: 160})
+	ticking := func() {
+		t.Helper()
+		before := w.titleOf(t)
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			got := w.titleOf(t)
+			if strings.HasPrefix(got, title+"|tick:") && got != before {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the page's messages stopped reaching the app: title %q", got)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	ticking()
+	w.onLoop(t, func() {
+		for _, v := range w.views {
+			if v != nil && v.web != nil && v.web.widget != 0 {
+				gtkWidgetGrabFocus(v.web.widget)
+				return
+			}
+		}
+		t.Error("no web view")
+	})
+	waitForFocusOrSkip(t, w, "the page to take the focus", func() bool { return w.focusedWeb() != nil })
+	next := func() (driver.SpeakRequest, bool) {
+		select {
+		case r := <-heard:
+			return r, true
+		case <-time.After(2 * time.Second):
+			return driver.SpeakRequest{}, false
+		}
+	}
+	w.onLoop(t, func() { w.speakMenu(true) })
+	if r, ok := next(); !ok || r.Command != driver.SpeakStart || r.Text != "page" || r.Lang == "" {
+		t.Fatalf("the page's selection was said as %+v (%v)", r, ok)
+	}
+	ticking()
+	// A second Start Speaking supersedes the first: the page is read and said once.
+	w.onLoop(t, func() { w.speakMenu(true); w.speakMenu(true) })
+	if r, ok := next(); !ok || r.Text != "page" {
+		t.Fatalf("the second Start Speaking said %+v (%v)", r, ok)
+	}
+	if r, ok := next(); ok {
+		t.Errorf("the superseded read was said too: %+v", r)
+	}
+	// Stop Speaking drops the read still pending.
+	w.onLoop(t, func() { w.speakMenu(true); w.speakMenu(false) })
+	if r, ok := next(); !ok || r.Command != driver.SpeakStop {
+		t.Fatalf("Stop Speaking sent %+v (%v)", r, ok)
+	}
+	if r, ok := next(); ok {
+		t.Errorf("a read Stop Speaking dropped was said: %+v", r)
+	}
+	ticking()
+}
+
 // TestEditingRolesFallBackToOnSelect chooses Edit menu role items that carry an OnSelect: the focused field and the text selection take Select All and Copy, and with neither the items' OnSelect runs.
 func TestEditingRolesFallBackToOnSelect(t *testing.T) {
 	if testing.Short() {

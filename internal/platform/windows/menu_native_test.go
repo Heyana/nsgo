@@ -723,6 +723,117 @@ setInterval(() => {
 	clipboard("hello page")
 }
 
+// TestStartSpeakingReadsTheFocusedPage runs Start Speaking while a WebView2 page's text area has the focus: it reads the area's selection from ExecuteScript's answer, a second Start or a Stop drops a read still pending, and the page's own messages keep reaching the app throughout. Where the window cannot come to the front, as in a disconnected session, the page cannot take the keyboard focus, and the test reads it as speakMenu reads a focused page.
+func TestStartSpeakingReadsTheFocusedPage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	if _, err := findWebView2(); err != nil {
+		t.Skip(err)
+	}
+	heard := make(chan string, 8)
+	was := menuSay
+	menuSay = func(_ *window, text string) { heard <- text }
+	t.Cleanup(func() { menuSay = was })
+	const title = "nsgo-page-speech"
+	app := func(cx *core.Scope) core.Node {
+		page := core.NewSignal(cx, "")
+		cx.Effect(func() { cx.SetTitle(title + "|" + page.Get()) })
+		// The page selects "page" in its text area and posts whether the area is the active element, with a count, every 50ms.
+		const html = `<!doctype html><textarea id=f>hello page</textarea><script>
+const f = document.getElementById('f');
+f.focus();
+f.setSelectionRange(6, 10);
+let n = 0;
+setInterval(() => {
+  if (document.activeElement !== f) { f.focus(); f.setSelectionRange(6, 10); }
+  nsgo.postMessage((document.activeElement === f ? 'ready' : 'wait') + ':' + (++n));
+}, 50);
+</script>`
+		return core.View{Style: core.Style{Padding: driver.All(10), Background: driver.RGB(0xffffff)}, Children: []core.Node{
+			core.WebView{Source: core.WebHTML(html, ""), OnMessage: func(data string) { page.Set(data) },
+				Style: core.Style{Width: driver.Pt(260), Height: driver.Pt(120)}},
+		}}
+	}
+	hwnd := startApp(t, title, app, 300, 200)
+	// The first start of the browser process can take a while.
+	waitForTitle(t, hwnd, title+"|ready:", 30*time.Second)
+	focused := false
+	if takeForeground(hwnd) {
+		deadline := time.Now().Add(30 * time.Second)
+		for !focused {
+			onMain(t, hwnd, func(w *window) {
+				focused = w.focusedWeb() != nil
+				for wv := range w.webs {
+					if !wv.focused {
+						wv.takeFocus()
+					}
+				}
+			})
+			if time.Now().After(deadline) {
+				t.Fatal("the page did not take the focus")
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	} else {
+		t.Log("the window cannot come to the front: the page is read as speakMenu reads a focused one")
+	}
+	speak := func(w *window, start bool) {
+		if focused {
+			w.speakMenu(start)
+			return
+		}
+		n := menuSpeech.Add(1)
+		for wv := range w.webs {
+			if start {
+				wv.speakSelection(n)
+			}
+		}
+	}
+	ticking := func() {
+		t.Helper()
+		before := windowText(hwnd)
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			got := windowText(hwnd)
+			if strings.HasPrefix(got, title+"|ready:") && got != before {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the page's messages stopped reaching the app: title %q", got)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	next := func() (string, bool) {
+		select {
+		case text := <-heard:
+			return text, true
+		case <-time.After(2 * time.Second):
+			return "", false
+		}
+	}
+	onMain(t, hwnd, func(w *window) { speak(w, true) })
+	if text, ok := next(); !ok || text != "page" {
+		t.Fatalf("the page's selection was said as %q (%v)", text, ok)
+	}
+	ticking()
+	// A second Start Speaking supersedes the first: the page is read and said once.
+	onMain(t, hwnd, func(w *window) { speak(w, true); speak(w, true) })
+	if text, ok := next(); !ok || text != "page" {
+		t.Fatalf("the second Start Speaking said %q (%v)", text, ok)
+	}
+	if text, ok := next(); ok {
+		t.Errorf("the superseded read was said too: %q", text)
+	}
+	// Stop Speaking drops the read still pending.
+	onMain(t, hwnd, func(w *window) { speak(w, true); speak(w, false) })
+	if text, ok := next(); ok {
+		t.Errorf("a read Stop Speaking dropped was said: %q", text)
+	}
+	ticking()
+}
+
 var (
 	keybdEvent        = user32.NewProc("keybd_event")
 	attachThreadInput = user32.NewProc("AttachThreadInput")

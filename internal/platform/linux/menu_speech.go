@@ -15,10 +15,18 @@ const menuUtterance = 0
 // menuSpeak hands the menu's requests to speech-dispatcher; tests hear them instead.
 var menuSpeak = speechd.Handle
 
-// speakMenu carries out Start Speaking, which reads the focused field's selection, or its whole text without one, stopping whatever speaks, and Stop Speaking, which stops what Start Speaking said.
+// menuSpeech counts the Speech menu's actions, so that a focused page's selection, which comes later, is said only for the last one (speakWebSelection).
+var menuSpeech uint64
+
+// speakMenu carries out Start Speaking, which reads the focused field's selection, or its whole text without one, or a focused web view's selection, stopping whatever speaks, and Stop Speaking, which stops what Start Speaking said.
 func (w *window) speakMenu(start bool) {
+	menuSpeech++
 	if !start {
 		menuSpeak(menuUtterance, driver.SpeakRequest{Command: driver.SpeakStop}, func(driver.Event) {})
+		return
+	}
+	if v := w.focusedWeb(); v != nil {
+		w.speakWebSelection(v, menuSpeech)
 		return
 	}
 	v := w.focusedEntry()
@@ -26,7 +34,11 @@ func (w *window) speakMenu(start bool) {
 		return
 	}
 	s, e := w.selection(v)
-	text := speechText(w.editorText(v), s, e)
+	w.sayForMenu(speechText(w.editorText(v), s, e))
+}
+
+// sayForMenu speaks text as the menu's utterance, in a voice for the app's language.
+func (w *window) sayForMenu(text string) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}

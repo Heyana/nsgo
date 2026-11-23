@@ -70,7 +70,7 @@ nsgo
 │   │   ├── pcmoutput                    Shared pull-based PCM output loop and timing
 │   │   ├── imagedecode, imageload       Shared images
 │   │   ├── canvasmesh                   Shared triangle-mesh rasterizer of canvases without textured vertices
-│   │   ├── menutext                     Shared menu labels
+│   │   ├── menutext, menuspeech         Shared menu labels and the Speech menu's read of a focused page
 │   │   ├── loopback                     Shared loopback redirects of desktops' sign-ins
 │   │   ├── updates                      Shared update checks of Linux, Android and iOS
 │   │   ├── appimage                     Identifies an executable's own AppImage

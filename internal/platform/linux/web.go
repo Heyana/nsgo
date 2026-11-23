@@ -22,6 +22,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/engine"
+	"github.com/nsgo-dev/nsgo/internal/platform/menuspeech"
 )
 
 // WebKitGTK 6.0, the GTK 4 one, loads on the first web view, so apps
@@ -75,6 +76,7 @@ var (
 	webkitWebViewGoForward                         func(uintptr)
 	webkitWebViewStopLoading                       func(uintptr)
 	webkitWebViewEvaluateJavascript                func(uintptr, *byte, int, *byte, *byte, uintptr, uintptr, uintptr)
+	webkitWebViewEvaluateJavascriptFinish          func(view, result, gerr uintptr) uintptr
 	webkitWebViewExecuteEditingCommand             func(uintptr, *byte)
 	webkitWebViewExecuteEditingCommandWithArgument func(uintptr, *byte, *byte)
 	webkitWebViewGetZoomLevel                      func(uintptr) float64
@@ -206,6 +208,7 @@ func bindWebKit(webkit, jsc, soup uintptr) {
 	reg(&webkitWebViewGoForward, "webkit_web_view_go_forward")
 	reg(&webkitWebViewStopLoading, "webkit_web_view_stop_loading")
 	reg(&webkitWebViewEvaluateJavascript, "webkit_web_view_evaluate_javascript")
+	reg(&webkitWebViewEvaluateJavascriptFinish, "webkit_web_view_evaluate_javascript_finish")
 	reg(&webkitWebViewExecuteEditingCommand, "webkit_web_view_execute_editing_command")
 	reg(&webkitWebViewExecuteEditingCommandWithArgument, "webkit_web_view_execute_editing_command_with_argument")
 	reg(&webkitWebViewGetZoomLevel, "webkit_web_view_get_zoom_level")
@@ -327,6 +330,7 @@ type web struct {
 
 	lastNavigation   driver.WebNavigation
 	navigationQueued bool
+	speech           uint64 // the Start Speaking whose read of the page's selection is pending (speakWebSelection), 0 for none
 }
 
 // webPage is the window and view a WebKitWebView belongs to.
@@ -931,6 +935,33 @@ func evaluate(page uintptr, script string) {
 	webkitWebViewEvaluateJavascript(page, cstr(script), -1, nil, nil, 0, 0, 0)
 }
 
+// speakWebSelection reads the selection of v's page for Start Speaking n, which webkit_web_view_evaluate_javascript answers with the value of menuspeech.WebSelection rather than through the page's messages. It speaks only if n is still the Speech menu's last action and the view has neither closed nor started another navigation.
+func (w *window) speakWebSelection(v *view, n uint64) {
+	v.web.speech = n
+	webkitWebViewEvaluateJavascript(v.web.widget, cstr(menuspeech.WebSelection), -1, nil, nil, 0, cbAsync, async(func(page, result uintptr) {
+		var gerr uintptr
+		value := webkitWebViewEvaluateJavascriptFinish(page, result, uintptr(unsafe.Pointer(&gerr)))
+		if value == 0 {
+			if gerr != 0 {
+				gErrorFree(gerr)
+			}
+			return
+		}
+		p := jscValueToString(value)
+		text := goString(p)
+		if p != 0 {
+			gFree(p)
+		}
+		gObjectUnref(value)
+		pw, pv := webPageOf(page)
+		if pv == nil || pv.web.speech != n || menuSpeech != n {
+			return
+		}
+		pv.web.speech = 0
+		pw.sayForMenu(text)
+	}))
+}
+
 // closeWeb stops v's page, cancels its downloads and lets it go.
 func (w *window) closeWeb(v *view) {
 	wv := v.web
@@ -1115,6 +1146,8 @@ func webLoadChangedCallback(page uintptr, event uint32, data uintptr) {
 	switch event {
 	case webkitLoadStarted:
 		v.web.failed = false
+		// A selection read before the navigation is of a page going away.
+		v.web.speech = 0
 		uri := goString(webkitWebViewGetURI(page))
 		// At load start the URI of a refused about: page can still name the page before it. The last navigation action being a refused about: one, a frame's perhaps, as WebKitGTK does not say, holds this start until the top level commits, so a refused page reports none.
 		v.web.startPending = v.web.config.Restricted && !v.web.ownNavigation &&
