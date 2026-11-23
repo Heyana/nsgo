@@ -101,6 +101,12 @@ func TestKeyNamesMatchOnKeys(t *testing.T) {
 	}
 }
 
+func TestKeyMessageAltUsesSystemKeyContext(t *testing.T) {
+	if !keyMessageAlt(1 << 29) {
+		t.Fatal("a system-key message with Alt context did not report Alt")
+	}
+}
+
 func TestGlobalHotKey(t *testing.T) {
 	for _, test := range []struct {
 		key        string

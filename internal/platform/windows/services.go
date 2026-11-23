@@ -316,7 +316,7 @@ func (w *window) keyDown(vk, lParam uintptr) bool {
 	if !hears && !w.heldKeys {
 		return false
 	}
-	ev := driver.Event{Kind: driver.EventKeyDown, Text: name, KeyCode: position, Modifiers: modifiers(), Repeat: repeated(lParam)}
+	ev := driver.Event{Kind: driver.EventKeyDown, Text: name, KeyCode: position, Modifiers: keyMessageModifiers(lParam), Repeat: repeated(lParam)}
 	if hears {
 		ev.ID = v.id
 	}
@@ -400,7 +400,7 @@ func (w *window) shortcut(vk, lParam uintptr) bool {
 	if name == "" {
 		return false
 	}
-	ctrl, alt, shift := keyDown(vkControl), keyDown(vkMenu), keyDown(vkShift)
+	ctrl, alt, shift := keyDown(vkControl), keyMessageAlt(lParam), keyDown(vkShift)
 	meta := keyDown(vkLWin) || keyDown(vkRWin)
 	var names []string
 	for _, control := range []string{"mod", "ctrl"} {
@@ -436,6 +436,19 @@ func (w *window) shortcut(vk, lParam uintptr) bool {
 func keyDown(vk uintptr) bool {
 	r, _, _ := getKeyState.Call(vk)
 	return int16(r) < 0
+}
+
+// keyMessageAlt reports Alt from the keyboard state or the message's Alt
+// context bit. The latter keeps posted WM_SYSKEYDOWN messages consistent with
+// real system-key messages when the thread state has not caught up yet.
+func keyMessageAlt(lParam uintptr) bool {
+	return keyDown(vkMenu) || lParam&(1<<29) != 0
+}
+
+func keyMessageModifiers(lParam uintptr) driver.Modifiers {
+	mods := modifiers()
+	mods.Alt = keyMessageAlt(lParam)
+	return mods
 }
 
 // modifiers returns the modifier keys held as the current message was
