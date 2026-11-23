@@ -133,6 +133,9 @@ func soundError(gerr uintptr) string {
 }
 
 func soundPipeline(description string) (uintptr, string) {
+	if !loadSound() {
+		return 0, "GStreamer is unavailable"
+	}
 	var gerr uintptr
 	pipeline := gstParseLaunch(cstr(description), &gerr)
 	if gerr != 0 {
