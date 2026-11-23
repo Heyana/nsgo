@@ -588,6 +588,9 @@ const capAuthSession = 2
 // capVideoPiP is the fourth capability byte's bit for a runtime that answers native video PiP commands, sent as ItemNativeCommand, which an older runtime consumes and ignores (Protocol.CAP_VIDEO_PIP): without it Go reports PiP unsupported.
 const capVideoPiP = 4
 
+// capCapture is the fourth capability byte's bit for a runtime that reads ItemCapture and answers it with msgCaptureReply (Protocol.CAP_CAPTURE): mount items carry no length, so one built before SurfaceCapture.java would misread the rest of the batch, and Go answers its captures unavailable instead.
+const capCapture = 8
+
 // readEnvironmentCapabilities reads the environment as readEnvironment does, with the third and fourth capability bytes, which say what the runtime itself can do (cap* bits) rather than the device, so they stay out of driver.Environment.
 func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	env := driver.Environment{
@@ -683,7 +686,7 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	if len(r.buf) > 0 {
 		env.OpenedURL = r.str()
 	}
-	// The third capability byte's bits are all taken; a fourth ends the environment, so a runtime built before it, which ends at the opened URL, reads as having none of them. Its bits: capExtendedSensors and capAuthSession.
+	// The third capability byte's bits are all taken; a fourth ends the environment, so a runtime built before it, which ends at the opened URL, reads as having none of them. Its bits: capExtendedSensors, capAuthSession, capVideoPiP and capCapture.
 	var fourth byte
 	if len(r.buf) > 0 {
 		fourth = r.byte()

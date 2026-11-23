@@ -93,7 +93,7 @@ func TestAuthSessionCapabilityGate(t *testing.T) {
 	if m := regexp.MustCompile(`static final int EVENT_AUTH_SESSION = (\d+);`).FindSubmatch(protocol); m == nil || string(m[1]) != strconv.Itoa(int(driver.EventAuthSession)) {
 		t.Fatalf("Protocol.java's EVENT_AUTH_SESSION is %q, driver.EventAuthSession %d", m, driver.EventAuthSession)
 	}
-	if !strings.Contains(string(view), "d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP);") {
+	if !strings.Contains(string(view), "d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP | Protocol.CAP_CAPTURE);") {
 		t.Fatal("NsgoView's fourth capability byte does not advertise CAP_AUTH_SESSION")
 	}
 

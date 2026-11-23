@@ -235,6 +235,8 @@ final class Protocol {
     static final int CAP_AUTH_SESSION = 2;
     /** The fourth capability byte's bit for a runtime that answers native video PiP commands (VideoPictureInPicture, capVideoPiP in protocol.go). */
     static final int CAP_VIDEO_PIP = 4;
+    /** The fourth capability byte's bit for a runtime that reads ITEM_CAPTURE and answers it with CAPTURE_REPLY (capCapture in protocol.go); Go sends the item only to a runtime that sets it. */
+    static final int CAP_CAPTURE = 8;
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
     /** Answers a PHYSICAL_KEY down that asked: surface, request and whether the focused view consumed it (HardwareKeys). */

@@ -224,6 +224,8 @@ type surface struct {
 	extendedSensors atomic.Bool
 	// authSessions is set once the runtime's environment says it reads ItemAuthSession (capAuthSession); until then Go answers sessions unavailable.
 	authSessions atomic.Bool
+	// captures is set once the runtime's environment says it reads ItemCapture (capCapture); until then Go answers captures unavailable.
+	captures atomic.Bool
 	// videoPiP is set once the runtime's environment says it answers native video PiP commands (capVideoPiP); until then Go reports PiP unsupported.
 	videoPiP atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
@@ -525,6 +527,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.playUpdates.Store(third&capPlayUpdates != 0)
 			s.extendedSensors.Store(fourth&capExtendedSensors != 0)
 			s.authSessions.Store(fourth&capAuthSession != 0)
+			s.captures.Store(fourth&capCapture != 0)
 			s.videoPiP.Store(fourth&capVideoPiP != 0)
 			// The bulk hello waits for the first environment, which says whether the runtime reads extended messages: one that does not keeps both sides on complete messages (errNoExtendedMessages).
 			if s.extendedMessages.Load() && s.bulkHello.CompareAndSwap(false, true) {
@@ -1165,6 +1168,7 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 	}
 	b = filterExtendedSensors(s.extendedSensors.Load(), b, func(ev driver.Event) { s.dispatchTo(v.id, ev) })
 	b = filterAuthSessions(s.authSessions.Load(), b, func(ev driver.Event) { s.dispatchTo(v.id, ev) })
+	b = filterCaptures(s.captures.Load(), b, func(ev driver.Event) { s.dispatchTo(v.id, ev) })
 	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(b)))))
 	b = s.soundVoices.limit(v.id, withoutAudioLatencyReads(b, func(ev driver.Event) { s.dispatchTo(v.id, ev) }))
 	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
