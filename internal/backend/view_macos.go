@@ -1,4 +1,4 @@
-//go:build darwin && !ios && !nsgotui
+//go:build darwin && !ios && !nsgotui && !nsgoandroidhost
 
 package backend
 

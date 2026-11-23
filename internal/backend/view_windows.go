@@ -1,4 +1,4 @@
-//go:build windows && !nsgotui
+//go:build windows && !nsgotui && !nsgoandroidhost
 
 package backend
 

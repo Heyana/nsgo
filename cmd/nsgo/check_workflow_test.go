@@ -17,7 +17,10 @@ func TestCheckWorkflowVetsEveryTargetOnce(t *testing.T) {
 	}
 	var workflow struct {
 		Jobs map[string]struct {
-			Steps []struct{ Run string }
+			Steps []struct {
+				Run string
+				Env map[string]string
+			}
 		}
 	}
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
@@ -26,6 +29,10 @@ func TestCheckWorkflowVetsEveryTargetOnce(t *testing.T) {
 	var got []string
 	for _, job := range workflow.Jobs {
 		for _, step := range job.Steps {
+			// A step with its own GOFLAGS vets extra build tags, such as Android host development, on top of the default lists.
+			if step.Env["GOFLAGS"] != "" {
+				continue
+			}
 			if list, ok := strings.CutPrefix(step.Run, "go tool nsgo check -target "); ok {
 				// A group such as tui stands for its targets, as nsgo check expands it; each name expands on its own so a target listed twice still shows twice.
 				for _, name := range strings.Split(strings.TrimSpace(list), ",") {

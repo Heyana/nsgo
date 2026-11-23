@@ -1,3 +1,5 @@
+//go:build android || nsgoandroidhost
+
 package android
 
 import (

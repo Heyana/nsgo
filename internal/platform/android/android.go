@@ -1,4 +1,4 @@
-//go:build android
+//go:build android || nsgoandroidhost
 
 // Package android is NSGo's Android backend. The app is a plain Go executable that the prebuilt Java runtime in java/ starts as a child process; nsgo packages it as libnsgo.so in an APK. The two talk over the process's pipes: one batch per commit, with separate messages for pixel frames, and one message per event and per step of text. Java keeps the text the engine prepares, measures it and lays it out with StaticLayout, and mounts one Android view per node; text calls have correlated replies and deadlines. Go fetches images and Java decodes them, animated GIF and WebP included; Go rasterizes SVG with imagedecode first, as Android cannot. Java hosts web views, videos and native components' views, plays canvas drawings, runs style transitions, a port of core.Animator and layout animations on Choreographer frames, shows input accessory bars above the keyboard and reports the environment, back, keys, presses outside overlays and answers to alerts and clipboard reads. An overlay over other apps shows in a window of its own, an NsgoView the first view hands its surface's batches, images and events on to (overlay.go).
 //
@@ -28,7 +28,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -192,7 +191,8 @@ type surface struct {
 	geometryReports map[uint32]func(driver.GeometrySnapshot)
 
 	mu      sync.Mutex // guards out and buf
-	out     *os.File
+	in      io.Reader
+	out     io.WriteCloser
 	buf     []byte
 	ids     atomic.Uint32 // the last prepared text or layout id
 	textRPC *textRPC
@@ -280,21 +280,17 @@ func Run(app engine.App, opts Options) {
 	s := connect(opts)
 	setLiveSurface(s)
 	defer clearLiveSurface(s)
+	defer s.out.Close()
 	s.serve(app, opts, nil)
 }
 
 // connect keeps the pipe to the runtime to the surface, and sends the
 // app's own prints to standard error, which the runtime logs.
 func connect(opts Options) *surface {
-	fd, err := syscall.Dup(1)
-	if err != nil {
-		panic(err)
-	}
-	if err := syscall.Dup3(2, 1, 0); err != nil {
-		panic(err)
-	}
+	in, out := runtimeStreams()
 	s := &surface{
-		out:      os.NewFile(uintptr(fd), "nsgo-runtime"),
+		in:       in,
+		out:      out,
 		started:  make(chan struct{}),
 		env:      driver.Environment{OS: driver.OSAndroid, HasWebView: true, ScheduledNotifications: true, Gamepads: true},
 		main:     treeView{images: map[driver.NodeID]*imageView{}},
@@ -307,7 +303,9 @@ func connect(opts Options) *surface {
 	s.textRPC = newTextRPC(func(payload []byte, deadline time.Time) error {
 		return s.sendBefore(msgTextRequest, deadline, func(w *writer) { w.buf = append(w.buf, payload...) })
 	})
-	useDNS()
+	if !hostRuntime {
+		useDNS()
+	}
 	s.sendFonts(opts.Fonts)
 	driver.ConnectLiveUpdates(func(msg []byte) {
 		s.send(msgLiveUpdate, func(w *writer) { w.buf = append(w.buf, msg...) })
@@ -365,7 +363,7 @@ func connect(opts Options) *surface {
 // host's app is the test's: the runtime's size goes to test, and the
 // test starts the engine.
 func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
-	in := bufio.NewReader(os.Stdin)
+	in := bufio.NewReader(s.in)
 	for {
 		kind, payload, err := readMessage(in)
 		if err != nil {

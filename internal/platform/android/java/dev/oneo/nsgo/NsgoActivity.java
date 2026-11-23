@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.net.LocalSocket;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -32,6 +33,7 @@ public class NsgoActivity extends Activity {
     private static NsgoView kept;
 
     private NsgoView view;
+    private AndroidHostDev devHost;
     private Integer previousOrientation;
     /** The theme the window shows, which a kept view's context takes while no activity holds it. */
     private int theme = android.R.style.Theme_DeviceDefault_NoActionBar;
@@ -57,6 +59,8 @@ public class NsgoActivity extends Activity {
         window.setStatusBarColor(Color.TRANSPARENT);
         window.setNavigationBarColor(Color.TRANSPARENT);
         if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false);
+        devHost = AndroidHostDev.open(this);
+        if (devHost != null) return;
         // The view lays itself out behind the system bars and styles them.
         Intent intent = getIntent();
         boolean share = isShare(intent.getAction());
@@ -80,9 +84,20 @@ public class NsgoActivity extends Activity {
         if (state == null || share) openIntent(intent);
     }
 
+    /** A new Go app gets a fresh view within the Activity's existing window. */
+    void showHostEngine(LocalSocket socket) {
+        if (view != null) view.stopHostView();
+        requestOrientation(0);
+        NsgoView next = new NsgoView(new MutableContextWrapper(this));
+        next.setHostSocket(socket);
+        view = next;
+        setContentView(next);
+    }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (view == null) return;
         if (!isShare(intent.getAction())) openNotification(intent);
         openIntent(intent);
     }
@@ -213,25 +228,28 @@ public class NsgoActivity extends Activity {
     public void onBackPressed() {
         if (view != null && !view.inputGate.allowInput()) return;
         // Back arrives here before API 33, or without predictive back.
-        if (!view.back()) super.onBackPressed();
+        if (view == null || !view.back()) super.onBackPressed();
     }
 
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        view.activityResult(request, result, data);
+        if (view != null) view.activityResult(request, result, data);
     }
 
     @Override
     public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
-        view.permissionResult(request, permissions, results);
+        if (view != null) view.permissionResult(request, permissions, results);
     }
 
     /** Ends the app with the activity unless an overlay, a background location stream or a recording keeps it running for the next activity. */
     @Override
     protected void onDestroy() {
-        if (view.keepOffScreen()) {
+        if (devHost != null) {
+            devHost.close();
+            if (view != null) view.stopHostView();
+        } else if (view.keepOffScreen()) {
             ((ViewGroup) view.getParent()).removeView(view);
             ((MutableContextWrapper) view.getContext()).setBaseContext(new ContextThemeWrapper(getApplicationContext(), theme));
             kept = view;

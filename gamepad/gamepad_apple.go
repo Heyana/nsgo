@@ -1,4 +1,4 @@
-//go:build darwin && !(ios && nsgowatch)
+//go:build darwin && !(ios && nsgowatch) && !nsgoandroidhost
 
 package gamepad
 

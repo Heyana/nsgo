@@ -29,7 +29,7 @@ type session struct {
 	build func(ctx context.Context, p *project) error
 	start func(ctx context.Context, p *project) (app, error)
 	watch func(*project) string // additional inputs the target packages
-	close func()
+	close func()                // releases a target that lives across rebuilds
 }
 
 // app is one started dev app. stop ends it, and wait returns once it has
@@ -44,13 +44,14 @@ type app struct {
 // The rest of the flags have replaced nsgo.yaml's values already, and apply
 // replaces them again after each reload.
 type devOptions struct {
-	apply   func(*project)
-	port    int    // the dev server's, which the web target is served from
-	host    string // the dev server's bind address; empty listens on every interface
-	open    bool   // whether to open the web target in the browser
-	device  string // the iPhone, simulator or Android device to run on
-	team    string // the Apple developer team the iOS target signs with
-	release bool   // build as nsgo build does, for measuring
+	apply       func(*project)
+	port        int    // the dev server's, which the web target is served from
+	host        string // the dev server's bind address; empty listens on every interface
+	open        bool   // whether to open the web target in the browser
+	androidHost bool   // runs the Go side of an Android app on this machine
+	device      string // the iPhone, simulator or Android device to run on
+	team        string // the Apple developer team the iOS target signs with
+	release     bool   // build as nsgo build does, for measuring
 
 	debug     bool // run a native desktop app under Delve
 	debugger  *devDebugger
@@ -820,6 +821,9 @@ func (s *devServer) events(w http.ResponseWriter, r *http.Request) {
 
 // sessionFor picks how dev builds and shows nsgo.yaml's target.
 func sessionFor(p *project, opts devOptions) (session, error) {
+	if opts.androidHost && (p.Dev.Target != "android" || opts.release) {
+		return session{}, errors.New("-android-host needs -target android and a development build")
+	}
 	if opts.clip != "" {
 		switch {
 		case p.AppClip == nil:
@@ -850,6 +854,9 @@ func sessionFor(p *project, opts devOptions) (session, error) {
 		sys, _, _ := appleOSOf(p.Dev.Target)
 		return iosSession(sys, opts), nil
 	case "android":
+		if opts.androidHost {
+			return androidHostSession(opts)
+		}
 		return androidSession(opts), nil
 	default:
 		if mp, ok := miniProgramPlatformOf(p.Dev.Target); ok {

@@ -37,6 +37,7 @@ import android.hardware.display.DisplayManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.net.LinkProperties;
+import android.net.LocalSocket;
 import android.net.Network;
 import android.os.Build;
 import android.os.StatFs;
@@ -229,6 +230,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private final int[] location = new int[2];
     private NsgoEngine engine;
     private final Set<Integer> displayHolds = new HashSet<>();
+    private LocalSocket hostSocket;
+    private volatile boolean hostStopped;
     /** The window's folds and hinges while the view is in one, null where the device reports none. */
     private Folds folds;
     private final Runnable foldsReported = this::foldsChanged;
@@ -652,6 +655,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
+        if (hostStopped) return;
         updateGestureRects();
         if (primary != null) {
             // An overlay's size goes with its environment.
@@ -1026,6 +1030,45 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     private void start() {
+        if (hostSocket != null) {
+            try {
+                engine.start(hostSocket);
+            } catch (IOException error) {
+                throw new IllegalStateException("cannot attach the development process", error);
+            }
+            hostSocket = null;
+        } else {
+            startProcess();
+        }
+        // The first environment already carries the default network.
+        watchNetwork();
+        // The host's handlers and tokens come before the app starts.
+        attachRunningEngine();
+        write(Protocol.LIVE_REPORT, LiveUpdates.state(getContext()));
+        if (livePressEarly != null) write(Protocol.LIVE_REPORT, livePressEarly);
+        livePressEarly = null;
+        recordingState();
+        RecordingService.connected(engine);
+    }
+
+    void setHostSocket(LocalSocket socket) {
+        hostSocket = socket;
+    }
+
+    /** Releases the previous engine's view before the Activity shows the new one. */
+    void stopHostView() {
+        hostStopped = true;
+        startHeld = false;
+        removeCallbacks(startUnheld);
+        if (hostSocket != null) {
+            AndroidHostDev.closeSocket(hostSocket);
+            hostSocket = null;
+        }
+        stop();
+        destroyNodes();
+    }
+
+    private void startProcess() {
         File exe = new File(getContext().getApplicationInfo().nativeLibraryDir, "libnsgo.so");
         ProcessBuilder builder = new ProcessBuilder(exe.getAbsolutePath());
         builder.command().addAll(flags);
@@ -1045,15 +1088,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         } catch (IOException e) {
             throw new IllegalStateException("cannot start " + exe, e);
         }
-        // The first environment already carries the default network.
-        watchNetwork();
-        // The host's handlers and tokens come before the app starts.
-        attachRunningEngine();
-        write(Protocol.LIVE_REPORT, LiveUpdates.state(getContext()));
-        if (livePressEarly != null) write(Protocol.LIVE_REPORT, livePressEarly);
-        livePressEarly = null;
-        recordingState();
-        RecordingService.connected(engine);
     }
 
     /**
@@ -1184,6 +1218,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         canvasImages.close();
         decoder.shutdownNow();
         files.shutdownNow();
+        destroyNodes();
+    }
+
+    private void destroyNodes() {
         releaseAllBackdrops();
         for (int i = 0; i < nodes.size(); i++) {
             Node n = nodes.valueAt(i);
@@ -1226,6 +1264,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     @Override
     public void onMessage(int kind, byte[] payload) {
+        if (hostStopped) return;
         DataInputStream message = new DataInputStream(new ByteArrayInputStream(payload));
         try {
             switch (kind) {
@@ -1237,6 +1276,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     SparseArray<Map<String, PixelFrame>> pixels = pendingPixels;
                     pendingPixels = null;
                     ui.post(() -> {
+                        if (hostStopped) return;
                         NsgoView view = to == 0 ? this : overlays.view(to);
                         if (view != null && (view.primary != null || control || attachment.permits(generation))) view.mount(payload, pixels);
                     });

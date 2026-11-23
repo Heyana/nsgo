@@ -94,12 +94,12 @@ func TestAutomationProtocolMatchesJava(t *testing.T) {
 		}
 	}
 
-	// 5. Build tags keep automation and testSurface out of release builds.
+	// 5. Build tags keep automation and testSurface out of release builds; automation also builds for host development (nsgoandroidhost).
 	for name, pair := range map[string][2]string{
 		"testhost.go":       {testHostGo, "//go:build android && nsgotest\n"},
-		"testsurface.go":    {testSurfaceGo, "//go:build android && (nsgotest || nsgoautomation)\n"},
-		"automation.go":     {automationGo, "//go:build android && nsgoautomation\n"},
-		"automation_off.go": {automationOffGo, "//go:build android && !nsgoautomation\n"},
+		"testsurface.go":    {testSurfaceGo, "//go:build (android || nsgoandroidhost) && (nsgotest || nsgoautomation)\n"},
+		"automation.go":     {automationGo, "//go:build (android || nsgoandroidhost) && nsgoautomation\n"},
+		"automation_off.go": {automationOffGo, "//go:build (android || nsgoandroidhost) && !nsgoautomation\n"},
 	} {
 		if !strings.HasPrefix(pair[0], pair[1]) {
 			t.Errorf("%s build tag = %q, want prefix %q", name, strings.SplitN(pair[0], "\n", 2)[0], strings.TrimSpace(pair[1]))

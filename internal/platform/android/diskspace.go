@@ -1,4 +1,4 @@
-//go:build android
+//go:build android || nsgoandroidhost
 
 package android
 
@@ -13,13 +13,7 @@ func (s *surface) diskSpace(from, count uint32, path string) {
 		go s.dispatchTo(from, driver.DiskSpaceEvent(count, driver.DiskSpace{}, driver.ErrDiskSpaceUnavailable))
 		return
 	}
-	if err := s.send(msgDiskSpace, func(w *writer) {
-		w.u32(from)
-		w.u32(count)
-		w.str(path)
-	}); err != nil {
-		go s.dispatchTo(from, driver.DiskSpaceEvent(count, driver.DiskSpace{}, err))
-	}
+	s.requestDiskSpace(from, count, path)
 }
 
 func (s *surface) diskSpaceReply(r *reader) {

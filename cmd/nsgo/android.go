@@ -110,10 +110,7 @@ func releaseAndroidBundle(ctx context.Context, p *project, dir, target string, g
 // runtime, manifest and resources, then signs the resulting APK or App Bundle.
 func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 	write func(io.Writer, []byte, apk.Manifest, []apk.File, *apk.Key) error, goarches ...string) (string, error) {
-	if err := p.androidWidgetRuntime(androidruntime.ClassesDex); err != nil {
-		return "", err
-	}
-	classes, err := androidClassFiles(p)
+	files, err := androidRuntimeFiles(p)
 	if err != nil {
 		return "", err
 	}
@@ -122,8 +119,6 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 		return "", err
 	}
 	defer os.RemoveAll(tmp)
-	files := []apk.File{{Name: "classes.dex", Data: androidruntime.ClassesDex}}
-	files = append(files, classes...)
 	var libraries []string
 	for _, goarch := range goarches {
 		app, abi, err := buildAndroidBinary(ctx, p, tmp, goarch)
@@ -141,6 +136,22 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 			}
 		}
 	}
+	return writeAndroidPackage(ctx, p, dir, ext, files, libraries, "", write)
+}
+
+func androidRuntimeFiles(p *project) ([]apk.File, error) {
+	if err := p.androidWidgetRuntime(androidruntime.ClassesDex); err != nil {
+		return nil, err
+	}
+	classes, err := androidClassFiles(p)
+	if err != nil {
+		return nil, err
+	}
+	return append([]apk.File{{Name: "classes.dex", Data: androidruntime.ClassesDex}}, classes...), nil
+}
+
+func writeAndroidPackage(ctx context.Context, p *project, dir, ext string, files []apk.File, libraries []string, hostConfig string,
+	write func(io.Writer, []byte, apk.Manifest, []apk.File, *apk.Key) error) (string, error) {
 	if ext == ".aab" {
 		stage(ctx, "packaging the App Bundle")
 	} else {
@@ -150,9 +161,14 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 	if err != nil {
 		return "", err
 	}
-
+	if hostConfig != "" {
+		files = append(files, apk.File{Name: "assets/__nsgo_android_host", Data: []byte(hostConfig)})
+	}
 	// Resources go in the APK's assets, where the app reads them.
 	err = walkMobileResources(p, func(rel string, data []byte) error {
+		if hostConfig != "" && rel == "__nsgo_android_host" {
+			return errors.New("resources/__nsgo_android_host is reserved by the Android development runtime")
+		}
 		files = append(files, apk.File{Name: "assets/" + rel, Data: data})
 		return nil
 	})
@@ -206,7 +222,7 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 		Adaptive:            adaptive,
 		Theme:               androidThemes[p.Appearance],
 		Launch:              launch,
-		Debuggable:          androidDebuggable(p),
+		Debuggable:          androidDebuggable(p) || hostConfig != "",
 		CrashReportBuild:    crashReportBuild(p),
 		Permissions:         p.androidPermissions(),
 		TargetSDK:           p.Android.TargetSDK,

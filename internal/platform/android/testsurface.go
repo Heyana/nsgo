@@ -1,4 +1,4 @@
-//go:build android && (nsgotest || nsgoautomation)
+//go:build (android || nsgoandroidhost) && (nsgotest || nsgoautomation)
 
 package android
 
