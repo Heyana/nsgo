@@ -14,6 +14,10 @@ import (
 // The final canvas height, including user font scaling and pixel rounding,
 // determines the grid. Changing density must redraw even at the same size.
 func TestViewRulesFollowFontAndDensity(t *testing.T) {
+	// A native target keeps the display's own pixel ratio (testhost.Pin), so only the headless model can set the densities this walks through; TestFormulaRuleNativePixels checks the rules' native pixels.
+	if nsgotest.Target() != "" {
+		t.Skip("sets the pixel ratio, which a native target keeps as the display's")
+	}
 	r := Default()
 	if _, err := r.engine(); err != nil {
 		t.Fatal(err)
@@ -93,6 +97,10 @@ func TestRuleGridLeavesGlyphsAndRuleLengthAlone(t *testing.T) {
 }
 
 func TestViewRuleDensityChangeAtFixedSize(t *testing.T) {
+	// A native target keeps the display's own pixel ratio (testhost.Pin), so only the headless model can set the densities this walks through; TestFormulaRuleNativePixels checks the rules' native pixels.
+	if nsgotest.Target() != "" {
+		t.Skip("sets the pixel ratio, which a native target keeps as the display's")
+	}
 	r := Default()
 	if _, err := r.engine(); err != nil {
 		t.Fatal(err)
