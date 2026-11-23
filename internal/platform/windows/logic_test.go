@@ -2247,8 +2247,11 @@ func TestOffscreenCanvasScaleFollowsWorldTransform(t *testing.T) {
 
 // A test's pinned ReduceMotion: false wins over the machine's Reduce Motion, as a test host's windows read the app's pinned environment.
 func TestPinnedMotionWinsOverTheMachines(t *testing.T) {
+	// A zoom that jumps reports its scroll to the engine.
+	eng := engine.Start(noopPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{})
+	t.Cleanup(eng.Close)
 	for _, pinned := range []bool{false, true} {
-		w := &window{animator: driver.NewAnimator(nil), env: driver.Environment{ReduceMotion: true}, ticking: true,
+		w := &window{engine: eng, animator: driver.NewAnimator(nil), env: driver.Environment{ReduceMotion: true}, ticking: true,
 			envPin: func(env driver.Environment) driver.Environment { env.ReduceMotion = pinned; return env }}
 		scroll := &view{id: 1, kind: driver.KindScroll, frame: driver.Bounds{Size: driver.Size{Width: 200, Height: 200}},
 			size: driver.Size{Width: 400, Height: 400}, style: driver.ViewStyle{Opacity: 1}}
