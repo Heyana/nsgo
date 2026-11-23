@@ -142,13 +142,15 @@ type window struct {
 	showFirst firstShow
 	focused   bool
 	// noActivate keeps a panel from the focus (SurfaceConfig.NoActivate), which X11 does by leaving it unmanaged: no window manager places, decorates or focuses it. anchorBounds and panelSide are where core.Window.ShowAt last placed it, panelSide WindowPlaceDefault for nowhere.
-	noActivate   bool
-	dock         driver.PanelDock
-	dockLayer    bool
-	dockIssue    string
-	unmanaged    bool
-	anchorBounds driver.Bounds
-	panelSide    driver.WindowPlacement
+	noActivate bool
+	dock       driver.PanelDock
+	// fitWidth and fitHeight are a fitted panel's last WindowFitSize in GTK's logical pixels, 0 before one (fitPanel).
+	fitWidth, fitHeight int32
+	dockLayer           bool
+	dockIssue           string
+	unmanaged           bool
+	anchorBounds        driver.Bounds
+	panelSide           driver.WindowPlacement
 	// level is the level SetWindowLevel last asked for, which X11 asks the window manager for again as the window maps once levelWatched.
 	level        driver.WindowLevel
 	levelWatched bool

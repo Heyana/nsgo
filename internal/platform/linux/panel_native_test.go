@@ -117,6 +117,17 @@ func TestTransparentFittedPanelKeepsItsAnchor(t *testing.T) {
 		return p != nil && p.win != 0
 	})
 	anchor := driver.Bounds{Origin: driver.Point{X: 300, Y: 180}, Size: driver.Size{Width: 40, Height: 24}}
+	// Realize the panel before it shows, as reading its X11 window for stacking or placement does: it must still show at its fitted size (#2096).
+	host.onLoop(t, func() {
+		if _, _, ok := p.x11Window(); !ok {
+			t.Fatal("panel did not expose an X11 window")
+		}
+	})
+	// Whether the core's fit comes before the realized surface reports its options size is a race: make the fit come first and the report after it, which GTK takes as the default size of a resizable window.
+	host.onLoop(t, func() {
+		p.fitPanel(180, 80)
+		gtkWindowSetDefaultSize(p.win, 280, 240)
+	})
 	// The core's windows belong to the engine's goroutine: show the panel there, not from the test's.
 	shown := make(chan error, 1)
 	ctl.scope.Post(func() { shown <- ctl.panel.ShowAt(anchor, core.PlaceRight) })

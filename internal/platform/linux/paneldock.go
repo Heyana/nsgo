@@ -95,6 +95,7 @@ func (w *window) showDockedPanel() {
 		return
 	}
 	w.visible = true
+	w.applyFit()
 	gtkWidgetSetVisible(w.win, 1)
 	if !w.noActivate {
 		gtkWindowPresent(w.win)

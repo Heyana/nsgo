@@ -18,6 +18,7 @@ var (
 	gdkX11PanelXDisplay       func(display uintptr) uintptr
 	gdkX11SurfaceGetXID       func(surface uintptr) uintptr
 	x11MoveWindow             func(display, window uintptr, x, y int32) int32
+	x11ResizeWindow           func(display, window uintptr, width, height uint32) int32
 	x11ChangeWindowAttributes func(display, window, mask uintptr, attributes *x11WindowAttributes) int32
 	x11Flush                  func(display uintptr) int32
 	x11PanelsReady            bool
@@ -39,6 +40,7 @@ var (
 		purego.RegisterLibFunc(&gdkX11PanelXDisplay, gtkLib, "gdk_x11_display_get_xdisplay")
 		purego.RegisterLibFunc(&gdkX11SurfaceGetXID, gtkLib, "gdk_x11_surface_get_xid")
 		purego.RegisterLibFunc(&x11MoveWindow, lib, "XMoveWindow")
+		purego.RegisterLibFunc(&x11ResizeWindow, lib, "XResizeWindow")
 		purego.RegisterLibFunc(&x11ChangeWindowAttributes, lib, "XChangeWindowAttributes")
 		purego.RegisterLibFunc(&x11Flush, lib, "XFlush")
 		x11PanelsReady = true
@@ -105,6 +107,7 @@ func (w *window) showPanel(at driver.Bounds, side driver.WindowPlacement) {
 		return
 	}
 	w.visible = true
+	w.applyFit()
 	gtkWidgetSetVisible(w.win, 1)
 	if w.noActivate {
 		return
@@ -161,9 +164,27 @@ func (w *window) placementFailed() {
 	}
 }
 
+// applyFit has a fitted panel about to show take its fitted size (#2096). GTK 4 makes a resizable window's default size every size its surface reports, so a panel realized at its options size before a fit, as reading its X11 window for stacking or placement does, can take that size back as its default after the fit. And its X11 backend resizes the X window only when the size it computes differs from the last one it computed (gdksurface-x11.c, compute_toplevel_size), which a fit while realized already was, so setting the default size again does not move the surface off its options size: on X11 the X window is resized directly, as placePanel moves it, and GDK follows the configure event.
+func (w *window) applyFit() {
+	if w.fitWidth <= 0 || w.fitHeight <= 0 {
+		return
+	}
+	gtkWindowSetDefaultSize(w.win, w.fitWidth, w.fitHeight)
+	bindWindowLimits()
+	if gtkWidgetGetRealized(w.win) == 0 {
+		return
+	}
+	if display, xid, ok := w.x11Window(); ok {
+		scale := max(gtkWidgetGetScaleFactor(w.win), 1)
+		x11ResizeWindow(display, xid, uint32(w.fitWidth*scale), uint32(w.fitHeight*scale))
+		x11Flush(display)
+	}
+}
+
 // fitPanel sizes a panel to width by height, the size its content takes (driver.WindowFitSize), rounded up to GTK's whole logical pixels so a size the core rounded to device pixels, a half point at scale 2, loses none of the content: GTK keeps its top left corner, and one that shows beside the rectangle ShowAt placed it at is placed there again at its new size, on X11.
 func (w *window) fitPanel(width, height driver.Points) {
-	gtkWindowSetDefaultSize(w.win, int32(math.Ceil(float64(width))), int32(math.Ceil(float64(height))))
+	w.fitWidth, w.fitHeight = int32(math.Ceil(float64(width))), int32(math.Ceil(float64(height)))
+	gtkWindowSetDefaultSize(w.win, w.fitWidth, w.fitHeight)
 	if w.visible && w.dock.Edge != driver.WindowPlaceDefault {
 		w.placeDockedPanel()
 	}
