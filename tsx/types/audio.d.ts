@@ -33,7 +33,7 @@ export interface Sound {
   play(voice?: Voice): Playback;
   /** Stops every playback of the sound. */
   stop(): void;
-  /** Lets the sound go; the view's sounds go with it. */
+  /** Lets the sound go. A sound is released only by `close()` or when the view goes, not when it is no longer referenced, and each one counts against the sandbox's sound quota until then. */
   close(): void;
 }
 
@@ -41,6 +41,6 @@ export interface Sound {
 export declare function supported(): boolean;
 
 /**
- * Loads a sound from an "asset:" path, a data: URL or an http(s) URL. A package's sounds keep the default limits: 64 sounds, 16 MiB decoded, 8 MiB encoded and 5 seconds each, and 32 overlapping playbacks. Rejects with an Error whose `reason` is an AudioErrorReason, and whose `code` is "ERR_ACCESS_DENIED" without the capability and "ERR_NSH_QUOTA_EXCEEDED" past a limit.
+ * Loads a sound from an "asset:" path, a data: URL or an http(s) URL. A package's sounds keep the default limits: 64 sounds, 16 MiB decoded, 8 MiB encoded and 5 seconds each, and 32 overlapping playbacks. In a sandbox, at most 256 loads may be pending or open at once (`Limits.Sounds`), each counting until it fails or its sound closes. Rejects with an Error whose `reason` is an AudioErrorReason, and whose `code` is "ERR_ACCESS_DENIED" without the capability, "ERR_NSH_QUOTA_EXCEEDED" past a limit and "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM" where nothing plays audio.
  */
 export declare function loadSound(uri: string): Promise<Sound>;

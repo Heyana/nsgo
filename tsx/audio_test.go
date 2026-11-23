@@ -39,7 +39,7 @@ func soundDurations(a *nsgotest.App) {
 // raised is a Go app that raises the engine's sound limits before showing node.
 func raised(node func(cx *core.Scope) core.Node) func(cx *core.Scope) core.Node {
 	return func(cx *core.Scope) core.Node {
-		if err := cx.SetSoundLimits(core.SoundLimits{MaxSounds: 250, MaxDuration: 30 * time.Second}); err != nil {
+		if err := cx.SetSoundLimits(core.SoundLimits{MaxSounds: 250, MaxDuration: 30 * time.Second, MaxDecodedBytes: 64 << 20}); err != nil {
 			panic(err)
 		}
 		return node(cx)
@@ -100,9 +100,89 @@ func TestAudioPackageKeepsTheDefaultQuotas(t *testing.T) {
 	}
 }
 
-func TestAudioPackageWithoutTheCapability(t *testing.T) {
+// A package past the default decoded size is refused even where the Go app raised it: nine sounds of 4.9 seconds decode to more than 16 MiB in nsgotest's fake.
+func TestAudioPackageKeepsTheDecodedQuota(t *testing.T) {
 	headlessAudio(t)
 	p := verified(t, `
+import { mount, signal, Text } from "nsgo";
+import { loadSound } from "nsgo/audio";
+
+const result = signal("loading");
+(async () => {
+  const got: string[] = [];
+  for (let i = 0; i < 9; i++) {
+    try { await loadSound("asset:m" + i + ".wav"); got.push("ok"); } catch (e: any) { got.push(e.code + ":" + e.reason); }
+  }
+  result.set(got.join(","));
+})();
+
+mount(() => <Text testID="result">{result}</Text>);
+`, pkg.Capabilities{Audio: true})
+	app := nsgotest.Start(t, raised(func(*core.Scope) core.Node {
+		return tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}
+	}), playsAudio, func(a *nsgotest.App) {
+		a.AudioDurations = map[string]time.Duration{}
+		for i := range 9 {
+			a.AudioDurations[fmt.Sprintf("asset:m%d.wav", i)] = 4900 * time.Millisecond
+		}
+	})
+	app.Find("text:" + strings.Repeat("ok,", 8) + "ERR_NSH_QUOTA_EXCEEDED:quota-exceeded")
+}
+
+// A package's playbacks reach the platform restricted, which holds them to the restricted share of the output's voices.
+func TestAudioPackagePlaysRestricted(t *testing.T) {
+	headlessAudio(t)
+	p := verified(t, `
+import { mount, signal, Text } from "nsgo";
+import { loadSound } from "nsgo/audio";
+
+const result = signal("loading");
+loadSound("asset:s0.wav").then((s) => { s.play(); result.set("played"); });
+
+mount(() => <Text testID="result">{result}</Text>);
+`, pkg.Capabilities{Audio: true})
+	app := nsgotest.Start(t, raised(func(*core.Scope) core.Node {
+		return tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}
+	}), playsAudio, soundDurations)
+	app.Find("text:played")
+	if pb := app.Sounds[0].Playbacks; len(pb) != 1 || !pb[0].Restricted {
+		t.Fatalf("a package's playbacks: %+v", pb)
+	}
+}
+
+// Every load holds Go state until it fails or its sound closes, so a sandbox may have at most Limits.Sounds pending or open, of one source or many.
+func TestAudioPackageSoundsLimit(t *testing.T) {
+	headlessAudio(t)
+	p := verified(t, `
+import { mount, signal, Text } from "nsgo";
+import { loadSound, type Sound } from "nsgo/audio";
+
+const result = signal("loading");
+(async () => {
+  const got: string[] = [];
+  const held: Sound[] = [];
+  for (let i = 0; i < 4; i++) {
+    try { held.push(await loadSound("asset:s0.wav")); got.push("ok"); } catch (e: any) { got.push(e.code + ":" + e.reason); }
+  }
+  held[0].close();
+  held[0].close();
+  try { await loadSound("asset:s1.wav"); got.push("ok"); } catch (e: any) { got.push(e.code); }
+  try { await loadSound("asset:s2.wav"); got.push("ok"); } catch (e: any) { got.push(e.code); }
+  result.set(got.join(","));
+})();
+
+mount(() => <Text testID="result">{result}</Text>);
+`, pkg.Capabilities{Audio: true})
+	limits := tsx.DefaultLimits
+	limits.Sounds = 3
+	app := nsgotest.Start(t, func(*core.Scope) core.Node {
+		return tsx.View{Package: p, Sandbox: tsx.Sandbox{Limits: &limits, WebUnisolated: true}}
+	}, playsAudio, soundDurations)
+	app.Find("text:ok,ok,ok,ERR_NSH_QUOTA_EXCEEDED:quota-exceeded,ok,ERR_NSH_QUOTA_EXCEEDED")
+}
+
+func TestAudioPackageWithoutTheCapability(t *testing.T) {
+	src := `
 import { mount, signal, Text } from "nsgo";
 import { supported, loadSound } from "nsgo/audio";
 
@@ -110,13 +190,26 @@ const result = signal("loading");
 loadSound("asset:s0.wav").then(() => result.set("loaded"), (e: any) => result.set(e.code + ":" + e.permission + ":" + e.reason));
 
 mount(() => <Text testID="result">{() => "supported:" + supported() + " " + result()}</Text>);
-`, pkg.Capabilities{})
-	app := nsgotest.Start(t, func(*core.Scope) core.Node {
-		return tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}
-	}, playsAudio, soundDurations)
-	app.Find("text:supported:false ERR_ACCESS_DENIED:audio:not-allowed")
-	if len(app.Sounds) != 0 {
-		t.Fatalf("%d sounds reached the platform", len(app.Sounds))
+`
+	for _, c := range []struct {
+		name     string
+		declared pkg.Capabilities
+		grant    *pkg.Capabilities
+	}{
+		{"undeclared", pkg.Capabilities{}, nil},
+		{"denied_by_host_grant", pkg.Capabilities{Audio: true}, &pkg.Capabilities{}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			headlessAudio(t)
+			p := verified(t, src, c.declared)
+			app := nsgotest.Start(t, func(*core.Scope) core.Node {
+				return tsx.View{Package: p, Sandbox: tsx.Sandbox{Grant: c.grant, WebUnisolated: true}}
+			}, playsAudio, soundDurations)
+			app.Find("text:supported:false ERR_ACCESS_DENIED:audio:not-allowed")
+			if len(app.Sounds) != 0 {
+				t.Fatalf("%d sounds reached the platform", len(app.Sounds))
+			}
+		})
 	}
 }
 
@@ -161,7 +254,7 @@ mount(App);
 	if len(s.Plays) != 2 || s.Plays[0] != (core.SoundVoice{Volume: 0.5, Rate: 1.5, Pan: -1, Loop: true}) || s.Plays[1].Volume != 0 {
 		t.Fatalf("plays %+v", s.Plays)
 	}
-	if pb := s.Playbacks[0]; pb.Volume != 0.25 || pb.Rate != 2 || pb.Ended {
+	if pb := s.Playbacks[0]; pb.Volume != 0.25 || pb.Rate != 2 || pb.Ended || pb.Restricted {
 		t.Fatalf("first playback %+v", pb)
 	}
 	app.Press("id:stop")

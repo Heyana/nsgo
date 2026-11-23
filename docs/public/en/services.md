@@ -757,7 +757,7 @@ Browsers require a user gesture for audible playback. Load short sounds ahead of
 
 Use `audio.Voice{Muted: true}` to start an effect silently and `playback.SetVolume(0)` to silence an active effect. For long audio, `audio.NewPlayer` streams a source and `player.SetMuted(true)` silences the output while playback continues. Unmuting restores the player's configured volume. `Voice.Volume` and `Player.SetVolume` use zero for default full volume.
 
-In TSX, `nsgo/audio` exposes `supported()` and `loadSound(uri)`, gated by the `audio` package capability. `loadSound` resolves with a sound whose `play({ volume, rate, pan, loop, muted })` returns a playback with `setVolume`, `setRate`, `stop` and a reactive `ended`; there, a volume of 0 is silence. A refused load rejects with an `Error` whose `reason` is the audio error's name, such as `quota-exceeded`, and whose `code` is `ERR_ACCESS_DENIED` without the capability and `ERR_NSH_QUOTA_EXCEEDED` past a limit.
+In TSX, `nsgo/audio` exposes `supported()` and `loadSound(uri)`, gated by the `audio` package capability. `loadSound` resolves with a sound whose `play({ volume, rate, pan, loop, muted })` returns a playback with `setVolume`, `setRate`, `stop` and a reactive `ended`; there, a volume of 0 is silence. A refused load rejects with an `Error` whose `reason` is the audio error's name, such as `quota-exceeded`, and whose `code` is `ERR_ACCESS_DENIED` without the capability, `ERR_NSH_QUOTA_EXCEEDED` past a limit and `ERR_FEATURE_UNAVAILABLE_ON_PLATFORM` where nothing plays audio. A sound is released only by `close()` or when its view goes; in a sandbox each load counts against `Limits.Sounds` (256 by default) until it fails or its sound closes.
 
 ## Gamepads
 

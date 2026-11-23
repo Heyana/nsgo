@@ -686,7 +686,7 @@ mobile.RequestOverlayPermission(cx, func(p core.OverlayPermission) {
 
 浏览器需要用户操作才能播放有声内容。可提前加载短音效，在点击、轻触或按键后调用 `Sound.Play`。用户操作之前播放的音效无声。如果浏览器拒绝播放，播放器的 `Play` 回调会收到 `audio.NotAllowed`。可在下一次用户操作中重试。
 
-在 TSX 中，`nsgo/audio` 提供 `supported()` 和 `loadSound(uri)`，签名包需声明 `audio` 权限。`loadSound` 解析为一个音效，其 `play({ volume, rate, pan, loop, muted })` 返回的播放句柄有 `setVolume`、`setRate`、`stop` 和响应式的 `ended`；在 TSX 中音量为 0 即静音。加载失败时，Promise 以 `Error` 拒绝：`reason` 是音频错误名，如 `quota-exceeded`；缺少权限时 `code` 为 `ERR_ACCESS_DENIED`，超出限制时为 `ERR_NSH_QUOTA_EXCEEDED`。
+在 TSX 中，`nsgo/audio` 提供 `supported()` 和 `loadSound(uri)`，签名包需声明 `audio` 权限。`loadSound` 解析为一个音效，其 `play({ volume, rate, pan, loop, muted })` 返回的播放句柄有 `setVolume`、`setRate`、`stop` 和响应式的 `ended`；在 TSX 中音量为 0 即静音。加载失败时，Promise 以 `Error` 拒绝：`reason` 是音频错误名，如 `quota-exceeded`；缺少权限时 `code` 为 `ERR_ACCESS_DENIED`，超出限制时为 `ERR_NSH_QUOTA_EXCEEDED`，平台不能播放音频时为 `ERR_FEATURE_UNAVAILABLE_ON_PLATFORM`。音效只有调用 `close()` 或所在视图移除时才会释放；在沙盒中，每次加载都计入 `Limits.Sounds`（默认 256），直到加载失败或音效关闭。
 
 ## 音频时序
 

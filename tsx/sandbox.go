@@ -36,9 +36,8 @@ type Limits struct {
 	// Nodes is how many elements the bundle may hold at once, each of
 	// which may hold a native view; past it the bundle stops.
 	Nodes int
-	// Timers is how many timers and frame callbacks may wait at once, and
-	// Requests how many fetches may be under way: one more fails.
-	Timers, Requests int
+	// Timers is how many timers and frame callbacks may wait at once, Requests how many fetches may be under way, and Sounds how many nsgo/audio sounds may be loading or open, each loadSound counting until it fails or its sound closes: one more fails.
+	Timers, Requests, Sounds int
 	// Body is the most bytes a request's or a response's body may hold.
 	Body int
 	// Storage is the most bytes its partition of the app's storage may
@@ -48,9 +47,9 @@ type Limits struct {
 	Memory int
 }
 
-// DefaultLimits are NSH's, 10 seconds to load, 2 per call, 1000 frames, hardened, 200 000 nodes, 10 000 timers, 32 requests, 64 MiB bodies and 1 MiB of storage, and NSGo's 64 MiB of memory.
+// DefaultLimits are NSH's, 10 seconds to load, 2 per call, 1000 frames, hardened, 200 000 nodes, 10 000 timers, 32 requests, 64 MiB bodies and 1 MiB of storage, and NSGo's 256 sounds and 64 MiB of memory.
 var DefaultLimits = Limits{Load: 10 * time.Second, Call: 2 * time.Second, Stack: 1000, Harden: true,
-	Nodes: 200_000, Timers: 10_000, Requests: 32, Body: 64 << 20, Memory: 64 << 20, Storage: 1 << 20}
+	Nodes: 200_000, Timers: 10_000, Requests: 32, Sounds: 256, Body: 64 << 20, Memory: 64 << 20, Storage: 1 << 20}
 
 // ErrBudget is what a call cut at its time budget fails with.
 var ErrBudget = errors.New("tsx: the script ran past its time budget")
@@ -88,7 +87,7 @@ func limitRegexps(d time.Duration) (restore func()) {
 	}
 }
 
-// ParseLimits reads limits as nsgo dev -limits writes them: DefaultLimits with the fields spec names set, as "nodes=1000,call=500ms". Its keys are load, call, call-total, stack, nodes, timers, requests, body, storage and memory; "default" or "" is DefaultLimits.
+// ParseLimits reads limits as nsgo dev -limits writes them: DefaultLimits with the fields spec names set, as "nodes=1000,call=500ms". Its keys are load, call, call-total, stack, nodes, timers, requests, sounds, body, storage and memory; "default" or "" is DefaultLimits.
 func ParseLimits(spec string) (Limits, error) {
 	l := DefaultLimits
 	if spec == "" || spec == "default" {
@@ -113,15 +112,15 @@ func ParseLimits(spec string) (Limits, error) {
 					l.CallTotal = d
 				}
 			}
-		case "stack", "nodes", "timers", "requests", "body", "storage", "memory":
+		case "stack", "nodes", "timers", "requests", "sounds", "body", "storage", "memory":
 			var n int
 			if n, err = strconv.Atoi(v); err == nil && n < 0 {
 				err = errors.New("is negative")
 			}
 			*map[string]*int{"stack": &l.Stack, "nodes": &l.Nodes, "timers": &l.Timers, "requests": &l.Requests,
-				"body": &l.Body, "storage": &l.Storage, "memory": &l.Memory}[k] = n
+				"sounds": &l.Sounds, "body": &l.Body, "storage": &l.Storage, "memory": &l.Memory}[k] = n
 		default:
-			return l, fmt.Errorf("tsx: no limit %q: load, call, call-total, stack, nodes, timers, requests, body, storage or memory", k)
+			return l, fmt.Errorf("tsx: no limit %q: load, call, call-total, stack, nodes, timers, requests, sounds, body, storage or memory", k)
 		}
 		if err != nil {
 			return l, fmt.Errorf("tsx: limit %s: %v", k, err)
@@ -362,8 +361,8 @@ type sandboxed struct {
 	// requests.
 	caps    bool
 	modules []string
-	// nodes, timers and requests are what it holds now.
-	nodes, timers, requests int
+	// nodes, timers, requests and sounds are what it holds now.
+	nodes, timers, requests, sounds int
 	// stopped is why it stopped: no JS runs after.
 	stopped error
 	// memory is what the built-ins hold for it under Limits.Memory, nil without one.

@@ -177,8 +177,8 @@ func (l *limitsFlag) Set(v string) error {
 	}
 	for _, kv := range strings.Split(v, ",") {
 		if k, _, _ := strings.Cut(kv, "="); v != "" && v != "default" &&
-			!slices.Contains([]string{"load", "call", "call-total", "stack", "nodes", "timers", "requests", "body", "storage", "memory"}, k) {
-			return fmt.Errorf("no limit %q: load, call, call-total, stack, nodes, timers, requests, body, storage or memory", k)
+			!slices.Contains([]string{"load", "call", "call-total", "stack", "nodes", "timers", "requests", "sounds", "body", "storage", "memory"}, k) {
+			return fmt.Errorf("no limit %q: load, call, call-total, stack, nodes, timers, requests, sounds, body, storage or memory", k)
 		}
 	}
 	*l = limitsFlag(v)
@@ -208,7 +208,7 @@ func bindDevFlags(fs *flag.FlagSet) *devFlags {
 	fs.StringVar(&f.lang, "lang", "", "start the app with --nsgo-lang, in this `locale`, as de or zh-Hant, or a pseudo locale: en-XA accents and lengthens its messages, ar-XB mirrors them")
 	fs.StringVar(&f.team, "team", "", "the Apple developer `team` the iOS target signs with (default: the team Xcode last used)")
 	fs.StringVar(&f.clip, "clip", "", "with -target ios or ios_simulator, run nsgo.yaml's App Clip alone, opened from this `url`, in place of the app")
-	fs.Var(&f.limits, "limits", "run a TSX app sandboxed, as tsx.View runs a package: within the default limits, or those given (`load=10s,call=2s,call-total=0,stack=1000,nodes=200000,timers=10000,requests=32,body=67108864,storage=1048576`), and nsgo.yaml's capabilities")
+	fs.Var(&f.limits, "limits", "run a TSX app sandboxed, as tsx.View runs a package: within the default limits, or those given (`load=10s,call=2s,call-total=0,stack=1000,nodes=200000,timers=10000,requests=32,sounds=256,body=67108864,storage=1048576`), and nsgo.yaml's capabilities")
 	return f
 }
 
