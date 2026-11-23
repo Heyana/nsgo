@@ -84,28 +84,82 @@ func clipboardImage() []driver.PastedFile {
 		}
 	}
 	h, _, _ := getClipboardData.Call(cfDIB)
-	dib := globalBytes(h)
+	if bmp := bmpOfDIB(globalBytes(h)); bmp != nil {
+		return []driver.PastedFile{{MIME: "image/bmp", Data: bmp}}
+	}
+	return nil
+}
+
+// bmpOfDIB wraps the clipboard's DIB — a header, its color table and its
+// pixels — as a BMP file: a header that says where the pixels start. nil
+// stands for data the BMP reader would not take.
+func bmpOfDIB(dib []byte) []byte {
 	if len(dib) < 40 {
 		return nil
 	}
-	// A BMP file is the DIB after a 14-byte header that says where its
-	// pixels start: after the info header and the color table.
-	header := binary.LittleEndian.Uint32(dib)
-	bits, used := binary.LittleEndian.Uint16(dib[14:]), binary.LittleEndian.Uint32(dib[32:])
+	headerSize := binary.LittleEndian.Uint32(dib)
+	if headerSize < 40 || int(headerSize) > len(dib) {
+		return nil
+	}
+	bpp, used := binary.LittleEndian.Uint16(dib[14:]), binary.LittleEndian.Uint32(dib[32:])
 	compression := binary.LittleEndian.Uint32(dib[16:])
 	colors := used
-	if colors == 0 && bits <= 8 {
-		colors = 1 << bits
+	if colors == 0 && bpp <= 8 {
+		colors = 1 << bpp
 	}
-	offset := 14 + header + colors*4
-	if compression == 3 && header == 40 { // BI_BITFIELDS: three masks follow
-		offset += 12
+	// A BMP file's header is the 40-byte BITMAPINFOHEADER, whose fields come
+	// first in the BITMAPV4/V5HEADER (108 or 124 bytes) an app's DIB may carry,
+	// as .NET's clipboard image does: the wider rest goes, and the pixels that
+	// followed it move up.
+	info := append(make([]byte, 0, 40), dib[:40]...)
+	binary.LittleEndian.PutUint32(info, 40)
+	pixels := dib[headerSize:]
+	if compression == 3 {
+		// BI_BITFIELDS: the masks start at byte 40 of the header. A 40-byte
+		// V3 header has no room for them, so the three masks sit between the
+		// header and the pixels; the wider V4/V5 headers keep the masks,
+		// including the alpha mask at bytes 52-56, inside the header.
+		var masks []byte
+		if headerSize == 40 {
+			if len(dib) < 52 {
+				return nil
+			}
+			pixels = dib[52:]
+			masks = dib[40:52]
+		} else {
+			if headerSize < 52 {
+				return nil
+			}
+			masks = dib[40:headerSize]
+		}
+		// The reader takes 32-bit BI_RGB only: plain BGRA pixels say the same
+		// without masks, which Windows puts on every bitmap it copies.
+		if bpp != 32 || !bgraMasks(masks) {
+			return nil
+		}
+		binary.LittleEndian.PutUint32(info[16:], 0)
 	}
-	file := make([]byte, 14, 14+len(dib))
+	offset := 14 + len(info) + int(colors)*4
+	file := make([]byte, 14, 14+len(info)+len(pixels))
 	file[0], file[1] = 'B', 'M'
-	binary.LittleEndian.PutUint32(file[2:], uint32(14+len(dib)))
-	binary.LittleEndian.PutUint32(file[10:], offset)
-	return []driver.PastedFile{{MIME: "image/bmp", Data: append(file, dib...)}}
+	binary.LittleEndian.PutUint32(file[2:], uint32(14+len(info)+len(pixels)))
+	binary.LittleEndian.PutUint32(file[10:], uint32(offset))
+	file = append(file, info...)
+	return append(file, pixels...)
+}
+
+// bgraMasks reports whether the masks are the plain blue, green, red and
+// alpha ones 32-bit pixels are already laid out in.
+func bgraMasks(masks []byte) bool {
+	if len(masks) < 12 {
+		return false
+	}
+	read := func(at int) uint32 { return binary.LittleEndian.Uint32(masks[at:]) }
+	alpha := uint32(0)
+	if len(masks) >= 16 {
+		alpha = read(12)
+	}
+	return read(0) == 0x00ff0000 && read(4) == 0x0000ff00 && read(8) == 0x000000ff && (alpha == 0xff000000 || alpha == 0)
 }
 
 // globalBytes copies the memory of global handle h.
