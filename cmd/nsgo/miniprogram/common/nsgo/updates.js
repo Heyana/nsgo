@@ -1,8 +1,6 @@
 'use strict'
 
-// The native update manager is created before WebAssembly starts. Mini
-// program hosts may emit an event during startup, so state is retained here
-// rather than forwarded through Go's bridge as a one-shot notification.
+// The native update manager is created before WebAssembly starts. Mini program hosts may emit an event during startup, so state is retained here rather than forwarded through Go's bridge as a one-shot notification.
 function updateManager(api) {
   const state = {
     supported: false,

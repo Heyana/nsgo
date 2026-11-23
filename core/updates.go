@@ -16,18 +16,14 @@ type UpdateCheck struct {
 	// windows, as Sparkle on macOS and WinSparkle on Windows do: they
 	// offer the newer version, install it and restart the app. Version metadata arrives separately through updater.Status; capability is still set.
 	Shown bool
-	// Restart is updater's signal that the platform has an update ready to
-	// apply by restarting. Version may be empty when the platform hides it.
+	// Restart is updater's signal that the platform has an update ready to apply by restarting. Version may be empty when the platform hides it.
 	Restart bool
 	// Managed and Store are updater.CapabilityOf's synchronous capability.
 	Managed UpdaterManaged
 	Store   string
 	// App and Current are the app's name and running version.
 	App, Current string
-	// Version is the newer version found, "" when Current is the newest
-	// or Restart is true and the platform exposes no version label,
-	// and URL the page that gets it: the App Store's on iOS, the
-	// release's elsewhere.
+	// Version is the newer version found, "" when Current is the newest or Restart is true and the platform exposes no version label, and URL the page that gets it: the App Store's on iOS, the release's elsewhere.
 	Version, URL string
 	// Notes are Version's release notes as plain text, "" when its feed has none.
 	Notes string

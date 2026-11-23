@@ -13,8 +13,7 @@ import (
 	"time"
 )
 
-// Use two actual published apps, not a fake registration: accepting the
-// updater's alert must reload the page and start the newly deployed module.
+// Use two actual published apps, not a fake registration: accepting the updater's alert must reload the page and start the newly deployed module.
 func TestPublishedWebUpdateReloadsNewRelease(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds two published web apps")

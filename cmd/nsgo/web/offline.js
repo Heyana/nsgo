@@ -44,9 +44,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
       let response = await cached(url.href);
       if (!response) {
-        // A user may reload into a new release while other old pages keep
-        // this worker active. Its waiting successor has already verified
-        // the new immutable files; serve those without retiring old caches.
+        // A user may reload into a new release while other old pages keep this worker active. Its waiting successor has already verified the new immutable files; serve those without retiring old caches.
         const names = await caches.keys();
         for (const name of names) {
           if (!name.startsWith(namespace) || name === cacheName) continue;

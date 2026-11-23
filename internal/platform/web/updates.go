@@ -12,9 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// A release compares its immutable file descriptor with the current nsgo.json.
-// Reloading fetches the new index without forcing a waiting offline worker to
-// activate underneath other live pages of the preceding release.
+// A release compares its immutable file descriptor with the current nsgo.json. Reloading fetches the new index without forcing a waiting offline worker to activate underneath other live pages of the preceding release.
 type webUpdates struct {
 	app           string
 	current       []byte

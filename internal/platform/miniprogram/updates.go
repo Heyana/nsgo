@@ -7,8 +7,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// A platform may finish its cold-start check before Go starts. The runtime
-// retains this snapshot; one subscription feeds every pending app request.
+// A platform may finish its cold-start check before Go starts. The runtime retains this snapshot; one subscription feeds every pending app request.
 type updateSnapshot struct {
 	supported, checked, available, ready bool
 	err                                  string
@@ -81,8 +80,7 @@ func (u *miniUpdater) check(id uint32) {
 		}
 		return
 	}
-	// Dispatch only queues an engine event. Keep it inside the close barrier
-	// so no timeout, snapshot or immediate answer can arrive after close.
+	// Dispatch only queues an engine event. Keep it inside the close barrier so no timeout, snapshot or immediate answer can arrive after close.
 	u.dispatch(driver.Event{Kind: driver.EventUpdate, Count: id, Data: &answer})
 }
 

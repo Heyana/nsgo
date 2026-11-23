@@ -33,8 +33,7 @@ import (
 type Options struct {
 	// Name is the displayed app name used by update replies.
 	Name string
-	// UpdateConfig is the published nsgo.json the loader started. Embedded
-	// hosts control their own lifetime; only standalone releases can reload.
+	// UpdateConfig is the published nsgo.json the loader started. Embedded hosts control their own lifetime; only standalone releases can reload.
 	UpdateConfig string
 	// Mount is the CSS selector of the element the app fills; the body
 	// when empty.
