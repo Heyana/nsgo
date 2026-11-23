@@ -92,10 +92,22 @@ func TestDocumentLinksKeepBrowserAlternativeClicks(t *testing.T) {
 	})
 	documentWait(t, func() bool { return mount.Call("querySelector", "a").Truthy() })
 	link := mount.Call("querySelector", "a")
+	// A synthetic click still follows a link, and a Meta click is no new tab off macOS: the window's listener, after the app's, notes what the app left to the browser and keeps the page from leaving the test.
+	var prevented bool
+	stop := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		prevented = args[0].Get("defaultPrevented").Bool()
+		args[0].Call("preventDefault")
+		return nil
+	})
+	t.Cleanup(stop.Release)
+	for _, name := range []string{"mousedown", "click", "auxclick"} {
+		js.Global().Call("addEventListener", name, stop)
+		t.Cleanup(func() { js.Global().Call("removeEventListener", name, stop) })
+	}
 	click := func(name string, button int, meta bool) bool {
 		e := js.Global().Get("MouseEvent").New(name, map[string]any{"bubbles": true, "cancelable": true, "button": button, "metaKey": meta})
 		link.Call("dispatchEvent", e)
-		return e.Get("defaultPrevented").Bool()
+		return prevented
 	}
 	if !click("click", 0, false) {
 		t.Fatal("ordinary link click navigates outside the app")
