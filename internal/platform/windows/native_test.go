@@ -34,9 +34,10 @@ var (
 	createCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
 	bitBlt                 = gdi32.NewProc("BitBlt")
 
-	findWindowW   = user32.NewProc("FindWindowW")
-	findWindowExW = user32.NewProc("FindWindowExW")
-	printWindow   = user32.NewProc("PrintWindow")
+	findWindowW         = user32.NewProc("FindWindowW")
+	sendMessageTimeoutW = user32.NewProc("SendMessageTimeoutW")
+	findWindowExW       = user32.NewProc("FindWindowExW")
+	printWindow         = user32.NewProc("PrintWindow")
 )
 
 // PrintWindow's PW_CLIENTONLY and PW_RENDERFULLCONTENT: the swap chain's
@@ -293,13 +294,19 @@ func TestDrawnFieldEditsSelectsAndIsCovered(t *testing.T) {
 	waitForTitle(t, hwnd, title+"|hello ther|2|1|1|false", 5*time.Second)
 }
 
+// waitForWindow returns the window titled title once its thread serves messages. FindWindow sees a window from CreateWindowEx on, before Run has registered it in windows, which onMain looks it up in; Run registers it before its message loop starts, so a WM_NULL sent to it returns only after that.
 func waitForWindow(t *testing.T, title string, done <-chan struct{}) uintptr {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		hwnd, _, _ := findWindowW.Call(0, uintptr(unsafe.Pointer(wide(title))))
 		if hwnd != 0 {
-			return hwnd
+			const smtoAbortIfHung = 0x0002
+			var result uintptr
+			wait := max(time.Until(deadline), 10*time.Millisecond)
+			if ok, _, _ := sendMessageTimeoutW.Call(hwnd, 0 /* WM_NULL */, 0, 0, smtoAbortIfHung, uintptr(wait.Milliseconds()), uintptr(unsafe.Pointer(&result))); ok != 0 {
+				return hwnd
+			}
 		}
 		select {
 		case <-done:
