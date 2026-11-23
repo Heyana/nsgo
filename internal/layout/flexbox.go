@@ -872,6 +872,12 @@ func flexBaseSize(c *flexConstants, child *flexItem, available Size[AvailableSpa
 	}
 	childAvailable := maxContentSpaces.withMain(dir, mainAvailable).withCross(dir, crossAvailable)
 
+	if c.isColumn && child.sizeStyle.Width.IsAuto() && !childKnown.Width.Valid && crossAvailable.isDefinite() && !child.aspectRatio.Valid {
+		// A non-stretched item can wrap differently at its fit-content width than at the offered width.
+		w := measureChildSize(child.node, childKnown, childParentSize, childAvailable, contentSize,
+			Horizontal, Line[bool]{})
+		childKnown.Width = Some(w).clamp(child.minSize.Width, child.maxSize.Width)
+	}
 	return measureChildSize(child.node, childKnown, childParentSize, childAvailable, contentSize, dir.mainAxis(),
 		Line[bool]{})
 }

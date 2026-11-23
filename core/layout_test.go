@@ -551,6 +551,23 @@ func TestFarEdgesRoundAgainWhenMovedByWholePixels(t *testing.T) {
 	}
 }
 
+func TestColumnFitsHeightAtItsItemsUsedWidth(t *testing.T) {
+	h := newHost(t, Size{Width: 240, Height: 200}, func(*Scope) Node {
+		return View{Style: Style{AlignItems: AlignEnd}, Children: []Node{
+			View{Children: []Node{
+				View{Style: Style{Width: Pt(80), Height: Pt(1)}},
+				Text{TestID: "text", Content: "one two three", Style: Style{Width: Pct(50), FontSize: 10}},
+			}},
+			View{TestID: "next", Style: Style{Height: Pt(10)}},
+		}}
+	})
+	h.commit()
+	text, next := h.find("text").frame, h.find("next").frame
+	if bottom := text.Origin.Y + text.Size.Height; bottom > next.Origin.Y {
+		t.Fatalf("text ends at %v, next item starts at %v", bottom, next.Origin.Y)
+	}
+}
+
 // TestATextShrinksInARowWithFlexShrink is the Sizes section of layout.md (#308): a text in a row shrinks below its one-line width and wraps only with FlexShrink, an unset minimum being 0 already, so MinWidth: Pt(0) alone leaves it overflowing the row. With an unset minimum it shrinks into less than its widest word and breaks its words; AutoMinimum stops it at its widest word, as CSS's automatic minimum does.
 func TestATextShrinksInARowWithFlexShrink(t *testing.T) {
 	for _, c := range []struct {

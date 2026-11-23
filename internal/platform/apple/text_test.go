@@ -16,6 +16,40 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
+func TestFittedColumnKeepsWrappedTextAboveNextItem(t *testing.T) {
+	root := core.NewRoot(core.RootOptions{})
+	t.Cleanup(root.Dispose)
+	tree := core.NewTree(root, TextEngine{})
+	tree.SetEnvironment(core.Environment{PixelRatio: 2})
+	tree.Resize(core.Size{Width: 240, Height: 300}, core.Geometry{})
+
+	var text, next core.Ref
+	tree.Mount(func(*core.Scope) core.Node {
+		return core.View{Style: core.Style{AlignItems: core.AlignEnd}, Children: []core.Node{
+			core.View{Style: core.Style{MaxWidth: core.Pt(62.5)}, Children: []core.Node{
+				core.View{Children: []core.Node{
+					core.Text{Ref: &text, Content: strings.Repeat("A\u3002\u7532\u4e59\uff0c\u4e19\u4e01", 4) + "\u4e0b\uff1f",
+						Style: core.Style{Language: "zh-Hans", FontSize: 14.5, LineHeight: 23.2}},
+				}},
+			}},
+			core.View{Ref: &next, Style: core.Style{Width: core.Pt(10), Height: core.Pt(10)}},
+		}}
+	})
+	for _, item := range tree.Commit().Items {
+		if item.Kind == driver.ItemText {
+			t.Cleanup(item.Text.Layout.(*Layout).Release)
+		}
+	}
+	textBox, textOK := text.Bounds()
+	nextBox, nextOK := next.Bounds()
+	if !textOK || !nextOK {
+		t.Fatal("text and next item should both have bounds")
+	}
+	if bottom := textBox.Origin.Y + textBox.Size.Height; bottom > nextBox.Origin.Y {
+		t.Fatalf("wrapped text ends at %v, next item starts at %v", bottom, nextBox.Origin.Y)
+	}
+}
+
 func TestAttachmentUsesBaselineOfFallbackText(t *testing.T) {
 	root := core.NewRoot(core.RootOptions{})
 	t.Cleanup(root.Dispose)
