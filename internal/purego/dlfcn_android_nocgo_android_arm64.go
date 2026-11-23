@@ -1,4 +1,4 @@
-//go:build android && arm64 && android && !cgo
+//go:build android && arm64
 
 package purego
 
