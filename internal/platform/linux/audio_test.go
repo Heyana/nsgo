@@ -1175,6 +1175,9 @@ func TestLinuxAudioPlayerStreamsTrackThatDecodesSlowly(t *testing.T) {
 
 // TestLinuxAudioTrackDecoderDrainsItsBus seeks a streaming decoder back and forth, as a loop does at each repeat, and leaves no messages on its bus.
 func TestLinuxAudioTrackDecoderDrainsItsBus(t *testing.T) {
+	if !loadSound() {
+		t.Skip("GStreamer is unavailable")
+	}
 	path := filepath.Join(t.TempDir(), "track.wav")
 	if err := os.WriteFile(path, audioTestWAV(time.Second), 0o600); err != nil {
 		t.Fatal(err)
