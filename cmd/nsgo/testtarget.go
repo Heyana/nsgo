@@ -227,10 +227,10 @@ var hostBackends = []string{
 	"github.com/nsgo-dev/nsgo/internal/platform/ios",
 	"github.com/nsgo-dev/nsgo/internal/platform/linux",
 	"github.com/nsgo-dev/nsgo/internal/platform/macos",
+	"github.com/nsgo-dev/nsgo/internal/platform/tui",
 	"github.com/nsgo-dev/nsgo/internal/platform/watchos",
 	"github.com/nsgo-dev/nsgo/internal/platform/web",
 	"github.com/nsgo-dev/nsgo/internal/platform/windows",
-	"github.com/nsgo-dev/nsgo/internal/platform/tui",
 }
 
 // goListFor runs go list with args on the package as target's test build
