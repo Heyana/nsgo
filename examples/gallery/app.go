@@ -88,7 +88,8 @@ func init() {
 		{"Toolbar", m.DemoToolbar, m.DemoToolbarDetail, lucide.PanelTop, cardsDemo(toolbarCard)},
 	}
 	inputs := []demo{
-		{"Input", m.DemoInput, m.DemoInputDetail, lucide.TextCursorInput, formDemo},
+		{"Input", m.DemoInput, m.DemoInputDetail, lucide.TextCursorInput, inputDemo},
+		{"Form", m.DemoForm, m.DemoFormDetail, lucide.ClipboardList, cardsDemo(formFieldCard, formSectionCard)},
 		{"Checkbox", m.DemoCheckbox, m.DemoCheckboxDetail, lucide.SquareCheck, cardsDemo(checkboxCard, radioCard, switchCard)},
 		{"Select", m.DemoSelect, m.DemoSelectDetail, lucide.ChevronsUpDown, cardsDemo(selectPlayground, comboboxPlayground)},
 		{"DatePicker", m.DemoDatePicker, m.DemoDatePickerDetail, lucide.Calendar, cardsDemo(datePickerPlayground, calendarPlayground, timeFieldPlayground)},
@@ -103,7 +104,7 @@ func init() {
 		{"Carousel", m.DemoCarousel, m.DemoCarouselDetail, lucide.GalleryHorizontal, cardsDemo(carouselCard)},
 	}
 	data := []demo{
-		{"List", m.DemoList, m.DemoListDetail, lucide.List, cardsDemo(listCard, treeCard, formSectionCard)},
+		{"List", m.DemoList, m.DemoListDetail, lucide.List, cardsDemo(listCard, treeCard)},
 		{"Table", m.DemoTable, m.DemoTableDetail, lucide.Table, cardsDemo(tableCard)},
 		{"DataTable", m.DemoDataTable, m.DemoDataTableDetail, lucide.Table, dataTableDemo},
 		{"CommitGraph", m.DemoCommitGraph, m.DemoCommitGraphDetail, lucide.GitGraph, commitGraphDemo},
@@ -165,6 +166,7 @@ func init() {
 		}},
 		{"Platform", m.GroupPlatform, []demo{
 			{"Foldable display", m.DemoFold, m.DemoFoldDetail, lucide.Columns2, foldDemo},
+			{"Mobile keyboard", m.DemoMobileKeyboard, m.DemoMobileKeyboardDetail, lucide.Keyboard, keyboardDemo},
 			{"System", m.DemoSystem, m.DemoSystemDetail, lucide.Cpu, systemDemo},
 			{"Storage", m.DemoStorage, m.DemoStorageDetail, lucide.Database, storageDemo},
 			{"Widgets", m.DemoWidgets, m.DemoWidgetsDetail, lucide.LayoutDashboard, widgetsDemo},

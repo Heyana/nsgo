@@ -170,6 +170,20 @@ func treeCard(cx *core.Scope) core.Node {
 	}}
 }
 
+// formFieldCard is ui.FormField: rows of a FormSection that edit text.
+func formFieldCard(cx *core.Scope) core.Node {
+	tr := locales.For(cx)
+	name, email, password := core.NewSignal(cx, ""), core.NewSignal(cx, ""), core.NewSignal(cx, "")
+	return Playground{Title: "FormField", UIOnly: true, Stage: func() core.Node {
+		return ui.FormSection{Style: core.Style{Width: core.Pt(320)}, Children: []core.Node{
+			ui.FormField{TestID: "form-field-name", Title: tr.FormName(), Input: base.Input{Value: name.Get, OnChange: name.Set, Placeholder: "Ada Lovelace"}},
+			ui.FormField{Title: tr.FormEMail(), Input: base.Input{Value: email.Get, OnChange: email.Set, KeyboardType: core.KeyboardEmail,
+				AutoCapitalize: core.AutoCapitalizeNone, Placeholder: "ada@example.com"}},
+			ui.FormField{Title: tr.FormPassword(), Input: base.Input{Value: password.Get, OnChange: password.Set, Masked: true, Placeholder: tr.FormAtLeast8Characters()}},
+		}}
+	}}
+}
+
 func formSectionCard(cx *core.Scope) core.Node {
 	tr := locales.For(cx)
 	last := core.NewSignal(cx, "")

@@ -512,21 +512,23 @@ func TestControls(t *testing.T) {
 	}
 }
 
-func TestForm(t *testing.T) {
+// TestInputPage shows ui's text fields: a controlled ui.Input and a
+// ui.Field, and the form's rows on a page of their own.
+func TestInputPage(t *testing.T) {
 	app := startDesktop(t)
 	open(app, "Input")
-	app.Press("role:button Submit")
-	app.Find("text:3 fields need attention")
-	app.Find("text:Enter your name")
-	app.Type("id:name", "Ada")
-	app.Type("id:email", "ada@example.com")
-	app.Type("id:password", "Analytical1!")
-	app.Find("text:Strong")
-	app.Press("role:button Submit")
-	app.Find("text:Account created for Ada <ada@example.com>")
 	app.Type("id:shout", "loud")
 	if got := app.Find("id:shout").Text; got != "LOUD" {
 		t.Fatalf("controlled field = %q", got)
+	}
+	app.Type("id:field", "plain")
+	if got := app.Find("id:field").Text; got != "plain" {
+		t.Fatalf("field = %q", got)
+	}
+	open(app, "Form")
+	app.Type("id:form-field-name", "Ada")
+	if got := app.Find("id:form-field-name >> role:textbox").Text; got != "Ada" {
+		t.Fatalf("form field = %q", got)
 	}
 }
 

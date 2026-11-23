@@ -71,8 +71,6 @@ var Parameters = map[string][]string{
 	"NavLevel":                     {"n"},
 	"NavDeep":                      {"n"},
 	"NavOnlyCallOnCancel":          {"what", "count"},
-	"FormAccountCreated":           {"name", "email"},
-	"FormFieldsNeedAttention":      {"count"},
 	"CanvasAvg":                    {"mean"},
 	"CanvasVsAverage":              {"delta"},
 	"CanvasStrokesPoints":          {"strokes", "points"},
@@ -273,8 +271,6 @@ type Translation struct {
 	NavLevel                     func(n int) string
 	NavDeep                      func(n int) string
 	NavOnlyCallOnCancel          func(what string, count int) string
-	FormAccountCreated           func(name string, email string) string
-	FormFieldsNeedAttention      func(count int) string
 	CanvasAvg                    func(mean float64) string
 	CanvasVsAverage              func(delta string) string
 	CanvasStrokesPoints          func(strokes int, points int) string
@@ -524,6 +520,10 @@ const (
 	textDemoEditorDetail
 	textDemoInput
 	textDemoInputDetail
+	textDemoForm
+	textDemoFormDetail
+	textDemoMobileKeyboard
+	textDemoMobileKeyboardDetail
 	textDemoMenu
 	textDemoMenuDetail
 	textDemoNavStack
@@ -1136,11 +1136,10 @@ const (
 	textNavCancel
 	textNavOk
 	textFormEnterYourName
-	textFormThatAddressNeedsAnAnd
-	textFormEnterYourEMail
-	textFormUseAtLeast8Characters
-	textForm1FieldNeedsAttention
 	textFormKeyboard
+	textFormHideKeyboard
+	textFormKeyboardTypes
+	textFormAutofill
 	textFormNone
 	textFormOnDrag
 	textFormInteractive
@@ -1153,15 +1152,11 @@ const (
 	textFormAtLeast8Characters
 	textFormPhone
 	textFormWebsite
-	textFormNumbers
 	textFormAge
-	textForm3Digits
 	textFormAmount
 	textFormOffset
 	textFormDarkKeyboardIos
 	textFormVerificationCode
-	textFormShippingAddress
-	textFormScrollsIntoView
 	textFormStreet
 	textFormCity
 	textFormPostalCode
@@ -1180,15 +1175,13 @@ const (
 	textFormReturnAddsALine
 	textFormNoCaret
 	textFormNoCaretHere
-	textFormCreateTheAccount
+	textFormNoPadding
+	textFormNoPaddingHere
+	textFormPlainTitle
+	textFormUntitledDocument
 	textFormSectionFooter
 	textFormNotifications
 	textFormSignOut
-	textFormSubmittingChecksEveryField
-	textFormSent
-	textFormCheck
-	textFormSubmit
-	textFormHideKeyboard
 	textFormMoreKeyboards
 	textFormSheetsAndBarsThatRide
 	textFormInputsInASheet
@@ -1218,11 +1211,6 @@ const (
 	textFormSelectAll
 	textFormCaretToStart
 	textFormOneTimeCode
-	textFormEmpty
-	textFormWeak
-	textFormFair
-	textFormGood
-	textFormStrong
 	textTextNothingYet
 	textTextSpansAndLinks
 	textTextSpansWithPressesOfTheir
@@ -2854,6 +2842,10 @@ var keyOfText = [numTexts]string{
 	"demoEditorDetail",
 	"demoInput",
 	"demoInputDetail",
+	"demoForm",
+	"demoFormDetail",
+	"demoMobileKeyboard",
+	"demoMobileKeyboardDetail",
 	"demoMenu",
 	"demoMenuDetail",
 	"demoNavStack",
@@ -3466,11 +3458,10 @@ var keyOfText = [numTexts]string{
 	"navCancel",
 	"navOk",
 	"formEnterYourName",
-	"formThatAddressNeedsAnAnd",
-	"formEnterYourEMail",
-	"formUseAtLeast8Characters",
-	"form1FieldNeedsAttention",
 	"formKeyboard",
+	"formHideKeyboard",
+	"formKeyboardTypes",
+	"formAutofill",
 	"formNone",
 	"formOnDrag",
 	"formInteractive",
@@ -3483,15 +3474,11 @@ var keyOfText = [numTexts]string{
 	"formAtLeast8Characters",
 	"formPhone",
 	"formWebsite",
-	"formNumbers",
 	"formAge",
-	"form3Digits",
 	"formAmount",
 	"formOffset",
 	"formDarkKeyboardIos",
 	"formVerificationCode",
-	"formShippingAddress",
-	"formScrollsIntoView",
 	"formStreet",
 	"formCity",
 	"formPostalCode",
@@ -3510,15 +3497,13 @@ var keyOfText = [numTexts]string{
 	"formReturnAddsALine",
 	"formNoCaret",
 	"formNoCaretHere",
-	"formCreateTheAccount",
+	"formNoPadding",
+	"formNoPaddingHere",
+	"formPlainTitle",
+	"formUntitledDocument",
 	"formSectionFooter",
 	"formNotifications",
 	"formSignOut",
-	"formSubmittingChecksEveryField",
-	"formSent",
-	"formCheck",
-	"formSubmit",
-	"formHideKeyboard",
 	"formMoreKeyboards",
 	"formSheetsAndBarsThatRide",
 	"formInputsInASheet",
@@ -3548,11 +3533,6 @@ var keyOfText = [numTexts]string{
 	"formSelectAll",
 	"formCaretToStart",
 	"formOneTimeCode",
-	"formEmpty",
-	"formWeak",
-	"formFair",
-	"formGood",
-	"formStrong",
 	"textNothingYet",
 	"textSpansAndLinks",
 	"textSpansWithPressesOfTheir",
@@ -5181,7 +5161,11 @@ var textsEn = i18n.NewTexts(""+
 	"Editor"+
 	"Code with highlighting, several carets, folding, find and replace, diagnostics, completion and definitions"+
 	"Input"+
-	"Text, numbers, tags and one-time codes, and the keyboard over the content"+
+	"Text fields, numbers, tags, one-time codes, keyboard types and autofill"+
+	"Form"+
+	"Rows of a settings form, and fields in them"+
+	"Mobile keyboard"+
+	"Its height, hiding it, and sheets and bars that ride above it"+
 	"Menu"+
 	"A menu bar, submenus, checkable items, context menus on rows"+
 	"NavStack"+
@@ -5794,11 +5778,10 @@ var textsEn = i18n.NewTexts(""+
 	"Cancel"+
 	"OK"+
 	"Enter your name"+
-	"That address needs an @ and a domain"+
-	"Enter your e-mail"+
-	"Use at least 8 characters"+
-	"1 field needs attention"+
 	"Keyboard"+
+	"Hide keyboard"+
+	"Keyboard types"+
+	"Autofill"+
 	"None"+
 	"On drag"+
 	"Interactive"+
@@ -5811,15 +5794,11 @@ var textsEn = i18n.NewTexts(""+
 	"At least 8 characters"+
 	"Phone"+
 	"Website"+
-	"Numbers"+
 	"Age"+
-	"3 digits"+
 	"Amount"+
 	"Offset"+
 	"dark keyboard (iOS)"+
 	"Verification code"+
-	"Shipping address"+
-	"scrolls into view"+
 	"Street"+
 	"City"+
 	"Postal code"+
@@ -5838,15 +5817,13 @@ var textsEn = i18n.NewTexts(""+
 	"Return adds a line"+
 	"No caret"+
 	"No caret here"+
-	"Create the account"+
+	"No padding"+
+	"The text starts at the rim"+
+	"Plain title"+
+	"Untitled document"+
 	"Kept on this device alone."+
 	"Notifications"+
 	"Sign out"+
-	"Submitting checks every field"+
-	"Sent"+
-	"Check"+
-	"Submit"+
-	"Hide keyboard"+
 	"More keyboards"+
 	"Sheets and bars that ride on the keyboard"+
 	"Inputs in a sheet"+
@@ -5876,11 +5853,6 @@ var textsEn = i18n.NewTexts(""+
 	"Select all"+
 	"Caret to start"+
 	"One-time code"+
-	"Empty"+
-	"Weak"+
-	"Fair"+
-	"Good"+
-	"Strong"+
 	"nothing yet"+
 	"Spans and links"+
 	"Spans with presses of their own"+
@@ -7506,7 +7478,11 @@ var textsEn = i18n.NewTexts(""+
 		6,
 		106,
 		5,
-		73,
+		71,
+		4,
+		43,
+		15,
+		61,
 		4,
 		60,
 		8,
@@ -8119,10 +8095,9 @@ var textsEn = i18n.NewTexts(""+
 		6,
 		2,
 		15,
-		36,
-		17,
-		25,
-		23,
+		8,
+		13,
+		14,
 		8,
 		4,
 		7,
@@ -8136,14 +8111,10 @@ var textsEn = i18n.NewTexts(""+
 		21,
 		5,
 		7,
-		7,
 		3,
-		8,
 		6,
 		6,
 		19,
-		17,
-		16,
 		17,
 		6,
 		4,
@@ -8163,15 +8134,13 @@ var textsEn = i18n.NewTexts(""+
 		18,
 		8,
 		13,
-		18,
+		10,
+		26,
+		11,
+		17,
 		26,
 		13,
 		8,
-		29,
-		4,
-		5,
-		6,
-		13,
 		14,
 		41,
 		17,
@@ -8201,11 +8170,6 @@ var textsEn = i18n.NewTexts(""+
 		10,
 		14,
 		13,
-		5,
-		4,
-		4,
-		4,
-		6,
 		11,
 		15,
 		31,
@@ -9834,7 +9798,11 @@ var textsZhHans = i18n.NewTexts(""+
 	"编辑器"+
 	"代码高亮、多光标、折叠、查找替换、诊断、补全和跳转定义"+
 	"输入框"+
-	"文本、数字、标签与一次性验证码，以及内容上方的键盘"+
+	"文本框、数字、标签、一次性验证码、键盘类型与自动填充"+
+	"表单"+
+	"设置式表单的行，以及行里的输入框"+
+	"手机键盘"+
+	"键盘高度、收起方式，以及跟随键盘的弹出表单与输入栏"+
 	"菜单"+
 	"菜单栏、子菜单、可勾选项、行上的上下文菜单"+
 	"导航栈"+
@@ -10447,11 +10415,10 @@ var textsZhHans = i18n.NewTexts(""+
 	"取消"+
 	"好"+
 	"请输入你的姓名"+
-	"这个地址需要一个 @ 和域名"+
-	"请输入你的电子邮件"+
-	"至少使用 8 个字符"+
-	"有 1 个字段需要注意"+
 	"键盘"+
+	"收起键盘"+
+	"键盘类型"+
+	"自动填充"+
 	"无"+
 	"拖动时"+
 	"交互式"+
@@ -10464,15 +10431,11 @@ var textsZhHans = i18n.NewTexts(""+
 	"至少 8 个字符"+
 	"电话"+
 	"网站"+
-	"数字"+
 	"年龄"+
-	"3 位数字"+
 	"金额"+
 	"偏移"+
 	"深色键盘（iOS）"+
 	"验证码"+
-	"收货地址"+
-	"滚动到可见位置"+
 	"街道"+
 	"城市"+
 	"邮政编码"+
@@ -10491,15 +10454,13 @@ var textsZhHans = i18n.NewTexts(""+
 	"按回车换行"+
 	"无光标"+
 	"这里没有光标"+
-	"创建账户"+
+	"无内边距"+
+	"文字从边框处开始"+
+	"纯文本标题"+
+	"未命名文档"+
 	"只保存在这台设备上。"+
 	"通知"+
 	"退出登录"+
-	"提交时会检查每个字段"+
-	"已发送"+
-	"检查"+
-	"提交"+
-	"收起键盘"+
 	"更多键盘场景"+
 	"随键盘移动的底部面板和输入栏"+
 	"底部面板中的输入框"+
@@ -10529,11 +10490,6 @@ var textsZhHans = i18n.NewTexts(""+
 	"全选"+
 	"光标移到开头"+
 	"一次性验证码"+
-	"空"+
-	"弱"+
-	"一般"+
-	"好"+
-	"强"+
 	"暂无"+
 	"文本片段和链接"+
 	"可单独点按的文本片段"+
@@ -12159,6 +12115,10 @@ var textsZhHans = i18n.NewTexts(""+
 		9,
 		81,
 		9,
+		78,
+		6,
+		48,
+		12,
 		75,
 		6,
 		63,
@@ -12772,11 +12732,10 @@ var textsZhHans = i18n.NewTexts(""+
 		6,
 		3,
 		21,
-		36,
-		27,
-		24,
-		27,
 		6,
+		12,
+		12,
+		12,
 		3,
 		9,
 		9,
@@ -12791,13 +12750,9 @@ var textsZhHans = i18n.NewTexts(""+
 		6,
 		6,
 		6,
-		11,
-		6,
 		6,
 		21,
 		9,
-		12,
-		21,
 		6,
 		6,
 		12,
@@ -12817,12 +12772,10 @@ var textsZhHans = i18n.NewTexts(""+
 		9,
 		18,
 		12,
+		24,
+		15,
+		15,
 		30,
-		6,
-		12,
-		30,
-		9,
-		6,
 		6,
 		12,
 		18,
@@ -12854,11 +12807,6 @@ var textsZhHans = i18n.NewTexts(""+
 		6,
 		18,
 		18,
-		3,
-		3,
-		6,
-		3,
-		3,
 		6,
 		21,
 		30,
@@ -14543,12 +14491,6 @@ func Supply(lang string, t Translation) {
 	if t.NavOnlyCallOnCancel != nil {
 		s.NavOnlyCallOnCancel = t.NavOnlyCallOnCancel
 	}
-	if t.FormAccountCreated != nil {
-		s.FormAccountCreated = t.FormAccountCreated
-	}
-	if t.FormFieldsNeedAttention != nil {
-		s.FormFieldsNeedAttention = t.FormFieldsNeedAttention
-	}
 	if t.CanvasAvg != nil {
 		s.CanvasAvg = t.CanvasAvg
 	}
@@ -15638,12 +15580,42 @@ func DemoInput(cx *core.Scope) string { return For(cx).DemoInput() }
 // DemoInput is the package's DemoInput in the language of msgs.
 func (msgs Messages) DemoInput() string { return msgs.text(textDemoInput) }
 
-// DemoInputDetail says "Text, numbers, tags and one-time codes, and the keyboard over the content"
+// DemoInputDetail says "Text fields, numbers, tags, one-time codes, keyboard types and autofill"
 // in the language the app shows under cx.
 func DemoInputDetail(cx *core.Scope) string { return For(cx).DemoInputDetail() }
 
 // DemoInputDetail is the package's DemoInputDetail in the language of msgs.
 func (msgs Messages) DemoInputDetail() string { return msgs.text(textDemoInputDetail) }
+
+// DemoForm says "Form"
+// in the language the app shows under cx.
+func DemoForm(cx *core.Scope) string { return For(cx).DemoForm() }
+
+// DemoForm is the package's DemoForm in the language of msgs.
+func (msgs Messages) DemoForm() string { return msgs.text(textDemoForm) }
+
+// DemoFormDetail says "Rows of a settings form, and fields in them"
+// in the language the app shows under cx.
+func DemoFormDetail(cx *core.Scope) string { return For(cx).DemoFormDetail() }
+
+// DemoFormDetail is the package's DemoFormDetail in the language of msgs.
+func (msgs Messages) DemoFormDetail() string { return msgs.text(textDemoFormDetail) }
+
+// DemoMobileKeyboard says "Mobile keyboard"
+// in the language the app shows under cx.
+func DemoMobileKeyboard(cx *core.Scope) string { return For(cx).DemoMobileKeyboard() }
+
+// DemoMobileKeyboard is the package's DemoMobileKeyboard in the language of msgs.
+func (msgs Messages) DemoMobileKeyboard() string { return msgs.text(textDemoMobileKeyboard) }
+
+// DemoMobileKeyboardDetail says "Its height, hiding it, and sheets and bars that ride above it"
+// in the language the app shows under cx.
+func DemoMobileKeyboardDetail(cx *core.Scope) string { return For(cx).DemoMobileKeyboardDetail() }
+
+// DemoMobileKeyboardDetail is the package's DemoMobileKeyboardDetail in the language of msgs.
+func (msgs Messages) DemoMobileKeyboardDetail() string {
+	return msgs.text(textDemoMobileKeyboardDetail)
+}
 
 // DemoMenu says "Menu"
 // in the language the app shows under cx.
@@ -20881,46 +20853,33 @@ func FormEnterYourName(cx *core.Scope) string { return For(cx).FormEnterYourName
 // FormEnterYourName is the package's FormEnterYourName in the language of msgs.
 func (msgs Messages) FormEnterYourName() string { return msgs.text(textFormEnterYourName) }
 
-// FormThatAddressNeedsAnAnd says "That address needs an @ and a domain"
-// in the language the app shows under cx.
-func FormThatAddressNeedsAnAnd(cx *core.Scope) string { return For(cx).FormThatAddressNeedsAnAnd() }
-
-// FormThatAddressNeedsAnAnd is the package's FormThatAddressNeedsAnAnd in the language of msgs.
-func (msgs Messages) FormThatAddressNeedsAnAnd() string {
-	return msgs.text(textFormThatAddressNeedsAnAnd)
-}
-
-// FormEnterYourEMail says "Enter your e-mail"
-// in the language the app shows under cx.
-func FormEnterYourEMail(cx *core.Scope) string { return For(cx).FormEnterYourEMail() }
-
-// FormEnterYourEMail is the package's FormEnterYourEMail in the language of msgs.
-func (msgs Messages) FormEnterYourEMail() string { return msgs.text(textFormEnterYourEMail) }
-
-// FormUseAtLeast8Characters says "Use at least 8 characters"
-// in the language the app shows under cx.
-func FormUseAtLeast8Characters(cx *core.Scope) string { return For(cx).FormUseAtLeast8Characters() }
-
-// FormUseAtLeast8Characters is the package's FormUseAtLeast8Characters in the language of msgs.
-func (msgs Messages) FormUseAtLeast8Characters() string {
-	return msgs.text(textFormUseAtLeast8Characters)
-}
-
-// Form1FieldNeedsAttention says "1 field needs attention"
-// in the language the app shows under cx.
-func Form1FieldNeedsAttention(cx *core.Scope) string { return For(cx).Form1FieldNeedsAttention() }
-
-// Form1FieldNeedsAttention is the package's Form1FieldNeedsAttention in the language of msgs.
-func (msgs Messages) Form1FieldNeedsAttention() string {
-	return msgs.text(textForm1FieldNeedsAttention)
-}
-
 // FormKeyboard says "Keyboard"
 // in the language the app shows under cx.
 func FormKeyboard(cx *core.Scope) string { return For(cx).FormKeyboard() }
 
 // FormKeyboard is the package's FormKeyboard in the language of msgs.
 func (msgs Messages) FormKeyboard() string { return msgs.text(textFormKeyboard) }
+
+// FormHideKeyboard says "Hide keyboard"
+// in the language the app shows under cx.
+func FormHideKeyboard(cx *core.Scope) string { return For(cx).FormHideKeyboard() }
+
+// FormHideKeyboard is the package's FormHideKeyboard in the language of msgs.
+func (msgs Messages) FormHideKeyboard() string { return msgs.text(textFormHideKeyboard) }
+
+// FormKeyboardTypes says "Keyboard types"
+// in the language the app shows under cx.
+func FormKeyboardTypes(cx *core.Scope) string { return For(cx).FormKeyboardTypes() }
+
+// FormKeyboardTypes is the package's FormKeyboardTypes in the language of msgs.
+func (msgs Messages) FormKeyboardTypes() string { return msgs.text(textFormKeyboardTypes) }
+
+// FormAutofill says "Autofill"
+// in the language the app shows under cx.
+func FormAutofill(cx *core.Scope) string { return For(cx).FormAutofill() }
+
+// FormAutofill is the package's FormAutofill in the language of msgs.
+func (msgs Messages) FormAutofill() string { return msgs.text(textFormAutofill) }
 
 // FormNone says "None"
 // in the language the app shows under cx.
@@ -21008,26 +20967,12 @@ func FormWebsite(cx *core.Scope) string { return For(cx).FormWebsite() }
 // FormWebsite is the package's FormWebsite in the language of msgs.
 func (msgs Messages) FormWebsite() string { return msgs.text(textFormWebsite) }
 
-// FormNumbers says "Numbers"
-// in the language the app shows under cx.
-func FormNumbers(cx *core.Scope) string { return For(cx).FormNumbers() }
-
-// FormNumbers is the package's FormNumbers in the language of msgs.
-func (msgs Messages) FormNumbers() string { return msgs.text(textFormNumbers) }
-
 // FormAge says "Age"
 // in the language the app shows under cx.
 func FormAge(cx *core.Scope) string { return For(cx).FormAge() }
 
 // FormAge is the package's FormAge in the language of msgs.
 func (msgs Messages) FormAge() string { return msgs.text(textFormAge) }
-
-// Form3Digits says "3 digits"
-// in the language the app shows under cx.
-func Form3Digits(cx *core.Scope) string { return For(cx).Form3Digits() }
-
-// Form3Digits is the package's Form3Digits in the language of msgs.
-func (msgs Messages) Form3Digits() string { return msgs.text(textForm3Digits) }
 
 // FormAmount says "Amount"
 // in the language the app shows under cx.
@@ -21056,20 +21001,6 @@ func FormVerificationCode(cx *core.Scope) string { return For(cx).FormVerificati
 
 // FormVerificationCode is the package's FormVerificationCode in the language of msgs.
 func (msgs Messages) FormVerificationCode() string { return msgs.text(textFormVerificationCode) }
-
-// FormShippingAddress says "Shipping address"
-// in the language the app shows under cx.
-func FormShippingAddress(cx *core.Scope) string { return For(cx).FormShippingAddress() }
-
-// FormShippingAddress is the package's FormShippingAddress in the language of msgs.
-func (msgs Messages) FormShippingAddress() string { return msgs.text(textFormShippingAddress) }
-
-// FormScrollsIntoView says "scrolls into view"
-// in the language the app shows under cx.
-func FormScrollsIntoView(cx *core.Scope) string { return For(cx).FormScrollsIntoView() }
-
-// FormScrollsIntoView is the package's FormScrollsIntoView in the language of msgs.
-func (msgs Messages) FormScrollsIntoView() string { return msgs.text(textFormScrollsIntoView) }
 
 // FormStreet says "Street"
 // in the language the app shows under cx.
@@ -21199,12 +21130,33 @@ func FormNoCaretHere(cx *core.Scope) string { return For(cx).FormNoCaretHere() }
 // FormNoCaretHere is the package's FormNoCaretHere in the language of msgs.
 func (msgs Messages) FormNoCaretHere() string { return msgs.text(textFormNoCaretHere) }
 
-// FormCreateTheAccount says "Create the account"
+// FormNoPadding says "No padding"
 // in the language the app shows under cx.
-func FormCreateTheAccount(cx *core.Scope) string { return For(cx).FormCreateTheAccount() }
+func FormNoPadding(cx *core.Scope) string { return For(cx).FormNoPadding() }
 
-// FormCreateTheAccount is the package's FormCreateTheAccount in the language of msgs.
-func (msgs Messages) FormCreateTheAccount() string { return msgs.text(textFormCreateTheAccount) }
+// FormNoPadding is the package's FormNoPadding in the language of msgs.
+func (msgs Messages) FormNoPadding() string { return msgs.text(textFormNoPadding) }
+
+// FormNoPaddingHere says "The text starts at the rim"
+// in the language the app shows under cx.
+func FormNoPaddingHere(cx *core.Scope) string { return For(cx).FormNoPaddingHere() }
+
+// FormNoPaddingHere is the package's FormNoPaddingHere in the language of msgs.
+func (msgs Messages) FormNoPaddingHere() string { return msgs.text(textFormNoPaddingHere) }
+
+// FormPlainTitle says "Plain title"
+// in the language the app shows under cx.
+func FormPlainTitle(cx *core.Scope) string { return For(cx).FormPlainTitle() }
+
+// FormPlainTitle is the package's FormPlainTitle in the language of msgs.
+func (msgs Messages) FormPlainTitle() string { return msgs.text(textFormPlainTitle) }
+
+// FormUntitledDocument says "Untitled document"
+// in the language the app shows under cx.
+func FormUntitledDocument(cx *core.Scope) string { return For(cx).FormUntitledDocument() }
+
+// FormUntitledDocument is the package's FormUntitledDocument in the language of msgs.
+func (msgs Messages) FormUntitledDocument() string { return msgs.text(textFormUntitledDocument) }
 
 // FormSectionFooter says "Kept on this device alone."
 // in the language the app shows under cx.
@@ -21226,45 +21178,6 @@ func FormSignOut(cx *core.Scope) string { return For(cx).FormSignOut() }
 
 // FormSignOut is the package's FormSignOut in the language of msgs.
 func (msgs Messages) FormSignOut() string { return msgs.text(textFormSignOut) }
-
-// FormSubmittingChecksEveryField says "Submitting checks every field"
-// in the language the app shows under cx.
-func FormSubmittingChecksEveryField(cx *core.Scope) string {
-	return For(cx).FormSubmittingChecksEveryField()
-}
-
-// FormSubmittingChecksEveryField is the package's FormSubmittingChecksEveryField in the language of msgs.
-func (msgs Messages) FormSubmittingChecksEveryField() string {
-	return msgs.text(textFormSubmittingChecksEveryField)
-}
-
-// FormSent says "Sent"
-// in the language the app shows under cx.
-func FormSent(cx *core.Scope) string { return For(cx).FormSent() }
-
-// FormSent is the package's FormSent in the language of msgs.
-func (msgs Messages) FormSent() string { return msgs.text(textFormSent) }
-
-// FormCheck says "Check"
-// in the language the app shows under cx.
-func FormCheck(cx *core.Scope) string { return For(cx).FormCheck() }
-
-// FormCheck is the package's FormCheck in the language of msgs.
-func (msgs Messages) FormCheck() string { return msgs.text(textFormCheck) }
-
-// FormSubmit says "Submit"
-// in the language the app shows under cx.
-func FormSubmit(cx *core.Scope) string { return For(cx).FormSubmit() }
-
-// FormSubmit is the package's FormSubmit in the language of msgs.
-func (msgs Messages) FormSubmit() string { return msgs.text(textFormSubmit) }
-
-// FormHideKeyboard says "Hide keyboard"
-// in the language the app shows under cx.
-func FormHideKeyboard(cx *core.Scope) string { return For(cx).FormHideKeyboard() }
-
-// FormHideKeyboard is the package's FormHideKeyboard in the language of msgs.
-func (msgs Messages) FormHideKeyboard() string { return msgs.text(textFormHideKeyboard) }
 
 // FormMoreKeyboards says "More keyboards"
 // in the language the app shows under cx.
@@ -21482,98 +21395,6 @@ func FormOneTimeCode(cx *core.Scope) string { return For(cx).FormOneTimeCode() }
 
 // FormOneTimeCode is the package's FormOneTimeCode in the language of msgs.
 func (msgs Messages) FormOneTimeCode() string { return msgs.text(textFormOneTimeCode) }
-
-// FormEmpty says "Empty"
-// in the language the app shows under cx.
-func FormEmpty(cx *core.Scope) string { return For(cx).FormEmpty() }
-
-// FormEmpty is the package's FormEmpty in the language of msgs.
-func (msgs Messages) FormEmpty() string { return msgs.text(textFormEmpty) }
-
-// FormWeak says "Weak"
-// in the language the app shows under cx.
-func FormWeak(cx *core.Scope) string { return For(cx).FormWeak() }
-
-// FormWeak is the package's FormWeak in the language of msgs.
-func (msgs Messages) FormWeak() string { return msgs.text(textFormWeak) }
-
-// FormFair says "Fair"
-// in the language the app shows under cx.
-func FormFair(cx *core.Scope) string { return For(cx).FormFair() }
-
-// FormFair is the package's FormFair in the language of msgs.
-func (msgs Messages) FormFair() string { return msgs.text(textFormFair) }
-
-// FormGood says "Good"
-// in the language the app shows under cx.
-func FormGood(cx *core.Scope) string { return For(cx).FormGood() }
-
-// FormGood is the package's FormGood in the language of msgs.
-func (msgs Messages) FormGood() string { return msgs.text(textFormGood) }
-
-// FormStrong says "Strong"
-// in the language the app shows under cx.
-func FormStrong(cx *core.Scope) string { return For(cx).FormStrong() }
-
-// FormStrong is the package's FormStrong in the language of msgs.
-func (msgs Messages) FormStrong() string { return msgs.text(textFormStrong) }
-
-// FormAccountCreated says "Account created for {name} <{email}>"
-// in the language the app shows under cx.
-func FormAccountCreated(cx *core.Scope, name string, email string) string {
-	return For(cx).FormAccountCreated(name, email)
-}
-
-// FormAccountCreated is the package's FormAccountCreated in the language of msgs.
-func (msgs Messages) FormAccountCreated(name string, email string) string {
-	if i18n.IsPseudo(msgs.lang) {
-		return i18n.Pseudo(msgs.lang, Messages{lang: Source, mark: true}.FormAccountCreated(name, email))
-	}
-	for lang := msgs.lang; ; lang = i18n.Parent(lang) {
-		if f := supplied[lang].FormAccountCreated; f != nil {
-			return f(name, email)
-		}
-		switch lang {
-		case "", "en":
-			return "Account created for " + msgs.arg(name) + " <" + msgs.arg(email) + ">"
-		case "zh-Hans":
-			return "已为 " + name + " <" + email + "> 创建账户"
-		}
-	}
-}
-
-// FormFieldsNeedAttention says "{count, plural, one {# field needs attention} other {# fields need attention}}"
-// in the language the app shows under cx.
-func FormFieldsNeedAttention(cx *core.Scope, count int) string {
-	return For(cx).FormFieldsNeedAttention(count)
-}
-
-// FormFieldsNeedAttention is the package's FormFieldsNeedAttention in the language of msgs.
-func (msgs Messages) FormFieldsNeedAttention(count int) string {
-	if i18n.IsPseudo(msgs.lang) {
-		return i18n.Pseudo(msgs.lang, Messages{lang: Source, mark: true}.FormFieldsNeedAttention(count))
-	}
-	for lang := msgs.lang; ; lang = i18n.Parent(lang) {
-		if f := supplied[lang].FormFieldsNeedAttention; f != nil {
-			return f(count)
-		}
-		switch lang {
-		case "", "en":
-			var b strings.Builder
-			switch i18n.Cardinal("en", float64(count)) {
-			case i18n.One:
-				b.WriteString(msgs.arg(i18n.FormatNumber("en", float64(count))))
-				b.WriteString(" field needs attention")
-			default:
-				b.WriteString(msgs.arg(i18n.FormatNumber("en", float64(count))))
-				b.WriteString(" fields need attention")
-			}
-			return b.String()
-		case "zh-Hans":
-			return "有 " + i18n.FormatNumber("zh-Hans", float64(count)) + " 个字段需要注意"
-		}
-	}
-}
 
 // TextNothingYet says "nothing yet"
 // in the language the app shows under cx.
