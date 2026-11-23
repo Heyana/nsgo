@@ -37,7 +37,7 @@ mount(App);
 
 ## Components and modules
 
-TSX imports the primitives from `nsgo`, `base`'s components from `nsgo/base`, game controllers from `nsgo/gamepad` (under the `gamepad` capability in signed packages) and `ui`'s from `nsgo/ui`, once the app imports `tsx/ui`; `examples/gallery-tsx` shows them.
+TSX imports the primitives from `nsgo`, `base`'s components from `nsgo/base`, game controllers from `nsgo/gamepad` (under the `gamepad` capability in signed packages), sounds from `nsgo/audio` (under `audio`) and `ui`'s from `nsgo/ui`, once the app imports `tsx/ui`; `examples/gallery-tsx` shows them.
 
 For Mermaid diagrams, import `github.com/nsgo-dev/nsgo/tsx/diagram` for its effect in the Go host, alongside `tsx/textview` or `tsx/ui`. This adds `Diagram` to `nsgo/base` without linking the diagram parser into apps that do not use it. It takes `source`, `fontSize`, a partial `theme`, `accessibilityLabel` and the usual styling props. Use it directly or supply a TextView renderer:
 

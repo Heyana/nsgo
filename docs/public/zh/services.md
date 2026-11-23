@@ -602,7 +602,7 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 
 ## 音效限制
 
-加载音效前，可以调用 `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` 调整引擎的限制。也可以设置 `MaxEncodedBytes`、`MaxDecodedBytes` 和 `MaxPlaybacks`。零值使用默认限制：单个音效编码后最多 8 MiB、时长最多 5 秒，引擎最多 64 个音源、解码后总计最多 16 MiB，每个输出最多同时播放 32 路。已加载的音效会继续计入新的限制。受限作用域在引擎预算内继续使用默认限制。无论限制如何设置，Android 的 SoundPool 最多同时播放 32 路，每个音效解码后最多 1 MiB。
+加载音效前，可以调用 `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` 调整引擎的限制。也可以设置 `MaxEncodedBytes`、`MaxDecodedBytes` 和 `MaxPlaybacks`。零值使用默认限制：单个音效编码后最多 8 MiB、时长最多 5 秒，引擎最多 64 个音源、解码后总计最多 16 MiB，每个输出最多同时播放 32 路。已加载的音效会继续计入新的限制。受限作用域在引擎预算内继续使用默认限制：无论 Go 应用如何设置，签名 TSX 包通过 `nsgo/audio` 加载的音效都受默认限制约束，而应用自带的 TSX 使用 Go 应用设置的限制。无论限制如何设置，Android 的 SoundPool 最多同时播放 32 路，每个音效解码后最多 1 MiB。
 
 ## 朗读文本
 
@@ -685,6 +685,8 @@ mobile.RequestOverlayPermission(cx, func(p core.OverlayPermission) {
 短音效用 `audio.LoadSound` 加载，可多次重叠播放。需要暂停、跳转、调速或循环的流式音频用 `audio.NewPlayer`。`cx.Env().CanPlayAudio()` 报告平台是否支持。macOS、iOS、Windows、Linux、Android 和 Web 已能播放音频：Apple、Windows 和浏览器后端支持 WAV、AAC 和 MP3，Linux 使用 GStreamer 解码。Android 会在视图离开屏幕时暂停播放器，每个音效解码后最多 1 MiB。tvOS、watchOS、HarmonyOS 和小程序仍将 `CanPlayAudio` 报告为 false。
 
 浏览器需要用户操作才能播放有声内容。可提前加载短音效，在点击、轻触或按键后调用 `Sound.Play`。用户操作之前播放的音效无声。如果浏览器拒绝播放，播放器的 `Play` 回调会收到 `audio.NotAllowed`。可在下一次用户操作中重试。
+
+在 TSX 中，`nsgo/audio` 提供 `supported()` 和 `loadSound(uri)`，签名包需声明 `audio` 权限。`loadSound` 解析为一个音效，其 `play({ volume, rate, pan, loop, muted })` 返回的播放句柄有 `setVolume`、`setRate`、`stop` 和响应式的 `ended`；在 TSX 中音量为 0 即静音。加载失败时，Promise 以 `Error` 拒绝：`reason` 是音频错误名，如 `quota-exceeded`；缺少权限时 `code` 为 `ERR_ACCESS_DENIED`，超出限制时为 `ERR_NSH_QUOTA_EXCEEDED`。
 
 ## 音频时序
 

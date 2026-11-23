@@ -490,3 +490,5 @@ nsgo/gamepad.Button.Y
 nsgo/gamepad.pads
 nsgo/gamepad.state
 nsgo/gamepad.supported
+nsgo/audio.loadSound
+nsgo/audio.supported

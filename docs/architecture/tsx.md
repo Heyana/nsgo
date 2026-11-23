@@ -151,6 +151,7 @@ An icon prop takes a name `ui.Icons` gave or an SVG document. An app lists the L
 - The web APIs (`web.js` over Go's `net/http`, UTF-8, base64 and URL parsing): `fetch`, `Headers`, `Request`, `Response`, `URL`, `URLSearchParams`, `TextEncoder`, `TextDecoder`, `AbortController`, `Event`, `EventTarget`, `Blob`, `File`, `FormData`, readable, writable and transform streams, `structuredClone`, `atob`, `btoa` and `performance`. `fetch` reads `http`, `https`, `data:` and `file:` URLs.
 - `nsgo/mobile` and `nsgo/desktop` are importable everywhere; where they do not apply their calls do nothing and their components render nothing.
 - `nsgo/gamepad` exposes connected game controllers (`pads`, reactive on connect/disconnect), per-frame snapshots (`state`), capability/platform availability (`supported`), and the W3C Standard Gamepad index constants (`Button`, `Axis`), held to the `gamepad` capability (`core.AccessGamepad`).
+- `nsgo/audio` exposes the audio package's sounds on `Scope.LoadSound` (`loadSound`, a URI only, and `supported`) with a handle for each playback, held to the `audio` capability (`core.AccessAudio`). It has no limit setter: a package's scope is restricted, so core keeps its sounds within NSH's default quotas whatever `audio.SetSoundLimits` set, and a load past one rejects with `ERR_NSH_QUOTA_EXCEEDED` and the reason `quota-exceeded`. It has no `AudioPlayer` yet ([roadmap](../roadmap.md#games)).
 
 ## Core's part
 

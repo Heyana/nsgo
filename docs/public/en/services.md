@@ -470,7 +470,7 @@ Call the returned function to release the lock. Escape, a window losing focus, o
 
 ## Sound limits
 
-Use `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` before loading sounds to change the engine's limits. `MaxEncodedBytes`, `MaxDecodedBytes` and `MaxPlaybacks` can also be set. Zero fields use the defaults of 8 MiB encoded and 5 seconds per sound, 64 sources, 16 MiB decoded across sounds, and 32 overlapping playbacks per output. Existing sounds stay loaded and count toward the new limits. Restricted scopes keep the default limits within the engine's budget. Android's SoundPool plays at most 32 sounds at once and decodes at most 1 MiB of each, whatever the limits.
+Use `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` before loading sounds to change the engine's limits. `MaxEncodedBytes`, `MaxDecodedBytes` and `MaxPlaybacks` can also be set. Zero fields use the defaults of 8 MiB encoded and 5 seconds per sound, 64 sources, 16 MiB decoded across sounds, and 32 overlapping playbacks per output. Existing sounds stay loaded and count toward the new limits. Restricted scopes keep the default limits within the engine's budget: a signed TSX package's `nsgo/audio` sounds hit them whatever the Go app set, while the app's own TSX takes the Go app's limits. Android's SoundPool plays at most 32 sounds at once and decodes at most 1 MiB of each, whatever the limits.
 
 ## Full screen
 
@@ -756,6 +756,8 @@ Browsers require a user gesture for audible playback. Load short sounds ahead of
 `Sound.Play` returns an `audio.Playback`, which on macOS, iOS, Windows, Linux and the web can set its own volume and rate or stop independently. `Ended()` is reactive and becomes true when that playback finishes, stops, is displaced by the voice limit, or cannot start. Backends without individual controls return an ended handle.
 
 Use `audio.Voice{Muted: true}` to start an effect silently and `playback.SetVolume(0)` to silence an active effect. For long audio, `audio.NewPlayer` streams a source and `player.SetMuted(true)` silences the output while playback continues. Unmuting restores the player's configured volume. `Voice.Volume` and `Player.SetVolume` use zero for default full volume.
+
+In TSX, `nsgo/audio` exposes `supported()` and `loadSound(uri)`, gated by the `audio` package capability. `loadSound` resolves with a sound whose `play({ volume, rate, pan, loop, muted })` returns a playback with `setVolume`, `setRate`, `stop` and a reactive `ended`; there, a volume of 0 is silence. A refused load rejects with an `Error` whose `reason` is the audio error's name, such as `quota-exceeded`, and whose `code` is `ERR_ACCESS_DENIED` without the capability and `ERR_NSH_QUOTA_EXCEEDED` past a limit.
 
 ## Gamepads
 
