@@ -354,9 +354,10 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 	return apple.TextEngine{}.Prepare(t)
 }
 
-// Mount implements engine.Platform.
+// EnableCanvas implements driver.CanvasEnabler: it links the offscreen decoder only into apps that draw a canvas.
 func (s *surface) EnableCanvas() { apple.EnableCanvas() }
 
+// Mount implements engine.Platform.
 func (s *surface) Mount(b *driver.MountBatch) {
 	if s.batches.Push(b) {
 		apple.OnMain(func() {
