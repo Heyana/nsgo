@@ -85,5 +85,5 @@ Coding agents can install NSGo's skill, which keeps an app on NSGo's conventions
 
 - [Live demo](https://nsgo.dev/gallery/): every component, running in the browser
 - [Roadmap](https://github.com/nsgo-dev/nsgo/blob/main/docs/roadmap.md): what is not implemented yet, by target
-- [Changelog](https://github.com/nsgo-dev/nsgo/blob/main/CHANGELOG.md)
+- [Releases](https://github.com/nsgo-dev/nsgo/releases)
 - [Architecture](https://github.com/nsgo-dev/nsgo/blob/main/ARCHITECTURE.md): how the engine works, for contributors

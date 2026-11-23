@@ -66,7 +66,7 @@ NSGo releases on demand when a downstream project needs a tagged version or main
 
 To test a merged change before it is tagged, run `go get github.com/nsgo-dev/nsgo@main` from the dependent module. You can use a commit ID in place of `main` to select the revision you verified. Go records the resulting pseudo-version in `go.mod`.
 
-A maintainer gives the changes their version and date in `CHANGELOG.md`, leaves a fresh Unreleased section, and tags the resulting commit on `main`. The [release workflow](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) checks the tag and publishes it after the test workflow passes.
+A maintainer gives the changes their version and date in `CHANGELOG.md`, leaves a fresh Unreleased section, and tags the resulting commit on `main`. The [release workflow](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) checks the tag and publishes it after the test workflow passes; the published notes then leave `CHANGELOG.md`, which keeps only unreleased changes, for [Releases](https://github.com/nsgo-dev/nsgo/releases).
 
 ## NSH
 

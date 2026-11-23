@@ -64,7 +64,7 @@ Linux 宿主可用 Docker 时，运行 `go tool nsgo test -run '^TestLinuxPackag
 
 要在打标签前测试已合入的改动，可以在下游模块中运行 `go get github.com/nsgo-dev/nsgo@main`。也可以用提交 ID 代替 `main`，选定已验证的版本。Go 会把生成的伪版本记录在 `go.mod` 中。
 
-维护者在 `CHANGELOG.md` 中为改动写上版本和日期，留出新的 Unreleased 小节，并为 `main` 上的对应提交打标签。[发布工作流](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) 检查标签，并在测试工作流通过后发布。
+维护者在 `CHANGELOG.md` 中为改动写上版本和日期，留出新的 Unreleased 小节，并为 `main` 上的对应提交打标签。[发布工作流](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) 检查标签，并在测试工作流通过后发布；发布后这一节从 `CHANGELOG.md` 中移除，`CHANGELOG.md` 只保留尚未发布的改动，已发布的说明见 [Releases](https://github.com/nsgo-dev/nsgo/releases)。
 
 ## NSH
 

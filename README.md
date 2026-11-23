@@ -120,7 +120,7 @@ To try what is on `main` before it is released, run `go get github.com/nsgo-dev/
 
 ## Status
 
-NSGo is early, and its API is not stable yet. [CHANGELOG.md](CHANGELOG.md) lists what each release changed, and the [roadmap](docs/roadmap.md) what is still missing.
+NSGo is early, and its API is not stable yet. [Releases](https://github.com/nsgo-dev/nsgo/releases) list what each release changed, and the [roadmap](docs/roadmap.md) what is still missing.
 
 ## Documentation
 
@@ -136,7 +136,7 @@ go tool nsgo check                  # vet every package
 go tool nsgo test                   # every package's tests
 ```
 
-[Contributing](https://nsgo.dev/docs/contributing/) has the rest of the setup. Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before changing code, and [CHANGELOG.md](CHANGELOG.md) for what changed.
+[Contributing](https://nsgo.dev/docs/contributing/) has the rest of the setup. Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before changing code, and [CHANGELOG.md](CHANGELOG.md) for what changed since the last release.
 
 ## Community
 

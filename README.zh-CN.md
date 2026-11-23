@@ -120,7 +120,7 @@ func TestPress(t *testing.T) {
 
 ## 状态
 
-NSGo 处于早期阶段，API 尚未稳定。每个版本的变更见 [CHANGELOG.md](CHANGELOG.md)，仍缺少的部分见[路线图](docs/roadmap.md)。
+NSGo 处于早期阶段，API 尚未稳定。每个版本的变更见 [Releases](https://github.com/nsgo-dev/nsgo/releases)，仍缺少的部分见[路线图](docs/roadmap.md)。
 
 ## 文档
 
@@ -136,7 +136,7 @@ go tool nsgo check                  # 检查所有包
 go tool nsgo test                   # 运行所有包的测试
 ```
 
-其余的开发环境配置见[参与开发](https://nsgo.dev/zh/docs/contributing/)。修改代码前请先阅读 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [AGENTS.md](AGENTS.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+其余的开发环境配置见[参与开发](https://nsgo.dev/zh/docs/contributing/)。修改代码前请先阅读 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [AGENTS.md](AGENTS.md)，上次发布以来的变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 社区
 
