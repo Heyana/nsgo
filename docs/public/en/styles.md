@@ -7,7 +7,7 @@ order: 52
 
 ## A style
 
-`core.Style` is one Go value for a box's layout, look and text. Every field's zero value is unset, so styles compose: `Merge` replaces only what the later style sets, and a child inherits the text fields its parents set.
+`core.Style` is one Go value for a box's layout, look and text. Every field's zero value is unset, so styles compose: `Merge` replaces only what the later style sets, and a child inherits the text fields its parents set. To set a length to nothing over a style that gives one, use `core.Zero` in `Padding`, `Margin`, `Borders`, `BorderWidth`, `CornerRadius` or a gap, as `core.Transparent` does for a color: `Padding: core.All(core.Zero)`.
 
 ```go
 card := core.Style{

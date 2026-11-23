@@ -1382,6 +1382,7 @@ func (t *Tree) restyle(n *node) bool {
 	if n.cls != nil && n.cls.related {
 		n.style = mergeStyles(n.style, n.cls.important)
 	}
+	n.style = n.style.unzeroed()
 	if p.Disabled {
 		// The platform still follows the states a disabled view's own
 		// styles wait for, which the event mask reads.

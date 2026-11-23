@@ -7,7 +7,7 @@ order: 52
 
 ## 样式
 
-`core.Style` 用一个 Go 值描述盒子的布局、外观和文本。每个字段的零值都表示未设置，因此样式可以叠加：`Merge` 只替换后一个样式设置的字段，子元素继承父元素设置的文本字段。
+`core.Style` 用一个 Go 值描述盒子的布局、外观和文本。每个字段的零值都表示未设置，因此样式可以叠加：`Merge` 只替换后一个样式设置的字段，子元素继承父元素设置的文本字段。要在已有长度的样式之上把长度设为无，在 `Padding`、`Margin`、`Borders`、`BorderWidth`、`CornerRadius` 或间距中使用 `core.Zero`，就像颜色使用 `core.Transparent` 一样：`Padding: core.All(core.Zero)`。
 
 ```go
 card := core.Style{

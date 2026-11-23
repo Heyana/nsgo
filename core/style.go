@@ -656,6 +656,30 @@ func (x TextTransform) Apply(s string) string {
 	return s
 }
 
+// Zero is a length of no points that, unlike 0, is set, as Transparent
+// is a color: Padding: All(Zero) takes away the padding a style under it
+// gives, where 0 would leave it. It works in Margin, Padding, Borders,
+// BorderWidth, CornerRadius and the gaps, and a view lays it out and
+// draws it as 0.
+const Zero Points = math.SmallestNonzeroFloat32
+
+// unzeroed is s with Zero as 0 in the fields that take it.
+func (s Style) unzeroed() Style {
+	for _, e := range []*Edges{&s.Margin, &s.Padding, &s.Borders} {
+		for _, p := range []*Points{&e.Top, &e.Right, &e.Bottom, &e.Left} {
+			if *p == Zero {
+				*p = 0
+			}
+		}
+	}
+	for _, p := range []*Points{&s.Gap, &s.RowGap, &s.ColumnGap, &s.BorderWidth, &s.CornerRadius} {
+		if *p == Zero {
+			*p = 0
+		}
+	}
+	return s
+}
+
 // IsZero reports whether s sets nothing.
 func (s Style) IsZero() bool { return reflect.ValueOf(s).IsZero() }
 

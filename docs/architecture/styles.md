@@ -4,7 +4,7 @@ How a `Style` becomes what each backend draws: the corners, borders, outlines, s
 
 ## Resolving
 
-Styles follow NSH's `styles.md` with Go values in place of CSS strings: constructors (`LinearGradient`, `Blur`, `Ring`, `DropShadow`) build what apps write, and every zero value is unset.
+Styles follow NSH's `styles.md` with Go values in place of CSS strings: constructors (`LinearGradient`, `Blur`, `Ring`, `DropShadow`) build what apps write, and every zero value is unset. `Zero`, the smallest float32 above 0, is a length that is set, as `Transparent` is a color: it merges as any length, and `restyle` turns it to 0 in a view's committed style, so layout and backends never see it.
 
 - `Merge` replaces a field the later style sets, `Transform` by CSS's properties: translate, rotate, scale and perspective each replace their own, and the transform property's functions, `Transform`'s or the list `Transforms`, replace each other; a slice replaces only when it is not nil, so an empty one clears. State styles merge in NSH's order, after the `GroupStyle` of the nearest ancestor whose `Group` matches its `Name` (the nearest group when empty). A group reports hovers, and presses only when it has a press handler; its state changes restyle the views that follow it. `Active`, groups and peers never add press events to a plain view, since NSGo's event mask also decides press targets and keyboard stops; use a press handler for an active style, or `Focusable` to opt into keyboard focus.
 - A state's `Background` without `Gradients` drops the gradients, as an animated background does, so press feedback shows over a gradient fill.
