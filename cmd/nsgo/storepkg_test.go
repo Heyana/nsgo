@@ -315,7 +315,7 @@ func TestFlatpakManifest(t *testing.T) {
 	if strings.Contains(string(data), "aarch64") {
 		t.Error("the manifest names an archive the release lacks")
 	}
-	meta, err := p.metainfo()
+	meta, err := p.metainfo(false)
 	if err != nil {
 		t.Fatal(err)
 	}

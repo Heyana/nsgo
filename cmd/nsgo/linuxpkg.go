@@ -23,7 +23,8 @@ import (
 // other files are, since dpkg and pacman read the package's name and
 // version from inside it. Both install the package's
 // directory in /opt/<slug>, a link to the app in /usr/bin, its desktop
-// entry and its icon in the hicolor theme.
+// entry, its AppStream metadata, its icon in the hicolor theme and the
+// files of linux.share under /usr/share.
 
 // linuxPackageEntry is a file, directory or link a Linux package
 // installs, by its path from the root.
@@ -216,6 +217,10 @@ func linuxPackageFiles(p *project, dir string) ([]linuxPackageEntry, error) {
 	mkdir("usr/bin")
 	files = append(files, linuxPackageEntry{name: "usr/bin/" + slug, link: "/" + opt + "/" + p.Name, mode: 0o777})
 
+	share, err := p.linuxShareFiles()
+	if err != nil {
+		return nil, err
+	}
 	n, err := p.appNames()
 	if err != nil {
 		return nil, err
@@ -248,7 +253,89 @@ func linuxPackageFiles(p *project, dir string) ([]linuxPackageEntry, error) {
 			add(fmt.Sprintf("usr/share/icons/hicolor/%dx%d/apps/%s.png", size, size, p.ID), scaledPNG(img, size), 0o644)
 		}
 	}
+	if err := p.addLinuxShare(share, files, func(e linuxPackageEntry) { add(e.name, e.data, e.mode) }); err != nil {
+		return nil, err
+	}
 	return files, nil
+}
+
+// linuxShareFiles are the files of linux.share, by their paths in the
+// system's usr/share, each regular file executable or not as it is there.
+func (p *project) linuxShareFiles() ([]linuxPackageEntry, error) {
+	if p.Linux.Share == "" {
+		return nil, nil
+	}
+	info, err := os.Stat(p.Linux.Share)
+	if err != nil {
+		return nil, fmt.Errorf("linux.share: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("linux.share: %s is not a directory", rel(p.Linux.Share))
+	}
+	var files []linuxPackageEntry
+	err = filepath.WalkDir(p.Linux.Share, func(file string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("linux.share: %s is not a regular file", rel(file))
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		mode := int64(0o644)
+		if info.Mode()&0o111 != 0 {
+			mode = 0o755
+		}
+		name, _ := filepath.Rel(p.Linux.Share, file)
+		files = append(files, linuxPackageEntry{name: "usr/share/" + filepath.ToSlash(name), data: data, mode: mode})
+		return nil
+	})
+	return files, err
+}
+
+// addLinuxShare adds the AppStream metadata, unless share or files hold the app's own, and share's files, with what NSGo adds there such as the AppImage's link to its desktop entry, to a package whose entries so far are files, through add. A file of share at a path the package holds already, such as the desktop entry or an icon NSGo writes, or at a directory it needs, such as applications, is refused.
+func (p *project) addLinuxShare(share, files []linuxPackageEntry, add func(linuxPackageEntry)) error {
+	metainfo := "usr/share/metainfo/" + p.ID + ".metainfo.xml"
+	named := func(name string) func(linuxPackageEntry) bool {
+		return func(e linuxPackageEntry) bool { return e.name == name && !e.dir }
+	}
+	if !slices.ContainsFunc(share, named(metainfo)) && !slices.ContainsFunc(files, named(metainfo)) {
+		data, err := p.metainfo(true)
+		if err != nil {
+			return err
+		}
+		share = append([]linuxPackageEntry{{name: metainfo, data: data, mode: 0o644}}, share...)
+	}
+	// dirs records each path the package holds, true for a directory, so a file where a directory is needed collides in either order.
+	dirs := map[string]bool{}
+	hold := func(name string, dir bool) {
+		dirs[name] = dir
+		for d := path.Dir(name); d != "."; d = path.Dir(d) {
+			dirs[d] = true
+		}
+	}
+	for _, f := range files {
+		hold(f.name, f.dir)
+	}
+	for _, e := range share {
+		_, taken := dirs[e.name]
+		for d := path.Dir(e.name); d != "." && !taken; d = path.Dir(d) {
+			dir, held := dirs[d]
+			taken = held && !dir
+		}
+		if taken {
+			return fmt.Errorf("%s, from linux.share or NSGo, collides with a file the package holds already", e.name)
+		}
+		hold(e.name, false)
+		add(e)
+	}
+	return nil
 }
 
 // linuxPackageSize is how many bytes the files take installed.

@@ -33,6 +33,7 @@ build:
   # ldflags: [-X main.releaseDate=2026-11-17]  # the app's own linker flags; -ldflags on build and test adds more
 # i18n: { dir: locales, source: en }
 # apple: { info: { NSCameraUsageDescription: Scans receipts. } }
+# linux: { share: packaging/share }  # files the Linux packages install under /usr/share, such as metainfo/<id>.metainfo.xml
 # release: { github: me/hello, tag_prefix: v }
 # updates: { key: <public key from nsgo keygen> }
 # store: { dir: store }       # YAML and Markdown store listings per language

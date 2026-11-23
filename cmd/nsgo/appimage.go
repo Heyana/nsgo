@@ -90,7 +90,10 @@ func buildAppImage(ctx context.Context, p *project, dir, arch string) (string, s
 }
 
 // appDirEntries are the AppImage's files: the Linux package in dir, with
-// AppRun starting the app and .DirIcon its icon.
+// AppRun starting the app, .DirIcon its icon, and usr/share holding the
+// desktop entry, linked to the one at the top, the AppStream metadata,
+// whose launchable names it there, and linux.share's files, as the Linux
+// packages' /usr/share does.
 func appDirEntries(p *project, dir string) ([]linuxPackageEntry, error) {
 	entries, err := linuxDirEntries(p, dir)
 	if err != nil {
@@ -107,7 +110,13 @@ func appDirEntries(p *project, dir string) ([]linuxPackageEntry, error) {
 	if _, err := os.Stat(filepath.Join(dir, p.ID+".png")); err == nil {
 		entries = append(entries, linuxPackageEntry{name: ".DirIcon", link: p.ID + ".png", mode: 0o777})
 	}
-	return entries, nil
+	share, err := p.linuxShareFiles()
+	if err != nil {
+		return nil, err
+	}
+	link := linuxPackageEntry{name: "usr/share/applications/" + p.ID + ".desktop", link: "../../../" + p.ID + ".desktop", mode: 0o777}
+	err = p.addLinuxShare(append([]linuxPackageEntry{link}, share...), entries, func(e linuxPackageEntry) { entries = append(entries, e) })
+	return entries, err
 }
 
 // linuxDirEntries are the files of the Linux package in dir, by their

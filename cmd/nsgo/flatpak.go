@@ -53,7 +53,7 @@ func buildLinuxArchive(ctx context.Context, p *project, dir, arch string) (strin
 	} else if err != nil {
 		return "", err
 	}
-	metainfo, err := p.metainfo()
+	metainfo, err := p.metainfo(false)
 	if err != nil {
 		return "", err
 	}
@@ -73,8 +73,12 @@ func buildLinuxArchive(ctx context.Context, p *project, dir, arch string) (strin
 }
 
 // metainfo is the app's AppStream metadata, which software centers and
-// Flathub list it by.
-func (p *project) metainfo() ([]byte, error) {
+// Flathub list it by. A Flatpak's names a proprietary license unless
+// linux.license gives one, and an empty content rating, as Flathub asks;
+// the Linux packages' (direct) name only a license linux.license gives,
+// and Utility as the category, which AppStream needs, when
+// linux.categories names none, as a Flatpak's desktop entry does.
+func (p *project) metainfo(direct bool) ([]byte, error) {
 	name, err := p.displayName()
 	if err != nil {
 		return nil, err
@@ -94,8 +98,12 @@ func (p *project) metainfo() ([]byte, error) {
 		summary = name
 	}
 	license := p.Linux.License
-	if license == "" {
+	if license == "" && !direct {
 		license = "LicenseRef-proprietary"
+	}
+	var categories []string
+	if direct && len(p.linuxCategories()) == 0 {
+		categories = []string{"Utility"}
 	}
 	developer := p.ID
 	if i := strings.LastIndexByte(developer, '.'); i > 0 {
@@ -110,6 +118,7 @@ func (p *project) metainfo() ([]byte, error) {
 		"ID": p.ID, "Name": name, "Names": names, "Summary": summary, "License": license,
 		"Developer": developer, "DeveloperName": p.maintainer(), "Homepage": homepage,
 		"Version": p.Version, "Date": time.Now().Format(time.DateOnly),
+		"Categories": categories, "Rating": !direct,
 	})
 	return out.Bytes(), err
 }
@@ -123,7 +132,9 @@ var metainfoTemplate = template.Must(template.New("metainfo").Funcs(template.Fun
 {{- end}}
   <summary>{{x .Summary}}</summary>
   <metadata_license>CC0-1.0</metadata_license>
+{{- if .License}}
   <project_license>{{x .License}}</project_license>
+{{- end}}
   <developer id="{{x .Developer}}">
     <name>{{x .DeveloperName}}</name>
   </developer>
@@ -131,10 +142,19 @@ var metainfoTemplate = template.Must(template.New("metainfo").Funcs(template.Fun
     <p>{{x .Summary}}</p>
   </description>
   <launchable type="desktop-id">{{x .ID}}.desktop</launchable>
+{{- if .Categories}}
+  <categories>
+{{- range .Categories}}
+    <category>{{x .}}</category>
+{{- end}}
+  </categories>
+{{- end}}
 {{- if .Homepage}}
   <url type="homepage">{{x .Homepage}}</url>
 {{- end}}
+{{- if .Rating}}
   <content_rating type="oars-1.1"/>
+{{- end}}
   <releases>
     <release version="{{x .Version}}" date="{{.Date}}"/>
   </releases>
