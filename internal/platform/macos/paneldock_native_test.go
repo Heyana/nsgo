@@ -81,8 +81,10 @@ func TestEdgeDockedPanelUsesNativeScreenFrames(t *testing.T) {
 			check := func(width, height float64) {
 				t.Helper()
 				var frame apple.CGRect
-				want, _ := driver.DockWindow(driver.Size{Width: driver.Points(width), Height: driver.Points(height)}, all, c.dock)
+				var want driver.WindowFrame
 				if !settle(func() bool {
+					// The screens as they are now: a runner's Dock and menu bar settle their sizes while the test runs, and the panel follows the visible frame they leave.
+					want, _ = driver.DockWindow(driver.Size{Width: driver.Points(width), Height: driver.Points(height)}, displays(), c.dock)
 					frame = objc.Send[apple.CGRect](panel.window, sel("frame"))
 					main := screenFrames("frame")[0]
 					x, y := frame.Origin.X-main.Origin.X, main.Origin.Y+main.Size.Height-frame.Origin.Y-frame.Size.Height
