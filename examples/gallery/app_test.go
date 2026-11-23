@@ -525,6 +525,16 @@ func TestInputPage(t *testing.T) {
 	if got := app.Find("id:field").Text; got != "plain" {
 		t.Fatalf("field = %q", got)
 	}
+	// Number keyboards only pick a software keyboard; the demo keeps the
+	// digits of what a hardware keyboard types.
+	app.Type("id:code", "12ab３")
+	if got := app.Find("id:code").Text; got != "123" {
+		t.Fatalf("code field = %q", got)
+	}
+	app.Type("id:code", "x")
+	if got := app.Find("id:code").Text; got != "123" {
+		t.Fatalf("code field after a letter = %q", got)
+	}
 	open(app, "Form")
 	app.Type("id:form-field-name", "Ada")
 	if got := app.Find("id:form-field-name >> role:textbox").Text; got != "Ada" {

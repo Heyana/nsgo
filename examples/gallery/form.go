@@ -50,6 +50,67 @@ func pair(a, b core.Node) core.Node {
 	return core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{ui.Cell{Child: a}, ui.Cell{Child: b}}}
 }
 
+// keepOnly is an OnChange that holds value to what filter keeps of the
+// typed text, as a field whose KeyboardType only picks a software keyboard
+// takes anything a hardware keyboard types. A field whose binding sends only
+// what differs from its last text takes the typed text before it goes back.
+func keepOnly(cx *core.Scope, value *core.Signal[string], filter func(string) string) func(string) {
+	return func(typed string) {
+		kept := filter(typed)
+		if kept == typed || kept != value.GetUntracked() {
+			value.Set(kept)
+			return
+		}
+		value.Set(typed)
+		cx.Post(func() { value.Set(kept) })
+	}
+}
+
+// halfWidth is r with a full-width form, such as an IME's digits, folded
+// to ASCII.
+func halfWidth(r rune) rune {
+	if r >= '！' && r <= '～' {
+		return r - '！' + '!'
+	}
+	return r
+}
+
+// digitText is the ASCII digits of s.
+func digitText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r = halfWidth(r); r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, s)
+}
+
+// decimalText is the digits of s and its first point.
+func decimalText(s string) string {
+	point := false
+	return strings.Map(func(r rune) rune {
+		switch r = halfWidth(r); {
+		case r >= '0' && r <= '9':
+			return r
+		case r == '.' && !point:
+			point = true
+			return r
+		}
+		return -1
+	}, s)
+}
+
+// phoneText is what of s a phone number writes: digits, a plus, spaces,
+// hyphens and parentheses.
+func phoneText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r = halfWidth(r); r >= '0' && r <= '9' || strings.ContainsRune("+ -()", r) {
+			return r
+		}
+		return -1
+	}, s)
+}
+
 // autoGrow is a multiline input that grows with its text
 // (OnContentSizeChange), up to 5 lines.
 func autoGrow() core.Node {
@@ -106,21 +167,22 @@ func fieldCard(cx *core.Scope) core.Node {
 // on-screen keyboard and what a hardware one may type.
 func keyboardTypesCard(cx *core.Scope) core.Node {
 	tr := locales.For(cx)
-	code := core.NewSignal(cx, "")
+	code, phone := core.NewSignal(cx, ""), core.NewSignal(cx, "")
+	age, amount := core.NewSignal(cx, ""), core.NewSignal(cx, "")
 	return Section{Title: tr.FormKeyboardTypes(), Note: "KeyboardType", Children: []core.Node{
 		formField(fieldProps{label: tr.FormEMail(), api: "KeyboardEmail"},
 			base.Input{KeyboardType: core.KeyboardEmail, AutoCapitalize: core.AutoCapitalizeNone, NoAutoCorrect: true, Placeholder: "ada@example.com"}),
-		formField(fieldProps{label: tr.FormPhone(), api: "KeyboardPhone"}, base.Input{KeyboardType: core.KeyboardPhone, Placeholder: "+1 555 0100"}),
+		formField(fieldProps{label: tr.FormPhone(), api: "KeyboardPhone"}, base.Input{Value: phone.Get, OnChange: keepOnly(cx, phone, phoneText), KeyboardType: core.KeyboardPhone, Placeholder: "+1 555 0100"}),
 		formField(fieldProps{label: tr.FormWebsite(), api: "KeyboardURL"},
 			base.Input{KeyboardType: core.KeyboardURL, AutoCapitalize: core.AutoCapitalizeNone, NoAutoCorrect: true, Placeholder: "https://"}),
 		pair(
-			formField(fieldProps{label: tr.FormAge(), api: "KeyboardNumber"}, base.Input{KeyboardType: core.KeyboardNumber, MaxLength: 3, Placeholder: "36"}),
-			formField(fieldProps{label: tr.FormAmount(), api: "KeyboardDecimal"}, base.Input{KeyboardType: core.KeyboardDecimal, Placeholder: "$0.00"}),
+			formField(fieldProps{label: tr.FormAge(), api: "KeyboardNumber"}, base.Input{Value: age.Get, OnChange: keepOnly(cx, age, digitText), KeyboardType: core.KeyboardNumber, MaxLength: 3, Placeholder: "36"}),
+			formField(fieldProps{label: tr.FormAmount(), api: "KeyboardDecimal"}, base.Input{Value: amount.Get, OnChange: keepOnly(cx, amount, decimalText), KeyboardType: core.KeyboardDecimal, Placeholder: "$0.00"}),
 		),
 		formField(fieldProps{label: tr.FormOffset(), hint: label(tr.FormDarkKeyboardIos())},
 			base.Input{IOS: core.IOSInputProps{KeyboardAppearance: core.KeyboardAppearanceDark}, Placeholder: "-12.5"}),
 		formField(fieldProps{label: tr.FormVerificationCode(), hint: func() string { return fmt.Sprintf("%d/6", len(code.Get())) }},
-			base.Input{TestID: "code", Value: code.Get, OnChange: code.Set, KeyboardType: core.KeyboardNumber, MaxLength: 6, Placeholder: "000000",
+			base.Input{TestID: "code", Value: code.Get, OnChange: keepOnly(cx, code, digitText), KeyboardType: core.KeyboardNumber, MaxLength: 6, Placeholder: "000000",
 				Style: core.Style{Height: core.Pt(44), LetterSpacing: 10, FontSize: 22, FontWeight: ui.Medium, TextAlign: core.TextAlignCenter}}),
 	}}
 }
