@@ -152,6 +152,16 @@ func (t *testSurface) KeyDown(key string) error {
 // KeyUp implements testhost.KeyHoldSurface.
 func (t *testSurface) KeyUp(key string) error { return t.do(map[string]any{"op": "keyUp", "key": key}) }
 
+// KeyCodeDown implements testhost.KeyCodeSurface: the browser's key event for name, the US layout's key at the physical position code, goes down with code as its KeyboardEvent.code, and stays held.
+func (t *testSurface) KeyCodeDown(code, name string) error {
+	return t.do(map[string]any{"op": "keyCodeDown", "key": name, "position": code})
+}
+
+// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
+func (t *testSurface) KeyCodeUp(code, name string) error {
+	return t.do(map[string]any{"op": "keyCodeUp", "key": name, "position": code})
+}
+
 // Compose and Commit go through the browser's input method path.
 func (t *testSurface) Compose(text string) error {
 	return t.do(map[string]any{"op": "compose", "text": text})

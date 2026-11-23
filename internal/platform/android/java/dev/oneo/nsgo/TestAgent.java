@@ -290,6 +290,16 @@ final class TestAgent {
                 heldKeys.key(activity(), view.inputGate, op.getString("key"), op.getString("op").equals("key-down"));
                 view.whenKeysIdle(() -> view.testReply(id, "", ""));
                 return;
+            case "key-code-down":
+            case "key-code-up": {
+                // A physical position: the key code the US layout's key there has, or the position's own where it names another position's, and the position's scan code.
+                String name = op.getString("key");
+                int code = op.optInt("keycode", 0);
+                if (code == 0) code = keyCode(name.toLowerCase());
+                heldKeys.key(activity(), view.inputGate, code, op.getInt("scan"), name, op.getString("op").equals("key-code-down"));
+                view.whenKeysIdle(() -> view.testReply(id, "", ""));
+                return;
+            }
             case "blur-window":
                 activity().moveTaskToBack(true);
                 break;

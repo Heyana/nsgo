@@ -99,6 +99,8 @@ type target struct {
 	ownMenu  []driver.MenuEntry
 	// held are the keys KeyDown holds on the surface, as the test named them, by the name keyName gives them, so a KeyUp of a key not held fails the step on every platform, as it does headless, and the test's end lets them come up (releaseHeld).
 	held map[string]string
+	// heldCodes are the physical positions KeyCodeDown holds, with the key name each was pressed with, so KeyCodeUp of a position not held fails and cleanup releases them.
+	heldCodes map[string]string
 	// heldButtons are the mouse buttons MouseDown holds on the surface, with the last point pressed, so MouseUp of a button not held fails and cleanup releases them.
 	heldButtons map[driver.MouseButton]driver.Point
 }
@@ -898,6 +900,39 @@ func (t *target) releaseHeld() {
 		}
 	}
 	t.held = nil
+	if s, ok := t.surface.(testhost.KeyCodeSurface); ok {
+		codes := slices.Sorted(maps.Keys(t.heldCodes))
+		for _, modifiers := range []bool{false, true} {
+			for _, code := range codes {
+				if modifierKey(t.heldCodes[code]) == modifiers {
+					_ = s.KeyCodeUp(code, t.heldCodes[code])
+				}
+			}
+		}
+	}
+	t.heldCodes = nil
+}
+
+// holdCode presses the physical position code, with the key name the US layout puts there, and holds it, or lets it come up, where the surface presses positions (testhost.KeyCodeSurface); elsewhere the test skips.
+func (t *target) holdCode(code, name string, down bool) {
+	t.a.t.Helper()
+	s, ok := t.surface.(testhost.KeyCodeSurface)
+	if !ok {
+		t.a.t.Skipf("nsgotest: %s: the platform cannot press a physical key position", t.a.stepName)
+	}
+	if !down {
+		if _, ok := t.heldCodes[code]; !ok {
+			t.a.t.Fatalf("nsgotest: %s: %q is not held. KeyCodeDown holds a position", t.a.stepName, code)
+		}
+		delete(t.heldCodes, code)
+		t.check(s.KeyCodeUp(code, name))
+		return
+	}
+	if t.heldCodes == nil {
+		t.heldCodes = map[string]string{}
+	}
+	t.heldCodes[code] = name
+	t.check(s.KeyCodeDown(code, name))
 }
 
 // mouseButton presses or releases button at surface point at on the target where it implements testhost.MouseButtonSurface.

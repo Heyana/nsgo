@@ -879,6 +879,45 @@ func (t *testSurface) hold(key string, down bool) error {
 	if err != nil {
 		return err
 	}
+	t.holdKey(k, down)
+	return nil
+}
+
+// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held, as hold holds a key.
+func (t *testSurface) KeyCodeDown(code, name string) error { return t.holdCode(code, name, true) }
+
+// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
+func (t *testSurface) KeyCodeUp(code, name string) error { return t.holdCode(code, name, false) }
+
+// rightModifiers are the flags a right-hand modifier sets while held: the side's device bit in place of the left one's.
+var rightModifiers = map[string]uint{
+	"ShiftRight": flagShift | 0x04, "ControlRight": flagControl | 0x2000, "AltRight": flagOption | 0x40, "MetaRight": flagCommand | 0x10,
+}
+
+// holdCode is hold for a physical position: AppKit's key code is the position's, with the characters name, the US layout's key there, types.
+func (t *testSurface) holdCode(code, name string, down bool) error {
+	t.follow()
+	if err := t.keyboard(); err != nil {
+		return err
+	}
+	pc, ok := driver.KeyPositionCodes(code)
+	if !ok || pc.Mac == 0xffff {
+		return fmt.Errorf("a Mac keyboard has no %s key", code)
+	}
+	k, err := testKeyNamed(strings.ToLower(name), name)
+	if err != nil {
+		return err
+	}
+	k.code = pc.Mac
+	if flags, ok := rightModifiers[code]; ok {
+		k.modifier = flags
+	}
+	t.holdKey(k, down)
+	return nil
+}
+
+// holdKey sends k going down or coming up, with the modifiers KeyDown holds.
+func (t *testSurface) holdKey(k testKey, down bool) {
 	if k.modifier != 0 {
 		if down {
 			t.heldFlags |= k.modifier
@@ -886,12 +925,12 @@ func (t *testSurface) hold(key string, down bool) error {
 			t.heldFlags &^= k.modifier
 		}
 		t.modifier(k.code, t.heldFlags)
-		return nil
+		return
 	}
 	if !down {
 		delete(t.heldCodes, k.code)
 		t.key(evKeyUp, k.code, t.heldFlags, k.chars, k.chars, false)
-		return nil
+		return
 	}
 	// A key already held goes down again as its auto-repeat, as AppKit sends a key held down.
 	repeat := t.heldCodes[k.code]
@@ -900,7 +939,6 @@ func (t *testSurface) hold(key string, down bool) error {
 	}
 	t.heldCodes[k.code] = true
 	t.key(evKeyDown, k.code, t.heldFlags, k.chars, k.chars, repeat)
-	return nil
 }
 
 // testKey is a key a test names, as AppKit sends it: its key code, the flags it sets while held for a modifier key (0 for another key), and the characters it types without modifiers.

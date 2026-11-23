@@ -144,6 +144,12 @@ type KeyHoldSurface interface {
 	KeyUp(key string) error
 }
 
+// KeyCodeSurface is a surface that presses a physical position, named as KeyboardEvent.code (KeyW), and holds it (KeyCodeDown) or lets it come up (KeyCodeUp): the platform's event carries the position's own code, and the key the US layout puts there, as name sets it, so the app reads both KeyEvent.Code and KeyEvent.Key.
+type KeyCodeSurface interface {
+	KeyCodeDown(code, name string) error
+	KeyCodeUp(code, name string) error
+}
+
 // OpenLinksSurface delivers links to the app under test as the system would.
 type OpenLinksSurface interface {
 	OpenLinks(links []string)

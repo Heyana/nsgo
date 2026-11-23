@@ -103,6 +103,8 @@ type webOp struct {
 	Width  float64   `json:"width,omitempty"`
 	Height float64   `json:"height,omitempty"`
 	Code   int       `json:"code,omitempty"`
+	// Position is the physical position keyCodeDown and keyCodeUp press, as KeyboardEvent.code names it; Key is then the US layout's key there.
+	Position string `json:"position,omitempty"`
 }
 
 // webAutomationWidth and webAutomationHeight are the CSS viewport size of nsgo dev -target web -automation's browser.
@@ -508,6 +510,15 @@ func (p *webPage) do(op webOp, data *any) error {
 		return p.keyDown(op.Key)
 	case "keyUp":
 		return p.keyUp(op.Key)
+	case "keyCodeDown", "keyCodeUp":
+		k, location, name, err := positionWebKey(op.Position, op.Key)
+		if err != nil {
+			return err
+		}
+		if op.Op == "keyCodeDown" {
+			return p.holdDown(k, location, name)
+		}
+		return p.holdUp(k, location, op.Position)
 	case "screenshot":
 		raw, err := p.call("Page.captureScreenshot", map[string]any{"format": "png"})
 		if err != nil {
@@ -558,10 +569,10 @@ func (p *webPage) key(key string) error {
 	p.heldMu.Lock()
 	mods |= p.held
 	p.heldMu.Unlock()
-	if err := p.sendKeyDown(k, name, mods|modifierBit(k.key), false); err != nil {
+	if err := p.sendKeyDown(k, 0, name, mods|modifierBit(k.key), false); err != nil {
 		return err
 	}
-	return p.sendKeyUp(k, mods)
+	return p.sendKeyUp(k, 0, mods)
 }
 
 // keyDown holds key, one key without modifiers, down until keyUp: a modifier's bit joins every key event after it. A key it already holds goes down again as an auto-repeat.
@@ -573,6 +584,34 @@ func (p *webPage) keyDown(key string) error {
 	if mods != 0 {
 		return fmt.Errorf("%q is a chord: a key held is one key", key)
 	}
+	return p.holdDown(k, 0, name)
+}
+
+// positionKeys are the DOM key location and Windows key code of positions whose US key names another position's: the right-hand modifiers, and the keypad's digits and point, which Num Lock types.
+var positionKeys = map[string]struct{ location, vk int }{
+	"ShiftRight": {2, 16}, "ControlRight": {2, 17}, "AltRight": {2, 18}, "MetaRight": {2, 92}, "NumpadDecimal": {3, 110},
+	"Numpad0": {3, 96}, "Numpad1": {3, 97}, "Numpad2": {3, 98}, "Numpad3": {3, 99}, "Numpad4": {3, 100},
+	"Numpad5": {3, 101}, "Numpad6": {3, 102}, "Numpad7": {3, 103}, "Numpad8": {3, 104}, "Numpad9": {3, 105},
+}
+
+// positionWebKey is the key event for the physical position code, carrying name, the US layout's key there, with the position as its code, and its DOM key location: 0 for the standard keys, 2 for a right-hand modifier and 3 for the keypad.
+func positionWebKey(code, name string) (k cdpKey, location int, _ string, _ error) {
+	k, name, mods, err := parseWebKey(name)
+	if err != nil {
+		return k, 0, "", err
+	}
+	if mods != 0 {
+		return k, 0, "", fmt.Errorf("%q is a chord: a position holds one key", name)
+	}
+	k.code = code
+	if pk, ok := positionKeys[code]; ok {
+		location, k.vk = pk.location, pk.vk
+	}
+	return k, location, name, nil
+}
+
+// holdDown sends k going down and holds it, a modifier's bit joining the events after it, as keyDown does.
+func (p *webPage) holdDown(k cdpKey, location int, name string) error {
 	p.heldMu.Lock()
 	if p.down == nil {
 		p.down = map[string]bool{}
@@ -580,9 +619,9 @@ func (p *webPage) keyDown(key string) error {
 	repeat := p.down[heldCode(k)]
 	p.down[heldCode(k)] = true
 	p.held |= modifierBit(k.key)
-	mods = p.held
+	mods := p.held
 	p.heldMu.Unlock()
-	return p.sendKeyDown(k, name, mods, repeat)
+	return p.sendKeyDown(k, location, name, mods, repeat)
 }
 
 // keyUp lets key, which keyDown holds, come up, its own modifier bit no longer among those its event and the ones after it carry.
@@ -594,6 +633,11 @@ func (p *webPage) keyUp(key string) error {
 	if mods != 0 {
 		return fmt.Errorf("%q is a chord: a key held is one key", key)
 	}
+	return p.holdUp(k, 0, key)
+}
+
+// holdUp lets k, which holdDown held, come up, as keyUp does.
+func (p *webPage) holdUp(k cdpKey, location int, key string) error {
 	p.heldMu.Lock()
 	if !p.down[heldCode(k)] {
 		p.heldMu.Unlock()
@@ -601,9 +645,9 @@ func (p *webPage) keyUp(key string) error {
 	}
 	delete(p.down, heldCode(k))
 	p.held &^= modifierBit(k.key)
-	mods = p.held
+	mods := p.held
 	p.heldMu.Unlock()
-	return p.sendKeyUp(k, mods)
+	return p.sendKeyUp(k, location, mods)
 }
 
 // heldCode is the physical key k is held by, as the page pairs a key's up with its down.
@@ -677,8 +721,8 @@ func modifierBit(key string) int {
 }
 
 // sendKeyDown sends k going down with mods held, its own bit among them when it is a modifier, as the browser reports a modifier pressed alone.
-func (p *webPage) sendKeyDown(k cdpKey, name string, mods int, repeat bool) error {
-	down := map[string]any{"type": "rawKeyDown", "key": k.key, "code": k.code, "windowsVirtualKeyCode": k.vk, "modifiers": mods}
+func (p *webPage) sendKeyDown(k cdpKey, location int, name string, mods int, repeat bool) error {
+	down := map[string]any{"type": "rawKeyDown", "key": k.key, "code": k.code, "windowsVirtualKeyCode": k.vk, "modifiers": mods, "location": location}
 	if k.text != "" && mods&^8 == 0 {
 		down["type"], down["text"], down["unmodifiedText"] = "keyDown", k.text, k.text
 	}
@@ -704,8 +748,8 @@ func (p *webPage) sendKeyDown(k cdpKey, name string, mods int, repeat bool) erro
 }
 
 // sendKeyUp sends k coming up with mods still held.
-func (p *webPage) sendKeyUp(k cdpKey, mods int) error {
+func (p *webPage) sendKeyUp(k cdpKey, location int, mods int) error {
 	_, err := p.call("Input.dispatchKeyEvent", map[string]any{"type": "keyUp", "key": k.key, "code": k.code,
-		"windowsVirtualKeyCode": k.vk, "modifiers": mods})
+		"windowsVirtualKeyCode": k.vk, "modifiers": mods, "location": location})
 	return err
 }

@@ -144,6 +144,29 @@ func (t *testSurface) KeyUp(key string) error {
 	return t.do(map[string]any{"op": "key-up", "key": key})
 }
 
+// positionKeyCodes are the Android key codes of positions whose US key names another position's: the right-hand modifiers, and the keypad's digits and point, which Num Lock types.
+var positionKeyCodes = map[string]int{
+	"ShiftRight": 60, "ControlRight": 114, "AltRight": 58, "MetaRight": 118, "NumpadDecimal": 158,
+	"Numpad0": 144, "Numpad1": 145, "Numpad2": 146, "Numpad3": 147, "Numpad4": 148,
+	"Numpad5": 149, "Numpad6": 150, "Numpad7": 151, "Numpad8": 152, "Numpad9": 153,
+}
+
+// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held as a hardware keyboard's key, with the position's Linux scan code and the key code of name, the US layout's key there.
+func (t *testSurface) KeyCodeDown(code, name string) error {
+	return t.keyCode("key-code-down", code, name)
+}
+
+// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
+func (t *testSurface) KeyCodeUp(code, name string) error { return t.keyCode("key-code-up", code, name) }
+
+func (t *testSurface) keyCode(op, code, name string) error {
+	pc, ok := driver.KeyPositionCodes(code)
+	if !ok || pc.XKB < 8 {
+		return fmt.Errorf("a keyboard has no %s key", code)
+	}
+	return t.do(map[string]any{"op": op, "key": name, "scan": int(pc.XKB) - 8, "keycode": positionKeyCodes[code]})
+}
+
 // BlurWindow moves the activity to the back, so the window loses focus and releases the held keys.
 func (t *testSurface) BlurWindow() error { return t.do(map[string]any{"op": "blur-window"}) }
 

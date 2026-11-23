@@ -1223,7 +1223,7 @@ func (t *testSurface) holdKey(key string, isDown bool) error {
 		return err
 	}
 	if !t.useSimulatorHID() {
-		return t.holdKeyDevice(key, isDown)
+		return t.holdKeyDevice(key, "", isDown)
 	}
 	u, ok := keyUsage(name)
 	if !ok {
@@ -1233,7 +1233,31 @@ func (t *testSurface) holdKey(key string, isDown bool) error {
 	return nil
 }
 
-func (t *testSurface) holdKeyDevice(key string, isDown bool) error {
+// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held, the simulator's keyboard sending the position's HID usage.
+func (t *testSurface) KeyCodeDown(code, name string) error { return t.holdCode(code, name, true) }
+
+// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
+func (t *testSurface) KeyCodeUp(code, name string) error { return t.holdCode(code, name, false) }
+
+// holdCode is holdKey for a physical position: the simulator's keyboard sends its HID usage, which UIKit reports as the key's keyCode; on a device, where the host reports the key itself, the report carries name, the US layout's key there, and the position.
+func (t *testSurface) holdCode(code, name string, isDown bool) error {
+	pc, ok := driver.KeyPositionCodes(code)
+	if !ok || pc.USB == 0 {
+		return fmt.Errorf("a keyboard has no %s key", code)
+	}
+	w, err := t.window()
+	if err != nil {
+		return err
+	}
+	if !t.useSimulatorHID() {
+		return t.holdKeyDevice(name, code, isDown)
+	}
+	hidKey(w, uint32(pc.USB), isDown)
+	return nil
+}
+
+// holdKeyDevice reports key going down or coming up as a hardware keyboard's would, at the physical position code where a test pressed one.
+func (t *testSurface) holdKeyDevice(key, code string, isDown bool) error {
 	parsed, _, _, ok := parseDeviceKey(key)
 	if !ok {
 		return fmt.Errorf("unknown key %q", key)
@@ -1260,12 +1284,12 @@ func (t *testSurface) holdKeyDevice(key string, isDown bool) error {
 			if reportKey {
 				if wasHeld {
 					upMods, _ := applyDeviceModifier(mods, flags, parsed, false)
-					t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: prevID, Text: parsed, Modifiers: upMods})
+					t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: prevID, Text: parsed, KeyCode: code, Modifiers: upMods})
 				}
 				if targetID != 0 {
-					consumed = t.s.engine.DispatchKeyDown(driver.Event{Kind: driver.EventKeyDown, ID: targetID, Text: parsed, Modifiers: mods})
+					consumed = t.s.engine.DispatchKeyDown(driver.Event{Kind: driver.EventKeyDown, ID: targetID, Text: parsed, KeyCode: code, Modifiers: mods})
 				} else {
-					t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyDown, Text: parsed, Modifiers: mods})
+					t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyDown, Text: parsed, KeyCode: code, Modifiers: mods})
 				}
 			}
 			if !consumed && len(t.s.keys) > 0 {
@@ -1281,7 +1305,7 @@ func (t *testSurface) holdKeyDevice(key string, isDown bool) error {
 		}
 		prevID, wasHeld, mods, _ := st.up(parsed)
 		if wasHeld && !t.s.editing() && (prevID != 0 || t.s.heldKeys) {
-			t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: prevID, Text: parsed, Modifiers: mods})
+			t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: prevID, Text: parsed, KeyCode: code, Modifiers: mods})
 		}
 	})
 	return nil

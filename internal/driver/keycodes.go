@@ -207,6 +207,21 @@ func WinKeyCode(scan uint16) string {
 	return ""
 }
 
+// PositionCodes are a physical position's codes on each platform: its keyboard-page HID usage (iOS and the USB column), XKB key code (Linux; Android's and HarmonyOS's Linux input code is 8 less), Windows set-1 scan code with its 0xe0 prefix, and AppKit key code, 0xffff where a Mac keyboard has none.
+type PositionCodes struct {
+	USB, XKB, Windows, Mac uint16
+}
+
+// KeyPositionCodes returns the platform codes of a physical position named as KeyboardEvent.code, for test hosts that press a position.
+func KeyPositionCodes(code string) (PositionCodes, bool) {
+	for _, p := range keyPositions {
+		if p.name == code {
+			return PositionCodes{USB: p.usb, XKB: p.xkb, Windows: p.windows, Mac: p.mac}, true
+		}
+	}
+	return PositionCodes{}, false
+}
+
 // USKeyName is the unmodified logical key name for a physical code on the US layout, for nsgotest's headless keyboard.
 func USKeyName(code string) string {
 	switch {

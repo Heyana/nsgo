@@ -367,6 +367,8 @@ var virtualKeys = map[string]uintptr{
 type keyStroke struct {
 	vk                     uintptr
 	ctrl, shift, alt, meta bool
+	// scan is the key's scan code and extended bit, in lParam's bits 16 to 24, for a key pressed by its position; 0 leaves them to the window, which then names the position from the virtual key.
+	scan uintptr
 }
 
 // parseKey reads a key a test names, a chord's modifiers before it ("mod+shift+k").
@@ -437,6 +439,45 @@ func (t *testSurface) stroke(key string, down, up bool) error {
 	if err != nil {
 		return err
 	}
+	return t.strokeKey(k, key, down, up)
+}
+
+// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held, as KeyDown holds a key, its message carrying the position's scan code.
+func (t *testSurface) KeyCodeDown(code, name string) error { return t.strokeCode(code, name, true) }
+
+// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
+func (t *testSurface) KeyCodeUp(code, name string) error { return t.strokeCode(code, name, false) }
+
+// positionKeys are the virtual keys of positions whose US key names another position's: the keypad's digits and point, which Num Lock types, and the right Windows key.
+var positionKeys = map[string]uintptr{
+	"Numpad0": 0x60, "Numpad1": 0x61, "Numpad2": 0x62, "Numpad3": 0x63, "Numpad4": 0x64,
+	"Numpad5": 0x65, "Numpad6": 0x66, "Numpad7": 0x67, "Numpad8": 0x68, "Numpad9": 0x69,
+	"NumpadDecimal": 0x6E, "MetaRight": vkRWin,
+}
+
+// strokeCode presses or releases the physical position code: the virtual key name, the US layout's key there, has, or the position's own (positionKeys), with the position's scan code and extended bit in lParam.
+func (t *testSurface) strokeCode(code, name string, down bool) error {
+	pc, ok := driver.KeyPositionCodes(code)
+	if !ok || pc.Windows == 0 {
+		return fmt.Errorf("a Windows keyboard has no %s key", code)
+	}
+	k, err := parseKey(name)
+	if err != nil {
+		return err
+	}
+	if vk, ok := positionKeys[code]; ok {
+		k.vk = vk
+	}
+	k.scan = uintptr(pc.Windows&0xff) << 16
+	if pc.Windows&0xff00 == 0xe000 {
+		k.scan |= 1 << 24
+	}
+	return t.strokeKey(k, name, down, !down)
+}
+
+// strokeKey presses k, named key, and lets it come up, as stroke does.
+func (t *testSurface) strokeKey(k keyStroke, key string, down, up bool) error {
+	var err error
 	t.scripted(func() {
 		if !down && !t.held[k.vk] {
 			err = fmt.Errorf("key %q is not held", key)
@@ -456,7 +497,7 @@ func (t *testSurface) stroke(key string, down, up bool) error {
 			// A modifier pressed alone is down as its own key goes down.
 			setKey(&state, k.vk, true)
 			hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&state)))
-			lParam := uintptr(1)
+			lParam := 1 | k.scan
 			if t.held[k.vk] {
 				lParam |= 1 << 30
 			}
@@ -470,7 +511,7 @@ func (t *testSurface) stroke(key string, down, up bool) error {
 			setKey(&state, k.vk, false)
 			hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&state)))
 			delete(t.held, k.vk)
-			hostSendMessage.Call(t.w.hwnd, hostKeyUp, k.vk, 1<<31|1<<30|1)
+			hostSendMessage.Call(t.w.hwnd, hostKeyUp, k.vk, 1<<31|1<<30|1|k.scan)
 		}
 		// The chord's modifiers come up with its key; the keys KeyDown holds stay down.
 		for _, vk := range []uintptr{vkControl, vkShift, vkMenu, vkLWin} {

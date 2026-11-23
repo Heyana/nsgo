@@ -445,9 +445,59 @@ func (t *testSurface) KeyUp(key string) error {
 
 // key presses (press) a key with the modifiers in state through the window's controller first, then lets the focused field edit if the controller leaves it the key, and releases it (release) either way. The key's identity comes from its keyval in a range outside the hardware keycodes.
 func (t *testSurface) key(name string, keyval, state uint32, press, release bool) error {
+	return t.keyAt(name, keyval, keyval|1<<31, state, press, release)
+}
+
+// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held, as KeyDown holds a key, with the position's XKB keycode.
+func (t *testSurface) KeyCodeDown(code, name string) error {
+	keyval, keycode, err := positionKey(code, name)
+	if err != nil {
+		return err
+	}
+	err = t.keyAt(strings.ToLower(name), keyval, keycode, t.mods, true, false)
+	if m, ok := modifierKeyvals[keyval]; ok {
+		t.mods |= m.bit
+	}
+	return err
+}
+
+// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
+func (t *testSurface) KeyCodeUp(code, name string) error {
+	keyval, keycode, err := positionKey(code, name)
+	if err != nil {
+		return err
+	}
+	state := t.mods
+	if m, ok := modifierKeyvals[keyval]; ok {
+		t.mods &^= m.bit
+	}
+	return t.keyAt(strings.ToLower(name), keyval, keycode, state, false, true)
+}
+
+// positionKeyvals are the keyvals of positions whose US key names another position's: the right-hand modifiers and the keypad's digits and point, which Num Lock types.
+var positionKeyvals = map[string]uint32{
+	"ShiftRight": 0xffe2, "ControlRight": 0xffe4, "AltRight": 0xffea, "MetaRight": 0xffec, "NumpadDecimal": 0xffae,
+	"Numpad0": gdkKP0, "Numpad1": gdkKP0 + 1, "Numpad2": gdkKP0 + 2, "Numpad3": gdkKP0 + 3, "Numpad4": gdkKP0 + 4,
+	"Numpad5": gdkKP0 + 5, "Numpad6": gdkKP0 + 6, "Numpad7": gdkKP0 + 7, "Numpad8": gdkKP0 + 8, "Numpad9": gdkKP0 + 9,
+}
+
+// positionKey returns the keyval name, the US layout's key at the position code, types, or the position's own (positionKeyvals), and the position's XKB keycode.
+func positionKey(code, name string) (keyval, keycode uint32, err error) {
+	pc, ok := driver.KeyPositionCodes(code)
+	if !ok || pc.XKB == 0 {
+		return 0, 0, fmt.Errorf("an XKB keyboard has no %s key", code)
+	}
+	if v, ok := positionKeyvals[code]; ok {
+		return v, uint32(pc.XKB), nil
+	}
+	_, keyval, err = parseOneKey(name)
+	return keyval, uint32(pc.XKB), err
+}
+
+// keyAt is key with the hardware keycode GTK reports, the identity its press and release share.
+func (t *testSurface) keyAt(name string, keyval, identity, state uint32, press, release bool) error {
 	loadEditing()
 	closing := false
-	identity := keyval | 1<<31
 	t.scripted(func() {
 		// After the release, wait for the display server to have sent the events the key caused, which the loop's next turn handles before the turn below.
 		defer func() { gdkDisplaySync(gdkDisplayGetDefault()); closing = t.w.closing }()

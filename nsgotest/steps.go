@@ -968,11 +968,18 @@ func (a *App) KeyUp(key string) {
 	a.done()
 }
 
-// KeyCode presses and releases a physical position, such as KeyW, in a headless test. It uses the test environment's KeyCodeNames or the US layout.
+// KeyCode presses and releases a physical position, such as KeyW. A headless test names the key with the test environment's KeyCodeNames or the US layout. On a target the platform's own event carries the position and the key the US layout puts there; a target that cannot press a position skips the test.
 func (a *App) KeyCode(code string) {
 	a.t.Helper()
 	a.step("keyCode(%s)", code)
-	a.press(a.physicalKeyName(code), code)
+	name := a.physicalKeyName(code)
+	if a.target != nil {
+		a.target.holdCode(code, name, true)
+		a.target.holdCode(code, name, false)
+		a.done()
+		return
+	}
+	a.press(name, code)
 	a.release(code, driver.Modifiers{})
 	a.done()
 }
@@ -981,7 +988,13 @@ func (a *App) KeyCode(code string) {
 func (a *App) KeyCodeDown(code string) {
 	a.t.Helper()
 	a.step("keyCodeDown(%s)", code)
-	a.press(a.physicalKeyName(code), code)
+	name := a.physicalKeyName(code)
+	if a.target != nil {
+		a.target.holdCode(code, name, true)
+		a.done()
+		return
+	}
+	a.press(name, code)
 	a.done()
 }
 
@@ -989,7 +1002,12 @@ func (a *App) KeyCodeDown(code string) {
 func (a *App) KeyCodeUp(code string) {
 	a.t.Helper()
 	a.step("keyCodeUp(%s)", code)
-	a.physicalKeyName(code)
+	name := a.physicalKeyName(code)
+	if a.target != nil {
+		a.target.holdCode(code, name, false)
+		a.done()
+		return
+	}
 	if _, ok := a.held[code]; !ok {
 		a.t.Fatalf("nsgotest: %s: %q is not held. KeyCodeDown holds a position", a.stepName, code)
 	}
@@ -997,16 +1015,16 @@ func (a *App) KeyCodeUp(code string) {
 	a.done()
 }
 
+// physicalKeyName names the key at a physical position: on a target, the US layout's, which the platform's event carries; headless, the test environment's KeyCodeNames or the US layout's.
 func (a *App) physicalKeyName(code string) string {
 	a.t.Helper()
-	if a.target != nil {
-		a.t.Skip("nsgotest: physical key positions are supported in headless tests")
-	}
-	if name := a.env.KeyCodeNames[code]; name != "" {
-		return name
+	if a.target == nil {
+		if name := a.env.KeyCodeNames[code]; name != "" {
+			return name
+		}
 	}
 	name := driver.USKeyName(code)
-	if name == "" {
+	if _, ok := driver.KeyPositionCodes(code); !ok || name == "" {
 		a.t.Fatalf("nsgotest: %s: unknown physical key code %q", a.stepName, code)
 	}
 	return name

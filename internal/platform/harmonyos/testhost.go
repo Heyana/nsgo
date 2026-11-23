@@ -196,6 +196,22 @@ func (t *testSurface) Commit(string) error  { return testhost.ErrNoInputMethod }
 func (t *testSurface) KeyDown(key string) error { return t.holdKey(key, 0) }
 func (t *testSurface) KeyUp(key string) error   { return t.holdKey(key, 1) }
 
+// KeyCodeDown implements testhost.KeyCodeSurface: the physical position code goes down and stays held, reported with InputKit's KeyCode for the position and name, the US layout's key there, as its text.
+func (t *testSurface) KeyCodeDown(code, name string) error { return t.holdCode(code, name, 0) }
+
+// KeyCodeUp implements testhost.KeyCodeSurface: the position code, which KeyCodeDown held, comes up.
+func (t *testSurface) KeyCodeUp(code, name string) error { return t.holdCode(code, name, 1) }
+
+func (t *testSurface) holdCode(code, name string, action int) error {
+	for k, position := range ohosKeyPositions {
+		if position == code {
+			t.s.m.key(k, action, t.s.m.keyModifiers(0), name)
+			return nil
+		}
+	}
+	return errors.New("InputKit has no KeyCode for " + code)
+}
+
 func (t *testSurface) holdKey(key string, action int) error {
 	key = driver.NormalizeKey(key)
 	if key == "mod" {
