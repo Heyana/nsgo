@@ -8,8 +8,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// Action is a terminal action, named after Ghostty's. Actions belonging to
-// an app's windows or tabs stay in the app's own keymap.
+// Action is a terminal action, named after Ghostty's. Actions belonging to an app's windows or tabs stay in the app's own keymap.
 type Action uint8
 
 const (
@@ -25,18 +24,14 @@ const (
 	Ignore
 )
 
-// Keybind binds Key, as core.Scope.OnKey names it, to Action. Amount is
-// the point size for SetFontSize and the step for Increase/DecreaseFontSize,
-// one point when zero. Bindings run only while the terminal input is
-// focused and no input method is composing.
+// Keybind binds Key, as core.Scope.OnKey names it, to Action. Amount is the point size for SetFontSize and the step for Increase/DecreaseFontSize, one point when zero. Bindings run only while the terminal input is focused and no input method is composing.
 type Keybind struct {
 	Key    string
 	Action Action
 	Amount core.Points
 }
 
-// RightClickAction is what the view does on a secondary click. A program
-// that captures the mouse takes it before these UI actions.
+// RightClickAction is what the view does on a secondary click. A program that captures the mouse takes it before these UI actions.
 type RightClickAction uint8
 
 const (
@@ -54,8 +49,7 @@ func configuredFontSize(font core.Font) core.Points {
 	return font.Size
 }
 
-// FontSize reports the view's current point size, tracked for controls
-// that display it. It returns zero while the view is unmounted.
+// FontSize reports the view's current point size, tracked for controls that display it. It returns zero while the view is unmounted.
 func (r *Ref) FontSize() core.Points {
 	if r == nil || r.v == nil {
 		return 0
@@ -63,16 +57,14 @@ func (r *Ref) FontSize() core.Points {
 	return r.v.fontSize.Get()
 }
 
-// SetFontSize sets the view's point size, clamped to Ghostty's range of
-// 1–255 points. It does not restart the terminal or replace its input.
+// SetFontSize sets the view's point size, clamped to Ghostty's range of 1–255 points. It does not restart the terminal or replace its input.
 func (r *Ref) SetFontSize(size core.Points) {
 	if r != nil && r.v != nil {
 		r.v.setFontSize(size)
 	}
 }
 
-// Perform runs an action on the mounted view, returning false for an
-// unknown action or an unavailable session operation.
+// Perform runs an action on the mounted view, returning false for an unknown action or an unavailable session operation.
 func (r *Ref) Perform(action Action, amount core.Points) bool {
 	return r != nil && r.v != nil && r.v.perform(action, amount)
 }
@@ -135,8 +127,7 @@ func (v *view) bindActions(cx *core.Scope) {
 	}
 }
 
-// withContextMenu adds a hit wrapper inside the existing root, preserving
-// the root's style, reference and geometry. Its trigger is unstyled.
+// withContextMenu adds a hit wrapper inside the existing root, preserving the root's style, reference and geometry. Its trigger is unstyled.
 func (v *view) withContextMenu(children []core.Node) []core.Node {
 	p := &v.p
 	if p.RightClickAction == RightClickIgnore {

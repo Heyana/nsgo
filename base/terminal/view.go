@@ -58,14 +58,11 @@ type View struct {
 	Transparent bool
 	// HideIndicator hides the scroll bar; the scrollback still scrolls.
 	HideIndicator bool
-	// Keybinds override the terminal's defaults while its input is focused.
-	// They use core's key names and Ghostty's actions; later entries win.
+	// Keybinds override the terminal's defaults while its input is focused. They use core's key names and Ghostty's actions; later entries win.
 	Keybinds []Keybind
-	// RightClickAction is ContextMenu by default. RightClickIgnore leaves
-	// secondary clicks to an enclosing app menu.
+	// RightClickAction is ContextMenu by default. RightClickIgnore leaves secondary clicks to an enclosing app menu.
 	RightClickAction RightClickAction
-	// MenuClass and MenuStyle style the default context menu's surface;
-	// MenuItemClass and MenuItemStyle style its four items.
+	// MenuClass and MenuStyle style the default context menu's surface; MenuItemClass and MenuItemStyle style its four items.
 	MenuClass     string
 	MenuStyle     core.Style
 	MenuItemClass string
