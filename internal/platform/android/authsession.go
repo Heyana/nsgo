@@ -36,8 +36,7 @@ func writeAuthRequest(w *writer, id uint32, r *driver.AuthRequest) {
 	w.str(r.URL)
 }
 
-// readAuthSession decodes the phase and its two strings: redirect, or
-// error code and message/callback. The original callback stays intact.
+// readAuthSession decodes the phase and its two strings: redirect, or error code and message/callback. The original callback stays intact.
 func readAuthSession(ev driver.Event, data string) *driver.AuthEvent {
 	switch ev.Index {
 	case int(driver.AuthRedirect):

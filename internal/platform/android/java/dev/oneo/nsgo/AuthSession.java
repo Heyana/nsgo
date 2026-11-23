@@ -17,9 +17,7 @@ import java.net.URISyntaxException;
 import java.util.Locale;
 
 /**
- * A system-browser authentication session, prepared before Go builds its
- * authorization URL. Only a callback claimed by the requesting Activity can
- * end it. An ordinary link is left to the app's open-link handlers.
+ * A system-browser authentication session, prepared before Go builds its authorization URL. Only a callback claimed by the requesting Activity can end it. An ordinary link is left to the app's open-link handlers.
  */
 final class AuthSession {
     private static final String EXTRA_SESSION = "android.support.customtabs.extra.SESSION";
@@ -68,8 +66,7 @@ final class AuthSession {
         }
         URI redirect;
         try {
-            // Path is decoded application text, as net/url.URL.Path is in
-            // the Go adapters; literal percent signs must not become escapes.
+            // Path is decoded application text, as net/url.URL.Path is in the Go adapters; literal percent signs must not become escapes.
             redirect = new URI(scheme.toLowerCase(Locale.ROOT), null, path, null, null).normalize();
             if (redirect.isOpaque() || redirect.getRawAuthority() != null ||
                     redirect.getRawQuery() != null || redirect.getRawFragment() != null ||
@@ -168,8 +165,7 @@ final class AuthSession {
             try {
                 activity.startActivity(tab);
             } catch (ActivityNotFoundException e) {
-                // A browser that has no Custom Tabs support opens ACTION_VIEW
-                // normally. Also try without extras if a handler refuses them.
+                // A browser that has no Custom Tabs support opens ACTION_VIEW normally. Also try without extras if a handler refuses them.
                 try {
                     activity.startActivity(new Intent(Intent.ACTION_VIEW, page).addCategory(Intent.CATEGORY_BROWSABLE));
                 } catch (ActivityNotFoundException | SecurityException fallback) {
@@ -210,8 +206,7 @@ final class AuthSession {
 
         @Override public void onActivityResumed(Activity a) {
             if (a != activity || !left || stopped) return;
-            // onNewIntent precedes resume. Defer once more so a callback
-            // wins over this cancellation, including a late posted resume.
+            // onNewIntent precedes resume. Defer once more so a callback wins over this cancellation, including a late posted resume.
             main.post(() -> {
                 if (current == this && !stopped) end("cancelled", "");
             });
