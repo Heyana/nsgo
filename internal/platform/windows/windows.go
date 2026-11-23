@@ -1010,8 +1010,6 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	w.watchPower()
 }
 
-// openSurface creates an opened window on the backend's message loop and
-// attaches its tree to the same engine. The root window owns the loop; a
 // panelExStyle is the extended style a SurfacePanel opens with: it floats
 // above the ordinary windows whether or not it takes the focus, and a panel
 // that never takes it (SurfaceConfig.NoActivate) says so too. The app moves
@@ -1024,6 +1022,8 @@ func panelExStyle(noActivate bool) uintptr {
 	return wsExTopmost
 }
 
+// openSurface creates an opened window on the backend's message loop and
+// attaches its tree to the same engine. The root window owns the loop; a
 // child surface only owns its HWND and engine surface.
 func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	opts := w.opts
