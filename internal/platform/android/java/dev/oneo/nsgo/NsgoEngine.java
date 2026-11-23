@@ -26,7 +26,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 /**
  * Owns one NSGo process and its pipe. A host may keep this object in an Application or foreground service, so that the app runs on while the NsgoView showing it is detached from its Activity.
  *
- * Until the surface protocol in android-lifecycle.md lands, the pipe carries one surface: an engine serves the one NsgoView that first attaches to it, keeps it, detached or not, until the process ends, and refuses every other view. The process starts once; once it has ended or been destroyed, a host makes a new engine.
+ * The engine answers text requests for each surface. Until it can resync a tree in another view, it keeps its first NsgoView, detached or not, to receive view messages and host overlays. The process starts once. A host makes a new engine after the process ends or is destroyed.
  */
 public final class NsgoEngine {
     private static final String TAG = "nsgo";
@@ -34,7 +34,7 @@ public final class NsgoEngine {
     private static final ConcurrentHashMap<String, NsgoEngine> liveActions = new ConcurrentHashMap<>();
     private final String liveActionToken = UUID.randomUUID().toString();
 
-    /** Receives messages from the Go process on the engine reader thread. */
+    /** Receives view messages from the Go process on the engine reader thread. */
     interface Listener {
         void onMessage(int kind, byte[] payload);
 
@@ -48,6 +48,7 @@ public final class NsgoEngine {
     }
 
     private final Context application;
+    final TextCache text;
     private Process process;
     private LocalSocket socket;
     /** The development socket's input; a started process's comes from the process. */
@@ -70,6 +71,7 @@ public final class NsgoEngine {
     public NsgoEngine(Context context) {
         if (context == null) throw new NullPointerException("context");
         application = context.getApplicationContext();
+        text = new TextCache(application.getResources().getDisplayMetrics().density);
     }
 
     /**
@@ -153,7 +155,7 @@ public final class NsgoEngine {
     }
 
     /**
-     * Binds the view the engine serves and starts the pipe readers once the process runs. The view stays bound until the process ends; another view is refused, as the pipe carries one surface's tree and text.
+     * Binds the view the engine serves and starts the pipe readers once the process runs. The view stays bound until the process ends because the runtime cannot resync a tree in a different view.
      */
     synchronized void attach(Listener next) {
         if (closed) throw new IllegalStateException("engine is destroyed");
@@ -255,6 +257,7 @@ public final class NsgoEngine {
             closed = true;
             liveActions.remove(liveActionToken, this);
             if (socket != null) AndroidHostDev.closeSocket(socket);
+            text.close();
             if (out != null) {
                 try {
                     out.close();
@@ -291,8 +294,17 @@ public final class NsgoEngine {
                 synchronized (this) {
                     current = listener;
                 }
-                // The bound view answers even while detached: Go waits for its text replies.
-                if (current != null) current.onMessage(message.kind, message.payload);
+                if (message.kind == Protocol.TEXT_REQUEST) {
+                    write(Protocol.TEXT_REPLY, text.request(message.payload));
+                } else if (message.kind == Protocol.RELEASE) {
+                    try {
+                        text.release(message.payload);
+                    } catch (IOException e) {
+                        Log.w(TAG, "invalid text release from app", e);
+                    }
+                } else if (current != null) {
+                    current.onMessage(message.kind, message.payload);
+                }
             }
             bulk.end();
         } catch (IOException e) {
@@ -300,6 +312,7 @@ public final class NsgoEngine {
         }
         // A corrupt pipe cannot be resynchronized; do not leave its writer running.
         if (failure != null) destroy();
+        text.close();
         RecordingService.ownerEnded(this);
         BackgroundDownloadService.ownerEnded(this);
         Listener current;

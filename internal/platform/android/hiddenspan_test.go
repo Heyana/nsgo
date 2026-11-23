@@ -84,7 +84,7 @@ func TestHiddenSpansSkippedJava(t *testing.T) {
 	input.u32(uint32(len(cases)))
 	for _, tc := range cases {
 		input.float(tc.width)
-		writeTextPrepare(&input, &tc.at)
+		writeTextPrepare(&input, &tc.at, 0)
 	}
 
 	out := runJavaAlgorithm(t, "hiddenspan", "HiddenSpanCheck", input.buf, "Text", "TextNode", "Protocol", "FontFallback", "RasterScale", "TextCopy")
@@ -124,13 +124,17 @@ func TestTextPrepareAppendsHiddenFlags(t *testing.T) {
 	hidden.Spans = slices.Clone(shown.Spans)
 	hidden.Spans[1].Hidden = true
 	var old, now writer
-	writeTextPrepare(&old, &shown)
-	writeTextPrepare(&now, &hidden)
+	writeTextPrepare(&old, &shown, 7)
+	writeTextPrepare(&now, &hidden, 7)
 	n := len(shown.Spans)
-	if len(now.buf) != len(old.buf) || !slices.Equal(now.buf[:len(now.buf)-n], old.buf[:len(old.buf)-n]) {
+	const surface = 4 // the surface ID follows the hidden flags
+	if len(now.buf) != len(old.buf) || !slices.Equal(now.buf[:len(now.buf)-n-surface], old.buf[:len(old.buf)-n-surface]) {
 		t.Fatalf("a hidden span changed the payload before its trailing flags")
 	}
-	if got, want := now.buf[len(now.buf)-n:], []byte{0, 1, 0}; !slices.Equal(got, want) {
+	if got, want := now.buf[len(now.buf)-n-surface:len(now.buf)-surface], []byte{0, 1, 0}; !slices.Equal(got, want) {
 		t.Errorf("trailing hidden flags = %v, want %v", got, want)
+	}
+	if got, want := now.buf[len(now.buf)-surface:], []byte{0, 0, 0, 7}; !slices.Equal(got, want) {
+		t.Errorf("trailing surface ID = %v, want %v", got, want)
 	}
 }

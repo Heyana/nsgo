@@ -95,7 +95,7 @@ func runJavaEngineCheck(t *testing.T, check string) {
 	t.Helper()
 	javac, java := androidJDK(t)
 	classes := t.TempDir()
-	args := []string{"-d", classes, "java/dev/oneo/nsgo/Protocol.java", "java/dev/oneo/nsgo/NsgoEngine.java"}
+	args := []string{"-d", classes, "java/dev/oneo/nsgo/Protocol.java", "java/dev/oneo/nsgo/NsgoEngine.java", "java/dev/oneo/nsgo/TextCache.java"}
 	if err := filepath.WalkDir("testdata/pipe", func(path string, entry fs.DirEntry, err error) error {
 		if err == nil && !entry.IsDir() && strings.HasSuffix(path, ".java") {
 			args = append(args, path)

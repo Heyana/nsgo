@@ -335,8 +335,8 @@ func spoken(lang string) []string {
 	}
 }
 
-// writeStyle writes a text style in the format Text.Style reads, sending the full CSS fontFamily list for Java's Typeface.CustomFallbackBuilder chain.
-func writeStyle(w *writer, t *driver.TextStyle) {
+// writeStyle writes a text style in the format Text.Style reads, sending the full CSS fontFamily list for Java's Typeface.CustomFallbackBuilder chain. prepareSurface sets the flag (Protocol.TEXT_PREPARE_SURFACE) that tells TextCache a TEXT_PREPARE ends in its surface ID; only a prepare's base style sets it.
+func writeStyle(w *writer, t *driver.TextStyle, prepareSurface bool) {
 	w.str(t.Font.Family)
 	w.str(t.Font.Language)
 	w.points(t.Font.Size)
@@ -347,7 +347,7 @@ func writeStyle(w *writer, t *driver.TextStyle) {
 	w.byte(byte(t.Align))
 	w.flags(t.Font.Italic,
 		t.Decoration&driver.TextDecorationUnderline != 0,
-		t.Decoration&driver.TextDecorationLineThrough != 0, t.RTL)
+		t.Decoration&driver.TextDecorationLineThrough != 0, t.RTL, prepareSurface)
 	w.byte(byte(t.Font.Variant))
 }
 
@@ -962,16 +962,16 @@ func readWebDownload(data string) *driver.WebDownload {
 	return &download
 }
 
-// writeTextPrepare writes the body of a TEXT_PREPARE message (after the text ID) as NsgoView.textOperation reads it.
-func writeTextPrepare(w *writer, t *driver.AttributedText) {
+// writeTextPrepare writes the body of a TEXT_PREPARE message (after the text ID) as TextCache.prepare reads it, ending in the ID of the surface whose cache and density the text belongs to (0: the first).
+func writeTextPrepare(w *writer, t *driver.AttributedText, surface uint32) {
 	w.str(t.Text)
-	writeStyle(w, &t.Style)
+	writeStyle(w, &t.Style, true)
 	w.u32(uint32(t.MaxLines))
 	w.u32(uint32(len(t.Spans)))
 	for _, sp := range t.Spans {
 		w.u32(uint32(sp.Start)) // UTF-8 offsets; Java converts them
 		w.u32(uint32(sp.End))
-		writeStyle(w, &sp.Style)
+		writeStyle(w, &sp.Style, false)
 		w.u32(uint32(sp.Background.Color)) // 0: none
 		w.points(sp.Background.Radius)
 		writeBackgroundInset(w, sp.Background.Top)
@@ -1000,6 +1000,8 @@ func writeTextPrepare(w *writer, t *driver.AttributedText) {
 	for _, sp := range t.Spans {
 		w.flags(sp.Hidden)
 	}
+	// The surface ID comes after everything else, which a runtime that predates it never reads; the base style's flag says it is there.
+	w.u32(surface)
 }
 
 // writeBackgroundInset writes either points or a fraction of the box's height.

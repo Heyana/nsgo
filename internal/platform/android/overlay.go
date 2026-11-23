@@ -12,7 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
 )
 
-// Overlays over other apps (driver.SurfaceOverlay, mobile.OpenOverlay) show in windows of WindowManager's, each an NsgoView of its own that the activity's view, the first surface, hands its batches, images and events on to by the surface's ID. Go keeps an overlay from the ItemOpenSurface that opens it, attaches its tree as Java first reports the window's size, frame and environment (msgSurface), and ends it as Java reports it refused or removed. Text, fonts, shader programs and the host channel stay the process's, which the first view serves.
+// Overlays over other apps (driver.SurfaceOverlay, mobile.OpenOverlay) show in windows of WindowManager's, each an NsgoView of its own that the activity's view, the first surface, hands its batches, images and events on to by the surface's ID. Go keeps an overlay from the ItemOpenSurface that opens it, attaches its tree as Java first reports the window's size, frame and environment (msgSurface), and ends it as Java reports it refused or removed. The process shares fonts, shader programs and the host channel. The engine measures and lays out text at the overlay surface's density.
 
 // overlay is what Go keeps of an overlay the app opened: the platform its tree attaches to.
 type overlay struct {
@@ -39,8 +39,10 @@ func (s *surface) openOverlays(b *driver.MountBatch) {
 	}
 }
 
-// Prepare implements engine.Platform with the process's text, which the first view keeps.
-func (o *overlay) Prepare(t *driver.AttributedText) driver.PreparedText { return o.s.Prepare(t) }
+// Prepare implements engine.Platform with the overlay surface's text.
+func (o *overlay) Prepare(t *driver.AttributedText) driver.PreparedText {
+	return o.s.prepare(o.view.id, t)
+}
 
 // RequestFrame asks the runtime to answer from the overlay's clock.
 func (o *overlay) RequestFrame() {

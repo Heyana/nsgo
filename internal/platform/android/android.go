@@ -43,7 +43,7 @@ import (
 const (
 	// Go to Java.
 	msgBatch   = 1 // a MountBatch, applied on the UI thread
-	msgRelease = 5 // frees a prepared text
+	msgRelease = 5 // frees a prepared text or a pending layout
 	msgImage   = 6 // bytes of an image view's source or placeholder
 	// msgCanvasImage is the bytes of an image canvases draw, by its key.
 	msgCanvasImage = 8
@@ -842,10 +842,13 @@ func (s *surface) receiveText(r *reader) {
 	}
 }
 
-// Prepare implements core.TextEngine: Java keeps the text and its paint
-// under a new id, so measuring and laying it out send only the id.
+// Prepare implements core.TextEngine for the first surface.
 func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
-	p := preparedText{s: s, id: s.ids.Add(1), text: *t}
+	return s.prepare(0, t)
+}
+
+func (s *surface) prepare(owner uint32, t *driver.AttributedText) preparedText {
+	p := preparedText{s: s, id: s.ids.Add(1), owner: owner, text: *t}
 	// StaticLayout ellipsizes a head or a middle on one line only.
 	p.cut = (t.Ellipsize == driver.EllipsizeHead || t.Ellipsize == driver.EllipsizeMiddle) && t.MaxLines > 1
 	for _, a := range t.Attachments {
@@ -853,7 +856,7 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 	}
 	_, p.ready = s.requestText(textPrepare, func(w *writer) {
 		w.u32(p.id)
-		writeTextPrepare(w, t)
+		writeTextPrepare(w, t, owner)
 	})
 	return p
 }
@@ -863,6 +866,7 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 type preparedText struct {
 	s           *surface
 	id          uint32
+	owner       uint32
 	attachments []driver.Size
 	text        driver.AttributedText
 	ready       bool
@@ -876,6 +880,7 @@ func (p preparedText) Measure(maxWidth driver.Points) driver.Size {
 		if data, ok := p.s.requestText(textMeasure, func(w *writer) {
 			w.u32(p.id)
 			w.points(maxWidth) // Auto, a NaN, does not wrap
+			w.u32(p.owner)
 		}); ok {
 			if len(data) == 8 {
 				r := reader{data}
@@ -894,7 +899,7 @@ func (p preparedText) Layout(size driver.Size) driver.TextLayout {
 			return l
 		}
 	}
-	l := &textLayout{s: p.s}
+	l := &textLayout{s: p.s, owner: p.owner}
 	l.carets.Set(l.caretLines)
 	if !p.ready {
 		return l
@@ -904,6 +909,7 @@ func (p preparedText) Layout(size driver.Size) driver.TextLayout {
 		w.u32(p.id)
 		w.u32(l.id)
 		w.points(size.Width)
+		w.u32(p.owner)
 	})
 	if !ok {
 		return l
@@ -929,7 +935,10 @@ func (p preparedText) Layout(size driver.Size) driver.TextLayout {
 }
 
 func (p preparedText) Release() {
-	p.s.send(msgRelease, func(w *writer) { w.u32(p.id) })
+	p.s.send(msgRelease, func(w *writer) {
+		w.u32(p.id)
+		w.u32(p.owner)
+	})
 }
 
 // layoutCut lays p out with its last line's rest cut at its head or
@@ -938,7 +947,7 @@ func (p preparedText) Release() {
 func (p preparedText) layoutCut(size driver.Size) driver.TextLayout {
 	whole := p.text
 	whole.MaxLines = 0
-	q := p.s.Prepare(&whole).(preparedText)
+	q := p.s.prepare(p.owner, &whole)
 	ql := q.Layout(size).(*textLayout)
 	lines := ql.TextLines()
 	ql.Release()
@@ -947,12 +956,12 @@ func (p preparedText) layoutCut(size driver.Size) driver.TextLayout {
 		return nil
 	}
 	fits := func(c *driver.AttributedText) bool {
-		r := p.s.Prepare(c)
+		r := p.s.prepare(p.owner, c)
 		defer r.Release()
 		return r.Measure(driver.Auto).Width <= size.Width+0.01
 	}
 	cut := p.text.CutRest(lines[p.text.MaxLines-1].Start, fits)
-	r := p.s.Prepare(&cut).(preparedText)
+	r := p.s.prepare(p.owner, &cut)
 	defer r.Release()
 	l := r.Layout(size).(*textLayout)
 	// Attachments by the app's indices: those cut out are hidden.
@@ -974,6 +983,7 @@ func (p preparedText) layoutCut(size driver.Size) driver.TextLayout {
 type textLayout struct {
 	native      bool
 	id          uint32
+	owner       uint32
 	s           *surface
 	attachments []attachmentBox
 	sizes       []driver.Size
@@ -998,7 +1008,10 @@ func (l *textLayout) caretLines() driver.CaretLayout {
 	if !l.native {
 		return nil
 	}
-	data, ok := l.s.requestText(textCarets, func(w *writer) { w.u32(l.id) })
+	data, ok := l.s.requestText(textCarets, func(w *writer) {
+		w.u32(l.id)
+		w.u32(l.owner)
+	})
 	if !ok {
 		return nil
 	}
@@ -1049,7 +1062,10 @@ func (l *textLayout) TextLines() []driver.TextLine {
 	if !l.native {
 		return nil
 	}
-	data, ok := l.s.requestText(textLines, func(w *writer) { w.u32(l.id) })
+	data, ok := l.s.requestText(textLines, func(w *writer) {
+		w.u32(l.id)
+		w.u32(l.owner)
+	})
 	if !ok {
 		return nil
 	}
@@ -1083,7 +1099,10 @@ type attachmentBox struct {
 // Release frees a StaticLayout that no mount batch will name.
 func (l *textLayout) Release() {
 	if l.id != 0 {
-		l.s.send(msgRelease, func(w *writer) { w.u32(l.id) })
+		l.s.send(msgRelease, func(w *writer) {
+			w.u32(l.id)
+			w.u32(l.owner)
+		})
 	}
 }
 
@@ -1627,7 +1646,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			w.points(t.Content.Origin.Y)
 		case driver.ItemInput:
 			in := it.Input
-			writeStyle(w, &in.Style)
+			writeStyle(w, &in.Style, false)
 			w.str(in.Placeholder)
 			w.byte(byte(in.KeyboardType))
 			w.flags(in.Masked, in.Readonly, in.Disabled)

@@ -406,6 +406,29 @@ final class TestAgent {
             case "tab-badge":
                 view.testReply(id, "", tabBadge(op.getInt("index")));
                 return;
+            case "text-cache-surface": {
+                NsgoEngine engine = (NsgoEngine) field(view, "engine");
+                if (op.optBoolean("remove")) engine.text.removeSurface(op.getInt("surface"));
+                else engine.text.registerSurface(op.getInt("surface"), (float) op.getDouble("density"));
+                break;
+            }
+            case "text-cache-engine-close": {
+                // Use a separate engine so shutting it down cannot end the test's process.
+                NsgoEngine isolated = new NsgoEngine(view.getContext().getApplicationContext());
+                byte[] request = Base64.decode(op.getString("request"), Base64.DEFAULT);
+                try {
+                    byte[] before = isolated.text.request(request);
+                    if (before.length < 10 || before[9] != 0) throw new IllegalStateException("isolated prepare failed");
+                    isolated.destroy();
+                    isolated.destroy();
+                    isolated.text.registerSurface(0, view.density());
+                    byte[] after = isolated.text.request(request);
+                    if (after.length < 10 || after[9] != 1) throw new IllegalStateException("destroyed engine retained text");
+                } finally {
+                    isolated.destroy();
+                }
+                break;
+            }
             case "screenshot":
                 screenshot(id, 3);
                 return;

@@ -340,6 +340,8 @@ final class Protocol {
 
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;
+    // PREPARE's base style flag for a trailing surface ID.
+    static final int TEXT_PREPARE_SURFACE = 16;
     static final int TEXT_MEASURE = 2;
     static final int TEXT_LAYOUT = 3;
     static final int TEXT_LAYOUT_LINES = 4;

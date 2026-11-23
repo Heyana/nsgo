@@ -538,7 +538,7 @@ func TestWriteStyleAndDrawingPreserveFontFamilyList(t *testing.T) {
 	var sw writer
 	writeStyle(&sw, &driver.TextStyle{
 		Font: driver.Font{Family: list, Size: 16, Weight: 500},
-	})
+	}, false)
 	sr := reader{sw.buf}
 	if got := sr.str(); got != list {
 		t.Errorf("writeStyle family = %q, want %q", got, list)

@@ -16,11 +16,11 @@ The overlay is a surface the app opens, as `desktop.OpenPanel` opens one on macO
 
 ## How Android shows it
 
-Phones open no windows, so the first tree is the activity's view and `OpenWindow` and `OpenPanel` return nil; the overlay is the one surface Android opens beside it. `NsgoEngine` owns the process, and the engine keeps its first view, detached or not, until the process ends (#12's first stage), so that view stays the first surface and answers the process's text, and the overlay's view attaches as an opened surface. The pipe names the surface of what belongs to one:
+Phones open no windows, so the first tree is the activity's view and `OpenWindow` and `OpenPanel` return nil. The overlay is the one surface Android opens beside it. `NsgoEngine` owns the process and keeps its first view, detached or not, until the process ends (#12's first stage). The overlay's view attaches as an opened surface. The pipe names the surface of what belongs to one:
 
 1. Every batch, image and event carries its surface's ID, 0 for the activity's view, and `NsgoEngine`'s first view hands an overlay's on to the overlay's own `NsgoView`, with its own nodes, gestures, animations and environment.
 2. The overlay's view reports its size, applied frame and environment with `SURFACE` messages, the first of which attaches its tree, and its end with the reason; a refused overlay is attached only to be ended.
-3. What is the process's, text and fonts, shader programs, downloads, folders and the host channel, stays with the first view. Each view keeps its own canvas images, released as it closes ([canvas](canvas.md#players)).
+3. The engine measures and lays out text separately for each surface at its own density and frees the cache as the overlay closes. Fonts, shader programs, downloads, folders and the host channel stay with the first view. Each view keeps its own canvas images, released as it closes ([canvas](canvas.md#players)).
 
 A second view of an Activity, a fresh Activity attaching to a running engine and the `SurfaceAttach`/`SurfaceResync` protocol remain #12's later stages ([Android engine and view lifetime](android-lifecycle.md)).
 

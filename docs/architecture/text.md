@@ -74,6 +74,8 @@ A `Canvas` records its drawing on the engine into an immutable `Drawing` the pla
 
 ## Android runtime
 
+The Java engine owns prepared text and native layouts by surface. Each uses the display density the view reported when the text was prepared. The view takes its `StaticLayout`, clipping and shadow at mount time, and the layout remains available for caret and line queries until it leaves the view. Older runtimes ignore the surface IDs appended to text messages. Requests from older Go apps use the first surface's shared cache.
+
 Android sends `Prepare`, `Measure`, `Layout`, `Lines` and `Carets` over the runtime pipe with a request ID separate from the prepared text or layout ID. Java always replies with data or an error for a request whose header it can read. Go checks the operation and ID, ignores duplicate or late replies, and waits at most one second for each text request, including its queued write. A failed measurement uses the approximate engine's size, and failed line and caret queries return no geometry. A failed native layout leaves its text and attachments without a native layout for that commit.
 
 The Go and Java processes negotiate fragmented bulk transfers as they connect. Go splits encoded images, canvas images, bitmap frames and large font or bitmap mount data into pieces of at most 32 KiB. Java splits HTTP bodies and folder replies the same way. The writer lets waiting text traffic take the pipe between fragments. The reader delivers text frames as they arrive and hands over a reassembled bulk message only when complete. A mount batch and its associated bitmap frames keep their order across surfaces.

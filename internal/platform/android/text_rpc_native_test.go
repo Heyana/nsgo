@@ -3,6 +3,7 @@
 package android
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +46,14 @@ func TestTextRPCReportsErrorsAndRecoversOnDevice(t *testing.T) {
 	defer l.Release()
 	if size.Width <= 0 || size.Height <= 0 || !l.native || len(l.TextLines()) != 1 || len(l.caretLines()) != 1 {
 		t.Fatalf("text RPCs did not recover after the rejected requests: size %+v, native %t", size, l.native)
+	}
+	legacy := preparedText{s: s, id: s.ids.Add(1), text: a}
+	_, legacy.ready = s.requestText(textPrepare, func(w *writer) {
+		writeLegacyPreparedText(w, legacy.id, &a)
+	})
+	defer legacy.Release()
+	if old := legacy.Measure(120); !legacy.ready || old != size {
+		t.Fatalf("legacy prepare returned %+v, want %+v (ready %t)", old, size, legacy.ready)
 	}
 }
 
@@ -102,4 +111,80 @@ func TestTextRPCPassesAnUnfinishedImageOnDevice(t *testing.T) {
 		send(part)
 	}
 	live.Sync()
+}
+
+func TestTextCachesFollowEngineAndSurfaceLifetimesOnDevice(t *testing.T) {
+	live, err := testhost.Current().Open(func(*core.Scope) core.Node { return core.View{} }, testhost.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	live.Sync()
+	target := live.(*testSurface)
+	s := target.s
+	step := func(op map[string]any) {
+		t.Helper()
+		if err := target.do(op); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text := driver.AttributedText{Text: "Engine-owned 甲😀", Style: driver.TextStyle{Font: driver.Font{Size: 16}}}
+	check := func(owner uint32) *preparedText {
+		t.Helper()
+		p := s.prepare(owner, &text)
+		size := p.Measure(200)
+		layout := p.Layout(size).(*textLayout)
+		if !p.ready || !layout.native || size.Height <= 0 || len(layout.TextLines()) == 0 || len(layout.caretLines()) == 0 {
+			t.Fatalf("surface %d text unavailable: size %+v, ready %t, native %t", owner, size, p.ready, layout.native)
+		}
+		layout.Release()
+		return &p
+	}
+	primary := check(0)
+	defer primary.Release()
+	step(map[string]any{"op": "detach-view"})
+	defer func() { _ = target.do(map[string]any{"op": "reattach-view"}) }()
+	check(0).Release()
+	const first, second = uint32(0x7fff0001), uint32(0x7fff0002)
+	for id, density := range map[uint32]float64{first: 1.25, second: 2.5} {
+		step(map[string]any{"op": "text-cache-surface", "surface": id, "density": density})
+		defer func(id uint32) {
+			_ = target.do(map[string]any{"op": "text-cache-surface", "surface": id, "remove": true})
+		}(id)
+	}
+	removed, sibling := check(first), check(second)
+	defer removed.Release()
+	defer sibling.Release()
+	step(map[string]any{"op": "text-cache-surface", "surface": first, "remove": true})
+	measure := func(p *preparedText) textReply {
+		_, reply := s.textRPC.call(textMeasure, textTimeout, func(w *writer) {
+			w.u32(p.id)
+			w.float(200)
+			w.u32(p.owner)
+		})
+		return reply
+	}
+	if reply := measure(removed); reply.err == nil || !strings.Contains(reply.err.Error(), "unknown text surface") {
+		t.Fatalf("removed surface reply = %v", reply.err)
+	}
+	step(map[string]any{"op": "text-cache-surface", "surface": first, "density": 2.5})
+	if reply := measure(removed); reply.err == nil || !strings.Contains(reply.err.Error(), "unknown prepared text") {
+		t.Fatalf("recreated surface retained old text: %v", reply.err)
+	}
+	check(first).Release()
+	if reply := measure(sibling); reply.err != nil {
+		t.Fatalf("removing another surface discarded sibling text: %v", reply.err)
+	}
+	step(map[string]any{"op": "reattach-view"})
+	if reply := measure(primary); reply.err != nil {
+		t.Fatalf("reattaching lost the primary cache: %v", reply.err)
+	}
+	var request writer
+	request.u64(1)
+	request.byte(textPrepare)
+	request.u32(1)
+	writeTextPrepare(&request, &text, 0)
+	step(map[string]any{"op": "text-cache-engine-close", "request": base64.StdEncoding.EncodeToString(request.buf)})
+	if reply := measure(primary); reply.err != nil {
+		t.Fatalf("closing another engine discarded primary text: %v", reply.err)
+	}
 }

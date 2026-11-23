@@ -21,7 +21,7 @@ public final class HiddenSpanCheck {
             for (int c = 0; c < cases; c++) {
                 float density = 1f;
                 float layoutWidth = in.readFloat();
-                // Read the exact wire format NsgoView.textOperation(TEXT_PREPARE) reads (minus id).
+                // Read the exact wire format TextCache.prepare reads (minus id).
                 String text = Protocol.readString(in);
                 Text.Style style = new Text.Style(in, density);
                 int maxLines = in.readInt();
@@ -34,6 +34,7 @@ public final class HiddenSpanCheck {
                 style.readDecoration(in, density);
                 for (Text.Span span : spans) span.style.readDecoration(in, density);
                 for (Text.Span span : spans) span.hidden = Protocol.flag(in.readUnsignedByte(), 0);
+                in.readInt(); // surface ID
 
                 Text.Prepared prepared = new Text.Prepared(text, style, maxLines, ellipsize, shadow, spans, attachments);
                 float[] size = prepared.measure(Float.NaN);

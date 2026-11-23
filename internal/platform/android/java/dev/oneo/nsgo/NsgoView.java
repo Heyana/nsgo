@@ -49,7 +49,6 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
-import android.text.StaticLayout;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.DisplayMetrics;
@@ -112,7 +111,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
@@ -150,16 +148,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private final SparseArray<Node> nodes = new SparseArray<>();
     /** The node each node's view is, for a group to find its children's hit slop and areas. */
     private final java.util.HashMap<View, Node> byView = new java.util.HashMap<>();
-    /** Prepared text by ID, on the reader thread; an overlay's view shares the first view's, as text is the process's. */
-    private final SparseArray<Text.Prepared> prepared;
-    /** Laid-out text by ID: the reader thread adds it, the batch that draws it takes it. */
-    private final ConcurrentHashMap<Integer, StaticLayout> layouts;
-    /** Laid-out text a text view shows, by layout id, for hit testing on the reader thread. */
-    private final ConcurrentHashMap<Integer, StaticLayout> shown;
-    /** The lines a clipped layout shows, by layout id, until its ITEM_TEXT. */
-    private final ConcurrentHashMap<Integer, Integer> clips;
-    /** The text shadow of a layout, by layout id, until its ITEM_TEXT. */
-    private final ConcurrentHashMap<Integer, Text.Shadow> shadows;
     /**
      * The first view, which the engine serves, for an overlay's view: null for the first view itself. The first view receives every message and hands an overlay's batches and images on to its view, whose events name its surface.
      */
@@ -520,22 +508,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (first == null) {
             // Alarms a force stop cleared, which the boot receiver cannot set again.
             Notifications.rearm(context);
-            prepared = new SparseArray<>();
-            layouts = new ConcurrentHashMap<>();
-            shown = new ConcurrentHashMap<>();
-            clips = new ConcurrentHashMap<>();
-            shadows = new ConcurrentHashMap<>();
             host = new Host(this);
             downloads = new Downloads(this::write);
             audioOutputs = new AudioOutput(context.getApplicationContext(), this::write);
             overlays = new Overlays(this);
             discovery = new Discovery(context.getApplicationContext(), ui, this::write);
         } else {
-            prepared = first.prepared;
-            layouts = first.layouts;
-            shown = first.shown;
-            clips = first.clips;
-            shadows = first.shadows;
             host = first.host;
             downloads = first.downloads;
             audioOutputs = first.audioOutputs;
@@ -702,9 +680,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         // Text prepared before a change of density keeps its pixel size
         // until the engine prepares it again.
         float d = getResources().getDisplayMetrics().density;
-        if (d != density && engine != null && engine.isAlive()) {
+        if (d != density) {
             density = d;
-            if (primary == null) sendSize(Protocol.RESIZE);
+            if (engine != null) {
+                engine.text.setDensity(surface, d);
+                if (primary == null && engine.isAlive()) sendSize(Protocol.RESIZE);
+            }
         }
         // A rotation or a display change moves an overlay's usable area: its window moves back onto it before it reports its frame.
         if (primary != null) primary.overlays.fit(this);
@@ -870,7 +851,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Releases this view's native children and returns back to the system while its Go graph and process commands continue. Reattaching the same view reconstructs its current graph; queued view deltas from the old attachment are dropped. The engine still retains the view and its context until the process ends. The view detaches itself as it leaves its window.
+     * Releases this view's native children and returns back to the system while its Go graph and process commands continue; the engine keeps answering text requests. Reattaching the same view reconstructs its current graph; queued view deltas from the old attachment are dropped. The engine still retains the view and its context until the process ends. The view detaches itself as it leaves its window.
      */
     public void detachFromEngine() {
         attachmentWanted = false;
@@ -886,6 +867,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     private void attachRunningEngine() {
+        engine.text.registerSurface(surface, density);
         engine.attach(this);
         attached = true;
         attachmentWanted = true;
@@ -1252,6 +1234,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         releaseAllBackdrops();
         for (int i = 0; i < nodes.size(); i++) {
             Node n = nodes.valueAt(i);
+            if (engine != null) engine.text.hide(surface, n.laid);
             if (n.animator != null) n.animator.cancel();
             if (n.keyframer != null) n.keyframer.cancel();
             if (n.web != null) n.web.destroy();
@@ -1260,6 +1243,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             if (n.embedded != null) n.embedded.destroy();
             n.embedded = null;
         }
+        if (engine != null) engine.text.removeSurface(surface);
         nodes.clear();
         byView.clear();
         outside.clear();
@@ -1420,9 +1404,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                         });
                     }
                     break;
-                case Protocol.TEXT_REQUEST:
-                    text(message);
-                    break;
                 case Protocol.EXTENDED:
                     extended(message.readUnsignedByte(), message, payload);
                     break;
@@ -1431,14 +1412,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     for (int i = 0; i < ids.length; i++) ids[i] = message.readInt();
                     // After the batches that stopped drawing them.
                     ui.post(() -> ShaderNode.release(ids));
-                    break;
-                }
-                case Protocol.RELEASE: {
-                    int id = message.readInt();
-                    prepared.remove(id);
-                    layouts.remove(id);
-                    clips.remove(id);
-                    shadows.remove(id);
                     break;
                 }
                 default:
@@ -1589,6 +1562,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (primary != null) {
             byte[] state = primary.overlays.state(this, payload);
             if (state == null || Arrays.equals(state, environment)) return;
+            if (environment == null) engine.text.registerSurface(surface, density);
             environment = state;
             write(Protocol.SURFACE, state);
             return;
@@ -2163,106 +2137,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             throw new AssertionError(impossible);
         }
         write(Protocol.DNS, bytes.toByteArray());
-    }
-
-    /** Answers every numbered text request with its data or an error. */
-    private void text(DataInputStream in) {
-        long request = 0;
-        int kind = 0;
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        DataOutputStream out = new DataOutputStream(bytes);
-        try {
-            request = in.readLong();
-            kind = in.readUnsignedByte();
-            out.writeLong(request);
-            out.writeByte(kind);
-            out.writeBoolean(false);
-            textOperation(kind, in, out);
-        } catch (Throwable error) {
-            bytes.reset();
-            try {
-                out.writeLong(request);
-                out.writeByte(kind);
-                out.writeBoolean(true);
-                Protocol.writeString(out, error.getClass().getSimpleName() + ": " + error.getMessage());
-            } catch (IOException impossible) {
-                throw new AssertionError(impossible);
-            }
-        }
-        write(Protocol.TEXT_REPLY, bytes.toByteArray());
-    }
-
-    private void textOperation(int kind, DataInputStream in, DataOutputStream out) throws IOException {
-        int id = in.readInt();
-        switch (kind) {
-            case Protocol.TEXT_PREPARE: {
-                String text = Protocol.readString(in);
-                Text.Style style = new Text.Style(in, density);
-                int maxLines = in.readInt();
-                List<Text.Span> spans = new ArrayList<>();
-                for (int i = 0, n = in.readInt(); i < n; i++) spans.add(new Text.Span(in, density));
-                List<Text.Attachment> attachments = new ArrayList<>();
-                for (int i = 0, n = in.readInt(); i < n; i++) attachments.add(new Text.Attachment(in, density));
-                int ellipsize = in.readUnsignedByte();
-                Text.Shadow shadow = new Text.Shadow(in, density);
-                style.readDecoration(in, density);
-                for (Text.Span span : spans) span.style.readDecoration(in, density);
-                // Each span's hidden flag comes last, so a runtime that predates it reads the rest unchanged; with none sent, every span is visible.
-                for (Text.Span span : spans) {
-                    if (in.available() > 0) span.hidden = Protocol.flag(in.readUnsignedByte(), 0);
-                }
-                prepared.put(id, new Text.Prepared(text, style, maxLines, ellipsize, shadow, spans, attachments));
-                break;
-            }
-            case Protocol.TEXT_MEASURE: {
-                Text.Prepared p = prepared.get(id);
-                if (p == null) throw new IOException("unknown prepared text " + id);
-                float maxWidth = in.readFloat(); // NaN does not wrap
-                float[] size = p.measure(maxWidth * density);
-                out.writeFloat(size[0] / density);
-                out.writeFloat(size[1] / density);
-                break;
-            }
-            case Protocol.TEXT_LAYOUT: {
-                int layout = in.readInt();
-                Text.Prepared p = prepared.get(id);
-                if (p == null) throw new IOException("unknown prepared text " + id);
-                StaticLayout l = p.layout(in.readFloat() * density);
-                if (p.hasAttachments()) {
-                    float[] places = Text.attachments(l);
-                    out.writeInt(places.length / 2);
-                    for (float f : places) out.writeFloat(f / density);
-                } else {
-                    out.writeInt(0);
-                }
-                layouts.put(layout, l);
-                if (p.clipLines() > 0) clips.put(layout, p.clipLines());
-                if (p.shadow() != null) shadows.put(layout, p.shadow());
-                break;
-            }
-            case Protocol.TEXT_LAYOUT_LINES: {
-                StaticLayout l = layouts.get(id);
-                if (l == null) l = shown.get(id);
-                if (l == null) throw new IOException("unknown text layout " + id);
-                float[][] lines = Text.lines(l);
-                out.writeInt(lines.length);
-                for (float[] line : lines) {
-                    out.writeInt((int) line[0]);
-                    out.writeInt((int) line[1]);
-                    for (int i = 2; i < line.length; i++) out.writeFloat(line[i] / density);
-                }
-                break;
-            }
-            case Protocol.TEXT_CARETS: {
-                StaticLayout l = layouts.get(id);
-                if (l == null) l = shown.get(id);
-                if (l == null) throw new IOException("unknown text layout " + id);
-                out.write(Text.carets(l, density));
-                break;
-            }
-            default:
-                throw new IOException("unknown text operation " + kind);
-        }
     }
 
     /**
@@ -3719,7 +3593,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 byView.remove(n.view);
                 releaseBackdrops(n);
                 if (backdropNodes.remove(n) || !backdropAncestors.isEmpty()) updateBackdropAncestors();
-                if (n.laid != 0) shown.remove(n.laid);
+                engine.text.hide(surface, n.laid);
                 outside.remove(n);
                 moving.remove(n);
                 mouse.forget(n.id);
@@ -3761,14 +3635,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 ((TextNode) n.view).copy = TextCopy.EMPTY;
                 n.text = Protocol.readString(in);
                 int laid = in.readInt();
-                StaticLayout layout = layouts.remove(laid);
-                if (n.laid != 0) shown.remove(n.laid);
+                if (n.laid != laid) engine.text.hide(surface, n.laid);
+                TextCache.Layout layout = engine.text.show(surface, laid);
                 n.laid = laid;
-                if (layout != null) shown.put(laid, layout);
-                Integer clip = clips.remove(laid);
-                Text.Shadow shadow = shadows.remove(laid);
                 int x = px(in.readFloat()), y = px(in.readFloat());
-                ((TextNode) n.view).setLayout(layout, x, y, clip != null ? clip : 0, shadow);
+                ((TextNode) n.view).setLayout(layout != null ? layout.value : null, x, y,
+                        layout != null ? layout.clip : 0, layout != null ? layout.shadow : null);
                 describe(n);
                 break;
             }
