@@ -9,16 +9,12 @@ import (
 	"github.com/caelyreth/untie/display"
 	"golang.org/x/image/font/gofont/goregular"
 
-	_ "github.com/nsgo-dev/nsgo"
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
-func TestMain(m *testing.M) { nsgotest.Main(m) }
-
-// Missing text must reach the platform as a complete run: splitting Arabic or
-// combining characters into individual glyphs would lose their shaping.
+// Missing text must reach the platform as a complete run: splitting Arabic or combining characters into individual glyphs would lose their shaping.
 func TestTextUsesSystemFallback(t *testing.T) {
 	r := Default()
 	texts := []string{"中文 日本語 한국어", "العربية हिन्दी", "Latin 中文 é"}
@@ -167,5 +163,29 @@ func TestExplicitTextFallbackWins(t *testing.T) {
 		return core.TextMetrics{}
 	}, "en"); got != l {
 		t.Error("covered text was laid out again")
+	}
+}
+
+// A display formula wrapped to its width keeps its system text runs: the wrapped layout comes from the renderer's shared cache too, so the view adds them again.
+func TestWrappedDisplayFormulaKeepsSystemText(t *testing.T) {
+	r := Default()
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pt(160), FontSize: 20}, Children: []core.Node{
+			View{Source: `a=\text{中文}+b+c+d+e+f+g+h+i+j+k+l+m+n`, Display: true, Renderer: r, TestID: "wrapped"},
+		}}
+	}, nsgotest.Size(600, 400))
+	waitForFont(app, r, "id:wrapped")
+	v := app.Find("id:wrapped")
+	if v.Frame.Size.Width > 161 {
+		t.Fatalf("formula did not wrap: %v", v.Frame.Size)
+	}
+	var texts []string
+	for _, op := range v.Ops {
+		if op.Kind == driver.DrawFillText {
+			texts = append(texts, op.Text)
+		}
+	}
+	if len(texts) != 1 || texts[0] != "中文" {
+		t.Fatalf("wrapped formula text runs %q, want the system run", texts)
 	}
 }
