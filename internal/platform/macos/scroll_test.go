@@ -145,8 +145,19 @@ func TestTheIndicatorShowsOnlyForTheUsersScrolls(t *testing.T) {
 		v.scrollBy(driver.Point{Y: 20})
 		check("ScrollBy", 620, false)
 
+		s.wheels.chain = []*view{v}
+		gesture := func(phase uint, dy driver.Points) { s.gestureEvent(0, phase, 0, dy, mediaTime()) }
+		gesture(phaseMayBegin, 0)
+		check("fingers resting on the trackpad", 620, false)
+		v.scrollBy(driver.Point{Y: 25})
+		check("ScrollBy during a pending gesture", 645, false)
+		gesture(phaseBegan, 0)
+		gesture(phaseChanged, 20)
+		check("trackpad motion after compensation", 665, true)
+		gesture(phaseCancelled, 0)
+
 		v.wheelBy(0, -20, 0)
-		check("a mouse wheel", 600, true)
+		check("a mouse wheel", 645, true)
 
 		// A trackpad gesture pulled past the top springs back as the fingers lift.
 		v.sc.phase, v.sc.alpha = scrollPhase{}, 0

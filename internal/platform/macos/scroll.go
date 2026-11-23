@@ -297,13 +297,17 @@ func (v *view) moveTo(pos driver.Points) {
 
 // moveZoom is moveTo of an offset along both axes at zoom z.
 func (v *view) moveZoom(at driver.Point, z float64) {
+	v.placeZoom(at, z, v.userScrolling())
+}
+
+func (v *view) placeZoom(at driver.Point, z float64, showIndicator bool) {
 	s := v.sc
 	if s.at == at && s.zoom == z {
 		return
 	}
 	pos := v.main(at)
 	s.at, s.zoom = at, z
-	if v.userScrolling() {
+	if showIndicator {
 		v.showIndicator()
 	}
 	s.report = true
@@ -897,12 +901,14 @@ func (v *view) scrollBy(d driver.Point) {
 		p.to += by
 	}
 	s.resampled.Shift(by)
+	at := s.at
 	if v.zooms() {
 		s.phase.rawAt.X, s.phase.rawAt.Y = s.phase.rawAt.X+d.X, s.phase.rawAt.Y+d.Y
-		v.moveZoom(driver.Point{X: s.at.X + d.X, Y: s.at.Y + d.Y}, s.zoom)
-	} else if by != 0 {
-		v.moveTo(v.pos() + by)
+		at.X, at.Y = at.X+d.X, at.Y+d.Y
+	} else {
+		v.setMain(&at, v.pos()+by)
 	}
+	v.placeZoom(at, s.zoom, false)
 	v.reportScroll()
 }
 
