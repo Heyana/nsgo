@@ -623,6 +623,12 @@ jobs:
         run: go tool nsgo test -target windows -timeout 1m ./internal/testhost/testdata/discovery
       - name: Test native editing keys and bindings
         run: go tool nsgo test -target windows ./internal/testhost/testdata/keys
+      - name: Test the Windows backend's logic
+        # The package's other tests drive native windows and run one by one below; the logic tests (logic_test.go and *_logic_test.go) need none and otherwise run nowhere.
+        shell: bash
+        run: |
+          tests=$(grep -ho '^func Test[A-Za-z0-9_]*' internal/platform/windows/logic_test.go internal/platform/windows/*_logic_test.go | sed 's/^func //' | paste -sd '|')
+          go tool nsgo test -run "^($tests)\$" ./internal/platform/windows -- -count=1
       - name: Test WinSparkle quit approval and callback cleanup
         run: go tool nsgo test -run '^TestWinSparkleQuit' ./internal/platform/windows -- -count=1
       - name: Test unpackaged startup task failures
