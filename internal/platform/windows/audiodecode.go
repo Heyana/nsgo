@@ -84,7 +84,8 @@ func (a *windowAudio) load(id uint32, src driver.ImageSource, maxBytes, maxDecod
 	if maxBytes <= 0 {
 		maxBytes = driver.MaxSoundBytes
 	}
-	maxDecoded = min(cmp.Or(maxDecoded, driver.MaxDecodedBytes), xaMaxBufferBytes)
+	// Half of int's range keeps the PCM a 32-bit build can hold, and its byte counts, from overflowing.
+	maxDecoded = min(cmp.Or(maxDecoded, driver.MaxDecodedBytes), xaMaxBufferBytes, math.MaxInt/2)
 	ctx, cancel := context.WithCancel(context.Background())
 	a.loading[id] = cancel
 	go func() {
@@ -210,7 +211,8 @@ func decodeWindowsSound(data []byte, name string, limit time.Duration, maxDecode
 				format = actual
 				pcm.format = soundFormat{channels: min(actual.channels, 2), rate: actual.rate}
 				frameBytes = int(pcm.format.channels) * 4
-				maxBytes = int(limit*time.Duration(actual.rate)/time.Second) * frameBytes
+				// Microseconds keep a long duration cap times the rate within int64, and a frame past maxDecoded is enough to refuse the sound, which keeps the cap within int.
+				maxBytes = int(min(int64(limit/time.Microsecond)*int64(actual.rate)/1e6, maxDecoded/int64(frameBytes)+1)) * frameBytes
 				readFormat = false
 			}
 			cut, large, err := pcm.appendSample(sample, int(format.channels)*4, maxBytes, maxDecoded)
