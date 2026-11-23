@@ -1432,9 +1432,21 @@ func (t *testSurface) Animating() bool {
 func layersAnimating(layer objc.ID) bool {
 	if keys := layer.Send(sel("animationKeys")); keys != 0 {
 		for i := range objc.Send[uint](keys, sel("count")) {
+			key := apple.GoString(keys.Send(sel("objectAtIndex:"), i))
 			a := layer.Send(sel("animationForKey:"), keys.Send(sel("objectAtIndex:"), i))
 			if a == 0 {
 				continue
+			}
+			// tvOS can retain a completed opacity animation in animationKeys after its presentation value has reached the model value. It is no longer work for a test step to wait for; compare the presentation and model values before treating the stale key as active.
+			if key == "nsgo.opacity" {
+				presentation := layer.Send(sel("presentationLayer"))
+				if presentation != 0 {
+					shown := objc.Send[float32](presentation, sel("opacity"))
+					model := objc.Send[float32](layer, sel("opacity"))
+					if math.Abs(float64(shown-model)) < 0.001 {
+						continue
+					}
+				}
 			}
 			// A caret's blink repeats "forever" as a huge count.
 			repeat, duration := objc.Send[float32](a, sel("repeatCount")), objc.Send[float64](a, sel("duration"))
