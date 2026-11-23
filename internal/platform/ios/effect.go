@@ -119,3 +119,11 @@ func (v *view) fitHolder(vs *driver.ViewStyle) {
 	}
 	apple.ClipHolder(v.container.Send(selLayer), vs, false)
 }
+
+// shaderInput marks v's effect stale after an ItemShaderInput and schedules its redraw.
+func (s *surface) shaderInput(v *view) {
+	if fx := s.effects.Get(v); fx != nil {
+		fx.Invalidate()
+		s.shadeLater(v)
+	}
+}

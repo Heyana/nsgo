@@ -49,10 +49,10 @@ func (w *window) touchFinger(message uint32, wParam, lParam uintptr) {
 	switch {
 	case message == wmPointerDown:
 		// Touches on a video's controls or a page are theirs, as hostedMouse gives them the press Windows makes from the touch.
-		if vd, _, _ := w.barAt(at.X, at.Y); vd != nil {
+		if vh := videos.Load(); vh != nil && vh.barAt(w, at.X, at.Y) {
 			return
 		}
-		if wv, _, _ := w.webAt(at.X, at.Y); wv != nil {
+		if wh := webViews.Load(); wh != nil && wh.hitAt(w, at.X, at.Y) {
 			return
 		}
 		w.touch(w.fingers.TouchDown(key, w.listensTouches(), p))

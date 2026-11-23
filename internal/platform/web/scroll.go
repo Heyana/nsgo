@@ -626,7 +626,9 @@ func (s *surface) rasterAfterZoom(v *view) {
 		sc.rasterEnd = js.FuncOf(func(js.Value, []js.Value) any {
 			sc.rasterTimer = js.Undefined()
 			if s.view(v.id) == v {
-				s.refreshCanvasScale(v.content)
+				if ch := canvases.Load(); ch != nil {
+					ch.refreshScale(s, v.content)
+				}
 			}
 			return nil
 		})

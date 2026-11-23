@@ -1,0 +1,12 @@
+//go:build darwin && !ios
+
+package macos
+
+func init() {
+	var s *surface
+	s.EnableShaders()
+	s.EnableCanvas()
+	s.EnableVideo()
+	s.EnableWebView()
+	s.EnableNative()
+}

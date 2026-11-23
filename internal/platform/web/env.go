@@ -188,10 +188,14 @@ func (s *surface) updateEnv() {
 		s.engine.SetEnvironment(env)
 		for _, v := range s.views {
 			if repaint && v != nil && v.kind == driver.KindCanvas {
-				s.paint(v)
+				if ch := canvases.Load(); ch != nil {
+					ch.paint(s, v)
+				}
 			}
 			if repaint && v != nil && v.gl != nil {
-				s.shadeLater(v)
+				if sh := shaders.Load(); sh != nil {
+					sh.shadeLater(s, v)
+				}
 			}
 			if repaint && v != nil && v.gpu != nil {
 				s.resizeGPU(v)

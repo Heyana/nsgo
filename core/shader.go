@@ -50,6 +50,8 @@ type ShaderProgram struct {
 	// uncompiled is a program of a build without the compilers
 	// (shader_nocompile.go), which takes any uniform.
 	uncompiled bool
+	// enable activates the platform's shader handler when navShader uses this program.
+	enable func(*Tree)
 }
 
 // uniformSlot is where a uniform's lanes lie among the program's own,
@@ -228,6 +230,7 @@ func (sn *shaderNode) withFrames() *driver.Shader {
 }
 
 func (t *Tree) mountShader(cx *Scope, parent *node, s Shader) {
+	t.enableShaders()
 	n := t.newNode(driver.KindShader, parent, cx)
 	t.setClasses(n, s.Class)
 	t.bindStyle(cx, n, s.Style, s.StyleFunc)

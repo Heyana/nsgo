@@ -20,7 +20,7 @@ func compileFragment(src string) (*ShaderProgram, error) {
 	if err != nil {
 		return nil, err
 	}
-	sp := &ShaderProgram{p: &driver.ShaderProgram{IR: p}, uniforms: map[string]uniformSlot{}}
+	sp := &ShaderProgram{p: &driver.ShaderProgram{IR: p}, uniforms: map[string]uniformSlot{}, enable: (*Tree).enableShaders}
 	lane := 0
 	for i, name := range p.UniformNames {
 		if name == shader.RectSizeUniform || name == shader.ScaleUniform || name == shader.ImageSizesUniform {
@@ -44,7 +44,7 @@ func compileWGSL(src string) (*ShaderProgram, error) {
 		return nil, err
 	}
 	sp := &ShaderProgram{p: &driver.ShaderProgram{IR: c.IR, WGSL: true}, uniforms: map[string]uniformSlot{},
-		animated: c.Animated, pictures: driver.Pictures(c.Inputs)}
+		animated: c.Animated, pictures: driver.Pictures(c.Inputs), enable: (*Tree).enableShaders}
 	lane := wgsl.BuiltinLanes
 	for _, u := range c.Uniforms {
 		sp.uniforms[u.Name] = uniformSlot{lane: lane, n: u.Lanes, vec3: u.Vec3}

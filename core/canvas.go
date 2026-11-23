@@ -159,6 +159,7 @@ func (t *Tree) resolvePaint(n *node, inherited *textFields) {
 func sameGradient(a, b Gradient) bool { return reflect.DeepEqual(a, b) }
 
 func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
+	t.enableCanvas()
 	n := t.newNode(driver.KindCanvas, parent, cx)
 	t.bindClasses(cx, n, c.Class, c.ClassFunc)
 	t.bindStyle(cx, n, c.Style, c.StyleFunc)

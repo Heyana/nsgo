@@ -616,7 +616,9 @@ func (iv *ImageView) Start(ratio float64) {
 	}
 	if src := iv.config.Source; src.Offscreen != nil {
 		iv.cancel = nil
-		iv.show(offscreenDecoded(src, iv.request(ratio)), true, 0)
+		if fn := decodeOffscreen.Load(); fn != nil {
+			iv.show((*fn)(src, iv.request(ratio)), true, 0)
+		}
 		return
 	}
 	n := iv.load

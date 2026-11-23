@@ -125,7 +125,9 @@ func (w *window) setImage(v *view, c *driver.ImageConfig) bool {
 	case c.Source.Pixels != nil:
 		v.source.showPixels(c.Source)
 	case c.Source.Offscreen != nil:
-		w.showOffscreen(v, &v.source, c.Source)
+		if ch := canvases.Load(); ch != nil {
+			ch.showOffscreen(w, v, &v.source, c.Source)
+		}
 	default:
 		v.source.reset(c.Source)
 		changed = true

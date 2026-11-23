@@ -1038,8 +1038,8 @@ func (wv *web) pruneHistory() {
 	}
 }
 
-// focusedWeb returns the web view whose page has keyboard focus, or nil.
-func (w *window) focusedWeb() *view {
+// focusedWebView returns the web view whose page has keyboard focus, or nil.
+func (w *window) focusedWebView() *view {
 	if len(w.natives) == 0 {
 		return nil
 	}

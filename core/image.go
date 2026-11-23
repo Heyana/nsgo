@@ -186,6 +186,7 @@ func (cx *Scope) KeepImage(src ImageSource) (release func()) {
 	if key == "" {
 		return func() {}
 	}
+	t.enableCanvas()
 	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemKeepImage, Value: key})
 	t.changed = true
 	var done atomic.Bool

@@ -1297,7 +1297,10 @@ func (w *window) menuEdit(role driver.MenuRole) bool {
 	in := w.focusedField()
 	switch {
 	case in == nil:
-		return w.webEdit(role) || w.selectionEdit(role)
+		if wh := webViews.Load(); wh != nil && wh.edit(w, role) {
+			return true
+		}
+		return w.selectionEdit(role)
 	case role == driver.MenuPasteAndMatchStyle:
 		w.paste(in)
 	case role == driver.MenuDelete:

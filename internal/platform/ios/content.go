@@ -60,10 +60,9 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 	apple.DrawTopDown(ctx, f.Size.Height, !apple.MsgBool(layer, selContentsAreFlipped), func(baseUp bool) {
 		apple.TranslateCTM(ctx, -f.Origin.X, -f.Origin.Y)
 		if v.drawing != nil {
-			ops := v.surface.animator.CanvasOps(v.id, v.drawing)
-			apple.Play(ctx, ops, apple.CanvasHost{
-				Ratio: v.contentScale(), Redraw: v.redraw, Owner: v, BaseUp: baseUp})
-			v.played = append(v.played[:0], ops...)
+			if ch := canvases.Load(); ch != nil {
+				ch.paint(v, ctx, baseUp)
+			}
 			return
 		}
 		box := v.box

@@ -438,7 +438,9 @@ func (p *painter) drawImage(v *view, tint driver.Color, r rectF) {
 	if v.source.src.Offscreen != nil {
 		p.pushClipRect(r)
 		defer p.pop()
-		p.drawOffscreenImage(v, &v.source, r)
+		if ch := canvases.Load(); ch != nil {
+			ch.drawOffscreen(p, v, &v.source, r)
+		}
 		return
 	}
 	alpha := float32(1)

@@ -75,6 +75,10 @@ type observed struct {
 	dispatch  func(driver.Event)
 }
 
+// UnwrapPlatform implements driver.PlatformUnwrapper so core can reach the
+// underlying backend's optional feature enablers without observed naming them.
+func (o observed) UnwrapPlatform() any { return o.Platform }
+
 // platform is what the engine runs on in o's place: o itself, or, over a platform that registers fonts, o with its RegisterFont, which embedding the Platform interface does not promote (#313).
 func (o observed) platform() Platform {
 	if _, ok := o.Platform.(driver.FontRegistrar); ok {

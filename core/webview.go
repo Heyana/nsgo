@@ -152,6 +152,7 @@ func cloneWebHeaders(headers map[string]string) map[string]string {
 }
 
 func (t *Tree) mountWebView(cx *Scope, parent *node, w WebView) {
+	t.enableWebView()
 	n := t.newNode(driver.KindWeb, parent, cx)
 	t.setClasses(n, w.Class)
 	t.bindStyle(cx, n, w.Style, w.StyleFunc)

@@ -14,6 +14,8 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/canvastest"
 )
 
+func init() { EnableCanvas() }
+
 func TestOffscreenImageRenderCacheInvalidateRelease(t *testing.T) {
 	const id uint64 = 987654321
 	defer ReleaseOffscreen(id)

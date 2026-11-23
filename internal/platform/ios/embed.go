@@ -325,7 +325,9 @@ func (s *surface) close() {
 		engine.SyncStorage()
 	}
 	s.releaseAllAwake()
-	apple.ReleaseCanvasImages(s)
+	if ch := canvases.Load(); ch != nil {
+		ch.releaseSurface(s)
+	}
 	s.setSystemGestureEdges(0)
 	if s.audio != nil {
 		s.audio.Close()

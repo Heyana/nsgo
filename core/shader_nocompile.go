@@ -20,5 +20,5 @@ func compileWGSL(string) (*ShaderProgram, error) { return uncompiled(true), nil 
 
 func uncompiled(wgsl bool) *ShaderProgram {
 	return &ShaderProgram{p: &driver.ShaderProgram{WGSL: wgsl}, uniforms: map[string]uniformSlot{}, lanes: builtinLanes,
-		uncompiled: true}
+		uncompiled: true, enable: (*Tree).enableShaders}
 }

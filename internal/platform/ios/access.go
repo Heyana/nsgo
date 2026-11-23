@@ -117,7 +117,7 @@ func (v *view) setLabel(label string) {
 		return
 	}
 	v.props.Label = label
-	if _, ok := v.component.(*uiSwitch); ok {
+	if switchViewOf(v.component) != 0 {
 		v.updateAccessibility()
 	}
 	v.announceLive(label)
@@ -224,10 +224,10 @@ func (v *view) announceLive(text string) {
 // updateAccessibility sets v's properties from its props, events and text.
 func (v *view) updateAccessibility() {
 	native, p := v.native, &v.props
-	if s, ok := v.component.(*uiSwitch); ok {
+	if sw := switchViewOf(v.component); sw != 0 {
 		native.Send(selSetIsAccessibilityElement, false)
 		v.axElement = false
-		s.view.Send(sel("setAccessibilityLabel:"), nsOrNil(p.Label))
+		sw.Send(sel("setAccessibilityLabel:"), nsOrNil(p.Label))
 		return
 	}
 	// VoiceOver keeps to a dialog while it shows.

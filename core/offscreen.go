@@ -55,6 +55,7 @@ func (cx *Scope) NewOffscreenImage(size Size, scale float64, draw func(*Drawing)
 		dirty: true,
 	}
 	if t != nil {
+		t.enableCanvas()
 		if t.offscreens == nil {
 			t.offscreens = map[uint64]*OffscreenImage{}
 		}

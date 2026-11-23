@@ -138,86 +138,47 @@ func mouseButton(message uint32, wParam uintptr) (button int, down, ok bool) {
 // hostedMouse gives a mouse message to the page or the control bar under
 // it, or holding it, and reports whether one took it.
 func (w *window) hostedMouse(message uint32, wParam, lParam uintptr) bool {
+	wh := webViews.Load()
+	vh := videos.Load()
+	if wh == nil && vh == nil {
+		return false
+	}
 	x, y := int32(int16(lParam&0xffff)), int32(int16(lParam>>16&0xffff))
-	time, _, _ := getMessageTime.Call()
+	tm, _, _ := getMessageTime.Call()
 	if message == wmMouseMove {
-		return w.hostedMove(x, y, uint32(time))
+		if wh != nil && wh.rawMove(w, x, y, uint32(tm)) {
+			return true
+		}
+		if vh != nil && vh.drag(w, x, y) {
+			return true
+		}
+		if wh != nil {
+			wh.hoverMove(w, x, y, uint32(tm))
+		}
+		return false
 	}
 	button, down, ok := mouseButton(message, wParam)
 	if !ok {
 		return false
 	}
-	if wv := w.rawWeb; wv != nil {
-		// Every button goes to the page while one is held on it.
-		px, py := wv.local(x, y)
-		wv.mouse(button, down, px, py, uint32(time))
-		if wv.buttons == 0 {
-			w.rawWeb = nil
-			releaseCapture.Call()
-		}
+	if wh != nil && wh.rawButton(w, button, down, x, y, uint32(tm)) {
 		return true
 	}
-	if vd := w.barVideo; vd != nil {
-		if !down && button == 0 {
-			w.barVideo = nil
-			releaseCapture.Call()
-			vd.released()
-		}
+	if vh != nil && vh.heldButton(w, button, down) {
 		return true
 	}
 	if !down {
 		return false
 	}
-	if wv, px, py := w.webAt(x, y); wv != nil {
-		w.pressOutside(x, y)
-		w.rawWeb = wv
-		setCapture.Call(w.hwnd)
-		wv.mouse(button, true, px, py, uint32(time))
-		if wv.buttons == 0 {
-			w.rawWeb = nil
-			releaseCapture.Call()
-		}
+	if wh != nil && wh.pressAt(w, button, x, y, uint32(tm)) {
 		return true
 	}
 	// A press on the window's own content takes the keyboard from a page.
-	for wv := range w.webs {
-		if wv.focused {
-			wv.focusWindow()
-		}
+	if wh != nil {
+		wh.blurFocused(w)
 	}
-	if button == 0 {
-		if vd, lx, _ := w.barAt(x, y); vd != nil {
-			w.barVideo = vd
-			setCapture.Call(w.hwnd)
-			vd.press(lx, float32(vd.v.frame.Size.Width))
-			return true
-		}
-	}
-	return false
-}
-
-// hostedMove follows the mouse to x, y: to the page holding it or under
-// it, or along the scrubber being dragged. It reports whether a held page
-// or bar took the move; hover moves go on to the window too.
-func (w *window) hostedMove(x, y int32, time uint32) bool {
-	if wv := w.rawWeb; wv != nil {
-		px, py := wv.local(x, y)
-		wv.mouse(-1, false, px, py, time)
+	if button == 0 && vh != nil && vh.pressAt(w, x, y) {
 		return true
-	}
-	if vd := w.barVideo; vd != nil {
-		vd.drag(float32(vd.v.surfacePoint(w.point(x, y)).X), float32(vd.v.frame.Size.Width))
-		return true
-	}
-	wv, px, py := w.webAt(x, y)
-	if w.hoverWeb != nil && w.hoverWeb != wv {
-		w.hoverWeb.leave()
-		w.hoverWeb = nil
-	}
-	if wv != nil {
-		// pointerMoved asked to hear when the mouse leaves.
-		w.hoverWeb = wv
-		wv.mouse(-1, false, px, py, time)
 	}
 	return false
 }
@@ -307,9 +268,8 @@ func (w *window) mouseLeft() {
 	w.tracking = false
 	w.pointerIn = false
 	w.hoverViews()
-	if wv := w.hoverWeb; wv != nil && w.rawWeb == nil {
-		w.hoverWeb = nil
-		wv.leave()
+	if wh := webViews.Load(); wh != nil {
+		wh.mouseLeft(w)
 	}
 	if w.barDrag == nil {
 		w.hoverBars(driver.Point{X: -1, Y: -1})
@@ -322,29 +282,33 @@ func (w *window) captureLost(to uintptr) {
 	if to == w.hwnd {
 		return
 	}
-	if wv := w.rawWeb; wv != nil {
-		w.rawWeb = nil
-		wv.leave()
+	if wh := webViews.Load(); wh != nil {
+		wh.captureLost(w)
 	}
-	if vd := w.barVideo; vd != nil {
-		w.barVideo = nil
-		vd.released()
+	if vh := videos.Load(); vh != nil {
+		vh.captureLost(w)
 	}
 }
 
 // hostedWheel gives a wheel turn at client pixel x, y to
 // the page under it, reporting whether the page took it.
 func (w *window) hostedWheel(x, y int32, delta int16, horizontal bool) bool {
-	if w.rawWeb != nil {
-		return false
+	if wh := webViews.Load(); wh != nil {
+		return wh.wheel(w, x, y, delta, horizontal)
 	}
-	wv, px, py := w.webAt(x, y)
-	return wv != nil && wv.wheel(delta, horizontal, px, py)
+	return false
 }
 
 // hostedPointer gives a touch or pen contact to the page it went down
 // on, reporting whether the page took it; others become mouse messages.
 func (w *window) hostedPointer(message uint32, wParam, lParam uintptr) bool {
+	if wh := webViews.Load(); wh != nil {
+		return wh.pointer(w, message, wParam, lParam)
+	}
+	return false
+}
+
+func (w *window) webPointer(message uint32, wParam, lParam uintptr) bool {
 	id := uint32(wParam & 0xffff)
 	var kind uint32
 	if r, _, _ := getPointerType.Call(uintptr(id), uintptr(unsafe.Pointer(&kind))); r == 0 ||
@@ -491,16 +455,18 @@ func systemCursor(c driver.Cursor) uintptr {
 // hostedCursor sets the cursor over the client area: the page's, or a
 // hand over a control bar's button. It reports whether it set one.
 func (w *window) hostedCursor() bool {
+	wh := webViews.Load()
+	vh := videos.Load()
+	if wh == nil && vh == nil {
+		return false
+	}
 	var at point
 	getCursorPos.Call(uintptr(unsafe.Pointer(&at)))
 	screenToClient.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))
-	if wv, _, _ := w.webAt(at.X, at.Y); wv != nil && wv.cursor != 0 {
-		setCursor.Call(wv.cursor)
+	if wh != nil && wh.cursor(w, at.X, at.Y) {
 		return true
 	}
-	if vd, lx, _ := w.barAt(at.X, at.Y); vd != nil && lx < videoButton {
-		hand, _, _ := loadCursorW.Call(0, idcHand)
-		setCursor.Call(hand)
+	if vh != nil && vh.cursor(w, at.X, at.Y) {
 		return true
 	}
 	return false

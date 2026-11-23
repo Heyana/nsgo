@@ -4,6 +4,7 @@ package apple
 
 import (
 	"math"
+	"sync"
 
 	"github.com/ebitengine/purego"
 
@@ -17,6 +18,12 @@ var (
 	cgLayerGetContext        func(layer uintptr) uintptr
 	cgContextDrawLayerInRect func(ctx uintptr, r CGRect, layer uintptr)
 )
+
+var canvasLayerOnce sync.Once
+
+func ensureCanvasLayer() {
+	canvasLayerOnce.Do(func() { loadCanvasLayer(coreGraphics) })
+}
 
 func loadCanvasLayer(cg uintptr) {
 	purego.RegisterLibFunc(&cgLayerCreateWithContext, cg, "CGLayerCreateWithContext")
@@ -40,6 +47,8 @@ type CanvasLayer struct {
 // image the part draws has not loaded yet, which the layer would miss.
 func NewCanvasLayer(ctx uintptr, d *driver.Drawing, ops []driver.DrawOp, split driver.CanvasSplit,
 	w, h, scale float64, host CanvasHost) *CanvasLayer {
+	ensureCanvasLayer()
+	ensureCanvas()
 	pw, ph := int(math.Ceil(w*scale)), int(math.Ceil(h*scale))
 	if pw <= 0 || ph <= 0 || split.At <= 0 {
 		return nil

@@ -220,6 +220,7 @@ func (t *Tree) bindFx(cx *Scope, n *node, role driver.ShaderRole, p *ShaderProgr
 }
 
 func (t *Tree) mountShaderEffect(cx *Scope, parent *node, e ShaderEffect) {
+	t.enableShaders()
 	n := t.newNode(driver.KindView, parent, cx)
 	t.setClasses(n, e.Class)
 	t.bindStyle(cx, n, e.Style, e.StyleFunc)
@@ -233,6 +234,7 @@ func (t *Tree) mountShaderEffect(cx *Scope, parent *node, e ShaderEffect) {
 }
 
 func (t *Tree) mountShaderTransition(cx *Scope, parent *node, e ShaderTransition) {
+	t.enableShaders()
 	n := t.newNode(driver.KindView, parent, cx)
 	t.setClasses(n, e.Class)
 	t.bindStyle(cx, n, e.Style, e.StyleFunc)
@@ -262,12 +264,14 @@ func progressOf(x float64, n AnimatedNode) AnimatedNode {
 var screenStyle = Style{Position: Absolute, Width: Pt(0), Height: Pt(0)}
 
 func (t *Tree) mountScreenEffect(cx *Scope, parent *node, e ScreenEffect) {
+	t.enableShaders()
 	n := t.newNode(driver.KindView, parent, cx)
 	t.bindStyle(cx, n, screenStyle, nil)
 	t.bindFx(cx, n, driver.ShaderScreen, e.Program, e.Uniforms, e.UniformsFunc, progressOf(e.Progress, e.ProgressNode), e.ProgressFunc, e.MaxSampleOffset, e.Paused, e.PausedFunc)
 }
 
 func (t *Tree) mountScreenTransition(cx *Scope, parent *node, e ScreenTransition) {
+	t.enableShaders()
 	n := t.newNode(driver.KindView, parent, cx)
 	t.bindStyle(cx, n, screenStyle, nil)
 	p := e.Program
@@ -349,6 +353,9 @@ func (t *Tree) navShader(host *node, ts *TransitionShader, backward bool) bool {
 	}
 	if t.root.Env().reduce.GetUntracked() {
 		return false
+	}
+	if ts.Program.enable != nil {
+		ts.Program.enable(t)
 	}
 	cx := host.owner
 	fx := host.fx

@@ -20,7 +20,7 @@ func TestClosingASurfaceReleasesItsShaders(t *testing.T) {
 		v := s.create(driver.KindShader, 1)
 		s.views = []*view{nil, v}
 		s.native.Send(selAddSubview, v.native)
-		sl := v.shader
+		sl := v.shaderLayer()
 		if sl == nil {
 			t.Skip("no Metal device")
 		}

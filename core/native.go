@@ -56,6 +56,7 @@ type nativeNode struct {
 }
 
 func (t *Tree) mountNative(cx *Scope, parent *node, v Native) {
+	t.enableNative()
 	n := t.newNode(driver.KindNative, parent, cx)
 	t.setLabels(n, nil, v.LabelledBy)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)

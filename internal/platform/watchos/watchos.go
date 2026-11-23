@@ -355,6 +355,8 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 }
 
 // Mount implements engine.Platform.
+func (s *surface) EnableCanvas() { apple.EnableCanvas() }
+
 func (s *surface) Mount(b *driver.MountBatch) {
 	if s.batches.Push(b) {
 		apple.OnMain(func() {

@@ -112,6 +112,7 @@ func (cx *Scope) ClearWebsiteData(done func(err error)) {
 
 // webCookies sends r, with the schemes the current scope serves, and calls answer with the platform's event and its error: Unavailable where the platform has no store or no listing by domain.
 func (cx *Scope) webCookies(t *Tree, r driver.WebCookiesRequest, answer func(driver.Event, error)) {
+	t.enableWebView()
 	r.Schemes = slices.Sorted(maps.Keys(webSchemesOf(cx.current())))
 	t.request(cx, driver.MountItem{Kind: driver.ItemWebCookies, Cookies: &r}, func(ev driver.Event) {
 		switch ev.Text {

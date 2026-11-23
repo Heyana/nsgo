@@ -265,9 +265,15 @@ func (w *window) animatedChanged() {
 			v.animated = vals
 		}
 	})
-	w.changedCanvases()
-	w.changedNatives()
-	w.changedShaders()
+	if ch := canvases.Load(); ch != nil {
+		ch.changedCanvases(w)
+	}
+	if nh := natives.Load(); nh != nil {
+		nh.changedNatives(w)
+	}
+	if sh := shaders.Load(); sh != nil {
+		sh.changedShaders(w)
+	}
 	w.repinBound()
 }
 

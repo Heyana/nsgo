@@ -219,6 +219,39 @@ func TestSmallJSON(t *testing.T) {
 	}
 }
 
+func TestAndroidDNSTag(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("needs the go command")
+	}
+	const plain = "package main\n\nfunc main() {}\n"
+	const withNet = "package main\n\nimport \"net\"\n\nfunc main() { _, _ = net.LookupHost(\"example.com\") }\n"
+	for _, c := range []struct {
+		name string
+		src  string
+		env  []string
+		tags []string
+		want bool
+	}{
+		{"plain android", plain, []string{"GOOS=android", "GOARCH=arm64", "CGO_ENABLED=0"}, nil, false},
+		{"net android", withNet, []string{"GOOS=android", "GOARCH=arm64", "CGO_ENABLED=0"}, nil, true},
+		{"net non-android", withNet, []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}, nil, false},
+		{"nsgodev skips list", plain, []string{"GOOS=android", "GOARCH=arm64", "CGO_ENABLED=0"}, []string{"nsgodev"}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module app\n\ngo 1.26\n"), 0o644)
+			os.WriteFile(filepath.Join(dir, "main.go"), []byte(c.src), 0o644)
+			got, err := androidDNSTag(t.Context(), &project{Dir: dir}, c.env, c.tags)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if slices.Contains(got, "nsgo_android_dns") != c.want {
+				t.Fatalf("tags = %v, want nsgo_android_dns=%v", got, c.want)
+			}
+		})
+	}
+}
+
 // setGoEnv points the go command at a go env file of its own, which sets GOEXPERIMENT to experiment, as go env -w does, unless it is empty.
 func setGoEnv(t *testing.T, experiment string) {
 	file := filepath.Join(t.TempDir(), "env")

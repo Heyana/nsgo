@@ -36,6 +36,9 @@ func (v *view) setCanvasNodes(nodes []driver.CanvasNode) {
 		return
 	}
 	v.releaseCanvasNodes()
+	if len(nodes) > 0 && canvasNodeClass == 0 {
+		registerCanvasNodes()
+	}
 	for _, n := range nodes {
 		el := objc.ID(canvasNodeClass).Send(sel("alloc")).Send(sel("initWithAccessibilityContainer:"), v.native)
 		el.Send(selSetIsAccessibilityElement, true)

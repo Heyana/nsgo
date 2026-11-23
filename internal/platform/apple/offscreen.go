@@ -43,7 +43,18 @@ var (
 	offscreenRendering = map[uint64]bool{}
 	offscreenDropped   = map[uint64]bool{}
 	offscreenRenders   atomic.Uint64
+	decodeOffscreen    atomic.Pointer[func(driver.ImageSource, request) decoded]
 )
+
+// EnableCanvas wires offscreen-canvas decoding for ImageView so offscreen
+// rendering (and Play) link only into apps that use canvases or offscreens.
+func EnableCanvas() {
+	if decodeOffscreen.Load() != nil {
+		return
+	}
+	fn := offscreenDecoded
+	decodeOffscreen.Store(&fn)
+}
 
 // ReleaseOffscreen drops the cached CGImage for offscreen resource id.
 func ReleaseOffscreen(id uint64) {
@@ -62,6 +73,7 @@ func ReleaseOffscreen(id uint64) {
 // off.Drawing only on first use or when off.Version changes. The caller must
 // call Release on the returned image when non-zero.
 func offscreenImage(src driver.ImageSource, host CanvasHost) (img uintptr, width, height float64, points driver.Size, waited bool) {
+	ensureCanvas()
 	off := src.Offscreen
 	if off == nil {
 		return 0, 0, 0, driver.Size{}, false

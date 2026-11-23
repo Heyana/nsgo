@@ -1477,7 +1477,10 @@ func (w *window) menuEdit(role driver.MenuRole) bool {
 		gtkWidgetActivateAction(w.focus.entry, cstr(action), 0)
 		return true
 	}
-	return w.webEdit(role) || w.selectionEdit(role)
+	if wh := webViews.Load(); wh != nil && wh.edit(w, role) {
+		return true
+	}
+	return w.selectionEdit(role)
 }
 
 // GDK's event types and modifier bits the shield reads.

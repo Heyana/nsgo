@@ -5,6 +5,7 @@ package android
 import (
 	"image"
 	"log"
+	"slices"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
@@ -24,6 +25,28 @@ type glProgram struct {
 	images int
 	sent   bool
 	views  int // the shader views drawing it, on every surface
+}
+
+// withoutEffects leaves out of b what the Java runtime does not draw yet:
+// effects, transitions and navigation shaders, and their starts and
+// pictures, so their children show as they are and pages and dialogs come
+// with their own motion.
+func withoutEffects(b *driver.MountBatch) *driver.MountBatch {
+	effect := func(it *driver.MountItem) bool {
+		switch it.Kind {
+		case driver.ItemShaderTransition, driver.ItemShaderInput:
+			return true
+		case driver.ItemShader:
+			return it.Shader == nil || it.Shader.Role != driver.ShaderFill
+		}
+		return false
+	}
+	if !slices.ContainsFunc(b.Items, func(it driver.MountItem) bool { return effect(&it) }) {
+		return b
+	}
+	out := *b
+	out.Items = slices.DeleteFunc(slices.Clone(b.Items), func(it driver.MountItem) bool { return effect(&it) })
+	return &out
 }
 
 // What a lane holds, as ShaderNode reads it: a 32-bit float, or a 32-bit

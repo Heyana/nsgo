@@ -95,6 +95,7 @@ func (in *iconNode) naturalSize() Size {
 func (t *Tree) mountIcon(cx *Scope, parent *node, v Icon) {
 	// Icons draw through the canvas protocol: the engine records the shapes
 	// and a platform plays them, as canvases do.
+	t.enableCanvas()
 	n := t.newNode(driver.KindCanvas, parent, cx)
 	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)

@@ -159,12 +159,20 @@ func (w *window) showAnimated() {
 		}
 		w.moved(v)
 	})
-	w.changedCanvases()
-	w.changedNatives()
-	w.changedShaders()
+	if ch := canvases.Load(); ch != nil {
+		ch.changedCanvases(w)
+	}
+	if nh := natives.Load(); nh != nil {
+		nh.changedNatives(w)
+	}
+	if sh := shaders.Load(); sh != nil {
+		sh.changedShaders(w)
+	}
 	w.repinBound()
 	if w.animator.Running() {
-		w.staleEffects()
+		if sh := shaders.Load(); sh != nil {
+			sh.staleEffects(w)
+		}
 	}
 }
 

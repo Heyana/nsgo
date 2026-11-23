@@ -9,6 +9,7 @@ import (
 	"math"
 	"slices"
 	"structs"
+	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -86,6 +87,12 @@ func (m affine) invert() affine {
 	}
 	return affine{A: m.D / det, B: -m.B / det, C: -m.C / det, D: m.A / det,
 		X: (m.C*m.Y - m.D*m.X) / det, Y: (m.B*m.X - m.A*m.Y) / det}
+}
+
+var canvasOnce sync.Once
+
+func ensureCanvas() {
+	canvasOnce.Do(func() { loadCanvas(coreGraphics) })
 }
 
 func loadCanvas(cg uintptr) {
@@ -251,6 +258,7 @@ func PlayOver(ctx uintptr, ops []driver.DrawOp, split driver.CanvasSplit, host C
 	if ctx == 0 {
 		return
 	}
+	ensureCanvas()
 	newPlayer(ctx, ops, split, host).run()
 }
 

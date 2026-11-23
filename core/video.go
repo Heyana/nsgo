@@ -145,6 +145,7 @@ type videoNode struct {
 }
 
 func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
+	t.enableVideo()
 	n := t.newNode(driver.KindVideo, parent, cx)
 	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)

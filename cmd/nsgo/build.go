@@ -822,6 +822,10 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 		}
 	}
 	tags = uniqueTags(tags)
+	tags, err = androidDNSTag(ctx, p, env, tags)
+	if err != nil {
+		return nil, nil, err
+	}
 	args = append(args, tagsArgs(tags)...)
 	env, err = smallJSON(ctx, p, env, tags)
 	if err != nil {
@@ -897,6 +901,36 @@ func (p *project) devTokenFile() (string, error) {
 		return "", err
 	}
 	return f.Name(), nil
+}
+
+// androidDNSTag adds nsgo_android_dns when building an Android app whose own
+// packages or dependencies import net, so Android's DNS resolver links only
+// into apps that use Go networking (docs/architecture/layers.md, What an app links).
+func androidDNSTag(ctx context.Context, p *project, env, tags []string) ([]string, error) {
+	if !slices.Contains(env, "GOOS=android") || slices.Contains(tags, "nsgo_android_dns") ||
+		slices.Contains(tags, "nsgodev") || slices.Contains(tags, "nsgotest") {
+		return tags, nil
+	}
+	args := []string{"list", "-deps", "-f", "{{.ImportPath}}"}
+	if p.testBinary {
+		args = append(args, "-test")
+	}
+	args = append(args, tagsArgs(tags)...)
+	cmd := exec.CommandContext(ctx, "go", append(args, ".")...)
+	cmd.Dir = p.Dir
+	cmd.Env = append(os.Environ(), env...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("go list: %w\n%s", err, stderr.Bytes())
+	}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if line == "net" {
+			return append(tags, "nsgo_android_dns"), nil
+		}
+	}
+	return tags, nil
 }
 
 // smallJSON returns env with GOEXPERIMENT=nojsonv2 added: encoding/json's first implementation, which from Go 1.27, where Go builds encoding/json on encoding/json/v2 by default, links into a page about 1 MB smaller, into an Android app about 450 KB and into a desktop one 100 to 450 KB; Go 1.26 builds the first implementation already, and the experiment changes nothing. An app whose packages or dependencies import encoding/json/v2 or jsontext keeps them, as does one whose GOEXPERIMENT, in the environment or set with go env -w, names the experiment either way.

@@ -153,8 +153,10 @@ func (p *picture) load(s *surface, v *view, src driver.ImageSource) bool {
 	}
 	p.release()
 	if src.Offscreen != nil {
-		if canvas, _, ok := s.offscreenCanvas(src.Offscreen, v); ok && canvas.Truthy() {
-			p.url, p.object = canvas.Call("toDataURL", "image/png").String(), false
+		if ch := canvases.Load(); ch != nil {
+			if canvas, _, ok := ch.offscreenCanvas(s, src.Offscreen, v); ok && canvas.Truthy() {
+				p.url, p.object = canvas.Call("toDataURL", "image/png").String(), false
+			}
 		}
 	} else {
 		p.url, p.object = imageURL(src)
