@@ -11,6 +11,8 @@ import (
 // ViewProps records a mounted view's identity, accessibility and interaction settings.
 type ViewProps struct {
 	Role core.Role
+	// Href is the browser address of a link; other backends ignore it.
+	Href string
 	// Level is a heading's or a tree item's level, from 1; 0 for none.
 	Level int
 	Label string
@@ -111,6 +113,7 @@ func viewProps(p driver.ViewProps) ViewProps {
 		Role:             p.Role,
 		Level:            p.Level,
 		Label:            p.Label,
+		Href:             p.Href,
 		LabelledBy:       labelledBy,
 		LabelFor:         p.LabelFor,
 		LabelPress:       p.LabelPress,
@@ -156,6 +159,7 @@ func (p ViewProps) driverProps() driver.ViewProps {
 		Role:             p.Role,
 		Level:            p.Level,
 		Label:            p.Label,
+		Href:             p.Href,
 		LabelledBy:       p.LabelledBy,
 		LabelFor:         p.LabelFor,
 		LabelPress:       p.LabelPress,

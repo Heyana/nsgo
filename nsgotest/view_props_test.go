@@ -2,6 +2,7 @@ package nsgotest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -16,7 +17,7 @@ func TestViewPropsOwnTheirPointerBackedValues(t *testing.T) {
 		Checked: true, Indeterminate: true, Pressed: true, Busy: true, Invalid: true,
 		Expandable: true, Expanded: true, Value: core.AccessibilityValue{Min: 0, Max: 10, Now: 3},
 		Appearance: core.AppearanceDark, HitSlop: core.All(8), TabAfter: 9}
-	model := &App{t: t, views: map[driver.NodeID]*View{1: {ID: 1}}}
+	model := &App{t: t, Clock: core.NewManualClock(time.Unix(0, 0)), views: map[driver.NodeID]*View{1: {ID: 1}}}
 	model.apply(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemViewProps, ID: 1, ViewProps: &native}}})
 	got := model.views[1].Props
 	ids[0] = 90
