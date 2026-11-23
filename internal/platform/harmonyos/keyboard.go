@@ -7,6 +7,8 @@ import "github.com/nsgo-dev/nsgo/internal/driver"
 type harmonyHeldKey struct {
 	id   driver.NodeID
 	name string
+	// code is the key's physical position, as KeyboardEvent.code.
+	code string
 }
 
 type harmonyKey struct {
@@ -24,7 +26,7 @@ func (m *mounter) dispatchKey(key harmonyKey) {
 		clear(m.pressed)
 		for code, held := range m.held {
 			delete(m.held, code)
-			m.s.dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name})
+			m.s.dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: held.code})
 		}
 		return
 	}
@@ -33,7 +35,7 @@ func (m *mounter) dispatchKey(key harmonyKey) {
 		if held, ok := m.held[key.code]; ok {
 			delete(m.held, key.code)
 			mods := m.keyModifiers(key.mods &^ harmonyModifier(held.name))
-			m.s.dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: harmonyModifiers(mods)})
+			m.s.dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: held.code, Modifiers: harmonyModifiers(mods)})
 		}
 		return
 	}
@@ -56,10 +58,10 @@ func (m *mounter) dispatchKey(key harmonyKey) {
 			if held, ok := m.held[key.code]; ok {
 				id, name = held.id, held.name
 			} else {
-				m.held[key.code] = harmonyHeldKey{id, name}
+				m.held[key.code] = harmonyHeldKey{id, name, keyPosition(key.code)}
 			}
 			mods := m.keyModifiers(key.mods)
-			ev := driver.Event{Kind: driver.EventKeyDown, ID: id, Text: name, Modifiers: harmonyModifiers(mods), Repeat: repeat}
+			ev := driver.Event{Kind: driver.EventKeyDown, ID: id, Text: name, KeyCode: keyPosition(key.code), Modifiers: harmonyModifiers(mods), Repeat: repeat}
 			if id != 0 && harmonyModifier(name) == 0 {
 				if <-m.s.engine.DispatchKeyDownAsync(ev) {
 					return

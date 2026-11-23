@@ -435,7 +435,7 @@ core.View{
 
 对于鼠标按键，`View.OnMouseDown` 和 `View.OnMouseUp` 在 macOS、Windows、Linux、Web 和 `nsgotest` 上为五个按键（`core.MouseButtonLeft`、`core.MouseButtonRight`、`core.MouseButtonMiddle`、`core.MouseButtonBack`、`core.MouseButtonForward`）报告 `core.MouseButtonEvent`，且不会把视图变成键盘焦点停靠点。`core.MouseButtonsDown(cx)` 和 `core.MouseButtonHeld(cx, core.MouseButtonRight)` 是对窗口上当前按住的鼠标按键的被追踪读取，窗口失焦时会自动清空。
 
-如果操作绑定到物理键位，读取 `KeyEvent.Code`、`core.KeyCodesDown(cx)` 或 `core.KeyCodeHeld(cx, "KeyW")`。键位采用 `KeyboardEvent.code` 命名。在 AZERTY 布局下，QWERTY 键盘 W 所在位置的 `Code` 为 `"KeyW"`，`Key` 为 `"z"`。`core.KeyCodeLabel(cx, "KeyW")` 返回当前布局的显示标签，可用于按键提示。在 iOS、Android 和不支持布局映射的浏览器上，它使用该键位最近一次报告的按键名称，在收到事件之前返回空字符串。
+如果操作绑定到物理键位，读取 `KeyEvent.Code`、`core.KeyCodesDown(cx)` 或 `core.KeyCodeHeld(cx, "KeyW")`。键位采用 `KeyboardEvent.code` 命名。在 AZERTY 布局下，QWERTY 键盘 W 所在位置的 `Code` 为 `"KeyW"`，`Key` 为 `"z"`。`core.KeyCodeLabel(cx, "KeyW")` 返回当前布局的显示标签，可用于按键提示。在 iOS、Android、HarmonyOS 和不支持布局映射的浏览器上，它使用该键位最近一次报告的按键名称，在收到事件之前返回空字符串。HarmonyOS 的键位和按键名称都取自 InputKit 的 `KeyCode`，因为 ArkUI 不报告扫描码，所以在非 QWERTY 布局下按键名称暂时不会跟随布局变化。
 
 ```go
 var loop func(time.Time)

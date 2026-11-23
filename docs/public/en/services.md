@@ -483,7 +483,7 @@ A game or a canvas polls the keys instead. `core.KeysDown(cx)` lists the keys he
 
 For mouse buttons, `View.OnMouseDown` and `View.OnMouseUp` deliver a `core.MouseButtonEvent` for every button (`core.MouseButtonLeft`, `core.MouseButtonRight`, `core.MouseButtonMiddle`, `core.MouseButtonBack`, `core.MouseButtonForward`) on macOS, Windows, Linux, the web and `nsgotest`, without making the view a keyboard focus stop. `core.MouseButtonsDown(cx)` and `core.MouseButtonHeld(cx, core.MouseButtonRight)` are tracked reads of the buttons held on the window, clearing automatically when the window loses focus.
 
-For a control tied to a physical position, read `KeyEvent.Code`, `core.KeyCodesDown(cx)` or `core.KeyCodeHeld(cx, "KeyW")`. The code uses `KeyboardEvent.code` names: on AZERTY the QWERTY W position has `Code: "KeyW"` and `Key: "z"`. `core.KeyCodeLabel(cx, "KeyW")` gives the active layout's display label for a prompt. On iOS, Android and browsers without a layout map, it uses the last key name reported at that position and returns an empty string until a key is seen.
+For a control tied to a physical position, read `KeyEvent.Code`, `core.KeyCodesDown(cx)` or `core.KeyCodeHeld(cx, "KeyW")`. The code uses `KeyboardEvent.code` names: on AZERTY the QWERTY W position has `Code: "KeyW"` and `Key: "z"`. `core.KeyCodeLabel(cx, "KeyW")` gives the active layout's display label for a prompt. On iOS, Android, HarmonyOS and browsers without a layout map, it uses the last key name reported at that position and returns an empty string until a key is seen. HarmonyOS names both the position and the key from InputKit's `KeyCode`, as ArkUI reports no scan code, so there the key name does not yet follow a non-QWERTY layout.
 
 ```go
 var loop func(time.Time)

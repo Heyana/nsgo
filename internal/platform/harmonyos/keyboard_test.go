@@ -139,3 +139,39 @@ func TestNativeKeyBridgeOrdersCallbacksAndItsGoKeymap(t *testing.T) {
 		t.Fatalf("lifecycle left a key held: %v / %v", heard, s.m.held)
 	}
 }
+
+// TestNativeKeyBridgeReportsPositions checks that a key's down and up carry its physical position beside the layout's name, and that KeyCodesDown tracks positions while they are held, for InputKit's KeyCodes and the emulator's Linux codes.
+func TestNativeKeyBridgeReportsPositions(t *testing.T) {
+	s := &surface{}
+	s.m = newMounter(s)
+	p := &keyboardBridgePlatform{m: s.m}
+	var heard []string
+	s.engine = engine.Start(p, func(cx *core.Scope) core.Node {
+		return core.View{OnKeyDown: func(e core.KeyEvent) bool {
+			heard = append(heard, "down "+e.Key+" "+e.Code+" "+strings.Join(core.KeyCodesDown(cx), ","))
+			return false
+		}, OnKeyUp: func(e core.KeyEvent) { heard = append(heard, "up "+e.Key+" "+e.Code) }}
+	}, engine.Options{})
+	defer s.engine.Close()
+	s.engine.Sync()
+	if len(p.listeners) != 1 {
+		t.Fatalf("listeners = %v", p.listeners)
+	}
+	key := func(code, action int, text string) {
+		s.event([]js.Value{js.ValueOf("key"), js.ValueOf(code), js.ValueOf(action), js.ValueOf(0), js.ValueOf(text)})
+	}
+	s.event([]js.Value{js.ValueOf("focus"), js.ValueOf(int(p.listeners[0])), js.ValueOf(0), js.ValueOf(0), js.ValueOf("")})
+	key(2039, 0, "KEYCODE_W") // ArkUI's keyText names the KeyCode.
+	key(2039, 1, "KEYCODE_W")
+	key(17, 0, "") // The emulator's Linux code for the same position.
+	key(17, 1, "")
+	until := time.Now().Add(5 * time.Second)
+	for s.m.keyRunning && time.Now().Before(until) {
+		time.Sleep(time.Millisecond)
+	}
+	s.engine.Sync()
+	want := []string{"down w KeyW KeyW", "up w KeyW", "down w KeyW KeyW", "up w KeyW"}
+	if !slices.Equal(heard, want) {
+		t.Fatalf("positions = %v, want %v", heard, want)
+	}
+}
