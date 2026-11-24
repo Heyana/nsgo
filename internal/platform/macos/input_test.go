@@ -608,9 +608,9 @@ func TestInputLetterSpacing(t *testing.T) {
 			t.Errorf("single-line field editor typing kern = %v, want 10", got)
 		}
 		e.Send(sel("insertText:"), apple.NSString("3"))
-		window.Send(sel("makeFirstResponder:"), objc.ID(0))
-		// The field restyles its text once the focus has moved, on the next turn of the run loop.
-		objc.ID(apple.Class("NSRunLoop")).Send(sel("mainRunLoop")).Send(sel("runUntilDate:"), objc.ID(apple.Class("NSDate")).Send(sel("dateWithTimeIntervalSinceNow:"), 0.05))
+		if !objc.Send[bool](window, selMakeFirstResponer, objc.ID(0)) || single.input.editor() != 0 {
+			t.Fatal("the field did not end editing")
+		}
 		if got := apple.GoString(single.input.field.Send(selStringValue)); got != "123" {
 			t.Fatalf("single-line value after editing = %q, want 123", got)
 		}

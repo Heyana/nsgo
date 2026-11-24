@@ -109,13 +109,19 @@ func registerInput() {
 			apple.Super(self, cmd, note)
 			inputOf(self).changed()
 		}},
+		{Cmd: sel("textDidEndEditing:"), Fn: func(self objc.ID, cmd objc.SEL, note objc.ID) {
+			// AppKit notifies the control delegate before it finishes ending the edit.
+			apple.Super(self, cmd, note)
+			if in := inputOf(self); in != nil {
+				in.restyleField()
+			}
+		}},
 		{Cmd: sel("controlTextDidEndEditing:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
 			in := inputOf(self)
 			if in == nil {
 				return
 			}
 			if !in.stillEditing() {
-				in.restyleField()
 				in.focusChanged(false)
 				return
 			}
@@ -123,7 +129,6 @@ func registerInput() {
 			// the window's first responder: ask again once the focus moved.
 			apple.OnMain(func() {
 				if v := views[in.field]; v != nil && v.input == in && !in.stillEditing() {
-					in.restyleField()
 					in.focusChanged(false)
 				}
 			})
@@ -512,7 +517,7 @@ func (in *input) styleLines() {
 // restyleField gives a field's text its language and letter spacing again once editing ends, as the field takes the field editor's text without them.
 func (in *input) restyleField() {
 	c := &in.fs.Config
-	if in.multiline || in.masked || (c.Style.Font.Language == "" && c.Style.LetterSpacing == 0) {
+	if in.multiline || in.masked || (c.Style.Font.Language == "" && c.Style.LetterSpacing == 0) || in.editor() != 0 {
 		return
 	}
 	if cur := apple.GoString(in.field.Send(selStringValue)); cur != "" {
