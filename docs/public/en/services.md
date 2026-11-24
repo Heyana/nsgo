@@ -158,6 +158,19 @@ An iOS App Clip and its full app share these data and storage locations when `ap
 
 On HarmonyOS, Go file operations such as `os.ReadFile`, `os.WriteFile` and `os.Rename` work under these directories and `os.TempDir()`. Relative paths start in the files directory. Advisory file locks and symbolic links are unavailable.
 
+### The user's folders
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` returns the path of one of the user's folders: `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir` or `VideosDir`. It asks the system each time, so a folder the user moved is followed: the folders in the home directory on macOS (`Movies` for videos), the known folders on Windows, OneDrive's included, and the XDG user directories on Linux. The folder may not exist yet. Phones, the web and HarmonyOS have no such folders an app reaches by path, nor does Linux for a folder `user-dirs.dirs` leaves out: `UserDir` returns `core.ErrUserDirUnavailable`, and the app asks the user with `cx.PickDirectories` or `cx.SaveFile` instead.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+Tests never get the user's folders: each is an empty directory of the test's temporary one, and `nsgotest.UserDirs(map[core.StandardDir]string{…})` pins them, a folder left out unavailable.
+
 ### Crash reports
 
 Native release builds keep Go crash traces under `cx.LogsDir()/crashes`. Apple records uncaught Objective-C exceptions, Android records uncaught Java exceptions, and Windows records SEH exceptions that reach its top-level filter. List pending reports on the next launch with `cx.CrashReports()`. Each report identifies the version, build and platform that produced it. Call `Open()` to read the diagnostic text, close the reader, then call `Acknowledge()` to delete the report when the app has processed it. Run these file operations on a goroutine.

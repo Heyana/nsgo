@@ -4,6 +4,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
@@ -68,4 +69,10 @@ func (o *Options) UseTest(t testhost.Options, pin *TestPin) {
 	} else {
 		o.DataDir, o.CacheDir, o.LogsDir = "", "", ""
 	}
+	// Nor are the user's folders.
+	dirs := t.UserDirs
+	if dirs == nil && err == nil {
+		dirs = testhost.MakeUserDirs(dir + "/user")
+	}
+	o.UserDir = func(d core.StandardDir) string { return dirs[d] }
 }

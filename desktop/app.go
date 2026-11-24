@@ -166,6 +166,22 @@ func RequestRestart(cx *core.Scope) {
 	}
 }
 
+// StandardDir names one of the user's standard folders.
+type StandardDir = core.StandardDir
+
+const (
+	DocumentsDir = core.DocumentsDir
+	DownloadsDir = core.DownloadsDir
+	DesktopDir   = core.DesktopDir
+	PicturesDir  = core.PicturesDir
+	MusicDir     = core.MusicDir
+	// VideosDir is macOS's Movies.
+	VideosDir = core.VideosDir
+)
+
+// UserDir returns the absolute path of the user's folder dir as the system names it now, which may not exist yet: under the home directory on macOS (a sandboxed app's container links them), the known folder on Windows, which follows one the user moved, and the XDG user directory on Linux, where only the desktop has a default and a folder set to the home directory is disabled. Elsewhere, and for a folder the system does not name, it returns core.ErrUserDirUnavailable: phones and the web reach the user's files through core.Scope.PickFiles and PickDirectories.
+func UserDir(cx *core.Scope, dir StandardDir) (string, error) { return cx.UserDir(dir) }
+
 // RevealFile opens the file manager with path selected.
 func RevealFile(cx *core.Scope, path string, done func(error)) { cx.RevealFile(path, done) }
 

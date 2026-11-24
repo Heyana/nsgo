@@ -332,6 +332,7 @@ func (a *App) targetOptions(t *target) testhost.Options {
 		TakePhoto:  takePhoto,
 		ScanCode:   scanCode,
 		DiskSpace:  a.diskSpace,
+		UserDirs:   a.targetUserDirs(),
 		TransitionEnds: func(pending func() bool) {
 			t.mu.Lock()
 			t.transitionsEnding = pending
@@ -1045,4 +1046,15 @@ func pathHasParent(name string) bool {
 		}
 	}
 	return false
+}
+
+// targetUserDirs are the folders a target test pins, nil for the target to make its own.
+func (a *App) targetUserDirs() map[core.StandardDir]string {
+	if !a.userDirsPinned {
+		return nil
+	}
+	if a.userDirs == nil {
+		return map[core.StandardDir]string{}
+	}
+	return a.userDirs
 }

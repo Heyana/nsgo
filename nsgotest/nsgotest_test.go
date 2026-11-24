@@ -1670,6 +1670,44 @@ func TestDiskSpace(t *testing.T) {
 	}
 }
 
+func TestUserDirs(t *testing.T) {
+	t.Run("temporary", func(t *testing.T) {
+		var got []string
+		Start(t, func(cx *core.Scope) core.Node {
+			for d := desktop.DocumentsDir; d <= desktop.VideosDir; d++ {
+				path, err := desktop.UserDir(cx, d)
+				if err != nil {
+					if runtime.GOOS == "js" && errors.Is(err, core.ErrUserDirUnavailable) {
+						continue
+					}
+					t.Errorf("UserDir(%d): %v", d, err)
+				}
+				got = append(got, path)
+			}
+			return core.Text{Content: "ready"}
+		})
+		home, _ := os.UserHomeDir()
+		for _, path := range got {
+			if info, err := os.Stat(path); err != nil || !info.IsDir() || !filepath.IsAbs(path) {
+				t.Errorf("folder %q is no directory: %v", path, err)
+			}
+			if home != "" && filepath.Dir(path) == home {
+				t.Errorf("folder %q is the user's", path)
+			}
+		}
+	})
+	t.Run("pinned", func(t *testing.T) {
+		app := Start(t, func(cx *core.Scope) core.Node {
+			music, err := desktop.UserDir(cx, desktop.MusicDir)
+			_, missing := desktop.UserDir(cx, desktop.VideosDir)
+			return core.Text{Content: fmt.Sprint(music, err, errors.Is(missing, core.ErrUserDirUnavailable)), TestID: "dirs"}
+		}, UserDirs(map[core.StandardDir]string{core.MusicDir: "/srv/music"}))
+		if got := app.Find("id:dirs").Text; got != "/srv/music<nil> true" {
+			t.Errorf("pinned folders: %q", got)
+		}
+	})
+}
+
 func TestVerticalBarEdgeOptionAndSetter(t *testing.T) {
 	app := Start(t, func(cx *core.Scope) core.Node {
 		return core.Text{ContentFunc: func() string {

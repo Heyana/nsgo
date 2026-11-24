@@ -68,6 +68,7 @@ func startTest(app engine.App, opts Options, test *testWindow) *surface {
 	eopts := engine.Options{ReadAsset: imageload.ReadAsset, Environment: s.env, NetworkWatcher: apple.NetworkWatcher{}, Perf: monitor, Thread: apple.RaiseThread, Appearance: opts.Appearance,
 		Secrets: apple.Keychain{}, Windows: &engine.WindowOptions{Title: opts.Title, Width: opts.Width, Height: opts.Height}}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
+	eopts.UserDir = engine.SystemUserDir(nil)
 	eopts.UseTest(test.options, &test.pin)
 	s.envPin = eopts.Pin
 	imageload.UseDiskCache(eopts.CacheDir)

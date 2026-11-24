@@ -1019,6 +1019,7 @@ func (s *surface) start(app engine.App, opts Options) {
 		Environment: s.env, NetworkWatcher: apple.NetworkWatcher{}, Perf: monitor, Thread: apple.RaiseThread, Appearance: opts.Appearance, Host: opts.Host,
 		Secrets: apple.Keychain{}}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
+	eopts.UserDir = engine.SystemUserDir(nil)
 	imageload.UseDiskCache(eopts.CacheDir)
 	s.engine = engine.Start(s, app, eopts)
 	s.reportFrameWindow(s.env)

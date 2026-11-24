@@ -17,6 +17,7 @@ import (
 	"github.com/gdamore/tcell/v3/color"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/engine"
+	"github.com/nsgo-dev/nsgo/internal/platform/knownfolder"
 	"github.com/nsgo-dev/nsgo/internal/platform/queue"
 )
 
@@ -118,7 +119,7 @@ func Run(app engine.App, o Options) error {
 	w := newSurface(screen)
 	screen.SetTitle(safeText(o.Title))
 	data, cache, logs := engine.AppDirs(o.ID)
-	w.start(app, engine.Options{Environment: terminalEnvironment(), Appearance: o.Appearance, DataDir: data, CacheDir: cache, LogsDir: logs})
+	w.start(app, engine.Options{Environment: terminalEnvironment(), Appearance: o.Appearance, DataDir: data, CacheDir: cache, LogsDir: logs, UserDir: engine.SystemUserDir(knownfolder.Path)})
 	defer w.tree.close()
 	defer w.engine.Close()
 	interrupts := make(chan os.Signal, 1)

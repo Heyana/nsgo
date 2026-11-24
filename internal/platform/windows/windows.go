@@ -41,6 +41,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/finger"
 	"github.com/nsgo-dev/nsgo/internal/platform/hover"
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
+	"github.com/nsgo-dev/nsgo/internal/platform/knownfolder"
 	"github.com/nsgo-dev/nsgo/internal/platform/loopback"
 	"github.com/nsgo-dev/nsgo/internal/platform/queue"
 	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
@@ -994,6 +995,7 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	}
 	data, cache, logs := engine.AppDirs(opts.ID)
 	eopts.SetDirs(data, cache, logs)
+	eopts.UserDir = engine.SystemUserDir(knownfolder.Path)
 	if opts.test != nil {
 		eopts.UseTest(opts.test.options, &opts.test.pin)
 		w.envPin = eopts.Pin

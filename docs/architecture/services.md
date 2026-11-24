@@ -1,6 +1,6 @@
 # Services
 
-Services are what the platform does for the app outside its views: alerts, the clipboard, opening links, the photo picker, taking a photo, file and folder picks and saves, opening and sharing the app's files, installing packages on Android, speech recognition, speaking text, biometrics, secrets, disk space, Sign in with Apple, in-app purchases, sign-in sessions, notifications and the badge, the system's permissions, keeping the computer awake, haptics, the app's lifecycle, the appearance, keyboard shortcuts, the status bar, the desktop window and quitting. Read this before changing one, in `core` or in a backend; [application and windows](application.md) covers the windows, tray icons and global shortcuts an app opens. A service goes to the platform of the window the code asking is in.
+Services are what the platform does for the app outside its views: alerts, the clipboard, opening links, the photo picker, taking a photo, file and folder picks and saves, the user's standard folders, opening and sharing the app's files, installing packages on Android, speech recognition, speaking text, biometrics, secrets, disk space, Sign in with Apple, in-app purchases, sign-in sessions, notifications and the badge, the system's permissions, keeping the computer awake, haptics, the app's lifecycle, the appearance, keyboard shortcuts, the status bar, the desktop window and quitting. Read this before changing one, in `core` or in a backend; [application and windows](application.md) covers the windows, tray icons and global shortcuts an app opens. A service goes to the platform of the window the code asking is in.
 
 Audio playback is the `audio` package, whose engine part `core` carries as a service through the batch ([audio playback](audio.md)). macOS, iOS, Windows, Linux and the web play it so far; elsewhere an app plays sound only through a `Video`.
 
@@ -187,6 +187,21 @@ Linux discovers a running or activatable `org.gnome.NautilusPreviewer` without s
 | Web | None: `NoFileOpener` | Unavailable | Unavailable | `navigator.share` (with `navigator.canShare` check) for text, links and `SharedFile.Data` as `File` objects; `AbortError` answers false without error, unsupported answers `NoShareSheet` |
 
 Android hands files on as content URIs from the runtime's `FileProvider`, which the manifest declares unexported, granting URIs, with an authority named after the app's package. A URI names one of its roots, the app's data directory (which holds `DataDir` and `CacheDir`) or its external one, the path under it and the name the other app sees, with the type as a parameter; a file elsewhere fails, and the provider serves nothing outside its roots, whatever the path says. The intent grants the app chosen read access until its activity finishes, so the app keeps the file there until then and deletes it itself.
+
+## The user's folders
+
+`desktop.UserDir` names the user's Documents, Downloads, Desktop, Pictures, Music and Videos folders ([#2284](https://github.com/nsgo-dev/nsgo/issues/2284)). NSH has no counterpart: it gives apps only their own data and cache directories. `core.Scope.UserDir` answers it synchronously through `RootOptions.UserDir`, which the desktop backends and the terminal's set to `engine.SystemUserDir`, Windows' and the terminal's with `internal/platform/knownfolder`, as `internal/engine` builds for every target without `syscall`. It asks on each call, so a moved folder is followed, and reports a path without checking it exists. Targets that leave it nil answer `ErrUserDirUnavailable`, as `core` does for an unknown folder or an empty answer.
+
+| Target | Folders |
+| --- | --- |
+| macOS | `$HOME/Documents`, `Downloads`, `Desktop`, `Pictures`, `Music` and `Movies`, the user domain's `NSSearchPathForDirectoriesInDomains` paths, which a sandbox's container links to the user's |
+| Windows | `SHGetKnownFolderPath` with `FOLDERID_Documents`, `Downloads`, `Desktop`, `Pictures`, `Music` and `Videos`, following redirection |
+| Linux | `$XDG_CONFIG_HOME/user-dirs.dirs` as GLib's `g_get_user_special_dir` reads it: a folder set to `$HOME` is disabled, and only the desktop defaults, to `~/Desktop` |
+| iOS, tvOS, watchOS | Unavailable: the app's own `Documents` is its sandbox's, which `DataDir` covers, and the user's files come through the document picker |
+| Android | Unavailable: scoped storage makes the public folders MediaStore collections without paths an app may use, reached through the pickers |
+| Web, HarmonyOS, mini programs | Unavailable |
+
+Tests never see the user's folders: `nsgotest` and `engine.Options.UseTest` make one per kind under the test's temporary directory (`testhost.MakeUserDirs`), and `nsgotest.UserDirs` pins them for headless and target tests alike.
 
 ## Installing packages
 

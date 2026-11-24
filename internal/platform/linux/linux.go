@@ -535,6 +535,7 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 			Constraints: opts.Constraints, Transparent: opts.Transparent, NoShadow: opts.NoShadow, SkipTaskbar: opts.SkipTaskbar, Hidden: opts.MainHidden}
 	}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
+	eopts.UserDir = engine.SystemUserDir(nil)
 	if opts.test != nil {
 		eopts.UseTest(opts.test.options, &opts.test.pin)
 		w.envPin = eopts.Pin

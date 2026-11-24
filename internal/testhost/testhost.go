@@ -6,6 +6,8 @@ package testhost
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
@@ -51,6 +53,8 @@ type Options struct {
 	Secrets driver.SecretStore
 	// DiskSpace is the storage capacity the test sees on every target.
 	DiskSpace driver.DiskSpaceResult
+	// UserDirs pins core.Scope.UserDir's folders, one left out unavailable; nil gives each a directory of the test's temporary one.
+	UserDirs map[core.StandardDir]string
 	// Observe sees every batch the engine sends, on the engine's goroutine, before the platform applies it; Event every event the platform reports to the engine, on the goroutine it reports from. Each comes with the number of its surface: 0 for the first, the one Open opens, else the window or panel the app opened (driver.SurfaceConfig.ID). Neither may block.
 	Observe func(surface uint32, b *driver.MountBatch)
 	Event   func(surface uint32, ev driver.Event)
@@ -262,4 +266,20 @@ func Pin(env driver.Environment, pin *driver.Environment) driver.Environment {
 		env.VerticalBarEdge = pin.VerticalBarEdge
 	}
 	return env
+}
+
+// MakeUserDirs makes a directory in dir for each of the user's folders, named as macOS names them, for a test to use in place of the user's.
+func MakeUserDirs(dir string) map[core.StandardDir]string {
+	names := map[core.StandardDir]string{
+		core.DocumentsDir: "Documents", core.DownloadsDir: "Downloads", core.DesktopDir: "Desktop",
+		core.PicturesDir: "Pictures", core.MusicDir: "Music", core.VideosDir: "Movies",
+	}
+	dirs := make(map[core.StandardDir]string, len(names))
+	for d, name := range names {
+		path := filepath.Join(dir, name)
+		if os.MkdirAll(path, 0o755) == nil {
+			dirs[d] = path
+		}
+	}
+	return dirs
 }

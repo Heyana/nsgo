@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -46,6 +47,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/devtools"
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
 // Option configures Start.
@@ -84,6 +86,11 @@ func Secrets(values map[string]string) Option {
 // Without it the service reports core.ErrDiskSpaceUnavailable.
 func DiskSpace(space core.DiskSpace, err error) Option {
 	return func(a *App) { a.diskSpace = driver.DiskSpaceResult{Space: space, Err: err} }
+}
+
+// UserDirs pins what Scope.UserDir answers in headless and native tests: a folder left out reports core.ErrUserDirUnavailable. Without it each folder is a directory of the test's temporary one, never the user's.
+func UserDirs(dirs map[core.StandardDir]string) Option {
+	return func(a *App) { a.userDirs = maps.Clone(dirs); a.userDirsPinned = true }
 }
 
 // UpdaterState supplies the updater snapshot before the first render.
@@ -242,6 +249,8 @@ type App struct {
 	sensorRuns        map[uint32]*sensorRun
 	offscreenSurfaces map[uint64]*OffscreenSurface
 	diskSpace         driver.DiskSpaceResult
+	userDirs          map[core.StandardDir]string
+	userDirsPinned    bool
 
 	t    testing.TB
 	size driver.Size
@@ -733,8 +742,12 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 	}
 	// A library may run headless inside a browser, whose runtime has no filesystem. Its app directories are empty, as on the web backend.
 	var data, cache, logs string
+	userDirs := a.userDirs
 	if runtime.GOOS != "js" {
 		dir := t.TempDir()
+		if !a.userDirsPinned {
+			userDirs = testhost.MakeUserDirs(filepath.Join(dir, "user"))
+		}
 		data, cache, logs = filepath.Join(dir, "data"), filepath.Join(dir, "cache"), filepath.Join(dir, "logs")
 		for _, path := range []string{data, cache, logs} {
 			if err := os.MkdirAll(path, 0o755); err != nil {
@@ -767,6 +780,7 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		Storage:   a.store,
 		ReadAsset: assetReader(),
 		DataDir:   data, CacheDir: cache, LogsDir: logs,
+		UserDir:      func(d core.StandardDir) string { return userDirs[d] },
 		Secrets:      a.Secrets,
 		Cloud:        a.cloud,
 		GameServices: a.gameServices,

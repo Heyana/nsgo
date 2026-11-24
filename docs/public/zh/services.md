@@ -155,6 +155,19 @@ store.SetItem("tab", "library")
 
 在 HarmonyOS 上，`os.ReadFile`、`os.WriteFile` 和 `os.Rename` 等 Go 文件操作可用于这些目录及系统的临时目录。相对路径从应用的文件目录开始解析。暂不支持建议性文件锁和符号链接。
 
+### 用户的文件夹
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` 返回用户某个标准文件夹的路径：`DocumentsDir`、`DownloadsDir`、`DesktopDir`、`PicturesDir`、`MusicDir` 或 `VideosDir`。它每次都询问系统，所以用户移动过的文件夹也能跟上：macOS 上是主目录里的文件夹（视频是 `Movies`），Windows 上是已知文件夹（包括 OneDrive 重定向的），Linux 上是 XDG 用户目录。文件夹不一定已经存在。手机、Web 和 HarmonyOS 没有应用能按路径访问的这类文件夹，Linux 上 `user-dirs.dirs` 没有设置的文件夹也没有：`UserDir` 返回 `core.ErrUserDirUnavailable`，应用改用 `cx.PickDirectories` 或 `cx.SaveFile` 让用户选择。
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+测试从不拿到用户的文件夹：每个文件夹都是测试临时目录里的一个空目录，`nsgotest.UserDirs(map[core.StandardDir]string{…})` 可以指定它们，没列出的文件夹不可用。
+
 ### 崩溃报告
 
 原生发布构建将 Go 崩溃堆栈保存在 `cx.LogsDir()/crashes` 下。Apple 平台记录未捕获的 Objective-C 异常，Android 记录未捕获的 Java 异常，Windows 记录到达顶层过滤器的 SEH 异常。下次启动时调用 `cx.CrashReports()` 列出待处理报告。报告含崩溃应用的版本、构建号和平台。调用 `Open()` 读取诊断文本并关闭读取器，处理完成后调用 `Acknowledge()` 删除报告。在 goroutine 中执行这些文件操作。

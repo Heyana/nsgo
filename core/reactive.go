@@ -116,6 +116,8 @@ type RootOptions struct {
 	Cloud CloudStore
 	// DataDir, CacheDir and LogsDir are the app's directories, "" where the target has none.
 	DataDir, CacheDir, LogsDir string
+	// UserDir answers Scope.UserDir with a folder's absolute path, "" where the platform has none; nil where it has none of them.
+	UserDir func(StandardDir) string
 	// Host is the channel to the host app that embeds the app: its
 	// parameters, events, handlers and URL handler. The graph attaches to
 	// it until its root is disposed.
@@ -137,7 +139,7 @@ func NewRoot(opts RootOptions) *Scope {
 		opts.Clock = SystemClock{}
 	}
 	rt := &runtime{graphOwner: newGraphOwner(opts.CheckCommits), post: opts.Post, clock: opts.Clock, report: opts.Report, checkCommits: opts.CheckCommits,
-		store: opts.Storage, secrets: opts.Secrets, readAsset: opts.ReadAsset, gameServices: opts.GameServices, cloud: opts.Cloud, dataDir: opts.DataDir, cacheDir: opts.CacheDir, logsDir: opts.LogsDir,
+		store: opts.Storage, secrets: opts.Secrets, readAsset: opts.ReadAsset, gameServices: opts.GameServices, cloud: opts.Cloud, dataDir: opts.DataDir, cacheDir: opts.CacheDir, logsDir: opts.LogsDir, userDir: opts.UserDir,
 		requestFrame: opts.RequestFrame, requestSurfaceFrame: opts.RequestSurfaceFrame, setFrameRate: opts.SetFrameRate, windows: opts.Windows, takesHotKeys: opts.HotKeys, tray: opts.Tray, networkWatcher: opts.NetworkWatcher}
 	rt.root = &Scope{rt: rt}
 	if devtools.Enabled {
@@ -198,6 +200,7 @@ type runtime struct {
 	dataDir             string
 	cacheDir            string
 	logsDir             string
+	userDir             func(StandardDir) string
 	host                *hostApp
 	networkWatcher      driver.NetworkWatcher
 	updater             *Signal[UpdaterState]

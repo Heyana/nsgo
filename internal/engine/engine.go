@@ -208,6 +208,8 @@ type Options struct {
 	ReadAsset func(context.Context, string) ([]byte, error)
 	// DataDir, CacheDir and LogsDir are the app's directories, made when the engine starts; "" where the target has none.
 	DataDir, CacheDir, LogsDir string
+	// UserDir answers core.Scope.UserDir; nil where the target has no folders of the user's. Desktops pass SystemUserDir.
+	UserDir func(core.StandardDir) string
 	// Appearance is the appearance the app starts in, forced as
 	// Scope.SetAppearance forces it; the system's by default.
 	Appearance driver.Appearance
@@ -567,6 +569,7 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 		DataDir:   opts.DataDir,
 		CacheDir:  opts.CacheDir,
 		LogsDir:   opts.LogsDir,
+		UserDir:   opts.UserDir,
 		Host:      opts.Host.Channel,
 		Windows:   opts.Windows,
 		HotKeys:   opts.HotKeys,
