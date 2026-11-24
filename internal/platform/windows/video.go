@@ -88,6 +88,7 @@ const (
 // MF_MEDIA_ENGINE_EVENT
 const (
 	mediaError          = 5
+	mediaPlay           = 8
 	mediaPause          = 9
 	mediaLoadedMetadata = 10
 	mediaWaiting        = 12
@@ -357,6 +358,10 @@ func (vd *video) notified(serial uint64, event uint32, param1 uintptr, param2 ui
 		vd.report(driver.Event{Kind: driver.EventLoad, Duration: seconds(duration), RateChangeable: true,
 			Size: driver.Size{Width: driver.Points(vd.natural[0]), Height: driver.Points(vd.natural[1])}})
 		vd.wantFrame = time.Now().Add(videoFrameWait)
+		vd.pump()
+	case mediaPlay:
+		// A play with its data at hand, such as the bar's after its own pause, fires Play without Playing.
+		vd.playbackChanged()
 		vd.pump()
 	case mediaPlaying:
 		vd.playbackChanged()
