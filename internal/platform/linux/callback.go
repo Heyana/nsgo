@@ -20,6 +20,7 @@ var (
 	cbPreviewSelection  uintptr
 	cbPreviewProperties uintptr
 	cbPreviewOwner      uintptr
+	cbWaylandExported   uintptr
 
 	cbClickPressed     uintptr
 	cbClickReleased    uintptr
@@ -173,6 +174,7 @@ func init() {
 	cbPreviewSelection = newCallback(previewSelectionCallback)
 	cbPreviewProperties = newCallback(previewPropertiesCallback)
 	cbPreviewOwner = newCallback(previewOwnerCallback)
+	cbWaylandExported = newCallback(waylandExportedCallback)
 	cbNotificationAction = newCallback(notificationActionCallback)
 	cbNotificationClosed = newCallback(notificationClosedCallback)
 	cbGlobalHotKeyResponse = newCallback(globalHotKeyResponse)

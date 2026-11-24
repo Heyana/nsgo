@@ -145,62 +145,64 @@ func (w *window) pickScreenColor(id uint32) {
 	bindScreenColor()
 	pick := &portalColorPick{id: id}
 	w.colorPick = pick
-	appID, parent := w.appID, w.portalParentWindow()
-	portalQueue() <- func() {
-		bus := portalBus(appID)
-		if bus == 0 {
-			w.post(func() { w.finishColorPick(pick, 0, false) })
-			return
-		}
-		w.post(func() {
-			if w.closing || w.colorPick != pick || pick.done {
+	appID := w.appID
+	w.withPortalParent(func(parent string) {
+		portalQueue() <- func() {
+			bus := portalBus(appID)
+			if bus == 0 {
+				w.post(func() { w.finishColorPick(pick, 0, false) })
 				return
 			}
-			pick.bus = bus
-			token := portalToken("nsgo_color")
-			pick.request = portalRequestPathForSender(goString(gDBusConnectionGetUniqueName(bus)), token)
-			if pick.request == "" {
-				w.finishColorPick(pick, 0, false)
-				return
-			}
-			pick.sub = subscribeColorPickResponse(bus, pick.request, w.handle)
-			if pick.sub == 0 {
-				w.finishColorPick(pick, 0, false)
-				return
-			}
-			awaited := pick.request
-			portalQueue() <- func() {
-				reply := portalCall(bus, globalShortcutPath, screenshotPortalIface, "PickColor",
-					gVariantNewString(cstr(parent)), portalOptions(token))
-				request := ""
-				if reply != 0 {
-					request = portalTupleText(reply, 0)
-					gVariantUnref(reply)
-				}
-				if request == awaited {
+			w.post(func() {
+				if w.closing || w.colorPick != pick || pick.done {
 					return
 				}
-				w.post(func() {
-					if w.closing || w.colorPick != pick || pick.done || pick.request != awaited {
+				pick.bus = bus
+				token := portalToken("nsgo_color")
+				pick.request = portalRequestPathForSender(goString(gDBusConnectionGetUniqueName(bus)), token)
+				if pick.request == "" {
+					w.finishColorPick(pick, 0, false)
+					return
+				}
+				pick.sub = subscribeColorPickResponse(bus, pick.request, w.handle)
+				if pick.sub == 0 {
+					w.finishColorPick(pick, 0, false)
+					return
+				}
+				awaited := pick.request
+				portalQueue() <- func() {
+					reply := portalCall(bus, globalShortcutPath, screenshotPortalIface, "PickColor",
+						gVariantNewString(cstr(parent)), portalOptions(token))
+					request := ""
+					if reply != 0 {
+						request = portalTupleText(reply, 0)
+						gVariantUnref(reply)
+					}
+					if request == awaited {
 						return
 					}
-					if pick.sub != 0 {
-						gDBusConnectionSignalUnsubscribe(pick.bus, pick.sub)
-						pick.sub = 0
-					}
-					if request == "" {
-						w.finishColorPick(pick, 0, false)
-						return
-					}
-					pick.request = request
-					pick.sub = subscribeColorPickResponse(pick.bus, pick.request, w.handle)
-					if pick.sub == 0 {
-						w.finishColorPick(pick, 0, false)
-					}
-				})
-			}
-		})
-	}
+					w.post(func() {
+						if w.closing || w.colorPick != pick || pick.done || pick.request != awaited {
+							return
+						}
+						if pick.sub != 0 {
+							gDBusConnectionSignalUnsubscribe(pick.bus, pick.sub)
+							pick.sub = 0
+						}
+						if request == "" {
+							w.finishColorPick(pick, 0, false)
+							return
+						}
+						pick.request = request
+						pick.sub = subscribeColorPickResponse(pick.bus, pick.request, w.handle)
+						if pick.sub == 0 {
+							w.finishColorPick(pick, 0, false)
+						}
+					})
+				}
+			})
+		}
+	})
 }
 
 func subscribeColorPickResponse(bus uintptr, request string, handle uintptr) uint32 {

@@ -312,6 +312,12 @@ type window struct {
 	watchingTimeZone bool
 	lastWidth        driver.Points
 	lastHeight       driver.Points
+	// wlParent is the Wayland export of wlParentSurface, the portals' parent handle; wlParentWaiters wait for an export in flight (parent_wayland.go).
+	wlParent        string
+	wlParentSurface uintptr
+	wlParentWaiters []func(string)
+	// previewRequests counts QuickLook's requests and closes, so one waiting for its parent opens only while it is the latest.
+	previewRequests uint64
 	// resized is a commit the main thread stopped waiting for during a busy allocation. The next allocation observes its completion before waiting for the newer size.
 	resized       <-chan struct{}
 	started       bool
@@ -735,7 +741,7 @@ func (w *window) toplevel() uintptr {
 	return gtkWidgetGetRoot(w.surface)
 }
 
-// portalParentWindow identifies the surface's X11 toplevel for an XDG portal request.
+// portalParentWindow identifies the surface's toplevel for an XDG portal request: its X11 window, or on Wayland its export once withPortalParent has made one.
 func (w *window) portalParentWindow() string {
 	if w.win == 0 && w.surface == 0 {
 		return ""
@@ -743,6 +749,9 @@ func (w *window) portalParentWindow() string {
 	toplevel := w.toplevel()
 	if toplevel == 0 {
 		return ""
+	}
+	if parent := w.waylandParent(); parent != "" {
+		return parent
 	}
 	if bindX11Panels(); !x11PanelsReady {
 		return ""

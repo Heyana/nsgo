@@ -110,14 +110,22 @@ func (w *window) quickLook(r *driver.QuickLookRequest) {
 		return
 	}
 	previewSignals()
-	p := &filePreview{owner: w, parent: w.portalParentWindow(), paths: slices.Clone(r.Paths),
-		index: min(max(r.Index, 0), len(r.Paths)-1)}
-	previews.Lock()
-	previews.active = p
-	finishPreviewClose()
-	previews.revision++
-	previews.Unlock()
-	wakePreview()
+	paths, index := slices.Clone(r.Paths), min(max(r.Index, 0), len(r.Paths)-1)
+	w.previewRequests++
+	request := w.previewRequests
+	// Sushi tells our panel's keys and Close apart from another app's by its parent, which Wayland gives once exported.
+	w.withPortalParent(func(parent string) {
+		if w.previewRequests != request {
+			return
+		}
+		p := &filePreview{owner: w, parent: parent, paths: paths, index: index}
+		previews.Lock()
+		previews.active = p
+		finishPreviewClose()
+		previews.revision++
+		previews.Unlock()
+		wakePreview()
+	})
 }
 
 // finishPreviewClose releases the pending close. The caller holds previews.
@@ -130,6 +138,7 @@ func finishPreviewClose() {
 }
 
 func (w *window) closeQuickLook() {
+	w.previewRequests++ // A preview still waiting for its parent never opens.
 	previews.Lock()
 	p := previews.active
 	if p == nil || p.owner != w {

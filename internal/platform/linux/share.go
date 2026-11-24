@@ -84,79 +84,80 @@ func (w *window) share(r driver.ShareRequest, id uint32) {
 	}
 	bindShare()
 	appID := w.appID
-	parent := w.portalParentWindow()
 	req := r
-	portalQueue() <- func() {
-		plan, err := prepareLinuxShare(req, filepath.Join(os.TempDir(), "nsgo-share"))
-		if err != nil {
-			w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: err.Error()})
-			return
-		}
-		if plan.kind == linuxShareMultiFiles {
-			w.shareViaFileManager(id, plan.paths)
-			return
-		}
-		bus := portalBus(appID)
-		if bus == 0 {
-			if len(plan.paths) > 0 {
+	w.withPortalParent(func(parent string) {
+		portalQueue() <- func() {
+			plan, err := prepareLinuxShare(req, filepath.Join(os.TempDir(), "nsgo-share"))
+			if err != nil {
+				w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: err.Error()})
+				return
+			}
+			if plan.kind == linuxShareMultiFiles {
 				w.shareViaFileManager(id, plan.paths)
 				return
 			}
-			w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: driver.NoShareSheet})
-			return
-		}
-		token := portalToken("nsgo_share")
-		expected := portalRequestPath(bus, token)
-		if expected == "" {
-			if len(plan.paths) > 0 {
-				w.shareViaFileManager(id, plan.paths)
-				return
-			}
-			w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: driver.NoShareSheet})
-			return
-		}
-		w.post(func() {
-			if w.closing {
-				return
-			}
-			pending := registerLinuxShare(w, id, bus, expected, plan.paths)
-			if pending == nil {
-				portalQueue() <- func() {
-					if len(plan.paths) > 0 {
-						w.shareViaFileManager(id, plan.paths)
-					} else {
-						w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: driver.NoShareSheet})
-					}
+			bus := portalBus(appID)
+			if bus == 0 {
+				if len(plan.paths) > 0 {
+					w.shareViaFileManager(id, plan.paths)
+					return
 				}
+				w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: driver.NoShareSheet})
 				return
 			}
-			portalQueue() <- func() {
-				var reply uintptr
-				if plan.kind == linuxShareURI {
-					reply = portalCall(bus, globalShortcutPath, openURIIface, "OpenURI",
-						gVariantNewString(cstr(parent)),
-						gVariantNewString(cstr(plan.uri)),
-						portalShareOptions(token))
-				} else {
-					reply = portalOpenFile(bus, parent, plan.paths[0], token)
+			token := portalToken("nsgo_share")
+			expected := portalRequestPath(bus, token)
+			if expected == "" {
+				if len(plan.paths) > 0 {
+					w.shareViaFileManager(id, plan.paths)
+					return
 				}
-				if reply == 0 {
-					w.post(func() { cancelLinuxShare(pending.key) })
-					if len(plan.paths) > 0 {
-						w.shareViaFileManager(id, plan.paths)
-					} else {
-						w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: driver.NoShareSheet})
+				w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: driver.NoShareSheet})
+				return
+			}
+			w.post(func() {
+				if w.closing {
+					return
+				}
+				pending := registerLinuxShare(w, id, bus, expected, plan.paths)
+				if pending == nil {
+					portalQueue() <- func() {
+						if len(plan.paths) > 0 {
+							w.shareViaFileManager(id, plan.paths)
+						} else {
+							w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: driver.NoShareSheet})
+						}
 					}
 					return
 				}
-				actual := portalTupleText(reply, 0)
-				gVariantUnref(reply)
-				if actual != "" && actual != expected {
-					w.post(func() { rebindLinuxShare(pending.key, actual) })
+				portalQueue() <- func() {
+					var reply uintptr
+					if plan.kind == linuxShareURI {
+						reply = portalCall(bus, globalShortcutPath, openURIIface, "OpenURI",
+							gVariantNewString(cstr(parent)),
+							gVariantNewString(cstr(plan.uri)),
+							portalShareOptions(token))
+					} else {
+						reply = portalOpenFile(bus, parent, plan.paths[0], token)
+					}
+					if reply == 0 {
+						w.post(func() { cancelLinuxShare(pending.key) })
+						if len(plan.paths) > 0 {
+							w.shareViaFileManager(id, plan.paths)
+						} else {
+							w.dispatchShareEvent(driver.Event{Kind: driver.EventFiles, Count: id, Text: driver.NoShareSheet})
+						}
+						return
+					}
+					actual := portalTupleText(reply, 0)
+					gVariantUnref(reply)
+					if actual != "" && actual != expected {
+						w.post(func() { rebindLinuxShare(pending.key, actual) })
+					}
 				}
-			}
-		})
-	}
+			})
+		}
+	})
 }
 
 func (w *window) shareViaFileManager(id uint32, paths []string) {

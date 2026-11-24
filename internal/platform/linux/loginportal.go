@@ -86,71 +86,72 @@ func (c *portalLogin) next() {
 	bindPermissions()
 	bindSession()
 	appID := currentLinuxSandbox(c.root.opts.ID).appID
-	parent := r.owner.portalParentWindow()
-	portalQueue() <- func() {
-		if c.closed.Load() {
-			return
-		}
-		bus := portalBus(appID)
-		if bus == 0 {
-			c.fail(serial, errors.New("no session bus"))
-			return
-		}
-		executable, err := os.Executable()
-		if err != nil {
-			c.fail(serial, err)
-			return
-		}
-		token := portalToken("nsgo_login")
-		path := portalRequestPath(bus, token)
-		c.root.post(func() {
+	r.owner.withPortalParent(func(parent string) {
+		portalQueue() <- func() {
 			if c.closed.Load() {
 				return
 			}
-			c.bus, c.path = bus, path
-			c.subscribe()
-			if c.sub == 0 {
-				c.finish(serial, errors.New("could not subscribe to the Background portal"))
+			bus := portalBus(appID)
+			if bus == 0 {
+				c.fail(serial, errors.New("no session bus"))
 				return
 			}
-			if c.watch == 0 {
-				c.watch = gDBusConnectionSignalSubscribe(bus, cstr("org.freedesktop.DBus"), cstr("org.freedesktop.DBus"), cstr("NameOwnerChanged"), cstr("/org/freedesktop/DBus"), cstr(portalDesktopName), 0, cbLoginPortalOwner, c.root.handle, 0)
+			executable, err := os.Executable()
+			if err != nil {
+				c.fail(serial, err)
+				return
 			}
-			portalQueue() <- func() {
+			token := portalToken("nsgo_login")
+			path := portalRequestPath(bus, token)
+			c.root.post(func() {
 				if c.closed.Load() {
 					return
 				}
-				options := menuDict([]uintptr{
-					menuDictEntry("handle_token", gVariantNewString(cstr(token))),
-					menuDictEntry("autostart", gVariantNewBoolean(boolInt(r.on))),
-					menuDictEntry("commandline", menuArray("s", []uintptr{gVariantNewString(cstr(executable)), gVariantNewString(cstr("--nsgo-launched-at-login"))})),
-				})
-				reply, err := portalTryTimeout(bus, portalDesktopName, portalDesktopPath, backgroundPortal, "RequestBackground", 10000,
-					gVariantNewString(cstr(parent)), options)
-				if err != nil || reply == 0 {
-					if err == nil {
-						err = errors.New("empty Background portal reply")
-					}
-					c.fail(serial, err)
+				c.bus, c.path = bus, path
+				c.subscribe()
+				if c.sub == 0 {
+					c.finish(serial, errors.New("could not subscribe to the Background portal"))
 					return
 				}
-				actual := portalTupleText(reply, 0)
-				gVariantUnref(reply)
-				c.root.post(func() {
-					if c.closed.Load() || !c.busy || c.path != path || actual == path {
+				if c.watch == 0 {
+					c.watch = gDBusConnectionSignalSubscribe(bus, cstr("org.freedesktop.DBus"), cstr("org.freedesktop.DBus"), cstr("NameOwnerChanged"), cstr("/org/freedesktop/DBus"), cstr(portalDesktopName), 0, cbLoginPortalOwner, c.root.handle, 0)
+				}
+				portalQueue() <- func() {
+					if c.closed.Load() {
 						return
 					}
-					if actual == "" {
-						c.finish(serial, errors.New("no Background portal request handle"))
+					options := menuDict([]uintptr{
+						menuDictEntry("handle_token", gVariantNewString(cstr(token))),
+						menuDictEntry("autostart", gVariantNewBoolean(boolInt(r.on))),
+						menuDictEntry("commandline", menuArray("s", []uintptr{gVariantNewString(cstr(executable)), gVariantNewString(cstr("--nsgo-launched-at-login"))})),
+					})
+					reply, err := portalTryTimeout(bus, portalDesktopName, portalDesktopPath, backgroundPortal, "RequestBackground", 10000,
+						gVariantNewString(cstr(parent)), options)
+					if err != nil || reply == 0 {
+						if err == nil {
+							err = errors.New("empty Background portal reply")
+						}
+						c.fail(serial, err)
 						return
 					}
-					gDBusConnectionSignalUnsubscribe(c.bus, c.sub)
-					c.path = actual
-					c.subscribe()
-				})
-			}
-		})
-	}
+					actual := portalTupleText(reply, 0)
+					gVariantUnref(reply)
+					c.root.post(func() {
+						if c.closed.Load() || !c.busy || c.path != path || actual == path {
+							return
+						}
+						if actual == "" {
+							c.finish(serial, errors.New("no Background portal request handle"))
+							return
+						}
+						gDBusConnectionSignalUnsubscribe(c.bus, c.sub)
+						c.path = actual
+						c.subscribe()
+					})
+				}
+			})
+		}
+	})
 }
 
 func (c *portalLogin) subscribe() {
