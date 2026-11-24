@@ -3399,7 +3399,7 @@ func (s *surface) pickHit(hit, up objc.ID, loc apple.CGPoint, always, moving boo
 				s.inside[v] = struct{}{}
 				v.over = true
 				if v.sc != nil {
-					v.hovered()
+					v.hovered(loc)
 				}
 				v.mouseAt(driver.EventMouseEnter, loc)
 			}
@@ -3766,8 +3766,8 @@ func mouseEntered(self objc.ID, _ objc.SEL, event objc.ID) {
 		return
 	}
 	v.surface.inside[v] = struct{}{}
-	if v.sc != nil {
-		v.hovered(event)
+	if v.sc != nil && event != 0 {
+		v.hovered(objc.Send[apple.CGPoint](event, selLocationInWindow))
 	}
 	if !v.over && (event == 0 || covers(v, v.surface.hitAt(objc.Send[apple.CGPoint](event, selLocationInWindow)))) {
 		v.over = true
@@ -3800,8 +3800,8 @@ func mouseMoved(self objc.ID, _ objc.SEL, event objc.ID) {
 		return
 	}
 	defer v.surface.measuring(false)()
-	if v.sc != nil {
-		v.hovered(event)
+	if v.sc != nil && event != 0 {
+		v.hovered(objc.Send[apple.CGPoint](event, selLocationInWindow))
 	}
 	if !v.over {
 		return

@@ -1269,12 +1269,11 @@ var whenScrolling struct {
 	read time.Time
 }
 
-// hovered shows the indicator at the edge, unless the user shows it only while scrolling.
-func (v *view) hovered(event objc.ID) {
-	if event == 0 || !v.indicates() || v.sc.config.Behavior.NoScroll {
+// hovered shows the indicator when loc, a point of the window, is on the edge track, unless the user shows it only while scrolling.
+func (v *view) hovered(loc apple.CGPoint) {
+	if !v.indicates() || v.sc.config.Behavior.NoScroll {
 		return
 	}
-	loc := objc.Send[apple.CGPoint](event, selLocationInWindow)
 	p := objc.Send[apple.CGPoint](v.native, selConvertPoint, loc, objc.ID(0))
 	if !v.onThumbTrack(driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)}) {
 		return
