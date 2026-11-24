@@ -31,6 +31,34 @@ func TestPressRoutingDoesNotDisableSiblings(t *testing.T) {
 	}
 }
 
+func TestClickableTextDoesNotStealSiblingTouches(t *testing.T) {
+	var buttonPresses, linkPresses int
+	app := nsgotest.Start(t, func(*core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pt(300), Height: core.Pt(200)}, Children: []core.Node{
+			core.View{Style: core.Style{Padding: core.All(12), Gap: 8}, Children: []core.Node{
+				core.Input{TestID: "field", Style: core.Style{Height: core.Pt(36)}},
+				core.View{TestID: "button", Style: core.Style{Height: core.Pt(36)},
+					OnPress: func(core.PressEvent) { buttonPresses++ }},
+			}},
+			core.View{Style: core.Style{Padding: core.All(12)}, Children: []core.Node{
+				core.Text{TestID: "link", Content: "Link", OnPress: func(core.PressEvent) { linkPresses++ }},
+			}},
+		}}
+	}, nsgotest.Size(300, 200))
+	app.Press("id:field")
+	if !app.Find("id:field").Focused || linkPresses != 0 {
+		t.Fatalf("tap on field: focused=%v, link presses=%d", app.Find("id:field").Focused, linkPresses)
+	}
+	app.Press("id:button")
+	if buttonPresses != 1 || linkPresses != 0 {
+		t.Fatalf("tap on button: button presses=%d, link presses=%d", buttonPresses, linkPresses)
+	}
+	app.Press("id:link")
+	if linkPresses != 1 {
+		t.Fatalf("tap on link: link presses=%d, want 1", linkPresses)
+	}
+}
+
 // A sibling probed for a touch outside it, which declines it, must not take the touch's pan from the views it lands on.
 func TestDeclinedRoutingLeavesPansToTheTouchedViews(t *testing.T) {
 	var outer, sibling, presses int

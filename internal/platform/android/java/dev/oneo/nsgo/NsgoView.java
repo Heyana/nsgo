@@ -7032,6 +7032,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                         || c.area != null && x >= c.area[0] * density && y >= c.area[1] * density
                         && x < (c.area[0] + c.area[2]) * density && y < (c.area[1] + c.area[3]) * density;
                 if (!slop && !area) continue;
+                // Group can probe outside its bounds without taking the touch itself. Other
+                // ViewGroups (such as clickable text) need a descendant the touch actually hits.
+                if (!slop && !(child instanceof Group) && touchHit(child, x, y) == null) continue;
                 if (child instanceof Group) ((Group) child).childrenOnly = !slop;
                 int candidates = gestures.candidates();
                 if (deliver(child, e)) return child;
