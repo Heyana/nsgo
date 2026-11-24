@@ -214,10 +214,9 @@ private func handle(_ r: Request) async throws -> Answer {
             throw Failure(code: "failed", message: "could not open subscriptions")
         }
 #else
-        guard let url = URL(string: "https://apps.apple.com/account/subscriptions") else {
+        guard let url = URL(string: "https://apps.apple.com/account/subscriptions"), await UIApplication.shared.open(url) else {
             throw Failure(code: "failed", message: "could not open subscriptions")
         }
-        await UIApplication.shared.open(url)
 #endif
         return Answer()
     case "refund":
