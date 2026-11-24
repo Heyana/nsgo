@@ -28,6 +28,7 @@ var privacyAnchors = map[string]string{
 	driver.PermissionPhotos:              "Privacy_Photos",
 	driver.PermissionBluetooth:           "Privacy_Bluetooth",
 	driver.PermissionMediaLibrary:        "Privacy_Media",
+	driver.PermissionLocalNetwork:        "Privacy_LocalNetwork",
 	driver.PermissionLocation:            "Privacy_LocationServices",
 	driver.PermissionBackgroundLocation:  "Privacy_LocationServices",
 	driver.PermissionMotion:              "Privacy_Motion",

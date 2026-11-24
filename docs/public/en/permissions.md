@@ -7,7 +7,7 @@ order: 49
 
 ## Checking and asking
 
-The system keeps some of what an app may do for the user to give: the microphone, the camera, contacts, calendars, reminders, photos, Bluetooth, the media library, location and notifications on phones and Macs, motion and location in the background on phones, and on macOS also Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools and Automation of another app ([location and motion](services.md#location-and-motion), [notifications](notifications.md)). `core.Permissions()` lists them as `core.Permission` keys. `cx.PermissionStatus` answers whether the app has one without asking, and `cx.RequestPermission` asks with the system's prompt where it has one and has not asked yet. Ask as the user does something that needs the permission. Face ID and Touch ID are not among them: `cx.BiometricAvailability` tells them and `cx.AuthenticateBiometric` asks with their own prompt ([biometrics](services.md#biometrics)).
+The system keeps some of what an app may do for the user to give: the microphone, the camera, contacts, calendars, reminders, photos, Bluetooth, the media library, the local network, location and notifications on phones and Macs, motion and location in the background on phones, and on macOS also Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools and Automation of another app ([location and motion](services.md#location-and-motion), [notifications](notifications.md)). `core.Permissions()` lists them as `core.Permission` keys. `cx.PermissionStatus` answers whether the app has one without asking, and `cx.RequestPermission` asks with the system's prompt where it has one and has not asked yet. Ask as the user does something that needs the permission. Face ID and Touch ID are not among them: `cx.BiometricAvailability` tells them and `cx.AuthenticateBiometric` asks with their own prompt ([biometrics](services.md#biometrics)).
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -46,6 +46,7 @@ apple:
     NSPhotoLibraryUsageDescription: Imports photos from your library.
     NSBluetoothAlwaysUsageDescription: Finds your headphones.
     NSAppleMusicUsageDescription: Plays your library.                            # iOS
+    NSLocalNetworkUsageDescription: Finds your computer to sync with.            # iOS, macOS 15
     NSAppleEventsUsageDescription: Reveals files in Finder.                      # macOS Automation
 android:
   permissions:
@@ -61,9 +62,25 @@ windows:
 
 On Android, each permission must be listed in `nsgo.yaml`'s `android.permissions`; one left out of the manifest answers `PermissionUnavailable`. Under `nsgo dev`, macOS charges what the app does to the terminal that started it, so the terminal is the app asked and listed; build the app to test its own permissions.
 
+## The local network
+
+From iOS 14 and macOS 15, a connection to a device on the local network fails until the user lets the app find and connect to devices there, and the system tells an app neither whether it may nor whether it was asked. Ask for `core.PermissionLocalNetwork` before the first connection, such as when the user starts pairing: the request advertises and browses a Bonjour service of NSGo's own, which shows the system's prompt the first time, and answers once the user does, granted or denied, or unknown after two minutes. `cx.PermissionStatus` answers what the last request in this run learned, and unknown before one. Android, Windows and Linux answer not gated, as macOS does before 15 and for a program started from a terminal, such as under `nsgo dev`; the web answers unavailable.
+
+```go
+cx.RequestPermission(core.PermissionLocalNetwork, func(s core.PermissionStatus) {
+	if s.Allowed() {
+		pair()
+	} else if s == core.PermissionDenied {
+		showLocalNetworkOff()
+	}
+})
+```
+
+Asking needs `NSLocalNetworkUsageDescription` in `apple.info`. With it, `nsgo build` lists the service's type, `_nsgo-lnp._tcp`, in `NSBonjourServices` after the app's own, as iOS refuses to browse a type the Info.plist does not list; an app embedding NSGo in its own host lists the type in the host's Info.plist.
+
 ## Opening the settings
 
-`cx.OpenPermissionSettings` opens the page that gives a permission and answers whether one opened: Privacy & Security at the permission's pane (including Automation, Contacts, Photos and Location Services) or Notifications on macOS, the app's page in Settings (or its Notifications page from iOS 16) on iOS, the app's page in Settings on Android, and the microphone's, camera's or notifications' page on Windows.
+`cx.OpenPermissionSettings` opens the page that gives a permission and answers whether one opened: Privacy & Security at the permission's pane (including Automation, Contacts, Photos, Location Services and, from macOS 15, Local Network) or Notifications on macOS, the app's page in Settings (or its Notifications page from iOS 16) on iOS, the app's page in Settings on Android, and the microphone's, camera's or notifications' page on Windows.
 
 For `PermissionLocation` and `PermissionBackgroundLocation`, macOS opens Location Services; `PermissionMotion` opens Motion & Fitness, even though macOS does not supply motion samples. iOS and Android open the app's page for all three. Opening settings neither requests nor grants a permission.
 
@@ -83,12 +100,12 @@ The app held out is its bundle, else its executable; `GuideOptions.App` names an
 
 | Platform | What it tells and asks |
 | --- | --- |
-| macOS | Every permission (Automation per running target app via `PermissionAutomationOf`, plus notifications for bundled apps); bare Automation, App Management, Developer Tools and Media & Apple Music are unknown; motion is unavailable |
-| iOS | The microphone, the camera, contacts, calendars, reminders, photos (with `PermissionLimited`), Bluetooth, the media library, location, motion and notifications |
+| macOS | Every permission (Automation per running target app via `PermissionAutomationOf`, plus notifications for bundled apps); bare Automation, App Management, Developer Tools and Media & Apple Music are unknown; motion is unavailable; the local network from macOS 15, as asking learns it |
+| iOS | The microphone, the camera, contacts, calendars, reminders, photos (with `PermissionLimited`), Bluetooth, the media library, the local network as asking learns it, location, motion and notifications |
 | Windows | The microphone, the camera and notifications, which it never prompts for; the rest is not gated |
 | Linux | Not gated outside sandboxes; notifications reflect whether a notification server answers; in Flatpak and Snap, the camera through the desktop portal and the microphone through the portal and PipeWire |
 | Web | The microphone and the camera (unknown in Firefox), notifications, location (not background location), and motion on mobile browsers |
-| Android | The microphone, the camera, calendars, Bluetooth and the media library, where `android.permissions` declares them |
+| Android | The microphone, the camera, calendars, Bluetooth and the media library, where `android.permissions` declares them; the local network is not gated |
 | Apple Watch, mini programs | Notifications, location and motion through their services; the rest kept by the system is unknown for now |
 
 Location and motion permissions follow each [platform's sensors](services.md#location-and-motion), and `PermissionNotifications` follows [notifications](notifications.md). Fitness uses `PermissionActivityRecognition` (`ACTIVITY_RECOGNITION` on Android, `NSMotionUsageDescription` on Apple), including Apple pressure; raw Android motion remains separate. On mobile Safari, ask for `PermissionMotion` from a press handler.

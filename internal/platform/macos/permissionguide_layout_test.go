@@ -20,6 +20,7 @@ func TestPrivacyPanes(t *testing.T) {
 		driver.PermissionMicrophone, driver.PermissionCamera, driver.PermissionContacts,
 		driver.PermissionCalendars, driver.PermissionReminders, driver.PermissionPhotos,
 		driver.PermissionLocation, driver.PermissionBackgroundLocation, driver.PermissionNotifications,
+		driver.PermissionLocalNetwork,
 	}
 	for _, name := range append(slices.Clone(dragPanes), noDragPanes...) {
 		if privacySettingsURL(name) == "" {
@@ -44,6 +45,9 @@ func TestPrivacyPanes(t *testing.T) {
 	}
 	if got := privacySettingsURL(driver.PermissionLocation); got != "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices" {
 		t.Errorf("location pane: %s", got)
+	}
+	if got := privacySettingsURL(driver.PermissionLocalNetwork); got != "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork" {
+		t.Errorf("local network pane: %s", got)
 	}
 	if got := privacySettingsURL(driver.PermissionNotifications); got != "x-apple.systempreferences:com.apple.preference.notifications" {
 		t.Errorf("notifications pane: %s", got)

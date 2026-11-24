@@ -41,7 +41,7 @@ func TestAnswerPermission(t *testing.T) {
 	if PhonePermission(PermissionAccessibility) != PermissionUnavailable {
 		t.Error("a phone keeps Accessibility")
 	}
-	for _, kept := range []string{PermissionContacts, PermissionPhotos, PermissionNotifications} {
+	for _, kept := range []string{PermissionContacts, PermissionPhotos, PermissionLocalNetwork, PermissionNotifications} {
 		if PhonePermission(kept) != PermissionUnknown {
 			t.Errorf("PhonePermission(%q) = %d, want PermissionUnknown", kept, PhonePermission(kept))
 		}

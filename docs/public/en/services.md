@@ -327,7 +327,7 @@ The content stays mounted but hidden while it waits, so it shows at once when th
 
 On macOS, iOS, Android, Windows and Linux, `cx.AdvertiseService` publishes a listening port and TXT attributes. `cx.BrowseServices` reports resolved services with their host, port and TXT attributes. `Host` may be a DNS hostname or an IP address. When a service leaves, the callback receives it again with `Removed` set. Check `cx.Env().CanDiscoverServices()` for platform support. Both calls return a stop function and end when their scope is disposed. A platform error is reported asynchronously on the engine goroutine. Linux uses Avahi and reports an error if the daemon is unavailable.
 
-For Bonjour on Apple platforms, declare the service types and explain local network access in `nsgo.yaml`. The system manages the permission prompt and remembers the user's choice.
+For Bonjour on Apple platforms, declare the service types and explain local network access in `nsgo.yaml`. The system manages the permission prompt and remembers the user's choice; to ask ahead of the first connection and learn the answer, request [`core.PermissionLocalNetwork`](permissions.md#the-local-network).
 
 ```yaml
 apple:

@@ -1175,10 +1175,11 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 	}
 	b = withoutOffscreenReleases(s.withoutScans(v.id, b))
 	b = s.soundVoices.limit(v.id, withoutAudioLatencyReads(b, func(ev driver.Event) { s.dispatchTo(v.id, ev) }))
-	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
+	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through, and keeps no local network from an app at the runtime's target SDK, so Go answers that permission. A test's observer may hold the batch, so filter these items from a copy.
 	outsideBatch := func(it driver.MountItem) bool {
 		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile ||
-			it.Kind == driver.ItemDiskSpace || it.Kind == driver.ItemDiscovery
+			it.Kind == driver.ItemDiskSpace || it.Kind == driver.ItemDiscovery ||
+			it.Kind == driver.ItemPermission && it.Permission.Name == driver.PermissionLocalNetwork
 	}
 	if slices.ContainsFunc(b.Items, outsideBatch) {
 		for _, it := range b.Items {
@@ -1189,6 +1190,8 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 				s.diskSpace(v.id, it.Count, it.Value)
 			case driver.ItemDiscovery:
 				s.discovery(v.id, it.Count, it.Discovery)
+			case driver.ItemPermission:
+				driver.AnswerPermission(it.Count, *it.Permission, func(string) int { return driver.PermissionNotGated }, func(ev driver.Event) { s.dispatchTo(v.id, ev) })
 			}
 		}
 		out := *b

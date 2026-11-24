@@ -19,6 +19,7 @@ const (
 	PermissionPhotos          = "photos"
 	PermissionBluetooth       = "bluetooth"
 	PermissionMediaLibrary    = "media-library"
+	PermissionLocalNetwork    = "local-network"
 	// The sensors' permissions, which core asks the sensor service for (ItemSensor) rather than sending ItemPermission, except to open their settings or guide.
 	PermissionLocation            = "location"
 	PermissionBackgroundLocation  = "background-location"
@@ -93,7 +94,7 @@ func AnswerPermission(id uint32, r PermissionRequest, status func(name string) i
 func PhonePermission(name string) int {
 	switch name {
 	case PermissionMicrophone, PermissionCamera, PermissionContacts, PermissionCalendars, PermissionReminders, PermissionPhotos,
-		PermissionBluetooth, PermissionMediaLibrary, PermissionLocation, PermissionBackgroundLocation, PermissionMotion, PermissionActivityRecognition, PermissionNotifications:
+		PermissionBluetooth, PermissionMediaLibrary, PermissionLocalNetwork, PermissionLocation, PermissionBackgroundLocation, PermissionMotion, PermissionActivityRecognition, PermissionNotifications:
 		return PermissionUnknown
 	}
 	return PermissionUnavailable

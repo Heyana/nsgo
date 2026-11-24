@@ -40,6 +40,8 @@ const (
 	PermissionBluetooth Permission = driver.PermissionBluetooth
 	// PermissionMediaLibrary is Media & Apple Music: iOS tells and asks it (NSAppleMusicUsageDescription), Android tells and asks READ_MEDIA_AUDIO (API 33+) or READ_EXTERNAL_STORAGE (API 28–32) in android.permissions, and macOS never tells it.
 	PermissionMediaLibrary Permission = driver.PermissionMediaLibrary
+	// PermissionLocalNetwork is finding and connecting to devices on the local network, which iOS and tvOS keep from 14 and macOS from 15: until the user allows it, a connection to a device there fails. The system never tells it, so checking answers PermissionUnknown until a request in this run has learned it. Asking advertises and browses a Bonjour service of NSGo's own, which shows the system's prompt, waits up to two minutes for the user and needs NSLocalNetworkUsageDescription in apple.info, with which nsgo build lists that service in NSBonjourServices. Android, Windows and Linux answer PermissionNotGated, as macOS does before 15 and for a program another, such as a terminal, starts and answers for.
+	PermissionLocalNetwork Permission = driver.PermissionLocalNetwork
 	// PermissionLocation is the device's location while the app shows (Locate, WatchLocation): asking needs NSLocationWhenInUseUsageDescription, or NSLocationUsageDescription on macOS, and on Android ACCESS_COARSE_LOCATION, with ACCESS_FINE_LOCATION for a precise one, in android.permissions. Whether the user allowed only an approximate location shows on each fix (LocationFix.Approximate).
 	PermissionLocation Permission = driver.PermissionLocation
 	// PermissionBackgroundLocation is a location stream going on in the background (LocationOptions.Background): on Apple platforms PermissionLocation with UIBackgroundModes' location, and on Android also ACCESS_BACKGROUND_LOCATION where android.permissions lists it, which Android 11 and later give only on the app's page of the settings, which asking opens. Ask for it after PermissionLocation.
@@ -65,7 +67,7 @@ func Permissions() []Permission {
 	return []Permission{PermissionAccessibility, PermissionScreenRecording, PermissionInputMonitoring, PermissionFullDiskAccess,
 		PermissionAppManagement, PermissionDeveloperTools, PermissionAutomation, PermissionMicrophone, PermissionCamera,
 		PermissionContacts, PermissionCalendars, PermissionReminders, PermissionPhotos, PermissionBluetooth, PermissionMediaLibrary,
-		PermissionLocation, PermissionBackgroundLocation, PermissionMotion, PermissionActivityRecognition, PermissionNotifications}
+		PermissionLocalNetwork, PermissionLocation, PermissionBackgroundLocation, PermissionMotion, PermissionActivityRecognition, PermissionNotifications}
 }
 
 // PermissionStatus is whether the app has a Permission.

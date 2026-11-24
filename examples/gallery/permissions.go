@@ -40,6 +40,8 @@ func permissionTitle(tr locales.Messages, p core.Permission) string {
 		return tr.PermissionPhotos()
 	case core.PermissionBluetooth:
 		return tr.PermissionBluetooth()
+	case core.PermissionLocalNetwork:
+		return tr.PermissionLocalNetwork()
 	case core.PermissionLocation:
 		return tr.PermissionLocation()
 	case core.PermissionBackgroundLocation:

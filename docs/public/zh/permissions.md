@@ -7,7 +7,7 @@ order: 49
 
 ## 检查和请求
 
-系统替用户保管着应用的一些能力，由用户授予：手机和 Mac 上的麦克风、相机、通讯录、日历、提醒事项、照片、蓝牙、媒体资料库、定位和通知，手机上的运动与后台定位，以及 macOS 上的辅助功能、录屏、输入监控、完全磁盘访问权限、App 管理、开发者工具和控制其他应用的自动化权限（[定位与运动](services.md#定位与运动)、[通知](notifications.md)）。`core.Permissions()` 以 `core.Permission` 键列出它们。`cx.PermissionStatus` 不打扰用户地回答应用是否已有某项权限，`cx.RequestPermission` 在系统有弹窗且尚未询问过时用系统弹窗请求。请在用户做需要该权限的操作时再请求。面容 ID 和触控 ID 不在其中：`cx.BiometricAvailability` 回答它们是否可用，`cx.AuthenticateBiometric` 用它们自己的弹窗请求。
+系统替用户保管着应用的一些能力，由用户授予：手机和 Mac 上的麦克风、相机、通讯录、日历、提醒事项、照片、蓝牙、媒体资料库、本地网络、定位和通知，手机上的运动与后台定位，以及 macOS 上的辅助功能、录屏、输入监控、完全磁盘访问权限、App 管理、开发者工具和控制其他应用的自动化权限（[定位与运动](services.md#定位与运动)、[通知](notifications.md)）。`core.Permissions()` 以 `core.Permission` 键列出它们。`cx.PermissionStatus` 不打扰用户地回答应用是否已有某项权限，`cx.RequestPermission` 在系统有弹窗且尚未询问过时用系统弹窗请求。请在用户做需要该权限的操作时再请求。面容 ID 和触控 ID 不在其中：`cx.BiometricAvailability` 回答它们是否可用，`cx.AuthenticateBiometric` 用它们自己的弹窗请求。
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -46,6 +46,7 @@ apple:
     NSPhotoLibraryUsageDescription: 从图库导入照片。
     NSBluetoothAlwaysUsageDescription: 查找你的耳机。
     NSAppleMusicUsageDescription: 播放你的资料库。                # iOS
+    NSLocalNetworkUsageDescription: 查找要同步的电脑。            # iOS、macOS 15
     NSAppleEventsUsageDescription: 在访达中显示文件。             # macOS 自动化
 android:
   permissions:
@@ -61,9 +62,25 @@ windows:
 
 在 Android 上，每项权限都必须在 `nsgo.yaml` 的 `android.permissions` 中声明；清单中未声明的权限回答 `PermissionUnavailable`。在 `nsgo dev` 下，macOS 把应用的行为记在启动它的终端名下，询问和列出的都是终端；要测试应用自己的权限，请先构建应用。
 
+## 本地网络
+
+从 iOS 14 和 macOS 15 起，在用户允许应用查找并连接本地网络上的设备之前，连接本地网络设备会失败，而系统既不告诉应用是否允许，也不告诉它是否询问过。请在第一次连接之前请求 `core.PermissionLocalNetwork`，例如在用户开始配对时：请求会发布并浏览一个 NSGo 自己的 Bonjour 服务，第一次时由此显示系统弹窗，等用户回答后回答已授予或已拒绝，两分钟内没有回答则为未知。`cx.PermissionStatus` 回答本次运行中最近一次请求得知的状态，此前为未知。Android、Windows 和 Linux 回答不受限，macOS 15 之前以及从终端启动的程序（例如 `nsgo dev` 下）也是如此；Web 回答不可用。
+
+```go
+cx.RequestPermission(core.PermissionLocalNetwork, func(s core.PermissionStatus) {
+	if s.Allowed() {
+		pair()
+	} else if s == core.PermissionDenied {
+		showLocalNetworkOff()
+	}
+})
+```
+
+请求需要在 `apple.info` 中写 `NSLocalNetworkUsageDescription`。写了之后，`nsgo build` 会把这个服务的类型 `_nsgo-lnp._tcp` 加在应用自己的类型之后列进 `NSBonjourServices`，因为 iOS 拒绝浏览 Info.plist 没有列出的类型；把 NSGo 嵌入自己宿主的应用要在宿主的 Info.plist 中列出这个类型。
+
 ## 打开设置
 
-`cx.OpenPermissionSettings` 打开授予某项权限的页面，并回答是否打开：macOS 上是“隐私与安全性”中该权限的面板（包括自动化、通讯录、照片和定位服务）或“通知”，iOS 上是“设置”中本应用的页面（通知从 iOS 16 起直接打开通知设置页），Android 上是“设置”中本应用的页面，Windows 上是麦克风、相机或通知的页面。
+`cx.OpenPermissionSettings` 打开授予某项权限的页面，并回答是否打开：macOS 上是“隐私与安全性”中该权限的面板（包括自动化、通讯录、照片和定位服务，macOS 15 起还有本地网络）或“通知”，iOS 上是“设置”中本应用的页面（通知从 iOS 16 起直接打开通知设置页），Android 上是“设置”中本应用的页面，Windows 上是麦克风、相机或通知的页面。
 
 对于 `PermissionLocation` 和 `PermissionBackgroundLocation`，macOS 打开“定位服务”；`PermissionMotion` 打开“运动与健身”，但 macOS 尚不提供运动采样。iOS 和 Android 对这三项权限都打开本应用的设置页面。打开设置不会请求或授予权限。
 
@@ -83,12 +100,12 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 
 | 平台 | 能读取和请求的权限 |
 | --- | --- |
-| macOS | 全部权限（自动化通过 `PermissionAutomationOf` 按运行中的目标应用检查与请求，打包应用还支持通知）；不含目标的自动化、App 管理、开发者工具和媒体与 Apple Music 为未知；运动为不可用 |
-| iOS | 麦克风、相机、通讯录、日历、提醒事项、照片（支持 `PermissionLimited`）、蓝牙、媒体资料库、定位、运动和通知 |
+| macOS | 全部权限（自动化通过 `PermissionAutomationOf` 按运行中的目标应用检查与请求，打包应用还支持通知）；不含目标的自动化、App 管理、开发者工具和媒体与 Apple Music 为未知；运动为不可用；macOS 15 起的本地网络由请求得知 |
+| iOS | 麦克风、相机、通讯录、日历、提醒事项、照片（支持 `PermissionLimited`）、蓝牙、媒体资料库、由请求得知的本地网络、定位、运动和通知 |
 | Windows | 麦克风、相机和通知，但从不弹窗请求；其余不受限 |
 | Linux | 沙盒外不受限；通知反映通知服务是否响应；在 Flatpak 和 Snap 中通过桌面 Portal 读取和请求相机，通过 Portal 与 PipeWire 读取和请求麦克风 |
 | Web | 麦克风和相机（在 Firefox 中为未知）、通知、位置（不含后台位置）以及移动浏览器上的运动 |
-| Android | 在 `android.permissions` 中声明了的麦克风、相机、日历、蓝牙和媒体资料库 |
+| Android | 在 `android.permissions` 中声明了的麦克风、相机、日历、蓝牙和媒体资料库；本地网络不受限 |
 | Apple Watch、小程序 | 通知、定位和运动走各自服务；其余系统保管的权限目前为未知 |
 
 定位和运动权限在有对应传感器的平台上都能读取和请求，`PermissionNotifications` 与[通知](notifications.md)一致。在移动 Safari 上，请在点按处理函数中请求 `PermissionMotion`。

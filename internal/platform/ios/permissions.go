@@ -20,7 +20,7 @@ func notificationPermissionStatus(np int) int {
 	return driver.PermissionUnavailable
 }
 
-// permission carries out an ItemPermission numbered id: privacy tells and asks, and the settings are the app's page in Settings (or its Notifications page from iOS 16). Nothing guides on a phone or a TV, so a guide answers the status at once.
+// permission carries out an ItemPermission numbered id: privacy tells and asks, apple's probe asks for the local network, and the settings are the app's page in Settings (or its Notifications page from iOS 16). Nothing guides on a phone or a TV, so a guide answers the status at once.
 func (s *surface) permission(id uint32, r driver.PermissionRequest) {
 	e := s.engine
 	answer := func(status int) { e.Dispatch(driver.Event{Kind: driver.EventPermission, Count: id, Index: status}) }
@@ -30,10 +30,18 @@ func (s *surface) permission(id uint32, r driver.PermissionRequest) {
 			apple.NotificationPermission(false, func(np int) { answer(notificationPermissionStatus(np)) })
 			return
 		}
+		if r.Name == driver.PermissionLocalNetwork {
+			answer(apple.LocalNetworkStatus())
+			return
+		}
 		answer(privacy.Status(r.Name))
 	case driver.PermissionAsk:
 		if r.Name == driver.PermissionNotifications {
 			apple.NotificationPermission(true, func(np int) { answer(notificationPermissionStatus(np)) })
+			return
+		}
+		if r.Name == driver.PermissionLocalNetwork {
+			apple.RequestLocalNetwork(answer)
 			return
 		}
 		privacy.Request(r.Name, answer)
@@ -46,7 +54,7 @@ func (s *surface) permission(id uint32, r driver.PermissionRequest) {
 				return
 			}
 			settings = apple.GoString(apple.Global(uikitPath, "UIApplicationOpenNotificationSettingsURLString"))
-		} else if r.Name != driver.PermissionActivityRecognition && privacy.Status(r.Name) == driver.PermissionUnavailable {
+		} else if r.Name != driver.PermissionActivityRecognition && r.Name != driver.PermissionLocalNetwork && privacy.Status(r.Name) == driver.PermissionUnavailable {
 			opened(false)
 			return
 		}

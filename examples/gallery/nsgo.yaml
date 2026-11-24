@@ -40,6 +40,7 @@ apple:
     NSRemindersUsageDescription: The System page shows how the app asks for your reminders.
     NSBluetoothAlwaysUsageDescription: The System page shows how the app asks for Bluetooth.
     NSAppleMusicUsageDescription: The System page shows how the app asks for your media library.
+    NSLocalNetworkUsageDescription: The System page shows how the app asks for the local network.
 
 android:
   permissions: [POST_NOTIFICATIONS, USE_BIOMETRIC, RECORD_AUDIO, CAMERA, READ_CALENDAR, WRITE_CALENDAR, BLUETOOTH_CONNECT, BLUETOOTH, READ_MEDIA_AUDIO, READ_EXTERNAL_STORAGE, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION, FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION]

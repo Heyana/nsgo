@@ -1683,7 +1683,7 @@ const plistHead = `<?xml version="1.0" encoding="UTF-8"?>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>{{.Version}}</string>
 	<key>CFBundleVersion</key><string>{{.BundleVersion}}</string>
-{{- range $key, $value := .Apple.Info}}
+{{- range $key, $value := .InfoPlist}}
 {{- if and (ne $key "MinimumOSVersion") (ne $key "LSMinimumSystemVersion")}}
 	<key>{{html $key}}</key>{{$.InfoValue $value}}
 {{- end}}

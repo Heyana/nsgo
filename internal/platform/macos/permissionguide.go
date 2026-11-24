@@ -17,7 +17,6 @@ import (
 	"github.com/nsgo-dev/nsgo/desktop/locales"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
-	"github.com/nsgo-dev/nsgo/internal/platform/privacy"
 )
 
 // The permission guide (desktop.GuidePermission) is an NSPanel that never takes the focus, so System Settings stays the active app while the user drags from it. A goroutine follows System Settings through the window server (CGWindowListCopyWindowInfo), which needs no permission, 30 times a second, and has the main thread move the panel under its window as it moves, or hide it while another app is in front. The card holding the app is a view of a class of ours, the drag's source, whose item writes the app to the pasteboard as Finder does. Its look, its place and what it writes follow PermissionFlow through MyGo's port (NOTICE); its pointer stays the arrow.
@@ -208,7 +207,7 @@ func guidePermissionAllowed(st int) bool {
 // pollGuideStatus reads name's status on the guide tracker's background goroutine.
 func pollGuideStatus(name string) int {
 	if name != driver.PermissionNotifications {
-		return privacy.Status(name)
+		return permissionStatus(name)
 	}
 	ch := make(chan int, 1)
 	apple.NotificationPermission(false, func(np int) { ch <- notificationPermissionStatus(np) })
@@ -228,7 +227,7 @@ func (s *surface) guidePermission(id uint32, r driver.PermissionRequest) {
 		})
 		return
 	}
-	s.startGuide(id, r, privacy.Status(r.Name))
+	s.startGuide(id, r, permissionStatus(r.Name))
 }
 
 func (s *surface) startGuide(id uint32, r driver.PermissionRequest, st int) {

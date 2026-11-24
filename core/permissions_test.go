@@ -173,7 +173,7 @@ func TestPermissionStatusStrings(t *testing.T) {
 			t.Errorf("%d: %q allowed %v, want %q %v", c.s, c.s.String(), c.s.Allowed(), c.name, c.allowed)
 		}
 	}
-	if len(core.Permissions()) != 20 {
+	if len(core.Permissions()) != 21 {
 		t.Errorf("%d permissions", len(core.Permissions()))
 	}
 }
@@ -261,5 +261,42 @@ func TestNotificationPermissionHeldToAccessNotifications(t *testing.T) {
 	}
 	if app.NotificationPermission != core.NotificationsNotAsked {
 		t.Errorf("refused request changed NotificationPermission to %v", app.NotificationPermission)
+	}
+}
+
+// TestLocalNetworkPermission sends the local network's check, request and settings to the platform as the other permissions', holding them to AccessPermissions, and lists it.
+func TestLocalNetworkPermission(t *testing.T) {
+	if !slices.Contains(core.Permissions(), core.PermissionLocalNetwork) || core.PermissionLocalNetwork != "local-network" {
+		t.Fatalf("Permissions() %v lacks %q", core.Permissions(), core.PermissionLocalNetwork)
+	}
+	var scope *core.Scope
+	var refused []core.PermissionStatus
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		scope = cx
+		return core.Show{When: func() bool { return true }, Then: func(cx *core.Scope) core.Node {
+			cx.ProvideAccess(refuseKey{core.PermissionLocalNetwork})
+			cx.RequestPermission(core.PermissionLocalNetwork, func(s core.PermissionStatus) { refused = append(refused, s) })
+			return core.View{}
+		}}
+	})
+	if !slices.Equal(refused, []core.PermissionStatus{core.PermissionUnavailable}) {
+		t.Errorf("code its Access refuses heard %v", refused)
+	}
+	var got []core.PermissionStatus
+	answer := func(s core.PermissionStatus) { got = append(got, s) }
+	app.PermissionAnswers[core.PermissionLocalNetwork] = core.PermissionDenied
+	scope.PermissionStatus(core.PermissionLocalNetwork, answer)
+	scope.RequestPermission(core.PermissionLocalNetwork, answer)
+	scope.PermissionStatus(core.PermissionLocalNetwork, answer)
+	app.Settle()
+	want := []core.PermissionStatus{core.PermissionNotAsked, core.PermissionDenied, core.PermissionDenied}
+	if !slices.Equal(got, want) {
+		t.Errorf("statuses %v, want %v", got, want)
+	}
+	var opened []bool
+	scope.OpenPermissionSettings(core.PermissionLocalNetwork, func(ok bool) { opened = append(opened, ok) })
+	app.Settle()
+	if !slices.Equal(opened, []bool{true}) || !slices.Equal(app.PermissionSettings, []core.Permission{core.PermissionLocalNetwork}) {
+		t.Errorf("opened %v, settings %v", opened, app.PermissionSettings)
 	}
 }

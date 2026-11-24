@@ -2718,6 +2718,7 @@ const (
 	textPermissionPhotos
 	textPermissionBluetooth
 	textPermissionMediaLibrary
+	textPermissionLocalNetwork
 	textPermissionLocation
 	textPermissionBackgroundLocation
 	textPermissionActivityRecognition
@@ -5040,6 +5041,7 @@ var keyOfText = [numTexts]string{
 	"permissionPhotos",
 	"permissionBluetooth",
 	"permissionMediaLibrary",
+	"permissionLocalNetwork",
 	"permissionLocation",
 	"permissionBackgroundLocation",
 	"permissionActivityRecognition",
@@ -7360,6 +7362,7 @@ var textsEn = i18n.NewTexts(""+
 	"Photos"+
 	"Bluetooth"+
 	"Media & Apple Music"+
+	"Local Network"+
 	"Location"+
 	"Background location"+
 	"Motion & Fitness"+
@@ -9677,6 +9680,7 @@ var textsEn = i18n.NewTexts(""+
 		6,
 		9,
 		19,
+		13,
 		8,
 		19,
 		16,
@@ -11997,6 +12001,7 @@ var textsZhHans = i18n.NewTexts(""+
 	"照片"+
 	"蓝牙"+
 	"媒体与Apple Music"+
+	"本地网络"+
 	"定位"+
 	"后台定位"+
 	"运动与健身"+
@@ -14314,6 +14319,7 @@ var textsZhHans = i18n.NewTexts(""+
 		6,
 		6,
 		20,
+		12,
 		6,
 		12,
 		15,
@@ -36642,6 +36648,13 @@ func PermissionMediaLibrary(cx *core.Scope) string { return For(cx).PermissionMe
 
 // PermissionMediaLibrary is the package's PermissionMediaLibrary in the language of msgs.
 func (msgs Messages) PermissionMediaLibrary() string { return msgs.text(textPermissionMediaLibrary) }
+
+// PermissionLocalNetwork says "Local Network"
+// in the language the app shows under cx.
+func PermissionLocalNetwork(cx *core.Scope) string { return For(cx).PermissionLocalNetwork() }
+
+// PermissionLocalNetwork is the package's PermissionLocalNetwork in the language of msgs.
+func (msgs Messages) PermissionLocalNetwork() string { return msgs.text(textPermissionLocalNetwork) }
 
 // PermissionLocation says "Location"
 // in the language the app shows under cx.
