@@ -61,13 +61,22 @@ func TestReadMarkedRunKeepsThisRunsOutput(t *testing.T) {
 
 func TestReadMarkedRunEndsAtItsExitMarkWithoutAStart(t *testing.T) {
 	lines := strings.Join([]string{
+		"--- FAIL: TestEarlier (0.01s)",
 		"nsgo-test-exit old 1",
+		"=== RUN   TestFast",
 		"scroll_test.go:13: checks a desktop mouse and touchpad, unavailable on android",
+		"--- SKIP: TestFast (0.00s)",
+		"PASS",
 		"nsgo-test-exit t1 0",
 	}, "\n")
-	code, err := readMarkedRun(strings.NewReader(lines), "t1", &strings.Builder{}, func() error { return errors.New("waited for the log to end") }, nil)
+	var out strings.Builder
+	code, err := readMarkedRun(strings.NewReader(lines), "t1", &out, func() error { return errors.New("waited for the log to end") }, nil)
 	if err != nil || code != 0 {
 		t.Fatalf("code %d, err %v", code, err)
+	}
+	want := "=== RUN   TestFast\nscroll_test.go:13: checks a desktop mouse and touchpad, unavailable on android\n--- SKIP: TestFast (0.00s)\nPASS\n"
+	if out.String() != want {
+		t.Fatalf("out %q, want %q", out.String(), want)
 	}
 }
 

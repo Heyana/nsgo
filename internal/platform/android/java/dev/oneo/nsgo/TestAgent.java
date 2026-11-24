@@ -20,6 +20,7 @@ import android.view.PixelCopy;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -69,6 +70,7 @@ final class TestAgent {
     private final NsgoView view;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final HeldKeyAgent heldKeys = new HeldKeyAgent();
+    private AlertDialog blurDialog;
 
     TestAgent(NsgoView view) {
         this.view = view;
@@ -110,6 +112,46 @@ final class TestAgent {
         while (c instanceof ContextWrapper && !(c instanceof Activity)) c = ((ContextWrapper) c).getBaseContext();
         if (!(c instanceof Activity)) throw new IllegalStateException("no activity shows the app");
         return (Activity) c;
+    }
+
+    /**
+     * Takes window focus away from the activity with a focusable dialog window so Android delivers
+     * onWindowFocusChanged(false) to NsgoView. If the activity has not yet received its initial
+     * window focus after launch, wait for it first so Android transitions from focused to unfocused.
+     */
+    private void blurWindow(int id) {
+        Runnable show = () -> {
+            try {
+                if (blurDialog != null) blurDialog.dismiss();
+                AlertDialog dialog = new AlertDialog.Builder(activity()).setMessage("blur").create();
+                blurDialog = dialog;
+                dialog.show();
+                view.testReply(id, "", "");
+            } catch (Exception e) {
+                view.testReply(id, e.toString(), "");
+            }
+        };
+        if (view.hasWindowFocus()) {
+            show.run();
+            return;
+        }
+        final boolean[] done = {false};
+        ViewTreeObserver observer = view.getViewTreeObserver();
+        ViewTreeObserver.OnWindowFocusChangeListener[] holder = new ViewTreeObserver.OnWindowFocusChangeListener[1];
+        Runnable runOnce = () -> {
+            if (done[0]) return;
+            done[0] = true;
+            if (holder[0] != null) {
+                ViewTreeObserver current = view.getViewTreeObserver();
+                if (current.isAlive()) current.removeOnWindowFocusChangeListener(holder[0]);
+            }
+            show.run();
+        };
+        holder[0] = hasFocus -> {
+            if (hasFocus) ui.post(runOnce);
+        };
+        if (observer.isAlive()) observer.addOnWindowFocusChangeListener(holder[0]);
+        ui.postDelayed(runOnce, 2000);
     }
 
     /** Reads native geometry and typography, including views placed outside core's layout roots. */
@@ -301,8 +343,8 @@ final class TestAgent {
                 return;
             }
             case "blur-window":
-                activity().moveTaskToBack(true);
-                break;
+                blurWindow(id);
+                return;
             case "select-range": {
                 View focused = activity().getCurrentFocus();
                 if (!(focused instanceof InputField)) throw new IllegalStateException("no text field has the keyboard focus");

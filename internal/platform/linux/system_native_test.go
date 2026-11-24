@@ -268,6 +268,11 @@ func TestFileDialogsReachGTK(t *testing.T) {
 		}
 		return
 	}
+	// Create the temp directories before startTestWindow so t.Cleanup (LIFO)
+	// closes the GTK window and stops its main loop before removing folders
+	// that GTK's file chooser monitors may still be watching.
+	dir := t.TempDir()
+	exportDir := t.TempDir()
 	scopes := make(chan *core.Scope, 1)
 	status := make(chan string, 16)
 	app := func(c *core.Scope) core.Node {
@@ -291,7 +296,6 @@ func TestFileDialogsReachGTK(t *testing.T) {
 			time.Sleep(20 * time.Millisecond)
 		}
 	}
-	dir := t.TempDir()
 	notes := filepath.Join(dir, "notes.txt")
 	os.WriteFile(notes, []byte("notes"), 0o644)
 	next := func(what string) string {
@@ -357,7 +361,6 @@ func TestFileDialogsReachGTK(t *testing.T) {
 	if s := next("the folder pick"); s != "photos true <nil>" {
 		t.Errorf("picked %q", s)
 	}
-	exportDir := t.TempDir()
 	copied := filepath.Join(exportDir, "copy.txt")
 	refused := filepath.Join(exportDir, "reserved.txt")
 	const refusal = "The app reserves this destination."

@@ -24,16 +24,39 @@ func TestX11PointerLock(t *testing.T) {
 		}}
 	}, Options{Width: 240, Height: 180})
 	cx := <-ready
+	wait := func(what string, ready func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(4 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			met := false
+			w.onLoop(t, func() { met = ready() })
+			if met {
+				return
+			}
+		}
+		t.Fatalf("timed out waiting for %s", what)
+	}
 	var display, top uintptr
 	var server *xPointerServer
 	var fake func(uintptr, int32, int32, uintptr) int32
-	w.onLoop(t, func() {
-		server = xPointerDisplay()
-		if server == nil {
-			return
+	w.onLoop(t, func() { server = xPointerDisplay() })
+	if server == nil {
+		t.Skip("requires XInput2 and XTest")
+	}
+	// Wait until the window's first commit has mapped its X11 surface before
+	// reading its XID or calling XSetInputFocus (which fails with BadMatch on
+	// an unmapped window).
+	wait("the mapped X11 surface", func() bool {
+		if gtkWidgetGetMapped(w.win) == 0 || gtkWidgetGetMapped(w.surface) == 0 {
+			return false
 		}
 		native := gtkNativeGetSurface(gtkWidgetGetNative(w.surface))
+		if native == 0 {
+			return false
+		}
 		display, top = server.display, gdkX11SurfaceGetXID(native)
+		return top != 0
+	})
+	w.onLoop(t, func() {
 		lib, err := purego.Dlopen("libXtst.so.6", purego.RTLD_NOW|purego.RTLD_LOCAL)
 		if err != nil {
 			return
@@ -49,19 +72,8 @@ func TestX11PointerLock(t *testing.T) {
 		xPointer.warp(display, 0, top, 0, 0, 0, 0, 50, 50)
 		x11Flush(display)
 	})
-	if server == nil || fake == nil {
+	if fake == nil {
 		t.Skip("requires XInput2 and XTest")
-	}
-	wait := func(what string, ready func() bool) {
-		t.Helper()
-		for deadline := time.Now().Add(4 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			met := false
-			w.onLoop(t, func() { met = ready() })
-			if met {
-				return
-			}
-		}
-		t.Fatalf("timed out waiting for %s", what)
 	}
 	wait("window focus", w.canHoldPointer)
 	var startX, startY int32

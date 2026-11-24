@@ -279,11 +279,12 @@ func iosDeviceTestProcess(ctx context.Context, device, id, token string, args, e
 	return cmd, logs, nil
 }
 
-// readMarkedRun copies to out the lines a test host writes between its run's start and exit marks, calls onStart, when it is not nil, at the start mark, and returns the code the exit mark gives, even with no start mark before it, a marked runtime error even before the host starts, or ended's error when the lines end before it.
+// readMarkedRun copies to out the lines a test host writes between its run's start and exit marks, calls onStart, when it is not nil, at the start mark, and returns the code the exit mark gives, even with no start mark before it (preserving the lines written since the last prior mark), a marked runtime error even before the host starts, or ended's error when the lines end before it.
 func readMarkedRun(lines io.Reader, token string, out io.Writer, ended func() error, onStart func()) (int, error) {
 	sc := bufio.NewScanner(lines)
 	sc.Buffer(make([]byte, 1<<16), 1<<22)
 	started := false
+	var preStart strings.Builder
 	for sc.Scan() {
 		line := strings.TrimRight(sc.Text(), "\r")
 		switch {
@@ -291,17 +292,27 @@ func readMarkedRun(lines io.Reader, token string, out io.Writer, ended func() er
 			return -1, errors.New(strings.TrimPrefix(line, "nsgo-test-error "+token+" "))
 		case line == "nsgo-test-start "+token:
 			started = true
+			preStart.Reset()
 			if onStart != nil {
 				onStart()
 			}
-		// The exit mark bears this run's token, so it ends the run even when the device's log lost the start mark, as Android's has for a test that skipped at once.
+		// The exit mark bears this run's token, so it ends the run even when the device's log lost the start mark, as Android's has for a test that skipped or finished quickly.
 		case strings.HasPrefix(line, "nsgo-test-exit "+token+" "):
 			code, err := strconv.Atoi(strings.TrimPrefix(line, "nsgo-test-exit "+token+" "))
 			if err != nil {
 				return -1, fmt.Errorf("the test host's exit mark %q has no code", line)
 			}
+			if !started && preStart.Len() > 0 {
+				io.WriteString(out, preStart.String())
+			}
 			return code, nil
 		case !started:
+			if strings.HasPrefix(line, "nsgo-test-start ") || strings.HasPrefix(line, "nsgo-test-exit ") || strings.HasPrefix(line, "nsgo-test-error ") {
+				preStart.Reset()
+				continue
+			}
+			preStart.WriteString(line)
+			preStart.WriteByte('\n')
 		default:
 			io.WriteString(out, line+"\n")
 		}

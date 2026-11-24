@@ -83,8 +83,8 @@ func TestAudioTSXAppTakesTheGoAppsLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := nsgotest.Start(t, raised(tsx.App("App.tsx", code)), playsAudio, soundDurations)
-	app.Find("text:loaded:20000")
-	app.Find("text:200|")
+	app.WaitFor("text:loaded:20000", 5*time.Second)
+	app.WaitFor("text:200|", 5*time.Second)
 }
 
 // A package keeps NSH's default limits whatever the Go app hosting it raised.
@@ -94,7 +94,7 @@ func TestAudioPackageKeepsTheDefaultQuotas(t *testing.T) {
 	app := nsgotest.Start(t, raised(func(*core.Scope) core.Node {
 		return tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}
 	}), playsAudio, soundDurations)
-	app.Find("text:64|rejected:ERR_NSH_QUOTA_EXCEEDED:quota-exceeded")
+	app.WaitFor("text:64|rejected:ERR_NSH_QUOTA_EXCEEDED:quota-exceeded", 5*time.Second)
 	if got := app.Find("id:long").Text; got != "rejected:ERR_NSH_QUOTA_EXCEEDED:quota-exceeded" {
 		t.Fatalf("a 20-second sound in a package: %s", got)
 	}
@@ -126,7 +126,7 @@ mount(() => <Text testID="result">{result}</Text>);
 			a.AudioDurations[fmt.Sprintf("asset:m%d.wav", i)] = 4900 * time.Millisecond
 		}
 	})
-	app.Find("text:" + strings.Repeat("ok,", 8) + "ERR_NSH_QUOTA_EXCEEDED:quota-exceeded")
+	app.WaitFor("text:"+strings.Repeat("ok,", 8)+"ERR_NSH_QUOTA_EXCEEDED:quota-exceeded", 5*time.Second)
 }
 
 // A package's playbacks reach the platform restricted, which holds them to the restricted share of the output's voices.
@@ -144,7 +144,7 @@ mount(() => <Text testID="result">{result}</Text>);
 	app := nsgotest.Start(t, raised(func(*core.Scope) core.Node {
 		return tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}
 	}), playsAudio, soundDurations)
-	app.Find("text:played")
+	app.WaitFor("text:played", 5*time.Second)
 	if pb := app.Sounds[0].Playbacks; len(pb) != 1 || !pb[0].Restricted {
 		t.Fatalf("a package's playbacks: %+v", pb)
 	}
@@ -178,7 +178,7 @@ mount(() => <Text testID="result">{result}</Text>);
 	app := nsgotest.Start(t, func(*core.Scope) core.Node {
 		return tsx.View{Package: p, Sandbox: tsx.Sandbox{Limits: &limits, WebUnisolated: true}}
 	}, playsAudio, soundDurations)
-	app.Find("text:ok,ok,ok,ERR_NSH_QUOTA_EXCEEDED:quota-exceeded,ok,ERR_NSH_QUOTA_EXCEEDED")
+	app.WaitFor("text:ok,ok,ok,ERR_NSH_QUOTA_EXCEEDED:quota-exceeded,ok,ERR_NSH_QUOTA_EXCEEDED", 5*time.Second)
 }
 
 func TestAudioPackageWithoutTheCapability(t *testing.T) {
@@ -205,7 +205,7 @@ mount(() => <Text testID="result">{() => "supported:" + supported() + " " + resu
 			app := nsgotest.Start(t, func(*core.Scope) core.Node {
 				return tsx.View{Package: p, Sandbox: tsx.Sandbox{Grant: c.grant, WebUnisolated: true}}
 			}, playsAudio, soundDurations)
-			app.Find("text:supported:false ERR_ACCESS_DENIED:audio:not-allowed")
+			app.WaitFor("text:supported:false ERR_ACCESS_DENIED:audio:not-allowed", 5*time.Second)
 			if len(app.Sounds) != 0 {
 				t.Fatalf("%d sounds reached the platform", len(app.Sounds))
 			}
@@ -247,7 +247,7 @@ mount(App);
 	}
 	app := nsgotest.Start(t, tsx.App("App.tsx", code), playsAudio, soundDurations)
 	app.Find("text:supported:true")
-	app.Find("text:duration:10")
+	app.WaitFor("text:duration:10", 5*time.Second)
 	app.Press("id:play")
 	app.Find("text:ended:false")
 	s := app.Sounds[0]
@@ -277,16 +277,16 @@ import { supported, loadSound } from "nsgo/audio";
 const result = signal("loading");
 loadSound("asset:s0.wav").then(() => result.set("loaded"), (e: any) => result.set(e.code + ":" + e.reason));
 // A source that is no string is refused at once, before the platform's answer.
-let bad = "";
-loadSound(42 as any).catch((e: any) => { bad = e.name; });
+const bad = signal("");
+loadSound(42 as any).catch((e: any) => { bad.set(e.name); });
 
-mount(() => <Text testID="result">{() => "supported:" + supported() + " " + result() + " " + bad}</Text>);
+mount(() => <Text testID="result">{() => "supported:" + supported() + " " + result() + " " + bad()}</Text>);
 `)}}, "App.tsx")
 	if err != nil {
 		t.Fatal(err)
 	}
 	app := nsgotest.Start(t, tsx.App("App.tsx", code), soundDurations)
-	app.Find("text:supported:false ERR_FEATURE_UNAVAILABLE_ON_PLATFORM:unavailable TypeError")
+	app.WaitFor("text:supported:false ERR_FEATURE_UNAVAILABLE_ON_PLATFORM:unavailable TypeError", 5*time.Second)
 }
 
 var playsAudio = nsgotest.Environment(core.Environment{Audio: true})
