@@ -145,8 +145,14 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 			return err
 		}
 	}
+	pattern := "./..."
+	fuzz := opts.target == "" && testFuzzEnabled(opts.args)
+	if fuzz {
+		// Go only fuzzes one package. Prepare and probe only that package too.
+		pattern = "."
+	}
 	p.Build.LDFlags = append(p.Build.LDFlags, opts.ldflags...)
-	if err := p.prepareCatalogs(ctx, "./...", false); err != nil {
+	if err := p.prepareCatalogs(ctx, pattern, false); err != nil {
 		return err
 	}
 	if opts.fps && !slices.Contains([]string{"macos", "windows", "linux", "ios_simulator", "web", "android"}, opts.target) {
@@ -226,11 +232,14 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 	if profile != "" {
 		runFlags = append([]string{"-coverprofile=" + profile}, flags...)
 	}
-	cmd, err := command("./...", uniqueTags(append(runTags, "nsgocheck")), runFlags)
+	cmd, err := command(pattern, uniqueTags(append(runTags, "nsgocheck")), runFlags)
 	if err != nil {
 		return err
 	}
 	runs := []testCommand{{cmd: cmd}}
+	if fuzz {
+		return reportTests(opts, runs...)
+	}
 	// As check does, NSGo's own repository also tests the dev client, whose files build only with nsgodev, unless the run's tags already include it; there are no automation-only dev tests. Its coverage profile goes to a file of its own, appended to the run's once both have ended, since go test would overwrite the first run's.
 	var cover, devCover string
 	if dev, ok := devClientPattern(p.Dir); ok && p.steps == nil && !slices.Contains(runTags, "nsgodev") {
@@ -280,6 +289,47 @@ func devClientPattern(dir string) (string, bool) {
 		return "", false
 	}
 	return "./" + sub, true
+}
+
+// testFuzzEnabled reports whether the forwarded flags ask cmd/go to fuzz, not
+// whether the test binary's arguments contain the spelling of a fuzz flag.
+func testFuzzEnabled(args []string) bool {
+	var enabled bool
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
+		if arg == "-args" || arg == "--args" || arg == "--" {
+			break
+		}
+		flag, ok := strings.CutPrefix(arg, "-")
+		if !ok {
+			continue
+		}
+		flag, value, hasValue := strings.Cut(strings.TrimPrefix(flag, "-"), "=")
+		name, testPrefix := strings.CutPrefix(flag, "test.")
+		switch name {
+		case "bench", "benchtime", "blockprofile", "blockprofilerate", "count", "coverprofile", "cpu", "cpuprofile",
+			"fuzz", "fuzzminimizetime", "fuzztime", "list", "memprofile", "memprofilerate", "mutexprofile",
+			"mutexprofilefraction", "outputdir", "parallel", "run", "shuffle", "skip", "timeout", "trace":
+		case "C", "asmflags", "buildmode", "compiler", "covermode", "coverpkg", "debug-actiongraph",
+			"debug-runtime-trace", "debug-trace", "exec", "gccgoflags", "gcflags", "installsuffix",
+			"ldflags", "mod", "modfile", "o", "overlay", "p", "pgo", "pkgdir", "tags", "toolexec", "vet":
+			if testPrefix {
+				continue
+			}
+		default:
+			continue
+		}
+		// Unlike an unknown test-binary flag, a known value flag can
+		// consume the next token even when it starts with a dash.
+		if !hasValue && len(args) > 0 {
+			value, args = args[0], args[1:]
+		}
+		if name == "fuzz" {
+			enabled = value != ""
+		}
+	}
+	return enabled
 }
 
 // testTagArgs lets command-line tags replace earlier ones without dropping the tool's tags.

@@ -196,6 +196,7 @@ Use `app.Surface("title:Settings")` for the same view queries, input steps, resi
 ```sh
 go tool nsgo check                 # vet; -target web,android vets those targets instead, all every available one
 go tool nsgo test                  # headless; -run as go test's, -target macos|ios|ios_simulator|android|web|all on a platform
+go tool nsgo test ./pkg -fuzz FuzzX -fuzztime 3s  # headless fuzzing of ./pkg only, not its subpackages
 ```
 
 Vetting and tests use the same Go JSON policy as `build`. Headless `nsgo test -- -c` compiles tests without running them; compiler failures remain visible in the console and JUnit report.

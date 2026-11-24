@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -223,13 +224,107 @@ func TestRunTestsKeepsTheTreeWithFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, args := range [][]string{{"-count", "1"}, {"-count=1", "-update", "golden"}, {"-count=1", "-args", "-update=golden"}} {
+	for i, args := range [][]string{
+		{"-count", "1"},
+		{"-count=1", "-update", "golden"},
+		{"-count=1", "-args", "-update=golden"},
+		{"-count=1", "-skip", "-fuzz=not-a-flag", "-args", "--", "-test.fuzz=not-a-go-flag"},
+	} {
 		mark := filepath.Join(t.TempDir(), "mark")
 		if err := runTests(t.Context(), p, testOptions{args: args, env: []string{"TREE_MARK=" + mark}}); err != nil {
 			t.Errorf("%d: runTests with %q: %v", i, args, err)
 		}
 		if _, err := os.Stat(mark); err != nil {
 			t.Errorf("%d: runTests with %q did not run sub's test: %v", i, args, err)
+		}
+	}
+}
+
+func TestTestFuzzEnabled(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		want bool
+	}{
+		{nil, false},
+		{[]string{"-fuzz", "FuzzX"}, true},
+		{[]string{"--fuzz=FuzzX"}, true},
+		{[]string{"--test.fuzz", "FuzzX"}, true},
+		{[]string{"-test.fuzz=FuzzX"}, true},
+		{[]string{"-fuzz="}, false},
+		{[]string{"-fuzz", "FuzzX", "--test.fuzz="}, false},
+		{[]string{"-run", "-fuzz=literal"}, false},
+		{[]string{"-ldflags", "-test.fuzz=literal"}, false},
+		{[]string{"-test.run", "-args", "-fuzz=FuzzX"}, true},
+		{[]string{"-v", "-short", "-custom", "-fuzz=FuzzX"}, true},
+		{[]string{"-args", "-fuzz=FuzzX"}, false},
+		{[]string{"--args", "-test.fuzz=FuzzX"}, false},
+		{[]string{"--", "-fuzz=FuzzX"}, false},
+		{[]string{"-fuzz=FuzzX", "-args", "-test.fuzz="}, true},
+		{[]string{"-fuzztime=3s", "-fuzzminimizetime=1x"}, false},
+	} {
+		if got := testFuzzEnabled(c.args); got != c.want {
+			t.Errorf("testFuzzEnabled(%q) = %t, want %t", c.args, got, c.want)
+		}
+	}
+}
+
+func TestRunTestsFuzzesOnlyNamedPackage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs go test")
+	}
+	dir := t.TempDir()
+	// The named package has a child and is also eligible for the extra dev-client run.
+	writeFiles(t, dir, map[string]string{
+		"go.mod":              "module " + nsgoModule + "\n\ngo 1.26\n",
+		"internal/dev/dev.go": "package dev\n",
+		"internal/dev/fuzz_test.go": `//go:build nsgocheck
+
+package dev
+
+import ("os"; "testing")
+
+func FuzzX(f *testing.F) {
+	// Without an explicit seed, the body only runs when Go actually fuzzes.
+	f.Fuzz(func(t *testing.T, _ string) {
+		if err := os.WriteFile(os.Getenv("FUZZ_MARK"), []byte("fuzzed"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+`,
+		"internal/dev/sub/sub_test.go": `package sub
+
+import "testing"
+
+func TestSub(t *testing.T) { t.Fatal("fuzz run included a subpackage") }
+`,
+	})
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mark := filepath.Join(dir, "fuzzed")
+	cmd := exec.CommandContext(t.Context(), exe, "-test.run=^TestCLIProcess$", "--", "test", "./internal/dev",
+		"-fuzz", "^FuzzX$", "-fuzztime=16x", "-parallel=1", "-timeout=1m")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=", "NSGO_CLI_PROCESS=1", "FUZZ_MARK="+mark)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("headless fuzz: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "testing the dev client with nsgodev") {
+		t.Errorf("fuzz run repeated the dev-client tests:\n%s", out)
+	}
+	if got, err := os.ReadFile(mark); err != nil || string(got) != "fuzzed" {
+		t.Fatalf("the nsgocheck fuzz target did not run: %q, %v\n%s", got, err, out)
+	}
+}
+
+func TestTargetTestsRejectFuzzFlags(t *testing.T) {
+	for _, args := range [][]string{{"-fuzz", "FuzzX"}, {"-test.fuzz=FuzzX"}} {
+		err := runTests(t.Context(), nil, testOptions{target: "web", args: args})
+		if err == nil || !strings.Contains(err.Error(), "target runs cannot accept") {
+			t.Errorf("target flags %q: %v, want an explicit argument error", args, err)
 		}
 	}
 }
