@@ -122,6 +122,8 @@ window.addEventListener('message',()=>window.nsgo.postMessage('step:'+(++counter
 	app.Post(func() { web.PostMessage("step") })
 	app.WaitFor("text:step:42", 5*time.Second)
 	near := func(got, want uint32) bool { return got+3 >= want && got <= want+3 }
+	// An iPhone's capture leaves out a video's picture, which shows on its screen.
+	videoCaptured := nsgotest.Target() != "ios"
 	for _, kind := range kinds {
 		for _, corners := range []string{"round", "shaped", "continuous"} {
 			t.Run(kind+"/"+corners, func(t *testing.T) {
@@ -133,7 +135,7 @@ window.addEventListener('message',()=>window.nsgo.postMessage('step:'+(++counter
 					return r >> 8, g >> 8, b >> 8
 				}
 				img := app.Capture()
-				if kind == "web" || kind == "video" {
+				if kind == "web" || kind == "video" && videoCaptured {
 					deadline := time.Now().Add(7 * time.Second)
 					for time.Now().Before(deadline) {
 						r, g, b := at(img, 60, 40)
@@ -160,7 +162,7 @@ window.addEventListener('message',()=>window.nsgo.postMessage('step:'+(++counter
 				if kind == "view" || kind == "web" {
 					check("content", 60, 40, 0xffff00)
 				}
-				if kind == "video" {
+				if kind == "video" && videoCaptured {
 					// The encoded HEVC fixture goes through the platform's video color conversion.
 					r, g, b := at(img, 60, 40)
 					if r >= 64 || g >= 64 || b <= 200 {

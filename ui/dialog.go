@@ -123,7 +123,7 @@ func (d Dialog) Render(cx *core.Scope) core.Node {
 	}
 	popup := core.Style{Width: core.Pt(440), Padding: core.All(20), Gap: 12, Transition: dialogPop}
 	if d.Bare {
-		// Keep the clip separate until every Apple content kind preserves its outer decoration (#1362).
+		// Overflow clips at a view's bounds, over its rim, so the clip is a view of its own inside the rim (#1362).
 		popup = core.Style{Transition: dialogPop}
 		body = []core.Node{core.View{Style: core.Style{Overflow: core.Hidden, FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)},
 			StyleFunc: func() core.Style { return bareClip(d.surfaceStyle(dialogShape)) }, Children: body}}
