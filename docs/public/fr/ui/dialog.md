@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 Une action portant `Role: core.AlertCancel` s’exécute sur Échap ou retour, suivie par `OnOpenChange(false, base.ReasonCancel)`. `Default: true` donne le focus clavier à une action lorsque l’alerte s’ouvre sur ordinateur de bureau, le web et Apple TV, et fait en sorte qu’Entrée la choisisse ; un appui sur une action exécute `OnPress`, puis `OnOpenChange(false, base.ReasonSelect)`. Entrée exécute l’action par défaut tant que le focus clavier ne se trouve sur aucune autre action ni aucun champ : lorsque le focus est déplacé vers une autre action, Entrée appuie sur celle-ci, et une boîte de dialogue par-dessus l’alerte conserve Entrée. Une fois qu’une action s’est exécutée, l’alerte se ferme, quoi que fasse `OnOpenChange`, et n’en exécute aucune autre tant que `Open` ne repasse pas à false puis à true. Si plusieurs actions portent le même marqueur, la première l’emporte. Sans marqueurs, Échap ferme sans exécuter d’action et Entrée n’a pas d’action par défaut. `Role: core.AlertDestructive` décrit une action ; `Variant` ou `Color` choisit son apparence.
 
-Pour l’alerte ou la feuille d’actions propre au système, utilisez `cx.ShowAlert` ([Services plateforme](../services.md#alerts-and-the-clipboard)).
+Pour l’alerte ou la feuille d’actions propre au système, utilisez `cx.ShowAlert` ([Services plateforme](../services.md#alertes-et-presse-papiers)).
 
 ## Comportement
 

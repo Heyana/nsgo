@@ -60,7 +60,7 @@ cx.Share(core.ShareOptions{
 }, func(shown bool, err error) {})
 ```
 
-`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` riceve testo e file per [`android.share_types`](building.md#incoming-shares-on-android) o [`apple.share_types`](building.md#incoming-shares-on-ios). Le condivisioni Android possono avviare l'app; iOS le mette in coda in un App Group finché l'app non è attiva o l'utente non la apre la volta successiva. Le condivisioni in sospeso attendono il primo handler. iOS conserva il lotto della casella in arrivo finché il callback non ritorna; la consegna avviene almeno una volta anche attraverso l'uscita del processo. Il testo arriva in `Text`, e i file arrivano come copie leggibili nella cache con `Path`, `Name` e `MIME`. Sposta o copia un file in un archivio persistente se deve sopravvivere alla cache.
+`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` riceve testo e file per [`android.share_types`](building.md#condivisioni-in-ingresso-su-android) o [`apple.share_types`](building.md#condivisioni-in-ingresso-su-ios). Le condivisioni Android possono avviare l'app; iOS le mette in coda in un App Group finché l'app non è attiva o l'utente non la apre la volta successiva. Le condivisioni in sospeso attendono il primo handler. iOS conserva il lotto della casella in arrivo finché il callback non ritorna; la consegna avviene almeno una volta anche attraverso l'uscita del processo. Il testo arriva in `Text`, e i file arrivano come copie leggibili nella cache con `Path`, `Name` e `MIME`. Sposta o copia un file in un archivio persistente se deve sopravvivere alla cache.
 
 `desktop.LookUp` mostra il pannello del dizionario di sistema per un testo, come fa un tocco con tre dita su macOS, disegnato sopra un riquadro in una vista: il testo e il riquadro di una selezione con il `Ref` della sua vista `Selectable`. `desktop.CanLookUp` indica se è possibile, in una finestra su macOS; Windows, Linux e il web non hanno un pannello del genere. Nei test, `nsgotest.App.LookUps` elenca i pannelli mostrati quando `nsgotest.Environment` imposta `CanLookUp`.
 
@@ -138,7 +138,7 @@ Usa `audio.NewOutput(cx, audio.OutputConfig{SampleRate: 48000, Channels: 2, Rend
 
 ## Archiviazione
 
-`cx.Storage()` è l'archivio chiave-valore dell'app, conservato sul dispositivo e condiviso da tutti i grafi dell'app. Le letture sono sincrone, e una lettura all'interno di un calcolo lo sottoscrive alle modifiche; `SetItem` restituisce un `core.StorageFullError` oltre la quota (`core.StorageQuota`, 5 MiB per impostazione predefinita). È un semplice file che qualsiasi programma dell'utente può leggere, quindi conserva token e password nei [segreti](#secrets).
+`cx.Storage()` è l'archivio chiave-valore dell'app, conservato sul dispositivo e condiviso da tutti i grafi dell'app. Le letture sono sincrone, e una lettura all'interno di un calcolo lo sottoscrive alle modifiche; `SetItem` restituisce un `core.StorageFullError` oltre la quota (`core.StorageQuota`, 5 MiB per impostazione predefinita). È un semplice file che qualsiasi programma dell'utente può leggere, quindi conserva token e password nei [segreti](#segreti).
 
 `cx.Store()` restituisce l'archivio sottostante, per un host che crea un'altra radice con `core.RootOptions.Storage`, come uno che esegue un plugin su una goroutine propria: entrambe le radici condividono allora le voci dell'app e ciò che è conservato sul dispositivo. È l'intero archivio, non la partizione che `cx.ProvideStorage` dà al codice non scritto dall'app.
 
@@ -154,7 +154,7 @@ store.SetItem("tab", "library")
 
 `store.Keys()` elenca le chiavi, `RemoveItem` ne elimina una e `Clear` svuota l'archivio. `cx.DataDir()` e `cx.CacheDir()` forniscono le cartelle dell'app per i file per cui l'archivio chiave-valore è troppo piccolo; `cx.LogsDir()` fornisce la cartella della piattaforma per i file di log, e uno `Scope.ProvideStorage` dà a un sottoalbero una partizione propria.
 
-Un App Clip iOS e la sua app completa condividono questi percorsi di dati e archiviazione quando sono configurati `app_clip` e un `apple.app_group` esplicito; le loro cache restano separate. Abilitare il gruppo non migra i dati esistenti della sandbox. [Archiviazione degli App Clip](building.md#app-clips) tratta configurazione e firma.
+Un App Clip iOS e la sua app completa condividono questi percorsi di dati e archiviazione quando sono configurati `app_clip` e un `apple.app_group` esplicito; le loro cache restano separate. Abilitare il gruppo non migra i dati esistenti della sandbox. [Archiviazione degli App Clip](building.md#app-clip) tratta configurazione e firma.
 
 Su HarmonyOS, le operazioni sui file di Go come `os.ReadFile`, `os.WriteFile` e `os.Rename` funzionano in queste cartelle e in `os.TempDir()`. I percorsi relativi partono dalla cartella dei file. I lock consultivi sui file e i collegamenti simbolici non sono disponibili.
 

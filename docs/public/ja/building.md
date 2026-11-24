@@ -11,19 +11,19 @@ order: 22
 go tool nsgo build
 ```
 
-`build` は、`nsgo.yaml` に記載された各ターゲット向けにシンボルを strip したリリース用パッケージを `dist/<name>-<version>-<target>` に書き出します。出力物は `.app`、`.ipa`、`.apk`、Windows や Linux 向けのディレクトリ、または Web サイト（`import()` で指定された各 TSX モジュールをインポート実行時に読み込むページ）になります。`-target` フラグでターゲット一覧を上書きでき、`all` を指定すると Go と Xcode だけでビルドできるすべてのターゲットが対象になります。Android NDK がインストールされている場合は `android_x64` を、[ミニプログラム](#mini-programs)向けには `miniprogram` または `miniprogram_wechat`・`miniprogram_qq`・`miniprogram_alipay`・`miniprogram_douyin` を個別に、[HarmonyOS](#harmonyos) プレビュー向けには `harmonyos` を指定してください。`-run` を付けると、現在のマシン向けにビルドされたパッケージを起動するか、`-device` で選んだ iPhone、シミュレーター、または Android デバイスにインストールします。
+`build` は、`nsgo.yaml` に記載された各ターゲット向けにシンボルを strip したリリース用パッケージを `dist/<name>-<version>-<target>` に書き出します。出力物は `.app`、`.ipa`、`.apk`、Windows や Linux 向けのディレクトリ、または Web サイト（`import()` で指定された各 TSX モジュールをインポート実行時に読み込むページ）になります。`-target` フラグでターゲット一覧を上書きでき、`all` を指定すると Go と Xcode だけでビルドできるすべてのターゲットが対象になります。Android NDK がインストールされている場合は `android_x64` を、[ミニプログラム](#ミニプログラム)向けには `miniprogram` または `miniprogram_wechat`・`miniprogram_qq`・`miniprogram_alipay`・`miniprogram_douyin` を個別に、[HarmonyOS](#harmonyos) プレビュー向けには `harmonyos` を指定してください。`-run` を付けると、現在のマシン向けにビルドされたパッケージを起動するか、`-device` で選んだ iPhone、シミュレーター、または Android デバイスにインストールします。
 
 配布用の成果物はすべて `dist/releases` にまとめられます。確認すべきディレクトリはここだけです。
 
 | `dist/releases` 内のファイル | 内容 |
 | --- | --- |
-| `*.dmg`, `*-setup.exe`, `*.deb`, `*.pkg.tar.gz`, `*.AppImage` | macOS、Windows、Linux 用の[インストーラー](#installers) |
+| `*.dmg`, `*-setup.exe`, `*.deb`, `*.pkg.tar.gz`, `*.AppImage` | macOS、Windows、Linux 用の[インストーラー](#インストーラー) |
 | `*.AppImage.zsync` | AppImageUpdate および互換ランチャー向けの差分更新制御ファイル |
 | `*-ios.ipa`, `*-tvos.ipa`, `*.apk` | ストアまたは実機配布向けの iOS、tvOS、Android パッケージ |
-| `*.pkg`, `*.msix`, `*.aab`, `*.flatpak`, `*.tar.gz`, `flatpak/` | `store` ビルドの[ストアパッケージ](#store-packages) |
-| `install.sh`, `install.ps1` | [GitHub リリース](#publish-on-github)からアプリをインストールするスクリプト |
-| `appcast-<target>.xml` | アプリの[アップデート](#updates)が読み込むフィード |
-| `homebrew/<name>.rb`, `winget/` | 直接配信用の [Homebrew cask および winget マニフェスト](#channels) |
+| `*.pkg`, `*.msix`, `*.aab`, `*.flatpak`, `*.tar.gz`, `flatpak/` | `store` ビルドの[ストアパッケージ](#ストアパッケージ) |
+| `install.sh`, `install.ps1` | [GitHub リリース](#github-での公開)からアプリをインストールするスクリプト |
+| `appcast-<target>.xml` | アプリの[アップデート](#アップデート)が読み込むフィード |
+| `homebrew/<name>.rb`, `winget/` | 直接配信用の [Homebrew cask および winget マニフェスト](#チャンネル) |
 | `*-web.zip` | 展開してそのまま配信できる Web サイト |
 | `miniprogram/<platform>/` | 各プラットフォームの開発者ツールからアップロードするミニプログラムプロジェクト |
 
@@ -132,7 +132,7 @@ Android では、`icon.android.foreground` と `background` によってラン�
 
 `android.uses_cleartext_traffic: true` を指定すると、APK と App Bundle で任意のホストへの平文 HTTP 通信を許可し、マニフェストフラグとネットワークセキュリティポリシーの両方を設定します。このオプトインがない場合でも、`android.loopback_cleartext: true` を設定すると、アプリ自身が配信する動画などの用途向けに `localhost`、`127.0.0.1`、`::1` からの平文 HTTP のみを許可します。ループバック限定ポリシーは他のホストへの平文通信を拒否し、両方が true の場合は全ホスト許可の設定が優先されます。組み込み AAR の場合は、ホストアプリの Android ネットワークセキュリティポリシーを設定してください。
 
-すべてのビルドでは起動時に `--nsgo-fps` など NSGo 自身のフラグも受け取ります（[実行とデバッグ](debugging.md#flags-of-every-build)）。`nsgo dev` では、開いているどのウィンドウからでも Command/Control+R でリロードでき、別のウィンドウでアプリ関数が動き続けている限りメインビューを閉じた後も利用できます。
+すべてのビルドでは起動時に `--nsgo-fps` など NSGo 自身のフラグも受け取ります（[実行とデバッグ](debugging.md#すべてのビルドで使えるフラグ)）。`nsgo dev` では、開いているどのウィンドウからでも Command/Control+R でリロードでき、別のウィンドウでアプリ関数が動き続けている限りメインビューを閉じた後も利用できます。
 
 ### 起動画面
 
@@ -206,11 +206,11 @@ windows:
 
 | パッケージ | コマンドの扱い |
 | --- | --- |
-| macOS | `Contents/MacOS` に配置され、アプリ本体より前に `<id>.<command>` としてそのまま署名されます（アドホック署名、または `sign.identity`・Hardened Runtime・タイムスタンプ付きで署名されるため[公証](#notarize)を通過できますが、アプリのエンタイトルメントは付きません）。ディスクイメージ自体は `PATH` に何も追加しません。[Homebrew cask](#channels) が各コマンドをリンクし、ユーザー自身で `/Applications/<name>.app/Contents/MacOS/<command>` をリンクすることもできます |
-| Windows | `<name>.exe` の隣に `<command>.exe` として配置され、本体と同様に[署名](#sign-windows-packages)され、インストーラーが導入しアンインストーラーが削除します。`windows.path` を設定すると、インストーラーは `windows.command_line` と同様にユーザーの `Path` にもフォルダーを追加するため、インストール後に開いたコンソールからコマンドを実行できます。アンインストーラーはそのバージョンがインストールしたものだけを削除するため、アップデートでリネームや削除されたコマンドは（アプリが配布しなくなった他ファイルと同様に）フォルダーに残ります |
+| macOS | `Contents/MacOS` に配置され、アプリ本体より前に `<id>.<command>` としてそのまま署名されます（アドホック署名、または `sign.identity`・Hardened Runtime・タイムスタンプ付きで署名されるため[公証](#公証notarize)を通過できますが、アプリのエンタイトルメントは付きません）。ディスクイメージ自体は `PATH` に何も追加しません。[Homebrew cask](#チャンネル) が各コマンドをリンクし、ユーザー自身で `/Applications/<name>.app/Contents/MacOS/<command>` をリンクすることもできます |
+| Windows | `<name>.exe` の隣に `<command>.exe` として配置され、本体と同様に[署名](#windows-パッケージの署名)され、インストーラーが導入しアンインストーラーが削除します。`windows.path` を設定すると、インストーラーは `windows.command_line` と同様にユーザーの `Path` にもフォルダーを追加するため、インストール後に開いたコンソールからコマンドを実行できます。アンインストーラーはそのバージョンがインストールしたものだけを削除するため、アップデートでリネームや削除されたコマンドは（アプリが配布しなくなった他ファイルと同様に）フォルダーに残ります |
 | Linux | `/opt/<slug>` に配置され、`.deb` と Arch パッケージが所有する `/usr/bin/<command>` リンクが張られるため、パッケージ削除時に同時に削除され、dpkg と pacman は他パッケージのファイルへの上書きインストールを拒否します。AppImage はアプリ本体と同じ場所に保持し、`PATH` には追加しません |
 
-インストーラー、チェックサム、および[アップデート](#updates)の appcast にはアプリの他のファイルと同様にコマンドも含まれるため、アップデート時にはアプリと一緒に置き換わります。[ストアパッケージ](#store-packages)では Mac App Store のサンドボックス、MSIX、Flatpak がアプリ自身の実行ファイルしか実行できないためコマンドは除外されます。
+インストーラー、チェックサム、および[アップデート](#アップデート)の appcast にはアプリの他のファイルと同様にコマンドも含まれるため、アップデート時にはアプリと一緒に置き換わります。[ストアパッケージ](#ストアパッケージ)では Mac App Store のサンドボックス、MSIX、Flatpak がアプリ自身の実行ファイルしか実行できないためコマンドは除外されます。
 
 ## インストーラー
 
@@ -218,9 +218,9 @@ windows:
 
 | ターゲット | インストーラー |
 | --- | --- |
-| macOS | `<name>-<version>-macos-<arch>.dmg`。アプリ、矢印、ドラッグ先の Applications へのリンクを表示するディスクイメージで、`sign.identity` で署名され[公証](#notarize)されます |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`。ユーザー単位でインストールするネイティブ Windows インストーラーで、以前ユーザーが選択したフォルダーに再インストールし、起動中のアプリを終了し、スタートメニューショートカットと任意のデスクトップショートカットを作成し、自身がインストールしたものだけを削除するアンインストーラーを備えます（アプリで Windows パッケージに署名する場合は [`sign.certificate`](#sign-windows-packages) で署名）。`windows.command_line` を有効にすると `.com` コンパニオンもインストールしてアプリのフォルダーをユーザーの `Path` に追加するため、インストール後に開いたコンソールからアプリのコマンドを実行でき、コンパニオンを見つける Win+R でもアプリを起動して開いたコンソールを閉じます。アンインストーラーはインストーラー自身が追加したエントリのみ `Path` から削除し、ユーザーが元々持っていたエントリには触れません |
-| Linux | Debian/Ubuntu 向けの `<name>-<version>-linux-<arch>.deb` と Arch Linux 向けの `<name>-<version>-linux-<arch>.pkg.tar.gz` は、アプリを `/opt/<slug>` にインストールし、コマンド本体、各[コマンド](#commands)へのリンク、デスクトップエントリ、アイコンを配置します（Arch パッケージには `pacman -Qkk` 用の `.MTREE` が含まれます）。また `<name>-<version>-linux-<arch>.AppImage` はインストール不要でどのディストリビューションでも実行できます |
+| macOS | `<name>-<version>-macos-<arch>.dmg`。アプリ、矢印、ドラッグ先の Applications へのリンクを表示するディスクイメージで、`sign.identity` で署名され[公証](#公証notarize)されます |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`。ユーザー単位でインストールするネイティブ Windows インストーラーで、以前ユーザーが選択したフォルダーに再インストールし、起動中のアプリを終了し、スタートメニューショートカットと任意のデスクトップショートカットを作成し、自身がインストールしたものだけを削除するアンインストーラーを備えます（アプリで Windows パッケージに署名する場合は [`sign.certificate`](#windows-パッケージの署名) で署名）。`windows.command_line` を有効にすると `.com` コンパニオンもインストールしてアプリのフォルダーをユーザーの `Path` に追加するため、インストール後に開いたコンソールからアプリのコマンドを実行でき、コンパニオンを見つける Win+R でもアプリを起動して開いたコンソールを閉じます。アンインストーラーはインストーラー自身が追加したエントリのみ `Path` から削除し、ユーザーが元々持っていたエントリには触れません |
+| Linux | Debian/Ubuntu 向けの `<name>-<version>-linux-<arch>.deb` と Arch Linux 向けの `<name>-<version>-linux-<arch>.pkg.tar.gz` は、アプリを `/opt/<slug>` にインストールし、コマンド本体、各[コマンド](#コマンド)へのリンク、デスクトップエントリ、アイコンを配置します（Arch パッケージには `pacman -Qkk` 用の `.MTREE` が含まれます）。また `<name>-<version>-linux-<arch>.AppImage` はインストール不要でどのディストリビューションでも実行できます |
 
 Windows のセットアップとアンインストーラーはどのシステム上でも Go だけでビルドでき、Windows ネイティブのダイアログを使います。アプリのカタログにある言語のうち訳語を持つ言語（簡体字中国語・繁体字中国語を含む）で表示され、システムの UI 言語を選びます。`/LANG=<LCID>` を指定するとその実行に限って言語を選べます（簡体字中国語なら `/LANG=2052`）。`/S` はサイレントでインストールまたはアンインストールし、末尾の `/D=<folder>` はインストール先フォルダーを指定し（スペースを含んでも可）、`/RELAUNCH` はアップデート後にアプリを起動します。`/D` を指定しない場合、アップグレードは置き換える既存インストールのフォルダーにインストールします。`-installers=false` または `build.installers: false` を指定するとパッケージのみをビルドします。
 
@@ -281,7 +281,7 @@ sign:
 
 `android.target_sdk` が未設定の場合、ランタイムは API 36 をターゲットにします。Android App Bundle ビルドは、2026 年 8 月 31 日以降に新規モバイルアプリおよびアップデートで [Google Play が必須とする](https://support.google.com/googleplay/android-developer/answer/11926878) API 36 未満では失敗します。スタンドアロン APK ビルドは警告を出して続行します。
 
-アップロード用に Mac パッケージへ署名するには `sign.macos_profile` を設定します。ウィジェットがない場合、未署名のパッケージでもサンドボックス内で実行できるため、アプリコンテナ・ネットワーク・ユーザー選択ファイルへのアクセスをテストできます。ウィジェット付きのストアビルドでは、同じチームかつ `apple.app_group`（デフォルトは `group.<id>`）を付与した、`<id>` 用の `sign.macos_profile` と `<id>.widgets` 用の macOS `sign.widgets_profile` の両方が必要です。両バンドルはその共有コンテナを使用し、ホームディレクトリの例外は追加されません。`-installers=false` を指定すると `.pkg` とインストーラーアイデンティティを省略しつつ、サンドボックスとプロファイル署名は保持します。`.msix` はパートナーセンターへ、`.aab` は Play Console へアップロードしてください。リリースに指定のアーカイブが揃ったら、`flatpak/<id>.yml` を Flathub に提出します。ローカルでは `flatpak-builder` でもビルドできます。バンドルのインストールは `flatpak install --user ./<name>-<version>-linux-<arch>.flatpak` で行います（対応する GNOME ランタイムがインストール済みであるか、設定済みリモートから取得できる必要があります）。ビルドは Linux ツールチェーンなしで Go 上でバンドルを生成します。ストアパッケージは、アートワークがない場合は透過アイコンを、`linux.categories` が未設定の場合は Utility を使用します。ストア外でのインストール向けに MSIX へ署名するには [`sign.certificate`](#sign-windows-packages) を設定します。証明書のサブジェクトは `windows.store.publisher` と一致する必要があり、インストール先のマシンがその証明書を信頼している必要があります。署名設定がない場合、アップロードされたパッケージはストア側が署名します。
+アップロード用に Mac パッケージへ署名するには `sign.macos_profile` を設定します。ウィジェットがない場合、未署名のパッケージでもサンドボックス内で実行できるため、アプリコンテナ・ネットワーク・ユーザー選択ファイルへのアクセスをテストできます。ウィジェット付きのストアビルドでは、同じチームかつ `apple.app_group`（デフォルトは `group.<id>`）を付与した、`<id>` 用の `sign.macos_profile` と `<id>.widgets` 用の macOS `sign.widgets_profile` の両方が必要です。両バンドルはその共有コンテナを使用し、ホームディレクトリの例外は追加されません。`-installers=false` を指定すると `.pkg` とインストーラーアイデンティティを省略しつつ、サンドボックスとプロファイル署名は保持します。`.msix` はパートナーセンターへ、`.aab` は Play Console へアップロードしてください。リリースに指定のアーカイブが揃ったら、`flatpak/<id>.yml` を Flathub に提出します。ローカルでは `flatpak-builder` でもビルドできます。バンドルのインストールは `flatpak install --user ./<name>-<version>-linux-<arch>.flatpak` で行います（対応する GNOME ランタイムがインストール済みであるか、設定済みリモートから取得できる必要があります）。ビルドは Linux ツールチェーンなしで Go 上でバンドルを生成します。ストアパッケージは、アートワークがない場合は透過アイコンを、`linux.categories` が未設定の場合は Utility を使用します。ストア外でのインストール向けに MSIX へ署名するには [`sign.certificate`](#windows-パッケージの署名) を設定します。証明書のサブジェクトは `windows.store.publisher` と一致する必要があり、インストール先のマシンがその証明書を信頼している必要があります。署名設定がない場合、アップロードされたパッケージはストア側が署名します。
 
 macOS と iOS では、スクロールビューのエッジエフェクト（`Scroll.EdgeEffects`）、`IOS.BackdropMaterial` を指定しない macOS の背景ブラー、および背景カラーフィルター（単独、または `IOS.BackdropMaterial` なしのブラーとの併用）は、半径指定のブラー、ビュー内でのブラー変化、背景カラーマトリクス適用を行う公開 API が存在しないため、AppKit や UIKit 自身のマテリアルやエッジエフェクトと同じく Core Animation のプライベート API である `CABackdropLayer` と `CAFilter` を通じて描画します。App Store 審査はプライベート API を使用するアプリをリジェクトする場合があります。NSGo がそれらを呼び出すのはエッジバー付きスクロールビューと前述の背景フィルターを使用するときだけですが、macOS および iOS のすべてのビルドにそのシンボル名は含まれます。
 
@@ -463,11 +463,11 @@ updates:
 | チャンネル | 対象 | パッケージの振る舞い |
 | --- | --- | --- |
 | `direct` | GitHub、Web サイト、Homebrew cask、winget（リリース自身のファイルをインストールする経路） | 上記の方法で自己アップデートします |
-| `store` | App Store、Mac App Store、Microsoft Store、Google Play、Flathub などのストア | [ストアパッケージ](#store-packages)となり、自己アップデーターを持ちません。iOS と macOS は鍵なしで自身の App Store に問い合わせ、Google Play からのインストールでは Play のネイティブアップデートフローを使用できます |
-| `steam` | Steam | Steam がアップデートする[デポディレクトリ](#steam-depots)を生成します |
+| `store` | App Store、Mac App Store、Microsoft Store、Google Play、Flathub などのストア | [ストアパッケージ](#ストアパッケージ)となり、自己アップデーターを持ちません。iOS と macOS は鍵なしで自身の App Store に問い合わせ、Google Play からのインストールでは Play のネイティブアップデートフローを使用できます |
+| `steam` | Steam | Steam がアップデートする[デポディレクトリ](#steam-デポ)を生成します |
 | `none` | Linux ディストリビューションやアプリを再パッケージ化する配布者 | 何もチェックしません |
 
-ストアは自己アップデートするアプリをリジェクトするため、必ず direct ではなく `store` ビルドをアップロードしてください。macOS または Windows のインストーラーを含む各 direct リリースでは、Homebrew cask（`dist/releases/homebrew/<name>.rb`：ビルドされたディスクイメージの `auto_updates true`、チェックサム、ダウンロード URL、およびアプリの各[コマンド](#commands)への `binary` リンクを宣言）と winget マルチファイルマニフェスト（`dist/releases/winget/<id>.yaml`、`<id>.installer.yaml`、`<id>.locale.en-US.yaml`：ビルドされた NSIS インストーラー用）も書き出されます。システムがどこからインストールされたかを判別できる場合、アプリ側でもそれをチェックします。別ストアからの Android アプリ、Flatpak や Snap、TestFlight ビルドではアップデートをそのストアに委ねます。Google Play インストール版で手動の `updater.Check` を実行すると、許可されている場合に Play In-App Updates へ即時フローの提示を要求し、同意・ダウンロード・インストール・再起動は Play が処理します。開発ビルドではこのフローに入りません。スタンドアロン Android パッケージには SDK がバンドルされ、[組み込みホスト](embedding.md#android)では Gradle 経由で提供します。
+ストアは自己アップデートするアプリをリジェクトするため、必ず direct ではなく `store` ビルドをアップロードしてください。macOS または Windows のインストーラーを含む各 direct リリースでは、Homebrew cask（`dist/releases/homebrew/<name>.rb`：ビルドされたディスクイメージの `auto_updates true`、チェックサム、ダウンロード URL、およびアプリの各[コマンド](#コマンド)への `binary` リンクを宣言）と winget マルチファイルマニフェスト（`dist/releases/winget/<id>.yaml`、`<id>.installer.yaml`、`<id>.locale.en-US.yaml`：ビルドされた NSIS インストーラー用）も書き出されます。システムがどこからインストールされたかを判別できる場合、アプリ側でもそれをチェックします。別ストアからの Android アプリ、Flatpak や Snap、TestFlight ビルドではアップデートをそのストアに委ねます。Google Play インストール版で手動の `updater.Check` を実行すると、許可されている場合に Play In-App Updates へ即時フローの提示を要求し、同意・ダウンロード・インストール・再起動は Play が処理します。開発ビルドではこのフローに入りません。スタンドアロン Android パッケージには SDK がバンドルされ、[組み込みホスト](embedding.md#android)では Gradle 経由で提供します。
 
 ### アプリからの確認
 
@@ -555,7 +555,7 @@ android:
   share_types: [text/plain, 'image/*', application/pdf]
 ```
 
-APK および App Bundle ビルドでは、単一アイテムと複数アイテムの両方に対してこれらのタイプを登録します。各共有を受け取るには [`mobile.OnShared`](services.md#opening-links-and-files) を登録してください。
+APK および App Bundle ビルドでは、単一アイテムと複数アイテムの両方に対してこれらのタイプを登録します。各共有を受け取るには [`mobile.OnShared`](services.md#リンクとファイルを開く) を登録してください。
 
 パスベースのアドレスを使う Web アプリでは、`web.base` にデプロイ先ディレクトリ（`/` または `/my-app/`）を設定し、本番サーバーがアプリケーションルートに対して `index.html` を返すように構成してください。開発サーバーは HTML ナビゲーションリクエストに対してすでにこのフォールバックを提供しています。ディープリンクがリロードされた際も、アセットはその固定された HTML `<base>` からの相対パスのまま解決されます。[アプリケーションアドレス](addresses.md)を参照してください。
 

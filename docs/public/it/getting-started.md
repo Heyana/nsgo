@@ -12,7 +12,7 @@ order: 10
 - Per eseguire su un iPhone, un Apple ID negli Account di Xcode e l'iPhone autorizzato come attendibile, con la Modalità sviluppatore attiva.
 - Per eseguire su Android, `adb` dai platform-tools dell'Android SDK.
 - Per eseguire su Windows, il solo Go, che compila anche i pacchetti per Windows e per il web.
-- Su Linux, GTK 4.14 o successivo, Pango e Cairo. Le immagini di rete usano libsoup 3, le web view usano WebKitGTK 6.0, mentre audio e video usano i plug-in di GStreamer. Sui sistemi con restrizioni AppArmor sui namespace utente, [WebKitGTK richiede un profilo bubblewrap](debugging.md#linux-web-views).
+- Su Linux, GTK 4.14 o successivo, Pango e Cairo. Le immagini di rete usano libsoup 3, le web view usano WebKitGTK 6.0, mentre audio e video usano i plug-in di GStreamer. Sui sistemi con restrizioni AppArmor sui namespace utente, [WebKitGTK richiede un profilo bubblewrap](debugging.md#viste-web-su-linux).
 
 ## Creare un'app
 
@@ -78,7 +78,7 @@ La skill di NSGo insegna agli agenti di programmazione, come Claude Code, Codex 
 bunx skills add nsgo-dev/nsgo
 ```
 
-Gli agenti che leggono da sé la documentazione partono da <https://nsgo.dev/llms.txt>, che elenca ogni pagina in Markdown all'indirizzo `https://nsgo.dev/docs/<page>.md`; <https://nsgo.dev/llms-full.txt> le contiene tutte. Un agente può anche usare l'app in esecuzione ([Esecuzione e debug](debugging.md#agents)).
+Gli agenti che leggono da sé la documentazione partono da <https://nsgo.dev/llms.txt>, che elenca ogni pagina in Markdown all'indirizzo `https://nsgo.dev/docs/<page>.md`; <https://nsgo.dev/llms-full.txt> le contiene tutte. Un agente può anche usare l'app in esecuzione ([Esecuzione e debug](debugging.md#agenti)).
 
 ## Prossimi passi
 

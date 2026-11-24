@@ -70,5 +70,5 @@ Tampilan gulir native dan virtualisasinya sama di setiap target. Baris didaur ul
 
 - [Daftar dan pengguliran](../lists.md): panduan lengkap, termasuk header lengket dan memuat lebih banyak.
 - [Scroll](scroll.md): tampilan gulir polos.
-- [DataTable](../lists.md#tables): tabel dengan banyak baris dan kolom.
+- [DataTable](../lists.md#tabel): tabel dengan banyak baris dan kolom.
 - Halaman List, Table, dan DataTable di galeri.

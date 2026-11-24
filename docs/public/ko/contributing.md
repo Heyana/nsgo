@@ -7,7 +7,7 @@ order: 80
 
 ## 요구 사항
 
-Xcode와 Go 1.27.3 이상이 설치된 macOS는 Android APK를 포함해 arm64용 모든 대상을 빌드할 수 있습니다. 실제 기기에서 실행하려면 [설치 및 준비](getting-started.md#requirements)에 나열된 항목이 필요하며, x86_64 Android 에뮬레이터 대상인 `android_x64`는 Go가 cgo를 통해서만 android/amd64를 링크하므로 Android NDK가 필요합니다. Windows 설치 및 제거 프로그램은 Go만으로 빌드됩니다.
+Xcode와 Go 1.27.3 이상이 설치된 macOS는 Android APK를 포함해 arm64용 모든 대상을 빌드할 수 있습니다. 실제 기기에서 실행하려면 [설치 및 준비](getting-started.md#요구-사항)에 나열된 항목이 필요하며, x86_64 Android 에뮬레이터 대상인 `android_x64`는 Go가 cgo를 통해서만 android/amd64를 링크하므로 Android NDK가 필요합니다. Windows 설치 및 제거 프로그램은 Go만으로 빌드됩니다.
 
 ```sh
 git clone https://github.com/nsgo-dev/nsgo.git

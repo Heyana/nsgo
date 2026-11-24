@@ -52,7 +52,7 @@ Các nền tảng Apple, Android, Windows, Linux và web cập nhật ảnh đi�
 
 ## Chụp một view
 
-Gọi `cx.Capture(&ref, done)` với `core.Ref` của một view đã được gắn, hoặc `cx.Capture(nil, done)` cho bề mặt hiện tại. Callback nhận dữ liệu byte PNG theo tỉ lệ điểm ảnh của bề mặt hoặc một lỗi trên goroutine của engine. Dùng `core.ImageSource{Data: png}` để hiển thị kết quả. Để chia sẻ, hãy ghi dữ liệu byte vào một tệp `.png` trong thư mục cache của ứng dụng và truyền đường dẫn của nó trong `core.ShareOptions.Files`. [Chia sẻ tệp](services.md#opening-links-and-files)
+Gọi `cx.Capture(&ref, done)` với `core.Ref` của một view đã được gắn, hoặc `cx.Capture(nil, done)` cho bề mặt hiện tại. Callback nhận dữ liệu byte PNG theo tỉ lệ điểm ảnh của bề mặt hoặc một lỗi trên goroutine của engine. Dùng `core.ImageSource{Data: png}` để hiển thị kết quả. Để chia sẻ, hãy ghi dữ liệu byte vào một tệp `.png` trong thư mục cache của ứng dụng và truyền đường dẫn của nó trong `core.ShareOptions.Files`. [Chia sẻ tệp](services.md#mở-liên-kết-và-tệp)
 
 Việc chụp lấy các điểm ảnh hiển thị của bề mặt trong phạm vi khung của view. Tính năng này khả dụng trên macOS, iOS, tvOS, Windows, Linux, Android và web. Android chụp cửa sổ của activity. Chụp trên web vẽ DOM của ứng dụng vào một canvas, bao gồm cả đầu ra shader của NSGo, và bỏ qua các frame nhúng, các ảnh không đọc được và một số hiệu ứng CSS.
 

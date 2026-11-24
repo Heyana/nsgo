@@ -52,7 +52,7 @@ Apple 平台、Android、Windows、Linux 與網頁會直接更新像素圖片，
 
 ## 擷取檢視畫面
 
-傳入已掛載檢視的 `core.Ref` 呼叫 `cx.Capture(&ref, done)`，或傳入 `nil` 呼叫 `cx.Capture(nil, done)` 來擷取目前的繪圖表面。回呼函式會在引擎 goroutine 上收到符合繪圖表面像素縮放比例的 PNG 位元組資料，或收到一個錯誤。使用 `core.ImageSource{Data: png}` 即可顯示擷取結果。若要分享該圖片，請將位元組寫入應用程式快取目錄中的 `.png` 檔案，並將其路徑傳入 `core.ShareOptions.Files`（參閱[分享檔案](services.md#opening-links-and-files)）。
+傳入已掛載檢視的 `core.Ref` 呼叫 `cx.Capture(&ref, done)`，或傳入 `nil` 呼叫 `cx.Capture(nil, done)` 來擷取目前的繪圖表面。回呼函式會在引擎 goroutine 上收到符合繪圖表面像素縮放比例的 PNG 位元組資料，或收到一個錯誤。使用 `core.ImageSource{Data: png}` 即可顯示擷取結果。若要分享該圖片，請將位元組寫入應用程式快取目錄中的 `.png` 檔案，並將其路徑傳入 `core.ShareOptions.Files`（參閱[分享檔案](services.md#開啟連結與檔案)）。
 
 擷取功能會取得檢視邊界內可見的繪圖表面像素，支援 macOS、iOS、tvOS、Windows、Linux、Android 與網頁。Android 會擷取 Activity 的視窗。網頁擷取會將應用程式的 DOM 繪製到畫布中（包含 NSGo 著色器輸出），但會略過內嵌框架、無法讀取的圖片以及部分 CSS 效果。
 

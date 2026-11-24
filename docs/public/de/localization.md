@@ -18,7 +18,7 @@ appName:
 
 Eine Meldung ist ein String oder eine `message` mit einer `description` und `placeholders` für Übersetzerinnen und Übersetzer.
 
-Das Package importiert `locales/`. `dev`, `build` und `test` prüfen die Kataloge und schreiben daneben eine Go-Funktion pro Meldung, etwa `locales.Greeting(cx, "Ada")`, die sie in der Sprache ausgibt, die die App anzeigt, und dieser folgt, wenn sie sich ändert; `go tool nsgo i18n` schreibt nur die Funktionen. Meldungen formatieren Zahlen und Datumsangaben (`{d, date, medium}`), und `appName` benennt die App in jeder Sprache in ihren Paketen, so wie eine Meldung mit einem `apple.info`-Schlüssel, etwa `NSCameraUsageDescription`, diesen Info.plist-Eintrag übersetzt ([Berechtigungen](permissions.md#usage-descriptions)).
+Das Package importiert `locales/`. `dev`, `build` und `test` prüfen die Kataloge und schreiben daneben eine Go-Funktion pro Meldung, etwa `locales.Greeting(cx, "Ada")`, die sie in der Sprache ausgibt, die die App anzeigt, und dieser folgt, wenn sie sich ändert; `go tool nsgo i18n` schreibt nur die Funktionen. Meldungen formatieren Zahlen und Datumsangaben (`{d, date, medium}`), und `appName` benennt die App in jeder Sprache in ihren Paketen, so wie eine Meldung mit einem `apple.info`-Schlüssel, etwa `NSCameraUsageDescription`, diesen Info.plist-Eintrag übersetzt ([Berechtigungen](permissions.md#nutzungsbeschreibungen)).
 
 ## Die Sprache
 

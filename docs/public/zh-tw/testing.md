@@ -189,7 +189,7 @@ go tool nsgo test -target macos
 
 `app.Play(selector, core.VideoInfo{Duration: time.Second, RateChangeable: true})` 會回報視訊載入完成，並附上其時長、原始尺寸與播放速率調整能力。將 `RateChangeable` 設為 false 可測試不提供倍速控制項的播放器。
 
-在 `tui` 上，測試需要互動式終端機、已連結的 NSGo 後端與呼叫 `nsgotest.Main` 的 `TestMain`。每個行程開啟一個應用程式；其步驟會測試終端機編輯、焦點、滑鼠與按鍵路由。測試輸出會先暫存，直到終端機還原後才輸出。PNG 擷取會使用固定的可攜式字型將儲存格光柵化。[終端機目標](building.md#terminal)
+在 `tui` 上，測試需要互動式終端機、已連結的 NSGo 後端與呼叫 `nsgotest.Main` 的 `TestMain`。每個行程開啟一個應用程式；其步驟會測試終端機編輯、焦點、滑鼠與按鍵路由。測試輸出會先暫存，直到終端機還原後才輸出。PNG 擷取會使用固定的可攜式字型將儲存格光柵化。[終端機目標](building.md#終端機模式)
 
 ## TSX 測試
 

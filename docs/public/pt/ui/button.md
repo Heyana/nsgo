@@ -73,4 +73,4 @@ O botão é uma view desenhada da mesma forma em todos os lugares, não um botã
 - [Estilos e temas](../styles.md): o tema do qual um botão obtém suas cores.
 - [Acessibilidade](../accessibility.md): papéis, rótulos e foco.
 - A página Button da galeria.
-- [Componentes sem estilo](../authoring/base.md#button): `base.Button`, para um botão com uma aparência própria.
+- [Componentes sem estilo](../authoring/base.md#botão): `base.Button`, para um botão com uma aparência própria.

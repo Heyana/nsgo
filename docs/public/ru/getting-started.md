@@ -12,7 +12,7 @@ order: 10
 - Для запуска на iPhone — Apple ID в разделе Accounts в Xcode и доверенный iPhone с включённым режимом разработчика (Developer Mode).
 - Для запуска на Android — `adb` из пакета platform-tools в Android SDK.
 - Для запуска на Windows — только Go, который также собирает пакеты для Windows и веба.
-- На Linux — GTK 4.14 или новее, Pango и Cairo. Изображения из сети используют libsoup 3, веб-представления — WebKitGTK 6.0, а звук и видео — плагины GStreamer. В системах с ограничениями пространств имён пользователей в AppArmor [WebKitGTK требуется профиль bubblewrap](debugging.md#linux-web-views).
+- На Linux — GTK 4.14 или новее, Pango и Cairo. Изображения из сети используют libsoup 3, веб-представления — WebKitGTK 6.0, а звук и видео — плагины GStreamer. В системах с ограничениями пространств имён пользователей в AppArmor [WebKitGTK требуется профиль bubblewrap](debugging.md#веб-представления-на-linux).
 
 ## Создание приложения
 
@@ -78,7 +78,7 @@ go tool nsgo dev -target android            # on a connected device or emulator
 bunx skills add nsgo-dev/nsgo
 ```
 
-Агенты, которые сами читают документацию, начинают с <https://nsgo.dev/llms.txt>, где перечислены все страницы в формате Markdown по адресу `https://nsgo.dev/docs/<page>.md`; <https://nsgo.dev/llms-full.txt> содержит их все. Агент также может использовать запущенное приложение ([Запуск и отладка](debugging.md#agents)).
+Агенты, которые сами читают документацию, начинают с <https://nsgo.dev/llms.txt>, где перечислены все страницы в формате Markdown по адресу `https://nsgo.dev/docs/<page>.md`; <https://nsgo.dev/llms-full.txt> содержит их все. Агент также может использовать запущенное приложение ([Запуск и отладка](debugging.md#агенты)).
 
 ## Далее
 

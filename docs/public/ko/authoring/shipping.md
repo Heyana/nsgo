@@ -23,7 +23,7 @@ package locales
 //go:generate go tool nsgo i18n
 ```
 
-`go generate ./locales`를 실행하면 메시지마다 함수가 생성되며, 컴포넌트는 스코프와 함께 이를 호출합니다. 예를 들어 `locales.Clear(cx)`는 앱이 표시 중인 언어로 해당 문구를 반환합니다. 앱이 Go 도구만으로 빌드할 수 있도록 생성된 `catalog_gen.go`도 커밋하세요. 번역할 언어마다 파일(`zh-Hans.yaml` 등)을 추가하며, 앱은 [NSGo 자체 문구](../localization.md#nsgos-own-words)와 마찬가지로 패키지 임포트 경로를 키로 삼아 자체 카탈로그에서 다른 언어를 제공할 수 있습니다.
+`go generate ./locales`를 실행하면 메시지마다 함수가 생성되며, 컴포넌트는 스코프와 함께 이를 호출합니다. 예를 들어 `locales.Clear(cx)`는 앱이 표시 중인 언어로 해당 문구를 반환합니다. 앱이 Go 도구만으로 빌드할 수 있도록 생성된 `catalog_gen.go`도 커밋하세요. 번역할 언어마다 파일(`zh-Hans.yaml` 등)을 추가하며, 앱은 [NSGo 자체 문구](../localization.md#nsgo-기본-문구)와 마찬가지로 패키지 임포트 경로를 키로 삼아 자체 카탈로그에서 다른 언어를 제공할 수 있습니다.
 
 ## 테스트
 
@@ -60,4 +60,4 @@ func init() {
 }
 ```
 
-이후 `import { Toggle } from "example.com/chips"`로 불러오면 구조체 필드를 props로 전달할 수 있습니다([TSX 앱](../tsx.md#go-from-tsx)).
+이후 `import { Toggle } from "example.com/chips"`로 불러오면 구조체 필드를 props로 전달할 수 있습니다([TSX 앱](../tsx.md#tsx에서-go-호출하기)).

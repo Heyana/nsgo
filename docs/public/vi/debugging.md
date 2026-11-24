@@ -124,7 +124,7 @@ go tool nsgo dev -devtools
 - **Profiler**: thời gian của từng commit, tách thành thời gian chạy mã của bạn trước đó, thời gian commit kèm tính toán bố cục, và thời gian áp dụng lên luồng chính của nền tảng. Công cụ cũng hiển thị các dòng mã có lệnh ghi gây ra commit và mở sẵn danh sách các computation đã chạy, xếp từ lâu nhất trở xuống. Danh sách thứ hai nêu tên các computation chạy nhiều nhất trong giây vừa qua theo dòng mã đã tạo ra chúng. Runtime Android áp dụng các lô thay đổi trong mã Java riêng nên commit trên Android không ghi nhận thời gian phía nền tảng.
 - **Recorder**: ghi lại thao tác nhấn, gõ, xóa và cuộn của bạn trong ứng dụng, xuất thành một tệp kiểm thử `nsgotest` để sao chép vào tệp `_test.go`. Trong mục Elements, **Assert shown** và **Assert text** thêm bước kiểm tra view đang chọn. Kiểm tra văn bản lưu lại chữ theo đúng ngôn ngữ ứng dụng đang hiển thị, vì vậy hãy ghi thao tác bằng đúng ngôn ngữ mà bài kiểm thử của bạn chạy.
 - **Highlight updates**: vẽ viền quanh từng view bị thay đổi bởi một commit, tương tự cờ `-highlight`.
-- **Layout**: bật và tắt [kiểm tra bố cục](#layout) trên thiết bị, tương tự cách cờ `-layout` khởi chạy.
+- **Layout**: bật và tắt [kiểm tra bố cục](#bố-cục) trên thiết bị, tương tự cách cờ `-layout` khởi chạy.
 
 Trạng thái, computation và lệnh ghi của một ứng dụng TSX được đặt tên theo dòng mã TSX của chúng thông qua source map của bundle, và liên kết thẳng tới các tệp trong ứng dụng của bạn.
 
@@ -224,7 +224,7 @@ go tool nsgo dev -target web -automation
 claude mcp add nsgo -- go tool nsgo mcp
 ```
 
-Các client khác nhận cùng lệnh đó — `go` với các đối số `tool nsgo mcp` — chạy trong thư mục ứng dụng. Các view được gọi tên bằng bộ chọn của [bài kiểm thử](testing.md#a-test), hoặc bằng các tham chiếu `view:` mà ảnh chụp cây giao diện (snapshot) in ra (các tham chiếu này sẽ hết hiệu lực mỗi khi lưu tệp khiến ứng dụng khởi động lại).
+Các client khác nhận cùng lệnh đó — `go` với các đối số `tool nsgo mcp` — chạy trong thư mục ứng dụng. Các view được gọi tên bằng bộ chọn của [bài kiểm thử](testing.md#một-bài-kiểm-thử), hoặc bằng các tham chiếu `view:` mà ảnh chụp cây giao diện (snapshot) in ra (các tham chiếu này sẽ hết hiệu lực mỗi khi lưu tệp khiến ứng dụng khởi động lại).
 
 Agent thao tác trực tiếp trên dữ liệu thật của ứng dụng, đúng như khi chạy `dev`. Chỉ các bản build `dev -automation` mới tích hợp tính năng này, và chỉ các công cụ trên cùng máy này nắm giữ token trong `.nsgo/automation.yaml` (tệp mà chỉ bạn có quyền đọc) mới kết nối được.
 

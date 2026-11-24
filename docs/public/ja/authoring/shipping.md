@@ -23,7 +23,7 @@ package locales
 //go:generate go tool nsgo i18n
 ```
 
-`go generate ./locales` を実行するとメッセージごとに関数が生成され、コンポーネントからスコープを渡して `locales.Clear(cx)` を呼ぶことで、アプリが表示している言語で文言を出力できます。アプリが Go のみでビルドできるよう、生成された `catalog_gen.go` をコミットしてください。翻訳先の言語ごとにファイル（`zh-Hans.yaml` など）を追加します。未収録の言語については、[NSGo 自身の文言](../localization.md#nsgos-own-words)と同様に、アプリ側が自身のカタログ内でパッケージのインポートパスをキーとして翻訳を提供できます。
+`go generate ./locales` を実行するとメッセージごとに関数が生成され、コンポーネントからスコープを渡して `locales.Clear(cx)` を呼ぶことで、アプリが表示している言語で文言を出力できます。アプリが Go のみでビルドできるよう、生成された `catalog_gen.go` をコミットしてください。翻訳先の言語ごとにファイル（`zh-Hans.yaml` など）を追加します。未収録の言語については、[NSGo 自身の文言](../localization.md#nsgo-自身の文言)と同様に、アプリ側が自身のカタログ内でパッケージのインポートパスをキーとして翻訳を提供できます。
 
 ## テスト
 
@@ -60,4 +60,4 @@ func init() {
 }
 ```
 
-これにより、`import { Toggle } from "example.com/chips"` と記述し、フィールドを props として渡せるようになります（[TSX アプリ](../tsx.md#go-from-tsx)）。
+これにより、`import { Toggle } from "example.com/chips"` と記述し、フィールドを props として渡せるようになります（[TSX アプリ](../tsx.md#tsx-から-go-を利用する)）。

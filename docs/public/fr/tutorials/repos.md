@@ -187,6 +187,6 @@ go tool nsgo test
 
 ## Suite
 
-- [Services plateforme](../services.md#networking) : plus d’informations sur le réseau, le stockage et les fichiers.
+- [Services plateforme](../services.md#réseau) : plus d’informations sur le réseau, le stockage et les fichiers.
 - [Listes et défilement](../lists.md) : actualisation par glissement, aimantation et longues listes.
 - [Exécution et débogage](../debugging.md) : observer chaque mise à jour avec `-trace`.

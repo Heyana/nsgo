@@ -18,7 +18,7 @@ appName:
 
 메시지는 문자열이거나, 번역가를 위한 `description`과 `placeholders`를 포함한 `message` 객체입니다.
 
-패키지는 `locales/`를 임포트합니다. `dev`, `build`, `test` 명령은 카탈로그를 검사하고 그 옆에 메시지마다 Go 함수(예: `locales.Greeting(cx, "Ada")`)를 생성합니다. 이 함수는 앱이 표시하는 언어로 문구를 반환하며 언어가 바뀌면 함께 갱신됩니다. `go tool nsgo i18n`은 함수 생성만 단독으로 실행합니다. 메시지는 숫자와 날짜를 서식화할 수 있으며(`{d, date, medium}`), `appName`은 패키징 시 각 언어에 맞는 앱 이름을 지정합니다. 마찬가지로 `NSCameraUsageDescription` 같은 `apple.info` 키를 가진 메시지는 해당 Info.plist 항목을 번역합니다([권한](permissions.md#usage-descriptions)).
+패키지는 `locales/`를 임포트합니다. `dev`, `build`, `test` 명령은 카탈로그를 검사하고 그 옆에 메시지마다 Go 함수(예: `locales.Greeting(cx, "Ada")`)를 생성합니다. 이 함수는 앱이 표시하는 언어로 문구를 반환하며 언어가 바뀌면 함께 갱신됩니다. `go tool nsgo i18n`은 함수 생성만 단독으로 실행합니다. 메시지는 숫자와 날짜를 서식화할 수 있으며(`{d, date, medium}`), `appName`은 패키징 시 각 언어에 맞는 앱 이름을 지정합니다. 마찬가지로 `NSCameraUsageDescription` 같은 `apple.info` 키를 가진 메시지는 해당 Info.plist 항목을 번역합니다([권한](permissions.md#사용-목적-설명)).
 
 ## 언어
 

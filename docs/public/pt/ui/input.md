@@ -66,7 +66,7 @@ O teclado virtual cobre a parte de baixo de um celular. Coloque `core.EnvKeyboar
 
 ## Validação
 
-As regras são do aplicativo. Um signal guarda o erro, `OnBlur` ou `OnSubmit` o define, e uma mensagem abaixo do campo o mostra ([Formulários](../forms.md#validation)).
+As regras são do aplicativo. Um signal guarda o erro, `OnBlur` ou `OnSubmit` o define, e uma mensagem abaixo do campo o mostra ([Formulários](../forms.md#validação)).
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")

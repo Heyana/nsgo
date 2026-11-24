@@ -22,7 +22,7 @@ go tool nsgo check   # vet every package
 go tool nsgo test    # every package's tests
 ```
 
-Fügen Sie für jede Änderung einen Test hinzu: `nsgotest` für alles, was Nutzerinnen und Nutzer sehen, und die eigenen Tests des Pakets für alles Übrige. Starten Sie die Gallery auf den Plattformen, die Sie geändert haben ([Entwicklungsumgebung einrichten](../contributing.md#the-gallery)).
+Fügen Sie für jede Änderung einen Test hinzu: `nsgotest` für alles, was Nutzerinnen und Nutzer sehen, und die eigenen Tests des Pakets für alles Übrige. Starten Sie die Gallery auf den Plattformen, die Sie geändert haben ([Entwicklungsumgebung einrichten](../contributing.md#die-gallery)).
 
 Formatieren Sie Go-Dateien mit `gofmt` aus der Go-Version in `go.mod`; `gofmt -l .` listet die Dateien auf, die formatiert werden müssen. Die CI prüft jede getrackte Go-Datei und schlägt mit den Namen der nicht formatierten Dateien fehl.
 

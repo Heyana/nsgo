@@ -18,9 +18,9 @@ widgets:
 # apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
-Apple platformlarında onu bir widget uzantısı çizer; `build` ve `dev` bu uzantıyı Xcode'un Swift derleyicisiyle derler ([Derleme ve dağıtım](building.md#widgets-and-live-activities)). Android'de önceden derlenmiş Java çalışma zamanı aynı zaman çizelgesini App Widgets olarak çizer. İkisi de uygulama durduğunda yayınlanan içeriği göstermeye devam eder.
+Apple platformlarında onu bir widget uzantısı çizer; `build` ve `dev` bu uzantıyı Xcode'un Swift derleyicisiyle derler ([Derleme ve dağıtım](building.md#araç-takımları-ve-canlı-etkinlikler)). Android'de önceden derlenmiş Java çalışma zamanı aynı zaman çizelgesini App Widgets olarak çizer. İkisi de uygulama durduğunda yayınlanan içeriği göstermeye devam eder.
 
-Korumalı alanda çalışan (sandboxed) bir Mac App Store derlemesi için `apple.app_group` ayarlayın ve macOS hazırlama profillerini `sign.macos_profile` ve `sign.widgets_profile` üzerinden sağlayın. Hem uygulama hem de `<id>.widgets` aynı ekibe ait olmalı ve o gruba yetkili olmalıdır. Zaman çizelgeleri ve görüntüler grubun paylaşılan kapsayıcısına gider; doğrudan ve geliştirme macOS derlemeleri mevcut ana dizin konumlarını korur. [Mağaza imzalama](building.md#store-packages) derleme seçeneklerini açıklar.
+Korumalı alanda çalışan (sandboxed) bir Mac App Store derlemesi için `apple.app_group` ayarlayın ve macOS hazırlama profillerini `sign.macos_profile` ve `sign.widgets_profile` üzerinden sağlayın. Hem uygulama hem de `<id>.widgets` aynı ekibe ait olmalı ve o gruba yetkili olmalıdır. Zaman çizelgeleri ve görüntüler grubun paylaşılan kapsayıcısına gider; doğrudan ve geliştirme macOS derlemeleri mevcut ana dizin konumlarını korur. [Mağaza imzalama](building.md#mağaza-paketleri) derleme seçeneklerini açıklar.
 
 `name` ve `description` uygulamanın kataloglarındaki iletileri adlandırabilir. Bunu yaptıklarında widget galerisi ve yer tutucu kullanıcının dilini kullanır; bir çeviri eksikse kaynak kataloğun metnine geri döner. Katalog anahtarı olmayan bir değer olduğu gibi gösterilir.
 

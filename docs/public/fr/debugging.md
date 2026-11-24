@@ -124,7 +124,7 @@ go tool nsgo dev -devtools
 - **Profiler** : le temps de chaque commit, réparti entre votre code qui le précède, le commit avec sa mise en page, et son application sur le thread principal de la plateforme. Il indique également les lignes dont les écritures ont déclenché le commit, et s'ouvre sur les calculs exécutés, du plus long au plus court. Une seconde liste nomme les calculs qui se sont exécutés le plus souvent durant la dernière seconde, par la ligne qui les a créés. Le runtime d'Android applique les lots dans son propre code Java ; les commits Android n'ont donc pas de temps plateforme.
 - **Recorder** : ce que vous appuyez, saisissez, effacez et faites défiler dans l'application, généré sous forme de fichier de test `nsgotest` prêt à copier dans un fichier `_test.go`. Dans Elements, **Assert shown** et **Assert text** ajoutent une vérification de la vue sélectionnée. Une vérification de texte conserve le texte dans la langue affichée par l'application : enregistrez donc dans la langue utilisée par vos tests.
 - **Highlight updates** encadre chaque vue modifiée par un commit, comme le fait `-highlight`.
-- **Layout** affiche et masque l'[audit de mise en page](#layout) sur l'appareil, comme le lance `-layout`.
+- **Layout** affiche et masque l'[audit de mise en page](#mise-en-page) sur l'appareil, comme le lance `-layout`.
 
 L'état, les calculs et les écritures d'une application TSX sont nommés d'après leurs lignes TSX, grâce aux source maps des bundles, et renvoient directement aux fichiers de votre application.
 
@@ -224,7 +224,7 @@ go tool nsgo dev -target web -automation
 claude mcp add nsgo -- go tool nsgo mcp
 ```
 
-Les autres clients acceptent la même commande, `go` avec les arguments `tool nsgo mcp`, exécutée dans le répertoire de l'application. Les vues sont désignées par les sélecteurs des [tests](testing.md#a-test), ou par les références `view:` qu'un instantané affiche, lesquelles deviennent obsolètes dès qu'un enregistrement redémarre l'application.
+Les autres clients acceptent la même commande, `go` avec les arguments `tool nsgo mcp`, exécutée dans le répertoire de l'application. Les vues sont désignées par les sélecteurs des [tests](testing.md#un-test), ou par les références `view:` qu'un instantané affiche, lesquelles deviennent obsolètes dès qu'un enregistrement redémarre l'application.
 
 L'agent agit sur les vraies données de l'application, telles que `dev` les exécute. Seules les compilations `dev -automation` l'incluent, et seuls les outils sur cette machine détenant le jeton dans `.nsgo/automation.yaml`, que vous seul pouvez lire, y ont accès.
 

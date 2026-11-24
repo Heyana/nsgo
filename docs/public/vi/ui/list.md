@@ -70,5 +70,5 @@ Scroll view gốc và cơ chế ảo hóa là như nhau trên mọi mục tiêu.
 
 - [Danh sách và cuộn](../lists.md): hướng dẫn đầy đủ, bao gồm tiêu đề cố định và tải thêm.
 - [Scroll](scroll.md): một scroll view đơn giản.
-- [DataTable](../lists.md#tables): một bảng có nhiều hàng và cột.
+- [DataTable](../lists.md#bảng): một bảng có nhiều hàng và cột.
 - Các trang List, Table và DataTable trong gallery.

@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 Un'azione con `Role: core.AlertCancel` viene eseguita con Esc o il tasto indietro, seguita da `OnOpenChange(false, base.ReasonCancel)`. `Default: true` dà a un'azione il focus della tastiera quando l'avviso si apre su desktop, web e Apple TV, e fa sì che Invio la scelga; la pressione di un'azione esegue `OnPress`, poi `OnOpenChange(false, base.ReasonSelect)`. Invio esegue l'azione predefinita finché il focus della tastiera non si trova su un'altra azione o su un campo: con il focus spostato su un'altra azione, Invio preme quella, e una finestra di dialogo sopra l'avviso si tiene Invio. Una volta eseguita un'azione, l'avviso si chiude, qualunque cosa faccia `OnOpenChange`, e non ne esegue altre finché `Open` non torna falso e poi di nuovo vero. Se più azioni portano lo stesso marcatore, vince la prima. Senza marcatori, Esc chiude senza eseguire alcuna azione e Invio non ha un'azione predefinita. `Role: core.AlertDestructive` descrive un'azione; `Variant` o `Color` ne sceglie l'aspetto.
 
-Per l'avviso o l'action sheet propri del sistema, usa `cx.ShowAlert` ([Servizi di piattaforma](../services.md#alerts-and-the-clipboard)).
+Per l'avviso o l'action sheet propri del sistema, usa `cx.ShowAlert` ([Servizi di piattaforma](../services.md#avvisi-e-appunti)).
 
 ## Comportamento
 

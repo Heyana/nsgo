@@ -59,4 +59,4 @@ A caixa é desenhada pelo aplicativo, não por um controle da plataforma, então
 - [Formulários](../forms.md): escolhas em um formulário.
 - [List](list.md): caixas de seleção em linhas.
 - A página Checkbox da galeria.
-- [Componentes sem estilo](../authoring/base.md#checkbox): `base.Checkbox`, para uma caixa com uma aparência própria.
+- [Componentes sem estilo](../authoring/base.md#caixa-de-seleção): `base.Checkbox`, para uma caixa com uma aparência própria.

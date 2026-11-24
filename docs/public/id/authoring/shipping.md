@@ -23,7 +23,7 @@ package locales
 //go:generate go tool nsgo i18n
 ```
 
-`go generate ./locales` menulis satu fungsi per pesan, yang dipanggil oleh komponen bersama cakupannya: `locales.Clear(cx)` mengucapkannya dalam bahasa yang sedang ditampilkan aplikasi. Komit file `catalog_gen.go` yang dihasilkan, sehingga aplikasi dapat dibangun dengan Go saja. Tambahkan satu file untuk setiap bahasa tujuan terjemahan (`zh-Hans.yaml`); aplikasi dapat menyediakan bahasa lainnya dalam katalognya sendiri, di bawah kunci yang menamai jalur impor paket Anda, seperti untuk [kata-kata milik NSGo sendiri](../localization.md#nsgos-own-words).
+`go generate ./locales` menulis satu fungsi per pesan, yang dipanggil oleh komponen bersama cakupannya: `locales.Clear(cx)` mengucapkannya dalam bahasa yang sedang ditampilkan aplikasi. Komit file `catalog_gen.go` yang dihasilkan, sehingga aplikasi dapat dibangun dengan Go saja. Tambahkan satu file untuk setiap bahasa tujuan terjemahan (`zh-Hans.yaml`); aplikasi dapat menyediakan bahasa lainnya dalam katalognya sendiri, di bawah kunci yang menamai jalur impor paket Anda, seperti untuk [kata-kata milik NSGo sendiri](../localization.md#kata-kata-milik-nsgo).
 
 ## Pengujian
 
@@ -60,4 +60,4 @@ func init() {
 }
 ```
 
-`import { Toggle } from "example.com/chips"` kemudian menerima field-fieldnya sebagai props ([Aplikasi TSX](../tsx.md#go-from-tsx)).
+`import { Toggle } from "example.com/chips"` kemudian menerima field-fieldnya sebagai props ([Aplikasi TSX](../tsx.md#go-dari-tsx)).

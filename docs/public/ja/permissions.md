@@ -7,7 +7,7 @@ order: 49
 
 ## 確認とリクエスト
 
-アプリが実行できる操作の一部は、ユーザーが許可するまでシステムによって制限されています。スマートフォンと Mac ではマイク、カメラ、連絡先、カレンダー、リマインダー、写真、Bluetooth、メディアライブラリ、位置情報、通知が対象となり、スマートフォンではモーションとバックグラウンドでの位置情報も対象です。さらに macOS では、アクセシビリティ、画面収録、入力監視、フルディスクアクセス、アプリ管理、デベロッパツール、および他アプリのオートメーションも含まれます（[位置情報とモーション](services.md#location-and-motion)、[通知](notifications.md)）。`core.Permissions()` はこれらを `core.Permission` キーの一覧として返します。`cx.PermissionStatus` は尋ねることなくアプリが権限を持っているかを返し、`cx.RequestPermission` はシステムプロンプトが存在し、かつまだ尋ねていない場合にシステムのプロンプトでリクエストします。ユーザーがその権限を必要とする操作を行ったタイミングでリクエストしてください。Face ID と Touch ID はこれらに含まれません。`cx.BiometricAvailability` で利用可否を確認し、`cx.AuthenticateBiometric` で専用のプロンプトを使って認証を求めます（[生体認証](services.md#biometrics)）。
+アプリが実行できる操作の一部は、ユーザーが許可するまでシステムによって制限されています。スマートフォンと Mac ではマイク、カメラ、連絡先、カレンダー、リマインダー、写真、Bluetooth、メディアライブラリ、位置情報、通知が対象となり、スマートフォンではモーションとバックグラウンドでの位置情報も対象です。さらに macOS では、アクセシビリティ、画面収録、入力監視、フルディスクアクセス、アプリ管理、デベロッパツール、および他アプリのオートメーションも含まれます（[位置情報とモーション](services.md#位置情報とモーション)、[通知](notifications.md)）。`core.Permissions()` はこれらを `core.Permission` キーの一覧として返します。`cx.PermissionStatus` は尋ねることなくアプリが権限を持っているかを返し、`cx.RequestPermission` はシステムプロンプトが存在し、かつまだ尋ねていない場合にシステムのプロンプトでリクエストします。ユーザーがその権限を必要とする操作を行ったタイミングでリクエストしてください。Face ID と Touch ID はこれらに含まれません。`cx.BiometricAvailability` で利用可否を確認し、`cx.AuthenticateBiometric` で専用のプロンプトを使って認証を求めます（[生体認証](services.md#生体認証)）。
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -91,7 +91,7 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 | Android | `android.permissions` に宣言されたマイク、カメラ、カレンダー、Bluetooth、メディアライブラリ |
 | Apple Watch、ミニプログラム | それぞれのサービスを通じた通知、位置情報、モーション。システムによって制限されるその他の項目は現時点では unknown |
 
-位置情報とモーションの権限は各[プラットフォームのセンサー](services.md#location-and-motion)に準拠し、`PermissionNotifications` は[通知](notifications.md)に準拠します。フィットネスでは `PermissionActivityRecognition`（Android では `ACTIVITY_RECOGNITION`、Apple では `NSMotionUsageDescription`）を使用し、Apple の気圧データも含まれます。Android の生モーションデータは引き続き別扱いになります。モバイル Safari では、押下ハンドラーの中から `PermissionMotion` をリクエストしてください。
+位置情報とモーションの権限は各[プラットフォームのセンサー](services.md#位置情報とモーション)に準拠し、`PermissionNotifications` は[通知](notifications.md)に準拠します。フィットネスでは `PermissionActivityRecognition`（Android では `ACTIVITY_RECOGNITION`、Apple では `NSMotionUsageDescription`）を使用し、Apple の気圧データも含まれます。Android の生モーションデータは引き続き別扱いになります。モバイル Safari では、押下ハンドラーの中から `PermissionMotion` をリクエストしてください。
 
 ## テスト
 

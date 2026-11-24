@@ -22,7 +22,7 @@ go tool nsgo check   # vet every package
 go tool nsgo test    # every package's tests
 ```
 
-Değiştirdiğiniz şey için bir test ekleyin: kullanıcının gördükleri için `nsgotest`, geri kalanı için paketin kendi testleri. Dokunduğunuz platformlarda galeriyi çalıştırın ([Geliştirme kurulumu](../contributing.md#the-gallery)).
+Değiştirdiğiniz şey için bir test ekleyin: kullanıcının gördükleri için `nsgotest`, geri kalanı için paketin kendi testleri. Dokunduğunuz platformlarda galeriyi çalıştırın ([Geliştirme kurulumu](../contributing.md#galeri)).
 
 Go dosyalarını `go.mod` içindeki Go sürümünün `gofmt` aracıyla biçimlendirin; `gofmt -l .` biçimlendirme gerektiren dosyaları listeler. CI izlenen her Go dosyasını denetler ve biçimlendirilmemiş olanların adlarıyla başarısız olur.
 

@@ -45,4 +45,4 @@ const { mount } = await import(new URL(config.loader, url).href);
 await mount(null, url.href, { config });
 ```
 
-請透過 CORS 允許頁面的來源擷取 CDN 上的檔案，並以 `application/wasm` 提供 WebAssembly。針對應用程式使用的任何深層路由（deep route），請提供應用程式入口 HTML。[嵌入](embedding.md#web)說明了如何改為掛載至特定元素中。
+請透過 CORS 允許頁面的來源擷取 CDN 上的檔案，並以 `application/wasm` 提供 WebAssembly。針對應用程式使用的任何深層路由（deep route），請提供應用程式入口 HTML。[嵌入](embedding.md#網頁)說明了如何改為掛載至特定元素中。

@@ -190,7 +190,7 @@ NSGo bayraklarını dizinden önce koyun: `go tool nsgo test -target web ./app`,
 
 `app.Play(selector, core.VideoInfo{Duration: time.Second, RateChangeable: true})`, süresi, doğal boyutu ve oynatma hızı yeteneğiyle birlikte bir video yüklemesini bildirir. Hız denetimleri kullanılamayan bir oynatıcıyı test etmek için `RateChangeable`'ı false olarak ayarlayın.
 
-`tui` üzerinde testler etkileşimli bir terminal, bağlı bir NSGo arka ucu ve `nsgotest.Main`'i çağıran `TestMain` gerektirir. Her süreç bir uygulama açar; adımları terminal düzenlemesini, odağı, fare ve tuş yönlendirmesini dener. Test çıktısı, terminal geri yüklenene kadar arabelleğe alınır. PNG yakalamaları hücreleri taşınabilir sabit bir yazı yüzüyle işler. [Terminal hedefleri](building.md#terminal)
+`tui` üzerinde testler etkileşimli bir terminal, bağlı bir NSGo arka ucu ve `nsgotest.Main`'i çağıran `TestMain` gerektirir. Her süreç bir uygulama açar; adımları terminal düzenlemesini, odağı, fare ve tuş yönlendirmesini dener. Test çıktısı, terminal geri yüklenene kadar arabelleğe alınır. PNG yakalamaları hücreleri taşınabilir sabit bir yazı yüzüyle işler. [Terminal hedefleri](building.md#uçbirim-terminal)
 
 ## TSX testleri
 

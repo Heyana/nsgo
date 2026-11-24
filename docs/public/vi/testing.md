@@ -190,7 +190,7 @@ Trên Android, công cụ đánh thức màn hình đang ngủ và bỏ qua màn
 
 `app.Play(selector, core.VideoInfo{Duration: time.Second, RateChangeable: true})` báo cáo một lần tải video cùng thời lượng, kích thước gốc và khả năng thay đổi tốc độ phát của nó. Đặt `RateChangeable` thành false để kiểm thử một trình phát không có điều khiển tốc độ.
 
-Trên `tui`, các bài kiểm thử yêu cầu một terminal tương tác, một backend NSGo đã được liên kết và `TestMain` gọi `nsgotest.Main`. Mỗi tiến trình mở một ứng dụng; các bước của nó thử nghiệm việc chỉnh sửa trong terminal, tiêu điểm, cũng như định tuyến chuột và phím. Đầu ra kiểm thử được đệm lại cho đến khi terminal được khôi phục. Ảnh chụp PNG kết xuất các ô bằng một phông chữ cố định mang tính di động. [Đích terminal](building.md#terminal)
+Trên `tui`, các bài kiểm thử yêu cầu một terminal tương tác, một backend NSGo đã được liên kết và `TestMain` gọi `nsgotest.Main`. Mỗi tiến trình mở một ứng dụng; các bước của nó thử nghiệm việc chỉnh sửa trong terminal, tiêu điểm, cũng như định tuyến chuột và phím. Đầu ra kiểm thử được đệm lại cho đến khi terminal được khôi phục. Ảnh chụp PNG kết xuất các ô bằng một phông chữ cố định mang tính di động. [Đích terminal](building.md#thiết-bị-đầu-cuối)
 
 ## Kiểm thử TSX
 

@@ -31,7 +31,7 @@ La place de NSGo parmi les frameworks d'interface utilisateur repose sur trois c
 - **Go uniquement.** Le moteur, la mise en page et les backends sont en Go, sans C, sans cgo et sans moteur JavaScript pour les applications Go.
 - **Toutes les plateformes depuis un seul Mac.** Un Mac doté de Go et de Xcode compile de manière croisée toutes les cibles : pas besoin de NDK, d'Android SDK, de JDK, de GTK ni de chaîne d'outils Windows.
 - **Tous les fichiers de publication en une seule commande.** `nsgo build` génère une image disque signée et notariée pour macOS, un installateur Windows signé, des paquets deb et Arch ainsi qu'une AppImage, des paquets pour le Mac App Store, le Microsoft Store, Google Play et Flathub, et des scripts d'installation depuis les releases GitHub ([compilation et distribution](building.md)).
-- **Mises à jour natives de chaque plateforme.** Sur macOS Sparkle, et sur Windows WinSparkle, téléchargent, vérifient et installent la version suivante ; sur Linux et Android, l'application détecte la nouvelle version et ouvre sa page de publication ; sur iOS, l'App Store s'en charge. Une application installée via un store reste gérée par ce store ([mises à jour](building.md#updates)).
+- **Mises à jour natives de chaque plateforme.** Sur macOS Sparkle, et sur Windows WinSparkle, téléchargent, vérifient et installent la version suivante ; sur Linux et Android, l'application détecte la nouvelle version et ouvre sa page de publication ; sur iOS, l'App Store s'en charge. Une application installée via un store reste gérée par ce store ([mises à jour](building.md#mises-à-jour)).
 - **Toutes les plateformes.** Téléphones, tablettes, téléviseurs, montres, ordinateurs de bureau et le web partagent un seul moteur et une seule API, ainsi que les iOS App Clips, les widgets iPhone et Mac et, à titre expérimental, les mini-programmes WeChat, QQ, Alipay et Douyin.
 - **Intégration.** Une application NSGo peut s'insérer en tant que vue dans une application iOS, Android, Go desktop ou web existante, pour migrer écran par écran ([intégration](embedding.md)).
 - **Une boucle de développement rapide.** L'enregistrement d'un fichier Go recompile et redémarre l'application ; une modification TSX met à jour l'application en cours d'exécution sur place tout en conservant son état ; les erreurs de compilation et les panics lors du rendu s'affichent par-dessus l'application ([exécution et débogage](debugging.md)).
@@ -50,7 +50,7 @@ La place de NSGo parmi les frameworks d'interface utilisateur repose sur trois c
 
 ## NSH
 
-NSGo porte la conception de NSH : l'architecture, les backends, les noms de l'API et les composants sans style de `base` proviennent de NSH ([état du projet](index.md#status)).
+NSGo porte la conception de NSH : l'architecture, les backends, les noms de l'API et les composants sans style de `base` proviennent de NSH ([état du projet](index.md#statut)).
 
 - **Choisissez NSGo** pour écrire des applications en Go plutôt qu'en Rust ou en TSX, pour compiler toutes les cibles depuis un Mac avec Go et Xcode, ou pour ce que NSGo ajoute : des shaders GPU écrits en Go, des icônes vectorielles, un terminal, des applications ouvrant leurs propres fenêtres, panneaux et icônes de barre d'état, ainsi que les composants stylés de `ui`.
 - **Choisissez NSH** pour un projet plus mature, du TSX exécuté par QuickJS avec bytecode et limites de tas, le backend GPUI ou la prise en charge d'Android 32 bits.

@@ -50,7 +50,7 @@ widget.ActivityContent{
 
 ## Toques
 
-`widget.OnAction` executa o manipulador ao pressionar uma ação ou um `widget.Button`, recebendo a atividade e o ID da ação (`Activity` é `nil` para um [botão de widget](widgets.md#buttons)). Defina-o em `main`, antes de `nsgo.Run`: no iOS, o sistema inicia o app em segundo plano ao receber um toque, sem suas views, e mantém a atividade aguardando até o manipulador retornar, para que ele possa atualizá-la ali; no Android, o toque chega ao processo Go em execução por meio do receptor de runtime sem abrir sua Activity. As ações exigem que o motor que as publicou continue em execução; uma ação obsoleta não faz nada após o encerramento desse motor. A notificação em si continua abrindo o app quando tocada. O manipulador é executado em uma goroutine do sistema, não na das views do app — que ele alcança por meio do `Post` de um `core.Scope`.
+`widget.OnAction` executa o manipulador ao pressionar uma ação ou um `widget.Button`, recebendo a atividade e o ID da ação (`Activity` é `nil` para um [botão de widget](widgets.md#botões)). Defina-o em `main`, antes de `nsgo.Run`: no iOS, o sistema inicia o app em segundo plano ao receber um toque, sem suas views, e mantém a atividade aguardando até o manipulador retornar, para que ele possa atualizá-la ali; no Android, o toque chega ao processo Go em execução por meio do receptor de runtime sem abrir sua Activity. As ações exigem que o motor que as publicou continue em execução; uma ação obsoleta não faz nada após o encerramento desse motor. A notificação em si continua abrindo o app quando tocada. O manipulador é executado em uma goroutine do sistema, não na das views do app — que ele alcança por meio do `Post` de um `core.Scope`.
 
 ```go
 func main() {

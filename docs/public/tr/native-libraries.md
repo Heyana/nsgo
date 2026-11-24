@@ -35,7 +35,7 @@ Her kütüphanede şunlar bulunur:
 - `name`: kurulu dosya adı; macOS'ta `.dylib`, Windows'ta `.dll`, Linux'ta ise `.so` veya sürümlü bir `.so.*` ile biter.
 - `path` (bu paket dizinine göreli bir dosya) veya `url` (kütüphanenin kendisi için bir HTTP(S) URL'si) alanlarından tam olarak biri. Arşiv URL'leri yerine çıkarılmış kütüphaneleri yayımlayın. URL'ler gömülü kullanıcı adları ve parolalar içermez.
 - `sha256`: özgün dosyanın SHA-256 değeri; her iki kaynak için de zorunludur. Örneğin macOS'ta `shasum -a 256 lib/macos-arm64/libexample.dylib` bunu yazdırır.
-- `licenses`: bu paket dizinine göreli olarak, özgün lisans ve bildirim dosyalarına giden boş olmayan yollar. Bu metinler `THIRD_PARTY_NOTICES.txt` içinde dağıtılır ve sürüm derlemelerinde `core.ThirdPartyNotices()`'a ulaşır. Uygulamanın mevcut [lisans politikası](building.md#license-notices), tam modül istisnaları da dahil olmak üzere, yerel lisanslara bağımsız olarak uygulanır.
+- `licenses`: bu paket dizinine göreli olarak, özgün lisans ve bildirim dosyalarına giden boş olmayan yollar. Bu metinler `THIRD_PARTY_NOTICES.txt` içinde dağıtılır ve sürüm derlemelerinde `core.ThirdPartyNotices()`'a ulaşır. Uygulamanın mevcut [lisans politikası](building.md#lisans-bildirimleri), tam modül istisnaları da dahil olmak üzere, yerel lisanslara bağımsız olarak uygulanır.
 
 Yerel yollar ve sembolik bağlantılar bildiren paketin içinde kalır. NSGo bilinmeyen alanları, sağlama toplamı uyuşmazlıklarını, başka bir işletim sistemi veya mimariye ait dosyaları ve çakışan kurulu adları reddeder. İki paket, aynı sağlama toplamına sahip aynı adlı bir dosyayı paylaşabilir. Bir dosya 1 GiB ile sınırlıdır.
 

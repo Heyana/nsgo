@@ -187,6 +187,6 @@ go tool nsgo test
 
 ## Prossimi passi
 
-- [Servizi di piattaforma](../services.md#networking): altro su networking, archiviazione e file.
+- [Servizi di piattaforma](../services.md#rete): altro su networking, archiviazione e file.
 - [Liste e scorrimento](../lists.md): trascinamento per aggiornare, aggancio e liste lunghe.
 - [Esecuzione e debug](../debugging.md): osserva ogni aggiornamento con `-trace`.

@@ -52,7 +52,7 @@ Apple プラットフォーム、Android、Windows、Linux、Web ではピクセ
 
 ## ビューをキャプチャする
 
-マウント済みビューの `core.Ref` を渡して `cx.Capture(&ref, done)` を呼び出すか、現在のサーフェス全体を対象にする場合は `cx.Capture(nil, done)` を呼び出します。コールバックはエンジンゴルーチン上で、サーフェスのピクセル倍率に応じた PNG バイト列またはエラーを受け取ります。結果を表示するには `core.ImageSource{Data: png}` を使用します。共有するには、バイト列をアプリのキャッシュディレクトリ内の `.png` ファイルに書き出し、そのパスを `core.ShareOptions.Files` に渡してください（[ファイルの共有](services.md#opening-links-and-files)）。
+マウント済みビューの `core.Ref` を渡して `cx.Capture(&ref, done)` を呼び出すか、現在のサーフェス全体を対象にする場合は `cx.Capture(nil, done)` を呼び出します。コールバックはエンジンゴルーチン上で、サーフェスのピクセル倍率に応じた PNG バイト列またはエラーを受け取ります。結果を表示するには `core.ImageSource{Data: png}` を使用します。共有するには、バイト列をアプリのキャッシュディレクトリ内の `.png` ファイルに書き出し、そのパスを `core.ShareOptions.Files` に渡してください（[ファイルの共有](services.md#リンクとファイルを開く)）。
 
 キャプチャはビューの境界内にある表示中のサーフェスピクセルを取得します。macOS、iOS、tvOS、Windows、Linux、Android、Web で利用できます。Android ではアクティビティのウィンドウをキャプチャします。Web のキャプチャでは、NSGo シェーダーの出力を含めてアプリの DOM をキャンバスに描画しますが、埋め込みフレーム、読み取れない画像、および一部の CSS エフェクトは除外されます。
 

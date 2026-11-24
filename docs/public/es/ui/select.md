@@ -58,4 +58,4 @@ En macOS, Windows y Linux la lista es una ventana emergente junto al disparador.
 - [Menú](menu.md): comandos en lugar de un valor.
 - [Pestañas](tabs.md): unas pocas opciones mostradas a la vez.
 - Las páginas Select y Combobox de la galería.
-- [Componentes sin estilos](../authoring/base.md#select): `base.Select`, con grupos y un disparador propio.
+- [Componentes sin estilos](../authoring/base.md#selector): `base.Select`, con grupos y un disparador propio.

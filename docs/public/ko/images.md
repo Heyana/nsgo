@@ -52,7 +52,7 @@ Apple 플랫폼, Android, Windows, Linux, 웹은 픽셀 이미지를 직접 업�
 
 ## 뷰 캡처하기
 
-마운트된 뷰의 `core.Ref`로 `cx.Capture(&ref, done)`을 호출하거나, 현재 서피스 전체를 대상으로 `cx.Capture(nil, done)`을 호출하세요. 콜백은 엔진 고루틴에서 서피스의 픽셀 스케일에 맞는 PNG 바이트 또는 오류를 전달받습니다. 결과를 표시하려면 `core.ImageSource{Data: png}`를 사용하세요. 이를 공유하려면 앱의 캐시 디렉터리에 있는 `.png` 파일에 바이트를 쓰고 `core.ShareOptions.Files`에 해당 경로를 전달하세요. [파일 공유](services.md#opening-links-and-files)
+마운트된 뷰의 `core.Ref`로 `cx.Capture(&ref, done)`을 호출하거나, 현재 서피스 전체를 대상으로 `cx.Capture(nil, done)`을 호출하세요. 콜백은 엔진 고루틴에서 서피스의 픽셀 스케일에 맞는 PNG 바이트 또는 오류를 전달받습니다. 결과를 표시하려면 `core.ImageSource{Data: png}`를 사용하세요. 이를 공유하려면 앱의 캐시 디렉터리에 있는 `.png` 파일에 바이트를 쓰고 `core.ShareOptions.Files`에 해당 경로를 전달하세요. [파일 공유](services.md#링크와-파일-열기)
 
 캡처는 뷰의 경계 안에 보이는 서피스 픽셀을 가져옵니다. macOS, iOS, tvOS, Windows, Linux, Android, 웹에서 사용할 수 있습니다. Android는 액티비티의 창을 캡처합니다. 웹 캡처는 NSGo 셰이더 출력을 포함한 앱의 DOM을 캔버스에 그리며, 임베드된 프레임, 읽을 수 없는 이미지 및 일부 CSS 효과는 생략합니다.
 

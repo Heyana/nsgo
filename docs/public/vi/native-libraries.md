@@ -35,7 +35,7 @@ Mỗi thư viện có:
 - `name`: tên tệp khi được cài đặt, kết thúc bằng `.dylib` trên macOS, `.dll` trên Windows, hoặc `.so` hay một `.so.*` có số phiên bản trên Linux.
 - Đúng một trong hai: `path`, một tệp tương đối với thư mục package này, hoặc `url`, một URL HTTP(S) trỏ tới chính thư viện. Hãy phát hành các thư viện đã giải nén thay vì URL của tệp nén. URL không được chứa tên người dùng và mật khẩu nhúng.
 - `sha256`: SHA-256 của tệp gốc, bắt buộc với cả hai nguồn. Ví dụ, `shasum -a 256 lib/macos-arm64/libexample.dylib` in ra giá trị này trên macOS.
-- `licenses`: danh sách đường dẫn không rỗng tới các tệp giấy phép và thông báo gốc, tương đối với thư mục package này. Các văn bản này được phát hành trong `THIRD_PARTY_NOTICES.txt` và có trong `core.ThirdPartyNotices()` ở các bản build release. [Chính sách giấy phép](building.md#license-notices) hiện có của ứng dụng, bao gồm các ngoại lệ chính xác theo module, áp dụng độc lập cho giấy phép của thư viện gốc.
+- `licenses`: danh sách đường dẫn không rỗng tới các tệp giấy phép và thông báo gốc, tương đối với thư mục package này. Các văn bản này được phát hành trong `THIRD_PARTY_NOTICES.txt` và có trong `core.ThirdPartyNotices()` ở các bản build release. [Chính sách giấy phép](building.md#thông-báo-giấy-phép) hiện có của ứng dụng, bao gồm các ngoại lệ chính xác theo module, áp dụng độc lập cho giấy phép của thư viện gốc.
 
 Đường dẫn cục bộ và liên kết tượng trưng (symbolic link) phải nằm bên trong package khai báo. NSGo từ chối các trường không xác định, checksum không khớp, tệp dành cho hệ điều hành hoặc kiến trúc khác, và các tên cài đặt bị trùng nhau. Hai package có thể dùng chung một tệp cùng tên với cùng checksum. Mỗi tệp giới hạn ở 1 GiB.
 

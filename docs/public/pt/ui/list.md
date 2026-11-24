@@ -70,5 +70,5 @@ A view de rolagem nativa e a virtualização são as mesmas em todos os alvos. A
 
 - [Listas e rolagem](../lists.md): o guia completo, incluindo cabeçalhos fixos e carregar mais.
 - [Scroll](scroll.md): uma view de rolagem simples.
-- [DataTable](../lists.md#tables): uma tabela com muitas linhas e colunas.
+- [DataTable](../lists.md#tabelas): uma tabela com muitas linhas e colunas.
 - As páginas List, Table e DataTable da galeria.

@@ -36,4 +36,4 @@ El control predeterminado lo dibuja la aplicación, por lo que se ve igual en to
 - [Formularios](../forms.md): ajustes en un formulario.
 - [Accesibilidad](../accessibility.md): etiquetas y foco.
 - La página Switch de la galería.
-- [Componentes sin estilo](../authoring/base.md#switch): `base.Switch`, para un interruptor con un aspecto propio.
+- [Componentes sin estilo](../authoring/base.md#interruptor): `base.Switch`, para un interruptor con un aspecto propio.

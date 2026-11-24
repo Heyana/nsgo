@@ -12,7 +12,7 @@ order: 10
 - 若要在 iPhone 上執行，需在 Xcode 的 Accounts 中登入 Apple ID、信任該 iPhone，並開啟開發者模式。
 - 若要在 Android 上執行，需要 Android SDK platform-tools 中的 `adb`。
 - 若要在 Windows 上執行，只需安裝 Go 即可，它同時也能建置 Windows 與網頁套件。
-- 在 Linux 上，需要 GTK 4.14 或更新版本、Pango 與 Cairo。網路圖片使用 libsoup 3，網頁檢視（web view）使用 WebKitGTK 6.0，而音訊與視訊則使用 GStreamer 外掛程式。在具有 AppArmor 使用者命名空間限制的系統上，[WebKitGTK 需要設定 bubblewrap 設定檔](debugging.md#linux-web-views)。
+- 在 Linux 上，需要 GTK 4.14 或更新版本、Pango 與 Cairo。網路圖片使用 libsoup 3，網頁檢視（web view）使用 WebKitGTK 6.0，而音訊與視訊則使用 GStreamer 外掛程式。在具有 AppArmor 使用者命名空間限制的系統上，[WebKitGTK 需要設定 bubblewrap 設定檔](debugging.md#linux-網頁檢視)。
 
 ## 建立應用程式
 
@@ -78,7 +78,7 @@ NSGo 的 skill 可以教導 Claude Code、Codex 與 Cursor 等編碼代理如何
 bunx skills add nsgo-dev/nsgo
 ```
 
-會自行閱讀文件的代理可以從 <https://nsgo.dev/llms.txt> 開始，其中列出了每個頁面位於 `https://nsgo.dev/docs/<page>.md` 的 Markdown 連結；而 <https://nsgo.dev/llms-full.txt> 則包含所有頁面的完整內容。代理也可以直接操作執行中的應用程式（參閱[執行與除錯](debugging.md#agents)）。
+會自行閱讀文件的代理可以從 <https://nsgo.dev/llms.txt> 開始，其中列出了每個頁面位於 `https://nsgo.dev/docs/<page>.md` 的 Markdown 連結；而 <https://nsgo.dev/llms-full.txt> 則包含所有頁面的完整內容。代理也可以直接操作執行中的應用程式（參閱[執行與除錯](debugging.md#代理程式)）。
 
 ## 下一步
 

@@ -70,5 +70,5 @@ La vista di scorrimento nativa e la virtualizzazione sono le stesse su ogni targ
 
 - [Elenchi e scorrimento](../lists.md): la guida completa, inclusi gli header fissi e il caricamento progressivo.
 - [Scroll](scroll.md): una semplice vista di scorrimento.
-- [DataTable](../lists.md#tables): una tabella con molte righe e colonne.
+- [DataTable](../lists.md#tabelle): una tabella con molte righe e colonne.
 - Le pagine List, Table e DataTable della galleria.

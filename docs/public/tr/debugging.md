@@ -124,7 +124,7 @@ go tool nsgo dev -devtools
 - **Profiler**: her işlemenin (commit) süresi; öncesindeki kendi kodunuz, yerleşimiyle birlikte işleme ve platformun ana iş parçacığında uygulanması olarak bölünür. Ayrıca yazmaları işlemeye neden olan satırları da gösterir ve çalıştırdığı hesaplamalar üzerinde en uzundan başlayarak açılır. İkinci bir liste son bir saniyede en çok çalışan hesaplamaları onları oluşturan satıra göre adlandırır. Android'in çalışma zamanı toplu işleri kendi Java kodunda uygular, bu yüzden Android işlemelerinin platform süresi yoktur.
 - **Recorder**: uygulamada bastığınız, yazdığınız, temizlediğiniz ve kaydırdığınız her şey; bir `_test.go` dosyasına kopyalanacak bir `nsgotest` test dosyası olarak yazılır. Elements içinde **Assert shown** ve **Assert text** seçili görünüm için bir denetim ekler. Bir metin denetimi metni uygulamanın gösterdiği dilde tutar, bu nedenle testlerinizin çalıştığı dilde kayıt yapın.
 - **Highlight updates** tıpkı `-highlight` gibi bir işlemenin değiştirdiği her görünümün dış çizgisini çizer.
-- **Layout** `-layout` bayrağının başlattığı gibi cihazdaki [yerleşim denetimini](#layout) gösterir ve gizler.
+- **Layout** `-layout` bayrağının başlattığı gibi cihazdaki [yerleşim denetimini](#yerleşim) gösterir ve gizler.
 
 Bir TSX uygulamasının durumu, hesaplamaları ve yazmaları paketlerin kaynak haritaları aracılığıyla TSX satırlarıyla adlandırılır ve uygulamanızdaki dosyalara bağlanır.
 
@@ -224,7 +224,7 @@ go tool nsgo dev -target web -automation
 claude mcp add nsgo -- go tool nsgo mcp
 ```
 
-Diğer istemciler de uygulamanın dizininde çalıştırılan `tool nsgo mcp` argümanlarıyla aynı `go` komutunu alır. Görünümler [testlerin](testing.md#a-test) seçicileriyle veya bir anlık görüntünün yazdırdığı `view:` referanslarıyla adlandırılır; bir kaydetme işlemi uygulamayı yeniden başlattığından bu referanslar eskir.
+Diğer istemciler de uygulamanın dizininde çalıştırılan `tool nsgo mcp` argümanlarıyla aynı `go` komutunu alır. Görünümler [testlerin](testing.md#bir-test) seçicileriyle veya bir anlık görüntünün yazdırdığı `view:` referanslarıyla adlandırılır; bir kaydetme işlemi uygulamayı yeniden başlattığından bu referanslar eskir.
 
 Ajan, `dev` komutunun çalıştırdığı gibi uygulamanın gerçek verileri üzerinde hareket eder. Yalnızca `dev -automation` derlemeleri bunu taşır ve yalnızca bu makinede yalnızca sizin okuyabileceğiniz `.nsgo/automation.yaml` içindeki belirtece sahip araçlar ona ulaşır.
 

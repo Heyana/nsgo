@@ -69,4 +69,4 @@ A trilha é desenhada pelo aplicativo e tem o mesmo tamanho em todo lugar. Os to
 - [Formulários](../forms.md): sliders em um formulário.
 - [Acessibilidade](../accessibility.md): valores e papéis ajustáveis.
 - As páginas Slider, RangeSlider e Rating da galeria.
-- [Componentes sem estilo](../authoring/base.md#slider): `base.Slider`, vertical e com marcas próprias.
+- [Componentes sem estilo](../authoring/base.md#controle-deslizante): `base.Slider`, vertical e com marcas próprias.

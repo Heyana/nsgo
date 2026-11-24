@@ -18,7 +18,7 @@ appName:
 
 Một thông điệp là một chuỗi, hoặc là `message` kèm `description` và `placeholders` dành cho người dịch.
 
-Package import `locales/`. `dev`, `build` và `test` kiểm tra các catalog và viết một hàm Go cho mỗi thông điệp bên cạnh chúng, chẳng hạn `locales.Greeting(cx, "Ada")`, hàm này nói thông điệp bằng ngôn ngữ mà ứng dụng đang hiển thị và bám theo khi ngôn ngữ đó thay đổi; `go tool nsgo i18n` chỉ viết các hàm này. Thông điệp định dạng số và ngày tháng (`{d, date, medium}`), và `appName` đặt tên ứng dụng bằng từng ngôn ngữ trong các gói cài đặt của nó, giống như một thông điệp có khóa `apple.info`, chẳng hạn `NSCameraUsageDescription`, dịch mục Info.plist tương ứng ([quyền truy cập](permissions.md#usage-descriptions)).
+Package import `locales/`. `dev`, `build` và `test` kiểm tra các catalog và viết một hàm Go cho mỗi thông điệp bên cạnh chúng, chẳng hạn `locales.Greeting(cx, "Ada")`, hàm này nói thông điệp bằng ngôn ngữ mà ứng dụng đang hiển thị và bám theo khi ngôn ngữ đó thay đổi; `go tool nsgo i18n` chỉ viết các hàm này. Thông điệp định dạng số và ngày tháng (`{d, date, medium}`), và `appName` đặt tên ứng dụng bằng từng ngôn ngữ trong các gói cài đặt của nó, giống như một thông điệp có khóa `apple.info`, chẳng hạn `NSCameraUsageDescription`, dịch mục Info.plist tương ứng ([quyền truy cập](permissions.md#mô-tả-mục-đích-sử-dụng)).
 
 ## Ngôn ngữ
 

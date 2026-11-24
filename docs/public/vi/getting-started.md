@@ -12,7 +12,7 @@ order: 10
 - Để chạy trên iPhone, cần một Apple ID trong mục Accounts của Xcode và iPhone đã được tin cậy, với Developer Mode được bật.
 - Để chạy trên Android, cần `adb` từ platform-tools của Android SDK.
 - Để chạy trên Windows, chỉ cần Go, và Go cũng build được các gói cho Windows và web.
-- Trên Linux, cần GTK 4.14 trở lên, Pango và Cairo. Ảnh từ mạng dùng libsoup 3, web view dùng WebKitGTK 6.0, còn âm thanh và video dùng các plug-in GStreamer. Trên các hệ thống có giới hạn user namespace của AppArmor, [WebKitGTK cần một profile bubblewrap](debugging.md#linux-web-views).
+- Trên Linux, cần GTK 4.14 trở lên, Pango và Cairo. Ảnh từ mạng dùng libsoup 3, web view dùng WebKitGTK 6.0, còn âm thanh và video dùng các plug-in GStreamer. Trên các hệ thống có giới hạn user namespace của AppArmor, [WebKitGTK cần một profile bubblewrap](debugging.md#web-view-trên-linux).
 
 ## Tạo một ứng dụng
 
@@ -78,7 +78,7 @@ Skill của NSGo dạy các coding agent, như Claude Code, Codex và Cursor, c�
 bunx skills add nsgo-dev/nsgo
 ```
 
-Các agent tự đọc tài liệu sẽ bắt đầu từ <https://nsgo.dev/llms.txt>, nơi liệt kê mọi trang dưới dạng Markdown tại `https://nsgo.dev/docs/<page>.md`; <https://nsgo.dev/llms-full.txt> chứa tất cả các trang. Agent cũng có thể sử dụng ứng dụng đang chạy ([Chạy và gỡ lỗi](debugging.md#agents)).
+Các agent tự đọc tài liệu sẽ bắt đầu từ <https://nsgo.dev/llms.txt>, nơi liệt kê mọi trang dưới dạng Markdown tại `https://nsgo.dev/docs/<page>.md`; <https://nsgo.dev/llms-full.txt> chứa tất cả các trang. Agent cũng có thể sử dụng ứng dụng đang chạy ([Chạy và gỡ lỗi](debugging.md#agent-tự-động-hóa)).
 
 ## Tiếp theo
 

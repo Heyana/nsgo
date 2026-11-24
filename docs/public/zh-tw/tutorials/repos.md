@@ -187,6 +187,6 @@ go tool nsgo test
 
 ## 下一步
 
-- [平台服務](../services.md#networking)：深入了解網路連線、儲存空間與檔案。
+- [平台服務](../services.md#網路連線)：深入了解網路連線、儲存空間與檔案。
 - [清單與捲動](../lists.md)：下拉重新整理、對齊吸附與長清單。
 - [執行與除錯](../debugging.md)：使用 `-trace` 觀察每一次更新。

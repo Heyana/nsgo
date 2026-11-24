@@ -12,7 +12,7 @@ order: 10
 - Zur Ausführung auf einem iPhone eine Apple-ID in den Accounts von Xcode sowie ein als vertrauenswürdig eingestuftes iPhone mit aktiviertem Entwicklermodus.
 - Zur Ausführung unter Android `adb` aus den platform-tools des Android SDK.
 - Zur Ausführung unter Windows allein Go, das auch die Windows- und Web-Pakete baut.
-- Unter Linux GTK 4.14 oder neuer, Pango und Cairo. Netzwerkbilder verwenden libsoup 3, Web-Views verwenden WebKitGTK 6.0 und Audio sowie Video verwenden GStreamer-Plug-ins. Auf Systemen mit AppArmor-Einschränkungen für User-Namespaces [benötigt WebKitGTK ein bubblewrap-Profil](debugging.md#linux-web-views).
+- Unter Linux GTK 4.14 oder neuer, Pango und Cairo. Netzwerkbilder verwenden libsoup 3, Web-Views verwenden WebKitGTK 6.0 und Audio sowie Video verwenden GStreamer-Plug-ins. Auf Systemen mit AppArmor-Einschränkungen für User-Namespaces [benötigt WebKitGTK ein bubblewrap-Profil](debugging.md#webviews-unter-linux).
 
 ## Eine App erstellen
 

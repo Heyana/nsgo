@@ -23,7 +23,7 @@ package locales
 //go:generate go tool nsgo i18n
 ```
 
-執行 `go generate ./locales` 會為每則訊息產生對應函式，元件可傳入作用域呼叫：`locales.Clear(cx)` 便會以應用程式目前顯示的語言輸出該文字。請將產生的 `catalog_gen.go` 提交至版本庫，讓應用程式僅需 Go 工具鏈即可建置。為每個需要翻譯的語言新增對應檔案（例如 `zh-Hans.yaml`）；應用程式也可在自己的語系目錄中，以命名貴套件匯入路徑的鍵值提供其他語言翻譯，方式與 [NSGo 內建文字](../localization.md#nsgos-own-words)相同。
+執行 `go generate ./locales` 會為每則訊息產生對應函式，元件可傳入作用域呼叫：`locales.Clear(cx)` 便會以應用程式目前顯示的語言輸出該文字。請將產生的 `catalog_gen.go` 提交至版本庫，讓應用程式僅需 Go 工具鏈即可建置。為每個需要翻譯的語言新增對應檔案（例如 `zh-Hans.yaml`）；應用程式也可在自己的語系目錄中，以命名貴套件匯入路徑的鍵值提供其他語言翻譯，方式與 [NSGo 內建文字](../localization.md#nsgo-內建文字)相同。
 
 ## 測試
 
@@ -60,4 +60,4 @@ func init() {
 }
 ```
 
-之後透過 `import { Toggle } from "example.com/chips"` 即可將元件欄位作為 props 使用（[TSX 應用程式](../tsx.md#go-from-tsx)）。
+之後透過 `import { Toggle } from "example.com/chips"` 即可將元件欄位作為 props 使用（[TSX 應用程式](../tsx.md#在-tsx-中使用-go)）。

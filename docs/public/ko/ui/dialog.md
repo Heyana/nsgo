@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 `Role: core.AlertCancel`이 지정된 액션은 Escape 또는 뒤로 가기를 눌렀을 때 실행되며, 이어서 `OnOpenChange(false, base.ReasonCancel)`이 호출됩니다. `Default: true`는 데스크톱, 웹, Apple TV에서 알림창이 열릴 때 해당 액션에 키보드 포커스를 주고 Return 키로 선택할 수 있게 합니다. 액션을 누르면 `OnPress`가 실행된 뒤 `OnOpenChange(false, base.ReasonSelect)`가 호출됩니다. Return 키는 다른 액션이나 필드에 키보드 포커스가 없을 때 기본 액션을 실행하며, 포커스가 다른 액션으로 이동했다면 Return 키는 그 액션을 누르고, 알림창 위에 다른 다이얼로그가 열려 있으면 Return 키는 그 다이얼로그가 가져갑니다. 액션이 한 번 실행되면 `OnOpenChange`의 동작과 무관하게 알림창이 닫히며, `Open`이 false가 되었다가 다시 true가 되기 전까지는 다른 액션을 실행하지 않습니다. 여러 액션에 같은 표시가 있으면 첫 번째 액션이 우선합니다. 표시가 없으면 Escape는 액션을 실행하지 않고 창을 닫으며 Return 키에는 기본 액션이 없습니다. `Role: core.AlertDestructive`는 파괴적 액션임을 설명하며, 외관은 `Variant` 또는 `Color`로 선택합니다.
 
-시스템 자체 알림창이나 액션 시트를 사용하려면 `cx.ShowAlert`를 사용하세요([플랫폼 서비스](../services.md#alerts-and-the-clipboard)).
+시스템 자체 알림창이나 액션 시트를 사용하려면 `cx.ShowAlert`를 사용하세요([플랫폼 서비스](../services.md#알림-대화상자와-클립보드)).
 
 ## 동작
 

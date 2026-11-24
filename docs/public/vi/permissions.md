@@ -7,7 +7,7 @@ order: 49
 
 ## Kiểm tra và xin quyền
 
-Hệ thống giữ lại một số việc mà ứng dụng có thể làm để người dùng tự cấp: micrô, camera, danh bạ, lịch, lời nhắc, ảnh, Bluetooth, thư viện phương tiện, vị trí và thông báo trên điện thoại và máy Mac, chuyển động và vị trí ở chế độ nền trên điện thoại, và trên macOS còn có Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools và Automation đối với một ứng dụng khác ([vị trí và chuyển động](services.md#location-and-motion), [thông báo](notifications.md)). `core.Permissions()` liệt kê chúng dưới dạng các khóa `core.Permission`. `cx.PermissionStatus` trả lời ứng dụng có một quyền hay không mà không hỏi, còn `cx.RequestPermission` hỏi bằng lời nhắc của hệ thống ở nơi có lời nhắc và chưa hỏi lần nào. Hãy xin quyền khi người dùng làm một việc cần đến quyền đó. Face ID và Touch ID không nằm trong số này: `cx.BiometricAvailability` cho biết về chúng và `cx.AuthenticateBiometric` hỏi bằng lời nhắc riêng của chúng ([sinh trắc học](services.md#biometrics)).
+Hệ thống giữ lại một số việc mà ứng dụng có thể làm để người dùng tự cấp: micrô, camera, danh bạ, lịch, lời nhắc, ảnh, Bluetooth, thư viện phương tiện, vị trí và thông báo trên điện thoại và máy Mac, chuyển động và vị trí ở chế độ nền trên điện thoại, và trên macOS còn có Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools và Automation đối với một ứng dụng khác ([vị trí và chuyển động](services.md#vị-trí-và-chuyển-động), [thông báo](notifications.md)). `core.Permissions()` liệt kê chúng dưới dạng các khóa `core.Permission`. `cx.PermissionStatus` trả lời ứng dụng có một quyền hay không mà không hỏi, còn `cx.RequestPermission` hỏi bằng lời nhắc của hệ thống ở nơi có lời nhắc và chưa hỏi lần nào. Hãy xin quyền khi người dùng làm một việc cần đến quyền đó. Face ID và Touch ID không nằm trong số này: `cx.BiometricAvailability` cho biết về chúng và `cx.AuthenticateBiometric` hỏi bằng lời nhắc riêng của chúng ([sinh trắc học](services.md#sinh-trắc-học)).
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -91,7 +91,7 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 | Android | Micrô, camera, lịch, Bluetooth và thư viện phương tiện, ở nơi `android.permissions` khai báo chúng |
 | Apple Watch, mini program | Thông báo, vị trí và chuyển động thông qua các dịch vụ của chúng; phần còn lại do hệ thống giữ hiện là unknown |
 
-Quyền vị trí và chuyển động tuân theo [cảm biến của từng nền tảng](services.md#location-and-motion), và `PermissionNotifications` tuân theo [thông báo](notifications.md). Fitness dùng `PermissionActivityRecognition` (`ACTIVITY_RECOGNITION` trên Android, `NSMotionUsageDescription` trên Apple), bao gồm cả áp suất trên Apple; chuyển động thô trên Android vẫn tách riêng. Trên Safari di động, hãy xin `PermissionMotion` từ một trình xử lý lần nhấn.
+Quyền vị trí và chuyển động tuân theo [cảm biến của từng nền tảng](services.md#vị-trí-và-chuyển-động), và `PermissionNotifications` tuân theo [thông báo](notifications.md). Fitness dùng `PermissionActivityRecognition` (`ACTIVITY_RECOGNITION` trên Android, `NSMotionUsageDescription` trên Apple), bao gồm cả áp suất trên Apple; chuyển động thô trên Android vẫn tách riêng. Trên Safari di động, hãy xin `PermissionMotion` từ một trình xử lý lần nhấn.
 
 ## Kiểm thử
 

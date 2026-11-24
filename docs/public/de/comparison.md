@@ -37,7 +37,7 @@ Der Platz von NSGo unter den UI-Frameworks ergibt sich aus drei Entscheidungen: 
 - **Schneller Entwicklungszyklus.** Das Speichern einer Go-Datei baut die App neu und startet sie neu; eine TSX-Änderung aktualisiert die laufende App direkt an Ort und Stelle und behält ihren Zustand; Build-Fehler und Panics beim Rendern werden direkt über der App angezeigt ([Ausführen und Debuggen](debugging.md)).
 - **Ein einziger Testsatz für überall.** Tests finden und bedienen Steuerelemente anhand von Text oder Rolle genau wie Nutzerinnen und Nutzer – blitzschnell ohne Fenster oder unverändert in echten Fenstern auf jeder Zielplattform mit plattformeigener Eingabe und Screenshots ([Tests](testing.md)).
 - **Eingebaute Lokalisierung.** Texte der App und ihrer Komponenten liegen in Katalogen, und Pseudo-Locales spüren unübersetzte, abgeschnittene oder noch nicht für Rechts-nach-links vorbereitete Stellen auf ([Lokalisierung](localization.md)).
-- **Shader in Go.** `core.Shader` führt GPU-Shader aus, die in Go-Syntax oder WGSL geschrieben sind – auf jeder Plattform ([Canvas](canvas.md#shaders)).
+- **Shader in Go.** `core.Shader` führt GPU-Shader aus, die in Go-Syntax oder WGSL geschrieben sind – auf jeder Plattform ([Canvas](canvas.md#shader)).
 - **TSX bei Bedarf.** Bildschirme können auch in TSX mit Tailwind-Klassen geschrieben werden und laufen auf derselben Engine wie Go-Komponenten.
 
 ## Schwächen

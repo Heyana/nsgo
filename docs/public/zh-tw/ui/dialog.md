@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 具有 `Role: core.AlertCancel` 的動作會在按下 Escape 或返回鍵時執行，接著呼叫 `OnOpenChange(false, base.ReasonCancel)`。`Default: true` 會在桌面平台、網頁與 Apple TV 上開啟提示框時賦予該動作鍵盤焦點，並讓 Return 鍵選取它；點擊動作會先執行 `OnPress`，再呼叫 `OnOpenChange(false, base.ReasonSelect)`。當鍵盤焦點不在其他動作或欄位上時，Return 鍵會執行預設動作：若焦點已移至另一個動作，Return 鍵會觸發該動作；若提示框上方另有對話框，Return 鍵則會保留給該對話框。一旦某個動作執行後，無論 `OnOpenChange` 的實作為何，提示框都會關閉，且在 `Open` 變為 false 再變回 true 之前不會再執行其他動作。若多個動作帶有相同的標記，以第一個為準。若沒有任何標記，按下 Escape 會直接關閉而不執行任何動作，且 Return 鍵沒有預設動作。`Role: core.AlertDestructive` 用於描述破壞性動作的語意；外觀則由 `Variant` 或 `Color` 決定。
 
-若要顯示系統原生的提示框或動作表，請使用 `cx.ShowAlert`（[平台服務](../services.md#alerts-and-the-clipboard)）。
+若要顯示系統原生的提示框或動作表，請使用 `cx.ShowAlert`（[平台服務](../services.md#警告對話框與剪貼簿)）。
 
 ## 行為
 

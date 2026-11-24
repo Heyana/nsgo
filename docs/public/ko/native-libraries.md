@@ -35,7 +35,7 @@ libraries:
 - `name`: 설치될 파일 이름입니다. macOS에서는 `.dylib`, Windows에서는 `.dll`, Linux에서는 `.so` 또는 버전이 붙은 `.so.*`로 끝나야 합니다.
 - 이 패키지 디렉터리를 기준으로 한 상대 파일 경로인 `path` 또는 라이브러리 자체를 가리키는 HTTP(S) URL인 `url` 중 정확히 하나를 지정합니다. 아카이브 URL이 아니라 압축이 풀린 라이브러리를 게시하세요. URL에는 사용자 이름이나 비밀번호를 포함하지 마세요.
 - `sha256`: 원본 파일의 SHA-256 해시값으로, 두 소스 방식 모두에서 필수입니다. 예를 들어 macOS에서는 `shasum -a 256 lib/macos-arm64/libexample.dylib` 명령으로 출력할 수 있습니다.
-- `licenses`: 이 패키지 디렉터리를 기준으로 한 원본 라이선스 및 고지 파일의 비어 있지 않은 경로 목록입니다. 이 텍스트는 `THIRD_PARTY_NOTICES.txt`에 포함되어 배포되며, 릴리스 빌드에서 `core.ThirdPartyNotices()`를 통해 확인할 수 있습니다. 정확한 모듈 예외(exact module exception)를 포함한 앱의 기존 [라이선스 정책](building.md#license-notices)은 네이티브 라이선스에도 독립적으로 적용됩니다.
+- `licenses`: 이 패키지 디렉터리를 기준으로 한 원본 라이선스 및 고지 파일의 비어 있지 않은 경로 목록입니다. 이 텍스트는 `THIRD_PARTY_NOTICES.txt`에 포함되어 배포되며, 릴리스 빌드에서 `core.ThirdPartyNotices()`를 통해 확인할 수 있습니다. 정확한 모듈 예외(exact module exception)를 포함한 앱의 기존 [라이선스 정책](building.md#라이선스-고지)은 네이티브 라이선스에도 독립적으로 적용됩니다.
 
 로컬 경로와 심볼릭 링크는 선언하는 패키지 내부에 머물러야 합니다. NSGo는 알 수 없는 필드, 체크섬 불일치, 다른 운영체제 또는 아키텍처용 파일, 그리고 충돌하는 설치 파일 이름을 거부합니다. 두 패키지가 체크섬이 동일한 같은 이름의 파일을 공유할 수는 있습니다. 파일 크기는 1 GiB로 제한됩니다.
 

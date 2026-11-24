@@ -7,7 +7,7 @@ order: 49
 
 ## 확인 및 요청
 
-시스템은 앱이 수행할 수 있는 일부 기능을 사용자가 직접 허용하도록 보호합니다. 휴대폰과 Mac에서는 마이크, 카메라, 연락처, 캘린더, 미리 알림, 사진, Bluetooth, 미디어 보관함, 위치, 알림이 여기에 해당하고, 휴대폰에서는 동작 및 백그라운드 위치가 포함되며, macOS에서는 손쉬운 사용(Accessibility), 화면 기록(Screen Recording), 입력 모니터링(Input Monitoring), 전체 디스크 접근 권한(Full Disk Access), 앱 관리(App Management), 개발자 도구(Developer Tools), 다른 앱 자동화(Automation)도 포함됩니다([위치 및 동작](services.md#location-and-motion), [알림](notifications.md)). `core.Permissions()`는 이들을 `core.Permission` 키로 나열합니다. `cx.PermissionStatus`는 묻지 않고 앱에 해당 권한이 있는지 응답하며, `cx.RequestPermission`은 시스템 프롬프트가 있고 아직 묻지 않은 경우 시스템 프롬프트로 권한을 요청합니다. 사용자가 해당 권한이 필요한 작업을 수행할 때 요청하세요. Face ID와 Touch ID는 이 목록에 포함되지 않습니다. 이들의 사용 가능 여부는 `cx.BiometricAvailability`로 확인하고, 자체 프롬프트로 인증을 요청할 때는 `cx.AuthenticateBiometric`을 사용합니다([생체 인증](services.md#biometrics)).
+시스템은 앱이 수행할 수 있는 일부 기능을 사용자가 직접 허용하도록 보호합니다. 휴대폰과 Mac에서는 마이크, 카메라, 연락처, 캘린더, 미리 알림, 사진, Bluetooth, 미디어 보관함, 위치, 알림이 여기에 해당하고, 휴대폰에서는 동작 및 백그라운드 위치가 포함되며, macOS에서는 손쉬운 사용(Accessibility), 화면 기록(Screen Recording), 입력 모니터링(Input Monitoring), 전체 디스크 접근 권한(Full Disk Access), 앱 관리(App Management), 개발자 도구(Developer Tools), 다른 앱 자동화(Automation)도 포함됩니다([위치 및 동작](services.md#위치와-모션), [알림](notifications.md)). `core.Permissions()`는 이들을 `core.Permission` 키로 나열합니다. `cx.PermissionStatus`는 묻지 않고 앱에 해당 권한이 있는지 응답하며, `cx.RequestPermission`은 시스템 프롬프트가 있고 아직 묻지 않은 경우 시스템 프롬프트로 권한을 요청합니다. 사용자가 해당 권한이 필요한 작업을 수행할 때 요청하세요. Face ID와 Touch ID는 이 목록에 포함되지 않습니다. 이들의 사용 가능 여부는 `cx.BiometricAvailability`로 확인하고, 자체 프롬프트로 인증을 요청할 때는 `cx.AuthenticateBiometric`을 사용합니다([생체 인증](services.md#생체-인증)).
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -91,7 +91,7 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 | Android | `android.permissions`에 선언된 경우 마이크, 카메라, 캘린더, Bluetooth, 미디어 보관함 |
 | Apple Watch, 미니 프로그램 | 각 서비스를 통한 알림, 위치, 동작; 시스템이 보호하는 나머지 항목은 현재 unknown |
 
-위치 및 동작 권한은 각 [플랫폼의 센서](services.md#location-and-motion)를 따르며, `PermissionNotifications`는 [알림](notifications.md)을 따릅니다. 피트니스는 Apple 기압 데이터를 포함해 `PermissionActivityRecognition`(Android에서는 `ACTIVITY_RECOGNITION`, Apple에서는 `NSMotionUsageDescription`)을 사용하며, Android의 원시 동작 데이터는 이와 별개로 유지됩니다. 모바일 Safari에서는 누르기 핸들러 안에서 `PermissionMotion`을 요청하세요.
+위치 및 동작 권한은 각 [플랫폼의 센서](services.md#위치와-모션)를 따르며, `PermissionNotifications`는 [알림](notifications.md)을 따릅니다. 피트니스는 Apple 기압 데이터를 포함해 `PermissionActivityRecognition`(Android에서는 `ACTIVITY_RECOGNITION`, Apple에서는 `NSMotionUsageDescription`)을 사용하며, Android의 원시 동작 데이터는 이와 별개로 유지됩니다. 모바일 Safari에서는 누르기 핸들러 안에서 `PermissionMotion`을 요청하세요.
 
 ## 테스트
 

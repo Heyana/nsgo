@@ -22,7 +22,7 @@ go tool nsgo check   # vet every package
 go tool nsgo test    # every package's tests
 ```
 
-Thêm bài kiểm thử cho những gì bạn thay đổi: dùng `nsgotest` cho những gì người dùng nhìn thấy, và bài kiểm thử riêng của từng gói cho phần còn lại. Chạy gallery trên các nền tảng bạn đã chỉnh sửa ([Thiết lập môi trường phát triển](../contributing.md#the-gallery)).
+Thêm bài kiểm thử cho những gì bạn thay đổi: dùng `nsgotest` cho những gì người dùng nhìn thấy, và bài kiểm thử riêng của từng gói cho phần còn lại. Chạy gallery trên các nền tảng bạn đã chỉnh sửa ([Thiết lập môi trường phát triển](../contributing.md#ứng-dụng-gallery)).
 
 Định dạng các tệp Go bằng `gofmt` từ đúng phiên bản Go trong `go.mod`; `gofmt -l .` liệt kê các tệp cần định dạng lại. CI kiểm tra mọi tệp Go đang được theo dõi và sẽ báo lỗi kèm tên các tệp chưa đúng định dạng.
 

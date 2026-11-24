@@ -18,9 +18,9 @@ widgets:
 # apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
-Auf Apple-Plattformen zeichnet es eine Widget-Erweiterung, die `build` und `dev` mit Xcodes Swift-Compiler kompilieren ([Bauen und ausliefern](building.md#widgets-and-live-activities)). Unter Android zeichnet die vorgebaute Java-Laufzeit dieselbe Zeitachse als App-Widgets. Beide zeigen den veröffentlichten Inhalt weiter an, wenn die App beendet wird.
+Auf Apple-Plattformen zeichnet es eine Widget-Erweiterung, die `build` und `dev` mit Xcodes Swift-Compiler kompilieren ([Bauen und ausliefern](building.md#widgets-und-live-aktivitäten)). Unter Android zeichnet die vorgebaute Java-Laufzeit dieselbe Zeitachse als App-Widgets. Beide zeigen den veröffentlichten Inhalt weiter an, wenn die App beendet wird.
 
-Für einen Mac-App-Store-Build in der Sandbox setzen Sie `apple.app_group` und liefern macOS-Provisioning-Profile über `sign.macos_profile` und `sign.widgets_profile`. Sowohl die App als auch `<id>.widgets` müssen zum selben Team gehören und für diese Gruppe berechtigt sein. Zeitachsen und Bilder liegen in ihrem gemeinsamen Container; direkte und Entwicklungs-Builds für macOS behalten ihren bisherigen Ort im Home-Verzeichnis. [Store-Signierung](building.md#store-packages) beschreibt die Build-Optionen.
+Für einen Mac-App-Store-Build in der Sandbox setzen Sie `apple.app_group` und liefern macOS-Provisioning-Profile über `sign.macos_profile` und `sign.widgets_profile`. Sowohl die App als auch `<id>.widgets` müssen zum selben Team gehören und für diese Gruppe berechtigt sein. Zeitachsen und Bilder liegen in ihrem gemeinsamen Container; direkte und Entwicklungs-Builds für macOS behalten ihren bisherigen Ort im Home-Verzeichnis. [Store-Signierung](building.md#store-pakete) beschreibt die Build-Optionen.
 
 `name` und `description` können Nachrichten in den Katalogen der App benennen. In diesem Fall verwenden die Widget-Galerie und der Platzhalter die Sprache der Nutzerin bzw. des Nutzers und greifen auf den Text des Quellkatalogs zurück, wenn eine Übersetzung fehlt. Ein Wert, der kein Katalogschlüssel ist, wird wörtlich angezeigt.
 

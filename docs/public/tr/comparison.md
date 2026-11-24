@@ -31,13 +31,13 @@ NSGo'nun UI çerçeveleri arasındaki yeri üç tercihe dayanır: uygulamalar Go
 - **Yalnızca Go.** Motor, yerleşim ve arka uçlar Go'dur; Go uygulamaları için C, cgo ve JavaScript motoru yoktur.
 - **Tek bir Mac'ten her platform.** Go ve Xcode kurulu bir Mac her hedefi çapraz derler: NDK, Android SDK, JDK, GTK veya Windows araç zinciri gerekmez.
 - **Tek komuttan her sürüm dosyası.** `nsgo build`; macOS için imzalanmış ve noter onaylı bir disk görüntüsü, imzalı bir Windows yükleyicisi, deb ve Arch paketleri ile bir AppImage, Mac App Store, Microsoft Store, Google Play ve Flathub paketleri ve GitHub sürümlerinden kurulum yapan betikler üretir ([derleme](building.md)).
-- **Her platformun kendi güncellemeleri.** macOS'ta Sparkle, Windows'ta WinSparkle bir sonraki sürümü indirir, doğrular ve kurar; Linux ve Android'de uygulama yeni sürümü bulup sürüm sayfasını açar; iOS'ta ise App Store günceller. Bir mağazadan kurulan uygulama o mağazaya bırakılır ([güncellemeler](building.md#updates)).
+- **Her platformun kendi güncellemeleri.** macOS'ta Sparkle, Windows'ta WinSparkle bir sonraki sürümü indirir, doğrular ve kurar; Linux ve Android'de uygulama yeni sürümü bulup sürüm sayfasını açar; iOS'ta ise App Store günceller. Bir mağazadan kurulan uygulama o mağazaya bırakılır ([güncellemeler](building.md#güncellemeler)).
 - **Her platform.** Telefonlar, tabletler, TV'ler, saatler, masaüstleri ve web; iOS App Clips, iPhone ve Mac widget'ları ve deneysel olarak WeChat, QQ, Alipay ve Douyin mini programlarıyla birlikte tek bir motoru ve tek bir API'yi paylaşır.
 - **Gömme.** Bir NSGo uygulaması mevcut bir iOS, Android, Go masaüstü veya web uygulamasının içinde bir görünüm olarak yer alabilir ve uygulamanın ekran ekran taşınmasını sağlar ([gömme](embedding.md)).
 - **Hızlı geliştirme döngüsü.** Bir Go dosyasını kaydetmek uygulamayı yeniden derler ve başlatır; bir TSX değişikliği çalışan uygulamayı yerinde günceller ve durumunu korur; derleme hataları ve işleme sırasındaki panikler uygulamanın üzerinde gösterilir ([çalıştırma ve hata ayıklama](debugging.md)).
 - **Her yerde tek bir test kümesi.** Testler denetimleri kullanıcılar gibi metin veya role göre bulup kullanır; penceresiz olarak hızla çalışabileceği gibi, her hedefte gerçek pencerelerde platformun kendi girdisiyle değişiklik yapmadan çalışıp ekran görüntüsü de alabilir ([test etme](testing.md)).
 - **Yerleşik yerelleştirme.** Bir uygulamanın ve bileşenlerinin sözcükleri kataloglarda tutulur; sahte yerel ayarlar çevrilmemiş, kesilmiş veya sağdan sola yazıma hazır olmayan yerleri bulur ([yerelleştirme](localization.md)).
-- **Go ile gölgelendiriciler.** `core.Shader` her platformda Go sözdizimiyle veya WGSL ile yazılmış GPU gölgelendiricilerini çalıştırır ([tuval](canvas.md#shaders)).
+- **Go ile gölgelendiriciler.** `core.Shader` her platformda Go sözdizimiyle veya WGSL ile yazılmış GPU gölgelendiricilerini çalıştırır ([tuval](canvas.md#gölgelendiriciler-shaders)).
 - **İstendiğinde TSX.** Ekranlar, Go bileşenleriyle aynı motor üzerinde Tailwind sınıflarıyla TSX olarak yazılabilir.
 
 ## Zayıf yönler
@@ -50,7 +50,7 @@ NSGo'nun UI çerçeveleri arasındaki yeri üç tercihe dayanır: uygulamalar Go
 
 ## NSH
 
-NSGo, NSH'nin tasarımını taşır: mimari, arka uçlar, API adları ve `base` paketindeki stilsiz bileşenler NSH'ye aittir ([durum](index.md#status)).
+NSGo, NSH'nin tasarımını taşır: mimari, arka uçlar, API adları ve `base` paketindeki stilsiz bileşenler NSH'ye aittir ([durum](index.md#durum)).
 
 - **NSGo'yu seçin:** Uygulamaları Rust veya TSX yerine Go ile yazmak, Go ve Xcode kurulu bir Mac'ten her hedefi derlemek ya da NSGo'nun eklediklerinden yararlanmak için: Go ile yazılmış GPU gölgelendiricileri, vektör simgeler, bir terminal, kendi pencerelerini, panellerini ve tepsi simgelerini açabilen uygulamalar ve `ui` içindeki stilli bileşenler.
 - **NSH'yi seçin:** Daha olgun bir proje, bayt kodu ve yığın sınırlarıyla QuickJS tarafından çalıştırılan TSX, GPUI arka ucu veya 32 bit Android desteği için.

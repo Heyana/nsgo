@@ -70,5 +70,5 @@ ui.List{
 
 - [목록과 스크롤](../lists.md): 고정 헤더와 추가 로딩을 포함한 전체 가이드.
 - [Scroll](scroll.md): 기본 스크롤 뷰.
-- [DataTable](../lists.md#tables): 수많은 행과 열로 구성된 테이블.
+- [DataTable](../lists.md#테이블): 수많은 행과 열로 구성된 테이블.
 - 갤러리의 List, Table, DataTable 페이지.

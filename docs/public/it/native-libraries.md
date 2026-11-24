@@ -35,7 +35,7 @@ Ogni libreria ha:
 - `name`: il nome del file installato, che termina in `.dylib` su macOS, `.dll` su Windows, oppure `.so` o un `.so.*` con versione su Linux.
 - Esattamente uno tra `path`, un file relativo a questa directory del pacchetto, e `url`, un URL HTTP(S) della libreria stessa. Pubblica le librerie già estratte anziché URL di archivi. Gli URL non contengono nomi utente e password incorporati.
 - `sha256`: lo SHA-256 del file originale, obbligatorio per entrambe le sorgenti. Per esempio, `shasum -a 256 lib/macos-arm64/libexample.dylib` lo stampa su macOS.
-- `licenses`: percorsi non vuoti ai file originali di licenza e di avviso, relativi a questa directory del pacchetto. Questi testi vengono distribuiti in `THIRD_PARTY_NOTICES.txt` e arrivano a `core.ThirdPartyNotices()` nelle build di release. La [policy sulle licenze](building.md#license-notices) già esistente dell'app, comprese le eccezioni per moduli specifici, si applica in modo indipendente alle licenze native.
+- `licenses`: percorsi non vuoti ai file originali di licenza e di avviso, relativi a questa directory del pacchetto. Questi testi vengono distribuiti in `THIRD_PARTY_NOTICES.txt` e arrivano a `core.ThirdPartyNotices()` nelle build di release. La [policy sulle licenze](building.md#note-sulle-licenze) già esistente dell'app, comprese le eccezioni per moduli specifici, si applica in modo indipendente alle licenze native.
 
 I percorsi locali e i link simbolici restano all'interno del pacchetto che li dichiara. NSGo rifiuta campi sconosciuti, checksum non corrispondenti, file per un altro sistema operativo o un'altra architettura e nomi di installazione in conflitto. Due pacchetti possono condividere un file con lo stesso nome e lo stesso checksum. Un file è limitato a 1 GiB.
 

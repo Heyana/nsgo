@@ -22,7 +22,7 @@ go tool nsgo check   # vet every package
 go tool nsgo test    # every package's tests
 ```
 
-변경한 내용에 대한 테스트를 추가하세요. 사용자에게 보이는 부분은 `nsgotest`로, 나머지는 각 패키지의 자체 테스트로 작성합니다. 수정한 플랫폼에서 갤러리도 실행해 확인하세요([개발 환경 설정](../contributing.md#the-gallery)).
+변경한 내용에 대한 테스트를 추가하세요. 사용자에게 보이는 부분은 `nsgotest`로, 나머지는 각 패키지의 자체 테스트로 작성합니다. 수정한 플랫폼에서 갤러리도 실행해 확인하세요([개발 환경 설정](../contributing.md#갤러리)).
 
 Go 파일은 `go.mod`에 지정된 Go 버전의 `gofmt`로 포맷하세요. `gofmt -l .`로 포맷이 필요한 파일 목록을 확인할 수 있습니다. CI는 추적되는 모든 Go 파일을 검사하며 포맷되지 않은 파일이 있으면 파일 이름과 함께 실패합니다.
 

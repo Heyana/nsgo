@@ -18,9 +18,9 @@ widgets:
 # apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
-在 Apple 平台上，小工具由擴充功能負責繪製，並由 `build` 與 `dev` 透過 Xcode 的 Swift 編譯器進行編譯（[建置與發佈](building.md#widgets-and-live-activities)）。在 Android 上，預先建置的 Java 執行階段會將相同的時間軸繪製為 App Widgets。兩者在應用程式停止後仍會繼續顯示已發佈的內容。
+在 Apple 平台上，小工具由擴充功能負責繪製，並由 `build` 與 `dev` 透過 Xcode 的 Swift 編譯器進行編譯（[建置與發佈](building.md#小工具與即時動態)）。在 Android 上，預先建置的 Java 執行階段會將相同的時間軸繪製為 App Widgets。兩者在應用程式停止後仍會繼續顯示已發佈的內容。
 
-針對沙盒化的 Mac App Store 建置，請設定 `apple.app_group`，並透過 `sign.macos_profile` 與 `sign.widgets_profile` 提供 macOS 的佈建描述檔（provisioning profile）。主應用程式與 `<id>.widgets` 皆須屬於同一團隊，並具備該群組的授權（entitlement）。時間軸與圖片會存放在該共用容器中；直接發佈與開發用的 macOS 建置則維持原有的家目錄位置。[商店簽署](building.md#store-packages)說明了相關建置選項。
+針對沙盒化的 Mac App Store 建置，請設定 `apple.app_group`，並透過 `sign.macos_profile` 與 `sign.widgets_profile` 提供 macOS 的佈建描述檔（provisioning profile）。主應用程式與 `<id>.widgets` 皆須屬於同一團隊，並具備該群組的授權（entitlement）。時間軸與圖片會存放在該共用容器中；直接發佈與開發用的 macOS 建置則維持原有的家目錄位置。[商店簽署](building.md#商店封裝檔)說明了相關建置選項。
 
 `name` 與 `description` 可以指定應用程式語系目錄（catalog）中的訊息鍵值。如此設定時，小工具庫與預覽佔位畫面會使用使用者的語言，並在缺少翻譯時退回使用來源目錄的文字。若值不是目錄鍵值，則會按原樣顯示。
 

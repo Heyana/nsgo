@@ -18,7 +18,7 @@ appName:
 
 Sebuah pesan berupa string, atau `message` dengan `description` dan `placeholders` untuk penerjemah.
 
-Paket mengimpor `locales/`. `dev`, `build`, dan `test` memeriksa katalog dan menulis satu fungsi Go per pesan di sampingnya, seperti `locales.Greeting(cx, "Ada")`, yang mengucapkannya dalam bahasa yang ditampilkan aplikasi dan mengikutinya saat bahasa berubah; `go tool nsgo i18n` hanya menulis fungsi-fungsinya saja. Pesan memformat angka dan tanggal (`{d, date, medium}`), dan `appName` menamai aplikasi dalam setiap bahasa di paketnya, sebagaimana pesan dengan kunci `apple.info`, seperti `NSCameraUsageDescription`, menerjemahkan entri Info.plist tersebut ([izin](permissions.md#usage-descriptions)).
+Paket mengimpor `locales/`. `dev`, `build`, dan `test` memeriksa katalog dan menulis satu fungsi Go per pesan di sampingnya, seperti `locales.Greeting(cx, "Ada")`, yang mengucapkannya dalam bahasa yang ditampilkan aplikasi dan mengikutinya saat bahasa berubah; `go tool nsgo i18n` hanya menulis fungsi-fungsinya saja. Pesan memformat angka dan tanggal (`{d, date, medium}`), dan `appName` menamai aplikasi dalam setiap bahasa di paketnya, sebagaimana pesan dengan kunci `apple.info`, seperti `NSCameraUsageDescription`, menerjemahkan entri Info.plist tersebut ([izin](permissions.md#deskripsi-penggunaan)).
 
 ## Bahasa
 

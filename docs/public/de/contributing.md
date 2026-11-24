@@ -7,7 +7,7 @@ order: 80
 
 ## Voraussetzungen
 
-macOS mit Xcode und Go 1.27.3 oder neuer baut jede Zielplattform für arm64, einschließlich der Android-APK. Für die Ausführung auf Geräten gilt das unter [Einrichtung](getting-started.md#requirements) Aufgeführte, und für das Ziel `android_x64` des x86_64-Android-Emulators wird ein Android NDK benötigt, da Go `android/amd64` nur mit cgo linkt. Setup- und Deinstallationsprogramme für Windows bauen allein mit Go.
+macOS mit Xcode und Go 1.27.3 oder neuer baut jede Zielplattform für arm64, einschließlich der Android-APK. Für die Ausführung auf Geräten gilt das unter [Einrichtung](getting-started.md#voraussetzungen) Aufgeführte, und für das Ziel `android_x64` des x86_64-Android-Emulators wird ein Android NDK benötigt, da Go `android/amd64` nur mit cgo linkt. Setup- und Deinstallationsprogramme für Windows bauen allein mit Go.
 
 ```sh
 git clone https://github.com/nsgo-dev/nsgo.git

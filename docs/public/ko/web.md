@@ -45,4 +45,4 @@ const { mount } = await import(new URL(config.loader, url).href);
 await mount(null, url.href, { config });
 ```
 
-CORS를 통해 페이지의 출처가 CDN의 파일을 가져올 수 있도록 허용하고, WebAssembly 파일은 `application/wasm`으로 제공하세요. 앱이 사용하는 모든 딥 라우트(deep route)에 대해서는 앱 진입점 HTML을 제공해야 합니다. 특정 요소 안에 마운트하는 방법은 [임베딩](embedding.md#web)에서 다룹니다.
+CORS를 통해 페이지의 출처가 CDN의 파일을 가져올 수 있도록 허용하고, WebAssembly 파일은 `application/wasm`으로 제공하세요. 앱이 사용하는 모든 딥 라우트(deep route)에 대해서는 앱 진입점 HTML을 제공해야 합니다. 특정 요소 안에 마운트하는 방법은 [임베딩](embedding.md#웹)에서 다룹니다.

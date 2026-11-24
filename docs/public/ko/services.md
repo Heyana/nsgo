@@ -60,7 +60,7 @@ cx.Share(core.ShareOptions{
 }, func(shown bool, err error) {})
 ```
 
-`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })`는 [`android.share_types`](building.md#incoming-shares-on-android) 또는 [`apple.share_types`](building.md#incoming-shares-on-ios)에 대한 텍스트와 파일을 받습니다. Android 공유는 앱을 시작할 수 있으며, iOS는 앱이 활성화되거나 사용자가 다음에 앱을 열 때까지 공유를 App Group에 대기시킵니다. 대기 중인 공유는 첫 번째 핸들러를 기다립니다. iOS는 콜백이 반환될 때까지 수신함 배치를 유지하므로, 프로세스가 종료되더라도 최소 한 번은 전달됩니다. 텍스트는 `Text`로 도착하고, 파일은 `Path`, `Name`, `MIME`을 가진 읽기 가능한 캐시 사본으로 도착합니다. 파일이 캐시보다 오래 남아야 한다면 영구 저장소로 옮기거나 복사하세요.
+`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })`는 [`android.share_types`](building.md#android에서-공유-받기) 또는 [`apple.share_types`](building.md#ios에서-공유-받기)에 대한 텍스트와 파일을 받습니다. Android 공유는 앱을 시작할 수 있으며, iOS는 앱이 활성화되거나 사용자가 다음에 앱을 열 때까지 공유를 App Group에 대기시킵니다. 대기 중인 공유는 첫 번째 핸들러를 기다립니다. iOS는 콜백이 반환될 때까지 수신함 배치를 유지하므로, 프로세스가 종료되더라도 최소 한 번은 전달됩니다. 텍스트는 `Text`로 도착하고, 파일은 `Path`, `Name`, `MIME`을 가진 읽기 가능한 캐시 사본으로 도착합니다. 파일이 캐시보다 오래 남아야 한다면 영구 저장소로 옮기거나 복사하세요.
 
 `desktop.LookUp`은 macOS에서 세 손가락 탭을 했을 때처럼 텍스트에 대한 시스템 사전 패널을 뷰의 특정 영역 위에 표시합니다. 선택 영역의 텍스트와 영역을 그 `Selectable` 뷰의 `Ref`와 함께 전달합니다. `desktop.CanLookUp`은 macOS의 창 안에서 이것이 가능한지 알려 줍니다. Windows, Linux, 웹에는 그런 패널이 없습니다. 테스트에서는 `nsgotest.Environment`가 `CanLookUp`을 설정한 경우 `nsgotest.App.LookUps`가 표시된 패널을 나열합니다.
 
@@ -138,7 +138,7 @@ macOS, Windows, Linux, iOS에서 저장 대화상자를 특정 위치에서 열�
 
 ## 저장소
 
-`cx.Storage()`는 앱의 키-값 저장소로, 기기에 보관되며 앱의 모든 그래프가 공유합니다. 읽기는 동기적이며, 계산(computation) 안에서 읽으면 그 계산이 변경 사항을 구독합니다. `SetItem`은 할당량(`core.StorageQuota`, 기본값 5 MiB)을 넘으면 `core.StorageFullError`를 반환합니다. 저장소는 사용자의 어떤 프로그램이든 읽을 수 있는 일반 파일이므로, 토큰과 비밀번호는 대신 [비밀 정보](#secrets)에 보관하세요.
+`cx.Storage()`는 앱의 키-값 저장소로, 기기에 보관되며 앱의 모든 그래프가 공유합니다. 읽기는 동기적이며, 계산(computation) 안에서 읽으면 그 계산이 변경 사항을 구독합니다. `SetItem`은 할당량(`core.StorageQuota`, 기본값 5 MiB)을 넘으면 `core.StorageFullError`를 반환합니다. 저장소는 사용자의 어떤 프로그램이든 읽을 수 있는 일반 파일이므로, 토큰과 비밀번호는 대신 [비밀 정보](#비밀-정보)에 보관하세요.
 
 `cx.Store()`는 기반 저장소를 반환합니다. 자체 고루틴에서 플러그인을 실행하는 경우처럼 `core.RootOptions.Storage`로 다른 루트를 만드는 호스트를 위한 것으로, 이렇게 하면 두 루트가 앱의 항목과 기기에 보관된 내용을 공유합니다. 이는 저장소 전체이며, `cx.ProvideStorage`가 앱이 작성하지 않은 코드에 제공하는 파티션이 아닙니다.
 
@@ -154,7 +154,7 @@ store.SetItem("tab", "library")
 
 `store.Keys()`는 키를 나열하고, `RemoveItem`은 하나를 삭제하며, `Clear`는 저장소를 비웁니다. `cx.DataDir()`와 `cx.CacheDir()`는 키-값 저장소에 담기에는 너무 큰 파일을 위한 앱의 폴더를 제공합니다. `cx.LogsDir()`는 로그 파일을 위한 플랫폼의 디렉터리를 제공하고, `Scope.ProvideStorage`는 하위 트리에 자체 파티션을 제공합니다.
 
-iOS App Clip과 그 전체 앱은 `app_clip`과 명시적인 `apple.app_group`이 구성되어 있으면 이 데이터 및 저장소 위치를 공유하며, 캐시는 분리된 상태로 유지됩니다. 그룹을 활성화해도 기존 샌드박스 데이터가 이전되지는 않습니다. 구성과 서명은 [App Clip 저장소](building.md#app-clips)에서 다룹니다.
+iOS App Clip과 그 전체 앱은 `app_clip`과 명시적인 `apple.app_group`이 구성되어 있으면 이 데이터 및 저장소 위치를 공유하며, 캐시는 분리된 상태로 유지됩니다. 그룹을 활성화해도 기존 샌드박스 데이터가 이전되지는 않습니다. 구성과 서명은 [App Clip 저장소](building.md#app-clip)에서 다룹니다.
 
 HarmonyOS에서는 `os.ReadFile`, `os.WriteFile`, `os.Rename` 같은 Go 파일 작업이 이 디렉터리들과 `os.TempDir()` 아래에서 동작합니다. 상대 경로는 files 디렉터리에서 시작합니다. 권고(advisory) 파일 잠금과 심볼릭 링크는 사용할 수 없습니다.
 

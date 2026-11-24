@@ -35,7 +35,7 @@ Setiap pustaka memiliki:
 - `name`: nama file terpasangnya, berakhiran `.dylib` di macOS, `.dll` di Windows, atau `.so` maupun `.so.*` berversi di Linux.
 - Tepat satu dari `path`, sebuah file relatif terhadap direktori paket ini, atau `url`, sebuah URL HTTP(S) untuk pustaka itu sendiri. Terbitkan pustaka yang sudah diekstrak, bukan URL arsip. URL tidak boleh menyematkan nama pengguna dan kata sandi.
 - `sha256`: SHA-256 dari file asli, wajib untuk kedua sumber. Misalnya, `shasum -a 256 lib/macos-arm64/libexample.dylib` mencetaknya di macOS.
-- `licenses`: path yang tidak kosong ke file lisensi dan notice asli, relatif terhadap direktori paket ini. Teks-teks ini dikirim dalam `THIRD_PARTY_NOTICES.txt` dan mencapai `core.ThirdPartyNotices()` pada build rilis. [Kebijakan lisensi](building.md#license-notices) aplikasi yang sudah ada, termasuk pengecualian modul yang persis, berlaku secara terpisah untuk lisensi native.
+- `licenses`: path yang tidak kosong ke file lisensi dan notice asli, relatif terhadap direktori paket ini. Teks-teks ini dikirim dalam `THIRD_PARTY_NOTICES.txt` dan mencapai `core.ThirdPartyNotices()` pada build rilis. [Kebijakan lisensi](building.md#pemberitahuan-lisensi) aplikasi yang sudah ada, termasuk pengecualian modul yang persis, berlaku secara terpisah untuk lisensi native.
 
 Path lokal dan tautan simbolik tetap berada di dalam paket yang mendeklarasikannya. NSGo menolak field yang tidak dikenal, ketidakcocokan checksum, file untuk sistem operasi atau arsitektur lain, dan nama terpasang yang bertentangan. Dua paket dapat berbagi file bernama identik dengan checksum yang sama. Sebuah file dibatasi hingga 1 GiB.
 

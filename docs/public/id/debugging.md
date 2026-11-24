@@ -124,7 +124,7 @@ go tool nsgo dev -devtools
 - **Profiler**: waktu setiap commit, dipecah menjadi kode Anda sebelumnya, commit beserta tata letaknya, dan penerapannya di thread utama platform. Profiler juga menampilkan baris kode yang penulisannya menyebabkan commit tersebut, dan terbuka pada komputasi yang dijalankannya, dari yang paling lama terlebih dahulu. Daftar kedua menyebutkan komputasi yang paling sering berjalan dalam satu detik terakhir, berdasarkan baris yang membuatnya. Runtime Android menerapkan batch di kode Java-nya sendiri, sehingga commit Android tidak memiliki waktu platform.
 - **Recorder**: apa yang Anda tekan, ketik, hapus, dan gulir di aplikasi, ditulis sebagai file pengujian `nsgotest` untuk disalin ke file `_test.go`. Di Elements, **Assert shown** dan **Assert text** menambahkan pemeriksaan untuk view yang dipilih. Pemeriksaan teks menyimpan teks dalam bahasa yang ditampilkan aplikasi, jadi rekam dengan bahasa tempat pengujian Anda berjalan.
 - **Highlight updates** memberi garis luar pada setiap view yang diubah oleh commit, seperti `-highlight`.
-- **Layout** menampilkan dan menyembunyikan [audit tata letak](#layout) di perangkat, seperti yang dimulai oleh `-layout`.
+- **Layout** menampilkan dan menyembunyikan [audit tata letak](#tata-letak) di perangkat, seperti yang dimulai oleh `-layout`.
 
 State, komputasi, dan penulisan pada aplikasi TSX dinamai berdasarkan baris TSX-nya, melalui source map bundel, dan tertaut ke file di aplikasi Anda.
 
@@ -224,7 +224,7 @@ go tool nsgo dev -target web -automation
 claude mcp add nsgo -- go tool nsgo mcp
 ```
 
-Klien lain menggunakan perintah yang sama, `go` dengan argumen `tool nsgo mcp`, yang dijalankan di direktori aplikasi. View dinamai dengan selector [pengujian](testing.md#a-test), atau dengan referensi `view:` yang dicetak snapshot, yang menjadi usang saat penyimpanan file memulai ulang aplikasi.
+Klien lain menggunakan perintah yang sama, `go` dengan argumen `tool nsgo mcp`, yang dijalankan di direktori aplikasi. View dinamai dengan selector [pengujian](testing.md#sebuah-pengujian), atau dengan referensi `view:` yang dicetak snapshot, yang menjadi usang saat penyimpanan file memulai ulang aplikasi.
 
 Agen bertindak pada data nyata aplikasi, sebagaimana `dev` menjalankannya. Hanya build `dev -automation` yang menyertakannya, dan hanya alat di mesin ini yang memegang token di `.nsgo/automation.yaml`, yang hanya dapat Anda baca, yang dapat menjangkaunya.
 

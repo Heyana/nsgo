@@ -35,7 +35,7 @@ libraries:
 - `name`：安裝後的檔案名稱，在 macOS 上以 `.dylib` 結尾，在 Windows 上以 `.dll` 結尾，在 Linux 上則以 `.so` 或含版本號的 `.so.*` 結尾。
 - `path` 或 `url` 兩者擇一設定：`path` 為相對於此套件目錄的檔案路徑，`url` 則為函式庫檔案本身的 HTTP(S) 網址。請發佈解壓縮後的函式庫檔案，而非壓縮封存檔網址。網址中不得內嵌使用者名稱與密碼。
 - `sha256`：原始檔案的 SHA-256 雜湊值，無論採用哪一種來源皆為必填。例如在 macOS 上可透過 `shasum -a 256 lib/macos-arm64/libexample.dylib` 印出此值。
-- `licenses`：指向原始授權條款與聲明檔案的非空路徑清單，相對於此套件目錄。這些文字內容會隨附於 `THIRD_PARTY_NOTICES.txt`，並在發佈建置中透過 `core.ThirdPartyNotices()` 取得。應用程式現有的[授權政策](building.md#license-notices)（包含精確模組例外規則）亦會獨立套用至原生授權條款。
+- `licenses`：指向原始授權條款與聲明檔案的非空路徑清單，相對於此套件目錄。這些文字內容會隨附於 `THIRD_PARTY_NOTICES.txt`，並在發佈建置中透過 `core.ThirdPartyNotices()` 取得。應用程式現有的[授權政策](building.md#授權聲明)（包含精確模組例外規則）亦會獨立套用至原生授權條款。
 
 本機路徑與符號連結必須位於進行宣告的套件目錄之內。NSGo 會拒絕未知欄位、檢查碼不符、屬於其他作業系統或架構的檔案，以及互相衝突的安裝檔名。兩個套件可以共用名稱與檢查碼皆相同的檔案。單一檔案大小上限為 1 GiB。
 

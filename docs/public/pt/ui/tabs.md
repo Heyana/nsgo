@@ -57,4 +57,4 @@ iOS e Android mostram a barra de abas do sistema com sua própria aparência e g
 - [Menu](menu.md): comandos em vez de seções.
 - [Select](select.md): muitas opções em uma lista.
 - As páginas Tabs e NavStack da galeria.
-- [Componentes sem estilo](../authoring/base.md#tabs): `base.Tabs`, para abas com uma aparência própria.
+- [Componentes sem estilo](../authoring/base.md#abas): `base.Tabs`, para abas com uma aparência própria.

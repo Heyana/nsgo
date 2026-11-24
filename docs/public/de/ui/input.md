@@ -66,7 +66,7 @@ Die Bildschirmtastatur verdeckt den unteren Teil eines Smartphones. Setzen Sie `
 
 ## Validierung
 
-Die Regeln gehören der App. Ein Signal hält den Fehler, `OnBlur` oder `OnSubmit` setzt ihn, und eine Meldung unter dem Feld zeigt ihn an ([Formulare](../forms.md#validation)).
+Die Regeln gehören der App. Ein Signal hält den Fehler, `OnBlur` oder `OnSubmit` setzt ihn, und eine Meldung unter dem Feld zeigt ihn an ([Formulare](../forms.md#validierung)).
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")

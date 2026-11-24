@@ -23,7 +23,7 @@ package locales
 //go:generate go tool nsgo i18n
 ```
 
-`go generate ./locales` escreve uma função por mensagem, que o componente chama com seu escopo: `locales.Clear(cx)` a pronuncia no idioma que o aplicativo exibe. Faça commit do arquivo `catalog_gen.go` gerado, para que os aplicativos compilem apenas com Go. Adicione um arquivo por idioma para o qual traduzir (`zh-Hans.yaml`); um aplicativo fornece outros em seus próprios catálogos, sob uma chave que nomeia o caminho de importação do seu pacote, como em [Textos próprios do NSGo](../localization.md#nsgos-own-words).
+`go generate ./locales` escreve uma função por mensagem, que o componente chama com seu escopo: `locales.Clear(cx)` a pronuncia no idioma que o aplicativo exibe. Faça commit do arquivo `catalog_gen.go` gerado, para que os aplicativos compilem apenas com Go. Adicione um arquivo por idioma para o qual traduzir (`zh-Hans.yaml`); um aplicativo fornece outros em seus próprios catálogos, sob uma chave que nomeia o caminho de importação do seu pacote, como em [Textos próprios do NSGo](../localization.md#as-palavras-do-próprio-nsgo).
 
 ## Testes
 
@@ -60,4 +60,4 @@ func init() {
 }
 ```
 
-`import { Toggle } from "example.com/chips"` passa então a aceitar os campos como props ([Aplicativos TSX](../tsx.md#go-from-tsx)).
+`import { Toggle } from "example.com/chips"` passa então a aceitar os campos como props ([Aplicativos TSX](../tsx.md#go-a-partir-do-tsx)).

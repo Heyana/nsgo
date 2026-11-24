@@ -60,7 +60,7 @@ cx.Share(core.ShareOptions{
 }, func(shown bool, err error) {})
 ```
 
-`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` nhận văn bản và tệp cho [`android.share_types`](building.md#incoming-shares-on-android) hoặc [`apple.share_types`](building.md#incoming-shares-on-ios). Nội dung chia sẻ trên Android có thể khởi động ứng dụng; iOS xếp chúng vào hàng đợi trong một App Group cho đến khi ứng dụng hoạt động hoặc người dùng mở nó lần tiếp theo. Các nội dung chia sẻ đang chờ sẽ đợi trình xử lý đầu tiên. iOS giữ lô hộp thư đến cho đến khi hàm gọi lại trả về; việc chuyển giao diễn ra ít nhất một lần qua mỗi lần tiến trình thoát. Văn bản đến trong `Text`, còn tệp đến dưới dạng bản sao bộ nhớ đệm có thể đọc với `Path`, `Name` và `MIME`. Hãy di chuyển hoặc sao chép tệp sang bộ lưu trữ lâu dài nếu nó cần tồn tại lâu hơn bộ nhớ đệm.
+`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` nhận văn bản và tệp cho [`android.share_types`](building.md#nội-dung-chia-sẻ-đến-trên-android) hoặc [`apple.share_types`](building.md#nội-dung-chia-sẻ-đến-trên-ios). Nội dung chia sẻ trên Android có thể khởi động ứng dụng; iOS xếp chúng vào hàng đợi trong một App Group cho đến khi ứng dụng hoạt động hoặc người dùng mở nó lần tiếp theo. Các nội dung chia sẻ đang chờ sẽ đợi trình xử lý đầu tiên. iOS giữ lô hộp thư đến cho đến khi hàm gọi lại trả về; việc chuyển giao diễn ra ít nhất một lần qua mỗi lần tiến trình thoát. Văn bản đến trong `Text`, còn tệp đến dưới dạng bản sao bộ nhớ đệm có thể đọc với `Path`, `Name` và `MIME`. Hãy di chuyển hoặc sao chép tệp sang bộ lưu trữ lâu dài nếu nó cần tồn tại lâu hơn bộ nhớ đệm.
 
 `desktop.LookUp` hiển thị bảng từ điển của hệ thống cho một đoạn văn bản, như thao tác chạm ba ngón trên macOS, được vẽ phía trên một hộp trong một view: văn bản và hộp của một vùng chọn cùng `Ref` của view `Selectable` chứa nó. `desktop.CanLookUp` cho biết nó có làm được không, trong một cửa sổ trên macOS; Windows, Linux và web không có bảng như vậy. Trong kiểm thử, `nsgotest.App.LookUps` liệt kê các bảng đã hiển thị khi `nsgotest.Environment` đặt `CanLookUp`.
 
@@ -138,7 +138,7 @@ Dùng `audio.NewOutput(cx, audio.OutputConfig{SampleRate: 48000, Channels: 2, Re
 
 ## Lưu trữ
 
-`cx.Storage()` là bộ lưu trữ khóa-giá trị của ứng dụng, được giữ trên thiết bị và dùng chung bởi mọi đồ thị của ứng dụng. Việc đọc là đồng bộ, và đọc bên trong một phép tính sẽ đăng ký phép tính đó theo dõi thay đổi; `SetItem` trả về một `core.StorageFullError` khi vượt hạn mức (`core.StorageQuota`, mặc định 5 MiB). Đây là một tệp thông thường mà bất kỳ chương trình nào của người dùng cũng đọc được, vì vậy hãy giữ token và mật khẩu trong [bí mật](#secrets) thay vào đó.
+`cx.Storage()` là bộ lưu trữ khóa-giá trị của ứng dụng, được giữ trên thiết bị và dùng chung bởi mọi đồ thị của ứng dụng. Việc đọc là đồng bộ, và đọc bên trong một phép tính sẽ đăng ký phép tính đó theo dõi thay đổi; `SetItem` trả về một `core.StorageFullError` khi vượt hạn mức (`core.StorageQuota`, mặc định 5 MiB). Đây là một tệp thông thường mà bất kỳ chương trình nào của người dùng cũng đọc được, vì vậy hãy giữ token và mật khẩu trong [bí mật](#bí-mật) thay vào đó.
 
 `cx.Store()` trả về kho lưu trữ bên dưới, dành cho một host tạo một root khác bằng `core.RootOptions.Storage`, chẳng hạn host chạy một plugin trên goroutine riêng: khi đó cả hai root dùng chung các mục của ứng dụng và những gì được giữ trên thiết bị. Đó là toàn bộ kho, không phải phân vùng mà `cx.ProvideStorage` cấp cho mã không do ứng dụng viết.
 
@@ -154,7 +154,7 @@ store.SetItem("tab", "library")
 
 `store.Keys()` liệt kê các khóa, `RemoveItem` xóa một khóa và `Clear` làm trống bộ lưu trữ. `cx.DataDir()` và `cx.CacheDir()` cho các thư mục của ứng dụng dành cho những tệp mà bộ lưu trữ khóa-giá trị quá nhỏ để chứa; `cx.LogsDir()` cho thư mục của nền tảng dành cho tệp nhật ký, và một `Scope.ProvideStorage` cấp cho một cây con một phân vùng riêng.
 
-Một iOS App Clip và ứng dụng đầy đủ của nó dùng chung các vị trí dữ liệu và lưu trữ này khi `app_clip` và `apple.app_group` tường minh được cấu hình; bộ nhớ đệm của chúng vẫn tách biệt. Bật nhóm không di chuyển dữ liệu sandbox hiện có. [Lưu trữ App Clip](building.md#app-clips) trình bày cấu hình và ký.
+Một iOS App Clip và ứng dụng đầy đủ của nó dùng chung các vị trí dữ liệu và lưu trữ này khi `app_clip` và `apple.app_group` tường minh được cấu hình; bộ nhớ đệm của chúng vẫn tách biệt. Bật nhóm không di chuyển dữ liệu sandbox hiện có. [Lưu trữ App Clip](building.md#app-clip) trình bày cấu hình và ký.
 
 Trên HarmonyOS, các thao tác tệp của Go như `os.ReadFile`, `os.WriteFile` và `os.Rename` hoạt động trong các thư mục này và `os.TempDir()`. Đường dẫn tương đối bắt đầu từ thư mục files. Khóa tệp tư vấn (advisory lock) và liên kết tượng trưng không khả dụng.
 

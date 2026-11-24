@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 Một hành động có `Role: core.AlertCancel` chạy khi nhấn Escape hoặc nút quay lại, tiếp theo là `OnOpenChange(false, base.ReasonCancel)`. `Default: true` trao tiêu điểm bàn phím cho một hành động khi hộp cảnh báo mở trên máy tính để bàn, web và Apple TV, và khiến Return chọn nó; một lần nhấn hành động sẽ chạy `OnPress`, rồi `OnOpenChange(false, base.ReasonSelect)`. Return chạy hành động mặc định khi tiêu điểm bàn phím không nằm trên hành động hay trường nào khác: khi tiêu điểm đã chuyển sang một hành động khác, Return nhấn hành động đó, và một hộp thoại nằm trên hộp cảnh báo sẽ giữ phím Return. Khi một hành động đã chạy, hộp cảnh báo sẽ đóng, bất kể `OnOpenChange` làm gì, và không chạy hành động nào khác cho tới khi `Open` chuyển sang false rồi true trở lại. Nếu nhiều hành động mang cùng một dấu đánh dấu, hành động đầu tiên được ưu tiên. Khi không có dấu đánh dấu, Escape đóng hộp cảnh báo mà không chạy hành động nào và Return không có hành động mặc định. `Role: core.AlertDestructive` mô tả một hành động; `Variant` hoặc `Color` chọn giao diện của nó.
 
-Để dùng hộp cảnh báo hoặc action sheet của chính hệ thống, hãy dùng `cx.ShowAlert` ([Dịch vụ nền tảng](../services.md#alerts-and-the-clipboard)).
+Để dùng hộp cảnh báo hoặc action sheet của chính hệ thống, hãy dùng `cx.ShowAlert` ([Dịch vụ nền tảng](../services.md#hộp-cảnh-báo-và-bảng-nhớ-tạm)).
 
 ## Hành vi
 

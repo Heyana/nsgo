@@ -70,5 +70,5 @@ Yerel kaydırma görünümü ve sanallaştırma her hedefte aynıdır. Satırlar
 
 - [Listeler ve kaydırma](../lists.md): yapışkan başlıklar ve daha fazla yükleme dahil tam kılavuz.
 - [Kaydırma](scroll.md): düz bir kaydırma görünümü.
-- [DataTable](../lists.md#tables): çok sayıda satır ve sütundan oluşan bir tablo.
+- [DataTable](../lists.md#tablolar): çok sayıda satır ve sütundan oluşan bir tablo.
 - Galerinin List, Table ve DataTable sayfaları.

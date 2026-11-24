@@ -60,7 +60,7 @@ cx.Share(core.ShareOptions{
 }, func(shown bool, err error) {})
 ```
 
-`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` recebe texto e arquivos para [`android.share_types`](building.md#incoming-shares-on-android) ou [`apple.share_types`](building.md#incoming-shares-on-ios). Compartilhamentos no Android podem iniciar o aplicativo; o iOS os enfileira em um App Group até que o aplicativo esteja ativo ou o usuário o abra novamente. Compartilhamentos pendentes aguardam o primeiro handler. O iOS retém o lote da caixa de entrada até o callback retornar; a entrega acontece pelo menos uma vez, mesmo com o encerramento do processo. O texto chega em `Text`, e os arquivos chegam como cópias legíveis em cache com `Path`, `Name` e `MIME`. Mova ou copie um arquivo para um armazenamento persistente se ele precisar durar mais que o cache.
+`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` recebe texto e arquivos para [`android.share_types`](building.md#compartilhamentos-recebidos-no-android) ou [`apple.share_types`](building.md#compartilhamentos-recebidos-no-ios). Compartilhamentos no Android podem iniciar o aplicativo; o iOS os enfileira em um App Group até que o aplicativo esteja ativo ou o usuário o abra novamente. Compartilhamentos pendentes aguardam o primeiro handler. O iOS retém o lote da caixa de entrada até o callback retornar; a entrega acontece pelo menos uma vez, mesmo com o encerramento do processo. O texto chega em `Text`, e os arquivos chegam como cópias legíveis em cache com `Path`, `Name` e `MIME`. Mova ou copie um arquivo para um armazenamento persistente se ele precisar durar mais que o cache.
 
 `desktop.LookUp` exibe o painel de dicionário do sistema para um texto, como faz um toque com três dedos no macOS, desenhado sobre uma caixa em uma view: o texto e a caixa de uma seleção com o `Ref` de sua view `Selectable`. `desktop.CanLookUp` diz se é possível, em uma janela no macOS; Windows, Linux e a web não têm esse painel. Em testes, `nsgotest.App.LookUps` lista os painéis exibidos quando `nsgotest.Environment` define `CanLookUp`.
 
@@ -138,7 +138,7 @@ Use `audio.NewOutput(cx, audio.OutputConfig{SampleRate: 48000, Channels: 2, Rend
 
 ## Armazenamento
 
-`cx.Storage()` é o armazenamento chave-valor do aplicativo, mantido no dispositivo e compartilhado por todos os grafos do aplicativo. As leituras são síncronas, e uma leitura dentro de uma computação a inscreve nas mudanças; `SetItem` retorna um `core.StorageFullError` além da cota (`core.StorageQuota`, 5 MiB por padrão). É um arquivo simples que qualquer programa do usuário pode ler, então guarde tokens e senhas em [segredos](#secrets).
+`cx.Storage()` é o armazenamento chave-valor do aplicativo, mantido no dispositivo e compartilhado por todos os grafos do aplicativo. As leituras são síncronas, e uma leitura dentro de uma computação a inscreve nas mudanças; `SetItem` retorna um `core.StorageFullError` além da cota (`core.StorageQuota`, 5 MiB por padrão). É um arquivo simples que qualquer programa do usuário pode ler, então guarde tokens e senhas em [segredos](#segredos).
 
 `cx.Store()` retorna o store subjacente, para um host que cria outra raiz com `core.RootOptions.Storage`, como um que roda um plugin em uma goroutine própria: ambas as raízes passam a compartilhar as entradas do aplicativo e o que é mantido no dispositivo. É o store inteiro, não a partição que `cx.ProvideStorage` dá ao código que o aplicativo não escreveu.
 

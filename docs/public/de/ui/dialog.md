@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 Eine Aktion mit `Role: core.AlertCancel` läuft bei Escape oder Zurück, gefolgt von `OnOpenChange(false, base.ReasonCancel)`. `Default: true` gibt einer Aktion den Tastaturfokus, wenn sich die Warnmeldung auf Desktops, im Web und auf Apple TV öffnet, und lässt die Eingabetaste sie wählen; das Drücken einer Aktion führt `OnPress` aus, dann `OnOpenChange(false, base.ReasonSelect)`. Die Eingabetaste führt die Standardaktion aus, solange der Tastaturfokus auf keiner anderen Aktion und keinem Feld liegt: Liegt der Fokus auf einer anderen Aktion, drückt die Eingabetaste diese, und ein Dialog über der Warnmeldung behält die Eingabetaste für sich. Sobald eine Aktion ausgeführt wurde, schließt sich die Warnmeldung, unabhängig davon, was `OnOpenChange` tut, und führt keine weitere aus, bis `Open` wieder false und dann true wird. Tragen mehrere Aktionen dieselbe Markierung, gewinnt die erste. Ohne Markierungen schließt Escape, ohne eine Aktion auszuführen, und die Eingabetaste hat keine Standardaktion. `Role: core.AlertDestructive` beschreibt eine Aktion; `Variant` oder `Color` wählt ihr Erscheinungsbild.
 
-Für die systemeigene Warnmeldung oder das systemeigene Aktionsblatt verwenden Sie `cx.ShowAlert` ([Plattformdienste](../services.md#alerts-and-the-clipboard)).
+Für die systemeigene Warnmeldung oder das systemeigene Aktionsblatt verwenden Sie `cx.ShowAlert` ([Plattformdienste](../services.md#hinweisdialoge-und-die-zwischenablage)).
 
 ## Verhalten
 

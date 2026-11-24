@@ -66,7 +66,7 @@ Bàn phím ảo che phần dưới của điện thoại. Đặt `core.EnvKeyboa
 
 ## Kiểm tra hợp lệ
 
-Ứng dụng nắm giữ các quy tắc. Một signal giữ lỗi, `OnBlur` hoặc `OnSubmit` đặt nó, và một thông báo dưới trường hiển thị nó ([Biểu mẫu](../forms.md#validation)).
+Ứng dụng nắm giữ các quy tắc. Một signal giữ lỗi, `OnBlur` hoặc `OnSubmit` đặt nó, và một thông báo dưới trường hiển thị nó ([Biểu mẫu](../forms.md#kiểm-tra-hợp-lệ)).
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")

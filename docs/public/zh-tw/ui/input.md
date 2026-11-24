@@ -66,7 +66,7 @@ email.Focus()
 
 ## 驗證
 
-驗證規則由應用程式自行掌控。透過一個訊號保存錯誤訊息，在 `OnBlur` 或 `OnSubmit` 時設定它，並於欄位下方顯示該訊息（[表單](../forms.md#validation)）。
+驗證規則由應用程式自行掌控。透過一個訊號保存錯誤訊息，在 `OnBlur` 或 `OnSubmit` 時設定它，並於欄位下方顯示該訊息（[表單](../forms.md#驗證)）。
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")

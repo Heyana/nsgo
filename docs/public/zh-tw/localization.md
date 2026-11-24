@@ -18,7 +18,7 @@ appName:
 
 每則訊息可以是一個字串，或是包含 `message`、提供給譯者的 `description` 與 `placeholders` 的物件。
 
-套件會匯入 `locales/`。`dev`、`build` 與 `test` 會檢查語系目錄，並在旁邊為每則訊息產生對應的 Go 函式，例如 `locales.Greeting(cx, "Ada")`，它會以應用程式目前顯示的語言輸出該訊息，並在語言變更時自動跟隨更新；執行 `go tool nsgo i18n` 則可單獨產生這些函式。訊息支援數字與日期格式化（`{d, date, medium}`），`appName` 會在其各個封裝中以對應語言命名應用程式，而帶有 `apple.info` 鍵值的訊息（例如 `NSCameraUsageDescription`）則會翻譯該 `Info.plist` 項目（[權限](permissions.md#usage-descriptions)）。
+套件會匯入 `locales/`。`dev`、`build` 與 `test` 會檢查語系目錄，並在旁邊為每則訊息產生對應的 Go 函式，例如 `locales.Greeting(cx, "Ada")`，它會以應用程式目前顯示的語言輸出該訊息，並在語言變更時自動跟隨更新；執行 `go tool nsgo i18n` 則可單獨產生這些函式。訊息支援數字與日期格式化（`{d, date, medium}`），`appName` 會在其各個封裝中以對應語言命名應用程式，而帶有 `apple.info` 鍵值的訊息（例如 `NSCameraUsageDescription`）則會翻譯該 `Info.plist` 項目（[權限](permissions.md#用途說明)）。
 
 ## 語言切換
 

@@ -60,7 +60,7 @@ cx.Share(core.ShareOptions{
 }, func(shown bool, err error) {})
 ```
 
-`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })`, [`android.share_types`](building.md#incoming-shares-on-android) veya [`apple.share_types`](building.md#incoming-shares-on-ios) için metin ve dosyalar alır. Android paylaşımları uygulamayı başlatabilir; iOS ise bunları uygulama etkin olana veya kullanıcı onu bir sonraki açışına kadar bir App Group içinde kuyruğa alır. Bekleyen paylaşımlar ilk işleyiciyi bekler. iOS gelen kutusu grubunu geri çağırma dönene kadar tutar; teslimat bir süreç çıkışı boyunca en az bir kezdir. Metin `Text` içinde gelir; dosyalar ise `Path`, `Name` ve `MIME` ile okunabilir önbellek kopyaları olarak gelir. Bir dosyanın önbellekten daha uzun yaşaması gerekiyorsa onu kalıcı depolamaya taşıyın veya kopyalayın.
+`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })`, [`android.share_types`](building.md#androidde-gelen-paylaşımlar) veya [`apple.share_types`](building.md#iosta-gelen-paylaşımlar) için metin ve dosyalar alır. Android paylaşımları uygulamayı başlatabilir; iOS ise bunları uygulama etkin olana veya kullanıcı onu bir sonraki açışına kadar bir App Group içinde kuyruğa alır. Bekleyen paylaşımlar ilk işleyiciyi bekler. iOS gelen kutusu grubunu geri çağırma dönene kadar tutar; teslimat bir süreç çıkışı boyunca en az bir kezdir. Metin `Text` içinde gelir; dosyalar ise `Path`, `Name` ve `MIME` ile okunabilir önbellek kopyaları olarak gelir. Bir dosyanın önbellekten daha uzun yaşaması gerekiyorsa onu kalıcı depolamaya taşıyın veya kopyalayın.
 
 `desktop.LookUp`, macOS'ta üç parmakla dokunmanın yaptığı gibi, bir metin için sistemin sözlük panelini bir görünümdeki bir kutunun üzerine çizerek gösterir: bir seçimin metni ve kutusu, onun `Selectable` görünümünün `Ref` değeriyle. `desktop.CanLookUp` macOS'ta bir pencerede bunu yapıp yapamayacağını söyler; Windows, Linux ve web'de böyle bir panel yoktur. Testlerde `nsgotest.App.LookUps`, `nsgotest.Environment`'ın `CanLookUp` ayarladığı yerde gösterilen panelleri listeler.
 
@@ -138,7 +138,7 @@ Uygulamanızın çözdüğü veya sentezlediği iç içe geçmiş (interleaved) 
 
 ## Depolama
 
-`cx.Storage()` uygulamanın cihazda tutulan ve uygulamanın her grafiği tarafından paylaşılan anahtar-değer depolamasıdır. Okumalar eşzamanlıdır ve bir hesaplama içinde yapılan okumalar onu değişikliklere abone eder; `SetItem` kota aşıldığında (`core.StorageQuota`, varsayılan olarak 5 MiB) bir `core.StorageFullError` döndürür. Bu, kullanıcının herhangi bir programının okuyabileceği düz bir dosyadır; bu nedenle belirteçleri ve parolaları bunun yerine [gizli bilgiler](#secrets) içinde tutun.
+`cx.Storage()` uygulamanın cihazda tutulan ve uygulamanın her grafiği tarafından paylaşılan anahtar-değer depolamasıdır. Okumalar eşzamanlıdır ve bir hesaplama içinde yapılan okumalar onu değişikliklere abone eder; `SetItem` kota aşıldığında (`core.StorageQuota`, varsayılan olarak 5 MiB) bir `core.StorageFullError` döndürür. Bu, kullanıcının herhangi bir programının okuyabileceği düz bir dosyadır; bu nedenle belirteçleri ve parolaları bunun yerine [gizli bilgiler](#gizli-bilgiler) içinde tutun.
 
 `cx.Store()`, `core.RootOptions.Storage` ile başka bir kök oluşturan bir ana makine için (örneğin kendi goroutine'inde bir eklenti çalıştıran bir ana makine) temeldeki depoyu döndürür: o zaman her iki kök de uygulamanın girdilerini ve cihazda tutulanları paylaşır. Bu, `cx.ProvideStorage`'ın uygulamanın yazmadığı koda verdiği bölüm değil, deponun tamamıdır.
 

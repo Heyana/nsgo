@@ -66,7 +66,7 @@ email.Focus()
 
 ## バリデーション
 
-ルールはアプリ側が管理します。シグナルがエラーを保持し、`OnBlur` または `OnSubmit` でそれを設定し、フィールドの下のメッセージで表示します（[フォーム](../forms.md#validation)）。
+ルールはアプリ側が管理します。シグナルがエラーを保持し、`OnBlur` または `OnSubmit` でそれを設定し、フィールドの下のメッセージで表示します（[フォーム](../forms.md#バリデーション)）。
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")

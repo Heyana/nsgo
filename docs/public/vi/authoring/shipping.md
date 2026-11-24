@@ -23,7 +23,7 @@ package locales
 //go:generate go tool nsgo i18n
 ```
 
-`go generate ./locales` sinh ra một hàm cho mỗi thông điệp, và thành phần chỉ cần gọi hàm đó kèm scope của mình: `locales.Clear(cx)` sẽ đọc lên nội dung theo đúng ngôn ngữ ứng dụng đang hiển thị. Hãy commit tệp `catalog_gen.go` đã sinh để các ứng dụng có thể build chỉ với Go. Thêm một tệp cho mỗi ngôn ngữ bạn dịch sang (`zh-Hans.yaml`); ứng dụng có thể bổ sung các ngôn ngữ khác trong danh mục riêng của nó, dưới một khóa mang đường dẫn import của gói bạn, giống như với [từ ngữ riêng của NSGo](../localization.md#nsgos-own-words).
+`go generate ./locales` sinh ra một hàm cho mỗi thông điệp, và thành phần chỉ cần gọi hàm đó kèm scope của mình: `locales.Clear(cx)` sẽ đọc lên nội dung theo đúng ngôn ngữ ứng dụng đang hiển thị. Hãy commit tệp `catalog_gen.go` đã sinh để các ứng dụng có thể build chỉ với Go. Thêm một tệp cho mỗi ngôn ngữ bạn dịch sang (`zh-Hans.yaml`); ứng dụng có thể bổ sung các ngôn ngữ khác trong danh mục riêng của nó, dưới một khóa mang đường dẫn import của gói bạn, giống như với [từ ngữ riêng của NSGo](../localization.md#văn-bản-riêng-của-nsgo).
 
 ## Kiểm thử
 
@@ -60,4 +60,4 @@ func init() {
 }
 ```
 
-Khi đó `import { Toggle } from "example.com/chips"` sẽ nhận các trường cấu trúc dưới dạng props ([Ứng dụng TSX](../tsx.md#go-from-tsx)).
+Khi đó `import { Toggle } from "example.com/chips"` sẽ nhận các trường cấu trúc dưới dạng props ([Ứng dụng TSX](../tsx.md#go-từ-tsx)).

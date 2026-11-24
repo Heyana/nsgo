@@ -18,7 +18,7 @@ appName:
 
 Bir ileti bir dizedir ya da çevirmenler için bir `description` ve `placeholders` içeren bir `message`'dır.
 
-Paket `locales/` dizinini içe aktarır. `dev`, `build` ve `test` katalogları denetler ve yanlarına her ileti için `locales.Greeting(cx, "Ada")` gibi bir Go işlevi yazar; bu işlev iletiyi uygulamanın gösterdiği dilde söyler ve dil değiştikçe onu izler; `go tool nsgo i18n` yalnızca işlevleri yazar. İletiler sayıları ve tarihleri biçimlendirir (`{d, date, medium}`); `appName` uygulamayı paketlerinde her dilde adlandırır, tıpkı `NSCameraUsageDescription` gibi bir `apple.info` anahtarına sahip bir iletinin o Info.plist girdisini çevirmesi gibi ([izinler](permissions.md#usage-descriptions)).
+Paket `locales/` dizinini içe aktarır. `dev`, `build` ve `test` katalogları denetler ve yanlarına her ileti için `locales.Greeting(cx, "Ada")` gibi bir Go işlevi yazar; bu işlev iletiyi uygulamanın gösterdiği dilde söyler ve dil değiştikçe onu izler; `go tool nsgo i18n` yalnızca işlevleri yazar. İletiler sayıları ve tarihleri biçimlendirir (`{d, date, medium}`); `appName` uygulamayı paketlerinde her dilde adlandırır, tıpkı `NSCameraUsageDescription` gibi bir `apple.info` anahtarına sahip bir iletinin o Info.plist girdisini çevirmesi gibi ([izinler](permissions.md#kullanım-açıklamaları)).
 
 ## Dil
 

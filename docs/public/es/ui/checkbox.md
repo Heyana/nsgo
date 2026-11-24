@@ -59,4 +59,4 @@ La casilla la dibuja la aplicación, no un control de la plataforma, por lo que 
 - [Formularios](../forms.md): opciones en un formulario.
 - [Lista](list.md): casillas de verificación en filas.
 - La página Checkbox de la galería.
-- [Componentes sin estilo](../authoring/base.md#checkbox): `base.Checkbox`, para una casilla con un aspecto propio.
+- [Componentes sin estilo](../authoring/base.md#casilla-de-verificación): `base.Checkbox`, para una casilla con un aspecto propio.

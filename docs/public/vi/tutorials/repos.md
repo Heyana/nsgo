@@ -187,6 +187,6 @@ go tool nsgo test
 
 ## Tiếp theo
 
-- [Dịch vụ nền tảng](../services.md#networking): thêm về mạng, lưu trữ và tệp.
+- [Dịch vụ nền tảng](../services.md#mạng): thêm về mạng, lưu trữ và tệp.
 - [Danh sách và cuộn](../lists.md): kéo để làm mới, căn khớp (snapping) và danh sách dài.
 - [Chạy và gỡ lỗi](../debugging.md): theo dõi từng lần cập nhật với `-trace`.

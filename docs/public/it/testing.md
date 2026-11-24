@@ -190,7 +190,7 @@ Metti i flag di NSGo prima della directory: `go tool nsgo test -target web ./app
 
 `app.Play(selector, core.VideoInfo{Duration: time.Second, RateChangeable: true})` riporta il caricamento di un video con la sua durata, la dimensione naturale e la capacità di variare la velocità di riproduzione. Imposta `RateChangeable` a false per testare un player i cui controlli di velocità non sono disponibili.
 
-Su `tui`, i test richiedono un terminale interattivo, un backend NSGo collegato e `TestMain` che chiama `nsgotest.Main`. Ogni processo apre una sola applicazione; i suoi passi esercitano la modifica nel terminale, il focus e l'instradamento di mouse e tasti. L'output del test viene bufferizzato finché il terminale non è stato ripristinato. Le catture PNG rendono le celle con un font a larghezza fissa portabile. [Target da terminale](building.md#terminal)
+Su `tui`, i test richiedono un terminale interattivo, un backend NSGo collegato e `TestMain` che chiama `nsgotest.Main`. Ogni processo apre una sola applicazione; i suoi passi esercitano la modifica nel terminale, il focus e l'instradamento di mouse e tasti. L'output del test viene bufferizzato finché il terminale non è stato ripristinato. Le catture PNG rendono le celle con un font a larghezza fissa portabile. [Target da terminale](building.md#terminale)
 
 ## Test TSX
 

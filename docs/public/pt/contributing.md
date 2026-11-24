@@ -7,7 +7,7 @@ order: 80
 
 ## Requisitos
 
-Um macOS com Xcode e Go 1.27.3 ou posterior compila todos os alvos para arm64, incluindo o APK do Android. Executar em dispositivos exige o que [Configuração](getting-started.md#requirements) lista, e o alvo do emulador x86_64 do Android, `android_x64`, exige um Android NDK, já que o Go vincula `android/amd64` apenas com cgo. Os programas de instalação e desinstalação do Windows são compilados apenas com Go.
+Um macOS com Xcode e Go 1.27.3 ou posterior compila todos os alvos para arm64, incluindo o APK do Android. Executar em dispositivos exige o que [Configuração](getting-started.md#requisitos) lista, e o alvo do emulador x86_64 do Android, `android_x64`, exige um Android NDK, já que o Go vincula `android/amd64` apenas com cgo. Os programas de instalação e desinstalação do Windows são compilados apenas com Go.
 
 ```sh
 git clone https://github.com/nsgo-dev/nsgo.git

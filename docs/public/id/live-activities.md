@@ -50,7 +50,7 @@ widget.ActivityContent{
 
 ## Penekanan
 
-`widget.OnAction` menjalankan handler untuk penekanan sebuah aksi atau sebuah `widget.Button`, dengan activity dan ID aksinya (`Activity` bernilai nil untuk [tombol widget](widgets.md#buttons)). Atur di `main`, sebelum `nsgo.Run`: di iOS sistem memulai aplikasi di latar belakang untuk sebuah penekanan, tanpa tampilannya, dan menahan activity sampai handler kembali, sehingga handler memperbaruinya di sana; di Android penekanan mencapai proses Go yang sedang berjalan melalui receiver runtime tanpa membuka Activity-nya. Aksi memerlukan engine yang mempostingnya agar tetap berjalan; aksi yang usang tidak melakukan apa pun setelah engine itu berakhir. Notifikasinya sendiri tetap membuka aplikasi saat diketuk. Handler berjalan di goroutine milik sistem, bukan milik tampilan aplikasi, yang dijangkaunya melalui `Post` milik sebuah `core.Scope`.
+`widget.OnAction` menjalankan handler untuk penekanan sebuah aksi atau sebuah `widget.Button`, dengan activity dan ID aksinya (`Activity` bernilai nil untuk [tombol widget](widgets.md#tombol)). Atur di `main`, sebelum `nsgo.Run`: di iOS sistem memulai aplikasi di latar belakang untuk sebuah penekanan, tanpa tampilannya, dan menahan activity sampai handler kembali, sehingga handler memperbaruinya di sana; di Android penekanan mencapai proses Go yang sedang berjalan melalui receiver runtime tanpa membuka Activity-nya. Aksi memerlukan engine yang mempostingnya agar tetap berjalan; aksi yang usang tidak melakukan apa pun setelah engine itu berakhir. Notifikasinya sendiri tetap membuka aplikasi saat diketuk. Handler berjalan di goroutine milik sistem, bukan milik tampilan aplikasi, yang dijangkaunya melalui `Post` milik sebuah `core.Scope`.
 
 ```go
 func main() {

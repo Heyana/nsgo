@@ -11,19 +11,19 @@ order: 22
 go tool nsgo build
 ```
 
-`build`는 `nsgo.yaml`에 나열된 각 타겟에 대해 디버그 심볼을 제거한 릴리스 패키지를 `dist/<name>-<version>-<target>`에 생성합니다. 결과물은 `.app`, `.ipa`, `.apk`, Windows 및 Linux 디렉터리, 또는 `import()`가 호출될 때 해당 TSX 모듈을 가져오는 웹 사이트입니다. `-target`을 지정하면 타겟 목록을 대체하며, `all`은 Go와 Xcode만으로 빌드할 수 있는 모든 타겟을 뜻합니다. Android NDK가 설치되어 있으면 `android_x64`를 추가할 수 있고, [미니 프로그램](#mini-programs)용으로는 `miniprogram` 또는 `miniprogram_wechat`, `miniprogram_qq`, `miniprogram_alipay`, `miniprogram_douyin` 중 하나를, [HarmonyOS](#harmonyos) 프리뷰용으로는 `harmonyos`를 추가합니다. `-run`은 현재 머신용으로 빌드된 패키지를 실행하거나, `-device`로 지정한 iPhone, 시뮬레이터, Android 기기에 설치합니다.
+`build`는 `nsgo.yaml`에 나열된 각 타겟에 대해 디버그 심볼을 제거한 릴리스 패키지를 `dist/<name>-<version>-<target>`에 생성합니다. 결과물은 `.app`, `.ipa`, `.apk`, Windows 및 Linux 디렉터리, 또는 `import()`가 호출될 때 해당 TSX 모듈을 가져오는 웹 사이트입니다. `-target`을 지정하면 타겟 목록을 대체하며, `all`은 Go와 Xcode만으로 빌드할 수 있는 모든 타겟을 뜻합니다. Android NDK가 설치되어 있으면 `android_x64`를 추가할 수 있고, [미니 프로그램](#미니-프로그램)용으로는 `miniprogram` 또는 `miniprogram_wechat`, `miniprogram_qq`, `miniprogram_alipay`, `miniprogram_douyin` 중 하나를, [HarmonyOS](#harmonyos) 프리뷰용으로는 `harmonyos`를 추가합니다. `-run`은 현재 머신용으로 빌드된 패키지를 실행하거나, `-device`로 지정한 iPhone, 시뮬레이터, Android 기기에 설치합니다.
 
 배포할 모든 파일은 `dist/releases`에 모이므로 이 디렉터리만 확인하면 됩니다:
 
 | `dist/releases` 내부 | 내용 |
 | --- | --- |
-| `*.dmg`, `*-setup.exe`, `*.deb`, `*.pkg.tar.gz`, `*.AppImage` | macOS, Windows, Linux용 [인스톨러](#installers) |
+| `*.dmg`, `*-setup.exe`, `*.deb`, `*.pkg.tar.gz`, `*.AppImage` | macOS, Windows, Linux용 [인스톨러](#인스톨러) |
 | `*.AppImage.zsync` | AppImageUpdate 및 호환 런처용 델타 업데이트 제어 파일 |
 | `*-ios.ipa`, `*-tvos.ipa`, `*.apk` | 스토어 또는 기기 배포용 iOS, tvOS, Android 패키지 |
-| `*.pkg`, `*.msix`, `*.aab`, `*.flatpak`, `*.tar.gz` 및 `flatpak/` | `store` 빌드의 [스토어 패키지](#store-packages) |
-| `install.sh`, `install.ps1` | [GitHub 릴리스](#publish-on-github)에서 앱을 설치하는 스크립트 |
-| `appcast-<target>.xml` | 앱이 [업데이트](#updates)를 확인하는 피드 |
-| `homebrew/<name>.rb`, `winget/` | 직접 배포(direct)용 [Homebrew cask 및 winget 매니페스트](#channels) |
+| `*.pkg`, `*.msix`, `*.aab`, `*.flatpak`, `*.tar.gz` 및 `flatpak/` | `store` 빌드의 [스토어 패키지](#스토어-패키지) |
+| `install.sh`, `install.ps1` | [GitHub 릴리스](#github에-게시)에서 앱을 설치하는 스크립트 |
+| `appcast-<target>.xml` | 앱이 [업데이트](#업데이트)를 확인하는 피드 |
+| `homebrew/<name>.rb`, `winget/` | 직접 배포(direct)용 [Homebrew cask 및 winget 매니페스트](#채널) |
 | `*-web.zip` | 압축 해제 후 그대로 서빙할 수 있는 웹 사이트 |
 | `miniprogram/<platform>/` | 각 플랫폼 개발자 도구에서 업로드할 미니 프로그램 프로젝트 |
 
@@ -132,7 +132,7 @@ Android에서는 `icon.android.foreground`와 `background`가 어댑티브 런�
 
 `android.uses_cleartext_traffic: true`는 APK와 App Bundle이 모든 호스트에 대해 평문 HTTP를 사용하도록 매니페스트 플래그와 네트워크 보안 정책을 설정합니다. 이 옵션을 켜지 않은 상태에서 `android.loopback_cleartext: true`를 설정하면 앱 자체가 서빙하는 비디오처럼 `localhost`, `127.0.0.1`, `::1`에 한해 평문 HTTP를 허용합니다. 루프백 전용 정책은 다른 호스트에 대한 평문 통신을 차단하며, 두 설정이 모두 true면 전체 호스트 허용이 우선합니다. 임베드되는 AAR의 경우에는 호스트 앱의 Android 네트워크 보안 정책을 구성하세요.
 
-모든 빌드는 시작 시 `--nsgo-fps` 같은 NSGo 자체 플래그도 받습니다([실행 및 디버깅](debugging.md#flags-of-every-build)). `nsgo dev`에서는 열려 있는 모든 창에서 Command/Control+R로 리로드할 수 있으며, 다른 창에서 앱 함수가 계속 실행 중이라면 메인 뷰가 닫힌 뒤에도 동작합니다.
+모든 빌드는 시작 시 `--nsgo-fps` 같은 NSGo 자체 플래그도 받습니다([실행 및 디버깅](debugging.md#모든-빌드의-공통-플래그)). `nsgo dev`에서는 열려 있는 모든 창에서 Command/Control+R로 리로드할 수 있으며, 다른 창에서 앱 함수가 계속 실행 중이라면 메인 뷰가 닫힌 뒤에도 동작합니다.
 
 ### 실행 화면
 
@@ -206,11 +206,11 @@ windows:
 
 | 패키지 | 커맨드 |
 | --- | --- |
-| macOS | `Contents/MacOS` 안에 앱과 동일하게(`<id>.<command>`) 앱보다 먼저 서명됩니다. 애드혹 또는 `sign.identity`로 강화된 런타임(hardened runtime)과 타임스탬프를 붙여 서명하므로 앱 [공증](#notarize)이 가능하지만 앱의 entitlement는 받지 않습니다. 디스크 이미지는 `PATH`에 아무것도 추가하지 않으며, [Homebrew cask](#channels)가 각 커맨드를 링크하고 사용자가 직접 `/Applications/<name>.app/Contents/MacOS/<command>`를 링크할 수도 있습니다 |
-| Windows | `<name>.exe` 옆에 `<command>.exe`로 위치하며 똑같이 [서명](#sign-windows-packages)되고 인스톨러가 설치하며 언인스톨러가 제거합니다. `windows.path`를 설정하면 `windows.command_line`과 마찬가지로 인스톨러가 폴더를 사용자의 `Path`에 추가하므로 설치 후 연 콘솔에서 커맨드를 찾을 수 있습니다. 업데이트 시 이름이 바뀌거나 제외된 커맨드는 앱이 더 이상 배포하지 않는 파일과 마찬가지로 폴더에 남는데, 언인스톨러가 해당 버전이 설치한 것만 제거하기 때문입니다 |
+| macOS | `Contents/MacOS` 안에 앱과 동일하게(`<id>.<command>`) 앱보다 먼저 서명됩니다. 애드혹 또는 `sign.identity`로 강화된 런타임(hardened runtime)과 타임스탬프를 붙여 서명하므로 앱 [공증](#공증)이 가능하지만 앱의 entitlement는 받지 않습니다. 디스크 이미지는 `PATH`에 아무것도 추가하지 않으며, [Homebrew cask](#채널)가 각 커맨드를 링크하고 사용자가 직접 `/Applications/<name>.app/Contents/MacOS/<command>`를 링크할 수도 있습니다 |
+| Windows | `<name>.exe` 옆에 `<command>.exe`로 위치하며 똑같이 [서명](#windows-패키지-서명)되고 인스톨러가 설치하며 언인스톨러가 제거합니다. `windows.path`를 설정하면 `windows.command_line`과 마찬가지로 인스톨러가 폴더를 사용자의 `Path`에 추가하므로 설치 후 연 콘솔에서 커맨드를 찾을 수 있습니다. 업데이트 시 이름이 바뀌거나 제외된 커맨드는 앱이 더 이상 배포하지 않는 파일과 마찬가지로 폴더에 남는데, 언인스톨러가 해당 버전이 설치한 것만 제거하기 때문입니다 |
 | Linux | `/opt/<slug>`에 위치하며 `.deb`와 Arch 패키지가 소유하는 `/usr/bin/<command>` 링크를 만드므로 패키지를 제거하면 링크도 사라지고 dpkg와 pacman이 다른 패키지의 파일을 덮어쓰지 못하게 막습니다. AppImage는 앱 옆에 커맨드를 보관하며 `PATH`에는 아무것도 추가하지 않습니다 |
 
-인스톨러, 체크섬, [업데이트](#updates) 앱캐스트는 앱의 다른 파일들과 함께 커맨드도 포함하므로 업데이트 시 앱과 함께 교체됩니다. [스토어 패키지](#store-packages)는 Mac App Store 샌드박스, MSIX, Flatpak이 앱 자체 실행 파일만 실행하므로 커맨드를 제외합니다.
+인스톨러, 체크섬, [업데이트](#업데이트) 앱캐스트는 앱의 다른 파일들과 함께 커맨드도 포함하므로 업데이트 시 앱과 함께 교체됩니다. [스토어 패키지](#스토어-패키지)는 Mac App Store 샌드박스, MSIX, Flatpak이 앱 자체 실행 파일만 실행하므로 커맨드를 제외합니다.
 
 ## 인스톨러
 
@@ -218,9 +218,9 @@ windows:
 
 | 타겟 | 인스톨러 |
 | --- | --- |
-| macOS | `<name>-<version>-macos-<arch>.dmg`: 앱, 화살표, 드래그해 넣을 Applications 링크를 표시하는 디스크 이미지로, `sign.identity`로 서명하고 [공증](#notarize)합니다 |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`: 사용자 단위로 설치하고, 재설치 시 사용자가 이전에 고른 폴더에 설치하며, 실행 중인 앱을 종료하고, 시작 메뉴 바로가기와 선택적 바탕화면 바로가기, 그리고 자신이 설치한 파일만 지우는 언인스톨러를 포함하는 네이티브 Windows 인스톨러입니다. 앱이 Windows 패키지에 서명할 때 [`sign.certificate`로 함께 서명](#sign-windows-packages)합니다. `windows.command_line`은 `.com` 동반 파일도 설치하고 앱 폴더를 사용자의 `Path`에 추가하므로 설치 후 연 콘솔에서 앱 커맨드를 실행할 수 있고, Win+R 역시 동반 파일을 찾아 앱을 시작하고 열었던 콘솔을 닫습니다. 언인스톨러는 인스톨러가 추가했던 경우에만 `Path`에서 폴더를 빼며 기존 항목은 건드리지 않습니다 |
-| Linux | Debian/Ubuntu용 `<name>-<version>-linux-<arch>.deb`와 Arch Linux용 `<name>-<version>-linux-<arch>.pkg.tar.gz`는 `/opt/<slug>`에 앱, 커맨드, [커맨드](#commands) 링크, 데스크톱 엔트리, 아이콘을 설치하며(Arch 패키지는 `pacman -Qkk`용 `.MTREE` 포함), `<name>-<version>-linux-<arch>.AppImage`는 설치 없이 어떤 배포판에서도 실행됩니다 |
+| macOS | `<name>-<version>-macos-<arch>.dmg`: 앱, 화살표, 드래그해 넣을 Applications 링크를 표시하는 디스크 이미지로, `sign.identity`로 서명하고 [공증](#공증)합니다 |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`: 사용자 단위로 설치하고, 재설치 시 사용자가 이전에 고른 폴더에 설치하며, 실행 중인 앱을 종료하고, 시작 메뉴 바로가기와 선택적 바탕화면 바로가기, 그리고 자신이 설치한 파일만 지우는 언인스톨러를 포함하는 네이티브 Windows 인스톨러입니다. 앱이 Windows 패키지에 서명할 때 [`sign.certificate`로 함께 서명](#windows-패키지-서명)합니다. `windows.command_line`은 `.com` 동반 파일도 설치하고 앱 폴더를 사용자의 `Path`에 추가하므로 설치 후 연 콘솔에서 앱 커맨드를 실행할 수 있고, Win+R 역시 동반 파일을 찾아 앱을 시작하고 열었던 콘솔을 닫습니다. 언인스톨러는 인스톨러가 추가했던 경우에만 `Path`에서 폴더를 빼며 기존 항목은 건드리지 않습니다 |
+| Linux | Debian/Ubuntu용 `<name>-<version>-linux-<arch>.deb`와 Arch Linux용 `<name>-<version>-linux-<arch>.pkg.tar.gz`는 `/opt/<slug>`에 앱, 커맨드, [커맨드](#커맨드) 링크, 데스크톱 엔트리, 아이콘을 설치하며(Arch 패키지는 `pacman -Qkk`용 `.MTREE` 포함), `<name>-<version>-linux-<arch>.AppImage`는 설치 없이 어떤 배포판에서도 실행됩니다 |
 
 Windows 셋업과 언인스톨러는 어떤 시스템에서든 Go만으로 빌드되며 네이티브 Windows 대화 상자를 사용합니다. 앱 카탈로그의 언어 중 자체 번역이 있는 언어(간체/번체 중국어 포함)를 지원하며 시스템 UI 언어를 선택합니다. `/LANG=<LCID>`로 한 번의 실행에 사용할 언어를 고를 수 있으며, 예를 들어 간체 중국어는 `/LANG=2052`입니다. `/S`는 무인 설치 또는 제거를 수행하고, 마지막 인수로 지정한 `/D=<folder>`는 공백이 포함된 경로를 포함해 설치 폴더를 선택하며, `/RELAUNCH`는 업데이트 후 앱을 엽니다. `/D`가 없으면 업그레이드는 교체되는 기존 설치의 폴더에 설치됩니다. `-installers=false` 또는 `build.installers: false`는 패키지 파일만 빌드합니다.
 
@@ -281,7 +281,7 @@ sign:
 
 `android.target_sdk`가 설정되지 않으면 런타임은 API 36을 타겟팅합니다. 2026년 8월 31일부터 [Google Play가 요구](https://support.google.com/googleplay/android-developer/answer/11926878)하는 신규 모바일 앱 및 업데이트 기준인 API 36 미만에서는 Android App Bundle 빌드가 실패합니다. 독립 실행형 APK 빌드는 경고만 출력하고 계속 진행합니다.
 
-Mac 패키지를 업로드용으로 서명하려면 `sign.macos_profile`을 설정하세요. 위젯이 없다면 서명되지 않은 패키지도 샌드박스 안에서 실행되므로 앱 컨테이너, 네트워크, 사용자가 선택한 파일에 대한 접근을 테스트할 수 있습니다. 위젯이 포함된 스토어 빌드에서는 `<id>`용 `sign.macos_profile`과 같은 팀 소속이며 `apple.app_group`(기본값 `group.<id>`)을 부여하는 `<id>.widgets`용 macOS `sign.widgets_profile`이 모두 필요합니다. 두 번들 모두 해당 공유 컨테이너를 사용하며 홈 디렉터리 예외는 추가되지 않습니다. `-installers=false`를 주면 `.pkg`와 인스톨러 인증서는 생략하되 샌드박스와 프로필 서명은 유지합니다. `.msix`는 Partner Center에, `.aab`는 Play Console에 업로드하세요. 릴리스에 명시된 아카이브가 올라가면 `flatpak/<id>.yml`을 Flathub에 제출하세요. 로컬에서도 `flatpak-builder`로 빌드할 수 있으며, `flatpak install --user ./<name>-<version>-linux-<arch>.flatpak`으로 번들을 설치할 수 있습니다(일치하는 GNOME 런타임이 설치되어 있거나 설정된 리모트에서 받을 수 있어야 함). 빌드는 Linux 툴체인 없이 Go로 번들을 작성합니다. 스토어 패키지는 아트워크가 없을 때 투명 아이콘을 사용하고 `linux.categories`가 없으면 Utility를 사용합니다. 스토어 외부에서 설치하도록 MSIX에 서명하려면 [`sign.certificate`](#sign-windows-packages)를 설정하세요. 인증서 주체가 `windows.store.publisher`와 일치해야 하며 설치 대상 머신이 인증서를 신뢰해야 합니다. 서명 설정을 비워 두면 업로드된 패키지에 스토어가 서명합니다.
+Mac 패키지를 업로드용으로 서명하려면 `sign.macos_profile`을 설정하세요. 위젯이 없다면 서명되지 않은 패키지도 샌드박스 안에서 실행되므로 앱 컨테이너, 네트워크, 사용자가 선택한 파일에 대한 접근을 테스트할 수 있습니다. 위젯이 포함된 스토어 빌드에서는 `<id>`용 `sign.macos_profile`과 같은 팀 소속이며 `apple.app_group`(기본값 `group.<id>`)을 부여하는 `<id>.widgets`용 macOS `sign.widgets_profile`이 모두 필요합니다. 두 번들 모두 해당 공유 컨테이너를 사용하며 홈 디렉터리 예외는 추가되지 않습니다. `-installers=false`를 주면 `.pkg`와 인스톨러 인증서는 생략하되 샌드박스와 프로필 서명은 유지합니다. `.msix`는 Partner Center에, `.aab`는 Play Console에 업로드하세요. 릴리스에 명시된 아카이브가 올라가면 `flatpak/<id>.yml`을 Flathub에 제출하세요. 로컬에서도 `flatpak-builder`로 빌드할 수 있으며, `flatpak install --user ./<name>-<version>-linux-<arch>.flatpak`으로 번들을 설치할 수 있습니다(일치하는 GNOME 런타임이 설치되어 있거나 설정된 리모트에서 받을 수 있어야 함). 빌드는 Linux 툴체인 없이 Go로 번들을 작성합니다. 스토어 패키지는 아트워크가 없을 때 투명 아이콘을 사용하고 `linux.categories`가 없으면 Utility를 사용합니다. 스토어 외부에서 설치하도록 MSIX에 서명하려면 [`sign.certificate`](#windows-패키지-서명)를 설정하세요. 인증서 주체가 `windows.store.publisher`와 일치해야 하며 설치 대상 머신이 인증서를 신뢰해야 합니다. 서명 설정을 비워 두면 업로드된 패키지에 스토어가 서명합니다.
 
 macOS와 iOS에서 스크롤 뷰의 가장자리 효과(`Scroll.EdgeEffects`), `IOS.BackdropMaterial`이 없는 macOS 배경 블러, 그리고 배경 컬러 필터(단독 사용 또는 `IOS.BackdropMaterial`이 없는 블러 위에 사용)는 반경을 지정해 블러를 주거나 뷰 전체에서 블러를 변화시키거나 배경 컬러 행렬을 적용하는 공개 API가 없기 때문에 AppKit과 UIKit의 머티리얼·가장자리 효과와 마찬가지로 Core Animation의 비공개 `CABackdropLayer` 및 `CAFilter`를 통해 그립니다. App Store 심사에서 비공개 API 사용을 이유로 앱을 거부할 가능성이 있습니다. NSGo는 가장자리 바가 있는 스크롤 뷰와 해당 배경 필터에만 이를 호출하지만, 모든 macOS 및 iOS 빌드 바이너리에는 해당 심볼 이름이 포함됩니다.
 
@@ -463,11 +463,11 @@ updates:
 | 채널 | 대상 | 패키지 |
 | --- | --- | --- |
 | `direct` | GitHub, 웹 사이트, Homebrew cask, winget(릴리스의 자체 파일을 설치함) | 위 표의 방식대로 자체 업데이트합니다 |
-| `store` | App Store, Mac App Store, Microsoft Store, Google Play, Flathub 및 기타 스토어 | [스토어 패키지](#store-packages)이며 자체 업데이터가 없습니다. iOS와 macOS는 키 없이 각 App Store에 문의하고, Google Play 설치본은 Play의 네이티브 업데이트 흐름을 사용할 수 있습니다 |
-| `steam` | Steam | Steam이 업데이트하는 [디포 디렉터리](#steam-depots)를 생성합니다 |
+| `store` | App Store, Mac App Store, Microsoft Store, Google Play, Flathub 및 기타 스토어 | [스토어 패키지](#스토어-패키지)이며 자체 업데이터가 없습니다. iOS와 macOS는 키 없이 각 App Store에 문의하고, Google Play 설치본은 Play의 네이티브 업데이트 흐름을 사용할 수 있습니다 |
+| `steam` | Steam | Steam이 업데이트하는 [디포 디렉터리](#steam-디포)를 생성합니다 |
 | `none` | Linux 배포판 및 앱을 재패키징하는 모든 경우 | 아무것도 확인하지 않습니다 |
 
-스토어는 자체 업데이트하는 앱을 거부하므로 반드시 direct가 아닌 `store` 빌드를 업로드하세요. macOS 또는 Windows 인스톨러가 포함된 각 direct 릴리스는 Homebrew cask(`dist/releases/homebrew/<name>.rb` — `auto_updates true`, 빌드된 디스크 이미지의 체크섬과 다운로드 URL, 각 앱 [커맨드](#commands)에 대한 `binary` 링크 선언)와 winget 다중 파일 매니페스트(`dist/releases/winget/<id>.yaml`, `<id>.installer.yaml`, 빌드된 NSIS 인스톨러용 `<id>.locale.en-US.yaml`)도 함께 작성합니다. 시스템이 앱을 누가 설치했는지 알려주는 곳에서는 앱도 이를 확인합니다. 다른 스토어에서 설치된 Android 앱, Flatpak이나 Snap, TestFlight 빌드는 업데이트를 해당 스토어에 맡깁니다. Google Play 설치본에서 수동으로 `updater.Check`를 호출하면 허용될 때 Play In-App Updates에 즉시 업데이트 흐름을 요청하며, Play가 동의, 다운로드, 설치, 재시작을 처리합니다. 개발 빌드는 이 흐름에 들어가지 않습니다. 독립 실행형 Android 패키지는 SDK를 번들하며, [임베딩 호스트](embedding.md#android)는 Gradle을 통해 제공합니다.
+스토어는 자체 업데이트하는 앱을 거부하므로 반드시 direct가 아닌 `store` 빌드를 업로드하세요. macOS 또는 Windows 인스톨러가 포함된 각 direct 릴리스는 Homebrew cask(`dist/releases/homebrew/<name>.rb` — `auto_updates true`, 빌드된 디스크 이미지의 체크섬과 다운로드 URL, 각 앱 [커맨드](#커맨드)에 대한 `binary` 링크 선언)와 winget 다중 파일 매니페스트(`dist/releases/winget/<id>.yaml`, `<id>.installer.yaml`, 빌드된 NSIS 인스톨러용 `<id>.locale.en-US.yaml`)도 함께 작성합니다. 시스템이 앱을 누가 설치했는지 알려주는 곳에서는 앱도 이를 확인합니다. 다른 스토어에서 설치된 Android 앱, Flatpak이나 Snap, TestFlight 빌드는 업데이트를 해당 스토어에 맡깁니다. Google Play 설치본에서 수동으로 `updater.Check`를 호출하면 허용될 때 Play In-App Updates에 즉시 업데이트 흐름을 요청하며, Play가 동의, 다운로드, 설치, 재시작을 처리합니다. 개발 빌드는 이 흐름에 들어가지 않습니다. 독립 실행형 Android 패키지는 SDK를 번들하며, [임베딩 호스트](embedding.md#android)는 Gradle을 통해 제공합니다.
 
 ### 앱에서 확인하기
 
@@ -555,7 +555,7 @@ android:
   share_types: [text/plain, 'image/*', application/pdf]
 ```
 
-APK와 App Bundle 빌드는 단일 항목과 다중 항목 모두에 대해 해당 타입을 등록합니다. 각 공유를 받으려면 [`mobile.OnShared`](services.md#opening-links-and-files)를 등록하세요.
+APK와 App Bundle 빌드는 단일 항목과 다중 항목 모두에 대해 해당 타입을 등록합니다. 각 공유를 받으려면 [`mobile.OnShared`](services.md#링크와-파일-열기)를 등록하세요.
 
 경로 기반 주소를 사용하는 웹 앱은 `web.base`를 배포 디렉터리(`/` 또는 `/my-app/`)로 설정하고 프로덕션 서버가 애플리케이션 라우트에 대해 `index.html`을 서빙하도록 구성하세요. 개발 서버는 이미 HTML 내비게이션 요청에 대해 이 폴백을 제공합니다. 딥 링크가 새로 고침될 때도 애셋은 고정된 HTML base를 기준으로 상대 경로를 유지합니다. [애플리케이션 주소](addresses.md)를 참고하세요.
 

@@ -66,7 +66,7 @@ Yazılım klavyesi bir telefonun alt kısmını kaplar. İçeriğin klavyenin ü
 
 ## Doğrulama
 
-Kurallar uygulamaya aittir. Bir sinyal hatayı tutar, `OnBlur` veya `OnSubmit` onu ayarlar ve alanın altındaki bir mesaj onu gösterir ([Formlar](../forms.md#validation)).
+Kurallar uygulamaya aittir. Bir sinyal hatayı tutar, `OnBlur` veya `OnSubmit` onu ayarlar ve alanın altındaki bir mesaj onu gösterir ([Formlar](../forms.md#doğrulama)).
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")

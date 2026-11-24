@@ -7,7 +7,7 @@ order: 49
 
 ## Memeriksa dan meminta
 
-Sistem menyerahkan sebagian hal yang boleh dilakukan aplikasi kepada pengguna untuk diberikan: mikrofon, kamera, kontak, kalender, pengingat, foto, Bluetooth, pustaka media, lokasi, dan notifikasi di ponsel dan Mac, gerakan dan lokasi di latar belakang di ponsel, dan di macOS juga Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools, dan Automation aplikasi lain ([lokasi dan gerakan](services.md#location-and-motion), [notifikasi](notifications.md)). `core.Permissions()` mencantumkannya sebagai kunci `core.Permission`. `cx.PermissionStatus` menjawab apakah aplikasi memiliki suatu izin tanpa bertanya, dan `cx.RequestPermission` meminta dengan prompt sistem jika ada dan belum pernah ditanyakan. Mintalah saat pengguna melakukan sesuatu yang membutuhkan izin tersebut. Face ID dan Touch ID tidak termasuk di dalamnya: `cx.BiometricAvailability` memberitahukannya dan `cx.AuthenticateBiometric` meminta dengan prompt miliknya sendiri ([biometrik](services.md#biometrics)).
+Sistem menyerahkan sebagian hal yang boleh dilakukan aplikasi kepada pengguna untuk diberikan: mikrofon, kamera, kontak, kalender, pengingat, foto, Bluetooth, pustaka media, lokasi, dan notifikasi di ponsel dan Mac, gerakan dan lokasi di latar belakang di ponsel, dan di macOS juga Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools, dan Automation aplikasi lain ([lokasi dan gerakan](services.md#lokasi-dan-gerakan), [notifikasi](notifications.md)). `core.Permissions()` mencantumkannya sebagai kunci `core.Permission`. `cx.PermissionStatus` menjawab apakah aplikasi memiliki suatu izin tanpa bertanya, dan `cx.RequestPermission` meminta dengan prompt sistem jika ada dan belum pernah ditanyakan. Mintalah saat pengguna melakukan sesuatu yang membutuhkan izin tersebut. Face ID dan Touch ID tidak termasuk di dalamnya: `cx.BiometricAvailability` memberitahukannya dan `cx.AuthenticateBiometric` meminta dengan prompt miliknya sendiri ([biometrik](services.md#biometrik)).
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -91,7 +91,7 @@ Aplikasi yang disodorkan adalah bundle-nya, atau jika tidak ada, executable-nya;
 | Android | Mikrofon, kamera, kalender, Bluetooth, dan pustaka media, jika dideklarasikan di `android.permissions` |
 | Apple Watch, mini program | Notifikasi, lokasi, dan gerakan melalui layanannya; sisanya yang dibatasi oleh sistem untuk saat ini bernilai unknown |
 
-Izin lokasi dan gerakan mengikuti [sensor masing-masing platform](services.md#location-and-motion), dan `PermissionNotifications` mengikuti [notifikasi](notifications.md). Kebugaran memakai `PermissionActivityRecognition` (`ACTIVITY_RECOGNITION` di Android, `NSMotionUsageDescription` di Apple), termasuk tekanan udara Apple; gerakan mentah Android tetap terpisah. Di Safari seluler, mintalah `PermissionMotion` dari handler ketukan.
+Izin lokasi dan gerakan mengikuti [sensor masing-masing platform](services.md#lokasi-dan-gerakan), dan `PermissionNotifications` mengikuti [notifikasi](notifications.md). Kebugaran memakai `PermissionActivityRecognition` (`ACTIVITY_RECOGNITION` di Android, `NSMotionUsageDescription` di Apple), termasuk tekanan udara Apple; gerakan mentah Android tetap terpisah. Di Safari seluler, mintalah `PermissionMotion` dari handler ketukan.
 
 ## Pengujian
 

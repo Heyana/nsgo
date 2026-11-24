@@ -12,7 +12,7 @@ order: 10
 - iPhone 実機で実行する場合は、Xcode の Accounts に Apple ID を登録し、iPhone を信頼済みにして、デベロッパモードを有効にする必要があります。
 - Android で実行する場合は、Android SDK の platform-tools に含まれる `adb` が必要です。
 - Windows で実行する場合は Go のみで動作し、Windows および Web パッケージのビルドも行えます。
-- Linux では GTK 4.14 以降、Pango、Cairo が必要です。ネットワーク画像には libsoup 3、Web ビューには WebKitGTK 6.0、オーディオとビデオには GStreamer プラグインを使用します。AppArmor によるユーザー名前空間の制限があるシステムでは、[WebKitGTK に bubblewrap プロファイルが必要です](debugging.md#linux-web-views)。
+- Linux では GTK 4.14 以降、Pango、Cairo が必要です。ネットワーク画像には libsoup 3、Web ビューには WebKitGTK 6.0、オーディオとビデオには GStreamer プラグインを使用します。AppArmor によるユーザー名前空間の制限があるシステムでは、[WebKitGTK に bubblewrap プロファイルが必要です](debugging.md#linux-の-webview)。
 
 ## アプリを作成する
 
@@ -78,7 +78,7 @@ NSGo のスキルは、Claude Code、Codex、Cursor などのコーディング�
 bunx skills add nsgo-dev/nsgo
 ```
 
-ドキュメントを直接読むエージェントは <https://nsgo.dev/llms.txt> から開始でき、そこにはすべてのページが `https://nsgo.dev/docs/<page>.md` の Markdown として一覧表示されています。また、<https://nsgo.dev/llms-full.txt> には全ページがまとめられています。エージェントは実行中のアプリを操作することもできます（[実行とデバッグ](debugging.md#agents)）。
+ドキュメントを直接読むエージェントは <https://nsgo.dev/llms.txt> から開始でき、そこにはすべてのページが `https://nsgo.dev/docs/<page>.md` の Markdown として一覧表示されています。また、<https://nsgo.dev/llms-full.txt> には全ページがまとめられています。エージェントは実行中のアプリを操作することもできます（[実行とデバッグ](debugging.md#エージェント)）。
 
 ## 次のステップ
 

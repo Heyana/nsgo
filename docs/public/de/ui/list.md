@@ -70,5 +70,5 @@ Die native Scroll-View und die Virtualisierung sind auf jeder Zielplattform glei
 
 - [Listen und Scrollen](../lists.md): der vollständige Leitfaden, einschließlich fixierter Header und Nachladen.
 - [Scroll](scroll.md): eine einfache Scroll-View.
-- [DataTable](../lists.md#tables): eine Tabelle mit vielen Zeilen und Spalten.
+- [DataTable](../lists.md#tabellen): eine Tabelle mit vielen Zeilen und Spalten.
 - Die Seiten List, Table und DataTable der Galerie.

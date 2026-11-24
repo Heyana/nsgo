@@ -66,7 +66,7 @@ El teclado en pantalla cubre la parte inferior de un teléfono. Coloca `core.Env
 
 ## Validación
 
-La aplicación es dueña de las reglas. Una señal guarda el error, `OnBlur` o `OnSubmit` lo establece y un mensaje debajo del campo lo muestra ([Formularios](../forms.md#validation)).
+La aplicación es dueña de las reglas. Una señal guarda el error, `OnBlur` o `OnSubmit` lo establece y un mensaje debajo del campo lo muestra ([Formularios](../forms.md#validación)).
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")

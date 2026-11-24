@@ -52,7 +52,7 @@ Le piattaforme Apple, Android, Windows, Linux e il web aggiornano direttamente l
 
 ## Catturare una vista
 
-Chiama `cx.Capture(&ref, done)` con il `core.Ref` di una vista montata, oppure `cx.Capture(nil, done)` per la superficie corrente. La callback riceve, sulla goroutine del motore, i byte PNG alla scala di pixel della superficie oppure un errore. Usa `core.ImageSource{Data: png}` per mostrare il risultato. Per condividerlo, scrivi i byte in un file `.png` nella directory della cache dell'app e passa il suo percorso in `core.ShareOptions.Files`. [Condividere file](services.md#opening-links-and-files)
+Chiama `cx.Capture(&ref, done)` con il `core.Ref` di una vista montata, oppure `cx.Capture(nil, done)` per la superficie corrente. La callback riceve, sulla goroutine del motore, i byte PNG alla scala di pixel della superficie oppure un errore. Usa `core.ImageSource{Data: png}` per mostrare il risultato. Per condividerlo, scrivi i byte in un file `.png` nella directory della cache dell'app e passa il suo percorso in `core.ShareOptions.Files`. [Condividere file](services.md#aprire-link-e-file)
 
 La cattura prende i pixel visibili della superficie entro i limiti della vista. È disponibile su macOS, iOS, tvOS, Windows, Linux, Android e il web. Android cattura la finestra dell'activity. La cattura sul web dipinge il DOM dell'app in un canvas, incluso l'output degli shader di NSGo, e omette i frame incorporati, le immagini che non riesce a leggere e alcuni effetti CSS.
 

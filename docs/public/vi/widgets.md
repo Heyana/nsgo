@@ -18,9 +18,9 @@ widgets:
 # apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
-Trên các nền tảng Apple, một widget extension vẽ widget, và `build` cùng `dev` biên dịch extension đó bằng trình biên dịch Swift của Xcode ([Xây dựng và đóng gói phát hành](building.md#widgets-and-live-activities)). Trên Android, runtime Java dựng sẵn vẽ cùng một timeline dưới dạng App Widget. Cả hai đều tiếp tục hiển thị nội dung đã xuất bản khi ứng dụng dừng.
+Trên các nền tảng Apple, một widget extension vẽ widget, và `build` cùng `dev` biên dịch extension đó bằng trình biên dịch Swift của Xcode ([Xây dựng và đóng gói phát hành](building.md#widget-và-live-activities)). Trên Android, runtime Java dựng sẵn vẽ cùng một timeline dưới dạng App Widget. Cả hai đều tiếp tục hiển thị nội dung đã xuất bản khi ứng dụng dừng.
 
-Với bản build Mac App Store có sandbox, đặt `apple.app_group` và cung cấp các provisioning profile macOS qua `sign.macos_profile` và `sign.widgets_profile`. Cả ứng dụng và `<id>.widgets` phải thuộc cùng một team và được cấp quyền dùng nhóm đó. Timeline và hình ảnh nằm trong vùng chứa dùng chung của nhóm; các bản build macOS phân phối trực tiếp và bản phát triển vẫn giữ vị trí trong thư mục home như trước. [Ký cho cửa hàng](building.md#store-packages) mô tả các tùy chọn build.
+Với bản build Mac App Store có sandbox, đặt `apple.app_group` và cung cấp các provisioning profile macOS qua `sign.macos_profile` và `sign.widgets_profile`. Cả ứng dụng và `<id>.widgets` phải thuộc cùng một team và được cấp quyền dùng nhóm đó. Timeline và hình ảnh nằm trong vùng chứa dùng chung của nhóm; các bản build macOS phân phối trực tiếp và bản phát triển vẫn giữ vị trí trong thư mục home như trước. [Ký cho cửa hàng](building.md#gói-kho-ứng-dụng) mô tả các tùy chọn build.
 
 `name` và `description` có thể đặt tên cho các thông điệp trong catalog của ứng dụng. Khi đó, thư viện widget và phần giữ chỗ dùng ngôn ngữ của người dùng, và quay về văn bản của catalog nguồn khi thiếu bản dịch. Một giá trị không phải là khóa catalog sẽ được hiển thị nguyên văn.
 

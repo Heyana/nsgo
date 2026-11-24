@@ -187,6 +187,6 @@ go tool nsgo test
 
 ## Siguiente
 
-- [Servicios de plataforma](../services.md#networking): más sobre red, almacenamiento y archivos.
+- [Servicios de plataforma](../services.md#redes): más sobre red, almacenamiento y archivos.
 - [Listas y desplazamiento](../lists.md): arrastrar para actualizar, ajuste (snapping) y listas largas.
 - [Ejecución y depuración](../debugging.md): observa cada actualización con `-trace`.

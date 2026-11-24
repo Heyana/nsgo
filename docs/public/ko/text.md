@@ -74,7 +74,7 @@ cx.RegisterFont(data) // TrueType 또는 OpenType 서체
 
 ## 선택과 측정
 
-`SelectableOn`은 사용자가 텍스트를 선택하고 복사할 수 있게 하며, `Selectable`이 설정된 `View`는 웹 페이지처럼 내부 텍스트들이 문서 순서대로 함께 선택되도록 합니다. `SelectionColor`는 선택 강조 색상을 지정합니다. `OnTextSelection`은 사용자가 선택 영역을 움직일 때 `core.TextSelection`을 받습니다. 여기에는 일반 `Text`, `Markdown` 및 `HTML`(영역 내 `TextView`와 스타일이 지정된 텍스트의 파싱된 인라인·블록 구조를 부분 스팬과 링크까지 포함해 보존), 텍스트별 `Ranges`, 그리고 뷰 좌표계에서 선택이 닿는 텍스트들의 `Bounds`가 담겨 있어 Markdown이나 HTML로 복사하거나 단어 목록 또는 선택된 단어 번역을 만드는 데 활용할 수 있습니다. `desktop.LookUp`은 시스템 사전에서 해당 단어를 보여 줍니다([서비스](services.md#opening-links-and-files)). `cx.MeasureText`는 특정 글꼴로 문자열의 크기를 측정해 텍스트에 맞춘 열 등을 구성할 때 사용합니다. 이를 호출하는 반응형 함수는 사용 가능한 글꼴이 바뀔 때 업데이트되며, `OnTextLayout`은 각 레이아웃 이후의 줄 정보를 보고합니다.
+`SelectableOn`은 사용자가 텍스트를 선택하고 복사할 수 있게 하며, `Selectable`이 설정된 `View`는 웹 페이지처럼 내부 텍스트들이 문서 순서대로 함께 선택되도록 합니다. `SelectionColor`는 선택 강조 색상을 지정합니다. `OnTextSelection`은 사용자가 선택 영역을 움직일 때 `core.TextSelection`을 받습니다. 여기에는 일반 `Text`, `Markdown` 및 `HTML`(영역 내 `TextView`와 스타일이 지정된 텍스트의 파싱된 인라인·블록 구조를 부분 스팬과 링크까지 포함해 보존), 텍스트별 `Ranges`, 그리고 뷰 좌표계에서 선택이 닿는 텍스트들의 `Bounds`가 담겨 있어 Markdown이나 HTML로 복사하거나 단어 목록 또는 선택된 단어 번역을 만드는 데 활용할 수 있습니다. `desktop.LookUp`은 시스템 사전에서 해당 단어를 보여 줍니다([서비스](services.md#링크와-파일-열기)). `cx.MeasureText`는 특정 글꼴로 문자열의 크기를 측정해 텍스트에 맞춘 열 등을 구성할 때 사용합니다. 이를 호출하는 반응형 함수는 사용 가능한 글꼴이 바뀔 때 업데이트되며, `OnTextLayout`은 각 레이아웃 이후의 줄 정보를 보고합니다.
 
 ## 문서
 

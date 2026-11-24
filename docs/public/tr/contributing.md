@@ -7,7 +7,7 @@ order: 80
 
 ## Gereksinimler
 
-Xcode ve Go 1.27.3 veya üzeri kurulu macOS, Android APK'sı dahil arm64 için her hedefi derler. Cihazlarda çalıştırmak [Kurulum](getting-started.md#requirements) sayfasında listelenenleri gerektirir ve x86_64 Android emülatörünün hedefi olan `android_x64` ise Go yalnızca cgo ile android/amd64 bağlantısı kurduğundan bir Android NDK gerektirir. Windows kurulum ve kaldırma programları yalnızca Go ile derlenir.
+Xcode ve Go 1.27.3 veya üzeri kurulu macOS, Android APK'sı dahil arm64 için her hedefi derler. Cihazlarda çalıştırmak [Kurulum](getting-started.md#gereksinimler) sayfasında listelenenleri gerektirir ve x86_64 Android emülatörünün hedefi olan `android_x64` ise Go yalnızca cgo ile android/amd64 bağlantısı kurduğundan bir Android NDK gerektirir. Windows kurulum ve kaldırma programları yalnızca Go ile derlenir.
 
 ```sh
 git clone https://github.com/nsgo-dev/nsgo.git

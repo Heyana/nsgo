@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 Una acción con `Role: core.AlertCancel` se ejecuta con Escape o retroceso, seguida de `OnOpenChange(false, base.ReasonCancel)`. `Default: true` otorga foco de teclado a una acción cuando se abre la alerta en escritorios, la web y Apple TV, y hace que Intro la elija; al pulsar una acción se ejecuta `OnPress` y luego `OnOpenChange(false, base.ReasonSelect)`. Intro ejecuta la acción predeterminada mientras el foco del teclado no esté en otra acción o campo: si el foco se mueve a otra acción, Intro pulsa esa otra, y un cuadro de diálogo sobre la alerta conserva Intro. Una vez que una acción se ha ejecutado, la alerta se cierra, haga lo que haga `OnOpenChange`, y no ejecuta ninguna otra hasta que `Open` vuelva a ser falso y luego verdadero. Si varias acciones llevan el mismo marcador, gana la primera. Sin marcadores, Escape cierra sin ejecutar ninguna acción e Intro no tiene acción predeterminada. `Role: core.AlertDestructive` describe una acción; `Variant` o `Color` elige su aspecto.
 
-Para la alerta o la hoja de acciones propia del sistema, usa `cx.ShowAlert` ([Servicios de plataforma](../services.md#alerts-and-the-clipboard)).
+Para la alerta o la hoja de acciones propia del sistema, usa `cx.ShowAlert` ([Servicios de plataforma](../services.md#alertas-y-el-portapapeles)).
 
 ## Comportamiento
 
@@ -83,4 +83,4 @@ En Android y en pantallas táctiles un cuadro de diálogo es una hoja desde la p
 - [Menú](menu.md): comandos anclados y menús contextuales.
 - [Accesibilidad](../accessibility.md): foco y roles de cuadro de diálogo.
 - Las páginas Dialog, Sheet y AlertDialog de la galería.
-- [Componentes sin estilo](../authoring/base.md#dialog): `base.Dialog` y `base.Sheet`, con las presentaciones de iOS y animación propia.
+- [Componentes sin estilo](../authoring/base.md#cuadro-de-diálogo): `base.Dialog` y `base.Sheet`, con las presentaciones de iOS y animación propia.

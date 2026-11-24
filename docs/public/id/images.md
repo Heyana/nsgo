@@ -52,7 +52,7 @@ Platform Apple, Android, Windows, Linux, dan web memperbarui gambar piksel secar
 
 ## Mengambil tangkapan tampilan
 
-Panggil `cx.Capture(&ref, done)` dengan `core.Ref` milik view yang terpasang, atau `cx.Capture(nil, done)` untuk permukaan (*surface*) saat ini. Callback menerima byte PNG pada skala piksel permukaan tersebut atau sebuah error pada goroutine mesin. Gunakan `core.ImageSource{Data: png}` untuk menampilkan hasilnya. Untuk membagikannya, tulis byte tersebut ke file `.png` di direktori cache aplikasi dan berikan path-nya di `core.ShareOptions.Files`. [Membagikan file](services.md#opening-links-and-files)
+Panggil `cx.Capture(&ref, done)` dengan `core.Ref` milik view yang terpasang, atau `cx.Capture(nil, done)` untuk permukaan (*surface*) saat ini. Callback menerima byte PNG pada skala piksel permukaan tersebut atau sebuah error pada goroutine mesin. Gunakan `core.ImageSource{Data: png}` untuk menampilkan hasilnya. Untuk membagikannya, tulis byte tersebut ke file `.png` di direktori cache aplikasi dan berikan path-nya di `core.ShareOptions.Files`. [Membagikan file](services.md#membuka-tautan-dan-file)
 
 Pengambilan tangkapan mengambil piksel permukaan yang terlihat dalam batas view. Fitur ini tersedia di macOS, iOS, tvOS, Windows, Linux, Android, dan web. Android menangkap jendela activity. Tangkapan web melukis DOM aplikasi ke dalam kanvas, termasuk keluaran shader NSGo, serta mengabaikan frame tertanam, gambar yang tidak dapat dibaca, dan sebagian efek CSS.
 

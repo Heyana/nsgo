@@ -190,7 +190,7 @@ NSGo 플래그는 디렉터리 뒤에 두지 말고 `go tool nsgo test -target w
 
 `app.Play(selector, core.VideoInfo{Duration: time.Second, RateChangeable: true})`는 재생 길이, 원본 크기 및 재생 속도 변경 가능 여부와 함께 비디오 로드를 보고합니다. 속도 제어 기능을 사용할 수 없는 플레이어를 테스트하려면 `RateChangeable`을 false로 설정하세요.
 
-`tui`에서 테스트를 실행하려면 대화형 터미널, 링크된 NSGo 백엔드, 그리고 `nsgotest.Main`을 호출하는 `TestMain`이 필요합니다. 각 프로세스는 하나의 애플리케이션을 열며, 스텝은 터미널 편집, 포커스, 마우스 및 키 라우팅을 테스트합니다. 테스트 출력은 터미널이 복원될 때까지 버퍼링됩니다. PNG 캡처는 포터블 고정 글꼴로 셀을 렌더링합니다. [터미널 타겟](building.md#terminal)
+`tui`에서 테스트를 실행하려면 대화형 터미널, 링크된 NSGo 백엔드, 그리고 `nsgotest.Main`을 호출하는 `TestMain`이 필요합니다. 각 프로세스는 하나의 애플리케이션을 열며, 스텝은 터미널 편집, 포커스, 마우스 및 키 라우팅을 테스트합니다. 테스트 출력은 터미널이 복원될 때까지 버퍼링됩니다. PNG 캡처는 포터블 고정 글꼴로 셀을 렌더링합니다. [터미널 타겟](building.md#터미널)
 
 ## TSX 테스트
 

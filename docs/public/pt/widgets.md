@@ -18,9 +18,9 @@ widgets:
 # apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
-Nas plataformas Apple, uma extensão de widget o desenha, que `build` e `dev` compilam com o compilador Swift do Xcode ([Compilação e distribuição](building.md#widgets-and-live-activities)). No Android, o runtime Java pré-compilado desenha a mesma linha do tempo como App Widgets. Ambos continuam mostrando o conteúdo publicado quando o aplicativo para.
+Nas plataformas Apple, uma extensão de widget o desenha, que `build` e `dev` compilam com o compilador Swift do Xcode ([Compilação e distribuição](building.md#widgets-e-live-activities)). No Android, o runtime Java pré-compilado desenha a mesma linha do tempo como App Widgets. Ambos continuam mostrando o conteúdo publicado quando o aplicativo para.
 
-Para uma compilação da Mac App Store com sandbox, defina `apple.app_group` e forneça perfis de provisionamento do macOS por meio de `sign.macos_profile` e `sign.widgets_profile`. Tanto o aplicativo quanto `<id>.widgets` devem pertencer à mesma equipe e ter o entitlement desse grupo. As linhas do tempo e as imagens ficam no contêiner compartilhado dele; compilações diretas e de desenvolvimento do macOS mantêm sua localização existente no diretório pessoal. [Assinatura para lojas](building.md#store-packages) descreve as opções de compilação.
+Para uma compilação da Mac App Store com sandbox, defina `apple.app_group` e forneça perfis de provisionamento do macOS por meio de `sign.macos_profile` e `sign.widgets_profile`. Tanto o aplicativo quanto `<id>.widgets` devem pertencer à mesma equipe e ter o entitlement desse grupo. As linhas do tempo e as imagens ficam no contêiner compartilhado dele; compilações diretas e de desenvolvimento do macOS mantêm sua localização existente no diretório pessoal. [Assinatura para lojas](building.md#pacotes-de-loja) descreve as opções de compilação.
 
 `name` e `description` podem nomear mensagens nos catálogos do aplicativo. Quando o fazem, a galeria de widgets e o placeholder usam o idioma do usuário, recorrendo ao texto do catálogo de origem quando falta uma tradução. Um valor que não é uma chave de catálogo é mostrado literalmente.
 

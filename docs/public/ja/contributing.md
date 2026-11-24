@@ -7,7 +7,7 @@ order: 80
 
 ## 要件
 
-Xcode と Go 1.27.3 以降を入れた macOS があれば、Android の APK を含め arm64 向けの全ターゲットをビルドできます。実機で動かすには[セットアップ](getting-started.md#requirements)に記載されている環境が必要で、x86_64 Android エミュレータ向けのターゲット `android_x64` には Go が android/amd64 を cgo ありでしかリンクしないため Android NDK が必要です。Windows のセットアップとアンインストールのプログラムは Go だけでビルドできます。
+Xcode と Go 1.27.3 以降を入れた macOS があれば、Android の APK を含め arm64 向けの全ターゲットをビルドできます。実機で動かすには[セットアップ](getting-started.md#必要要件)に記載されている環境が必要で、x86_64 Android エミュレータ向けのターゲット `android_x64` には Go が android/amd64 を cgo ありでしかリンクしないため Android NDK が必要です。Windows のセットアップとアンインストールのプログラムは Go だけでビルドできます。
 
 ```sh
 git clone https://github.com/nsgo-dev/nsgo.git

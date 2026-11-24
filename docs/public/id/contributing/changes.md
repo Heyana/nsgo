@@ -22,7 +22,7 @@ go tool nsgo check   # vet every package
 go tool nsgo test    # every package's tests
 ```
 
-Tambahkan pengujian untuk apa yang Anda ubah: `nsgotest` untuk apa yang dilihat pengguna, dan pengujian paket itu sendiri untuk sisanya. Jalankan galeri pada platform yang Anda sentuh ([Pengaturan pengembangan](../contributing.md#the-gallery)).
+Tambahkan pengujian untuk apa yang Anda ubah: `nsgotest` untuk apa yang dilihat pengguna, dan pengujian paket itu sendiri untuk sisanya. Jalankan galeri pada platform yang Anda sentuh ([Pengaturan pengembangan](../contributing.md#galeri)).
 
 Format file Go dengan `gofmt` dari versi Go di `go.mod`; `gofmt -l .` mencantumkan file yang perlu diformat. CI memeriksa setiap file Go yang dilacak dan gagal dengan menampilkan nama file yang belum diformat.
 

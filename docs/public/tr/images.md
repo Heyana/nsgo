@@ -52,7 +52,7 @@ Apple platformları, Android, Windows, Linux ve web piksel görüntülerini doğ
 
 ## Bir görünümü yakalamak
 
-Bağlanmış bir görünümün `core.Ref` değeriyle `cx.Capture(&ref, done)` veya geçerli yüzey için `cx.Capture(nil, done)` çağırın. Geri çağrı, motor goroutine'inde yüzeyin piksel ölçeğinde PNG baytlarını veya bir hatayı alır. Sonucu görüntülemek için `core.ImageSource{Data: png}` kullanın. Paylaşmak için baytları uygulamanın önbellek dizininde bir `.png` dosyasına yazın ve yolunu `core.ShareOptions.Files` içinde verin. [Dosya paylaşma](services.md#opening-links-and-files)
+Bağlanmış bir görünümün `core.Ref` değeriyle `cx.Capture(&ref, done)` veya geçerli yüzey için `cx.Capture(nil, done)` çağırın. Geri çağrı, motor goroutine'inde yüzeyin piksel ölçeğinde PNG baytlarını veya bir hatayı alır. Sonucu görüntülemek için `core.ImageSource{Data: png}` kullanın. Paylaşmak için baytları uygulamanın önbellek dizininde bir `.png` dosyasına yazın ve yolunu `core.ShareOptions.Files` içinde verin. [Dosya paylaşma](services.md#bağlantıları-ve-dosyaları-açma)
 
 Yakalama, görünümün sınırları içindeki görünür yüzey piksellerini alır. macOS, iOS, tvOS, Windows, Linux, Android ve web üzerinde kullanılabilir. Android, etkinliğin penceresini yakalar. Web yakalaması, NSGo gölgelendirici çıktısı dahil uygulamanın DOM'unu bir tuvale boyar; gömülü çerçeveleri, okuyamadığı görüntüleri ve bazı CSS efektlerini atlar.
 

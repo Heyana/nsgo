@@ -187,6 +187,6 @@ go tool nsgo test
 
 ## Selanjutnya
 
-- [Layanan platform](../services.md#networking): lebih lanjut tentang jaringan, penyimpanan, dan file.
+- [Layanan platform](../services.md#jaringan): lebih lanjut tentang jaringan, penyimpanan, dan file.
 - [Daftar dan pengguliran](../lists.md): tarik untuk menyegarkan, snapping, dan daftar panjang.
 - [Menjalankan dan debugging](../debugging.md): pantau setiap pembaruan dengan `-trace`.

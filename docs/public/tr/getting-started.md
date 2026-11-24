@@ -12,7 +12,7 @@ order: 10
 - Bir iPhone'da çalıştırmak için Xcode'un Accounts bölümünde bir Apple ID ve Developer Mode açık, güvenilir olarak işaretlenmiş bir iPhone.
 - Android'de çalıştırmak için Android SDK'nın platform-tools paketinden `adb`.
 - Windows'ta çalıştırmak için yalnızca Go; Windows ve web paketlerini de o derler.
-- Linux'ta GTK 4.14 veya daha yenisi, Pango ve Cairo. Ağ görüntüleri libsoup 3, web görünümleri WebKitGTK 6.0, ses ve video ise GStreamer eklentileri kullanır. AppArmor kullanıcı ad alanı kısıtlamaları olan sistemlerde [WebKitGTK bir bubblewrap profiline ihtiyaç duyar](debugging.md#linux-web-views).
+- Linux'ta GTK 4.14 veya daha yenisi, Pango ve Cairo. Ağ görüntüleri libsoup 3, web görünümleri WebKitGTK 6.0, ses ve video ise GStreamer eklentileri kullanır. AppArmor kullanıcı ad alanı kısıtlamaları olan sistemlerde [WebKitGTK bir bubblewrap profiline ihtiyaç duyar](debugging.md#linux-web-görünümleri).
 
 ## Bir uygulama oluşturun
 
@@ -78,7 +78,7 @@ NSGo'nun becerisi (skill), Claude Code, Codex ve Cursor gibi kodlama ajanlarına
 bunx skills add nsgo-dev/nsgo
 ```
 
-Belgeleri kendisi okuyan ajanlar <https://nsgo.dev/llms.txt> ile başlar; bu dosya her sayfayı `https://nsgo.dev/docs/<page>.md` adresinde Markdown olarak listeler; <https://nsgo.dev/llms-full.txt> ise hepsini içerir. Bir ajan çalışan uygulamayı da kullanabilir ([Çalıştırma ve hata ayıklama](debugging.md#agents)).
+Belgeleri kendisi okuyan ajanlar <https://nsgo.dev/llms.txt> ile başlar; bu dosya her sayfayı `https://nsgo.dev/docs/<page>.md` adresinde Markdown olarak listeler; <https://nsgo.dev/llms-full.txt> ise hepsini içerir. Bir ajan çalışan uygulamayı da kullanabilir ([Çalıştırma ve hata ayıklama](debugging.md#ajanlar)).
 
 ## Sonraki adımlar
 

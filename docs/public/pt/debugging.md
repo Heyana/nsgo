@@ -224,7 +224,7 @@ go tool nsgo dev -target web -automation
 claude mcp add nsgo -- go tool nsgo mcp
 ```
 
-Outros clientes aceitam o mesmo comando, `go` com os argumentos `tool nsgo mcp`, executado no diretório do aplicativo. As views são nomeadas com os seletores dos [testes](testing.md#a-test), ou com as referências `view:` que um instantâneo imprime, as quais um salvamento invalida ao reiniciar o aplicativo.
+Outros clientes aceitam o mesmo comando, `go` com os argumentos `tool nsgo mcp`, executado no diretório do aplicativo. As views são nomeadas com os seletores dos [testes](testing.md#um-teste), ou com as referências `view:` que um instantâneo imprime, as quais um salvamento invalida ao reiniciar o aplicativo.
 
 O agente atua nos dados reais do aplicativo, conforme `dev` o executa. Apenas compilações `dev -automation` incluem esse recurso, e apenas ferramentas nesta máquina que possuam o token em `.nsgo/automation.yaml`, que somente você pode ler, o alcançam.
 

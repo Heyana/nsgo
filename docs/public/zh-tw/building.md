@@ -11,19 +11,19 @@ order: 22
 go tool nsgo build
 ```
 
-`build` 會為 `nsgo.yaml` 列出的每個目標平台產生經過裁剪（stripped）的發佈封裝檔，輸出至 `dist/<name>-<version>-<target>`：包含 `.app`、`.ipa`、`.apk`、Windows 與 Linux 的目錄，或是網站檔案（其頁面會在 `import()` 執行時才擷取對應的 TSX 模組）。`-target` 會取代該列表，其中 `all` 代表所有僅需 Go 與 Xcode 即可建置的目標；若系統已安裝 Android NDK，可加上 `android_x64`；[小程式](#mini-programs)可指定 `miniprogram`，或單獨指定 `miniprogram_wechat`、`miniprogram_qq`、`miniprogram_alipay` 或 `miniprogram_douyin`；[HarmonyOS](#harmonyos) 預覽則可使用 `harmonyos`。`-run` 會啟動為本機建置的封裝檔，或將其安裝至由 `-device` 選定的 iPhone、模擬器或 Android 裝置上。
+`build` 會為 `nsgo.yaml` 列出的每個目標平台產生經過裁剪（stripped）的發佈封裝檔，輸出至 `dist/<name>-<version>-<target>`：包含 `.app`、`.ipa`、`.apk`、Windows 與 Linux 的目錄，或是網站檔案（其頁面會在 `import()` 執行時才擷取對應的 TSX 模組）。`-target` 會取代該列表，其中 `all` 代表所有僅需 Go 與 Xcode 即可建置的目標；若系統已安裝 Android NDK，可加上 `android_x64`；[小程式](#小程式)可指定 `miniprogram`，或單獨指定 `miniprogram_wechat`、`miniprogram_qq`、`miniprogram_alipay` 或 `miniprogram_douyin`；[HarmonyOS](#harmonyos) 預覽則可使用 `harmonyos`。`-run` 會啟動為本機建置的封裝檔，或將其安裝至由 `-device` 選定的 iPhone、模擬器或 Android 裝置上。
 
 所有用於發佈的檔案皆會彙整於 `dist/releases`，這是唯一需要檢視的目錄：
 
 | `dist/releases` 中的檔案 | 用途 |
 | --- | --- |
-| `*.dmg`、`*-setup.exe`、`*.deb`、`*.pkg.tar.gz`、`*.AppImage` | 適用於 macOS、Windows 與 Linux 的[安裝程式](#installers) |
+| `*.dmg`、`*-setup.exe`、`*.deb`、`*.pkg.tar.gz`、`*.AppImage` | 適用於 macOS、Windows 與 Linux 的[安裝程式](#安裝程式) |
 | `*.AppImage.zsync` | 供 AppImageUpdate 與相容啟動器使用的差異更新控制檔 |
 | `*-ios.ipa`、`*-tvos.ipa`、`*.apk` | 適用於商店或實機的 iOS、tvOS 與 Android 封裝檔 |
-| `*.pkg`、`*.msix`、`*.aab`、`*.flatpak`、`*.tar.gz` 與 `flatpak/` | `store` 渠道建置出的[商店封裝檔](#store-packages) |
-| `install.sh`、`install.ps1` | 用於從 [GitHub Releases](#publish-on-github) 安裝應用程式的腳本 |
-| `appcast-<target>.xml` | 應用程式讀取的[更新](#updates)訂閱源（feed） |
-| `homebrew/<name>.rb`、`winget/` | 直接發佈用的 [Homebrew cask 與 winget 清單](#channels) |
+| `*.pkg`、`*.msix`、`*.aab`、`*.flatpak`、`*.tar.gz` 與 `flatpak/` | `store` 渠道建置出的[商店封裝檔](#商店封裝檔) |
+| `install.sh`、`install.ps1` | 用於從 [GitHub Releases](#在-github-上發佈) 安裝應用程式的腳本 |
+| `appcast-<target>.xml` | 應用程式讀取的[更新](#更新)訂閱源（feed） |
+| `homebrew/<name>.rb`、`winget/` | 直接發佈用的 [Homebrew cask 與 winget 清單](#渠道) |
 | `*-web.zip` | 網站壓縮檔，解壓後即可直接作為靜態網站提供服務 |
 | `miniprogram/<platform>/` | 各平台的小程式專案，可直接透過對應開發者工具上傳 |
 
@@ -132,7 +132,7 @@ Apple TV 的圖示是一張分層卡片而非正方形：`tvos` 接受 Xcode 的
 
 `android.uses_cleartext_traffic: true` 會允許 APK 或 App Bundle 向任意主機發送未加密的明文 HTTP 請求，同時設定 manifest 旗標與網路安全性設定。若未開啟此項，`android.loopback_cleartext: true` 則僅允許對 `localhost`、`127.0.0.1` 與 `::1` 使用明文 HTTP（例如由應用程式自身提供服務的影片）。僅限本機迴圈的原則會拒絕其他主機的明文流量；當兩項設定皆為 true 時，允許所有主機的設定優先。對於嵌入式的 AAR，請在宿主應用程式的 Android 網路安全性設定中進行組態。
 
-每個建置在啟動時也都接受 NSGo 自身的命令列旗標，例如 `--nsgo-fps`（[執行與除錯](debugging.md#flags-of-every-build)）。在 `nsgo dev` 中，Command/Control+R 可從任一開啟的視窗觸發重新載入，且即使主視窗關閉，只要仍有其他視窗保持應用程式函式執行，此快捷鍵依然有效。
+每個建置在啟動時也都接受 NSGo 自身的命令列旗標，例如 `--nsgo-fps`（[執行與除錯](debugging.md#所有建置共通的旗標)）。在 `nsgo dev` 中，Command/Control+R 可從任一開啟的視窗觸發重新載入，且即使主視窗關閉，只要仍有其他視窗保持應用程式函式執行，此快捷鍵依然有效。
 
 ### 啟動畫面
 
@@ -206,11 +206,11 @@ windows:
 
 | 封裝 | 命令列程式處理方式 |
 | --- | --- |
-| macOS | 置於 `Contents/MacOS` 中，在簽署主應用程式前照原樣以 `<id>.<command>` 進行簽署：採 ad hoc 簽署，或使用 `sign.identity` 搭配強化執行階段（hardened runtime）與時間戳記以讓應用程式通過[公證](#notarize)，但不帶主應用程式的權限宣告。磁碟映像檔不會設定 `PATH`；[Homebrew cask](#channels) 會建立每個命令的符號連結，使用者也可自行連結 `/Applications/<name>.app/Contents/MacOS/<command>` |
-| Windows | `<command>.exe` 置於 `<name>.exe` 旁，並依[簽署 Windows 封裝檔](#sign-windows-packages)的方式照原樣簽署，安裝程式會安裝它並在解除安裝時將其移除；搭配 `windows.path` 時，安裝程式也會將應用程式資料夾加入使用者的 `Path`（如同 `windows.command_line`），使安裝後開啟的主控台能直接找到這些命令。若更新時重新命名或移除了某個命令，該檔案會像其他應用程式不再隨附的檔案一樣留在資料夾中，因為解除安裝程式只會移除該版本安裝時所寫入的檔案 |
+| macOS | 置於 `Contents/MacOS` 中，在簽署主應用程式前照原樣以 `<id>.<command>` 進行簽署：採 ad hoc 簽署，或使用 `sign.identity` 搭配強化執行階段（hardened runtime）與時間戳記以讓應用程式通過[公證](#公證)，但不帶主應用程式的權限宣告。磁碟映像檔不會設定 `PATH`；[Homebrew cask](#渠道) 會建立每個命令的符號連結，使用者也可自行連結 `/Applications/<name>.app/Contents/MacOS/<command>` |
+| Windows | `<command>.exe` 置於 `<name>.exe` 旁，並依[簽署 Windows 封裝檔](#簽署-windows-封裝檔)的方式照原樣簽署，安裝程式會安裝它並在解除安裝時將其移除；搭配 `windows.path` 時，安裝程式也會將應用程式資料夾加入使用者的 `Path`（如同 `windows.command_line`），使安裝後開啟的主控台能直接找到這些命令。若更新時重新命名或移除了某個命令，該檔案會像其他應用程式不再隨附的檔案一樣留在資料夾中，因為解除安裝程式只會移除該版本安裝時所寫入的檔案 |
 | Linux | 置於 `/opt/<slug>` 中並於 `/usr/bin/<command>` 建立由 `.deb` 與 Arch 套件擁有的連結，因此移除套件時會一併移除該連結，且 dpkg 與 pacman 會拒絕覆寫其他套件的檔案；AppImage 則將其保存在應用程式旁，不會更動 `PATH` |
 
-安裝程式、檢查碼以及[更新](#updates) appcast 皆會像處理應用程式其他檔案一樣包含這些命令，因此在更新時會隨應用程式一併替換。[商店封裝檔](#store-packages)則不會包含它們，因為 Mac App Store 的沙盒、MSIX 與 Flatpak 僅允許執行應用程式自身的主執行檔。
+安裝程式、檢查碼以及[更新](#更新) appcast 皆會像處理應用程式其他檔案一樣包含這些命令，因此在更新時會隨應用程式一併替換。[商店封裝檔](#商店封裝檔)則不會包含它們，因為 Mac App Store 的沙盒、MSIX 與 Flatpak 僅允許執行應用程式自身的主執行檔。
 
 ## 安裝程式
 
@@ -218,9 +218,9 @@ windows:
 
 | 目標平台 | 安裝程式 |
 | --- | --- |
-| macOS | `<name>-<version>-macos-<arch>.dmg`，這是一個顯示應用程式、箭頭與 Applications 連結的磁碟映像檔，方便使用者拖曳安裝，並使用 `sign.identity` 簽署及進行[公證](#notarize) |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`，為原生 Windows 安裝程式，會為使用者安裝應用程式（若先前已安裝則安裝於原本選定的資料夾，並關閉執行中的應用程式），附帶「開始」功能表捷徑、可選的桌面捷徑以及僅移除其所安裝檔案的解除安裝程式，並於設定了 [`sign.certificate`](#sign-windows-packages) 時隨應用程式一併簽署；`windows.command_line` 亦會安裝 `.com` 輔助程式並將應用程式資料夾加入使用者的 `Path`，使安裝後開啟的主控台能直接執行應用程式命令，而同樣能找到該輔助程式的 Win+R 則會在啟動應用程式後自動關閉開啟的主控台；解除安裝程式僅在該資料夾是由安裝程式加入時才會將其從 `Path` 移除，絕不會動到使用者原本自訂的路徑項目 |
-| Linux | 適用於 Debian 與 Ubuntu 的 `<name>-<version>-linux-<arch>.deb`，以及適用於 Arch Linux 的 `<name>-<version>-linux-<arch>.pkg.tar.gz`，兩者皆會將應用程式安裝於 `/opt/<slug>` 並包含命令、其[命令列程式](#commands)連結、桌面項目與圖示（Arch 套件包含供 `pacman -Qkk` 驗證的 `.MTREE`）；另有 `<name>-<version>-linux-<arch>.AppImage`，無需安裝即可在任何發行版上執行 |
+| macOS | `<name>-<version>-macos-<arch>.dmg`，這是一個顯示應用程式、箭頭與 Applications 連結的磁碟映像檔，方便使用者拖曳安裝，並使用 `sign.identity` 簽署及進行[公證](#公證) |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`，為原生 Windows 安裝程式，會為使用者安裝應用程式（若先前已安裝則安裝於原本選定的資料夾，並關閉執行中的應用程式），附帶「開始」功能表捷徑、可選的桌面捷徑以及僅移除其所安裝檔案的解除安裝程式，並於設定了 [`sign.certificate`](#簽署-windows-封裝檔) 時隨應用程式一併簽署；`windows.command_line` 亦會安裝 `.com` 輔助程式並將應用程式資料夾加入使用者的 `Path`，使安裝後開啟的主控台能直接執行應用程式命令，而同樣能找到該輔助程式的 Win+R 則會在啟動應用程式後自動關閉開啟的主控台；解除安裝程式僅在該資料夾是由安裝程式加入時才會將其從 `Path` 移除，絕不會動到使用者原本自訂的路徑項目 |
+| Linux | 適用於 Debian 與 Ubuntu 的 `<name>-<version>-linux-<arch>.deb`，以及適用於 Arch Linux 的 `<name>-<version>-linux-<arch>.pkg.tar.gz`，兩者皆會將應用程式安裝於 `/opt/<slug>` 並包含命令、其[命令列程式](#命令列程式)連結、桌面項目與圖示（Arch 套件包含供 `pacman -Qkk` 驗證的 `.MTREE`）；另有 `<name>-<version>-linux-<arch>.AppImage`，無需安裝即可在任何發行版上執行 |
 
 Windows 安裝程式與解除安裝程式僅需 Go 即可在任何系統上建置，並使用原生 Windows 對話框。它們會支援應用程式語系目錄中已有對應翻譯的語言（包含簡體中文與繁體中文），並自動選用系統的介面語言；`/LANG=<LCID>` 可為單次執行指定語言，例如以 `/LANG=2052` 指定簡體中文。`/S` 會以靜默方式安裝或解除安裝，置於最後的 `/D=<folder>` 可指定安裝資料夾（路徑可包含空格），而 `/RELAUNCH` 會在更新後開啟應用程式。若未指定 `/D`，升級時會安裝於所取代之既有安裝的資料夾。傳入 `-installers=false` 或設定 `build.installers: false` 則只建置封裝檔而不製作安裝程式。
 
@@ -281,7 +281,7 @@ sign:
 
 未設定 `android.target_sdk` 時，執行階段預設以 API 36 為目標。低於 API 36 的 Android App Bundle 建置將會失敗，因為 [Google Play 要求](https://support.google.com/googleplay/android-developer/answer/11926878)自 2026 年 8 月 31 日起所有新行動應用程式與更新皆須符合此標準。獨立 APK 建置則僅會發出警告並繼續建置。
 
-設定 `sign.macos_profile` 即可簽署供上傳使用的 Mac 封裝檔。在沒有小工具的情況下，未簽署的套件仍可在沙盒中執行，方便你測試對應用程式容器、網路以及使用者選取檔案的存取。包含小工具的商店建置則必須同時提供 `<id>` 的 `sign.macos_profile` 以及 `<id>.widgets` 的 macOS 版 `sign.widgets_profile`，兩者須屬於同一團隊並授予 `apple.app_group`（預設為 `group.<id>`）。兩個套件皆會使用該共用容器；不會新增家目錄例外權限。`-installers=false` 會保留沙盒與描述檔簽署，僅略過產生 `.pkg` 與其 Installer 身分簽署。請分別在合作夥伴中心（Partner Center）上傳 `.msix`，並在 Play Console 上傳 `.aab`。當 GitHub 發佈包含 `flatpak/<id>.yml` 所指名的封存檔後，即可將其提交至 Flathub。`flatpak-builder` 亦可在本地建置。可使用 `flatpak install --user ./<name>-<version>-linux-<arch>.flatpak` 安裝套件；系統必須已安裝或可從已設定的遠端取得對應的 GNOME 執行階段。工具本身僅用 Go 即可建置套件，無需 Linux 工具鏈。當缺乏圖示美術圖檔時，商店封裝檔會使用透明圖示；若未設定 `linux.categories`，則預設使用 `Utility`。若要在商店之外安裝 MSIX，請設定 [`sign.certificate`](#sign-windows-packages) 來簽署 MSIX；其憑證主體必須與 `windows.store.publisher` 相符，且接收機器必須信任該憑證。若未設定簽署資訊，上傳至商店時將由商店代為簽署。
+設定 `sign.macos_profile` 即可簽署供上傳使用的 Mac 封裝檔。在沒有小工具的情況下，未簽署的套件仍可在沙盒中執行，方便你測試對應用程式容器、網路以及使用者選取檔案的存取。包含小工具的商店建置則必須同時提供 `<id>` 的 `sign.macos_profile` 以及 `<id>.widgets` 的 macOS 版 `sign.widgets_profile`，兩者須屬於同一團隊並授予 `apple.app_group`（預設為 `group.<id>`）。兩個套件皆會使用該共用容器；不會新增家目錄例外權限。`-installers=false` 會保留沙盒與描述檔簽署，僅略過產生 `.pkg` 與其 Installer 身分簽署。請分別在合作夥伴中心（Partner Center）上傳 `.msix`，並在 Play Console 上傳 `.aab`。當 GitHub 發佈包含 `flatpak/<id>.yml` 所指名的封存檔後，即可將其提交至 Flathub。`flatpak-builder` 亦可在本地建置。可使用 `flatpak install --user ./<name>-<version>-linux-<arch>.flatpak` 安裝套件；系統必須已安裝或可從已設定的遠端取得對應的 GNOME 執行階段。工具本身僅用 Go 即可建置套件，無需 Linux 工具鏈。當缺乏圖示美術圖檔時，商店封裝檔會使用透明圖示；若未設定 `linux.categories`，則預設使用 `Utility`。若要在商店之外安裝 MSIX，請設定 [`sign.certificate`](#簽署-windows-封裝檔) 來簽署 MSIX；其憑證主體必須與 `windows.store.publisher` 相符，且接收機器必須信任該憑證。若未設定簽署資訊，上傳至商店時將由商店代為簽署。
 
 在 macOS 與 iOS 上，捲動檢視的邊緣效果（`Scroll.EdgeEffects`）、未設定 `IOS.BackdropMaterial` 的 macOS 背景模糊，以及背景色彩濾鏡（單獨使用，或疊加於未設定 `IOS.BackdropMaterial` 的模糊之上）皆透過 Core Animation 的私有 `CABackdropLayer` 與 `CAFilter` 繪製（如同 AppKit 與 UIKit 自身的材質與邊緣效果一樣），因為沒有公開 API 能依半徑進行模糊、在檢視上漸變模糊半徑，或套用背景色彩矩陣。App Store 審查可能會拒絕使用私有 API 的應用程式：NSGo 僅在帶有邊緣條的捲動檢視與上述背景濾鏡時才會呼叫它們，但所有 macOS 與 iOS 建置皆會包含其符號名稱。
 
@@ -463,11 +463,11 @@ updates:
 | 渠道 | 適用對象 | 建置出的封裝檔 |
 | --- | --- | --- |
 | `direct` | GitHub、官方網站，以及直接安裝發佈檔案的 Homebrew cask 與 winget | 如上表所述自行更新 |
-| `store` | App Store、Mac App Store、Microsoft Store、Google Play、Flathub 與其他商店 | 屬於[商店封裝檔](#store-packages)，不附帶自我更新器；iOS 與 macOS 無需金鑰即可查詢各自的 App Store，透過 Google Play 安裝的應用程式則可使用 Play 的原生更新流程 |
-| `steam` | Steam | 產生交由 Steam 更新的 [depot 目錄](#steam-depots) |
+| `store` | App Store、Mac App Store、Microsoft Store、Google Play、Flathub 與其他商店 | 屬於[商店封裝檔](#商店封裝檔)，不附帶自我更新器；iOS 與 macOS 無需金鑰即可查詢各自的 App Store，透過 Google Play 安裝的應用程式則可使用 Play 的原生更新流程 |
+| `steam` | Steam | 產生交由 Steam 更新的 [depot 目錄](#steam-depot) |
 | `none` | Linux 發行版以及任何重新打包應用程式的對象 | 不檢查更新 |
 
-商店會拒絕包含自我更新機制的應用程式，因此請務必上傳 `store` 建置，切勿上傳 `direct` 建置。每次包含 macOS 或 Windows 安裝程式的 `direct` 發佈同時也會產生 Homebrew cask（`dist/releases/homebrew/<name>.rb`，宣告 `auto_updates true`、已建置磁碟映像檔的檢查碼與下載網址，以及每個應用程式[命令列程式](#commands)的 `binary` 連結）與 winget 多檔案清單（對應已建置 NSIS 安裝程式的 `dist/releases/winget/<id>.yaml`、`<id>.installer.yaml` 與 `<id>.locale.en-US.yaml`）。只要系統能夠辨識應用程式的安裝來源，應用程式也會一併檢查：從其他商店安裝的 Android 應用程式、Flatpak 或 Snap，以及 TestFlight 建置皆會交由該商店管理更新。在透過 Google Play 安裝的應用程式中手動呼叫 `updater.Check` 時，會在允許的情況下請求 Play In-App Updates 提供即時更新流程；同意、下載、安裝與重啟均由 Play 處理。開發建置永遠不會進入該流程。獨立 Android 套件已內建 SDK；[嵌入式宿主](embedding.md#android)則透過 Gradle 引入。
+商店會拒絕包含自我更新機制的應用程式，因此請務必上傳 `store` 建置，切勿上傳 `direct` 建置。每次包含 macOS 或 Windows 安裝程式的 `direct` 發佈同時也會產生 Homebrew cask（`dist/releases/homebrew/<name>.rb`，宣告 `auto_updates true`、已建置磁碟映像檔的檢查碼與下載網址，以及每個應用程式[命令列程式](#命令列程式)的 `binary` 連結）與 winget 多檔案清單（對應已建置 NSIS 安裝程式的 `dist/releases/winget/<id>.yaml`、`<id>.installer.yaml` 與 `<id>.locale.en-US.yaml`）。只要系統能夠辨識應用程式的安裝來源，應用程式也會一併檢查：從其他商店安裝的 Android 應用程式、Flatpak 或 Snap，以及 TestFlight 建置皆會交由該商店管理更新。在透過 Google Play 安裝的應用程式中手動呼叫 `updater.Check` 時，會在允許的情況下請求 Play In-App Updates 提供即時更新流程；同意、下載、安裝與重啟均由 Play 處理。開發建置永遠不會進入該流程。獨立 Android 套件已內建 SDK；[嵌入式宿主](embedding.md#android)則透過 Gradle 引入。
 
 ### 在應用程式內檢查
 
@@ -555,7 +555,7 @@ android:
   share_types: [text/plain, 'image/*', application/pdf]
 ```
 
-APK 與 App Bundle 建置會同時為單一與多個分享項目註冊這些類型。註冊 [`mobile.OnShared`](services.md#opening-links-and-files) 即可接收每次分享的內容。
+APK 與 App Bundle 建置會同時為單一與多個分享項目註冊這些類型。註冊 [`mobile.OnShared`](services.md#開啟連結與檔案) 即可接收每次分享的內容。
 
 針對使用路徑式網址的網頁應用程式，請將 `web.base` 設為其部署目錄（`/` 或 `/my-app/`），並設定生產環境伺服器為應用程式路由提供 `index.html`。開發伺服器已內建針對 HTML 導覽請求的此項後備處理。重新載入深層連結時，資源路徑仍會相對於該固定的 HTML base 解析。詳見[應用程式網址](addresses.md)。
 

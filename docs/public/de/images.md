@@ -52,7 +52,7 @@ Apple-Plattformen, Android, Windows, Linux und das Web aktualisieren Pixelbilder
 
 ## Eine View aufnehmen
 
-Rufen Sie `cx.Capture(&ref, done)` mit dem `core.Ref` einer eingehängten View auf, oder `cx.Capture(nil, done)` für die aktuelle Oberfläche. Der Callback erhält PNG-Bytes in der Pixelskalierung der Oberfläche oder einen Fehler auf der Engine-Goroutine. Verwenden Sie `core.ImageSource{Data: png}`, um das Ergebnis anzuzeigen. Um es zu teilen, schreiben Sie die Bytes in eine `.png`-Datei im Cache-Verzeichnis der App und übergeben Sie deren Pfad in `core.ShareOptions.Files`. [Dateien teilen](services.md#opening-links-and-files)
+Rufen Sie `cx.Capture(&ref, done)` mit dem `core.Ref` einer eingehängten View auf, oder `cx.Capture(nil, done)` für die aktuelle Oberfläche. Der Callback erhält PNG-Bytes in der Pixelskalierung der Oberfläche oder einen Fehler auf der Engine-Goroutine. Verwenden Sie `core.ImageSource{Data: png}`, um das Ergebnis anzuzeigen. Um es zu teilen, schreiben Sie die Bytes in eine `.png`-Datei im Cache-Verzeichnis der App und übergeben Sie deren Pfad in `core.ShareOptions.Files`. [Dateien teilen](services.md#links-und-dateien-öffnen)
 
 Capture erfasst die sichtbaren Oberflächenpixel innerhalb der Grenzen der View. Es ist unter macOS, iOS, tvOS, Windows, Linux, Android und im Web verfügbar. Android erfasst das Fenster der Activity. Die Web-Erfassung zeichnet das DOM der App in ein Canvas, einschließlich NSGo-Shader-Ausgaben, und lässt eingebettete Frames, nicht lesbare Bilder sowie einige CSS-Effekte aus.
 

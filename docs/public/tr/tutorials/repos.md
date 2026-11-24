@@ -187,6 +187,6 @@ go tool nsgo test
 
 ## Sonraki adımlar
 
-- [Platform hizmetleri](../services.md#networking): ağ, depolama ve dosyalar hakkında daha fazlası.
+- [Platform hizmetleri](../services.md#ağ): ağ, depolama ve dosyalar hakkında daha fazlası.
 - [Listeler ve kaydırma](../lists.md): çekerek yenileme, yaslanma ve uzun listeler.
 - [Çalıştırma ve hata ayıklama](../debugging.md): her güncellemeyi `-trace` ile izleyin.

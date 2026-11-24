@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 `Role: core.AlertCancel` olan bir eylem Escape veya geri tuşuyla çalışır, ardından `OnOpenChange(false, base.ReasonCancel)` gelir. `Default: true`, uyarı masaüstlerinde, web'de ve Apple TV'de açıldığında bir eyleme klavye odağını verir ve Return'ün onu seçmesini sağlar; bir eyleme basış `OnPress`'i, ardından `OnOpenChange(false, base.ReasonSelect)`'i çalıştırır. Return, klavye odağı başka bir eylemde veya alanda değilken varsayılan eylemi çalıştırır: odak başka bir eyleme taşındığında Return o eyleme basar, uyarının üzerindeki bir iletişim kutusu ise Return'ü kendisinde tutar. Bir eylem çalıştıktan sonra, `OnOpenChange` ne yaparsa yapsın uyarı kapanır ve `Open` yanlış, sonra yeniden doğru olana kadar başka bir eylem çalıştırmaz. Birden fazla eylem aynı işareti taşıyorsa ilki kazanır. İşaretler olmadan Escape bir eylem çalıştırmadan kapatır ve Return'ün varsayılan bir eylemi olmaz. `Role: core.AlertDestructive` bir eylemi tanımlar; görünümünü `Variant` veya `Color` seçer.
 
-Sistemin kendi uyarısı veya eylem sayfası için `cx.ShowAlert` kullanın ([Platform hizmetleri](../services.md#alerts-and-the-clipboard)).
+Sistemin kendi uyarısı veya eylem sayfası için `cx.ShowAlert` kullanın ([Platform hizmetleri](../services.md#uyarılar-ve-pano)).
 
 ## Davranış
 

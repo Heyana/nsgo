@@ -12,7 +12,7 @@ order: 10
 - Untuk menjalankan di iPhone, dibutuhkan Apple ID di Accounts Xcode dan iPhone tersebut harus dipercaya (*trusted*), dengan Developer Mode aktif.
 - Untuk menjalankan di Android, dibutuhkan `adb` dari platform-tools Android SDK.
 - Untuk menjalankan di Windows, cukup Go saja, yang juga membangun paket Windows dan web.
-- Di Linux, dibutuhkan GTK 4.14 atau lebih baru, Pango, dan Cairo. Gambar jaringan menggunakan libsoup 3, web view menggunakan WebKitGTK 6.0, dan audio serta video menggunakan plug-in GStreamer. Pada sistem dengan pembatasan user namespace AppArmor, [WebKitGTK membutuhkan profil bubblewrap](debugging.md#linux-web-views).
+- Di Linux, dibutuhkan GTK 4.14 atau lebih baru, Pango, dan Cairo. Gambar jaringan menggunakan libsoup 3, web view menggunakan WebKitGTK 6.0, dan audio serta video menggunakan plug-in GStreamer. Pada sistem dengan pembatasan user namespace AppArmor, [WebKitGTK membutuhkan profil bubblewrap](debugging.md#web-view-linux).
 
 ## Membuat aplikasi
 
@@ -78,7 +78,7 @@ Skill NSGo mengajarkan agen pemrograman, seperti Claude Code, Codex, dan Cursor,
 bunx skills add nsgo-dev/nsgo
 ```
 
-Agen yang membaca dokumentasi sendiri dapat memulai dari <https://nsgo.dev/llms.txt>, yang mencantumkan setiap halaman dalam format Markdown di `https://nsgo.dev/docs/<page>.md`; <https://nsgo.dev/llms-full.txt> berisi semuanya. Agen juga dapat menggunakan aplikasi yang sedang berjalan ([Menjalankan dan men-debug](debugging.md#agents)).
+Agen yang membaca dokumentasi sendiri dapat memulai dari <https://nsgo.dev/llms.txt>, yang mencantumkan setiap halaman dalam format Markdown di `https://nsgo.dev/docs/<page>.md`; <https://nsgo.dev/llms-full.txt> berisi semuanya. Agen juga dapat menggunakan aplikasi yang sedang berjalan ([Menjalankan dan men-debug](debugging.md#agen)).
 
 ## Selanjutnya
 

@@ -18,9 +18,9 @@ widgets:
 # apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
-Apple 플랫폼에서는 위젯 익스텐션이 이를 그리며, `build`와 `dev`가 Xcode의 Swift 컴파일러로 이 익스텐션을 컴파일합니다([빌드 및 배포](building.md#widgets-and-live-activities)). Android에서는 사전 빌드된 Java 런타임이 동일한 타임라인을 App Widget으로 그립니다. 두 플랫폼 모두 앱이 종료된 뒤에도 게시된 콘텐츠를 계속 표시합니다.
+Apple 플랫폼에서는 위젯 익스텐션이 이를 그리며, `build`와 `dev`가 Xcode의 Swift 컴파일러로 이 익스텐션을 컴파일합니다([빌드 및 배포](building.md#위젯과-실시간-현황)). Android에서는 사전 빌드된 Java 런타임이 동일한 타임라인을 App Widget으로 그립니다. 두 플랫폼 모두 앱이 종료된 뒤에도 게시된 콘텐츠를 계속 표시합니다.
 
-샌드박스된 Mac App Store 빌드의 경우 `apple.app_group`을 설정하고 `sign.macos_profile`과 `sign.widgets_profile`을 통해 macOS 프로비저닝 프로필을 제공하세요. 앱과 `<id>.widgets` 모두 동일한 팀에 속해야 하며 해당 그룹의 entitlement를 가져야 합니다. 타임라인과 이미지는 이 공유 컨테이너에 저장되며, 직접 배포(direct) 빌드와 개발용 macOS 빌드는 기존의 홈 디렉터리 위치를 그대로 사용합니다. 빌드 옵션은 [스토어 서명](building.md#store-packages)에서 설명합니다.
+샌드박스된 Mac App Store 빌드의 경우 `apple.app_group`을 설정하고 `sign.macos_profile`과 `sign.widgets_profile`을 통해 macOS 프로비저닝 프로필을 제공하세요. 앱과 `<id>.widgets` 모두 동일한 팀에 속해야 하며 해당 그룹의 entitlement를 가져야 합니다. 타임라인과 이미지는 이 공유 컨테이너에 저장되며, 직접 배포(direct) 빌드와 개발용 macOS 빌드는 기존의 홈 디렉터리 위치를 그대로 사용합니다. 빌드 옵션은 [스토어 서명](building.md#스토어-패키지)에서 설명합니다.
 
 `name`과 `description`에는 앱 카탈로그의 메시지 키를 지정할 수 있습니다. 키를 지정하면 위젯 갤러리와 플레이스홀더는 사용자의 언어를 사용하며, 번역이 없는 경우 원본 카탈로그의 텍스트로 폴백합니다. 카탈로그 키가 아닌 값은 입력된 그대로 표시됩니다.
 

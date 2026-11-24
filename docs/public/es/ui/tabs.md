@@ -57,4 +57,4 @@ iOS y Android muestran la barra de pestañas del sistema con su propio aspecto y
 - [Menú](menu.md): comandos en lugar de secciones.
 - [Selector](select.md): muchas opciones en una lista.
 - Las páginas Tabs y NavStack de la galería.
-- [Componentes sin estilo](../authoring/base.md#tabs): `base.Tabs`, para pestañas con un aspecto propio.
+- [Componentes sin estilo](../authoring/base.md#pestañas): `base.Tabs`, para pestañas con un aspecto propio.

@@ -224,7 +224,7 @@ go tool nsgo dev -target web -automation
 claude mcp add nsgo -- go tool nsgo mcp
 ```
 
-Altri client accettano lo stesso comando, `go` con gli argomenti `tool nsgo mcp`, eseguito nella directory dell'app. Le viste sono identificate tramite i selettori dei [test](testing.md#a-test), oppure tramite i riferimenti `view:` stampati da uno snapshot, che un salvataggio rende obsoleti riavviando l'app.
+Altri client accettano lo stesso comando, `go` con gli argomenti `tool nsgo mcp`, eseguito nella directory dell'app. Le viste sono identificate tramite i selettori dei [test](testing.md#un-test), oppure tramite i riferimenti `view:` stampati da uno snapshot, che un salvataggio rende obsoleti riavviando l'app.
 
 L'agente opera sui dati reali dell'app, così come la esegue `dev`. Solo le build `dev -automation` includono questa funzionalità, e solo gli strumenti su questa macchina in possesso del token in `.nsgo/automation.yaml`, leggibile solo da te, possono raggiungerla.
 

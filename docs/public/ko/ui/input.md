@@ -66,7 +66,7 @@ email.Focus()
 
 ## 유효성 검사
 
-규칙은 앱이 관리합니다. 시그널이 오류를 보관하고 `OnBlur`나 `OnSubmit`에서 오류를 설정하며, 필드 아래의 메시지로 이를 표시합니다([폼](../forms.md#validation)).
+규칙은 앱이 관리합니다. 시그널이 오류를 보관하고 `OnBlur`나 `OnSubmit`에서 오류를 설정하며, 필드 아래의 메시지로 이를 표시합니다([폼](../forms.md#유효성-검사)).
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")

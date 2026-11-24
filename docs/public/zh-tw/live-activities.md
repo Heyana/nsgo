@@ -50,7 +50,7 @@ widget.ActivityContent{
 
 ## 按下操作
 
-`widget.OnAction` 會執行操作按鈕或 `widget.Button` 被按下時的處理函式，並傳入對應的即時動態與操作 ID（若是[小工具按鈕](widgets.md#buttons)，則 `Activity` 為 nil）。請在 `main` 中、呼叫 `nsgo.Run` 之前設定此處理函式：在 iOS 上，按下按鈕時系統會在背景啟動應用程式而不載入其檢視，並保留該即時動態直到處理函式返回為止，因此處理函式可直接於該處更新動態；在 Android 上，按下事件會透過執行階段接收器直接送達執行中的 Go 行程，無須開啟其 Activity。操作按鈕需要發佈它們的引擎保持執行；該引擎結束後，過時的操作將不會有任何作用，但輕觸通知本身仍會開啟應用程式。該處理函式執行於系統的 goroutine 上，而非應用程式檢視的 goroutine，若要操作檢視狀態，需透過 `core.Scope` 的 `Post` 派發。
+`widget.OnAction` 會執行操作按鈕或 `widget.Button` 被按下時的處理函式，並傳入對應的即時動態與操作 ID（若是[小工具按鈕](widgets.md#按鈕)，則 `Activity` 為 nil）。請在 `main` 中、呼叫 `nsgo.Run` 之前設定此處理函式：在 iOS 上，按下按鈕時系統會在背景啟動應用程式而不載入其檢視，並保留該即時動態直到處理函式返回為止，因此處理函式可直接於該處更新動態；在 Android 上，按下事件會透過執行階段接收器直接送達執行中的 Go 行程，無須開啟其 Activity。操作按鈕需要發佈它們的引擎保持執行；該引擎結束後，過時的操作將不會有任何作用，但輕觸通知本身仍會開啟應用程式。該處理函式執行於系統的 goroutine 上，而非應用程式檢視的 goroutine，若要操作檢視狀態，需透過 `core.Scope` 的 `Post` 派發。
 
 ```go
 func main() {

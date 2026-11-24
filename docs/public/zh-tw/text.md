@@ -74,7 +74,7 @@ cx.RegisterFont(data) // a TrueType or OpenType face
 
 ## 選取與量測
 
-`SelectableOn` 讓使用者能夠選取並複製文字，而在 `View` 上設定 `Selectable` 則可讓其中的文字如網頁一般依文件順序一併選取。`SelectionColor` 用於設定反白選取的顏色。當使用者移動選取範圍時，`OnTextSelection` 會接收一個 `core.TextSelection`：包含其純文字 `Text`、`Markdown` 與 `HTML`（保留該區域內任何 `TextView` 與樣式化文字經解析後的行內與區塊結構，包含部分片段與連結）、每個文字對應的 `Ranges`，以及所觸及文字在檢視中的 `Bounds`，可用於複製為 Markdown 或 HTML、建立單字清單或翻譯選取的字詞；`desktop.LookUp` 可在系統字典中顯示這些字詞（參閱[服務](services.md#opening-links-and-files)）。`cx.MeasureText` 可依指定字型量測字串大小，以便讓欄位貼合其文字寬度；呼叫它的反應式函式會在可用字型變更時更新，而 `OnTextLayout` 會在每次版面配置後回報各行資訊。
+`SelectableOn` 讓使用者能夠選取並複製文字，而在 `View` 上設定 `Selectable` 則可讓其中的文字如網頁一般依文件順序一併選取。`SelectionColor` 用於設定反白選取的顏色。當使用者移動選取範圍時，`OnTextSelection` 會接收一個 `core.TextSelection`：包含其純文字 `Text`、`Markdown` 與 `HTML`（保留該區域內任何 `TextView` 與樣式化文字經解析後的行內與區塊結構，包含部分片段與連結）、每個文字對應的 `Ranges`，以及所觸及文字在檢視中的 `Bounds`，可用於複製為 Markdown 或 HTML、建立單字清單或翻譯選取的字詞；`desktop.LookUp` 可在系統字典中顯示這些字詞（參閱[服務](services.md#開啟連結與檔案)）。`cx.MeasureText` 可依指定字型量測字串大小，以便讓欄位貼合其文字寬度；呼叫它的反應式函式會在可用字型變更時更新，而 `OnTextLayout` 會在每次版面配置後回報各行資訊。
 
 ## 文件
 

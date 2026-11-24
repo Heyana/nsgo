@@ -60,7 +60,7 @@ cx.Share(core.ShareOptions{
 }, func(shown bool, err error) {})
 ```
 
-`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` 會接收針對 [`android.share_types`](building.md#incoming-shares-on-android) 或 [`apple.share_types`](building.md#incoming-shares-on-ios) 分享而來的文字與檔案。Android 的分享可以啟動應用程式；iOS 則會將它們排入 App Group 中，直到應用程式處於作用中或使用者下次開啟它。待處理的分享會等待第一個處理常式。iOS 會保留收件匣批次，直到回呼函式返回；跨越行程結束時，傳遞保證至少一次。文字會放在 `Text` 中，檔案則以可讀取的快取副本送達，並帶有 `Path`、`Name` 與 `MIME`。若檔案需要在快取之外長久保存，請將它移動或複製到永久儲存空間。
+`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` 會接收針對 [`android.share_types`](building.md#android-接收分享) 或 [`apple.share_types`](building.md#ios-接收分享) 分享而來的文字與檔案。Android 的分享可以啟動應用程式；iOS 則會將它們排入 App Group 中，直到應用程式處於作用中或使用者下次開啟它。待處理的分享會等待第一個處理常式。iOS 會保留收件匣批次，直到回呼函式返回；跨越行程結束時，傳遞保證至少一次。文字會放在 `Text` 中，檔案則以可讀取的快取副本送達，並帶有 `Path`、`Name` 與 `MIME`。若檔案需要在快取之外長久保存，請將它移動或複製到永久儲存空間。
 
 `desktop.LookUp` 會為一段文字顯示系統的字典面板，就像在 macOS 上用三指輕點一樣，繪製在檢視中的某個方框上方：即選取範圍的文字與方框，以及其 `Selectable` 檢視的 `Ref`。`desktop.CanLookUp` 會說明是否可以使用，僅限 macOS 上的視窗；Windows、Linux 與網頁沒有這樣的面板。在測試中，`nsgotest.App.LookUps` 會列出在 `nsgotest.Environment` 設定了 `CanLookUp` 時所顯示的面板。
 
@@ -138,7 +138,7 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 ## 儲存空間
 
-`cx.Storage()` 是應用程式的鍵值儲存空間，保存在裝置上，並由應用程式的所有圖共用。讀取為同步操作，在計算中讀取會使該計算訂閱其變更；超過配額（`core.StorageQuota`，預設 5 MiB）時，`SetItem` 會回傳 `core.StorageFullError`。它是一個使用者的任何程式都能讀取的一般檔案，因此請將權杖與密碼改存在[機密資料](#secrets)中。
+`cx.Storage()` 是應用程式的鍵值儲存空間，保存在裝置上，並由應用程式的所有圖共用。讀取為同步操作，在計算中讀取會使該計算訂閱其變更；超過配額（`core.StorageQuota`，預設 5 MiB）時，`SetItem` 會回傳 `core.StorageFullError`。它是一個使用者的任何程式都能讀取的一般檔案，因此請將權杖與密碼改存在[機密資料](#機密資料)中。
 
 `cx.Store()` 會回傳底層的存放區，供以 `core.RootOptions.Storage` 建立另一個根的主機使用，例如在自己的 goroutine 上執行外掛程式的主機：兩個根此時會共用應用程式的項目以及保存在裝置上的內容。它是整個存放區，而不是 `cx.ProvideStorage` 提供給非應用程式自行撰寫之程式碼的分割區。
 
@@ -154,7 +154,7 @@ store.SetItem("tab", "library")
 
 `store.Keys()` 會列出鍵，`RemoveItem` 刪除一個鍵，而 `Clear` 會清空儲存空間。`cx.DataDir()` 與 `cx.CacheDir()` 提供應用程式的資料夾，用於存放鍵值儲存空間容納不下的檔案；`cx.LogsDir()` 提供平台用於記錄檔的目錄，而 `Scope.ProvideStorage` 可給予子樹一個專屬的分割區。
 
-當設定了 `app_clip` 與明確的 `apple.app_group` 時，iOS App Clip 與其完整應用程式會共用這些資料與儲存位置；它們的快取則保持分開。啟用群組不會遷移既有的沙盒資料。[App Clip 儲存空間](building.md#app-clips)說明了設定與簽署方式。
+當設定了 `app_clip` 與明確的 `apple.app_group` 時，iOS App Clip 與其完整應用程式會共用這些資料與儲存位置；它們的快取則保持分開。啟用群組不會遷移既有的沙盒資料。[App Clip 儲存空間](building.md#app-clip)說明了設定與簽署方式。
 
 在 HarmonyOS 上，`os.ReadFile`、`os.WriteFile` 與 `os.Rename` 等 Go 檔案操作可在這些目錄與 `os.TempDir()` 下運作。相對路徑從 files 目錄開始。建議性檔案鎖與符號連結無法使用。
 

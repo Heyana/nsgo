@@ -31,13 +31,13 @@ Vị trí của NSGo giữa các UI framework bắt nguồn từ ba lựa chọn
 - **Thuần Go.** Engine, bố cục và các backend đều viết bằng Go, không có C, không cgo và không cần engine JavaScript đối với ứng dụng Go.
 - **Build mọi nền tảng từ một máy Mac.** Một máy Mac có sẵn Go và Xcode có thể biên dịch chéo cho mọi nền tảng đích: không cần NDK, Android SDK, JDK, GTK hay chuỗi công cụ Windows.
 - **Tạo mọi tệp phát hành chỉ với một lệnh.** `nsgo build` xuất ra tệp ảnh đĩa đã ký và công chứng (notarized) cho macOS, trình cài đặt đã ký cho Windows, gói deb, Arch và AppImage, gói cho Mac App Store, Microsoft Store, Google Play và Flathub, cùng các script cài đặt từ bản phát hành GitHub ([đóng gói và phát hành](building.md)).
-- **Cơ chế cập nhật riêng của từng nền tảng.** Trên macOS có Sparkle và trên Windows có WinSparkle để tải về, xác minh và cài đặt phiên bản tiếp theo; trên Linux và Android ứng dụng tìm thấy bản mới và mở trang phát hành; trên iOS thì App Store đảm nhận. Ứng dụng được cài từ kho ứng dụng sẽ do chính kho đó cập nhật ([cập nhật](building.md#updates)).
+- **Cơ chế cập nhật riêng của từng nền tảng.** Trên macOS có Sparkle và trên Windows có WinSparkle để tải về, xác minh và cài đặt phiên bản tiếp theo; trên Linux và Android ứng dụng tìm thấy bản mới và mở trang phát hành; trên iOS thì App Store đảm nhận. Ứng dụng được cài từ kho ứng dụng sẽ do chính kho đó cập nhật ([cập nhật](building.md#cập-nhật)).
 - **Mọi nền tảng.** Điện thoại, máy tính bảng, TV, đồng hồ, máy tính để bàn và web dùng chung một engine và một API, cùng với iOS App Clips, widget trên iPhone và Mac, và ở mức thử nghiệm là các mini program WeChat, QQ, Alipay và Douyin.
 - **Nhúng vào ứng dụng có sẵn.** Một ứng dụng NSGo có thể đặt như một view trong ứng dụng iOS, Android, Go desktop hoặc web hiện có, giúp chuyển đổi dần từng màn hình một ([nhúng ứng dụng](embedding.md)).
 - **Vòng lặp phát triển nhanh.** Lưu một tệp Go sẽ tự động build lại và khởi động lại ứng dụng; thay đổi TSX cập nhật ngay vào ứng dụng đang chạy mà vẫn giữ nguyên trạng thái; lỗi build và panic khi kết xuất hiển thị trực tiếp lên trên ứng dụng ([chạy và gỡ lỗi](debugging.md)).
 - **Một bộ kiểm thử dùng cho mọi nơi.** Các bài kiểm thử tìm và thao tác với điều khiển theo văn bản hoặc vai trò như người dùng thật, chạy nhanh không cần cửa sổ, hoặc giữ nguyên không đổi để chạy trong cửa sổ thật trên từng nền tảng đích với đầu vào gốc của nền tảng đó và lưu ảnh chụp màn hình ([kiểm thử](testing.md)).
 - **Hỗ trợ bản địa hóa tích hợp sẵn.** Từ ngữ của ứng dụng và các thành phần nằm trong các danh mục (catalog), và các ngôn ngữ giả (pseudo-locale) giúp phát hiện nội dung chưa dịch, bị cắt chữ hoặc chưa sẵn sàng cho bố cục phải-sang-trái ([bản địa hóa](localization.md)).
-- **Viết shader bằng Go.** `core.Shader` chạy các GPU shader được viết bằng cú pháp Go hoặc WGSL trên mọi nền tảng ([canvas](canvas.md#shaders)).
+- **Viết shader bằng Go.** `core.Shader` chạy các GPU shader được viết bằng cú pháp Go hoặc WGSL trên mọi nền tảng ([canvas](canvas.md#shader)).
 - **Dùng TSX khi muốn.** Các màn hình có thể viết bằng TSX cùng các lớp Tailwind, chạy trên cùng một engine với các thành phần Go.
 
 ## Điểm yếu
@@ -50,7 +50,7 @@ Vị trí của NSGo giữa các UI framework bắt nguồn từ ba lựa chọn
 
 ## NSH
 
-NSGo chuyển thể thiết kế của NSH: kiến trúc, các backend, tên gọi API và các thành phần chưa tạo kiểu trong `base` đều đến từ NSH ([trạng thái](index.md#status)).
+NSGo chuyển thể thiết kế của NSH: kiến trúc, các backend, tên gọi API và các thành phần chưa tạo kiểu trong `base` đều đến từ NSH ([trạng thái](index.md#trạng-thái)).
 
 - **Chọn NSGo** để viết ứng dụng bằng Go thay vì Rust hoặc TSX, để build mọi nền tảng đích từ một máy Mac với Go và Xcode, hoặc để tận dụng những gì NSGo bổ sung thêm: GPU shader viết bằng Go, biểu tượng vector, terminal, khả năng ứng dụng tự mở cửa sổ riêng, panel và biểu tượng khay hệ thống, cùng các thành phần đã tạo kiểu trong `ui`.
 - **Chọn NSH** nếu bạn muốn một dự án trưởng thành hơn, TSX chạy trên QuickJS có bytecode và giới hạn heap, backend GPUI, hoặc hỗ trợ Android 32-bit.

@@ -52,7 +52,7 @@ Plataformas Apple, Android, Windows, Linux e web atualizam imagens de pixels dir
 
 ## Capturar uma view
 
-Chame `cx.Capture(&ref, done)` com o `core.Ref` de uma view montada, ou `cx.Capture(nil, done)` para a superfície atual. O callback recebe os bytes PNG na escala de pixels da superfície ou um erro na goroutine do motor. Use `core.ImageSource{Data: png}` para exibir o resultado. Para compartilhar, grave os bytes em um arquivo `.png` no diretório de cache do app e passe o caminho em `core.ShareOptions.Files`. [Compartilhando arquivos](services.md#opening-links-and-files)
+Chame `cx.Capture(&ref, done)` com o `core.Ref` de uma view montada, ou `cx.Capture(nil, done)` para a superfície atual. O callback recebe os bytes PNG na escala de pixels da superfície ou um erro na goroutine do motor. Use `core.ImageSource{Data: png}` para exibir o resultado. Para compartilhar, grave os bytes em um arquivo `.png` no diretório de cache do app e passe o caminho em `core.ShareOptions.Files`. [Compartilhando arquivos](services.md#abrindo-links-e-arquivos)
 
 A captura lê os pixels visíveis da superfície dentro dos limites da view. Está disponível no macOS, iOS, tvOS, Windows, Linux, Android e web. O Android captura a janela da activity. A captura na web desenha o DOM do app em um canvas, incluindo saída de shaders do NSGo, e omite frames incorporados, imagens que não pode ler e alguns efeitos CSS.
 

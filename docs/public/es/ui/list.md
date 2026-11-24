@@ -70,5 +70,5 @@ La vista desplazable nativa y la virtualización son las mismas en todos los des
 
 - [Listas y desplazamiento](../lists.md): la guía completa, incluidos los encabezados fijos y la carga de más elementos.
 - [Desplazamiento](scroll.md): una vista desplazable simple.
-- [DataTable](../lists.md#tables): una tabla de muchas filas y columnas.
+- [DataTable](../lists.md#tablas): una tabla de muchas filas y columnas.
 - Las páginas List, Table y DataTable de la galería.

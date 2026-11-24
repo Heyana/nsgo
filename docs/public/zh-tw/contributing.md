@@ -7,7 +7,7 @@ order: 80
 
 ## 環境需求
 
-安裝有 Xcode 與 Go 1.27.3 或更新版本的 macOS 可建置所有 arm64 目標平台，包含 Android 的 APK。若要在實體裝置上執行，則須具備[環境設定](getting-started.md#requirements)中列出的工具，而 x86_64 Android 模擬器的目標 `android_x64` 則需要 Android NDK，因為 Go 僅在啟用 cgo 時才能連結 android/amd64。Windows 安裝與解除安裝程式僅需 Go 即可建置。
+安裝有 Xcode 與 Go 1.27.3 或更新版本的 macOS 可建置所有 arm64 目標平台，包含 Android 的 APK。若要在實體裝置上執行，則須具備[環境設定](getting-started.md#系統需求)中列出的工具，而 x86_64 Android 模擬器的目標 `android_x64` 則需要 Android NDK，因為 Go 僅在啟用 cgo 時才能連結 android/amd64。Windows 安裝與解除安裝程式僅需 Go 即可建置。
 
 ```sh
 git clone https://github.com/nsgo-dev/nsgo.git

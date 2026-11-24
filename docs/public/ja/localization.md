@@ -18,7 +18,7 @@ appName:
 
 メッセージは単なる文字列、または翻訳者向けの `description` と `placeholders` を含む `message` オブジェクトで記述します。
 
-パッケージは `locales/` をインポートします。`dev`、`build`、`test` はカタログを検証し、その隣にメッセージごとの Go 関数（例: `locales.Greeting(cx, "Ada")`）を生成します。生成された関数はアプリが表示中の言語で文言を返し、言語が切り替わると追従します。関数の生成だけを行う場合は `go tool nsgo i18n` を実行します。メッセージでは数値や日付をフォーマットでき（`{d, date, medium}`）、`appName` はパッケージ内で各言語におけるアプリ名を設定します。同様に、`NSCameraUsageDescription` のように `apple.info` キーを持つメッセージは、対応する Info.plist エントリを翻訳します（[パーミッション](permissions.md#usage-descriptions)）。
+パッケージは `locales/` をインポートします。`dev`、`build`、`test` はカタログを検証し、その隣にメッセージごとの Go 関数（例: `locales.Greeting(cx, "Ada")`）を生成します。生成された関数はアプリが表示中の言語で文言を返し、言語が切り替わると追従します。関数の生成だけを行う場合は `go tool nsgo i18n` を実行します。メッセージでは数値や日付をフォーマットでき（`{d, date, medium}`）、`appName` はパッケージ内で各言語におけるアプリ名を設定します。同様に、`NSCameraUsageDescription` のように `apple.info` キーを持つメッセージは、対応する Info.plist エントリを翻訳します（[パーミッション](permissions.md#利用目的の説明)）。
 
 ## 言語
 

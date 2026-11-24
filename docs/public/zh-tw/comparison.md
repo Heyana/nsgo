@@ -31,13 +31,13 @@ NSGo 在眾多 UI 框架中的定位來自三項選擇：應用程式以 Go（�
 - **純 Go 實作。** 引擎、版面配置與各平台後端皆以 Go 撰寫，Go 應用程式無須 C、cgo 或 JavaScript 引擎。
 - **一台 Mac 建置所有平台。** 只要有一台安裝 Go 與 Xcode 的 Mac，即可交叉編譯所有目標平台：無須 NDK、Android SDK、JDK、GTK 或 Windows 工具鏈。
 - **一道指令產出所有發佈檔案。** `nsgo build` 可產出經簽署與公證的 macOS 磁碟映像檔、經簽署的 Windows 安裝程式、deb 與 Arch 套件及 AppImage、Mac App Store、Microsoft Store、Google Play 與 Flathub 套件，以及從 GitHub releases 安裝的腳本（參閱[建置與發佈](building.md)）。
-- **使用各平台自身的更新機制。** 在 macOS 上由 Sparkle、在 Windows 上由 WinSparkle 下載、驗證並安裝下一版本；在 Linux 與 Android 上應用程式會偵測新版並開啟其發佈頁面；在 iOS 上則由 App Store 處理。透過商店安裝的應用程式會交由該商店管理更新（參閱[更新](building.md#updates)）。
+- **使用各平台自身的更新機制。** 在 macOS 上由 Sparkle、在 Windows 上由 WinSparkle 下載、驗證並安裝下一版本；在 Linux 與 Android 上應用程式會偵測新版並開啟其發佈頁面；在 iOS 上則由 App Store 處理。透過商店安裝的應用程式會交由該商店管理更新（參閱[更新](building.md#更新)）。
 - **涵蓋所有平台。** 手機、平板、電視、手錶、桌面與網頁共用同一套引擎與 API，並支援 iOS App Clips、iPhone 與 Mac 小工具，以及實驗性支援微信、QQ、支付寶與抖音小程式。
 - **可嵌入既有應用。** NSGo 應用程式可以作為一個檢視嵌入現有的 iOS、Android、Go 桌面或網頁應用程式中，方便以逐個畫面的方式漸進遷移（參閱[嵌入](embedding.md)）。
 - **快速的開發迴圈。** 儲存 Go 檔案即可重新建置並重啟應用程式；修改 TSX 則會原地更新執行中的應用程式並保留其狀態；建置錯誤與轉譯期間的 panic 會直接顯示在應用程式畫面上（參閱[執行與除錯](debugging.md)）。
 - **一套測試通用於各處。** 測試能像使用者一樣透過文字或角色尋找並操作控制項，既可在無視窗環境下快速執行，也可無須修改直接執行於各目標平台的真實視窗中、透過平台自身輸入事件運作並儲存螢幕截圖（參閱[測試](testing.md)）。
 - **內建在地化支援。** 應用程式與元件的字串集中存放於語系目錄（catalog）中，並可透過偽語系（pseudo-locale）找出尚未翻譯、遭到截斷或尚未支援由右至左排版的文字（參閱[在地化](localization.md)）。
-- **以 Go 撰寫著色器。** `core.Shader` 可在每個平台上執行以 Go 語法或 WGSL 撰寫的 GPU 著色器（參閱[畫布與著色器](canvas.md#shaders)）。
+- **以 Go 撰寫著色器。** `core.Shader` 可在每個平台上執行以 Go 語法或 WGSL 撰寫的 GPU 著色器（參閱[畫布與著色器](canvas.md#著色器)）。
 - **視需要選用 TSX。** 畫面亦可使用 TSX 搭配 Tailwind 類別撰寫，並運行於與 Go 元件相同的引擎上。
 
 ## 劣勢
@@ -50,7 +50,7 @@ NSGo 在眾多 UI 框架中的定位來自三項選擇：應用程式以 Go（�
 
 ## NSH
 
-NSGo 移植了 NSH 的設計：其架構、後端、API 命名以及 `base` 中的無樣式元件皆源自 NSH（參閱[專案狀態](index.md#status)）。
+NSGo 移植了 NSH 的設計：其架構、後端、API 命名以及 `base` 中的無樣式元件皆源自 NSH（參閱[專案狀態](index.md#目前狀態)）。
 
 - **選擇 NSGo** 的情境：想以 Go 而非 Rust 或 TSX 撰寫應用程式、希望只用安裝 Go 與 Xcode 的 Mac 建置所有目標平台，或需要 NSGo 額外提供的功能——以 Go 撰寫的 GPU 著色器、向量圖示、終端機、應用程式自行開啟的視窗、面板與系統列圖示，以及 `ui` 中的預設樣式元件。
 - **選擇 NSH** 的情境：需要較成熟的專案、以 QuickJS 搭配位元組碼與堆積限制執行的 TSX、GPUI 後端，或 32 位元 Android 支援。

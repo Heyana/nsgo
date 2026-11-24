@@ -64,4 +64,4 @@ El disparador y los elementos son de la aplicación; la hoja, la ventana emergen
 - [Diálogo](dialog.md): una superficie modal.
 - [Pestañas](tabs.md): secciones mostradas a la vez.
 - Las páginas Menu, ContextMenu y Command de la galería.
-- [Componentes sin estilos](../authoring/base.md#menu): `base.Menu`, para un menú con un aspecto propio.
+- [Componentes sin estilos](../authoring/base.md#menú): `base.Menu`, para un menú con un aspecto propio.

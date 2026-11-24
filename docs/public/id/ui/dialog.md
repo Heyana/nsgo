@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 Aksi dengan `Role: core.AlertCancel` berjalan saat Escape atau kembali, diikuti oleh `OnOpenChange(false, base.ReasonCancel)`. `Default: true` memberikan fokus papan ketik pada sebuah aksi ketika peringatan terbuka di desktop, web, dan Apple TV, dan membuat Return memilihnya; tekanan pada aksi menjalankan `OnPress`, lalu `OnOpenChange(false, base.ReasonSelect)`. Return menjalankan aksi bawaan selama fokus papan ketik tidak berada pada aksi atau kolom lain: dengan fokus dipindahkan ke aksi lain, Return menekan aksi tersebut, dan dialog di atas peringatan mempertahankan Return untuk dirinya. Begitu sebuah aksi berjalan, peringatan tertutup, apa pun yang dilakukan `OnOpenChange`, dan tidak menjalankan aksi lain sampai `Open` menjadi false lalu true kembali. Jika beberapa aksi membawa penanda yang sama, yang pertama menang. Tanpa penanda, Escape menutup tanpa menjalankan aksi dan Return tidak memiliki aksi bawaan. `Role: core.AlertDestructive` mendeskripsikan sebuah aksi; `Variant` atau `Color` memilih tampilannya.
 
-Untuk peringatan atau action sheet milik sistem, gunakan `cx.ShowAlert` ([Layanan platform](../services.md#alerts-and-the-clipboard)).
+Untuk peringatan atau action sheet milik sistem, gunakan `cx.ShowAlert` ([Layanan platform](../services.md#peringatan-dan-papan-klip)).
 
 ## Perilaku
 

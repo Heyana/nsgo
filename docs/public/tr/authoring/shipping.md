@@ -23,7 +23,7 @@ package locales
 //go:generate go tool nsgo i18n
 ```
 
-`go generate ./locales` ileti başına bir işlev yazar; bileşen bunu kendi kapsamıyla çağırır: `locales.Clear(cx)` sözcüğü uygulamanın gösterdiği dilde söyler. Uygulamaların yalnızca Go ile derlenebilmesi için üretilen `catalog_gen.go` dosyasını işleyin (commit). Çeviri yaptığınız her dil için bir dosya ekleyin (`zh-Hans.yaml`); bir uygulama ise tıpkı [NSGo'nun kendi sözcükleri](../localization.md#nsgos-own-words) için olduğu gibi, kendi kataloglarında paketinizin içe aktarma yolunu adlandıran bir anahtar altında diğer dilleri sağlar.
+`go generate ./locales` ileti başına bir işlev yazar; bileşen bunu kendi kapsamıyla çağırır: `locales.Clear(cx)` sözcüğü uygulamanın gösterdiği dilde söyler. Uygulamaların yalnızca Go ile derlenebilmesi için üretilen `catalog_gen.go` dosyasını işleyin (commit). Çeviri yaptığınız her dil için bir dosya ekleyin (`zh-Hans.yaml`); bir uygulama ise tıpkı [NSGo'nun kendi sözcükleri](../localization.md#nsgonun-kendi-sözcükleri) için olduğu gibi, kendi kataloglarında paketinizin içe aktarma yolunu adlandıran bir anahtar altında diğer dilleri sağlar.
 
 ## Testler
 
@@ -60,4 +60,4 @@ func init() {
 }
 ```
 
-`import { Toggle } from "example.com/chips"` ardından alanları prop olarak alır ([TSX uygulamaları](../tsx.md#go-from-tsx)).
+`import { Toggle } from "example.com/chips"` ardından alanları prop olarak alır ([TSX uygulamaları](../tsx.md#tsxten-go)).

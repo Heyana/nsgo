@@ -74,7 +74,7 @@ cx.RegisterFont(data) // TrueType または OpenType フォント
 
 ## 選択と計測
 
-`SelectableOn` を設定するとユーザーがテキストを選択してコピーできるようになり、`View` に `Selectable` を設定すると、Web ページのようにその内部のテキストをドキュメント順でまとめて選択できるようになります。`SelectionColor` は選択ハイライトの色を指定します。`OnTextSelection` はユーザーが選択範囲を動かすたびに `core.TextSelection` を受け取ります。これにはプレーンな `Text`、`Markdown`、`HTML`（範囲内の `TextView` やスタイル付きテキストの解析済みインライン・ブロック構造を、部分的なスパンやリンクも含めて保持）、テキストごとの `Ranges`、および選択範囲が触れているテキストのビュー内での `Bounds` が含まれており、Markdown や HTML としてのコピー、単語リスト作成、選択された単語の翻訳などに使えます。`desktop.LookUp` はそれらをシステムの辞書で表示します（[サービス](services.md#opening-links-and-files)）。`cx.MeasureText` は指定したフォントで文字列のサイズを計測するため、テキストに合わせた列幅の決定に使えます。これを呼び出すリアクティブ関数は利用可能なフォントが変わると再評価され、`OnTextLayout` は各レイアウト後に計測された行を報告します。
+`SelectableOn` を設定するとユーザーがテキストを選択してコピーできるようになり、`View` に `Selectable` を設定すると、Web ページのようにその内部のテキストをドキュメント順でまとめて選択できるようになります。`SelectionColor` は選択ハイライトの色を指定します。`OnTextSelection` はユーザーが選択範囲を動かすたびに `core.TextSelection` を受け取ります。これにはプレーンな `Text`、`Markdown`、`HTML`（範囲内の `TextView` やスタイル付きテキストの解析済みインライン・ブロック構造を、部分的なスパンやリンクも含めて保持）、テキストごとの `Ranges`、および選択範囲が触れているテキストのビュー内での `Bounds` が含まれており、Markdown や HTML としてのコピー、単語リスト作成、選択された単語の翻訳などに使えます。`desktop.LookUp` はそれらをシステムの辞書で表示します（[サービス](services.md#リンクとファイルを開く)）。`cx.MeasureText` は指定したフォントで文字列のサイズを計測するため、テキストに合わせた列幅の決定に使えます。これを呼び出すリアクティブ関数は利用可能なフォントが変わると再評価され、`OnTextLayout` は各レイアウト後に計測された行を報告します。
 
 ## ドキュメント
 

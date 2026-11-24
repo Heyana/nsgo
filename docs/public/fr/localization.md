@@ -18,7 +18,7 @@ appName:
 
 Un message est une chaîne, ou un objet `message` accompagné d’une `description` et de `placeholders` pour les traducteurs.
 
-Le paquet importe `locales/`. `dev`, `build` et `test` vérifient les catalogues et génèrent une fonction Go par message à côté d’eux, comme `locales.Greeting(cx, "Ada")`, qui l’énonce dans la langue affichée par l’application et s’adapte lorsqu’elle change ; `go tool nsgo i18n` génère uniquement les fonctions. Les messages mettent en forme les nombres et les dates (`{d, date, medium}`), et `appName` nomme l’application dans chaque langue au sein de ses paquets, tout comme un message doté d’une clé `apple.info`, telle que `NSCameraUsageDescription`, traduit cette entrée Info.plist ([autorisations](permissions.md#usage-descriptions)).
+Le paquet importe `locales/`. `dev`, `build` et `test` vérifient les catalogues et génèrent une fonction Go par message à côté d’eux, comme `locales.Greeting(cx, "Ada")`, qui l’énonce dans la langue affichée par l’application et s’adapte lorsqu’elle change ; `go tool nsgo i18n` génère uniquement les fonctions. Les messages mettent en forme les nombres et les dates (`{d, date, medium}`), et `appName` nomme l’application dans chaque langue au sein de ses paquets, tout comme un message doté d’une clé `apple.info`, telle que `NSCameraUsageDescription`, traduit cette entrée Info.plist ([autorisations](permissions.md#descriptions-dutilisation)).
 
 ## La langue
 

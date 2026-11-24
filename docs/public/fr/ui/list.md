@@ -70,5 +70,5 @@ La vue défilante native et la virtualisation sont identiques sur chaque cible. 
 
 - [Listes et défilement](../lists.md) : le guide complet, incluant les en-têtes figés et le chargement incrémental.
 - [Défilement](scroll.md) : une vue défilante simple.
-- [DataTable](../lists.md#tables) : un tableau comportant de nombreuses lignes et colonnes.
+- [DataTable](../lists.md#tableaux) : un tableau comportant de nombreuses lignes et colonnes.
 - Les pages List, Table et DataTable de la galerie.

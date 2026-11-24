@@ -60,7 +60,7 @@ cx.Share(core.ShareOptions{
 }, func(shown bool, err error) {})
 ```
 
-`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` は、[`android.share_types`](building.md#incoming-shares-on-android) または [`apple.share_types`](building.md#incoming-shares-on-ios) に対するテキストとファイルを受け取ります。Android の共有はアプリを起動できます。iOS はアプリがアクティブになるか、ユーザーが次にアプリを開くまで、共有を App Group にキューイングします。保留中の共有は最初のハンドラーを待ちます。iOS はコールバックが戻るまで受信箱のバッチを保持し、プロセス終了をまたいでも少なくとも 1 回は配信されます。テキストは `Text` に届き、ファイルは `Path`、`Name`、`MIME` を持つ読み取り可能なキャッシュのコピーとして届きます。キャッシュより長く残す必要があるファイルは、永続ストレージに移動またはコピーしてください。
+`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` は、[`android.share_types`](building.md#android-での共有の受け取り) または [`apple.share_types`](building.md#ios-での共有の受け取り) に対するテキストとファイルを受け取ります。Android の共有はアプリを起動できます。iOS はアプリがアクティブになるか、ユーザーが次にアプリを開くまで、共有を App Group にキューイングします。保留中の共有は最初のハンドラーを待ちます。iOS はコールバックが戻るまで受信箱のバッチを保持し、プロセス終了をまたいでも少なくとも 1 回は配信されます。テキストは `Text` に届き、ファイルは `Path`、`Name`、`MIME` を持つ読み取り可能なキャッシュのコピーとして届きます。キャッシュより長く残す必要があるファイルは、永続ストレージに移動またはコピーしてください。
 
 `desktop.LookUp` は、macOS で 3 本指タップをしたときと同じように、テキストに対するシステムの辞書パネルをビュー内のボックスの上に表示します。渡すのは選択範囲のテキストとボックス、そしてその `Selectable` ビューの `Ref` です。`desktop.CanLookUp` は表示できるかどうかを示し、表示できるのは macOS のウィンドウ内です。Windows、Linux、Web にはそのようなパネルはありません。テストでは、`nsgotest.Environment` が `CanLookUp` を設定している場合、表示されたパネルを `nsgotest.App.LookUps` が一覧します。
 
@@ -138,7 +138,7 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 ## ストレージ
 
-`cx.Storage()` はアプリのキーバリューストレージで、デバイス上に保持され、アプリのすべてのグラフで共有されます。読み取りは同期的で、計算の内側で読み取るとその計算が変更を購読します。`SetItem` はクォータ（`core.StorageQuota`、デフォルトは 5 MiB）を超えると `core.StorageFullError` を返します。これはユーザーのどのプログラムからでも読めるただのファイルなので、トークンやパスワードは代わりに [シークレット](#secrets) に保存してください。
+`cx.Storage()` はアプリのキーバリューストレージで、デバイス上に保持され、アプリのすべてのグラフで共有されます。読み取りは同期的で、計算の内側で読み取るとその計算が変更を購読します。`SetItem` はクォータ（`core.StorageQuota`、デフォルトは 5 MiB）を超えると `core.StorageFullError` を返します。これはユーザーのどのプログラムからでも読めるただのファイルなので、トークンやパスワードは代わりに [シークレット](#シークレット) に保存してください。
 
 `cx.Store()` は基盤となるストアを返します。これは、プラグインを独自のゴルーチンで実行するホストのように、`core.RootOptions.Storage` で別のルートを作成するホスト向けです。そうすると両方のルートがアプリのエントリとデバイス上に保持される内容を共有します。これはストア全体であり、アプリが書いていないコードに `cx.ProvideStorage` が与えるパーティションではありません。
 

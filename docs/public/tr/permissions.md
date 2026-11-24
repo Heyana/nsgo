@@ -7,7 +7,7 @@ order: 49
 
 ## Denetleme ve isteme
 
-Sistem, bir uygulamanın yapabileceklerinin bir kısmını kullanıcının vermesine bırakır: telefonlarda ve Mac'lerde mikrofon, kamera, kişiler, takvimler, anımsatıcılar, fotoğraflar, Bluetooth, medya arşivi, konum ve bildirimler; telefonlarda hareket ve arka planda konum; macOS'ta ayrıca Erişilebilirlik, Ekran Kaydı, Giriş İzleme, Tam Disk Erişimi, Uygulama Yönetimi, Geliştirici Araçları ve başka bir uygulamanın Otomasyonu ([konum ve hareket](services.md#location-and-motion), [bildirimler](notifications.md)). `core.Permissions()` bunları `core.Permission` anahtarları olarak listeler. `cx.PermissionStatus` uygulamanın birine sahip olup olmadığını sormadan yanıtlar; `cx.RequestPermission` ise sistemin bir istemi olduğu ve henüz sormadığı yerde o istemle sorar. Kullanıcı izni gerektiren bir şey yaptığı anda isteyin. Face ID ve Touch ID bunların arasında değildir: `cx.BiometricAvailability` onları bildirir ve `cx.AuthenticateBiometric` kendi istemleriyle sorar ([biyometri](services.md#biometrics)).
+Sistem, bir uygulamanın yapabileceklerinin bir kısmını kullanıcının vermesine bırakır: telefonlarda ve Mac'lerde mikrofon, kamera, kişiler, takvimler, anımsatıcılar, fotoğraflar, Bluetooth, medya arşivi, konum ve bildirimler; telefonlarda hareket ve arka planda konum; macOS'ta ayrıca Erişilebilirlik, Ekran Kaydı, Giriş İzleme, Tam Disk Erişimi, Uygulama Yönetimi, Geliştirici Araçları ve başka bir uygulamanın Otomasyonu ([konum ve hareket](services.md#konum-ve-hareket), [bildirimler](notifications.md)). `core.Permissions()` bunları `core.Permission` anahtarları olarak listeler. `cx.PermissionStatus` uygulamanın birine sahip olup olmadığını sormadan yanıtlar; `cx.RequestPermission` ise sistemin bir istemi olduğu ve henüz sormadığı yerde o istemle sorar. Kullanıcı izni gerektiren bir şey yaptığı anda isteyin. Face ID ve Touch ID bunların arasında değildir: `cx.BiometricAvailability` onları bildirir ve `cx.AuthenticateBiometric` kendi istemleriyle sorar ([biyometri](services.md#biyometri)).
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -91,7 +91,7 @@ Sunulan uygulama, uygulamanın paketidir, yoksa yürütülebilir dosyasıdır; `
 | Android | `android.permissions` bildirdiği sürece mikrofon, kamera, takvimler, Bluetooth ve medya arşivi |
 | Apple Watch, mini programlar | Kendi servisleri üzerinden bildirimler, konum ve hareket; sistemin kısıtladığı geri kalanı şimdilik bilinmez |
 
-Konum ve hareket izinleri her [platformun algılayıcılarını](services.md#location-and-motion), `PermissionNotifications` ise [bildirimleri](notifications.md) izler. Fitness, Apple basınç verisi dahil `PermissionActivityRecognition` kullanır (Android'de `ACTIVITY_RECOGNITION`, Apple'da `NSMotionUsageDescription`); ham Android hareket verisi ayrı kalır. Mobil Safari'de `PermissionMotion`'ı bir basış işleyicisinden isteyin.
+Konum ve hareket izinleri her [platformun algılayıcılarını](services.md#konum-ve-hareket), `PermissionNotifications` ise [bildirimleri](notifications.md) izler. Fitness, Apple basınç verisi dahil `PermissionActivityRecognition` kullanır (Android'de `ACTIVITY_RECOGNITION`, Apple'da `NSMotionUsageDescription`); ham Android hareket verisi ayrı kalır. Mobil Safari'de `PermissionMotion`'ı bir basış işleyicisinden isteyin.
 
 ## Test etme
 

@@ -18,9 +18,9 @@ widgets:
 # apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
-Sulle piattaforme Apple lo disegna un'estensione per widget, che `build` e `dev` compilano con il compilatore Swift di Xcode ([Compilazione e distribuzione](building.md#widgets-and-live-activities)). Su Android, il runtime Java precompilato disegna la stessa timeline come App Widget. Entrambi continuano a mostrare il contenuto pubblicato quando l'app si ferma.
+Sulle piattaforme Apple lo disegna un'estensione per widget, che `build` e `dev` compilano con il compilatore Swift di Xcode ([Compilazione e distribuzione](building.md#widget-e-attività-in-tempo-reale)). Su Android, il runtime Java precompilato disegna la stessa timeline come App Widget. Entrambi continuano a mostrare il contenuto pubblicato quando l'app si ferma.
 
-Per una build sandbox per il Mac App Store, imposta `apple.app_group` e fornisci i profili di provisioning macOS tramite `sign.macos_profile` e `sign.widgets_profile`. Sia l'app sia `<id>.widgets` devono appartenere allo stesso team e avere l'entitlement per quel gruppo. Timeline e immagini vanno nel suo contenitore condiviso; le build macOS dirette e di sviluppo mantengono la posizione esistente nella directory home. [Firma per gli store](building.md#store-packages) descrive le opzioni di build.
+Per una build sandbox per il Mac App Store, imposta `apple.app_group` e fornisci i profili di provisioning macOS tramite `sign.macos_profile` e `sign.widgets_profile`. Sia l'app sia `<id>.widgets` devono appartenere allo stesso team e avere l'entitlement per quel gruppo. Timeline e immagini vanno nel suo contenitore condiviso; le build macOS dirette e di sviluppo mantengono la posizione esistente nella directory home. [Firma per gli store](building.md#pacchetti-per-gli-store) descrive le opzioni di build.
 
 `name` e `description` possono indicare messaggi nei cataloghi dell'app. In tal caso, la galleria dei widget e il segnaposto usano la lingua dell'utente, ricorrendo al testo del catalogo sorgente quando manca una traduzione. Un valore che non è una chiave di catalogo viene mostrato alla lettera.
 

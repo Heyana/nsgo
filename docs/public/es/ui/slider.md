@@ -69,4 +69,4 @@ La pista la dibuja la aplicación y tiene el mismo tamaño en todas partes. Las 
 - [Formularios](../forms.md): controles deslizantes en un formulario.
 - [Accesibilidad](../accessibility.md): valores y roles ajustables.
 - Las páginas Slider, RangeSlider y Rating de la galería.
-- [Componentes sin estilo](../authoring/base.md#slider): `base.Slider`, vertical y con tus propias marcas.
+- [Componentes sin estilo](../authoring/base.md#control-deslizante): `base.Slider`, vertical y con tus propias marcas.

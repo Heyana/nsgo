@@ -36,4 +36,4 @@ O controle padrão é desenhado pelo aplicativo, então tem a mesma aparência e
 - [Formulários](../forms.md): configurações em um formulário.
 - [Acessibilidade](../accessibility.md): rótulos e foco.
 - A página Switch da galeria.
-- [Componentes sem estilo](../authoring/base.md#switch): `base.Switch`, para um switch com uma aparência própria.
+- [Componentes sem estilo](../authoring/base.md#interruptor): `base.Switch`, para um switch com uma aparência própria.

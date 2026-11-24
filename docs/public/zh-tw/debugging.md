@@ -124,7 +124,7 @@ go tool nsgo dev -devtools
 - **Profiler**：顯示每次提交的耗時，拆分為提交前的應用程式碼執行時間、包含版面配置的提交時間，以及在平台主執行緒上套用變更的時間。同時顯示觸發該次提交的寫入行號，並預設展開執行耗時最長的計算。另一份清單則依建立行號列出過去一秒內執行次數最多的計算。Android 的執行環境是在自身的 Java 程式碼中套用批次更新，因此 Android 的提交不會顯示平台耗時。
 - **Recorder**：記錄你在應用程式中的點擊、輸入、清除與捲動操作，並寫成一段可直接複製進 `_test.go` 檔案的 `nsgotest` 測試程式碼。在 Elements 面板中，**Assert shown** 與 **Assert text** 可為選取的檢視加入斷言檢查。文字檢查會以應用程式當時顯示的語言記錄文字，因此請在測試執行所使用的語言下進行錄製。
 - **Highlight updates** 會框出每次提交所變更的檢視，效果與 `-highlight` 相同。
-- **Layout** 會在裝置上顯示或隱藏[版面配置稽核](#layout)，功能與啟動時加上 `-layout` 相同。
+- **Layout** 會在裝置上顯示或隱藏[版面配置稽核](#版面配置)，功能與啟動時加上 `-layout` 相同。
 
 TSX 應用程式的狀態、計算與寫入位置會透過套件的 source map 以 TSX 檔案與行號命名，並連結至應用程式中的原始檔案。
 
@@ -224,7 +224,7 @@ go tool nsgo dev -target web -automation
 claude mcp add nsgo -- go tool nsgo mcp
 ```
 
-其他用戶端也使用相同指令，在應用程式目錄中執行 `go` 並傳入參數 `tool nsgo mcp`。檢視可透過[測試](testing.md#a-test)所使用的選擇器命名，或使用快照印出的 `view:` 參照（一旦存檔重啟應用程式，該參照便會失效）。
+其他用戶端也使用相同指令，在應用程式目錄中執行 `go` 並傳入參數 `tool nsgo mcp`。檢視可透過[測試](testing.md#撰寫測試)所使用的選擇器命名，或使用快照印出的 `view:` 參照（一旦存檔重啟應用程式，該參照便會失效）。
 
 代理程式會直接操作 `dev` 執行時應用程式的真實資料。只有 `dev -automation` 建置會包含此能力，且唯有本機持有 `.nsgo/automation.yaml`（僅限你自己可讀取）內權杖的工具才能連線存取。
 

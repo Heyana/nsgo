@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 `Role: core.AlertCancel` を持つアクションは Escape キーまたは戻る操作で実行され、続いて `OnOpenChange(false, base.ReasonCancel)` が呼ばれます。`Default: true` を設定すると、デスクトップ、Web、および Apple TV でアラートが開いたときにそのアクションにキーボードフォーカスが当たり、Return キーで選択できるようになります。アクションが押されると `OnPress` が実行され、次に `OnOpenChange(false, base.ReasonSelect)` が呼ばれます。キーボードフォーカスが他のアクションやフィールドにない間は Return キーでデフォルトアクションが実行されますが、別のアクションにフォーカスが移っている場合は Return キーでそのアクションが押され、アラートの上に別のダイアログがある場合はそのダイアログが Return キーを受け取ります。一度アクションが実行されると、`OnOpenChange` が何をしようともアラートは閉じ、`Open` が一度 false になって再び true になるまで他のアクションは実行されません。複数のアクションに同じマーカーが付いている場合は、最初のものが優先されます。マーカーがない場合、Escape キーはアクションを実行せずに閉じ、Return キーにはデフォルトアクションがありません。`Role: core.AlertDestructive` はアクションの性質を表し、見た目は `Variant` または `Color` で選択します。
 
-システム標準のアラートやアクションシートには `cx.ShowAlert` を使用してください（[プラットフォームサービス](../services.md#alerts-and-the-clipboard)）。
+システム標準のアラートやアクションシートには `cx.ShowAlert` を使用してください（[プラットフォームサービス](../services.md#アラートとクリップボード)）。
 
 ## 振る舞い
 

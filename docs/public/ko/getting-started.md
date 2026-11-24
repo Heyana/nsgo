@@ -12,7 +12,7 @@ order: 10
 - iPhone에서 실행하려면 Xcode의 Accounts에 등록된 Apple ID와 신뢰할 수 있는 기기로 설정된 iPhone이 필요하며, 개발자 모드(Developer Mode)가 켜져 있어야 합니다.
 - Android에서 실행하려면 Android SDK의 platform-tools에 포함된 `adb`가 필요합니다.
 - Windows에서 실행하려면 Go만 있으면 되며, Go만으로 Windows 및 웹 패키지도 빌드할 수 있습니다.
-- Linux에서는 GTK 4.14 이상, Pango, Cairo가 필요합니다. 네트워크 이미지는 libsoup 3를, 웹 뷰는 WebKitGTK 6.0을, 오디오와 비디오는 GStreamer 플러그인을 사용합니다. AppArmor 사용자 네임스페이스 제한이 있는 시스템에서는 [WebKitGTK에 bubblewrap 프로필이 필요합니다](debugging.md#linux-web-views).
+- Linux에서는 GTK 4.14 이상, Pango, Cairo가 필요합니다. 네트워크 이미지는 libsoup 3를, 웹 뷰는 WebKitGTK 6.0을, 오디오와 비디오는 GStreamer 플러그인을 사용합니다. AppArmor 사용자 네임스페이스 제한이 있는 시스템에서는 [WebKitGTK에 bubblewrap 프로필이 필요합니다](debugging.md#linux-웹-뷰).
 
 ## 앱 생성하기
 
@@ -78,7 +78,7 @@ NSGo의 스킬은 Claude Code, Codex, Cursor 같은 코딩 에이전트에게 NS
 bunx skills add nsgo-dev/nsgo
 ```
 
-문서를 직접 읽는 에이전트는 <https://nsgo.dev/llms.txt>에서 시작할 수 있으며, 여기에는 모든 페이지가 `https://nsgo.dev/docs/<page>.md` 형식의 Markdown으로 나열되어 있습니다. <https://nsgo.dev/llms-full.txt>에는 모든 문서가 하나로 모여 있습니다. 에이전트는 실행 중인 앱을 직접 사용할 수도 있습니다([실행 및 디버깅](debugging.md#agents)).
+문서를 직접 읽는 에이전트는 <https://nsgo.dev/llms.txt>에서 시작할 수 있으며, 여기에는 모든 페이지가 `https://nsgo.dev/docs/<page>.md` 형식의 Markdown으로 나열되어 있습니다. <https://nsgo.dev/llms-full.txt>에는 모든 문서가 하나로 모여 있습니다. 에이전트는 실행 중인 앱을 직접 사용할 수도 있습니다([실행 및 디버깅](debugging.md#에이전트)).
 
 ## 다음 단계
 

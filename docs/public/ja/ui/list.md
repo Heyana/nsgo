@@ -70,5 +70,5 @@ ui.List{
 
 - [リストとスクロール](../lists.md): スティッキーヘッダーや追加読み込みを含む完全なガイド。
 - [スクロール](scroll.md): 素のスクロールビュー。
-- [DataTable](../lists.md#tables): 多数の行と列を持つテーブル。
+- [DataTable](../lists.md#テーブル): 多数の行と列を持つテーブル。
 - ギャラリーの List、Table、DataTable ページ。

@@ -224,7 +224,7 @@ go tool nsgo dev -target web -automation
 claude mcp add nsgo -- go tool nsgo mcp
 ```
 
-Andere Clients erhalten denselben Befehl – `go` mit den Argumenten `tool nsgo mcp`, ausgeführt im App-Verzeichnis. Views werden mit den Selektoren aus [Tests](testing.md#a-test) angesprochen oder über die `view:`-Referenzen, die ein Snapshot ausgibt und die ein Speichern durch den Neustart der App ungültig macht.
+Andere Clients erhalten denselben Befehl – `go` mit den Argumenten `tool nsgo mcp`, ausgeführt im App-Verzeichnis. Views werden mit den Selektoren aus [Tests](testing.md#ein-test) angesprochen oder über die `view:`-Referenzen, die ein Snapshot ausgibt und die ein Speichern durch den Neustart der App ungültig macht.
 
 Der Agent handelt auf den echten Daten der App, so wie `dev` sie ausführt. Nur `dev -automation`-Builds enthalten diese Schnittstelle, und nur Werkzeuge auf diesem Rechner mit dem Token in `.nsgo/automation.yaml`, das ausschließlich Sie lesen können, erreichen sie.
 

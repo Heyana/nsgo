@@ -63,7 +63,7 @@ ui.AlertDialog{
 
 Uma ação com `Role: core.AlertCancel` roda com Escape ou voltar, seguida de `OnOpenChange(false, base.ReasonCancel)`. `Default: true` dá a uma ação o foco do teclado quando o alerta abre nos desktops, na web e na Apple TV, e faz Return escolhê-la; o toque em uma ação roda `OnPress` e depois `OnOpenChange(false, base.ReasonSelect)`. Return roda a ação padrão enquanto o foco do teclado não está em nenhuma outra ação ou campo: com o foco movido para outra ação, Return pressiona essa, e um diálogo sobre o alerta fica com o Return. Depois que uma ação roda, o alerta fecha, faça o que fizer `OnOpenChange`, e não roda nenhuma outra até que `Open` passe a falso e a verdadeiro de novo. Se várias ações tiverem o mesmo marcador, a primeira vence. Sem marcadores, Escape fecha sem rodar nenhuma ação e Return não tem ação padrão. `Role: core.AlertDestructive` descreve uma ação; `Variant` ou `Color` escolhe sua aparência.
 
-Para o alerta ou a action sheet do próprio sistema, use `cx.ShowAlert` ([Serviços da plataforma](../services.md#alerts-and-the-clipboard)).
+Para o alerta ou a action sheet do próprio sistema, use `cx.ShowAlert` ([Serviços da plataforma](../services.md#alertas-e-a-área-de-transferência)).
 
 ## Comportamento
 
@@ -83,4 +83,4 @@ No Android e em telas sensíveis ao toque, um diálogo é uma sheet vinda de bai
 - [Menu](menu.md): comandos ancorados e menus de contexto.
 - [Acessibilidade](../accessibility.md): foco e papéis de diálogo.
 - As páginas Dialog, Sheet e AlertDialog da galeria.
-- [Componentes sem estilo](../authoring/base.md#dialog): `base.Dialog` e `base.Sheet`, com as apresentações do iOS e um movimento próprio.
+- [Componentes sem estilo](../authoring/base.md#diálogo): `base.Dialog` e `base.Sheet`, com as apresentações do iOS e um movimento próprio.

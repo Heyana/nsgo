@@ -35,7 +35,7 @@ Cada biblioteca possui:
 - `name`: o nome do arquivo instalado, terminado em `.dylib` no macOS, `.dll` no Windows ou `.so` (ou `.so.*` versionado) no Linux.
 - Exatamente um entre `path` (um arquivo relativo ao diretório deste pacote) ou `url` (uma URL HTTP(S) para a biblioteca em si). Publique bibliotecas já extraídas em vez de URLs de arquivos compactados. URLs não devem conter nomes de usuário e senhas embutidos.
 - `sha256`: o SHA-256 do arquivo original, obrigatório para qualquer uma das origens. Por exemplo, `shasum -a 256 lib/macos-arm64/libexample.dylib` o imprime no macOS.
-- `licenses`: caminhos não vazios para os arquivos originais de licença e aviso legal, relativos ao diretório deste pacote. Esses textos vão para `THIRD_PARTY_NOTICES.txt` e chegam a `core.ThirdPartyNotices()` em compilações de release. A [política de licenças](building.md#license-notices) existente do app, incluindo exceções exatas por módulo, aplica-se de forma independente às licenças nativas.
+- `licenses`: caminhos não vazios para os arquivos originais de licença e aviso legal, relativos ao diretório deste pacote. Esses textos vão para `THIRD_PARTY_NOTICES.txt` e chegam a `core.ThirdPartyNotices()` em compilações de release. A [política de licenças](building.md#avisos-de-licença) existente do app, incluindo exceções exatas por módulo, aplica-se de forma independente às licenças nativas.
 
 Caminhos locais e links simbólicos devem permanecer dentro do pacote declarante. O NSGo rejeita campos desconhecidos, divergências de checksum, arquivos destinados a outro sistema operacional ou arquitetura e nomes instalados conflitantes. Dois pacotes podem compartilhar um arquivo com nome idêntico caso tenha o mesmo checksum. O limite de tamanho por arquivo é 1 GiB.
 

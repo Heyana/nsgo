@@ -187,6 +187,6 @@ go tool nsgo test
 
 ## Wie es weitergeht
 
-- [Plattformdienste](../services.md#networking): mehr zu Netzwerk, Speicher und Dateien.
+- [Plattformdienste](../services.md#netzwerk): mehr zu Netzwerk, Speicher und Dateien.
 - [Listen und Scrollen](../lists.md): Pull-to-Refresh, Einrasten und lange Listen.
 - [Ausführen und Debuggen](../debugging.md): jede Aktualisierung mit `-trace` beobachten.

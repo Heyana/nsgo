@@ -124,7 +124,7 @@ go tool nsgo dev -devtools
 - **Profiler**: el tiempo de cada commit, dividido entre su código previo, el commit con su diseño y su aplicación en el hilo principal de la plataforma. También muestra las líneas cuyas escrituras provocaron el commit y se abre sobre los cálculos que ejecutó, los más largos primero. Una segunda lista nombra los cálculos que más se ejecutaron en el último segundo, por la línea que los creó. El entorno de ejecución de Android aplica lotes en su propio código Java, por lo que los commits de Android no tienen tiempo de plataforma.
 - **Recorder**: lo que pulsa, escribe, borra y desplaza en la aplicación, escrito como un archivo de prueba `nsgotest` para copiar en un archivo `_test.go`. En Elements, **Assert shown** y **Assert text** añaden una comprobación de la vista seleccionada. Una comprobación de texto conserva el texto en el idioma en que lo mostró la aplicación, así que grabe con el idioma en el que se ejecutan sus pruebas.
 - **Highlight updates** rodea cada vista que cambia un commit, como hace `-highlight`.
-- **Layout** muestra y oculta la [auditoría de diseño](#layout) en el dispositivo, como la inicia `-layout`.
+- **Layout** muestra y oculta la [auditoría de diseño](#diseño) en el dispositivo, como la inicia `-layout`.
 
 El estado, los cálculos y las escrituras de una aplicación TSX se nombran por sus líneas TSX, a través de los mapas de código fuente de los paquetes, y enlazan con los archivos de su aplicación.
 
@@ -224,7 +224,7 @@ go tool nsgo dev -target web -automation
 claude mcp add nsgo -- go tool nsgo mcp
 ```
 
-Otros clientes aceptan el mismo comando, `go` con los argumentos `tool nsgo mcp`, ejecutado en el directorio de la aplicación. Las vistas se nombran con los selectores de [pruebas](testing.md#a-test), o con las referencias `view:` que imprime una instantánea, que un guardado vuelve obsoletas al reiniciar la aplicación.
+Otros clientes aceptan el mismo comando, `go` con los argumentos `tool nsgo mcp`, ejecutado en el directorio de la aplicación. Las vistas se nombran con los selectores de [pruebas](testing.md#una-prueba), o con las referencias `view:` que imprime una instantánea, que un guardado vuelve obsoletas al reiniciar la aplicación.
 
 El agente actúa sobre los datos reales de la aplicación, tal como los ejecuta `dev`. Solo las compilaciones `dev -automation` lo incluyen, y solo llegan a él herramientas en esta máquina que posean el token en `.nsgo/automation.yaml`, que únicamente usted puede leer.
 

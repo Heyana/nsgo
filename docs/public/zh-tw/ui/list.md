@@ -70,5 +70,5 @@ ui.List{
 
 - [清單與捲動](../lists.md)：完整指南，包含固定標頭與載入更多項目。
 - [捲動](scroll.md)：純粹的捲動檢視。
-- [DataTable](../lists.md#tables)：包含大量列與欄的表格。
+- [DataTable](../lists.md#表格)：包含大量列與欄的表格。
 - 展示畫廊（gallery）的 List、Table 與 DataTable 頁面。

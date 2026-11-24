@@ -52,7 +52,7 @@ Les plateformes Apple, Android, Windows, Linux et le web mettent à jour directe
 
 ## Capturer une vue
 
-Appelez `cx.Capture(&ref, done)` avec la `core.Ref` d’une vue montée, ou `cx.Capture(nil, done)` pour la surface courante. Le rappel reçoit les octets PNG à l’échelle de pixels de la surface ou une erreur sur la goroutine du moteur. Utilisez `core.ImageSource{Data: png}` pour afficher le résultat. Pour le partager, écrivez les octets dans un fichier `.png` dans le répertoire de cache de l’application et passez son chemin dans `core.ShareOptions.Files`. [Partager des fichiers](services.md#opening-links-and-files)
+Appelez `cx.Capture(&ref, done)` avec la `core.Ref` d’une vue montée, ou `cx.Capture(nil, done)` pour la surface courante. Le rappel reçoit les octets PNG à l’échelle de pixels de la surface ou une erreur sur la goroutine du moteur. Utilisez `core.ImageSource{Data: png}` pour afficher le résultat. Pour le partager, écrivez les octets dans un fichier `.png` dans le répertoire de cache de l’application et passez son chemin dans `core.ShareOptions.Files`. [Partager des fichiers](services.md#ouvrir-des-liens-et-des-fichiers)
 
 La capture prélève les pixels visibles de la surface dans les limites de la vue. Elle est disponible sur macOS, iOS, tvOS, Windows, Linux, Android et le web. Android capture la fenêtre de l’activité. La capture web peint le DOM de l’application dans un canevas, y compris la sortie des shaders NSGo, et omet les cadres intégrés, les images qu’elle ne peut pas lire ainsi que certains effets CSS.
 

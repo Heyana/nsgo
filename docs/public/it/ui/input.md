@@ -66,7 +66,7 @@ La tastiera software copre la parte inferiore di un telefono. Metti `core.EnvKey
 
 ## Validazione
 
-Le regole sono dell'app. Un signal contiene l'errore, `OnBlur` o `OnSubmit` lo imposta e un messaggio sotto il campo lo mostra ([Moduli](../forms.md#validation)).
+Le regole sono dell'app. Un signal contiene l'errore, `OnBlur` o `OnSubmit` lo imposta e un messaggio sotto il campo lo mostra ([Moduli](../forms.md#validazione)).
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")

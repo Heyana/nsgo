@@ -22,7 +22,7 @@ go tool nsgo check   # vet every package
 go tool nsgo test    # every package's tests
 ```
 
-為你的變更補上測試：使用者可見的行為使用 `nsgotest`，其餘則使用套件自身的測試。並在你改動到的平台上執行元件展覽館（參閱[開發環境設定](../contributing.md#the-gallery)）。
+為你的變更補上測試：使用者可見的行為使用 `nsgotest`，其餘則使用套件自身的測試。並在你改動到的平台上執行元件展覽館（參閱[開發環境設定](../contributing.md#元件展覽館)）。
 
 使用 `go.mod` 中指定 Go 版本的 `gofmt` 格式化 Go 檔案；`gofmt -l .` 會列出需要格式化的檔案。CI 會檢查所有受追蹤的 Go 檔案，若有未格式化的檔案便會失敗並列出其檔名。
 

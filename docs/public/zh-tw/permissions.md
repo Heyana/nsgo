@@ -7,7 +7,7 @@ order: 49
 
 ## 檢查與請求
 
-系統會將應用程式的部分功能保留給使用者決定是否授權：在手機與 Mac 上包含麥克風、相機、聯絡人、行事曆、提醒事項、照片、藍牙、媒體資料庫、定位與通知；在手機上還包含動作與背景定位；在 macOS 上更包含輔助使用、螢幕錄製、輸入監控、完全取用磁碟、App 管理、開發者工具，以及對其他應用程式的自動化控制（參閱[定位與動作](services.md#location-and-motion)、[通知](notifications.md)）。`core.Permissions()` 會將這些項目列為 `core.Permission` 鍵值。`cx.PermissionStatus` 可在不詢問使用者的情況下回報應用程式是否已取得指定權限，而 `cx.RequestPermission` 則會在系統支援提示且尚未詢問過時跳出系統請求視窗。請在使用者執行需要該權限的操作時再提出請求。Face ID 與 Touch ID 不屬於此列：請改用 `cx.BiometricAvailability` 查詢可用性，並透過 `cx.AuthenticateBiometric` 以其專屬提示進行驗證（參閱[生物辨識](services.md#biometrics)）。
+系統會將應用程式的部分功能保留給使用者決定是否授權：在手機與 Mac 上包含麥克風、相機、聯絡人、行事曆、提醒事項、照片、藍牙、媒體資料庫、定位與通知；在手機上還包含動作與背景定位；在 macOS 上更包含輔助使用、螢幕錄製、輸入監控、完全取用磁碟、App 管理、開發者工具，以及對其他應用程式的自動化控制（參閱[定位與動作](services.md#定位與動作)、[通知](notifications.md)）。`core.Permissions()` 會將這些項目列為 `core.Permission` 鍵值。`cx.PermissionStatus` 可在不詢問使用者的情況下回報應用程式是否已取得指定權限，而 `cx.RequestPermission` 則會在系統支援提示且尚未詢問過時跳出系統請求視窗。請在使用者執行需要該權限的操作時再提出請求。Face ID 與 Touch ID 不屬於此列：請改用 `cx.BiometricAvailability` 查詢可用性，並透過 `cx.AuthenticateBiometric` 以其專屬提示進行驗證（參閱[生物辨識](services.md#生物辨識)）。
 
 ```go
 cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
@@ -91,7 +91,7 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 | Android | 麥克風、相機、行事曆、藍牙與媒體資料庫（前提是已在 `android.permissions` 中宣告） |
 | Apple Watch、小程式 | 透過各自的服務處理通知、定位與動作；其餘受系統管控的權限目前皆回傳 unknown |
 
-定位與動作權限遵循各[平台的感測器](services.md#location-and-motion)支援情況，而 `PermissionNotifications` 則遵循[通知](notifications.md)的規範。體適能活動辨識使用 `PermissionActivityRecognition`（在 Android 上為 `ACTIVITY_RECOGNITION`，在 Apple 平台上為 `NSMotionUsageDescription`），包含 Apple 的氣壓感測資料；Android 的原始動作感測資料則仍分開處理。在行動版 Safari 上，請於點擊事件處理常式中請求 `PermissionMotion`。
+定位與動作權限遵循各[平台的感測器](services.md#定位與動作)支援情況，而 `PermissionNotifications` 則遵循[通知](notifications.md)的規範。體適能活動辨識使用 `PermissionActivityRecognition`（在 Android 上為 `ACTIVITY_RECOGNITION`，在 Apple 平台上為 `NSMotionUsageDescription`），包含 Apple 的氣壓感測資料；Android 的原始動作感測資料則仍分開處理。在行動版 Safari 上，請於點擊事件處理常式中請求 `PermissionMotion`。
 
 ## 測試
 

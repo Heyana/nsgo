@@ -18,9 +18,9 @@ widgets:
 # apple: { app_group: group.dev.example.hello }  # the shared App Group, group.<id> by default
 ```
 
-Di platform Apple, sebuah ekstensi widget menggambarnya, yang dikompilasi oleh `build` dan `dev` dengan compiler Swift milik Xcode ([Membangun dan mendistribusikan](building.md#widgets-and-live-activities)). Di Android, runtime Java yang sudah dibangun sebelumnya menggambar timeline yang sama sebagai App Widgets. Keduanya tetap menampilkan konten yang telah diterbitkan ketika aplikasi berhenti.
+Di platform Apple, sebuah ekstensi widget menggambarnya, yang dikompilasi oleh `build` dan `dev` dengan compiler Swift milik Xcode ([Membangun dan mendistribusikan](building.md#widget-dan-live-activities)). Di Android, runtime Java yang sudah dibangun sebelumnya menggambar timeline yang sama sebagai App Widgets. Keduanya tetap menampilkan konten yang telah diterbitkan ketika aplikasi berhenti.
 
-Untuk build Mac App Store yang di-sandbox, atur `apple.app_group` dan sediakan provisioning profile macOS melalui `sign.macos_profile` dan `sign.widgets_profile`. Aplikasi dan `<id>.widgets` harus berada di tim yang sama dan memiliki entitlement untuk grup tersebut. Timeline dan gambar disimpan di kontainer bersamanya; build macOS langsung dan build pengembangan tetap menggunakan lokasi di direktori home yang sudah ada. [Penandatanganan untuk store](building.md#store-packages) menjelaskan opsi build-nya.
+Untuk build Mac App Store yang di-sandbox, atur `apple.app_group` dan sediakan provisioning profile macOS melalui `sign.macos_profile` dan `sign.widgets_profile`. Aplikasi dan `<id>.widgets` harus berada di tim yang sama dan memiliki entitlement untuk grup tersebut. Timeline dan gambar disimpan di kontainer bersamanya; build macOS langsung dan build pengembangan tetap menggunakan lokasi di direktori home yang sudah ada. [Penandatanganan untuk store](building.md#paket-toko-aplikasi) menjelaskan opsi build-nya.
 
 `name` dan `description` dapat menamai pesan di katalog aplikasi. Jika demikian, galeri widget dan placeholder menggunakan bahasa pengguna, dengan kembali ke teks katalog sumber ketika terjemahan tidak tersedia. Nilai yang bukan kunci katalog ditampilkan apa adanya.
 

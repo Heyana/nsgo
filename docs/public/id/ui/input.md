@@ -66,7 +66,7 @@ Papan ketik perangkat lunak menutupi bagian bawah ponsel. Letakkan `core.EnvKeyb
 
 ## Validasi
 
-Aplikasi yang memiliki aturannya. Sebuah signal menyimpan galat, `OnBlur` atau `OnSubmit` mengaturnya, dan pesan di bawah kolom menampilkannya ([Formulir](../forms.md#validation)).
+Aplikasi yang memiliki aturannya. Sebuah signal menyimpan galat, `OnBlur` atau `OnSubmit` mengaturnya, dan pesan di bawah kolom menampilkannya ([Formulir](../forms.md#validasi)).
 
 ```go preview=input/validation
 err := core.NewSignal(cx, "")
