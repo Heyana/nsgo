@@ -1442,8 +1442,10 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.openURL(it.Value, it.Count)
 			continue
 		case driver.ItemSensor:
-			if it.Sensor.Command != driver.SensorStop {
-				w.engine.Dispatch(driver.NoSensor(it))
+			if it.Sensor.Command == driver.SensorStop {
+				cancelWindowsLocation(w, it.Count, it.Sensor.Generation)
+			} else {
+				w.sensorLocation(it.Count, *it.Sensor)
 			}
 			continue
 		case driver.ItemBiometricAvailability, driver.ItemBiometricAuthenticate:
@@ -3205,6 +3207,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.unregisterHotKeys()
 		endWindowGuide(w)
 		endWindowScanner(w)
+		endWindowLocation(w)
 		w.releaseAllAwake()
 		w.loopback.Close()
 		// Clients let the window's providers go.
