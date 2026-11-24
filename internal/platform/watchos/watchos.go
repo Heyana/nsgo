@@ -98,9 +98,11 @@ type view struct {
 
 // look is what a node's SwiftUI modifiers show (Host.swift's look op).
 type look struct {
-	opacity   float64
-	hidden    bool
-	clips     bool
+	opacity float64
+	hidden  bool
+	clips   bool
+	// inset is how far the clip stands inside the box on each side, the border's widths (driver.ViewStyle.ClipBox), and radii are its corners there.
+	inset     driver.Edges
 	radii     driver.Corners
 	transform [6]float64
 }
@@ -820,6 +822,13 @@ func (s *surface) sendLook(v *view) {
 	l.clips = st.Clip || v.kind == driver.KindImage || v.kind == driver.KindInput || v.kind == driver.KindScroll
 	if l.clips {
 		l.radii = st.Radii(f.Size)
+		if st.Clip || v.kind == driver.KindScroll {
+			// Inside the border, as CSS clips overflow to the padding box; SwiftUI's corners are circular, so each takes the smaller of its elliptical radii.
+			_, _, _, _, inner := st.ClipBox(f.Size)
+			l.inset = st.BorderWidths()
+			r := func(c [2]float64) driver.Points { return driver.Points(min(c[0], c[1])) }
+			l.radii = driver.Corners{TopLeft: r(inner[0]), TopRight: r(inner[1]), BottomRight: r(inner[2]), BottomLeft: r(inner[3])}
+		}
 	}
 	m := k.Matrix(f.Size).Mul(st.Matrix(f.Size))
 	if scale != 1 {
@@ -839,6 +848,8 @@ func (s *surface) sendLook(v *view) {
 		// SwiftUI's order: top leading, bottom leading, bottom trailing,
 		// top trailing.
 		s.w.f64(float64(r.TopLeft), float64(r.BottomLeft), float64(r.BottomRight), float64(r.TopRight))
+		in := l.inset
+		s.w.f64(float64(in.Top), float64(in.Left), float64(in.Bottom), float64(in.Right))
 		s.w.f64(l.transform[:]...)
 	}
 	key := boxKey{style: st, w: w, h: h}

@@ -7609,6 +7609,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             super.draw(canvas);
             Box.end(canvas, this, save);
         }
+
+        @Override
+        protected void dispatchDraw(Canvas canvas) {
+            int save = Box.children(canvas, this);
+            super.dispatchDraw(canvas);
+            if (save >= 0) canvas.restoreToCount(save);
+        }
     }
 
     /** A modal's layer: it takes the touches its children leave, so none reach the views it covers. */

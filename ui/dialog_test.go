@@ -124,84 +124,23 @@ func TestDialogTitleActions(t *testing.T) {
 	}
 }
 
-// TestBareDialogClipFollowsTheSurface checks that a bare dialog clips its body to the inside of the surface's rim, whatever corners and rim the app's Style and StyleFunc give it, and follows them while it is open.
-func TestBareDialogClipFollowsTheSurface(t *testing.T) {
-	type corners = core.Corners
-	for _, c := range []struct {
-		name          string
-		style         core.Style
-		surface, clip corners
-	}{
-		{"default", core.Style{}, uniform(RadiusDialog), uniform(RadiusDialog - 1)},
-		{"radius", core.Style{CornerRadius: 20}, uniform(20), uniform(19)},
-		{"rim", core.Style{CornerRadius: 20, BorderWidth: 3}, uniform(20), uniform(17)},
-		{"no rim", core.Style{CornerRadius: 12, BorderStyle: core.BorderNone}, uniform(12), uniform(12)},
-		{"sides", core.Style{CornerRadius: 12, Borders: core.Edges{Top: 4, Right: 1, Bottom: 1, Left: 1}}, uniform(12),
-			corners{TopLeft: 8, TopRight: 8, BottomRight: 11, BottomLeft: 11}},
-		{"corners", core.Style{CornerRadii: corners{TopLeft: 20, TopRight: 20}}, corners{TopLeft: 20, TopRight: 20},
-			corners{TopLeft: 19, TopRight: 19}},
-		{"circular", core.Style{BorderCurve: core.BorderCurveCircular}, uniform(RadiusDialog), uniform(RadiusDialog - 1)},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			app, _ := start(t, desktopEnv, func(*core.Scope) core.Node {
-				return Dialog{Open: func() bool { return true }, Bare: true, Style: c.style, TestID: "dialog",
-					Children: []core.Node{core.Text{Content: "Body"}}}
-			}, nsgotest.ManualFrames())
-			dialog := app.Find("dialog")
-			if got := shownCorners(dialog.Style); got != c.surface {
-				t.Fatalf("surface corners = %+v, want %+v", got, c.surface)
-			}
-			clip := bareClipView(t, dialog).Style
-			if got := shownCorners(clip); got != c.clip {
-				t.Fatalf("clip corners = %+v, want %+v", got, c.clip)
-			}
-			if clip.ContinuousCorners != dialog.Style.ContinuousCorners {
-				t.Fatalf("clip continuous corners = %v, surface's = %v", clip.ContinuousCorners, dialog.Style.ContinuousCorners)
-			}
-		})
-	}
-	t.Run("style func", func(t *testing.T) {
-		var radius *core.Signal[core.Points]
-		app, _ := start(t, desktopEnv, func(cx *core.Scope) core.Node {
-			radius = core.NewSignal(cx, core.Points(20))
-			return Dialog{Open: func() bool { return true }, Bare: true, TestID: "dialog",
-				StyleFunc: func() core.Style { return core.Style{CornerRadius: radius.Get()} },
-				Children:  []core.Node{core.Text{Content: "Body"}}}
+// TestBareDialogClipsInItsSurface checks that a bare dialog's surface clips its body itself, which the platform does inside its rim (driver.ViewStyle.ClipBox), with no view of its own between them, whatever corners and rim the app's Style gives it.
+func TestBareDialogClipsInItsSurface(t *testing.T) {
+	for _, style := range []core.Style{{}, {CornerRadius: 20, BorderWidth: 3}, {CornerRadii: core.Corners{TopLeft: 20, TopRight: 20}}} {
+		app, _ := start(t, desktopEnv, func(*core.Scope) core.Node {
+			return Dialog{Open: func() bool { return true }, Bare: true, Style: style, TestID: "dialog",
+				Children: []core.Node{core.Text{Content: "Body", TestID: "body"}}}
 		}, nsgotest.ManualFrames())
-		if got := shownCorners(bareClipView(t, app.Find("dialog")).Style); got != uniform(19) {
-			t.Fatalf("clip corners = %+v, want 19", got)
+		dialog := app.Find("dialog")
+		if !dialog.Style.Clip {
+			t.Fatalf("%+v: the bare dialog's surface does not clip", style)
 		}
-		app.Post(func() { radius.Set(8) })
-		app.Settle()
-		if got := shownCorners(bareClipView(t, app.Find("dialog")).Style); got != uniform(7) {
-			t.Fatalf("clip corners after the radius changed = %+v, want 7", got)
-		}
-	})
-}
-
-// uniform is r at every corner.
-func uniform(r core.Points) core.Corners {
-	return core.Corners{TopLeft: r, TopRight: r, BottomRight: r, BottomLeft: r}
-}
-
-// shownCorners is the radius each corner of a view is drawn with.
-func shownCorners(s nsgotest.ViewStyle) core.Corners {
-	if s.Corners != (core.Corners{}) {
-		return s.Corners
-	}
-	return uniform(s.CornerRadius)
-}
-
-// bareClipView is the view a bare dialog clips its body with.
-func bareClipView(t *testing.T, dialog *nsgotest.View) *nsgotest.View {
-	t.Helper()
-	for _, v := range views(dialog)[1:] {
-		if v.Style.Clip {
-			return v
+		for v := app.Find("body").Parent; v != dialog; v = v.Parent {
+			if v.Style.Clip {
+				t.Fatalf("%+v: a view between the surface and its body clips", style)
+			}
 		}
 	}
-	t.Fatal("the bare dialog has no clipping view")
-	return nil
 }
 
 // TestDialogTextFuncsUpdateInPlace changes a dialog's and an alert dialog's title and description while they are open: the texts shown and what screen readers read follow on the same views, and the field inside keeps its focus and text.

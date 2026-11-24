@@ -29,6 +29,7 @@ final class Box extends GradientDrawable {
     private final Path side = new Path();
     private Look look = new Look();
     private final Path clipPath = new Path();
+    private final Path childClip = new Path();
     private static final int OUTER = 1, BODY = 2, OUTLINE = 4;
     /** Whether the view clips its content, independently of its outer decoration. */
     boolean clip;
@@ -60,6 +61,25 @@ final class Box extends GradientDrawable {
         box.draw(canvas, OUTER);
         int save = canvas.save();
         canvas.clipPath(box.shape(box.getBounds(), box.clipPath));
+        return save;
+    }
+
+    /**
+     * Clips the children drawn next to the padding box, inside the border, as CSS clips overflow; begin has clipped the
+     * body, border included, to the box's outer corners. Returns the count to restore, or -1 when there is no border.
+     */
+    static int children(Canvas canvas, View view) {
+        Box box = background(view);
+        if (box == null || !box.clip) return -1;
+        float[] widths = box.widths();
+        if (widths[0] <= 0 && widths[1] <= 0 && widths[2] <= 0 && widths[3] <= 0) return -1;
+        float w = view.getWidth(), h = view.getHeight();
+        float x = widths[3], y = widths[0], iw = Math.max(w - widths[1] - x, 0), ih = Math.max(h - widths[2] - y, 0);
+        box.childClip.reset();
+        Shape.ellipticRect(box.childClip, x, y, iw, ih,
+                innerRadii(Shape.fit(box.corners(), w, h), widths), box.look.continuous);
+        int save = canvas.save();
+        canvas.clipPath(box.childClip);
         return save;
     }
 

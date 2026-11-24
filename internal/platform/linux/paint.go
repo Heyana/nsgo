@@ -111,6 +111,10 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 		w.snapshotInsets(cur, s, &sh, e.Shadows)
 	}
 	clip := s.Clip || v.kind == driver.KindScroll || v.kind == driver.KindImage || v.kind == driver.KindInput
+	if s.Clip || v.kind == driver.KindScroll {
+		// What clips its children keeps them inside its border, as CSS clips overflow to the padding box.
+		sh.padding = s
+	}
 	if clip {
 		sh.pushClip(cur)
 	}

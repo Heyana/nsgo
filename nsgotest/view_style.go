@@ -28,7 +28,7 @@ type ViewStyle struct {
 	BorderStyle core.BorderStyle
 	Outline     core.Outline
 	Opacity     float32
-	// Clip clips children to the bounds and corners.
+	// Clip clips children to the padding box, inside the border, with its corners.
 	Clip         bool
 	ShadowColor  core.Color
 	ShadowOffset core.Point

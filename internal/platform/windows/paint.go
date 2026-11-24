@@ -777,7 +777,10 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	// a table's are, pushes no clip for it. A text's decoration lines and
 	// shadow reach past its box unless the view clips, as on Apple and the web.
 	contained := !clip && v.kind != driver.KindView && v.kind != driver.KindModal && v.kind != driver.KindText
-	if clip {
+	if s.Clip || v.kind == driver.KindScroll {
+		// Children and content stay inside the border, as CSS clips overflow to the padding box.
+		p.pushClipPadding(s, &b)
+	} else if clip {
 		p.pushClipBox(&b)
 	} else if contained {
 		p.pushClipRect(bounds)

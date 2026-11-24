@@ -161,6 +161,8 @@ type shape struct {
 	radii      driver.Corners
 	continuous bool
 	rect       gskRoundedRect
+	// padding is the style whose padding box pushClip clips to, nil for the box itself.
+	padding *driver.ViewStyle
 }
 
 func newShape(s *driver.ViewStyle, w, h float32) shape {
@@ -186,13 +188,33 @@ func (sh *shape) path(d float32) uintptr {
 		sh.radii.Inset(driver.Points(d)), sh.continuous, false))
 }
 
-// pushClip clips what follows to the box, until a pop.
+// pushClip clips what follows to the box, or its padding box when padding is set, until a pop.
 func (sh *shape) pushClip(snap uintptr) {
+	if sh.padding != nil && sh.padding.BorderWidths() != (driver.Edges{}) {
+		sh.pushClipPadding(snap, sh.padding)
+		return
+	}
 	if !sh.continuous {
 		gtkSnapshotPushRoundedClip(snap, &sh.rect)
 		return
 	}
 	p := sh.path(0)
+	gtkSnapshotPushFill(snap, p, fillWinding)
+	gskPathUnref(p)
+}
+
+// pushClipPadding clips what follows to the box's padding box, inside the border of s, with its inner corners (driver.ViewStyle.ClipBox), until a pop.
+func (sh *shape) pushClipPadding(snap uintptr, s *driver.ViewStyle) {
+	x, y, w, h, inner := s.ClipBox(driver.Size{Width: driver.Points(sh.w), Height: driver.Points(sh.h)})
+	if !sh.continuous {
+		r := gskRoundedRect{bounds: grapheneRect{float32(x), float32(y), float32(w), float32(h)}}
+		for i, c := range inner {
+			r.corner[i] = grapheneSize{float32(c[0]), float32(c[1])}
+		}
+		gtkSnapshotPushRoundedClip(snap, &r)
+		return
+	}
+	p := gskPath(driver.EllipticRect(nil, x, y, w, h, inner, true, false))
 	gtkSnapshotPushFill(snap, p, fillWinding)
 	gskPathUnref(p)
 }

@@ -222,6 +222,9 @@ enum Kind: UInt8 {
 	/// (top left, top right, bottom right, bottom left).
 	var clips = false
 	var radii = RectangleCornerRadii()
+	/// inset is how far the clip stands inside the box: the border's
+	/// widths, as CSS clips overflow to the padding box.
+	var inset = EdgeInsets()
 	/// transform moves the node from its own top left corner.
 	var transform = CGAffineTransform.identity
 	/// draws says Go draws the node's look into ink, a rectangle in the
@@ -338,12 +341,14 @@ struct Alert: Identifiable {
 				let id = r.u32()
 				let opacity = r.f64(), hidden = r.u8() != 0, clips = r.u8() != 0
 				let radii = RectangleCornerRadii(topLeading: r.f64(), bottomLeading: r.f64(), bottomTrailing: r.f64(), topTrailing: r.f64())
+				let inset = EdgeInsets(top: r.f64(), leading: r.f64(), bottom: r.f64(), trailing: r.f64())
 				let t = CGAffineTransform(a: r.f64(), b: r.f64(), c: r.f64(), d: r.f64(), tx: r.f64(), ty: r.f64())
 				guard let n = nodes[id] else { continue }
 				if n.opacity != opacity { n.opacity = opacity }
 				if n.hidden != hidden { n.hidden = hidden }
 				if n.clips != clips { n.clips = clips }
 				if n.radii != radii { n.radii = radii }
+				if n.inset != inset { n.inset = inset }
 				if n.transform != t { n.transform = t }
 			case .ink:
 				let id = r.u32(), draws = r.u8() != 0, ink = r.rect()
@@ -510,6 +515,20 @@ struct NodeAccess: ViewModifier {
 	}
 }
 
+/// ClipBox is where a node clips: its box inset by the border's widths,
+/// with the corners there.
+struct ClipBox: Shape {
+	let radii: RectangleCornerRadii
+	let inset: EdgeInsets
+
+	func path(in rect: CGRect) -> Path {
+		let box = CGRect(x: rect.minX + inset.leading, y: rect.minY + inset.top,
+			width: max(rect.width - inset.leading - inset.trailing, 0),
+			height: max(rect.height - inset.top - inset.bottom, 0))
+		return UnevenRoundedRectangle(cornerRadii: radii).path(in: box)
+	}
+}
+
 /// Children are a node's children, each placed at its frame: in the
 /// node's own stack, or in one clipped to its box when it clips.
 struct Children: View {
@@ -521,7 +540,7 @@ struct Children: View {
 				ForEach(node.children.filter { !$0.culled }) { NodeView(node: $0) }
 			}
 			.frame(width: node.frame.width, height: node.frame.height, alignment: .topLeading)
-			.clipShape(UnevenRoundedRectangle(cornerRadii: node.radii))
+			.clipShape(ClipBox(radii: node.radii, inset: node.inset))
 		} else {
 			ForEach(node.children.filter { !$0.culled }) { NodeView(node: $0) }
 		}
@@ -590,7 +609,7 @@ struct ScrollNode: View {
 			bridge?.scroll(node.id, .nan, .nan, code)
 		}
 		.frame(width: node.frame.width, height: node.frame.height)
-		.clipShape(UnevenRoundedRectangle(cornerRadii: node.radii))
+		.clipShape(ClipBox(radii: node.radii, inset: node.inset))
 	}
 }
 

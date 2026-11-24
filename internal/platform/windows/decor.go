@@ -130,6 +130,19 @@ func (p *painter) pushClipBox(b *box) {
 	g.release()
 }
 
+// pushClipPadding clips what follows to the box's padding box, inside the border of s, with its inner corners (driver.ViewStyle.ClipBox); a box without a border clips to itself.
+func (p *painter) pushClipPadding(s *driver.ViewStyle, b *box) {
+	if s.BorderWidths() == (driver.Edges{}) {
+		p.pushClipBox(b)
+		return
+	}
+	x, y, w, h, inner := s.ClipBox(driver.Size{Width: driver.Points(b.w), Height: driver.Points(b.h)})
+	segs := driver.EllipticRect(nil, x, y, w, h, inner, b.continuous, false)
+	g := p.pathGeometry(d2dFillWinding, func(sink *comObject) { addSegments(sink, segs) })
+	p.pushLayer(1, g)
+	g.release()
+}
+
 // strokeBox draws a line of width in c along the box inset by inset,
 // dashed as style says.
 func (p *painter) strokeBox(b *box, inset, width float32, c driver.Color, style driver.BorderStyle) {

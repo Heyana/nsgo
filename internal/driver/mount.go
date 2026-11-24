@@ -764,7 +764,7 @@ type ViewStyle struct {
 	BorderStyle BorderStyle
 	Outline     Outline
 	Opacity     float32
-	// Clip clips children to the bounds and corners.
+	// Clip clips children to the padding box, inside the border, with its corners (ClipBox).
 	Clip         bool
 	ShadowColor  Color
 	ShadowOffset Point
@@ -832,6 +832,22 @@ func (vs *ViewStyle) Radii(size Size) Corners {
 
 // Rounded reports whether some corner is rounded.
 func (vs *ViewStyle) Rounded() bool { return vs.CornerRadius > 0 || vs.Corners != (Corners{}) }
+
+// BorderWidths returns the border's width on each side.
+func (vs *ViewStyle) BorderWidths() Edges {
+	if vs.Borders != (Edges{}) {
+		return vs.Borders
+	}
+	return All(vs.BorderWidth)
+}
+
+// ClipBox returns where Clip clips the children of a view of size: its padding box, inside its border, with the radii of its corners there, each the fitted radius less the widths of the sides it joins, elliptical where they differ, as CSS clips overflow (InnerRadii).
+func (vs *ViewStyle) ClipBox(size Size) (x, y, w, h float64, radii [4][2]float64) {
+	b := vs.BorderWidths()
+	x, y = float64(b.Left), float64(b.Top)
+	w, h = max(float64(size.Width)-x-float64(b.Right), 0), max(float64(size.Height)-y-float64(b.Bottom), 0)
+	return x, y, w, h, InnerRadii(vs.Radii(size), b)
+}
 
 // Rim is how a rounded view with a fill and one solid border, either of
 // them opaque, keeps the fill from showing past it. Drawn as CSS says, both reach the

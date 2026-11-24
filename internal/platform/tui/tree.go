@@ -329,15 +329,16 @@ func (t *tree) hit(p driver.Point, match func(*view) bool) *view {
 	return visit(t.views[t.root], p)
 }
 
+// clip is where a view clips its children: box, its padding box (driver.ViewStyle.ClipBox), in the view's coordinates, which matrix maps to the screen's.
 type clip struct {
 	matrix driver.Matrix3D
-	size   driver.Size
+	box    driver.Bounds
 }
 
 func inside(clips []clip, p driver.Point) bool {
 	for _, c := range clips {
 		q, ok := c.matrix.Unproject(p)
-		if !ok || !(driver.Bounds{Size: c.size}).Contains(q) {
+		if !ok || !c.box.Contains(q) {
 			return false
 		}
 	}
@@ -394,7 +395,10 @@ func (t *tree) render(width, height int) *grid {
 			}
 		}
 		if v.style.Clip || v.kind == driver.KindScroll {
-			clips = append(slices.Clip(clips), clip{matrix, v.frame.Size})
+			// Inside the border, as CSS clips overflow to the padding box.
+			x, y, w, h, _ := v.style.ClipBox(v.frame.Size)
+			box := driver.Bounds{Origin: driver.Point{X: driver.Points(x), Y: driver.Points(y)}, Size: driver.Size{Width: driver.Points(w), Height: driver.Points(h)}}
+			clips = append(slices.Clip(clips), clip{matrix, box})
 		}
 		textMatrix := matrix
 		var layout *textLayout
@@ -414,7 +418,7 @@ func (t *tree) render(width, height int) *grid {
 			layout = v.editLayout(value, style)
 			v.inputShift = 0
 			textMatrix = matrix.Mul(driver.Translate3D(float64(v.input.Content.Origin.X), float64(v.input.Content.Origin.Y), 0))
-			clips = append(slices.Clip(clips), clip{textMatrix, v.input.Content.Size})
+			clips = append(slices.Clip(clips), clip{textMatrix, driver.Bounds{Size: v.input.Content.Size}})
 			if t.focus == v && !v.input.Multiline {
 				if box, ok := layout.CaretRect(driver.Caret{Offset: v.selection.End}); ok {
 					shift := max(0, box.Origin.X-v.input.Content.Size.Width+cellWidth)

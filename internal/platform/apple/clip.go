@@ -10,12 +10,12 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// NeedsClipHolder reports whether a view that clips also draws outside its box: an outer shadow, a React Native shadow or an outline. Core Animation clips those with the children when a layer sets masksToBounds or a mask, so the backends clip such a view's children in a holder view of their own and leave the styled layer unclipped, as CSS keeps a box's own shadows and outline outside its overflow clip.
+// NeedsClipHolder reports whether a view that clips draws outside where it clips its children: an outer shadow, a React Native shadow, an outline or a border, which the children stay inside of (driver.ViewStyle.ClipBox). Core Animation clips those with the children when a layer sets masksToBounds or a mask, so the backends clip such a view's children in a holder view of their own and leave the styled layer unclipped, as CSS keeps a box's own shadows and outline outside its overflow clip and clips inside its border.
 func NeedsClipHolder(vs *driver.ViewStyle) bool {
 	if vs == nil || !vs.Clip {
 		return false
 	}
-	if vs.Outline.Visible() || vs.ShadowColor&0xff != 0 {
+	if vs.Outline.Visible() || vs.ShadowColor&0xff != 0 || vs.BorderWidths() != (driver.Edges{}) {
 		return true
 	}
 	if vs.Effects != nil {
@@ -37,7 +37,7 @@ func ShapedCorners(vs *driver.ViewStyle) bool {
 // holderMasks are the shape masks ClipHolder gave holders whose corners differ, which they keep.
 var holderMasks = map[objc.ID]objc.ID{}
 
-// ClipHolder clips layer, the layer of the view holding a view's children, to the box and corners of vs, the view's style; nil or a style that does not clip leaves the children unclipped, or clipped to the holder's bounds for a scroll view's container (scrolls), as NSClipView clips. Corners of different radii take a shape mask over the current bounds; a scroll holder calls this again after committing a new bounds origin. A mask an effect set in its place, hiding the children, stays until the effect puts back HolderMask. A holder that is not a scroll view's container also takes the view's perspective (ChildPerspective), clipping or not, which would otherwise stop at the holder.
+// ClipHolder clips layer, the layer of the view holding a view's children, to the box and corners of vs, the view's style, inside its border (driver.ViewStyle.ClipBox); nil or a style that does not clip leaves the children unclipped, or clipped to the holder's bounds for a scroll view's container (scrolls), as NSClipView clips. Corners of different radii and a border take a shape mask over the current bounds; a scroll holder calls this again after committing a new bounds origin. A mask an effect set in its place, hiding the children, stays until the effect puts back HolderMask. A holder that is not a scroll view's container also takes the view's perspective (ChildPerspective), clipping or not, which would otherwise stop at the holder.
 func ClipHolder(layer objc.ID, vs *driver.ViewStyle, scrolls bool) {
 	if layer == 0 {
 		return
@@ -60,8 +60,10 @@ func ClipHolder(layer objc.ID, vs *driver.ViewStyle, scrolls bool) {
 			layer.Send(selSetMasksToBounds, scrolls)
 			return
 		}
-		radii := vs.Radii(driver.Size{Width: driver.Points(w), Height: driver.Points(h)})
-		if !needsShape(vs, radii) {
+		size := driver.Size{Width: driver.Points(w), Height: driver.Points(h)}
+		radii := vs.Radii(size)
+		bordered := vs.BorderWidths() != (driver.Edges{})
+		if !bordered && !needsShape(vs, radii) {
 			dropHolderMask(layer, m)
 			r, masked := cornersOf(radii)
 			setCorners(layer, r, masked, vs.ContinuousCorners, w, h)
@@ -78,7 +80,14 @@ func ClipHolder(layer objc.ID, vs *driver.ViewStyle, scrolls bool) {
 			}
 		}
 		m.Send(selSetFrame, CGRect{Origin: b.Origin, Size: b.Size})
-		path := boxPath(0, 0, w, h, radii, vs.ContinuousCorners)
+		var path uintptr
+		if bordered {
+			// Inside the border, as CSS clips overflow to the padding box.
+			x, y, iw, ih, inner := vs.ClipBox(size)
+			path = cgPath(driver.EllipticRect(nil, x, y, iw, ih, inner, vs.ContinuousCorners, false))
+		} else {
+			path = boxPath(0, 0, w, h, radii, vs.ContinuousCorners)
+		}
 		m.Send(selSetPath, path)
 		Release(path)
 	})

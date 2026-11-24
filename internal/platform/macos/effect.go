@@ -123,12 +123,14 @@ func (v *view) fitHolder(vs *driver.ViewStyle) {
 	if v.sc == nil {
 		v.content.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
 	} else if vs != nil && v.sc.zoomed > 0 && v.sc.zoomed != 1 {
-		// Bounds scale the scroll contents; viewport corners keep their size in points while the content zooms beneath them.
+		// Bounds scale the scroll contents; viewport corners and borders keep their size in points while the content zooms beneath them.
 		clip := *vs
 		z := driver.Points(v.sc.zoomed)
 		clip.CornerRadius /= z
 		clip.Corners = driver.Corners{TopLeft: clip.Corners.TopLeft / z, TopRight: clip.Corners.TopRight / z,
 			BottomRight: clip.Corners.BottomRight / z, BottomLeft: clip.Corners.BottomLeft / z}
+		clip.BorderWidth /= z
+		clip.Borders = driver.Edges{Top: clip.Borders.Top / z, Right: clip.Borders.Right / z, Bottom: clip.Borders.Bottom / z, Left: clip.Borders.Left / z}
 		vs = &clip
 	}
 	apple.ClipHolder(v.content.Send(selLayer), vs, v.sc != nil)

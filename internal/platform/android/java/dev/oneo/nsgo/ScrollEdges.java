@@ -134,6 +134,13 @@ final class ScrollEdges extends FrameLayout {
 
     @Override
     protected void dispatchDraw(Canvas canvas) {
+        int save = Box.children(canvas, this);
+        drawEdges(canvas);
+        if (save >= 0) canvas.restoreToCount(save);
+    }
+
+    /** Draws the children and, when the scroll stretches, its edges. */
+    private void drawEdges(Canvas canvas) {
         if (!hasEdges) {
             super.dispatchDraw(canvas);
             return;
