@@ -15,6 +15,7 @@ public final class MotionCheck {
             snaps(in, out);
             sticky(in, out);
             transitions(in, out);
+            retargets(in, out);
         }
     }
 
@@ -53,6 +54,29 @@ public final class MotionCheck {
             long elapsed = in.readLong();
             out.writeDouble(transition.at(elapsed));
             out.writeDouble(transition.done(elapsed) ? 1 : 0);
+        }
+    }
+
+    private static float[] frame(DataInputStream in) throws IOException {
+        return new float[] {in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat()};
+    }
+
+    private static void retargets(DataInputStream in, DataOutputStream out) throws IOException {
+        int cases = in.readInt(), steps = in.readInt();
+        for (int i = 0; i < cases; i++) {
+            float[] from = frame(in), to = frame(in);
+            LayoutTransition transition = LayoutTransition.read(in);
+            long at = in.readLong();
+            float[] next = frame(in);
+            LayoutTransition nextTransition = LayoutTransition.read(in);
+            LayoutTransition.Motion motion = LayoutTransition.Motion.start(from, to, transition, 0);
+            motion.retarget(next, nextTransition, at);
+            for (int j = 0; j < steps; j++) {
+                boolean done = motion.step(in.readLong());
+                for (int k = 0; k < 4; k++) out.writeDouble(motion.shown[k]);
+                for (int k = 0; k < 4; k++) out.writeDouble(motion.vel[k]);
+                out.writeDouble(done ? 1 : 0);
+            }
         }
     }
 }

@@ -30,6 +30,7 @@ func TestMotionMatchesJava(t *testing.T) {
 	want := scrollSamples(&input)
 	want = append(want, stickySamples(&input)...)
 	want = append(want, layoutSamples(&input)...)
+	want = append(want, retargetSamples(&input)...)
 	cmd = exec.CommandContext(t.Context(), java, "-cp", classes, "dev.oneo.nsgo.MotionCheck")
 	cmd.Stdin = bytes.NewReader(input.buf)
 	var diagnostics bytes.Buffer
@@ -143,9 +144,15 @@ func layoutSamples(w *writer) []motionSample {
 		{Curve: driver.LayoutEaseInEaseOut, Duration: d, Delay: delay},
 		{Curve: driver.LayoutSpring, Duration: d, Delay: delay, Damping: 0.25},
 		{Curve: driver.LayoutSpring, Duration: d, Damping: 1},
+		{Curve: driver.LayoutSpring, Response: 300 * time.Millisecond, DampingRatio: 0.3},
+		{Curve: driver.LayoutSpring, Response: 300 * time.Millisecond, DampingRatio: 1, Delay: delay},
+		{Curve: driver.LayoutSpring, Response: 300 * time.Millisecond, DampingRatio: 2.5},
+		{Curve: driver.LayoutSpring},
 		{Curve: driver.LayoutBezier, Duration: d, Bezier: driver.Curve{X1: 0.12, Y1: 0.76, X2: 0.77, Y2: 1.23}},
 	}
-	times := []time.Duration{-time.Millisecond, 0, delay, delay + d/10, d / 2, d, delay + d, delay + d + time.Millisecond}
+	// The later times reach springs that run past Duration until they settle.
+	times := []time.Duration{-time.Millisecond, 0, delay, delay + d/10, d / 2, d, delay + d, delay + d + time.Millisecond,
+		400 * time.Millisecond, time.Second, 3 * time.Second}
 	w.u32(uint32(len(transitions) * len(times)))
 	var samples []motionSample
 	for i, tr := range transitions {
@@ -159,6 +166,61 @@ func layoutSamples(w *writer) []motionSample {
 			}
 			name := fmt.Sprintf("layout transition %d at %v", i, elapsed)
 			samples = append(samples, motionSample{name, at}, motionSample{name + " done", finished})
+		}
+	}
+	return samples
+}
+
+// retargetSamples moves frames with Android's LayoutTransition.Motion and Go's driver.LayoutMotion, redirecting each mid-flight, and compares the frames shown, the velocities and whether the motions settled.
+func retargetSamples(w *writer) []motionSample {
+	spring := driver.LayoutTransition{Curve: driver.LayoutSpring, Response: 300 * time.Millisecond, DampingRatio: 0.4}
+	stiff := driver.LayoutTransition{Curve: driver.LayoutSpring, Response: 150 * time.Millisecond, DampingRatio: 1}
+	linear := driver.LayoutTransition{Curve: driver.LayoutLinear, Duration: 200 * time.Millisecond}
+	frame := func(x, y, width, height driver.Points) driver.Bounds {
+		return driver.Bounds{Origin: driver.Point{X: x, Y: y}, Size: driver.Size{Width: width, Height: height}}
+	}
+	cases := []struct {
+		from, to, next driver.Bounds
+		tr, nextTr     driver.LayoutTransition
+		at             time.Duration
+	}{
+		// Back toward where it started while moving fast, as a toggle pressed twice.
+		{frame(0, 0, 100, 40), frame(200, 0, 100, 40), frame(0, 80, 100, 40), spring, spring, 48 * time.Millisecond},
+		// Onto where it already is, its momentum carrying it past.
+		{frame(0, 0, 100, 40), frame(200, 0, 160, 40), frame(120, 0, 120, 40), spring, stiff, 90 * time.Millisecond},
+		// A timed curve drops the spring's velocity.
+		{frame(0, 0, 100, 40), frame(200, 0, 100, 40), frame(50, 0, 100, 40), spring, linear, 48 * time.Millisecond},
+		// After it settled, a new target starts from rest.
+		{frame(0, 0, 100, 40), frame(200, 0, 100, 40), frame(0, 0, 100, 40), stiff, spring, 3 * time.Second},
+	}
+	steps := []time.Duration{0, 16 * time.Millisecond, 100 * time.Millisecond, 250 * time.Millisecond, 600 * time.Millisecond, 2 * time.Second}
+	w.u32(uint32(len(cases)))
+	w.u32(uint32(len(steps)))
+	var samples []motionSample
+	for i, c := range cases {
+		w.bounds(c.from)
+		w.bounds(c.to)
+		writeLayoutTransition(w, &c.tr)
+		w.u64(uint64(c.at))
+		w.bounds(c.next)
+		writeLayoutTransition(w, &c.nextTr)
+		m := driver.StartLayoutMotion(c.from, c.to, c.tr, 0)
+		m.Retarget(c.next, c.nextTr, c.at)
+		for _, step := range steps {
+			w.u64(uint64(c.at + step))
+			shown, done := m.Step(c.at + step)
+			name := fmt.Sprintf("retarget %d at %v after", i, step)
+			vel := m.Velocity()
+			finished := 0.0
+			if done {
+				finished = 1
+			}
+			samples = append(samples,
+				motionSample{name + " x", float64(shown.Origin.X)}, motionSample{name + " y", float64(shown.Origin.Y)},
+				motionSample{name + " width", float64(shown.Size.Width)}, motionSample{name + " height", float64(shown.Size.Height)},
+				motionSample{name + " x velocity", vel[0]}, motionSample{name + " y velocity", vel[1]},
+				motionSample{name + " width velocity", vel[2]}, motionSample{name + " height velocity", vel[3]},
+				motionSample{name + " done", finished})
 		}
 	}
 	return samples
