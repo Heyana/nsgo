@@ -239,6 +239,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private boolean ownsEngine;
     private boolean attached;
     private boolean attachmentWanted = true;
+    private boolean backgroundVideoPlayback;
     private final ViewAttachment attachment = new ViewAttachment();
     private boolean clearingNativeTree;
     /** Whether a service or overlay keeps the app running off screen after its activity ends, and whether the app quit, which keeps nothing. */
@@ -769,7 +770,25 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         super.onVisibilityAggregated(visible);
         if (!visible) {
             pauseAudio();
-            if (videoPictureInPicture != null && !videoPictureInPicture.isActive()) pauseVideos();
+            pauseHiddenVideos();
+        }
+    }
+
+    /**
+     * Allows core.Video players to keep playing when this view is hidden. A host-owned
+     * engine also keeps this view's native tree mounted when it leaves its Android
+     * window, so playback, callbacks and updates continue on the same view.
+     * The host owns the mediaPlayback foreground service and retains the view and engine.
+     * Explicit detachFromEngine (or stop) still releases the tree. Turning this off
+     * also releases the tree if the host-owned view is outside its window.
+     * Defaults to false. Call on the UI thread.
+     */
+    public void setBackgroundVideoPlaybackEnabled(boolean enabled) {
+        if (backgroundVideoPlayback == enabled) return;
+        backgroundVideoPlayback = enabled;
+        if (!enabled && !isVisibleInWindow()) {
+            pauseHiddenVideos();
+            if (primary == null && !ownsEngine && attached && !isAttachedToWindow()) detachFromEngine();
         }
     }
 
@@ -788,11 +807,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (entering) videoPictureInPicture.transitioning();
     }
 
-    private boolean audioVisible() {
+    private boolean isVisibleInWindow() {
         return isAttachedToWindow() && isShown() && getWindowVisibility() == View.VISIBLE;
     }
 
-    private void pauseVideos() {
+    private void pauseHiddenVideos() {
+        if (backgroundVideoPlayback || videoPictureInPicture == null || videoPictureInPicture.isActive()) return;
         for (int i = 0; i < nodes.size(); i++) {
             Node node = nodes.valueAt(i);
             if (node.video != null) node.video.backgroundPause();
@@ -838,7 +858,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         removeCallbacks(hoverRefresh);
         hoverRefreshPending = false;
         mouse.reset();
-        if (!ownsEngine && primary == null) detachFromEngine();
+        if (!ownsEngine && primary == null && !backgroundVideoPlayback) detachFromEngine();
         super.onDetachedFromWindow();
     }
 
@@ -861,7 +881,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Releases this view's native children and returns back to the system while its Go graph and process commands continue; the engine keeps answering text requests. Reattaching the same view reconstructs its current graph; queued view deltas from the old attachment are dropped. The engine still retains the view and its context until the process ends. The view detaches itself as it leaves its window.
+     * Releases this view's native children and returns back to the system while its Go graph and process commands continue; the engine keeps answering text requests. Reattaching the same view reconstructs its current graph; queued view deltas from the old attachment are dropped. The engine still retains the view and its context until the process ends. A host-owned view detaches itself as it leaves its window unless background video playback is enabled.
      */
     public void detachFromEngine() {
         attachmentWanted = false;
@@ -1267,10 +1287,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         return surface;
     }
 
-    /** Destroys the native components still showing, on the UI thread. */
+    /** Destroys players and native components still mounted, on the UI thread. */
     private void destroyComponents() {
         for (int i = 0; i < nodes.size(); i++) {
             Node n = nodes.valueAt(i);
+            if (n.video != null) {
+                n.video.destroy();
+                n.video = null;
+            }
             if (n.gpu != null) {
                 n.gpu.destroy();
                 n.gpu = null;
@@ -4008,7 +4032,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             case Protocol.ITEM_AUDIO: {
                 NsgoView first = primary == null ? this : primary;
                 if (first.audio == null) first.audio = new Audio(first.getContext(), first::write);
-                first.audio.command(surface, audioVisible(), in);
+                first.audio.command(surface, isVisibleInWindow(), in);
                 break;
             }
             case Protocol.ITEM_AUTH_SESSION: {
@@ -6124,7 +6148,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             case Protocol.KIND_VIDEO:
                 // The player fills the node's view, which draws its style
                 // and takes its presses.
-                n.video = new VideoNode(context, new VideoNode.Reporter() {
+                n.video = new VideoNode(context, ui, new VideoNode.Reporter() {
                     @Override
                     public boolean wants(int k) {
                         return n.has(k);

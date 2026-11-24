@@ -90,6 +90,8 @@ The first stage takes the launch flags, data directory, host parameters and test
 
 An embedding app places the engine in an `Application` or a foreground service, not in an Activity field. The service owns the notification and its Android lifecycle. For API 34 and later, recording adds `FOREGROUND_SERVICE_MICROPHONE` and `foregroundServiceType="microphone"` to the host manifest; playback and other work use the service type their host declares. The runtime does not request permissions or start a service as a side effect of attaching a view.
 
+An embedding host that retains its engine and view for media playback can opt in with `NsgoView.setBackgroundVideoPlaybackEnabled(true)`. Hiding the view skips the video's visibility pause. Removing it from its Android window keeps the surface attached to the Go engine, so the native tree continues to take commits and deliver node events. The player drops its texture surface when Android destroys it and keeps its audio track. A UI-thread handler polls progress independently of a window. Explicit `detachFromEngine` still releases the native tree, and the player is released when its node or engine ends.
+
 The planned runtime will let two Activities attach different surface IDs to the same engine. Their trees share Go signals and storage but have independent size, focus, insets, navigation and embedded native children. If an app needs two Activities to show one logical tree, it chooses one surface and hands the other Activity a new view attached to that surface; the engine never guesses which Activity is current.
 
 ## Delivery stages

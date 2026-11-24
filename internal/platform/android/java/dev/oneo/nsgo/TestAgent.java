@@ -71,6 +71,7 @@ final class TestAgent {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final HeldKeyAgent heldKeys = new HeldKeyAgent();
     private AlertDialog blurDialog;
+    private ViewGroup viewParent;
 
     TestAgent(NsgoView view) {
         this.view = view;
@@ -498,6 +499,32 @@ final class TestAgent {
                 return;
             case "reattach-view":
                 view.attachToEngine((NsgoEngine) field(view, "engine"));
+                break;
+            case "background-video-playback":
+                view.setBackgroundVideoPlaybackEnabled(op.getBoolean("enabled"));
+                break;
+            case "view-visibility":
+                view.setVisibility(op.getBoolean("visible") ? View.VISIBLE : View.INVISIBLE);
+                break;
+            case "remove-view-from-window": {
+                if (!view.isAttachedToWindow()) throw new IllegalStateException("view has no window");
+                viewParent = (ViewGroup) view.getParent();
+                // Exercise the embedding host's detach path without changing who stops the test engine.
+                java.lang.reflect.Field ownsEngine = NsgoView.class.getDeclaredField("ownsEngine");
+                ownsEngine.setAccessible(true);
+                boolean owned = ownsEngine.getBoolean(view);
+                ownsEngine.setBoolean(view, false);
+                try {
+                    viewParent.removeView(view);
+                } finally {
+                    ownsEngine.setBoolean(view, owned);
+                }
+                if (view.isAttachedToWindow()) throw new IllegalStateException("view still has a window");
+                break;
+            }
+            case "return-view-to-window":
+                viewParent.addView(view);
+                viewParent = null;
                 break;
             case "widget-pin":
                 view.testReply(id, "", Boolean.toString(AppWidgets.pin(activity(),op.getString("kind"))));

@@ -9,6 +9,7 @@ import android.graphics.SurfaceTexture;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
+import android.os.Handler;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -51,6 +52,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
     }
 
     private final Context context;
+    private final Handler ui;
     private final Reporter reporter;
     private MediaPlayer player;
     private Surface surface;
@@ -89,9 +91,10 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
     private boolean hearsNoisy;
     private final Runnable progress = this::progress;
 
-    VideoNode(Context context, Reporter reporter) {
+    VideoNode(Context context, Handler ui, Reporter reporter) {
         super(context);
         this.context = context.getApplicationContext();
+        this.ui = ui;
         this.reporter = reporter;
         setSurfaceTextureListener(this);
     }
@@ -113,6 +116,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         paused = Protocol.flag(flags, 0);
         if (paused != wasPaused) {
             // The app decides again.
+            surfacePlaying = false;
             held = false;
             resumable = false;
             if (!paused) completed = false;
@@ -192,6 +196,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
                 mp.seekTo(0);
                 mp.start();
             }
+            scheduleProgress(repeat, progressInterval);
             followPlaying();
         });
         p.setOnSeekCompleteListener(mp -> {
@@ -285,8 +290,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         if (p.isPlaying() && rate > 0 && p.getPlaybackParams().getSpeed() != rate) {
             p.setPlaybackParams(p.getPlaybackParams().setSpeed(rate));
         }
-        removeCallbacks(progress);
-        if (p.isPlaying()) postDelayed(progress, progressInterval);
+        scheduleProgress(p.isPlaying(), progressInterval);
         followPlaying();
     }
 
@@ -361,12 +365,13 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
 
     /** Pauses a playing player that the app did not pause, and reports it. */
     private void platformPause(int reason, boolean transientLoss) {
+        surfacePlaying = false;
         MediaPlayer p = player;
         if (p == null || !prepared || !p.isPlaying()) return;
         p.pause();
         held = !paused;
         resumable = held && transientLoss;
-        removeCallbacks(progress);
+        ui.removeCallbacks(progress);
         report(Protocol.EVENT_VIDEO_PAUSE, "", 0, 0, 0, 0, reason, false);
         followPlaying();
     }
@@ -382,8 +387,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         if (rate > 0 && p.getPlaybackParams().getSpeed() != rate) {
             p.setPlaybackParams(p.getPlaybackParams().setSpeed(rate));
         }
-        removeCallbacks(progress);
-        post(progress);
+        scheduleProgress(true, 0);
         report(Protocol.EVENT_VIDEO_PLAY, "", 0, 0, 0, 0, false);
         followPlaying();
     }
@@ -395,11 +399,17 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         if (manager != null) manager.abandonAudioFocusRequest(focusRequest);
     }
 
+    /** Progress follows the player even when the view has no window. */
+    private void scheduleProgress(boolean playing, long delay) {
+        ui.removeCallbacks(progress);
+        if (playing) ui.postDelayed(progress, delay);
+    }
+
     private void progress() {
         MediaPlayer p = player;
         if (p == null || !prepared || !p.isPlaying()) return;
         report(Protocol.EVENT_PROGRESS, "", p.getCurrentPosition(), p.getDuration(), 0, 0, false);
-        postDelayed(progress, Math.max(16, progressInterval));
+        ui.postDelayed(progress, Math.max(16, progressInterval));
         reporter.pictureInPictureChanged(this);
     }
 
@@ -453,7 +463,8 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
     }
 
     private void release() {
-        removeCallbacks(progress);
+        ui.removeCallbacks(progress);
+        surfacePlaying = false;
         prepared = false;
         completed = replaying = false;
         if (player != null) {
@@ -494,6 +505,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
 
     @Override
     public void onSurfaceTextureAvailable(SurfaceTexture st, int width, int height) {
+        if (disposed) return;
         surface = new Surface(st);
         if (player != null) {
             player.setSurface(surface);
