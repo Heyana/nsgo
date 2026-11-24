@@ -34,6 +34,8 @@ func TestCheckWorkflowVetsEveryTargetOnce(t *testing.T) {
 				continue
 			}
 			if list, ok := strings.CutPrefix(step.Run, "go tool nsgo check -target "); ok {
+				// A flag after the list, such as -jobs, is no target.
+				list, _, _ = strings.Cut(list, " ")
 				// A group such as tui stands for its targets, as nsgo check expands it; each name expands on its own so a target listed twice still shows twice.
 				for _, name := range strings.Split(strings.TrimSpace(list), ",") {
 					expanded, err := expandTargets([]string{name})
