@@ -119,8 +119,6 @@ jobs:
           pulseaudio --start --exit-idle-time=-1
           pactl load-module module-null-sink sink_name=nsgo_test
           pactl set-default-sink nsgo_test
-      - name: Vet
-        run: go tool nsgo check
       - name: Test native window limits and titlebar buttons
         env:
           GDK_BACKEND: x11
@@ -244,15 +242,6 @@ jobs:
           kill -0 "$wm_pid"
           go tool nsgo test -run '^TestOwnedWindowsFollow' ./internal/platform/linux -- -count=1
           SCRIPT
-      - name: Test
-        env:
-          GDK_BACKEND: x11
-          GSK_RENDERER: cairo
-          PULSE_SINK: nsgo_test
-          NSGO_FILE_ASSOCIATIONS: '1'
-          NSGO_REQUIRE_JDK: '1'
-        # examples/gallery runs its tests in sequence for about nine minutes on a hosted runner, beside the other packages, so go test's default ten-minute limit cuts it off.
-        run: xvfb-run -a go tool nsgo test -- -timeout=20m
       - name: Test Linux launcher menus and recent files
         env:
           GDK_BACKEND: x11
@@ -343,6 +332,58 @@ jobs:
         run: xvfb-run -a go tool nsgo test -target linux -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
 
   # The browser tests need Go alone, while the test job above spends most of its time installing and driving GTK, so they run beside it on a runner of their own.
+  # The Test step runs the whole suite and takes about 3m49s, while the test job's other steps take about 6 minutes beside it.
+  test-suite:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set up Java for Android runtime tests
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install native test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb x11-xkb-utils openbox pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin libdbusmenu-glib4 avahi-daemon dbus openbox gnome-sushi sway
+      - name: Allow WebKit's sandbox on the runner
+        run: |
+          # Ubuntu restricts unprivileged user namespaces. Grant bubblewrap that permission so WebKit can keep its sandbox enabled.
+          sudo tee /etc/apparmor.d/nsgo-ci-bwrap > /dev/null <<'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile nsgo-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          sudo apparmor_parser --replace /etc/apparmor.d/nsgo-ci-bwrap
+          bwrap --unshare-user --unshare-net --ro-bind / / /usr/bin/true
+      - name: Start a virtual audio output
+        run: |
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=nsgo_test
+          pactl set-default-sink nsgo_test
+      - name: Vet
+        run: go tool nsgo check
+      - name: Test
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          PULSE_SINK: nsgo_test
+          NSGO_FILE_ASSOCIATIONS: '1'
+          NSGO_REQUIRE_JDK: '1'
+        # examples/gallery runs its tests in sequence for about nine minutes on a hosted runner, beside the other packages, so go test's default ten-minute limit cuts it off.
+        run: xvfb-run -a go tool nsgo test -- -timeout=20m
+
   web:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
