@@ -143,7 +143,7 @@ go tool nsgo test                   # 运行所有包的测试
 欢迎到 Telegram 群组 nsgo-dev-community（[@nsgo_dev](https://t.me/nsgo_dev)）提问、交流想法，或分享你用 NSGo 做的东西。Bug 和改动建议请提到 [issues](https://github.com/nsgo-dev/nsgo/issues)。
 
 <p align="center">
-  <a href="https://t.me/nsgo_dev"><img src="website/src/assets/telegram-qr.png" alt="Telegram 群组 @nsgo_dev 的二维码" width="200"></a>
+  <a href="https://t.me/nsgo_dev"><img src="docs/assets/telegram-qr.png" alt="Telegram 群组 @nsgo_dev 的二维码" width="200"></a>
 </p>
 
 ## 赞助

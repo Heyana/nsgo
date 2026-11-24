@@ -143,7 +143,7 @@ go tool nsgo test                   # every package's tests
 Questions, ideas and what you build with NSGo are welcome in nsgo-dev-community, the Telegram group [@nsgo_dev](https://t.me/nsgo_dev). Report bugs and propose changes in [issues](https://github.com/nsgo-dev/nsgo/issues).
 
 <p align="center">
-  <a href="https://t.me/nsgo_dev"><img src="website/src/assets/telegram-qr.png" alt="The QR code of the Telegram group @nsgo_dev" width="200"></a>
+  <a href="https://t.me/nsgo_dev"><img src="docs/assets/telegram-qr.png" alt="The QR code of the Telegram group @nsgo_dev" width="200"></a>
 </p>
 
 ## Sponsors
