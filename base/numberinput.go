@@ -192,7 +192,12 @@ func (c *numberCtl) fit(v float64) float64 {
 		if lo != nil {
 			from = *lo
 		}
-		scale := math.Pow(10, float64(decimals(step)))
+		digits := decimals(step)
+		if c.n.Precision != 0 {
+			// An explicit grid can have an origin finer than its spacing.
+			digits = max(digits, decimals(from))
+		}
+		scale := math.Pow(10, float64(digits))
 		v = math.Round((from+math.Round((v-from)/step)*step)*scale) / scale
 	}
 	return clampTo(v, lo, hi)

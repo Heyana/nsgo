@@ -77,14 +77,18 @@ ui.Select[string]{
 }
 ```
 
-`ui.NumberInput` and `base.NumberInput` accept `LabelFunc` for a changing accessible name. A custom `Format` follows the signals it reads while the field is not being edited; a language switch preserves the active draft until editing ends. `ui.NumberInput` steps and scrubs a number with bounds, `ui.DatePicker` and `ui.TimeField` edit dates and times, `ui.ColorPicker` edits a color, and `ui.TagInput` edits a list of tags.
-
-`ui.OtpInput` takes a one-time code in cells. It and `base.OtpInput` accept `LabelFunc` without replacing the focused field or its code. `Size` sets the default height and width, 36 points on desktops and TVs and 44 on touch devices. `CellWidth` and `CellHeight` override either dimension independently. `TextStyle` overrides the cell typography, `CornerRadius` changes its corners, and `CaretHeight` overrides the height derived from the line height.
+`ui.NumberInput` uses `Step` for buttons, arrow keys and scrubbing. When a typed value is committed, it rounds to `Precision` from `Min`; zero `Precision` uses `Step`. Set `NoSnap: true` to clamp typed values to `Min` and `Max` without rounding. The default `Format` shows the rounding grid's decimal places, or the shortest round-trip decimal with `NoSnap`.
 
 ```go
-quantity := core.NewSignal(cx, 1.0)
-ui.NumberInput{Value: quantity.Get, OnChange: quantity.Set, Min: 1, Max: 99, Step: 1, Label: "Quantity"}
+gravity := core.NewSignal(cx, 9.81)
+ui.NumberInput{Value: gravity.Get, OnChange: gravity.Set, Min: 0, Max: 100, Step: 0.1, Precision: 0.01, Label: "Gravity"}
 ```
+
+`ui.NumberInput` and `base.NumberInput` accept `LabelFunc` for a changing accessible name. A custom `Format` follows the signals it reads while the field is not being edited; a language switch preserves the active draft until editing ends.
+
+`ui.DatePicker` and `ui.TimeField` edit dates and times, `ui.ColorPicker` edits a color, and `ui.TagInput` edits a list of tags.
+
+`ui.OtpInput` takes a one-time code in cells. It and `base.OtpInput` accept `LabelFunc` without replacing the focused field or its code. `Size` sets the default height and width, 36 points on desktops and TVs and 44 on touch devices. `CellWidth` and `CellHeight` override either dimension independently. `TextStyle` overrides the cell typography, `CornerRadius` changes its corners, and `CaretHeight` overrides the height derived from the line height.
 
 ## Grouped rows
 

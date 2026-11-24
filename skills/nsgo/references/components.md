@@ -6,7 +6,7 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 | --- | --- |
 | Box, text, image, icon | `core.View`, `core.Text` with `core.Span` runs, `core.Image`, `core.Icon` with icons from `icons/lucide`; `ui.Textf` for text from a signal in a size, weight and color |
 | Buttons | `ui.Button` (`ButtonPrimary`, `ButtonSecondary`, `ButtonOutline`, `ButtonGhost`), `ui.IconButton` with a `Label` for screen readers that also shows as its tooltip (`Tooltip` overrides it), `ui.ToggleButton`, `ui.ToggleGroup`, `ui.HoldToConfirm`, `ui.Link` (`Style.Color` colors its text and hover underline) |
-| Text fields | `ui.Input` (controlled with `Value` and `OnChange`, `Multiline`, `Masked`), `ui.NumberInput`, `ui.OtpInput`, `ui.TagInput`, `ui.FormField` for a label and message |
+| Text fields | `ui.Input` (controlled with `Value` and `OnChange`, `Multiline`, `Masked`), `ui.NumberInput` (`Step` for increments, `Precision` to round typed values, `NoSnap` to clamp without rounding), `ui.OtpInput`, `ui.TagInput`, `ui.FormField` for a label and message |
 | Choices | `ui.Switch`, `ui.Checkbox`, `ui.Radio` in a `ui.RadioGroup`, `ui.Select[T]` with `ui.Option[T]`, `ui.Combobox`, `ui.Slider`, `ui.Rating` |
 | Dates, times, colors and emoji | `ui.DatePicker`, `ui.Calendar`, `ui.TimeField`, `ui.ColorPicker`, `ui.EmojiPicker` (`base.EmojiPicker` for custom styling; multi-language search, categories, skin tones; `base.EmojiPickerRef` focuses, reads or sets the query and jumps categories) |
 | Scrolling and long data | `ui.ScrollView` or `core.Scroll`; `ui.List` or `core.List` for rows built only in view; `core.NewCollection` behind them |

@@ -77,16 +77,18 @@ ui.Select[string]{
 }
 ```
 
-`ui.NumberInput` 带边界地步进和拖动数字，`ui.DatePicker` 和 `ui.TimeField` 编辑日期和时间，`ui.ColorPicker` 编辑颜色，`ui.TagInput` 编辑一组标签。
+`ui.NumberInput` 的按钮、方向键和拖动操作使用 `Step` 步进。输入值提交时，以 `Min` 为起点按 `Precision` 取整；`Precision` 为零时使用 `Step`。设置 `NoSnap: true` 可将输入值限制在 `Min` 和 `Max` 之间而不取整。默认的 `Format` 按取整网格的小数位数显示；启用 `NoSnap` 时，使用能无损读回数值的最短十进制写法。
+
+```go
+gravity := core.NewSignal(cx, 9.81)
+ui.NumberInput{Value: gravity.Get, OnChange: gravity.Set, Min: 0, Max: 100, Step: 0.1, Precision: 0.01, Label: "重力"}
+```
 
 `ui.NumberInput` 和 `base.NumberInput` 的 `LabelFunc` 可更新辅助功能名称。自定义 `Format` 会在字段未编辑时跟随其读取的信号更新；切换语言会保留正在编辑的草稿，直到编辑结束。
 
-`ui.OtpInput` 在格子中输入一次性验证码。它和 `base.OtpInput` 的 `LabelFunc` 可更新名称，同时保留输入焦点和验证码。`Size` 设置格子的默认宽度和高度，在桌面和电视上为 36 点，在触屏设备上为 44 点。`CellWidth` 和 `CellHeight` 可分别覆盖宽度和高度。`TextStyle` 设置格子的文字样式，`CornerRadius` 设置圆角，`CaretHeight` 可覆盖根据行高计算的光标高度。
+`ui.DatePicker` 和 `ui.TimeField` 编辑日期和时间，`ui.ColorPicker` 编辑颜色，`ui.TagInput` 编辑一组标签。
 
-```go
-quantity := core.NewSignal(cx, 1.0)
-ui.NumberInput{Value: quantity.Get, OnChange: quantity.Set, Min: 1, Max: 99, Step: 1, Label: "数量"}
-```
+`ui.OtpInput` 在格子中输入一次性验证码。它和 `base.OtpInput` 的 `LabelFunc` 可更新名称，同时保留输入焦点和验证码。`Size` 设置格子的默认宽度和高度，在桌面和电视上为 36 点，在触屏设备上为 44 点。`CellWidth` 和 `CellHeight` 可分别覆盖宽度和高度。`TextStyle` 设置格子的文字样式，`CornerRadius` 设置圆角，`CaretHeight` 可覆盖根据行高计算的光标高度。
 
 ## 分组行
 

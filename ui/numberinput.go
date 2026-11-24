@@ -13,8 +13,8 @@ import (
 // NumberInput is base.NumberInput in ui's look, with buttons stacked at
 // its end on desktops, a minus and a plus on touch screens. What is typed
 // is read as the field is left or Return pressed, and kept to the range
-// and the step; text that is no number gives the value back. A drag across
-// its Leading handle scrubs it.
+// and rounded unless NoSnap is set; text that is no number gives the value
+// back. A drag across its Leading handle scrubs it.
 type NumberInput struct {
 	// Ref is the field's; LabelledBy and Invalid are a core.Input's.
 	Ref        *core.Ref
@@ -25,9 +25,16 @@ type NumberInput struct {
 	// Min and Max are the range, when Max is above Min.
 	Min, Max float64
 	// Step is what the buttons, the keys and the scrub change the value
-	// by, and what it is rounded to from Min; 1 when 0.
+	// by; 1 when 0.
 	Step float64
-	// Format writes the value, with as many decimals as Step has when nil; Parse reads it back, strconv.ParseFloat's when nil. Changes to signals Format reads refresh the shown value outside editing.
+	// Precision is what typed values round to from Min; 0 uses Step.
+	Precision float64
+	// NoSnap leaves typed values unrounded, but still holds them to the range.
+	NoSnap bool
+	// Format writes the value, with the decimals of the rounding grid when
+	// nil, or the shortest round-trip decimal with NoSnap. Changes to
+	// signals Format reads refresh the shown value outside editing.
+	// Parse reads it back, using strconv.ParseFloat when nil.
 	Format func(value float64) string
 	Parse  func(text string) (float64, bool)
 	// Leading is the scrub handle's icon, or LeadingText its text, such
@@ -70,7 +77,17 @@ func decimals(step float64) int {
 func (n NumberInput) Render(cx *core.Scope) core.Node {
 	format := n.Format
 	if format == nil {
-		d := decimals(n.step())
+		d := -1
+		if !n.NoSnap {
+			if n.Precision == 0 {
+				d = decimals(n.step())
+			} else {
+				d = decimals(n.Precision)
+				if n.Max > n.Min {
+					d = max(d, decimals(n.Min))
+				}
+			}
+		}
 		format = func(v float64) string { return strconv.FormatFloat(v, 'f', d, 64) }
 	}
 	parse := n.Parse
@@ -81,7 +98,8 @@ func (n NumberInput) Render(cx *core.Scope) core.Node {
 		}
 	}
 	number := func(v float64) func() *float64 { return func() *float64 { return &v } }
-	in := base.NumberInput{Ref: n.Ref, LabelledBy: n.LabelledBy, Invalid: n.Invalid, Format: format, Parse: parse, OnCommit: true, Snap: true, Step: n.step, Disabled: n.Disabled, Label: n.Label, LabelFunc: n.LabelFunc, TestID: n.TestID,
+	in := base.NumberInput{Ref: n.Ref, LabelledBy: n.LabelledBy, Invalid: n.Invalid, Format: format, Parse: parse, OnCommit: true,
+		Snap: !n.NoSnap, Precision: n.Precision, Step: n.step, Disabled: n.Disabled, Label: n.Label, LabelFunc: n.LabelFunc, TestID: n.TestID,
 		ControlsRight: true, IncrementLabel: n.IncrementLabel, DecrementLabel: n.DecrementLabel,
 		Value: func() *float64 {
 			v := 0.0
