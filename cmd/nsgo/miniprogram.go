@@ -94,6 +94,15 @@ const miniprogramSubpackage = "nsgo-app"
 // compiler, as the render layer draws no shader.
 var miniprogramTags = []string{"nsgominiprogram", "nsgo_noshader"}
 
+// miniProgramJSONEnv keeps mini program modules small even if the app uses jsonv2 on other targets.
+func miniProgramJSONEnv(ctx context.Context, dir string, env []string) ([]string, error) {
+	cur, err := goExperiment(ctx, dir, env)
+	if err != nil {
+		return nil, err
+	}
+	return append(env, "GOEXPERIMENT="+experiments(cur, "nojsonv2")), nil
+}
+
 // buildMiniProgram writes the project to dir. The module is built with
 // encoding/json's first implementation, which is smaller, and when it is
 // still too large for its package, again without inlining.
@@ -109,12 +118,10 @@ func buildMiniProgram(ctx context.Context, p *project, mp miniProgramPlatform, d
 	}
 	defer os.RemoveAll(tmp)
 	wasm := filepath.Join(tmp, "app.wasm")
-	env := []string{"GOOS=js", "GOARCH=wasm"}
-	cur, err := goExperiment(ctx, p.Dir, env)
+	env, err := miniProgramJSONEnv(ctx, p.Dir, []string{"GOOS=js", "GOARCH=wasm"})
 	if err != nil {
 		return err
 	}
-	env = append(env, "GOEXPERIMENT="+experiments(cur, "nojsonv2"))
 	// A mini program runs no code it did not ship, which the page's
 	// engine would, and goja does not fit in its package.
 	tsx, err := linkedDir(ctx, p, env, "github.com/nsgo-dev/nsgo/tsx", miniprogramTags...)

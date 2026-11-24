@@ -199,7 +199,7 @@ func TestSmallJSON(t *testing.T) {
 				goenv = "jsonv2"
 			}
 			setGoEnv(t, goenv)
-			env, err := smallJSON(t.Context(), &project{Dir: dir}, []string{"GOOS=js", "GOARCH=wasm"}, nil)
+			env, err := smallJSON(t.Context(), dir, []string{"GOOS=js", "GOARCH=wasm"}, ".")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -214,8 +214,76 @@ func TestSmallJSON(t *testing.T) {
 	}
 	setGoEnv(t, "")
 	t.Setenv("GOEXPERIMENT", "jsonv2")
-	if env, err := smallJSON(t.Context(), &project{Dir: t.TempDir()}, nil, nil); err != nil || len(env) != 0 {
+	if env, err := smallJSON(t.Context(), t.TempDir(), nil, "."); err != nil || len(env) != 0 {
 		t.Fatalf("with GOEXPERIMENT set, env = %v, %v", env, err)
+	}
+}
+
+func TestVerificationUsesPackagedJSON(t *testing.T) {
+	if testing.Short() {
+		t.Skip("vets and tests a real Go module")
+	}
+	t.Setenv("GOEXPERIMENT", "")
+	t.Setenv("GOFLAGS", "")
+	t.Setenv("GOWORK", "off")
+	setGoEnv(t, "")
+
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod":    "module example.com/jsonfixture\n\ngo 1.27\n",
+		"nsgo.yaml": "name: JSON fixture\n",
+		"main.go": `package main
+import _ "example.com/jsonfixture/decode"
+func main() {}
+`,
+		"decode/decode.go": `package decode
+import "encoding/json"
+func cause(err *json.UnmarshalTypeError) error { return err.Err }
+`,
+		"decode/decode_test.go": `package decode
+import ("encoding/json"; "errors"; "testing")
+func TestCause(t *testing.T) {
+	want := errors.New("bad value")
+	if got := cause(&json.UnmarshalTypeError{Err: want}); got != want {
+		t.Fatalf("cause = %v, want %v", got, want)
+	}
+}
+`,
+		"decode/v2_test.go": `//go:build usejsonv2
+
+package decode
+import _ "encoding/json/v2"
+`,
+	})
+	p, err := load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	const diagnostic = ".Err undefined"
+	for _, target := range []string{"", "web"} {
+		if err := check(ctx, p, target, 0); err == nil || !strings.Contains(err.Error(), diagnostic) {
+			t.Errorf("check %q should reject a JSON v2-only API by default: %v", target, err)
+		}
+	}
+	var testErr error
+	out := captureStderr(t, func() { testErr = runTests(ctx, p, testOptions{}) })
+	if testErr == nil || !strings.Contains(out, diagnostic) {
+		t.Errorf("headless test should reject a JSON v2-only API by default: %v\n%s", testErr, out)
+	}
+	if err := runTests(ctx, p, testOptions{args: []string{"-tags=usejsonv2"}}); err != nil {
+		t.Errorf("headless test did not honor a tagged test's JSON v2 import: %v", err)
+	}
+
+	t.Setenv("GOEXPERIMENT", "jsonv2")
+	if err := check(ctx, p, "web", 0); err != nil {
+		t.Errorf("check ignored explicit GOEXPERIMENT=jsonv2: %v", err)
+	}
+	if err := runTests(ctx, p, testOptions{}); err != nil {
+		t.Errorf("headless test ignored explicit GOEXPERIMENT=jsonv2: %v", err)
+	}
+	if err := check(ctx, p, "miniprogram_wechat", 0); err == nil || !strings.Contains(err.Error(), diagnostic) {
+		t.Errorf("check should reject JSON v2-only APIs in mini programs: %v", err)
 	}
 }
 

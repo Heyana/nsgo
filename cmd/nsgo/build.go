@@ -825,8 +825,12 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 	if err != nil {
 		return nil, nil, err
 	}
-	args = append(args, tagsArgs(tags)...)
-	env, err = smallJSON(ctx, p, env, tags)
+	tagFlags := tagsArgs(tags)
+	args = append(args, tagFlags...)
+	if p.testBinary {
+		tagFlags = append(tagFlags, "-test")
+	}
+	env, err = smallJSON(ctx, p.Dir, env, append(tagFlags, ".")...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -930,22 +934,18 @@ func androidDNSTag(ctx context.Context, p *project, env, tags []string) ([]strin
 	return tags, nil
 }
 
-// smallJSON returns env with GOEXPERIMENT=nojsonv2 added: encoding/json's first implementation, which from Go 1.27, where Go builds encoding/json on encoding/json/v2 by default, links into a page about 1 MB smaller, into an Android app about 450 KB and into a desktop one 100 to 450 KB; Go 1.26 builds the first implementation already, and the experiment changes nothing. An app whose packages or dependencies import encoding/json/v2 or jsontext keeps them, as does one whose GOEXPERIMENT, in the environment or set with go env -w, names the experiment either way.
-func smallJSON(ctx context.Context, p *project, env, tags []string) ([]string, error) {
-	cur, err := goExperiment(ctx, p.Dir, env)
+// smallJSON adds nojsonv2 to shrink the binary unless GOEXPERIMENT already names the experiment or the packages loaded by listArgs use json/v2 or jsontext.
+func smallJSON(ctx context.Context, dir string, env []string, listArgs ...string) ([]string, error) {
+	cur, err := goExperiment(ctx, dir, env)
 	if err != nil {
 		return nil, err
 	}
 	if strings.Contains(cur, "jsonv2") {
 		return env, nil
 	}
-	args := []string{"list", "-deps", "-f", `{{if not .Standard}}{{join .Imports "\n"}}{{end}}`}
-	if p.testBinary {
-		args = append(args, "-test")
-	}
-	args = append(args, tagsArgs(tags)...)
-	cmd := exec.CommandContext(ctx, "go", append(args, ".")...)
-	cmd.Dir = p.Dir
+	args := append([]string{"list", "-deps", "-f", `{{if not .Standard}}{{join .Imports "\n"}}{{end}}`}, listArgs...)
+	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

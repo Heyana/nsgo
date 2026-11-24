@@ -190,49 +190,65 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 	if err != nil {
 		return err
 	}
+	var overlayFlags []string
 	if tsxTest != "" {
 		ov, err := p.overlay(map[string]string{"zz_nsgo_tsx_test.go": tsxTest})
 		if err != nil {
 			return err
 		}
-		args = append(args, "-overlay", ov)
+		overlayFlags = []string{"-overlay", ov}
+		args = append(args, overlayFlags...)
 	}
-	command := func(pattern string, tags, flags []string) *exec.Cmd {
-		a := append(slices.Clone(args), tagsArgs(tags)...)
+	// Keep core's graph ownership checks even when the command line replaces the app's tags.
+	runTags, flags, listFlags, profile := testTagArgs(p.Dir, tags, opts.args)
+	command := func(pattern string, tags, testFlags []string) (*exec.Cmd, error) {
+		tagFlags := tagsArgs(tags)
+		// Probe the same test packages, leaving package load errors to go test's reporter.
+		list := append([]string{"-e", "-test"}, tagFlags...)
+		list = append(append(list, overlayFlags...), listFlags...)
+		env, err := smallJSON(ctx, p.Dir, opts.env, append(list, pattern)...)
+		if err != nil {
+			return nil, err
+		}
+		a := append(slices.Clone(args), tagFlags...)
 		// Packages precede flags a test binary may take, including -args.
-		a = append(append(a, pattern), flags...)
+		a = append(append(a, pattern), testFlags...)
 		cmd := exec.CommandContext(ctx, "go", a...)
 		cmd.Dir = p.Dir
-		cmd.Env = append(os.Environ(), opts.env...)
+		cmd.Env = append(os.Environ(), env...)
 		cmd.Env = append(cmd.Env, "NSGO_TEST_RESOURCES="+filepath.Join(p.Dir, resourcesDir))
 		if opts.trace {
 			cmd.Env = append(cmd.Env, "NSGO_TEST_TRACE=1")
 		}
-		return cmd
+		return cmd, nil
 	}
-	// Headless tests build with nsgocheck, which keeps core's graph ownership checks in the build; a -tags on the command line replaces the tags before it, as go test does, without dropping nsgocheck.
-	runTags, flags, profile := testTagArgs(p.Dir, tags, opts.args)
+	runFlags := flags
 	if profile != "" {
-		flags = append([]string{"-coverprofile=" + profile}, flags...)
+		runFlags = append([]string{"-coverprofile=" + profile}, flags...)
 	}
-	runs := []testCommand{{cmd: command("./...", uniqueTags(append(runTags, "nsgocheck")), flags)}}
+	cmd, err := command("./...", uniqueTags(append(runTags, "nsgocheck")), runFlags)
+	if err != nil {
+		return err
+	}
+	runs := []testCommand{{cmd: cmd}}
 	// As check does, NSGo's own repository also tests the dev client, whose files build only with nsgodev, unless the run's tags already include it; there are no automation-only dev tests. Its coverage profile goes to a file of its own, appended to the run's once both have ended, since go test would overwrite the first run's.
 	var cover, devCover string
-	if dev, ok := devClientPattern(p.Dir); ok && p.steps == nil {
-		devTags, flags, profile := testTagArgs(p.Dir, tags, opts.args)
-		if !slices.Contains(devTags, "nsgodev") {
-			if profile != "" {
-				f, err := os.CreateTemp("", "nsgo-dev-*.cover")
-				if err != nil {
-					return err
-				}
-				f.Close()
-				defer os.Remove(f.Name())
-				cover, devCover = profile, f.Name()
-				flags = append([]string{"-coverprofile=" + devCover}, flags...)
+	if dev, ok := devClientPattern(p.Dir); ok && p.steps == nil && !slices.Contains(runTags, "nsgodev") {
+		if profile != "" {
+			f, err := os.CreateTemp("", "nsgo-dev-*.cover")
+			if err != nil {
+				return err
 			}
-			runs = append(runs, testCommand{cmd: command(dev, append(devTags, "nsgodev"), flags), label: devClientLabel, title: "testing the dev client with nsgodev"})
+			f.Close()
+			defer os.Remove(f.Name())
+			cover, devCover = profile, f.Name()
+			flags = append([]string{"-coverprofile=" + devCover}, flags...)
 		}
+		cmd, err := command(dev, append(runTags, "nsgodev"), flags)
+		if err != nil {
+			return err
+		}
+		runs = append(runs, testCommand{cmd: cmd, label: devClientLabel, title: "testing the dev client with nsgodev"})
 	}
 	err = reportTests(opts, runs...)
 	if cover != "" {
@@ -266,8 +282,9 @@ func devClientPattern(dir string) (string, bool) {
 	return "./" + sub, true
 }
 
-// testTagArgs reads the command line's -tags as Go does, replacing the tags before it, and returns the other flags, so a later -tags cannot drop the nsgocheck or nsgodev added to the tags, leaving the test binary's own arguments intact. It takes -coverprofile out as well, returning the file it names, resolved as go test does against -outputdir and dir, so the dev run can write its profile elsewhere.
-func testTagArgs(dir string, tags, args []string) (devTags, flags []string, cover string) {
+// testTagArgs lets command-line tags replace earlier ones without dropping the tool's tags.
+// It separates flags needed by go list and resolves the coverage path against -outputdir and dir.
+func testTagArgs(dir string, tags, args []string) (runTags, flags, listFlags []string, cover string) {
 	var outputDir string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -275,8 +292,9 @@ func testTagArgs(dir string, tags, args []string) (devTags, flags []string, cove
 			flags = append(flags, args[i:]...)
 			break
 		}
-		name, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		name = strings.TrimPrefix(name, "test.")
+		start := i
+		flag, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		name := strings.TrimPrefix(flag, "test.")
 		if name == "tags" || name == "coverprofile" {
 			if !hasValue && i+1 < len(args) {
 				i++
@@ -298,6 +316,10 @@ func testTagArgs(dir string, tags, args []string) (devTags, flags []string, cove
 		if name == "outputdir" {
 			outputDir = value
 		}
+		switch flag {
+		case "asan", "compiler", "mod", "modfile", "msan", "overlay", "p", "race":
+			listFlags = append(listFlags, args[start:i+1]...)
+		}
 	}
 	if cover != "" {
 		if !filepath.IsAbs(cover) {
@@ -307,7 +329,7 @@ func testTagArgs(dir string, tags, args []string) (devTags, flags []string, cove
 			cover = filepath.Join(outputDir, cover)
 		}
 	}
-	return uniqueTags(tags), flags, cover
+	return uniqueTags(tags), flags, listFlags, cover
 }
 
 // appendCoverProfile adds the blocks of the coverage profile at from to the one at to, as go test joins its packages' profiles, or moves it there when the first run wrote none.

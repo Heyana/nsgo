@@ -411,7 +411,7 @@ func TestTestTagArgs(t *testing.T) {
 		{nil, []string{"-test.coverprofile=c.out", "-outputdir", "out"}, nil, []string{"-outputdir", "out"}, filepath.Join(dir, "out", "c.out")},
 		{nil, []string{"-outputdir=" + abs, "-coverprofile=c.out"}, nil, []string{"-outputdir=" + abs}, filepath.Join(abs, "c.out")},
 	} {
-		tags, flags, cover := testTagArgs(dir, c.tags, c.args)
+		tags, flags, _, cover := testTagArgs(dir, c.tags, c.args)
 		if !slices.Equal(tags, c.wantTags) || !slices.Equal(flags, c.wantFlags) || cover != c.wantCover {
 			t.Errorf("testTagArgs(%q, %q) = %q, %q, %q, want %q, %q, %q", c.tags, c.args, tags, flags, cover, c.wantTags, c.wantFlags, c.wantCover)
 		}

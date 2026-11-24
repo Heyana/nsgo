@@ -533,5 +533,16 @@ func goToolWithTags(ctx context.Context, p *project, env, extra []string, args .
 		return err
 	}
 	args = append(append([]string{args[0]}, tagsArgs(tags)...), args[1:]...)
+	if args[0] == "vet" {
+		if slices.Contains(extra, "nsgominiprogram") {
+			env, err = miniProgramJSONEnv(ctx, p.Dir, env)
+		} else {
+			// Include test dependencies and leave package load errors to vet.
+			env, err = smallJSON(ctx, p.Dir, env, append([]string{"-e", "-test"}, args[1:]...)...)
+		}
+		if err != nil {
+			return err
+		}
+	}
 	return goTool(ctx, p.Dir, env, args...)
 }
