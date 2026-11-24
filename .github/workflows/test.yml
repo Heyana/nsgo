@@ -497,15 +497,6 @@ jobs:
         run: go tool nsgo test -ldflags '-s=false -w=false' ./internal/platform/apple -- -count=1
       - name: Test widget and Live Activity recording
         run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
-      # Load AuthenticationServices before playback, as in the failed suite (#801).
-      - name: Stress overlapping sound playback in fresh processes
-        env:
-          GOTRACEBACK: crash
-        run: |
-          for i in $(seq 1 200); do
-            go tool nsgo test -ldflags '-s=false -w=false' -run '^(TestAuthenticationServicesLoads|TestASoundDecodesOnceAndPlaysOverlapping)$' \
-              ./internal/platform/apple -- -count=1 -timeout=30s || { echo "run $i failed"; exit 1; }
-          done
       - name: Test main-thread failure propagation
         run: go tool nsgo test -run '^TestOnMainExitPropagation$' ./internal/platform/macos -- -race
       - name: Test public unified-log diagnostics
@@ -559,6 +550,47 @@ jobs:
         run: go tool nsgo test -target macos ./internal/testhost/testdata/capture
       - name: Test pull PCM audio
         run: go tool nsgo test -target macos ./internal/testhost/testdata/audiooutput
+      - name: Print crash reports
+        if: failure()
+        run: |
+          # ReportCrash writes a report a few seconds after the process dies.
+          sleep 20
+          for reports in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+            if [[ -d "$reports" ]]; then
+              find "$reports" -type f -newer "$RUNNER_TEMP/apple-start" \( -name '*.ips' -o -name '*.crash' \) -print -exec cat {} \;
+            fi
+          done
+
+  # The stress loop below starts a fresh process 200 times and takes about 6m41s, while the rest of the apple job takes about 4 minutes beside it.
+  apple-stress:
+    needs: changes
+    # Skips a pull request that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it.
+    if: ${{ !cancelled() && needs.changes.outputs.apple != 'false' }}
+    runs-on: depot-macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Grant the runner the microphone
+        run: .github/scripts/grant-microphone.sh
+      - name: Mark the job's start for crash reports
+        run: touch "$RUNNER_TEMP/apple-start"
+      # Load AuthenticationServices before playback, as in the failed suite (#801).
+      - name: Stress overlapping sound playback in fresh processes
+        env:
+          GOTRACEBACK: crash
+        run: |
+          for i in $(seq 1 200); do
+            go tool nsgo test -ldflags '-s=false -w=false' -run '^(TestAuthenticationServicesLoads|TestASoundDecodesOnceAndPlaysOverlapping)$' \
+              ./internal/platform/apple -- -count=1 -timeout=30s || { echo "run $i failed"; exit 1; }
+          done
       - name: Print crash reports
         if: failure()
         run: |
