@@ -25,13 +25,100 @@ func (s *surface) setDrawing(v *view, d *driver.Drawing) {
 	}
 }
 
-// changedCanvases plays again the canvases whose bound arguments changed.
+// changedCanvases plays again the canvases whose bound arguments changed,
+// clipped to what the change covers where it can be bounded, as macOS,
+// iOS and Linux do.
 func (s *surface) changedCanvases() {
 	s.animator.ChangedCanvases(func(id driver.NodeID) {
 		if v := s.view(id); v != nil && v.kind == driver.KindCanvas {
-			s.paint(v)
+			s.paintChange(v)
 		}
 	})
+}
+
+// paintChange plays v's drawing again after its bound arguments changed:
+// only over the area the change covers while the <canvas> keeps the
+// pixels of the last play at the same size, the whole drawing otherwise.
+func (s *surface) paintChange(v *view) {
+	if v.drawing == nil {
+		return
+	}
+	ops := s.animator.CanvasOps(v.id, v.drawing)
+	if len(v.canvasLast) != len(ops) || !balanced(ops) {
+		s.paint(v)
+		return
+	}
+	w, h := v.canvasSize()
+	tile, ratio, sliced := s.canvasPlan(v, w, h)
+	if ratio != v.canvasRatio || tile != v.canvasTile || sliced != v.canvasSliced {
+		s.paint(v)
+		return
+	}
+	area, ok := driver.CanvasDamage(v.canvasLast, ops)
+	if !ok {
+		s.paint(v)
+		return
+	}
+	v.canvasLast = append(v.canvasLast[:0], ops...)
+	if area.Size.Width <= 0 || area.Size.Height <= 0 {
+		return
+	}
+	clip, reached := damagedPixels(area, tile, ratio, v.inner.Get("width").Int(), v.inner.Get("height").Int())
+	if !reached {
+		return
+	}
+	ctx := v.inner.Call("getContext", "2d")
+	ctx.Call("save")
+	ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
+	ctx.Call("beginPath")
+	ctx.Call("rect", clip.x, clip.y, clip.w, clip.h)
+	ctx.Call("clip")
+	ctx.Call("clearRect", clip.x, clip.y, clip.w, clip.h)
+	ctx.Call("setTransform", ratio, 0, 0, ratio, -tile.x*ratio, -tile.y*ratio)
+	p := s.canvasPlayer(v, ctx, ratio, w, h, tile)
+	for i := range ops {
+		p.Play(&ops[i])
+	}
+	for range p.Depth() + 1 {
+		ctx.Call("restore")
+	}
+	s.canvasImages.endPass()
+	s.requestGlassPaint()
+}
+
+// balanced reports whether ops never restore more than they saved, so a
+// play wrapped in a save of its own ends with that save's clip.
+func balanced(ops []driver.DrawOp) bool {
+	depth := 0
+	for i := range ops {
+		switch ops[i].Kind {
+		case driver.DrawSave:
+			depth++
+		case driver.DrawRestore:
+			if depth--; depth < 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// damagedPixels returns the pixels of a <canvas> of width by height
+// showing tile at ratio that a change covering area, in the drawing's
+// points, reaches: 2 points wider for anti-aliasing and rounded out to
+// whole pixels, as apple.Damaged; false when it reaches none.
+func damagedPixels(area driver.Bounds, tile canvasRect, ratio float64, width, height int) (canvasRect, bool) {
+	const pad = 2
+	x0 := math.Floor((float64(area.Origin.X) - pad - tile.x) * ratio)
+	y0 := math.Floor((float64(area.Origin.Y) - pad - tile.y) * ratio)
+	x1 := math.Ceil((float64(area.Origin.X+area.Size.Width) + pad - tile.x) * ratio)
+	y1 := math.Ceil((float64(area.Origin.Y+area.Size.Height) + pad - tile.y) * ratio)
+	x0, y0 = max(x0, 0), max(y0, 0)
+	x1, y1 = min(x1, float64(width)), min(y1, float64(height))
+	if x1 <= x0 || y1 <= y0 {
+		return canvasRect{}, false
+	}
+	return canvasRect{x0, y0, x1 - x0, y1 - y0}, true
 }
 
 // changedNatives hands components the animated props that changed.
@@ -90,27 +177,37 @@ func (s *surface) paint(v *view) {
 	if pw > 0 && ph > 0 {
 		ctx := v.inner.Call("getContext", "2d")
 		ctx.Call("setTransform", ratio, 0, 0, ratio, -tile.x*ratio, -tile.y*ratio)
-		p := canvas2d.NewPlayer(ctx, ratio, math.Hypot(w, h))
-		p.OriginX, p.OriginY = tile.x, tile.y
-		p.Font = fontCSS
-		p.NewCanvas = s.scratchCanvas
-		p.Image = func(src driver.ImageSource, readable bool) (js.Value, float64, bool) {
-			im := s.loadCanvasImage(src, v, readable)
-			return im.img, im.density, im.loaded
-		}
-		p.MeshCanvas = s.scratchMeshCanvas
-		p.Texture = func(src driver.ImageSource) canvasmesh.Texture {
-			tex, _ := s.meshTexture(src, v)
-			return tex
-		}
+		p := s.canvasPlayer(v, ctx, ratio, w, h, tile)
 		ops := s.animator.CanvasOps(v.id, v.drawing)
 		for i := range ops {
 			p.Play(&ops[i])
 		}
+		v.canvasLast = append(v.canvasLast[:0], ops...)
+	} else {
+		v.canvasLast = v.canvasLast[:0]
 	}
 	s.canvasImages.endPass()
 	s.setCanvasExact(v)
 	s.requestGlassPaint()
+}
+
+// canvasPlayer returns a player of v's drawing, of w by h points, into
+// ctx, whose canvas shows tile at ratio pixels per point.
+func (s *surface) canvasPlayer(v *view, ctx js.Value, ratio, w, h float64, tile canvasRect) *canvas2d.Player {
+	p := canvas2d.NewPlayer(ctx, ratio, math.Hypot(w, h))
+	p.OriginX, p.OriginY = tile.x, tile.y
+	p.Font = fontCSS
+	p.NewCanvas = s.scratchCanvas
+	p.Image = func(src driver.ImageSource, readable bool) (js.Value, float64, bool) {
+		im := s.loadCanvasImage(src, v, readable)
+		return im.img, im.density, im.loaded
+	}
+	p.MeshCanvas = s.scratchMeshCanvas
+	p.Texture = func(src driver.ImageSource) canvasmesh.Texture {
+		tex, _ := s.meshTexture(src, v)
+		return tex
+	}
+	return p
 }
 
 // setCanvasExact draws a canvas inside zoomed scroll contents or an axis-aligned scale transform pixel for pixel while its bitmap is exactly as large as the screen shows it. Chrome composes nested scale transforms with filtering even when they add up to one pixel per pixel, which greys a sharp edge; nearest sampling of a bitmap at that size changes nothing else. During a zoom, under rotation/skew, or past the raster bounds, the bitmap is scaled for the screen and keeps smooth sampling.

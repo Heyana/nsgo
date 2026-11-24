@@ -47,7 +47,8 @@ const maxDamage = 24
 type damage struct {
 	whole bool
 	// old are the areas, in the window's points, the queued views and
-	// those taken out painted in the last frame.
+	// those taken out painted in the last frame, and those redrawArea
+	// draws again.
 	old    []rectF
 	queued []*view
 	// last is what the last frame changed, in pixels, all of it when
@@ -104,6 +105,28 @@ func (w *window) redrawView(v *view) {
 	w.redrawPending()
 }
 
+// redrawArea has the next frame draw again area, in v's points, where v
+// stays: what a canvas's animated arguments changed. A view not measured
+// yet, drawn through effects or queued already is drawn again whole.
+func (w *window) redrawArea(v *view, area rectF) {
+	d := &w.damage
+	t := v.area
+	if d.whole || v.queued || t == (rectF{}) || unknown(t) {
+		w.redrawView(v)
+		return
+	}
+	if t.empty() {
+		// It shows nowhere.
+		return
+	}
+	size := frameOf(v).Size
+	area = area.intersect(rectF{0, 0, float32(size.Width), float32(size.Height)})
+	if r := mapBounds(v.world, area).intersect(v.seen); !r.empty() {
+		d.old = append(d.old, r)
+		w.redrawPending()
+	}
+}
+
 // up returns the view v draws in.
 func up(v *view) *view {
 	if v.leftFrom != nil {
@@ -157,6 +180,7 @@ func (m *measuring) visit(v *view, parent matrix, x, y driver.Points, clip rectF
 	if effects {
 		v.area = everywhere
 	} else {
+		v.world, v.seen = pl.world, clip
 		v.area = mapBounds(pl.world, viewExtent(v, s, bounds)).intersect(clip)
 		if v.area.empty() {
 			v.area = noArea
@@ -383,6 +407,34 @@ func (p *painter) skips(v *view) bool {
 		}
 	}
 	return true
+}
+
+// paintsOwn reports whether the pass paints v's own decoration and
+// content: unless what v paints of its own (v.area: its box, shadows,
+// outline and text ink) meets none of a partial frame's areas, as NSH's
+// own_paint_needed. Its children, clips and layers are drawn regardless,
+// and so is what has effects beyond its pixels: what is hosted at its own
+// rectangles (web views, native components, fields, videos), shaders and
+// GPU views, and a view under a backdrop effect.
+func (p *painter) paintsOwn(v *view) bool {
+	t := v.area
+	if p.areas == nil || t == (rectF{}) || unknown(t) {
+		return true
+	}
+	switch v.kind {
+	case driver.KindView, driver.KindText, driver.KindImage, driver.KindCanvas, driver.KindScroll:
+	default:
+		return true
+	}
+	if p.w.effectOn(v) != nil {
+		return true
+	}
+	for _, a := range p.areas {
+		if !a.intersect(t).empty() {
+			return true
+		}
+	}
+	return false
 }
 
 // pushAreas clips what the pass draws to areas, in pixels, after

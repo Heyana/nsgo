@@ -194,11 +194,13 @@ As NSH's, a frame draws only what changed since its back buffer was drawn and pr
 
 - A change of a view queues it with `redrawView`, noting where the last frame painted its subtree; `redrawAll` draws everything, for the environment, the chrome, a size and what is not tied to a view. Applied items queue their views; a removed view is queued before it goes, an inserted one after.
 - At the frame, a walk down the paths to the queued views records where each now paints (`measure`, placed as `painter.draw` places them, clipped by the ancestors that clip), and their subtrees' new areas join the old ones.
+- A canvas whose animated arguments change queues only the area `driver.CanvasDamage` bounds, placed where the last frame drew the canvas (`redrawArea`); one not measured yet, drawn through effects or unbounded is queued whole ([canvas](canvas.md#animated-arguments)).
 - The swap chain is `FLIP_SEQUENTIAL` with two buffers, so a frame draws its own areas and the last frame's, merged to at most 24, cleared and clipped to, and presents its own with `Present1`. Views whose subtree meets no area, or shows nowhere, are left out, in every frame.
+- A view whose own painted area (its box, shadows, outline and text ink) meets no area paints none of its own decoration or content, as NSH's `own_paint_needed` (`painter.paintsOwn`): no shadows, backdrop, fill, gradients, image, canvas, text or border. It is still walked for its children, with its clip, mask and opacity. Glass, views under a backdrop effect and what is hosted or draws through a shader or the GPU keep the whole path.
 - A window with web views, a material or native components' windows, a change under a filter or a 3D transform, a new or resized swap chain, and the frame after a whole one draw everything. A paint the system asks for with nothing queued draws nothing: DWM keeps what was presented.
 - A `WM_SIZE` waits, as macOS's resize does ([frame clocks](#frame-clocks)), at most 16 ms for the commit at the new size, and applies and draws it before returning; an engine that missed the deadline is not waited for again until its commit lands. The swap chain is unscaled (`DXGI_SCALING_NONE`): a size shown before its frame shows the last one at its pixels against the top left and, past it, the opaque background of the topmost view filling the window, rather than stretched to the window.
 
-`TestPartialFramesDrawWhatAWholeOneDoes` checks the window's pixels after partial frames against a whole frame.
+`TestPartialFramesDrawWhatAWholeOneDoes` checks the window's pixels after partial frames against a whole frame, and `TestCanvasArgumentsDrawOnlyWhatTheyChange` that a canvas's moving dot draws a fraction of the canvas and the same pixels. They open a window, so they need a signed-in desktop: over SSH every frame is whole. The web's `TestPartialCanvasRedrawsMatchFullOnes` compares a clipped replay with a full one.
 
 ## Frame clocks
 

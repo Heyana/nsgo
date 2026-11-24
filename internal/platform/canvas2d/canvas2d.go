@@ -57,6 +57,9 @@ func NewPlayer(ctx js.Value, ratio, size float64) *Player {
 	return &Player{Ctx: ctx, Ratio: ratio, Size: size, width: 1}
 }
 
+// Depth is how many saves the ops played so far left unrestored.
+func (p *Player) Depth() int { return len(p.saved) / 2 }
+
 // Play plays op.
 func (p *Player) Play(op *driver.DrawOp) {
 	ctx := p.Ctx

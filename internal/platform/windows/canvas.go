@@ -126,12 +126,32 @@ type canvasPlayer struct {
 	split driver.CanvasSplit
 }
 
-// changedCanvases draws again the canvases whose bound arguments changed.
+// changedCanvases draws again what the bound arguments of canvases
+// changed: the area driver.CanvasDamage bounds, as NSH's partial redraws,
+// or the whole canvas where it bounds none.
 func (w *window) changedCanvases() {
 	w.animator.ChangedCanvases(func(id driver.NodeID) {
-		if v := w.view(id); v != nil {
-			v.canvasCache.argsChanged()
+		v := w.view(id)
+		if v == nil {
+			return
+		}
+		c := &v.canvasCache
+		c.argsChanged()
+		ops := w.animator.CanvasOps(v.id, v.drawing)
+		last := c.last
+		c.last, c.spare = append(c.spare[:0], ops...), last
+		if c.drawing != v.drawing || len(last) != len(ops) {
 			w.redrawView(v)
+			return
+		}
+		area, ok := driver.CanvasDamage(last, ops)
+		switch {
+		case !ok:
+			w.redrawView(v)
+		case area.Size.Width > 0 && area.Size.Height > 0:
+			// 2 points wider for anti-aliasing, as apple.Damaged.
+			o, s := area.Origin, area.Size
+			w.redrawArea(v, rectF{float32(o.X) - 2, float32(o.Y) - 2, float32(o.X+s.Width) + 2, float32(o.Y+s.Height) + 2})
 		}
 	})
 }
@@ -289,9 +309,13 @@ func (c *canvasPlayer) play(op *driver.DrawOp) {
 	case driver.DrawClosePath:
 		c.closePath()
 	case driver.DrawFill:
-		c.fill(op.EvenOdd)
+		if !c.unseen(c.st.fill, c.st.fillGrad) {
+			c.fill(op.EvenOdd)
+		}
 	case driver.DrawStroke:
-		c.stroke()
+		if !c.unseen(c.st.stroke, c.st.strokeGrad) {
+			c.stroke()
+		}
 	case driver.DrawClip:
 		if g := c.geometry(op.EvenOdd); g != nil {
 			c.p.pushLayer(1, g)
@@ -330,17 +354,61 @@ func (c *canvasPlayer) play(op *driver.DrawOp) {
 		c.st.composite = op.Composite
 	case driver.DrawShadow:
 		c.st.shadow = *op
-	case driver.DrawFillText, driver.DrawStrokeText:
-		c.text(op)
+	case driver.DrawFillText:
+		if !c.unseen(c.st.fill, c.st.fillGrad) {
+			c.text(op)
+		}
+	case driver.DrawStrokeText:
+		if !c.unseen(c.st.stroke, c.st.strokeGrad) {
+			c.text(op)
+		}
 	case driver.DrawImage:
-		c.image(op)
+		if !c.transparent() {
+			c.image(op)
+		}
 	case driver.DrawVertices:
-		c.vertices(op)
+		if !c.transparent() {
+			c.vertices(op)
+		}
 	case driver.DrawAtlas:
-		c.atlas(op)
+		if !c.transparent() {
+			c.atlas(op)
+		}
 	case driver.DrawClear:
 		c.clear(op)
 	}
+}
+
+// transparent reports whether what paints now cannot change a pixel
+// whatever it draws, as NSH's player: source-over at zero alpha, which
+// hides its shadow too.
+func (c *canvasPlayer) transparent() bool {
+	return c.st.composite == driver.CompositeSourceOver && c.st.alpha <= 0
+}
+
+// unseen reports whether painting with col, or g when not nil, cannot
+// change a pixel, so its geometry, layout or bitmap need not be made:
+// transparent, or source-over in a transparent paint with no shadow to
+// show.
+func (c *canvasPlayer) unseen(col driver.Color, g *driver.CanvasGradient) bool {
+	if c.transparent() {
+		return true
+	}
+	if c.st.composite != driver.CompositeSourceOver {
+		return false
+	}
+	if sh := c.st.shadow; visible(sh.Color) && (sh.X != 0 || sh.Y != 0 || sh.R != 0) {
+		return false
+	}
+	if g == nil {
+		return !visible(col)
+	}
+	for _, s := range g.Stops {
+		if visible(s.Color) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *canvasPlayer) toView(x, y float64) pointF {

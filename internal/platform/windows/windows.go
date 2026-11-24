@@ -348,6 +348,12 @@ type view struct {
 	// them again, below that it measures a view under it (damage.go).
 	area, tree    rectF
 	queued, below bool
+	// world and seen are how the last frame placed the view in the
+	// window and what of it the clips around left visible, for an area
+	// of it drawn again (redrawArea); world is unset while it draws
+	// through effects.
+	world matrix
+	seen  rectF
 }
 
 // detach takes v out of its parent's children.

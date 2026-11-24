@@ -301,6 +301,9 @@ type view struct {
 	// canvasTile is the drawing-point rectangle painted in inner, and canvasSliced whether inner is positioned as a visible sub-rectangle.
 	canvasTile   canvasRect
 	canvasSliced bool
+	// canvasLast are the ops the <canvas> was last played with, bound
+	// arguments in, for the damage of the next change.
+	canvasLast []driver.DrawOp
 	// canvasExact is whether the canvas is drawn with image-rendering: pixelated, which it is while its bitmap matches the screen pixels an axis-aligned zoom shows it at.
 	canvasExact bool
 	// transformZoom and transformSkewed track the view's style/animated transform scale and whether it rotates/skews/tilts, for sharp canvas replay under style transforms.

@@ -736,33 +736,40 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 		e = &driver.Effects{}
 	}
 	masked := e.Mask != nil && p.pushMask(e.Mask, width, height)
-	filled := visible(s.Background) || len(e.Gradients) > 0
-	if filled && visible(s.ShadowColor) && simple && width > 0 && height > 0 {
-		// React Native's shadow, under a fill only, as iOS draws a shadow
-		// of a layer with a background.
-		p.drawShadow(v, s, width, height, radius)
-	}
-	p.drawBoxShadows(v, s, &b, e.Shadows, false)
 	// Glass reads what is behind it, its background included, in place
 	// of its blur.
 	glass := s.Glass != driver.GlassNone
-	if !glass {
-		p.drawBackdrop(e, &b, world)
+	own := glass || p.paintsOwn(v)
+	if own {
+		filled := visible(s.Background) || len(e.Gradients) > 0
+		if filled && visible(s.ShadowColor) && simple && width > 0 && height > 0 {
+			// React Native's shadow, under a fill only, as iOS draws a
+			// shadow of a layer with a background.
+			p.drawShadow(v, s, width, height, radius)
+		}
+		p.drawBoxShadows(v, s, &b, e.Shadows, false)
+		if !glass {
+			p.drawBackdrop(e, &b, world)
+		}
 	}
 	if rim, inset, ok := s.Rim(); ok {
-		p.fillRim(&b, s.Background, inset)
+		if own {
+			p.fillRim(&b, s.Background, inset)
+		}
 		rimmed := *s
 		rimmed.BorderColor = rim
 		s = &rimmed
-	} else {
+	} else if own {
 		p.fillBox(&b, s.Background, nil)
 	}
-	p.drawGradients(&b, e.Gradients)
-	if glass && !p.drawGlass(v, s, &b, world) {
-		p.drawBackdrop(e, &b, world)
+	if own {
+		p.drawGradients(&b, e.Gradients)
+		if glass && !p.drawGlass(v, s, &b, world) {
+			p.drawBackdrop(e, &b, world)
+		}
+		p.drawBoxShadows(v, s, &b, e.Shadows, true)
+		v.pruneShadows()
 	}
-	p.drawBoxShadows(v, s, &b, e.Shadows, true)
-	v.pruneShadows()
 	// An image is clipped to its corners without Clip, as its layer clips
 	// it on Apple and as Linux and the web clip it.
 	clip := s.Clip || v.kind == driver.KindScroll || v.kind == driver.KindImage
@@ -777,9 +784,11 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	}
 	switch v.kind {
 	case driver.KindImage:
-		p.drawImage(v, s.TintColor, p.w.imageBox(s, width, height))
+		if own {
+			p.drawImage(v, s.TintColor, p.w.imageBox(s, width, height))
+		}
 	case driver.KindCanvas:
-		if v.drawing != nil {
+		if own && v.drawing != nil {
 			if ch := canvases.Load(); ch != nil {
 				ch.draw(p, v, width, height)
 			}
@@ -807,7 +816,7 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 			v.field.draw(p, world)
 		}
 	}
-	if v.text != nil {
+	if own && v.text != nil {
 		x, y := float32(v.content.Origin.X), float32(v.content.Origin.Y)
 		selected := v.selEnd > v.selStart
 		tinted := v.animated.Has(driver.PropTextColor)
@@ -882,12 +891,14 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	if clip {
 		p.pop()
 	}
-	if dashed := s.BorderStyle == driver.BorderDashed || s.BorderStyle == driver.BorderDotted; dashed || !simple {
+	if !own {
+		// Nothing of its own meets the frame's areas.
+	} else if dashed := s.BorderStyle == driver.BorderDashed || s.BorderStyle == driver.BorderDotted; dashed || !simple {
 		p.drawShapedBorder(s, &b)
 	} else {
 		p.drawBorder(s, width, height, radius)
 	}
-	if o := s.Outline; o.Visible() {
+	if o := s.Outline; own && o.Visible() {
 		p.strokeBox(&b, -(float32(o.Offset) + float32(o.Width)/2), float32(o.Width), o.Color, o.Style)
 	}
 	if masked {

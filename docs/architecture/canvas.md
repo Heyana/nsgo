@@ -42,10 +42,11 @@ A drawing answers without the platform, during `Draw` and after it, so `OnPress`
 
 `Drawing.Bind(arg, node)` has the platform read argument `arg` (`ArgX` to `ArgColor`) of the last operation from an animated node. The drawing carries the bindings as `DrawSlot`s; the backend registers them with `Animator.BindCanvas` and, when `ChangedCanvases` reports a canvas, plays a copy from `CanvasOps` with the values patched in. The canvas redraws on the frame clock without a commit. Android's Java animator patches the encoded operations in place by their byte offsets.
 
-macOS, iOS and Linux redraw only what the change covers, as NSH's partial redraws; Windows records the changed part again; Android and the web redraw the whole canvas.
+macOS, iOS, Linux, Windows and the web redraw only what the change covers, as NSH's partial redraws; Android redraws the whole canvas.
 
 - `driver.CanvasDamage` replays the operations last drawn and those drawn now for their geometry, and adds up the bounds of the painting operations that changed or paint with state that did: transform, path, alpha, paint, line, shadow.
-- The view invalidates that area of its content layer, 2 points wider for anti-aliasing and rounded out (`apple.Damaged`). Core Graphics clips the replay of the whole drawing to it, so the pixels are a full redraw's.
+- The area, 2 points wider for anti-aliasing and rounded out, is drawn again: Apple invalidates it in the view's content layer (`apple.Damaged`), Windows adds it, where the last frame placed the view, to the next frame's damage (`window.redrawArea`), and the web clears it in the `<canvas>` and plays there. The replay of the whole drawing is clipped to it, so the pixels are a full redraw's.
+- Windows leaves out a source-over paint that cannot change a pixel before it builds its geometry, lays its text out or looks its bitmap up, as NSH's player: at zero alpha, or in a transparent color or gradient with no shadow to show.
 - Bounds are conservative: curves by their control points, arcs by their circle, strokes by their reach at miter joins and square caps, shadows by twice their blur, text by 1.5 em a character.
 - A changed clip, changed painting under a composite operation other than source-over, an image at its natural size and bounds that are not finite redraw the whole canvas.
 

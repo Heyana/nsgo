@@ -4,6 +4,7 @@ package windows
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -105,6 +106,86 @@ func TestPartialFramesDrawWhatAWholeOneDoes(t *testing.T) {
 		}
 		if differ > 0 {
 			t.Errorf("step %d: %d bytes of the partial frames differ from a whole frame", n, differ)
+		}
+	}
+}
+
+// TestCanvasArgumentsDrawOnlyWhatTheyChange moves a dot a canvas draws
+// from an animated value and checks that the frame drew only around it,
+// and that what it left matches a whole frame.
+func TestCanvasArgumentsDrawOnlyWhatTheyChange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-" + t.Name()
+	moves := make(chan func(float64), 1)
+	app := func(cx *core.Scope) core.Node {
+		x := core.NewAnimatedValue(cx, 40)
+		moves <- func(to float64) { cx.Post(func() { x.Set(to) }) }
+		return core.View{Style: core.Style{Width: driver.Pt(320), Height: driver.Pt(240), Background: driver.RGB(0xffffff)},
+			Children: []core.Node{
+				core.View{Style: core.Style{Position: core.Absolute, Left: driver.Pt(10), Top: driver.Pt(10), Width: driver.Pt(300),
+					Height: driver.Pt(220), Background: driver.RGB(0xeeeeee), CornerRadius: 12,
+					ShadowColor: driver.RGBA(0, 0.3), ShadowRadius: 4, ShadowOffset: driver.Point{Y: 2}},
+					Children: []core.Node{core.Canvas{Style: core.Style{Position: core.Absolute, Left: driver.Pt(10), Top: driver.Pt(10),
+						Width: driver.Pt(280), Height: driver.Pt(200)}, Draw: func(d *core.Drawing, size core.Size) {
+						d.SetFillColor(driver.RGB(0xeeeeff)).FillRect(0, 0, float32(size.Width), float32(size.Height))
+						d.SetStrokeColor(driver.RGB(0x2266cc)).SetLineWidth(2).BeginPath().MoveTo(0, 100)
+						for i := 0; i <= 28; i++ {
+							d.LineTo(float32(i*10), 100+float32((i*7)%30)-15)
+						}
+						d.Stroke()
+						// Painted transparent: it cannot change a pixel.
+						d.SetFillColor(driver.RGBA(0xff0000, 0)).FillRect(0, 0, float32(size.Width), float32(size.Height))
+						d.SetFillColor(driver.RGB(0xcc2222)).BeginPath().Arc(40, 60, 8, 0, 2*math.Pi, false).Bind(core.ArgX, x).Fill()
+					}}}},
+			}}
+	}
+	hwnd := startApp(t, title, app, 320, 240)
+	var move func(float64)
+	select {
+	case move = <-moves:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the app did not start")
+	}
+	settle := func() []byte {
+		time.Sleep(400 * time.Millisecond)
+		pix, _, _, ok := clientPixels(hwnd)
+		if !ok {
+			t.Skip("cannot read the window's pixels")
+		}
+		return pix
+	}
+	settle()
+	for i, to := range []float64{80, 120, 200, 60} {
+		move(to)
+		partial := settle()
+		onMain(t, hwnd, func(w *window) {
+			d := &w.damage
+			if d.lastWhole || len(d.last) == 0 {
+				t.Errorf("move %d: the last frame was not partial", i)
+				return
+			}
+			var drawn int64
+			for _, r := range d.last {
+				drawn += r.area()
+			}
+			// The canvas is 280 by 200 points; the dot's way is about 40
+			// by 20 to 160 by 20.
+			if canvas := int64(280 * 200 * w.scale * w.scale); drawn*4 > canvas {
+				t.Errorf("move %d: the frame drew %d pixels of the canvas's %d", i, drawn, canvas)
+			}
+		})
+		onMain(t, hwnd, func(w *window) { w.redrawAll() })
+		whole := settle()
+		differ := 0
+		for i := range partial {
+			if d := int(partial[i]) - int(whole[i]); d > 2 || d < -2 {
+				differ++
+			}
+		}
+		if differ > 0 {
+			t.Errorf("move %d: %d bytes of the partial frame differ from a whole frame", i, differ)
 		}
 	}
 }

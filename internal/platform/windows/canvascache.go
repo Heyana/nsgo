@@ -35,12 +35,15 @@ type canvasCache struct {
 	head, tail *comObject
 	scale      float32
 	generation uint64
+	// last are the ops as the bound arguments last changed them, for the
+	// damage of the next change; spare is the buffer it was before.
+	last, spare []driver.DrawOp
 }
 
 // setDrawing takes v's new drawing.
 func (c *canvasCache) setDrawing(d *driver.Drawing) {
 	c.release()
-	c.drawing, c.split, c.atlas, c.mixes = d, driver.CanvasSplit{}, false, false
+	c.drawing, c.split, c.atlas, c.mixes, c.last = d, driver.CanvasSplit{}, false, false, nil
 	if d == nil {
 		return
 	}
