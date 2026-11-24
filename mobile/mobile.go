@@ -107,9 +107,7 @@ func OnOpenLinks(cx *core.Scope, fn func(links []string)) { cx.OnOpenLinks(fn) }
 // if it needs to outlive the cache.
 type SharedItem = core.SharedItem
 
-// OnShared calls fn for each share the system delivers while cx lives.
-// Shares that launch the app wait for its first handler. On Android,
-// nsgo.yaml's android.share_types declares which media types the app receives.
+// OnShared calls fn for each share the system delivers while cx lives. Shares that launch the app wait for its first handler. On Android, nsgo.yaml's android.share_types declares which media types the app receives. On iOS, apple.share_types declares the UTIs the share extension accepts; it queues each share in the App Group until the containing app is next active. Files arrive as cache copies on both: move or copy one to persistent storage if it needs to outlive the cache.
 func OnShared(cx *core.Scope, fn func(items []SharedItem)) { cx.OnShared(fn) }
 
 // ExitApp leaves the app on Android as its back button does when nothing

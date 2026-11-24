@@ -3,6 +3,7 @@ package core
 import (
 	"math"
 	"slices"
+	"sync"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -931,9 +932,12 @@ type SharedItem = driver.SharedItem
 
 // OnShared is the core's part of mobile.OnShared.
 func (cx *Scope) OnShared(fn func([]SharedItem)) {
-	cx.rt.shares.add(cx, func(shares [][]driver.SharedItem) {
-		for _, items := range shares {
-			fn(slices.Clone(items))
+	cx.rt.shares.add(cx, func(shares []driver.SharedDelivery) {
+		for _, share := range shares {
+			fn(slices.Clone(share.Items))
+			if share.Acknowledge != nil {
+				share.Acknowledge()
+			}
 		}
 	})
 }
@@ -984,8 +988,15 @@ func (t *Tree) surfaceEvent(ev driver.Event) bool {
 		}
 		t.within(t.root, func() { rt.links.open(rt, links) })
 	case driver.EventShared:
-		if items, _ := ev.Data.([]driver.SharedItem); len(items) != 0 {
-			t.within(t.root, func() { rt.shares.open(rt, [][]driver.SharedItem{items}) })
+		share, ok := ev.Data.(driver.SharedDelivery)
+		if !ok {
+			share.Items, _ = ev.Data.([]driver.SharedItem)
+		}
+		if len(share.Items) != 0 {
+			if share.Acknowledge != nil {
+				share.Acknowledge = sync.OnceFunc(share.Acknowledge)
+			}
+			t.within(t.root, func() { rt.shares.open(rt, []driver.SharedDelivery{share}) })
 		}
 	case driver.EventTray:
 		if tr := rt.trays[ev.Count]; tr != nil {

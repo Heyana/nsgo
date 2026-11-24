@@ -82,12 +82,12 @@ func TestIOSAppClipSigningProject(t *testing.T) {
 	}
 	plain := *p
 	plain.AppClip = nil
-	for name, value := range map[string]map[string]string{
+	for name, value := range map[string]map[string]any{
 		"plain": iosProjectData(&plain, iOS, "TEAM123"),
 		"tv":    iosProjectData(p, tvOS, "TEAM123"),
 		"clip":  iosProjectData(p.clipProject(), iOS, "TEAM123"),
 	} {
-		if value["Clip"] != "" {
+		if clip, _ := value["Clip"].(string); clip != "" {
 			t.Errorf("%s recursively embeds an App Clip", name)
 		}
 	}

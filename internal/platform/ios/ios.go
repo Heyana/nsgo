@@ -150,6 +150,9 @@ type view struct {
 }
 
 type surface struct {
+	// shareWake schedules the App Group inbox when the containing app activates.
+	shareWake func()
+
 	// gpuLayers are the GPU views' layers by view, which the engine goroutine submits frames to.
 	gpuLayers sync.Map
 	sensors   apple.Sensors
@@ -658,6 +661,7 @@ func attachScene(cfg driver.SurfaceConfig) {
 	s.env = s.environment()
 	s.engine.ResizeWithEnvironment(size, s.geometry(size), s.env)
 	s.observe()
+	s.observeShares()
 	if s.frameWanted.Load() || s.animator.Running() {
 		s.startTicking()
 	}
@@ -790,6 +794,7 @@ func (s *surface) startEngine(test *testOpen) {
 	s.sendLaunchLinks()
 	s.sendLaunchFiles()
 	s.observe()
+	s.observeShares()
 	// Scenes that connected before the engine started, as iPadOS restores a test host's, open their trees now.
 	for _, o := range scenes {
 		if o.scene != 0 && o.engine == nil {
@@ -952,6 +957,9 @@ func (s *surface) observe() {
 	for name, state := range lifecycleNote {
 		on(apple.Global(uikitPath, name), func(objc.ID) {
 			lifecycleNow = state
+			if state == driver.LifecycleActive && s.shareWake != nil {
+				s.shareWake()
+			}
 			if name == "UIApplicationWillResignActiveNotification" {
 				// The keys held come up for the app: UIKit may end their presses elsewhere, or not at all.
 				s.releaseKeys()

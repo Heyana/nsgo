@@ -557,6 +557,22 @@ APK and App Bundle builds register those types for both single and multiple item
 
 For a web app with path-based addresses, set `web.base` to its deployment directory (`/` or `/my-app/`) and configure your production server to serve `index.html` for application routes. The development server already provides that fallback for HTML navigation requests. Assets remain relative to that fixed HTML base when a deep link is reloaded. See [Application addresses](addresses.md).
 
+## Incoming shares on iOS
+
+Declare the Uniform Type Identifiers the share extension accepts, with URL and text types before broader file types:
+
+```yaml
+apple:
+  share_types: [public.url, public.plain-text, public.image, com.adobe.pdf]
+  # app_group: group.com.example.app  # defaults to group.<id>
+sign:
+  # share_profile: assets/Share.mobileprovision
+```
+
+`build` and `dev` package a Go share extension, `<id>.share`, with the app. Xcode signs it and registers its App Group for device runs. For an IPA, enable the same App Group for `<id>` and `<id>.share`; `sign.profile` and `sign.share_profile` must grant it. App Clips, tvOS and watchOS have no share extension.
+
+The extension copies up to 128 items and 512 MiB of files into the App Group, then completes the share sheet. `mobile.OnShared` receives those batches while the app is active or when the user next opens it; they survive the extension and app exiting before delivery. iOS provides no supported API for a Share extension to foreground or launch its containing app. This handoff therefore does not automatically open the app.
+
 ## Mini programs
 
 ```sh
@@ -613,10 +629,11 @@ sign:
   keystore: assets/release.p12              # signs APKs, with key_alias
   certificate: assets/codesign.pfx          # signs the Windows app and its installer
   # widgets_profile: assets/Widgets.mobileprovision  # the iOS extension's profile; use a macOS profile for a Mac App Store build
+  # share_profile: assets/Share.mobileprovision      # signs the IPA's share extension
   # clip_profile: assets/Clip.mobileprovision        # signs the IPA's App Clip
 ```
 
-The keystore's passwords come from `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD`. `-team` signs the iPhone's package. `-profile`, `-widgets-profile`, `-clip-profile` and `-macos-profile` replace the app's, the widget extension's, the App Clip's and the Mac App Store's provisioning profiles from the command line. `-installer` replaces the Mac Installer Distribution identity.
+The keystore's passwords come from `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD`. `-team` signs the iPhone's package. `-profile`, `-widgets-profile`, `-share-profile`, `-clip-profile` and `-macos-profile` replace the app's, the widget extension's, the share extension's, the App Clip's and the Mac App Store's provisioning profiles from the command line. `-installer` replaces the Mac Installer Distribution identity.
 
 ### Sign Windows packages
 

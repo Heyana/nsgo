@@ -286,7 +286,7 @@ const (
 	EventDiskSpace
 	// EventDiscovery reports local service operation Count with a *DiscoveryReply in Data.
 	EventDiscovery
-	// EventShared reports one share received from another app (Data, []SharedItem). It names no view.
+	// EventShared reports one share received from another app (Data, []SharedItem or SharedDelivery). It names no view.
 	EventShared
 	// EventCursorPoint answers ItemCursorPoint Count. Finished reports availability, and Point is in desktop screen coordinates.
 	EventCursorPoint
@@ -305,6 +305,12 @@ const (
 // SharedItem is text or a file copied from an incoming share.
 type SharedItem struct {
 	Text, Path, Name, MIME string
+}
+
+// SharedDelivery keeps a durable incoming share until an app handler has received it. Acknowledge runs on the engine goroutine after the callback; a backend must schedule any disk I/O elsewhere.
+type SharedDelivery struct {
+	Items       []SharedItem
+	Acknowledge func()
 }
 
 // EventVideoPause reports that the platform paused video ID, not the app's Paused: Index is why (VideoPauseInterruption, ...). An EventMask has no room for another kind, so it shares EventImageInfo's, an answer that names no view and is never in a mask; Android's Protocol.java mirrors it.

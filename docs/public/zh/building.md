@@ -465,6 +465,22 @@ android:
 
 APK 和 App Bundle 都会为单项和多项分享注册这些类型。用 [`mobile.OnShared`](services.md#打开链接与文件) 接收每次分享。
 
+## 接收 iOS 分享
+
+用 UTI 声明分享扩展接收的类型，将网址和文本放在宽泛的文件类型之前：
+
+```yaml
+apple:
+  share_types: [public.url, public.plain-text, public.image, com.adobe.pdf]
+  # app_group: group.com.example.app  # 默认为 group.<id>
+sign:
+  # share_profile: assets/Share.mobileprovision
+```
+
+工具将 Go 实现的 `<id>.share` 扩展打包进应用。真机运行时由 Xcode 为应用和扩展签名并注册 App Group；构建 IPA 时，`sign.profile` 与 `sign.share_profile` 必须为两者授予同一个 App Group。App Clip、tvOS 和 watchOS 不包含分享扩展。
+
+扩展把每批最多 128 项、512 MiB 的文件复制到 App Group 后结束分享。`mobile.OnShared` 在应用处于活动状态或用户下次打开时接收这些批次；在交付之前，应用或扩展退出不会丢失批次。iOS 没有支持 Share 扩展自动启动或切到主应用的公开 API，因此此流程不会自动打开应用。
+
 ## 小程序
 
 ```sh
@@ -521,10 +537,11 @@ sign:
   keystore: assets/release.p12              # 与 key_alias 一起为 APK 签名
   certificate: assets/codesign.pfx          # 为 Windows 应用及其安装包签名
   # widgets_profile: assets/Widgets.mobileprovision  # iOS 扩展的描述文件；Mac App Store 构建使用 macOS 描述文件
+  # share_profile: assets/Share.mobileprovision      # 为 IPA 中的分享扩展签名
   # clip_profile: assets/Clip.mobileprovision        # 为 IPA 中的轻 App 签名
 ```
 
-密钥库的密码来自 `NSGO_KEYSTORE_PASSWORD` 和 `NSGO_KEY_PASSWORD`。`-team` 用于为 iPhone 包签名。命令行可用 `-profile`、`-widgets-profile`、`-clip-profile` 和 `-macos-profile` 替换应用、小组件扩展、轻 App 和 Mac App Store 的描述文件，`-installer` 替换 Mac Installer Distribution 身份。
+密钥库的密码来自 `NSGO_KEYSTORE_PASSWORD` 和 `NSGO_KEY_PASSWORD`。`-team` 用于为 iPhone 包签名。命令行可用 `-profile`、`-widgets-profile`、`-share-profile`、`-clip-profile` 和 `-macos-profile` 替换应用、小组件扩展、分享扩展、轻 App 和 Mac App Store 的描述文件，`-installer` 替换 Mac Installer Distribution 身份。
 
 ### 为 Windows 包签名
 

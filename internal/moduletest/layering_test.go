@@ -75,6 +75,7 @@ var layers = []struct {
 	{"internal/platform/privacy", []string{"internal/driver", "internal/platform/objcblock"}},
 	{"internal/platform/queue", []string{"internal/driver"}},
 	{"internal/platform/scrollbar", []string{"internal/driver"}},
+	{"internal/platform/shareinbox", []string{"internal/driver", "internal/platform/objcblock"}},
 	{"internal/platform/speechd", []string{"internal/driver"}},
 	{"internal/platform/textselect", []string{"internal/driver"}},
 	{"internal/platform/updates", []string{"internal/driver", "internal/platform/imageload"}},
@@ -133,6 +134,7 @@ var layers = []struct {
 	{"examples/", []string{"", "audio", "cloud", "automation", "core", "base/", "ui/", "gpu", "mobile", "desktop", "desktop/locales", "web", "gamepad", "gameservices", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},
 	// The nsgo tool links no component or runtime, so changing them does
 	// not build it again; it writes TSX declarations by running the app.
+	{"cmd/nsgo/shareextension", []string{"internal/platform/objcblock", "internal/platform/shareinbox"}},
 	{"cmd/", []string{"core", "cmd/", "internal/automation", "internal/appstartup", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},
 	{"tools/", []string{"core"}},
 }
@@ -143,7 +145,7 @@ var platformShared = []string{
 	"internal/appstartup",
 	"internal/platform/authscheme",
 	"internal/audiosession", "internal/platform/apple", "internal/platform/canvas2d", "internal/platform/canvasmesh", "internal/platform/canvastest", "internal/platform/codescan", "internal/platform/field", "internal/platform/finger",
-	"internal/platform/appimage", "internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/loopback", "internal/platform/menuspeech", "internal/platform/menutext", "internal/platform/objcblock", "internal/platform/perfhud", "internal/platform/picked", "internal/platform/privacy", "internal/platform/queue", "internal/platform/scrollbar", "internal/platform/speechd",
+	"internal/platform/appimage", "internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/loopback", "internal/platform/menuspeech", "internal/platform/menutext", "internal/platform/objcblock", "internal/platform/perfhud", "internal/platform/picked", "internal/platform/privacy", "internal/platform/queue", "internal/platform/scrollbar", "internal/platform/shareinbox", "internal/platform/speechd",
 	"internal/platform/ops", "internal/platform/pcmoutput", "internal/platform/textruns", "internal/platform/textselect", "internal/platform/updates", "internal/platform/videoalpha", "internal/platform/videoplay", "internal/platform/viewtree", "internal/platform/webstyle", "internal/shaderir/",
 }
 

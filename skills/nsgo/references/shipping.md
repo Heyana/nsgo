@@ -41,7 +41,7 @@ build:
 # steam: { app_id: 480 }      # use your Steamworks App ID for native dev
 ```
 
-A flag replaces the value it names (`-target`, `-version`, `-output`, or the signing profiles `-profile`, `-widgets-profile` and `-clip-profile`); `go tool nsgo build -h` lists them. Read the version-matched [Building and shipping](https://nsgo.dev/docs/building.md) page for the rest: installers, store packages, signing, notarizing, GitHub releases, updates, file types, App Clips, widgets and mini programs.
+A flag replaces the value it names (`-target`, `-version`, `-output`, or the signing profiles `-profile`, `-widgets-profile`, `-share-profile` and `-clip-profile`); `go tool nsgo build -h` lists them. Read the version-matched [Building and shipping](https://nsgo.dev/docs/building.md) page for the rest: installers, store packages, signing, notarizing, GitHub releases, updates, file types, App Clips, widgets and mini programs.
 
 Set `game: true` for game classification and Game Mode metadata, and `gamepad: true` when the app supports a hardware gamepad. See [Games](https://nsgo.dev/docs/building.md#games).
 
@@ -112,6 +112,8 @@ Declare `file_types` in `nsgo.yaml` and handle paths with `desktop.OnOpenFiles`.
 Declare `url_schemes: [myapp]` for the app's own links and handle them with `desktop.OnOpenLinks`, or `mobile.OnOpenLinks` on iOS and Android. The macOS, iOS and Android apps, the NSIS installer and MSIX package, and the Linux desktop entry register them; on Windows and Linux a second launch hands its link to the running app. On Windows and Linux the handler hears any URL the app is started with, so check the scheme, and confirm with the user before a link changes anything.
 
 Set `android.share_types: [text/plain, 'image/*']` to receive those MIME types from the Android share sheet. Register `mobile.OnShared` for the text and cache-backed files, including what launched the app. [Building](https://nsgo.dev/docs/building.md#incoming-shares-on-android)
+
+Set `apple.share_types: [public.url, public.image]` for the UTIs an iOS share extension accepts. It keeps each share in an App Group inbox until the app is next active, and cannot launch the app. Device runs use Xcode signing; IPA builds need `sign.share_profile` for `<id>.share`, granting the same `apple.app_group` as the app. [Building](https://nsgo.dev/docs/building.md#incoming-shares-on-ios)
 
 ## Secrets
 

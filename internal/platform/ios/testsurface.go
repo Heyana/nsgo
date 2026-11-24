@@ -1543,6 +1543,11 @@ func (t *testSurface) OpenLinks(links []string) {
 	t.s.engine.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: links})
 }
 
+// ReceiveShare delivers a simulated incoming share through the normal engine event.
+func (t *testSurface) ReceiveShare(items []driver.SharedItem) {
+	t.s.engine.Dispatch(driver.Event{Kind: driver.EventShared, Data: items})
+}
+
 // ChooseDockMenu implements testhost.Surface: iOS has no app icon menu.
 func (t *testSurface) ChooseDockMenu(uint32) error { return testhost.ErrNoMenu }
 

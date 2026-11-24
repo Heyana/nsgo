@@ -1,0 +1,5 @@
+# The native provider/inbox test also builds and embeds the real Go extension.
+name: ShareExtensionTest
+id: dev.nsgo.test.shareextension
+apple:
+  share_types: [public.url, public.plain-text, public.data]

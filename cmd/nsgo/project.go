@@ -165,6 +165,8 @@ type project struct {
 	// their Info.plist, such as NSMicrophoneUsageDescription.
 	Apple struct {
 		Info map[string]any `yaml:"info"`
+		// ShareTypes are the UTIs the iOS share extension accepts.
+		ShareTypes []string `yaml:"share_types"`
 		// RequiresFullScreen is the iOS package's UIRequiresFullScreen, true unless set; false lets an iPad run the app in Split View, Slide Over and Stage Manager.
 		RequiresFullScreen *bool `yaml:"requires_full_screen"`
 		// MultipleScenes is the iOS package's UIApplicationSupportsMultipleScenes, false unless set; true lets the system create more than one scene session for the app.
@@ -524,6 +526,9 @@ func load(dir string) (*project, error) {
 	if err := p.validateAndroidShareTypes(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
+	if err := p.validateIOSShareTypes(); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
+	}
 	if err := p.validateWidgets(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
@@ -548,7 +553,7 @@ func load(dir string) (*project, error) {
 	if p.Linux.Share != "" {
 		p.Linux.Share = p.resolve(p.Linux.Share)
 	}
-	for _, path := range []*string{&p.Sign.Profile, &p.Sign.WidgetsProfile, &p.Sign.AssetPacksProfile, &p.Sign.ClipProfile, &p.Sign.MacOSProfile, &p.Sign.Keystore, &p.Sign.Certificate} {
+	for _, path := range []*string{&p.Sign.Profile, &p.Sign.WidgetsProfile, &p.Sign.ShareProfile, &p.Sign.AssetPacksProfile, &p.Sign.ClipProfile, &p.Sign.MacOSProfile, &p.Sign.Keystore, &p.Sign.Certificate} {
 		if *path != "" {
 			*path = p.resolve(*path)
 		}

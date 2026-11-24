@@ -196,7 +196,7 @@ func (p *project) clipStoragePlist() string {
 }
 
 func (p *project) needsIOSAppGroup() bool {
-	return p.iosExtension() || p.clipStorageGroup() != ""
+	return p.iosExtension() || p.iosShares() || p.clipStorageGroup() != ""
 }
 
 // checkIOSAppGroup refuses a profile that cannot reach the configured

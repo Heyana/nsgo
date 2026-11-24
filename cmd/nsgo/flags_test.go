@@ -266,6 +266,7 @@ func TestBuildSigningProfileFlags(t *testing.T) {
 	if err := fs.Parse([]string{
 		"-profile", "profiles/app.mobileprovision",
 		"-widgets-profile", "profiles/widgets.mobileprovision",
+		"-share-profile", "profiles/share.mobileprovision",
 		"-clip-profile", "profiles/clip.mobileprovision",
 		"-macos-profile", "profiles/macos.provisionprofile",
 		"-installer", "Mac Installer Distribution: Example (TEAM123)",
@@ -275,6 +276,7 @@ func TestBuildSigningProfileFlags(t *testing.T) {
 	p := &project{Dir: t.TempDir(), Sign: signing{
 		Profile:        "from-yaml.mobileprovision",
 		WidgetsProfile: "from-yaml-widgets.mobileprovision",
+		ShareProfile:   "from-yaml-share.mobileprovision",
 		ClipProfile:    "from-yaml-clip.mobileprovision",
 		MacOSProfile:   "from-yaml-macos.provisionprofile",
 		Installer:      "from-yaml-installer",
@@ -287,6 +289,9 @@ func TestBuildSigningProfileFlags(t *testing.T) {
 	}
 	if got, want := p.Sign.WidgetsProfile, filepath.Join(p.Dir, "profiles/widgets.mobileprovision"); got != want {
 		t.Errorf("sign.widgets_profile: got %q, want %q", got, want)
+	}
+	if got, want := p.Sign.ShareProfile, filepath.Join(p.Dir, "profiles/share.mobileprovision"); got != want {
+		t.Errorf("sign.share_profile: got %q, want %q", got, want)
 	}
 	if got, want := p.Sign.ClipProfile, filepath.Join(p.Dir, "profiles/clip.mobileprovision"); got != want {
 		t.Errorf("sign.clip_profile: got %q, want %q", got, want)

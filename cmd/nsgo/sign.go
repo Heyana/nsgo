@@ -36,6 +36,8 @@ type signing struct {
 	Profile string `yaml:"profile"`
 	// WidgetsProfile is the provisioning profile of an iOS or Mac App Store package's widget extension, <id>.widgets, granting the app group.
 	WidgetsProfile string `yaml:"widgets_profile"`
+	// ShareProfile signs the iOS share extension.
+	ShareProfile string `yaml:"share_profile"`
 	// AssetPacksProfile signs the iOS Background Assets downloader extension.
 	AssetPacksProfile string `yaml:"asset_packs_profile"`
 	// ClipProfile is the provisioning profile of the iOS package's App
@@ -76,16 +78,17 @@ type signing struct {
 
 // signFlags are nsgo build's flags that replace nsgo.yaml's sign values.
 type signFlags struct {
-	identity, profile, widgetsProfile, clipProfile, macOSProfile *override[string]
-	installer                                                    *override[string]
-	keystore, alias, notarize                                    *override[string]
-	certificate, signCommand, timestamp                          *override[string]
+	identity, profile, widgetsProfile, shareProfile, clipProfile, macOSProfile *override[string]
+	installer                                                                  *override[string]
+	keystore, alias, notarize                                                  *override[string]
+	certificate, signCommand, timestamp                                        *override[string]
 }
 
 func (f *signFlags) bind(fs *flag.FlagSet) {
 	f.identity = stringFlag(fs, "sign", "the macOS and iOS codesign `identity` (default: nsgo.yaml's sign.identity, else ad hoc on macOS and the profile's in the keychain on iOS)")
 	f.profile = stringFlag(fs, "profile", "the iOS provisioning `profile` (default: nsgo.yaml's sign.profile)")
 	f.widgetsProfile = stringFlag(fs, "widgets-profile", "the iOS or Mac App Store widget extension's provisioning `profile` (default: nsgo.yaml's sign.widgets_profile)")
+	f.shareProfile = stringFlag(fs, "share-profile", "the iOS share extension's provisioning `profile` (default: nsgo.yaml's sign.share_profile)")
 	f.clipProfile = stringFlag(fs, "clip-profile", "the iOS App Clip's provisioning `profile` (default: nsgo.yaml's sign.clip_profile)")
 	f.macOSProfile = stringFlag(fs, "macos-profile", "the Mac App Store provisioning `profile` (default: nsgo.yaml's sign.macos_profile)")
 	f.installer = stringFlag(fs, "installer", "the Mac Installer Distribution `identity` (default: nsgo.yaml's sign.installer)")
@@ -104,6 +107,9 @@ func (f *signFlags) apply(p *project) {
 	}
 	if f.widgetsProfile.set {
 		p.Sign.WidgetsProfile = p.resolve(f.widgetsProfile.value)
+	}
+	if f.shareProfile.set {
+		p.Sign.ShareProfile = p.resolve(f.shareProfile.value)
 	}
 	if f.clipProfile.set {
 		p.Sign.ClipProfile = p.resolve(f.clipProfile.value)
@@ -342,6 +348,9 @@ func signForStore(ctx context.Context, p *project, sys *appleOS, app string) err
 	}
 	if sys == iOS {
 		if err := signIOSWidgets(ctx, p, app, identity); err != nil {
+			return err
+		}
+		if err := signIOSShare(ctx, p, app, identity); err != nil {
 			return err
 		}
 		if err := signIOSClip(ctx, p, app, identity); err != nil {

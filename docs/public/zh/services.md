@@ -60,7 +60,7 @@ cx.Share(core.ShareOptions{
 }, func(shown bool, err error) {})
 ```
 
-在 Android 上，`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` 接收 [`android.share_types`](building.md#接收-android-分享) 声明的文本和文件。启动应用的分享会等到第一个处理函数注册。文本放在 `Text`，文件会复制到缓存，并带有 `Path`、`Name` 和 `MIME`。如需长期保留文件，请移到或复制到持久存储。
+`mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` 接收 [`android.share_types`](building.md#接收-android-分享) 或 [`apple.share_types`](building.md#接收-ios-分享) 声明的文本和文件。Android 分享可以启动应用；iOS 将批次保存在 App Group 中，等应用处于活动状态或用户下次正常打开。待处理的分享会等到第一个处理函数注册。iOS 在回调返回之前保留批次；跨进程退出时按至少一次语义交付。文本放在 `Text`，文件会复制到缓存，并带有 `Path`、`Name` 和 `MIME`。如需长期保留文件，请移到或复制到持久存储。
 
 `desktop.LookUp` 为一段文本显示系统词典面板，如 macOS 上三指轻点所做，文本绘制在某个视图中的一个框上：通常是选区的文本和边界框，加上其 `Selectable` 视图的 `Ref`。`desktop.CanLookUp` 说明能否显示，即在 macOS 的窗口中；Windows、Linux 和 Web 没有这样的面板。测试中，在 `nsgotest.Environment` 设置了 `CanLookUp` 时，`nsgotest.App.LookUps` 列出显示过的面板。
 

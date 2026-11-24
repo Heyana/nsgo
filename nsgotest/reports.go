@@ -332,14 +332,14 @@ func (a *App) OpenLinks(links ...string) {
 }
 
 // ReceiveShare delivers mobile.SharedItem values as another app sharing text or
-// files would. It runs headless and on Android targets.
+// files would. It runs headless and on iOS and Android targets.
 func (a *App) ReceiveShare(items ...core.SharedItem) {
 	a.t.Helper()
 	items = slices.Clone(items)
 	if a.target != nil {
 		surface, ok := a.target.surface.(testhost.SharedItemsSurface)
 		if !ok {
-			a.t.Skip("nsgotest: ReceiveShare runs headless and on Android targets")
+			a.t.Skip("nsgotest: ReceiveShare runs headless and on iOS and Android targets")
 		}
 		surface.ReceiveShare(items)
 		a.Settle()

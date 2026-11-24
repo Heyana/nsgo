@@ -74,6 +74,7 @@ nsgo
 │   │   ├── imagedecode, imageload       Shared images
 │   │   ├── canvasmesh                   Shared triangle-mesh rasterizer of canvases without textured vertices
 │   │   ├── menutext, menuspeech         Shared menu labels and the Speech menu's read of a focused page
+│   │   ├── shareinbox                   Durable iOS App Group shares and their wakeup
 │   │   ├── authscheme                   Shared private-scheme sign-ins in desktop browsers
 │   │   ├── loopback                     Shared loopback redirects of desktops' sign-ins
 │   │   ├── updates                      Shared update checks of Linux, Android and iOS
@@ -123,7 +124,7 @@ What keeps each layer in its place:
 | Core | Touch a native view or call the system |
 | Protocol | Hold app logic |
 
-The `nsgo` tool links no component or runtime, so changing them does not rebuild it. It shares packaged startup identities with backends through `internal/appstartup`, which has only constants and no dependencies. It is the only package that imports the MCP SDK (`github.com/modelcontextprotocol/go-sdk`), which every app's module graph gains through its `tool` line.
+The iOS-only support package `cmd/nsgo/shareextension` imports only the inbox and Objective-C block bridge; its host form is empty so the tool can keep it in vendored dependencies. The `nsgo` tool links no component or runtime, so changing them does not rebuild it. It shares packaged startup identities with backends through `internal/appstartup`, which has only constants and no dependencies. It is the only package that imports the MCP SDK (`github.com/modelcontextprotocol/go-sdk`), which every app's module graph gains through its `tool` line.
 
 ## Dependency graph
 
