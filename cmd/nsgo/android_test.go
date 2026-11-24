@@ -155,6 +155,10 @@ func TestAndroidGhosttyLibrary(t *testing.T) {
 	if file.Name != "lib/arm64-v8a/libghostty-vt.so" || !bytes.Equal(file.Data, want) {
 		t.Fatalf("Android Ghostty file = %+v, want ABI path and bytes", file)
 	}
+	// x64 has no prebuild and cannot be listed without cgo, so it must not reach go list at all.
+	if file, err := androidGhosttyLibrary(t.Context(), nil, "amd64", "x86_64"); err != nil || file.Data != nil {
+		t.Fatalf("Android x64 Ghostty library = %+v, %v; want none", file, err)
+	}
 }
 
 // TestAndroidLibraries checks that only an app whose function table names the fold geometry's reader and whose sources select it declares the window extensions.

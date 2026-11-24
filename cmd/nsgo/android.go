@@ -266,6 +266,10 @@ const nsgoInternal = "github.com/nsgo-dev/nsgo/internal/"
 
 // androidGhosttyLibrary returns the prebuilt libghostty-vt for an app that links base/terminal. Android's loader searches the APK's ABI directory, so the library is a sibling of libnsgo.so rather than a Go-embedded payload.
 func androidGhosttyLibrary(ctx context.Context, p *project, goarch, abi string) (apk.File, error) {
+	// Only arm64 has a prebuild, and only arm64 builds without cgo: listing android/amd64 with CGO_ENABLED=0 fails, as it must link externally.
+	if goarch != "arm64" {
+		return apk.File{}, nil
+	}
 	dir, err := linkedDir(ctx, p, []string{"GOOS=android", "GOARCH=" + goarch, "CGO_ENABLED=0"}, ghosttyPackage)
 	if err != nil {
 		return apk.File{}, err
