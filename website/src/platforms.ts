@@ -1,9 +1,7 @@
 import type { IconName } from './components/Icon.astro';
 
 /**
- * The platforms NSGo runs on, each shown on its own, with its kind and what
- * draws it; localized names override English where users call a platform
- * otherwise, and experimental marks one not ready for most apps.
+ * The platforms NSGo runs on, each shown on its own, with its kind and what draws it; zh and zh-tw name one in Chinese where its users call it otherwise, and experimental marks one not ready for most apps.
  */
 export type PlatformKind = 'app' | 'web' | 'mini';
 

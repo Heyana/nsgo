@@ -23,8 +23,11 @@ type PlatformWords = {
 const allWords: Record<SiteLang, PlatformWords> = {
   en: {
     runsOn: 'Runs on',
+    // The tip of an experimental platform's mark.
     experimental: 'Experimental: mini programs hold an app to 2 MB, which larger apps exceed for now.',
+    // The tip of HarmonyOS's mark.
     preview: 'Preview: ArkUI draws a first set of views, and you sign the package yourself to install it on a phone.',
+    // A platform's line under the board: Android draws with Android Views.
     drawsWith: [' draws with ', ''],
   },
   zh: {
@@ -49,7 +52,7 @@ const allWords: Record<SiteLang, PlatformWords> = {
     runsOn: '지원 플랫폼',
     experimental: '실험적: 미니 프로그램은 앱 크기를 2 MB로 제한하므로 큰 앱은 현재 이를 초과합니다.',
     preview: '미리보기: ArkUI가 초기 뷰 집합을 그리며, 휴대전화에 설치하려면 패키지에 직접 서명해야 합니다.',
-    drawsWith: ['는 ', '로 렌더링'],
+    drawsWith: ['에서는 ', ' 사용'],
   },
   es: {
     runsOn: 'Se ejecuta en',

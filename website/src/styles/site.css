@@ -604,8 +604,7 @@
   border-top-right-radius: 0;
 }
 
-/* CJK headlines are one long phrase per line, which the package's size
-   breaks awkwardly beside the platforms. */
+/* CJK headlines are one long phrase a line, which the package's size breaks before their last characters beside the platforms. */
 :root:is([lang|='zh'], [lang|='ja'], [lang|='ko']) .hero .headline {
   font-size: clamp(2.25rem, 1.4rem + 3vw, 3.5rem);
 }

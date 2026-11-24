@@ -1,9 +1,5 @@
 ---
-// Real screens of the gallery: its desktop layout in a window and its phone
-// layout before it, in the page's language (falling back to English assets
-// where screenshots are only captured in en/zh) and both appearances, of
-// which the site's shows. They are src/assets/screens/<layout>-<lang>-<theme>.jpg,
-// which `bun run screenshots` retakes.
+// Real screens of the gallery: its desktop layout in a window and its phone layout before it, in the page's language (English for languages without their own screenshots, which are only taken in en and zh) and both appearances, of which the site's shows. They are src/assets/screens/<layout>-<lang>-<theme>.jpg, which `bun run screenshots` retakes.
 import { asSiteLang, type SiteLang } from '../../locales';
 
 interface Props {
