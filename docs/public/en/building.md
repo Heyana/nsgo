@@ -85,6 +85,7 @@ build:
   ldflags: []           # the app's own linker flags, such as -X main.releaseDate=2026-11-17
   open: false           # true opens the output directory after building
   installers: true      # false leaves out the disk image, the Windows installer and the Linux packages
+  # skip_installers: [macos]  # omit installers for the listed desktop systems
   jobs: 0               # how many targets build at once; 0 is half the CPUs, 1 one after another
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, tvos, tvos_simulator, watchos, watchos_simulator, android_arm64, web]
 # apple: { sign_in_with_apple: true }  # the Sign in with Apple entitlement, for iOS, tvOS and Mac App Store builds
@@ -222,7 +223,11 @@ For the desktop targets, `build` writes what users install the app from into `di
 | Windows | `<name>-<version>-windows-<arch>-setup.exe`, a native Windows installer that installs for the user, again in the folder the user chose before, closing the app if it runs, with a Start menu shortcut, an optional desktop one and an uninstaller that removes only what it installed, [signed with `sign.certificate`](#sign-windows-packages) where the app signs Windows packages; `windows.command_line` also installs the `.com` companion and puts the app's folder on the user's `Path`, so consoles opened after installing run the app's command, while Win+R, which finds the companion too, starts the app and closes the console it opened; the uninstaller takes the folder off `Path` only if an installer added it, never an entry you had |
 | Linux | `<name>-<version>-linux-<arch>.deb` for Debian and Ubuntu, and `<name>-<version>-linux-<arch>.pkg.tar.gz` for Arch Linux, which install the app in `/opt/<slug>` with a command, links to its [commands](#commands), its desktop entry and icon (the Arch package includes `.MTREE` for `pacman -Qkk`), and `<name>-<version>-linux-<arch>.AppImage`, which runs on any distribution without installing |
 
-The Windows setup and uninstaller build with Go alone, on any system, and use native Windows dialogs. They speak the languages of the app's catalogs they have words for, Simplified and Traditional Chinese included, picking the system's UI language; `/LANG=<LCID>` picks one for a single run, such as `/LANG=2052` for Simplified Chinese. `/S` installs or uninstalls silently, a final `/D=<folder>` chooses the folder, spaces included, and `/RELAUNCH` opens the app after an update. Without `/D`, an upgrade installs in the folder of the installation it replaces. `-installers=false` or `build.installers: false` builds the packages alone.
+`-installers=false` or `build.installers: false` builds the desktop apps without installers or store packages. To skip only selected desktop systems, list `macos`, `windows` or `linux` in `build.skip_installers`. The `-skip-installers` flag replaces that list with comma-separated names; `-skip-installers=` clears it.
+
+Building a DMG mounts the disk image with `hdiutil attach`, which can be denied without a logged-in GUI session. On a headless Mac, use `-skip-installers=macos` or set `build.skip_installers: [macos]` to keep the signed `.app` and still build the Windows and Linux installers.
+
+The Windows setup and uninstaller build with Go alone, on any system, and use native Windows dialogs. They speak the languages of the app's catalogs they have words for, Simplified and Traditional Chinese included, picking the system's UI language; `/LANG=<LCID>` picks one for a single run, such as `/LANG=2052` for Simplified Chinese. `/S` installs or uninstalls silently, a final `/D=<folder>` chooses the folder, spaces included, and `/RELAUNCH` opens the app after an update. Without `/D`, an upgrade installs in the folder of the installation it replaces.
 
 The installers take pictures and icons of the app's own; each is the app's icon or the built-in picture otherwise:
 

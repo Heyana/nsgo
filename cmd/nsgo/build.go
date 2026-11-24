@@ -425,7 +425,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 			return err
 		}
 		if p.channel() == channelStore {
-			if !p.installers() {
+			if !p.installers(target) {
 				_, err := signMacStoreApp(ctx, p, app)
 				return err
 			}
@@ -435,7 +435,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 			return err
 		}
 		dmg := ""
-		if p.installers() {
+		if p.installers(target) {
 			if dmg, err = buildDMG(ctx, p, app, dir, arch); err != nil {
 				return err
 			}
@@ -448,7 +448,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		if err := buildWindows(ctx, p, dir, goArch(arch)); err != nil {
 			return err
 		}
-		install := p.installers()
+		install := p.installers(target)
 		signer := windowsSignerOf(p)
 		if signer != nil {
 			if err := signer.signWindowsPackage(ctx, p, dir); err != nil {
@@ -538,7 +538,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 			stage(ctx, "bundling the Steam GTK runtime")
 			return addSteamLinuxRuntime(p, dir)
 		}
-		if !p.installers() {
+		if !p.installers(target) {
 			return nil
 		}
 		if p.channel() == channelStore {
@@ -614,7 +614,7 @@ func buildMacUniversal(ctx context.Context, p *project, dir string) error {
 		return err
 	}
 	if p.channel() == channelStore {
-		if !p.installers() {
+		if !p.installers("macos") {
 			_, err := signMacStoreApp(ctx, p, app)
 			return err
 		}
@@ -635,7 +635,7 @@ func buildMacUniversal(ctx context.Context, p *project, dir string) error {
 		}
 	}
 	dmg := ""
-	if p.installers() {
+	if p.installers("macos") {
 		dmg, err = buildDMG(ctx, p, app, dir, "universal")
 		if err != nil {
 			return err

@@ -315,6 +315,8 @@ type project struct {
 		FPS any `yaml:"fps"`
 		// Installers packages the desktop targets for users to install (installer.go): a disk image on macOS, a Windows installer on Windows, Debian and Arch packages on Linux; it defaults to true.
 		Installers *bool `yaml:"installers"`
+		// SkipInstallers omits installers for the listed desktop systems.
+		SkipInstallers []string `yaml:"skip_installers"`
 		// Jobs is how many targets build at once; 0, the default, is
 		// half the CPUs.
 		Jobs int `yaml:"jobs"`
@@ -376,10 +378,24 @@ func (p *project) openOutput() bool {
 	return p.Build.Open != nil && *p.Build.Open
 }
 
-// installers reports whether nsgo build packages desktop targets for
-// users to install, unless build.installers turns it off.
-func (p *project) installers() bool {
-	return p.channel() != channelSteam && (p.Build.Installers == nil || *p.Build.Installers)
+// installers reports whether to make an installer for a desktop system
+// or an expanded target of that system.
+func (p *project) installers(target string) bool {
+	if p.channel() == channelSteam || (p.Build.Installers != nil && !*p.Build.Installers) {
+		return false
+	}
+	system, _, _ := strings.Cut(target, "_")
+	_, desktop := desktopSystems[system]
+	return desktop && !slices.Contains(p.Build.SkipInstallers, system)
+}
+
+func validateSkipInstallers(systems []string) error {
+	for _, system := range systems {
+		if _, ok := desktopSystems[system]; !ok {
+			return fmt.Errorf("unknown desktop system %q; use macos, windows or linux", system)
+		}
+	}
+	return nil
 }
 
 // hotReload reports whether nsgo dev rebuilds the app on changes, unless
@@ -475,6 +491,9 @@ func load(dir string) (*project, error) {
 		if err := validateAppImageUpdate(*p.Linux.AppImageUpdate); err != nil {
 			return nil, fmt.Errorf("nsgo.yaml: linux.appimage_update: %w", err)
 		}
+	}
+	if err := validateSkipInstallers(p.Build.SkipInstallers); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: build.skip_installers: %w", err)
 	}
 	for _, tag := range p.Build.Tags {
 		if !validTag(tag) {

@@ -492,6 +492,27 @@ func TestManifestSkippedWhenInapplicable(t *testing.T) {
 		checkNoneWritten(t, p, []string{"macos_arm64", "windows_x64"})
 	})
 
+	t.Run("skip_macos", func(t *testing.T) {
+		p, _ := updatingProject(t, "")
+		p.Build.SkipInstallers = []string{"macos"}
+		if err := p.cleanReleaseDir(); err != nil {
+			t.Fatal(err)
+		}
+		writeFiles(t, p.releaseDir(), map[string]string{
+			p.releaseName("macos_arm64", ".dmg"):       "dmg from an earlier build",
+			p.releaseName("windows_x64", "-setup.exe"): "exe",
+		})
+		if err := p.writePackageManifests(t.Context(), []string{"macos_arm64", "windows_x64"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(p.releaseDir(), "homebrew")); !os.IsNotExist(err) {
+			t.Errorf("Homebrew cask directory: want none, got %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(p.releaseDir(), "winget", p.ID+".installer.yaml")); err != nil {
+			t.Errorf("winget installer manifest: %v", err)
+		}
+	})
+
 	// Missing release URL skips manifests without error.
 	t.Run("no_release_url", func(t *testing.T) {
 		p, _ := updatingProject(t, "")

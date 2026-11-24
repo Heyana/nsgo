@@ -166,7 +166,7 @@ var metainfoTemplate = template.Must(template.New("metainfo").Funcs(template.Fun
 // the archives there, each by its download in the release, else by its
 // path beside the manifest, for flatpak-builder to build here.
 func (p *project) writeFlatpakManifest(targets []string) error {
-	if p.channel() != channelStore || !p.installers() || !slices.ContainsFunc(targets, func(t string) bool { return strings.HasPrefix(t, "linux_") }) {
+	if p.channel() != channelStore || !p.installers("linux") || !slices.ContainsFunc(targets, func(t string) bool { return strings.HasPrefix(t, "linux_") }) {
 		return nil
 	}
 	base := p.releaseFilesURL()

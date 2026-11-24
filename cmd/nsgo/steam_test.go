@@ -18,7 +18,7 @@ func TestSteamBuildChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 	flags.apply(p)
-	if p.installers() || p.updatesOn() || p.updates() || p.sparklePlist("macos_arm64") != "" {
+	if p.installers("macos_arm64") || p.updatesOn() || p.updates() || p.sparklePlist("macos_arm64") != "" {
 		t.Fatal("Steam build enables installers or app updates")
 	}
 	for _, tc := range []struct {

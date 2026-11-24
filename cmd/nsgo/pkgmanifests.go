@@ -42,11 +42,11 @@ const (
 // writePackageManifests writes Homebrew cask and winget manifests for a
 // direct release's macOS and Windows installers.
 func (p *project) writePackageManifests(ctx context.Context, targets []string) error {
-	if p.Build.embed || !p.updates() || !p.installers() {
+	if p.Build.embed || !p.updates() {
 		return nil
 	}
-	hasMac := slices.ContainsFunc(targets, func(t string) bool { return strings.HasPrefix(t, "macos_") })
-	hasWin := slices.ContainsFunc(targets, func(t string) bool { return strings.HasPrefix(t, "windows_") })
+	hasMac := p.installers("macos") && slices.ContainsFunc(targets, func(t string) bool { return strings.HasPrefix(t, "macos_") })
+	hasWin := p.installers("windows") && slices.ContainsFunc(targets, func(t string) bool { return strings.HasPrefix(t, "windows_") })
 	if !hasMac && !hasWin {
 		return nil
 	}

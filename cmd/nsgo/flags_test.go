@@ -260,6 +260,56 @@ func TestBuildFlagsApply(t *testing.T) {
 	}
 }
 
+func TestBuildInstallerSelection(t *testing.T) {
+	desktop := []string{"macos_arm64", "macos_x64", "macos_universal", "windows_x64", "linux_x64"}
+	withoutMac := []string{"windows_x64", "linux_x64"}
+	for _, tc := range []struct {
+		name, config string
+		args, want   []string
+	}{
+		{"default", "", nil, desktop},
+		{"skip_macos", "skip_installers: [macos]", nil, withoutMac},
+		{"replace_skips", "skip_installers: [windows]", []string{"-skip-installers=macos,linux"}, []string{"windows_x64"}},
+		{"clear_skips", "skip_installers: [macos]", []string{"-skip-installers="}, desktop},
+		{"global_config", "installers: false", nil, nil},
+		{"global_flag", "skip_installers: [macos]", []string{"-installers=false"}, nil},
+		{"enable_unskipped", "installers: false, skip_installers: [macos]", []string{"-installers"}, withoutMac},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFiles(t, dir, map[string]string{"nsgo.yaml": "name: Studio\nbuild: {" + tc.config + "}\n"})
+			p, err := load(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fs := flag.NewFlagSet("build", flag.ContinueOnError)
+			flags := bindBuildFlags(fs)
+			if err := fs.Parse(tc.args); err != nil {
+				t.Fatal(err)
+			}
+			flags.apply(p)
+			for _, target := range desktop {
+				if got, want := p.installers(target), slices.Contains(tc.want, target); got != want {
+					t.Errorf("%s installer enabled = %t, want %t", target, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildRejectsUnknownInstallerSystem(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{"nsgo.yaml": "name: Studio\nbuild: {skip_installers: [macso]}\n"})
+	if _, err := load(dir); err == nil || !strings.Contains(err.Error(), `build.skip_installers: unknown desktop system "macso"`) {
+		t.Errorf("load with misspelled installer system: %v", err)
+	}
+	fs := flag.NewFlagSet("build", flag.ContinueOnError)
+	bindBuildFlags(fs)
+	if err := fs.Set("skip-installers", "macso"); err == nil || !strings.Contains(err.Error(), `"macso"`) {
+		t.Errorf("flag with misspelled installer system: %v", err)
+	}
+}
+
 func TestBuildSigningProfileFlags(t *testing.T) {
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
 	f := bindBuildFlags(fs)

@@ -395,11 +395,16 @@ func TestInstallScripts(t *testing.T) {
 		t.Fatal("scripts written without release.github")
 	}
 	p.Releases.GitHub = "me/my-app"
-	if err := p.writeInstallScripts(t.Context(), []string{"web", "android_arm64"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(p.releaseDir(), "install.sh")); err == nil {
-		t.Fatal("scripts written without a desktop target")
+	p.Build.SkipInstallers = []string{"macos"}
+	for _, targets := range [][]string{{"web", "android_arm64"}, {"web", "macos_arm64"}} {
+		if err := p.writeInstallScripts(t.Context(), targets); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"install.sh", "install.ps1"} {
+			if _, err := os.Stat(filepath.Join(p.releaseDir(), name)); !os.IsNotExist(err) {
+				t.Errorf("%s for %v: want no script, got %v", name, targets, err)
+			}
+		}
 	}
 	if err := p.writeInstallScripts(t.Context(), []string{"web", "linux_x64"}); err != nil {
 		t.Fatal(err)

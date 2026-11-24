@@ -62,6 +62,8 @@ go tool nsgo build -release-notes notes.md  # the release's notes, which the upd
 
 Packages land in `dist/<name>-<version>-<target>`, and everything to hand out in `dist/releases`, each file named `<name>-<version>-<system>-<arch>` with its `.sha256`. Direct releases with macOS or Windows installers also write a Homebrew cask (`dist/releases/homebrew/<slug>.rb`, with `auto_updates true`) and a winget multi-file manifest (`dist/releases/winget/`). Builds are release builds; `go tool nsgo dev -release` runs one with hot reload for measuring.
 
+On a headless Mac, set `build.skip_installers: [macos]` or pass `-skip-installers=macos` to keep the signed `.app` and build the other desktop installers without mounting a DMG. [Installers](https://nsgo.dev/docs/building.md#installers)
+
 Use the raw Git tag prefix in `release.tag_prefix`; generated install scripts encode it for GitHub download URLs. [GitHub releases](https://nsgo.dev/docs/building.md#publish-on-github)
 
 `sign.certificate` also signs the Store channel's MSIX in Go. For installation outside the Store, match the certificate subject to `windows.store.publisher` and use a certificate the receiving Windows machine trusts; without signing settings, the Store signs the uploaded package. See [Windows signing](https://nsgo.dev/docs/building.md#sign-windows-packages).

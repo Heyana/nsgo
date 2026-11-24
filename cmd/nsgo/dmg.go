@@ -83,7 +83,7 @@ func buildDMG(ctx context.Context, p *project, app, dir, arch string) (string, e
 	}
 	disk, err := hdiutilAttach(ctx, "-readwrite", "-noverify", "-noautoopen", "-nobrowse", "-mountpoint", mnt, rw)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("mounting the disk image (the session may be headless or not allowed to mount; use -skip-installers=macos to build the .app without a DMG): %w", err)
 	}
 	err = finishVolume(ctx, mnt, volume, name, pic, layout, icon != nil)
 	// macOS creates these while the image is mounted.

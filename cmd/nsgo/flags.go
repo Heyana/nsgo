@@ -237,6 +237,7 @@ type buildFlags struct {
 	ldflags *[]string
 	open    *boolOverride
 	install *boolOverride
+	skip    *override[[]string]
 	jobs    *override[int]
 	channel *override[string]
 	notes   string
@@ -255,6 +256,13 @@ func bindBuildFlags(fs *flag.FlagSet) *buildFlags {
 	f.ldflags = stringListFlag(fs, "ldflags", "add app linker `flags` to nsgo.yaml's build.ldflags, as go build's -ldflags takes them; repeat for more")
 	f.open = boolFlag(fs, "open", "open the output directory (default: nsgo.yaml's build.open)")
 	f.install = boolFlag(fs, "installers", "package macOS, Windows and Linux targets for users to install: a disk image, a Windows installer, Debian and Arch packages (default: nsgo.yaml's build.installers, else true)")
+	f.skip = bindOverride(fs, "skip-installers", "skip installers for comma-separated desktop `systems`: macos, windows or linux (default: nsgo.yaml's build.skip_installers)", func(s string) ([]string, error) {
+		if s == "" {
+			return nil, nil
+		}
+		systems := strings.Split(s, ",")
+		return systems, validateSkipInstallers(systems)
+	})
 	f.jobs = intFlag(fs, "jobs", "how many targets build at once, sharing compile workers across them (default: nsgo.yaml's build.jobs, else half the CPUs)")
 	f.channel = stringFlag(fs, "channel", "the `channel` the packages are handed out through, which decides how they update: direct, store, steam or none (default: nsgo.yaml's updates.channel)")
 	fs.StringVar(&f.notes, "release-notes", "", "a Markdown `file` of the release's notes, which the appcasts carry for the update prompts to show")
@@ -282,6 +290,7 @@ func (f *buildFlags) apply(p *project) {
 	if f.install.set {
 		p.Build.Installers = &f.install.value
 	}
+	f.skip.replace(&p.Build.SkipInstallers)
 	f.jobs.replace(&p.Build.Jobs)
 	f.channel.replace(&p.Updates.Channel)
 	if f.notes != "" {

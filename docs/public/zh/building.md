@@ -74,6 +74,7 @@ build:
   ldflags: []           # 应用自己的链接器参数，例如 -X main.releaseDate=2026-11-17
   open: false           # true 时构建后打开输出目录
   installers: true      # false 时不生成磁盘映像、Windows 安装程序和 Linux 软件包
+  # skip_installers: [macos]  # 不生成所列桌面系统的安装程序
   jobs: 0               # 同时构建的目标数；0 为 CPU 数的一半，1 为逐个构建
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, tvos, tvos_simulator, watchos, watchos_simulator, android_arm64, web]
 # apple: { sign_in_with_apple: true }  # 「通过 Apple 登录」的授权，用于 iOS、tvOS 和 Mac App Store 构建
@@ -163,7 +164,11 @@ licenses:
 
 Arch 包包含 `.MTREE`，供 `pacman -Qkk` 检查已安装文件的内容与元数据。
 
-Windows 安装与卸载程序只需 Go 即可在任何系统上构建，界面使用 Windows 原生对话框。程序按系统界面语言，从应用文案中它有译文的语言里选择，包括简体和繁体中文；`/LANG=<LCID>` 为单次运行指定语言，例如 `/LANG=2052` 使用简体中文。`/S` 静默安装或卸载；放在最后的 `/D=<目录>` 指定安装目录，可含空格；`/RELAUNCH` 在更新后启动应用。不传 `/D` 时，升级装在被替换的那次安装所在的目录。`-installers=false` 或 `build.installers: false` 只构建包本身。
+`-installers=false` 或 `build.installers: false` 会省略所有桌面安装程序和商店包，但仍构建应用本身。若只跳过部分桌面系统，在 `build.skip_installers` 中列出 `macos`、`windows` 或 `linux`。`-skip-installers` 用逗号分隔的系统名替换此列表；`-skip-installers=` 清空列表。
+
+构建 DMG 时，工具通过 `hdiutil attach` 挂载磁盘映像；没有登录图形会话时，系统可能拒绝挂载。在无图形会话的 Mac 上，传入 `-skip-installers=macos` 或设置 `build.skip_installers: [macos]`，即可保留已签名的 `.app`，同时继续构建 Windows 和 Linux 的安装程序。
+
+Windows 安装与卸载程序只需 Go 即可在任何系统上构建，界面使用 Windows 原生对话框。程序按系统界面语言，从应用文案中它有译文的语言里选择，包括简体和繁体中文；`/LANG=<LCID>` 为单次运行指定语言，例如 `/LANG=2052` 使用简体中文。`/S` 静默安装或卸载；放在最后的 `/D=<目录>` 指定安装目录，可含空格；`/RELAUNCH` 在更新后启动应用。不传 `/D` 时，升级装在被替换的那次安装所在的目录。
 
 安装程序可以使用应用自己的图片和图标，未指定时使用应用图标或内置图片：
 
