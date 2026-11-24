@@ -176,6 +176,36 @@ func TestPhysicalKeyStepsFollowThePositionAndLayout(t *testing.T) {
 	}
 }
 
+func TestBlurWindowReleasesNamedAndPhysicalKeys(t *testing.T) {
+	var keys, codes []string
+	var ups []core.KeyEvent
+	app := Start(t, func(cx *core.Scope) core.Node {
+		cx.Effect(func() {
+			keys = core.KeysDown(cx)
+			codes = core.KeyCodesDown(cx)
+		})
+		return core.View{
+			TestID: "pad", Focusable: func() bool { return true },
+			OnKeyUp: func(e core.KeyEvent) { ups = append(ups, e) },
+			Style:   core.Style{Width: core.Pt(100), Height: core.Pt(30)},
+		}
+	}, Environment(core.Environment{OS: core.OSWindows, Idiom: core.IdiomDesktop, KeyCodeNames: map[string]string{"KeyW": "z"}}))
+	app.Focus("id:pad")
+	app.KeyCodeDown("KeyW")
+	app.KeyDown("left")
+	if len(keys) != 2 || !slices.Contains(keys, "z") || !slices.Contains(keys, "left") || !slices.Equal(codes, []string{"KeyW"}) {
+		t.Fatalf("before blur: keys %v, codes %v; want left and z, KeyW", keys, codes)
+	}
+	app.BlurWindow()
+	if len(keys) != 0 || len(codes) != 0 {
+		t.Fatalf("after blur: keys %v, codes %v; want none", keys, codes)
+	}
+	physical, named := core.KeyEvent{Key: "z", Code: "KeyW"}, core.KeyEvent{Key: "left"}
+	if len(ups) != 2 || !slices.Contains(ups, physical) || !slices.Contains(ups, named) {
+		t.Fatalf("blur key-ups %+v, want %+v and %+v", ups, physical, named)
+	}
+}
+
 // TestKeysDownHearsKeysNoViewHears holds the keys a frame loop reads to follow KeyDown and KeyUp with no view that hears keys focused, once a read asked for every key, and to leave out those typed into a field (#1046).
 func TestKeysDownHearsKeysNoViewHears(t *testing.T) {
 	var held string

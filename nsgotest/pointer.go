@@ -769,10 +769,10 @@ func (a *App) BlurWindow() {
 		a.done()
 		return
 	}
-	for name, h := range a.held {
-		delete(a.held, name)
+	for identity, h := range a.held {
+		delete(a.held, identity)
 		if h.reported && h.tree != nil {
-			h.tree.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: h.id, Text: name})
+			h.tree.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: h.id, Text: h.name, KeyCode: h.code})
 		}
 	}
 	for b := driver.MouseButtonLeft; b <= driver.MouseButtonForward; b++ {
