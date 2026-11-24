@@ -995,6 +995,7 @@ func (w *window) shutdown(forced bool) {
 		releaseTimeZoneWatcher()
 	}
 	w.closeAudio()
+	stopGeoClue(w)
 	w.discovery.close()
 	w.releasePointer(false)
 	unregisterLiveWindow(w)
@@ -1168,9 +1169,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.openURL(it.Value, it.Count)
 			continue
 		case driver.ItemSensor:
-			if it.Sensor.Command != driver.SensorStop {
-				handleGeoClue(w, it)
-			}
+			handleGeoClue(w, it)
 			continue
 		case driver.ItemBiometricAvailability, driver.ItemBiometricAuthenticate:
 			w.engine.Dispatch(driver.NoBiometric(it))

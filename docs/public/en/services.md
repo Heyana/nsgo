@@ -778,7 +778,7 @@ android:
   permissions: [ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION, FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION]
 ```
 
-iOS and watchOS give location and motion, macOS location, tvOS one fix at a time and Android both through the framework's own providers. A secure browser supplies geolocation fixes and, on mobile, accelerometer, gyroscope and fused motion readings. Call `cx.RequestPermission(core.PermissionMotion, done)` from a press handler on Safari. The browser reports location unavailable without `navigator.geolocation`, motion unavailable on desktops and for magnetometer streams. In TSX, `Sensors` has `permission`, `requestPermission`, `locate`, `watchLocation` and `watchMotion`, under the package capabilities `location`, `backgroundLocation` and `motion`, in milliseconds.
+iOS and watchOS give location and motion, macOS location, tvOS one fix at a time and Android both through the framework's own providers. Linux gets fixes and streams from GeoClue 2 on the system bus, whose agent asks the user as the app's first request starts; since GeoClue cannot be asked without prompting, the permission reads as not asked until the app has asked in that run, and background location is unavailable. A secure browser supplies geolocation fixes and, on mobile, accelerometer, gyroscope and fused motion readings. Call `cx.RequestPermission(core.PermissionMotion, done)` from a press handler on Safari. The browser reports location unavailable without `navigator.geolocation`, motion unavailable on desktops and for magnetometer streams. In TSX, `Sensors` has `permission`, `requestPermission`, `locate`, `watchLocation` and `watchMotion`, under the package capabilities `location`, `backgroundLocation` and `motion`, in milliseconds.
 
 ## Audio
 
