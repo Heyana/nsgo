@@ -44,7 +44,7 @@ type ExternalTextureDesc struct {
 	Handle uintptr
 	// Plane picks the plane of an NV12 or P010 texture: 0 for luma, 1 for chroma (ExternalD3D11Shared).
 	Plane uint32
-	// KeyedMutex makes the backend hold the texture's IDXGIKeyedMutex while a submitted frame reads it, acquiring AcquireKey and releasing ReleaseKey (ExternalD3D11Shared). The texture must have been created with D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX; with both keys 0 it is a plain mutex.
+	// KeyedMutex makes the backend hold the texture's IDXGIKeyedMutex while a submitted frame reads it, acquiring AcquireKey and releasing ReleaseKey (ExternalD3D11Shared). The texture must have been created with D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX; with both keys 0 it is a plain mutex. Each submitted frame that binds the texture takes AcquireKey and releases ReleaseKey again, so use keys that allow repeated reads (such as equal keys) or sample each import in one frame only.
 	KeyedMutex bool
 	AcquireKey uint64
 	ReleaseKey uint64

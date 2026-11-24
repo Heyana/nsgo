@@ -269,7 +269,7 @@ func (p *d3d11PipelineHandle) Release() {
 
 type d3d11NativeOps struct {
 	scaleFn func() float32
-	// shared holds each shared texture imports opened, by NT handle (gpu_external.go).
+	// shared holds each shared texture opened during the current Submit, by NT handle, cleared by EndImportBatch (gpu_external.go).
 	shared map[uintptr]*d3d11SharedTexture
 }
 

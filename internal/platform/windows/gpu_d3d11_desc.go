@@ -1087,6 +1087,8 @@ type d3dTrackedTexture struct {
 	handle  d3dReleaser
 	// external describes a texture opened by GPUOpImportTexture, which the controller only samples.
 	external *driver.GPUExternalTextureDesc
+	// importBatch identifies the Submit that imported this texture so planes imported together share one keyed-mutex acquisition while a recycled NT handle in a later Submit does not alias them.
+	importBatch uint64
 }
 
 type d3dTrackedSampler struct {
@@ -1136,6 +1138,8 @@ type d3dNativeOps interface {
 	ReadTexture(swap d3dReleaser, swapW, swapH uint32, tex *d3dTrackedTexture, region driver.GPUTextureRegion, surface bool) ([]byte, uint32, error)
 	// ImportTexture opens a shared texture's plane and returns its handle and the shared texture's descriptor.
 	ImportTexture(desc driver.GPUExternalTextureDesc) (d3dReleaser, d3d11Texture2DDesc, uint32, error)
+	// EndImportBatch drops per-submit shared-handle cache entries without releasing opened textures, so an NT handle closed and recycled by Windows in a later Submit opens the new resource.
+	EndImportBatch()
 	// AcquireKeyedMutex and ReleaseKeyedMutex hold an imported texture's IDXGIKeyedMutex; AcquireKeyedMutex returns d3dKeyedMutexWaitTimeout if it timed out.
 	AcquireKeyedMutex(tex *d3dTrackedTexture, key uint64, timeoutMS uint32) (uint32, error)
 	ReleaseKeyedMutex(tex *d3dTrackedTexture, key uint64)
@@ -1147,13 +1151,14 @@ type d3dGPUController struct {
 	ops  d3dNativeOps
 	emit func(*driver.GPUEvent)
 
-	cfg        driver.GPUViewConfig
-	cfgDirty   bool
-	pw, ph     uint32
-	generation uint32
-	ready      bool
-	lost       bool
-	disposed   bool
+	cfg         driver.GPUViewConfig
+	cfgDirty    bool
+	pw, ph      uint32
+	generation  uint32
+	importBatch uint64
+	ready       bool
+	lost        bool
+	disposed    bool
 
 	swap       d3dReleaser
 	buffers    map[driver.GPUID]*d3dTrackedBuffer
@@ -1334,6 +1339,9 @@ func (c *d3dGPUController) Submit(frame driver.GPUFrame) (drewSwap bool) {
 
 	var deferredReadbacks []driver.GPUResourceOp
 	var deferredDestroys []driver.GPUResourceOp
+
+	c.importBatch++
+	defer c.ops.EndImportBatch()
 
 	// Phase 1: creates and writes.
 	for _, op := range frame.Ops {
@@ -1555,9 +1563,10 @@ func (c *d3dGPUController) execCreateOrWrite(op driver.GPUResourceOp) bool {
 				Format:      ext.Format,
 				Usage:       driver.GPUTextureSampled,
 			},
-			texDesc:  td,
-			handle:   handle,
-			external: &ext,
+			texDesc:     td,
+			handle:      handle,
+			external:    &ext,
+			importBatch: c.importBatch,
 		}
 		return true
 
@@ -1702,10 +1711,14 @@ func (c *d3dGPUController) execDestroy(op driver.GPUResourceOp) {
 	}
 }
 
-// acquireExternal acquires the keyed mutex of each imported texture that frame's passes bind, once per shared handle, and returns those it holds.
+// acquireExternal acquires the keyed mutex of each imported texture that frame's passes bind, once per shared handle within its import batch, and returns those it holds.
 func (c *d3dGPUController) acquireExternal(frame driver.GPUFrame) []*d3dTrackedTexture {
+	type sharedKey struct {
+		batch  uint64
+		handle uintptr
+	}
 	var held []*d3dTrackedTexture
-	seen := map[uintptr]bool{}
+	seen := map[sharedKey]bool{}
 	for _, pass := range frame.Passes {
 		for _, cmd := range pass.Commands {
 			if cmd.Kind != driver.GPUCmdSetBindGroup {
@@ -1717,10 +1730,14 @@ func (c *d3dGPUController) acquireExternal(frame driver.GPUFrame) []*d3dTrackedT
 			}
 			for _, e := range bg.entries {
 				t := c.textures[e.Texture]
-				if e.Texture == 0 || t == nil || t.external == nil || !t.external.KeyedMutex || seen[t.external.Handle] {
+				if e.Texture == 0 || t == nil || t.external == nil || !t.external.KeyedMutex {
 					continue
 				}
-				seen[t.external.Handle] = true
+				key := sharedKey{batch: t.importBatch, handle: t.external.Handle}
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
 				hr, err := c.ops.AcquireKeyedMutex(t, t.external.AcquireKey, d3dKeyedMutexAcquireTimeoutMS)
 				switch {
 				case err != nil:

@@ -280,6 +280,7 @@ func TestD3D11BGRASwizzleAndDeviceLostHR(t *testing.T) {
 
 type fakeD3DHandle struct {
 	kind     string
+	sharedID int
 	released *int
 	alive    *int
 	closed   bool
@@ -306,6 +307,8 @@ type fakeD3D11Ops struct {
 	executedCopies    int
 	readbackPixelsOut []byte
 	imports           int
+	sharedOpens       int
+	shared            map[uintptr]int
 	keyedMutexBusy    bool
 	keyedMutexLog     []string
 }
@@ -383,7 +386,22 @@ func (f *fakeD3D11Ops) ReadTexture(swap d3dReleaser, swapW, swapH uint32, tex *d
 
 func (f *fakeD3D11Ops) ImportTexture(desc driver.GPUExternalTextureDesc) (d3dReleaser, d3d11Texture2DDesc, uint32, error) {
 	f.imports++
-	return f.alloc("imported texture"), d3d11Texture2DDesc{width: desc.Width, height: desc.Height, mipLevels: 1, arraySize: 1}, 0, nil
+	if f.shared == nil {
+		f.shared = map[uintptr]int{}
+	}
+	sid, ok := f.shared[desc.Handle]
+	if !ok {
+		f.sharedOpens++
+		sid = f.sharedOpens
+		f.shared[desc.Handle] = sid
+	}
+	h := f.alloc("imported texture")
+	h.sharedID = sid
+	return h, d3d11Texture2DDesc{width: desc.Width, height: desc.Height, mipLevels: 1, arraySize: 1}, 0, nil
+}
+
+func (f *fakeD3D11Ops) EndImportBatch() {
+	clear(f.shared)
 }
 
 func (f *fakeD3D11Ops) AcquireKeyedMutex(tex *d3dTrackedTexture, key uint64, timeoutMS uint32) (uint32, error) {
@@ -725,6 +743,69 @@ func TestD3D11ControllerImportsTexturesAndHoldsKeyedMutexWhileDrawing(t *testing
 	ctrl.Submit(driver.GPUFrame{Generation: 1, Ops: []driver.GPUResourceOp{{Kind: driver.GPUOpDestroyTexture, ID: 1}, {Kind: driver.GPUOpDestroyTexture, ID: 2}}})
 	if ops.alive != 1 || len(ctrl.textures) != 0 {
 		t.Fatalf("alive after destroying imports = %d (want the swap chain only), textures = %v", ops.alive, ctrl.textures)
+	}
+	ctrl.Release()
+	if ops.alive != 0 {
+		t.Fatalf("leak: alive = %d", ops.alive)
+	}
+}
+
+// TestD3D11ImportedTextureRecycledHandleOpensFreshResource verifies that shared-handle deduplication is scoped to one Submit: when a frame destroys the previous imports and imports a new shared texture whose Windows NT handle value was recycled, phase 1 opens a fresh resource rather than reusing the old texture's cached entry (which is only destroyed in phase 5), and keyed-mutex acquisition does not alias distinct import batches.
+func TestD3D11ImportedTextureRecycledHandleOpensFreshResource(t *testing.T) {
+	ops := &fakeD3D11Ops{}
+	ctrl := newD3DGPUController(ops, nil)
+	if !ctrl.MountOrResize(16, 16) {
+		t.Fatal("mount failed")
+	}
+	const recycledHandle = uintptr(0x40)
+	luma := &driver.GPUExternalTextureDesc{Kind: driver.GPUExternalD3D11Shared, Width: 16, Height: 16, Format: driver.GPUFormatR8Unorm, Handle: recycledHandle, KeyedMutex: true, AcquireKey: 1, ReleaseKey: 1}
+	chroma := &driver.GPUExternalTextureDesc{Kind: driver.GPUExternalD3D11Shared, Width: 8, Height: 8, Plane: 1, Format: driver.GPUFormatRG8Unorm, Handle: recycledHandle, KeyedMutex: true, AcquireKey: 1, ReleaseKey: 1}
+
+	// Frame 1: both planes imported in the same Submit share one opened resource.
+	ctrl.Submit(driver.GPUFrame{
+		Generation: 1,
+		Ops: []driver.GPUResourceOp{
+			{Kind: driver.GPUOpImportTexture, ID: 1, External: luma},
+			{Kind: driver.GPUOpImportTexture, ID: 2, External: chroma},
+		},
+	})
+	h1 := ctrl.textures[1].handle.(*fakeD3DHandle)
+	h2 := ctrl.textures[2].handle.(*fakeD3DHandle)
+	if ops.sharedOpens != 1 || h1.sharedID != 1 || h2.sharedID != 1 {
+		t.Fatalf("frame 1 shared opens=%d, ids=(%d,%d), want 1 and (1,1)", ops.sharedOpens, h1.sharedID, h2.sharedID)
+	}
+	if len(ops.shared) != 0 {
+		t.Fatalf("per-submit shared map was not cleared after frame 1: %v", ops.shared)
+	}
+
+	// Frame 2: destroys frame 1's textures (phase 5) while importing frame 2's planes under the recycled handle value (phase 1).
+	// Also bind texture 1 (still alive during phases 2-3) alongside texture 3 to confirm keyed mutexes are not aliased across batches.
+	pass := driver.GPUPass{
+		ColorAttachments: []driver.GPUColorAttachment{{LoadOp: driver.GPULoadClear, StoreOp: driver.GPUStoreStore}},
+		Commands:         []driver.GPUCommand{{Kind: driver.GPUCmdSetBindGroup, ID: 10}, {Kind: driver.GPUCmdDraw, U0: 3}},
+	}
+	ctrl.Submit(driver.GPUFrame{
+		Generation: 1,
+		Ops: []driver.GPUResourceOp{
+			{Kind: driver.GPUOpDestroyTexture, ID: 1},
+			{Kind: driver.GPUOpDestroyTexture, ID: 2},
+			{Kind: driver.GPUOpImportTexture, ID: 3, External: luma},
+			{Kind: driver.GPUOpImportTexture, ID: 4, External: chroma},
+			{Kind: driver.GPUOpCreateBindGroup, ID: 10, BindGroup: &driver.GPUBindGroupDesc{Entries: []driver.GPUBindGroupEntry{{Binding: 0, Texture: 1}, {Binding: 1, Texture: 3}, {Binding: 2, Texture: 4}}}},
+		},
+		Passes: []driver.GPUPass{pass},
+	})
+	h3 := ctrl.textures[3].handle.(*fakeD3DHandle)
+	h4 := ctrl.textures[4].handle.(*fakeD3DHandle)
+	if ops.sharedOpens != 2 || h3.sharedID != 2 || h4.sharedID != 2 {
+		t.Fatalf("frame 2 shared opens=%d, ids=(%d,%d), want 2 and (2,2)", ops.sharedOpens, h3.sharedID, h4.sharedID)
+	}
+	if ctrl.textures[1] != nil || ctrl.textures[2] != nil {
+		t.Fatalf("frame 1 textures survived deferred destroy")
+	}
+	// Textures 1 (batch 1) and 3/4 (batch 2) must each acquire and release their own keyed mutex (2 acquires + 2 releases).
+	if len(ops.keyedMutexLog) != 4 {
+		t.Fatalf("keyed mutex log = %v, want 4 entries (two distinct batches)", ops.keyedMutexLog)
 	}
 	ctrl.Release()
 	if ops.alive != 0 {

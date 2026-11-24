@@ -199,10 +199,16 @@ func TestD3D11ImportedNV12MatchesUpload(t *testing.T) {
 	}
 	mutex.call(keyedMutexReleaseSync, keyedMutexArgs(1)...)
 
-	if len(ops.shared) != 1 {
-		t.Fatalf("both planes should view one opened texture, have %d", len(ops.shared))
+	if len(ops.shared) != 0 {
+		t.Fatalf("EndImportBatch should clear the per-submit shared handle cache, have %d entries", len(ops.shared))
+	}
+	h3 := ctrl.textures[3].handle.(*d3d11TextureHandle)
+	h4 := ctrl.textures[4].handle.(*d3d11TextureHandle)
+	if h3.shared == nil || h3.shared != h4.shared || h3.tex != h4.tex {
+		t.Fatalf("both planes should view one opened texture")
 	}
 	// Closing the imports releases the views they made and the texture they opened.
+	opened := h3.shared
 	var views []*comObject
 	for _, id := range []driver.GPUID{3, 4} {
 		srv := ctrl.textures[id].handle.(*d3d11TextureHandle).srv
@@ -218,7 +224,7 @@ func TestD3D11ImportedNV12MatchesUpload(t *testing.T) {
 			t.Errorf("plane %d's view has %d references left after its destroy", i, refs)
 		}
 	}
-	if len(ops.shared) != 0 {
-		t.Errorf("the opened shared texture outlived its planes")
+	if opened.refs != 0 || opened.tex != nil || opened.mutex != nil {
+		t.Errorf("the opened shared texture outlived its planes: refs=%d tex=%v mutex=%v", opened.refs, opened.tex, opened.mutex)
 	}
 }

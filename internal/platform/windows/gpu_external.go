@@ -27,7 +27,7 @@ const (
 	keyedMutexReleaseSync   = 9
 )
 
-// d3d11SharedTexture is a shared texture opened once for all the planes imported from its handle: opening a handle twice can make two resources, and holding the keyed mutex of one does not make the other's contents visible.
+// d3d11SharedTexture is a shared texture opened once for all the planes imported from its handle within one Submit: opening a handle twice can make two resources, and holding the keyed mutex of one does not make the other's contents visible. EndImportBatch drops the handle map entries after each Submit without releasing open textures so a handle value Windows later recycles opens the new resource.
 type d3d11SharedTexture struct {
 	ops    *d3d11NativeOps
 	handle uintptr
@@ -46,7 +46,12 @@ func (s *d3d11SharedTexture) release() {
 	}
 }
 
-// openShared returns the shared texture of handle, opening it on the device the GPU views render with the first time.
+// EndImportBatch forgets this submit's handle-to-resource entries without releasing any imported textures' references.
+func (n *d3d11NativeOps) EndImportBatch() {
+	clear(n.shared)
+}
+
+// openShared returns the shared texture of handle for the current submit, opening it on the device the GPU views render with the first time in this submit.
 func (n *d3d11NativeOps) openShared(d3d *comObject, handle uintptr) (*d3d11SharedTexture, uint32, error) {
 	if s := n.shared[handle]; s != nil {
 		s.refs++
