@@ -372,40 +372,6 @@ func tarHeaders(t *testing.T, data []byte) map[string]*tar.Header {
 	}
 }
 
-// The installer installs and removes the commands as the app's files, and with windows.path puts its folder on the user's Path.
-func TestNSISScriptCommands(t *testing.T) {
-	dir := t.TempDir()
-	writeFiles(t, dir, map[string]string{"App.exe": "exe", "tool.exe": "command"})
-	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0"}
-	p.Commands = []command{{Name: "tool", Package: "./cmd/tool"}}
-	script := func() string {
-		d, err := nsisScript(t.Context(), p, dir, "x64")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var out bytes.Buffer
-		if err := nsisTemplate.Execute(&out, d); err != nil {
-			t.Fatal(err)
-		}
-		return out.String()
-	}
-	plain := script()
-	if !strings.Contains(plain, `Delete "$INSTDIR\tool.exe"`) {
-		t.Error("the uninstaller leaves the command")
-	}
-	if strings.Contains(plain, "Call AddUserPath") {
-		t.Error("the installer changes Path without windows.path")
-	}
-	p.Windows.Path = true
-	withPath := script()
-	if !strings.Contains(withPath, "Call AddUserPath") {
-		t.Error("windows.path puts nothing on Path")
-	}
-	if strings.Contains(withPath, "App.com") {
-		t.Error("windows.path adds the command companion")
-	}
-}
-
 // A signed Windows package signs the commands as the app's executable, replacing a signature they carried.
 func TestSignsWindowsCommands(t *testing.T) {
 	image := buildTestPE(t)

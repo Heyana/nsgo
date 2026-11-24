@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/xml"
 	"os"
 	"path/filepath"
@@ -163,7 +162,7 @@ func TestFileAssociationsWithoutDeclarations(t *testing.T) {
 	if err != nil || len(types) != 0 || len(definitions) != 0 {
 		t.Fatalf("no declarations = %v, %s, %v", types, definitions, err)
 	}
-	d, err := nsisScript(t.Context(), p, dir, "x64")
+	d, err := windowsInstallerPlan(t.Context(), p, dir, "x64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,65 +185,26 @@ func TestLinuxFileAssociationsRequireImportedMIME(t *testing.T) {
 	}
 }
 
-func TestNSISFileAssociations(t *testing.T) {
+func TestWindowsInstallerFileAssociations(t *testing.T) {
 	p := associationProject(t)
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{p.Name + ".exe": "exe"})
-	d, err := nsisScript(t.Context(), p, dir, "x64")
+	d, err := windowsInstallerPlan(t.Context(), p, dir, "x64")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out bytes.Buffer
-	if err := nsisTemplate.Execute(&out, d); err != nil {
-		t.Fatal(err)
-	}
-	script := out.String()
 	for i, f := range d.FileTypes {
-		if !strings.HasPrefix(f.ProgID, p.ID+".") {
-			t.Errorf("foreign ProgID = %s", f.ProgID)
-		}
-		for _, want := range []string{
-			`WriteRegStr HKCU "Software\Classes\` + f.ProgID + `" "" ` + nsisString(p.FileTypes[i].Name),
-			`WriteRegStr HKCU "Software\Classes\` + f.ProgID + `\DefaultIcon" "" '"$INSTDIR\My App.exe",0'`,
-			`WriteRegStr HKCU "Software\Classes\` + f.ProgID + `\shell\open\command" "" '"$INSTDIR\My App.exe" "%1"'`,
-		} {
-			if !strings.Contains(script, want) {
-				t.Errorf("NSIS script lacks %s", want)
-			}
-		}
-		for _, ext := range f.Extensions {
-			if want := `WriteRegStr HKCU "Software\Classes\.` + ext + `\OpenWithProgids" "` + f.ProgID + `" ""`; !strings.Contains(script, want) {
-				t.Errorf("NSIS script lacks %s", want)
-			}
-			if strings.Contains(script, `WriteRegStr HKCU "Software\Classes\.`+ext+`"`) {
-				t.Error("NSIS sets an extension's default handler")
-			}
+		if !strings.HasPrefix(f.ProgID, p.ID+".") || f.Name != p.FileTypes[i].Name || !slices.Equal(f.Extensions, p.FileTypes[i].Extensions) {
+			t.Fatalf("invalid type: %+v", f)
 		}
 	}
-	// Before NSIS 3.06, DeleteRegKey /ifempty ignored values and would take other apps' Open With values and defaults with an extension's key.
-	for _, want := range []string{"!if ${NSIS_PACKEDVERSION} < 0x03006000\n!error", "Call RemoveFileTypes", "Call un.RemoveFileTypes", `StrCmp $1 $2 0 forget_type`,
-		`DeleteRegValue HKCU "Software\Classes\.$3\OpenWithProgids" "$0"`,
-		`DeleteRegKey /ifempty HKCU "Software\Classes\.$3"`,
-		`System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'`,
-		`\FileTypes\$0"`,
-	} {
-		if !strings.Contains(script, want) {
-			t.Errorf("NSIS cleanup lacks %s", want)
-		}
-	}
-	// Reordering or translating types must keep their registry identities.
 	slices.Reverse(p.FileTypes)
 	p.FileTypes[0].Name = "Translated"
-	newData, err := nsisScript(t.Context(), p, dir, "x64")
+	newer, err := windowsInstallerPlan(t.Context(), p, dir, "x64")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if newData.FileTypes[0].ProgID != d.FileTypes[2].ProgID {
-		t.Error("ProgID changed when its type was moved or renamed")
-	}
-	if nsisCompiler() != "" {
-		if _, err := buildNSIS(t.Context(), p, dir, "x64"); err != nil {
-			t.Fatal(err)
-		}
+	if newer.FileTypes[0].ProgID != d.FileTypes[2].ProgID {
+		t.Error("ProgID changed when reordered or renamed")
 	}
 }

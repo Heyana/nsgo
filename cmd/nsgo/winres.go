@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"image"
 	"slices"
 	"strings"
 	"unicode/utf16"
@@ -45,6 +46,16 @@ type windowsVersionTable struct {
 
 // windowsResource writes a COFF object with a .rsrc section holding an icon group of PNG images, when there are images, and the version resource, when there is one, which go build links into a Windows executable. Both share the one object, as the linker takes .rsrc from one object alone.
 func windowsResource(goarch string, images [][]byte, sizes []int, version *windowsVersion) ([]byte, error) {
+	return windowsResourceWithManifest(goarch, images, sizes, version, "", nil)
+}
+
+// windowsIconEntry preserves an ICO's dimensions, palette and bit depth. App PNG icons use the default 32-bit entries; installer ICOs may still hold DIBs.
+type windowsIconEntry struct {
+	Shape  [4]uint8
+	Format [2]uint16
+}
+
+func windowsResourceWithManifest(goarch string, images [][]byte, sizes []int, version *windowsVersion, manifest string, iconEntries []windowsIconEntry) ([]byte, error) {
 	machine, reloc := uint16(0), uint16(0)
 	switch goarch {
 	case "amd64":
@@ -56,7 +67,7 @@ func windowsResource(goarch string, images [][]byte, sizes []int, version *windo
 	default:
 		return nil, fmt.Errorf("no Windows resources for %s", goarch)
 	}
-	if len(images) == 0 && version == nil {
+	if len(images) == 0 && version == nil && manifest == "" {
 		return nil, errors.New("a Windows resource object needs an icon or a version")
 	}
 
@@ -85,8 +96,12 @@ func windowsResource(goarch string, images [][]byte, sizes []int, version *windo
 			if sizes[i] >= 256 {
 				side = 0
 			}
-			put(&group, [4]uint8{side, side, 0, 0})
-			put(&group, [2]uint16{1, 32})
+			shape, format := [4]uint8{side, side, 0, 0}, [2]uint16{1, 32}
+			if i < len(iconEntries) {
+				shape, format = iconEntries[i].Shape, iconEntries[i].Format
+			}
+			put(&group, shape)
+			put(&group, format)
 			put(&group, uint32(len(img)))
 			put(&group, uint16(i+1))
 			icons.resources = append(icons.resources, resource{uint32(i + 1), []leaf{{langEnUS, img}}})
@@ -105,6 +120,9 @@ func windowsResource(goarch string, images [][]byte, sizes []int, version *windo
 		}
 		slices.SortFunc(v.langs, func(a, b leaf) int { return int(a.lang) - int(b.lang) })
 		types = append(types, resourceType{rtVersion, []resource{v}})
+	}
+	if manifest != "" {
+		types = append(types, resourceType{24, []resource{{1, []leaf{{0, []byte(manifest)}}}}})
 	}
 	const dirSize, entrySize, dataEntrySize = 16, 8, 16
 	leaves, ids := 0, 0
@@ -410,4 +428,29 @@ var windowsLanguageIDs = map[string]uint16{
 	"wo": 0x0488, "xh": 0x0434, "yo": 0x046a, "zh": 0x0804, "zh-cn": 0x0804,
 	"zh-hans": 0x0804, "zh-hant": 0x0404, "zh-hk": 0x0c04, "zh-mo": 0x1404, "zh-sg": 0x1004,
 	"zh-tw": 0x0404, "zu": 0x0435,
+}
+
+// icoFile is an .ico of img in the sizes Windows picks from, each a PNG.
+func icoFile(img image.Image) []byte {
+	var out bytes.Buffer
+	put := func(v any) { binary.Write(&out, binary.LittleEndian, v) }
+	put([3]uint16{0, 1, uint16(len(windowsIconSizes))})
+	offset := 6 + 16*len(windowsIconSizes)
+	var images [][]byte
+	for _, size := range windowsIconSizes {
+		data := scaledPNG(img, size)
+		images = append(images, data)
+		side := uint8(size)
+		if size >= 256 {
+			side = 0
+		}
+		put([4]uint8{side, side, 0, 0})
+		put([2]uint16{1, 32})
+		put([2]uint32{uint32(len(data)), uint32(offset)})
+		offset += len(data)
+	}
+	for _, data := range images {
+		out.Write(data)
+	}
+	return out.Bytes()
 }

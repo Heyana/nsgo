@@ -219,10 +219,10 @@ For the desktop targets, `build` writes what users install the app from into `di
 | Target | Installer |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`, a disk image showing the app, an arrow and a link to Applications to drag it to, signed with `sign.identity` and [notarized](#notarize) |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`, an [NSIS](https://nsis.sourceforge.io) installer that installs for the user, again in the folder the user chose before, closing the app if it runs, with a Start menu shortcut, an optional desktop one and an uninstaller that removes only what it installed, [signed with `sign.certificate`](#sign-windows-packages) where the app signs Windows packages; `windows.command_line` also installs the `.com` companion and puts the app's folder on the user's `Path`, so consoles opened after installing run the app's command, while Win+R, which finds the companion too, starts the app and closes the console it opened; the uninstaller takes the folder off `Path` only if an installer added it, never an entry you had |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`, a native Windows installer that installs for the user, again in the folder the user chose before, closing the app if it runs, with a Start menu shortcut, an optional desktop one and an uninstaller that removes only what it installed, [signed with `sign.certificate`](#sign-windows-packages) where the app signs Windows packages; `windows.command_line` also installs the `.com` companion and puts the app's folder on the user's `Path`, so consoles opened after installing run the app's command, while Win+R, which finds the companion too, starts the app and closes the console it opened; the uninstaller takes the folder off `Path` only if an installer added it, never an entry you had |
 | Linux | `<name>-<version>-linux-<arch>.deb` for Debian and Ubuntu, and `<name>-<version>-linux-<arch>.pkg.tar.gz` for Arch Linux, which install the app in `/opt/<slug>` with a command, links to its [commands](#commands), its desktop entry and icon (the Arch package includes `.MTREE` for `pacman -Qkk`), and `<name>-<version>-linux-<arch>.AppImage`, which runs on any distribution without installing |
 
-The Windows installer needs NSIS's compiler, 3.06 or later, on a Mac `brew install makensis`, so a Mac builds every installer; without it `build` leaves the script, `<name>.nsi`, in the package, which compiles anywhere as it is. The installer speaks the languages of the app's catalogs that NSIS translates, Simplified and Traditional Chinese included, picking the system's. `-installers=false` or `build.installers: false` builds the packages alone.
+The Windows setup and uninstaller build with Go alone, on any system, and use native Windows dialogs. They speak the languages of the app's catalogs they have words for, Simplified and Traditional Chinese included, picking the system's UI language; `/LANG=<LCID>` picks one for a single run, such as `/LANG=2052` for Simplified Chinese. `/S` installs or uninstalls silently, a final `/D=<folder>` chooses the folder, spaces included, and `/RELAUNCH` opens the app after an update. Without `/D`, an upgrade installs in the folder of the installation it replaces. `-installers=false` or `build.installers: false` builds the packages alone.
 
 The installers take pictures and icons of the app's own; each is the app's icon or the built-in picture otherwise:
 
@@ -494,7 +494,7 @@ NSGo writes that filename under `$SNAP_USER_DATA/.config/autostart`, which snapd
 
 ## File types
 
-`file_types` registers the documents an app opens: from the Finder, the Dock and Open With on macOS, from Explorer's Open With through the NSIS installer or the MSIX on Windows, through the desktop entry of the Debian, Arch, AppImage and Flatpak packages on Linux, and through Open In on iOS:
+`file_types` registers the documents an app opens: from the Finder, the Dock and Open With on macOS, from Explorer's Open With through the Windows installer or the MSIX on Windows, through the desktop entry of the Debian, Arch, AppImage and Flatpak packages on Linux, and through Open In on iOS:
 
 ```yaml
 file_types:
@@ -654,7 +654,7 @@ sign:
 
 `build` stops if the command succeeds but leaves the app executable, command companion, a PE resource, or the setup executable without an embedded Authenticode signature.
 
-Signing the uninstaller inside the installer needs NSIS 3.08 or later, and a certificate that is not a `.pfx` cannot sign it through `sign.certificate`. `-certificate`, `-sign-command` and `-timestamp-url` set these from the command line.
+The uninstaller inside the installer is signed before it is embedded, with the same `sign.certificate` or `sign.sign_command` as the app and the setup. `-certificate`, `-sign-command` and `-timestamp-url` set these from the command line.
 
 ### Notarize
 

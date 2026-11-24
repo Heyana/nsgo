@@ -262,13 +262,6 @@ func main() {
 			break
 		}
 		err = revoke(o)
-	case signerCommand:
-		// NSIS runs it through the hook uninstallerSignCommand installs,
-		// which the build's environment tells where the certificate is.
-		if len(args) != 1 {
-			usage()
-		}
-		err = signUninstaller(args[0])
 	default:
 		usage()
 	}

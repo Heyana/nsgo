@@ -152,7 +152,7 @@ func quoteArg(path string) string {
 // signWindowsPackage signs what a Windows package hands out: the
 // executable and its command companion, then the programs and libraries
 // among its resources that carry no signature of their own. The installer
-// is signed once makensis has made it.
+// is signed after its payload is appended.
 func (s *windowsSigner) signWindowsPackage(ctx context.Context, p *project, dir string) error {
 	if err := s.load(p); err != nil {
 		return err
@@ -204,85 +204,6 @@ func (s *windowsSigner) signWindowsResources(ctx context.Context, dir string, na
 		detailIn(ctx, "signed %s", rel(path))
 		return nil
 	})
-}
-
-// The environment makensis runs this tool with to sign the uninstaller it
-// writes: the certificate and the timestamp server, since NSIS reads "$"
-// and quotes in the script as its own.
-const (
-	signerEnv     = "NSGO_SIGNER"
-	signCertEnv   = "NSGO_SIGN_CERTIFICATE"
-	signStampEnv  = "NSGO_SIGN_TIMESTAMP"
-	signerCommand = "sign-uninstaller"
-)
-
-// uninstallerSignCommand is makensis's hook that signs the uninstaller it
-// writes: this tool signs it with the app's certificate, as it signs the
-// app. sign.sign_command's own command signs it instead, with makensis's
-// %1 standing for the file. NSIS 3.08 is the first with the hook; without
-// it the uninstaller stays unsigned, and the installer with it.
-func uninstallerSignCommand(ctx context.Context, p *project) (string, []string, error) {
-	if p.Sign.SignCommand != "" {
-		return strings.ReplaceAll(p.Sign.SignCommand, "'", `$\'`), nil, nil
-	}
-	compiler := nsisCompiler()
-	if compiler == "" {
-		// Without makensis the build leaves the script for the user to
-		// compile, which signs nothing.
-		return "", nil, nil
-	}
-	if major, minor := nsisCompilerVersion(compiler); major < 3 || major == 3 && minor < 8 {
-		detailIn(ctx, "not signing the uninstaller: that needs NSIS 3.08 or later")
-		return "", nil, nil
-	}
-	self, err := os.Executable()
-	if err != nil {
-		return "", nil, err
-	}
-	// The path goes through the environment, since NSIS reads "$" and
-	// "%" in the script as its own syntax: each system's shell expands
-	// its own spelling of a variable.
-	line := `"$` + signerEnv + `" ` + signerCommand + ` "%1"`
-	if isWindows() {
-		line = `"%` + signerEnv + `%" ` + signerCommand + ` "%1"`
-	}
-	return line, []string{
-		signerEnv + "=" + self,
-		signCertEnv + "=" + p.Sign.Certificate,
-		signStampEnv + "=" + p.timestampURL(),
-	}, nil
-}
-
-// signUninstaller signs the file makensis names, the uninstaller it made,
-// with the certificate the build's environment gave: the hook
-// uninstallerSignCommand installs. It is the tool's own command, run by
-// makensis alone.
-func signUninstaller(path string) error {
-	certificate := os.Getenv(signCertEnv)
-	if certificate == "" {
-		return fmt.Errorf("%s is not set: sign-uninstaller is for makensis, which nsgo build runs", signCertEnv)
-	}
-	p := &project{Sign: signing{Certificate: certificate, TimestampURL: os.Getenv(signStampEnv)}}
-	s := &windowsSigner{}
-	if url := p.timestampURL(); url != "none" {
-		s.stamp = &authenticode.Timestamp{URL: url}
-	}
-	if err := s.load(p); err != nil {
-		return err
-	}
-	return s.signFile(context.Background(), path, true)
-}
-
-// nsisVersion reads makensis's version, "v3.11-1" or a distribution's
-// "v3.08-3".
-func nsisCompilerVersion(makensis string) (major, minor int) {
-	out, err := exec.Command(makensis, "-VERSION").Output()
-	if err != nil {
-		return 0, 0
-	}
-	text, _, _ := strings.Cut(strings.TrimSpace(string(out)), "-")
-	fmt.Sscanf(strings.TrimPrefix(text, "v"), "%d.%d", &major, &minor)
-	return major, minor
 }
 
 // checkSigningWindows refuses, before anything builds, what signing

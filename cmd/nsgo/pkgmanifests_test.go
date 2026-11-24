@@ -274,11 +274,11 @@ func TestWingetManifestMultiArch(t *testing.T) {
 	var inst wingetInstallerManifest
 	mustDecodeWingetYAML(t, instBytes, &inst)
 	if inst.PackageIdentifier != "dev.example.myapp" || inst.PackageVersion != "1.2.0" ||
-		inst.InstallerType != "nullsoft" || inst.Scope != "user" || inst.UpgradeBehavior != "install" ||
+		inst.InstallerType != "exe" || inst.Scope != "user" || inst.UpgradeBehavior != "install" ||
 		inst.ManifestType != "installer" || inst.ManifestVersion != "1.9.0" {
 		t.Fatalf("installer manifest = %+v", inst)
 	}
-	if inst.InstallerSwitches == nil || inst.InstallerSwitches.Silent != "/S" || inst.InstallerSwitches.SilentWithProgress != "/S" {
+	if inst.InstallerSwitches == nil || inst.InstallerSwitches.Silent != "/S" || inst.InstallerSwitches.SilentWithProgress != "/S" || inst.InstallerSwitches.InstallLocation != "/D=<INSTALLPATH>" {
 		t.Fatalf("installer switches = %+v", inst.InstallerSwitches)
 	}
 	if len(inst.AppsAndFeaturesEntries) != 1 || inst.AppsAndFeaturesEntries[0].DisplayName != "My App" ||
@@ -518,7 +518,7 @@ func TestManifestSkippedWhenInapplicable(t *testing.T) {
 		}
 	})
 
-	// Missing built installers (e.g. makensis absent) writes nothing.
+	// Missing built installers (e.g. installers disabled) writes nothing.
 	t.Run("no_built_files", func(t *testing.T) {
 		p, _ := updatingProject(t, "")
 		if err := p.cleanReleaseDir(); err != nil {

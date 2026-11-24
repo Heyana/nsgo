@@ -1,0 +1,20 @@
+name: NSGoInstaller1408
+id: dev.nsgo.test.installer1408
+version: 1.0.0
+windows:
+  publisher: NSGo installer fixture
+  command_line: true
+i18n:
+  source: en
+  dir: locales
+file_types:
+  - id: dev.nsgo.test.installer1408.document
+    name: Installer fixture document
+    extensions: [nsgo1408fixture, nsgo1408old]
+  - id: dev.nsgo.test.installer1408.reassigned
+    name: Reassigned fixture document
+    extensions: [nsgo1408other]
+url_schemes: [com.nsgo.installer1408, com.nsgo.installer1408-old, com.nsgo.installer1408-taken]
+build:
+  targets: [windows_x64]
+  open: false

@@ -158,12 +158,12 @@ licenses:
 | 目标 | 安装程序 |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`，打开后显示应用、一个箭头和“应用程序”文件夹的链接，提示把应用拖过去，用 `sign.identity` 签名并[公证](#公证) |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`，[NSIS](https://nsis.sourceforge.io) 安装程序，为当前用户安装，再次安装时装回用户之前选的目录，应用运行中会先关闭它，带开始菜单快捷方式、可选的桌面快捷方式，以及只删除自己装过的文件的卸载程序（应用为 Windows 包签名时，安装包与卸载器都[已签名](#为-windows-包签名)）；`windows.command_line` 还会安装 `.com` 伴侣，并把应用目录加入用户的 `Path`，安装后新开的控制台可直接运行应用的命令；Win+R 同样会找到伴侣，它会启动应用并关掉为它打开的控制台；只有当该目录是安装程序添加的时，卸载程序才会把它从 `Path` 中移除，用户原有的条目不受影响 |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`，原生 Windows 安装程序，为当前用户安装，再次安装时装回用户之前选的目录，应用运行中会先关闭它，带开始菜单快捷方式、可选的桌面快捷方式，以及只删除自己装过的文件的卸载程序（应用为 Windows 包签名时，安装包与卸载器都[已签名](#为-windows-包签名)）；`windows.command_line` 还会安装 `.com` 伴侣，并把应用目录加入用户的 `Path`，安装后新开的控制台可直接运行应用的命令；Win+R 同样会找到伴侣，它会启动应用并关掉为它打开的控制台；只有当该目录是安装程序添加的时，卸载程序才会把它从 `Path` 中移除，用户原有的条目不受影响 |
 | Linux | 供 Debian 和 Ubuntu 使用的 `<name>-<version>-linux-<arch>.deb`，以及供 Arch Linux 使用的 `<name>-<version>-linux-<arch>.pkg.tar.gz`，把应用装到 `/opt/<name>`，并带命令、桌面入口和图标；还有 `<name>-<version>-linux-<arch>.AppImage`，无需安装即可在任何发行版上运行 |
 
 Arch 包包含 `.MTREE`，供 `pacman -Qkk` 检查已安装文件的内容与元数据。
 
-Windows 安装程序需要 NSIS 3.06 或更高版本的编译器，在 Mac 上用 `brew install makensis` 安装，因此 Mac 可以构建全部安装程序；没有它时，`build` 把脚本 `<name>.nsi` 留在包里，在任何系统上都可原样编译。安装程序提供应用文案中 NSIS 有翻译的语言，包括简体和繁体中文，并按系统语言选择。`-installers=false` 或 `build.installers: false` 只构建包本身。
+Windows 安装与卸载程序只需 Go 即可在任何系统上构建，界面使用 Windows 原生对话框。程序按系统界面语言，从应用文案中它有译文的语言里选择，包括简体和繁体中文；`/LANG=<LCID>` 为单次运行指定语言，例如 `/LANG=2052` 使用简体中文。`/S` 静默安装或卸载；放在最后的 `/D=<目录>` 指定安装目录，可含空格；`/RELAUNCH` 在更新后启动应用。不传 `/D` 时，升级装在被替换的那次安装所在的目录。`-installers=false` 或 `build.installers: false` 只构建包本身。
 
 安装程序可以使用应用自己的图片和图标，未指定时使用应用图标或内置图片：
 
@@ -404,7 +404,7 @@ NSGo 把该文件写到 `$SNAP_USER_DATA/.config/autostart`，由 snapd 通过�
 
 ## 文件类型
 
-`file_types` 登记应用能打开的文档：macOS 上从访达、程序坞和“打开方式”打开，Windows 上通过 NSIS 安装程序或 MSIX 出现在资源管理器的“打开方式”里，Linux 上通过 Debian、Arch、AppImage 和 Flatpak 包的桌面项登记，iOS 上通过“打开方式”导入：
+`file_types` 登记应用能打开的文档：macOS 上从访达、程序坞和“打开方式”打开，Windows 上通过 Windows 安装程序或 MSIX 出现在资源管理器的“打开方式”里，Linux 上通过 Debian、Arch、AppImage 和 Flatpak 包的桌面项登记，iOS 上通过“打开方式”导入：
 
 ```yaml
 file_types:
@@ -562,7 +562,7 @@ sign:
 
 `build` 会检查命令留下的嵌入式 Authenticode 签名：即使命令成功退出，只要应用可执行文件、命令行伴随程序、PE 资源或安装程序仍未签名，构建就会停止。
 
-安装包内卸载器的签名需要 NSIS 3.08 或更高版本；`sign.certificate` 只接受 `.pfx`，其他证书可通过 `sign.sign_command` 签名。命令行可用 `-certificate`、`-sign-command` 和 `-timestamp-url` 指定这些值。
+安装包内的卸载器在嵌入前签名，与应用和安装程序使用同一 `sign.certificate` 或 `sign.sign_command`。命令行可用 `-certificate`、`-sign-command` 和 `-timestamp-url` 指定这些值。
 
 ### 公证
 

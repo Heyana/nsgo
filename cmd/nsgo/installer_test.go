@@ -49,145 +49,44 @@ func TestLinuxVersions(t *testing.T) {
 	}
 }
 
-// The script installs every file of the package but itself, its icon and
-// the setup, again where the app already is, and its uninstaller removes
-// those files alone.
-func TestNSISScript(t *testing.T) {
+// The installer installs every file of the package but an earlier NSIS script and this app's setups, the app's own programs named *-setup.exe included, and its uninstaller removes those files alone. windows.command_line and windows.path both put the folder on the user's Path.
+func TestWindowsInstallerPlan(t *testing.T) {
 	dir := t.TempDir()
-	writeFiles(t, dir, map[string]string{
-		"locales/en.yaml":      "appName: My App\n",
-		"locales/ja.yaml":      "appName: アプリ\n",
-		"locales/zh-Hans.yaml": "appName: 应用\n",
-		"locales/zh-Hant.yaml": "appName: 應用\n",
-		"locales/eo.yaml":      "appName: Apo\n",
-	})
+	writeFiles(t, dir, map[string]string{"locales/en.yaml": "appName: My App\n"})
 	pkg := filepath.Join(dir, "pkg")
-	writeFiles(t, pkg, map[string]string{
-		"MyApp.exe": "exe", "fonts/a$b.ttf": "font", "MyApp.nsi": "old",
-		"helper-setup.exe": "a program of the app's",
-	})
+	writeFiles(t, pkg, map[string]string{"MyApp.exe": "exe", "fonts/a$b.ttf": "font", "MyApp.nsi": "old", "myapp-0.9-windows-x64-setup.exe": "old", "helper-setup.exe": "a program of the app's"})
 	p := &project{Dir: dir, Name: "MyApp", ID: "dev.example.app", Version: "1.2.0-beta.1"}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "en"
-	d, err := nsisScript(t.Context(), p, pkg, "arm64")
+	d, err := windowsInstallerPlan(t.Context(), p, pkg, "arm64")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
-	for _, l := range d.Languages {
-		names = append(names, l.Name)
+	if d.Name != "My App" || d.Exe != "MyApp.exe" || d.Output != "myapp-1.2.0-beta.1-windows-arm64-setup.exe" || !d.ARM64 || d.Command {
+		t.Fatalf("installer identity: %+v", d)
 	}
-	if got := strings.Join(names, ","); got != "English,Japanese,SimpChinese,TradChinese" {
-		t.Errorf("languages %s", got)
+	if !slices.Equal(d.Files, []string{"MyApp.exe", `fonts\a$b.ttf`, "helper-setup.exe"}) || !slices.Equal(d.Dirs, []string{"fonts"}) {
+		t.Fatalf("installer file list: %v, %v", d.Files, d.Dirs)
 	}
-	var out bytes.Buffer
-	if err := nsisTemplate.Execute(&out, d); err != nil {
-		t.Fatal(err)
-	}
-	script := out.String()
-	for _, want := range []string{
-		`Name "My App" "My App"`,
-		`OutFile "myapp-1.2.0-beta.1-windows-arm64-setup.exe"`,
-		`InstallDir "$LOCALAPPDATA\Programs\My App"`,
-		`InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\dev.example.app" "InstallLocation"`,
-		`WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\dev.example.app" "InstallLocation" "$INSTDIR"`,
-		`File /r /x "MyApp.nsi" /x "myapp-1.2.0-beta.1-windows-arm64-setup.exe" "*"`,
-		`Delete "$INSTDIR\helper-setup.exe"`,
-		`LangString NSGO_SHORTCUT ${LANG_SimpChinese} "创建桌面快捷方式"`,
-		`LangString NSGO_RUNNING ${LANG_Japanese} "My App は実行中です。終了して続行しますか？"`,
-		`CreateShortCut "$SMPROGRAMS\My App.lnk" "$INSTDIR\MyApp.exe"`,
-		`ExecWait '"$INSTDIR\MyApp.exe" --nsgo-register-toast="$SMPROGRAMS\My App.lnk"'`,
-		`ExecWait '"$INSTDIR\MyApp.exe" --nsgo-unregister-toast'`,
-		`Delete "$INSTDIR\fonts\a$$b.ttf"`,
-		`RMDir "$INSTDIR\fonts"`,
-		`${IfNot} ${IsNativeARM64}`,
-		`${GetOptions} $0 "/RELAUNCH" $1`,
-		`Exec '"$INSTDIR\MyApp.exe"'`,
-		`VIProductVersion "1.2.0.0"`,
-		`$$_.ExecutablePath.StartsWith($$d, 'OrdinalIgnoreCase')`,
-	} {
-		if !strings.Contains(script, want) {
-			t.Errorf("script lacks %s", want)
+	for _, set := range []func(){func() { p.Windows.CommandLine = true }, func() { p.Windows.CommandLine, p.Windows.Path = false, true }} {
+		set()
+		if d, err = windowsInstallerPlan(t.Context(), p, pkg, "arm64"); err != nil {
+			t.Fatal(err)
 		}
-	}
-	for _, unwanted := range []string{`Delete "$INSTDIR\MyApp.nsi"`, `RMDir /r`} {
-		if strings.Contains(script, unwanted) {
-			t.Errorf("script holds %s", unwanted)
-		}
-	}
-	// A command-line package adds and removes its install folder from the
-	// user's Path, while preserving the existing toast registration.
-	p.Windows.CommandLine = true
-	d, err = nsisScript(t.Context(), p, pkg, "arm64")
-	if err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	if err := nsisTemplate.Execute(&out, d); err != nil {
-		t.Fatal(err)
-	}
-	script = out.String()
-	for _, want := range []string{
-		"WriteUninstaller \"$INSTDIR\\Uninstall.exe\"\n  Call AddUserPath\n",
-		"  Call un.RemoveOwnedPath\n",
-		`SetEnvironmentVariable(t "NSGO_PATH_REMOVE", t "$R1")`,
-		`$$k.SetValue('Path', ($$p -join ';'), 'ExpandString')`,
-		`SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000`,
-	} {
-		if !strings.Contains(script, want) {
-			t.Errorf("command line script lacks %s", want)
-		}
-	}
-	// A quote in the name stays inside the command lines the installer runs.
-	d.Name = "Bob's `Notes`"
-	out.Reset()
-	if err := nsisTemplate.Execute(&out, d); err != nil {
-		t.Fatal(err)
-	}
-	if want := "ExecWait '\"$INSTDIR\\MyApp.exe\" --nsgo-register-toast=\"$SMPROGRAMS\\Bob$\\'s `Notes`.lnk\"'"; !strings.Contains(out.String(), want) {
-		t.Errorf("script lacks %s", want)
-	}
-	if strings.Contains(out.String(), "Publisher") || strings.Contains(out.String(), "LegalCopyright") {
-		t.Error("a script without a publisher or copyright names one")
-	}
-	// The publisher and copyright the executable's version says are the setup's and the uninstall entry's.
-	p.Windows.Publisher, p.Copyright = "Example $Ltd", "© 2026 Example"
-	if d, err = nsisScript(t.Context(), p, pkg, "arm64"); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	if err := nsisTemplate.Execute(&out, d); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		`VIAddVersionKey /LANG=${LANG_ENGLISH} "CompanyName" "Example $$Ltd"`,
-		`VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "© 2026 Example"`,
-		`WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\dev.example.app" "Publisher" "Example $$Ltd"`,
-	} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("script lacks %s", want)
-		}
-	}
-	for v, want := range map[string]string{"1.2.3": "1.2.3.0", "v2": "2.0.0.0", "1.2.3.4.5": "1.2.3.4", "1.2.0-beta.1": "1.2.0.0", "": "0.0.0.0"} {
-		if got := nsisVersion(v); got != want {
-			t.Errorf("nsisVersion(%q) = %s, want %s", v, got, want)
+		if !d.Command {
+			t.Errorf("command_line %v, path %v puts nothing on Path", p.Windows.CommandLine, p.Windows.Path)
 		}
 	}
 }
 
-// makensis compiles the script, which reaches every file, for a name with
-// quotes in it.
-func TestNSISCompiles(t *testing.T) {
-	compiler := nsisCompiler()
-	if compiler == "" {
-		t.Skip("no makensis")
-	}
+// The installer builds with Go alone, including configured icons and quoted names.
+func TestWindowsInstallerBuildsWithoutMakensis(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{"App.exe": "exe", "fonts/a.ttf": "font"})
 	locales := t.TempDir()
 	writeFiles(t, locales, map[string]string{"en.yaml": "appName: \"Bob's `Notes`\"\n"})
 	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0", Release: true}
 	p.I18n.Dir, p.I18n.Source = locales, "en"
-	if _, err := buildNSIS(t.Context(), p, dir, "x64"); err != nil {
+	if _, err := buildWindowsInstaller(t.Context(), p, dir, "x64"); err != nil {
 		t.Fatal(err)
 	}
 	// Icons of their own, a PNG and an .ico of one size, other than the
@@ -208,18 +107,14 @@ func TestNSISCompiles(t *testing.T) {
 	writeFiles(t, icons, map[string]string{"Setup.png": b.String(), "Uninstall.ico": ico.String()})
 	p.Windows.InstallerIcon = filepath.Join(icons, "Setup.png")
 	p.Windows.UninstallerIcon = filepath.Join(icons, "Uninstall.ico")
-	setup, err := buildNSIS(t.Context(), p, dir, "x64")
+	setup, err := buildWindowsInstaller(t.Context(), p, dir, "x64")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info, err := os.Stat(setup); err != nil || info.Size() == 0 {
 		t.Fatalf("no installer: %v", err)
 	}
-	// With the Path functions too.
-	p.Windows.CommandLine = true
-	if _, err := buildNSIS(t.Context(), p, dir, "x64"); err != nil {
-		t.Fatal(err)
-	}
+	verifyInstallerPayload(t, setup)
 }
 
 func TestICOFiles(t *testing.T) {

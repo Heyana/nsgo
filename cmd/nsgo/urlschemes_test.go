@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/xml"
 	"os"
 	"os/exec"
@@ -98,41 +97,12 @@ func TestURLSchemesRegisterInTheInstaller(t *testing.T) {
 	dir := t.TempDir()
 	p := &project{Dir: dir, Name: "My App", ID: "me.oneo.umapp", Version: "1.0.0", URLSchemes: []string{"umapp", "umapp-dev"}}
 	writeFiles(t, dir, map[string]string{p.Name + ".exe": "exe"})
-	d, err := nsisScript(t.Context(), p, dir, "x64")
+	d, err := windowsInstallerPlan(t.Context(), p, dir, "x64")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out bytes.Buffer
-	if err := nsisTemplate.Execute(&out, d); err != nil {
-		t.Fatal(err)
-	}
-	script := out.String()
-	const command = `'"$INSTDIR\My App.exe" -- "%1"'`
-	for _, scheme := range p.URLSchemes {
-		for _, want := range []string{
-			`WriteRegStr HKCU "Software\Classes\` + scheme + `" "" "URL:My App"`,
-			`WriteRegStr HKCU "Software\Classes\` + scheme + `" "URL Protocol" ""`,
-			`WriteRegStr HKCU "Software\Classes\` + scheme + `\DefaultIcon" "" '"$INSTDIR\My App.exe",0'`,
-			`WriteRegStr HKCU "Software\Classes\` + scheme + `\shell\open\command" "" ` + command,
-			`WriteRegStr HKCU "` + d.UninstallKey + `\URLSchemes" "` + scheme + `" ` + command,
-		} {
-			if !strings.Contains(script, want) {
-				t.Errorf("NSIS script lacks %s", want)
-			}
-		}
-	}
-	for _, want := range []string{"Call RemoveURLSchemes\n", "Call un.RemoveURLSchemes", "StrCmp $1 $2 0 forget_scheme", `DeleteRegKey HKCU "Software\Classes\$0"`} {
-		if !strings.Contains(script, want) {
-			t.Errorf("NSIS cleanup lacks %s", want)
-		}
-	}
-	if strings.Index(script, "Call RemoveURLSchemes\n") > strings.Index(script, `"URL Protocol"`) {
-		t.Error("the installer registers the schemes before removing the old ones")
-	}
-	if nsisCompiler() != "" {
-		if _, err := buildNSIS(t.Context(), p, dir, "x64"); err != nil {
-			t.Fatal(err)
-		}
+	if strings.Join(d.URLSchemes, ",") != "umapp,umapp-dev" {
+		t.Fatalf("installer schemes: %v", d.URLSchemes)
 	}
 }
 

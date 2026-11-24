@@ -606,9 +606,6 @@ jobs:
   windows:
     runs-on: depot-windows-2025-4
     timeout-minutes: 30
-    env:
-      NSIS_VERSION: '3.13'
-      NSIS_SHA256: DB9A1038BBC0E53FEF24F423FD609979BD578E942F1BE1198DB186D1C42652A3
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -727,75 +724,12 @@ jobs:
         env:
           NSGO_AUTOMATION_E2E: '1'
         run: go tool nsgo test -run '^TestAutomationEndToEnd$' ./cmd/nsgo
-      # The runner image has no NSIS. It comes from a pinned installer checked against its SHA-256 and cached by version, so an outage at a package host fails this step instead of the document registration test (#707). The hash is the one SourceForge serves and the one the Chocolatey nsis.install 3.13.0 package records.
-      - name: Restore the NSIS installer
-        id: nsis-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}\nsis-installer
-          key: nsis-${{ env.NSIS_VERSION }}-${{ env.NSIS_SHA256 }}
-      - name: Download the NSIS installer
-        if: steps.nsis-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $dir = Join-Path $env:RUNNER_TEMP 'nsis-installer'
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          $exe = Join-Path $dir "nsis-$env:NSIS_VERSION-setup.exe"
-          # SourceForge is NSIS's own download host. The Chocolatey package embeds the same installer, so it is the fallback when SourceForge is down; either copy must match the pinned hash.
-          $sources = @(
-            @{ Url = "https://downloads.sourceforge.net/project/nsis/NSIS%203/$env:NSIS_VERSION/nsis-$env:NSIS_VERSION-setup.exe"; Package = $false },
-            @{ Url = "https://community.chocolatey.org/api/v2/package/nsis.install/$env:NSIS_VERSION.0"; Package = $true }
-          )
-          foreach ($source in $sources) {
-            Remove-Item -Force -Recurse -ErrorAction SilentlyContinue $exe, "$dir\pkg.zip", "$dir\pkg"
-            $out = if ($source.Package) { "$dir\pkg.zip" } else { $exe }
-            curl.exe -fsSL --retry 3 --retry-all-errors --connect-timeout 20 --max-time 180 -o $out $source.Url
-            if ($LASTEXITCODE -ne 0) { Write-Warning "Downloading $($source.Url) failed with curl exit code $LASTEXITCODE"; continue }
-            if ($source.Package) {
-              try {
-                Expand-Archive -Path "$dir\pkg.zip" -DestinationPath "$dir\pkg"
-                Copy-Item "$dir\pkg\tools\nsis-$env:NSIS_VERSION-setup.exe" $exe
-              } catch {
-                Write-Warning "$($source.Url) is not a package holding nsis-$env:NSIS_VERSION-setup.exe: $_"
-              }
-              Remove-Item -Force -Recurse -ErrorAction SilentlyContinue "$dir\pkg.zip", "$dir\pkg"
-            }
-            if ((Test-Path $exe) -and (Get-FileHash -Algorithm SHA256 $exe).Hash -eq $env:NSIS_SHA256) { Write-Output "Downloaded NSIS $env:NSIS_VERSION from $($source.Url)"; exit 0 }
-            Write-Warning "$($source.Url) did not give an installer with SHA-256 $env:NSIS_SHA256"
-          }
-          Remove-Item -Force -ErrorAction SilentlyContinue $exe
-          Write-Output "::error title=NSIS download failed::Could not download NSIS $env:NSIS_VERSION with SHA-256 $env:NSIS_SHA256 from SourceForge or Chocolatey; the package hosts are unreachable, so the document registration test cannot run."
-          exit 1
-      - name: Save the NSIS installer
-        if: steps.nsis-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}\nsis-installer
-          key: nsis-${{ env.NSIS_VERSION }}-${{ env.NSIS_SHA256 }}
-      - name: Install NSIS
-        shell: pwsh
-        run: |
-          $exe = Join-Path $env:RUNNER_TEMP "nsis-installer\nsis-$env:NSIS_VERSION-setup.exe"
-          if ((Get-FileHash -Algorithm SHA256 $exe).Hash -ne $env:NSIS_SHA256) {
-            Write-Output "::error title=NSIS installer mismatch::$exe does not have SHA-256 $env:NSIS_SHA256."
-            exit 1
-          }
-          $install = Start-Process -FilePath $exe -ArgumentList '/S' -Wait -PassThru
-          $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
-          if ($install.ExitCode -ne 0 -or -not (Test-Path $makensis)) {
-            Write-Output "::error title=NSIS install failed::The NSIS $env:NSIS_VERSION installer exited with $($install.ExitCode) and left no $makensis."
-            exit 1
-          }
-          $version = & $makensis -VERSION
-          if ($version -ne "v$env:NSIS_VERSION") {
-            Write-Output "::error title=NSIS version mismatch::$makensis reports $version, not v$env:NSIS_VERSION."
-            exit 1
-          }
-          Write-Output "Installed NSIS $version at $makensis from $exe"
-      - name: Test document registration
+      - name: Test document registration and installer cleanup
         env:
           NSGO_FILE_ASSOCIATIONS: '1'
-        run: go tool nsgo test -run 'FileAssociations|FileTypes|NSIS' ./cmd/nsgo
+        run: go tool nsgo test -run 'FileAssociations|FileTypes|URLSchemes|WindowsInstaller' ./cmd/nsgo
+      - name: Test the Windows installer runtime's cleanup
+        run: go tool nsgo test -run 'UninstallerCleanup' ./cmd/nsgo/windowsinstaller
 
   terminal:
     name: Terminal (${{ matrix.os }})

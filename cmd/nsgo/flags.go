@@ -254,7 +254,7 @@ func bindBuildFlags(fs *flag.FlagSet) *buildFlags {
 	f.output = stringFlag(fs, "output", "the `output` directory (default: nsgo.yaml's build.output)")
 	f.ldflags = stringListFlag(fs, "ldflags", "add app linker `flags` to nsgo.yaml's build.ldflags, as go build's -ldflags takes them; repeat for more")
 	f.open = boolFlag(fs, "open", "open the output directory (default: nsgo.yaml's build.open)")
-	f.install = boolFlag(fs, "installers", "package macOS, Windows and Linux targets for users to install: a disk image, an NSIS installer, Debian and Arch packages (default: nsgo.yaml's build.installers, else true)")
+	f.install = boolFlag(fs, "installers", "package macOS, Windows and Linux targets for users to install: a disk image, a Windows installer, Debian and Arch packages (default: nsgo.yaml's build.installers, else true)")
 	f.jobs = intFlag(fs, "jobs", "how many targets build at once, sharing compile workers across them (default: nsgo.yaml's build.jobs, else half the CPUs)")
 	f.channel = stringFlag(fs, "channel", "the `channel` the packages are handed out through, which decides how they update: direct, store, steam or none (default: nsgo.yaml's updates.channel)")
 	fs.StringVar(&f.notes, "release-notes", "", "a Markdown `file` of the release's notes, which the appcasts carry for the update prompts to show")

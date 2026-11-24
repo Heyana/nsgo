@@ -24,7 +24,7 @@ func TestReleaseNames(t *testing.T) {
 	for _, c := range []struct{ got, want string }{
 		{dmgName(p, "arm64"), "my-app-1.2.0-beta.1-macos-arm64.dmg"},
 		{dmgName(p, "universal"), "my-app-1.2.0-beta.1-macos-universal.dmg"},
-		{nsisSetupName(p, "x64"), "my-app-1.2.0-beta.1-windows-x64-setup.exe"},
+		{windowsSetupName(p, "x64"), "my-app-1.2.0-beta.1-windows-x64-setup.exe"},
 		{debName(p, "amd64"), "my-app-1.2.0-beta.1-linux-x64.deb"},
 		{archPackageName(p, "arm64"), "my-app-1.2.0-beta.1-linux-arm64.pkg.tar.gz"},
 		{p.releaseName("android_arm64", ".aab"), "my-app-1.2.0-beta.1-android-arm64.aab"},

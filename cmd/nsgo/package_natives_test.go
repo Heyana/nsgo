@@ -321,7 +321,7 @@ func TestPackageNativesWindowsSigningAndInstallerInputs(t *testing.T) {
 		}
 	}
 	p.Sign.Certificate = ""
-	d, err := nsisScript(t.Context(), p, out, "amd64")
+	d, err := windowsInstallerPlan(t.Context(), p, out, "amd64")
 	if err != nil {
 		t.Fatal(err)
 	}

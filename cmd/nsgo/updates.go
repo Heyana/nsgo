@@ -545,8 +545,7 @@ func (p *project) writeAppcast(target string, installers ...string) error {
 			item.signature = base64.StdEncoding.EncodeToString(ed25519.Sign(key, data))
 		}
 		if system == "windows" {
-			// The installer quits the app, installs quietly and starts the new
-			// version (nsis.go).
+			// The installer quits the app, installs quietly and starts the new version (windowsinstaller/runtime_windows.go).
 			item.arguments = "/S /RELAUNCH"
 		}
 		items = append(items, item)

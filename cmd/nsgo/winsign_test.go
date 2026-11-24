@@ -158,7 +158,7 @@ func TestSignsWindowsPackage(t *testing.T) {
 	// The installer is signed once made, not before.
 	data, _ = os.ReadFile(filepath.Join(dir, "setup.exe"))
 	if authenticode.Signed(data) {
-		t.Error("the setup program was signed before makensis made it")
+		t.Error("the setup program was signed before its payload was appended")
 	}
 	// Signing again keeps one signature.
 	before, _ := os.Stat(filepath.Join(dir, "App.exe"))

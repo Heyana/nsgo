@@ -43,8 +43,7 @@ type machine struct {
 	ndk          string
 	harmonySDK   bool // hvigorw and OHOS_BASE_SDK_HOME are here
 	browser      string
-	linuxLibs    []string // what of GTK 4, Pango and Cairo is missing
-	makensis     string
+	linuxLibs    []string        // what of GTK 4, Pango and Cairo is missing
 	miniTools    map[string]bool // mini program platforms whose tool opens projects
 }
 
@@ -219,11 +218,6 @@ func (m *machine) tools() []verdict {
 	} else {
 		out = append(out, elsewhere("no Chrome, Chromium or Edge: nsgo test -target web needs one, or NSGO_BROWSER"))
 	}
-	if m.makensis != "" {
-		out = append(out, yes().with("makensis "+dim(m.makensis)))
-	} else {
-		out = append(out, elsewhere("no makensis: Windows packages get their installer's script, not the installer"))
-	}
 	return out
 }
 
@@ -348,9 +342,6 @@ func probe(ctx context.Context) *machine {
 	wg.Go(func() { m.probeAndroid(ctx) })
 	if path, err := findBrowser(); err == nil {
 		m.browser = path
-	}
-	if path, err := exec.LookPath("makensis"); err == nil {
-		m.makensis = path
 	}
 	if _, err := exec.LookPath("hvigorw"); err == nil && os.Getenv("OHOS_BASE_SDK_HOME") != "" {
 		m.harmonySDK = true
