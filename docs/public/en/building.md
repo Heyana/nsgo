@@ -541,6 +541,10 @@ The app hears the files with `desktop.OnOpenFiles`, including a later Windows or
 desktop.OnOpenFiles(cx, func(paths []string) { open(paths[0]) })
 ```
 
+On Windows and Linux, both first and later launches take arguments naming existing regular files (including local `file:` URLs) before the first `--`, after NSGo removes its flags. The handler receives absolute paths. The default scan does not interpret subcommands or flags, so `app -- editor scene.flow` keeps both arguments out of file delivery.
+
+For a CLI that needs to distinguish documents from subcommands or flag values, pass `nsgo.LaunchFiles(parse)` to `nsgo.Run`. The parser gets the read-only arguments before `--`, without the executable or NSGo's flags, and returns absolute filesystem paths, which NSGo uses as returned. Return `nil` to open no files for that launch, or pass `nsgo.LaunchFiles(nil)` to disable command-line file opens entirely, including Open With. Links still reach `OnOpenLinks` after `--`; on Windows a link launch never opens files or calls the parser.
+
 On iOS, regular documents are imported into app-owned temporary files with their original names. File-provider reads are coordinated off the UI thread, and their security scopes end before the handler runs. Move an import into `cx.DataDir()` to keep it; edits affect the copy. iOS uses the app's document icon; `icon` applies on macOS. App Clips and tvOS packages register no document types. File opens stay separate from `OnOpenLinks`.
 
 `desktop.AddRecentFile(cx, path)` records a document the user opened: in the Dock menu and File › Open Recent on macOS, the Jump List's Recent category on Windows, and the desktop's recently used files on Linux. A choice reaches the same handler. `desktop.ClearRecentFiles` forgets the app's registrations, keeping other apps' history of shared files on Linux; Linux also respects GTK's history setting.

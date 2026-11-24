@@ -71,6 +71,8 @@ type Options struct {
 	ID string
 	// InstanceKey scopes the single-instance lock; empty keeps one lock per ID.
 	InstanceKey string
+	// LaunchFiles replaces the command-line file scan (nsgo.LaunchFiles).
+	LaunchFiles func(args []string) []string
 	// Components are the native components Native elements name.
 	Components driver.NativeComponents
 	// Material is the material behind the window's content, where the app
@@ -649,7 +651,7 @@ func wide(s string) *uint16 {
 	return p
 }
 
-// launched hands the running app what a second launch asked of it (launchArguments): a Jump List task chooses its item, a launch to open links alone brings the app's window to the front, as opening a link does on macOS, any other launch reopens the app, and the files and links it names open.
+// launched hands the running app what a second launch asked of it: a Jump List task chooses its item, a launch to open links alone brings the app's window to the front, as opening a link does on macOS, any other launch reopens the app, and the files and links it names open.
 func (w *window) launched(args launch) {
 	switch {
 	case args.Task != "":
@@ -689,11 +691,15 @@ func Run(app engine.App, opts Options) {
 		unregisterToast(opts.ID)
 		return
 	}
+	var args launch
+	if opts.test == nil {
+		args = launch{Launch: engine.Launched(opts.LaunchFiles), Task: opts.DockTask}
+	}
 	// One copy runs per app ID; an app without one, as a test's window, runs as many as it is started.
 	var single *instance
 	if opts.ID != "" && opts.test == nil {
 		var alreadyRunning bool
-		if single, alreadyRunning = claimInstance(opts.ID, opts.InstanceKey, launchArguments(opts.DockTask)); alreadyRunning {
+		if single, alreadyRunning = claimInstance(opts.ID, opts.InstanceKey, args); alreadyRunning {
 			return
 		}
 		defer single.close()
@@ -799,16 +805,16 @@ func Run(app engine.App, opts Options) {
 	w.showFirst.arm(opts.Hidden)
 	if opts.test != nil {
 		opts.test.ready <- w
-	} else if opts.DockTask != "" {
+	} else if args.Task != "" {
 		// The core keeps it until the app sets its menu.
-		w.engine.Dispatch(driver.Event{Kind: driver.EventDockMenu, Text: opts.DockTask})
+		w.engine.Dispatch(driver.Event{Kind: driver.EventDockMenu, Text: args.Task})
 	} else {
 		// The core keeps them until the app's first handlers register.
-		if paths := engine.LaunchFiles(); len(paths) > 0 {
-			w.engine.Dispatch(driver.Event{Kind: driver.EventOpenFiles, Data: paths})
+		if len(args.Files) > 0 {
+			w.engine.Dispatch(driver.Event{Kind: driver.EventOpenFiles, Data: args.Files})
 		}
-		if links := engine.LaunchLinks(); len(links) > 0 {
-			w.engine.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: links})
+		if len(args.Links) > 0 {
+			w.engine.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: args.Links})
 		}
 	}
 	if opts.test == nil {

@@ -105,6 +105,30 @@ func InstanceKey(key string) Option {
 	return func(o *options) { o.platform.InstanceKey = key }
 }
 
+// LaunchFiles replaces Run's command-line file scan on Windows and Linux.
+// By default the scan takes existing regular files (including local file
+// URLs) before the first "--" and delivers their absolute paths to
+// desktop.OnOpenFiles. It does not interpret the app's flags or subcommands.
+//
+// When there are arguments to classify, parse gets the read-only arguments
+// after the engine removes its flags, excluding the executable name, "--"
+// and everything after it.
+// Return the absolute filesystem paths to deliver, not URLs; they are used
+// as returned.
+// A nil parser disables command-line file delivery, and a parser returning
+// nil opens no files for that launch. The launching process makes this
+// choice even when it hands the result to a running instance.
+//
+// Links are still read on both sides of "--". On Windows, a launch with
+// a link opens no files and never calls parse. Other platforms ignore this
+// option.
+func LaunchFiles(parse func(args []string) []string) Option {
+	if parse == nil {
+		parse = func([]string) []string { return nil }
+	}
+	return func(o *options) { o.platform.LaunchFiles = parse }
+}
+
 // WindowFrame opens the main window with frame f, as desktop.Frame
 // reported it, instead of centered at WindowSize: an app restores its
 // window with it. A window no screen would show, as on a screen that

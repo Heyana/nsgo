@@ -64,6 +64,8 @@ type Options struct {
 	Name string
 	// InstanceKey scopes the single-instance lock; empty keeps one lock per ID.
 	InstanceKey string
+	// LaunchFiles replaces the command-line file scan (nsgo.LaunchFiles).
+	LaunchFiles func(args []string) []string
 	// Components are the native components Native elements name.
 	Components driver.NativeComponents
 	// Fonts are font files under the app's resources, registered before
@@ -415,11 +417,12 @@ func InstalledBy() string {
 // Run opens a window showing app and runs GTK's main loop. Call it from
 // main; it returns when the window closes.
 func Run(app engine.App, opts Options) {
+	args := engine.Launched(opts.LaunchFiles)
 	// One copy runs per app ID; an app without one, as a test's window, runs as many as it is started.
 	var instance *instance
 	if opts.ID != "" && opts.test == nil {
 		var alreadyRunning bool
-		if instance, alreadyRunning = claimInstance(opts.ID, opts.InstanceKey, engine.Launched()); alreadyRunning {
+		if instance, alreadyRunning = claimInstance(opts.ID, opts.InstanceKey, args); alreadyRunning {
 			return
 		}
 		defer instance.close()
@@ -435,11 +438,11 @@ func Run(app engine.App, opts Options) {
 		instance.setDelivery(func(args engine.Launch) { w.post(func() { w.launched(args) }) })
 	}
 	// The core keeps them until the app's first handlers register.
-	if paths := engine.LaunchFiles(); len(paths) > 0 {
-		w.engine.Dispatch(driver.Event{Kind: driver.EventOpenFiles, Data: paths})
+	if len(args.Files) > 0 {
+		w.engine.Dispatch(driver.Event{Kind: driver.EventOpenFiles, Data: args.Files})
 	}
-	if links := engine.LaunchLinks(); len(links) > 0 {
-		w.engine.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: links})
+	if len(args.Links) > 0 {
+		w.engine.Dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: args.Links})
 	}
 	registerLiveWindow(w)
 	defer w.stop()

@@ -40,6 +40,8 @@ type Options struct {
 	Simulate core.OS
 	// InstanceKey scopes the Windows and Linux instance lock; empty keeps one per app ID.
 	InstanceKey string
+	// LaunchFiles replaces the Windows and Linux command-line file scan; nil keeps the default.
+	LaunchFiles func(args []string) []string
 	// HideDock starts the app out of the Dock (macOS).
 	HideDock bool
 	// Transparent, NoShadow and SkipTaskbar are the main window's (core.WindowOptions).

@@ -988,16 +988,39 @@ type Launch struct {
 	Links []string `json:"links,omitempty"`
 }
 
-// Launched returns what this process's command line asks the app to open.
-func Launched() Launch { return Launch{Files: LaunchFiles(), Links: LaunchLinks()} }
+// Launched returns what this process's command line asks the app to open,
+// after the backend has removed engine flags. A nil parseFiles uses the
+// default file scan.
+func Launched(parseFiles func([]string) []string) Launch {
+	return parseLaunch(os.Args[1:], parseFiles, runtime.GOOS == "windows")
+}
 
-// LaunchFiles returns the files the command line names, as absolute paths, also those named by file URLs, as a desktop entry's %U passes them: what Windows and Linux launch an app with to open, which their backends send it as EventOpenFiles. Other arguments are left to the app. On Windows a launch that names a link opens no files: the shell puts a link into the registered command line as it is, inside quotes it may close, so a link could otherwise name local files for the app to open.
-func LaunchFiles() []string {
-	if runtime.GOOS == "windows" && len(LaunchLinks()) > 0 {
-		return nil
+func parseLaunch(args []string, parseFiles func([]string) []string, preferLinks bool) Launch {
+	launch := Launch{Links: launchLinks(args)}
+	// The Windows shell inserts a link into a quoted argument. If the
+	// link breaks out of the quotes, it still cannot name files to open.
+	if preferLinks && len(launch.Links) > 0 {
+		return launch
 	}
+	if i := slices.Index(args, "--"); i >= 0 {
+		args = args[:i]
+	}
+	if len(args) == 0 {
+		return launch
+	}
+	if parseFiles != nil {
+		launch.Files = parseFiles(args[:len(args):len(args)])
+	} else {
+		launch.Files = launchFiles(args)
+	}
+	return launch
+}
+
+// launchFiles takes existing regular files (including local file URLs, as a
+// Linux desktop entry's %U passes them) and returns their absolute paths.
+func launchFiles(args []string) []string {
 	var paths []string
-	for _, arg := range os.Args[1:] {
+	for _, arg := range args {
 		if path, ok := fileURLPath(arg); ok {
 			arg = path
 		}
@@ -1013,8 +1036,12 @@ func LaunchFiles() []string {
 
 // LaunchLinks returns the links the command line names (IsLink): what Windows and Linux launch an app with to open a link of a URL scheme its package registers, which their backends send it as EventOpenLinks. The app filters them by scheme itself, so a build that registers none, as a development one, takes those it is started with too.
 func LaunchLinks() []string {
+	return launchLinks(os.Args[1:])
+}
+
+func launchLinks(args []string) []string {
 	var links []string
-	for _, arg := range os.Args[1:] {
+	for _, arg := range args {
 		if IsLink(arg) {
 			links = append(links, arg)
 		}

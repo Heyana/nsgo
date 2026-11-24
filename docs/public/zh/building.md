@@ -448,6 +448,10 @@ Windows 安装程序把应用加进“打开方式”，不替换用户的默认
 desktop.OnOpenFiles(cx, func(paths []string) { open(paths[0]) })
 ```
 
+在 Windows 和 Linux 上，无论是首次启动还是应用运行时再次启动，NSGo 都会先移除自己的标志，再扫描第一个 `--` 之前的参数，只把指向现有普通文件的路径（包括本地 `file:` URL）以绝对路径交给处理函数。默认扫描不解析应用的子命令或标志，所以 `app -- editor scene.flow` 中的两个参数都不会被当作文件打开。
+
+如果需要区分文档、子命令和标志的值，可以向 `nsgo.Run` 传入 `nsgo.LaunchFiles(parse)`。解析函数收到第一个 `--` 之前的只读参数，不含可执行文件名和 NSGo 自己的标志；它应返回绝对文件路径，NSGo 会原样交付。返回 `nil` 可让本次启动不打开文件；传入 `nsgo.LaunchFiles(nil)` 可完全禁用命令行文件打开，包括系统的“打开方式”。`--` 之后的链接仍会交给 `OnOpenLinks`；在 Windows 上，由链接触发的启动不会打开文件，也不会调用解析函数。
+
 iOS 把普通文档导入为应用自有的临时文件，保留原来的文件名。读取文件提供程序时会在 UI 线程之外协调访问，并在处理函数执行前结束安全作用域。要长期保留，请把导入文件移到 `cx.DataDir()`；编辑只影响副本。iOS 使用应用的文档图标，`icon` 只用于 macOS。App Clip 和 tvOS 包不登记文档类型。文件不会混入 `OnOpenLinks`。
 
 `desktop.AddRecentFile(cx, path)` 记录用户打开过的文档：macOS 上列进程序坞菜单和“文件 › 打开最近使用”，Windows 上列进跳转列表的“最近”，Linux 上记录到桌面的最近使用文件。选中后同样交给这个处理函数。`desktop.ClearRecentFiles` 清除应用自己的登记，Linux 上保留其他应用对同一文件的记录，也遵循 GTK 的历史记录设置。

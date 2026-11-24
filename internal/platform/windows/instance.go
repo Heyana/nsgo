@@ -62,11 +62,6 @@ type launch struct {
 	Task string `json:"task,omitempty"`
 }
 
-// launchArguments is what this launch hands the running app.
-func launchArguments(task string) launch {
-	return launch{Launch: engine.Launched(), Task: task}
-}
-
 func claimInstance(id, key string, args launch) (*instance, bool) {
 	mutexName, pipeName := instanceNames(id, key)
 	h, _, err := createMutexW.Call(0, 1, uintptr(unsafe.Pointer(mutexName)))
