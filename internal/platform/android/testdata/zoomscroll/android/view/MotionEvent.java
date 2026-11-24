@@ -8,19 +8,29 @@ public final class MotionEvent {
     public static final int ACTION_POINTER_DOWN = 5;
     public static final int ACTION_POINTER_UP = 6;
 
-    private final int action;
+    private final int action, actionIndex;
     private final float[] xs, ys;
     private final long eventTime;
 
     public MotionEvent(int action, float x, float y, long eventTime) {
+        this(action, 0, new float[]{x}, new float[]{y}, eventTime);
+    }
+
+    /** An event of several fingers; actionIndex is the one a pointer action names. */
+    public MotionEvent(int action, int actionIndex, float[] xs, float[] ys, long eventTime) {
         this.action = action;
-        this.xs = new float[]{x};
-        this.ys = new float[]{y};
+        this.actionIndex = actionIndex;
+        this.xs = xs;
+        this.ys = ys;
         this.eventTime = eventTime;
     }
 
     public int getActionMasked() {
         return action;
+    }
+
+    public int getActionIndex() {
+        return actionIndex;
     }
 
     public float getX() {

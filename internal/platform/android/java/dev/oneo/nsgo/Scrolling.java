@@ -1176,11 +1176,40 @@ final class Scrolling {
                     nest();
                     return false;
                 case MotionEvent.ACTION_POINTER_DOWN:
+                    // The view takes the touch at this event, which onTouchEvent
+                    // then never sees: the pan goes on from the fingers' middle.
+                    lastX = middleX(e, -1);
+                    lastY = middleY(e, -1);
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     return Math.hypot(e.getX() - downX, e.getY() - downY) > slop;
             }
             return false;
+        }
+
+        /** The middle of e's fingers but the one at index skip (-1 for none). */
+        private static float middleX(MotionEvent e, int skip) {
+            float sum = 0;
+            int n = 0;
+            for (int i = 0; i < e.getPointerCount(); i++) {
+                if (i != skip) {
+                    sum += e.getX(i);
+                    n++;
+                }
+            }
+            return sum / n;
+        }
+
+        private static float middleY(MotionEvent e, int skip) {
+            float sum = 0;
+            int n = 0;
+            for (int i = 0; i < e.getPointerCount(); i++) {
+                if (i != skip) {
+                    sum += e.getY(i);
+                    n++;
+                }
+            }
+            return sum / n;
         }
 
         @Override
@@ -1189,12 +1218,12 @@ final class Scrolling {
             scale.onTouchEvent(e);
             if (tracker[0] == null) tracker[0] = android.view.VelocityTracker.obtain();
             tracker[0].addMovement(e);
-            float x = e.getX(), y = e.getY();
-            if (e.getPointerCount() > 1) {
-                // The fingers' middle pans while they pinch.
-                x = (e.getX(0) + e.getX(1)) / 2;
-                y = (e.getY(0) + e.getY(1)) / 2;
-            }
+            // The fingers' middle pans while they pinch. A finger going up is
+            // still in its event: the middle of those that stay is where the
+            // next move goes on from, or the content jumps by half the
+            // fingers' spread as one lifts.
+            int up = e.getActionMasked() == MotionEvent.ACTION_POINTER_UP ? e.getActionIndex() : -1;
+            float x = middleX(e, up), y = middleY(e, up);
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     downX = lastX = x;
