@@ -87,6 +87,34 @@ const allWords: Record<SiteLang, WorkflowCopy> = {
     steps: ['Создать', 'Запустить', 'Тестировать', 'Выпустить'],
     texts: ['Приложение на Go, TSX или смешанное.', 'Горячая перезагрузка при сохранении.', 'Без окна или в нативном окне.', 'Подписанные пакеты для каждой платформы.'],
   },
+  it: {
+    eyebrow: 'Flusso di lavoro',
+    title: 'Un solo strumento, dalla prima riga allo store.',
+    text: 'nsgo crea, avvia, testa e impacchetta le app. Si installa con Go e funziona ovunque funzioni Go.',
+    steps: ['Crea', 'Avvia', 'Testa', 'Distribuisci'],
+    texts: ['Un’app in Go, TSX o mista.', 'Ricaricamento a caldo a ogni salvataggio.', 'Headless o in una finestra nativa.', 'Pacchetti firmati per ogni piattaforma.'],
+  },
+  vi: {
+    eyebrow: 'Quy trình làm việc',
+    title: 'Một công cụ duy nhất, từ dòng đầu tiên đến cửa hàng ứng dụng.',
+    text: 'nsgo khởi tạo, chạy, kiểm thử và đóng gói ứng dụng. Cài cùng Go và hoạt động ở mọi nơi Go chạy được.',
+    steps: ['Khởi tạo', 'Chạy', 'Kiểm thử', 'Phát hành'],
+    texts: ['Ứng dụng Go, TSX hoặc kết hợp.', 'Tải lại nóng mỗi khi lưu.', 'Không giao diện hoặc trong cửa sổ gốc.', 'Gói đã ký sẵn cho từng nền tảng.'],
+  },
+  id: {
+    eyebrow: 'Alur kerja',
+    title: 'Satu alat, dari baris pertama hingga toko aplikasi.',
+    text: 'nsgo membuat, menjalankan, menguji, dan mengemas aplikasi. Terpasang bersama Go dan berjalan di mana pun Go berjalan.',
+    steps: ['Buat', 'Jalankan', 'Uji', 'Rilis'],
+    texts: ['Aplikasi Go, TSX, atau campuran.', 'Muat ulang otomatis setiap menyimpan.', 'Headless atau di jendela native.', 'Paket bertanda tangan untuk setiap target.'],
+  },
+  tr: {
+    eyebrow: 'İş akışı',
+    title: 'İlk satırdan mağazaya kadar tek araç.',
+    text: 'nsgo uygulamaları oluşturur, çalıştırır, test eder ve paketler. Go ile kurulur ve Go’nun çalıştığı her yerde çalışır.',
+    steps: ['Oluştur', 'Çalıştır', 'Test et', 'Yayınla'],
+    texts: ['Go, TSX veya karma bir uygulama.', 'Her kayıtta anında yeniden yükleme.', 'Başsız veya yerel bir pencerede.', 'Her hedef için imzalanmış paketler.'],
+  },
 };
 
 const words = allWords[asSiteLang(Astro.props.lang)];

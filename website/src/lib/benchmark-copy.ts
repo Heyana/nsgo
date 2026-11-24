@@ -596,6 +596,242 @@ const ru: BenchmarkCopy = {
   },
 };
 
+const it: BenchmarkCopy = {
+  title: 'Benchmark',
+  description: 'NSGo a confronto con MyGo, NSH, GPUI Kit e GPUI Fast: le stesse tre app misurate su macOS, Windows e Linux, e dove gira ogni framework.',
+  heading: 'Le stesse app, cinque framework.',
+  lead: 'Tre piccole app, scritte per ciascun framework nel modo idiomatico, compilate in release e misurate una dopo l’altra sulla stessa macchina.',
+  desktops: 'Desktop',
+  missing: 'Non ancora misurato su questo desktop.',
+  machine: (date, cpu, memory, runs, seconds) => `Misurato il ${date} su ${cpu} con ${memory} di memoria: mediana di ${runs} esecuzioni da ${seconds} s ciascuna.`,
+  versions: 'Versioni',
+  lower: 'Più basso è meglio',
+  higher: 'Più alto è meglio',
+  failed: 'Fallito',
+  cases: {
+    counter: {
+      title: 'Contatore',
+      body: 'Un numero e due pulsanti a riposo: quanto velocemente si apre un’app e quanto costa tenerla aperta.',
+    },
+    quotes: {
+      title: 'Quotazioni in tempo reale',
+      body: 'Una tabella di 40 quotazioni, dieci delle quali cambiano a ogni fotogramma, con quattro testi ciascuna.',
+    },
+    list: {
+      title: 'Elenco scorrevole',
+      body: '10.000 righe con un punto e due testi, fatte scorrere di una riga a ogni fotogramma.',
+    },
+  },
+  metrics: {
+    startup: 'Avvio',
+    memory: 'Memoria',
+    size: 'Dimensione binario',
+    cpu: 'CPU',
+    fps: 'Fotogrammi al secondo',
+  },
+  app: 'App',
+  compositor: 'Compositore',
+  cpuNote: 'Percentuale di un core. Le viste native affidano il disegno al compositore di sistema, mentre un renderer GPU disegna nel proprio processo, quindi ogni barra somma la CPU del compositore a quella dell’app.',
+  fpsNote: 'Gli aggiornamenti seguono il display: un’app che tiene il passo resta alla frequenza di aggiornamento.',
+  features: {
+    title: 'Dove gira ciascuno.',
+    yes: 'Sì',
+    no: 'No',
+  },
+  method: {
+    title: 'Come viene misurato.',
+    items: [
+      'Ogni app stampa una riga al primo fotogramma, poi ogni secondo quanti fotogrammi ha aggiornato. Il runner misura fino alla prima riga e legge tempo CPU e memoria dal sistema.',
+      'L’avvio va dal lancio del binario al primo fotogramma. La memoria è letta a fine esecuzione: physical footprint su macOS, PSS su Linux, working set su Windows.',
+      'La CPU è misurata per 10 s dopo 3 s di assestamento, alternando le app. Il compositore è WindowServer su macOS, DWM su Windows e compositore Wayland + Xwayland su Linux, al netto del consumo a riposo.',
+      'Build release: go build -ldflags "-s -w" e cargo build --release senza simboli. GPUI Kit e GPUI Fast condividono la stessa sorgente, compilata contro GPUI e contro GPUI Fast.',
+    ],
+    source: 'Le app e il runner',
+  },
+  fair: {
+    title: 'Qualcosa di poco equo?',
+    body: 'Queste app sono state scritte dagli autori di NSGo. Se una non segue lo stile del proprio framework, usa una versione vecchia o una misura ne favorisce uno, apri una issue con le modifiche e ripeteremo la misura.',
+    action: 'Segnala in una issue',
+  },
+};
+
+const vi: BenchmarkCopy = {
+  title: 'Hiệu năng',
+  description: 'So sánh NSGo với MyGo, NSH, GPUI Kit và GPUI Fast: ba ứng dụng giống nhau đo trên macOS, Windows và Linux, cùng các nền tảng mỗi framework hỗ trợ.',
+  heading: 'Cùng ứng dụng, năm framework.',
+  lead: 'Ba ứng dụng nhỏ, được viết đúng cách khuyến nghị của từng framework, biên dịch bản phát hành và đo lần lượt trên cùng một máy.',
+  desktops: 'Máy tính',
+  missing: 'Chưa đo trên hệ điều hành này.',
+  machine: (date, cpu, memory, runs, seconds) => `Đo ngày ${date} trên ${cpu} với ${memory} bộ nhớ: trung vị của ${runs} lần chạy, mỗi lần ${seconds} giây.`,
+  versions: 'Phiên bản',
+  lower: 'Thấp hơn tốt hơn',
+  higher: 'Cao hơn tốt hơn',
+  failed: 'Thất bại',
+  cases: {
+    counter: {
+      title: 'Bộ đếm',
+      body: 'Một con số và hai nút ở trạng thái nghỉ: tốc độ mở ứng dụng và chi phí duy trì khi đang mở.',
+    },
+    quotes: {
+      title: 'Bảng giá trực tiếp',
+      body: 'Bảng 40 mã giá, mười mã thay đổi ở mỗi khung hình hiển thị, mỗi mã gồm bốn đoạn chữ.',
+    },
+    list: {
+      title: 'Danh sách cuộn',
+      body: '10.000 dòng gồm một dấu chấm và hai đoạn chữ, cuộn thêm một dòng ở mỗi khung hình.',
+    },
+  },
+  metrics: {
+    startup: 'Khởi động',
+    memory: 'Bộ nhớ',
+    size: 'Kích thước tệp nhị phân',
+    cpu: 'CPU',
+    fps: 'Khung hình mỗi giây',
+  },
+  app: 'Ứng dụng',
+  compositor: 'Bộ tổng hợp',
+  cpuNote: 'Phần trăm của một nhân CPU. Giao diện gốc giao phần vẽ cho bộ tổng hợp hệ thống trong khi bộ dựng GPU vẽ ngay trong tiến trình riêng, nên mỗi thanh cộng thêm CPU của bộ tổng hợp vào ứng dụng.',
+  fpsNote: 'Cập nhật theo màn hình: ứng dụng theo kịp sẽ duy trì đúng tần số quét.',
+  features: {
+    title: 'Nơi mỗi framework chạy được.',
+    yes: 'Có',
+    no: 'Không',
+  },
+  method: {
+    title: 'Cách đo lường.',
+    items: [
+      'Mỗi ứng dụng in một dòng ở khung hình đầu tiên, rồi mỗi giây in số khung hình đã cập nhật. Trình đo tính thời gian tới dòng đầu tiên và đọc CPU cùng bộ nhớ tiến trình từ hệ thống.',
+      'Thời gian khởi động tính từ lúc chạy tệp nhị phân tới khung hình đầu tiên. Bộ nhớ đo cuối mỗi lượt: physical footprint trên macOS, PSS trên Linux, working set trên Windows.',
+      'CPU đo trong 10 giây sau 3 giây ổn định, các ứng dụng chạy luân phiên. Bộ tổng hợp là WindowServer trên macOS, DWM trên Windows và Wayland + Xwayland trên Linux, trừ đi mức tiêu thụ lúc nghỉ.',
+      'Bản phát hành: go build -ldflags "-s -w" và cargo build --release đã lược bỏ ký hiệu. GPUI Kit và GPUI Fast dùng chung mã nguồn, biên dịch với GPUI gốc và GPUI Fast.',
+    ],
+    source: 'Các ứng dụng và trình đo',
+  },
+  fair: {
+    title: 'Thấy điểm chưa công bằng?',
+    body: 'Các ứng dụng này do nhóm tác giả NSGo viết. Nếu một bản chưa viết đúng phong cách framework, dùng bản cũ hoặc cách đo thiên vị một framework nào, hãy mở issue để chúng tôi sửa và đo lại.',
+    action: 'Báo cáo qua issue',
+  },
+};
+
+const id: BenchmarkCopy = {
+  title: 'Tolok ukur',
+  description: 'Perbandingan NSGo melawan MyGo, NSH, GPUI Kit, dan GPUI Fast: tiga aplikasi yang sama diukur di macOS, Windows, dan Linux, serta platform masing-masing framework.',
+  heading: 'Aplikasi yang sama, lima framework.',
+  lead: 'Tiga aplikasi kecil yang ditulis secara idiomatik untuk tiap framework, dibangun dalam mode rilis, lalu diukur bergantian di mesin yang sama.',
+  desktops: 'Desktop',
+  missing: 'Belum diukur di desktop ini.',
+  machine: (date, cpu, memory, runs, seconds) => `Diukur pada ${date} di ${cpu} dengan memori ${memory}: median dari ${runs} kali jalan, masing-masing ${seconds} detik.`,
+  versions: 'Versi',
+  lower: 'Lebih rendah lebih baik',
+  higher: 'Lebih tinggi lebih baik',
+  failed: 'Gagal',
+  cases: {
+    counter: {
+      title: 'Penghitung',
+      body: 'Satu angka dan dua tombol dalam keadaan diam: seberapa cepat aplikasi terbuka dan berapa biaya mempertahankannya.',
+    },
+    quotes: {
+      title: 'Kuotasi streaming',
+      body: 'Tabel berisi 40 kuotasi, sepuluh di antaranya berubah setiap frame layar dengan empat teks masing-masing.',
+    },
+    list: {
+      title: 'Daftar gulir',
+      body: '10.000 baris berisi satu titik dan dua teks, digulir satu baris lebih jauh di setiap frame.',
+    },
+  },
+  metrics: {
+    startup: 'Waktu mulai',
+    memory: 'Memori',
+    size: 'Ukuran biner',
+    cpu: 'CPU',
+    fps: 'Frame per detik',
+  },
+  app: 'Aplikasi',
+  compositor: 'Kompositor',
+  cpuNote: 'Persentase dari satu inti CPU. Tampilan native menyerahkan penggambaran ke kompositor sistem, sedangkan perender GPU menggambar di prosesnya sendiri, sehingga tiap batang menjumlahkan CPU kompositor ke CPU aplikasi.',
+  fpsNote: 'Pembaruan mengikuti layar: aplikasi yang mampu mengejar tetap berada pada refresh rate layar.',
+  features: {
+    title: 'Di mana masing-masing berjalan.',
+    yes: 'Ya',
+    no: 'Tidak',
+  },
+  method: {
+    title: 'Cara pengukuran.',
+    items: [
+      'Setiap aplikasi mencetak satu baris pada frame pertama, lalu setiap detik jumlah frame yang diperbarui. Runner mencatat waktu hingga baris pertama dan membaca CPU serta memori proses dari sistem.',
+      'Waktu mulai diukur dari peluncuran biner hingga frame pertama. Memori dibaca di akhir pengujian: physical footprint di macOS, PSS di Linux, dan working set di Windows.',
+      'CPU diukur selama 10 detik setelah 3 detik stabilisasi secara bergantian. Kompositor adalah WindowServer di macOS, DWM di Windows, serta kompositor Wayland + Xwayland di Linux dikurangi penggunaan saat kosong.',
+      'Build rilis: go build -ldflags "-s -w" serta cargo build --release tanpa simbol. GPUI Kit dan GPUI Fast berbagi kode sumber yang sama, dibangun terhadap GPUI hulu dan GPUI Fast.',
+    ],
+    source: 'Aplikasi dan runner',
+  },
+  fair: {
+    title: 'Ada yang kurang adil?',
+    body: 'Aplikasi ini ditulis oleh pembuat NSGo. Jika ada yang belum ditulis secara idiomatik, memakai versi lama, atau pengukuran menguntungkan satu pihak, buka issue agar kami perbaiki dan ukur ulang.',
+    action: 'Laporkan di issue',
+  },
+};
+
+const tr: BenchmarkCopy = {
+  title: 'Kıyaslamalar',
+  description: 'NSGo’nun MyGo, NSH, GPUI Kit ve GPUI Fast ile karşılaştırması: aynı üç uygulamanın macOS, Windows ve Linux ölçümleri ve her çerçevenin çalıştığı platformlar.',
+  heading: 'Aynı uygulamalar, beş çerçeve.',
+  lead: 'Her çerçeve için önerilen biçimde yazılmış üç küçük uygulama; sürüm modunda derlendi ve aynı makinede art arda ölçüldü.',
+  desktops: 'Masaüstü',
+  missing: 'Bu masaüstünde henüz ölçülmedi.',
+  machine: (date, cpu, memory, runs, seconds) => `${date} tarihinde ${cpu} (${memory} bellek) üzerinde ölçüldü: her biri ${seconds} sn süren ${runs} çalıştırmanın medyanı.`,
+  versions: 'Sürümler',
+  lower: 'Düşük olan daha iyi',
+  higher: 'Yüksek olan daha iyi',
+  failed: 'Başarısız',
+  cases: {
+    counter: {
+      title: 'Sayaç',
+      body: 'Boşta bekleyen bir sayı ve iki düğme: uygulamanın ne kadar hızlı açıldığı ve açık kalma maliyeti.',
+    },
+    quotes: {
+      title: 'Canlı fiyat akışı',
+      body: 'Her ekran karesinde onu değişen, her biri dört metin içeren 40 satırlık fiyat tablosu.',
+    },
+    list: {
+      title: 'Kaydırılan liste',
+      body: 'Bir nokta ve iki metinden oluşan 10.000 satır, her karede bir satır aşağı kaydırılır.',
+    },
+  },
+  metrics: {
+    startup: 'Açılış',
+    memory: 'Bellek',
+    size: 'İkili dosya boyutu',
+    cpu: 'CPU',
+    fps: 'Saniye başına kare',
+  },
+  app: 'Uygulama',
+  compositor: 'Birleştirici',
+  cpuNote: 'Tek çekirdek yüzdesi. Yerel görünümler çizimi sistem birleştiricisine bırakırken GPU çiziciler kendi sürecinde çizer; bu nedenle her çubuk birleştirici CPU’sunu uygulamaya ekler.',
+  fpsNote: 'Güncellemeler ekranı izler: yetişebilen uygulama yenileme hızında kalır.',
+  features: {
+    title: 'Her biri nerede çalışır.',
+    yes: 'Evet',
+    no: 'Hayır',
+  },
+  method: {
+    title: 'Nasıl ölçülüyor.',
+    items: [
+      'Her uygulama ilk karede bir satır, ardından her saniye kaç kare güncellediğini yazar. Çalıştırıcı ilk satıra kadar geçen süreyi ve sistemden CPU süresi ile belleği okur.',
+      'Açılış süresi ikili dosyanın başlatılmasından ilk kareye kadardır. Bellek çalıştırma sonunda okunur: macOS’ta physical footprint, Linux’ta PSS, Windows’ta working set.',
+      'CPU, 3 saniyelik oturma süresinin ardından 10 saniye boyunca sırayla ölçülür. Birleştirici macOS’ta WindowServer, Windows’ta DWM, Linux’ta Wayland birleştiricisi ve Xwayland’dir (boşta tüketim düşülerek).',
+      'Sürüm derlemeleri: go build -ldflags "-s -w" ve sembolleri temizlenmiş cargo build --release. GPUI Kit ve GPUI Fast aynı kaynağı kendi paketleriyle derler.',
+    ],
+    source: 'Uygulamalar ve ölçüm aracı',
+  },
+  fair: {
+    title: 'Adil olmayan bir şey mi var?',
+    body: 'Bu uygulamalar NSGo yazarları tarafından yazıldı. Biri kendi çerçevesine uygun yazılmadıysa, eski bir sürüm kullanıyorsa veya ölçüm bir çerçeveyi kayırıyorsa issue açın, düzeltip yeniden ölçelim.',
+    action: 'Issue ile bildir',
+  },
+};
+
 export const benchmarkCopies: Record<SiteLang, BenchmarkCopy> = {
   en,
   zh,
@@ -607,4 +843,8 @@ export const benchmarkCopies: Record<SiteLang, BenchmarkCopy> = {
   de,
   pt,
   ru,
+  it,
+  vi,
+  id,
+  tr,
 };

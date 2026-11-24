@@ -10,7 +10,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { langs } from '../src/site.ts';
+
+// Languages the gallery app itself ships catalogs for (examples/gallery/locales/).
+const langs = ['en', 'zh'];
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const website = path.resolve(here, '..');

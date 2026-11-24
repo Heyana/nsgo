@@ -38,6 +38,10 @@ const GROUP_LABELS: Record<string, Partial<Record<SiteLang, string>>> = {
     de: 'Erste Schritte',
     pt: 'Primeiros passos',
     ru: 'Начало работы',
+    it: 'Per iniziare',
+    vi: 'Bắt đầu',
+    id: 'Mulai',
+    tr: 'Başlarken',
   },
   'Core concepts': {
     'zh-tw': '核心概念',
@@ -48,6 +52,10 @@ const GROUP_LABELS: Record<string, Partial<Record<SiteLang, string>>> = {
     de: 'Kernkonzepte',
     pt: 'Conceitos principais',
     ru: 'Основные концепции',
+    it: 'Concetti chiave',
+    vi: 'Khái niệm cốt lõi',
+    id: 'Konsep inti',
+    tr: 'Temel kavramlar',
   },
   'Writing components': {
     'zh-tw': '撰寫元件',
@@ -58,6 +66,10 @@ const GROUP_LABELS: Record<string, Partial<Record<SiteLang, string>>> = {
     de: 'Komponenten schreiben',
     pt: 'Escrevendo componentes',
     ru: 'Написание компонентов',
+    it: 'Scrivere componenti',
+    vi: 'Viết thành phần',
+    id: 'Menulis komponen',
+    tr: 'Bileşen yazma',
   },
   Components: {
     'zh-tw': '元件',
@@ -68,6 +80,10 @@ const GROUP_LABELS: Record<string, Partial<Record<SiteLang, string>>> = {
     de: 'Komponenten',
     pt: 'Componentes',
     ru: 'Компоненты',
+    it: 'Componenti',
+    vi: 'Thành phần',
+    id: 'Komponen',
+    tr: 'Bileşenler',
   },
   'Platform features': {
     'zh-tw': '平台功能',
@@ -78,6 +94,10 @@ const GROUP_LABELS: Record<string, Partial<Record<SiteLang, string>>> = {
     de: 'Plattformfunktionen',
     pt: 'Recursos de plataforma',
     ru: 'Возможности платформ',
+    it: 'Funzionalità di piattaforma',
+    vi: 'Tính năng nền tảng',
+    id: 'Fitur platform',
+    tr: 'Platform özellikleri',
   },
   Toolchain: {
     'zh-tw': '工具鏈',
@@ -88,6 +108,10 @@ const GROUP_LABELS: Record<string, Partial<Record<SiteLang, string>>> = {
     de: 'Toolchain',
     pt: 'Ferramentas',
     ru: 'Инструменты',
+    it: 'Strumenti',
+    vi: 'Bộ công cụ',
+    id: 'Perangkat bantu',
+    tr: 'Araç zinciri',
   },
   Contributing: {
     'zh-tw': '參與貢獻',
@@ -98,6 +122,10 @@ const GROUP_LABELS: Record<string, Partial<Record<SiteLang, string>>> = {
     de: 'Mitwirken',
     pt: 'Contribuir',
     ru: 'Участие в разработке',
+    it: 'Contribuire',
+    vi: 'Đóng góp',
+    id: 'Berkontribusi',
+    tr: 'Katkıda bulunma',
   },
 };
 

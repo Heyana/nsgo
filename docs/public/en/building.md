@@ -374,6 +374,7 @@ mobile:
   asset_packs:
     - {name: levels, dir: resources/levels, delivery: install-time}
     - {name: voices, dir: large-assets/voices, delivery: fast-follow}
+```
 
 Build Android packs with `go tool nsgo build -channel store -target android_arm64`. Use `bundletool build-apks --local-testing` and `bundletool install-apks` to test the bundle on a device. NSGo opens installed `install-time` packs. The `fast-follow` modules are included for Play delivery, and reading those packs from the Play Asset Delivery SDK is still pending.
 

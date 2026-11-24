@@ -52,6 +52,10 @@ const status = {
   de: { loading: 'Vorschau wird geladen…', failed: 'Die Vorschau konnte nicht gestartet werden.' },
   pt: { loading: 'Carregando a prévia…', failed: 'Não foi possível iniciar a prévia.' },
   ru: { loading: 'Загрузка предпросмотра…', failed: 'Не удалось запустить предпросмотр.' },
+  it: { loading: 'Caricamento dell’anteprima…', failed: 'Impossibile avviare l’anteprima.' },
+  vi: { loading: 'Đang tải bản xem trước…', failed: 'Không thể khởi chạy bản xem trước.' },
+  id: { loading: 'Memuat pratinjau…', failed: 'Pratinjau tidak dapat dimulai.' },
+  tr: { loading: 'Önizleme yükleniyor…', failed: 'Önizleme başlatılamadı.' },
 };
 
 // livePreviews puts an empty box before each marked block, which

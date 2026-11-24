@@ -1,0 +1,68 @@
+---
+title: 原生库
+description: 通过 NSGo 常规的打包、许可证与签名流程，随 Go 包一同分发预编译的共享库。
+group: 工具链
+order: 23
+---
+
+Go 包只需在自身包目录中放置 `nsgo-natives.yaml`，即可随包分发其通过 purego 加载的共享库。当应用导入该包时，NSGo 会为目标平台筛选对应的声明，校验这些文件，并在签名和制作安装程序之前将其打包进去。应用本身无需任何额外配置或打包命令。
+
+## 声明库
+
+```yaml
+version: 1
+libraries:
+  macos_arm64:
+    - name: libexample.dylib
+      path: lib/macos-arm64/libexample.dylib
+      sha256: "<64 hexadecimal digits for this file>"
+      licenses: [licenses/LICENSE, licenses/NOTICE]
+  macos_x64:
+    - name: libexample.dylib
+      url: https://downloads.example.org/v1.0/macos-x64/libexample.dylib
+      sha256: "<64 hexadecimal digits for this file>"
+      licenses: [licenses/LICENSE, licenses/NOTICE]
+  windows_arm64: []
+  windows_x64: []
+  linux_arm64: []
+  linux_x64: []
+```
+
+支持的键包括 `macos_arm64`、`macos_x64`、`windows_arm64`、`windows_x64`、`linux_arm64` 和 `linux_x64`。请声明该 Go 包会被选中的每一个目标平台；`[]` 明确表示该目标不需要捆绑库。此外，也可以使用 Go 构建标签将该包排除在它不支持的目标平台之外。`macos_universal` 会使用两个 macOS 条目。
+
+每个库包含以下字段：
+
+- `name`：安装后的文件名，在 macOS 上以 `.dylib` 结尾，在 Windows 上以 `.dll` 结尾，在 Linux 上以 `.so` 或带版本号的 `.so.*` 结尾。
+- 必须且仅能指定 `path` 或 `url` 中的一个：`path` 为相对于当前包目录的文件路径，`url` 为指向库文件本身的 HTTP(S) URL。请直接发布解压后的库文件，而不要提供归档压缩包的 URL。URL 中不得嵌入用户名和密码。
+- `sha256`：原始文件的 SHA-256 校验和，无论使用哪种来源都必须填写。例如，在 macOS 上可以通过 `shasum -a 256 lib/macos-arm64/libexample.dylib` 打印该值。
+- `licenses`：非空的路径列表，指向相对于当前包目录的原始许可证和声明文件。这些文本会打包进 `THIRD_PARTY_NOTICES.txt`，并在发布构建中通过 `core.ThirdPartyNotices()` 提供。应用现有的[许可证策略](building.md#license-notices)（包括精确模块例外规则）同样独立适用于原生库许可证。
+
+本地路径和符号链接必须保持在声明该库的包目录内部。NSGo 会拒绝未知字段、校验和不匹配的文件、属于其他操作系统或架构的文件，以及存在冲突的安装文件名。两个包可以共用具有相同校验和的同名文件。单个文件大小上限为 1 GiB。
+
+## 打包与加载
+
+| 目标 | 库目录 |
+| --- | --- |
+| macOS | `<app>.app/Contents/Frameworks` |
+| Windows 和 Linux | 与可执行文件同级 |
+
+包会基于可执行文件的位置（而非当前工作目录）从该目录加载库文件。请提前构建好依赖项，使其同级依赖库能够从其所在分发目录加载。请声明每一个所需的同级文件以及加载器需要的每一个文件名。
+
+NSGo 在复用已缓存的下载文件之前会再次进行校验，并通过文件锁协调并发构建。内容缓存位于操作系统用户缓存目录下的 `nsgo/natives` 中。本地文件会在复制过程中完成校验。
+
+macOS 通用包（universal package）要求两种架构使用相同的库文件名。NSGo 会使用 `lipo` 合并各个架构切片；发布者预先制作好的通用库可直接用于任一条目。库文件会在应用之前完成签名，随后走完应用常规的磁盘映像、签名与公证流程。即使设置了 `build.installers: false`，Windows 签名仍会包含已声明的 DLL。Linux 安装程序会包含与可执行文件目录相同的库文件和声明文件。
+
+开发模式和原生桌面目标测试使用相同的包筛选与复制步骤。声明会根据构建的目标平台、构建标签和生成的 Go overlay（包括本地替换模块和 vendor 包）进行筛选。其他目标平台目前不会从此文件打包任何库。
+
+## 在 vendor 时保留文件
+
+Go 的 vendor 操作需要通过嵌入数据来保留包目录下的文件。包可以将其清单文件和许可证文件标记为包含，而无需在运行时读取它们的字节内容：
+
+```go
+import "embed"
+
+//go:embed nsgo-natives.yaml licenses/*
+var _ embed.FS
+```
+
+使用 `path` 时，也请将本地库路径包含到该嵌入指令中，例如 `lib/*`。使用 URL 下载时，Go 包中只需包含清单文件和许可证文件。

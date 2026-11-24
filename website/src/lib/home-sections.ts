@@ -300,7 +300,7 @@ const COPY: Record<SiteLang, SectionCopy> = {
       eyebrow: 'Что вы получаете',
       title: 'Всё, что нужно приложению, на одном языке.',
       items: [
-        ['По-настоящему нативно', 'Каждая платформа использует собственные views, текст, прокрутку и доступность.'],
+        ['По-настоящему нативно', 'Каждая платформа использует собственные компоненты, текст, прокрутку и доступность.'],
         ['Реактивный движок', 'Сигналы обновляют только то, что их читает. Анимации идут в такт с кадрами платформы.'],
         ['Привычная вёрстка и стили', 'Flexbox и grid, CSS-подобные стили, классы Tailwind, светлая и тёмная темы, языки RTL.'],
         ['Готовые компоненты', 'Без стилей в base и готовые в ui: от кнопок и меню до таблиц, графиков, редактора кода и терминала.'],
@@ -323,6 +323,126 @@ const COPY: Record<SiteLang, SectionCopy> = {
       text: 'Следуйте руководству, чтобы установить инструмент и создать первое приложение.',
       getStarted: 'Начать',
       liveDemo: 'Открыть демо',
+    },
+  },
+  it: {
+    features: {
+      eyebrow: 'Cosa ottieni',
+      title: 'Tutto ciò che serve a un’app, in un solo linguaggio.',
+      items: [
+        ['Davvero nativo', 'Ogni piattaforma disegna con le proprie viste, testo, scorrimento e accessibilità.'],
+        ['Motore reattivo', 'I segnali aggiornano solo ciò che li legge. Le animazioni seguono il clock dei fotogrammi della piattaforma.'],
+        ['Layout e stili familiari', 'Flexbox e grid, stili simili a CSS, classi Tailwind, temi chiaro e scuro e lingue da destra a sinistra.'],
+        ['Componenti inclusi', 'Senza stile in base, pronti all’uso in ui: da pulsanti e menu a tabelle, grafici, editor di codice e terminale.'],
+        ['Go o TSX', 'Componenti come valori Go oppure TSX con classi Tailwind, compilati in anticipo senza Node.'],
+        ['Test come utenti veri', 'Trova un controllo dal suo testo e premilo, in modalità headless o in una finestra reale.'],
+      ],
+    },
+    api: {
+      eyebrow: 'L’API',
+      title: 'Un componente è semplicemente Go.',
+      text: 'Gli elementi sono struct, lo stato è un segnale e un test preme il pulsante proprio come farebbe un utente.',
+      items: [
+        ['Nessun linguaggio di template', 'Un componente è una funzione che restituisce elementi.'],
+        ['Aggiornamenti mirati', 'Premere aggiorna solo il testo che legge il contatore.'],
+        ['Integrabile ovunque', 'Inserisci una vista NSGo in un’app iOS, Android, desktop o web.'],
+      ],
+    },
+    end: {
+      title: 'Inizia a creare con NSGo.',
+      text: 'Segui la guida per installare lo strumento e creare la tua prima app.',
+      getStarted: 'Inizia',
+      liveDemo: 'Prova la demo dal vivo',
+    },
+  },
+  vi: {
+    features: {
+      eyebrow: 'Bạn nhận được gì',
+      title: 'Mọi thứ một ứng dụng cần, chỉ trong một ngôn ngữ.',
+      items: [
+        ['Thực sự nguyên bản', 'Mỗi nền tảng vẽ bằng thành phần gốc, chữ, cuộn và trợ năng của riêng mình.'],
+        ['Động cơ phản ứng', 'Signal chỉ cập nhật đúng nơi đọc nó. Hoạt ảnh chạy theo nhịp khung hình của nền tảng.'],
+        ['Bố cục và kiểu dáng quen thuộc', 'Flexbox và grid, kiểu giống CSS, lớp Tailwind, giao diện sáng/tối và ngôn ngữ phải sang trái.'],
+        ['Đi kèm bộ thành phần', 'Không kiểu ở base, dùng ngay ở ui: từ nút bấm và menu tới bảng dữ liệu, biểu đồ, trình soạn mã và terminal.'],
+        ['Go hoặc TSX', 'Viết thành phần bằng giá trị Go hoặc TSX với lớp Tailwind, biên dịch trước mà không cần Node.'],
+        ['Kiểm thử như người dùng', 'Tìm điều khiển theo văn bản rồi nhấn vào, ở chế độ không giao diện hoặc trong cửa sổ thật.'],
+      ],
+    },
+    api: {
+      eyebrow: 'API',
+      title: 'Thành phần đơn giản chỉ là Go.',
+      text: 'Phần tử là struct, trạng thái là signal, còn bài kiểm thử nhấn nút hệt như người dùng.',
+      items: [
+        ['Không cần ngôn ngữ mẫu', 'Thành phần chỉ là một hàm trả về các phần tử.'],
+        ['Cập nhật chi tiết', 'Nhấn nút chỉ làm thay đổi đúng đoạn chữ đang đọc bộ đếm.'],
+        ['Nhúng ở mọi nơi', 'Đặt giao diện NSGo vào bên trong ứng dụng iOS, Android, máy tính hoặc web.'],
+      ],
+    },
+    end: {
+      title: 'Bắt đầu xây dựng với NSGo.',
+      text: 'Làm theo hướng dẫn để cài đặt công cụ và tạo ứng dụng đầu tiên.',
+      getStarted: 'Bắt đầu',
+      liveDemo: 'Thử bản demo trực tiếp',
+    },
+  },
+  id: {
+    features: {
+      eyebrow: 'Yang Anda dapatkan',
+      title: 'Semua yang dibutuhkan aplikasi, dalam satu bahasa.',
+      items: [
+        ['Benar-benar native', 'Setiap platform menggambar dengan tampilan, teks, gulir, dan aksesibilitasnya sendiri.'],
+        ['Mesin reaktif', 'Sinyal hanya memperbarui bagian yang membacanya. Animasi berjalan mengikuti detak frame platform.'],
+        ['Tata letak dan gaya yang akrab', 'Flexbox dan grid, gaya ala CSS, kelas Tailwind, tema terang dan gelap, serta bahasa kanan-ke-kiri.'],
+        ['Komponen siap pakai', 'Tanpa gaya di base, siap pakai di ui: mulai dari tombol dan menu hingga tabel data, grafik, editor kode, dan terminal.'],
+        ['Go atau TSX', 'Komponen sebagai nilai Go, atau TSX dengan kelas Tailwind, dikompilasi di awal tanpa Node.'],
+        ['Pengujian seperti pengguna', 'Temukan kontrol berdasarkan teksnya lalu tekan, secara headless maupun di jendela nyata.'],
+      ],
+    },
+    api: {
+      eyebrow: 'API',
+      title: 'Komponen hanyalah kode Go.',
+      text: 'Elemen adalah struct, state adalah sinyal, dan pengujian menekan tombol persis seperti pengguna.',
+      items: [
+        ['Tanpa bahasa templat', 'Komponen hanyalah fungsi yang mengembalikan elemen.'],
+        ['Pembaruan presisi', 'Menekan tombol hanya mengubah teks yang membaca hitungan.'],
+        ['Mudah disematkan di mana saja', 'Masukkan tampilan NSGo ke dalam aplikasi iOS, Android, desktop, atau web.'],
+      ],
+    },
+    end: {
+      title: 'Mulai membangun dengan NSGo.',
+      text: 'Ikuti panduan untuk memasang alat dan membuat aplikasi pertama Anda.',
+      getStarted: 'Mulai',
+      liveDemo: 'Coba demo langsung',
+    },
+  },
+  tr: {
+    features: {
+      eyebrow: 'Neler kazanırsınız',
+      title: 'Bir uygulamanın ihtiyaç duyduğu her şey tek dilde.',
+      items: [
+        ['Gerçekten yerel', 'Her platform kendi görünümleri, metni, kaydırması ve erişilebilirliğiyle çizer.'],
+        ['Reaktif motor', 'Sinyaller yalnızca onları okuyan yerleri günceller. Animasyonlar platformun kare saatinde çalışır.'],
+        ['Alışık olduğunuz düzen ve stiller', 'Flexbox ve grid, CSS benzeri stiller, Tailwind sınıfları, açık/koyu temalar ve sağdan sola diller.'],
+        ['Dahili bileşenler', 'base içinde stilsiz, ui içinde kullanıma hazır: düğmeler ve menülerden veri tablolarına, grafiklere, kod editörüne ve terminale kadar.'],
+        ['Go veya TSX', 'Go değerleri olarak veya Node gerektirmeden önceden derlenen Tailwind sınıflı TSX ile bileşenler yazın.'],
+        ['Kullanıcı gibi davranan testler', 'Bir denetimi metnine göre bulun ve tıklayın; başsız olarak veya gerçek bir pencerede.'],
+      ],
+    },
+    api: {
+      eyebrow: 'API',
+      title: 'Bir bileşen yalnızca Go’dur.',
+      text: 'Öğeler struct, durum bir sinyaldir ve testler düğmeye tıpkı bir kullanıcı gibi basar.',
+      items: [
+        ['Şablon dili yok', 'Bileşen, öğeler döndüren bir fonksiyondur.'],
+        ['İnce taneli güncellemeler', 'Tıklama yalnızca sayacı okuyan tek metni değiştirir.'],
+        ['Her yere gömülebilir', 'Bir NSGo görünümünü iOS, Android, masaüstü veya web uygulamasına yerleştirin.'],
+      ],
+    },
+    end: {
+      title: 'NSGo ile geliştirmeye başlayın.',
+      text: 'Aracı kurmak ve ilk uygulamanızı oluşturmak için kılavuzu izleyin.',
+      getStarted: 'Başlayın',
+      liveDemo: 'Canlı demoyu deneyin',
     },
   },
 };

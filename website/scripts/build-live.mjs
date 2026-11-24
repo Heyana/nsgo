@@ -30,7 +30,9 @@ function collect(node, page) {
   }
   for (const child of node.children ?? []) collect(child, page);
 }
-for (const lang of ['en', 'zh']) {
+for (const entry of readdirSync(docs, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const lang = entry.name;
   for (const file of readdirSync(path.join(docs, lang), { recursive: true })) {
     if (!file.endsWith('.md')) continue;
     collect(fromMarkdown(readFileSync(path.join(docs, lang, file), 'utf8')), `${lang}/${file}`);

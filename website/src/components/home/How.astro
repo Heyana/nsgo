@@ -123,9 +123,53 @@ const allHow: Record<SiteLang, HowCopy> = {
     nodes: [
       { label: 'Ваше приложение', title: 'Go или TSX', items: ['Компоненты', 'Сигналы', 'Стили и Tailwind'] },
       { label: 'Движок NSGo', title: 'На Go', items: ['Реактивный граф', 'Flexbox и grid', 'Подготовка текста'] },
-      { label: 'Платформа', title: 'Нативные views', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+      { label: 'Платформа', title: 'Нативные компоненты', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
     ],
     links: ['рендерит', 'один пакет на коммит'],
+  },
+  it: {
+    eyebrow: 'Come funziona',
+    title: 'Go gestisce l’app. La piattaforma la disegna.',
+    text: 'Nessun browser integrato e nessun renderer personalizzato tra la tua app e lo schermo: ogni aggiornamento passa al thread principale una sola volta, in un unico batch con solo ciò che è cambiato.',
+    nodes: [
+      { label: 'La tua app', title: 'Go o TSX', items: ['Componenti', 'Segnali', 'Stili e Tailwind'] },
+      { label: 'Motore NSGo', title: 'In Go', items: ['Grafo reattivo', 'Flexbox e grid', 'Preparazione del testo'] },
+      { label: 'La piattaforma', title: 'Viste native', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['renderizza', 'un batch per commit'],
+  },
+  vi: {
+    eyebrow: 'Cách hoạt động',
+    title: 'Go điều khiển ứng dụng. Nền tảng đảm nhiệm vẽ giao diện.',
+    text: 'Không có trình duyệt nhúng hay bộ dựng hình tùy biến nào giữa ứng dụng và màn hình: mỗi lần cập nhật chỉ qua luồng chính một lần dưới dạng một lô duy nhất chứa đúng phần thay đổi.',
+    nodes: [
+      { label: 'Ứng dụng của bạn', title: 'Go hoặc TSX', items: ['Thành phần', 'Signal', 'Kiểu dáng và Tailwind'] },
+      { label: 'Động cơ NSGo', title: 'Viết bằng Go', items: ['Đồ thị phản ứng', 'Flexbox và grid', 'Chuẩn bị văn bản'] },
+      { label: 'Nền tảng', title: 'Giao diện gốc', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['kết xuất', 'một lô mỗi lần cam kết'],
+  },
+  id: {
+    eyebrow: 'Cara kerja',
+    title: 'Go mengendalikan aplikasi. Platform yang menggambarnya.',
+    text: 'Tidak ada peramban tertanam dan tidak ada perender khusus di antara aplikasi dan layar: setiap pembaruan melintas ke thread utama satu kali saja, sebagai satu batch berisi hanya yang berubah.',
+    nodes: [
+      { label: 'Aplikasi Anda', title: 'Go atau TSX', items: ['Komponen', 'Sinyal', 'Gaya dan Tailwind'] },
+      { label: 'Mesin NSGo', title: 'Dalam Go', items: ['Graf reaktif', 'Flexbox dan grid', 'Persiapan teks'] },
+      { label: 'Platform', title: 'Tampilan native', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['merender', 'satu batch per commit'],
+  },
+  tr: {
+    eyebrow: 'Nasıl çalışır',
+    title: 'Uygulamayı Go yönetir. Platform çizer.',
+    text: 'Uygulamanız ile ekran arasında gömülü bir tarayıcı veya özel bir çizici yoktur: her güncelleme ana iş parçacığına yalnızca bir kez, sadece değişenleri içeren tek bir yığın olarak geçer.',
+    nodes: [
+      { label: 'Uygulamanız', title: 'Go veya TSX', items: ['Bileşenler', 'Sinyaller', 'Stiller ve Tailwind'] },
+      { label: 'NSGo motoru', title: 'Go ile', items: ['Reaktif grafik', 'Flexbox ve grid', 'Metin hazırlama'] },
+      { label: 'Platform', title: 'Yerel görünümler', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['işler', 'her commit için tek yığın'],
   },
 };
 

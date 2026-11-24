@@ -72,6 +72,10 @@ const same = (value: string, overrides: Partial<LocalizedText> = {}): LocalizedT
   de: value,
   pt: value,
   ru: value,
+  it: value,
+  vi: value,
+  id: value,
+  tr: value,
   ...overrides,
 });
 
@@ -98,6 +102,10 @@ const community: Support = {
   de: 'Community',
   pt: 'Comunidade',
   ru: 'Сообщество',
+  it: 'Community',
+  vi: 'Cộng đồng',
+  id: 'Komunitas',
+  tr: 'Topluluk',
 };
 
 /** Mini programs hold an app to 2 MB, which NSGo's larger apps exceed. */
@@ -112,6 +120,10 @@ const experimental: Support = {
   de: 'Experimentell',
   pt: 'Experimental',
   ru: 'Экспериментально',
+  it: 'Sperimentale',
+  vi: 'Thử nghiệm',
+  id: 'Eksperimental',
+  tr: 'Deneysel',
 };
 
 const nativeViews: Support = {
@@ -124,7 +136,11 @@ const nativeViews: Support = {
   fr: 'Vues natives',
   de: 'Native Views',
   pt: 'Views nativas',
-  ru: 'Нативные views',
+  ru: 'Нативные компоненты',
+  it: 'Viste native',
+  vi: 'Giao diện gốc',
+  id: 'Tampilan native',
+  tr: 'Yerel görünümler',
 };
 
 /**
@@ -143,6 +159,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
     de: 'App-Entwicklung',
     pt: 'Desenvolvimento',
     ru: 'Разработка',
+    it: 'Sviluppo',
+    vi: 'Phát triển ứng dụng',
+    id: 'Pengembangan aplikasi',
+    tr: 'Uygulama geliştirme',
     rows: [
       {
         en: 'Language',
@@ -155,6 +175,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
         de: 'Sprache',
         pt: 'Linguagem',
         ru: 'Язык',
+        it: 'Linguaggio',
+        vi: 'Ngôn ngữ',
+        id: 'Bahasa',
+        tr: 'Dil',
         values: {
           nsgo: same('Go, TSX', { zh: 'Go、TSX', 'zh-tw': 'Go、TSX', ja: 'Go、TSX' }),
           mygo: same('Go'),
@@ -174,6 +198,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
         de: 'Gezeichnet mit',
         pt: 'Desenhado com',
         ru: 'Отрисовка',
+        it: 'Disegnato con',
+        vi: 'Cách vẽ',
+        id: 'Digambar dengan',
+        tr: 'Çizim yöntemi',
         values: {
           nsgo: nativeViews,
           mygo: {
@@ -187,6 +215,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
             de: 'Eigener GPU-Renderer',
             pt: 'Renderizador GPU próprio',
             ru: 'Собственный GPU-рендерер',
+            it: 'Renderer GPU proprio',
+            vi: 'Bộ dựng GPU riêng',
+            id: 'Perender GPU sendiri',
+            tr: 'Kendi GPU çizicisi',
           },
           nsh: nativeViews,
           gpui: {
@@ -200,6 +232,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
             de: 'GPUI auf der GPU',
             pt: 'GPUI na GPU',
             ru: 'GPUI на GPU',
+            it: 'GPUI su GPU',
+            vi: 'GPUI trên GPU',
+            id: 'GPUI pada GPU',
+            tr: 'GPU üzerinde GPUI',
           },
           'gpui-fast': {
             en: 'GPUI on the GPU, retained',
@@ -211,7 +247,11 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
             fr: 'GPUI sur GPU, retenu',
             de: 'GPUI auf der GPU, Retained',
             pt: 'GPUI na GPU, retido',
-            ru: 'GPUI на GPU, retained',
+            ru: 'GPUI на GPU (с сохранением)',
+            it: 'GPUI su GPU, retained',
+            vi: 'GPUI trên GPU, giữ trạng thái',
+            id: 'GPUI pada GPU, dipertahankan',
+            tr: 'GPU üzerinde GPUI, korumalı',
           },
         },
       },
@@ -226,6 +266,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
         de: 'Hot Reload',
         pt: 'Hot reload',
         ru: 'Горячая перезагрузка',
+        it: 'Ricaricamento a caldo',
+        vi: 'Tải lại nóng',
+        id: 'Hot reload',
+        tr: 'Anında yeniden yükleme',
         values: only('nsgo', 'mygo', 'nsh'),
       },
       {
@@ -239,6 +283,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
         de: 'Signierte Screens zur Laufzeit geladen',
         pt: 'Telas assinadas carregadas em execução',
         ru: 'Загрузка подписанных экранов в рантайме',
+        it: 'Schermate firmate caricate a runtime',
+        vi: 'Tải màn hình đã ký khi chạy',
+        id: 'Layar bertanda tangan dimuat saat runtime',
+        tr: 'Çalışma zamanında yüklenen imzalı ekranlar',
         values: only('nsgo', 'nsh'),
       },
     ],
@@ -254,6 +302,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
     de: 'Desktop',
     pt: 'Desktop',
     ru: 'Десктоп',
+    it: 'Desktop',
+    vi: 'Máy tính',
+    id: 'Desktop',
+    tr: 'Masaüstü',
     rows: [
       { ...same('macOS'), values: all(true) },
       { ...same('Windows'), values: all(true) },
@@ -271,6 +323,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
     de: 'Jenseits des Desktops',
     pt: 'Além do desktop',
     ru: 'За пределами десктопа',
+    it: 'Oltre il desktop',
+    vi: 'Ngoài máy tính',
+    id: 'Di luar desktop',
+    tr: 'Masaüstünün ötesinde',
     rows: [
       { ...same('Web'), values: all(true) },
       { ...same('iOS'), values: only('nsgo', 'nsh') },
@@ -290,6 +346,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
         de: 'Homescreen-Widgets',
         pt: 'Widgets da tela inicial',
         ru: 'Виджеты домашнего экрана',
+        it: 'Widget della schermata Home',
+        vi: 'Widget màn hình chính',
+        id: 'Widget layar utama',
+        tr: 'Ana ekran widget’ları',
         values: only('nsgo'),
       },
       {
@@ -303,6 +363,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
         de: 'Terminals',
         pt: 'Terminais',
         ru: 'Терминалы',
+        it: 'Terminali',
+        vi: 'Terminal',
+        id: 'Terminal',
+        tr: 'Terminaller',
         values: only('nsh'),
       },
     ],
@@ -318,6 +382,10 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
     de: 'Mini-Programme',
     pt: 'Miniprogramas',
     ru: 'Мини-программы',
+    it: 'Mini-programmi',
+    vi: 'Ứng dụng mini',
+    id: 'Program mini',
+    tr: 'Mini programlar',
     rows: [
       { ...same('WeChat', { zh: '微信', 'zh-tw': '微信' }), values: { ...only(), nsgo: experimental, nsh: community } },
       { ...same('QQ'), values: { ...only(), nsgo: experimental } },
