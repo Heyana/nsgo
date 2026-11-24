@@ -314,6 +314,10 @@ func TestFileDialogsReachGTK(t *testing.T) {
 		wait("a file dialog", func() bool { dlg = chooserDialog(); return dlg != 0 })
 		const accept, cancel = -3, -6 // GTK_RESPONSE_*
 		if path == "" {
+			// GTK 4.14's path bar walks the folder up asynchronously and,
+			// when the dialog closes mid-walk, removes its buttons from the
+			// box it already freed, so the chooser loads before closing.
+			time.Sleep(time.Second)
 			w.onLoop(t, func() { gtkDialogResponse(dlg, cancel) })
 		} else {
 			w.onLoop(t, func() {
