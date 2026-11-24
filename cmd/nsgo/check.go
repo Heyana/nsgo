@@ -112,7 +112,18 @@ func vetArgs(jobs int, patterns ...string) []string {
 	return append(args, patterns...)
 }
 
-// checkTargets vets every requested target, up to jobs at once (one for 0). Only Apple mobile targets included through all may be skipped for an unavailable SDK; explicit names stay strict. A target's failure does not prevent checking the independent targets beside and after it; cancellation stops starting new ones.
+const emptyVetReason = "no packages match ./... under the build constraints"
+
+// goTool prefixes Go's diagnostics with the command that failed. Match
+// the whole diagnostic so a package-load or vet error is never a skip.
+const emptyVetError = `go vet failed
+go: warning: "./..." matched no packages
+no packages to vet`
+
+// checkTargets vets the requested targets, up to jobs at once (one for 0).
+// It skips empty package sets and, only for Apple mobile targets included
+// through all, unavailable SDKs. Failures do not stop the other targets,
+// but cancellation stops starting new ones.
 func checkTargets(ctx context.Context, p *project, target string, jobs int) error {
 	requested := strings.Split(target, ",")
 	names, err := expandTargets(requested)
@@ -133,10 +144,8 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 	outcomes := make([]outcome, len(names))
 	slots := make(chan struct{}, max(1, min(jobs, len(names))))
 	var wg sync.WaitGroup
-	var interrupted error
 	for i, name := range names {
 		if ctx.Err() != nil {
-			interrupted = ctx.Err()
 			break
 		}
 		_, _, apple := appleOSOf(name)
@@ -150,7 +159,6 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 		case <-ctx.Done():
 		}
 		if ctx.Err() != nil {
-			interrupted = ctx.Err()
 			break
 		}
 		wg.Go(func() {
@@ -163,6 +171,11 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 			s := begin("vetting for %s", name)
 			if err == nil {
 				err = goToolWithTags(ctx, p, env, targetTags(name), vetArgs(jobs, "./...")...)
+				if err != nil && ctx.Err() == nil && err.Error() == emptyVetError {
+					s.fail()
+					outcomes[i].why = emptyVetReason
+					return
+				}
 			}
 			if err == nil && repository {
 				// The test hosts build only with nsgotest, which no app build sets, and each must implement testhost.Surface, so the repository vets them for every target it checks.
@@ -200,25 +213,36 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 	}
 	wg.Wait()
 	var skipped []string
-	// why is the reason the first target was skipped for, so a Mac whose Xcode lacks an SDK, or fails for another reason, says which.
+	// An SDK warning keeps the first lookup error as before, but empty
+	// package sets have their own reason. Report both in target order.
 	var why string
 	var failures []error
+	vetted := false
 	for i, o := range outcomes {
-		if o.why != "" {
-			skipped = append(skipped, names[i])
-			if why == "" {
+		switch {
+		case o.why != "":
+			if why != "" && (why == emptyVetReason) != (o.why == emptyVetReason) {
+				warn("skipped %s: %s", strings.Join(skipped, ", "), why)
+				skipped = skipped[:0]
+			}
+			if len(skipped) == 0 {
 				why = o.why
 			}
-		}
-		if o.err != nil {
+			skipped = append(skipped, names[i])
+		case o.err != nil:
 			failures = append(failures, o.err)
+		default:
+			vetted = true
 		}
 	}
-	if interrupted != nil {
-		failures = append(failures, interrupted)
+	if err := ctx.Err(); err != nil {
+		failures = append(failures, err)
 	}
 	if len(skipped) > 0 {
 		warn("skipped %s: %s", strings.Join(skipped, ", "), why)
+	}
+	if !vetted && len(failures) == 0 {
+		return errors.New("nothing was vetted: every requested target was skipped")
 	}
 	return errors.Join(failures...)
 }

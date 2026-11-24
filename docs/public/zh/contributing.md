@@ -42,6 +42,8 @@ go tool nsgo test -bench . ./core  # core 的基准测试
 
 `-target` 只检查它指定的目标，不再检查宿主系统，在 NSGo 自己的仓库里也不检查 dev client，这些由不带参数的 `check` 检查。要检查一项改动涉及的平台，把它们都写进同一个检查，例如 `check -target web,android -jobs 2`，不要同时启动多个：`-jobs n` 最多同时检查 n 个目标，每次 `go vet` 使用 n 个编译进程，默认一次检查一个目标并使用 Go 的默认值；同一模块里已有检查在运行时，后启动的检查会提示并等待它结束。CI 的 `check.yml` 会检查所有目标。
 
+检查结果使用展开后的目标名称，例如 `linux` 会展开为 `linux_arm64` 和 `linux_x64`。如果某个目标的构建约束使 `./...` 匹配不到任何包，`check` 会列出被跳过的目标及原因，并继续检查其余目标。如果所有目标都被跳过，命令会失败并说明没有检查任何包。
+
 在仓库根目录或 `internal/dev` 中运行无头测试命令时，它会带上 `nsgodev` 构建标签再测试一次 `internal/dev`（dev client 的文件需要这个标签），让本地和 CI 都运行 dev client 的测试。两次运行使用相同的筛选条件和参数，结果合并到同一份统计和 JUnit 报告中，第二次运行的包名为 `internal/dev [nsgodev]`。
 
 `check -target all` 在任何宿主系统上都会检查 macOS、Windows、Linux、Android arm64 和 Web 目标。有对应 Xcode SDK 时，还会检查 iOS、tvOS 和 watchOS，并集中列出跳过的目标。显式指定的目标（例如 `check -target ios`）在所需工具不可用时仍会失败，与 `all` 一起指定时也一样。一个目标失败不会阻止后续目标的检查，任何必需检查失败都会让命令失败。`build -target all` 仍需要装有 Xcode 的 macOS。在 NSGo 自己的仓库里，每个指定的目标还会带 `nsgotest` 检查平台的测试宿主；`harmonyos` 预览目标不在 `all` 里，CI 会单独指定它。

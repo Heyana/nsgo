@@ -178,6 +178,105 @@ func TestCheckTargetFailuresContinue(t *testing.T) {
 	}
 }
 
+func TestCheckTargetEmptyPackageSets(t *testing.T) {
+	// Use the runner for vet; the JSON policy needs no package scan when
+	// the user already picked an experiment.
+	t.Setenv("GOEXPERIMENT", "nojsonv2")
+	const noPackages = "go: warning: \"./...\" matched no packages\nno packages to vet\n"
+	tests := []struct {
+		name, targets        string
+		linux, web           string
+		wantError, neverSays string
+		wantLines            []string
+		noXcode              bool
+	}{
+		{
+			name: "mixed", targets: "linux,web", web: noPackages,
+			wantLines: []string{"vetted for linux_arm64", "vetted for linux_x64", "skipped web: no packages match ./... under the build constraints"},
+			neverSays: "vetted for web",
+		},
+		{
+			name: "all empty", targets: "web,linux", linux: noPackages, web: noPackages,
+			wantError: "nothing was vetted",
+			wantLines: []string{"skipped web, linux_arm64, linux_x64: no packages match ./... under the build constraints"},
+			neverSays: "vetted for ",
+		},
+		{
+			name: "additional diagnostic", targets: "web,linux_arm64",
+			web:       noPackages + "broken.go:4:9: undefined: missing\n",
+			wantError: "web: go vet failed\n" + noPackages + "broken.go:4:9: undefined: missing",
+			wantLines: []string{"vetted for linux_arm64"}, neverSays: "skipped web",
+		},
+		{
+			name: "missing SDKs and empty web", targets: "web,all", web: noPackages, noXcode: true,
+			wantLines: []string{
+				"skipped web: no packages match ./... under the build constraints",
+				"skipped ios, ios_simulator, tvos, tvos_simulator, watchos, watchos_simulator:",
+				"Xcode",
+			},
+			neverSays: "vetted for web",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := checkFixture(t)
+			ctx := withProcessRunner(t, func(_ context.Context, cmd processCommand) ([]byte, error) {
+				switch {
+				case cmd.name == "xcrun" && tc.noXcode:
+					return nil, errors.New("Xcode SDK unavailable")
+				case cmd.name == "go" && len(cmd.args) == 2 && cmd.args[0] == "env" && cmd.args[1] == "GOFLAGS":
+					return nil, nil
+				case cmd.name == "go" && len(cmd.args) >= 2 && cmd.args[0] == "vet" && cmd.args[len(cmd.args)-1] == "./...":
+					var diagnostic string
+					switch envTarget(cmd.env) {
+					case "linux_arm64", "linux_x64":
+						diagnostic = tc.linux
+					case "js_wasm":
+						diagnostic = tc.web
+					}
+					if diagnostic != "" {
+						return []byte(diagnostic), errors.New("exit status 1")
+					}
+					return nil, nil
+				default:
+					return nil, fmt.Errorf("unexpected command %s %q", cmd.name, cmd.args)
+				}
+			})
+			var err error
+			out := captureStderr(t, func() { err = checkTargets(ctx, p, tc.targets, 0) })
+			if tc.wantError == "" && err != nil || tc.wantError != "" && (err == nil || !strings.Contains(err.Error(), tc.wantError)) {
+				t.Fatalf("check returned %v, wanted error %q:\n%s", err, tc.wantError, out)
+			}
+			rest := out
+			for _, want := range tc.wantLines {
+				_, after, ok := strings.Cut(rest, want)
+				if !ok {
+					t.Fatalf("missing or out of order %q:\n%s", want, out)
+				}
+				rest = after
+			}
+			if strings.Contains(out, tc.neverSays) {
+				t.Errorf("unexpected %q:\n%s", tc.neverSays, out)
+			}
+		})
+	}
+}
+
+func TestCheckTargetSkipsRealBuildConstraints(t *testing.T) {
+	if testing.Short() {
+		t.Skip("cross-vets a real package")
+	}
+	p := checkFixture(t)
+	writeFiles(t, p.Dir, map[string]string{
+		"main.go": "//go:build !js && !wasip1\n\npackage fixture\n\nvar Value = 1\n",
+	})
+	var err error
+	out := captureStderr(t, func() { err = check(t.Context(), p, "linux,web", 0) })
+	if err != nil || !strings.Contains(out, "vetted for linux_arm64") || !strings.Contains(out, "skipped web: no packages match ./...") {
+		t.Fatalf("check did not vet the Linux-only package and skip web: %v\n%s", err, out)
+	}
+}
+
 // A bare OS name vets that OS, as nsgo test -target spells it (#589).
 func TestCheckBareOSTarget(t *testing.T) {
 	if testing.Short() {
