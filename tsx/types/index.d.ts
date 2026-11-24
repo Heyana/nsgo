@@ -297,6 +297,7 @@ export interface StorageModule {
   keys(): Promise<string[]>;
   clear(): Promise<void>;
 }
+/** Persistent key-value storage, partitioned for packages. With Sandbox.DisableStorage, every method rejects with an Error: "tsx: Storage is disabled for this sandbox". */
 export declare const Storage: StorageModule;
 /** The app's secure store, by account: the keychain, Credential Manager, Secret Service or Android Keystore; a package's own part of it under the secrets capability. */
 export interface SecretsModule {

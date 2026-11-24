@@ -120,6 +120,86 @@ func results(t *testing.T, attempts string, caps pkg.Capabilities, s tsx.Sandbox
 	return out
 }
 
+func TestSandboxDisableStorage(t *testing.T) {
+	p := verified(t, `import { mount, signal, Storage, Text } from "nsgo";
+const log = signal("");
+mount(() => <Text testID="storage-log">{log}</Text>);
+(async () => {
+	const results = [];
+	for (const [name, ...args] of [
+		["getItem", "existing"],
+		["keys"],
+		["setItem", "existing", "changed"],
+		["getItem", "existing"],
+		["removeItem", "existing"],
+		["getItem", "existing"],
+		["setItem", "new", "value"],
+		["clear"],
+		["keys"],
+	]) {
+		results.push(await Storage[name](...args).then(
+			v => JSON.stringify(v) ?? "ok",
+			e => e.name + ": " + e.message,
+		));
+	}
+	log.set(JSON.stringify(results));
+})();`, pkg.Capabilities{})
+	allowed := []string{`"saved"`, `["existing"]`, "ok", `"changed"`, "ok", "null", "ok", "ok", "[]"}
+	for _, c := range []struct {
+		name    string
+		sandbox tsx.Sandbox
+		want    []string
+		entries []string
+	}{
+		{"default", tsx.Sandbox{}, allowed, nil},
+		{"no partition quota", tsx.Sandbox{Limits: &tsx.Limits{Storage: 0}}, allowed, nil},
+		{"disabled", tsx.Sandbox{DisableStorage: true}, slices.Repeat([]string{"Error: tsx: Storage is disabled for this sandbox"}, len(allowed)), []string{"existing=saved"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var partition core.Storage
+			var seedErr error
+			sandbox := c.sandbox
+			// Exercise the module even on targets that share page authority.
+			sandbox.WebUnisolated = runtime.GOOS == "js"
+			app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+				seed := cx.Child()
+				seed.Run(func() {
+					seed.ProvideStorage(p.App.ID, 0)
+					partition = seed.Storage()
+					seedErr = partition.SetItem("existing", "saved")
+				})
+				return tsx.View{Package: p, Sandbox: sandbox}
+			}, nsgotest.Storage(map[string]string{"existing": "host"}))
+			if seedErr != nil {
+				t.Fatal(seedErr)
+			}
+			app.WaitUntil(10*time.Second, func() bool {
+				return app.Find("id:storage-log").Text != ""
+			})
+			var got []string
+			if err := json.Unmarshal([]byte(app.Find("id:storage-log").Text), &got); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(got, c.want) {
+				t.Errorf("Storage results = %q, want %q", got, c.want)
+			}
+			var entries []string
+			var hostValue string
+			app.Post(func() {
+				for _, key := range partition.Keys() {
+					value, _ := partition.GetItem(key)
+					entries = append(entries, key+"="+value)
+				}
+				hostValue, _ = app.Storage().GetItem("existing")
+			})
+			app.Settle()
+			if !slices.Equal(entries, c.entries) || hostValue != "host" {
+				t.Errorf("partition = %q, host entry = %q; want %q and host", entries, hostValue, c.entries)
+			}
+		})
+	}
+}
+
 func TestSandboxHoldsAPackageToItsCapabilities(t *testing.T) {
 	got := results(t, `
 	allowed: async () => (await fetch("https://api.example.com/a")).text(),

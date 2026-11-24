@@ -41,7 +41,8 @@ type Limits struct {
 	// Body is the most bytes a request's or a response's body may hold.
 	Body int
 	// Storage is the most bytes its partition of the app's storage may
-	// hold (Sandbox.Storage).
+	// hold (Sandbox.Storage). Zero leaves no partition quota; use
+	// Sandbox.DisableStorage to deny the nsgo Storage module instead.
 	Storage int
 	// Memory limits metered allocation on goja, including buffers, large array stores and strings built by concatenation or replacement. Checks precede allocation and collected stores release their charge. It does not cap the whole heap: ordinary objects, closures, small allocations and other unmetered storage can still grow, and it does not apply in the browser. Zero leaves it unlimited; DefaultLimits holds 64 MiB.
 	Memory int
@@ -157,16 +158,20 @@ type Sandbox struct {
 	OnError func(error)
 	// Storage names its partition of the app's storage and of its secrets (core.Scope.ProvideSecrets), which no one else's code sees; "" leaves it the app's.
 	Storage string
-	// WebUnisolated runs it on the web with the page's authority. The page's engine runs it in a realm of the page's origin, which reaches the page's own APIs (XMLHttpRequest, WebSocket, navigator, localStorage, the page's window) past Go, so there Capabilities and Grant hold only the requests the runtime and core make, and Storage's partition and a pkg.Trust kept in the page's storage are open to its code. Without it, a sandbox with Capabilities or Grant refuses to start on the web with ErrUnisolated. Other targets isolate it and ignore this.
+	// DisableStorage makes every nsgo Storage method reject with an Error
+	// whose message is "tsx: Storage is disabled for this sandbox". It
+	// leaves existing data and the Secrets module alone.
+	DisableStorage bool
+	// WebUnisolated runs it on the web with the page's authority. The page's engine runs it in a realm of the page's origin, which reaches the page's own APIs (XMLHttpRequest, WebSocket, navigator, localStorage, the page's window) past Go. Capabilities and Grant hold only the requests the runtime and core make, and DisableStorage still withholds the nsgo Storage module's operations, not the page's storage APIs. Storage's partition and a pkg.Trust kept in the page's storage are open to its code. Without WebUnisolated, a sandbox with Capabilities, Grant or DisableStorage refuses to start on the web with ErrUnisolated. Other targets isolate it and ignore WebUnisolated.
 	WebUnisolated bool
 }
 
-// ErrUnisolated is what a sandbox with Capabilities or Grant fails with on the web unless Sandbox.WebUnisolated is set: the page's engine cannot isolate a package's realm from the page, so what it declares would not hold.
-var ErrUnisolated = errors.New("tsx: the web cannot isolate a sandboxed package from the page, so its capabilities would not hold; set Sandbox.WebUnisolated to run it with the page's authority")
+// ErrUnisolated is what a sandbox with Capabilities, Grant or DisableStorage fails with on the web unless Sandbox.WebUnisolated is set: the page's engine cannot isolate a package's realm from the page, so its restrictions would not hold.
+var ErrUnisolated = errors.New("tsx: the web cannot isolate a sandboxed package from the page, so its restrictions would not hold; set Sandbox.WebUnisolated to run it with the page's authority")
 
-// isolation checks whether the realm's access to the page would bypass the sandbox's capabilities.
+// isolation checks whether the realm's access to the page would bypass the sandbox's restrictions.
 func (s Sandbox) isolation(sharesPageAuthority bool) error {
-	if sharesPageAuthority && (s.Capabilities != nil || s.Grant != nil) && !s.WebUnisolated {
+	if sharesPageAuthority && (s.Capabilities != nil || s.Grant != nil || s.DisableStorage) && !s.WebUnisolated {
 		return ErrUnisolated
 	}
 	return nil
@@ -181,7 +186,7 @@ type ViewOptions struct {
 	Props  map[string]any
 }
 
-// Sandboxed returns the app of a bundle, as App does, run within s, in a view of its own: its frame, which fills the room its parent gives it, no more, so the bundle cannot grow over the host's views, and clips what the bundle shows, overlays included (core.Scope.Confine). In a scroll view that room is the scroll view's height: a host that wants the bundle as tall as its content puts it in a view of its own. On the web it panics with ErrUnisolated when s has Capabilities or Grant, unless s.WebUnisolated. When options has an Export, that named component, which runs within s as the rest of the bundle does, is rendered instead of the entry-mounted root; a missing one panics with ErrNoViewExport and one that is not a function with ErrViewExportNotComponent.
+// Sandboxed returns the app of a bundle, as App does, run within s, in a view of its own: its frame, which fills the room its parent gives it, no more, so the bundle cannot grow over the host's views, and clips what the bundle shows, overlays included (core.Scope.Confine). In a scroll view that room is the scroll view's height: a host that wants the bundle as tall as its content puts it in a view of its own. On the web it panics with ErrUnisolated when s has Capabilities, Grant or DisableStorage, unless s.WebUnisolated. When options has an Export, that named component, which runs within s as the rest of the bundle is, is rendered instead of the entry-mounted root; a missing one panics with ErrNoViewExport and one that is not a function with ErrViewExportNotComponent.
 func Sandboxed(name, src string, s Sandbox, options ...ViewOptions) func(cx *core.Scope) core.Node {
 	var view ViewOptions
 	if len(options) > 0 {
@@ -266,7 +271,11 @@ func (s Sandbox) start(cx *core.Scope, name, src string) *runtime {
 	} else {
 		r.regexTimeout = limits.Load
 	}
-	r.sandbox = &sandboxed{caps: s.Capabilities != nil || s.Grant != nil, modules: s.Modules}
+	r.sandbox = &sandboxed{
+		caps:           s.Capabilities != nil || s.Grant != nil,
+		modules:        s.Modules,
+		disableStorage: s.DisableStorage,
+	}
 	r.exportView = s.exportView
 	if s.plugin {
 		r.onError = s.OnError
@@ -359,8 +368,9 @@ func (a access) WebHosts() []string { return a.c.WebHosts() }
 type sandboxed struct {
 	// caps says capabilities hold it, so the runtime checks its own
 	// requests.
-	caps    bool
-	modules []string
+	caps           bool
+	modules        []string
+	disableStorage bool
 	// nodes, timers, requests and sounds are what it holds now.
 	nodes, timers, requests, sounds int
 	// stopped is why it stopped: no JS runs after.

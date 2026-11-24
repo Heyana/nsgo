@@ -2,6 +2,7 @@ package tsx
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -228,13 +229,25 @@ func imageBytes(src string) ([]byte, error) {
 	return []byte(data), nil
 }
 
+var errStorageDisabled = errors.New("tsx: Storage is disabled for this sandbox")
+
 func (r *runtime) storage() js.Value {
 	o := r.vm.NewObject()
-	s := r.cx.Storage()
+	var s core.Storage
+	var storageErr error
+	if r.sandbox != nil && r.sandbox.disableStorage {
+		storageErr = errStorageDisabled
+	} else {
+		s = r.cx.Storage()
+	}
 	set := func(name string, f func(call js.FunctionCall) (js.Value, error)) {
 		_ = o.Set(name, r.function(func(call js.FunctionCall) js.Value {
 			p, resolve, reject := r.newPromise()
-			v, err := f(call)
+			var v js.Value
+			err := storageErr
+			if err == nil {
+				v, err = f(call)
+			}
 			if err != nil {
 				_ = reject(r.goError(err))
 			} else {
