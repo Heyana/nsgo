@@ -1,6 +1,6 @@
 name: Test
 
-# Tests every package on Linux, Apple's backends on macOS, Android presses on an emulator, and native input regressions across desktops and the web. It does not run again on main, which takes the commits the merge queue tested as they are. release.yml calls it before publishing a release. The Apple jobs skip a pull request that cannot affect Apple's targets (apple-changes.yml).
+# Tests every package on Linux, Apple's backends on macOS, Android presses on an emulator, and native input regressions across desktops and the web, the browsers in a job of their own. It does not run again on main, which takes the commits the merge queue tested as they are. release.yml calls it before publishing a release. The Apple jobs skip a pull request that cannot affect Apple's targets (apple-changes.yml).
 on:
   pull_request:
   # The merge queue tests each pull request on top of the ones ahead of it before it lands on main.
@@ -230,10 +230,6 @@ jobs:
           GSK_RENDERER: cairo
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/shaderpixels
-      - name: Test browser shader pixel frames
-        run: go tool nsgo test -target web ./internal/testhost/testdata/shaderpixels
-      - name: Test browser empty web sources
-        run: go tool nsgo test -target web -run '^TestEmptyWebSourceIsOpaque$' ./internal/platform/web
       - name: Test Linux owned-window visibility and minimization
         env:
           NSGO_OWNED_WINDOWS_REQUIRE_WM: '1'
@@ -340,6 +336,30 @@ jobs:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
         run: xvfb-run -a go tool nsgo test -target linux -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
+      - name: Test canvas image tint on Linux
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+        run: xvfb-run -a go tool nsgo test -target linux -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
+
+  # The browser tests need Go alone, while the test job above spends most of its time installing and driving GTK, so they run beside it on a runner of their own.
+  web:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test browser shader pixel frames
+        run: go tool nsgo test -target web ./internal/testhost/testdata/shaderpixels
+      - name: Test browser empty web sources
+        run: go tool nsgo test -target web -run '^TestEmptyWebSourceIsOpaque$' ./internal/platform/web
       - name: Test browser press routing, modifiers and visible labels
         run: go tool nsgo test -target web ./internal/testhost/testdata/press
       - name: Test browser editing keys and bindings
@@ -354,13 +374,8 @@ jobs:
         run: go tool nsgo test -target web ./tsx/internal/js
       - name: Test the TSX runtime in Chromium
         run: go tool nsgo test -target web ./tsx
-      - name: Test canvas image tint on Linux and the web
-        env:
-          GDK_BACKEND: x11
-          GSK_RENDERER: cairo
-        run: |
-          xvfb-run -a go tool nsgo test -target linux -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
-          go tool nsgo test -target web -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
+      - name: Test canvas image tint in Chromium
+        run: go tool nsgo test -target web -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
       - name: Test browser radio and tab focus
         run: go tool nsgo test -target web -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
       - name: Test Chromium display frame timestamps
