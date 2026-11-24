@@ -45,6 +45,7 @@ public final class ZoomScrollCheck {
 
     static final class Recorder implements Scrolling.Host {
         final List<Integer> events = new ArrayList<>();
+        float zoom = 1;
 
         @Override
         public void scrollEvent(int kind, float x, float y, float zoom) {
@@ -52,7 +53,9 @@ public final class ZoomScrollCheck {
         }
 
         @Override
-        public void scrolled(float x, float y, float zoom) {}
+        public void scrolled(float x, float y, float zoom) {
+            this.zoom = zoom;
+        }
 
         @Override
         public boolean dismissKeyboard() {
@@ -205,7 +208,31 @@ public final class ZoomScrollCheck {
         check(scroll.getScrollY() == yPinched + 10, "the finger that stayed did not pan on");
         scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_UP, 100, 250, t + 96));
 
-        // 8. NoScroll leaves touches alone.
+        // 8. Pinches follow the fingers' spread however close they come:
+        // once the spread has passed the slop, at 150, spreading to 450
+        // zooms in three times and closing to 150 zooms back out to 1,
+        // though 150 is far under the 27mm at which Android's
+        // ScaleGestureDetector ends a pinch.
+        t = 1450;
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN, 90, 200, t));
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_POINTER_DOWN, 1,
+                new float[]{90, 210}, new float[]{200, 200}, t + 16));
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE, 0,
+                new float[]{85, 215}, new float[]{200, 200}, t + 32));
+        check(host.zoom == 1, "a spread within slop zoomed to " + host.zoom);
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE, 0,
+                new float[]{75, 225}, new float[]{200, 200}, t + 48));
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE, 0,
+                new float[]{-75, 375}, new float[]{200, 200}, t + 64));
+        check(Math.abs(host.zoom - 3) < 1e-4, "spreading the fingers zoomed to " + host.zoom);
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE, 0,
+                new float[]{75, 225}, new float[]{200, 200}, t + 80));
+        check(Math.abs(host.zoom - 1) < 1e-4, "closing the fingers zoomed to " + host.zoom);
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_POINTER_UP, 1,
+                new float[]{75, 225}, new float[]{200, 200}, t + 96));
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_UP, 75, 200, t + 112));
+
+        // 9. NoScroll leaves touches alone.
         cfg.noScroll = true;
         scroll.configure(cfg);
         downsBefore = content.downs;

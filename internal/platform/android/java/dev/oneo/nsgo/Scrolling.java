@@ -8,7 +8,6 @@ import android.graphics.RectF;
 import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.MotionEvent;
-import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
@@ -966,15 +965,18 @@ final class Scrolling {
     /**
      * A zoomable scroll view: Android has none, so it scales its content
      * around its top left and scrolls both ways itself, pinched around the
-     * fingers' focal point, panned with any number of fingers and flung
-     * with an OverScroller. Pinches past the limits spring back unless
+     * fingers' middle, panned with any number of fingers and flung with an
+     * OverScroller. Pinches past the limits spring back unless
      * NoBouncesZoom.
+     *
+     * It reads pinches from the fingers' spread itself: ScaleGestureDetector
+     * ends a pinch once the fingers come closer than its minimum span, about
+     * 27mm, which stops a pinch in halfway.
      */
     static final class ZoomScroll extends FrameLayout implements Scroller {
         private final Host host;
         private final float density;
         private final View content;
-        private final ScaleGestureDetector scale;
         private final OverScroller flinger;
         private final android.view.VelocityTracker[] tracker = {null};
         private final int slop;
@@ -982,6 +984,8 @@ final class Scrolling {
         private float zoom = 1;
         private float notifiedZoom = 1;
         private float lastX, lastY, downX, downY;
+        // The fingers' spread at the last event, and where a pinch starts from.
+        private float lastSpan, pinchFrom;
         private boolean dragging, pinching, momentum, tapping;
         private final InheritedBackdrop backdrop = new InheritedBackdrop();
 
@@ -994,24 +998,6 @@ final class Scrolling {
             content.setPivotY(0);
             flinger = new OverScroller(context);
             slop = ViewConfiguration.get(context).getScaledTouchSlop();
-            scale = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                @Override
-                public boolean onScaleBegin(ScaleGestureDetector g) {
-                    if (config.noPinchZoom) return false;
-                    pinching = true;
-                    if (!dragging) {
-                        dragging = true;
-                        event(Protocol.EVENT_SCROLL_DRAG_START);
-                    }
-                    return true;
-                }
-
-                @Override
-                public boolean onScale(ScaleGestureDetector g) {
-                    zoomAround(limit(zoom * g.getScaleFactor(), true), g.getFocusX(), g.getFocusY());
-                    return true;
-                }
-            });
             setClipChildren(true);
         }
 
@@ -1172,14 +1158,14 @@ final class Scrolling {
                         endMomentum();
                         return true;
                     }
-                    scale.onTouchEvent(e);
                     nest();
                     return false;
                 case MotionEvent.ACTION_POINTER_DOWN:
                     // The view takes the touch at this event, which onTouchEvent
-                    // then never sees: the pan goes on from the fingers' middle.
+                    // then never sees: the pan and pinch go on from the fingers'.
                     lastX = middleX(e, -1);
                     lastY = middleY(e, -1);
+                    lastSpan = pinchFrom = span(e, -1, lastX, lastY);
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     return Math.hypot(e.getX() - downX, e.getY() - downY) > slop;
@@ -1212,10 +1198,22 @@ final class Scrolling {
             return sum / n;
         }
 
+        /** Twice the fingers' mean distance from their middle x, y, but the one at index skip; 0 for one finger. */
+        private static float span(MotionEvent e, int skip, float x, float y) {
+            float sum = 0;
+            int n = 0;
+            for (int i = 0; i < e.getPointerCount(); i++) {
+                if (i != skip) {
+                    sum += (float) Math.hypot(e.getX(i) - x, e.getY(i) - y);
+                    n++;
+                }
+            }
+            return n < 2 ? 0 : 2 * sum / n;
+        }
+
         @Override
         public boolean onTouchEvent(MotionEvent e) {
             if (config.noScroll) return false;
-            scale.onTouchEvent(e);
             if (tracker[0] == null) tracker[0] = android.view.VelocityTracker.obtain();
             tracker[0].addMovement(e);
             // The fingers' middle pans while they pinch. A finger going up is
@@ -1234,8 +1232,10 @@ final class Scrolling {
                 case MotionEvent.ACTION_POINTER_UP:
                     lastX = x;
                     lastY = y;
+                    lastSpan = pinchFrom = span(e, up, x, y);
                     return true;
                 case MotionEvent.ACTION_MOVE:
+                    pinch(span(e, -1, x, y), x, y);
                     if (!dragging && Math.hypot(x - downX, y - downY) > slop) {
                         dragging = true;
                         event(Protocol.EVENT_SCROLL_DRAG_START);
@@ -1279,6 +1279,24 @@ final class Scrolling {
                     return true;
             }
             return true;
+        }
+
+        /** Zooms by the fingers' spread, once it has changed by more than twice the slop. */
+        private void pinch(float span, float x, float y) {
+            if (span == 0 || lastSpan == 0 || config.noPinchZoom) return;
+            if (!pinching) {
+                if (Math.abs(span - pinchFrom) <= 2 * slop) return;
+                pinching = true;
+                lastSpan = span;
+                if (!dragging) {
+                    dragging = true;
+                    event(Protocol.EVENT_SCROLL_DRAG_START);
+                    if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                }
+                return;
+            }
+            zoomAround(limit(zoom * span / lastSpan, true), x, y);
+            lastSpan = span;
         }
 
         @Override
