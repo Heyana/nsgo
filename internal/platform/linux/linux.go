@@ -219,23 +219,28 @@ type window struct {
 	backdropStop    *view
 	backdropPath    map[*view]*view
 	backdropStopped bool
-	entries         map[uintptr]*view
-	natives         map[uintptr]*view // by the objects of hosted widgets
-	appID           string
-	keys            []driver.KeyBinding
-	dockMenu        *launcherMenu
-	hotKeys         *globalHotKeys
-	colorPick       *portalColorPick
-	discovery       avahiDiscovery
-	scanner         *codeScanner
-	held            map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
-	heldKeys        bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
-	heldMouse       bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
-	mouseHeld       map[driver.MouseButton]heldMouseBtn // mouse buttons reported going down and not yet up
-	mouseClicks     map[driver.MouseButton]buttonClicks
-	keyLayoutGroup  int32
-	animating       []*view
-	ticking         bool
+	// backdrops are the views drawn with backdrop filters, each with what
+	// it last drew behind it, and backdropClock the frame clock that
+	// redraws them (backdrop.go).
+	backdrops      map[*view]uintptr
+	backdropClock  uintptr
+	entries        map[uintptr]*view
+	natives        map[uintptr]*view // by the objects of hosted widgets
+	appID          string
+	keys           []driver.KeyBinding
+	dockMenu       *launcherMenu
+	hotKeys        *globalHotKeys
+	colorPick      *portalColorPick
+	discovery      avahiDiscovery
+	scanner        *codeScanner
+	held           map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
+	heldKeys       bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
+	heldMouse      bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
+	mouseHeld      map[driver.MouseButton]heldMouseBtn // mouse buttons reported going down and not yet up
+	mouseClicks    map[driver.MouseButton]buttonClicks
+	keyLayoutGroup int32
+	animating      []*view
+	ticking        bool
 	// tickID is the surface's tick callback and watchID the timer watching it while the clock runs; ticked is when the frame clock last ticked.
 	tickID, watchID uint32
 	ticked          time.Time

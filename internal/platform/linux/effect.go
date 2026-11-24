@@ -285,16 +285,8 @@ func backdropPath(root, host *view) (map[*view]*view, driver.Matrix3D, bool) {
 	return path, inv, true
 }
 
-// backdropNode snapshots what the window drew behind host, scaled to pixels, into a node pw by ph pixels covering host's box and ov points around it; 0 where there is nothing to draw. Ancestors along the path from root to host are snapshotted directly so GTK's cached render nodes are not re-entered or replaced.
+// backdropNode snapshots what the window drew behind host, scaled to pixels, into a node pw by ph pixels covering host's box and ov points around it; 0 where there is nothing to draw (snapshotBehind).
 func (w *window) backdropNode(host *view, ov float64) (node uintptr, pw, ph int) {
-	root := w.view(w.root)
-	if w.surface == 0 || root == nil || root.widget == 0 {
-		return 0, 0, 0
-	}
-	path, surfaceToHost, ok := backdropPath(root, host)
-	if !ok {
-		return 0, 0, 0
-	}
 	scale := float64(max(gtkWidgetGetScaleFactor(host.widget), 1))
 	size := host.shownFrame().Size
 	pw = min(int(math.Ceil((float64(size.Width)+2*ov)*scale)), 4096)
@@ -305,26 +297,11 @@ func (w *window) backdropNode(host *view, ov float64) (node uintptr, pw, ph int)
 	snap := gtkSnapshotNew()
 	gtkSnapshotScale(snap, float32(scale), float32(scale))
 	gtkSnapshotTranslate(snap, &graphenePoint{float32(ov), float32(ov)})
-	if t := gskMatrixTransform(0, surfaceToHost); t != 0 {
-		gtkSnapshotTransform(snap, t)
-		gskTransformUnref(t)
-	}
-	prevStop, prevPath, prevStopped := w.backdropStop, w.backdropPath, w.backdropStopped
-	w.backdropStop, w.backdropPath, w.backdropStopped = host, path, false
-	defer func() {
-		w.backdropStop, w.backdropPath, w.backdropStopped = prevStop, prevPath, prevStopped
-	}()
-	rect := grapheneRect{0, 0, float32(gtkWidgetGetWidth(w.surface)), float32(gtkWidgetGetHeight(w.surface))}
-	c := rgba(background(root))
-	gtkSnapshotAppendColor(snap, &c, &rect)
-	if gtkWidgetGetParent(root.widget) == w.surface {
-		gtkSnapshotSave(snap)
-		if t := gskMatrixTransform(0, root.placement(0, 0)); t != 0 {
-			gtkSnapshotTransform(snap, t)
-			gskTransformUnref(t)
+	if !w.snapshotBehind(host, snap, 0) {
+		if node := gtkSnapshotFreeToNode(snap); node != 0 {
+			gskRenderNodeUnref(node)
 		}
-		w.snapshotView(root, snap)
-		gtkSnapshotRestore(snap)
+		return 0, 0, 0
 	}
 	return gtkSnapshotFreeToNode(snap), pw, ph
 }

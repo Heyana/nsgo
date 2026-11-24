@@ -90,6 +90,9 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 				gtkSnapshotAppendOutset(cur, &sh.rect, &c, float32(b.Offset.X), float32(b.Offset.Y), float32(b.Spread), float32(b.Blur))
 			}
 		}
+		if len(e.BackdropFilters) > 0 {
+			w.snapshotBackdrop(v, cur, &sh, e.BackdropFilters)
+		}
 		if rim, inset, ok := s.Rim(); ok {
 			sh.fillRim(cur, s.Background, inset)
 			rimmed := *s
