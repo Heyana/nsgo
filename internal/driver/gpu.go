@@ -40,6 +40,9 @@ const (
 	GPUFormatR32Float
 	GPUFormatRGBA32Float
 	GPUFormatStencil8
+	// The 16-bit normalized formats below exist only for imported textures, such as the planes of a P010 video frame; no device creates them (IsImportOnly).
+	GPUFormatR16Unorm
+	GPUFormatRG16Unorm
 )
 
 // IsDepth reports whether f carries a depth aspect.
@@ -70,6 +73,11 @@ func (f GPUTextureFormat) IsExtended() bool {
 	default:
 		return false
 	}
+}
+
+// IsImportOnly reports whether f is a format only imported textures have (GPUOpImportTexture).
+func (f GPUTextureFormat) IsImportOnly() bool {
+	return f == GPUFormatR16Unorm || f == GPUFormatRG16Unorm
 }
 
 // IsCompressed reports whether f is a block-compressed GPU texture format.
@@ -112,7 +120,8 @@ func (f GPUTextureFormat) BlockSize() (width, height uint32) {
 	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm,
 		GPUFormatRG8Unorm, GPUFormatR8Unorm, GPUFormatRGBA16Float,
 		GPUFormatDepth24Plus, GPUFormatDepth24PlusStencil8, GPUFormatDepth32Float,
-		GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float, GPUFormatRGBA32Float, GPUFormatStencil8:
+		GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float, GPUFormatRGBA32Float, GPUFormatStencil8,
+		GPUFormatR16Unorm, GPUFormatRG16Unorm:
 		return 1, 1
 	default:
 		return 0, 0
@@ -151,9 +160,9 @@ func (f GPUTextureFormat) BytesPerPixel() uint32 {
 	switch f {
 	case GPUFormatR8Unorm:
 		return 1
-	case GPUFormatRG8Unorm:
+	case GPUFormatRG8Unorm, GPUFormatR16Unorm:
 		return 2
-	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm, GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float:
+	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm, GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float, GPUFormatRG16Unorm:
 		return 4
 	case GPUFormatRGBA16Float:
 		return 8
@@ -217,6 +226,10 @@ func (f GPUTextureFormat) String() string {
 		return "RGBA32Float"
 	case GPUFormatStencil8:
 		return "Stencil8"
+	case GPUFormatR16Unorm:
+		return "R16Unorm"
+	case GPUFormatRG16Unorm:
+		return "RG16Unorm"
 	default:
 		return "Unknown"
 	}
@@ -646,6 +659,21 @@ type GPUFeatures struct {
 	StencilTest bool
 	// MipmapGeneration reports support for GPUOpGenerateMipmaps (box-filtered mip chains generated on the device).
 	MipmapGeneration bool
+	// ImportD3D11Shared and ImportDMABuf report support for GPUOpImportTexture of each GPUExternalTextureKind.
+	ImportD3D11Shared bool
+	ImportDMABuf      bool
+}
+
+// SupportsImport reports whether f supports GPUOpImportTexture of kind.
+func (f GPUFeatures) SupportsImport(kind GPUExternalTextureKind) bool {
+	switch kind {
+	case GPUExternalD3D11Shared:
+		return f.ImportD3D11Shared
+	case GPUExternalDMABuf:
+		return f.ImportDMABuf
+	default:
+		return false
+	}
 }
 
 // DefaultSoftwareGPUFeatures returns the capabilities supported by the pure-Go headless software GPU device.
@@ -757,6 +785,47 @@ type GPUTextureDesc struct {
 	SampleCount int
 	Format      GPUTextureFormat
 	Usage       GPUTextureUsage
+}
+
+// GPUExternalTextureKind identifies the GPU memory a GPUOpImportTexture opens.
+type GPUExternalTextureKind uint8
+
+const (
+	// GPUExternalD3D11Shared is a Direct3D 11 texture shared through an NT handle (IDXGIResource1::CreateSharedHandle).
+	GPUExternalD3D11Shared GPUExternalTextureKind = iota + 1
+	// GPUExternalDMABuf is a Linux DMA-BUF imported through EGL_EXT_image_dma_buf_import.
+	GPUExternalDMABuf
+)
+
+// GPUDMABufPlane is one plane of a DMA-BUF: its file descriptor, byte offset and row pitch.
+type GPUDMABufPlane struct {
+	FD     int
+	Offset uint32
+	Pitch  uint32
+}
+
+// GPUDRMFormatModInvalid is DRM_FORMAT_MOD_INVALID: the DMA-BUF's layout is implied by its driver rather than named.
+const GPUDRMFormatModInvalid uint64 = 0x00ffffffffffffff
+
+// GPUExternalTextureDesc describes a texture imported from GPU memory another API or device owns. The imported texture is a sampled 2D texture of Width x Height texels in Format.
+type GPUExternalTextureDesc struct {
+	Label  string
+	Kind   GPUExternalTextureKind
+	Width  uint32
+	Height uint32
+	Format GPUTextureFormat
+
+	// D3D11: the shared NT handle, the plane of a planar texture (0 luma, 1 chroma for NV12 and P010), and the keyed mutex to hold while reading it.
+	Handle     uintptr
+	Plane      uint32
+	KeyedMutex bool
+	AcquireKey uint64
+	ReleaseKey uint64
+
+	// DMA-BUF: the plane's single-plane DRM fourcc, its format modifier (GPUDRMFormatModInvalid for none) and its one plane.
+	FourCC   uint32
+	Modifier uint64
+	Planes   []GPUDMABufPlane
 }
 
 // GPUSamplerDesc describes a GPU texture sampler.
@@ -987,6 +1056,8 @@ const (
 	GPUOpDestroyComputePipeline
 	GPUOpReadBuffer
 	GPUOpGenerateMipmaps
+	// GPUOpImportTexture opens External as the texture ID; GPUOpDestroyTexture releases it.
+	GPUOpImportTexture
 )
 
 // GPUResourceOp is one resource creation, update, destruction, or readback op.
@@ -1002,6 +1073,7 @@ type GPUResourceOp struct {
 	BindGroup       *GPUBindGroupDesc
 	Pipeline        *GPUPipelineDesc
 	ComputePipeline *GPUComputePipelineDesc
+	External        *GPUExternalTextureDesc
 	TextureDst      GPUTextureCopy
 	DataLayout      GPUDataLayout
 	ReadbackID      uint64

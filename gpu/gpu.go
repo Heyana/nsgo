@@ -196,6 +196,10 @@ const (
 	FormatRGBA32Float    TextureFormat = TextureFormat(driver.GPUFormatRGBA32Float)
 	FormatStencil8       TextureFormat = TextureFormat(driver.GPUFormatStencil8)
 
+	// Import-only formats: textures from Device.ImportTexture, such as the planes of a P010 frame, have them; Device.CreateTexture does not take them.
+	FormatR16Unorm  TextureFormat = TextureFormat(driver.GPUFormatR16Unorm)
+	FormatRG16Unorm TextureFormat = TextureFormat(driver.GPUFormatRG16Unorm)
+
 	// Short HDR float format aliases matching WGSL/shader shorthand.
 	FormatRGBA16F  TextureFormat = FormatRGBA16Float
 	FormatRG11B10F TextureFormat = FormatRG11B10Float
@@ -870,6 +874,9 @@ type Features struct {
 	StencilTest bool
 	// MipmapGeneration reports support for Device.GenerateMipmaps. Where it is false, build the chain on the CPU (GenerateMipChainRGBA) and upload each level with WriteTextureMip.
 	MipmapGeneration bool
+	// ImportD3D11Shared and ImportDMABuf report support for Device.ImportTexture of ExternalD3D11Shared and ExternalDMABuf textures (Device.SupportsExternalTexture).
+	ImportD3D11Shared bool
+	ImportDMABuf      bool
 }
 
 // DeviceCapabilities summarizes the active GPU device's limits, optional features, timing query support, and supported compressed texture formats. Targets without native compute support (WebGL 2, OpenGL ES 3.0) report Features.Compute false; check Device.SupportsCompute and use a CPU or render-pass fallback there.
@@ -895,6 +902,8 @@ func featuresFromDriver(f driver.GPUFeatures) Features {
 		ExtendedFormats:        f.ExtendedFormats,
 		StencilTest:            f.StencilTest,
 		MipmapGeneration:       f.MipmapGeneration,
+		ImportD3D11Shared:      f.ImportD3D11Shared,
+		ImportDMABuf:           f.ImportDMABuf,
 	}
 }
 

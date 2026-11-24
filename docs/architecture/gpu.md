@@ -297,6 +297,15 @@ return gpu.View{
   2. `core` bumps the surface's device generation, marks all handles from the lost `Device` invalid (subsequent writes/submits become no-ops rather than panicking), and calls `View.OnDeviceLost`.
   3. When the platform restores or recreates the device/context, it emits `EventGPUDeviceReady` with the new generation and `core` invokes `View.OnReady` with a fresh `*gpu.Device` so the app rebuilds its resources cleanly.
 
+### Imported textures
+
+`Device.ImportTexture` ([#2296](https://github.com/nsgo-dev/nsgo/issues/2296)) opens GPU memory another device owns, such as a hardware decoder's frame, as a sampled 2D texture without copying it; `Device.SupportsExternalTexture(kind)` (`Features.ImportD3D11Shared`, `Features.ImportDMABuf`) says whether a target can, and elsewhere it returns `ErrUnsupported`, so callers fall back to `WriteTexture`.
+
+- **One plane per import**: an NV12 frame is two textures, luma `FormatR8Unorm` and chroma `FormatRG8Unorm` at half size, and P010's are the import-only `FormatR16Unorm` and `FormatRG16Unorm`, which `CreateTexture` rejects. Shaders keep a plain `texture_2d` and convert YUV themselves, so no backend needs `samplerExternalOES` or a YCbCr sampler.
+- **Windows**: the backend opens the NT handle with `ID3D11Device1::OpenSharedResource1` once per handle, whose planes share that resource (opening it twice can yield two resources, and the keyed mutex of one does not make the other's writes visible), and views the plane with `CreateShaderResourceView1`'s `PlaneSlice`. With `KeyedMutex`, it acquires `AcquireKey` (100 ms at most, reporting a timeout on `OnError`) before a frame whose passes bind the texture and releases `ReleaseKey` after them.
+- **Linux**: the backend makes an EGLImage with `EGL_EXT_image_dma_buf_import` (naming the modifier where `_modifiers` is present) on the display `eglGetCurrentDisplay` gives inside the `GtkGLArea`'s context, and binds it with `glEGLImageTargetTexture2DOES`; a GLX context reports no support.
+- **Lifetime**: the caller keeps the handle or file descriptors, open until the first frame submitted after the import completes. Imported textures are only sampled: writes, copies, readbacks and render passes on them are dropped or rejected, and they are not retained across device loss. Closing one releases what the backend opened after the frames already submitted, so a decoder's frame goes back to its pool once the `FrameFence` of the last frame that sampled it completes.
+
 ## Web backend: WebGPU with WebGL 2 fallback (Decision 2)
 
 On the web (`internal/platform/web`, [#1108](https://github.com/nsgo-dev/nsgo/issues/1108)), a `gpu.View` mounts a `<canvas>` sized to physical pixels (`width * pixelRatio`, `height * pixelRatio`), reusing the canvas sizing and animation-frame lifecycle already established in `internal/platform/web/shader.go`:
@@ -450,7 +459,7 @@ Tracked as staged follow-up issues once Stage 1 (`#1105`–`#1110`) is green on 
   - Dynamic uniform buffer offsets, ring-buffered streaming updates, mipmap generation, and GPU timing/profiling queries.
 - **Compute, interop, and Stage 2 backends ([#1234](https://github.com/nsgo-dev/nsgo/issues/1234)–[#1240](https://github.com/nsgo-dev/nsgo/issues/1240))**:
   - Compute pipelines (`@compute @workgroup_size(X, Y, Z)`, `var<storage, read>`, `var<storage, read_write>`, `texture_storage_2d`, `Device.CreateComputePipeline`, `Encoder.BeginComputePass`, `Dispatch` / `DispatchIndirect`, `Device.ReadBuffer`) with `Device.Capabilities().Features.Compute` / `Device.SupportsCompute()` capability queries ([#1234](https://github.com/nsgo-dev/nsgo/issues/1234)). Compute shaders compile to MSL (`kernel void`), HLSL SM 5.0 (`[numthreads]` + `StructuredBuffer`/`RWStructuredBuffer`), WGSL, and GLSL 4.30 / ES 3.10 (`layout(local_size_*) in;` + `std430` SSBOs), and dispatch runs today on the headless software device (`gpu.NewSoftwareRenderer`, `nsgotest`). The Metal, Direct3D 11, WebGPU, WebGL 2, OpenGL and Android GLES backends still report `Features.Compute` false until each wires compute dispatch. Where `SupportsCompute()` is false, creating compute pipelines, read/write storage or storage texture bindings, dispatching, or `ReadBuffer` returns `gpu.ErrUnsupported`, and a compute pass records nothing; applications should fall back to CPU updates (`Device.WriteBuffer`) or ping-pong render-to-texture passes.
-  - Zero-copy / shared-texture interop with `core.Image`, `core.Video`, and pixel buffers;
+  - Zero-copy interop with `core.Image`, `core.Video`, and pixel buffers, and importing `CVPixelBuffer` / IOSurface frames on Metal ([#1105](https://github.com/nsgo-dev/nsgo/issues/1105)); [imported textures](#imported-textures) cover Direct3D 11 and DMA-BUF;
   - Stage 2 **Android Vulkan** (`purego` once bionic `dlopen` and cross-process surface sharing land) and Stage 2 **HarmonyOS** GPU surface support.
 
 ### Completion criteria

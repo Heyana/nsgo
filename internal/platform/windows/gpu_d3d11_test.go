@@ -3,6 +3,7 @@ package windows
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -304,6 +305,9 @@ type fakeD3D11Ops struct {
 	executedPasses    int
 	executedCopies    int
 	readbackPixelsOut []byte
+	imports           int
+	keyedMutexBusy    bool
+	keyedMutexLog     []string
 }
 
 func (f *fakeD3D11Ops) alloc(kind string) *fakeD3DHandle {
@@ -375,6 +379,23 @@ func (f *fakeD3D11Ops) ExecutePass(pass driver.GPUPass, swap d3dReleaser, swapW,
 
 func (f *fakeD3D11Ops) ReadTexture(swap d3dReleaser, swapW, swapH uint32, tex *d3dTrackedTexture, region driver.GPUTextureRegion, surface bool) ([]byte, uint32, error) {
 	return append([]byte(nil), f.readbackPixelsOut...), 0, nil
+}
+
+func (f *fakeD3D11Ops) ImportTexture(desc driver.GPUExternalTextureDesc) (d3dReleaser, d3d11Texture2DDesc, uint32, error) {
+	f.imports++
+	return f.alloc("imported texture"), d3d11Texture2DDesc{width: desc.Width, height: desc.Height, mipLevels: 1, arraySize: 1}, 0, nil
+}
+
+func (f *fakeD3D11Ops) AcquireKeyedMutex(tex *d3dTrackedTexture, key uint64, timeoutMS uint32) (uint32, error) {
+	if f.keyedMutexBusy {
+		return d3dKeyedMutexWaitTimeout, nil
+	}
+	f.keyedMutexLog = append(f.keyedMutexLog, fmt.Sprintf("acquire %d:%d", tex.id, key))
+	return 0, nil
+}
+
+func (f *fakeD3D11Ops) ReleaseKeyedMutex(tex *d3dTrackedTexture, key uint64) {
+	f.keyedMutexLog = append(f.keyedMutexLog, fmt.Sprintf("release %d:%d", tex.id, key))
 }
 
 func (f *fakeD3D11Ops) DeviceRemovedReason() uint32 {
@@ -617,4 +638,96 @@ type fakeReadbackLossOps struct {
 
 func (f *fakeReadbackLossOps) ReadTexture(swap d3dReleaser, swapW, swapH uint32, tex *d3dTrackedTexture, region driver.GPUTextureRegion, surface bool) ([]byte, uint32, error) {
 	return nil, dxgiHRErrDeviceRemoved, errors.New("simulated readback device removed")
+}
+
+func TestD3D11ExternalSRVDescriptor(t *testing.T) {
+	nv12 := d3d11Texture2DDesc{width: 64, height: 35, mipLevels: 1, arraySize: 1, format: dxgiFmtNV12, sampleCount: 1, bindFlags: d3d11BindShaderResource, misc: d3d11MiscSharedNTHandle | d3d11MiscSharedKeyedMutex}
+	for _, tc := range []struct {
+		name  string
+		td    d3d11Texture2DDesc
+		ext   driver.GPUExternalTextureDesc
+		want  uint32
+		fails bool
+	}{
+		{"NV12 luma", nv12, driver.GPUExternalTextureDesc{Width: 64, Height: 35, Format: driver.GPUFormatR8Unorm}, dxgiFmtR8Unorm, false},
+		{"NV12 chroma rounds up", nv12, driver.GPUExternalTextureDesc{Width: 32, Height: 18, Plane: 1, Format: driver.GPUFormatRG8Unorm, KeyedMutex: true}, dxgiFmtR8G8Unorm, false},
+		{"P010 chroma", d3d11Texture2DDesc{width: 8, height: 8, arraySize: 1, format: dxgiFmtP010, bindFlags: d3d11BindShaderResource}, driver.GPUExternalTextureDesc{Width: 4, Height: 4, Plane: 1, Format: driver.GPUFormatRG16Unorm}, dxgiFmtR16G16Unorm, false},
+		{"BGRA", d3d11Texture2DDesc{width: 8, height: 8, arraySize: 1, format: dxgiFmtB8G8R8A8Unorm, bindFlags: d3d11BindShaderResource}, driver.GPUExternalTextureDesc{Width: 8, Height: 8, Format: driver.GPUFormatBGRA8Unorm}, dxgiFmtB8G8R8A8Unorm, false},
+		{"wrong plane format", nv12, driver.GPUExternalTextureDesc{Width: 32, Height: 18, Plane: 1, Format: driver.GPUFormatR8Unorm}, 0, true},
+		{"wrong size", nv12, driver.GPUExternalTextureDesc{Width: 64, Height: 36, Format: driver.GPUFormatR8Unorm}, 0, true},
+		{"plane of a single-plane texture", d3d11Texture2DDesc{width: 8, height: 8, arraySize: 1, format: dxgiFmtR8Unorm, bindFlags: d3d11BindShaderResource}, driver.GPUExternalTextureDesc{Width: 8, Height: 8, Plane: 1, Format: driver.GPUFormatR8Unorm}, 0, true},
+		{"array", d3d11Texture2DDesc{width: 8, height: 8, arraySize: 4, format: dxgiFmtNV12, bindFlags: d3d11BindShaderResource}, driver.GPUExternalTextureDesc{Width: 8, Height: 8, Format: driver.GPUFormatR8Unorm}, 0, true},
+		{"not a shader resource", d3d11Texture2DDesc{width: 8, height: 8, arraySize: 1, format: dxgiFmtNV12}, driver.GPUExternalTextureDesc{Width: 8, Height: 8, Format: driver.GPUFormatR8Unorm}, 0, true},
+		{"no keyed mutex", d3d11Texture2DDesc{width: 8, height: 8, arraySize: 1, format: dxgiFmtNV12, bindFlags: d3d11BindShaderResource}, driver.GPUExternalTextureDesc{Width: 8, Height: 8, Format: driver.GPUFormatR8Unorm, KeyedMutex: true}, 0, true},
+	} {
+		srv, err := d3dExternalSRVDescriptor(tc.td, tc.ext)
+		if tc.fails {
+			if err == nil {
+				t.Errorf("%s: no error, srv %+v", tc.name, srv)
+			}
+			continue
+		}
+		if err != nil || srv.format != tc.want || srv.viewDimension != d3d11SRVDimTexture2D || srv.u1 != 1 {
+			t.Errorf("%s: srv %+v, err %v", tc.name, srv, err)
+		}
+	}
+}
+
+func TestD3D11ControllerImportsTexturesAndHoldsKeyedMutexWhileDrawing(t *testing.T) {
+	ops := &fakeD3D11Ops{}
+	var errs []string
+	ctrl := newD3DGPUController(ops, func(ev *driver.GPUEvent) {
+		if ev.Kind == driver.GPUEventError {
+			errs = append(errs, ev.Message)
+		}
+	})
+	if !ctrl.MountOrResize(16, 16) {
+		t.Fatal("mount failed")
+	}
+	luma := &driver.GPUExternalTextureDesc{Kind: driver.GPUExternalD3D11Shared, Width: 16, Height: 16, Format: driver.GPUFormatR8Unorm, Handle: 0x40, KeyedMutex: true, AcquireKey: 1, ReleaseKey: 0}
+	chroma := &driver.GPUExternalTextureDesc{Kind: driver.GPUExternalD3D11Shared, Width: 8, Height: 8, Plane: 1, Format: driver.GPUFormatRG8Unorm, Handle: 0x40, KeyedMutex: true, AcquireKey: 1, ReleaseKey: 0}
+	pass := driver.GPUPass{
+		ColorAttachments: []driver.GPUColorAttachment{{LoadOp: driver.GPULoadClear, StoreOp: driver.GPUStoreStore}},
+		Commands:         []driver.GPUCommand{{Kind: driver.GPUCmdSetBindGroup, ID: 3}, {Kind: driver.GPUCmdDraw, U0: 3}},
+	}
+	ctrl.Submit(driver.GPUFrame{
+		Generation: 1,
+		Ops: []driver.GPUResourceOp{
+			{Kind: driver.GPUOpImportTexture, ID: 1, External: luma},
+			{Kind: driver.GPUOpImportTexture, ID: 2, External: chroma},
+			{Kind: driver.GPUOpCreateBindGroup, ID: 3, BindGroup: &driver.GPUBindGroupDesc{Entries: []driver.GPUBindGroupEntry{{Binding: 0, Texture: 1}, {Binding: 1, Texture: 2}}}},
+			// Writes to an imported texture are dropped.
+			{Kind: driver.GPUOpWriteTexture, ID: 1, Data: []byte{1}},
+		},
+		Passes:  []driver.GPUPass{pass},
+		Present: true,
+	})
+	if ops.imports != 2 || ctrl.textures[1].external == nil || ctrl.textures[2].desc.Format != driver.GPUFormatRG8Unorm {
+		t.Fatalf("imports = %d, textures = %+v", ops.imports, ctrl.textures)
+	}
+	// Both planes share one handle, so its mutex is taken once, around the pass.
+	if len(ops.keyedMutexLog) != 2 || !strings.HasPrefix(ops.keyedMutexLog[0], "acquire ") || !strings.HasSuffix(ops.keyedMutexLog[0], ":1") || !strings.HasSuffix(ops.keyedMutexLog[1], ":0") {
+		t.Fatalf("keyed mutex log = %v", ops.keyedMutexLog)
+	}
+	// A frame that does not bind them leaves the mutex alone.
+	ops.keyedMutexLog = nil
+	ctrl.Submit(driver.GPUFrame{Generation: 1, Passes: []driver.GPUPass{{ColorAttachments: pass.ColorAttachments}}, Present: true})
+	if len(ops.keyedMutexLog) != 0 {
+		t.Fatalf("keyed mutex log without bindings = %v", ops.keyedMutexLog)
+	}
+	// A mutex the decoder keeps is reported, and not released.
+	ops.keyedMutexBusy = true
+	ctrl.Submit(driver.GPUFrame{Generation: 1, Passes: []driver.GPUPass{pass}, Present: true})
+	if len(errs) != 1 || !strings.Contains(errs[0], "keyed mutex") || len(ops.keyedMutexLog) != 0 {
+		t.Fatalf("busy mutex errors = %v, log = %v", errs, ops.keyedMutexLog)
+	}
+	// Destroying both releases what the imports opened.
+	ctrl.Submit(driver.GPUFrame{Generation: 1, Ops: []driver.GPUResourceOp{{Kind: driver.GPUOpDestroyTexture, ID: 1}, {Kind: driver.GPUOpDestroyTexture, ID: 2}}})
+	if ops.alive != 1 || len(ctrl.textures) != 0 {
+		t.Fatalf("alive after destroying imports = %d (want the swap chain only), textures = %v", ops.alive, ctrl.textures)
+	}
+	ctrl.Release()
+	if ops.alive != 0 {
+		t.Fatalf("leak: alive = %d", ops.alive)
+	}
 }

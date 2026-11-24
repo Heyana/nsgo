@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
@@ -34,10 +35,14 @@ const (
 	dxgiFmtR24G8Typeless      uint32 = 44
 	dxgiFmtD24UnormS8Uint     uint32 = 45
 	dxgiFmtR24UnormX8Typeless uint32 = 46
+	dxgiFmtR16G16Unorm        uint32 = 35
 	dxgiFmtR8G8Unorm          uint32 = 49
+	dxgiFmtR16Unorm           uint32 = 56
 	dxgiFmtR16Uint            uint32 = 57
 	dxgiFmtR8Unorm            uint32 = 61
 	dxgiFmtB8G8R8A8Unorm      uint32 = 87
+	dxgiFmtNV12               uint32 = 103
+	dxgiFmtP010               uint32 = 104
 
 	// D3D11_USAGE (d3d11.h).
 	d3d11UsageDefault   uint32 = 0
@@ -60,6 +65,13 @@ const (
 	// D3D11_RESOURCE_MISC_FLAG (d3d11.h).
 	d3d11MiscTextureCube      uint32 = 0x4
 	d3d11MiscBufferStructured uint32 = 0x40
+	d3d11MiscSharedKeyedMutex uint32 = 0x100
+	d3d11MiscSharedNTHandle   uint32 = 0x800
+
+	// IDXGIKeyedMutex::AcquireSync's success codes besides S_OK (WAIT_TIMEOUT, WAIT_ABANDONED), and how long a frame waits for an imported texture's key.
+	d3dKeyedMutexWaitTimeout      uint32 = 0x102
+	d3dKeyedMutexWaitAbandoned    uint32 = 0x80
+	d3dKeyedMutexAcquireTimeoutMS        = 100
 
 	// D3D11_MAP (d3d11.h).
 	d3d11MapRead uint32 = 1
@@ -316,7 +328,81 @@ func d3d11Features() driver.GPUFeatures {
 		MSAA4x:         true,
 		Depth32Float:   true,
 		Anisotropy:     true,
+		// ID3D11Device1::OpenSharedResource1, which every Windows 10 device has.
+		ImportD3D11Shared: true,
 	}
+}
+
+// d3dExternalViewFormat returns the SRV format that samples plane of a shared texture in DXGI format texFmt as the plane format want, or dxgiFmtUnknown if the texture has no such plane.
+func d3dExternalViewFormat(texFmt uint32, plane uint32, want driver.GPUTextureFormat) uint32 {
+	var view uint32
+	switch texFmt {
+	case dxgiFmtNV12:
+		view = [2]uint32{dxgiFmtR8Unorm, dxgiFmtR8G8Unorm}[min(plane, 1)]
+	case dxgiFmtP010:
+		view = [2]uint32{dxgiFmtR16Unorm, dxgiFmtR16G16Unorm}[min(plane, 1)]
+	case dxgiFmtR8Unorm, dxgiFmtR8G8Unorm, dxgiFmtR16Unorm, dxgiFmtR16G16Unorm, dxgiFmtR8G8B8A8Unorm, dxgiFmtB8G8R8A8Unorm:
+		if plane != 0 {
+			return dxgiFmtUnknown
+		}
+		view = texFmt
+	default:
+		return dxgiFmtUnknown
+	}
+	if d3dPlaneFormat(want) != view {
+		return dxgiFmtUnknown
+	}
+	return view
+}
+
+// d3dExternalSRVDescriptor validates that the shared texture td has the plane ext imports, at its size and format, and returns the SRV that samples it.
+func d3dExternalSRVDescriptor(td d3d11Texture2DDesc, ext driver.GPUExternalTextureDesc) (d3d11SRVDesc, error) {
+	if td.arraySize != 1 || td.sampleCount > 1 {
+		return d3d11SRVDesc{}, fmt.Errorf("d3d11: imported texture must be a single-sampled 2D texture, not an array of %d or %d samples", td.arraySize, td.sampleCount)
+	}
+	if td.bindFlags&d3d11BindShaderResource == 0 {
+		return d3d11SRVDesc{}, errors.New("d3d11: imported texture lacks D3D11_BIND_SHADER_RESOURCE")
+	}
+	if ext.KeyedMutex && td.misc&d3d11MiscSharedKeyedMutex == 0 {
+		return d3d11SRVDesc{}, errors.New("d3d11: imported texture has no keyed mutex (D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX)")
+	}
+	view := d3dExternalViewFormat(td.format, ext.Plane, ext.Format)
+	if view == dxgiFmtUnknown {
+		return d3d11SRVDesc{}, fmt.Errorf("d3d11: plane %d of a DXGI format %d texture cannot be sampled as %s", ext.Plane, td.format, ext.Format)
+	}
+	if w, h := d3dExternalPlaneSize(td.format, ext.Plane, td.width, td.height); w != ext.Width || h != ext.Height {
+		return d3d11SRVDesc{}, fmt.Errorf("d3d11: plane %d of the imported texture is %dx%d, not %dx%d", ext.Plane, w, h, ext.Width, ext.Height)
+	}
+	// Texture2D SRV: MostDetailedMip 0, MipLevels 1.
+	return d3d11SRVDesc{format: view, viewDimension: d3d11SRVDimTexture2D, u0: 0, u1: 1}, nil
+}
+
+// d3dPlaneFormat is the DXGI format of an imported plane in format f.
+func d3dPlaneFormat(f driver.GPUTextureFormat) uint32 {
+	switch f {
+	case driver.GPUFormatR8Unorm:
+		return dxgiFmtR8Unorm
+	case driver.GPUFormatRG8Unorm:
+		return dxgiFmtR8G8Unorm
+	case driver.GPUFormatR16Unorm:
+		return dxgiFmtR16Unorm
+	case driver.GPUFormatRG16Unorm:
+		return dxgiFmtR16G16Unorm
+	case driver.GPUFormatRGBA8Unorm:
+		return dxgiFmtR8G8B8A8Unorm
+	case driver.GPUFormatBGRA8Unorm:
+		return dxgiFmtB8G8R8A8Unorm
+	default:
+		return dxgiFmtUnknown
+	}
+}
+
+// d3dExternalPlaneSize is the size in texels of plane of a texture of width x height in DXGI format texFmt: the chroma plane of NV12 and P010 is half the size, rounded up.
+func d3dExternalPlaneSize(texFmt, plane, width, height uint32) (uint32, uint32) {
+	if plane == 1 && (texFmt == dxgiFmtNV12 || texFmt == dxgiFmtP010) {
+		return (width + 1) / 2, (height + 1) / 2
+	}
+	return width, height
 }
 
 // d3dAlignConstantBufferSize rounds size up to a 16-byte multiple (min 16), matching Direct3D 11's D3D11_BIND_CONSTANT_BUFFER ByteWidth requirement.
@@ -999,6 +1085,8 @@ type d3dTrackedTexture struct {
 	rtvDesc d3d11RTVDesc
 	dsvDesc d3d11DSVDesc
 	handle  d3dReleaser
+	// external describes a texture opened by GPUOpImportTexture, which the controller only samples.
+	external *driver.GPUExternalTextureDesc
 }
 
 type d3dTrackedSampler struct {
@@ -1046,6 +1134,11 @@ type d3dNativeOps interface {
 	ExecuteCopy(cp driver.GPUCopyOp, lookup *d3dPassLookup) (uint32, error)
 	ExecutePass(pass driver.GPUPass, swap d3dReleaser, swapW, swapH uint32, lookup *d3dPassLookup) (drewSwap bool, hr uint32, err error)
 	ReadTexture(swap d3dReleaser, swapW, swapH uint32, tex *d3dTrackedTexture, region driver.GPUTextureRegion, surface bool) ([]byte, uint32, error)
+	// ImportTexture opens a shared texture's plane and returns its handle and the shared texture's descriptor.
+	ImportTexture(desc driver.GPUExternalTextureDesc) (d3dReleaser, d3d11Texture2DDesc, uint32, error)
+	// AcquireKeyedMutex and ReleaseKeyedMutex hold an imported texture's IDXGIKeyedMutex; AcquireKeyedMutex returns d3dKeyedMutexWaitTimeout if it timed out.
+	AcquireKeyedMutex(tex *d3dTrackedTexture, key uint64, timeoutMS uint32) (uint32, error)
+	ReleaseKeyedMutex(tex *d3dTrackedTexture, key uint64)
 	DeviceRemovedReason() uint32
 }
 
@@ -1268,6 +1361,10 @@ func (c *d3dGPUController) Submit(frame driver.GPUFrame) (drewSwap bool) {
 		pipelines:  c.pipelines,
 	}
 
+	// Hold the keyed mutexes of the imported textures the passes sample until they are recorded.
+	held := c.acquireExternal(frame)
+	defer func() { c.releaseExternal(held) }()
+
 	// Phase 2: copies.
 	for _, cp := range frame.Copies {
 		hr, err := c.ops.ExecuteCopy(cp, lookup)
@@ -1331,6 +1428,9 @@ func (c *d3dGPUController) Submit(frame driver.GPUFrame) (drewSwap bool) {
 			Pixels:     pix,
 		})
 	}
+
+	c.releaseExternal(held)
+	held = nil
 
 	// Phase 5: deferred destroys (safe because IDs are globally monotonic).
 	for _, op := range deferredDestroys {
@@ -1425,9 +1525,45 @@ func (c *d3dGPUController) execCreateOrWrite(op driver.GPUResourceOp) bool {
 		}
 		return true
 
+	case driver.GPUOpImportTexture:
+		if op.External == nil {
+			return false
+		}
+		ext := *op.External
+		ext.Planes = slices.Clone(ext.Planes)
+		handle, td, hr, err := c.ops.ImportTexture(ext)
+		if err != nil {
+			if c.checkDeviceLost(hr, err.Error()) {
+				return false
+			}
+			c.emitError(d3dErrorCodeFromHR(hr, driver.GPUErrorFailed), err.Error())
+			return false
+		}
+		if prev := c.textures[op.ID]; prev != nil && prev.handle != nil {
+			prev.handle.Release()
+		}
+		c.textures[op.ID] = &d3dTrackedTexture{
+			id: op.ID,
+			desc: driver.GPUTextureDesc{
+				Label:       ext.Label,
+				Dimension:   driver.GPUDim2D,
+				Width:       ext.Width,
+				Height:      ext.Height,
+				Layers:      1,
+				MipLevels:   1,
+				SampleCount: 1,
+				Format:      ext.Format,
+				Usage:       driver.GPUTextureSampled,
+			},
+			texDesc:  td,
+			handle:   handle,
+			external: &ext,
+		}
+		return true
+
 	case driver.GPUOpWriteTexture:
 		tex := c.textures[op.ID]
-		if tex == nil || len(op.Data) == 0 {
+		if tex == nil || tex.external != nil || len(op.Data) == 0 {
 			return false
 		}
 		hr, err := c.ops.WriteTexture(tex, op.TextureDst, op.Data, op.DataLayout)
@@ -1562,6 +1698,49 @@ func (c *d3dGPUController) execDestroy(op driver.GPUResourceOp) {
 				p.handle.Release()
 			}
 			delete(c.pipelines, op.ID)
+		}
+	}
+}
+
+// acquireExternal acquires the keyed mutex of each imported texture that frame's passes bind, once per shared handle, and returns those it holds.
+func (c *d3dGPUController) acquireExternal(frame driver.GPUFrame) []*d3dTrackedTexture {
+	var held []*d3dTrackedTexture
+	seen := map[uintptr]bool{}
+	for _, pass := range frame.Passes {
+		for _, cmd := range pass.Commands {
+			if cmd.Kind != driver.GPUCmdSetBindGroup {
+				continue
+			}
+			bg := c.bindGroups[cmd.ID]
+			if bg == nil {
+				continue
+			}
+			for _, e := range bg.entries {
+				t := c.textures[e.Texture]
+				if e.Texture == 0 || t == nil || t.external == nil || !t.external.KeyedMutex || seen[t.external.Handle] {
+					continue
+				}
+				seen[t.external.Handle] = true
+				hr, err := c.ops.AcquireKeyedMutex(t, t.external.AcquireKey, d3dKeyedMutexAcquireTimeoutMS)
+				switch {
+				case err != nil:
+					c.emitError(driver.GPUErrorFailed, err.Error())
+				case hr == d3dKeyedMutexWaitTimeout:
+					c.emitError(driver.GPUErrorFailed, fmt.Sprintf("d3d11: imported texture %d: keyed mutex key %d not released within %d ms", t.id, t.external.AcquireKey, d3dKeyedMutexAcquireTimeoutMS))
+				default:
+					held = append(held, t)
+				}
+			}
+		}
+	}
+	return held
+}
+
+// releaseExternal releases the keyed mutexes acquireExternal took on textures that are still open.
+func (c *d3dGPUController) releaseExternal(held []*d3dTrackedTexture) {
+	for _, t := range held {
+		if c.textures[t.id] == t {
+			c.ops.ReleaseKeyedMutex(t, t.external.ReleaseKey)
 		}
 	}
 }

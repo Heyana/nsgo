@@ -189,6 +189,9 @@ func (b *d3d11BufferHandle) Release() {
 type d3d11TextureHandle struct {
 	tex, srv, rtv, dsv *comObject
 	sliceRTVs          map[uint64]*comObject
+	// shared is the shared texture an imported plane views, and mutex its IDXGIKeyedMutex (gpu_external.go).
+	shared *d3d11SharedTexture
+	mutex  *comObject
 }
 
 func (t *d3d11TextureHandle) Release() {
@@ -200,7 +203,11 @@ func (t *d3d11TextureHandle) Release() {
 		delete(t.sliceRTVs, k)
 	}
 	t.sliceRTVs = nil
-	releaseAll(&t.dsv, &t.rtv, &t.srv, &t.tex)
+	releaseAll(&t.mutex, &t.dsv, &t.rtv, &t.srv, &t.tex)
+	if t.shared != nil {
+		t.shared.release()
+		t.shared = nil
+	}
 }
 
 func (t *d3d11TextureHandle) rtvFor(d3d *comObject, desc driver.GPUTextureDesc, mip, layer uint32) *comObject {
@@ -262,6 +269,8 @@ func (p *d3d11PipelineHandle) Release() {
 
 type d3d11NativeOps struct {
 	scaleFn func() float32
+	// shared holds each shared texture imports opened, by NT handle (gpu_external.go).
+	shared map[uintptr]*d3d11SharedTexture
 }
 
 func (n *d3d11NativeOps) getDevices() (*gfx, *comObject, error) {

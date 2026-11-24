@@ -125,6 +125,7 @@ type mockGL struct {
 	blitCalls        int
 	readPixelsCalls  [][4]int32
 	readPixelsSource []byte
+	eglImageTargets  []uintptr
 }
 
 func newMockGL() *mockGL {
@@ -326,6 +327,9 @@ func (m *mockGL) TexSubImage3DOffset(target uint32, level, x, y, z, width, heigh
 	})
 }
 func (m *mockGL) TexParameteri(target, pname uint32, param int32) {}
+func (m *mockGL) EGLImageTargetTexture2D(target uint32, image uintptr) {
+	m.eglImageTargets = append(m.eglImageTargets, image)
+}
 
 func (m *mockGL) GenSampler() uint32 {
 	id := m.alloc()

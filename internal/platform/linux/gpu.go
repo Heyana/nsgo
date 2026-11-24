@@ -620,8 +620,13 @@ func (w *window) initGPUContext(v *view, g *glGPUView, context uintptr) bool {
 	feat := driver.GPUFeatures{
 		Depth32Float: true,
 	}
+	importer := newEGLImporter()
+	feat.ImportDMABuf = importer != nil
 	g.generation++
 	g.ctx = newGLGPUContext(api, es, g.generation, lim, feat)
+	if importer != nil {
+		g.ctx.importer = importer
+	}
 	g.realized = true
 	g.hasRendered = false
 	pw, ph := gpuPhysicalSize(v, g.area)

@@ -210,6 +210,8 @@ type glAPI interface {
 	TexSubImage3D(target uint32, level, x, y, z, width, height, depth int32, format, typ uint32, data []byte)
 	TexSubImage3DOffset(target uint32, level, x, y, z, width, height, depth int32, format, typ uint32, offset uintptr)
 	TexParameteri(target, pname uint32, param int32)
+	// EGLImageTargetTexture2D is glEGLImageTargetTexture2DOES, binding an EGLImage to the bound texture (gpu_gl_external.go).
+	EGLImageTargetTexture2D(target uint32, image uintptr)
 
 	// Samplers.
 	GenSampler() uint32
@@ -281,6 +283,8 @@ type glGPUTexture struct {
 	mipLevels uint32
 	// rendered records whether the texture's current contents came from an FBO render pass (OpenGL Y-up) rather than a top-row-first WriteTexture upload.
 	rendered bool
+	// eglImage is the EGLImage an imported texture is bound to.
+	eglImage uintptr
 }
 
 type glGPUSampler struct {
@@ -320,6 +324,8 @@ type glGPUContext struct {
 	generation    uint32
 	limits        driver.GPULimits
 	features      driver.GPUFeatures
+	// importer makes EGLImages of DMA-BUFs; nil where GTK's context is not EGL.
+	importer glExternalImporter
 
 	buffers    map[driver.GPUID]*glGPUBuffer
 	textures   map[driver.GPUID]*glGPUTexture
@@ -380,11 +386,8 @@ func (c *glGPUContext) destroyAll() {
 		}
 		delete(c.buffers, id)
 	}
-	for id, t := range c.textures {
-		if t.glID != 0 {
-			c.gl.DeleteTexture(t.glID)
-		}
-		delete(c.textures, id)
+	for id := range c.textures {
+		c.deleteTexture(id)
 	}
 	for id, s := range c.samplers {
 		if s.glID != 0 {
@@ -474,13 +477,10 @@ func (c *glGPUContext) applyOp(op driver.GPUResourceOp) *glGPUError {
 		return c.createTexture(op.ID, op.Texture)
 	case driver.GPUOpWriteTexture:
 		return c.writeTexture(op.ID, op.TextureDst, op.Data, op.DataLayout)
+	case driver.GPUOpImportTexture:
+		return c.importTexture(op.ID, op.External)
 	case driver.GPUOpDestroyTexture:
-		if t, ok := c.textures[op.ID]; ok {
-			if t.glID != 0 {
-				c.gl.DeleteTexture(t.glID)
-			}
-			delete(c.textures, op.ID)
-		}
+		c.deleteTexture(op.ID)
 	case driver.GPUOpCreateSampler:
 		return c.createSampler(op.ID, op.Sampler)
 	case driver.GPUOpDestroySampler:
@@ -731,6 +731,9 @@ func (c *glGPUContext) writeTexture(id driver.GPUID, dst driver.GPUTextureCopy, 
 	t, ok := c.textures[id]
 	if !ok {
 		return &glGPUError{code: driver.GPUErrorInvalidDescriptor, message: fmt.Sprintf("unknown texture %d", id)}
+	}
+	if t.eglImage != 0 {
+		return &glGPUError{code: driver.GPUErrorInvalidDescriptor, message: fmt.Sprintf("texture %d is imported and cannot be written", id)}
 	}
 	_, pixelFmt, pixelType, _, ok := glTextureFormatInfo(t.format)
 	if !ok {

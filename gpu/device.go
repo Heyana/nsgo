@@ -331,13 +331,15 @@ func (d *Device) SupportsCompressedFormat(format TextureFormat) bool {
 	return slices.Contains(d.compressedFormats, format)
 }
 
-// SupportsFormat reports whether d can create textures in format. Compressed formats follow SupportsCompressedFormat, and the extended formats (FormatBGRA8UnormSRGB, FormatRG11B10Float, FormatR32Float, FormatRGBA32Float, FormatStencil8) require Features.ExtendedFormats.
+// SupportsFormat reports whether d can create textures in format. Compressed formats follow SupportsCompressedFormat, the import-only FormatR16Unorm and FormatRG16Unorm are never created, and the extended formats (FormatBGRA8UnormSRGB, FormatRG11B10Float, FormatR32Float, FormatRGBA32Float, FormatStencil8) require Features.ExtendedFormats.
 func (d *Device) SupportsFormat(format TextureFormat) bool {
 	switch {
 	case d == nil || format == FormatUndefined:
 		return false
 	case format.IsCompressed():
 		return d.SupportsCompressedFormat(format)
+	case driver.GPUTextureFormat(format).IsImportOnly():
+		return false
 	case driver.GPUTextureFormat(format).IsExtended():
 		return d.features.ExtendedFormats
 	default:
@@ -530,6 +532,8 @@ type Texture struct {
 	retained     bool
 	shadowWrites []retainedTextureWrite
 	closed       bool
+	// external marks a texture from ImportTexture, which is only sampled.
+	external bool
 }
 
 // ID returns the texture's numeric handle.
@@ -2088,7 +2092,7 @@ func (d *Device) WriteBuffer(buf *Buffer, offset uint64, data []byte) {
 
 // WriteTexture copies raw texel bytes into dst according to layout. The written width is BytesPerRow / bytes-per-texel (clamped to the mip edge), and the row count follows the data length and RowsPerImage, on every backend.
 func (d *Device) WriteTexture(tex *Texture, dst TextureCopy, data []byte, layout DataLayout) {
-	if !d.alive() || tex == nil || !tex.Valid() || tex.dev != d || len(data) == 0 {
+	if !d.alive() || tex == nil || !tex.Valid() || tex.dev != d || tex.external || len(data) == 0 {
 		return
 	}
 	cloned := slices.Clone(data)
@@ -2314,7 +2318,7 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 		for i, ca := range desc.ColorAttachments {
 			var tid, rid driver.GPUID
 			if ca.Texture != nil {
-				if !ca.Texture.Valid() || ca.Texture.dev != e.dev || ca.Texture.epoch != e.epoch {
+				if !ca.Texture.Valid() || ca.Texture.external || ca.Texture.dev != e.dev || ca.Texture.epoch != e.epoch {
 					invalid = true
 				} else {
 					tid = ca.Texture.id
@@ -2519,7 +2523,7 @@ func (e *Encoder) CopyBufferToTexture(src BufferCopy, dst TextureCopy, width, he
 	if e == nil || e.finished || e.dev == nil || !e.dev.alive() {
 		return
 	}
-	if !src.Buffer.Valid() || !dst.Texture.Valid() || src.Buffer.dev != e.dev || dst.Texture.dev != e.dev || src.Buffer.epoch != e.epoch || dst.Texture.epoch != e.epoch {
+	if !src.Buffer.Valid() || !dst.Texture.Valid() || dst.Texture.external || src.Buffer.dev != e.dev || dst.Texture.dev != e.dev || src.Buffer.epoch != e.epoch || dst.Texture.epoch != e.epoch {
 		return
 	}
 	e.copies = append(e.copies, driver.GPUCopyOp{
@@ -2549,7 +2553,7 @@ func (e *Encoder) CopyTextureToTexture(src, dst TextureCopy, width, height, laye
 	if e == nil || e.finished || e.dev == nil || !e.dev.alive() {
 		return
 	}
-	if !src.Texture.Valid() || !dst.Texture.Valid() || src.Texture.dev != e.dev || dst.Texture.dev != e.dev || src.Texture.epoch != e.epoch || dst.Texture.epoch != e.epoch {
+	if !src.Texture.Valid() || !dst.Texture.Valid() || src.Texture.external || dst.Texture.external || src.Texture.dev != e.dev || dst.Texture.dev != e.dev || src.Texture.epoch != e.epoch || dst.Texture.epoch != e.epoch {
 		return
 	}
 	e.copies = append(e.copies, driver.GPUCopyOp{
@@ -2901,6 +2905,12 @@ func (d *Device) ReadTexture(tex *Texture, region TextureRegion, fn func(rgba []
 	if tex == nil || !tex.Valid() || tex.dev != d {
 		if fn != nil {
 			fn(nil, Error{Code: ErrInvalidDescriptor, Message: "ReadTexture requires a live Texture"})
+		}
+		return
+	}
+	if tex.external {
+		if fn != nil {
+			fn(nil, Error{Code: ErrInvalidDescriptor, Message: "ReadTexture cannot read an imported texture; render it to a texture and read that"})
 		}
 		return
 	}
