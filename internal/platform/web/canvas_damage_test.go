@@ -4,6 +4,7 @@ package web
 
 import (
 	goimage "image"
+	"math"
 	"syscall/js"
 	"testing"
 
@@ -35,9 +36,11 @@ func TestPartialCanvasRedrawsMatchFullOnes(t *testing.T) {
 			}
 			mark := func(v *view) {
 				ctx := v.inner.Call("getContext", "2d")
+				ctx.Call("save")
 				ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
 				ctx.Set("fillStyle", "#ff00ff")
 				ctx.Call("fillRect", 0, 0, 1, 1)
+				ctx.Call("restore")
 			}
 			draw := func(value float64, change bool) *goimage.RGBA {
 				s, _ := canvasZoomSurface(t)
@@ -92,4 +95,59 @@ func differ(a, b *goimage.RGBA, by int) (int, goimage.Point) {
 		}
 	}
 	return n, first
+}
+
+type damageAnimNode uint32
+
+func (n damageAnimNode) AnimatedNodeID() uint32 { return uint32(n) }
+
+// TestPartialCanvasRedrawsStartFromDefaultState checks that a partial replay
+// starts with the 2D context's defaults (black fill/stroke, line width 1, empty
+// current path) rather than inheriting the state or clip path left by the
+// previous play.
+func TestPartialCanvasRedrawsStartFromDefaultState(t *testing.T) {
+	d := driver.NewDrawing(nil)
+	// Stroke before any BeginPath: would draw the clip rectangle if paintChange leaked it.
+	d.Stroke()
+	// Rely on default black fill and default stroke/line width over the damaged area before changing them.
+	d.FillRect(10, 10, 140, 35)
+	d.StrokeRect(20, 50, 120, 35)
+	d.SetLineWidth(6).SetStrokeColor(driver.RGB(0x00ff00)).SetFillColor(driver.RGB(0xff0000)).SetAlpha(0.5)
+	d.BeginPath().Arc(40, 50, 10, 0, 2*math.Pi, false).Bind(driver.ArgX, damageAnimNode(1))
+	d.Fill()
+	d.Stroke()
+
+	draw := func(value float64, change bool) *goimage.RGBA {
+		s, _ := canvasZoomSurface(t)
+		s.animator.Apply([]driver.AnimationOp{{Kind: driver.AnimCreateValue, Node: 1, Value: value}})
+		v := mountCanvas(s, 20, 21, 1, 160, 100)
+		s.mount(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemCanvas, ID: 21, Drawing: d}}})
+		s.changedCanvases()
+		if !change {
+			return canvasPixels(v)
+		}
+		ctx := v.inner.Call("getContext", "2d")
+		ctx.Call("save")
+		ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
+		ctx.Set("fillStyle", "#ff00ff")
+		ctx.Call("fillRect", 0, 0, 1, 1)
+		ctx.Call("restore")
+		s.animator.Apply([]driver.AnimationOp{{Kind: driver.AnimSet, Node: 1, Value: 60}})
+		s.changedCanvases()
+		img := canvasPixels(v)
+		if c := img.RGBAAt(0, 0); c.R != 0xff || c.G != 0 || c.B != 0xff {
+			t.Errorf("the change drew the whole canvas: pixel (0,0) = %v", c)
+		}
+		img.SetRGBA(0, 0, img.RGBAAt(1, 0))
+		return img
+	}
+	want := draw(60, false)
+	want.SetRGBA(0, 0, want.RGBAAt(1, 0))
+	moved := draw(120, true)
+	if want.Rect != moved.Rect {
+		t.Fatalf("the canvases are %v and %v", want.Rect, moved.Rect)
+	}
+	if n, at := differ(want, moved, 8); n > 0 {
+		t.Errorf("a partial redraw differs from a full one in %d pixels, the first at %v: want=%v got=%v", n, at, want.RGBAAt(at.X, at.Y), moved.RGBAAt(at.X, at.Y))
+	}
 }

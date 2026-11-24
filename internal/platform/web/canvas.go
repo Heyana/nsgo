@@ -73,6 +73,8 @@ func (s *surface) paintChange(v *view) {
 	ctx.Call("beginPath")
 	ctx.Call("rect", clip.x, clip.y, clip.w, clip.h)
 	ctx.Call("clip")
+	// Clear the clip rectangle from the current path so a drawing that fills or strokes before its first BeginPath does not paint it.
+	ctx.Call("beginPath")
 	ctx.Call("clearRect", clip.x, clip.y, clip.w, clip.h)
 	ctx.Call("setTransform", ratio, 0, 0, ratio, -tile.x*ratio, -tile.y*ratio)
 	p := s.canvasPlayer(v, ctx, ratio, w, h, tile)
@@ -176,11 +178,16 @@ func (s *surface) paint(v *view) {
 	v.inner.Set("height", ph)
 	if pw > 0 && ph > 0 {
 		ctx := v.inner.Call("getContext", "2d")
+		// Bracket the full play with save/restore so the context returns to its defaults before any subsequent partial replay.
+		ctx.Call("save")
 		ctx.Call("setTransform", ratio, 0, 0, ratio, -tile.x*ratio, -tile.y*ratio)
 		p := s.canvasPlayer(v, ctx, ratio, w, h, tile)
 		ops := s.animator.CanvasOps(v.id, v.drawing)
 		for i := range ops {
 			p.Play(&ops[i])
+		}
+		for range p.Depth() + 1 {
+			ctx.Call("restore")
 		}
 		v.canvasLast = append(v.canvasLast[:0], ops...)
 	} else {
