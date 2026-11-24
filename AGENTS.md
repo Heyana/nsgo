@@ -47,6 +47,7 @@ NSGo is a cross-platform native UI engine with a Go backend, ported from the des
 - Do each task in its own Git worktree, never in the main checkout, which other agents may be changing at the same time.
 - Confirm before choosing an answer to an open question in [ARCHITECTURE.md](ARCHITECTURE.md#open-questions).
 - Commit or push only when the user asks.
+- When an agent creates or comments on an issue or pull request, end it with the agent's model, such as `🤖 Claude Opus 5.5`.
 - Bring a branch up to date with another, such as `benchmark` with `main`, by rebasing it onto that branch, never by merging; push the result with `--force-with-lease`.
 
 ## Verification
