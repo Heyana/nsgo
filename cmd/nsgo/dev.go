@@ -77,7 +77,7 @@ func automationSupported(target, hostOS string) bool {
 	return automationTargetError(target, hostOS, false) == nil
 }
 
-// dev builds and runs the app, with a dev server its builds connect to: a failed build shows over the app, and Command or Control+R in the app, outside the browser, builds and starts it again unless the app binds the key itself, with OnKey or an enabled item of its application menu (internal/dev's Wrap). It exits once the app does. With nsgo.yaml's hot reload it rebuilds and restarts the app whenever a Go file it compiles from, go.mod, nsgo.yaml or a catalog changes, and keeps the running app when a build fails. After each Go build of an app with a tsconfig.json it writes the TSX's types to .nsgo/types, for editors.
+// dev builds and runs the app, with a dev server its builds connect to: a failed build shows over the app, and Command or Control+R in the app, outside the browser, builds and starts it again unless the app binds the key itself, with OnKey or an enabled item of its application menu (internal/dev's Wrap). It exits once the app does. With nsgo.yaml's hot reload it watches Go sources, embedded files, go.mod, nsgo.yaml and catalogs, and keeps the running app when a build fails. After each Go build of an app with a tsconfig.json it writes the TSX's types to .nsgo/types, for editors.
 func dev(ctx context.Context, p *project, opts devOptions) error {
 	if opts.debug {
 		if err := checkDevDebug(p, opts); err != nil {
@@ -222,7 +222,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		if hasCatalogs(p.I18n.Dir) {
 			dirs = append(dirs, p.I18n.Dir)
 		}
-		dirs, sources := splitSources(dirs)
+		dirs, sources := splitSources(p.Dir, dirs)
 		scanBuild := func() string {
 			files := scan(dirs)
 			if s.watch != nil {
@@ -470,19 +470,29 @@ func reloadBundles(p *project, srv *devServer) {
 func bundleSource(name string) bool {
 	switch filepath.Ext(name) {
 	case ".tsx", ".ts", ".jsx", ".js", ".mjs", ".json":
-		return true
+		info, err := os.Stat(name)
+		return err == nil && !info.IsDir()
 	}
 	return false
 }
 
-// splitSources takes the files a TSX bundle compiles from out of dirs.
-func splitSources(dirs []string) (rest, sources []string) {
+// splitSources takes bundle inputs out of dirs in place, but only if
+// the app has TSX entries to reload. Otherwise every file stays a Go
+// build input regardless of its extension.
+func splitSources(dir string, dirs []string) (rest, sources []string) {
+	rest = dirs[:0]
 	for _, d := range dirs {
-		if info, err := os.Stat(d); err == nil && !info.IsDir() && bundleSource(d) {
-			sources = append(sources, d)
-		} else {
+		if !bundleSource(d) {
 			rest = append(rest, d)
+			continue
 		}
+		if len(sources) == 0 {
+			entries, _ := tsxEntries(dir)
+			if len(entries) == 0 {
+				return dirs, nil
+			}
+		}
+		sources = append(sources, d)
 	}
 	return rest, sources
 }
@@ -874,8 +884,7 @@ func sessionFor(p *project, opts devOptions) (session, error) {
 }
 
 // sourceDirs lists the project's directory and those of every non-standard
-// package it compiles, NSGo's own included, and the files they embed: a
-// TSX app's sources.
+// package it compiles, NSGo's own included, and the files they embed.
 func sourceDirs(dir string, pkgs []goPackage) []string {
 	dirs := []string{dir}
 	for _, g := range pkgs {

@@ -70,6 +70,61 @@ func TestDevServerKeepsBindAddressWhenPortIsTaken(t *testing.T) {
 	}
 }
 
+func TestDevEmbeddedChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name, main string
+		bundled    bool
+	}{
+		{"Go", `package main
+import "embed"
+//go:embed assets/*
+var src embed.FS
+func main() {}
+`, false},
+		{"TSX", `package main
+import (
+	"embed"
+	"github.com/nsgo-dev/nsgo/tsx/compiler"
+)
+//go:embed assets/*
+var src embed.FS
+var _ = compiler.App(src, "assets/App.tsx")
+func main() {}
+`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFiles(t, dir, map[string]string{
+				"main.go":         tc.main,
+				"tsconfig.json":   `{}`,
+				"assets/map.json": `{"level":1}`,
+				"assets/code.js":  `export const x = 1`,
+				"assets/code.ts":  `export const y: number = 2`,
+				"assets/App.tsx":  `import map from "./map.json"; import "./code.js"; import "./code.ts"; export default map`,
+				"assets/note.txt": "original",
+			})
+			names := []string{"map.json", "code.js", "code.ts", "App.tsx", "note.txt"}
+			files := []string{dir}
+			for _, name := range names {
+				files = append(files, filepath.Join(dir, "assets", name))
+			}
+			build, bundles := splitSources(dir, files)
+			for _, name := range names {
+				beforeBuild, beforeBundles := scan(build), scan(bundles)
+				path := filepath.Join(dir, "assets", name)
+				if err := os.WriteFile(path, []byte("the replacement differs in size from every original"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				wantBundle := tc.bundled && name != "note.txt"
+				if rebuilt, reloaded := scan(build) != beforeBuild, scan(bundles) != beforeBundles; rebuilt == wantBundle || reloaded != wantBundle {
+					t.Errorf("saving %s: Go rebuild = %t, bundle reload = %t; want %t, %t",
+						name, rebuilt, reloaded, !wantBundle, wantBundle)
+				}
+			}
+		})
+	}
+}
+
 func TestDevDebugKeepsSymbols(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{

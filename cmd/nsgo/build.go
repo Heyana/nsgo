@@ -777,6 +777,7 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 	for k, v := range extra.files {
 		files[k] = v
 	}
+	stage(ctx, "preparing Go overlay")
 	if p.testBinary {
 		// nsgo test -target: the package's tests, with the backend's test
 		// host, in place of the app.
@@ -793,7 +794,6 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 		// rather than compiling as it starts, which a phone or a page
 		// takes seconds for; the tests still link the compiler for their
 		// own files.
-		stage(ctx, "compiling TSX")
 		bundle, err := p.bundleFile()
 		if err != nil {
 			return nil, nil, err
@@ -802,7 +802,6 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 			files["zz_nsgo_bundle.go"] = bundle
 		}
 	} else {
-		stage(ctx, "compiling TSX")
 		bundle, err := p.bundleFile()
 		if err != nil {
 			return nil, nil, err

@@ -60,7 +60,9 @@ Go apps and libraries call `automation.Register` on the graph goroutine with a s
 
 ## TSX apps
 
-The tool finds a package's TSX entries in its `compiler.App(src, "App.tsx")` calls (`bundle.go`), compiles each with `tsx/bundler` from the app's directory and adds the bundles to the package with a file calling `compiler.Bundled`, through `go -overlay`, built with the `nsgo_bundled` tag, which leaves the compiler out. The overlay names the package's directory as `$PWD` spells it and by its real path, since `go` names the files by either. `nsgo dev` compiles hot bundles ([TSX](tsx.md#developing)) and watches the files they compile from apart from the Go ones: a change of them alone compiles the TSX again and sends `bundle <entry>` over `/_nsgo/events`, which `/_nsgo/bundle?entry=` serves, with no Go build; a failed compile shows as a failed build does.
+The tool finds a package's TSX entries in its `compiler.App(src, "App.tsx")` calls (`bundle.go`), compiles each with `tsx/bundler` from the app's directory and adds the bundles to the package with a file calling `compiler.Bundled`, through `go -overlay`, built with the `nsgo_bundled` tag, which leaves the compiler out. The overlay names the package's directory as `$PWD` spells it and by its real path, since `go` names the files by either.
+
+`nsgo dev` compiles hot bundles ([TSX](tsx.md#developing)). With a detected entry, it watches the bundle source files separately from the Go build inputs: a change to those sources alone compiles the TSX again and sends `bundle <entry>` over `/_nsgo/events`, which `/_nsgo/bundle?entry=` serves, with no Go build; a failed compile shows as a failed build does. Without an entry, embedded files stay in the Go rebuild set regardless of extension.
 
 A web release's bundles are split ([TSX](tsx.md#split-bundles)): `buildWeb` writes each chunk as `chunks/<module>.<10 hex>.js` before the Go build, and the file the overlay adds gives `compiler.BundledChunks` their URLs.
 
