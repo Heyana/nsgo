@@ -158,6 +158,19 @@ Bir iOS App Clip ve tam uygulaması, `app_clip` ve açık bir `apple.app_group` 
 
 HarmonyOS'ta `os.ReadFile`, `os.WriteFile` ve `os.Rename` gibi Go dosya işlemleri bu dizinler ve `os.TempDir()` altında çalışır. Göreli yollar files dizininde başlar. Tavsiye niteliğindeki dosya kilitleri ve sembolik bağlantılar kullanılamaz.
 
+### Kullanıcının klasörleri
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` kullanıcının klasörlerinden birinin yolunu döndürür: `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir` veya `VideosDir`. Her seferinde sisteme sorar, böylece kullanıcının taşıdığı bir klasör izlenir: macOS'ta ev dizinindeki klasörler (videolar için `Movies`), Windows'ta OneDrive'ınkiler dahil bilinen klasörler ve Linux'ta XDG kullanıcı dizinleri. Klasör henüz var olmayabilir. Telefonlarda, web'de ve HarmonyOS'ta bir uygulamanın yol üzerinden ulaştığı böyle klasörler yoktur; `user-dirs.dirs` dosyasının dışarıda bıraktığı bir klasör için Linux'ta da yoktur: `UserDir` `core.ErrUserDirUnavailable` döndürür ve uygulama bunun yerine kullanıcıya `cx.PickDirectories` veya `cx.SaveFile` ile sorar.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+Testler kullanıcının klasörlerini asla almaz: her biri testin geçici dizini içinde boş bir dizindir ve `nsgotest.UserDirs(map[core.StandardDir]string{…})` bunları sabitler; dışarıda bırakılan bir klasör kullanılamaz.
+
 ### Çökme raporları
 
 Yerel sürüm derlemeleri Go çökme izlerini `cx.LogsDir()/crashes` altında tutar. Apple yakalanmamış Objective-C istisnalarını, Android yakalanmamış Java istisnalarını, Windows ise en üst düzey filtresine ulaşan SEH istisnalarını kaydeder. Bekleyen raporları bir sonraki açılışta `cx.CrashReports()` ile listeleyin. Her rapor, onu üreten sürümü, derlemeyi ve platformu tanımlar. Tanılama metnini okumak için `Open()`'ı çağırın, okuyucuyu kapatın, ardından uygulama raporu işlediğinde silmek için `Acknowledge()`'ı çağırın. Bu dosya işlemlerini bir goroutine'de çalıştırın.

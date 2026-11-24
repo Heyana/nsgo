@@ -158,6 +158,19 @@ iOS App Clip dan aplikasi lengkapnya berbagi lokasi data dan penyimpanan ini ket
 
 Di HarmonyOS, operasi file Go seperti `os.ReadFile`, `os.WriteFile`, dan `os.Rename` bekerja di bawah direktori-direktori ini dan `os.TempDir()`. Path relatif dimulai di direktori files. Kunci file advisori dan tautan simbolik tidak tersedia.
 
+### Folder pengguna
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` mengembalikan path salah satu folder pengguna: `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir`, atau `VideosDir`. Fungsi ini bertanya ke sistem setiap kali dipanggil, sehingga folder yang dipindahkan pengguna tetap diikuti: folder di direktori home di macOS (`Movies` untuk video), known folders di Windows, termasuk milik OneDrive, dan direktori pengguna XDG di Linux. Folder tersebut mungkin belum ada. Ponsel, web, dan HarmonyOS tidak memiliki folder semacam itu yang dapat dijangkau aplikasi melalui path, begitu pula Linux untuk folder yang tidak dicantumkan `user-dirs.dirs`: `UserDir` mengembalikan `core.ErrUserDirUnavailable`, dan aplikasi meminta pengguna memilih dengan `cx.PickDirectories` atau `cx.SaveFile` sebagai gantinya.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+Pengujian tidak pernah mendapatkan folder pengguna: masing-masing adalah direktori kosong di dalam direktori sementara pengujian, dan `nsgotest.UserDirs(map[core.StandardDir]string{…})` menetapkannya, dengan folder yang tidak dicantumkan menjadi tidak tersedia.
+
 ### Laporan crash
 
 Build rilis native menyimpan jejak crash Go di bawah `cx.LogsDir()/crashes`. Apple mencatat exception Objective-C yang tidak tertangkap, Android mencatat exception Java yang tidak tertangkap, dan Windows mencatat exception SEH yang mencapai filter tingkat atasnya. Cantumkan laporan yang tertunda pada peluncuran berikutnya dengan `cx.CrashReports()`. Setiap laporan mengidentifikasi versi, build, dan platform yang menghasilkannya. Panggil `Open()` untuk membaca teks diagnostik, tutup pembacanya, lalu panggil `Acknowledge()` untuk menghapus laporan setelah aplikasi memprosesnya. Jalankan operasi file ini di sebuah goroutine.

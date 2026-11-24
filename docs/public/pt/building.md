@@ -219,10 +219,10 @@ Para os alvos de desktop, `build` grava em `dist/releases` aquilo a partir do qu
 | Alvo | Instalador |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`, uma imagem de disco exibindo o aplicativo, uma seta e um link para Applications para arrastá-lo, assinada com `sign.identity` e [autenticada (notarize)](#notarize) |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`, um instalador [NSIS](https://nsis.sourceforge.io) que instala para o usuário — novamente na pasta que o usuário escolheu antes, fechando o aplicativo se estiver em execução — com um atalho no menu Iniciar, um atalho opcional na área de trabalho e um desinstalador que remove apenas o que instalou, [assinado com `sign.certificate`](#sign-windows-packages) onde o aplicativo assina pacotes Windows; `windows.command_line` também instala o companheiro `.com` e coloca a pasta do aplicativo no `Path` do usuário, para que consoles abertos após a instalação executem o comando do aplicativo, enquanto Win+R, que também encontra o companheiro, inicia o aplicativo e fecha o console que abriu; o desinstalador retira a pasta do `Path` somente se um instalador a adicionou, nunca uma entrada que você já tinha |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`, um instalador nativo do Windows que instala para o usuário — novamente na pasta que o usuário escolheu antes, fechando o aplicativo se estiver em execução — com um atalho no menu Iniciar, um atalho opcional na área de trabalho e um desinstalador que remove apenas o que instalou, [assinado com `sign.certificate`](#sign-windows-packages) onde o aplicativo assina pacotes Windows; `windows.command_line` também instala o companheiro `.com` e coloca a pasta do aplicativo no `Path` do usuário, para que consoles abertos após a instalação executem o comando do aplicativo, enquanto Win+R, que também encontra o companheiro, inicia o aplicativo e fecha o console que abriu; o desinstalador retira a pasta do `Path` somente se um instalador a adicionou, nunca uma entrada que você já tinha |
 | Linux | `<name>-<version>-linux-<arch>.deb` para Debian e Ubuntu, e `<name>-<version>-linux-<arch>.pkg.tar.gz` para Arch Linux, que instalam o aplicativo em `/opt/<slug>` com um comando, links para seus [comandos](#commands), sua entrada de desktop e ícone (o pacote Arch inclui `.MTREE` para `pacman -Qkk`), e `<name>-<version>-linux-<arch>.AppImage`, que roda em qualquer distribuição sem instalação |
 
-O instalador Windows precisa do compilador do NSIS, 3.06 ou posterior; em um Mac `brew install makensis`, de modo que um Mac compila todos os instaladores; sem ele, `build` deixa o script `<name>.nsi` no pacote, que compila em qualquer lugar como está. O instalador fala os idiomas dos catálogos do aplicativo que o NSIS traduz, incluindo chinês simplificado e tradicional, escolhendo o do sistema. `-installers=false` ou `build.installers: false` compila apenas os pacotes.
+O instalador e o desinstalador do Windows são compilados apenas com Go, em qualquer sistema, e usam diálogos nativos do Windows. Eles falam os idiomas dos catálogos do aplicativo para os quais têm traduções, incluindo chinês simplificado e tradicional, escolhendo o idioma da interface do sistema; `/LANG=<LCID>` escolhe um para uma única execução, como `/LANG=2052` para chinês simplificado. `/S` instala ou desinstala silenciosamente, um `/D=<folder>` final escolhe a pasta, com espaços inclusive, e `/RELAUNCH` abre o aplicativo após uma atualização. Sem `/D`, uma atualização instala na pasta da instalação que ela substitui. `-installers=false` ou `build.installers: false` compila apenas os pacotes.
 
 Os instaladores aceitam imagens e ícones próprios do aplicativo; caso contrário, cada um usa o ícone do aplicativo ou a imagem embutida:
 
@@ -495,7 +495,7 @@ O NSGo grava esse nome de arquivo em `$SNAP_USER_DATA/.config/autostart`, que o 
 
 ## Tipos de arquivo
 
-`file_types` registra os documentos que um aplicativo abre: pelo Finder, pelo Dock e por Abrir Com no macOS, pelo Abrir Com do Explorer via instalador NSIS ou MSIX no Windows, pela entrada de desktop dos pacotes Debian, Arch, AppImage e Flatpak no Linux e por Abrir Em no iOS:
+`file_types` registra os documentos que um aplicativo abre: pelo Finder, pelo Dock e por Abrir Com no macOS, pelo Abrir Com do Explorer via instalador do Windows ou MSIX no Windows, pela entrada de desktop dos pacotes Debian, Arch, AppImage e Flatpak no Linux e por Abrir Em no iOS:
 
 ```yaml
 file_types:
@@ -655,7 +655,7 @@ sign:
 
 `build` para se o comando tiver sucesso mas deixar o executável do aplicativo, o companheiro de comando, um recurso PE ou o executável de instalação sem uma assinatura Authenticode incorporada.
 
-Assinar o desinstalador dentro do instalador precisa do NSIS 3.08 ou posterior, e um certificado que não seja `.pfx` não pode assiná-lo via `sign.certificate`. `-certificate`, `-sign-command` e `-timestamp-url` definem essas opções pela linha de comando.
+O desinstalador dentro do instalador é assinado antes de ser incorporado, com o mesmo `sign.certificate` ou `sign.sign_command` do aplicativo e do instalador. `-certificate`, `-sign-command` e `-timestamp-url` definem essas opções pela linha de comando.
 
 ### Autenticar (Notarize)
 

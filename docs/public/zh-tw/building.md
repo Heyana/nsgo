@@ -219,10 +219,10 @@ windows:
 | 目標平台 | 安裝程式 |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`，這是一個顯示應用程式、箭頭與 Applications 連結的磁碟映像檔，方便使用者拖曳安裝，並使用 `sign.identity` 簽署及進行[公證](#notarize) |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`，為 [NSIS](https://nsis.sourceforge.io) 安裝程式，會為使用者安裝應用程式（若先前已安裝則安裝於原本選定的資料夾，並關閉執行中的應用程式），附帶「開始」功能表捷徑、可選的桌面捷徑以及僅移除其所安裝檔案的解除安裝程式，並於設定了 [`sign.certificate`](#sign-windows-packages) 時隨應用程式一併簽署；`windows.command_line` 亦會安裝 `.com` 輔助程式並將應用程式資料夾加入使用者的 `Path`，使安裝後開啟的主控台能直接執行應用程式命令，而同樣能找到該輔助程式的 Win+R 則會在啟動應用程式後自動關閉開啟的主控台；解除安裝程式僅在該資料夾是由安裝程式加入時才會將其從 `Path` 移除，絕不會動到使用者原本自訂的路徑項目 |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`，為原生 Windows 安裝程式，會為使用者安裝應用程式（若先前已安裝則安裝於原本選定的資料夾，並關閉執行中的應用程式），附帶「開始」功能表捷徑、可選的桌面捷徑以及僅移除其所安裝檔案的解除安裝程式，並於設定了 [`sign.certificate`](#sign-windows-packages) 時隨應用程式一併簽署；`windows.command_line` 亦會安裝 `.com` 輔助程式並將應用程式資料夾加入使用者的 `Path`，使安裝後開啟的主控台能直接執行應用程式命令，而同樣能找到該輔助程式的 Win+R 則會在啟動應用程式後自動關閉開啟的主控台；解除安裝程式僅在該資料夾是由安裝程式加入時才會將其從 `Path` 移除，絕不會動到使用者原本自訂的路徑項目 |
 | Linux | 適用於 Debian 與 Ubuntu 的 `<name>-<version>-linux-<arch>.deb`，以及適用於 Arch Linux 的 `<name>-<version>-linux-<arch>.pkg.tar.gz`，兩者皆會將應用程式安裝於 `/opt/<slug>` 並包含命令、其[命令列程式](#commands)連結、桌面項目與圖示（Arch 套件包含供 `pacman -Qkk` 驗證的 `.MTREE`）；另有 `<name>-<version>-linux-<arch>.AppImage`，無需安裝即可在任何發行版上執行 |
 
-Windows 安裝程式需要 NSIS 3.06 或更新版本的編譯器（在 Mac 上可透過 `brew install makensis` 安裝），因此一台 Mac 即可建置所有平台的安裝程式；若系統未安裝 NSIS，`build` 會將腳本 `<name>.nsi` 保留在套件目錄中，可在任何環境下直接編譯。安裝程式會支援應用程式語系目錄中 NSIS 所涵蓋的語言（包含簡體中文與繁體中文），並自動選用系統語言。傳入 `-installers=false` 或設定 `build.installers: false` 則只建置封裝檔而不製作安裝程式。
+Windows 安裝程式與解除安裝程式僅需 Go 即可在任何系統上建置，並使用原生 Windows 對話框。它們會支援應用程式語系目錄中已有對應翻譯的語言（包含簡體中文與繁體中文），並自動選用系統的介面語言；`/LANG=<LCID>` 可為單次執行指定語言，例如以 `/LANG=2052` 指定簡體中文。`/S` 會以靜默方式安裝或解除安裝，置於最後的 `/D=<folder>` 可指定安裝資料夾（路徑可包含空格），而 `/RELAUNCH` 會在更新後開啟應用程式。若未指定 `/D`，升級時會安裝於所取代之既有安裝的資料夾。傳入 `-installers=false` 或設定 `build.installers: false` 則只建置封裝檔而不製作安裝程式。
 
 安裝程式可採用應用程式自訂的圖片與圖示；若未設定則使用應用程式圖示或內建預設圖片：
 
@@ -496,7 +496,7 @@ NSGo 會將該檔案寫入 `$SNAP_USER_DATA/.config/autostart`，讓 snapd 透�
 
 ## 檔案類型
 
-`file_types` 用於註冊應用程式可開啟的文件類型：支援從 macOS 的 Finder、Dock 與「打開檔案的應用程式」、Windows 透過 NSIS 安裝程式或 MSIX 註冊的檔案總管「開啟檔案」、Linux 上 Debian、Arch、AppImage 與 Flatpak 套件的桌面項目，以及 iOS 的「打開方式」：
+`file_types` 用於註冊應用程式可開啟的文件類型：支援從 macOS 的 Finder、Dock 與「打開檔案的應用程式」、Windows 透過 Windows 安裝程式或 MSIX 註冊的檔案總管「開啟檔案」、Linux 上 Debian、Arch、AppImage 與 Flatpak 套件的桌面項目，以及 iOS 的「打開方式」：
 
 ```yaml
 file_types:
@@ -656,7 +656,7 @@ sign:
 
 若該命令回傳成功，但應用程式執行檔、命令輔助程式、PE 資源或安裝程式執行檔仍缺少內嵌的 Authenticode 簽章，`build` 將會中止並報錯。
 
-簽署安裝程式內部的解除安裝程式需要 NSIS 3.08 或更新版本，且非 `.pfx` 格式的憑證無法透過 `sign.certificate` 對其簽署。`-certificate`、`-sign-command` 與 `-timestamp-url` 可從命令列設定上述選項。
+安裝程式內部的解除安裝程式會在嵌入前先行簽署，所用的 `sign.certificate` 或 `sign.sign_command` 與應用程式及安裝程式相同。`-certificate`、`-sign-command` 與 `-timestamp-url` 可從命令列設定上述選項。
 
 ### 公證
 

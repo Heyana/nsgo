@@ -219,10 +219,10 @@ windows:
 | ターゲット | インストーラー |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`。アプリ、矢印、ドラッグ先の Applications へのリンクを表示するディスクイメージで、`sign.identity` で署名され[公証](#notarize)されます |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`。ユーザー単位でインストールする [NSIS](https://nsis.sourceforge.io) インストーラーで、以前ユーザーが選択したフォルダーに再インストールし、起動中のアプリを終了し、スタートメニューショートカットと任意のデスクトップショートカットを作成し、自身がインストールしたものだけを削除するアンインストーラーを備えます（アプリで Windows パッケージに署名する場合は [`sign.certificate`](#sign-windows-packages) で署名）。`windows.command_line` を有効にすると `.com` コンパニオンもインストールしてアプリのフォルダーをユーザーの `Path` に追加するため、インストール後に開いたコンソールからアプリのコマンドを実行でき、コンパニオンを見つける Win+R でもアプリを起動して開いたコンソールを閉じます。アンインストーラーはインストーラー自身が追加したエントリのみ `Path` から削除し、ユーザーが元々持っていたエントリには触れません |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`。ユーザー単位でインストールするネイティブ Windows インストーラーで、以前ユーザーが選択したフォルダーに再インストールし、起動中のアプリを終了し、スタートメニューショートカットと任意のデスクトップショートカットを作成し、自身がインストールしたものだけを削除するアンインストーラーを備えます（アプリで Windows パッケージに署名する場合は [`sign.certificate`](#sign-windows-packages) で署名）。`windows.command_line` を有効にすると `.com` コンパニオンもインストールしてアプリのフォルダーをユーザーの `Path` に追加するため、インストール後に開いたコンソールからアプリのコマンドを実行でき、コンパニオンを見つける Win+R でもアプリを起動して開いたコンソールを閉じます。アンインストーラーはインストーラー自身が追加したエントリのみ `Path` から削除し、ユーザーが元々持っていたエントリには触れません |
 | Linux | Debian/Ubuntu 向けの `<name>-<version>-linux-<arch>.deb` と Arch Linux 向けの `<name>-<version>-linux-<arch>.pkg.tar.gz` は、アプリを `/opt/<slug>` にインストールし、コマンド本体、各[コマンド](#commands)へのリンク、デスクトップエントリ、アイコンを配置します（Arch パッケージには `pacman -Qkk` 用の `.MTREE` が含まれます）。また `<name>-<version>-linux-<arch>.AppImage` はインストール不要でどのディストリビューションでも実行できます |
 
-Windows インストーラーには NSIS コンパイラ 3.06 以降が必要です（Mac では `brew install makensis` で導入できるため、Mac 1 台ですべてのインストーラーをビルドできます）。ない場合でも、`build` はパッケージ内にそのままどこでもコンパイルできるスクリプト `<name>.nsi` を残します。インストーラーは、アプリのカタログにある言語のうち NSIS が対応している言語（簡体字中国語・繁体字中国語を含む）で表示され、システムの言語を選びます。`-installers=false` または `build.installers: false` を指定するとパッケージのみをビルドします。
+Windows のセットアップとアンインストーラーはどのシステム上でも Go だけでビルドでき、Windows ネイティブのダイアログを使います。アプリのカタログにある言語のうち訳語を持つ言語（簡体字中国語・繁体字中国語を含む）で表示され、システムの UI 言語を選びます。`/LANG=<LCID>` を指定するとその実行に限って言語を選べます（簡体字中国語なら `/LANG=2052`）。`/S` はサイレントでインストールまたはアンインストールし、末尾の `/D=<folder>` はインストール先フォルダーを指定し（スペースを含んでも可）、`/RELAUNCH` はアップデート後にアプリを起動します。`/D` を指定しない場合、アップグレードは置き換える既存インストールのフォルダーにインストールします。`-installers=false` または `build.installers: false` を指定するとパッケージのみをビルドします。
 
 インストーラーはアプリ独自の画像やアイコンも使用でき、指定しない場合はアプリのアイコンまたは組み込み画像が使われます。
 
@@ -496,7 +496,7 @@ NSGo はそのファイル名を `$SNAP_USER_DATA/.config/autostart` 配下に�
 
 ## ファイル形式
 
-`file_types` はアプリが開くドキュメント形式を登録します。macOS では Finder、Dock、「このアプリケーションで開く」、Windows では NSIS インストーラーまたは MSIX を通じてエクスプローラーの「プログラムから開く」、Linux では Debian・Arch・AppImage・Flatpak パッケージのデスクトップエントリ、iOS では「次で開く」に対応します。
+`file_types` はアプリが開くドキュメント形式を登録します。macOS では Finder、Dock、「このアプリケーションで開く」、Windows では Windows インストーラーまたは MSIX を通じてエクスプローラーの「プログラムから開く」、Linux では Debian・Arch・AppImage・Flatpak パッケージのデスクトップエントリ、iOS では「次で開く」に対応します。
 
 ```yaml
 file_types:
@@ -656,7 +656,7 @@ sign:
 
 コマンドが成功したにもかかわらず、アプリ実行ファイル、コマンドコンパニオン、PE リソース、またはセットアップ実行ファイルに埋め込み Authenticode 署名が付いていない場合、`build` は停止します。
 
-インストーラー内部のアンインストーラーへの署名には NSIS 3.08 以降が必要であり、`.pfx` 以外の証明書では `sign.certificate` を通じた署名はできません。`-certificate`、`-sign-command`、`-timestamp-url` を使ってコマンドラインからこれらを指定することもできます。
+インストーラー内部のアンインストーラーは、埋め込まれる前に、アプリやセットアップと同じ `sign.certificate` または `sign.sign_command` で署名されます。`-certificate`、`-sign-command`、`-timestamp-url` を使ってコマンドラインからこれらを指定することもできます。
 
 ### 公証（Notarize）
 

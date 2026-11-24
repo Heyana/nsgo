@@ -219,10 +219,10 @@ Für die Desktop-Ziele schreibt `build` die Dateien, mit denen Nutzende die App 
 | Zielplattform | Installer |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`, ein Disk-Image mit der App, einem Pfeil und einem Link zum Programme-Ordner zum Hinüberziehen, signiert mit `sign.identity` und [notarisiert](#notarize) |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`, ein [NSIS](https://nsis.sourceforge.io)-Installer, der für die nutzende Person installiert – bei erneutem Ausführen im zuvor gewählten Ordner, wobei eine laufende App geschlossen wird –, mit Startmenü-Verknüpfung, optionaler Desktop-Verknüpfung und einem Uninstaller, der nur entfernt, was er selbst installiert hat, [signiert mit `sign.certificate`](#sign-windows-packages), wo die App Windows-Pakete signiert; `windows.command_line` installiert zusätzlich den `.com`-Begleiter und trägt den Ordner der App in `Path` der nutzenden Person ein, sodass nach der Installation geöffnete Konsolen den App-Befehl ausführen, während Win+R – das den Begleiter ebenfalls findet – die App startet und die geöffnete Konsole schließt; der Uninstaller entfernt den Ordner nur dann aus `Path`, wenn ihn ein Installer hinzugefügt hat, niemals einen selbst angelegten Eintrag |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`, ein nativer Windows-Installer, der für die nutzende Person installiert – bei erneutem Ausführen im zuvor gewählten Ordner, wobei eine laufende App geschlossen wird –, mit Startmenü-Verknüpfung, optionaler Desktop-Verknüpfung und einem Uninstaller, der nur entfernt, was er selbst installiert hat, [signiert mit `sign.certificate`](#sign-windows-packages), wo die App Windows-Pakete signiert; `windows.command_line` installiert zusätzlich den `.com`-Begleiter und trägt den Ordner der App in `Path` der nutzenden Person ein, sodass nach der Installation geöffnete Konsolen den App-Befehl ausführen, während Win+R – das den Begleiter ebenfalls findet – die App startet und die geöffnete Konsole schließt; der Uninstaller entfernt den Ordner nur dann aus `Path`, wenn ihn ein Installer hinzugefügt hat, niemals einen selbst angelegten Eintrag |
 | Linux | `<name>-<version>-linux-<arch>.deb` für Debian und Ubuntu sowie `<name>-<version>-linux-<arch>.pkg.tar.gz` für Arch Linux, die die App in `/opt/<slug>` samt Befehl, Links auf ihre [Befehle](#commands), Desktop-Eintrag und Icon installieren (das Arch-Paket enthält `.MTREE` für `pacman -Qkk`), sowie `<name>-<version>-linux-<arch>.AppImage`, das auf jeder Distribution ohne Installation läuft |
 
-Der Windows-Installer benötigt den NSIS-Compiler ab Version 3.06 (auf einem Mac `brew install makensis`), sodass ein Mac jeden Installer bauen kann; ohne ihn belässt `build` das Skript `<name>.nsi` im Paket, das sich überall unverändert kompilieren lässt. Der Installer spricht diejenigen Sprachen aus den App-Katalogen, die NSIS übersetzt – einschließlich vereinfachtem und traditionellem Chinesisch –, und wählt die Systemsprache. `-installers=false` oder `build.installers: false` baut ausschließlich die Pakete.
+Setup und Uninstaller für Windows bauen allein mit Go auf jedem System und verwenden native Windows-Dialoge. Sie sprechen diejenigen Sprachen aus den App-Katalogen, für die sie Texte haben – einschließlich vereinfachtem und traditionellem Chinesisch –, und wählen die Sprache der Systemoberfläche; `/LANG=<LCID>` wählt eine Sprache für einen einzelnen Aufruf, etwa `/LANG=2052` für vereinfachtes Chinesisch. `/S` installiert oder deinstalliert still, ein abschließendes `/D=<folder>` wählt den Ordner, auch mit Leerzeichen, und `/RELAUNCH` öffnet die App nach einem Update. Ohne `/D` installiert ein Upgrade in den Ordner der Installation, die es ersetzt. `-installers=false` oder `build.installers: false` baut ausschließlich die Pakete.
 
 Die Installer übernehmen eigene Bilder und Icons der App; andernfalls wird jeweils das App-Icon oder das eingebaute Bild verwendet:
 
@@ -496,7 +496,7 @@ NSGo schreibt diesen Dateinamen unter `$SNAP_USER_DATA/.config/autostart`, den `
 
 ## Dateitypen
 
-`file_types` registriert die Dokumente, die eine App öffnet: über Finder, Dock und „Öffnen mit“ unter macOS, über „Öffnen mit“ des Explorers durch den NSIS-Installer oder das MSIX unter Windows, über den Desktop-Eintrag der Debian-, Arch-, AppImage- und Flatpak-Pakete unter Linux sowie über „Öffnen in“ unter iOS:
+`file_types` registriert die Dokumente, die eine App öffnet: über Finder, Dock und „Öffnen mit“ unter macOS, über „Öffnen mit“ des Explorers durch den Windows-Installer oder das MSIX unter Windows, über den Desktop-Eintrag der Debian-, Arch-, AppImage- und Flatpak-Pakete unter Linux sowie über „Öffnen in“ unter iOS:
 
 ```yaml
 file_types:
@@ -656,7 +656,7 @@ sign:
 
 `build` bricht ab, wenn der Befehl erfolgreich zurückkehrt, aber die ausführbare Datei der App, der Befehlsbegleiter, eine PE-Ressource oder die Setup-Datei ohne eingebettete Authenticode-Signatur verbleibt.
 
-Das Signieren des Uninstallers innerhalb des Installers erfordert NSIS 3.08 oder neuer, und ein Zertifikat, das keine `.pfx`-Datei ist, kann ihn nicht über `sign.certificate` signieren. `-certificate`, `-sign-command` und `-timestamp-url` setzen diese Werte über die Kommandozeile.
+Der Uninstaller innerhalb des Installers wird vor dem Einbetten signiert, mit demselben `sign.certificate` bzw. `sign.sign_command` wie die App und das Setup. `-certificate`, `-sign-command` und `-timestamp-url` setzen diese Werte über die Kommandozeile.
 
 ### Notarisieren
 

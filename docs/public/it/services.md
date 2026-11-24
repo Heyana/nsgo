@@ -158,6 +158,19 @@ Un App Clip iOS e la sua app completa condividono questi percorsi di dati e arch
 
 Su HarmonyOS, le operazioni sui file di Go come `os.ReadFile`, `os.WriteFile` e `os.Rename` funzionano in queste cartelle e in `os.TempDir()`. I percorsi relativi partono dalla cartella dei file. I lock consultivi sui file e i collegamenti simbolici non sono disponibili.
 
+### Le cartelle dell'utente
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` restituisce il percorso di una delle cartelle dell'utente: `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir` o `VideosDir`. Lo chiede al sistema ogni volta, così segue una cartella che l'utente ha spostato: le cartelle nella directory home su macOS (`Movies` per i video), le cartelle note su Windows, incluse quelle di OneDrive, e le directory utente XDG su Linux. La cartella potrebbe non esistere ancora. I telefoni, il web e HarmonyOS non hanno cartelle di questo tipo raggiungibili da un'app tramite percorso, né le ha Linux per una cartella che `user-dirs.dirs` tralascia: `UserDir` restituisce `core.ErrUserDirUnavailable`, e l'app chiede invece all'utente con `cx.PickDirectories` o `cx.SaveFile`.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+I test non ricevono mai le cartelle dell'utente: ciascuna è una directory vuota all'interno di quella temporanea del test, e `nsgotest.UserDirs(map[core.StandardDir]string{…})` le fissa, mentre una cartella tralasciata risulta non disponibile.
+
 ### Rapporti di crash
 
 Le build native di release conservano le tracce dei crash di Go in `cx.LogsDir()/crashes`. Apple registra le eccezioni Objective-C non gestite, Android registra le eccezioni Java non gestite, e Windows registra le eccezioni SEH che raggiungono il suo filtro di primo livello. Elenca i rapporti in sospeso all'avvio successivo con `cx.CrashReports()`. Ogni rapporto identifica la versione, la build e la piattaforma che lo hanno prodotto. Chiama `Open()` per leggere il testo diagnostico, chiudi il reader, poi chiama `Acknowledge()` per eliminare il rapporto quando l'app lo ha elaborato. Esegui queste operazioni sui file su una goroutine.

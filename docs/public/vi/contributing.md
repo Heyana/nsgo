@@ -7,7 +7,7 @@ order: 80
 
 ## Yêu cầu
 
-macOS có Xcode và Go 1.27.3 trở lên có thể build mọi nền tảng đích cho arm64, bao gồm cả APK của Android. Để chạy trên thiết bị thật, cần các thành phần được liệt kê ở mục [Cài đặt](getting-started.md#requirements); riêng trình giả lập Android x86_64 (`android_x64`) cần có Android NDK, vì Go chỉ liên kết `android/amd64` khi có cgo. Trình cài đặt Windows cần NSIS (`brew install makensis`); nếu thiếu, lệnh `build` sẽ giữ lại tệp script của nó.
+macOS có Xcode và Go 1.27.3 trở lên có thể build mọi nền tảng đích cho arm64, bao gồm cả APK của Android. Để chạy trên thiết bị thật, cần các thành phần được liệt kê ở mục [Cài đặt](getting-started.md#requirements); riêng trình giả lập Android x86_64 (`android_x64`) cần có Android NDK, vì Go chỉ liên kết `android/amd64` khi có cgo. Các chương trình cài đặt và gỡ cài đặt Windows được build chỉ bằng Go.
 
 ```sh
 git clone https://github.com/nsgo-dev/nsgo.git

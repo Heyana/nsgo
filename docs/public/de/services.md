@@ -158,6 +158,19 @@ Ein iOS App Clip und seine vollständige App teilen sich diese Daten- und Speich
 
 Unter HarmonyOS funktionieren Go-Dateioperationen wie `os.ReadFile`, `os.WriteFile` und `os.Rename` unter diesen Verzeichnissen und `os.TempDir()`. Relative Pfade beginnen im Dateiverzeichnis. Advisory-Dateisperren und symbolische Links sind nicht verfügbar.
 
+### Die Ordner des Benutzers
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` gibt den Pfad eines der Ordner des Benutzers zurück: `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir` oder `VideosDir`. Es fragt jedes Mal das System, sodass ein vom Benutzer verschobener Ordner gefunden wird: die Ordner im Home-Verzeichnis unter macOS (`Movies` für Videos), die bekannten Ordner unter Windows einschließlich derer von OneDrive und die XDG-Benutzerverzeichnisse unter Linux. Der Ordner muss noch nicht existieren. Smartphones, das Web und HarmonyOS haben keine solchen Ordner, die eine App über einen Pfad erreicht, ebenso wenig Linux für einen Ordner, den `user-dirs.dirs` auslässt: `UserDir` gibt dann `core.ErrUserDirUnavailable` zurück, und die App fragt den Benutzer stattdessen mit `cx.PickDirectories` oder `cx.SaveFile`.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+Tests erhalten nie die Ordner des Benutzers: Jeder ist ein leeres Verzeichnis im temporären Verzeichnis des Tests, und `nsgotest.UserDirs(map[core.StandardDir]string{…})` legt sie fest, wobei ein ausgelassener Ordner nicht verfügbar ist.
+
 ### Absturzberichte
 
 Native Release-Builds bewahren Go-Absturz-Traces unter `cx.LogsDir()/crashes` auf. Apple zeichnet nicht abgefangene Objective-C-Ausnahmen auf, Android nicht abgefangene Java-Ausnahmen und Windows SEH-Ausnahmen, die seinen Top-Level-Filter erreichen. Listen Sie ausstehende Berichte beim nächsten Start mit `cx.CrashReports()` auf. Jeder Bericht gibt die Version, den Build und die Plattform an, die ihn erzeugt haben. Rufen Sie `Open()` auf, um den Diagnosetext zu lesen, schließen Sie den Reader und rufen Sie dann `Acknowledge()` auf, um den Bericht zu löschen, sobald die App ihn verarbeitet hat. Führen Sie diese Dateioperationen auf einer Goroutine aus.

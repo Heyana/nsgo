@@ -219,10 +219,10 @@ Pour les cibles de bureau, `build` écrit ce à partir de quoi les utilisateurs 
 | Cible | Installateur |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`, une image disque présentant l'application, une flèche et un lien vers Applications où la glisser, signée avec `sign.identity` et [notarisée](#notarize) |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`, un installateur [NSIS](https://nsis.sourceforge.io) qui installe pour l'utilisateur, à nouveau dans le dossier choisi précédemment, en fermant l'application si elle tourne, avec un raccourci dans le menu Démarrer, un raccourci facultatif sur le Bureau et un désinstallateur ne supprimant que ce qu'il a installé, [signé avec `sign.certificate`](#sign-windows-packages) là où l'application signe les paquets Windows ; `windows.command_line` installe aussi le compagnon `.com` et ajoute le dossier de l'application au `Path` de l'utilisateur, afin que les consoles ouvertes après installation exécutent la commande de l'application, tandis que Win+R, qui trouve aussi le compagnon, démarre l'application et ferme la console ouverte ; le désinstallateur ne retire le dossier du `Path` que si un installateur l'a ajouté, jamais une entrée que vous aviez déjà |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`, un installateur Windows natif qui installe pour l'utilisateur, à nouveau dans le dossier choisi précédemment, en fermant l'application si elle tourne, avec un raccourci dans le menu Démarrer, un raccourci facultatif sur le Bureau et un désinstallateur ne supprimant que ce qu'il a installé, [signé avec `sign.certificate`](#sign-windows-packages) là où l'application signe les paquets Windows ; `windows.command_line` installe aussi le compagnon `.com` et ajoute le dossier de l'application au `Path` de l'utilisateur, afin que les consoles ouvertes après installation exécutent la commande de l'application, tandis que Win+R, qui trouve aussi le compagnon, démarre l'application et ferme la console ouverte ; le désinstallateur ne retire le dossier du `Path` que si un installateur l'a ajouté, jamais une entrée que vous aviez déjà |
 | Linux | `<name>-<version>-linux-<arch>.deb` pour Debian et Ubuntu, et `<name>-<version>-linux-<arch>.pkg.tar.gz` pour Arch Linux, qui installent l'application dans `/opt/<slug>` avec une commande, des liens vers ses [commandes](#commands), son entrée desktop et son icône (le paquet Arch inclut `.MTREE` pour `pacman -Qkk`), ainsi que `<name>-<version>-linux-<arch>.AppImage`, qui s'exécute sur toute distribution sans installation |
 
-L'installateur Windows nécessite le compilateur de NSIS, version 3.06 ou ultérieure — sur Mac, `brew install makensis` — si bien qu'un Mac construit tous les installateurs ; sans lui, `build` laisse le script `<name>.nsi` dans le paquet, qui se compile partout tel quel. L'installateur parle les langues des catalogues de l'application que NSIS traduit, chinois simplifié et traditionnel inclus, en choisissant celle du système. `-installers=false` ou `build.installers: false` compile uniquement les paquets.
+L'installateur et le désinstallateur Windows se compilent avec Go seul, sur n'importe quel système, et utilisent les boîtes de dialogue natives de Windows. Ils parlent les langues des catalogues de l'application pour lesquelles ils ont une traduction, chinois simplifié et traditionnel inclus, en choisissant la langue de l'interface du système ; `/LANG=<LCID>` en impose une le temps d'une exécution, par exemple `/LANG=2052` pour le chinois simplifié. `/S` installe ou désinstalle en silence, un `/D=<folder>` final choisit le dossier, espaces compris, et `/RELAUNCH` ouvre l'application après une mise à jour. Sans `/D`, une mise à niveau s'installe dans le dossier de l'installation qu'elle remplace. `-installers=false` ou `build.installers: false` compile uniquement les paquets.
 
 Les installateurs reprennent vos propres images et icônes ; sinon, chacun utilise l'icône de l'application ou l'image intégrée :
 
@@ -496,7 +496,7 @@ NSGo écrit ce nom de fichier sous `$SNAP_USER_DATA/.config/autostart`, que snap
 
 ## Types de fichiers
 
-`file_types` enregistre les documents ouverts par une application : depuis le Finder, le Dock et Ouvrir avec sous macOS, depuis Ouvrir avec de l'Explorateur via l'installateur NSIS ou le MSIX sous Windows, via l'entrée desktop des paquets Debian, Arch, AppImage et Flatpak sous Linux, et via Ouvrir dans sous iOS :
+`file_types` enregistre les documents ouverts par une application : depuis le Finder, le Dock et Ouvrir avec sous macOS, depuis Ouvrir avec de l'Explorateur via l'installateur Windows ou le MSIX sous Windows, via l'entrée desktop des paquets Debian, Arch, AppImage et Flatpak sous Linux, et via Ouvrir dans sous iOS :
 
 ```yaml
 file_types:
@@ -656,7 +656,7 @@ sign:
 
 `build` s'arrête si la commande réussit mais laisse l'exécutable de l'application, le compagnon de commande, une ressource PE ou l'exécutable d'installation sans signature Authenticode intégrée.
 
-La signature du désinstallateur à l'intérieur de l'installateur nécessite NSIS 3.08 ou ultérieur, et un certificat qui n'est pas un `.pfx` ne peut pas le signer via `sign.certificate`. `-certificate`, `-sign-command` et `-timestamp-url` les définissent depuis la ligne de commande.
+Le désinstallateur intégré à l'installateur est signé avant d'y être incorporé, avec le même `sign.certificate` ou `sign.sign_command` que l'application et l'installateur. `-certificate`, `-sign-command` et `-timestamp-url` les définissent depuis la ligne de commande.
 
 ### Notariser
 

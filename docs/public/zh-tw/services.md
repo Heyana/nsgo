@@ -158,6 +158,19 @@ store.SetItem("tab", "library")
 
 在 HarmonyOS 上，`os.ReadFile`、`os.WriteFile` 與 `os.Rename` 等 Go 檔案操作可在這些目錄與 `os.TempDir()` 下運作。相對路徑從 files 目錄開始。建議性檔案鎖與符號連結無法使用。
 
+### 使用者資料夾
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` 會傳回使用者某個資料夾的路徑：`DocumentsDir`、`DownloadsDir`、`DesktopDir`、`PicturesDir`、`MusicDir` 或 `VideosDir`。它每次都會向系統查詢，因此使用者搬移過的資料夾也能正確對應：macOS 上為家目錄中的資料夾（影片對應 `Movies`），Windows 上為已知資料夾（包含 OneDrive 的資料夾），Linux 上則為 XDG 使用者目錄。該資料夾可能尚未存在。手機、網頁與 HarmonyOS 沒有應用程式能以路徑存取的此類資料夾，Linux 上 `user-dirs.dirs` 未列出的資料夾亦同：此時 `UserDir` 會傳回 `core.ErrUserDirUnavailable`，應用程式應改以 `cx.PickDirectories` 或 `cx.SaveFile` 詢問使用者。
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+測試永遠不會取得使用者的資料夾：每個資料夾都是測試暫存目錄中的一個空目錄，而 `nsgotest.UserDirs(map[core.StandardDir]string{…})` 可固定這些資料夾，未列出的資料夾則視為無法使用。
+
 ### 當機報告
 
 原生發行版建置會將 Go 當機追蹤保存在 `cx.LogsDir()/crashes` 下。Apple 會記錄未捕捉的 Objective-C 例外，Android 會記錄未捕捉的 Java 例外，而 Windows 會記錄到達其頂層篩選器的 SEH 例外。在下次啟動時以 `cx.CrashReports()` 列出待處理的報告。每份報告都會標明產生它的版本、建置編號與平台。呼叫 `Open()` 讀取診斷文字，關閉讀取器，然後在應用程式處理完報告後呼叫 `Acknowledge()` 將其刪除。請在 goroutine 上執行這些檔案操作。

@@ -219,10 +219,10 @@ Masaüstü hedefleri için `build`, kullanıcıların uygulamayı kuracağı dos
 | Hedef | Yükleyici |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`; uygulamayı, bir oku ve sürükleyip bırakılacak Applications bağlantısını gösteren, `sign.identity` ile imzalanmış ve [noter onaylı](#notarize) bir disk görüntüsü |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`; kullanıcı için (yine kullanıcının daha önce seçtiği klasöre, çalışıyorsa uygulamayı kapatarak) Başlat menüsü kısayolu, isteğe bağlı masaüstü kısayolu ve yalnızca kurduğunu kaldıran bir kaldırıcı ile kurulum yapan, uygulamanın Windows paketlerini imzaladığı yerde [`sign.certificate`](#sign-windows-packages) ile imzalanmış bir [NSIS](https://nsis.sourceforge.io) yükleyicisi; `windows.command_line` ayrıca `.com` eşlikçisini kurar ve uygulamanın klasörünü kullanıcının `Path` değişkenine ekler, böylece kurulumdan sonra açılan konsollar uygulamanın komutunu çalıştırırken eşlikçiyi de bulan Win+R uygulamayı başlatır ve açtığı konsolu kapatır; kaldırıcı klasörü `Path`'ten yalnızca bir yükleyici eklediyse çıkarır, sizin zaten sahip olduğunuz bir girdiyi asla çıkarmaz |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`; kullanıcı için (yine kullanıcının daha önce seçtiği klasöre, çalışıyorsa uygulamayı kapatarak) Başlat menüsü kısayolu, isteğe bağlı masaüstü kısayolu ve yalnızca kurduğunu kaldıran bir kaldırıcı ile kurulum yapan, uygulamanın Windows paketlerini imzaladığı yerde [`sign.certificate`](#sign-windows-packages) ile imzalanmış yerel bir Windows yükleyicisi; `windows.command_line` ayrıca `.com` eşlikçisini kurar ve uygulamanın klasörünü kullanıcının `Path` değişkenine ekler, böylece kurulumdan sonra açılan konsollar uygulamanın komutunu çalıştırırken eşlikçiyi de bulan Win+R uygulamayı başlatır ve açtığı konsolu kapatır; kaldırıcı klasörü `Path`'ten yalnızca bir yükleyici eklediyse çıkarır, sizin zaten sahip olduğunuz bir girdiyi asla çıkarmaz |
 | Linux | Debian ve Ubuntu için `<name>-<version>-linux-<arch>.deb` ve Arch Linux için `<name>-<version>-linux-<arch>.pkg.tar.gz` — uygulamayı `/opt/<slug>` dizinine bir komut, [komutlarına](#commands) bağlantılar, masaüstü girdisi ve simgesiyle kurar (Arch paketi `pacman -Qkk` için `.MTREE` içerir) — ve kurulum olmadan herhangi bir dağıtımda çalışan `<name>-<version>-linux-<arch>.AppImage` |
 
-Windows yükleyicisi NSIS derleyicisinin 3.06 veya sonraki bir sürümünü gerektirir (Mac üzerinde `brew install makensis` ile bir Mac her yükleyiciyi derler); onsuz `build` paketin içinde her yerde olduğu gibi derlenebilen `<name>.nsi` betiğini bırakır. Yükleyici, uygulamanın kataloglarında bulunan ve NSIS'in çevirdiği dilleri (Basitleştirilmiş ve Geleneksel Çince dahil) sistem dilini seçerek konuşur. `-installers=false` veya `build.installers: false` yalnızca paketleri derler.
+Windows kurulum programı ve kaldırıcı, herhangi bir sistemde yalnızca Go ile derlenir ve yerel Windows iletişim kutularını kullanır. Uygulamanın kataloglarındaki dillerden karşılığını bildikleri her birini (Basitleştirilmiş ve Geleneksel Çince dahil) sistemin arayüz dilini seçerek konuşurlar; `/LANG=<LCID>` tek bir çalıştırma için bir dil seçer, örneğin Basitleştirilmiş Çince için `/LANG=2052`. `/S` sessizce kurar veya kaldırır, sondaki bir `/D=<folder>` klasörü (boşluklar dahil) seçer ve `/RELAUNCH` bir güncellemeden sonra uygulamayı açar. `/D` olmadan bir yükseltme, yerini aldığı kurulumun klasörüne kurar. `-installers=false` veya `build.installers: false` yalnızca paketleri derler.
 
 Yükleyiciler uygulamanın kendi resimlerini ve simgelerini alır; aksi durumda her biri uygulamanın simgesini veya yerleşik resmi kullanır:
 
@@ -495,7 +495,7 @@ NSGo bu dosya adını `$SNAP_USER_DATA/.config/autostart` altına yazar ve snapd
 
 ## Dosya türleri
 
-`file_types` uygulamanın açtığı belgeleri kaydeder: macOS'ta Finder, Dock ve Birlikte Aç'tan; Windows'ta NSIS yükleyicisi veya MSIX aracılığıyla Gezgin'in Birlikte Aç menüsünden; Linux'ta Debian, Arch, AppImage ve Flatpak paketlerinin masaüstü girdisi üzerinden ve iOS'ta Şununla Aç üzerinden:
+`file_types` uygulamanın açtığı belgeleri kaydeder: macOS'ta Finder, Dock ve Birlikte Aç'tan; Windows'ta Windows yükleyicisi veya MSIX aracılığıyla Gezgin'in Birlikte Aç menüsünden; Linux'ta Debian, Arch, AppImage ve Flatpak paketlerinin masaüstü girdisi üzerinden ve iOS'ta Şununla Aç üzerinden:
 
 ```yaml
 file_types:
@@ -655,7 +655,7 @@ sign:
 
 Komut başarılı olur ancak uygulama yürütülebilir dosyasını, komut eşlikçisini, bir PE kaynağını veya kurulum yürütülebilir dosyasını gömülü bir Authenticode imzası olmadan bırakırsa `build` durur.
 
-Yükleyici içindeki kaldırıcıyı imzalamak NSIS 3.08 veya daha yenisini gerektirir ve `.pfx` olmayan bir sertifika onu `sign.certificate` üzerinden imzalayamaz. `-certificate`, `-sign-command` ve `-timestamp-url` bunları komut satırından ayarlar.
+Yükleyici içindeki kaldırıcı, gömülmeden önce uygulama ve kurulum programıyla aynı `sign.certificate` veya `sign.sign_command` ile imzalanır. `-certificate`, `-sign-command` ve `-timestamp-url` bunları komut satırından ayarlar.
 
 ### Noter onayı
 

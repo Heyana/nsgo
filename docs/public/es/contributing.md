@@ -7,7 +7,7 @@ order: 80
 
 ## Requisitos
 
-macOS con Xcode y Go 1.27.3 o posterior compila todos los destinos para arm64, incluido el APK de Android. Ejecutar en dispositivos requiere lo que enumera [Configuración](getting-started.md#requirements), y el destino del emulador de Android x86_64, `android_x64`, requiere un NDK de Android, ya que Go enlaza android/amd64 solo con cgo. El instalador de Windows necesita NSIS (`brew install makensis`); sin él `build` deja su script generado.
+macOS con Xcode y Go 1.27.3 o posterior compila todos los destinos para arm64, incluido el APK de Android. Ejecutar en dispositivos requiere lo que enumera [Configuración](getting-started.md#requirements), y el destino del emulador de Android x86_64, `android_x64`, requiere un NDK de Android, ya que Go enlaza android/amd64 solo con cgo. Los programas de instalación y desinstalación de Windows se compilan solo con Go.
 
 ```sh
 git clone https://github.com/nsgo-dev/nsgo.git

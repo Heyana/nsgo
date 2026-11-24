@@ -158,6 +158,19 @@ store.SetItem("tab", "library")
 
 HarmonyOS では、`os.ReadFile`、`os.WriteFile`、`os.Rename` などの Go のファイル操作は、これらのディレクトリと `os.TempDir()` の下で動作します。相対パスは files ディレクトリを起点とします。アドバイザリファイルロックとシンボリックリンクは利用できません。
 
+### ユーザーのフォルダー
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` はユーザーのフォルダーの 1 つ（`DocumentsDir`、`DownloadsDir`、`DesktopDir`、`PicturesDir`、`MusicDir`、`VideosDir`）のパスを返します。毎回システムに問い合わせるため、ユーザーが移動したフォルダーにも追従します。macOS ではホームディレクトリ内のフォルダー（ビデオは `Movies`）、Windows では OneDrive のものを含む既知のフォルダー、Linux では XDG ユーザーディレクトリです。フォルダーがまだ存在しない場合もあります。スマートフォン、Web、HarmonyOS にはアプリがパスで到達できるそうしたフォルダーがなく、Linux でも `user-dirs.dirs` に記載のないフォルダーは同様です。その場合 `UserDir` は `core.ErrUserDirUnavailable` を返すので、アプリは代わりに `cx.PickDirectories` や `cx.SaveFile` でユーザーに尋ねます。
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+テストがユーザーのフォルダーを受け取ることはありません。各フォルダーはテストの一時ディレクトリ内の空のディレクトリになり、`nsgotest.UserDirs(map[core.StandardDir]string{…})` で固定でき、指定しなかったフォルダーは利用不可になります。
+
 ### クラッシュレポート
 
 ネイティブのリリースビルドは、Go のクラッシュトレースを `cx.LogsDir()/crashes` の下に保存します。Apple はキャッチされなかった Objective-C 例外を、Android はキャッチされなかった Java 例外を、Windows はトップレベルフィルターに到達した SEH 例外を記録します。次回起動時に `cx.CrashReports()` で保留中のレポートを一覧します。各レポートは、それを生成したバージョン、ビルド、プラットフォームを示します。`Open()` を呼び出して診断テキストを読み、リーダーを閉じてから、アプリが処理を終えたら `Acknowledge()` を呼び出してレポートを削除します。これらのファイル操作はゴルーチン上で実行してください。

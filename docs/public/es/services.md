@@ -158,6 +158,19 @@ Un App Clip de iOS y su aplicación completa comparten estas ubicaciones de dato
 
 En HarmonyOS, las operaciones de archivo de Go como `os.ReadFile`, `os.WriteFile` y `os.Rename` funcionan en estos directorios y en `os.TempDir()`. Las rutas relativas empiezan en el directorio de archivos. Los bloqueos de archivo consultivos y los enlaces simbólicos no están disponibles.
 
+### Las carpetas del usuario
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` devuelve la ruta de una de las carpetas del usuario: `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir` o `VideosDir`. Consulta al sistema cada vez, así que sigue a una carpeta que el usuario haya movido: las carpetas del directorio personal en macOS (`Movies` para los vídeos), las carpetas conocidas en Windows, incluidas las de OneDrive, y los directorios de usuario XDG en Linux. Puede que la carpeta aún no exista. Los teléfonos, la web y HarmonyOS no tienen carpetas así a las que una aplicación llegue por ruta, ni tampoco Linux para una carpeta que `user-dirs.dirs` omite: `UserDir` devuelve `core.ErrUserDirUnavailable`, y la aplicación se lo pide al usuario con `cx.PickDirectories` o `cx.SaveFile` en su lugar.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+Las pruebas nunca obtienen las carpetas del usuario: cada una es un directorio vacío dentro del directorio temporal de la prueba, y `nsgotest.UserDirs(map[core.StandardDir]string{…})` las fija, y una carpeta omitida queda no disponible.
+
 ### Informes de fallos
 
 Las compilaciones nativas de publicación guardan las trazas de fallos de Go en `cx.LogsDir()/crashes`. Apple registra las excepciones de Objective-C no capturadas, Android registra las excepciones de Java no capturadas y Windows registra las excepciones SEH que llegan a su filtro de nivel superior. Enumera los informes pendientes en el siguiente inicio con `cx.CrashReports()`. Cada informe identifica la versión, la compilación y la plataforma que lo produjo. Llama a `Open()` para leer el texto de diagnóstico, cierra el lector y luego llama a `Acknowledge()` para eliminar el informe cuando la aplicación lo haya procesado. Ejecuta estas operaciones de archivo en una goroutine.

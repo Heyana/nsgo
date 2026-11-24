@@ -158,6 +158,19 @@ Un App Clip iOS et son application complète partagent ces emplacements de donn�
 
 Sur HarmonyOS, les opérations de fichiers Go telles que `os.ReadFile`, `os.WriteFile` et `os.Rename` fonctionnent dans ces répertoires et dans `os.TempDir()`. Les chemins relatifs commencent dans le répertoire des fichiers. Les verrous de fichiers consultatifs et les liens symboliques ne sont pas disponibles.
 
+### Les dossiers de l’utilisateur
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` renvoie le chemin de l’un des dossiers de l’utilisateur : `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir` ou `VideosDir`. Il interroge le système à chaque appel, si bien qu’un dossier déplacé par l’utilisateur est suivi : les dossiers du répertoire personnel sous macOS (`Movies` pour les vidéos), les dossiers connus sous Windows, y compris ceux de OneDrive, et les répertoires utilisateur XDG sous Linux. Le dossier peut ne pas encore exister. Les téléphones, le web et HarmonyOS n’ont pas de tels dossiers qu’une application atteint par chemin, pas plus que Linux pour un dossier que `user-dirs.dirs` omet : `UserDir` renvoie `core.ErrUserDirUnavailable`, et l’application demande alors à l’utilisateur avec `cx.PickDirectories` ou `cx.SaveFile`.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+Les tests n’obtiennent jamais les dossiers de l’utilisateur : chacun est un répertoire vide dans le répertoire temporaire du test, et `nsgotest.UserDirs(map[core.StandardDir]string{…})` les fixe, un dossier omis étant indisponible.
+
 ### Rapports de plantage
 
 Les builds natives de production conservent les traces de plantage Go sous `cx.LogsDir()/crashes`. Apple enregistre les exceptions Objective-C non interceptées, Android les exceptions Java non interceptées, et Windows les exceptions SEH qui atteignent son filtre de premier niveau. Listez les rapports en attente au lancement suivant avec `cx.CrashReports()`. Chaque rapport identifie la version, la build et la plateforme qui l’ont produit. Appelez `Open()` pour lire le texte de diagnostic, fermez le lecteur, puis appelez `Acknowledge()` pour supprimer le rapport une fois que l’application l’a traité. Exécutez ces opérations sur les fichiers dans une goroutine.

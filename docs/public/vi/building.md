@@ -219,10 +219,10 @@ Các trình cài đặt, tệp kiểm tra tổng của chúng và các nguồn c
 | Nền tảng đích | Trình cài đặt |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`, một ảnh đĩa hiển thị biểu tượng ứng dụng, mũi tên và liên kết tới Applications để kéo thả vào, được ký bằng `sign.identity` và [công chứng](#notarize) |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`, một trình cài đặt [NSIS](https://nsis.sourceforge.io) cài cho người dùng hiện tại, tự dùng lại thư mục người dùng đã chọn trước đó, tự đóng ứng dụng nếu đang chạy, có lối tắt Start menu, tùy chọn lối tắt màn hình nền và trình gỡ cài đặt chỉ xóa những gì nó đã cài, được [ký bằng `sign.certificate`](#sign-windows-packages) khi ứng dụng có ký gói Windows; `windows.command_line` cài thêm tệp đồng hành `.com` và đưa thư mục ứng dụng vào `Path` của người dùng để cửa sổ dòng lệnh mở sau khi cài có thể chạy lệnh ứng dụng, trong khi Win+R (cũng tìm thấy tệp đồng hành này) khởi chạy ứng dụng và đóng cửa sổ console vừa mở; trình gỡ cài đặt chỉ gỡ thư mục khỏi `Path` nếu trình cài đặt từng thêm nó vào, không bao giờ xóa mục bạn tự thêm |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`, một trình cài đặt Windows gốc (native) cài cho người dùng hiện tại, tự dùng lại thư mục người dùng đã chọn trước đó, tự đóng ứng dụng nếu đang chạy, có lối tắt Start menu, tùy chọn lối tắt màn hình nền và trình gỡ cài đặt chỉ xóa những gì nó đã cài, được [ký bằng `sign.certificate`](#sign-windows-packages) khi ứng dụng có ký gói Windows; `windows.command_line` cài thêm tệp đồng hành `.com` và đưa thư mục ứng dụng vào `Path` của người dùng để cửa sổ dòng lệnh mở sau khi cài có thể chạy lệnh ứng dụng, trong khi Win+R (cũng tìm thấy tệp đồng hành này) khởi chạy ứng dụng và đóng cửa sổ console vừa mở; trình gỡ cài đặt chỉ gỡ thư mục khỏi `Path` nếu trình cài đặt từng thêm nó vào, không bao giờ xóa mục bạn tự thêm |
 | Linux | `<name>-<version>-linux-<arch>.deb` cho Debian và Ubuntu, và `<name>-<version>-linux-<arch>.pkg.tar.gz` cho Arch Linux, cài ứng dụng vào `/opt/<slug>` kèm một lệnh, các liên kết tới các [lệnh](#commands) của nó, desktop entry và biểu tượng (gói Arch bao gồm `.MTREE` cho `pacman -Qkk`), và `<name>-<version>-linux-<arch>.AppImage` chạy trực tiếp trên mọi bản phân phối mà không cần cài đặt |
 
-Trình cài đặt Windows yêu cầu trình biên dịch NSIS phiên bản 3.06 trở lên (trên Mac cài qua `brew install makensis`), nhờ đó máy Mac có thể tạo mọi trình cài đặt; nếu không có NSIS, `build` giữ lại tệp kịch bản `<name>.nsi` trong gói để có thể biên dịch ở bất kỳ đâu nguyên trạng. Trình cài đặt tự động hiển thị các ngôn ngữ trong danh mục của ứng dụng mà NSIS có bản dịch — bao gồm cả tiếng Trung giản thể và phồn thể — chọn theo ngôn ngữ hệ thống. `-installers=false` hoặc `build.installers: false` chỉ xây dựng các gói ứng dụng mà không tạo trình cài đặt.
+Trình cài đặt (setup) và trình gỡ cài đặt Windows được xây dựng chỉ bằng Go, trên bất kỳ hệ thống nào, và dùng các hộp thoại gốc của Windows. Chúng hiển thị các ngôn ngữ trong danh mục của ứng dụng mà chúng có sẵn bản dịch — bao gồm cả tiếng Trung giản thể và phồn thể — chọn theo ngôn ngữ giao diện của hệ thống; `/LANG=<LCID>` chọn một ngôn ngữ cho một lần chạy, chẳng hạn `/LANG=2052` cho tiếng Trung giản thể. `/S` cài đặt hoặc gỡ cài đặt ở chế độ im lặng, `/D=<folder>` đặt ở cuối chọn thư mục cài đặt (được phép chứa dấu cách), và `/RELAUNCH` mở ứng dụng sau khi cập nhật. Khi không có `/D`, bản nâng cấp sẽ cài vào thư mục của bản cài đặt mà nó thay thế. `-installers=false` hoặc `build.installers: false` chỉ xây dựng các gói ứng dụng mà không tạo trình cài đặt.
 
 Các trình cài đặt có thể nhận hình ảnh và biểu tượng riêng của ứng dụng; nếu không thiết lập, mỗi mục sẽ dùng biểu tượng của ứng dụng hoặc hình ảnh dựng sẵn:
 
@@ -496,7 +496,7 @@ NSGo ghi tệp có tên đó vào `$SNAP_USER_DATA/.config/autostart`, để sna
 
 ## Loại tệp
 
-`file_types` đăng ký các tài liệu mà ứng dụng có thể mở: từ Finder, Dock và Open With trên macOS; từ Open With của Explorer thông qua trình cài đặt NSIS hoặc MSIX trên Windows; thông qua desktop entry của các gói Debian, Arch, AppImage và Flatpak trên Linux; và thông qua Open In trên iOS:
+`file_types` đăng ký các tài liệu mà ứng dụng có thể mở: từ Finder, Dock và Open With trên macOS; từ Open With của Explorer thông qua trình cài đặt Windows hoặc MSIX trên Windows; thông qua desktop entry của các gói Debian, Arch, AppImage và Flatpak trên Linux; và thông qua Open In trên iOS:
 
 ```yaml
 file_types:
@@ -656,7 +656,7 @@ sign:
 
 `build` sẽ dừng lại nếu lệnh ký thành công nhưng lại để tệp thực thi ứng dụng, tệp đồng hành dòng lệnh, một tài nguyên PE hoặc tệp thực thi setup không có chữ ký Authenticode nhúng bên trong.
 
-Việc ký trình gỡ cài đặt nằm bên trong trình cài đặt đòi hỏi NSIS 3.08 trở lên, và một chứng chỉ không phải định dạng `.pfx` không thể ký qua `sign.certificate`. `-certificate`, `-sign-command` và `-timestamp-url` cho phép thiết lập các thông số này từ dòng lệnh.
+Trình gỡ cài đặt nằm bên trong trình cài đặt được ký trước khi nhúng vào, bằng cùng `sign.certificate` hoặc `sign.sign_command` như ứng dụng và trình cài đặt (setup). `-certificate`, `-sign-command` và `-timestamp-url` cho phép thiết lập các thông số này từ dòng lệnh.
 
 ### Công chứng
 

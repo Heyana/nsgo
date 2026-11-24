@@ -7,7 +7,7 @@ order: 80
 
 ## Persyaratan
 
-macOS dengan Xcode dan Go 1.27.3 atau yang lebih baru membangun setiap target untuk arm64, termasuk APK Android. Menjalankan di perangkat membutuhkan apa yang tercantum di [Pengaturan](getting-started.md#requirements), dan target emulator Android x86_64, `android_x64`, membutuhkan Android NDK, karena Go hanya menautkan android/amd64 dengan cgo. Installer Windows membutuhkan NSIS (`brew install makensis`); tanpanya `build` hanya menyisakan skripnya.
+macOS dengan Xcode dan Go 1.27.3 atau yang lebih baru membangun setiap target untuk arm64, termasuk APK Android. Menjalankan di perangkat membutuhkan apa yang tercantum di [Pengaturan](getting-started.md#requirements), dan target emulator Android x86_64, `android_x64`, membutuhkan Android NDK, karena Go hanya menautkan android/amd64 dengan cgo. Program setup dan uninstall Windows dibangun hanya dengan Go.
 
 ```sh
 git clone https://github.com/nsgo-dev/nsgo.git

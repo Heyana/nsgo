@@ -158,6 +158,19 @@ Một iOS App Clip và ứng dụng đầy đủ của nó dùng chung các vị
 
 Trên HarmonyOS, các thao tác tệp của Go như `os.ReadFile`, `os.WriteFile` và `os.Rename` hoạt động trong các thư mục này và `os.TempDir()`. Đường dẫn tương đối bắt đầu từ thư mục files. Khóa tệp tư vấn (advisory lock) và liên kết tượng trưng không khả dụng.
 
+### Các thư mục của người dùng
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` trả về đường dẫn của một trong các thư mục của người dùng: `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir` hoặc `VideosDir`. Hàm này hỏi hệ thống mỗi lần gọi, nên thư mục mà người dùng đã di chuyển vẫn được theo dõi: các thư mục trong thư mục chính (home) trên macOS (`Movies` cho video), các known folder trên Windows, kể cả của OneDrive, và các thư mục người dùng XDG trên Linux. Thư mục có thể chưa tồn tại. Điện thoại, web và HarmonyOS không có những thư mục như vậy mà ứng dụng truy cập được qua đường dẫn, Linux cũng vậy đối với thư mục mà `user-dirs.dirs` bỏ qua: `UserDir` trả về `core.ErrUserDirUnavailable`, và khi đó ứng dụng hỏi người dùng bằng `cx.PickDirectories` hoặc `cx.SaveFile`.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+Bài kiểm thử không bao giờ nhận các thư mục thật của người dùng: mỗi thư mục là một thư mục trống bên trong thư mục tạm của bài kiểm thử, và `nsgotest.UserDirs(map[core.StandardDir]string{…})` cố định chúng, thư mục nào bị bỏ qua thì không khả dụng.
+
 ### Báo cáo sự cố
 
 Các bản dựng phát hành gốc giữ vết sự cố của Go trong `cx.LogsDir()/crashes`. Apple ghi lại các ngoại lệ Objective-C không được bắt, Android ghi lại các ngoại lệ Java không được bắt, và Windows ghi lại các ngoại lệ SEH đi tới bộ lọc cấp cao nhất của nó. Liệt kê các báo cáo đang chờ ở lần khởi chạy tiếp theo bằng `cx.CrashReports()`. Mỗi báo cáo xác định phiên bản, bản dựng và nền tảng đã tạo ra nó. Gọi `Open()` để đọc văn bản chẩn đoán, đóng reader, rồi gọi `Acknowledge()` để xóa báo cáo khi ứng dụng đã xử lý xong. Hãy chạy các thao tác tệp này trên một goroutine.

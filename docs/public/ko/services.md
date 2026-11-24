@@ -158,6 +158,19 @@ iOS App Clip과 그 전체 앱은 `app_clip`과 명시적인 `apple.app_group`�
 
 HarmonyOS에서는 `os.ReadFile`, `os.WriteFile`, `os.Rename` 같은 Go 파일 작업이 이 디렉터리들과 `os.TempDir()` 아래에서 동작합니다. 상대 경로는 files 디렉터리에서 시작합니다. 권고(advisory) 파일 잠금과 심볼릭 링크는 사용할 수 없습니다.
 
+### 사용자 폴더
+
+`desktop.UserDir(cx, desktop.DownloadsDir)`는 사용자 폴더 중 하나의 경로를 반환합니다: `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir`, `VideosDir`. 매번 시스템에 물어보므로 사용자가 옮긴 폴더도 따라갑니다. macOS에서는 홈 디렉터리의 폴더(동영상은 `Movies`), Windows에서는 OneDrive 폴더를 포함한 알려진 폴더(known folders), Linux에서는 XDG 사용자 디렉터리입니다. 폴더가 아직 존재하지 않을 수도 있습니다. 휴대폰, 웹, HarmonyOS에는 앱이 경로로 접근하는 이런 폴더가 없으며, Linux에서 `user-dirs.dirs`에 빠진 폴더도 마찬가지입니다. 이 경우 `UserDir`는 `core.ErrUserDirUnavailable`을 반환하며, 앱은 대신 `cx.PickDirectories`나 `cx.SaveFile`로 사용자에게 묻습니다.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+테스트는 사용자 폴더를 받지 않습니다. 각 폴더는 테스트 임시 디렉터리 안의 빈 디렉터리이며, `nsgotest.UserDirs(map[core.StandardDir]string{…})`로 고정할 수 있고 지정하지 않은 폴더는 사용할 수 없습니다.
+
 ### 크래시 보고서
 
 네이티브 릴리스 빌드는 Go 크래시 트레이스를 `cx.LogsDir()/crashes` 아래에 보관합니다. Apple은 잡히지 않은 Objective-C 예외를, Android는 잡히지 않은 Java 예외를, Windows는 최상위 필터에 도달한 SEH 예외를 기록합니다. 다음 실행 시 `cx.CrashReports()`로 대기 중인 보고서를 나열하세요. 각 보고서에는 그것을 생성한 버전, 빌드, 플랫폼이 표시됩니다. `Open()`을 호출해 진단 텍스트를 읽고 리더를 닫은 다음, 앱이 보고서를 처리했으면 `Acknowledge()`를 호출해 삭제하세요. 이 파일 작업들은 고루틴에서 실행하세요.

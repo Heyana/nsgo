@@ -219,10 +219,10 @@ Untuk target desktop, `build` menulis berkas yang digunakan pengguna untuk memas
 | Target | Penginstal |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`, sebuah disk image yang menampilkan aplikasi, panah, dan tautan ke Applications untuk menyeretnya ke sana, ditandatangani dengan `sign.identity` dan [dinotarisasi](#notarize) |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`, penginstal [NSIS](https://nsis.sourceforge.io) yang memasang untuk pengguna, lagi di folder yang dipilih pengguna sebelumnya, menutup aplikasi jika sedang berjalan, dengan pintasan Start menu, pintasan desktop opsional, dan uninstaller yang hanya menghapus apa yang dipasangnya, [ditandatangani dengan `sign.certificate`](#sign-windows-packages) tempat aplikasi menandatangani paket Windows; `windows.command_line` juga memasang pendamping `.com` dan menambahkan folder aplikasi ke `Path` pengguna, sehingga konsol yang dibuka setelah pemasangan menjalankan perintah aplikasi, sementara Win+R—yang juga menemukan pendamping tersebut—menjalankan aplikasi dan menutup konsol yang dibukanya; uninstaller menghapus folder dari `Path` hanya jika penginstal yang menambahkannya, tidak pernah menghapus entri yang sudah Anda miliki |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`, penginstal Windows native yang memasang untuk pengguna, lagi di folder yang dipilih pengguna sebelumnya, menutup aplikasi jika sedang berjalan, dengan pintasan Start menu, pintasan desktop opsional, dan uninstaller yang hanya menghapus apa yang dipasangnya, [ditandatangani dengan `sign.certificate`](#sign-windows-packages) tempat aplikasi menandatangani paket Windows; `windows.command_line` juga memasang pendamping `.com` dan menambahkan folder aplikasi ke `Path` pengguna, sehingga konsol yang dibuka setelah pemasangan menjalankan perintah aplikasi, sementara Win+R—yang juga menemukan pendamping tersebut—menjalankan aplikasi dan menutup konsol yang dibukanya; uninstaller menghapus folder dari `Path` hanya jika penginstal yang menambahkannya, tidak pernah menghapus entri yang sudah Anda miliki |
 | Linux | `<name>-<version>-linux-<arch>.deb` untuk Debian dan Ubuntu, serta `<name>-<version>-linux-<arch>.pkg.tar.gz` untuk Arch Linux, yang memasang aplikasi di `/opt/<slug>` beserta perintah, tautan ke [perintah-perintahnya](#commands), entri desktop, dan ikon (paket Arch menyertakan `.MTREE` untuk `pacman -Qkk`), serta `<name>-<version>-linux-<arch>.AppImage`, yang berjalan di distribusi mana pun tanpa perlu instalasi |
 
-Penginstal Windows memerlukan kompilator NSIS, versi 3.06 atau lebih baru (di Mac `brew install makensis`), sehingga Mac dapat membangun setiap penginstal; tanpanya `build` meninggalkan skrip `<name>.nsi` di dalam paket, yang dapat dikompilasi di mana saja apa adanya. Penginstal berbicara dalam bahasa-bahasa katalog aplikasi yang diterjemahkan NSIS, termasuk Bahasa Mandarin Sederhana dan Tradisional, dengan memilih bahasa sistem. `-installers=false` atau `build.installers: false` hanya membangun paketnya saja.
+Setup dan uninstaller Windows dibangun hanya dengan Go, di sistem apa pun, dan menggunakan dialog Windows native. Keduanya berbicara dalam bahasa-bahasa katalog aplikasi yang kosakatanya mereka miliki, termasuk Bahasa Mandarin Sederhana dan Tradisional, dengan memilih bahasa UI sistem; `/LANG=<LCID>` memilih satu bahasa untuk satu kali jalan, misalnya `/LANG=2052` untuk Bahasa Mandarin Sederhana. `/S` memasang atau mencopot pemasangan secara senyap, `/D=<folder>` di posisi terakhir memilih folder, termasuk yang berisi spasi, dan `/RELAUNCH` membuka aplikasi setelah pembaruan. Tanpa `/D`, peningkatan versi memasang di folder instalasi yang digantikannya. `-installers=false` atau `build.installers: false` hanya membangun paketnya saja.
 
 Penginstal menerima gambar dan ikon milik aplikasi sendiri; jika tidak ada, masing-masing memakai ikon aplikasi atau gambar bawaan:
 
@@ -496,7 +496,7 @@ NSGo menulis nama file tersebut di bawah `$SNAP_USER_DATA/.config/autostart`, ya
 
 ## Jenis file
 
-`file_types` mendaftarkan dokumen yang dapat dibuka aplikasi: dari Finder, Dock, dan Open With di macOS; dari Open With Explorer melalui penginstal NSIS atau MSIX di Windows; melalui entri desktop paket Debian, Arch, AppImage, dan Flatpak di Linux; serta melalui Open In di iOS:
+`file_types` mendaftarkan dokumen yang dapat dibuka aplikasi: dari Finder, Dock, dan Open With di macOS; dari Open With Explorer melalui penginstal Windows atau MSIX di Windows; melalui entri desktop paket Debian, Arch, AppImage, dan Flatpak di Linux; serta melalui Open In di iOS:
 
 ```yaml
 file_types:
@@ -656,7 +656,7 @@ sign:
 
 `build` berhenti jika perintah berhasil tetapi meninggalkan berkas eksekusi aplikasi, pendamping perintah, sumber daya PE, atau berkas eksekusi setup tanpa tanda tangan Authenticode yang tersemat.
 
-Penandatanganan uninstaller di dalam penginstal memerlukan NSIS 3.08 atau lebih baru, dan sertifikat yang bukan `.pfx` tidak dapat menandatanganinya melalui `sign.certificate`. `-certificate`, `-sign-command`, dan `-timestamp-url` mengaturnya dari baris perintah.
+Uninstaller di dalam penginstal ditandatangani sebelum disematkan, dengan `sign.certificate` atau `sign.sign_command` yang sama seperti aplikasi dan setup. `-certificate`, `-sign-command`, dan `-timestamp-url` mengaturnya dari baris perintah.
 
 ### Notarisasi
 

@@ -219,10 +219,10 @@ windows:
 | 타겟 | 인스톨러 |
 | --- | --- |
 | macOS | `<name>-<version>-macos-<arch>.dmg`: 앱, 화살표, 드래그해 넣을 Applications 링크를 표시하는 디스크 이미지로, `sign.identity`로 서명하고 [공증](#notarize)합니다 |
-| Windows | `<name>-<version>-windows-<arch>-setup.exe`: 사용자 단위로 설치하고, 재설치 시 사용자가 이전에 고른 폴더에 설치하며, 실행 중인 앱을 종료하고, 시작 메뉴 바로가기와 선택적 바탕화면 바로가기, 그리고 자신이 설치한 파일만 지우는 언인스톨러를 포함하는 [NSIS](https://nsis.sourceforge.io) 인스톨러입니다. 앱이 Windows 패키지에 서명할 때 [`sign.certificate`로 함께 서명](#sign-windows-packages)합니다. `windows.command_line`은 `.com` 동반 파일도 설치하고 앱 폴더를 사용자의 `Path`에 추가하므로 설치 후 연 콘솔에서 앱 커맨드를 실행할 수 있고, Win+R 역시 동반 파일을 찾아 앱을 시작하고 열었던 콘솔을 닫습니다. 언인스톨러는 인스톨러가 추가했던 경우에만 `Path`에서 폴더를 빼며 기존 항목은 건드리지 않습니다 |
+| Windows | `<name>-<version>-windows-<arch>-setup.exe`: 사용자 단위로 설치하고, 재설치 시 사용자가 이전에 고른 폴더에 설치하며, 실행 중인 앱을 종료하고, 시작 메뉴 바로가기와 선택적 바탕화면 바로가기, 그리고 자신이 설치한 파일만 지우는 언인스톨러를 포함하는 네이티브 Windows 인스톨러입니다. 앱이 Windows 패키지에 서명할 때 [`sign.certificate`로 함께 서명](#sign-windows-packages)합니다. `windows.command_line`은 `.com` 동반 파일도 설치하고 앱 폴더를 사용자의 `Path`에 추가하므로 설치 후 연 콘솔에서 앱 커맨드를 실행할 수 있고, Win+R 역시 동반 파일을 찾아 앱을 시작하고 열었던 콘솔을 닫습니다. 언인스톨러는 인스톨러가 추가했던 경우에만 `Path`에서 폴더를 빼며 기존 항목은 건드리지 않습니다 |
 | Linux | Debian/Ubuntu용 `<name>-<version>-linux-<arch>.deb`와 Arch Linux용 `<name>-<version>-linux-<arch>.pkg.tar.gz`는 `/opt/<slug>`에 앱, 커맨드, [커맨드](#commands) 링크, 데스크톱 엔트리, 아이콘을 설치하며(Arch 패키지는 `pacman -Qkk`용 `.MTREE` 포함), `<name>-<version>-linux-<arch>.AppImage`는 설치 없이 어떤 배포판에서도 실행됩니다 |
 
-Windows 인스톨러를 만들려면 NSIS 컴파일러 3.06 이상이 필요하며 Mac에서는 `brew install makensis`로 설치할 수 있어 Mac 한 대로 모든 인스톨러를 빌드할 수 있습니다. 컴파일러가 없으면 `build`는 패키지 안에 `<name>.nsi` 스크립트를 남기므로 어디서든 그대로 컴파일할 수 있습니다. 인스톨러는 앱 카탈로그의 언어 중 NSIS가 지원하는 언어(간체/번체 중국어 포함)를 지원하며 시스템 언어를 선택합니다. `-installers=false` 또는 `build.installers: false`는 패키지 파일만 빌드합니다.
+Windows 셋업과 언인스톨러는 어떤 시스템에서든 Go만으로 빌드되며 네이티브 Windows 대화 상자를 사용합니다. 앱 카탈로그의 언어 중 자체 번역이 있는 언어(간체/번체 중국어 포함)를 지원하며 시스템 UI 언어를 선택합니다. `/LANG=<LCID>`로 한 번의 실행에 사용할 언어를 고를 수 있으며, 예를 들어 간체 중국어는 `/LANG=2052`입니다. `/S`는 무인 설치 또는 제거를 수행하고, 마지막 인수로 지정한 `/D=<folder>`는 공백이 포함된 경로를 포함해 설치 폴더를 선택하며, `/RELAUNCH`는 업데이트 후 앱을 엽니다. `/D`가 없으면 업그레이드는 교체되는 기존 설치의 폴더에 설치됩니다. `-installers=false` 또는 `build.installers: false`는 패키지 파일만 빌드합니다.
 
 인스톨러는 앱 고유의 이미지와 아이콘을 사용할 수 있으며, 지정하지 않으면 앱 아이콘이나 내장 이미지를 사용합니다:
 
@@ -496,7 +496,7 @@ NSGo는 해당 파일명을 `$SNAP_USER_DATA/.config/autostart` 아래에 작성
 
 ## 파일 형식
 
-`file_types`는 앱이 여는 문서를 등록합니다. macOS의 Finder, Dock, '다음으로 열기', Windows의 NSIS 인스톨러나 MSIX를 통한 탐색기 '연결 프로그램', Linux의 Debian, Arch, AppImage, Flatpak 패키지 데스크톱 엔트리, iOS의 '다음에서 열기'가 여기에 해당합니다:
+`file_types`는 앱이 여는 문서를 등록합니다. macOS의 Finder, Dock, '다음으로 열기', Windows의 Windows 인스톨러나 MSIX를 통한 탐색기 '연결 프로그램', Linux의 Debian, Arch, AppImage, Flatpak 패키지 데스크톱 엔트리, iOS의 '다음에서 열기'가 여기에 해당합니다:
 
 ```yaml
 file_types:
@@ -656,7 +656,7 @@ sign:
 
 명령이 성공하더라도 앱 실행 파일, 커맨드 동반 파일, PE 리소스 또는 셋업 실행 파일 중 하나라도 내장된 Authenticode 서명이 빠져 있으면 `build`는 중단됩니다.
 
-인스톨러 내부의 언인스톨러에 서명하려면 NSIS 3.08 이상이 필요하며, `.pfx`가 아닌 인증서는 `sign.certificate`로 서명할 수 없습니다. `-certificate`, `-sign-command`, `-timestamp-url`로 커맨드라인에서 이를 설정할 수 있습니다.
+인스톨러 내부의 언인스톨러는 내장되기 전에 앱 및 셋업과 같은 `sign.certificate` 또는 `sign.sign_command`로 서명됩니다. `-certificate`, `-sign-command`, `-timestamp-url`로 커맨드라인에서 이를 설정할 수 있습니다.
 
 ### 공증
 

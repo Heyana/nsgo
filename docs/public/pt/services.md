@@ -158,6 +158,19 @@ Um App Clip do iOS e seu aplicativo completo compartilham esses locais de dados 
 
 No HarmonyOS, operações de arquivo do Go como `os.ReadFile`, `os.WriteFile` e `os.Rename` funcionam nesses diretórios e em `os.TempDir()`. Caminhos relativos começam no diretório de arquivos. Locks consultivos de arquivo e links simbólicos não estão disponíveis.
 
+### As pastas do usuário
+
+`desktop.UserDir(cx, desktop.DownloadsDir)` retorna o caminho de uma das pastas do usuário: `DocumentsDir`, `DownloadsDir`, `DesktopDir`, `PicturesDir`, `MusicDir` ou `VideosDir`. Ele consulta o sistema a cada vez, então uma pasta que o usuário moveu é acompanhada: as pastas no diretório pessoal no macOS (`Movies` para vídeos), as pastas conhecidas no Windows, incluindo as do OneDrive, e os diretórios de usuário XDG no Linux. A pasta pode ainda não existir. Celulares, a web e o HarmonyOS não têm pastas desse tipo que um aplicativo alcance por caminho, nem o Linux para uma pasta que `user-dirs.dirs` omite: `UserDir` retorna `core.ErrUserDirUnavailable`, e o aplicativo pede ao usuário com `cx.PickDirectories` ou `cx.SaveFile`.
+
+```go
+dir, err := desktop.UserDir(cx, desktop.DownloadsDir)
+if err != nil {
+	dir = cx.DataDir()
+}
+```
+
+Os testes nunca recebem as pastas do usuário: cada uma é um diretório vazio dentro do diretório temporário do teste, e `nsgotest.UserDirs(map[core.StandardDir]string{…})` as fixa, com uma pasta omitida ficando indisponível.
+
 ### Relatórios de falha
 
 Builds nativas de release mantêm rastros de falhas do Go em `cx.LogsDir()/crashes`. A Apple registra exceções Objective-C não capturadas, o Android registra exceções Java não capturadas e o Windows registra exceções SEH que chegam ao seu filtro de nível superior. Liste os relatórios pendentes na próxima inicialização com `cx.CrashReports()`. Cada relatório identifica a versão, a build e a plataforma que o produziram. Chame `Open()` para ler o texto de diagnóstico, feche o leitor e então chame `Acknowledge()` para excluir o relatório quando o aplicativo o tiver processado. Execute essas operações de arquivo em uma goroutine.
