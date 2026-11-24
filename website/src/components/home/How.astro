@@ -2,12 +2,21 @@
 // How it works: the app, the engine and the platform, with updates flowing
 // between them.
 import { SectionHead } from 'nsgo-website/components';
+import { asSiteLang, type SiteLang } from '../../locales';
 
 interface Props {
   lang: string;
 }
 
-const how = {
+type HowCopy = {
+  eyebrow: string;
+  title: string;
+  text: string;
+  nodes: { label: string; title: string; items: string[] }[];
+  links: [string, string];
+};
+
+const allHow: Record<SiteLang, HowCopy> = {
   en: {
     eyebrow: 'How it works',
     title: 'Go owns the app. The platform draws it.',
@@ -30,7 +39,97 @@ const how = {
     ],
     links: ['渲染', '每次提交一批'],
   },
-}[Astro.props.lang === 'zh' ? 'zh' : 'en'];
+  'zh-tw': {
+    eyebrow: '運作原理',
+    title: 'Go 掌管應用，平台負責繪製',
+    text: '應用與螢幕之間沒有內嵌瀏覽器，也沒有自繪算繪器：每次更新只跨越主執行緒一次，單一批次僅傳遞變動部分。',
+    nodes: [
+      { label: '你的應用', title: 'Go 或 TSX', items: ['元件', 'signal', '樣式與 Tailwind'] },
+      { label: 'NSGo 引擎', title: '執行於 Go', items: ['響應式圖', 'flexbox 與 grid', '文字準備'] },
+      { label: '平台', title: '原生視圖', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['算繪', '每次提交一批'],
+  },
+  ja: {
+    eyebrow: '仕組み',
+    title: 'アプリは Go が担い、描画はプラットフォームへ。',
+    text: 'アプリと画面の間に組み込みブラウザも独自レンダラーもありません。各更新はメインスレッドへ 1 度だけ、変更差分だけを 1 バッチで渡します。',
+    nodes: [
+      { label: 'あなたのアプリ', title: 'Go または TSX', items: ['コンポーネント', 'シグナル', 'スタイルと Tailwind'] },
+      { label: 'NSGo エンジン', title: 'Go で動作', items: ['リアクティブグラフ', 'Flexbox と Grid', 'テキスト準備'] },
+      { label: 'プラットフォーム', title: 'ネイティブビュー', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['レンダリング', 'コミットごとに 1 バッチ'],
+  },
+  ko: {
+    eyebrow: '동작 원리',
+    title: '앱은 Go가, 그리기는 플랫폼이 맡습니다.',
+    text: '앱과 화면 사이에 내장 브라우저나 커스텀 렌더러가 없습니다. 각 업데이트는 변경된 부분만 하나의 배치로 묶어 메인 스레드에 단 한 번 전달됩니다.',
+    nodes: [
+      { label: '내 앱', title: 'Go 또는 TSX', items: ['컴포넌트', '시그널', '스타일과 Tailwind'] },
+      { label: 'NSGo 엔진', title: 'Go로 실행', items: ['반응형 그래프', 'Flexbox와 Grid', '텍스트 준비'] },
+      { label: '플랫폼', title: '네이티브 뷰', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['렌더링', '커밋당 1개 배치'],
+  },
+  es: {
+    eyebrow: 'Cómo funciona',
+    title: 'Go controla la app. La plataforma la dibuja.',
+    text: 'No hay ningún navegador integrado ni motor gráfico propio entre tu app y la pantalla: cada actualización cruza al hilo principal una sola vez, en un lote con solo lo que cambió.',
+    nodes: [
+      { label: 'Tu app', title: 'Go o TSX', items: ['Componentes', 'Señales', 'Estilos y Tailwind'] },
+      { label: 'Motor NSGo', title: 'En Go', items: ['Grafo reactivo', 'Flexbox y grid', 'Preparación de texto'] },
+      { label: 'La plataforma', title: 'Vistas nativas', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['renderiza', 'un lote por commit'],
+  },
+  fr: {
+    eyebrow: 'Fonctionnement',
+    title: 'Go pilote l’app. La plateforme la dessine.',
+    text: 'Aucun navigateur embarqué ni moteur de rendu maison ne s’interpose entre votre app et l’écran : chaque mise à jour passe sur le thread principal une seule fois, en un seul lot contenant uniquement les changements.',
+    nodes: [
+      { label: 'Votre app', title: 'Go ou TSX', items: ['Composants', 'Signaux', 'Styles et Tailwind'] },
+      { label: 'Moteur NSGo', title: 'En Go', items: ['Graphe réactif', 'Flexbox et grid', 'Préparation du texte'] },
+      { label: 'La plateforme', title: 'Vues natives', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['rend', 'un lot par commit'],
+  },
+  de: {
+    eyebrow: 'So funktioniert es',
+    title: 'Go steuert die App. Die Plattform zeichnet sie.',
+    text: 'Kein eingebetteter Browser und kein eigener Renderer stehen zwischen deiner App und dem Bildschirm: jedes Update wechselt nur einmal in den Main-Thread, als einzelner Batch mit ausschließlich den Änderungen.',
+    nodes: [
+      { label: 'Deine App', title: 'Go oder TSX', items: ['Komponenten', 'Signale', 'Styles und Tailwind'] },
+      { label: 'NSGo-Engine', title: 'In Go', items: ['Reaktiver Graph', 'Flexbox und Grid', 'Textvorbereitung'] },
+      { label: 'Die Plattform', title: 'Native Views', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['rendert', 'ein Batch pro Commit'],
+  },
+  pt: {
+    eyebrow: 'Como funciona',
+    title: 'Go comanda o app. A plataforma desenha.',
+    text: 'Nenhum navegador embutido nem renderizador próprio fica entre seu app e a tela: cada atualização cruza para a thread principal uma única vez, em um único lote contendo apenas o que mudou.',
+    nodes: [
+      { label: 'Seu app', title: 'Go ou TSX', items: ['Componentes', 'Signals', 'Estilos e Tailwind'] },
+      { label: 'Motor NSGo', title: 'Em Go', items: ['Grafo reativo', 'Flexbox e grid', 'Preparação de texto'] },
+      { label: 'A plataforma', title: 'Views nativas', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['renderiza', 'um lote por commit'],
+  },
+  ru: {
+    eyebrow: 'Как это работает',
+    title: 'Логика на Go. Отрисовка на платформе.',
+    text: 'Между приложением и экраном нет ни встроенного браузера, ни собственного рендерера: каждое обновление передаётся в главный поток один раз единым пакетом только с изменениями.',
+    nodes: [
+      { label: 'Ваше приложение', title: 'Go или TSX', items: ['Компоненты', 'Сигналы', 'Стили и Tailwind'] },
+      { label: 'Движок NSGo', title: 'На Go', items: ['Реактивный граф', 'Flexbox и grid', 'Подготовка текста'] },
+      { label: 'Платформа', title: 'Нативные views', items: ['AppKit · UIKit', 'Android Views', 'Direct2D · GTK · DOM'] },
+    ],
+    links: ['рендерит', 'один пакет на коммит'],
+  },
+};
+
+const how = allHow[asSiteLang(Astro.props.lang)];
 ---
 
 <section class="section" id="how">

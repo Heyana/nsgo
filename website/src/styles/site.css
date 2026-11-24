@@ -604,9 +604,9 @@
   border-top-right-radius: 0;
 }
 
-/* The Chinese headline is one long phrase a line, which the package's size
-   breaks before its last character beside the platforms. */
-:root[lang|='zh'] .hero .headline {
+/* CJK headlines are one long phrase per line, which the package's size
+   breaks awkwardly beside the platforms. */
+:root:is([lang|='zh'], [lang|='ja'], [lang|='ko']) .hero .headline {
   font-size: clamp(2.25rem, 1.4rem + 3vw, 3.5rem);
 }
 

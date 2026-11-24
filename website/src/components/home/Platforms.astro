@@ -5,21 +5,26 @@
 // as the hero's picture is the one part of it this site gives.
 import Icon from '../Icon.astro';
 import HeroField from './HeroField.astro';
+import { asSiteLang, type SiteLang } from '../../locales';
 import { platformName, platforms } from '../../platforms';
 
 interface Props {
   lang: string;
 }
-const { lang } = Astro.props;
+const lang = asSiteLang(Astro.props.lang);
 
-const words = {
+type PlatformWords = {
+  runsOn: string;
+  experimental: string;
+  preview: string;
+  drawsWith: [string, string];
+};
+
+const allWords: Record<SiteLang, PlatformWords> = {
   en: {
     runsOn: 'Runs on',
-    // The tip of an experimental platform's mark.
     experimental: 'Experimental: mini programs hold an app to 2 MB, which larger apps exceed for now.',
-    // The tip of HarmonyOS's mark.
     preview: 'Preview: ArkUI draws a first set of views, and you sign the package yourself to install it on a phone.',
-    // A platform's line under the board: Android draws with Android Views.
     drawsWith: [' draws with ', ''],
   },
   zh: {
@@ -28,7 +33,57 @@ const words = {
     preview: '预览：ArkUI 只绘制首批视图，安装包需要自行签名才能装到手机上。',
     drawsWith: [' 上由 ', ' 绘制'],
   },
-}[lang === 'zh' ? 'zh' : 'en'];
+  'zh-tw': {
+    runsOn: '執行於',
+    experimental: '實驗性：小程式限制應用在 2 MB 以內，較大的應用暫時會超出限制。',
+    preview: '預覽：ArkUI 僅繪製首批視圖，安裝包需自行簽章才能安裝到手機上。',
+    drawsWith: [' 上由 ', ' 繪製'],
+  },
+  ja: {
+    runsOn: '対応プラットフォーム',
+    experimental: '実験的：ミニプログラムはアプリサイズの上限が 2 MB のため、大規模なアプリは現在超過します。',
+    preview: 'プレビュー：ArkUI が初期ビュー群を描画します。端末へインストールするにはパッケージへの自己署名が必要です。',
+    drawsWith: [' は ', ' で描画'],
+  },
+  ko: {
+    runsOn: '지원 플랫폼',
+    experimental: '실험적: 미니 프로그램은 앱 크기를 2 MB로 제한하므로 큰 앱은 현재 이를 초과합니다.',
+    preview: '미리보기: ArkUI가 초기 뷰 집합을 그리며, 휴대전화에 설치하려면 패키지에 직접 서명해야 합니다.',
+    drawsWith: ['는 ', '로 렌더링'],
+  },
+  es: {
+    runsOn: 'Se ejecuta en',
+    experimental: 'Experimental: los miniprogramas limitan la app a 2 MB, algo que las apps más grandes superan por ahora.',
+    preview: 'Vista previa: ArkUI dibuja un primer conjunto de vistas y debes firmar el paquete tú mismo para instalarlo en un teléfono.',
+    drawsWith: [' dibuja con ', ''],
+  },
+  fr: {
+    runsOn: 'Fonctionne sur',
+    experimental: 'Expérimental : les mini-programmes limitent une app à 2 Mo, ce que les plus grandes apps dépassent pour l’instant.',
+    preview: 'Aperçu : ArkUI dessine un premier ensemble de vues et vous devez signer vous-même le paquet pour l’installer sur un téléphone.',
+    drawsWith: [' s’affiche avec ', ''],
+  },
+  de: {
+    runsOn: 'Läuft auf',
+    experimental: 'Experimentell: Mini-Programme begrenzen Apps auf 2 MB, was größere Apps derzeit überschreiten.',
+    preview: 'Vorschau: ArkUI zeichnet eine erste Auswahl an Views; zum Installieren auf einem Telefon signierst du das Paket selbst.',
+    drawsWith: [' zeichnet mit ', ''],
+  },
+  pt: {
+    runsOn: 'Roda em',
+    experimental: 'Experimental: miniprogramas limitam o app a 2 MB, o que apps maiores ultrapassam por enquanto.',
+    preview: 'Prévia: ArkUI desenha um primeiro conjunto de views e você mesmo assina o pacote para instalá-lo no celular.',
+    drawsWith: [' desenha com ', ''],
+  },
+  ru: {
+    runsOn: 'Работает на',
+    experimental: 'Экспериментально: мини-программы ограничивают размер приложения до 2 МБ, что крупные приложения пока превышают.',
+    preview: 'Предпросмотр: ArkUI отрисовывает первый набор представлений, а пакет для установки на телефон нужно подписывать самостоятельно.',
+    drawsWith: [' рисует через ', ''],
+  },
+};
+
+const words = allWords[lang];
 
 // Where each tile sits, in points of a 480 by 300 board, and the shape of
 // the device or surface it runs on. The board has three columns, desktops,

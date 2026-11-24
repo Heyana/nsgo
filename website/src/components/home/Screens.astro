@@ -1,14 +1,18 @@
 ---
 // Real screens of the gallery: its desktop layout in a window and its phone
-// layout before it, in the page's language and both appearances, of which
-// the site's shows. They are src/assets/screens/<layout>-<lang>-<theme>.jpg,
+// layout before it, in the page's language (falling back to English assets
+// where screenshots are only captured in en/zh) and both appearances, of
+// which the site's shows. They are src/assets/screens/<layout>-<lang>-<theme>.jpg,
 // which `bun run screenshots` retakes.
+import { asSiteLang, type SiteLang } from '../../locales';
+
 interface Props {
   lang: string;
 }
-const lang = Astro.props.lang === 'zh' ? 'zh' : 'en';
+const lang = asSiteLang(Astro.props.lang);
+const assetLang = lang === 'zh' ? 'zh' : 'en';
 
-const alts = {
+const alts: Record<SiteLang, { desktop: string; phone: string }> = {
   en: {
     desktop: 'The NSGo gallery’s Stocks demo in its desktop layout, on the web backend',
     phone: 'The NSGo gallery’s components in its phone layout, on the web backend',
@@ -17,13 +21,47 @@ const alts = {
     desktop: 'NSGo Gallery 的股票演示，桌面布局，运行在 Web 后端',
     phone: 'NSGo Gallery 的组件列表，手机布局，运行在 Web 后端',
   },
-}[lang];
+  'zh-tw': {
+    desktop: 'NSGo Gallery 的股票示範，桌面版面，執行於 Web 後端',
+    phone: 'NSGo Gallery 的元件清單，手機版面，執行於 Web 後端',
+  },
+  ja: {
+    desktop: 'Web バックエンド上で動作する NSGo Gallery のデスクトップ版 Stocks デモ',
+    phone: 'Web バックエンド上で動作する NSGo Gallery のモバイル版コンポーネント一覧',
+  },
+  ko: {
+    desktop: '웹 백엔드에서 실행되는 NSGo Gallery 데스크톱 레이아웃의 Stocks 데모',
+    phone: '웹 백엔드에서 실행되는 NSGo Gallery 모바일 레이아웃의 컴포넌트 목록',
+  },
+  es: {
+    desktop: 'Demo de bolsa de NSGo Gallery en diseño de escritorio, sobre el backend web',
+    phone: 'Componentes de NSGo Gallery en diseño móvil, sobre el backend web',
+  },
+  fr: {
+    desktop: 'Démo Bourse de NSGo Gallery en disposition bureau, sur le backend web',
+    phone: 'Composants de NSGo Gallery en disposition mobile, sur le backend web',
+  },
+  de: {
+    desktop: 'Die Aktien-Demo der NSGo-Galerie im Desktop-Layout auf dem Web-Backend',
+    phone: 'Die Komponenten der NSGo-Galerie im Mobil-Layout auf dem Web-Backend',
+  },
+  pt: {
+    desktop: 'Demonstração de ações da galeria NSGo em layout desktop, no backend web',
+    phone: 'Componentes da galeria NSGo em layout mobile, no backend web',
+  },
+  ru: {
+    desktop: 'Демонстрация котировок в галерее NSGo для десктопа на веб-бэкенде',
+    phone: 'Компоненты галереи NSGo в мобильной раскладке на веб-бэкенде',
+  },
+};
+
+const alt = alts[lang];
 
 const files = import.meta.glob<{ default: ImageMetadata }>('../../assets/screens/*.jpg', { eager: true });
 const screens = (layout: 'desktop' | 'phone') =>
   (['light', 'dark'] as const).map((theme) => {
-    const file = files[`../../assets/screens/${layout}-${lang}-${theme}.jpg`];
-    if (!file) throw new Error(`src/assets/screens/${layout}-${lang}-${theme}.jpg is missing: run \`bun run screenshots\``);
+    const file = files[`../../assets/screens/${layout}-${assetLang}-${theme}.jpg`];
+    if (!file) throw new Error(`src/assets/screens/${layout}-${assetLang}-${theme}.jpg is missing: run \`bun run screenshots\``);
     return { theme, image: file.default };
   });
 ---
@@ -33,12 +71,12 @@ const screens = (layout: 'desktop' | 'phone') =>
     <div class="stage">
     <figure class="stage__desktop">
       {screens('desktop').map(({ theme, image }) => (
-        <img src={image.src} width={image.width} height={image.height} alt={alts.desktop} data-screen-theme={theme} loading="lazy" />
+        <img src={image.src} width={image.width} height={image.height} alt={alt.desktop} data-screen-theme={theme} loading="lazy" />
       ))}
     </figure>
     <figure class="stage__phone">
       {screens('phone').map(({ theme, image }) => (
-        <img src={image.src} width={image.width} height={image.height} alt={alts.phone} data-screen-theme={theme} loading="lazy" />
+        <img src={image.src} width={image.width} height={image.height} alt={alt.phone} data-screen-theme={theme} loading="lazy" />
       ))}
     </figure>
     </div>

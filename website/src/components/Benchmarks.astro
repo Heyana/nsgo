@@ -5,6 +5,7 @@
 import { ActionButton, Page } from 'nsgo-website/components';
 import 'nsgo-website/styles/home.css';
 import Icon from './Icon.astro';
+import { DATE_LOCALES, type SiteLang } from '../locales';
 import { benchmarkCopies } from '../lib/benchmark-copy';
 import {
   caseIds,
@@ -24,7 +25,7 @@ import {
 import '../styles/benchmarks.css';
 
 interface Props {
-  lang: 'en' | 'zh';
+  lang: SiteLang;
 }
 const { lang } = Astro.props;
 const copy = benchmarkCopies[lang];
@@ -99,7 +100,7 @@ function charts(r: Results, c: CaseId): Chart[] {
 }
 
 const date = (iso: string) =>
-  new Date(iso).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  new Date(iso).toLocaleDateString(DATE_LOCALES[lang], { year: 'numeric', month: 'long', day: 'numeric' });
 ---
 
 <Page lang={lang} title={copy.title} description={copy.description}>

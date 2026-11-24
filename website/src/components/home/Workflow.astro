@@ -2,12 +2,21 @@
 // The workflow: the four steps of the nsgo tool side by side, each with the
 // command that takes it.
 import { KIcon, SectionHead } from 'nsgo-website/components';
+import { asSiteLang, type SiteLang } from '../../locales';
 
 interface Props {
   lang: string;
 }
 
-const words = {
+type WorkflowCopy = {
+  eyebrow: string;
+  title: string;
+  text: string;
+  steps: [string, string, string, string];
+  texts: [string, string, string, string];
+};
+
+const allWords: Record<SiteLang, WorkflowCopy> = {
   en: {
     eyebrow: 'Workflow',
     title: 'One tool, from first line to store.',
@@ -22,7 +31,65 @@ const words = {
     steps: ['创建', '运行', '测试', '发布'],
     texts: ['Go、TSX 或混合应用。', '每次保存都热重载。', '无窗口或原生窗口中运行。', '为每个目标打出签名的包。'],
   },
-}[Astro.props.lang === 'zh' ? 'zh' : 'en'];
+  'zh-tw': {
+    eyebrow: '工作流程',
+    title: '一個工具，從第一行程式碼到上架',
+    text: 'nsgo 負責建立、執行、測試與打包應用。它隨 Go 安裝，在 Go 可執行之處皆可運作。',
+    steps: ['建立', '執行', '測試', '發佈'],
+    texts: ['Go、TSX 或混合應用。', '每次儲存自動熱重載。', '無頭模式或原生視窗執行。', '為每個目標產出已簽章的套件。'],
+  },
+  ja: {
+    eyebrow: 'ワークフロー',
+    title: '最初の 1 行からストア公開まで、ひとつのツールで。',
+    text: 'nsgo がアプリの作成、実行、テスト、パッケージ化を担います。Go と一緒にインストールされ、Go が動く場所ならどこでも動作します。',
+    steps: ['作成', '実行', 'テスト', '出荷'],
+    texts: ['Go、TSX、または混在アプリ。', '保存のたびにホットリロード。', 'ヘッドレスまたは実ウィンドウで実行。', '各ターゲット向けに署名済みパッケージを作成。'],
+  },
+  ko: {
+    eyebrow: '워크플로',
+    title: '첫 줄부터 스토어 출시까지 하나의 도구로.',
+    text: 'nsgo가 앱 생성, 실행, 테스트, 패키징을 모두 처리합니다. Go와 함께 설치되며 Go가 동작하는 곳이라면 어디서나 실행됩니다.',
+    steps: ['생성', '실행', '테스트', '출시'],
+    texts: ['Go, TSX 또는 혼합 앱.', '저장할 때마다 핫 리로드.', '헤드리스 또는 네이티브 창에서 실행.', '각 타깃용 서명 패키지 생성.'],
+  },
+  es: {
+    eyebrow: 'Flujo de trabajo',
+    title: 'Una herramienta, de la primera línea a la tienda.',
+    text: 'nsgo crea, ejecuta, prueba y empaqueta aplicaciones. Se instala con Go y funciona dondequiera que funcione Go.',
+    steps: ['Crear', 'Ejecutar', 'Probar', 'Publicar'],
+    texts: ['Una app en Go, TSX o mixta.', 'Recarga en caliente al guardar.', 'Sin interfaz o en ventana nativa.', 'Paquetes firmados para cada destino.'],
+  },
+  fr: {
+    eyebrow: 'Flux de travail',
+    title: 'Un seul outil, de la première ligne à la boutique.',
+    text: 'nsgo crée, lance, teste et empaquette les applications. Il s’installe avec Go et fonctionne partout où Go tourne.',
+    steps: ['Créer', 'Lancer', 'Tester', 'Publier'],
+    texts: ['Une app en Go, TSX ou mixte.', 'Rechargement à chaud à chaque sauvegarde.', 'Sans fenêtre ou dans une fenêtre native.', 'Paquets signés pour chaque cible.'],
+  },
+  de: {
+    eyebrow: 'Workflow',
+    title: 'Ein Werkzeug, von der ersten Zeile bis in den Store.',
+    text: 'nsgo erstellt, startet, testet und paketiert Apps. Es wird mit Go installiert und läuft überall, wo Go läuft.',
+    steps: ['Erstellen', 'Starten', 'Testen', 'Ausliefern'],
+    texts: ['Eine Go-, TSX- oder gemischte App.', 'Hot Reload bei jedem Speichern.', 'Headless oder in einem nativen Fenster.', 'Signierte Pakete für jedes Ziel.'],
+  },
+  pt: {
+    eyebrow: 'Fluxo de trabalho',
+    title: 'Uma ferramenta, da primeira linha à loja.',
+    text: 'O nsgo cria, executa, testa e empacota apps. É instalado com Go e roda onde quer que o Go rode.',
+    steps: ['Criar', 'Executar', 'Testar', 'Publicar'],
+    texts: ['Um app em Go, TSX ou misto.', 'Hot reload a cada salvamento.', 'Headless ou em uma janela nativa.', 'Pacotes assinados para cada alvo.'],
+  },
+  ru: {
+    eyebrow: 'Рабочий процесс',
+    title: 'Один инструмент — от первой строки до магазина.',
+    text: 'nsgo создаёт, запускает, тестирует и собирает приложения. Устанавливается вместе с Go и работает везде, где работает Go.',
+    steps: ['Создать', 'Запустить', 'Тестировать', 'Выпустить'],
+    texts: ['Приложение на Go, TSX или смешанное.', 'Горячая перезагрузка при сохранении.', 'Без окна или в нативном окне.', 'Подписанные пакеты для каждой платформы.'],
+  },
+};
+
+const words = allWords[asSiteLang(Astro.props.lang)];
 
 const steps = [
   { icon: 'folder-plus', color: '#6366f1', command: 'init' },

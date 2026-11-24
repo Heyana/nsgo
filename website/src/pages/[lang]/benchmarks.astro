@@ -1,0 +1,12 @@
+---
+import type { GetStaticPaths } from 'astro';
+import Benchmarks from '../../components/Benchmarks.astro';
+import { NON_DEFAULT_LANGS, type SiteLang } from '../../locales';
+
+export const getStaticPaths: GetStaticPaths = () =>
+  NON_DEFAULT_LANGS.map((lang) => ({ params: { lang }, props: { lang } }));
+
+const { lang } = Astro.props as { lang: SiteLang };
+---
+
+<Benchmarks lang={lang} />

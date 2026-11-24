@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 export function docLinks({ base }) {
   return (context) => {
     const file = context.fileURL ? fileURLToPath(context.fileURL) : '';
-    const match = file.split(path.sep).join('/').match(/docs\/public\/(en|zh)\/(.*)\.md$/);
+    const match = file.split(path.sep).join('/').match(/docs\/public\/([a-z]{2}(?:-[a-z]{2})?)\/(.*)\.md$/);
     if (!match) return null;
     const [, lang, id] = match;
     return {

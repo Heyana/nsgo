@@ -44,6 +44,14 @@ export function programId(code) {
 const status = {
   en: { loading: 'Loading the preview…', failed: 'The preview could not start.' },
   zh: { loading: '正在加载预览…', failed: '预览无法启动。' },
+  'zh-tw': { loading: '正在載入預覽…', failed: '預覽無法啟動。' },
+  ja: { loading: 'プレビューを読み込み中…', failed: 'プレビューを起動できませんでした。' },
+  ko: { loading: '미리보기를 불러오는 중…', failed: '미리보기를 시작할 수 없습니다.' },
+  es: { loading: 'Cargando la vista previa…', failed: 'No se pudo iniciar la vista previa.' },
+  fr: { loading: 'Chargement de l’aperçu…', failed: 'Impossible de démarrer l’aperçu.' },
+  de: { loading: 'Vorschau wird geladen…', failed: 'Die Vorschau konnte nicht gestartet werden.' },
+  pt: { loading: 'Carregando a prévia…', failed: 'Não foi possível iniciar a prévia.' },
+  ru: { loading: 'Загрузка предпросмотра…', failed: 'Не удалось запустить предпросмотр.' },
 };
 
 // livePreviews puts an empty box before each marked block, which
@@ -53,7 +61,8 @@ const status = {
 export function livePreviews({ base }) {
   return (context) => {
     const file = context.fileURL?.pathname ?? '';
-    const words = status[file.includes('/docs/public/zh/') ? 'zh' : 'en'];
+    const lang = file.match(/\/docs\/public\/([a-z]{2}(?:-[a-z]{2})?)\//)?.[1] ?? 'en';
+    const words = status[lang] ?? status.en;
     return {
       name: 'nsgo-live-previews',
       code(node, ctx) {
