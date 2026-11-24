@@ -99,6 +99,16 @@ Every frame runs the commit on the engine goroutine and, on the main thread, the
   | macOS at 120 Hz, 1200×800, the monitors' process CPU, another workspace's iOS simulator busy meanwhile: ticking; scrolling; the stack (fps, main thread a frame, CPU) | 0.25 ms, 10–18%; 120 fps, 0.65 ms, 33–42%; 107–112 fps, 0.2 ms, 6–11% | 2.6 ms, 29–36%; 120 fps, 2.9 ms, 81%, down to 28–35 fps between scrolls; 86–90 fps, 1.9 ms, 22–29% |
   | macOS, the Animations page, as above: main thread a frame; CPU | 0.3–0.8 ms; 6–15% | 0.6 ms; 10–14% |
 
+  Again on 2026-11-24, interleaved with NSH 0.5.0's release build. The process CPU was read every second between the marks with no monitor running: from `/proc` on Linux, and inside the emulator for Android, where NSGo's is the sum of its Java and Go processes. Medians in parentheses. On macOS the monitors were read on an M1 Max whose load average was 9–73, so not a quiet machine:
+
+  | Where | NSGo | NSH 0.5.0 |
+  | --- | --- | --- |
+  | Linux, as above, two rounds: main thread a frame scrolling (with the monitor); process CPU ticking, scrolling, the stack | 5.5–6.2 ms; 17–21%, 52–66% (59–61%), 6–12% (10%) | —; 8–10%, 9–37% in one round, its later runs not finding the sidebar's row |
+  | Android emulator (x86-64, Android 10), two rounds: process CPU ticking; scrolling | 126–143% (137–142%); 165–239% (223%), of which the Java process 93% and 124% | 75–83% (78–80%); 76–153% (114–128%) |
+  | macOS at 120 Hz, the Animations page: main thread a frame; CPU | 0.28–0.55 ms; 6–9% | 0.17–0.25 ms; 5–6% |
+
+  An 8-second `sample` of NSGo's Animations page found AppKit's window layout pass in 1 of 3,718 main-thread samples; most of its frames go to reading each animated layer's bounds and anchor point through purego functions that return structs (`apple.layerTransform`).
+
   Windows waits for a signed-in session, as SSH has no desktop to draw in, and the iOS simulator and headless Chrome for a quiet machine and NSH's web build.
 
   Measure what a user does: a touchpad's scroll (`Input.synthesizeScrollGesture` over CDP on the web, `App.Scroll` on a target, whose gesture moves 20 points a frame), ticking, at the size users run, and read whether the cells keep up as well as what a frame costs. A wheel's notches scroll by the page's own steps (`wheel.go`), as NSH's do, and a touchpad's scroll is the browser's. Run one measurement at a time, interleaved with NSH's, and check that nothing else runs: a single run moves by a fifth, and a headless browser left behind took 70% of a core and moved every reading.
