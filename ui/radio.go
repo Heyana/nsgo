@@ -18,11 +18,16 @@ type Radio struct {
 	// and uncheck the others.
 	OnChange func(checked bool)
 	Text     string
+	TextFunc func() string
+	// Children replace Text.
 	Children []core.Node
-	Label    string
-	Hint     string
-	TestID   string
-	Style    core.Style
+	// Label is what assistive technology reads, Text when empty.
+	Label     string
+	LabelFunc func() string
+	Hint      string
+	HintFunc  func() string
+	TestID    string
+	Style     core.Style
 }
 
 // Render implements core.Node.
@@ -40,13 +45,10 @@ func (r Radio) Render(cx *core.Scope) core.Node {
 					Disabled: &core.Style{Opacity: core.Alpha(0.45)}}}
 		},
 		Children: []core.Node{dot}}
-	label := r.Label
-	if label == "" {
-		label = r.Text
-	}
+	label, labelFunc := textBinding(r.Label, r.LabelFunc, r.Text, r.TextFunc)
 	return base.Radio{Ref: r.Ref, LabelledBy: r.LabelledBy, Invalid: r.Invalid, Checked: r.Checked, Disabled: r.Disabled, OnChange: r.OnChange, Style: selectionRow.Merge(r.Style),
 		StyleFunc: func() core.Style { return core.Style{FocusVisible: FocusRing(cx, 2)} },
-		Children:  append([]core.Node{ring}, selectionLabel(cx, r.Text, nil, r.Children)...), Label: label, Hint: r.Hint, TestID: r.TestID}
+		Children:  append([]core.Node{ring}, selectionLabel(cx, r.Text, r.TextFunc, r.Children)...), Label: label, LabelFunc: labelFunc, Hint: r.Hint, HintFunc: r.HintFunc, TestID: r.TestID}
 }
 
 // RadioGroup holds the Radios of one choice, stacked or in a row.
@@ -54,9 +56,10 @@ type RadioGroup struct {
 	Horizontal bool
 	Children   []core.Node
 	// Label names the choice for assistive technology.
-	Label  string
-	TestID string
-	Style  core.Style
+	Label     string
+	LabelFunc func() string
+	TestID    string
+	Style     core.Style
 }
 
 // Render implements core.Node.
@@ -65,5 +68,5 @@ func (g RadioGroup) Render(*core.Scope) core.Node {
 	if g.Horizontal {
 		s = core.Style{Direction: core.Row, Wrap: core.Wrap, ColumnGap: 16, RowGap: 4}
 	}
-	return base.RadioGroup{Style: s.Merge(g.Style), Children: g.Children, Label: g.Label, TestID: g.TestID}
+	return base.RadioGroup{Style: s.Merge(g.Style), Children: g.Children, Label: g.Label, LabelFunc: g.LabelFunc, TestID: g.TestID}
 }

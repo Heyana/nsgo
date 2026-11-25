@@ -65,6 +65,7 @@ type RadioGroup struct {
 	StyleFunc func() core.Style
 	Children  []core.Node
 	Label     string
+	LabelFunc func() string
 	TestID    string
 	// OnLayout and Tooltip are its view's, as a core.View's.
 	OnLayout func(core.Bounds)
@@ -74,6 +75,6 @@ type RadioGroup struct {
 // Render implements core.Node.
 func (g RadioGroup) Render(cx *core.Scope) core.Node {
 	group := newRoving(cx, false)
-	return core.View{Class: g.Class, Style: g.Style, StyleFunc: g.StyleFunc, Role: core.RoleRadioGroup, Invalid: g.Invalid, Label: g.Label, TestID: g.TestID, OnLayout: g.OnLayout, Tooltip: g.Tooltip,
+	return core.View{Class: g.Class, Style: g.Style, StyleFunc: g.StyleFunc, Role: core.RoleRadioGroup, Invalid: g.Invalid, Label: g.Label, LabelFunc: g.LabelFunc, TestID: g.TestID, OnLayout: g.OnLayout, Tooltip: g.Tooltip,
 		Children: append(slices.Clip(g.Children), group.keys())}
 }

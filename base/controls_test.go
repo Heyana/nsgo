@@ -260,16 +260,25 @@ func TestNumberInputSpinButtonAndLevels(t *testing.T) {
 }
 
 func TestRadioLabelAndHintFuncsUpdateInPlace(t *testing.T) {
-	var label, hint *core.Signal[string]
+	var groupLabel, label, hint *core.Signal[string]
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		groupLabel = core.NewSignal(cx, "Plan")
 		label, hint = core.NewSignal(cx, "Plan A"), core.NewSignal(cx, "Choose a plan")
-		return base.Radio{TestID: "radio", Style: core.Style{Height: core.Pt(20)}, LabelFunc: label.Get, HintFunc: hint.Get}
-	})
+		return base.RadioGroup{TestID: "group", LabelFunc: groupLabel.Get, Children: []core.Node{
+			base.Radio{TestID: "radio", Style: core.Style{Height: core.Pt(20)}, LabelFunc: label.Get, HintFunc: hint.Get},
+		}}
+	}, nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+	groupBefore := app.Find("id:group").ID
 	before := app.Find("id:radio").ID
-	app.Post(func() { label.Set("Plan B"); hint.Set("Updated hint") })
+	app.Focus("id:radio")
+	app.Post(func() { groupLabel.Set("Subscription"); label.Set("Plan B"); hint.Set("Updated hint") })
 	app.Settle()
+	g := app.Find("id:group")
+	if g.ID != groupBefore || g.Props.Label != "Subscription" {
+		t.Fatalf("radio group after update = %+v on %v, want label Subscription on %v", g.Props, g.ID, groupBefore)
+	}
 	v := app.Find("id:radio")
-	if v.ID != before || v.Props.Label != "Plan B" || v.Props.Hint != "Updated hint" {
-		t.Fatalf("radio after update = %+v on %v, want updated props on %v", v.Props, v.ID, before)
+	if v.ID != before || !v.Focused || v.Props.Label != "Plan B" || v.Props.Hint != "Updated hint" {
+		t.Fatalf("radio after update = %+v focused=%v on %v, want updated props focused on %v", v.Props, v.Focused, v.ID, before)
 	}
 }
