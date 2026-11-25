@@ -147,6 +147,15 @@ func MustCompileShader(src string) *ShaderProgram {
 
 // HasUniform reports whether the program has a uniform named name, which
 // Uniforms may set.
+// UniformLanes returns where a uniform lies in a shader's lanes and how
+// many lanes it takes, so a test can read it without knowing the order its
+// program declares its uniforms in. The lane indexes Shader.Lanes as the
+// platform receives it.
+func (p *ShaderProgram) UniformLanes(name string) (lane, n int, ok bool) {
+	slot, ok := p.uniforms[name]
+	return slot.lane, slot.n, ok
+}
+
 func (p *ShaderProgram) HasUniform(name string) bool {
 	_, ok := p.uniforms[name]
 	return ok

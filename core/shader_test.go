@@ -100,3 +100,22 @@ func TestShaderUniformsFuncReplacesAUniform(t *testing.T) {
 		t.Fatalf("shader = %+v, want Time 3 and Spots 1 with no nodes", sh)
 	}
 }
+
+// UniformLanes says where a uniform lies in a shader's lanes, so a test can read the value without knowing the program's declaration order (#2251).
+func TestUniformLanesFollowTheDeclarations(t *testing.T) {
+	prog := MustCompileShader(testShader)
+	for name, want := range map[string]struct{ lane, n int }{
+		"Time":  {0, 1},
+		"Tint":  {1, 3},
+		"Spots": {4, 8},
+		"Count": {12, 1},
+	} {
+		lane, n, ok := prog.UniformLanes(name)
+		if !ok || lane != want.lane || n != want.n {
+			t.Errorf("UniformLanes(%q) = %d, %d, %v; want %d, %d", name, lane, n, ok, want.lane, want.n)
+		}
+	}
+	if _, _, ok := prog.UniformLanes("Missing"); ok {
+		t.Error("UniformLanes named a uniform the program has not")
+	}
+}

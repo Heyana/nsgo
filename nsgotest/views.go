@@ -8,9 +8,13 @@ import "github.com/nsgo-dev/nsgo/internal/driver"
 // the nodes that drive them, the pictures it reads and a transition's
 // state.
 type Shader struct {
-	Role               ShaderRole
-	WGSL               bool
-	Lanes              []float64
+	Role  ShaderRole
+	WGSL  bool
+	Lanes []float64
+	// Images are what the program's image0At to image3At read, in order,
+	// as the view was sent them: an image of Pixels carries the copy's
+	// Version and Rect.
+	Images             []driver.ImageSource
 	Nodes              []ShaderNode
 	Pictures           Pictures
 	Overflow           float64

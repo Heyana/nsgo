@@ -761,7 +761,8 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemShader:
 			v.Shader = nil
 			if sh := it.Shader; sh != nil {
-				v.Shader = &Shader{Role: sh.Role, WGSL: sh.Program != nil && sh.Program.WGSL, Lanes: sh.Lanes, Nodes: sh.Nodes,
+				v.Shader = &Shader{Role: sh.Role, WGSL: sh.Program != nil && sh.Program.WGSL, Lanes: sh.Lanes,
+					Images: slices.Clone(sh.Images), Nodes: sh.Nodes,
 					Pictures: sh.Pictures, Overflow: sh.Overflow, Running: sh.Running, Backwards: sh.Backwards}
 				pass := a.canvasImageUse
 				for _, src := range sh.Images {

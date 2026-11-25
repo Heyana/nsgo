@@ -3,6 +3,7 @@ package nsgotest
 import (
 	"errors"
 	"fmt"
+	"image"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1874,5 +1875,25 @@ func TestFrameAtStampsTheWaitingFrame(t *testing.T) {
 				t.Fatalf("clock moved to %v, want %v", app.Clock.Now(), now)
 			}
 		})
+	}
+}
+
+// A shader view records the images the core sent it, so a test can see which pixel versions reached the platform (#2251).
+func TestShaderRecordsImages(t *testing.T) {
+	prog, err := core.CompileWGSL("fn shade(uv: vec2f) -> vec4f { return vec4f(uv, 0.0, 1.0); }")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := core.ImageSource{URI: "frame.png", Pixels: image.NewRGBA(image.Rect(0, 0, 2, 2)), Version: 3}
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.Shader{TestID: "shader", Program: prog, Images: []core.ImageSource{src},
+			Style: core.Style{Width: core.Pt(64), Height: core.Pt(64)}}
+	})
+	sh := app.Find("id:shader").Shader
+	if sh == nil || len(sh.Images) != 1 {
+		t.Fatalf("shader images = %+v", sh)
+	}
+	if got := sh.Images[0]; got.Version != 3 || got.Pixels == nil || got.URI != "frame.png" {
+		t.Fatalf("shader image = %+v, want frame.png at version 3", got)
 	}
 }
