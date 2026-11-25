@@ -2462,7 +2462,6 @@ const (
 	textTerminalDemoSession
 	textTerminalCopy
 	textTerminalPaste
-	textTerminalSelectAll
 	textTerminalKeyBar
 	textTerminalKeyBarNote
 	textStyled
@@ -4785,7 +4784,6 @@ var keyOfText = [numTexts]string{
 	"terminalDemoSession",
 	"terminalCopy",
 	"terminalPaste",
-	"terminalSelectAll",
 	"terminalKeyBar",
 	"terminalKeyBarNote",
 	"styled",
@@ -7106,7 +7104,6 @@ var textsEn = i18n.NewTexts(""+
 	"Demo session"+
 	"Copy"+
 	"Paste"+
-	"Select all"+
 	"Key bar"+
 	"Over a touch screen's keyboard"+
 	"Styled"+
@@ -9424,7 +9421,6 @@ var textsEn = i18n.NewTexts(""+
 		12,
 		4,
 		5,
-		10,
 		7,
 		30,
 		6,
@@ -11745,7 +11741,6 @@ var textsZhHans = i18n.NewTexts(""+
 	"演示会话"+
 	"复制"+
 	"粘贴"+
-	"全选"+
 	"按键栏"+
 	"显示在触屏的软键盘上方"+
 	"样式"+
@@ -14061,7 +14056,6 @@ var textsZhHans = i18n.NewTexts(""+
 		6,
 		12,
 		12,
-		6,
 		6,
 		6,
 		9,
@@ -34345,13 +34339,6 @@ func TerminalPaste(cx *core.Scope) string { return For(cx).TerminalPaste() }
 
 // TerminalPaste is the package's TerminalPaste in the language of msgs.
 func (msgs Messages) TerminalPaste() string { return msgs.text(textTerminalPaste) }
-
-// TerminalSelectAll says "Select all"
-// in the language the app shows under cx.
-func TerminalSelectAll(cx *core.Scope) string { return For(cx).TerminalSelectAll() }
-
-// TerminalSelectAll is the package's TerminalSelectAll in the language of msgs.
-func (msgs Messages) TerminalSelectAll() string { return msgs.text(textTerminalSelectAll) }
 
 // TerminalKeyBar says "Key bar"
 // in the language the app shows under cx.
