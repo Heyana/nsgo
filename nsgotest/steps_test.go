@@ -1577,3 +1577,33 @@ func TestMultilineInputScrollsHeadless(t *testing.T) {
 		t.Fatalf("after Ref.ScrollToEnd: offset.Y = %v, want %v", got, wantMax)
 	}
 }
+
+// A key held by physical code comes up on blur with its name and code, so the code-held state empties and OnKeyUp hears it (#2248).
+func TestBlurWindowReleasesKeysHeldByCode(t *testing.T) {
+	var ups []core.KeyEvent
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{Children: []core.Node{
+			core.View{
+				TestID: "pad", Focusable: func() bool { return true },
+				OnKeyDown: func(e core.KeyEvent) bool { return true },
+				OnKeyUp:   func(e core.KeyEvent) { ups = append(ups, e) },
+				Style:     core.Style{Width: core.Pt(100), Height: core.Pt(30)},
+			},
+			core.Text{TestID: "held", ContentFunc: func() string {
+				return fmt.Sprint(core.KeyCodesDown(cx), core.KeysDown(cx))
+			}},
+		}}
+	}, Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+	app.Focus("id:pad")
+	app.KeyCodeDown("KeyW")
+	if got := app.Find("id:held").Text; got != "[KeyW] [w]" {
+		t.Fatalf("while holding KeyW: %q", got)
+	}
+	app.BlurWindow()
+	if got := app.Find("id:held").Text; got != "[] []" {
+		t.Fatalf("after BlurWindow: %q", got)
+	}
+	if want := []core.KeyEvent{{Key: "w", Code: "KeyW"}}; !slices.Equal(ups, want) {
+		t.Fatalf("ups %+v, want %+v", ups, want)
+	}
+}
