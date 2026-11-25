@@ -78,12 +78,12 @@ func TestIOSDocumentTypesEndToEnd(t *testing.T) {
 			}
 		}
 	}
+	sender, err := load(filepath.Join("..", "..", "internal", "platform", "ios"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	send := func(which string) {
 		t.Helper()
-		sender, err := load(filepath.Join("..", "..", "internal", "platform", "ios"))
-		if err != nil {
-			t.Fatal(err)
-		}
 		if err := runTests(ctx, sender, testOptions{
 			target: "ios_simulator", device: udid, timeout: time.Minute,
 			run: "^TestSystemDocumentOpenInRoutesToRegisteredApp$",
@@ -112,9 +112,16 @@ func TestIOSDocumentTypesEndToEnd(t *testing.T) {
 			t.Fatalf("the imported copy did not survive its sender: %q, %v", data, err)
 		}
 	}
-	const link = "nsgo1385documents://separate-link"
-	// simctl openurl presents a SpringBoard confirmation on recent iOS.
-	// An actual sender app uses UIApplication's public openURL instead.
+	const scheme = "nsgo1385documents"
+	const link = scheme + "://separate-link"
+	// Before one app opens another's custom scheme, LaunchServices asks the user ("“ios” wants to open “NSGo Documents”") unless both apps share a team ID or the user has already allowed the pair, and simulator builds are signed ad hoc, with no team ID. UIKit answers openURL only once the user taps, so the sender would wait for an alert nothing in the test can tap. Record the user's approval where LaunchServices looks for it first: its preference keyed "source-->scheme", whose value is the target's bundle ID. simctl openurl asks too, so the sender still opens the link through UIApplication's public openURL.
+	approval := testProject(sender).ID + "-->" + scheme
+	if err := run(ctx, "xcrun", "simctl", "spawn", udid, "defaults", "write", "com.apple.launchservices.schemeapproval", approval, "-string", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		exec.Command("xcrun", "simctl", "spawn", udid, "defaults", "delete", "com.apple.launchservices.schemeapproval", approval).Run()
+	})
 	send("link")
 	events := readEvents(4)
 	if len(events) != 4 || events[3].Kind != "link" || events[3].Path != link || events[3].PID != pid {
