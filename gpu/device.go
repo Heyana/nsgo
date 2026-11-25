@@ -2403,7 +2403,7 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 				}
 			}
 			if ca.ResolveTarget != nil {
-				if !ca.ResolveTarget.Valid() || ca.ResolveTarget.dev != e.dev || ca.ResolveTarget.epoch != e.epoch {
+				if e == nil || !ca.ResolveTarget.Valid() || ca.ResolveTarget.dev != e.dev || ca.ResolveTarget.epoch != e.epoch {
 					invalid = true
 				} else {
 					rid = ca.ResolveTarget.id
@@ -2424,7 +2424,7 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 	if desc.DepthStencil != nil {
 		var tid driver.GPUID
 		if desc.DepthStencil.Texture != nil {
-			if !desc.DepthStencil.Texture.Valid() || desc.DepthStencil.Texture.dev != e.dev || desc.DepthStencil.Texture.epoch != e.epoch {
+			if e == nil || !desc.DepthStencil.Texture.Valid() || desc.DepthStencil.Texture.dev != e.dev || desc.DepthStencil.Texture.epoch != e.epoch {
 				invalid = true
 			} else {
 				tid = desc.DepthStencil.Texture.id
@@ -2442,7 +2442,7 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 	}
 	var timingLabel string
 	var queryID driver.GPUID
-	if e.dev != nil && e.dev.features.TimestampQueries {
+	if e != nil && e.dev != nil && e.dev.features.TimestampQueries {
 		timingLabel = desc.TimingLabel
 		if desc.TimestampQuery != nil && !desc.TimestampQuery.closed && desc.TimestampQuery.dev == e.dev {
 			queryID = desc.TimestampQuery.id
@@ -2454,10 +2454,14 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 	formats := make([]TextureFormat, len(cas))
 	samples := make([]int, len(cas))
 	depth := FormatUndefined
+	surface := FormatUndefined
+	if !invalid && e != nil && e.dev != nil {
+		surface = e.dev.SurfaceFormat()
+	}
 	for i := range cas {
 		if len(desc.ColorAttachments) == 0 || desc.ColorAttachments[i].Texture == nil {
 			// The swapchain's own attachment: its sample count belongs to the surface.
-			formats[i], samples[i] = e.dev.SurfaceFormat(), -1
+			formats[i], samples[i] = surface, -1
 			continue
 		}
 		ca := desc.ColorAttachments[i]

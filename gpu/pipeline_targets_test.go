@@ -84,3 +84,15 @@ func TestPipelineTargetMismatchSkipsTheDraw(t *testing.T) {
 		t.Fatalf("draw with a matching target = %v, want blue", got)
 	}
 }
+
+// A render pass begun from a nil encoder is invalid rather than a panic, as before the target check existed (#2341).
+func TestNilEncoderRenderPassIsSafe(t *testing.T) {
+	var enc *gpu.Encoder
+	pass := enc.BeginRenderPass(gpu.RenderPassDesc{})
+	if pass == nil {
+		t.Fatal("a nil encoder returned no pass")
+	}
+	pass.ClearColor(core.RGB(0x000000))
+	pass.Draw(3, 0)
+	pass.End()
+}
