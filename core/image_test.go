@@ -518,3 +518,29 @@ func TestSetImageCacheLimitClampsAndEmits(t *testing.T) {
 		t.Fatalf("disposed scope emitted %+v", it)
 	}
 }
+
+// PickImageScale names the file core mounts for a source with scales or variants, and ResolveImage reads the screen's ratio for it (#2272).
+func TestPickImageScaleNamesTheMountedFile(t *testing.T) {
+	cover := ImageSource{URI: "asset:images/cover.png", Scales: ScalesOf(1, 2, 3)}
+	for _, tc := range []struct {
+		ratio float32
+		want  string
+	}{
+		{1, "asset:images/cover.png"},
+		{2, "asset:images/cover@2x.png"},
+		{2.5, "asset:images/cover@3x.png"},
+	} {
+		got := PickImageScale(cover, tc.ratio)
+		if got.URI != tc.want || got.Scales != 0 {
+			t.Errorf("ratio %v: %+v, want %s", tc.ratio, got, tc.want)
+		}
+	}
+	variants := ImageSource{URI: "bundle:cover", Scales: ScalesOf(1, 2), Variants: map[float32]string{2: "data:image/png;base64,AA"}}
+	if got := PickImageScale(variants, 2); got.URI != "data:image/png;base64,AA" || got.Variants != nil {
+		t.Errorf("variants: %+v, want the variant's URI", got)
+	}
+	query := ImageSource{URI: "asset:a.png?v=1", Scales: ScalesOf(1, 2)}
+	if got := PickImageScale(query, 2); got.URI != "asset:a.png?v=1" {
+		t.Errorf("query: %+v, want the URI unchanged", got)
+	}
+}

@@ -253,12 +253,26 @@ func ScalesOf(scales ...float32) ImageScales {
 // (asset:/a.png at 2 is asset:/a@2x.png); without scales, for the 1x pick
 // or with a query or fragment, which no file name has, the URI stays.
 func (t *Tree) pickScale(s ImageSource) ImageSource {
+	return PickImageScale(s, t.root.Env().ratio.GetUntracked())
+}
+
+// ResolveImage returns src as core mounts it at the screen's current pixel ratio, for a tool that must act on the file an image really shows: the URI is the variant the scales pick, and Scales and Variants are cleared. It reads the pixel ratio tracked, so the caller runs again when the window moves to a screen of another ratio.
+func (cx *Scope) ResolveImage(src ImageSource) ImageSource {
+	t := cx.tree()
+	if t == nil {
+		return src
+	}
+	return PickImageScale(src, t.root.Env().ratio.Get())
+}
+
+// PickImageScale returns s as the platform loads it at ratio: an "asset:" image with scales names the variant they pick, a source with Variants names the variant's URI, and a URI with a query or fragment, which no file name has, stays. Scales and Variants are cleared.
+func PickImageScale(s ImageSource, ratio float32) ImageSource {
 	scales := s.Scales
 	s.Scales = 0
 	if scales == 0 || s.Variants == nil && (!strings.HasPrefix(s.URI, "asset:") || strings.ContainsAny(s.URI, "?#")) {
 		return s
 	}
-	pick := scales.Pick(t.root.Env().ratio.GetUntracked())
+	pick := scales.Pick(ratio)
 	if pick == 1 {
 		return s
 	}

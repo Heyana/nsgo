@@ -58,7 +58,7 @@ Capture takes the visible surface pixels within the view's bounds. It is availab
 
 ## Resources and scales
 
-Files under `resources/` ship with the app. `core.Src("asset:images/cover.png")` loads one, and `Scales: core.ScalesOf(1, 2, 3)` picks `cover.png`, `cover@2x.png` or `cover@3x.png` for the screen's pixel ratio.
+Files under `resources/` ship with the app. `core.Src("asset:images/cover.png")` loads one, and `Scales: core.ScalesOf(1, 2, 3)` picks `cover.png`, `cover@2x.png` or `cover@3x.png` for the screen's pixel ratio. `core.ResolveImage(cx, src)` returns the source core mounts at the screen's current pixel ratio, so a tool can act on the file really shown; `core.PickImageScale(src, ratio)` is the same rule for a ratio the caller has.
 
 ```go
 core.Image{Source: core.ImageSource{

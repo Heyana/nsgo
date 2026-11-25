@@ -105,7 +105,7 @@ var exempt = map[string][]string{
 	"document metadata is ignored without a browser head capability and is refused to confined owners": {"BindWebHead"},
 	"app-wide downloads are held to unrestricted owners":                                               {"Download", "OnDownloadUpdate"},
 	"the graph, its scopes and what they read": {"Child", "Dispose", "Abort", "Disposed", "HasTree", "Cleanup", "Context", "Post", "AfterFunc",
-		"ObserveWork", "BeginWork", "Untrack", "PauseTracking", "Batch", "Effect", "RenderEffect", "Run", "Env", "Theme", "Dark", "Palette", "Now",
+		"ObserveWork", "BeginWork", "Untrack", "PauseTracking", "Batch", "Effect", "RenderEffect", "Run", "Env", "Theme", "Dark", "Palette", "Now", "ResolveImage",
 		"WallTime", "KeyLabel", "Present", "OnExit", "CurrentWindow", "MainWindow", "Quitting", "Hiding", "LaunchAtLogin", "OnNetworkChange"},
 	"Access itself, Confine, and what ProvideHost, ProvideStorage and ProvideSecrets scope to the owner": {"ProvideAccess", "CheckAccess",
 		"ProvideHost", "HasHost", "HostParams", "OnHostEvent", "ProvideStorage", "Storage", "ProvideSecrets", "Confine"},
