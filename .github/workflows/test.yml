@@ -28,11 +28,14 @@ jobs:
     uses: ./.github/workflows/apple-changes.yml
 
   gallery:
-    # The first shard keeps the job's own name, which the merge queue requires as "Gallery (web)".
-    name: ${{ matrix.shard == 1 && format('Gallery ({0})', matrix.target) || format('Gallery ({0}, shard 2)', matrix.target) }}
+    name: Gallery (${{ matrix.target }}, shard ${{ matrix.shard }})
     needs: changes
-    # Gallery (web) is a required check, so it runs even when the changes job fails; macOS joins it unless the change cannot affect Apple's targets and all-jobs is unset.
+    # The web shards stand behind the required check Gallery (web), so they run even when the changes job fails; macOS joins them unless the change cannot affect Apple's targets and all-jobs is unset.
     if: ${{ !cancelled() }}
+    # Each web shard reports its own success under its own name, so the gallery-web job can tell the web shards from the macOS ones.
+    outputs:
+      web_shard_1: ${{ steps.passed.outputs.web_shard_1 }}
+      web_shard_2: ${{ steps.passed.outputs.web_shard_2 }}
     strategy:
       fail-fast: false
       matrix:
@@ -73,6 +76,9 @@ jobs:
           NSGO_GALLERY_PERF: '1'
           NSGO_GALLERY_PERF_SECONDS: '3'
         run: go tool nsgo test -target ${{ matrix.target }} -fps -env NSGO_GALLERY_PERF=1 -env NSGO_GALLERY_PERF_SECONDS=3 -run '^TestPerfCanvas(Sprites|Mesh)' ./examples/gallery
+      - name: Record that the shard passed
+        id: passed
+        run: echo "${{ matrix.target }}_shard_${{ matrix.shard }}=success" >> "$GITHUB_OUTPUT"
       - name: Keep results and screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -84,6 +90,24 @@ jobs:
             formula-screenshots
             terminal-actions-screenshots
           if-no-files-found: warn
+
+  gallery-web:
+    # The required check: it passes only when every web shard of the gallery job passed, so the merge queue keeps gating on the whole gallery on the web. It runs whatever happened before it, as a skipped required check would count as passed.
+    name: Gallery (web)
+    needs: gallery
+    if: ${{ always() }}
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every web shard to pass
+        env:
+          SHARD_1: ${{ needs.gallery.outputs.web_shard_1 }}
+          SHARD_2: ${{ needs.gallery.outputs.web_shard_2 }}
+        run: |
+          if [ "$SHARD_1" != success ] || [ "$SHARD_2" != success ]; then
+            echo "::error::A web shard of the gallery did not pass: shard 1 '$SHARD_1', shard 2 '$SHARD_2'."
+            exit 1
+          fi
 
   test:
     runs-on: depot-ubuntu-24.04-4
