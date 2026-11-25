@@ -34,9 +34,11 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 		return PipelineSource{}, fmt.Errorf("msl: nil program")
 	}
 	w := &pipeWriter{
-		p:           p,
-		structNames: map[string]string{},
-		bindingSlot: make([]uint32, len(p.Bindings)),
+		p:              p,
+		structNames:    map[string]string{},
+		bufferStructs:  map[string]structUsage{},
+		needStructCtor: map[string]bool{},
+		bindingSlot:    make([]uint32, len(p.Bindings)),
 	}
 	var bufSlot, texSlot, sampSlot uint32
 	// Reserve low buffer slots for vertex buffers (0..7) in render pipelines; compute-only pipelines start buffer slots at 0.
@@ -44,6 +46,12 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 		bufSlot = 8
 	}
 	for i, b := range p.Bindings {
+		switch b.Kind {
+		case shaderir.BindingUniformBuffer:
+			w.markBufferStructs(b.Type, false)
+		case shaderir.BindingStorageBufferRead, shaderir.BindingStorageBufferReadWrite:
+			w.markBufferStructs(b.Type, true)
+		}
 		w.registerStructs(b.Type)
 		switch b.Kind {
 		case shaderir.BindingUniformBuffer, shaderir.BindingStorageBufferRead, shaderir.BindingStorageBufferReadWrite:
@@ -93,11 +101,11 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	var out []string
 	out = append(out, Prelude(), "")
 	for i, st := range w.structTypes {
-		out = append(out, fmt.Sprintf("struct S%d {", i))
-		for j, m := range st.Sub {
-			out = append(out, fmt.Sprintf("\t%s;", w.declVar(m, fmt.Sprintf("M%d", j))))
+		name := fmt.Sprintf("S%d", i)
+		out = append(out, w.emitStructDecl(name, st)...)
+		if w.needStructCtor[name] {
+			out = append(out, w.emitStructCtor(name, st)...)
 		}
-		out = append(out, "};", "")
 	}
 	out = append(out, body...)
 
@@ -111,12 +119,230 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	}, nil
 }
 
+type structUsage uint8
+
+const (
+	structLocal structUsage = iota
+	structUniform
+	structStorage
+	structBoth
+)
+
 type pipeWriter struct {
-	p           *shaderir.Program
-	structNames map[string]string
-	structTypes []shaderir.Type
-	bindingSlot []uint32
-	slots       []BindingSlot
+	p              *shaderir.Program
+	structNames    map[string]string
+	structTypes    []shaderir.Type
+	bufferStructs  map[string]structUsage
+	needStructCtor map[string]bool
+	bindingSlot    []uint32
+	slots          []BindingSlot
+}
+
+func (w *pipeWriter) markBufferStructs(t shaderir.Type, storage bool) {
+	switch t.Main {
+	case shaderir.Struct:
+		for _, f := range t.Sub {
+			w.markBufferStructs(f, storage)
+		}
+		key := t.String()
+		u := structUniform
+		if storage {
+			u = structStorage
+		}
+		switch w.bufferStructs[key] {
+		case structLocal:
+			w.bufferStructs[key] = u
+		case structUniform:
+			if storage {
+				w.bufferStructs[key] = structBoth
+			}
+		case structStorage:
+			if !storage {
+				w.bufferStructs[key] = structBoth
+			}
+		}
+	case shaderir.Array:
+		if len(t.Sub) > 0 {
+			w.markBufferStructs(t.Sub[0], storage)
+		}
+	}
+}
+
+func (w *pipeWriter) isBufferStruct(t shaderir.Type) bool {
+	return t.Main == shaderir.Struct && w.bufferStructs[t.String()] != structLocal
+}
+
+func packedVec3TypeName(bt shaderir.BasicType) (packed, unpacked string, ok bool) {
+	switch bt {
+	case shaderir.Vec3:
+		return "packed_float3", "float3", true
+	case shaderir.IVec3:
+		return "packed_int3", "int3", true
+	case shaderir.UVec3:
+		return "packed_uint3", "uint3", true
+	}
+	return "", "", false
+}
+
+func (w *pipeWriter) bufferStructIsStorage(t shaderir.Type) bool {
+	u := w.bufferStructs[t.String()]
+	return u == structStorage || u == structBoth
+}
+
+// mslStructSizeAlign returns the emitted Metal byte size and alignment of a
+// buffer-layout struct, matching WGSL host-shareable layout.
+func (w *pipeWriter) mslStructSizeAlign(t shaderir.Type) (size, align int) {
+	if w.bufferStructIsStorage(t) {
+		return t.StorageSizeBytes(), t.StorageAlignBytes()
+	}
+	return t.SizeBytes(), t.AlignBytes()
+}
+
+// mslBufferMemberLayout returns the Metal byte size, alignment, and whether m
+// is a runtime-sized array for a member of a host-shareable struct. Direct vec3
+// members use packed_*3 (size 12, align 4), whereas array elements keep
+// unpacked vector types (size 16, align 16) so array<vec3<T>, N> keeps its
+// 16-byte WGSL stride.
+func (w *pipeWriter) mslBufferMemberLayout(t shaderir.Type, isStorage bool) (size, align int, runtimeArr bool) {
+	switch t.Main {
+	case shaderir.Bool:
+		return 1, 1, false
+	case shaderir.Int, shaderir.Uint, shaderir.Float:
+		return 4, 4, false
+	case shaderir.Vec2, shaderir.IVec2, shaderir.UVec2:
+		return 8, 8, false
+	case shaderir.Vec3, shaderir.IVec3, shaderir.UVec3:
+		return 12, 4, false
+	case shaderir.Vec4, shaderir.IVec4, shaderir.UVec4:
+		return 16, 16, false
+	case shaderir.Mat2:
+		return 16, 8, false
+	case shaderir.Mat3x2:
+		return 24, 8, false
+	case shaderir.Mat4x2:
+		return 32, 8, false
+	case shaderir.Mat2x3, shaderir.Mat2x4:
+		return 32, 16, false
+	case shaderir.Mat3, shaderir.Mat3x4:
+		return 48, 16, false
+	case shaderir.Mat4x3, shaderir.Mat4:
+		return 64, 16, false
+	case shaderir.Array:
+		if len(t.Sub) == 0 {
+			return 0, 4, t.Length == 0
+		}
+		es, ea := w.mslArrayElemLayout(t.Sub[0], isStorage)
+		if t.Length == 0 {
+			return 0, ea, true
+		}
+		stride := roundUp(es, ea)
+		return t.Length * stride, ea, false
+	case shaderir.Struct:
+		s, a := w.mslStructSizeAlign(t)
+		return s, a, false
+	}
+	return 4, 4, false
+}
+
+func (w *pipeWriter) mslArrayElemLayout(t shaderir.Type, isStorage bool) (size, align int) {
+	switch t.Main {
+	case shaderir.Vec3, shaderir.IVec3, shaderir.UVec3:
+		return 16, 16
+	case shaderir.Struct:
+		return w.mslStructSizeAlign(t)
+	default:
+		s, a, _ := w.mslBufferMemberLayout(t, isStorage)
+		return s, a
+	}
+}
+
+func (w *pipeWriter) emitStructDecl(name string, st shaderir.Type) []string {
+	if !w.isBufferStruct(st) {
+		lines := []string{fmt.Sprintf("struct %s {", name)}
+		for j, m := range st.Sub {
+			lines = append(lines, fmt.Sprintf("\t%s;", w.declVar(m, fmt.Sprintf("M%d", j))))
+		}
+		lines = append(lines, "};", "")
+		return lines
+	}
+
+	isStorage := w.bufferStructIsStorage(st)
+	wgslAlign := st.AlignBytes()
+	wgslSize := st.SizeBytes()
+	if isStorage {
+		wgslAlign = st.StorageAlignBytes()
+		wgslSize = st.StorageSizeBytes()
+	}
+
+	var members []string
+	curOff := 0
+	maxNaturalAlign := 1
+	padIdx := 0
+	endsWithRuntimeArr := false
+	for j, m := range st.Sub {
+		wgslOff := st.StructFieldOffset(j)
+		if isStorage {
+			wgslOff = st.StorageStructFieldOffset(j)
+		}
+		mslSize, mslAlign, runtimeArr := w.mslBufferMemberLayout(m, isStorage)
+		alignedOff := roundUp(curOff, max(mslAlign, 1))
+		if alignedOff < wgslOff {
+			members = append(members, fmt.Sprintf("\tuchar __pad%d[%d];", padIdx, wgslOff-curOff))
+			padIdx++
+			curOff = wgslOff
+		} else {
+			curOff = alignedOff
+		}
+		if mslAlign > maxNaturalAlign {
+			maxNaturalAlign = mslAlign
+		}
+		if packed, _, ok := packedVec3TypeName(m.Main); ok {
+			members = append(members, fmt.Sprintf("\t%s M%d;", packed, j))
+		} else {
+			members = append(members, fmt.Sprintf("\t%s;", w.declVar(m, fmt.Sprintf("M%d", j))))
+		}
+		if runtimeArr {
+			endsWithRuntimeArr = true
+		} else {
+			curOff += mslSize
+		}
+	}
+	if !endsWithRuntimeArr {
+		naturalEnd := roundUp(curOff, maxNaturalAlign)
+		if naturalEnd < wgslSize {
+			members = append(members, fmt.Sprintf("\tuchar __pad%d[%d];", padIdx, wgslSize-curOff))
+		}
+	}
+
+	header := fmt.Sprintf("struct %s {", name)
+	if wgslAlign > maxNaturalAlign {
+		header = fmt.Sprintf("struct alignas(%d) %s {", wgslAlign, name)
+	}
+	lines := make([]string, 0, len(members)+3)
+	lines = append(lines, header)
+	lines = append(lines, members...)
+	lines = append(lines, "};", "")
+	return lines
+}
+
+func (w *pipeWriter) emitStructCtor(name string, st shaderir.Type) []string {
+	params := make([]string, len(st.Sub))
+	for j, m := range st.Sub {
+		params[j] = w.declVar(m, fmt.Sprintf("a%d", j))
+	}
+	lines := []string{
+		fmt.Sprintf("%s __make_%s(%s) {", name, name, strings.Join(params, ", ")),
+		fmt.Sprintf("\t%s r = {};", name),
+	}
+	for j, m := range st.Sub {
+		if packed, _, ok := packedVec3TypeName(m.Main); ok {
+			lines = append(lines, fmt.Sprintf("\tr.M%d = %s(a%d);", j, packed, j))
+		} else {
+			lines = append(lines, fmt.Sprintf("\tr.M%d = a%d;", j, j))
+		}
+	}
+	lines = append(lines, "\treturn r;", "}", "")
+	return lines
 }
 
 func (w *pipeWriter) registerStructs(t shaderir.Type) {
@@ -258,7 +484,7 @@ func (w *pipeWriter) emitHelper(f shaderir.Func) []string {
 		ret = w.typeStr(f.Return)
 	}
 	lines := []string{fmt.Sprintf("%s F%d(%s) {", ret, f.Index, strings.Join(params, ", "))}
-	lines = append(lines, w.emitBlock(f.Block, f.Block, 1, "helper")...)
+	lines = append(lines, w.emitBlock(f.Block, f.Block, 1, "helper", &f)...)
 	lines = append(lines, "}", "")
 	return lines
 }
@@ -302,7 +528,7 @@ func (w *pipeWriter) emitVertex(entry string) []string {
 	}
 	lines = append(lines, fmt.Sprintf("vertex StageOut %s(%s) {", entry, strings.Join(params, ", ")))
 	lines = append(lines, "\tStageOut __out = {};")
-	lines = append(lines, w.emitBlock(w.p.VertexFunc.Block, w.p.VertexFunc.Block, 1, "vertex")...)
+	lines = append(lines, w.emitBlock(w.p.VertexFunc.Block, w.p.VertexFunc.Block, 1, "vertex", nil)...)
 	lines = append(lines, "\treturn __out;", "}", "")
 	return lines
 }
@@ -341,12 +567,12 @@ func (w *pipeWriter) emitFragment(entry string) []string {
 		lines = append(lines, "};", "")
 		lines = append(lines, fmt.Sprintf("fragment FragOut %s(%s) {", entry, strings.Join(params, ", ")))
 		lines = append(lines, "\tFragOut __fout = {};")
-		lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, w.p.FragmentFunc.Block, 1, "fragment")...)
+		lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, w.p.FragmentFunc.Block, 1, "fragment", nil)...)
 		lines = append(lines, "\treturn __fout;", "}", "")
 		return lines
 	}
 	lines = append(lines, fmt.Sprintf("fragment float4 %s(%s) {", entry, strings.Join(params, ", ")))
-	lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, w.p.FragmentFunc.Block, 1, "fragment")...)
+	lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, w.p.FragmentFunc.Block, 1, "fragment", nil)...)
 	lines = append(lines, "}", "")
 	return lines
 }
@@ -364,7 +590,7 @@ func (w *pipeWriter) emitCompute(entry string) []string {
 	}
 	var lines []string
 	lines = append(lines, fmt.Sprintf("kernel void %s(%s) {", entry, strings.Join(params, ", ")))
-	lines = append(lines, w.emitBlock(w.p.ComputeFunc.Block, w.p.ComputeFunc.Block, 1, "compute")...)
+	lines = append(lines, w.emitBlock(w.p.ComputeFunc.Block, w.p.ComputeFunc.Block, 1, "compute", nil)...)
 	lines = append(lines, "}", "")
 	return lines
 }
@@ -397,10 +623,141 @@ func (w *pipeWriter) localName(stage string, idx int) string {
 	return fmt.Sprintf("l%d", idx)
 }
 
-func (w *pipeWriter) emitBlock(top, b *shaderir.Block, level int, stage string) []string {
+type blockEnv struct {
+	w     *pipeWriter
+	top   *shaderir.Block
+	b     *shaderir.Block
+	stage string
+	fn    *shaderir.Func
+}
+
+func (e *blockEnv) LocalType(idx int) shaderir.Type {
+	p := e.w.p
+	switch e.stage {
+	case "vertex":
+		na := len(p.Attributes)
+		nv := len(p.Varyings)
+		switch {
+		case idx < na:
+			return p.Attributes[idx]
+		case idx == na:
+			return shaderir.Type{Main: shaderir.Vec4}
+		case idx < na+nv+1:
+			return p.Varyings[idx-na-1]
+		}
+	case "fragment":
+		nv := len(p.Varyings)
+		no := len(p.FragmentOutputs)
+		switch {
+		case idx == 0:
+			return shaderir.Type{Main: shaderir.Vec4}
+		case idx < nv+1:
+			return p.Varyings[idx-1]
+		case idx < nv+1+no:
+			return p.FragmentOutputs[idx-nv-1]
+		}
+	case "helper":
+		if e.fn != nil {
+			ni := len(e.fn.InParams)
+			no := len(e.fn.OutParams)
+			if idx < ni {
+				return e.fn.InParams[idx]
+			}
+			if idx < ni+no {
+				return e.fn.OutParams[idx-ni]
+			}
+		}
+	}
+	if t, ok := findBlockLocalType(e.top, e.b, idx); ok {
+		return t
+	}
+	return shaderir.Type{}
+}
+
+func findBlockLocalType(cur, target *shaderir.Block, idx int) (shaderir.Type, bool) {
+	if cur == nil || !blockContains(cur, target) {
+		return shaderir.Type{}, false
+	}
+	if rel := idx - cur.LocalVarIndexOffset; rel >= 0 && rel < len(cur.LocalVars) {
+		return cur.LocalVars[rel], true
+	}
+	if cur == target {
+		return shaderir.Type{}, false
+	}
+	for _, s := range cur.Stmts {
+		for _, child := range s.Blocks {
+			if t, ok := findBlockLocalType(child, target, idx); ok {
+				return t, true
+			}
+		}
+	}
+	return shaderir.Type{}, false
+}
+
+func blockContains(cur, target *shaderir.Block) bool {
+	if cur == target {
+		return true
+	}
+	for _, s := range cur.Stmts {
+		for _, child := range s.Blocks {
+			if blockContains(child, target) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (e *blockEnv) UniformType(idx int) shaderir.Type {
+	if idx >= 0 && idx < len(e.w.p.Uniforms) {
+		return e.w.p.Uniforms[idx]
+	}
+	return shaderir.Type{}
+}
+
+func (e *blockEnv) PrivateType(idx int) shaderir.Type {
+	if idx >= 0 && idx < len(e.w.p.Privates) {
+		return e.w.p.Privates[idx]
+	}
+	return shaderir.Type{}
+}
+
+func (e *blockEnv) FuncReturn(idx int) shaderir.Type {
+	for _, f := range e.w.p.Funcs {
+		if f.Index == idx {
+			return f.Return
+		}
+	}
+	return shaderir.Type{}
+}
+
+func (e *blockEnv) BindingType(idx int) shaderir.Type {
+	if idx >= 0 && idx < len(e.w.p.Bindings) {
+		return e.w.p.Bindings[idx].Type
+	}
+	return shaderir.Type{}
+}
+
+func (w *pipeWriter) packedVec3Field(e shaderir.Expr, env *blockEnv) (packed, unpacked string, ok bool) {
+	if e.Type != shaderir.FieldSelector || len(e.Exprs) < 2 || e.Exprs[1].Type != shaderir.StructMember {
+		return "", "", false
+	}
+	baseType := shaderir.TypeOf(&e.Exprs[0], env)
+	if !w.isBufferStruct(baseType) {
+		return "", "", false
+	}
+	idx := e.Exprs[1].Index
+	if idx < 0 || idx >= len(baseType.Sub) {
+		return "", "", false
+	}
+	return packedVec3TypeName(baseType.Sub[idx].Main)
+}
+
+func (w *pipeWriter) emitBlock(top, b *shaderir.Block, level int, stage string, fn *shaderir.Func) []string {
 	if b == nil {
 		return nil
 	}
+	env := &blockEnv{w: w, top: top, b: b, stage: stage, fn: fn}
 	indent := strings.Repeat("\t", level)
 	var lines []string
 	for i, lt := range b.LocalVars {
@@ -411,29 +768,34 @@ func (w *pipeWriter) emitBlock(top, b *shaderir.Block, level int, stage string) 
 	for _, s := range b.Stmts {
 		switch s.Type {
 		case shaderir.ExprStmt:
-			lines = append(lines, fmt.Sprintf("%s%s;", indent, w.emitExpr(s.Exprs[0], stage)))
+			lines = append(lines, fmt.Sprintf("%s%s;", indent, w.emitExpr(s.Exprs[0], env)))
 		case shaderir.BlockStmt:
 			lines = append(lines, indent+"{")
-			lines = append(lines, w.emitBlock(top, s.Blocks[0], level+1, stage)...)
+			lines = append(lines, w.emitBlock(top, s.Blocks[0], level+1, stage, fn)...)
 			lines = append(lines, indent+"}")
 		case shaderir.Assign:
-			lines = append(lines, fmt.Sprintf("%s%s = %s;", indent, w.emitExpr(s.Exprs[0], stage), w.emitExpr(s.Exprs[1], stage)))
+			lhs := w.emitLValue(s.Exprs[0], env)
+			rhs := w.emitExpr(s.Exprs[1], env)
+			if packed, _, ok := w.packedVec3Field(s.Exprs[0], env); ok {
+				rhs = fmt.Sprintf("%s(%s)", packed, rhs)
+			}
+			lines = append(lines, fmt.Sprintf("%s%s = %s;", indent, lhs, rhs))
 		case shaderir.Init:
 			lines = append(lines, fmt.Sprintf("%s%s = {};", indent, w.localName(stage, s.InitIndex)))
 		case shaderir.If:
-			lines = append(lines, fmt.Sprintf("%sif (%s) {", indent, w.emitExpr(s.Exprs[0], stage)))
-			lines = append(lines, w.emitBlock(top, s.Blocks[0], level+1, stage)...)
+			lines = append(lines, fmt.Sprintf("%sif (%s) {", indent, w.emitExpr(s.Exprs[0], env)))
+			lines = append(lines, w.emitBlock(top, s.Blocks[0], level+1, stage, fn)...)
 			if len(s.Blocks) > 1 {
 				lines = append(lines, indent+"} else {")
-				lines = append(lines, w.emitBlock(top, s.Blocks[1], level+1, stage)...)
+				lines = append(lines, w.emitBlock(top, s.Blocks[1], level+1, stage, fn)...)
 			}
 			lines = append(lines, indent+"}")
 		case shaderir.For:
 			v := w.localName(stage, s.ForVarIndex)
 			var initStr, endStr string
 			if len(s.Exprs) >= 2 {
-				initStr = w.emitExpr(s.Exprs[0], stage)
-				endStr = w.emitExpr(s.Exprs[1], stage)
+				initStr = w.emitExpr(s.Exprs[0], env)
+				endStr = w.emitExpr(s.Exprs[1], env)
 			} else {
 				initStr = constLit(s.ForInit, s.ForVarType.Main == shaderir.Uint)
 				endStr = constLit(s.ForEnd, s.ForVarType.Main == shaderir.Uint)
@@ -441,7 +803,7 @@ func (w *pipeWriter) emitBlock(top, b *shaderir.Block, level int, stage string) 
 			deltaStr := constLit(s.ForDelta, s.ForVarType.Main == shaderir.Uint)
 			lines = append(lines, fmt.Sprintf("%sfor (%s = %s; %s %s %s; %s += %s) {",
 				indent, w.declVar(s.ForVarType, v), initStr, v, opString(s.ForOp), endStr, v, deltaStr))
-			lines = append(lines, w.emitBlock(top, s.Blocks[0], level+1, stage)...)
+			lines = append(lines, w.emitBlock(top, s.Blocks[0], level+1, stage, fn)...)
 			lines = append(lines, indent+"}")
 		case shaderir.Continue:
 			lines = append(lines, indent+"continue;")
@@ -455,7 +817,7 @@ func (w *pipeWriter) emitBlock(top, b *shaderir.Block, level int, stage string) 
 			} else if len(s.Exprs) == 0 {
 				lines = append(lines, indent+"return;")
 			} else {
-				lines = append(lines, fmt.Sprintf("%sreturn %s;", indent, w.emitExpr(s.Exprs[0], stage)))
+				lines = append(lines, fmt.Sprintf("%sreturn %s;", indent, w.emitExpr(s.Exprs[0], env)))
 			}
 		case shaderir.Discard:
 			lines = append(lines, indent+"discard_fragment();")
@@ -464,12 +826,28 @@ func (w *pipeWriter) emitBlock(top, b *shaderir.Block, level int, stage string) 
 	return lines
 }
 
-func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
+func (w *pipeWriter) emitLValue(e shaderir.Expr, env *blockEnv) string {
+	switch e.Type {
+	case shaderir.FieldSelector:
+		base := w.emitLValue(e.Exprs[0], env)
+		switch m := e.Exprs[1]; m.Type {
+		case shaderir.SwizzlingExpr:
+			return fmt.Sprintf("(%s).%s", base, m.Swizzling)
+		case shaderir.StructMember:
+			return fmt.Sprintf("(%s).M%d", base, m.Index)
+		}
+	case shaderir.Index:
+		return fmt.Sprintf("(%s)[%s]", w.emitLValue(e.Exprs[0], env), w.emitExpr(e.Exprs[1], env))
+	}
+	return w.emitExpr(e, env)
+}
+
+func (w *pipeWriter) emitExpr(e shaderir.Expr, env *blockEnv) string {
 	switch e.Type {
 	case shaderir.NumberExpr:
 		return constLit(e.Const, e.Unsigned)
 	case shaderir.LocalVariable:
-		return w.localName(stage, e.Index)
+		return w.localName(env.stage, e.Index)
 	case shaderir.BindingVariable:
 		return fmt.Sprintf("B%d", e.Index)
 	case shaderir.BuiltinInput:
@@ -495,32 +873,43 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 		}
 	case shaderir.StructConstruct:
 		name := w.typeStr(*e.StructType)
+		if len(e.Exprs) == 0 {
+			return fmt.Sprintf("%s{}", name)
+		}
 		args := make([]string, len(e.Exprs))
 		for i, a := range e.Exprs {
-			args[i] = w.emitExpr(a, stage)
+			args[i] = w.emitExpr(a, env)
+		}
+		if w.isBufferStruct(*e.StructType) {
+			w.needStructCtor[name] = true
+			return fmt.Sprintf("__make_%s(%s)", name, strings.Join(args, ", "))
 		}
 		return fmt.Sprintf("%s{%s}", name, strings.Join(args, ", "))
 	case shaderir.Unary:
-		return fmt.Sprintf("(%s%s)", opString(e.Op), w.emitExpr(e.Exprs[0], stage))
+		return fmt.Sprintf("(%s%s)", opString(e.Op), w.emitExpr(e.Exprs[0], env))
 	case shaderir.Binary:
-		return fmt.Sprintf("(%s %s %s)", w.emitExpr(e.Exprs[0], stage), opString(e.Op), w.emitExpr(e.Exprs[1], stage))
+		return fmt.Sprintf("(%s %s %s)", w.emitExpr(e.Exprs[0], env), opString(e.Op), w.emitExpr(e.Exprs[1], env))
 	case shaderir.Selection:
-		return fmt.Sprintf("((%s) ? (%s) : (%s))", w.emitExpr(e.Exprs[0], stage), w.emitExpr(e.Exprs[1], stage), w.emitExpr(e.Exprs[2], stage))
+		return fmt.Sprintf("((%s) ? (%s) : (%s))", w.emitExpr(e.Exprs[0], env), w.emitExpr(e.Exprs[1], env), w.emitExpr(e.Exprs[2], env))
 	case shaderir.FieldSelector:
-		base := w.emitExpr(e.Exprs[0], stage)
+		base := w.emitExpr(e.Exprs[0], env)
 		switch m := e.Exprs[1]; m.Type {
 		case shaderir.SwizzlingExpr:
 			return fmt.Sprintf("(%s).%s", base, m.Swizzling)
 		case shaderir.StructMember:
-			return fmt.Sprintf("(%s).M%d", base, m.Index)
+			sel := fmt.Sprintf("(%s).M%d", base, m.Index)
+			if _, unpacked, ok := w.packedVec3Field(e, env); ok {
+				return fmt.Sprintf("%s(%s)", unpacked, sel)
+			}
+			return sel
 		}
 	case shaderir.Index:
-		return fmt.Sprintf("(%s)[%s]", w.emitExpr(e.Exprs[0], stage), w.emitExpr(e.Exprs[1], stage))
+		return fmt.Sprintf("(%s)[%s]", w.emitExpr(e.Exprs[0], env), w.emitExpr(e.Exprs[1], env))
 	case shaderir.Call:
 		callee := e.Exprs[0]
 		args := make([]string, len(e.Exprs)-1)
 		for i, a := range e.Exprs[1:] {
-			args[i] = w.emitExpr(a, stage)
+			args[i] = w.emitExpr(a, env)
 		}
 		if callee.Type == shaderir.FunctionExpr {
 			_, bArgs := w.helperBindingParams()

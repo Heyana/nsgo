@@ -3,8 +3,11 @@
 package apple
 
 import (
+	"context"
 	"encoding/binary"
 	"math"
+	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -212,5 +215,207 @@ func TestMetalGPUFrames(t *testing.T) {
 		if !near(left, 100, 0, 0, 255) || !near(right, 0, 200, 0, 255) {
 			t.Errorf("target %d: pixels %v and %v, want [100 0 0 255] and [0 200 0 255]", i, left, right)
 		}
+	}
+}
+
+const gpuVec3LayoutWGSL = `
+struct Packet {
+	d: vec3<f32>,
+	s: f32,
+}
+
+struct IntPacket {
+	iv: vec3<i32>,
+	is: i32,
+	uv: vec3<u32>,
+	us: u32,
+}
+
+struct Outer {
+	lead: f32,
+	p: Packet,
+	arr: array<vec3<f32>, 2>,
+	tail: vec3<f32>,
+}
+
+@group(0) @binding(0) var<uniform> u: Outer;
+@group(0) @binding(1) var<storage, read> items: array<Packet>;
+@group(0) @binding(2) var<uniform> ip: IntPacket;
+
+fn combine(a: Packet, b: Packet) -> Packet {
+	var local = a;
+	local.d.x += b.d.x;
+	return Packet(local.d, a.s + b.s);
+}
+
+@vertex
+fn vs_main(@location(0) pos: vec2<f32>) -> @builtin(position) vec4<f32> {
+	return vec4<f32>(pos, 0.5, 1.0);
+}
+
+@fragment
+fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+	let c = combine(u.p, items[1u]);
+	if (pos.x < 4.0) {
+		return vec4<f32>(c.d.x, c.d.y, c.s, 1.0);
+	}
+	let iScale = f32(ip.iv.z + ip.is) / 10.0;
+	let uScale = f32(ip.uv.x + ip.us) / 10.0;
+	return vec4<f32>(u.lead + u.arr[1].x, iScale + u.arr[1].y * 0.0, uScale + u.tail.z * 0.5, 1.0);
+}
+`
+
+// TestMetalVec3PackedStructLayout verifies that Metal reads {vec3<f32>, f32},
+// {vec3<i32>, i32}, and {vec3<u32>, u32} uniform and storage buffer members,
+// nested structs, array<vec3<f32>, 2>, trailing vec3 padding, and helper
+// struct construction at exact WGSL offsets under Metal's API validation.
+func TestMetalVec3PackedStructLayout(t *testing.T) {
+	if os.Getenv("MTL_DEBUG_LAYER") != "1" {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+		cmd.Env = append(os.Environ(), "MTL_DEBUG_LAYER=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		return
+	}
+	prog, err := wgsl.CompilePipeline(gpuVec3LayoutWGSL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan *driver.GPUEvent, 16)
+	var layer *GPULayer
+	withPool(func() {
+		layer = NewGPULayer(driver.GPUViewConfig{SampleCount: 1}, func(ev *driver.GPUEvent) { events <- ev })
+		if layer != nil {
+			layer.Resize(8, 4, 1)
+		}
+	})
+	if layer == nil {
+		t.Skip("Metal unavailable")
+	}
+	t.Cleanup(func() { withPool(layer.Release) })
+	next := func() *driver.GPUEvent {
+		t.Helper()
+		select {
+		case ev := <-events:
+			if ev.Kind == driver.GPUEventError {
+				t.Fatalf("GPU error %d: %s", ev.ErrorCode, ev.Message)
+			}
+			return ev
+		case <-time.After(15 * time.Second):
+			t.Fatal("no GPU event")
+			return nil
+		}
+	}
+	ready := next()
+	gen := ready.Generation
+
+	const (
+		vb driver.GPUID = iota + 1
+		ub
+		sb
+		ib
+		layout
+		group
+		pipe
+		target
+	)
+	quad := gpuFloats(-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1)
+	// Outer WGSL layout (80 bytes):
+	//   0..4:   lead = 0.2
+	//   4..16:  pad
+	//   16..32: p = Packet{ d: (0.2, 0.4, 0.0), s: 0.4 }
+	//   32..64: arr = [vec3(0,0,0), vec3(0.4, 0.6, 0)]
+	//   64..80: tail = vec3(0, 0, 0.8) + 4 pad bytes
+	uData := gpuFloats(
+		0.2, 0, 0, 0,
+		0.2, 0.4, 0.0, 0.4,
+		0.0, 0.0, 0.0, 0.0,
+		0.4, 0.6, 0.0, 0.0,
+		0.0, 0.0, 0.8, 0.0,
+	)
+	sData := gpuFloats(
+		0.9, 0.9, 0.9, 0.9,
+		0.2, 0.0, 0.0, 0.4,
+	)
+	// IntPacket WGSL layout (32 bytes):
+	//   0..12:  iv = (1, 2, 2)
+	//   12..16: is = 4       -> (2 + 4) / 10 = 0.6
+	//   16..28: uv = (1, 2, 3)
+	//   28..32: us = 3       -> (1 + 3) / 10 = 0.4; + 0.8*0.5 = 0.8
+	var iData []byte
+	for _, v := range []uint32{1, 2, 2, 4, 1, 2, 3, 3} {
+		iData = binary.LittleEndian.AppendUint32(iData, v)
+	}
+	rgba := driver.GPUFormatRGBA8Unorm
+	layer.Submit(driver.GPUFrame{Generation: gen, Ops: []driver.GPUResourceOp{
+		{Kind: driver.GPUOpCreateBuffer, ID: vb, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferVertex, Data: quad}},
+		{Kind: driver.GPUOpCreateBuffer, ID: ub, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferUniform, Data: uData}},
+		{Kind: driver.GPUOpCreateBuffer, ID: sb, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferStorage, Data: sData}},
+		{Kind: driver.GPUOpCreateBuffer, ID: ib, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferUniform, Data: iData}},
+		{Kind: driver.GPUOpCreateBindGroupLayout, ID: layout, BindGroupLayout: &driver.GPUBindGroupLayoutDesc{Entries: []driver.GPUBindGroupLayoutEntry{
+			{Binding: 0, Visibility: driver.GPUStageFragment, Type: driver.GPUBindingUniform},
+			{Binding: 1, Visibility: driver.GPUStageFragment, Type: driver.GPUBindingStorageRead},
+			{Binding: 2, Visibility: driver.GPUStageFragment, Type: driver.GPUBindingUniform},
+		}}},
+		{Kind: driver.GPUOpCreateBindGroup, ID: group, BindGroup: &driver.GPUBindGroupDesc{Layout: layout, Entries: []driver.GPUBindGroupEntry{
+			{Binding: 0, Buffer: ub}, {Binding: 1, Buffer: sb}, {Binding: 2, Buffer: ib},
+		}}},
+		{Kind: driver.GPUOpCreatePipeline, ID: pipe, Pipeline: &driver.GPUPipelineDesc{
+			Label:    "vec3-layout",
+			Vertex:   driver.GPUShaderStage{IR: prog.IR, EntryPoint: "vs_main"},
+			Fragment: driver.GPUShaderStage{IR: prog.IR, EntryPoint: "fs_main"},
+			Layouts:  []driver.GPUID{layout},
+			VertexBuffers: []driver.GPUVertexBufferLayout{{
+				Stride: 8, Attributes: []driver.GPUVertexAttribute{{Format: driver.GPUVertexFloat32x2}},
+			}},
+			Targets:     []driver.GPUColorTargetState{{Format: rgba, WriteMask: driver.GPUColorWriteAll}},
+			SampleCount: 1,
+		}},
+		{Kind: driver.GPUOpCreateTexture, ID: target, Texture: &driver.GPUTextureDesc{
+			Width: 8, Height: 4, Layers: 1, MipLevels: 1, Format: rgba, Usage: driver.GPUTextureRenderAttachment | driver.GPUTextureCopySrc,
+		}},
+	}, Passes: []driver.GPUPass{{
+		ColorAttachments: []driver.GPUColorAttachment{{Texture: target, LoadOp: driver.GPULoadClear, StoreOp: driver.GPUStoreStore}},
+		Commands: []driver.GPUCommand{
+			{Kind: driver.GPUCmdSetBindGroup, Slot: 0, ID: group},
+			{Kind: driver.GPUCmdSetPipeline, ID: pipe},
+			{Kind: driver.GPUCmdSetVertexBuffer, Slot: 0, ID: vb},
+			{Kind: driver.GPUCmdSetViewport, F2: 8, F3: 4, F5: 1},
+			{Kind: driver.GPUCmdDraw, U0: 6},
+		},
+	}}})
+	read := func(id uint64, x uint32) []byte {
+		t.Helper()
+		layer.Submit(driver.GPUFrame{Generation: gen, Ops: []driver.GPUResourceOp{{
+			Kind: driver.GPUOpReadTexture, ReadbackID: id, ID: target,
+			ReadbackRegion: driver.GPUTextureRegion{X: x, Y: 2, Width: 1, Height: 1},
+		}}})
+		ev := next()
+		if ev.Kind != driver.GPUEventReadback || ev.ReadbackID != id || ev.Message != "" {
+			t.Fatalf("readback %d = %+v", id, ev)
+		}
+		return ev.Pixels
+	}
+	near := func(got []byte, want ...byte) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range want {
+			if d := int(got[i]) - int(want[i]); d < -1 || d > 1 {
+				return false
+			}
+		}
+		return true
+	}
+	// Left pixel: c = (0.2+0.2=0.4, 0.4, 0.4+0.4=0.8, 1.0) -> ~(102, 102, 204, 255)
+	if left := read(1, 1); !near(left, 102, 102, 204, 255) {
+		t.Errorf("left pixel = %v, want ~[102 102 204 255]", left)
+	}
+	// Right pixel: (0.2+0.4=0.6, 0.6, 0.4+0.4=0.8, 1.0) -> ~(153, 153, 204, 255)
+	if right := read(2, 6); !near(right, 153, 153, 204, 255) {
+		t.Errorf("right pixel = %v, want ~[153 153 204 255]", right)
 	}
 }
