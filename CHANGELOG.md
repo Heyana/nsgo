@@ -2,10 +2,37 @@
 
 ## [Unreleased]
 
-## [0.3.2] - 2026-11-25
+## [0.3.3] - 2026-11-25
 
-v0.3.1 was tagged but not released: its committed Android runtime was not built from its Java. 0.3.2 is 0.3.1 with the runtime rebuilt (#2376).
+v0.3.1 and v0.3.2 were tagged but not released: v0.3.1's committed Android runtime was not built from its Java (#2376), and v0.3.2 failed the Apple simulator tests that pull requests skip (#2381, #2386 to #2389). The Go module proxy serves both tags, so 0.3.3 is the first release since 0.3.0 and holds their changes. Releases now run every test before they tag (#2382).
 
+- `nsgo test -json`, which writes `go test`'s event stream to stdout for tools such as `benchstat`.
+- `Encoder.Device`, `RenderPass.Device` and `ComputePass.Device`, so a rendering helper that takes only an encoder can notice a device restore and rebuild its cached resources (#2345 by @Laotree).
+- The `targets` package, which lists the build targets `nsgo build` accepts and expands `all`, `tui`, `miniprogram` and a bare OS name as the tool does, so a tool that writes or checks an app's `build.targets` shares the tool's own table (#2259 by @Laotree).
+- `nsgotest.App.FrameAt`, which runs the display frame the app waits for stamped with a given time without moving the clock, so a test can cover the displays that stamp a frame with when it shows (#2256 by @Laotree).
+- Record `desktop.SetFullScreen` as `nsgotest.WindowSetFullScreen`, with `On` and the `DisplayID` it names, instead of a request with an empty action (#2258 by @Laotree).
+- Report display HDR capabilities (`HDR`, `HDRSupported`, `HDRHeadroom`, `SDRWhiteLevel`, `MaxLuminance`) in `core.DisplayInfo` and support HDR swapchain output (`ColorSpace`, `FormatRGB10A2Unorm`, `Device.SurfaceColorSpace`) on macOS, Windows, and Linux (#2358 by @oneo-me).
+- `BindGroupLayoutDesc.Retained`, so a bind group layout opts into recreation after device loss on its own, as the other resources do, instead of only through `ViewProps.RetainResources` (#2338 by @Laotree).
+- `core.ResolveImage` and `core.PickImageScale`, which name the file an `ImageSource` with `Scales` or `Variants` mounts at a pixel ratio, the rule core itself applies (#2272 by @Laotree).
+- Let TSX sandbox hosts deny access to NSGo storage (#2299 by @J4ck1e2000).
+- `nsgotest.App.GameServicesScoreQueries`, which lists each `LoadScores` call with its player scope, time scope and limit, so a test can check that a time scope reaches the platform (#2250 by @Laotree).
+- `nsgotest.Shader.Images`, so a test can see which images, and which copy of a pixel buffer, reached a shader view, and `core.ShaderProgram.UniformLanes`, which names a uniform's lanes in `Shader.Lanes` without depending on declaration order (#2251 by @Laotree).
+- `nsgotest.StatusBarConfig.Immersive`, so a test can see that `mobile.Immersive`, a screen's or a modal's `StatusBar` asked for immersive full screen (#2255 by @Laotree).
+- Run remote `base/terminal` sessions in Android arm64 apps with a cgo-free bionic loader and packaged Ghostty library (#1452 by @houko).
+- Report every repetition of a benchmark under `-count`, and every repetition in the JUnit report, instead of only the first (#2273 by @Laotree).
+- Release physical keys with their original name and code when `nsgotest.App.BlurWindow` simulates focus loss (#2248 by @J4ck1e2000).
+- Release a key held with `KeyCodeDown` by its name and code when `nsgotest`'s `BlurWindow` takes the focus away, so `core.KeyCodesDown` empties and the focused view's `OnKeyUp` hears it (#2248 by @Laotree).
+- Skip targets with no matching Go packages in `nsgo check -target` (#2267 by @J4ck1e2000).
+- Limit headless fuzz testing to the named package (#2268 by @J4ck1e2000).
+- Give a module template's app a module path of its own when its name matches a standard library package, such as `time`, and refuse a `-module` value that names one, instead of generating an app that Go cannot build (#2270 by @Laotree).
+- Report both clicks of a double tap on iPadOS 26, whose double-tap interaction on every window cancelled the second tap's touches (#2387 by @houko).
+- Let `ui.NumberInput` accept and display typed values independently of the increment size (#2263 by @J4ck1e2000).
+- Refuse a pipeline at `RenderPass.SetPipeline` whose colour targets or depth format do not fit the pass's attachments, skipping its draws instead of recording draws a strict backend rejects (#2341 by @Laotree).
+- Dereference a closed `BindGroup` or `BindGroupLayout` from its device's restore lists at once, so a frame that creates and closes them no longer grows the device's memory for its lifetime (#2346 by @Laotree).
+- Compare as WGSL and the GPU backends do on the software device: a NaN is ordered by nothing, equal to nothing and unequal to itself, and `==` / `!=` on bools compare their values (#2335 by @Laotree).
+- Evaluate the shader math builtins — exponentials, logarithms, the inverse trigonometry, the hyperbolics, `sign`, `trunc`, `round`, `mod`, `distance`, `faceForward`, `refract`, `transpose`, `determinant`, the matrix constructors and the bit casts — on the software GPU device, and refuse a pipeline that calls a builtin it does not implement instead of drawing zeros (#2334 by @Laotree).
+- Skip a draw whose vertex buffer slot or index buffer a rejected bind left without a usable buffer, instead of drawing with the buffers bound before it (#2253 by @Laotree).
+- Keep the indentation a failing `Example`'s `got:` and `want:` carry in `nsgo test`'s output, which previously lost four spaces from every line (#2262 by @Laotree).
 - Run an unknown command `nsgo X` as an extension: the module's `go.mod` tool `X` through `go tool`, else `nsgo-X` on `PATH`, with its arguments, streams and exit status, and list the extensions found in the usage (#2366 by @houko).
 - Add `nsgo game`, which runs the game layer's command, the module's tool or else `go run` of its release, with `NSGO_GAME_VERSION` to choose another (#2366 by @houko).
 - Run the module's pinned `go tool nsgo` in place of an `nsgo` of another version, with `NSGO_NO_DELEGATE=1` to opt out, and add `nsgo version`, which says which one ran (#2366 by @houko).
