@@ -4,7 +4,7 @@ import "testing"
 
 // A frame that creates and closes bind groups must not grow the device for its lifetime: a closed group and its layout leave the lists a restore walks.
 func TestClosedBindGroupsLeaveTheRestoreLists(t *testing.T) {
-	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, ColorSpaceDefault, 2, Limits{}, Features{}, nil)
 	layouts, groups := len(d.retainedLayouts), len(d.retainedBindGroups)
 	for range 16 {
 		l, err := d.CreateBindGroupLayout(nil, nil)
@@ -32,7 +32,7 @@ func TestClosedBindGroupsLeaveTheRestoreLists(t *testing.T) {
 
 // A restore rebuilds every open bind group and layout and none that a close removed.
 func TestRestoreKeepsOnlyOpenBindGroups(t *testing.T) {
-	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, ColorSpaceDefault, 2, Limits{}, Features{}, nil)
 	d.retainResources = true
 	openLayout, err := d.CreateBindGroupLayout(nil, nil)
 	if err != nil {
@@ -57,7 +57,7 @@ func TestRestoreKeepsOnlyOpenBindGroups(t *testing.T) {
 		t.Fatalf("BindGroupLayout.Close = %v", err)
 	}
 
-	restored := newDevice(nil, nil, 2, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	restored := newDevice(nil, nil, 2, 64, 64, FormatRGBA8Unorm, ColorSpaceDefault, 2, Limits{}, Features{}, nil)
 	restored.retainResources = true
 	restored.restoreRetainedFrom(d)
 
