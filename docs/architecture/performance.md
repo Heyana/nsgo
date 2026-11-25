@@ -25,8 +25,8 @@ The panel sits at the top right of the surface (below the safe area on iOS and w
 - `TICK` is the gaps between refreshes and the 95th-percentile gap between shown frames.
 - `MAIN` is main-thread time per frame, its 95th percentile, and `drop`, the share of frames that took longer than one refresh.
 - `APP` and `CORE` are the app's and the core's time per commit, commits per second and mount items per commit.
-- `HOP` is how long batches waited between the threads, and how busy the engine goroutine was.
-- `CPU` is percent of one core, `GPU` this process' share (macOS only), `MEM` its physical footprint (Apple), working set (Windows) or resident set (Linux); on the web, all three stay `-`, since `js/wasm` cannot read them.
+- `HOP` is how long batches waited between the threads, and how busy the engine goroutine was. The web has one thread and applies a batch as the engine hands it over, so its wait reads about 0.
+- `CPU` is percent of one core, `GPU` this process' share (macOS only), `MEM` its physical footprint (Apple), working set (Windows) or resident set (Linux); on the web, all three stay `-`, since its backend does not sample them.
 - On Android, `TEXT` reports the mean and 95th percentile of the last 120 native text request round trips, including queue time.
 - The trace is the last 120 frames' main-thread cost against one refresh (the line): green within half of it, amber within it, red over.
 
@@ -42,7 +42,7 @@ A backend calls `RecordWork` around its main-thread work, `Vsync` from its frame
 | Windows | Each `DwmFlush`, at DWM's composition rate (`DwmGetCompositionTimingInfo`) | Batches, ticks and drawing a frame, less `Present`, which waits for the display |
 | Linux | A tick callback of the surface's frame clock, at its refresh interval | Batches, ticks, and each frame from the clock's `layout` signal to `after-paint` |
 | Android | The primary view's Choreographer callback, while its window is visible | Batch application and animation steps, reported to the Go process |
-| Web | Each `requestAnimationFrame` callback, from its `DOMHighResTimeStamp` | Batches, animations, transitions, scrolls, input and shaders |
+| Web | Each `requestAnimationFrame` callback, from its `DOMHighResTimeStamp`, at the lower quartile of the last 16 gaps between them, so a missed refresh does not halve the rate; a frame only the monitor asked for closes its frame and runs none of the tick's work | Batches, animations, transitions, scrolls, input and shaders |
 
 Apple platforms read memory with `proc_pid_rusage`'s physical footprint; macOS reads GPU time from the `accumulatedGPUTime` of the process' accelerator clients in the IO registry (`internal/platform/apple/perf.go`), through purego.
 
@@ -218,7 +218,7 @@ macOS follows NSH's surface:
 
 Linux and Windows serve the app's frames the same way: `RequestFrame` sets a flag and posts to the main thread only while the clock is stopped, and a scroll reported while the app waits for a frame, from a tick, a batch or the wheel, rides with that frame. A list scrolled a row every frame, as the benchmark's, took two engine passes a frame and now one (`TestAListScrolledEveryFrameWakesTheEngineOnceAFrame` reads the monitor's `Passes`); the second pass had committed nothing.
 
-Android and the web hold a scroll report for the frame the app waits for too: Android from its request until the runtime's `msgFrame`, the web until its animation frame, which the page's scroll events precede. The engine also skips a wake that finds its queue drained, which a push between a wake and the take that drained its message leaves. Under `nsgo test -fps`, which on these targets reads the engine's monitor alone, a list scrolled a row every frame took 120 passes a second at 60 frames in headless Chrome and now 60; on the Android emulator, about 115 passes and 84 commits at 58 frames and now one of each a frame (2026-11-13).
+Android and the web hold a scroll report for the frame the app waits for too: Android from its request until the runtime's `msgFrame`, the web until its animation frame, which the page's scroll events precede. The engine also skips a wake that finds its queue drained, which a push between a wake and the take that drained its message leaves. Under `nsgo test -fps`, which on both targets then read the engine's monitor alone, as it still does on Android, a list scrolled a row every frame took 120 passes a second at 60 frames in headless Chrome and now 60; on the Android emulator, about 115 passes and 84 commits at 58 frames and now one of each a frame (2026-11-13).
 
 Every tick on macOS, iOS and watchOS passes the main goroutine through Go's scheduler (`apple.YieldFrame`). That goroutine lives in the platform's callbacks and never yields by itself, so Go's monitor thread, finding it on one P for 10 ms, takes the P and polls every 20 µs for a while: about 3,000 wakeups a second while an app animates. A yield a tick is enough for frames up to 9 ms apart; between slower ones, a 60 Hz display's or a slowed animation's, a timer yields every 8 ms and ends 100 ms after the last slow frame. On macOS the wakeups fall to about 400 a second, and a list scrolled every frame costs 6% fewer instructions at 120 frames a second and 9% at 60 (2026-11-13); iOS and watchOS are not measured.
 
