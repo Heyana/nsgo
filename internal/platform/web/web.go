@@ -57,9 +57,6 @@ type Options struct {
 
 const fontFamily = `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
 
-// monospaceFamily is the CSS of core.FontMonospace.
-const monospaceFamily = `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
-
 // cssFamily returns the CSS font-family of a family name.
 func cssFamily(family string) string {
 	switch family {
@@ -220,7 +217,9 @@ type surface struct {
 	frame         js.Func // the animation frame callback
 	frameID       js.Value
 	ticking       bool
-	closed        bool
+	// perfOnly is set while the pending animation frame is the performance monitor's alone (perfFrame).
+	perfOnly bool
+	closed   bool
 	// frameWanted is set while the app waits for a display frame.
 	frameWanted bool
 	// perf measures the surface when --nsgo-fps or nsgo test -fps asks.

@@ -21,7 +21,12 @@ import (
 
 // startTicking asks for animation frames until nothing animates.
 func (s *surface) startTicking() {
-	if s.ticking || s.closed {
+	if s.closed {
+		return
+	}
+	// Something needs the frame now, so the one pending runs the whole tick even when only the monitor asked for it.
+	s.perfOnly = false
+	if s.ticking {
 		return
 	}
 	s.ticking = true
@@ -44,16 +49,39 @@ func (s *surface) stopTicking() {
 	}
 	s.frameID = js.Undefined()
 	s.ticking = false
+	s.perfOnly = false
+}
+
+// perfFrame asks for the next animation frame for the performance monitor alone, when nothing else wants one: it closes the monitor's frame and does none of the tick's work, so the monitor does not add work to the frames it measures.
+func (s *surface) perfFrame() {
+	if s.ticking || s.closed || s.perf == nil {
+		return
+	}
+	s.startTicking()
+	s.perfOnly = true
 }
 
 func (s *surface) wantsTicking() bool {
-	return !s.closed && (s.perf != nil || s.animator.Running() || len(s.transitions) > 0 || len(s.layoutMotions) > 0 || s.frameWanted || s.geometryAnimating())
+	return !s.closed && (s.perf != nil || s.animating())
+}
+
+// animating reports whether something other than the performance monitor needs the next animation frame.
+func (s *surface) animating() bool {
+	return s.animator.Running() || len(s.transitions) > 0 || len(s.layoutMotions) > 0 || s.frameWanted || s.geometryAnimating()
 }
 
 func (s *surface) tick(stamp time.Duration) {
-	defer s.reportGeometry()
 	s.ticking = false
 	s.frameID = js.Undefined()
+	if s.perfOnly {
+		s.perfOnly = false
+		if !s.closed && s.perf != nil {
+			s.vsync(stamp)
+			s.perfFrame()
+			return
+		}
+	}
+	defer s.reportGeometry()
 	if s.closed {
 		return
 	}
@@ -93,8 +121,10 @@ func (s *surface) tick(stamp time.Duration) {
 		s.perf.RecordWork(time.Since(workStart), dirty)
 		s.vsync(stamp)
 	}
-	if s.wantsTicking() {
+	if s.animating() {
 		s.startTicking()
+	} else {
+		s.perfFrame()
 	}
 }
 

@@ -196,3 +196,40 @@ func TestPerfMonitorInTestModeRecordsFrames(t *testing.T) {
 	}
 	t.Fatal("timed out waiting for test-mode frame clock ticks")
 }
+
+func TestPerfMonitorIdleFramesSkipTheTick(t *testing.T) {
+	doc := js.Global().Get("document")
+	if !doc.Truthy() {
+		t.Skip("no document here: run with nsgo test -target web")
+	}
+	mount := doc.Call("createElement", "div")
+	mount.Set("id", "nsgo-perf-idle")
+	setStyle(mount, map[string]string{"width": "360px", "height": "240px"})
+	doc.Get("body").Call("appendChild", mount)
+	defer mount.Call("remove")
+
+	s := open(func(*core.Scope) core.Node { return core.Text{Content: "Idle"} }, Options{Mount: "#nsgo-perf-idle", Perf: true}, nil)
+	defer s.windowCommand(&driver.WindowCommand{Action: driver.WindowDestroy})
+	defer s.engine.Close()
+
+	// With nothing animating, the monitor's frames only close its frames: the pending one is the monitor's alone.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if snap := s.perf.Snapshot(); s.ticking && s.perfOnly && snap.TickInterval.Mean > 0 {
+			break
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	if !s.ticking || !s.perfOnly {
+		t.Fatalf("idle monitor frame: ticking=%v perfOnly=%v, want both", s.ticking, s.perfOnly)
+	}
+	if s.perf.Snapshot().TickInterval.Mean <= 0 {
+		t.Fatal("idle monitor frames recorded no refresh gaps")
+	}
+
+	// A frame the app asks for makes the pending one run the whole tick.
+	s.RequestFrame()
+	if s.perfOnly || !s.ticking {
+		t.Fatalf("after RequestFrame: ticking=%v perfOnly=%v, want ticking and not perfOnly", s.ticking, s.perfOnly)
+	}
+}

@@ -12,30 +12,72 @@ import (
 func TestPerfClockIntervals(t *testing.T) {
 	var clock perfClock
 
-	// Before two frames arrive, fall back to any estimated display rate.
-	if got := clock.next(16*time.Millisecond, 0); got != 0 {
+	// Before a gap is seen, fall back to any estimated display rate.
+	if got := clock.period(16*time.Millisecond, 0); got != 0 {
 		t.Fatalf("first frame without fallback = %v, want 0", got)
 	}
 	clock = perfClock{}
-	if got := clock.next(16*time.Millisecond, 120); got != time.Second/120 {
+	if got := clock.period(16*time.Millisecond, 120); got != time.Second/120 {
 		t.Fatalf("first frame with 120 Hz fallback = %v, want %v", got, time.Second/120)
 	}
 
 	// Consecutive 120 Hz refreshes record the measured cadence.
-	step := time.Duration(8333 * time.Microsecond)
-	if got := clock.next(16*time.Millisecond+step, 60); got != step {
+	step := 8333 * time.Microsecond
+	at := 16*time.Millisecond + step
+	if got := clock.period(at, 60); got != step {
 		t.Fatalf("second frame interval = %v, want %v", got, step)
 	}
 
 	// A pause >= 100 ms (background tab) preserves the last valid period.
-	if got := clock.next(16*time.Millisecond+step+250*time.Millisecond, 60); got != step {
+	at += 250 * time.Millisecond
+	if got := clock.period(at, 60); got != step {
 		t.Fatalf("interval after pause = %v, want preserved %v", got, step)
 	}
 
-	// A subsequent 60 Hz cadence updates the period.
+	// Moving to a 60 Hz display takes over once its gaps fill the window.
 	slow := 16667 * time.Microsecond
-	if got := clock.next(16*time.Millisecond+step+250*time.Millisecond+slow, 120); got != slow {
-		t.Fatalf("updated interval = %v, want %v", got, slow)
+	for range perfWindow {
+		at += slow
+		clock.period(at, 120)
+	}
+	if got := clock.period(at+slow, 120); got != slow {
+		t.Fatalf("interval on a 60 Hz display = %v, want %v", got, slow)
+	}
+}
+
+func TestPerfClockIgnoresMissedFrames(t *testing.T) {
+	var clock perfClock
+	period := 16667 * time.Microsecond
+	at := time.Second
+	clock.period(at, 0)
+	for i := range 40 {
+		gap := period
+		// Every third frame misses a refresh, and a run of three in a row misses two.
+		if i%3 == 2 || (i >= 20 && i < 23) {
+			gap = 2 * period
+		}
+		at += gap
+		if got := clock.period(at, 0); got != period {
+			t.Fatalf("frame %d (gap %v): period = %v, want %v", i, gap, got, period)
+		}
+	}
+
+	// Through the monitor, a missed frame neither halves the refresh rate nor the drop budget.
+	m := engine.NewPerfMonitor()
+	clock = perfClock{}
+	t0 := time.Now()
+	at = time.Second
+	for i := range 60 {
+		gap := period
+		if i%10 == 9 {
+			gap = 2 * period
+		}
+		at += gap
+		m.RecordWork(time.Millisecond, true)
+		m.Vsync(t0.Add(at), clock.period(at, 0))
+		if snap := m.Snapshot(); snap.RefreshRate != nil && (*snap.RefreshRate < 55 || *snap.RefreshRate > 65) {
+			t.Fatalf("frame %d (gap %v): refresh rate = %v, want about 60", i, gap, *snap.RefreshRate)
+		}
 	}
 }
 

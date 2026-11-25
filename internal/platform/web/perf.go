@@ -75,7 +75,7 @@ func (s *surface) startPerf() {
 		})
 		h.timer = g.Call("setInterval", h.tickFn, perfIntervalMs())
 	}
-	s.startTicking()
+	s.perfFrame()
 }
 
 // stopPerf tears down the performance panel, stops its redraw timer, clears the
@@ -129,7 +129,7 @@ func (s *surface) vsync(stamp time.Duration) {
 	}
 	var interval time.Duration
 	if s.hud != nil {
-		interval = s.hud.clock.next(stamp, s.watch.refreshRate)
+		interval = s.hud.clock.period(stamp, s.watch.refreshRate)
 	}
 	s.perf.Vsync(at, interval)
 }

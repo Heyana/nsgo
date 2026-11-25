@@ -1,41 +1,47 @@
 package web
 
 import (
-	"strconv"
+	"slices"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/engine"
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
 )
 
-// perfFontFamily matches web's monospace font stack (core.FontMonospace) without
-// requiring js/wasm so layout helpers can be tested on any host.
-const perfFontFamily = `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+// monospaceFamily is the CSS of core.FontMonospace. It lives here, outside the js/wasm files, so the panel's styles can be tested on any host.
+const monospaceFamily = `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
 
 // perfPauseLimit caps refresh gaps included in the display period estimate:
 // longer gaps reflect background tabs or suspended clocks rather than a slow
 // display.
 const perfPauseLimit = 100 * time.Millisecond
 
-// perfClock tracks display refresh intervals from consecutive
-// requestAnimationFrame timestamps.
+// perfWindow is how many recent refresh gaps perfClock estimates the display's period from.
+const perfWindow = 16
+
+// perfClock estimates the display's refresh period from consecutive requestAnimationFrame timestamps. The native backends pass Vsync their display link's nominal period; the web has none, so the clock takes the lower quartile of the recent gaps: a frame the page missed is a gap of two or more periods, which neither moves the estimate nor, through Vsync's rate, the drop budget, unless most recent frames were missed.
 type perfClock struct {
 	lastStamp time.Duration
-	period    time.Duration
+	gaps      [perfWindow]time.Duration
+	n, next   int
+	sorted    [perfWindow]time.Duration
 }
 
-// next records stamp (on performance.now's clock) and returns the refresh
-// interval to pass to PerfMonitor.Vsync, falling back to fallbackRate (Hz)
-// until two consecutive visible refreshes are observed.
-func (c *perfClock) next(stamp time.Duration, fallbackRate float64) time.Duration {
+// period records stamp (on performance.now's clock) and returns the refresh interval to pass to PerfMonitor.Vsync, falling back to fallbackRate (Hz) until a refresh gap has been observed.
+func (c *perfClock) period(stamp time.Duration, fallbackRate float64) time.Duration {
 	if c.lastStamp > 0 && stamp > c.lastStamp {
 		if gap := stamp - c.lastStamp; gap < perfPauseLimit {
-			c.period = gap
+			c.gaps[c.next] = gap
+			c.next = (c.next + 1) % perfWindow
+			c.n = min(c.n+1, perfWindow)
 		}
 	}
 	c.lastStamp = stamp
-	if c.period > 0 {
-		return c.period
+	if c.n > 0 {
+		sorted := c.sorted[:c.n]
+		copy(sorted, c.gaps[:c.n])
+		slices.Sort(sorted)
+		return sorted[c.n/4]
 	}
 	if fallbackRate > 0 {
 		return time.Duration(float64(time.Second) / fallbackRate)
@@ -91,7 +97,7 @@ func perfPanelStyles(whole bool) map[string]string {
 func perfLabelStyles() map[string]string {
 	return map[string]string{
 		"margin":               "0",
-		"font-family":          perfFontFamily,
+		"font-family":          monospaceFamily,
 		"font-size":            webstyle.Px(engine.PerfFontSize),
 		"line-height":          "1.3",
 		"font-variant-numeric": "tabular-nums",
@@ -142,5 +148,3 @@ func perfPixelRatio(v float64) float64 {
 	}
 	return 1
 }
-
-func perfDataAttr() string { return strconv.Itoa(int(engine.PerfWidth)) }
