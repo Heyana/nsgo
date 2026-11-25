@@ -387,6 +387,21 @@ func webgpuLostReason(reason string) driver.GPUDeviceLostReason {
 	}
 }
 
+// webgpuPipelineBindGroupLayouts maps a pipeline's layout IDs to the bindGroupLayouts sequence for createPipelineLayout, keeping each entry at its @group index. A zero ID (a nil Layouts slot) or an unknown one maps to the empty layout rather than null: older WebGPU implementations predate nullable entries and throw on null, and an empty layout means the same thing.
+func webgpuPipelineBindGroupLayouts[T any](ids []driver.GPUID, lookup func(driver.GPUID) (T, bool), empty func() T) []T {
+	out := make([]T, len(ids))
+	for i, id := range ids {
+		if id != 0 {
+			if l, ok := lookup(id); ok {
+				out[i] = l
+				continue
+			}
+		}
+		out[i] = empty()
+	}
+	return out
+}
+
 func alignUp(v, align uint64) uint64 {
 	if align <= 1 {
 		return v

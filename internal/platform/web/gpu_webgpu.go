@@ -69,6 +69,9 @@ type webgpuBackend struct {
 	bindGroups map[driver.GPUID]*webgpuBindGroup
 	pipelines  map[driver.GPUID]*webgpuPipeline
 
+	// emptyLayout is a zero-entry bind group layout created on first use, standing in for nil PipelineDesc.Layouts slots.
+	emptyLayout js.Value
+
 	devListeners listeners
 	destroyed    bool
 }
@@ -692,18 +695,13 @@ func (b *webgpuBackend) createPipeline(id driver.GPUID, desc driver.GPUPipelineD
 	hasAutoLayout := true
 	if len(desc.Layouts) > 0 {
 		hasAutoLayout = false
-		bgls := make([]any, len(desc.Layouts))
-		for i, lid := range desc.Layouts {
-			if lid == 0 {
-				bgls[i] = js.Null()
-				continue
+		bgls := webgpuPipelineBindGroupLayouts(desc.Layouts, func(lid driver.GPUID) (any, bool) {
+			l, ok := b.layouts[lid]
+			if !ok {
+				return nil, false
 			}
-			if l, ok := b.layouts[lid]; ok {
-				bgls[i] = l.gpuLayout
-			} else {
-				bgls[i] = js.Null()
-			}
-		}
+			return l.gpuLayout, true
+		}, func() any { return b.emptyBindGroupLayout() })
 		pipeLayout = b.device.Call("createPipelineLayout", map[string]any{
 			"bindGroupLayouts": bgls,
 		})
@@ -1150,4 +1148,12 @@ func (b *webgpuBackend) cleanupResources(destroyDevice bool) {
 
 func (b *webgpuBackend) destroy() {
 	b.cleanupResources(true)
+}
+
+// emptyBindGroupLayout returns the device's zero-entry bind group layout, creating it on first use.
+func (b *webgpuBackend) emptyBindGroupLayout() js.Value {
+	if !b.emptyLayout.Truthy() {
+		b.emptyLayout = b.device.Call("createBindGroupLayout", map[string]any{"entries": []any{}})
+	}
+	return b.emptyLayout
 }
