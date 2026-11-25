@@ -1524,6 +1524,39 @@ func (d *Device) CreateBindGroupDesc(cx *core.Scope, desc BindGroupDesc) (*BindG
 	return bg, nil
 }
 
+// checkPipelineLayouts enforces the device's bind group limit and rejects shaders that declare bindings in a group whose layout slot is nil.
+func (d *Device) checkPipelineLayouts(layouts []*BindGroupLayout, stages []ShaderStage, kind string) error {
+	if d.limits.MaxBindGroups > 0 && uint32(len(layouts)) > d.limits.MaxBindGroups {
+		return Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("too many bind group layouts in %s", kind)}
+	}
+	for _, stage := range stages {
+		if stage.Module == nil || stage.Module.ir == nil {
+			continue
+		}
+		for _, b := range stage.Module.ir.Bindings {
+			if int(b.Group) < len(layouts) && layouts[b.Group] == nil {
+				return Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("%s shader declares @group(%d) @binding(%d), but Layouts[%d] is nil", kind, b.Group, b.Binding, b.Group)}
+			}
+		}
+	}
+	return nil
+}
+
+// resolvePipelineLayouts maps layouts to driver IDs, preserving nil slots as 0 while rejecting closed or foreign-device layouts.
+func (d *Device) resolvePipelineLayouts(layouts []*BindGroupLayout, kind string) ([]driver.GPUID, error) {
+	layoutIDs := make([]driver.GPUID, len(layouts))
+	for i, l := range layouts {
+		if l == nil {
+			continue
+		}
+		if !l.Valid() || l.dev != d {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("%s BindGroupLayout[%d] is closed or from another device", kind, i)}
+		}
+		layoutIDs[i] = l.id
+	}
+	return layoutIDs, nil
+}
+
 func (d *Device) preparePipelineDesc(desc PipelineDesc) (driver.GPUPipelineDesc, string, error) {
 	if !d.alive() {
 		return driver.GPUPipelineDesc{}, "", Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
@@ -1537,8 +1570,8 @@ func (d *Device) preparePipelineDesc(desc PipelineDesc) (driver.GPUPipelineDesc,
 	if d.limits.MaxVertexBuffers > 0 && uint32(len(desc.VertexBuffers)) > d.limits.MaxVertexBuffers {
 		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "too many vertex buffers in pipeline"}
 	}
-	if d.limits.MaxBindGroups > 0 && uint32(len(desc.Layouts)) > d.limits.MaxBindGroups {
-		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "too many bind group layouts in pipeline"}
+	if err := d.checkPipelineLayouts(desc.Layouts, []ShaderStage{desc.Vertex, desc.Fragment}, "pipeline"); err != nil {
+		return driver.GPUPipelineDesc{}, "", err
 	}
 	var totalAttrs uint32
 	dVBs := make([]driver.GPUVertexBufferLayout, len(desc.VertexBuffers))
@@ -1580,12 +1613,9 @@ func (d *Device) preparePipelineDesc(desc PipelineDesc) (driver.GPUPipelineDesc,
 		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "too many vertex attributes in pipeline"}
 	}
 
-	layoutIDs := make([]driver.GPUID, len(desc.Layouts))
-	for i, l := range desc.Layouts {
-		if l == nil || !l.Valid() || l.dev != d {
-			return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "pipeline BindGroupLayout is nil or invalid"}
-		}
-		layoutIDs[i] = l.id
+	layoutIDs, err := d.resolvePipelineLayouts(desc.Layouts, "pipeline")
+	if err != nil {
+		return driver.GPUPipelineDesc{}, "", err
 	}
 
 	samples := max(desc.SampleCount, 1)
@@ -2121,15 +2151,12 @@ func (d *Device) CreateComputePipeline(cx *core.Scope, desc ComputePipelineDesc)
 	if d.limits.MaxComputeInvocationsPerGroup > 0 && uint64(ws[0])*uint64(ws[1])*uint64(ws[2]) > uint64(d.limits.MaxComputeInvocationsPerGroup) {
 		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("workgroup invocations %d exceed limit %d", uint64(ws[0])*uint64(ws[1])*uint64(ws[2]), d.limits.MaxComputeInvocationsPerGroup)}
 	}
-	if d.limits.MaxBindGroups > 0 && uint32(len(desc.Layouts)) > d.limits.MaxBindGroups {
-		return nil, Error{Code: ErrInvalidDescriptor, Message: "too many bind group layouts in compute pipeline"}
+	if err := d.checkPipelineLayouts(desc.Layouts, []ShaderStage{desc.Compute}, "compute pipeline"); err != nil {
+		return nil, err
 	}
-	layoutIDs := make([]driver.GPUID, len(desc.Layouts))
-	for i, l := range desc.Layouts {
-		if l == nil || l.closed || l.dev != d {
-			return nil, Error{Code: ErrInvalidDescriptor, Message: "compute pipeline BindGroupLayout is nil or invalid"}
-		}
-		layoutIDs[i] = l.id
+	layoutIDs, err := d.resolvePipelineLayouts(desc.Layouts, "compute pipeline")
+	if err != nil {
+		return nil, err
 	}
 	entry := desc.Compute.EntryPoint
 	if entry == "" && desc.Compute.Module.ir != nil {
@@ -2969,6 +2996,9 @@ func (p *RenderPass) drawnBound(indexed bool) bool {
 	}
 	for slot := range p.bindGroupsMissing {
 		if int(slot) < p.requiredGroups {
+			if int(slot) < len(p.pipe.desc.Layouts) && p.pipe.desc.Layouts[slot] == nil {
+				continue
+			}
 			return false
 		}
 	}

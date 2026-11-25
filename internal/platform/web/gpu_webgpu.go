@@ -692,10 +692,16 @@ func (b *webgpuBackend) createPipeline(id driver.GPUID, desc driver.GPUPipelineD
 	hasAutoLayout := true
 	if len(desc.Layouts) > 0 {
 		hasAutoLayout = false
-		bgls := make([]any, 0, len(desc.Layouts))
-		for _, lid := range desc.Layouts {
+		bgls := make([]any, len(desc.Layouts))
+		for i, lid := range desc.Layouts {
+			if lid == 0 {
+				bgls[i] = js.Null()
+				continue
+			}
 			if l, ok := b.layouts[lid]; ok {
-				bgls = append(bgls, l.gpuLayout)
+				bgls[i] = l.gpuLayout
+			} else {
+				bgls[i] = js.Null()
 			}
 		}
 		pipeLayout = b.device.Call("createPipelineLayout", map[string]any{

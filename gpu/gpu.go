@@ -694,9 +694,10 @@ type ShaderStage struct {
 
 // PipelineDesc configures Device.CreatePipeline and Device.CreatePipelineAsync.
 type PipelineDesc struct {
-	Label         string
-	Vertex        ShaderStage
-	Fragment      ShaderStage
+	Label    string
+	Vertex   ShaderStage
+	Fragment ShaderStage
+	// Layouts holds the bind group layouts indexed by @group(N). A nil entry leaves that slot empty (an empty bind group layout) when the shaders declare no bindings in that group, and SetBindGroup is not required for it.
 	Layouts       []*BindGroupLayout
 	VertexBuffers []VertexBufferLayout
 	Primitive     PrimitiveState
@@ -710,6 +711,7 @@ type PipelineDesc struct {
 type ComputePipelineDesc struct {
 	Label   string
 	Compute ShaderStage
+	// Layouts holds the bind group layouts indexed by @group(N). A nil entry leaves that slot empty (an empty bind group layout) when the compute shader declares no bindings in that group, and SetBindGroup is not required for it.
 	Layouts []*BindGroupLayout
 }
 

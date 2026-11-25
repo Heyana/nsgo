@@ -204,7 +204,7 @@ type PipelineDesc struct {
 	Label         string
 	Vertex        ShaderStage // Module + EntryPoint (e.g. "vs_main")
 	Fragment      ShaderStage // Module + EntryPoint (e.g. "fs_main")
-	Layouts       []*BindGroupLayout
+	Layouts       []*BindGroupLayout // indexed by @group(N); nil leaves a slot empty when the shaders declare no bindings in that group
 	VertexBuffers []VertexBufferLayout // Stride, StepMode (Vertex/Instance), Attributes (Format, Offset, Location)
 	Primitive     PrimitiveState       // Topology, FrontFace (CCW/CW), CullMode (None/Front/Back)
 	DepthStencil  *DepthStencilState   // Format, DepthWrite, DepthCompare, Stencil, DepthBias
@@ -247,7 +247,7 @@ func (p *RenderPass) DrawIndexedInstanced(indexCount, instanceCount, firstIndex 
 func (p *RenderPass) End()
 ```
 
-A draw is skipped while the pass holds no usable pipeline, or while a resource the pipeline declares is missing: a vertex buffer, bind group or index buffer whose bind was rejected — nil, closed, from another device or from an earlier device epoch — marks its slot, and a later valid bind to that slot lets drawing resume. A rejected bind for a slot the pipeline does not declare leaves the draws alone. Nothing draws against the resources bound before a rejected bind.
+A draw is skipped while the pass holds no usable pipeline, or while a resource the pipeline declares is missing: a vertex buffer, bind group or index buffer whose bind was rejected — nil, closed, from another device or from an earlier device epoch — marks its slot, and a later valid bind to that slot lets drawing resume. A rejected bind for a slot the pipeline does not declare leaves the draws alone. A nil slot in `PipelineDesc.Layouts` or `ComputePipelineDesc.Layouts` leaves that group empty and needs no `SetBindGroup` before drawing or dispatching. Nothing draws against the resources bound before a rejected bind.
 
 A pipeline's colour targets must fit the pass's attachments: the same number of colour targets, the same formats, a sample count the attachment has, and a depth format the pass's depth attachment has. `SetPipeline` with one that does not fit sets no pipeline, so the pass's draws are skipped rather than recorded for a backend that would refuse them, and the encoder leaves a debug marker naming the mismatch. Typical per-frame usage on the engine goroutine:
 
