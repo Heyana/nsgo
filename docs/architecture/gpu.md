@@ -215,6 +215,7 @@ type PipelineDesc struct {
 // Encoder records render passes and copies for one Submit call.
 type Encoder struct { /* ... */ }
 
+func (e *Encoder) Device() *Device
 func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass
 func (e *Encoder) CopyBufferToBuffer(src *Buffer, srcOffset uint64, dst *Buffer, dstOffset, size uint64)
 func (e *Encoder) CopyBufferToTexture(src BufferCopy, dst TextureCopy, width, height, layers uint32)
@@ -230,6 +231,7 @@ type RenderPassDesc struct {
 
 type RenderPass struct { /* ... */ }
 
+func (p *RenderPass) Device() *Device
 func (p *RenderPass) SetViewport(x, y, width, height, minDepth, maxDepth float32)
 func (p *RenderPass) SetScissor(x, y, width, height int32)
 func (p *RenderPass) SetPipeline(pipe *Pipeline)

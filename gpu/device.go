@@ -3150,6 +3150,30 @@ func (d *Device) EndFrame(f *Frame) {
 }
 
 // Device returns the owning GPU Device.
+// Device returns the device the encoder records for, or nil for a nil encoder.
+func (e *Encoder) Device() *Device {
+	if e == nil {
+		return nil
+	}
+	return e.dev
+}
+
+// Device returns the device the pass records into, or nil for a nil pass.
+func (p *RenderPass) Device() *Device {
+	if p == nil {
+		return nil
+	}
+	return p.enc.Device()
+}
+
+// Device returns the device the pass records into, or nil for a nil pass.
+func (p *ComputePass) Device() *Device {
+	if p == nil {
+		return nil
+	}
+	return p.enc.Device()
+}
+
 func (f *Frame) Device() *Device { return f.dev }
 
 // Time returns the frame's display timestamp.
