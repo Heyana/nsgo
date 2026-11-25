@@ -1,3 +1,7 @@
+### Added
+
+- `nsgo.LaunchFiles(parse)` lets a Windows or Linux app decide which command-line arguments open as files, or with `nil` open none (#2264 by @J4ck1e2000).
+
 ### Fixed
 
-- Let Windows and Linux apps control launch file delivery, with the default scan stopping at `--` (#2264 by @J4ck1e2000).
+- Windows and Linux apps no longer open arguments after `--` as files, on a first launch or one handed to a running instance (#2264 by @J4ck1e2000).
