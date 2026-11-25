@@ -17,16 +17,16 @@ The performance monitor measures what a surface's frames and commits cost while 
 
 ## The panel
 
-Any build shows one when started with `--nsgo-fps` (`internal/backend/flags.go`), and `nsgo dev -fps` starts it so; `nsgo.Run` turns the flag into the backend's monitor, and embedded views and target tests have none. Without the flag nothing is installed, so a build costs the same with the monitor's code as without it; with it, the frame clock runs every refresh, so measure with and read CPU without it. macOS, iOS, Windows, Linux and Android show one. The web accepts the option and ignores it.
+Any build shows one when started with `--nsgo-fps` (`internal/backend/flags.go`), and `nsgo dev -fps` starts it so; `nsgo.Run` turns the flag into the backend's monitor, and embedded views and target tests have none. Without the flag nothing is installed, so a build costs the same with the monitor's code as without it; with it, the frame clock runs every refresh, so measure with and read CPU without it. macOS, iOS, Windows, Linux, Android and the web show one. When a web app is mounted inside an element (`NSGO_MOUNT`), the panel sits at the top right of that mount element rather than the page body, clamped to its width, so several mounted apps show their own panels without overlapping each other or the host page.
 
-The panel sits at the top right of the surface (below the safe area on iOS), lets the pointer through, and is redrawn every 500 ms; on macOS it fades out while the pointer is over it. Its sizes, colors and trace are `engine`'s (`perfpanel.go`), and `internal/platform/perfhud` reads the process' CPU and memory for every backend:
+The panel sits at the top right of the surface (below the safe area on iOS and whole-page web views), lets the pointer through, and is redrawn every 500 ms; on macOS it fades out while the pointer is over it. Its sizes, colors and trace are `engine`'s (`perfpanel.go`), and `internal/platform/perfhud` reads the process' CPU and memory for every backend:
 
 - `FPS` counts frames shown over the last second; `max` is what the main thread could keep up with, capped at the display's rate.
 - `TICK` is the gaps between refreshes and the 95th-percentile gap between shown frames.
 - `MAIN` is main-thread time per frame, its 95th percentile, and `drop`, the share of frames that took longer than one refresh.
 - `APP` and `CORE` are the app's and the core's time per commit, commits per second and mount items per commit.
 - `HOP` is how long batches waited between the threads, and how busy the engine goroutine was.
-- `CPU` is percent of one core, `GPU` this process' share (macOS only), `MEM` its physical footprint (Apple), working set (Windows) or resident set (Linux).
+- `CPU` is percent of one core, `GPU` this process' share (macOS only), `MEM` its physical footprint (Apple), working set (Windows) or resident set (Linux); on the web, all three stay `-`, since `js/wasm` cannot read them.
 - On Android, `TEXT` reports the mean and 95th percentile of the last 120 native text request round trips, including queue time.
 - The trace is the last 120 frames' main-thread cost against one refresh (the line): green within half of it, amber within it, red over.
 
@@ -42,6 +42,7 @@ A backend calls `RecordWork` around its main-thread work, `Vsync` from its frame
 | Windows | Each `DwmFlush`, at DWM's composition rate (`DwmGetCompositionTimingInfo`) | Batches, ticks and drawing a frame, less `Present`, which waits for the display |
 | Linux | A tick callback of the surface's frame clock, at its refresh interval | Batches, ticks, and each frame from the clock's `layout` signal to `after-paint` |
 | Android | The primary view's Choreographer callback, while its window is visible | Batch application and animation steps, reported to the Go process |
+| Web | Each `requestAnimationFrame` callback, from its `DOMHighResTimeStamp` | Batches, animations, transitions, scrolls, input and shaders |
 
 Apple platforms read memory with `proc_pid_rusage`'s physical footprint; macOS reads GPU time from the `accumulatedGPUTime` of the process' accelerator clients in the IO registry (`internal/platform/apple/perf.go`), through purego.
 

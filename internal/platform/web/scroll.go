@@ -325,6 +325,7 @@ func (s *surface) scrollEvent(v *view, kind driver.EventKind) {
 }
 
 func (s *surface) scrolled(v *view) {
+	defer s.perfWork(true)()
 	sc := v.sc
 	offset := v.offset()
 	scrolled := s.animator.Scroll(v.id, offset)

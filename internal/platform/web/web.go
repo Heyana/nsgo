@@ -51,6 +51,8 @@ type Options struct {
 	Host string
 	// OS, when set and not OSWeb, is the platform the page runs as (--nsgo-os): the environment reports it, Simulated, with its idiom, phone for iOS and Android, desktop otherwise, rather than the one the desktop media query gives.
 	OS driver.OS
+	// Perf shows the performance monitor over the app (--nsgo-fps).
+	Perf bool
 }
 
 const fontFamily = `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
@@ -216,11 +218,14 @@ type surface struct {
 	transitions   map[*view]bool
 	layoutMotions map[*view]bool
 	frame         js.Func // the animation frame callback
+	frameID       js.Value
 	ticking       bool
+	closed        bool
 	// frameWanted is set while the app waits for a display frame.
 	frameWanted bool
-	// perf measures the engine when a test asks (nsgo test -fps).
+	// perf measures the surface when --nsgo-fps or nsgo test -fps asks.
 	perf       *engine.PerfMonitor
+	hud        *hud
 	components driver.NativeComponents
 	unknown    map[string]bool // component names warned about
 	drag       *view           // the view files are dragged over
@@ -456,6 +461,10 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 		Size:      s.size(), Environment: s.env, NetworkWatcher: networkWatcher{}, Appearance: opts.Appearance,
 		Storage: engine.NewStorage(newLocalStorage(opts.ID)),
 	}
+	if opts.Perf || (test != nil && test.options.FPS) {
+		s.perf = engine.NewPerfMonitor()
+		eopts.Perf = s.perf
+	}
 	if test == nil {
 		eopts.Host = connectHost(opts.Host, s.setHostEnvironment)
 	} else {
@@ -463,12 +472,11 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 		s.envPin = eopts.Pin
 		// The page's size, which the test sets, is the surface's.
 		eopts.Size = s.size()
-		if test.options.FPS {
-			s.perf = engine.NewPerfMonitor()
-			eopts.Perf = s.perf
-		}
 	}
 	s.engine = engine.Start(s, app, eopts)
+	if s.perf != nil {
+		s.startPerf()
+	}
 	if test == nil {
 		live = s
 	}
@@ -1458,7 +1466,14 @@ func (s *surface) MountsAtOnce() {}
 
 // Mount implements engine.Platform; the page has one thread, so it
 // applies the batch right away.
-func (s *surface) Mount(b *driver.MountBatch) { driver.Apply(b, s.mount) }
+func (s *surface) Mount(b *driver.MountBatch) {
+	if s.perf != nil && !b.Sent.IsZero() {
+		s.perf.RecordLatency(time.Since(b.Sent))
+	}
+	done := s.perfWork(true)
+	driver.Apply(b, s.mount)
+	done()
+}
 
 // mount applies b to the page at once, which runs on its one thread.
 func (s *surface) mount(b *driver.MountBatch) {
@@ -2756,6 +2771,7 @@ func (s *surface) hostPagePoint(x, y float64) driver.Point {
 }
 
 func (s *surface) mouseButtonDown(e js.Value) {
+	defer s.perfWork(false)()
 	btn := domMouseButton(e.Get("button").Int())
 	if btn == driver.MouseButtonNone || s.engine == nil {
 		return
@@ -2801,6 +2817,7 @@ func (s *surface) mouseButtonDown(e js.Value) {
 }
 
 func (s *surface) mouseButtonUp(e js.Value) {
+	defer s.perfWork(false)()
 	btn := domMouseButton(e.Get("button").Int())
 	if btn == driver.MouseButtonNone || s.engine == nil {
 		return
@@ -2915,6 +2932,13 @@ func (s *surface) windowCommand(c *driver.WindowCommand) {
 	case driver.WindowClose:
 		js.Global().Call("close")
 	case driver.WindowDestroy:
+		s.closed = true
+		s.stopPerf()
+		s.stopTicking()
+		if !s.frame.IsUndefined() {
+			s.frame.Release()
+			s.frame = js.Func{}
+		}
 		s.closeUpdates()
 		s.closeAudio()
 		s.closeNotifications()
@@ -2942,6 +2966,13 @@ func (s *surface) listen() {
 	}
 	ls.on(js.Global(), "pagehide", func(e js.Value) {
 		if !e.Get("persisted").Truthy() {
+			s.closed = true
+			s.stopPerf()
+			s.stopTicking()
+			if !s.frame.IsUndefined() {
+				s.frame.Release()
+				s.frame = js.Func{}
+			}
 			s.closeUpdates()
 			s.closeAudio()
 			s.closeNotifications()
@@ -3088,6 +3119,7 @@ func (s *surface) stopLongPress() {
 }
 
 func (s *surface) pointerDown(e js.Value) {
+	defer s.perfWork(false)()
 	s.stopLongPress()
 	if s.documentLink(e.Get("target")) != nil && browserLinkClick(e) {
 		s.press = press{}
@@ -3127,6 +3159,7 @@ func (s *surface) pointerDown(e js.Value) {
 }
 
 func (s *surface) pointerUp(e js.Value) {
+	defer s.perfWork(false)()
 	p := &s.press
 	if p.view == nil || p.done || e.Get("pointerId").Int() != p.pointer {
 		return
@@ -3141,6 +3174,7 @@ func (s *surface) pointerUp(e js.Value) {
 
 // pointerMove cancels a press, and its pending long press, once the pointer has moved beyond the same eight-point slop the headless and native gesture models use. Listening on the document keeps a drag that leaves the original element from pressing it when it comes back for pointerup/click.
 func (s *surface) pointerMove(e js.Value) {
+	defer s.perfWork(false)()
 	if s.pointerLock.active != nil {
 		return
 	}
@@ -3162,6 +3196,7 @@ func (s *surface) pointerMove(e js.Value) {
 // click completes a press. Clicks also come from assistive technology,
 // without a pointer.
 func (s *surface) click(e js.Value) {
+	defer s.perfWork(false)()
 	p := s.press
 	s.press = press{}
 	if link := s.documentLink(e.Get("target")); link != nil {
@@ -3311,6 +3346,7 @@ func (s *surface) contextMenu(e js.Value) {
 
 // keyDown presses a focused pressable view with Enter or Space.
 func (s *surface) keyDown(e js.Value) {
+	defer s.perfWork(false)()
 	k := e.Get("key").String()
 	el := e.Get("target")
 	v := s.target(el)

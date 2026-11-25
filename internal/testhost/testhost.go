@@ -67,8 +67,7 @@ type Options struct {
 	TransitionEnds func(pending func() bool)
 	// FPS measures the app with the backend's performance monitor and
 	// logs its readings once a second (nsgo test -fps), where the backend
-	// has one: macOS, iOS, Windows, Linux and Android. The web measures
-	// only the engine, with no frame readings.
+	// has one: macOS, iOS, Windows, Linux, Android and the web.
 	FPS bool
 	// PickImages, when set, answers the photo picks the app asks for in place of the system's picker: done takes the files picked, none when the user cancels, and may be called on any goroutine. macOS, Windows and Linux use it; the other targets show their picker.
 	PickImages func(driver.PickRequest, func([]driver.PickedFile))

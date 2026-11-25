@@ -21,24 +21,52 @@ import (
 
 // startTicking asks for animation frames until nothing animates.
 func (s *surface) startTicking() {
-	if s.ticking {
+	if s.ticking || s.closed {
 		return
 	}
 	s.ticking = true
 	if s.frame.IsUndefined() {
 		s.frame = js.FuncOf(func(_ js.Value, args []js.Value) any {
-			s.tick(time.Duration(args[0].Float() * float64(time.Millisecond)))
+			var stamp time.Duration
+			if len(args) > 0 && args[0].Type() == js.TypeNumber {
+				stamp = time.Duration(args[0].Float() * float64(time.Millisecond))
+			}
+			s.tick(stamp)
 			return nil
 		})
 	}
-	js.Global().Call("requestAnimationFrame", s.frame)
+	s.frameID = js.Global().Call("requestAnimationFrame", s.frame)
+}
+
+func (s *surface) stopTicking() {
+	if s.frameID.Truthy() && js.Global().Get("cancelAnimationFrame").Type() == js.TypeFunction {
+		js.Global().Call("cancelAnimationFrame", s.frameID)
+	}
+	s.frameID = js.Undefined()
+	s.ticking = false
+}
+
+func (s *surface) wantsTicking() bool {
+	return !s.closed && (s.perf != nil || s.animator.Running() || len(s.transitions) > 0 || len(s.layoutMotions) > 0 || s.frameWanted || s.geometryAnimating())
 }
 
 func (s *surface) tick(stamp time.Duration) {
 	defer s.reportGeometry()
 	s.ticking = false
+	s.frameID = js.Undefined()
+	if s.closed {
+		return
+	}
+	var workStart time.Time
+	var dirty bool
+	if s.perf != nil {
+		workStart = time.Now()
+		dirty = s.animator.Running() || len(s.transitions) > 0 || len(s.layoutMotions) > 0 || len(s.shading) > 0 || s.hasStaleEffects()
+	}
 	s.animator.Step(stamp)
-	s.applyAnimatedAt(stamp)
+	if s.applyAnimatedAt(stamp) {
+		dirty = true
+	}
 	s.stepTransitions(stamp)
 	s.stepLayoutMotions(stamp)
 	if s.animator.Running() || len(s.transitions) > 0 || len(s.layoutMotions) > 0 {
@@ -49,6 +77,9 @@ func (s *surface) tick(stamp time.Duration) {
 	}
 	if sh := shaders.Load(); sh != nil {
 		sh.changedShaders(s)
+		if len(s.shading) > 0 || s.hasStaleEffects() {
+			dirty = true
+		}
 		sh.drawShaders(s)
 	}
 	if s.frameWanted {
@@ -58,7 +89,11 @@ func (s *surface) tick(stamp time.Duration) {
 			s.engine.FrameAt(driver.DisplayTime(stamp, time.Duration(now()*float64(time.Millisecond))))
 		}
 	}
-	if s.animator.Running() || len(s.transitions) > 0 || len(s.layoutMotions) > 0 || s.frameWanted || s.geometryAnimating() {
+	if s.perf != nil {
+		s.perf.RecordWork(time.Since(workStart), dirty)
+		s.vsync(stamp)
+	}
+	if s.wantsTicking() {
 		s.startTicking()
 	}
 }
@@ -143,8 +178,10 @@ func (s *surface) stepLayoutMotions(stamp time.Duration) {
 // applyAnimated writes the animated values that changed.
 func (s *surface) applyAnimated() { s.applyAnimatedAt(s.clock()) }
 
-func (s *surface) applyAnimatedAt(at time.Duration) {
+func (s *surface) applyAnimatedAt(at time.Duration) bool {
+	changed := false
 	s.animator.Changed(func(id driver.NodeID, vals driver.AnimatedValues) {
+		changed = true
 		v := s.view(id)
 		if v == nil {
 			return
@@ -167,6 +204,7 @@ func (s *surface) applyAnimatedAt(at time.Duration) {
 	if len(s.slicedCanvases) > 0 {
 		s.checkSlicedCanvases()
 	}
+	return changed
 }
 
 // layoutBatch is what a batch with a layout animation tracks.

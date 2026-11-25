@@ -55,6 +55,7 @@ type glide struct {
 // wheelScroll scrolls the view under a wheel or touchpad event; Ctrl's
 // are pinches (wheelZoom).
 func (s *surface) wheelScroll(e js.Value) {
+	defer s.perfWork(false)()
 	if e.Get("defaultPrevented").Bool() {
 		return
 	}
