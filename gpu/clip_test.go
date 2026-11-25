@@ -70,46 +70,62 @@ func TestSoftwareFarPlaneSkyboxCompareLessEqual(t *testing.T) {
 		w2, w2, w2, w2, 0, 1, 0, 1,
 		-w3, w3, w3, w3, 0, 1, 0, 1,
 	)
+	fullscreenTriData := packFloat32Slice(
+		-w0, -w0, w0, w0, 0, 1, 0, 1,
+		3*w1, -w1, w1, w1, 0, 1, 0, 1,
+		-w2, 3*w2, w2, w2, 0, 1, 0, 1,
+	)
 
-	for _, sz := range [][2]int{{13, 17}, {32, 32}, {64, 64}} {
-		sr := gpu.NewSoftwareRenderer(sz[0], sz[1], gpu.FormatDepth24Plus)
-		dev := sr.Device()
-		vb, err := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageVertex, Data: quadData})
-		if err != nil {
-			t.Fatalf("CreateBuffer: %v", err)
+	for _, geom := range []struct {
+		name  string
+		data  []byte
+		count uint32
+	}{{"quad", quadData, 6}, {"fullscreen_tri", fullscreenTriData, 3}} {
+		for _, sz := range [][2]int{{13, 17}, {32, 32}, {64, 64}, {97, 53}} {
+			runSoftwareSkyboxCase(t, mod, geom.name, geom.data, geom.count, sz)
 		}
-		pipe, err := dev.CreatePipeline(nil, gpu.PipelineDesc{
-			Vertex:        gpu.ShaderStage{Module: mod, EntryPoint: "vs_main"},
-			Fragment:      gpu.ShaderStage{Module: mod, EntryPoint: "fs_main"},
-			VertexBuffers: clipVertexLayout(),
-			DepthStencil: &gpu.DepthStencilState{
-				Format:       gpu.FormatDepth24Plus,
-				DepthWrite:   true,
-				DepthCompare: gpu.CompareLessEqual,
-			},
-			Targets: []gpu.ColorTargetState{{Format: gpu.FormatRGBA8Unorm}},
-		})
-		if err != nil {
-			t.Fatalf("CreatePipeline: %v", err)
-		}
+	}
+}
 
-		enc := dev.BeginEncoder()
-		p := enc.BeginRenderPass(gpu.RenderPassDesc{})
-		p.ClearColor(rgbaColor(0, 0, 0, 255))
-		p.ClearDepth(1.0)
-		p.SetPipeline(pipe)
-		p.SetVertexBuffer(0, vb, 0)
-		p.Draw(6, 0)
-		p.End()
-		dev.Submit(enc.Finish())
+func runSoftwareSkyboxCase(t *testing.T, mod *gpu.ShaderModule, name string, data []byte, count uint32, sz [2]int) {
+	t.Helper()
+	sr := gpu.NewSoftwareRenderer(sz[0], sz[1], gpu.FormatDepth24Plus)
+	dev := sr.Device()
+	vb, err := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageVertex, Data: data})
+	if err != nil {
+		t.Fatalf("CreateBuffer: %v", err)
+	}
+	pipe, err := dev.CreatePipeline(nil, gpu.PipelineDesc{
+		Vertex:        gpu.ShaderStage{Module: mod, EntryPoint: "vs_main"},
+		Fragment:      gpu.ShaderStage{Module: mod, EntryPoint: "fs_main"},
+		VertexBuffers: clipVertexLayout(),
+		DepthStencil: &gpu.DepthStencilState{
+			Format:       gpu.FormatDepth24Plus,
+			DepthWrite:   true,
+			DepthCompare: gpu.CompareLessEqual,
+		},
+		Targets: []gpu.ColorTargetState{{Format: gpu.FormatRGBA8Unorm}},
+	})
+	if err != nil {
+		t.Fatalf("CreatePipeline: %v", err)
+	}
 
-		img := sr.Image()
-		want := color.RGBA{0, 255, 0, 255}
-		for y := 0; y < sz[1]; y++ {
-			for x := 0; x < sz[0]; x++ {
-				if got := img.RGBAAt(x, y); got != want {
-					t.Fatalf("%dx%d pixel(%d,%d) = %+v, want %+v", sz[0], sz[1], x, y, got, want)
-				}
+	enc := dev.BeginEncoder()
+	p := enc.BeginRenderPass(gpu.RenderPassDesc{})
+	p.ClearColor(rgbaColor(0, 0, 0, 255))
+	p.ClearDepth(1.0)
+	p.SetPipeline(pipe)
+	p.SetVertexBuffer(0, vb, 0)
+	p.Draw(count, 0)
+	p.End()
+	dev.Submit(enc.Finish())
+
+	img := sr.Image()
+	want := color.RGBA{0, 255, 0, 255}
+	for y := 0; y < sz[1]; y++ {
+		for x := 0; x < sz[0]; x++ {
+			if got := img.RGBAAt(x, y); got != want {
+				t.Fatalf("%s %dx%d pixel(%d,%d) = %+v, want %+v", name, sz[0], sz[1], x, y, got, want)
 			}
 		}
 	}
