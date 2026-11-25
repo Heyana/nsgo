@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"text/template"
 )
 
@@ -17,6 +19,25 @@ import (
 var templates = []string{"go", "tsx", "mixed"}
 
 type initData struct{ Name, ID, Module, Slug string }
+
+// stdModules is the standard library's import paths, as the go tool lists them.
+var stdModules = sync.OnceValue(func() []string {
+	out, err := exec.Command("go", "list", "std").Output()
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(out))
+})
+
+// moduleCollidesWithStd reports whether path is a standard library package or a prefix of one, which an app's module path cannot be.
+func moduleCollidesWithStd(path string) bool {
+	for _, std := range stdModules() {
+		if std == path || strings.HasPrefix(std, path+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 // initApp writes a new app of template kind into dir: nsgo.yaml, a main
 // package and tests; a TSX app's entry, its tests, tsconfig.json and
@@ -36,6 +57,9 @@ func initApp(ctx context.Context, dir, name, module, kind string) error {
 	}
 	id := "dev.nsgo." + strings.ToLower(regexp.MustCompile(`[^A-Za-z0-9]+`).ReplaceAllString(name, ""))
 	slug := strings.Trim(strings.ToLower(regexp.MustCompile(`[^A-Za-z0-9]+`).ReplaceAllString(name, "-")), "-")
+	if module != "" && moduleCollidesWithStd(module) {
+		return fmt.Errorf("init: module path %q is a standard library package; pass -module with a path of your own, such as example.com/%s", module, slug)
+	}
 	data := initData{name, id, module, slug}
 	if !slices.Contains(templates, kind) {
 		return initModuleTemplate(ctx, dir, kind, data)

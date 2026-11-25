@@ -117,6 +117,10 @@ func moduleTemplateFiles(src fs.FS, data initData) ([]moduleTemplateFile, error)
 	moduleFlag := data.Module != ""
 	if !moduleFlag {
 		data.Module = data.Slug
+		// A slug that names a standard library package cannot be the app's module path, so give it a domain of its own.
+		if moduleCollidesWithStd(data.Module) {
+			data.Module = "example.com/" + data.Module
+		}
 	}
 	var files []moduleTemplateFile
 	seen := make(map[string]bool)

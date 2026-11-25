@@ -132,3 +132,39 @@ func addTemplateVersion(t *testing.T, proxy, module, version string, files map[s
 		t.Fatal(writeErr, closeErr)
 	}
 }
+
+// A slug that names a standard library package gets a module path of its own, and an explicit standard library module is refused before anything is written (#2270).
+func TestInitModuleTemplateStandardLibraryCollisions(t *testing.T) {
+	const module = "github.com/nsgo-dev/game/template"
+	proxy := t.TempDir()
+	addTemplateVersion(t, proxy, module, "v1.0.0", map[string][]byte{
+		"nsgo.yaml":   []byte("name: {{printf \"%q\" .Name}}\nid: {{.ID}}\nversion: 0.1.0\n"),
+		"main.go":     []byte("package main\nfunc main() {}\n"),
+		"go.mod.tmpl": []byte("module {{.Module}}\n\ngo 1.27.3\n"),
+	})
+	server := httptest.NewServer(http.FileServer(http.Dir(proxy)))
+	t.Cleanup(server.Close)
+	t.Setenv("GOFLAGS", "-modcacherw")
+	t.Setenv("GOPROXY", server.URL+",direct")
+	t.Setenv("GOSUMDB", "off")
+	t.Setenv("GONOPROXY", "*")
+	t.Setenv("GOMODCACHE", t.TempDir())
+
+	dir := filepath.Join(t.TempDir(), "time")
+	if err := initApp(t.Context(), dir, "Time", "", module+"@v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil || !strings.Contains(string(got), "module example.com/time") {
+		t.Fatalf("go.mod = %q, %v; want module example.com/time", got, err)
+	}
+
+	dir = filepath.Join(t.TempDir(), "time")
+	err = initApp(t.Context(), dir, "Time", "time", module+"@v1.0.0")
+	if err == nil || !strings.Contains(err.Error(), "standard library") {
+		t.Fatalf("init -module time = %v, want a refusal", err)
+	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Fatalf("init wrote %s before refusing", dir)
+	}
+}

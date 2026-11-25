@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +73,17 @@ func TestDirAppName(t *testing.T) {
 	}
 	if _, err := dirAppName("../应用"); err == nil {
 		t.Error("named an app after a directory with no letters it can use")
+	}
+}
+
+// A module path that names a standard library package is refused before any file is written (#2270).
+func TestInitRejectsAStandardLibraryModule(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "app")
+	err := initApp(t.Context(), dir, "My App", "time", "go")
+	if err == nil || !strings.Contains(err.Error(), "standard library") || !strings.Contains(err.Error(), "-module") {
+		t.Fatalf("init -module time = %v, want a refusal naming the collision and -module", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("init wrote %s before refusing", dir)
 	}
 }
