@@ -285,7 +285,8 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	})
 }
 
-func TestCrossBackendStructOffsetsMatchWGSL(t *testing.T) {
+// TestStructOffsetsMatchWGSLInIRAndMSL checks the IR's WGSL offsets and the MSL struct that pads to them; the GLSL, HLSL and WGSL writers are only checked to accept the struct. HLSL lays it out by cbuffer and StructuredBuffer packing, a gap the roadmap records.
+func TestStructOffsetsMatchWGSLInIRAndMSL(t *testing.T) {
 	const src = `
 struct Packet {
 	d: vec3<f32>,
@@ -347,8 +348,8 @@ fn fs_main() -> @location(0) vec4<f32> {
 	}
 }
 
-// Verify TypeEnv handles helper-local structs inside nested blocks.
-func TestCompilePipelineHelperNestedBlockPackedVec3(t *testing.T) {
+// TestCompilePipelineHelperPackedVec3 checks a helper that reads a buffer struct copied into its own local.
+func TestCompilePipelineHelperPackedVec3(t *testing.T) {
 	st := shaderir.Type{
 		Main: shaderir.Struct,
 		Sub:  []shaderir.Type{{Main: shaderir.Vec3}, {Main: shaderir.Float}},
@@ -420,5 +421,59 @@ func TestCompilePipelineHelperNestedBlockPackedVec3(t *testing.T) {
 	}
 	if !strings.Contains(out.Source, "float4(float3((l0).M0), (l0).M1)") {
 		t.Errorf("expected helper packed_float3 read to unwrap to float3:\n%s", out.Source)
+	}
+}
+
+// TestCompilePipelineNestedBlockPackedVec3 checks that a buffer struct local declared in a function's outer block keeps its packed vec3 reads and writes inside if and for bodies, in a helper and in an entry point.
+func TestCompilePipelineNestedBlockPackedVec3(t *testing.T) {
+	const src = `
+struct Packet {
+	d: vec3<f32>,
+	s: f32,
+}
+
+@group(0) @binding(0) var<uniform> u: Packet;
+
+fn shade(k: f32) -> vec4<f32> {
+	var p = u;
+	if (k > 0.5) {
+		p.d = p.d * k;
+	}
+	for (var i = 0; i < 2; i++) {
+		p.s = p.s + p.d.x;
+	}
+	return vec4<f32>(p.d, p.s);
+}
+
+@fragment
+fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+	var q = u;
+	if (pos.x > 1.0) {
+		q.d = vec3<f32>(pos.y);
+	}
+	for (var i = 0; i < 2; i++) {
+		q.s = q.s + q.d.z;
+	}
+	return shade(q.s) + vec4<f32>(q.d, 0.0);
+}
+`
+	prog, err := wgsl.CompilePipeline(src)
+	if err != nil {
+		t.Fatalf("wgsl.CompilePipeline: %v", err)
+	}
+	out, err := msl.CompilePipeline(prog.IR)
+	if err != nil {
+		t.Fatalf("msl.CompilePipeline: %v", err)
+	}
+	for _, want := range []string{
+		" = packed_float3((float3((l1).M0) * ",
+		"(float3((l1).M0)).x",
+		" = packed_float3(float3(",
+		"(float3((l1).M0)).z",
+		"float4(float3((l1).M0), (l1).M1)",
+	} {
+		if !strings.Contains(out.Source, want) {
+			t.Errorf("MSL missing %q:\n%s", want, out.Source)
+		}
 	}
 }
