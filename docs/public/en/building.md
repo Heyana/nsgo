@@ -213,6 +213,18 @@ A package links with `build.ldflags` and `-ldflags`, then its own `ldflags`, who
 
 The installers, their checksums and the [update](#updates) appcasts carry the commands as they carry the app's other files, so an update replaces them with the app. [Store packages](#store-packages) leave them out, as the Mac App Store's sandbox, the MSIX and the Flatpak run only the app's own executable.
 
+## Extensions
+
+A command `nsgo` does not know itself runs an extension, as git and cargo do, so a library built on NSGo can add its commands to `nsgo`'s:
+
+1. In a module, `nsgo X args…` runs `go tool X args…` when the `go.mod` found from the working directory upward declares a tool whose command name is `X`: the last element of its package path, before a major version such as `/v2`. The extension is then the version the module requires.
+2. Otherwise it runs a program named `nsgo-X` on `PATH`, which works outside a module too, such as before a project exists.
+3. Otherwise `nsgo` prints its usage and exits with status 2, as it does for any unknown command.
+
+Built-in commands always win, and a name that is not letters, digits, `-` and `_` runs nothing. The extension takes the arguments unchanged, `nsgo`'s standard input, output and error, and its environment with `NSGO_EXTENSION=1` and `NSGO_VERSION`, the `nsgo` module's version, which is empty for a build from a checkout; `nsgo` exits with the extension's status. The usage, which `nsgo help` prints, lists the extensions found and where each comes from.
+
+A library ships one as a Go main package whose directory is the command's name, such as `example.com/maps/cmd/maps` for `nsgo maps`. An app adds it to its module with `go get -tool example.com/maps/cmd/maps@latest`, and `go install example.com/maps/cmd/nsgo-maps@latest` puts an `nsgo-maps` on `PATH` for use outside a module, which may run the same code as the tool.
+
 ## Installers
 
 For the desktop targets, `build` writes what users install the app from into `dist/releases`, each with a `.sha256` checksum:

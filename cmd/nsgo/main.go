@@ -30,6 +30,8 @@
 //	                                                      check a package and print what it holds
 //	nsgo revoke  -sequence N [-days N] [-keys IDs] [-packages H,...] -out F
 //	                                                      sign a revocation list
+//	nsgo X [args]                                        run an extension: the module's go.mod tool X with
+//	                                                      go tool, else nsgo-X on PATH
 //
 // dir is the app's directory, holding nsgo.yaml and its main package; it
 // defaults to the current directory, and may end in /..., as go's
@@ -263,7 +265,14 @@ func main() {
 		}
 		err = revoke(o)
 	default:
-		usage()
+		var code int
+		var found bool
+		if code, found, err = runExtension(ctx, cmd, args); found && err == nil {
+			os.Exit(code)
+		}
+		if err == nil {
+			usage()
+		}
 	}
 	if err != nil && ctx.Err() == nil {
 		report(err)
@@ -294,6 +303,19 @@ func usage() {
 dev and build take -name, -id and -version, which replace nsgo.yaml's
 values, and -h lists every flag. Put NSGo flags before the path.
 After --, headless tests accept go test flags; target tests accept
--short, -count, -cpu, -parallel, -failfast and -fullpath.`)
+-short, -count, -cpu, -parallel, -failfast and -fullpath.
+
+Another command X runs the module's go.mod tool X with go tool,
+else nsgo-X on PATH.`)
+	if found := listExtensions(context.Background()); len(found) > 0 {
+		width := 0
+		for _, ext := range found {
+			width = max(width, len(ext.Name))
+		}
+		fmt.Fprintln(os.Stderr, "\nextensions:")
+		for _, ext := range found {
+			fmt.Fprintf(os.Stderr, "  nsgo %-*s  %s\n", width, ext.Name, ext.source())
+		}
+	}
 	os.Exit(2)
 }

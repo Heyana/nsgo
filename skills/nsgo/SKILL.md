@@ -30,6 +30,8 @@ go tool nsgo dev           # hot reload; -target web, ios_simulator, android, tv
 go tool nsgo doctor        # which targets this machine builds and runs, and what it lacks
 ```
 
+Another command `X` runs an extension: the module's `go.mod` tool named `X` with `go tool`, else `nsgo-X` on `PATH`; built-ins win. [Extensions](https://nsgo.dev/docs/building.md#extensions)
+
 Use `-template <module>[@version]` to scaffold from a module's published [template directory](https://nsgo.dev/docs/getting-started.md#templates-from-go-modules).
 
 With hot reload, saving a file embedded in a Go-only app rebuilds and restarts it; saving only TSX bundle inputs updates the running app in place. [Running and debugging](https://nsgo.dev/docs/debugging.md#run)

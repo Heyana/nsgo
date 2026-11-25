@@ -152,6 +152,18 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## 扩展命令
+
+`nsgo` 自身不认识的命令会交给扩展执行，与 git 和 cargo 的做法相同，这样基于 NSGo 的库可以把自己的命令加到 `nsgo` 上：
+
+1. 在模块中，从工作目录向上找到的 `go.mod` 声明了命令名为 `X` 的工具时，`nsgo X args…` 运行 `go tool X args…`。命令名是工具包路径的最后一段，`/v2` 这样的主版本后缀之前的那一段。扩展的版本因此就是模块所依赖的版本。
+2. 否则运行 `PATH` 上名为 `nsgo-X` 的程序，在模块之外同样可用，例如项目还不存在的时候。
+3. 否则 `nsgo` 打印用法并以状态 2 退出，与任何未知命令相同。
+
+内置命令总是优先，名字不是由字母、数字、`-` 和 `_` 组成的命令什么也不运行。扩展得到原样的参数、`nsgo` 的标准输入、输出和错误，以及加上 `NSGO_EXTENSION=1` 和 `NSGO_VERSION`（`nsgo` 模块的版本，从源码检出构建时为空）的环境变量；`nsgo` 以扩展的退出状态退出。`nsgo help` 打印的用法会列出找到的扩展及各自的来源。
+
+库以一个 Go main 包提供扩展，包所在目录名就是命令名，例如 `nsgo maps` 对应 `example.com/maps/cmd/maps`。应用用 `go get -tool example.com/maps/cmd/maps@latest` 把它加入自己的模块；`go install example.com/maps/cmd/nsgo-maps@latest` 则在 `PATH` 上放一个 `nsgo-maps` 供模块之外使用，它可以运行与工具相同的代码。
+
 ## 安装程序
 
 对桌面目标，`build` 会把供用户安装的文件写到 `dist/releases`，每个文件旁附带 `.sha256` 校验和：
