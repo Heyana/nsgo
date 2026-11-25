@@ -3322,6 +3322,9 @@ func (vm *irVM) evalBinary(op shaderir.Op, a, b irVal) irVal {
 	case shaderir.LessThanOp, shaderir.LessThanEqualOp, shaderir.GreaterThanOp,
 		shaderir.GreaterThanEqualOp, shaderir.EqualOp, shaderir.NotEqualOp:
 		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: compareValues(op, a, b)}
+	case shaderir.VectorEqualOp, shaderir.VectorNotEqualOp:
+		// The backends write these as all(a == b) and !all(a == b): one bool for the whole vector.
+		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: vectorsEqual(a, b) == (op == shaderir.VectorEqualOp)}
 	}
 	// Component-wise float/int/uint arithmetic with scalar broadcast.
 	resT := a.typ
@@ -3420,6 +3423,35 @@ func (vm *irVM) evalBinary(op shaderir.Op, a, b irVal) irVal {
 		}
 	}
 	return out
+}
+
+// vectorsEqual reports whether every lane of a equals the same lane of b, which VectorEqualOp means for the whole vector.
+func vectorsEqual(a, b irVal) bool {
+	n := max(a.typ.VectorElementCount(), b.typ.VectorElementCount())
+	if n < 1 {
+		n = 1
+	}
+	for i := 0; i < n; i++ {
+		switch a.typ.Scalar() {
+		case shaderir.Int:
+			if a.i[i] != b.i[i] {
+				return false
+			}
+		case shaderir.Uint:
+			if a.u[i] != b.u[i] {
+				return false
+			}
+		case shaderir.Bool:
+			if a.i[i] != b.i[i] {
+				return false
+			}
+		default:
+			if a.f[i] != b.f[i] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // compareValues evaluates a comparison of the operands' first element. A float comparison with a NaN is unordered, so every ordered comparison is false and only != is true, as IEEE 754 and WGSL require; a bool compares its value, which a three-way compare never read.

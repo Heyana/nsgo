@@ -19,6 +19,9 @@ func TestSoftwareDeviceComparesNaNAndBools(t *testing.T) {
 	uintVal := func(v uint32) irVal {
 		return irVal{typ: shaderir.Type{Main: shaderir.Uint}, u: [4]uint32{v}, f: [16]float32{float32(v)}}
 	}
+	vec2Val := func(x, y float32) irVal {
+		return irVal{typ: shaderir.Type{Main: shaderir.Vec2}, f: [16]float32{x, y}}
+	}
 	boolVal := func(v bool) irVal {
 		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: v}
 	}
@@ -42,6 +45,11 @@ func TestSoftwareDeviceComparesNaNAndBools(t *testing.T) {
 		{shaderir.EqualOp, boolVal(true), boolVal(true), true},
 		{shaderir.LessThanOp, intVal(-1), intVal(0), true},
 		{shaderir.GreaterThanEqualOp, uintVal(3), uintVal(3), true},
+		{shaderir.VectorEqualOp, vec2Val(1, 2), vec2Val(1, 2), true},
+		{shaderir.VectorEqualOp, vec2Val(1, 2), vec2Val(1, 3), false},
+		{shaderir.VectorNotEqualOp, vec2Val(1, 2), vec2Val(1, 3), true},
+		{shaderir.VectorEqualOp, vec2Val(float32(math.NaN()), 2), vec2Val(float32(math.NaN()), 2), false},
+		{shaderir.VectorNotEqualOp, vec2Val(float32(math.NaN()), 2), vec2Val(float32(math.NaN()), 2), true},
 	}
 	for _, c := range cases {
 		if got := vm.evalBinary(c.op, c.a, c.b); got.b != c.want {
