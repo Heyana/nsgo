@@ -58,7 +58,7 @@ Apple 平台、Android、Windows、Linux 和 Web 直接更新像素图片，微�
 
 ## 资源与像素密度
 
-`resources/` 下的文件随应用一起发布。`core.Src("asset:images/cover.png")` 加载其中一个，`Scales: core.ScalesOf(1, 2, 3)` 按屏幕像素比选择 `cover.png`、`cover@2x.png` 或 `cover@3x.png`。`core.ResolveImage(cx, src)` 返回 core 按当前屏幕像素比实际挂载的来源，便于工具对真正显示的文件做事；`core.PickImageScale(src, ratio)` 是同一规则，供调用方用自己的比例计算。
+`resources/` 下的文件随应用一起发布。`core.Src("asset:images/cover.png")` 加载其中一个，`Scales: core.ScalesOf(1, 2, 3)` 按屏幕像素比选择 `cover.png`、`cover@2x.png` 或 `cover@3x.png`。`cx.ResolveImage(src)` 返回 core 按当前屏幕像素比实际挂载的来源，便于工具对真正显示的文件做事；`core.PickImageScale(src, ratio)` 是同一规则，供调用方用自己的比例计算。
 
 ```go
 core.Image{Source: core.ImageSource{
