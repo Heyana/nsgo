@@ -697,7 +697,7 @@ type PipelineDesc struct {
 	Label    string
 	Vertex   ShaderStage
 	Fragment ShaderStage
-	// Layouts holds the bind group layouts indexed by @group(N). A nil entry leaves that slot empty (an empty bind group layout) when the shaders declare no bindings in that group, and SetBindGroup is not required for it.
+	// Layouts holds the bind group layouts indexed by @group(N). A nil entry leaves that slot empty (an empty bind group layout) when the shader modules declare no bindings in that group, and SetBindGroup is not required for it. The check covers every binding a module declares, not only those the chosen entry points use, so it is stricter than WebGPU's rule: a module with @group(N) bindings needs Layouts[N] even for an entry point that never reads them.
 	Layouts       []*BindGroupLayout
 	VertexBuffers []VertexBufferLayout
 	Primitive     PrimitiveState
@@ -711,7 +711,7 @@ type PipelineDesc struct {
 type ComputePipelineDesc struct {
 	Label   string
 	Compute ShaderStage
-	// Layouts holds the bind group layouts indexed by @group(N). A nil entry leaves that slot empty (an empty bind group layout) when the compute shader declares no bindings in that group, and SetBindGroup is not required for it.
+	// Layouts holds the bind group layouts indexed by @group(N). A nil entry leaves that slot empty (an empty bind group layout) when the compute module declares no bindings in that group, and SetBindGroup is not required for it. As with PipelineDesc.Layouts, every binding the module declares counts, not only those the entry point uses.
 	Layouts []*BindGroupLayout
 }
 
