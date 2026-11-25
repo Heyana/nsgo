@@ -131,22 +131,37 @@ func (r *runtime) resumer() func(fn func()) bool {
 	}
 }
 
-// newPromise is the VM's NewPromise, whose settling, as a host request answers, runs under the deadline of the work that made the promise, and not at all once it passed.
+// newPromise is the VM's NewPromise, whose settling, as a host request answers, runs under the deadline of the work that made the promise, and not at all once it passed. Any uncatchable VM error (such as an interrupt from Limits.Call) is propagated to the enclosing slice instead of being returned and dropped.
 func (r *runtime) newPromise() (*js.Promise, func(any) error, func(any) error) {
 	p, resolve, reject := r.vm.NewPromise()
-	if r.current == nil {
-		return p, resolve, reject
-	}
 	resume := r.resumer()
 	wrap := func(settle func(any) error) func(any) error {
 		return func(v any) error {
 			var err error
 			if r.depth > 0 {
-				resume(func() { err = settle(v) })
-				return err
+				var interruptedOwner *deadline
+				resume(func() {
+					if err = settle(v); err != nil {
+						interruptedOwner = r.current
+					}
+				})
+				if err != nil {
+					// Restore the interrupted reaction's owner before panicking out of r.under, so r.within expires the right deadline.
+					if interruptedOwner != nil {
+						r.current = interruptedOwner
+					}
+					panic(err)
+				}
+				return nil
 			}
 			// Settled outside a call into JS, its jobs run in one of their own, under the deadline.
-			resume(func() { r.inJS(func() { err = settle(v) }) })
+			resume(func() {
+				r.inJS(func() {
+					if err = settle(v); err != nil {
+						panic(err)
+					}
+				})
+			})
 			return err
 		}
 	}

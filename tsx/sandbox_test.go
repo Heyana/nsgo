@@ -934,6 +934,79 @@ export function hits() { return later; }`, pkg.Capabilities{})
 	}
 }
 
+func TestPluginCallSliceTimeoutInGoSettledPromise(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("the page's engine cannot interrupt a running slice")
+	}
+	p := verified(t, `import { host, Clipboard } from "nsgo";
+const spin = () => { for (;;) {} };
+let releasePeer;
+const peerWait = new Promise(resolve => { releasePeer = resolve; });
+export function peer() { return peerWait.then(() => "ok"); }
+export async function hostResolve() {
+	await host.call("echo", {});
+	releasePeer();
+	spin();
+}
+export async function hostReject() {
+	try {
+		await host.call("fail", {});
+	} catch (_) {}
+	releasePeer();
+	spin();
+}
+export async function serviceClipboard() {
+	await Clipboard.readText();
+	releasePeer();
+	spin();
+}`, pkg.Capabilities{Host: []string{"echo", "fail"}, Clipboard: true})
+	for _, tc := range []struct {
+		name, export string
+		total        time.Duration
+	}{
+		{"host-resolve", "hostResolve", 0},
+		{"host-resolve-with-total", "hostResolve", 10 * time.Second},
+		{"host-reject", "hostReject", 0},
+		{"service-clipboard", "serviceClipboard", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := tsx.Limits{Load: time.Second, Call: 100 * time.Millisecond, CallTotal: tc.total}
+			h := core.NewHost()
+			var app *nsgotest.App
+			h.Handle("echo", func(c *core.HostCall) { go app.Post(func() { c.Resolve("x") }) })
+			h.Handle("fail", func(c *core.HostCall) { go app.Post(func() { c.Reject(errors.New("boom")) }) })
+			var plugin *tsx.Plugin
+			var loadErr error
+			app = nsgotest.Start(t, func(cx *core.Scope) core.Node {
+				plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &limits, Host: h, WebUnisolated: true})
+				return core.View{}
+			})
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			var callErr, peerErr error
+			var peerVal any
+			done, peerDone := 0, 0
+			app.Post(func() {
+				plugin.Call("peer", nil, func(v any, err error) { peerDone++; peerVal, peerErr = v, err })
+				plugin.Call(tc.export, nil, func(_ any, err error) { done++; callErr = err })
+			})
+			advanceUntil(t, app, 5*time.Second, func() bool { return done > 0 && peerDone > 0 })
+			if done != 1 || !errors.Is(callErr, tsx.ErrBudget) {
+				t.Fatalf("done called %d times with %v, want once with ErrBudget", done, callErr)
+			}
+			if peerDone != 1 || peerVal != "ok" || peerErr != nil {
+				t.Fatalf("peer = %d (%v, %v); want 1 (ok, nil)", peerDone, peerVal, peerErr)
+			}
+			app.Post(plugin.Close)
+			app.Settle()
+			if done != 1 {
+				t.Fatalf("done called %d times after Close, want once", done)
+			}
+		})
+	}
+}
+
 // TestPluginCallTotalStopsYieldingWork holds CallTotal to failing a call whose every slice stays within Call, as it yields to a timer between them, and to dropping its timers, so the app runs on.
 func TestPluginCallTotalStopsYieldingWork(t *testing.T) {
 	p := verified(t, `export async function loop() {
