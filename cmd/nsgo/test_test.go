@@ -1227,3 +1227,42 @@ func TestToolFailureIsTheMessage(t *testing.T) {
 		}
 	}
 }
+
+// Every repetition of a benchmark is reported, though go test attaches all but the first to the package (#2273).
+func TestBenchmarkRepetitionsAreReported(t *testing.T) {
+	var out bytes.Buffer
+	r := &testRun{running: map[string]*testResult{}, packages: map[string]*testResult{}, out: &out}
+	r.read(strings.NewReader(`{"Action":"run","Package":"x","Test":"BenchmarkX"}
+{"Action":"output","Package":"x","Test":"BenchmarkX","Output":"=== RUN   BenchmarkX\n"}
+{"Action":"output","Package":"x","Test":"BenchmarkX","Output":"BenchmarkX\n"}
+{"Action":"output","Package":"x","Test":"BenchmarkX","Output":"BenchmarkX-12    \t 6696271\t         1.685 ns/op\n"}
+{"Action":"output","Package":"x","Output":"BenchmarkX-12    \t 7485183\t         1.615 ns/op\n"}
+{"Action":"output","Package":"x","Output":"PASS\n"}
+{"Action":"pass","Package":"x","Elapsed":0.284}
+`))
+	if err := r.finish(testOptions{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := margin + "✓ BenchmarkX-12 6696271 1.685 ns/op\n" +
+		margin + "✓ BenchmarkX-12 7485183 1.615 ns/op\n" +
+		margin + "2 passed, 0 failed, 0 skipped\n"
+	if out.String() != want {
+		t.Fatalf("output:\n%s\nwant:\n%s", out.String(), want)
+	}
+}
+
+// The raw stream reaches the writer -json sets, so a tool can read go test's own events (#2273).
+func TestJSONWritesTheRawStream(t *testing.T) {
+	var out, raw bytes.Buffer
+	r := &testRun{running: map[string]*testResult{}, packages: map[string]*testResult{}, out: &out, raw: &raw}
+	stream := `{"Action":"run","Package":"x","Test":"TestOne"}
+{"Action":"pass","Package":"x","Test":"TestOne","Elapsed":0.1}
+`
+	r.read(strings.NewReader(stream))
+	if err := r.finish(testOptions{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if raw.String() != stream {
+		t.Fatalf("raw stream:\n%s\nwant:\n%s", raw.String(), stream)
+	}
+}

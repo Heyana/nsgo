@@ -35,8 +35,9 @@ type testOptions struct {
 	ldflags     []string      // app linker flags -ldflags adds to nsgo.yaml's build.ldflags
 	// env are the tests' KEY=VALUE variables, on every target: a
 	// phone's tests see no others of this machine's.
-	env  []string
-	args []string
+	env        []string
+	args       []string
+	jsonOutput bool // write go test's -json stream to stdout, for tools such as benchstat
 }
 
 // testEvent is a line of go test -json (test2json's format).
@@ -109,6 +110,8 @@ type testBuild struct {
 
 // testRun gathers what go test -json reports.
 type testRun struct {
+	// raw, when set, receives each line of go test's -json stream before it is read.
+	raw     io.Writer
 	results []*testResult
 	running map[string]*testResult
 	// packages hold what a package printed outside its tests, such as
@@ -139,6 +142,9 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 	// go test would take another package inside the app's directory, and a target never reads it.
 	if err := testPathError(opts.args); err != nil {
 		return err
+	}
+	if rest, on := stripJSONFlag(opts.args); on {
+		opts.args, opts.jsonOutput = rest, true
 	}
 	if opts.target != "" {
 		if _, err := parseTargetTestFlags(opts.args); err != nil {
@@ -497,6 +503,10 @@ type testCommand struct {
 // reportTests runs the commands one after another, as go test goes on past a package's failures, and reports their tests together. A run that did not start or end by itself, as when the command is interrupted, stops the rest.
 func reportTests(opts testOptions, runs ...testCommand) error {
 	r := &testRun{running: map[string]*testResult{}, packages: map[string]*testResult{}, trace: opts.trace, out: os.Stderr}
+	if opts.jsonOutput {
+		// The stream goes on untouched for tools that read go test's own events.
+		r.raw = os.Stdout
+	}
 	var waitErr error
 	for _, run := range runs {
 		if run.title != "" {
@@ -530,6 +540,9 @@ func (r *testRun) read(in io.Reader) {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
 	for sc.Scan() {
+		if r.raw != nil {
+			fmt.Fprintln(r.raw, sc.Text())
+		}
 		var ev testEvent
 		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
 			fmt.Fprintln(r.out, sc.Text())
@@ -584,6 +597,10 @@ func (r *testRun) event(ev testEvent) {
 		switch ev.Action {
 		case "output":
 			pkg.Output += ev.Output
+			// go test attaches every repetition after the first to the package rather than to the benchmark.
+			if name, ok := benchmarkName(ev.Output); ok {
+				r.benchmark(&testResult{Package: ev.Package, Name: name, Output: ev.Output})
+			}
 		case "fail":
 			pkg.Status = "fail"
 			// A package that did not build shows why.
@@ -672,6 +689,32 @@ func (r *testRun) interrupted(pkg string) {
 			fmt.Fprintf(r.out, "%s  %s\n%s", margin, pkg, indent(diagnostics.String()))
 		}
 	}
+}
+
+// stripJSONFlag removes the -json flag nsgo test takes for itself, so the rest of the flags go to go test.
+func stripJSONFlag(args []string) ([]string, bool) {
+	for i, a := range args {
+		switch a {
+		case "-json", "--json", "-json=true", "--json=true":
+			return slices.Delete(slices.Clone(args), i, i+1), true
+		case "-json=false", "--json=false":
+			return slices.Delete(slices.Clone(args), i, i+1), false
+		}
+	}
+	return args, false
+}
+
+// benchmarkName returns the benchmark a package-level output line reports, which carries its name before the -GOMAXPROCS suffix.
+func benchmarkName(line string) (string, bool) {
+	line = strings.TrimSuffix(line, "\n")
+	if !strings.HasPrefix(line, "Benchmark") || !strings.Contains(line, " ns/op") {
+		return "", false
+	}
+	name, _, _ := strings.Cut(line, " ")
+	if i := strings.LastIndexByte(name, '-'); i > 0 {
+		name = name[:i]
+	}
+	return name, true
 }
 
 // benchmark reports each result line a benchmark has printed whole as a
