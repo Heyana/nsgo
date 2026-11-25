@@ -677,6 +677,11 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		if op.Pipeline == nil {
 			return nil, fmt.Errorf("gpu: missing pipeline descriptor")
 		}
+		for _, ir := range []*shaderir.Program{op.Pipeline.Vertex.IR, op.Pipeline.Fragment.IR} {
+			if b := unsupportedSoftBuiltin(ir); b != "" {
+				return nil, fmt.Errorf("gpu: the software device does not implement the %q builtin", b)
+			}
+		}
 		comb := mergeShaderPrograms(op.Pipeline.Vertex.IR, op.Pipeline.Fragment.IR)
 		var attrMaps []softAttrBinding
 		if comb != nil {
@@ -725,6 +730,9 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 	case GPUOpCreateComputePipeline:
 		if op.ComputePipeline == nil || op.ComputePipeline.Compute.IR == nil || op.ComputePipeline.Compute.IR.ComputeFunc.Block == nil {
 			return nil, fmt.Errorf("gpu: missing compute pipeline shader")
+		}
+		if b := unsupportedSoftBuiltin(op.ComputePipeline.Compute.IR); b != "" {
+			return nil, fmt.Errorf("gpu: the software device does not implement the %q builtin", b)
 		}
 		d.computePipelines[op.ID] = &softComputePipeline{desc: *op.ComputePipeline}
 	case GPUOpDestroyComputePipeline:
@@ -3460,6 +3468,94 @@ func evalMatMul(a, b irVal) irVal {
 	return irVal{}
 }
 
+// softBuiltins are the builtin calls the interpreter evaluates. A pipeline that calls another one is refused when it is created, rather than drawing a zero where the call is (#2334). Derivatives are here because the rasterizer draws one fragment at a time and returns zero for them.
+var softBuiltins = map[shaderir.BuiltinFunc]bool{
+	// Constructors and casts.
+	shaderir.FloatF: true, shaderir.IntF: true, shaderir.UintF: true,
+	shaderir.Vec2F: true, shaderir.Vec3F: true, shaderir.Vec4F: true,
+	shaderir.IVec2F: true, shaderir.IVec3F: true, shaderir.IVec4F: true,
+	shaderir.UVec2F: true, shaderir.UVec3F: true, shaderir.UVec4F: true,
+	shaderir.Mat2F: true, shaderir.Mat3F: true, shaderir.Mat4F: true,
+	shaderir.Mat2x3F: true, shaderir.Mat2x4F: true, shaderir.Mat3x2F: true,
+	shaderir.Mat3x4F: true, shaderir.Mat4x2F: true, shaderir.Mat4x3F: true,
+	shaderir.FloatBitsToInt: true, shaderir.FloatBitsToUint: true,
+	shaderir.IntBitsToFloat: true, shaderir.UintBitsToFloat: true,
+	// Arithmetic.
+	shaderir.Sin: true, shaderir.Cos: true, shaderir.Tan: true,
+	shaderir.Asin: true, shaderir.Acos: true, shaderir.Atan: true, shaderir.Atan2: true,
+	shaderir.Pow: true, shaderir.Exp: true, shaderir.Exp2: true, shaderir.Log: true, shaderir.Log2: true,
+	shaderir.Sinh: true, shaderir.Cosh: true, shaderir.Tanh: true,
+	shaderir.Sqrt: true, shaderir.Inversesqrt: true, shaderir.Abs: true, shaderir.Sign: true,
+	shaderir.Floor: true, shaderir.Ceil: true, shaderir.Fract: true, shaderir.Trunc: true, shaderir.RoundEven: true,
+	shaderir.Mod: true, shaderir.Radians: true, shaderir.Degrees: true,
+	shaderir.Min: true, shaderir.Max: true, shaderir.Clamp: true, shaderir.Mix: true,
+	shaderir.Step: true, shaderir.Smoothstep: true,
+	// Geometry.
+	shaderir.Length: true, shaderir.Distance: true, shaderir.Dot: true, shaderir.Cross: true,
+	shaderir.Normalize: true, shaderir.Faceforward: true, shaderir.Reflect: true, shaderir.Refract: true,
+	shaderir.Transpose: true, shaderir.Determinant: true,
+	// Derivatives, zero on the software rasterizer.
+	shaderir.Dfdx: true, shaderir.Dfdy: true, shaderir.Fwidth: true,
+	// Textures, arrays and barriers.
+	shaderir.TextureSample: true, shaderir.TextureSampleLevel: true, shaderir.TextureSampleBias: true,
+	shaderir.TextureSampleGrad: true, shaderir.TextureSampleCompare: true, shaderir.TextureSampleCompareLevel: true,
+	shaderir.TextureLoad: true, shaderir.TextureDimensions: true, shaderir.TextureStore: true,
+	shaderir.ArrayLength: true, shaderir.WorkgroupBarrier: true, shaderir.StorageBarrier: true,
+}
+
+// unsupportedSoftBuiltin returns the first builtin a program calls that the interpreter does not evaluate, or "".
+func unsupportedSoftBuiltin(p *shaderir.Program) shaderir.BuiltinFunc {
+	var visit func(e shaderir.Expr) (shaderir.BuiltinFunc, bool)
+	visit = func(e shaderir.Expr) (shaderir.BuiltinFunc, bool) {
+		if e.Type == shaderir.BuiltinFuncExpr && e.BuiltinFunc != "" && !softBuiltins[e.BuiltinFunc] {
+			return e.BuiltinFunc, true
+		}
+		for _, sub := range e.Exprs {
+			if b, ok := visit(sub); ok {
+				return b, true
+			}
+		}
+		return "", false
+	}
+	var visitBlock func(b *shaderir.Block) (shaderir.BuiltinFunc, bool)
+	visitBlock = func(b *shaderir.Block) (shaderir.BuiltinFunc, bool) {
+		if b == nil {
+			return "", false
+		}
+		for _, s := range b.Stmts {
+			for _, e := range s.Exprs {
+				if bi, ok := visit(e); ok {
+					return bi, true
+				}
+			}
+			for _, sub := range s.Blocks {
+				if bi, ok := visitBlock(sub); ok {
+					return bi, true
+				}
+			}
+		}
+		return "", false
+	}
+	if p == nil {
+		return ""
+	}
+	if b, ok := visitBlock(p.VertexFunc.Block); ok {
+		return b
+	}
+	if b, ok := visitBlock(p.FragmentFunc.Block); ok {
+		return b
+	}
+	if b, ok := visitBlock(p.ComputeFunc.Block); ok {
+		return b
+	}
+	for i := range p.Funcs {
+		if b, ok := visitBlock(p.Funcs[i].Block); ok {
+			return b
+		}
+	}
+	return ""
+}
+
 func (vm *irVM) evalCall(e shaderir.Expr) irVal {
 	callee := e.Exprs[0]
 	if callee.Type == shaderir.FunctionExpr {
@@ -3614,6 +3710,41 @@ func (vm *irVM) evalCall(e shaderir.Expr) irVal {
 		return packMat(shaderir.Mat3, 3, args)
 	case shaderir.Mat4F:
 		return packMat(shaderir.Mat4, 4, args)
+	case shaderir.Mat2F:
+		return packMat(shaderir.Mat2, 2, args)
+	case shaderir.Mat2x3F:
+		return packMatrix(shaderir.Mat2x3, 2, 3, args)
+	case shaderir.Mat2x4F:
+		return packMatrix(shaderir.Mat2x4, 2, 4, args)
+	case shaderir.Mat3x2F:
+		return packMatrix(shaderir.Mat3x2, 3, 2, args)
+	case shaderir.Mat3x4F:
+		return packMatrix(shaderir.Mat3x4, 3, 4, args)
+	case shaderir.Mat4x2F:
+		return packMatrix(shaderir.Mat4x2, 4, 2, args)
+	case shaderir.Mat4x3F:
+		return packMatrix(shaderir.Mat4x3, 4, 3, args)
+	case shaderir.Transpose:
+		src := args[0]
+		cols, rows := src.typ.MatrixCols(), src.typ.MatrixRows()
+		out := irVal{typ: shaderir.Type{Main: shaderir.MatrixOf(rows, cols)}}
+		for c := 0; c < cols; c++ {
+			for r := 0; r < rows; r++ {
+				out.f[r*cols+c] = src.f[c*rows+r]
+			}
+		}
+		return out
+	case shaderir.Determinant:
+		m := args[0]
+		switch m.typ.MatrixCols() {
+		case 2:
+			return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{m.f[0]*m.f[3] - m.f[2]*m.f[1]}}
+		case 3:
+			return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{determinant3(m.f[:])}}
+		case 4:
+			return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{determinant4(m.f[:])}}
+		}
+		return irVal{typ: shaderir.Type{Main: shaderir.Float}}
 	case shaderir.Dot:
 		n := max(args[0].typ.VectorElementCount(), 1)
 		var sum float32
@@ -3661,6 +3792,41 @@ func (vm *irVM) evalCall(e shaderir.Expr) irVal {
 			out.f[i] = args[0].f[i] - 2*d*args[1].f[i]
 		}
 		return out
+	case shaderir.Distance:
+		n := max(args[0].typ.VectorElementCount(), 1)
+		var sum float32
+		for i := 0; i < n; i++ {
+			d := args[0].f[i] - args[1].f[i]
+			sum += d * d
+		}
+		return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{float32(math.Sqrt(float64(sum)))}}
+	case shaderir.Faceforward:
+		n := max(args[0].typ.VectorElementCount(), 1)
+		var d float32
+		for i := 0; i < n; i++ {
+			d += args[2].f[i] * args[1].f[i]
+		}
+		if d < 0 {
+			return args[0]
+		}
+		return mapVec1(args[0], func(x float32) float32 { return -x })
+	case shaderir.Refract:
+		n := max(args[0].typ.VectorElementCount(), 1)
+		eta := args[2].f[0]
+		var d float32
+		for i := 0; i < n; i++ {
+			d += args[1].f[i] * args[0].f[i]
+		}
+		k := 1 - eta*eta*(1-d*d)
+		out := irVal{typ: args[0].typ}
+		if k < 0 {
+			return out
+		}
+		scale := eta*d + float32(math.Sqrt(float64(k)))
+		for i := 0; i < n; i++ {
+			out.f[i] = eta*args[0].f[i] - scale*args[1].f[i]
+		}
+		return out
 	case shaderir.Min:
 		if args[0].typ.Scalar() == shaderir.Uint {
 			return mapUint2(args[0], args[1], func(a, b uint32) uint32 { return min(a, b) })
@@ -3705,6 +3871,59 @@ func (vm *irVM) evalCall(e shaderir.Expr) irVal {
 		return mapVec1(args[0], func(x float32) float32 { return float32(math.Cos(float64(x))) })
 	case shaderir.Tan:
 		return mapVec1(args[0], func(x float32) float32 { return float32(math.Tan(float64(x))) })
+	case shaderir.Radians:
+		return mapVec1(args[0], func(x float32) float32 { return x * float32(math.Pi/180) })
+	case shaderir.Degrees:
+		return mapVec1(args[0], func(x float32) float32 { return x * float32(180/math.Pi) })
+	case shaderir.Asin:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Asin(float64(x))) })
+	case shaderir.Acos:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Acos(float64(x))) })
+	case shaderir.Atan:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Atan(float64(x))) })
+	case shaderir.Atan2:
+		return mapVec2(args[0], args[1], func(y, x float32) float32 { return float32(math.Atan2(float64(y), float64(x))) })
+	case shaderir.Exp:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Exp(float64(x))) })
+	case shaderir.Exp2:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Exp2(float64(x))) })
+	case shaderir.Log:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Log(float64(x))) })
+	case shaderir.Log2:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Log2(float64(x))) })
+	case shaderir.Sinh:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Sinh(float64(x))) })
+	case shaderir.Cosh:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Cosh(float64(x))) })
+	case shaderir.Tanh:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Tanh(float64(x))) })
+	case shaderir.Trunc:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.Trunc(float64(x))) })
+	case shaderir.RoundEven:
+		return mapVec1(args[0], func(x float32) float32 { return float32(math.RoundToEven(float64(x))) })
+	case shaderir.Sign:
+		return mapVec1(args[0], func(x float32) float32 {
+			switch {
+			case x > 0:
+				return 1
+			case x < 0:
+				return -1
+			}
+			return 0
+		})
+	case shaderir.Mod:
+		return mapVec2(args[0], args[1], func(x, y float32) float32 { return x - y*float32(math.Floor(float64(x/y))) })
+	case shaderir.Dfdx, shaderir.Dfdy, shaderir.Fwidth:
+		// The software rasterizer draws one fragment at a time, so it has no neighbouring pixels to compare and a derivative is zero here (#2334).
+		return mapVec1(args[0], func(float32) float32 { return 0 })
+	case shaderir.FloatBitsToInt:
+		return floatBits(args[0], shaderir.Int)
+	case shaderir.FloatBitsToUint:
+		return floatBits(args[0], shaderir.Uint)
+	case shaderir.IntBitsToFloat:
+		return intBits(args[0])
+	case shaderir.UintBitsToFloat:
+		return uintBits(args[0])
 	case shaderir.Pow:
 		return mapVec2(args[0], args[1], func(a, b float32) float32 { return float32(math.Pow(float64(a), float64(b))) })
 	case shaderir.Step:
@@ -4273,6 +4492,95 @@ func swizzleIdx(c byte) int {
 		return 3
 	}
 	return -1
+}
+
+// packMatrix builds a cols x rows matrix from a matrix of another shape or from scalars and column vectors, as its constructor is written.
+func packMatrix(bt shaderir.BasicType, cols, rows int, args []irVal) irVal {
+	out := irVal{typ: shaderir.Type{Main: bt}}
+	if len(args) == 1 && args[0].typ.IsMatrix() {
+		src := args[0]
+		sc, sr := src.typ.MatrixCols(), src.typ.MatrixRows()
+		for c := 0; c < cols && c < sc; c++ {
+			for r := 0; r < rows && r < sr; r++ {
+				out.f[c*rows+r] = src.f[c*sr+r]
+			}
+		}
+		return out
+	}
+	k := 0
+	for _, a := range args {
+		cnt := max(a.typ.VectorElementCount(), 1)
+		for i := 0; i < cnt && k < cols*rows; i++ {
+			out.f[k] = a.f[i]
+			k++
+		}
+	}
+	return out
+}
+
+// floatBits reinterprets each float lane's bits as an int or uint lane.
+func floatBits(a irVal, main shaderir.BasicType) irVal {
+	n := max(a.typ.VectorElementCount(), 1)
+	out := irVal{typ: shaderir.Type{Main: shaderir.VectorOf(main, n)}}
+	for i := 0; i < n; i++ {
+		bits := math.Float32bits(a.f[i])
+		if main == shaderir.Int {
+			out.i[i] = int32(bits)
+			out.f[i] = float32(out.i[i])
+		} else {
+			out.u[i] = bits
+			out.f[i] = float32(out.u[i])
+		}
+	}
+	return out
+}
+
+// intBits reinterprets each int lane's bits as a float lane.
+func intBits(a irVal) irVal {
+	n := max(a.typ.VectorElementCount(), 1)
+	out := irVal{typ: shaderir.Type{Main: shaderir.VectorOf(shaderir.Float, n)}}
+	for i := 0; i < n; i++ {
+		out.f[i] = math.Float32frombits(uint32(a.i[i]))
+	}
+	return out
+}
+
+// uintBits reinterprets each uint lane's bits as a float lane.
+func uintBits(a irVal) irVal {
+	n := max(a.typ.VectorElementCount(), 1)
+	out := irVal{typ: shaderir.Type{Main: shaderir.VectorOf(shaderir.Float, n)}}
+	for i := 0; i < n; i++ {
+		out.f[i] = math.Float32frombits(a.u[i])
+	}
+	return out
+}
+
+// determinant3 is the determinant of a 3x3 matrix stored by column.
+func determinant3(f []float32) float32 {
+	return f[0]*(f[4]*f[8]-f[7]*f[5]) - f[3]*(f[1]*f[8]-f[7]*f[2]) + f[6]*(f[1]*f[5]-f[4]*f[2])
+}
+
+// determinant4 is the determinant of a 4x4 matrix stored by column, by cofactor expansion along its first column.
+func determinant4(f []float32) float32 {
+	var det float32
+	for r := 0; r < 4; r++ {
+		sub := make([]float32, 0, 9)
+		for c := 1; c < 4; c++ {
+			for rr := 0; rr < 4; rr++ {
+				if rr == r {
+					continue
+				}
+				sub = append(sub, f[c*4+rr])
+			}
+		}
+		term := f[r] * determinant3(sub)
+		if r%2 == 1 {
+			det -= term
+		} else {
+			det += term
+		}
+	}
+	return det
 }
 
 func mapVec1(a irVal, fn func(float32) float32) irVal {
