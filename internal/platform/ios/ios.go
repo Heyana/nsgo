@@ -416,6 +416,7 @@ func loadUIKit() {
 			if !iosInputAllowed(self, event) {
 				return
 			}
+			keepDoubleTaps(self, event)
 			apple.Super(self, cmd, event)
 			if onWindowEvent != nil {
 				onWindowEvent(self, event)
@@ -2142,6 +2143,27 @@ func (v *view) longPressDelay() time.Duration {
 func (v *view) pressable() bool {
 	return v.events.Has(driver.EventPress) || v.events.Has(driver.EventLongPress) ||
 		v.events.Has(driver.EventPressDown) || v.events.Has(driver.EventPressUp)
+}
+
+// doubleTapRecognizer names the recognizer of the double-tap interaction iPadOS 26 puts on every window. It recognizes a double tap anywhere and, cancelling touches in the view by default, cancels the second tap's touches, so a view never heard that tap end and OnPress never reported its second click.
+const doubleTapRecognizer = "com.apple.UIKit._UIDoubleTapInteraction.tap"
+
+// keepDoubleTaps lets the views under a touch hear it end while window's double-tap interaction recognizes it, as before iPadOS 26: the interaction still runs, and a pressable view reports both clicks of a double tap.
+func keepDoubleTaps(window, event objc.ID) {
+	const eventTypeTouches = 0 // UIEventTypeTouches
+	if event == 0 || objc.Send[int](event, sel("type")) != eventTypeTouches {
+		return
+	}
+	recognizers := window.Send(sel("gestureRecognizers"))
+	if recognizers == 0 {
+		return
+	}
+	for i := range objc.Send[uint](recognizers, sel("count")) {
+		g := recognizers.Send(sel("objectAtIndex:"), i)
+		if objc.Send[bool](g, sel("cancelsTouchesInView")) && apple.GoString(g.Send(sel("name"))) == doubleTapRecognizer {
+			g.Send(sel("setCancelsTouchesInView:"), false)
+		}
+	}
 }
 
 // Touches a view does not handle go up the responder chain to a pressable
