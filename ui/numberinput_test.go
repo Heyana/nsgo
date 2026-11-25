@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/core"
@@ -123,6 +124,28 @@ func TestNumberInputNoSnap(t *testing.T) {
 	app.Type(field, "120")
 	app.Submit(field)
 	checkNumberInputValue(t, app, value, field, 100, "100")
+}
+
+func TestNumberInputInvalidPrecisionUsesStep(t *testing.T) {
+	for name, precision := range map[string]float64{
+		"negative": -0.01,
+		"nan":      math.NaN(),
+		"infinite": math.Inf(1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			const field = "label:Value"
+			var value *core.Signal[float64]
+			app, _ := start(t, desktopEnv, func(cx *core.Scope) core.Node {
+				value = core.NewSignal(cx, 1.0)
+				return NumberInput{Label: "Value", Value: value.Get, OnChange: value.Set,
+					Min: 0, Max: 100, Step: 0.1, Precision: precision}
+			})
+			app.Clear(field)
+			app.Type(field, "9.87")
+			app.Submit(field)
+			checkNumberInputValue(t, app, value, field, 9.9, "9.9")
+		})
+	}
 }
 
 func checkNumberInputValue(t *testing.T, app *nsgotest.App, value *core.Signal[float64], field string, want float64, wantText string) {

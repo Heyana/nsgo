@@ -64,6 +64,14 @@ func (n NumberInput) step() float64 {
 	return 1
 }
 
+// precision is the positive finite explicit rounding grid, or zero to use Step.
+func (n NumberInput) precision() float64 {
+	if n.Precision > 0 && !math.IsNaN(n.Precision) && !math.IsInf(n.Precision, 0) {
+		return n.Precision
+	}
+	return 0
+}
+
 // decimals is how many digits after the point step needs.
 func decimals(step float64) int {
 	s := strconv.FormatFloat(step, 'f', -1, 64)
@@ -75,14 +83,15 @@ func decimals(step float64) int {
 
 // Render implements core.Node.
 func (n NumberInput) Render(cx *core.Scope) core.Node {
+	precision := n.precision()
 	format := n.Format
 	if format == nil {
 		d := -1
 		if !n.NoSnap {
-			if n.Precision == 0 {
+			if precision == 0 {
 				d = decimals(n.step())
 			} else {
-				d = decimals(n.Precision)
+				d = decimals(precision)
 				if n.Max > n.Min {
 					d = max(d, decimals(n.Min))
 				}
@@ -99,7 +108,7 @@ func (n NumberInput) Render(cx *core.Scope) core.Node {
 	}
 	number := func(v float64) func() *float64 { return func() *float64 { return &v } }
 	in := base.NumberInput{Ref: n.Ref, LabelledBy: n.LabelledBy, Invalid: n.Invalid, Format: format, Parse: parse, OnCommit: true,
-		Snap: !n.NoSnap, Precision: n.Precision, Step: n.step, Disabled: n.Disabled, Label: n.Label, LabelFunc: n.LabelFunc, TestID: n.TestID,
+		Snap: !n.NoSnap, Precision: precision, Step: n.step, Disabled: n.Disabled, Label: n.Label, LabelFunc: n.LabelFunc, TestID: n.TestID,
 		ControlsRight: true, IncrementLabel: n.IncrementLabel, DecrementLabel: n.DecrementLabel,
 		Value: func() *float64 {
 			v := 0.0
