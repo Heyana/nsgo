@@ -1,6 +1,7 @@
 package core
 
 import (
+	"image"
 	"slices"
 	"strings"
 	"testing"
@@ -117,5 +118,29 @@ func TestUniformLanesFollowTheDeclarations(t *testing.T) {
 	}
 	if _, _, ok := prog.UniformLanes("Missing"); ok {
 		t.Error("UniformLanes named a uniform the program has not")
+	}
+}
+
+// A shader's images reach the platform with each new pixel version, and an unchanged one sends no shader item (#2251).
+func TestShaderSendsImagesByVersion(t *testing.T) {
+	prog := MustCompileShader(testShader)
+	pixels := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	var version *Signal[int]
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
+		version = NewSignal(cx, 1)
+		return Shader{Program: prog, Style: Style{Height: Pt(40)}, ImagesFunc: func() []ImageSource {
+			return []ImageSource{{URI: "frame", Pixels: pixels, Version: uint64(version.Get())}}
+		}}
+	})
+	sh := shaderItem(h.commit())
+	if sh == nil || len(sh.Images) != 1 || sh.Images[0].Version != 1 || sh.Images[0].Pixels == nil {
+		t.Fatalf("the first commit sent %+v", sh)
+	}
+	if sh := shaderItem(h.commit()); sh != nil {
+		t.Errorf("an unchanged image sent %+v", sh)
+	}
+	version.Set(2)
+	if sh := shaderItem(h.commit()); sh == nil || len(sh.Images) != 1 || sh.Images[0].Version != 2 {
+		t.Errorf("a new version sent %+v", sh)
 	}
 }
