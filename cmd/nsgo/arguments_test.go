@@ -184,3 +184,18 @@ func TestTargetTestFlagsNeverDisappear(t *testing.T) {
 		}
 	}
 }
+
+// The test command registers -json itself, so nsgo test -json <dir> parses before the directory is split off (#2273).
+func TestTestCommandRegistersJSON(t *testing.T) {
+	var o testOptions
+	fs := testFlagSet(&o)
+	if err := parseCommand(fs, []string{"-json", "app"}, -1); err != nil {
+		t.Fatal(err)
+	}
+	if !o.jsonOutput {
+		t.Fatal("-json did not reach the test options")
+	}
+	if dir, rest := splitTestArgs(fs.Args()); dir != "app" || len(rest) != 0 {
+		t.Fatalf("dir=%q flags=%q, want app and no forwarded flags", dir, rest)
+	}
+}
