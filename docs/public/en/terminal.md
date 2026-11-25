@@ -5,7 +5,7 @@ group: Core concepts
 order: 63
 ---
 
-`base/terminal` provides a session (`Terminal`) and its `View`. Desktops run local programs; iOS and browsers use `Options.Conn`, an `io.ReadWriteCloser` connected to a remote program. The app owns the session and closes it when finished.
+`base/terminal` provides a session (`Terminal`) and its unstyled `View`; `ui/terminal` wraps `View` in `ui`'s look for the default context menu and touch key bar. Desktops run local programs; iOS and browsers use `Options.Conn`, an `io.ReadWriteCloser` connected to a remote program. The app owns the session and closes it when finished.
 
 ```go
 t, err := terminal.New(terminal.Options{CursorBlink: true})
@@ -65,7 +65,7 @@ view := terminal.View{
 
 ## Context menu
 
-A secondary click opens an unstyled `base.ContextMenu` with localized Copy, Paste, Select All and Clear items. Copy requires a selection. Clear removes content above the prompt and is disabled on the alternate screen. Touch screens use the context menu's long-press presentation. Style the surface with `MenuClass`/`MenuStyle` and the items with `MenuItemClass`/`MenuItemStyle`.
+A secondary click opens an unstyled `base.ContextMenu` on `base/terminal.View` with localized Copy, Paste, Select All and Clear items. `ui/terminal.View` styles both that menu and the touch key bar in `ui`'s theme colors, with app style overrides merged on top. Copy requires a selection. Clear removes content above the prompt and is disabled on the alternate screen. Touch screens use the context menu's long-press presentation. Style the surface with `MenuClass`/`MenuStyle`/`MenuStyleFunc`, the items with `MenuItemClass`/`MenuItemStyle`/`MenuItemStyleFunc`, and optional leading item icons with `MenuItemIcon`.
 
 Set `RightClickAction` to `RightClickPaste`, `RightClickCopy`, `RightClickCopyOrPaste` (copy a selection, otherwise paste), or `RightClickIgnore`. Ignore leaves the event for an enclosing app menu; use it when supplying a styled `ui.ContextMenu` that calls the ref's actions.
 

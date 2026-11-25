@@ -70,8 +70,14 @@ func TestTouch(t *testing.T) {
 	app.Press("id:term-key-up")
 	sent("\x1b[A")
 	app.Press("id:term-key-ctrl")
+	if !app.Find("id:term-key-ctrl").Props.Pressed {
+		t.Fatal("ctrl key did not report Pressed while latched")
+	}
 	app.Type("label:Terminal", "c")
 	sent("\x03")
+	if app.Find("id:term-key-ctrl").Props.Pressed {
+		t.Fatal("ctrl key remained Pressed after consuming key")
+	}
 	app.Type("label:Terminal", "c")
 	sent("c")
 	app.Press("id:term-key-|")

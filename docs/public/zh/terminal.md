@@ -5,7 +5,7 @@ group: 核心概念
 order: 63
 ---
 
-`base/terminal` 提供会话 `Terminal` 及其 `View`。桌面运行本地程序；iOS 和浏览器使用 `Options.Conn`，即连接远程程序的 `io.ReadWriteCloser`。应用持有会话，并在结束时关闭它。
+`base/terminal` 提供会话 `Terminal` 及其无样式的 `View`；`ui/terminal` 以 `ui` 的外观包装 `View`，为默认上下文菜单和触控按键栏着色。桌面运行本地程序；iOS 和浏览器使用 `Options.Conn`，即连接远程程序的 `io.ReadWriteCloser`。应用持有会话，并在结束时关闭它。
 
 ```go
 t, err := terminal.New(terminal.Options{CursorBlink: true})
@@ -65,7 +65,7 @@ view := terminal.View{
 
 ## 上下文菜单
 
-右键默认打开无样式的 `base.ContextMenu`，包含本地化的复制、粘贴、全选和清空。复制需要已有选区；清空移除提示符上方内容，在备用屏幕禁用。触摸屏沿用上下文菜单的长按展示。用 `MenuClass`/`MenuStyle` 设置菜单表面，用 `MenuItemClass`/`MenuItemStyle` 设置菜单项。
+`base/terminal.View` 右键默认打开无样式的 `base.ContextMenu`，包含本地化的复制、粘贴、全选和清空。`ui/terminal.View` 以 `ui` 主题颜色为该菜单及触控按键栏提供样式，并保留应用自定义样式的覆盖。复制需要已有选区；清空移除提示符上方内容，在备用屏幕禁用。触摸屏沿用上下文菜单的长按展示。用 `MenuClass`/`MenuStyle`/`MenuStyleFunc` 设置菜单表面，用 `MenuItemClass`/`MenuItemStyle`/`MenuItemStyleFunc` 设置菜单项，并用 `MenuItemIcon` 为菜单项提供前导图标。
 
 `RightClickAction` 还可设置为 `RightClickPaste`、`RightClickCopy`、`RightClickCopyOrPaste`（有选区时复制，否则粘贴）或 `RightClickIgnore`。Ignore 把事件留给外层应用菜单；自定义带样式的 `ui.ContextMenu` 可通过 ref 调用相同动作。
 

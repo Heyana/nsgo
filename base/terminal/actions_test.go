@@ -190,3 +190,35 @@ func TestTerminalSecondaryClickPolicyAndCustomMenu(t *testing.T) {
 	app.RightClick("id:term-screen")
 	app.Find("role:menuitem App menu")
 }
+
+func TestTerminalMenuStyleFuncReactsToSignals(t *testing.T) {
+	conn := newRecordingConn()
+	term := newTerminal(t, Options{Conn: conn})
+	var bg *core.Signal[core.Color]
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		bg = core.NewSignal(cx, core.RGB(0x111111))
+		return View{
+			Terminal: term, TestID: "term", AutoFocus: true,
+			MenuStyle:         core.Style{Padding: core.All(4)},
+			MenuStyleFunc:     func() core.Style { return core.Style{Background: bg.Get()} },
+			MenuItemStyle:     core.Style{Padding: core.Symmetric(0, 8)},
+			MenuItemStyleFunc: func() core.Style { return core.Style{Color: bg.Get()} },
+			Style:             core.Style{Width: core.Pct(100), Height: core.Pct(100)},
+		}
+	}, nsgotest.Size(400, 300), nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+	app.RightClick("id:term-screen")
+	if got := app.Find("role:menu").Style.Background; got != core.RGB(0x111111) {
+		t.Fatalf("menu background = %#x, want 0x111111ff", got)
+	}
+	if got := app.Find("id:term-menu-paste >> text:Paste").TextStyle.Color; got != core.RGB(0x111111) {
+		t.Fatalf("item color = %#x, want 0x111111ff", got)
+	}
+	app.Post(func() { bg.Set(core.RGB(0x222222)) })
+	app.Settle()
+	if got := app.Find("role:menu").Style.Background; got != core.RGB(0x222222) {
+		t.Fatalf("updated menu background = %#x, want 0x222222ff", got)
+	}
+	if got := app.Find("id:term-menu-paste >> text:Paste").TextStyle.Color; got != core.RGB(0x222222) {
+		t.Fatalf("updated item color = %#x, want 0x222222ff", got)
+	}
+}

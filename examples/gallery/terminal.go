@@ -4,21 +4,20 @@ import (
 	"runtime"
 
 	"github.com/nsgo-dev/nsgo/base/terminal"
-	terminalwords "github.com/nsgo-dev/nsgo/base/terminal/locales"
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/icons/lucide"
 
 	"github.com/nsgo-dev/nsgo/examples/gallery/locales"
 	"github.com/nsgo-dev/nsgo/ui"
+	uiterminal "github.com/nsgo-dev/nsgo/ui/terminal"
 )
 
-// base/terminal's View runs the user's shell with Ghostty's emulator, or
+// ui/terminal's View runs the user's shell with Ghostty's emulator, or
 // on phones, which run no local programs, a demo session standing in for
 // a remote one (terminal_session.go). The panel beside it sets what the
 // view and the terminal take, each under its API's name, and reads back
-// what the shell reports. The context menu around the view is the app's,
-// calling the view's Ref; on touch screens a long press selects a word and
-// opens it, and a bar of keys shows over the keyboard. Where no terminal
+// what the shell reports. Its default context menu and touch key bar
+// take ui's look; on touch screens a long press selects a word and opens
+// the menu, and the bar of keys shows over the keyboard. Where no terminal
 // runs (the web) the demo says why.
 
 // terminalThemes are Ghostty's themes the panel offers, after following
@@ -80,35 +79,15 @@ func terminalDemo(cx *core.Scope) core.Node {
 			if name := theme.Get(); name != "" {
 				th, _ = terminal.GhosttyTheme(name)
 			}
-			view := terminal.View{Terminal: t, Label: tr.DemoTerminal(), TestID: "terminal", AutoFocus: true, Ref: ref,
-				RightClickAction: terminal.RightClickIgnore,
-				Theme:            th, DarkTheme: th,
+			return uiterminal.View{Terminal: t, Label: tr.DemoTerminal(), TestID: "terminal", AutoFocus: true, Ref: ref,
+				Theme: th, DarkTheme: th,
 				AllowClipboardRead: clipboardRead.Get(), AllowClipboardWrite: clipboardWrite.Get(),
 				Font:         core.Font{Family: family.Get(), Size: core.Points(size.Get())},
 				Padding:      terminal.Padding{X: core.Points(padX.Get()), Y: core.Points(padY.Get())},
 				OnSizeChange: func(cols, rows int) { cells.Set([2]int{cols, rows}) },
 				Style:        core.Style{FlexGrow: 1},
 				NoKeyBar:     !keyBar.Get(),
-				KeyBarStyle:  core.Style{Borders: core.Edges{Top: 1}, Padding: core.Symmetric(6, 6), FlexShrink: 0},
-				KeyBarStyleFunc: func() core.Style {
-					return core.Style{Background: colors.Raised(), BorderColors: core.EdgeColors{Top: colors.Line()}}
-				},
-				KeyStyle: core.Style{MinWidth: core.Pt(40), Height: core.Pt(34), Padding: core.Symmetric(0, 10), Margin: core.Edges{Right: 6},
-					CornerRadius: 6, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, BorderWidth: 1, FontSize: 15},
-				KeyStyleFunc: func() core.Style {
-					return core.Style{Background: colors.Surface(), BorderColor: colors.Border(), Color: colors.Text(),
-						Active: &core.Style{Background: colors.Hover()}}
-				},
-				KeyOnStyleFunc: func() core.Style {
-					return core.Style{Background: colors.AccentFill(), BorderColor: colors.AccentFill(), Color: colors.OnAccent()}
-				},
 			}
-			return ui.ContextMenu{TestID: "terminal-menu", Style: core.Style{FlexGrow: 1}, Trigger: view, Children: []core.Node{
-				ui.MenuItem{Text: tr.TerminalCopy(), Icon: lucide.Copy, Disabled: func() bool { return !ref.Selected() }, OnSelect: ref.Copy},
-				ui.MenuItem{Text: tr.TerminalPaste(), OnSelect: ref.Paste},
-				ui.MenuItem{Text: tr.TerminalSelectAll(), OnSelect: ref.SelectAll},
-				ui.MenuItem{Text: terminalwords.For(cx).Clear(), OnSelect: func() { ref.Perform(terminal.ClearScreen, 0) }},
-			}}
 		})
 	})
 

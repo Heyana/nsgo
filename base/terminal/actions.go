@@ -152,13 +152,22 @@ func (v *view) withContextMenu(children []core.Node) []core.Node {
 	}
 	m := func() locales.Messages { return locales.For(v.cx) }
 	item := func(id string, label func() string, action Action, disabled func() bool) core.Node {
+		var itemChildren []core.Node
+		if p.MenuItemIcon != nil {
+			if icon := p.MenuItemIcon(v.cx, action); icon != nil {
+				itemChildren = append(itemChildren, icon)
+			}
+		}
+		itemChildren = append(itemChildren, core.Text{ContentFunc: label, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1}})
 		return base.MenuItem{TestID: v.testID("menu-" + id), LabelFunc: label, Disabled: disabled,
-			Class: p.MenuItemClass, Style: p.MenuItemStyle, OnSelect: func() { v.perform(action, 0) },
-			Children: []core.Node{core.Text{ContentFunc: label}}}
+			Class: p.MenuItemClass, Style: p.MenuItemStyle, StyleFunc: p.MenuItemStyleFunc,
+			OnSelect: func() { v.perform(action, 0) },
+			Children: itemChildren}
 	}
 	return []core.Node{base.ContextMenu{Style: fill,
+		Offset: 2, Margin: 8,
 		Trigger:    core.View{Style: fill, Children: children},
-		PopupClass: p.MenuClass, PopupStyle: p.MenuStyle,
+		PopupClass: p.MenuClass, PopupStyle: p.MenuStyle, PopupStyleFunc: p.MenuStyleFunc,
 		Children: []core.Node{
 			item("copy", func() string { return m().Copy() }, CopyToClipboard, func() bool { return !v.selected.Get() }),
 			item("paste", func() string { return m().Paste() }, PasteFromClipboard, func() bool { return v.t == nil }),

@@ -85,15 +85,19 @@ func (v *view) keyBar() core.Node {
 		var keys []core.Node
 		for _, name := range names {
 			text, label := keyCap(m, name)
-			on := func() bool { return false }
+			var pressed func() bool
 			switch name {
 			case "ctrl":
-				on = v.ctrlOn.Get
+				pressed = v.ctrlOn.Get
 			case "alt":
-				on = v.altOn.Get
+				pressed = v.altOn.Get
+			}
+			on := pressed
+			if on == nil {
+				on = func() bool { return false }
 			}
 			keys = append(keys, core.View{
-				Role: core.RoleButton, Label: label, NoFocus: true, TestID: v.testID("key-" + name),
+				Role: core.RoleButton, Label: label, NoFocus: true, Pressed: pressed, TestID: v.testID("key-" + name),
 				ClassFunc: func() string {
 					if on() {
 						return strings.TrimSpace(p.KeyClass + " " + p.KeyOnClass)

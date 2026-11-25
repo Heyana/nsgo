@@ -34,7 +34,7 @@ nsgo
 ├── Components
 │   ├── ui                               Styled components on base
 │   │   ├── chat                         A conversation
-│   │   └── filepicker, diff, commitgraph, flow  A file picker and styled forms
+│   │   └── filepicker, editor, diff, commitgraph, flow, richeditor, terminal  A file picker and styled forms
 │   ├── base                             Unstyled controls, popups, navigation
 │   │   ├── datatable, dock, plot, toast Complex components
 │   │   ├── commitgraph                  A Git history's revision graph

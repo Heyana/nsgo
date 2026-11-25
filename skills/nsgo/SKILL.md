@@ -181,7 +181,7 @@ Declare `url_schemes` for private app URLs and `app_links` for explicit HTTPS DN
 
 ## Terminal
 
-`base/terminal.View` runs a session the app owns and closes. `Keybinds` overrides focused, noncomposing input defaults with clipboard, selection, clear and zoom actions; `Ref.FontSize` is tracked and `SetFontSize` keeps the session. `RightClickAction` defaults to a localized unstyled menu; use `RightClickIgnore` with an app-owned menu. Import `tsx/terminal` for reactive `keybinds` and `rightClickAction` in `nsgo/base`. [Terminal](https://nsgo.dev/docs/terminal.md)
+`base/terminal.View` runs a session the app owns and closes, and `ui/terminal` (`terminal.View`) styles its default context menu and touch key bar in `ui`'s look. `Keybinds` overrides focused, noncomposing input defaults with clipboard, selection, clear and zoom actions; `Ref.FontSize` is tracked and `SetFontSize` keeps the session. `RightClickAction` defaults to the localized context menu; use `RightClickIgnore` with an app-owned menu. Import `tsx/terminal` for reactive `keybinds` and `rightClickAction` in `nsgo/base`. [Terminal](https://nsgo.dev/docs/terminal.md)
 
 ## Web documents
 
