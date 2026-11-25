@@ -1206,3 +1206,39 @@ func TestPipelineTextureOverloadErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestUniformArrayStride(t *testing.T) {
+	const frag = `
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+	return vec4<f32>(0.0);
+}
+`
+	for _, tc := range []struct {
+		name, decl string
+		want       string
+	}{
+		{"scalar", "struct U { w: array<f32, 4>, s: f32 }\n@group(0) @binding(0) var<uniform> u: U;", "4 bytes apart"},
+		{"vec2", "@group(0) @binding(0) var<uniform> u: array<vec2<f32>, 4>;", "8 bytes apart"},
+		{"nested struct", "struct E { a: f32, b: f32 }\nstruct U { e: array<E, 2> }\n@group(0) @binding(0) var<uniform> u: U;", "8 bytes apart"},
+		{"vec4", "@group(0) @binding(0) var<uniform> u: array<vec4<f32>, 4>;", ""},
+		{"vec3", "struct U { v: array<vec3<f32>, 2>, s: f32 }\n@group(0) @binding(0) var<uniform> u: U;", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := wgsl.CompilePipeline(tc.decl + frag)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("CompilePipeline: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("CompilePipeline error = %v, want one containing %q", err, tc.want)
+			}
+		})
+	}
+	const storage = "@group(0) @binding(0) var<storage, read> s: array<f32, 4>;"
+	if _, err := wgsl.CompilePipeline(storage + frag); err != nil {
+		t.Fatalf("storage arrays keep natural strides: %v", err)
+	}
+}

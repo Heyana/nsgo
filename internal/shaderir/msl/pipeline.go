@@ -189,8 +189,7 @@ func (w *pipeWriter) bufferStructIsStorage(t shaderir.Type) bool {
 	return u == structStorage || u == structBoth
 }
 
-// mslStructSizeAlign returns the emitted Metal byte size and alignment of a
-// buffer-layout struct, matching WGSL host-shareable layout.
+// mslStructSizeAlign returns the emitted Metal byte size and alignment of a buffer-layout struct, matching WGSL host-shareable layout.
 func (w *pipeWriter) mslStructSizeAlign(t shaderir.Type) (size, align int) {
 	if w.bufferStructIsStorage(t) {
 		return t.StorageSizeBytes(), t.StorageAlignBytes()
@@ -198,12 +197,8 @@ func (w *pipeWriter) mslStructSizeAlign(t shaderir.Type) (size, align int) {
 	return t.SizeBytes(), t.AlignBytes()
 }
 
-// mslBufferMemberLayout returns the Metal byte size, alignment, and whether m
-// is a runtime-sized array for a member of a host-shareable struct. Direct vec3
-// members use packed_*3 (size 12, align 4), whereas array elements keep
-// unpacked vector types (size 16, align 16) so array<vec3<T>, N> keeps its
-// 16-byte WGSL stride.
-func (w *pipeWriter) mslBufferMemberLayout(t shaderir.Type, isStorage bool) (size, align int, runtimeArr bool) {
+// mslBufferMemberLayout returns the Metal byte size, alignment, and whether m is a runtime-sized array for a member of a host-shareable struct. Direct vec3 members use packed_*3 (size 12, align 4), whereas array elements keep unpacked vector types (size 16, align 16) so array<vec3<T>, N> keeps its 16-byte WGSL stride.
+func (w *pipeWriter) mslBufferMemberLayout(t shaderir.Type) (size, align int, runtimeArr bool) {
 	switch t.Main {
 	case shaderir.Bool:
 		return 1, 1, false
@@ -231,7 +226,7 @@ func (w *pipeWriter) mslBufferMemberLayout(t shaderir.Type, isStorage bool) (siz
 		if len(t.Sub) == 0 {
 			return 0, 4, t.Length == 0
 		}
-		es, ea := w.mslArrayElemLayout(t.Sub[0], isStorage)
+		es, ea := w.mslArrayElemLayout(t.Sub[0])
 		if t.Length == 0 {
 			return 0, ea, true
 		}
@@ -244,14 +239,14 @@ func (w *pipeWriter) mslBufferMemberLayout(t shaderir.Type, isStorage bool) (siz
 	return 4, 4, false
 }
 
-func (w *pipeWriter) mslArrayElemLayout(t shaderir.Type, isStorage bool) (size, align int) {
+func (w *pipeWriter) mslArrayElemLayout(t shaderir.Type) (size, align int) {
 	switch t.Main {
 	case shaderir.Vec3, shaderir.IVec3, shaderir.UVec3:
 		return 16, 16
 	case shaderir.Struct:
 		return w.mslStructSizeAlign(t)
 	default:
-		s, a, _ := w.mslBufferMemberLayout(t, isStorage)
+		s, a, _ := w.mslBufferMemberLayout(t)
 		return s, a
 	}
 }
@@ -284,7 +279,7 @@ func (w *pipeWriter) emitStructDecl(name string, st shaderir.Type) []string {
 		if isStorage {
 			wgslOff = st.StorageStructFieldOffset(j)
 		}
-		mslSize, mslAlign, runtimeArr := w.mslBufferMemberLayout(m, isStorage)
+		mslSize, mslAlign, runtimeArr := w.mslBufferMemberLayout(m)
 		alignedOff := roundUp(curOff, max(mslAlign, 1))
 		if alignedOff < wgslOff {
 			members = append(members, fmt.Sprintf("\tuchar __pad%d[%d];", padIdx, wgslOff-curOff))
