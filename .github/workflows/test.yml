@@ -28,7 +28,7 @@ jobs:
     uses: ./.github/workflows/apple-changes.yml
 
   gallery:
-    name: Gallery (${{ matrix.target }})
+    name: Gallery (${{ matrix.target }}, shard ${{ matrix.shard }})
     needs: changes
     # Gallery (web) is a required check, so it runs even when the changes job fails; macOS joins it unless the change cannot affect Apple's targets and all-jobs is unset.
     if: ${{ !cancelled() }}
@@ -36,6 +36,8 @@ jobs:
       fail-fast: false
       matrix:
         target: ${{ fromJSON(!inputs.all-jobs && needs.changes.outputs.apple == 'false' && '["web"]' || '["web","macos"]') }}
+        # The gallery's tests run in one long step, so two runners take half the list each: names TestA…TestM and TestN…TestZ.
+        shard: [1, 2]
     runs-on: ${{ matrix.target == 'macos' && 'depot-macos-26' || 'depot-ubuntu-24.04-4' }}
     timeout-minutes: 30
     steps:
@@ -55,13 +57,17 @@ jobs:
         if: matrix.target == 'macos'
         run: echo "DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer" >> "$GITHUB_ENV"
       - name: Test gallery on the target
-        run: go tool nsgo test -target ${{ matrix.target }} -junit "$RUNNER_TEMP/gallery.xml" -screenshots gallery-screenshots ./examples/gallery
+        env:
+          GALLERY_TESTS: ${{ matrix.shard == 1 && '^Test[A-M]' || '^Test[N-Z]' }}
+        run: go tool nsgo test -target ${{ matrix.target }} -run "$GALLERY_TESTS" -junit "$RUNNER_TEMP/gallery.xml" -screenshots gallery-screenshots ./examples/gallery
       - name: Test formula layout and display wrapping
+        if: matrix.shard == 1
         run: go tool nsgo test -target ${{ matrix.target }} -screenshots formula-screenshots ./base/formula
       - name: Test terminal actions on macOS
-        if: matrix.target == 'macos'
+        if: matrix.target == 'macos' && matrix.shard == 1
         run: go tool nsgo test -target macos -run '^TestTerminal(KeybindOverridesZoomAndFocus|DefaultContextMenuActionsAndLanguage|SecondaryClickPolicyAndCustomMenu)$' -screenshots terminal-actions-screenshots ./base/terminal -- -count=1
       - name: Run the many-sprite and mesh canvas scenarios
+        if: matrix.shard == 1
         env:
           NSGO_GALLERY_PERF: '1'
           NSGO_GALLERY_PERF_SECONDS: '3'
@@ -70,7 +76,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gallery-${{ matrix.target }}
+          name: gallery-${{ matrix.target }}-shard-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/gallery.xml
             gallery-screenshots
