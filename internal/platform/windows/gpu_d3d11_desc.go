@@ -46,8 +46,8 @@ const (
 	dxgiFmtP010               uint32 = 104
 
 	// DXGI_COLOR_SPACE_TYPE values (dxgicommon.h).
-	dxgiColorSpaceRGBFullG22NoneP709   uint32 = 0
-	dxgiColorSpaceRGBFullG10NoneP709   uint32 = 10
+	dxgiColorSpaceRGBFullG22NoneP709    uint32 = 0
+	dxgiColorSpaceRGBFullG10NoneP709    uint32 = 10
 	dxgiColorSpaceRGBFullG2084NoneP2020 uint32 = 12
 
 	// D3D11_USAGE (d3d11.h).

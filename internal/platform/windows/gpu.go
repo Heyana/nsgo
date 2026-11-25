@@ -140,7 +140,7 @@ type d3d11SwapTargets struct {
 	generation               uint64
 }
 
-func (s *d3d11SwapTargets) SurfaceFormat() driver.GPUTextureFormat { return s.format }
+func (s *d3d11SwapTargets) SurfaceFormat() driver.GPUTextureFormat  { return s.format }
 func (s *d3d11SwapTargets) SurfaceColorSpace() driver.GPUColorSpace { return s.colorSpace }
 
 func (s *d3d11SwapTargets) Release() {

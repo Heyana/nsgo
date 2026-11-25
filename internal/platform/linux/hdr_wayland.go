@@ -69,9 +69,9 @@ func loadWaylandColorMgmt() bool {
 		return false
 	}
 	for name, fn := range map[string]any{
-		"gdk_wayland_monitor_get_type":      &wlColorMgmt.getMonitorType,
-		"gdk_wayland_monitor_get_wl_output": &wlColorMgmt.getWLOutput,
-		"gdk_wayland_surface_get_type":      &wlColorMgmt.getSurfaceType,
+		"gdk_wayland_monitor_get_type":       &wlColorMgmt.getMonitorType,
+		"gdk_wayland_monitor_get_wl_output":  &wlColorMgmt.getWLOutput,
+		"gdk_wayland_surface_get_type":       &wlColorMgmt.getSurfaceType,
 		"gdk_wayland_surface_get_wl_surface": &wlColorMgmt.getWLSurface,
 	} {
 		sym, err := purego.Dlsym(gtkLib, name)
@@ -342,13 +342,30 @@ func wlCMInfoDone(_, info uintptr) {
 	}
 }
 
-func wlCMInfoIgnoredHU(_, _ uintptr, _ int32, _ uint32)                                           {}
-func wlCMInfoIgnored8I(_, _ uintptr, _, _, _, _, _, _, _, _ int32)                                {}
-func wlCMInfoIgnoredU(_, _ uintptr, _ uint32)                                                     {}
-func wlCMInfoPrimariesNamed(_, info uintptr, p uint32)                                            { if w := wlCMInfos[info]; w != nil { w.primariesNamed = p } }
-func wlCMInfoTFNamed(_, info uintptr, tf uint32)                                                  { if w := wlCMInfos[info]; w != nil { w.tfNamed = tf } }
-func wlCMInfoLuminances(_, info uintptr, _ uint32, maxLum, refLum uint32)                         { if w := wlCMInfos[info]; w != nil { w.maxLum = maxLum; w.refLum = refLum } }
-func wlCMInfoTargetLuminance(_, info uintptr, _ uint32, maxLum uint32)                            { if w := wlCMInfos[info]; w != nil { w.targetMaxLum = maxLum } }
+func wlCMInfoIgnoredHU(_, _ uintptr, _ int32, _ uint32)            {}
+func wlCMInfoIgnored8I(_, _ uintptr, _, _, _, _, _, _, _, _ int32) {}
+func wlCMInfoIgnoredU(_, _ uintptr, _ uint32)                      {}
+func wlCMInfoPrimariesNamed(_, info uintptr, p uint32) {
+	if w := wlCMInfos[info]; w != nil {
+		w.primariesNamed = p
+	}
+}
+func wlCMInfoTFNamed(_, info uintptr, tf uint32) {
+	if w := wlCMInfos[info]; w != nil {
+		w.tfNamed = tf
+	}
+}
+func wlCMInfoLuminances(_, info uintptr, _ uint32, maxLum, refLum uint32) {
+	if w := wlCMInfos[info]; w != nil {
+		w.maxLum = maxLum
+		w.refLum = refLum
+	}
+}
+func wlCMInfoTargetLuminance(_, info uintptr, _ uint32, maxLum uint32) {
+	if w := wlCMInfos[info]; w != nil {
+		w.targetMaxLum = maxLum
+	}
+}
 
 func wlCMPoll(_ uintptr) int32 {
 	s := wlCMServer

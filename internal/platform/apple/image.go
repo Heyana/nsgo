@@ -35,12 +35,12 @@ var (
 	cgColorSpaceCreateWithName   func(name uintptr) uintptr
 	cgDataProviderCreateWithData func(data uintptr) uintptr
 	cgImageCreate                func(w, h, bits, pixelBits, row int, space uintptr, info uint32, provider, decode uintptr, interpolate bool, intent int32) uintptr
-	srgb                 uintptr
-	cgExtendedLinearSRGB uintptr
-	cgITUR2100PQ         uintptr
-	cgITUR2100HLG        uintptr
-	cgDisplayP3          uintptr
-	cfTrue               uintptr
+	srgb                         uintptr
+	cgExtendedLinearSRGB         uintptr
+	cgITUR2100PQ                 uintptr
+	cgITUR2100HLG                uintptr
+	cgDisplayP3                  uintptr
+	cfTrue                       uintptr
 	// The dictionaries of the animated formats, each with its delay keys
 	// (unclamped first) and loop count.
 	animatedKeys                  [][4]uintptr

@@ -1289,22 +1289,22 @@ const (
 
 // GPUEvent is the payload carried in Event.Data for EventGPU.
 type GPUEvent struct {
-	Kind           GPUEventKind
-	Generation     uint32
+	Kind              GPUEventKind
+	Generation        uint32
 	Width             int
 	Height            int
 	SurfaceFormat     GPUTextureFormat
 	SurfaceColorSpace GPUColorSpace
 	FramesInFlight    int
-	Limits         GPULimits
-	Features       GPUFeatures
-	LostReason     GPUDeviceLostReason
-	ErrorCode      GPUErrorCode
-	Message        string
-	ReadbackID     uint64
-	Pixels         []byte
-	PassTimings    []GPUPassTiming
-	FrameIndex     uint64
-	FrameSlot      int
-	FenceID        uint64
+	Limits            GPULimits
+	Features          GPUFeatures
+	LostReason        GPUDeviceLostReason
+	ErrorCode         GPUErrorCode
+	Message           string
+	ReadbackID        uint64
+	Pixels            []byte
+	PassTimings       []GPUPassTiming
+	FrameIndex        uint64
+	FrameSlot         int
+	FenceID           uint64
 }

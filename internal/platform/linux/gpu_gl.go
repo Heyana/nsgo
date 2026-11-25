@@ -31,13 +31,13 @@ const (
 	gpuGLDynamicDraw        = 0x88E8
 
 	// Data types.
-	gpuGLByte           = 0x1400
-	gpuGLUnsignedByte   = 0x1401
-	gpuGLShort          = 0x1402
-	gpuGLUnsignedShort  = 0x1403
-	gpuGLInt            = 0x1404
-	gpuGLUnsignedInt    = 0x1405
-	gpuGLFloat          = 0x1406
+	gpuGLByte                = 0x1400
+	gpuGLUnsignedByte        = 0x1401
+	gpuGLShort               = 0x1402
+	gpuGLUnsignedShort       = 0x1403
+	gpuGLInt                 = 0x1404
+	gpuGLUnsignedInt         = 0x1405
+	gpuGLFloat               = 0x1406
 	gpuGLHalfFloat           = 0x140B
 	gpuGLUnsignedInt248      = 0x84FA
 	gpuGLUnsignedInt2101010R = 0x8368
