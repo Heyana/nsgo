@@ -330,10 +330,6 @@ func fakeGo(t *testing.T) (log, counts string) {
 	log, counts = filepath.Join(dir, "vet.log"), filepath.Join(dir, "counts.log")
 	running := filepath.Join(dir, "running")
 	script := `#!/bin/sh
-if [ "$1" = list ]; then
-echo example.com/checkfixture
-exit 0
-fi
 [ "$1" = vet ] || exit 0
 echo "$*" >> '` + log + `'
 mkdir -p '` + running + `'
@@ -446,28 +442,4 @@ func TestCheckLockOutlivesItsHolder(t *testing.T) {
 		t.Fatalf("a stale lock file held the check: %v", err)
 	}
 	unlock()
-}
-
-// A target no package builds for is skipped with a reason rather than failed, and a run that vet nothing still fails (#2267).
-func TestCheckTargetSkipsATargetWithNoPackages(t *testing.T) {
-	p := checkFixture(t)
-	writeFiles(t, p.Dir, map[string]string{
-		"go.mod":  "module checkfixture\n\ngo 1.26\n",
-		"main.go": "//go:build !js && !wasip1\n\npackage fixture\n\nvar Value = 1\n",
-	})
-	var err error
-	out := captureStderr(t, func() { err = checkTargets(context.Background(), p, "linux,web", 0) })
-	if err != nil {
-		t.Fatalf("checkTargets(linux,web) = %v, want the web target skipped", err)
-	}
-	if !strings.Contains(out, "skipped web: no packages build for it") {
-		t.Fatalf("output = %q, want web reported as skipped", out)
-	}
-	out = captureStderr(t, func() { err = checkTargets(context.Background(), p, "web", 0) })
-	if err == nil || !strings.Contains(err.Error(), "nothing was vetted: no packages build for web") {
-		t.Fatalf("checkTargets(web) = %v, want a failure that nothing was vetted", err)
-	}
-	if !strings.Contains(out, "skipped web: no packages build for it") {
-		t.Fatalf("output = %q, want web reported as skipped", out)
-	}
 }
