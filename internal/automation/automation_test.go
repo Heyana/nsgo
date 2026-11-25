@@ -109,7 +109,12 @@ func TestAppToolResultRoundTrip(t *testing.T) {
 		}
 	}
 
-	if _, ok, err := DecodeAppToolResult([]byte(`{"_nsgoAppResult":{"images":[{"data":123}]}}`)); ok || err == nil {
-		t.Errorf("invalid image data: ok=%v err=%v, want false, non-nil", ok, err)
+	for _, raw := range []string{
+		`{"_nsgoAppResult":{"images":[{"data":123}]}}`,
+		`{"_nsgoAppResult":{"images":[{"data":"cG5n","mime":"image/jpeg"}]}}`,
+	} {
+		if _, ok, err := DecodeAppToolResult([]byte(raw)); ok || err == nil {
+			t.Errorf("DecodeAppToolResult(%s) = ok:%v err:%v, want false, non-nil", raw, ok, err)
+		}
 	}
 }

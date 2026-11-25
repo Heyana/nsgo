@@ -63,6 +63,7 @@ func DecodeAppToolResult(data []byte) (AppToolResult, bool, error) {
 		}
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
 	var r AppToolResult
 	if err := dec.Decode(&r); err != nil {
 		return AppToolResult{}, false, err
