@@ -39,9 +39,9 @@ type Device struct {
 	// surfaceSamples is the swapchain's sample count, or 0 when the backend does not say, and surfaceDepth its depth format, empty when it has none.
 	surfaceSamples int
 	surfaceDepth   TextureFormat
-	width, height   int
-	framesInFlight  int
-	directMapped    bool
+	width, height  int
+	framesInFlight int
+	directMapped   bool
 
 	frameIndex       uint64
 	inFrame          bool
