@@ -14,8 +14,7 @@ import (
 // or an error.
 type Tool = core.AutomationTool
 
-// Image is an image returned by an app tool to nsgo mcp.
-// An empty MIMEType defaults to "image/png".
+// Image is an image returned by an app tool to nsgo mcp. Data must not be empty, and MIMEType must start with "image/"; an empty MIMEType defaults to "image/png". A Result with an image that breaks either rule makes the call fail.
 type Image = core.AutomationImage
 
 // Result is an explicit text and image result returned by an app tool to nsgo mcp.

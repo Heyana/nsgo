@@ -127,6 +127,18 @@ func TestAppAutomationToolResult(t *testing.T) {
 				},
 			},
 			{
+				Name: "image_no_data", InputSchema: schema,
+				Handler: func(context.Context, json.RawMessage) (any, error) {
+					return automation.Result{Text: "lost", Images: []automation.Image{{MIMEType: "image/png"}}}, nil
+				},
+			},
+			{
+				Name: "image_bad_mime", InputSchema: schema,
+				Handler: func(context.Context, json.RawMessage) (any, error) {
+					return automation.Result{Images: []automation.Image{{Data: pngBytes, MIMEType: "application/pdf"}}}, nil
+				},
+			},
+			{
 				Name: "plain_png_struct", InputSchema: schema,
 				Handler: func(context.Context, json.RawMessage) (any, error) {
 					return struct {
@@ -175,6 +187,15 @@ func TestAppAutomationToolResult(t *testing.T) {
 	}
 	if _, ok, err := automation.DecodeResult(nilRaw); ok || err != nil {
 		t.Fatalf("image_nil_ptr DecodeResult = ok:%v err:%v", ok, err)
+	}
+
+	for name, want := range map[string]string{"image_no_data": "no data", "image_bad_mime": `"application/pdf"`} {
+		var err error
+		app.Post(func() { _, err = automation.Call(cx, t.Context(), name, nil) })
+		app.Settle()
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want one naming %s", name, err, want)
+		}
 	}
 
 	plainRaw := call("plain_png_struct")

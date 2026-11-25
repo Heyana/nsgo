@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/nsgo-dev/nsgo/internal/automation"
 )
@@ -103,6 +104,12 @@ func encodeAutomationResult(r AutomationResult) (json.RawMessage, error) {
 	if len(r.Images) > 0 {
 		wire.Images = make([]automation.AppToolImage, len(r.Images))
 		for i, img := range r.Images {
+			if len(img.Data) == 0 {
+				return nil, fmt.Errorf("automation: image %d has no data", i)
+			}
+			if img.MIMEType != "" && !strings.HasPrefix(img.MIMEType, "image/") {
+				return nil, fmt.Errorf("automation: image %d has MIME type %q, not an image/ type", i, img.MIMEType)
+			}
 			wire.Images[i] = automation.AppToolImage{Data: img.Data, MIMEType: img.MIMEType}
 		}
 	}
