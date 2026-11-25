@@ -205,3 +205,109 @@ func TestRejectedBindOnlySkipsDrawsThatNeedIt(t *testing.T) {
 		t.Fatalf("draw after a valid bind group = %v, want blue", got)
 	}
 }
+
+// A pipeline that declares no layouts still reads the groups its shaders bind, so a rejected bind group skips its draws (#2253).
+func TestAutoLayoutPipelineTracksItsShaderGroups(t *testing.T) {
+	const shader = `
+@group(0) @binding(0) var<uniform> params: vec4<f32>;
+
+struct VertexIn {
+	@location(0) pos: vec4<f32>,
+	@location(1) color: vec4<f32>,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	out.pos = in.pos;
+	out.color = in.color;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	return in.color + params * 0.0;
+}
+`
+	sr := gpu.NewSoftwareRenderer(8, 8, gpu.FormatUndefined)
+	dev := sr.Device()
+	mod := gpu.MustCompileWGSL(shader)
+	vertices, err := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageVertex, Data: packFloat32s(
+		-1, -1, 0.5, 1, 0, 0, 1, 1,
+		1, -1, 0.5, 1, 0, 0, 1, 1,
+		1, 1, 0.5, 1, 0, 0, 1, 1,
+		-1, -1, 0.5, 1, 0, 0, 1, 1,
+		1, 1, 0.5, 1, 0, 0, 1, 1,
+		-1, 1, 0.5, 1, 0, 0, 1, 1,
+	)})
+	if err != nil {
+		t.Fatalf("CreateBuffer: %v", err)
+	}
+	layout, err := dev.CreateBindGroupLayout(nil, []gpu.BindGroupLayoutEntry{{Binding: 0, Visibility: gpu.StageFragment, Type: gpu.BindingUniform}})
+	if err != nil {
+		t.Fatalf("CreateBindGroupLayout: %v", err)
+	}
+	uniform, err := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageUniform, Data: packFloat32s(0, 0, 0, 0)})
+	if err != nil {
+		t.Fatalf("CreateBuffer uniform: %v", err)
+	}
+	group, err := dev.CreateBindGroup(nil, layout, []gpu.BindGroupEntry{{Binding: 0, Buffer: uniform}})
+	if err != nil {
+		t.Fatalf("CreateBindGroup: %v", err)
+	}
+	closedGroup, err := dev.CreateBindGroup(nil, layout, []gpu.BindGroupEntry{{Binding: 0, Buffer: uniform}})
+	if err != nil {
+		t.Fatalf("CreateBindGroup spare: %v", err)
+	}
+	if err := closedGroup.Close(); err != nil {
+		t.Fatal(err)
+	}
+	pipe, err := dev.CreatePipeline(nil, gpu.PipelineDesc{
+		Vertex:   gpu.ShaderStage{Module: mod, EntryPoint: "vs_main"},
+		Fragment: gpu.ShaderStage{Module: mod, EntryPoint: "fs_main"},
+		VertexBuffers: []gpu.VertexBufferLayout{{
+			Stride: 8 * 4,
+			Attributes: []gpu.VertexAttribute{
+				{Location: 0, Offset: 0, Format: gpu.VertexFloat32x4},
+				{Location: 1, Offset: 4 * 4, Format: gpu.VertexFloat32x4},
+			},
+		}},
+		Targets: []gpu.ColorTargetState{{Format: gpu.FormatRGBA8Unorm}},
+	})
+	if err != nil {
+		t.Fatalf("CreatePipeline: %v", err)
+	}
+	render := func(bind func(p *gpu.RenderPass)) {
+		t.Helper()
+		enc := dev.BeginEncoder()
+		p := enc.BeginRenderPass(gpu.RenderPassDesc{})
+		p.ClearColor(core.RGB(0x000000))
+		p.SetPipeline(pipe)
+		p.SetVertexBuffer(0, vertices, 0)
+		p.SetBindGroup(0, group)
+		bind(p)
+		p.Draw(6, 0)
+		p.End()
+		dev.Submit(enc.Finish())
+		if err := sr.LastError(); err != nil {
+			t.Fatalf("SoftwareRenderer error: %v", err)
+		}
+	}
+	render(func(p *gpu.RenderPass) {})
+	if got := sr.Image().RGBAAt(4, 4); got != (color.RGBA{B: 255, A: 255}) {
+		t.Fatalf("draw with the group bound = %v, want blue", got)
+	}
+	render(func(p *gpu.RenderPass) { p.SetBindGroup(0, closedGroup) })
+	if got := sr.Image().RGBAAt(4, 4); got != (color.RGBA{A: 255}) {
+		t.Fatalf("draw after a rejected bind group on an auto layout = %v, want the clear color", got)
+	}
+	render(func(p *gpu.RenderPass) { p.SetBindGroup(0, group) })
+	if got := sr.Image().RGBAAt(4, 4); got != (color.RGBA{B: 255, A: 255}) {
+		t.Fatalf("draw after a valid bind group = %v, want blue", got)
+	}
+}

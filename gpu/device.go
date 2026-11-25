@@ -2694,8 +2694,9 @@ type RenderPass struct {
 	ended     bool
 	invalid   bool
 	pipeValid bool
-	// pipe is the pipeline a draw records with, whose vertex and bind group slots a draw needs.
-	pipe *Pipeline
+	// pipe is the pipeline a draw records with, whose vertex and bind group slots a draw needs, and requiredGroups is the number of group slots it reads.
+	pipe           *Pipeline
+	requiredGroups int
 	// vertexMissing and bindGroupsMissing hold the slots a rejected bind left without a usable resource, and indexMissing says the same of the index buffer; a draw skips only while one of the slots its pipeline declares is missing.
 	vertexMissing     map[uint32]bool
 	bindGroupsMissing map[uint32]bool
@@ -2784,6 +2785,7 @@ func (p *RenderPass) SetPipeline(pipe *Pipeline) {
 	}
 	p.pipeValid = true
 	p.pipe = pipe
+	p.requiredGroups = pipelineBindGroups(pipe)
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
 		Kind: driver.GPUCmdSetPipeline,
 		ID:   pipe.id,
@@ -2872,6 +2874,22 @@ func (p *RenderPass) SetBlendConstant(r, g, b, a float32) {
 	})
 }
 
+// pipelineBindGroups returns the @group slots a pipeline reads: the layouts it declares, or every group its shaders bind when it declares fewer, as an automatic layout leaves them implicit.
+func pipelineBindGroups(pipe *Pipeline) int {
+	n := len(pipe.desc.Layouts)
+	for _, stage := range []ShaderStage{pipe.desc.Vertex, pipe.desc.Fragment} {
+		if stage.Module == nil || stage.Module.ir == nil {
+			continue
+		}
+		for _, b := range stage.Module.ir.Bindings {
+			if int(b.Group)+1 > n {
+				n = int(b.Group) + 1
+			}
+		}
+	}
+	return n
+}
+
 // drawnBound reports whether the pass holds what its pipeline reads, so a draw records only when every vertex buffer slot and bind group slot the pipeline declares has a usable resource, plus the index buffer an indexed draw reads.
 func (p *RenderPass) drawnBound(indexed bool) bool {
 	if !p.pipeValid || p.pipe == nil {
@@ -2883,7 +2901,7 @@ func (p *RenderPass) drawnBound(indexed bool) bool {
 		}
 	}
 	for slot := range p.bindGroupsMissing {
-		if int(slot) < len(p.pipe.desc.Layouts) {
+		if int(slot) < p.requiredGroups {
 			return false
 		}
 	}
