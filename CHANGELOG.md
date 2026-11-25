@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-25
+
+- Run an unknown command `nsgo X` as an extension: the module's `go.mod` tool `X` through `go tool`, else `nsgo-X` on `PATH`, with its arguments, streams and exit status, and list the extensions found in the usage (#2366 by @houko).
+- Add `nsgo game`, which runs the game layer's command, the module's tool or else `go run` of its release, with `NSGO_GAME_VERSION` to choose another (#2366 by @houko).
+- Run the module's pinned `go tool nsgo` in place of an `nsgo` of another version, with `NSGO_NO_DELEGATE=1` to opt out, and add `nsgo version`, which says which one ran (#2366 by @houko).
+- Sample hardware decoders' frames in `gpu.View` without copying them, through `Device.ImportTexture`: Direct3D 11 shared textures on Windows and DMA-BUFs on Linux (#2296 by @oneo-me).
+- Report the window's display and its refresh rates on HarmonyOS (#1213 by @houko).
+- Report physical key positions on HarmonyOS (#1242 by @houko).
+- Apply `Scope.RequestOrientation` on HarmonyOS (#2227 by @houko).
+- Receive iOS share-sheet text and files through an App Group inbox on app activation (#655 by @houko).
+- Draw backdrop filters, blurs and color filters, on Linux (#2287 by @oneo-me).
+- Serve `Locate`, foreground `WatchLocation` and the location permission on Linux through GeoClue 2 (#1404).
+- Ask for and learn Local Network access before an app's first LAN connection with `core.PermissionLocalNetwork`, which iOS and macOS 15 answer through a Bonjour probe whose type `nsgo build` adds to `NSBonjourServices`, and which Android, Windows and Linux answer not gated (#2347).
+- Set a length to none over another style's with `core.Zero` in `Padding`, `Margin`, `Borders`, `BorderWidth`, `CornerRadius` and the gaps, as `core.Transparent` sets a color, which takes away `ui.Input`'s padding and turns `ui.Field`'s box off for text that reads as plain text but edits (#2243 by @oneo-me).
+- Press physical key positions with `nsgotest`'s `KeyCode`, `KeyCodeDown` and `KeyCodeUp` under `-target` on macOS, Windows, Linux, the web, iOS, Android and HarmonyOS (#1242 by @houko).
+- Give desktop apps the user's Documents, Downloads, Desktop, Pictures, Music and Videos folders with `desktop.UserDir`, from macOS's home folders, Windows' known folders and Linux's XDG user directories, and `core.ErrUserDirUnavailable` elsewhere (#2284 by @oneo-me).
+- Localize the website (`nsgo.dev`) and public docs (`docs/public/`) into 12 additional languages (`zh-tw`, `ja`, `ko`, `es`, `fr`, `de`, `pt`, `ru`, `it`, `vi`, `id`, `tr`), covering the home page, navigation, benchmarks, docs, live previews, and social share cards.
+- Serve `Locate`, foreground `WatchLocation` and the location permission on Windows through WinRT's `Geolocator` (#1404).
+- Keep Android `PickDirectories` document descriptors open until `Close` and expose `io.ReaderAt` on opened directory files across `FolderFS` backends (#2245 by @henry-wm).
+- Link each platform backend's shaders, canvases, videos, web views and native components only into apps that construct one, and link Android's Go DNS resolver only into Android apps that import `net` (#1536).
+- Redraw only what a canvas's animated values change on Windows and the web, skip Windows canvas paints that cannot change a pixel, and leave the decoration of views outside a Windows partial frame's damage unpainted (#1331 by @oneo-me).
+- Place a desktop `ui.Dialog` nearer the window's middle the more of its height it takes, centering one that fills it (#2234 by @oneo-me).
+- Name a key pressed by `nsgotest`'s `KeyCode`, `KeyCodeDown` and `KeyCodeUp` under `-target` with the platform's current keyboard layout on macOS, Windows, Linux and the web, so `KeyW` is `z` on AZERTY, and keep a modifier held by both `KeyDown` and `KeyCodeDown` down until both release it (#1242 by @houko).
+- Clip `Overflow: Hidden` children inside the view's border, to its padding box as CSS does, on Apple, Android, Windows, Linux, watchOS and the terminal, so a bare `ui.Dialog` clips in its surface with no inner view (#1362 by @oneo-me).
+- Build the Windows setup and its signed uninstaller with Go alone, with native Windows dialogs, so `build` no longer needs NSIS's `makensis` or leaves a `.nsi` script; installations, file types, URL schemes and `Path` entries of the earlier NSIS installers upgrade in place (#1408 by @houko).
+- Rebuild Go-only apps when embedded JSON or JavaScript changes in `nsgo dev` (#2271 by @J4ck1e2000).
+- Run a `WebView`'s injected scripts on HarmonyOS, report the page title with its load, and answer `cx.SetWebCookies`, `cx.WebCookies` and `cx.ClearWebsiteData` there with `Unavailable` instead of never calling back (#894 by @houko).
+- Let headless builds skip macOS disk images without disabling Windows or Linux installers (#2274).
+- Space inputs' text and placeholders by `Style.LetterSpacing` on macOS, iOS and Linux, as texts are (#2242 by @oneo-me).
+- Label the Shift, Control and Alt keys in `core.KeyCodeLabel` on Windows (#1242 by @houko).
+- Keep a selection set on an unfocused text field on macOS when the field takes the focus, rather than moving the caret to the end.
+- Preserve letter spacing in single-line macOS inputs after editing (#2277 by @J4ck1e2000).
+- Reveal macOS scroll indicators on hover at the track, not across the scroll view's content (#2221 by @iFwu).
+- Match the build's Go JSON implementation when vetting and testing Go code (#2276).
+- Animate panel frames at display cadence on macOS and Windows, with square corners on narrow macOS panels (#2215 by @J4ck1e2000).
+- Keep the colors a `ui.Field`'s static `Style` sets over its look (#2243 by @oneo-me).
+- Keep the focus in `ui.TagInput` after Return adds a tag, so the next one can be typed straight away (#2239 by @oneo-me).
+- Report a hardware keyboard's keypad digits on Android as digits when Num Lock is off, where they were not reported at all (#1242 by @houko).
+- Report a failure when tvOS cannot open the App Store's subscriptions page for `ManageSubscriptions` (#1368 by @oneo-me).
+- Let Linux file previews on Wayland move through the app's files and close with its window, and parent the XDG portals' share, color pick and sign-in requests to the window there (#1372 by @oneo-me).
+- Report `Video.OnPlay` when Windows' drawn control bar plays a video it paused (#1358 by @oneo-me).
 - Add the Android OpenGL ES 3.0 `gpu.View` backend (`GpuView.java` on `TextureView` and the shared GL thread with depth buffer, retained buffers/textures/samplers/FBOs/VAOs/pipelines, Go-side GLSL ES 3.00 pipeline compilation, off-commit binary GPU frame streaming, and `Env.SupportsGPU()` / `EventGPU` reporting) (#1109 by @houko).
 - Draw `gpu.View` pipelines with Metal on macOS and iOS, with persistent buffers, textures, samplers and bind groups, depth and multisampled surfaces, and texture and surface readback (#1105 by @houko).
 - Add package `cloud` for provider-neutral cloud key-value and file/snapshot storage (iCloud KV store and ubiquity containers on macOS and iOS, Google Play Games Saved Games bridge on Android, `ErrUnavailable` elsewhere), `core.Env.CanUseCloudStorage`, `nsgo.yaml` `cloud:`/`icloud:` Apple entitlements in `nsgo build`, and an isolated per-app in-memory cloud store in `nsgotest` with change and conflict simulation (#1241).
