@@ -578,12 +578,37 @@ func displaySnapshot(current objc.ID) ([]driver.DisplayInfo, string) {
 			currentID = id
 		}
 		rate, maximum := displayRates(screen, number)
+		hdr, hdrSupported, hdrHeadroom := screenHDR(screen)
 		point := func(r apple.CGRect) driver.Bounds {
 			return driver.Bounds{Origin: driver.Point{X: driver.Points(r.Origin.X - primaryFrame.Origin.X), Y: driver.Points(top - r.Origin.Y - r.Size.Height)}, Size: driver.Size{Width: driver.Points(r.Size.Width), Height: driver.Points(r.Size.Height)}}
 		}
-		out = append(out, driver.DisplayInfo{ID: id, Frame: point(frame), VisibleFrame: point(visible), Scale: float32(objc.Send[float64](screen, sel("backingScaleFactor"))), Main: screen == primary, RefreshRate: rate, MaxRefreshRate: maximum})
+		out = append(out, driver.DisplayInfo{
+			ID: id, Frame: point(frame), VisibleFrame: point(visible),
+			Scale: float32(objc.Send[float64](screen, sel("backingScaleFactor"))), Main: screen == primary,
+			RefreshRate: rate, MaxRefreshRate: maximum,
+			HDR: hdr, HDRSupported: hdrSupported, HDRHeadroom: hdrHeadroom,
+		})
 	}
 	return out, currentID
+}
+
+func screenHDR(screen objc.ID) (hdr, supported bool, headroom float32) {
+	if screen == 0 {
+		return false, false, 0
+	}
+	var cur, pot float64
+	if objc.Send[bool](screen, sel("respondsToSelector:"), sel("maximumExtendedDynamicRangeColorComponentValue")) {
+		cur = objc.Send[float64](screen, sel("maximumExtendedDynamicRangeColorComponentValue"))
+	}
+	if objc.Send[bool](screen, sel("respondsToSelector:"), sel("maximumPotentialExtendedDynamicRangeColorComponentValue")) {
+		pot = objc.Send[float64](screen, sel("maximumPotentialExtendedDynamicRangeColorComponentValue"))
+	}
+	if cur > 0 {
+		headroom = float32(cur)
+	}
+	hdr = cur > 1.0
+	supported = pot > 1.0 || hdr
+	return hdr, supported, headroom
 }
 
 func screenNumber(screen objc.ID) uint32 {

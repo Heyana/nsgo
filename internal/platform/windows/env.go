@@ -172,12 +172,20 @@ func highContrastEnabled() bool {
 // displays reads the monitors in the virtual desktop, in the points monitorLayout lays them out in, as WindowFrame uses.
 func (w *window) displays() ([]driver.DisplayInfo, string) {
 	placements := monitorLayout()
+	hdrByDevice := queryDisplayHDR()
 	out := make([]driver.DisplayInfo, 0, len(placements))
 	current := w.currentMonitor()
 	currentID := ""
 	for _, placement := range placements {
 		display := placement.display
 		display.RefreshRate, display.MaxRefreshRate = displayRates(placement.info.Device)
+		if info, ok := hdrByDevice[syscall.UTF16ToString(placement.info.Device[:])]; ok {
+			display.HDR = info.hdr
+			display.HDRSupported = info.supported
+			display.HDRHeadroom = info.headroom
+			display.SDRWhiteLevel = info.sdrWhiteLevel
+			display.MaxLuminance = info.maxLuminance
+		}
 		if placement.monitor == current {
 			currentID = display.ID
 		}

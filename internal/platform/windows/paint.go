@@ -150,9 +150,10 @@ type painter struct {
 	targetAlpha               bool
 }
 
-// composed is a web view a pass reached.
+// composed is a web view or HDR GPU view a pass reached.
 type composed struct {
 	web *webView
+	gpu *gpuView
 	at  placement
 }
 
@@ -344,7 +345,30 @@ func (p *painter) compose(wv *webView, world matrix, width, height, radius float
 	if w <= 0 || h <= 0 || mapBounds(m, rectF{0, 0, float32(w), float32(h)}).intersect(clip).empty() {
 		return
 	}
-	p.composed = append(p.composed, composed{wv, placement{m: m, width: w, height: h, clip: clip,
+	p.composed = append(p.composed, composed{web: wv, at: placement{m: m, width: w, height: h, clip: clip,
+		radius: radius * sc, alpha: p.alpha}})
+	if p.split != nil {
+		p.split.pending = true
+	}
+}
+
+// placeGPU records where an HDR GPU view's DirectComposition portal sits in
+// paint order so later siblings and HUD children draw on a layer above it.
+func (p *painter) placeGPU(gv *gpuView, world matrix, width, height, radius float32) {
+	s := float64(p.scale)
+	m := world
+	m.e, m.f = m.e*s, m.f*s
+	if world.a == 1 && world.d == 1 && world.b == 0 && world.c == 0 {
+		m.e, m.f = math.Round(m.e), math.Round(m.f)
+	}
+	c := p.clipBounds()
+	sc := float32(s)
+	clip := rectF{max(c.left*sc, 0), max(c.top*sc, 0), min(c.right*sc, 1e7), min(c.bottom*sc, 1e7)}
+	w, h := int32(math.Round(float64(width)*s)), int32(math.Round(float64(height)*s))
+	if w <= 0 || h <= 0 || mapBounds(m, rectF{0, 0, float32(w), float32(h)}).intersect(clip).empty() {
+		return
+	}
+	p.composed = append(p.composed, composed{gpu: gv, at: placement{m: m, width: w, height: h, clip: clip,
 		radius: radius * sc, alpha: p.alpha}})
 	if p.split != nil {
 		p.split.pending = true
@@ -542,7 +566,7 @@ func (w *window) frame() {
 	if wh := webViews.Load(); wh != nil {
 		wh.composedPlaced(w, p.composed, layers)
 	} else if w.composition != nil {
-		w.composition.arrange(nil, layers)
+		w.composedGPUPlaced(p.composed, layers)
 	}
 	if nh := natives.Load(); nh != nil {
 		nh.placeComponents(w, p.components)
@@ -556,7 +580,9 @@ func (w *window) composedPlaced(drawn []composed, layers []int) {
 	old := w.composed
 	w.composed = w.composed[:0:0]
 	for _, c := range drawn {
-		w.composed = append(w.composed, c.web)
+		if c.web != nil {
+			w.composed = append(w.composed, c.web)
+		}
 	}
 	if len(old) == 0 && len(drawn) == 0 && w.composition == nil {
 		return
@@ -568,9 +594,31 @@ func (w *window) composedPlaced(drawn []composed, layers []int) {
 	}
 	visuals := make([]*comObject, 0, len(drawn))
 	for _, c := range drawn {
-		c.web.composeAt(&c.at)
-		if c.web.portal != nil {
-			visuals = append(visuals, c.web.portal.outer)
+		if c.web != nil {
+			c.web.composeAt(&c.at)
+			if c.web.portal != nil {
+				visuals = append(visuals, c.web.portal.outer)
+			}
+		} else if c.gpu != nil {
+			c.gpu.composeAt(&c.at)
+			if c.gpu.portal != nil {
+				visuals = append(visuals, c.gpu.portal.outer)
+			}
+		}
+	}
+	if w.composition != nil {
+		w.composition.arrange(visuals, layers)
+	}
+}
+
+func (w *window) composedGPUPlaced(drawn []composed, layers []int) {
+	visuals := make([]*comObject, 0, len(drawn))
+	for _, c := range drawn {
+		if c.gpu != nil {
+			c.gpu.composeAt(&c.at)
+			if c.gpu.portal != nil {
+				visuals = append(visuals, c.gpu.portal.outer)
+			}
 		}
 	}
 	if w.composition != nil {
@@ -801,7 +849,7 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 			sh.drawShader(p, v, width, height)
 		}
 	case driver.KindGPU:
-		p.drawGPU(v, width, height)
+		p.drawGPU(v, world, width, height, radius, s.Clip)
 	case driver.KindWeb:
 		if wh := webViews.Load(); wh != nil {
 			wh.draw(p, v, world, width, height, radius, s.Clip)

@@ -16,15 +16,21 @@ import (
 // glGPUView hosts a GtkGLArea for a driver.KindGPU view and executes off-commit driver.GPUFrame batches on its OpenGL 3.3 Core or OpenGL ES 3.0 context through libepoxy (purego, zero cgo).
 type glGPUView struct {
 	hosted
-	area        uintptr
-	cfg         driver.GPUViewConfig
-	ctx         *glGPUContext
-	generation  uint32
-	realized    bool
-	hasRendered bool
-	width       int
-	height      int
-	frames      []driver.GPUFrame
+	area              uintptr
+	cfg               driver.GPUViewConfig
+	ctx               *glGPUContext
+	generation        uint32
+	realized          bool
+	hasRendered       bool
+	width             int
+	height            int
+	surfaceFormat     driver.GPUTextureFormat
+	surfaceColorSpace driver.GPUColorSpace
+	colorCleanup      func()
+	hdrFBO            uint32
+	hdrTex            uint32
+	hdrW, hdrH        int
+	frames            []driver.GPUFrame
 }
 
 // Additional OpenGL 3.3 Core / OpenGL ES 3.0 and GtkGLArea functions bound lazily through libepoxy and GTK 4.
@@ -514,9 +520,14 @@ func (w *window) closeGPU(v *view) {
 	if g.ctx != nil && g.area != 0 {
 		gtkGLAreaMakeCurrent(g.area)
 		if gtkGLAreaGetError(g.area) == 0 {
+			g.releaseHDRTarget()
 			g.ctx.destroyAll()
 		}
 		g.ctx = nil
+	}
+	if g.colorCleanup != nil {
+		g.colorCleanup()
+		g.colorCleanup = nil
 	}
 	completeGPUFrames(g.frames)
 	g.frames = nil
@@ -627,6 +638,22 @@ func (w *window) initGPUContext(v *view, g *glGPUView, context uintptr) bool {
 	if importer != nil {
 		g.ctx.importer = importer
 	}
+	if g.colorCleanup != nil {
+		g.colorCleanup()
+		g.colorCleanup = nil
+	}
+	var gdkSurf uintptr
+	if w.surface != 0 {
+		if native := gtkWidgetGetNative(w.surface); native != 0 {
+			gdkSurf = gtkNativeGetSurface(native)
+		}
+	}
+	negotiatedCS, colorCleanup := setWaylandSurfaceColorSpace(gdkSurf, g.cfg.ColorSpace)
+	surfFmt, surfCS := resolveLinuxGPUSurface(g.cfg, negotiatedCS)
+	g.surfaceFormat = surfFmt
+	g.surfaceColorSpace = surfCS
+	g.colorCleanup = colorCleanup
+
 	g.realized = true
 	g.hasRendered = false
 	pw, ph := gpuPhysicalSize(v, g.area)
@@ -636,17 +663,69 @@ func (w *window) initGPUContext(v *view, g *glGPUView, context uintptr) bool {
 			Kind: driver.EventGPU,
 			ID:   v.id,
 			Data: &driver.GPUEvent{
-				Kind:          driver.GPUEventDeviceReady,
-				Generation:    g.generation,
-				Width:         pw,
-				Height:        ph,
-				SurfaceFormat: driver.GPUFormatRGBA8Unorm,
-				Limits:        lim,
-				Features:      feat,
+				Kind:              driver.GPUEventDeviceReady,
+				Generation:        g.generation,
+				Width:             pw,
+				Height:            ph,
+				SurfaceFormat:     surfFmt,
+				SurfaceColorSpace: surfCS,
+				Limits:            lim,
+				Features:          feat,
 			},
 		})
 	}
 	return true
+}
+
+func (g *glGPUView) releaseHDRTarget() {
+	if g.ctx == nil {
+		g.hdrFBO, g.hdrTex, g.hdrW, g.hdrH = 0, 0, 0, 0
+		return
+	}
+	if g.hdrFBO != 0 {
+		g.ctx.gl.DeleteFramebuffer(g.hdrFBO)
+		g.hdrFBO = 0
+	}
+	if g.hdrTex != 0 {
+		g.ctx.gl.DeleteTexture(g.hdrTex)
+		g.hdrTex = 0
+	}
+	g.hdrW, g.hdrH = 0, 0
+}
+
+func (g *glGPUView) ensureHDRTarget(pw, ph int) uint32 {
+	if g.surfaceFormat == driver.GPUFormatRGBA8Unorm || g.ctx == nil {
+		return 0
+	}
+	if g.hdrFBO != 0 && g.hdrW == pw && g.hdrH == ph {
+		return g.hdrFBO
+	}
+	g.releaseHDRTarget()
+	internalFmt, pixelFmt, pixelType, _, ok := glTextureFormatInfo(g.surfaceFormat)
+	if !ok {
+		return 0
+	}
+	gl := g.ctx.gl
+	tex := gl.GenTexture()
+	gl.BindTexture(gpuGLTexture2D, tex)
+	gl.TexImage2D(gpuGLTexture2D, 0, internalFmt, int32(pw), int32(ph), 0, pixelFmt, pixelType, nil)
+	gl.TexParameteri(gpuGLTexture2D, gpuGLTextureMinFilter, gpuGLNearest)
+	gl.TexParameteri(gpuGLTexture2D, gpuGLTextureMagFilter, gpuGLNearest)
+	gl.BindTexture(gpuGLTexture2D, 0)
+
+	fbo := gl.GenFramebuffer()
+	gl.BindFramebuffer(gpuGLFramebuffer, fbo)
+	gl.FramebufferTexture2D(gpuGLFramebuffer, gpuGLColorAttachment0, gpuGLTexture2D, tex, 0)
+	if gl.CheckFramebufferStatus(gpuGLFramebuffer) != gpuGLFramebufferComplete {
+		gl.BindFramebuffer(gpuGLFramebuffer, 0)
+		gl.DeleteFramebuffer(fbo)
+		gl.DeleteTexture(tex)
+		return 0
+	}
+	g.hdrFBO = fbo
+	g.hdrTex = tex
+	g.hdrW, g.hdrH = pw, ph
+	return fbo
 }
 
 func gpuRealizeCallback(area, data uintptr) {
@@ -745,6 +824,11 @@ func gpuRenderCallback(area, context, data uintptr) uintptr {
 		}
 	}
 
+	targetFBO := defaultFBO
+	if hdrFBO := g.ensureHDRTarget(pw, ph); hdrFBO != 0 {
+		targetFBO = hdrFBO
+	}
+
 	frames := g.frames
 	g.frames = nil
 	defer completeGPUFrames(frames)
@@ -752,7 +836,7 @@ func gpuRenderCallback(area, context, data uintptr) uintptr {
 		if fr.Generation != 0 && fr.Generation != g.generation {
 			continue
 		}
-		readbacks, errs := g.ctx.executeFrame(fr, defaultFBO, int32(pw), int32(ph))
+		readbacks, errs := g.ctx.executeFrame(fr, targetFBO, int32(pw), int32(ph))
 		for _, pass := range fr.Passes {
 			if !passIsOffscreen(pass) {
 				g.hasRendered = true
@@ -778,6 +862,12 @@ func gpuRenderCallback(area, context, data uintptr) uintptr {
 			}
 		}
 	}
+	if targetFBO != defaultFBO && g.hasRendered {
+		g.ctx.gl.BindFramebuffer(gpuGLReadFramebuffer, targetFBO)
+		g.ctx.gl.BindFramebuffer(gpuGLDrawFramebuffer, defaultFBO)
+		g.ctx.gl.BlitFramebuffer(0, 0, int32(pw), int32(ph), 0, 0, int32(pw), int32(ph), gpuGLColorBufferBit, gpuGLNearest)
+		g.ctx.gl.BindFramebuffer(gpuGLFramebuffer, defaultFBO)
+	}
 	if !g.hasRendered {
 		g.ctx.gl.BindFramebuffer(gpuGLFramebuffer, defaultFBO)
 		g.ctx.gl.Disable(gpuGLScissorTest)
@@ -797,7 +887,12 @@ func gpuUnrealizeCallback(area, data uintptr) {
 	g := v.gpu
 	gtkGLAreaMakeCurrent(area)
 	if gtkGLAreaGetError(area) == 0 && g.ctx != nil {
+		g.releaseHDRTarget()
 		g.ctx.destroyAll()
+	}
+	if g.colorCleanup != nil {
+		g.colorCleanup()
+		g.colorCleanup = nil
 	}
 	g.ctx = nil
 	wasRealized := g.realized

@@ -35,6 +35,7 @@ type Device struct {
 	features          Features
 	compressedFormats []TextureFormat
 	surfaceFormat     TextureFormat
+	surfaceColorSpace ColorSpace
 	width, height     int
 	framesInFlight    int
 	directMapped      bool
@@ -66,9 +67,12 @@ type Device struct {
 	retainedPipelines  []*Pipeline
 }
 
-func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, fmt TextureFormat, framesInFlight int, lim Limits, feat Features, compressed []TextureFormat) *Device {
+func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, fmt TextureFormat, colorSpace ColorSpace, framesInFlight int, lim Limits, feat Features, compressed []TextureFormat) *Device {
 	if fmt == FormatUndefined {
 		fmt = FormatRGBA8Unorm
+	}
+	if colorSpace == ColorSpaceDefault {
+		colorSpace = ColorSpaceSRGB
 	}
 	if len(compressed) == 0 {
 		compressed = compressedFormatsFromFeatures(feat)
@@ -88,6 +92,7 @@ func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, f
 		features:          feat,
 		compressedFormats: compressed,
 		surfaceFormat:     fmt,
+		surfaceColorSpace: colorSpace,
 		width:             w,
 		height:            h,
 		readbacks:         map[uint64]func([]byte, error){},
@@ -366,8 +371,11 @@ func (d *Device) SupportsCompute() bool {
 	return d != nil && d.features.Compute
 }
 
-// SurfaceFormat returns the swapchain's preferred color texture format.
+// SurfaceFormat returns the swapchain's negotiated color texture format.
 func (d *Device) SurfaceFormat() TextureFormat { return d.surfaceFormat }
+
+// SurfaceColorSpace returns the swapchain's negotiated color space.
+func (d *Device) SurfaceColorSpace() ColorSpace { return d.surfaceColorSpace }
 
 // SurfaceSize returns the current drawable size in physical pixels.
 func (d *Device) SurfaceSize() (width, height int) { return d.width, d.height }

@@ -1418,7 +1418,7 @@ func (s *surface) observe() {
 	center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
 	names := []string{"NSWindowDidResizeNotification", "NSWindowDidMoveNotification",
 		"NSWindowWillEnterFullScreenNotification", "NSWindowWillExitFullScreenNotification",
-		"NSWindowDidChangeScreenNotification",
+		"NSWindowDidChangeScreenNotification", "NSWindowDidChangeScreenProfileNotification",
 		"NSWindowDidEnterFullScreenNotification", "NSWindowDidExitFullScreenNotification",
 		"NSWindowDidMiniaturizeNotification", "NSWindowDidDeminiaturizeNotification",
 		"NSWindowDidBecomeKeyNotification", "NSWindowDidResignKeyNotification", "NSWindowDidChangeOcclusionStateNotification"}

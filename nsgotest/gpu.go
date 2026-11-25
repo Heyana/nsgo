@@ -114,22 +114,20 @@ func (a *App) syncGPUViews(configured []*View, resized []*View) {
 			st.generation++
 			gen := st.generation
 			readyNow[v.ID] = true
-			surfFmt := st.cfg.ColorFormat
-			if surfFmt == driver.GPUFormatUndefined {
-				surfFmt = driver.GPUFormatRGBA8Unorm
-			}
+			surfFmt, surfCS := resolveTestSurface(st.cfg)
 			a.post(driver.Event{
 				Kind: driver.EventGPU,
 				ID:   v.ID,
 				Data: &driver.GPUEvent{
-					Kind:           driver.GPUEventDeviceReady,
-					Generation:     gen,
-					Width:          w,
-					Height:         h,
-					SurfaceFormat:  surfFmt,
-					FramesInFlight: driver.NormalizeFramesInFlight(st.cfg.FramesInFlight),
-					Limits:         driver.DefaultSoftwareGPULimits(),
-					Features:       a.gpuFeatures(),
+					Kind:              driver.GPUEventDeviceReady,
+					Generation:        gen,
+					Width:             w,
+					Height:            h,
+					SurfaceFormat:     surfFmt,
+					SurfaceColorSpace: surfCS,
+					FramesInFlight:    driver.NormalizeFramesInFlight(st.cfg.FramesInFlight),
+					Limits:            driver.DefaultSoftwareGPULimits(),
+					Features:          a.gpuFeatures(),
 				},
 			})
 		}
@@ -343,25 +341,42 @@ func (a *App) RestoreGPUDevice(selector string) {
 	st.ready = true
 	st.generation++
 	st.soft = driver.NewGPUSoftwareDevice(w, h, st.cfg)
-	surfFmt := st.cfg.ColorFormat
-	if surfFmt == driver.GPUFormatUndefined {
-		surfFmt = driver.GPUFormatRGBA8Unorm
-	}
+	surfFmt, surfCS := resolveTestSurface(st.cfg)
 	a.post(driver.Event{
 		Kind: driver.EventGPU,
 		ID:   v.ID,
 		Data: &driver.GPUEvent{
-			Kind:           driver.GPUEventDeviceReady,
-			Generation:     st.generation,
-			Width:          w,
-			Height:         h,
-			SurfaceFormat:  surfFmt,
-			FramesInFlight: driver.NormalizeFramesInFlight(st.cfg.FramesInFlight),
-			Limits:         driver.DefaultSoftwareGPULimits(),
-			Features:       a.gpuFeatures(),
+			Kind:              driver.GPUEventDeviceReady,
+			Generation:        st.generation,
+			Width:             w,
+			Height:            h,
+			SurfaceFormat:     surfFmt,
+			SurfaceColorSpace: surfCS,
+			FramesInFlight:    driver.NormalizeFramesInFlight(st.cfg.FramesInFlight),
+			Limits:            driver.DefaultSoftwareGPULimits(),
+			Features:          a.gpuFeatures(),
 		},
 	})
 	a.Settle()
+}
+
+func resolveTestSurface(cfg driver.GPUViewConfig) (driver.GPUTextureFormat, driver.GPUColorSpace) {
+	cs := cfg.ColorSpace
+	if cs == driver.GPUColorSpaceDefault {
+		cs = driver.GPUColorSpaceSRGB
+	}
+	fmt := cfg.ColorFormat
+	if fmt == driver.GPUFormatUndefined {
+		switch cs {
+		case driver.GPUColorSpaceExtendedLinearSRGB:
+			fmt = driver.GPUFormatRGBA16Float
+		case driver.GPUColorSpaceHDR10PQ, driver.GPUColorSpaceHDR10HLG:
+			fmt = driver.GPUFormatRGB10A2Unorm
+		default:
+			fmt = driver.GPUFormatRGBA8Unorm
+		}
+	}
+	return fmt, cs
 }
 
 // TriggerGPUSurfaceRotation simulates an Android surface destruction and recreation across orientation change on the KindGPU view matching selector. If width or height is <= 0, the current surface width and height are swapped.

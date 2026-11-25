@@ -38,8 +38,9 @@ const (
 	gpuGLInt            = 0x1404
 	gpuGLUnsignedInt    = 0x1405
 	gpuGLFloat          = 0x1406
-	gpuGLHalfFloat      = 0x140B
-	gpuGLUnsignedInt248 = 0x84FA
+	gpuGLHalfFloat           = 0x140B
+	gpuGLUnsignedInt248      = 0x84FA
+	gpuGLUnsignedInt2101010R = 0x8368
 
 	// Textures and pixel storage.
 	gpuGLTexture2D            = 0x0DE1
@@ -82,6 +83,7 @@ const (
 	gpuGLR8                = 0x8229
 	gpuGLRG8               = 0x822B
 	gpuGLRGBA8             = 0x8058
+	gpuGLRGB10A2           = 0x8059
 	gpuGLSRGB8Alpha8       = 0x8C43
 	gpuGLRGBA16F           = 0x881A
 	gpuGLDepthComponent24  = 0x81A6
@@ -602,6 +604,27 @@ func glTextureTarget(dim driver.GPUTextureDimension) uint32 {
 	}
 }
 
+// resolveLinuxGPUSurface chooses the negotiated swapchain pixel format and color
+// space for cfg on Linux given the color space negotiated with the compositor.
+func resolveLinuxGPUSurface(cfg driver.GPUViewConfig, negotiatedCS driver.GPUColorSpace) (driver.GPUTextureFormat, driver.GPUColorSpace) {
+	if negotiatedCS == driver.GPUColorSpaceDefault {
+		negotiatedCS = driver.GPUColorSpaceSRGB
+	}
+	switch negotiatedCS {
+	case driver.GPUColorSpaceExtendedLinearSRGB:
+		return driver.GPUFormatRGBA16Float, driver.GPUColorSpaceExtendedLinearSRGB
+	case driver.GPUColorSpaceHDR10PQ, driver.GPUColorSpaceHDR10HLG:
+		if cfg.ColorFormat == driver.GPUFormatRGBA16Float {
+			return driver.GPUFormatRGBA16Float, negotiatedCS
+		}
+		return driver.GPUFormatRGB10A2Unorm, negotiatedCS
+	}
+	if cfg.ColorFormat == driver.GPUFormatRGBA16Float || cfg.ColorFormat == driver.GPUFormatRGB10A2Unorm {
+		return cfg.ColorFormat, negotiatedCS
+	}
+	return driver.GPUFormatRGBA8Unorm, negotiatedCS
+}
+
 func glTextureFormatInfo(f driver.GPUTextureFormat) (internalFmt int32, pixelFmt, pixelType uint32, bgraSwizzle, ok bool) {
 	switch f {
 	case driver.GPUFormatRGBA8Unorm:
@@ -617,6 +640,8 @@ func glTextureFormatInfo(f driver.GPUTextureFormat) (internalFmt int32, pixelFmt
 		return gpuGLR8, gpuGLRed, gpuGLUnsignedByte, false, true
 	case driver.GPUFormatRGBA16Float:
 		return gpuGLRGBA16F, gpuGLRGBA, gpuGLHalfFloat, false, true
+	case driver.GPUFormatRGB10A2Unorm:
+		return gpuGLRGB10A2, gpuGLRGBA, gpuGLUnsignedInt2101010R, false, true
 	case driver.GPUFormatDepth24Plus:
 		return gpuGLDepthComponent24, gpuGLDepthComponent, gpuGLUnsignedInt, false, true
 	case driver.GPUFormatDepth24PlusStencil8:

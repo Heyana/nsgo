@@ -11,7 +11,15 @@ import (
 // Children render over the GPU surface as ordinary native NSGo views (HUD, menus).
 type ViewProps struct {
 	// ColorFormat defaults to the platform's preferred swapchain format.
+	// When FormatUndefined is paired with an HDR ColorSpace, backends pick an
+	// appropriate HDR format (such as FormatRGBA16Float for extended linear
+	// sRGB or FormatRGB10A2Unorm for HDR10 PQ/HLG).
 	ColorFormat TextureFormat
+	// ColorSpace requests the swapchain's color space and transfer function.
+	// ColorSpaceDefault selects standard SDR sRGB. Backends that cannot honor
+	// an HDR color space fall back to SDR and report the negotiated color space
+	// via Device.SurfaceColorSpace.
+	ColorSpace ColorSpace
 	// DepthFormat enables an automatic swapchain depth/stencil buffer resized
 	// with the view (e.g. FormatDepth24Plus). FormatUndefined disables it.
 	DepthFormat TextureFormat
@@ -179,6 +187,7 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 
 	return core.GPUView{
 		ColorFormat:    uint8(props.ColorFormat),
+		ColorSpace:     uint8(props.ColorSpace),
 		DepthFormat:    uint8(props.DepthFormat),
 		SampleCount:    props.SampleCount,
 		FramesInFlight: driver.NormalizeFramesInFlight(props.FramesInFlight),
@@ -219,6 +228,7 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 					ev.Width,
 					ev.Height,
 					TextureFormat(ev.SurfaceFormat),
+					ColorSpace(ev.SurfaceColorSpace),
 					fif,
 					limitsFromDriver(ev.Limits),
 					featuresFromDriver(ev.Features),

@@ -200,12 +200,44 @@ const (
 	FormatR16Unorm  TextureFormat = TextureFormat(driver.GPUFormatR16Unorm)
 	FormatRG16Unorm TextureFormat = TextureFormat(driver.GPUFormatRG16Unorm)
 
+	// FormatRGB10A2Unorm is a 10-bit-per-channel RGB + 2-bit alpha normalized format used for HDR10 (PQ/HLG) swapchains and render targets.
+	FormatRGB10A2Unorm TextureFormat = TextureFormat(driver.GPUFormatRGB10A2Unorm)
+
 	// Short HDR float format aliases matching WGSL/shader shorthand.
 	FormatRGBA16F  TextureFormat = FormatRGBA16Float
 	FormatRG11B10F TextureFormat = FormatRG11B10Float
 	FormatR32F     TextureFormat = FormatR32Float
 	FormatRGBA32F  TextureFormat = FormatRGBA32Float
 )
+
+// ColorSpace identifies the color primaries and transfer function of a gpu.View swapchain.
+type ColorSpace uint8
+
+const (
+	// ColorSpaceDefault selects the platform's default SDR swapchain color space (sRGB).
+	ColorSpaceDefault ColorSpace = ColorSpace(driver.GPUColorSpaceDefault)
+	// ColorSpaceSRGB is standard sRGB (Rec. 709 primaries, sRGB transfer, [0, 1] range).
+	ColorSpaceSRGB ColorSpace = ColorSpace(driver.GPUColorSpaceSRGB)
+	// ColorSpaceExtendedLinearSRGB is linear-light extended-range sRGB / scRGB
+	// (Rec. 709 primaries, linear transfer, 1.0 = SDR reference white, values > 1.0 for HDR).
+	ColorSpaceExtendedLinearSRGB ColorSpace = ColorSpace(driver.GPUColorSpaceExtendedLinearSRGB)
+	// ColorSpaceHDR10PQ is BT.2020 primaries with SMPTE ST 2084 (PQ) transfer.
+	ColorSpaceHDR10PQ ColorSpace = ColorSpace(driver.GPUColorSpaceHDR10PQ)
+	// ColorSpaceHDR10HLG is BT.2020 primaries with Hybrid Log-Gamma (HLG) transfer.
+	ColorSpaceHDR10HLG ColorSpace = ColorSpace(driver.GPUColorSpaceHDR10HLG)
+	// ColorSpaceDisplayP3 is Display P3 primaries with sRGB transfer.
+	ColorSpaceDisplayP3 ColorSpace = ColorSpace(driver.GPUColorSpaceDisplayP3)
+)
+
+// IsHDR reports whether c is an HDR / extended dynamic range color space.
+func (c ColorSpace) IsHDR() bool {
+	return driver.GPUColorSpace(c).IsHDR()
+}
+
+// String returns the color space's canonical name.
+func (c ColorSpace) String() string {
+	return driver.GPUColorSpace(c).String()
+}
 
 // IsDepth reports whether f carries a depth aspect.
 func (f TextureFormat) IsDepth() bool {

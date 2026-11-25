@@ -244,8 +244,16 @@ func displays() []driver.DisplayInfo {
 		point := func(r gdkMonitorRectangle) driver.Bounds {
 			return driver.Bounds{Origin: driver.Point{X: driver.Points(float32(r.X)), Y: driver.Points(float32(r.Y))}, Size: driver.Size{Width: driver.Points(float32(r.Width)), Height: driver.Points(float32(r.Height))}}
 		}
-		out = append(out, driver.DisplayInfo{ID: monitorDisplayID(monitor), Frame: point(frame), VisibleFrame: point(visible), Scale: scale, Main: i == 0,
-			RefreshRate: float64(max(0, gdkMonitorGetRefreshRate(monitor))) / 1000})
+		hdr := queryWaylandMonitorHDR(monitor)
+		out = append(out, driver.DisplayInfo{
+			ID: monitorDisplayID(monitor), Frame: point(frame), VisibleFrame: point(visible), Scale: scale, Main: i == 0,
+			RefreshRate:   float64(max(0, gdkMonitorGetRefreshRate(monitor))) / 1000,
+			HDR:           hdr.hdr,
+			HDRSupported:  hdr.supported,
+			HDRHeadroom:   hdr.headroom,
+			SDRWhiteLevel: hdr.sdrWhiteLevel,
+			MaxLuminance:  hdr.maxLuminance,
+		})
 		gObjectUnref(monitor)
 	}
 	return out

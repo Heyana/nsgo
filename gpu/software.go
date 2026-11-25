@@ -59,6 +59,7 @@ func newSoftwareRenderer(width, height int, colorFormat, depthFormat TextureForm
 		width,
 		height,
 		colorFormat,
+		ColorSpaceSRGB,
 		fif,
 		limitsFromDriver(driver.DefaultSoftwareGPULimits()),
 		features,

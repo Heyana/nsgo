@@ -131,16 +131,36 @@ type d3d11SwapTargets struct {
 	swapTex, swapRTV, bitmap *comObject
 	msaaTex, msaaRTV         *comObject
 	depthTex, depthDSV       *comObject
+	hdrSwap                  *comObject // optional DirectComposition HDR IDXGISwapChain1
+	format                   driver.GPUTextureFormat
+	colorSpace               driver.GPUColorSpace
+	dxgiFmt                  uint32
 	depthFmt                 driver.GPUTextureFormat
 	bitmapScale              float32
 	generation               uint64
 }
 
+func (s *d3d11SwapTargets) SurfaceFormat() driver.GPUTextureFormat { return s.format }
+func (s *d3d11SwapTargets) SurfaceColorSpace() driver.GPUColorSpace { return s.colorSpace }
+
 func (s *d3d11SwapTargets) Release() {
 	if s == nil {
 		return
 	}
-	releaseAll(&s.bitmap, &s.depthDSV, &s.depthTex, &s.msaaRTV, &s.msaaTex, &s.swapRTV, &s.swapTex)
+	releaseAll(&s.hdrSwap, &s.bitmap, &s.depthDSV, &s.depthTex, &s.msaaRTV, &s.msaaTex, &s.swapRTV, &s.swapTex)
+}
+
+func (s *d3d11SwapTargets) presentHDR(ctx *comObject) {
+	if s == nil || s.hdrSwap == nil || s.swapTex == nil || ctx == nil {
+		return
+	}
+	var back *comObject
+	if failed(s.hdrSwap.call(swapGetBuffer, 0, uintptr(unsafe.Pointer(&iidD3D11Texture2D)), uintptr(unsafe.Pointer(&back)))) || back == nil {
+		return
+	}
+	ctx.call(ctxCopyResource, back.ptr(), s.swapTex.ptr())
+	back.release()
+	s.hdrSwap.call(swapPresent, 0, 0)
 }
 
 func (s *d3d11SwapTargets) ensureBitmap(dc *comObject, scale float32) *comObject {
@@ -160,7 +180,7 @@ func (s *d3d11SwapTargets) ensureBitmap(dc *comObject, scale float32) *comObject
 		scale = 1
 	}
 	props := bitmapProperties1{
-		format:    dxgiFormatBGRA,
+		format:    s.dxgiFmt,
 		alphaMode: d2dAlphaPremultiplied,
 		dpiX:      96 * scale,
 		dpiY:      96 * scale,
@@ -302,18 +322,38 @@ func (n *d3d11NativeOps) CreateSwapTargets(pw, ph uint32, cfg driver.GPUViewConf
 	if err != nil {
 		return nil, 0, err
 	}
-	st := &d3d11SwapTargets{depthFmt: cfg.DepthFormat, generation: gfxGeneration}
+	surfFmt, surfCS, dxgiFmt, dxgiCS := d3dResolveSwapFormat(cfg)
+	var hdrSwap *comObject
+	if surfCS.IsHDR() {
+		if sc, scErr := createHDRCompositionSwapChain(g, pw, ph, dxgiFmt, dxgiCS); scErr == nil {
+			hdrSwap = sc
+		} else {
+			// Fall back to standard SDR Direct2D bitmap composition when DirectComposition or the HDR color space is unavailable.
+			surfFmt = driver.GPUFormatBGRA8Unorm
+			surfCS = driver.GPUColorSpaceSRGB
+			dxgiFmt = dxgiFmtB8G8R8A8Unorm
+		}
+	}
+	st := &d3d11SwapTargets{
+		hdrSwap:    hdrSwap,
+		format:     surfFmt,
+		colorSpace: surfCS,
+		dxgiFmt:    dxgiFmt,
+		depthFmt:   cfg.DepthFormat,
+		generation: gfxGeneration,
+	}
 	swapDesc := d3d11Texture2DDesc{
 		width:       pw,
 		height:      ph,
 		mipLevels:   1,
 		arraySize:   1,
-		format:      dxgiFmtB8G8R8A8Unorm,
+		format:      dxgiFmt,
 		sampleCount: 1,
 		usage:       d3d11UsageDefault,
 		bindFlags:   d3d11BindRenderTarget | d3d11BindShaderResource,
 	}
 	if hr := g.d3d.call(d3dCreateTexture2D, uintptr(unsafe.Pointer(&swapDesc)), 0, uintptr(unsafe.Pointer(&st.swapTex))); failed(hr) {
+		st.Release()
 		return nil, uint32(hr), hresultError("d3d11: CreateTexture2D swapchain", hr)
 	}
 	if hr := g.d3d.call(d3dCreateRenderTargetView, st.swapTex.ptr(), 0, uintptr(unsafe.Pointer(&st.swapRTV))); failed(hr) {
@@ -327,7 +367,7 @@ func (n *d3d11NativeOps) CreateSwapTargets(pw, ph uint32, cfg driver.GPUViewConf
 			height:      ph,
 			mipLevels:   1,
 			arraySize:   1,
-			format:      dxgiFmtB8G8R8A8Unorm,
+			format:      dxgiFmt,
 			sampleCount: samples,
 			usage:       d3d11UsageDefault,
 			bindFlags:   d3d11BindRenderTarget,
@@ -365,11 +405,13 @@ func (n *d3d11NativeOps) CreateSwapTargets(pw, ph uint32, cfg driver.GPUViewConf
 			return nil, uint32(hr), hresultError("d3d11: CreateDepthStencilView swapchain", hr)
 		}
 	}
-	scale := float32(1)
-	if n.scaleFn != nil {
-		scale = n.scaleFn()
+	if st.hdrSwap == nil {
+		scale := float32(1)
+		if n.scaleFn != nil {
+			scale = n.scaleFn()
+		}
+		st.ensureBitmap(g.dc, scale)
 	}
-	st.ensureBitmap(g.dc, scale)
 	return st, 0, nil
 }
 
@@ -1176,10 +1218,13 @@ func (n *d3d11NativeOps) ExecutePass(pass driver.GPUPass, swapHandle d3dReleaser
 
 	// Resolve MSAA render targets at pass end.
 	if needSwapResolve && swap != nil && swap.swapTex != nil && swap.msaaTex != nil {
-		ctx.call(ctxResolveSubresource, swap.swapTex.ptr(), 0, swap.msaaTex.ptr(), 0, uintptr(dxgiFmtB8G8R8A8Unorm))
+		ctx.call(ctxResolveSubresource, swap.swapTex.ptr(), 0, swap.msaaTex.ptr(), 0, uintptr(swap.dxgiFmt))
 	}
 	for _, r := range resolves {
 		ctx.call(ctxResolveSubresource, r.dst.ptr(), uintptr(r.dstSub), r.src.ptr(), uintptr(r.srcSub), uintptr(r.format))
+	}
+	if drewSwap && swap != nil && swap.hdrSwap != nil {
+		swap.presentHDR(ctx)
 	}
 
 	return drewSwap, 0, nil
@@ -1205,8 +1250,14 @@ func (n *d3d11NativeOps) ReadTexture(swapHandle d3dReleaser, swapW, swapH uint32
 			return nil, 0, errors.New("d3d11: swapchain texture unavailable for readback")
 		}
 		srcTex = swap.swapTex
-		srcFmt = driver.GPUFormatBGRA8Unorm
-		srcDXGI = dxgiFmtB8G8R8A8Unorm
+		srcFmt = swap.format
+		if srcFmt == driver.GPUFormatUndefined {
+			srcFmt = driver.GPUFormatBGRA8Unorm
+		}
+		srcDXGI = swap.dxgiFmt
+		if srcDXGI == 0 {
+			srcDXGI = dxgiFmtB8G8R8A8Unorm
+		}
 		mipW, mipH = swapW, swapH
 	} else {
 		if tex == nil {
@@ -1282,9 +1333,11 @@ func (n *d3d11NativeOps) ReadTexture(swapHandle d3dReleaser, swapW, swapH uint32
 
 // gpuView holds one KindGPU view's D3D11 controller on the main UI thread.
 type gpuView struct {
-	w    *window
-	v    *view
-	ctrl *d3dGPUController
+	w        *window
+	v        *view
+	ctrl     *d3dGPUController
+	portal   *portal    // DirectComposition visual when presenting an HDR IDXGISwapChain3
+	boundRef *comObject // swapchain last bound to portal.inner
 }
 
 func (w *window) newGPUView(v *view) *gpuView {
@@ -1306,12 +1359,61 @@ func (gv *gpuView) release() {
 	if gv == nil {
 		return
 	}
+	if gv.portal != nil {
+		gv.portal.inner.call(visualSetContent, 0)
+		gv.portal.release()
+		gv.portal = nil
+		gv.boundRef = nil
+	}
 	if gv.ctrl != nil {
 		gv.ctrl.Release()
 	}
 	if gv.w != nil && gv.w.gpuViews != nil && gv.v != nil {
 		delete(gv.w.gpuViews, gv.v.id)
 	}
+}
+
+func (gv *gpuView) hdrSwap() *comObject {
+	if gv == nil || gv.ctrl == nil {
+		return nil
+	}
+	swap, _ := gv.ctrl.swap.(*d3d11SwapTargets)
+	if swap == nil || swap.generation != gfxGeneration {
+		return nil
+	}
+	return swap.hdrSwap
+}
+
+func (gv *gpuView) ensurePortal() *portal {
+	if gv.hdrSwap() == nil {
+		return nil
+	}
+	if gv.portal == nil && gv.w != nil {
+		if p, err := gv.w.newPortal(); err == nil {
+			gv.portal = p
+		}
+	}
+	return gv.portal
+}
+
+func (gv *gpuView) composeAt(at *placement) {
+	hdr := gv.hdrSwap()
+	if at == nil || hdr == nil {
+		if gv.portal != nil && gv.boundRef != nil {
+			gv.portal.inner.call(visualSetContent, 0)
+			gv.boundRef = nil
+		}
+		return
+	}
+	p := gv.ensurePortal()
+	if p == nil {
+		return
+	}
+	if gv.boundRef != hdr {
+		p.inner.call(visualSetContent, hdr.ptr())
+		gv.boundRef = hdr
+	}
+	p.place(*at)
 }
 
 func (w *window) gpuPixelSize(v *view) (uint32, uint32) {
@@ -1341,6 +1443,7 @@ func (w *window) syncGPUViews(configured, resized []*view) {
 		seen[v.id] = true
 		pw, ph := w.gpuPixelSize(v)
 		if v.gpuView.ctrl.MountOrResize(pw, ph) {
+			v.gpuView.ensurePortal()
 			w.redrawView(v)
 		}
 	}
@@ -1350,6 +1453,7 @@ func (w *window) syncGPUViews(configured, resized []*view) {
 		}
 		pw, ph := w.gpuPixelSize(v)
 		if v.gpuView.ctrl.MountOrResize(pw, ph) {
+			v.gpuView.ensurePortal()
 			w.redrawView(v)
 		}
 	}
@@ -1470,8 +1574,9 @@ func (w *window) releaseAllGPUViews() {
 	}
 }
 
-// drawGPU composites a KindGPU view's D3D11 swapchain texture through Direct2D.
-func (p *painter) drawGPU(v *view, width, height float32) {
+// drawGPU composites a KindGPU view's D3D11 swapchain texture through Direct2D,
+// or places its DirectComposition HDR swapchain portal when HDR output is active.
+func (p *painter) drawGPU(v *view, world matrix, width, height, radius float32, clip bool) {
 	gv := v.gpuView
 	if gv == nil || gv.ctrl == nil || width <= 0 || height <= 0 {
 		return
@@ -1479,6 +1584,16 @@ func (p *painter) drawGPU(v *view, width, height float32) {
 	swap, _ := gv.ctrl.swap.(*d3d11SwapTargets)
 	if swap == nil || swap.generation != gfxGeneration {
 		return
+	}
+	if swap.hdrSwap != nil {
+		if gv.ensurePortal() != nil {
+			r := float32(0)
+			if clip {
+				r = radius
+			}
+			p.placeGPU(gv, world, width, height, r)
+			return
+		}
 	}
 	bmp := swap.ensureBitmap(p.dc, p.scale)
 	if bmp == nil {

@@ -2382,6 +2382,26 @@ func quantizeColorForFormat(format GPUTextureFormat, c [4]float32) [4]float32 {
 		return [4]float32{c[0], 0, 0, 1}
 	case GPUFormatRGBA32Float:
 		return c
+	case GPUFormatRGB10A2Unorm:
+		q10 := func(v float32) float32 {
+			if v <= 0 {
+				return 0
+			}
+			if v >= 1 {
+				return 1
+			}
+			return float32(uint32(math.Round(float64(v)*1023))) / 1023.0
+		}
+		q2 := func(v float32) float32 {
+			if v <= 0 {
+				return 0
+			}
+			if v >= 1 {
+				return 1
+			}
+			return float32(uint32(math.Round(float64(v)*3))) / 3.0
+		}
+		return [4]float32{q10(c[0]), q10(c[1]), q10(c[2]), q2(c[3])}
 	default: // RGBA8Unorm, BGRA8Unorm
 		return [4]float32{
 			float32(floatToByte(c[0])) / 255.0,
@@ -2438,6 +2458,14 @@ func decodePixelBytes(src []byte, format GPUTextureFormat) [4]float32 {
 			math.Float32frombits(binary.LittleEndian.Uint32(src[8:12])),
 			math.Float32frombits(binary.LittleEndian.Uint32(src[12:16])),
 		}
+	case GPUFormatRGB10A2Unorm:
+		v := binary.LittleEndian.Uint32(src[0:4])
+		return [4]float32{
+			float32(v&0x3ff) / 1023.0,
+			float32((v>>10)&0x3ff) / 1023.0,
+			float32((v>>20)&0x3ff) / 1023.0,
+			float32((v>>30)&0x3) / 3.0,
+		}
 	default:
 		return [4]float32{
 			float32(src[0]) / 255.0,
@@ -2482,6 +2510,27 @@ func encodePixelBytes(dst []byte, format GPUTextureFormat, c [4]float32) {
 		binary.LittleEndian.PutUint32(dst[4:8], math.Float32bits(c[1]))
 		binary.LittleEndian.PutUint32(dst[8:12], math.Float32bits(c[2]))
 		binary.LittleEndian.PutUint32(dst[12:16], math.Float32bits(c[3]))
+	case GPUFormatRGB10A2Unorm:
+		u10 := func(v float32) uint32 {
+			if v <= 0 {
+				return 0
+			}
+			if v >= 1 {
+				return 1023
+			}
+			return uint32(math.Round(float64(v) * 1023))
+		}
+		u2 := func(v float32) uint32 {
+			if v <= 0 {
+				return 0
+			}
+			if v >= 1 {
+				return 3
+			}
+			return uint32(math.Round(float64(v) * 3))
+		}
+		packed := u10(c[0]) | (u10(c[1]) << 10) | (u10(c[2]) << 20) | (u2(c[3]) << 30)
+		binary.LittleEndian.PutUint32(dst[0:4], packed)
 	default:
 		dst[0] = floatToByte(c[0])
 		dst[1] = floatToByte(c[1])

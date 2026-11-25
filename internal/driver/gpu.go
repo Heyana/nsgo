@@ -43,7 +43,53 @@ const (
 	// The 16-bit normalized formats below exist only for imported textures, such as the planes of a P010 video frame; no device creates them (IsImportOnly).
 	GPUFormatR16Unorm
 	GPUFormatRG16Unorm
+	// GPUFormatRGB10A2Unorm is a 10-bit-per-channel RGB + 2-bit alpha normalized format used for HDR10 (PQ/HLG) swapchains and render targets.
+	GPUFormatRGB10A2Unorm
 )
+
+// GPUColorSpace selects the color space and transfer function of a GPU view's swapchain.
+type GPUColorSpace uint8
+
+const (
+	// GPUColorSpaceDefault selects the platform's default SDR swapchain color space (sRGB).
+	GPUColorSpaceDefault GPUColorSpace = iota
+	// GPUColorSpaceSRGB is standard sRGB (Rec. 709 primaries, sRGB transfer, [0, 1] range).
+	GPUColorSpaceSRGB
+	// GPUColorSpaceExtendedLinearSRGB is linear-light extended-range sRGB / scRGB
+	// (Rec. 709 primaries, linear transfer, 1.0 = SDR reference white, values > 1.0 for HDR).
+	GPUColorSpaceExtendedLinearSRGB
+	// GPUColorSpaceHDR10PQ is BT.2020 primaries with SMPTE ST 2084 (PQ) transfer.
+	GPUColorSpaceHDR10PQ
+	// GPUColorSpaceHDR10HLG is BT.2020 primaries with Hybrid Log-Gamma (HLG) transfer.
+	GPUColorSpaceHDR10HLG
+	// GPUColorSpaceDisplayP3 is Display P3 primaries with sRGB transfer.
+	GPUColorSpaceDisplayP3
+)
+
+// IsHDR reports whether c is an HDR / extended dynamic range color space.
+func (c GPUColorSpace) IsHDR() bool {
+	return c == GPUColorSpaceExtendedLinearSRGB || c == GPUColorSpaceHDR10PQ || c == GPUColorSpaceHDR10HLG
+}
+
+// String returns a human-readable identifier for c.
+func (c GPUColorSpace) String() string {
+	switch c {
+	case GPUColorSpaceDefault:
+		return "Default"
+	case GPUColorSpaceSRGB:
+		return "sRGB"
+	case GPUColorSpaceExtendedLinearSRGB:
+		return "ExtendedLinearSRGB"
+	case GPUColorSpaceHDR10PQ:
+		return "HDR10PQ"
+	case GPUColorSpaceHDR10HLG:
+		return "HDR10HLG"
+	case GPUColorSpaceDisplayP3:
+		return "DisplayP3"
+	default:
+		return "Unknown"
+	}
+}
 
 // IsDepth reports whether f carries a depth aspect.
 func (f GPUTextureFormat) IsDepth() bool {
@@ -121,7 +167,7 @@ func (f GPUTextureFormat) BlockSize() (width, height uint32) {
 		GPUFormatRG8Unorm, GPUFormatR8Unorm, GPUFormatRGBA16Float,
 		GPUFormatDepth24Plus, GPUFormatDepth24PlusStencil8, GPUFormatDepth32Float,
 		GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float, GPUFormatRGBA32Float, GPUFormatStencil8,
-		GPUFormatR16Unorm, GPUFormatRG16Unorm:
+		GPUFormatR16Unorm, GPUFormatRG16Unorm, GPUFormatRGB10A2Unorm:
 		return 1, 1
 	default:
 		return 0, 0
@@ -162,7 +208,7 @@ func (f GPUTextureFormat) BytesPerPixel() uint32 {
 		return 1
 	case GPUFormatRG8Unorm, GPUFormatR16Unorm:
 		return 2
-	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm, GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float, GPUFormatRG16Unorm:
+	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm, GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float, GPUFormatRG16Unorm, GPUFormatRGB10A2Unorm:
 		return 4
 	case GPUFormatRGBA16Float:
 		return 8
@@ -230,6 +276,8 @@ func (f GPUTextureFormat) String() string {
 		return "R16Unorm"
 	case GPUFormatRG16Unorm:
 		return "RG16Unorm"
+	case GPUFormatRGB10A2Unorm:
+		return "RGB10A2Unorm"
 	default:
 		return "Unknown"
 	}
@@ -593,6 +641,7 @@ func NormalizeFramesInFlight(n int) int {
 // GPUViewConfig is the mount configuration for a KindGPU view (ItemGPU).
 type GPUViewConfig struct {
 	ColorFormat    GPUTextureFormat
+	ColorSpace     GPUColorSpace
 	DepthFormat    GPUTextureFormat
 	SampleCount    int
 	FramesInFlight int
@@ -1242,10 +1291,11 @@ const (
 type GPUEvent struct {
 	Kind           GPUEventKind
 	Generation     uint32
-	Width          int
-	Height         int
-	SurfaceFormat  GPUTextureFormat
-	FramesInFlight int
+	Width             int
+	Height            int
+	SurfaceFormat     GPUTextureFormat
+	SurfaceColorSpace GPUColorSpace
+	FramesInFlight    int
 	Limits         GPULimits
 	Features       GPUFeatures
 	LostReason     GPUDeviceLostReason

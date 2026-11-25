@@ -25,6 +25,7 @@ const (
 	dxgiFmtR32G32Float        uint32 = 16
 	dxgiFmtR32G32Uint         uint32 = 17
 	dxgiFmtR32G32Sint         uint32 = 18
+	dxgiFmtR10G10B10A2Unorm   uint32 = 24
 	dxgiFmtR8G8B8A8Unorm      uint32 = 28
 	dxgiFmtR8G8B8A8UnormSRGB  uint32 = 29
 	dxgiFmtR32Typeless        uint32 = 39
@@ -43,6 +44,11 @@ const (
 	dxgiFmtB8G8R8A8Unorm      uint32 = 87
 	dxgiFmtNV12               uint32 = 103
 	dxgiFmtP010               uint32 = 104
+
+	// DXGI_COLOR_SPACE_TYPE values (dxgicommon.h).
+	dxgiColorSpaceRGBFullG22NoneP709   uint32 = 0
+	dxgiColorSpaceRGBFullG10NoneP709   uint32 = 10
+	dxgiColorSpaceRGBFullG2084NoneP2020 uint32 = 12
 
 	// D3D11_USAGE (d3d11.h).
 	d3d11UsageDefault   uint32 = 0
@@ -489,6 +495,8 @@ func d3dTextureFormats(f driver.GPUTextureFormat, sampled bool) (texFmt, srvFmt,
 		return dxgiFmtR8Unorm, dxgiFmtR8Unorm, dxgiFmtR8Unorm, dxgiFmtUnknown
 	case driver.GPUFormatRGBA16Float:
 		return dxgiFmtR16G16B16A16Float, dxgiFmtR16G16B16A16Float, dxgiFmtR16G16B16A16Float, dxgiFmtUnknown
+	case driver.GPUFormatRGB10A2Unorm:
+		return dxgiFmtR10G10B10A2Unorm, dxgiFmtR10G10B10A2Unorm, dxgiFmtR10G10B10A2Unorm, dxgiFmtUnknown
 	case driver.GPUFormatDepth32Float, driver.GPUFormatDepth24Plus:
 		if sampled {
 			return dxgiFmtR32Typeless, dxgiFmtR32Float, dxgiFmtUnknown, dxgiFmtD32Float
@@ -1147,6 +1155,28 @@ type d3dNativeOps interface {
 }
 
 // d3dGPUController manages one KindGPU view's swapchain, retained resources, generation tracking, device-loss transitions, and GPUEvent emission.
+// d3dSwapInfo is optionally implemented by swap target handles to report the
+// negotiated swapchain pixel format and color space.
+type d3dSwapInfo interface {
+	SurfaceFormat() driver.GPUTextureFormat
+	SurfaceColorSpace() driver.GPUColorSpace
+}
+
+// d3dResolveSwapFormat chooses the swapchain pixel format, color space, DXGI
+// format, and DXGI color space for cfg on Windows D3D11/DXGI.
+func d3dResolveSwapFormat(cfg driver.GPUViewConfig) (driver.GPUTextureFormat, driver.GPUColorSpace, uint32, uint32) {
+	switch cfg.ColorSpace {
+	case driver.GPUColorSpaceExtendedLinearSRGB:
+		return driver.GPUFormatRGBA16Float, driver.GPUColorSpaceExtendedLinearSRGB, dxgiFmtR16G16B16A16Float, dxgiColorSpaceRGBFullG10NoneP709
+	case driver.GPUColorSpaceHDR10PQ:
+		if cfg.ColorFormat == driver.GPUFormatRGBA16Float {
+			return driver.GPUFormatRGBA16Float, driver.GPUColorSpaceHDR10PQ, dxgiFmtR16G16B16A16Float, dxgiColorSpaceRGBFullG2084NoneP2020
+		}
+		return driver.GPUFormatRGB10A2Unorm, driver.GPUColorSpaceHDR10PQ, dxgiFmtR10G10B10A2Unorm, dxgiColorSpaceRGBFullG2084NoneP2020
+	}
+	return driver.GPUFormatBGRA8Unorm, driver.GPUColorSpaceSRGB, dxgiFmtB8G8R8A8Unorm, dxgiColorSpaceRGBFullG22NoneP709
+}
+
 type d3dGPUController struct {
 	ops  d3dNativeOps
 	emit func(*driver.GPUEvent)
@@ -1223,14 +1253,25 @@ func (c *d3dGPUController) MountOrResize(pw, ph uint32) bool {
 		c.generation++
 		c.ready = true
 		c.lost = false
+		surfFmt := driver.GPUFormatBGRA8Unorm
+		surfCS := driver.GPUColorSpaceSRGB
+		if info, ok := swap.(d3dSwapInfo); ok {
+			if f := info.SurfaceFormat(); f != driver.GPUFormatUndefined {
+				surfFmt = f
+			}
+			if cs := info.SurfaceColorSpace(); cs != driver.GPUColorSpaceDefault {
+				surfCS = cs
+			}
+		}
 		c.emitEvent(&driver.GPUEvent{
-			Kind:          driver.GPUEventDeviceReady,
-			Generation:    c.generation,
-			Width:         int(pw),
-			Height:        int(ph),
-			SurfaceFormat: driver.GPUFormatBGRA8Unorm,
-			Limits:        d3d11Limits(),
-			Features:      d3d11Features(),
+			Kind:              driver.GPUEventDeviceReady,
+			Generation:        c.generation,
+			Width:             int(pw),
+			Height:            int(ph),
+			SurfaceFormat:     surfFmt,
+			SurfaceColorSpace: surfCS,
+			Limits:            d3d11Limits(),
+			Features:          d3d11Features(),
 		})
 	} else if sizeChanged {
 		c.emitEvent(&driver.GPUEvent{

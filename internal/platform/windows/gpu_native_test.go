@@ -300,7 +300,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 	g.dc.call(rtClear, uintptr(unsafe.Pointer(&clearCol)))
 	p := newPainter(w, g)
 	p.setTransform(identity)
-	p.drawGPU(v, pw, ph)
+	p.drawGPU(v, identity, pw, ph, 0, false)
 	p.release()
 	if hr := g.dc.call(rtEndDraw, 0, 0); failed(hr) {
 		t.Fatal(hresultError("D2D EndDraw", hr))

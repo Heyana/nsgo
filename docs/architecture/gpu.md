@@ -308,6 +308,14 @@ return gpu.View{
 - **Linux**: the backend makes an EGLImage with `EGL_EXT_image_dma_buf_import` (naming the modifier where `_modifiers` is present) on the display `eglGetCurrentDisplay` gives inside the `GtkGLArea`'s context, and binds it with `glEGLImageTargetTexture2DOES`; a GLX context reports no support.
 - **Lifetime**: the caller keeps the handle or file descriptors, open until the first frame submitted after the import completes. Imported textures are only sampled: writes, copies, readbacks and render passes on them are dropped or rejected, and they are not retained across device loss. Closing one releases what the backend opened after the frames already submitted, so a decoder's frame goes back to its pool once the `FrameFence` of the last frame that sampled it completes.
 
+### HDR swapchains
+
+`gpu.ViewProps.ColorSpace` (`ColorSpaceDefault`, `ColorSpaceSRGB`, `ColorSpaceExtendedLinearSRGB`, `ColorSpaceHDR10PQ`, `ColorSpaceHDR10HLG`, `ColorSpaceDisplayP3`) and `gpu.FormatRGB10A2Unorm` let a view request an HDR swapchain alongside `core.DisplayInfo`'s HDR reporting (`HDR`, `HDRSupported`, `HDRHeadroom`, `SDRWhiteLevel`, `MaxLuminance`) ([#2358](https://github.com/nsgo-dev/nsgo/issues/2358)). Backends negotiate what the platform supports and report the active format and color space through `Device.SurfaceFormat()` and `Device.SurfaceColorSpace()`, falling back to SDR sRGB when HDR output is unavailable:
+
+- **macOS & iOS (`internal/platform/apple`)**: `CAMetalLayer` configures `kCGColorSpaceExtendedLinearSRGB`, `kCGColorSpaceITUR_2100_PQ`, `kCGColorSpaceITUR_2100_HLG` or `kCGColorSpaceDisplayP3` with `RGBA16Float` or `RGB10A2Unorm` and enables `wantsExtendedDynamicRangeContent` on macOS.
+- **Windows (`internal/platform/windows`)**: HDR views create a DirectComposition flip-model swap chain (`IDXGIFactory2::CreateSwapChainForComposition`) configured via `IDXGISwapChain3::SetColorSpace1` (`DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709` for `RGBA16Float` scRGB, `DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020` for `RGB10A2Unorm`/`RGBA16Float` HDR10 PQ) and compose it as a DirectComposition portal so HUD children render above it.
+- **Linux (`internal/platform/linux`)**: on Wayland compositors advertising `wp_color_management_v1`, `gpu.View` attaches a `wp_color_management_surface_v1` image description to its `wl_surface` and renders into an internal `RGBA16F` or `RGB10A2` framebuffer when HDR is negotiated.
+
 ## Web backend: WebGPU with WebGL 2 fallback (Decision 2)
 
 On the web (`internal/platform/web`, [#1108](https://github.com/nsgo-dev/nsgo/issues/1108)), a `gpu.View` mounts a `<canvas>` sized to physical pixels (`width * pixelRatio`, `height * pixelRatio`), reusing the canvas sizing and animation-frame lifecycle already established in `internal/platform/web/shader.go`:

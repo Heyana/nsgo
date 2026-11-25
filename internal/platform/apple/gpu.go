@@ -39,6 +39,7 @@ type gpuRender struct {
 	layer, queue objc.ID
 	cfg          driver.GPUViewConfig
 	format       driver.GPUTextureFormat // the surface's color format
+	colorSpace   driver.GPUColorSpace    // the surface's negotiated color space
 	generation   uint32
 	emit         func(*driver.GPUEvent)
 	wake         chan struct{}
@@ -95,10 +96,7 @@ func NewGPULayer(cfg driver.GPUViewConfig, emit func(*driver.GPUEvent)) *GPULaye
 	if queue == 0 {
 		return nil
 	}
-	format := driver.GPUFormatBGRA8Unorm
-	if cfg.ColorFormat == driver.GPUFormatRGBA16Float {
-		format = cfg.ColorFormat
-	}
+	format, colorSpace, cgSpace, edr := resolveAppleGPUSurface(cfg)
 	if cfg.SampleCount != 4 {
 		cfg.SampleCount = 1
 	}
@@ -108,9 +106,12 @@ func NewGPULayer(cfg driver.GPUViewConfig, emit func(*driver.GPUEvent)) *GPULaye
 	// A presenting frame copies the surface into the drawable.
 	layer.Send(sel("setFramebufferOnly:"), false)
 	layer.Send(sel("setOpaque:"), false)
-	layer.Send(sel("setColorspace:"), srgb)
+	layer.Send(sel("setColorspace:"), cgSpace)
+	if edr && objc.Send[bool](layer, sel("respondsToSelector:"), sel("setWantsExtendedDynamicRangeContent:")) {
+		layer.Send(sel("setWantsExtendedDynamicRangeContent:"), true)
+	}
 	r := &gpuRender{
-		layer: layer, queue: queue, cfg: cfg, format: format, generation: gpuGenerations.Add(1), emit: emit,
+		layer: layer, queue: queue, cfg: cfg, format: format, colorSpace: colorSpace, generation: gpuGenerations.Add(1), emit: emit,
 		wake: make(chan struct{}, 1), done: make(chan struct{}),
 		buffers: map[driver.GPUID]objc.ID{}, textures: map[driver.GPUID]*gpuTexture{}, samplers: map[driver.GPUID]objc.ID{},
 		layouts: map[driver.GPUID]*driver.GPUBindGroupLayoutDesc{}, groups: map[driver.GPUID]*driver.GPUBindGroupDesc{},
@@ -118,6 +119,44 @@ func NewGPULayer(cfg driver.GPUViewConfig, emit func(*driver.GPUEvent)) *GPULaye
 	}
 	go r.loop()
 	return &GPULayer{Layer: layer, render: r}
+}
+
+func resolveAppleGPUSurface(cfg driver.GPUViewConfig) (driver.GPUTextureFormat, driver.GPUColorSpace, uintptr, bool) {
+	switch cfg.ColorSpace {
+	case driver.GPUColorSpaceExtendedLinearSRGB:
+		if cgExtendedLinearSRGB != 0 {
+			return driver.GPUFormatRGBA16Float, driver.GPUColorSpaceExtendedLinearSRGB, cgExtendedLinearSRGB, true
+		}
+	case driver.GPUColorSpaceHDR10PQ:
+		if cgITUR2100PQ != 0 {
+			format := driver.GPUFormatRGB10A2Unorm
+			if cfg.ColorFormat == driver.GPUFormatRGBA16Float {
+				format = driver.GPUFormatRGBA16Float
+			}
+			return format, driver.GPUColorSpaceHDR10PQ, cgITUR2100PQ, true
+		}
+	case driver.GPUColorSpaceHDR10HLG:
+		if cgITUR2100HLG != 0 {
+			format := driver.GPUFormatRGB10A2Unorm
+			if cfg.ColorFormat == driver.GPUFormatRGBA16Float {
+				format = driver.GPUFormatRGBA16Float
+			}
+			return format, driver.GPUColorSpaceHDR10HLG, cgITUR2100HLG, true
+		}
+	case driver.GPUColorSpaceDisplayP3:
+		if cgDisplayP3 != 0 {
+			format := driver.GPUFormatBGRA8Unorm
+			if cfg.ColorFormat == driver.GPUFormatRGBA16Float || cfg.ColorFormat == driver.GPUFormatRGB10A2Unorm {
+				format = cfg.ColorFormat
+			}
+			return format, driver.GPUColorSpaceDisplayP3, cgDisplayP3, false
+		}
+	}
+	format := driver.GPUFormatBGRA8Unorm
+	if cfg.ColorFormat == driver.GPUFormatRGBA16Float || cfg.ColorFormat == driver.GPUFormatRGB10A2Unorm {
+		format = cfg.ColorFormat
+	}
+	return format, driver.GPUColorSpaceSRGB, srgb, false
 }
 
 // Resize sizes the layer's drawable for w by h points at scale, on the main thread. The first nonzero size makes the view's device ready; later ones report a resize.
@@ -138,6 +177,7 @@ func (l *GPULayer) Resize(w, h, scale float64) {
 		l.ready = true
 		ev.Kind = driver.GPUEventDeviceReady
 		ev.SurfaceFormat = r.format
+		ev.SurfaceColorSpace = r.colorSpace
 		ev.Limits = driver.DefaultGPULimits()
 		ev.Limits.MaxTextureDimension2D = 8192
 		ev.Features = driver.GPUFeatures{StorageBuffers: true, MSAA4x: true, Depth32Float: true, Anisotropy: true}
@@ -251,6 +291,7 @@ func (r *gpuRender) loop() {
 // Metal's enumerations, as MTLPixelFormat, MTLTextureType and the others name them.
 const (
 	mtlPixelFormatRGBA8UnormSRGB      = 71
+	mtlPixelFormatRGB10A2Unorm        = 90
 	mtlPixelFormatRG8Unorm            = 30
 	mtlPixelFormatR8Unorm             = 10
 	mtlPixelFormatRGBA16Float         = 115
@@ -293,6 +334,8 @@ func gpuPixelFormat(f driver.GPUTextureFormat) uint {
 		return mtlPixelFormatR8Unorm
 	case driver.GPUFormatRGBA16Float:
 		return mtlPixelFormatRGBA16Float
+	case driver.GPUFormatRGB10A2Unorm:
+		return mtlPixelFormatRGB10A2Unorm
 	case driver.GPUFormatDepth24Plus, driver.GPUFormatDepth32Float:
 		// Apple GPUs have no 24-bit depth; WebGPU lets Depth24Plus be wider.
 		return mtlPixelFormatDepth32Float

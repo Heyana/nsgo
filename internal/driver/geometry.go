@@ -91,6 +91,23 @@ type DisplayInfo struct {
 	MaxRefreshRate float64
 	// RefreshRateEstimated marks a rate measured from browser frame callbacks.
 	RefreshRateEstimated bool
+	// HDR reports whether the display is currently accepting HDR output
+	// (extended dynamic range / HDR mode active).
+	HDR bool
+	// HDRSupported reports whether the display is capable of HDR output, even
+	// when HDR mode is currently off in OS settings.
+	HDRSupported bool
+	// HDRHeadroom is the display's current peak luminance relative to SDR
+	// reference white (1.0 for SDR; > 1.0 when HDR headroom is active, such as
+	// Apple EDR headroom or MaxLuminance / SDRWhiteLevel). Zero means
+	// unavailable.
+	HDRHeadroom float32
+	// SDRWhiteLevel is the display's reference SDR white luminance in nits
+	// (cd/m²), or zero when unavailable.
+	SDRWhiteLevel float32
+	// MaxLuminance is the display's peak HDR luminance in nits (cd/m²), or
+	// zero when unavailable.
+	MaxLuminance float32
 }
 
 // Contains reports whether p lies inside b.

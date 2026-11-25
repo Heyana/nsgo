@@ -78,6 +78,7 @@ func (s *GPUSurface) Submit(frame any) {
 // Apps construct views via package gpu rather than using GPUView directly.
 type GPUView struct {
 	ColorFormat    uint8
+	ColorSpace     uint8
 	DepthFormat    uint8
 	SampleCount    int
 	FramesInFlight int
@@ -131,6 +132,7 @@ func (t *Tree) mountGPU(cx *Scope, parent *node, v GPUView) {
 	gn := &gpuNode{
 		cfg: driver.GPUViewConfig{
 			ColorFormat:    driver.GPUTextureFormat(v.ColorFormat),
+			ColorSpace:     driver.GPUColorSpace(v.ColorSpace),
 			DepthFormat:    driver.GPUTextureFormat(v.DepthFormat),
 			SampleCount:    samples,
 			FramesInFlight: driver.NormalizeFramesInFlight(v.FramesInFlight),
