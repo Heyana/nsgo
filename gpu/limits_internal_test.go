@@ -48,3 +48,27 @@ func TestSingleColorTargetLimitRejectsMRT(t *testing.T) {
 		t.Fatalf("unreported MaxColorAttachments = %d, want 1", got)
 	}
 }
+
+// A bind group layout opts into restore by itself, as the other resources do (#2338).
+func TestRetainedBindGroupLayoutIsRestored(t *testing.T) {
+	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	kept, err := d.CreateBindGroupLayoutDesc(nil, BindGroupLayoutDesc{Retained: true})
+	if err != nil {
+		t.Fatalf("CreateBindGroupLayoutDesc retained: %v", err)
+	}
+	plain, err := d.CreateBindGroupLayoutDesc(nil, BindGroupLayoutDesc{})
+	if err != nil {
+		t.Fatalf("CreateBindGroupLayoutDesc: %v", err)
+	}
+	next := newDevice(nil, nil, 2, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	next.restoreRetainedFrom(d)
+	if len(next.retainedLayouts) != 1 || next.retainedLayouts[0] != kept {
+		t.Fatalf("restored layouts = %v, want the retained one alone", next.retainedLayouts)
+	}
+	if !kept.Valid() {
+		t.Fatal("the retained layout is not valid on the new device")
+	}
+	if plain.dev != d {
+		t.Fatal("a layout that asked for nothing was restored")
+	}
+}

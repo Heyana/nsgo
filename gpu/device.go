@@ -1368,7 +1368,7 @@ func (d *Device) CreateBindGroupLayoutDesc(cx *core.Scope, desc BindGroupLayoutD
 		id:          id,
 		epoch:       d.generation,
 		entries:     slices.Clone(entries),
-		retained:    d.retainResources,
+		retained:    desc.Retained || d.retainResources,
 		retainedIdx: -1,
 	}
 	d.keepRetainedLayout(l)

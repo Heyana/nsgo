@@ -297,7 +297,7 @@ return gpu.View{
 - **Device-loss recovery**: Desktop driver resets (`DXGI_ERROR_DEVICE_REMOVED` on Windows), browser tab/GPU resets (`webglcontextlost`, `GPUDevice.lost`), and Android EGL context destruction (`EGL_CONTEXT_LOST` on Activity pause) all map to one contract:
   1. The backend emits `EventGPUDeviceLost` with a reason (`LostReset`, `LostDestroyed`, `LostOutOfMemory`).
   2. `core` bumps the surface's device generation, marks all handles from the lost `Device` invalid (subsequent writes/submits become no-ops rather than panicking), and calls `View.OnDeviceLost`.
-  3. When the platform restores or recreates the device/context, it emits `EventGPUDeviceReady` with the new generation and `core` invokes `View.OnReady` with a fresh `*gpu.Device` so the app rebuilds its resources cleanly.
+  3. When the platform restores or recreates the device/context, it emits `EventGPUDeviceReady` with the new generation and `core` invokes `View.OnReady` with a fresh `*gpu.Device` so the app rebuilds its resources cleanly. `BufferDesc`, `TextureDesc`, `RenderTargetDesc`, `SamplerDesc`, `BindGroupLayoutDesc` and `PipelineDesc` each carry `Retained bool`, which recreates that resource in a restore on its own, as `ViewProps.RetainResources` does for all of them.
 
 ### Imported textures
 

@@ -425,8 +425,9 @@ type BindGroupLayoutEntry struct {
 
 // BindGroupLayoutDesc configures Device.CreateBindGroupLayoutDesc.
 type BindGroupLayoutDesc struct {
-	Label   string
-	Entries []BindGroupLayoutEntry
+	Label    string
+	Entries  []BindGroupLayoutEntry
+	Retained bool // opt in to automatic recreation after device loss
 }
 
 // BindGroupEntry binds a Buffer, Texture, or Sampler to a slot in a BindGroup.
