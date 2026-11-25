@@ -136,8 +136,7 @@ func TestPipelineNilBindGroupLayoutSlotsRenderAndCompute(t *testing.T) {
 	rp.SetVertexBuffer(0, verts, 0)
 	rp.SetBindGroup(0, frameBG)
 	rp.SetBindGroup(3, objectBG)
-	rp.Draw(3, 0)
-	// A rejected bind on a nil layout slot must also not block subsequent draws.
+	// A rejected bind on a nil layout slot must not block the draw: it is the pass's only draw, so a skipped draw leaves the clear colour and fails the pixel check below.
 	rp.SetBindGroup(1, nil)
 	rp.Draw(3, 0)
 	rp.End()
