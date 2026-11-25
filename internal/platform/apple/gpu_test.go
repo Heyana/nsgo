@@ -265,10 +265,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 }
 `
 
-// TestMetalVec3PackedStructLayout verifies that Metal reads {vec3<f32>, f32},
-// {vec3<i32>, i32}, and {vec3<u32>, u32} uniform and storage buffer members,
-// nested structs, array<vec3<f32>, 2>, trailing vec3 padding, and helper
-// struct construction at exact WGSL offsets under Metal's API validation.
+// TestMetalVec3PackedStructLayout verifies that Metal reads {vec3<f32>, f32}, {vec3<i32>, i32}, and {vec3<u32>, u32} uniform and storage buffer members, nested structs, array<vec3<f32>, 2>, trailing vec3 padding, and helper struct construction at exact WGSL offsets under Metal's API validation.
 func TestMetalVec3PackedStructLayout(t *testing.T) {
 	if os.Getenv("MTL_DEBUG_LAYER") != "1" {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

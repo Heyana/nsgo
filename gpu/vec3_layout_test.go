@@ -48,10 +48,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 }
 `
 
-// TestVec3FollowedByScalarInUniformAndStorageBuffers verifies that WGSL
-// structs with vec3<f32> followed by f32 (and leading/trailing padding, plus
-// storage buffer arrays of {vec3<f32>, f32}) pack identically across the
-// headless software GPU and native Metal.
+// TestVec3FollowedByScalarInUniformAndStorageBuffers verifies that WGSL structs with vec3<f32> followed by f32 (and leading/trailing padding, plus storage buffer arrays of {vec3<f32>, f32}) pack identically across the headless software GPU and native Metal.
 func TestVec3FollowedByScalarInUniformAndStorageBuffers(t *testing.T) {
 	mod := gpu.MustCompileWGSL(vec3UniformAndStorageWGSL)
 	quad := packFloat32s(
