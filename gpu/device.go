@@ -2451,9 +2451,27 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 			}
 		}
 	}
+	formats := make([]TextureFormat, len(cas))
+	samples := make([]int, len(cas))
+	depth := FormatUndefined
+	for i := range cas {
+		if len(desc.ColorAttachments) == 0 || desc.ColorAttachments[i].Texture == nil {
+			// The swapchain's own attachment: its sample count belongs to the surface.
+			formats[i], samples[i] = e.dev.SurfaceFormat(), -1
+			continue
+		}
+		ca := desc.ColorAttachments[i]
+		formats[i], samples[i] = ca.Texture.desc.Format, max(ca.Texture.desc.SampleCount, 1)
+	}
+	if desc.DepthStencil != nil && desc.DepthStencil.Texture != nil {
+		depth = desc.DepthStencil.Texture.desc.Format
+	}
 	return &RenderPass{
-		enc:     e,
-		invalid: invalid,
+		enc:          e,
+		invalid:      invalid,
+		colorFormats: formats,
+		colorSamples: samples,
+		depthFormat:  depth,
 		pass: driver.GPUPass{
 			Label:            debugLabel(desc.Label),
 			TimingLabel:      timingLabel,
@@ -2701,6 +2719,10 @@ type RenderPass struct {
 	vertexMissing     map[uint32]bool
 	bindGroupsMissing map[uint32]bool
 	indexMissing      bool
+	// colorFormats and sampleSamples are the formats and sample counts of the pass's colour attachments, and depthFormat the depth attachment's, which a pipeline's targets must match. A swapchain attachment's sample count is -1, the surface's own.
+	colorFormats []TextureFormat
+	colorSamples []int
+	depthFormat  TextureFormat
 }
 
 // PushDebugGroup begins a nested debug group inside this render pass. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
@@ -2773,7 +2795,7 @@ func (p *RenderPass) SetScissor(x, y, width, height int32) {
 	})
 }
 
-// SetPipeline binds the active render pipeline. Stale handles from a lost device or pipelines still compiling asynchronously are safely ignored, and subsequent draws are skipped until a valid ready pipeline is bound.
+// SetPipeline binds the active render pipeline. Stale handles from a lost device or pipelines still compiling asynchronously are safely ignored, and subsequent draws are skipped until a valid ready pipeline is bound. A pipeline whose colour targets do not fit the pass's attachments — another number of targets, another format, a sample count the attachment does not have, or a depth format the pass's depth attachment does not have — is ignored the same way, since the backends would refuse its draws.
 func (p *RenderPass) SetPipeline(pipe *Pipeline) {
 	if p.ended || p.invalid {
 		return
@@ -2781,6 +2803,12 @@ func (p *RenderPass) SetPipeline(pipe *Pipeline) {
 	if pipe == nil || !pipe.Ready() || p.enc == nil || pipe.dev != p.enc.dev || pipe.epoch != p.enc.epoch {
 		p.pipeValid = false
 		p.pipe = nil
+		return
+	}
+	if !p.matchesPipeline(pipe) {
+		// The strictest backends refuse a draw whose pipeline does not fit the pass's attachments; skip it here too, and leave a marker naming the mismatch.
+		p.pipeValid = false
+		p.enc.debugOps = append(p.enc.debugOps, driver.GPUDebugOp{Kind: driver.GPUDebugInsertMarker, Label: "pipeline targets do not match the render pass attachments", PassIndex: len(p.enc.passes)})
 		return
 	}
 	p.pipeValid = true
@@ -2793,6 +2821,30 @@ func (p *RenderPass) SetPipeline(pipe *Pipeline) {
 }
 
 // SetBindGroup binds group to @group(slot) with optional dynamic offsets.
+// matchesPipeline reports whether the pipeline's colour targets and depth format fit the pass's attachments: the same number of colour targets, the same formats and sample counts, and the same depth format where the pass has a depth attachment. A pipeline target left FormatUndefined takes the device's surface format, as CreatePipeline resolves it.
+func (p *RenderPass) matchesPipeline(pipe *Pipeline) bool {
+	targets := pipe.desc.Targets
+	if len(targets) != len(p.colorFormats) {
+		return false
+	}
+	for i, target := range targets {
+		format := target.Format
+		if format == FormatUndefined {
+			format = p.enc.dev.SurfaceFormat()
+		}
+		if format != p.colorFormats[i] {
+			return false
+		}
+		if n := p.colorSamples[i]; n > 0 && pipe.desc.SampleCount != 0 && pipe.desc.SampleCount != n {
+			return false
+		}
+	}
+	if p.depthFormat != FormatUndefined && (pipe.desc.DepthStencil == nil || pipe.desc.DepthStencil.Format != p.depthFormat) {
+		return false
+	}
+	return true
+}
+
 func (p *RenderPass) SetBindGroup(slot uint32, group *BindGroup, dynamicOffsets ...uint32) {
 	if p.ended || p.invalid {
 		return

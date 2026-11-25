@@ -249,6 +249,8 @@ func (p *RenderPass) End()
 
 A draw is skipped while the pass holds no usable pipeline, or while a resource the pipeline declares is missing: a vertex buffer, bind group or index buffer whose bind was rejected — nil, closed, from another device or from an earlier device epoch — marks its slot, and a later valid bind to that slot lets drawing resume. A rejected bind for a slot the pipeline does not declare leaves the draws alone. Nothing draws against the resources bound before a rejected bind.
 
+A pipeline's colour targets must fit the pass's attachments: the same number of colour targets, the same formats, a sample count the attachment has, and a depth format the pass's depth attachment has. `SetPipeline` with one that does not fit sets no pipeline, so the pass's draws are skipped rather than recorded for a backend that would refuse them, and the encoder leaves a debug marker naming the mismatch. Typical per-frame usage on the engine goroutine:
+
 Typical per-frame usage on the engine goroutine:
 
 ```go
