@@ -686,10 +686,12 @@ func (s *Sampler) Close() error {
 
 // BindGroupLayout describes the resource schema of a BindGroup slot.
 type BindGroupLayout struct {
-	dev         *Device
-	id          driver.GPUID
-	epoch       uint32
-	entries     []BindGroupLayoutEntry
+	dev     *Device
+	id      driver.GPUID
+	epoch   uint32
+	entries []BindGroupLayoutEntry
+	// label is the debug label the layout was created with, kept for a restore.
+	label       string
 	retained    bool
 	closed      bool
 	retainedIdx int
@@ -1368,6 +1370,7 @@ func (d *Device) CreateBindGroupLayoutDesc(cx *core.Scope, desc BindGroupLayoutD
 		id:          id,
 		epoch:       d.generation,
 		entries:     slices.Clone(entries),
+		label:       desc.Label,
 		retained:    desc.Retained || d.retainResources,
 		retainedIdx: -1,
 	}
@@ -2021,7 +2024,7 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 			}
 		}
 		id := d.nextID()
-		dd := driver.GPUBindGroupLayoutDesc{Entries: dEntries}
+		dd := driver.GPUBindGroupLayoutDesc{Label: debugLabel(l.label), Entries: dEntries}
 		d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBindGroupLayout, ID: id, BindGroupLayout: &dd})
 		l.dev = d
 		l.id = id

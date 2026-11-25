@@ -72,3 +72,25 @@ func TestRetainedBindGroupLayoutIsRestored(t *testing.T) {
 		t.Fatal("a layout that asked for nothing was restored")
 	}
 }
+
+// A retained bind group layout keeps its debug label through a restore (#2338).
+func TestRetainedBindGroupLayoutKeepsItsLabel(t *testing.T) {
+	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	kept, err := d.CreateBindGroupLayoutDesc(nil, BindGroupLayoutDesc{Label: "frame layout", Retained: true})
+	if err != nil {
+		t.Fatalf("CreateBindGroupLayoutDesc: %v", err)
+	}
+	next := newDevice(nil, nil, 2, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	next.restoreRetainedFrom(d)
+	if len(next.retainedLayouts) != 1 || next.retainedLayouts[0] != kept {
+		t.Fatalf("restored layouts = %v, want the retained one", next.retainedLayouts)
+	}
+	if kept.label != "frame layout" {
+		t.Fatalf("the restored layout's label = %q, want frame layout", kept.label)
+	}
+	for _, op := range next.pendingOps {
+		if op.Kind == driver.GPUOpCreateBindGroupLayout && op.BindGroupLayout != nil && op.BindGroupLayout.Label != debugLabel("frame layout") {
+			t.Fatalf("the restored descriptor's label = %q", op.BindGroupLayout.Label)
+		}
+	}
+}
