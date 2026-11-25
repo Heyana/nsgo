@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	buildtargets "github.com/nsgo-dev/nsgo/targets"
 	"html"
 	"io/fs"
 	"maps"
@@ -302,74 +303,19 @@ func openPage(url, dir string) (cmd *exec.Cmd, file string, err error) {
 }
 
 // targets are the names nsgo.yaml and -target accept, each one package.
-var targets = []string{
-	"macos_arm64", "macos_x64", "macos_universal",
-	"windows_arm64", "windows_x64",
-	"linux_arm64", "linux_x64",
-	"ios", "ios_simulator",
-	"tvos", "tvos_simulator",
-	"watchos", "watchos_simulator",
-	"android_arm64", "android_x64",
-	"harmonyos",
-	"web",
-	"miniprogram_wechat", "miniprogram_qq", "miniprogram_alipay", "miniprogram_douyin",
-	"tui_macos_arm64", "tui_macos_x64", "tui_windows_arm64", "tui_windows_x64", "tui_linux_arm64", "tui_linux_x64",
-}
+var targets = buildtargets.Names()
 
 // miniProgramGroup names every mini program target at once.
-const miniProgramGroup = "miniprogram"
+const miniProgramGroup = buildtargets.MiniProgram
 
-// expandTargets replaces "all" with every target that needs only Go and Xcode, a bare OS name with its architectures, and "miniprogram" with every mini program, checks every name and drops duplicates, so each package is built once. android_x64 stays out of "all" and "android" because it needs an NDK, macos_universal out of "all" and "macos" because it builds both macOS architectures again to join them, and the mini programs because they take only Go apps that fit their packages.
+// expandTargets replaces "all" with every target that needs only Go and Xcode, a bare OS name with its architectures, and "miniprogram" with every mini program, checks every name and drops duplicates, so each package is built once.
 func expandTargets(names []string) ([]string, error) {
-	var out []string
-	for _, name := range names {
-		expanded := []string{name}
-		switch {
-		case name == "all":
-			expanded = goAndXcodeTargets()
-		case name == "tui":
-			expanded = nil
-			for _, t := range targets {
-				if strings.HasPrefix(t, "tui_") {
-					expanded = append(expanded, t)
-				}
-			}
-		case name == miniProgramGroup:
-			expanded = nil
-			for _, t := range targets {
-				if strings.HasPrefix(t, "miniprogram_") {
-					expanded = append(expanded, t)
-				}
-			}
-		case slices.Contains([]string{"macos", "windows", "linux", "android"}, name):
-			// The bare OS, as nsgo test -target spells it (#589).
-			expanded = nil
-			for _, t := range targets {
-				if goos, _, _ := strings.Cut(t, "_"); goos == name && t != "android_x64" && t != "macos_universal" {
-					expanded = append(expanded, t)
-				}
-			}
-		case !slices.Contains(targets, name):
-			return nil, fmt.Errorf("unknown target %q; use all, miniprogram or one of %s", name, strings.Join(targets, ", "))
-		}
-		for _, target := range expanded {
-			if !slices.Contains(out, target) {
-				out = append(out, target)
-			}
-		}
-	}
-	return out, nil
+	return buildtargets.Expand(names)
 }
 
-// goAndXcodeTargets are the packages a Mac with Go and Xcode can build. android_x64 is omitted: Go links android/amd64 only with cgo, so it needs an NDK; macos_universal, which joins the two macOS targets' builds; the harmonyos preview, and the mini programs, which only some apps fit.
+// goAndXcodeTargets are the packages a Mac with Go and Xcode can build.
 func goAndXcodeTargets() []string {
-	var out []string
-	for _, target := range targets {
-		if target != "android_x64" && target != "macos_universal" && target != "harmonyos" && !strings.HasPrefix(target, "miniprogram_") {
-			out = append(out, target)
-		}
-	}
-	return out
+	return buildtargets.GoAndXcode()
 }
 
 // universalStoreTargets replaces the architectures of each combined store

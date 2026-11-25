@@ -115,7 +115,9 @@ build:
 # miniprogram: { appid: { wechat: wx0123456789abcdef, alipay: "2021000000000000" }, custom_navigation: false }  # the mini programs'
 ```
 
-A bare OS name in `targets` — or in `nsgo build -target` and `nsgo check -target` — means its architectures (`windows` is `windows_arm64` and `windows_x64`; `android` is `android_arm64` only, as the x86_64 build needs an NDK). `macos_universal`, which `macos` and `all` leave out, builds both macOS architectures and joins them into one app, its libraries and widgets included. The Steam channel uses the universal app bundle. Installer builds wrap it in one disk image, with one Sparkle feed on the direct channel. `nsgo test -target` also takes the name of the architecture its tests run for: a desktop OS's on this machine's architecture and Android's on `arm64`, so `windows_x64` runs the `windows` target on an x64 Windows machine, while an architecture the target does not run for is refused with the name to use.
+A bare OS name in `targets` — or in `nsgo build -target` and `nsgo check -target` — means its architectures (`windows` is `windows_arm64` and `windows_x64`; `android` is `android_arm64` only, as the x86_64 build needs an NDK). A tool that writes or checks `targets` shares the tool's own table through `github.com/nsgo-dev/nsgo/targets`: `targets.Names()` lists every accepted name, and `targets.Expand` replaces `all`, `tui`, `miniprogram` and a bare OS name as `nsgo build` does.
+
+`macos_universal`, which `macos` and `all` leave out, builds both macOS architectures and joins them into one app, its libraries and widgets included. The Steam channel uses the universal app bundle. Installer builds wrap it in one disk image, with one Sparkle feed on the direct channel. `nsgo test -target` also takes the name of the architecture its tests run for: a desktop OS's on this machine's architecture and Android's on `arm64`, so `windows_x64` runs the `windows` target on an x64 Windows machine, while an architecture the target does not run for is refused with the name to use.
 
 Flags replace the values they name, such as `-target`, `-version` or `-output`; `-h` lists them all.
 
