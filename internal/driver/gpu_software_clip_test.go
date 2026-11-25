@@ -45,6 +45,11 @@ func buildClipColorProgram(interp shaderir.Interpolation) *shaderir.Program {
 
 func runClipColorDraw(t *testing.T, w, h int, verts []float32, interp shaderir.Interpolation, ds *GPUDepthStencilState, cmdsBeforeDraw []GPUCommand) (*GPUSoftwareDevice, color.RGBA) {
 	t.Helper()
+	return runClipColorDrawBlend(t, w, h, verts, interp, ds, nil, cmdsBeforeDraw)
+}
+
+func runClipColorDrawBlend(t *testing.T, w, h int, verts []float32, interp shaderir.Interpolation, ds *GPUDepthStencilState, blend *GPUBlendState, cmdsBeforeDraw []GPUCommand) (*GPUSoftwareDevice, color.RGBA) {
+	t.Helper()
 	clearCol := color.RGBA{10, 20, 30, 255}
 	dev := NewGPUSoftwareDevice(w, h, GPUViewConfig{
 		ColorFormat: GPUFormatRGBA8Unorm,
@@ -74,7 +79,7 @@ func runClipColorDraw(t *testing.T, w, h int, verts []float32, interp shaderir.I
 					},
 				}},
 				DepthStencil: ds,
-				Targets:      []GPUColorTargetState{{Format: GPUFormatRGBA8Unorm}},
+				Targets:      []GPUColorTargetState{{Format: GPUFormatRGBA8Unorm, Blend: blend}},
 			}},
 		},
 		Passes: []GPUPass{{
@@ -258,9 +263,7 @@ func TestGPUSoftwareNearPlaneClippingAndVaryings(t *testing.T) {
 
 func TestGPUSoftwareViewportDepthRangeAndClamping(t *testing.T) {
 	const w, h = 32, 32
-	// Triangle spanning x in [-1, 1], with z/w going from 0.2 (left) to 2.0 (right, beyond far plane).
-	// The right side where z > w (nx > ~0.777? Wait: let's make an explicit linear ramp in w=1:
-	// x=-1 -> z=0.0, x=1 -> z=2.0, so x > 0 has z > 1.0 == w and must be clipped out!)
+	// A fullscreen quad at w = 1 whose depth ramps from z = 0 at x = -1 to z = 2 at x = +1, so the half with x > 0 lies beyond the far plane (z > w) and must be clipped away.
 	verts := []float32{
 		-1, -1, 0.0, 1, 0, 1, 0, 1,
 		1, -1, 2.0, 1, 0, 1, 0, 1,
@@ -350,6 +353,110 @@ func TestGPUSoftwareViewportDepthRangeAndClamping(t *testing.T) {
 	for i, d := range negDev.depthBuf {
 		if d != 0.25 {
 			t.Fatalf("negative-biased depth[%d] = %v, want clamped minDepth 0.25", i, d)
+		}
+	}
+}
+
+// TestGPUSoftwareClippedFanBlendsEachPixelOnce draws additive-blend geometry that the clipper splits into a fan of triangles (one larger than the guard band, one crossing the near plane) and a two-triangle quad whose diagonal passes through pixel centers, and checks that no pixel is blended twice along a shared edge.
+func TestGPUSoftwareClippedFanBlendsEachPixelOnce(t *testing.T) {
+	additive := &GPUBlendState{
+		Color: GPUBlendComponent{SrcFactor: GPUBlendOne, DstFactor: GPUBlendOne, Operation: GPUBlendAdd},
+		Alpha: GPUBlendComponent{SrcFactor: GPUBlendOne, DstFactor: GPUBlendOne, Operation: GPUBlendAdd},
+	}
+	const red = 0.2
+	cases := []struct {
+		name      string
+		verts     []float32
+		fullCover bool
+	}{
+		{"beyond_guard_band", []float32{
+			-30, -30, 0.5, 1, red, 0, 0, 0,
+			30, -30, 0.5, 1, red, 0, 0, 0,
+			0, 30, 0.5, 1, red, 0, 0, 0,
+		}, true},
+		{"rotated_beyond_guard_band", []float32{
+			-40, 25, 0.5, 1, red, 0, 0, 0,
+			-10, -45, 0.5, 1, red, 0, 0, 0,
+			45, 20, 0.5, 1, red, 0, 0, 0,
+		}, true},
+		{"crosses_near_plane", []float32{
+			-4, -4, -0.5, 1, red, 0, 0, 0,
+			4, -4, 0.5, 1, red, 0, 0, 0,
+			0, 4, 0.5, 1, red, 0, 0, 0,
+		}, false},
+		{"quad_diagonal", []float32{
+			-1, -1, 0.5, 1, red, 0, 0, 0,
+			1, -1, 0.5, 1, red, 0, 0, 0,
+			1, 1, 0.5, 1, red, 0, 0, 0,
+			-1, -1, 0.5, 1, red, 0, 0, 0,
+			1, 1, 0.5, 1, red, 0, 0, 0,
+			-1, 1, 0.5, 1, red, 0, 0, 0,
+		}, true},
+	}
+	for _, tc := range cases {
+		for _, sz := range [][2]int{{64, 64}, {97, 53}} {
+			dev, clearCol := runClipColorDrawBlend(t, sz[0], sz[1], tc.verts, shaderir.InterpPerspective, nil, additive, nil)
+			img := dev.SurfaceImage()
+			once := clearCol.R + floatToByte(red)
+			drawn, doubled := 0, 0
+			for y := 0; y < sz[1]; y++ {
+				for x := 0; x < sz[0]; x++ {
+					switch r := img.RGBAAt(x, y).R; r {
+					case once:
+						drawn++
+					case clearCol.R:
+					default:
+						if doubled < 5 {
+							t.Errorf("%s %dx%d pixel(%d,%d) R = %d, want %d (blended once) or %d (uncovered)", tc.name, sz[0], sz[1], x, y, r, once, clearCol.R)
+						}
+						doubled++
+					}
+				}
+			}
+			if doubled > 0 {
+				t.Errorf("%s %dx%d: %d pixels blended more than once", tc.name, sz[0], sz[1], doubled)
+			}
+			if tc.fullCover && drawn != sz[0]*sz[1] {
+				t.Errorf("%s %dx%d: %d of %d pixels covered, want all", tc.name, sz[0], sz[1], drawn, sz[0]*sz[1])
+			}
+			if !tc.fullCover && drawn < sz[0]*sz[1]/4 {
+				t.Errorf("%s %dx%d: only %d pixels covered", tc.name, sz[0], sz[1], drawn)
+			}
+		}
+	}
+}
+
+// TestGPUSoftwareLinearVaryingIsScreenSpace checks that @interpolate(linear) varyings ignore w both inside a triangle and at vertices the clipper creates.
+func TestGPUSoftwareLinearVaryingIsScreenSpace(t *testing.T) {
+	const w, h = 40, 30
+	// NDC corners scaled by different w; the colors are chosen so the screen-space interpolation gives R = (ndcX+1)/2 and G = (ndcY+1)/2.
+	tri := func(far, w0, w1, w2 float32) []float32 {
+		c := (far + 1) / 2
+		return []float32{
+			-1 * w0, -1 * w0, 0.5 * w0, w0, 0, 0, 0, 1,
+			far * w1, -1 * w1, 0.5 * w1, w1, c, 0, 0, 1,
+			-1 * w2, far * w2, 0.5 * w2, w2, 0, c, 0, 1,
+		}
+	}
+	cases := []struct {
+		name  string
+		verts []float32
+	}{
+		{"unclipped", tri(3, 1, 4, 2)},
+		{"clipped_by_guard_band", tri(40, 1, 4, 2)},
+	}
+	for _, tc := range cases {
+		dev, _ := runClipColorDraw(t, w, h, tc.verts, shaderir.InterpLinear, nil, nil)
+		img := dev.SurfaceImage()
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				got := img.RGBAAt(x, y)
+				wantR := (float64(x) + 0.5) / w * 255
+				wantG := (1 - (float64(y)+0.5)/h) * 255
+				if math.Abs(float64(got.R)-wantR) > 2 || math.Abs(float64(got.G)-wantG) > 2 {
+					t.Fatalf("%s pixel(%d,%d) = %+v, want R ~ %.1f G ~ %.1f", tc.name, x, y, got, wantR, wantG)
+				}
+			}
 		}
 	}
 }

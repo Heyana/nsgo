@@ -1813,14 +1813,15 @@ const (
 	clipMinW
 )
 
+// clipPlanes lists the planes in clipping order. The w >= clipWEps plane goes first so every vertex later planes create has a positive w, which the screen-space lerp of linear varyings divides by.
 var clipPlanes = [7]clipPlaneKind{
+	clipMinW,
 	clipNear,
 	clipFar,
 	clipLeft,
 	clipRight,
 	clipBottom,
 	clipTop,
-	clipMinW,
 }
 
 func finitePos4(p [4]float32) bool {
@@ -1836,7 +1837,7 @@ func triviallyOutsideClip(p0, p1, p2 [4]float32) bool {
 	if p0[3] <= 0 && p1[3] <= 0 && p2[3] <= 0 {
 		return true
 	}
-	for _, kind := range clipPlanes[:6] {
+	for _, kind := range clipPlanes[1:] {
 		if clipPlaneDist(kind, p0) < 0 && clipPlaneDist(kind, p1) < 0 && clipPlaneDist(kind, p2) < 0 {
 			return true
 		}
@@ -1909,16 +1910,28 @@ func (c *softDrawCtx) lerpClipVertex(dst *shadedVertex, inV, outV shadedVertex, 
 	for i := 0; i < 4; i++ {
 		dst.pos[i] = inV.pos[i] + t*(outV.pos[i]-inV.pos[i])
 	}
+	// A linear (noperspective) varying is linear in screen space, so it is the ratio of two clip-space-linear quantities, w*value and w; lerp both and divide.
+	wIn, wOut, wNew := inV.pos[3], outV.pos[3], dst.pos[3]
 	nv := len(c.prog.Varyings)
 	for vi := 0; vi < nv; vi++ {
-		if vi < len(c.prog.VaryingMeta) && c.prog.VaryingMeta[vi].Interpolation == shaderir.InterpFlat {
+		interp := shaderir.InterpPerspective
+		if vi < len(c.prog.VaryingMeta) {
+			interp = c.prog.VaryingMeta[vi].Interpolation
+		}
+		if interp == shaderir.InterpFlat {
 			dst.varyings[vi] = inV.varyings[vi]
 			continue
 		}
 		a, b := inV.varyings[vi], outV.varyings[vi]
 		out := irVal{typ: a.typ}
-		for i := 0; i < 4; i++ {
-			out.f[i] = a.f[i] + t*(b.f[i]-a.f[i])
+		if interp == shaderir.InterpLinear && wNew > 0 {
+			for i := 0; i < 4; i++ {
+				out.f[i] = ((1-t)*wIn*a.f[i] + t*wOut*b.f[i]) / wNew
+			}
+		} else {
+			for i := 0; i < 4; i++ {
+				out.f[i] = a.f[i] + t*(b.f[i]-a.f[i])
+			}
 		}
 		dst.varyings[vi] = out
 	}
@@ -2132,6 +2145,29 @@ func (c *softDrawCtx) rasterClippedTriangle(v0, v1, v2 shadedVertex) {
 		return
 	}
 
+	// Coverage uses the top-left fill rule, so a sample on an edge shared by two triangles (an adjacent mesh triangle, or a neighbour in the fan a clipped polygon splits into) is covered by exactly one of them. Each edge function is rounded per product (the float32 conversions forbid fused multiply-add), so the same edge walked in opposite directions by the two triangles gives exactly negated values and an exact zero in both.
+	orient := float32(1)
+	if area < 0 {
+		orient = -1
+	}
+	edgeFn := func(ax, ay, bx, by, fx, fy float32) float32 {
+		return orient * (float32((ax-fx)*(by-fy)) - float32((ay-fy)*(bx-fx)))
+	}
+	// An edge a->b is top-left when the interior lies on its +x side, or on its +y side (below it on screen) when it is horizontal.
+	topLeft := func(ax, ay, bx, by float32) bool {
+		gx, gy := orient*(ay-by), orient*(bx-ax)
+		return gx > 0 || (gx == 0 && gy > 0)
+	}
+	tl0, tl1, tl2 := topLeft(x1, y1, x2, y2), topLeft(x2, y2, x0, y0), topLeft(x0, y0, x1, y1)
+	edgeIn := func(e float32, tl bool) bool {
+		return e > 0 || (e == 0 && tl)
+	}
+	covers := func(fx, fy float32) bool {
+		return edgeIn(edgeFn(x1, y1, x2, y2, fx, fy), tl0) &&
+			edgeIn(edgeFn(x2, y2, x0, y0, fx, fy), tl1) &&
+			edgeIn(edgeFn(x0, y0, x1, y1, fx, fy), tl2)
+	}
+
 	var sampleCovered [4]bool
 	var sampleDepth [4]float32
 	// A depth-only pass (no color targets) with no fragment shader skips shading entirely, as shadow-map passes do.
@@ -2148,11 +2184,11 @@ func (c *softDrawCtx) rasterClippedTriangle(v0, v1, v2 shadedVertex) {
 					sampleCovered[s] = false
 					continue
 				}
-				w0, w1, w2 := baryAt(sx, sy)
-				if w0 < -1e-5 || w1 < -1e-5 || w2 < -1e-5 {
+				if !covers(sx, sy) {
 					sampleCovered[s] = false
 					continue
 				}
+				_, w1, w2 := baryAt(sx, sy)
 				// Interpolate relative to z0 so constant-depth triangles (such as z == w) remain exact.
 				z := clampRange(z0+w1*(z1-z0)+w2*(z2-z0), minD, maxD)
 				if hasDepthBias {
@@ -2206,11 +2242,24 @@ func (c *softDrawCtx) rasterClippedTriangle(v0, v1, v2 shadedVertex) {
 				} else {
 					bw0, bw1, bw2 = 1.0/3.0, 1.0/3.0, 1.0/3.0
 				}
+				// Linear (noperspective) varyings use the screen-space weights, clamped and renormalized the same way.
+				lw0, lw1, lw2 := max(float32(0), w0), max(float32(0), w1), max(float32(0), w2)
+				if lwSum := lw0 + lw1 + lw2; lwSum > 0 {
+					lw0, lw1, lw2 = lw0/lwSum, lw1/lwSum, lw2/lwSum
+				} else {
+					lw0, lw1, lw2 = 1.0/3.0, 1.0/3.0, 1.0/3.0
+				}
 				for vi := range nv {
-					flat := vi < len(c.prog.VaryingMeta) && c.prog.VaryingMeta[vi].Interpolation == shaderir.InterpFlat
-					if flat {
+					interp := shaderir.InterpPerspective
+					if vi < len(c.prog.VaryingMeta) {
+						interp = c.prog.VaryingMeta[vi].Interpolation
+					}
+					switch interp {
+					case shaderir.InterpFlat:
 						interpVaryings[vi] = v0.varyings[vi]
-					} else {
+					case shaderir.InterpLinear:
+						interpVaryings[vi] = lerpIRVal(v0.varyings[vi], v1.varyings[vi], v2.varyings[vi], lw0, lw1, lw2)
+					default:
 						interpVaryings[vi] = lerpIRVal(v0.varyings[vi], v1.varyings[vi], v2.varyings[vi], bw0, bw1, bw2)
 					}
 				}
