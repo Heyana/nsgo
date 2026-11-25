@@ -2176,7 +2176,7 @@ func TestSystemPermissionsOnTheWeb(t *testing.T) {
 	}
 	app := startDesktop(t)
 	open(app, "System")
-	app.WaitFor("text:Not on this platform: Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools, Automation, Contacts, Calendars, Reminders, Photos, Bluetooth, Media & Apple Music, Background location, Motion", 10*time.Second)
+	app.WaitFor("text:Not on this platform: Accessibility, Screen Recording, Input Monitoring, Full Disk Access, App Management, Developer Tools, Automation, Contacts, Calendars, Reminders, Photos, Bluetooth, Media & Apple Music, Local Network, Background location, Motion", 10*time.Second)
 	for _, p := range []core.Permission{core.PermissionMicrophone, core.PermissionCamera, core.PermissionNotifications, core.PermissionLocation} {
 		app.WaitUntil(10*time.Second, func() bool {
 			s := app.Find("id:permission-" + string(p)).Text
