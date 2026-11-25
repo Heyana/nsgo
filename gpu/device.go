@@ -2461,8 +2461,8 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 	if !invalid && e != nil && e.dev != nil {
 		surface = e.dev.SurfaceFormat()
 	}
-	if ds == nil && len(desc.ColorAttachments) == 0 && e != nil && e.dev != nil {
-		// The swapchain pass draws into the surface's own depth buffer too.
+	if e != nil && e.dev != nil && (ds == nil && len(desc.ColorAttachments) == 0 || desc.DepthStencil != nil && desc.DepthStencil.Texture == nil) {
+		// The swapchain pass draws into the surface's own depth buffer too, and so does a pass whose depth attachment names no texture (#2395).
 		depth = e.dev.surfaceDepth
 	}
 	for i := range cas {

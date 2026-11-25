@@ -1,6 +1,7 @@
 package gpu_test
 
 import (
+	"image/color"
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/core"
@@ -196,6 +197,48 @@ func TestPipelineSampleAndDepthMismatchesSkipTheDraw(t *testing.T) {
 		})
 		if px := got[(4*8+4)*4 : (4*8+4)*4+4]; px[2] != 0 {
 			t.Fatalf("a pipeline with depth drew into a pass without it: %v", px)
+		}
+	})
+	// A pass whose depth attachment names no texture draws into the surface's own depth buffer, so it takes the surface's depth format (#2395).
+	surfaceDepth := func(t *testing.T, surface gpu.TextureFormat) color.RGBA {
+		t.Helper()
+		sr := gpu.NewSoftwareRenderer(8, 8, surface)
+		dev := sr.Device()
+		vertices, err := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageVertex, Data: quad})
+		if err != nil {
+			t.Fatalf("CreateBuffer: %v", err)
+		}
+		pipe, err := dev.CreatePipeline(nil, gpu.PipelineDesc{
+			Vertex:        gpu.ShaderStage{Module: mod, EntryPoint: "vs_main"},
+			Fragment:      gpu.ShaderStage{Module: mod, EntryPoint: "fs_main"},
+			VertexBuffers: layout,
+			DepthStencil:  &gpu.DepthStencilState{Format: gpu.FormatDepth24Plus, DepthWrite: true, DepthCompare: gpu.CompareLess},
+			Targets:       []gpu.ColorTargetState{{}},
+		})
+		if err != nil {
+			t.Fatalf("CreatePipeline: %v", err)
+		}
+		enc := dev.BeginEncoder()
+		pass := enc.BeginRenderPass(gpu.RenderPassDesc{
+			ColorAttachments: []gpu.ColorAttachment{{LoadOp: gpu.LoadClear}},
+			DepthStencil:     &gpu.DepthStencilAttachment{DepthLoadOp: gpu.LoadClear, ClearDepth: 1},
+		})
+		pass.ClearColor(core.RGB(0x000000))
+		pass.SetPipeline(pipe)
+		pass.SetVertexBuffer(0, vertices, 0)
+		pass.Draw(6, 0)
+		pass.End()
+		dev.Submit(enc.Finish())
+		return sr.Image().RGBAAt(4, 4)
+	}
+	t.Run("depth pipeline on the surface's depth attachment", func(t *testing.T) {
+		if got := surfaceDepth(t, gpu.FormatDepth24Plus); got.R == 0 && got.G == 0 && got.B == 0 {
+			t.Fatalf("a depth-tested pipeline drew nothing into the surface's own depth attachment: %v", got)
+		}
+	})
+	t.Run("depth pipeline on a surface depth of another format", func(t *testing.T) {
+		if got := surfaceDepth(t, gpu.FormatDepth32Float); got.R != 0 || got.G != 0 || got.B != 0 {
+			t.Fatalf("a Depth24Plus pipeline drew into a Depth32Float surface: %v", got)
 		}
 	})
 	t.Run("single-sample pipeline on a 4-sample swapchain", func(t *testing.T) {
