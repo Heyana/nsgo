@@ -1840,3 +1840,39 @@ func TestWindowRecordsSetFullScreen(t *testing.T) {
 		}
 	}
 }
+
+// FrameAt stamps the waiting frame with the time a display will show it, without moving the clock, and runs nothing when no frame waits (#2256).
+func TestFrameAtStampsTheWaitingFrame(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		lead  time.Duration
+		frame bool
+	}{
+		{"ahead", driver.FrameInterval, true},
+		{"before the clock", -2 * driver.FrameInterval, true},
+		{"with none waiting", driver.FrameInterval, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var times []time.Time
+			app := Start(t, func(cx *core.Scope) core.Node {
+				if tc.frame {
+					cx.RequestAnimationFrame(func(at time.Time) { times = append(times, at) })
+				}
+				return core.View{}
+			})
+			now := app.Clock.Now()
+			stamp := now.Add(tc.lead)
+			app.FrameAt(stamp)
+			if tc.frame {
+				if len(times) != 1 || !times[0].Equal(stamp) {
+					t.Fatalf("frames = %v, want one stamped %v", times, stamp)
+				}
+			} else if len(times) != 0 {
+				t.Fatalf("a frame ran with none waiting: %v", times)
+			}
+			if !app.Clock.Now().Equal(now) {
+				t.Fatalf("clock moved to %v, want %v", app.Clock.Now(), now)
+			}
+		})
+	}
+}

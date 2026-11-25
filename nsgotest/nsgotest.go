@@ -1133,6 +1133,23 @@ func (a *App) FastForward(d time.Duration) {
 	a.Settle()
 }
 
+// FrameAt runs the display frame the app waits for, stamped at, and settles; the clock does not move. A zero at stamps the frame with the clock's now, as today's frame is. A frame stamped a frame ahead of the clock, or before it, is what a display that stamps a frame's show time hands the app. It skips a target run, which drives its own frames.
+func (a *App) FrameAt(at time.Time) {
+	a.t.Helper()
+	if a.target != nil {
+		a.t.Skip("nsgotest: FrameAt drives the headless frame loop")
+	}
+	a.step("frameAt(%s)", at.Format(time.RFC3339Nano))
+	a.mu.Lock()
+	wanted := a.frameWanted
+	a.frameWanted = false
+	a.mu.Unlock()
+	if wanted {
+		a.root.RunFrameAt(at)
+	}
+	a.Settle()
+}
+
 // runFrame runs the display frame the app waits for, if it waits for one.
 func (a *App) runFrame() {
 	a.mu.Lock()

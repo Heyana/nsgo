@@ -30,7 +30,7 @@ Each target's frame source is its frame clock, shared with the native animations
 | watchOS | The host's `TimelineView(.animation)` | The timeline's date |
 | Mini programs | A 16 ms timer of the logic layer, which has no display frames | The graph clock's |
 
-Headless tests run frames as the manual clock advances: `nsgotest.App.Advance` moves the clock a frame at a time and runs a waiting frame at each, applying the same preference to callbacks as a platform.
+Headless tests run frames as the manual clock advances: `nsgotest.App.Advance` moves the clock a frame at a time and runs a waiting frame at each, applying the same preference to callbacks as a platform. `nsgotest.App.FrameAt(at)` runs the waiting frame stamped `at` without moving the clock, for the displays that stamp a frame with when it shows.
 
 ## Animated values
 
