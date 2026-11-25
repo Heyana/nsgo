@@ -110,14 +110,11 @@ func InstanceKey(key string) Option {
 // URLs) before the first "--" and delivers their absolute paths to
 // desktop.OnOpenFiles. It does not interpret the app's flags or subcommands.
 //
-// When there are arguments to classify, parse gets the read-only arguments
-// after the engine removes its flags, excluding the executable name, "--"
-// and everything after it.
-// Return the absolute filesystem paths to deliver, not URLs; they are used
-// as returned.
-// A nil parser disables command-line file delivery, and a parser returning
-// nil opens no files for that launch. The launching process makes this
-// choice even when it hands the result to a running instance.
+// When there are arguments to classify, parse gets a copy of the arguments after the engine removes its flags, excluding the executable name, "--" and everything after it. Local file URLs, as a Linux desktop entry passes them, are already paths; links among the arguments are included on Linux.
+//
+// Return the filesystem paths to deliver, not URLs. Relative paths are resolved against the launching process's working directory.
+//
+// A nil parser disables command-line file delivery, including Open With and recent-file choices on Windows and Linux, and a parser returning nil opens no files for that launch. The launching process makes this choice even when it hands the result to a running instance.
 //
 // Links are still read on both sides of "--". On Windows, a launch with
 // a link opens no files and never calls parse. Other platforms ignore this

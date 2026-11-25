@@ -1009,11 +1009,32 @@ func parseLaunch(args []string, parseFiles func([]string) []string, preferLinks 
 		return launch
 	}
 	if parseFiles != nil {
-		launch.Files = parseFiles(args[:len(args):len(args)])
+		launch.Files = parsedFiles(args, parseFiles)
 	} else {
 		launch.Files = launchFiles(args)
 	}
 	return launch
+}
+
+// parsedFiles runs the app's parser on a copy of args in which local file URLs, as a Linux desktop entry's %U passes them, are already paths, and resolves the relative paths it returns against this process's working directory, since a running instance the launch is handed to may have another.
+func parsedFiles(args []string, parse func([]string) []string) []string {
+	in := make([]string, len(args))
+	for i, arg := range args {
+		if path, ok := fileURLPath(arg); ok {
+			arg = path
+		}
+		in[i] = arg
+	}
+	var paths []string
+	for _, path := range parse(in) {
+		if path == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(path); err == nil {
+			paths = append(paths, abs)
+		}
+	}
+	return paths
 }
 
 // launchFiles takes existing regular files (including local file URLs, as a

@@ -85,6 +85,21 @@ func TestLaunchFilesCustomParser(t *testing.T) {
 	if len(got.Files) != 0 || len(got.Links) != 0 {
 		t.Errorf("disabled launch = %+v, want no files or links", got)
 	}
+	// A desktop entry's %U reaches the parser as a path, and a relative result is resolved here, not by the running instance it may be handed to.
+	urlPath := filepath.ToSlash(doc)
+	if filepath.VolumeName(doc) != "" {
+		urlPath = "/" + urlPath
+	}
+	fileURL := (&url.URL{Scheme: "file", Path: urlPath}).String()
+	got = parseLaunch([]string{"open", fileURL}, func(args []string) []string {
+		if want := []string{"open", doc}; !slices.Equal(args, want) {
+			t.Fatalf("parser arguments = %q, want %q", args, want)
+		}
+		return []string{"settings.yaml", "", args[1]}
+	}, false)
+	if want := []string{absolute("settings.yaml"), doc}; !slices.Equal(got.Files, want) {
+		t.Errorf("parsed files = %q, want %q", got.Files, want)
+	}
 	got = parseLaunch([]string{"--", "editor"}, func(args []string) []string {
 		t.Fatalf("no file arguments before --, but called parser with %q", args)
 		return nil
