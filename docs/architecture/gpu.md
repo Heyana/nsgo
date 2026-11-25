@@ -247,7 +247,7 @@ func (p *RenderPass) DrawIndexedInstanced(indexCount, instanceCount, firstIndex 
 func (p *RenderPass) End()
 ```
 
-A draw is skipped while the pass holds no usable pipeline, or while a vertex slot or the index buffer whose bind it rejected has no valid buffer: a buffer that is nil, closed, from another device or from an earlier device epoch marks its slot missing, and a later valid bind to that slot lets drawing resume. Nothing draws against the buffers bound before a rejected bind.
+A draw is skipped while the pass holds no usable pipeline, or while a resource the pipeline declares is missing: a vertex buffer, bind group or index buffer whose bind was rejected — nil, closed, from another device or from an earlier device epoch — marks its slot, and a later valid bind to that slot lets drawing resume. A rejected bind for a slot the pipeline does not declare leaves the draws alone. Nothing draws against the resources bound before a rejected bind.
 
 Typical per-frame usage on the engine goroutine:
 

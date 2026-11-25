@@ -2694,9 +2694,12 @@ type RenderPass struct {
 	ended     bool
 	invalid   bool
 	pipeValid bool
-	// vertexMissing holds the vertex buffer slots a rejected bind left without a usable buffer, and indexMissing says the same of the index buffer; draws skip while one is set, as they do for a stale pipeline.
-	vertexMissing map[uint32]bool
-	indexMissing  bool
+	// pipe is the pipeline a draw records with, whose vertex and bind group slots a draw needs.
+	pipe *Pipeline
+	// vertexMissing and bindGroupsMissing hold the slots a rejected bind left without a usable resource, and indexMissing says the same of the index buffer; a draw skips only while one of the slots its pipeline declares is missing.
+	vertexMissing     map[uint32]bool
+	bindGroupsMissing map[uint32]bool
+	indexMissing      bool
 }
 
 // PushDebugGroup begins a nested debug group inside this render pass. It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
@@ -2776,9 +2779,11 @@ func (p *RenderPass) SetPipeline(pipe *Pipeline) {
 	}
 	if pipe == nil || !pipe.Ready() || p.enc == nil || pipe.dev != p.enc.dev || pipe.epoch != p.enc.epoch {
 		p.pipeValid = false
+		p.pipe = nil
 		return
 	}
 	p.pipeValid = true
+	p.pipe = pipe
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
 		Kind: driver.GPUCmdSetPipeline,
 		ID:   pipe.id,
@@ -2787,9 +2792,17 @@ func (p *RenderPass) SetPipeline(pipe *Pipeline) {
 
 // SetBindGroup binds group to @group(slot) with optional dynamic offsets.
 func (p *RenderPass) SetBindGroup(slot uint32, group *BindGroup, dynamicOffsets ...uint32) {
-	if p.ended || p.invalid || group == nil || !group.Valid() || p.enc == nil || group.dev != p.enc.dev || group.epoch != p.enc.epoch {
+	if p.ended || p.invalid {
 		return
 	}
+	if group == nil || !group.Valid() || p.enc == nil || group.dev != p.enc.dev || group.epoch != p.enc.epoch {
+		if p.bindGroupsMissing == nil {
+			p.bindGroupsMissing = map[uint32]bool{}
+		}
+		p.bindGroupsMissing[slot] = true
+		return
+	}
+	delete(p.bindGroupsMissing, slot)
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
 		Kind:           driver.GPUCmdSetBindGroup,
 		Slot:           slot,
@@ -2859,9 +2872,27 @@ func (p *RenderPass) SetBlendConstant(r, g, b, a float32) {
 	})
 }
 
+// drawnBound reports whether the pass holds what its pipeline reads, so a draw records only when every vertex buffer slot and bind group slot the pipeline declares has a usable resource, plus the index buffer an indexed draw reads.
+func (p *RenderPass) drawnBound(indexed bool) bool {
+	if !p.pipeValid || p.pipe == nil {
+		return false
+	}
+	for slot := range p.vertexMissing {
+		if int(slot) < len(p.pipe.desc.VertexBuffers) {
+			return false
+		}
+	}
+	for slot := range p.bindGroupsMissing {
+		if int(slot) < len(p.pipe.desc.Layouts) {
+			return false
+		}
+	}
+	return !indexed || !p.indexMissing
+}
+
 // Draw draws vertexCount non-indexed vertices starting at firstVertex.
 func (p *RenderPass) Draw(vertexCount, firstVertex uint32) {
-	if p.ended || p.invalid || !p.pipeValid || len(p.vertexMissing) > 0 {
+	if p.ended || p.invalid || !p.drawnBound(false) {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -2872,7 +2903,7 @@ func (p *RenderPass) Draw(vertexCount, firstVertex uint32) {
 
 // DrawIndexed draws indexCount indexed vertices.
 func (p *RenderPass) DrawIndexed(indexCount, firstIndex uint32, baseVertex int32) {
-	if p.ended || p.invalid || !p.pipeValid || len(p.vertexMissing) > 0 || p.indexMissing {
+	if p.ended || p.invalid || !p.drawnBound(true) {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -2883,7 +2914,7 @@ func (p *RenderPass) DrawIndexed(indexCount, firstIndex uint32, baseVertex int32
 
 // DrawInstanced draws instanceCount instances of vertexCount vertices.
 func (p *RenderPass) DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance uint32) {
-	if p.ended || p.invalid || !p.pipeValid || len(p.vertexMissing) > 0 {
+	if p.ended || p.invalid || !p.drawnBound(false) {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
@@ -2894,7 +2925,7 @@ func (p *RenderPass) DrawInstanced(vertexCount, instanceCount, firstVertex, firs
 
 // DrawIndexedInstanced draws instanceCount instances of indexCount indexed vertices.
 func (p *RenderPass) DrawIndexedInstanced(indexCount, instanceCount, firstIndex uint32, baseVertex int32, firstInstance uint32) {
-	if p.ended || p.invalid || !p.pipeValid || len(p.vertexMissing) > 0 || p.indexMissing {
+	if p.ended || p.invalid || !p.drawnBound(true) {
 		return
 	}
 	p.pass.Commands = append(p.pass.Commands, driver.GPUCommand{
