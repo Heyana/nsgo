@@ -230,6 +230,26 @@ func TestMCPAppToolCatalog(t *testing.T) {
 	}
 }
 
+func TestMCPAppToolCallBeforeList(t *testing.T) {
+	b := &fakeBridge{}
+	cs := connectMCP(t, b)
+	ctx := t.Context()
+	// The tool registers after the client connected, and the client calls it without listing first.
+	b.appTools = []automation.AppTool{{Name: "set_count", Description: "Set the count", InputSchema: json.RawMessage(`{"type":"object"}`)}}
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "set_count", Arguments: map[string]int{"count": 3}})
+	if err != nil || result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, `"count": 3`) {
+		t.Fatalf("a call before any list: %+v, %v", result, err)
+	}
+	// A built-in tool needs no catalog read.
+	n := len(b.calls)
+	if _, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: automation.Status, Arguments: map[string]any{}}); err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(b.calls[n:], func(c string) bool { return strings.HasPrefix(c, automation.ListAppTools+" ") }) {
+		t.Errorf("a built-in call read the catalog: %q", b.calls[n:])
+	}
+}
+
 func TestMCPAppToolResults(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 2, 1))
 	img.Set(0, 0, color.White)
