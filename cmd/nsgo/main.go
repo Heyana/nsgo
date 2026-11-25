@@ -1,6 +1,6 @@
 // Command nsgo develops and builds NSGo apps.
 //
-//	nsgo init  [-template go|tsx|mixed|module[@version]] [-name N] [-module M] [dir]
+//	nsgo init  [-template go|tsx|mixed|module[@version][#name]] [-name N] [-module M] [-list] [dir]
 //	                                                      write a new app
 //	nsgo dev   [-target T] [-hot-reload=false] [-trace] [-automation] [-limits[=L]] [-preview PKG] [flags] [dir]
 //	                                                      run the app and rebuild it on changes
@@ -101,8 +101,17 @@ func main() {
 		fs := flag.NewFlagSet("init", flag.ExitOnError)
 		name := fs.String("name", "", "the app's name (default: the directory's)")
 		module := fs.String("module", "", "write a go.mod for this module path")
-		kind := fs.String("template", "go", "the app to write: go, tsx, mixed, or a module path with an optional @version")
+		kind := fs.String("template", "go", "the app to write: go, tsx, mixed, or a module path with optional @version and #name")
+		list := fs.Bool("list", false, "list available templates")
 		if err = parseCommand(fs, args, 1); err != nil {
+			break
+		}
+		if *list {
+			if fs.NArg() > 0 || *name != "" || *module != "" {
+				err = errors.New("init: -list takes only -template")
+				break
+			}
+			err = listInitTemplates(ctx, os.Stdout, *kind)
 			break
 		}
 		dir := fs.Arg(0)

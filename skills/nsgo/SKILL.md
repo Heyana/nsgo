@@ -32,7 +32,7 @@ go tool nsgo doctor        # which targets this machine builds and runs, and wha
 
 `go tool nsgo game <command>` runs the game layer's command, the module's tool or else `go run` of its release. Another command `X` runs an extension: the module's `go.mod` tool named `X` with `go tool`, else `nsgo-X` on `PATH`; built-ins win. An `nsgo` on `PATH` runs the module's pinned `go tool nsgo` first when the versions differ (`NSGO_NO_DELEGATE=1` turns it off); `nsgo version` says which ran. [Extensions](https://nsgo.dev/docs/building.md#extensions)
 
-Use `-template <module>[@version]` to scaffold from a module's published [template directory](https://nsgo.dev/docs/getting-started.md#templates-from-go-modules).
+Use `-template <module>[@version][#<name>]` to scaffold from a module's published [template directory](https://nsgo.dev/docs/getting-started.md#templates-from-go-modules), or `-list` to list a module's templates.
 
 With hot reload, saving a file embedded in a Go-only app rebuilds and restarts it; saving only TSX bundle inputs updates the running app in place. [Running and debugging](https://nsgo.dev/docs/debugging.md#run)
 

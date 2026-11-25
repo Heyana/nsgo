@@ -11,26 +11,59 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 )
 
-func initModuleTemplate(ctx context.Context, dir, kind string, data initData) error {
-	module, version, hasVersion := strings.Cut(kind, "@")
+func parseModuleTemplate(kind string) (module, version, name string, ok bool) {
+	spec, rawName, hasName := strings.Cut(kind, "#")
+	module, version, hasVersion := strings.Cut(spec, "@")
 	domain, _, _ := strings.Cut(module, "/")
 	if !strings.Contains(domain, ".") || strings.HasPrefix(module, "-") || hasVersion && version == "" {
-		return fmt.Errorf("init: no template %q; use %s or a module path with an optional @version", kind, strings.Join(templates, ", "))
+		return "", "", "", false
+	}
+	if hasName {
+		localName, err := filepath.Localize(rawName)
+		if err != nil || localName == "" || localName == "." {
+			return "", "", "", false
+		}
+		name = localName
 	}
 	if !hasVersion {
 		version = "latest"
+	}
+	return module, version, name, true
+}
+
+func openModuleTemplateRoot(moduleDir, module, name string) (*os.Root, error) {
+	root, err := os.OpenRoot(filepath.Join(moduleDir, "template"))
+	if err != nil {
+		return nil, fmt.Errorf("init: module %s has no readable template directory: %w", module, err)
+	}
+	if name == "" {
+		return root, nil
+	}
+	sub, err := root.OpenRoot(name)
+	root.Close()
+	if err != nil {
+		return nil, fmt.Errorf("init: module %s has no readable template %q: %w", module, filepath.ToSlash(name), err)
+	}
+	return sub, nil
+}
+
+func initModuleTemplate(ctx context.Context, dir, kind string, data initData) error {
+	module, version, name, ok := parseModuleTemplate(kind)
+	if !ok {
+		return fmt.Errorf("init: no template %q; use %s or a module path with optional @version and #name", kind, strings.Join(templates, ", "))
 	}
 	moduleDir, err := downloadInitModule(ctx, module+"@"+version)
 	if err != nil {
 		return err
 	}
-	src, err := os.OpenRoot(filepath.Join(moduleDir, "template"))
+	src, err := openModuleTemplateRoot(moduleDir, module, name)
 	if err != nil {
-		return fmt.Errorf("init: module %s has no readable template directory: %w", module, err)
+		return err
 	}
 	defer src.Close()
 
@@ -43,6 +76,90 @@ func initModuleTemplate(ctx context.Context, dir, kind string, data initData) er
 	}
 	detail("next: go tool nsgo dev %s", rel(dir))
 	return nil
+}
+
+func listInitTemplates(ctx context.Context, w io.Writer, kind string) error {
+	if slices.Contains(templates, kind) {
+		for _, name := range templates {
+			if _, err := fmt.Fprintln(w, name); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	module, version, name, ok := parseModuleTemplate(kind)
+	if !ok {
+		return fmt.Errorf("init: no template %q; use %s or a module path with optional @version and #name", kind, strings.Join(templates, ", "))
+	}
+	if name != "" {
+		return errors.New("init: -list does not take a #template name")
+	}
+	moduleDir, err := downloadInitModule(ctx, module+"@"+version)
+	if err != nil {
+		return err
+	}
+	root, err := openModuleTemplateRoot(moduleDir, module, "")
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	names, hasRoot, err := moduleTemplateNames(root.FS())
+	if err != nil {
+		return fmt.Errorf("init: list templates in %s: %w", module, err)
+	}
+	if len(names) == 0 && !hasRoot {
+		return fmt.Errorf("init: module %s has no templates", module)
+	}
+	if hasRoot {
+		if _, err := fmt.Fprintln(w, "(default)"); err != nil {
+			return err
+		}
+	}
+	for _, n := range names {
+		if _, err := fmt.Fprintln(w, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func moduleTemplateNames(src fs.FS) ([]string, bool, error) {
+	var names []string
+	hasRoot := isTemplateDir(src, ".")
+	err := fs.WalkDir(src, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || name == "." || !entry.IsDir() {
+			return err
+		}
+		if isTemplateDir(src, name) {
+			names = append(names, name)
+			return fs.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	slices.Sort(names)
+	return names, hasRoot, nil
+}
+
+func isTemplateDir(src fs.FS, dir string) bool {
+	return hasTemplateEntry(src, dir, "nsgo.yaml") && hasTemplateEntry(src, dir, "main.go")
+}
+
+func hasTemplateEntry(src fs.FS, dir, base string) bool {
+	for _, name := range []string{base, base + ".tmpl"} {
+		p := name
+		if dir != "." {
+			p = dir + "/" + name
+		}
+		info, err := fs.Stat(src, p)
+		if err == nil && info.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
 }
 
 // Use an isolated directory so a caller's module, workspace and replace

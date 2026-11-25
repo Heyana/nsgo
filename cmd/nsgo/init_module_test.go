@@ -168,3 +168,104 @@ func TestInitModuleTemplateStandardLibraryCollisions(t *testing.T) {
 		t.Fatalf("init wrote %s before refusing", dir)
 	}
 }
+
+func TestInitModuleNamedTemplates(t *testing.T) {
+	const module = "github.com/nsgo-dev/game/templates"
+	proxy := t.TempDir()
+	addTemplateVersion(t, proxy, module, "v1.0.0", map[string][]byte{
+		"platformer/nsgo.yaml":       []byte("name: {{printf \"%q\" .Name}}\nid: {{.ID}}\nversion: 0.1.0\n"),
+		"platformer/main.go":         []byte("package main\nfunc main() { println(\"platformer\") }\n"),
+		"platformer/assets/hero.png": []byte{1, 2, 3},
+		"rpg/nsgo.yaml.tmpl":         []byte("name: {{printf \"%q\" .Name}}\nid: {{.ID}}\nversion: 0.1.0\n"),
+		"rpg/main.go.tmpl":           []byte("package main\nfunc main() { println(\"rpg\") }\n"),
+		"2d/shooter/nsgo.yaml":       []byte("name: {{printf \"%q\" .Name}}\nid: {{.ID}}\nversion: 0.1.0\n"),
+		"2d/shooter/main.go":         []byte("package main\nfunc main() { println(\"shooter\") }\n"),
+		"shared/README.md":           []byte("not a template\n"),
+	})
+	addTemplateVersion(t, proxy, module, "v1.1.0", map[string][]byte{
+		"platformer/nsgo.yaml": []byte("name: {{printf \"%q\" .Name}}\nid: {{.ID}}\nversion: 0.2.0\n"),
+		"platformer/main.go":   []byte("package main\nfunc main() { println(\"platformer-v1.1\") }\n"),
+		"rpg/nsgo.yaml":        []byte("name: {{printf \"%q\" .Name}}\nid: {{.ID}}\nversion: 0.2.0\n"),
+		"rpg/main.go":          []byte("package main\nfunc main() { println(\"rpg-v1.1\") }\n"),
+	})
+	server := httptest.NewServer(http.FileServer(http.Dir(proxy)))
+	t.Cleanup(server.Close)
+	t.Setenv("GOFLAGS", "-modcacherw")
+	t.Setenv("GOPROXY", server.URL+",direct")
+	t.Setenv("GOSUMDB", "off")
+	t.Setenv("GONOPROXY", "*")
+	t.Setenv("GOMODCACHE", t.TempDir())
+
+	dir := filepath.Join(t.TempDir(), "plat")
+	if err := initApp(t.Context(), dir, "Plat", "example.com/plat", module+"@v1.0.0#platformer"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil || !strings.Contains(string(got), "println(\"platformer\")") {
+		t.Fatalf("platformer main.go = %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, "assets/hero.png")); err != nil || !bytes.Equal(got, []byte{1, 2, 3}) {
+		t.Fatalf("platformer asset = %v, %v", got, err)
+	}
+
+	dir = filepath.Join(t.TempDir(), "rpg")
+	if err := initApp(t.Context(), dir, "RPG", "example.com/rpg", module+"#rpg"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil || !strings.Contains(string(got), "println(\"rpg-v1.1\")") {
+		t.Fatalf("latest rpg main.go = %q, %v", got, err)
+	}
+
+	dir = filepath.Join(t.TempDir(), "shooter")
+	if err := initApp(t.Context(), dir, "Shooter", "example.com/shooter", module+"@v1.0.0#2d/shooter"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil || !strings.Contains(string(got), "println(\"shooter\")") {
+		t.Fatalf("nested shooter main.go = %q, %v", got, err)
+	}
+
+	if err := initApp(t.Context(), filepath.Join(t.TempDir(), "missing"), "Missing", "", module+"@v1.0.0#missing"); err == nil || !strings.Contains(err.Error(), "\"missing\"") {
+		t.Fatalf("missing named template = %v, want error naming missing", err)
+	}
+
+	for _, bad := range []string{module + "#", module + "@v1.0.0#", module + "#.", module + "#../escape", module + "#/abs"} {
+		if err := initApp(t.Context(), filepath.Join(t.TempDir(), "bad"), "Bad", "", bad); err == nil {
+			t.Errorf("initApp(%q) succeeded, want error", bad)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := listInitTemplates(t.Context(), &buf, "go"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), "go\ntsx\nmixed\n"; got != want {
+		t.Errorf("builtin list = %q, want %q", got, want)
+	}
+
+	buf.Reset()
+	if err := listInitTemplates(t.Context(), &buf, module+"@v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), "2d/shooter\nplatformer\nrpg\n"; got != want {
+		t.Errorf("module v1.0.0 list = %q, want %q", got, want)
+	}
+
+	if err := listInitTemplates(t.Context(), &buf, module+"@v1.0.0#platformer"); err == nil {
+		t.Error("listInitTemplates with #name succeeded, want error")
+	}
+
+	const singleModule = "github.com/nsgo-dev/single/template"
+	addTemplateVersion(t, proxy, singleModule, "v1.0.0", map[string][]byte{
+		"nsgo.yaml": []byte("name: {{.Name}}\nid: {{.ID}}\nversion: 0.1.0\n"),
+		"main.go":   []byte("package main\nfunc main() {}\n"),
+	})
+	buf.Reset()
+	if err := listInitTemplates(t.Context(), &buf, singleModule+"@v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), "(default)\n"; got != want {
+		t.Errorf("single-template module list = %q, want %q", got, want)
+	}
+}
