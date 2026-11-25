@@ -1897,3 +1897,40 @@ func TestShaderRecordsImages(t *testing.T) {
 		t.Fatalf("shader image = %+v, want frame.png at version 3", got)
 	}
 }
+
+// A shader's recorded images follow ImagesFunc: a new pixel version sends a new shader item with it, and an unchanged version does not (#2251).
+func TestShaderImagesFollowImagesFunc(t *testing.T) {
+	prog, err := core.CompileWGSL("fn shade(uv: vec2f) -> vec4f { return vec4f(uv, 0.0, 1.0); }")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pixels := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	var version, other *core.Signal[int]
+	app := Start(t, func(cx *core.Scope) core.Node {
+		version = core.NewSignal(cx, 1)
+		other = core.NewSignal(cx, 0)
+		return core.View{Children: []core.Node{
+			core.Shader{TestID: "shader", Program: prog, Style: core.Style{Width: core.Pt(64), Height: core.Pt(64)},
+				ImagesFunc: func() []core.ImageSource {
+					return []core.ImageSource{{URI: "frame", Pixels: pixels, Version: uint64(version.Get())}}
+				}},
+			core.Text{TestID: "other", ContentFunc: func() string { return fmt.Sprint(other.Get()) }},
+		}}
+	})
+	first := app.Find("id:shader").Shader
+	if first == nil || len(first.Images) != 1 || first.Images[0].Version != 1 {
+		t.Fatalf("the first commit recorded %+v", first)
+	}
+	// Another view's change commits the tree without touching the shader's image.
+	other.Set(1)
+	app.Settle()
+	if got := app.Find("id:shader").Shader; got != first {
+		t.Fatal("an unchanged image version sent a new shader item")
+	}
+	version.Set(2)
+	app.Settle()
+	second := app.Find("id:shader").Shader
+	if second == first || len(second.Images) != 1 || second.Images[0].Version != 2 {
+		t.Fatalf("a new version recorded %+v, want version 2", second)
+	}
+}
