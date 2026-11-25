@@ -125,6 +125,7 @@ type RingBuffer struct {
 	backing        []byte
 	slotUsed       []uint64
 	slotDirty      []bool
+	cleanup        *cleanupGroup
 	closed         bool
 }
 
@@ -201,7 +202,7 @@ func (d *Device) CreateRingBuffer(cx *core.Scope, desc RingBufferDesc) (*RingBuf
 		slotDirty:      make([]bool, slots),
 	}
 	d.ringBuffers[rb] = struct{}{}
-	d.bindCleanup(cx, func() { _ = rb.Close() })
+	rb.cleanup = d.bindCleanup(cx, rb)
 	return rb, nil
 }
 
@@ -364,6 +365,8 @@ func (r *RingBuffer) Close() error {
 		return nil
 	}
 	r.closed = true
+	r.cleanup.remove(r)
+	r.cleanup = nil
 	if r.dev != nil {
 		delete(r.dev.ringBuffers, r)
 	}

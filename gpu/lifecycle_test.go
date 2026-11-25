@@ -629,3 +629,69 @@ func TestGPUPerDescriptorRetainedOptIn(t *testing.T) {
 		t.Fatalf("expected non-retained buffer to remain invalidated on epoch 1, got valid=%v epoch=%d", ephemeralBuf.Valid(), ephemeralBuf.Epoch())
 	}
 }
+
+func TestClosedRetainedResourcesNotRestoredAfterDeviceLoss(t *testing.T) {
+	var (
+		keptBuf, closedBuf   *gpu.Buffer
+		keptTex, closedTex   *gpu.Texture
+		keptSamp, closedSamp *gpu.Sampler
+	)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return gpu.View(cx, gpu.ViewProps{
+			TestID:          "close-restore-gpu",
+			RetainResources: true,
+			Style:           core.Style{Width: core.Pt(32), Height: core.Pt(32)},
+			OnReady: func(d *gpu.Device) {
+				if d.Epoch() > 1 {
+					return
+				}
+				var err error
+				keptBuf, err = d.CreateBuffer(cx, gpu.BufferDesc{Label: "kept", Usage: gpu.UsageVertex, Data: packFloat32s(1, 2, 3)})
+				if err != nil {
+					t.Fatalf("CreateBuffer kept: %v", err)
+				}
+				closedBuf, err = d.CreateBuffer(cx, gpu.BufferDesc{Label: "closed", Usage: gpu.UsageVertex, Data: packFloat32s(4, 5, 6)})
+				if err != nil {
+					t.Fatalf("CreateBuffer closed: %v", err)
+				}
+				_ = closedBuf.Close()
+
+				keptTex, err = d.CreateTexture(cx, gpu.TextureDesc{Label: "kept", Width: 4, Height: 4, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled})
+				if err != nil {
+					t.Fatalf("CreateTexture kept: %v", err)
+				}
+				closedTex, err = d.CreateTexture(cx, gpu.TextureDesc{Label: "closed", Width: 4, Height: 4, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled})
+				if err != nil {
+					t.Fatalf("CreateTexture closed: %v", err)
+				}
+				_ = closedTex.Close()
+
+				keptSamp, err = d.CreateSampler(cx, gpu.SamplerDesc{Label: "kept"})
+				if err != nil {
+					t.Fatalf("CreateSampler kept: %v", err)
+				}
+				closedSamp, err = d.CreateSampler(cx, gpu.SamplerDesc{Label: "closed"})
+				if err != nil {
+					t.Fatalf("CreateSampler closed: %v", err)
+				}
+				_ = closedSamp.Close()
+			},
+		})
+	}, nsgotest.Size(32, 32))
+
+	app.TriggerGPUDeviceLostWithReason("id:close-restore-gpu", nsgotest.GPULostReset, "reset")
+	app.RestoreGPUDevice("id:close-restore-gpu")
+
+	if !keptBuf.Valid() || keptBuf.Epoch() != 2 {
+		t.Fatalf("expected kept buffer restored to epoch 2, got valid=%v epoch=%d", keptBuf.Valid(), keptBuf.Epoch())
+	}
+	if !keptTex.Valid() || keptTex.Epoch() != 2 {
+		t.Fatalf("expected kept texture restored to epoch 2, got valid=%v epoch=%d", keptTex.Valid(), keptTex.Epoch())
+	}
+	if !keptSamp.Valid() || keptSamp.Epoch() != 2 {
+		t.Fatalf("expected kept sampler restored to epoch 2, got valid=%v epoch=%d", keptSamp.Valid(), keptSamp.Epoch())
+	}
+	if closedBuf.Valid() || closedTex.Valid() || closedSamp.Valid() {
+		t.Fatalf("expected closed resources to stay invalid after restore")
+	}
+}

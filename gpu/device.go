@@ -3,6 +3,7 @@ package gpu
 import (
 	"fmt"
 	"image"
+	"io"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -60,7 +61,10 @@ type Device struct {
 	lastPassTimings  []PassTiming
 	timestampQueries map[driver.GPUID]*TimestampQuery
 
-	// Retained resource lists for opt-in automatic recreation after device loss. retainedMu guards the two lists a close removes from, so a frame that creates and closes resources cannot race a restore walking them.
+	cleanupMu     sync.Mutex
+	scopeCleanups map[*core.Scope]*cleanupGroup
+
+	// Retained resource lists for opt-in automatic recreation after device loss. retainedMu guards every retained list so a frame that creates and closes resources cannot race a restore walking them.
 	retainedMu         sync.Mutex
 	retainedBuffers    []*Buffer
 	retainedTextures   []*Texture
@@ -88,6 +92,7 @@ func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, f
 		slotFences:        make([]*FrameFence, n),
 		fences:            map[uint64]*FrameFence{},
 		ringBuffers:       map[*RingBuffer]struct{}{},
+		scopeCleanups:     map[*core.Scope]*cleanupGroup{},
 		surf:              surf,
 		scope:             scope,
 		generation:        gen,
@@ -301,14 +306,126 @@ func (d *Device) dispatchFrame(f driver.GPUFrame) {
 	}
 }
 
-func (d *Device) bindCleanup(cx *core.Scope, fn func()) {
+// cleanupGroup holds live GPU resources registered on one *core.Scope so
+// closing a resource removes it from the set and the scope holds at most one
+// cleanup callback per device.
+type cleanupGroup struct {
+	mu    sync.Mutex
+	dev   *Device
+	owner *core.Scope
+	items map[io.Closer]struct{}
+	done  bool
+}
+
+func (g *cleanupGroup) remove(res io.Closer) {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	if !g.done {
+		delete(g.items, res)
+	}
+	g.mu.Unlock()
+}
+
+func (g *cleanupGroup) run() {
+	if g.dev != nil {
+		g.dev.cleanupMu.Lock()
+		if g.dev.scopeCleanups[g.owner] == g {
+			delete(g.dev.scopeCleanups, g.owner)
+		}
+		g.dev.cleanupMu.Unlock()
+	}
+
+	g.mu.Lock()
+	if g.done {
+		g.mu.Unlock()
+		return
+	}
+	g.done = true
+	items := make([]io.Closer, 0, len(g.items))
+	for res := range g.items {
+		items = append(items, res)
+	}
+	g.items = nil
+	g.mu.Unlock()
+
+	for _, res := range items {
+		_ = res.Close()
+	}
+}
+
+func (d *Device) bindCleanup(cx *core.Scope, res io.Closer) *cleanupGroup {
 	owner := cx
 	if owner == nil {
 		owner = d.scope
 	}
-	if owner != nil {
-		owner.Cleanup(fn)
+	if owner == nil || res == nil {
+		return nil
 	}
+	d.cleanupMu.Lock()
+	if d.scopeCleanups == nil {
+		d.scopeCleanups = map[*core.Scope]*cleanupGroup{}
+	}
+	g := d.scopeCleanups[owner]
+	register := g == nil
+	if register {
+		g = &cleanupGroup{
+			dev:   d,
+			owner: owner,
+			items: map[io.Closer]struct{}{},
+		}
+		d.scopeCleanups[owner] = g
+	}
+	d.cleanupMu.Unlock()
+
+	if register {
+		owner.Cleanup(g.run)
+	}
+
+	g.mu.Lock()
+	if g.done {
+		g.mu.Unlock()
+		_ = res.Close()
+		return nil
+	}
+	g.items[res] = struct{}{}
+	g.mu.Unlock()
+	return g
+}
+
+type retainedItem interface {
+	comparable
+	retainedSlot() *int
+}
+
+// keepRetained records an item in a device's restore list, remembering its index so Close removes it in constant time.
+func keepRetained[T retainedItem](mu *sync.Mutex, list *[]T, item T) {
+	mu.Lock()
+	*item.retainedSlot() = len(*list)
+	*list = append(*list, item)
+	mu.Unlock()
+}
+
+// forgetRetained drops a closed item from a device's restore list so it becomes unreachable without a restore.
+func forgetRetained[T retainedItem](mu *sync.Mutex, list *[]T, item T) {
+	mu.Lock()
+	defer mu.Unlock()
+	slot := item.retainedSlot()
+	i := *slot
+	s := *list
+	if i < 0 || i >= len(s) || s[i] != item {
+		return
+	}
+	last := len(s) - 1
+	s[i] = s[last]
+	var zero T
+	s[last] = zero
+	*list = s[:last]
+	if i != last {
+		*s[i].retainedSlot() = i
+	}
+	*slot = -1
 }
 
 // Limits returns the device's capability limits.
@@ -483,16 +600,20 @@ func (d *Device) CacheStats() PipelineCacheStats {
 
 // Buffer is a retained GPU vertex, index, uniform, or storage buffer.
 type Buffer struct {
-	dev      *Device
-	id       driver.GPUID
-	epoch    uint32
-	label    string
-	size     uint64
-	usage    BufferUsage
-	retained bool
-	shadow   []byte
-	closed   bool
+	dev         *Device
+	id          driver.GPUID
+	epoch       uint32
+	label       string
+	size        uint64
+	usage       BufferUsage
+	retained    bool
+	retainedIdx int
+	shadow      []byte
+	cleanup     *cleanupGroup
+	closed      bool
 }
+
+func (b *Buffer) retainedSlot() *int { return &b.retainedIdx }
 
 // ID returns the buffer's process-unique numeric handle.
 func (b *Buffer) ID() uint64 { return uint64(b.id) }
@@ -523,6 +644,11 @@ func (b *Buffer) Close() error {
 	}
 	b.closed = true
 	b.shadow = nil
+	b.cleanup.remove(b)
+	b.cleanup = nil
+	if b.dev != nil {
+		forgetRetained(&b.dev.retainedMu, &b.dev.retainedBuffers, b)
+	}
 	if b.dev != nil && b.dev.alive() && b.epoch == b.dev.generation {
 		b.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyBuffer, ID: b.id})
 	}
@@ -542,11 +668,15 @@ type Texture struct {
 	epoch        uint32
 	desc         TextureDesc
 	retained     bool
+	retainedIdx  int
 	shadowWrites []retainedTextureWrite
+	cleanup      *cleanupGroup
 	closed       bool
 	// external marks a texture from ImportTexture, which is only sampled.
 	external bool
 }
+
+func (t *Texture) retainedSlot() *int { return &t.retainedIdx }
 
 // ID returns the texture's numeric handle.
 func (t *Texture) ID() uint64 { return uint64(t.id) }
@@ -574,6 +704,11 @@ func (t *Texture) Close() error {
 	}
 	t.closed = true
 	t.shadowWrites = nil
+	t.cleanup.remove(t)
+	t.cleanup = nil
+	if t.dev != nil {
+		forgetRetained(&t.dev.retainedMu, &t.dev.retainedTextures, t)
+	}
 	if t.dev != nil && t.dev.alive() && t.epoch == t.dev.generation {
 		t.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyTexture, ID: t.id})
 	}
@@ -648,13 +783,17 @@ func (rt *RenderTarget) Close() error {
 
 // Sampler is a retained GPU texture sampler.
 type Sampler struct {
-	dev      *Device
-	id       driver.GPUID
-	epoch    uint32
-	desc     SamplerDesc
-	retained bool
-	closed   bool
+	dev         *Device
+	id          driver.GPUID
+	epoch       uint32
+	desc        SamplerDesc
+	retained    bool
+	retainedIdx int
+	cleanup     *cleanupGroup
+	closed      bool
 }
+
+func (s *Sampler) retainedSlot() *int { return &s.retainedIdx }
 
 // ID returns the sampler's numeric handle.
 func (s *Sampler) ID() uint64 { return uint64(s.id) }
@@ -681,6 +820,11 @@ func (s *Sampler) Close() error {
 		return nil
 	}
 	s.closed = true
+	s.cleanup.remove(s)
+	s.cleanup = nil
+	if s.dev != nil {
+		forgetRetained(&s.dev.retainedMu, &s.dev.retainedSamplers, s)
+	}
 	if s.dev != nil && s.dev.alive() && s.epoch == s.dev.generation {
 		s.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroySampler, ID: s.id})
 	}
@@ -698,7 +842,10 @@ type BindGroupLayout struct {
 	retained    bool
 	closed      bool
 	retainedIdx int
+	cleanup     *cleanupGroup
 }
+
+func (l *BindGroupLayout) retainedSlot() *int { return &l.retainedIdx }
 
 // ID returns the layout's numeric handle.
 func (l *BindGroupLayout) ID() uint64 { return uint64(l.id) }
@@ -722,8 +869,10 @@ func (l *BindGroupLayout) Close() error {
 		return nil
 	}
 	l.closed = true
+	l.cleanup.remove(l)
+	l.cleanup = nil
 	if l.dev != nil {
-		l.dev.forgetRetainedLayout(l)
+		forgetRetained(&l.dev.retainedMu, &l.dev.retainedLayouts, l)
 	}
 	if l.dev != nil && l.dev.alive() && l.epoch == l.dev.generation {
 		l.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyBindGroupLayout, ID: l.id})
@@ -741,7 +890,10 @@ type BindGroup struct {
 	retained    bool
 	closed      bool
 	retainedIdx int
+	cleanup     *cleanupGroup
 }
+
+func (g *BindGroup) retainedSlot() *int { return &g.retainedIdx }
 
 // ID returns the bind group's numeric handle.
 func (g *BindGroup) ID() uint64 { return uint64(g.id) }
@@ -765,8 +917,10 @@ func (g *BindGroup) Close() error {
 		return nil
 	}
 	g.closed = true
+	g.cleanup.remove(g)
+	g.cleanup = nil
 	if g.dev != nil {
-		g.dev.forgetRetainedBindGroup(g)
+		forgetRetained(&g.dev.retainedMu, &g.dev.retainedBindGroups, g)
 	}
 	if g.dev != nil && g.dev.alive() && g.epoch == g.dev.generation {
 		g.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyBindGroup, ID: g.id})
@@ -774,71 +928,23 @@ func (g *BindGroup) Close() error {
 	return nil
 }
 
-// keepRetainedLayout records a layout in the device's restore list, whose index it remembers so a close removes it in constant time.
-func (d *Device) keepRetainedLayout(l *BindGroupLayout) {
-	d.retainedMu.Lock()
-	l.retainedIdx = len(d.retainedLayouts)
-	d.retainedLayouts = append(d.retainedLayouts, l)
-	d.retainedMu.Unlock()
-}
-
-// forgetRetainedLayout drops a closed layout from the device's restore list, so the layout and what it held become unreachable without a restore.
-func (d *Device) forgetRetainedLayout(l *BindGroupLayout) {
-	d.retainedMu.Lock()
-	defer d.retainedMu.Unlock()
-	i := l.retainedIdx
-	if i < 0 || i >= len(d.retainedLayouts) || d.retainedLayouts[i] != l {
-		return
-	}
-	last := len(d.retainedLayouts) - 1
-	d.retainedLayouts[i] = d.retainedLayouts[last]
-	d.retainedLayouts[last] = nil
-	d.retainedLayouts = d.retainedLayouts[:last]
-	if i != last {
-		d.retainedLayouts[i].retainedIdx = i
-	}
-	l.retainedIdx = -1
-}
-
-// keepRetainedBindGroup records a bind group in the device's restore list, whose index it remembers so a close removes it in constant time.
-func (d *Device) keepRetainedBindGroup(g *BindGroup) {
-	d.retainedMu.Lock()
-	g.retainedIdx = len(d.retainedBindGroups)
-	d.retainedBindGroups = append(d.retainedBindGroups, g)
-	d.retainedMu.Unlock()
-}
-
-// forgetRetainedBindGroup drops a closed bind group from the device's restore list, so the group, its entries and the resources they bound become unreachable without a restore.
-func (d *Device) forgetRetainedBindGroup(g *BindGroup) {
-	d.retainedMu.Lock()
-	defer d.retainedMu.Unlock()
-	i := g.retainedIdx
-	if i < 0 || i >= len(d.retainedBindGroups) || d.retainedBindGroups[i] != g {
-		return
-	}
-	last := len(d.retainedBindGroups) - 1
-	d.retainedBindGroups[i] = d.retainedBindGroups[last]
-	d.retainedBindGroups[last] = nil
-	d.retainedBindGroups = d.retainedBindGroups[:last]
-	if i != last {
-		d.retainedBindGroups[i].retainedIdx = i
-	}
-	g.retainedIdx = -1
-}
-
 // Pipeline is an immutable vertex+fragment GPU render pipeline.
 type Pipeline struct {
-	dev        *Device
-	id         driver.GPUID
-	epoch      uint32
-	desc       PipelineDesc
-	cacheKey   string
-	retained   bool
-	ready      atomic.Bool
-	done       chan struct{}
-	compileErr error
-	closed     bool
+	dev         *Device
+	id          driver.GPUID
+	epoch       uint32
+	desc        PipelineDesc
+	cacheKey    string
+	retained    bool
+	retainedIdx int
+	ready       atomic.Bool
+	done        chan struct{}
+	compileErr  error
+	cleanup     *cleanupGroup
+	closed      bool
 }
+
+func (p *Pipeline) retainedSlot() *int { return &p.retainedIdx }
 
 // ID returns the pipeline's numeric handle.
 func (p *Pipeline) ID() uint64 { return uint64(p.id) }
@@ -899,6 +1005,11 @@ func (p *Pipeline) Close() error {
 	}
 	p.closed = true
 	p.ready.Store(false)
+	p.cleanup.remove(p)
+	p.cleanup = nil
+	if p.dev != nil {
+		forgetRetained(&p.dev.retainedMu, &p.dev.retainedPipelines, p)
+	}
 	if p.dev != nil && p.dev.alive() && p.epoch == p.dev.generation {
 		p.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyPipeline, ID: p.id})
 	}
@@ -911,6 +1022,7 @@ type TimestampQuery struct {
 	id      driver.GPUID
 	label   string
 	timings []PassTiming
+	cleanup *cleanupGroup
 	closed  bool
 }
 
@@ -949,6 +1061,8 @@ func (q *TimestampQuery) Close() error {
 		return nil
 	}
 	q.closed = true
+	q.cleanup.remove(q)
+	q.cleanup = nil
 	if q.dev != nil {
 		delete(q.dev.timestampQueries, q.id)
 	}
@@ -966,17 +1080,18 @@ func (d *Device) CreateTimestampQuery(cx *core.Scope, label string) (*TimestampQ
 	id := d.nextID()
 	q := &TimestampQuery{dev: d, id: id, label: label}
 	d.timestampQueries[id] = q
-	d.bindCleanup(cx, func() { _ = q.Close() })
+	q.cleanup = d.bindCleanup(cx, q)
 	return q, nil
 }
 
 // ComputePipeline is an immutable GPU compute shader pipeline.
 type ComputePipeline struct {
-	dev    *Device
-	id     driver.GPUID
-	epoch  uint32
-	desc   ComputePipelineDesc
-	closed bool
+	dev     *Device
+	id      driver.GPUID
+	epoch   uint32
+	desc    ComputePipelineDesc
+	cleanup *cleanupGroup
+	closed  bool
 }
 
 // ID returns the compute pipeline's numeric handle.
@@ -993,6 +1108,8 @@ func (p *ComputePipeline) Close() error {
 		return nil
 	}
 	p.closed = true
+	p.cleanup.remove(p)
+	p.cleanup = nil
 	if p.dev != nil && p.dev.alive() && p.epoch == p.dev.generation {
 		p.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyComputePipeline, ID: p.id})
 	}
@@ -1041,19 +1158,20 @@ func (d *Device) CreateBuffer(cx *core.Scope, desc BufferDesc) (*Buffer, error) 
 		copy(shadow, desc.Data)
 	}
 	buf := &Buffer{
-		dev:      d,
-		id:       id,
-		epoch:    d.generation,
-		label:    desc.Label,
-		size:     size,
-		usage:    desc.Usage,
-		retained: retained,
-		shadow:   shadow,
+		dev:         d,
+		id:          id,
+		epoch:       d.generation,
+		label:       desc.Label,
+		size:        size,
+		usage:       desc.Usage,
+		retained:    retained,
+		retainedIdx: -1,
+		shadow:      shadow,
 	}
 	if retained {
-		d.retainedBuffers = append(d.retainedBuffers, buf)
+		keepRetained(&d.retainedMu, &d.retainedBuffers, buf)
 	}
-	d.bindCleanup(cx, func() { _ = buf.Close() })
+	buf.cleanup = d.bindCleanup(cx, buf)
 	return buf, nil
 }
 
@@ -1160,11 +1278,11 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 	}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateTexture, ID: id, Texture: &dd})
 	retained := desc.Retained || d.retainResources
-	tex := &Texture{dev: d, id: id, epoch: d.generation, desc: desc, retained: retained}
+	tex := &Texture{dev: d, id: id, epoch: d.generation, desc: desc, retained: retained, retainedIdx: -1}
 	if retained {
-		d.retainedTextures = append(d.retainedTextures, tex)
+		keepRetained(&d.retainedMu, &d.retainedTextures, tex)
 	}
-	d.bindCleanup(cx, func() { _ = tex.Close() })
+	tex.cleanup = d.bindCleanup(cx, tex)
 	return tex, nil
 }
 
@@ -1313,11 +1431,11 @@ func (d *Device) CreateSampler(cx *core.Scope, desc SamplerDesc) (*Sampler, erro
 	}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateSampler, ID: id, Sampler: &dd})
 	retained := desc.Retained || d.retainResources
-	s := &Sampler{dev: d, id: id, epoch: d.generation, desc: desc, retained: retained}
+	s := &Sampler{dev: d, id: id, epoch: d.generation, desc: desc, retained: retained, retainedIdx: -1}
 	if retained {
-		d.retainedSamplers = append(d.retainedSamplers, s)
+		keepRetained(&d.retainedMu, &d.retainedSamplers, s)
 	}
-	d.bindCleanup(cx, func() { _ = s.Close() })
+	s.cleanup = d.bindCleanup(cx, s)
 	return s, nil
 }
 
@@ -1377,8 +1495,8 @@ func (d *Device) CreateBindGroupLayoutDesc(cx *core.Scope, desc BindGroupLayoutD
 		retained:    desc.Retained || d.retainResources,
 		retainedIdx: -1,
 	}
-	d.keepRetainedLayout(l)
-	d.bindCleanup(cx, func() { _ = l.Close() })
+	keepRetained(&d.retainedMu, &d.retainedLayouts, l)
+	l.cleanup = d.bindCleanup(cx, l)
 	return l, nil
 }
 
@@ -1519,8 +1637,8 @@ func (d *Device) CreateBindGroupDesc(cx *core.Scope, desc BindGroupDesc) (*BindG
 		retained:    d.retainResources,
 		retainedIdx: -1,
 	}
-	d.keepRetainedBindGroup(bg)
-	d.bindCleanup(cx, func() { _ = bg.Close() })
+	keepRetained(&d.retainedMu, &d.retainedBindGroups, bg)
+	bg.cleanup = d.bindCleanup(cx, bg)
 	return bg, nil
 }
 
@@ -1726,19 +1844,20 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 	close(done)
 	retained := desc.Retained || d.retainResources
 	p := &Pipeline{
-		dev:      d,
-		id:       id,
-		epoch:    d.generation,
-		desc:     desc,
-		cacheKey: key,
-		retained: retained,
-		done:     done,
+		dev:         d,
+		id:          id,
+		epoch:       d.generation,
+		desc:        desc,
+		cacheKey:    key,
+		retained:    retained,
+		retainedIdx: -1,
+		done:        done,
 	}
 	p.ready.Store(true)
 	if retained {
-		d.retainedPipelines = append(d.retainedPipelines, p)
+		keepRetained(&d.retainedMu, &d.retainedPipelines, p)
 	}
-	d.bindCleanup(cx, func() { _ = p.Close() })
+	p.cleanup = d.bindCleanup(cx, p)
 	return p, nil
 }
 
@@ -1762,18 +1881,19 @@ func (d *Device) CreatePipelineAsync(cx *core.Scope, desc PipelineDesc, onReady 
 	id := d.nextID()
 	retained := desc.Retained || d.retainResources
 	p := &Pipeline{
-		dev:      d,
-		id:       id,
-		epoch:    d.generation,
-		desc:     desc,
-		cacheKey: key,
-		retained: retained,
-		done:     make(chan struct{}),
+		dev:         d,
+		id:          id,
+		epoch:       d.generation,
+		desc:        desc,
+		cacheKey:    key,
+		retained:    retained,
+		retainedIdx: -1,
+		done:        make(chan struct{}),
 	}
 	if retained {
-		d.retainedPipelines = append(d.retainedPipelines, p)
+		keepRetained(&d.retainedMu, &d.retainedPipelines, p)
 	}
-	d.bindCleanup(cx, func() { _ = p.Close() })
+	p.cleanup = d.bindCleanup(cx, p)
 
 	cache := d.cache
 	gen := d.generation
@@ -1863,15 +1983,20 @@ func (d *Device) PrecompilePipelines(cx *core.Scope, descs []PipelineDesc, onDon
 
 // restoreRetainedFrom recreates all open retained resources from a previous lost Device onto d in dependency order (buffers -> textures -> samplers -> bind group layouts -> bind groups -> pipelines) so apps opting into retention continue rendering seamlessly after device or surface restoration.
 func (d *Device) restoreRetainedFrom(prev *Device) {
-	prev.retainedMu.Lock()
-	prevLayouts := slices.Clone(prev.retainedLayouts)
-	prevBindGroups := slices.Clone(prev.retainedBindGroups)
-	prev.retainedMu.Unlock()
 	if d == nil || prev == nil || !d.alive() {
 		return
 	}
+	prev.retainedMu.Lock()
+	prevBuffers := slices.Clone(prev.retainedBuffers)
+	prevTextures := slices.Clone(prev.retainedTextures)
+	prevSamplers := slices.Clone(prev.retainedSamplers)
+	prevLayouts := slices.Clone(prev.retainedLayouts)
+	prevBindGroups := slices.Clone(prev.retainedBindGroups)
+	prevPipelines := slices.Clone(prev.retainedPipelines)
+	prev.retainedMu.Unlock()
+
 	restoredBufs := map[*Buffer]bool{}
-	for _, b := range prev.retainedBuffers {
+	for _, b := range prevBuffers {
 		if b == nil || b.closed || !b.retained {
 			continue
 		}
@@ -1886,12 +2011,12 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 		b.dev = d
 		b.id = id
 		b.epoch = d.generation
-		d.retainedBuffers = append(d.retainedBuffers, b)
+		keepRetained(&d.retainedMu, &d.retainedBuffers, b)
 		restoredBufs[b] = true
 	}
 
 	restoredTexs := map[*Texture]bool{}
-	for _, t := range prev.retainedTextures {
+	for _, t := range prevTextures {
 		if t == nil || t.closed || !t.retained {
 			continue
 		}
@@ -1930,12 +2055,12 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 		t.dev = d
 		t.id = id
 		t.epoch = d.generation
-		d.retainedTextures = append(d.retainedTextures, t)
+		keepRetained(&d.retainedMu, &d.retainedTextures, t)
 		restoredTexs[t] = true
 	}
 
 	restoredSamps := map[*Sampler]bool{}
-	for _, s := range prev.retainedSamplers {
+	for _, s := range prevSamplers {
 		if s == nil || s.closed || !s.retained {
 			continue
 		}
@@ -1956,13 +2081,13 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 		s.dev = d
 		s.id = id
 		s.epoch = d.generation
-		d.retainedSamplers = append(d.retainedSamplers, s)
+		keepRetained(&d.retainedMu, &d.retainedSamplers, s)
 		restoredSamps[s] = true
 	}
 
 	// Determine which BindGroupLayouts are needed by retained bind groups or pipelines.
 	neededLayouts := map[*BindGroupLayout]bool{}
-	for _, p := range prev.retainedPipelines {
+	for _, p := range prevPipelines {
 		if p == nil || p.closed || !p.retained {
 			continue
 		}
@@ -2032,7 +2157,7 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 		l.dev = d
 		l.id = id
 		l.epoch = d.generation
-		d.keepRetainedLayout(l)
+		keepRetained(&d.retainedMu, &d.retainedLayouts, l)
 		restoredLayouts[l] = true
 	}
 
@@ -2070,10 +2195,10 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 		bg.dev = d
 		bg.id = id
 		bg.epoch = d.generation
-		d.keepRetainedBindGroup(bg)
+		keepRetained(&d.retainedMu, &d.retainedBindGroups, bg)
 	}
 
-	for _, p := range prev.retainedPipelines {
+	for _, p := range prevPipelines {
 		if p == nil || p.closed || !p.retained || !p.ready.Load() {
 			continue
 		}
@@ -2093,7 +2218,7 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 		p.epoch = d.generation
 		p.cacheKey = key
 		p.ready.Store(true)
-		d.retainedPipelines = append(d.retainedPipelines, p)
+		keepRetained(&d.retainedMu, &d.retainedPipelines, p)
 	}
 }
 
@@ -2146,7 +2271,7 @@ func (d *Device) CreateComputePipeline(cx *core.Scope, desc ComputePipelineDesc)
 	id := d.nextID()
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateComputePipeline, ID: id, ComputePipeline: &dd})
 	cp := &ComputePipeline{dev: d, id: id, epoch: d.generation, desc: desc}
-	d.bindCleanup(cx, func() { _ = cp.Close() })
+	cp.cleanup = d.bindCleanup(cx, cp)
 	return cp, nil
 }
 

@@ -149,9 +149,10 @@ func (d *Device) ImportTexture(cx *core.Scope, desc ExternalTextureDesc) (*Textu
 			Format:      desc.Format,
 			Usage:       TextureSampled,
 		},
-		external: true,
+		retainedIdx: -1,
+		external:    true,
 	}
-	d.bindCleanup(cx, func() { _ = tex.Close() })
+	tex.cleanup = d.bindCleanup(cx, tex)
 	return tex, nil
 }
 
