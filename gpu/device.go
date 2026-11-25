@@ -56,7 +56,8 @@ type Device struct {
 	lastPassTimings  []PassTiming
 	timestampQueries map[driver.GPUID]*TimestampQuery
 
-	// Retained resource lists for opt-in automatic recreation after device loss.
+	// Retained resource lists for opt-in automatic recreation after device loss. retainedMu guards the two lists a close removes from, so a frame that creates and closes resources cannot race a restore walking them.
+	retainedMu         sync.Mutex
 	retainedBuffers    []*Buffer
 	retainedTextures   []*Texture
 	retainedSamplers   []*Sampler
@@ -677,12 +678,13 @@ func (s *Sampler) Close() error {
 
 // BindGroupLayout describes the resource schema of a BindGroup slot.
 type BindGroupLayout struct {
-	dev      *Device
-	id       driver.GPUID
-	epoch    uint32
-	entries  []BindGroupLayoutEntry
-	retained bool
-	closed   bool
+	dev         *Device
+	id          driver.GPUID
+	epoch       uint32
+	entries     []BindGroupLayoutEntry
+	retained    bool
+	closed      bool
+	retainedIdx int
 }
 
 // ID returns the layout's numeric handle.
@@ -707,6 +709,9 @@ func (l *BindGroupLayout) Close() error {
 		return nil
 	}
 	l.closed = true
+	if l.dev != nil {
+		l.dev.forgetRetainedLayout(l)
+	}
 	if l.dev != nil && l.dev.alive() && l.epoch == l.dev.generation {
 		l.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyBindGroupLayout, ID: l.id})
 	}
@@ -715,13 +720,14 @@ func (l *BindGroupLayout) Close() error {
 
 // BindGroup binds buffers, textures, and samplers for one shader @group(G).
 type BindGroup struct {
-	dev      *Device
-	id       driver.GPUID
-	epoch    uint32
-	layout   *BindGroupLayout
-	entries  []BindGroupEntry
-	retained bool
-	closed   bool
+	dev         *Device
+	id          driver.GPUID
+	epoch       uint32
+	layout      *BindGroupLayout
+	entries     []BindGroupEntry
+	retained    bool
+	closed      bool
+	retainedIdx int
 }
 
 // ID returns the bind group's numeric handle.
@@ -746,10 +752,65 @@ func (g *BindGroup) Close() error {
 		return nil
 	}
 	g.closed = true
+	if g.dev != nil {
+		g.dev.forgetRetainedBindGroup(g)
+	}
 	if g.dev != nil && g.dev.alive() && g.epoch == g.dev.generation {
 		g.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyBindGroup, ID: g.id})
 	}
 	return nil
+}
+
+// keepRetainedLayout records a layout in the device's restore list, whose index it remembers so a close removes it in constant time.
+func (d *Device) keepRetainedLayout(l *BindGroupLayout) {
+	d.retainedMu.Lock()
+	l.retainedIdx = len(d.retainedLayouts)
+	d.retainedLayouts = append(d.retainedLayouts, l)
+	d.retainedMu.Unlock()
+}
+
+// forgetRetainedLayout drops a closed layout from the device's restore list, so the layout and what it held become unreachable without a restore.
+func (d *Device) forgetRetainedLayout(l *BindGroupLayout) {
+	d.retainedMu.Lock()
+	defer d.retainedMu.Unlock()
+	i := l.retainedIdx
+	if i < 0 || i >= len(d.retainedLayouts) || d.retainedLayouts[i] != l {
+		return
+	}
+	last := len(d.retainedLayouts) - 1
+	d.retainedLayouts[i] = d.retainedLayouts[last]
+	d.retainedLayouts[last] = nil
+	d.retainedLayouts = d.retainedLayouts[:last]
+	if i != last {
+		d.retainedLayouts[i].retainedIdx = i
+	}
+	l.retainedIdx = -1
+}
+
+// keepRetainedBindGroup records a bind group in the device's restore list, whose index it remembers so a close removes it in constant time.
+func (d *Device) keepRetainedBindGroup(g *BindGroup) {
+	d.retainedMu.Lock()
+	g.retainedIdx = len(d.retainedBindGroups)
+	d.retainedBindGroups = append(d.retainedBindGroups, g)
+	d.retainedMu.Unlock()
+}
+
+// forgetRetainedBindGroup drops a closed bind group from the device's restore list, so the group, its entries and the resources they bound become unreachable without a restore.
+func (d *Device) forgetRetainedBindGroup(g *BindGroup) {
+	d.retainedMu.Lock()
+	defer d.retainedMu.Unlock()
+	i := g.retainedIdx
+	if i < 0 || i >= len(d.retainedBindGroups) || d.retainedBindGroups[i] != g {
+		return
+	}
+	last := len(d.retainedBindGroups) - 1
+	d.retainedBindGroups[i] = d.retainedBindGroups[last]
+	d.retainedBindGroups[last] = nil
+	d.retainedBindGroups = d.retainedBindGroups[:last]
+	if i != last {
+		d.retainedBindGroups[i].retainedIdx = i
+	}
+	g.retainedIdx = -1
 }
 
 // Pipeline is an immutable vertex+fragment GPU render pipeline.
@@ -1295,13 +1356,14 @@ func (d *Device) CreateBindGroupLayoutDesc(cx *core.Scope, desc BindGroupLayoutD
 	dd := driver.GPUBindGroupLayoutDesc{Label: debugLabel(desc.Label), Entries: dEntries}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBindGroupLayout, ID: id, BindGroupLayout: &dd})
 	l := &BindGroupLayout{
-		dev:      d,
-		id:       id,
-		epoch:    d.generation,
-		entries:  slices.Clone(entries),
-		retained: d.retainResources,
+		dev:         d,
+		id:          id,
+		epoch:       d.generation,
+		entries:     slices.Clone(entries),
+		retained:    d.retainResources,
+		retainedIdx: -1,
 	}
-	d.retainedLayouts = append(d.retainedLayouts, l)
+	d.keepRetainedLayout(l)
 	d.bindCleanup(cx, func() { _ = l.Close() })
 	return l, nil
 }
@@ -1435,14 +1497,15 @@ func (d *Device) CreateBindGroupDesc(cx *core.Scope, desc BindGroupDesc) (*BindG
 	dd := driver.GPUBindGroupDesc{Label: debugLabel(desc.Label), Layout: layoutID, Entries: dEntries}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBindGroup, ID: id, BindGroup: &dd})
 	bg := &BindGroup{
-		dev:      d,
-		id:       id,
-		epoch:    d.generation,
-		layout:   layout,
-		entries:  slices.Clone(entries),
-		retained: d.retainResources,
+		dev:         d,
+		id:          id,
+		epoch:       d.generation,
+		layout:      layout,
+		entries:     slices.Clone(entries),
+		retained:    d.retainResources,
+		retainedIdx: -1,
 	}
-	d.retainedBindGroups = append(d.retainedBindGroups, bg)
+	d.keepRetainedBindGroup(bg)
 	d.bindCleanup(cx, func() { _ = bg.Close() })
 	return bg, nil
 }
@@ -1786,6 +1849,10 @@ func (d *Device) PrecompilePipelines(cx *core.Scope, descs []PipelineDesc, onDon
 
 // restoreRetainedFrom recreates all open retained resources from a previous lost Device onto d in dependency order (buffers -> textures -> samplers -> bind group layouts -> bind groups -> pipelines) so apps opting into retention continue rendering seamlessly after device or surface restoration.
 func (d *Device) restoreRetainedFrom(prev *Device) {
+	prev.retainedMu.Lock()
+	prevLayouts := slices.Clone(prev.retainedLayouts)
+	prevBindGroups := slices.Clone(prev.retainedBindGroups)
+	prev.retainedMu.Unlock()
 	if d == nil || prev == nil || !d.alive() {
 		return
 	}
@@ -1921,14 +1988,14 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 		}
 		return hasBound || bg.retained || d.retainResources
 	}
-	for _, bg := range prev.retainedBindGroups {
+	for _, bg := range prevBindGroups {
 		if canRestoreBG(bg) && bg.layout != nil && !bg.layout.closed {
 			neededLayouts[bg.layout] = true
 		}
 	}
 
 	restoredLayouts := map[*BindGroupLayout]bool{}
-	for _, l := range prev.retainedLayouts {
+	for _, l := range prevLayouts {
 		if l == nil || l.closed || (!l.retained && !d.retainResources && !neededLayouts[l]) {
 			continue
 		}
@@ -1951,11 +2018,11 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 		l.dev = d
 		l.id = id
 		l.epoch = d.generation
-		d.retainedLayouts = append(d.retainedLayouts, l)
+		d.keepRetainedLayout(l)
 		restoredLayouts[l] = true
 	}
 
-	for _, bg := range prev.retainedBindGroups {
+	for _, bg := range prevBindGroups {
 		if !canRestoreBG(bg) {
 			continue
 		}
@@ -1989,7 +2056,7 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 		bg.dev = d
 		bg.id = id
 		bg.epoch = d.generation
-		d.retainedBindGroups = append(d.retainedBindGroups, bg)
+		d.keepRetainedBindGroup(bg)
 	}
 
 	for _, p := range prev.retainedPipelines {
