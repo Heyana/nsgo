@@ -7,6 +7,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/desktop"
+	"github.com/nsgo-dev/nsgo/mobile"
 )
 
 func TestClosedSurfaceStepNamesItsWindow(t *testing.T) {
@@ -88,5 +89,29 @@ func TestStatusBarRecordsResolvedSettings(t *testing.T) {
 	app.Press("id:hide")
 	if want := (StatusBarConfig{Style: core.StatusBarLight, Hidden: true, Animated: true}); app.StatusBar != want {
 		t.Fatalf("status bar = %+v, want %+v", app.StatusBar, want)
+	}
+}
+
+// Immersive full screen reaches the model, so a test can see a game turn it on and off (#2255).
+func TestStatusBarRecordsImmersive(t *testing.T) {
+	if Target() != "" {
+		t.Skip("checks the headless model")
+	}
+	var app *App
+	app = Start(t, func(cx *core.Scope) core.Node {
+		return core.View{TestID: "toggle", Style: core.Style{Height: core.Pt(20)}, OnPress: func(core.PressEvent) {
+			mobile.Immersive(cx, !app.StatusBar.Immersive)
+		}}
+	}, Environment(core.Environment{OS: core.OSAndroid}))
+	if app.StatusBar.Immersive {
+		t.Fatal("immersive on at start")
+	}
+	app.Press("id:toggle")
+	if !app.StatusBar.Immersive {
+		t.Fatal("mobile.Immersive(cx, true) did not reach the model")
+	}
+	app.Press("id:toggle")
+	if app.StatusBar.Immersive {
+		t.Fatal("mobile.Immersive(cx, false) did not reach the model")
 	}
 }

@@ -77,7 +77,8 @@ func dockEdge(edge driver.WindowPlacement) core.Placement {
 
 // StatusBarConfig records the resolved status bar settings the app sent.
 type StatusBarConfig struct {
-	Style    core.StatusBarStyle
-	Hidden   bool
-	Animated bool
+	Style     core.StatusBarStyle
+	Hidden    bool
+	Animated  bool
+	Immersive bool
 }

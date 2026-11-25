@@ -1144,7 +1144,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemTitle:
 			a.Title = it.Value
 		case driver.ItemStatusBar:
-			a.StatusBar = StatusBarConfig{Style: it.StatusBar.Style, Hidden: it.StatusBar.Hidden, Animated: it.StatusBar.Animated}
+			a.StatusBar = StatusBarConfig{Style: it.StatusBar.Style, Hidden: it.StatusBar.Hidden, Animated: it.StatusBar.Animated, Immersive: it.StatusBar.Immersive}
 		case driver.ItemScreen:
 			v.Screen = screenConfig(*it.Screen)
 			v.hasScreen = true
