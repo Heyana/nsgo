@@ -1817,3 +1817,26 @@ func TestHeadlessScreenInsets(t *testing.T) {
 		t.Errorf("hidden screen insets after safe-area update = %+v, want %+v", hidden, want)
 	}
 }
+
+// SetFullScreen is recorded with its On and the display it asks for, and every action the core can send has a name (#2258).
+func TestWindowRecordsSetFullScreen(t *testing.T) {
+	app := Start(t, func(cx *core.Scope) core.Node {
+		cx.Effect(func() {
+			desktop.SetFullScreen(cx, true, "display-2")
+			desktop.SetFullScreen(cx, false)
+		})
+		return core.View{}
+	}, Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+	want := []WindowRequest{
+		{Action: WindowSetFullScreen, On: true, DisplayID: "display-2"},
+		{Action: WindowSetFullScreen},
+	}
+	if !slices.Equal(app.Window, want) {
+		t.Fatalf("window requests = %+v; want %+v", app.Window, want)
+	}
+	for a := driver.WindowSetTitleBar; a <= driver.WindowSetFullScreen; a++ {
+		if _, ok := windowActions[a]; !ok {
+			t.Errorf("driver window action %d has no WindowAction name", a)
+		}
+	}
+}

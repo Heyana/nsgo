@@ -21,6 +21,7 @@ const (
 	WindowMinimize         WindowAction = "minimize"
 	WindowToggleMaximize   WindowAction = "toggleMaximize"
 	WindowToggleFullScreen WindowAction = "toggleFullScreen"
+	WindowSetFullScreen    WindowAction = "setFullScreen"
 	WindowClose            WindowAction = "close"
 	WindowSetFrame         WindowAction = "setFrame"
 	WindowSetLevel         WindowAction = "setLevel"
@@ -60,9 +61,12 @@ type WindowRequest struct {
 	Placement     core.WindowPlacement
 	Workspaces    core.WindowWorkspaces
 	PointerEvents core.WindowPointerEvents
-	// On enables transparency, the window shadow or skipping the taskbar,
-	// according to Action.
+	// On enables transparency, the window shadow, skipping the taskbar, or
+	// entering full screen, according to Action.
 	On bool
+	// DisplayID is the display WindowSetFullScreen enters on, empty for the
+	// window's current display.
+	DisplayID string
 }
 
 var windowActions = map[driver.WindowAction]WindowAction{
@@ -88,6 +92,7 @@ var windowActions = map[driver.WindowAction]WindowAction{
 	driver.WindowSetShadow:        WindowSetShadow,
 	driver.WindowSetSkipTaskbar:   WindowSetSkipTaskbar,
 	driver.WindowFitSize:          WindowFitSize,
+	driver.WindowSetFullScreen:    WindowSetFullScreen,
 }
 
 func windowRequest(c *driver.WindowCommand) WindowRequest {
@@ -107,5 +112,6 @@ func windowRequest(c *driver.WindowCommand) WindowRequest {
 		Workspaces:    c.Workspaces,
 		PointerEvents: c.PointerEvents,
 		On:            c.On,
+		DisplayID:     c.DisplayID,
 	}
 }
