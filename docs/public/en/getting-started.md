@@ -42,11 +42,11 @@ Pass the template's module path with an optional `@version` and `#name`. An omit
 
 ```sh
 go tool nsgo init -template example.com/my-template@v1.2.0 -module example.com/hello hello
-go tool nsgo init -template example.com/my-templates@v1.2.0#platformer -module example.com/hello hello
+go tool nsgo init -template 'example.com/my-templates@v1.2.0#platformer' -module example.com/hello hello
 go tool nsgo init -template example.com/my-templates -list
 ```
 
-Publish a single starter in the module's `template/` directory, or several starters under `template/<name>/` and select one with `#<name>`. Include `nsgo.yaml` and `main.go` in each starter. The tool renders both, plus any file ending in `.tmpl`, with Go's `text/template`, and strips `.tmpl` from output names. It copies other files, including binary assets, unchanged.
+Publish either a single starter in the module's `template/` directory or several starters under `template/<name>/`, not both: when `template/` is itself a starter, the tool copies it whole, subdirectories included. Select a named starter with `#<name>`, quoting the argument since some shells treat `#` specially. `-list` prints one name per line, or `(default)` for a module whose `template/` is the starter. Include `nsgo.yaml` and `main.go` in each starter. The tool renders both, plus any file ending in `.tmpl`, with Go's `text/template`, and strips `.tmpl` from output names. It copies other files, including binary assets, unchanged.
 
 Templates receive `.Name` (the app's display name), `.ID` (the generated app ID), `.Slug` (the lower-case, hyphenated name) and `.Module` (the value of `-module`, or the slug, where a slug that names a standard library package such as `time` becomes `example.com/<slug>`). A `-module` value that names a standard library package is refused. Ship a `go.mod.tmpl` to declare the generated app's module and dependencies, since Go excludes nested `go.mod` files from module downloads. Without one, `-module` writes the same minimal `go.mod` as it does for a built-in template.
 

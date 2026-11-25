@@ -38,13 +38,15 @@ go tool nsgo init
 
 ### 来自 Go 模块的模板
 
-传入模板的模块路径，可以附带版本。省略版本时，使用 Go 模块代理能找到的最新版本。
+传入模板的模块路径，可以附带 `@version` 和 `#name`。省略版本时，使用 Go 模块代理能找到的最新版本。
 
 ```sh
 go tool nsgo init -template example.com/my-template@v1.2.0 -module example.com/hello hello
+go tool nsgo init -template 'example.com/my-templates@v1.2.0#platformer' -module example.com/hello hello
+go tool nsgo init -template example.com/my-templates -list
 ```
 
-把起始项目放在模块的 `template/` 目录里发布，其中要有 `nsgo.yaml` 和 `main.go`。工具用 Go 的 `text/template` 渲染这两个文件以及所有以 `.tmpl` 结尾的文件，并去掉输出文件名里的 `.tmpl`；其他文件（包括二进制资源）原样复制。
+发布时二选一：把单个起始项目放在模块的 `template/` 目录里，或者把多个起始项目分别放在 `template/<name>/` 下。`template/` 本身就是起始项目时，工具会把它连同子目录整个复制。用 `#<name>` 选择具名起始项目；有些 shell 会特殊处理 `#`，所以要给参数加引号。`-list` 每行打印一个名字，`template/` 本身是起始项目的模块则打印 `(default)`。每个起始项目里都要有 `nsgo.yaml` 和 `main.go`。工具用 Go 的 `text/template` 渲染这两个文件以及所有以 `.tmpl` 结尾的文件，并去掉输出文件名里的 `.tmpl`；其他文件（包括二进制资源）原样复制。
 
 模板可以使用 `.Name`（应用的显示名称）、`.ID`（生成的应用 id）、`.Slug`（小写、以连字符连接的名称）和 `.Module`（`-module` 的值，未指定时为 slug；若 slug 与标准库包同名，如 `time`，则改用 `example.com/<slug>`）。`-module` 若给出标准库包路径会被拒绝。Go 下载模块时会排除含有 `go.mod` 的子目录，所以要用 `go.mod.tmpl` 声明生成的应用的模块和依赖。没有它时，`-module` 会像内置模板一样写出一个最简的 `go.mod`。
 
