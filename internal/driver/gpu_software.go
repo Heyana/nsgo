@@ -3319,18 +3319,9 @@ func (vm *irVM) evalBinary(op shaderir.Op, a, b irVal) irVal {
 		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: a.b && b.b}
 	case shaderir.OrOr:
 		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: a.b || b.b}
-	case shaderir.LessThanOp:
-		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: cmpVal(a, b) < 0}
-	case shaderir.LessThanEqualOp:
-		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: cmpVal(a, b) <= 0}
-	case shaderir.GreaterThanOp:
-		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: cmpVal(a, b) > 0}
-	case shaderir.GreaterThanEqualOp:
-		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: cmpVal(a, b) >= 0}
-	case shaderir.EqualOp:
-		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: cmpVal(a, b) == 0}
-	case shaderir.NotEqualOp:
-		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: cmpVal(a, b) != 0}
+	case shaderir.LessThanOp, shaderir.LessThanEqualOp, shaderir.GreaterThanOp,
+		shaderir.GreaterThanEqualOp, shaderir.EqualOp, shaderir.NotEqualOp:
+		return irVal{typ: shaderir.Type{Main: shaderir.Bool}, b: compareValues(op, a, b)}
 	}
 	// Component-wise float/int/uint arithmetic with scalar broadcast.
 	resT := a.typ
@@ -3431,33 +3422,68 @@ func (vm *irVM) evalBinary(op shaderir.Op, a, b irVal) irVal {
 	return out
 }
 
-func cmpVal(a, b irVal) int {
-	switch a.typ.Main {
+// compareValues evaluates a comparison of the operands' first element. A float comparison with a NaN is unordered, so every ordered comparison is false and only != is true, as IEEE 754 and WGSL require; a bool compares its value, which a three-way compare never read.
+func compareValues(op shaderir.Op, a, b irVal) bool {
+	switch a.typ.Scalar() {
+	case shaderir.Bool:
+		switch op {
+		case shaderir.EqualOp:
+			return a.b == b.b
+		case shaderir.NotEqualOp:
+			return a.b != b.b
+		}
+		return false
 	case shaderir.Int:
-		if a.i[0] < b.i[0] {
-			return -1
+		x, y := a.i[0], b.i[0]
+		switch op {
+		case shaderir.LessThanOp:
+			return x < y
+		case shaderir.LessThanEqualOp:
+			return x <= y
+		case shaderir.GreaterThanOp:
+			return x > y
+		case shaderir.GreaterThanEqualOp:
+			return x >= y
+		case shaderir.EqualOp:
+			return x == y
+		case shaderir.NotEqualOp:
+			return x != y
 		}
-		if a.i[0] > b.i[0] {
-			return 1
-		}
-		return 0
+		return false
 	case shaderir.Uint:
-		if a.u[0] < b.u[0] {
-			return -1
+		x, y := a.u[0], b.u[0]
+		switch op {
+		case shaderir.LessThanOp:
+			return x < y
+		case shaderir.LessThanEqualOp:
+			return x <= y
+		case shaderir.GreaterThanOp:
+			return x > y
+		case shaderir.GreaterThanEqualOp:
+			return x >= y
+		case shaderir.EqualOp:
+			return x == y
+		case shaderir.NotEqualOp:
+			return x != y
 		}
-		if a.u[0] > b.u[0] {
-			return 1
-		}
-		return 0
-	default:
-		if a.f[0] < b.f[0] {
-			return -1
-		}
-		if a.f[0] > b.f[0] {
-			return 1
-		}
-		return 0
+		return false
 	}
+	x, y := a.f[0], b.f[0]
+	switch op {
+	case shaderir.LessThanOp:
+		return x < y
+	case shaderir.LessThanEqualOp:
+		return x <= y
+	case shaderir.GreaterThanOp:
+		return x > y
+	case shaderir.GreaterThanEqualOp:
+		return x >= y
+	case shaderir.EqualOp:
+		return x == y
+	case shaderir.NotEqualOp:
+		return x != y
+	}
+	return false
 }
 
 func evalMatMul(a, b irVal) irVal {
