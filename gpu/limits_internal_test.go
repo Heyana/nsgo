@@ -51,7 +51,7 @@ func TestSingleColorTargetLimitRejectsMRT(t *testing.T) {
 
 // A bind group layout opts into restore by itself, as the other resources do (#2338).
 func TestRetainedBindGroupLayoutIsRestored(t *testing.T) {
-	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, ColorSpaceDefault, 2, Limits{}, Features{}, nil)
 	kept, err := d.CreateBindGroupLayoutDesc(nil, BindGroupLayoutDesc{Retained: true})
 	if err != nil {
 		t.Fatalf("CreateBindGroupLayoutDesc retained: %v", err)
@@ -60,7 +60,7 @@ func TestRetainedBindGroupLayoutIsRestored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateBindGroupLayoutDesc: %v", err)
 	}
-	next := newDevice(nil, nil, 2, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	next := newDevice(nil, nil, 2, 64, 64, FormatRGBA8Unorm, ColorSpaceDefault, 2, Limits{}, Features{}, nil)
 	next.restoreRetainedFrom(d)
 	if len(next.retainedLayouts) != 1 || next.retainedLayouts[0] != kept {
 		t.Fatalf("restored layouts = %v, want the retained one alone", next.retainedLayouts)
@@ -75,12 +75,12 @@ func TestRetainedBindGroupLayoutIsRestored(t *testing.T) {
 
 // A retained bind group layout keeps its debug label through a restore (#2338).
 func TestRetainedBindGroupLayoutKeepsItsLabel(t *testing.T) {
-	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	d := newDevice(nil, nil, 1, 64, 64, FormatRGBA8Unorm, ColorSpaceDefault, 2, Limits{}, Features{}, nil)
 	kept, err := d.CreateBindGroupLayoutDesc(nil, BindGroupLayoutDesc{Label: "frame layout", Retained: true})
 	if err != nil {
 		t.Fatalf("CreateBindGroupLayoutDesc: %v", err)
 	}
-	next := newDevice(nil, nil, 2, 64, 64, FormatRGBA8Unorm, 2, Limits{}, Features{}, nil)
+	next := newDevice(nil, nil, 2, 64, 64, FormatRGBA8Unorm, ColorSpaceDefault, 2, Limits{}, Features{}, nil)
 	next.restoreRetainedFrom(d)
 	if len(next.retainedLayouts) != 1 || next.retainedLayouts[0] != kept {
 		t.Fatalf("restored layouts = %v, want the retained one", next.retainedLayouts)
