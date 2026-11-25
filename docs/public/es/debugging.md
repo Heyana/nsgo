@@ -198,7 +198,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps` muestra el monitor de rendimiento sobre la aplicación en macOS, iOS, Windows, Linux y Android. Mide fotogramas y commits, y Android también muestra el tiempo de ida y vuelta del texto nativo. Las compilaciones de desarrollo incluyen el cliente de desarrollo; mida con `-release`, que compila igual que `nsgo build`.
+`-fps` muestra el monitor de rendimiento sobre la aplicación en macOS, iOS, Windows, Linux, Android y la web. Mide fotogramas y commits, y Android también muestra el tiempo de ida y vuelta del texto nativo. Las compilaciones de desarrollo incluyen el cliente de desarrollo; mida con `-release`, que compila igual que `nsgo build`.
 
 ## Idiomas y aspecto
 
@@ -263,7 +263,7 @@ Toda compilación de una aplicación, incluidos los paquetes, acepta las propias
 
 | Bandera | Efecto |
 | --- | --- |
-| `--nsgo-fps` | Muestra el monitor de rendimiento en macOS, iOS, Windows, Linux y Android |
+| `--nsgo-fps` | Muestra el monitor de rendimiento en macOS, iOS, Windows, Linux, Android y la web |
 | `--nsgo-lang=zh-Hans` | Inicia la aplicación en una configuración regional, incluida una pseudoconfiguración regional |
 | `--nsgo-appearance=dark` | Inicia la aplicación en `light`, `dark` o siguiendo el `system` |
 | `--nsgo-os=ios` | Ejecuta una compilación web como `macos`, `windows`, `linux`, `ios` o `android`, siendo `web` ella misma |

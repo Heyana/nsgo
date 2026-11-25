@@ -198,7 +198,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps`, macOS, iOS, Windows, Linux ve Android'de uygulamanın üzerinde başarım izleyicisini gösterir. Kareleri ve işlemeleri ölçer; Android ayrıca yerel metin gidiş-dönüş süresini de gösterir. Dev derlemeleri geliştirici istemcisini taşır; `nsgo build` gibi derleyen `-release` ile ölçüm yapın.
+`-fps`, macOS, iOS, Windows, Linux, Android ve web'de uygulamanın üzerinde başarım izleyicisini gösterir. Kareleri ve işlemeleri ölçer; Android ayrıca yerel metin gidiş-dönüş süresini de gösterir. Dev derlemeleri geliştirici istemcisini taşır; `nsgo build` gibi derleyen `-release` ile ölçüm yapın.
 
 ## Diller ve görünüm
 
@@ -263,7 +263,7 @@ Paketler dahil bir uygulamanın her derlemesi başlarken NSGo'nun kendi bayrakla
 
 | Bayrak | Etki |
 | --- | --- |
-| `--nsgo-fps` | macOS, iOS, Windows, Linux ve Android'de başarım izleyicisini gösterir |
+| `--nsgo-fps` | macOS, iOS, Windows, Linux, Android ve web'de başarım izleyicisini gösterir |
 | `--nsgo-lang=zh-Hans` | Uygulamayı bir yerel ayarda, sahte yerel ayarlarda da başlatır |
 | `--nsgo-appearance=dark` | Uygulamayı `light`, `dark` veya `system` izleyecek şekilde başlatır |
 | `--nsgo-os=ios` | Bir web derlemesini `macos`, `windows`, `linux`, `ios` veya `android` olarak çalıştırır (`web` kendisidir) |

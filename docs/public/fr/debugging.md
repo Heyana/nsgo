@@ -198,7 +198,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps` affiche le moniteur de performances par-dessus l'application sur macOS, iOS, Windows, Linux et Android. Il mesure les images et les commits, et Android affiche également le temps d'aller-retour natif du texte. Les compilations dev embarquent le client de développement ; mesurez avec `-release`, qui compile comme le fait `nsgo build`.
+`-fps` affiche le moniteur de performances par-dessus l'application sur macOS, iOS, Windows, Linux, Android et le web. Il mesure les images et les commits, et Android affiche également le temps d'aller-retour natif du texte. Les compilations dev embarquent le client de développement ; mesurez avec `-release`, qui compile comme le fait `nsgo build`.
 
 ## Langues et apparence
 
@@ -263,7 +263,7 @@ Toute compilation d'une application, paquets inclus, accepte les propres drapeau
 
 | Drapeau | Effet |
 | --- | --- |
-| `--nsgo-fps` | Affiche le moniteur de performances sur macOS, iOS, Windows, Linux et Android |
+| `--nsgo-fps` | Affiche le moniteur de performances sur macOS, iOS, Windows, Linux, Android et le web |
 | `--nsgo-lang=zh-Hans` | Démarre l'application dans une locale, y compris une pseudo-locale |
 | `--nsgo-appearance=dark` | Démarre l'application en mode `light`, `dark` ou suivant `system` |
 | `--nsgo-os=ios` | Exécute une compilation web comme `macos`, `windows`, `linux`, `ios` ou `android`, `web` étant lui-même |

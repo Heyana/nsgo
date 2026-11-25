@@ -198,7 +198,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps` 會在 macOS、iOS、Windows、Linux 與 Android 的應用程式畫面上顯示效能監視器。它會量測影格與提交次數，Android 也會額外顯示原生文字往返耗時。開發建置內含開發用戶端；若要進行真實效能測量，請加上 `-release`，以與 `nsgo build` 相同的方式建置。
+`-fps` 會在 macOS、iOS、Windows、Linux、Android 與 Web 的應用程式畫面上顯示效能監視器。它會量測影格與提交次數，Android 也會額外顯示原生文字往返耗時。開發建置內含開發用戶端；若要進行真實效能測量，請加上 `-release`，以與 `nsgo build` 相同的方式建置。
 
 ## 語言與外觀
 
@@ -263,7 +263,7 @@ func registerSceneTool(cx *core.Scope, sceneID *core.Signal[string]) error {
 
 | 旗標 | 效果 |
 | --- | --- |
-| `--nsgo-fps` | 在 macOS、iOS、Windows、Linux 與 Android 上顯示效能監視器 |
+| `--nsgo-fps` | 在 macOS、iOS、Windows、Linux、Android 與 Web 上顯示效能監視器 |
 | `--nsgo-lang=zh-Hans` | 以指定語系啟動應用程式，亦可使用偽語系 |
 | `--nsgo-appearance=dark` | 以 `light`、`dark` 或跟隨系統（`system`）的外觀啟動應用程式 |
 | `--nsgo-os=ios` | 將網頁建置以 `macos`、`windows`、`linux`、`ios` 或 `android` 模式執行（`web` 即為其本身） |

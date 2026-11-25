@@ -198,7 +198,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps` menampilkan pemantau performa di atas aplikasi pada macOS, iOS, Windows, Linux, dan Android. Pemantau ini mengukur frame dan commit, dan Android juga menampilkan waktu pulang-pergi (round-trip) teks native. Build dev membawa klien dev; lakukan pengukuran dengan `-release`, yang membangun sebagaimana `nsgo build`.
+`-fps` menampilkan pemantau performa di atas aplikasi pada macOS, iOS, Windows, Linux, Android, dan web. Pemantau ini mengukur frame dan commit, dan Android juga menampilkan waktu pulang-pergi (round-trip) teks native. Build dev membawa klien dev; lakukan pengukuran dengan `-release`, yang membangun sebagaimana `nsgo build`.
 
 ## Bahasa dan tampilan
 
@@ -263,7 +263,7 @@ Setiap build aplikasi, termasuk paket yang dikemas, menerima flag milik NSGo sen
 
 | Flag | Efek |
 | --- | --- |
-| `--nsgo-fps` | Menampilkan pemantau performa di macOS, iOS, Windows, Linux, dan Android |
+| `--nsgo-fps` | Menampilkan pemantau performa di macOS, iOS, Windows, Linux, Android, dan web |
 | `--nsgo-lang=zh-Hans` | Memulai aplikasi dalam suatu locale, termasuk pseudo-locale |
 | `--nsgo-appearance=dark` | Memulai aplikasi dalam mode `light`, `dark`, atau mengikuti `system` |
 | `--nsgo-os=ios` | Menjalankan build web sebagai `macos`, `windows`, `linux`, `ios`, atau `android`, sedangkan `web` adalah dirinya sendiri |

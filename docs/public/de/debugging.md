@@ -198,7 +198,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps` zeigt den Performance-Monitor unter macOS, iOS, Windows, Linux und Android über der App an. Er misst Frames und Commits, und Android zeigt zusätzlich die Round-Trip-Zeit für nativen Text an. Dev-Builds enthalten den Dev-Client; messen Sie mit `-release`, das genau so baut wie `nsgo build`.
+`-fps` zeigt den Performance-Monitor unter macOS, iOS, Windows, Linux, Android und im Web über der App an. Er misst Frames und Commits, und Android zeigt zusätzlich die Round-Trip-Zeit für nativen Text an. Dev-Builds enthalten den Dev-Client; messen Sie mit `-release`, das genau so baut wie `nsgo build`.
 
 ## Sprachen und Erscheinungsbild
 
@@ -263,7 +263,7 @@ Jeder Build einer App – Pakete eingeschlossen – akzeptiert beim Start eigene
 
 | Flag | Wirkung |
 | --- | --- |
-| `--nsgo-fps` | Zeigt den Performance-Monitor unter macOS, iOS, Windows, Linux und Android |
+| `--nsgo-fps` | Zeigt den Performance-Monitor unter macOS, iOS, Windows, Linux, Android und im Web |
 | `--nsgo-lang=zh-Hans` | Startet die App in einer Locale, auch in einer Pseudo-Locale |
 | `--nsgo-appearance=dark` | Startet die App im Modus `light`, `dark` oder gemäß `system` |
 | `--nsgo-os=ios` | Führt einen Web-Build als `macos`, `windows`, `linux`, `ios` oder `android` aus; `web` steht für sich selbst |

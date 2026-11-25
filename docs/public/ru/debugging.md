@@ -198,7 +198,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps` выводит монитор производительности поверх приложения на macOS, iOS, Windows, Linux и Android. Он измеряет частоту кадров и коммиты, а на Android дополнительно показывает время кругового обращения (round-trip) для нативного текста. Dev-сборки содержат dev-клиент; для замеров используйте `-release`, который собирает приложение так же, как `nsgo build`.
+`-fps` выводит монитор производительности поверх приложения на macOS, iOS, Windows, Linux, Android и в вебе. Он измеряет частоту кадров и коммиты, а на Android дополнительно показывает время кругового обращения (round-trip) для нативного текста. Dev-сборки содержат dev-клиент; для замеров используйте `-release`, который собирает приложение так же, как `nsgo build`.
 
 ## Языки и оформление
 
@@ -263,7 +263,7 @@ func registerSceneTool(cx *core.Scope, sceneID *core.Signal[string]) error {
 
 | Флаг | Действие |
 | --- | --- |
-| `--nsgo-fps` | Показывает монитор производительности на macOS, iOS, Windows, Linux и Android |
+| `--nsgo-fps` | Показывает монитор производительности на macOS, iOS, Windows, Linux, Android и в вебе |
 | `--nsgo-lang=zh-Hans` | Запускает приложение в указанной локали, включая псевдолокали |
 | `--nsgo-appearance=dark` | Запускает приложение в теме `light`, `dark` или по настройке `system` |
 | `--nsgo-os=ios` | Запускает веб-сборку в режиме `macos`, `windows`, `linux`, `ios` или `android`, где `web` соответствует самому себе |

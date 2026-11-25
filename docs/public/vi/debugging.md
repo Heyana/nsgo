@@ -198,7 +198,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps` hiển thị bộ theo dõi hiệu năng phủ lên ứng dụng trên macOS, iOS, Windows, Linux và Android. Nó đo số khung hình và số commit, riêng Android còn hiển thị thời gian khứ hồi (round-trip) cho văn bản gốc. Bản build dev có mang theo dev client; hãy đo với `-release`, cờ build giống hệt như `nsgo build`.
+`-fps` hiển thị bộ theo dõi hiệu năng phủ lên ứng dụng trên macOS, iOS, Windows, Linux, Android và web. Nó đo số khung hình và số commit, riêng Android còn hiển thị thời gian khứ hồi (round-trip) cho văn bản gốc. Bản build dev có mang theo dev client; hãy đo với `-release`, cờ build giống hệt như `nsgo build`.
 
 ## Ngôn ngữ và giao diện sáng tối
 
@@ -263,7 +263,7 @@ Mọi bản build của ứng dụng, kể cả các gói phát hành, đều nh
 
 | Cờ | Tác dụng |
 | --- | --- |
-| `--nsgo-fps` | Hiện bộ theo dõi hiệu năng trên macOS, iOS, Windows, Linux và Android |
+| `--nsgo-fps` | Hiện bộ theo dõi hiệu năng trên macOS, iOS, Windows, Linux, Android và web |
 | `--nsgo-lang=zh-Hans` | Khởi động ứng dụng với một ngôn ngữ (locale), bao gồm cả ngôn ngữ giả |
 | `--nsgo-appearance=dark` | Khởi động ứng dụng ở chế độ `light`, `dark` hoặc theo `system` |
 | `--nsgo-os=ios` | Chạy bản build web như `macos`, `windows`, `linux`, `ios` hoặc `android` (riêng `web` là chính nó) |

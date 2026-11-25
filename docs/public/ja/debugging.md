@@ -198,7 +198,7 @@ go tool nsgo dev -fps
 go tool nsgo dev -release -fps
 ```
 
-`-fps` は macOS、iOS、Windows、Linux、Android でアプリ上にパフォーマンスモニタを表示します。フレームとコミットを計測し、Android ではネイティブテキストのラウンドトリップ時間も表示します。dev ビルドには dev クライアントが含まれるため、計測時は `nsgo build` と同様にビルドする `-release` を付けてください。
+`-fps` は macOS、iOS、Windows、Linux、Android、Web でアプリ上にパフォーマンスモニタを表示します。フレームとコミットを計測し、Android ではネイティブテキストのラウンドトリップ時間も表示します。dev ビルドには dev クライアントが含まれるため、計測時は `nsgo build` と同様にビルドする `-release` を付けてください。
 
 ## 言語と外観
 
@@ -263,7 +263,7 @@ func registerSceneTool(cx *core.Scope, sceneID *core.Signal[string]) error {
 
 | フラグ | 効果 |
 | --- | --- |
-| `--nsgo-fps` | macOS、iOS、Windows、Linux、Android でパフォーマンスモニタを表示 |
+| `--nsgo-fps` | macOS、iOS、Windows、Linux、Android、Web でパフォーマンスモニタを表示 |
 | `--nsgo-lang=zh-Hans` | 指定ロケール（擬似ロケールも可）でアプリを起動 |
 | `--nsgo-appearance=dark` | アプリを `light`、`dark`、または `system` 追従で起動 |
 | `--nsgo-os=ios` | Web ビルドを `macos`、`windows`、`linux`、`ios`、`android` として実行（`web` はそのまま） |
