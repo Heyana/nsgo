@@ -638,6 +638,56 @@ func TestBenchmarkResults(t *testing.T) {
 	}
 }
 
+// A failing Example prints the text go test compared, which starts at the left edge, so its own indentation survives while the indentation go test adds to a test's log lines still comes off.
+func TestExampleFailureKeepsItsIndentation(t *testing.T) {
+	var out bytes.Buffer
+	r := &testRun{running: map[string]*testResult{}, packages: map[string]*testResult{}, out: &out}
+	r.read(strings.NewReader(`{"Action":"run","Package":"p","Test":"Example_indent"}
+{"Action":"output","Package":"p","Test":"Example_indent","Output":"=== RUN   Example_indent\n"}
+{"Action":"output","Package":"p","Test":"Example_indent","Output":"got:\n"}
+{"Action":"output","Package":"p","Test":"Example_indent","Output":"a:\n"}
+{"Action":"output","Package":"p","Test":"Example_indent","Output":"    b: 1\n"}
+{"Action":"output","Package":"p","Test":"Example_indent","Output":"want:\n"}
+{"Action":"fail","Package":"p","Test":"Example_indent","Elapsed":0.01}
+{"Action":"fail","Package":"p","Elapsed":0.01}
+`))
+	if err := r.finish(testOptions{}, nil); err == nil {
+		t.Fatal("finish reported no failure")
+	}
+	want := margin + "✗ Example_indent (10ms)\n" +
+		margin + "    got:\n" +
+		margin + "    a:\n" +
+		margin + "        b: 1\n" +
+		margin + "    want:\n" +
+		margin + "0 passed, 1 failed, 0 skipped\n"
+	if out.String() != want {
+		t.Fatalf("output:\n%s\nwant:\n%s", out.String(), want)
+	}
+}
+
+// A test's log lines keep their layout: go test indents one by four spaces and a continued line by eight, and both lose the four.
+func TestLogFailureKeepsItsLayout(t *testing.T) {
+	var out bytes.Buffer
+	r := &testRun{running: map[string]*testResult{}, packages: map[string]*testResult{}, out: &out}
+	r.read(strings.NewReader(`{"Action":"run","Package":"p","Test":"TestLogs"}
+{"Action":"output","Package":"p","Test":"TestLogs","Output":"=== RUN   TestLogs\n"}
+{"Action":"output","Package":"p","Test":"TestLogs","Output":"    x_test.go:7: deep message\n"}
+{"Action":"output","Package":"p","Test":"TestLogs","Output":"        second line\n"}
+{"Action":"fail","Package":"p","Test":"TestLogs","Elapsed":0.02}
+{"Action":"fail","Package":"p","Elapsed":0.02}
+`))
+	if err := r.finish(testOptions{}, nil); err == nil {
+		t.Fatal("finish reported no failure")
+	}
+	want := margin + "✗ TestLogs (20ms)\n" +
+		margin + "    x_test.go:7: deep message\n" +
+		margin + "        second line\n" +
+		margin + "0 passed, 1 failed, 0 skipped\n"
+	if out.String() != want {
+		t.Fatalf("output:\n%s\nwant:\n%s", out.String(), want)
+	}
+}
+
 // A process panic can end the package without any closing test event. Keep its last test's output, fail the tests it cut short, a paused parallel one included, and leave another package's tests alone.
 func TestInterruptedTestsKeepTheirOutput(t *testing.T) {
 	var out bytes.Buffer

@@ -698,13 +698,37 @@ func (r *testRun) print(t *testResult) {
 	mark := map[string]string{"pass": "✓", "fail": "✗", "skip": "-"}[t.Status]
 	fmt.Fprintf(r.out, "%s%s %s (%s)\n", margin, mark, t.Name, t.Elapsed.Round(time.Millisecond))
 	if t.Status == "fail" {
+		var lines []string
 		for _, line := range strings.Split(strings.TrimRight(t.Output, "\n"), "\n") {
 			if goTestLine(line) {
 				continue
 			}
-			fmt.Fprintf(r.out, "%s    %s\n", margin, strings.TrimPrefix(line, "    "))
+			lines = append(lines, line)
+		}
+		// go test indents the lines it writes, a test's log lines among them, and leaves what the test prints at the left edge: remove the indentation they share, so an Example's output keeps its own.
+		cut := commonIndent(lines)
+		for _, line := range lines {
+			fmt.Fprintf(r.out, "%s    %s\n", margin, strings.TrimPrefix(line, cut))
 		}
 	}
+}
+
+// commonIndent is the run of spaces every non-blank line starts with, which go test adds to the lines it writes and to none that a test prints itself.
+func commonIndent(lines []string) string {
+	n := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lead := len(line) - len(strings.TrimLeft(line, " "))
+		if n < 0 || lead < n {
+			n = lead
+		}
+	}
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat(" ", n)
 }
 
 // finish prints the tally, writes the JUnit report and reports failure.
