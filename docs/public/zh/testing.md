@@ -96,6 +96,8 @@ func TestMain(m *testing.M) {
 
 无头 GPU 测试可用 `app.Surface("title:Inspector").GPUReadPixels("id:viewport")` 读取对应窗口的软件 GPU 像素。`Surface.TriggerGPUDeviceLost` 和 `Surface.RestoreGPUDevice` 模拟该窗口的设备丢失与恢复，并使用该窗口的像素比例。即使不同窗口中的视图 ID 相同，设备和回读回调也各自独立；`app.GPUFrames()` 记录整个应用的提交。这些辅助方法作用于无头软件 GPU 模型。
 
+要在不打开 GPU 设备的情况下检查着色器的各后端代码生成，可对 `*core.ShaderProgram`（来自 `core.CompileShader` 或 `core.CompileWGSL`）调用 `nsgotest.TranslateShader`，或对 `*gpu.ShaderModule`（来自 `gpu.CompileWGSL` 或 `gpu.CompileKage`）调用 `nsgotest.TranslateShaderModule`。两者都会返回包含 `MSL`、`HLSL`、`GLSL`、`GLES` 和 `WGSL` 源码的 `nsgotest.ShaderSources`，并将各后端的翻译错误（包括恢复的 translator panic）连同后端名称一并报告；`gpu.TranslateShaderModule` 还返回分阶段的 `gpu.PipelineSources` 与各后端独立错误。
+
 `nsgotest.UpdaterState(core.UpdaterState{...})` 可在第一次渲染前设置更新器的能力和偏好，适用于无窗口测试及原生目标。通过 `app.Update` 提供每次检查的结果；偏好变更由测试模型处理，不访问更新源。
 
 无头测试通过 `app.EditMenu` 和 `app.EditMenuItems()` 检查编辑菜单，用 `app.ChooseEditAction(core.EditCopy)` 选择已提供的操作，用 `app.CloseEditMenu()` 关闭菜单；粘贴使用测试的剪贴板。`app.LongPressAt(selector, point)` 长按指定位置；无头测试中，`app.Touch(selector, point).Hold(duration)` 会在手指抬起之前触发长按，随后可用 `Move` 测试选区扫动。这些菜单记录和操作选择检查模型行为，系统工具栏仍需原生验收。

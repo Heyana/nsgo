@@ -147,6 +147,15 @@ func MustCompileShader(src string) *ShaderProgram {
 
 // HasUniform reports whether the program has a uniform named name, which
 // Uniforms may set.
+// DriverShaderProgram returns the driver representation of p, or nil when p is nil.
+// Called by nsgotest; never by apps.
+func DriverShaderProgram(p *ShaderProgram) *driver.ShaderProgram {
+	if p == nil {
+		return nil
+	}
+	return p.p
+}
+
 // UniformLanes returns where a uniform lies in a shader's lanes and how
 // many lanes it takes, so a test can read it without knowing the order its
 // program declares its uniforms in. The lane indexes Shader.Lanes as the
