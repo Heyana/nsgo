@@ -66,7 +66,7 @@ NSGo veröffentlicht nach Bedarf, wenn ein nachgelagertes Projekt eine getaggte 
 
 Um eine bereits gemergte Änderung vor dem Taggen zu testen, führen Sie im abhängigen Modul `go get github.com/nsgo-dev/nsgo@main` aus. Anstelle von `main` können Sie eine Commit-ID angeben, um genau die verifizierte Revision auszuwählen. Go trägt die resultierende Pseudo-Version in `go.mod` ein.
 
-Ein Maintainer versieht die Änderungen in `CHANGELOG.md` mit Version und Datum, lässt einen frischen „Unreleased“-Abschnitt stehen und taggt den resultierenden Commit auf `main`. Der [Release-Workflow](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) prüft das Tag und veröffentlicht es, nachdem der Test-Workflow bestanden wurde; die veröffentlichten Release-Notes wandern dann aus `CHANGELOG.md`, das nur unveröffentlichte Änderungen behält, zu den [Releases](https://github.com/nsgo-dev/nsgo/releases).
+Ein Maintainer führt `go run ./tools/changelog release X.Y.Z` aus, das die Änderungen in `CHANGELOG.md` mit Version und Datum versieht und einen frischen „Unreleased“-Abschnitt stehen lässt, merged das nach `main` und startet dann den [Release-Workflow](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) mit dieser Version: `gh workflow run release.yml -f version=X.Y.Z`. Der Workflow führt alle Prüfungen und Tests auf dem neuesten Commit von `main` aus und taggt diesen Commit erst danach als `vX.Y.Z` und veröffentlicht ihn, sodass ein Fehlschlag die Versionsnummer nicht verbraucht; die veröffentlichten Release-Notes wandern dann aus `CHANGELOG.md`, das nur unveröffentlichte Änderungen behält, zu den [Releases](https://github.com/nsgo-dev/nsgo/releases).
 
 ## NSH
 

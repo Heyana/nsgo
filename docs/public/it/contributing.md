@@ -66,7 +66,7 @@ NSGo effettua rilasci su richiesta quando un progetto a valle necessita di una v
 
 Per testare una modifica già unita su `main` prima che sia taggata, esegui `go get github.com/nsgo-dev/nsgo@main` dal modulo dipendente. Puoi usare un ID di commit al posto di `main` per selezionare la revisione verificata. Go registra la risultante pseudo-versione in `go.mod`.
 
-Un manutentore assegna alle modifiche la versione e la data in `CHANGELOG.md`, lascia una nuova sezione Unreleased e tagga il commit risultante su `main`. Il [workflow di rilascio](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) controlla il tag e lo pubblica dopo che il workflow dei test è passato; le note pubblicate lasciano quindi `CHANGELOG.md`, che conserva solo le modifiche non ancora rilasciate, per i [Rilasci](https://github.com/nsgo-dev/nsgo/releases).
+Un manutentore esegue `go run ./tools/changelog release X.Y.Z`, che assegna alle modifiche la versione e la data in `CHANGELOG.md` e lascia una nuova sezione Unreleased, lo unisce a `main`, poi avvia il [workflow di rilascio](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) con quella versione: `gh workflow run release.yml -f version=X.Y.Z`. Il workflow esegue tutti i controlli e i test sull'ultimo commit di `main` e solo quando passano tagga quel commit come `vX.Y.Z` e lo pubblica, così un fallimento non consuma il numero di versione; le note pubblicate lasciano quindi `CHANGELOG.md`, che conserva solo le modifiche non ancora rilasciate, per i [Rilasci](https://github.com/nsgo-dev/nsgo/releases).
 
 ## NSH
 

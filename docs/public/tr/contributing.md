@@ -66,7 +66,7 @@ NSGo, alt akış bir proje etiketlenmiş bir sürüme ihtiyaç duyduğunda veya 
 
 Birleştirilmiş bir değişikliği etiketlenmeden önce test etmek için bağımlı modülden `go get github.com/nsgo-dev/nsgo@main` çalıştırın. Doğruladığınız revizyonu seçmek için `main` yerine bir commit kimliği kullanabilirsiniz. Go elde edilen sözde sürümü `go.mod` dosyasına kaydeder.
 
-Bir bakımcı değişikliklere `CHANGELOG.md` içinde sürüm ve tarih verir, yeni bir Unreleased bölümü bırakır ve `main` üzerindeki ilgili commit'i etiketler. [Sürüm iş akışı](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) etiketi denetler ve test iş akışı geçtikten sonra yayınlar; yayınlanan notlar daha sonra yalnızca yayınlanmamış değişiklikleri tutan `CHANGELOG.md` dosyasından [Sürümler](https://github.com/nsgo-dev/nsgo/releases) sayfasına geçer.
+Bir bakımcı, değişikliklere `CHANGELOG.md` içinde sürüm ve tarih veren ve yeni bir Unreleased bölümü bırakan `go run ./tools/changelog release X.Y.Z` komutunu çalıştırır, sonucu `main`'e birleştirir ve ardından [sürüm iş akışını](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) bu sürümle çalıştırır: `gh workflow run release.yml -f version=X.Y.Z`. İş akışı tüm denetimleri ve testleri `main`'in en son commit'i üzerinde çalıştırır ve ancak hepsi geçtiğinde bu commit'i `vX.Y.Z` olarak etiketleyip yayınlar; böylece bir başarısızlık sürüm numarasını harcamaz. Yayınlanan notlar daha sonra yalnızca yayınlanmamış değişiklikleri tutan `CHANGELOG.md` dosyasından [Sürümler](https://github.com/nsgo-dev/nsgo/releases) sayfasına geçer.
 
 ## NSH
 

@@ -66,7 +66,7 @@ NSGo phát hành theo nhu cầu khi một dự án phụ thuộc cần một phi
 
 Để kiểm thử một thay đổi đã gộp trước khi nó được gắn thẻ, hãy chạy `go get github.com/nsgo-dev/nsgo@main` từ module phụ thuộc. Bạn có thể dùng mã commit thay cho `main` để chọn đúng bản sửa đổi đã kiểm chứng. Go sẽ ghi lại phiên bản giả (pseudo-version) tương ứng vào `go.mod`.
 
-Một maintainer sẽ gán phiên bản và ngày phát hành cho các thay đổi trong `CHANGELOG.md`, để lại một mục Unreleased mới, rồi gắn thẻ lên commit tương ứng trên `main`. [Workflow phát hành](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) sẽ kiểm tra thẻ và xuất bản sau khi workflow kiểm thử chạy thành công; ghi chú phát hành khi đó sẽ rời khỏi `CHANGELOG.md` — nơi chỉ giữ các thay đổi chưa phát hành — để chuyển sang mục [Releases](https://github.com/nsgo-dev/nsgo/releases).
+Một maintainer chạy `go run ./tools/changelog release X.Y.Z` để gán phiên bản và ngày phát hành cho các thay đổi trong `CHANGELOG.md` và để lại một mục Unreleased mới, merge vào `main`, rồi chạy [workflow phát hành](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) với phiên bản đó: `gh workflow run release.yml -f version=X.Y.Z`. Workflow chạy mọi bước kiểm tra và kiểm thử trên commit mới nhất của `main`, và chỉ khi tất cả đều đạt mới gắn thẻ `vX.Y.Z` lên commit đó và xuất bản, nên một lần thất bại không làm mất số phiên bản; ghi chú phát hành khi đó sẽ rời khỏi `CHANGELOG.md` — nơi chỉ giữ các thay đổi chưa phát hành — để chuyển sang mục [Releases](https://github.com/nsgo-dev/nsgo/releases).
 
 ## NSH
 

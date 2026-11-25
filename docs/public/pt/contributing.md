@@ -66,7 +66,7 @@ O NSGo faz lançamentos sob demanda quando um projeto dependente precisa de uma 
 
 Para testar uma alteração mesclada antes de ela receber uma tag, execute `go get github.com/nsgo-dev/nsgo@main` no módulo dependente. Você pode usar um ID de commit no lugar de `main` para selecionar a revisão verificada. O Go registra a pseudoversão resultante em `go.mod`.
 
-Um mantenedor atribui às alterações sua versão e data em `CHANGELOG.md`, deixa uma nova seção Unreleased e cria uma tag no commit resultante em `main`. O [workflow de lançamento](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) verifica a tag e a publica após o workflow de testes passar; as notas publicadas então saem do `CHANGELOG.md`, que mantém apenas alterações não lançadas, para [Releases](https://github.com/nsgo-dev/nsgo/releases).
+Um mantenedor executa `go run ./tools/changelog release X.Y.Z`, que atribui às alterações sua versão e data em `CHANGELOG.md` e deixa uma nova seção Unreleased, faz o merge em `main` e então executa o [workflow de lançamento](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) com essa versão: `gh workflow run release.yml -f version=X.Y.Z`. O workflow executa todas as verificações e testes no último commit de `main` e só depois que passam cria a tag `vX.Y.Z` nesse commit e o publica, de modo que uma falha não consome o número de versão; as notas publicadas então saem do `CHANGELOG.md`, que mantém apenas alterações não lançadas, para [Releases](https://github.com/nsgo-dev/nsgo/releases).
 
 ## NSH
 

@@ -66,7 +66,7 @@ NSGo merilis sesuai kebutuhan ketika proyek hilir membutuhkan versi bertag atau 
 
 Untuk menguji perubahan yang sudah di-merge sebelum diberi tag, jalankan `go get github.com/nsgo-dev/nsgo@main` dari modul yang bergantung padanya. Anda dapat menggunakan ID commit sebagai pengganti `main` untuk memilih revisi yang telah Anda verifikasi. Go mencatat pseudo-version hasilnya di `go.mod`.
 
-Seorang pengelola memberikan versi dan tanggal pada perubahan-perubahan tersebut di `CHANGELOG.md`, menyisakan bagian Unreleased yang baru, dan memberi tag pada commit hasilnya di `main`. [Alur kerja rilis](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) memeriksa tag tersebut dan menerbitkannya setelah alur kerja pengujian lolos; catatan yang diterbitkan kemudian berpindah dari `CHANGELOG.md`—yang hanya menyimpan perubahan yang belum dirilis—ke [Rilis](https://github.com/nsgo-dev/nsgo/releases).
+Seorang pengelola menjalankan `go run ./tools/changelog release X.Y.Z`, yang memberikan versi dan tanggal pada perubahan di `CHANGELOG.md` serta menyisakan bagian Unreleased yang baru, menggabungkannya ke `main`, lalu menjalankan [alur kerja rilis](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) dengan versi tersebut: `gh workflow run release.yml -f version=X.Y.Z`. Alur kerja itu menjalankan semua pemeriksaan dan pengujian pada commit terbaru `main` dan baru memberi tag `vX.Y.Z` pada commit itu serta menerbitkannya setelah semuanya lolos, sehingga kegagalan tidak menghabiskan nomor versi; catatan yang diterbitkan kemudian berpindah dari `CHANGELOG.md`—yang hanya menyimpan perubahan yang belum dirilis—ke [Rilis](https://github.com/nsgo-dev/nsgo/releases).
 
 ## NSH
 

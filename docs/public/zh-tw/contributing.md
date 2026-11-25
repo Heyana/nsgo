@@ -66,7 +66,7 @@ NSGo 會在下游客戶專案需要特定標籤版本或維護者有已準備好
 
 若要在正式打標籤前測試已合併的變更，請在相依模組中執行 `go get github.com/nsgo-dev/nsgo@main`。你也可以用 commit ID 取代 `main` 以選取你已驗證的修訂版本。Go 會將產生的偽版本（pseudo-version）記錄在 `go.mod` 中。
 
-維護者會在 `CHANGELOG.md` 中為變更填入版本號與日期、保留一個全新的 Unreleased 區段，並在 `main` 上為該 commit 打上標籤。[發佈工作流程](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml)會檢查該標籤，並在測試工作流程通過後正式發佈；已發佈的更新日誌隨後會自 `CHANGELOG.md` 移除（該檔案僅保留尚未發佈的變更），並公布於 [Releases](https://github.com/nsgo-dev/nsgo/releases)。
+維護者執行 `go run ./tools/changelog release X.Y.Z`，在 `CHANGELOG.md` 中為變更填入版本號與日期並保留一個全新的 Unreleased 區段，合併到 `main` 後，以該版本執行[發佈工作流程](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml)：`gh workflow run release.yml -f version=X.Y.Z`。工作流程會在 `main` 的最新 commit 上跑完所有檢查與測試，全部通過後才為該 commit 打上 `vX.Y.Z` 標籤並發佈，失敗時版本號不會被占用；已發佈的更新日誌隨後會自 `CHANGELOG.md` 移除（該檔案僅保留尚未發佈的變更），並公布於 [Releases](https://github.com/nsgo-dev/nsgo/releases)。
 
 ## NSH
 

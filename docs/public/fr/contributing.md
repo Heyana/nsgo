@@ -66,7 +66,7 @@ NSGo publie des versions à la demande lorsqu'un projet en aval a besoin d'une v
 
 Pour tester une modification fusionnée avant qu'elle ne soit taguée, exécutez `go get github.com/nsgo-dev/nsgo@main` depuis le module dépendant. Vous pouvez utiliser un identifiant de commit à la place de `main` pour sélectionner la révision vérifiée. Go enregistre la pseudo-version résultante dans `go.mod`.
 
-Un mainteneur attribue leur version et leur date aux changements dans `CHANGELOG.md`, laisse une nouvelle section Unreleased, puis tague le commit correspondant sur `main`. Le [workflow de publication](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) vérifie le tag et le publie après la réussite du workflow de tests ; les notes publiées quittent alors `CHANGELOG.md`, qui ne conserve que les changements non publiés, pour apparaître dans [Releases](https://github.com/nsgo-dev/nsgo/releases).
+Un mainteneur lance `go run ./tools/changelog release X.Y.Z`, qui attribue leur version et leur date aux changements dans `CHANGELOG.md` et laisse une nouvelle section Unreleased, le fusionne dans `main`, puis lance le [workflow de publication](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) avec cette version : `gh workflow run release.yml -f version=X.Y.Z`. Le workflow exécute toutes les vérifications et tous les tests sur le dernier commit de `main` et ne tague ce commit `vX.Y.Z` puis ne le publie qu'une fois qu'ils réussissent, si bien qu'un échec ne consomme pas le numéro de version ; les notes publiées quittent alors `CHANGELOG.md`, qui ne conserve que les changements non publiés, pour apparaître dans [Releases](https://github.com/nsgo-dev/nsgo/releases).
 
 ## NSH
 

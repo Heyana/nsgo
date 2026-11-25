@@ -66,7 +66,7 @@ go tool nsgo test -target harmonyos -run TestHarmonyOSPages -timeout 10m ./examp
 
 Чтобы протестировать смерженное изменение до выпуска тега, выполните `go get github.com/nsgo-dev/nsgo@main` в зависимом модуле. Вместо `main` можно указать идентификатор конкретного проверенного коммита. Go запишет полученную псевдоверсию в `go.mod`.
 
-Мейнтейнер присваивает изменениям версию и дату в `CHANGELOG.md`, оставляет новый раздел Unreleased и ставит тег на итоговый коммит в `main`. [Рабочий процесс релиза](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) проверяет тег и публикует релиз после прохождения тестов; опубликованные примечания затем переносятся из `CHANGELOG.md` (где остаются только невыпущенные изменения) в раздел [Релизы](https://github.com/nsgo-dev/nsgo/releases).
+Мейнтейнер запускает `go run ./tools/changelog release X.Y.Z`, который присваивает изменениям версию и дату в `CHANGELOG.md` и оставляет новый раздел Unreleased, сливает это в `main`, а затем запускает [рабочий процесс релиза](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) с этой версией: `gh workflow run release.yml -f version=X.Y.Z`. Рабочий процесс выполняет все проверки и тесты на последнем коммите `main` и только после их прохождения ставит на этот коммит тег `vX.Y.Z` и публикует релиз, поэтому неудача не расходует номер версии; опубликованные примечания затем переносятся из `CHANGELOG.md` (где остаются только невыпущенные изменения) в раздел [Релизы](https://github.com/nsgo-dev/nsgo/releases).
 
 ## NSH
 

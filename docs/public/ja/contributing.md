@@ -66,7 +66,7 @@ NSGo は、下流プロジェクトがタグ付きバージョンを必要とす
 
 タグ付け前にマージ済みの変更をテストするには、依存元モジュールから `go get github.com/nsgo-dev/nsgo@main` を実行します。検証済みのリビジョンを指定したい場合は、`main` の代わりにコミット ID を使えます。Go はその結果の擬似バージョンを `go.mod` に記録します。
 
-メンテナが `CHANGELOG.md` に変更のバージョンと日付を付与し、新しい Unreleased セクションを残して `main` 上のそのコミットにタグを付けます。[リリースワークフロー](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml)がそのタグを確認し、テストワークフローの通過後に公開します。公開されたノートは `CHANGELOG.md`（未リリースの変更のみ保持）から [Releases](https://github.com/nsgo-dev/nsgo/releases) へと移されます。
+メンテナは `go run ./tools/changelog release X.Y.Z` を実行して `CHANGELOG.md` の変更にバージョンと日付を付与し、新しい Unreleased セクションを残します。それを `main` にマージしたら、そのバージョンで[リリースワークフロー](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml)を実行します：`gh workflow run release.yml -f version=X.Y.Z`。ワークフローは `main` の最新コミットですべてのチェックとテストを実行し、すべて通過したときにだけそのコミットに `vX.Y.Z` のタグを付けて公開するため、失敗してもバージョン番号は失われません。公開されたノートは `CHANGELOG.md`（未リリースの変更のみ保持）から [Releases](https://github.com/nsgo-dev/nsgo/releases) へと移されます。
 
 ## NSH
 

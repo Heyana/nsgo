@@ -66,7 +66,7 @@ NSGo는 하위 프로젝트가 태그된 버전을 필요로 하거나 메인테
 
 태그되기 전에 병합된 변경 사항을 테스트하려면 의존 모듈에서 `go get github.com/nsgo-dev/nsgo@main`을 실행하세요. 검증할 리비전을 선택하려면 `main` 대신 커밋 ID를 사용할 수 있습니다. Go는 결과 의사 버전(pseudo-version)을 `go.mod`에 기록합니다.
 
-메인테이너가 `CHANGELOG.md`의 변경 사항에 버전과 날짜를 부여하고 새 Unreleased 섹션을 남긴 뒤 `main`의 해당 커밋에 태그를 답니다. [릴리스 워크플로](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml)는 태그를 확인하고 테스트 워크플로가 통과한 후 릴리스를 게시합니다. 게시된 릴리스 노트는 미출시 변경 사항만 남기는 `CHANGELOG.md`를 떠나 [Releases](https://github.com/nsgo-dev/nsgo/releases)로 이동합니다.
+메인테이너가 `go run ./tools/changelog release X.Y.Z`를 실행해 `CHANGELOG.md`의 변경 사항에 버전과 날짜를 부여하고 새 Unreleased 섹션을 남긴 뒤, 이를 `main`에 병합하고 그 버전으로 [릴리스 워크플로](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml)를 실행합니다: `gh workflow run release.yml -f version=X.Y.Z`. 워크플로는 `main`의 최신 커밋에서 모든 검사와 테스트를 실행하고, 모두 통과한 경우에만 그 커밋에 `vX.Y.Z` 태그를 달아 게시하므로 실패해도 버전 번호가 소모되지 않습니다. 게시된 릴리스 노트는 미출시 변경 사항만 남기는 `CHANGELOG.md`를 떠나 [Releases](https://github.com/nsgo-dev/nsgo/releases)로 이동합니다.
 
 ## NSH
 

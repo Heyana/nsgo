@@ -66,7 +66,7 @@ NSGo lanza versiones bajo demanda cuando un proyecto dependiente necesita una ve
 
 Para probar un cambio fusionado antes de que sea etiquetado, ejecute `go get github.com/nsgo-dev/nsgo@main` desde el módulo dependiente. Puede usar un ID de commit en lugar de `main` para seleccionar la revisión que verificó. Go registra la pseudoversión resultante en `go.mod`.
 
-Un mantenedor asigna a los cambios su versión y fecha en `CHANGELOG.md`, deja una nueva sección Unreleased y etiqueta el commit resultante en `main`. El [flujo de lanzamiento](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) comprueba la etiqueta y la publica después de que pase el flujo de pruebas; las notas publicadas salen entonces de `CHANGELOG.md`, que conserva solo los cambios no publicados, hacia [Lanzamientos](https://github.com/nsgo-dev/nsgo/releases).
+Un mantenedor ejecuta `go run ./tools/changelog release X.Y.Z`, que asigna a los cambios su versión y fecha en `CHANGELOG.md` y deja una nueva sección Unreleased, lo fusiona en `main` y luego ejecuta el [flujo de lanzamiento](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) con esa versión: `gh workflow run release.yml -f version=X.Y.Z`. El flujo ejecuta todas las comprobaciones y pruebas sobre el último commit de `main` y solo cuando pasan etiqueta ese commit como `vX.Y.Z` y lo publica, de modo que un fallo no consume el número de versión; las notas publicadas salen entonces de `CHANGELOG.md`, que conserva solo los cambios no publicados, hacia [Lanzamientos](https://github.com/nsgo-dev/nsgo/releases).
 
 ## NSH
 
