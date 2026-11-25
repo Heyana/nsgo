@@ -9,6 +9,7 @@ import (
 
 	"github.com/ebitengine/purego/objc"
 
+	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/engine"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
@@ -36,10 +37,13 @@ func TestDirectionMirrorsUIKitControls(t *testing.T) {
 		win.Send(sel("setRootViewController:"), rootVC)
 		win.Send(sel("makeKeyAndVisible"))
 
+		// The switch, the tab bar and the navigation bar report to the engine as they are made and laid out, so the surfaces need a running one: an Engine's zero value has no runner to dispatch to.
+		eng := engine.Start(idlePlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{})
+		defer eng.Close()
 		s := &surface{
 			native:   objc.ID(classView).Send(selAlloc).Send(selInitWithFrame, apple.Rect(0, 0, 390, 844)),
 			views:    make([]*view, 10),
-			engine:   &engine.Engine{},
+			engine:   eng,
 			animator: driver.NewAnimator(func(driver.Event) {}),
 			slides:   map[*view]*slide{},
 		}
@@ -261,7 +265,7 @@ func TestDirectionMirrorsUIKitControls(t *testing.T) {
 			embedded: true,
 			native:   objc.ID(classView).Send(selAlloc).Send(selInitWithFrame, apple.Rect(0, 0, 200, 100)),
 			views:    make([]*view, 4),
-			engine:   &engine.Engine{},
+			engine:   eng,
 			animator: driver.NewAnimator(func(driver.Event) {}),
 			slides:   map[*view]*slide{},
 		}
@@ -282,3 +286,10 @@ func TestDirectionMirrorsUIKitControls(t *testing.T) {
 		}
 	})
 }
+
+// idlePlatform is a platform that shows nothing, for an engine that only takes a test surface's events.
+type idlePlatform struct{ apple.TextEngine }
+
+func (idlePlatform) Mount(*driver.MountBatch)  {}
+func (idlePlatform) RequestFrame()             {}
+func (idlePlatform) SubmitGPU(driver.GPUFrame) {}
