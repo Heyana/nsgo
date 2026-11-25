@@ -17,3 +17,8 @@ func RegisterAutomationTool(*Scope, AutomationTool) error { return nil }
 func CallAutomationTool(*Scope, context.Context, string, json.RawMessage) (json.RawMessage, error) {
 	return nil, errors.ErrUnsupported
 }
+
+// DecodeAutomationResult is automation's result decoder, unavailable in this build.
+func DecodeAutomationResult(json.RawMessage) (AutomationResult, bool, error) {
+	return AutomationResult{}, false, errors.ErrUnsupported
+}

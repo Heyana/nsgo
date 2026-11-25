@@ -232,7 +232,7 @@ var twinned = []string{"base.List.ListStyle", "base.Slider.StartLabel", "base.Tr
 // component props still awaiting bindings. Remove a field when adding its
 // twin.
 var textFuncExceptions = strings.Fields(`
-core.AutomationTool.Description core.Composition.Text core.HeaderSymbol.Label core.MenuItem.Label core.Notification.Title
+core.AutomationResult.Text core.AutomationTool.Description core.Composition.Text core.HeaderSymbol.Label core.MenuItem.Label core.Notification.Title
 core.PickDirectoriesOptions.Title core.PickFilesOptions.Title core.ShareOptions.Text core.TabBarItem.Title
 core.SelectionBlock.Label core.SelectionBlock.Title core.SelectionInline.Label core.SelectionInline.Text core.SelectionInline.Title
 core.TextSelection.Text core.TrayOptions.Title core.WindowOptions.Title

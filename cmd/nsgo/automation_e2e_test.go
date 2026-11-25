@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -375,5 +376,50 @@ func exerciseAppMCPTool(t *testing.T, h *automationHub, fixtureDir string) {
 	var value map[string]int
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &value); err != nil || value["count"] != 3 {
 		t.Fatalf("set_count returned %+v, %v", value, err)
+	}
+	verifyAppImageMCPTools(t, ctx, cs)
+}
+
+func verifyAppImageMCPTools(t *testing.T, ctx context.Context, cs *mcp.ClientSession) {
+	t.Helper()
+	// Image-only Result (empty text) returns a single PNG ImageContent.
+	imgOnly, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "render_badge", Arguments: map[string]any{}})
+	if err != nil || imgOnly.IsError || len(imgOnly.Content) != 1 {
+		t.Fatalf("render_badge (image only): %+v, %v", imgOnly, err)
+	}
+	ic, ok := imgOnly.Content[0].(*mcp.ImageContent)
+	if !ok || ic.MIMEType != "image/png" {
+		t.Fatalf("render_badge[0] = %+v", imgOnly.Content[0])
+	}
+	if cfg, err := png.DecodeConfig(bytes.NewReader(ic.Data)); err != nil || cfg.Width != 2 || cfg.Height != 1 {
+		t.Fatalf("render_badge PNG = %+v, err=%v", cfg, err)
+	}
+
+	// Text + Image Result returns TextContent followed by ImageContent.
+	withText, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "render_badge", Arguments: map[string]any{"text": "badge ok"}})
+	if err != nil || withText.IsError || len(withText.Content) != 2 {
+		t.Fatalf("render_badge (text+image): %+v, %v", withText, err)
+	}
+	if tc, ok := withText.Content[0].(*mcp.TextContent); !ok || tc.Text != "badge ok" {
+		t.Fatalf("render_badge text = %+v", withText.Content[0])
+	}
+	if ic, ok := withText.Content[1].(*mcp.ImageContent); !ok || ic.MIMEType != "image/png" || len(ic.Data) == 0 {
+		t.Fatalf("render_badge image = %+v", withText.Content[1])
+	}
+
+	// Plain struct with a png field returns JSON text, not ImageContent.
+	plain, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "png_json", Arguments: map[string]any{}})
+	if err != nil || plain.IsError || len(plain.Content) != 1 {
+		t.Fatalf("png_json: %+v, %v", plain, err)
+	}
+	tc, ok := plain.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("png_json returned %T instead of *mcp.TextContent", plain.Content[0])
+	}
+	var payload struct {
+		PNG []byte `json:"png"`
+	}
+	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil || len(payload.PNG) == 0 {
+		t.Fatalf("png_json text = %q, err=%v", tc.Text, err)
 	}
 }

@@ -19,13 +19,17 @@ import (
 
 // fakeBridge answers as nsgo dev -automation would, recording the calls.
 type fakeBridge struct {
-	calls    []string
-	png      []byte
-	appTools []automation.AppTool
+	calls      []string
+	png        []byte
+	appTools   []automation.AppTool
+	appResults map[string]json.RawMessage
 }
 
 func (f *fakeBridge) call(_ context.Context, method string, params json.RawMessage) (json.RawMessage, *automation.Error) {
 	f.calls = append(f.calls, method+" "+string(params))
+	if raw, ok := f.appResults[method]; ok {
+		return raw, nil
+	}
 	var result any
 	switch method {
 	case automation.ListAppTools:
@@ -223,5 +227,114 @@ func TestMCPAppToolCatalog(t *testing.T) {
 	b.appTools = nil
 	if has(tool.Name, "Change the count") {
 		t.Fatal("the removed tool is still published")
+	}
+}
+
+func TestMCPAppToolResults(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	img.Set(0, 0, color.White)
+	var pic bytes.Buffer
+	png.Encode(&pic, img)
+	pngBytes := pic.Bytes()
+	jpegBytes := []byte("fake-jpeg")
+
+	encode := func(r automation.AppToolResult) json.RawMessage {
+		t.Helper()
+		raw, err := automation.EncodeAppToolResult(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	plainPNG, _ := json.Marshal(struct {
+		PNG    []byte `json:"png"`
+		Width  int    `json:"width"`
+		Height int    `json:"height"`
+	}{PNG: pngBytes, Width: 2, Height: 1})
+
+	schema := json.RawMessage(`{"type":"object"}`)
+	b := &fakeBridge{
+		appTools: []automation.AppTool{
+			{Name: "image_only", Description: "Image only", InputSchema: schema},
+			{Name: "text_and_images", Description: "Text and images", InputSchema: schema},
+			{Name: "text_only", Description: "Text only", InputSchema: schema},
+			{Name: "empty_result", Description: "Empty result", InputSchema: schema},
+			{Name: "plain_png", Description: "Plain struct with png", InputSchema: schema},
+			{Name: "corrupt_envelope", Description: "Corrupt envelope", InputSchema: schema},
+		},
+		appResults: map[string]json.RawMessage{
+			"image_only":       encode(automation.AppToolResult{Images: []automation.AppToolImage{{Data: pngBytes}}}),
+			"text_and_images":  encode(automation.AppToolResult{Text: "rendered", Images: []automation.AppToolImage{{Data: pngBytes, MIMEType: "image/png"}, {Data: jpegBytes, MIMEType: "image/jpeg"}}}),
+			"text_only":        encode(automation.AppToolResult{Text: "just text"}),
+			"empty_result":     encode(automation.AppToolResult{}),
+			"plain_png":        plainPNG,
+			"corrupt_envelope": json.RawMessage(`{"_nsgoAppResult":{"images":[{"data":123}]}}`),
+		},
+	}
+	cs := connectMCP(t, b)
+	ctx := t.Context()
+
+	// Image-only result defaults empty MIMEType to image/png.
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "image_only", Arguments: map[string]any{}})
+	if err != nil || res.IsError || len(res.Content) != 1 {
+		t.Fatalf("image_only: %+v, %v", res, err)
+	}
+	ic, ok := res.Content[0].(*mcp.ImageContent)
+	if !ok || ic.MIMEType != "image/png" || !bytes.Equal(ic.Data, pngBytes) {
+		t.Fatalf("image_only content = %+v", res.Content[0])
+	}
+
+	// Text + multiple images preserves text first, then each image with its MIME type.
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "text_and_images", Arguments: map[string]any{}})
+	if err != nil || res.IsError || len(res.Content) != 3 {
+		t.Fatalf("text_and_images: %+v, %v", res, err)
+	}
+	if tc, ok := res.Content[0].(*mcp.TextContent); !ok || tc.Text != "rendered" {
+		t.Fatalf("text_and_images[0] = %+v", res.Content[0])
+	}
+	if ic, ok := res.Content[1].(*mcp.ImageContent); !ok || ic.MIMEType != "image/png" || !bytes.Equal(ic.Data, pngBytes) {
+		t.Fatalf("text_and_images[1] = %+v", res.Content[1])
+	}
+	if ic, ok := res.Content[2].(*mcp.ImageContent); !ok || ic.MIMEType != "image/jpeg" || !bytes.Equal(ic.Data, jpegBytes) {
+		t.Fatalf("text_and_images[2] = %+v", res.Content[2])
+	}
+
+	// Text-only explicit Result emits a single TextContent without JSON quoting.
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "text_only", Arguments: map[string]any{}})
+	if err != nil || res.IsError || len(res.Content) != 1 {
+		t.Fatalf("text_only: %+v, %v", res, err)
+	}
+	if tc, ok := res.Content[0].(*mcp.TextContent); !ok || tc.Text != "just text" {
+		t.Fatalf("text_only content = %+v", res.Content[0])
+	}
+
+	// Empty explicit Result emits empty Content.
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "empty_result", Arguments: map[string]any{}})
+	if err != nil || res.IsError || len(res.Content) != 0 {
+		t.Fatalf("empty_result: %+v, %v", res, err)
+	}
+
+	// A plain struct with a png field cannot spoof an image content item: it returns indented JSON text.
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "plain_png", Arguments: map[string]any{}})
+	if err != nil || res.IsError || len(res.Content) != 1 {
+		t.Fatalf("plain_png: %+v, %v", res, err)
+	}
+	tc, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("plain_png returned %T instead of *mcp.TextContent", res.Content[0])
+	}
+	var gotPlain struct {
+		PNG    []byte `json:"png"`
+		Width  int    `json:"width"`
+		Height int    `json:"height"`
+	}
+	if err := json.Unmarshal([]byte(tc.Text), &gotPlain); err != nil || !bytes.Equal(gotPlain.PNG, pngBytes) || gotPlain.Width != 2 {
+		t.Fatalf("plain_png JSON text = %q, err = %v", tc.Text, err)
+	}
+
+	// A corrupt envelope returns a tool error.
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "corrupt_envelope", Arguments: map[string]any{}})
+	if err != nil || !res.IsError {
+		t.Fatalf("corrupt_envelope: %+v, %v", res, err)
 	}
 }

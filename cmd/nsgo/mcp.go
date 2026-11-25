@@ -111,11 +111,15 @@ func mcpResult(method string, result json.RawMessage) *mcp.CallToolResult {
 			return text(s)
 		}
 	}
+	return mcpJSONResult(result)
+}
+
+func mcpJSONResult(result json.RawMessage) *mcp.CallToolResult {
 	var out bytes.Buffer
 	if json.Indent(&out, result, "", "  ") != nil {
-		return text(string(result))
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(result)}}}
 	}
-	return text(out.String())
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out.String()}}}
 }
 
 // serveMCP serves MCP on standard input and output for the app in p.Dir, with args, mcp's arguments, for the nsgo dev -automation it starts when none runs.

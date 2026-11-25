@@ -253,9 +253,9 @@ func registerSceneTool(cx *core.Scope, sceneID *core.Signal[string]) error {
 }
 ```
 
-The name must be unique on the app's graph and distinct from the built-in names. `nsgo mcp` lists the tool until the scope is cleaned up. The handler runs on the engine goroutine, so it can read or set signals. It receives a JSON object, checks the arguments it needs and returns a JSON-encodable value or an error.
+The name must be unique on the app's graph and distinct from the built-in names. `nsgo mcp` lists the tool until the scope is cleaned up. The handler runs on the engine goroutine, so it can read or set signals. It receives a JSON object, checks the arguments it needs and returns a JSON-encodable value, an `automation.Result` (or `*automation.Result`) with text and `automation.Image` entries (`MIMEType` defaults to `"image/png"` when empty), or an error.
 
-In a test, capture the scope when the app starts, call `automation.Call(cx, ctx, name, args)` inside `app.Post`, then use `app.Settle()` before checking the result or the view. Registration is active in `dev -automation` and tests and is a no-op in release builds.
+In a test, capture the scope when the app starts, call `automation.Call(cx, ctx, name, args)` inside `app.Post` (using `automation.DecodeResult` when the tool returns an `automation.Result`), then use `app.Settle()` before checking the result or the view. Registration is active in `dev -automation` and tests and is a no-op in release builds.
 
 ## Flags of every build
 
