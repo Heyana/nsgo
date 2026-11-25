@@ -140,6 +140,8 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 		err error
 		// why is set when the target was skipped.
 		why string
+		// empty is set when the target was skipped for having no packages at all.
+		empty bool
 	}
 	outcomes := make([]outcome, len(names))
 	slots := make(chan struct{}, max(1, min(jobs, len(names))))
@@ -167,6 +169,13 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 			if err != nil && optional && ctx.Err() == nil {
 				outcomes[i].why = err.Error()
 				return
+			}
+			if err == nil {
+				if none, lerr := targetListsNoPackages(ctx, p, env, targetTags(name)); lerr == nil && none {
+					outcomes[i].why = "no packages build for it"
+					outcomes[i].empty = true
+					return
+				}
 			}
 			s := begin("vetting for %s", name)
 			if err == nil {
@@ -238,6 +247,24 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 	if err := ctx.Err(); err != nil {
 		failures = append(failures, err)
 	}
+	// A run that vetted nothing says so: a build constraint that excludes every requested target fails rather than passing silently.
+	vetted := 0
+	for _, o := range outcomes {
+		if o.err == nil && o.why == "" {
+			vetted++
+		}
+	}
+	if vetted == 0 && len(failures) == 0 {
+		var empty []string
+		for i, o := range outcomes {
+			if o.empty {
+				empty = append(empty, names[i])
+			}
+		}
+		if len(empty) > 0 {
+			failures = append(failures, fmt.Errorf("nothing was vetted: no packages build for %s", strings.Join(empty, ", ")))
+		}
+	}
 	if len(skipped) > 0 {
 		warn("skipped %s: %s", strings.Join(skipped, ", "), why)
 	}
@@ -245,6 +272,22 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 		return errors.New("nothing was vetted: every requested target was skipped")
 	}
 	return errors.Join(failures...)
+}
+
+// targetListsNoPackages reports whether no package under the project builds for the target, which makes go vet fail with "no packages to vet" although there is nothing to check.
+func targetListsNoPackages(ctx context.Context, p *project, env, extra []string) (bool, error) {
+	tags, err := goTags(ctx, p, env, extra...)
+	if err != nil {
+		return false, err
+	}
+	args := append([]string{"list", "-e", "-f", "{{.ImportPath}}"}, tagsArgs(tags)...)
+	args = append(args, "./...")
+	out, err := execute(ctx, processCommand{name: "go", args: args, dir: p.Dir, env: append(os.Environ(), env...)})
+	if err != nil {
+		// Let go vet report whatever go list could not tell.
+		return false, nil
+	}
+	return strings.TrimSpace(string(out)) == "", nil
 }
 
 // checkTSX writes the app's types and type-checks its TSX. An app
