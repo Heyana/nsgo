@@ -1201,6 +1201,8 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 		scratchBindVal      []irVal
 		scratchBindHit      []bool
 		v0Out, v1Out, v2Out shadedVertex
+		scratchClipA        []shadedVertex
+		scratchClipB        []shadedVertex
 	)
 
 	draw := func(indexed bool, count, instances, first, firstInst uint32, baseVertex int32) error {
@@ -1235,6 +1237,8 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 			v1Out.varyings = v1Out.varyings[:nv]
 			v2Out.varyings = v2Out.varyings[:nv]
 		}
+		scratchClipA = ensureClipVertexBuf(scratchClipA, nv)
+		scratchClipB = ensureClipVertexBuf(scratchClipB, nv)
 		na := len(prog.Attributes)
 		if cap(scratchAttrs) < na {
 			scratchAttrs = make([]irVal, na)
@@ -1267,6 +1271,8 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 			vertLocals:     scratchVLocals,
 			fragLocals:     scratchFLocals,
 			interpVaryings: scratchVaryings,
+			clipBufA:       scratchClipA,
+			clipBufB:       scratchClipB,
 			colorTargets:   colorTargets,
 			depthPix:       depthPix,
 			stencilPix:     stencilPix,
@@ -1670,6 +1676,8 @@ type softDrawCtx struct {
 	vertLocals     []irVal
 	fragLocals     []irVal
 	interpVaryings []irVal
+	clipBufA       []shadedVertex
+	clipBufB       []shadedVertex
 	colorTargets   []softColorTarget
 	depthPix       []float32
 	stencilPix     []uint8
@@ -1771,25 +1779,258 @@ func (c *softDrawCtx) runFragment(fragCoord [4]float32, varyings []irVal, frontF
 	return outs, false
 }
 
+const (
+	clipWEps      = float32(1e-7)
+	clipGuardBand = float32(8.0)
+	maxClipVerts  = 12
+)
+
+func ensureClipVertexBuf(buf []shadedVertex, nv int) []shadedVertex {
+	if len(buf) < maxClipVerts {
+		old := buf
+		buf = make([]shadedVertex, maxClipVerts)
+		copy(buf, old)
+	}
+	for i := range buf {
+		if cap(buf[i].varyings) < nv {
+			buf[i].varyings = make([]irVal, nv)
+		} else {
+			buf[i].varyings = buf[i].varyings[:nv]
+		}
+	}
+	return buf
+}
+
+type clipPlaneKind uint8
+
+const (
+	clipNear clipPlaneKind = iota
+	clipFar
+	clipLeft
+	clipRight
+	clipBottom
+	clipTop
+	clipMinW
+)
+
+var clipPlanes = [7]clipPlaneKind{
+	clipNear,
+	clipFar,
+	clipLeft,
+	clipRight,
+	clipBottom,
+	clipTop,
+	clipMinW,
+}
+
+func finitePos4(p [4]float32) bool {
+	for _, v := range p {
+		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+			return false
+		}
+	}
+	return true
+}
+
+func triviallyOutsideClip(p0, p1, p2 [4]float32) bool {
+	if p0[3] <= 0 && p1[3] <= 0 && p2[3] <= 0 {
+		return true
+	}
+	for _, kind := range clipPlanes[:6] {
+		if clipPlaneDist(kind, p0) < 0 && clipPlaneDist(kind, p1) < 0 && clipPlaneDist(kind, p2) < 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func inClipFastPath(p [4]float32) bool {
+	w := p[3]
+	if w < clipWEps || p[2] < 0 || p[2] > w {
+		return false
+	}
+	lim := clipGuardBand * w
+	return p[0] >= -lim && p[0] <= lim && p[1] >= -lim && p[1] <= lim
+}
+
+func clipPlaneDist(kind clipPlaneKind, p [4]float32) float32 {
+	switch kind {
+	case clipNear:
+		return p[2]
+	case clipFar:
+		return p[3] - p[2]
+	case clipLeft:
+		return p[3] + p[0]
+	case clipRight:
+		return p[3] - p[0]
+	case clipBottom:
+		return p[3] + p[1]
+	case clipTop:
+		return p[3] - p[1]
+	case clipMinW:
+		return p[3] - clipWEps
+	}
+	return 0
+}
+
+func snapClipPlanePos(kind clipPlaneKind, p *[4]float32) {
+	switch kind {
+	case clipNear:
+		p[2] = 0
+	case clipFar:
+		p[2] = p[3]
+	case clipLeft:
+		p[0] = -p[3]
+	case clipRight:
+		p[0] = p[3]
+	case clipBottom:
+		p[1] = -p[3]
+	case clipTop:
+		p[1] = p[3]
+	case clipMinW:
+		p[3] = clipWEps
+	}
+}
+
+func clipEdgeT(dIn, dOut float32) float32 {
+	denom := dIn - dOut
+	if denom <= 0 || math.IsNaN(float64(denom)) {
+		return 0
+	}
+	return clamp01(dIn / denom)
+}
+
+func copyShadedVertex(dst *shadedVertex, src shadedVertex) {
+	dst.pos = src.pos
+	copy(dst.varyings, src.varyings)
+}
+
+func (c *softDrawCtx) lerpClipVertex(dst *shadedVertex, inV, outV shadedVertex, t float32) {
+	for i := 0; i < 4; i++ {
+		dst.pos[i] = inV.pos[i] + t*(outV.pos[i]-inV.pos[i])
+	}
+	nv := len(c.prog.Varyings)
+	for vi := 0; vi < nv; vi++ {
+		if vi < len(c.prog.VaryingMeta) && c.prog.VaryingMeta[vi].Interpolation == shaderir.InterpFlat {
+			dst.varyings[vi] = inV.varyings[vi]
+			continue
+		}
+		a, b := inV.varyings[vi], outV.varyings[vi]
+		out := irVal{typ: a.typ}
+		for i := 0; i < 4; i++ {
+			out.f[i] = a.f[i] + t*(b.f[i]-a.f[i])
+		}
+		dst.varyings[vi] = out
+	}
+}
+
+func (c *softDrawCtx) clipAgainstPlane(in, out []shadedVertex, inN int, kind clipPlaneKind) int {
+	if inN == 0 {
+		return 0
+	}
+	outN := 0
+	prev := in[inN-1]
+	dPrev := clipPlaneDist(kind, prev.pos)
+	for i := 0; i < inN; i++ {
+		cur := in[i]
+		dCur := clipPlaneDist(kind, cur.pos)
+		if dCur >= 0 {
+			if dPrev < 0 && outN < len(out) {
+				t := clipEdgeT(dCur, dPrev)
+				c.lerpClipVertex(&out[outN], cur, prev, t)
+				snapClipPlanePos(kind, &out[outN].pos)
+				outN++
+			}
+			if outN < len(out) {
+				copyShadedVertex(&out[outN], cur)
+				outN++
+			}
+		} else if dPrev >= 0 && outN < len(out) {
+			t := clipEdgeT(dPrev, dCur)
+			c.lerpClipVertex(&out[outN], prev, cur, t)
+			snapClipPlanePos(kind, &out[outN].pos)
+			outN++
+		}
+		prev, dPrev = cur, dCur
+	}
+	return outN
+}
+
 func (c *softDrawCtx) rasterTriangle(v0, v1, v2 shadedVertex) {
-	// Skip triangles with non-positive W (behind camera).
-	if v0.pos[3] <= 1e-6 || v1.pos[3] <= 1e-6 || v2.pos[3] <= 1e-6 {
+	if !finitePos4(v0.pos) || !finitePos4(v1.pos) || !finitePos4(v2.pos) {
+		return
+	}
+	if triviallyOutsideClip(v0.pos, v1.pos, v2.pos) {
+		return
+	}
+	if inClipFastPath(v0.pos) && inClipFastPath(v1.pos) && inClipFastPath(v2.pos) {
+		c.rasterClippedTriangle(v0, v1, v2)
+		return
+	}
+
+	nv := len(c.prog.Varyings)
+	c.clipBufA = ensureClipVertexBuf(c.clipBufA, nv)
+	c.clipBufB = ensureClipVertexBuf(c.clipBufB, nv)
+	curBuf, nextBuf := c.clipBufA, c.clipBufB
+	n := 3
+	copyShadedVertex(&curBuf[0], v0)
+	copyShadedVertex(&curBuf[1], v1)
+	copyShadedVertex(&curBuf[2], v2)
+
+	for _, plane := range clipPlanes {
+		allIn := true
+		allOut := true
+		for i := 0; i < n; i++ {
+			if clipPlaneDist(plane, curBuf[i].pos) >= 0 {
+				allOut = false
+			} else {
+				allIn = false
+			}
+		}
+		if allOut {
+			return
+		}
+		if allIn {
+			continue
+		}
+		n = c.clipAgainstPlane(curBuf, nextBuf, n, plane)
+		if n < 3 {
+			return
+		}
+		curBuf, nextBuf = nextBuf, curBuf
+	}
+
+	// Preserve the original triangle's provoking vertex for flat varyings even if v0 was clipped out.
+	for vi := 0; vi < nv; vi++ {
+		if vi < len(c.prog.VaryingMeta) && c.prog.VaryingMeta[vi].Interpolation == shaderir.InterpFlat {
+			curBuf[0].varyings[vi] = v0.varyings[vi]
+		}
+	}
+	for k := 1; k+1 < n; k++ {
+		c.rasterClippedTriangle(curBuf[0], curBuf[k], curBuf[k+1])
+	}
+}
+
+func (c *softDrawCtx) rasterClippedTriangle(v0, v1, v2 shadedVertex) {
+	if v0.pos[3] <= 0 || v1.pos[3] <= 0 || v2.pos[3] <= 0 {
 		return
 	}
 	invW0, invW1, invW2 := 1.0/v0.pos[3], 1.0/v1.pos[3], 1.0/v2.pos[3]
 
 	// Canonical WebGPU NDC: X in [-1, 1], Y in [-1, 1] (+Y up), Z in [0, 1].
 	// Screen coordinates: X right, Y down.
-	toScreen := func(p [4]float32, invW float32) (sx, sy, sz float32) {
-		nx, ny, nz := p[0]*invW, p[1]*invW, p[2]*invW
+	minD, maxD := min(c.vpMinD, c.vpMaxD), max(c.vpMinD, c.vpMaxD)
+	toScreen := func(p [4]float32) (sx, sy, sz float32) {
+		nx, ny := p[0]/p[3], p[1]/p[3]
+		nz := clamp01(p[2] / p[3])
 		sx = c.vpX + (nx*0.5+0.5)*c.vpW
 		sy = c.vpY + (0.5-ny*0.5)*c.vpH
-		sz = c.vpMinD + nz*(c.vpMaxD-c.vpMinD)
+		sz = clampRange(c.vpMinD+nz*(c.vpMaxD-c.vpMinD), minD, maxD)
 		return
 	}
-	x0, y0, z0 := toScreen(v0.pos, invW0)
-	x1, y1, z1 := toScreen(v1.pos, invW1)
-	x2, y2, z2 := toScreen(v2.pos, invW2)
+	x0, y0, z0 := toScreen(v0.pos)
+	x1, y1, z1 := toScreen(v1.pos)
+	x2, y2, z2 := toScreen(v2.pos)
 
 	// Signed screen-space area. Because screen Y goes DOWN while NDC Y goes UP,
 	// a CCW triangle in NDC has NEGATIVE signed area in screen coordinates.
@@ -1903,18 +2144,19 @@ func (c *softDrawCtx) rasterTriangle(v0, v1, v2 shadedVertex) {
 			for s := 0; s < sampleCount; s++ {
 				sx := float32(px) + sampleOffsets[s][0]
 				sy := float32(py) + sampleOffsets[s][1]
+				if sx < c.vpX || sx >= c.vpX+c.vpW || sy < c.vpY || sy >= c.vpY+c.vpH {
+					sampleCovered[s] = false
+					continue
+				}
 				w0, w1, w2 := baryAt(sx, sy)
 				if w0 < -1e-5 || w1 < -1e-5 || w2 < -1e-5 {
 					sampleCovered[s] = false
 					continue
 				}
-				z := w0*z0 + w1*z1 + w2*z2
+				// Interpolate relative to z0 so constant-depth triangles (such as z == w) remain exact.
+				z := clampRange(z0+w1*(z1-z0)+w2*(z2-z0), minD, maxD)
 				if hasDepthBias {
-					z = clamp01(z + depthBias)
-				}
-				if z < 0 || z > 1 {
-					sampleCovered[s] = false
-					continue
+					z = clampRange(z+depthBias, minD, maxD)
 				}
 				sampleCovered[s] = true
 				sampleDepth[s] = z
@@ -1946,22 +2188,30 @@ func (c *softDrawCtx) rasterTriangle(v0, v1, v2 shadedVertex) {
 				fy = centY / float32(coveredCount)
 				w0, w1, w2 = baryAt(fx, fy)
 			}
-			centerDepth := w0*z0 + w1*z1 + w2*z2
+			centerDepth := clampRange(z0+w1*(z1-z0)+w2*(z2-z0), minD, maxD)
 			if hasDepthBias {
-				centerDepth = clamp01(centerDepth + depthBias)
+				centerDepth = clampRange(centerDepth+depthBias, minD, maxD)
 			}
 
 			var fragOuts [maxSoftColorAttachments][4]float32
 			if !skipFragment {
-				// Perspective-correct interpolation weights.
-				pw0, pw1, pw2 := w0*invW0, w1*invW1, w2*invW2
-				invSum := float32(1.0) / (pw0 + pw1 + pw2)
+				// Perspective-correct interpolation weights; clamp negative edge-tolerance weights to zero
+				// so steep 1/w gradients near the near plane never invert or blow up invSum.
+				pw0, pw1, pw2 := max(float32(0), w0)*invW0, max(float32(0), w1)*invW1, max(float32(0), w2)*invW2
+				pwSum := pw0 + pw1 + pw2
+				var invSum, bw0, bw1, bw2 float32
+				if pwSum > 0 {
+					invSum = float32(1.0) / pwSum
+					bw0, bw1, bw2 = pw0*invSum, pw1*invSum, pw2*invSum
+				} else {
+					bw0, bw1, bw2 = 1.0/3.0, 1.0/3.0, 1.0/3.0
+				}
 				for vi := range nv {
 					flat := vi < len(c.prog.VaryingMeta) && c.prog.VaryingMeta[vi].Interpolation == shaderir.InterpFlat
 					if flat {
 						interpVaryings[vi] = v0.varyings[vi]
 					} else {
-						interpVaryings[vi] = lerpIRVal(v0.varyings[vi], v1.varyings[vi], v2.varyings[vi], pw0*invSum, pw1*invSum, pw2*invSum)
+						interpVaryings[vi] = lerpIRVal(v0.varyings[vi], v1.varyings[vi], v2.varyings[vi], bw0, bw1, bw2)
 					}
 				}
 
@@ -4847,14 +5097,18 @@ func mapUint3(a, b, c irVal, fn func(uint32, uint32, uint32) uint32) irVal {
 	return out
 }
 
-func clamp01(v float32) float32 {
-	if v < 0 {
-		return 0
+func clampRange(v, lo, hi float32) float32 {
+	if v < lo {
+		return lo
 	}
-	if v > 1 {
-		return 1
+	if v > hi {
+		return hi
 	}
 	return v
+}
+
+func clamp01(v float32) float32 {
+	return clampRange(v, 0, 1)
 }
 
 func floatToByte(v float32) byte {
