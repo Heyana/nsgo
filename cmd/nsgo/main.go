@@ -13,6 +13,9 @@
 //	                                                      on a platform
 //	nsgo check [-target T] [-jobs N] [dir]               vet the app and type-check its TSX
 //	nsgo i18n  [-source L] [dir]                         check catalogs and write their Go code
+//	nsgo game  <command> [args]                          run the game layer's command: the module's go.mod
+//	                                                      tool, else go run of its release for this NSGo
+//	nsgo version                                         print which nsgo runs
 //	nsgo doctor                                          show which targets this machine builds and runs
 //	nsgo keygen                                          print a key pair for updates or signed packages
 //	nsgo certify -key P -apps A [-days N] [-out F]       certify a release key for apps
@@ -32,6 +35,8 @@
 //	                                                      sign a revocation list
 //	nsgo X [args]                                        run an extension: the module's go.mod tool X with
 //	                                                      go tool, else nsgo-X on PATH
+//
+// In a module whose go.mod pins nsgo as a tool at another version, nsgo first runs that one, go tool nsgo, with the same arguments; NSGO_NO_DELEGATE=1 turns that off.
 //
 // dir is the app's directory, holding nsgo.yaml and its main package; it
 // defaults to the current directory, and may end in /..., as go's
@@ -55,6 +60,9 @@ import (
 )
 
 func main() {
+	if code, delegated := delegate(context.Background(), os.Args[1:]); delegated {
+		os.Exit(code)
+	}
 	if len(os.Args) < 2 {
 		usage()
 	}
@@ -177,6 +185,18 @@ func main() {
 		} else {
 			err = generateCatalog(ctx, dir, *source)
 		}
+	case "game":
+		var code int
+		if code, err = runGame(ctx, args); err == nil {
+			os.Exit(code)
+		}
+		err = fmt.Errorf("game: %w", err)
+	case "version":
+		fs := flag.NewFlagSet("version", flag.ExitOnError)
+		if err = parseCommand(fs, args, 0); err != nil {
+			break
+		}
+		printVersion(ctx)
 	case "doctor":
 		fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 		if err = parseCommand(fs, args, 0); err != nil {
@@ -289,7 +309,9 @@ func usage() {
   nsgo test  [-run REGEXP] [-bench REGEXP] [-junit FILE] [-trace] [-target macos|windows|linux|web|ios_simulator|tvos_simulator|android [-fps]] [dir | App.tsx < steps] [-- go test flags]
   nsgo check [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [dir]
   nsgo i18n  [-source L] [dir]
+  nsgo game  <command> [args]
   nsgo doctor
+  nsgo version
   nsgo keygen
   nsgo certify -key P -apps A [-days N] [-out F]
   nsgo publish itch -target web,macos_arm64 [dir]
@@ -305,8 +327,10 @@ values, and -h lists every flag. Put NSGo flags before the path.
 After --, headless tests accept go test flags; target tests accept
 -short, -count, -cpu, -parallel, -failfast and -fullpath.
 
-Another command X runs the module's go.mod tool X with go tool,
-else nsgo-X on PATH.`)
+game runs the game layer's command, the module's go.mod tool, else
+go run of its release for this NSGo. Another command X runs the
+module's go.mod tool X with go tool, else nsgo-X on PATH. In a module
+that pins nsgo at another version, its own nsgo runs instead.`)
 	if found := listExtensions(context.Background()); len(found) > 0 {
 		width := 0
 		for _, ext := range found {

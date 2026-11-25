@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -33,7 +34,7 @@ func runNsgo(t *testing.T, dir, path string, env []string, args ...string) (stri
 	cmd := exec.Command(exe, append([]string{"-test.run=^TestCLIProcess$", "--"}, args...)...)
 	cmd.Dir = dir
 	for _, kv := range os.Environ() {
-		if k, _, _ := strings.Cut(kv, "="); !strings.EqualFold(k, "PATH") && k != "NSGO_EXTENSION" {
+		if k, _, _ := strings.Cut(kv, "="); !strings.EqualFold(k, "PATH") && !slices.Contains([]string{"NSGO_EXTENSION", "NSGO_DELEGATED", "NSGO_DELEGATED_FROM", "NSGO_NO_DELEGATE", "NSGO_GAME_VERSION"}, k) {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}

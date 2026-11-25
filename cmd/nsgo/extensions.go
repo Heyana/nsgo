@@ -22,7 +22,7 @@ import (
 // Extensions are commands nsgo does not know itself, as git, kubectl and cargo run theirs: nsgo X runs the tool X the working directory's module declares in go.mod, with go tool, so the module pins its version, else the program nsgo-X on PATH, which also works outside a module. Built-in commands always win, and a name that is not a command's name runs nothing.
 
 // builtinCommands are the commands main's switch runs, and help, which prints the usage; an extension never takes their names.
-var builtinCommands = []string{"dev", "mcp", "init", "build", "test", "check", "i18n", "doctor", "keygen", "certify", "publish", "verify", "revoke", "help"}
+var builtinCommands = []string{"dev", "mcp", "init", "build", "test", "check", "i18n", "game", "doctor", "keygen", "certify", "publish", "verify", "revoke", "version", "help"}
 
 // extension is a command found for a name: the module tool Tool, run with go tool from the working directory, or the program Path.
 type extension struct {
@@ -31,15 +31,22 @@ type extension struct {
 	Path string
 }
 
-// command is how ext runs with args: arguments unchanged, the extension's own streams and NSGO_EXTENSION=1 and NSGO_VERSION, the tool's version, which is empty for a build that records none, in its environment.
+// command is how ext runs with args.
 func (ext extension) command(args []string) *exec.Cmd {
-	var cmd *exec.Cmd
 	if ext.Tool != "" {
-		// The tool's whole path, which go tool resolves only among the module's tools, never to one of Go's own of the same name, such as vet or doc.
-		cmd = exec.Command("go", append([]string{"tool", ext.Tool}, args...)...)
-	} else {
-		cmd = exec.Command(ext.Path, args...)
+		return goToolCommand(ext.Tool, args)
 	}
+	return extensionCommand(ext.Path, args...)
+}
+
+// goToolCommand runs the module's tool at the package path tool with args. The whole path is one go tool resolves only among the module's tools, never to one of Go's own of the same name, such as vet or doc.
+func goToolCommand(tool string, args []string) *exec.Cmd {
+	return extensionCommand("go", append([]string{"tool", tool}, args...)...)
+}
+
+// extensionCommand runs name with args as nsgo runs a command of another program's: the arguments unchanged, nsgo's own streams, and NSGO_EXTENSION=1 and NSGO_VERSION, the tool's version, which is empty for a build that records none, in its environment.
+func extensionCommand(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.Env = append(os.Environ(), "NSGO_EXTENSION=1", "NSGO_VERSION="+toolVersion())
 	return cmd
@@ -59,30 +66,37 @@ func runExtension(ctx context.Context, name string, args []string) (int, bool, e
 	if err != nil || !ok {
 		return 0, false, err
 	}
-	cmd := ext.command(args)
-	if err := cmd.Start(); err != nil {
+	code, err := runChild(ext.command(args))
+	if err != nil {
 		return 0, true, fmt.Errorf("%s: %w", name, err)
 	}
-	// main's context already keeps an interrupt from stopping nsgo, so it waits for the extension's own exit; like go tool, it hands the signals it receives on.
+	return code, true, nil
+}
+
+// runChild runs cmd to its end and returns its exit status, 1 when a signal ended it.
+func runChild(cmd *exec.Cmd) (int, error) {
+	// Catching an interrupt and SIGTERM, the signals every target nsgo vets for defines, keeps them from stopping nsgo, from before the child starts, so nsgo waits for the child's own exit; like go tool, it hands them on.
 	signals := make(chan os.Signal, 8)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer func() {
+		signal.Stop(signals)
+		close(signals)
+	}()
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
 	go func() {
 		for s := range signals {
 			cmd.Process.Signal(s)
 		}
 	}()
-	err = cmd.Wait()
-	signal.Stop(signals)
-	close(signals)
+	err := cmd.Wait()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		// A program a signal ended has no exit code.
-		return max(exit.ExitCode(), 1), true, nil
+		return max(exit.ExitCode(), 1), nil
 	}
-	if err != nil {
-		return 0, true, fmt.Errorf("%s: %w", name, err)
-	}
-	return 0, true, nil
+	return 0, err
 }
 
 // findExtension finds the extension named name: the working directory's module's tool of that command name, else nsgo-<name> on PATH.
@@ -170,8 +184,31 @@ func pathExtensions() []extension {
 	return found
 }
 
-// moduleTools are the package paths of the tools the go.mod of dir's module declares, the first found walking up from dir, as go mod edit reads them; a directory outside a module has none.
+// moduleTools are the package paths of the tools the go.mod of dir's module declares; a directory outside a module has none.
 func moduleTools(ctx context.Context, dir string) ([]string, error) {
+	mod, err := moduleFile(ctx, dir)
+	if mod == nil || err != nil {
+		return nil, err
+	}
+	tools := make([]string, len(mod.Tool))
+	for i, t := range mod.Tool {
+		tools[i] = t.Path
+	}
+	return tools, nil
+}
+
+// goModFile is what go mod edit -json prints of a go.mod that nsgo reads: the module's path, its requirements, replacements and tools.
+type goModFile struct {
+	Module  struct{ Path string }
+	Require []struct{ Path, Version string }
+	Replace []struct {
+		Old, New struct{ Path, Version string }
+	}
+	Tool []struct{ Path string }
+}
+
+// moduleFile reads the go.mod of dir's module, the first found walking up from dir, as go mod edit reads it. It is nil outside a module, and for a go.mod that declares no tools, which says nothing nsgo reads.
+func moduleFile(ctx context.Context, dir string) (*goModFile, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -183,7 +220,7 @@ func moduleTools(ctx context.Context, dir string) ([]string, error) {
 			if !bytes.Contains(data, []byte("tool")) {
 				return nil, nil
 			}
-			return goModTools(ctx, gomod)
+			return readGoMod(ctx, gomod)
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
@@ -196,25 +233,21 @@ func moduleTools(ctx context.Context, dir string) ([]string, error) {
 	}
 }
 
-// goModTools are the tools gomod declares.
-func goModTools(ctx context.Context, gomod string) ([]string, error) {
+// readGoMod reads gomod with go mod edit -json.
+func readGoMod(ctx context.Context, gomod string) (*goModFile, error) {
 	out, err := execute(ctx, processCommand{name: "go", args: []string{"mod", "edit", "-json", gomod}})
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
 			err = fmt.Errorf("%w\n%s", err, strings.TrimSpace(string(exit.Stderr)))
 		}
-		return nil, fmt.Errorf("reading the tools of %s: %w", rel(gomod), err)
+		return nil, fmt.Errorf("reading %s: %w", rel(gomod), err)
 	}
-	var mod struct{ Tool []struct{ Path string } }
+	var mod goModFile
 	if err := json.Unmarshal(out, &mod); err != nil {
-		return nil, fmt.Errorf("reading the tools of %s: %w", rel(gomod), err)
+		return nil, fmt.Errorf("reading %s: %w", rel(gomod), err)
 	}
-	tools := make([]string, len(mod.Tool))
-	for i, t := range mod.Tool {
-		tools[i] = t.Path
-	}
-	return tools, nil
+	return &mod, nil
 }
 
 // toolCommandName is the command name go tool knows the tool at path by, as go install names its executable: the path's last element, or the one before a major version's, such as game for example.com/game/v2.

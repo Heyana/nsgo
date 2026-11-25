@@ -225,6 +225,12 @@ Built-in commands always win, and a name that is not letters, digits, `-` and `_
 
 A library ships one as a Go main package whose directory is the command's name, such as `example.com/maps/cmd/maps` for `nsgo maps`. An app adds it to its module with `go get -tool example.com/maps/cmd/maps@latest`, and `go install example.com/maps/cmd/nsgo-maps@latest` puts an `nsgo-maps` on `PATH` for use outside a module, which may run the same code as the tool.
 
+`nsgo game` is built in and runs [the game layer](https://game.nsgo.dev)'s command with nothing else to install: in a module whose `go.mod` declares the tool `github.com/nsgo-dev/game/packages/game/cmd/game`, it runs `go tool` with it, at the version the module pins, and anywhere else `go run github.com/nsgo-dev/game/packages/game/cmd/game@<version>`, the release of the game layer made for this `nsgo` (`latest` until there is one), which `NSGO_GAME_VERSION` replaces. `go run` reports a failure of the command as exit status 1, whatever status it ended with.
+
+### The module's nsgo
+
+An `nsgo` installed on `PATH` never builds a project with another version than the one the project pins. In a module whose `go.mod` declares the tool `github.com/nsgo-dev/nsgo/cmd/nsgo` at another version, `nsgo` first runs the module's, `go tool nsgo` with the same arguments, which then resolves the built-in commands and extensions, and exits with its status. `NSGO_DELEGATED=1` in its environment keeps it from doing the same again, and `NSGO_NO_DELEGATE=1` runs the `nsgo` called instead. Outside a module, in one without the tool, in NSGo's own module and at the same version, nothing changes. `nsgo version` says which one ran, such as `nsgo v0.4.0 (the module's; called as v0.3.1)`.
+
 ## Installers
 
 For the desktop targets, `build` writes what users install the app from into `dist/releases`, each with a `.sha256` checksum:
