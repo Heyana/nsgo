@@ -67,6 +67,11 @@ func initModuleTemplate(ctx context.Context, dir, kind string, data initData) er
 	}
 	defer src.Close()
 
+	if name == "" && !isTemplateDir(src.FS(), ".") {
+		if names, _, err := moduleTemplateNames(src.FS()); err == nil && len(names) > 0 {
+			return fmt.Errorf("init: module %s has no default template; select one with -template %s#<name> from: %s", module, kind, strings.Join(names, ", "))
+		}
+	}
 	files, err := moduleTemplateFiles(src.FS(), data)
 	if err != nil {
 		return fmt.Errorf("init: template %s: %w", kind, err)
@@ -124,9 +129,12 @@ func listInitTemplates(ctx context.Context, w io.Writer, kind string) error {
 	return nil
 }
 
+// A template/ directory that is itself a template is copied whole, so its subdirectories are part of it rather than named templates.
 func moduleTemplateNames(src fs.FS) ([]string, bool, error) {
+	if isTemplateDir(src, ".") {
+		return nil, true, nil
+	}
 	var names []string
-	hasRoot := isTemplateDir(src, ".")
 	err := fs.WalkDir(src, ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil || name == "." || !entry.IsDir() {
 			return err
@@ -141,7 +149,7 @@ func moduleTemplateNames(src fs.FS) ([]string, bool, error) {
 		return nil, false, err
 	}
 	slices.Sort(names)
-	return names, hasRoot, nil
+	return names, false, nil
 }
 
 func isTemplateDir(src fs.FS, dir string) bool {

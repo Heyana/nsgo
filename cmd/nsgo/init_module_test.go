@@ -252,8 +252,30 @@ func TestInitModuleNamedTemplates(t *testing.T) {
 		t.Errorf("module v1.0.0 list = %q, want %q", got, want)
 	}
 
-	if err := listInitTemplates(t.Context(), &buf, module+"@v1.0.0#platformer"); err == nil {
-		t.Error("listInitTemplates with #name succeeded, want error")
+	if err := listInitTemplates(t.Context(), &buf, module+"@v1.0.0#platformer"); err == nil || !strings.Contains(err.Error(), "-list does not take a #template name") {
+		t.Errorf("listInitTemplates with #name = %v, want a refusal of the name", err)
+	}
+
+	err = initApp(t.Context(), filepath.Join(t.TempDir(), "unnamed"), "Unnamed", "", module+"@v1.0.0")
+	if err == nil || !strings.Contains(err.Error(), module+"@v1.0.0#<name>") || !strings.Contains(err.Error(), "2d/shooter, platformer, rpg") {
+		t.Errorf("init without #name in a module of named templates = %v, want the names to choose from", err)
+	}
+
+	// A template/ directory that is itself a template is copied whole, so its subdirectories are not listed as named templates.
+	const mixedModule = "github.com/nsgo-dev/mixed/templates"
+	addTemplateVersion(t, proxy, mixedModule, "v1.0.0", map[string][]byte{
+		"nsgo.yaml":          []byte("name: {{.Name}}\nid: {{.ID}}\nversion: 0.1.0\n"),
+		"main.go":            []byte("package main\nfunc main() {}\n"),
+		"extra/nsgo.yaml":    []byte("name: {{.Name}}\nid: {{.ID}}\nversion: 0.1.0\n"),
+		"extra/main.go":      []byte("package main\nfunc main() {}\n"),
+		"extra/assets/x.txt": []byte("x\n"),
+	})
+	buf.Reset()
+	if err := listInitTemplates(t.Context(), &buf, mixedModule+"@v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), "(default)\n"; got != want {
+		t.Errorf("root template with a nested one, list = %q, want %q", got, want)
 	}
 
 	const singleModule = "github.com/nsgo-dev/single/template"
