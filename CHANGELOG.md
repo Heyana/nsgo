@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.3.1] - 2026-11-25
+## [0.3.2] - 2026-11-25
+
+v0.3.1 was tagged but not released: its committed Android runtime was not built from its Java. 0.3.2 is 0.3.1 with the runtime rebuilt (#2376).
 
 - Run an unknown command `nsgo X` as an extension: the module's `go.mod` tool `X` through `go tool`, else `nsgo-X` on `PATH`, with its arguments, streams and exit status, and list the extensions found in the usage (#2366 by @houko).
 - Add `nsgo game`, which runs the game layer's command, the module's tool or else `go run` of its release, with `NSGO_GAME_VERSION` to choose another (#2366 by @houko).
