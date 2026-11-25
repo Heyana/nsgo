@@ -52,8 +52,11 @@ func TestIOSVideoSeekWithSeparateAudio(t *testing.T) {
 			w.Header().Set("Content-Type", "video/quicktime")
 			http.ServeContent(w, r, "picture.mov", time.Time{}, bytes.NewReader(alphaclips.HEVC))
 		case "/sound.wav":
-			if r.Header.Get("Referer") == referer {
-				t.Error("the separate audio URL received the video's Referer")
+			// Video.Headers applies to a direct HTTP AudioSource file on Apple too (#681).
+			if r.Header.Get("Referer") != referer {
+				t.Error("the separate audio request was missing the video's Referer")
+				w.WriteHeader(http.StatusForbidden)
+				return
 			}
 			select {
 			case audioRequested <- struct{}{}:
