@@ -28,7 +28,8 @@ jobs:
     uses: ./.github/workflows/apple-changes.yml
 
   gallery:
-    name: Gallery (${{ matrix.target }}, shard ${{ matrix.shard }})
+    # The first shard keeps the job's own name, which the merge queue requires as "Gallery (web)".
+    name: ${{ matrix.shard == 1 && format('Gallery ({0})', matrix.target) || format('Gallery ({0}, shard 2)', matrix.target) }}
     needs: changes
     # Gallery (web) is a required check, so it runs even when the changes job fails; macOS joins it unless the change cannot affect Apple's targets and all-jobs is unset.
     if: ${{ !cancelled() }}
