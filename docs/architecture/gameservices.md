@@ -49,3 +49,4 @@ Each `nsgotest.App` owns an isolated in-memory fake (`nsgotest/gameservices.go`)
 - Configure sign-in and friends with `App.SetGameServicesPlayer` and `App.SetGameServicesFriends`.
 - Simulate failures with `App.SetGameServicesError` and `App.SetGameServicesAuthError`.
 - Seed and inspect state with `App.SeedLeaderboardScores`, `App.GameServicesAchievements`, `App.GameServicesSubmittedScores`, `App.GameServicesScores`, `App.GameServicesShownAchievements` and `App.GameServicesShownLeaderboards`.
+- `App.GameServicesScoreQueries` lists each `LoadScores` call with its player scope, time scope and limit, including calls that ended in an error; the fake records the time scope but does not filter by it.

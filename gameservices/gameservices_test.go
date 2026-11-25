@@ -178,6 +178,16 @@ func TestSubmitAndLoadScores(t *testing.T) {
 		t.Fatalf("friend scores:\ngot:  %+v\nwant: %+v", friends, wantFriends)
 	}
 
+	// Each load reached the fake with the time scope the caller asked for.
+	queries := app.GameServicesScoreQueries()
+	wantQueries := []nsgotest.GameServicesScoreQuery{
+		{LeaderboardID: "arcade", PlayerScope: gameservices.Global, TimeScope: gameservices.AllTime, Limit: 3},
+		{LeaderboardID: "arcade", PlayerScope: gameservices.Friends, TimeScope: gameservices.Week, Limit: 25},
+	}
+	if !slices.Equal(queries, wantQueries) {
+		t.Fatalf("score queries:\ngot:  %+v\nwant: %+v", queries, wantQueries)
+	}
+
 	// Empty leaderboard ID is rejected for both SubmitScore and LoadScores.
 	var badSubmit, badLoad error
 	gameservices.SubmitScore(cx, "", 10, func(err error) { badSubmit = err })

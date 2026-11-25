@@ -12,6 +12,14 @@ import (
 
 // fakeGameServices is a per-app isolated in-memory implementation of
 // driver.GameServices used by nsgotest.App so parallel tests never interfere.
+// GameServicesScoreQuery is one gameservices.LoadScores call, as this app's fake game services saw it.
+type GameServicesScoreQuery struct {
+	LeaderboardID string
+	PlayerScope   core.GamePlayerScope
+	TimeScope     core.GameTimeScope
+	Limit         int
+}
+
 type fakeGameServices struct {
 	mu                sync.Mutex
 	player            core.GamePlayer
@@ -23,6 +31,7 @@ type fakeGameServices struct {
 	leaderboards      map[string][]core.GameScoreEntry
 	shownAchievements int
 	shownLeaderboards []string
+	scoreQueries      []GameServicesScoreQuery
 }
 
 func newFakeGameServices() *fakeGameServices {
@@ -129,8 +138,9 @@ func (f *fakeGameServices) ShowLeaderboard(leaderboardID string) {
 	f.mu.Unlock()
 }
 
-func (f *fakeGameServices) LoadScores(leaderboardID string, scope driver.GamePlayerScope, _ driver.GameTimeScope, limit int, done func([]driver.GameScoreEntry, error)) {
+func (f *fakeGameServices) LoadScores(leaderboardID string, scope driver.GamePlayerScope, timeScope driver.GameTimeScope, limit int, done func([]driver.GameScoreEntry, error)) {
 	f.mu.Lock()
+	f.scoreQueries = append(f.scoreQueries, GameServicesScoreQuery{LeaderboardID: leaderboardID, PlayerScope: scope, TimeScope: timeScope, Limit: limit})
 	var (
 		out []core.GameScoreEntry
 		err error
@@ -272,6 +282,14 @@ func (a *App) GameServicesShownAchievements() int {
 func (a *App) GameServicesShownLeaderboards() []string {
 	a.gameServices.mu.Lock()
 	out := slices.Clone(a.gameServices.shownLeaderboards)
+	a.gameServices.mu.Unlock()
+	return out
+}
+
+// GameServicesScoreQueries returns the LoadScores queries this app made, oldest first, including those that ended in an error. The fake does not filter by time scope.
+func (a *App) GameServicesScoreQueries() []GameServicesScoreQuery {
+	a.gameServices.mu.Lock()
+	out := slices.Clone(a.gameServices.scoreQueries)
 	a.gameServices.mu.Unlock()
 	return out
 }
