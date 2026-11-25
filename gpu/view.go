@@ -235,6 +235,8 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 					compressedFormatsFromDriver(ev.Features),
 				)
 				dev.retainResources = props.RetainResources
+				dev.surfaceSamples = max(props.SampleCount, 1)
+				dev.surfaceDepth = props.DepthFormat
 				dev.cache = props.PipelineCache
 				if suspended {
 					dev.setSuspended(true)

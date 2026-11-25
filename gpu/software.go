@@ -66,6 +66,8 @@ func newSoftwareRenderer(width, height int, colorFormat, depthFormat TextureForm
 		compressedFormatsFromFeatures(features),
 	)
 	dev.directMapped = true
+	dev.surfaceSamples = sampleCount
+	dev.surfaceDepth = depthFormat
 	soft.SetReadbackHandler(func(rbs []driver.GPUSoftReadback, err error) {
 		if err != nil {
 			r.mu.Lock()

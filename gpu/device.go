@@ -36,9 +36,12 @@ type Device struct {
 	compressedFormats []TextureFormat
 	surfaceFormat     TextureFormat
 	surfaceColorSpace ColorSpace
-	width, height     int
-	framesInFlight    int
-	directMapped      bool
+	// surfaceSamples is the swapchain's sample count, or 0 when the backend does not say, and surfaceDepth its depth format, empty when it has none.
+	surfaceSamples int
+	surfaceDepth   TextureFormat
+	width, height   int
+	framesInFlight  int
+	directMapped    bool
 
 	frameIndex       uint64
 	inFrame          bool
@@ -2458,10 +2461,17 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 	if !invalid && e != nil && e.dev != nil {
 		surface = e.dev.SurfaceFormat()
 	}
+	if ds == nil && len(desc.ColorAttachments) == 0 && e != nil && e.dev != nil {
+		// The swapchain pass draws into the surface's own depth buffer too.
+		depth = e.dev.surfaceDepth
+	}
 	for i := range cas {
 		if len(desc.ColorAttachments) == 0 || desc.ColorAttachments[i].Texture == nil {
 			// The swapchain's own attachment: its sample count belongs to the surface.
 			formats[i], samples[i] = surface, -1
+			if e != nil && e.dev != nil && e.dev.surfaceSamples > 0 {
+				samples[i] = e.dev.surfaceSamples
+			}
 			continue
 		}
 		ca := desc.ColorAttachments[i]
@@ -2839,11 +2849,12 @@ func (p *RenderPass) matchesPipeline(pipe *Pipeline) bool {
 		if format != p.colorFormats[i] {
 			return false
 		}
-		if n := p.colorSamples[i]; n > 0 && pipe.desc.SampleCount != 0 && pipe.desc.SampleCount != n {
+		if n := p.colorSamples[i]; n > 0 && max(pipe.desc.SampleCount, 1) != n {
 			return false
 		}
 	}
-	if p.depthFormat != FormatUndefined && (pipe.desc.DepthStencil == nil || pipe.desc.DepthStencil.Format != p.depthFormat) {
+	// A pipeline that declares a depth format needs the pass to hold that attachment; one that declares none draws with the depth test off, whatever the pass has.
+	if pipe.desc.DepthStencil != nil && pipe.desc.DepthStencil.Format != FormatUndefined && pipe.desc.DepthStencil.Format != p.depthFormat {
 		return false
 	}
 	return true
