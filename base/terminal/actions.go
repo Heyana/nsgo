@@ -153,9 +153,9 @@ func (v *view) withContextMenu(children []core.Node) []core.Node {
 	m := func() locales.Messages { return locales.For(v.cx) }
 	item := func(id string, label func() string, action Action, disabled func() bool) core.Node {
 		var itemChildren []core.Node
-		if p.MenuItemIcon != nil {
-			if icon := p.MenuItemIcon(v.cx, action); icon != nil {
-				itemChildren = append(itemChildren, icon)
+		if p.MenuItemLeading != nil {
+			if lead := p.MenuItemLeading(v.cx, action); lead != nil {
+				itemChildren = append(itemChildren, lead)
 			}
 		}
 		itemChildren = append(itemChildren, core.Text{ContentFunc: label, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1}})

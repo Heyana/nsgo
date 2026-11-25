@@ -64,14 +64,14 @@ type View struct {
 	Keybinds []Keybind
 	// RightClickAction is ContextMenu by default. RightClickIgnore leaves secondary clicks to an enclosing app menu.
 	RightClickAction RightClickAction
-	// MenuClass and MenuStyle style the default context menu's surface; MenuItemClass and MenuItemStyle style its four items; MenuItemIcon supplies an optional leading node per action. A part's StyleFunc merges over its Style and follows the signals it reads.
+	// MenuClass and MenuStyle style the default context menu's surface; MenuItemClass and MenuItemStyle style its four items; MenuItemLeading supplies an optional leading node per action. A part's StyleFunc merges over its Style and follows the signals it reads.
 	MenuClass         string
 	MenuStyle         core.Style
 	MenuStyleFunc     func() core.Style
 	MenuItemClass     string
 	MenuItemStyle     core.Style
 	MenuItemStyleFunc func() core.Style
-	MenuItemIcon      func(cx *core.Scope, action Action) core.Node
+	MenuItemLeading   func(cx *core.Scope, action Action) core.Node
 	// MouseReporting allows programs to capture the mouse when they request it; nil means true. Turning it off leaves selection and scrolling to the view. Shift also bypasses mouse capture for selection.
 	MouseReporting func() bool
 	// MouseScrollMultiplier scales wheel reports and alternate-screen arrow keys, separately for touchpads and discrete wheels. It does not change the platform's ordinary scrollback scrolling.

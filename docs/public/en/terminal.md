@@ -65,11 +65,11 @@ view := terminal.View{
 
 ## Context menu
 
-A secondary click opens an unstyled `base.ContextMenu` on `base/terminal.View` with localized Copy, Paste, Select All and Clear items. `ui/terminal.View` styles both that menu and the touch key bar in `ui`'s theme colors, with app style overrides merged on top. Copy requires a selection. Clear removes content above the prompt and is disabled on the alternate screen. Touch screens use the context menu's long-press presentation. Style the surface with `MenuClass`/`MenuStyle`/`MenuStyleFunc`, the items with `MenuItemClass`/`MenuItemStyle`/`MenuItemStyleFunc`, and optional leading item icons with `MenuItemIcon`.
+A secondary click opens an unstyled `base.ContextMenu` on `base/terminal.View` with localized Copy, Paste, Select All and Clear items. `ui/terminal.View` styles both that menu and the touch key bar in `ui`'s theme colors, with the app's styles and style functions merged on top; the app's classes apply under that look. Copy requires a selection. Clear removes content above the prompt and is disabled on the alternate screen. Touch screens use the context menu's long-press presentation. Style the surface with `MenuClass`/`MenuStyle`/`MenuStyleFunc`, the items with `MenuItemClass`/`MenuItemStyle`/`MenuItemStyleFunc`, and an optional leading node per item, such as an icon, with `MenuItemLeading`.
 
 Set `RightClickAction` to `RightClickPaste`, `RightClickCopy`, `RightClickCopyOrPaste` (copy a selection, otherwise paste), or `RightClickIgnore`. Ignore leaves the event for an enclosing app menu; use it when supplying a styled `ui.ContextMenu` that calls the ref's actions.
 
-Import `tsx/terminal` to register `<Terminal>` in `nsgo/base`. Its reactive `keybinds` and `rightClickAction` props update the view while keeping the session. Action values use Ghostty names such as `increase_font_size` and `copy_to_clipboard`; right-click values are `context-menu`, `paste`, `copy`, `copy-or-paste` and `ignore`. The menu styling props use the Go names in lower camel case.
+Import `tsx/terminal` to register `<Terminal>` in `nsgo/base`. Its reactive `keybinds` and `rightClickAction` props update the view while keeping the session. Action values use Ghostty names such as `increase_font_size` and `copy_to_clipboard`; right-click values are `context-menu`, `paste`, `copy`, `copy-or-paste` and `ignore`. The `menuClass`, `menuStyle`, `menuItemClass` and `menuItemStyle` props style the menu under the Go names in lower camel case; the style functions, `MenuItemLeading` and `ui/terminal` are Go only.
 
 ## Mouse reports
 

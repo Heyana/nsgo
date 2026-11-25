@@ -11,11 +11,7 @@ import (
 	"github.com/nsgo-dev/nsgo/ui"
 )
 
-// View is terminal.View in ui's look: the default context menu on ui's
-// menu surface with hover, active and disabled row states and Copy's icon,
-// and the touch key bar on a raised bar with bordered keys and accented
-// latched modifiers. The app's MenuStyle, MenuItemStyle, MenuItemIcon,
-// KeyBarStyle, KeyStyle and KeyOnStyle (and their StyleFuncs) merge over ui's.
+// View is terminal.View in ui's look: the default context menu on ui's menu surface with hover, active and disabled row states and Copy's icon, and the touch key bar on a raised bar with bordered keys and accented latched modifiers. The app's MenuStyle, MenuItemStyle, KeyBarStyle, KeyStyle and KeyOnStyle (and their StyleFuncs) merge over ui's, and its MenuItemLeading replaces ui's leading icons. The app's classes for those parts apply under ui's look, as core.View's Class applies under its Style.
 type View terminal.View
 
 // Render implements core.Node.
@@ -25,8 +21,8 @@ func (v View) Render(cx *core.Scope) core.Node {
 	out.MenuStyleFunc = mergePart(func() core.Style { return menuStyle(cx) }, v.MenuStyle, v.MenuStyleFunc)
 	out.MenuItemStyle = core.Style{}
 	out.MenuItemStyleFunc = mergePart(func() core.Style { return menuItemStyle(cx) }, v.MenuItemStyle, v.MenuItemStyleFunc)
-	if out.MenuItemIcon == nil {
-		out.MenuItemIcon = func(cx *core.Scope, a terminal.Action) core.Node {
+	if out.MenuItemLeading == nil {
+		out.MenuItemLeading = func(cx *core.Scope, a terminal.Action) core.Node {
 			if a == terminal.CopyToClipboard {
 				return ui.Icon(lucide.Copy, 14, ui.ColorsOf(cx).Muted)
 			}

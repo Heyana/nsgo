@@ -65,11 +65,11 @@ view := terminal.View{
 
 ## 上下文菜单
 
-`base/terminal.View` 右键默认打开无样式的 `base.ContextMenu`，包含本地化的复制、粘贴、全选和清空。`ui/terminal.View` 以 `ui` 主题颜色为该菜单及触控按键栏提供样式，并保留应用自定义样式的覆盖。复制需要已有选区；清空移除提示符上方内容，在备用屏幕禁用。触摸屏沿用上下文菜单的长按展示。用 `MenuClass`/`MenuStyle`/`MenuStyleFunc` 设置菜单表面，用 `MenuItemClass`/`MenuItemStyle`/`MenuItemStyleFunc` 设置菜单项，并用 `MenuItemIcon` 为菜单项提供前导图标。
+`base/terminal.View` 右键默认打开无样式的 `base.ContextMenu`，包含本地化的复制、粘贴、全选和清空。`ui/terminal.View` 以 `ui` 主题颜色为该菜单及触控按键栏提供样式，应用的样式和样式函数合并在其上，应用的类则位于该外观之下。复制需要已有选区；清空移除提示符上方内容，在备用屏幕禁用。触摸屏沿用上下文菜单的长按展示。用 `MenuClass`/`MenuStyle`/`MenuStyleFunc` 设置菜单表面，用 `MenuItemClass`/`MenuItemStyle`/`MenuItemStyleFunc` 设置菜单项，并用 `MenuItemLeading` 为每个菜单项提供可选的前导节点（例如图标）。
 
 `RightClickAction` 还可设置为 `RightClickPaste`、`RightClickCopy`、`RightClickCopyOrPaste`（有选区时复制，否则粘贴）或 `RightClickIgnore`。Ignore 把事件留给外层应用菜单；自定义带样式的 `ui.ContextMenu` 可通过 ref 调用相同动作。
 
-导入 `tsx/terminal` 后可在 `nsgo/base` 使用 `<Terminal>`。响应式 `keybinds` 和 `rightClickAction` 属性更新视图并保留会话。动作使用 Ghostty 名称，例如 `increase_font_size` 和 `copy_to_clipboard`；右键策略为 `context-menu`、`paste`、`copy`、`copy-or-paste` 和 `ignore`。菜单样式属性使用 Go 名称对应的小驼峰写法。
+导入 `tsx/terminal` 后可在 `nsgo/base` 使用 `<Terminal>`。响应式 `keybinds` 和 `rightClickAction` 属性更新视图并保留会话。动作使用 Ghostty 名称，例如 `increase_font_size` 和 `copy_to_clipboard`；右键策略为 `context-menu`、`paste`、`copy`、`copy-or-paste` 和 `ignore`。`menuClass`、`menuStyle`、`menuItemClass` 和 `menuItemStyle` 属性以 Go 名称的小驼峰写法设置菜单样式；样式函数、`MenuItemLeading` 和 `ui/terminal` 仅限 Go。
 
 ## 鼠标上报
 
