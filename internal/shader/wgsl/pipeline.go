@@ -118,8 +118,11 @@ func compilePipelineModule(m *module, src string) *PipelineProgram {
 			if t.k == kArray && t.n == 0 {
 				fail(g.pos, "uniform buffer %s cannot have a runtime-sized array type", g.name)
 			}
-			if stride, ok := unalignedUniformArray(t.ir()); ok {
-				fail(g.pos, "uniform buffer %s holds an array whose elements are %d bytes apart; uniform arrays need a multiple of 16, such as array<vec4<f32>, N>", g.name, stride)
+			if member, reason, ok := uniformLayoutError(t.ir(), t.String()); ok {
+				if member == "" {
+					fail(g.pos, "uniform buffer %s %s", g.name, reason)
+				}
+				fail(g.pos, "uniform buffer %s member %s %s", g.name, member, reason)
 			}
 			kind = shaderir.BindingUniformBuffer
 		case "storage":
@@ -1165,23 +1168,51 @@ func parseStageField(name string, t ty, attrs []attr, pos int, fieldIdx int) sta
 	return fb
 }
 
-// unalignedUniformArray returns the element stride of the first array in a uniform buffer's type whose elements are not a multiple of 16 bytes apart. WGSL's uniform address space refuses such arrays, and the Metal writer, which lays buffer structs out with natural array strides, could not read them at the offsets the host writes.
-func unalignedUniformArray(t shaderir.Type) (int, bool) {
+// uniformLayoutError returns the first WGSL uniform-address-space layout rule
+// violated by the natural layout of t. The IR's uniform layout is deliberately
+// stricter than storage layout, so accepted uniform buffers have the same
+// offsets in every writer.
+func uniformLayoutError(t shaderir.Type, prefix string) (member, reason string, ok bool) {
 	switch t.Main {
 	case shaderir.Array:
 		if len(t.Sub) == 0 {
-			return 0, false
+			return "", "", false
 		}
 		if stride := t.Sub[0].StorageStride(); stride%16 != 0 {
-			return stride, true
+			return prefix, fmt.Sprintf("array elements are %d bytes apart; uniform arrays need a multiple of 16, such as array<vec4<f32>, N>", stride), true
 		}
-		return unalignedUniformArray(t.Sub[0])
+		return uniformLayoutError(t.Sub[0], prefix)
 	case shaderir.Struct:
-		for _, f := range t.Sub {
-			if stride, ok := unalignedUniformArray(f); ok {
-				return stride, true
+		for i, f := range t.Sub {
+			name := fmt.Sprintf("field%d", i)
+			if i < len(t.FieldNames) && t.FieldNames[i] != "" {
+				name = t.FieldNames[i]
+			}
+			path := name
+			if prefix != "" {
+				path = prefix + "." + name
+			}
+			offset := t.StorageStructFieldOffset(i)
+			if (f.Main == shaderir.Struct || f.Main == shaderir.Array) && offset%16 != 0 {
+				return path, fmt.Sprintf("starts at offset %d, which is not a multiple of 16; add padding before this member", offset), true
+			}
+			if i > 0 {
+				previous := t.Sub[i-1]
+				if previous.Main == shaderir.Struct || previous.Main == shaderir.Array {
+					previousEnd := t.StorageStructFieldOffset(i-1) + roundUp16(previous.StorageSizeBytes())
+					if offset < previousEnd {
+						return path, fmt.Sprintf("starts at offset %d, before the required offset %d after the preceding %v member; add padding", offset, previousEnd, previous.Main), true
+					}
+				}
+			}
+			if member, reason, ok := uniformLayoutError(f, path); ok {
+				return member, reason, true
 			}
 		}
 	}
-	return 0, false
+	return "", "", false
+}
+
+func roundUp16(n int) int {
+	return (n + 15) / 16 * 16
 }

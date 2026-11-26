@@ -202,7 +202,7 @@ func (t Type) AlignBytes() int {
 				maxAlign = a
 			}
 		}
-		return maxAlign
+		return roundUp(maxAlign, 16)
 	default:
 		return 4
 	}

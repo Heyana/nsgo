@@ -124,6 +124,68 @@ func TestCompilePipelineAndEmitters(t *testing.T) {
 	}
 }
 
+func TestUniformLayoutRejectsWGSLInvalidStructAndArrayMembers(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "struct member",
+			src: `
+struct Inner { x: f32 }
+struct U { a: f32, s: Inner }
+@group(0) @binding(0) var<uniform> u: U;
+@fragment fn fs() -> @location(0) vec4<f32> { return vec4<f32>(u.s.x); }
+`,
+			want: "member U.s starts at offset 4",
+		},
+		{
+			name: "array member",
+			src: `
+struct Q { x: f32, y: f32, z: f32, w: f32 }
+struct V { a: f32, q: array<Q, 2> }
+@group(0) @binding(0) var<uniform> u: V;
+@fragment fn fs() -> @location(0) vec4<f32> { return vec4<f32>(u.q[1].x); }
+`,
+			want: "member V.q starts at offset 4",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := wgsl.CompilePipeline(tt.src)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("CompilePipeline error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestUniformLayoutAcceptsExplicitPadding(t *testing.T) {
+	const src = `
+struct Inner { x: f32 }
+struct U { a: vec4<f32>, s: Inner, pad: vec3<f32> }
+@group(0) @binding(0) var<uniform> u: U;
+@fragment fn fs() -> @location(0) vec4<f32> { return vec4<f32>(u.s.x); }
+`
+	prog, err := wgsl.CompilePipeline(src)
+	if err != nil {
+		t.Fatalf("CompilePipeline: %v", err)
+	}
+	typ := prog.IR.Bindings[0].Type
+	if got, want := typ.StructFieldOffset(1), 16; got != want {
+		t.Fatalf("inner struct offset = %d, want %d", got, want)
+	}
+	if got, want := typ.StructFieldOffset(2), 32; got != want {
+		t.Fatalf("padding offset = %d, want %d", got, want)
+	}
+	for i := range typ.Sub {
+		if got, want := typ.StructFieldOffset(i), typ.StorageStructFieldOffset(i); got != want {
+			t.Fatalf("field %d uniform offset = %d, storage offset = %d", i, got, want)
+		}
+	}
+}
+
 const shadowReceiverWGSL = `
 struct ShadowUniforms {
 	mvp: mat4x4<f32>,
