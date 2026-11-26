@@ -1007,6 +1007,42 @@ export async function serviceClipboard() {
 	}
 }
 
+// TestPluginLoadTimeGoSettledPromiseCutReachesOnError holds a slice cut in a reaction to a host.call made as the module loads, with no CallTotal and so no owner, to reporting ErrBudget to OnError, as a cut timer set at load does, while the app runs on.
+func TestPluginLoadTimeGoSettledPromiseCutReachesOnError(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("the page's engine cannot interrupt a running slice")
+	}
+	p := verified(t, `import { host } from "nsgo";
+host.call("echo", {}).then(() => { for (;;) {} });
+export function ping() { return "alive"; }`, pkg.Capabilities{Host: []string{"echo"}})
+	limits := tsx.Limits{Load: time.Second, Call: 20 * time.Millisecond}
+	h := core.NewHost()
+	// The module calls the host as it loads, before Start returns the app, so the answer waits for it.
+	var pending *core.HostCall
+	h.Handle("echo", func(c *core.HostCall) { pending = c })
+	var plugin *tsx.Plugin
+	var loadErr error
+	var appErrors, attributed []error
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &limits, Host: h, WebUnisolated: true, OnError: func(err error) { attributed = append(attributed, err) }})
+		return core.View{}
+	}, nsgotest.Errors(func(err error) { appErrors = append(appErrors, err) }))
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if pending == nil {
+		t.Fatal("the module did not call the host as it loaded")
+	}
+	app.Post(func() { pending.Resolve("x") })
+	advanceUntil(t, app, 5*time.Second, func() bool { return len(attributed) > 0 })
+	if len(appErrors) != 0 || len(attributed) != 1 || !errors.Is(attributed[0], tsx.ErrBudget) {
+		t.Fatalf("app errors = %v, plugin errors = %v", appErrors, attributed)
+	}
+	if value, err := callPlugin(t, app, plugin, "ping"); err != nil || value != "alive" {
+		t.Fatalf("ping = %v, %v", value, err)
+	}
+}
+
 // TestPluginCallTotalStopsYieldingWork holds CallTotal to failing a call whose every slice stays within Call, as it yields to a timer between them, and to dropping its timers, so the app runs on.
 func TestPluginCallTotalStopsYieldingWork(t *testing.T) {
 	p := verified(t, `export async function loop() {
