@@ -197,11 +197,12 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			}
 		}
 		stage(ctx, "finding sources")
-		dirs := sourceDirs(p.Dir, pkgs)
+		dirs, globs := sourceDirs(p.Dir, pkgs), embedGlobs(pkgs)
 		// The commands the desktop packages hold rebuild them too.
 		for _, c := range p.Commands {
 			if cmdPkgs, err := p.appPackages(ctx, c.Package); err == nil {
 				dirs = append(dirs, sourceDirs(p.Dir, cmdPkgs)...)
+				globs = append(globs, embedGlobs(cmdPkgs)...)
 			}
 		}
 
@@ -224,7 +225,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		}
 		dirs, sources := splitSources(p.Dir, dirs)
 		scanBuild := func() string {
-			files := scan(dirs)
+			files := scan(dirs) + embedMatches(globs)
 			if s.watch != nil {
 				files += s.watch(p)
 			}
@@ -897,6 +898,57 @@ func sourceDirs(dir string, pkgs []goPackage) []string {
 		}
 	}
 	return dirs
+}
+
+// embedGlobs lists the //go:embed patterns of every non-standard package,
+// joined to its directory, with all: kept.
+func embedGlobs(pkgs []goPackage) []string {
+	var globs []string
+	for _, g := range pkgs {
+		if g.standard || g.dir == "" {
+			continue
+		}
+		for _, pattern := range g.embedPatterns {
+			all, ok := strings.CutPrefix(pattern, "all:")
+			if ok {
+				globs = append(globs, "all:"+filepath.Join(g.dir, all))
+			} else {
+				globs = append(globs, filepath.Join(g.dir, pattern))
+			}
+		}
+	}
+	return globs
+}
+
+// embedMatches returns the names of the files the globs match now, which
+// scan's listing of the files embedded at the last build misses when a
+// new one appears: a directory matched holds its tree, but for names
+// starting with . or _ unless the pattern starts with all:, as go:embed
+// reads them.
+func embedMatches(globs []string) string {
+	var b strings.Builder
+	for _, glob := range globs {
+		glob, all := strings.CutPrefix(glob, "all:")
+		matches, _ := filepath.Glob(glob)
+		for _, match := range matches {
+			filepath.WalkDir(match, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return nil
+				}
+				if name := d.Name(); path != match && !all && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")) {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if !d.IsDir() {
+					b.WriteString(path + "\n")
+				}
+				return nil
+			})
+		}
+	}
+	return b.String()
 }
 
 // scan returns a fingerprint of the watched files' names, sizes and times:

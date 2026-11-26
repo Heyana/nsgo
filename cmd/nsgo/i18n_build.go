@@ -49,13 +49,14 @@ type goPackage struct {
 	standard        bool     // in the standard library
 	err             string   // why it cannot be loaded, such as a module go.mod lacks
 	embeds          []string // the files it embeds, relative to dir
+	embedPatterns   []string // its //go:embed patterns, relative to dir
 }
 
 // goPackages lists pkgs, from dir, with -deps their dependencies too, as a build with tags sees them.
 func goPackages(ctx context.Context, dir string, deps bool, tags []string, pkgs ...string) ([]goPackage, error) {
 	args := append([]string{"list", "-e"}, tagsArgs(tags)...)
 	args = append(args, "-f",
-		"{{.ImportPath}}\t{{.Dir}}\t{{if .Module}}{{.Module.Main}}{{end}}\t{{.Standard}}\t{{if .Error}}{{printf \"%q\" .Error.Err}}{{end}}{{range .EmbedFiles}}\t{{.}}{{end}}")
+		"{{.ImportPath}}\t{{.Dir}}\t{{if .Module}}{{.Module.Main}}{{end}}\t{{.Standard}}\t{{join .EmbedPatterns \"\\x1f\"}}\t{{if .Error}}{{printf \"%q\" .Error.Err}}{{end}}{{range .EmbedFiles}}\t{{.}}{{end}}")
 	if deps {
 		args = append(args, "-deps")
 	}
@@ -71,12 +72,15 @@ func goPackages(ctx context.Context, dir string, deps bool, tags []string, pkgs 
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		f := strings.Split(line, "\t")
 		// A package without Go files yet has no directory. The last line's
-		// empty error, trimmed, leaves it a field short.
+		// empty patterns and error, trimmed, leave it fields short.
 		if len(f) >= 4 {
 			g := goPackage{importPath: f[0], dir: f[1], main: f[2] == "true", standard: f[3] == "true"}
-			if len(f) >= 5 {
-				g.err, _ = strconv.Unquote(f[4])
-				g.embeds = f[5:]
+			if len(f) >= 5 && f[4] != "" {
+				g.embedPatterns = strings.Split(f[4], "\x1f")
+			}
+			if len(f) >= 6 {
+				g.err, _ = strconv.Unquote(f[5])
+				g.embeds = f[6:]
 			}
 			list = append(list, g)
 		}

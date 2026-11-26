@@ -125,6 +125,52 @@ func main() {}
 	}
 }
 
+func TestDevNewEmbeddedFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod": "module embedprobe\n\ngo 1.26\n",
+		"main.go": `package main
+import "embed"
+//go:embed notes/*.txt
+var notes embed.FS
+//go:embed static
+var static embed.FS
+//go:embed all:raw
+var raw embed.FS
+func main() {}
+`,
+		"notes/a.txt":     "a",
+		"static/index.md": "index",
+		"raw/a":           "a",
+	})
+	pkgs, err := goPackages(t.Context(), dir, false, nil, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) != 1 || len(pkgs[0].embeds) != 3 || len(pkgs[0].embedPatterns) != 3 {
+		t.Fatalf("go list = %+v, want one package with 3 files and 3 patterns embedded", pkgs)
+	}
+	dirs, globs := sourceDirs(dir, pkgs), embedGlobs(pkgs)
+	fingerprint := func() string { return scan(dirs) + embedMatches(globs) }
+	for _, tc := range []struct {
+		file    string
+		rebuild bool
+	}{
+		{"notes/b.txt", true},
+		{"notes/b.md", false},
+		{"static/deep/page.md", true},
+		{"static/_draft.md", false},
+		{"static/.hidden/page.md", false},
+		{"raw/_kept", true},
+	} {
+		before := fingerprint()
+		writeFiles(t, dir, map[string]string{tc.file: "new"})
+		if rebuilt := fingerprint() != before; rebuilt != tc.rebuild {
+			t.Errorf("creating %s: rebuild = %t, want %t", tc.file, rebuilt, tc.rebuild)
+		}
+	}
+}
+
 func TestDevDebugKeepsSymbols(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{
