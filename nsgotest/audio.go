@@ -25,14 +25,14 @@ type Sound struct {
 // AudioPlayback is one play of a Sound in the headless audio model.
 type AudioPlayback struct {
 	// Volume and Rate are its current settings and Loop whether it repeats until stopped. Ended reports all ways it stopped. Restricted says a restricted scope's sound played it, which the platform holds to the restricted playbacks' share of the output's voices.
-	Volume, Rate float32
-	Loop         bool
-	Ended        bool
-	Restricted   bool
-	id           uint32
-	sound        *Sound
-	remaining    time.Duration
-	startAt      time.Time
+	Volume, Rate, Pan float32
+	Loop              bool
+	Ended             bool
+	Restricted        bool
+	id                uint32
+	sound             *Sound
+	remaining         time.Duration
+	startAt           time.Time
 }
 
 // AudioPlayer is a player the app opened.
@@ -109,7 +109,7 @@ func (a *App) audio(id uint32, r driver.AudioRequest) {
 		case driver.AudioPlaybackSet:
 			for _, p := range a.audioPlaybacks {
 				if p.id == r.Playback && p.sound == s {
-					p.Volume, p.Rate = r.Volume, r.Rate
+					p.Volume, p.Rate, p.Pan = r.Volume, r.Rate, r.Pan
 					break
 				}
 			}
@@ -197,7 +197,7 @@ func (a *App) startPlayback(s *Sound, r driver.AudioRequest) {
 		a.endPlayback(a.audioPlaybacks[oldest])
 		a.audioPlaybacks = slices.Delete(a.audioPlaybacks, oldest, oldest+1)
 	}
-	p := &AudioPlayback{Volume: r.Volume, Rate: r.Rate, Loop: r.Loop, Restricted: r.Restricted, id: r.Playback, sound: s, remaining: s.Duration, startAt: r.StartAt}
+	p := &AudioPlayback{Volume: r.Volume, Rate: r.Rate, Pan: r.Pan, Loop: r.Loop, Restricted: r.Restricted, id: r.Playback, sound: s, remaining: s.Duration, startAt: r.StartAt}
 	s.Playbacks = append(s.Playbacks, p)
 	a.audioPlaybacks = append(a.audioPlaybacks, p)
 }

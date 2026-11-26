@@ -367,7 +367,7 @@ func (a *webAudio) play(id uint32, r *driver.AudioRequest) {
 	source.Call("connect", gain)
 	voice := &webSoundVoice{sound: id, playback: r.Playback, source: source, gain: gain, restricted: r.Restricted}
 	// A centered voice skips the panner; browsers without StereoPannerNode play every voice centered.
-	if r.Pan != 0 && a.output.Get("createStereoPanner").Type() == js.TypeFunction {
+	if a.output.Get("createStereoPanner").Type() == js.TypeFunction {
 		voice.panner = a.output.Call("createStereoPanner")
 		voice.panner.Get("pan").Set("value", r.Pan)
 		gain.Call("connect", voice.panner)
@@ -427,6 +427,9 @@ func (a *webAudio) controlPlayback(id uint32, r *driver.AudioRequest) {
 			} else {
 				voice.gain.Get("gain").Set("value", r.Volume)
 				voice.source.Get("playbackRate").Set("value", r.Rate)
+				if voice.panner.Truthy() {
+					voice.panner.Get("pan").Set("value", r.Pan)
+				}
 			}
 			return
 		}

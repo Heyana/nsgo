@@ -283,7 +283,7 @@ func (a *windowAudio) controlPlayback(id uint32, r *driver.AudioRequest) {
 		if r.Command == driver.AudioPlaybackStop {
 			output.retire(v)
 			output.voices = slices.Delete(output.voices, i, i+1)
-		} else if failed(v.voice.callF(xaVoiceVolume, 1, f32(r.Volume), 0)) || failed(v.voice.callF(xaVoiceRate, 1, f32(r.Rate), 0)) {
+		} else if failed(v.voice.callF(xaVoiceVolume, 1, f32(r.Volume), 0)) || failed(v.voice.callF(xaVoiceRate, 1, f32(r.Rate), 0)) || failed(output.pan(v, r.Pan)) {
 			a.closeOutput()
 		}
 		return

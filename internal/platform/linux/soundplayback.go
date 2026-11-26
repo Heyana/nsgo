@@ -40,7 +40,7 @@ func (m *soundMixer) control(id uint32, req *driver.AudioRequest) {
 				m.endPlayback(*play)
 				m.pending = slices.Delete(m.pending, i, i+1)
 			} else {
-				play.volume, play.rate = req.Volume, req.Rate
+				play.volume, play.rate, play.pan = req.Volume, req.Rate, req.Pan
 			}
 			return
 		}
@@ -51,20 +51,21 @@ func (m *soundMixer) control(id uint32, req *driver.AudioRequest) {
 				m.finishVoice(voice)
 				m.voices = slices.Delete(m.voices, i, i+1)
 			} else {
-				m.updateVoice(i, req.Volume, req.Rate)
+				m.updateVoice(i, req.Volume, req.Rate, req.Pan)
 			}
 			return
 		}
 	}
 }
 
-func (m *soundMixer) updateVoice(index int, volume, rate float32) {
+func (m *soundMixer) updateVoice(index int, volume, rate, pan float32) {
 	voice := &m.voices[index]
 	// The mixer applies pad volume to each output block. An upstream
 	// volume element would have processed the queued PCM already.
 	setSoundVolume(voice.pad, volume)
 	voice.play.volume = volume
-	if voice.play.rate == rate {
+	voice.play.pan = pan
+	if voice.play.rate == rate && voice.play.pan == pan {
 		return
 	}
 	start := time.Now().Add(20 * time.Millisecond)

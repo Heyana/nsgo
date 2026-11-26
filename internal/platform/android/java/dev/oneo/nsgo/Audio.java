@@ -54,7 +54,7 @@ final class Audio {
     private static final class Voice {
         final Sound sound;
         final int stream, playback;
-        final float left, right;
+        float left, right;
         /** A looping voice repeats until stopped: it has no remaining time and no completion. */
         final boolean loop;
         long changed;
@@ -115,7 +115,7 @@ final class Audio {
                 break;
             }
             case PLAYBACK_SET:
-                setPlayback(id, playback, in.readFloat(), in.readFloat());
+                setPlayback(id, playback, in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat());
                 break;
             case PLAYBACK_STOP:
                 stopPlayback(id, playback);
@@ -331,14 +331,16 @@ final class Audio {
         }
     }
 
-    private void setPlayback(int id, int playback, float volume, float rate) {
+    private void setPlayback(int id, int playback, float volume, float left, float right, float rate) {
         for (Voice voice : voices) if (voice.sound.id == id && voice.playback == playback) {
             voice.advance(SystemClock.elapsedRealtimeNanos());
             if (voice.remaining == 0) {
                 finishVoice(voice, false);
                 return;
             }
-            pool.setVolume(voice.stream, volume * voice.left, volume * voice.right);
+            voice.left = left;
+            voice.right = right;
+            pool.setVolume(voice.stream, volume * left, volume * right);
             pool.setRate(voice.stream, rate);
             voice.rate = rate;
             scheduleVoice(voice);

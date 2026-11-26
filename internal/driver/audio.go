@@ -48,7 +48,7 @@ const (
 	AudioClose
 	// AudioReadLatency reads the current output route's latency.
 	AudioReadLatency
-	// AudioPlaybackSet updates Playback's volume and rate.
+	// AudioPlaybackSet updates Playback's volume, rate and pan.
 	AudioPlaybackSet
 	// AudioPlaybackStop stops Playback alone.
 	AudioPlaybackStop

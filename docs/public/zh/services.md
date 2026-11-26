@@ -615,11 +615,11 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 
 ## 音频播放
 
-用 `audio.LoadSound` 加载短音效，再用 `sound.Play(audio.Voice{})` 播放。多次调用可以重叠播放。在 macOS、iOS、Windows、Linux、Android 和 Web 上，可以用返回的 `audio.Playback` 单独调整音量和倍速，或停止本次播放。播放结束、停止、超过并发上限被淘汰，或无法启动时，响应式的 `Ended()` 变为 true。无法单独控制每次播放的后端会返回一个已结束的句柄。
+用 `audio.LoadSound` 加载短音效，再用 `sound.Play(audio.Voice{})` 播放。多次调用可以重叠播放。在 macOS、iOS、Windows、Linux、Android 和 Web 上，可以用返回的 `audio.Playback` 单独调整音量、倍速和声道位置，或停止本次播放。播放结束、停止、超过并发上限被淘汰，或无法启动时，响应式的 `Ended()` 变为 true。无法单独控制每次播放的后端会返回一个已结束的句柄。
 
 在 iOS 上，库自带的、不经 `audio` 和 `Video` 播放的音频引擎（如 `AudioQueue`）在播放期间用 `audio.HoldSession(core.AudioSessionPlayback)` 持有应用唯一的音频会话，停止时调用返回的 release。它与播放器的 `AudioSession` 取相同的级别，和应用的视频、播放器与录音一同权衡，因此 `AudioSessionPlayback` 和 `AudioSessionMixWithOthers` 在响铃/静音开关拨到静音时仍会出声。其他平台上它什么也不持有。
 
-用 `audio.Voice{Muted: true}` 静音启动音效，也可用 `playback.SetVolume(0)` 将正在播放的音效静音。长音频用 `audio.NewPlayer` 流式播放，`player.SetMuted(true)` 可在保持播放进度的同时静音。取消静音会恢复播放器设定的音量。`Voice.Volume` 和 `Player.SetVolume` 以零表示默认满音量。
+用 `audio.Voice{Muted: true}` 静音启动音效，也可用 `playback.SetVolume(0)` 将正在播放的音效静音，用 `playback.SetPan(-1)` 或 `SetPan(1)` 将它移到左声道或右声道。长音频用 `audio.NewPlayer` 流式播放，`player.SetMuted(true)` 可在保持播放进度的同时静音。取消静音会恢复播放器设定的音量。`Voice.Volume` 和 `Player.SetVolume` 以零表示默认满音量。
 
 ## 音效限制
 

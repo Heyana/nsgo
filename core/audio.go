@@ -466,18 +466,18 @@ func (s *Sound) Play(v SoundVoice) *Playback {
 		return p
 	}
 	b := s.buffer
-	volume, rate := audioVolume(v.Volume), audioRate(v.Rate)
+	volume, rate, pan := audioVolume(v.Volume), audioRate(v.Rate), audioPan(v.Pan)
 	if v.Muted {
 		volume = 0
 	}
 	if b.key.tree.reported.AudioPlaybackControls {
-		*p = Playback{sound: b, id: audioIDs.Add(1), ended: NewSignal(b.rt.root, false), volume: volume, rate: rate}
+		*p = Playback{sound: b, id: audioIDs.Add(1), ended: NewSignal(b.rt.root, false), volume: volume, rate: rate, pan: pan}
 		if b.playbacks == nil {
 			b.playbacks = map[uint32]*Playback{}
 		}
 		b.playbacks[p.id] = p
 	}
-	b.key.tree.sendAudio(b.id, driver.AudioRequest{Command: driver.AudioPlay, Playback: p.id, Volume: volume, Rate: rate, Pan: audioPan(v.Pan), StartAt: v.StartAt, Loop: v.Loop,
+	b.key.tree.sendAudio(b.id, driver.AudioRequest{Command: driver.AudioPlay, Playback: p.id, Volume: volume, Rate: rate, Pan: pan, StartAt: v.StartAt, Loop: v.Loop,
 		MaxPlaybacks: b.rt.audioState().limits.MaxPlaybacks, Restricted: b.key.restricted})
 	return p
 }

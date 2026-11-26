@@ -38,6 +38,9 @@ func writeAudio(w *writer, id uint32, r *driver.AudioRequest) {
 		w.flags(r.Loop)
 	case driver.AudioPlaybackSet:
 		w.float(r.Volume)
+		left, right := driver.AudioPanGains(r.Pan)
+		w.float(left)
+		w.float(right)
 		w.float(r.Rate)
 	case driver.AudioPlaybackStop:
 	case driver.AudioOpen:

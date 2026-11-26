@@ -317,8 +317,9 @@ func TestSoundPlaybackControlsAndEnds(t *testing.T) {
 	first.Stop()
 	second.SetVolume(0.25)
 	second.SetRate(2)
+	second.SetPan(-1)
 	app.Settle()
-	if !first.Ended() || second.Ended() || !p[0].Ended || p[1].Ended || p[1].Volume != 0.25 || p[1].Rate != 2 {
+	if !first.Ended() || second.Ended() || !p[0].Ended || p[1].Ended || p[1].Volume != 0.25 || p[1].Rate != 2 || p[1].Pan != -1 {
 		t.Fatalf("independent stop and settings gave %+v, %+v", p[0], p[1])
 	}
 	second.SetVolume(0)

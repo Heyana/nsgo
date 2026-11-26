@@ -678,6 +678,7 @@ func (a *Audio) controlPlayback(id uint32, r *driver.AudioRequest) {
 			} else {
 				v.varispeed.Send(sel("setRate:"), r.Rate)
 				v.mixer.Send(sel("setOutputVolume:"), r.Volume)
+				v.mixer.Send(sel("setPan:"), r.Pan)
 			}
 			return
 		}

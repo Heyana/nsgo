@@ -127,6 +127,10 @@ func (r *runtime) playbackValue(p *core.Playback) *js.Object {
 		p.SetRate(float32(arg(call, 0).ToFloat()))
 		return js.Undefined()
 	}))
+	_ = o.Set("setPan", r.function(func(call js.FunctionCall) js.Value {
+		p.SetPan(float32(arg(call, 0).ToFloat()))
+		return js.Undefined()
+	}))
 	_ = o.Set("stop", r.function(func(js.FunctionCall) js.Value {
 		p.Stop()
 		return js.Undefined()

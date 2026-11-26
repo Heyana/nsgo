@@ -23,6 +23,7 @@ export interface Playback {
   readonly ended: boolean;
   setVolume(volume: number): void;
   setRate(rate: number): void;
+  setPan(pan: number): void;
   stop(): void;
 }
 
