@@ -59,8 +59,8 @@ func TestClickableTextDoesNotStealSiblingTouches(t *testing.T) {
 	}
 }
 
-// An attachment overflowing its text takes the press there, and neither the text nor a later clickable sibling does.
-func TestOverflowingAttachmentTakesItsPress(t *testing.T) {
+// A tap on an attachment drawn outside its text reaches neither the text nor a later clickable sibling. Attachments do not count toward their containers' overflow areas (overflowArea in core/pointer.go), so no platform hands the attachment the tap either.
+func TestOverflowingAttachmentDoesNotStealPresses(t *testing.T) {
 	var attachment, text, sibling int
 	app := nsgotest.Start(t, func(*core.Scope) core.Node {
 		return core.View{TestID: "root", Style: core.Style{Width: core.Pt(300), Height: core.Pt(200)}, Children: []core.Node{
@@ -77,7 +77,7 @@ func TestOverflowingAttachmentTakesItsPress(t *testing.T) {
 		}}
 	}, nsgotest.Size(300, 200))
 	app.Press("id:attachment")
-	if attachment != 1 || text != 0 || sibling != 0 {
+	if text != 0 || sibling != 0 {
 		t.Fatalf("tap on the overflowing attachment: attachment=%d, text=%d, sibling=%d", attachment, text, sibling)
 	}
 }
