@@ -137,8 +137,8 @@ func (r *runtime) newPromise() (*js.Promise, func(any) error, func(any) error) {
 	resume := r.resumer()
 	wrap := func(settle func(any) error) func(any) error {
 		return func(v any) error {
-			var err error
 			if r.depth > 0 {
+				var err error
 				var interruptedOwner *deadline
 				resume(func() {
 					if err = settle(v); err != nil {
@@ -146,7 +146,7 @@ func (r *runtime) newPromise() (*js.Promise, func(any) error, func(any) error) {
 					}
 				})
 				if err != nil {
-					// Restore the interrupted reaction's owner before panicking out of r.under, so r.within expires the right deadline.
+					// r.under has already put back the previous owner; set the interrupted reaction's owner again, so r.within expires its deadline as the panic unwinds.
 					if interruptedOwner != nil {
 						r.current = interruptedOwner
 					}
@@ -157,12 +157,13 @@ func (r *runtime) newPromise() (*js.Promise, func(any) error, func(any) error) {
 			// Settled outside a call into JS, its jobs run in one of their own, under the deadline.
 			resume(func() {
 				r.inJS(func() {
-					if err = settle(v); err != nil {
+					if err := settle(v); err != nil {
 						panic(err)
 					}
 				})
 			})
-			return err
+			// The call into JS has already handled any error the settling raised.
+			return nil
 		}
 	}
 	return p, wrap(resolve), wrap(reject)
