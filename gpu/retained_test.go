@@ -1,10 +1,32 @@
 package gpu
 
 import (
+	"sync/atomic"
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/nsgotest"
 )
+
+// liveScopeCleanups counts the cleanups the package has registered on scopes and not taken off or run, by wrapping core's hook for the test.
+func liveScopeCleanups(t *testing.T) *atomic.Int64 {
+	orig := driver.ScopeCleanup
+	live := new(atomic.Int64)
+	driver.ScopeCleanup = func(scope any, fn func()) func() {
+		live.Add(1)
+		var done atomic.Bool
+		end := func() {
+			if done.CompareAndSwap(false, true) {
+				live.Add(-1)
+			}
+		}
+		remove := orig(scope, func() { end(); fn() })
+		return func() { end(); remove() }
+	}
+	t.Cleanup(func() { driver.ScopeCleanup = orig })
+	return live
+}
 
 // A frame that creates and closes bind groups must not grow the device for its lifetime: a closed group and its layout leave the lists a restore walks.
 func TestClosedBindGroupsLeaveTheRestoreLists(t *testing.T) {
@@ -76,9 +98,9 @@ func TestRestoreKeepsOnlyOpenBindGroups(t *testing.T) {
 	}
 }
 
-// Creating and closing resources N times under one scope keeps both the scope's
-// cleanup set and the device's retained lists at a constant size (#2339).
+// Creating and closing resources N times under one scope keeps both the scope's cleanups and the device's retained lists at a constant size (#2339).
 func TestClosedResourcesLeaveScopeAndRetainedLists(t *testing.T) {
+	live := liveScopeCleanups(t)
 	cx := core.NewRoot(core.RootOptions{})
 	defer cx.Dispose()
 
@@ -177,11 +199,8 @@ fn cs_main() {}
 		}
 	}
 
-	if got := len(d.scopeCleanups); got != 1 {
-		t.Fatalf("scopeCleanups count = %d, want 1", got)
-	}
-	if got := len(d.scopeCleanups[cx].items); got != 0 {
-		t.Fatalf("scopeCleanups[cx].items = %d, want 0", got)
+	if got := live.Load(); got != 0 {
+		t.Fatalf("closed resources left %d cleanups on the scope, want 0", got)
 	}
 	if len(d.retainedBuffers) != 0 || len(d.retainedTextures) != 0 ||
 		len(d.retainedSamplers) != 0 || len(d.retainedLayouts) != 0 ||
@@ -192,9 +211,9 @@ fn cs_main() {}
 	}
 }
 
-// Disposing a scope closes every resource still open on it, removes the scope
-// from the device's cleanup map, and leaves later Close calls as no-ops.
+// Disposing a scope closes every resource still open on it, last created first, and leaves later Close calls as no-ops.
 func TestScopeDisposalClosesRemainingResources(t *testing.T) {
+	live := liveScopeCleanups(t)
 	root := core.NewRoot(core.RootOptions{})
 	defer root.Dispose()
 	child := root.Child()
@@ -218,16 +237,23 @@ func TestScopeDisposalClosesRemainingResources(t *testing.T) {
 		t.Fatalf("CreateTexture open: %v", err)
 	}
 
+	if got := live.Load(); got != 2 {
+		t.Fatalf("live cleanups before Dispose = %d, want 2", got)
+	}
+	ops := len(d.pendingOps)
 	child.Dispose()
 
+	if got := d.pendingOps[ops:]; len(got) != 2 || got[0].Kind != driver.GPUOpDestroyTexture || got[1].Kind != driver.GPUOpDestroyBuffer {
+		t.Fatalf("Dispose destroyed %v, want the texture, then the buffer", got)
+	}
 	if openBuf.Valid() || !openBuf.closed {
 		t.Fatal("openBuf should be closed after scope disposal")
 	}
 	if openTex.Valid() || !openTex.closed {
 		t.Fatal("openTex should be closed after scope disposal")
 	}
-	if got := len(d.scopeCleanups); got != 0 {
-		t.Fatalf("scopeCleanups after Dispose = %d, want 0", got)
+	if got := live.Load(); got != 0 {
+		t.Fatalf("live cleanups after Dispose = %d, want 0", got)
 	}
 	if len(d.retainedBuffers) != 0 || len(d.retainedTextures) != 0 {
 		t.Fatalf("retained lists after Dispose: bufs=%d texs=%d, want 0", len(d.retainedBuffers), len(d.retainedTextures))
@@ -237,5 +263,96 @@ func TestScopeDisposalClosesRemainingResources(t *testing.T) {
 	}
 	if err := openTex.Close(); err != nil {
 		t.Fatalf("post-dispose Close(openTex): %v", err)
+	}
+}
+
+// Resources created while an effect runs belong to the effect, as Scope.Cleanup's do, whichever scope is passed: they close when it runs again, and do not take a resource created under the scope outside it with them.
+func TestResourcesCreatedInAnEffectBelongToIt(t *testing.T) {
+	live := liveScopeCleanups(t)
+	var (
+		d        *Device
+		inEffect []*Buffer
+		long     *Buffer
+		size     *core.Signal[int]
+	)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		size = core.NewSignal(cx, 16)
+		return View(cx, ViewProps{
+			TestID: "effect-gpu",
+			Style:  core.Style{Width: core.Pt(32), Height: core.Pt(32)},
+			OnReady: func(dev *Device) {
+				d = dev
+				cx.Effect(func() {
+					b, err := d.CreateBuffer(cx, BufferDesc{Size: uint64(size.Get()), Usage: UsageVertex})
+					if err != nil {
+						t.Errorf("CreateBuffer in effect: %v", err)
+						return
+					}
+					inEffect = append(inEffect, b)
+				})
+				var err error
+				if long, err = d.CreateBuffer(cx, BufferDesc{Size: 16, Usage: UsageVertex}); err != nil {
+					t.Errorf("CreateBuffer: %v", err)
+				}
+			},
+		})
+	}, nsgotest.Size(32, 32))
+	app.Settle()
+	if d == nil || len(inEffect) != 1 || long == nil {
+		t.Fatalf("device ready %v, effect buffers %d, long-lived %v", d != nil, len(inEffect), long != nil)
+	}
+	base := live.Load()
+	for i := range 5 {
+		app.Post(func() { size.Set(32 + 16*i) })
+		app.Settle()
+	}
+	if len(inEffect) != 6 {
+		t.Fatalf("effect ran %d times, want 6", len(inEffect))
+	}
+	for i, b := range inEffect[:5] {
+		if b.Valid() {
+			t.Fatalf("buffer %d from an earlier effect run is still open", i)
+		}
+	}
+	if !inEffect[5].Valid() || !long.Valid() {
+		t.Fatalf("open buffers closed: latest effect's %v, long-lived %v", inEffect[5].Valid(), long.Valid())
+	}
+	if got := live.Load(); got != base {
+		t.Fatalf("live cleanups went from %d to %d over the effect's runs", base, got)
+	}
+}
+
+// Losing and restoring the device again and again leaves the view's scope holding what it held after the first restore, as a restore reuses each resource's cleanup instead of registering a new one per device.
+func TestRepeatedDeviceLossKeepsTheScopeBounded(t *testing.T) {
+	live := liveScopeCleanups(t)
+	var kept *Buffer
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return View(cx, ViewProps{
+			TestID:          "loss-gpu",
+			RetainResources: true,
+			Style:           core.Style{Width: core.Pt(32), Height: core.Pt(32)},
+			OnReady: func(d *Device) {
+				if d.Epoch() > 1 {
+					return
+				}
+				var err error
+				if kept, err = d.CreateBuffer(cx, BufferDesc{Size: 16, Usage: UsageVertex}); err != nil {
+					t.Errorf("CreateBuffer: %v", err)
+				}
+			},
+		})
+	}, nsgotest.Size(32, 32))
+	app.TriggerGPUDeviceLostWithReason("id:loss-gpu", nsgotest.GPULostReset, "reset")
+	app.RestoreGPUDevice("id:loss-gpu")
+	base := live.Load()
+	for range 5 {
+		app.TriggerGPUDeviceLostWithReason("id:loss-gpu", nsgotest.GPULostReset, "reset")
+		app.RestoreGPUDevice("id:loss-gpu")
+	}
+	if kept == nil || !kept.Valid() || kept.Epoch() != 7 {
+		t.Fatalf("retained buffer not restored: %v", kept)
+	}
+	if got := live.Load(); got != base {
+		t.Fatalf("live cleanups went from %d to %d over five losses", base, got)
 	}
 }

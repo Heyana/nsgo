@@ -61,9 +61,6 @@ type Device struct {
 	lastPassTimings  []PassTiming
 	timestampQueries map[driver.GPUID]*TimestampQuery
 
-	cleanupMu     sync.Mutex
-	scopeCleanups map[*core.Scope]*cleanupGroup
-
 	// Retained resource lists for opt-in automatic recreation after device loss. retainedMu guards every retained list so a frame that creates and closes resources cannot race a restore walking them.
 	retainedMu         sync.Mutex
 	retainedBuffers    []*Buffer
@@ -92,7 +89,6 @@ func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, f
 		slotFences:        make([]*FrameFence, n),
 		fences:            map[uint64]*FrameFence{},
 		ringBuffers:       map[*RingBuffer]struct{}{},
-		scopeCleanups:     map[*core.Scope]*cleanupGroup{},
 		surf:              surf,
 		scope:             scope,
 		generation:        gen,
@@ -306,92 +302,24 @@ func (d *Device) dispatchFrame(f driver.GPUFrame) {
 	}
 }
 
-// cleanupGroup holds live GPU resources registered on one *core.Scope so
-// closing a resource removes it from the set and the scope holds at most one
-// cleanup callback per device.
-type cleanupGroup struct {
-	mu    sync.Mutex
-	dev   *Device
-	owner *core.Scope
-	items map[io.Closer]struct{}
-	done  bool
-}
-
-func (g *cleanupGroup) remove(res io.Closer) {
-	if g == nil {
-		return
-	}
-	g.mu.Lock()
-	if !g.done {
-		delete(g.items, res)
-	}
-	g.mu.Unlock()
-}
-
-func (g *cleanupGroup) run() {
-	if g.dev != nil {
-		g.dev.cleanupMu.Lock()
-		if g.dev.scopeCleanups[g.owner] == g {
-			delete(g.dev.scopeCleanups, g.owner)
-		}
-		g.dev.cleanupMu.Unlock()
-	}
-
-	g.mu.Lock()
-	if g.done {
-		g.mu.Unlock()
-		return
-	}
-	g.done = true
-	items := make([]io.Closer, 0, len(g.items))
-	for res := range g.items {
-		items = append(items, res)
-	}
-	g.items = nil
-	g.mu.Unlock()
-
-	for _, res := range items {
-		_ = res.Close()
-	}
-}
-
-func (d *Device) bindCleanup(cx *core.Scope, res io.Closer) *cleanupGroup {
+// bindCleanup registers res's Close on cx's current owner, or the view's scope when cx is nil, as Scope.Cleanup does, and returns what takes it off again, which res's Close calls so a closed resource leaves nothing on the scope.
+func (d *Device) bindCleanup(cx *core.Scope, res io.Closer) (remove func()) {
 	owner := cx
 	if owner == nil {
 		owner = d.scope
 	}
-	if owner == nil || res == nil {
+	if owner == nil {
 		return nil
 	}
-	d.cleanupMu.Lock()
-	if d.scopeCleanups == nil {
-		d.scopeCleanups = map[*core.Scope]*cleanupGroup{}
-	}
-	g := d.scopeCleanups[owner]
-	register := g == nil
-	if register {
-		g = &cleanupGroup{
-			dev:   d,
-			owner: owner,
-			items: map[io.Closer]struct{}{},
-		}
-		d.scopeCleanups[owner] = g
-	}
-	d.cleanupMu.Unlock()
+	return driver.ScopeCleanup(owner, func() { _ = res.Close() })
+}
 
-	if register {
-		owner.Cleanup(g.run)
+// unbind takes a closing resource's Close off the scope bindCleanup registered it on.
+func unbind(remove *func()) {
+	if f := *remove; f != nil {
+		*remove = nil
+		f()
 	}
-
-	g.mu.Lock()
-	if g.done {
-		g.mu.Unlock()
-		_ = res.Close()
-		return nil
-	}
-	g.items[res] = struct{}{}
-	g.mu.Unlock()
-	return g
 }
 
 type retainedItem interface {
@@ -609,7 +537,7 @@ type Buffer struct {
 	retained    bool
 	retainedIdx int
 	shadow      []byte
-	cleanup     *cleanupGroup
+	cleanup     func()
 	closed      bool
 }
 
@@ -644,8 +572,7 @@ func (b *Buffer) Close() error {
 	}
 	b.closed = true
 	b.shadow = nil
-	b.cleanup.remove(b)
-	b.cleanup = nil
+	unbind(&b.cleanup)
 	if b.dev != nil {
 		forgetRetained(&b.dev.retainedMu, &b.dev.retainedBuffers, b)
 	}
@@ -670,7 +597,7 @@ type Texture struct {
 	retained     bool
 	retainedIdx  int
 	shadowWrites []retainedTextureWrite
-	cleanup      *cleanupGroup
+	cleanup      func()
 	closed       bool
 	// external marks a texture from ImportTexture, which is only sampled.
 	external bool
@@ -704,8 +631,7 @@ func (t *Texture) Close() error {
 	}
 	t.closed = true
 	t.shadowWrites = nil
-	t.cleanup.remove(t)
-	t.cleanup = nil
+	unbind(&t.cleanup)
 	if t.dev != nil {
 		forgetRetained(&t.dev.retainedMu, &t.dev.retainedTextures, t)
 	}
@@ -789,7 +715,7 @@ type Sampler struct {
 	desc        SamplerDesc
 	retained    bool
 	retainedIdx int
-	cleanup     *cleanupGroup
+	cleanup     func()
 	closed      bool
 }
 
@@ -820,8 +746,7 @@ func (s *Sampler) Close() error {
 		return nil
 	}
 	s.closed = true
-	s.cleanup.remove(s)
-	s.cleanup = nil
+	unbind(&s.cleanup)
 	if s.dev != nil {
 		forgetRetained(&s.dev.retainedMu, &s.dev.retainedSamplers, s)
 	}
@@ -842,7 +767,7 @@ type BindGroupLayout struct {
 	retained    bool
 	closed      bool
 	retainedIdx int
-	cleanup     *cleanupGroup
+	cleanup     func()
 }
 
 func (l *BindGroupLayout) retainedSlot() *int { return &l.retainedIdx }
@@ -869,8 +794,7 @@ func (l *BindGroupLayout) Close() error {
 		return nil
 	}
 	l.closed = true
-	l.cleanup.remove(l)
-	l.cleanup = nil
+	unbind(&l.cleanup)
 	if l.dev != nil {
 		forgetRetained(&l.dev.retainedMu, &l.dev.retainedLayouts, l)
 	}
@@ -890,7 +814,7 @@ type BindGroup struct {
 	retained    bool
 	closed      bool
 	retainedIdx int
-	cleanup     *cleanupGroup
+	cleanup     func()
 }
 
 func (g *BindGroup) retainedSlot() *int { return &g.retainedIdx }
@@ -917,8 +841,7 @@ func (g *BindGroup) Close() error {
 		return nil
 	}
 	g.closed = true
-	g.cleanup.remove(g)
-	g.cleanup = nil
+	unbind(&g.cleanup)
 	if g.dev != nil {
 		forgetRetained(&g.dev.retainedMu, &g.dev.retainedBindGroups, g)
 	}
@@ -940,7 +863,7 @@ type Pipeline struct {
 	ready       atomic.Bool
 	done        chan struct{}
 	compileErr  error
-	cleanup     *cleanupGroup
+	cleanup     func()
 	closed      bool
 }
 
@@ -1005,8 +928,7 @@ func (p *Pipeline) Close() error {
 	}
 	p.closed = true
 	p.ready.Store(false)
-	p.cleanup.remove(p)
-	p.cleanup = nil
+	unbind(&p.cleanup)
 	if p.dev != nil {
 		forgetRetained(&p.dev.retainedMu, &p.dev.retainedPipelines, p)
 	}
@@ -1022,7 +944,7 @@ type TimestampQuery struct {
 	id      driver.GPUID
 	label   string
 	timings []PassTiming
-	cleanup *cleanupGroup
+	cleanup func()
 	closed  bool
 }
 
@@ -1061,8 +983,7 @@ func (q *TimestampQuery) Close() error {
 		return nil
 	}
 	q.closed = true
-	q.cleanup.remove(q)
-	q.cleanup = nil
+	unbind(&q.cleanup)
 	if q.dev != nil {
 		delete(q.dev.timestampQueries, q.id)
 	}
@@ -1090,7 +1011,7 @@ type ComputePipeline struct {
 	id      driver.GPUID
 	epoch   uint32
 	desc    ComputePipelineDesc
-	cleanup *cleanupGroup
+	cleanup func()
 	closed  bool
 }
 
@@ -1108,8 +1029,7 @@ func (p *ComputePipeline) Close() error {
 		return nil
 	}
 	p.closed = true
-	p.cleanup.remove(p)
-	p.cleanup = nil
+	unbind(&p.cleanup)
 	if p.dev != nil && p.dev.alive() && p.epoch == p.dev.generation {
 		p.dev.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpDestroyComputePipeline, ID: p.id})
 	}
