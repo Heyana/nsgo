@@ -1,8 +1,9 @@
-<p align="center">
-  <img src="examples/gallery/assets/Icon.png" alt="NSGo" width="128">
-</p>
-
-<h1 align="center">NSGo</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/banner/zh-dark.webp">
+    <img src=".github/banner/zh-light.webp" alt="NSGo：每个平台的原生 UI，用 Go 编写" width="100%">
+  </picture>
+</h1>
 
 <p align="center">
   <strong>简体中文</strong> |

@@ -1,8 +1,9 @@
-<p align="center">
-  <img src="examples/gallery/assets/Icon.png" alt="NSGo" width="128">
-</p>
-
-<h1 align="center">NSGo</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/banner/en-dark.webp">
+    <img src=".github/banner/en-light.webp" alt="NSGo: native UI on every platform, written in Go" width="100%">
+  </picture>
+</h1>
 
 <p align="center">
   <strong>English</strong> |
