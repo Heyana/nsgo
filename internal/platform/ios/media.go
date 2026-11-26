@@ -411,8 +411,8 @@ func (v *view) place(f driver.Bounds) {
 			sh.sizeShader(v)
 		}
 	}
-	if v.gpu != nil {
-		v.sizeGPU()
+	if g := gpus.Load(); g != nil && v.gpu != nil {
+		g.sizeView(v)
 	}
 	if field := v.surface.accessories[v.id]; field != nil && field.input != nil {
 		// A taller bar shows only once the keyboard asks for it again.

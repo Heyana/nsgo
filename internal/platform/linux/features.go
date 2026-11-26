@@ -59,16 +59,23 @@ type nativeOps struct {
 	closeAll       func(*window)
 }
 
+type gpuOps struct {
+	set   func(*window, *view, driver.GPUViewConfig)
+	close func(*window, *view)
+}
+
 var (
 	shaderOnce sync.Once
 	videoOnce  sync.Once
 	webOnce    sync.Once
+	gpuOnce    sync.Once
 
 	shaders  atomic.Pointer[shaderOps]
 	canvases atomic.Pointer[canvasOps]
 	videos   atomic.Pointer[videoOps]
 	webViews atomic.Pointer[webViewOps]
 	natives  atomic.Pointer[nativeOps]
+	gpus     atomic.Pointer[gpuOps]
 )
 
 func (*window) EnableShaders() {
@@ -219,4 +226,13 @@ func (w *window) focusedWeb() *view {
 		return wh.focused(w)
 	}
 	return nil
+}
+
+func (*window) EnableGPU() {
+	gpuOnce.Do(func() {
+		gpus.Store(&gpuOps{
+			set:   (*window).setGPU,
+			close: (*window).closeGPU,
+		})
+	})
 }

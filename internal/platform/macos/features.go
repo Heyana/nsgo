@@ -61,12 +61,19 @@ type nativeOps struct {
 	setSwitchInvalid func(driver.NativeComponent, bool)
 }
 
+type gpuOps struct {
+	newView  func(*view, driver.GPUViewConfig)
+	sizeView func(*view)
+	release  func(*surface, *view)
+}
+
 var (
 	shaders  atomic.Pointer[shaderOps]
 	canvases atomic.Pointer[canvasOps]
 	videos   atomic.Pointer[videoOps]
 	webViews atomic.Pointer[webViewOps]
 	natives  atomic.Pointer[nativeOps]
+	gpus     atomic.Pointer[gpuOps]
 )
 
 func (*surface) EnableShaders() {
@@ -287,4 +294,15 @@ func setSwitchInvalid(c driver.NativeComponent, invalid bool) {
 	if nh := natives.Load(); nh != nil {
 		nh.setSwitchInvalid(c, invalid)
 	}
+}
+
+func (*surface) EnableGPU() {
+	if gpus.Load() != nil {
+		return
+	}
+	gpus.Store(&gpuOps{
+		newView:  (*view).newGPU,
+		sizeView: (*view).sizeGPU,
+		release:  (*surface).releaseGPU,
+	})
 }

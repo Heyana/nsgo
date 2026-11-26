@@ -1579,7 +1579,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemGPU:
 			if it.GPU != nil {
-				w.setGPU(v, *it.GPU)
+				if g := gpus.Load(); g != nil {
+					g.set(w, v, *it.GPU)
+				}
 			}
 		case driver.ItemWeb:
 			if wh := webViews.Load(); wh != nil {
@@ -1759,8 +1761,8 @@ func (w *window) delete(v *view) {
 	if nh := natives.Load(); nh != nil {
 		nh.closeView(w, v)
 	}
-	if v.gpu != nil {
-		w.closeGPU(v)
+	if g := gpus.Load(); g != nil && v.gpu != nil {
+		g.close(w, v)
 	}
 	v.source.reset(driver.ImageSource{})
 	v.placeholder.reset(driver.ImageSource{})

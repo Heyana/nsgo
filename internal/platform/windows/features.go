@@ -78,13 +78,33 @@ type nativeOps struct {
 	closeWindow     func(*window)
 }
 
+type gpuOps struct {
+	configure func(*window, *view, driver.GPUViewConfig)
+	sync      func(*window, []*view, []*view)
+	process   func(*window)
+	release   func(*gpuView)
+}
+
 var (
 	shaders  atomic.Pointer[shaderOps]
 	canvases atomic.Pointer[canvasOps]
 	videos   atomic.Pointer[videoOps]
 	webViews atomic.Pointer[webViewOps]
 	natives  atomic.Pointer[nativeOps]
+	gpus     atomic.Pointer[gpuOps]
 )
+
+func (*window) EnableGPU() {
+	if gpus.Load() != nil {
+		return
+	}
+	gpus.Store(&gpuOps{
+		configure: (*window).configureGPU,
+		sync:      (*window).syncGPUViews,
+		process:   (*window).processGPUFrames,
+		release:   (*gpuView).release,
+	})
+}
 
 func (*window) EnableShaders() {
 	if shaders.Load() != nil {

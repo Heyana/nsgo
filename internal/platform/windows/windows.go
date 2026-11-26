@@ -1836,7 +1836,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemGPU:
 			if v.kind == driver.KindGPU && it.GPU != nil {
-				w.configureGPU(v, *it.GPU)
+				if g := gpus.Load(); g != nil {
+					g.configure(w, v, *it.GPU)
+				}
 				gpuConfigured = append(gpuConfigured, v)
 			}
 		case driver.ItemShaderTransition:
@@ -1924,7 +1926,9 @@ func (w *window) apply(b *driver.MountBatch) {
 	if wh := webViews.Load(); wh != nil {
 		wh.startEnvs()
 	}
-	w.syncGPUViews(gpuConfigured, gpuResized)
+	if g := gpus.Load(); g != nil && len(gpuConfigured)+len(gpuResized) > 0 {
+		g.sync(w, gpuConfigured, gpuResized)
+	}
 	// Focus once the batch placed the fields.
 	for _, f := range focus {
 		switch {
@@ -2022,7 +2026,9 @@ func (w *window) destroy(v *view) {
 	if sh := shaders.Load(); sh != nil {
 		sh.release(w, v)
 	}
-	v.gpuView.release()
+	if g := gpus.Load(); g != nil {
+		g.release(v.gpuView)
+	}
 	v.glass.release()
 	v.gpuView = nil
 	if ch := canvases.Load(); ch != nil {
@@ -2763,7 +2769,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.startClock()
 		return 0
 	case wmGPU:
-		w.processGPUFrames()
+		if g := gpus.Load(); g != nil {
+			g.process(w)
+		}
 		return 0
 	case wmAlert:
 		w.showAlert()

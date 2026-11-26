@@ -49,3 +49,13 @@ func (t *Tree) enableNative() {
 		p.EnableNative()
 	}
 }
+
+func (t *Tree) enableGPU() {
+	p := unwrapPlatform(t.text)
+	if e, ok := p.(driver.GPUEnabler); ok {
+		e.EnableGPU()
+	}
+	if s, ok := p.(driver.GPUSubmitter); ok {
+		t.SetGPUSubmitter(s.SubmitGPU)
+	}
+}

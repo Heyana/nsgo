@@ -61,12 +61,19 @@ type nativeOps struct {
 	switchView func(driver.NativeComponent) objc.ID
 }
 
+type gpuOps struct {
+	newView  func(*view, driver.GPUViewConfig)
+	sizeView func(*view)
+	release  func(*surface, *view)
+}
+
 var (
 	shaders  atomic.Pointer[shaderOps]
 	canvases atomic.Pointer[canvasOps]
 	videos   atomic.Pointer[videoOps]
 	webViews atomic.Pointer[webViewOps]
 	natives  atomic.Pointer[nativeOps]
+	gpus     atomic.Pointer[gpuOps]
 )
 
 func (*surface) EnableShaders() {
@@ -242,4 +249,15 @@ func switchViewOf(c driver.NativeComponent) objc.ID {
 		return nh.switchView(c)
 	}
 	return 0
+}
+
+func (*surface) EnableGPU() {
+	if gpus.Load() != nil {
+		return
+	}
+	gpus.Store(&gpuOps{
+		newView:  (*view).newGPU,
+		sizeView: (*view).sizeGPU,
+		release:  (*surface).releaseGPU,
+	})
 }

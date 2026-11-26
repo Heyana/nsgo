@@ -20,7 +20,7 @@ var unlinked = map[string][]string{
 	"": {
 		// Images download through the system's HTTP client (imageload.HTTP).
 		"net/http", "crypto/tls", "crypto/x509",
-		// Shaders compile when an app makes one: no package variable, init or element case of its own reaches the compilers. The target writers (msl, hlsl, glsl) still link with each backend's GPU views, which are not gated on use.
+		// Shaders and GPU views compile when an app makes one: no package variable, init or element case of its own reaches the compilers, and each target's writer is listed below.
 		"github.com/nsgo-dev/nsgo/internal/shader", "github.com/nsgo-dev/nsgo/internal/shader/wgsl", "go/parser",
 		// Only nsgo dev -automation's builds link the agent and what tests run on.
 		"testing", "github.com/nsgo-dev/nsgo/nsgotest", "github.com/nsgo-dev/nsgo/internal/automation",
@@ -31,13 +31,14 @@ var unlinked = map[string][]string{
 	"js": {
 		"image/png", "image/jpeg", "image/gif", "golang.org/x/image/webp", "golang.org/x/image/draw",
 		"github.com/nsgo-dev/nsgo/internal/platform/canvas2d",
+		"github.com/nsgo-dev/nsgo/internal/shaderir/glsl",
 	},
 	// Android's DNS resolver links only when an app uses Go networking of its own.
-	"android": {"net"},
+	"android": {"net", "github.com/nsgo-dev/nsgo/internal/shaderir/glsl"},
 	// Only Android reads its resources from a zip, the APK.
-	"darwin":  {"archive/zip"},
-	"windows": {"archive/zip"},
-	"linux":   {"archive/zip"},
+	"darwin":  {"archive/zip", "github.com/nsgo-dev/nsgo/internal/shaderir/msl"},
+	"windows": {"archive/zip", "github.com/nsgo-dev/nsgo/internal/shaderir/hlsl"},
+	"linux":   {"archive/zip", "github.com/nsgo-dev/nsgo/internal/shaderir/glsl"},
 }
 
 // featureSymbols names each backend's entry points for shaders, canvases, videos, web views and native components. Minimal apps must link none of them; testdata/features must link all of them.
@@ -48,6 +49,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/apple.(*Video).Configure",
 		"github.com/nsgo-dev/nsgo/internal/platform/apple.(*Web).Configure",
 		"github.com/nsgo-dev/nsgo/internal/platform/macos.(*surface).configureNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/apple.NewGPULayer",
 	},
 	"windows": {
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).setShader",
@@ -55,6 +57,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*video).configure",
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).newWeb",
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).setNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).configureGPU",
 	},
 	"linux": {
 		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).setShader",
@@ -62,6 +65,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).configureVideo",
 		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).configureWeb",
 		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).configureNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).setGPU",
 	},
 	"android": {
 		"github.com/nsgo-dev/nsgo/internal/platform/android.writeShader",
@@ -69,6 +73,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/android.writeVideo",
 		"github.com/nsgo-dev/nsgo/internal/platform/android.writeWebConfig",
 		"github.com/nsgo-dev/nsgo/internal/platform/android.writeNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/android.writeGPUViewConfig",
 	},
 	"js": {
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).setShader",
@@ -76,6 +81,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).setVideo",
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).setWeb",
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).configureNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).configureGPU",
 	},
 }
 

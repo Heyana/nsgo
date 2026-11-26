@@ -240,8 +240,8 @@ func (v *view) sizeContent() {
 			sh.sizeShader(v)
 		}
 	}
-	if v.gpu != nil {
-		v.sizeGPU()
+	if g := gpus.Load(); g != nil && v.gpu != nil {
+		g.sizeView(v)
 	}
 	if v.contentLayer == 0 {
 		return
@@ -283,8 +283,8 @@ func (s *surface) rescale() {
 				sh.sizeShader(v)
 			}
 		}
-		if v != nil && v.gpu != nil {
-			v.sizeGPU()
+		if g := gpus.Load(); g != nil && v != nil && v.gpu != nil {
+			g.sizeView(v)
 		}
 		if v == nil || v.contentLayer == 0 {
 			continue

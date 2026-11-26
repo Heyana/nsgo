@@ -45,6 +45,10 @@ type nativeOps struct {
 	writeCommand func(*writer, *driver.MountItem)
 }
 
+type gpuOps struct {
+	writeViewConfig func(*writer, *driver.GPUViewConfig)
+}
+
 var (
 	shaders    atomic.Pointer[shaderOps]
 	canvases   atomic.Pointer[canvasOps]
@@ -52,7 +56,15 @@ var (
 	videos     atomic.Pointer[videoOps]
 	webViews   atomic.Pointer[webViewOps]
 	natives    atomic.Pointer[nativeOps]
+	gpus       atomic.Pointer[gpuOps]
 )
+
+func (*surface) EnableGPU() {
+	if gpus.Load() != nil {
+		return
+	}
+	gpus.Store(&gpuOps{writeViewConfig: writeGPUViewConfig})
+}
 
 func enableCanvasRequests() {
 	if canvasReqs.Load() != nil {

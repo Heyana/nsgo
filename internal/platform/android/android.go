@@ -1798,7 +1798,9 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 				w.u32(0) // no program
 			}
 		case driver.ItemGPU:
-			writeGPUViewConfig(w, it.GPU)
+			if g := gpus.Load(); g != nil {
+				g.writeViewConfig(w, it.GPU)
+			}
 		case driver.ItemSetClipboard, driver.ItemAnnounce, driver.ItemTitle, driver.ItemAccessibilityLabel,
 			driver.ItemKeepImage, driver.ItemReleaseImage:
 			w.str(it.Value)

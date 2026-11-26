@@ -198,7 +198,9 @@ func (s *surface) updateEnv() {
 				}
 			}
 			if repaint && v != nil && v.gpu != nil {
-				s.resizeGPU(v)
+				if g := gpus.Load(); g != nil {
+					g.resize(s, v)
+				}
 			}
 		}
 		if repaint || darkChanged {

@@ -1,4 +1,4 @@
-// Command features constructs a shader, canvas, video, web view and native component: linked_test.go checks that each backend links their code when an app uses them.
+// Command features constructs a shader, canvas, video, web view, native component and GPU view: linked_test.go checks that each backend links their code when an app uses them.
 package main
 
 import (
@@ -23,6 +23,7 @@ func Fragment(pos vec4) vec4 {
 				core.Video{Source: "https://example.test/clip.mp4"},
 				core.WebView{Source: core.WebSource{HTML: "<p>hi</p>"}},
 				core.Native{Component: "custom"},
+				core.GPUView{},
 			},
 		}
 	})

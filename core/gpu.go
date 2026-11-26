@@ -113,6 +113,7 @@ type gpuNode struct {
 }
 
 func (t *Tree) mountGPU(cx *Scope, parent *node, v GPUView) {
+	t.enableGPU()
 	n := t.newNode(driver.KindGPU, parent, cx)
 	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)

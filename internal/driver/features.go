@@ -40,3 +40,13 @@ type WebViewEnabler interface {
 type NativeEnabler interface {
 	EnableNative()
 }
+
+// GPUEnabler is implemented by backends whose GPU view handling links on demand.
+type GPUEnabler interface {
+	EnableGPU()
+}
+
+// GPUSubmitter is implemented by backends that run a GPU view's frames off the commit. Core connects it when an app mounts a GPU view, so the frame path links only then.
+type GPUSubmitter interface {
+	SubmitGPU(GPUFrame)
+}

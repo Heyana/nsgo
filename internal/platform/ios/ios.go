@@ -1609,7 +1609,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemGPU:
 			if v.kind == driver.KindGPU && it.GPU != nil && s.env.GPU {
-				v.newGPU(*it.GPU)
+				if g := gpus.Load(); g != nil {
+					g.newView(v, *it.GPU)
+				}
 			}
 		case driver.ItemShader:
 			if sh := shaders.Load(); sh != nil {
@@ -1948,8 +1950,8 @@ func (s *surface) delete(v *view, kept bool) {
 		apple.ForgetHolder(v.container.Send(selLayer))
 		delete(views, v.container)
 	}
-	if v.gpu != nil {
-		s.releaseGPU(v)
+	if g := gpus.Load(); g != nil && v.gpu != nil {
+		g.release(s, v)
 	}
 	delete(views, v.native)
 	if v.input != nil {

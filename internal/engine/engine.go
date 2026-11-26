@@ -594,7 +594,6 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 	// batch past the next commit.
 	attach := func(t *core.Tree, p Platform) *surface {
 		s := &surface{id: t.ID(), tree: t, p: p, commit: t.Commit}
-		t.SetGPUSubmitter(p.SubmitGPU)
 		if source := platformGeometrySource(p); source != nil {
 			t.SetDevGeometrySource(source.ObserveGeometry)
 		}
