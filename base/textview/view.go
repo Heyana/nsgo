@@ -37,6 +37,13 @@ type TextView struct {
 	// custom nodes' content, after a code block's code, in a table's last
 	// cell), else on a line of its own after it.
 	StreamingCaret core.Node
+	// FadeIn fades in the characters the document gains after the view
+	// shows, each over FadeIn, one after another 14 ms apart and at most
+	// 160 ms behind its arrival, so a reply arriving in bursts shows
+	// smoothly; under reduced motion, each burst together over at most
+	// 200 ms. Images, formulas and other attachments show at once. 0
+	// shows them at once.
+	FadeIn time.Duration
 
 	// Styles style the parts; StyleOf's result for a part goes under
 	// them, again when what it reads changes, and Classes under both.
@@ -154,6 +161,9 @@ func (tv TextView) Render(cx *core.Scope) core.Node {
 	if tv.StreamingCaret != nil {
 		r.caret = &pinnedNode{tv.StreamingCaret}
 	}
+	if tv.FadeIn > 0 {
+		r.fade = newFader(cx, tv.FadeIn)
+	}
 	search := tv.Search
 	if search == nil {
 		search = searchKey.Use(cx)
@@ -269,6 +279,8 @@ type renderer struct {
 	search *searchView
 	// caret is the StreamingCaret behind a pointer, made once, so the texts that follow their content keep its view.
 	caret core.Node
+	// fade, if set, fades in the characters the texts gain.
+	fade *fader
 }
 
 // style merges the parts' styles: StyleOf's for each, then Styles'.

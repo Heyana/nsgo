@@ -116,7 +116,7 @@ func drawDiagram(cx *core.Scope, code textview.CodeBlock) core.Node {
 // ui.TextView{Markdown: source, RenderDiagram: drawDiagram}
 ```
 
-`textview.Parse` 可讀取 Markdown，而 `textview.ParseHTML` 可讀取 HTML，將其轉換為應用程式同樣可以建構的區塊。`Options.Streaming` 會修復分段抵達的文件，補齊結尾尚未閉合的語法並暫緩顯示語意需視後續字元而定的最後一行（例如單獨出現的清單標記），使串流回覆不會閃現出原始標記文字；而 `StreamingCaret` 會在結尾繪製輸入游標，適合用於邊串流邊輸出的回覆內容。
+`textview.Parse` 可讀取 Markdown，而 `textview.ParseHTML` 可讀取 HTML，將其轉換為應用程式同樣可以建構的區塊。`Options.Streaming` 會修復分段抵達的文件，補齊結尾尚未閉合的語法並暫緩顯示語意需視後續字元而定的最後一行（例如單獨出現的清單標記），使串流回覆不會閃現出原始標記文字；而 `StreamingCaret` 會在結尾繪製輸入游標，適合用於邊串流邊輸出的回覆內容。`FadeIn` 會讓文件新增的字元依序淡入，且不會落後抵達太久，使成批抵達的回覆讀起來依然流暢。
 
 `textview.Search` 可在透過 `Search` 欄位或其上層的 `textview.ProvideSearch` 加入其中的多個檢視間搜尋文字。`SetQuery`、`Open` 與 `Close` 可從尋找列控制搜尋，`Count` 與 `Selected` 回報目前的搜尋狀態，而 `Next` 與 `Previous` 則依閱讀順序依序切換符合項目。各檢視會以 `PartSearch` 標記每個符合項目，並以 `PartSearchSelected` 標記目前選中的項目，供應用程式樣式著色並將其捲動至可視範圍內，同時不干擾使用者原本的文字選取。
 

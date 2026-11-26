@@ -387,7 +387,7 @@ type Span struct {
 	Class       string
 	Content     string
 	ContentFunc func() string
-	// Style's text fields merge over the Text's. Background and CornerRadius draw a box behind the span's characters on each line, and BackgroundInsetTop and BackgroundInsetBottom inset that box vertically. Cursor overrides the containing Text's cursor over these characters when it is not Auto.
+	// Style's text fields merge over the Text's. Background and CornerRadius draw a box behind the span's characters on each line, and BackgroundInsetTop and BackgroundInsetBottom inset that box vertically. Cursor overrides the containing Text's cursor over these characters when it is not Auto. Opacity fades the span's characters, their decorations and background, as a reply's new words fade in, without laying the text out again.
 	Style     Style
 	StyleFunc func() Style
 	// OnPress and OnLongPress take the presses on the span's characters,

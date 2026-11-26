@@ -116,7 +116,7 @@ func drawDiagram(cx *core.Scope, code textview.CodeBlock) core.Node {
 // ui.TextView{Markdown: source, RenderDiagram: drawDiagram}
 ```
 
-`textview.Parse` 读取 Markdown，`textview.ParseHTML` 读取 HTML，得到应用也可以自己构建的块。`Options.Streaming` 修复仍在到达的文档：补全末尾未闭合的语法，并暂缓显示含义还要由后续字符决定的最后一行，例如单独的列表标记，让回复不会把标记闪成文本；`StreamingCaret` 在末尾绘制光标，适合逐字生成的回复。
+`textview.Parse` 读取 Markdown，`textview.ParseHTML` 读取 HTML，得到应用也可以自己构建的块。`Options.Streaming` 修复仍在到达的文档：补全末尾未闭合的语法，并暂缓显示含义还要由后续字符决定的最后一行，例如单独的列表标记，让回复不会把标记闪成文本；`StreamingCaret` 在末尾绘制光标，适合逐字生成的回复。`FadeIn` 让文档新增的字符依次淡入，且不会落后到达太久，让成批到达的回复也读起来流畅。
 
 `textview.Search` 在加入它的各个视图里查找文本，视图通过 `Search` 字段或上层的 `textview.ProvideSearch` 加入。查找栏用 `SetQuery`、`Open` 和 `Close` 驱动它，`Count` 和 `Selected` 给出位置，`Next` 和 `Previous` 按阅读顺序逐个切换匹配。视图给每个匹配加上 `PartSearch`，给选中的匹配再加 `PartSearchSelected`，颜色由应用的样式决定；视图还会把选中的匹配滚动到视野内，并且不改动用户的选择。
 

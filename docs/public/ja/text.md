@@ -116,7 +116,7 @@ func drawDiagram(cx *core.Scope, code textview.CodeBlock) core.Node {
 // ui.TextView{Markdown: source, RenderDiagram: drawDiagram}
 ```
 
-`textview.Parse` は Markdown を、`textview.ParseHTML` は HTML を、アプリから直接構築することもできるブロック列へと解析します。`Options.Streaming` は断片的に届くドキュメントを修復し、末尾で閉じられていない構文を閉じ、リストマーカー単体のように後続の文字によって意味が決まる最終行を保留することで、応答がマーカーをそのままテキストとして一瞬表示してしまうのを防ぎます。また、`StreamingCaret` はストリーミングで生成される応答の末尾にキャレットを描画します。
+`textview.Parse` は Markdown を、`textview.ParseHTML` は HTML を、アプリから直接構築することもできるブロック列へと解析します。`Options.Streaming` は断片的に届くドキュメントを修復し、末尾で閉じられていない構文を閉じ、リストマーカー単体のように後続の文字によって意味が決まる最終行を保留することで、応答がマーカーをそのままテキストとして一瞬表示してしまうのを防ぎます。また、`StreamingCaret` はストリーミングで生成される応答の末尾にキャレットを描画します。`FadeIn` はドキュメントに加わった文字を一文字ずつ順にフェードインさせ、到着から大きく遅れることはないため、まとまって届く応答も滑らかに読めます。
 
 `textview.Search` は、`Search` フィールドまたは上位の `textview.ProvideSearch` を通じて参加したビュー全体を横断してテキストを検索します。`SetQuery`、`Open`、`Close` で検索バーから操作でき、`Count` と `Selected` で一致数と現在位置を取得し、`Next` と `Previous` で読み順に沿って一致箇所を前後に移動します。各ビューは一致箇所に `PartSearch` を、選択中の一致箇所に `PartSearchSelected` を付与するため、アプリのスタイルで配色し、画面内にスクロールさせつつ、ユーザーのテキスト選択状態は維持できます。
 

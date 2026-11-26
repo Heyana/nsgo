@@ -1,0 +1,6 @@
+name: Markdown Stream
+id: dev.oneo.nsgo.stream
+version: 0.1.0
+
+dev:
+  target: native

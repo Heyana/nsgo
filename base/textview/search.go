@@ -328,7 +328,7 @@ func (t *searchText) reveal(from, to int, margin core.Edges) {
 
 // searched is t, a text at place showing spans, which a view in a search builds again as the search's matches in it change: split at their ends, with the search's parts on them.
 func (r *renderer) searched(cx *core.Scope, place TextRef, t core.Text) core.Text {
-	t = r.selectable(t)
+	t = r.selectable(r.faded(place, t))
 	if r.search == nil {
 		return t
 	}

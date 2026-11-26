@@ -116,7 +116,7 @@ func drawDiagram(cx *core.Scope, code textview.CodeBlock) core.Node {
 // ui.TextView{Markdown: source, RenderDiagram: drawDiagram}
 ```
 
-`textview.Parse` reads Markdown and `textview.ParseHTML` reads HTML into blocks the app can also build. `Options.Streaming` repairs a document that arrives in pieces, closing what its end leaves open and holding back a last line whose meaning the next characters decide, such as a list marker alone, so a reply never flashes markers as text, and `StreamingCaret` draws a caret at its end, for a reply written as it streams.
+`textview.Parse` reads Markdown and `textview.ParseHTML` reads HTML into blocks the app can also build. `Options.Streaming` repairs a document that arrives in pieces, closing what its end leaves open and holding back a last line whose meaning the next characters decide, such as a list marker alone, so a reply never flashes markers as text, and `StreamingCaret` draws a caret at its end, for a reply written as it streams. `FadeIn` fades in each character the document gains, one after another and never far behind its arrival, so a reply arriving in bursts reads smoothly.
 
 A `textview.Search` finds text across the views that join it, through their `Search` field or `textview.ProvideSearch` above them. `SetQuery`, `Open` and `Close` drive it from a find bar, `Count` and `Selected` say where it is, and `Next` and `Previous` step through its matches in reading order. The views mark each match with `PartSearch` and the selected one with `PartSearchSelected`, for the app's styles to color, scroll it into view, and leave the user's selection alone.
 

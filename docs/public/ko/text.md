@@ -116,7 +116,7 @@ func drawDiagram(cx *core.Scope, code textview.CodeBlock) core.Node {
 // ui.TextView{Markdown: source, RenderDiagram: drawDiagram}
 ```
 
-`textview.Parse`는 Markdown을, `textview.ParseHTML`은 HTML을 앱에서도 직접 구성할 수 있는 블록들로 파싱합니다. `Options.Streaming`은 조각 단위로 도착하는 문서를 복구해 끝부분에서 열린 채 남은 구문을 닫고, 단독 목록 기호처럼 다음 문자가 와야 의미가 결정되는 마지막 줄을 보류하므로 응답이 스트리밍되는 동안 기호가 일반 텍스트로 깜빡이지 않으며, `StreamingCaret`은 스트리밍으로 작성되는 응답의 끝에 캐럿을 그려 줍니다.
+`textview.Parse`는 Markdown을, `textview.ParseHTML`은 HTML을 앱에서도 직접 구성할 수 있는 블록들로 파싱합니다. `Options.Streaming`은 조각 단위로 도착하는 문서를 복구해 끝부분에서 열린 채 남은 구문을 닫고, 단독 목록 기호처럼 다음 문자가 와야 의미가 결정되는 마지막 줄을 보류하므로 응답이 스트리밍되는 동안 기호가 일반 텍스트로 깜빡이지 않으며, `StreamingCaret`은 스트리밍으로 작성되는 응답의 끝에 캐럿을 그려 줍니다. `FadeIn`은 문서에 새로 더해진 문자를 하나씩 차례로 페이드인하되 도착 시점보다 크게 늦지 않게 하여, 한꺼번에 몰려오는 응답도 부드럽게 읽히게 합니다.
 
 `textview.Search`는 `Search` 필드나 상위 트리의 `textview.ProvideSearch`를 통해 연결된 뷰들 전체에서 텍스트를 찾습니다. `SetQuery`, `Open`, `Close`로 찾기 막대에서 검색을 제어하고, `Count`와 `Selected`로 현재 위치를 확인하며, `Next`와 `Previous`로 읽기 순서대로 일치 항목을 이동합니다. 각 뷰는 일치 항목을 `PartSearch`로, 선택된 항목을 `PartSearchSelected`로 표시해 앱의 스타일로 색상을 입히고 화면 안으로 스크롤하며 사용자의 텍스트 선택 영역은 그대로 유지합니다.
 

@@ -513,6 +513,9 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 							Color: currentIn(sp.style.Background, spanStyle.Color), Radius: sp.style.CornerRadius,
 							Top: sp.style.BackgroundInsetTop, Bottom: sp.style.BackgroundInsetBottom,
 						}}
+					if o := sp.style.Opacity.Value(); o < 1 {
+						fadeSpan(&span, o)
+					}
 					if sp.style.Visibility == VisibilityHidden {
 						// In place: laid out, skipped as the engine draws, no link.
 						span.Hidden, span.Link, span.Background = true, false, driver.TextBackground{}
@@ -1415,4 +1418,21 @@ func increasingRun(seq []int) []bool {
 		}
 	}
 	return stay
+}
+
+// fadeSpan fades a span's characters to opacity o: its colors' alphas are multiplied by o, and a span whose color is the platform's default, which has no alpha to fade, is hidden in place below half.
+func fadeSpan(span *driver.TextSpan, o float32) {
+	st := &span.Style
+	if st.Color == 0 {
+		if o < 0.5 {
+			span.Hidden = true
+		}
+		return
+	}
+	if st.Decoration != 0 && st.DecorationColor == 0 {
+		st.DecorationColor = st.Color
+	}
+	st.Color = st.Color.Faded(o)
+	st.DecorationColor = st.DecorationColor.Faded(o)
+	span.Background.Color = span.Background.Color.Faded(o)
 }

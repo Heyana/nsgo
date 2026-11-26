@@ -178,6 +178,24 @@ func TestSpanBackgrounds(t *testing.T) {
 	}
 }
 
+func TestSpanOpacityFadesItsColors(t *testing.T) {
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
+		return Text{TestID: "text", Style: Style{Color: RGB(0x112233)}, Spans: []Span{
+			{Content: "a "},
+			{Content: "new", Style: Style{Opacity: Alpha(0.5), Background: RGB(0xeeeeee), TextDecoration: TextDecorationUnderline}},
+		}}
+	})
+	h.commit()
+	spans := h.find("text").text.text.Spans
+	if c := spans[0].Style.Color; c != RGB(0x112233) {
+		t.Errorf("an opaque span's color = %08x", uint32(c))
+	}
+	half := RGB(0x112233).Faded(0.5)
+	if st := spans[1].Style; st.Color != half || st.DecorationColor != half || spans[1].Background.Color != RGB(0xeeeeee).Faded(0.5) {
+		t.Errorf("a half faded span = %+v, background %08x", st, uint32(spans[1].Background.Color))
+	}
+}
+
 func TestSpansFuncAttachmentsFollowTheSpans(t *testing.T) {
 	var at *Signal[int]
 	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
