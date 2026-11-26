@@ -208,7 +208,7 @@ Apply these changes? [y/N]
 
 Para cada módulo, o plano informa sua versão e data de publicação, e seu proprietário: o host e, em um serviço de hospedagem de código como o github.com, também a conta, indicado quando o `go.mod` ainda não tem nenhum módulo dele. Avisos de retratação (retract) e de descontinuação, uma versão sem tag de release, um `replace` do módulo e a linha de import do seu pacote raiz vêm a seguir, quando se aplicam. Depois vêm as linhas do `go.mod` que mudam, incluindo `go` e `toolchain`, os comandos `go tool` que passariam a executar outra versão, os módulos obtidos de seus próprios hosts e aqueles cujos hashes o `go.sum` aceita sem verificação pelo banco de dados de checksums. O `go get` marca com `// indirect` um módulo que nenhum pacote importa ainda, e o `go mod tidy` remove a marca assim que algum o importa.
 
-Em um terminal, `add` pergunta antes de gravar, e `-y` aplica o plano sem perguntar; sem terminal e sem `-y`, ele não grava nada e sai com status 1. Um módulo que o `go.mod` já exige fica como está, com sua versão exibida, a menos que uma versão seja digitada.
+Em um terminal, `add` pergunta antes de gravar, e `-y` aplica o plano sem perguntar; sem terminal e sem `-y`, ele não grava nada e sai com status 1. Uma interrupção, como Ctrl+C, deixa `go.mod` e `go.sum` como estavam e sai com status 130. Um módulo que o `go.mod` já exige fica como está, com sua versão exibida, a menos que uma versão seja digitada.
 
 O planejamento não executa nada além do comando go, sobre cópias de `go.mod` e `go.sum`:
 

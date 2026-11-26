@@ -186,6 +186,11 @@ func main() {
 			ask = askToApply
 		}
 		err = addModules(ctx, o, fs.Args(), os.Stdout, ask)
+		// An interrupt fails add, which says what it left of go.mod and go.sum, rather than ending quietly with status 0 as the other commands do: the status tells a script whether the files were written.
+		if err != nil && ctx.Err() != nil {
+			report(err)
+			os.Exit(130)
+		}
 	case "game":
 		var code int
 		if code, err = runGame(ctx, args); err == nil {

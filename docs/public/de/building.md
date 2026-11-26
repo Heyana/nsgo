@@ -208,7 +208,7 @@ Apply these changes? [y/N]
 
 Für jedes Modul nennt der Plan Version und Veröffentlichungsdatum sowie den Eigentümer: den Host und auf einem Code-Hoster wie github.com auch das Konto, markiert, wenn `go.mod` noch kein Modul von ihm enthält. Hinweise auf zurückgezogene (retract) und veraltete Versionen, eine Version ohne Release-Tag, ein `replace` des Moduls und die Import-Zeile seines Wurzelpakets folgen, wenn sie zutreffen. Danach kommen die Zeilen von `go.mod`, die sich ändern, einschließlich `go` und `toolchain`, die `go tool`-Befehle, die danach eine andere Version ausführen würden, die Module, die von ihren eigenen Hosts geholt werden, und die, deren Prüfsummen `go.sum` ohne Prüfung durch die Prüfsummendatenbank übernimmt. `go get` markiert ein Modul, das noch kein Paket importiert, mit `// indirect`; `go mod tidy` entfernt die Markierung, sobald eines es importiert.
 
-Im Terminal fragt `add` vor dem Schreiben, und `-y` wendet den Plan ohne Nachfrage an; ohne Terminal und ohne `-y` schreibt es nichts und beendet sich mit Status 1. Ein Modul, das `go.mod` bereits verlangt, bleibt, wie es ist, und seine Version wird ausgegeben, sofern keine Version angegeben ist.
+Im Terminal fragt `add` vor dem Schreiben, und `-y` wendet den Plan ohne Nachfrage an; ohne Terminal und ohne `-y` schreibt es nichts und beendet sich mit Status 1. Eine Unterbrechung, etwa mit Strg+C, lässt `go.mod` und `go.sum` unverändert und beendet sich mit Status 130. Ein Modul, das `go.mod` bereits verlangt, bleibt, wie es ist, und seine Version wird ausgegeben, sofern keine Version angegeben ist.
 
 Die Planung führt nichts als den Befehl go aus, auf Kopien von `go.mod` und `go.sum`:
 

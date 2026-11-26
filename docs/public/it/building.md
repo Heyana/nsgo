@@ -208,7 +208,7 @@ Apply these changes? [y/N]
 
 Per ogni modulo, il piano indica la versione e la data di pubblicazione, e il proprietario: l'host e, su un servizio di hosting del codice come github.com, anche l'account, segnalato quando `go.mod` non ha ancora alcun modulo suo. Seguono, quando si applicano, gli avvisi di ritiro (retract) e di deprecazione, una versione senza tag di release, un `replace` del modulo e la riga di import del suo pacchetto radice. Vengono poi le righe di `go.mod` che cambiano, incluse `go` e `toolchain`, i comandi `go tool` che eseguirebbero un'altra versione, i moduli recuperati dai propri host e quelli i cui hash `go.sum` accetta senza la verifica del database dei checksum. `go get` marca come `// indirect` un modulo che nessun pacchetto importa ancora, e `go mod tidy` toglie il segno appena un pacchetto lo importa.
 
-In un terminale, `add` chiede prima di scrivere, e `-y` applica il piano senza chiedere; senza terminale e senza `-y`, non scrive nulla ed esce con stato 1. Un modulo che `go.mod` richiede già resta com'è e ne viene stampata la versione, a meno che non si digiti una versione.
+In un terminale, `add` chiede prima di scrivere, e `-y` applica il piano senza chiedere; senza terminale e senza `-y`, non scrive nulla ed esce con stato 1. Un'interruzione, come Ctrl+C, lascia `go.mod` e `go.sum` com'erano ed esce con stato 130. Un modulo che `go.mod` richiede già resta com'è e ne viene stampata la versione, a meno che non si digiti una versione.
 
 La pianificazione non esegue altro che il comando go, su copie di `go.mod` e `go.sum`:
 

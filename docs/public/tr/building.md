@@ -208,7 +208,7 @@ Apply these changes? [y/N]
 
 Plan her modül için sürümünü ve yayın tarihini, ayrıca sahibini belirtir: barındırıcıyı (host) ve github.com gibi kod barındırma hizmetlerinde hesabı da; `go.mod` bu sahipten henüz bir modül içermiyorsa bu işaretlenir. Geçerli olduklarında geri çekme (retract) ve kullanımdan kaldırma bildirimleri, sürüm etiketi olmayan bir sürüm, modülün bir `replace` satırı ve kök paketinin import satırı ardından gelir. Sonra `go.mod` içinde değişen satırlar, `go` ve `toolchain` dahil, başka bir sürümü çalıştıracak `go tool` komutları, kendi barındırıcılarından alınan modüller ve `go.sum`'ın sağlama toplamı veritabanının denetimi olmadan kabul ettiği modüller gelir. `go get`, henüz hiçbir paketin içe aktarmadığı bir modülü `// indirect` olarak işaretler; `go mod tidy` bir paket onu içe aktarınca bu işareti kaldırır.
 
-Bir terminalde `add` yazmadan önce sorar, `-y` ise planı sormadan uygular; terminal ve `-y` olmadan hiçbir şey yazmaz ve 1 durum koduyla çıkar. `go.mod`'un zaten gerektirdiği bir modül, bir sürüm yazılmadıkça olduğu gibi bırakılır ve sürümü yazdırılır.
+Bir terminalde `add` yazmadan önce sorar, `-y` ise planı sormadan uygular; terminal ve `-y` olmadan hiçbir şey yazmaz ve 1 durum koduyla çıkar. Ctrl+C gibi bir kesinti `go.mod` ve `go.sum` dosyalarını olduğu gibi bırakır ve 130 durum koduyla çıkar. `go.mod`'un zaten gerektirdiği bir modül, bir sürüm yazılmadıkça olduğu gibi bırakılır ve sürümü yazdırılır.
 
 Planlama, `go.mod` ve `go.sum` kopyaları üzerinde go komutundan başka hiçbir şey çalıştırmaz:
 

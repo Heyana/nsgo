@@ -208,7 +208,7 @@ Apply these changes? [y/N]
 
 Với mỗi module, kế hoạch nêu phiên bản và ngày phát hành, cùng chủ sở hữu của nó: host, và trên các dịch vụ lưu trữ mã như github.com thì cả tài khoản, được đánh dấu khi `go.mod` chưa có module nào của chủ sở hữu đó. Khi áp dụng, tiếp theo là các thông báo rút lại (retract) và ngừng hỗ trợ (deprecation), phiên bản không có tag phát hành, `replace` của module và dòng import của gói gốc. Sau đó là các dòng của `go.mod` thay đổi, gồm cả `go` và `toolchain`, các lệnh `go tool` sẽ chạy phiên bản khác, các module được lấy từ host riêng của chúng và những module có hash được `go.sum` nhận mà không qua kiểm tra của cơ sở dữ liệu checksum. `go get` đánh dấu `// indirect` cho module chưa có gói nào import, và `go mod tidy` bỏ dấu đó khi đã có gói import nó.
 
-Trong terminal, `add` hỏi trước khi ghi, và `-y` áp dụng kế hoạch mà không hỏi; không có terminal và không có `-y` thì nó không ghi gì và thoát với trạng thái 1. Module mà `go.mod` đã yêu cầu được giữ nguyên và in ra phiên bản, trừ khi bạn gõ một phiên bản.
+Trong terminal, `add` hỏi trước khi ghi, và `-y` áp dụng kế hoạch mà không hỏi; không có terminal và không có `-y` thì nó không ghi gì và thoát với trạng thái 1. Khi bị ngắt, chẳng hạn bằng Ctrl+C, nó giữ nguyên `go.mod` và `go.sum` và thoát với trạng thái 130. Module mà `go.mod` đã yêu cầu được giữ nguyên và in ra phiên bản, trừ khi bạn gõ một phiên bản.
 
 Việc lập kế hoạch chỉ chạy lệnh go, trên bản sao của `go.mod` và `go.sum`:
 

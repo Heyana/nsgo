@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
@@ -76,16 +77,23 @@ func addModules(ctx context.Context, o addOptions, args []string, out io.Writer,
 	if err != nil {
 		return err
 	}
+	// An interrupt kills the go commands of planning, whose errors would say only that they were killed.
+	planning := func(err error) error {
+		if ctx.Err() != nil {
+			return fmt.Errorf("add: interrupted while planning, so nothing was written: %w", ctx.Err())
+		}
+		return err
+	}
 	m, err := findAddModule(ctx)
 	if err != nil {
-		return err
+		return planning(err)
 	}
 	// The plan says what planning found, so the step leaves no line of its own.
 	s := begin("planning %s", strings.Join(args, " "))
 	p, err := m.plan(withStep(ctx, s), reqs)
 	s.remove()
 	if err != nil {
-		return err
+		return planning(err)
 	}
 	if err := p.write(out); err != nil {
 		return err
@@ -129,14 +137,15 @@ func addModules(ctx context.Context, o addOptions, args []string, out io.Writer,
 func askToApply(ctx context.Context) (bool, error) {
 	fmt.Fprint(os.Stderr, "Apply these changes? [y/N] ")
 	answer := make(chan string, 1)
+	in := os.Stdin
 	go func() {
-		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		line, _ := bufio.NewReader(in).ReadString('\n')
 		answer <- line
 	}()
 	select {
 	case <-ctx.Done():
 		fmt.Fprintln(os.Stderr)
-		return false, ctx.Err()
+		return false, fmt.Errorf("add: interrupted, so the plan was not applied: %w", ctx.Err())
 	case line := <-answer:
 		a := strings.ToLower(strings.TrimSpace(line))
 		return a == "y" || a == "yes", nil
@@ -148,7 +157,7 @@ type addModule struct {
 	dir string // the module's root, which holds go.mod
 	// goCmd is the go command of the toolchain the module selects, which runs with GOTOOLCHAIN=local, so planning downloads and runs no other toolchain.
 	goCmd string
-	// env is every go command's environment: the user's, with GOWORK=off, GOTOOLCHAIN=local and GOPROXY up to its first direct, which becomes off, so only modules GOPRIVATE or GONOPROXY marks are fetched from their own hosts.
+	// env is every go command's environment: the user's, with GOWORK=off, GOTOOLCHAIN=local, the toolchain's GOROOT and GOPROXY up to its first direct, which becomes off, so only modules GOPRIVATE or GONOPROXY marks are fetched from their own hosts.
 	env []string
 	// workspace is the go.work the module is under, which planning leaves out, as GOWORK=off go get does.
 	workspace string
@@ -183,7 +192,8 @@ func findAddModule(ctx context.Context) (*addModule, error) {
 	if _, err := os.Stat(m.goCmd); err != nil {
 		return nil, fmt.Errorf("add: the module's toolchain has no go command: %w", err)
 	}
-	m.env = append(alone, "GOTOOLCHAIN=local", "GOPROXY="+initModuleProxy(vars["GOPROXY"]))
+	// GOROOT is the toolchain's own, as the go command sets it for a toolchain it switches to: a GOROOT the user exported, such as another toolchain's, would have this go command read that tree's standard library.
+	m.env = append(alone, "GOTOOLCHAIN=local", "GOROOT="+vars["GOROOT"], "GOPROXY="+initModuleProxy(vars["GOPROXY"]))
 	m.sumDB, m.noSumDB, m.noProxy = vars["GOSUMDB"], vars["GONOSUMDB"], vars["GONOPROXY"]
 	return m, nil
 }
@@ -559,10 +569,10 @@ func (p *addPlan) write(w io.Writer) error {
 			row("untagged", item.selected+" is a commit with no release tag")
 		}
 		for _, why := range item.listed.Retracted {
-			row("retracted", why)
+			row("retracted", shortMessage(why, "retracted by module author"))
 		}
 		if item.listed.Deprecated != "" {
-			row("deprecated", item.listed.Deprecated)
+			row("deprecated", shortMessage(item.listed.Deprecated, "deprecated by module author"))
 		}
 		if r := item.listed.Replace; r != nil {
 			row("replaced", "go.mod replaces it with "+strings.TrimSpace(r.Path+" "+r.Version)+", which builds use instead")
@@ -592,6 +602,23 @@ func (p *addPlan) write(w io.Writer) error {
 	}
 	_, err := w.Write(b.Bytes())
 	return err
+}
+
+// shortMessage is a retraction's rationale or a deprecation notice, text from a go.mod nobody vetted, as the go command prints it (modload.ShortMessage): its first line, trimmed, else def, or a placeholder when it is longer than 500 bytes or holds a character a terminal does not print, such as an escape that would hide the rest of the plan. go list -json, which the plan reads, gives the text as go.mod has it.
+func shortMessage(msg, def string) string {
+	msg, _, _ = strings.Cut(msg, "\n")
+	if msg = strings.TrimSpace(msg); msg == "" {
+		return def
+	}
+	if len(msg) > 500 {
+		return "(message omitted: too long)"
+	}
+	for _, r := range msg {
+		if !unicode.IsGraphic(r) && !unicode.IsSpace(r) {
+			return "(message omitted: contains non-printable characters)"
+		}
+	}
+	return msg
 }
 
 // relTo is path relative to dir when it can be, else path.

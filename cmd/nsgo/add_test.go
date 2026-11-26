@@ -17,9 +17,23 @@ import (
 	"golang.org/x/mod/module"
 )
 
-// init makes a copy of the test binary named git record its arguments in NSGO_TEST_GIT_LOG and fail, so a test sees whether the go command ran git.
+// init makes a copy of the test binary named git record its arguments in NSGO_TEST_GIT_LOG and fail, so a test sees whether the go command ran git, and one named go run the go command in NSGO_TEST_GO_SWITCH as a toolchain switch does.
 func init() {
 	name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+	if root := os.Getenv("NSGO_TEST_GO_SWITCH"); name == "go" && root != "" {
+		cmd := exec.Command(filepath.Join(root, "bin", "go"), os.Args[1:]...)
+		cmd.Env = append(os.Environ(), "GOROOT="+root)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		err := cmd.Run()
+		if exit, ok := err.(*exec.ExitError); ok {
+			os.Exit(exit.ExitCode())
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	log := os.Getenv("NSGO_TEST_GIT_LOG")
 	if name != "git" || log == "" {
 		return
@@ -85,7 +99,12 @@ func libraryProxy(t *testing.T) string {
 		map[string]string{"player/player.go": "package player\n"})
 	addProxyModule(t, proxy, "example.com/newgo", "v1.0.0", "module example.com/newgo\n\ngo 1.99\n", map[string]string{"newgo.go": "package newgo\n"})
 	addProxyModule(t, proxy, "example.com/old", "v1.0.0", "module example.com/old\n\ngo 1.26\n", map[string]string{"old.go": "package old\n"})
-	addProxyModule(t, proxy, "example.com/old", "v1.1.0", "// Deprecated: use example.com/new\nmodule example.com/old\n\ngo 1.26\n\nretract v1.0.0 // broken build\n", map[string]string{"old.go": "package old\n"})
+	// The notice's second line stays out of the plan, as go get leaves it out.
+	addProxyModule(t, proxy, "example.com/old", "v1.1.0", "// Deprecated: use example.com/new\n// instead, which is maintained.\nmodule example.com/old\n\ngo 1.26\n\nretract v1.0.0 // broken build\n", map[string]string{"old.go": "package old\n"})
+	// Notices with an escape that would hide the rest of the plan in a terminal.
+	addProxyModule(t, proxy, "example.com/sneaky", "v1.0.0", "module example.com/sneaky\n\ngo 1.26\n", map[string]string{"sneaky.go": "package sneaky\n"})
+	addProxyModule(t, proxy, "example.com/sneaky", "v1.1.0", "// Deprecated: fine\x1b[8m\n// second line\nmodule example.com/sneaky\n\ngo 1.26\n\nretract v1.0.0 // broken\x1b[8m\n", map[string]string{"sneaky.go": "package sneaky\n"})
+	addProxyModule(t, proxy, "example.com/std", "v1.0.0", "module example.com/std\n\ngo 1.26\n", map[string]string{"std.go": "package std\n\nimport _ \"strings\"\n"})
 	addProxyModule(t, proxy, "github.com/acme/edge", "v0.0.0-20260101000000-abcdefabcdef", "module github.com/acme/edge\n\ngo 1.27\n", map[string]string{"edge.go": "package edge\n"})
 	addProxyModule(t, proxy, "example.com/lib", "v1.2.0", "module example.com/lib\n\ngo 1.26\n", map[string]string{"lib.go": "package lib\n"})
 	addProxyModule(t, proxy, "example.com/lib", "v1.3.0-rc.1", "module example.com/lib\n\ngo 1.26\n", map[string]string{"lib.go": "package lib\n"})
@@ -249,6 +268,48 @@ example.com/tool
 	}
 }
 
+// A notice holding a character a terminal does not print, such as an escape that would hide the rest of the plan, shows as the go command shows it, a placeholder (#2460).
+func TestAddPlanHidesUnprintableNotices(t *testing.T) {
+	offlineAdd(t, libraryProxy(t))
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{"go.mod": "module example.com/tool\n\ngo 1.26\n"})
+	plan, err := planAdd(t, dir, "example.com/sneaky@v1.0.0")
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, plan)
+	}
+	for _, want := range []string{
+		"  retracted  (message omitted: contains non-printable characters)\n",
+		"  deprecated (message omitted: contains non-printable characters)\n",
+		"  go.mod     + require example.com/sneaky v1.0.0 // indirect\n",
+	} {
+		if !strings.Contains(plan, want) {
+			t.Errorf("plan lacks %q:\n%s", want, plan)
+		}
+	}
+	if strings.ContainsAny(plan, "\x1b") || strings.Contains(plan, "second line") {
+		t.Errorf("plan holds the module's notice as written:\n%q", plan)
+	}
+}
+
+func TestShortMessage(t *testing.T) {
+	for msg, want := range map[string]string{
+		"":                              "default",
+		" \n second line":               "default",
+		"  use example.com/new  ":       "use example.com/new",
+		"use example.com/new\nsecond":   "use example.com/new",
+		"tab\tand space":                "tab\tand space",
+		"fine\x1b[8m":                   "(message omitted: contains non-printable characters)",
+		"bell\a":                        "(message omitted: contains non-printable characters)",
+		"right-to-left \u202e override": "(message omitted: contains non-printable characters)",
+		strings.Repeat("x", 500):        strings.Repeat("x", 500),
+		strings.Repeat("x", 501):        "(message omitted: too long)",
+	} {
+		if got := shortMessage(msg, "default"); got != want {
+			t.Errorf("shortMessage(%q) = %q, want %q", msg, got, want)
+		}
+	}
+}
+
 // A module without a root package has no import line, and a module go.mod replaces says so; its content comes from the replacement, so go.sum takes nothing (#2460).
 func TestAddPlanReplacedModuleWithoutPackage(t *testing.T) {
 	offlineAdd(t, libraryProxy(t))
@@ -364,6 +425,53 @@ func fakeGitOnPath(t *testing.T) (dir, log string) {
 	log = filepath.Join(t.TempDir(), "git.log")
 	t.Setenv("NSGO_TEST_GIT_LOG", log)
 	return dir, log
+}
+
+// fakeToolchainSwitch puts a copy of the test binary named go in a new directory, which runs the go command in root with GOROOT=root, as a go command that switches to the toolchain in root runs it, and returns the directory.
+func fakeToolchainSwitch(t *testing.T, root string) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "go")
+	if runtime.GOOS == "windows" {
+		dst += ".exe"
+	}
+	if os.Link(exe, dst) != nil {
+		data, err := os.ReadFile(exe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dst, data, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("NSGO_TEST_GO_SWITCH", root)
+	return dir
+}
+
+// The go command of the toolchain the module selects runs with that toolchain's GOROOT, not with another one the user exported, which would give it another standard library (#2460).
+func TestAddRunsGoWithItsToolchainsGOROOT(t *testing.T) {
+	offlineAdd(t, libraryProxy(t))
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go is not on PATH")
+	}
+	root, err := exec.Command(gobin, "env", "GOROOT").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeToolchainSwitch(t, strings.TrimSpace(string(root))))
+	// Another toolchain's GOROOT, which the go found on PATH ignores once it switches: one without a standard library.
+	t.Setenv("GOROOT", t.TempDir())
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{"go.mod": "module example.com/tool\n\ngo 1.26\n"})
+	plan, err := planAdd(t, dir, "example.com/std")
+	if err != nil || !strings.Contains(plan, "+ require example.com/std v1.0.0") {
+		t.Fatalf("plan %q, %v; want it planned with the toolchain's own standard library", plan, err)
+	}
 }
 
 // With direct after the proxy in GOPROXY, a module the proxy lacks fails without the go command starting git, which it does for go get itself (#2460).
@@ -670,6 +778,49 @@ func TestAddRestoresAfterAnInterrupt(t *testing.T) {
 	}
 	if gomod, gosum := moduleFiles(t, dir); !bytes.Equal(gomod, oldMod) || !bytes.Equal(gosum, oldSum) {
 		t.Errorf("go.mod and go.sum after the interrupt:\n%s\n%s\nwant them as they were", gomod, gosum)
+	}
+}
+
+// An interrupt while planning, or at the question, writes nothing and says so, so the command fails rather than ending as if it had applied the plan (#2460).
+func TestAddInterruptedWritesNothing(t *testing.T) {
+	offlineAdd(t, libraryProxy(t))
+	dir := t.TempDir()
+	const gomod = "module example.com/tool\n\ngo 1.26\n"
+	writeFiles(t, dir, map[string]string{"go.mod": gomod})
+	t.Chdir(dir)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var err error
+	captureStderr(t, func() { err = addModules(ctx, addOptions{yes: true}, []string{"example.com/dep"}, io.Discard, nil) })
+	if err == nil || !strings.Contains(err.Error(), "interrupted while planning, so nothing was written") {
+		t.Errorf("interrupted while planning: %v", err)
+	}
+
+	// The question reads a standard input nobody answers, and the interrupt comes while it waits.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.Close(); w.Close() })
+	stdin := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = stdin })
+	ctx, cancel = context.WithCancel(t.Context())
+	defer cancel()
+	ask := func(ctx context.Context) (bool, error) {
+		cancel()
+		return askToApply(ctx)
+	}
+	captureStderr(t, func() { err = addModules(ctx, addOptions{}, []string{"example.com/dep"}, io.Discard, ask) })
+	if err == nil || !strings.Contains(err.Error(), "interrupted, so the plan was not applied") {
+		t.Errorf("interrupted at the question: %v", err)
+	}
+	if got, _ := moduleFiles(t, dir); string(got) != gomod {
+		t.Errorf("go.mod changed:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "go.sum")); !os.IsNotExist(err) {
+		t.Errorf("go.sum was written: %v", err)
 	}
 }
 

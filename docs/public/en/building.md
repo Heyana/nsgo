@@ -213,7 +213,7 @@ Apply these changes? [y/N]
 
 For each module, the plan names its version and publication date, and its owner: the host, and on a code host such as github.com the account, marked when `go.mod` has no module from it yet. Retraction and deprecation notices, a version with no release tag, a `replace` of the module and the import line of its root package follow when they apply. Then come the lines of `go.mod` that change, `go` and `toolchain` included, the `go tool` commands that would run another version, the modules fetched from their own hosts and those `go.sum` takes unchecked by the checksum database. `go get` marks a module no package imports yet `// indirect`, and `go mod tidy` drops the mark once one does.
 
-In a terminal, `add` asks before writing, and `-y` applies the plan without asking; without a terminal and without `-y`, it writes nothing and exits with status 1. A module `go.mod` already requires is left as it is, its version printed, unless a version is typed.
+In a terminal, `add` asks before writing, and `-y` applies the plan without asking; without a terminal and without `-y`, it writes nothing and exits with status 1. An interrupt, such as Ctrl+C, leaves `go.mod` and `go.sum` as they were and exits with status 130. A module `go.mod` already requires is left as it is, its version printed, unless a version is typed.
 
 Planning runs nothing but the go command, on copies of `go.mod` and `go.sum`:
 

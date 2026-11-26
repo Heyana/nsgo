@@ -20,14 +20,14 @@ func main() {
 }
 `
 
-// goEnv returns PATH with go's directory and the environment a test module builds offline in: proxy, a file URL or off, for modules, and a module cache of its own.
+// goEnv returns PATH with go's directory and the environment a test module builds offline in: proxy, a file URL or off, for modules, a module cache of its own, and no module marked private by the host, which would be fetched from its own host instead.
 func goEnv(t *testing.T, proxy string) (string, []string) {
 	t.Helper()
 	gobin, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("go is not on PATH")
 	}
-	return filepath.Dir(gobin), []string{"GOPROXY=" + proxy, "GOSUMDB=off", "GOFLAGS=-mod=mod -modcacherw", "GOTOOLCHAIN=local", "GOMODCACHE=" + t.TempDir()}
+	return filepath.Dir(gobin), []string{"GOPROXY=" + proxy, "GOSUMDB=off", "GOFLAGS=-mod=mod -modcacherw", "GOTOOLCHAIN=local", "GOMODCACHE=" + t.TempDir(), "GOPRIVATE=", "GONOPROXY=", "GONOSUMDB="}
 }
 
 // nsgoProxy writes a module proxy holding a stand-in github.com/nsgo-dev/nsgo at version and returns its file URL.

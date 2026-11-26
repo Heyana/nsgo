@@ -5,7 +5,7 @@
 //	go run ./tools/changelog release [-date YYYY-MM-DD] [-no-runtime] X.Y.Z
 //	go run ./tools/changelog adopt -base origin/main -kind Fixed <name>
 //
-// check validates the fragments; collect moves them into `Unreleased` and deletes them; release collects them and turns `Unreleased` into the version's section above a fresh one, after replacing a stale Android runtime with one the android-runtime.yml workflow builds on main (runtime.go), unless -no-runtime; adopt moves the `Unreleased` lines a branch added to CHANGELOG.md into a fragment, for branches started before fragments.
+// check validates the fragments; collect moves them into `Unreleased` and deletes them; release collects them and turns `Unreleased` into the version's section above a fresh one, once every release nsgo names for a command (commandReleases in cmd/nsgo/delegate.go) is a tag or this release, and after replacing a stale Android runtime with one the android-runtime.yml workflow builds on main (runtime.go), unless -no-runtime; adopt moves the `Unreleased` lines a branch added to CHANGELOG.md into a fragment, for branches started before fragments.
 package main
 
 import (
@@ -13,11 +13,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -304,6 +308,9 @@ func release(root, version, date string, rt *rebuild) error {
 	if _, err := cut(folded, version, date); err != nil {
 		return err
 	}
+	if err := checkCommandReleases(root, version); err != nil {
+		return err
+	}
 	if rt != nil {
 		if err := rt.refresh(root); err != nil {
 			return err
@@ -326,6 +333,68 @@ func release(root, version, date string, rt *rebuild) error {
 	}
 	fmt.Printf("collected %d fragments and wrote the %s section of %s; review it, then merge it and tag v%s\n", n, version, changelogFile, version)
 	return nil
+}
+
+// delegateFile holds commandReleases, the release in which each of nsgo's newer commands first ships, which an installed nsgo names to a module that pins an older one.
+const delegateFile = "cmd/nsgo/delegate.go"
+
+// checkCommandReleases refuses a release while commandReleases names a release that neither is tagged nor is this one, X.Y.Z or the X.Y.Z a pre-release leads to: a command added for one release and shipped in another would send users to a version without it.
+func checkCommandReleases(root, version string) error {
+	path := filepath.Join(root, filepath.FromSlash(delegateFile))
+	f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		return err
+	}
+	var releases map[string]string
+	ast.Inspect(f, func(n ast.Node) bool {
+		spec, ok := n.(*ast.ValueSpec)
+		if !ok || len(spec.Names) != 1 || spec.Names[0].Name != "commandReleases" || len(spec.Values) != 1 {
+			return true
+		}
+		if lit, ok := spec.Values[0].(*ast.CompositeLit); ok {
+			releases = map[string]string{}
+			for _, elt := range lit.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				k, kerr := stringLiteral(kv.Key)
+				v, verr := stringLiteral(kv.Value)
+				if kerr == nil && verr == nil {
+					releases[k] = v
+				}
+			}
+		}
+		return false
+	})
+	if releases == nil {
+		return fmt.Errorf("%s has no commandReleases map literal", delegateFile)
+	}
+	this, _, _ := strings.Cut(version, "-")
+	var stale []string
+	for cmd, release := range releases {
+		if release == "v"+version || release == "v"+this {
+			continue
+		}
+		if _, err := git(root, "rev-parse", "-q", "--verify", "refs/tags/"+release+"^{commit}"); err == nil {
+			continue
+		}
+		stale = append(stale, fmt.Sprintf("%s: %s", cmd, release))
+	}
+	if len(stale) == 0 {
+		return nil
+	}
+	slices.Sort(stale)
+	return fmt.Errorf("%s's commandReleases names releases that are neither tagged nor v%s (%s): set them to v%s, or fetch the tags with git fetch --tags", delegateFile, this, strings.Join(stale, ", "), this)
+}
+
+// stringLiteral is the value of the Go string literal e.
+func stringLiteral(e ast.Expr) (string, error) {
+	lit, ok := e.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", errors.New("not a string literal")
+	}
+	return strconv.Unquote(lit.Value)
 }
 
 // branchBullets returns the `Unreleased` bullets the working copy's changelog adds to the base's and the changelog to restore, the base's. Without those bullets the working copy must be the base: a branch that also changed other lines needs a person to move them.

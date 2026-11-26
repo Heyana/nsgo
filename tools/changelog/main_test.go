@@ -39,11 +39,12 @@ func read(t *testing.T, path string) string {
 	return string(data)
 }
 
-// repo makes a changelog and fragments in a temporary directory.
+// repo makes a changelog and fragments in a temporary directory, with an nsgo that names no command's release.
 func repo(t *testing.T, changelog string, frags map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
 	write(t, filepath.Join(root, changelogFile), changelog)
+	write(t, filepath.Join(root, filepath.FromSlash(delegateFile)), "package main\n\nvar commandReleases = map[string]string{}\n")
 	write(t, filepath.Join(root, fragmentDir, readme), "# Changelog fragments\n\n### Not a fragment\n")
 	for name, data := range frags {
 		write(t, filepath.Join(root, fragmentDir, name), data)
@@ -216,6 +217,49 @@ func TestReleaseRefusesBeforeTouchingFragments(t *testing.T) {
 	empty := repo(t, "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] - 2026-11-19\n\n- Add x.\n", nil)
 	if err := run(empty, []string{"release", "-no-runtime", "0.3.0"}, time.Now()); err == nil || !strings.Contains(err.Error(), "nothing to release") {
 		t.Errorf("empty release: %v", err)
+	}
+}
+
+// A release refuses while nsgo names, for a command, a release that is neither tagged nor this one, which would send users to a version without the command.
+func TestReleaseChecksCommandReleases(t *testing.T) {
+	root := repo(t, sample, map[string]string{"new.md": "### Added\n- Add new.\n"})
+	for _, args := range [][]string{{"init", "-q"}, {"commit", "-q", "--allow-empty", "-m", "base"}, {"tag", "v0.2.0"}} {
+		config := []string{"-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}
+		if out, err := exec.Command("git", append(config, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	commands := func(releases string) {
+		write(t, filepath.Join(root, filepath.FromSlash(delegateFile)), "package main\n\nvar commandReleases = map[string]string{"+releases+"}\n")
+	}
+	for _, tc := range []struct{ releases, version, want string }{
+		{`"add": "v0.2.5", "old": "v0.2.0"`, "0.3.0", "names releases that are neither tagged nor v0.3.0 (add: v0.2.5): set them to v0.3.0"},
+		{`"add": "v0.3.0"`, "0.3.1", "(add: v0.3.0)"},
+	} {
+		commands(tc.releases)
+		if err := run(root, []string{"release", "-no-runtime", tc.version}, time.Now()); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s at %s: %v, want %q", tc.releases, tc.version, err, tc.want)
+		}
+		if got := read(t, filepath.Join(root, changelogFile)); got != sample {
+			t.Errorf("%s at %s rewrote the changelog", tc.releases, tc.version)
+		}
+	}
+	// A tagged release, this one and the one a pre-release leads to pass.
+	commands(`"add": "v0.3.0", "old": "v0.2.0"`)
+	if err := run(root, []string{"release", "-no-runtime", "-date", "2026-12-01", "0.3.0-rc.1"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkCommandReleases(root, "0.3.0"); err != nil {
+		t.Error(err)
+	}
+}
+
+// The repository's commandReleases is read as the release reads it.
+func TestRepositoryCommandReleases(t *testing.T) {
+	root := filepath.Join("..", "..")
+	err := checkCommandReleases(root, "999.0.0")
+	if err != nil && !strings.Contains(err.Error(), "neither tagged nor") {
+		t.Fatal(err)
 	}
 }
 

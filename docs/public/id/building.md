@@ -208,7 +208,7 @@ Apply these changes? [y/N]
 
 Untuk setiap modul, rencana menyebutkan versi dan tanggal terbitnya, serta pemiliknya: host-nya, dan pada layanan hosting kode seperti github.com juga akunnya, ditandai bila `go.mod` belum memiliki modul dari pemilik itu. Pemberitahuan penarikan (retract) dan penghentian (deprecation), versi tanpa tag rilis, `replace` atas modul tersebut, dan baris import paket akarnya menyusul bila berlaku. Lalu muncul baris-baris `go.mod` yang berubah, termasuk `go` dan `toolchain`, perintah `go tool` yang akan menjalankan versi lain, modul yang diambil dari host-nya sendiri, dan modul yang hash-nya diterima `go.sum` tanpa diperiksa oleh basis data checksum. `go get` menandai modul yang belum diimpor paket mana pun dengan `// indirect`, dan `go mod tidy` menghapus tanda itu begitu ada paket yang mengimpornya.
 
-Di terminal, `add` bertanya sebelum menulis, dan `-y` menerapkan rencana tanpa bertanya; tanpa terminal dan tanpa `-y`, ia tidak menulis apa pun dan keluar dengan status 1. Modul yang sudah dibutuhkan `go.mod` dibiarkan apa adanya dan versinya dicetak, kecuali sebuah versi diketikkan.
+Di terminal, `add` bertanya sebelum menulis, dan `-y` menerapkan rencana tanpa bertanya; tanpa terminal dan tanpa `-y`, ia tidak menulis apa pun dan keluar dengan status 1. Interupsi, seperti Ctrl+C, membiarkan `go.mod` dan `go.sum` seperti semula dan keluar dengan status 130. Modul yang sudah dibutuhkan `go.mod` dibiarkan apa adanya dan versinya dicetak, kecuali sebuah versi diketikkan.
 
 Perencanaan tidak menjalankan apa pun selain perintah go, pada salinan `go.mod` dan `go.sum`:
 

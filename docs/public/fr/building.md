@@ -208,7 +208,7 @@ Apply these changes? [y/N]
 
 Pour chaque module, le plan indique sa version et sa date de publication, ainsi que son propriétaire : l'hôte et, sur un hébergeur de code comme github.com, le compte, signalé quand `go.mod` n'a encore aucun module de lui. Les avis de retrait (retract) et d'obsolescence, une version sans tag de publication, un `replace` du module et la ligne d'import de son paquet racine suivent le cas échéant. Viennent ensuite les lignes de `go.mod` qui changent, `go` et `toolchain` compris, les commandes `go tool` qui exécuteraient une autre version, les modules récupérés depuis leurs propres hôtes et ceux dont `go.sum` accepte les sommes sans vérification par la base de données de sommes de contrôle. `go get` marque `// indirect` un module qu'aucun paquet n'importe encore, et `go mod tidy` retire la marque dès qu'un paquet l'importe.
 
-Dans un terminal, `add` demande avant d'écrire, et `-y` applique le plan sans demander ; sans terminal et sans `-y`, il n'écrit rien et se termine avec le statut 1. Un module que `go.mod` requiert déjà est laissé tel quel et sa version affichée, sauf si une version est saisie.
+Dans un terminal, `add` demande avant d'écrire, et `-y` applique le plan sans demander ; sans terminal et sans `-y`, il n'écrit rien et se termine avec le statut 1. Une interruption, comme Ctrl+C, laisse `go.mod` et `go.sum` tels qu'ils étaient et se termine avec le statut 130. Un module que `go.mod` requiert déjà est laissé tel quel et sa version affichée, sauf si une version est saisie.
 
 La planification n'exécute rien d'autre que la commande go, sur des copies de `go.mod` et `go.sum` :
 
