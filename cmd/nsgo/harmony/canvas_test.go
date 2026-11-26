@@ -13,8 +13,8 @@ import (
 
 var canvasCase = regexp.MustCompile(`(?m)^\s*case ([0-9]+):`)
 
-// recorderOnlyKinds are the drawing kinds the recorder resolves itself, so players skip them.
-var recorderOnlyKinds = map[driver.DrawKind]bool{driver.DrawTextAlign: true, driver.DrawTextBaseline: true}
+// recorderOnlyKinds are the drawing kinds canvasJSON never sends: those the recorder resolves itself, which players skip, and DrawShader, as the host has no GPU path for canvases.
+var recorderOnlyKinds = map[driver.DrawKind]bool{driver.DrawTextAlign: true, driver.DrawTextBaseline: true, driver.DrawShader: true}
 
 // TestCanvasPlayerReadsEveryDrawKind checks that Index.ets's canvas player has a case for every drawing kind canvasJSON sends, under the driver's number, and none for a number the driver lacks. A kind the player has no case for is dropped silently, as DrawAtlas was before the host learned it.
 func TestCanvasPlayerReadsEveryDrawKind(t *testing.T) {
