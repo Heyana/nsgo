@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux` bersifat opsional. Kuncinya adalah `linux_x64` dan `linux_arm64`, sehingga paket yang membundel pustaka di satu arsitektur dan memuat pustaka milik sistem di arsitektur lainnya dapat menyebutkan kebutuhan masing-masing.
-- `depends` dan `recommends` masing-masing menerima daftar `deb` dan `arch`, seperti `linux.depends` dan `linux.recommends` milik aplikasi di [nsgo.yaml](building.md#nsgoyaml): setiap entri ditulis sebagaimana dpkg atau pacman menuliskannya, misalnya `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)`, atau `libpulse: audio output`.
-- Kolom `Depends` dan `Recommends` pada `.deb` serta baris `depend` dan `optdepend` pada paket Arch mencantumkan paket milik NSGo sendiri, lalu milik aplikasi, lalu milik setiap paket Go yang ditautkan build, sesuai urutan Go mencantumkannya, tanpa entri yang sudah tercantum. Paket Go yang dikecualikan oleh target atau build tag tidak menambahkan apa pun.
+- `depends` dan `recommends` masing-masing menerima daftar `deb` dan `arch`, seperti `linux.depends` dan `linux.recommends` milik aplikasi di [nsgo.yaml](building.md#nsgoyaml): setiap entri `deb` ditulis sebagaimana dpkg menuliskannya, misalnya `libsoup-3.0-0 | libsoup3` atau `libavcodec61 (>= 7:7.1)`, dan setiap entri `arch` sebagaimana pacman menuliskannya, misalnya `ffmpeg>=7` atau `libpulse: audio output`.
+- Kolom `Depends` dan `Recommends` pada `.deb` serta baris `depend` dan `optdepend` pada paket Arch mencantumkan paket milik NSGo sendiri, lalu milik aplikasi, lalu milik setiap paket Go yang ditautkan build, sesuai urutan Go mencantumkannya, tanpa entri yang sudah tercantum dan tanpa rekomendasi paket Go yang sudah disebut oleh entri `depends`. Paket Go yang dikecualikan oleh target atau build tag tidak menambahkan apa pun.
 - Entri kosong atau entri yang berisi jeda baris menghentikan build dengan menyebutkan paket Go-nya, demikian pula `linux` di file versi 1 atau kunci selain keduanya.
 - AppImage dan Flatpak dari build toko aplikasi tidak mengambil apa pun dari `linux`.
 

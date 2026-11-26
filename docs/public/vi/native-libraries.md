@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux` là tùy chọn. Các khóa của nó là `linux_x64` và `linux_arm64`, nên một package đóng gói kèm thư viện trên một kiến trúc và nạp thư viện của hệ thống trên kiến trúc kia có thể nêu những gì mỗi kiến trúc cần.
-- `depends` và `recommends` đều nhận các danh sách `deb` và `arch`, giống `linux.depends` và `linux.recommends` của ứng dụng trong [nsgo.yaml](building.md#nsgoyaml): mỗi mục được viết theo cách dpkg hoặc pacman viết, chẳng hạn `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` hay `libpulse: audio output`.
-- Các trường `Depends` và `Recommends` của `.deb` cùng các dòng `depend` và `optdepend` của gói Arch liệt kê các gói của chính NSGo, rồi của ứng dụng, rồi của từng Go package mà bản build liên kết, theo thứ tự Go liệt kê chúng, bỏ qua các mục đã có. Một Go package bị target hoặc build tag loại ra không thêm gì.
+- `depends` và `recommends` đều nhận các danh sách `deb` và `arch`, giống `linux.depends` và `linux.recommends` của ứng dụng trong [nsgo.yaml](building.md#nsgoyaml): mỗi mục `deb` được viết theo cách dpkg viết, chẳng hạn `libsoup-3.0-0 | libsoup3` hay `libavcodec61 (>= 7:7.1)`, và mỗi mục `arch` theo cách pacman viết, chẳng hạn `ffmpeg>=7` hay `libpulse: audio output`.
+- Các trường `Depends` và `Recommends` của `.deb` cùng các dòng `depend` và `optdepend` của gói Arch liệt kê các gói của chính NSGo, rồi của ứng dụng, rồi của từng Go package mà bản build liên kết, theo thứ tự Go liệt kê chúng, bỏ qua các mục đã có và khuyến nghị của một Go package mà một mục `depends` đã nêu. Một Go package bị target hoặc build tag loại ra không thêm gì.
 - Một mục rỗng hoặc chứa ký tự xuống dòng sẽ dừng bản build và nêu tên Go package đó, tương tự `linux` trong tệp phiên bản 1 hoặc một khóa khác hai khóa này.
 - AppImage và Flatpak của bản build kho ứng dụng không lấy gì từ `linux`.
 

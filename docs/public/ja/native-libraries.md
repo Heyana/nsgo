@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux` は省略可能です。キーは `linux_x64` と `linux_arm64` なので、一方のアーキテクチャではライブラリを同梱し、もう一方ではシステムのものを読み込むパッケージも、それぞれに必要なものを指定できます。
-- `depends` と `recommends` はそれぞれ `deb` と `arch` のリストを取り、[nsgo.yaml](building.md#nsgoyaml) にあるアプリの `linux.depends` と `linux.recommends` と同じ形です。各エントリは `libsoup-3.0-0 | libsoup3`、`ffmpeg (>= 7)`、`libpulse: audio output` のように、dpkg や pacman の書き方で記述します。
-- `.deb` の `Depends` と `Recommends`、Arch パッケージの `depend` 行と `optdepend` 行には、NSGo 自身のパッケージ、アプリのもの、ビルドがリンクする各 Go パッケージのものの順に並びます。Go パッケージ同士は Go が列挙する順序に従い、すでに含まれているエントリは省かれます。ターゲットやビルドタグによって除外された Go パッケージは何も追加しません。
+- `depends` と `recommends` はそれぞれ `deb` と `arch` のリストを取り、[nsgo.yaml](building.md#nsgoyaml) にあるアプリの `linux.depends` と `linux.recommends` と同じ形です。`deb` の各エントリは `libsoup-3.0-0 | libsoup3` や `libavcodec61 (>= 7:7.1)` のように dpkg の書き方で、`arch` の各エントリは `ffmpeg>=7` や `libpulse: audio output` のように pacman の書き方で記述します。
+- `.deb` の `Depends` と `Recommends`、Arch パッケージの `depend` 行と `optdepend` 行には、NSGo 自身のパッケージ、アプリのもの、ビルドがリンクする各 Go パッケージのものの順に並びます。Go パッケージ同士は Go が列挙する順序に従い、すでに含まれているエントリと、`depends` のエントリがすでに挙げている Go パッケージの推奨は省かれます。ターゲットやビルドタグによって除外された Go パッケージは何も追加しません。
 - 空のエントリや改行を含むエントリがあると、その Go パッケージ名を示してビルドが停止します。バージョン 1 のファイルにある `linux` や、これら 2 つ以外のキーも同様です。
 - AppImage とストアビルドの Flatpak は `linux` から何も取り込みません。
 

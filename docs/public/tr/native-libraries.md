@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux` isteğe bağlıdır. Anahtarları `linux_x64` ve `linux_arm64`'tür; böylece bir mimaride kütüphaneyi kendisi paketleyip diğerinde sistemin kütüphanesini yükleyen bir paket, her birinin neye ihtiyaç duyduğunu belirtir.
-- `depends` ve `recommends`, uygulamanın [nsgo.yaml](building.md#nsgoyaml) içindeki `linux.depends` ve `linux.recommends` alanları gibi, her biri `deb` ve `arch` listeleri alır: her girdi dpkg veya pacman'ın yazdığı biçimdedir, örneğin `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` veya `libpulse: audio output`.
-- `.deb` dosyasının `Depends` ve `Recommends` alanları ile Arch paketinin `depend` ve `optdepend` satırları önce NSGo'nun kendi paketlerini, ardından uygulamanınkileri, ardından derlemenin bağladığı her Go paketininkileri Go'nun listelediği sırayla sıralar; zaten listelenmiş girdiler atlanır. Hedefin veya derleme etiketlerinin dışarıda bıraktığı bir Go paketi hiçbir şey eklemez.
+- `depends` ve `recommends`, uygulamanın [nsgo.yaml](building.md#nsgoyaml) içindeki `linux.depends` ve `linux.recommends` alanları gibi, her biri `deb` ve `arch` listeleri alır: her `deb` girdisi dpkg'nin yazdığı biçimdedir, örneğin `libsoup-3.0-0 | libsoup3` veya `libavcodec61 (>= 7:7.1)`; her `arch` girdisi pacman'ın yazdığı biçimdedir, örneğin `ffmpeg>=7` veya `libpulse: audio output`.
+- `.deb` dosyasının `Depends` ve `Recommends` alanları ile Arch paketinin `depend` ve `optdepend` satırları önce NSGo'nun kendi paketlerini, ardından uygulamanınkileri, ardından derlemenin bağladığı her Go paketininkileri Go'nun listelediği sırayla sıralar; zaten listelenmiş girdiler ve bir `depends` girdisinin zaten adlandırdığı bir Go paketi önerisi atlanır. Hedefin veya derleme etiketlerinin dışarıda bıraktığı bir Go paketi hiçbir şey eklemez.
 - Boş bir girdi veya satır sonu içeren bir girdi, Go paketini adlandırarak derlemeyi durdurur; sürüm 1 dosyasındaki `linux` veya bu ikisinden başka bir anahtar da öyle.
 - AppImage ve bir mağaza derlemesinin Flatpak'i `linux` içinden hiçbir şey almaz.
 

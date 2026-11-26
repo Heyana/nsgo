@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux` ist optional. Seine Schlüssel sind `linux_x64` und `linux_arm64`, sodass ein Package, das auf der einen Architektur eine Bibliothek bündelt und auf der anderen die des Systems lädt, für jede nennt, was sie braucht.
-- `depends` und `recommends` nehmen jeweils die Listen `deb` und `arch`, wie `linux.depends` und `linux.recommends` der App in [nsgo.yaml](building.md#nsgoyaml): jeden Eintrag so, wie dpkg oder pacman ihn schreibt, etwa `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` oder `libpulse: audio output`.
-- `Depends` und `Recommends` des `.deb` sowie die Zeilen `depend` und `optdepend` des Arch-Pakets führen die eigenen Pakete von NSGo auf, dann die der App, dann die jedes Go-Packages, das der Build einbindet, in der Reihenfolge, in der Go sie auflistet; bereits aufgeführte Einträge entfallen. Ein Go-Package, das die Zielplattform oder Build-Tags fernhalten, fügt nichts hinzu.
+- `depends` und `recommends` nehmen jeweils die Listen `deb` und `arch`, wie `linux.depends` und `linux.recommends` der App in [nsgo.yaml](building.md#nsgoyaml): jeden `deb`-Eintrag so, wie dpkg ihn schreibt, etwa `libsoup-3.0-0 | libsoup3` oder `libavcodec61 (>= 7:7.1)`, und jeden `arch`-Eintrag so, wie pacman ihn schreibt, etwa `ffmpeg>=7` oder `libpulse: audio output`.
+- `Depends` und `Recommends` des `.deb` sowie die Zeilen `depend` und `optdepend` des Arch-Pakets führen die eigenen Pakete von NSGo auf, dann die der App, dann die jedes Go-Packages, das der Build einbindet, in der Reihenfolge, in der Go sie auflistet; bereits aufgeführte Einträge entfallen, ebenso die Empfehlung eines Go-Packages, die ein `depends`-Eintrag schon nennt. Ein Go-Package, das die Zielplattform oder Build-Tags fernhalten, fügt nichts hinzu.
 - Ein leerer Eintrag oder einer mit Zeilenumbruch bricht den Build unter Nennung des Go-Packages ab, ebenso `linux` in einer Datei der Version 1 oder ein anderer Schlüssel als diese beiden.
 - Das AppImage und das Flatpak eines Store-Builds übernehmen nichts aus `linux`.
 

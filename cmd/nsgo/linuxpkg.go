@@ -65,26 +65,30 @@ func validateLinuxDeps(field string, depends, recommends linuxDeps) error {
 	return nil
 }
 
-// linuxRequirements are the entries of the Debian and Arch packages' dependency fields for arch: NSGo's own, GTK 4 and, recommended as only web views load it, WebKitGTK; then the app's linux.depends and linux.recommends; then those that the packages its build links declare for the target in nsgo-natives.yaml (addPackageNatives), leaving out any entry the field holds already.
+// linuxRequirements are the entries of the Debian and Arch packages' dependency fields for arch: NSGo's own, GTK 4 and, recommended as only web views load it, WebKitGTK; then the app's linux.depends and linux.recommends; then those that the packages its build links declare for the target in nsgo-natives.yaml (addPackageNatives), leaving out any entry the field holds already and any recommended one that a depend names, since a package one linked package needs is no longer optional because another only recommends it.
 func (p *project) linuxRequirements(arch string) (depends, recommends linuxDeps) {
 	depends = linuxDeps{Deb: append([]string{"libgtk-4-1"}, p.Linux.Depends.Deb...), Arch: append([]string{"gtk4"}, p.Linux.Depends.Arch...)}
 	recommends = linuxDeps{Deb: append([]string{"libwebkitgtk-6.0-4"}, p.Linux.Recommends.Deb...), Arch: append([]string{"webkitgtk-6.0: web views"}, p.Linux.Recommends.Arch...)}
-	for _, linked := range p.nativeLinuxDeps["linux_"+goArchName(arch)] {
-		depends.add(linked.Depends)
-		recommends.add(linked.Recommends)
+	linked := p.nativeLinuxDeps["linux_"+goArchName(arch)]
+	for _, deps := range linked {
+		depends.add(deps.Depends, linuxDeps{})
+	}
+	for _, deps := range linked {
+		recommends.add(deps.Recommends, depends)
 	}
 	return depends, recommends
 }
 
-// add appends each entry of extra that deps does not hold yet.
-func (deps *linuxDeps) add(extra linuxDeps) {
+// add appends each entry of extra that neither deps nor skip holds yet. An Arch entry is compared without the ": description" an optdepend carries, so libpulse in skip leaves out "libpulse: sound".
+func (deps *linuxDeps) add(extra, skip linuxDeps) {
 	for _, entry := range extra.Deb {
-		if !slices.Contains(deps.Deb, entry) {
+		if !slices.Contains(deps.Deb, entry) && !slices.Contains(skip.Deb, entry) {
 			deps.Deb = append(deps.Deb, entry)
 		}
 	}
 	for _, entry := range extra.Arch {
-		if !slices.Contains(deps.Arch, entry) {
+		name, _, _ := strings.Cut(entry, ":")
+		if !slices.Contains(deps.Arch, entry) && !slices.Contains(skip.Arch, strings.TrimSpace(name)) {
 			deps.Arch = append(deps.Arch, entry)
 		}
 	}

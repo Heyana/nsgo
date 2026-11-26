@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"debug/elf"
@@ -108,7 +109,11 @@ func readNativeManifest(dir string) (*nativeManifest, error) {
 	if info.Size() > 1<<20 {
 		return nil, fmt.Errorf("native manifest exceeds 1 MiB")
 	}
-	decoder := yaml.NewDecoder(io.LimitReader(f, 1<<20))
+	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	var manifest nativeManifest
 	if err := decoder.Decode(&manifest); err != nil {
@@ -118,6 +123,13 @@ func readNativeManifest(dir string) (*nativeManifest, error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("one YAML document is required")
 	}
+	// A null linux (linux: or linux: ~) decodes to a nil map, so whether the key is there is read through a yaml.Node, which takes even a null: version 1 refuses the key whatever its value, as nsgo before version 2 does.
+	var keys struct {
+		Linux yaml.Node `yaml:"linux"`
+	}
+	if err := yaml.Unmarshal(data, &keys); err != nil {
+		return nil, err
+	}
 	targets := nativeVersionTargets(manifest.Version)
 	switch {
 	case manifest.Version == 0:
@@ -126,7 +138,7 @@ func readNativeManifest(dir string) (*nativeManifest, error) {
 		return nil, fmt.Errorf("version is %d; this nsgo reads versions 1 and 2", manifest.Version)
 	case len(manifest.Libraries) == 0:
 		return nil, fmt.Errorf("a nonempty libraries target map is required")
-	case manifest.Linux != nil && manifest.Version < 2:
+	case keys.Linux.Kind != 0 && manifest.Version < 2:
 		return nil, fmt.Errorf("linux needs version: 2")
 	}
 	for _, target := range slices.Sorted(maps.Keys(manifest.Libraries)) {

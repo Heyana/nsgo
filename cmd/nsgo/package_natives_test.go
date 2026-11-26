@@ -160,7 +160,7 @@ func TestPackageNativesLinuxPackageDependencies(t *testing.T) {
 	library := nativeELF(false)
 	dir := t.TempDir()
 	// Only media bundles a library.
-	none :="version: 2\nlibraries:\n  linux_x64: []\n  linux_arm64: []\n"
+	none := "version: 2\nlibraries:\n  linux_x64: []\n  linux_arm64: []\n"
 	media := "version: 2\nlibraries:\n  linux_x64:\n    - name: libfixture.so.1\n      path: lib/libfixture.so.1\n      sha256: " + nativeDigest(library) + "\n      licenses: [LICENSE]\n  linux_arm64: []\n"
 	files := map[string]string{
 		"app/go.mod":                "module example.com/app\ngo 1.27.3\nrequire (\n\texample.com/media v0.0.0\n\texample.com/neon v0.0.0\n\texample.com/sound v0.0.0\n\texample.com/tagged v0.0.0\n)\nreplace (\n\texample.com/media => ../media\n\texample.com/neon => ../neon\n\texample.com/sound => ../sound\n\texample.com/tagged => ../tagged\n)\n",
@@ -202,16 +202,16 @@ func TestPackageNativesLinuxPackageDependencies(t *testing.T) {
 	}{
 		{"amd64", nil, [4]string{
 			"libgtk-4-1, gstreamer1.0-plugins-good, libva2, libva-drm2, libpulse0",
-			"libwebkitgtk-6.0-4, gstreamer1.0-libav, libpulse0",
+			"libwebkitgtk-6.0-4, gstreamer1.0-libav",
 			"gtk4, gst-plugins-good, libva, libpulse",
-			"webkitgtk-6.0: web views, gst-libav: H.264 and AAC video, libpulse: sound",
+			"webkitgtk-6.0: web views, gst-libav: H.264 and AAC video",
 		}},
 		{"arm64", nil, arm},
 		{"amd64", []string{"nativeextra"}, [4]string{
 			"libgtk-4-1, gstreamer1.0-plugins-good, libva2, libva-drm2, libpulse0, libtagged1",
-			"libwebkitgtk-6.0-4, gstreamer1.0-libav, libpulse0",
+			"libwebkitgtk-6.0-4, gstreamer1.0-libav",
 			"gtk4, gst-plugins-good, libva, libpulse, tagged",
-			"webkitgtk-6.0: web views, gst-libav: H.264 and AAC video, libpulse: sound",
+			"webkitgtk-6.0: web views, gst-libav: H.264 and AAC video",
 		}},
 	} {
 		p.Build.Tags = c.tags
@@ -302,6 +302,8 @@ func TestPackageNativesLinuxManifests(t *testing.T) {
 	}
 	for name, c := range map[string]struct{ manifest, reason string }{
 		"version 1":       {strings.Replace(good, "version: 2", "version: 1", 1), "linux needs version: 2"},
+		"version 1 null":  {"version: 1\nlibraries:\n  linux_x64: []\nlinux:\n", "linux needs version: 2"},
+		"version 1 tilde": {"version: 1\nlibraries:\n  linux_x64: []\nlinux: ~\n", "linux needs version: 2"},
 		"terminal target": {strings.Replace(good, "  linux_arm64:", "  tui_linux_arm64:", 1), `linux takes linux_arm64 and linux_x64, not "tui_linux_arm64"`},
 		"another target":  {strings.Replace(good, "  linux_arm64:", "  macos_arm64:", 1), `linux takes linux_arm64 and linux_x64, not "macos_arm64"`},
 		"unknown field":   {strings.Replace(good, "    recommends:", "    suggests:", 1), "field suggests not found"},

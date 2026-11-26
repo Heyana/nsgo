@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux` es opcional. Sus claves son `linux_x64` y `linux_arm64`, de modo que un paquete que incluye una biblioteca en una arquitectura y carga la del sistema en la otra nombra lo que necesita cada una.
-- `depends` y `recommends` aceptan cada uno las listas `deb` y `arch`, como `linux.depends` y `linux.recommends` de la aplicación en [nsgo.yaml](building.md#nsgoyaml): cada entrada tal como la escribe dpkg o pacman, por ejemplo `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` o `libpulse: audio output`.
-- Los campos `Depends` y `Recommends` del `.deb` y las líneas `depend` y `optdepend` del paquete de Arch enumeran los paquetes propios de NSGo, luego los de la aplicación y luego los de cada paquete de Go que enlaza la compilación, en el orden en que Go los lista, omitiendo las entradas ya enumeradas. Un paquete de Go que el destino o las etiquetas de compilación dejan fuera no añade nada.
+- `depends` y `recommends` aceptan cada uno las listas `deb` y `arch`, como `linux.depends` y `linux.recommends` de la aplicación en [nsgo.yaml](building.md#nsgoyaml): cada entrada de `deb` tal como la escribe dpkg, por ejemplo `libsoup-3.0-0 | libsoup3` o `libavcodec61 (>= 7:7.1)`, y cada entrada de `arch` tal como la escribe pacman, por ejemplo `ffmpeg>=7` o `libpulse: audio output`.
+- Los campos `Depends` y `Recommends` del `.deb` y las líneas `depend` y `optdepend` del paquete de Arch enumeran los paquetes propios de NSGo, luego los de la aplicación y luego los de cada paquete de Go que enlaza la compilación, en el orden en que Go los lista, omitiendo las entradas ya enumeradas y la recomendación de un paquete de Go que una entrada de `depends` ya nombra. Un paquete de Go que el destino o las etiquetas de compilación dejan fuera no añade nada.
 - Una entrada vacía o que contiene un salto de línea detiene la compilación, nombrando el paquete de Go, al igual que `linux` en un archivo de la versión 1 o una clave distinta de estas dos.
 - La AppImage y el Flatpak de una compilación para tienda no toman nada de `linux`.
 

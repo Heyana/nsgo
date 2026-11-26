@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux`는 선택 사항입니다. 키는 `linux_x64`와 `linux_arm64`이므로, 한 아키텍처에서는 라이브러리를 번들하고 다른 아키텍처에서는 시스템의 라이브러리를 로드하는 패키지도 각각에 필요한 것을 지정할 수 있습니다.
-- `depends`와 `recommends`는 각각 `deb`와 `arch` 목록을 받으며, [nsgo.yaml](building.md#nsgoyaml)에 있는 앱의 `linux.depends` 및 `linux.recommends`와 형식이 같습니다. 각 항목은 `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)`, `libpulse: audio output`처럼 dpkg나 pacman이 쓰는 형식으로 적습니다.
-- `.deb`의 `Depends`와 `Recommends`, Arch 패키지의 `depend` 및 `optdepend` 줄에는 NSGo 자체의 패키지, 앱의 패키지, 빌드가 링크하는 각 Go 패키지의 항목이 차례로 들어가며, Go 패키지의 항목은 Go가 나열하는 순서를 따르고 이미 나열된 항목은 제외됩니다. 타겟이나 빌드 태그로 제외된 Go 패키지는 아무것도 추가하지 않습니다.
+- `depends`와 `recommends`는 각각 `deb`와 `arch` 목록을 받으며, [nsgo.yaml](building.md#nsgoyaml)에 있는 앱의 `linux.depends` 및 `linux.recommends`와 형식이 같습니다. `deb` 항목은 `libsoup-3.0-0 | libsoup3`, `libavcodec61 (>= 7:7.1)`처럼 dpkg가 쓰는 형식으로, `arch` 항목은 `ffmpeg>=7`, `libpulse: audio output`처럼 pacman이 쓰는 형식으로 적습니다.
+- `.deb`의 `Depends`와 `Recommends`, Arch 패키지의 `depend` 및 `optdepend` 줄에는 NSGo 자체의 패키지, 앱의 패키지, 빌드가 링크하는 각 Go 패키지의 항목이 차례로 들어가며, Go 패키지의 항목은 Go가 나열하는 순서를 따르고 이미 나열된 항목과 `depends` 항목이 이미 지정한 Go 패키지의 권장 항목은 제외됩니다. 타겟이나 빌드 태그로 제외된 Go 패키지는 아무것도 추가하지 않습니다.
 - 빈 항목이나 줄바꿈이 포함된 항목이 있으면 해당 Go 패키지 이름을 알리며 빌드가 중단됩니다. 버전 1 파일의 `linux`나 이 두 키 이외의 키도 마찬가지입니다.
 - AppImage와 스토어 빌드의 Flatpak은 `linux`에서 아무것도 가져오지 않습니다.
 

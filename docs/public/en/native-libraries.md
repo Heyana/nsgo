@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux` is optional. Its keys are `linux_x64` and `linux_arm64`, so a package that bundles a library on one architecture and loads the system's on the other names what each needs.
-- `depends` and `recommends` each take `deb` and `arch` lists, as the app's `linux.depends` and `linux.recommends` in [nsgo.yaml](building.md#nsgoyaml) do: each entry as dpkg or pacman writes it, such as `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` or `libpulse: audio output`.
-- The `.deb`'s `Depends` and `Recommends` and the Arch package's `depend` and `optdepend` lines list NSGo's own packages, then the app's, then those of each Go package the build links, in the order Go lists them, leaving out entries already listed. A Go package that the target or build tags leave out adds nothing.
+- `depends` and `recommends` each take `deb` and `arch` lists, as the app's `linux.depends` and `linux.recommends` in [nsgo.yaml](building.md#nsgoyaml) do: each `deb` entry as dpkg writes it, such as `libsoup-3.0-0 | libsoup3` or `libavcodec61 (>= 7:7.1)`, and each `arch` entry as pacman writes it, such as `ffmpeg>=7` or `libpulse: audio output`.
+- The `.deb`'s `Depends` and `Recommends` and the Arch package's `depend` and `optdepend` lines list NSGo's own packages, then the app's, then those of each Go package the build links, in the order Go lists them, leaving out entries already listed and a Go package's recommendation that a `depends` entry already names. A Go package that the target or build tags leave out adds nothing.
 - An empty entry or one holding a line break stops the build, naming the Go package, as does `linux` in a version 1 file or a key other than these two.
 - The AppImage and a store build's Flatpak take nothing from `linux`.
 

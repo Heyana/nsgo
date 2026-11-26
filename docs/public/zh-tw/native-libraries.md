@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux` 為選用項目。其鍵值為 `linux_x64` 與 `linux_arm64`，因此在一種架構上隨附函式庫、在另一種架構上載入系統函式庫的套件，可以分別列出各自所需的套件。
-- `depends` 與 `recommends` 各自接受 `deb` 與 `arch` 清單，與應用程式在 [nsgo.yaml](building.md#nsgoyaml) 中的 `linux.depends` 與 `linux.recommends` 相同：每個項目依 dpkg 或 pacman 的寫法填寫，例如 `libsoup-3.0-0 | libsoup3`、`ffmpeg (>= 7)` 或 `libpulse: audio output`。
-- `.deb` 的 `Depends` 與 `Recommends` 欄位，以及 Arch 套件的 `depend` 與 `optdepend` 行，依序列出 NSGo 本身的套件、應用程式的套件，以及建置所連結的每個 Go 套件的項目，後者依 Go 列出套件的順序排列，已列出的項目不會重複。被目標平台或建置標籤排除的 Go 套件不會新增任何內容。
+- `depends` 與 `recommends` 各自接受 `deb` 與 `arch` 清單，與應用程式在 [nsgo.yaml](building.md#nsgoyaml) 中的 `linux.depends` 與 `linux.recommends` 相同：`deb` 的項目依 dpkg 的寫法填寫，例如 `libsoup-3.0-0 | libsoup3` 或 `libavcodec61 (>= 7:7.1)`；`arch` 的項目依 pacman 的寫法填寫，例如 `ffmpeg>=7` 或 `libpulse: audio output`。
+- `.deb` 的 `Depends` 與 `Recommends` 欄位，以及 Arch 套件的 `depend` 與 `optdepend` 行，依序列出 NSGo 本身的套件、應用程式的套件，以及建置所連結的每個 Go 套件的項目，後者依 Go 列出套件的順序排列，已列出的項目不會重複，Go 套件推薦的套件若已由 `depends` 的項目列出也會省去。被目標平台或建置標籤排除的 Go 套件不會新增任何內容。
 - 項目為空或含有換行字元時，建置會停止並指出該 Go 套件；版本 1 檔案中出現 `linux`，或使用這兩者以外的鍵值，亦同。
 - AppImage 與商店建置的 Flatpak 不會採用 `linux` 中的任何內容。
 

@@ -105,8 +105,8 @@ linux:
 ```
 
 - `linux` 为可选项。其键为 `linux_x64` 和 `linux_arm64`，因此在一种架构上捆绑库、在另一种架构上加载系统库的包，可以分别列出各自所需的软件包。
-- `depends` 和 `recommends` 各自接受 `deb` 和 `arch` 列表，与应用在 [nsgo.yaml](building.md#nsgoyaml) 中的 `linux.depends` 和 `linux.recommends` 相同：每个条目按 dpkg 或 pacman 的写法填写，例如 `libsoup-3.0-0 | libsoup3`、`ffmpeg (>= 7)` 或 `libpulse: audio output`。
-- `.deb` 的 `Depends` 和 `Recommends` 字段以及 Arch 软件包的 `depend` 和 `optdepend` 行，依次列出 NSGo 自身的软件包、应用的软件包，以及构建所链接的每个 Go 包的条目，后者按 Go 列出包的顺序排列，已列出的条目不再重复。被目标平台或构建标签排除的 Go 包不会添加任何内容。
+- `depends` 和 `recommends` 各自接受 `deb` 和 `arch` 列表，与应用在 [nsgo.yaml](building.md#nsgoyaml) 中的 `linux.depends` 和 `linux.recommends` 相同：`deb` 的条目按 dpkg 的写法填写，例如 `libsoup-3.0-0 | libsoup3` 或 `libavcodec61 (>= 7:7.1)`；`arch` 的条目按 pacman 的写法填写，例如 `ffmpeg>=7` 或 `libpulse: audio output`。
+- `.deb` 的 `Depends` 和 `Recommends` 字段以及 Arch 软件包的 `depend` 和 `optdepend` 行，依次列出 NSGo 自身的软件包、应用的软件包，以及构建所链接的每个 Go 包的条目，后者按 Go 列出包的顺序排列，已列出的条目不再重复，Go 包推荐的软件包若已由 `depends` 的条目列出也会省去。被目标平台或构建标签排除的 Go 包不会添加任何内容。
 - 条目为空或含有换行符时，构建会停止并指出该 Go 包；版本 1 文件中出现 `linux`，或使用这两个以外的键，同样如此。
 - AppImage 和商店构建的 Flatpak 不使用 `linux` 中的任何内容。
 
