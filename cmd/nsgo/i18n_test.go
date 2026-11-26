@@ -377,6 +377,70 @@ func TestSuppliedHours(t *testing.T) {
 	}
 }
 
+func TestCatalogCoverage(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	widgets := filepath.Join(dir, "widgets/locales")
+	const widgetsPath = "example.com/app/widgets/locales"
+	writeFiles(t, dir, map[string]string{
+		"go.mod":                  "module example.com/app\n",
+		"locales/en.yaml":         "title: Example\n",
+		"locales/de.yaml":         "title: Beispiel\n" + widgetsPath + ":\n  open: Öffnen\n  close: Schließen\n  clear: Leeren\n",
+		"locales/fr.yaml":         "title: Exemple\n" + widgetsPath + ":\n  close: Fermer\n  clear: \"\"\n",
+		"locales/ja.yaml":         "title: 例\n",
+		"locales/pt-BR.yaml":      "title: Exemplo\n" + widgetsPath + ":\n  open: Abrir\n",
+		"widgets/locales/en.yaml": "open: Open\nclose: Close\nclear: Clear\n",
+		"widgets/locales/fr.yaml": "open: Ouvrir\n",
+		"widgets/locales/pt.yaml": "close: Fechar\nclear: Limpar\n",
+	})
+	if err := generateCatalog(ctx, widgets, "en"); err != nil {
+		t.Fatal(err)
+	}
+	pkgs := []goPackage{
+		{importPath: "example.com/app/locales", dir: filepath.Join(dir, "locales"), main: true},
+		{importPath: widgetsPath, dir: widgets, main: true},
+	}
+	for _, mode := range []string{"", "warn", "off", "mute"} {
+		t.Run(mode, func(t *testing.T) {
+			yaml := "name: Coverage\n"
+			if mode != "" {
+				yaml += "i18n: {coverage: " + mode + "}\n"
+			}
+			writeFiles(t, dir, map[string]string{"nsgo.yaml": yaml})
+			p, err := load(dir)
+			if mode == "mute" {
+				if err == nil || !strings.Contains(err.Error(), `i18n.coverage is "mute"`) {
+					t.Fatalf("invalid coverage: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := captureStderr(t, func() {
+				_, err = p.writeCatalogs(ctx, pkgs, false)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "lacks 2 of the source's messages") {
+				t.Errorf("catalog diagnostics missing with coverage %q:\n%s", mode, out)
+			}
+			coverage := strings.Count(out, "the app's catalogs can supply")
+			if mode == "off" {
+				if coverage != 0 {
+					t.Errorf("coverage warnings not suppressed:\n%s", out)
+				}
+				return
+			}
+			if coverage != 2 || !strings.Contains(out, "in fr, falls back to en for: clear;") ||
+				!strings.Contains(out, "has no ja, so says en there;") {
+				t.Errorf("want a missing French key and missing Japanese locale only:\n%s", out)
+			}
+		})
+	}
+}
+
 func TestTranslationTimeSignature(t *testing.T) {
 	params := []param{{name: "d", typ: "time.Time"}}
 	if got := translationSignature(params); got != "hc string, d time.Time" {

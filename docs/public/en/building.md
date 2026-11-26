@@ -64,7 +64,7 @@ build_number: 1         # CFBundleVersion and Android's versionCode; else from v
 # copyright: © 2026 Example  # the Windows executable's details and installer, and the macOS About panel
 # appearance: dark      # light or dark whatever the system's
 # theme: theme.json     # a TSX app's theme: NSGo's or a shadcn/ui one
-# i18n: { dir: locales, source: en }  # the app's catalogs and the language they are written in
+# i18n: { dir: locales, source: en, coverage: warn }  # coverage: off allows dependency translations to fall back without a warning
 icon:
   apple: assets/AppIcon.icon  # macOS, iOS and watchOS, or an .icns for macOS
   windows: assets/IconWindows.png  # optional Windows artwork

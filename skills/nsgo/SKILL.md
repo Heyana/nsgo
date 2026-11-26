@@ -178,6 +178,7 @@ An App Clip can request its full app's StoreKit recommendation from an explicit 
 ## Words and configuration
 
 - Put every user-visible word in `locales/`, a YAML catalog per language in ICU MessageFormat beside `nsgo.yaml`, and call the generated functions (`locales.Greeting(cx, "Ada")`), never string literals. `dev`, `build` and `test` check catalogs and regenerate the functions; `nsgo dev -lang en-XA` finds untranslated and cut text, `-lang ar-XB` right-to-left layout.
+- Missing dependency translations warn by key for partial coverage. Use `i18n: { coverage: off }` in `nsgo.yaml` only when fallback to the dependency's source language is intentional. [Localization](https://nsgo.dev/docs/localization.md)
 - Write configuration people edit by hand in YAML, not JSON: `nsgo.yaml`, catalogs and themes.
 
 Declare `url_schemes` for private app URLs and `app_links` for explicit HTTPS DNS hosts (no scheme, path, port, IP or wildcard). On iOS, `mobile.OpenedURL(cx)` tracks cold and warm scheme/universal invocations; schemes still reach `mobile.OnOpenLinks`. Full-app signing claims `applinks:` domains, while App Clips keep their own `appclips:` list. The server must publish AASA and the profile must authorize Associated Domains; simulator injection does not prove association. [Links](https://nsgo.dev/docs/building.md#links)

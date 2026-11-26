@@ -53,7 +53,7 @@ build_number: 1         # CFBundleVersion 和 Android 的 versionCode；省略�
 # copyright: © 2026 Example  # Windows 可执行文件的详细信息和安装程序，以及 macOS 的“关于”面板
 # appearance: dark      # 无论系统设置如何，都使用 light 或 dark
 # theme: theme.json     # TSX 应用的主题：NSGo 的主题或 shadcn/ui 主题
-# i18n: { dir: locales, source: en }  # 应用的文案目录及其编写语言
+# i18n: { dir: locales, source: en, coverage: warn }  # coverage: off 关闭依赖文案的翻译覆盖率警告
 icon:
   apple: assets/AppIcon.icon  # macOS、iOS 和 watchOS，或仅用于 macOS 的 .icns
   windows: assets/IconWindows.png  # 可选的 Windows 图标

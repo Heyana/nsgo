@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nsgo-dev/nsgo/i18n"
 	"golang.org/x/text/language"
 )
 
@@ -188,31 +189,73 @@ func (cs *catalogSet) checkSupply(f *catalogFile, s *supply) {
 	}
 }
 
-// checkCoverage warns of catalogs without a language the app shows,
-// whose messages show in another language there.
+// checkCoverage warns when a dependency falls back to its source for
+// messages in a language the app shows.
 func (cs *catalogSet) checkCoverage(app *catalog) {
 	if app == nil {
 		return
 	}
-	supplied := map[*catalog][]string{}
+	type translations map[string]map[string]bool // language → keys with translations
+	supplied := map[*catalog]translations{}
 	for _, c := range cs.order {
 		for _, f := range c.files {
 			for _, s := range f.supplies {
-				if s.target != nil {
-					supplied[s.target] = append(supplied[s.target], f.lang)
+				if s.target == nil {
+					continue
+				}
+				if supplied[s.target] == nil {
+					supplied[s.target] = translations{}
+				}
+				keys := supplied[s.target][f.lang]
+				if keys == nil {
+					keys = map[string]bool{}
+					supplied[s.target][f.lang] = keys
+				}
+				for _, key := range s.keys {
+					if coversMessage(s.msgs[key], s.target.params[key]) {
+						keys[key] = true
+					}
 				}
 			}
 		}
 	}
+	appLangs := app.languages()
 	for _, c := range cs.order {
-		if c == app {
+		if c == app || len(c.keys) == 0 {
 			continue
 		}
-		have := append(c.languages(), supplied[c]...)
+		added := supplied[c]
+		langs := c.languages()
+		own := len(langs)
+		for lang := range added {
+			if c.files[lang] == nil {
+				langs = append(langs, lang)
+			}
+		}
+		slices.Sort(langs[own:])
+		tags := make([]language.Tag, len(langs))
+		for i, lang := range langs {
+			tags[i] = language.Make(lang)
+		}
+		matcher := language.NewMatcher(tags)
 		var lacking []string
-		for _, lang := range app.languages() {
-			if !matches(lang, have) {
+		for _, lang := range appLangs {
+			if i18n.IsPseudo(lang) {
+				continue
+			}
+			_, i, confidence := matcher.Match(language.Make(lang))
+			if confidence < language.High {
 				lacking = append(lacking, lang)
+				continue
+			}
+			missing := missingCatalogKeys(c, langs[i], added)
+			switch len(missing) {
+			case 0:
+			case len(c.keys):
+				lacking = append(lacking, lang)
+			default:
+				cs.ds.warnf(c.dir, 0, "in %s, falls back to %s for: %s; the app's catalogs can supply them under the key %s",
+					lang, c.source, strings.Join(missing, ", "), c.importPath)
 			}
 		}
 		if len(lacking) > 0 {
@@ -222,14 +265,33 @@ func (cs *catalogSet) checkCoverage(app *catalog) {
 	}
 }
 
-// matches reports whether one of langs suits lang, as matching does.
-func matches(lang string, langs []string) bool {
-	tags := make([]language.Tag, len(langs))
-	for i, l := range langs {
-		tags[i] = language.Make(l)
+// missingCatalogKeys follows the generated lookup from the matched
+// language through its CLDR parents, before the final source fallback.
+func missingCatalogKeys(c *catalog, matched string, supplied map[string]map[string]bool) []string {
+	var chain []string
+	for lang := matched; lang != ""; lang = i18n.Parent(lang) {
+		if lang == c.source {
+			return nil
+		}
+		chain = append(chain, lang)
 	}
-	_, _, conf := language.NewMatcher(tags).Match(language.Make(lang))
-	return conf >= language.High
+	var missing []string
+keys:
+	for _, key := range c.keys {
+		for _, lang := range chain {
+			f := c.files[lang]
+			if supplied[lang][key] || f != nil && coversMessage(f.msgs[key], c.params[key]) {
+				continue keys
+			}
+		}
+		missing = append(missing, key)
+	}
+	return missing
+}
+
+// coversMessage counts empty text as missing, like the generated lookup.
+func coversMessage(m *catalogMessage, params []param) bool {
+	return m != nil && (m.text != "" || len(params) != 0)
 }
 
 // write writes each writable catalog's generated code, reporting whether
@@ -309,7 +371,9 @@ func (p *project) writeCatalogs(ctx context.Context, pkgs []goPackage, check boo
 		return false, nil
 	}
 	cs.resolve()
-	cs.checkCoverage(app)
+	if p.I18n.Coverage != "off" {
+		cs.checkCoverage(app)
+	}
 	cs.ds.printWarnings()
 	return cs.write(check)
 }

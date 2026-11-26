@@ -143,6 +143,8 @@ type project struct {
 	I18n struct {
 		Dir    string `yaml:"dir"`
 		Source string `yaml:"source"`
+		// Coverage is warn (default) or off for dependency translations.
+		Coverage string `yaml:"coverage"`
 	} `yaml:"i18n"`
 	// Web is the web target's: Host is a JS module, relative to
 	// nsgo.yaml and inside its directory, whose createHost(player) gives
@@ -529,6 +531,11 @@ func load(dir string) (*project, error) {
 	}
 	if p.I18n.Source == "" {
 		p.I18n.Source = "en"
+	}
+	switch p.I18n.Coverage {
+	case "", "warn", "off":
+	default:
+		return nil, fmt.Errorf("nsgo.yaml: i18n.coverage is %q; use warn or off", p.I18n.Coverage)
 	}
 	if err := p.validateFileTypes(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)

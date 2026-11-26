@@ -37,3 +37,5 @@ nsgo dev -lang en-XA
 ## NSGo 自己的文案
 
 NSGo 的组件以 NSGo 已翻译的语言显示自己的文案。对于其他语言，以包名为键（例如 `github.com/nsgo-dev/nsgo/base/locales`）即可用该文件的语言提供这个包的文案。平台菜单，以及 Android 和 Windows 的读屏软件在系统没有现成说法时播报的角色和状态（例如标签页、搜索框），使用 `github.com/nsgo-dev/nsgo/desktop/locales` 的文案。
+
+依赖缺少应用使用的语言时，`nsgo` 会发出警告；如果只翻译了部分文案，警告会列出缺少的文案键。若接受这些文案回退到依赖的源语言，可在 `nsgo.yaml` 中设置 `i18n: { coverage: off }`。其他文案警告和错误不受影响。
