@@ -237,7 +237,7 @@ Desktop app builds and target tests compile app code with `CGO_ENABLED=0`, as th
 
 Apps that import `base/terminal` also ship libghostty-vt: Windows and Linux packages place the library beside the executable; macOS and iOS bundles sign it into their frameworks. [Embedding](embedding.md) explains the companion XCFramework for iOS hosts.
 
-A dependency can declare prebuilt desktop shared libraries in `nsgo-natives.yaml`. NSGo verifies their SHA-256, copies them into the app before signing and includes them in installers; the app author runs no extra step. [Native libraries](native-libraries.md) describes the package author's format and loading paths.
+A dependency can declare prebuilt desktop shared libraries in `nsgo-natives.yaml`, and from version 2 of that file frameworks for iOS and tvOS. NSGo verifies their SHA-256, copies them into the app before signing and includes them in installers; the app author runs no extra step. [Native libraries](native-libraries.md) describes the package author's format and loading paths.
 
 ## Commands
 

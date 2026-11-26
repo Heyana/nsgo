@@ -682,6 +682,8 @@ type buildExtra struct {
 	flags []string
 	tags  []string
 	files map[string]string
+	// target is NSGo's name of what the build is for, such as ios_simulator, whose native libraries the linked packages' nsgo-natives.yaml give (nativeTarget); empty takes none.
+	target string
 }
 
 // goBuildWith is goBuild with extra's flags, tags and files. A TSX app's
@@ -789,7 +791,7 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 		done = func() { os.Remove(token) }
 		files["zz_nsgo_devtoken.go"] = token
 	}
-	overlay, err := p.buildOverlay(ctx, env, tags, extra.flags, files)
+	overlay, err := p.buildOverlay(ctx, extra.target, env, tags, extra.flags, files)
 	if err != nil {
 		done()
 		return nil, nil, err
@@ -894,7 +896,7 @@ func rejectDesktopCgo(ctx context.Context, p *project, env, tags, flags []string
 	return nil
 }
 
-func (p *project) buildOverlay(ctx context.Context, env, tags, flags []string, files map[string]string) (string, error) {
+func (p *project) buildOverlay(ctx context.Context, target string, env, tags, flags []string, files map[string]string) (string, error) {
 	var overlay string
 	if len(files) > 0 {
 		var err error
@@ -905,14 +907,14 @@ func (p *project) buildOverlay(ctx context.Context, env, tags, flags []string, f
 	}
 	if !p.packageLicenses || p.testBinary {
 		p.nativeLibraries = map[string][]nativeLibrary{}
-		if nativeTarget(env) != "" {
-			_, err := p.listLicenseSources(ctx, env, tags, flags, overlay, map[string]*licenseSource{})
+		if nativeTarget(target) != "" {
+			_, err := p.listLicenseSources(ctx, target, env, tags, flags, overlay, map[string]*licenseSource{})
 			return overlay, err
 		}
 		return overlay, nil
 	}
 	stage(ctx, "collecting license notices")
-	noticeFile, err := p.licenseNoticesFile(ctx, env, tags, flags, overlay)
+	noticeFile, err := p.licenseNoticesFile(ctx, target, env, tags, flags, overlay)
 	if err != nil {
 		return "", err
 	}
@@ -1028,7 +1030,7 @@ func buildMacApp(ctx context.Context, p *project, dir, arch string) (string, err
 	}
 	app := filepath.Join(dir, p.Name+".app")
 	bin := filepath.Join(app, "Contents", "MacOS", p.Name)
-	if err := goBuild(ctx, p, bin, []string{"GOOS=darwin", "GOARCH=" + arch, "CGO_ENABLED=0"}, "-macos="+minimum); err != nil {
+	if err := goBuildWith(ctx, p, bin, []string{"GOOS=darwin", "GOARCH=" + arch, "CGO_ENABLED=0"}, buildExtra{target: "macos_" + goArchName(arch)}, "-macos="+minimum); err != nil {
 		return "", err
 	}
 	stage(ctx, "bundling the app")
@@ -1089,8 +1091,8 @@ func buildWindows(ctx context.Context, p *project, dir, arch string) error {
 	if err != nil {
 		return err
 	}
-	if err := goBuild(ctx, p, filepath.Join(dir, p.Name+".exe"),
-		[]string{"GOOS=windows", "GOARCH=" + arch, "CGO_ENABLED=0"}, "-H=windowsgui"); err != nil {
+	if err := goBuildWith(ctx, p, filepath.Join(dir, p.Name+".exe"),
+		[]string{"GOOS=windows", "GOARCH=" + arch, "CGO_ENABLED=0"}, buildExtra{target: "windows_" + goArchName(arch)}, "-H=windowsgui"); err != nil {
 		return err
 	}
 	if p.windowsCommandLine() {
@@ -1116,8 +1118,8 @@ func buildWindows(ctx context.Context, p *project, dir, arch string) error {
 
 // buildLinux writes <dir>/<name> with the resources, icon and the app's commands beside it.
 func buildLinux(ctx context.Context, p *project, dir, arch string) error {
-	if err := goBuild(ctx, p, filepath.Join(dir, p.Name),
-		[]string{"GOOS=linux", "GOARCH=" + arch, "CGO_ENABLED=0"}); err != nil {
+	if err := goBuildWith(ctx, p, filepath.Join(dir, p.Name),
+		[]string{"GOOS=linux", "GOARCH=" + arch, "CGO_ENABLED=0"}, buildExtra{target: "linux_" + goArchName(arch)}); err != nil {
 		return err
 	}
 	stage(ctx, "copying resources")

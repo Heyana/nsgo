@@ -254,8 +254,15 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 				// they yield, as GODEBUG=asyncpreemptoff=1 has it.
 				tags, ldflags = []string{"ios", "nsgoembed"}, []string{"-X=runtime.godebugDefault=asyncpreemptoff=1"}
 			}
+			// The target refuses the frameworks its packages declare (addPackageNatives); Mac Catalyst is no target of nsgo-natives.yaml.
+			target := "ios"
+			if sl.catalyst {
+				target = ""
+			} else if sl.sdk == "iphonesimulator" {
+				target = "ios_simulator"
+			}
 			extra := buildExtra{flags: []string{"-buildmode=c-archive"}, tags: tags,
-				files: map[string]string{"nsgo_embed_export.go": export}}
+				files: map[string]string{"nsgo_embed_export.go": export}, target: target}
 			if err := goBuildWith(ctx, p, lib, env, extra, ldflags...); err != nil {
 				return err
 			}

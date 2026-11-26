@@ -56,10 +56,13 @@ func buildTUI(ctx context.Context, p *project, dir, target string) error {
 	if err != nil {
 		return err
 	}
-	if err = goBuildWith(ctx, p, tuiBinary(p, dir, target), env, buildExtra{tags: []string{"nsgotui"}}); err != nil {
+	if err = goBuildWith(ctx, p, tuiBinary(p, dir, target), env, buildExtra{tags: []string{"nsgotui"}, target: target}); err != nil {
 		return err
 	}
-	return copyResources(p, dir)
+	if err := copyResources(p, dir); err != nil {
+		return err
+	}
+	return addTUILibraries(ctx, p, dir, target)
 }
 
 func tuiSession(opts devOptions) session {

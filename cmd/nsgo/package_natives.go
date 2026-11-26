@@ -16,7 +16,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -26,6 +25,26 @@ import (
 
 const nativeManifestName = "nsgo-natives.yaml"
 const maxNativeLibrary = 1 << 30
+
+// nativeTransport carries the downloads of native libraries; tests replace it to reach TLS servers of their own.
+var nativeTransport = http.DefaultTransport
+
+// desktopNativeTargets are version 1's targets, which version 2 keeps; appleNativeTargets are the ones version 2 adds, whose entries are frameworks. Another target means another version.
+var (
+	desktopNativeTargets = []string{"macos_arm64", "macos_x64", "windows_arm64", "windows_x64", "linux_arm64", "linux_x64"}
+	appleNativeTargets   = []string{"ios", "ios_simulator", "tvos", "tvos_simulator"}
+)
+
+// nativeVersionTargets are the targets a version of nsgo-natives.yaml takes, none for a version this nsgo cannot read.
+func nativeVersionTargets(version int) []string {
+	switch version {
+	case 1:
+		return desktopNativeTargets
+	case 2:
+		return slices.Concat(desktopNativeTargets, appleNativeTargets)
+	}
+	return nil
+}
 
 type nativeManifest struct {
 	Version   int                        `yaml:"version"`
@@ -40,30 +59,17 @@ type nativeLibrary struct {
 	Licenses []string `yaml:"licenses"`
 
 	packageDir, owner string
+	// version is its manifest's: version 2 downloads only over https.
+	version int
 }
 
-// nativeTarget names the desktop slice whose packages the build lists.
-func nativeTarget(env []string) string {
-	system, arch := runtime.GOOS, runtime.GOARCH
-	for _, setting := range append(os.Environ(), env...) {
-		key, value, _ := strings.Cut(setting, "=")
-		switch key {
-		case "GOOS":
-			system = value
-		case "GOARCH":
-			arch = value
-		}
+// nativeTarget names the target of nsgo-natives.yaml that a build for NSGo's target packages from: a desktop architecture, iOS or tvOS its own, a terminal target its desktop's (tui_macos_arm64 takes macos_arm64), and any other none.
+func nativeTarget(target string) string {
+	target = strings.TrimPrefix(target, "tui_")
+	if slices.Contains(desktopNativeTargets, target) || slices.Contains(appleNativeTargets, target) {
+		return target
 	}
-	if system == "darwin" {
-		system = "macos"
-	}
-	if arch == "amd64" {
-		arch = "x64"
-	}
-	if system != "macos" && system != "windows" && system != "linux" {
-		return ""
-	}
-	return system + "_" + arch
+	return ""
 }
 
 func readNativeManifest(dir string) (*nativeManifest, error) {
@@ -99,17 +105,25 @@ func readNativeManifest(dir string) (*nativeManifest, error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("one YAML document is required")
 	}
-	if manifest.Version != 1 || len(manifest.Libraries) == 0 {
-		return nil, fmt.Errorf("version: 1 and a nonempty libraries target map are required")
+	targets := nativeVersionTargets(manifest.Version)
+	switch {
+	case targets == nil:
+		return nil, fmt.Errorf("version is %d; this nsgo reads versions 1 and 2", manifest.Version)
+	case len(manifest.Libraries) == 0:
+		return nil, fmt.Errorf("a nonempty libraries target map is required")
 	}
 	for _, target := range slices.Sorted(maps.Keys(manifest.Libraries)) {
 		libraries := manifest.Libraries[target]
-		if !slices.Contains([]string{"macos_arm64", "macos_x64", "windows_arm64", "windows_x64", "linux_arm64", "linux_x64"}, target) {
-			return nil, fmt.Errorf("unsupported native-library target %q; declare individual desktop architectures", target)
+		if !slices.Contains(targets, target) {
+			if slices.Contains(nativeVersionTargets(2), target) {
+				return nil, fmt.Errorf("native-library target %s needs version: 2", target)
+			}
+			return nil, fmt.Errorf("unsupported native-library target %q; version %d takes %s", target, manifest.Version, strings.Join(targets, ", "))
 		}
 		for i := range libraries {
 			library := &libraries[i]
 			library.SHA256 = strings.ToLower(library.SHA256)
+			library.version = manifest.Version
 			if err := library.validate(target); err != nil {
 				return nil, fmt.Errorf("%s library %d: %w", target, i+1, err)
 			}
@@ -120,6 +134,45 @@ func readNativeManifest(dir string) (*nativeManifest, error) {
 
 func (library nativeLibrary) validate(target string) error {
 	name := library.Name
+	if slices.Contains(appleNativeTargets, target) {
+		// The name becomes a directory, the executable inside it and the last part of a bundle ID, so it is checked before it reaches any of them.
+		if !frameworkName(name) {
+			return fmt.Errorf("name %q must be <Name>.framework, Name of ASCII letters, digits, . and -, beginning and ending with a letter or digit", name)
+		}
+	} else if err := desktopLibraryName(name, target); err != nil {
+		return err
+	}
+	if (library.URL == "") == (library.Path == "") {
+		return fmt.Errorf("%s needs exactly one url or path", name)
+	}
+	if library.URL != "" {
+		u, err := url.Parse(library.URL)
+		kind, scheme := "an HTTP(S)", err == nil && (u.Scheme == "https" || u.Scheme == "http")
+		if library.version >= 2 {
+			kind, scheme = "an https", err == nil && u.Scheme == "https"
+		}
+		if !scheme || u.Host == "" || u.User != nil || u.Fragment != "" {
+			return fmt.Errorf("%s needs %s URL without user credentials or a fragment", name, kind)
+		}
+	} else if !fs.ValidPath(library.Path) || strings.Contains(library.Path, "\\") {
+		return fmt.Errorf("%s path must stay in its Go package directory", name)
+	}
+	if sum, err := hex.DecodeString(library.SHA256); err != nil || len(sum) != sha256.Size {
+		return fmt.Errorf("%s needs its 64-digit SHA-256", name)
+	}
+	if len(library.Licenses) == 0 {
+		return fmt.Errorf("%s needs license file paths", name)
+	}
+	for _, license := range library.Licenses {
+		if !fs.ValidPath(license) || strings.Contains(license, "\\") {
+			return fmt.Errorf("%s license paths must stay in its Go package directory", name)
+		}
+	}
+	return nil
+}
+
+// desktopLibraryName refuses a name that is not a shared library's for the desktop target, or that one of the desktops' file systems would not take.
+func desktopLibraryName(name, target string) error {
 	if name == "" || name == "." || name == ".." || strings.TrimSpace(name) != name ||
 		strings.ContainsAny(name, "/\\:*?\"<>|\x00\r\n") || strings.HasSuffix(name, ".") {
 		return fmt.Errorf("name %q must be a portable file name", name)
@@ -140,29 +193,22 @@ func (library nativeLibrary) validate(target string) error {
 	if !valid {
 		return fmt.Errorf("%q is not a shared-library name for %s", name, target)
 	}
-	if (library.URL == "") == (library.Path == "") {
-		return fmt.Errorf("%s needs exactly one url or path", name)
-	}
-	if library.URL != "" {
-		u, err := url.Parse(library.URL)
-		if err != nil || u.Host == "" || u.User != nil || u.Fragment != "" || u.Scheme != "https" && u.Scheme != "http" {
-			return fmt.Errorf("%s needs an HTTP(S) URL without user credentials or a fragment", name)
-		}
-	} else if !fs.ValidPath(library.Path) || strings.Contains(library.Path, "\\") {
-		return fmt.Errorf("%s path must stay in its Go package directory", name)
-	}
-	if sum, err := hex.DecodeString(library.SHA256); err != nil || len(sum) != sha256.Size {
-		return fmt.Errorf("%s needs its 64-digit SHA-256", name)
-	}
-	if len(library.Licenses) == 0 {
-		return fmt.Errorf("%s needs license file paths", name)
-	}
-	for _, license := range library.Licenses {
-		if !fs.ValidPath(license) || strings.Contains(license, "\\") {
-			return fmt.Errorf("%s license paths must stay in its Go package directory", name)
-		}
-	}
 	return nil
+}
+
+// frameworkName reports whether name is <Name>.framework with Name of ASCII letters, digits, dots and hyphens, beginning and ending with a letter or digit and without two dots in a row, so that Name is a part of a bundle ID as well as a file name.
+func frameworkName(name string) bool {
+	base, ok := strings.CutSuffix(name, ".framework")
+	if !ok || base == "" || strings.Contains(base, "..") {
+		return false
+	}
+	alphanumeric := func(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' }
+	for i := range len(base) {
+		if c := base[i]; !alphanumeric(c) && c != '.' && c != '-' {
+			return false
+		}
+	}
+	return alphanumeric(base[0]) && alphanumeric(base[len(base)-1])
 }
 
 // packageNativePath follows links only within the declaring package.
@@ -198,12 +244,17 @@ func (p *project) addPackageNatives(pkg licensePackage, target string, sources m
 	if err != nil {
 		return fmt.Errorf("%s/%s: %w", pkg.ImportPath, nativeManifestName, err)
 	}
-	if manifest == nil {
+	// A file packages nothing for a target its version does not take, such as iOS from version 1.
+	if manifest == nil || !slices.Contains(nativeVersionTargets(manifest.Version), target) {
 		return nil
 	}
 	libraries, declared := manifest.Libraries[target]
 	if !declared {
 		return fmt.Errorf("%s/%s has no %s entry; declare [] if it needs no native libraries", pkg.ImportPath, nativeManifestName, target)
+	}
+	// An XCFramework for a host app has nowhere to carry a package's frameworks yet.
+	if p.Build.embed && slices.Contains(appleNativeTargets, target) && len(libraries) > 0 {
+		return fmt.Errorf("-embed cannot carry the %s frameworks that %s declares in %s", target, pkg.ImportPath, nativeManifestName)
 	}
 	for _, library := range libraries {
 		library.packageDir, library.owner = pkg.Dir, pkg.ImportPath
@@ -295,7 +346,19 @@ func (library nativeLibrary) fetch(ctx context.Context, dir string) (string, err
 		return "", err
 	}
 	stage(ctx, "downloading native library %s", library.Name)
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Transport: nativeTransport}
+	if library.version >= 2 {
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if req.URL.Scheme != "https" {
+				return fmt.Errorf("redirected to %s, which is not https", req.URL.Redacted())
+			}
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			return nil
+		}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download native library %s: %w", library.Name, err)
 	}

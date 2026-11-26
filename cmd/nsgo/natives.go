@@ -178,6 +178,28 @@ func addDesktopLibraries(ctx context.Context, p *project, dir, system, arch stri
 	return p.addNativeLibraries(ctx, target, dir)
 }
 
+// addTUILibraries puts the libraries the packages of a terminal target's build declare for its desktop beside the executable, as a console program has no bundle, and signs macOS's ad hoc, as addMacLibraries does.
+func addTUILibraries(ctx context.Context, p *project, dir, target string) error {
+	native := nativeTarget(target)
+	if err := p.addNativeLibraries(ctx, native, dir); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(native, "macos_") {
+		return nil
+	}
+	signed := map[string]bool{}
+	for _, library := range p.nativeLibraries[native] {
+		if signed[library.Name] {
+			continue
+		}
+		signed[library.Name] = true
+		if err := run(ctx, "codesign", "--force", "--sign", "-", filepath.Join(dir, library.Name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // addIOSEmbeddedLibraries supplies the host with a companion XCFramework whenever its app links the terminal, for static and dynamic embedding alike.
 func addIOSEmbeddedLibraries(ctx context.Context, p *project, dir, tmp, minimum string) error {
 	args := []string{"-create-xcframework"}

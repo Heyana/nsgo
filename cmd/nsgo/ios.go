@@ -184,9 +184,13 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 		return "", err
 	}
 	app := filepath.Join(dir, p.Name+".app")
+	target := sys.target
+	if simulator {
+		target += "_simulator"
+	}
 	// Go's runtime objects target a newer OS than the minimum; the
 	// linker's warning about it is noise.
-	if err := goBuild(ctx, p, filepath.Join(app, p.Name), env, "-extldflags=-Wl,-w"); err != nil {
+	if err := goBuildWith(ctx, p, filepath.Join(app, p.Name), env, buildExtra{target: target}, "-extldflags=-Wl,-w"); err != nil {
 		return "", err
 	}
 	stage(ctx, "bundling the app")
@@ -272,6 +276,10 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 		}
 	} else if p.AppClip != nil {
 		detailIn(ctx, "no App Clip on %s: it is left out", sys.name)
+	}
+	// Last, so that a package's framework cannot take the place of one of NSGo's.
+	if err := addPackageFrameworks(ctx, p, sys, app, simulator); err != nil {
+		return "", err
 	}
 	if !simulator {
 		return app, nil

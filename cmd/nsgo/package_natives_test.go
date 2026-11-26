@@ -86,13 +86,13 @@ func TestPackageNativesFollowBuildTagsAndLicenses(t *testing.T) {
 	os.WriteFile(main, []byte("package main\nfunc main() {}\n"), 0o644)
 	os.WriteFile(filepath.Join(p.Dir, "native.go"), []byte("//go:build nativeextra\n\npackage main\nimport _ \"example.com/native\"\n"), 0o644)
 	env := []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0"}
-	if _, err := p.licenseNoticesFile(t.Context(), env, nil, nil, ""); err != nil {
+	if _, err := p.licenseNoticesFile(t.Context(), "linux_x64", env, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.nativeLibraries["linux_x64"]) != 0 {
 		t.Fatal("excluded package shipped native libraries")
 	}
-	if _, err := p.licenseNoticesFile(t.Context(), env, []string{"nativeextra"}, nil, ""); err != nil {
+	if _, err := p.licenseNoticesFile(t.Context(), "linux_x64", env, []string{"nativeextra"}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.nativeLibraries["linux_x64"]) != 1 || !strings.Contains(p.thirdPartyNotices, "native library libfixture.so.1") || !strings.Contains(p.thirdPartyNotices, "legal/native.txt") || strings.Contains(p.thirdPartyNotices, filepath.Dir(p.Dir)) {
@@ -104,11 +104,11 @@ func TestPackageNativesFollowBuildTagsAndLicenses(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(filepath.Dir(p.Dir), "dep/legal/native.txt"), license, 0o644)
 	p.Licenses.Copyleft = "error"
-	if _, err := p.licenseNoticesFile(t.Context(), env, []string{"nativeextra"}, nil, ""); err == nil || !strings.Contains(err.Error(), "copyleft") {
+	if _, err := p.licenseNoticesFile(t.Context(), "linux_x64", env, []string{"nativeextra"}, nil, ""); err == nil || !strings.Contains(err.Error(), "copyleft") {
 		t.Fatalf("native license bypassed policy: %v", err)
 	}
 	p.Licenses.Allow = []string{"example.com/native"}
-	if _, err := p.licenseNoticesFile(t.Context(), env, []string{"nativeextra"}, nil, ""); err != nil {
+	if _, err := p.licenseNoticesFile(t.Context(), "linux_x64", env, []string{"nativeextra"}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -242,7 +242,7 @@ func TestPackageNativesArchitectureAndCollisions(t *testing.T) {
 		}
 	}
 	p := nativeFixture(t, "linux_x64", "libfixture.so", nativeELF(false))
-	if _, err := p.licenseNoticesFile(t.Context(), []string{"GOOS=linux", "GOARCH=amd64"}, nil, nil, ""); err != nil {
+	if _, err := p.licenseNoticesFile(t.Context(), "linux_x64", []string{"GOOS=linux", "GOARCH=amd64"}, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	out := t.TempDir()
@@ -274,7 +274,7 @@ func TestPackageNativesMissingUniversalSlice(t *testing.T) {
 func TestPackageNativesSignBeforeMacBundle(t *testing.T) {
 	p := nativeFixture(t, "macos_arm64", "libfixture.dylib", nativeMachO(true))
 	app := filepath.Join(t.TempDir(), "Fixture.app")
-	if _, err := p.licenseNoticesFile(t.Context(), []string{"GOOS=darwin", "GOARCH=arm64"}, nil, nil, ""); err != nil {
+	if _, err := p.licenseNoticesFile(t.Context(), "macos_arm64", []string{"GOOS=darwin", "GOARCH=arm64"}, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.addNativeLibraries(t.Context(), "macos_arm64", filepath.Join(app, "Contents/Frameworks")); err != nil {
@@ -336,7 +336,7 @@ func TestPackageNativesOverlayAndDevDiscovery(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "native.go")
 	os.WriteFile(path, []byte("package main\nimport _ \"example.com/native\"\n"), 0o644)
 	p.packageLicenses = false
-	if _, err := p.buildOverlay(t.Context(), []string{"GOOS=linux", "GOARCH=amd64"}, nil, nil, map[string]string{"zz_native.go": path}); err != nil {
+	if _, err := p.buildOverlay(t.Context(), "linux_x64", []string{"GOOS=linux", "GOARCH=amd64"}, nil, nil, map[string]string{"zz_native.go": path}); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.nativeLibraries["linux_x64"]) != 1 {
@@ -359,7 +359,7 @@ func TestPackageNativesVendoredAssets(t *testing.T) {
 	if err := os.Rename(dep, dep+"-unused"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.licenseNoticesFile(t.Context(), []string{"GOOS=linux", "GOARCH=amd64"}, nil, []string{"-mod=vendor"}, ""); err != nil {
+	if _, err := p.licenseNoticesFile(t.Context(), "linux_x64", []string{"GOOS=linux", "GOARCH=amd64"}, nil, []string{"-mod=vendor"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	out := t.TempDir()
@@ -373,13 +373,13 @@ func TestPackageNativesVendoredAssets(t *testing.T) {
 
 func TestPackageNativesRequireExplicitArchitecture(t *testing.T) {
 	p := nativeFixture(t, "linux_x64", "libfixture.so", nativeELF(false))
-	if _, err := p.licenseNoticesFile(t.Context(), []string{"GOOS=linux", "GOARCH=arm64"}, nil, nil, ""); err == nil || !strings.Contains(err.Error(), "no linux_arm64 entry") {
+	if _, err := p.licenseNoticesFile(t.Context(), "linux_arm64", []string{"GOOS=linux", "GOARCH=arm64"}, nil, nil, ""); err == nil || !strings.Contains(err.Error(), "no linux_arm64 entry") {
 		t.Fatalf("missing target: %v", err)
 	}
 	dep := filepath.Join(filepath.Dir(p.Dir), "dep", nativeManifestName)
 	data, _ := os.ReadFile(dep)
 	os.WriteFile(dep, append(data, []byte("  linux_arm64: []\n")...), 0o644)
-	if _, err := p.licenseNoticesFile(t.Context(), []string{"GOOS=linux", "GOARCH=arm64"}, nil, nil, ""); err != nil {
+	if _, err := p.licenseNoticesFile(t.Context(), "linux_arm64", []string{"GOOS=linux", "GOARCH=arm64"}, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 }

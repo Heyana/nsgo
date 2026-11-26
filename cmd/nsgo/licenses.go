@@ -69,7 +69,8 @@ type licenseSource struct {
 
 var licenseClassifier = sync.OnceValues(assets.DefaultClassifier)
 
-func (p *project) licenseNoticesFile(ctx context.Context, env, tags, flags []string, overlay string) (string, error) {
+// licenseNoticesFile collects the notices of what the build for NSGo's target links, with the native libraries its packages declare for the target (nativeTarget), and returns the file that gives them to core when the app links it.
+func (p *project) licenseNoticesFile(ctx context.Context, target string, env, tags, flags []string, overlay string) (string, error) {
 	sources := map[string]*licenseSource{}
 	p.nativeLibraries = map[string][]nativeLibrary{}
 	var hasCore bool
@@ -78,11 +79,13 @@ func (p *project) licenseNoticesFile(ctx context.Context, env, tags, flags []str
 		architectures = []string{""}
 	}
 	for _, arch := range architectures {
-		targetEnv := slices.Clone(env)
+		targetEnv, archTarget := slices.Clone(env), target
 		if arch != "" {
+			// The bundle's other architectures are its target's OS's.
 			targetEnv = append(targetEnv, "GOARCH="+arch)
+			archTarget = target[:strings.LastIndex(target, "_")+1] + goArchName(arch)
 		}
-		core, err := p.listLicenseSources(ctx, targetEnv, tags, flags, overlay, sources)
+		core, err := p.listLicenseSources(ctx, archTarget, targetEnv, tags, flags, overlay, sources)
 		if err != nil {
 			return "", err
 		}
@@ -101,7 +104,7 @@ func (p *project) licenseNoticesFile(ctx context.Context, env, tags, flags []str
 	return p.cacheFile("notices", ".go", source)
 }
 
-func (p *project) listLicenseSources(ctx context.Context, env, tags, flags []string, overlay string, sources map[string]*licenseSource) (bool, error) {
+func (p *project) listLicenseSources(ctx context.Context, target string, env, tags, flags []string, overlay string, sources map[string]*licenseSource) (bool, error) {
 	args := append([]string{"list", "-deps", "-json=ImportPath,Dir,Root,DepOnly,Standard,Module,EmbedFiles"}, flags...)
 	if p.testBinary {
 		args = append(args, "-test")
@@ -159,7 +162,7 @@ func (p *project) listLicenseSources(ctx context.Context, env, tags, flags []str
 			hasCore = true
 		}
 		addLicensePackage(sources, pkg)
-		if err := p.addPackageNatives(pkg, nativeTarget(env), sources); err != nil {
+		if err := p.addPackageNatives(pkg, nativeTarget(target), sources); err != nil {
 			return false, err
 		}
 	}

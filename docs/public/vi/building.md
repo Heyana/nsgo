@@ -230,7 +230,7 @@ Nó chỉ ghi `go.mod` và `go.sum` khi cả hai đều chưa thay đổi kể t
 
 Các ứng dụng import `base/terminal` cũng đóng gói kèm `libghostty-vt`: gói Windows và Linux đặt thư viện bên cạnh tệp thực thi; gói macOS và iOS ký nó vào trong các framework của mình. [Nhúng](embedding.md) giải thích XCFramework đi kèm cho ứng dụng chủ iOS.
 
-Một gói phụ thuộc có thể khai báo các thư viện chia sẻ máy tính để bàn đã biên dịch sẵn trong `nsgo-natives.yaml`. NSGo kiểm tra mã băm SHA-256 của chúng, sao chép vào ứng dụng trước khi ký số và đưa vào các trình cài đặt; tác giả ứng dụng không cần thực hiện thêm bước nào. [Thư viện gốc](native-libraries.md) mô tả định dạng dành cho tác giả gói và các đường dẫn nạp thư viện.
+Một gói phụ thuộc có thể khai báo các thư viện chia sẻ máy tính để bàn đã biên dịch sẵn trong `nsgo-natives.yaml`, và từ phiên bản 2 của tệp này là cả framework cho iOS và tvOS. NSGo kiểm tra mã băm SHA-256 của chúng, sao chép vào ứng dụng trước khi ký số và đưa vào các trình cài đặt; tác giả ứng dụng không cần thực hiện thêm bước nào. [Thư viện gốc](native-libraries.md) mô tả định dạng dành cho tác giả gói và các đường dẫn nạp thư viện.
 
 ## Lệnh dòng lệnh
 

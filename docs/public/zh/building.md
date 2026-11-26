@@ -199,6 +199,14 @@ Apply these changes? [y/N]
 
 `add` 是 NSGo 0.3.4 之后新增的。在固定为 0.3.4 或更早正式版本的模块中，已安装的 `nsgo` 不会为它运行[模块的 nsgo](#模块的-nsgo)，而是打印引入 `add` 的 `go get github.com/nsgo-dev/nsgo@<版本>`；在那里，`go tool nsgo add` 运行的是固定的 nsgo，它不认识 `add`。
 
+## 来自 Go 包的库
+
+桌面应用构建和目标测试对应用代码使用 `CGO_ENABLED=0`，NSGo 自身也遵循这一规则。应用包若含有 cgo 文件，构建会列出这些文件并停止，不会静默丢弃它们。原生库请使用 purego 和 `nsgo-natives.yaml`。
+
+导入 `base/terminal` 的应用也会附带 libghostty-vt：Windows 和 Linux 包将库放在可执行文件旁，macOS 和 iOS 则将其签入应用的框架目录。[嵌入](embedding.md)介绍了 iOS 宿主使用的配套 XCFramework。
+
+依赖可以在 `nsgo-natives.yaml` 中声明预编译的桌面共享库，从该文件的版本 2 起还可以声明 iOS 和 tvOS 的框架。NSGo 会校验其 SHA-256，在签名前将其复制进应用，并将其纳入安装程序；应用作者无需执行额外步骤。[原生库](native-libraries.md)介绍了包作者使用的格式和加载路径。
+
 ## 扩展命令
 
 `nsgo` 自身不认识的命令会交给扩展执行，与 git 和 cargo 的做法相同，这样基于 NSGo 的库可以把自己的命令加到 `nsgo` 上：
@@ -703,9 +711,5 @@ apple:
 在轻 App 中由用户主动触发 `mobile.ShowAppClipOverlay(cx, mobile.AppClipOverlayBottom)`，可请求 StoreKit 推荐它对应的完整应用。`AppClipOverlayBottomRaised` 为底栏留出空间。返回的函数关闭该请求；作用域清理也会关闭它，旧请求不会关闭新请求。在原生 iOS 轻 App 之外调用不产生效果。App Store 决定能否加载和显示推荐，因此这个调用不报告推荐已显示或应用已安装。轻 App 的任务应在不安装完整应用时也能完成。[Apple 的浮层说明](https://developer.apple.com/documentation/appclip/recommending-your-app-to-app-clip-users)
 
 ## 嵌入其他应用
-
-桌面应用构建和目标测试对应用代码使用 `CGO_ENABLED=0`，NSGo 自身也遵循这一规则。应用包若含有 cgo 文件，构建会列出这些文件并停止，不会静默丢弃它们。原生库请使用 purego 和 `nsgo-natives.yaml`。
-
-导入 `base/terminal` 的应用也会附带 libghostty-vt：Windows 和 Linux 包将库放在可执行文件旁，macOS 和 iOS 则将其签入应用的框架目录。[嵌入](embedding.md)介绍了 iOS 宿主使用的配套 XCFramework。
 
 `-embed` 把应用打包给你自己的 iOS 或 Android 应用使用：一个 XCFramework（加 `-dynamic` 时由动态框架组成）或 AAR，通过其中的 `NSGoView` 或 `NsgoView` 显示应用。Go 桌面程序用 `nsgo.NewView` 显示应用，网页则用站点的 `nsgo.js`，其主机为页面所在的主机，或 `nsgo.yaml` 中 `web.host` 指定的主机。仓库中的 `examples/embed-*` 分别给出了示例；宿主侧见[嵌入](embedding.md)。
