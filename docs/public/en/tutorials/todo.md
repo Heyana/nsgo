@@ -14,8 +14,8 @@ mkdir todo && cd todo
 go mod init example.com/todo
 go get github.com/nsgo-dev/nsgo
 go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-go tool nsgo init
-go tool nsgo dev
+nsgo init
+nsgo dev
 ```
 
 ## Build the todo app
@@ -189,15 +189,15 @@ func TestAddCompleteAndDelete(t *testing.T) {
 The test starts the app headless, finds elements by their text or test ID, and acts as a user would. Run it with:
 
 ```sh
-go tool nsgo test
+nsgo test
 ```
 
-`TestMain` gives the platform the main thread when the tests run on a target, and `go tool nsgo test -target ios_simulator` runs the same test in the simulator with its native input.
+`TestMain` gives the platform the main thread when the tests run on a target, and `nsgo test -target ios_simulator` runs the same test in the simulator with its native input.
 
 ## Ship it
 
 ```sh
-go tool nsgo build
+nsgo build
 ```
 
 `build` writes a release package for each target `nsgo.yaml` lists, into `dist/<name>-<version>-<target>`: an `.app`, an `.ipa`, an `.apk`, Windows' and Linux's directories, or a web site. Everything to hand out also lands in `dist/releases`: the disk image, setup program, Debian and Arch packages, IPAs, APKs, the site, mini programs, and scripts that install the app from your GitHub releases. [Building and shipping](../building.md) covers installers, signing and notarization, publishing, icons, widgets, App Clips and the App Store.

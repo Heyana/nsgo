@@ -47,8 +47,8 @@ iOS 上 `mobile.PictureInPicture` 的 `Children` 使用独立布局，默认为 
 
 在 headless 测试中，`nsgotest.PictureInPictureSupport(supported, possible)` 在 iOS、macOS 或 Android 的 `nsgotest.Environment` 下设定系统提供的支持，视图的 `PiPState`、`PiPStarts` 和 `PiPStops` 记录会话，`app.ReportPictureInPicture` 报告系统会给出的状态，`app.PictureInPictureControl` 发送窗口的 `play`、`pause`、`skip` 和 `restore`。视频画中画窗口的播放和暂停作用于视频自身的播放器，由 `Video.OnPlay` 和 `Video.OnPause` 报告，暂停的原因是 `VideoPauseControls`；测试中用 `app.PlayVideo` 和 `app.PauseVideo` 报告。
 
-运行 `go tool nsgo dev -target ios examples/pip` 可试用两条路径，使用 `-target macos` 或 `-target android` 可试用视频画中画。Mac 原生测试覆盖有无系统控件时的进入、退出和重复命令，以及带控件的活动会话中的源替换。iPhone 验收仍待完成，包括带控件视频的全屏和自动进入；目前已覆盖原生委托、视频帧及 headless 应用测试。
+运行 `nsgo dev -target ios examples/pip` 可试用两条路径，使用 `-target macos` 或 `-target android` 可试用视频画中画。Mac 原生测试覆盖有无系统控件时的进入、退出和重复命令，以及带控件的活动会话中的源替换。iPhone 验收仍待完成，包括带控件视频的全屏和自动进入；目前已覆盖原生委托、视频帧及 headless 应用测试。
 
-运行 `go tool nsgo dev -target tvos_simulator examples/pip` 可试用 tvOS 视频路径；NSGo 将播放器关联到系统 Now Playing 会话。tvOS 27 模拟器可加载带系统控件和不带控件的视频，但 AVKit 在此报告不支持画中画。实际进入、停止和恢复画中画仍需在实体 Apple TV 上验证。
+运行 `nsgo dev -target tvos_simulator examples/pip` 可试用 tvOS 视频路径；NSGo 将播放器关联到系统 Now Playing 会话。tvOS 27 模拟器可加载带系统控件和不带控件的视频，但 AVKit 在此报告不支持画中画。实际进入、停止和恢复画中画仍需在实体 Apple TV 上验证。
 
 网页目标回归测试在 Chromium 使用本地录制的视频和真实应用按钮点击，验证浏览器实际会话的进入、退出、来源更换与删除。其他浏览器引擎仍待验收。

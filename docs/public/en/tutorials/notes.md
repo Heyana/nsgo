@@ -14,8 +14,8 @@ mkdir notes && cd notes
 go mod init example.com/notes
 go get github.com/nsgo-dev/nsgo
 go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-go tool nsgo init
-go tool nsgo dev
+nsgo init
+nsgo dev
 ```
 
 ## Write the app
@@ -212,7 +212,7 @@ func TestSavedNotes(t *testing.T) {
 ```
 
 ```sh
-go tool nsgo test
+nsgo test
 ```
 
 ## Next

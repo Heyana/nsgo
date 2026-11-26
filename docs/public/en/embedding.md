@@ -10,9 +10,9 @@ order: 23
 An embeddable app is a normal app package with a `Root` and a `main`, built with `-embed` for the host's target. Each view runs the app once and is an engine of its own, so a host shows as many views as it likes, each with its own state.
 
 ```sh
-go tool nsgo build -embed -target ios examples/embedded
-go tool nsgo build -embed -target android_arm64 examples/embedded
-go tool nsgo build -target web examples/embedded
+nsgo build -embed -target ios examples/embedded
+nsgo build -embed -target android_arm64 examples/embedded
+nsgo build -target web examples/embedded
 ```
 
 The iOS build writes `<Name>.xcframework` and `<Name>Resources`; the Android build writes `<Name>.aar`; the web build writes a directory with `nsgo.json` and the loader.

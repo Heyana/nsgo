@@ -8,7 +8,7 @@ order: 20
 ## 运行
 
 ```sh
-go tool nsgo dev
+nsgo dev
 ```
 
 `dev` 为本机或 `nsgo.yaml` 中 `dev.target` 指定的目标构建并打开应用。热重载默认开启；保存 Go 文件，或保存纯 Go 应用中嵌入的文件时，应用会重新构建并重启。如果导入的包需要 `go.mod` 或 `go.sum` 中没有的模块，`dev` 会先执行 `go mod tidy`。仅修改 TSX bundle 的源文件时，应用会原地更新并保留状态。应用退出时运行结束。
@@ -18,14 +18,14 @@ go tool nsgo dev
 `-target` 在别处运行，`-device` 按名称、UDID 或序列号选择 iPhone、Apple TV、Apple Watch、模拟器或 Android 设备：
 
 ```sh
-go tool nsgo dev -target tui                # terminal cells; diagnostics in .nsgo/tui.log
-go tool nsgo dev -target web                # 在浏览器中，打开它打印的地址，端口为 -port（默认 8080）
-go tool nsgo dev -target ios_simulator      # 在 iOS 模拟器中
-go tool nsgo dev -target ios                # 在连接的 iPhone 上，由 Xcode 签名
-go tool nsgo dev -target tvos_simulator     # 在 Apple TV 模拟器中
-go tool nsgo dev -target watchos_simulator  # 在 Apple Watch 模拟器中
-go tool nsgo dev -target android            # 通过 adb 在连接的设备或模拟器上
-go tool nsgo dev -target miniprogram_wechat # 在微信开发者工具中（也支持 _qq、_alipay、_douyin）
+nsgo dev -target tui                # terminal cells; diagnostics in .nsgo/tui.log
+nsgo dev -target web                # 在浏览器中，打开它打印的地址，端口为 -port（默认 8080）
+nsgo dev -target ios_simulator      # 在 iOS 模拟器中
+nsgo dev -target ios                # 在连接的 iPhone 上，由 Xcode 签名
+nsgo dev -target tvos_simulator     # 在 Apple TV 模拟器中
+nsgo dev -target watchos_simulator  # 在 Apple Watch 模拟器中
+nsgo dev -target android            # 通过 adb 在连接的设备或模拟器上
+nsgo dev -target miniprogram_wechat # 在微信开发者工具中（也支持 _qq、_alipay、_douyin）
 ```
 
 开发服务器默认监听所有网络接口。用 `-host 127.0.0.1` 只监听回环地址，Android 仍可通过 `adb reverse` 连接；也可以指定某个本机网卡的 IP 地址，只在该地址监听。要在 Apple 真机上使用开发功能，请选择设备能通过局域网访问的地址。
@@ -37,7 +37,7 @@ go tool nsgo dev -target miniprogram_wechat # 在微信开发者工具中（也�
 把与你的 Go 版本兼容的 [Delve](https://github.com/go-delve/delve/blob/master/Documentation/installation/README.md) 放到 `PATH` 上，命令名为 `dlv`。用下列命令运行原生桌面应用，保留调试信息并关闭 Go 优化。
 
 ```sh
-go tool nsgo dev -target native -debug
+nsgo dev -target native -debug
 ```
 
 从 Delve 的 `API server listening at` 输出中复制端口。在装有 Go 扩展的 VS Code 中添加用于连接调试器的配置，把 `40000` 换成这个端口。
@@ -75,23 +75,23 @@ func PreviewEmpty(cx *core.Scope) core.Node {
 ```
 
 ```sh
-go tool nsgo dev -preview ./components
-go tool nsgo dev -target web -preview ./components
+nsgo dev -preview ./components
+nsgo dev -target web -preview ./components
 ```
 
 勾选要同时查看的预览，然后选择语言区域、主题、浅色或深色外观、视口尺寸和布局方向。预览使用最近的应用的 `nsgo.yaml`、翻译目录、配置的 `theme` 和资源。也可在参数后指定同一个 Go module 内的应用目录。这时预览路径相对于该目录。
 
-保存文件会重新构建预览，保留已选的组件和显示设置。`nsgopreview` 标签将预览排除在普通发布构建之外。在使用同一标签的 `_test.go` 文件中用 `nsgotest.Start(t, PreviewEmpty)` 复用预览，然后用 `GOFLAGS=-tags=nsgopreview go tool nsgo test -target macos ./components` 运行测试以生成原生截图。
+保存文件会重新构建预览，保留已选的组件和显示设置。`nsgopreview` 标签将预览排除在普通发布构建之外。在使用同一标签的 `_test.go` 文件中用 `nsgotest.Start(t, PreviewEmpty)` 复用预览，然后用 `GOFLAGS=-tags=nsgopreview nsgo test -target macos ./components` 运行测试以生成原生截图。
 
 使用 `-target ios_simulator` 首次安装主应用后，只改 Go 代码会替换已安装的可执行文件并重新启动应用。修改 `nsgo.yaml`、打包资源或应用图标会重新安装。
 
-开发 Android 界面时，可以用 `go tool nsgo dev -target android -android-host` 缩短 Go 重建流程。工具先安装原生运行时，再在开发机上运行 Go。每次 Go 重建都会通过 adb 重连到同一个 Activity。打包资源、预编译类、启动器图标或 `nsgo.yaml` 变化时，会重新安装运行时 APK。Go 进程使用开发机的构建约束、文件系统和网络。`Scope.DiskSpace` 报告开发机上 `DataDir` 所在卷的空间。验证 `_android.go` 文件或 Go 在设备上的行为时，请使用常规 Android dev 命令。
+开发 Android 界面时，可以用 `nsgo dev -target android -android-host` 缩短 Go 重建流程。工具先安装原生运行时，再在开发机上运行 Go。每次 Go 重建都会通过 adb 重连到同一个 Activity。打包资源、预编译类、启动器图标或 `nsgo.yaml` 变化时，会重新安装运行时 APK。Go 进程使用开发机的构建约束、文件系统和网络。`Scope.DiskSpace` 报告开发机上 `DataDir` 所在卷的空间。验证 `_android.go` 文件或 Go 在设备上的行为时，请使用常规 Android dev 命令。
 
 ## 错误
 
 构建失败时，错误显示在运行中的应用上方，带有复制错误和重新构建的按钮；修好文件后，下一次保存就会替换它。组件渲染时 panic 也以同样方式显示。在应用里按 Command+R（非 Apple 平台为 Control+R）随时可以重新构建并重启应用，错误显示时也可以，除非应用自己绑定了这个键，无论是用 `cx.OnKey` 还是作为应用菜单里一个启用的菜单项；在浏览器里这个键照常刷新页面。应用自己的输出（比如 `log.Print`）出现在终端里工具输出的下方。
 
-运行前，`go tool nsgo check` 会检查应用并对它的 TSX 做类型检查；加上 `-target all` 则改为为每个目标检查，这样在 Mac 上也能检查到其他平台构建标签下的代码。
+运行前，`nsgo check` 会检查应用并对它的 TSX 做类型检查；加上 `-target all` 则改为为每个目标检查，这样在 Mac 上也能检查到其他平台构建标签下的代码。
 
 ### Apple 应用包的日志
 
@@ -114,7 +114,7 @@ Ubuntu 24.04 及更新版本可通过 AppArmor 限制非特权用户的命名空
 ## DevTools
 
 ```sh
-go tool nsgo dev -devtools
+nsgo dev -devtools
 ```
 
 `-devtools` 会在浏览器中打开 DevTools。它由 `nsgo dev` 提供，适用于每个目标平台，手机上的应用也可以。它会实时展示运行中的应用：
@@ -133,13 +133,13 @@ DevTools 通过 `nsgo dev` 的服务器读取应用，这个服务器监听你�
 ## 更新
 
 ```sh
-go tool nsgo dev -highlight
+nsgo dev -highlight
 ```
 
 `-highlight` 会把每次提交改动过的视图框出来半秒，使用应用时就能在屏幕上看到哪次更新重绘了超出预期的内容。这些框画在每个窗口、面板、模态视图、iOS 弹窗表和嵌入式视图（`nsgo.NewView`）之上。应用运行时可以在 DevTools 中开关它们。
 
 ```sh
-go tool nsgo dev -trace
+nsgo dev -trace
 ```
 
 `-trace` 打印运行中应用的每次提交：序号、耗时，以及它发出的挂载项，这样能看到一次更新创建、修改或移除了哪些视图。挂载项上方会列出这次提交的起因：自上次提交以来写入 signal 的代码行（写得最多的排在前面），以及运行了多少个绑定、effect 和 memo。
@@ -150,21 +150,21 @@ go tool nsgo dev -trace
    ran 118 bindings, 18 effects, 5 memos
 ```
 
-某一行写了很多次，或者一次写入触发了大量绑定重算，就是该合并写入（`cx.Batch`）或缩小绑定读取范围的地方。`go tool nsgo test -trace` 会在测试的每一步下打印同样的内容。
+某一行写了很多次，或者一次写入触发了大量绑定重算，就是该合并写入（`cx.Batch`）或缩小绑定读取范围的地方。`nsgo test -trace` 会在测试的每一步下打印同样的内容。
 
 ## 运行时性能分析
 
 使用 `nsgo dev` 采集运行中应用的 Go CPU 活动、堆快照或执行跟踪。应用将采集结果发给开发服务器，由运行命令的机器保存。
 
 ```sh
-go tool nsgo dev -target android -profile cpu -profile-duration 10s
+nsgo dev -target android -profile cpu -profile-duration 10s
 go tool pprof -top .nsgo/profiles/cpu.pprof
 ```
 
-桌面、iPhone 和 iOS 模拟器也可以采集 CPU。iPhone 提示本地网络权限时请允许。也可以用 `go tool nsgo dev -profile trace` 记录调度器和 goroutine 事件，再用 `go tool trace` 打开 `.nsgo/profiles/execution.trace`。CPU 和执行跟踪默认采集 10 秒，`-profile-output` 指定本机输出路径。组件预览的默认路径和相对路径基于应用目录。开发命令保存第一份完整采集结果后，应用会继续运行。
+桌面、iPhone 和 iOS 模拟器也可以采集 CPU。iPhone 提示本地网络权限时请允许。也可以用 `nsgo dev -profile trace` 记录调度器和 goroutine 事件，再用 `go tool trace` 打开 `.nsgo/profiles/execution.trace`。CPU 和执行跟踪默认采集 10 秒，`-profile-output` 指定本机输出路径。组件预览的默认路径和相对路径基于应用目录。开发命令保存第一份完整采集结果后，应用会继续运行。
 
 ```sh
-go tool nsgo dev -target web -profile heap
+nsgo dev -target web -profile heap
 go tool pprof -top .nsgo/profiles/heap.pprof
 ```
 
@@ -173,8 +173,8 @@ Go 在浏览器中支持堆快照和执行跟踪。浏览器 CPU 采样可使用
 ## 布局
 
 ```sh
-go tool nsgo dev -layout
-go tool nsgo dev -layout=bounds,grid=4
+nsgo dev -layout
+nsgo dev -layout=bounds,grid=4
 ```
 
 `-layout` 启动应用时在每个窗口、面板、iOS 弹窗表和嵌入式视图上方显示 DevTools 的布局审计层，勾出每个视图的框：边框盒为蓝色，内边距的内缘为绿色，外边距的外缘为橙色；被滚动视图或裁剪内容的视图遮住的部分不画。`grid` 画出间距 8 点的网格，`grid=N` 画出间距 N 点的网格，N 至少为 4。取值要写在 `=` 之后：只写参数本身表示 `bounds`。
@@ -194,8 +194,8 @@ go tool nsgo dev -layout=bounds,grid=4
 ## 性能
 
 ```sh
-go tool nsgo dev -fps
-go tool nsgo dev -release -fps
+nsgo dev -fps
+nsgo dev -release -fps
 ```
 
 `-fps` 在 macOS、iOS、Windows、Linux、Android 和 Web 上于应用上方显示性能监视器。它测量帧和提交的开销，Android 还显示原生文本请求的往返耗时。开发构建带有开发客户端；测量时请加 `-release`，它与 `nsgo build` 的构建方式相同。
@@ -203,9 +203,9 @@ go tool nsgo dev -release -fps
 ## 语言与外观
 
 ```sh
-go tool nsgo dev -lang zh-Hans
-go tool nsgo dev -lang en-XA   # 加重音并拉长，找出未翻译和被截断的文字
-go tool nsgo dev -lang ar-XB   # 从右到左
+nsgo dev -lang zh-Hans
+nsgo dev -lang en-XA   # 加重音并拉长，找出未翻译和被截断的文字
+nsgo dev -lang ar-XB   # 从右到左
 ```
 
 `-lang` 以某个语言区域启动应用，也可以是伪语言区域（[本地化](localization.md)）。
@@ -213,15 +213,15 @@ go tool nsgo dev -lang ar-XB   # 从右到左
 ## 智能体
 
 ```sh
-go tool nsgo dev -automation
-go tool nsgo dev -target android -automation
-go tool nsgo dev -target web -automation
+nsgo dev -automation
+nsgo dev -target android -automation
+nsgo dev -target web -automation
 ```
 
-`-automation` 让 AI 智能体或端到端测试工具像人一样使用运行中的应用（目前支持 macOS、Windows、Linux（`-target native`）、Android（`-target android`）、Web（`-target web`）、开发者工具模拟器中的小程序（`-target miniprogram_wechat`、`miniprogram_qq`、`miniprogram_alipay` 或 `miniprogram_douyin`）以及 iOS、tvOS 和 watchOS 的真机与模拟器，通过 `-target ios`、`tvos`、`watchos`、`ios_simulator`、`tvos_simulator` 或 `watchos_simulator`）：列出窗口、概括某个窗口显示的内容、点击、输入、按键、滚动、拖动、悬停、选择菜单项、回答提示框、等待内容出现以及截图。智能体通过 `go tool nsgo mcp` 以 MCP 连接：它使用当前目录正在运行的 `dev -automation`，没有时就用相同的参数（如 `-target android`）启动一个，并在客户端断开时停止它：
+`-automation` 让 AI 智能体或端到端测试工具像人一样使用运行中的应用（目前支持 macOS、Windows、Linux（`-target native`）、Android（`-target android`）、Web（`-target web`）、开发者工具模拟器中的小程序（`-target miniprogram_wechat`、`miniprogram_qq`、`miniprogram_alipay` 或 `miniprogram_douyin`）以及 iOS、tvOS 和 watchOS 的真机与模拟器，通过 `-target ios`、`tvos`、`watchos`、`ios_simulator`、`tvos_simulator` 或 `watchos_simulator`）：列出窗口、概括某个窗口显示的内容、点击、输入、按键、滚动、拖动、悬停、选择菜单项、回答提示框、等待内容出现以及截图。智能体通过 `nsgo mcp` 以 MCP 连接：它使用当前目录正在运行的 `dev -automation`，没有时就用相同的参数（如 `-target android`）启动一个，并在客户端断开时停止它：
 
 ```sh
-claude mcp add nsgo -- go tool nsgo mcp
+claude mcp add nsgo -- nsgo mcp
 ```
 
 其他客户端使用同样的命令：在应用目录中运行 `go`，参数为 `tool nsgo mcp`。视图用[测试](testing.md#一个测试)的选择器命名，或者用快照打印的 `view:` 引用；保存文件会重启应用，之前的引用随之失效。

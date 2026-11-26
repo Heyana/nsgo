@@ -72,7 +72,7 @@ func TestMain(m *testing.M) {
 
 在 iOS 和 tvOS 上，`app.Resize(width, height)` 调整测试宿主的 `UIWindow`，并等待原生布局；每个测试从场景自身的大小开始。这能检查不同视口下的内容，但不会设置分屏、侧拉或台前调度窗口。实时自动化跟随运行中场景的大小，拒绝 `Resize`。
 
-在真实目标上，`nsgotest.Environment` 固定外观、语言环境、文字大小、减少动画、增强对比度、定时触感反馈支持、热状态、低电量模式、登录时启动的原因、位于前台的应用及平台是否跟踪它，以及设备的名称和型号。一起设置 `Displays` 和 `DisplayID` 即可固定显示器列表、窗口所在的显示器及其刷新率。其余部分保持目标自身的值：操作系统、idiom、安全区域和系统标题栏高度。因此，`Environment` 设置为 `core.OSWindows` 并不会让 `go tool nsgo test -target macos` 按 Windows 布局应用；这样的测试要么无头运行，此时整个 `Environment` 都会生效，要么使用 `-target windows`。`nsgotest.Idiom` 同样只在无头运行时生效。`nsgotest.Size` 在 macOS、Windows、Linux 和 Web 上设置测试窗口的大小；Android、iOS、tvOS 和 watchOS 保持设备屏幕的大小。在 `-target macos` 上，应用像 `nsgo.Run` 那样自己打开窗口，不需要 `Environment`：根视图或 `SetMainView` 设置的视图显示在主窗口中，`desktop.CurrentWindow` 和 `OnClosing` 在其中可用；主窗口默认为 480×640 点，除非 `nsgotest.Size` 另行指定；各个步骤作用于主窗口，与无头运行一致。通过关闭按钮或“关闭”菜单项的快捷键关闭主窗口时，会询问它的 `OnClosing` 处理函数；主窗口关闭后不再有可操作的视图，应用在最后一个窗口关闭时请求的退出计入 `app.Quits`，而不会结束测试。
+在真实目标上，`nsgotest.Environment` 固定外观、语言环境、文字大小、减少动画、增强对比度、定时触感反馈支持、热状态、低电量模式、登录时启动的原因、位于前台的应用及平台是否跟踪它，以及设备的名称和型号。一起设置 `Displays` 和 `DisplayID` 即可固定显示器列表、窗口所在的显示器及其刷新率。其余部分保持目标自身的值：操作系统、idiom、安全区域和系统标题栏高度。因此，`Environment` 设置为 `core.OSWindows` 并不会让 `nsgo test -target macos` 按 Windows 布局应用；这样的测试要么无头运行，此时整个 `Environment` 都会生效，要么使用 `-target windows`。`nsgotest.Idiom` 同样只在无头运行时生效。`nsgotest.Size` 在 macOS、Windows、Linux 和 Web 上设置测试窗口的大小；Android、iOS、tvOS 和 watchOS 保持设备屏幕的大小。在 `-target macos` 上，应用像 `nsgo.Run` 那样自己打开窗口，不需要 `Environment`：根视图或 `SetMainView` 设置的视图显示在主窗口中，`desktop.CurrentWindow` 和 `OnClosing` 在其中可用；主窗口默认为 480×640 点，除非 `nsgotest.Size` 另行指定；各个步骤作用于主窗口，与无头运行一致。通过关闭按钮或“关闭”菜单项的快捷键关闭主窗口时，会询问它的 `OnClosing` 处理函数；主窗口关闭后不再有可操作的视图，应用在最后一个窗口关闭时请求的退出计入 `app.Quits`，而不会结束测试。
 
 没有绑定消费按键、也没有应用菜单项以该键为快捷键时，`app.Key("mod+a")` 会全选当前文本框的内容，`mod+c`、`mod+x` 和 `mod+v` 会通过 `app.Clipboard` 复制、剪切和粘贴。在 macOS、Windows 或 Linux 的 `Environment` 中，没有被绑定、聚焦视图或文本框消费的按键会选择以它为快捷键的已启用应用菜单项，因此 `app.Key("mod+r")` 可以测试菜单快捷键能否到达对应的菜单项：已禁用的菜单项不响应，文本框获得焦点时，`NotInText` 菜单项不响应，也不让后面同快捷键的菜单项响应；在 Linux 上，没有按住 Control、Alt 或徽标键的按键不会选择任何菜单项。在无头测试中，带有标准角色但没有 `OnSelect` 的菜单项，无论由 `app.ChooseMenu` 还是快捷键选择，都会像桌面平台那样执行：Close 经由主窗口的 `OnClosing` 处理函数关闭主窗口；Quit 询问 `OnQuitRequest` 处理函数，获准的请求计入 `app.Quits`；Minimize、Zoom 和 Toggle Full Screen 只改变主窗口环境里报告的窗口状态，应用的其他窗口保持不变（`app.SetWindowEnvironment` 可以单独改任意一个窗口的环境）；编辑角色作用于已聚焦的文本框。其他角色，以及文本框中的 Undo 或 Redo，会让该步骤失败，而不是悄悄吞掉按键；在 `-target` 下，这样的菜单项会跳过测试。在无头测试、桌面目标和 Web 上，`KeyAlways` 绑定会在文本框编辑之前消费 Return、Backspace 和全选；`KeyAuto` 和 `KeyNotEditing` 则把这些键留给已聚焦的文本框。Android 和 iOS 的测试宿主还不会先把这些键交给键位绑定。已聚焦视图的 `OnKeyDown` 会最先收到 `app.Key`，单独的修饰键（`app.Key("shift")`）也算；它消费的键不会再交给任何绑定，无头测试以及桌面和 Web 目标上都是如此。`app.Key` 是一次完整的按键，所以视图的 `OnKeyUp` 随后会收到该键抬起。`app.KeyDown` 和 `app.KeyUp` 分别按下和松开一个键，不接受组合键：`KeyDown` 按住的修饰键会加入之后的每个键，直到对应的 `KeyUp`，所以先 `app.KeyDown("shift")` 再 `app.Key("a")` 按下的是 Shift+A；`KeyUp` 一个没有按住的键会让该步骤失败。测试结束时仍按住的键会在那时松开，在 `-target` 下经由平台松开，所以收到按下的视图也会收到抬起，不会有键留到下一个测试。`core.KeysDown` 和 `KeyHeld` 读取它们按住的键。在 `-target` 下，watchOS 会跳过用到它们的测试。`app.MouseDown`、`app.MouseDownAt`、`app.MouseDownWith`、`app.MouseDownAtWith` 以及对应的 `MouseUp` 方法可以分别按下和松开全部五个鼠标按键（从 `core.MouseButtonLeft` 到 `core.MouseButtonForward`），并更新 `core.MouseButtonsDown` 与 `core.MouseButtonHeld`；`app.BlurWindow()` 模拟窗口失去焦点并清空所有按住的键盘和鼠标按键。
 
@@ -115,14 +115,14 @@ func TestMain(m *testing.M) {
 ## 运行测试
 
 ```sh
-go tool nsgo test
+nsgo test
 ```
 
 `test` 每个测试输出一行。`-run` 像 `go test` 一样筛选测试。在目标上，`-timeout` 设置每个测试的截止时间（默认三分钟，`0` 表示不限制），到达时结果会注明。在模拟器或手机上，`TestMain` 调用 `nsgotest.Main` 的测试从测试宿主启动时开始计时，应用启动得慢不计入其中；启动另有五分钟的上限，超过时测试以启动超时失败。子测试全部跳过的测试计为跳过。`-junit report.xml` 写出保留每个跳过原因的 JUnit 报告，`-trace` 打印每一步的挂载项和提交耗时，`-bench` 改为运行基准测试，每个结果输出一行，`-count` 的每一次重复都算一行；`-json` 把 `go test` 自己的事件流原样写到 stdout，可供 `benchstat` 之类的工具读取。`--` 之后的参数交给 `go test`。编译错误会显示在控制台和 JUnit 报告中，无头运行使用 `-- -c` 只编译测试时也一样。
 
-传入没有 `nsgo.yaml` 的目录（例如库或模块根目录）时，`test` 会处理其下的所有包；目录也可以像 Go 的包模式那样以 `/...` 结尾。它只接受一个目录，遇到第二个会报错退出：要测试多个目录，就传入它们共同的上级目录，或逐个运行。`go tool nsgo check` 以同样的方式选取并检查包。
+传入没有 `nsgo.yaml` 的目录（例如库或模块根目录）时，`test` 会处理其下的所有包；目录也可以像 Go 的包模式那样以 `/...` 结尾。它只接受一个目录，遇到第二个会报错退出：要测试多个目录，就传入它们共同的上级目录，或逐个运行。`nsgo check` 以同样的方式选取并检查包。
 
-要无头运行模糊测试，在目录之后传入 `-fuzz`（或 `-test.fuzz`）：`go tool nsgo test ./pkg -fuzz FuzzX -fuzztime 3s`。Go 每次只能对一个包进行模糊测试，因此该命令只选取目录自身的包，不包含子包。
+要无头运行模糊测试，在目录之后传入 `-fuzz`（或 `-test.fuzz`）：`nsgo test ./pkg -fuzz FuzzX -fuzztime 3s`。Go 每次只能对一个包进行模糊测试，因此该命令只选取目录自身的包，不包含子包。
 
 测试会检查响应式图的 goroutine 归属：信号和作用域应在应用的 goroutine 上访问，工作 goroutine 通过 `cx.Post` 调度。在应用空闲时从其他 goroutine 发起的调用会 panic，并提示使用 `Scope.Post`；其余情况由 `-race` 检出。引擎内部 panic 仍会使测试失败；发布的应用则停止受影响的引擎，并把堆栈报告给宿主。开发构建也检查归属，发布构建不包含这项检查；WebAssembly 的开发构建和测试构建不使用 goroutine ID 检查，因为浏览器回调可能在浏览器管理的 goroutine 上恢复；其他测试检查照常进行。
 
@@ -147,12 +147,12 @@ go tool nsgo test
 测试可以在真实窗口中、用平台自己的输入运行。测试发现遵循目标平台的构建标签，即使包中也有跨平台文件，仍会包含仅适用于该目标的测试文件：
 
 ```sh
-go tool nsgo test -target macos
+nsgo test -target macos
 ```
 
 在 macOS 上，测试窗口会忽略测试宿主以外的鼠标、键盘和触控板输入，因此测试运行时使用电脑不会改变测试场景。测试自身的操作仍然有效。
 
-测试窗口无需激活应用就能收到测试的按键，因此你正在使用的应用会保持在前台。当其他应用处于活动状态时，AppKit 可能拒绝文本框获得焦点，`Focus` 和 `Type` 会说明原因。`go tool nsgo test -target macos -activate` 让测试应用在点击文本框或按键前激活并获得键盘。它需要未锁定的桌面会话，并要求测试导入 `github.com/nsgo-dev/nsgo`（空白导入即可），并在 `TestMain` 中启动 `nsgotest.Main` 或 `nsgotest.MainFunc`。
+测试窗口无需激活应用就能收到测试的按键，因此你正在使用的应用会保持在前台。当其他应用处于活动状态时，AppKit 可能拒绝文本框获得焦点，`Focus` 和 `Type` 会说明原因。`nsgo test -target macos -activate` 让测试应用在点击文本框或按键前激活并获得键盘。它需要未锁定的桌面会话，并要求测试导入 `github.com/nsgo-dev/nsgo`（空白导入即可），并在 `TestMain` 中启动 `nsgotest.Main` 或 `nsgotest.MainFunc`。
 
 清理测试时会关闭仍打开的原生上下文菜单，避免吞掉下一个子测试的第一次点击或按键。在 macOS 上，WindowServer 截图包含测试窗口中打开的原生弹出菜单，裁剪到窗口范围内，不包含其他窗口。
 
@@ -174,7 +174,7 @@ go tool nsgo test -target macos
 
 要测量而不是检查时，用 `nsgotest.Measure()` 启动：应用运行在系统时钟上，`Advance` 会真实等待相应时长，各步骤只等待正在进行的动画停下。`app.Mark("name")` 标出此后的读数测的是什么，`app.Mark("-")` 结束标记；无论是否加 `-fps`，标记都会打印出来。
 
-NSGo 的参数要写在目录之前：`go tool nsgo test -target web ./app`，而不是写在目录之后。无头运行时，`--` 之后的参数交给 `go test`。在目标上运行时，`--` 之后只支持 `-short`、`-count`、`-cpu`、`-parallel`、`-failfast` 和 `-fullpath`，例如 `go tool nsgo test -target web ./app -- -short -count=3`；其他 Go 测试参数会明确报错，包括此时应写在目录之前的 `-run` 和 `-timeout`。`-count=0` 不运行任何测试。链接 NSGo 原生宿主的测试按每个次数和 CPU 设置在新进程中重复运行，结果带 `[run N]`，截图保存在 `run-N` 子目录中，每次调用各有超时；库包保留 Go 在进程内的重复运行。
+NSGo 的参数要写在目录之前：`nsgo test -target web ./app`，而不是写在目录之后。无头运行时，`--` 之后的参数交给 `go test`。在目标上运行时，`--` 之后只支持 `-short`、`-count`、`-cpu`、`-parallel`、`-failfast` 和 `-fullpath`，例如 `nsgo test -target web ./app -- -short -count=3`；其他 Go 测试参数会明确报错，包括此时应写在目录之前的 `-run` 和 `-timeout`。`-count=0` 不运行任何测试。链接 NSGo 原生宿主的测试按每个次数和 CPU 设置在新进程中重复运行，结果带 `[run N]`，截图保存在 `run-N` 子目录中，每次调用各有超时；库包保留 Go 在进程内的重复运行。
 
 使用 `tui` 目标测试时，需要交互式终端、链接 NSGo 后端，并由 `TestMain` 调用 `nsgotest.Main`。每个进程只打开一个应用，测试步骤经过终端的编辑、焦点、鼠标和键盘路径。测试输出会暂存到终端恢复之后再打印；PNG 截图使用固定字体绘制单元格。[终端目标](building.md#terminal)
 
@@ -189,5 +189,5 @@ TSX 应用中用 `nsgo/test` 编写的 `*.test.tsx` 文件会随 Go 测试一起
 不写测试文件也能驱动 TSX 应用：传入它的入口，并从标准输入提供步骤，写法与 `*.test.tsx` 测试的函数体相同，`app` 即该应用：
 
 ```sh
-go tool nsgo test App.tsx < steps.ts
+nsgo test App.tsx < steps.ts
 ```

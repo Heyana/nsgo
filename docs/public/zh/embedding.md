@@ -10,9 +10,9 @@ order: 23
 可嵌入的应用就是普通的应用包，带 `Root` 和 `main`，用 `-embed` 按宿主的平台构建。每个视图运行一次应用，并且是独立的引擎，因此宿主可以显示任意多个视图，每个都有自己的状态。
 
 ```sh
-go tool nsgo build -embed -target ios examples/embedded
-go tool nsgo build -embed -target android_arm64 examples/embedded
-go tool nsgo build -target web examples/embedded
+nsgo build -embed -target ios examples/embedded
+nsgo build -embed -target android_arm64 examples/embedded
+nsgo build -target web examples/embedded
 ```
 
 iOS 构建写出 `<Name>.xcframework` 和 `<Name>Resources`；Android 构建写出 `<Name>.aar`；Web 构建写出包含 `nsgo.json` 和加载器的目录。

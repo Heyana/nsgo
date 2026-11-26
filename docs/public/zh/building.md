@@ -8,7 +8,7 @@ order: 22
 ## 构建
 
 ```sh
-go tool nsgo build
+nsgo build
 ```
 
 `build` 为 `nsgo.yaml` 列出的每个目标写出精简的发布包，放在 `dist/<name>-<version>-<target>`：`.app`、`.ipa`、`.apk`、Windows 和 Linux 的目录，或一个网站，网站页面会在 `import()` 执行时才获取它指定的 TSX 模块。`-target` 替换目标列表，`all` 表示所有只需 Go 和 Xcode 的目标；安装 Android NDK 后可再加上 `android_x64`；`miniprogram` 构建全部[小程序](#小程序)，也可单独指定 `miniprogram_wechat`、`miniprogram_qq`、`miniprogram_alipay` 或 `miniprogram_douyin`；`harmonyos` 构建[鸿蒙](#鸿蒙)预览版。`-run` 启动为本机构建的包，或把它安装到 `-device` 选中的 iPhone、模拟器或 Android 设备上。
@@ -33,9 +33,9 @@ go tool nsgo build
 
 ## Terminal
 
-在交互式终端中执行 `go tool nsgo dev -target tui`，即可运行应用。`go tool nsgo test -target tui` 通过 `nsgotest.Main` 在终端中运行测试，每个测试进程只打开一个应用。终端决定视口大小，每格对应 8×16 个布局点。应用显式选择自己的样式，组件保留通常的形态和尺寸。`examples/tui` 演示了输入框、按钮、快捷键和尺寸变化。
+在交互式终端中执行 `nsgo dev -target tui`，即可运行应用。`nsgo test -target tui` 通过 `nsgotest.Main` 在终端中运行测试，每个测试进程只打开一个应用。终端决定视口大小，每格对应 8×16 个布局点。应用显式选择自己的样式，组件保留通常的形态和尺寸。`examples/tui` 演示了输入框、按钮、快捷键和尺寸变化。
 
-通过 `go tool nsgo build -target tui_macos_arm64` 构建控制台程序，也可以选择 `tui_macos_x64`、`tui_windows_arm64`、`tui_windows_x64`、`tui_linux_arm64` 或 `tui_linux_x64`。构建和检查时，`tui` 组包含全部六个目标，`all` 也包含它们。各输出目录包含可执行文件和资源，不生成图形安装器；六个目标都只需要 Go。
+通过 `nsgo build -target tui_macos_arm64` 构建控制台程序，也可以选择 `tui_macos_x64`、`tui_windows_arm64`、`tui_windows_x64`、`tui_linux_arm64` 或 `tui_linux_x64`。构建和检查时，`tui` 组包含全部六个目标，`all` 也包含它们。各输出目录包含可执行文件和资源，不生成图形安装器；六个目标都只需要 Go。
 
 后端支持单元格文字、背景、实线边框、裁剪、滚动、焦点和文本编辑，使用终端的字体和颜色。在 Mac 上也以 Control 作为 `mod`。Ctrl+C 在编辑器中复制，在没有快捷键或编辑器接收时退出。带括号粘贴只插入文字，不触发快捷键；剪贴板只在进程内共享。画布、图像、媒体、原生托管组件、系统菜单和提示框、动画、缩放、双向文字塑形、头部或中部省略以及系统剪贴板桥接仍未实现。`base/terminal` 仍是图形应用中嵌入的终端控件。
 
@@ -254,8 +254,8 @@ iOS、tvOS 和 watchOS 的设备构建会在应用及其扩展中写入 App Stor
 启用 Google Play Developer API，并授予服务账号向目标轨道发布此应用的权限。将 `NSGO_PLAY_SERVICE_ACCOUNT` 设为服务账号的 JSON 密钥内容或密钥文件路径。[Google Play API 设置](https://developers.google.com/android-publisher/getting_started)
 
 ```sh
-go tool nsgo build -target android -channel store
-go tool nsgo publish -target android -track internal
+nsgo build -target android -channel store
+nsgo publish -target android -track internal
 ```
 
 命令在 `build.output/releases` 中查找当前项目版本的 App Bundle。有多个构建时，在参数后传入 `.aab` 路径以选定文件。轨道填写 `internal`、`production` 或封闭测试的轨道 ID。命令从包中读取包名和版本代码，确认版本代码高于该轨道上的所有版本后，再上传包并提交发布。
@@ -283,9 +283,9 @@ store/
 顶层和各语言的 `listing.yaml` 都必须包含 `version: 1` 并拒绝未知字段。规范的语言目录名（例如 `zh-Hans`）会自动映射到各商店的语言代码（App Store Connect 使用 `zh-Hans`，Google Play 使用 `zh-CN`），也可用 `app_store.locale` 或 `google_play.locale` 单独覆盖。
 
 ```sh
-go tool nsgo publish -store all -dry-run                  # 仅校验字数限制、语言与媒体文件，不上传
-go tool nsgo publish -store appstore,play                 # 校验并上传至 App Store Connect 与 Google Play
-go tool nsgo publish -store play -track production        # 同时更新指定 Google Play 轨道的发布说明
+nsgo publish -store all -dry-run                  # 仅校验字数限制、语言与媒体文件，不上传
+nsgo publish -store appstore,play                 # 校验并上传至 App Store Connect 与 Google Play
+nsgo publish -store play -track production        # 同时更新指定 Google Play 轨道的发布说明
 ```
 
 校验会在读取凭据或发起任何 HTTP 请求之前完成，检查必填项、语言代码、URL 协议、媒体文件及数量（App Store 每种显示类型最多 10 张截图、3 段预览；Google Play 每种图片类型最多 8 张截图）以及字符上限（App Store：标题 30、副标题 30、关键词 100、宣传文本 170、描述 4000、更新说明 4000；Google Play：标题 30、简短描述 80、完整描述 4000、更新说明 500）。
@@ -312,14 +312,14 @@ compliance:
 ## Steam depot
 
 ```sh
-go tool nsgo build -channel steam -target macos_universal,windows_x64,linux_x64
+nsgo build -channel steam -target macos_universal,windows_x64,linux_x64
 ```
 
 可设定 `updates.channel: steam` 作为默认渠道。请选择 macOS、Windows 和 Linux 目标。将各个 `dist/<name>-<version>-<target>` 目录分别上传到对应的 Steam depot，并将 macOS 的应用包、Windows 和 Linux arm64 的可执行文件或 Linux x64 的 `steam-launch.sh` 设为启动选项。Steam 负责更新。产物不包含安装器、自更新程序或 `steam_appid.txt`。
 
 Linux x64 depot 内含 Steam Linux Runtime 3.0 和 4.0 所需的 GTK 4 及其依赖，启动脚本仅在系统没有 GTK 4.14 或更新版本时使用它们。请把 `nsgo-gtk/` 与启动脚本放在同一目录：其中的 `licenses/` 收录这些库的许可证、构建所用的源码和构建脚本，这是 LGPL 对 GLib、Pango 和 GTK 的要求。Linux arm64 需要运行环境提供 GTK 4。
 
-要在 Steam 客户端之外本地测试，在 `nsgo.yaml` 中设定 `steam: {app_id: 480}`，将 480 换成你的 Steamworks App ID。`go tool nsgo dev` 会将 ID 写入原生构建目录内的 `steam_appid.txt`，并从该目录启动应用。[Steamworks API](https://partner.steamgames.com/doc/api/steam_api)、[SteamPipe](https://partner.steamgames.com/doc/sdk/uploading)。
+要在 Steam 客户端之外本地测试，在 `nsgo.yaml` 中设定 `steam: {app_id: 480}`，将 480 换成你的 Steamworks App ID。`nsgo dev` 会将 ID 写入原生构建目录内的 `steam_appid.txt`，并从该目录启动应用。[Steamworks API](https://partner.steamgames.com/doc/api/steam_api)、[SteamPipe](https://partner.steamgames.com/doc/sdk/uploading)。
 
 ## 发布到 GitHub
 
@@ -355,8 +355,8 @@ itch:
 在 CI 中将 `BUTLER_API_KEY` 设为机密变量，然后构建并上传。
 
 ```sh
-go tool nsgo build -channel none -installers=false -target web,macos_arm64
-go tool nsgo publish itch -target web,macos_arm64
+nsgo build -channel none -installers=false -target web,macos_arm64
+nsgo publish itch -target web,macos_arm64
 ```
 
 如果覆盖 `-output` 或 `-version`，两条命令需使用相同的值。工具上传各目标的包目录，并将 itch.io 的版本设为构建版本。NSGo 使用 `PATH` 上的 `butler`，也可从 itch.io 下载固定版本。首次上传 Web 构建后，将 itch.io 游戏类型设为 HTML，并将上传的版本设为可在浏览器中运行。[Butler 文档](https://itch.io/docs/butler/pushing.html)
@@ -511,8 +511,8 @@ sign:
 ## 小程序
 
 ```sh
-go tool nsgo build -target miniprogram_wechat -run
-go tool nsgo dev -target miniprogram_alipay
+nsgo build -target miniprogram_wechat -run
+nsgo dev -target miniprogram_alipay
 ```
 
 每个目标写出对应平台开发者工具的项目，也放在 `dist/releases/miniprogram/<平台>`，`-run` 和 `dev` 会用该工具打开；`dev` 在你保存时重新构建，工具随之刷新：
@@ -531,7 +531,7 @@ go tool nsgo dev -target miniprogram_alipay
 ## 鸿蒙
 
 ```sh
-go tool nsgo build -target harmonyos -run
+nsgo build -target harmonyos -run
 ```
 
 `harmonyos` 在 `dist/releases` 写出 `<name>-<version>-harmonyos.hap`。引擎以 WebAssembly 运行在 ArkWeb 中，ArkTS 宿主用 ArkUI 视图绘制它挂载的内容，文字、输入框、滚动和对话框都是系统自己的。`PATH` 中有 `hdc` 时，`-run` 把 HAP 安装到连接的设备或模拟器上并启动，`nsgo test -target harmonyos` 使用独立的 `.nsgotest` bundle 标识在模拟器上运行未签名的测试 HAP，并在结束后删除测试 HAP，因此已安装的应用仍然可用。
@@ -553,7 +553,7 @@ harmonyos:
     profile: signing/app.p7b
 ```
 
-路径相对于 `nsgo.yaml`。在环境中设置 `NSGO_HARMONY_KEYSTORE_PASSWORD` 和 `NSGO_HARMONY_KEY_PASSWORD`。签名使用 SDK 的 `hap-sign-tool.jar`，并从 `JAVA_HOME` 或 `PATH` 找到 Java。构建保留应用的完整 `id`，使其与 profile 的包名匹配，因此 `auto` 模式签名也需要 SDK 和 `hvigorw`。在应用目录运行 `go tool nsgo doctor` 可检查签名配置和 profile 包名，无需密码。`build -run` 会把已签名的 HAP 交给 `hdc` 安装。
+路径相对于 `nsgo.yaml`。在环境中设置 `NSGO_HARMONY_KEYSTORE_PASSWORD` 和 `NSGO_HARMONY_KEY_PASSWORD`。签名使用 SDK 的 `hap-sign-tool.jar`，并从 `JAVA_HOME` 或 `PATH` 找到 Java。构建保留应用的完整 `id`，使其与 profile 的包名匹配，因此 `auto` 模式签名也需要 SDK 和 `hvigorw`。在应用目录运行 `nsgo doctor` 可检查签名配置和 profile 包名，无需密码。`build -run` 会把已签名的 HAP 交给 `hdc` 安装。
 
 ## 签名
 

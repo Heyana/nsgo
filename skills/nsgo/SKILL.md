@@ -1,11 +1,11 @@
 ---
 name: nsgo
-description: Build, run, test and ship cross-platform native apps with NSGo, the Go UI engine whose apps draw with each platform's own views on iOS, Android, macOS, Windows, Linux, the web, tvOS, watchOS and mini programs. Use when writing or reviewing code that imports github.com/nsgo-dev/nsgo, a TSX app on nsgo, nsgo.yaml or locales/ catalogs, nsgotest tests, `go tool nsgo` commands, or components built on NSGo's base and ui. Excludes changes to NSGo itself.
+description: Build, run, test and ship cross-platform native apps with NSGo, the Go UI engine whose apps draw with each platform's own views on iOS, Android, macOS, Windows, Linux, the web, tvOS, watchOS and mini programs. Use when writing or reviewing code that imports github.com/nsgo-dev/nsgo, a TSX app on nsgo, nsgo.yaml or locales/ catalogs, nsgotest tests, `nsgo` or `go tool nsgo` commands, or components built on NSGo's base and ui. Excludes changes to NSGo itself.
 ---
 
 # NSGo
 
-NSGo (`github.com/nsgo-dev/nsgo`) runs an app's logic, reactive graph and layout in Go, and each platform draws it with its own native views. An app is a Go main package whose components return elements; `go tool nsgo` creates, runs, tests and packages it.
+NSGo (`github.com/nsgo-dev/nsgo`) runs an app's logic, reactive graph and layout in Go, and each platform draws it with its own native views. An app is a Go main package whose components return elements; `nsgo` creates, runs, tests and packages it.
 
 NSGo is early and changes quickly, with no stable API yet. Use the latest version, and read the version-matched source before using an API rather than guessing:
 
@@ -25,12 +25,14 @@ Bind translated control words with their `…Func` fields to keep focus and inpu
 go mod init example.com/hello
 go get github.com/nsgo-dev/nsgo@latest
 go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo@latest
-go tool nsgo init          # app.go, app_test.go, nsgo.yaml; -template tsx or -template mixed
-go tool nsgo dev           # hot reload; -target web, ios_simulator, android, tvos_simulator, watchos_simulator
-go tool nsgo doctor        # which targets this machine builds and runs, and what it lacks
+nsgo init          # app.go, app_test.go, nsgo.yaml; -template tsx or -template mixed
+nsgo dev           # hot reload; -target web, ios_simulator, android, tvos_simulator, watchos_simulator
+nsgo doctor        # which targets this machine builds and runs, and what it lacks
 ```
 
-`go tool nsgo game <command>` runs the game layer's command, the module's tool or else `go run` of its release. Another command `X` runs an extension: the module's `go.mod` tool named `X` with `go tool`, else `nsgo-X` on `PATH`; built-ins win. An `nsgo` on `PATH` (`curl -fsSL https://nsgo.dev/install.sh | sh` installs one) runs the module's pinned `go tool nsgo` first when the versions differ (`NSGO_NO_DELEGATE=1` turns it off); `nsgo version` says which ran. [Extensions](https://nsgo.dev/docs/building.md#extensions)
+Commands are written `nsgo X`, the installed command (`brew install nsgo-dev/tap/nsgo`, `curl -fsSL https://nsgo.dev/install.sh | sh` or `go install github.com/nsgo-dev/nsgo/cmd/nsgo@latest`). Where `nsgo` is not on `PATH`, as in CI, run `go tool nsgo X` in the module instead, at the version its `tool` line, which `go get -tool` writes, pins.
+
+`nsgo game <command>` runs the game layer's command, the module's tool or else `go run` of its release. Another command `X` runs an extension: the module's `go.mod` tool named `X` with `go tool`, else `nsgo-X` on `PATH`; built-ins win. An `nsgo` on `PATH` runs the module's pinned `go tool nsgo` first when the versions differ (`NSGO_NO_DELEGATE=1` turns it off); `nsgo version` says which ran. [Extensions](https://nsgo.dev/docs/building.md#extensions)
 
 Use `-template <module>[@version][#<name>]` to scaffold from a module's published [template directory](https://nsgo.dev/docs/getting-started.md#templates-from-go-modules), or `-list` to list a module's templates.
 
@@ -40,7 +42,7 @@ Go 1.27.3 or later builds every target from a Mac, with Xcode for Apple's; nothi
 
 For a signed HarmonyOS HAP, configure `harmonyos.signing` and use the SDK, Java and environment passwords described in [Building](https://nsgo.dev/docs/building/#harmonyos).
 On `ios_simulator`, Go-only dev rebuilds of the main app replace the installed executable and relaunch. Changes to the app's resources, icon or `nsgo.yaml` reinstall it. [Running and debugging](https://nsgo.dev/docs/debugging.md)
-For Android UI work, `go tool nsgo dev -target android -android-host` rebuilds Go on the development machine and reconnects to the installed Activity. Changes to packaged resources and precompiled classes reinstall the APK. Use ordinary Android dev for Go code that needs the device OS. [Debugging](https://nsgo.dev/docs/debugging.md#run)
+For Android UI work, `nsgo dev -target android -android-host` rebuilds Go on the development machine and reconnects to the installed Activity. Changes to packaged resources and precompiled classes reinstall the APK. Use ordinary Android dev for Go code that needs the device OS. [Debugging](https://nsgo.dev/docs/debugging.md#run)
 
 
 Use `-host 127.0.0.1` to bind the dev server to loopback only, including with Android's `adb reverse`.
@@ -49,7 +51,7 @@ Apps importing `base/terminal` ship libghostty-vt beside Windows/Linux executabl
 
 Go dependencies can ship prebuilt desktop shared libraries through their package's `nsgo-natives.yaml`: NSGo verifies checksums, bundles licenses, signs and includes them in installers without app configuration. Package authors declare target names, URL or local files, SHA-256 and license paths, and preserve these files with `go:embed` for vendoring. [Native libraries](https://nsgo.dev/docs/native-libraries.md) gives the contract and loading directories.
 
-For terminal apps, use `go tool nsgo dev -target tui` and `go tool nsgo test -target tui` in an interactive terminal with `nsgotest.Main`. Choose cell-sized styles explicitly (8×16 points per cell); Control is `mod` on every host. Diagnostics go to `.nsgo/tui.log`; media/canvas/native hosted views are not implemented. [Terminal targets](https://nsgo.dev/docs/building.md#terminal)
+For terminal apps, use `nsgo dev -target tui` and `nsgo test -target tui` in an interactive terminal with `nsgotest.Main`. Choose cell-sized styles explicitly (8×16 points per cell); Control is `mod` on every host. Diagnostics go to `.nsgo/tui.log`; media/canvas/native hosted views are not implemented. [Terminal targets](https://nsgo.dev/docs/building.md#terminal)
 
 ## Writing an app
 
@@ -175,7 +177,7 @@ An App Clip can request its full app's StoreKit recommendation from an explicit 
 
 ## Words and configuration
 
-- Put every user-visible word in `locales/`, a YAML catalog per language in ICU MessageFormat beside `nsgo.yaml`, and call the generated functions (`locales.Greeting(cx, "Ada")`), never string literals. `dev`, `build` and `test` check catalogs and regenerate the functions; `go tool nsgo dev -lang en-XA` finds untranslated and cut text, `-lang ar-XB` right-to-left layout.
+- Put every user-visible word in `locales/`, a YAML catalog per language in ICU MessageFormat beside `nsgo.yaml`, and call the generated functions (`locales.Greeting(cx, "Ada")`), never string literals. `dev`, `build` and `test` check catalogs and regenerate the functions; `nsgo dev -lang en-XA` finds untranslated and cut text, `-lang ar-XB` right-to-left layout.
 - Write configuration people edit by hand in YAML, not JSON: `nsgo.yaml`, catalogs and themes.
 
 Declare `url_schemes` for private app URLs and `app_links` for explicit HTTPS DNS hosts (no scheme, path, port, IP or wildcard). On iOS, `mobile.OpenedURL(cx)` tracks cold and warm scheme/universal invocations; schemes still reach `mobile.OnOpenLinks`. Full-app signing claims `applinks:` domains, while App Clips keep their own `appclips:` list. The server must publish AASA and the profile must authorize Associated Domains; simulator injection does not prove association. [Links](https://nsgo.dev/docs/building.md#links)
@@ -195,9 +197,9 @@ Run the tool, never `go vet`, `go test`, `go build` or `go run` directly: it typ
 Use `app.Surface("title:Settings")` for the same view queries, input steps, resizing and waits in a secondary desktop window; its `Post` schedules through the app, and closed handles fail. Keep app-wide service fixtures on the original `App`. [Testing](https://nsgo.dev/docs/testing.md)
 
 ```sh
-go tool nsgo check                 # vet; -target web,android vets those targets instead, all every available one
-go tool nsgo test                  # headless; -run as go test's, -target macos|ios|ios_simulator|android|web|all on a platform
-go tool nsgo test ./pkg -fuzz FuzzX -fuzztime 3s  # headless fuzzing of ./pkg only, not its subpackages
+nsgo check                 # vet; -target web,android vets those targets instead, all every available one
+nsgo test                  # headless; -run as go test's, -target macos|ios|ios_simulator|android|web|all on a platform
+nsgo test ./pkg -fuzz FuzzX -fuzztime 3s  # headless fuzzing of ./pkg only, not its subpackages
 ```
 
 Vetting and tests use the same Go JSON policy as `build`. Headless `nsgo test -- -c` compiles tests without running them; compiler failures remain visible in the console and JUnit report.
@@ -210,27 +212,27 @@ Test an app as a user uses it with `nsgotest`, finding views by text, role, labe
 
 On Apple targets, the default Go logger writes public unified-log entries under the running bundle ID and category `nsgo`, including packaged launches without a terminal. Keep secrets out of logs; custom writers and `slog` handlers own their output. [Packaged logs](https://nsgo.dev/docs/debugging.md#packaged-apple-apps-logs)
 
-Run `go tool nsgo dev -target native -debug` with Delve on `PATH` to attach a debugger to a desktop app. Reconnect to the printed loopback address after a Go rebuild. [Running and debugging](https://nsgo.dev/docs/debugging.md#go-debugger)
+Run `nsgo dev -target native -debug` with Delve on `PATH` to attach a debugger to a desktop app. Reconnect to the printed loopback address after a Go rebuild. [Running and debugging](https://nsgo.dev/docs/debugging.md#go-debugger)
 
-`go tool nsgo dev -devtools` opens DevTools (elements, signals, a commit profiler and a test recorder); `-highlight` outlines what each commit changes, `-trace` prints each commit with the lines whose writes caused it, `-layout` outlines every box and `-release -fps` measures frame and commit cost, including native text round trips on Android. On macOS, Windows, Linux, Android (`-target android`), the web (`-target web`), mini programs (`-target miniprogram_wechat`, `miniprogram_qq`, `miniprogram_alipay`, `miniprogram_douyin`) and Apple devices and simulators (`-target ios`, `tvos`, `watchos`, `ios_simulator`, `tvos_simulator`, `watchos_simulator`), `go tool nsgo mcp` lets an agent drive the running app over MCP (`claude mcp add nsgo -- go tool nsgo mcp`): list windows, outline views, press, type, scroll and take screenshots. Use it to check a change on screen instead of assuming it renders. Go apps can add tools with `automation.Register`; see [app-defined MCP tools](https://nsgo.dev/docs/debugging.md#app-defined-mcp-tools). On macOS and Windows a native Go rebuild restores the main window’s last regular frame during the same dev session. Windows also restores full screen, and Linux restores the window's size and full-screen mode. Command/Control+R reloads from every open window and remains available after an app function's main view closes.
+`nsgo dev -devtools` opens DevTools (elements, signals, a commit profiler and a test recorder); `-highlight` outlines what each commit changes, `-trace` prints each commit with the lines whose writes caused it, `-layout` outlines every box and `-release -fps` measures frame and commit cost, including native text round trips on Android. On macOS, Windows, Linux, Android (`-target android`), the web (`-target web`), mini programs (`-target miniprogram_wechat`, `miniprogram_qq`, `miniprogram_alipay`, `miniprogram_douyin`) and Apple devices and simulators (`-target ios`, `tvos`, `watchos`, `ios_simulator`, `tvos_simulator`, `watchos_simulator`), `nsgo mcp` lets an agent drive the running app over MCP (`claude mcp add nsgo -- nsgo mcp`): list windows, outline views, press, type, scroll and take screenshots. Use it to check a change on screen instead of assuming it renders. Go apps can add tools with `automation.Register`; see [app-defined MCP tools](https://nsgo.dev/docs/debugging.md#app-defined-mcp-tools). On macOS and Windows a native Go rebuild restores the main window’s last regular frame during the same dev session. Windows also restores full screen, and Linux restores the window's size and full-screen mode. Command/Control+R reloads from every open window and remains available after an app function's main view closes.
 
 DevTools bounds and `-layout` boxes follow native presentation geometry where the backend reports it; HarmonyOS and mini programs retain Go-side tracking until native feedback is available ([limits](https://nsgo.dev/docs/debugging.md#layout)).
 
-For Go component previews, put `PreviewXxx(*core.Scope) core.Node` functions in an importable package under `//go:build nsgopreview`. Run `go tool nsgo dev -preview ./components` or add `-target web`. [Component previews](https://nsgo.dev/docs/debugging.md#component-previews)
+For Go component previews, put `PreviewXxx(*core.Scope) core.Node` functions in an importable package under `//go:build nsgopreview`. Run `nsgo dev -preview ./components` or add `-target web`. [Component previews](https://nsgo.dev/docs/debugging.md#component-previews)
 
-Use `go tool nsgo dev -profile cpu` or `-profile heap` for a Go profile, and `-profile trace` for a scheduler trace. The host writes them under `.nsgo/profiles` unless `-profile-output` sets a path. On the web, capture the heap or an execution trace. [Runtime profiles](https://nsgo.dev/docs/debugging.md#runtime-profiles)
+Use `nsgo dev -profile cpu` or `-profile heap` for a Go profile, and `-profile trace` for a scheduler trace. The host writes them under `.nsgo/profiles` unless `-profile-output` sets a path. On the web, capture the heap or an execution trace. [Runtime profiles](https://nsgo.dev/docs/debugging.md#runtime-profiles)
 
 ## Shipping
 
 Linux Arch packages include `.MTREE`; check installed files with `pacman -Qkk`. The [contribution guide](https://nsgo.dev/docs/contributing.md#check-and-test) describes optional package-manager acceptance in disposable containers.
 
-`go tool nsgo build` packages every target `nsgo.yaml` lists into `dist/`, installers and store packages into `dist/releases`. Read [references/shipping.md](references/shipping.md) before editing `nsgo.yaml`, icons, signing, updates or embedding. Use `updater.CapabilityOf` before offering update controls, and read `updater.Status` inside bindings for state and persisted preferences.
+`nsgo build` packages every target `nsgo.yaml` lists into `dist/`, installers and store packages into `dist/releases`. Read [references/shipping.md](references/shipping.md) before editing `nsgo.yaml`, icons, signing, updates or embedding. Use `updater.CapabilityOf` before offering update controls, and read `updater.Status` inside bindings for state and persisted preferences.
 
 When using `sign.sign_command`, return success after writing each PE output's embedded Authenticode signature. [Windows signing](https://nsgo.dev/docs/building.md#sign-windows-packages)
 
 For store ratings, call `cx.RequestReview()` where `cx.Env().CanRequestReview()` is true. Standalone Android packages include Play Review; embedded hosts supply it through Gradle. [Store reviews](https://nsgo.dev/docs/services.md#store-reviews)
 
-Use `go tool nsgo publish ios` with a signed IPA or `go tool nsgo publish macos` with a signed PKG to upload to TestFlight. [App Store Connect setup](https://nsgo.dev/docs/building.md#app-store-connect)
+Use `nsgo publish ios` with a signed IPA or `nsgo publish macos` with a signed PKG to upload to TestFlight. [App Store Connect setup](https://nsgo.dev/docs/building.md#app-store-connect)
 
 Declare independently delivered files in `mobile.asset_packs`. Use `mobile.AssetPackReady` and `mobile.OpenAssetPackFile` for files in available packs. [Store asset packs](https://nsgo.dev/docs/building.md#store-asset-packs)
 

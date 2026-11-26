@@ -8,7 +8,7 @@ order: 22
 ## Build
 
 ```sh
-go tool nsgo build
+nsgo build
 ```
 
 `build` writes a stripped release package for each target `nsgo.yaml` lists, into `dist/<name>-<version>-<target>`: an `.app`, an `.ipa`, an `.apk`, Windows' and Linux's directories, or a web site, whose page fetches each TSX module an `import()` names when the import runs. `-target` replaces the list, and `all` means every target that needs only Go and Xcode; add `android_x64` when an Android NDK is installed, and `miniprogram`, or `miniprogram_wechat`, `miniprogram_qq`, `miniprogram_alipay` or `miniprogram_douyin` alone, for [mini programs](#mini-programs), and `harmonyos` for a [HarmonyOS](#harmonyos) preview. `-run` starts the package built for this machine, or installs it on the iPhone, simulator or Android device `-device` picks.
@@ -40,13 +40,13 @@ web:
   offline: true
 ```
 
-Serve the published directory over HTTPS, or use `go tool nsgo build -target web -run` on localhost. The service worker caches the page, WebAssembly, scripts and packaged resources. Online visits load the published version. After the installation succeeds and the previous release's tabs close, the latest release can launch from its cache. Requests for an app's online services still need a connection.
+Serve the published directory over HTTPS, or use `nsgo build -target web -run` on localhost. The service worker caches the page, WebAssembly, scripts and packaged resources. Online visits load the published version. After the installation succeeds and the previous release's tabs close, the latest release can launch from its cache. Requests for an app's online services still need a connection.
 
 ## Terminal
 
-Run the app in an interactive terminal with `go tool nsgo dev -target tui`. `go tool nsgo test -target tui` runs its tests there through `nsgotest.Main`, one application per test process. The terminal controls the size: a cell represents 8 by 16 layout points. Choose your application's styles explicitly; components keep their ordinary forms and sizes. `examples/tui` demonstrates fields, buttons, shortcuts and resizing.
+Run the app in an interactive terminal with `nsgo dev -target tui`. `nsgo test -target tui` runs its tests there through `nsgotest.Main`, one application per test process. The terminal controls the size: a cell represents 8 by 16 layout points. Choose your application's styles explicitly; components keep their ordinary forms and sizes. `examples/tui` demonstrates fields, buttons, shortcuts and resizing.
 
-Build a console executable with `go tool nsgo build -target tui_macos_arm64`, or the matching `tui_macos_x64`, `tui_windows_arm64`, `tui_windows_x64`, `tui_linux_arm64` or `tui_linux_x64`. The `tui` build/check group includes all six, and `all` includes them too. Each package directory contains the executable and resources; it has no GUI installer. All six build with Go alone.
+Build a console executable with `nsgo build -target tui_macos_arm64`, or the matching `tui_macos_x64`, `tui_windows_arm64`, `tui_windows_x64`, `tui_linux_arm64` or `tui_linux_x64`. The `tui` build/check group includes all six, and `all` includes them too. Each package directory contains the executable and resources; it has no GUI installer. All six build with Go alone.
 
 The backend supports cell text, backgrounds, solid borders, clipping, scrolling, focus and text editing. It uses the terminal's font and colors; Control is `mod`, including on a Mac. Ctrl+C copies inside an editor and exits when no binding or editor takes it. Bracketed paste inserts text without running shortcuts, and the clipboard is process-local. Canvas, images, media, native hosted components, system menus/alerts, animations, zoom, bidirectional shaping, head/middle ellipsis and a system clipboard bridge are not implemented yet. `base/terminal` remains the terminal control embedded in a GUI application.
 
@@ -319,8 +319,8 @@ The Info.plist of each iOS, tvOS and watchOS bundle `build` writes for devices, 
 Enable the Google Play Developer API and give a service account permission to release the app to the chosen track. Set `NSGO_PLAY_SERVICE_ACCOUNT` to the account's JSON key or to the path of its key file. [Google Play API setup](https://developers.google.com/android-publisher/getting_started)
 
 ```sh
-go tool nsgo build -target android -channel store
-go tool nsgo publish -target android -track internal
+nsgo build -target android -channel store
+nsgo publish -target android -track internal
 ```
 
 The command finds the App Bundle for the project's version in `build.output/releases`. Pass a `.aab` path after the flags to select a file when there are multiple builds. Use `internal`, `production`, or the track ID of a closed test. The command reads the package and version code from the bundle, requires a code higher than every release on that track, then uploads the bundle and commits the release.
@@ -348,9 +348,9 @@ store/
 Both `listing.yaml` files require `version: 1` and refuse unknown keys. Canonical locale directories such as `zh-Hans` map automatically to each store's code (`zh-Hans` on App Store Connect, `zh-CN` on Google Play) unless overridden per store with `app_store.locale` or `google_play.locale`.
 
 ```sh
-go tool nsgo publish -store all -dry-run                  # validate lengths, locales and media without uploading
-go tool nsgo publish -store appstore,play                 # validate and upload to App Store Connect and Google Play
-go tool nsgo publish -store play -track production        # also update release notes on the named Play track
+nsgo publish -store all -dry-run                  # validate lengths, locales and media without uploading
+nsgo publish -store appstore,play                 # validate and upload to App Store Connect and Google Play
+nsgo publish -store play -track production        # also update release notes on the named Play track
 ```
 
 Validation runs before reading credentials or making any HTTP request, checking required fields, locale codes, URL schemes, media files and counts (up to 10 screenshots and 3 previews per App Store display type; up to 8 screenshots per Google Play image type), and character limits (App Store: title 30, subtitle 30, keywords 100, promotional text 170, description 4000, release notes 4000; Google Play: title 30, short description 80, description 4000, release notes 500).
@@ -379,8 +379,8 @@ Set an entry to `true` after completing its questionnaire. A matching `-channel 
 Create an app in App Store Connect and sign an iOS device IPA with an App Store distribution profile or a macOS store PKG with your team's installer identity. On a Mac with Xcode, set `NSGO_APP_STORE_KEY` to your App Store Connect team key's `.p8` file or its text, `NSGO_APP_STORE_KEY_ID` to its key ID, and `NSGO_APP_STORE_ISSUER` to its issuer ID; without them the notarization key (`NSGO_NOTARY_KEY`, `NSGO_NOTARY_KEY_ID`, `NSGO_NOTARY_ISSUER`) is used, as for store listings. Give that key access to the app and permission to upload builds.
 
 ```sh
-go tool nsgo publish ios path/to/Hello.ipa
-go tool nsgo publish macos path/to/Hello.pkg
+nsgo publish ios path/to/Hello.ipa
+nsgo publish macos path/to/Hello.pkg
 ```
 
 The tool checks the bundle's build number before uploading, then reports Apple's processing result for TestFlight. Increase `build_number` for the next upload. macOS build numbers increase across all app versions, while iOS can restart the sequence for a new version. Submit a processed build for App Review separately in App Store Connect. [Apple's distribution guide](https://developer.apple.com/documentation/xcode/preparing-your-app-for-distribution)
@@ -396,23 +396,23 @@ mobile:
     - {name: voices, dir: large-assets/voices, delivery: fast-follow}
 ```
 
-Build Android packs with `go tool nsgo build -channel store -target android_arm64`. Use `bundletool build-apks --local-testing` and `bundletool install-apks` to test the bundle on a device. NSGo opens installed `install-time` packs. The `fast-follow` modules are included for Play delivery, and reading those packs from the Play Asset Delivery SDK is still pending.
+Build Android packs with `nsgo build -channel store -target android_arm64`. Use `bundletool build-apks --local-testing` and `bundletool install-apks` to test the bundle on a device. NSGo opens installed `install-time` packs. The `fast-follow` modules are included for Play delivery, and reading those packs from the Play Asset Delivery SDK is still pending.
 
-On iOS, `go tool nsgo build -target ios` maps `install-time` to Apple's essential policy and `fast-follow` to prefetch, both on first install and updates. Xcode 26 or later builds the Background Assets downloader. Use a shared `apple.app_group` or the default `group.<id>`. The app's `sign.profile` and the `<id>.assetdownloader` extension's `sign.asset_packs_profile` both need that group. Upload the `.aar` files from `dist/releases` alongside the IPA using App Store Connect's asset-pack upload workflow. [Creating managed asset packs](https://developer.apple.com/documentation/backgroundassets/creating-managed-asset-packs)
+On iOS, `nsgo build -target ios` maps `install-time` to Apple's essential policy and `fast-follow` to prefetch, both on first install and updates. Xcode 26 or later builds the Background Assets downloader. Use a shared `apple.app_group` or the default `group.<id>`. The app's `sign.profile` and the `<id>.assetdownloader` extension's `sign.asset_packs_profile` both need that group. Upload the `.aar` files from `dist/releases` alongside the IPA using App Store Connect's asset-pack upload workflow. [Creating managed asset packs](https://developer.apple.com/documentation/backgroundassets/creating-managed-asset-packs)
 
 From a goroutine, call `mobile.AssetPackReady(ctx, "levels")` to check readiness and `mobile.OpenAssetPackFile("levels", "intro.map")` to open a file relative to the declared directory. Close the returned reader after use. [Testing Apple asset packs locally](https://developer.apple.com/documentation/backgroundassets/testing-asset-packs-locally)
 
 ## Steam depots
 
 ```sh
-go tool nsgo build -channel steam -target macos_universal,windows_x64,linux_x64
+nsgo build -channel steam -target macos_universal,windows_x64,linux_x64
 ```
 
 Set `updates.channel: steam` to use the channel by default. Select macOS, Windows and Linux targets. Upload each `dist/<name>-<version>-<target>` directory to its Steam depot, using the app bundle on macOS, the executable on Windows and Linux arm64, and `steam-launch.sh` on Linux x64 as the launch option. Steam handles updates. The directories contain no installers, self-updater or `steam_appid.txt`.
 
 Linux x64 depots include GTK 4 and its dependencies for Steam Linux Runtime 3.0 and 4.0. The launcher uses them only when the system has no GTK 4.14 or newer. Keep `nsgo-gtk/` next to the launcher: its `licenses/` holds the libraries' licenses, the sources they were built from and the build script, which the LGPL requires for GLib, Pango and GTK. Linux arm64 needs GTK 4 available in its runtime.
 
-For local testing outside the Steam client, set `steam: {app_id: 480}` in `nsgo.yaml`, replacing 480 with your Steamworks App ID. `go tool nsgo dev` writes the ID to `steam_appid.txt` in its native build directory and launches the app with that directory as its working directory. [Steamworks API](https://partner.steamgames.com/doc/api/steam_api), [SteamPipe](https://partner.steamgames.com/doc/sdk/uploading).
+For local testing outside the Steam client, set `steam: {app_id: 480}` in `nsgo.yaml`, replacing 480 with your Steamworks App ID. `nsgo dev` writes the ID to `steam_appid.txt` in its native build directory and launches the app with that directory as its working directory. [Steamworks API](https://partner.steamgames.com/doc/api/steam_api), [SteamPipe](https://partner.steamgames.com/doc/sdk/uploading).
 
 ## Publish on GitHub
 
@@ -448,8 +448,8 @@ itch:
 With `BUTLER_API_KEY` set as a secret in CI, build and upload the targets.
 
 ```sh
-go tool nsgo build -channel none -installers=false -target web,macos_arm64
-go tool nsgo publish itch -target web,macos_arm64
+nsgo build -channel none -installers=false -target web,macos_arm64
+nsgo publish itch -target web,macos_arm64
 ```
 
 Use the same `-output` and `-version` on both commands if you override them. The upload takes each target's package directory and sets its itch.io version to the build's version. NSGo uses `butler` on `PATH` or downloads a pinned copy from itch.io. After the first web upload, set the itch.io game type to HTML and mark the upload playable in the browser. [Butler documentation](https://itch.io/docs/butler/pushing.html)
@@ -606,8 +606,8 @@ The extension copies up to 128 items and 512 MiB of files into the App Group, th
 ## Mini programs
 
 ```sh
-go tool nsgo build -target miniprogram_wechat -run
-go tool nsgo dev -target miniprogram_alipay
+nsgo build -target miniprogram_wechat -run
+nsgo dev -target miniprogram_alipay
 ```
 
 Each target writes a project for its platform's developer tool, also in `dist/releases/miniprogram/<platform>`, which `-run` and `dev` open; `dev` builds again as you save, and the tool reloads:
@@ -626,7 +626,7 @@ Mini programs are experimental. A mini program runs Go apps alone, not TSX, and 
 ## HarmonyOS
 
 ```sh
-go tool nsgo build -target harmonyos -run
+nsgo build -target harmonyos -run
 ```
 
 `harmonyos` writes `<name>-<version>-harmonyos.hap` to `dist/releases`. The engine runs as WebAssembly in ArkWeb, and an ArkTS host draws what it mounts with ArkUI views, so text, fields, scrolling and dialogs are the system's own. With `hdc` on `PATH`, `-run` installs the HAP on the connected device or emulator and starts it, and `nsgo test -target harmonyos` runs an app's tests from an unsigned HAP on an emulator under a separate `.nsgotest` bundle identity, removing that test HAP after the run so the installed app remains available.
@@ -648,7 +648,7 @@ harmonyos:
     profile: signing/app.p7b
 ```
 
-Paths are relative to `nsgo.yaml`. Set `NSGO_HARMONY_KEYSTORE_PASSWORD` and `NSGO_HARMONY_KEY_PASSWORD` in the environment. Signing uses the SDK's `hap-sign-tool.jar` and Java from `JAVA_HOME` or `PATH`. The build keeps the app's exact `id` to match the profile, so signing needs the SDK and `hvigorw` even in `auto` mode. `go tool nsgo doctor`, run in the app directory, checks the signing configuration and profile bundle name without passwords. `build -run` gives `hdc` the signed HAP.
+Paths are relative to `nsgo.yaml`. Set `NSGO_HARMONY_KEYSTORE_PASSWORD` and `NSGO_HARMONY_KEY_PASSWORD` in the environment. Signing uses the SDK's `hap-sign-tool.jar` and Java from `JAVA_HOME` or `PATH`. The build keeps the app's exact `id` to match the profile, so signing needs the SDK and `hvigorw` even in `auto` mode. `nsgo doctor`, run in the app directory, checks the signing configuration and profile bundle name without passwords. `build -run` gives `hdc` the signed HAP.
 
 ## Sign
 

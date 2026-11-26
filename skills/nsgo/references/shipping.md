@@ -2,7 +2,7 @@
 
 ## Layout
 
-`go tool nsgo init` writes the layout every app keeps; `examples/hello` in the module directory is the smallest complete one.
+`nsgo init` writes the layout every app keeps; `examples/hello` in the module directory is the smallest complete one.
 
 | Path | What |
 | --- | --- |
@@ -14,7 +14,7 @@
 | `.nsgo/` | The tool's own files, such as TSX types and test screenshots; ignore it in Git |
 | `dist/` | Packages `build` writes; ignore it in Git |
 
-Keep packages the app imports in the same module; `go tool nsgo check` and `test` take a directory without `nsgo.yaml`, or `./...`, as every package under it.
+Keep packages the app imports in the same module; `nsgo check` and `test` take a directory without `nsgo.yaml`, or `./...`, as every package under it.
 
 ## nsgo.yaml
 
@@ -41,7 +41,7 @@ build:
 # steam: { app_id: 480 }      # use your Steamworks App ID for native dev
 ```
 
-A flag replaces the value it names (`-target`, `-version`, `-output`, or the signing profiles `-profile`, `-widgets-profile`, `-share-profile` and `-clip-profile`); `go tool nsgo build -h` lists them. Read the version-matched [Building and shipping](https://nsgo.dev/docs/building.md) page for the rest: installers, store packages, signing, notarizing, GitHub releases, updates, file types, App Clips, widgets and mini programs.
+A flag replaces the value it names (`-target`, `-version`, `-output`, or the signing profiles `-profile`, `-widgets-profile`, `-share-profile` and `-clip-profile`); `nsgo build -h` lists them. Read the version-matched [Building and shipping](https://nsgo.dev/docs/building.md) page for the rest: installers, store packages, signing, notarizing, GitHub releases, updates, file types, App Clips, widgets and mini programs.
 
 Set `game: true` for game classification and Game Mode metadata, and `gamepad: true` when the app supports a hardware gamepad. See [Games](https://nsgo.dev/docs/building.md#games).
 
@@ -52,15 +52,15 @@ Set `launch_screen.background` to a quoted `"#RRGGBB"` color and/or `launch_scre
 ## Build
 
 ```sh
-go tool nsgo build                       # every target nsgo.yaml lists
-go tool nsgo build -target web           # or all, macos, windows, macos_arm64, ios, android_arm64, miniprogram_wechat, ...
-go tool nsgo build -run -device "iPhone" # build and start or install it
-go tool nsgo build -channel store        # store packages instead of installers and self-updates
-go tool nsgo build -channel steam -target macos_universal,windows_x64,linux_x64
-go tool nsgo build -release-notes notes.md  # the release's notes, which the update prompts show
+nsgo build                       # every target nsgo.yaml lists
+nsgo build -target web           # or all, macos, windows, macos_arm64, ios, android_arm64, miniprogram_wechat, ...
+nsgo build -run -device "iPhone" # build and start or install it
+nsgo build -channel store        # store packages instead of installers and self-updates
+nsgo build -channel steam -target macos_universal,windows_x64,linux_x64
+nsgo build -release-notes notes.md  # the release's notes, which the update prompts show
 ```
 
-Packages land in `dist/<name>-<version>-<target>`, and everything to hand out in `dist/releases`, each file named `<name>-<version>-<system>-<arch>` with its `.sha256`. Direct releases with macOS or Windows installers also write a Homebrew cask (`dist/releases/homebrew/<slug>.rb`, with `auto_updates true`) and a winget multi-file manifest (`dist/releases/winget/`). Builds are release builds; `go tool nsgo dev -release` runs one with hot reload for measuring.
+Packages land in `dist/<name>-<version>-<target>`, and everything to hand out in `dist/releases`, each file named `<name>-<version>-<system>-<arch>` with its `.sha256`. Direct releases with macOS or Windows installers also write a Homebrew cask (`dist/releases/homebrew/<slug>.rb`, with `auto_updates true`) and a winget multi-file manifest (`dist/releases/winget/`). Builds are release builds; `nsgo dev -release` runs one with hot reload for measuring.
 
 On a headless Mac, set `build.skip_installers: [macos]` or pass `-skip-installers=macos` to keep the signed `.app` and build the other desktop installers without mounting a DMG. [Installers](https://nsgo.dev/docs/building.md#installers)
 
@@ -74,11 +74,11 @@ Linux store builds write an installable `.flatpak` in Go alongside the archive a
 
 Android store builds require API 36 or higher. Record outstanding store questionnaires in `compliance` and declare Apple's export compliance in `apple.info` ([Store compliance](https://nsgo.dev/docs/building.md#store-compliance)).
 
-For Google Play, build with `-target android -channel store`, then use `go tool nsgo publish -target android -track internal`. Set `NSGO_PLAY_SERVICE_ACCOUNT` to the service account JSON key or its file path. [Google Play publishing](https://nsgo.dev/docs/building.md#publish-to-google-play)
+For Google Play, build with `-target android -channel store`, then use `nsgo publish -target android -track internal`. Set `NSGO_PLAY_SERVICE_ACCOUNT` to the service account JSON key or its file path. [Google Play publishing](https://nsgo.dev/docs/building.md#publish-to-google-play)
 
 For Steam, upload the desktop target directories directly. Use `steam-launch.sh` for Linux x64 and upload `nsgo-gtk/` with it. Native dev with `steam.app_id` writes `steam_appid.txt` into its build and starts there. The depot output excludes that file, installers and self-updaters.
 
-Set `web.offline: true` in `nsgo.yaml` to cache a published web build and its packaged resources for offline launch. Serve the site over HTTPS or preview it with `go tool nsgo build -target web -run`. See [Offline web packages](https://nsgo.dev/docs/building.md#offline-web-packages).
+Set `web.offline: true` in `nsgo.yaml` to cache a published web build and its packaged resources for offline launch. Serve the site over HTTPS or preview it with `nsgo build -target web -run`. See [Offline web packages](https://nsgo.dev/docs/building.md#offline-web-packages).
 
 Mac App Store builds use Apple's lookup and native store page. A Google Play install's manual `updater.Check` enters Play's immediate update flow when allowed; other store installs stay managed, and no store install reads a direct appcast. Embedded Android hosts supply `com.google.android.play:app-update:2.1.0` and its [shrink rules](https://nsgo.dev/docs/embedding.md#android).
 
@@ -93,13 +93,13 @@ Published standalone web apps use `updater.Check` to compare their current descr
 Keep App Store and Google Play metadata as plain-text YAML and Markdown under `store/` (or `store.dir`): top-level `listing.yaml` (`version: 1`) and per-locale `<locale>/listing.yaml` (`version: 1`, unknown keys refused) plus optional `description.md`, `release_notes.md`, `promotional_text.md` and `screenshots/`.
 
 ```sh
-go tool nsgo publish -store all -dry-run                  # validate lengths, required fields, locales and media
-go tool nsgo publish -store appstore,play                 # validate and upload to App Store Connect and Google Play
+nsgo publish -store all -dry-run                  # validate lengths, required fields, locales and media
+nsgo publish -store appstore,play                 # validate and upload to App Store Connect and Google Play
 ```
 
 Validation runs before reading credentials or sending HTTP requests. Canonical locale directories like `zh-Hans` map to `zh-Hans` on App Store Connect and `zh-CN` on Google Play unless overridden.
 
-Publish built web and desktop packages with `go tool nsgo publish itch -target web,macos_arm64`. Set `itch.project` in `nsgo.yaml` and pass `BUTLER_API_KEY` as a CI secret ([itch.io publishing](https://nsgo.dev/docs/building.md#publish-on-itchio)).
+Publish built web and desktop packages with `nsgo publish itch -target web,macos_arm64`. Set `itch.project` in `nsgo.yaml` and pass `BUTLER_API_KEY` as a CI secret ([itch.io publishing](https://nsgo.dev/docs/building.md#publish-on-itchio)).
 
 Standalone builds bundle `THIRD_PARTY_NOTICES.txt`. Show the text with `core.ThirdPartyNotices()`. Configure missing or unrecognized licenses with `licenses.unknown`, copyleft handling with `licenses.copyleft`, and reviewed exceptions by exact module path in `licenses.allow`.
 
@@ -139,7 +139,7 @@ For standalone Android apps that host a custom Android View with `core.Native`, 
 
 ## Embedding
 
-`go tool nsgo build -embed -target ios|android_arm64` packages an app as an XCFramework or an AAR for a host app of your own, `nsgo.NewView` shows one in a Go desktop program, and the web build's loader puts apps in a page. `examples/embed-*` show each host ([Embedding](https://nsgo.dev/docs/embedding.md)).
+`nsgo build -embed -target ios|android_arm64` packages an app as an XCFramework or an AAR for a host app of your own, `nsgo.NewView` shows one in a Go desktop program, and the web build's loader puts apps in a page. `examples/embed-*` show each host ([Embedding](https://nsgo.dev/docs/embedding.md)).
 
 The web loader shows download progress. Style `progress.nsgo-load-progress` or replace it with `onProgress` in the mount options or the `web.host` module. A release includes smaller Brotli and gzip copies of its wasm for servers configured to negotiate precompressed files.
 

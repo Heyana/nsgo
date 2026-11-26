@@ -7,7 +7,7 @@ order: 24
 
 ## 构建应用
 
-运行 `go tool nsgo build -target web`，通过 HTTP 提供生成的目录。带内容哈希的资源可长期缓存；`index.html`、`nsgo.json` 和 `manifest.webmanifest` 应重新验证。应用仍保持 NSGo 的布局、滚动、焦点和指针行为。
+运行 `nsgo build -target web`，通过 HTTP 提供生成的目录。带内容哈希的资源可长期缓存；`index.html`、`nsgo.json` 和 `manifest.webmanifest` 应重新验证。应用仍保持 NSGo 的布局、滚动、焦点和指针行为。
 
 ## 标题与链接
 

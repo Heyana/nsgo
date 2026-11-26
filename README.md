@@ -71,15 +71,17 @@ Apps also embed in iOS, Android, Go desktop and web apps of their own. [ARCHITEC
 
 ## Getting started
 
-With [Go](https://go.dev/dl/) 1.27.3 or later, and Xcode for iOS, tvOS and watchOS, create an app and run it with hot reload:
+With [Go](https://go.dev/dl/) 1.27.3 or later, and Xcode for iOS, tvOS and watchOS, install `nsgo` ([other ways](docs/public/en/getting-started.md#install-nsgo)), then create an app and run it with hot reload:
 
 ```sh
+brew install nsgo-dev/tap/nsgo
+mkdir hello && cd hello
 go mod init example.com/hello
 go get github.com/nsgo-dev/nsgo
 go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-go tool nsgo init   # -template tsx for a TSX app
-go tool nsgo dev    # -target web, ios_simulator, tvos_simulator, watchos_simulator, android or miniprogram_wechat to run elsewhere
-go tool nsgo doctor # which targets this machine builds and runs, and what the others lack
+nsgo init   # -template tsx for a TSX app
+nsgo dev    # -target web, ios_simulator, tvos_simulator, watchos_simulator, android or miniprogram_wechat to run elsewhere
+nsgo doctor # which targets this machine builds and runs, and what the others lack
 ```
 
 An app is Go components that return elements, with signals updating what reads them:
@@ -106,7 +108,7 @@ func Root(cx *core.Scope) core.Node {
 func main() { nsgo.Run(Root) }
 ```
 
-Its tests use the app as a user does, and `go tool nsgo test` runs them headless or, with `-target`, on a platform:
+Its tests use the app as a user does, and `nsgo test` runs them headless or, with `-target`, on a platform:
 
 ```go
 func TestPress(t *testing.T) {

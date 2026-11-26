@@ -71,15 +71,17 @@
 
 ## 快速开始
 
-安装 [Go](https://go.dev/dl/) 1.27.3 或更新版本（构建 iOS、tvOS 和 watchOS 还需 Xcode）后，创建应用并以热重载方式运行：
+安装 [Go](https://go.dev/dl/) 1.27.3 或更新版本（构建 iOS、tvOS 和 watchOS 还需 Xcode）和 `nsgo`（[其他安装方式](docs/public/zh/getting-started.md#安装-nsgo)）后，创建应用并以热重载方式运行：
 
 ```sh
+brew install nsgo-dev/tap/nsgo
+mkdir hello && cd hello
 go mod init example.com/hello
 go get github.com/nsgo-dev/nsgo
 go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-go tool nsgo init   # 加 -template tsx 创建 TSX 应用
-go tool nsgo dev    # 加 -target web、ios_simulator、tvos_simulator、watchos_simulator、android 或 miniprogram_wechat 在别处运行
-go tool nsgo doctor # 列出本机能构建、运行哪些目标，以及其余目标缺什么
+nsgo init   # 加 -template tsx 创建 TSX 应用
+nsgo dev    # 加 -target web、ios_simulator、tvos_simulator、watchos_simulator、android 或 miniprogram_wechat 在别处运行
+nsgo doctor # 列出本机能构建、运行哪些目标，以及其余目标缺什么
 ```
 
 应用由返回元素的 Go 组件构成，signal 变化时只更新读取它的部分：
@@ -106,7 +108,7 @@ func Root(cx *core.Scope) core.Node {
 func main() { nsgo.Run(Root) }
 ```
 
-测试像用户一样操作应用，`go tool nsgo test` 可无界面运行它们，加 `-target` 则在指定平台上运行：
+测试像用户一样操作应用，`nsgo test` 可无界面运行它们，加 `-target` 则在指定平台上运行：
 
 ```go
 func TestPress(t *testing.T) {

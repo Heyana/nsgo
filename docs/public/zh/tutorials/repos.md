@@ -14,8 +14,8 @@ mkdir repos && cd repos
 go mod init example.com/repos
 go get github.com/nsgo-dev/nsgo
 go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-go tool nsgo init
-go tool nsgo dev
+nsgo init
+nsgo dev
 ```
 
 ## 编写应用
@@ -180,7 +180,7 @@ func TestRetriesAfterAFailure(t *testing.T) {
 ```
 
 ```sh
-go tool nsgo test
+nsgo test
 ```
 
 `WaitFor` 会一直等到回答到达、界面显示出来。

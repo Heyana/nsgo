@@ -8,7 +8,7 @@ order: 24
 ## Build the app
 
 ```sh
-go tool nsgo build -target web
+nsgo build -target web
 ```
 
 Serve the generated directory over HTTP. Release assets have content hashes in their names, so cache them as immutable; revalidate `index.html`, `nsgo.json` and `manifest.webmanifest`. The web app keeps NSGo's layout, scrolling, focus and pointer behavior.

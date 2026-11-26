@@ -18,14 +18,14 @@ appName:
 
 一条文案可以是一个字符串，也可以是带有供译者参考的 `description` 和 `placeholders` 的 `message`。
 
-应用的包会导入 `locales/`。`dev`、`build` 和 `test` 会检查这些文案，并在旁边为每条文案写出一个 Go 函数，例如 `locales.Greeting(cx, "Ada")`，它用应用当前显示的语言说出这条文案，并随语言变化而更新；`go tool nsgo i18n` 只写出这些函数。文案可以格式化数字和日期（`{d, date, medium}`），`appName` 则是应用在各语言安装包中的名称，与 `apple.info` 同键的文案（例如 `NSCameraUsageDescription`）则翻译 Info.plist 中的那一项（[权限](permissions.md#用途说明)）。
+应用的包会导入 `locales/`。`dev`、`build` 和 `test` 会检查这些文案，并在旁边为每条文案写出一个 Go 函数，例如 `locales.Greeting(cx, "Ada")`，它用应用当前显示的语言说出这条文案，并随语言变化而更新；`nsgo i18n` 只写出这些函数。文案可以格式化数字和日期（`{d, date, medium}`），`appName` 则是应用在各语言安装包中的名称，与 `apple.info` 同键的文案（例如 `NSCameraUsageDescription`）则翻译 Info.plist 中的那一项（[权限](permissions.md#用途说明)）。
 
 ## 语言
 
 `cx.SetLocale("de")` 选择语言，布局会按该语言的书写方向排列。在独立应用中，系统自身显示的文案（例如文本选择菜单、文件对话框和 GTK 控件）也会跟随所选语言（在 Android 13+、Windows 和 Linux 上立即生效，在 macOS 和 iOS 上从下次启动起生效）；`cx.SetLocale("")` 恢复跟随用户语言。
 
 ```sh
-go tool nsgo dev -lang en-XA
+nsgo dev -lang en-XA
 ```
 
 会以伪语言运行应用，显示未翻译和被截断的文本。任何构建在启动时都接受这个参数：`--nsgo-lang=en-XA`。

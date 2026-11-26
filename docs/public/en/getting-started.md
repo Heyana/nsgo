@@ -14,44 +14,66 @@ order: 10
 - To run on Windows, Go alone, which also builds the Windows and web packages.
 - On Linux, GTK 4.14 or newer, Pango and Cairo. Network images use libsoup 3, web views use WebKitGTK 6.0, and audio and video use GStreamer plug-ins. On systems with AppArmor user namespace restrictions, [WebKitGTK needs a bubblewrap profile](debugging.md#linux-web-views).
 
-## Install the command
+## Install nsgo
 
-Apps run the tool as `go tool nsgo`, so this is optional. To have `nsgo` on macOS or Linux without building it, install the latest release's binary into `~/.local/bin`, or `$NSGO_INSTALL_DIR`; `NSGO_VERSION=vX.Y.Z` picks a release:
+Install the `nsgo` command once, with Homebrew:
+
+```sh
+brew install nsgo-dev/tap/nsgo
+```
+
+Or with the install script, which puts it in `~/.local/bin`, or `$NSGO_INSTALL_DIR`, on macOS and Linux; `NSGO_VERSION=vX.Y.Z` picks a release:
 
 ```sh
 curl -fsSL https://nsgo.dev/install.sh | sh
 ```
 
-## Create an app
-
-Make a module, add NSGo and its tool, then let the tool write an app:
+Or with Go, on any system, Windows included:
 
 ```sh
-mkdir hello && cd hello
-go mod init example.com/hello
-go get github.com/nsgo-dev/nsgo
-go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-go tool nsgo init
+go install github.com/nsgo-dev/nsgo/cmd/nsgo@latest
 ```
 
-`go get -tool` adds `nsgo` to the module once, so `go tool nsgo` runs it without installing anything. `init` writes:
+`nsgo version` prints the version installed.
+
+## Create an app
+
+Let `nsgo` write an app and its module, then add NSGo to it:
+
+```sh
+nsgo init -module example.com/hello hello
+cd hello
+go get github.com/nsgo-dev/nsgo
+go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
+```
+
+`init` prints these commands as its next step, and writes:
 
 | File | What it is |
 | --- | --- |
 | `app.go` | The app, a counter: a `Root` component and `main`, which calls `nsgo.Run(Root)` |
 | `app_test.go` | A test that presses the button |
 | `nsgo.yaml` | The app's name, id, version and targets |
+| `go.mod` | The module, with `-module` |
 
-`go tool nsgo init -template tsx` writes a TSX app instead, and `-template mixed` a Go app whose TSX entry uses Go components of its own.
+In a module of your own, `nsgo init` without `-module` writes the app into the current directory. `nsgo init -template tsx` writes a TSX app instead, and `-template mixed` a Go app whose TSX entry uses Go components of its own.
+
+### The project's NSGo
+
+`go get -tool` writes a `tool` line into `go.mod`, which pins the project to the version of NSGo it requires. Inside the project, an installed `nsgo` at another version runs the pinned one, `go tool nsgo`, with the same arguments, so everyone builds the project with the same NSGo whatever they installed; `nsgo version` says which ran ([The module's nsgo](building.md#the-modules-nsgo)). `go tool nsgo` also works on its own, without installing anything, as in CI and for teammates who have not installed `nsgo`:
+
+```sh
+go tool nsgo test
+```
 
 ### Templates from Go modules
 
 Pass the template's module path with an optional `@version` and `#name`. An omitted version resolves to the latest version Go's module proxy can find.
 
 ```sh
-go tool nsgo init -template example.com/my-template@v1.2.0 -module example.com/hello hello
-go tool nsgo init -template 'example.com/my-templates@v1.2.0#platformer' -module example.com/hello hello
-go tool nsgo init -template example.com/my-templates -list
+nsgo init -template example.com/my-template@v1.2.0 -module example.com/hello hello
+nsgo init -template 'example.com/my-templates@v1.2.0#platformer' -module example.com/hello hello
+nsgo init -template example.com/my-templates -list
 ```
 
 Publish either a single starter in the module's `template/` directory or several starters under `template/<name>/`, not both: when `template/` is itself a starter, the tool copies it whole, subdirectories included. Select a named starter with `#<name>`, quoting the argument since some shells treat `#` specially. `-list` prints one name per line, or `(default)` for a module whose `template/` is the starter. Include `nsgo.yaml` and `main.go` in each starter. The tool renders both, plus any file ending in `.tmpl`, with Go's `text/template`, and strips `.tmpl` from output names. It copies other files, including binary assets, unchanged.
@@ -61,7 +83,7 @@ Templates receive `.Name` (the app's display name), `.ID` (the generated app ID)
 ## Run it
 
 ```sh
-go tool nsgo dev
+nsgo dev
 ```
 
 `dev` builds the app for this machine and opens it. On each save it rebuilds and restarts the app, and a change of TSX alone updates the running app in place. A failed build shows over the app, with buttons to copy the error and to build again.
@@ -69,14 +91,14 @@ go tool nsgo dev
 Run it somewhere else with `-target`:
 
 ```sh
-go tool nsgo dev -target web                # in the browser
-go tool nsgo dev -target ios_simulator      # in the iOS simulator
-go tool nsgo dev -target tvos_simulator     # in the Apple TV simulator
-go tool nsgo dev -target watchos_simulator  # in the Apple Watch simulator
-go tool nsgo dev -target android            # on a connected device or emulator
+nsgo dev -target web                # in the browser
+nsgo dev -target ios_simulator      # in the iOS simulator
+nsgo dev -target tvos_simulator     # in the Apple TV simulator
+nsgo dev -target watchos_simulator  # in the Apple Watch simulator
+nsgo dev -target android            # on a connected device or emulator
 ```
 
-`go tool nsgo doctor` lists every target with whether this machine builds it and runs it, and what it lacks for those it cannot, such as Xcode, `adb`, a connected device or GTK.
+`nsgo doctor` lists every target with whether this machine builds it and runs it, and what it lacks for those it cannot, such as Xcode, `adb`, a connected device or GTK.
 
 [Running and debugging](debugging.md) covers devices, tracing updates, the performance monitor and other languages.
 

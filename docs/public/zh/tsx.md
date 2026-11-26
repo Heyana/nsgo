@@ -33,7 +33,7 @@ function App() {
 mount(App);
 ```
 
-`go tool nsgo init -template tsx` 会写出这样一个应用，`examples/tsx` 也是一个例子。`nsgo dev` 和 `nsgo build` 会提前编译 TSX，所以发布的包里不带编译器；`go run` 和 `go test` 则在应用启动时编译。两种方式都不需要 Node。
+`nsgo init -template tsx` 会写出这样一个应用，`examples/tsx` 也是一个例子。`nsgo dev` 和 `nsgo build` 会提前编译 TSX，所以发布的包里不带编译器；`go run` 和 `go test` 则在应用启动时编译。两种方式都不需要 Node。
 
 ## 组件与模块
 
@@ -93,13 +93,13 @@ capabilities:
   # webview: { hosts: [...], input: true, media: [microphone, camera] }、clipboard、picker、speech、text_to_speech、status_bar、notifications、biometrics、sign_in_with_apple、purchases、secrets、audio、gamepad、auth_session
 ```
 
-根密钥离线保存，用它为发布密钥签发证书，然后在该目录中签名应用。`go tool nsgo keygen` 打印一对密钥，不写任何文件；根密钥和每个发布密钥各运行一次。公钥写在参数和应用代码里；私钥不要放进仓库，只通过 `NSGO_ROOT_KEY` 和 `NSGO_RELEASE_KEY` 交给工具：
+根密钥离线保存，用它为发布密钥签发证书，然后在该目录中签名应用。`nsgo keygen` 打印一对密钥，不写任何文件；根密钥和每个发布密钥各运行一次。公钥写在参数和应用代码里；私钥不要放进仓库，只通过 `NSGO_ROOT_KEY` 和 `NSGO_RELEASE_KEY` 交给工具：
 
 ```sh
-go tool nsgo keygen # 根密钥一次，发布密钥一次
-NSGO_ROOT_KEY=<根私钥> go tool nsgo certify -key <发布公钥> -apps 'com.example.*'
-NSGO_RELEASE_KEY=<发布私钥> go tool nsgo publish -cert release.cert plugin
-go tool nsgo verify -root <根公钥> plugin/dist/Plugin-1.0.0.nsgopkg
+nsgo keygen # 根密钥一次，发布密钥一次
+NSGO_ROOT_KEY=<根私钥> nsgo certify -key <发布公钥> -apps 'com.example.*'
+NSGO_RELEASE_KEY=<发布私钥> nsgo publish -cert release.cert plugin
+nsgo verify -root <根公钥> plugin/dist/Plugin-1.0.0.nsgopkg
 ```
 
 应用信任写在代码里的根公钥，在引擎协程之外验证包，再用 `tsx.View` 在沙箱中把它显示在自己的视图旁。包只能通过视图给它的 host 通道访问应用，并拥有应用存储和机密中属于自己的一部分：
@@ -115,7 +115,7 @@ core.Catch{Try: view.Render, Fallback: failed}
 trust.Accept(p) // 运行之后，更旧的构建会被拒绝
 ```
 
-`Sandbox.Grant` 让它得到比声明更少的权限，`Sandbox.Limits` 设置其他时间预算和配额，`Sandbox.Modules` 给它 NSGo 自带之外的 Go 函数和组件。它的快捷键、返回处理器和导航栈只在键盘焦点位于它的视图内时生效；它自己移动焦点（`focus()`、`autoFocus`、`Keyboard.dismiss`、`setAccessibilityFocus`）也只在焦点已在其中、或响应用户在其中的按压时才生效。它显示在自己的视图中，这个视图占满且不超出父视图给它的空间，并裁剪它的内容，菜单、弹出框和提示也在其中；放在滚动视图中时，用一个视图包住它，它才会按内容的高度显示。它的对话框、警告框、上下文菜单和读屏播报也只按同样的规则显示；即使它不移除自己的对话框，返回也会关闭它。`View.Export` 指定包的入口模块导出的一个组件，显示它而不是入口挂载的根，此时入口的 `mount` 既不渲染也不运行它的组件，并把 `View.Props` 作为它的 props；`View.Props` 是可以 JSON 编码的 map，每个视图各得一份副本。这样一个包能提供多个视图，各有自己的状态，权限和限额都相同；导出不存在时以 `tsx.ErrNoViewExport` panic，导出的不是函数时以 `tsx.ErrViewExportNotComponent` panic。入口导出函数的包是函数型插件：`tsx.Load(cx, p, tsx.Sandbox{})` 在调用方的 goroutine 上同步运行它而不显示，要求 `cx` 属于一个视图树，否则返回 `tsx.ErrNoTree`；入口模块加载时抛出错误则返回这个错误，`Plugin.Call` 调用这些函数。`go tool nsgo dev -limits` 像这样的视图一样运行应用，`go tool nsgo revoke` 签署吊销发布密钥和包的列表，供 `Trust.UpdateRevocations` 使用。`examples/plugins` 会请用户授予包声明的权限，再安装并运行它。`Limits.Memory` 默认为 64 MiB，在原生目标上对数组、字符串、缓冲区和类型化数组计量。其中包括 `concat`、`flat`、`slice`、数组展开、字符串拼接、模板字符串、`replace`、`replaceAll`、`TextEncoder` 和 `Blob` 副本。`-limits` 中的 `memory=<bytes>` 可调整此限额，`memory=0` 将其关闭。分配前会检查限额。若 Go 检查可回收的存储后仍超限，包将以资源为 `memory` 的 `ERR_NSH_QUOTA_EXCEEDED` 停止。普通对象、闭包、栈、小额分配和未计量的内置函数或宿主 API 也会占用内存。浏览器使用自己的堆。自己用 `pkg.Build` 签名包的应用，或用 `go tool nsgo publish -extra <文件>` 放入该文件内容的应用，可以把自己的元数据放进 `pkg.Contents.Extra`，例如插件要加到菜单里的项：它和包一起签名，`Verify` 原样以 `p.Extra` 返回，由应用自己解析，因此应用无需运行包的代码就能读到它。
+`Sandbox.Grant` 让它得到比声明更少的权限，`Sandbox.Limits` 设置其他时间预算和配额，`Sandbox.Modules` 给它 NSGo 自带之外的 Go 函数和组件。它的快捷键、返回处理器和导航栈只在键盘焦点位于它的视图内时生效；它自己移动焦点（`focus()`、`autoFocus`、`Keyboard.dismiss`、`setAccessibilityFocus`）也只在焦点已在其中、或响应用户在其中的按压时才生效。它显示在自己的视图中，这个视图占满且不超出父视图给它的空间，并裁剪它的内容，菜单、弹出框和提示也在其中；放在滚动视图中时，用一个视图包住它，它才会按内容的高度显示。它的对话框、警告框、上下文菜单和读屏播报也只按同样的规则显示；即使它不移除自己的对话框，返回也会关闭它。`View.Export` 指定包的入口模块导出的一个组件，显示它而不是入口挂载的根，此时入口的 `mount` 既不渲染也不运行它的组件，并把 `View.Props` 作为它的 props；`View.Props` 是可以 JSON 编码的 map，每个视图各得一份副本。这样一个包能提供多个视图，各有自己的状态，权限和限额都相同；导出不存在时以 `tsx.ErrNoViewExport` panic，导出的不是函数时以 `tsx.ErrViewExportNotComponent` panic。入口导出函数的包是函数型插件：`tsx.Load(cx, p, tsx.Sandbox{})` 在调用方的 goroutine 上同步运行它而不显示，要求 `cx` 属于一个视图树，否则返回 `tsx.ErrNoTree`；入口模块加载时抛出错误则返回这个错误，`Plugin.Call` 调用这些函数。`nsgo dev -limits` 像这样的视图一样运行应用，`nsgo revoke` 签署吊销发布密钥和包的列表，供 `Trust.UpdateRevocations` 使用。`examples/plugins` 会请用户授予包声明的权限，再安装并运行它。`Limits.Memory` 默认为 64 MiB，在原生目标上对数组、字符串、缓冲区和类型化数组计量。其中包括 `concat`、`flat`、`slice`、数组展开、字符串拼接、模板字符串、`replace`、`replaceAll`、`TextEncoder` 和 `Blob` 副本。`-limits` 中的 `memory=<bytes>` 可调整此限额，`memory=0` 将其关闭。分配前会检查限额。若 Go 检查可回收的存储后仍超限，包将以资源为 `memory` 的 `ERR_NSH_QUOTA_EXCEEDED` 停止。普通对象、闭包、栈、小额分配和未计量的内置函数或宿主 API 也会占用内存。浏览器使用自己的堆。自己用 `pkg.Build` 签名包的应用，或用 `nsgo publish -extra <文件>` 放入该文件内容的应用，可以把自己的元数据放进 `pkg.Contents.Extra`，例如插件要加到菜单里的项：它和包一起签名，`Verify` 原样以 `p.Extra` 返回，由应用自己解析，因此应用无需运行包的代码就能读到它。
 
 将 `Sandbox.DisableStorage` 设为 `true` 可禁止通过 `nsgo` 的 `Storage` 读取或写入数据。每个方法都会抛出消息为 `tsx: Storage is disabled for this sandbox` 的 `Error`，已有数据保持不变。`Limits.Storage` 为零仍表示不限制存储字节数。
 
@@ -142,4 +142,4 @@ Web 上暂时无法将包与页面隔离：包拥有页面自身的网络、剪�
 
 ## 编辑器与测试
 
-继承 `.nsgo/tsconfig.json` 的 `tsconfig.json` 为编辑器提供 TSX 的类型，这些类型由 `go tool nsgo dev` 和 `go tool nsgo check` 写出。应用旁边用 `nsgo/test` 编写的 `*.test.tsx` 文件会随 Go 测试一起运行（[测试](testing.md)）。
+继承 `.nsgo/tsconfig.json` 的 `tsconfig.json` 为编辑器提供 TSX 的类型，这些类型由 `nsgo dev` 和 `nsgo check` 写出。应用旁边用 `nsgo/test` 编写的 `*.test.tsx` 文件会随 Go 测试一起运行（[测试](testing.md)）。

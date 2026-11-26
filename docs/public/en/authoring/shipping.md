@@ -44,7 +44,7 @@ func TestToggle(t *testing.T) {
 }
 ```
 
-From the library's root, `go tool nsgo test` takes every package, and `-target macos` or another target runs the same tests in a native window. Test both appearances and a pseudo locale (`-lang en-XA`) to catch hard-coded colors and words. [Testing](../testing.md) covers the rest.
+From the library's root, `nsgo test` takes every package, and `-target macos` or another target runs the same tests in a native window. Test both appearances and a pseudo locale (`-lang en-XA`) to catch hard-coded colors and words. [Testing](../testing.md) covers the rest.
 
 ## Publishing
 

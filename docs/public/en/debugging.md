@@ -8,7 +8,7 @@ order: 20
 ## Run
 
 ```sh
-go tool nsgo dev
+nsgo dev
 ```
 
 `dev` builds and opens the app for this machine, or for the target `nsgo.yaml`'s `dev.target` names. With hot reload enabled (the default), saving a Go file or an embedded file in a Go-only app rebuilds and restarts the app. When an import needs a module missing from `go.mod` or `go.sum`, `dev` runs `go mod tidy` first. Changes only to a TSX bundle's sources update the running app in place, keeping its state. The run ends with the app.
@@ -18,14 +18,14 @@ On macOS and Windows, a native dev rebuild reopens the main view’s window at i
 `-target` runs it elsewhere, and `-device` picks the iPhone, Apple TV, Apple Watch, simulator or Android device by name, UDID or serial:
 
 ```sh
-go tool nsgo dev -target tui                # terminal cells; diagnostics in .nsgo/tui.log
-go tool nsgo dev -target web                # in the browser, at the address it prints, on -port (8080 by default)
-go tool nsgo dev -target ios_simulator      # in the iOS simulator
-go tool nsgo dev -target ios                # on the connected iPhone, signed by Xcode
-go tool nsgo dev -target tvos_simulator     # in the Apple TV simulator
-go tool nsgo dev -target watchos_simulator  # in the Apple Watch simulator
-go tool nsgo dev -target android            # on a connected device or emulator, over adb
-go tool nsgo dev -target miniprogram_wechat # in WeChat DevTools (also _qq, _alipay, _douyin)
+nsgo dev -target tui                # terminal cells; diagnostics in .nsgo/tui.log
+nsgo dev -target web                # in the browser, at the address it prints, on -port (8080 by default)
+nsgo dev -target ios_simulator      # in the iOS simulator
+nsgo dev -target ios                # on the connected iPhone, signed by Xcode
+nsgo dev -target tvos_simulator     # in the Apple TV simulator
+nsgo dev -target watchos_simulator  # in the Apple Watch simulator
+nsgo dev -target android            # on a connected device or emulator, over adb
+nsgo dev -target miniprogram_wechat # in WeChat DevTools (also _qq, _alipay, _douyin)
 ```
 
 The dev server listens on all interfaces by default. Use `-host 127.0.0.1` to keep it on loopback, including when Android connects through `adb reverse`, or name a local interface's IP address to listen only there. Use an address reachable over the LAN for dev features on physical Apple devices.
@@ -37,7 +37,7 @@ The dev server listens on all interfaces by default. Use `-host 127.0.0.1` to ke
 Put a [Delve](https://github.com/go-delve/delve/blob/master/Documentation/installation/README.md) version compatible with your Go version on `PATH` as `dlv`. Start a native desktop app with its debugging information and with Go optimization disabled.
 
 ```sh
-go tool nsgo dev -target native -debug
+nsgo dev -target native -debug
 ```
 
 Copy the port from Delve's `API server listening at` line. In VS Code with the Go extension, add an attach configuration and replace `40000` with that port.
@@ -75,23 +75,23 @@ func PreviewEmpty(cx *core.Scope) core.Node {
 ```
 
 ```sh
-go tool nsgo dev -preview ./components
-go tool nsgo dev -target web -preview ./components
+nsgo dev -preview ./components
+nsgo dev -target web -preview ./components
 ```
 
 Check the fixtures you want to display together and choose a locale, theme, light or dark appearance, viewport size and layout direction. The preview takes the closest app's `nsgo.yaml`, its translation catalogs, configured `theme` and resources. Pass an app directory after the flags to select a different configuration in the same module. In that case, the preview path is relative to the app directory.
 
-Saving a file rebuilds the preview and keeps your selection and display settings. The `nsgopreview` tag excludes the fixtures from ordinary release builds. Use the same fixture in a tagged `_test.go` file with `nsgotest.Start(t, PreviewEmpty)` and run it with `GOFLAGS=-tags=nsgopreview go tool nsgo test -target macos ./components` to take a native screenshot.
+Saving a file rebuilds the preview and keeps your selection and display settings. The `nsgopreview` tag excludes the fixtures from ordinary release builds. Use the same fixture in a tagged `_test.go` file with `nsgotest.Start(t, PreviewEmpty)` and run it with `GOFLAGS=-tags=nsgopreview nsgo test -target macos ./components` to take a native screenshot.
 
 After the main app's first install with `-target ios_simulator`, a Go-only rebuild replaces the installed executable and relaunches the app. Editing `nsgo.yaml`, packaged resources or the app icon triggers a reinstall.
 
-Use `go tool nsgo dev -target android -android-host` for Android UI work with a shorter Go rebuild loop. The tool installs the native runtime once and runs Go on the development machine. Each Go rebuild reconnects to the same Activity over adb. Changes to packaged resources, precompiled classes, launcher icons or `nsgo.yaml` install the runtime APK again. The Go process uses the host's build constraints, files and networking. `Scope.DiskSpace` reports the volume containing the host's `DataDir`. Use the regular Android dev command to exercise `_android.go` files and on-device Go behavior.
+Use `nsgo dev -target android -android-host` for Android UI work with a shorter Go rebuild loop. The tool installs the native runtime once and runs Go on the development machine. Each Go rebuild reconnects to the same Activity over adb. Changes to packaged resources, precompiled classes, launcher icons or `nsgo.yaml` install the runtime APK again. The Go process uses the host's build constraints, files and networking. `Scope.DiskSpace` reports the volume containing the host's `DataDir`. Use the regular Android dev command to exercise `_android.go` files and on-device Go behavior.
 
 ## Errors
 
 A failed build shows over the running app, with buttons to copy the error and to build again; fix the file and the next save replaces it. A component that panics while it renders shows the same way. Command+R in the app, Control+R off Apple platforms, builds and starts it again at any time, over the error too, unless the app binds the key itself, with `cx.OnKey` or as an enabled item of its application menu; in the browser the key reloads the page as usual. The app's own output, such as `log.Print`, appears in the terminal under the tool's lines.
 
-Before running, `go tool nsgo check` vets the app and type-checks its TSX; `-target all` vets it for every target, so code behind another platform's build tags is checked from a Mac too.
+Before running, `nsgo check` vets the app and type-checks its TSX; `-target all` vets it for every target, so code behind another platform's build tags is checked from a Mac too.
 
 ### Packaged Apple apps’ logs
 
@@ -114,7 +114,7 @@ Use your distribution's bubblewrap AppArmor profile if it provides one, such as 
 ## DevTools
 
 ```sh
-go tool nsgo dev -devtools
+nsgo dev -devtools
 ```
 
 `-devtools` opens DevTools in the browser, served by `nsgo dev` for every target, a phone's app too. It shows the running app as it runs:
@@ -133,13 +133,13 @@ DevTools read the app through `nsgo dev`'s server, which listens on your network
 ## Updates
 
 ```sh
-go tool nsgo dev -highlight
+nsgo dev -highlight
 ```
 
 `-highlight` outlines for half a second each view a commit changed, so an update that redraws more than it should shows on screen as you use the app. The outlines draw over every window, panel, modal, iOS sheet and embedded view (`nsgo.NewView`). DevTools turn them on and off while the app runs.
 
 ```sh
-go tool nsgo dev -trace
+nsgo dev -trace
 ```
 
 `-trace` prints each commit of the running app: its number, its time, and the mount items it sent, so you see which views an update created, changed or removed. Above the items it names what the commit followed from: the lines of your code that wrote signals since the last commit, the most writing first, and how many bindings, effects and memos ran.
@@ -150,21 +150,21 @@ go tool nsgo dev -trace
    ran 118 bindings, 18 effects, 5 memos
 ```
 
-A line that writes many times, or many bindings run for one write, is where to batch writes (`cx.Batch`) or narrow what a binding reads. `go tool nsgo test -trace` prints the same under each step of a test.
+A line that writes many times, or many bindings run for one write, is where to batch writes (`cx.Batch`) or narrow what a binding reads. `nsgo test -trace` prints the same under each step of a test.
 
 ## Runtime profiles
 
 Capture a running app's Go CPU activity, heap, or execution trace with `nsgo dev`. The app sends the capture to the dev server, which saves it on the machine running the command.
 
 ```sh
-go tool nsgo dev -target android -profile cpu -profile-duration 10s
+nsgo dev -target android -profile cpu -profile-duration 10s
 go tool pprof -top .nsgo/profiles/cpu.pprof
 ```
 
-The CPU example also works on a desktop, an iPhone, or an iOS simulator. On an iPhone, allow Local Network access if the system prompts for it. The heap is a snapshot and works on the web too. For scheduler and goroutine events, run `go tool nsgo dev -profile trace` and open `.nsgo/profiles/execution.trace` with `go tool trace`. CPU and execution traces default to 10 seconds. `-profile-output` sets the local file's path. For component previews, the default and relative paths use the app directory. A dev run saves its first complete capture, then continues running the app.
+The CPU example also works on a desktop, an iPhone, or an iOS simulator. On an iPhone, allow Local Network access if the system prompts for it. The heap is a snapshot and works on the web too. For scheduler and goroutine events, run `nsgo dev -profile trace` and open `.nsgo/profiles/execution.trace` with `go tool trace`. CPU and execution traces default to 10 seconds. `-profile-output` sets the local file's path. For component previews, the default and relative paths use the app directory. A dev run saves its first complete capture, then continues running the app.
 
 ```sh
-go tool nsgo dev -target web -profile heap
+nsgo dev -target web -profile heap
 go tool pprof -top .nsgo/profiles/heap.pprof
 ```
 
@@ -173,8 +173,8 @@ Go's browser runtime supports heap profiles and execution traces. For browser CP
 ## Layout
 
 ```sh
-go tool nsgo dev -layout
-go tool nsgo dev -layout=bounds,grid=4
+nsgo dev -layout
+nsgo dev -layout=bounds,grid=4
 ```
 
 `-layout` starts the app with DevTools' layout audit over every window, panel, iOS sheet and embedded view, which outlines every view: its border box in blue, the inner edge of its padding in green and the outer edge of its margin in orange, each cut where a scroll view or a view that clips hides it. `grid` draws a grid of 8 points, and `grid=N` one of N points, at least 4. Give the value after `=`: the flag alone means `bounds`.
@@ -194,8 +194,8 @@ If your app binds the same key, the app's binding wins. Without the key, as on a
 ## Speed
 
 ```sh
-go tool nsgo dev -fps
-go tool nsgo dev -release -fps
+nsgo dev -fps
+nsgo dev -release -fps
 ```
 
 `-fps` shows the performance monitor over the app on macOS, iOS, Windows, Linux, Android and the web. It measures frames and commits, and Android also shows native text round-trip time. Dev builds carry the dev client; measure with `-release`, which builds as `nsgo build` does.
@@ -203,9 +203,9 @@ go tool nsgo dev -release -fps
 ## Languages and appearance
 
 ```sh
-go tool nsgo dev -lang zh-Hans
-go tool nsgo dev -lang en-XA   # accented and longer, to find untranslated and cut text
-go tool nsgo dev -lang ar-XB   # right to left
+nsgo dev -lang zh-Hans
+nsgo dev -lang en-XA   # accented and longer, to find untranslated and cut text
+nsgo dev -lang ar-XB   # right to left
 ```
 
 `-lang` starts the app in a locale, a pseudo locale too ([Localization](localization.md)).
@@ -213,15 +213,15 @@ go tool nsgo dev -lang ar-XB   # right to left
 ## Agents
 
 ```sh
-go tool nsgo dev -automation
-go tool nsgo dev -target android -automation
-go tool nsgo dev -target web -automation
+nsgo dev -automation
+nsgo dev -target android -automation
+nsgo dev -target web -automation
 ```
 
-`-automation` lets an AI agent or an end-to-end runner use the running app as a person does, on macOS, Windows, Linux (`-target native`), Android (`-target android`), the web (`-target web`), mini programs in their developer tools' simulators (`-target miniprogram_wechat`, `miniprogram_qq`, `miniprogram_alipay` or `miniprogram_douyin`) and Apple devices and simulators (`-target ios`, `tvos`, `watchos`, `ios_simulator`, `tvos_simulator` or `watchos_simulator`) so far: list its windows, outline what one shows, press, type, send keys, scroll, drag, hover, choose menu items, answer alerts, wait for what appears and take screenshots. Agents reach it over MCP through `go tool nsgo mcp`, which uses the `dev -automation` running for the directory, or starts one with the same flags (such as `-target android`) and stops it as the client leaves:
+`-automation` lets an AI agent or an end-to-end runner use the running app as a person does, on macOS, Windows, Linux (`-target native`), Android (`-target android`), the web (`-target web`), mini programs in their developer tools' simulators (`-target miniprogram_wechat`, `miniprogram_qq`, `miniprogram_alipay` or `miniprogram_douyin`) and Apple devices and simulators (`-target ios`, `tvos`, `watchos`, `ios_simulator`, `tvos_simulator` or `watchos_simulator`) so far: list its windows, outline what one shows, press, type, send keys, scroll, drag, hover, choose menu items, answer alerts, wait for what appears and take screenshots. Agents reach it over MCP through `nsgo mcp`, which uses the `dev -automation` running for the directory, or starts one with the same flags (such as `-target android`) and stops it as the client leaves:
 
 ```sh
-claude mcp add nsgo -- go tool nsgo mcp
+claude mcp add nsgo -- nsgo mcp
 ```
 
 Other clients take the same command, `go` with the arguments `tool nsgo mcp`, run in the app's directory. Views are named with the selectors of [tests](testing.md#a-test), or with the `view:` references a snapshot prints, which a save makes stale as it restarts the app.

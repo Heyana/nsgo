@@ -44,7 +44,7 @@ func TestToggle(t *testing.T) {
 }
 ```
 
-在组件库根目录运行 `go tool nsgo test` 会测试所有包，加上 `-target macos` 或其他目标则在原生窗口中运行同样的测试。在两种外观和伪语言（`-lang en-XA`）下都测一遍，可以发现写死的颜色和文案。其余内容见[测试](../testing.md)。
+在组件库根目录运行 `nsgo test` 会测试所有包，加上 `-target macos` 或其他目标则在原生窗口中运行同样的测试。在两种外观和伪语言（`-lang en-XA`）下都测一遍，可以发现写死的颜色和文案。其余内容见[测试](../testing.md)。
 
 ## 发布
 

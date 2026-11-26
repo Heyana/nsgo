@@ -1,6 +1,6 @@
 # Testing NSGo apps
 
-`nsgotest` starts an app without a window, on a manual clock, and acts on it as a user does. The same tests run in a real window with the platform's input through `go tool nsgo test -target`.
+`nsgotest` starts an app without a window, on a manual clock, and acts on it as a user does. The same tests run in a real window with the platform's input through `nsgo test -target`.
 
 ```go
 func TestMain(m *testing.M) { nsgotest.Main(m) }
@@ -112,12 +112,12 @@ Use `app.Surface(selector)` for window-local `Exists`, `Texts`, `Enabled`, `Clea
 Test discovery follows the target's build tags, including target-only tests in packages that also have portable files.
 
 ```sh
-go tool nsgo test -target macos            # windows, linux, web, ios (a connected iPhone), ios_simulator, tvos_simulator, watchos_simulator, android; windows_x64 means windows on an x64 machine (only the architecture the tests run for)
-go tool nsgo test -target macos -run TestAdd
-go tool nsgo test -target macos -activate  # allow the test app to take the keyboard
+nsgo test -target macos            # windows, linux, web, ios (a connected iPhone), ios_simulator, tvos_simulator, watchos_simulator, android; windows_x64 means windows on an x64 machine (only the architecture the tests run for)
+nsgo test -target macos -run TestAdd
+nsgo test -target macos -activate  # allow the test app to take the keyboard
 ```
 
-On HarmonyOS, `go tool nsgo test -target harmonyos` uses `build.harmonyos_bundles` and reports whether the HAP used the committed host or a host compiled from templates. See [Building](https://nsgo.dev/docs/building.md#harmonyos).
+On HarmonyOS, `nsgo test -target harmonyos` uses `build.harmonyos_bundles` and reports whether the HAP used the committed host or a host compiled from templates. See [Building](https://nsgo.dev/docs/building.md#harmonyos).
 
 HarmonyOS target tests have fresh data, cache and log directories under `os.TempDir()` and can use Go file operations there.
 
@@ -127,7 +127,7 @@ Test windows take keys without activating the app. AppKit may refuse a field's c
 
 `app.Screenshot("en/library")` saves `.nsgo/test/screenshots/<target>/en/library.png`, `app.Capture()` returns the pixels, and both skip headless. Captures on macOS, iOS and tvOS use sRGB, and the macOS WindowServer capture includes an open native popup clipped to the test window. Android captures the rendered window including shaders. `-trace` prints each step's commits, `-junit report.xml` writes a report, `-bench` runs benchmarks, `-env KEY=VALUE` reaches a phone's tests, and headless flags after `--` go to `go test`. Target runs accept `-short`, `-count`, `-cpu`, `-parallel`, `-failfast` and `-fullpath` there and reject unsupported arguments. Host-linked tests repeat in fresh processes for each count and CPU setting, a timeout per invocation, which on a simulator starts when the test host starts, the launch limited to five minutes of its own; libraries keep Go's in-process repetitions. Put NSGo flags before the directory; on a target that includes `-run` and `-timeout`, which headless runs hand to `go test` after it. `test` takes one directory, every package under it, and errors on a second.
 
-DevTools' Recorder (`go tool nsgo dev -devtools`) writes what you do in the running app as an `nsgotest` test to start from.
+DevTools' Recorder (`nsgo dev -devtools`) writes what you do in the running app as an `nsgotest` test to start from.
 
 With `-target web`, libraries that do not link the backend run headless inside the browser. Storage stays in memory; `DataDir`, `CacheDir` and `LogsDir` are empty, and the file-backed `nsgotest.MicrophoneInput` fake skips.
 
@@ -137,4 +137,4 @@ Use `app.Surface("id:palette").WindowState()` on macOS, Windows or Linux to asse
 
 ## TSX
 
-A TSX app's `*.test.tsx` files, written with `nsgo/test`, run with its Go tests under `go tool nsgo test`.
+A TSX app's `*.test.tsx` files, written with `nsgo/test`, run with its Go tests under `nsgo test`.

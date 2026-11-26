@@ -18,14 +18,14 @@ appName:
 
 A message is a string, or `message` with a `description` and `placeholders` for translators.
 
-The package imports `locales/`. `dev`, `build` and `test` check the catalogs and write a Go function per message beside them, such as `locales.Greeting(cx, "Ada")`, which says it in the language the app shows and follows it as it changes; `go tool nsgo i18n` writes the functions alone. Messages format numbers and dates (`{d, date, medium}`), and `appName` names the app in each language in its packages, as a message with an `apple.info` key, such as `NSCameraUsageDescription`, translates that Info.plist entry ([permissions](permissions.md#usage-descriptions)).
+The package imports `locales/`. `dev`, `build` and `test` check the catalogs and write a Go function per message beside them, such as `locales.Greeting(cx, "Ada")`, which says it in the language the app shows and follows it as it changes; `nsgo i18n` writes the functions alone. Messages format numbers and dates (`{d, date, medium}`), and `appName` names the app in each language in its packages, as a message with an `apple.info` key, such as `NSCameraUsageDescription`, translates that Info.plist entry ([permissions](permissions.md#usage-descriptions)).
 
 ## The language
 
 `cx.SetLocale("de")` chooses the language, and the layout runs in the direction it is written in. In a standalone app, what the system says itself—such as text selection menus, file dialogs and GTK's widgets—follows the forced language too (immediately on Android 13+, Windows and Linux, and from the next launch on macOS and iOS); `cx.SetLocale("")` follows the user's language again.
 
 ```sh
-go tool nsgo dev -lang en-XA
+nsgo dev -lang en-XA
 ```
 
 runs the app in a pseudo locale that shows untranslated and cut text. Any build takes it as it starts: `--nsgo-lang=en-XA`.
