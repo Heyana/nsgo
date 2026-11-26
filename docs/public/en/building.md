@@ -276,7 +276,7 @@ Built-in commands always win, and a name that is not letters, digits, `-` and `_
 
 A library ships one as a Go main package whose directory is the command's name, such as `example.com/maps/cmd/maps` for `nsgo maps`. An app adds it to its module with `go get -tool example.com/maps/cmd/maps@latest`, and `go install example.com/maps/cmd/nsgo-maps@latest` puts an `nsgo-maps` on `PATH` for use outside a module, which may run the same code as the tool.
 
-`nsgo game` is built in and runs [the game layer](https://game.nsgo.dev)'s command with nothing else to install: in a module whose `go.mod` declares the tool `github.com/nsgo-dev/game/packages/game/cmd/game`, it runs `go tool` with it, at the version the module pins, and anywhere else `go run github.com/nsgo-dev/game/packages/game/cmd/game@<version>`, the release of the game layer made for this `nsgo` (`latest` until there is one), which `NSGO_GAME_VERSION` replaces. `go run` reports a failure of the command as exit status 1, whatever status it ended with.
+`nsgo game` is built in and runs [the game layer](https://game.nsgo.dev)'s command with nothing else to install: in a module whose `go.mod` declares the tool `github.com/nsgo-dev/game/packages/game/cmd/game`, it runs `go tool` with it, at the version the module pins, and anywhere else `go run github.com/nsgo-dev/game/packages/game/cmd/game@<version>`, the release of the game layer made for this `nsgo` (`v0.1.0`), which `NSGO_GAME_VERSION` replaces. `go run` reports a failure of the command as exit status 1, whatever status it ended with.
 
 ### The module's nsgo
 

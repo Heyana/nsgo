@@ -32,7 +32,7 @@ func main() {
 
 func TestGameCommandOutsideAModule(t *testing.T) {
 	t.Chdir(t.TempDir())
-	for version, want := range map[string]string{"": "latest", "v1.2.3": "v1.2.3"} {
+	for version, want := range map[string]string{"": "v0.1.0", "v1.2.3": "v1.2.3"} {
 		t.Setenv("NSGO_GAME_VERSION", version)
 		cmd, err := gameCommand(t.Context(), []string{"new", "-template", "starter", "my game"})
 		if err != nil {

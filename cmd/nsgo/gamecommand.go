@@ -11,8 +11,8 @@ import (
 // gameTool is the game layer's command, nsgo-dev/game's cmd/game, which nsgo game runs without nsgo importing the game module.
 const gameTool = "github.com/nsgo-dev/game/packages/game/cmd/game"
 
-// gameVersion is the version of the game layer nsgo game runs outside a module that declares gameTool. It is latest until the game layer publishes a release made for this NSGo; NSGO_GAME_VERSION replaces it.
-const gameVersion = "latest"
+// gameVersion is the version of the game layer nsgo game runs outside a module that declares gameTool; NSGO_GAME_VERSION replaces it.
+const gameVersion = "v0.1.0"
 
 // gameCommand is how nsgo game runs the game layer's command with args: the working directory's module's tool, at the version its go.mod pins, else go run of gameTool at gameVersion, which works outside a module and before a project exists.
 func gameCommand(ctx context.Context, args []string) (*exec.Cmd, error) {
