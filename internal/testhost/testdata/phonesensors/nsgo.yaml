@@ -1,0 +1,13 @@
+name: PhoneSensors
+id: dev.nsgo.test.phonesensors56
+version: 0.1.0
+apple:
+  info:
+    NSLocationWhenInUseUsageDescription: The sensor fixture reads injected location fixes.
+    NSMotionUsageDescription: The sensor fixture reads motion samples.
+android:
+  permissions: [ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION]
+updates:
+  channel: none
+build:
+  installers: false
