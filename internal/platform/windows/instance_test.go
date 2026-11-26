@@ -9,15 +9,8 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/engine"
 )
 
-// deliveryBudget is how long a handoff may take: what is left of the test's own deadline, less a margin to report before the test binary is killed. The handoff arrives on the owner's goroutine and the sender only writes to its pipe, so no fixed wait measures anything a loaded runner cannot outlast.
-func deliveryBudget(t *testing.T) time.Duration {
-	t.Helper()
-	left := time.Minute
-	if deadline, ok := t.Deadline(); ok {
-		left = time.Until(deadline) - 5*time.Second
-	}
-	return max(left, time.Second)
-}
+// deliveryWait bounds how long a handoff may take. The owner's goroutine reads the message as soon as it is in the pipe, so this is far longer than delivery needs on a loaded runner, yet a lost message still fails the test in seconds rather than at the binary's timeout.
+const deliveryWait = 30 * time.Second
 
 // TestInstanceHandsOffByKey keeps the default instance and two keyed ones running together; a later launch must send its files and links to the owner of its own key, even while the other owners run.
 func TestInstanceHandsOffByKey(t *testing.T) {
@@ -45,8 +38,29 @@ func TestInstanceHandsOffByKey(t *testing.T) {
 			if len(paths) != 2 || paths[0] != path || paths[1] != link {
 				t.Fatalf("key %q received %v; want %q and %q", key, paths, path, link)
 			}
-		case <-time.After(deliveryBudget(t)):
-			t.Fatalf("key %q did not receive its files within the test's budget", key)
+		case <-time.After(deliveryWait):
+			t.Fatalf("key %q did not receive its files within %v", key, deliveryWait)
 		}
+	}
+}
+
+// TestInstanceReceivesAClosedSender sends a launch that connects, writes and closes before the owner calls ConnectNamedPipe, which then fails with ERROR_NO_DATA; the message must still be read rather than dropped.
+func TestInstanceReceivesAClosedSender(t *testing.T) {
+	_, name := instanceNames("dev.nsgo.instance-test-"+t.TempDir(), "closed")
+	pipe, err := createInstancePipe(name)
+	if pipe == instanceInvalidHandle {
+		t.Fatalf("create pipe: %v", err)
+	}
+	defer closeHandle.Call(pipe)
+	path, link := `C:\Documents\closed.txt`, "umapp://open/closed"
+	if !sendInstance(name, launch{Launch: engine.Launch{Files: []string{path}, Links: []string{link}}, Task: "Open"}) {
+		t.Fatal("sendInstance failed")
+	}
+	got, ok := receiveInstance(pipe)
+	if !ok {
+		t.Fatal("receiveInstance dropped the message of a sender that had already closed")
+	}
+	if len(got.Files) != 1 || got.Files[0] != path || len(got.Links) != 1 || got.Links[0] != link || got.Task != "Open" {
+		t.Fatalf("received %+v; want %q, %q and task Open", got, path, link)
 	}
 }
