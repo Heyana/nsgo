@@ -136,7 +136,7 @@ var layers = []struct {
 	// The nsgo tool links no component or runtime, so changing them does
 	// not build it again; it writes TSX declarations by running the app.
 	{"cmd/nsgo/shareextension", []string{"internal/platform/objcblock", "internal/platform/shareinbox"}},
-	{"cmd/", []string{"core", "cmd/", "targets", "internal/automation", "internal/appstartup", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},
+	{"cmd/", []string{"core", "cmd/", "i18n", "targets", "internal/automation", "internal/appstartup", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},
 	{"tools/", []string{"core"}},
 }
 
