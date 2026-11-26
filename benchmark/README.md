@@ -20,7 +20,7 @@ Fyne draws from a 60 Hz ticker rather than the display's refresh, and the system
 | `gpui/` | GPUI Kit's, a binary a case; the feature `fast` builds them on GPUI Fast |
 | `cases/`, `internal/bench/` | What the Rust and the Go programs share |
 | `runner/` | Builds, runs and measures them |
-| `results/` | `darwin.json`, `windows.json` and `linux.json`; `go/` holds runs of the Go frameworks alone (NSGo, MyGo, Fyne and Wails), which the website does not show |
+| `results/` | `darwin.json`, `windows.json` and `linux.json` |
 
 ## Running it
 
