@@ -91,7 +91,7 @@ The test's private clipboard models `ReadClipboardItems`, `WriteClipboardItems` 
 
 Use `app.AppleSignIn` or `app.PurchaseAnswer` when a test needs to answer Sign in with Apple or a purchase. The hooks receive `nsgotest.AppleSignInRequest` and `nsgotest.PurchaseRequest` records. [Services](https://nsgo.dev/docs/services.md)
 
-Keep a test off the network and disk the user owns: inject the fetcher or the `http.Client` into the component, or serve answers from `net/http/httptest`, and give storage and secrets through `nsgotest.Storage` and `nsgotest.Secrets`, so no test reaches the machine's keychain. A resource's loading and error states are then tested by answering slowly or with an error.
+Keep a test off the network and disk the user owns: inject the fetcher or the `http.Client` into the component, and serve its answers from `nsgotest.NewHTTPTransport`, whose routes answer in-process with no listener — `net/http/httptest` also serves one, but its listener keeps it off `-target web` — and give storage and secrets through `nsgotest.Storage` and `nsgotest.Secrets`, so no test reaches the machine's keychain. A resource's loading and error states are then tested by answering slowly or with an error.
 
 Set the app's picker, camera or save hook to answer a request in an app test. The hooks receive the `nsgotest` records `ImagePick`, `CodeScan`, `FilePick`, `DirectoryPick` and `FileSave`. [Photos and files](https://nsgo.dev/docs/services.md#photos-and-files)
 
