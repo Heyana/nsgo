@@ -75,11 +75,8 @@ With [Go](https://go.dev/dl/) 1.27.3 or later, and Xcode for iOS, tvOS and watch
 
 ```sh
 brew install nsgo-dev/tap/nsgo
-mkdir hello && cd hello
-go mod init example.com/hello
-go get github.com/nsgo-dev/nsgo
-go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-nsgo init   # -template tsx for a TSX app
+nsgo init -module example.com/hello hello   # -template tsx for a TSX app
+cd hello
 nsgo dev    # -target web, ios_simulator, tvos_simulator, watchos_simulator, android or miniprogram_wechat to run elsewhere
 nsgo doctor # which targets this machine builds and runs, and what the others lack
 ```

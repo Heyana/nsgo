@@ -38,29 +38,28 @@ go install github.com/nsgo-dev/nsgo/cmd/nsgo@latest
 
 ## Create an app
 
-Let `nsgo` write an app and its module, then add NSGo to it:
+Let `nsgo` write an app and its module:
 
 ```sh
 nsgo init -module example.com/hello hello
 cd hello
-go get github.com/nsgo-dev/nsgo
-go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
 ```
 
-`init` prints these commands as its next step, and writes:
+`init` writes:
 
 | File | What it is |
 | --- | --- |
 | `app.go` | The app, a counter: a `Root` component and `main`, which calls `nsgo.Run(Root)` |
 | `app_test.go` | A test that presses the button |
 | `nsgo.yaml` | The app's name, id, version and targets |
-| `go.mod` | The module, with `-module` |
+| `go.mod` | The module, named by `-module` or else after the directory, requiring the NSGo that ran `init` and running it as a tool |
+| `go.sum` | The checksums of what the app needs, which `init` fills with `go mod tidy` |
 
-In a module of your own, `nsgo init` without `-module` writes the app into the current directory. `nsgo init -template tsx` writes a TSX app instead, and `-template mixed` a Go app whose TSX entry uses Go components of its own.
+In a module of your own, `nsgo init` without `-module` writes the app into the current directory, and adds NSGo's `require` and `tool` lines to `go.mod` when it lacks them, changing nothing else. A development build of `nsgo`, with no version to require, writes `go.mod` without them and prints the `go get` commands that add them. `nsgo init -template tsx` writes a TSX app instead, and `-template mixed` a Go app whose TSX entry uses Go components of its own.
 
 ### The project's NSGo
 
-`go get -tool` writes a `tool` line into `go.mod`, which pins the project to the version of NSGo it requires. Inside the project, an installed `nsgo` at another version runs the pinned one, `go tool nsgo`, with the same arguments, so everyone builds the project with the same NSGo whatever they installed; `nsgo version` says which ran ([The module's nsgo](building.md#the-modules-nsgo)). `go tool nsgo` also works on its own, without installing anything, as in CI and for teammates who have not installed `nsgo`:
+The `tool` line in `go.mod` pins the project to the version of NSGo it requires; `go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo` writes it into a module that lacks it. Inside the project, an installed `nsgo` at another version runs the pinned one, `go tool nsgo`, with the same arguments, so everyone builds the project with the same NSGo whatever they installed; `nsgo version` says which ran ([The module's nsgo](building.md#the-modules-nsgo)). `go tool nsgo` also works on its own, without installing anything, as in CI and for teammates who have not installed `nsgo`:
 
 ```sh
 go tool nsgo test
@@ -78,7 +77,7 @@ nsgo init -template example.com/my-templates -list
 
 Publish either a single starter in the module's `template/` directory or several starters under `template/<name>/`, not both: when `template/` is itself a starter, the tool copies it whole, subdirectories included. Select a named starter with `#<name>`, quoting the argument since some shells treat `#` specially. `-list` prints one name per line, or `(default)` for a module whose `template/` is the starter. Include `nsgo.yaml` and `main.go` in each starter. The tool renders both, plus any file ending in `.tmpl`, with Go's `text/template`, and strips `.tmpl` from output names. It copies other files, including binary assets, unchanged.
 
-Templates receive `.Name` (the app's display name), `.ID` (the generated app ID), `.Slug` (the lower-case, hyphenated name) and `.Module` (the value of `-module`, or the slug, where a slug that names a standard library package such as `time` becomes `example.com/<slug>`). A `-module` value that names a standard library package is refused. Ship a `go.mod.tmpl` to declare the generated app's module and dependencies, since Go excludes nested `go.mod` files from module downloads. Without one, `-module` writes the same minimal `go.mod` as it does for a built-in template.
+Templates receive `.Name` (the app's display name), `.ID` (the generated app ID), `.Slug` (the lower-case, hyphenated name) and `.Module` (the value of `-module`, or the slug, where a slug that names a standard library package such as `time` becomes `example.com/<slug>`). A `-module` value that names a standard library package is refused. Ship a `go.mod.tmpl` to declare the generated app's module and dependencies, since Go excludes nested `go.mod` files from module downloads. Without one, the tool writes the same `go.mod` as it does for a built-in template. Either way it adds NSGo's `require` and `tool` lines the `go.mod` lacks, keeping a version of NSGo the template requires, and runs `go mod tidy`.
 
 ## Run it
 

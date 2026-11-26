@@ -22,15 +22,13 @@ Bind translated control words with their `…Func` fields to keep focus and inpu
 ## Create and run
 
 ```sh
-go mod init example.com/hello
-go get github.com/nsgo-dev/nsgo@latest
-go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo@latest
-nsgo init          # app.go, app_test.go, nsgo.yaml; -template tsx or -template mixed
+nsgo init -module example.com/hello hello   # app.go, app_test.go, nsgo.yaml, go.mod pinning this nsgo; -template tsx or -template mixed
+cd hello
 nsgo dev           # hot reload; -target web, ios_simulator, android, tvos_simulator, watchos_simulator
 nsgo doctor        # which targets this machine builds and runs, and what it lacks
 ```
 
-Commands are written `nsgo X`, the installed command (`brew install nsgo-dev/tap/nsgo`, `curl -fsSL https://nsgo.dev/install.sh | sh` or `go install github.com/nsgo-dev/nsgo/cmd/nsgo@latest`). Where `nsgo` is not on `PATH`, as in CI, run `go tool nsgo X` in the module instead, at the version its `tool` line, which `go get -tool` writes, pins.
+Commands are written `nsgo X`, the installed command (`brew install nsgo-dev/tap/nsgo`, `curl -fsSL https://nsgo.dev/install.sh | sh` or `go install github.com/nsgo-dev/nsgo/cmd/nsgo@latest`). Where `nsgo` is not on `PATH`, as in CI, run `go tool nsgo X` in the module instead, at the version its `tool` line, which `nsgo init` writes, pins. In an existing module, `nsgo init` adds only the `require` and `tool` lines `go.mod` lacks.
 
 `nsgo game <command>` runs the game layer's command, the module's tool or else `go run` of its release. Another command `X` runs an extension: the module's `go.mod` tool named `X` with `go tool`, else `nsgo-X` on `PATH`; built-ins win. An `nsgo` on `PATH` runs the module's pinned `go tool nsgo` first when the versions differ (`NSGO_NO_DELEGATE=1` turns it off); `nsgo version` says which ran. [Extensions](https://nsgo.dev/docs/building.md#extensions)
 

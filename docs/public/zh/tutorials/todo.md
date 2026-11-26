@@ -10,11 +10,8 @@ order: 11
 ## 创建应用
 
 ```sh
-mkdir todo && cd todo
-go mod init example.com/todo
-go get github.com/nsgo-dev/nsgo
-go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-nsgo init
+nsgo init -module example.com/todo todo
+cd todo
 nsgo dev
 ```
 

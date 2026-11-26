@@ -10,11 +10,8 @@ order: 13
 ## 创建应用
 
 ```sh
-mkdir repos && cd repos
-go mod init example.com/repos
-go get github.com/nsgo-dev/nsgo
-go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-nsgo init
+nsgo init -module example.com/repos repos
+cd repos
 nsgo dev
 ```
 

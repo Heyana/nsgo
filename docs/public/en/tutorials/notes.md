@@ -10,11 +10,8 @@ This tutorial builds a notes app: a list of notes, a page that edits one, and no
 ## Create the app
 
 ```sh
-mkdir notes && cd notes
-go mod init example.com/notes
-go get github.com/nsgo-dev/nsgo
-go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-nsgo init
+nsgo init -module example.com/notes notes
+cd notes
 nsgo dev
 ```
 

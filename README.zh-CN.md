@@ -75,11 +75,8 @@
 
 ```sh
 brew install nsgo-dev/tap/nsgo
-mkdir hello && cd hello
-go mod init example.com/hello
-go get github.com/nsgo-dev/nsgo
-go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo
-nsgo init   # 加 -template tsx 创建 TSX 应用
+nsgo init -module example.com/hello hello   # 加 -template tsx 创建 TSX 应用
+cd hello
 nsgo dev    # 加 -target web、ios_simulator、tvos_simulator、watchos_simulator、android 或 miniprogram_wechat 在别处运行
 nsgo doctor # 列出本机能构建、运行哪些目标，以及其余目标缺什么
 ```
