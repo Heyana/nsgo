@@ -829,7 +829,7 @@
               });
               groupsBox.value = group;
               groupsBox.hidden = false;
-              if (!params.has('group')) {
+              if (params.get('group') !== group) {
                 var url = new URL(location.href);
                 url.searchParams.set('group', group);
                 history.replaceState(history.state, '', url);
