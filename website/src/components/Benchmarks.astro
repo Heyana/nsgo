@@ -58,6 +58,10 @@ function ranked(rows: Row[], higher = false): Row[] {
   return rows.sort((a, b) => Number(!!a.failed) - Number(!!b.failed) || (higher ? total(b) - total(a) : total(a) - total(b)));
 }
 
+// The frameworks a desktop's run measured: one it ran shows, failed or not, and one it never ran (Fyne and Wails before their programs were added) is left out rather than shown as failed.
+const measured = (r: Results) =>
+  frameworks.filter((f) => r.size[f.id] !== undefined || Object.values(r.cases).some((c) => c?.[f.id] !== undefined));
+
 function chart(
   r: Results,
   c: CaseId,
@@ -67,7 +71,7 @@ function chart(
   note?: string,
   higher = false,
 ): Chart {
-  const rows = frameworks.map((f) => {
+  const rows = measured(r).map((f) => {
     const m = r.cases[c]?.[f.id];
     const parts = m && !m.error ? value(m) : undefined;
     return { id: f.id, name: f.name, color: f.color, parts: parts ?? [], label: parts ? label(parts) : copy.failed, failed: !parts };
@@ -80,7 +84,7 @@ function charts(r: Results, c: CaseId): Chart[] {
   const startup = chart(r, c, copy.metrics.startup, (m) => [m.startup], ([v]) => formatMs(v));
   const memory = chart(r, c, copy.metrics.memory, (m) => [m.memory], ([v]) => formatBytes(v));
   if (c === 'counter') {
-    const rows = frameworks.map((f) => {
+    const rows = measured(r).map((f) => {
       const size = r.size[f.id];
       return { id: f.id, name: f.name, color: f.color, parts: size ? [size] : [], label: size ? formatBytes(size) : copy.failed, failed: !size };
     });

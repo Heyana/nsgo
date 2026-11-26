@@ -4,8 +4,8 @@ import type { SiteLang } from '../locales';
 const en = {
   title: 'Benchmarks',
   description:
-    'NSGo against MyGo, NSH, GPUI Kit and GPUI Fast: the same three apps measured on macOS, Windows and Linux, and where each framework runs.',
-  heading: 'The same apps, five frameworks.',
+    'NSGo against MyGo, Fyne, Wails, NSH, GPUI Kit and GPUI Fast: the same three apps measured on macOS, Windows and Linux, and where each framework runs.',
+  heading: 'The same apps, seven frameworks.',
   lead: 'Three small apps, written for each framework the way it is meant to be used, built as releases and measured one after another on the same machine.',
   desktops: 'Desktop',
   missing: 'Not measured on this desktop yet.',
@@ -40,7 +40,7 @@ const en = {
   compositor: 'Compositor',
   cpuNote:
     'Percent of one core. Native views leave their drawing to the system compositor, where a GPU renderer draws in its own process, so each bar adds the compositor’s CPU to the app’s.',
-  fpsNote: 'Updates follow the display: an app that keeps up stays at its refresh rate.',
+  fpsNote: 'Updates follow the display: an app that keeps up stays at its refresh rate. Fyne draws 60 frames a second and the system webview animates at 60, whatever the display.',
   features: {
     title: 'Where each one runs.',
     yes: 'Yes',
@@ -50,9 +50,9 @@ const en = {
     title: 'How it is measured.',
     items: [
       'Each app prints a line on its first frame, then every second how many frames it updated. The runner times the first line from the start and reads the process’s CPU time and memory from the system.',
-      'Startup runs from launching the binary to the first frame. Memory is read at the end of a run: the physical footprint on macOS, the proportional set size on Linux, the working set on Windows.',
+      'Startup runs from launching the binary to the first frame. Memory is read at the end of a run: the physical footprint on macOS, the proportional set size on Linux, the working set on Windows. On macOS a system webview’s WebKit processes count with the app that started them.',
       'CPU is measured for 10 seconds after 3 to settle, the apps taking turns. The compositor is WindowServer on macOS, the Desktop Window Manager on Windows, and the Wayland compositor and Xwayland on Linux, less what it spends with none of the apps open.',
-      'Release builds: go build -ldflags "-s -w", and cargo build --release with symbols stripped. GPUI Kit and GPUI Fast share one source, built against upstream GPUI and against GPUI Fast.',
+      'Release builds: go build -ldflags "-s -w", and cargo build --release with symbols stripped. GPUI Kit and GPUI Fast share one source, built against upstream GPUI and against GPUI Fast. Fyne builds with -tags release and Wails with -tags production, as fyne package -release and wails3 build do.',
     ],
     source: 'The apps and the runner',
   },
@@ -67,8 +67,8 @@ export type BenchmarkCopy = typeof en;
 
 const zh: BenchmarkCopy = {
   title: '性能',
-  description: 'NSGo 与 MyGo、NSH、GPUI Kit、GPUI Fast 的对比：同样的三个应用在 macOS、Windows 和 Linux 上的测量结果，以及各框架支持的平台。',
-  heading: '同样的应用，五个框架',
+  description: 'NSGo 与 MyGo、Fyne、Wails、NSH、GPUI Kit、GPUI Fast 的对比：同样的三个应用在 macOS、Windows 和 Linux 上的测量结果，以及各框架支持的平台。',
+  heading: '同样的应用，七个框架',
   lead: '三个小应用，按每个框架推荐的写法各实现一遍，以发布模式构建，在同一台机器上依次测量。',
   desktops: '桌面平台',
   missing: '还没有在这个平台上测量。',
@@ -101,7 +101,7 @@ const zh: BenchmarkCopy = {
   app: '应用',
   compositor: '合成器',
   cpuNote: '以单核为 100%。原生视图把绘制交给系统合成器，而 GPU 渲染在应用自己的进程里绘制，所以每条都把合成器的 CPU 加在应用的之上。',
-  fpsNote: '更新跟随显示器：跟得上的应用保持在屏幕刷新率。',
+  fpsNote: '更新跟随显示器：跟得上的应用保持在屏幕刷新率。Fyne 固定每秒绘制 60 帧，系统 WebView 的动画也是 60 帧，与屏幕无关。',
   features: {
     title: '各自能跑在哪里',
     yes: '支持',
@@ -111,9 +111,9 @@ const zh: BenchmarkCopy = {
     title: '测量方法',
     items: [
       '每个应用在第一帧打印一行，之后每秒打印更新了多少帧。测量程序从启动开始计时到第一行，并从系统读取进程的 CPU 时间和内存。',
-      '启动时间是从启动二进制到第一帧。内存在每次运行结束时读取：macOS 为物理内存占用（footprint），Linux 为按比例分摊的常驻内存（PSS），Windows 为工作集。',
+      '启动时间是从启动二进制到第一帧。内存在每次运行结束时读取：macOS 为物理内存占用（footprint），Linux 为按比例分摊的常驻内存（PSS），Windows 为工作集。macOS 上，系统 WebView 的 WebKit 进程计入启动它的应用。',
       'CPU 在稳定 3 秒后测量 10 秒，各应用轮流运行。合成器在 macOS 是 WindowServer，Windows 是桌面窗口管理器（DWM），Linux 是 Wayland 合成器和 Xwayland，并扣除未打开任何测试应用时它自身的占用。',
-      '均为发布构建：go build -ldflags "-s -w"，以及去除符号的 cargo build --release。GPUI Kit 与 GPUI Fast 共用一份源码，分别基于上游 GPUI 和 GPUI Fast 构建。',
+      '均为发布构建：go build -ldflags "-s -w"，以及去除符号的 cargo build --release。GPUI Kit 与 GPUI Fast 共用一份源码，分别基于上游 GPUI 和 GPUI Fast 构建。Fyne 加 -tags release、Wails 加 -tags production 构建，与 fyne package -release 和 wails3 build 一致。',
     ],
     source: '测试应用与测量程序',
   },
@@ -126,8 +126,8 @@ const zh: BenchmarkCopy = {
 
 const zhTw: BenchmarkCopy = {
   title: '效能基準',
-  description: 'NSGo 與 MyGo、NSH、GPUI Kit、GPUI Fast 的對比：同樣三個應用在 macOS、Windows 與 Linux 上的實測數據，以及各框架支援的平台。',
-  heading: '同樣的應用，五個框架',
+  description: 'NSGo 與 MyGo、Fyne、Wails、NSH、GPUI Kit、GPUI Fast 的對比：同樣三個應用在 macOS、Windows 與 Linux 上的實測數據，以及各框架支援的平台。',
+  heading: '同樣的應用，七個框架',
   lead: '三個小型應用，依照每個框架推薦的方式各實作一次，以發佈模式建置，並在同一台機器上依序測量。',
   desktops: '桌面平台',
   missing: '尚未在此桌面平台上測量。',
@@ -160,7 +160,7 @@ const zhTw: BenchmarkCopy = {
   app: '應用',
   compositor: '合成器',
   cpuNote: '以單一核心為 100%。原生視圖將繪製交給系統合成器，而 GPU 算繪則在應用自身行程中完成，因此每條數據都將合成器的 CPU 加在應用之上。',
-  fpsNote: '更新跟隨顯示器：能跟上的應用會維持在螢幕更新率。',
+  fpsNote: '更新跟隨顯示器：能跟上的應用會維持在螢幕更新率。Fyne 固定每秒繪製 60 格，系統 WebView 的動畫也是 60 格，與螢幕無關。',
   features: {
     title: '各自能執行於哪些平台',
     yes: '支援',
@@ -170,9 +170,9 @@ const zhTw: BenchmarkCopy = {
     title: '測量方式',
     items: [
       '每個應用在第一個影格輸出文字，接著每秒輸出更新的影格數。測量程式從啟動計時至第一行輸出，並向系統讀取行程的 CPU 時間與記憶體。',
-      '啟動時間從啟動執行檔算至第一個影格。記憶體於每次執行結束時讀取：macOS 為實體記憶體佔用（footprint），Linux 為比例常駐集（PSS），Windows 為工作集（working set）。',
+      '啟動時間從啟動執行檔算至第一個影格。記憶體於每次執行結束時讀取：macOS 為實體記憶體佔用（footprint），Linux 為比例常駐集（PSS），Windows 為工作集（working set）。macOS 上，系統 WebView 的 WebKit 程序計入啟動它的應用。',
       'CPU 在穩定 3 秒後量測 10 秒，各應用輪流執行。合成器在 macOS 為 WindowServer、Windows 為桌面視窗管理員（DWM）、Linux 為 Wayland 合成器與 Xwayland，並扣除未開啟測試應用時的基準耗用。',
-      '均為發佈建置：go build -ldflags "-s -w"，以及移除符號的 cargo build --release。GPUI Kit 與 GPUI Fast 共用同一份原始碼，分別建置於上游 GPUI 與 GPUI Fast。',
+      '均為發佈建置：go build -ldflags "-s -w"，以及移除符號的 cargo build --release。GPUI Kit 與 GPUI Fast 共用同一份原始碼，分別建置於上游 GPUI 與 GPUI Fast。Fyne 加 -tags release、Wails 加 -tags production 建置，與 fyne package -release 和 wails3 build 一致。',
     ],
     source: '測試應用與測量程式',
   },
@@ -185,8 +185,8 @@ const zhTw: BenchmarkCopy = {
 
 const ja: BenchmarkCopy = {
   title: 'ベンチマーク',
-  description: 'NSGo と MyGo・NSH・GPUI Kit・GPUI Fast の比較：同じ 3 つのアプリを macOS・Windows・Linux で計測した結果と、各フレームワークの対応プラットフォーム。',
-  heading: '同じアプリ、5 つのフレームワーク。',
+  description: 'NSGo と MyGo・Fyne・Wails・NSH・GPUI Kit・GPUI Fast の比較：同じ 3 つのアプリを macOS・Windows・Linux で計測した結果と、各フレームワークの対応プラットフォーム。',
+  heading: '同じアプリ、7 つのフレームワーク。',
   lead: '3 つの小さなアプリをそれぞれのフレームワーク本来の書き方で実装し、リリースビルドにして同じマシン上で順に計測しました。',
   desktops: 'デスクトップ',
   missing: 'このデスクトップ環境ではまだ計測されていません。',
@@ -219,7 +219,7 @@ const ja: BenchmarkCopy = {
   app: 'アプリ',
   compositor: 'コンポジタ',
   cpuNote: '1 コアあたりの割合です。ネイティブビューは描画をシステムのコンポジタに委ねる一方、GPU レンダラーは自プロセス内で描画するため、コンポジタの CPU 使用率をアプリの分に加算しています。',
-  fpsNote: '更新はディスプレイに同期します。追従できるアプリはリフレッシュレートを維持します。',
+  fpsNote: '更新はディスプレイに同期します。追従できるアプリはリフレッシュレートを維持します。Fyne は毎秒 60 フレームで描画し、システムの WebView もディスプレイに関係なく 60 フレームでアニメーションします。',
   features: {
     title: '各フレームワークの動作先。',
     yes: '対応',
@@ -229,9 +229,9 @@ const ja: BenchmarkCopy = {
     title: '計測方法。',
     items: [
       '各アプリは最初のフレームで 1 行出力し、その後 1 秒ごとに更新フレーム数を出力します。ランナーは起動から最初の出力までを計測し、プロセスの CPU 時間とメモリを OS から取得します。',
-      '起動時間はバイナリ起動から最初のフレームまでです。メモリは計測終了時に取得します（macOS は physical footprint、Linux は PSS、Windows は working set）。',
+      '起動時間はバイナリ起動から最初のフレームまでです。メモリは計測終了時に取得します（macOS は physical footprint、Linux は PSS、Windows は working set）。macOS では、システム WebView の WebKit プロセスも起動したアプリに含めます。',
       'CPU は 3 秒の安定化後に 10 秒間、各アプリを順番に計測します。コンポジタは macOS では WindowServer、Windows では DWM、Linux では Wayland コンポジタと Xwayland で、アプリ未起動時の基準値を差し引いています。',
-      'リリースビルドは go build -ldflags "-s -w" およびシンボル除去付き cargo build --release を使用。GPUI Kit と GPUI Fast は同一ソースをそれぞれのクレートに対してビルドしています。',
+      'リリースビルドは go build -ldflags "-s -w" およびシンボル除去付き cargo build --release を使用。GPUI Kit と GPUI Fast は同一ソースをそれぞれのクレートに対してビルドしています。Fyne は -tags release、Wails は -tags production でビルドし、fyne package -release と wails3 build に合わせています。',
     ],
     source: 'テストアプリとランナー',
   },
@@ -244,8 +244,8 @@ const ja: BenchmarkCopy = {
 
 const ko: BenchmarkCopy = {
   title: '벤치마크',
-  description: 'NSGo와 MyGo, NSH, GPUI Kit, GPUI Fast 비교: macOS, Windows, Linux에서 동일한 세 앱을 측정한 결과와 각 프레임워크의 지원 플랫폼.',
-  heading: '같은 앱, 다섯 개의 프레임워크.',
+  description: 'NSGo와 MyGo, Fyne, Wails, NSH, GPUI Kit, GPUI Fast 비교: macOS, Windows, Linux에서 동일한 세 앱을 측정한 결과와 각 프레임워크의 지원 플랫폼.',
+  heading: '같은 앱, 일곱 개의 프레임워크.',
   lead: '세 가지 작은 앱을 각 프레임워크가 권장하는 방식대로 작성해 릴리스 모드로 빌드하고, 같은 머신에서 차례로 측정했습니다.',
   desktops: '데스크톱',
   missing: '이 데스크톱에서는 아직 측정되지 않았습니다.',
@@ -278,7 +278,7 @@ const ko: BenchmarkCopy = {
   app: '앱',
   compositor: '컴포지터',
   cpuNote: '단일 코어 대비 백분율입니다. 네이티브 뷰는 그리기를 시스템 컴포지터에 맡기는 반면 GPU 렌더러는 자체 프로세스에서 그리므로, 각 막대에 컴포지터 CPU를 앱에 더해 표시합니다.',
-  fpsNote: '업데이트는 디스플레이를 따릅니다. 따라가는 앱은 화면 주사율을 유지합니다.',
+  fpsNote: '업데이트는 디스플레이를 따릅니다. 따라가는 앱은 화면 주사율을 유지합니다. Fyne은 초당 60프레임을 그리고, 시스템 WebView 애니메이션도 디스플레이와 관계없이 60프레임입니다.',
   features: {
     title: '각 프레임워크의 실행 환경.',
     yes: '지원',
@@ -288,9 +288,9 @@ const ko: BenchmarkCopy = {
     title: '측정 방법.',
     items: [
       '각 앱은 첫 프레임에 한 줄을 출력하고, 이후 매초 갱신한 프레임 수를 출력합니다. 러너는 시작부터 첫 줄까지의 시간을 재고 시스템에서 프로세스의 CPU 시간과 메모리를 읽습니다.',
-      '시작 시간은 바이너리 실행부터 첫 프레임까지입니다. 메모리는 실행 종료 시점에 읽습니다(macOS: physical footprint, Linux: PSS, Windows: working set).',
+      '시작 시간은 바이너리 실행부터 첫 프레임까지입니다. 메모리는 실행 종료 시점에 읽습니다(macOS: physical footprint, Linux: PSS, Windows: working set). macOS에서는 시스템 WebView의 WebKit 프로세스도 이를 시작한 앱에 포함합니다.',
       'CPU는 3초 안정화 후 10초 동안 앱을 번갈아 실행하며 측정합니다. 컴포지터는 macOS의 WindowServer, Windows의 DWM, Linux의 Wayland 컴포지터 및 Xwayland이며 앱을 열지 않았을 때의 사용량을 뺍니다.',
-      '릴리스 빌드: go build -ldflags "-s -w" 및 심볼이 제거된 cargo build --release. GPUI Kit과 GPUI Fast는 동일한 소스를 각각의 크레이트로 빌드했습니다.',
+      '릴리스 빌드: go build -ldflags "-s -w" 및 심볼이 제거된 cargo build --release. GPUI Kit과 GPUI Fast는 동일한 소스를 각각의 크레이트로 빌드했습니다. Fyne은 -tags release, Wails는 -tags production으로 빌드해 fyne package -release, wails3 build와 같습니다.',
     ],
     source: '테스트 앱과 러너',
   },
@@ -303,8 +303,8 @@ const ko: BenchmarkCopy = {
 
 const es: BenchmarkCopy = {
   title: 'Benchmarks',
-  description: 'NSGo frente a MyGo, NSH, GPUI Kit y GPUI Fast: las mismas tres aplicaciones medidas en macOS, Windows y Linux, y dónde corre cada framework.',
-  heading: 'Las mismas apps, cinco frameworks.',
+  description: 'NSGo frente a MyGo, Fyne, Wails, NSH, GPUI Kit y GPUI Fast: las mismas tres aplicaciones medidas en macOS, Windows y Linux, y dónde corre cada framework.',
+  heading: 'Las mismas apps, siete frameworks.',
   lead: 'Tres pequeñas aplicaciones, escritas para cada framework tal como está pensado usarse, compiladas en modo release y medidas una tras otra en la misma máquina.',
   desktops: 'Escritorio',
   missing: 'Aún no medido en este sistema de escritorio.',
@@ -337,7 +337,7 @@ const es: BenchmarkCopy = {
   app: 'App',
   compositor: 'Compositor',
   cpuNote: 'Porcentaje de un núcleo. Las vistas nativas delegan el dibujo al compositor del sistema, mientras un renderizador GPU dibuja en su propio proceso, por lo que cada barra suma la CPU del compositor a la de la app.',
-  fpsNote: 'Las actualizaciones siguen a la pantalla: una app que mantiene el ritmo iguala su tasa de refresco.',
+  fpsNote: 'Las actualizaciones siguen a la pantalla: una app que mantiene el ritmo iguala su tasa de refresco. Fyne dibuja 60 fotogramas por segundo y la webview del sistema anima a 60, sea cual sea la pantalla.',
   features: {
     title: 'Dónde funciona cada uno.',
     yes: 'Sí',
@@ -347,9 +347,9 @@ const es: BenchmarkCopy = {
     title: 'Cómo se mide.',
     items: [
       'Cada app imprime una línea en su primer fotograma y luego cada segundo cuántos fotogramas actualizó. El runner mide desde el inicio hasta la primera línea y lee del sistema el tiempo de CPU y memoria del proceso.',
-      'El arranque va desde lanzar el binario hasta el primer fotograma. La memoria se lee al final: physical footprint en macOS, PSS en Linux y working set en Windows.',
+      'El arranque va desde lanzar el binario hasta el primer fotograma. La memoria se lee al final: physical footprint en macOS, PSS en Linux y working set en Windows. En macOS, los procesos de WebKit de una webview del sistema cuentan con la app que los inició.',
       'La CPU se mide durante 10 segundos tras 3 de estabilización, turnando las apps. El compositor es WindowServer en macOS, DWM en Windows y el compositor Wayland más Xwayland en Linux, restando su uso sin apps abiertas.',
-      'Compilaciones release: go build -ldflags "-s -w" y cargo build --release sin símbolos. GPUI Kit y GPUI Fast comparten el mismo código, compilado contra GPUI y contra GPUI Fast.',
+      'Compilaciones release: go build -ldflags "-s -w" y cargo build --release sin símbolos. GPUI Kit y GPUI Fast comparten el mismo código, compilado contra GPUI y contra GPUI Fast. Fyne se compila con -tags release y Wails con -tags production, como hacen fyne package -release y wails3 build.',
     ],
     source: 'Las apps y el runner',
   },
@@ -362,8 +362,8 @@ const es: BenchmarkCopy = {
 
 const fr: BenchmarkCopy = {
   title: 'Benchmarks',
-  description: 'NSGo face à MyGo, NSH, GPUI Kit et GPUI Fast : les trois mêmes applications mesurées sur macOS, Windows et Linux, et les plateformes de chaque framework.',
-  heading: 'Les mêmes apps, cinq frameworks.',
+  description: 'NSGo face à MyGo, Fyne, Wails, NSH, GPUI Kit et GPUI Fast : les trois mêmes applications mesurées sur macOS, Windows et Linux, et les plateformes de chaque framework.',
+  heading: 'Les mêmes apps, sept frameworks.',
   lead: 'Trois petites applications, écrites pour chaque framework selon sa façon idiomatique, compilées en release et mesurées l’une après l’autre sur la même machine.',
   desktops: 'Bureau',
   missing: 'Pas encore mesuré sur ce système de bureau.',
@@ -396,7 +396,7 @@ const fr: BenchmarkCopy = {
   app: 'App',
   compositor: 'Compositeur',
   cpuNote: 'Pourcentage d’un cœur. Les vues natives délèguent le dessin au compositeur système, alors qu’un moteur GPU dessine dans son propre processus ; chaque barre ajoute donc le CPU du compositeur à celui de l’app.',
-  fpsNote: 'Les mises à jour suivent l’écran : une app qui tient la cadence reste à la fréquence de rafraîchissement.',
+  fpsNote: 'Les mises à jour suivent l’écran : une app qui tient la cadence reste à la fréquence de rafraîchissement. Fyne dessine 60 images par seconde et la webview du système anime à 60, quel que soit l’écran.',
   features: {
     title: 'Où chacun fonctionne.',
     yes: 'Oui',
@@ -406,9 +406,9 @@ const fr: BenchmarkCopy = {
     title: 'Méthode de mesure.',
     items: [
       'Chaque app affiche une ligne à sa première image, puis chaque seconde le nombre d’images mises à jour. Le runner chronomètre jusqu’à la première ligne et lit le temps CPU et la mémoire auprès du système.',
-      'Le démarrage va du lancement du binaire à la première image. La mémoire est lue en fin d’exécution : empreinte physique sur macOS, PSS sur Linux, working set sur Windows.',
+      'Le démarrage va du lancement du binaire à la première image. La mémoire est lue en fin d’exécution : empreinte physique sur macOS, PSS sur Linux, working set sur Windows. Sur macOS, les processus WebKit d’une webview du système comptent avec l’app qui les a lancés.',
       'Le CPU est mesuré pendant 10 s après 3 s de stabilisation, les apps tournant à tour de rôle. Le compositeur est WindowServer sur macOS, DWM sur Windows et le compositeur Wayland + Xwayland sur Linux, diminué de sa consommation à vide.',
-      'Compilations release : go build -ldflags "-s -w" et cargo build --release sans symboles. GPUI Kit et GPUI Fast partagent une même source, compilée contre GPUI et contre GPUI Fast.',
+      'Compilations release : go build -ldflags "-s -w" et cargo build --release sans symboles. GPUI Kit et GPUI Fast partagent une même source, compilée contre GPUI et contre GPUI Fast. Fyne est compilé avec -tags release et Wails avec -tags production, comme le font fyne package -release et wails3 build.',
     ],
     source: 'Les apps et le runner',
   },
@@ -421,8 +421,8 @@ const fr: BenchmarkCopy = {
 
 const de: BenchmarkCopy = {
   title: 'Benchmarks',
-  description: 'NSGo im Vergleich zu MyGo, NSH, GPUI Kit und GPUI Fast: dieselben drei Apps auf macOS, Windows und Linux gemessen, plus Plattformübersicht.',
-  heading: 'Dieselben Apps, fünf Frameworks.',
+  description: 'NSGo im Vergleich zu MyGo, Fyne, Wails, NSH, GPUI Kit und GPUI Fast: dieselben drei Apps auf macOS, Windows und Linux gemessen, plus Plattformübersicht.',
+  heading: 'Dieselben Apps, sieben Frameworks.',
   lead: 'Drei kleine Apps, jeweils idiomatisch für ihr Framework geschrieben, als Release gebaut und nacheinander auf derselben Maschine gemessen.',
   desktops: 'Desktop',
   missing: 'Auf diesem Desktop noch nicht gemessen.',
@@ -455,7 +455,7 @@ const de: BenchmarkCopy = {
   app: 'App',
   compositor: 'Compositor',
   cpuNote: 'Prozent eines Kerns. Native Views überlassen das Zeichnen dem System-Compositor, während ein GPU-Renderer im eigenen Prozess zeichnet; jeder Balken addiert daher die Compositor-CPU zur App-CPU.',
-  fpsNote: 'Updates folgen dem Display: eine App, die mithält, bleibt bei der Bildwiederholrate.',
+  fpsNote: 'Updates folgen dem Display: eine App, die mithält, bleibt bei der Bildwiederholrate. Fyne zeichnet 60 Bilder pro Sekunde, und die System-Webview animiert mit 60, unabhängig vom Display.',
   features: {
     title: 'Wo jedes Framework läuft.',
     yes: 'Ja',
@@ -465,9 +465,9 @@ const de: BenchmarkCopy = {
     title: 'Wie gemessen wird.',
     items: [
       'Jede App gibt beim ersten Frame eine Zeile aus und danach jede Sekunde die aktualisierten Frames. Der Runner misst die Zeit bis zur ersten Zeile und liest CPU-Zeit sowie Speicher vom System.',
-      'Die Startzeit reicht vom Start der Binärdatei bis zum ersten Frame. Der Speicher wird am Laufende gelesen: Physical Footprint unter macOS, PSS unter Linux, Working Set unter Windows.',
+      'Die Startzeit reicht vom Start der Binärdatei bis zum ersten Frame. Der Speicher wird am Laufende gelesen: Physical Footprint unter macOS, PSS unter Linux, Working Set unter Windows. Unter macOS zählen die WebKit-Prozesse einer System-Webview zur App, die sie gestartet hat.',
       'Die CPU wird nach 3 s Einschwingzeit 10 s lang im Wechsel gemessen. Der Compositor ist WindowServer (macOS), DWM (Windows) bzw. Wayland-Compositor + Xwayland (Linux) abzüglich des Leerlaufs.',
-      'Release-Builds: go build -ldflags "-s -w" sowie cargo build --release ohne Symbole. GPUI Kit und GPUI Fast teilen denselben Quellcode gegen Upstream-GPUI bzw. GPUI Fast.',
+      'Release-Builds: go build -ldflags "-s -w" sowie cargo build --release ohne Symbole. GPUI Kit und GPUI Fast teilen denselben Quellcode gegen Upstream-GPUI bzw. GPUI Fast. Fyne wird mit -tags release und Wails mit -tags production gebaut, wie es fyne package -release und wails3 build tun.',
     ],
     source: 'Apps und Messprogramm',
   },
@@ -480,8 +480,8 @@ const de: BenchmarkCopy = {
 
 const pt: BenchmarkCopy = {
   title: 'Benchmarks',
-  description: 'NSGo contra MyGo, NSH, GPUI Kit e GPUI Fast: os mesmos três apps medidos em macOS, Windows e Linux, e onde cada framework roda.',
-  heading: 'Os mesmos apps, cinco frameworks.',
+  description: 'NSGo contra MyGo, Fyne, Wails, NSH, GPUI Kit e GPUI Fast: os mesmos três apps medidos em macOS, Windows e Linux, e onde cada framework roda.',
+  heading: 'Os mesmos apps, sete frameworks.',
   lead: 'Três pequenos apps, escritos para cada framework do jeito recomendado, compilados em modo release e medidos um após o outro na mesma máquina.',
   desktops: 'Desktop',
   missing: 'Ainda não medido neste desktop.',
@@ -514,7 +514,7 @@ const pt: BenchmarkCopy = {
   app: 'App',
   compositor: 'Compositor',
   cpuNote: 'Porcentagem de um núcleo. Views nativas delegam o desenho ao compositor do sistema, enquanto um renderizador GPU desenha no próprio processo, então cada barra soma a CPU do compositor à do app.',
-  fpsNote: 'As atualizações acompanham a tela: um app que acompanha mantém a taxa de atualização.',
+  fpsNote: 'As atualizações acompanham a tela: um app que acompanha mantém a taxa de atualização. Fyne desenha 60 quadros por segundo e a webview do sistema anima a 60, seja qual for a tela.',
   features: {
     title: 'Onde cada um roda.',
     yes: 'Sim',
@@ -524,9 +524,9 @@ const pt: BenchmarkCopy = {
     title: 'Como é medido.',
     items: [
       'Cada app imprime uma linha no primeiro quadro e depois a cada segundo quantos quadros atualizou. O runner mede o tempo até a primeira linha e lê o tempo de CPU e a memória do sistema.',
-      'A inicialização vai do lançamento do binário ao primeiro quadro. A memória é lida ao final: physical footprint no macOS, PSS no Linux e working set no Windows.',
+      'A inicialização vai do lançamento do binário ao primeiro quadro. A memória é lida ao final: physical footprint no macOS, PSS no Linux e working set no Windows. No macOS, os processos do WebKit de uma webview do sistema contam com o app que os iniciou.',
       'A CPU é medida por 10 s após 3 s de estabilização, alternando os apps. O compositor é WindowServer no macOS, DWM no Windows e compositor Wayland + Xwayland no Linux, descontando o consumo ocioso.',
-      'Builds de release: go build -ldflags "-s -w" e cargo build --release sem símbolos. GPUI Kit e GPUI Fast compartilham o mesmo código, compilado contra GPUI e contra GPUI Fast.',
+      'Builds de release: go build -ldflags "-s -w" e cargo build --release sem símbolos. GPUI Kit e GPUI Fast compartilham o mesmo código, compilado contra GPUI e contra GPUI Fast. Fyne é compilado com -tags release e Wails com -tags production, como fazem fyne package -release e wails3 build.',
     ],
     source: 'Os apps e o runner',
   },
@@ -539,8 +539,8 @@ const pt: BenchmarkCopy = {
 
 const ru: BenchmarkCopy = {
   title: 'Бенчмарки',
-  description: 'Сравнение NSGo с MyGo, NSH, GPUI Kit и GPUI Fast: три одинаковых приложения на macOS, Windows и Linux, а также список поддерживаемых платформ.',
-  heading: 'Одни и те же приложения, пять фреймворков.',
+  description: 'Сравнение NSGo с MyGo, Fyne, Wails, NSH, GPUI Kit и GPUI Fast: три одинаковых приложения на macOS, Windows и Linux, а также список поддерживаемых платформ.',
+  heading: 'Одни и те же приложения, семь фреймворков.',
   lead: 'Три небольших приложения, написанные идиоматично для каждого фреймворка, собранные в release-режиме и измеренные подряд на одной машине.',
   desktops: 'Десктоп',
   missing: 'На этой ОС ещё не измерялось.',
@@ -573,7 +573,7 @@ const ru: BenchmarkCopy = {
   app: 'Приложение',
   compositor: 'Композитор',
   cpuNote: 'Процент одного ядра. Нативные представления отдают отрисовку системному композитору, тогда как GPU-рендерер рисует в своём процессе, поэтому на графиках CPU композитора прибавлен к CPU приложения.',
-  fpsNote: 'Обновления синхронизированы с экраном: успевающее приложение держит частоту обновления дисплея.',
+  fpsNote: 'Обновления синхронизированы с экраном: успевающее приложение держит частоту обновления дисплея. Fyne рисует 60 кадров в секунду, а системный WebView анимирует с частотой 60 независимо от экрана.',
   features: {
     title: 'Где работает каждый фреймворк.',
     yes: 'Да',
@@ -583,9 +583,9 @@ const ru: BenchmarkCopy = {
     title: 'Методика измерений.',
     items: [
       'Каждое приложение выводит строку на первом кадре, затем каждую секунду число обновлённых кадров. Раннер замеряет время до первой строки и считывает CPU и память процесса из системы.',
-      'Запуск измеряется от старта бинарника до первого кадра. Память фиксируется в конце прогона: physical footprint на macOS, PSS на Linux, working set на Windows.',
+      'Запуск измеряется от старта бинарника до первого кадра. Память фиксируется в конце прогона: physical footprint на macOS, PSS на Linux, working set на Windows. В macOS процессы WebKit системного WebView учитываются вместе с запустившим их приложением.',
       'CPU измеряется 10 секунд после 3 секунд прогрева по очереди для каждого приложения. Композитор — WindowServer на macOS, DWM на Windows и Wayland + Xwayland на Linux за вычетом простоя.',
-      'Release-сборки: go build -ldflags "-s -w" и cargo build --release без отладочных символов. GPUI Kit и GPUI Fast используют общий исходник против upstream GPUI и GPUI Fast.',
+      'Release-сборки: go build -ldflags "-s -w" и cargo build --release без отладочных символов. GPUI Kit и GPUI Fast используют общий исходник против upstream GPUI и GPUI Fast. Fyne собирается с -tags release, Wails — с -tags production, как это делают fyne package -release и wails3 build.',
     ],
     source: 'Приложения и раннер',
   },
@@ -598,8 +598,8 @@ const ru: BenchmarkCopy = {
 
 const it: BenchmarkCopy = {
   title: 'Benchmark',
-  description: 'NSGo a confronto con MyGo, NSH, GPUI Kit e GPUI Fast: le stesse tre app misurate su macOS, Windows e Linux, e dove gira ogni framework.',
-  heading: 'Le stesse app, cinque framework.',
+  description: 'NSGo a confronto con MyGo, Fyne, Wails, NSH, GPUI Kit e GPUI Fast: le stesse tre app misurate su macOS, Windows e Linux, e dove gira ogni framework.',
+  heading: 'Le stesse app, sette framework.',
   lead: 'Tre piccole app, scritte per ciascun framework nel modo idiomatico, compilate in release e misurate una dopo l’altra sulla stessa macchina.',
   desktops: 'Desktop',
   missing: 'Non ancora misurato su questo desktop.',
@@ -632,7 +632,7 @@ const it: BenchmarkCopy = {
   app: 'App',
   compositor: 'Compositore',
   cpuNote: 'Percentuale di un core. Le viste native affidano il disegno al compositore di sistema, mentre un renderer GPU disegna nel proprio processo, quindi ogni barra somma la CPU del compositore a quella dell’app.',
-  fpsNote: 'Gli aggiornamenti seguono il display: un’app che tiene il passo resta alla frequenza di aggiornamento.',
+  fpsNote: 'Gli aggiornamenti seguono il display: un’app che tiene il passo resta alla frequenza di aggiornamento. Fyne disegna 60 fotogrammi al secondo e la webview di sistema anima a 60, qualunque sia il display.',
   features: {
     title: 'Dove gira ciascuno.',
     yes: 'Sì',
@@ -642,9 +642,9 @@ const it: BenchmarkCopy = {
     title: 'Come viene misurato.',
     items: [
       'Ogni app stampa una riga al primo fotogramma, poi ogni secondo quanti fotogrammi ha aggiornato. Il runner misura fino alla prima riga e legge tempo CPU e memoria dal sistema.',
-      'L’avvio va dal lancio del binario al primo fotogramma. La memoria è letta a fine esecuzione: physical footprint su macOS, PSS su Linux, working set su Windows.',
+      'L’avvio va dal lancio del binario al primo fotogramma. La memoria è letta a fine esecuzione: physical footprint su macOS, PSS su Linux, working set su Windows. Su macOS i processi WebKit di una webview di sistema contano con l’app che li ha avviati.',
       'La CPU è misurata per 10 s dopo 3 s di assestamento, alternando le app. Il compositore è WindowServer su macOS, DWM su Windows e compositore Wayland + Xwayland su Linux, al netto del consumo a riposo.',
-      'Build release: go build -ldflags "-s -w" e cargo build --release senza simboli. GPUI Kit e GPUI Fast condividono la stessa sorgente, compilata contro GPUI e contro GPUI Fast.',
+      'Build release: go build -ldflags "-s -w" e cargo build --release senza simboli. GPUI Kit e GPUI Fast condividono la stessa sorgente, compilata contro GPUI e contro GPUI Fast. Fyne è compilato con -tags release e Wails con -tags production, come fanno fyne package -release e wails3 build.',
     ],
     source: 'Le app e il runner',
   },
@@ -657,8 +657,8 @@ const it: BenchmarkCopy = {
 
 const vi: BenchmarkCopy = {
   title: 'Hiệu năng',
-  description: 'So sánh NSGo với MyGo, NSH, GPUI Kit và GPUI Fast: ba ứng dụng giống nhau đo trên macOS, Windows và Linux, cùng các nền tảng mỗi framework hỗ trợ.',
-  heading: 'Cùng ứng dụng, năm framework.',
+  description: 'So sánh NSGo với MyGo, Fyne, Wails, NSH, GPUI Kit và GPUI Fast: ba ứng dụng giống nhau đo trên macOS, Windows và Linux, cùng các nền tảng mỗi framework hỗ trợ.',
+  heading: 'Cùng ứng dụng, bảy framework.',
   lead: 'Ba ứng dụng nhỏ, được viết đúng cách khuyến nghị của từng framework, biên dịch bản phát hành và đo lần lượt trên cùng một máy.',
   desktops: 'Máy tính',
   missing: 'Chưa đo trên hệ điều hành này.',
@@ -691,7 +691,7 @@ const vi: BenchmarkCopy = {
   app: 'Ứng dụng',
   compositor: 'Bộ tổng hợp',
   cpuNote: 'Phần trăm của một nhân CPU. Giao diện gốc giao phần vẽ cho bộ tổng hợp hệ thống trong khi bộ dựng GPU vẽ ngay trong tiến trình riêng, nên mỗi thanh cộng thêm CPU của bộ tổng hợp vào ứng dụng.',
-  fpsNote: 'Cập nhật theo màn hình: ứng dụng theo kịp sẽ duy trì đúng tần số quét.',
+  fpsNote: 'Cập nhật theo màn hình: ứng dụng theo kịp sẽ duy trì đúng tần số quét. Fyne vẽ 60 khung hình mỗi giây và WebView của hệ thống chạy hoạt ảnh ở 60, bất kể màn hình.',
   features: {
     title: 'Nơi mỗi framework chạy được.',
     yes: 'Có',
@@ -701,9 +701,9 @@ const vi: BenchmarkCopy = {
     title: 'Cách đo lường.',
     items: [
       'Mỗi ứng dụng in một dòng ở khung hình đầu tiên, rồi mỗi giây in số khung hình đã cập nhật. Trình đo tính thời gian tới dòng đầu tiên và đọc CPU cùng bộ nhớ tiến trình từ hệ thống.',
-      'Thời gian khởi động tính từ lúc chạy tệp nhị phân tới khung hình đầu tiên. Bộ nhớ đo cuối mỗi lượt: physical footprint trên macOS, PSS trên Linux, working set trên Windows.',
+      'Thời gian khởi động tính từ lúc chạy tệp nhị phân tới khung hình đầu tiên. Bộ nhớ đo cuối mỗi lượt: physical footprint trên macOS, PSS trên Linux, working set trên Windows. Trên macOS, các tiến trình WebKit của WebView hệ thống được tính cùng ứng dụng đã khởi chạy chúng.',
       'CPU đo trong 10 giây sau 3 giây ổn định, các ứng dụng chạy luân phiên. Bộ tổng hợp là WindowServer trên macOS, DWM trên Windows và Wayland + Xwayland trên Linux, trừ đi mức tiêu thụ lúc nghỉ.',
-      'Bản phát hành: go build -ldflags "-s -w" và cargo build --release đã lược bỏ ký hiệu. GPUI Kit và GPUI Fast dùng chung mã nguồn, biên dịch với GPUI gốc và GPUI Fast.',
+      'Bản phát hành: go build -ldflags "-s -w" và cargo build --release đã lược bỏ ký hiệu. GPUI Kit và GPUI Fast dùng chung mã nguồn, biên dịch với GPUI gốc và GPUI Fast. Fyne được build với -tags release và Wails với -tags production, giống fyne package -release và wails3 build.',
     ],
     source: 'Các ứng dụng và trình đo',
   },
@@ -716,8 +716,8 @@ const vi: BenchmarkCopy = {
 
 const id: BenchmarkCopy = {
   title: 'Tolok ukur',
-  description: 'Perbandingan NSGo melawan MyGo, NSH, GPUI Kit, dan GPUI Fast: tiga aplikasi yang sama diukur di macOS, Windows, dan Linux, serta platform masing-masing framework.',
-  heading: 'Aplikasi yang sama, lima framework.',
+  description: 'Perbandingan NSGo melawan MyGo, Fyne, Wails, NSH, GPUI Kit, dan GPUI Fast: tiga aplikasi yang sama diukur di macOS, Windows, dan Linux, serta platform masing-masing framework.',
+  heading: 'Aplikasi yang sama, tujuh framework.',
   lead: 'Tiga aplikasi kecil yang ditulis secara idiomatik untuk tiap framework, dibangun dalam mode rilis, lalu diukur bergantian di mesin yang sama.',
   desktops: 'Desktop',
   missing: 'Belum diukur di desktop ini.',
@@ -750,7 +750,7 @@ const id: BenchmarkCopy = {
   app: 'Aplikasi',
   compositor: 'Kompositor',
   cpuNote: 'Persentase dari satu inti CPU. Tampilan native menyerahkan penggambaran ke kompositor sistem, sedangkan perender GPU menggambar di prosesnya sendiri, sehingga tiap batang menjumlahkan CPU kompositor ke CPU aplikasi.',
-  fpsNote: 'Pembaruan mengikuti layar: aplikasi yang mampu mengejar tetap berada pada refresh rate layar.',
+  fpsNote: 'Pembaruan mengikuti layar: aplikasi yang mampu mengejar tetap berada pada refresh rate layar. Fyne menggambar 60 bingkai per detik dan webview sistem beranimasi pada 60, apa pun layarnya.',
   features: {
     title: 'Di mana masing-masing berjalan.',
     yes: 'Ya',
@@ -760,9 +760,9 @@ const id: BenchmarkCopy = {
     title: 'Cara pengukuran.',
     items: [
       'Setiap aplikasi mencetak satu baris pada frame pertama, lalu setiap detik jumlah frame yang diperbarui. Runner mencatat waktu hingga baris pertama dan membaca CPU serta memori proses dari sistem.',
-      'Waktu mulai diukur dari peluncuran biner hingga frame pertama. Memori dibaca di akhir pengujian: physical footprint di macOS, PSS di Linux, dan working set di Windows.',
+      'Waktu mulai diukur dari peluncuran biner hingga frame pertama. Memori dibaca di akhir pengujian: physical footprint di macOS, PSS di Linux, dan working set di Windows. Di macOS, proses WebKit dari webview sistem dihitung bersama aplikasi yang memulainya.',
       'CPU diukur selama 10 detik setelah 3 detik stabilisasi secara bergantian. Kompositor adalah WindowServer di macOS, DWM di Windows, serta kompositor Wayland + Xwayland di Linux dikurangi penggunaan saat kosong.',
-      'Build rilis: go build -ldflags "-s -w" serta cargo build --release tanpa simbol. GPUI Kit dan GPUI Fast berbagi kode sumber yang sama, dibangun terhadap GPUI hulu dan GPUI Fast.',
+      'Build rilis: go build -ldflags "-s -w" serta cargo build --release tanpa simbol. GPUI Kit dan GPUI Fast berbagi kode sumber yang sama, dibangun terhadap GPUI hulu dan GPUI Fast. Fyne dibangun dengan -tags release dan Wails dengan -tags production, seperti fyne package -release dan wails3 build.',
     ],
     source: 'Aplikasi dan runner',
   },
@@ -775,8 +775,8 @@ const id: BenchmarkCopy = {
 
 const tr: BenchmarkCopy = {
   title: 'Kıyaslamalar',
-  description: 'NSGo’nun MyGo, NSH, GPUI Kit ve GPUI Fast ile karşılaştırması: aynı üç uygulamanın macOS, Windows ve Linux ölçümleri ve her çerçevenin çalıştığı platformlar.',
-  heading: 'Aynı uygulamalar, beş çerçeve.',
+  description: 'NSGo’nun MyGo, Fyne, Wails, NSH, GPUI Kit ve GPUI Fast ile karşılaştırması: aynı üç uygulamanın macOS, Windows ve Linux ölçümleri ve her çerçevenin çalıştığı platformlar.',
+  heading: 'Aynı uygulamalar, yedi çerçeve.',
   lead: 'Her çerçeve için önerilen biçimde yazılmış üç küçük uygulama; sürüm modunda derlendi ve aynı makinede art arda ölçüldü.',
   desktops: 'Masaüstü',
   missing: 'Bu masaüstünde henüz ölçülmedi.',
@@ -809,7 +809,7 @@ const tr: BenchmarkCopy = {
   app: 'Uygulama',
   compositor: 'Birleştirici',
   cpuNote: 'Tek çekirdek yüzdesi. Yerel görünümler çizimi sistem birleştiricisine bırakırken GPU çiziciler kendi sürecinde çizer; bu nedenle her çubuk birleştirici CPU’sunu uygulamaya ekler.',
-  fpsNote: 'Güncellemeler ekranı izler: yetişebilen uygulama yenileme hızında kalır.',
+  fpsNote: 'Güncellemeler ekranı izler: yetişebilen uygulama yenileme hızında kalır. Fyne saniyede 60 kare çizer ve sistem web görünümü ekrandan bağımsız olarak 60’ta canlandırır.',
   features: {
     title: 'Her biri nerede çalışır.',
     yes: 'Evet',
@@ -819,9 +819,9 @@ const tr: BenchmarkCopy = {
     title: 'Nasıl ölçülüyor.',
     items: [
       'Her uygulama ilk karede bir satır, ardından her saniye kaç kare güncellediğini yazar. Çalıştırıcı ilk satıra kadar geçen süreyi ve sistemden CPU süresi ile belleği okur.',
-      'Açılış süresi ikili dosyanın başlatılmasından ilk kareye kadardır. Bellek çalıştırma sonunda okunur: macOS’ta physical footprint, Linux’ta PSS, Windows’ta working set.',
+      'Açılış süresi ikili dosyanın başlatılmasından ilk kareye kadardır. Bellek çalıştırma sonunda okunur: macOS’ta physical footprint, Linux’ta PSS, Windows’ta working set. macOS’ta sistem web görünümünün WebKit süreçleri, onları başlatan uygulamayla birlikte sayılır.',
       'CPU, 3 saniyelik oturma süresinin ardından 10 saniye boyunca sırayla ölçülür. Birleştirici macOS’ta WindowServer, Windows’ta DWM, Linux’ta Wayland birleştiricisi ve Xwayland’dir (boşta tüketim düşülerek).',
-      'Sürüm derlemeleri: go build -ldflags "-s -w" ve sembolleri temizlenmiş cargo build --release. GPUI Kit ve GPUI Fast aynı kaynağı kendi paketleriyle derler.',
+      'Sürüm derlemeleri: go build -ldflags "-s -w" ve sembolleri temizlenmiş cargo build --release. GPUI Kit ve GPUI Fast aynı kaynağı kendi paketleriyle derler. Fyne -tags release, Wails -tags production ile derlenir; fyne package -release ve wails3 build de böyle yapar.',
     ],
     source: 'Uygulamalar ve ölçüm aracı',
   },

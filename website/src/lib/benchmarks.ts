@@ -3,7 +3,7 @@
 // which the page compares in a table.
 import type { SiteLang } from '../locales';
 
-export type FrameworkId = 'nsgo' | 'mygo' | 'nsh' | 'gpui' | 'gpui-fast';
+export type FrameworkId = 'nsgo' | 'mygo' | 'fyne' | 'wails' | 'nsh' | 'gpui' | 'gpui-fast';
 
 /**
  * The frameworks, each in a color of its own across the page's charts:
@@ -12,6 +12,8 @@ export type FrameworkId = 'nsgo' | 'mygo' | 'nsh' | 'gpui' | 'gpui-fast';
 export const frameworks: { id: FrameworkId; name: string; url: string; color: string }[] = [
   { id: 'nsgo', name: 'NSGo', url: 'https://github.com/nsgo-dev/nsgo', color: '#007aff' },
   { id: 'mygo', name: 'MyGo', url: 'https://github.com/egoist/mygo', color: '#d4a5b4' },
+  { id: 'fyne', name: 'Fyne', url: 'https://github.com/fyne-io/fyne', color: '#8ec3e6' },
+  { id: 'wails', name: 'Wails', url: 'https://github.com/wailsapp/wails', color: '#ee9f7f' },
   { id: 'nsh', name: 'NSH', url: 'https://github.com/longbridge/nsh', color: '#9fc4af' },
   { id: 'gpui', name: 'GPUI Kit', url: 'https://github.com/longbridge/gpui-kit', color: '#b5acd4' },
   { id: 'gpui-fast', name: 'GPUI Fast', url: 'https://github.com/longbridge/gpui-fast', color: '#d8c39c' },
@@ -86,7 +88,7 @@ export interface FeatureRow extends LocalizedText {
   values: Record<FrameworkId, Support>;
 }
 
-const all = (v: Support): Record<FrameworkId, Support> => ({ nsgo: v, mygo: v, nsh: v, gpui: v, 'gpui-fast': v });
+const all = (v: Support): Record<FrameworkId, Support> => ({ nsgo: v, mygo: v, fyne: v, wails: v, nsh: v, gpui: v, 'gpui-fast': v });
 const only = (...ids: FrameworkId[]): Record<FrameworkId, Support> =>
   Object.fromEntries(frameworks.map((f) => [f.id, ids.includes(f.id)])) as Record<FrameworkId, Support>;
 
@@ -182,6 +184,8 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
         values: {
           nsgo: same('Go, TSX', { zh: 'Go、TSX', 'zh-tw': 'Go、TSX', ja: 'Go、TSX' }),
           mygo: same('Go'),
+          fyne: same('Go'),
+          wails: same('Go, HTML', { zh: 'Go、HTML', 'zh-tw': 'Go、HTML', ja: 'Go、HTML' }),
           nsh: same('Rust, TSX', { zh: 'Rust、TSX', 'zh-tw': 'Rust、TSX', ja: 'Rust、TSX' }),
           gpui: same('Rust'),
           'gpui-fast': same('Rust'),
@@ -219,6 +223,38 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
             vi: 'Bộ dựng GPU riêng',
             id: 'Perender GPU sendiri',
             tr: 'Kendi GPU çizicisi',
+          },
+          fyne: {
+            en: 'Its own widgets on OpenGL',
+            zh: '自绘控件，OpenGL',
+            'zh-tw': '自繪元件，OpenGL',
+            ja: '独自ウィジェット（OpenGL）',
+            ko: '자체 위젯, OpenGL',
+            es: 'Widgets propios en OpenGL',
+            fr: 'Ses propres widgets sur OpenGL',
+            de: 'Eigene Widgets auf OpenGL',
+            pt: 'Widgets próprios em OpenGL',
+            ru: 'Собственные виджеты на OpenGL',
+            it: 'Widget propri su OpenGL',
+            vi: 'Widget riêng trên OpenGL',
+            id: 'Widget sendiri di OpenGL',
+            tr: 'OpenGL üzerinde kendi bileşenleri',
+          },
+          wails: {
+            en: 'The system webview',
+            zh: '系统 WebView',
+            'zh-tw': '系統 WebView',
+            ja: 'システムの WebView',
+            ko: '시스템 WebView',
+            es: 'La webview del sistema',
+            fr: 'La webview du système',
+            de: 'Die System-Webview',
+            pt: 'A webview do sistema',
+            ru: 'Системный WebView',
+            it: 'La webview di sistema',
+            vi: 'WebView của hệ thống',
+            id: 'Webview sistem',
+            tr: 'Sistem web görünümü',
           },
           nsh: nativeViews,
           gpui: {
@@ -270,7 +306,7 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
         vi: 'Tải lại nóng',
         id: 'Hot reload',
         tr: 'Anında yeniden yükleme',
-        values: only('nsgo', 'mygo', 'nsh'),
+        values: only('nsgo', 'mygo', 'wails', 'nsh'),
       },
       {
         en: 'Screens loaded at run time, signed',
@@ -329,8 +365,8 @@ export const features: (LocalizedText & { rows: FeatureRow[] })[] = [
     tr: 'Masaüstünün ötesinde',
     rows: [
       { ...same('Web'), values: all(true) },
-      { ...same('iOS'), values: only('nsgo', 'nsh') },
-      { ...same('Android'), values: only('nsgo', 'nsh') },
+      { ...same('iOS'), values: only('nsgo', 'fyne', 'wails', 'nsh') },
+      { ...same('Android'), values: only('nsgo', 'fyne', 'wails', 'nsh') },
       { ...same('HarmonyOS', { zh: '鸿蒙', 'zh-tw': '鴻蒙' }), values: { ...only(), nsh: community } },
       { ...same('App Clips', { zh: '轻 App', 'zh-tw': '輕 App' }), values: only('nsgo') },
       { ...same('tvOS'), values: only('nsgo') },
