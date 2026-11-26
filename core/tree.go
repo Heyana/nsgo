@@ -652,6 +652,7 @@ type inputNode struct {
 	// its placeholder while empty; sized the value's text, for
 	// OnContentSizeChange.
 	measured, sized preparedInput
+	measuredDirty   bool // measured is deferred while layout is independent of the value
 	reported        Size // the content size last reported
 	reportedOK      bool
 	// Multiline scrolling and app-drawn scroll bar (scrollbars.go).

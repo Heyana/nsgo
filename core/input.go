@@ -88,6 +88,26 @@ func (p *preparedInput) release() {
 	}
 }
 
+// inputContentAffectsLayout reports whether a multiline input's text can
+// change the size its parent lays out. A fixed height or a zero flex basis
+// with growth leaves the parent in charge of the field's height, so the
+// text engine can stay out of the edit path until scroll content is asked for.
+func inputContentAffectsLayout(n *node) bool {
+	if n.input.contentSize != nil {
+		return true
+	}
+	if _, fixed := n.style.Height.Points(); fixed {
+		return false
+	}
+	parent := n.nativeParent()
+	if parent != nil && !parent.style.Direction.row() && !parent.style.RowByDefault {
+		if basis, fixed := n.style.FlexBasis.Points(); fixed && basis == 0 && n.style.FlexGrow > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // inputText is s as field c lays it out. A multiline field's trailing
 // line break still takes a line.
 func inputText(s string, c *driver.InputConfig) driver.AttributedText {
@@ -107,16 +127,23 @@ func (t *Tree) prepareInput(n *node) {
 	in := n.input
 	c := &in.config
 	if c.Multiline {
-		s := in.value
-		if s == "" {
-			s = c.Placeholder
-		}
-		if in.measured.set(t.text, inputText(s, c)) {
-			in.platformScroll = Size{}
-			t.markLayout(n)
+		if !inputContentAffectsLayout(n) {
+			in.measured.release()
+			in.measuredDirty = true
+		} else {
+			s := in.value
+			if s == "" {
+				s = c.Placeholder
+			}
+			if in.measured.set(t.text, inputText(s, c)) {
+				in.platformScroll = Size{}
+				t.markLayout(n)
+			}
+			in.measuredDirty = false
 		}
 	} else if in.measured.prepared != nil {
 		in.measured.release()
+		in.measuredDirty = false
 		in.platformScroll = Size{}
 		t.markLayout(n)
 	}
@@ -184,8 +211,19 @@ type CaretEvent struct {
 // inputScrollContent returns the scrollable content size of multiline input n relative to its frame: frame.Size plus any vertical text overflow beyond its content box. Empty text never overflows.
 func (t *Tree) inputScrollContent(n *node) Size {
 	in := n.input
+	if in == nil || !in.config.Multiline {
+		return n.frame.Size
+	}
+	if in.measuredDirty {
+		s := in.value
+		if s == "" {
+			s = in.config.Placeholder
+		}
+		in.measured.set(t.text, inputText(s, &in.config))
+		in.measuredDirty = false
+	}
 	size := n.frame.Size
-	if in == nil || !in.config.Multiline || in.value == "" || in.measured.prepared == nil {
+	if in.value == "" || in.measured.prepared == nil {
 		return size
 	}
 	w := max(in.config.Content.Size.Width, 0)

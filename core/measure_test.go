@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -17,6 +18,42 @@ func (e countingEngine) Prepare(t *driver.AttributedText) driver.PreparedText {
 type countingText struct {
 	driver.PreparedText
 	measures *int
+}
+
+type preparationCountingEngine struct{ prepares *int }
+
+func (e preparationCountingEngine) Prepare(t *driver.AttributedText) driver.PreparedText {
+	*e.prepares++
+	return ApproxTextEngine{}.Prepare(t)
+}
+
+func TestFixedMultilineInputDefersValuePreparation(t *testing.T) {
+	prepares := 0
+	h := newHost(t, Size{Width: 200, Height: 200}, nil)
+	h.tree = NewTree(h.root, preparationCountingEngine{&prepares})
+	h.tree.Resize(Size{Width: 200, Height: 200}, Geometry{})
+	var text *Signal[string]
+	var ref Ref
+	h.tree.Mount(func(cx *Scope) Node {
+		text = NewSignal(cx, "short")
+		return View{Children: []Node{
+			Input{Ref: &ref, TestID: "in", Multiline: true, Value: text.Get, OnChange: text.Set,
+				Style: Style{FlexGrow: 1, FlexBasis: Pt(0)}},
+		}}
+	})
+	h.commit()
+	initial := prepares
+	in := h.find("in")
+	h.tree.Dispatch(driver.Event{Kind: driver.EventChangeText, ID: in.id, Text: strings.Repeat("line\n", 10000), Count: 1})
+	h.commit()
+	if prepares != initial {
+		t.Fatalf("editing a layout-independent input prepared text %d times, want %d", prepares, initial)
+	}
+	ref.ScrollToEnd(false)
+	h.commit()
+	if prepares != initial+1 {
+		t.Fatalf("asking for scroll content prepared text %d times, want %d", prepares, initial+1)
+	}
 }
 
 func (c countingText) Measure(width Points) Size {
