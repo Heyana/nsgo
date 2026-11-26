@@ -14,6 +14,14 @@ order: 10
 - To run on Windows, Go alone, which also builds the Windows and web packages.
 - On Linux, GTK 4.14 or newer, Pango and Cairo. Network images use libsoup 3, web views use WebKitGTK 6.0, and audio and video use GStreamer plug-ins. On systems with AppArmor user namespace restrictions, [WebKitGTK needs a bubblewrap profile](debugging.md#linux-web-views).
 
+## Install the command
+
+Apps run the tool as `go tool nsgo`, so this is optional. To have `nsgo` on macOS or Linux without building it, install the latest release's binary into `~/.local/bin`, or `$NSGO_INSTALL_DIR`; `NSGO_VERSION=vX.Y.Z` picks a release:
+
+```sh
+curl -fsSL https://nsgo.dev/install.sh | sh
+```
+
 ## Create an app
 
 Make a module, add NSGo and its tool, then let the tool write an app:

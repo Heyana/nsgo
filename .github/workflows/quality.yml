@@ -1,6 +1,6 @@
 name: Repository quality
 
-# Checks workflows, dependencies, backend duplication and the Android runtime artifacts.
+# Checks workflows, the install script, dependencies, backend duplication and the Android runtime artifacts.
 
 on:
   pull_request:
@@ -36,6 +36,25 @@ jobs:
           # Skip style suggestions, but fail on shell correctness warnings and errors.
           SHELLCHECK_OPTS: --severity=warning
         run: actionlint -color
+
+  install-script:
+    name: Install script (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux runs it with dash and macOS with its own sh, BSD tar and shasum.
+        os: [depot-ubuntu-24.04, depot-macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint website/public/install.sh, served at nsgo.dev/install.sh
+        if: runner.os == 'Linux'
+        run: shellcheck website/public/install.sh website/scripts/test-install.sh
+      - name: Install from fake releases served locally
+        run: sh website/scripts/test-install.sh
 
   platform-duplicates:
     name: Shared backend code

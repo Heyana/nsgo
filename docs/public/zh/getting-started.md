@@ -14,6 +14,14 @@ order: 10
 - 在 Windows 上运行只需要 Go，它也能构建 Windows 和 Web 包。
 - 在 Linux 上运行需要 GTK 4.14 或更新版本、Pango 和 Cairo。网络图片使用 libsoup 3，网页视图使用 WebKitGTK 6.0，音频和视频使用 GStreamer 插件。AppArmor 限制用户命名空间的系统上，[WebKitGTK 需要 bubblewrap 配置](debugging.md#linux-网页视图)。
 
+## 安装命令
+
+应用通过 `go tool nsgo` 运行工具，因此这一步可选。想在 macOS 或 Linux 上直接使用 `nsgo` 而不自己构建，可以把最新版本的二进制装到 `~/.local/bin` 或 `$NSGO_INSTALL_DIR`；`NSGO_VERSION=vX.Y.Z` 指定版本：
+
+```sh
+curl -fsSL https://nsgo.dev/install.sh | sh
+```
+
 ## 创建应用
 
 创建一个模块，加入 NSGo 和它的工具，然后让工具生成应用：

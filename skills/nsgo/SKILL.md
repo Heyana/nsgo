@@ -30,7 +30,7 @@ go tool nsgo dev           # hot reload; -target web, ios_simulator, android, tv
 go tool nsgo doctor        # which targets this machine builds and runs, and what it lacks
 ```
 
-`go tool nsgo game <command>` runs the game layer's command, the module's tool or else `go run` of its release. Another command `X` runs an extension: the module's `go.mod` tool named `X` with `go tool`, else `nsgo-X` on `PATH`; built-ins win. An `nsgo` on `PATH` runs the module's pinned `go tool nsgo` first when the versions differ (`NSGO_NO_DELEGATE=1` turns it off); `nsgo version` says which ran. [Extensions](https://nsgo.dev/docs/building.md#extensions)
+`go tool nsgo game <command>` runs the game layer's command, the module's tool or else `go run` of its release. Another command `X` runs an extension: the module's `go.mod` tool named `X` with `go tool`, else `nsgo-X` on `PATH`; built-ins win. An `nsgo` on `PATH` (`curl -fsSL https://nsgo.dev/install.sh | sh` installs one) runs the module's pinned `go tool nsgo` first when the versions differ (`NSGO_NO_DELEGATE=1` turns it off); `nsgo version` says which ran. [Extensions](https://nsgo.dev/docs/building.md#extensions)
 
 Use `-template <module>[@version][#<name>]` to scaffold from a module's published [template directory](https://nsgo.dev/docs/getting-started.md#templates-from-go-modules), or `-list` to list a module's templates.
 
