@@ -79,7 +79,7 @@ func initModuleTemplate(ctx context.Context, dir, kind string, data initData) er
 	if err := writeModuleTemplate(dir, src, files); err != nil {
 		return err
 	}
-	detail("next: go tool nsgo dev %s", rel(dir))
+	detail("next: %s dev %s", nsgoCommand(), rel(dir))
 	return nil
 }
 

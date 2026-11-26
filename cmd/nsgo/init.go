@@ -98,14 +98,41 @@ func initApp(ctx context.Context, dir, name, module, kind string) error {
 		done("create %s", rel(filepath.Join(dir, file)))
 	}
 	if module != "" {
-		detail("next: cd %s && go get github.com/nsgo-dev/nsgo && go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo && go tool nsgo dev", rel(dir))
+		detail("next: cd %s && go get github.com/nsgo-dev/nsgo && go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo && %s dev", rel(dir), nsgoCommand())
 	} else {
-		detail("next: go tool nsgo dev %s", rel(dir))
+		detail("next: %s dev %s", nsgoCommand(), rel(dir))
 	}
 	if kind != "go" {
 		detail("nsgo dev and nsgo check write the TSX's types to .nsgo/types for editors; check also type-checks it")
 	}
 	return nil
+}
+
+// executable is os.Executable, which tests replace.
+var executable = os.Executable
+
+// nsgoCommand is the command that ran this nsgo, as the commands it suggests name it: go tool nsgo for a build the go command runs, and nsgo for an installed one, including the module's nsgo an installed one delegated to.
+func nsgoCommand() string {
+	if os.Getenv("NSGO_DELEGATED") == "1" {
+		return "nsgo"
+	}
+	if exe, err := executable(); err == nil && builtByGo(exe) {
+		return "go tool nsgo"
+	}
+	return "nsgo"
+}
+
+// goCacheEntry is the directory of an executable in Go's build cache, the output's SHA-256 with -d (cmd/go/internal/cache's DiskCache.fileName).
+var goCacheEntry = regexp.MustCompile(`^[0-9a-f]{64}-d$`)
+
+// builtByGo reports whether exe is a binary the go command built to run, as go tool does and sets nothing in the environment to say: one in its build cache, at <GOCACHE>/<first byte>/<hash>-d/<name>, or one it has just linked in its work directory, at go-build<N>/b<N>/exe/<name> (cmd/go/internal/tool's buildAndRunModtool).
+func builtByGo(exe string) bool {
+	dir := filepath.Dir(exe)
+	parent, grandparent := filepath.Dir(dir), filepath.Dir(filepath.Dir(dir))
+	if base := filepath.Base(dir); goCacheEntry.MatchString(base) {
+		return filepath.Base(parent) == base[:2]
+	}
+	return filepath.Base(dir) == "exe" && regexp.MustCompile(`^b[0-9]+$`).MatchString(filepath.Base(parent)) && strings.HasPrefix(filepath.Base(grandparent), "go-build")
 }
 
 // dirAppName names an app after its directory, made absolute so that .

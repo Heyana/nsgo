@@ -87,3 +87,48 @@ func TestInitRejectsAStandardLibraryModule(t *testing.T) {
 		t.Fatalf("init wrote %s before refusing", dir)
 	}
 }
+
+// The go command sets nothing for a tool it runs, so where the binary lives says how nsgo was called: its build cache and its work directory are go tool's (#2413).
+func TestBuiltByGo(t *testing.T) {
+	hash := strings.Repeat("ab", 32)
+	for exe, want := range map[string]bool{
+		filepath.Join("/home/ada/.cache/go-build", "ab", hash+"-d", "nsgo"):               true,
+		filepath.Join("/tmp/go-build1234567", "b001", "exe", "nsgo"):                      true,
+		filepath.Join(`C:\Users\ada\AppData\Local\go-build`, "ab", hash+"-d", "nsgo.exe"): true,
+		filepath.Join("/home/ada/.cache/go-build", "cd", hash+"-d", "nsgo"):               false,
+		filepath.Join("/home/ada/go/bin", "nsgo"):                                         false,
+		filepath.Join("/opt/homebrew/bin", "nsgo"):                                        false,
+		filepath.Join("/home/ada/.local/bin", "nsgo"):                                     false,
+		filepath.Join("/home/ada/project", "exe", "nsgo"):                                 false,
+	} {
+		if got := builtByGo(exe); got != want {
+			t.Errorf("builtByGo(%q) = %v, want %v", exe, got, want)
+		}
+	}
+}
+
+// init's next step names the command as it was called: nsgo for an installed one, the one an installed nsgo delegated to included, and go tool nsgo for the module's tool (#2413).
+func TestInitNextNamesTheCommand(t *testing.T) {
+	installed := filepath.Join("/home/ada/.local/bin", "nsgo")
+	tool := filepath.Join("/home/ada/.cache/go-build", "ab", strings.Repeat("ab", 32)+"-d", "nsgo")
+	for _, c := range []struct {
+		exe, delegated, want string
+	}{
+		{installed, "", "next: nsgo dev "},
+		{tool, "", "next: go tool nsgo dev "},
+		{tool, "1", "next: nsgo dev "},
+	} {
+		t.Setenv("NSGO_DELEGATED", c.delegated)
+		executable = func() (string, error) { return c.exe, nil }
+		t.Cleanup(func() { executable = os.Executable })
+		dir := filepath.Join(t.TempDir(), "app")
+		var err error
+		out := captureStderr(t, func() { err = initApp(t.Context(), dir, "My App", "", "go") })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, c.want) {
+			t.Errorf("init from %s (NSGO_DELEGATED=%q) printed\n%s\nwant %q", c.exe, c.delegated, out, c.want)
+		}
+	}
+}
