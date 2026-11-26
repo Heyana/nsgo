@@ -65,7 +65,7 @@ Package nạp thư viện của nó từ thư mục đó, dựa trên vị trí 
 
 NSGo kiểm tra lại các tệp tải về trong cache trước khi dùng lại và điều phối các bản build chạy đồng thời thông qua một khóa tệp. Cache nội dung nằm trong thư mục cache người dùng của hệ điều hành, ở `nsgo/natives`. Các tệp cục bộ được xác minh khi chúng được sao chép.
 
-Một gói macOS universal yêu cầu cùng tên thư viện cho cả hai kiến trúc. NSGo ghép các lát (slice) bằng `lipo`; một thư viện vốn đã là universal của nhà phát hành có thể dùng cho mục nào cũng được. Các thư viện được ký trước ứng dụng, sau đó đi qua các bước tạo disk image, ký số và notarization thông thường của ứng dụng. Việc ký số trên Windows bao gồm cả các DLL đã khai báo, kể cả khi `build.installers: false`. Trình cài đặt Linux bao gồm cùng các tệp và thông báo như thư mục chứa tệp thực thi. Các target terminal ký ad hoc các thư viện macOS.
+Một gói macOS universal yêu cầu cùng tên thư viện cho cả hai kiến trúc. NSGo ghép các lát (slice) bằng `lipo`; một thư viện vốn đã là universal của nhà phát hành có thể dùng cho mục nào cũng được. Các thư viện được ký trước ứng dụng, sau đó đi qua các bước tạo disk image, ký số và notarization thông thường của ứng dụng. Việc ký số trên Windows bao gồm cả các DLL đã khai báo, kể cả khi `build.installers: false`. Trình cài đặt Linux bao gồm cùng các tệp và thông báo như thư mục chứa tệp thực thi. Trên Mac, các target terminal ký ad hoc các thư viện macOS; trên hệ thống khác chúng đóng gói thư viện như được phát hành, thư viện universal giữ nguyên, và từ chối thư viện arm64 chưa được ký.
 
 Môi trường phát triển, `-run` và các bài kiểm thử trên target dùng cùng bước chọn package và sao chép, trên desktop cũng như trên iOS và tvOS. Các khai báo được chọn theo target, tag và overlay Go được sinh ra của bản build, bao gồm cả các thay thế cục bộ (local replacement) và package được vendor. Android, HarmonyOS, watchOS, web và mini program không đóng gói gì từ tệp này.
 
@@ -73,12 +73,12 @@ Môi trường phát triển, `-run` và các bài kiểm thử trên target dù
 
 NSGo kiểm tra tệp nhị phân của từng framework và dừng bản build kèm lý do, trừ khi nó:
 
-- là một thư viện động Mach-O arm64 được build cho nền tảng của target, thiết bị thật hoặc trình giả lập, như `LC_BUILD_VERSION` của nó cho biết; một tệp universal đóng góp lát arm64 của nó;
+- là một thư viện động Mach-O arm64 được build cho nền tảng của target, thiết bị thật hoặc trình giả lập, như `LC_BUILD_VERSION` của nó cho biết; một tệp universal đóng góp lát arm64 của nó; arm64e bị từ chối;
 - yêu cầu hệ điều hành tối thiểu không mới hơn của ứng dụng, tức `apple.info.MinimumOSVersion`, hoặc nếu không có thì iOS 15.0 và tvOS 17.0 ([Xây dựng và đóng gói phát hành](building.md#nsgoyaml));
 - có tên cài đặt `@rpath/<Name>.framework/<Name>`;
 - chỉ nạp qua `@rpath` những framework mà các package của ứng dụng khai báo cho cùng target.
 
-NSGo ghi `Info.plist` của framework, với `CFBundleIdentifier` là ID của ứng dụng, một dấu chấm và `Name` viết thường, kèm nền tảng và hệ điều hành tối thiểu của ứng dụng. Các bản build cho trình giả lập ký ad hoc framework. Bản build cho thiết bị để việc đó cho bước ký của ứng dụng: `sign.profile` ký framework bằng danh tính của ứng dụng trước chính ứng dụng, giống như Xcode làm với `nsgo build -run` và `nsgo dev` trên thiết bị. Hãy cho framework có nạp các framework đi kèm đường dẫn chạy `@loader_path/..`, để nó tìm thấy chúng trong `Frameworks`.
+NSGo ghi `Info.plist` của framework, với `CFBundleIdentifier` là ID của ứng dụng, một dấu chấm và `Name` viết thường, kèm nền tảng và hệ điều hành tối thiểu của ứng dụng. Các bản build cho trình giả lập ký ad hoc framework. Bản build cho thiết bị để việc đó cho bước ký của ứng dụng: `sign.profile` ký framework bằng danh tính của ứng dụng trước chính ứng dụng, giống như Xcode làm với `nsgo build -run` và `nsgo dev` trên thiết bị. Framework có nạp các framework đi kèm cần đường dẫn chạy `@loader_path/..` hoặc `@executable_path/Frameworks` để tìm thấy chúng trong `Frameworks`, vì tệp thực thi của ứng dụng không có đường dẫn nào, và không nạp gì khác qua `@rpath` trừ khi có đường dẫn chạy của hệ thống như `/usr/lib/swift`. Framework có bundle ID trùng, không phân biệt hoa thường, với một bundle khác trong ứng dụng, chẳng hạn `StoreKit.framework` bên cạnh `NSGoStoreKit.framework` của NSGo, sẽ dừng bản build.
 
 `nsgo build -embed` dừng lại và nêu tên package khi ứng dụng liên kết một package có khai báo framework cho iOS: XCFramework dành cho ứng dụng chủ hiện chưa thể mang chúng theo.
 

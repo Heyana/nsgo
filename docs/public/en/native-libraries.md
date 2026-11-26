@@ -65,7 +65,7 @@ The package loads its library from that directory, using the executable's locati
 
 NSGo checks cached downloads again before reuse and coordinates concurrent builds through a file lock. The content cache lives under the operating system's user-cache directory, in `nsgo/natives`. Local files are verified as they are copied.
 
-A universal macOS package requires the same library names for both architectures. NSGo joins the slices with `lipo`; a publisher's already-universal library can serve either entry. Libraries are signed before the app, then pass through the app's normal disk-image, signing and notarization steps. Windows signing includes declared DLLs even with `build.installers: false`. Linux installers include the same files and notices as the executable directory. Terminal targets sign macOS libraries ad hoc.
+A universal macOS package requires the same library names for both architectures. NSGo joins the slices with `lipo`; a publisher's already-universal library can serve either entry. Libraries are signed before the app, then pass through the app's normal disk-image, signing and notarization steps. Windows signing includes declared DLLs even with `build.installers: false`. Linux installers include the same files and notices as the executable directory. On a Mac, terminal targets sign macOS libraries ad hoc; on other hosts they ship them as published, a universal one whole, and refuse an arm64 one that is not signed already.
 
 Development, `-run` and target tests use the same package selection and copy steps, on desktops, iOS and tvOS. Declarations are selected with the build's target, tags and generated Go overlay, including local replacements and vendored packages. Android, HarmonyOS, watchOS, the web and mini programs package nothing from this file.
 
@@ -73,12 +73,12 @@ Development, `-run` and target tests use the same package selection and copy ste
 
 NSGo checks each framework's binary and stops the build, naming the reason, unless it is:
 
-- an arm64 Mach-O dynamic library built for the target's platform, devices or the simulator, as its `LC_BUILD_VERSION` says; a universal file gives its arm64 slice;
+- an arm64 Mach-O dynamic library built for the target's platform, devices or the simulator, as its `LC_BUILD_VERSION` says; a universal file gives its arm64 slice; arm64e is refused;
 - for a minimum OS no newer than the app's, `apple.info.MinimumOSVersion` or else iOS 15.0 and tvOS 17.0 ([Building](building.md#nsgoyaml));
 - named `@rpath/<Name>.framework/<Name>` by its install name;
 - loading through `@rpath` only frameworks that the app's packages declare for the same target.
 
-NSGo writes the framework's `Info.plist`, whose `CFBundleIdentifier` is the app's ID, a dot and `Name` in lower case, with the platform and the app's minimum OS. Simulator builds sign the framework ad hoc. A device build leaves it to the app's signing: `sign.profile` signs it with the app's identity before the app, as Xcode does for `nsgo build -run` and `nsgo dev` on a device. Give a framework that loads its peers an `@loader_path/..` run path, so that it finds them in `Frameworks`.
+NSGo writes the framework's `Info.plist`, whose `CFBundleIdentifier` is the app's ID, a dot and `Name` in lower case, with the platform and the app's minimum OS. Simulator builds sign the framework ad hoc. A device build leaves it to the app's signing: `sign.profile` signs it with the app's identity before the app, as Xcode does for `nsgo build -run` and `nsgo dev` on a device. A framework that loads its peers needs an `@loader_path/..` or `@executable_path/Frameworks` run path to find them in `Frameworks`, as the app's executable has none, and loads nothing else through `@rpath` unless it has a system run path such as `/usr/lib/swift`. A framework whose bundle ID another bundle in the app already has, in any case, such as `StoreKit.framework` beside NSGo's `NSGoStoreKit.framework`, stops the build.
 
 `nsgo build -embed` stops when the app links a package that declares iOS frameworks, naming the package: the XCFramework for a host app cannot carry them yet.
 

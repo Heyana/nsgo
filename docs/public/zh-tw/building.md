@@ -46,7 +46,7 @@ web:
 
 使用 `go tool nsgo dev -target tui` 可在互動式終端機中執行應用程式。`go tool nsgo test -target tui` 則會透過 `nsgotest.Main` 在終端機中執行測試，每個測試行程執行一個應用程式。終端機決定整體尺寸：每個字元儲存格代表 8 × 16 版面配置點。請明確選擇應用程式的樣式；各元件仍保有其原有的形式與尺寸。`examples/tui` 示範了輸入欄位、按鈕、快捷鍵與視窗調整大小。
 
-使用 `go tool nsgo build -target tui_macos_arm64`（或對應的 `tui_macos_x64`、`tui_windows_arm64`、`tui_windows_x64`、`tui_linux_arm64` 或 `tui_linux_x64`）可建置主控台執行檔。`tui` 建置/檢查群組包含這六種目標，`all` 群組亦同。每個套件目錄內含執行檔與資源，沒有圖形介面安裝程式。這六種目標皆可僅憑 Go 工具鏈完成建置。
+使用 `go tool nsgo build -target tui_macos_arm64`（或對應的 `tui_macos_x64`、`tui_windows_arm64`、`tui_windows_x64`、`tui_linux_arm64` 或 `tui_linux_x64`）可建置主控台執行檔。`tui` 建置/檢查群組包含這六種目標，`all` 群組亦同。每個套件目錄內含執行檔與資源，沒有圖形介面安裝程式。這六種目標皆可僅憑 Go 工具鏈完成建置；唯一的例外是連結了宣告 macOS 函式庫之套件的 macOS 終端建置：在 Mac 上會對這些函式庫進行臨時（ad hoc）簽署，在其他主機上則依發佈時的原樣封裝，因此 arm64 函式庫必須已經簽署。
 
 此後端支援儲存格文字、背景、實線邊框、裁剪、捲動、焦點與文字編輯。它使用終端機本身的字型與顏色；包含 Mac 在內，Control 皆為 `mod` 鍵。Ctrl+C 在編輯器內會執行複製，若無任何繫結或編輯器接手則會結束程式。括號貼上（bracketed paste）會直接插入文字而不觸發快捷鍵，剪貼簿僅限於行程內部使用。畫布、圖片、媒體、原生託管元件、系統選單/警告對話框、動畫、縮放、雙向文字塑形、開頭/中間省略號與系統剪貼簿橋接目前尚未實作。`base/terminal` 仍是用於嵌入 GUI 應用程式中的終端機控制項。
 

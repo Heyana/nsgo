@@ -65,7 +65,7 @@ libraries:
 
 NSGo 在重複使用快取的下載檔案前會再次檢查其完整性，並透過檔案鎖定來協調並行建置。內容快取位於作業系統的使用者快取目錄下的 `nsgo/natives`。本機檔案則會在複製時進行驗證。
 
-通用（universal）macOS 套件要求兩種架構使用相同的函式庫名稱。NSGo 會使用 `lipo` 合併這兩個架構切片；若發佈者提供的函式庫本身已是通用二進位檔，亦可同時用於兩個項目。函式庫會在應用程式之前完成簽署，隨後再通過應用程式正常的磁碟映像檔製作、簽署與公證步驟。即使設定了 `build.installers: false`，Windows 簽署仍會包含已宣告的 DLL。Linux 安裝程式則會包含與執行檔目錄相同的檔案與聲明。終端目標平台會對 macOS 函式庫進行臨時（ad hoc）簽署。
+通用（universal）macOS 套件要求兩種架構使用相同的函式庫名稱。NSGo 會使用 `lipo` 合併這兩個架構切片；若發佈者提供的函式庫本身已是通用二進位檔，亦可同時用於兩個項目。函式庫會在應用程式之前完成簽署，隨後再通過應用程式正常的磁碟映像檔製作、簽署與公證步驟。即使設定了 `build.installers: false`，Windows 簽署仍會包含已宣告的 DLL。Linux 安裝程式則會包含與執行檔目錄相同的檔案與聲明。在 Mac 上，終端目標平台會對 macOS 函式庫進行臨時（ad hoc）簽署；在其他主機上則依發佈時的原樣封裝（通用函式庫整體保留），並拒絕尚未簽署的 arm64 函式庫。
 
 開發模式、`-run` 與目標平台測試皆使用相同的套件選取與複製步驟，桌面平台以及 iOS 與 tvOS 皆然。系統會根據建置的目標平台、標籤與產生的 Go overlay（包含本機替換與 vendor 套件）來選取宣告內容。Android、鴻蒙、watchOS、Web 與小程式不會從此檔案打包任何內容。
 
@@ -73,12 +73,12 @@ NSGo 在重複使用快取的下載檔案前會再次檢查其完整性，並透
 
 NSGo 會檢查每個框架的二進位檔，不符合以下條件時便停止建置並說明原因：
 
-- 是為目標平台（實機或模擬器）建置的 arm64 Mach-O 動態函式庫，以其 `LC_BUILD_VERSION` 為準；通用檔案取其 arm64 切片；
+- 是為目標平台（實機或模擬器）建置的 arm64 Mach-O 動態函式庫，以其 `LC_BUILD_VERSION` 為準；通用檔案取其 arm64 切片；arm64e 會被拒絕；
 - 最低系統版本不高於應用程式的最低版本，即 `apple.info.MinimumOSVersion`，未設定時為 iOS 15.0 與 tvOS 17.0（[建置與發佈](building.md#nsgoyaml)）；
 - 安裝名稱為 `@rpath/<Name>.framework/<Name>`；
 - 透過 `@rpath` 載入的框架，皆為應用程式的套件為同一目標平台宣告的框架。
 
-NSGo 會為框架寫入 `Info.plist`，其 `CFBundleIdentifier` 為應用程式 ID 加一個句點再加小寫的 `Name`，並帶有平台與應用程式的最低系統版本。模擬器建置會對框架進行臨時簽署。實機建置則將框架交由應用程式的簽署流程處理：`sign.profile` 會在簽署應用程式之前以應用程式的身分為其簽署，Xcode 在實機上執行 `nsgo build -run` 與 `nsgo dev` 時亦然。會載入關聯框架的框架應帶有 `@loader_path/..` 執行路徑，以便在 `Frameworks` 中找到它們。
+NSGo 會為框架寫入 `Info.plist`，其 `CFBundleIdentifier` 為應用程式 ID 加一個句點再加小寫的 `Name`，並帶有平台與應用程式的最低系統版本。模擬器建置會對框架進行臨時簽署。實機建置則將框架交由應用程式的簽署流程處理：`sign.profile` 會在簽署應用程式之前以應用程式的身分為其簽署，Xcode 在實機上執行 `nsgo build -run` 與 `nsgo dev` 時亦然。應用程式的執行檔沒有執行路徑，因此會載入關聯框架的框架需要帶有 `@loader_path/..` 或 `@executable_path/Frameworks` 執行路徑，才能在 `Frameworks` 中找到它們；除非帶有 `/usr/lib/swift` 這類系統執行路徑，否則不能透過 `@rpath` 載入其他內容。若框架的 bundle ID 與應用程式中另一個 bundle 相同（不區分大小寫），例如與 NSGo 的 `NSGoStoreKit.framework` 並存的 `StoreKit.framework`，建置會停止。
 
 當應用程式連結了宣告 iOS 框架的套件時，`nsgo build -embed` 會停止並指出該套件：供宿主應用程式使用的 XCFramework 目前還無法攜帶這些框架。
 

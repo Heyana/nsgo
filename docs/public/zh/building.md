@@ -35,7 +35,7 @@ nsgo build
 
 在交互式终端中执行 `nsgo dev -target tui`，即可运行应用。`nsgo test -target tui` 通过 `nsgotest.Main` 在终端中运行测试，每个测试进程只打开一个应用。终端决定视口大小，每格对应 8×16 个布局点。应用显式选择自己的样式，组件保留通常的形态和尺寸。`examples/tui` 演示了输入框、按钮、快捷键和尺寸变化。
 
-通过 `nsgo build -target tui_macos_arm64` 构建控制台程序，也可以选择 `tui_macos_x64`、`tui_windows_arm64`、`tui_windows_x64`、`tui_linux_arm64` 或 `tui_linux_x64`。构建和检查时，`tui` 组包含全部六个目标，`all` 也包含它们。各输出目录包含可执行文件和资源，不生成图形安装器；六个目标都只需要 Go。
+通过 `nsgo build -target tui_macos_arm64` 构建控制台程序，也可以选择 `tui_macos_x64`、`tui_windows_arm64`、`tui_windows_x64`、`tui_linux_arm64` 或 `tui_linux_x64`。构建和检查时，`tui` 组包含全部六个目标，`all` 也包含它们。各输出目录包含可执行文件和资源，不生成图形安装器；六个目标都只需要 Go；唯一的例外是链接了声明 macOS 库的包的 macOS 终端构建：在 Mac 上会对这些库做临时（ad hoc）签名，在其他主机上则按发布时的原样打包，因此 arm64 库必须已经签过名。
 
 后端支持单元格文字、背景、实线边框、裁剪、滚动、焦点和文本编辑，使用终端的字体和颜色。在 Mac 上也以 Control 作为 `mod`。Ctrl+C 在编辑器中复制，在没有快捷键或编辑器接收时退出。带括号粘贴只插入文字，不触发快捷键；剪贴板只在进程内共享。画布、图像、媒体、原生托管组件、系统菜单和提示框、动画、缩放、双向文字塑形、头部或中部省略以及系统剪贴板桥接仍未实现。`base/terminal` 仍是图形应用中嵌入的终端控件。
 

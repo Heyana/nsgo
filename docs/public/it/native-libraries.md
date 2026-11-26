@@ -65,7 +65,7 @@ Il pacchetto carica la propria libreria da quella directory, usando la posizione
 
 NSGo verifica di nuovo i download in cache prima di riutilizzarli e coordina le build concorrenti tramite un lock su file. La cache dei contenuti si trova nella directory della cache utente del sistema operativo, in `nsgo/natives`. I file locali vengono verificati mentre vengono copiati.
 
-Un pacchetto macOS universale richiede gli stessi nomi di libreria per entrambe le architetture. NSGo unisce le slice con `lipo`; una libreria già universale fornita dall'editore può servire per entrambe le voci. Le librerie vengono firmate prima dell'app, quindi passano attraverso i normali passaggi di immagine disco, firma e notarizzazione dell'app. La firma su Windows include le DLL dichiarate anche con `build.installers: false`. Gli installer Linux includono gli stessi file e avvisi della directory dell'eseguibile. I target da terminale firmano ad hoc le librerie macOS.
+Un pacchetto macOS universale richiede gli stessi nomi di libreria per entrambe le architetture. NSGo unisce le slice con `lipo`; una libreria già universale fornita dall'editore può servire per entrambe le voci. Le librerie vengono firmate prima dell'app, quindi passano attraverso i normali passaggi di immagine disco, firma e notarizzazione dell'app. La firma su Windows include le DLL dichiarate anche con `build.installers: false`. Gli installer Linux includono gli stessi file e avvisi della directory dell'eseguibile. Su un Mac i target da terminale firmano ad hoc le librerie macOS; altrove le includono così come pubblicate, una universale per intero, e rifiutano una libreria arm64 non ancora firmata.
 
 Lo sviluppo, `-run` e i test sui target usano gli stessi passaggi di selezione dei pacchetti e di copia, sui desktop come su iOS e tvOS. Le dichiarazioni vengono selezionate con il target, i tag e l'overlay Go generato della build, incluse le sostituzioni locali e i pacchetti in vendor. Android, HarmonyOS, watchOS, il web e i mini programmi non pacchettizzano nulla da questo file.
 
@@ -73,12 +73,12 @@ Lo sviluppo, `-run` e i test sui target usano gli stessi passaggi di selezione d
 
 NSGo controlla il binario di ogni framework e interrompe la build indicandone il motivo, a meno che non sia:
 
-- una libreria dinamica Mach-O arm64 compilata per la piattaforma del target, dispositivi o simulatore, come indica il suo `LC_BUILD_VERSION`; un file universale fornisce la propria slice arm64;
+- una libreria dinamica Mach-O arm64 compilata per la piattaforma del target, dispositivi o simulatore, come indica il suo `LC_BUILD_VERSION`; un file universale fornisce la propria slice arm64; arm64e viene rifiutato;
 - per un sistema operativo minimo non più recente di quello dell'app, `apple.info.MinimumOSVersion` oppure iOS 15.0 e tvOS 17.0 ([Compilazione e distribuzione](building.md#nsgoyaml));
 - con il nome di installazione `@rpath/<Name>.framework/<Name>`;
 - e che carichi tramite `@rpath` solo framework che i pacchetti dell'app dichiarano per lo stesso target.
 
-NSGo scrive l'`Info.plist` del framework, il cui `CFBundleIdentifier` è l'ID dell'app, un punto e `Name` in minuscolo, con la piattaforma e il sistema operativo minimo dell'app. Le build per il simulatore firmano il framework ad hoc. Una build per dispositivi lo lascia alla firma dell'app: `sign.profile` lo firma con l'identità dell'app prima dell'app stessa, come fa Xcode per `nsgo build -run` e `nsgo dev` su un dispositivo. Dai a un framework che carica i framework correlati il percorso di esecuzione `@loader_path/..`, così che li trovi in `Frameworks`.
+NSGo scrive l'`Info.plist` del framework, il cui `CFBundleIdentifier` è l'ID dell'app, un punto e `Name` in minuscolo, con la piattaforma e il sistema operativo minimo dell'app. Le build per il simulatore firmano il framework ad hoc. Una build per dispositivi lo lascia alla firma dell'app: `sign.profile` lo firma con l'identità dell'app prima dell'app stessa, come fa Xcode per `nsgo build -run` e `nsgo dev` su un dispositivo. Un framework che carica i framework correlati ha bisogno del percorso di esecuzione `@loader_path/..` o `@executable_path/Frameworks` per trovarli in `Frameworks`, dato che l'eseguibile dell'app non ne ha, e non carica altro tramite `@rpath` a meno che non abbia un percorso di esecuzione di sistema come `/usr/lib/swift`. Un framework il cui bundle ID appartiene già a un altro bundle dell'app, senza distinzione tra maiuscole e minuscole, come `StoreKit.framework` accanto al `NSGoStoreKit.framework` di NSGo, interrompe la build.
 
 `nsgo build -embed` si ferma indicando il pacchetto quando l'app collega un pacchetto che dichiara framework per iOS: l'XCFramework per un'app host non può ancora portarli con sé.
 

@@ -65,7 +65,7 @@ libraries:
 
 NSGo 在复用已缓存的下载文件之前会再次进行校验，并通过文件锁协调并发构建。内容缓存位于操作系统用户缓存目录下的 `nsgo/natives` 中。本地文件会在复制过程中完成校验。
 
-macOS 通用包（universal package）要求两种架构使用相同的库文件名。NSGo 会使用 `lipo` 合并各个架构切片；发布者预先制作好的通用库可直接用于任一条目。库文件会在应用之前完成签名，随后走完应用常规的磁盘映像、签名与公证流程。即使设置了 `build.installers: false`，Windows 签名仍会包含已声明的 DLL。Linux 安装程序会包含与可执行文件目录相同的库文件和声明文件。终端目标会对 macOS 库进行临时（ad hoc）签名。
+macOS 通用包（universal package）要求两种架构使用相同的库文件名。NSGo 会使用 `lipo` 合并各个架构切片；发布者预先制作好的通用库可直接用于任一条目。库文件会在应用之前完成签名，随后走完应用常规的磁盘映像、签名与公证流程。即使设置了 `build.installers: false`，Windows 签名仍会包含已声明的 DLL。Linux 安装程序会包含与可执行文件目录相同的库文件和声明文件。在 Mac 上，终端目标会对 macOS 库进行临时（ad hoc）签名；在其他主机上则按发布时的原样打包（通用库整体保留），并拒绝尚未签名的 arm64 库。
 
 开发模式、`-run` 和目标测试使用相同的包筛选与复制步骤，桌面平台以及 iOS 和 tvOS 均是如此。声明会根据构建的目标平台、构建标签和生成的 Go overlay（包括本地替换模块和 vendor 包）进行筛选。Android、鸿蒙、watchOS、Web 和小程序不会从此文件打包任何内容。
 
@@ -73,12 +73,12 @@ macOS 通用包（universal package）要求两种架构使用相同的库文件
 
 NSGo 会检查每个框架的二进制文件，不满足以下条件时停止构建并说明原因：
 
-- 是为目标平台（真机或模拟器）构建的 arm64 Mach-O 动态库，以其 `LC_BUILD_VERSION` 为准；通用文件取其 arm64 切片；
+- 是为目标平台（真机或模拟器）构建的 arm64 Mach-O 动态库，以其 `LC_BUILD_VERSION` 为准；通用文件取其 arm64 切片；arm64e 会被拒绝；
 - 最低系统版本不高于应用的最低版本，即 `apple.info.MinimumOSVersion`，未设置时为 iOS 15.0 和 tvOS 17.0（[构建](building.md#nsgoyaml)）；
 - 安装名为 `@rpath/<Name>.framework/<Name>`；
 - 通过 `@rpath` 加载的框架，都是应用的包为同一目标声明的框架。
 
-NSGo 会为框架写入 `Info.plist`，其 `CFBundleIdentifier` 为应用 ID 加一个点再加小写的 `Name`，并带有平台和应用的最低系统版本。模拟器构建会对框架进行临时签名。真机构建将框架留给应用的签名流程：`sign.profile` 会在签名应用之前用应用的身份为其签名，Xcode 在真机上执行 `nsgo build -run` 和 `nsgo dev` 时也是如此。会加载同级框架的框架应带有 `@loader_path/..` 运行路径，以便在 `Frameworks` 中找到它们。
+NSGo 会为框架写入 `Info.plist`，其 `CFBundleIdentifier` 为应用 ID 加一个点再加小写的 `Name`，并带有平台和应用的最低系统版本。模拟器构建会对框架进行临时签名。真机构建将框架留给应用的签名流程：`sign.profile` 会在签名应用之前用应用的身份为其签名，Xcode 在真机上执行 `nsgo build -run` 和 `nsgo dev` 时也是如此。应用的可执行文件没有运行路径，因此会加载同级框架的框架需要带有 `@loader_path/..` 或 `@executable_path/Frameworks` 运行路径，才能在 `Frameworks` 中找到它们；除非带有 `/usr/lib/swift` 这类系统运行路径，否则不能通过 `@rpath` 加载其他内容。若框架的 bundle ID 与应用中另一个 bundle 相同（不区分大小写），例如与 NSGo 的 `NSGoStoreKit.framework` 并存的 `StoreKit.framework`，构建会停止。
 
 当应用链接了声明 iOS 框架的包时，`nsgo build -embed` 会停止并指出该包：供宿主应用使用的 XCFramework 目前还无法携带这些框架。
 
