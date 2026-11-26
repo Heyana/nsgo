@@ -200,6 +200,7 @@ Use `app.Surface("title:Settings")` for the same view queries, input steps, resi
 ```sh
 nsgo check                 # vet; -target web,android vets those targets instead, all every available one
 nsgo test                  # headless; -run as go test's, -target macos|ios|ios_simulator|android|web|all on a platform
+nsgo test . ./cmd/...      # the packages the patterns name, as go test's: a directory is its own package, /... its tree
 nsgo test ./pkg -fuzz FuzzX -fuzztime 3s  # headless fuzzing of ./pkg only, not its subpackages
 ```
 

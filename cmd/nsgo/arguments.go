@@ -12,11 +12,8 @@ func parseCommand(fs *flag.FlagSet, args []string, paths int) error {
 		return err
 	}
 	if paths < 0 {
-		dir, rest := splitTestArgs(fs.Args())
-		if err := misplacedFlags(fs, dir, rest, goTestOwnFlags); err != nil {
-			return err
-		}
-		return testPathError(rest)
+		patterns, rest := splitTestArgs(fs.Args())
+		return misplacedFlags(fs, strings.Join(patterns, " "), rest, goTestOwnFlags)
 	}
 	if fs.NArg() <= paths {
 		return nil
@@ -30,9 +27,10 @@ func parseCommand(fs *flag.FlagSet, args []string, paths int) error {
 	return fmt.Errorf("%s: takes no positional arguments, got %q", fs.Name(), fs.Arg(0))
 }
 
+// testPathError refuses a package among the flags a run forwards: patterns go before the first flag, as go test's do.
 func testPathError(args []string) error {
 	if packages := packageArgs(args); len(packages) > 0 {
-		return fmt.Errorf("test: takes one directory, not %q as well; test their common parent or one directory at a time, and pass only go test flags after --", packages[0])
+		return fmt.Errorf("test: takes package patterns before its flags, not %q after them", packages[0])
 	}
 	return nil
 }

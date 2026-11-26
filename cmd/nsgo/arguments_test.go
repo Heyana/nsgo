@@ -53,7 +53,6 @@ func TestCommandsRefuseTrailingArguments(t *testing.T) {
 		{[]string{"dev", "first", "second"}, "takes one path"},
 		{[]string{"mcp", "first", "second"}, "takes one path"},
 		{[]string{"check", "first", "second"}, "takes one path"},
-		{[]string{"test", "first", "second"}, "takes one directory"},
 		{[]string{"doctor", "extra"}, "takes no positional arguments"},
 		{[]string{"certify", "extra"}, "takes no positional arguments"},
 		{[]string{"revoke", "extra"}, "takes no positional arguments"},
@@ -90,20 +89,20 @@ func TestMisplacedFlagsNameTheCommand(t *testing.T) {
 
 func TestTestArgumentsKeepGoTestFlags(t *testing.T) {
 	for _, tc := range []struct {
-		args []string
-		dir  string
-		rest []string
+		args     []string
+		patterns []string
+		rest     []string
 	}{
-		{[]string{"-target", "web", "app", "--", "-short"}, "app", []string{"-short"}},
-		{[]string{"--", "-short", "-count=2"}, "", []string{"-short", "-count=2"}},
-		{[]string{"app", "--", "-short"}, "app", []string{"-short"}},
-		{[]string{"app", "-count", "2"}, "app", []string{"-count", "2"}},
-		{[]string{"app", "--", "-args", "-target", "custom"}, "app", []string{"-args", "-target", "custom"}},
-		{[]string{"app", "--", "-update=--target=custom"}, "app", []string{"-update=--target=custom"}},
-		// go test owns these too, so after the directory they are its flags, not misplaced ones.
-		{[]string{"--", "-timeout=20m", "-run", "TestOne"}, "", []string{"-timeout=20m", "-run", "TestOne"}},
-		{[]string{"app", "-test.bench=.", "-trace", "trace.out"}, "app", []string{"-test.bench=.", "-trace", "trace.out"}},
-		{[]string{"-ldflags", "-X a.b=c", "app", "-ldflags", "-X a.b=d"}, "app", []string{"-ldflags", "-X a.b=d"}},
+		{[]string{"-target", "web", "app", "--", "-short"}, []string{"app"}, []string{"-short"}},
+		{[]string{"--", "-short", "-count=2"}, nil, []string{"-short", "-count=2"}},
+		{[]string{"app", "--", "-short"}, []string{"app"}, []string{"-short"}},
+		{[]string{"app", "-count", "2"}, []string{"app"}, []string{"-count", "2"}},
+		{[]string{"app", "--", "-args", "-target", "custom"}, []string{"app"}, []string{"-args", "-target", "custom"}},
+		{[]string{"app", "--", "-update=--target=custom"}, []string{"app"}, []string{"-update=--target=custom"}},
+		// go test owns these too, so after the patterns they are its flags, not misplaced ones.
+		{[]string{"--", "-timeout=20m", "-run", "TestOne"}, nil, []string{"-timeout=20m", "-run", "TestOne"}},
+		{[]string{"app", "-test.bench=.", "-trace", "trace.out"}, []string{"app"}, []string{"-test.bench=.", "-trace", "trace.out"}},
+		{[]string{"-ldflags", "-X a.b=c", "app", "-ldflags", "-X a.b=d"}, []string{"app"}, []string{"-ldflags", "-X a.b=d"}},
 	} {
 		fs := flag.NewFlagSet("test", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
@@ -116,9 +115,39 @@ func TestTestArgumentsKeepGoTestFlags(t *testing.T) {
 		if err := parseCommand(fs, tc.args, -1); err != nil {
 			t.Fatal(err)
 		}
-		if dir, rest := splitTestArgs(fs.Args()); dir != tc.dir || !slices.Equal(rest, tc.rest) {
-			t.Errorf("%q: dir=%q flags=%q, want %q %q", tc.args, dir, rest, tc.dir, tc.rest)
+		if patterns, rest := splitTestArgs(fs.Args()); !slices.Equal(patterns, tc.patterns) || !slices.Equal(rest, tc.rest) {
+			t.Errorf("%q: patterns=%q flags=%q, want %q %q", tc.args, patterns, rest, tc.patterns, tc.rest)
 		}
+	}
+}
+
+// A shard of the suite names the packages it tests, so test takes go package patterns rather than one directory.
+func TestTestTakesPackagePatterns(t *testing.T) {
+	var o testOptions
+	fs := testFlagSet(&o)
+	if err := parseCommand(fs, []string{".", "./cmd/...", "./ui/...", "--", "-short"}, -1); err != nil {
+		t.Fatal(err)
+	}
+	patterns, rest := splitTestArgs(fs.Args())
+	if !slices.Equal(patterns, []string{".", "./cmd/...", "./ui/..."}) || !slices.Equal(rest, []string{"-short"}) {
+		t.Fatalf("patterns=%q forwarded=%q", patterns, rest)
+	}
+}
+
+// testEntry takes an app's directory whole and leaves a module's packages to their patterns.
+func TestTestEntryTakesAnAppButNotAModule(t *testing.T) {
+	dir := t.TempDir()
+	if testEntry(dir) {
+		t.Error("a directory without nsgo.yaml was taken whole")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nsgo.yaml"), []byte("name: App\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !testEntry(dir) {
+		t.Error("an app's directory was not taken whole")
+	}
+	if !testEntry(filepath.Join(dir, "App.tsx")) {
+		t.Error("a TSX entry was not taken whole")
 	}
 }
 
@@ -216,7 +245,7 @@ func TestTestCommandRegistersJSON(t *testing.T) {
 	if !o.jsonOutput {
 		t.Fatal("-json did not reach the test options")
 	}
-	if dir, rest := splitTestArgs(fs.Args()); dir != "app" || len(rest) != 0 {
-		t.Fatalf("dir=%q flags=%q, want app and no forwarded flags", dir, rest)
+	if patterns, rest := splitTestArgs(fs.Args()); !slices.Equal(patterns, []string{"app"}) || len(rest) != 0 {
+		t.Fatalf("patterns=%q flags=%q, want app and no forwarded flags", patterns, rest)
 	}
 }

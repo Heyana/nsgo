@@ -36,8 +36,11 @@ type testOptions struct {
 	ldflags     []string      // app linker flags -ldflags adds to nsgo.yaml's build.ldflags
 	// env are the tests' KEY=VALUE variables, on every target: a
 	// phone's tests see no others of this machine's.
-	env        []string
-	args       []string
+	env  []string
+	args []string
+	// patterns are the go package patterns the run tests, counted from the
+	// module's root; nil tests every package under the project's directory.
+	patterns   []string
 	jsonOutput bool // write go test's -json stream to stdout, for tools such as benchstat
 }
 
@@ -181,14 +184,26 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 			return err
 		}
 	}
-	pattern := "./..."
+	patterns := opts.patterns
+	if len(patterns) == 0 {
+		patterns = []string{"./..."}
+	}
+	if opts.target != "" && len(patterns) > 1 {
+		return errors.New("test: a target run tests one directory, not several package patterns")
+	}
 	fuzz := opts.target == "" && testFuzzEnabled(opts.args)
 	if fuzz {
 		// Go only fuzzes one package. Prepare and probe only that package too.
-		pattern = "."
+		if len(patterns) > 1 {
+			return errors.New("test: -fuzz runs one package")
+		}
+		if len(opts.patterns) == 0 {
+			patterns = []string{"."}
+		}
 	}
 	p.Build.LDFlags = append(p.Build.LDFlags, opts.ldflags...)
-	if err := p.prepareCatalogs(ctx, pattern, false); err != nil {
+	// Every package of the project prepares its catalogs, whichever packages the run tests: a pattern is a package's, not the tree its texts come from.
+	if err := p.prepareCatalogs(ctx, "./...", false); err != nil {
 		return err
 	}
 	if opts.fps && !slices.Contains([]string{"macos", "windows", "linux", "ios_simulator", "web", "android"}, opts.target) {
@@ -243,18 +258,18 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 	}
 	// Keep core's graph ownership checks even when the command line replaces the app's tags.
 	runTags, flags, listFlags, profile := testTagArgs(p.Dir, tags, opts.args)
-	command := func(pattern string, tags, testFlags []string) (*exec.Cmd, error) {
+	command := func(patterns []string, tags, testFlags []string) (*exec.Cmd, error) {
 		tagFlags := tagsArgs(tags)
 		// Probe the same test packages, leaving package load errors to go test's reporter.
 		list := append([]string{"-e", "-test"}, tagFlags...)
 		list = append(append(list, overlayFlags...), listFlags...)
-		env, err := smallJSON(ctx, p.Dir, opts.env, append(list, pattern)...)
+		env, err := smallJSON(ctx, p.Dir, opts.env, append(list, patterns...)...)
 		if err != nil {
 			return nil, err
 		}
 		a := append(slices.Clone(args), tagFlags...)
 		// Packages precede flags a test binary may take, including -args.
-		a = append(append(a, pattern), testFlags...)
+		a = append(append(a, patterns...), testFlags...)
 		cmd := exec.CommandContext(ctx, "go", a...)
 		cmd.Dir = p.Dir
 		cmd.Env = append(os.Environ(), env...)
@@ -268,7 +283,7 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 	if profile != "" {
 		runFlags = append([]string{"-coverprofile=" + profile}, flags...)
 	}
-	cmd, err := command(pattern, uniqueTags(append(runTags, "nsgocheck")), runFlags)
+	cmd, err := command(patterns, uniqueTags(append(runTags, "nsgocheck")), runFlags)
 	if err != nil {
 		return err
 	}
@@ -278,7 +293,7 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 	}
 	// As check does, NSGo's own repository also tests the dev client, whose files build only with nsgodev, unless the run's tags already include it; there are no automation-only dev tests. Its coverage profile goes to a file of its own, appended to the run's once both have ended, since go test would overwrite the first run's.
 	var cover, devCover string
-	if dev, ok := devClientPattern(p.Dir); ok && p.steps == nil && !slices.Contains(runTags, "nsgodev") {
+	if dev, ok := devClientPattern(p.Dir); ok && p.steps == nil && !slices.Contains(runTags, "nsgodev") && runCovers(ctx, p.Dir, opts.patterns, nsgoModule+"/internal/dev") {
 		if profile != "" {
 			f, err := os.CreateTemp("", "nsgo-dev-*.cover")
 			if err != nil {
@@ -289,7 +304,7 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 			cover, devCover = profile, f.Name()
 			flags = append([]string{"-coverprofile=" + devCover}, flags...)
 		}
-		cmd, err := command(dev, append(runTags, "nsgodev"), flags)
+		cmd, err := command([]string{dev}, append(runTags, "nsgodev"), flags)
 		if err != nil {
 			return err
 		}
@@ -302,6 +317,21 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 		}
 	}
 	return err
+}
+
+// runCovers reports whether the run's package patterns name importPath, which they name from dir: a run without patterns of its own tests every package.
+func runCovers(ctx context.Context, dir string, patterns []string, importPath string) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	cmd := exec.CommandContext(ctx, "go", append([]string{"list", "-e", "-f", "{{.ImportPath}}"}, patterns...)...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		// go test reports a listing failure itself.
+		return true
+	}
+	return slices.Contains(strings.Fields(string(out)), importPath)
 }
 
 // devClientLabel follows the names of the dev client's packages tested with nsgodev, as go test names a test variant of a package, so the report sets them apart from the ordinary build's.
@@ -444,15 +474,24 @@ func appendCoverProfile(to, from string) error {
 	return err
 }
 
-// splitTestArgs takes the optional project directory before forwarded Go flags. flag.Parse already consumes -- when no directory precedes it.
-func splitTestArgs(rest []string) (dir string, args []string) {
-	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
-		dir, rest = rest[0], rest[1:]
+// splitTestArgs takes the project directory or the go package patterns before forwarded Go flags, and what follows them. flag.Parse already consumes -- when no pattern precedes it.
+func splitTestArgs(rest []string) (patterns []string, args []string) {
+	for len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		patterns, rest = append(patterns, rest[0]), rest[1:]
 	}
 	if len(rest) > 0 && rest[0] == "--" {
 		rest = rest[1:]
 	}
-	return dir, rest
+	return patterns, rest
+}
+
+// testEntry reports whether path names a project a run takes whole: an app's directory, which has its nsgo.yaml, or a TSX entry, whose steps the run reads.
+func testEntry(path string) bool {
+	if ext := filepath.Ext(path); ext == ".tsx" || ext == ".ts" {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(treeOf(path), "nsgo.yaml"))
+	return err == nil
 }
 
 // loadForTest reads the app's nsgo.yaml; a directory without one still

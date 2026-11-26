@@ -136,8 +136,19 @@ func main() {
 		if err = parseCommand(fs, args, -1); err != nil {
 			break
 		}
-		dir, forwarded := splitTestArgs(fs.Args())
+		paths, forwarded := splitTestArgs(fs.Args())
 		o.args = forwarded
+		// A run takes go package patterns, so a shard of the suite names
+		// exactly the packages it tests; one app directory or entry still
+		// tests its own tree, as it always has.
+		dir := ""
+		switch {
+		case len(paths) == 0:
+		case len(paths) == 1 && testEntry(paths[0]):
+			dir = paths[0]
+		default:
+			o.patterns = paths
+		}
 		var p *project
 		if p, err = loadForTest(dir, os.Stdin); err == nil {
 			err = runTests(ctx, p, o)

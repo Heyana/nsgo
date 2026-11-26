@@ -557,14 +557,14 @@ func TestRunTestsBuildWithChecks(t *testing.T) {
 	}
 }
 
-func TestRunTestsRejectsASecondPackage(t *testing.T) {
+func TestRunTestsRejectsAPackageAmongItsFlags(t *testing.T) {
 	p, err := loadForTest(t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, target := range []string{"", "web"} {
 		err := runTests(t.Context(), p, testOptions{target: target, args: []string{"-v", "./b"}})
-		if err == nil || !strings.Contains(err.Error(), `takes one directory, not "./b"`) {
+		if err == nil || !strings.Contains(err.Error(), `takes package patterns before its flags, not "./b" after them`) {
 			t.Errorf("target %q: runTests = %v, want an error naming ./b", target, err)
 		}
 	}
@@ -572,22 +572,23 @@ func TestRunTestsRejectsASecondPackage(t *testing.T) {
 
 func TestForwardedTestFlagsDoNotNameADirectory(t *testing.T) {
 	for _, tc := range []struct {
-		in   []string
-		dir  string
-		args []string
+		in       []string
+		patterns []string
+		args     []string
 	}{
-		{[]string{"--", "-timeout=20m"}, "", []string{"-timeout=20m"}},
-		{[]string{".", "--", "-timeout=20m"}, ".", []string{"-timeout=20m"}},
-		{[]string{"./core"}, "./core", nil},
-		{[]string{"App.tsx", "--", "-count=1"}, "App.tsx", []string{"-count=1"}},
+		{[]string{"--", "-timeout=20m"}, nil, []string{"-timeout=20m"}},
+		{[]string{".", "--", "-timeout=20m"}, []string{"."}, []string{"-timeout=20m"}},
+		{[]string{"./core"}, []string{"./core"}, nil},
+		{[]string{".", "./cmd/...", "./ui/...", "--", "-short"}, []string{".", "./cmd/...", "./ui/..."}, []string{"-short"}},
+		{[]string{"App.tsx", "--", "-count=1"}, []string{"App.tsx"}, []string{"-count=1"}},
 	} {
 		fs := flag.NewFlagSet("test", flag.ContinueOnError)
 		if err := fs.Parse(tc.in); err != nil {
 			t.Fatal(err)
 		}
-		dir, args := splitTestArgs(fs.Args())
-		if dir != tc.dir || !slices.Equal(args, tc.args) {
-			t.Errorf("args %q: directory=%q, forwarded=%q; want %q, %q", tc.in, dir, args, tc.dir, tc.args)
+		patterns, args := splitTestArgs(fs.Args())
+		if !slices.Equal(patterns, tc.patterns) || !slices.Equal(args, tc.args) {
+			t.Errorf("args %q: patterns=%q, forwarded=%q; want %q, %q", tc.in, patterns, args, tc.patterns, tc.args)
 		}
 	}
 }

@@ -386,14 +386,17 @@ jobs:
   # The browser tests need Go alone, while the test job above spends most of its time installing and driving GTK, so they run beside it on a runner of their own.
   # The Test step runs the whole suite and takes about 3m49s, while the test job's other steps take about 6 minutes beside it.
   test-suite:
+    name: test-suite (${{ matrix.name }})
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        packages:
-          - ". ./cmd/... ./examples/... ./ui/... ./tsx/... ./web/... ./automation/... ./microphone/..."
-          - "./internal/... ./base/... ./core/... ./gpu/... ./nsgotest/... ./tools/... ./cloud/... ./audio/... ./desktop/... ./gamepad/... ./i18n/... ./icons/... ./widget/... ./mobile/... ./targets/... ./updater/... ./gameservices/..."
+        include:
+          - name: app
+            packages: ". ./cmd/... ./examples/... ./ui/... ./tsx/... ./web/... ./automation/... ./microphone/..."
+          - name: core
+            packages: "./internal/... ./base/... ./core/... ./gpu/... ./nsgotest/... ./tools/... ./cloud/... ./audio/... ./desktop/... ./gamepad/... ./i18n/... ./icons/... ./widget/... ./mobile/... ./targets/... ./updater/... ./gameservices/..."
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -437,11 +440,10 @@ jobs:
           PULSE_SINK: nsgo_test
           NSGO_FILE_ASSOCIATIONS: '1'
           NSGO_REQUIRE_JDK: '1'
+        # The shard's patterns are one run, so each package is built once and reported once.
         # examples/gallery runs its tests in sequence for about nine minutes on a hosted runner, beside the other packages, so go test's default ten-minute limit cuts it off.
         run: |
-          for package in ${{ matrix.packages }}; do
-            xvfb-run -a go tool nsgo test "$package" -- -timeout=20m
-          done
+          xvfb-run -a go tool nsgo test ${{ matrix.packages }} -- -timeout=20m
   web:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30

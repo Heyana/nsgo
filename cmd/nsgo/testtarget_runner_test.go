@@ -49,7 +49,7 @@ func TestTargetTestsRejectExtraPackagesBeforeStartingGo(t *testing.T) {
 	})
 	p := &project{Dir: t.TempDir()}
 	err := runTests(ctx, p, testOptions{target: "android", args: []string{"-count=2", "./second"}})
-	if err == nil || !strings.Contains(err.Error(), `takes one directory, not "./second"`) {
+	if err == nil || !strings.Contains(err.Error(), `takes package patterns before its flags, not "./second" after them`) {
 		t.Fatalf("multiple-package target test returned %v", err)
 	}
 }
