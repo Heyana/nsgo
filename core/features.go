@@ -59,3 +59,9 @@ func (t *Tree) enableGPU() {
 		t.SetGPUSubmitter(s.SubmitGPU)
 	}
 }
+
+func (t *Tree) enableGlass() {
+	if p, ok := unwrapPlatform(t.text).(driver.GlassEnabler); ok {
+		p.EnableGlass()
+	}
+}

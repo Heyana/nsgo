@@ -235,7 +235,10 @@ func (gv *glassView) release() {
 // drawGlass draws v's glass over box b at world, which keeps rectangles
 // upright: false when it cannot, for its blur to draw instead.
 func (p *painter) drawGlass(v *view, s *driver.ViewStyle, b *box, world matrix) bool {
-	gp := glassShaders.program(p.g)
+	var gp *glassProgram
+	if gl := glasses.Load(); gl != nil {
+		gp = gl.program(p.g)
+	}
 	pw, ph := uint32(math.Ceil(float64(b.w*p.scale))), uint32(math.Ceil(float64(b.h*p.scale)))
 	if gp == nil || pw == 0 || ph == 0 || world.b != 0 || world.c != 0 {
 		return false

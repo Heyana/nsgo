@@ -715,7 +715,9 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 	// Drawn above a web view reached before it, if any.
 	p.realize()
 	if e := p.w.effectOn(v); e != nil {
-		p.pictureBackdrop(e, v, world)
+		if sh := shaders.Load(); sh != nil {
+			sh.pictureBackdrop(p, e, v, world)
+		}
 	}
 	if pl.filters || !pl.flat {
 		p.setTransform(world)

@@ -37,12 +37,49 @@ type gl2BindGroup struct {
 	entries  map[uint32]driver.GPUBindGroupEntry
 }
 
+// gl2UniformBlockSlot and gl2SamplerPair mirror the GLSL writer's types
+// without naming its package, so an app that draws no GPU view links none of
+// the writer.
+type gl2UniformBlockSlot struct {
+	Group     uint32
+	Binding   uint32
+	BlockName string
+	Slot      uint32
+}
+
+type gl2SamplerPair struct {
+	Name           string
+	Unit           uint32
+	TextureGroup   uint32
+	TextureBinding uint32
+	SamplerGroup   uint32
+	SamplerBinding uint32
+}
+
 type gl2Pipeline struct {
 	prog          js.Value
 	vao           js.Value
 	desc          driver.GPUPipelineDesc
-	uniformBlocks []glsl.UniformBlockSlot
-	samplerPairs  []glsl.SamplerPair
+	uniformBlocks []gl2UniformBlockSlot
+	samplerPairs  []gl2SamplerPair
+}
+
+// gl2Blocks copies the writer's block slots into gl2UniformBlockSlot.
+func gl2Blocks(blocks []glsl.UniformBlockSlot) []gl2UniformBlockSlot {
+	out := make([]gl2UniformBlockSlot, len(blocks))
+	for i, b := range blocks {
+		out[i] = gl2UniformBlockSlot{b.Group, b.Binding, b.BlockName, b.Slot}
+	}
+	return out
+}
+
+// gl2Pairs copies the writer's sampler pairs into gl2SamplerPair.
+func gl2Pairs(pairs []glsl.SamplerPair) []gl2SamplerPair {
+	out := make([]gl2SamplerPair, len(pairs))
+	for i, sp := range pairs {
+		out[i] = gl2SamplerPair{sp.Name, sp.Unit, sp.TextureGroup, sp.TextureBinding, sp.SamplerGroup, sp.SamplerBinding}
+	}
+	return out
 }
 
 type gl2BoundGroup struct {
@@ -554,8 +591,8 @@ func (b *webgl2Backend) createPipeline(id driver.GPUID, desc driver.GPUPipelineD
 		prog:          prog,
 		vao:           vao,
 		desc:          desc,
-		uniformBlocks: compiled.UniformBlocks,
-		samplerPairs:  compiled.SamplerPairs,
+		uniformBlocks: gl2Blocks(compiled.UniformBlocks),
+		samplerPairs:  gl2Pairs(compiled.SamplerPairs),
 	}
 }
 

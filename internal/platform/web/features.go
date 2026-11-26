@@ -18,6 +18,7 @@ type shaderOps struct {
 	shadeLater      func(*surface, *view)
 	changedShaders  func(*surface)
 	drawShaders     func(*surface)
+	drawEffects     func(*surface)
 	draw            func(*surface, *view)
 	staleEffects    func(*surface)
 	release         func(*surface, *view)
@@ -91,6 +92,7 @@ func (*surface) EnableShaders() {
 		shadeLater:      (*surface).shadeLater,
 		changedShaders:  (*surface).changedShaders,
 		drawShaders:     (*surface).drawShaders,
+		drawEffects:     (*surface).drawEffects,
 		draw:            (*surface).drawShader,
 		staleEffects:    (*surface).staleEffects,
 		release: func(s *surface, v *view) {

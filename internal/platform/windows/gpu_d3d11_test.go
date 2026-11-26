@@ -12,7 +12,6 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/shader/wgsl"
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
-	"github.com/nsgo-dev/nsgo/internal/shaderir/hlsl"
 )
 
 func TestD3D11StructSizesMatchABI(t *testing.T) {
@@ -587,11 +586,11 @@ func TestD3D11ResolveBindingHelper(t *testing.T) {
 			2: {Binding: 2, Texture: 77},
 		},
 	}
-	e, ok := d3dResolveBinding(hlsl.RegisterBinding{Group: 1, Binding: 2, Kind: shaderir.BindingTexture, Register: 0}, bound)
+	e, ok := d3dResolveBinding(d3dRegisterBinding{Group: 1, Binding: 2, Kind: shaderir.BindingTexture, Register: 0}, bound)
 	if !ok || e.Texture != 77 {
 		t.Fatalf("d3dResolveBinding = %+v, %v", e, ok)
 	}
-	if _, ok := d3dResolveBinding(hlsl.RegisterBinding{Group: 0, Binding: 0, Kind: shaderir.BindingUniformBuffer, Register: 0}, bound); ok {
+	if _, ok := d3dResolveBinding(d3dRegisterBinding{Group: 0, Binding: 0, Kind: shaderir.BindingUniformBuffer, Register: 0}, bound); ok {
 		t.Fatal("expected unbound group 0 to return false")
 	}
 	if !d3dIsSRVBinding(shaderir.BindingTexture) || !d3dIsSRVBinding(shaderir.BindingStorageBufferRead) || d3dIsSRVBinding(shaderir.BindingSampler) {

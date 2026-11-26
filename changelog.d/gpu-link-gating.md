@@ -1,3 +1,3 @@
 ### Changed
 
-- Link a backend's MSL, HLSL or GLSL writer only when an app mounts a `core.GPUView`, through a `driver.GPUEnabler` whose table holds the item, resize, frame and release entry points (by @Laotree).
+- Link a backend's MSL, HLSL or GLSL writer only when an app mounts a `core.GPUView` or asks for a glass effect, through `driver.GPUEnabler`, `driver.GPUSubmitter` and `driver.GlassEnabler` tables that hold the item, resize, frame, release and effect entry points (by @Laotree).

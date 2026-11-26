@@ -1387,6 +1387,9 @@ func (t *Tree) restyle(n *node) bool {
 		n.style = mergeStyles(n.style, n.cls.important)
 	}
 	n.style = n.style.unzeroed()
+	if n.style.GlassEffect != GlassNone {
+		t.enableGlass()
+	}
 	if p.Disabled {
 		// The platform still follows the states a disabled view's own
 		// styles wait for, which the event mask reads.

@@ -1,8 +1,8 @@
 package driver
 
-// Feature enablers let each backend link its shader, canvas, video, web view and native-component code only into apps that construct one (docs/architecture/layers.md, What an app links).
+// Feature enablers let each backend link its shader, canvas, video, web view, native-component, GPU-view and glass code only into apps that use one (docs/architecture/layers.md, What an app links).
 //
-// Core's element mount methods type-assert the tree's TextEngine (unwrapping wrappers via PlatformUnwrapper) to the matching interface and call its method before the batch commits. When an app never constructs that element, no reachable call site mentions the interface method, so Go's linker drops the backend's implementation and everything reachable only through it.
+// Core's element mount methods and style resolution type-assert the tree's TextEngine (unwrapping wrappers via PlatformUnwrapper) to the matching interface and call its method before the batch commits. When an app never uses that element or style, no reachable call site mentions the interface method, so Go's linker drops the backend's implementation and everything reachable only through it.
 
 // PlatformUnwrapper returns the wrapped backend platform so core can reach its optional feature enablers without the wrapper referencing them.
 type PlatformUnwrapper interface {
@@ -49,4 +49,9 @@ type GPUEnabler interface {
 // GPUSubmitter is implemented by backends that run a GPU view's frames off the commit. Core connects it when an app mounts a GPU view, so the frame path links only then.
 type GPUSubmitter interface {
 	SubmitGPU(GPUFrame)
+}
+
+// GlassEnabler is implemented by backends that draw a glass effect with a shader program, which links only when a style asks for one.
+type GlassEnabler interface {
+	EnableGlass()
 }

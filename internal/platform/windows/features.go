@@ -16,6 +16,7 @@ type shaderOps struct {
 	changedShaders  func(*window)
 	drawShader      func(*painter, *view, float32, float32)
 	drawEffect      func(*painter, *view, matrix) bool
+	pictureBackdrop func(*painter, *view, *view, matrix)
 	release         func(*window, *view)
 }
 
@@ -85,6 +86,10 @@ type gpuOps struct {
 	release   func(*gpuView)
 }
 
+type glassOps struct {
+	program func(*gfx) *glassProgram
+}
+
 var (
 	shaders  atomic.Pointer[shaderOps]
 	canvases atomic.Pointer[canvasOps]
@@ -92,7 +97,15 @@ var (
 	webViews atomic.Pointer[webViewOps]
 	natives  atomic.Pointer[nativeOps]
 	gpus     atomic.Pointer[gpuOps]
+	glasses  atomic.Pointer[glassOps]
 )
+
+func (*window) EnableGlass() {
+	if glasses.Load() != nil {
+		return
+	}
+	glasses.Store(&glassOps{program: glassShaders.program})
+}
 
 func (*window) EnableGPU() {
 	if gpus.Load() != nil {
@@ -116,6 +129,7 @@ func (*window) EnableShaders() {
 		startTransition: (*window).startTransition,
 		changedShaders:  (*window).changedShaders,
 		drawShader:      (*painter).drawShader,
+		pictureBackdrop: (*painter).pictureBackdrop,
 		drawEffect: func(p *painter, v *view, world matrix) bool {
 			e := p.w.effectOn(v)
 			return e != nil && p.drawEffect(e, v, world)

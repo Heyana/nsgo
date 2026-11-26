@@ -1027,13 +1027,31 @@ func d3dLostReasonFromHR(hr uint32) driver.GPUDeviceLostReason {
 }
 
 // d3dCompiledHLSL holds the HLSL SM 5.0 sources, entry points, and register bindings produced from a GPUPipelineDesc via hlsl.CompilePipeline.
+// d3dRegisterBinding mirrors hlsl.RegisterBinding without naming the HLSL
+// writer's package, so an app that compiles no program links none of it.
+type d3dRegisterBinding struct {
+	Group    uint32
+	Binding  uint32
+	Kind     shaderir.BindingKind
+	Register uint32
+}
+
+// d3dRegisters copies the writer's bindings into d3dRegisterBinding.
+func d3dRegisters(bindings []hlsl.RegisterBinding) []d3dRegisterBinding {
+	out := make([]d3dRegisterBinding, len(bindings))
+	for i, b := range bindings {
+		out[i] = d3dRegisterBinding{b.Group, b.Binding, b.Kind, b.Register}
+	}
+	return out
+}
+
 type d3dCompiledHLSL struct {
 	VertexSource string
 	VertexEntry  string
 	PixelSource  string
 	PixelEntry   string
-	VSRegisters  []hlsl.RegisterBinding
-	PSRegisters  []hlsl.RegisterBinding
+	VSRegisters  []d3dRegisterBinding
+	PSRegisters  []d3dRegisterBinding
 }
 
 // d3dCompilePipelineHLSL compiles a pipeline's vertex and fragment shader IRs into HLSL SM 5.0 sources and per-stage register tables.
@@ -1051,7 +1069,7 @@ func d3dCompilePipelineHLSL(desc *driver.GPUPipelineDesc) (d3dCompiledHLSL, erro
 	out := d3dCompiledHLSL{
 		VertexSource: vsOut.VertexSource,
 		VertexEntry:  vsOut.VertexEntry,
-		VSRegisters:  vsOut.Registers,
+		VSRegisters:  d3dRegisters(vsOut.Registers),
 	}
 	if desc.Vertex.EntryPoint != "" && desc.Vertex.IR.VertexEntry == desc.Vertex.EntryPoint {
 		out.VertexEntry = desc.Vertex.EntryPoint
@@ -1062,7 +1080,7 @@ func d3dCompilePipelineHLSL(desc *driver.GPUPipelineDesc) (d3dCompiledHLSL, erro
 	if desc.Fragment.IR == desc.Vertex.IR {
 		out.PixelSource = vsOut.PixelSource
 		out.PixelEntry = vsOut.PixelEntry
-		out.PSRegisters = vsOut.Registers
+		out.PSRegisters = d3dRegisters(vsOut.Registers)
 	} else {
 		psOut, err := hlsl.CompilePipeline(desc.Fragment.IR)
 		if err != nil {
@@ -1070,7 +1088,7 @@ func d3dCompilePipelineHLSL(desc *driver.GPUPipelineDesc) (d3dCompiledHLSL, erro
 		}
 		out.PixelSource = psOut.PixelSource
 		out.PixelEntry = psOut.PixelEntry
-		out.PSRegisters = psOut.Registers
+		out.PSRegisters = d3dRegisters(psOut.Registers)
 	}
 	if desc.Fragment.EntryPoint != "" && desc.Fragment.IR.FragmentEntry == desc.Fragment.EntryPoint {
 		out.PixelEntry = desc.Fragment.EntryPoint
@@ -1129,8 +1147,8 @@ type d3dTrackedPipeline struct {
 	elements  []d3dInputElementSpec
 	vbStrides []uint32
 	topology  uint32
-	vsRegs    []hlsl.RegisterBinding
-	psRegs    []hlsl.RegisterBinding
+	vsRegs    []d3dRegisterBinding
+	psRegs    []d3dRegisterBinding
 	handle    d3dReleaser
 }
 
@@ -1863,7 +1881,7 @@ func d3dErrorCodeFromHR(hr uint32, fallback driver.GPUErrorCode) driver.GPUError
 }
 
 // d3dResolveBinding maps one HLSL RegisterBinding to the matching resource entry in the currently bound bind groups.
-func d3dResolveBinding(rb hlsl.RegisterBinding, bound [8]*d3dTrackedBindGroup) (driver.GPUBindGroupEntry, bool) {
+func d3dResolveBinding(rb d3dRegisterBinding, bound [8]*d3dTrackedBindGroup) (driver.GPUBindGroupEntry, bool) {
 	if rb.Group >= uint32(len(bound)) {
 		return driver.GPUBindGroupEntry{}, false
 	}

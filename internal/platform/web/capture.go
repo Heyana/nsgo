@@ -69,7 +69,9 @@ func (s *surface) captureFrame(id driver.NodeID, answer func([]byte, error)) {
 			}
 		}
 	}
-	s.drawEffects()
+	if sh := shaders.Load(); sh != nil {
+		sh.drawEffects(s)
+	}
 	ratio := float64(s.env.PixelRatio)
 	if ratio <= 0 {
 		ratio = 1
