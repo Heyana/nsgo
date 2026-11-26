@@ -133,7 +133,7 @@ jobs:
 
   android-runtime:
     name: Check the Android runtime is current
-    # Pull requests no longer commit classes.dex and classes.jar (#1759); a maintainer rebuilds them in a bot/android-runtime pull request. A release whose committed binaries were not built from its own Java would ship a runtime that does not match its sources, so this rebuilds them and refuses the release when they differ.
+    # Pull requests no longer commit classes.dex and classes.jar (#1759); `go run ./tools/changelog release` rebuilds them with android-runtime.yml when the Java changed since their last rebuild, deciding from Git history, and this exact comparison is the guard behind it. A release whose committed binaries were not built from its own Java would ship a runtime that does not match its sources, so this rebuilds them and refuses the release when they differ.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -149,19 +149,16 @@ jobs:
         run: |
           set -euo pipefail
           runtime=internal/platform/android/runtime
-          # build.sh needs platform 36 and a d8 from cmdline-tools or build-tools 36+; install what the runner image lacks, as test.yml's android job does.
-          if [ ! -f "$ANDROID_HOME/platforms/android-36/android.jar" ] || { [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/d8" ] && ! ls "$ANDROID_HOME"/build-tools/3[6-9]*/d8 >/dev/null 2>&1; }; then
-            (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
-          fi
+          committed="$RUNNER_TEMP/committed"
+          mkdir -p "$committed"
+          cp "$runtime/classes.dex" "$runtime/classes.jar" "$committed/"
+          # The same build as test.yml's android job and android-runtime.yml, which also installs the SDK packages the runner image lacks.
+          .github/scripts/build-android-runtime.sh
           dexdump=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name dexdump | sort -V | tail -n 1)
           if [ -z "$dexdump" ]; then
             echo "::error::No dexdump in $ANDROID_HOME/build-tools, so the committed classes.dex cannot be compared."
             exit 1
           fi
-          committed="$RUNNER_TEMP/committed"
-          mkdir -p "$committed"
-          cp "$runtime/classes.dex" "$runtime/classes.jar" "$committed/"
-          "$runtime/build.sh"
 
           # The jar holds javac's class files, which a JDK 21 compiles the same on any machine, so its entries' checksums of their uncompressed bytes must match exactly; the archive's own bytes are not compared, as they depend on the jar tool's compressor.
           entries() { unzip -v "$1" | awk 'length($7) == 8 && $7 ~ /^[0-9a-f]+$/ { print $7, $8 }'; }
@@ -192,7 +189,7 @@ jobs:
             stale="$stale classes.dex"
           fi
           if [ -n "$stale" ]; then
-            echo "::error title=Stale Android runtime::The committed$stale in $runtime at $GITHUB_SHA was not built from this commit's Java. Rebuild both with $runtime/build.sh on main's tip, merge them in a bot/android-runtime pull request, and release the merged commit."
+            echo "::error title=Stale Android runtime::The committed$stale in $runtime at $GITHUB_SHA was not built from this commit's Java. Run go run ./tools/changelog release on main's tip, which rebuilds both with android-runtime.yml, or rebuild them with $runtime/build.sh on main's tip in a bot/android-runtime pull request; then release the merged commit."
             exit 1
           fi
           echo "The committed Android runtime matches the Java of $GITHUB_SHA."

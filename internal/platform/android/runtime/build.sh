@@ -1,12 +1,8 @@
 #!/bin/sh
-# Rebuilds classes.dex and classes.jar from the Java runtime in ../java
-# after changing it: the dex goes in apps' APKs, the jar in the libraries
-# nsgo build -embed makes for host apps.
+# Rebuilds classes.dex and classes.jar from the Java runtime in ../java after changing it: the dex goes in apps' APKs, the jar in the libraries nsgo build -embed makes for host apps.
 #
-# These are the artifacts NSGo cannot build with Go, so they are committed, but only by maintainers, in a bot/android-runtime pull request after a change to ../java or the runtime's build inputs merges; a pull request leaves them alone.
-# It needs a JDK 17+ and a recent d8: the SDK's cmdline-tools, or
-# build-tools 36+. Python 3 fetches checksum-pinned Play Review and In-App Updates bytecode.
-# Set ANDROID_HOME to the SDK that holds them.
+# These are the artifacts NSGo cannot build with Go, so they are committed, but never by a pull request that changes ../java or the runtime's build inputs. `go run ./tools/changelog release X.Y.Z` rebuilds them when those changed since the last rebuild, by dispatching .github/workflows/android-runtime.yml, which runs this script on main's tip, and puts them in the release's changelog pull request; between releases, or for a release made with -no-runtime, a maintainer runs it on main and commits them in a bot/android-runtime pull request.
+# It needs a JDK 17+ (CI and the committed files use 21) and a recent d8: the SDK's cmdline-tools, or build-tools 36+. Python 3 fetches checksum-pinned Play Review and In-App Updates bytecode. Set ANDROID_HOME to the SDK that holds them.
 set -eu
 
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

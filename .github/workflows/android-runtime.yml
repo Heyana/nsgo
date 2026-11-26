@@ -1,0 +1,35 @@
+name: Android runtime
+
+# Builds the Android runtime's classes.dex and classes.jar from the Java at the ref it runs on and uploads them as the android-runtime artifact. `go run ./tools/changelog release X.Y.Z` dispatches it on main when the committed runtime is older than its Java and downloads the files into the release's pull request, so a maintainer needs neither a JDK nor the Android SDK; release.yml still refuses a release whose committed runtime differs from its Java.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the Android runtime
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          # The JDK the committed runtime is built with, as in test.yml's android job and release.yml's check, so javac gives the same class files.
+          java-version: '21'
+      - name: Build the runtime
+        run: .github/scripts/build-android-runtime.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-runtime
+          path: |
+            internal/platform/android/runtime/classes.dex
+            internal/platform/android/runtime/classes.jar
+          if-no-files-found: error
+          # The release tool downloads it within minutes; a few days covers a release prepared and resumed later.
+          retention-days: 3

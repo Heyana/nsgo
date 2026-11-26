@@ -2,10 +2,10 @@
 //
 //	go run ./tools/changelog check
 //	go run ./tools/changelog collect
-//	go run ./tools/changelog release [-date YYYY-MM-DD] X.Y.Z
+//	go run ./tools/changelog release [-date YYYY-MM-DD] [-no-runtime] X.Y.Z
 //	go run ./tools/changelog adopt -base origin/main -kind Fixed <name>
 //
-// check validates the fragments; collect moves them into `Unreleased` and deletes them; release collects them and turns `Unreleased` into the version's section above a fresh one; adopt moves the `Unreleased` lines a branch added to CHANGELOG.md into a fragment, for branches started before fragments.
+// check validates the fragments; collect moves them into `Unreleased` and deletes them; release collects them and turns `Unreleased` into the version's section above a fresh one, after replacing a stale Android runtime with one the android-runtime.yml workflow builds on main (runtime.go), unless -no-runtime; adopt moves the `Unreleased` lines a branch added to CHANGELOG.md into a fragment, for branches started before fragments.
 package main
 
 import (
@@ -52,7 +52,7 @@ func main() {
 }
 
 func usage() error {
-	return errors.New("usage: changelog check | collect | release [-date YYYY-MM-DD] X.Y.Z | adopt -base REV -kind KIND NAME")
+	return errors.New("usage: changelog check | collect | release [-date YYYY-MM-DD] [-no-runtime] X.Y.Z | adopt -base REV -kind KIND NAME")
 }
 
 func run(root string, args []string, now time.Time) error {
@@ -83,13 +83,18 @@ func run(root string, args []string, now time.Time) error {
 	case "release":
 		fs := flag.NewFlagSet("release", flag.ContinueOnError)
 		date := fs.String("date", now.UTC().Format(time.DateOnly), "the release's date")
+		noRuntime := fs.Bool("no-runtime", false, "leave the Android runtime as committed rather than rebuilding it when its Java changed")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
 		if fs.NArg() != 1 {
 			return usage()
 		}
-		return release(root, fs.Arg(0), *date)
+		var rt *rebuild
+		if !*noRuntime {
+			rt = newRebuild()
+		}
+		return release(root, fs.Arg(0), *date, rt)
 	case "adopt":
 		fs := flag.NewFlagSet("adopt", flag.ContinueOnError)
 		base := fs.String("base", "", "the branch the change merges into, such as origin/main")
@@ -280,7 +285,8 @@ func cut(text, version, date string) (string, error) {
 	return section(head, nil, section(heading+" - "+date, body, tail)), nil
 }
 
-func release(root, version, date string) error {
+// release cuts the version's section; with rt, it first brings the Android runtime up to date with its Java, so the release's pull request carries the files release.yml checks.
+func release(root, version, date string, rt *rebuild) error {
 	path := filepath.Join(root, changelogFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -297,6 +303,11 @@ func release(root, version, date string) error {
 	}
 	if _, err := cut(folded, version, date); err != nil {
 		return err
+	}
+	if rt != nil {
+		if err := rt.refresh(root); err != nil {
+			return err
+		}
 	}
 	n, err := collect(root)
 	if err != nil {

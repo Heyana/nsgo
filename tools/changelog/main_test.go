@@ -158,7 +158,7 @@ func TestCollectLeavesFragmentsOnError(t *testing.T) {
 
 func TestRelease(t *testing.T) {
 	root := repo(t, sample, map[string]string{"new.md": "### Added\n- Add new.\n"})
-	if err := run(root, []string{"release", "-date", "2026-12-01", "0.3.0"}, time.Time{}); err != nil {
+	if err := run(root, []string{"release", "-no-runtime", "-date", "2026-12-01", "0.3.0"}, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	want := `# Changelog
@@ -184,7 +184,7 @@ func TestRelease(t *testing.T) {
 
 func TestReleaseDefaultsToToday(t *testing.T) {
 	root := repo(t, sample, nil)
-	if err := run(root, []string{"release", "0.3.0-rc.1"}, time.Date(2026, 12, 2, 23, 0, 0, 0, time.UTC)); err != nil {
+	if err := run(root, []string{"release", "-no-runtime", "0.3.0-rc.1"}, time.Date(2026, 12, 2, 23, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(root, changelogFile)); !strings.Contains(got, "\n## [0.3.0-rc.1] - 2026-12-02\n\n- Keep an older line.\n") {
@@ -198,9 +198,9 @@ func TestReleaseRefusesBeforeTouchingFragments(t *testing.T) {
 		args      []string
 		want      string
 	}{
-		{sample, []string{"release", "0.2.0"}, "already has"},
-		{sample, []string{"release", "v0.3.0"}, "is not X.Y.Z"},
-		{sample, []string{"release", "-date", "12/01/2026", "0.3.0"}, "is not YYYY-MM-DD"},
+		{sample, []string{"release", "-no-runtime", "0.2.0"}, "already has"},
+		{sample, []string{"release", "-no-runtime", "v0.3.0"}, "is not X.Y.Z"},
+		{sample, []string{"release", "-no-runtime", "-date", "12/01/2026", "0.3.0"}, "is not YYYY-MM-DD"},
 	} {
 		root := repo(t, tc.changelog, map[string]string{"new.md": "### Added\n- Add new.\n"})
 		if err := run(root, tc.args, time.Now()); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -214,7 +214,7 @@ func TestReleaseRefusesBeforeTouchingFragments(t *testing.T) {
 		}
 	}
 	empty := repo(t, "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] - 2026-11-19\n\n- Add x.\n", nil)
-	if err := run(empty, []string{"release", "0.3.0"}, time.Now()); err == nil || !strings.Contains(err.Error(), "nothing to release") {
+	if err := run(empty, []string{"release", "-no-runtime", "0.3.0"}, time.Now()); err == nil || !strings.Contains(err.Error(), "nothing to release") {
 		t.Errorf("empty release: %v", err)
 	}
 }

@@ -90,7 +90,7 @@ jobs:
 
   android-runtime:
     name: Android runtime binaries
-    # Maintainers rebuild classes.dex and classes.jar from main and commit them in a bot/android-runtime pull request; one from anywhere else makes every other Android pull request conflict, as Git cannot merge binaries.
+    # classes.dex and classes.jar, rebuilt from main, are committed only in a release's chore/release-X.Y.Z pull request, which tools/changelog release fills, or a bot/android-runtime one; one from anywhere else makes every other Android pull request conflict, as Git cannot merge binaries.
     if: github.event_name == 'pull_request'
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 5
@@ -102,7 +102,7 @@ jobs:
           fetch-depth: 2
       - name: Check the pull request leaves the runtime's binaries alone
         env:
-          BOT: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'bot/android-runtime' }}
+          BOT: ${{ github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'bot/android-runtime' || startsWith(github.head_ref, 'chore/release-')) }}
         run: |
           set -euo pipefail
           [ "$BOT" = true ] && exit 0
@@ -110,5 +110,5 @@ jobs:
           changed=$(git diff --name-only HEAD^1 HEAD -- "$runtime/classes.dex" "$runtime/classes.jar" | tr '\n' ' ')
           if [ -n "$changed" ]; then
             # A warning while pull requests opened before this check still carry the binaries; it becomes an error once they have merged or dropped them.
-            echo "::warning::This pull request changes ${changed}which maintainers rebuild in a bot/android-runtime pull request after merge. Drop them with: git checkout origin/main -- $runtime/classes.dex $runtime/classes.jar"
+            echo "::warning::This pull request changes ${changed}which a release's changelog pull request or a bot/android-runtime one rebuilds after merge. Drop them with: git checkout origin/main -- $runtime/classes.dex $runtime/classes.jar"
           fi
