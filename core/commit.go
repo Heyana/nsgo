@@ -979,7 +979,7 @@ func (t *Tree) emitParts(n *node) bool {
 	case n.canvas != nil:
 		if cn := n.canvas; cn.fresh && cn.drawing != nil {
 			cn.fresh = false
-			add(driver.MountItem{Kind: driver.ItemCanvas, ID: n.id, Drawing: cn.withFrames(cn.drawing.Painted(&cn.paint, cn.color))})
+			add(driver.MountItem{Kind: driver.ItemCanvas, ID: n.id, Drawing: cn.scaled(cn.withFrames(cn.drawing.Painted(&cn.paint, cn.color)))})
 		}
 	case n.shader != nil:
 		if sn := n.shader; sn.fresh {

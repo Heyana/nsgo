@@ -615,6 +615,25 @@ func (t *target) postApp(fn func()) {
 	cx.Post(fn)
 }
 
+// pixelRatio is the device pixels per point the platform reports to the app, read on the engine's goroutine.
+func (t *target) pixelRatio() float32 {
+	t.mu.Lock()
+	cx := t.appScope
+	t.mu.Unlock()
+	if cx == nil {
+		t.a.t.Fatal("nsgotest: the platform has not rendered the app yet")
+	}
+	ratio := make(chan float32, 1)
+	cx.Post(func() { ratio <- cx.Env().PixelRatio() })
+	select {
+	case r := <-ratio:
+		return r
+	case <-time.After(10 * time.Second):
+		t.a.t.Fatal("nsgotest: the engine did not report its pixel ratio")
+		return 0
+	}
+}
+
 // pending reports whether posts wait for the next runPosts.
 func (t *target) pending() bool {
 	t.a.mu.Lock()

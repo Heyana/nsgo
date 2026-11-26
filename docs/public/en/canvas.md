@@ -33,6 +33,19 @@ d.SetFillGradient(core.CanvasLinear(0, 0, float32(size.Width), 0,
 )).FillRect(0, 0, float32(size.Width), 40)
 ```
 
+## Resolution
+
+`ResolutionScale` draws a canvas with fewer pixels and stretches them to its box, as a game's quality setting does: 0.5 draws half the pixels per side, times the screen's density and any zoom or transform around the canvas. Zero and values outside (0, 1) keep the screen's density. The stretch is smooth unless `Sampling` is `core.ImageSamplingNearest`, which keeps pixel art blocky. `ResolutionScaleFunc` and `SamplingFunc` follow signals and play the last drawing again without rerunning `Draw`. Hit tests, `OnPress` and the size `Draw` gets stay in points. HarmonyOS still draws at the screen's density.
+
+```go
+core.Canvas{
+	Style:               core.Style{FlexGrow: 1},
+	ResolutionScaleFunc: func() float32 { return quality.Get() }, // 0.5 on low
+	Sampling:            core.ImageSamplingNearest,
+	Draw:                drawScene,
+}
+```
+
 ## Text, images and parts
 
 `MeasureText`, `TextMetrics` and `SetTextAlign` lay text out on the platform's text engine, so labels use the same fonts as the rest of the app. `DrawImage`, `DrawImageIn` and `DrawImageFrom` draw pictures, `DrawSVG` and `DrawSVGIn` draw parsed `*core.SVG` documents (`core.ParseSVG`) at their intrinsic size or fitted into a rectangle — with `<text>` and `<tspan>` elements measured and rendered by the platform's own text engine and `currentColor` taken from the drawing's fill color — and `OnPress` can test the last drawing with `IsPointInPath` and `IsPointInStroke`. Native backends cache the 64 most recently drawn unkept canvas image sources; call `release := cx.KeepImage(src)` to pin sprite atlases or long-lived textures out of that eviction bound until `release()` runs or `cx` disposes.

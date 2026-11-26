@@ -62,10 +62,13 @@ type surface struct {
 	canvas js.Value
 	images canvasImageCache[*canvasImage]
 	// meshCanvas is a second offscreen canvas, where meshes' textures are read and their rasters composited.
-	meshCanvas  js.Value
-	pixelImages bool
-	pixelFrames []canvasPixelFrame
-	pixelCount  int
+	meshCanvas js.Value
+	// stretchCanvas is where a canvas drawn below the pixel ratio is
+	// stretched to it pixel by pixel (Drawing.Upscale nearest).
+	stretchCanvas js.Value
+	pixelImages   bool
+	pixelFrames   []canvasPixelFrame
+	pixelCount    int
 	// files are images of bytes written for <image> to load, by key.
 	files map[string]string
 	// appearance is the one the app forces, AppearanceSystem for none.
@@ -291,7 +294,7 @@ func fingers(list js.Value) []finger {
 }
 
 // canvasPainter holds paintDrawing once core constructs a Canvas or Icon, so mini programs that never draw a canvas drop internal/platform/canvas2d.
-var canvasPainter atomic.Pointer[func(*surface, driver.NodeID, []driver.DrawOp, driver.Size) string]
+var canvasPainter atomic.Pointer[func(*surface, driver.NodeID, []driver.DrawOp, driver.Size, float64, bool) string]
 
 func (*surface) EnableCanvas() {
 	if canvasPainter.Load() != nil {
@@ -303,18 +306,22 @@ func (*surface) EnableCanvas() {
 
 // paint draws ops on the offscreen canvas and returns the picture as a
 // data URL, "" while an image they draw loads.
-func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size) string {
+func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size, scale float64, smooth bool) string {
 	if fn := canvasPainter.Load(); fn != nil {
-		return (*fn)(s, id, ops, size)
+		return (*fn)(s, id, ops, size, scale, smooth)
 	}
 	return ""
 }
 
-func (s *surface) paintDrawing(id driver.NodeID, ops []driver.DrawOp, size driver.Size) string {
-	ratio := float64(s.env.PixelRatio)
-	if ratio <= 0 {
-		ratio = 2
+// paintDrawing draws ops at the pixel ratio times scale, which <image>
+// stretches to the canvas's box smoothly; drawn below the pixel ratio to
+// their nearest, they are stretched to it on a second canvas first.
+func (s *surface) paintDrawing(id driver.NodeID, ops []driver.DrawOp, size driver.Size, scale float64, smooth bool) string {
+	full := float64(s.env.PixelRatio)
+	if full <= 0 {
+		full = 2
 	}
+	ratio := full * scale
 	w, h := float64(size.Width), float64(size.Height)
 	if !s.canvas.Truthy() {
 		s.canvas = s.api.Call("createOffscreenCanvas", map[string]any{"type": "2d", "width": 1, "height": 1})
@@ -374,7 +381,25 @@ func (s *surface) paintDrawing(id driver.NodeID, ops []driver.DrawOp, size drive
 	if waiting {
 		return ""
 	}
+	if !smooth && scale < 1 {
+		c = s.stretch(c, int(w*full+0.999), int(h*full+0.999))
+	}
 	return c.Call("toDataURL", "image/png").String()
+}
+
+// stretch draws c over width × height pixels of stretchCanvas, each of
+// its pixels filling those nearest it, and returns stretchCanvas.
+func (s *surface) stretch(c js.Value, width, height int) js.Value {
+	if !s.stretchCanvas.Truthy() {
+		s.stretchCanvas = s.api.Call("createOffscreenCanvas", map[string]any{"type": "2d", "width": 1, "height": 1})
+	}
+	out := s.stretchCanvas
+	out.Set("width", width)
+	out.Set("height", height)
+	ctx := out.Call("getContext", "2d")
+	ctx.Set("imageSmoothingEnabled", false)
+	ctx.Call("drawImage", c, 0, 0, width, height)
+	return out
 }
 
 func (s *surface) supportsPixelImages() bool { return s.pixelImages }

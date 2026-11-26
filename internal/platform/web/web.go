@@ -310,8 +310,10 @@ type view struct {
 	// canvasLast are the ops the <canvas> was last played with, bound
 	// arguments in, for the damage of the next change.
 	canvasLast []driver.DrawOp
-	// canvasExact is whether the canvas is drawn with image-rendering: pixelated, which it is while its bitmap matches the screen pixels an axis-aligned zoom shows it at.
+	// canvasExact is whether the canvas's bitmap matches the screen pixels an axis-aligned zoom shows it at, which it then draws with image-rendering: pixelated.
 	canvasExact bool
+	// imageRendering is the image-rendering its <canvas> was last given (canvasRendering).
+	imageRendering string
 	// transformZoom and transformSkewed track the view's style/animated transform scale and whether it rotates/skews/tilts, for sharp canvas replay under style transforms.
 	transformZoom   float64
 	transformSkewed bool

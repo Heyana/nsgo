@@ -3888,9 +3888,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     boolean selected = in.readUnsignedByte() != 0;
                     parts[i] = new CanvasNode.Part(x, y, w, h, role, label, testID, selected);
                 }
+                float resolution = in.readFloat();
+                boolean nearest = in.readUnsignedByte() != 0;
                 String[] keys = new String[in.readInt()];
                 for (int i = 0; i < keys.length; i++) keys[i] = Protocol.readString(in);
                 n.canvas.setPixels(keys, frames);
+                n.canvas.setResolution(resolution, !nearest);
                 n.canvas.setOps(ops, offsets, colors, parts);
                 animator.bindCanvas(n.id, nodes);
                 applyAnimated();

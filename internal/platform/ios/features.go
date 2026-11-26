@@ -103,8 +103,10 @@ func (*surface) EnableCanvas() {
 	}
 	canvases.Store(&canvasOps{
 		apply: func(s *surface, v *view, d *driver.Drawing) {
+			was := v.drawing
 			v.drawing = d
 			v.played = v.played[:0] // drawn whole first
+			v.restretch(was)
 			s.animator.BindCanvas(v.id, d.Slots)
 			v.setCanvasNodes(d.Nodes)
 			v.redraw()

@@ -40,6 +40,20 @@ type Canvas struct {
 	EmFunc func() EmBox
 	// MeasureEm measures a width-aware em canvas, such as base/formula's display math, at width in points (Auto when unconstrained) and the resolved, scaled font size. It returns its box in ems without drawing. Em or EmFunc may supply its preferred box. Reads are tracked; the callback also runs during layout, so it must not change signals.
 	MeasureEm func(width, fontSize Points) EmBox
+	// ResolutionScale multiplies the pixels per point the canvas is drawn at, the screen's density times any zoom or transform around it: 0.5 draws half the pixels per side and stretches them to the canvas's box, so a heavy drawing such as a game's scene has fewer to fill. Zero and values outside (0, 1) draw at the screen's density. ResolutionScaleFunc follows what it reads, playing the last drawing again at the new scale without running Draw. Hit tests, OnPress and the size Draw gets stay in points.
+	ResolutionScale     float32
+	ResolutionScaleFunc func() float32
+	// Sampling is how a canvas drawn below the screen's density (ResolutionScale) is stretched to its box: smoothly by default, or to the nearest pixel for pixel art. SamplingFunc follows what it reads, as ResolutionScaleFunc does.
+	Sampling     ImageSampling
+	SamplingFunc func() ImageSampling
+}
+
+// canvasResolution is the ResolutionScale a canvas sends: r within (0, 1), or 0 for any other value, which draws at the screen's density.
+func canvasResolution(r float32) float32 {
+	if r > 0 && r < 1 {
+		return r
+	}
+	return 0
 }
 
 // EmBox is a canvas's natural size in ems of its font size (Canvas.Em): Width wide, reaching Ascent above its baseline and Descent below it.
@@ -111,6 +125,10 @@ type canvasNode struct {
 	// measureFont invalidates a width-aware recording even when fixed dimensions keep its frame unchanged after a font-size change.
 	measureFont *Signal[Points]
 	measured    EmBox
+	// resolution and sampling are the canvas's ResolutionScale, as
+	// canvasResolution keeps it, and Sampling, which its drawing carries.
+	resolution float32
+	sampling   ImageSampling
 	// frames are the copies of the pixels the drawing last sent draws, by the app's buffer and version.
 	frames map[pixelKey]*image.RGBA
 }
@@ -118,6 +136,18 @@ type canvasNode struct {
 type pixelKey struct {
 	from    *image.RGBA
 	version uint64
+}
+
+// scaled returns d carrying the canvas's resolution and sampling, in a
+// copy where they differ, as a drawing handed to the platform never
+// changes.
+func (cn *canvasNode) scaled(d *Drawing) *Drawing {
+	if d.Resolution == cn.resolution && d.Upscale == cn.sampling {
+		return d
+	}
+	out := *d
+	out.Resolution, out.Upscale = cn.resolution, cn.sampling
+	return &out
 }
 
 // withFrames returns d with the pixels it draws copied, as an image view's are (pixelFrame): those the last drawing sent at the same version keep their copies, so the platform keeps its images.
@@ -167,8 +197,32 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 	n.h = handlers{press: c.OnPress, layout: c.OnLayout}
 	n.props = driver.ViewProps{Role: RoleImage, Label: c.Label, TestID: c.TestID}
 	t.bindAccessibility(cx, n, a11y{labelFunc: c.LabelFunc})
-	cn := &canvasNode{draw: c.Draw, size: NewSignal(cx, Size{})}
+	cn := &canvasNode{draw: c.Draw, size: NewSignal(cx, Size{}),
+		resolution: canvasResolution(c.ResolutionScale), sampling: c.Sampling}
 	n.canvas = cn
+	// A new scale or sampling plays the last drawing again.
+	replay := func() {
+		if cn.drawing != nil {
+			cn.fresh = true
+			t.touch(n)
+		}
+	}
+	if c.ResolutionScaleFunc != nil {
+		cx.renderEffect(func() {
+			if r := canvasResolution(c.ResolutionScaleFunc()); r != cn.resolution {
+				cn.resolution = r
+				replay()
+			}
+		})
+	}
+	if c.SamplingFunc != nil {
+		cx.renderEffect(func() {
+			if s := c.SamplingFunc(); s != cn.sampling {
+				cn.sampling = s
+				replay()
+			}
+		})
+	}
 	t.canvases = append(t.canvases, n)
 	if c.Em.sized() || c.EmFunc != nil || c.MeasureEm != nil {
 		cn.em = &emNode{box: c.Em, measure: c.MeasureEm}

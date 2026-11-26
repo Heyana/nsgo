@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -84,4 +85,15 @@ func (l *CanvasLayer) Release() {
 		Release(l.ref)
 		l.ref = 0
 	}
+}
+
+// StretchCanvas has Core Animation stretch layer, the content layer of a
+// canvas playing d, as d's Upscale says: smoothly or to the nearest
+// pixel, which a drawing at a ResolutionScale below 1 shows.
+func StretchCanvas(layer objc.ID, d *driver.Drawing) {
+	filter := "linear"
+	if !d.Smooth() {
+		filter = "nearest"
+	}
+	layer.Send(sel("setMagnificationFilter:"), NSString(filter))
 }

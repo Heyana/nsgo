@@ -93,6 +93,12 @@ type View struct {
 	// arguments are bound to.
 	Drawing *driver.Drawing
 	Ops     []driver.DrawOp
+	// ResolutionScale is what a canvas's Canvas.ResolutionScale
+	// multiplies the pixels per point it is drawn at by, within (0, 1],
+	// and CanvasSampling how its pixels stretch to its box; CanvasScale
+	// returns the pixels per point.
+	ResolutionScale float32
+	CanvasSampling  core.ImageSampling
 	// Shader is what the view's shader draws, a shader view's fill or a
 	// view's effect, transition or navigation shader, nil for none.
 	// ShaderStarts counts the transitions it started
@@ -166,6 +172,35 @@ func (a *App) Animated(selector string) ViewStyle {
 	v := a.Find(selector)
 	vals, _ := a.anim.Values(v.ID)
 	return animatedValues(vals).Apply(v.Style)
+}
+
+// CanvasScale returns the pixels per point the canvas selector matches is
+// drawn at, as the platforms raster it: the screen's PixelRatio, times the
+// raster steps (driver.RasterStep) of the style transforms and scroll
+// zooms around it, which together reach 4 at most, times its
+// ResolutionScale.
+func (a *App) CanvasScale(selector string) float32 {
+	a.t.Helper()
+	v := a.Find(selector)
+	ratio := 1.0
+	if a.target != nil {
+		ratio = float64(a.target.pixelRatio())
+	} else if a.env != nil && a.env.PixelRatio > 0 {
+		ratio = float64(a.env.PixelRatio)
+	}
+	zoom := 1.0
+	for n := v; n != nil; n = n.Parent {
+		vals, _ := a.anim.Values(n.ID)
+		zoom *= driver.RasterStep(animatedValues(vals).Apply(n.Style).Transform.RasterScale())
+		if n != v && n.Kind == KindScroll && n.ZoomScale > 0 {
+			zoom *= driver.RasterStep(n.ZoomScale)
+		}
+	}
+	scale := v.ResolutionScale
+	if scale <= 0 {
+		scale = 1
+	}
+	return float32(ratio * min(zoom, 4) * float64(scale))
 }
 
 // NativeCommand is a command a native view received.
@@ -254,6 +289,7 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 		return
 	}
 	v.Drawing = d
+	v.ResolutionScale, v.CanvasSampling = float32(d.ResolutionScale()), d.Upscale
 	a.anim.BindCanvas(v.ID, d.Slots)
 	v.Ops = slices.Clone(a.anim.CanvasOps(v.ID, d))
 	pass := a.canvasImageUse

@@ -203,6 +203,9 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 		w.str(n.TestID)
 		w.flags(n.Selected)
 	}
+	// The resolution scale and whether its pixels stretch to the nearest.
+	w.float(float32(d.ResolutionScale()))
+	w.flags(!d.Smooth())
 }
 
 // writeAtlas supplies one image key followed by the sprite records.

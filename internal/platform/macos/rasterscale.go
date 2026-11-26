@@ -16,7 +16,8 @@ import (
 // times rather than every frame.
 
 // contentScale is the pixels per point v's content layer draws at: the
-// window's, times the raster steps of v and the views around it.
+// window's, times the raster steps of v and the views around it, times a
+// canvas's ResolutionScale.
 func (v *view) contentScale() float64 {
 	scale := float64(v.surface.env.PixelRatio)
 	for n := v; n != nil; n = n.parentView() {
@@ -24,7 +25,7 @@ func (v *view) contentScale() float64 {
 			scale *= n.rasterStep
 		}
 	}
-	return scale
+	return scale * v.drawing.ResolutionScale()
 }
 
 // parentView is the view whose native view holds v's, or nil.
@@ -59,4 +60,18 @@ func (v *view) followScale(vs *driver.ViewStyle) {
 		}
 	}
 	walk(v.native)
+}
+
+// restretch gives canvas v's content layer the pixels per point and the
+// stretch of its drawing, which replaced was, when they changed.
+func (v *view) restretch(was *driver.Drawing) {
+	if v.contentLayer == 0 {
+		return
+	}
+	if was == nil || was.ResolutionScale() != v.drawing.ResolutionScale() {
+		v.contentLayer.Send(selSetContentsScale, v.contentScale())
+	}
+	if was == nil || was.Smooth() != v.drawing.Smooth() {
+		apple.StretchCanvas(v.contentLayer, v.drawing)
+	}
 }

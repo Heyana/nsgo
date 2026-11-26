@@ -50,6 +50,16 @@ final class RasterScale {
         return s > 1.0 ? (float) s : 1f;
     }
 
+    /**
+     * Backing bitmap scale for a canvas widthPx × heightPx pixels: its bounded
+     * raster step times its resolution (Canvas.ResolutionScale) where that is
+     * within (0, 1). 1 draws straight into the view's canvas.
+     */
+    static float canvasScale(int widthPx, int heightPx, float step, float resolution) {
+        float s = step > 1f ? boundedScale(widthPx, heightPx, step) : 1f;
+        return resolution > 0f && resolution < 1f ? s * resolution : s;
+    }
+
     /** Backing bitmap pixel dimension for basePx at scale. */
     static int scaledPixels(int basePx, float scale) {
         if (basePx <= 0) return 0;

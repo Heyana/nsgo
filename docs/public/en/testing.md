@@ -98,7 +98,7 @@ On macOS, `nsgotest.PlatformTextEngine()` gives headless tests CoreText metrics.
 
 Windowless rendering and font registration currently support macOS. Other targets return `nsgotest.ErrNoPlayer`; native-target `Screenshot` remains available independently.
 
-`View.Style` records a `nsgotest.ViewStyle`, and `View.Animated` records `nsgotest.AnimatedValues`. `app.Animated(selector)` applies bound values to the recorded base style. Effects and custom cursors retain their app-value identities; `Radii`, `Rounded`, `Rim` and `Matrix` keep the same geometry policies.
+`View.Style` records a `nsgotest.ViewStyle`, and `View.Animated` records `nsgotest.AnimatedValues`. `app.Animated(selector)` applies bound values to the recorded base style. `app.CanvasScale(selector)` returns the pixels per point a canvas is drawn at: the pixel ratio, times the raster steps of the zooms and transforms around it, times its `ResolutionScale`, which `View.ResolutionScale` records with its `CanvasSampling`. Effects and custom cursors retain their app-value identities; `Radii`, `Rounded`, `Rim` and `Matrix` keep the same geometry policies.
 
 `app.Find(selector).Kind` is a `nsgotest.ViewKind`; compare it with constants such as `nsgotest.KindText`, `KindInput`, `KindCanvas` or `KindGPU` when a test needs to inspect the mounted view form.
 

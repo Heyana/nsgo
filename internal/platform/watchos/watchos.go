@@ -905,7 +905,7 @@ func hostDraw(id uint32, ctx uintptr, w, h float64) {
 			v.layout.DrawBackgrounds(ctx, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y), 0, 0))
 			v.layout.Draw(ctx, float64(f.Size.Height), r, baseUp)
 		case v.drawing != nil:
-			apple.Play(ctx, s.animator.CanvasOps(v.id, v.drawing), host)
+			s.playCanvas(ctx, v, f.Size, host)
 		case v.image != nil:
 			v.image.Draw(ctx)
 		case v.field != nil:

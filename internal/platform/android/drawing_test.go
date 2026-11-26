@@ -56,3 +56,27 @@ func TestCanvasLeavesShaderOpsOut(t *testing.T) {
 		t.Errorf("a shader op wrote %v, an empty drawing %v", shaded.buf, empty.buf)
 	}
 }
+
+// The resolution scale and its sampling follow the accessibility nodes.
+func TestCanvasResolutionWire(t *testing.T) {
+	for _, c := range []struct {
+		resolution float32
+		sampling   driver.ImageSampling
+		want       float32
+		nearest    byte
+	}{{0, driver.ImageSamplingSmooth, 1, 0}, {0.5, driver.ImageSamplingNearest, 0.5, 1}, {1.5, driver.ImageSamplingSmooth, 1, 0}} {
+		d := driver.NewDrawing(nil).FillRect(0, 0, 4, 4)
+		d.Resolution, d.Upscale = c.resolution, c.sampling
+		var w writer
+		writeDrawing(&w, d)
+		r := reader{buf: w.buf}
+		n := int(r.u32())
+		r.buf = r.buf[n:]
+		if slots, nodes := r.u32(), r.u32(); slots != 0 || nodes != 0 {
+			t.Fatalf("%d slots and %d nodes", slots, nodes)
+		}
+		if got, nearest := r.float(), r.byte(); got != c.want || nearest != c.nearest || len(r.buf) != 0 {
+			t.Errorf("resolution %v: wrote %v nearest %d, %d bytes left; want %v nearest %d", c.resolution, got, nearest, len(r.buf), c.want, c.nearest)
+		}
+	}
+}

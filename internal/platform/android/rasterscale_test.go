@@ -41,6 +41,15 @@ public class RasterScaleDriver {
             + RasterScale.scaledPixels(2048, bSquare) + " "
             + RasterScale.scaledPixels(8192, bLong) + " "
             + RasterScale.scaledPixels(5000, bHuge));
+        // Canvas.ResolutionScale multiplies the bounded step; outside (0, 1) it keeps it.
+        System.out.println("CANVAS "
+            + RasterScale.canvasScale(300, 150, 1f, 0.5f) + " "
+            + RasterScale.canvasScale(300, 150, 2f, 0.5f) + " "
+            + RasterScale.canvasScale(2048, 2048, 4f, 0.5f) + " "
+            + RasterScale.canvasScale(300, 150, 1f, 0f) + " "
+            + RasterScale.canvasScale(300, 150, 2f, 1.5f) + " "
+            + RasterScale.scaledPixels(300, RasterScale.canvasScale(300, 150, 1f, 0.5f)) + " "
+            + RasterScale.scaledPixels(1, RasterScale.canvasScale(1, 1, 1f, 0.01f)));
     }
 }
 `
@@ -121,6 +130,17 @@ public class RasterScaleDriver {
 			}
 			if pHuge != 5000 {
 				t.Errorf("pHuge = %d, want 5000", pHuge)
+			}
+		}
+	}
+	if !strings.Contains(string(out), "CANVAS 0.5 1.0 ") {
+		t.Errorf("no canvas scale line, or a wrong one, in %s", out)
+	}
+	for _, line := range lines {
+		if f := strings.Fields(line); f[0] == "CANVAS" {
+			square, _ := strconv.ParseFloat(f[3], 64)
+			if math.Abs(square-1) > 0.01 || f[4] != "1.0" || f[5] != "2.0" || f[6] != "150" || f[7] != "1" {
+				t.Errorf("canvas scales %v, want 0.5 1.0 ~1 1.0 2.0 150 1", f[1:])
 			}
 		}
 	}

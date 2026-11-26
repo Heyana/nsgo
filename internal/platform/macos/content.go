@@ -137,6 +137,9 @@ func (v *view) drawLayer() objc.ID {
 	layer.Send(selSetDelegate, contentDrawer)
 	layer.Send(selSetNeedsDisplayOnResize, true)
 	layer.Send(selSetContentsScale, v.contentScale())
+	if v.drawing != nil {
+		apple.StretchCanvas(layer, v.drawing)
+	}
 	layer.Send(selSetZPosition, apple.Z(contentZ))
 	v.laidFrame = v.contentFrame()
 	v.needFrame = v.laidFrame

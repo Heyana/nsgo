@@ -29,6 +29,11 @@ type Drawing struct {
 	// (FillFromView and the like), which the core sets before the platform
 	// plays the drawing.
 	ViewPaints []ViewPaint
+	// Resolution multiplies the pixels per point the platform plays the
+	// drawing at (core.Canvas.ResolutionScale), and Upscale is how it
+	// stretches the fewer pixels to the canvas's box: ResolutionScale reads it.
+	Resolution float32
+	Upscale    ImageSampling
 
 	text     TextEngine // measures text; nil approximates it
 	measured map[textKey]TextMetrics
@@ -51,6 +56,30 @@ type Drawing struct {
 // the core records a Canvas's: MeasureText, TextMetrics and the
 // alignment of texts ask it.
 func NewDrawing(text TextEngine) *Drawing { return &Drawing{text: text} }
+
+// ResolutionScale is what d's Resolution multiplies the pixels per point a platform
+// plays it at by: within (0, 1), or 1 for a nil d or any other value,
+// which plays it at the screen's density.
+func (d *Drawing) ResolutionScale() float64 {
+	if d == nil || !(d.Resolution > 0 && d.Resolution < 1) {
+		return 1
+	}
+	return float64(d.Resolution)
+}
+
+// Smooth reports whether the pixels of d, played below the screen's
+// density, are stretched smoothly to the canvas's box rather than to
+// their nearest (Upscale); a nil d is smooth.
+func (d *Drawing) Smooth() bool { return d == nil || d.Upscale != ImageSamplingNearest }
+
+// CanvasPixels is how many pixels length points take at scale pixels per
+// point: rounded up, and at least 1 for a length above 0.
+func CanvasPixels(length Points, scale float64) int {
+	if !(length > 0) {
+		return 0
+	}
+	return max(int(math.Ceil(float64(length)*scale-1e-6)), 1)
+}
 
 // DrawKind is a drawing operation.
 type DrawKind uint8
@@ -1200,7 +1229,8 @@ func (d *Drawing) Painted(p *PaintStyle, current Color) *Drawing {
 	if len(d.ViewPaints) == 0 {
 		return d
 	}
-	out := &Drawing{Ops: slices.Clone(d.Ops), Slots: d.Slots, Nodes: d.Nodes, ViewPaints: d.ViewPaints, text: d.text}
+	out := &Drawing{Ops: slices.Clone(d.Ops), Slots: d.Slots, Nodes: d.Nodes, ViewPaints: d.ViewPaints,
+		Resolution: d.Resolution, Upscale: d.Upscale, text: d.text}
 	for _, v := range d.ViewPaints {
 		if v.Op >= len(out.Ops) {
 			continue

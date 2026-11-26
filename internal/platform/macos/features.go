@@ -103,8 +103,10 @@ func (*surface) EnableCanvas() {
 	}
 	canvases.Store(&canvasOps{
 		apply: func(s *surface, v *view, d *driver.Drawing) {
+			was := v.drawing
 			v.drawing = d
 			v.played = v.played[:0] // drawn whole first
+			v.restretch(was)
 			cp := v.canvasState()
 			if cp == nil {
 				cp = &canvasPaint{}

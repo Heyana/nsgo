@@ -36,6 +36,11 @@ type canvasCache struct {
 	// head is the static part's list, or the whole drawing's; tail the
 	// rest's, nil until played for the arguments' current values.
 	head, tail *comObject
+	// low is the bitmap a drawing below the screen's density
+	// (driver.Drawing.ResolutionScale) plays into, lowW × lowH pixels,
+	// which frames stretch to the canvas; nil until played.
+	low        *comObject
+	lowW, lowH uint32
 	scale      float32
 	generation uint64
 	// last are the ops as the bound arguments last changed them, for the
@@ -85,9 +90,10 @@ func (c *canvasCache) argsChanged() {
 	} else {
 		releaseAll(&c.head)
 	}
+	releaseAll(&c.low)
 }
 
-func (c *canvasCache) release() { releaseAll(&c.head, &c.tail) }
+func (c *canvasCache) release() { releaseAll(&c.head, &c.tail, &c.low) }
 
 // offscreenScale is the pixels per point an offscreen canvas bitmap draws at under world transform world: baseScale times driver.RasterStep of world's stretch, bounded to 4096 × 4096 pixels and a 16384-pixel side.
 func offscreenScale(width, height, baseScale float32, world matrix) float32 {
@@ -112,6 +118,9 @@ func (p *painter) canvas(v *view, width, height float32) {
 	c := &v.canvasCache
 	if c.drawing != v.drawing {
 		c.setDrawing(v.drawing)
+	}
+	if v.drawing.ResolutionScale() < 1 && p.lowCanvas(v, width, height) {
+		return
 	}
 	scale := p.scale
 	if c.mixes {
@@ -201,4 +210,72 @@ func (p *painter) recordCanvas(v *view, ops []driver.DrawOp, split driver.Canvas
 		return nil
 	}
 	return list
+}
+
+// lowCanvas draws v's drawing below the screen's density: played into a
+// bitmap of the canvas's own at the pixels per point it would draw at
+// times its ResolutionScale, again only when the drawing, that scale or
+// its bound arguments change, and stretched to the canvas smoothly or to
+// the nearest pixel (driver.Drawing.Smooth). False when there is no
+// bitmap.
+func (p *painter) lowCanvas(v *view, width, height float32) bool {
+	c := &v.canvasCache
+	d := v.drawing
+	scale := offscreenScale(width, height, p.scale, p.m) * float32(d.ResolutionScale())
+	pw, ph := uint32(driver.CanvasPixels(driver.Points(width), float64(scale))), uint32(driver.CanvasPixels(driver.Points(height), float64(scale)))
+	if pw == 0 || ph == 0 || uint64(pw)*uint64(ph) > 1<<24 {
+		return false
+	}
+	if c.scale != scale || c.generation != gfxGeneration || c.lowW != pw || c.lowH != ph {
+		c.release()
+		c.scale, c.generation, c.lowW, c.lowH = scale, gfxGeneration, pw, ph
+	}
+	if c.low == nil || c.shaded {
+		if c.low == nil {
+			props := bitmapProperties1{format: dxgiFormatBGRA, alphaMode: d2dAlphaPremultiplied, dpiX: 96 * scale,
+				dpiY: 96 * scale, options: d2dBitmapTarget}
+			if failed(p.dc.callSize(dcCreateBitmap, pw, ph, 0, 0, uintptr(unsafe.Pointer(&props)), uintptr(unsafe.Pointer(&c.low)))) {
+				c.low = nil
+				return false
+			}
+		}
+		ops := p.w.animator.CanvasOps(v.id, d)
+		world := p.m
+		waited := false
+		p.flatten(func() {
+			var target *comObject
+			p.dc.call(dcGetTarget, uintptr(unsafe.Pointer(&target)))
+			p.dc.call(dcSetTarget, c.low.ptr())
+			// The context keeps its DPI, the window's, across targets.
+			p.dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
+			pushed, split, pscale := p.pushed, p.split, p.scale
+			p.pushed, p.split, p.scale = nil, nil, scale
+			p.setTransform(identity)
+			clear := colorF{}
+			p.dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
+			cp := p.newCanvasPlayer(v, identity, width, height)
+			cp.off, cp.pixelScale = c.low, scale
+			cp.playAll(ops)
+			waited = cp.waited
+			for len(p.pushed) > 0 {
+				p.pop()
+			}
+			p.pushed, p.split, p.scale = pushed, split, pscale
+			p.dc.callF(rtSetDpi, 0b11, f32(96*pscale), f32(96*pscale))
+			p.dc.call(dcSetTarget, target.ptr())
+			target.release()
+		})
+		p.setTransform(world)
+		if waited {
+			// Played again once the image loads, which redraws the canvas.
+			defer releaseAll(&c.low)
+		}
+	}
+	mode := uintptr(d2dInterpolationLinear)
+	if !d.Smooth() {
+		mode = d2dInterpolationNearest
+	}
+	dst := rectF{0, 0, float32(pw) / scale, float32(ph) / scale}
+	p.dc.callF(rtDrawBitmap, 0b100, c.low.ptr(), uintptr(unsafe.Pointer(&dst)), f32(1), mode, 0)
+	return true
 }

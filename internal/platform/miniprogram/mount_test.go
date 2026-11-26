@@ -19,6 +19,7 @@ type fakeHost struct {
 	ticks       int
 	pixelImages bool
 	pixelFrames []*image.RGBA
+	paints      []fakePaint
 }
 
 func (h *fakeHost) submit(ops []byte) {
@@ -36,9 +37,17 @@ func (h *fakeHost) imagePixels(_ driver.NodeID, pixels *image.RGBA) {
 	h.pixelFrames = append(h.pixelFrames, pixels)
 }
 
-func (h *fakeHost) paint(driver.NodeID, []driver.DrawOp, driver.Size) string {
+func (h *fakeHost) paint(_ driver.NodeID, _ []driver.DrawOp, _ driver.Size, scale float64, smooth bool) string {
+	h.paints = append(h.paints, fakePaint{scale, smooth})
 	return "data:image/png;base64,"
 }
+
+// fakePaint is the resolution a canvas was painted at.
+type fakePaint struct {
+	scale  float64
+	smooth bool
+}
+
 func (h *fakeHost) tick() { h.ticks++ }
 
 // last returns the operations of the last batch with code, as JSON.
@@ -448,5 +457,26 @@ func TestModalsReportShownAndDismissed(t *testing.T) {
 	m.tick(500 * time.Millisecond)
 	if len(h.events) != 1 || h.events[0].Kind != driver.EventModalDismissed || h.events[0].ID != 6 {
 		t.Fatalf("deleted mid-entrance: %+v, want only EventModalDismissed for 6", h.events)
+	}
+}
+
+func TestCanvasPaintsAtItsResolutionScale(t *testing.T) {
+	m, h := mounted()
+	ops := []driver.DrawOp{{Kind: driver.DrawStroke}}
+	driver.Apply(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 10, View: driver.KindCanvas},
+		{Kind: driver.ItemInsert, ID: 10, Parent: 1},
+		frame(10, 0, 0, 100, 50),
+		{Kind: driver.ItemCanvas, ID: 10, Drawing: &driver.Drawing{Ops: ops, Resolution: 0.5, Upscale: driver.ImageSamplingNearest}},
+	}}, m.mount)
+	// A new scale comes as the same ops in a new drawing, which paints again.
+	for _, r := range []float32{0, 1.5} {
+		driver.Apply(&driver.MountBatch{Items: []driver.MountItem{
+			{Kind: driver.ItemCanvas, ID: 10, Drawing: &driver.Drawing{Ops: ops, Resolution: r}},
+		}}, m.mount)
+	}
+	want := []fakePaint{{0.5, false}, {1, true}, {1, true}}
+	if !slices.Equal(h.paints, want) {
+		t.Fatalf("paints = %v, want %v", h.paints, want)
 	}
 }

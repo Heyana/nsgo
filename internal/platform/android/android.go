@@ -1778,7 +1778,12 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			if ch := canvases.Load(); ch != nil {
 				ch.write(w, it.Drawing)
 			} else {
+				// An empty drawing: no ops, slots or nodes, at full resolution.
 				w.u32(0)
+				w.u32(0)
+				w.u32(0)
+				w.float(1)
+				w.flags(false)
 			}
 			keys := canvasesMap[i]
 			w.u32(uint32(len(keys)))

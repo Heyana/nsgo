@@ -50,6 +50,30 @@ func TestCanvasSamples(t *testing.T) {
 	}
 }
 
+// TestCanvasResolution plays a canvas at half the screen's density into a
+// bitmap with half the pixels a side, stretched to the canvas smoothly and
+// to the nearest pixel.
+func TestCanvasResolution(t *testing.T) {
+	g, err := devices()
+	if err != nil {
+		t.Skip(err)
+	}
+	w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
+	for _, sampling := range []driver.ImageSampling{driver.ImageSamplingSmooth, driver.ImageSamplingNearest} {
+		v := &view{drawing: canvastest.Resolution(w, sampling)}
+		img := drawImage(t, g, canvastest.ResolutionSize, canvastest.ResolutionSize, func(p *painter) {
+			p.canvas(v, canvastest.ResolutionSize, canvastest.ResolutionSize)
+		}, w)
+		if c := v.canvasCache; c.low == nil || c.lowW != canvastest.ResolutionPixels || c.lowH != canvastest.ResolutionPixels {
+			t.Errorf("sampling %v: backing %d × %d, want %d a side", sampling, c.lowW, c.lowH, canvastest.ResolutionPixels)
+		}
+		for _, f := range canvastest.CheckResolution(img, image.Point{}, sampling) {
+			t.Errorf("sampling %v: %s", sampling, f)
+		}
+		v.canvasCache.release()
+	}
+}
+
 // TestImageNearestSampling draws the same 320×180 frame with two
 // sampling settings to verify that changing the view's look updates it.
 func TestImageNearestSampling(t *testing.T) {

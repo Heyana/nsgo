@@ -92,6 +92,9 @@ class CanvasNode extends View {
     private int hovered = -1;
     /** Stepped raster scale (>1 when inside a scaled view or zooming scroll). */
     private float rasterScale = 1f;
+    /** Canvas.ResolutionScale, in (0, 1], which multiplies rasterScale, and whether its pixels stretch smoothly. */
+    private float resolution = 1f;
+    private boolean smooth = true;
     private Bitmap backing;
     private boolean backingDirty = true;
     private final Rect backingDst = new Rect();
@@ -110,7 +113,18 @@ class CanvasNode extends View {
         if (next == rasterScale) return;
         rasterScale = next;
         backingDirty = true;
-        if (rasterScale <= 1f) releaseBacking();
+        if (rasterScale <= 1f && resolution >= 1f) releaseBacking();
+        invalidate();
+    }
+
+    /** Sets Canvas.ResolutionScale, kept within (0, 1], and how its pixels stretch to the view. */
+    void setResolution(float scale, boolean smooth) {
+        float next = scale > 0f && scale < 1f ? scale : 1f;
+        if (next == resolution && smooth == this.smooth) return;
+        resolution = next;
+        this.smooth = smooth;
+        backingPaint.setFilterBitmap(smooth || next >= 1f);
+        if (rasterScale <= 1f && resolution >= 1f) releaseBacking();
         invalidate();
     }
 
@@ -202,26 +216,24 @@ class CanvasNode extends View {
         int w = getWidth(), h = getHeight();
         if (w <= 0 || h <= 0) return;
         float density = getResources().getDisplayMetrics().density;
-        if (rasterScale > 1f) {
-            float eff = RasterScale.boundedScale(w, h, rasterScale);
-            if (eff > 1f) {
-                int bw = RasterScale.scaledPixels(w, eff);
-                int bh = RasterScale.scaledPixels(h, eff);
-                if (backing == null || backing.getWidth() != bw || backing.getHeight() != bh) {
-                    releaseBacking();
-                    backing = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888);
-                }
-                if (backingDirty) {
-                    backing.eraseColor(Color.TRANSPARENT);
-                    Canvas bmCanvas = new Canvas(backing);
-                    bmCanvas.scale(density * ((float) bw / w), density * ((float) bh / h));
-                    new Player(bmCanvas, w / density, h / density, pictures, pixels).play(ByteBuffer.wrap(ops));
-                    backingDirty = false;
-                }
-                backingDst.set(0, 0, w, h);
-                canvas.drawBitmap(backing, null, backingDst, backingPaint);
-                return;
+        float eff = RasterScale.canvasScale(w, h, rasterScale, resolution);
+        if (eff != 1f) {
+            int bw = RasterScale.scaledPixels(w, eff);
+            int bh = RasterScale.scaledPixels(h, eff);
+            if (backing == null || backing.getWidth() != bw || backing.getHeight() != bh) {
+                releaseBacking();
+                backing = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888);
             }
+            if (backingDirty) {
+                backing.eraseColor(Color.TRANSPARENT);
+                Canvas bmCanvas = new Canvas(backing);
+                bmCanvas.scale(density * ((float) bw / w), density * ((float) bh / h));
+                new Player(bmCanvas, w / density, h / density, pictures, pixels).play(ByteBuffer.wrap(ops));
+                backingDirty = false;
+            }
+            backingDst.set(0, 0, w, h);
+            canvas.drawBitmap(backing, null, backingDst, backingPaint);
+            return;
         }
         int layer = canvas.saveLayer(0, 0, w, h, null);
         canvas.scale(density, density);

@@ -87,6 +87,9 @@ func (v *view) newContent() {
 	// cost more than glyphs.
 	layer.Send(sel("setDrawsAsynchronously:"), v.kind == driver.KindCanvas)
 	layer.Send(sel("setContentsScale:"), v.contentScale())
+	if v.drawing != nil {
+		apple.StretchCanvas(layer, v.drawing)
+	}
 	layer.Send(sel("setZPosition:"), apple.Z(contentZ))
 	v.attachContentLayer(layer)
 	layer.Send(selRelease)

@@ -90,7 +90,7 @@ func TestMain(m *testing.M) {
 
 `app.NowPlaying()` 返回应用最后一次发布的系统媒体信息，清除后返回 nil。`app.MediaCommand(core.MediaCommand{Kind: core.MediaSeek, Position: 30 * time.Second})` 向当前发布发送命令，由仍然有效的处理函数接收。无界面测试用 `nsgotest.Environment(core.Environment{NowPlaying: true})` 启用此能力，也可以在 macOS 目标上测试。
 
-`View.Style` 记录 `nsgotest.ViewStyle`，`View.Animated` 记录 `nsgotest.AnimatedValues`。`app.Animated(selector)` 将绑定值应用到记录的基础样式。效果和自定义光标保留其应用值标识；`Radii`、`Rounded`、`Rim` 和 `Matrix` 保持原有几何策略。
+`View.Style` 记录 `nsgotest.ViewStyle`，`View.Animated` 记录 `nsgotest.AnimatedValues`。`app.Animated(selector)` 将绑定值应用到记录的基础样式。`app.CanvasScale(selector)` 返回画布绘制时每点的像素数：像素比乘以它外面的缩放和变换的光栅档位，再乘以它的 `ResolutionScale`；`View.ResolutionScale` 和 `CanvasSampling` 记录后两者。效果和自定义光标保留其应用值标识；`Radii`、`Rounded`、`Rim` 和 `Matrix` 保持原有几何策略。
 
 `app.Find(selector).Kind` 的类型是 `nsgotest.ViewKind`。需要检查挂载视图的形式时，可将它与 `nsgotest.KindText`、`KindInput`、`KindCanvas` 或 `KindGPU` 等常量比较。
 

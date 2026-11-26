@@ -31,6 +31,19 @@ d.SetFillGradient(core.CanvasLinear(0, 0, float32(size.Width), 0,
 )).FillRect(0, 0, float32(size.Width), 40)
 ```
 
+## 分辨率
+
+`ResolutionScale` 让画布用更少的像素绘制，再拉伸到它的区域，像游戏的画质设置：0.5 在屏幕像素密度及画布外的缩放或变换之上，每边只画一半的像素。零和 (0, 1) 之外的值保持屏幕的像素密度。拉伸默认平滑，`Sampling` 设为 `core.ImageSamplingNearest` 时取最近的像素，像素画保持方块。`ResolutionScaleFunc` 和 `SamplingFunc` 跟随 signal，重新播放上一次的绘制而不再运行 `Draw`。命中测试、`OnPress` 和 `Draw` 拿到的尺寸仍以点为单位。HarmonyOS 仍按屏幕的像素密度绘制。
+
+```go
+core.Canvas{
+	Style:               core.Style{FlexGrow: 1},
+	ResolutionScaleFunc: func() float32 { return quality.Get() }, // 低画质时为 0.5
+	Sampling:            core.ImageSamplingNearest,
+	Draw:                drawScene,
+}
+```
+
 ## 文本、图片与部件
 
 `MeasureText`、`TextMetrics` 和 `SetTextAlign` 用平台的文本引擎排版，因此标签与应用其余部分使用相同的字体。`DrawImage`、`DrawImageIn` 和 `DrawImageFrom` 绘制图片，`DrawSVG` 和 `DrawSVGIn` 将解析后的 `*core.SVG` 文档（`core.ParseSVG`）按固有尺寸或适配到目标矩形绘制到画布上——其中的 `<text>` 和 `<tspan>` 元素由平台自身的文本引擎测量和绘制，`currentColor` 取画布当前的填充色——`OnPress` 可以用 `IsPointInPath` 和 `IsPointInStroke` 测试最后一次绘制。

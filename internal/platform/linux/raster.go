@@ -12,7 +12,8 @@ import (
 )
 
 // A canvas is rasterized with Cairo into an image surface at the
-// surface's scale and shown as textures of tile pixels a side, as NSH's
+// surface's scale and shown as textures of tile pixels a side (one for a
+// stretched raster, tileSide), as NSH's
 // Linux canvases are (canvasRaster): a frame in which the canvas did not
 // change appends the same textures, which GSK keeps on the GPU, and only
 // a new drawing, size or scale plays it whole. A change of its bound
@@ -21,6 +22,10 @@ import (
 // tiles it touches become new textures. What the drawing's static part
 // (driver.CanvasSplit) painted is kept from the last full play and
 // copied back into the area, so only the painting after it plays again.
+//
+// A canvas whose drawing asks for fewer pixels (driver.Drawing.Resolution)
+// rasterizes at that factor of the scale and GSK stretches its textures
+// over its bounds with the drawing's Upscale filter.
 //
 // A canvas out of sight, outside a clipping ancestor or the window, is
 // not drawn: what changed waits, and it draws once a layout shows it
@@ -31,6 +36,15 @@ var (
 	cairoSurfaceStatus         func(surface uintptr) int32
 	gdkMemoryTextureNew        func(w, h, format int32, bytes, stride uintptr) uintptr
 	gtkSnapshotAppendTexture   func(snap, texture uintptr, bounds *grapheneRect)
+	// gtkSnapshotAppendScaledTexture (GTK 4.10) stretches a texture with
+	// a GskScalingFilter.
+	gtkSnapshotAppendScaledTexture func(snap, texture uintptr, filter int32, bounds *grapheneRect)
+)
+
+// The GskScalingFilter values.
+const (
+	gskScalingFilterLinear  = 0
+	gskScalingFilterNearest = 1
 )
 
 func bindRaster(cairoLib uintptr) {
@@ -39,10 +53,17 @@ func bindRaster(cairoLib uintptr) {
 	reg(&cairoSurfaceStatus, cairoLib, "cairo_surface_status")
 	reg(&gdkMemoryTextureNew, gtkLib, "gdk_memory_texture_new")
 	reg(&gtkSnapshotAppendTexture, gtkLib, "gtk_snapshot_append_texture")
+	reg(&gtkSnapshotAppendScaledTexture, gtkLib, "gtk_snapshot_append_scaled_texture")
 }
 
 // tile is the side of a canvas's textures, in pixels.
 const tile = 256
+
+// maxStretched is the most pixels a side of a stretched raster
+// (driver.Drawing.Resolution) shows as one texture: GSK filters each
+// texture on its own, so a smooth stretch across tiles would show their
+// seams.
+const maxStretched = 4096
 
 // maxRaster is the most pixels a side of a Cairo image surface has: a
 // canvas wider or taller is not drawn.
@@ -53,6 +74,9 @@ type canvasRaster struct {
 	surface uintptr // ARGB32 at scale
 	pw, ph  int
 	scale   float64
+	// side is the side of its textures, in pixels (tileSide); zero is
+	// tile.
+	side int
 	// tiles are the surface's textures, row by row.
 	tiles []uintptr
 	// static is what the ops before the split painted, or 0.
@@ -169,8 +193,7 @@ func (w *window) snapshotCanvas(v *view, snap uintptr, width, height float64) {
 	if len(v.drawing.Ops) == 0 {
 		return
 	}
-	scale := w.canvasRasterScale(v, width, height)
-	pw, ph := int(math.Ceil(width*scale)), int(math.Ceil(height*scale))
+	pw, ph, scale := w.canvasPixels(v, width, height)
 	r := c.raster
 	fits := r != nil && r.scale == scale && r.pw == pw && r.ph == ph
 	dirty := c.whole || c.area.Size.Width > 0
@@ -192,16 +215,45 @@ func (w *window) snapshotCanvas(v *view, snap uintptr, width, height float64) {
 		}
 	}
 	r = c.raster
-	if r == nil || len(r.tiles) != tiles(pw, ph) {
+	if r == nil || len(r.tiles) != tiles(pw, ph, r.textureSide()) {
 		return
 	}
+	appendTiles(snap, r, scale, v.drawing.ResolutionScale() < 1, v.drawing.Smooth())
+}
+
+// canvasPixels returns the pixels a side canvas view v, width × height
+// points, rasterizes into, and the pixels per point: canvasRasterScale's
+// times its drawing's resolution scale, at least a pixel a side.
+func (w *window) canvasPixels(v *view, width, height float64) (pw, ph int, scale float64) {
+	factor := v.drawing.ResolutionScale()
+	scale = w.canvasRasterScale(v, width, height) * factor
+	if factor < 1 {
+		return driver.CanvasPixels(driver.Points(width), scale), driver.CanvasPixels(driver.Points(height), scale), scale
+	}
+	return int(math.Ceil(width * scale)), int(math.Ceil(height * scale)), scale
+}
+
+// appendTiles appends r's textures, at scale pixels a point, to snap:
+// stretched with the filter smooth names when stretched is set, at GSK's
+// own otherwise.
+func appendTiles(snap uintptr, r *canvasRaster, scale float64, stretched, smooth bool) {
+	pw, ph := r.pw, r.ph
+	filter := int32(gskScalingFilterLinear)
+	if !smooth {
+		filter = gskScalingFilterNearest
+	}
 	i := 0
-	for y := 0; y < ph; y += tile {
-		for x := 0; x < pw; x += tile {
-			tw, th := min(tile, pw-x), min(tile, ph-y)
+	side := r.textureSide()
+	for y := 0; y < ph; y += side {
+		for x := 0; x < pw; x += side {
+			tw, th := min(side, pw-x), min(side, ph-y)
 			at := grapheneRect{float32(float64(x) / scale), float32(float64(y) / scale),
 				float32(float64(tw) / scale), float32(float64(th) / scale)}
-			gtkSnapshotAppendTexture(snap, r.tiles[i], &at)
+			if stretched {
+				gtkSnapshotAppendScaledTexture(snap, r.tiles[i], filter, &at)
+			} else {
+				gtkSnapshotAppendTexture(snap, r.tiles[i], &at)
+			}
 			i++
 		}
 	}
@@ -228,7 +280,8 @@ func (w *window) rasterize(v *view, pw, ph int, scale float64) {
 			return
 		}
 		cairoSurfaceSetDeviceScale(surf, scale, scale)
-		r = &canvasRaster{surface: surf, pw: pw, ph: ph, scale: scale}
+		r = &canvasRaster{surface: surf, pw: pw, ph: ph, scale: scale,
+			side: tileSide(pw, ph, v.drawing.ResolutionScale() < 1)}
 		c.raster = r
 		c.whole = true
 	}
@@ -288,8 +341,25 @@ func (w *window) rasterize(v *view, pw, ph int, scale float64) {
 }
 
 // tiles is how many textures show pw × ph pixels.
-func tiles(pw, ph int) int {
-	return (pw + tile - 1) / tile * ((ph + tile - 1) / tile)
+func tiles(pw, ph, side int) int {
+	return (pw + side - 1) / side * ((ph + side - 1) / side)
+}
+
+// textureSide is the side of r's textures, in pixels.
+func (r *canvasRaster) textureSide() int {
+	if r.side > 0 {
+		return r.side
+	}
+	return tile
+}
+
+// tileSide is the side of the textures that show pw × ph pixels: one
+// texture for a raster stretched to its view (maxStretched), tile else.
+func tileSide(pw, ph int, stretched bool) int {
+	if stretched && pw <= maxStretched && ph <= maxStretched {
+		return max(pw, ph, 1)
+	}
+	return tile
 }
 
 // keepStatic copies the surface's pixels into static.
@@ -327,9 +397,10 @@ func (r *canvasRaster) texture(x0, y0, x1, y1 int) {
 	fresh := len(r.tiles) == 0
 	var row []byte
 	i := 0
-	for y := 0; y < r.ph; y += tile {
-		for x := 0; x < r.pw; x += tile {
-			tw, th := min(tile, r.pw-x), min(tile, r.ph-y)
+	side := r.textureSide()
+	for y := 0; y < r.ph; y += side {
+		for x := 0; x < r.pw; x += side {
+			tw, th := min(side, r.pw-x), min(side, r.ph-y)
 			if fresh {
 				r.tiles = append(r.tiles, 0)
 			}

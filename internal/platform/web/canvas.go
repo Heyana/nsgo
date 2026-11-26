@@ -227,15 +227,30 @@ func (s *surface) setCanvasExact(v *view) {
 	shown := float64(s.env.PixelRatio) * zoom
 	exact := zoomed && s.canvasAxisAligned(v) && tw > 0 && th > 0 &&
 		math.Abs(v.canvasRatio-shown) < 1e-9 && tw*shown == math.Ceil(tw*shown) && th*shown == math.Ceil(th*shown)
-	if exact == v.canvasExact {
-		return
-	}
 	v.canvasExact = exact
-	rendering := ""
-	if exact {
-		rendering = "pixelated"
+	v.setCanvasRendering()
+}
+
+// canvasRendering is the image-rendering v's <canvas> takes: a drawing below the screen's density (driver.Drawing.ResolutionScale) stretches as its Upscale says, and any other is pixelated while its bitmap is exact.
+func (v *view) canvasRendering() string {
+	if d := v.drawing; d.ResolutionScale() < 1 {
+		if d.Smooth() {
+			return ""
+		}
+		return "pixelated"
 	}
-	v.inner.Get("style").Set("imageRendering", rendering)
+	if v.canvasExact {
+		return "pixelated"
+	}
+	return ""
+}
+
+// setCanvasRendering gives v's <canvas> the image-rendering it takes now.
+func (v *view) setCanvasRendering() {
+	if r := v.canvasRendering(); r != v.imageRendering {
+		v.imageRendering = r
+		v.inner.Get("style").Set("imageRendering", r)
+	}
 }
 
 // smoothCanvases returns the canvases under root to smooth sampling while a zoom changes how the screen shows their bitmaps; the replay after it sets them again.
@@ -244,7 +259,7 @@ func (s *surface) smoothCanvases(root js.Value) {
 	for i := range canvases.Length() {
 		if v := s.viewOf(canvases.Index(i).Get("parentElement")); v != nil && v.canvasExact {
 			v.canvasExact = false
-			v.inner.Get("style").Set("imageRendering", "")
+			v.setCanvasRendering()
 		}
 	}
 }
@@ -282,6 +297,8 @@ func (s *surface) canvasPlan(v *view, w, h float64) (tile canvasRect, ratio floa
 	if base <= 0 {
 		base = 1
 	}
+	// A drawing's resolution lowers the pixels the zooms then raise, and the browser stretches them to the <canvas>'s box.
+	base *= v.drawing.ResolutionScale()
 	fullRatio := base * min(max(zoom, 1), maxRasterZoom)
 	full := canvasRect{w: w, h: h}
 	if w <= 0 || h <= 0 {
@@ -388,7 +405,7 @@ func (s *surface) visibleCanvasRect(v *view, w, h float64) (canvasRect, bool) {
 	return canvasRect{x: lx0, y: ly0, w: lx1 - lx0, h: ly1 - ly0}, true
 }
 
-// canvasScale is the pixels per point a canvas view draws at: the screen's pixel ratio times enclosing scroll zooms and style transforms, bounded by maxRasterZoom and the bitmap budget.
+// canvasScale is the pixels per point a canvas view draws at: the screen's pixel ratio times enclosing scroll zooms and style transforms, bounded by maxRasterZoom and the bitmap budget, times its drawing's ResolutionScale.
 func (s *surface) canvasScale(v *view) float64 {
 	w, h := v.canvasSize()
 	_, ratio, _ := s.canvasPlan(v, w, h)
