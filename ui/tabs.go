@@ -168,6 +168,11 @@ func (t Tabs[T]) Render(cx *core.Scope) core.Node {
 		}
 		s.Left, s.Top, s.Width, s.Height = core.Pt(left), core.Pt(f.Origin.Y), core.Pt(f.Size.Width), core.Pt(f.Size.Height)
 		s.CornerRadius = f.Size.Height / 2
+		if cx.Dark() {
+			s.Background = Alpha(colors.Text(), 0.14)
+			s.Shadows = shadows(Shadow(0, 1, 2, 0, Black(0.16)))
+			return s.Merge(t.IndicatorStyle)
+		}
 		return FinOf(cx).Pill().Over(s).Merge(t.IndicatorStyle)
 	}}
 	tabLook := func() core.Style {

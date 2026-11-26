@@ -225,3 +225,24 @@ func TestTabsOptionsFuncUpdatesInPlace(t *testing.T) {
 		t.Fatalf("the retained tab's accessibility label is %q, want the new one", got)
 	}
 }
+
+// TestTabsSegmentedDarkIndicator uses a translucent foreground fill and a softer
+// shadow for the segmented indicator in dark mode so it stays clear over the track.
+func TestTabsSegmentedDarkIndicator(t *testing.T) {
+	headless(t)
+	lightApp, lightPalette := start(t, desktopEnv, tabsContent)
+	lightThumb := lightApp.Find("segmented").Children[0].Style
+	if lightThumb.Background != lightPalette.Raised {
+		t.Fatalf("light segmented indicator background = %x, want raised %x", lightThumb.Background, lightPalette.Raised)
+	}
+	darkEnv := desktopEnv
+	darkEnv.Dark = true
+	darkApp, darkPalette := start(t, darkEnv, tabsContent)
+	darkThumb := darkApp.Find("segmented").Children[0].Style
+	if want := Alpha(darkPalette.Text, 0.14); darkThumb.Background != want {
+		t.Fatalf("dark segmented indicator background = %x, want %x", darkThumb.Background, want)
+	}
+	if darkThumb.Effects == nil || len(darkThumb.Effects.Shadows) != 1 || darkThumb.Effects.Shadows[0] != Shadow(0, 1, 2, 0, Black(0.16)) {
+		t.Fatalf("dark segmented indicator effects = %+v, want softer shadow", darkThumb.Effects)
+	}
+}
