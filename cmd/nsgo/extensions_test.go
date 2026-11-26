@@ -34,7 +34,7 @@ func runNsgo(t *testing.T, dir, path string, env []string, args ...string) (stri
 	cmd := exec.Command(exe, append([]string{"-test.run=^TestCLIProcess$", "--"}, args...)...)
 	cmd.Dir = dir
 	for _, kv := range os.Environ() {
-		if k, _, _ := strings.Cut(kv, "="); !strings.EqualFold(k, "PATH") && !slices.Contains([]string{"NSGO_EXTENSION", "NSGO_DELEGATED", "NSGO_DELEGATED_FROM", "NSGO_NO_DELEGATE", "NSGO_GAME_VERSION"}, k) {
+		if k, _, _ := strings.Cut(kv, "="); !strings.EqualFold(k, "PATH") && !slices.Contains([]string{"NSGO_EXTENSION", "NSGO_DELEGATED", "NSGO_DELEGATED_FROM", "NSGO_NO_DELEGATE"}, k) {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
@@ -150,6 +150,43 @@ func main() {
 	out, _ = runNsgo(t, dir, path, nil, "help")
 	if !strings.Contains(out, "  nsgo demo  go tool example.com/demo/cmd/demo\n") {
 		t.Fatalf("the usage lists no module tool:\n%s", out)
+	}
+}
+
+func TestExtensionGameModuleTool(t *testing.T) {
+	path, env := goEnv(t, "off")
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"game/go.mod": "module github.com/nsgo-dev/game/packages/game\n\ngo 1.26\n",
+		"game/cmd/game/main.go": `package main
+
+import ("fmt"; "os")
+
+func main() {
+	fmt.Printf("module game %q extension=%s\n", os.Args[1:], os.Getenv("NSGO_EXTENSION"))
+	os.Exit(3)
+}
+`,
+		"app/go.mod": "module example.com/app\n\ngo 1.26\n\nrequire github.com/nsgo-dev/game/packages/game v0.0.0\n\nreplace github.com/nsgo-dev/game/packages/game => ../game\n\ntool github.com/nsgo-dev/game/packages/game/cmd/game\n",
+	})
+	appDir := filepath.Join(root, "app")
+	out, code := runNsgo(t, appDir, path, env, "game", "check", "-v", ".")
+	if want := `module game ["check" "-v" "."] extension=1`; code != 3 || !strings.Contains(out, want) {
+		t.Fatalf("exit %d, output %s; want %q and exit 3", code, out, want)
+	}
+	out, _ = runNsgo(t, appDir, path, env, "help")
+	if want := "  nsgo game  go tool github.com/nsgo-dev/game/packages/game/cmd/game\n"; !strings.Contains(out, want) {
+		t.Fatalf("the usage does not list game as a module tool extension:\n%s", out)
+	}
+	// Outside a module, game resolves as an ordinary extension: nsgo-game on PATH, else usage.
+	bin := demoOnPath(t, "game")
+	out, code = runNsgo(t, t.TempDir(), bin, []string{"NSGO_TEST_EXTENSION=1", "NSGO_TEST_EXTENSION_EXIT=4"}, "game", "new")
+	if code != 4 || !strings.Contains(out, `demo ["new"] version=`) {
+		t.Fatalf("PATH nsgo-game: exit %d, output %s; want demo output and exit 4", code, out)
+	}
+	out, code = runNsgo(t, t.TempDir(), t.TempDir(), nil, "game")
+	if code != 2 || !strings.Contains(out, "usage:") {
+		t.Fatalf("missing game extension: exit %d, output %s; want usage and exit 2", code, out)
 	}
 }
 

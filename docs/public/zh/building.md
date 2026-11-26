@@ -219,8 +219,6 @@ Apply these changes? [y/N]
 
 库以一个 Go main 包提供扩展，包所在目录名就是命令名，例如 `nsgo maps` 对应 `example.com/maps/cmd/maps`。应用用 `go get -tool example.com/maps/cmd/maps@latest` 把它加入自己的模块；`go install example.com/maps/cmd/nsgo-maps@latest` 则在 `PATH` 上放一个 `nsgo-maps` 供模块之外使用，它可以运行与工具相同的代码。
 
-`nsgo game` 是内置命令，运行[游戏层](https://game.nsgo.dev)的命令，不需要另外安装任何东西：在 `go.mod` 声明了工具 `github.com/nsgo-dev/game/packages/game/cmd/game` 的模块中，它用 `go tool` 运行这个工具，版本是模块所固定的；在其他地方则运行 `go run github.com/nsgo-dev/game/packages/game/cmd/game@<version>`，即为当前 `nsgo` 发布的游戏层版本（`v0.1.0`），`NSGO_GAME_VERSION` 可以替换它。`go run` 把命令的失败一律报告为退出状态 1，不论命令本身以什么状态结束。
-
 ### 模块的 nsgo
 
 安装在 `PATH` 上的 `nsgo` 不会用与项目所固定版本不同的版本构建项目。在 `go.mod` 以另一个版本声明工具 `github.com/nsgo-dev/nsgo/cmd/nsgo` 的模块中，`nsgo` 先以相同参数运行模块的 `nsgo`，即 `go tool nsgo`，由它解析内置命令和扩展，并以它的退出状态退出。它的环境中的 `NSGO_DELEGATED=1` 防止它再这样做一次，`NSGO_NO_DELEGATE=1` 则改为运行被调用的那个 `nsgo`。在模块之外、在没有这个工具的模块中、在 NSGo 自己的模块中以及版本相同时，一切照旧。比固定版本更新的内置命令不会交出去，例如在固定 0.3.4 的模块中运行 `add`：`nsgo` 以状态 1 退出，并给出引入它的 `go get`（[添加库](#添加库)）。`nsgo version` 会说明运行的是哪一个，例如 `nsgo v0.4.0 (the module's; called as v0.3.1)`。

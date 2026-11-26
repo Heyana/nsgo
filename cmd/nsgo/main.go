@@ -15,8 +15,6 @@
 //	nsgo i18n  [-source L] [dir]                         check catalogs and write their Go code
 //	nsgo add   [-dry-run] [-y] module[@version] ...      go get modules once their plan is shown and
 //	                                                      confirmed, never moving NSGo off its releases
-//	nsgo game  <command> [args]                          run the game layer's command: the module's go.mod
-//	                                                      tool, else go run of its release for this NSGo
 //	nsgo version                                         print which nsgo runs
 //	nsgo doctor                                          show which targets this machine builds and runs
 //	nsgo keygen                                          print a key pair for updates or signed packages
@@ -191,12 +189,6 @@ func main() {
 			report(err)
 			os.Exit(130)
 		}
-	case "game":
-		var code int
-		if code, err = runGame(ctx, args); err == nil {
-			os.Exit(code)
-		}
-		err = fmt.Errorf("game: %w", err)
 	case "version":
 		fs := flag.NewFlagSet("version", flag.ExitOnError)
 		if err = parseCommand(fs, args, 0); err != nil {
@@ -316,7 +308,6 @@ func usage() {
   nsgo check [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [dir]
   nsgo i18n  [-source L] [dir]
   nsgo add   [-dry-run] [-y] module[@version] ...
-  nsgo game  <command> [args]
   nsgo doctor
   nsgo version
   nsgo keygen
@@ -340,10 +331,9 @@ get, refuses to move NSGo off its releases, and asks before writing;
 unless -y is given. A module that pins an nsgo from before add is
 told which release to get instead.
 
-game runs the game layer's command, the module's go.mod tool, else
-go run of its release for this NSGo. Another command X runs the
-module's go.mod tool X with go tool, else nsgo-X on PATH. In a module
-that pins nsgo at another version, its own nsgo runs instead.`)
+Any other command X runs the module's go.mod tool X with go tool, else
+nsgo-X on PATH. In a module that pins nsgo at another version, its own
+nsgo runs instead.`)
 	if found := listExtensions(context.Background()); len(found) > 0 {
 		width := 0
 		for _, ext := range found {

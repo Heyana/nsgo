@@ -22,7 +22,7 @@ import (
 // Extensions are commands nsgo does not know itself, as git, kubectl and cargo run theirs: nsgo X runs the tool X the working directory's module declares in go.mod, with go tool, so the module pins its version, else the program nsgo-X on PATH, which also works outside a module. Built-in commands always win, and a name that is not a command's name runs nothing.
 
 // builtinCommands are the commands main's switch runs, and help, which prints the usage; an extension never takes their names.
-var builtinCommands = []string{"dev", "mcp", "init", "build", "test", "check", "i18n", "add", "game", "doctor", "keygen", "certify", "publish", "verify", "revoke", "version", "help"}
+var builtinCommands = []string{"dev", "mcp", "init", "build", "test", "check", "i18n", "add", "doctor", "keygen", "certify", "publish", "verify", "revoke", "version", "help"}
 
 // extension is a command found for a name: the module tool Tool, run with go tool from the working directory, or the program Path.
 type extension struct {
