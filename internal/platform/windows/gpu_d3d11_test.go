@@ -95,13 +95,16 @@ func TestD3D11ConstantBufferAlignmentAndDescriptors(t *testing.T) {
 		t.Fatalf("vertex+index desc = %+v, hasCB=%v", main, hasCB)
 	}
 
-	// Structured storage buffer rounds ByteWidth up to a multiple of StructureByteStride (4).
+	// Raw storage buffers and SRVs count complete 32-bit words.
 	main, hasCB, _ = d3dBufferDescriptor(driver.GPUBufferDesc{
 		Size:  10,
 		Usage: driver.GPUBufferStorage,
 	})
-	if hasCB || main.bindFlags != d3d11BindShaderResource || main.miscFlags != d3d11MiscBufferStructured || main.structureByteStride != 4 || main.byteWidth != 12 {
+	if hasCB || main.bindFlags != d3d11BindShaderResource || main.miscFlags != d3d11MiscBufferAllowRawViews || main.structureByteStride != 0 || main.byteWidth != 12 {
 		t.Fatalf("storage buffer desc = %+v, hasCB=%v", main, hasCB)
+	}
+	if srv := d3dRawBufferSRV(main.byteWidth); srv != (d3d11SRVDesc{format: dxgiFmtR32Typeless, viewDimension: d3d11SRVDimBufferEx, u1: 3, u2: d3d11BufferExSRVFlagRaw}) {
+		t.Fatalf("raw storage SRV desc = %+v", srv)
 	}
 }
 

@@ -582,3 +582,95 @@ func TestD3D11GPUDeviceRemovedAndRecovery(t *testing.T) {
 		t.Fatalf("post-recovery pixel = %v, want [17 34 51 255]", got[:min(4, len(got))])
 	}
 }
+
+func TestD3D11GPUWGSLBufferLayout(t *testing.T) {
+	if !gpuAvailable() {
+		t.Skip("Direct3D 11 or D3DCompile unavailable")
+	}
+	const src = `
+struct P { s: f32, d: vec3f }
+@group(0) @binding(0) var<uniform> u: P;
+@group(0) @binding(1) var<storage, read> b: array<P>;
+@group(0) @binding(2) var<storage, read> q: array<vec3f>;
+
+@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+	if (i == 0u) { return vec4f(-1.0, -1.0, 0.0, 1.0); }
+	if (i == 1u) { return vec4f( 3.0, -1.0, 0.0, 1.0); }
+	return vec4f(-1.0, 3.0, 0.0, 1.0);
+}
+@fragment fn fs_main() -> @location(0) vec4f {
+	if (arrayLength(&b) != 2u || arrayLength(&q) != 2u) { return vec4f(1.0); }
+	let p = b[1];
+	return vec4f(u.d + p.d + q[1], u.s + p.s);
+}
+`
+	prog, err := wgsl.CompilePipeline(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const width, height = 8, 8
+	var events []*driver.GPUEvent
+	ctrl := newD3DGPUController(&d3d11NativeOps{}, func(ev *driver.GPUEvent) {
+		events = append(events, ev)
+	})
+	defer ctrl.Release()
+	ctrl.Configure(driver.GPUViewConfig{ColorFormat: driver.GPUFormatBGRA8Unorm, SampleCount: 1})
+	if !ctrl.MountOrResize(width, height) {
+		t.Fatalf("MountOrResize failed: %+v", events)
+	}
+
+	// P.s is at byte 0 and P.d at byte 16, with a stride of 32.
+	// The vec3 array has a stride of 16, not 12. Use nonzero padding and
+	// distinct unused first elements so a shifted read changes the pixel.
+	u := packF32(.25, 1, 1, 1, .125, .25, .5, 1)
+	b := packF32(1, 1, 1, 1, 1, 1, 1, 1, .75, 1, 1, 1, .125, .125, .125, 1)
+	q := packF32(1, 1, 1, 1, 0, .125, .125, 1)
+	frame := driver.GPUFrame{
+		Generation: 1,
+		Ops: []driver.GPUResourceOp{
+			{Kind: driver.GPUOpCreateBuffer, ID: 1, Buffer: &driver.GPUBufferDesc{Size: uint64(len(u)), Usage: driver.GPUBufferUniform, Data: u}},
+			{Kind: driver.GPUOpCreateBuffer, ID: 2, Buffer: &driver.GPUBufferDesc{Size: uint64(len(b)), Usage: driver.GPUBufferStorage, Data: b}},
+			{Kind: driver.GPUOpCreateBuffer, ID: 3, Buffer: &driver.GPUBufferDesc{Size: uint64(len(q)), Usage: driver.GPUBufferStorage, Data: q}},
+			{Kind: driver.GPUOpCreateBindGroupLayout, ID: 4, BindGroupLayout: &driver.GPUBindGroupLayoutDesc{}},
+			{Kind: driver.GPUOpCreateBindGroup, ID: 5, BindGroup: &driver.GPUBindGroupDesc{Layout: 4, Entries: []driver.GPUBindGroupEntry{
+				{Binding: 0, Buffer: 1}, {Binding: 1, Buffer: 2}, {Binding: 2, Buffer: 3},
+			}}},
+			{Kind: driver.GPUOpCreatePipeline, ID: 6, Pipeline: &driver.GPUPipelineDesc{
+				Vertex:    driver.GPUShaderStage{IR: prog.IR, EntryPoint: "vs_main"},
+				Fragment:  driver.GPUShaderStage{IR: prog.IR, EntryPoint: "fs_main"},
+				Layouts:   []driver.GPUID{4},
+				Primitive: driver.GPUPrimitiveState{Topology: driver.GPUTopologyTriangleList},
+				Targets:   []driver.GPUColorTargetState{{Format: driver.GPUFormatBGRA8Unorm}},
+			}},
+			{Kind: driver.GPUOpReadTexture, ReadbackID: 7, ReadbackSurface: true},
+		},
+		Passes: []driver.GPUPass{{
+			ColorAttachments: []driver.GPUColorAttachment{{LoadOp: driver.GPULoadClear, StoreOp: driver.GPUStoreStore}},
+			Commands: []driver.GPUCommand{
+				{Kind: driver.GPUCmdSetPipeline, ID: 6},
+				{Kind: driver.GPUCmdSetBindGroup, Slot: 0, ID: 5},
+				{Kind: driver.GPUCmdDraw, U0: 3},
+			},
+		}},
+		Present: true,
+	}
+
+	drew := ctrl.Submit(frame)
+	var pixels []byte
+	for _, ev := range events {
+		if ev.Kind == driver.GPUEventError || (ev.Kind == driver.GPUEventReadback && ev.Message != "") {
+			t.Fatalf("D3D11 error: %s", ev.Message)
+		}
+		if ev.Kind == driver.GPUEventReadback && ev.ReadbackID == 7 {
+			pixels = ev.Pixels
+		}
+	}
+	if !drew || len(pixels) != width*height*4 {
+		t.Fatalf("drew=%t, readback length=%d, want %d", drew, len(pixels), width*height*4)
+	}
+	center := ((height/2)*width + width/2) * 4
+	if got, want := [4]byte(pixels[center:center+4]), [4]byte{64, 128, 191, 255}; got != want {
+		t.Errorf("center pixel = %v, want %v", got, want)
+	}
+}

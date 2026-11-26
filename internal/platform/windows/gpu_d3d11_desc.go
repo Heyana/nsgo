@@ -69,10 +69,10 @@ const (
 	d3d11CPUAccessRead  uint32 = 0x20000
 
 	// D3D11_RESOURCE_MISC_FLAG (d3d11.h).
-	d3d11MiscTextureCube      uint32 = 0x4
-	d3d11MiscBufferStructured uint32 = 0x40
-	d3d11MiscSharedKeyedMutex uint32 = 0x100
-	d3d11MiscSharedNTHandle   uint32 = 0x800
+	d3d11MiscTextureCube         uint32 = 0x4
+	d3d11MiscBufferAllowRawViews uint32 = 0x20
+	d3d11MiscSharedKeyedMutex    uint32 = 0x100
+	d3d11MiscSharedNTHandle      uint32 = 0x800
 
 	// IDXGIKeyedMutex::AcquireSync's success codes besides S_OK (WAIT_TIMEOUT, WAIT_ABANDONED), and how long a frame waits for an imported texture's key.
 	d3dKeyedMutexWaitTimeout      uint32 = 0x102
@@ -87,11 +87,14 @@ const (
 	d3d11InputPerInstanceData uint32 = 1
 
 	// D3D11_SRV_DIMENSION (d3d11.h).
-	d3d11SRVDimBuffer         uint32 = 1
 	d3d11SRVDimTexture2D      uint32 = 4
 	d3d11SRVDimTexture2DArray uint32 = 5
 	d3d11SRVDimTexture2DMS    uint32 = 6
 	d3d11SRVDimTextureCube    uint32 = 9
+	d3d11SRVDimBufferEx       uint32 = 11
+
+	// D3D11_BUFFEREX_SRV_FLAG (d3d11.h).
+	d3d11BufferExSRVFlagRaw uint32 = 0x1
 
 	// D3D11_RTV_DIMENSION (d3d11.h).
 	d3d11RTVDimTexture2D      uint32 = 4
@@ -439,11 +442,12 @@ func d3dBufferDescriptor(desc driver.GPUBufferDesc) (mainDesc d3d11BufferDesc, h
 	if desc.Usage&driver.GPUBufferIndex != 0 {
 		nonCBBind |= d3d11BindIndexBuffer
 	}
-	var misc, stride uint32
+	var misc uint32
 	if desc.Usage&driver.GPUBufferStorage != 0 {
 		nonCBBind |= d3d11BindShaderResource
-		misc |= d3d11MiscBufferStructured
-		stride = 4
+		// Storage buffers can be bound with different WGSL element types,
+		// so the SRV exposes words rather than a fixed structure stride.
+		misc |= d3d11MiscBufferAllowRawViews
 		size = (size + 3) &^ 3
 	}
 	isUniform := desc.Usage&driver.GPUBufferUniform != 0
@@ -458,11 +462,10 @@ func d3dBufferDescriptor(desc driver.GPUBufferDesc) (mainDesc d3d11BufferDesc, h
 		}
 		// Combined Uniform + other bind flags: create both main and shadow CB.
 		mainDesc = d3d11BufferDesc{
-			byteWidth:           uint32(size),
-			usage:               d3d11UsageDefault,
-			bindFlags:           nonCBBind,
-			miscFlags:           misc,
-			structureByteStride: stride,
+			byteWidth: uint32(size),
+			usage:     d3d11UsageDefault,
+			bindFlags: nonCBBind,
+			miscFlags: misc,
 		}
 		return mainDesc, true, cbDesc
 	}
@@ -471,13 +474,21 @@ func d3dBufferDescriptor(desc driver.GPUBufferDesc) (mainDesc d3d11BufferDesc, h
 		nonCBBind = d3d11BindVertexBuffer
 	}
 	mainDesc = d3d11BufferDesc{
-		byteWidth:           uint32(size),
-		usage:               d3d11UsageDefault,
-		bindFlags:           nonCBBind,
-		miscFlags:           misc,
-		structureByteStride: stride,
+		byteWidth: uint32(size),
+		usage:     d3d11UsageDefault,
+		bindFlags: nonCBBind,
+		miscFlags: misc,
 	}
 	return mainDesc, false, d3d11BufferDesc{}
+}
+
+func d3dRawBufferSRV(byteWidth uint32) d3d11SRVDesc {
+	return d3d11SRVDesc{
+		format:        dxgiFmtR32Typeless,
+		viewDimension: d3d11SRVDimBufferEx,
+		u1:            byteWidth / 4, // NumElements counts 32-bit words.
+		u2:            d3d11BufferExSRVFlagRaw,
+	}
 }
 
 // d3dTextureFormats maps a driver.GPUTextureFormat to DXGI formats for the underlying Texture2D resource and its SRV, RTV, and DSV views. Depth formats that are also sampled use a typeless resource format so both DSV and SRV can be created on the same ID3D11Texture2D.

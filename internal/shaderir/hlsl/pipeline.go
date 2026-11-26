@@ -36,24 +36,32 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	}
 	w := &pipeWriter{
 		p:              p,
-		structNames:    map[string]string{},
+		valueNames:     map[string]string{},
 		needStructCtor: map[string]bool{},
 		bindingReg:     make([]uint32, len(p.Bindings)),
 		lenHelpers:     map[int]bool{},
+		storageHelpers: map[storageHelperKey]string{},
+		rawStorage:     p.ComputeFunc.Block == nil || p.VertexFunc.Block != nil || p.FragmentFunc.Block != nil,
 	}
 	var bReg, tReg, uReg, sReg uint32
 	for i, b := range p.Bindings {
-		w.registerStructs(b.Type)
 		switch b.Kind {
 		case shaderir.BindingUniformBuffer:
+			w.typeStr(b.Type)
 			w.bindingReg[i] = bReg
 			w.regs = append(w.regs, RegisterBinding{Group: b.Group, Binding: b.Binding, Kind: b.Kind, Register: bReg})
 			bReg++
 		case shaderir.BindingStorageBufferRead, shaderir.BindingTexture:
+			if b.Kind == shaderir.BindingStorageBufferRead && !w.rawStorage {
+				w.typeStr(storageElement(b.Type))
+			}
 			w.bindingReg[i] = tReg
 			w.regs = append(w.regs, RegisterBinding{Group: b.Group, Binding: b.Binding, Kind: b.Kind, Register: tReg})
 			tReg++
 		case shaderir.BindingStorageBufferReadWrite, shaderir.BindingStorageTexture:
+			if b.Kind == shaderir.BindingStorageBufferReadWrite && b.Type.Main != shaderir.None {
+				w.typeStr(storageElement(b.Type))
+			}
 			w.bindingReg[i] = uReg
 			w.regs = append(w.regs, RegisterBinding{Group: b.Group, Binding: b.Binding, Kind: b.Kind, Register: uReg})
 			uReg++
@@ -94,10 +102,21 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	if p.ComputeFunc.Block != nil {
 		csBody = w.emitCompute(cEntry)
 	}
+	if w.storageErr != nil {
+		return PipelineSource{}, w.storageErr
+	}
+	var varyings []string
+	if p.VertexFunc.Block != nil || p.FragmentFunc.Block != nil {
+		varyings = w.emitVaryingsStruct()
+	}
 
 	var header []string
 	header = append(header, common...)
-	for i, st := range w.structTypes {
+	for i, st := range w.valueTypes {
+		if st.Main == shaderir.Array {
+			header = append(header, fmt.Sprintf("typedef %s A%d[%d];", w.typeStr(st.Sub[0]), i, st.Length))
+			continue
+		}
 		name := fmt.Sprintf("S%d", i)
 		header = append(header, fmt.Sprintf("struct %s {", name))
 		header = append(header, w.emitPaddedStructFields(st)...)
@@ -115,7 +134,6 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 			header = append(header, "\treturn r;", "}", "")
 		}
 	}
-	header = append(header, w.emitStorageLoadHelpers()...)
 	for i, b := range p.Bindings {
 		reg := w.bindingReg[i]
 		switch b.Kind {
@@ -124,24 +142,16 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 			header = append(header, fmt.Sprintf("\t%s;", w.declVar(b.Type, fmt.Sprintf("B%d", i))))
 			header = append(header, "};")
 		case shaderir.BindingStorageBufferRead:
-			elemType := b.Type
-			if elemType.Main == shaderir.Array && len(elemType.Sub) > 0 {
-				elemType = elemType.Sub[0]
-			}
-			if elemType.Main == shaderir.Struct && w.p.ComputeFunc.Block == nil {
+			if w.rawStorage {
 				header = append(header, fmt.Sprintf("ByteAddressBuffer B%d : register(t%d);", i, reg))
 			} else {
-				header = append(header, fmt.Sprintf("StructuredBuffer<%s> B%d : register(t%d);", w.typeStr(elemType), i, reg))
+				header = append(header, fmt.Sprintf("StructuredBuffer<%s> B%d : register(t%d);", w.typeStr(storageElement(b.Type)), i, reg))
 			}
 		case shaderir.BindingStorageBufferReadWrite:
 			if b.Type.Main == shaderir.None {
 				header = append(header, fmt.Sprintf("RWByteAddressBuffer B%d : register(u%d);", i, reg))
 			} else {
-				elemType := b.Type
-				if elemType.Main == shaderir.Array && len(elemType.Sub) > 0 {
-					elemType = elemType.Sub[0]
-				}
-				header = append(header, fmt.Sprintf("RWStructuredBuffer<%s> B%d : register(u%d);", w.typeStr(elemType), i, reg))
+				header = append(header, fmt.Sprintf("RWStructuredBuffer<%s> B%d : register(u%d);", w.typeStr(storageElement(b.Type)), i, reg))
 			}
 		case shaderir.BindingTexture:
 			header = append(header, fmt.Sprintf("%s B%d : register(t%d);", w.typeStr(b.Type), i, reg))
@@ -158,15 +168,19 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	if w.usesNumWorkgroups {
 		header = append(header, "cbuffer __NSGoComputeMeta : register(b15) {", "\tuint3 __num_workgroups;", "};")
 	}
-	for i := range p.Bindings {
-		if w.lenHelpers[i] {
+	for i, b := range p.Bindings {
+		if !w.lenHelpers[i] {
+			continue
+		}
+		if w.rawStorage && b.Kind == shaderir.BindingStorageBufferRead {
+			header = append(header, fmt.Sprintf("uint __len_B%d(uint base, uint stride) { uint size; B%d.GetDimensions(size); return (max(size, base) - base) / stride; }", i, i))
+		} else {
 			header = append(header, fmt.Sprintf("uint __len_B%d() { uint __n = 0u, __s = 0u; B%d.GetDimensions(__n, __s); return __n; }", i, i))
 		}
 	}
+	header = append(header, w.storageFuncs...)
 	header = append(header, "")
-	if p.VertexFunc.Block != nil || p.FragmentFunc.Block != nil {
-		header = append(header, w.emitVaryingsStruct()...)
-	}
+	header = append(header, varyings...)
 	header = append(header, helperLines...)
 
 	hdr := strings.Join(header, "\n")
@@ -190,73 +204,6 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 		WorkgroupSize: p.ComputeFunc.WorkgroupSize,
 		Registers:     w.regs,
 	}, nil
-}
-
-func (w *pipeWriter) emitStorageLoadHelpers() []string {
-	var lines []string
-	for i, b := range w.p.Bindings {
-		if b.Kind != shaderir.BindingStorageBufferRead || w.p.ComputeFunc.Block != nil {
-			continue
-		}
-		elem := b.Type
-		if elem.Main == shaderir.Array && len(elem.Sub) > 0 {
-			elem = elem.Sub[0]
-		}
-		if elem.Main != shaderir.Struct {
-			continue
-		}
-		name := w.typeStr(elem)
-		lines = append(lines, fmt.Sprintf("%s __load_B%d(uint __index) {", name, i))
-		lines = append(lines, fmt.Sprintf("\t%s __value = (%s)0;", name, name))
-		w.emitStorageAssignments(elem, fmt.Sprintf("__index * %d", elem.StorageStride()), "__value", fmt.Sprintf("B%d", i), &lines, 1)
-		lines = append(lines, "\treturn __value;", "}", "")
-	}
-	return lines
-}
-
-func (w *pipeWriter) emitStorageAssignments(t shaderir.Type, base, dst, buffer string, lines *[]string, level int) {
-	indent := strings.Repeat("\t", level)
-	for i, field := range t.Sub {
-		address := fmt.Sprintf("(%s + %d)", base, t.StorageStructFieldOffset(i))
-		name := fmt.Sprintf("%s.M%d", dst, i)
-		if field.Main == shaderir.Struct {
-			w.emitStorageAssignments(field, address, name, buffer, lines, level)
-			continue
-		}
-		if load := hlslStorageLoad(field, buffer, address); load != "" {
-			*lines = append(*lines, fmt.Sprintf("%s%s = %s;", indent, name, load))
-		}
-	}
-}
-
-func hlslStorageLoad(t shaderir.Type, buffer, address string) string {
-	switch t.Main {
-	case shaderir.Float:
-		return fmt.Sprintf("asfloat(%s.Load(%s))", buffer, address)
-	case shaderir.Int:
-		return fmt.Sprintf("asint(%s.Load(%s))", buffer, address)
-	case shaderir.Uint:
-		return fmt.Sprintf("%s.Load(%s)", buffer, address)
-	case shaderir.Vec2:
-		return fmt.Sprintf("asfloat(%s.Load2(%s))", buffer, address)
-	case shaderir.Vec3:
-		return fmt.Sprintf("asfloat(%s.Load3(%s))", buffer, address)
-	case shaderir.Vec4:
-		return fmt.Sprintf("asfloat(%s.Load4(%s))", buffer, address)
-	case shaderir.IVec2:
-		return fmt.Sprintf("asint(%s.Load2(%s))", buffer, address)
-	case shaderir.IVec3:
-		return fmt.Sprintf("asint(%s.Load3(%s))", buffer, address)
-	case shaderir.IVec4:
-		return fmt.Sprintf("asint(%s.Load4(%s))", buffer, address)
-	case shaderir.UVec2:
-		return fmt.Sprintf("%s.Load2(%s)", buffer, address)
-	case shaderir.UVec3:
-		return fmt.Sprintf("%s.Load3(%s)", buffer, address)
-	case shaderir.UVec4:
-		return fmt.Sprintf("%s.Load4(%s)", buffer, address)
-	}
-	return ""
 }
 
 // emitPaddedStructFields gives HLSL structs the offsets and stride used by
@@ -286,37 +233,41 @@ func (w *pipeWriter) emitPaddedStructFields(t shaderir.Type) []string {
 
 type pipeWriter struct {
 	p                 *shaderir.Program
-	structNames       map[string]string
-	structTypes       []shaderir.Type
+	valueNames        map[string]string
+	valueTypes        []shaderir.Type
 	needStructCtor    map[string]bool
 	bindingReg        []uint32
 	regs              []RegisterBinding
 	usesNumWorkgroups bool
 	lenHelpers        map[int]bool
+	rawStorage        bool
+	storageHelpers    map[storageHelperKey]string
+	storageFuncs      []string
+	storageErr        error
 }
 
-func (w *pipeWriter) registerStructs(t shaderir.Type) {
-	switch t.Main {
-	case shaderir.Struct:
-		w.structName(t)
-	case shaderir.Array:
-		if len(t.Sub) > 0 {
-			w.registerStructs(t.Sub[0])
-		}
+func storageElement(t shaderir.Type) shaderir.Type {
+	if t.Main == shaderir.Array && len(t.Sub) > 0 {
+		return t.Sub[0]
 	}
+	return t
 }
 
-func (w *pipeWriter) structName(t shaderir.Type) string {
+func (w *pipeWriter) valueTypeName(t shaderir.Type) string {
 	key := t.String()
-	if n, ok := w.structNames[key]; ok {
+	if n, ok := w.valueNames[key]; ok {
 		return n
 	}
 	for _, f := range t.Sub {
-		w.registerStructs(f)
+		w.typeStr(f)
 	}
-	n := fmt.Sprintf("S%d", len(w.structTypes))
-	w.structNames[key] = n
-	w.structTypes = append(w.structTypes, t)
+	prefix := "S"
+	if t.Main == shaderir.Array {
+		prefix = "A"
+	}
+	n := fmt.Sprintf("%s%d", prefix, len(w.valueTypes))
+	w.valueNames[key] = n
+	w.valueTypes = append(w.valueTypes, t)
 	return n
 }
 
@@ -335,8 +286,8 @@ func hlslStorageTexelType(f shaderir.StorageTextureFormat) string {
 
 func (w *pipeWriter) typeStr(t shaderir.Type) string {
 	switch t.Main {
-	case shaderir.Struct:
-		return w.structName(t)
+	case shaderir.Struct, shaderir.Array:
+		return w.valueTypeName(t)
 	case shaderir.Texture2D, shaderir.Texture, shaderir.TextureDepth2D:
 		return "Texture2D"
 	case shaderir.TextureCube:
@@ -363,9 +314,6 @@ func (w *pipeWriter) typeStr(t shaderir.Type) string {
 }
 
 func (w *pipeWriter) declVar(t shaderir.Type, name string) string {
-	if t.Main == shaderir.Array {
-		return fmt.Sprintf("%s %s[%d]", w.typeStr(t.Sub[0]), name, t.Length)
-	}
 	return fmt.Sprintf("%s %s", w.typeStr(t), name)
 }
 
@@ -564,6 +512,11 @@ func (w *pipeWriter) emitBlock(top, b *shaderir.Block, level int, stage string) 
 }
 
 func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
+	if w.rawStorage {
+		if ref, ok := w.storageRef(e, stage); ok {
+			return w.storageLoad(ref)
+		}
+	}
 	switch e.Type {
 	case shaderir.NumberExpr:
 		return hlslConstLit(e.Const, e.Unsigned)
@@ -572,10 +525,7 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 	case shaderir.BindingVariable:
 		if e.Index >= 0 && e.Index < len(w.p.Bindings) {
 			b := w.p.Bindings[e.Index]
-			if b.Kind == shaderir.BindingStorageBufferRead && b.Type.Main == shaderir.Struct {
-				return fmt.Sprintf("__load_B%d(0)", e.Index)
-			}
-			if (b.Kind == shaderir.BindingStorageBufferReadWrite) && b.Type.Main != shaderir.Array && b.Type.Main != shaderir.None {
+			if (b.Kind == shaderir.BindingStorageBufferRead || b.Kind == shaderir.BindingStorageBufferReadWrite) && b.Type.Main != shaderir.Array && b.Type.Main != shaderir.None {
 				return fmt.Sprintf("B%d[0]", e.Index)
 			}
 		}
@@ -639,15 +589,23 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			return fmt.Sprintf("(%s).M%d", base, m.Index)
 		}
 	case shaderir.Index:
-		if base := e.Exprs[0]; base.Type == shaderir.BindingVariable && base.Index >= 0 && base.Index < len(w.p.Bindings) {
-			b := w.p.Bindings[base.Index]
-			if b.Kind == shaderir.BindingStorageBufferRead && b.Type.Main == shaderir.Array && len(b.Type.Sub) > 0 && b.Type.Sub[0].Main == shaderir.Struct {
-				return fmt.Sprintf("__load_B%d(%s)", base.Index, w.emitExpr(e.Exprs[1], stage))
-			}
-		}
 		return fmt.Sprintf("(%s)[%s]", w.emitExpr(e.Exprs[0], stage), w.emitExpr(e.Exprs[1], stage))
 	case shaderir.Call:
 		callee := e.Exprs[0]
+		if callee.BuiltinFunc == shaderir.ArrayLength && len(e.Exprs) > 1 {
+			array := e.Exprs[1]
+			if w.rawStorage {
+				if ref, ok := w.storageRef(array, stage); ok {
+					w.lenHelpers[ref.binding] = true
+					return fmt.Sprintf("__len_B%d(%s, %du)", ref.binding, ref.address(), ref.typ.Sub[0].StorageStride())
+				}
+			}
+			if array.Type == shaderir.BindingVariable {
+				w.lenHelpers[array.Index] = true
+				return fmt.Sprintf("__len_B%d()", array.Index)
+			}
+			return "0u"
+		}
 		args := make([]string, len(e.Exprs)-1)
 		for i, a := range e.Exprs[1:] {
 			args[i] = w.emitExpr(a, stage)
@@ -716,12 +674,6 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			return fmt.Sprintf("uint2(0u, 0u) /* %s */", args[0])
 		case shaderir.TextureStore:
 			return fmt.Sprintf("%s[%s] = %s", args[0], args[1], args[2])
-		case shaderir.ArrayLength:
-			if len(e.Exprs) > 1 && e.Exprs[1].Type == shaderir.BindingVariable {
-				w.lenHelpers[e.Exprs[1].Index] = true
-				return fmt.Sprintf("__len_B%d()", e.Exprs[1].Index)
-			}
-			return "0u"
 		case shaderir.WorkgroupBarrier:
 			return "GroupMemoryBarrierWithGroupSync()"
 		case shaderir.StorageBarrier:

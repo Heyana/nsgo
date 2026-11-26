@@ -451,13 +451,7 @@ func (n *d3d11NativeOps) CreateBuffer(mainDesc d3d11BufferDesc, hasCB bool, cbDe
 			return nil, uint32(hr), hresultError("d3d11: CreateBuffer", hr)
 		}
 		if mainDesc.bindFlags&d3d11BindShaderResource != 0 {
-			stride := max(mainDesc.structureByteStride, 4)
-			srvDesc := d3d11SRVDesc{
-				format:        dxgiFmtUnknown,
-				viewDimension: d3d11SRVDimBuffer,
-				u0:            0,
-				u1:            mainDesc.byteWidth / stride,
-			}
+			srvDesc := d3dRawBufferSRV(mainDesc.byteWidth)
 			if hr := g.d3d.call(d3dCreateShaderResourceView, h.buf.ptr(), uintptr(unsafe.Pointer(&srvDesc)), uintptr(unsafe.Pointer(&h.srv))); failed(hr) {
 				h.Release()
 				return nil, uint32(hr), hresultError("d3d11: CreateShaderResourceView buffer", hr)

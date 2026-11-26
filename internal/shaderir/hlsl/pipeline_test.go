@@ -203,6 +203,7 @@ struct P { s: f32, d: vec3<f32> }
 @group(0) @binding(1) var<storage, read> b: array<P>;
 @vertex fn vs_main() -> @builtin(position) vec4<f32> { return vec4<f32>(u.d + b[1].d, u.s + b[1].s); }
 @fragment fn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(u.d, u.s); }
+@compute @workgroup_size(1) fn cs_main() {}
 `
 	prog, err := wgsl.CompilePipeline(src)
 	if err != nil {
@@ -216,11 +217,78 @@ struct P { s: f32, d: vec3<f32> }
 		"struct S0 {\n\tfloat M0;\n\tuint __pad0;\n\tuint __pad1;\n\tuint __pad2;\n\tfloat3 M1;",
 		"cbuffer CB0 : register(b0)",
 		"ByteAddressBuffer B1 : register(t0)",
-		"S0 __load_B1(uint __index)",
-		"asfloat(B1.Load3((__index * 32 + 16)))",
+		"asfloat(B1.Load(32u))",
+		"asfloat(B1.Load3(48u))",
 	} {
 		if !strings.Contains(out.VertexSource, want) {
 			t.Errorf("HLSL missing %q:\n%s", want, out.VertexSource)
 		}
+	}
+}
+
+func TestCompilePipelineHLSLRawStorageTypes(t *testing.T) {
+	const src = `
+struct Inner {
+	signed: i32,
+	basis: mat2x3f,
+	coords: array<vec2u, 2>,
+}
+struct Data {
+	prefix: u32,
+	inner: Inner,
+	tail: array<vec3f>,
+}
+@group(0) @binding(0) var<storage, read> data: Data;
+@group(0) @binding(1) var<storage, read> words: array<i32>;
+@group(0) @binding(2) var<storage, read> grid: array<array<vec2i, 2>, 2>;
+@group(0) @binding(3) var<storage, read> strength: f32;
+
+fn color(part: Inner) -> vec3f {
+	return part.basis * vec2f(f32(part.signed), f32(part.coords[1].x));
+}
+@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+	let n = arrayLength(&data.tail) + arrayLength(&words);
+	let v = data.tail[i] + data.inner.basis[1] + color(data.inner);
+	let s = f32(words[i] + grid[1][i].x) + strength;
+	return vec4f(v, f32(n) + s);
+}
+`
+	prog, err := wgsl.CompilePipeline(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := hlsl.CompilePipeline(prog.IR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"ByteAddressBuffer B0 : register(t0);",
+		"ByteAddressBuffer B1 : register(t1);",
+		"ByteAddressBuffer B2 : register(t2);",
+		"ByteAddressBuffer B3 : register(t3);",
+		"B0.GetDimensions(size); return (max(size, base) - base) / stride;",
+		"__len_B0(80u, 16u)",
+		"__len_B1(0u, 4u)",
+		"asfloat(B0.Load3((uint(__in.__vertex_id) * 16u + 80u)))",
+		"asfloat(B0.Load3(48u))",
+		"asint(B0.Load(at))",
+		"transpose(float2x3(asfloat(B0.Load3(at)), asfloat(B0.Load3((at + 16u)))))",
+		"B0.Load2(at + i * 8u)",
+		"asint(B1.Load(uint(__in.__vertex_id) * 4u))",
+		"asint(B2.Load2((uint(min(__in.__vertex_id, 1u)) * 8u + 16u)))",
+		"asfloat(B3.Load(0u))",
+	} {
+		if !strings.Contains(out.VertexSource, want) {
+			t.Errorf("HLSL missing %q:\n%s", want, out.VertexSource)
+		}
+	}
+	if strings.Contains(out.VertexSource, "StructuredBuffer") || strings.Contains(out.VertexSource, "[0];") {
+		t.Errorf("HLSL materialized a typed resource or a runtime-sized array:\n%s", out.VertexSource)
+	}
+	binding := strings.Index(out.VertexSource, "ByteAddressBuffer B0")
+	helper := strings.Index(out.VertexSource, "__load_B0_")
+	entry := strings.Index(out.VertexSource, " vs_main(")
+	if binding < 0 || helper <= binding || entry <= helper {
+		t.Errorf("HLSL must declare the raw resource before its load helpers and entry point:\n%s", out.VertexSource)
 	}
 }
