@@ -1,7 +1,6 @@
 package diagram
 
 import (
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -73,41 +72,35 @@ func TestViewLaysOutAndPaints(t *testing.T) {
 	app.Screenshot("diagram-flowchart")
 }
 
+// A press on a linked item opens its link, and resting on an item shows its tooltip, also when the pointer reaches the item after entering the diagram elsewhere. The window is a desktop's width, which the web needs to count as a desktop.
 func TestDiagramLinksOpenAndTooltipsFollowItems(t *testing.T) {
-	source := "flowchart LR\n  A[Open] \n  click A \"https://example.com/help\" \"Open help\""
+	source := "flowchart LR\n  A[Open] --> B[Plain]\n  click A \"https://example.com/help\" \"Open help\""
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return View{TestID: "d", Source: source}
-	}, nsgotest.Environment(core.Environment{Idiom: core.IdiomDesktop, OS: core.OSMacOS}))
+	}, nsgotest.Environment(core.Environment{Idiom: core.IdiomDesktop, OS: core.OSMacOS}), nsgotest.Size(800, 600))
 	d := app.Find("id:d")
-	center := driver.Point{X: driver.Points(d.Frame.Size.Width / 2), Y: driver.Points(d.Frame.Size.Height / 2)}
-	app.HoverAt("id:d", center)
+	h := driver.Points(d.Frame.Size.Height / 2)
+	open, plain := driver.Point{X: 20, Y: h}, driver.Point{X: driver.Points(d.Frame.Size.Width) - 20, Y: h}
+	app.HoverAt("id:d", plain)
+	app.Advance(600 * time.Millisecond)
+	if app.Exists("text:Open help") {
+		t.Fatal("an item without a tooltip shows one")
+	}
+	app.HoverAt("id:d", open)
+	if app.Exists("text:Open help") {
+		t.Fatal("the tooltip showed before the pointer rested")
+	}
 	app.Advance(600 * time.Millisecond)
 	if !app.Exists("text:Open help") {
-		t.Fatalf("linked item's tooltip did not show:\n%s", app.Dump())
+		t.Fatalf("the item the pointer rests on shows no tooltip:\n%s", app.Dump())
 	}
-	app.PressAt("id:d", center)
+	app.HoverAt("id:d", plain)
+	if app.Exists("text:Open help") {
+		t.Fatal("the tooltip stayed after the pointer left its item")
+	}
+	app.PressAt("id:d", open)
 	if got := app.OpenedURLs; len(got) != 1 || got[0] != "https://example.com/help" {
 		t.Fatalf("opened URLs = %v, want the diagram link", got)
-	}
-}
-
-func TestDiagramLinksOnMacOSTarget(t *testing.T) {
-	if target := os.Getenv("NSGO_TEST_TARGET"); target != "macos" {
-		t.Skipf("native interaction requires NSGO_TEST_TARGET=macos, got %q", target)
-	}
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return View{TestID: "d", Source: "flowchart LR\n  A[Open]\n  click A \"https://example.com/native\" \"Native help\""}
-	}, nsgotest.Environment(core.Environment{Idiom: core.IdiomDesktop, OS: core.OSMacOS}))
-	d := app.Find("id:d")
-	center := driver.Point{X: driver.Points(d.Frame.Size.Width / 2), Y: driver.Points(d.Frame.Size.Height / 2)}
-	app.HoverAt("id:d", center)
-	app.Advance(600 * time.Millisecond)
-	if !app.Exists("text:Native help") {
-		t.Fatalf("native target did not show the item's tooltip:\n%s", app.Dump())
-	}
-	app.PressAt("id:d", center)
-	if got := app.OpenedURLs; len(got) != 1 || got[0] != "https://example.com/native" {
-		t.Fatalf("native target opened URLs = %v", got)
 	}
 }
 
