@@ -182,7 +182,7 @@ func (n *node) overflowArea(kids []*node) (area Bounds, transformed bool) {
 		x1, y1 = max(x1, b.Origin.X+b.Size.Width), max(y1, b.Origin.Y+b.Size.Height)
 	}
 	for _, c := range kids {
-		if c.style.Display == DisplayNone || c.hidden || c.attach != nil {
+		if c.style.Display == DisplayNone || c.hidden || c.attach != nil && c.attach.cut {
 			continue
 		}
 		transformed = transformed || c.transformed || c.sent.transformed

@@ -62,6 +62,38 @@ func TestAttachmentsFlowInText(t *testing.T) {
 	}
 }
 
+func TestTextAttachmentOverflowIsPressable(t *testing.T) {
+	pressed := 0
+	h := newHost(t, Size{Width: 200, Height: 200}, func(*Scope) Node {
+		return View{Style: Style{FontSize: 10}, Children: []Node{
+			Text{TestID: "text", Spans: []Span{
+				{Content: "ab "},
+				{Attachment: View{TestID: "box", OnPress: func(PressEvent) { pressed++ },
+					Style: Style{Width: Pt(10), Height: Pt(6), Transform: Transform{TranslateY: 40}}}},
+			}},
+		}}
+	})
+	b := h.commit()
+	text, box := h.find("text"), h.find("box")
+	var overflow *driver.MountItem
+	for i := range b.Items {
+		if b.Items[i].Kind == driver.ItemOverflow && b.Items[i].ID == text.id {
+			overflow = &b.Items[i]
+		}
+	}
+	if overflow == nil || !overflow.Transformed {
+		t.Fatalf("text overflow = %+v, want transformed overflow", overflow)
+	}
+	at := Point{X: 20, Y: 48}
+	if got := h.tree.HitTest(at); got != box.id {
+		t.Fatalf("hit test at attachment = %d, want %d", got, box.id)
+	}
+	h.tree.PressAt(driver.Event{Page: at})
+	if pressed != 1 {
+		t.Fatalf("presses = %d, want 1", pressed)
+	}
+}
+
 func TestAttachmentsAlignAndGrowLines(t *testing.T) {
 	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
 		return View{Style: Style{FontSize: 10}, Children: []Node{
