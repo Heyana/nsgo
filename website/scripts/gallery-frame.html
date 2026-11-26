@@ -702,14 +702,14 @@
 
         // Every load passes on the URL's debugging flags, so a switch or a retry starts the app as the URL asks. Each group is its own web build (build-gallery.mjs), so the frame names its directory. Every part comes from a constant list, so the address the frame loads holds nothing the page did not put there.
         function appURL() {
-          var parts = ['embed=1', 'theme=' + (theme() === 'dark' ? 'dark' : 'light')];
-          if (platform !== 'web') parts.push('nsgo-os=' + platform);
+          var parts = ['embed=1', 'theme=' + encodeURIComponent(theme())];
+          if (platform !== 'web') parts.push('nsgo-os=' + encodeURIComponent(platform));
           if (params.has('nsgo-fps')) parts.push('nsgo-fps=1');
           var lang = LANGS.indexOf(params.get('nsgo-lang'));
-          if (lang >= 0) parts.push('nsgo-lang=' + LANGS[lang]);
+          if (lang >= 0) parts.push('nsgo-lang=' + encodeURIComponent(LANGS[lang]));
           var appearance = APPEARANCES.indexOf(params.get('nsgo-appearance'));
-          if (appearance >= 0) parts.push('nsgo-appearance=' + APPEARANCES[appearance]);
-          return group + '/app.html?' + parts.join('&');
+          if (appearance >= 0) parts.push('nsgo-appearance=' + encodeURIComponent(APPEARANCES[appearance]));
+          return encodeURIComponent(group) + '/app.html?' + parts.join('&');
         }
 
         // fit scales a frame to the stage, never above its own size, so the app keeps its CSS size and with it its layout and media queries.
@@ -800,8 +800,9 @@
         }
 
         function choose(value) {
-          if (!known(value) || value === platform) return;
-          platform = value;
+          var next = known(value);
+          if (!next || next === platform) return;
+          platform = next;
           try {
             localStorage.setItem(storageKey, platform);
           } catch (error) {}
@@ -814,8 +815,10 @@
 
         // chooseGroup switches the demo group: each group is its own web build, so its frame loads on first use and comes from the HTTP cache after.
         function chooseGroup(value) {
-          if (value === group) return;
-          group = value;
+          var wanted = -1;
+          for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].id === value) wanted = i;
+          if (wanted < 0 || GROUPS[wanted].id === group) return;
+          group = GROUPS[wanted].id;
           var url = new URL(location.href);
           url.searchParams.set('group', group);
           history.replaceState(history.state, '', url);
