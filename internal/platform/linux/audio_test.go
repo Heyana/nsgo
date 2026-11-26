@@ -1120,13 +1120,19 @@ func TestLinuxAudioTrackVoiceFollowsMixerClock(t *testing.T) {
 			w.audio.mixer = nil
 		}
 	})
+	// The voice starts on the first tick after the mixer plays, which a busy machine reaches several loop turns after resume.
 	const drift = 300 * time.Millisecond
-	w.onLoop(t, func() {
-		if p.voice == nil {
+	for deadline, moved := time.Now().Add(4*time.Second), false; !moved; time.Sleep(10 * time.Millisecond) {
+		w.onLoop(t, func() {
+			if p.voice != nil {
+				p.voice.started = p.voice.started.Add(drift)
+				moved = true
+			}
+		})
+		if !moved && time.Now().After(deadline) {
 			t.Fatal("the player did not start a track voice")
 		}
-		p.voice.started = p.voice.started.Add(drift)
-	})
+	}
 	time.Sleep(200 * time.Millisecond)
 	w.onLoop(t, func() {
 		running := gstElementRunningTime(w.audio.mixer.pipeline)
