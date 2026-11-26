@@ -148,6 +148,23 @@
       html[data-theme='dark'] .platforms input:checked + span {
         background: #262a32;
       }
+      .groups {
+        flex: none;
+        margin-right: 8px;
+        padding: 4px 8px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        box-shadow: var(--shadow-sm);
+      }
+      .groups:focus-visible {
+        outline: 2px solid var(--blue);
+        outline-offset: 2px;
+      }
       .platforms input:focus-visible + span {
         outline: 2px solid var(--blue);
         outline-offset: -2px;
@@ -529,6 +546,7 @@
         <label><input type="radio" name="platform" value="android" /><span>Android</span></label>
         <label><input type="radio" name="platform" value="web" /><span>Web</span></label>
       </fieldset>
+      <select class="groups" id="groups" aria-label="Demo group" hidden></select>
       <button class="theme" id="theme" type="button" aria-label="Dark appearance" aria-pressed="false">
         <svg class="theme__moon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.5 10.1A5.8 5.8 0 0 1 5.9 2.5a.5.5 0 0 0-.7-.6 6.8 6.8 0 1 0 8.9 8.9.5.5 0 0 0-.6-.7Z" /></svg>
         <svg class="theme__sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.2" fill="currentColor" /><path stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.1 1.1M11.9 11.9 13 13M3 13l1.1-1.1M11.9 4.1 13 3" /></svg>
@@ -629,6 +647,8 @@
         var retry = document.getElementById('retry');
         var themeButton = document.getElementById('theme');
         var radios = document.querySelectorAll('#platforms input');
+        var groupsBox = document.getElementById('groups');
+        var group = 'apps';
         var frame = null;
 
         function known(value) {
@@ -667,7 +687,7 @@
           if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'nsgo-gallery-theme', theme: next }, location.origin);
         }
 
-        // Every load passes on the URL's nsgo- flags, so a switch or a retry starts the app as the URL asks.
+        // Every load passes on the URL's nsgo- flags, so a switch or a retry starts the app as the URL asks. Each group is its own web build (build-gallery.mjs), so the frame names its directory.
         function appURL() {
           var query = new URLSearchParams({ embed: '1', theme: theme() });
           if (platform !== 'web') query.set('nsgo-os', platform);
@@ -675,7 +695,7 @@
             if (key.indexOf('nsgo-') !== 0 || key === 'nsgo-os') return;
             query.append(key, value);
           });
-          return 'app.html?' + query;
+          return group + '/app.html?' + query;
         }
 
         // fit scales a frame to the stage, never above its own size, so the app keeps its CSS size and with it its layout and media queries.
@@ -778,6 +798,49 @@
           load();
         }
 
+        // chooseGroup switches the demo group: each group is its own web build, so its frame loads on first use and comes from the HTTP cache after.
+        function chooseGroup(value) {
+          if (value === group) return;
+          group = value;
+          var url = new URL(location.href);
+          url.searchParams.set('group', group);
+          history.replaceState(history.state, '', url);
+          if (window.umami) window.umami.track('switch-group', { group: group });
+          load();
+        }
+
+        // start lists the groups from the build's index and loads the one the URL names, the first otherwise.
+        function start() {
+          fetch('index.json', { cache: 'no-cache' })
+            .then(function (response) {
+              return response.json();
+            })
+            .then(function (index) {
+              var ids = index.groups.map(function (g) {
+                return g.id;
+              });
+              var wanted = params.get('group');
+              group = ids.indexOf(wanted) >= 0 ? wanted : ids[0];
+              index.groups.forEach(function (g) {
+                var option = document.createElement('option');
+                option.value = g.id;
+                option.textContent = g.title;
+                groupsBox.appendChild(option);
+              });
+              groupsBox.value = group;
+              groupsBox.hidden = false;
+              if (!params.has('group')) {
+                var url = new URL(location.href);
+                url.searchParams.set('group', group);
+                history.replaceState(history.state, '', url);
+              }
+              load();
+            })
+            .catch(function () {
+              load();
+            });
+        }
+
         function showTheme() {
           var dark = theme() === 'dark';
           themeButton.setAttribute('aria-pressed', String(dark));
@@ -805,6 +868,11 @@
 
         document.getElementById('platforms').addEventListener('change', function (event) {
           choose(event.target.value);
+        });
+
+        groupsBox.addEventListener('change', function (event) {
+          chooseGroup(event.target.value);
+          groupsBox.value = group;
         });
 
         retry.addEventListener('click', load);
@@ -838,7 +906,7 @@
 
         select(platform);
         showTheme();
-        load();
+        start();
       })();
     </script>
   </body>

@@ -29,17 +29,22 @@ function findSite(dir) {
 
 // buildWeb builds app, a package path from the repository's root, into
 // output and returns its nsgo.json with gzip, the compressed wasm's name,
-// and gzipSize in place of wasm.
-export function buildWeb({ app, name, output }) {
+// and gzipSize in place of wasm. tags, when given, are added to the go
+// command's build tags, so a build can carry one part of an app.
+export function buildWeb({ app, name, output, tags = [] }) {
   const scratch = path.join(website, '.web-build', path.basename(output));
   rmSync(scratch, { recursive: true, force: true });
   rmSync(output, { recursive: true, force: true });
   mkdirSync(scratch, { recursive: true });
   try {
+    const env = { ...process.env };
+    if (tags.length > 0) {
+      env.GOFLAGS = `${env.GOFLAGS ?? ''} -tags=${tags.join(',')}`.trim();
+    }
     execFileSync(
       'go',
       ['tool', 'nsgo', 'build', '-target', 'web', '-name', name, '-open=false', '-output', scratch, app],
-      { cwd: repo, stdio: 'inherit' },
+      { cwd: repo, stdio: 'inherit', env },
     );
     cpSync(findSite(scratch), output, { recursive: true });
   } finally {
