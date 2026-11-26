@@ -15,6 +15,7 @@ const en = {
   lower: 'Lower is better',
   higher: 'Higher is better',
   failed: 'Failed',
+  best: 'Best',
   cases: {
     counter: {
       title: 'Counter',
@@ -77,6 +78,7 @@ const zh: BenchmarkCopy = {
   lower: '越低越好',
   higher: '越高越好',
   failed: '失败',
+  best: '最优',
   cases: {
     counter: {
       title: '计数器',
@@ -136,6 +138,7 @@ const zhTw: BenchmarkCopy = {
   lower: '越低越好',
   higher: '越高越好',
   failed: '失敗',
+  best: '最佳',
   cases: {
     counter: {
       title: '計數器',
@@ -195,6 +198,7 @@ const ja: BenchmarkCopy = {
   lower: '低いほど優秀',
   higher: '高いほど優秀',
   failed: '失敗',
+  best: '最良',
   cases: {
     counter: {
       title: 'カウンター',
@@ -254,6 +258,7 @@ const ko: BenchmarkCopy = {
   lower: '낮을수록 좋음',
   higher: '높을수록 좋음',
   failed: '실패',
+  best: '최고',
   cases: {
     counter: {
       title: '카운터',
@@ -313,6 +318,7 @@ const es: BenchmarkCopy = {
   lower: 'Menor es mejor',
   higher: 'Mayor es mejor',
   failed: 'Error',
+  best: 'Mejor',
   cases: {
     counter: {
       title: 'Contador',
@@ -372,6 +378,7 @@ const fr: BenchmarkCopy = {
   lower: 'Plus bas est mieux',
   higher: 'Plus haut est mieux',
   failed: 'Échec',
+  best: 'Meilleur',
   cases: {
     counter: {
       title: 'Compteur',
@@ -431,6 +438,7 @@ const de: BenchmarkCopy = {
   lower: 'Niedriger ist besser',
   higher: 'Höher ist besser',
   failed: 'Fehlgeschlagen',
+  best: 'Bestwert',
   cases: {
     counter: {
       title: 'Zähler',
@@ -490,6 +498,7 @@ const pt: BenchmarkCopy = {
   lower: 'Menor é melhor',
   higher: 'Maior é melhor',
   failed: 'Falhou',
+  best: 'Melhor',
   cases: {
     counter: {
       title: 'Contador',
@@ -549,6 +558,7 @@ const ru: BenchmarkCopy = {
   lower: 'Меньше — лучше',
   higher: 'Больше — лучше',
   failed: 'Ошибка',
+  best: 'Лучший',
   cases: {
     counter: {
       title: 'Счётчик',
@@ -608,6 +618,7 @@ const it: BenchmarkCopy = {
   lower: 'Più basso è meglio',
   higher: 'Più alto è meglio',
   failed: 'Fallito',
+  best: 'Migliore',
   cases: {
     counter: {
       title: 'Contatore',
@@ -667,6 +678,7 @@ const vi: BenchmarkCopy = {
   lower: 'Thấp hơn tốt hơn',
   higher: 'Cao hơn tốt hơn',
   failed: 'Thất bại',
+  best: 'Tốt nhất',
   cases: {
     counter: {
       title: 'Bộ đếm',
@@ -726,6 +738,7 @@ const id: BenchmarkCopy = {
   lower: 'Lebih rendah lebih baik',
   higher: 'Lebih tinggi lebih baik',
   failed: 'Gagal',
+  best: 'Terbaik',
   cases: {
     counter: {
       title: 'Penghitung',
@@ -785,6 +798,7 @@ const tr: BenchmarkCopy = {
   lower: 'Düşük olan daha iyi',
   higher: 'Yüksek olan daha iyi',
   failed: 'Başarısız',
+  best: 'En iyi',
   cases: {
     counter: {
       title: 'Sayaç',

@@ -40,6 +40,8 @@ interface Chart {
   max: number;
   /** Whether more is better, as frames are. */
   higher?: boolean;
+  /** The best value as shown, which every row showing it is marked with; unset when every row shows the same. */
+  best?: string;
 }
 
 interface Row {
@@ -52,6 +54,12 @@ interface Row {
 }
 
 const total = (row: Row) => row.parts.reduce((a, b) => a + b, 0);
+
+/** The best value as the ranked rows show it, unless all of them show the same. */
+function bestOf(rows: Row[]): string | undefined {
+  const ok = rows.filter((r) => !r.failed);
+  return ok.length > 1 && ok.some((r) => r.label !== ok[0].label) ? ok[0].label : undefined;
+}
 
 /** The rows best first, those that failed last. */
 function ranked(rows: Row[], higher = false): Row[] {
@@ -77,7 +85,8 @@ function chart(
     return { id: f.id, name: f.name, color: f.color, parts: parts ?? [], label: parts ? label(parts) : copy.failed, failed: !parts };
   });
   const max = Math.max(...rows.map(total), 1e-9);
-  return { title, note, rows: ranked(rows, higher), max, higher };
+  const sorted = ranked(rows, higher);
+  return { title, note, rows: sorted, max, higher, best: bestOf(sorted) };
 }
 
 function charts(r: Results, c: CaseId): Chart[] {
@@ -88,7 +97,8 @@ function charts(r: Results, c: CaseId): Chart[] {
       const size = r.size[f.id];
       return { id: f.id, name: f.name, color: f.color, parts: size ? [size] : [], label: size ? formatBytes(size) : copy.failed, failed: !size };
     });
-    const size = { title: copy.metrics.size, rows: ranked(rows), max: Math.max(...rows.map(total), 1) };
+    const sorted = ranked(rows);
+    const size = { title: copy.metrics.size, rows: sorted, max: Math.max(...rows.map(total), 1), best: bestOf(sorted) };
     return [startup, memory, size];
   }
   const cpu = chart(
@@ -164,7 +174,10 @@ const date = (iso: string) =>
                                   />
                                 ))}
                               </span>
-                              <span class="bench-bar__value">{row.label}</span>
+                              <span class="bench-bar__value">
+                                {!row.failed && row.label === ch.best && <b class="bench-bar__best">{copy.best}</b>}
+                                {row.label}
+                              </span>
                             </li>
                           ))}
                         </ul>
