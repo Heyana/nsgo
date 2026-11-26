@@ -23,6 +23,7 @@ type galleryWorkflow struct {
 	Jobs map[string]struct {
 		Name     string
 		Needs    any
+		If       string
 		Outputs  map[string]string
 		Strategy struct {
 			Matrix map[string]any
@@ -111,7 +112,7 @@ func TestGalleryShardsMatchTheWorkflow(t *testing.T) {
 	}
 }
 
-// The required check Gallery (web) waits for the gallery job and reads the success of every web shard, so no shard runs outside what the merge queue gates on.
+// The required check Gallery (web) waits for the gallery job and reads the success of every web shard, so no shard runs outside what the merge queue gates on. It runs after a failed shard, as a skipped required check counts as passed, but not in a cancelled run, where it would fail a check nobody finished.
 func TestGalleryWebCheckCoversEveryShard(t *testing.T) {
 	workflow := readGalleryWorkflow(t)
 	gallery := workflow.Jobs["gallery"]
@@ -124,6 +125,9 @@ func TestGalleryWebCheckCoversEveryShard(t *testing.T) {
 	}
 	if needs, _ := check.Needs.(string); needs != "gallery" {
 		t.Errorf("the gallery-web job needs %v, want gallery", check.Needs)
+	}
+	if check.If != "${{ !cancelled() }}" {
+		t.Errorf("the gallery-web job runs if %q, want ${{ !cancelled() }}", check.If)
 	}
 	var env []string
 	for _, step := range check.Steps {

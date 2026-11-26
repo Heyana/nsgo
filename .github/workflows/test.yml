@@ -90,10 +90,10 @@ jobs:
             terminal-actions-screenshots
           if-no-files-found: warn
   gallery-web:
-    # The required check: it passes only when every web shard of the gallery job passed, so the merge queue keeps gating on the whole gallery on the web. It runs whatever happened before it, as a skipped required check would count as passed.
+    # The required check: it passes only when every web shard of the gallery job passed, so the merge queue keeps gating on the whole gallery on the web. It runs whatever happened before it, as a skipped required check would count as passed, except in a cancelled run, where it ends cancelled with the shards instead of failing. A shard that runs out of time ends cancelled too, but the run goes on, so this job still runs and fails.
     name: Gallery (web)
     needs: gallery
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 5
     steps:
