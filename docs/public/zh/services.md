@@ -51,7 +51,7 @@ if err := core.CheckURL(url); err == nil {
 }
 ```
 
-`cx.OpenFile` 用系统关联的应用打开应用持有的文件，`cx.Share` 在 macOS、iOS、Android、Windows、Linux（通过桌面门户或文件管理器）与 Web（`navigator.share`）上显示系统分享面板，可以分享文件、文本或两者。`core.SharedFile` 是磁盘上的路径——在 Web 上或应用持有内存字节时也可以直接通过 `Data` 传入——以及另一个应用看到的名称和类型。在桌面上，`desktop.RevealFile` 在访达、资源管理器或文件管理器中选中显示一个文件或文件夹，`desktop.TrashFile` 把它移到废纸篓或回收站；它从不永久删除，卷没有废纸篓或废纸篓容不下该项目（例如比回收站还大的文件）时回答 `core.ErrNoTrash`，项目留在原处。
+`cx.OpenFile` 用系统关联的应用打开应用持有的文件，`cx.Share` 在 macOS、iOS、Android、Windows、Linux（通过桌面门户或文件管理器）与 Web（`navigator.share`）上显示系统分享面板，可以分享文件、文本或两者。`core.SharedFile` 是磁盘上的路径——在 Web 上或应用持有内存字节时也可以直接通过 `Data` 传入——以及另一个应用看到的名称和类型。在 Android 上，也可以在 `URI` 中传入应用已经持有的 `content://` URI，交给 `OpenFile` 或 `Share`；其他目标会拒绝此字段。在桌面上，`desktop.RevealFile` 在访达、资源管理器或文件管理器中选中显示一个文件或文件夹，`desktop.TrashFile` 把它移到废纸篓或回收站；它从不永久删除，卷没有废纸篓或废纸篓容不下该项目（例如比回收站还大的文件）时回答 `core.ErrNoTrash`，项目留在原处。
 
 ```go
 cx.Share(core.ShareOptions{

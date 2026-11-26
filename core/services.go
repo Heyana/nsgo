@@ -713,9 +713,28 @@ func (cx *Scope) SaveFile(o SaveOptions, done func(saved bool, path string, err 
 // resolveShared returns f as the platform hands it on, with an absolute
 // path or its bytes, a name and a type, or why it cannot be: a file with
 // neither path nor data, one that is not there, or not a regular file.
-func resolveShared(f SharedFile) (driver.SharedFile, error) {
+func resolveShared(f SharedFile, allowURI bool) (driver.SharedFile, error) {
+	if f.URI != "" {
+		if !allowURI {
+			return driver.SharedFile{}, errors.New("core: content URIs are supported on Android only")
+		}
+		if !strings.HasPrefix(f.URI, "content://") || len(f.URI) <= len("content://") {
+			return driver.SharedFile{}, errors.New("core: a shared URI must be a content URI")
+		}
+		r := driver.SharedFile{URI: f.URI, Name: f.Name, MIME: f.MIME}
+		if i := strings.LastIndexAny(r.Name, `/\`); i >= 0 {
+			r.Name = r.Name[i+1:]
+		}
+		if r.Name == "" || r.Name == "." || r.Name == ".." {
+			r.Name = "file"
+		}
+		if r.MIME == "" {
+			r.MIME = driver.MIMEForFile(r.Name)
+		}
+		return r, nil
+	}
 	if f.Path != "" {
-		return resolveOpened(f, false)
+		return resolveOpened(f, false, allowURI)
 	}
 	if f.Data == nil {
 		return driver.SharedFile{}, errors.New("core: a shared file has a path or data")
@@ -735,7 +754,10 @@ func resolveShared(f SharedFile) (driver.SharedFile, error) {
 
 // resolveOpened is resolveShared, taking a folder too when folders is
 // set.
-func resolveOpened(f SharedFile, folders bool) (driver.SharedFile, error) {
+func resolveOpened(f SharedFile, folders, allowURI bool) (driver.SharedFile, error) {
+	if f.URI != "" {
+		return resolveShared(f, allowURI)
+	}
 	if f.Path == "" {
 		return driver.SharedFile{}, errors.New("core: a shared file has a path")
 	}
@@ -790,7 +812,7 @@ func (cx *Scope) OpenFile(f SharedFile, done func(opened bool, err error)) {
 		return
 	}
 	os := cx.Env().hostUntracked()
-	r, err := resolveOpened(f, os == OSMacOS || os == OSWindows || os == OSLinux)
+	r, err := resolveOpened(f, os == OSMacOS || os == OSWindows || os == OSLinux, os == OSAndroid)
 	if err != nil {
 		answer(false, err)
 		return
@@ -927,7 +949,7 @@ func (cx *Scope) Share(o ShareOptions, done func(shown bool, err error)) {
 	}
 	r := driver.ShareRequest{Text: o.Text}
 	for _, f := range o.Files {
-		sf, err := resolveShared(f)
+		sf, err := resolveShared(f, cx.Env().hostUntracked() == OSAndroid)
 		if err != nil {
 			answer(false, err)
 			return
@@ -977,7 +999,7 @@ func (cx *Scope) installPackage(f SharedFile, done func(bool, error)) {
 	if t == nil {
 		return
 	}
-	r, err := resolveOpened(f, false)
+	r, err := resolveOpened(f, false, false)
 	// A backend without filesystem access can still report that installation is unavailable.
 	if err != nil && !errors.Is(err, errors.ErrUnsupported) {
 		if done != nil {

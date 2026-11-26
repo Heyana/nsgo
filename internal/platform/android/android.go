@@ -781,6 +781,9 @@ func (s *surface) stage(id uint32, b *driver.MountBatch) {
 			r := *it.Share
 			var files []driver.SharedFile
 			for j, f := range r.Files {
+				if f.URI != "" {
+					continue
+				}
 				if f.Path != "" {
 					continue
 				}
@@ -1908,7 +1911,11 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		case driver.ItemOpenFile:
 			// The file, the name the app opening it sees and its type.
 			w.u32(it.Count)
-			w.str(it.Open.Path)
+			path := it.Open.Path
+			if it.Open.URI != "" {
+				path = it.Open.URI
+			}
+			w.str(path)
 			w.str(it.Open.Name)
 			w.str(it.Open.MIME)
 		case driver.ItemInstallPackage:
@@ -1927,7 +1934,11 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			w.str(it.Share.Text)
 			w.u32(uint32(len(it.Share.Files)))
 			for _, f := range it.Share.Files {
-				w.str(f.Path)
+				path := f.Path
+				if f.URI != "" {
+					path = f.URI
+				}
+				w.str(path)
 				w.str(f.Name)
 				w.str(f.MIME)
 			}

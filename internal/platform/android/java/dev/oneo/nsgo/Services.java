@@ -196,7 +196,9 @@ final class Services {
     static boolean openFile(Context context, String path, String name, String mime, String[] error) {
         Intent intent = new Intent(Intent.ACTION_VIEW);
         try {
-            intent.setDataAndType(FileProvider.uri(context, new File(path), name, mime), mime);
+            Uri uri = path.startsWith("content://") ? contentURI(path) : FileProvider.uri(context, new File(path), name, mime);
+            if (mime.isEmpty()) mime = contentType(context, uri);
+            intent.setDataAndType(uri, mime);
         } catch (IOException e) {
             error[0] = e.getMessage();
             return false;
@@ -223,7 +225,8 @@ final class Services {
         ArrayList<Uri> uris = new ArrayList<>();
         try {
             for (int i = 0; i < paths.length; i++) {
-                uris.add(FileProvider.uri(context, new File(paths[i]), names[i], mimes[i]));
+                uris.add(paths[i].startsWith("content://") ? contentURI(paths[i]) : FileProvider.uri(context, new File(paths[i]), names[i], mimes[i]));
+                if (mimes[i].isEmpty()) mimes[i] = contentType(context, uris.get(i));
             }
         } catch (IOException e) {
             return e.getMessage();
@@ -249,6 +252,19 @@ final class Services {
         } catch (RuntimeException e) {
             return String.valueOf(e.getMessage());
         }
+    }
+
+    private static Uri contentURI(String text) throws IOException {
+        Uri uri = Uri.parse(text);
+        if (!"content".equals(uri.getScheme()) || uri.getAuthority() == null) {
+            throw new IOException("shared URI is not a content URI");
+        }
+        return uri;
+    }
+
+    private static String contentType(Context context, Uri uri) {
+        String mime = context.getContentResolver().getType(uri);
+        return mime == null || mime.isEmpty() ? "application/octet-stream" : mime;
     }
 
     /** The permission an app installing packages asks for in its manifest. */

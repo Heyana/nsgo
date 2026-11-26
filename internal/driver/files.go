@@ -208,6 +208,9 @@ func (r SaveRequest) Stage(dir string) (string, error) {
 // SharedFile is a file the app hands another app: one it opens in the
 // app the system associates with it, or one of a share.
 type SharedFile struct {
+	// URI is an existing content URI the Android app has permission to hand
+	// to another app. Other platforms do not take it.
+	URI string
 	// Path is where it is on disk, absolute once the core resolved it.
 	Path string
 	// Data holds the file's bytes for Share when it is not on disk, such as
