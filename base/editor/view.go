@@ -1023,7 +1023,18 @@ func (r *Ref) Value() string {
 // SetValue replaces the text, as an edit undo takes back.
 func (r *Ref) SetValue(text string) {
 	if r.e != nil {
-		r.e.changed(r.e.st.replaceText(text), true)
+		r.e.changed(r.e.st.replaceText(text, true), true)
+	}
+}
+
+// SetValueOutsideHistory replaces the text as SetValue does, but adds no
+// step to the undo history: what another app or a sync server changed,
+// which the user's undo must not take back. The history and the
+// selections move through the change, so undo still goes back to the
+// user's own edits. The editor's Value does the same.
+func (r *Ref) SetValueOutsideHistory(text string) {
+	if r.e != nil {
+		r.e.changed(r.e.st.replaceText(text, false), true)
 	}
 }
 

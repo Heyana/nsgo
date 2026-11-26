@@ -147,7 +147,7 @@ func TestSoftWrapBreaksAfterSpaces(t *testing.T) {
 func TestReplaceTextKeepsWhatStays(t *testing.T) {
 	s := goState("one\ntwo\nthree")
 	s.setSels([]selection{caret(pos{2, 3})})
-	s.replaceText("one\n2\nthree")
+	s.replaceText("one\n2\nthree", true)
 	if s.primary().head != (pos{2, 3}) || s.r().text() != "one\n2\nthree" {
 		t.Fatalf("%q, caret %v", s.r().text(), s.primary().head)
 	}

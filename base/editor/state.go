@@ -883,8 +883,10 @@ func (s *state) trimTrailing() []change {
 
 // replaceText replaces the text with text as one edit that changes only
 // what differs: the common prefix and suffix stay, and so do the carets
-// and folds away from the change.
-func (s *state) replaceText(text string) []change {
+// and folds away from the change. recorded adds it as a step undo takes
+// back; without it, as for a merge another app wrote, the history moves
+// through the change and keeps its own steps.
+func (s *state) replaceText(text string, recorded bool) []change {
 	text = normalize(text)
 	old := s.r().text()
 	if old == text {
@@ -913,7 +915,11 @@ func (s *state) replaceText(text string) []change {
 	}
 	s.afterEdit(changes)
 	s.setSels(next)
-	s.buf.record(changes, before, slices.Clone(s.sels), kindOther)
+	if recorded {
+		s.buf.record(changes, before, slices.Clone(s.sels), kindOther)
+	} else {
+		s.buf.rebase(changes)
+	}
 	s.buf.open = false
 	return changes
 }

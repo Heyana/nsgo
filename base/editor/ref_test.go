@@ -161,3 +161,36 @@ func TestCommandsOfWordsParagraphsAndCase(t *testing.T) {
 		t.Errorf("paste: %q", value)
 	}
 }
+
+// TestSetValueOutsideHistory keeps a merge out of the undo history, so
+// undo still takes back the text the user typed.
+func TestSetValueOutsideHistory(t *testing.T) {
+	ref := &Ref{}
+	var value string
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return Editor{Ref: ref, DefaultValue: "one\ntwo\n", OnChange: func(s string) { value = s },
+			Style: core.Style{Width: core.Pt(400), Height: core.Pt(300)}}
+	})
+	app.Settle()
+	ref.SetSelections([]Selection{{Anchor: Position{0, 3}, Head: Position{0, 3}}})
+	ref.Insert("!")
+	app.Settle()
+	if value != "one!\ntwo\n" {
+		t.Fatalf("typed %q", value)
+	}
+	ref.SetValueOutsideHistory("one!\ntwo\nthree\n")
+	app.Settle()
+	if value != "one!\ntwo\nthree\n" || ref.Value() != value {
+		t.Fatalf("the merge left %q", value)
+	}
+	ref.Run(Undo)
+	app.Settle()
+	if value != "one\ntwo\nthree\n" {
+		t.Fatalf("undo left %q, want the merge kept and the typed text gone", value)
+	}
+	ref.Run(Redo)
+	app.Settle()
+	if value != "one!\ntwo\nthree\n" {
+		t.Errorf("redo left %q", value)
+	}
+}

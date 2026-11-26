@@ -194,7 +194,8 @@ func (e *ed) follow() {
 					return
 				}
 				e.reported = v
-				e.changed(e.st.replaceText(v), false)
+				// The app's text is not the user's edit: undo keeps its own steps.
+				e.changed(e.st.replaceText(v, false), false)
 			})
 		})
 	}

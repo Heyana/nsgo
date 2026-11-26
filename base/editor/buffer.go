@@ -149,6 +149,41 @@ func (b *buffer) record(changes []change, before, after []selection, kind editKi
 	b.open = kind != kindOther
 }
 
+// rebase carries the undo and redo history through changes no step
+// records, such as a merge from a sync server, so undo still takes back
+// the edits around them and restores selections where the user left
+// them. A change that overlaps a step's leaves that step's range at the
+// change's edge, the place the text it replaces was.
+func (b *buffer) rebase(changes []change) {
+	if len(changes) == 0 {
+		return
+	}
+	for _, steps := range [][]undoStep{b.undo, b.redo} {
+		for i := range steps {
+			step := &steps[i]
+			for j := range step.changes {
+				c := &step.changes[j]
+				c.from, c.oldEnd, c.newEnd = mapThrough(changes, c.from, true), mapThrough(changes, c.oldEnd, false), mapThrough(changes, c.newEnd, false)
+			}
+			step.before = rebaseSels(changes, step.before)
+			step.after = rebaseSels(changes, step.after)
+		}
+	}
+	b.open = false
+}
+
+// rebaseSels carries selections through changes.
+func rebaseSels(changes []change, sels []selection) []selection {
+	if len(sels) == 0 {
+		return sels
+	}
+	out := make([]selection, len(sels))
+	for i, sel := range sels {
+		out[i] = selection{anchor: mapThrough(changes, sel.anchor, false), head: mapThrough(changes, sel.head, false), goal: -1}
+	}
+	return out
+}
+
 // merges reports whether changes go on where step left off: one change
 // each, typing on from its end (a white space after a word starts a new
 // step), or deleting back into it.
