@@ -7032,9 +7032,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                         || c.area != null && x >= c.area[0] * density && y >= c.area[1] * density
                         && x < (c.area[0] + c.area[2]) * density && y < (c.area[1] + c.area[3]) * density;
                 if (!slop && !area) continue;
-                // Group can probe outside its bounds without taking the touch itself. Other
-                // ViewGroups (such as clickable text) need a descendant the touch actually hits.
-                if (!slop && !(child instanceof Group) && touchHit(child, x, y) == null) continue;
+                // A Group probed outside its bounds leaves the touch to its children. Another container, such as clickable text, dispatches natively, which reaches only a child whose bounds hold the touch, and takes the touch itself otherwise; it is probed only when such a child is hit.
+                if (!slop && !(child instanceof Group) && !nativeHit(child, x, y)) continue;
                 if (child instanceof Group) ((Group) child).childrenOnly = !slop;
                 int candidates = gestures.candidates();
                 if (deliver(child, e)) return child;
@@ -7043,6 +7042,19 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 gestures.forgetCandidates(candidates);
             }
             return null;
+        }
+
+        /** Whether native dispatch from a non-Group container reaches a hit: a child whose bounds hold x, y, in the container's coordinates, and that touchHit hits there. */
+        private boolean nativeHit(View view, float x, float y) {
+            if (!(view instanceof ViewGroup)) return false;
+            ViewGroup group = (ViewGroup) view;
+            for (int i = group.getChildCount() - 1; i >= 0; i--) {
+                View child = group.getChildAt(i);
+                float[] p = intoChild(group, child, x, y);
+                if (p == null || p[0] < 0 || p[1] < 0 || p[0] >= child.getWidth() || p[1] >= child.getHeight()) continue;
+                if (touchHit(child, p[0], p[1]) != null) return true;
+            }
+            return false;
         }
 
         /** Dispatches e to child, in its coordinates. */
