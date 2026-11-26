@@ -101,6 +101,7 @@ func main() {
 	gridCols := flag.Int("grid-cols", 0, "grid columns for the NSGo stress case, default 30")
 	gridRows := flag.Int("grid-rows", 0, "grid rows for the NSGo stress case, default 20")
 	nsgoVersion := flag.String("nsgo-version", "", "NSGo's commit, where the checkout has no Git history")
+	flag.BoolVar(&prebuilt, "prebuilt", false, "measure the Rust programs already in their target folders rather than build them, for when they were built elsewhere")
 	out := flag.String("out", filepath.Join("results", runtime.GOOS+".json"), "where to write the results")
 	flag.Parse()
 
@@ -198,6 +199,9 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
+// prebuilt has the Rust programs measured as they are in their target folders, built on another machine of the same system (with the same cargo commands) and copied here, so the measured machine needs no Rust toolchain or room for its builds.
+var prebuilt bool
+
 // build builds a framework's programs of the cases named as releases, and
 // returns them by case.
 func build(fw string, named []string) (map[string]string, error) {
@@ -239,8 +243,10 @@ func build(fw string, named []string) (map[string]string, error) {
 		if !slices.ContainsFunc(named, func(c string) bool { return slices.Contains(cases, c) }) {
 			return bins, nil
 		}
-		if err := run(dir, []string{"CARGO_TARGET_DIR=" + target}, "cargo", args...); err != nil {
-			return nil, err
+		if !prebuilt {
+			if err := run(dir, []string{"CARGO_TARGET_DIR=" + target}, "cargo", args...); err != nil {
+				return nil, err
+			}
 		}
 		for _, c := range named {
 			if !slices.Contains(cases, c) {
@@ -249,6 +255,9 @@ func build(fw string, named []string) (map[string]string, error) {
 			out, err := filepath.Abs(filepath.Join(dir, target, "release", c+exe))
 			if err != nil {
 				return nil, err
+			}
+			if _, err := os.Stat(out); prebuilt && err != nil {
+				return nil, fmt.Errorf("-prebuilt, but %s is not there: %w", out, err)
 			}
 			bins[c] = out
 		}

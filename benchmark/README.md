@@ -35,6 +35,8 @@ go run ./runner -frameworks nsgo -cases grid -grid-cols 20 -grid-rows 15 -out /t
 go run ./runner -runs 1 -seconds 3 -out /tmp/x.json
 ```
 
+The Rust programs can be built on another Mac and copied into their target folders (`nsh/target/release/`, `gpui/target/release/` and `gpui/target/fast/release/`) with the same cargo commands; `-prebuilt` then measures them as they are, so the measured machine needs no Rust toolchain or room for their builds.
+
 It builds release binaries (`go build -ldflags "-s -w"`, `cargo build
 --release` with symbols stripped, GPUI Fast in `gpui/target/fast`), then runs
 each case's programs one after another, as many rounds as `-runs`, and keeps
