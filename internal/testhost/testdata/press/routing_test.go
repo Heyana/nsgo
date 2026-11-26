@@ -59,6 +59,29 @@ func TestClickableTextDoesNotStealSiblingTouches(t *testing.T) {
 	}
 }
 
+// An attachment overflowing its text takes the press there, and neither the text nor a later clickable sibling does.
+func TestOverflowingAttachmentTakesItsPress(t *testing.T) {
+	var attachment, text, sibling int
+	app := nsgotest.Start(t, func(*core.Scope) core.Node {
+		return core.View{TestID: "root", Style: core.Style{Width: core.Pt(300), Height: core.Pt(200)}, Children: []core.Node{
+			core.View{Style: core.Style{Padding: core.All(12)}, Children: []core.Node{
+				core.Text{OnPress: func(core.PressEvent) { text++ }, Spans: []core.Span{
+					{Content: "Link "},
+					{Attachment: core.View{TestID: "attachment", Style: core.Style{Width: core.Pt(20), Height: core.Pt(20),
+						Transform: core.Transform{TranslateY: 80}}, OnPress: func(core.PressEvent) { attachment++ }}},
+				}},
+			}},
+			core.View{Style: core.Style{Padding: core.All(12)}, Children: []core.Node{
+				core.Text{Content: "Later", OnPress: func(core.PressEvent) { sibling++ }},
+			}},
+		}}
+	}, nsgotest.Size(300, 200))
+	app.Press("id:attachment")
+	if attachment != 1 || text != 0 || sibling != 0 {
+		t.Fatalf("tap on the overflowing attachment: attachment=%d, text=%d, sibling=%d", attachment, text, sibling)
+	}
+}
+
 // A sibling probed for a touch outside it, which declines it, must not take the touch's pan from the views it lands on.
 func TestDeclinedRoutingLeavesPansToTheTouchedViews(t *testing.T) {
 	var outer, sibling, presses int
