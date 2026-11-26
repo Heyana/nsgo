@@ -4,6 +4,7 @@ package android
 
 import (
 	"math"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -167,5 +168,49 @@ func pinchPositionNative(t *testing.T) {
 	}
 	if changed.Value <= 1.2 {
 		t.Errorf("pinch spread Value = %v, want > 1.2", changed.Value)
+	}
+}
+
+func pinchStaysActiveBelowMinimumSpanNative(t *testing.T) {
+	var mu sync.Mutex
+	var phases []core.GesturePhase
+	surface, err := testhost.Current().Open(func(cx *core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pct(100), Height: core.Pct(100)}, OnPinch: func(e core.GestureEvent) {
+			mu.Lock()
+			phases = append(phases, e.Phase)
+			mu.Unlock()
+		}}
+	}, testhost.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := surface.(*testSurface)
+	s.Sync()
+	if err := s.do(map[string]any{"op": "pinch", "x": 160, "y": 150, "scales": []float32{1, 0.5, 0.1, 0.2, 1}}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		ended := slices.Contains(phases, core.GestureEnded)
+		mu.Unlock()
+		if ended {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	var began, ended int
+	for _, phase := range phases {
+		switch phase {
+		case core.GestureBegan:
+			began++
+		case core.GestureEnded:
+			ended++
+		}
+	}
+	if began != 1 || ended != 1 {
+		t.Fatalf("pinch phases = %v, want one began and one ended", phases)
 	}
 }

@@ -11,6 +11,9 @@ import (
 // discovery; their bodies require the Android test host and skip elsewhere.
 func TestWheelAndTouchpadMomentumNative(t *testing.T) { wheelAndTouchpadMomentumNative(t) }
 func TestPinchPositionNative(t *testing.T)            { pinchPositionNative(t) }
+func TestPinchStaysActiveBelowMinimumSpanNative(t *testing.T) {
+	pinchStaysActiveBelowMinimumSpanNative(t)
+}
 
 type javaWheelEvent struct {
 	nodeID   uint32

@@ -11,3 +11,7 @@ func wheelAndTouchpadMomentumNative(t *testing.T) {
 func pinchPositionNative(t *testing.T) {
 	t.Skip("run with nsgo test -target android")
 }
+
+func pinchStaysActiveBelowMinimumSpanNative(t *testing.T) {
+	t.Skip("run with nsgo test -target android")
+}

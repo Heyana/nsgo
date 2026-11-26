@@ -7213,6 +7213,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             trackPan(e, action);
             trackRotation(e, action);
             if (pinch != null) scaler.onTouchEvent(e);
+            if (pinching && (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL)) {
+                finishPinch(cancelling);
+            }
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                 velocity.recycle();
                 velocity = null;
@@ -7322,6 +7325,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         @Override
         public boolean onScaleBegin(ScaleGestureDetector d) {
             if (pinch == null) return false;
+            // ScaleGestureDetector ends and restarts a scale when its minimum
+            // span is crossed. Keep one logical pinch across that threshold.
+            if (pinching) return true;
             pinching = true;
             scale = 1;
             scaleVelocity = 0;
@@ -7350,13 +7356,21 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         @Override
         public void onScaleEnd(ScaleGestureDetector d) {
             if (!pinching) return;
+            if (cancelling) {
+                finishPinch(true);
+            } else {
+                float[] f = focus(pinch, d);
+                pinchX = f[0];
+                pinchY = f[1];
+            }
+        }
+
+        private void finishPinch(boolean cancelled) {
+            if (!pinching) return;
             pinching = false;
             pinchTookPress = false;
-            int phase = cancelling ? Protocol.GESTURE_CANCELLED : Protocol.GESTURE_ENDED;
-            float[] f = cancelling ? new float[] {pinchX, pinchY} : focus(pinch, d);
-            pinchX = f[0];
-            pinchY = f[1];
-            gesture(pinch, Protocol.EVENT_PINCH, phase, pinchX, pinchY, scaleVelocity, 0, scale);
+            gesture(pinch, Protocol.EVENT_PINCH, cancelled ? Protocol.GESTURE_CANCELLED : Protocol.GESTURE_ENDED,
+                    pinchX, pinchY, scaleVelocity, 0, scale);
         }
 
         /** Where a pinch is about, in n's untransformed points. */
