@@ -524,7 +524,7 @@ cx.RequestAnimationFrame(loop)
 
 In a game camera or a drag that needs to continue at the screen edge, call `ref.LockPointer()` from a press on the view that holds the ref. The pointer stays in place and is hidden while the view receives relative movement in `OnPointerDelta(dx, dy)`. Positive values move right and down.
 
-Call the returned function to release the lock. Escape, a window losing focus, or hiding or removing the view also releases it. Check `cx.Env().CanLockPointer()` to see whether the surface supports it. The web requires a user gesture such as a press. Linux on Wayland requires a compositor that supports pointer constraints and relative motion.
+Call the returned function to release the lock. `ref.PointerLocked()` reports the current state and updates computations that read it. `OnPointerUnlock` runs when Escape, a window losing focus, a refused request, or hiding or removing the view releases the lock. It does not run when the app calls the returned function. Check `cx.Env().CanLockPointer()` to see whether the surface supports it. The web requires a user gesture such as a press. Linux on Wayland requires a compositor that supports pointer constraints and relative motion.
 
 ## Sound limits
 

@@ -14,13 +14,25 @@ func TestPointerLock(t *testing.T) {
 	var first, second core.Ref
 	var unlockFirst, unlockSecond, hide func()
 	var firstX, secondX, secondY float64
+	var firstUnlocks, secondUnlocks int
 	app := Start(t, func(cx *core.Scope) core.Node {
 		hidden := core.NewSignal(cx, false)
 		hide = func() { hidden.Set(true) }
 		return core.View{Children: []core.Node{
 			core.View{
 				Ref: &first, TestID: "first", Style: core.Style{Height: core.Pt(50)},
-				OnPress:        func(core.PressEvent) { unlockFirst = first.LockPointer() },
+				OnPress: func(core.PressEvent) {
+					unlockFirst = first.LockPointer()
+					if !first.PointerLocked() {
+						t.Error("PointerLocked is false after acquiring the lock")
+					}
+				},
+				OnPointerUnlock: func() {
+					firstUnlocks++
+					if first.PointerLocked() {
+						t.Error("PointerLocked is true after an unlock")
+					}
+				},
 				OnPointerDelta: func(dx, _ float64) { firstX += dx },
 			},
 			core.View{
@@ -31,7 +43,13 @@ func TestPointerLock(t *testing.T) {
 					}
 					return core.Style{}
 				},
-				OnPress:        func(core.PressEvent) { unlockSecond = second.LockPointer() },
+				OnPress: func(core.PressEvent) { unlockSecond = second.LockPointer() },
+				OnPointerUnlock: func() {
+					secondUnlocks++
+					if second.PointerLocked() {
+						t.Error("PointerLocked is true after the hidden view unlocked")
+					}
+				},
 				OnPointerDelta: func(dx, dy float64) { secondX, secondY = secondX+dx, secondY+dy },
 			},
 		}}
@@ -53,6 +71,9 @@ func TestPointerLock(t *testing.T) {
 	if secondX != 7 || app.pointerLock.ID != 0 {
 		t.Fatal("Escape left the pointer locked")
 	}
+	if firstUnlocks != 0 || secondUnlocks != 1 {
+		t.Fatalf("unexpected unlock notifications after Escape: first=%d second=%d", firstUnlocks, secondUnlocks)
+	}
 	app.Press("id:second")
 	app.Post(hide)
 	app.Settle()
@@ -60,8 +81,14 @@ func TestPointerLock(t *testing.T) {
 	if secondX != 7 || app.pointerLock.ID != 0 {
 		t.Fatal("hiding the view did not release the lock")
 	}
+	if firstUnlocks != 0 || secondUnlocks != 2 {
+		t.Fatalf("unexpected unlock notifications after hiding: first=%d second=%d", firstUnlocks, secondUnlocks)
+	}
 	app.Post(unlockSecond)
 	app.Settle()
+	if secondUnlocks != 2 {
+		t.Fatalf("explicit unlock notified the handler: %d", secondUnlocks)
+	}
 }
 
 func TestPointerLockUnavailable(t *testing.T) {

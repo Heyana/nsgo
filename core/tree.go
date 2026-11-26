@@ -272,6 +272,8 @@ type node struct {
 	owner    *Scope
 	// contentBox is allocated only when a Ref observes its layout content box.
 	contentBox *Signal[Bounds]
+	// pointerLocked is allocated only when a Ref observes its pointer lock.
+	pointerLocked *Signal[bool]
 
 	responder *Responder // a view's part in the touch responder
 	follow    *following // what its frame follows (View.Follow)
@@ -405,6 +407,7 @@ type handlers struct {
 	mouseEnter, mouseLeave, mouseMove    func(MouseEvent)
 	mouseDown, mouseUp                   func(MouseButtonEvent)
 	pointerDelta                         func(dx, dy float64)
+	pointerUnlock                        func()
 	textSelection                        func(TextSelection)
 	focus, blur                          func()
 	keyDown                              func(KeyEvent) bool
@@ -1924,7 +1927,7 @@ func (t *Tree) setViewParts(n *node, v View) {
 	n.ownPointer, n.showsExpanded = v.PointerEvents, v.ShowsExpanded
 	t.pointersMoved = t.pointerStyled
 	n.h = handlers{focusIn: v.OnFocusIn, focusOut: v.OnFocusOut, press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
-		mouseEnter: v.OnMouseEnter, mouseLeave: v.OnMouseLeave, mouseMove: v.OnMouseMove, pointerDelta: v.OnPointerDelta,
+		mouseEnter: v.OnMouseEnter, mouseLeave: v.OnMouseLeave, mouseMove: v.OnMouseMove, pointerDelta: v.OnPointerDelta, pointerUnlock: v.OnPointerUnlock,
 		mouseDown: v.OnMouseDown, mouseUp: v.OnMouseUp,
 		textSelection: v.OnTextSelection,
 		layout:        v.OnLayout, contextMenu: v.OnContextMenu, touch: v.OnTouch, touchCapture: v.OnTouchCapture,

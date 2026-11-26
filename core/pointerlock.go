@@ -22,21 +22,23 @@ func (r *Ref) LockPointer() (unlock func()) {
 	t := r.t
 	t.rt.check()
 	if t.pointerLock != nil {
-		t.releasePointer(t.pointerLock)
+		t.releasePointer(t.pointerLock, false)
 	}
 	t.nextPointerLock++
 	lock := &pointerLock{node: r.n, token: driver.PointerLock{ID: r.n.id, Count: t.nextPointerLock}}
 	t.pointerLock = lock
+	t.setPointerLockState(lock, true)
 	t.pointerCommand(lock.token, true)
 	return func() {
 		t.rt.check()
-		t.releasePointer(lock)
+		t.releasePointer(lock, false)
 	}
 }
 
-func (t *Tree) releasePointer(lock *pointerLock) {
+func (t *Tree) releasePointer(lock *pointerLock, notify bool) {
 	if t.pointerLock == lock {
 		t.pointerLock = nil
+		t.setPointerLockState(lock, false)
 		if i := slices.IndexFunc(t.commands, func(it driver.MountItem) bool {
 			return it.Kind == driver.ItemPointerLock && it.On && lock.token.Matches(it.ID, it.Count)
 		}); i >= 0 {
@@ -44,6 +46,15 @@ func (t *Tree) releasePointer(lock *pointerLock) {
 		} else {
 			t.pointerCommand(lock.token, false)
 		}
+		if notify && !lock.node.deleted && lock.node.h.pointerUnlock != nil {
+			t.within(lock.node.owner, lock.node.h.pointerUnlock)
+		}
+	}
+}
+
+func (t *Tree) setPointerLockState(lock *pointerLock, locked bool) {
+	if lock.node.pointerLocked != nil {
+		t.within(lock.node.owner, func() { lock.node.pointerLocked.Set(locked) })
 	}
 }
 
@@ -58,13 +69,13 @@ func (t *Tree) checkPointerLock() {
 		return
 	}
 	if !t.reported.CanLockPointer || lock.node.deleted || t.detached(lock.node) {
-		t.releasePointer(lock)
+		t.releasePointer(lock, !lock.node.deleted)
 		return
 	}
 	for n := lock.node; n != nil; n = n.parent {
 		if n.style.Display == DisplayNone || n.style.Visibility == VisibilityHidden || n.hidden ||
 			n.attach != nil && n.attach.cut {
-			t.releasePointer(lock)
+			t.releasePointer(lock, true)
 			return
 		}
 	}
@@ -76,7 +87,7 @@ func (t *Tree) pointerLockEvent(ev driver.Event) {
 		return
 	}
 	if ev.Kind == driver.EventPointerUnlocked {
-		t.pointerLock = nil
+		t.releasePointer(lock, true)
 		return
 	}
 	if delta, ok := ev.Data.(driver.PointerDelta); ok && lock.node.h.pointerDelta != nil && !lock.node.deleted {

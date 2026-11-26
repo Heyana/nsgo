@@ -611,7 +611,7 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 
 游戏镜头或需要越过屏幕边缘继续拖动时，可在持有该 ref 的视图被按下时调用 `ref.LockPointer()`。锁定期间指针停在原处并隐藏，视图通过 `OnPointerDelta(dx, dy)` 收到相对位移，正值表示向右和向下。
 
-调用返回的函数可以解锁。按 Escape、窗口失去焦点，或者隐藏或移除视图，也会解除锁定。用 `cx.Env().CanLockPointer()` 查看当前窗口是否支持。Web 需要点击等用户操作。Linux 的 Wayland 会话需要合成器支持指针约束和相对位移。
+调用返回的函数可以解锁。`ref.PointerLocked()` 报告当前状态，读取它的计算会随状态更新。按 Escape、窗口失去焦点、平台拒绝请求，或者隐藏或移除视图时，`OnPointerUnlock` 会运行一次。应用调用返回的函数时不会运行它。用 `cx.Env().CanLockPointer()` 查看当前窗口是否支持。Web 需要点击等用户操作。Linux 的 Wayland 会话需要合成器支持指针约束和相对位移。
 
 ## 音频播放
 

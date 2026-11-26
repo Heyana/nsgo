@@ -67,6 +67,10 @@ type View struct {
 	// OnPointerDelta hears relative movement to the right and down while
 	// the view holds a pointer lock (Ref.LockPointer).
 	OnPointerDelta func(dx, dy float64)
+	// OnPointerUnlock runs when the pointer lock this view holds ends without
+	// the app calling the function returned by Ref.LockPointer: Escape, focus
+	// loss, a refused request, or the view becoming hidden or detached.
+	OnPointerUnlock func()
 	// OnContextMenu receives a secondary click in the view.
 	OnContextMenu func(ContextMenuEvent)
 	// OnTouch hears the fingers on the surface while one that went down
@@ -622,6 +626,18 @@ type Ref struct {
 // placed reports whether a live element carries the ref in the tree.
 func (r *Ref) placed() bool {
 	return r != nil && r.n != nil && !r.n.deleted && !r.t.detached(r.n)
+}
+
+// PointerLocked reports whether this view currently holds the pointer lock.
+// It is tracked when read inside a computation.
+func (r *Ref) PointerLocked() bool {
+	if r == nil || r.n == nil || r.n.deleted {
+		return false
+	}
+	if r.n.pointerLocked == nil {
+		r.n.pointerLocked = NewSignal(r.n.owner, r.t.pointerLock != nil && r.t.pointerLock.node == r.n)
+	}
+	return r.n.pointerLocked.Get()
 }
 
 // Bounds returns the element's frame in surface points after the last
