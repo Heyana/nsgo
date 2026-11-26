@@ -13,6 +13,10 @@ import (
 var (
 	procPidRusage    func(pid int32, flavor int32, buf unsafe.Pointer) int32
 	machTimebaseInfo func(info unsafe.Pointer) int32
+	procListAllPids  func(buf unsafe.Pointer, size int32) int32
+	procPidPath      func(pid int32, buf unsafe.Pointer, size uint32) int32
+	// responsibleFor is the process macOS holds responsible for a process: the app, for the XPC services that work for it.
+	responsibleFor func(pid int32) int32
 )
 
 func init() {
@@ -22,48 +26,113 @@ func init() {
 	}
 	purego.RegisterLibFunc(&procPidRusage, lib, "proc_pid_rusage")
 	purego.RegisterLibFunc(&machTimebaseInfo, lib, "mach_timebase_info")
+	purego.RegisterLibFunc(&procListAllPids, lib, "proc_listallpids")
+	purego.RegisterLibFunc(&procPidPath, lib, "proc_pidpath")
+	purego.RegisterLibFunc(&responsibleFor, lib, "responsibility_get_pid_responsible_for_pid")
 }
 
-// process reads a process' rusage_info_v2.
+// process reads a process' rusage_info_v2, and those of the XPC services working for it. A system webview (WKWebView, which Wails draws in) lays out, runs and paints its page in WebKit's XPC services, apart from the app's process; they count with it, or a page would cost only what its app's process does.
 type process struct {
 	pid          int32
 	numer, denom uint64
+	// before is what ran when the program started; helpers are the XPC services it started since, found once, when the program has settled.
+	before  pidSet
+	helpers []int32
+	found   bool
 }
 
-func openProcess(pid int) (*process, error) {
+func allPids() []int32 {
+	n := procListAllPids(nil, 0)
+	pids := make([]int32, max(n, 0)+64)
+	n = procListAllPids(unsafe.Pointer(&pids[0]), int32(len(pids)*4))
+	return pids[:max(n, 0)]
+}
+
+func runningPids() pidSet {
+	set := pidSet{}
+	for _, pid := range allPids() {
+		set[pid] = true
+	}
+	return set
+}
+
+func pidPath(pid int32) string {
+	var buf [4096]byte
+	n := procPidPath(pid, unsafe.Pointer(&buf[0]), uint32(len(buf)))
+	if n <= 0 {
+		return ""
+	}
+	return string(buf[:n])
+}
+
+// group is the process and its helpers: XPC services started since the program, held by macOS on the same process' account as the program (the app for an app bundle, the terminal for a program a terminal starts).
+func (p *process) group() []int32 {
+	if !p.found {
+		p.found = true
+		owner := responsibleFor(p.pid)
+		for _, pid := range allPids() {
+			if pid <= 0 || pid == p.pid || p.before[pid] || responsibleFor(pid) != owner {
+				continue
+			}
+			if strings.Contains(pidPath(pid), ".xpc/") {
+				p.helpers = append(p.helpers, pid)
+			}
+		}
+	}
+	return append([]int32{p.pid}, p.helpers...)
+}
+
+func openProcess(pid int, before pidSet) (*process, error) {
 	var tb [2]uint32
 	machTimebaseInfo(unsafe.Pointer(&tb))
-	return &process{pid: int32(pid), numer: uint64(tb[0]), denom: uint64(tb[1])}, nil
+	return &process{pid: int32(pid), numer: uint64(tb[0]), denom: uint64(tb[1]), before: before}, nil
 }
 
 func (p *process) close() {}
 
-// usage is rusage_info_v2, by 8 bytes: the UUID, then ri_user_time,
+// usage is a process' rusage_info_v2, by 8 bytes: the UUID, then ri_user_time,
 // ri_system_time, …, ri_phys_footprint at 9.
-func (p *process) usage() ([32]uint64, error) {
+func usage(pid int32) ([32]uint64, error) {
 	var buf [32]uint64
-	if procPidRusage(p.pid, 2, unsafe.Pointer(&buf)) != 0 {
+	if procPidRusage(pid, 2, unsafe.Pointer(&buf)) != 0 {
 		return buf, errProcess
 	}
 	return buf, nil
 }
 
-// cpu is the process' user and system time, in Mach time converted.
-func (p *process) cpu() (time.Duration, error) {
-	u, err := p.usage()
-	if err != nil {
-		return 0, err
+// sum adds a value of rusage_info_v2 over the process and its helpers. A helper that has gone counts nothing; the process itself must be there.
+func (p *process) sum(at int) (uint64, error) {
+	var total uint64
+	for k, pid := range p.group() {
+		u, err := usage(pid)
+		if err != nil {
+			if k == 0 {
+				return 0, err
+			}
+			continue
+		}
+		total += u[at]
 	}
-	return time.Duration((u[2] + u[3]) * p.numer / p.denom), nil
+	return total, nil
 }
 
-// memory is the process' physical footprint, as Activity Monitor shows it.
-func (p *process) memory() (int64, error) {
-	u, err := p.usage()
+// cpu is the user and system time of the process and its helpers, in Mach time converted.
+func (p *process) cpu() (time.Duration, error) {
+	user, err := p.sum(2)
 	if err != nil {
 		return 0, err
 	}
-	return int64(u[9]), nil
+	system, err := p.sum(3)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration((user + system) * p.numer / p.denom), nil
+}
+
+// memory is the physical footprint of the process and its helpers, as Activity Monitor shows each.
+func (p *process) memory() (int64, error) {
+	m, err := p.sum(9)
+	return int64(m), err
 }
 
 func cpuAndMemory() (string, int64) {

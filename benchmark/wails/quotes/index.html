@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html, body { margin: 0; background: #fff; color: #111; font-family: -apple-system, "Segoe UI", sans-serif; }
+			body { padding: 16px; display: flex; flex-direction: column; gap: 1px; }
+			h1 { margin: 0; font-size: 18px; font-weight: 600; }
+			.row { display: flex; gap: 12px; height: 18px; align-items: center; border-radius: 4px; font-size: 13px; }
+			.head { height: 24px; border: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; }
+			.row:nth-child(even) { background: #f6f7f9; }
+			.row > span { flex: none; text-align: right; }
+			.row > span:nth-child(1) { width: 80px; text-align: left; }
+			.row > span:nth-child(2) { width: 90px; }
+			.row > span:nth-child(3), .row > span:nth-child(4) { width: 80px; }
+			.row > span:nth-child(5) { width: 100px; color: #6b7280; }
+			.sym { font-weight: 600; }
+			.up { color: #1a7f37; }
+			.down { color: #cf222e; }
+		</style>
+	</head>
+	<body>
+		<h1 id="title">Streaming quotes · tick 0</h1>
+		<div class="row head"><span>Symbol</span><span>Price</span><span>Change</span><span>%</span><span>Volume</span></div>
+		<div id="rows"></div>
+		<script type="module">
+			import { Call } from '/wails/runtime.js';
+			const title = document.getElementById('title');
+			const body = document.getElementById('rows');
+			const cells = [];
+			const show = (r) => {
+				const c = cells[r.i];
+				const tone = r.change < 0 ? 'down' : 'up';
+				c[1].textContent = r.price.toFixed(2);
+				c[2].textContent = r.change.toFixed(2);
+				c[2].className = tone;
+				c[3].textContent = r.percent.toFixed(2) + '%';
+				c[3].className = tone;
+				c[4].textContent = String(r.volume);
+			};
+			for (const r of await Call.ByName('main.Quotes.Rows')) {
+				const row = document.createElement('div');
+				row.className = 'row';
+				const c = [];
+				for (let k = 0; k < 5; k++) c.push(row.appendChild(document.createElement('span')));
+				c[0].className = 'sym';
+				c[0].textContent = r.symbol;
+				cells.push(c);
+				body.appendChild(row);
+				show(r);
+			}
+			// Each animation frame asks Go to tick the market and sets the rows it changed, then waits for the next; the first frame drawn is ready.
+			let ticks = 0;
+			const frame = async () => {
+				for (const r of await Call.ByName('main.Quotes.Tick')) show(r);
+				title.textContent = 'Streaming quotes · tick ' + ++ticks;
+				requestAnimationFrame(frame);
+			};
+			requestAnimationFrame(() => requestAnimationFrame(frame));
+		</script>
+	</body>
+</html>

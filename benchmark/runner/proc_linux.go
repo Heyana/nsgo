@@ -14,7 +14,9 @@ import (
 // process reads a process' /proc files.
 type process struct{ pid int }
 
-func openProcess(pid int) (*process, error) { return &process{pid: pid}, nil }
+func openProcess(pid int, _ pidSet) (*process, error) { return &process{pid: pid}, nil }
+
+func runningPids() pidSet { return nil }
 
 func (p *process) close() {}
 

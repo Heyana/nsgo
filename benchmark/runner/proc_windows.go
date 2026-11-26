@@ -33,7 +33,7 @@ func init() {
 // process holds a handle of the process.
 type process struct{ h windows.Handle }
 
-func openProcess(pid int) (*process, error) {
+func openProcess(pid int, _ pidSet) (*process, error) {
 	return openWith(pid, windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_VM_READ)
 }
 
@@ -116,3 +116,5 @@ func compositorCPU() (time.Duration, error) {
 	}
 	return 0, errProcess
 }
+
+func runningPids() pidSet { return nil }

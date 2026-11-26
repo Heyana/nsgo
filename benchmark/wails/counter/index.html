@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html, body { margin: 0; height: 100%; background: #fff; color: #111; font-family: -apple-system, "Segoe UI", sans-serif; }
+			body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+			#count { font-size: 56px; font-weight: 700; }
+			.row { display: flex; gap: 8px; }
+			button { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 6px; border: 1px solid #d0d7de; background: #f6f8fa; }
+			button.primary { background: #0969da; border-color: #0969da; color: #fff; }
+		</style>
+	</head>
+	<body>
+		<div id="count">0</div>
+		<div class="row">
+			<button id="dec">−1</button>
+			<button id="inc" class="primary">+1</button>
+		</div>
+		<script type="module">
+			import { Call } from '/wails/runtime.js';
+			let n = 0;
+			const count = document.getElementById('count');
+			document.getElementById('dec').onclick = () => (count.textContent = --n);
+			document.getElementById('inc').onclick = () => (count.textContent = ++n);
+			// The second animation frame comes after the first one drawn, which is ready.
+			requestAnimationFrame(() => requestAnimationFrame(() => Call.ByName('main.Bench.Ready')));
+		</script>
+	</body>
+</html>

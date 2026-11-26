@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html, body { margin: 0; height: 100%; background: #fff; color: #111; font-family: -apple-system, "Segoe UI", sans-serif; }
+			#view { height: 100%; overflow-y: auto; position: relative; }
+			#space { position: relative; }
+			.row { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: 0 16px; box-sizing: border-box; }
+			.dot { width: 10px; height: 10px; border-radius: 5px; flex: none; }
+			.name { flex: 1; font-size: 14px; }
+			.value { font-size: 13px; color: #6b7280; }
+		</style>
+	</head>
+	<body>
+		<div id="view"><div id="space"></div></div>
+		<script type="module">
+			import { Call } from '/wails/runtime.js';
+			const tones = ['#007aff', '#34c759', '#ff9500', '#af52de'];
+			const [rows, rowH] = await Call.ByName('main.Bench.Size');
+			const view = document.getElementById('view');
+			const space = document.getElementById('space');
+			space.style.height = rows * rowH + 'px';
+			// The rows in view and one more, reused as the list scrolls: each is moved to the row it now shows and given that row's text.
+			const pool = [];
+			const shown = Math.ceil(view.clientHeight / rowH) + 1;
+			for (let k = 0; k < shown; k++) {
+				const row = space.appendChild(document.createElement('div'));
+				row.className = 'row';
+				row.style.height = rowH + 'px';
+				const dot = row.appendChild(document.createElement('span'));
+				dot.className = 'dot';
+				const name = row.appendChild(document.createElement('span'));
+				name.className = 'name';
+				const value = row.appendChild(document.createElement('span'));
+				value.className = 'value';
+				pool.push({ row, dot, name, value, i: -1 });
+			}
+			const render = () => {
+				const first = Math.floor(view.scrollTop / rowH);
+				for (let k = 0; k < shown; k++) {
+					const i = first + k;
+					const p = pool[i % shown];
+					if (p.i === i || i >= rows) continue;
+					p.i = i;
+					p.row.style.transform = 'translateY(' + i * rowH + 'px)';
+					p.dot.style.background = tones[i % tones.length];
+					p.name.textContent = 'Row ' + i;
+					p.value.textContent = String((i * 7) % 1000);
+				}
+			};
+			view.addEventListener('scroll', render);
+			render();
+			// Each animation frame scrolls a row further; the page counts its frames and tells Go once a second.
+			let top = 0;
+			let frames = 0;
+			let since = 0;
+			const frame = (now) => {
+				if (since === 0) {
+					since = now;
+					Call.ByName('main.Bench.Ready');
+				} else {
+					frames++;
+					if (now - since >= 1000) {
+						Call.ByName('main.Bench.Frames', frames, now - since);
+						frames = 0;
+						since = now;
+					}
+				}
+				top = (top + 1) % (rows - 20);
+				view.scrollTop = top * rowH;
+				render();
+				requestAnimationFrame(frame);
+			};
+			requestAnimationFrame(() => requestAnimationFrame(frame));
+		</script>
+	</body>
+</html>

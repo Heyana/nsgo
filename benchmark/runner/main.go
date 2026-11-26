@@ -2,7 +2,7 @@
 // and writes what they measured to results/<os>.json, which the website's
 // Benchmarks page shows. Run it from benchmark/:
 //
-//	go run ./runner [-frameworks nsgo,mygo,nsh,gpui,gpui-fast] [-cases counter,quotes,list,grid] [-runs 3] [-seconds 10]
+//	go run ./runner [-frameworks nsgo,mygo,fyne,wails,nsh,gpui,gpui-fast] [-cases counter,quotes,list,grid] [-runs 3] [-seconds 10]
 //
 // Each program prints "bench ready" on its first frame and, while a case
 // keeps changing, "bench frames N" each second (internal/bench, cases/).
@@ -30,11 +30,13 @@ import (
 )
 
 var (
-	frameworks = []string{"nsgo", "mygo", "nsh", "gpui", "gpui-fast"}
+	frameworks = []string{"nsgo", "mygo", "fyne", "wails", "nsh", "gpui", "gpui-fast"}
 	cases      = []string{"counter", "quotes", "list"}
 	// stress are the cases only NSGo has, measured only when named: they
 	// find where its frames run out rather than compare frameworks.
 	stress = []string{"grid"}
+	// goTags are the build tags of each Go framework's release builds: Fyne's fyne package -release and Wails' wails3 build set them.
+	goTags = map[string]string{"fyne": "release", "wails": "production"}
 	// titles name the cases' windows, for the Go programs whose title is
 	// set when they build.
 	titles = map[string]string{"counter": "Counter", "quotes": "Quotes", "list": "List", "grid": "Grid"}
@@ -115,6 +117,12 @@ func main() {
 	}
 	if *gridCols > 0 || *gridRows > 0 {
 		r.Grid = fmt.Sprintf("%dx%d", cmp.Or(max(*gridCols, 0), 30), cmp.Or(max(*gridRows, 0), 20))
+	}
+	// Only the frameworks this run measures name their versions, so a run of some of them does not seem to have measured the rest.
+	for fw := range r.Versions {
+		if !slices.Contains(strings.Split(*fws, ","), fw) {
+			delete(r.Versions, fw)
+		}
 	}
 	bins := map[string]map[string]string{}
 	for _, fw := range strings.Split(*fws, ",") {
@@ -199,7 +207,7 @@ func build(fw string, named []string) (map[string]string, error) {
 	}
 	bins := map[string]string{}
 	switch fw {
-	case "nsgo", "mygo":
+	case "nsgo", "mygo", "fyne", "wails":
 		for _, c := range named {
 			if slices.Contains(stress, c) && fw != "nsgo" {
 				continue
@@ -212,7 +220,11 @@ func build(fw string, named []string) (map[string]string, error) {
 			if fw == "nsgo" {
 				ldflags += " -X 'github.com/nsgo-dev/nsgo/core.appName=" + titles[c] + "'"
 			}
-			if err := run("", nil, "go", "build", "-trimpath", "-ldflags", ldflags, "-o", out, "./"+fw+"/"+c); err != nil {
+			args := []string{"build", "-trimpath", "-ldflags", ldflags}
+			if tags := goTags[fw]; tags != "" {
+				args = append(args, "-tags", tags)
+			}
+			if err := run("", nil, "go", append(args, "-o", out, "./"+fw+"/"+c)...); err != nil {
 				return nil, err
 			}
 			bins[c] = out
@@ -286,6 +298,7 @@ func measure(bin, c string, d time.Duration, env []string) (*Measure, error) {
 	if err != nil {
 		return nil, err
 	}
+	before := runningPids()
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -314,7 +327,7 @@ func measure(bin, c string, d time.Duration, env []string) (*Measure, error) {
 		return nil, errors.New("the program was not ready in 30 s")
 	}
 
-	p, err := openProcess(cmd.Process.Pid)
+	p, err := openProcess(cmd.Process.Pid, before)
 	if err != nil {
 		return nil, err
 	}
@@ -439,8 +452,10 @@ func versions(nsgo string) map[string]string {
 		v["nsgo"] = strings.TrimSpace(string(out))
 	}
 	if b, err := os.ReadFile("go.mod"); err == nil {
-		if m := regexp.MustCompile(`github\.com/egoist/mygo (v\S+)`).FindSubmatch(b); m != nil {
-			v["mygo"] = string(m[1])
+		for fw, mod := range map[string]string{"mygo": "github.com/egoist/mygo", "fyne": "fyne.io/fyne/v2", "wails": "github.com/wailsapp/wails/v3"} {
+			if m := regexp.MustCompile(regexp.QuoteMeta(mod) + ` (v\S+)`).FindSubmatch(b); m != nil {
+				v[fw] = string(m[1])
+			}
 		}
 	}
 	lock := func(file, pkg string) string {
