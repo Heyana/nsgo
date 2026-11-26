@@ -651,8 +651,15 @@
         var group = 'apps';
         var frame = null;
 
+        // The platforms and the app URL's debugging flags are constants: the URL an iframe
+        // loads is built from them, never from the page's own text.
+        var PLATFORMS = ['macos', 'windows', 'linux', 'ios', 'android', 'web'];
+        var LANGS = ['en', 'zh-Hans', 'zh-Hant', 'ja', 'ko', 'es', 'fr', 'de', 'pt', 'ru', 'it', 'vi', 'id', 'tr', 'en-XA'];
+        var APPEARANCES = ['light', 'dark', 'system'];
+
         function known(value) {
-          return Object.prototype.hasOwnProperty.call(frames, value) ? value : null;
+          var i = PLATFORMS.indexOf(value);
+          return i >= 0 ? PLATFORMS[i] : null;
         }
 
         var platform = known(params.get('platform'));
@@ -687,15 +694,16 @@
           if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'nsgo-gallery-theme', theme: next }, location.origin);
         }
 
-        // Every load passes on the URL's nsgo- flags, so a switch or a retry starts the app as the URL asks. Each group is its own web build (build-gallery.mjs), so the frame names its directory.
+        // Every load passes on the URL's debugging flags, so a switch or a retry starts the app as the URL asks. Each group is its own web build (build-gallery.mjs), so the frame names its directory. Every part comes from a constant list, so the address the frame loads holds nothing the page did not put there.
         function appURL() {
-          var query = new URLSearchParams({ embed: '1', theme: theme() });
-          if (platform !== 'web') query.set('nsgo-os', platform);
-          params.forEach(function (value, key) {
-            if (key.indexOf('nsgo-') !== 0 || key === 'nsgo-os') return;
-            query.append(key, value);
-          });
-          return group + '/app.html?' + query;
+          var parts = ['embed=1', 'theme=' + (theme() === 'dark' ? 'dark' : 'light')];
+          if (platform !== 'web') parts.push('nsgo-os=' + platform);
+          if (params.has('nsgo-fps')) parts.push('nsgo-fps=1');
+          var lang = LANGS.indexOf(params.get('nsgo-lang'));
+          if (lang >= 0) parts.push('nsgo-lang=' + LANGS[lang]);
+          var appearance = APPEARANCES.indexOf(params.get('nsgo-appearance'));
+          if (appearance >= 0) parts.push('nsgo-appearance=' + APPEARANCES[appearance]);
+          return group + '/app.html?' + parts.join('&');
         }
 
         // fit scales a frame to the stage, never above its own size, so the app keeps its CSS size and with it its layout and media queries.
@@ -819,8 +827,8 @@
               var ids = index.groups.map(function (g) {
                 return g.id;
               });
-              var wanted = params.get('group');
-              group = ids.indexOf(wanted) >= 0 ? wanted : ids[0];
+              var wanted = ids.indexOf(params.get('group'));
+              group = wanted >= 0 ? ids[wanted] : ids[0];
               index.groups.forEach(function (g) {
                 var option = document.createElement('option');
                 option.value = g.id;
