@@ -26,7 +26,6 @@ jobs:
   changes:
     name: Apple changes
     uses: ./.github/workflows/apple-changes.yml
-
   gallery:
     name: Gallery (${{ matrix.target }}, shard ${{ matrix.shard }})
     needs: changes
@@ -90,7 +89,6 @@ jobs:
             formula-screenshots
             terminal-actions-screenshots
           if-no-files-found: warn
-
   gallery-web:
     # The required check: it passes only when every web shard of the gallery job passed, so the merge queue keeps gating on the whole gallery on the web. It runs whatever happened before it, as a skipped required check would count as passed.
     name: Gallery (web)
@@ -108,7 +106,6 @@ jobs:
             echo "::error::A web shard of the gallery did not pass: shard 1 '$SHARD_1', shard 2 '$SHARD_2'."
             exit 1
           fi
-
   test:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 60
@@ -436,7 +433,6 @@ jobs:
           NSGO_REQUIRE_JDK: '1'
         # examples/gallery runs its tests in sequence for about nine minutes on a hosted runner, beside the other packages, so go test's default ten-minute limit cuts it off.
         run: xvfb-run -a go tool nsgo test -- -timeout=20m
-
   web:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
@@ -560,7 +556,6 @@ jobs:
             go tool nsgo test -target android -device emulator-5554 -timeout 10m -run '(^TestStandaloneReviewSDKClasses$)|(^TestCanvasAtlasWire$)|(^TestHardwareKeys|^TestTabBarBadgesNative$)|(^TestNotificationPressIntentsKeepCollidingIDs$)|(^TestTextRPC)|(^TestMountFlushesDeferredShaderPixels$|^TestSendExtended)|(^Test(DetachedViewReleasesWidgetsAndResyncsItsLiveGraph|EmbeddedVideoBackground(Playback|Surface))$)|(^TestNativeAndroid(Sound|PlaybackControls|Player|OutputLatency)$)|(ListTouchStopsMomentum$)|(^TestIME|^TestHardwareEnter|^TestImmersiveAndroidSystemBars$)|(^TestDirectionMirrorsNativeControls$)' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 5m -run '(^TestCanvasAtlas(MatchesDrawImageFrom|Sampling)$)|(^TestClipKeepsOuterDecoration$)|(^TestCanvasImageTint$)' ./internal/testhost/testdata/capture || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidNativePackagedView$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
-
   android-emulator-b:
     name: Android emulator (B)
     # The emulator needs KVM or Hypervisor.framework, which GitHub's runners have and Depot's lack.
@@ -626,7 +621,6 @@ jobs:
               exit 1
             fi
           done
-
   apple:
     needs: changes
     # Skips a pull request that cannot affect Apple's targets (apple-changes.yml) unless all-jobs is set; a failed changes job runs it.
@@ -759,7 +753,6 @@ jobs:
               find "$reports" -type f -newer "$RUNNER_TEMP/apple-start" \( -name '*.ips' -o -name '*.crash' \) -print -exec cat {} \;
             fi
           done
-
   apple-simulator:
     needs: changes
     # Runs only in the merge queue, by hand and for a release, never on a pull request: the organization has one depot-macos-15 runner, and pull request runs queued ahead of merge groups made every group time out. A skipped job counts as passed, so the pull request still reaches the queue, and an Apple failure there removes it from the batch. In the queue it still skips a change that cannot affect Apple's targets (apple-changes.yml); a failed changes job runs it. all-jobs runs it whatever the event and the change.
@@ -815,7 +808,11 @@ jobs:
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/testhost/testdata/deviceidentity
           go tool nsgo test -target watchos_simulator -timeout 1m ./testdata/devtools-geometry
 
-  windows:
+  # The job below used to run all of it: 8m02s of wall clock for 6m47s of steps.
+  # Split by each step's measured time, the halves take 3m24s and 3m23s, so two
+  # runners finish in about the time of the longer half.
+  windows-tests-a:
+    name: Windows tests (A)
     runs-on: depot-windows-2025-4
     timeout-minutes: 30
     steps:
@@ -830,48 +827,90 @@ jobs:
           cache: true
       - name: Test native press routing, modifiers and visible labels
         run: go tool nsgo test -target windows ./internal/testhost/testdata/press
-      - name: Test native local service discovery
-        run: go tool nsgo test -target windows -timeout 1m ./internal/testhost/testdata/discovery
-      - name: Test native editing keys and bindings
-        run: go tool nsgo test -target windows ./internal/testhost/testdata/keys
       - name: Test the Windows backend's logic
         # The package's other tests drive native windows and run one by one below; the logic tests (logic_test.go and *_logic_test.go) need none and otherwise run nowhere.
         shell: bash
         run: |
           tests=$(grep -ho '^func Test[A-Za-z0-9_]*' internal/platform/windows/logic_test.go internal/platform/windows/*_logic_test.go | sed 's/^func //' | paste -sd '|')
           go tool nsgo test -run "^($tests)\$" ./internal/platform/windows -- -count=1
-      - name: Test physical key names on AZERTY and QWERTZ layouts and modifier sides
-        run: go tool nsgo test -run '^(TestLayoutCodeNamesFollowTheLayout|TestTestHostKeyPositionsHoldTheirOwnSide)$' ./internal/platform/windows -- -count=1
-      - name: Test WinSparkle quit approval and callback cleanup
-        run: go tool nsgo test -run '^TestWinSparkleQuit' ./internal/platform/windows -- -count=1
       - name: Test unpackaged startup task failures
         run: go tool nsgo test -run '^TestStartupTaskRejectsUnpackaged$' ./internal/platform/windows -- -count=1
-      - name: Test native file preview rendering and keyboard forwarding
-        run: go tool nsgo test -run '^(TestRegisteredTextPreviewHandler|TestPreviewFrameCOM|TestNativePreviewSelectionAndClose)$' ./internal/platform/windows -- -count=1 -timeout=90s
-      - name: Test Windows DevTools presentation bounds
-        run: go tool nsgo test -target windows -timeout 1m ./testdata/devtools-geometry
       - name: Test system keys in embedded Windows views
         run: go tool nsgo test -run '^TestEmbeddedSystemKeysReachTheApp$' ./internal/platform/windows
       - name: Test native web sources and restricted history
         run: |
           go tool nsgo test -target windows ./internal/testhost/testdata/websource
           go tool nsgo test -target windows ./internal/testhost/testdata/webhistory
-      - name: Test native canvas image tint
-        run: go tool nsgo test -run '^TestCanvasImageTint$' ./internal/platform/windows
       - name: Test native photo pick answers
         run: go tool nsgo test -target windows ./internal/testhost/testdata/pick
       - name: Test native raised sound limits
         run: go tool nsgo test -target windows ./internal/testhost/testdata/soundlimits
-      - name: Test native window visibility
-        run: go tool nsgo test -target windows -run TestWindowStateReadsNativeVisibility ./internal/testhost/testdata/windowstate
       - name: Test native video controls and retained playback
         run: go tool nsgo test -run '^TestVideoControlsReportAndHoldPlayback$' ./internal/platform/windows
       - name: Test widget and Live Activity recording
         run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
-      - name: Compare Direct2D atlas pixels in direct and cached drawing
-        run: go tool nsgo test -run '^TestCanvasAtlasDrawsLikeImages$' ./internal/platform/windows
       - name: Test native focus, styles, activation and label relationships
         run: go tool nsgo test -run '^(TestRefFocusUsesNativeKeyboardStops|TestNativeLabeledByProvider)$' ./internal/platform/windows
+      - name: Test native clipboard representations
+        run: go tool nsgo test -run '^TestNativeClipboardItems$' ./internal/platform/windows
+      - name: Test native dev window frame and full screen
+        run: go tool nsgo test -run '^TestDevWindowFrameRestoresPlacementAndFullScreen$' ./internal/platform/windows -- -tags=nsgodev
+      - name: Test retained image bytes and current shader textures
+        run: go tool nsgo test -run '^(TestCanvasImageCacheByteBudgetAndReconfiguration|TestShaderViewsKeepOnlyTheirImages|TestShaderTextureCacheBoundsLRUPinsAndRelease)$' ./internal/platform/windows
+      - name: Test Windows owned-window visibility and minimization
+        run: go tool nsgo test -run '^TestOwnedWindowsFollowVisibility$' ./internal/platform/windows -- -count=1
+      - name: Test Windows audio
+        run: go tool nsgo test -trace -run '^TestWindowsAudio' ./internal/platform/windows
+      - name: Test Windows menu visibility after Alt shortcuts
+        run: go tool nsgo test -run '^TestConsumedAltChordKeepsMenusClosed$' ./internal/platform/windows
+      - name: Test menu yield with a focused WebView2 page
+        run: go tool nsgo test -run '^TestMenuYieldFollowsNativeFocus$' ./internal/platform/windows
+      - name: Test WebView2 history and navigation state
+        run: go tool nsgo test -run '^(TestWebOwnPagesReloadAndReturn|TestWebNavigationStateTracksPageEdits)$' ./internal/platform/windows
+      - name: Test WebView2 custom scheme requests and responses
+        run: go tool nsgo test -run '^TestWebSchemeRequestAnswers$' ./internal/platform/windows
+      - name: Test notification IDs and native toast identities
+        run: go tool nsgo test -run '^TestToast' ./internal/platform/windows
+      - name: Test instance isolation and file handoff
+        run: go tool nsgo test -run '^TestInstance' ./internal/platform/windows
+      - name: Test explicit full screen and restoration
+        run: go tool nsgo test -run '^TestExplicitFullScreenRestoresWindowFrame$' ./internal/platform/windows
+      - name: Test process and automation sessions
+        run: go tool nsgo test -run '^(TestProcessAlive.*|TestAutomationSessionFile|TestMCPSessionBridge|TestCheckDevAutomation|TestDevAutomationRefusesWhatItCannotDrive)$' ./cmd/nsgo
+      - name: Test Windows automation live surfaces
+        run: go tool nsgo test ./internal/platform/windows -- -tags=nsgoautomation -run '^TestLiveSurfaceTracking$'
+  windows-tests-b:
+    name: Windows tests (B)
+    runs-on: depot-windows-2025-4
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test native local service discovery
+        run: go tool nsgo test -target windows -timeout 1m ./internal/testhost/testdata/discovery
+      - name: Test native editing keys and bindings
+        run: go tool nsgo test -target windows ./internal/testhost/testdata/keys
+      - name: Test physical key names on AZERTY and QWERTZ layouts and modifier sides
+        run: go tool nsgo test -run '^(TestLayoutCodeNamesFollowTheLayout|TestTestHostKeyPositionsHoldTheirOwnSide)$' ./internal/platform/windows -- -count=1
+      - name: Test WinSparkle quit approval and callback cleanup
+        run: go tool nsgo test -run '^TestWinSparkleQuit' ./internal/platform/windows -- -count=1
+      - name: Test native file preview rendering and keyboard forwarding
+        run: go tool nsgo test -run '^(TestRegisteredTextPreviewHandler|TestPreviewFrameCOM|TestNativePreviewSelectionAndClose)$' ./internal/platform/windows -- -count=1 -timeout=90s
+      - name: Test Windows DevTools presentation bounds
+        run: go tool nsgo test -target windows -timeout 1m ./testdata/devtools-geometry
+      - name: Test native canvas image tint
+        run: go tool nsgo test -run '^TestCanvasImageTint$' ./internal/platform/windows
+      - name: Test native window visibility
+        run: go tool nsgo test -target windows -run TestWindowStateReadsNativeVisibility ./internal/testhost/testdata/windowstate
+      - name: Compare Direct2D atlas pixels in direct and cached drawing
+        run: go tool nsgo test -run '^TestCanvasAtlasDrawsLikeImages$' ./internal/platform/windows
       - name: Run the many-sprite and mesh canvas scenarios
         env:
           NSGO_GALLERY_PERF: '1'
@@ -879,59 +918,30 @@ jobs:
         run: go tool nsgo test -target windows -fps -run '^TestPerfCanvas(Sprites|Mesh)' ./examples/gallery
       - name: Test UI Automation property-changed events
         run: go tool nsgo test -run '^TestUIAPropertyChangedEvents$' ./internal/platform/windows
-
-      - name: Test native clipboard representations
-        run: go tool nsgo test -run '^TestNativeClipboardItems$' ./internal/platform/windows
       - name: Test the save dialog's starting folder
         run: go tool nsgo test -run '^TestSaveDialogStartsInFolder$' ./internal/platform/windows
-      - name: Test native dev window frame and full screen
-        run: go tool nsgo test -run '^TestDevWindowFrameRestoresPlacementAndFullScreen$' ./internal/platform/windows -- -tags=nsgodev
       - name: Test WebView2 popup requests
         run: go tool nsgo test -run '^TestWebView2WindowRequests$' ./internal/platform/windows
-      - name: Test retained image bytes and current shader textures
-        run: go tool nsgo test -run '^(TestCanvasImageCacheByteBudgetAndReconfiguration|TestShaderViewsKeepOnlyTheirImages|TestShaderTextureCacheBoundsLRUPinsAndRelease)$' ./internal/platform/windows
       - name: Test Windows shader pixel frames
         run: go tool nsgo test -target windows ./internal/testhost/testdata/shaderpixels
       - name: Test pixel frames and animated images
         run: go tool nsgo test -run '^(TestPixelFramesShowEachFrame|TestAnimatedGIFAndSVGImagesDraw)$' ./internal/platform/windows
-      - name: Test Windows owned-window visibility and minimization
-        run: go tool nsgo test -run '^TestOwnedWindowsFollowVisibility$' ./internal/platform/windows -- -count=1
       - name: Test Windows last-window close and session end
         run: go tool nsgo test -run '^TestWindows(LastWindowAsksBeforeQuitting|SessionEndForcesQuit)$' ./internal/platform/windows
-      - name: Test Windows audio
-        run: go tool nsgo test -trace -run '^TestWindowsAudio' ./internal/platform/windows
-      - name: Test Windows menu visibility after Alt shortcuts
-        run: go tool nsgo test -run '^TestConsumedAltChordKeepsMenusClosed$' ./internal/platform/windows
       - name: Test pointer lock preserves the process's Raw Input registration
         run: go tool nsgo test -run '^TestPointerLockKeepsRawMouseRegistration$' ./internal/platform/windows
-      - name: Test menu yield with a focused WebView2 page
-        run: go tool nsgo test -run '^TestMenuYieldFollowsNativeFocus$' ./internal/platform/windows
       - name: Test menu yield to the shortcuts the menu leaves a focused field
         run: go tool nsgo test -run '^TestMenuYieldReachesTheBindingTheMenuLeaves$' ./internal/platform/windows
       - name: Test WebView2 accelerator shortcuts
         run: go tool nsgo test -run '^TestFocusedPageKeysReachShortcutsFirst$' ./internal/platform/windows
-      - name: Test WebView2 history and navigation state
-        run: go tool nsgo test -run '^(TestWebOwnPagesReloadAndReturn|TestWebNavigationStateTracksPageEdits)$' ./internal/platform/windows
       - name: Test Edit menu roles in a focused WebView2 page and their OnSelect fallback
         run: go tool nsgo test -run '^(TestEditMenuEditsTheFocusedPage|TestWebEditCommandsCoverTheEditingRoles|TestEditingRolesFallBackToOnSelect)$' ./internal/platform/windows
-      - name: Test WebView2 custom scheme requests and responses
-        run: go tool nsgo test -run '^TestWebSchemeRequestAnswers$' ./internal/platform/windows
       - name: Test native radio and tab focus
         run: go tool nsgo test -target windows -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
-      - name: Test notification IDs and native toast identities
-        run: go tool nsgo test -run '^TestToast' ./internal/platform/windows
       - name: Test native direction mirroring
         run: go tool nsgo test -run '^TestDirectionMirrorsNativeControls$' ./internal/platform/windows
-      - name: Test instance isolation and file handoff
-        run: go tool nsgo test -run '^TestInstance' ./internal/platform/windows
       - name: Test native network reachability
         run: go tool nsgo test -run '^TestNetworkMonitorReadsNetworkListManager$' ./internal/platform/windows
-      - name: Test explicit full screen and restoration
-        run: go tool nsgo test -run '^TestExplicitFullScreenRestoresWindowFrame$' ./internal/platform/windows
-      - name: Test process and automation sessions
-        run: go tool nsgo test -run '^(TestProcessAlive.*|TestAutomationSessionFile|TestMCPSessionBridge|TestCheckDevAutomation|TestDevAutomationRefusesWhatItCannotDrive)$' ./cmd/nsgo
-      - name: Test Windows automation live surfaces
-        run: go tool nsgo test ./internal/platform/windows -- -tags=nsgoautomation -run '^TestLiveSurfaceTracking$'
       - name: Test Windows automation end to end
         env:
           NSGO_AUTOMATION_E2E: '1'
@@ -943,6 +953,24 @@ jobs:
       - name: Test the Windows installer runtime's cleanup
         run: go tool nsgo test -run 'UninstallerCleanup' ./cmd/nsgo/windowsinstaller
 
+  # The required check: it passes only when both halves passed.
+  windows:
+    needs: [windows-tests-a, windows-tests-b]
+    if: ${{ !cancelled() }}
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require both halves to pass
+        env:
+          TESTS_A: ${{ needs.windows-tests-a.result }}
+          TESTS_B: ${{ needs.windows-tests-b.result }}
+        run: |
+          for result in "$TESTS_A" "$TESTS_B"; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A half of windows did not pass: $result."
+              exit 1
+            fi
+          done
   terminal:
     name: Terminal (${{ matrix.os }})
     strategy:
