@@ -872,9 +872,8 @@ func (e *ed) reveal(p pos, center bool) {
 
 // xOf is where p is across its row, in the rows' box.
 func (e *ed) xOf(p pos) float32 {
-	l := e.st.line(p.line)
 	d := e.st.disp.row(e.st.disp.rowOf(p), e.st.r())
-	return pad + float32(colAt(l, p.col, e.st.tab)-colAt(l, d.start, e.st.tab))*e.charW
+	return pad + float32(e.shownCols(p.line, 0, p.col)-e.shownCols(p.line, 0, d.start))*e.charW
 }
 
 // posAt is the place at pt in the rows' box.
@@ -894,8 +893,8 @@ func (e *ed) posAt(pt core.Point) pos {
 		_, w := utf8.DecodeLastRuneInString(l[:end])
 		end -= w
 	}
-	col := int((float32(pt.X) - pad + e.charW/2) / e.charW)
-	return pos{d.line, byteAtCol(l, d.start, end, colAt(l, d.start, e.st.tab)+max(col, 0), e.st.tab)}
+	col := e.shownCols(d.line, 0, d.start) + int((float32(pt.X)-pad+e.charW/2)/e.charW)
+	return pos{d.line, e.byteAtShownCol(d.line, d.start, end, col)}
 }
 
 func (e *ed) gutterWidth() float32 {

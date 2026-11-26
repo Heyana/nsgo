@@ -306,6 +306,7 @@ func (e *ed) textArea() core.Node {
 			}
 		}),
 		e.glyphs(),
+		e.replacementLayer(),
 		e.layer(func() []rect { return e.linkRects() }),
 		e.layer(func() []rect { return e.caretRects() }),
 		e.inlineView(),
@@ -369,7 +370,7 @@ func (e *ed) rowRects(a, b pos, from, to int, style *core.Style, class string, o
 		l := r.line(d.line)
 		// Measure on this row: a wrapped row's end is the next row's start.
 		xAt := func(col int) float32 {
-			return pad + float32(colAt(l, col, e.st.tab)-colAt(l, d.start, e.st.tab))*e.charW
+			return pad + float32(e.shownCols(d.line, 0, col)-e.shownCols(d.line, 0, d.start))*e.charW
 		}
 		x0 := float32(pad)
 		if a.line == d.line && a.col >= d.start {
@@ -453,6 +454,7 @@ func (e *ed) matchRects() []rect {
 
 func (e *ed) selectionRects() []rect {
 	e.selRev.Get()
+	e.marksRev.Get()
 	var out []rect
 	for _, sel := range e.st.sels {
 		if !sel.empty() {
@@ -464,6 +466,7 @@ func (e *ed) selectionRects() []rect {
 
 func (e *ed) bracketRects() []rect {
 	e.selRev.Get()
+	e.marksRev.Get()
 	if !e.focused.Get() || e.styles().MatchingBracket.IsZero() && e.p.Classes.MatchingBracket == "" {
 		return nil
 	}
@@ -496,6 +499,7 @@ func (e *ed) linkRects() []rect {
 
 func (e *ed) caretRects() []rect {
 	e.selRev.Get()
+	e.marksRev.Get()
 	if !e.focused.Get() || e.composing.Get() != "" {
 		return nil
 	}
@@ -531,7 +535,9 @@ func (e *ed) rowSpans(row int) []core.Span {
 	if dark {
 		palette = &syntax.Dark
 	}
-	// The cuts: token bounds and marks' bounds within the row.
+	// The cuts: token bounds, marks' bounds and shapes' bounds within the
+	// row.
+	shapes := e.shapesIn(d.line)
 	cuts := []int{d.start, d.end}
 	toks := e.hl.line(d.line)
 	if e.p.NoHighlighting {
@@ -556,13 +562,30 @@ func (e *ed) rowSpans(row int) []core.Span {
 			cuts = append(cuts, m.to.col)
 		}
 	}
+	for _, s := range shapes {
+		cuts = append(cuts, s.from, s.to)
+	}
 	slices.Sort(cuts)
 	cuts = slices.Compact(cuts)
 	var out []core.Span
-	col := colAt(l, d.start, e.st.tab)
+	col := e.shownCols(d.line, 0, d.start)
 	for i := 0; i+1 < len(cuts); i++ {
 		a, b := cuts[i], cuts[i+1]
 		if a < d.start || b > d.end || a >= b {
+			continue
+		}
+		if s, ok := shapeAt(shapes, a); ok {
+			if b > s.to {
+				b = s.to
+			}
+			if s.hidden {
+				// Its columns collapse, so nothing follows them.
+				continue
+			}
+			// A replaced range keeps its columns for its view.
+			for _, c := range l[a:b] {
+				col += runeCols(c, col, e.st.tab)
+			}
 			continue
 		}
 		var style core.Style

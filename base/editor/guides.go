@@ -98,8 +98,9 @@ func (e *ed) glyphs() core.Node {
 		for row := s; row < end; row++ {
 			d := e.st.disp.row(row, r)
 			l := r.line(d.line)
+			shapes := e.shapesIn(d.line)
 			y := float32(row) * e.lh
-			base := colAt(l, d.start, e.st.tab)
+			base := e.shownCols(d.line, 0, d.start)
 			col := base
 			run, runCol := 0, 0
 			flush := func() {
@@ -108,7 +109,10 @@ func (e *ed) glyphs() core.Node {
 					run = 0
 				}
 			}
-			for _, c := range l[d.start:min(d.end, len(l))] {
+			for i, c := range l[d.start:min(d.end, len(l))] {
+				if sh, ok := shapeAt(shapes, d.start+i); ok && sh.hidden {
+					continue
+				}
 				switch c {
 				case ' ':
 					if run == 0 {

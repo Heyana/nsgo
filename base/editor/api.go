@@ -146,6 +146,21 @@ type Decoration struct {
 	// keeps its place through edits.
 	Gutter        *GutterMark
 	OverviewRuler *OverviewRulerMark
+	// Hidden hides the range's characters: their columns collapse and the
+	// text after them moves left, so a Markdown editor shows **bold** as its
+	// bold word while the caret is off it, giving new decorations as the
+	// caret moves. The text keeps its offsets, so keys, selections and
+	// copying see the characters as they are; a range across lines hides
+	// each line's part and keeps the line breaks. Soft wrap still breaks
+	// rows at the text's own columns.
+	Hidden bool
+	// Replace shows a view in the range's place instead of its characters,
+	// keeping their columns: the text after it stays where it was, so
+	// carets, selections and presses keep their places. The view fills a box
+	// as wide as the columns and as tall as the line, and takes its own
+	// presses. A range across lines, or split by soft wrap, hides its text
+	// and shows no view.
+	Replace core.Node
 }
 
 // TokenKind is a kind of token the highlighting colors: comment,
