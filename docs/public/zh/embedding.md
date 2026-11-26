@@ -103,6 +103,10 @@ engine.destroy();
 
 分离会释放原生子视图；重新附加会恢复当前信号、输入、焦点、滚动位置和绘图，不重新运行组件。网页和播放器按应用配置重新创建。对显式传入的引擎，`stop()` 只分离视图。每个引擎仍保留最初的视图及其 Activity，并拒绝其他视图，因此仍需由该 Activity 处理配置变化；尚不支持替换 Activity 或在一个进程中显示独立视图。
 
+要在后台播放 `core.Video`，带 `mediaPlayback` 前台服务的宿主保留同一个 `NsgoView` 和 `NsgoEngine`，并在 UI 线程调用 `app.setBackgroundVideoPlaybackEnabled(true)`。视图隐藏或离开窗口时，播放器继续播放并发送 `OnProgress` 和 `OnEnd`。要再次显示正在运行的应用，把同一个视图放回其 Activity 的窗口。视图以该 Activity 为上下文，因此这项设置只在 Activity 存活期间有效：请在它的 `onDestroy` 中调用 `detachFromEngine()` 或 `engine.destroy()`。这项设置只作用于 `core.Video`；视图隐藏或离开窗口时，`audio.Player` 和音效仍会暂停。
+
+这项设置让原生视图树保持挂载。调用 `detachFromEngine()` 释放它并停止其中的播放器，服务结束时调用 `engine.destroy()`。视图在窗口外时关闭这项设置也会释放视图树，因此放回视图时要再次调用 `attachToEngine(engine)`。宿主负责管理服务、清单权限，以及息屏播放所需的唤醒锁。[媒体播放服务](https://developer.android.com/develop/background-work/services/fgs/service-types#media) · [唤醒锁](https://developer.android.com/media/platform/mediaplayer/background#use-wake-locks)
+
 要检查 Google Play 更新，请把 `com.google.android.play:app-update:2.1.0` 加入 Android 宿主的 Gradle 依赖，并用[运行时的压缩规则](https://github.com/nsgo-dev/nsgo/blob/main/internal/platform/android/runtime/play-review.pro)保留 NSGo 按名称加载的 AppUpdateManager、AppUpdateInfo、AppUpdateOptions 和 Tasks API。上面的 Activity 结果转发也会传递用户取消更新的结果。
 
 ## 桌面

@@ -775,13 +775,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Allows core.Video players to keep playing when this view is hidden. A host-owned
-     * engine also keeps this view's native tree mounted when it leaves its Android
-     * window, so playback, callbacks and updates continue on the same view.
-     * The host owns the mediaPlayback foreground service and retains the view and engine.
-     * Explicit detachFromEngine (or stop) still releases the tree. Turning this off
-     * also releases the tree if the host-owned view is outside its window.
-     * Defaults to false. Call on the UI thread.
+     * Allows core.Video players to keep playing when this view is hidden. A host-owned engine also keeps this view's native tree mounted when it leaves its Android window, so playback, callbacks and updates continue on the same view. Audio players and sounds still pause while the view is hidden or out of its window.
+     *
+     * The host owns the mediaPlayback foreground service and retains the view and engine. The view keeps its Activity as its context, so the host calls detachFromEngine or engine.destroy from that Activity's onDestroy. Explicit detachFromEngine (or stop) still releases the tree. Turning this off also releases the tree if the host-owned view is outside its window; call attachToEngine again when putting the view back. Defaults to false. Call on the UI thread.
      */
     public void setBackgroundVideoPlaybackEnabled(boolean enabled) {
         if (backgroundVideoPlayback == enabled) return;
