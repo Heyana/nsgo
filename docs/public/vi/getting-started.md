@@ -36,6 +36,8 @@ go tool nsgo init
 
 `go tool nsgo init -template tsx` tạo một ứng dụng TSX thay thế, còn `-template mixed` tạo một ứng dụng Go mà điểm vào TSX của nó dùng các thành phần Go của chính ứng dụng.
 
+Thêm thư viện bằng `nsgo add <module>` thay cho `go get`: nó cho thấy `go.mod` và `go.sum` sẽ nhận gì trước khi ghi, và không bao giờ đưa NSGo của dự án ra khỏi các bản phát hành ([Thêm thư viện](building.md#thêm-thư-viện)).
+
 ### Mẫu từ module Go
 
 Truyền đường dẫn module của mẫu kèm phiên bản tùy chọn. Nếu bỏ qua phiên bản, nó sẽ được phân giải thành phiên bản mới nhất mà module proxy của Go tìm thấy.

@@ -173,3 +173,36 @@ func TestModuleNSGoVersion(t *testing.T) {
 		t.Error("outside a module: delegates")
 	}
 }
+
+// An installed nsgo does not hand a command to a module's nsgo from a release before it, which would not know it: it names the release to get, and a pin from that release on, or not a release, is delegated to as before (#2460).
+func TestDelegationOfANewerCommand(t *testing.T) {
+	path, env := goEnv(t, nsgoProxy(t, "v0.9.0"))
+	out, code := runNsgo(t, pinnedModule(t, "v0.3.4", ""), path, env, "add", "example.com/lib")
+	if want := "nsgo add needs NSGo v0.3.5 or later; this module pins v0.3.4: go get github.com/nsgo-dev/nsgo@v0.3.5\n"; code != 1 || !strings.Contains(out, want) || strings.Contains(out, "fake nsgo") {
+		t.Fatalf("exit %d, output %s; want %q and exit 1", code, out, want)
+	}
+
+	dir := pinnedModule(t, "v0.9.0", "")
+	download := exec.Command("go", "mod", "download", "github.com/nsgo-dev/nsgo")
+	download.Dir, download.Env = dir, append(os.Environ(), append(env, "GOWORK=off")...)
+	if out, err := download.CombinedOutput(); err != nil {
+		t.Fatalf("go mod download: %v\n%s", err, out)
+	}
+	if out, code := runNsgo(t, dir, path, env, "add", "example.com/lib"); code != 5 || !strings.Contains(out, `fake nsgo ["add" "example.com/lib"]`) {
+		t.Fatalf("a pin with add: exit %d, output %s; want the module's nsgo run", code, out)
+	}
+}
+
+func TestPredates(t *testing.T) {
+	for pinned, want := range map[string]bool{
+		"v0.3.4": true, "v0.1.0": true, "v0.3.5": false, "v0.4.0": false, "v1.0.0": false,
+		// Not releases: a build of any commit may carry them.
+		"v0.3.5-0.20261126000000-0123456789ab": false, "v0.3.4-0.20261120000000-0123456789ab": false, "v0.3.5-rc.1": false,
+		// A replacement by a directory, which has no version.
+		"": false,
+	} {
+		if got := predates(pinned, "v0.3.5"); got != want {
+			t.Errorf("predates(%q, v0.3.5) = %v, want %v", pinned, got, want)
+		}
+	}
+}

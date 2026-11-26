@@ -65,6 +65,8 @@ The `tool` line in `go.mod` pins the project to the version of NSGo it requires;
 go tool nsgo test
 ```
 
+Add libraries with `nsgo add <module>` rather than `go get`: it shows what `go.mod` and `go.sum` would get before writing them, and never moves the project's NSGo off its releases ([Adding libraries](building.md#adding-libraries)).
+
 ### Templates from Go modules
 
 Pass the template's module path with an optional `@version` and `#name`. An omitted version resolves to the latest version Go's module proxy can find.

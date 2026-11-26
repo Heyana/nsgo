@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## 新增函式庫
+
+用 `nsgo add` 新增函式庫，也就是一個 Go 模組。它是先顯示計畫的 `go get`：
+
+```sh
+nsgo add github.com/acme/chart           # 最新的正式版本；go.mod 已有時保持不變
+nsgo add github.com/acme/chart@v1.3.0    # 這個版本，即使低於 go.mod 中的版本
+nsgo add -dry-run github.com/acme/chart  # 只印出計畫，不寫入任何東西
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+對每個模組，計畫列出它的版本與發布日期，以及它的擁有者：主機，在 github.com 這類程式碼代管服務上還包括帳號；`go.mod` 中還沒有來自這個擁有者的模組時會特別註明。適用時，接著列出撤回（retract）與棄用通知、沒有發布標籤的版本、對該模組的 `replace`，以及其根套件的 import 行。然後是 `go.mod` 中改變的行（包括 `go` 與 `toolchain` 行）、之後會執行另一個版本的 `go tool` 命令、從模組自身主機取得的模組，以及 `go.sum` 收下卻未經總和檢查碼資料庫驗證的模組。`go get` 會把還沒有任何套件匯入的模組標為 `// indirect`，等有套件匯入它之後，`go mod tidy` 會去掉這個標記。
+
+在終端機中，`add` 寫入前會先詢問，`-y` 則不經詢問直接套用計畫；不在終端機中又沒有 `-y` 時，它什麼也不寫，並以狀態 1 結束。`go.mod` 已經依賴的模組維持原樣，只印出其版本，除非輸入了版本。
+
+規劃只執行 go 命令，作用於 `go.mod` 與 `go.sum` 的副本：
+
+- 使用模組已在用的工具鏈並設定 `GOTOOLCHAIN=local`，因此不會下載或執行其他工具鏈；
+- 只經由 `GOPROXY` 中第一個 `direct` 之前列出的模組代理取得，`direct` 改為 `off`，因此只有 `GOPRIVATE` 或 `GONOPROXY` 標記的模組會從它們自己的主機取得，`GONOSUMDB` 與 `GOAUTH` 保持不變；
+- 設定 `GOWORK=off`，因此在工作區中，它只為這個模組本身規劃 `go.mod`，與 `GOWORK=off go get` 寫出的一致，並在計畫中註明。
+
+無論是否給出 `-y`，`add` 都會拒絕：
+
+- 把 NSGo 的依賴移到虛擬版本或預先發布版本，依賴 NSGo 某個提交的函式庫就會這樣做；要刻意這樣做，先執行 `go get github.com/nsgo-dev/nsgo@<版本>`；
+- 需要比模組的工具鏈更新的 Go 的模組；先用 `go get go@<版本>` 提高模組的 Go 版本；
+- 經由 `@latest` 這類查詢降低模組的版本；輸入具體版本才會降低，計畫稱之為降級。
+
+只有在規劃之後 `go.mod` 與 `go.sum` 都沒有改變時，它才寫入這兩個檔案，各自先寫入暫存檔再改名覆蓋；發生錯誤或被中斷時，兩個檔案都會還原。有 `vendor` 目錄的模組，計畫會把 `go mod vendor` 列為下一步。
+
+`add` 是 NSGo 0.3.4 之後新增的。在固定為 0.3.4 或更早正式版本的模組中，已安裝的 `nsgo` 不會為它執行模組的 `nsgo`，而是印出引入 `add` 的 `go get github.com/nsgo-dev/nsgo@<版本>`；在那裡，`go tool nsgo add` 執行的是固定的 `nsgo`，它不認識 `add`。
+
 ## 來自 Go 套件的函式庫
 
 匯入 `base/terminal` 的應用程式同時會隨附 libghostty-vt：Windows 與 Linux 封裝檔會將該函式庫置於執行檔旁；macOS 與 iOS 套件則會將其簽署並包入框架中。[嵌入指南](embedding.md)說明了 iOS 宿主所需的配套 XCFramework。

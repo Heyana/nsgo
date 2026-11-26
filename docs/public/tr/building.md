@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## Kütüphane ekleme
+
+Bir kütüphaneyi, yani bir Go modülünü, planını önce gösteren bir `go get` olan `nsgo add` ile ekleyin:
+
+```sh
+nsgo add github.com/acme/chart           # en yeni sürümü; go.mod zaten içeriyorsa dokunmaz
+nsgo add github.com/acme/chart@v1.3.0    # bu sürüm, go.mod'dakinden düşük olsa bile
+nsgo add -dry-run github.com/acme/chart  # planı yazdırır, hiçbir şey yazmaz
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+Plan her modül için sürümünü ve yayın tarihini, ayrıca sahibini belirtir: barındırıcıyı (host) ve github.com gibi kod barındırma hizmetlerinde hesabı da; `go.mod` bu sahipten henüz bir modül içermiyorsa bu işaretlenir. Geçerli olduklarında geri çekme (retract) ve kullanımdan kaldırma bildirimleri, sürüm etiketi olmayan bir sürüm, modülün bir `replace` satırı ve kök paketinin import satırı ardından gelir. Sonra `go.mod` içinde değişen satırlar, `go` ve `toolchain` dahil, başka bir sürümü çalıştıracak `go tool` komutları, kendi barındırıcılarından alınan modüller ve `go.sum`'ın sağlama toplamı veritabanının denetimi olmadan kabul ettiği modüller gelir. `go get`, henüz hiçbir paketin içe aktarmadığı bir modülü `// indirect` olarak işaretler; `go mod tidy` bir paket onu içe aktarınca bu işareti kaldırır.
+
+Bir terminalde `add` yazmadan önce sorar, `-y` ise planı sormadan uygular; terminal ve `-y` olmadan hiçbir şey yazmaz ve 1 durum koduyla çıkar. `go.mod`'un zaten gerektirdiği bir modül, bir sürüm yazılmadıkça olduğu gibi bırakılır ve sürümü yazdırılır.
+
+Planlama, `go.mod` ve `go.sum` kopyaları üzerinde go komutundan başka hiçbir şey çalıştırmaz:
+
+- modülün zaten kullandığı araç zinciriyle (toolchain) ve `GOTOOLCHAIN=local` ile, böylece başka hiçbir araç zinciri indirilmez ya da çalıştırılmaz;
+- `GOPROXY`'nin ilk `direct` değerinden önce listelediği modül proxy'leri üzerinden; `direct` `off` olur, böylece yalnızca `GOPRIVATE` ya da `GONOPROXY` ile işaretlenen modüller kendi barındırıcılarından alınır, `GONOSUMDB` ve `GOAUTH` olduğu gibi kalır;
+- `GOWORK=off` ile, böylece bir çalışma alanında (workspace) `go.mod`'u yalnızca modülün kendisi için, `GOWORK=off go get` nasıl yazıyorsa öyle planlar ve bunu belirtir.
+
+`-y` verilsin ya da verilmesin, `add` şunları reddeder:
+
+- NSGo gereksinimini bir sözde sürüme (pseudo-version) ya da ön sürüme taşımak; NSGo'nun bir commit'ini gerektiren bir kütüphane bunu yapardı; `go get github.com/nsgo-dev/nsgo@<sürüm>` onu önce bilerek oraya taşır;
+- modülün araç zincirinden daha yeni bir Go gerektiren bir modül; `go get go@<sürüm>` önce modülünkini yükseltir;
+- bir modülü `@latest` gibi bir sorguyla düşürmek; sürümü yazmak onu düşürür ve plan buna sürüm düşürme (downgrade) der.
+
+`go.mod` ve `go.sum` dosyalarını yalnızca planlamadan bu yana ikisi de değişmediyse, her birini üzerine yeniden adlandırılan geçici bir dosya aracılığıyla yazar; bir hata ya da kesinti olursa ikisini de eski hâline getirir. `vendor` dizini olan bir modülde plan, sonraki adım olarak `go mod vendor` komutunu gösterir.
+
+`add`, NSGo 0.3.4'ten sonra geldi. 0.3.4'ü ya da daha eski bir sürümü sabitleyen bir modülde kurulu `nsgo`, bu komut için modülün `nsgo`'sunu çalıştırmaz; `add`'i getiren `go get github.com/nsgo-dev/nsgo@<sürüm>` komutunu yazdırır. Orada `go tool nsgo add`, `add`'i bilmeyen sabitlenmiş `nsgo`'yu çalıştırır.
+
 ## Go paketlerinden kütüphaneler
 
 `base/terminal` paketini içe aktaran uygulamalar libghostty-vt kütüphanesini de birlikte dağıtır: Windows ve Linux paketleri kütüphaneyi yürütülebilir dosyanın yanına yerleştirir; macOS ve iOS paketleri bunu çerçevelerine (framework) imzalar. [Gömme](embedding.md) iOS konakları için eşlik eden XCFramework'ü açıklar.

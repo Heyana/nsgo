@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## Bibliotheken hinzufügen
+
+Fügen Sie eine Bibliothek, also ein Go-Modul, mit `nsgo add` hinzu, einem `go get`, das zuerst seinen Plan zeigt:
+
+```sh
+nsgo add github.com/acme/chart           # die neueste Release-Version, außer go.mod enthält es schon
+nsgo add github.com/acme/chart@v1.3.0    # diese Version, auch unter der in go.mod
+nsgo add -dry-run github.com/acme/chart  # nur den Plan ausgeben, nichts schreiben
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+Für jedes Modul nennt der Plan Version und Veröffentlichungsdatum sowie den Eigentümer: den Host und auf einem Code-Hoster wie github.com auch das Konto, markiert, wenn `go.mod` noch kein Modul von ihm enthält. Hinweise auf zurückgezogene (retract) und veraltete Versionen, eine Version ohne Release-Tag, ein `replace` des Moduls und die Import-Zeile seines Wurzelpakets folgen, wenn sie zutreffen. Danach kommen die Zeilen von `go.mod`, die sich ändern, einschließlich `go` und `toolchain`, die `go tool`-Befehle, die danach eine andere Version ausführen würden, die Module, die von ihren eigenen Hosts geholt werden, und die, deren Prüfsummen `go.sum` ohne Prüfung durch die Prüfsummendatenbank übernimmt. `go get` markiert ein Modul, das noch kein Paket importiert, mit `// indirect`; `go mod tidy` entfernt die Markierung, sobald eines es importiert.
+
+Im Terminal fragt `add` vor dem Schreiben, und `-y` wendet den Plan ohne Nachfrage an; ohne Terminal und ohne `-y` schreibt es nichts und beendet sich mit Status 1. Ein Modul, das `go.mod` bereits verlangt, bleibt, wie es ist, und seine Version wird ausgegeben, sofern keine Version angegeben ist.
+
+Die Planung führt nichts als den Befehl go aus, auf Kopien von `go.mod` und `go.sum`:
+
+- mit der Toolchain, die das Modul bereits verwendet, und `GOTOOLCHAIN=local`, sodass keine andere Toolchain heruntergeladen oder ausgeführt wird;
+- über die Modul-Proxys, die `GOPROXY` vor seinem ersten `direct` nennt, das zu `off` wird, sodass nur die Module, die `GOPRIVATE` oder `GONOPROXY` markiert, von ihren eigenen Hosts geholt werden; `GONOSUMDB` und `GOAUTH` bleiben, wie sie sind;
+- mit `GOWORK=off`, sodass in einem Workspace `go.mod` nur für das Modul selbst geplant wird, wie `GOWORK=off go get` es schreibt, und der Plan das angibt.
+
+Ob mit oder ohne `-y`, `add` lehnt ab:
+
+- die Anforderung von NSGo auf eine Pseudo-Version oder eine Vorabversion zu verschieben, wie es eine Bibliothek täte, die einen Commit von NSGo verlangt; `go get github.com/nsgo-dev/nsgo@<version>` verschiebt sie zuvor bewusst dorthin;
+- ein Modul, das ein neueres Go braucht als die Toolchain des Moduls; `go get go@<version>` hebt die des Moduls zuvor an;
+- ein Modul über eine Abfrage wie `@latest` herabzustufen; die Angabe der Version stuft es herab, und der Plan nennt es ein Downgrade.
+
+`go.mod` und `go.sum` schreibt es nur, wenn sich keine der beiden seit der Planung geändert hat, jede über eine temporäre Datei, die darüber umbenannt wird, und stellt bei einem Fehler oder einer Unterbrechung beide wieder her. In einem Modul mit einem `vendor`-Verzeichnis nennt der Plan `go mod vendor` als nächsten Schritt.
+
+`add` ist neu nach NSGo 0.3.4. In einem Modul, das 0.3.4 oder ein früheres Release festlegt, führt ein installiertes `nsgo` dafür nicht das `nsgo` des Moduls aus, sondern gibt das `go get github.com/nsgo-dev/nsgo@<version>` aus, das `add` mitbringt; dort führt `go tool nsgo add` das festgelegte `nsgo` aus, das `add` nicht kennt.
+
 ## Bibliotheken aus Go-Paketen
 
 Apps, die `base/terminal` importieren, liefern zusätzlich `libghostty-vt` aus: Windows- und Linux-Pakete legen die Bibliothek neben die ausführbare Datei; macOS- und iOS-Bundles signieren sie in ihre Frameworks. [Einbetten](embedding.md) erläutert das begleitende XCFramework für iOS-Hosts.

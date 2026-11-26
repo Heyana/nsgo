@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## Adicionar bibliotecas
+
+Adicione uma biblioteca, isto é, um módulo Go, com `nsgo add`, um `go get` que mostra seu plano primeiro:
+
+```sh
+nsgo add github.com/acme/chart           # sua versão publicada mais recente, a menos que o go.mod já a tenha
+nsgo add github.com/acme/chart@v1.3.0    # esta versão, mesmo abaixo da do go.mod
+nsgo add -dry-run github.com/acme/chart  # mostra o plano e não grava nada
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+Para cada módulo, o plano informa sua versão e data de publicação, e seu proprietário: o host e, em um serviço de hospedagem de código como o github.com, também a conta, indicado quando o `go.mod` ainda não tem nenhum módulo dele. Avisos de retratação (retract) e de descontinuação, uma versão sem tag de release, um `replace` do módulo e a linha de import do seu pacote raiz vêm a seguir, quando se aplicam. Depois vêm as linhas do `go.mod` que mudam, incluindo `go` e `toolchain`, os comandos `go tool` que passariam a executar outra versão, os módulos obtidos de seus próprios hosts e aqueles cujos hashes o `go.sum` aceita sem verificação pelo banco de dados de checksums. O `go get` marca com `// indirect` um módulo que nenhum pacote importa ainda, e o `go mod tidy` remove a marca assim que algum o importa.
+
+Em um terminal, `add` pergunta antes de gravar, e `-y` aplica o plano sem perguntar; sem terminal e sem `-y`, ele não grava nada e sai com status 1. Um módulo que o `go.mod` já exige fica como está, com sua versão exibida, a menos que uma versão seja digitada.
+
+O planejamento não executa nada além do comando go, sobre cópias de `go.mod` e `go.sum`:
+
+- com a toolchain que o módulo já usa e `GOTOOLCHAIN=local`, de modo que nenhuma outra toolchain é baixada ou executada;
+- pelos proxies de módulos que o `GOPROXY` lista antes do seu primeiro `direct`, que vira `off`, de modo que apenas os módulos que `GOPRIVATE` ou `GONOPROXY` marcam são obtidos de seus próprios hosts, com `GONOSUMDB` e `GOAUTH` como estão;
+- com `GOWORK=off`, de modo que, em um workspace, ele planeja o `go.mod` apenas para o módulo, como `GOWORK=off go get` o grava, e informa isso.
+
+Com ou sem `-y`, `add` recusa:
+
+- mover o requisito do NSGo para uma pseudoversão ou uma pré-release, como faria uma biblioteca que exige um commit do NSGo; `go get github.com/nsgo-dev/nsgo@<versão>` o move para lá de propósito antes;
+- um módulo que precisa de um Go mais novo que a toolchain do módulo; `go get go@<versão>` eleva antes a do módulo;
+- rebaixar um módulo por meio de uma consulta como `@latest`; digitar a versão o rebaixa, e o plano chama isso de downgrade.
+
+Ele grava `go.mod` e `go.sum` apenas se nenhum dos dois mudou desde o planejamento, cada um por meio de um arquivo temporário renomeado sobre ele, e restaura ambos em caso de erro ou interrupção. Em um módulo com um diretório `vendor`, o plano indica `go mod vendor` como próximo passo.
+
+`add` é novo depois do NSGo 0.3.4. Em um módulo que fixa a 0.3.4 ou uma versão anterior, um `nsgo` instalado não executa para ele o `nsgo` do módulo, mas mostra o `go get github.com/nsgo-dev/nsgo@<versão>` que traz `add`; ali, `go tool nsgo add` executa o `nsgo` fixado, que não conhece `add`.
+
 ## Bibliotecas de pacotes Go
 
 Aplicativos que importam `base/terminal` também distribuem `libghostty-vt`: pacotes de Windows e Linux colocam a biblioteca ao lado do executável; pacotes de macOS e iOS a assinam dentro de seus frameworks. [Incorporação](embedding.md) explica o XCFramework complementar para hosts iOS.

@@ -154,6 +154,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## 添加库
+
+用 `nsgo add` 添加库，也就是一个 Go 模块。它是先展示计划的 `go get`：
+
+```sh
+nsgo add github.com/acme/chart           # 最新的正式版本，go.mod 已有它时保持不变
+nsgo add github.com/acme/chart@v1.3.0    # 这个版本，即使低于 go.mod 中的版本
+nsgo add -dry-run github.com/acme/chart  # 只打印计划，什么也不写
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+对每个模块，计划列出它的版本和发布日期，以及它的所有者：主机，在 github.com 这类代码托管站点上还有账号；`go.mod` 里还没有来自这个所有者的模块时会注明。适用时，接着列出撤回和弃用通知、没有发布标签的版本、对该模块的 `replace`，以及其根包的 import 行。然后是 `go.mod` 中改变的行（包括 `go` 和 `toolchain` 行）、此后会运行另一个版本的 `go tool` 命令、从模块自己的主机获取的模块，以及 `go.sum` 收下却未经校验和数据库检查的模块。`go get` 会把还没有包导入的模块标为 `// indirect`，有包导入它之后，`go mod tidy` 会去掉这个标记。
+
+在终端中，`add` 写入前会先询问，`-y` 则不经询问直接应用计划；不在终端中又没有 `-y` 时，它什么也不写，并以状态 1 退出。`go.mod` 已经依赖的模块保持原样，只打印其版本，除非输入了版本。
+
+规划只运行 go 命令，作用于 `go.mod` 和 `go.sum` 的副本：
+
+- 使用模块已在用的工具链并设置 `GOTOOLCHAIN=local`，因此不会下载或运行其他工具链；
+- 只经由 `GOPROXY` 中第一个 `direct` 之前列出的模块代理获取，`direct` 改为 `off`，因此只有 `GOPRIVATE` 或 `GONOPROXY` 标记的模块从它们自己的主机获取，`GONOSUMDB` 和 `GOAUTH` 保持不变；
+- 设置 `GOWORK=off`，因此在工作区中，它只为这个模块本身规划 `go.mod`，与 `GOWORK=off go get` 写出的一致，并在计划中注明。
+
+无论是否给出 `-y`，`add` 都会拒绝：
+
+- 把 NSGo 的依赖移到伪版本或预发布版本，依赖 NSGo 某个提交的库就会这样做；要有意这样做，先运行 `go get github.com/nsgo-dev/nsgo@<版本>`；
+- 需要比模块的工具链更新的 Go 的模块；先用 `go get go@<版本>` 提高模块的 Go 版本；
+- 经由 `@latest` 这样的查询降低模块的版本；输入具体版本才会降低，计划称之为降级。
+
+只有在规划之后 `go.mod` 和 `go.sum` 都没有改变时，它才写入这两个文件，各自先写入临时文件再改名覆盖；出错或被中断时，两个文件都恢复原样。有 `vendor` 目录的模块，计划会把 `go mod vendor` 列为下一步。
+
+`add` 是 NSGo 0.3.4 之后新增的。在固定为 0.3.4 或更早正式版本的模块中，已安装的 `nsgo` 不会为它运行[模块的 nsgo](#模块的-nsgo)，而是打印引入 `add` 的 `go get github.com/nsgo-dev/nsgo@<版本>`；在那里，`go tool nsgo add` 运行的是固定的 nsgo，它不认识 `add`。
+
 ## 扩展命令
 
 `nsgo` 自身不认识的命令会交给扩展执行，与 git 和 cargo 的做法相同，这样基于 NSGo 的库可以把自己的命令加到 `nsgo` 上：
@@ -170,7 +215,7 @@ licenses:
 
 ### 模块的 nsgo
 
-安装在 `PATH` 上的 `nsgo` 不会用与项目所固定版本不同的版本构建项目。在 `go.mod` 以另一个版本声明工具 `github.com/nsgo-dev/nsgo/cmd/nsgo` 的模块中，`nsgo` 先以相同参数运行模块的 `nsgo`，即 `go tool nsgo`，由它解析内置命令和扩展，并以它的退出状态退出。它的环境中的 `NSGO_DELEGATED=1` 防止它再这样做一次，`NSGO_NO_DELEGATE=1` 则改为运行被调用的那个 `nsgo`。在模块之外、在没有这个工具的模块中、在 NSGo 自己的模块中以及版本相同时，一切照旧。`nsgo version` 会说明运行的是哪一个，例如 `nsgo v0.4.0 (the module's; called as v0.3.1)`。
+安装在 `PATH` 上的 `nsgo` 不会用与项目所固定版本不同的版本构建项目。在 `go.mod` 以另一个版本声明工具 `github.com/nsgo-dev/nsgo/cmd/nsgo` 的模块中，`nsgo` 先以相同参数运行模块的 `nsgo`，即 `go tool nsgo`，由它解析内置命令和扩展，并以它的退出状态退出。它的环境中的 `NSGO_DELEGATED=1` 防止它再这样做一次，`NSGO_NO_DELEGATE=1` 则改为运行被调用的那个 `nsgo`。在模块之外、在没有这个工具的模块中、在 NSGo 自己的模块中以及版本相同时，一切照旧。比固定版本更新的内置命令不会交出去，例如在固定 0.3.4 的模块中运行 `add`：`nsgo` 以状态 1 退出，并给出引入它的 `go get`（[添加库](#添加库)）。`nsgo version` 会说明运行的是哪一个，例如 `nsgo v0.4.0 (the module's; called as v0.3.1)`。
 
 ## 安装程序
 

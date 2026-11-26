@@ -36,6 +36,8 @@ go tool nsgo init
 
 `go tool nsgo init -template tsx` scrive invece un'app TSX, e `-template mixed` un'app Go il cui punto di ingresso TSX usa componenti Go propri.
 
+Aggiungi le librerie con `nsgo add <modulo>` invece di `go get`: mostra cosa riceverebbero `go.mod` e `go.sum` prima di scriverli e non sposta mai l'NSGo del progetto fuori dalle sue release ([Aggiungere librerie](building.md#aggiungere-librerie)).
+
 ### Template da moduli Go
 
 Passa il percorso del modulo del template con una versione facoltativa. Se la versione è omessa, viene risolta nell'ultima versione che il proxy dei moduli di Go riesce a trovare.

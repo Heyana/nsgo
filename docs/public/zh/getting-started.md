@@ -65,6 +65,8 @@ cd hello
 go tool nsgo test
 ```
 
+添加库时用 `nsgo add <模块>` 代替 `go get`：它在写入之前先列出 `go.mod` 和 `go.sum` 将发生的变化，并且绝不会把项目的 NSGo 移到正式版本之外（[添加库](building.md#添加库)）。
+
 ### 来自 Go 模块的模板
 
 传入模板的模块路径，可以附带 `@version` 和 `#name`。省略版本时，使用 Go 模块代理能找到的最新版本。

@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## Aggiungere librerie
+
+Aggiungi una libreria, cioè un modulo Go, con `nsgo add`, un `go get` che mostra prima il suo piano:
+
+```sh
+nsgo add github.com/acme/chart           # la sua release più recente, a meno che go.mod non lo abbia già
+nsgo add github.com/acme/chart@v1.3.0    # questa versione, anche se inferiore a quella di go.mod
+nsgo add -dry-run github.com/acme/chart  # stampa il piano e non scrive nulla
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+Per ogni modulo, il piano indica la versione e la data di pubblicazione, e il proprietario: l'host e, su un servizio di hosting del codice come github.com, anche l'account, segnalato quando `go.mod` non ha ancora alcun modulo suo. Seguono, quando si applicano, gli avvisi di ritiro (retract) e di deprecazione, una versione senza tag di release, un `replace` del modulo e la riga di import del suo pacchetto radice. Vengono poi le righe di `go.mod` che cambiano, incluse `go` e `toolchain`, i comandi `go tool` che eseguirebbero un'altra versione, i moduli recuperati dai propri host e quelli i cui hash `go.sum` accetta senza la verifica del database dei checksum. `go get` marca come `// indirect` un modulo che nessun pacchetto importa ancora, e `go mod tidy` toglie il segno appena un pacchetto lo importa.
+
+In un terminale, `add` chiede prima di scrivere, e `-y` applica il piano senza chiedere; senza terminale e senza `-y`, non scrive nulla ed esce con stato 1. Un modulo che `go.mod` richiede già resta com'è e ne viene stampata la versione, a meno che non si digiti una versione.
+
+La pianificazione non esegue altro che il comando go, su copie di `go.mod` e `go.sum`:
+
+- con la toolchain che il modulo usa già e `GOTOOLCHAIN=local`, quindi non viene scaricata né eseguita nessun'altra toolchain;
+- tramite i proxy di moduli che `GOPROXY` elenca prima del suo primo `direct`, che diventa `off`, quindi solo i moduli contrassegnati da `GOPRIVATE` o `GONOPROXY` vengono recuperati dai propri host, con `GONOSUMDB` e `GOAUTH` invariati;
+- con `GOWORK=off`, quindi in un workspace pianifica `go.mod` per il solo modulo, come lo scrive `GOWORK=off go get`, e lo dice.
+
+Con o senza `-y`, `add` rifiuta:
+
+- di spostare il requisito di NSGo su una pseudo-versione o una pre-release, come farebbe una libreria che richiede un commit di NSGo; `go get github.com/nsgo-dev/nsgo@<versione>` ve lo sposta prima di proposito;
+- un modulo che richiede un Go più recente della toolchain del modulo; `go get go@<versione>` alza prima quella del modulo;
+- di abbassare un modulo tramite una query come `@latest`; digitare la versione lo abbassa, e il piano lo chiama downgrade.
+
+Scrive `go.mod` e `go.sum` solo se nessuno dei due è cambiato dalla pianificazione, ciascuno tramite un file temporaneo rinominato sopra di esso, e li ripristina entrambi in caso di errore o interruzione. In un modulo con una directory `vendor`, il piano indica `go mod vendor` come passo successivo.
+
+`add` è nuovo dopo NSGo 0.3.4. In un modulo che fissa la 0.3.4 o una release precedente, un `nsgo` installato non esegue per esso l'`nsgo` del modulo, ma stampa il `go get github.com/nsgo-dev/nsgo@<versione>` che porta `add`; lì, `go tool nsgo add` esegue l'`nsgo` fissato, che non conosce `add`.
+
 ## Librerie dai pacchetti Go
 
 Le app che importano `base/terminal` distribuiscono anche `libghostty-vt`: i pacchetti Windows e Linux collocano la libreria accanto all'eseguibile; i bundle macOS e iOS la firmano all'interno dei propri framework. [Incorporamento](embedding.md) illustra l'XCFramework di accompagnamento per gli host iOS.

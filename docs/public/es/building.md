@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## Añadir bibliotecas
+
+Añade una biblioteca, es decir, un módulo de Go, con `nsgo add`, que es un `go get` que muestra antes su plan:
+
+```sh
+nsgo add github.com/acme/chart           # su versión publicada más reciente, salvo que go.mod ya lo tenga
+nsgo add github.com/acme/chart@v1.3.0    # esta versión, aunque sea inferior a la de go.mod
+nsgo add -dry-run github.com/acme/chart  # muestra el plan y no escribe nada
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+Para cada módulo, el plan indica su versión y su fecha de publicación, y su propietario: el host y, en un servicio de alojamiento de código como github.com, también la cuenta, señalado cuando `go.mod` todavía no tiene ningún módulo suyo. Cuando corresponde, siguen los avisos de retirada (retract) y de obsolescencia, una versión sin etiqueta de release, un `replace` del módulo y la línea de import de su paquete raíz. Después vienen las líneas de `go.mod` que cambian, incluidas `go` y `toolchain`, los comandos `go tool` que pasarían a ejecutar otra versión, los módulos que se obtienen de sus propios hosts y aquellos cuyas sumas acepta `go.sum` sin que las compruebe la base de datos de sumas de verificación. `go get` marca con `// indirect` un módulo que todavía no importa ningún paquete, y `go mod tidy` quita la marca en cuanto alguno lo importa.
+
+En una terminal, `add` pregunta antes de escribir, y `-y` aplica el plan sin preguntar; sin terminal y sin `-y`, no escribe nada y termina con estado 1. Un módulo que `go.mod` ya requiere se deja como está y se muestra su versión, salvo que se escriba una versión.
+
+La planificación no ejecuta nada más que el comando go, sobre copias de `go.mod` y `go.sum`:
+
+- con la toolchain que el módulo ya usa y `GOTOOLCHAIN=local`, de modo que no se descarga ni se ejecuta ninguna otra toolchain;
+- a través de los proxies de módulos que `GOPROXY` enumera antes de su primer `direct`, que pasa a ser `off`, de modo que solo los módulos que marcan `GOPRIVATE` o `GONOPROXY` se obtienen de sus propios hosts, con `GONOSUMDB` y `GOAUTH` tal como están;
+- con `GOWORK=off`, de modo que en un espacio de trabajo planifica `go.mod` solo para el módulo, como lo escribe `GOWORK=off go get`, y lo indica.
+
+Con `-y` o sin él, `add` rechaza:
+
+- mover el requisito de NSGo a una pseudoversión o a una versión preliminar, como haría una biblioteca que requiere un commit de NSGo; `go get github.com/nsgo-dev/nsgo@<versión>` lo mueve allí a propósito antes;
+- un módulo que necesita un Go más reciente que la toolchain del módulo; `go get go@<versión>` sube antes la del módulo;
+- bajar un módulo mediante una consulta como `@latest`; escribir la versión lo baja, y el plan lo llama una degradación (downgrade).
+
+Escribe `go.mod` y `go.sum` solo si ninguno ha cambiado desde la planificación, cada uno mediante un archivo temporal que se renombra sobre él, y restaura ambos ante un error o una interrupción. En un módulo con un directorio `vendor`, el plan indica `go mod vendor` como siguiente paso.
+
+`add` es nuevo después de NSGo 0.3.4. En un módulo que fija la 0.3.4 o una versión anterior, un `nsgo` instalado no ejecuta para ello el `nsgo` del módulo, sino que muestra el `go get github.com/nsgo-dev/nsgo@<versión>` que trae `add`; allí, `go tool nsgo add` ejecuta el `nsgo` fijado, que no conoce `add`.
+
 ## Bibliotecas de paquetes Go
 
 Las aplicaciones que importan `base/terminal` también distribuyen `libghostty-vt`: los paquetes de Windows y Linux colocan la biblioteca junto al ejecutable; los paquetes de macOS e iOS la firman dentro de sus frameworks. [Incrustación](embedding.md) explica el XCFramework complementario para anfitriones iOS.

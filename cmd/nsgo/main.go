@@ -13,6 +13,8 @@
 //	                                                      on a platform
 //	nsgo check [-target T] [-jobs N] [dir]               vet the app and type-check its TSX
 //	nsgo i18n  [-source L] [dir]                         check catalogs and write their Go code
+//	nsgo add   [-dry-run] [-y] module[@version] ...      go get modules once their plan is shown and
+//	                                                      confirmed, never moving NSGo off its releases
 //	nsgo game  <command> [args]                          run the game layer's command: the module's go.mod
 //	                                                      tool, else go run of its release for this NSGo
 //	nsgo version                                         print which nsgo runs
@@ -171,6 +173,19 @@ func main() {
 		} else {
 			err = generateCatalog(ctx, dir, *source)
 		}
+	case "add":
+		fs := flag.NewFlagSet("add", flag.ExitOnError)
+		var o addOptions
+		fs.BoolVar(&o.dryRun, "dry-run", false, "print the plan and write nothing")
+		fs.BoolVar(&o.yes, "y", false, "apply the plan without asking")
+		if err = fs.Parse(args); err != nil {
+			break
+		}
+		var ask func(context.Context) (bool, error)
+		if stdinIsTerminal() {
+			ask = askToApply
+		}
+		err = addModules(ctx, o, fs.Args(), os.Stdout, ask)
 	case "game":
 		var code int
 		if code, err = runGame(ctx, args); err == nil {
@@ -295,6 +310,7 @@ func usage() {
   nsgo test  [-run REGEXP] [-bench REGEXP] [-junit FILE] [-trace] [-target macos|windows|linux|web|ios_simulator|tvos_simulator|android [-fps]] [dir | App.tsx < steps] [-- go test flags]
   nsgo check [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [dir]
   nsgo i18n  [-source L] [dir]
+  nsgo add   [-dry-run] [-y] module[@version] ...
   nsgo game  <command> [args]
   nsgo doctor
   nsgo version
@@ -312,6 +328,12 @@ dev and build take -name, -id and -version, which replace nsgo.yaml's
 values, and -h lists every flag. Put NSGo flags before the path.
 After --, headless tests accept go test flags; target tests accept
 -short, -count, -cpu, -parallel, -failfast and -fullpath.
+
+add is go get after a plan: it shows what go.mod and go.sum would
+get, refuses to move NSGo off its releases, and asks before writing;
+-y applies without asking, and without a terminal nothing is written
+unless -y is given. A module that pins an nsgo from before add is
+told which release to get instead.
 
 game runs the game layer's command, the module's go.mod tool, else
 go run of its release for this NSGo. Another command X runs the

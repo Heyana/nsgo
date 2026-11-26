@@ -36,6 +36,8 @@ go tool nsgo init
 
 `go tool nsgo init -template tsx` bunun yerine bir TSX uygulaması yazar; `-template mixed` ise TSX girişi kendi Go bileşenlerini kullanan bir Go uygulaması yazar.
 
+Kütüphaneleri `go get` yerine `nsgo add <modül>` ile ekleyin: yazmadan önce `go.mod` ve `go.sum`'ın ne alacağını gösterir ve projenin NSGo'sunu hiçbir zaman sürümlerinin dışına taşımaz ([Kütüphane ekleme](building.md#kütüphane-ekleme)).
+
 ### Go modüllerinden şablonlar
 
 Şablonun modül yolunu isteğe bağlı bir sürümle birlikte verin. Sürüm belirtilmezse Go'nun modül proxy'sinin bulabildiği en son sürüm kullanılır.

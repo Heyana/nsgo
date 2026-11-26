@@ -186,6 +186,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## Adding libraries
+
+Add a library, a Go module, with `nsgo add`, which is `go get` with its plan shown first:
+
+```sh
+nsgo add github.com/acme/chart           # its newest release, unless go.mod has it already
+nsgo add github.com/acme/chart@v1.3.0    # this version, even one below go.mod's
+nsgo add -dry-run github.com/acme/chart  # print the plan and write nothing
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+For each module, the plan names its version and publication date, and its owner: the host, and on a code host such as github.com the account, marked when `go.mod` has no module from it yet. Retraction and deprecation notices, a version with no release tag, a `replace` of the module and the import line of its root package follow when they apply. Then come the lines of `go.mod` that change, `go` and `toolchain` included, the `go tool` commands that would run another version, the modules fetched from their own hosts and those `go.sum` takes unchecked by the checksum database. `go get` marks a module no package imports yet `// indirect`, and `go mod tidy` drops the mark once one does.
+
+In a terminal, `add` asks before writing, and `-y` applies the plan without asking; without a terminal and without `-y`, it writes nothing and exits with status 1. A module `go.mod` already requires is left as it is, its version printed, unless a version is typed.
+
+Planning runs nothing but the go command, on copies of `go.mod` and `go.sum`:
+
+- with the toolchain the module already uses and `GOTOOLCHAIN=local`, so no other toolchain is downloaded or run;
+- through the module proxies `GOPROXY` lists before its first `direct`, which becomes `off`, so only the modules `GOPRIVATE` or `GONOPROXY` marks are fetched from their own hosts, with `GONOSUMDB` and `GOAUTH` as they are;
+- with `GOWORK=off`, so in a workspace it plans `go.mod` for the module alone, as `GOWORK=off go get` writes it, and says so.
+
+Whether or not `-y` is given, `add` refuses:
+
+- moving NSGo's requirement to a pseudo-version or a pre-release, as a library that requires a commit of NSGo would; `go get github.com/nsgo-dev/nsgo@<version>` moves it there on purpose first;
+- a module that needs a newer Go than the module's toolchain; `go get go@<version>` raises the module's first;
+- lowering a module through a query such as `@latest`; typing the version lowers it, and the plan calls it a downgrade.
+
+It writes `go.mod` and `go.sum` only when neither has changed since planning, each through a temporary file renamed over it, and puts both back on an error or an interrupt. In a module with a `vendor` directory, the plan names `go mod vendor` as the next step.
+
+`add` is new after NSGo 0.3.4. In a module that pins 0.3.4 or an earlier release, an installed `nsgo` does not run [the module's nsgo](#the-modules-nsgo) for it but prints the `go get github.com/nsgo-dev/nsgo@<version>` that brings `add`; there, `go tool nsgo add` runs the pinned nsgo, which does not know `add`.
+
 ## Libraries from Go packages
 
 Desktop app builds and target tests compile app code with `CGO_ENABLED=0`, as they do NSGo itself. If an app package contains cgo files, the build stops and names them instead of silently dropping them. Use purego and `nsgo-natives.yaml` for native libraries.
@@ -235,7 +280,7 @@ A library ships one as a Go main package whose directory is the command's name, 
 
 ### The module's nsgo
 
-An `nsgo` installed on `PATH` never builds a project with another version than the one the project pins. In a module whose `go.mod` declares the tool `github.com/nsgo-dev/nsgo/cmd/nsgo` at another version, `nsgo` first runs the module's, `go tool nsgo` with the same arguments, which then resolves the built-in commands and extensions, and exits with its status. `NSGO_DELEGATED=1` in its environment keeps it from doing the same again, and `NSGO_NO_DELEGATE=1` runs the `nsgo` called instead. Outside a module, in one without the tool, in NSGo's own module and at the same version, nothing changes. `nsgo version` says which one ran, such as `nsgo v0.4.0 (the module's; called as v0.3.1)`.
+An `nsgo` installed on `PATH` never builds a project with another version than the one the project pins. In a module whose `go.mod` declares the tool `github.com/nsgo-dev/nsgo/cmd/nsgo` at another version, `nsgo` first runs the module's, `go tool nsgo` with the same arguments, which then resolves the built-in commands and extensions, and exits with its status. `NSGO_DELEGATED=1` in its environment keeps it from doing the same again, and `NSGO_NO_DELEGATE=1` runs the `nsgo` called instead. Outside a module, in one without the tool, in NSGo's own module and at the same version, nothing changes. A built-in command newer than the pinned release, such as `add` in a module that pins 0.3.4, is not handed on: `nsgo` exits with status 1 and names the `go get` that brings it ([Adding libraries](#adding-libraries)). `nsgo version` says which one ran, such as `nsgo v0.4.0 (the module's; called as v0.3.1)`.
 
 ## Installers
 

@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## 라이브러리 추가
+
+라이브러리, 즉 Go 모듈은 먼저 계획을 보여 주는 `go get`인 `nsgo add`로 추가합니다:
+
+```sh
+nsgo add github.com/acme/chart           # 최신 릴리스, go.mod에 이미 있으면 그대로
+nsgo add github.com/acme/chart@v1.3.0    # 이 버전, go.mod의 버전보다 낮아도
+nsgo add -dry-run github.com/acme/chart  # 계획만 출력하고 아무것도 쓰지 않음
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+계획은 모듈마다 버전과 게시일, 그리고 소유자를 보여 줍니다. 소유자는 호스트이며, github.com 같은 코드 호스팅 서비스에서는 계정까지 포함하고, `go.mod`에 아직 그 소유자의 모듈이 없으면 그렇다고 표시합니다. 해당하는 경우 철회(retract)와 지원 중단(deprecation) 알림, 릴리스 태그가 없는 버전, 모듈의 `replace`, 루트 패키지의 import 줄이 이어집니다. 그다음에는 `go`와 `toolchain`을 포함해 바뀌는 `go.mod`의 줄, 다른 버전을 실행하게 될 `go tool` 명령, 자체 호스트에서 가져오는 모듈, 그리고 체크섬 데이터베이스의 확인 없이 `go.sum`이 받아들이는 모듈이 나옵니다. `go get`은 아직 어떤 패키지도 import하지 않는 모듈을 `// indirect`로 표시하며, 패키지가 import하면 `go mod tidy`가 이 표시를 없앱니다.
+
+터미널에서는 `add`가 쓰기 전에 묻고, `-y`는 묻지 않고 계획을 적용합니다. 터미널도 `-y`도 없으면 아무것도 쓰지 않고 상태 1로 종료합니다. `go.mod`가 이미 요구하는 모듈은 버전을 지정하지 않는 한 그대로 두고 버전만 출력합니다.
+
+계획 수립은 `go.mod`와 `go.sum`의 사본에서 go 명령만 실행합니다:
+
+- 모듈이 이미 사용하는 툴체인과 `GOTOOLCHAIN=local`로 실행하므로 다른 툴체인을 내려받거나 실행하지 않습니다.
+- `GOPROXY`의 첫 번째 `direct` 앞에 나열된 모듈 프록시를 거치며, `direct`는 `off`가 되므로 `GOPRIVATE`나 `GONOPROXY`가 표시한 모듈만 자체 호스트에서 가져옵니다. `GONOSUMDB`와 `GOAUTH`는 그대로 둡니다.
+- `GOWORK=off`로 실행하므로 워크스페이스 안에서도 `GOWORK=off go get`이 쓰는 대로 그 모듈만을 위한 `go.mod`를 계획하고, 그렇다고 알려 줍니다.
+
+`-y` 여부와 관계없이 `add`는 다음을 거부합니다:
+
+- NSGo 요구 사항을 의사 버전(pseudo-version)이나 프리릴리스로 옮기는 것. NSGo의 커밋을 요구하는 라이브러리가 그렇게 만듭니다. 의도적으로 옮기려면 먼저 `go get github.com/nsgo-dev/nsgo@<버전>`을 실행합니다.
+- 모듈의 툴체인보다 새로운 Go가 필요한 모듈. 먼저 `go get go@<버전>`으로 모듈의 Go 버전을 올립니다.
+- `@latest` 같은 쿼리로 모듈 버전을 낮추는 것. 버전을 직접 입력하면 낮출 수 있으며, 계획은 이를 다운그레이드라고 부릅니다.
+
+계획 수립 이후 `go.mod`와 `go.sum`이 둘 다 바뀌지 않았을 때만 각각 임시 파일에 쓴 뒤 이름을 바꿔 덮어쓰며, 오류나 중단이 생기면 두 파일을 모두 원래대로 되돌립니다. `vendor` 디렉터리가 있는 모듈에서는 계획이 다음 단계로 `go mod vendor`를 알려 줍니다.
+
+`add`는 NSGo 0.3.4 이후에 추가되었습니다. 0.3.4 또는 그 이전 릴리스를 고정한 모듈에서는 설치된 `nsgo`가 이 명령을 위해 모듈의 `nsgo`를 실행하지 않고, `add`를 가져오는 `go get github.com/nsgo-dev/nsgo@<버전>`을 출력합니다. 그런 모듈에서 `go tool nsgo add`는 `add`를 모르는 고정된 `nsgo`를 실행합니다.
+
 ## Go 패키지의 라이브러리
 
 `base/terminal`을 임포트하는 앱은 `libghostty-vt`도 함께 배포합니다. Windows와 Linux 패키지는 실행 파일 옆에 라이브러리를 배치하고, macOS와 iOS 번들은 프레임워크 내부에 서명해 넣습니다. [임베딩](embedding.md)에서 iOS 호스트용 동반 XCFramework를 설명합니다.

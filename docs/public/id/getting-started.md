@@ -36,6 +36,8 @@ go tool nsgo init
 
 `go tool nsgo init -template tsx` membuat aplikasi TSX, dan `-template mixed` membuat aplikasi Go yang entry TSX-nya menggunakan komponen Go miliknya sendiri.
 
+Tambahkan pustaka dengan `nsgo add <modul>` alih-alih `go get`: perintah ini menampilkan apa yang akan diterima `go.mod` dan `go.sum` sebelum menulisnya, dan tidak pernah memindahkan NSGo proyek keluar dari rilisnya ([Menambahkan pustaka](building.md#menambahkan-pustaka)).
+
 ### Templat dari modul Go
 
 Berikan path modul templat beserta versi opsionalnya. Versi yang dikosongkan akan merujuk ke versi terbaru yang dapat ditemukan oleh proxy modul Go.

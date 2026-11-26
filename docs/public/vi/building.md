@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## Thêm thư viện
+
+Thêm một thư viện, tức một module Go, bằng `nsgo add`, chính là `go get` nhưng cho xem kế hoạch trước:
+
+```sh
+nsgo add github.com/acme/chart           # bản phát hành mới nhất, trừ khi go.mod đã có nó
+nsgo add github.com/acme/chart@v1.3.0    # phiên bản này, kể cả khi thấp hơn bản trong go.mod
+nsgo add -dry-run github.com/acme/chart  # in kế hoạch và không ghi gì
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+Với mỗi module, kế hoạch nêu phiên bản và ngày phát hành, cùng chủ sở hữu của nó: host, và trên các dịch vụ lưu trữ mã như github.com thì cả tài khoản, được đánh dấu khi `go.mod` chưa có module nào của chủ sở hữu đó. Khi áp dụng, tiếp theo là các thông báo rút lại (retract) và ngừng hỗ trợ (deprecation), phiên bản không có tag phát hành, `replace` của module và dòng import của gói gốc. Sau đó là các dòng của `go.mod` thay đổi, gồm cả `go` và `toolchain`, các lệnh `go tool` sẽ chạy phiên bản khác, các module được lấy từ host riêng của chúng và những module có hash được `go.sum` nhận mà không qua kiểm tra của cơ sở dữ liệu checksum. `go get` đánh dấu `// indirect` cho module chưa có gói nào import, và `go mod tidy` bỏ dấu đó khi đã có gói import nó.
+
+Trong terminal, `add` hỏi trước khi ghi, và `-y` áp dụng kế hoạch mà không hỏi; không có terminal và không có `-y` thì nó không ghi gì và thoát với trạng thái 1. Module mà `go.mod` đã yêu cầu được giữ nguyên và in ra phiên bản, trừ khi bạn gõ một phiên bản.
+
+Việc lập kế hoạch chỉ chạy lệnh go, trên bản sao của `go.mod` và `go.sum`:
+
+- với toolchain mà module đang dùng và `GOTOOLCHAIN=local`, nên không có toolchain nào khác được tải về hay chạy;
+- qua các proxy module mà `GOPROXY` liệt kê trước `direct` đầu tiên, `direct` được đổi thành `off`, nên chỉ những module được `GOPRIVATE` hoặc `GONOPROXY` đánh dấu mới được lấy từ host riêng của chúng, còn `GONOSUMDB` và `GOAUTH` giữ nguyên;
+- với `GOWORK=off`, nên trong một workspace nó lập kế hoạch `go.mod` cho riêng module đó, giống như `GOWORK=off go get` ghi, và có nói rõ điều này.
+
+Dù có `-y` hay không, `add` từ chối:
+
+- chuyển yêu cầu NSGo sang một pseudo-version hoặc bản tiền phát hành, như một thư viện yêu cầu một commit của NSGo sẽ làm; `go get github.com/nsgo-dev/nsgo@<phiên bản>` chủ ý chuyển nó sang đó trước;
+- một module cần Go mới hơn toolchain của module; `go get go@<phiên bản>` nâng của module lên trước;
+- hạ phiên bản một module qua một truy vấn như `@latest`; gõ phiên bản cụ thể mới hạ nó, và kế hoạch gọi đó là hạ cấp (downgrade).
+
+Nó chỉ ghi `go.mod` và `go.sum` khi cả hai đều chưa thay đổi kể từ lúc lập kế hoạch, mỗi tệp qua một tệp tạm được đổi tên đè lên, và khôi phục cả hai khi có lỗi hoặc bị ngắt. Với module có thư mục `vendor`, kế hoạch nêu `go mod vendor` là bước tiếp theo.
+
+`add` có từ sau NSGo 0.3.4. Trong module cố định 0.3.4 hoặc một bản phát hành cũ hơn, `nsgo` đã cài không chạy `nsgo` của module cho lệnh này mà in ra `go get github.com/nsgo-dev/nsgo@<phiên bản>` mang `add` đến; ở đó, `go tool nsgo add` chạy `nsgo` được cố định, vốn không biết `add`.
+
 ## Thư viện từ các gói Go
 
 Các ứng dụng import `base/terminal` cũng đóng gói kèm `libghostty-vt`: gói Windows và Linux đặt thư viện bên cạnh tệp thực thi; gói macOS và iOS ký nó vào trong các framework của mình. [Nhúng](embedding.md) giải thích XCFramework đi kèm cho ứng dụng chủ iOS.

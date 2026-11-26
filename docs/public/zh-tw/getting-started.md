@@ -36,6 +36,8 @@ go tool nsgo init
 
 改用 `go tool nsgo init -template tsx` 則會產生 TSX 應用程式，而 `-template mixed` 會產生一個以 TSX 為進入點並使用自有 Go 元件的 Go 應用程式。
 
+新增函式庫時，請用 `nsgo add <模組>` 取代 `go get`：它會在寫入前先列出 `go.mod` 與 `go.sum` 將有的變化，而且絕不會把專案的 NSGo 移到正式版本之外（[新增函式庫](building.md#新增函式庫)）。
+
 ### 來自 Go 模組的範本
 
 傳入範本的模組路徑與選用的版本號。若省略版本號，將會解析為 Go 模組代理能找到的最新版本。

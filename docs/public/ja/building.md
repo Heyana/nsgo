@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## ライブラリの追加
+
+ライブラリ、つまり Go モジュールは、先に計画を見せる `go get` である `nsgo add` で追加します：
+
+```sh
+nsgo add github.com/acme/chart           # 最新のリリース。go.mod に既にあればそのまま
+nsgo add github.com/acme/chart@v1.3.0    # このバージョン。go.mod のものより低くても
+nsgo add -dry-run github.com/acme/chart  # 計画を表示するだけで何も書き込まない
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+計画はモジュールごとに、バージョンと公開日、そして所有者を示します。所有者はホストで、github.com のようなコードホスティングサービスではアカウントも含み、`go.mod` にまだその所有者のモジュールがなければその旨を示します。該当する場合は、撤回（retract）と非推奨の通知、リリースタグのないバージョン、そのモジュールの `replace`、ルートパッケージの import 行が続きます。その後に、`go` と `toolchain` を含む `go.mod` の変更行、別のバージョンを実行することになる `go tool` コマンド、自身のホストから取得されるモジュール、チェックサムデータベースの検証なしに `go.sum` が受け入れるモジュールが並びます。`go get` はまだどのパッケージもインポートしていないモジュールに `// indirect` を付け、インポートされると `go mod tidy` がその印を外します。
+
+ターミナルでは `add` は書き込む前に確認し、`-y` は確認せずに計画を適用します。ターミナルがなく `-y` もない場合は何も書き込まず、ステータス 1 で終了します。`go.mod` が既に要求しているモジュールは、バージョンを指定しない限りそのままにして、そのバージョンを表示します。
+
+計画の作成では、`go.mod` と `go.sum` のコピーに対して go コマンド以外は何も実行しません：
+
+- モジュールが既に使っているツールチェーンと `GOTOOLCHAIN=local` で実行するため、ほかのツールチェーンをダウンロードしたり実行したりしません。
+- `GOPROXY` の最初の `direct` より前に並ぶモジュールプロキシを経由し、`direct` は `off` になるため、`GOPRIVATE` か `GONOPROXY` が指定したモジュールだけが自身のホストから取得されます。`GONOSUMDB` と `GOAUTH` はそのままです。
+- `GOWORK=off` で実行するため、ワークスペース内でも `GOWORK=off go get` が書くとおりにそのモジュール単体の `go.mod` を計画し、そのことを示します。
+
+`-y` の有無にかかわらず、`add` は次を拒否します：
+
+- NSGo の要求を疑似バージョンやプレリリースに移すこと。NSGo のコミットを要求するライブラリはそうします。意図して移すには、先に `go get github.com/nsgo-dev/nsgo@<バージョン>` を実行します。
+- モジュールのツールチェーンより新しい Go を必要とするモジュール。先に `go get go@<バージョン>` でモジュールの Go を上げます。
+- `@latest` のようなクエリでモジュールのバージョンを下げること。バージョンを明示すれば下げられ、計画はそれをダウングレードと呼びます。
+
+`go.mod` と `go.sum` は、計画の作成後にどちらも変わっていない場合にだけ、それぞれ一時ファイルに書いてから名前を変えて上書きし、エラーや中断が起きれば両方を元に戻します。`vendor` ディレクトリのあるモジュールでは、計画が次の手順として `go mod vendor` を示します。
+
+`add` は NSGo 0.3.4 の後に追加されました。0.3.4 以前のリリースに固定したモジュールでは、インストール済みの `nsgo` はこのコマンドのためにモジュールの `nsgo` を実行せず、`add` をもたらす `go get github.com/nsgo-dev/nsgo@<バージョン>` を表示します。そこでは `go tool nsgo add` は固定された `nsgo` を実行し、それは `add` を知りません。
+
 ## Go パッケージ由来のライブラリ
 
 `base/terminal` をインポートするアプリには libghostty-vt も同梱されます。Windows と Linux パッケージでは実行ファイルの隣に配置され、macOS と iOS バンドルではフレームワーク内に署名されます。iOS ホスト向けのコンパニオン XCFramework については[組み込み](embedding.md)で説明しています。

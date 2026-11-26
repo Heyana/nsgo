@@ -36,6 +36,8 @@ go tool nsgo init
 
 `go tool nsgo init -template tsx`는 대신 TSX 앱을 생성하며, `-template mixed`는 TSX 진입점이 자체 Go 컴포넌트를 사용하는 Go 앱을 생성합니다.
 
+라이브러리는 `go get` 대신 `nsgo add <모듈>`로 추가하세요. 쓰기 전에 `go.mod`와 `go.sum`에 무엇이 들어갈지 보여 주며, 프로젝트의 NSGo를 릴리스가 아닌 버전으로 옮기지 않습니다([라이브러리 추가](building.md#라이브러리-추가)).
+
 ### Go 모듈의 템플릿
 
 선택적 버전과 함께 템플릿의 모듈 경로를 전달합니다. 버전을 생략하면 Go 모듈 프록시가 찾을 수 있는 최신 버전으로 결정됩니다.

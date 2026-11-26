@@ -181,6 +181,51 @@ licenses:
   allow: [example.org/reviewed-module]
 ```
 
+## Menambahkan pustaka
+
+Tambahkan pustaka, yaitu sebuah modul Go, dengan `nsgo add`, yakni `go get` yang menampilkan rencananya terlebih dahulu:
+
+```sh
+nsgo add github.com/acme/chart           # rilis terbarunya, kecuali go.mod sudah memilikinya
+nsgo add github.com/acme/chart@v1.3.0    # versi ini, meskipun lebih rendah dari versi di go.mod
+nsgo add -dry-run github.com/acme/chart  # cetak rencananya dan tidak menulis apa pun
+```
+
+```text
+github.com/acme/chart
+  module     github.com/acme/chart v1.3.0, published 2026-11-20
+  owner      github.com/acme, the first module from it in go.mod
+  next       import "github.com/acme/chart"
+
+example.com/hello
+  go.mod     + require github.com/acme/chart v1.3.0 // indirect
+             + require example.com/units v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.4.0 => v0.4.2, a release
+  go.sum     + 6 lines
+  tools      go tool nsgo then runs v0.4.2, and so does an installed nsgo here
+Apply these changes? [y/N]
+```
+
+Untuk setiap modul, rencana menyebutkan versi dan tanggal terbitnya, serta pemiliknya: host-nya, dan pada layanan hosting kode seperti github.com juga akunnya, ditandai bila `go.mod` belum memiliki modul dari pemilik itu. Pemberitahuan penarikan (retract) dan penghentian (deprecation), versi tanpa tag rilis, `replace` atas modul tersebut, dan baris import paket akarnya menyusul bila berlaku. Lalu muncul baris-baris `go.mod` yang berubah, termasuk `go` dan `toolchain`, perintah `go tool` yang akan menjalankan versi lain, modul yang diambil dari host-nya sendiri, dan modul yang hash-nya diterima `go.sum` tanpa diperiksa oleh basis data checksum. `go get` menandai modul yang belum diimpor paket mana pun dengan `// indirect`, dan `go mod tidy` menghapus tanda itu begitu ada paket yang mengimpornya.
+
+Di terminal, `add` bertanya sebelum menulis, dan `-y` menerapkan rencana tanpa bertanya; tanpa terminal dan tanpa `-y`, ia tidak menulis apa pun dan keluar dengan status 1. Modul yang sudah dibutuhkan `go.mod` dibiarkan apa adanya dan versinya dicetak, kecuali sebuah versi diketikkan.
+
+Perencanaan tidak menjalankan apa pun selain perintah go, pada salinan `go.mod` dan `go.sum`:
+
+- dengan toolchain yang sudah dipakai modul dan `GOTOOLCHAIN=local`, sehingga tidak ada toolchain lain yang diunduh atau dijalankan;
+- melalui proxy modul yang dicantumkan `GOPROXY` sebelum `direct` pertamanya, yang diubah menjadi `off`, sehingga hanya modul yang ditandai `GOPRIVATE` atau `GONOPROXY` yang diambil dari host-nya sendiri, dengan `GONOSUMDB` dan `GOAUTH` tetap apa adanya;
+- dengan `GOWORK=off`, sehingga di dalam workspace ia merencanakan `go.mod` hanya untuk modul itu sendiri, sebagaimana `GOWORK=off go get` menuliskannya, dan menyebutkannya.
+
+Dengan atau tanpa `-y`, `add` menolak:
+
+- memindahkan kebutuhan NSGo ke pseudo-version atau pra-rilis, seperti yang dilakukan pustaka yang membutuhkan sebuah commit NSGo; `go get github.com/nsgo-dev/nsgo@<versi>` memindahkannya ke sana dengan sengaja terlebih dahulu;
+- modul yang membutuhkan Go yang lebih baru daripada toolchain modul; `go get go@<versi>` menaikkan milik modul terlebih dahulu;
+- menurunkan versi modul melalui kueri seperti `@latest`; mengetikkan versinya akan menurunkannya, dan rencana menyebutnya downgrade.
+
+Ia menulis `go.mod` dan `go.sum` hanya jika keduanya tidak berubah sejak perencanaan, masing-masing melalui berkas sementara yang diganti namanya untuk menimpanya, dan mengembalikan keduanya bila terjadi galat atau interupsi. Pada modul yang memiliki direktori `vendor`, rencana menyebut `go mod vendor` sebagai langkah berikutnya.
+
+`add` baru ada setelah NSGo 0.3.4. Di modul yang menetapkan 0.3.4 atau rilis yang lebih lama, `nsgo` yang terpasang tidak menjalankan `nsgo` milik modul untuknya, melainkan mencetak `go get github.com/nsgo-dev/nsgo@<versi>` yang membawa `add`; di sana, `go tool nsgo add` menjalankan `nsgo` yang ditetapkan, yang tidak mengenal `add`.
+
 ## Pustaka dari paket Go
 
 Aplikasi yang mengimpor `base/terminal` juga menyertakan `libghostty-vt`: paket Windows dan Linux menaruh pustaka ini di sebelah berkas eksekusi; bundel macOS dan iOS menandatanganinya ke dalam framework masing-masing. [Menyematkan](embedding.md) menjelaskan XCFramework pendamping untuk host iOS.
