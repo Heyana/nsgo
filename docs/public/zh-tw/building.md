@@ -230,7 +230,7 @@ Apply these changes? [y/N]
 
 匯入 `base/terminal` 的應用程式同時會隨附 libghostty-vt：Windows 與 Linux 封裝檔會將該函式庫置於執行檔旁；macOS 與 iOS 套件則會將其簽署並包入框架中。[嵌入指南](embedding.md)說明了 iOS 宿主所需的配套 XCFramework。
 
-相依套件可以在 `nsgo-natives.yaml` 中宣告預先建置的桌面共用函式庫，自該檔案的版本 2 起也能宣告 iOS 與 tvOS 框架。NSGo 會驗證其 SHA-256 雜湊值、在簽署前將其複製進應用程式，並將其納入安裝程式中；應用程式作者無需執行任何額外步驟。[原生函式庫](native-libraries.md)說明了套件作者使用的格式與載入路徑。
+相依套件可以在 `nsgo-natives.yaml` 中宣告預先建置的桌面共用函式庫，自該檔案的版本 2 起也能宣告 iOS 與 tvOS 框架。NSGo 會驗證其 SHA-256 雜湊值、在簽署前將其複製進應用程式，並將其納入安裝程式中；應用程式作者無需執行任何額外步驟。自版本 2 起，相依套件還能宣告 Linux 套件，`.deb` 與 Arch 套件會在應用程式本身的 `linux.depends` 與 `linux.recommends` 之後相依或建議這些套件。[原生函式庫](native-libraries.md)說明了套件作者使用的格式與載入路徑。
 
 ## 命令列程式
 

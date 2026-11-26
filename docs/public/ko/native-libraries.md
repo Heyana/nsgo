@@ -1,11 +1,11 @@
 ---
 title: 네이티브 라이브러리
-description: NSGo의 일반 패키징, 라이선스 및 서명 단계를 거쳐 Go 패키지와 함께 사전 빌드된 공유 라이브러리와 Apple 프레임워크를 배포합니다.
+description: NSGo의 일반 패키징, 라이선스 및 서명 단계를 거쳐 Go 패키지와 함께 사전 빌드된 공유 라이브러리와 Apple 프레임워크를 배포하고, 이들에 필요한 Linux 패키지를 지정합니다.
 group: 툴체인
 order: 23
 ---
 
-Go 패키지는 패키지 디렉터리에 `nsgo-natives.yaml`을 두어 purego로 로드하는 공유 라이브러리를 함께 배포할 수 있으며, 버전 2부터는 iOS와 tvOS용 프레임워크도 배포할 수 있습니다. 앱이 해당 패키지를 임포트하면 NSGo는 타겟에 맞는 선언을 선택하고, 파일을 검증한 뒤 서명 및 인스톨러 생성 단계 전에 포함합니다. 앱에는 별도의 설정이나 패키징 명령이 필요하지 않습니다.
+Go 패키지는 패키지 디렉터리에 `nsgo-natives.yaml`을 두어 purego로 로드하는 공유 라이브러리를 함께 배포할 수 있으며, 버전 2부터는 iOS와 tvOS용 프레임워크도 배포하고 필요한 Linux 패키지도 지정할 수 있습니다. 앱이 해당 패키지를 임포트하면 NSGo는 타겟에 맞는 선언을 선택하고, 파일을 검증한 뒤 서명 및 인스톨러 생성 단계 전에 포함합니다. 앱에는 별도의 설정이나 패키징 명령이 필요하지 않습니다.
 
 데스크톱 앱 빌드와 타겟 테스트는 앱 코드에 대해 cgo를 비활성화합니다. 네이티브 코드는 purego와 `nsgo-natives.yaml`에 선언한 라이브러리를 사용해야 합니다. NSGo는 cgo 파일이 들어 있는 앱 패키지를 빌드가 시작되기 전에 거부합니다.
 
@@ -81,6 +81,34 @@ NSGo는 각 프레임워크의 바이너리를 검사하며, 다음 조건을 �
 NSGo는 프레임워크의 `Info.plist`를 작성합니다. 그 `CFBundleIdentifier`는 앱 ID, 점 하나, 소문자로 쓴 `Name`으로 이루어지며, 플랫폼과 앱의 최소 OS도 함께 기록됩니다. 시뮬레이터 빌드는 프레임워크에 애드혹 서명을 합니다. 기기 빌드는 서명을 앱의 서명 절차에 맡깁니다. `sign.profile`은 앱보다 먼저 앱의 ID로 프레임워크에 서명하며, 기기에서 `nsgo build -run`과 `nsgo dev`를 실행할 때는 Xcode가 같은 방식으로 서명합니다. 앱의 실행 파일에는 실행 경로가 없으므로, 피어 프레임워크를 로드하는 프레임워크가 `Frameworks`에서 피어를 찾으려면 `@loader_path/..` 또는 `@executable_path/Frameworks` 실행 경로가 필요합니다. 또한 `/usr/lib/swift` 같은 시스템 실행 경로가 없으면 `@rpath`를 통해 그 밖의 것을 로드할 수 없습니다. 번들 ID가 대소문자 구분 없이 앱의 다른 번들과 겹치는 프레임워크, 예를 들어 NSGo의 `NSGoStoreKit.framework` 옆의 `StoreKit.framework`는 빌드를 중단시킵니다.
 
 앱이 iOS 프레임워크를 선언하는 패키지를 링크하면 `nsgo build -embed`는 해당 패키지 이름을 알리며 중단합니다. 호스트 앱용 XCFramework는 아직 이 프레임워크들을 함께 담을 수 없습니다.
+
+## Linux 패키지
+
+버전 2부터 `linux`는 Linux 아키텍처별로, 해당 Go 패키지를 링크하는 앱의 Debian 패키지와 Arch 패키지가 의존하고 권장하는 시스템 패키지를 지정합니다.
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux`는 선택 사항입니다. 키는 `linux_x64`와 `linux_arm64`이므로, 한 아키텍처에서는 라이브러리를 번들하고 다른 아키텍처에서는 시스템의 라이브러리를 로드하는 패키지도 각각에 필요한 것을 지정할 수 있습니다.
+- `depends`와 `recommends`는 각각 `deb`와 `arch` 목록을 받으며, [nsgo.yaml](building.md#nsgoyaml)에 있는 앱의 `linux.depends` 및 `linux.recommends`와 형식이 같습니다. 각 항목은 `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)`, `libpulse: audio output`처럼 dpkg나 pacman이 쓰는 형식으로 적습니다.
+- `.deb`의 `Depends`와 `Recommends`, Arch 패키지의 `depend` 및 `optdepend` 줄에는 NSGo 자체의 패키지, 앱의 패키지, 빌드가 링크하는 각 Go 패키지의 항목이 차례로 들어가며, Go 패키지의 항목은 Go가 나열하는 순서를 따르고 이미 나열된 항목은 제외됩니다. 타겟이나 빌드 태그로 제외된 Go 패키지는 아무것도 추가하지 않습니다.
+- 빈 항목이나 줄바꿈이 포함된 항목이 있으면 해당 Go 패키지 이름을 알리며 빌드가 중단됩니다. 버전 1 파일의 `linux`나 이 두 키 이외의 키도 마찬가지입니다.
+- AppImage와 스토어 빌드의 Flatpak은 `linux`에서 아무것도 가져오지 않습니다.
 
 ## 벤더링 시 파일 보존
 

@@ -230,7 +230,7 @@ Ob mit oder ohne `-y`, `add` lehnt ab:
 
 Apps, die `base/terminal` importieren, liefern zusätzlich `libghostty-vt` aus: Windows- und Linux-Pakete legen die Bibliothek neben die ausführbare Datei; macOS- und iOS-Bundles signieren sie in ihre Frameworks. [Einbetten](embedding.md) erläutert das begleitende XCFramework für iOS-Hosts.
 
-Eine Abhängigkeit kann vorgebaute Desktop-Shared-Libraries in `nsgo-natives.yaml` deklarieren, ab dessen Version 2 auch Frameworks für iOS und tvOS. NSGo prüft deren SHA-256-Prüfsumme, kopiert sie vor dem Signieren in die App und nimmt sie in die Installer auf; für Autorinnen und Autoren der App ist kein zusätzlicher Schritt nötig. [Native Bibliotheken](native-libraries.md) beschreibt Format und Ladepfade für Paketautorinnen und -autoren.
+Eine Abhängigkeit kann vorgebaute Desktop-Shared-Libraries in `nsgo-natives.yaml` deklarieren, ab dessen Version 2 auch Frameworks für iOS und tvOS. NSGo prüft deren SHA-256-Prüfsumme, kopiert sie vor dem Signieren in die App und nimmt sie in die Installer auf; für Autorinnen und Autoren der App ist kein zusätzlicher Schritt nötig. Ab Version 2 kann sie auch Linux-Pakete nennen, von denen das `.deb` und das Arch-Paket dann nach den eigenen `linux.depends` und `linux.recommends` der App abhängen oder die sie empfehlen. [Native Bibliotheken](native-libraries.md) beschreibt Format und Ladepfade für Paketautorinnen und -autoren.
 
 ## Befehle
 

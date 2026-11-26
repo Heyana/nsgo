@@ -1,11 +1,11 @@
 ---
 title: ネイティブライブラリ
-description: NSGo の通常のパッケージ化、ライセンス、署名手順を通じて、ビルド済みの共有ライブラリと Apple のフレームワークを Go パッケージに同梱して配布します。
+description: NSGo の通常のパッケージ化、ライセンス、署名手順を通じて、ビルド済みの共有ライブラリと Apple のフレームワークを Go パッケージに同梱して配布し、それらが必要とする Linux パッケージを指定します。
 group: ツールチェーン
 order: 23
 ---
 
-Go パッケージは、パッケージディレクトリに `nsgo-natives.yaml` を配置することで、purego 経由で読み込む共有ライブラリを同梱して配布できます。バージョン 2 からは iOS と tvOS のフレームワークも配布できます。アプリがそのパッケージをインポートすると、NSGo はターゲットに応じた宣言を選択し、ファイルを検証して、署名やインストーラー作成の前にそれらを組み込みます。アプリ側に追加の設定やパッケージ化コマンドは不要です。
+Go パッケージは、パッケージディレクトリに `nsgo-natives.yaml` を配置することで、purego 経由で読み込む共有ライブラリを同梱して配布できます。バージョン 2 からは iOS と tvOS のフレームワークも配布でき、必要な Linux パッケージも指定できます。アプリがそのパッケージをインポートすると、NSGo はターゲットに応じた宣言を選択し、ファイルを検証して、署名やインストーラー作成の前にそれらを組み込みます。アプリ側に追加の設定やパッケージ化コマンドは不要です。
 
 デスクトップアプリのビルドとターゲットでのテストでは、アプリのコードに対して cgo が無効になります。ネイティブコードには purego と、`nsgo-natives.yaml` で宣言したライブラリを使用してください。NSGo は cgo ファイルを含むアプリのパッケージを、ビルドの開始前に拒否します。
 
@@ -81,6 +81,34 @@ NSGo は各フレームワークのバイナリを検査し、以下の条件を
 NSGo はフレームワークの `Info.plist` を書き込みます。その `CFBundleIdentifier` はアプリの ID、ドット、小文字の `Name` を連ねたもので、プラットフォームとアプリの最小 OS も記載されます。シミュレーター向けのビルドはフレームワークにアドホック署名を行います。実機向けのビルドは署名をアプリの署名手順に委ねます。`sign.profile` はアプリより先に、アプリと同じ ID でフレームワークに署名します。実機での `nsgo build -run` と `nsgo dev` では Xcode が同様に署名します。アプリの実行ファイルには実行パスがないため、関連フレームワークを読み込むフレームワークが `Frameworks` 内でそれらを見つけるには `@loader_path/..` または `@executable_path/Frameworks` の実行パスが必要です。また、`/usr/lib/swift` のようなシステムの実行パスがない限り、`@rpath` 経由でそれ以外のものを読み込むことはできません。バンドル ID が（大文字小文字を区別せず）アプリ内の別のバンドルと重なるフレームワーク、たとえば NSGo の `NSGoStoreKit.framework` と並ぶ `StoreKit.framework` は、ビルドを停止させます。
 
 アプリが iOS のフレームワークを宣言するパッケージをリンクしている場合、`nsgo build -embed` はそのパッケージ名を示して停止します。ホストアプリ向けの XCFramework はまだそれらを同梱できません。
+
+## Linux パッケージ
+
+バージョン 2 からは、`linux` で Linux のアーキテクチャごとに、その Go パッケージをリンクするアプリの Debian パッケージと Arch パッケージが依存し推奨するシステムパッケージを指定します。
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` は省略可能です。キーは `linux_x64` と `linux_arm64` なので、一方のアーキテクチャではライブラリを同梱し、もう一方ではシステムのものを読み込むパッケージも、それぞれに必要なものを指定できます。
+- `depends` と `recommends` はそれぞれ `deb` と `arch` のリストを取り、[nsgo.yaml](building.md#nsgoyaml) にあるアプリの `linux.depends` と `linux.recommends` と同じ形です。各エントリは `libsoup-3.0-0 | libsoup3`、`ffmpeg (>= 7)`、`libpulse: audio output` のように、dpkg や pacman の書き方で記述します。
+- `.deb` の `Depends` と `Recommends`、Arch パッケージの `depend` 行と `optdepend` 行には、NSGo 自身のパッケージ、アプリのもの、ビルドがリンクする各 Go パッケージのものの順に並びます。Go パッケージ同士は Go が列挙する順序に従い、すでに含まれているエントリは省かれます。ターゲットやビルドタグによって除外された Go パッケージは何も追加しません。
+- 空のエントリや改行を含むエントリがあると、その Go パッケージ名を示してビルドが停止します。バージョン 1 のファイルにある `linux` や、これら 2 つ以外のキーも同様です。
+- AppImage とストアビルドの Flatpak は `linux` から何も取り込みません。
 
 ## vendoring 時にファイルを保持する
 

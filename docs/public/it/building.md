@@ -230,7 +230,7 @@ Scrive `go.mod` e `go.sum` solo se nessuno dei due è cambiato dalla pianificazi
 
 Le app che importano `base/terminal` distribuiscono anche `libghostty-vt`: i pacchetti Windows e Linux collocano la libreria accanto all'eseguibile; i bundle macOS e iOS la firmano all'interno dei propri framework. [Incorporamento](embedding.md) illustra l'XCFramework di accompagnamento per gli host iOS.
 
-Una dipendenza può dichiarare librerie condivise desktop precompilate in `nsgo-natives.yaml` e, dalla sua versione 2, framework per iOS e tvOS. NSGo ne verifica lo SHA-256, le copia nell'app prima della firma e le include negli installer; l'autore dell'app non esegue alcun passaggio aggiuntivo. [Librerie native](native-libraries.md) descrive il formato per gli autori di pacchetti e i percorsi di caricamento.
+Una dipendenza può dichiarare librerie condivise desktop precompilate in `nsgo-natives.yaml` e, dalla sua versione 2, framework per iOS e tvOS. NSGo ne verifica lo SHA-256, le copia nell'app prima della firma e le include negli installer; l'autore dell'app non esegue alcun passaggio aggiuntivo. Dalla versione 2 può anche indicare pacchetti Linux, da cui il `.deb` e il pacchetto Arch dipendono o che raccomandano dopo `linux.depends` e `linux.recommends` propri dell'app. [Librerie native](native-libraries.md) descrive il formato per gli autori di pacchetti e i percorsi di caricamento.
 
 ## Comandi
 

@@ -67,6 +67,8 @@ type project struct {
 	thirdPartyNotices   string
 	// nativeLibraries are the declarations selected for each executable slice.
 	nativeLibraries map[string][]nativeLibrary
+	// nativeLinuxDeps are, for each Linux target, the linux entries of the selected packages, in the order go list gives the packages (linuxRequirements).
+	nativeLinuxDeps map[string][]nativeLinuxDeps
 
 	Name    string `yaml:"name"`
 	ID      string `yaml:"id"`
@@ -268,7 +270,7 @@ type project struct {
 			PublisherName string `yaml:"publisher_name"`
 		} `yaml:"store"`
 	} `yaml:"windows"`
-	// Linux is the Linux target's: Categories are its desktop entry's freedesktop menu categories, which file it in application menus and need a main one (validateLinuxCategories). Maintainer is who its Debian and Arch packages name as theirs, "Name <email>", else the app's name. Depends and Recommends add to those packages' Depends and Recommends, and depend and optdepend lines, after NSGo's own (linuxpkg.go). Summary, License, an SPDX expression, and FlatpakRuntime, GNOME's runtime version, are what the AppStream metadata and a store build's Flatpak manifest say (flatpak.go). Share is a directory, relative to nsgo.yaml, whose files the Debian and Arch packages install under /usr/share and the AppImage under its AppDir's usr/share, such as metainfo/<id>.metainfo.xml, which replaces NSGo's (linuxShareFiles).
+	// Linux is the Linux target's: Categories are its desktop entry's freedesktop menu categories, which file it in application menus and need a main one (validateLinuxCategories). Maintainer is who its Debian and Arch packages name as theirs, "Name <email>", else the app's name. Depends and Recommends add to those packages' Depends and Recommends, and depend and optdepend lines, after NSGo's own and before what the app's Go packages declare in nsgo-natives.yaml (linuxRequirements). Summary, License, an SPDX expression, and FlatpakRuntime, GNOME's runtime version, are what the AppStream metadata and a store build's Flatpak manifest say (flatpak.go). Share is a directory, relative to nsgo.yaml, whose files the Debian and Arch packages install under /usr/share and the AppImage under its AppDir's usr/share, such as metainfo/<id>.metainfo.xml, which replaces NSGo's (linuxShareFiles).
 	Linux struct {
 		Categories []string `yaml:"categories"`
 		// AppImageUpdate overrides the external update locator; empty disables discovery.
@@ -570,7 +572,7 @@ func load(dir string) (*project, error) {
 	if err := p.validateUpdates(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
-	if err := p.validateLinuxDeps(); err != nil {
+	if err := validateLinuxDeps("linux", p.Linux.Depends, p.Linux.Recommends); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if err := p.validateLinuxCategories(); err != nil {

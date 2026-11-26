@@ -230,7 +230,7 @@ Ele grava `go.mod` e `go.sum` apenas se nenhum dos dois mudou desde o planejamen
 
 Aplicativos que importam `base/terminal` também distribuem `libghostty-vt`: pacotes de Windows e Linux colocam a biblioteca ao lado do executável; pacotes de macOS e iOS a assinam dentro de seus frameworks. [Incorporação](embedding.md) explica o XCFramework complementar para hosts iOS.
 
-Uma dependência pode declarar bibliotecas compartilhadas de desktop pré-compiladas em `nsgo-natives.yaml` e, a partir da versão 2 do arquivo, frameworks para iOS e tvOS. O NSGo verifica seu SHA-256, as copia para o aplicativo antes da assinatura e as inclui nos instaladores; o autor do aplicativo não executa nenhuma etapa extra. [Bibliotecas nativas](native-libraries.md) descreve o formato do autor do pacote e os caminhos de carregamento.
+Uma dependência pode declarar bibliotecas compartilhadas de desktop pré-compiladas em `nsgo-natives.yaml` e, a partir da versão 2 do arquivo, frameworks para iOS e tvOS. O NSGo verifica seu SHA-256, as copia para o aplicativo antes da assinatura e as inclui nos instaladores; o autor do aplicativo não executa nenhuma etapa extra. A partir da versão 2, ela também pode indicar pacotes Linux, dos quais o `.deb` e o pacote Arch passam a depender ou que recomendam, depois de `linux.depends` e `linux.recommends` do próprio aplicativo. [Bibliotecas nativas](native-libraries.md) descreve o formato do autor do pacote e os caminhos de carregamento.
 
 ## Comandos
 

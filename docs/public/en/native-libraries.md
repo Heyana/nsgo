@@ -1,11 +1,11 @@
 ---
 title: Native libraries
-description: Ship prebuilt shared libraries and Apple frameworks with a Go package through NSGo's normal packaging, license and signing steps.
+description: Ship prebuilt shared libraries and Apple frameworks with a Go package through NSGo's normal packaging, license and signing steps, and name the Linux packages they need.
 group: Toolchain
 order: 23
 ---
 
-A Go package can ship the shared libraries it loads through purego by placing `nsgo-natives.yaml` in its package directory, and from version 2 its frameworks for iOS and tvOS. When an app imports the package, NSGo selects its declarations for the target, verifies the files and includes them before signing and making installers. The app needs no extra configuration or packaging command.
+A Go package can ship the shared libraries it loads through purego by placing `nsgo-natives.yaml` in its package directory, and from version 2 its frameworks for iOS and tvOS, and name the Linux packages it needs. When an app imports the package, NSGo selects its declarations for the target, verifies the files and includes them before signing and making installers. The app needs no extra configuration or packaging command.
 
 Desktop app builds and target tests disable cgo for app code. Native code must use purego and a declared `nsgo-natives.yaml` library. NSGo rejects app packages that contain cgo files before the build starts.
 
@@ -81,6 +81,34 @@ NSGo checks each framework's binary and stops the build, naming the reason, unle
 NSGo writes the framework's `Info.plist`, whose `CFBundleIdentifier` is the app's ID, a dot and `Name` in lower case, with the platform and the app's minimum OS. Simulator builds sign the framework ad hoc. A device build leaves it to the app's signing: `sign.profile` signs it with the app's identity before the app, as Xcode does for `nsgo build -run` and `nsgo dev` on a device. A framework that loads its peers needs an `@loader_path/..` or `@executable_path/Frameworks` run path to find them in `Frameworks`, as the app's executable has none, and loads nothing else through `@rpath` unless it has a system run path such as `/usr/lib/swift`. A framework whose bundle ID another bundle in the app already has, in any case, such as `StoreKit.framework` beside NSGo's `NSGoStoreKit.framework`, stops the build.
 
 `nsgo build -embed` stops when the app links a package that declares iOS frameworks, naming the package: the XCFramework for a host app cannot carry them yet.
+
+## Linux packages
+
+From version 2, `linux` names, for each Linux architecture, the system packages that the Debian and Arch packages of an app linking the Go package depend on and recommend:
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` is optional. Its keys are `linux_x64` and `linux_arm64`, so a package that bundles a library on one architecture and loads the system's on the other names what each needs.
+- `depends` and `recommends` each take `deb` and `arch` lists, as the app's `linux.depends` and `linux.recommends` in [nsgo.yaml](building.md#nsgoyaml) do: each entry as dpkg or pacman writes it, such as `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` or `libpulse: audio output`.
+- The `.deb`'s `Depends` and `Recommends` and the Arch package's `depend` and `optdepend` lines list NSGo's own packages, then the app's, then those of each Go package the build links, in the order Go lists them, leaving out entries already listed. A Go package that the target or build tags leave out adds nothing.
+- An empty entry or one holding a line break stops the build, naming the Go package, as does `linux` in a version 1 file or a key other than these two.
+- The AppImage and a store build's Flatpak take nothing from `linux`.
 
 ## Preserve files when vendoring
 

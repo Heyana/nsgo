@@ -230,7 +230,7 @@ Planlama, `go.mod` ve `go.sum` kopyaları üzerinde go komutundan başka hiçbir
 
 `base/terminal` paketini içe aktaran uygulamalar libghostty-vt kütüphanesini de birlikte dağıtır: Windows ve Linux paketleri kütüphaneyi yürütülebilir dosyanın yanına yerleştirir; macOS ve iOS paketleri bunu çerçevelerine (framework) imzalar. [Gömme](embedding.md) iOS konakları için eşlik eden XCFramework'ü açıklar.
 
-Bir bağımlılık, `nsgo-natives.yaml` içinde önceden derlenmiş masaüstü paylaşılan kütüphanelerini, dosyanın sürüm 2'sinden itibaren de iOS ve tvOS framework'lerini bildirebilir. NSGo bunların SHA-256 özetlerini doğrular, imzalamadan önce uygulamaya kopyalar ve yükleyicilere dahil eder; uygulama yazarının fazladan bir adım çalıştırması gerekmez. [Yerel kütüphaneler](native-libraries.md) paket yazarının biçimini ve yükleme yollarını açıklar.
+Bir bağımlılık, `nsgo-natives.yaml` içinde önceden derlenmiş masaüstü paylaşılan kütüphanelerini, dosyanın sürüm 2'sinden itibaren de iOS ve tvOS framework'lerini bildirebilir. NSGo bunların SHA-256 özetlerini doğrular, imzalamadan önce uygulamaya kopyalar ve yükleyicilere dahil eder; uygulama yazarının fazladan bir adım çalıştırması gerekmez. Sürüm 2'den itibaren Linux paketlerini de belirtebilir; `.deb` ve Arch paketi, uygulamanın kendi `linux.depends` ve `linux.recommends` girdilerinden sonra bunlara bağımlı olur veya bunları önerir. [Yerel kütüphaneler](native-libraries.md) paket yazarının biçimini ve yükleme yollarını açıklar.
 
 ## Komutlar
 

@@ -1,11 +1,11 @@
 ---
 title: Yerel kütüphaneler
-description: Önceden derlenmiş paylaşımlı kütüphaneleri ve Apple framework'lerini bir Go paketiyle, NSGo'nun olağan paketleme, lisans ve imzalama adımları üzerinden dağıtın.
+description: Önceden derlenmiş paylaşımlı kütüphaneleri ve Apple framework'lerini bir Go paketiyle, NSGo'nun olağan paketleme, lisans ve imzalama adımları üzerinden dağıtın ve ihtiyaç duydukları Linux paketlerini belirtin.
 group: Araç zinciri
 order: 23
 ---
 
-Bir Go paketi, purego aracılığıyla yüklediği paylaşımlı kütüphaneleri, paket dizinine `nsgo-natives.yaml` koyarak birlikte dağıtabilir; sürüm 2'den itibaren iOS ve tvOS için framework'lerini de. Bir uygulama paketi içe aktardığında NSGo, hedef için paketin bildirimlerini seçer, dosyaları doğrular ve imzalama ile yükleyici oluşturmadan önce bunları dahil eder. Uygulamanın ek bir yapılandırmaya veya paketleme komutuna ihtiyacı yoktur.
+Bir Go paketi, purego aracılığıyla yüklediği paylaşımlı kütüphaneleri, paket dizinine `nsgo-natives.yaml` koyarak birlikte dağıtabilir; sürüm 2'den itibaren iOS ve tvOS için framework'lerini de dağıtabilir ve ihtiyaç duyduğu Linux paketlerini belirtebilir. Bir uygulama paketi içe aktardığında NSGo, hedef için paketin bildirimlerini seçer, dosyaları doğrular ve imzalama ile yükleyici oluşturmadan önce bunları dahil eder. Uygulamanın ek bir yapılandırmaya veya paketleme komutuna ihtiyacı yoktur.
 
 Masaüstü uygulama derlemeleri ve hedef testleri, uygulama kodu için cgo'yu devre dışı bırakır. Yerel kod purego'yu ve `nsgo-natives.yaml` içinde bildirilen bir kütüphaneyi kullanmalıdır. NSGo, cgo dosyaları içeren uygulama paketlerini derleme başlamadan reddeder.
 
@@ -81,6 +81,34 @@ NSGo her framework'ün ikili dosyasını denetler ve aşağıdakileri sağlamıy
 NSGo framework'ün `Info.plist` dosyasını yazar; bunun `CFBundleIdentifier` değeri uygulamanın kimliği, bir nokta ve küçük harfli `Name`'den oluşur ve platformu ile uygulamanın en düşük işletim sistemi sürümünü taşır. Simülatör derlemeleri framework'ü ad hoc imzalar. Cihaz derlemesi onu uygulamanın imzalamasına bırakır: `sign.profile` onu uygulamadan önce uygulamanın kimliğiyle imzalar; Xcode da bir cihazda `nsgo build -run` ve `nsgo dev` için aynısını yapar. Eş framework'leri yükleyen bir framework'ün onları `Frameworks` içinde bulması için `@loader_path/..` veya `@executable_path/Frameworks` çalışma yolu gerekir, çünkü uygulamanın yürütülebilir dosyasında hiç yoktur; `/usr/lib/swift` gibi bir sistem çalışma yolu yoksa `@rpath` üzerinden başka bir şey yükleyemez. Paket kimliği, büyük-küçük harf ayrımı olmadan uygulamadaki başka bir pakette zaten bulunan bir framework, örneğin NSGo'nun `NSGoStoreKit.framework`'ü yanındaki `StoreKit.framework`, derlemeyi durdurur.
 
 Uygulama iOS framework'leri bildiren bir paketi bağladığında `nsgo build -embed` paketi adlandırarak durur: bir ana uygulama için XCFramework bunları henüz taşıyamaz.
+
+## Linux paketleri
+
+Sürüm 2'den itibaren `linux`, her Linux mimarisi için, Go paketini bağlayan bir uygulamanın Debian ve Arch paketlerinin bağımlı olduğu ve önerdiği sistem paketlerini belirtir:
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` isteğe bağlıdır. Anahtarları `linux_x64` ve `linux_arm64`'tür; böylece bir mimaride kütüphaneyi kendisi paketleyip diğerinde sistemin kütüphanesini yükleyen bir paket, her birinin neye ihtiyaç duyduğunu belirtir.
+- `depends` ve `recommends`, uygulamanın [nsgo.yaml](building.md#nsgoyaml) içindeki `linux.depends` ve `linux.recommends` alanları gibi, her biri `deb` ve `arch` listeleri alır: her girdi dpkg veya pacman'ın yazdığı biçimdedir, örneğin `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` veya `libpulse: audio output`.
+- `.deb` dosyasının `Depends` ve `Recommends` alanları ile Arch paketinin `depend` ve `optdepend` satırları önce NSGo'nun kendi paketlerini, ardından uygulamanınkileri, ardından derlemenin bağladığı her Go paketininkileri Go'nun listelediği sırayla sıralar; zaten listelenmiş girdiler atlanır. Hedefin veya derleme etiketlerinin dışarıda bıraktığı bir Go paketi hiçbir şey eklemez.
+- Boş bir girdi veya satır sonu içeren bir girdi, Go paketini adlandırarak derlemeyi durdurur; sürüm 1 dosyasındaki `linux` veya bu ikisinden başka bir anahtar da öyle.
+- AppImage ve bir mağaza derlemesinin Flatpak'i `linux` içinden hiçbir şey almaz.
 
 ## Vendor'a alırken dosyaları koruma
 

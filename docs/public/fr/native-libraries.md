@@ -1,11 +1,11 @@
 ---
 title: Bibliothèques natives
-description: Distribuez des bibliothèques partagées précompilées et des frameworks Apple avec un paquet Go via les étapes habituelles d’empaquetage, de gestion des licences et de signature de NSGo.
+description: Distribuez des bibliothèques partagées précompilées et des frameworks Apple avec un paquet Go via les étapes habituelles d’empaquetage, de gestion des licences et de signature de NSGo, et nommez les paquets Linux dont ils ont besoin.
 group: Chaîne d’outils
 order: 23
 ---
 
-Un paquet Go peut distribuer les bibliothèques partagées qu’il charge via purego en plaçant un fichier `nsgo-natives.yaml` dans son répertoire de paquet, et depuis la version 2 ses frameworks pour iOS et tvOS. Lorsqu’une application importe le paquet, NSGo sélectionne ses déclarations pour la cible, vérifie les fichiers et les inclut avant la signature et la création des installateurs. L’application ne nécessite aucune configuration ni commande d’empaquetage supplémentaire.
+Un paquet Go peut distribuer les bibliothèques partagées qu’il charge via purego en plaçant un fichier `nsgo-natives.yaml` dans son répertoire de paquet, et depuis la version 2 ses frameworks pour iOS et tvOS, et nommer les paquets Linux dont il a besoin. Lorsqu’une application importe le paquet, NSGo sélectionne ses déclarations pour la cible, vérifie les fichiers et les inclut avant la signature et la création des installateurs. L’application ne nécessite aucune configuration ni commande d’empaquetage supplémentaire.
 
 Les compilations d’applications de bureau et les tests sur cible désactivent cgo pour le code de l’application. Le code natif doit passer par purego et une bibliothèque déclarée dans `nsgo-natives.yaml`. NSGo rejette les paquets de l’application qui contiennent des fichiers cgo avant le début de la compilation.
 
@@ -81,6 +81,34 @@ NSGo vérifie le binaire de chaque framework et arrête la compilation en indiqu
 NSGo écrit le `Info.plist` du framework, dont le `CFBundleIdentifier` est l’identifiant de l’application, un point et `Name` en minuscules, avec la plateforme et le système minimal de l’application. Les compilations pour le simulateur signent le framework de façon ad hoc. Une compilation pour appareil le laisse à la signature de l’application : `sign.profile` le signe avec l’identité de l’application avant l’application elle-même, comme le fait Xcode pour `nsgo build -run` et `nsgo dev` sur un appareil. Un framework qui charge ses pairs a besoin du chemin d’exécution `@loader_path/..` ou `@executable_path/Frameworks` pour les trouver dans `Frameworks`, l’exécutable de l’application n’en ayant aucun, et ne charge rien d’autre par `@rpath` sauf s’il a un chemin d’exécution du système comme `/usr/lib/swift`. Un framework dont l’identifiant de bundle appartient déjà à un autre bundle de l’application, sans tenir compte de la casse, comme `StoreKit.framework` à côté du `NSGoStoreKit.framework` de NSGo, arrête la compilation.
 
 `nsgo build -embed` s’arrête en nommant le paquet lorsque l’application lie un paquet qui déclare des frameworks iOS : le XCFramework destiné à une application hôte ne peut pas encore les transporter.
+
+## Paquets Linux
+
+Depuis la version 2, `linux` nomme, pour chaque architecture Linux, les paquets système dont dépendent et que recommandent les paquets Debian et Arch d’une application qui lie le paquet Go :
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` est facultatif. Ses clés sont `linux_x64` et `linux_arm64`, de sorte qu’un paquet qui embarque une bibliothèque sur une architecture et charge celle du système sur l’autre nomme ce dont chacune a besoin.
+- `depends` et `recommends` prennent chacun des listes `deb` et `arch`, comme `linux.depends` et `linux.recommends` de l’application dans [nsgo.yaml](building.md#nsgoyaml) : chaque entrée telle que dpkg ou pacman l’écrit, par exemple `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` ou `libpulse: audio output`.
+- Les champs `Depends` et `Recommends` du `.deb` et les lignes `depend` et `optdepend` du paquet Arch listent les paquets propres à NSGo, puis ceux de l’application, puis ceux de chaque paquet Go que la compilation lie, dans l’ordre où Go les liste, en omettant les entrées déjà listées. Un paquet Go que la cible ou les balises de compilation excluent n’ajoute rien.
+- Une entrée vide ou contenant un saut de ligne arrête la compilation en nommant le paquet Go, tout comme `linux` dans un fichier de version 1 ou une clé autre que ces deux-là.
+- L’AppImage et le Flatpak d’une compilation de boutique ne reprennent rien de `linux`.
 
 ## Préserver les fichiers lors du vendoring
 

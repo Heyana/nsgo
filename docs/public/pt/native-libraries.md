@@ -1,11 +1,11 @@
 ---
 title: Bibliotecas nativas
-description: Distribua bibliotecas compartilhadas pré-compiladas e frameworks da Apple com um pacote Go usando as etapas normais de empacotamento, licença e assinatura do NSGo.
+description: Distribua bibliotecas compartilhadas pré-compiladas e frameworks da Apple com um pacote Go usando as etapas normais de empacotamento, licença e assinatura do NSGo, e indique os pacotes Linux de que eles precisam.
 group: Ferramentas
 order: 23
 ---
 
-Um pacote Go pode distribuir as bibliotecas compartilhadas que carrega via purego colocando `nsgo-natives.yaml` no diretório do pacote e, a partir da versão 2, seus frameworks para iOS e tvOS. Quando um app importa o pacote, o NSGo seleciona as declarações para o alvo, verifica os arquivos e os inclui antes da assinatura e da criação dos instaladores. O app não precisa de nenhuma configuração ou comando de empacotamento extra.
+Um pacote Go pode distribuir as bibliotecas compartilhadas que carrega via purego colocando `nsgo-natives.yaml` no diretório do pacote e, a partir da versão 2, seus frameworks para iOS e tvOS, e indicar os pacotes Linux de que precisa. Quando um app importa o pacote, o NSGo seleciona as declarações para o alvo, verifica os arquivos e os inclui antes da assinatura e da criação dos instaladores. O app não precisa de nenhuma configuração ou comando de empacotamento extra.
 
 As compilações de apps de desktop e os testes nos alvos desativam o cgo para o código do app. O código nativo deve usar purego e uma biblioteca declarada em `nsgo-natives.yaml`. O NSGo rejeita pacotes do app que contêm arquivos cgo antes de a compilação começar.
 
@@ -81,6 +81,34 @@ O NSGo verifica o binário de cada framework e interrompe a compilação informa
 O NSGo grava o `Info.plist` do framework, cujo `CFBundleIdentifier` é o ID do app, um ponto e `Name` em minúsculas, com a plataforma e o sistema operacional mínimo do app. Compilações para o simulador assinam o framework de forma ad hoc. Uma compilação para dispositivos o deixa para a assinatura do app: `sign.profile` o assina com a identidade do app antes do próprio app, como o Xcode faz para `nsgo build -run` e `nsgo dev` em um dispositivo. Um framework que carrega seus pares precisa do caminho de execução `@loader_path/..` ou `@executable_path/Frameworks` para encontrá-los em `Frameworks`, já que o executável do app não tem nenhum, e não carrega mais nada via `@rpath` a menos que tenha um caminho de execução do sistema como `/usr/lib/swift`. Um framework cujo identificador de bundle outro bundle do app já tem, sem distinguir maiúsculas, como `StoreKit.framework` ao lado do `NSGoStoreKit.framework` do NSGo, interrompe a compilação.
 
 `nsgo build -embed` para, citando o pacote, quando o app vincula um pacote que declara frameworks de iOS: o XCFramework para um app hospedeiro ainda não consegue levá-los.
+
+## Pacotes Linux
+
+A partir da versão 2, `linux` indica, para cada arquitetura Linux, os pacotes do sistema dos quais dependem e que recomendam os pacotes Debian e Arch de um app que vincula o pacote Go:
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` é opcional. Suas chaves são `linux_x64` e `linux_arm64`, de modo que um pacote que embute uma biblioteca em uma arquitetura e carrega a do sistema na outra indica o que cada uma precisa.
+- `depends` e `recommends` aceitam cada um as listas `deb` e `arch`, como `linux.depends` e `linux.recommends` do app no [nsgo.yaml](building.md#nsgoyaml): cada entrada como o dpkg ou o pacman a escreve, por exemplo `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` ou `libpulse: audio output`.
+- Os campos `Depends` e `Recommends` do `.deb` e as linhas `depend` e `optdepend` do pacote Arch listam os pacotes do próprio NSGo, depois os do app e depois os de cada pacote Go que a compilação vincula, na ordem em que o Go os lista, omitindo entradas já listadas. Um pacote Go que o alvo ou as build tags deixam de fora não adiciona nada.
+- Uma entrada vazia ou que contenha uma quebra de linha interrompe a compilação, citando o pacote Go, assim como `linux` em um arquivo da versão 1 ou uma chave diferente dessas duas.
+- O AppImage e o Flatpak de uma compilação de loja não usam nada de `linux`.
 
 ## Preservar arquivos ao usar vendor
 

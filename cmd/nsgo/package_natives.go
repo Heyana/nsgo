@@ -33,10 +33,11 @@ var nativeTransport = http.DefaultTransport
 // macHost reports whether nsgo runs on a Mac, which has the lipo and codesign that macOS libraries are thinned and signed with; tests replace it.
 var macHost = runtime.GOOS == "darwin"
 
-// desktopNativeTargets are version 1's targets, which version 2 keeps; appleNativeTargets are the ones version 2 adds, whose entries are frameworks. Another target means another version.
+// desktopNativeTargets are version 1's targets, which version 2 keeps; appleNativeTargets are the ones version 2 adds, whose entries are frameworks. Another target means another version. linuxNativeTargets are the keys of version 2's linux, which the terminal targets for Linux read too.
 var (
 	desktopNativeTargets = []string{"macos_arm64", "macos_x64", "windows_arm64", "windows_x64", "linux_arm64", "linux_x64"}
 	appleNativeTargets   = []string{"ios", "ios_simulator", "tvos", "tvos_simulator"}
+	linuxNativeTargets   = []string{"linux_arm64", "linux_x64"}
 )
 
 // nativeVersionTargets are the targets a version of nsgo-natives.yaml takes, none for a version this nsgo cannot read.
@@ -53,6 +54,14 @@ func nativeVersionTargets(version int) []string {
 type nativeManifest struct {
 	Version   int                        `yaml:"version"`
 	Libraries map[string][]nativeLibrary `yaml:"libraries"`
+	// Linux is version 2's, by Linux target: what the Debian and Arch packages of an app that links the package depend on and recommend (linuxRequirements).
+	Linux map[string]nativeLinuxDeps `yaml:"linux"`
+}
+
+// nativeLinuxDeps are a package's Linux packages for one target, shaped as nsgo.yaml's linux.depends and linux.recommends.
+type nativeLinuxDeps struct {
+	Depends    linuxDeps `yaml:"depends"`
+	Recommends linuxDeps `yaml:"recommends"`
 }
 
 type nativeLibrary struct {
@@ -117,6 +126,8 @@ func readNativeManifest(dir string) (*nativeManifest, error) {
 		return nil, fmt.Errorf("version is %d; this nsgo reads versions 1 and 2", manifest.Version)
 	case len(manifest.Libraries) == 0:
 		return nil, fmt.Errorf("a nonempty libraries target map is required")
+	case manifest.Linux != nil && manifest.Version < 2:
+		return nil, fmt.Errorf("linux needs version: 2")
 	}
 	for _, target := range slices.Sorted(maps.Keys(manifest.Libraries)) {
 		libraries := manifest.Libraries[target]
@@ -133,6 +144,15 @@ func readNativeManifest(dir string) (*nativeManifest, error) {
 			if err := library.validate(target); err != nil {
 				return nil, fmt.Errorf("%s library %d: %w", target, i+1, err)
 			}
+		}
+	}
+	for _, target := range slices.Sorted(maps.Keys(manifest.Linux)) {
+		if !slices.Contains(linuxNativeTargets, target) {
+			return nil, fmt.Errorf("linux takes %s, not %q", strings.Join(linuxNativeTargets, " and "), target)
+		}
+		deps := manifest.Linux[target]
+		if err := validateLinuxDeps("linux."+target, deps.Depends, deps.Recommends); err != nil {
+			return nil, err
 		}
 	}
 	return &manifest, nil
@@ -257,6 +277,9 @@ func (p *project) addPackageNatives(pkg licensePackage, target string, sources m
 	libraries, declared := manifest.Libraries[target]
 	if !declared {
 		return fmt.Errorf("%s/%s has no %s entry; declare [] if it needs no native libraries", pkg.ImportPath, nativeManifestName, target)
+	}
+	if deps, ok := manifest.Linux[target]; ok {
+		p.nativeLinuxDeps[target] = append(p.nativeLinuxDeps[target], deps)
 	}
 	// An XCFramework for a host app has nowhere to carry a package's frameworks yet.
 	if p.Build.embed && slices.Contains(appleNativeTargets, target) && len(libraries) > 0 {

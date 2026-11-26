@@ -205,7 +205,7 @@ Apply these changes? [y/N]
 
 导入 `base/terminal` 的应用也会附带 libghostty-vt：Windows 和 Linux 包将库放在可执行文件旁，macOS 和 iOS 则将其签入应用的框架目录。[嵌入](embedding.md)介绍了 iOS 宿主使用的配套 XCFramework。
 
-依赖可以在 `nsgo-natives.yaml` 中声明预编译的桌面共享库，从该文件的版本 2 起还可以声明 iOS 和 tvOS 的框架。NSGo 会校验其 SHA-256，在签名前将其复制进应用，并将其纳入安装程序；应用作者无需执行额外步骤。[原生库](native-libraries.md)介绍了包作者使用的格式和加载路径。
+依赖可以在 `nsgo-natives.yaml` 中声明预编译的桌面共享库，从该文件的版本 2 起还可以声明 iOS 和 tvOS 的框架。NSGo 会校验其 SHA-256，在签名前将其复制进应用，并将其纳入安装程序；应用作者无需执行额外步骤。从版本 2 起，依赖还可以声明 Linux 软件包，`.deb` 和 Arch 软件包会在应用自身的 `linux.depends` 和 `linux.recommends` 之后依赖或推荐它们。[原生库](native-libraries.md)介绍了包作者使用的格式和加载路径。
 
 ## 扩展命令
 

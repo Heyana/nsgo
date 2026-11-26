@@ -42,27 +42,52 @@ type linuxDeps struct {
 	Arch []string `yaml:"arch"`
 }
 
-// validateLinuxDeps rejects a blank entry, which would leave an empty item in a Debian list or an empty Arch line, and one holding a line break, which would add fields to the packages' metadata.
-func (p *project) validateLinuxDeps() error {
+// validateLinuxDeps rejects a blank entry of depends or recommends, which would leave an empty item in a Debian list or an empty Arch line, and one holding a line break, which would add fields to the packages' metadata, naming it under field: linux for nsgo.yaml's, linux.<target> for an nsgo-natives.yaml's.
+func validateLinuxDeps(field string, depends, recommends linuxDeps) error {
 	for _, key := range []struct {
 		name   string
 		values []string
 	}{
-		{"depends.deb", p.Linux.Depends.Deb},
-		{"depends.arch", p.Linux.Depends.Arch},
-		{"recommends.deb", p.Linux.Recommends.Deb},
-		{"recommends.arch", p.Linux.Recommends.Arch},
+		{"depends.deb", depends.Deb},
+		{"depends.arch", depends.Arch},
+		{"recommends.deb", recommends.Deb},
+		{"recommends.arch", recommends.Arch},
 	} {
 		for i, value := range key.values {
 			if strings.TrimSpace(value) == "" {
-				return fmt.Errorf("linux.%s entry %d is empty", key.name, i+1)
+				return fmt.Errorf("%s.%s entry %d is empty", field, key.name, i+1)
 			}
 			if strings.ContainsAny(value, "\r\n") {
-				return fmt.Errorf("linux.%s entry %d contains a line break", key.name, i+1)
+				return fmt.Errorf("%s.%s entry %d contains a line break", field, key.name, i+1)
 			}
 		}
 	}
 	return nil
+}
+
+// linuxRequirements are the entries of the Debian and Arch packages' dependency fields for arch: NSGo's own, GTK 4 and, recommended as only web views load it, WebKitGTK; then the app's linux.depends and linux.recommends; then those that the packages its build links declare for the target in nsgo-natives.yaml (addPackageNatives), leaving out any entry the field holds already.
+func (p *project) linuxRequirements(arch string) (depends, recommends linuxDeps) {
+	depends = linuxDeps{Deb: append([]string{"libgtk-4-1"}, p.Linux.Depends.Deb...), Arch: append([]string{"gtk4"}, p.Linux.Depends.Arch...)}
+	recommends = linuxDeps{Deb: append([]string{"libwebkitgtk-6.0-4"}, p.Linux.Recommends.Deb...), Arch: append([]string{"webkitgtk-6.0: web views"}, p.Linux.Recommends.Arch...)}
+	for _, linked := range p.nativeLinuxDeps["linux_"+goArchName(arch)] {
+		depends.add(linked.Depends)
+		recommends.add(linked.Recommends)
+	}
+	return depends, recommends
+}
+
+// add appends each entry of extra that deps does not hold yet.
+func (deps *linuxDeps) add(extra linuxDeps) {
+	for _, entry := range extra.Deb {
+		if !slices.Contains(deps.Deb, entry) {
+			deps.Deb = append(deps.Deb, entry)
+		}
+	}
+	for _, entry := range extra.Arch {
+		if !slices.Contains(deps.Arch, entry) {
+			deps.Arch = append(deps.Arch, entry)
+		}
+	}
 }
 
 // linuxMainCategories are the freedesktop Desktop Menu Specification's main categories, by which menus file an app; an entry naming none of them lands under Other.
@@ -116,14 +141,6 @@ func (p *project) validateLinuxCategories() error {
 		return fmt.Errorf("linux.categories names no main category, so menus would file the app under Other; add one of %s", strings.Join(linuxMainCategories, ", "))
 	}
 	return nil
-}
-
-// linuxDependency is a Debian dependency field: base, then extra.
-func linuxDependency(base string, extra []string) string {
-	if len(extra) == 0 {
-		return base
-	}
-	return strings.Join(append([]string{base}, extra...), ", ")
 }
 
 // buildLinuxPackages writes the Debian and Arch packages of the Linux
@@ -405,10 +422,11 @@ func debPackage(p *project, files []linuxPackageEntry, arch string) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
+	depends, recommends := p.linuxRequirements(arch)
 	control := fmt.Sprintf("Package: %s\nVersion: %s\nArchitecture: %s\nMaintainer: %s\nInstalled-Size: %d\n"+
 		"Depends: %s\nRecommends: %s\nSection: misc\nPriority: optional\nDescription: %s\n",
 		p.packageSlug(), debVersion(p.Version), debArch[arch], p.maintainer(), (linuxPackageSize(files)+1023)/1024,
-		linuxDependency("libgtk-4-1", p.Linux.Depends.Deb), linuxDependency("libwebkitgtk-6.0-4", p.Linux.Recommends.Deb), name)
+		strings.Join(depends.Deb, ", "), strings.Join(recommends.Deb, ", "), name)
 	controlFiles := []linuxPackageEntry{
 		{name: "control", data: []byte(control), mode: 0o644},
 		{name: "md5sums", data: md5sums.Bytes(), mode: 0o644},
@@ -455,12 +473,11 @@ func archPackage(p *project, files []linuxPackageEntry, arch string) ([]byte, er
 	var info strings.Builder
 	fmt.Fprintf(&info, "pkgname = %s\npkgbase = %s\npkgver = %s-1\npkgdesc = %s\nbuilddate = %d\npackager = %s\nsize = %d\narch = %s\n",
 		slug, slug, archVersion(p.Version), name, now.Unix(), p.maintainer(), linuxPackageSize(files), archLinuxArch[arch])
-	info.WriteString("depend = gtk4\n")
-	for _, dep := range p.Linux.Depends.Arch {
+	depends, recommends := p.linuxRequirements(arch)
+	for _, dep := range depends.Arch {
 		fmt.Fprintf(&info, "depend = %s\n", dep)
 	}
-	info.WriteString("optdepend = webkitgtk-6.0: web views\n")
-	for _, dep := range p.Linux.Recommends.Arch {
+	for _, dep := range recommends.Arch {
 		fmt.Fprintf(&info, "optdepend = %s\n", dep)
 	}
 	entries := append([]linuxPackageEntry{{name: ".PKGINFO", data: []byte(info.String()), mode: 0o644}}, files...)

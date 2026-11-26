@@ -1,11 +1,11 @@
 ---
 title: Thư viện gốc
-description: Phát hành kèm các thư viện dùng chung dựng sẵn và framework của Apple cùng một Go package thông qua các bước đóng gói, giấy phép và ký số thông thường của NSGo.
+description: Phát hành kèm các thư viện dùng chung dựng sẵn và framework của Apple cùng một Go package thông qua các bước đóng gói, giấy phép và ký số thông thường của NSGo, và nêu các gói Linux mà chúng cần.
 group: Bộ công cụ
 order: 23
 ---
 
-Một Go package có thể phát hành kèm các thư viện dùng chung mà nó nạp qua purego bằng cách đặt `nsgo-natives.yaml` trong thư mục package của nó, và từ phiên bản 2 có thể kèm cả framework cho iOS và tvOS. Khi một ứng dụng import package đó, NSGo chọn các khai báo của nó cho target, xác minh các tệp và đưa chúng vào trước khi ký số và tạo trình cài đặt. Ứng dụng không cần cấu hình thêm hay lệnh đóng gói nào khác.
+Một Go package có thể phát hành kèm các thư viện dùng chung mà nó nạp qua purego bằng cách đặt `nsgo-natives.yaml` trong thư mục package của nó, và từ phiên bản 2 có thể kèm cả framework cho iOS và tvOS, cũng như nêu các gói Linux mà nó cần. Khi một ứng dụng import package đó, NSGo chọn các khai báo của nó cho target, xác minh các tệp và đưa chúng vào trước khi ký số và tạo trình cài đặt. Ứng dụng không cần cấu hình thêm hay lệnh đóng gói nào khác.
 
 Các bản build ứng dụng desktop và bài kiểm thử trên target tắt cgo cho mã của ứng dụng. Mã gốc phải dùng purego và một thư viện được khai báo trong `nsgo-natives.yaml`. NSGo từ chối các package của ứng dụng có chứa tệp cgo trước khi bản build bắt đầu.
 
@@ -81,6 +81,34 @@ NSGo kiểm tra tệp nhị phân của từng framework và dừng bản build 
 NSGo ghi `Info.plist` của framework, với `CFBundleIdentifier` là ID của ứng dụng, một dấu chấm và `Name` viết thường, kèm nền tảng và hệ điều hành tối thiểu của ứng dụng. Các bản build cho trình giả lập ký ad hoc framework. Bản build cho thiết bị để việc đó cho bước ký của ứng dụng: `sign.profile` ký framework bằng danh tính của ứng dụng trước chính ứng dụng, giống như Xcode làm với `nsgo build -run` và `nsgo dev` trên thiết bị. Framework có nạp các framework đi kèm cần đường dẫn chạy `@loader_path/..` hoặc `@executable_path/Frameworks` để tìm thấy chúng trong `Frameworks`, vì tệp thực thi của ứng dụng không có đường dẫn nào, và không nạp gì khác qua `@rpath` trừ khi có đường dẫn chạy của hệ thống như `/usr/lib/swift`. Framework có bundle ID trùng, không phân biệt hoa thường, với một bundle khác trong ứng dụng, chẳng hạn `StoreKit.framework` bên cạnh `NSGoStoreKit.framework` của NSGo, sẽ dừng bản build.
 
 `nsgo build -embed` dừng lại và nêu tên package khi ứng dụng liên kết một package có khai báo framework cho iOS: XCFramework dành cho ứng dụng chủ hiện chưa thể mang chúng theo.
+
+## Gói Linux
+
+Từ phiên bản 2, `linux` nêu, cho từng kiến trúc Linux, các gói hệ thống mà gói Debian và gói Arch của một ứng dụng liên kết Go package này phụ thuộc vào và khuyến nghị:
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` là tùy chọn. Các khóa của nó là `linux_x64` và `linux_arm64`, nên một package đóng gói kèm thư viện trên một kiến trúc và nạp thư viện của hệ thống trên kiến trúc kia có thể nêu những gì mỗi kiến trúc cần.
+- `depends` và `recommends` đều nhận các danh sách `deb` và `arch`, giống `linux.depends` và `linux.recommends` của ứng dụng trong [nsgo.yaml](building.md#nsgoyaml): mỗi mục được viết theo cách dpkg hoặc pacman viết, chẳng hạn `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` hay `libpulse: audio output`.
+- Các trường `Depends` và `Recommends` của `.deb` cùng các dòng `depend` và `optdepend` của gói Arch liệt kê các gói của chính NSGo, rồi của ứng dụng, rồi của từng Go package mà bản build liên kết, theo thứ tự Go liệt kê chúng, bỏ qua các mục đã có. Một Go package bị target hoặc build tag loại ra không thêm gì.
+- Một mục rỗng hoặc chứa ký tự xuống dòng sẽ dừng bản build và nêu tên Go package đó, tương tự `linux` trong tệp phiên bản 1 hoặc một khóa khác hai khóa này.
+- AppImage và Flatpak của bản build kho ứng dụng không lấy gì từ `linux`.
 
 ## Giữ lại tệp khi vendor
 

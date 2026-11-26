@@ -1,11 +1,11 @@
 ---
 title: Librerie native
-description: Distribuisci librerie condivise precompilate e framework Apple con un pacchetto Go attraverso i normali passaggi di pacchettizzazione, licenza e firma di NSGo.
+description: Distribuisci librerie condivise precompilate e framework Apple con un pacchetto Go attraverso i normali passaggi di pacchettizzazione, licenza e firma di NSGo, e indica i pacchetti Linux di cui hanno bisogno.
 group: Strumenti
 order: 23
 ---
 
-Un pacchetto Go può distribuire le librerie condivise che carica tramite purego inserendo `nsgo-natives.yaml` nella directory del pacchetto e, dalla versione 2, i suoi framework per iOS e tvOS. Quando un'app importa il pacchetto, NSGo seleziona le sue dichiarazioni per il target, verifica i file e li include prima della firma e della creazione degli installer. L'app non ha bisogno di configurazioni aggiuntive né di un comando di pacchettizzazione.
+Un pacchetto Go può distribuire le librerie condivise che carica tramite purego inserendo `nsgo-natives.yaml` nella directory del pacchetto e, dalla versione 2, i suoi framework per iOS e tvOS, e indicare i pacchetti Linux di cui ha bisogno. Quando un'app importa il pacchetto, NSGo seleziona le sue dichiarazioni per il target, verifica i file e li include prima della firma e della creazione degli installer. L'app non ha bisogno di configurazioni aggiuntive né di un comando di pacchettizzazione.
 
 Le build delle app desktop e i test sui target disattivano cgo per il codice dell'app. Il codice nativo deve usare purego e una libreria dichiarata in `nsgo-natives.yaml`. NSGo rifiuta i pacchetti dell'app che contengono file cgo prima che la build cominci.
 
@@ -81,6 +81,34 @@ NSGo controlla il binario di ogni framework e interrompe la build indicandone il
 NSGo scrive l'`Info.plist` del framework, il cui `CFBundleIdentifier` è l'ID dell'app, un punto e `Name` in minuscolo, con la piattaforma e il sistema operativo minimo dell'app. Le build per il simulatore firmano il framework ad hoc. Una build per dispositivi lo lascia alla firma dell'app: `sign.profile` lo firma con l'identità dell'app prima dell'app stessa, come fa Xcode per `nsgo build -run` e `nsgo dev` su un dispositivo. Un framework che carica i framework correlati ha bisogno del percorso di esecuzione `@loader_path/..` o `@executable_path/Frameworks` per trovarli in `Frameworks`, dato che l'eseguibile dell'app non ne ha, e non carica altro tramite `@rpath` a meno che non abbia un percorso di esecuzione di sistema come `/usr/lib/swift`. Un framework il cui bundle ID appartiene già a un altro bundle dell'app, senza distinzione tra maiuscole e minuscole, come `StoreKit.framework` accanto al `NSGoStoreKit.framework` di NSGo, interrompe la build.
 
 `nsgo build -embed` si ferma indicando il pacchetto quando l'app collega un pacchetto che dichiara framework per iOS: l'XCFramework per un'app host non può ancora portarli con sé.
+
+## Pacchetti Linux
+
+Dalla versione 2, `linux` indica, per ogni architettura Linux, i pacchetti di sistema da cui dipendono e che raccomandano i pacchetti Debian e Arch di un'app che collega il pacchetto Go:
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` è facoltativo. Le sue chiavi sono `linux_x64` e `linux_arm64`, così un pacchetto che include una libreria su un'architettura e carica quella di sistema sull'altra indica ciò di cui ha bisogno ciascuna.
+- `depends` e `recommends` accettano ciascuno le liste `deb` e `arch`, come `linux.depends` e `linux.recommends` dell'app in [nsgo.yaml](building.md#nsgoyaml): ogni voce come la scrive dpkg o pacman, ad esempio `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)` o `libpulse: audio output`.
+- I campi `Depends` e `Recommends` del `.deb` e le righe `depend` e `optdepend` del pacchetto Arch elencano i pacchetti propri di NSGo, poi quelli dell'app, poi quelli di ogni pacchetto Go che la build collega, nell'ordine in cui Go li elenca, omettendo le voci già elencate. Un pacchetto Go che il target o i build tag escludono non aggiunge nulla.
+- Una voce vuota o che contiene un a capo ferma la build indicando il pacchetto Go, così come `linux` in un file della versione 1 o una chiave diversa da queste due.
+- L'AppImage e il Flatpak di una build per gli store non prendono nulla da `linux`.
 
 ## Preservare i file nel vendoring
 

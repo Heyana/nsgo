@@ -73,6 +73,7 @@ var licenseClassifier = sync.OnceValues(assets.DefaultClassifier)
 func (p *project) licenseNoticesFile(ctx context.Context, target string, env, tags, flags []string, overlay string) (string, error) {
 	sources := map[string]*licenseSource{}
 	p.nativeLibraries = map[string][]nativeLibrary{}
+	p.nativeLinuxDeps = map[string][]nativeLinuxDeps{}
 	var hasCore bool
 	architectures := p.noticeArchitectures
 	if len(architectures) == 0 {

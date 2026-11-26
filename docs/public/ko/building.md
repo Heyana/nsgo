@@ -230,7 +230,7 @@ Apply these changes? [y/N]
 
 `base/terminal`을 임포트하는 앱은 `libghostty-vt`도 함께 배포합니다. Windows와 Linux 패키지는 실행 파일 옆에 라이브러리를 배치하고, macOS와 iOS 번들은 프레임워크 내부에 서명해 넣습니다. [임베딩](embedding.md)에서 iOS 호스트용 동반 XCFramework를 설명합니다.
 
-의존 패키지는 `nsgo-natives.yaml`에 미리 빌드된 데스크톱 공유 라이브러리를 선언할 수 있으며, 그 버전 2부터는 iOS와 tvOS용 프레임워크도 선언할 수 있습니다. NSGo는 SHA-256을 검증하고 서명 전에 앱에 복사하며 인스톨러에도 포함하므로 앱 작성자가 별도 단계를 거칠 필요가 없습니다. [네이티브 라이브러리](native-libraries.md)에서 패키지 작성자용 포맷과 로딩 경로를 설명합니다.
+의존 패키지는 `nsgo-natives.yaml`에 미리 빌드된 데스크톱 공유 라이브러리를 선언할 수 있으며, 그 버전 2부터는 iOS와 tvOS용 프레임워크도 선언할 수 있습니다. NSGo는 SHA-256을 검증하고 서명 전에 앱에 복사하며 인스톨러에도 포함하므로 앱 작성자가 별도 단계를 거칠 필요가 없습니다. 버전 2부터는 Linux 패키지도 지정할 수 있으며, `.deb`와 Arch 패키지는 앱 자체의 `linux.depends`와 `linux.recommends` 뒤에 이를 의존 또는 권장 패키지로 기재합니다. [네이티브 라이브러리](native-libraries.md)에서 패키지 작성자용 포맷과 로딩 경로를 설명합니다.
 
 ## 커맨드
 

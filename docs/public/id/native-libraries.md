@@ -1,11 +1,11 @@
 ---
 title: Pustaka native
-description: Kirimkan pustaka bersama (shared library) yang sudah dibangun dan framework Apple bersama paket Go melalui langkah pengemasan, lisensi, dan penandatanganan normal NSGo.
+description: Kirimkan pustaka bersama (shared library) yang sudah dibangun dan framework Apple bersama paket Go melalui langkah pengemasan, lisensi, dan penandatanganan normal NSGo, serta sebutkan paket Linux yang dibutuhkannya.
 group: Perangkat bantu
 order: 23
 ---
 
-Sebuah paket Go dapat menyertakan pustaka bersama yang dimuatnya melalui purego dengan menempatkan `nsgo-natives.yaml` di direktori paketnya, dan sejak versi 2 juga framework-nya untuk iOS dan tvOS. Ketika sebuah aplikasi mengimpor paket tersebut, NSGo memilih deklarasinya untuk target, memverifikasi file-filenya, dan menyertakannya sebelum penandatanganan dan pembuatan installer. Aplikasi tidak memerlukan konfigurasi tambahan atau perintah pengemasan.
+Sebuah paket Go dapat menyertakan pustaka bersama yang dimuatnya melalui purego dengan menempatkan `nsgo-natives.yaml` di direktori paketnya, dan sejak versi 2 juga framework-nya untuk iOS dan tvOS, serta menyebutkan paket Linux yang dibutuhkannya. Ketika sebuah aplikasi mengimpor paket tersebut, NSGo memilih deklarasinya untuk target, memverifikasi file-filenya, dan menyertakannya sebelum penandatanganan dan pembuatan installer. Aplikasi tidak memerlukan konfigurasi tambahan atau perintah pengemasan.
 
 Build aplikasi desktop dan pengujian target menonaktifkan cgo untuk kode aplikasi. Kode native harus menggunakan purego dan pustaka yang dideklarasikan di `nsgo-natives.yaml`. NSGo menolak paket aplikasi yang berisi file cgo sebelum build dimulai.
 
@@ -81,6 +81,34 @@ NSGo memeriksa biner setiap framework dan menghentikan build dengan menyebutkan 
 NSGo menulis `Info.plist` framework tersebut, dengan `CFBundleIdentifier` berupa ID aplikasi, sebuah titik, dan `Name` dalam huruf kecil, beserta platform dan OS minimum aplikasi. Build simulator menandatangani framework secara ad hoc. Build perangkat menyerahkannya kepada penandatanganan aplikasi: `sign.profile` menandatanganinya dengan identitas aplikasi sebelum aplikasi itu sendiri, seperti yang dilakukan Xcode untuk `nsgo build -run` dan `nsgo dev` di perangkat. Framework yang memuat framework pendampingnya memerlukan run path `@loader_path/..` atau `@executable_path/Frameworks` untuk menemukannya di `Frameworks`, karena executable aplikasi tidak memilikinya, dan tidak memuat hal lain melalui `@rpath` kecuali memiliki run path sistem seperti `/usr/lib/swift`. Framework yang bundle ID-nya sudah dimiliki bundle lain di aplikasi, tanpa membedakan huruf besar-kecil, seperti `StoreKit.framework` di samping `NSGoStoreKit.framework` milik NSGo, menghentikan build.
 
 `nsgo build -embed` berhenti dan menyebutkan nama paketnya ketika aplikasi menautkan paket yang mendeklarasikan framework iOS: XCFramework untuk aplikasi host belum dapat membawanya.
+
+## Paket Linux
+
+Sejak versi 2, `linux` menyebutkan, untuk setiap arsitektur Linux, paket sistem yang menjadi dependensi dan rekomendasi paket Debian dan Arch dari aplikasi yang menautkan paket Go tersebut:
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` bersifat opsional. Kuncinya adalah `linux_x64` dan `linux_arm64`, sehingga paket yang membundel pustaka di satu arsitektur dan memuat pustaka milik sistem di arsitektur lainnya dapat menyebutkan kebutuhan masing-masing.
+- `depends` dan `recommends` masing-masing menerima daftar `deb` dan `arch`, seperti `linux.depends` dan `linux.recommends` milik aplikasi di [nsgo.yaml](building.md#nsgoyaml): setiap entri ditulis sebagaimana dpkg atau pacman menuliskannya, misalnya `libsoup-3.0-0 | libsoup3`, `ffmpeg (>= 7)`, atau `libpulse: audio output`.
+- Kolom `Depends` dan `Recommends` pada `.deb` serta baris `depend` dan `optdepend` pada paket Arch mencantumkan paket milik NSGo sendiri, lalu milik aplikasi, lalu milik setiap paket Go yang ditautkan build, sesuai urutan Go mencantumkannya, tanpa entri yang sudah tercantum. Paket Go yang dikecualikan oleh target atau build tag tidak menambahkan apa pun.
+- Entri kosong atau entri yang berisi jeda baris menghentikan build dengan menyebutkan paket Go-nya, demikian pula `linux` di file versi 1 atau kunci selain keduanya.
+- AppImage dan Flatpak dari build toko aplikasi tidak mengambil apa pun dari `linux`.
 
 ## Mempertahankan file saat vendoring
 

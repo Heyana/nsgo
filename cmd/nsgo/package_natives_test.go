@@ -149,6 +149,178 @@ func TestPackageNativesLinuxInstallerInputs(t *testing.T) {
 	}
 }
 
+// A version 2 file's linux entries for an architecture join the Debian and Arch packages built for it, after NSGo's own and the app's and each once, from the packages that build links alone: media bundles a library on x64 and needs the system's FFmpeg on arm64, neon is linked only on arm64, and tagged only with its build tag.
+func TestPackageNativesLinuxPackageDependencies(t *testing.T) {
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOFLAGS", "")
+	license, err := assets.ReadLicenseFile("License/MIT/pristine.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	library := nativeELF(false)
+	dir := t.TempDir()
+	// Only media bundles a library.
+	none :="version: 2\nlibraries:\n  linux_x64: []\n  linux_arm64: []\n"
+	media := "version: 2\nlibraries:\n  linux_x64:\n    - name: libfixture.so.1\n      path: lib/libfixture.so.1\n      sha256: " + nativeDigest(library) + "\n      licenses: [LICENSE]\n  linux_arm64: []\n"
+	files := map[string]string{
+		"app/go.mod":                "module example.com/app\ngo 1.27.3\nrequire (\n\texample.com/media v0.0.0\n\texample.com/neon v0.0.0\n\texample.com/sound v0.0.0\n\texample.com/tagged v0.0.0\n)\nreplace (\n\texample.com/media => ../media\n\texample.com/neon => ../neon\n\texample.com/sound => ../sound\n\texample.com/tagged => ../tagged\n)\n",
+		"app/main.go":               "package main\nimport (\n\t_ \"example.com/media\"\n\t_ \"example.com/sound\"\n)\nfunc main() {}\n",
+		"app/neon_arm64.go":         "package main\nimport _ \"example.com/neon\"\n",
+		"app/tagged.go":             "//go:build nativeextra\n\npackage main\nimport _ \"example.com/tagged\"\n",
+		"media/lib/libfixture.so.1": string(library),
+		"media/" + nativeManifestName: media + "linux:\n" +
+			"  linux_x64:\n    depends:\n      deb: [libva2, libva-drm2, libgtk-4-1]\n      arch: [libva]\n    recommends:\n      deb: [libpulse0]\n      arch: ['libpulse: sound']\n" +
+			"  linux_arm64:\n    depends:\n      deb: ['libavcodec61 | libavcodec-extra61']\n      arch: [ffmpeg]\n",
+		"neon/" + nativeManifestName: none + "linux:\n" +
+			"  linux_x64:\n    depends:\n      deb: [libneon-x64]\n      arch: [neon-x64]\n" +
+			"  linux_arm64:\n    depends:\n      deb: [libneon1]\n      arch: [neon]\n",
+		"sound/" + nativeManifestName: none + "linux:\n" +
+			"  linux_x64:\n    depends:\n      deb: [libva2, libpulse0]\n      arch: [libva, libpulse]\n    recommends:\n      deb: [gstreamer1.0-libav]\n      arch: ['libpulse: sound']\n",
+		"tagged/" + nativeManifestName: none + "linux:\n" +
+			"  linux_x64:\n    depends:\n      deb: [libtagged1]\n      arch: [tagged]\n" +
+			"  linux_arm64:\n    depends:\n      deb: [libtagged1]\n      arch: [tagged]\n",
+	}
+	for _, name := range []string{"media", "neon", "sound", "tagged"} {
+		files[name+"/go.mod"] = "module example.com/" + name + "\ngo 1.27.3\n"
+		files[name+"/"+name+".go"] = "package " + name + "\n"
+		files[name+"/LICENSE"] = string(license)
+	}
+	writeFiles(t, dir, files)
+	p := &project{Dir: filepath.Join(dir, "app"), Name: "Fixture", ID: "dev.example.fixture", Version: "1.0.0", packageLicenses: true}
+	p.Linux.Depends = linuxDeps{Deb: []string{"gstreamer1.0-plugins-good", "libva2"}, Arch: []string{"gst-plugins-good"}}
+	p.Linux.Recommends = linuxDeps{Deb: []string{"gstreamer1.0-libav"}, Arch: []string{"gst-libav: H.264 and AAC video"}}
+	arm := [4]string{
+		"libgtk-4-1, gstreamer1.0-plugins-good, libva2, libavcodec61 | libavcodec-extra61, libneon1",
+		"libwebkitgtk-6.0-4, gstreamer1.0-libav",
+		"gtk4, gst-plugins-good, ffmpeg, neon",
+		"webkitgtk-6.0: web views, gst-libav: H.264 and AAC video",
+	}
+	for _, c := range []struct {
+		arch string
+		tags []string
+		want [4]string
+	}{
+		{"amd64", nil, [4]string{
+			"libgtk-4-1, gstreamer1.0-plugins-good, libva2, libva-drm2, libpulse0",
+			"libwebkitgtk-6.0-4, gstreamer1.0-libav, libpulse0",
+			"gtk4, gst-plugins-good, libva, libpulse",
+			"webkitgtk-6.0: web views, gst-libav: H.264 and AAC video, libpulse: sound",
+		}},
+		{"arm64", nil, arm},
+		{"amd64", []string{"nativeextra"}, [4]string{
+			"libgtk-4-1, gstreamer1.0-plugins-good, libva2, libva-drm2, libpulse0, libtagged1",
+			"libwebkitgtk-6.0-4, gstreamer1.0-libav, libpulse0",
+			"gtk4, gst-plugins-good, libva, libpulse, tagged",
+			"webkitgtk-6.0: web views, gst-libav: H.264 and AAC video, libpulse: sound",
+		}},
+	} {
+		p.Build.Tags = c.tags
+		out := t.TempDir()
+		if err := buildLinux(t.Context(), p, out, c.arch); err != nil {
+			t.Fatal(err)
+		}
+		deb, pkg, err := buildLinuxPackages(t.Context(), p, out, c.arch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := linuxPackageDependencies(t, deb, pkg); got != c.want {
+			t.Errorf("linux_%s with tags %v:\n got %q\nwant %q", goArchName(c.arch), c.tags, got, c.want)
+		}
+	}
+	// A terminal target reads its desktop's entries, though it makes no Debian or Arch package.
+	p.Build.Tags = nil
+	if err := buildTUI(t.Context(), p, t.TempDir(), "tui_linux_arm64"); err != nil {
+		t.Fatal(err)
+	}
+	depends, recommends := p.linuxRequirements("arm64")
+	if got := [4]string{strings.Join(depends.Deb, ", "), strings.Join(recommends.Deb, ", "), strings.Join(depends.Arch, ", "), strings.Join(recommends.Arch, ", ")}; got != arm {
+		t.Errorf("tui_linux_arm64:\n got %q\nwant %q", got, arm)
+	}
+	// An entry nsgo.yaml would refuse stops the build, naming its package.
+	sound := filepath.Join(dir, "sound", nativeManifestName)
+	for entry, want := range map[string]string{
+		"[libva2, '']":               "example.com/sound/" + nativeManifestName + ": linux.linux_x64.depends.deb entry 2 is empty",
+		`["libva2\nDescription: x"]`: "example.com/sound/" + nativeManifestName + ": linux.linux_x64.depends.deb entry 1 contains a line break",
+	} {
+		if err := os.WriteFile(sound, []byte(strings.Replace(files["sound/"+nativeManifestName], "[libva2, libpulse0]", entry, 1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := buildLinux(t.Context(), p, t.TempDir(), "amd64"); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: got %v, want %q", entry, err, want)
+		}
+	}
+}
+
+// linuxPackageDependencies are the Depends and Recommends of the Debian package at deb, and the depend and optdepend lines of the Arch package at pkg, each list joined with ", ".
+func linuxPackageDependencies(t *testing.T, deb, pkg string) [4]string {
+	t.Helper()
+	var fields [4]string
+	data, err := os.ReadFile(deb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(tarFiles(t, arMembers(t, data)["control.tar.gz"])["./control"], "\n") {
+		if value, ok := strings.CutPrefix(line, "Depends: "); ok {
+			fields[0] = value
+		} else if value, ok := strings.CutPrefix(line, "Recommends: "); ok {
+			fields[1] = value
+		}
+	}
+	if data, err = os.ReadFile(pkg); err != nil {
+		t.Fatal(err)
+	}
+	var depend, optdepend []string
+	for _, line := range strings.Split(tarFiles(t, data)[".PKGINFO"], "\n") {
+		if value, ok := strings.CutPrefix(line, "depend = "); ok {
+			depend = append(depend, value)
+		} else if value, ok := strings.CutPrefix(line, "optdepend = "); ok {
+			optdepend = append(optdepend, value)
+		}
+	}
+	fields[2], fields[3] = strings.Join(depend, ", "), strings.Join(optdepend, ", ")
+	return fields
+}
+
+// linux takes the two Linux targets alone, from version 2, and checks each entry as nsgo.yaml's linux.depends and linux.recommends are checked.
+func TestPackageNativesLinuxManifests(t *testing.T) {
+	good := "version: 2\nlibraries:\n  linux_x64: []\nlinux:\n  linux_x64:\n    depends:\n      deb: [libva2, 'libsoup-3.0-0 | libsoup3']\n      arch: [libva]\n    recommends:\n      deb: [libpulse0]\n      arch: ['libpulse: sound']\n  linux_arm64:\n    depends:\n      arch: [ffmpeg]\n"
+	for _, valid := range []string{good, "version: 2\nlibraries:\n  linux_x64: []\nlinux: {}\n", "version: 2\nlibraries:\n  ios: []\nlinux:\n  linux_arm64: {}\n"} {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, nativeManifestName), []byte(valid), 0o644)
+		if _, err := readNativeManifest(dir); err != nil {
+			t.Errorf("refused %q: %v", valid, err)
+		}
+	}
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, nativeManifestName), []byte(good), 0o644)
+	manifest, err := readNativeManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := manifest.Linux["linux_x64"]; !slices.Equal(got.Depends.Deb, []string{"libva2", "libsoup-3.0-0 | libsoup3"}) || !slices.Equal(got.Recommends.Arch, []string{"libpulse: sound"}) {
+		t.Errorf("linux_x64 = %+v", got)
+	}
+	for name, c := range map[string]struct{ manifest, reason string }{
+		"version 1":       {strings.Replace(good, "version: 2", "version: 1", 1), "linux needs version: 2"},
+		"terminal target": {strings.Replace(good, "  linux_arm64:", "  tui_linux_arm64:", 1), `linux takes linux_arm64 and linux_x64, not "tui_linux_arm64"`},
+		"another target":  {strings.Replace(good, "  linux_arm64:", "  macos_arm64:", 1), `linux takes linux_arm64 and linux_x64, not "macos_arm64"`},
+		"unknown field":   {strings.Replace(good, "    recommends:", "    suggests:", 1), "field suggests not found"},
+		"not a list":      {strings.Replace(good, "[libva]", "libva", 1), "cannot unmarshal"},
+		"empty entry":     {strings.Replace(good, "[libva2, ", "[libva2, '', ", 1), "linux.linux_x64.depends.deb entry 2 is empty"},
+		"blank entry":     {strings.Replace(good, "[ffmpeg]", "['  ']", 1), "linux.linux_arm64.depends.arch entry 1 is empty"},
+		"line break":      {strings.Replace(good, "[libpulse0]", `["libpulse0\nDescription: x"]`, 1), "linux.linux_x64.recommends.deb entry 1 contains a line break"},
+		"carriage return": {strings.Replace(good, "['libpulse: sound']", `["libpulse: sound\r"]`, 1), "linux.linux_x64.recommends.arch entry 1 contains a line break"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			os.WriteFile(filepath.Join(dir, nativeManifestName), []byte(c.manifest), 0o644)
+			if _, err := readNativeManifest(dir); err == nil || !strings.Contains(err.Error(), c.reason) {
+				t.Fatalf("got %v, want the reason %q", err, c.reason)
+			}
+		})
+	}
+}
+
 func TestPackageNativesCacheAndCorruption(t *testing.T) {
 	data := nativeELF(false)
 	var requests atomic.Int32

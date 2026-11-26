@@ -230,7 +230,7 @@ Ia menulis `go.mod` dan `go.sum` hanya jika keduanya tidak berubah sejak perenca
 
 Aplikasi yang mengimpor `base/terminal` juga menyertakan `libghostty-vt`: paket Windows dan Linux menaruh pustaka ini di sebelah berkas eksekusi; bundel macOS dan iOS menandatanganinya ke dalam framework masing-masing. [Menyematkan](embedding.md) menjelaskan XCFramework pendamping untuk host iOS.
 
-Sebuah dependensi dapat mendeklarasikan pustaka bersama (*shared libraries*) desktop prakompilasi di `nsgo-natives.yaml`, dan sejak versi 2-nya juga framework untuk iOS dan tvOS. NSGo memverifikasi SHA-256-nya, menyalinnya ke dalam aplikasi sebelum penandatanganan, dan menyertakannya dalam penginstal; pembuat aplikasi tidak perlu menjalankan langkah tambahan. [Pustaka native](native-libraries.md) menjelaskan format bagi pembuat paket dan jalur pemuatannya.
+Sebuah dependensi dapat mendeklarasikan pustaka bersama (*shared libraries*) desktop prakompilasi di `nsgo-natives.yaml`, dan sejak versi 2-nya juga framework untuk iOS dan tvOS. NSGo memverifikasi SHA-256-nya, menyalinnya ke dalam aplikasi sebelum penandatanganan, dan menyertakannya dalam penginstal; pembuat aplikasi tidak perlu menjalankan langkah tambahan. Sejak versi 2, dependensi itu juga dapat menyebutkan paket Linux, yang kemudian menjadi dependensi atau rekomendasi `.deb` dan paket Arch setelah `linux.depends` dan `linux.recommends` milik aplikasi sendiri. [Pustaka native](native-libraries.md) menjelaskan format bagi pembuat paket dan jalur pemuatannya.
 
 ## Perintah
 

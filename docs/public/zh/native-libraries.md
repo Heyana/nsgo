@@ -1,11 +1,11 @@
 ---
 title: 原生库
-description: 通过 NSGo 常规的打包、许可证与签名流程，随 Go 包一同分发预编译的共享库和 Apple 框架。
+description: 通过 NSGo 常规的打包、许可证与签名流程，随 Go 包一同分发预编译的共享库和 Apple 框架，并声明它们所需的 Linux 软件包。
 group: 工具链
 order: 23
 ---
 
-Go 包只需在自身包目录中放置 `nsgo-natives.yaml`，即可随包分发其通过 purego 加载的共享库；从版本 2 起，还可以分发 iOS 和 tvOS 的框架。当应用导入该包时，NSGo 会为目标平台筛选对应的声明，校验这些文件，并在签名和制作安装程序之前将其打包进去。应用本身无需任何额外配置或打包命令。
+Go 包只需在自身包目录中放置 `nsgo-natives.yaml`，即可随包分发其通过 purego 加载的共享库；从版本 2 起，还可以分发 iOS 和 tvOS 的框架，并声明所需的 Linux 软件包。当应用导入该包时，NSGo 会为目标平台筛选对应的声明，校验这些文件，并在签名和制作安装程序之前将其打包进去。应用本身无需任何额外配置或打包命令。
 
 桌面应用构建和目标测试对应用代码禁用 cgo。原生代码必须使用 purego，并声明 `nsgo-natives.yaml` 库。NSGo 会在构建开始前拒绝含有 cgo 文件的应用包。
 
@@ -81,6 +81,34 @@ NSGo 会检查每个框架的二进制文件，不满足以下条件时停止构
 NSGo 会为框架写入 `Info.plist`，其 `CFBundleIdentifier` 为应用 ID 加一个点再加小写的 `Name`，并带有平台和应用的最低系统版本。模拟器构建会对框架进行临时签名。真机构建将框架留给应用的签名流程：`sign.profile` 会在签名应用之前用应用的身份为其签名，Xcode 在真机上执行 `nsgo build -run` 和 `nsgo dev` 时也是如此。应用的可执行文件没有运行路径，因此会加载同级框架的框架需要带有 `@loader_path/..` 或 `@executable_path/Frameworks` 运行路径，才能在 `Frameworks` 中找到它们；除非带有 `/usr/lib/swift` 这类系统运行路径，否则不能通过 `@rpath` 加载其他内容。若框架的 bundle ID 与应用中另一个 bundle 相同（不区分大小写），例如与 NSGo 的 `NSGoStoreKit.framework` 并存的 `StoreKit.framework`，构建会停止。
 
 当应用链接了声明 iOS 框架的包时，`nsgo build -embed` 会停止并指出该包：供宿主应用使用的 XCFramework 目前还无法携带这些框架。
+
+## Linux 软件包
+
+从版本 2 起，`linux` 按 Linux 架构列出系统软件包：链接该 Go 包的应用，其 Debian 和 Arch 软件包会依赖或推荐这些软件包。
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` 为可选项。其键为 `linux_x64` 和 `linux_arm64`，因此在一种架构上捆绑库、在另一种架构上加载系统库的包，可以分别列出各自所需的软件包。
+- `depends` 和 `recommends` 各自接受 `deb` 和 `arch` 列表，与应用在 [nsgo.yaml](building.md#nsgoyaml) 中的 `linux.depends` 和 `linux.recommends` 相同：每个条目按 dpkg 或 pacman 的写法填写，例如 `libsoup-3.0-0 | libsoup3`、`ffmpeg (>= 7)` 或 `libpulse: audio output`。
+- `.deb` 的 `Depends` 和 `Recommends` 字段以及 Arch 软件包的 `depend` 和 `optdepend` 行，依次列出 NSGo 自身的软件包、应用的软件包，以及构建所链接的每个 Go 包的条目，后者按 Go 列出包的顺序排列，已列出的条目不再重复。被目标平台或构建标签排除的 Go 包不会添加任何内容。
+- 条目为空或含有换行符时，构建会停止并指出该 Go 包；版本 1 文件中出现 `linux`，或使用这两个以外的键，同样如此。
+- AppImage 和商店构建的 Flatpak 不使用 `linux` 中的任何内容。
 
 ## 在 vendor 时保留文件
 

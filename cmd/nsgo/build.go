@@ -907,6 +907,7 @@ func (p *project) buildOverlay(ctx context.Context, target string, env, tags, fl
 	}
 	if !p.packageLicenses || p.testBinary {
 		p.nativeLibraries = map[string][]nativeLibrary{}
+		p.nativeLinuxDeps = map[string][]nativeLinuxDeps{}
 		if nativeTarget(target) != "" {
 			_, err := p.listLicenseSources(ctx, target, env, tags, flags, overlay, map[string]*licenseSource{})
 			return overlay, err

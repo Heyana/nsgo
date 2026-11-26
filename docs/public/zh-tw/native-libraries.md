@@ -1,11 +1,11 @@
 ---
 title: 原生函式庫
-description: 透過 NSGo 標準的打包、授權與簽署步驟，隨 Go 套件一同發佈預先建置的共用函式庫與 Apple 框架。
+description: 透過 NSGo 標準的打包、授權與簽署步驟，隨 Go 套件一同發佈預先建置的共用函式庫與 Apple 框架，並宣告它們所需的 Linux 套件。
 group: 工具鏈
 order: 23
 ---
 
-Go 套件只要在其套件目錄中放置 `nsgo-natives.yaml`，即可發佈其透過 purego 載入的共用函式庫；自版本 2 起，也能發佈其 iOS 與 tvOS 框架。當應用程式匯入該套件時，NSGo 會為目標平台選取對應的宣告、驗證檔案，並在進行簽署與製作安裝程式前將其納入。應用程式本身不需要任何額外設定或打包指令。
+Go 套件只要在其套件目錄中放置 `nsgo-natives.yaml`，即可發佈其透過 purego 載入的共用函式庫；自版本 2 起，也能發佈其 iOS 與 tvOS 框架，並宣告所需的 Linux 套件。當應用程式匯入該套件時，NSGo 會為目標平台選取對應的宣告、驗證檔案，並在進行簽署與製作安裝程式前將其納入。應用程式本身不需要任何額外設定或打包指令。
 
 桌面應用程式建置與目標平台測試會對應用程式程式碼停用 cgo。原生程式碼必須使用 purego，並宣告 `nsgo-natives.yaml` 函式庫。NSGo 會在建置開始前拒絕含有 cgo 檔案的應用程式套件。
 
@@ -81,6 +81,34 @@ NSGo 會檢查每個框架的二進位檔，不符合以下條件時便停止建
 NSGo 會為框架寫入 `Info.plist`，其 `CFBundleIdentifier` 為應用程式 ID 加一個句點再加小寫的 `Name`，並帶有平台與應用程式的最低系統版本。模擬器建置會對框架進行臨時簽署。實機建置則將框架交由應用程式的簽署流程處理：`sign.profile` 會在簽署應用程式之前以應用程式的身分為其簽署，Xcode 在實機上執行 `nsgo build -run` 與 `nsgo dev` 時亦然。應用程式的執行檔沒有執行路徑，因此會載入關聯框架的框架需要帶有 `@loader_path/..` 或 `@executable_path/Frameworks` 執行路徑，才能在 `Frameworks` 中找到它們；除非帶有 `/usr/lib/swift` 這類系統執行路徑，否則不能透過 `@rpath` 載入其他內容。若框架的 bundle ID 與應用程式中另一個 bundle 相同（不區分大小寫），例如與 NSGo 的 `NSGoStoreKit.framework` 並存的 `StoreKit.framework`，建置會停止。
 
 當應用程式連結了宣告 iOS 框架的套件時，`nsgo build -embed` 會停止並指出該套件：供宿主應用程式使用的 XCFramework 目前還無法攜帶這些框架。
+
+## Linux 套件
+
+自版本 2 起，`linux` 依 Linux 架構列出系統套件：連結該 Go 套件的應用程式，其 Debian 與 Arch 套件會相依或建議這些套件。
+
+```yaml
+version: 2
+libraries:
+  # ...
+linux:
+  linux_x64:
+    depends:
+      deb: [libva2, libva-drm2, libpulse0]
+      arch: [libva, libpulse]
+    recommends:
+      deb: [va-driver-all]
+      arch: ["intel-media-driver: hardware decoding on Intel GPUs"]
+  linux_arm64:
+    depends:
+      deb: [libavcodec61, libavformat61, libpulse0]
+      arch: [ffmpeg, libpulse]
+```
+
+- `linux` 為選用項目。其鍵值為 `linux_x64` 與 `linux_arm64`，因此在一種架構上隨附函式庫、在另一種架構上載入系統函式庫的套件，可以分別列出各自所需的套件。
+- `depends` 與 `recommends` 各自接受 `deb` 與 `arch` 清單，與應用程式在 [nsgo.yaml](building.md#nsgoyaml) 中的 `linux.depends` 與 `linux.recommends` 相同：每個項目依 dpkg 或 pacman 的寫法填寫，例如 `libsoup-3.0-0 | libsoup3`、`ffmpeg (>= 7)` 或 `libpulse: audio output`。
+- `.deb` 的 `Depends` 與 `Recommends` 欄位，以及 Arch 套件的 `depend` 與 `optdepend` 行，依序列出 NSGo 本身的套件、應用程式的套件，以及建置所連結的每個 Go 套件的項目，後者依 Go 列出套件的順序排列，已列出的項目不會重複。被目標平台或建置標籤排除的 Go 套件不會新增任何內容。
+- 項目為空或含有換行字元時，建置會停止並指出該 Go 套件；版本 1 檔案中出現 `linux`，或使用這兩者以外的鍵值，亦同。
+- AppImage 與商店建置的 Flatpak 不會採用 `linux` 中的任何內容。
 
 ## 執行 vendor 時保留檔案
 
