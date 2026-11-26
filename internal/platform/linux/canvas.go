@@ -328,11 +328,19 @@ func (p *canvasPlayer) play(op *driver.DrawOp) {
 	case driver.DrawFillText, driver.DrawStrokeText:
 		p.text(op)
 	case driver.DrawImage:
-		p.image(op)
+		if !p.shaded(op) {
+			p.image(op)
+		}
 	case driver.DrawVertices:
-		p.vertices(op)
+		if !p.shaded(op) {
+			p.vertices(op)
+		}
 	case driver.DrawAtlas:
-		p.atlas(op)
+		if !p.shaded(op) {
+			p.atlas(op)
+		}
+	case driver.DrawShader:
+		p.shaded(op)
 	case driver.DrawClear:
 		path := cairoCopyPath(cr)
 		cairoSave(cr)

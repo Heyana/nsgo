@@ -16,6 +16,7 @@ package canvasshade
 import (
 	"image"
 	"math"
+	"slices"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -115,7 +116,14 @@ func Plan(op *driver.DrawOp, m Affine, clip image.Rectangle, img Image) (Pass, b
 		return Pass{}, false
 	}
 	p := Pass{Shader: driver.PaintShader(op.Shader)}
-	var pts []Vertex // X, Y in canvas points until mapped
+	n := 6
+	switch {
+	case op.Kind == driver.DrawAtlas && op.Atlas != nil:
+		n = 6 * len(*op.Atlas)
+	case op.Kind == driver.DrawVertices && op.Mesh != nil:
+		n = len(op.Mesh.Vertices)
+	}
+	pts := make([]Vertex, 0, n) // X, Y in canvas points until mapped
 	quad := func(x0, y0, x1, y1 float64, at func(u, v float64) (x, y float64), dst, pos func(u, v float64) (float64, float64), c [4]float32) {
 		corners := [6][2]float64{{0, 0}, {1, 0}, {0, 1}, {1, 0}, {1, 1}, {0, 1}}
 		for _, k := range corners {
@@ -239,6 +247,7 @@ func premultiplied(c driver.Color) [4]float32 {
 // down when flipY is set, for a texture OpenGL reads bottom row first;
 // then dst, pos and the color.
 func (p *Pass) Pack(buf []float32, flipY bool) []float32 {
+	buf = slices.Grow(buf, len(p.Vertices)*Floats)
 	w, h := float32(p.Bounds.Dx()), float32(p.Bounds.Dy())
 	for _, v := range p.Vertices {
 		y := 1 - v.Y/h*2

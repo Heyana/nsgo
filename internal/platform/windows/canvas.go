@@ -124,6 +124,9 @@ type canvasPlayer struct {
 	// split is what a list played over the static part leaves out
 	// (canvascache.go).
 	split driver.CanvasSplit
+	// pixelScale is the pixels a DIP of the context it plays on covers,
+	// when not the painter's (canvasOffscreen).
+	pixelScale float32
 }
 
 // changedCanvases draws again what the bound arguments of canvases
@@ -213,7 +216,7 @@ func (p *painter) canvasOffscreen(v *view, ops []driver.DrawOp, width, height, s
 		clear := colorF{}
 		p.dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
 		c := p.newCanvasPlayer(v, identity, width, height)
-		c.off = off
+		c.off, c.pixelScale = off, scale
 		c.playAll(ops)
 		for len(p.pushed) > 0 {
 			p.pop()
@@ -363,16 +366,20 @@ func (c *canvasPlayer) play(op *driver.DrawOp) {
 			c.text(op)
 		}
 	case driver.DrawImage:
-		if !c.transparent() {
+		if !c.transparent() && !c.shaded(op) {
 			c.image(op)
 		}
 	case driver.DrawVertices:
-		if !c.transparent() {
+		if !c.transparent() && !c.shaded(op) {
 			c.vertices(op)
 		}
 	case driver.DrawAtlas:
-		if !c.transparent() {
+		if !c.transparent() && !c.shaded(op) {
 			c.atlas(op)
+		}
+	case driver.DrawShader:
+		if !c.transparent() {
+			c.shaded(op)
 		}
 	case driver.DrawClear:
 		c.clear(op)

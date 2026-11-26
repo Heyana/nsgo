@@ -28,6 +28,9 @@ type canvasCache struct {
 	drawing *driver.Drawing
 	split   driver.CanvasSplit // At 0 when the drawing is one list
 	atlas   bool               // a recording can contain aliased sprites
+	// shaded plays the drawing on each frame, as its shaded ops render
+	// at the pixels the frame shows (canvasshade.go).
+	shaded bool
 	// mixes reports whether the drawing uses DrawClear or non-source-over composites, which rasterize into an offscreen bitmap scaled with world.
 	mixes bool
 	// head is the static part's list, or the whole drawing's; tail the
@@ -43,10 +46,11 @@ type canvasCache struct {
 // setDrawing takes v's new drawing.
 func (c *canvasCache) setDrawing(d *driver.Drawing) {
 	c.release()
-	c.drawing, c.split, c.atlas, c.mixes, c.last = d, driver.CanvasSplit{}, false, false, nil
+	c.drawing, c.split, c.atlas, c.mixes, c.shaded, c.last = d, driver.CanvasSplit{}, false, false, false, nil
 	if d == nil {
 		return
 	}
+	c.shaded = d.Shaded() && shadeCanvas != nil
 	for _, op := range d.Ops {
 		if op.Kind == driver.DrawAtlas {
 			c.atlas = true
@@ -118,7 +122,7 @@ func (p *painter) canvas(v *view, width, height float32) {
 		c.scale, c.generation = scale, gfxGeneration
 	}
 	ops := p.w.animator.CanvasOps(v.id, v.drawing)
-	if c.atlas && !atlasListTransform(p.m, p.scale) {
+	if c.shaded || c.atlas && !atlasListTransform(p.m, p.scale) {
 		p.playCanvas(v, ops, width, height)
 		return
 	}

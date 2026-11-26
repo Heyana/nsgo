@@ -85,6 +85,8 @@ type imageSlot struct {
 	bitmapWidth, bitmapHeight int
 	tint                      driver.Color
 	generation                uint64
+	// shade is the picture as a texture canvas passes read (canvasshade.go).
+	shade *d3dImage
 	// blur is the Gaussian blur effect a blurred picture draws through,
 	// made in blurGeneration.
 	blur           *comObject
@@ -106,6 +108,7 @@ func (s *imageSlot) reset(src driver.ImageSource) {
 		s.load = nil
 	}
 	releaseAll(&s.bitmap, &s.blur, &s.canvasTint)
+	s.releaseShade()
 	s.pic = nil
 	s.src = src
 	s.frame, s.playing, s.ended = 0, false, false
@@ -140,6 +143,7 @@ func (s *imageSlot) showPixels(src driver.ImageSource) {
 	s.frame, s.playing, s.ended = 0, false, false
 	s.bitmapFrame = -1
 	releaseAll(&s.canvasTint)
+	s.releaseShade()
 	s.fade = 0
 }
 
