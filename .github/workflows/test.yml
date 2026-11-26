@@ -720,6 +720,12 @@ jobs:
     if: ${{ !cancelled() && (inputs.all-jobs || needs.changes.outputs.apple != 'false') }}
     runs-on: depot-macos-26
     timeout-minutes: 30
+    # The 200 fresh processes are independent, so two runners take 100 each and
+    # the job ends in about half the time; each half still reports its crashes.
+    strategy:
+      fail-fast: false
+      matrix:
+        half: [1, 2]
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -738,8 +744,11 @@ jobs:
       - name: Stress overlapping sound playback in fresh processes
         env:
           GOTRACEBACK: crash
+          HALF: ${{ matrix.half }}
         run: |
-          for i in $(seq 1 200); do
+          first=$(( (HALF - 1) * 100 + 1 ))
+          last=$(( HALF * 100 ))
+          for i in $(seq $first $last); do
             go tool nsgo test -ldflags '-s=false -w=false' -run '^(TestAuthenticationServicesLoads|TestASoundDecodesOnceAndPlaysOverlapping)$' \
               ./internal/platform/apple -- -count=1 -timeout=30s || { echo "run $i failed"; exit 1; }
           done
