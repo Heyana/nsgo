@@ -44,8 +44,10 @@ jobs:
           fi
 
   # go tool nsgo check -target all names the targets a Mac with Go and Xcode builds (cmd/nsgo/build.go, goAndXcodeTargets), and Apple's need cgo against Xcode's SDKs, which Linux has none of. So Linux vets the rest and a Mac only Apple's, side by side; a target added to cmd/nsgo/build.go's targets joins one of the two lists here.
-  check:
-    name: Build and vet
+  # The list is split in two so two 4-core runners vet it at once, and the job
+  # below, named as the required check, passes only when every part did.
+  check-targets-a:
+    name: Build and vet (targets A)
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -58,15 +60,72 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Build and vet every target but Apple's mobile ones
-        run: go tool nsgo check -target macos_arm64,macos_x64,windows_arm64,windows_x64,linux_arm64,linux_x64,android_arm64,web,harmonyos,tui -jobs 2
+      - name: Build and vet five targets
+        run: go tool nsgo check -target macos_arm64,windows_x64,linux_x64,web,tui -jobs 2
+      - name: Check the benchmark module
+        run: go list -mod=readonly ./...
+        working-directory: benchmark
+
+  check-targets-b:
+    name: Build and vet (targets B)
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build and vet five targets
+        run: go tool nsgo check -target macos_x64,windows_arm64,linux_arm64,android_arm64,harmonyos -jobs 2
+
+  # The Android host tags build a different set of packages, so they vet on a
+  # runner of their own rather than after the other ten targets.
+  check-android-host:
+    name: Build and vet (Android host)
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
       - name: Build and vet Android host development
         env:
           GOFLAGS: -tags=nsgodev,nsgoandroidhost
         run: go tool nsgo check -target macos_arm64,linux_x64,windows_x64 -jobs 2
-      - name: Check the benchmark module
-        run: go list -mod=readonly ./...
-        working-directory: benchmark
+
+  # The required check: it passes only when every part of the build and vet
+  # passed. It runs whatever happened before it, as a skipped required check
+  # would count as passed.
+  check:
+    name: Build and vet
+    needs: [check-targets-a, check-targets-b, check-android-host]
+    if: ${{ !cancelled() }}
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every part to pass
+        env:
+          TARGETS_A: ${{ needs.check-targets-a.result }}
+          TARGETS_B: ${{ needs.check-targets-b.result }}
+          ANDROID_HOST: ${{ needs.check-android-host.result }}
+        run: |
+          for result in "$TARGETS_A" "$TARGETS_B" "$ANDROID_HOST"; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A part of Build and vet did not pass: $result."
+              exit 1
+            fi
+          done
 
   apple:
     name: Build and vet (Apple)
