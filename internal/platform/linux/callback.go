@@ -184,12 +184,6 @@ func init() {
 	cbFrontmostEvent = newCallback(frontmostEvent)
 	cbSecretPrompt = newCallback(secretPromptCompleted)
 
-	cbGPURealize = newCallback(gpuRealizeCallback)
-	cbGPUResize = newCallback(gpuResizeCallback)
-	cbGPURender = newCallback(gpuRenderCallback)
-	cbGPUUnrealize = newCallback(gpuUnrealizeCallback)
-	cbGPUFlush = newCallback(gpuFlushCallback)
-
 	cbDropMotion = newCallback(dropMotionCallback)
 	cbDropLeave = newCallback(dropLeaveCallback)
 	cbDrop = newCallback(dropCallback)

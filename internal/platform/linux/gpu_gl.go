@@ -299,12 +299,31 @@ type glGPUBindGroup struct {
 	entries map[uint32]driver.GPUBindGroupEntry
 }
 
+// glUniformBlockSlot and glSamplerPair mirror the GLSL writer's types
+// without naming its package, so an app that draws no GPU view links none of
+// the writer.
+type glUniformBlockSlot struct {
+	Group     uint32
+	Binding   uint32
+	BlockName string
+	Slot      uint32
+}
+
+type glSamplerPair struct {
+	Name           string
+	Unit           uint32
+	TextureGroup   uint32
+	TextureBinding uint32
+	SamplerGroup   uint32
+	SamplerBinding uint32
+}
+
 type glGPUPipeline struct {
 	prog          uint32
 	vao           uint32
 	desc          driver.GPUPipelineDesc
-	uniformBlocks []glsl.UniformBlockSlot
-	samplerPairs  []glsl.SamplerPair
+	uniformBlocks []glUniformBlockSlot
+	samplerPairs  []glSamplerPair
 }
 
 type glGPUError struct {
@@ -1004,12 +1023,20 @@ func (c *glGPUContext) createPipeline(id driver.GPUID, desc *driver.GPUPipelineD
 	}
 
 	vao := c.gl.GenVertexArray()
+	blocks := make([]glUniformBlockSlot, len(compiled.UniformBlocks))
+	for i, b := range compiled.UniformBlocks {
+		blocks[i] = glUniformBlockSlot{b.Group, b.Binding, b.BlockName, b.Slot}
+	}
+	pairs := make([]glSamplerPair, len(compiled.SamplerPairs))
+	for i, sp := range compiled.SamplerPairs {
+		pairs[i] = glSamplerPair{sp.Name, sp.Unit, sp.TextureGroup, sp.TextureBinding, sp.SamplerGroup, sp.SamplerBinding}
+	}
 	c.pipelines[id] = &glGPUPipeline{
 		prog:          prog,
 		vao:           vao,
 		desc:          *desc,
-		uniformBlocks: compiled.UniformBlocks,
-		samplerPairs:  compiled.SamplerPairs,
+		uniformBlocks: blocks,
+		samplerPairs:  pairs,
 	}
 	return nil
 }

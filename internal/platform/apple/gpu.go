@@ -69,10 +69,19 @@ type gpuTexture struct {
 	desc   driver.GPUTextureDesc
 }
 
+// gpuBindingSlot mirrors msl.BindingSlot without naming its package, so an
+// app that draws no GPU view links none of the Metal shader writer.
+type gpuBindingSlot struct {
+	Group   uint32
+	Binding uint32
+	Kind    shaderir.BindingKind
+	Slot    uint32
+}
+
 type gpuPipeline struct {
 	desc             *driver.GPUPipelineDesc
 	vertex, fragment objc.ID // MTLFunctions
-	slots            []msl.BindingSlot
+	slots            []gpuBindingSlot
 	depthState       objc.ID
 	// states are the pipeline's Metal states by the depth attachment's pixel format, which Metal fixes in each.
 	states map[uint]objc.ID
@@ -439,7 +448,11 @@ func gpuNewPipeline(p *driver.GPUPipelineDesc) (*gpuPipeline, error) {
 		return nil, fmt.Errorf("%s", errorText(errObj))
 	}
 	defer lib.Send(selRelease)
-	gp := &gpuPipeline{desc: p, slots: src.Slots, states: map[uint]objc.ID{}}
+	slots := make([]gpuBindingSlot, len(src.Slots))
+	for i, s := range src.Slots {
+		slots[i] = gpuBindingSlot{s.Group, s.Binding, s.Kind, s.Slot}
+	}
+	gp := &gpuPipeline{desc: p, slots: slots, states: map[uint]objc.ID{}}
 	gp.vertex = lib.Send(sel("newFunctionWithName:"), NSString(src.VertexEntry))
 	if p.Fragment.IR != nil {
 		gp.fragment = lib.Send(sel("newFunctionWithName:"), NSString(src.FragmentEntry))

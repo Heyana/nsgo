@@ -230,6 +230,11 @@ func (w *window) focusedWeb() *view {
 
 func (*window) EnableGPU() {
 	gpuOnce.Do(func() {
+		cbGPURealize = newCallback(gpuRealizeCallback)
+		cbGPUResize = newCallback(gpuResizeCallback)
+		cbGPURender = newCallback(gpuRenderCallback)
+		cbGPUUnrealize = newCallback(gpuUnrealizeCallback)
+		cbGPUFlush = newCallback(gpuFlushCallback)
 		gpus.Store(&gpuOps{
 			set:   (*window).setGPU,
 			close: (*window).closeGPU,
