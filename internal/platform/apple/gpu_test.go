@@ -238,9 +238,13 @@ struct Outer {
 	tail: vec3<f32>,
 }
 
+struct ScalarQuad { r: f32, g: f32, b: f32, a: f32 }
+struct ScalarUniforms { colors: array<ScalarQuad, 2>, tail: f32 }
+
 @group(0) @binding(0) var<uniform> u: Outer;
 @group(0) @binding(1) var<storage, read> items: array<Packet>;
 @group(0) @binding(2) var<uniform> ip: IntPacket;
+@group(0) @binding(3) var<uniform> scalar: ScalarUniforms;
 
 fn combine(a: Packet, b: Packet) -> Packet {
 	var local = a;
@@ -259,13 +263,18 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 	if (pos.x < 4.0) {
 		return vec4<f32>(c.d.x, c.d.y, c.s, 1.0);
 	}
+	if (pos.x >= 6.0) {
+		return vec4<f32>(scalar.colors[1].g, scalar.tail, scalar.colors[0].b, 1.0);
+	}
 	let iScale = f32(ip.iv.z + ip.is) / 10.0;
 	let uScale = f32(ip.uv.x + ip.us) / 10.0;
 	return vec4<f32>(u.lead + u.arr[1].x, iScale + u.arr[1].y * 0.0, uScale + u.tail.z * 0.5, 1.0);
 }
 `
 
-// TestMetalVec3PackedStructLayout verifies that Metal reads {vec3<f32>, f32}, {vec3<i32>, i32}, and {vec3<u32>, u32} uniform and storage buffer members, nested structs, array<vec3<f32>, 2>, trailing vec3 padding, and helper struct construction at exact WGSL offsets under Metal's API validation.
+// TestMetalVec3PackedStructLayout verifies exact WGSL buffer layouts under
+// Metal API validation, including packed vec3 members, arrays of vec3, and
+// an exact-size uniform buffer containing an array of scalar-only structs.
 func TestMetalVec3PackedStructLayout(t *testing.T) {
 	if os.Getenv("MTL_DEBUG_LAYER") != "1" {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -314,6 +323,7 @@ func TestMetalVec3PackedStructLayout(t *testing.T) {
 		ub
 		sb
 		ib
+		scalarUB
 		layout
 		group
 		pipe
@@ -346,19 +356,25 @@ func TestMetalVec3PackedStructLayout(t *testing.T) {
 	for _, v := range []uint32{1, 2, 2, 4, 1, 2, 3, 3} {
 		iData = binary.LittleEndian.AppendUint32(iData, v)
 	}
+	// Two 16-byte scalar records, then a float at 32; the allocation is
+	// exactly 36 bytes, not a 48-byte uniform struct rounded up to 16.
+	scalarData := gpuFloats(1, 1, 1, 1, 1, 0, 0, 0, 1)
 	rgba := driver.GPUFormatRGBA8Unorm
 	layer.Submit(driver.GPUFrame{Generation: gen, Ops: []driver.GPUResourceOp{
 		{Kind: driver.GPUOpCreateBuffer, ID: vb, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferVertex, Data: quad}},
 		{Kind: driver.GPUOpCreateBuffer, ID: ub, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferUniform, Data: uData}},
 		{Kind: driver.GPUOpCreateBuffer, ID: sb, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferStorage, Data: sData}},
 		{Kind: driver.GPUOpCreateBuffer, ID: ib, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferUniform, Data: iData}},
+		{Kind: driver.GPUOpCreateBuffer, ID: scalarUB, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferUniform, Data: scalarData}},
 		{Kind: driver.GPUOpCreateBindGroupLayout, ID: layout, BindGroupLayout: &driver.GPUBindGroupLayoutDesc{Entries: []driver.GPUBindGroupLayoutEntry{
 			{Binding: 0, Visibility: driver.GPUStageFragment, Type: driver.GPUBindingUniform},
 			{Binding: 1, Visibility: driver.GPUStageFragment, Type: driver.GPUBindingStorageRead},
 			{Binding: 2, Visibility: driver.GPUStageFragment, Type: driver.GPUBindingUniform},
+			{Binding: 3, Visibility: driver.GPUStageFragment, Type: driver.GPUBindingUniform},
 		}}},
 		{Kind: driver.GPUOpCreateBindGroup, ID: group, BindGroup: &driver.GPUBindGroupDesc{Layout: layout, Entries: []driver.GPUBindGroupEntry{
 			{Binding: 0, Buffer: ub}, {Binding: 1, Buffer: sb}, {Binding: 2, Buffer: ib},
+			{Binding: 3, Buffer: scalarUB},
 		}}},
 		{Kind: driver.GPUOpCreatePipeline, ID: pipe, Pipeline: &driver.GPUPipelineDesc{
 			Label:    "vec3-layout",
@@ -412,7 +428,10 @@ func TestMetalVec3PackedStructLayout(t *testing.T) {
 		t.Errorf("left pixel = %v, want ~[102 102 204 255]", left)
 	}
 	// Right pixel: (0.2+0.4=0.6, 0.6, 0.4+0.4=0.8, 1.0) -> ~(153, 153, 204, 255)
-	if right := read(2, 6); !near(right, 153, 153, 204, 255) {
+	if right := read(2, 5); !near(right, 153, 153, 204, 255) {
 		t.Errorf("right pixel = %v, want ~[153 153 204 255]", right)
+	}
+	if scalar := read(3, 6); !near(scalar, 0, 255, 255, 255) {
+		t.Errorf("pixel from 36-byte uniform = %v, want [0 255 255 255]", scalar)
 	}
 }

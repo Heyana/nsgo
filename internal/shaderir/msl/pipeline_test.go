@@ -80,13 +80,13 @@ fn fs_main() -> @location(0) vec4<f32> {
 			t.Fatalf("wgsl.CompilePipeline: %v", err)
 		}
 		st := prog.IR.Bindings[0].Type
-		if st.StructFieldOffset(0) != 0 || st.StructFieldOffset(1) != 16 || st.StructFieldOffset(2) != 28 ||
-			st.StructFieldOffset(3) != 32 || st.StructFieldOffset(4) != 44 || st.StructFieldOffset(5) != 48 ||
-			st.StructFieldOffset(6) != 64 || st.SizeBytes() != 80 {
+		if st.StorageStructFieldOffset(0) != 0 || st.StorageStructFieldOffset(1) != 16 || st.StorageStructFieldOffset(2) != 28 ||
+			st.StorageStructFieldOffset(3) != 32 || st.StorageStructFieldOffset(4) != 44 || st.StorageStructFieldOffset(5) != 48 ||
+			st.StorageStructFieldOffset(6) != 64 || st.StorageSizeBytes() != 80 {
 			t.Fatalf("unexpected WGSL layout: size=%d offsets=[%d %d %d %d %d %d %d]",
-				st.SizeBytes(),
-				st.StructFieldOffset(0), st.StructFieldOffset(1), st.StructFieldOffset(2),
-				st.StructFieldOffset(3), st.StructFieldOffset(4), st.StructFieldOffset(5), st.StructFieldOffset(6))
+				st.StorageSizeBytes(),
+				st.StorageStructFieldOffset(0), st.StorageStructFieldOffset(1), st.StorageStructFieldOffset(2),
+				st.StorageStructFieldOffset(3), st.StorageStructFieldOffset(4), st.StorageStructFieldOffset(5), st.StorageStructFieldOffset(6))
 		}
 		out, err := msl.CompilePipeline(prog.IR)
 		if err != nil {
@@ -285,6 +285,40 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	})
 }
 
+func TestCompilePipelineUniformNaturalSize(t *testing.T) {
+	const src = `
+struct ScalarQuad { r: f32, g: f32, b: f32, a: f32 }
+struct Uniforms { colors: array<ScalarQuad, 2>, tail: f32 }
+@group(0) @binding(0) var<uniform> u: Uniforms;
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+	return vec4<f32>(u.colors[1].g, u.tail, u.colors[0].b, 1.0);
+}
+`
+	prog, err := wgsl.CompilePipeline(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := prog.IR.Bindings[0].Type
+	if off, size, align := st.StorageStructFieldOffset(1), st.StorageSizeBytes(), st.StorageAlignBytes(); off != 32 || size != 36 || align != 4 {
+		t.Fatalf("WGSL tail offset, size, alignment = %d, %d, %d; want 32, 36, 4", off, size, align)
+	}
+	out, err := msl.CompilePipeline(prog.IR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No extra alignment or padding: in Metal, S0 is 16 bytes aligned
+	// to 4, so S1 has a 32-byte array, then a float, and is 36 bytes.
+	for _, want := range []string{
+		"struct S0 {\n\tfloat M0;\n\tfloat M1;\n\tfloat M2;\n\tfloat M3;\n};",
+		"struct S1 {\n\tarray<S0, 2> M0;\n\tfloat M1;\n};",
+	} {
+		if !strings.Contains(out.Source, want) {
+			t.Errorf("MSL missing %q:\n%s", want, out.Source)
+		}
+	}
+}
+
 // TestStructOffsetsMatchWGSLInIRAndMSL checks the IR's WGSL offsets and the MSL struct that pads to them; the GLSL, HLSL and WGSL writers are only checked to accept the struct. HLSL lays it out by cbuffer and StructuredBuffer packing, a gap the roadmap records.
 func TestStructOffsetsMatchWGSLInIRAndMSL(t *testing.T) {
 	const src = `
@@ -314,16 +348,11 @@ fn fs_main() -> @location(0) vec4<f32> {
 		t.Fatalf("wgsl.CompilePipeline: %v", err)
 	}
 	st := prog.IR.Bindings[0].Type
-	if got := [4]int{st.StructFieldOffset(0), st.StructFieldOffset(1), st.StructFieldOffset(2), st.StructFieldOffset(3)}; got != [4]int{0, 12, 16, 32} {
-		t.Fatalf("uniform offsets = %v, want [0 12 16 32]", got)
+	if got := [4]int{st.StorageStructFieldOffset(0), st.StorageStructFieldOffset(1), st.StorageStructFieldOffset(2), st.StorageStructFieldOffset(3)}; got != [4]int{0, 12, 16, 32} {
+		t.Fatalf("WGSL offsets = %v, want [0 12 16 32]", got)
 	}
-	if st.SizeBytes() != 48 || st.StorageSizeBytes() != 48 || st.StorageStride() != 48 {
-		t.Fatalf("struct sizes = uniform:%d storage:%d stride:%d, want 48", st.SizeBytes(), st.StorageSizeBytes(), st.StorageStride())
-	}
-	for i := range st.Sub {
-		if st.StructFieldOffset(i) != st.StorageStructFieldOffset(i) {
-			t.Errorf("field %d offset mismatch uniform=%d storage=%d", i, st.StructFieldOffset(i), st.StorageStructFieldOffset(i))
-		}
+	if st.StorageSizeBytes() != 48 || st.StorageStride() != 48 {
+		t.Fatalf("struct size = %d, array stride = %d, want 48 each", st.StorageSizeBytes(), st.StorageStride())
 	}
 
 	mslOut, err := msl.CompilePipeline(prog.IR)

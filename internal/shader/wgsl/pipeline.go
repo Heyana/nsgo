@@ -1169,9 +1169,8 @@ func parseStageField(name string, t ty, attrs []attr, pos int, fieldIdx int) sta
 }
 
 // uniformLayoutError returns the first WGSL uniform-address-space layout rule
-// violated by the natural layout of t. The IR's uniform layout is deliberately
-// stricter than storage layout, so accepted uniform buffers have the same
-// offsets in every writer.
+// violated by the natural layout of t. These rules restrict which types can
+// be bound as uniforms without changing their offsets or size.
 func uniformLayoutError(t shaderir.Type, prefix string) (member, reason string, ok bool) {
 	switch t.Main {
 	case shaderir.Array:

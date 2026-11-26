@@ -68,8 +68,8 @@ func TestCompilePipelineAndEmitters(t *testing.T) {
 	if ir.Bindings[0].Kind != shaderir.BindingUniformBuffer || ir.Bindings[0].Group != 0 || ir.Bindings[0].Binding != 0 {
 		t.Errorf("unexpected binding 0: %+v", ir.Bindings[0])
 	}
-	if ir.Bindings[0].Type.SizeBytes() != 80 {
-		t.Errorf("Camera struct SizeBytes = %d, want 80", ir.Bindings[0].Type.SizeBytes())
+	if got := ir.Bindings[0].Type.StorageSizeBytes(); got != 80 {
+		t.Errorf("Camera struct size = %d, want 80", got)
 	}
 
 	// MSL emitter
@@ -173,16 +173,13 @@ struct U { a: vec4<f32>, s: Inner, pad: vec3<f32> }
 		t.Fatalf("CompilePipeline: %v", err)
 	}
 	typ := prog.IR.Bindings[0].Type
-	if got, want := typ.StructFieldOffset(1), 16; got != want {
-		t.Fatalf("inner struct offset = %d, want %d", got, want)
-	}
-	if got, want := typ.StructFieldOffset(2), 32; got != want {
-		t.Fatalf("padding offset = %d, want %d", got, want)
-	}
-	for i := range typ.Sub {
-		if got, want := typ.StructFieldOffset(i), typ.StorageStructFieldOffset(i); got != want {
-			t.Fatalf("field %d uniform offset = %d, storage offset = %d", i, got, want)
+	for i, want := range []int{0, 16, 32} {
+		if got := typ.StorageStructFieldOffset(i); got != want {
+			t.Errorf("member %d offset = %d, want %d", i, got, want)
 		}
+	}
+	if got := typ.StorageSizeBytes(); got != 48 {
+		t.Errorf("struct size = %d, want 48", got)
 	}
 }
 

@@ -36,7 +36,7 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	w := &pipeWriter{
 		p:              p,
 		structNames:    map[string]string{},
-		bufferStructs:  map[string]structUsage{},
+		bufferStructs:  map[string]bool{},
 		needStructCtor: map[string]bool{},
 		bindingSlot:    make([]uint32, len(p.Bindings)),
 	}
@@ -46,15 +46,10 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 		bufSlot = 8
 	}
 	for i, b := range p.Bindings {
-		switch b.Kind {
-		case shaderir.BindingUniformBuffer:
-			w.markBufferStructs(b.Type, false)
-		case shaderir.BindingStorageBufferRead, shaderir.BindingStorageBufferReadWrite:
-			w.markBufferStructs(b.Type, true)
-		}
 		w.registerStructs(b.Type)
 		switch b.Kind {
 		case shaderir.BindingUniformBuffer, shaderir.BindingStorageBufferRead, shaderir.BindingStorageBufferReadWrite:
+			w.markBufferStructs(b.Type)
 			w.bindingSlot[i] = bufSlot
 			w.slots = append(w.slots, BindingSlot{Group: b.Group, Binding: b.Binding, Kind: b.Kind, Slot: bufSlot})
 			bufSlot++
@@ -119,57 +114,36 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	}, nil
 }
 
-type structUsage uint8
-
-const (
-	structLocal structUsage = iota
-	structUniform
-	structStorage
-	structBoth
-)
-
 type pipeWriter struct {
 	p              *shaderir.Program
 	structNames    map[string]string
 	structTypes    []shaderir.Type
-	bufferStructs  map[string]structUsage
+	bufferStructs  map[string]bool
 	needStructCtor map[string]bool
 	bindingSlot    []uint32
 	slots          []BindingSlot
 }
 
-func (w *pipeWriter) markBufferStructs(t shaderir.Type, storage bool) {
+func (w *pipeWriter) markBufferStructs(t shaderir.Type) {
 	switch t.Main {
 	case shaderir.Struct:
-		for _, f := range t.Sub {
-			w.markBufferStructs(f, storage)
-		}
 		key := t.String()
-		u := structUniform
-		if storage {
-			u = structStorage
+		if w.bufferStructs[key] {
+			return
 		}
-		switch w.bufferStructs[key] {
-		case structLocal:
-			w.bufferStructs[key] = u
-		case structUniform:
-			if storage {
-				w.bufferStructs[key] = structBoth
-			}
-		case structStorage:
-			if !storage {
-				w.bufferStructs[key] = structBoth
-			}
+		w.bufferStructs[key] = true
+		for _, f := range t.Sub {
+			w.markBufferStructs(f)
 		}
 	case shaderir.Array:
 		if len(t.Sub) > 0 {
-			w.markBufferStructs(t.Sub[0], storage)
+			w.markBufferStructs(t.Sub[0])
 		}
 	}
 }
 
 func (w *pipeWriter) isBufferStruct(t shaderir.Type) bool {
-	return t.Main == shaderir.Struct && w.bufferStructs[t.String()] != structLocal
+	return t.Main == shaderir.Struct && w.bufferStructs[t.String()]
 }
 
 func packedVec3TypeName(bt shaderir.BasicType) (packed, unpacked string, ok bool) {
@@ -184,70 +158,26 @@ func packedVec3TypeName(bt shaderir.BasicType) (packed, unpacked string, ok bool
 	return "", "", false
 }
 
-func (w *pipeWriter) bufferStructIsStorage(t shaderir.Type) bool {
-	u := w.bufferStructs[t.String()]
-	return u == structStorage || u == structBoth
-}
-
-// mslStructSizeAlign returns the emitted Metal byte size and alignment of a buffer-layout struct, matching WGSL host-shareable layout.
-func (w *pipeWriter) mslStructSizeAlign(t shaderir.Type) (size, align int) {
-	if w.bufferStructIsStorage(t) {
-		return t.StorageSizeBytes(), t.StorageAlignBytes()
-	}
-	return t.SizeBytes(), t.AlignBytes()
-}
-
-// mslBufferMemberLayout returns the Metal byte size, alignment, and whether m is a runtime-sized array for a member of a host-shareable struct. Direct vec3 members use packed_*3 (size 12, align 4), whereas array elements keep unpacked vector types (size 16, align 16) so array<vec3<T>, N> keeps its 16-byte WGSL stride.
-func (w *pipeWriter) mslBufferMemberLayout(t shaderir.Type) (size, align int, runtimeArr bool) {
+// mslBufferMemberLayout describes the emitted Metal type. Direct vec3 members
+// use packed_*3; array elements use the unpacked type to keep a 16-byte stride.
+func mslBufferMemberLayout(t shaderir.Type) (size, align int, runtimeArr bool) {
 	switch t.Main {
 	case shaderir.Bool:
 		return 1, 1, false
-	case shaderir.Int, shaderir.Uint, shaderir.Float:
-		return 4, 4, false
-	case shaderir.Vec2, shaderir.IVec2, shaderir.UVec2:
-		return 8, 8, false
 	case shaderir.Vec3, shaderir.IVec3, shaderir.UVec3:
 		return 12, 4, false
-	case shaderir.Vec4, shaderir.IVec4, shaderir.UVec4:
-		return 16, 16, false
-	case shaderir.Mat2:
-		return 16, 8, false
-	case shaderir.Mat3x2:
-		return 24, 8, false
-	case shaderir.Mat4x2:
-		return 32, 8, false
-	case shaderir.Mat2x3, shaderir.Mat2x4:
-		return 32, 16, false
-	case shaderir.Mat3, shaderir.Mat3x4:
-		return 48, 16, false
-	case shaderir.Mat4x3, shaderir.Mat4:
-		return 64, 16, false
 	case shaderir.Array:
 		if len(t.Sub) == 0 {
 			return 0, 4, t.Length == 0
 		}
-		es, ea := w.mslArrayElemLayout(t.Sub[0])
-		if t.Length == 0 {
-			return 0, ea, true
+		elem := t.Sub[0]
+		if _, _, packed := packedVec3TypeName(elem.Main); packed {
+			return 16 * t.Length, 16, t.Length == 0
 		}
-		stride := roundUp(es, ea)
-		return t.Length * stride, ea, false
-	case shaderir.Struct:
-		s, a := w.mslStructSizeAlign(t)
-		return s, a, false
-	}
-	return 4, 4, false
-}
-
-func (w *pipeWriter) mslArrayElemLayout(t shaderir.Type) (size, align int) {
-	switch t.Main {
-	case shaderir.Vec3, shaderir.IVec3, shaderir.UVec3:
-		return 16, 16
-	case shaderir.Struct:
-		return w.mslStructSizeAlign(t)
+		size, align, _ := mslBufferMemberLayout(elem)
+		return t.Length * roundUp(size, align), align, t.Length == 0
 	default:
-		s, a, _ := w.mslBufferMemberLayout(t)
-		return s, a
+		return t.StorageSizeBytes(), t.StorageAlignBytes(), false
 	}
 }
 
@@ -261,13 +191,8 @@ func (w *pipeWriter) emitStructDecl(name string, st shaderir.Type) []string {
 		return lines
 	}
 
-	isStorage := w.bufferStructIsStorage(st)
-	wgslAlign := st.AlignBytes()
-	wgslSize := st.SizeBytes()
-	if isStorage {
-		wgslAlign = st.StorageAlignBytes()
-		wgslSize = st.StorageSizeBytes()
-	}
+	wgslAlign := st.StorageAlignBytes()
+	wgslSize := st.StorageSizeBytes()
 
 	var members []string
 	curOff := 0
@@ -275,11 +200,8 @@ func (w *pipeWriter) emitStructDecl(name string, st shaderir.Type) []string {
 	padIdx := 0
 	endsWithRuntimeArr := false
 	for j, m := range st.Sub {
-		wgslOff := st.StructFieldOffset(j)
-		if isStorage {
-			wgslOff = st.StorageStructFieldOffset(j)
-		}
-		mslSize, mslAlign, runtimeArr := w.mslBufferMemberLayout(m)
+		wgslOff := st.StorageStructFieldOffset(j)
+		mslSize, mslAlign, runtimeArr := mslBufferMemberLayout(m)
 		alignedOff := roundUp(curOff, max(mslAlign, 1))
 		if alignedOff < wgslOff {
 			members = append(members, fmt.Sprintf("\tuchar __pad%d[%d];", padIdx, wgslOff-curOff))

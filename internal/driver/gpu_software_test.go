@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nsgo-dev/nsgo/internal/shader/wgsl"
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
 )
 
@@ -276,6 +277,67 @@ func TestGPUSoftwareInstancingStepRateAndFirstInstance(t *testing.T) {
 		if got != want {
 			t.Errorf("col %d (x=%d): got %+v, want %+v", col, px, got, want)
 		}
+	}
+}
+
+func TestGPUSoftwareUniformNaturalSize(t *testing.T) {
+	const src = `
+struct ScalarQuad { r: f32, g: f32, b: f32, a: f32 }
+struct Uniforms { colors: array<ScalarQuad, 2>, tail: f32 }
+@group(0) @binding(0) var<uniform> u: Uniforms;
+@vertex
+fn vs_main(@location(0) pos: vec2<f32>) -> @builtin(position) vec4<f32> {
+	return vec4<f32>(pos, 0.5, 1.0);
+}
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+	return vec4<f32>(u.colors[1].g, u.tail, u.colors[0].b, 1.0);
+}
+`
+	prog, err := wgsl.CompilePipeline(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := NewGPUSoftwareDevice(8, 8, GPUViewConfig{ColorFormat: GPUFormatRGBA8Unorm})
+	defer dev.Close()
+	quad := packF32s(-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1)
+	// Two 16-byte scalar records, followed by a float at 32, with no end padding.
+	uniforms := packF32s(1, 1, 1, 1, 1, 0, 0, 0, 1)
+	_, err = dev.Submit(GPUFrame{
+		Ops: []GPUResourceOp{
+			{Kind: GPUOpCreateBuffer, ID: 1, Buffer: &GPUBufferDesc{Size: uint64(len(quad)), Usage: GPUBufferVertex, Data: quad}},
+			{Kind: GPUOpCreateBuffer, ID: 2, Buffer: &GPUBufferDesc{Size: uint64(len(uniforms)), Usage: GPUBufferUniform, Data: uniforms}},
+			{Kind: GPUOpCreateBindGroupLayout, ID: 3, BindGroupLayout: &GPUBindGroupLayoutDesc{
+				Entries: []GPUBindGroupLayoutEntry{{Binding: 0, Visibility: GPUStageFragment, Type: GPUBindingUniform}},
+			}},
+			{Kind: GPUOpCreateBindGroup, ID: 4, BindGroup: &GPUBindGroupDesc{
+				Layout:  3,
+				Entries: []GPUBindGroupEntry{{Binding: 0, Buffer: 2, Size: uint64(len(uniforms))}},
+			}},
+			{Kind: GPUOpCreatePipeline, ID: 5, Pipeline: &GPUPipelineDesc{
+				Vertex:        GPUShaderStage{IR: prog.IR, EntryPoint: "vs_main"},
+				Fragment:      GPUShaderStage{IR: prog.IR, EntryPoint: "fs_main"},
+				Layouts:       []GPUID{3},
+				VertexBuffers: []GPUVertexBufferLayout{{Stride: 8, Attributes: []GPUVertexAttribute{{Format: GPUVertexFloat32x2}}}},
+				Targets:       []GPUColorTargetState{{Format: GPUFormatRGBA8Unorm, WriteMask: GPUColorWriteAll}},
+			}},
+		},
+		Passes: []GPUPass{{
+			ColorAttachments: []GPUColorAttachment{{LoadOp: GPULoadClear, StoreOp: GPUStoreStore}},
+			Commands: []GPUCommand{
+				{Kind: GPUCmdSetPipeline, ID: 5},
+				{Kind: GPUCmdSetBindGroup, Slot: 0, ID: 4},
+				{Kind: GPUCmdSetVertexBuffer, Slot: 0, ID: 1},
+				{Kind: GPUCmdDraw, U0: 6},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := color.RGBA{0, 255, 255, 255}
+	if got := dev.SurfaceImage().RGBAAt(4, 4); got != want {
+		t.Errorf("pixel from exact-size uniform = %v, want %v", got, want)
 	}
 }
 

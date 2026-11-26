@@ -2922,11 +2922,7 @@ func decodeVertexAttr(data []byte, format GPUVertexFormat) irVal {
 	return irVal{}
 }
 
-func decodeUniformBytes(t shaderir.Type, data []byte, offset int) irVal {
-	return decodeBytes(t, data, offset, false)
-}
-
-func decodeBytes(t shaderir.Type, data []byte, offset int, std430 bool) irVal {
+func decodeBytes(t shaderir.Type, data []byte, offset int) irVal {
 	readF32 := func(off int) float32 {
 		if off < 0 || off+4 > len(data) {
 			return 0
@@ -2974,7 +2970,7 @@ func decodeBytes(t shaderir.Type, data []byte, offset int, std430 bool) irVal {
 		cols, rows := t.MatrixCols(), t.MatrixRows()
 		colStride := rows * 4
 		if rows == 3 {
-			colStride = 16 // WGSL/std140/std430 column alignment for vec3
+			colStride = 16 // WGSL's vec3 columns have 16-byte alignment.
 		}
 		for c := 0; c < cols; c++ {
 			for r := 0; r < rows; r++ {
@@ -2984,30 +2980,20 @@ func decodeBytes(t shaderir.Type, data []byte, offset int, std430 bool) irVal {
 	case shaderir.Struct:
 		v.fields = make([]irVal, len(t.Sub))
 		for i, ft := range t.Sub {
-			foff := t.StructFieldOffset(i)
-			if std430 {
-				foff = t.StorageStructFieldOffset(i)
-			}
-			v.fields[i] = decodeBytes(ft, data, offset+foff, std430)
+			v.fields[i] = decodeBytes(ft, data, offset+t.StorageStructFieldOffset(i))
 		}
 	case shaderir.Array:
 		v.fields = make([]irVal, t.Length)
 		elem := t.Sub[0]
-		var stride int
-		if std430 {
-			stride = elem.StorageStride()
-		} else {
-			a := max(elem.AlignBytes(), 16)
-			stride = ((elem.SizeBytes() + a - 1) / a) * a
-		}
-		for i := 0; i < t.Length; i++ {
-			v.fields[i] = decodeBytes(elem, data, offset+i*stride, std430)
+		stride := elem.StorageStride()
+		for i := range v.fields {
+			v.fields[i] = decodeBytes(elem, data, offset+i*stride)
 		}
 	}
 	return v
 }
 
-func encodeBytes(t shaderir.Type, data []byte, offset int, v irVal, std430 bool) {
+func encodeBytes(t shaderir.Type, data []byte, offset int, v irVal) {
 	writeF32 := func(off int, val float32) {
 		if off < 0 || off+4 > len(data) {
 			return
@@ -3072,23 +3058,13 @@ func encodeBytes(t shaderir.Type, data []byte, offset int, v irVal, std430 bool)
 			if i >= len(v.fields) {
 				break
 			}
-			foff := t.StructFieldOffset(i)
-			if std430 {
-				foff = t.StorageStructFieldOffset(i)
-			}
-			encodeBytes(ft, data, offset+foff, v.fields[i], std430)
+			encodeBytes(ft, data, offset+t.StorageStructFieldOffset(i), v.fields[i])
 		}
 	case shaderir.Array:
 		elem := t.Sub[0]
-		var stride int
-		if std430 {
-			stride = elem.StorageStride()
-		} else {
-			a := max(elem.AlignBytes(), 16)
-			stride = ((elem.SizeBytes() + a - 1) / a) * a
-		}
+		stride := elem.StorageStride()
 		for i := 0; i < t.Length && i < len(v.fields); i++ {
-			encodeBytes(elem, data, offset+i*stride, v.fields[i], std430)
+			encodeBytes(elem, data, offset+i*stride, v.fields[i])
 		}
 	}
 }
@@ -3323,7 +3299,7 @@ func (vm *irVM) assignExpr(lhs shaderir.Expr, val irVal) {
 		}
 		slice := addr.buf.data[:addr.boundEnd]
 		if addr.swizzle != "" {
-			cur := decodeBytes(addr.typ, slice, addr.offset, true)
+			cur := decodeBytes(addr.typ, slice, addr.offset)
 			for i, ch := range addr.swizzle {
 				ci := swizzleIdx(byte(ch))
 				if ci >= 0 && ci < 4 {
@@ -3332,10 +3308,10 @@ func (vm *irVM) assignExpr(lhs shaderir.Expr, val irVal) {
 					cur.u[ci] = val.u[i]
 				}
 			}
-			encodeBytes(addr.typ, slice, addr.offset, cur, true)
+			encodeBytes(addr.typ, slice, addr.offset, cur)
 			return
 		}
-		encodeBytes(addr.typ, slice, addr.offset, val, true)
+		encodeBytes(addr.typ, slice, addr.offset, val)
 		return
 	}
 	switch lhs.Type {
@@ -3503,7 +3479,7 @@ func (vm *irVM) evalExpr(e shaderir.Expr) irVal {
 		return vm.evalExpr(e.Exprs[2])
 	case shaderir.FieldSelector:
 		if addr, ok := vm.resolveStorageAddr(e); ok {
-			v := decodeBytes(addr.typ, addr.buf.data[:addr.boundEnd], addr.offset, true)
+			v := decodeBytes(addr.typ, addr.buf.data[:addr.boundEnd], addr.offset)
 			if addr.swizzle != "" {
 				return evalSwizzle(v, addr.swizzle)
 			}
@@ -3520,7 +3496,7 @@ func (vm *irVM) evalExpr(e shaderir.Expr) irVal {
 		}
 	case shaderir.Index:
 		if addr, ok := vm.resolveStorageAddr(e); ok {
-			return decodeBytes(addr.typ, addr.buf.data[:addr.boundEnd], addr.offset, true)
+			return decodeBytes(addr.typ, addr.buf.data[:addr.boundEnd], addr.offset)
 		}
 		base := vm.evalExpr(e.Exprs[0])
 		idxVal := vm.evalExpr(e.Exprs[1])
@@ -3578,7 +3554,7 @@ func (vm *irVM) evalBinding(idx int) irVal {
 			if bound.dynamicOffsets != nil {
 				effOffset += bound.dynamicOffsets[b.Binding]
 			}
-			val = decodeUniformBytes(b.Type, buf.data, int(effOffset))
+			val = decodeBytes(b.Type, buf.data, int(effOffset))
 		}
 	case shaderir.BindingStorageBufferRead, shaderir.BindingStorageBufferReadWrite:
 		buf := vm.ctx.dev.buffers[entry.Buffer]
@@ -3593,7 +3569,7 @@ func (vm *irVM) evalBinding(idx int) irVal {
 			if bound.dynamicOffsets != nil {
 				effOffset += bound.dynamicOffsets[b.Binding]
 			}
-			val = decodeBytes(b.Type, buf.data, int(effOffset), true)
+			val = decodeBytes(b.Type, buf.data, int(effOffset))
 		}
 		if b.Kind == shaderir.BindingStorageBufferReadWrite {
 			// Read/write storage changes while the shader runs, so it is never cached.

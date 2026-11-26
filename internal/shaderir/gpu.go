@@ -173,114 +173,15 @@ func (p *Program) IsPipeline() bool {
 	return len(p.Bindings) > 0 || len(p.AttributeMeta) > 0 || len(p.VaryingMeta) > 0 || len(p.FragmentOutputs) > 0 || p.VertexEntry != "" || p.FragmentEntry != "" || p.ComputeEntry != "" || p.ComputeFunc.Block != nil
 }
 
-// AlignBytes returns the WGSL/std140 uniform alignment of t in bytes.
-func (t Type) AlignBytes() int {
-	switch t.Main {
-	case Bool, Int, Uint, Float:
-		return 4
-	case Vec2, IVec2, UVec2:
-		return 8
-	case Vec3, Vec4, IVec3, IVec4, UVec3, UVec4:
-		return 16
-	case Mat2, Mat3x2, Mat4x2:
-		return 8
-	case Mat2x3, Mat2x4, Mat3, Mat3x4, Mat4x3, Mat4:
-		return 16
-	case Array:
-		if len(t.Sub) == 0 {
-			return 16
-		}
-		a := t.Sub[0].AlignBytes()
-		if a < 16 {
-			return 16
-		}
-		return a
-	case Struct:
-		maxAlign := 4
-		for _, f := range t.Sub {
-			if a := f.AlignBytes(); a > maxAlign {
-				maxAlign = a
-			}
-		}
-		return roundUp(maxAlign, 16)
-	default:
-		return 4
-	}
-}
-
-// SizeBytes returns the WGSL/std140 byte size of t.
-func (t Type) SizeBytes() int {
-	switch t.Main {
-	case Bool, Int, Uint, Float:
-		return 4
-	case Vec2, IVec2, UVec2:
-		return 8
-	case Vec3, IVec3, UVec3:
-		return 12
-	case Vec4, IVec4, UVec4:
-		return 16
-	case Mat2:
-		return 16
-	case Mat2x3:
-		return 32
-	case Mat2x4:
-		return 32
-	case Mat3x2:
-		return 24
-	case Mat3:
-		return 48
-	case Mat3x4:
-		return 48
-	case Mat4x2:
-		return 32
-	case Mat4x3:
-		return 64
-	case Mat4:
-		return 64
-	case Array:
-		if len(t.Sub) == 0 {
-			return 0
-		}
-		a := t.Sub[0].AlignBytes()
-		s := t.Sub[0].SizeBytes()
-		stride := roundUp(s, max(a, 16))
-		return stride * t.Length
-	case Struct:
-		offset := 0
-		maxAlign := 4
-		for _, f := range t.Sub {
-			a := f.AlignBytes()
-			if a > maxAlign {
-				maxAlign = a
-			}
-			offset = roundUp(offset, a) + f.SizeBytes()
-		}
-		return roundUp(offset, maxAlign)
-	default:
-		return 0
-	}
-}
-
-// StructFieldOffset returns the byte offset of field idx in a Struct type.
-func (t Type) StructFieldOffset(idx int) int {
-	if t.Main != Struct || idx < 0 || idx >= len(t.Sub) {
-		return 0
-	}
-	offset := 0
-	for i := 0; i <= idx; i++ {
-		f := t.Sub[i]
-		offset = roundUp(offset, f.AlignBytes())
-		if i == idx {
-			return offset
-		}
-		offset += f.SizeBytes()
-	}
-	return offset
-}
-
-// StorageAlignBytes returns the WGSL storage / GLSL std430 alignment of t in bytes.
+// StorageAlignBytes returns the natural WGSL type alignment in bytes for
+// both uniform and storage buffers. Uniform declarations have extra layout
+// constraints, but those do not change the type's layout.
 func (t Type) StorageAlignBytes() int {
 	switch t.Main {
+	case Vec2, IVec2, UVec2, Mat2, Mat3x2, Mat4x2:
+		return 8
+	case Vec3, Vec4, IVec3, IVec4, UVec3, UVec4, Mat2x3, Mat2x4, Mat3, Mat3x4, Mat4x3, Mat4:
+		return 16
 	case Array:
 		if len(t.Sub) == 0 {
 			return 4
@@ -295,18 +196,35 @@ func (t Type) StorageAlignBytes() int {
 		}
 		return maxAlign
 	default:
-		return t.AlignBytes()
+		return 4
 	}
 }
 
-// StorageStride returns the WGSL storage / GLSL std430 element stride in bytes for an element type inside a storage buffer array. Unlike std140 uniform arrays, storage array elements are aligned to their own alignment rather than rounded up to 16 bytes.
+// StorageStride returns the natural WGSL array element stride in bytes for t.
 func (t Type) StorageStride() int {
 	return roundUp(t.StorageSizeBytes(), t.StorageAlignBytes())
 }
 
-// StorageSizeBytes returns the WGSL storage / GLSL std430 byte size of t. For runtime-sized arrays (Length == 0) it returns 0.
+// StorageSizeBytes returns the natural WGSL byte size of t, or 0 for a
+// runtime-sized array (Length == 0).
 func (t Type) StorageSizeBytes() int {
 	switch t.Main {
+	case Bool, Int, Uint, Float:
+		return 4
+	case Vec2, IVec2, UVec2:
+		return 8
+	case Vec3, IVec3, UVec3:
+		return 12
+	case Vec4, IVec4, UVec4, Mat2:
+		return 16
+	case Mat3x2:
+		return 24
+	case Mat2x3, Mat2x4, Mat4x2:
+		return 32
+	case Mat3, Mat3x4:
+		return 48
+	case Mat4x3, Mat4:
+		return 64
 	case Array:
 		if len(t.Sub) == 0 || t.Length == 0 {
 			return 0
@@ -324,11 +242,12 @@ func (t Type) StorageSizeBytes() int {
 		}
 		return roundUp(offset, maxAlign)
 	default:
-		return t.SizeBytes()
+		return 0
 	}
 }
 
-// StorageStructFieldOffset returns the std430 / WGSL storage byte offset of field idx in a Struct type.
+// StorageStructFieldOffset returns the natural WGSL byte offset of field idx
+// in a Struct type.
 func (t Type) StorageStructFieldOffset(idx int) int {
 	if t.Main != Struct || idx < 0 || idx >= len(t.Sub) {
 		return 0

@@ -392,12 +392,12 @@ Extending `internal/shaderir` and `internal/shader/wgsl` for full 3D pipelines k
    - Add IR expressions/inputs/outputs for `@builtin(position)` (vertex output and fragment input), `@builtin(vertex_index)`, `@builtin(instance_index)`, `@builtin(front_facing)`, and `@builtin(frag_depth)`. Reserve `@builtin(sample_index)` and `@builtin(sample_mask)` for MSAA follow-ups.
 4. **Explicit resource bindings (`@group(G) @binding(B)`)**:
    - Add a `Bindings []Binding` table on `shaderir.Program` alongside the legacy flat `Uniforms`/`TextureCount` fields so GPU pipelines declare multiple bind groups (for example: group 0 per-frame camera/lights, group 1 per-material uniforms/textures, group 2 per-object transforms):
-     - `BindingUniformBuffer`: typed `Struct` block with std140/WGSL alignment rules (no 4096-byte single-block cap).
+     - `BindingUniformBuffer`: typed block with WGSL uniform address-space rules (no 4096-byte single-block cap).
      - `BindingStorageBufferRead`: read-only typed array/struct buffer (`var<storage, read>`) for instancing, skinning palettes, and light arrays (enabled when `Features.StorageBuffers` is true).
      - Typed textures extending `shaderir.BasicType`: `Texture2D`, `TextureCube`, `Texture2DArray`, `TextureDepth2D`, `TextureMultisampled2D`.
      - Explicit samplers: `Sampler` (`sampler`) and `SamplerComparison` (`sampler_comparison`).
 5. **User structs, non-square matrices, and sampling built-ins**:
-   - Complete `Struct` member layout, alignment, and byte-size computation in `internal/shaderir/type.go` (resolving its existing `TODO`) so WGSL vertex inputs, vertex outputs, and uniform structs check and pack deterministically.
+   - WGSL uniform and storage types have the same natural byte layout. Uniform array and struct members must start on 16-byte boundaries, array strides must be multiples of 16, and members after structs must allow for the preceding struct's size rounded up to 16. Use explicit padding members; member `@align` and `@size` are not supported.
    - Add non-square matrix types (`mat2x3`, `mat3x2`, `mat2x4`, `mat4x2`, `mat3x4`, `mat4x3`) and sampling built-ins: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureSampleCompare`, `textureLoad`, and `textureDimensions`.
 6. **Canonical coordinate and clip-space normalization**:
    - All shaders author against WebGPU conventions: right-handed or left-handed chosen by the app's projection matrix, NDC depth in `[0, 1]`, clip-space `+Y` up, texture UV `(0, 0)` at top-left, and `FrontFace` defaulting to `CCW`.
@@ -413,6 +413,8 @@ Extending `internal/shaderir` and `internal/shader/wgsl` for full 3D pipelines k
 | `internal/shaderir/wgsl` | WebGPU | `@vertex fn` / `@fragment fn` | `@location(N)` struct/params | `@group(G) @binding(B) var<uniform>` / `var<storage, read>` | `texture_2d`/`texture_cube`/`texture_2d_array`/`texture_depth_2d` + `sampler`/`sampler_comparison` | Native `[0, 1]` |
 
 For OpenGL's combined texture+sampler model, the GLSL writer emits one `uniform sampler*` per static `(textureBinding, samplerBinding)` pair referenced by sampling calls in the shader and returns the pair table alongside the GLSL source so the Linux, WebGL 2, and Android backends bind each texture unit and `glBindSampler` object deterministically.
+
+The GLSL writer still declares explicit uniform buffers as `std140` blocks. For example, a valid WGSL `mat2x2<f32>` has 8-byte column stride, whereas `std140` uses 16 bytes. `std140` also rounds the outer block size up to a multiple of 16, so a buffer bound at its exact WGSL size may be too short on OpenGL, OpenGL ES, or WebGL 2 even when its field offsets agree.
 
 ## Headless testing and CI contract (`nsgotest`)
 
