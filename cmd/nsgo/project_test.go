@@ -78,6 +78,16 @@ func TestAndroidPermissions(t *testing.T) {
 	}
 }
 
+func TestLoadRefusesUnknownConfigKeys(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "nsgo.yaml"), []byte("name: Test\nandroid:\n  permisions: [RECORD_AUDIO]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := load(dir); err == nil || !strings.Contains(err.Error(), "permisions") {
+		t.Fatalf("load unknown key = %v, want an error naming permisions", err)
+	}
+}
+
 func TestLinuxPackageDependencies(t *testing.T) {
 	dir := t.TempDir()
 	write := func(linux string) {

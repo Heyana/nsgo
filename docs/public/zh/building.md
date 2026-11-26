@@ -43,6 +43,8 @@ nsgo build
 
 ## nsgo.yaml
 
+`nsgo` 会拒绝此文件中的未知键，包括各配置段中拼写错误的键。`apple.info` 和 `macos.entitlements` 等自由格式映射仍可使用平台专属的键。
+
 ```yaml
 name: Hello
 id: dev.example.hello   # 应用的 ID；省略时为 dev.nsgo. 加上 name 中的字母和数字

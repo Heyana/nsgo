@@ -54,6 +54,8 @@ While `nsgo dev` owns the terminal, tool and application diagnostics go to `.nsg
 
 ## nsgo.yaml
 
+`nsgo` refuses unknown keys in this file, including misspellings nested under a section. Free-form maps such as `apple.info` and `macos.entitlements` remain open for platform-specific keys.
+
 ```yaml
 name: Hello
 id: dev.example.hello   # the bundle ID; without it, dev.nsgo. and the name's letters and digits

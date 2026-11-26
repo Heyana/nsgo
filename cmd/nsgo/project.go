@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -439,7 +440,9 @@ func load(dir string) (*project, error) {
 		return nil, err
 	}
 	p := &project{Dir: abs}
-	if err := yaml.Unmarshal(data, p); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(p); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if p.Name == "" {
