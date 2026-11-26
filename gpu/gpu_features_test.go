@@ -338,11 +338,160 @@ func TestHeadlessCompressedTextureDraw(t *testing.T) {
 		}
 	})
 
+	t.Run("BC7_NonTrivial_Mode1AndMode4", func(t *testing.T) {
+		// 8x4 BC7 texture:
+		// Left 4x4 block: Mode 1 (2 subsets, part=0: left 2 cols subset 0 = red, right 2 cols subset 1 = green).
+		leftBlk := make([]byte, 16)
+		setBitsLE(leftBlk, 1, 1, 1) // Mode 1 (bits 0..1 = 01)
+		pos := 2
+		setBitsLE(leftBlk, pos, 6, 0) // part = 0 (cols 0..1 subset 0, cols 2..3 subset 1)
+		pos += 6
+		// 4 endpoints (e0,e1,e2,e3) x 6-bit R,G,B:
+		// R: 63,63, 0,0; G: 0,0, 63,63; B: 0,0, 0,0
+		for _, v := range []uint32{63, 63, 0, 0, 0, 0, 63, 63, 0, 0, 0, 0} {
+			setBitsLE(leftBlk, pos, 6, v)
+			pos += 6
+		}
+		// 2 shared P-bits = 1, 1 -> R0=255, G1=255
+		setBitsLE(leftBlk, pos, 1, 1)
+		pos++
+		setBitsLE(leftBlk, pos, 1, 1)
+		// All 3-bit indices remain 0 -> subset 0 = (255,0,0,255), subset 1 = (0,255,0,255).
+
+		// Right 4x4 block: Mode 4 (rot=1 swaps R<->A, idxSel=0, 5-bit RGB + 6-bit A):
+		// Encoded RGB=(0,0,248), A=0..255 with anchor=0 -> left col blue=(0,0,248), right cols swap A->R.
+		rightBlk := make([]byte, 16)
+		setBitsLE(rightBlk, 4, 1, 1) // Mode 4 (bits 0..4 = 00001)
+		pos = 5
+		setBitsLE(rightBlk, pos, 2, 1) // rot = 1 (swap R and A)
+		pos += 2
+		setBitsLE(rightBlk, pos, 1, 0) // idxSel = 0
+		pos++
+		// R: 0, 0; G: 0, 0; B: 31, 31 (expands to 255)
+		for _, v := range []uint32{0, 0, 0, 0, 31, 31} {
+			setBitsLE(rightBlk, pos, 5, v)
+			pos += 5
+		}
+		// A: 0, 63 (expands to 0, 255)
+		setBitsLE(rightBlk, pos, 6, 0)
+		pos += 6
+		setBitsLE(rightBlk, pos, 6, 63)
+		pos += 6
+		// idx1 (2-bit, anchor 0 = 1 bit): all 0 -> encoded R=0 -> output A=0!
+		pos += 31
+		// idx2 (3-bit, anchor 0 = 2 bits): set texels with x>=2 to index 7 (alpha weight 64 -> encoded A=255 -> output R=255).
+		for i := range 16 {
+			bits := 3
+			if i == 0 {
+				bits = 2
+			}
+			if i%4 >= 2 {
+				setBitsLE(rightBlk, pos, bits, 7)
+			}
+			pos += bits
+		}
+
+		data := append(leftBlk, rightBlk...)
+		// Clear to blue-ish to make sure alpha=0 vs alpha=255 is visible; draw with nil blend so raw texture RGBA is stored.
+		img := drawSampled(t, gpu.FormatBC7RGBAUnorm, 8, 4, data, nil, core.RGB(0x000000), false)
+		// Check 4 quarters across the 32px wide quad (texels x=0..1, x=2..3, x=4..5, x=6..7).
+		// Mode 1 shared P-bit=1 sets LSB of all channels, so 0 expands to (0<<1|1) -> 2 in 8-bit.
+		if px := img.RGBAAt(4, 16); px != (color.RGBA{R: 255, G: 2, B: 2, A: 255}) {
+			t.Errorf("BC7 left-block subset0 pixel = %+v, want {255 2 2 255}", px)
+		}
+		if px := img.RGBAAt(12, 16); px != (color.RGBA{R: 2, G: 255, B: 2, A: 255}) {
+			t.Errorf("BC7 left-block subset1 pixel = %+v, want {2 255 2 255}", px)
+		}
+		if px := img.RGBAAt(20, 16); px != (color.RGBA{R: 0, G: 0, B: 255, A: 0}) {
+			t.Errorf("BC7 right-block rot1 low pixel = %+v, want {0 0 255 0}", px)
+		}
+		if px := img.RGBAAt(28, 16); px != (color.RGBA{R: 255, G: 0, B: 255, A: 0}) {
+			t.Errorf("BC7 right-block rot1 high pixel = %+v, want {255 0 255 0}", px)
+		}
+	})
+
 	t.Run("ASTC4x4_VoidExtent", func(t *testing.T) {
 		img := drawSampled(t, gpu.FormatASTC4x4Unorm, 4, 4, makeASTC4x4SolidBlock(40, 200, 120, 255), nil, core.RGB(0x000000), false)
 		px := img.RGBAAt(16, 16)
 		if px != (color.RGBA{R: 40, G: 200, B: 120, A: 255}) {
 			t.Errorf("ASTC4x4 pixel = %+v, want {40 200 120 255}", px)
+		}
+	})
+
+	t.Run("ASTC4x4_NonTrivial_InfillAndDualPlane", func(t *testing.T) {
+		setBitsRev := func(buf []byte, bitPos, count int, val uint32) {
+			for i := range count {
+				if (val>>i)&1 != 0 {
+					bp := 127 - (bitPos + i)
+					buf[bp>>3] |= 1 << (bp & 7)
+				}
+			}
+		}
+		// 8x4 ASTC 4x4 texture:
+		// Left 4x4 block: single-partition 4x2 grid (level 5 = 3-bit weights, 8*3 = 24 bits),
+		// CEM 8 (RGB direct, 6 values * 8-bit = 48 bits at epLevel 20),
+		// endpoints (0, 255, 0, 0, 255, 0) -> gradient from (0,0,255) on left to (255,0,0) on right!
+		leftBlk := make([]byte, 16)
+		// BlockMode: gridW=4 (b=0), gridH=2 (a=0), weightLevel=5 (h=0, r=7 -> bm[1:0]=3, bm[4]=1), dualPlane=0 -> 0x13.
+		setBitsLE(leftBlk, 0, 11, 0x13)
+		setBitsLE(leftBlk, 11, 2, 0) // 1 partition
+		setBitsLE(leftBlk, 13, 4, 8) // CEM 8 (RGB direct)
+		epPos := 17
+		for _, v := range []uint32{0, 255, 0, 0, 255, 0} {
+			setBitsLE(leftBlk, epPos, 8, v)
+			epPos += 8
+		}
+		// Weights for 4x2 grid: row 0 = [0, 2, 5, 7], row 1 = [0, 2, 5, 7].
+		for i, w := range []uint32{0, 2, 5, 7, 0, 2, 5, 7} {
+			setBitsRev(leftBlk, i*3, 3, w)
+		}
+
+		// Right 4x4 block: dual-plane 4x2 grid (level 2 = 2-bit weights, 16*2 = 32 bits),
+		// planeSelector = 3 (Alpha uses plane 1), CEM 12 (RGBA direct, 8 values at epLevel 20 = 8-bit: 64 bits <= 128-32-2-17=77 bits).
+		// Endpoints: (0, 255, 255, 0, 0, 255, 0, 255) -> (R: 0..255, G: 255..0, B: 0..255, A: 0..255).
+		// Plane 0 (RGB) = 0 on top half (y=0), 3 on bottom half (y=1); Plane 1 (A) = 3 on top half, 0 on bottom half.
+		rightBlk := make([]byte, 16)
+		setBitsLE(rightBlk, 0, 11, 0x02|(1<<10)) // gridW=4, gridH=2, weightLevel=2 (r=4 -> bm[1:0]=2, bm[4]=0), dualPlane=1
+		setBitsLE(rightBlk, 11, 2, 0)            // 1 partition
+		setBitsLE(rightBlk, 13, 4, 12)           // CEM 12 (RGBA direct)
+		setBitsLE(rightBlk, 128-32-2, 2, 3)      // planeSelector = 3 (Alpha)
+		epPos = 17
+		for _, v := range []uint32{0, 255, 255, 0, 0, 255, 0, 255} {
+			setBitsLE(rightBlk, epPos, 8, v)
+			epPos += 8
+		}
+		for y := range 2 {
+			for x := range 4 {
+				idx := y*4 + x
+				wRGB := uint32(0)
+				wA := uint32(3)
+				if y == 1 {
+					wRGB = 3
+					wA = 0
+				}
+				setBitsRev(rightBlk, (idx*2+0)*2, 2, wRGB)
+				setBitsRev(rightBlk, (idx*2+1)*2, 2, wA)
+			}
+		}
+
+		data := append(leftBlk, rightBlk...)
+		img := drawSampled(t, gpu.FormatASTC4x4Unorm, 8, 4, data, nil, core.RGB(0x000000), false)
+		// Left block: col 0 -> (0,0,255,255), col 3 -> (255,0,0,255), col 1 (w=2 -> 18/64) -> (~72,0,~183,255).
+		if px := img.RGBAAt(2, 16); px != (color.RGBA{R: 0, G: 0, B: 255, A: 255}) {
+			t.Errorf("ASTC left col0 = %+v, want {0 0 255 255}", px)
+		}
+		if px := img.RGBAAt(6, 16); px.R < 68 || px.R > 76 || px.B < 179 || px.B > 187 || px.A != 255 {
+			t.Errorf("ASTC left col1 = %+v, want ~{72 0 183 255}", px)
+		}
+		if px := img.RGBAAt(14, 16); px != (color.RGBA{R: 255, G: 0, B: 0, A: 255}) {
+			t.Errorf("ASTC left col3 = %+v, want {255 0 0 255}", px)
+		}
+		// Right block: top (y=4) -> green opaque (0,255,0,255); bottom (y=28) -> magenta-ish transparent (255,0,255,0).
+		if px := img.RGBAAt(24, 4); px != (color.RGBA{R: 0, G: 255, B: 0, A: 255}) {
+			t.Errorf("ASTC right top = %+v, want {0 255 0 255}", px)
+		}
+		if px := img.RGBAAt(24, 28); px != (color.RGBA{R: 255, G: 0, B: 255, A: 0}) {
+			t.Errorf("ASTC right bottom = %+v, want {255 0 255 0}", px)
 		}
 	})
 
