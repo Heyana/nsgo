@@ -52,7 +52,8 @@ func openModuleTemplateRoot(moduleDir, module, name string) (*os.Root, error) {
 	return sub, nil
 }
 
-func initModuleTemplate(ctx context.Context, dir, kind string, data initData) error {
+// initModuleTemplate writes the template kind names into dir. Its go.mod.tmpl, or else the go.mod init writes as for a built-in template outside any module or with -module, makes dir a new module, which completeModule completes as it does a built-in template's, keeping the template's own lines; otherwise the module enclosing dir, at enclosing, gets the lines it lacks.
+func initModuleTemplate(ctx context.Context, dir, kind string, data initData, enclosing string) error {
 	module, version, name, ok := parseModuleTemplate(kind)
 	if !ok {
 		return fmt.Errorf("init: no template %q; use %s or a module path with optional @version and #name", kind, strings.Join(templates, ", "))
@@ -72,15 +73,15 @@ func initModuleTemplate(ctx context.Context, dir, kind string, data initData) er
 			return fmt.Errorf("init: module %s has no default template; select one with -template %s#<name> from: %s", module, kind, strings.Join(names, ", "))
 		}
 	}
-	files, err := moduleTemplateFiles(src.FS(), data)
+	files, err := moduleTemplateFiles(src.FS(), data, data.Module != "" || enclosing == "")
 	if err != nil {
 		return fmt.Errorf("init: template %s: %w", kind, err)
 	}
 	if err := writeModuleTemplate(dir, src, files); err != nil {
 		return err
 	}
-	detail("next: %s dev %s", nsgoCommand(), rel(dir))
-	return nil
+	newModule := slices.ContainsFunc(files, func(f moduleTemplateFile) bool { return f.name == "go.mod" })
+	return completeModule(ctx, dir, enclosing, newModule)
 }
 
 func listInitTemplates(ctx context.Context, w io.Writer, kind string) error {
@@ -237,15 +238,10 @@ type moduleTemplateFile struct {
 	content      []byte
 }
 
-// Read and render every template before opening any destination file.
-func moduleTemplateFiles(src fs.FS, data initData) ([]moduleTemplateFile, error) {
-	moduleFlag := data.Module != ""
-	if !moduleFlag {
-		data.Module = data.Slug
-		// A slug that names a standard library package cannot be the app's module path, so give it a domain of its own.
-		if moduleCollidesWithStd(data.Module) {
-			data.Module = "example.com/" + data.Module
-		}
+// Read and render every template before opening any destination file. writeModule writes a go.mod, as for a built-in template, when the template has none.
+func moduleTemplateFiles(src fs.FS, data initData, writeModule bool) ([]moduleTemplateFile, error) {
+	if data.Module == "" {
+		data.Module = defaultModule(data.Slug)
 	}
 	var files []moduleTemplateFile
 	seen := make(map[string]bool)
@@ -293,7 +289,7 @@ func moduleTemplateFiles(src fs.FS, data initData) ([]moduleTemplateFile, error)
 	if hasModuleEntry && !hasModuleFile {
 		return nil, fmt.Errorf("go.mod is a directory")
 	}
-	if moduleFlag && !hasModuleEntry {
+	if writeModule && !hasModuleEntry {
 		var content bytes.Buffer
 		if err := initMod.Execute(&content, data); err != nil {
 			return nil, err

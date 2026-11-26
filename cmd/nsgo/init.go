@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -41,7 +42,7 @@ func moduleCollidesWithStd(path string) bool {
 
 // initApp writes a new app of template kind into dir: nsgo.yaml, a main
 // package and tests; a TSX app's entry, its tests, tsconfig.json and
-// .gitignore.
+// .gitignore. Outside any module, or with -module, it writes the app's go.mod too, and completeModule then makes the module build.
 func initApp(ctx context.Context, dir, name, module, kind string) error {
 	if name == "" {
 		var err error
@@ -61,8 +62,17 @@ func initApp(ctx context.Context, dir, name, module, kind string) error {
 		return fmt.Errorf("init: module path %q is a standard library package; pass -module with a path of your own, such as example.com/%s", module, slug)
 	}
 	data := initData{name, id, module, slug}
+	// The go.mod of the module dir is in, found before init writes one of its own.
+	enclosing, err := enclosingGoMod(dir)
+	if err != nil {
+		return err
+	}
 	if !slices.Contains(templates, kind) {
-		return initModuleTemplate(ctx, dir, kind, data)
+		return initModuleTemplate(ctx, dir, kind, data, enclosing)
+	}
+	newModule := module != "" || enclosing == ""
+	if newModule {
+		data.Module = cmp.Or(module, defaultModule(slug))
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -75,7 +85,7 @@ func initApp(ctx context.Context, dir, name, module, kind string) error {
 	if kind == "mixed" {
 		files["App.tsx"], files["native.go"] = initMixedTSX, initNative
 	}
-	if module != "" {
+	if newModule {
 		files["go.mod"] = initMod
 	}
 	names := slices.Sorted(maps.Keys(files))
@@ -97,15 +107,113 @@ func initApp(ctx context.Context, dir, name, module, kind string) error {
 		}
 		done("create %s", rel(filepath.Join(dir, file)))
 	}
-	if module != "" {
-		detail("next: cd %s && go get github.com/nsgo-dev/nsgo && go get -tool github.com/nsgo-dev/nsgo/cmd/nsgo && %s dev", rel(dir), nsgoCommand())
-	} else {
-		detail("next: %s dev %s", nsgoCommand(), rel(dir))
+	if err := completeModule(ctx, dir, enclosing, newModule); err != nil {
+		return err
 	}
 	if kind != "go" {
 		detail("nsgo dev and nsgo check write the TSX's types to .nsgo/types for editors; check also type-checks it")
 	}
 	return nil
+}
+
+// defaultModule is the module path of an app init names after its slug, which takes a domain of its own when it names a standard library package.
+func defaultModule(slug string) string {
+	if moduleCollidesWithStd(slug) {
+		return "example.com/" + slug
+	}
+	return slug
+}
+
+// enclosingGoMod is the go.mod of the module dir belongs to, the first found walking up from it, or empty outside any module.
+func enclosingGoMod(dir string) (string, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	for {
+		gomod := filepath.Join(dir, "go.mod")
+		if info, err := os.Stat(gomod); err == nil && info.Mode().IsRegular() {
+			return gomod, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", nil
+		}
+		dir = parent
+	}
+}
+
+// initNSGoVersion is the version of NSGo a module init completes requires, this nsgo's; tests replace it.
+var initNSGoVersion = toolVersion
+
+// requirableVersion reports whether version is one a go.mod can require: a release or a pseudo-version, which go install of a tag or commit builds, but not what a checkout's build records, nothing or a version marked +dirty.
+func requirableVersion(version string) bool {
+	_, meta, _ := strings.Cut(version, "+")
+	return version != "" && (meta == "" || meta == "incompatible")
+}
+
+// completeModule makes the module of the app init wrote into dir build, so nsgo dev runs next: a module init wrote, at dir's go.mod, requires this nsgo, declares it as a tool and is tidied, which fills go.sum; an enclosing module gets the require and tool lines it lacks and nothing else. A development build, with no version to require, leaves go.mod as it is and prints the go get commands that add them.
+func completeModule(ctx context.Context, dir, enclosing string, newModule bool) error {
+	gomod := enclosing
+	if newModule {
+		gomod = filepath.Join(dir, "go.mod")
+	}
+	version := initNSGoVersion()
+	if !requirableVersion(version) {
+		edits, err := nsgoModuleEdits(ctx, gomod, "")
+		if err != nil {
+			return err
+		}
+		if len(edits) > 0 {
+			detail("next: cd %s && go get %s && go get -tool %s && %s dev", rel(dir), nsgoModule, nsgoTool, nsgoCommand())
+			return nil
+		}
+		detail("next: %s dev %s", nsgoCommand(), rel(dir))
+		return nil
+	}
+	edits, err := nsgoModuleEdits(ctx, gomod, version)
+	if err != nil {
+		return err
+	}
+	if len(edits) > 0 {
+		if _, err := execute(ctx, processCommand{name: "go", args: append(append([]string{"mod", "edit"}, edits...), gomod)}); err != nil {
+			return fmt.Errorf("init: add NSGo to %s: %w", rel(gomod), err)
+		}
+		if !newModule {
+			done("add %s %s and its tool to %s", nsgoModule, version, rel(gomod))
+		}
+	}
+	if newModule {
+		stage(ctx, "running go mod tidy")
+		cmd := exec.CommandContext(ctx, "go", "mod", "tidy")
+		// The new module is in no workspace, whatever go.work encloses it.
+		cmd.Dir, cmd.Env = dir, append(os.Environ(), "GOWORK=off")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("init: wrote the app, but go mod tidy in %s failed; run it there again\n%s", rel(dir), strings.TrimSpace(string(out)))
+		}
+		done("require %s %s in %s and run go mod tidy", nsgoModule, version, rel(gomod))
+	}
+	detail("next: %s dev %s", nsgoCommand(), rel(dir))
+	return nil
+}
+
+// nsgoModuleEdits are the go mod edit flags that give gomod the lines it lacks of a require of NSGo at version and NSGo's tool. NSGo's own module needs neither.
+func nsgoModuleEdits(ctx context.Context, gomod, version string) ([]string, error) {
+	mod, err := readGoMod(ctx, gomod)
+	if err != nil {
+		return nil, fmt.Errorf("init: %w", err)
+	}
+	if mod.Module.Path == nsgoModule {
+		return nil, nil
+	}
+	var edits []string
+	if !slices.ContainsFunc(mod.Require, func(r struct{ Path, Version string }) bool { return r.Path == nsgoModule }) {
+		edits = append(edits, "-require="+nsgoModule+"@"+version)
+	}
+	if !slices.ContainsFunc(mod.Tool, func(t struct{ Path string }) bool { return t.Path == nsgoTool }) {
+		edits = append(edits, "-tool="+nsgoTool)
+	}
+	return edits, nil
 }
 
 // executable is os.Executable, which tests replace.

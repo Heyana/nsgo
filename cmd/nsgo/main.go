@@ -100,7 +100,7 @@ func main() {
 	case "init":
 		fs := flag.NewFlagSet("init", flag.ExitOnError)
 		name := fs.String("name", "", "the app's name (default: the directory's)")
-		module := fs.String("module", "", "write a go.mod for this module path")
+		module := fs.String("module", "", "write a go.mod for this module path (default outside a module: the app's slug)")
 		kind := fs.String("template", "go", "the app to write: go, tsx, mixed, or a module path with optional @version and #name")
 		list := fs.Bool("list", false, "list available templates")
 		if err = parseCommand(fs, args, 1); err != nil {

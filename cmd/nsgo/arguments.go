@@ -64,7 +64,7 @@ func misplacedFlags(fs *flag.FlagSet, dir string, args []string, forwarded map[s
 			if dir == "" {
 				dir = "."
 			}
-			return fmt.Errorf("%s: flags go before the directory: go tool nsgo %s %s %q", fs.Name(), fs.Name(), option, dir)
+			return fmt.Errorf("%s: flags go before the directory: %s %s %s %q", fs.Name(), nsgoCommand(), fs.Name(), option, dir)
 		}
 		if !hasValue && !goTestBoolFlags[name] && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 			i++

@@ -34,21 +34,21 @@ func TestCommandsRefuseTrailingArguments(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"build", "missing-app", "-target", "web"}, "go tool nsgo build -target"},
-		{[]string{"dev", "missing-app", "--target=web"}, "go tool nsgo dev -target=web"},
-		{[]string{"mcp", "missing-app", "-target", "web"}, "go tool nsgo mcp -target"},
-		{[]string{"check", "missing-app", "-target", "all"}, "go tool nsgo check -target"},
-		{[]string{"test", "missing-app", "-target", "web"}, "go tool nsgo test -target"},
-		{[]string{"test", "missing-app", "--", "-test.target=web"}, "go tool nsgo test -target=web"},
-		{[]string{"test", "--", "-target", "web"}, "go tool nsgo test -target"},
-		{[]string{"init", "missing-app", "-name", "Name"}, "go tool nsgo init -name"},
+		{[]string{"build", "missing-app", "-target", "web"}, "directory: nsgo build -target"},
+		{[]string{"dev", "missing-app", "--target=web"}, "directory: nsgo dev -target=web"},
+		{[]string{"mcp", "missing-app", "-target", "web"}, "directory: nsgo mcp -target"},
+		{[]string{"check", "missing-app", "-target", "all"}, "directory: nsgo check -target"},
+		{[]string{"test", "missing-app", "-target", "web"}, "directory: nsgo test -target"},
+		{[]string{"test", "missing-app", "--", "-test.target=web"}, "directory: nsgo test -target=web"},
+		{[]string{"test", "--", "-target", "web"}, "directory: nsgo test -target"},
+		{[]string{"init", "missing-app", "-name", "Name"}, "directory: nsgo init -name"},
 		{[]string{"init", "-list", "app"}, "-list takes only -template"},
 		{[]string{"init", "-list", "-name", "Name"}, "-list takes only -template"},
 		{[]string{"init", "-list", "-module", "example.com/app"}, "-list takes only -template"},
-		{[]string{"i18n", "missing-app", "-source", "en"}, "go tool nsgo i18n -source"},
-		{[]string{"publish", "missing-app", "-entry", "App.tsx"}, "go tool nsgo publish -entry"},
-		{[]string{"publish", "missing-app", "-store", "all"}, "go tool nsgo publish -store"},
-		{[]string{"verify", "missing-app", "-root", "key"}, "go tool nsgo verify -root"},
+		{[]string{"i18n", "missing-app", "-source", "en"}, "directory: nsgo i18n -source"},
+		{[]string{"publish", "missing-app", "-entry", "App.tsx"}, "directory: nsgo publish -entry"},
+		{[]string{"publish", "missing-app", "-store", "all"}, "directory: nsgo publish -store"},
+		{[]string{"verify", "missing-app", "-root", "key"}, "directory: nsgo verify -root"},
 		{[]string{"build", "first", "second"}, "takes one path"},
 		{[]string{"dev", "first", "second"}, "takes one path"},
 		{[]string{"mcp", "first", "second"}, "takes one path"},
@@ -61,12 +61,30 @@ func TestCommandsRefuseTrailingArguments(t *testing.T) {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			cmd := exec.Command(exe, append([]string{"-test.run=^TestCLIProcess$", "--"}, tc.args...)...)
 			cmd.Dir = t.TempDir()
-			cmd.Env = append(os.Environ(), "NSGO_CLI_PROCESS=1")
+			// NSGO_DELEGATED=1 names the command nsgo wherever the test binary lives.
+			cmd.Env = append(os.Environ(), "NSGO_CLI_PROCESS=1", "NSGO_DELEGATED=1")
 			out, err := cmd.CombinedOutput()
 			if err == nil || !strings.Contains(string(out), tc.want) {
 				t.Fatalf("exit %v, output %s; want a failure containing %q", err, out, tc.want)
 			}
 		})
+	}
+}
+
+// The flags-order error names the command as it was called: go tool nsgo for the module's tool, nsgo for an installed one (#2420).
+func TestMisplacedFlagsNameTheCommand(t *testing.T) {
+	t.Setenv("NSGO_DELEGATED", "")
+	t.Cleanup(func() { executable = os.Executable })
+	for exe, want := range map[string]string{
+		filepath.Join("/home/ada/.cache/go-build", "ab", strings.Repeat("ab", 32)+"-d", "nsgo"): "build: flags go before the directory: go tool nsgo build -target \"web\" \"app\"",
+		filepath.Join("/home/ada/.local/bin", "nsgo"):                                           "build: flags go before the directory: nsgo build -target \"web\" \"app\"",
+	} {
+		executable = func() (string, error) { return exe, nil }
+		fs := flag.NewFlagSet("build", flag.ContinueOnError)
+		fs.String("target", "", "")
+		if err := misplacedFlags(fs, "app", []string{"-target", "web"}, nil); err == nil || err.Error() != want {
+			t.Errorf("from %s: %v, want %q", exe, err, want)
+		}
 	}
 }
 

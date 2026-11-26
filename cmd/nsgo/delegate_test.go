@@ -34,26 +34,48 @@ func goEnv(t *testing.T, proxy string) (string, []string) {
 func nsgoProxy(t *testing.T, version string) string {
 	t.Helper()
 	dir := t.TempDir()
+	addNSGoVersion(t, dir, version, "module github.com/nsgo-dev/nsgo\n\ngo 1.26\n", map[string][]byte{"cmd/nsgo/main.go": []byte(fakeNSGoMain)})
+	return "file://" + filepath.ToSlash(dir)
+}
+
+// addNSGoVersion adds github.com/nsgo-dev/nsgo at version, with gomod and files, to the module proxy in dir.
+func addNSGoVersion(t *testing.T, dir, version, gomod string, files map[string][]byte) {
+	t.Helper()
 	at := filepath.Join(dir, "github.com", "nsgo-dev", "nsgo", "@v")
-	gomod := "module github.com/nsgo-dev/nsgo\n\ngo 1.26\n"
 	writeFiles(t, at, map[string]string{
-		"list":            version + "\n",
 		version + ".info": `{"Version":"` + version + `","Time":"2026-01-01T00:00:00Z"}`,
 		version + ".mod":  gomod,
 	})
+	list, err := os.OpenFile(filepath.Join(at, "list"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := list.WriteString(version + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := list.Close(); err != nil {
+		t.Fatal(err)
+	}
 	f, err := os.Create(filepath.Join(at, version+".zip"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	z := zip.NewWriter(f)
-	for name, content := range map[string]string{"go.mod": gomod, "cmd/nsgo/main.go": fakeNSGoMain} {
+	for name, content := range files {
 		w, err := z.Create("github.com/nsgo-dev/nsgo@" + version + "/" + name)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := w.Write([]byte(content)); err != nil {
+		if _, err := w.Write(content); err != nil {
 			t.Fatal(err)
 		}
+	}
+	w, err := z.Create("github.com/nsgo-dev/nsgo@" + version + "/go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte(gomod)); err != nil {
+		t.Fatal(err)
 	}
 	if err := z.Close(); err != nil {
 		t.Fatal(err)
@@ -61,7 +83,6 @@ func nsgoProxy(t *testing.T, version string) string {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return "file://" + filepath.ToSlash(dir)
 }
 
 // pinnedModule writes a module whose go.mod declares the nsgo tool at version, with more lines after the require, and returns its directory.
