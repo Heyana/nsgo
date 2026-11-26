@@ -17,6 +17,7 @@ import (
 const (
 	instanceMutexExists   = 183 // ERROR_ALREADY_EXISTS
 	instancePipeConnected = 535 // ERROR_PIPE_CONNECTED
+	instancePipeNoData    = 232 // ERROR_NO_DATA
 	instanceInvalidHandle = ^uintptr(0)
 
 	instanceGenericWrite        = 0x40000000
@@ -123,25 +124,12 @@ func sendInstance(name *uint16, args launch) bool {
 
 func (i *instance) serve() {
 	for {
-		// FILE_FLAG_FIRST_PIPE_INSTANCE: only the mutex's owner may serve this name.
-		pipe, _, err := createNamedPipeW.Call(uintptr(unsafe.Pointer(i.name)),
-			instancePipeAccessInbound|instanceFirstPipeInstance, instancePipeTypeMessage|instancePipeReadmodeMessage|instancePipeWait,
-			1, 64<<10, 64<<10, 0, 0)
+		pipe, err := createInstancePipe(i.name)
 		if pipe == instanceInvalidHandle {
 			log.Printf("nsgo: single-instance pipe: %v", err)
 			return
 		}
-		connected, _, err := connectNamedPipe.Call(pipe, 0)
-		var args launch
-		received := false
-		if connected != 0 || err == syscall.Errno(instancePipeConnected) {
-			var data [64 << 10]byte
-			var read uint32
-			if ok, _, _ := readFile.Call(pipe, uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)), uintptr(unsafe.Pointer(&read)), 0); ok != 0 {
-				received = json.Unmarshal(data[:read], &args) == nil
-			}
-			disconnectNamedPipe.Call(pipe)
-		}
+		args, received := receiveInstance(pipe)
 		closeHandle.Call(pipe)
 		select {
 		case <-i.done:
@@ -152,6 +140,30 @@ func (i *instance) serve() {
 			i.enqueue(args)
 		}
 	}
+}
+
+// createInstancePipe creates the one inbound instance of the pipe name; FILE_FLAG_FIRST_PIPE_INSTANCE makes sure only the mutex's owner may serve this name.
+func createInstancePipe(name *uint16) (uintptr, error) {
+	pipe, _, err := createNamedPipeW.Call(uintptr(unsafe.Pointer(name)),
+		instancePipeAccessInbound|instanceFirstPipeInstance, instancePipeTypeMessage|instancePipeReadmodeMessage|instancePipeWait,
+		1, 64<<10, 64<<10, 0, 0)
+	return pipe, err
+}
+
+// receiveInstance waits for one launch to connect to pipe and reads the message it wrote. A sender connects, writes and closes in one go, so it may be done before ConnectNamedPipe is called: ConnectNamedPipe then fails with ERROR_PIPE_CONNECTED if the sender is still connected, or ERROR_NO_DATA if it has already closed its end, and in both cases its message is waiting in the pipe's buffer to be read (CPython's multiprocessing handles the second case the same way, bpo-14725).
+func receiveInstance(pipe uintptr) (launch, bool) {
+	var args launch
+	connected, _, err := connectNamedPipe.Call(pipe, 0)
+	if connected == 0 && err != syscall.Errno(instancePipeConnected) && err != syscall.Errno(instancePipeNoData) {
+		return args, false
+	}
+	defer disconnectNamedPipe.Call(pipe)
+	var data [64 << 10]byte
+	var read uint32
+	if ok, _, _ := readFile.Call(pipe, uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)), uintptr(unsafe.Pointer(&read)), 0); ok == 0 {
+		return args, false
+	}
+	return args, json.Unmarshal(data[:read], &args) == nil
 }
 
 func (i *instance) enqueue(args launch) {
