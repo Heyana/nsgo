@@ -232,7 +232,7 @@ var twinned = []string{"base.List.ListStyle", "base.Slider.StartLabel", "base.Tr
 // component props still awaiting bindings. Remove a field when adding its
 // twin.
 var textFuncExceptions = strings.Fields(`
-core.AutomationResult.Text core.AutomationTool.Description core.Composition.Text core.HeaderSymbol.Label core.MenuItem.Label core.Notification.Title
+core.AutomationTool.Description core.Composition.Text core.HeaderSymbol.Label core.MenuItem.Label core.Notification.Title
 core.PickDirectoriesOptions.Title core.PickFilesOptions.Title core.ShareOptions.Text core.TabBarItem.Title
 core.SelectionBlock.Label core.SelectionBlock.Title core.SelectionInline.Label core.SelectionInline.Text core.SelectionInline.Title
 core.TextSelection.Text core.TrayOptions.Title core.WindowOptions.Title
@@ -246,7 +246,7 @@ base.ColorSlider.Label base.ColorSwatch.Label base.Combobox.Label base.Combobox.
 base.Command.Label base.Command.Placeholder base.CommandEntry.Label base.CommandEntry.Description
 base.CommandItem.Label base.CommandItem.Description base.DatePicker.Label base.DatePreset.Label
 base.Link.Label base.Link.Hint base.List.Label
-base.Pagination.Label base.ResizeHandle.Label
+base.Pagination.Label base.RadioGroup.Label base.ResizeHandle.Label
 base.Scrollbar.Label base.ScrollbarLook.Label base.SelectEntry.Title base.SelectGroup.Title
 base.SelectItem.Title base.Submenu.Label base.SuggestItem.Label base.SuggestList.Label base.Switch.Hint
 base.Table.Label base.TimeField.Label base.TimeFieldSegmentEntry.Label base.Toggle.Label base.Toggle.Hint
@@ -259,7 +259,7 @@ ui.Command.Placeholder ui.DatePicker.Label ui.DatePicker.Placeholder ui.DockTabL
 ui.HoldToConfirm.Hint ui.HoldToConfirm.Text
 ui.Image.Label ui.ImageCompare.Label ui.Link.Label ui.Link.Text ui.List.Label ui.MenuLabel.Text
 ui.Pagination.Label ui.PlainShell.Title
-ui.Rating.Label ui.ResizeHandle.Label
+ui.Radio.Label ui.Radio.Hint ui.Radio.Text ui.RadioGroup.Label ui.Rating.Label ui.ResizeHandle.Label
 ui.Scrollbar.Label ui.Select.Placeholder ui.Settings.Title ui.SettingsCategory.Title
 ui.SettingsCategory.Description ui.SettingsDialog.Label ui.SettingsGroup.Title ui.SettingsItem.Title
 ui.SettingsItem.Description ui.SidebarButton.Text ui.SidebarItem.Text

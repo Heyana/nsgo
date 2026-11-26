@@ -21,26 +21,11 @@ type mcpAppTools struct {
 
 func (a *mcpAppTools) receive(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-		switch method {
-		case "tools/list":
+		if method == "tools/list" {
 			a.refresh(ctx)
-		case "tools/call":
-			if p, ok := req.GetParams().(*mcp.CallToolParamsRaw); ok && !a.known(p.Name) {
-				a.refresh(ctx)
-			}
 		}
 		return next(ctx, method, req)
 	}
-}
-
-func (a *mcpAppTools) known(name string) bool {
-	if automation.Params[name] != nil {
-		return true
-	}
-	a.mu.Lock()
-	_, ok := a.tools[name]
-	a.mu.Unlock()
-	return ok
 }
 
 // watch notices registrations after startup and changes from a rebuild, even
@@ -115,31 +100,7 @@ func (a *mcpAppTools) add(tool automation.AppTool) (added bool) {
 				r.SetError(err)
 				return &r, nil
 			}
-			return mcpAppToolResult(result), nil
+			return mcpResult(tool.Name, result), nil
 		})
 	return true
-}
-
-func mcpAppToolResult(result json.RawMessage) *mcp.CallToolResult {
-	res, ok, err := automation.DecodeAppToolResult(result)
-	if err != nil {
-		var r mcp.CallToolResult
-		r.SetError(err)
-		return &r
-	}
-	if !ok {
-		return mcpJSONResult(result)
-	}
-	content := make([]mcp.Content, 0, 1+len(res.Images))
-	if res.Text != "" {
-		content = append(content, &mcp.TextContent{Text: res.Text})
-	}
-	for _, img := range res.Images {
-		mime := img.MIMEType
-		if mime == "" {
-			mime = "image/png"
-		}
-		content = append(content, &mcp.ImageContent{Data: img.Data, MIMEType: mime})
-	}
-	return &mcp.CallToolResult{Content: content}
 }

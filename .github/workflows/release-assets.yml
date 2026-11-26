@@ -1,0 +1,69 @@
+name: Release assets
+
+# Builds the prebuilt nsgo binaries a release attaches, with tools/release: an archive per platform and checksums.txt, from the checked-out commit, uploaded as the release-assets artifact. release.yml calls it with the release's version before anything is tagged, and its publish job attaches the artifact. A pull request that changes the build runs it with a check version and publishes nothing.
+#
+# The tag Go stamps into each binary, which nsgo version prints, is created here in the checkout alone and never pushed: release.yml tags the remote only after every check, this build included, has passed.
+
+on:
+  pull_request:
+    paths:
+      - "tools/release/**"
+      - ".github/workflows/release-assets.yml"
+      - ".github/workflows/release.yml"
+  workflow_call:
+    inputs:
+      version:
+        description: "The release's version, X.Y.Z or X.Y.Z-suffix, without the v."
+        required: true
+        type: string
+
+concurrency:
+  group: release-assets-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the release archives
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 20
+    env:
+      # A pull request has no version, so it builds a prerelease that is never tagged anywhere but its own checkout.
+      VERSION: ${{ inputs.version || '0.0.0-check' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          # Built without a cache another run wrote, as these binaries are published.
+          cache: false
+      - name: Tag the checkout
+        run: |
+          set -euo pipefail
+          tag=v$VERSION
+          # A run started by pushing the tag already has it, which must name the commit checked out.
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            if [ "$(git rev-parse "$tag^{commit}")" != "$(git rev-parse HEAD)" ]; then
+              echo "::error::$tag does not point at the checked-out commit $(git rev-parse HEAD)."
+              exit 1
+            fi
+          else
+            git tag "$tag" HEAD
+          fi
+      - name: Build and verify the archives
+        run: go run ./tools/release -out "$RUNNER_TEMP/release" "$VERSION"
+      - name: Check the checksums with sha256sum
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/release"
+          sha256sum -c --strict checksums.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+          retention-days: 7

@@ -9,7 +9,7 @@ order: 61
 
 视图的 `Label` 是辅助技术朗读的内容，`AccessibilityDescription` 是在标签之后朗读的补充说明，`Hint` 说明激活它会发生什么，`Role` 说明它是什么：`core.RoleButton`、`RoleLink`、`RoleHeader`、`RoleImage`、`RoleCheckbox`、`RoleSwitch`、`RoleRadio`、`RoleTab`、`RoleTextField`、`RoleSearchField`、`RoleStatus`、`RoleMenu`、`RoleMenuItem`、`RoleDialog`、`RoleAlertDialog`、`RoleAlert`、`RoleAdjustable`、`RoleProgressBar`、`RoleTable` 等。状态视图默认是礼貌播报的 live region；搜索框仍是文本输入框，但辅助技术会将其读作搜索框。对话框打开时会朗读它的角色和标签，再朗读它的说明，`ui.Dialog` 的标题和描述就是这样朗读的。没有标签的文本会朗读它的内容。`LabelFunc`、`HintFunc` 和 `AccessibilityDescriptionFunc` 在同一个视图上绑定会变化的无障碍文本，让控件在切换语言时保留焦点和状态。所有支持 `Label` 的 `core` 元素也接受 `LabelFunc`，`View` 和 `Text` 接受 `HintFunc`。
 
-`ui.Button`、`ui.Checkbox`、`ui.Radio`、`ui.MenuItem` 和 `ui.AlertAction` 接受 `TextFunc`，无障碍名称也随文字变化。按钮、复选框和单选框还可以通过 `LabelFunc` 单独指定无障碍名称。滑块、选项卡、开关、单选组、进度条和弹出层触发器也接受 `LabelFunc`。选项卡、选择器和组合框通过 `ui.Option.LabelFunc` 更新选项文字。数字输入框、验证码输入框、进度环和两种加载指示器也接受 `LabelFunc`。
+`ui.Button`、`ui.Checkbox`、`ui.MenuItem` 和 `ui.AlertAction` 接受 `TextFunc`，无障碍名称也随文字变化。按钮和复选框还可以通过 `LabelFunc` 单独指定无障碍名称。滑块、选项卡、开关、进度条和弹出层触发器也接受 `LabelFunc`。选项卡、选择器和组合框通过 `ui.Option.LabelFunc` 更新选项文字。数字输入框、验证码输入框、进度环和两种加载指示器也接受 `LabelFunc`。
 
 ```go
 core.View{

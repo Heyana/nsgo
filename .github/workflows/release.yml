@@ -2,7 +2,7 @@ name: Release
 
 # Tags and publishes a release, only once every check has passed. A maintainer decides the version: `go run ./tools/changelog release X.Y.Z` folds changelog.d's fragments into CHANGELOG.md and turns its `## [Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` above a fresh `## [Unreleased]`; they merge that to main, then run this workflow on main with that version (`gh workflow run release.yml -f version=X.Y.Z`).
 #
-# The run refuses a malformed version, a ref other than main, a commit that is no longer main's tip, a tag that already exists and a version the Go module proxy already serves. It then refuses fragments left uncollected, a missing changelog section and an Android runtime not built from its Java, and runs every job of test.yml, the Apple jobs pull requests skip included. Only after all of that passes does it create the annotated tag vX.Y.Z on the tested commit, publish the section as the release's notes (a prerelease for a version with a suffix such as -rc.1) and ask the proxy for the version so pkg.go.dev lists it. A tag created with GITHUB_TOKEN starts no workflow, so this same run publishes it.
+# The run refuses a malformed version, a ref other than main, a commit that is no longer main's tip, a tag that already exists and a version the Go module proxy already serves. It then refuses fragments left uncollected, a missing changelog section and an Android runtime not built from its Java, and runs every job of test.yml, the Apple jobs pull requests skip included. Beside the tests it builds the prebuilt nsgo binaries from the tested commit (release-assets.yml): an archive per platform and checksums.txt. Only after all of that passes does it create the annotated tag vX.Y.Z on the tested commit, publish the section as the release's notes with those archives attached (a prerelease for a version with a suffix such as -rc.1) and ask the proxy for the version so pkg.go.dev lists it. A tag created with GITHUB_TOKEN starts no workflow, so this same run publishes it.
 #
 # Pushing a tag vX.Y.Z on main still runs the same checks and publishes, for compatibility, but the version is public from the push on: the proxy may cache it before any check runs, and a failure then burns the version for good, as happened to v0.3.1 and v0.3.2 (#2380).
 
@@ -205,9 +205,16 @@ jobs:
       # Every job, the Apple jobs pull requests skip included: v0.3.2 failed apple-simulator, which no pull request had run.
       all-jobs: true
 
+  assets:
+    name: Build the release archives
+    needs: notes
+    uses: ./.github/workflows/release-assets.yml
+    with:
+      version: ${{ needs.notes.outputs.version }}
+
   publish:
     name: Tag and publish the release
-    needs: [notes, android-runtime, test]
+    needs: [notes, android-runtime, test, assets]
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 10
     # The only job that writes: it creates the tag and the release.
@@ -222,6 +229,21 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-notes
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: assets
+      - name: Check the archives against their checksums
+        working-directory: assets
+        run: |
+          set -euo pipefail
+          # The six archives and checksums.txt the assets job verified, checked again after the artifact's round trip and before anything is tagged.
+          sha256sum -c --strict checksums.txt
+          count=$(find . -maxdepth 1 -type f | wc -l)
+          if [ "$count" -ne 7 ]; then
+            echo "::error::The release-assets artifact holds $count files, want six archives and checksums.txt."
+            exit 1
+          fi
       - name: Create the tag on the tested commit
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -252,7 +274,8 @@ jobs:
           set -euo pipefail
           prerelease=()
           case "$VERSION" in *-*) prerelease=(--prerelease) ;; esac
-          gh release create "$TAG" --verify-tag --title "NSGo $VERSION" --notes-file notes.md "${prerelease[@]}"
+          # With assets, gh creates the release as a draft, uploads them and only then publishes it; a failed upload deletes the draft and fails the step, so no release is ever public without its archives.
+          gh release create "$TAG" --verify-tag --title "NSGo $VERSION" --notes-file notes.md "${prerelease[@]}" assets/*
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
@@ -270,7 +293,7 @@ jobs:
   burned:
     name: Report a burned version
     # A pushed tag is public before any check runs, so a failure after the push leaves a version the proxy may already serve and that cannot be released again.
-    needs: [notes, android-runtime, test, publish]
+    needs: [notes, android-runtime, test, assets, publish]
     if: ${{ failure() && github.event_name == 'push' }}
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 5

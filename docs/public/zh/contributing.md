@@ -68,6 +68,8 @@ Linux 宿主可用 Docker 时，运行 `go tool nsgo test -run '^TestLinuxPackag
 
 维护者运行 `go run ./tools/changelog release X.Y.Z`，在 `CHANGELOG.md` 中为改动写上版本和日期并留出新的 Unreleased 小节，合并到 `main` 后，以这个版本运行[发布工作流](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml)：`gh workflow run release.yml -f version=X.Y.Z`。工作流在 `main` 的最新提交上跑完所有检查和测试，全部通过后才为该提交打上 `vX.Y.Z` 标签并发布，失败时版本号不会被占用；发布后这一节从 `CHANGELOG.md` 中移除，`CHANGELOG.md` 只保留尚未发布的改动，已发布的说明见 [Releases](https://github.com/nsgo-dev/nsgo/releases)。
 
+每个版本都附带 macOS、Linux 和 Windows 在 arm64 与 amd64 上预编译好的 `nsgo`，由打标签的提交以 `CGO_ENABLED=0 go build -trimpath ./cmd/nsgo` 构建，`nsgo version` 输出 `vX.Y.Z`。压缩包名为 `nsgo_X.Y.Z_<os>_<arch>.tar.gz`，Windows 为 `.zip`，其中 `<os>` 为 `darwin`、`linux` 或 `windows`，`<arch>` 为 `arm64` 或 `amd64`；每个压缩包的根目录有 `nsgo`（Windows 上是 `nsgo.exe`）、`LICENSE` 和 `README.md`。`checksums.txt` 以 `sha256sum` 的格式列出每个压缩包的 SHA-256，可用 `sha256sum -c checksums.txt` 校验下载的文件。下载地址为 `https://github.com/nsgo-dev/nsgo/releases/download/vX.Y.Z/<asset>`。安装脚本和 Homebrew tap 依赖这些名称，所以它们不会改变。`go run ./tools/release -out <dir> X.Y.Z` 在打了 `vX.Y.Z` 标签的提交的干净检出上构建并校验它们，与发布工作流相同；修改构建过程的拉取请求会运行它，但不发布任何东西。
+
 ## NSH
 
 NSGo 把 [Native Shell](https://github.com/longbridge/nsh) 作为设计参考，测试都不依赖它。需要阅读时，将它克隆到仓库旁边，并检出它的最新发行版标签，不要用 `main`：

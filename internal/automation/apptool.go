@@ -1,7 +1,6 @@
 package automation
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,55 +19,6 @@ type AppTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	InputSchema json.RawMessage `json:"inputSchema"`
-}
-
-// AppToolImage is the wire form of an image returned by an app tool.
-type AppToolImage struct {
-	Data     []byte `json:"data"`
-	MIMEType string `json:"mimeType,omitempty"`
-}
-
-// AppToolResult is the wire form of an explicit app tool result.
-type AppToolResult struct {
-	Text   string         `json:"text,omitempty"`
-	Images []AppToolImage `json:"images,omitempty"`
-}
-
-type appToolResultEnvelope struct {
-	Result *AppToolResult `json:"_nsgoAppResult"`
-}
-
-// EncodeAppToolResult marshals r into the internal protocol's tagged form.
-func EncodeAppToolResult(r AppToolResult) ([]byte, error) {
-	return json.Marshal(appToolResultEnvelope{Result: &r})
-}
-
-// DecodeAppToolResult decodes data when it is an encoded AppToolResult.
-func DecodeAppToolResult(data []byte) (AppToolResult, bool, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil || len(fields) != 1 {
-		return AppToolResult{}, false, nil
-	}
-	raw, ok := fields["_nsgoAppResult"]
-	if !ok || len(raw) == 0 || string(raw) == "null" {
-		return AppToolResult{}, false, nil
-	}
-	var inner map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &inner); err != nil || inner == nil {
-		return AppToolResult{}, false, nil
-	}
-	for key := range inner {
-		if key != "text" && key != "images" {
-			return AppToolResult{}, false, nil
-		}
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var r AppToolResult
-	if err := dec.Decode(&r); err != nil {
-		return AppToolResult{}, false, err
-	}
-	return r, true, nil
 }
 
 var (

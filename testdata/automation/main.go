@@ -2,12 +2,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"image"
-	"image/color"
-	"image/png"
 	"os"
 	"runtime"
 	"strconv"
@@ -37,46 +33,6 @@ func App(app *core.Scope) {
 			}
 			count.Set(input.Count)
 			return input, nil
-		},
-	}); err != nil {
-		panic(err)
-	}
-	samplePNG := func() []byte {
-		img := image.NewRGBA(image.Rect(0, 0, 2, 1))
-		img.Set(0, 0, color.White)
-		var buf bytes.Buffer
-		if err := png.Encode(&buf, img); err != nil {
-			panic(err)
-		}
-		return buf.Bytes()
-	}()
-	if err := automation.Register(app, automation.Tool{
-		Name:        "render_badge",
-		Description: "Render a test PNG badge with optional text",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}}}`),
-		Handler: func(_ context.Context, args json.RawMessage) (any, error) {
-			var input struct {
-				Text string `json:"text"`
-			}
-			if err := json.Unmarshal(args, &input); err != nil {
-				return nil, err
-			}
-			return automation.Result{
-				Text:   input.Text,
-				Images: []automation.Image{{Data: samplePNG}},
-			}, nil
-		},
-	}); err != nil {
-		panic(err)
-	}
-	if err := automation.Register(app, automation.Tool{
-		Name:        "png_json",
-		Description: "Return a plain JSON struct containing a png field",
-		InputSchema: json.RawMessage(`{"type":"object"}`),
-		Handler: func(context.Context, json.RawMessage) (any, error) {
-			return struct {
-				PNG []byte `json:"png"`
-			}{PNG: samplePNG}, nil
 		},
 	}); err != nil {
 		panic(err)

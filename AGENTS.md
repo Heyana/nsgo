@@ -58,7 +58,7 @@ To vet the platforms a change touches, name them all in one `go tool nsgo check 
 
 Run `bun run build` in `website/` when changing the website; it type-checks the site and rebuilds the gallery it embeds.
 
-Every workflow runs on its own: `test.yml` and `codeql.yml`, which test and scan the code, `check.yml`, which builds and vets every target (`go tool nsgo check -target all`) so nothing that breaks the build merges, the website's deployment, pull request triage, labels, `quality.yml`, Dependabot and `release.yml`, which a maintainer runs with a version (`gh workflow run release.yml -f version=X.Y.Z`) and which tags main's tip and publishes its changelog section only once every check and `test.yml` job passes.
+Every workflow runs on its own: `test.yml` and `codeql.yml`, which test and scan the code, `check.yml`, which builds and vets every target (`go tool nsgo check -target all`) so nothing that breaks the build merges, the website's deployment, pull request triage, labels, `quality.yml`, Dependabot, `release-assets.yml`, which builds a release's prebuilt `nsgo` archives for `release.yml` and for pull requests that change that build, and `release.yml`, which a maintainer runs with a version (`gh workflow run release.yml -f version=X.Y.Z`) and which tags main's tip and publishes its changelog section only once every check and `test.yml` job passes.
 
 ## Documentation
 

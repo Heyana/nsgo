@@ -587,7 +587,6 @@ func TestWebAutomationEndToEnd(t *testing.T) {
 	if err != nil || cfg.Width < webAutomationWidth || cfg.Height < webAutomationHeight {
 		t.Fatalf("screenshot PNG = %dx%d, err=%v", cfg.Width, cfg.Height, err)
 	}
-	verifyAppImageMCPTools(t, ctx, cs)
 
 	// Console output from the page reaches automation logs.
 	if _, err := pg.call("Runtime.evaluate", map[string]any{"expression": `console.log("web-automation-log-check")`}); err != nil {

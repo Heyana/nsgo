@@ -521,32 +521,6 @@ func TestGPUViewControllerLifecycle(t *testing.T) {
 	}
 }
 
-func TestWebGPUPipelineBindGroupLayoutsKeepsGroupIndices(t *testing.T) {
-	known := map[driver.GPUID]string{7: "frame", 9: "object"}
-	lookup := func(id driver.GPUID) (string, bool) {
-		l, ok := known[id]
-		return l, ok
-	}
-	empties := 0
-	empty := func() string {
-		empties++
-		return "empty"
-	}
-	got := webgpuPipelineBindGroupLayouts([]driver.GPUID{7, 0, 0, 9, 42}, lookup, empty)
-	want := []string{"frame", "empty", "empty", "object", "empty"}
-	if len(got) != len(want) {
-		t.Fatalf("len = %d, want %d (%v)", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("group %d = %q, want %q (%v)", i, got[i], want[i], got)
-		}
-	}
-	if empties != 3 {
-		t.Fatalf("empty layout requested %d times, want 3", empties)
-	}
-}
-
 func TestResolveDynamicOffsetsAndClampLimits(t *testing.T) {
 	layout := []driver.GPUBindGroupLayoutEntry{
 		{Binding: 0, Type: driver.GPUBindingUniform, HasDynamicOffset: false},

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 
 	"github.com/nsgo-dev/nsgo/internal/automation"
 )
@@ -83,53 +82,9 @@ func CallAutomationTool(cx *Scope, ctx context.Context, name string, args json.R
 			err = failure
 			return
 		}
-		switch v := value.(type) {
-		case AutomationResult:
-			result, err = encodeAutomationResult(v)
-		case *AutomationResult:
-			if v == nil {
-				result, err = json.Marshal(nil)
-			} else {
-				result, err = encodeAutomationResult(*v)
-			}
-		default:
-			result, err = json.Marshal(value)
-		}
+		result, err = json.Marshal(value)
 	})
 	return result, err
-}
-
-func encodeAutomationResult(r AutomationResult) (json.RawMessage, error) {
-	wire := automation.AppToolResult{Text: r.Text}
-	if len(r.Images) > 0 {
-		wire.Images = make([]automation.AppToolImage, len(r.Images))
-		for i, img := range r.Images {
-			if len(img.Data) == 0 {
-				return nil, fmt.Errorf("automation: image %d has no data", i)
-			}
-			if img.MIMEType != "" && !strings.HasPrefix(img.MIMEType, "image/") {
-				return nil, fmt.Errorf("automation: image %d has MIME type %q, not an image/ type", i, img.MIMEType)
-			}
-			wire.Images[i] = automation.AppToolImage{Data: img.Data, MIMEType: img.MIMEType}
-		}
-	}
-	return automation.EncodeAppToolResult(wire)
-}
-
-// DecodeAutomationResult is automation's decoder for explicit results returned by CallAutomationTool.
-func DecodeAutomationResult(raw json.RawMessage) (AutomationResult, bool, error) {
-	wire, ok, err := automation.DecodeAppToolResult(raw)
-	if err != nil || !ok {
-		return AutomationResult{}, ok, err
-	}
-	res := AutomationResult{Text: wire.Text}
-	if len(wire.Images) > 0 {
-		res.Images = make([]AutomationImage, len(wire.Images))
-		for i, img := range wire.Images {
-			res.Images[i] = AutomationImage{Data: img.Data, MIMEType: img.MIMEType}
-		}
-	}
-	return res, true, nil
 }
 
 func (s *devSurface) AutomationTools() []automation.AppTool {
