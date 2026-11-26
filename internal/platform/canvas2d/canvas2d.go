@@ -40,6 +40,10 @@ type Player struct {
 	// scratch canvas for native 2D composition.
 	Texture    func(driver.ImageSource) canvasmesh.Texture
 	MeshCanvas func() js.Value
+	// Shade draws an op that shades with a program, a DrawShader or an
+	// image op under SetShader, reporting whether it did; nil, or a false
+	// report, leaves a DrawShader out and draws an image op plain.
+	Shade func(op *driver.DrawOp) bool
 	// fill and stroke are the gradients painting, whose own transforms
 	// apply as they paint, and width the line width; saved and widths
 	// keep them for Restore.
@@ -182,12 +186,26 @@ func (p *Player) Play(op *driver.DrawOp) {
 	case driver.DrawClear:
 		ctx.Call("clearRect", f(op.X), f(op.Y), f(op.W), f(op.H))
 	case driver.DrawImage:
-		p.image(op)
+		if !p.shaded(op) {
+			p.image(op)
+		}
 	case driver.DrawVertices:
-		p.vertices(op)
+		if !p.shaded(op) {
+			p.vertices(op)
+		}
 	case driver.DrawAtlas:
-		p.atlas(op)
+		if !p.shaded(op) {
+			p.atlas(op)
+		}
+	case driver.DrawShader:
+		p.shaded(op)
 	}
+}
+
+// shaded runs op through its program with Shade, reporting whether it
+// did: an image op it did not draws plain.
+func (p *Player) shaded(op *driver.DrawOp) bool {
+	return p.Shade != nil && driver.PaintShader(op.Shader) != nil && p.Shade(op)
 }
 
 func rule(evenOdd bool) string {

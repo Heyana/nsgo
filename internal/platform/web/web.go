@@ -184,7 +184,9 @@ type surface struct {
 	gestures       gestures
 	// canvasImages are the images canvases draw, bounded by count and byte budget, by ImageSource.Key.
 	canvasImages boundedImageCache[*canvasImage]
-	meshCanvas   js.Value
+	// canvasGL is the WebGL context canvas ops that shade share.
+	canvasGL   *canvasGL
+	meshCanvas js.Value
 	// slicedCanvases are the canvases past the bitmap budget whose visible part is drawn and updated as scrolling or panning moves them.
 	slicedCanvases map[*view]bool
 	// canvasFrames are the canvases of the pixels canvases drew last (canvasFrame).

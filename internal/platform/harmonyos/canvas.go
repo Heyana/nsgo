@@ -167,6 +167,10 @@ func canvasJSON(ops []driver.DrawOp, packed bool) string {
 	var saved []float32
 	for i := range ops {
 		o := &ops[i]
+		if o.Kind == driver.DrawShader {
+			// The host has no GPU path for canvases: a shaded image draws plain.
+			continue
+		}
 		c := canvasOp{
 			K: int(o.Kind), X: o.X, Y: o.Y, Y1: o.Y1, X2: o.X2,
 			W: o.W, H: o.H, R: o.R, A0: o.A0, A1: o.A1, RY: o.RY, CCW: o.CCW, EO: o.EvenOdd,

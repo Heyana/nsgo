@@ -210,6 +210,9 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 		if t.rt.restricted {
 			t.refuseDrawingImages(n, d)
 		}
+		if d.Shaded() {
+			t.enableCanvasShaders()
+		}
 		cn.drawing, cn.fresh = d, true
 		t.touch(n)
 	})
@@ -223,6 +226,39 @@ func (t *Tree) pickDrawingScales(d *Drawing) {
 			src := t.pickScale(*op.Image)
 			op.Image = &src
 		}
+	}
+	eachShaderImage(d, func(img *ImageSource) {
+		if img.Scales != 0 {
+			*img = t.pickScale(*img)
+		}
+	})
+}
+
+// eachShaderImage calls fn with each image the shaders of d's ops read,
+// in copies of the shaders that d's ops then name: ops sharing a shader
+// (SetShader) share its copy.
+func eachShaderImage(d *Drawing, fn func(*ImageSource)) {
+	var copies map[*driver.Shader]*driver.Shader
+	for i := range d.Ops {
+		op := &d.Ops[i]
+		from := driver.PaintShader(op.Shader)
+		if from == nil || len(from.Images) == 0 {
+			continue
+		}
+		c := copies[from]
+		if c == nil {
+			s := *from
+			s.Images = slices.Clone(s.Images)
+			for j := range s.Images {
+				fn(&s.Images[j])
+			}
+			if copies == nil {
+				copies = map[*driver.Shader]*driver.Shader{}
+			}
+			c = &s
+			copies[from] = c
+		}
+		op.Shader = driver.NewShaderPaint(c)
 	}
 }
 
@@ -240,6 +276,7 @@ func (t *Tree) refuseDrawingImagesOwner(owner *Scope, d *Drawing) {
 			op.Image = &src
 		}
 	}
+	eachShaderImage(d, func(img *ImageSource) { t.refuseImageOwner(owner, img) })
 }
 
 // MeasureText returns the advance width and the metrics of text's first

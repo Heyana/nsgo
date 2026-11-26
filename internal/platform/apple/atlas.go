@@ -25,6 +25,10 @@ func (im *loadedImage) release() {
 	im.image = 0
 	Release(im.canvasTint)
 	im.canvasTint = 0
+	if im.metal != 0 {
+		im.metal.Send(selRelease)
+		im.metal = 0
+	}
 }
 
 // crop returns a retained tile, with temporary true when the caller owns

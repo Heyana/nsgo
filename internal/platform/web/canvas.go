@@ -210,6 +210,9 @@ func (s *surface) canvasPlayer(v *view, ctx js.Value, ratio, w, h float64, tile 
 		return im.img, im.density, im.loaded
 	}
 	p.MeshCanvas = s.scratchMeshCanvas
+	if shade := shadeCanvas; shade != nil {
+		p.Shade = func(op *driver.DrawOp) bool { return shade(s, v, p, op) }
+	}
 	p.Texture = func(src driver.ImageSource) canvasmesh.Texture {
 		tex, _ := s.meshTexture(src, v)
 		return tex

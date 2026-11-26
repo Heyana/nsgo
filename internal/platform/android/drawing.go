@@ -10,7 +10,8 @@ import (
 // format CanvasNode plays, then where the arguments bound to animated
 // nodes are in those bytes, which Java writes their values into, then
 // the drawing's nodes. DrawTextAlign and DrawTextBaseline, which only
-// the recorder reads, are left out.
+// the recorder reads, are left out, and DrawShader, as CanvasNode has no
+// GPU path: an image op that shades draws plain.
 func writeDrawing(w *writer, d *driver.Drawing) {
 	type slot struct {
 		at    int
@@ -47,7 +48,7 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 	}
 	for i = range ops {
 		op := &ops[i]
-		if op.Kind == driver.DrawTextAlign || op.Kind == driver.DrawTextBaseline {
+		if op.Kind == driver.DrawTextAlign || op.Kind == driver.DrawTextBaseline || op.Kind == driver.DrawShader {
 			continue
 		}
 		if op.Kind == driver.DrawVertices {

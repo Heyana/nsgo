@@ -235,12 +235,31 @@ func (o *OffscreenImage) Release() {
 // copyDrawingFrames returns d with any Pixels image sources copied once
 // per (buffer, version), reusing entries from prev for unchanged frames.
 func copyDrawingFrames(d *Drawing, prev map[pixelKey]*image.RGBA) (*Drawing, map[pixelKey]*image.RGBA) {
-	if !slices.ContainsFunc(d.Ops, func(op driver.DrawOp) bool { return op.Image != nil && op.Image.Pixels != nil }) {
+	if !slices.ContainsFunc(d.Ops, func(op driver.DrawOp) bool {
+		return op.Image != nil && op.Image.Pixels != nil ||
+			driver.PaintShader(op.Shader) != nil && slices.ContainsFunc(driver.PaintShader(op.Shader).Images, func(img ImageSource) bool { return img.Pixels != nil })
+	}) {
 		return d, nil
 	}
 	out := *d
 	out.Ops = slices.Clone(d.Ops)
 	frames := map[pixelKey]*image.RGBA{}
+	frame := func(img *ImageSource) {
+		k := pixelKey{img.Pixels, img.Version}
+		c := frames[k]
+		if c == nil {
+			if c = prev[k]; c == nil {
+				c = driver.CopyPixels(k.from)
+			}
+			frames[k] = c
+		}
+		img.Pixels = c
+	}
+	eachShaderImage(&out, func(img *ImageSource) {
+		if img.Pixels != nil && !img.Pixels.Rect.Empty() {
+			frame(img)
+		}
+	})
 	for i := range out.Ops {
 		op := &out.Ops[i]
 		if op.Image == nil || op.Image.Pixels == nil {
@@ -251,16 +270,8 @@ func copyDrawingFrames(d *Drawing, prev map[pixelKey]*image.RGBA) (*Drawing, map
 			op.Image = nil
 			continue
 		}
-		k := pixelKey{op.Image.Pixels, op.Image.Version}
-		c := frames[k]
-		if c == nil {
-			if c = prev[k]; c == nil {
-				c = driver.CopyPixels(k.from)
-			}
-			frames[k] = c
-		}
 		img := *op.Image
-		img.Pixels = c
+		frame(&img)
 		op.Image = &img
 	}
 	return &out, frames

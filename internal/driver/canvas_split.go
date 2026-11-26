@@ -81,7 +81,7 @@ func (s CanvasSplit) Skips(i int, op *DrawOp) bool {
 // Paints reports whether an op of kind k changes pixels.
 func (k DrawKind) Paints() bool {
 	switch k {
-	case DrawFill, DrawStroke, DrawFillText, DrawStrokeText, DrawClear, DrawImage, DrawVertices, DrawAtlas:
+	case DrawFill, DrawStroke, DrawFillText, DrawStrokeText, DrawClear, DrawImage, DrawVertices, DrawAtlas, DrawShader:
 		return true
 	}
 	return false

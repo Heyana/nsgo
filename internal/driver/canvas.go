@@ -40,6 +40,11 @@ type Drawing struct {
 
 	sampling      ImageSampling
 	samplingStack []ImageSampling
+	// shader shades the images drawn (SetShader), and shaderStack keeps
+	// it for Restore.
+	shader      *Shader
+	shaderStack []*Shader
+	shaded      bool
 }
 
 // NewDrawing returns an empty drawing that measures text with text, as
@@ -128,6 +133,8 @@ const (
 	DrawVertices
 	// DrawAtlas draws a list of sprites from Image, in Atlas's order.
 	DrawAtlas
+	// DrawShader runs Shader's program over the rectangle X, Y, W, H.
+	DrawShader
 )
 
 // UsesPath reports whether an op of kind k builds on the current path or
@@ -159,6 +166,11 @@ type DrawOp struct {
 	Atlas     *AtlasSprites
 	// Tinted multiplies a DrawImage's source channels by Color before it composites.
 	Tinted bool
+	// Shader shades a DrawShader's rectangle, or the image a DrawImage,
+	// DrawVertices or DrawAtlas draws (SetShader); the zero paint draws it
+	// plain. Its Lanes are the program's own, without the bridge's, and
+	// the drawing's slots bind those its Nodes name, which players ignore.
+	Shader ShaderPaint
 	// TextAlign and TextBaseline are what a text op was placed with.
 	TextAlign    TextAlign
 	TextBaseline TextBaseline
@@ -187,6 +199,9 @@ const (
 	ArgRY
 	// ArgColor takes a color node, such as an interpolation to Colors.
 	ArgColor
+	// ArgLane is a lane of the op's shader, which only the drawing binds
+	// (ShaderPaint).
+	ArgLane
 )
 
 // DrawSlot binds argument Arg of operation Op to animated node Node.
@@ -194,6 +209,9 @@ type DrawSlot struct {
 	Op   int
 	Arg  DrawArg
 	Node uint32
+	// lane and channel are what an ArgLane slot sets.
+	lane    int
+	channel Channel
 }
 
 // Set returns op with the slot's argument set to num, or to col for
@@ -229,6 +247,8 @@ func (s DrawSlot) Set(op DrawOp, num float64, col Color) DrawOp {
 		op.RY = v
 	case ArgColor:
 		op.Color = col
+	case ArgLane:
+		return setLane(op, s.lane, s.channel.Of(num, col))
 	}
 	return op
 }
@@ -473,19 +493,27 @@ func (d *Drawing) op(o DrawOp) *Drawing {
 	}
 	if o.Image != nil {
 		o.Sampling = d.sampling
+		if d.shader != nil {
+			o.Shader = ShaderPaint{d.shader}
+		}
 	}
 	d.Ops = append(d.Ops, o)
+	if o.Shader.s != nil {
+		d.bindLanes(o.Shader.s)
+	}
 	return d
 }
 
 func (d *Drawing) Save() *Drawing {
 	d.samplingStack = append(d.samplingStack, d.sampling)
+	d.shaderStack = append(d.shaderStack, d.shader)
 	return d.op(DrawOp{Kind: DrawSave})
 }
 
 func (d *Drawing) Restore() *Drawing {
 	if n := len(d.samplingStack); n != 0 {
 		d.sampling, d.samplingStack = d.samplingStack[n-1], d.samplingStack[:n-1]
+		d.shader, d.shaderStack = d.shaderStack[n-1], d.shaderStack[:n-1]
 	}
 	return d.op(DrawOp{Kind: DrawRestore})
 }

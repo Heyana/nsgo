@@ -144,3 +144,61 @@ func TestShaderSendsImagesByVersion(t *testing.T) {
 		t.Errorf("a new version sent %+v", sh)
 	}
 }
+
+func canvasDrawing(b *driver.MountBatch) *driver.Drawing {
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemCanvas {
+			return it.Drawing
+		}
+	}
+	return nil
+}
+
+// A canvas shades a rectangle and a run of images with programs, their
+// animated uniforms bound as the drawing's slots and the paint's pixels
+// copied as an image op's are (#2260).
+func TestCanvasShadesWithPaints(t *testing.T) {
+	prog := MustCompileShader(testShader)
+	pixels := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	atlas := ImageSource{URI: "atlas.png"}
+	var clock *AnimatedValue
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
+		clock = NewAnimatedValue(cx, 0)
+		return Canvas{Style: Style{Width: Pt(100), Height: Pt(50)}, Draw: func(d *Drawing, _ Size) {
+			red := prog.Paint(Uniforms{"Tint": RGB(0xff0000), "Time": clock}, ImageSource{Pixels: pixels, Version: 1})
+			d.DrawShader(red, 1, 2, 30, 40)
+			d.Save()
+			d.SetShader(prog.Paint(Uniforms{"Count": 2}))
+			d.DrawAtlas(atlas, []Bounds{{Size: Size{Width: 4, Height: 4}}}, []RSXform{{SCos: 1}}, nil)
+			d.Restore()
+			d.DrawImage(atlas, 0, 0)
+		}}
+	})
+	d := canvasDrawing(h.commit())
+	if d == nil || len(d.Ops) != 5 {
+		t.Fatalf("drew %+v", d)
+	}
+	rect := driver.PaintShader(d.Ops[0].Shader)
+	if d.Ops[0].Kind != driver.DrawShader || rect == nil || rect.Program != prog.p || d.Ops[0].W != 30 {
+		t.Fatalf("the rectangle is %+v", d.Ops[0])
+	}
+	if rect.Lanes[1] != 1 || len(rect.Images) != 1 || rect.Images[0].Pixels == pixels || rect.Images[0].Pixels == nil {
+		t.Errorf("the rectangle shades with lanes %v and images %+v, not a copy of the app's pixels", rect.Lanes, rect.Images)
+	}
+	if len(d.Slots) != 1 || d.Slots[0].Op != 0 || d.Slots[0].Arg != driver.ArgLane || d.Slots[0].Node != clock.id {
+		t.Errorf("slots %+v, want Time's lane bound to the clock", d.Slots)
+	}
+	bound := d.Slots[0].Set(d.Ops[0], 2.5, 0)
+	if lanes := driver.PaintShader(bound.Shader).Lanes; lanes[0] != 2.5 || rect.Lanes[0] != 0 {
+		t.Errorf("binding the clock set lanes %v over %v", lanes, rect.Lanes)
+	}
+	if sprites := driver.PaintShader(d.Ops[2].Shader); d.Ops[2].Kind != driver.DrawAtlas || sprites == nil || sprites.Lanes[12] != 2 {
+		t.Errorf("the atlas shades with %+v", sprites)
+	}
+	if last := d.Ops[4]; last.Kind != driver.DrawImage || driver.PaintShader(last.Shader) != nil {
+		t.Errorf("Restore kept the shader for %+v", last)
+	}
+	if !d.Shaded() {
+		t.Error("the drawing does not report it shades")
+	}
+}

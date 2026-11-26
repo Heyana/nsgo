@@ -93,6 +93,9 @@ func (*surface) EnableShaders() {
 	})
 }
 
+// EnableCanvasShaders implements driver.CanvasShaderEnabler.
+func (*surface) EnableCanvasShaders() { apple.EnableCanvasShaders() }
+
 func (*surface) EnableCanvas() {
 	apple.EnableCanvas()
 	if canvases.Load() != nil {

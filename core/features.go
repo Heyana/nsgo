@@ -26,6 +26,12 @@ func (t *Tree) enableCanvas() {
 	}
 }
 
+func (t *Tree) enableCanvasShaders() {
+	if p, ok := unwrapPlatform(t.text).(driver.CanvasShaderEnabler); ok {
+		p.EnableCanvasShaders()
+	}
+}
+
 func (t *Tree) enableVideo() {
 	if p, ok := unwrapPlatform(t.text).(driver.VideoEnabler); ok {
 		p.EnableVideo()

@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
@@ -532,11 +533,19 @@ func (p *player) play(at int) {
 	case driver.DrawFillText, driver.DrawStrokeText:
 		p.text(op)
 	case driver.DrawImage:
-		p.image(op)
+		if !p.shaded(op) {
+			p.image(op)
+		}
 	case driver.DrawVertices:
-		p.vertices(op)
+		if !p.shaded(op) {
+			p.vertices(op)
+		}
 	case driver.DrawAtlas:
-		p.atlas(op)
+		if !p.shaded(op) {
+			p.atlas(op)
+		}
+	case driver.DrawShader:
+		p.shaded(op)
 	}
 }
 
@@ -849,8 +858,10 @@ type loadedImage struct {
 	waiting         map[any]func()
 	atlasCrops      map[driver.Bounds]uintptr
 	atlasPixels     int
-	used            uint64
-	cancel          context.CancelFunc
+	// metal is the image's Metal texture, made once a shaded op reads it.
+	metal  objc.ID
+	used   uint64
+	cancel context.CancelFunc
 }
 
 // tinted keeps one premultiplied sRGB copy of the image.

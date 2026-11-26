@@ -77,6 +77,10 @@ type (
 	DrawOp = driver.DrawOp
 	// RSXform scales, rotates and translates one DrawAtlas sprite.
 	RSXform = driver.RSXform
+	// ShaderPaint is a compiled program with its uniforms and images, which
+	// Drawing.DrawShader and Drawing.SetShader shade with
+	// (ShaderProgram.Paint).
+	ShaderPaint = driver.ShaderPaint
 	// Drawing is a recording of 2D drawing operations, modeled on the web's
 	// CanvasRenderingContext2D: a current path, fill and stroke settings, and a
 	// transform, saved and restored as a stack.
@@ -632,6 +636,7 @@ const (
 	DrawTextBaseline   = driver.DrawTextBaseline
 	DrawVertices       = driver.DrawVertices
 	DrawAtlas          = driver.DrawAtlas
+	DrawShader         = driver.DrawShader
 )
 
 const (

@@ -174,7 +174,7 @@ func (d *damageScan) step(a, b *DrawOp, changed bool) bool {
 			}
 			return d.path[i].inflate(d.cur[i].strokeReach())
 		})
-	case DrawFillText, DrawStrokeText, DrawClear, DrawImage, DrawVertices, DrawAtlas:
+	case DrawFillText, DrawStrokeText, DrawClear, DrawImage, DrawVertices, DrawAtlas, DrawShader:
 		s := &d.cur[1]
 		if !changed && !s.painted && !s.moved && !s.composed {
 			return true

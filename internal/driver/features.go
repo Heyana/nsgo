@@ -19,6 +19,13 @@ type CanvasEnabler interface {
 	EnableCanvas()
 }
 
+// CanvasShaderEnabler is implemented by backends whose canvases shade
+// with programs (Drawing.DrawShader, Drawing.SetShader) through code that
+// links on demand.
+type CanvasShaderEnabler interface {
+	EnableCanvasShaders()
+}
+
 // VideoEnabler is implemented by backends whose video player links on demand.
 type VideoEnabler interface {
 	EnableVideo()

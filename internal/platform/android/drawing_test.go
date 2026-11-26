@@ -45,3 +45,14 @@ func TestCanvasAtlasWire(t *testing.T) {
 		t.Errorf("read %d bytes of operations, want %d", got, length)
 	}
 }
+
+// CanvasNode has no GPU path, so a DrawShader goes unwritten (#2260).
+func TestCanvasLeavesShaderOpsOut(t *testing.T) {
+	paint := driver.NewShaderPaint(&driver.Shader{Program: &driver.ShaderProgram{}, Lanes: []float64{1}})
+	var empty, shaded writer
+	writeDrawing(&empty, driver.NewDrawing(nil))
+	writeDrawing(&shaded, driver.NewDrawing(nil).DrawShader(paint, 0, 0, 10, 10))
+	if !slices.Equal(empty.buf, shaded.buf) {
+		t.Errorf("a shader op wrote %v, an empty drawing %v", shaded.buf, empty.buf)
+	}
+}

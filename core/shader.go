@@ -170,6 +170,24 @@ func (p *ShaderProgram) HasUniform(name string) bool {
 	return ok
 }
 
+// Paint returns the program with the uniforms u and the images it reads,
+// which a Canvas's drawing shades with: Drawing.DrawShader runs it over a
+// rectangle, and Drawing.SetShader over the images drawn after it, such as
+// a run of glyphs from a signed distance field atlas through DrawAtlas.
+// An AnimatedNode among u's values follows the node on the platform's
+// frame clock, the drawing played again with no commit, as a bound
+// argument (Drawing.Bind) does. A WGSL program reads nsh.time and
+// nsh.progress as 0, and its pictures as transparent.
+func (p *ShaderProgram) Paint(u Uniforms, images ...ImageSource) ShaderPaint {
+	if p == nil {
+		return ShaderPaint{}
+	}
+	d := p.values(nil, u)
+	p.builtins(d, nil, nil, 0)
+	d.Images = slices.Clone(images)
+	return driver.NewShaderPaint(d)
+}
+
 // Uniforms are the values of a shader's uniform variables, by name. A
 // value is a number (any of Go's integer or float kinds, or a bool), an
 // AnimatedNode, a Color, or a slice of numbers or nodes or of any of these

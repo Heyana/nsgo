@@ -123,6 +123,29 @@ core.Shader{
 
 A Go shader receives the pixel's center in `dst` and the same point in points in `pos`, and has GLSL's built-in functions; `rectSize`, `pixelScale`, `image0At` to `image3At` and their sizes are NSGo's additions. A WGSL program writes `fn shade(uv: vec2f) -> vec4f` and reads `nsh.time` and `nsh.size`; `Paused` stops its clock. A platform without a GPU path for shaders draws nothing there.
 
+A canvas runs programs too, in its drawing's order, under its transform, clip, alpha and composite operator. `program.Paint(uniforms, images...)` makes a `core.ShaderPaint`. `d.DrawShader(paint, x, y, w, h)` shades a rectangle, with `pos` in its own points, `rectSize` its size and `pixelScale` the pixels a point of it covers on screen. `d.SetShader(paint)` shades the images that `DrawImage`, `DrawImageIn`, `DrawImageFrom`, `DrawAtlas` and `DrawVertices` draw after it, until `d.ClearShader()`; `Save` and `Restore` keep it. The image drawn is `image0`, read at `dst.xy`, its pixels; `pos` is the same point in its points, and the paint's own images become `image1` on. The program's color takes each sprite's alpha, each vertex's color and a tint. One `DrawAtlas` call shades a whole run of glyphs from a signed distance field atlas in one pass:
+
+```go
+var sdf = core.MustCompileShader(`
+package main
+
+var Color vec4
+var Glow float
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	d := image0At(dst.xy).a
+	w := fwidth(d)
+	return vec4(Color.rgb*Color.a, Color.a) * smoothstep(0.5-w-Glow, 0.5+w, d)
+}
+`)
+
+d.SetShader(sdf.Paint(core.Uniforms{"Color": core.RGB(0xff3b30), "Glow": pulse}))
+d.DrawAtlas(glyphs, rects, xforms, nil)
+d.ClearShader()
+```
+
+`image0At` reads the texel under a point, so a program that magnifies blends neighboring texels itself. An `AnimatedNode` among the uniforms redraws the canvas on the frame clock, without a commit, as `Bind` does. A WGSL program reads `nsh.time` as 0 there. Apple platforms, Windows, Linux and the web shade canvases. Android, HarmonyOS, watchOS and mini programs leave `DrawShader` out and draw shaded images plain.
+
 `core.ShaderEffect` draws its children through WGSL and `core.ScreenEffect` covers the surface. `core.ShaderTransition` and `core.ScreenTransition` sample the pictures before and after `Value` changes. `core.TransitionShader` does this for navigation and dialogs. On Android, capturing views for effects requires Android 10 or later and OpenGL ES 3.0 with external texture support. `core.Canvas` and `core.Shader` both take `Label` and their children draw over them.
 
 ## Next

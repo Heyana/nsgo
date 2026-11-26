@@ -50,7 +50,7 @@ func allowedPublicDriverType(name string) bool {
 		"Role", "SVG", "ScannedCode", "ScreenAnimation",
 		"ScrollBehavior", "ScrollEdge", "SecretAccessible", "SecretItem",
 		"SecretStore", "Selectable", "SensorNumber", "SensorQuaternion",
-		"SensorVector", "ShaderNode", "ShaderRole", "SharedFile",
+		"SensorVector", "ShaderNode", "ShaderPaint", "ShaderRole", "SharedFile",
 		"Size", "SnapAlignment", "SpringConfig", "StatusBarStyle",
 		"StepPosition", "SubmitBehavior", "Subscription", "SubscriptionOffer", "SystemGestureEdge", "SystemGestureOptions",
 		"SubscriptionPeriod", "TabBadge", "TextAlign", "TextAttachment", "TextBackground",

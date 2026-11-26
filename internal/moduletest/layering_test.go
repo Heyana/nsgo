@@ -57,6 +57,7 @@ var layers = []struct {
 	{"internal/platform/apple", append([]string{"internal/driver"}, platformShared...)},
 	{"internal/platform/canvas2d", []string{"internal/driver", "internal/platform/canvasmesh", "internal/platform/webstyle"}},
 	{"internal/platform/canvasmesh", []string{"internal/driver"}},
+	{"internal/platform/canvasshade", []string{"internal/driver"}},
 	{"internal/platform/canvastest", []string{"internal/driver"}},
 	{"internal/platform/codescan", []string{"internal/driver"}},
 	{"internal/platform/field", []string{"internal/driver"}},
@@ -145,7 +146,7 @@ var layers = []struct {
 var platformShared = []string{
 	"internal/appstartup",
 	"internal/platform/authscheme",
-	"internal/audiosession", "internal/platform/apple", "internal/platform/canvas2d", "internal/platform/canvasmesh", "internal/platform/canvastest", "internal/platform/codescan", "internal/platform/field", "internal/platform/finger",
+	"internal/audiosession", "internal/platform/apple", "internal/platform/canvas2d", "internal/platform/canvasmesh", "internal/platform/canvasshade", "internal/platform/canvastest", "internal/platform/codescan", "internal/platform/field", "internal/platform/finger",
 	"internal/platform/appimage", "internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/knownfolder", "internal/platform/loopback", "internal/platform/menuspeech", "internal/platform/menutext", "internal/platform/objcblock", "internal/platform/perfhud", "internal/platform/picked", "internal/platform/privacy", "internal/platform/queue", "internal/platform/scrollbar", "internal/platform/shareinbox", "internal/platform/speechd",
 	"internal/platform/ops", "internal/platform/pcmoutput", "internal/platform/textruns", "internal/platform/textselect", "internal/platform/updates", "internal/platform/videoalpha", "internal/platform/videoplay", "internal/platform/viewtree", "internal/platform/webstyle", "internal/shaderir/",
 }

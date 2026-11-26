@@ -98,6 +98,29 @@ core.Shader{
 
 Go 着色器在 `dst` 中收到像素中心，在 `pos` 中收到同一个点的点坐标，并可以使用 GLSL 的内建函数；`rectSize`、`pixelScale`、`image0At` 到 `image3At` 及其尺寸是 NSGo 的扩展。WGSL 程序写 `fn shade(uv: vec2f) -> vec4f`，读取 `nsh.time` 和 `nsh.size`；`Paused` 停止它的时钟。没有 GPU 着色器路径的平台在那里不绘制内容。
 
+画布也能运行着色程序，按绘制顺序执行，并遵循画布的变换、裁剪、透明度和合成方式。`program.Paint(uniforms, images...)` 生成一个 `core.ShaderPaint`。`d.DrawShader(paint, x, y, w, h)` 着色一个矩形：`pos` 是矩形自身的点坐标，`rectSize` 是它的尺寸，`pixelScale` 是它的一个点在屏幕上占的像素数。`d.SetShader(paint)` 着色此后 `DrawImage`、`DrawImageIn`、`DrawImageFrom`、`DrawAtlas` 和 `DrawVertices` 绘制的图片，直到 `d.ClearShader()`；`Save` 和 `Restore` 会保存和恢复这项设置。被绘制的图片就是 `image0`，在 `dst.xy` 处读取，单位是它的像素；`pos` 是同一点，单位是它的点；paint 自带的图片从 `image1` 开始。程序输出的颜色会乘上每个精灵的透明度、每个顶点的颜色和着色色调。一次 `DrawAtlas` 调用就能在一个 pass 里着色一整串来自有向距离场（SDF）图集的字形：
+
+```go
+var sdf = core.MustCompileShader(`
+package main
+
+var Color vec4
+var Glow float
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	d := image0At(dst.xy).a
+	w := fwidth(d)
+	return vec4(Color.rgb*Color.a, Color.a) * smoothstep(0.5-w-Glow, 0.5+w, d)
+}
+`)
+
+d.SetShader(sdf.Paint(core.Uniforms{"Color": core.RGB(0xff3b30), "Glow": pulse}))
+d.DrawAtlas(glyphs, rects, xforms, nil)
+d.ClearShader()
+```
+
+`image0At` 读取某点所在的纹素，因此放大绘制的程序需要自己混合相邻纹素。uniform 中的 `AnimatedNode` 会让画布在帧时钟上重绘，无需提交，和 `Bind` 一样。WGSL 程序在这里读到的 `nsh.time` 为 0。Apple 各平台、Windows、Linux 和 Web 支持画布着色；Android、HarmonyOS、watchOS 和小程序会跳过 `DrawShader`，着色的图片按普通图片绘制。
+
 `core.ShaderEffect` 用 WGSL 绘制子元素，`core.ScreenEffect` 作用于整个界面。`core.ShaderTransition` 和 `core.ScreenTransition` 对 `Value` 变化前后的画面采样，`core.TransitionShader` 用于导航和对话框转场。在 Android 上，效果捕获需要 Android 10 或更新版本，并且 OpenGL ES 3.0 支持外部纹理。`core.Canvas` 和 `core.Shader` 都接受 `Label`，子元素会绘制在它们之上。
 
 ## 下一步
