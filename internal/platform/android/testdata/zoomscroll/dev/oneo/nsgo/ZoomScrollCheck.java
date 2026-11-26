@@ -232,7 +232,25 @@ public final class ZoomScrollCheck {
                 new float[]{75, 225}, new float[]{200, 200}, t + 96));
         scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_UP, 75, 200, t + 112));
 
-        // 9. NoScroll leaves touches alone.
+        // 9. NoPinchZoom keeps a spread far past the slop from zooming.
+        cfg.noPinchZoom = true;
+        scroll.configure(cfg);
+        t = 1470;
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN, 75, 200, t));
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_POINTER_DOWN, 1,
+                new float[]{75, 225}, new float[]{200, 200}, t + 16));
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE, 0,
+                new float[]{25, 275}, new float[]{200, 200}, t + 32));
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE, 0,
+                new float[]{-75, 375}, new float[]{200, 200}, t + 48));
+        check(host.zoom == 1, "noPinchZoom zoomed to " + host.zoom);
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_POINTER_UP, 1,
+                new float[]{-75, 375}, new float[]{200, 200}, t + 64));
+        scroll.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_UP, -75, 200, t + 80));
+        cfg.noPinchZoom = false;
+        scroll.configure(cfg);
+
+        // 10. NoScroll leaves touches alone.
         cfg.noScroll = true;
         scroll.configure(cfg);
         downsBefore = content.downs;
