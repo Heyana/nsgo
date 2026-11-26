@@ -23,8 +23,9 @@ const (
 	// SidebarShellInset floats the content as a rounded card on the page's
 	// background at 90%, the window keeping a margin of 5 points around
 	// the sidebar and the card, and between them, while the sidebar
-	// shows; the card's edge and shadow lift it off the chrome there, in
-	// place of the sidebar's line. The margin, the edge and the shadow go
+	// shows, the gap between them its handle; the card's edge, outside
+	// it, and its shadow lift it off the chrome there, in place of the
+	// sidebar's line. The margin, the edge and the shadow go
 	// as the sidebar hides, the window controls and the toggle moving with
 	// it as it slides.
 	SidebarShellInset
@@ -234,13 +235,16 @@ func (s SidebarShell) Render(cx *core.Scope) core.Node {
 
 	// The handle's band, 3 points across, centers its line on the
 	// sidebar's last point; a double click restores the default width.
-	// The inset card's edge is the line there.
+	// In the inset variant the band fills the gap before the card, whose
+	// edge is the line there.
 	line := HandleLine(cx)
+	band, lineMargin := core.Points(0), core.Edges{Left: 1}
 	if inset {
 		line = func() core.Style { return core.Style{} }
+		band, lineMargin = shellInset, core.Edges{}
 	}
 	var start core.Points
-	var edge core.Node = base.ResizeHandle{Label: s.ResizeLabel, Edge: base.HandleLeading, Disabled: closed,
+	var edge core.Node = base.ResizeHandle{Label: s.ResizeLabel, Edge: base.HandleLeading, Thickness: band, Disabled: closed,
 		Value: func() core.AccessibilityValue {
 			return core.AccessibilityValue{Now: float32(chosen()), Min: float32(lo), Max: float32(min(hi, env.Window().Width))}
 		},
@@ -248,18 +252,20 @@ func (s SidebarShell) Render(cx *core.Scope) core.Node {
 		OnDragMove:    func(d core.Points) { resize(min(start+d, env.Window().Width-12)) },
 		OnDragEnd:     func(d core.Points) { resize(min(start+d, env.Window().Width-12)) },
 		OnDoublePress: func() { resize(def) },
-		Style:         core.Style{Margin: core.Edges{Left: 1}}, StyleFunc: line,
+		Style:         core.Style{Margin: lineMargin}, StyleFunc: line,
 		ThumbStyle: HandleThumb(cx), ThumbStyleFunc: HandleThumbColor(cx)}
 	if s.Fixed {
 		edge = core.View{Style: core.Style{Width: core.Pt(1), Height: core.Pct(100), Margin: core.Edges{Left: 1}}, StyleFunc: line}
 	}
 	handle := core.View{TestID: "sidebar-resize", Disabled: closed, StyleFunc: func() core.Style {
-		st := core.Style{Position: core.Absolute, Top: core.Pt(0), Bottom: core.Pt(0), Width: core.Pt(3), ZIndex: 1}
+		st := core.Style{Position: core.Absolute, Top: core.Pt(0), Bottom: core.Pt(0), Width: core.Pt(3), ZIndex: 1,
+			Left: core.Pt(width()*reveal() - 2)}
+		if inset {
+			st.Width, st.Left = core.Pt(shellInset), core.Pt(margin()+width()*reveal())
+		}
 		if s.Fixed {
 			st.PointerEvents = core.PointerEventsNone
 		}
-		// The band centers in the gap before the inset card.
-		st.Left = core.Pt(margin() + width()*reveal() + margin()/2 - 2)
 		if !shown.Get() {
 			st.Visibility = core.VisibilityHidden
 		}
@@ -304,18 +310,19 @@ func clearOfSides(style core.Style, edges func() core.EnvEdges, inner core.View)
 
 // insetCard is SidebarShellInset's card around the content, which clips
 // it: apart from the sidebar by margin, with an edge and a shadow while
-// the sidebar is open. The shadow is the card's and the clip the
-// content's, so it falls outside.
+// the sidebar is open. The edge is an outline around the card, as a
+// dialog's rim is outside what it holds, so the content keeps the card's
+// whole frame; the shadow is the card's and the clip the content's, so
+// it falls outside.
 func insetCard(cx *core.Scope, content core.View, open func() bool, margin func() core.Points) core.Node {
 	colors := ColorsOf(cx)
 	content.TestID = ""
-	content.Style.CornerRadius = shellInsetRadius - 1
+	content.Style.CornerRadius = shellInsetRadius
 	content.StyleFunc = nil
 	return core.View{TestID: "content", Style: FillRest, Children: []core.Node{content}, StyleFunc: func() core.Style {
-		st := core.Style{Background: Alpha(colors.Background(), 0.9), CornerRadius: shellInsetRadius, BorderWidth: 1,
-			BorderColor: Alpha(colors.Border(), 0), Margin: core.Edges{Left: margin()}}
+		st := core.Style{Background: Alpha(colors.Background(), 0.9), CornerRadius: shellInsetRadius, Margin: core.Edges{Left: margin()}}
 		if open() {
-			st.BorderColor = colors.Line()
+			st.OutlineWidth, st.OutlineColor = 1, colors.Line()
 			st.Shadows = []core.BoxShadow{
 				{Offset: core.Point{Y: 1}, Blur: 2, Color: Black(0.05)},
 				{Offset: core.Point{Y: 4}, Blur: 16, Color: Black(0.07)},

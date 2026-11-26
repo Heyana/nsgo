@@ -94,6 +94,23 @@ func TestResizeHandleReportsItsDrag(t *testing.T) {
 	}
 }
 
+func TestResizeHandleTakesItsThickness(t *testing.T) {
+	var moved core.Points
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pt(200), Height: core.Pt(100)}, Children: []core.Node{
+			base.ResizeHandle{TestID: "edge", Edge: base.HandleLeading, Thickness: 8,
+				OnDragMove: func(d core.Points) { moved = d }},
+		}}
+	})
+	if f := app.Find("id:edge"); f.Frame.Origin.X != 0 || f.Frame.Size.Width != 8 || f.Children[0].Frame.Origin.X != 0 {
+		t.Errorf("the band at %v, its line at %v, want 8 points hugging the leading edge", f.Frame, f.Children[0].Frame)
+	}
+	app.Pan("id:edge", core.Point{X: 12})
+	if moved != 12 {
+		t.Errorf("moved %v, want 12", moved)
+	}
+}
+
 func TestResizablePanelsFollowTheDragInRightToLeft(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return base.ResizablePanelGroup{TestID: "group", Style: core.Style{Width: core.Pt(600), Height: core.Pt(100)},

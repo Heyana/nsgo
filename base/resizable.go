@@ -385,7 +385,7 @@ func (g ResizablePanelGroup) Render(cx *core.Scope) core.Node {
 				return g.RenderHandle(cx, ResizeHandleContext{Index: slices.Index(shown.Get(), i) - 1, Axis: g.Axis, State: state.Get()})
 			})
 		}
-		return handleBandNode(handleBandSpec{horizontal: horizontal, line: parts.Of(g.HandleClass, g.HandleStyle, g.HandleStyleFunc),
+		return handleBandNode(handleBandSpec{horizontal: horizontal, thickness: parts.HandleBand, line: parts.Of(g.HandleClass, g.HandleStyle, g.HandleStyleFunc),
 			thumb: parts.Of(g.HandleThumbClass, g.HandleThumbStyle, g.HandleThumbStyleFunc), label: g.HandleLabel, testID: testID,
 			disabled: g.Disabled, onPan: pan, onStep: step, value: value, touch: !core.Untracked(cx, cx.Env().Desktop),
 			state: state, content: content})

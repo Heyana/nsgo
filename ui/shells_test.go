@@ -234,7 +234,7 @@ func TestSidebarShellInset(t *testing.T) {
 	var o *core.Signal[bool]
 	app, p := shell(t, windowEnv, func(cx *core.Scope) core.Node {
 		o = core.NewSignal(cx, true)
-		return SidebarShell{TestID: "shell", Variant: SidebarShellInset, ToggleLabel: "Toggle sidebar",
+		return SidebarShell{TestID: "shell", Variant: SidebarShellInset, ToggleLabel: "Toggle sidebar", ResizeLabel: "Resize sidebar",
 			Open: o.Get, OnOpenChange: o.Set, Width: func() core.Points { return 240 },
 			Header:  []core.Node{core.Text{Content: "Inbox", TestID: "title"}},
 			Content: []core.Node{core.Text{Content: "Body"}}}
@@ -263,11 +263,18 @@ func TestSidebarShellInset(t *testing.T) {
 	if got := app.Find("content-header").Style.Background; got != 0 {
 		t.Fatalf("content header = %x, want the card's", got)
 	}
-	if card.Style.BorderWidth != 1 || card.Style.BorderColor != p.Line || card.Style.Effects == nil || len(card.Style.Effects.Shadows) == 0 {
-		t.Fatalf("card edge = %v in %x, want an edge and a shadow", card.Style.BorderWidth, card.Style.BorderColor)
+	if card.Style.BorderWidth != 0 || card.Style.Outline.Width != 1 || card.Style.Outline.Color != p.Line || card.Style.Effects == nil || len(card.Style.Effects.Shadows) == 0 {
+		t.Fatalf("card edge = %v in %x (border %v), want an edge outside it and a shadow", card.Style.Outline.Width, card.Style.Outline.Color, card.Style.BorderWidth)
 	}
-	if got := within(app.Find("shell"), "sidebar-resize").Children[0].Style.Background; got != 0 {
+	if inner := card.Children[0]; inner.Frame.Size != card.Frame.Size {
+		t.Fatalf("content = %v in a card of %v, want the card's whole frame", inner.Frame.Size, card.Frame.Size)
+	}
+	handle := within(app.Find("shell"), "sidebar-resize")
+	if got := handle.Children[0].Style.Background; got != 0 {
 		t.Fatalf("handle line = %x, want the card's edge alone", got)
+	}
+	if band := app.Find("role:adjustable Resize sidebar"); x(app, "shell", band) != 5+240 || band.Frame.Size.Width != 5 {
+		t.Fatalf("handle at %v, %v across, want filling the gap", x(app, "shell", band), band.Frame.Size.Width)
 	}
 
 	app.Press("role:button Toggle sidebar")
@@ -285,8 +292,8 @@ func TestSidebarShellInset(t *testing.T) {
 	if got := offset(); got != (core.Point{}) {
 		t.Fatalf("window controls moved by %v once hidden, want none", got)
 	}
-	if card := app.Find("content"); card.Style.BorderColor != Alpha(p.Line, 0) || card.Style.Effects != nil && len(card.Style.Effects.Shadows) > 0 {
-		t.Fatalf("card edge = %x once hidden, want no edge or shadow", card.Style.BorderColor)
+	if card := app.Find("content"); card.Style.Outline.Width != 0 || card.Style.Effects != nil && len(card.Style.Effects.Shadows) > 0 {
+		t.Fatalf("card edge = %v once hidden, want no edge or shadow", card.Style.Outline.Width)
 	}
 }
 

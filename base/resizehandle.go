@@ -12,7 +12,9 @@ type handleBandSpec struct {
 	horizontal bool
 	// edge places the band hugging its container's edge from inside;
 	// zero centers it on a zero-length slot between two panels.
-	edge        HandleEdge
+	edge HandleEdge
+	// thickness is the band's width across its axis.
+	thickness   core.Points
 	line, thumb part
 	label       string
 	testID      string
@@ -42,7 +44,7 @@ const (
 	HandleTrailing
 )
 
-// handleBandNode is a handle: a band 3 points across with the resize
+// handleBandNode is a handle: a band, h.thickness across, with the resize
 // cursor, its line in the middle, or on the edge of the container it
 // hugs from inside. Between two panels it takes no room: negative
 // margins give back its thickness, so the band lies over the boundary
@@ -70,11 +72,11 @@ func handleBandNode(h handleBandSpec) core.Node {
 	}
 	// The margins either side give the band's thickness back, in whole
 	// points, so its line stays on a pixel of the boundary.
-	before := core.Points(math.Floor(float64(parts.HandleBand) / 2))
-	after := parts.HandleBand - before
+	before := core.Points(math.Floor(float64(h.thickness) / 2))
+	after := h.thickness - before
 	var activation core.PanActivation
 	if h.horizontal {
-		band.Width, band.Cursor = core.Pt(parts.HandleBand), core.CursorColResize
+		band.Width, band.Cursor = core.Pt(h.thickness), core.CursorColResize
 		switch h.edge {
 		case HandleLeading:
 			band.Top, band.Bottom, band.Left = zero, zero, zero
@@ -90,7 +92,7 @@ func handleBandNode(h handleBandSpec) core.Node {
 		over.Top = core.Pct(50)
 		activation = core.PanActivation{ActiveOffsetX: 2, FailOffsetY: 12}
 	} else {
-		band.Height, band.Cursor = core.Pt(parts.HandleBand), core.CursorRowResize
+		band.Height, band.Cursor = core.Pt(h.thickness), core.CursorRowResize
 		switch h.edge {
 		case HandleLeading:
 			band.Left, band.Right, band.Top = zero, zero, zero
@@ -196,6 +198,9 @@ type ResizeHandle struct {
 	// Axis is the axis it moves along.
 	Axis Axis
 	Edge HandleEdge
+	// Thickness is the band's width across Axis, which takes the drag:
+	// 3 points when 0.
+	Thickness core.Points
 	// OnDragStart, OnDragMove and OnDragEnd follow a drag, with its
 	// offset along Axis since it started.
 	OnDragStart   func()
@@ -283,7 +288,11 @@ func (r ResizeHandle) Render(cx *core.Scope) core.Node {
 			r.OnDragEnd(d)
 		}
 	}
-	return handleBandNode(handleBandSpec{horizontal: horizontal, edge: r.Edge, line: parts.Of(r.Class, r.Style, r.StyleFunc),
+	thickness := r.Thickness
+	if thickness <= 0 {
+		thickness = parts.HandleBand
+	}
+	return handleBandNode(handleBandSpec{horizontal: horizontal, edge: r.Edge, thickness: thickness, line: parts.Of(r.Class, r.Style, r.StyleFunc),
 		thumb: parts.Of(r.ThumbClass, r.ThumbStyle, r.ThumbStyleFunc), label: r.Label, testID: r.TestID, disabled: r.Disabled, onPan: pan, onStep: step,
 		onDoublePress: r.OnDoublePress, value: r.Value, touch: !core.Untracked(cx, cx.Env().Desktop), state: state, content: r.content()})
 }
