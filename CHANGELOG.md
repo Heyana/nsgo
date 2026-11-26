@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-26
+
+- Let embedded Android hosts keep video playback and its callbacks running while their retained view is hidden or out of its window (#2302 by @henry-wm).
+- `nsgo.LaunchFiles(parse)` lets a Windows or Linux app decide which command-line arguments open as files, or with `nil` open none (#2264 by @J4ck1e2000).
+- Support selecting a named template from a Go module with `nsgo init -template <module>[@version]#<name>` and listing available templates with `-list` (#2354 by @owocc).
+- Install the `nsgo` command on macOS and Linux with `curl -fsSL https://nsgo.dev/install.sh | sh`, which verifies the release's checksum (#2411).
+- Attach prebuilt `nsgo` binaries for macOS, Linux and Windows on arm64 and amd64, with `checksums.txt`, to every release, built from the tagged commit after every check passes (#2410).
+- Add `ui/terminal` (`View`) to style `base/terminal`'s default context menu and touch key bar in `ui`'s theme and appearance (#2306 by @owocc).
+- `web`: show the performance panel overlay (`--nsgo-fps` / `?nsgo-fps`) and run a continuous `requestAnimationFrame` clock to measure web frames, main-thread work, and batch hop latency (#2254).
+- A zoomable Android scroll view no longer zooms with a one-finger double tap and drag, which it did only when its content took no touches; it zooms with two-finger pinches, as on iOS (#2311 by @XiaoMengXinX).
+- `nsgo init` writes a complete module, requiring the running `nsgo` at its version, declaring it as a tool and filling `go.sum`, so `nsgo dev` runs right after it; in an existing module it adds only the `require` and `tool` lines `go.mod` lacks, and the error for flags after the directory names the command as it was called (#2420).
+- `nsgo init` names its next command as it was called, `nsgo dev` from an installed `nsgo` and `go tool nsgo dev` from the module's tool, and the docs install `nsgo` first, with Homebrew, the install script or `go install` (#2413).
+- Keep off-target clickable Android views from stealing touches (#2310 by @J4ck1e2000).
+- Let a pinch on a zoomed Android scroll view zoom out until the fingers meet, instead of stopping once they come within about 27mm of each other (#2311 by @XiaoMengXinX).
+- Keep a zoomed Android scroll view's content still as a second finger lands or one of two lifts, instead of jumping by half the fingers' spread (#2301 by @XiaoMengXinX).
+- Windows and Linux apps no longer open arguments after `--` as files, on a first launch or one handed to a running instance (#2264 by @J4ck1e2000).
+- Closing a GPU resource now takes its cleanup off the scope it was created under and drops it from the device's retained lists, so recreating resources under a long-lived scope, such as render targets on resize, no longer grows them (#2339 by @owocc).
+- `gpu`: clip triangles in homogeneous clip space, clamp fragment depth to the viewport depth range, cover shared edges once with a top-left fill rule, and interpolate `@interpolate(linear)` varyings in screen space in the software renderer (#2344 by @owocc).
+- `msl`: lay out `vec3<f32>`, `vec3<i32>`, and `vec3<u32>` members of uniform and storage buffer structs as packed Metal vectors with explicit WGSL padding so following scalars and array strides match WGSL on Metal (#2340 by @owocc).
+- WGSL: refuse uniform buffer arrays whose elements are not a multiple of 16 bytes apart, as WGSL requires, rather than reading them at other offsets on Metal (#2403).
+- `gpu`: a render pass whose depth attachment names no texture, the surface's own depth buffer, takes the surface's depth format again, so depth-tested pipelines draw in it instead of being skipped (#2395).
+- Fail a `tsx.Plugin.Call` with `ErrBudget` when `Limits.Call` cuts a slice resumed by a Go-settled promise such as `host.call`, and report the cut to `Sandbox.OnError` when the promise has no waiting call (#2390 by @owocc).
+- Keep the files and links a second launch hands a running Windows app when it writes and closes the pipe before the app starts listening, instead of dropping them silently (#2393 by @Laotree).
+
 ## [0.3.3] - 2026-11-25
 
 v0.3.1 and v0.3.2 were tagged but not released: v0.3.1's committed Android runtime was not built from its Java (#2376), and v0.3.2 failed the Apple simulator tests that pull requests skip (#2381, #2386 to #2389). The Go module proxy serves both tags, so 0.3.3 is the first release since 0.3.0 and holds their changes. Releases now run every test before they tag (#2382).
