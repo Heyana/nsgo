@@ -462,10 +462,11 @@ jobs:
       - name: Test browser package trust persistence
         run: go tool nsgo test -target web ./tsx/pkg
 
-  android:
-    # The emulator needs KVM or Hypervisor.framework, which GitHub's runners have and Depot's lack.
+  # The runtime is built once here and both emulator jobs package it, so the APK
+  # under test still comes from this commit's Java.
+  android-runtime:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -500,12 +501,35 @@ jobs:
             internal/platform/android/runtime/classes.jar
           if-no-files-found: error
           retention-days: 14
+  android-emulator-a:
+    # Half of the emulator script, split by the time each invocation took: the E2E
+    # pair and the platform suite are slower than the rest together.
+    name: Android emulator (A)
+    # The emulator needs KVM or Hypervisor.framework, which GitHub's runners have and Depot's lack.
+    needs: android-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Take the built Android runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-runtime
+          path: internal/platform/android/runtime
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Test Android input, audio and process exits
+      - name: Test on the emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
@@ -516,19 +540,75 @@ jobs:
           script: |
             NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidProcessExitResults$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/frameclock || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 10m -run '(^TestStandaloneReviewSDKClasses$)|(^TestCanvasAtlasWire$)|(^TestHardwareKeys|^TestTabBarBadgesNative$)|(^TestNotificationPressIntentsKeepCollidingIDs$)|(^TestTextRPC)|(^TestMountFlushesDeferredShaderPixels$|^TestSendExtended)|(^Test(DetachedViewReleasesWidgetsAndResyncsItsLiveGraph|EmbeddedVideoBackground(Playback|Surface))$)|(^TestNativeAndroid(Sound|PlaybackControls|Player|OutputLatency)$)|(ListTouchStopsMomentum$)|(^TestIME|^TestHardwareEnter|^TestImmersiveAndroidSystemBars$)|(^TestDirectionMirrorsNativeControls$)' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 5m -run '(^TestCanvasAtlas(MatchesDrawImageFrom|Sampling)$)|(^TestClipKeepsOuterDecoration$)|(^TestCanvasImageTint$)' ./internal/testhost/testdata/capture || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidNativePackagedView$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+
+  android-emulator-b:
+    name: Android emulator (B)
+    # The emulator needs KVM or Hypervisor.framework, which GitHub's runners have and Depot's lack.
+    needs: android-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Take the built Android runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-runtime
+          path: internal/platform/android/runtime
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test on the emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: false
+          ndk: 27.2.12479018
+          script: |
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./testdata/devtools-geometry || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestGreets$' ./examples/hello || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/press || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
-            go tool nsgo test -target android -device emulator-5554 -timeout 10m -run '(^TestStandaloneReviewSDKClasses$)|(^TestCanvasAtlasWire$)|(^TestHardwareKeys|^TestTabBarBadgesNative$)|(^TestNotificationPressIntentsKeepCollidingIDs$)|(^TestTextRPC)|(^TestMountFlushesDeferredShaderPixels$|^TestSendExtended)|(^Test(DetachedViewReleasesWidgetsAndResyncsItsLiveGraph|EmbeddedVideoBackground(Playback|Surface))$)|(^TestNativeAndroid(Sound|PlaybackControls|Player|OutputLatency)$)|(ListTouchStopsMomentum$)|(^TestIME|^TestHardwareEnter|^TestImmersiveAndroidSystemBars$)|(^TestDirectionMirrorsNativeControls$)' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
-            go tool nsgo test -target android -device emulator-5554 -timeout 5m -run '(^TestCanvasAtlas(MatchesDrawImageFrom|Sampling)$)|(^TestClipKeepsOuterDecoration$)|(^TestCanvasImageTint$)' ./internal/testhost/testdata/capture || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 3m -run '^Test(Mobile|Android)HardwareKey|^TestPressedPositionsReachTheApp$' ./internal/testhost/testdata/keys || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/soundlimits || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/websource || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/webhistory || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 3m -fps -env NSGO_GALLERY_PERF=1 -env NSGO_GALLERY_PERF_SECONDS=3 -run '^TestPerfCanvas(Sprites|Mesh)' ./examples/gallery || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
-            NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidNativePackagedView$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/network || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/shaderpixels || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+
+  # The required check: it passes only when the runtime build and both emulators passed.
+  android:
+    needs: [android-runtime, android-emulator-a, android-emulator-b]
+    if: ${{ !cancelled() }}
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every part to pass
+        env:
+          RUNTIME: ${{ needs.android-runtime.result }}
+          EMULATOR_A: ${{ needs.android-emulator-a.result }}
+          EMULATOR_B: ${{ needs.android-emulator-b.result }}
+        run: |
+          for result in "$RUNTIME" "$EMULATOR_A" "$EMULATOR_B"; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A part of android did not pass: $result."
+              exit 1
+            fi
+          done
 
   apple:
     needs: changes
