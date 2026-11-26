@@ -195,3 +195,32 @@ func TestCompilePipelineHLSLInterpolationAndMatrixConstructor(t *testing.T) {
 		}
 	}
 }
+
+func TestCompilePipelineHLSLBufferStructsKeepWGSLOffsets(t *testing.T) {
+	const src = `
+struct P { s: f32, d: vec3<f32> }
+@group(0) @binding(0) var<uniform> u: P;
+@group(0) @binding(1) var<storage, read> b: array<P>;
+@vertex fn vs_main() -> @builtin(position) vec4<f32> { return vec4<f32>(u.d + b[1].d, u.s + b[1].s); }
+@fragment fn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(u.d, u.s); }
+`
+	prog, err := wgsl.CompilePipeline(src)
+	if err != nil {
+		t.Fatalf("wgsl.CompilePipeline: %v", err)
+	}
+	out, err := hlsl.CompilePipeline(prog.IR)
+	if err != nil {
+		t.Fatalf("hlsl.CompilePipeline: %v", err)
+	}
+	for _, want := range []string{
+		"struct S0 {\n\tfloat M0;\n\tuint __pad0;\n\tuint __pad1;\n\tuint __pad2;\n\tfloat3 M1;",
+		"cbuffer CB0 : register(b0)",
+		"ByteAddressBuffer B1 : register(t0)",
+		"S0 __load_B1(uint __index)",
+		"asfloat(B1.Load3((__index * 32 + 16)))",
+	} {
+		if !strings.Contains(out.VertexSource, want) {
+			t.Errorf("HLSL missing %q:\n%s", want, out.VertexSource)
+		}
+	}
+}
