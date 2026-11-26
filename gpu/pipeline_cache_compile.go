@@ -50,13 +50,19 @@ func compilePipelineArtifacts(dd driver.GPUPipelineDesc) (*driver.GPUPipelineArt
 		return nil, Error{Code: ErrShaderCompile, Message: "missing shader IR for pipeline compilation"}
 	}
 	art, ps := translatePipelineIR(prog)
-	if ps.MSL == "" && ps.HLSL() == "" && ps.GLSL() == "" && ps.GLES() == "" && ps.WGSL == "" {
+	if !hasPipelineSource(ps) {
 		if err := ps.Err(); err != nil {
 			return nil, Error{Code: ErrShaderCompile, Message: err.Error(), Cause: err}
 		}
 		return nil, Error{Code: ErrShaderCompile, Message: "shader pipeline produced no backend output"}
 	}
 	return art, nil
+}
+
+func hasPipelineSource(ps PipelineSources) bool {
+	return ps.MSL != "" || ps.HLSLVertex != "" || ps.HLSLPixel != "" || ps.HLSLCompute != "" ||
+		ps.GLSLVertex != "" || ps.GLSLFragment != "" || ps.GLSLCompute != "" ||
+		ps.GLESVertex != "" || ps.GLESFragment != "" || ps.GLESCompute != "" || ps.WGSL != ""
 }
 
 func translatePipelineIR(prog *shaderir.Program) (*driver.GPUPipelineArtifacts, PipelineSources) {

@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -148,5 +149,43 @@ func Fragment(dst vec4, pos vec2) vec4 {
 		if bErr == nil || !strings.Contains(bErr.Error(), name) || !strings.Contains(bErr.Error(), "panic:") {
 			t.Errorf("%s panic error = %v, want recovered panic naming %s", name, bErr, name)
 		}
+	}
+}
+
+func TestCreatePipelineAsyncReportsTranslationFailure(t *testing.T) {
+	sr := NewSoftwareRenderer(8, 8, FormatUndefined)
+	dev := sr.Device()
+	cache, err := NewPipelineCache(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewPipelineCache: %v", err)
+	}
+	dev.SetPipelineCache(cache)
+
+	bad := &ShaderModule{ir: &shaderir.Program{
+		Bindings: []shaderir.Binding{{
+			Kind: shaderir.BindingUniformBuffer,
+			Type: shaderir.Type{Main: shaderir.Array},
+		}},
+		VertexFunc: shaderir.VertexFunc{Block: &shaderir.Block{}},
+	}}
+	var callbackErr error
+	p := dev.CreatePipelineAsync(nil, PipelineDesc{
+		Vertex:  ShaderStage{Module: bad},
+		Targets: []ColorTargetState{{Format: dev.SurfaceFormat()}},
+	}, func(_ *Pipeline, err error) {
+		callbackErr = err
+	})
+	if p == nil {
+		t.Fatal("CreatePipelineAsync returned nil for a valid stage")
+	}
+	<-p.Done()
+	if callbackErr == nil || !errors.Is(callbackErr, ErrShaderCompile) {
+		t.Fatalf("onReady error = %v, want ErrShaderCompile", callbackErr)
+	}
+	if p.Ready() {
+		t.Fatal("pipeline became ready after translation failure")
+	}
+	if err := p.Err(); err == nil || !errors.Is(err, ErrShaderCompile) {
+		t.Fatalf("Pipeline.Err() = %v, want ErrShaderCompile", err)
 	}
 }

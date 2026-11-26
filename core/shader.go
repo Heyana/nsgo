@@ -145,10 +145,8 @@ func MustCompileShader(src string) *ShaderProgram {
 	return p
 }
 
-// HasUniform reports whether the program has a uniform named name, which
-// Uniforms may set.
 // DriverShaderProgram returns the driver representation of p, or nil when p is nil.
-// Called by nsgotest; never by apps.
+// It is a runtime hook for nsgotest and must not be used by apps.
 func DriverShaderProgram(p *ShaderProgram) *driver.ShaderProgram {
 	if p == nil {
 		return nil
@@ -165,6 +163,8 @@ func (p *ShaderProgram) UniformLanes(name string) (lane, n int, ok bool) {
 	return slot.lane, slot.n, ok
 }
 
+// HasUniform reports whether the program has a uniform named name, which
+// Uniforms may set.
 func (p *ShaderProgram) HasUniform(name string) bool {
 	_, ok := p.uniforms[name]
 	return ok

@@ -53,7 +53,11 @@ func translateFragmentIR(ir *shaderir.Program) (ShaderSources, error) {
 	glslOpts := glsl.Options{FlipY: "true", Block: "NsgoUniforms"}
 	glslSrc, err := runFragmentBackend("GLSL", func() string {
 		_, _ = glsl.UniformLanes(ir)
-		return glsl.Fragment(ir, "nsgoShader", glslOpts)
+		body := glsl.Fragment(ir, "nsgoShader", glslOpts)
+		if body == "" {
+			return ""
+		}
+		return "#version 330 core\n\n" + body
 	})
 	src.GLSL = glslSrc
 	if err != nil {
@@ -62,7 +66,11 @@ func translateFragmentIR(ir *shaderir.Program) (ShaderSources, error) {
 
 	glesSrc, err := runFragmentBackend("GLES", func() string {
 		_, _ = glsl.UniformLanes(ir)
-		return glsl.Fragment(ir, "nsgoShader", glslOpts)
+		body := glsl.Fragment(ir, "nsgoShader", glslOpts)
+		if body == "" {
+			return ""
+		}
+		return "#version 300 es\nprecision highp float;\nprecision highp int;\n\n" + body
 	})
 	src.GLES = glesSrc
 	if err != nil {
