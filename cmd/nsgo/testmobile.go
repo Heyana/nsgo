@@ -61,7 +61,43 @@ var (
 	errSimulatorTestTimeout   = errors.New("the simulator test timed out")
 	errDeviceLaunchTimeout    = errors.New("the device app's launch timed out")
 	errDeviceTestTimeout      = errors.New("the device test timed out")
+	errAndroidNoMarkedResult  = errors.New("the Android log dump has no marked result")
 )
+
+type markedRunResult struct {
+	code int
+	err  error
+}
+
+// readAndroidMarkedRun watches the streaming log and periodically checks a
+// fresh logcat dump. The stream can miss a completed run's exit mark while the
+// device still retains it in logcat.
+func readAndroidMarkedRun(ctx context.Context, lines io.Reader, token string, out io.Writer, d device, ended func() error, onStart func(), stop func()) (int, error) {
+	result := make(chan markedRunResult, 1)
+	go func() {
+		code, err := readMarkedRun(lines, token, out, ended, onStart)
+		result <- markedRunResult{code: code, err: err}
+	}()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case r := <-result:
+			return r.code, r.err
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		case <-ticker.C:
+			pollCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+			dump, _ := d.output(pollCtx, "logcat", "-d", "-v", "raw", "-s", "nsgo:I")
+			cancel()
+			if code, err, ok := readAndroidDumpMark(dump, token); ok {
+				stop()
+				<-result
+				return code, err
+			}
+		}
+	}
+}
 
 func deviceLaunchError(ctx context.Context, what string, err error) error {
 	if errors.Is(context.Cause(ctx), errDeviceLaunchTimeout) {
@@ -389,7 +425,7 @@ func androidTestRunner(ctx context.Context, p *project, dir string, opts testOpt
 				return -1, deviceLaunchError(runCtx, "Android test app", err)
 			}
 			var testTimer *time.Timer
-			code, readErr := readMarkedRun(io.TeeReader(logs, &captured), token, out, func() error {
+			code, readErr := readAndroidMarkedRun(runCtx, io.TeeReader(logs, &captured), token, out, d, func() error {
 				if runCtx.Err() != nil {
 					return runCtx.Err()
 				}
@@ -399,6 +435,9 @@ func androidTestRunner(ctx context.Context, p *project, dir string, opts testOpt
 				if opts.timeout > 0 {
 					testTimer = time.AfterFunc(opts.timeout, func() { cancel(errDeviceTestTimeout) })
 				}
+			}, func() {
+				cmd.Process.Kill()
+				cmd.Wait()
 			})
 			launchTimer.Stop()
 			if testTimer != nil {
@@ -411,7 +450,9 @@ func androidTestRunner(ctx context.Context, p *project, dir string, opts testOpt
 			if runCtx.Err() != nil {
 				cmd.Process.Kill()
 				cmd.Wait()
-				androidTimeoutReport(out, token, captured.Bytes(), d)
+				if code, resultErr, ok := androidTimeoutResult(out, token, captured.Bytes(), d); ok {
+					return code, resultErr
+				}
 				switch cause := context.Cause(runCtx); {
 				case errors.Is(cause, errDeviceTestTimeout):
 					return -1, timeoutError(opts.timeout)
@@ -438,7 +479,35 @@ func androidTimeoutReport(out io.Writer, token string, captured []byte, d device
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	dump, _ := d.output(ctx, "logcat", "-d", "-v", "raw", "-s", "nsgo:I")
+	_, _, _ = readAndroidTimeoutResult(out, token, captured, dump)
+}
+
+func androidTimeoutResult(out io.Writer, token string, captured []byte, d device) (int, error, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	dump, _ := d.output(ctx, "logcat", "-d", "-v", "raw", "-s", "nsgo:I")
+	return readAndroidTimeoutResult(out, token, captured, dump)
+}
+
+func readAndroidTimeoutResult(out io.Writer, token string, captured []byte, dump string) (int, error, bool) {
+	if dump == "" {
+		dump = string(captured)
+	}
+	if code, err, ok := readAndroidDumpMark(dump, token); ok {
+		return code, err, true
+	}
 	writeAndroidTimeoutReport(out, token, captured, dump)
+	return -1, nil, false
+}
+
+func readAndroidDumpMark(dump, token string) (int, error, bool) {
+	code, err := readMarkedRun(strings.NewReader(dump), token, io.Discard, func() error {
+		return errAndroidNoMarkedResult
+	}, nil)
+	if errors.Is(err, errAndroidNoMarkedResult) {
+		return -1, nil, false
+	}
+	return code, err, true
 }
 
 func writeAndroidTimeoutReport(out io.Writer, token string, captured []byte, dump string) {

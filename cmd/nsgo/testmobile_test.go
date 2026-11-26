@@ -103,6 +103,25 @@ func TestWriteAndroidTimeoutReport(t *testing.T) {
 	}
 }
 
+func TestReadAndroidTimeoutResultUsesDumpedExitMark(t *testing.T) {
+	var out strings.Builder
+	code, err, ok := readAndroidTimeoutResult(&out, "run-1", []byte("nsgo-test-start run-1\n"), "nsgo-test-start run-1\n--- PASS: TestA (0.00s)\nnsgo-test-exit run-1 0\n")
+	if !ok || code != 0 || err != nil {
+		t.Fatalf("code=%d err=%v ok=%t, want exit code 0", code, err, ok)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("timeout report = %q, want none for a recovered result", out.String())
+	}
+}
+
+func TestReadAndroidTimeoutResultReportsDumpedErrorMark(t *testing.T) {
+	var out strings.Builder
+	code, err, ok := readAndroidTimeoutResult(&out, "run-2", []byte("nsgo-test-start run-2\n"), "nsgo-test-start run-2\nnsgo-test-error run-2 runtime failed\n")
+	if !ok || code != -1 || err == nil || err.Error() != "runtime failed" {
+		t.Fatalf("code=%d err=%v ok=%t, want runtime error", code, err, ok)
+	}
+}
+
 // Exercise the launcher process itself: simctl can fail after a fast app has already reported its result, or exit either way after the app has crashed.
 func TestSimulatorTestReadsTheAppsExitCode(t *testing.T) {
 	for _, tc := range []struct {
