@@ -296,3 +296,48 @@ func TestPictureInPictureDisablingKeepsInlineLayer(t *testing.T) {
 		t.Fatal("disabling PiP removed the video's inline layer")
 	}
 }
+
+func TestPictureInPictureWillStartRetainsSessionUntilStopped(t *testing.T) {
+	loadAVKit()
+	registerPiPDelegate()
+	var starts, stops int
+	cls := RegisterClass("NsgoTestPiPWillStartController", Class("NSObject"), nil, []objc.MethodDef{
+		{Cmd: sel("isPictureInPicturePossible"), Fn: func(objc.ID, objc.SEL) bool { return true }},
+		{Cmd: sel("isPictureInPictureActive"), Fn: func(objc.ID, objc.SEL) bool { return false }},
+		{Cmd: sel("startPictureInPicture"), Fn: func(objc.ID, objc.SEL) { starts++ }},
+		{Cmd: sel("stopPictureInPicture"), Fn: func(objc.ID, objc.SEL) { stops++ }},
+		{Cmd: sel("setDelegate:"), Fn: func(objc.ID, objc.SEL, objc.ID) {}},
+	})
+	p := &PictureInPicture{controller: objc.ID(cls).Send(sel("new")), state: driver.PictureInPictureState{Supported: true, Possible: true}}
+	p.delegate = objc.ID(pipDelegateClass).Send(sel("new"))
+	pipDelegates.Store(p.delegate, p)
+	delegate := p.delegate
+	delegate.Send(sel("pictureInPictureControllerWillStartPictureInPicture:"), p.controller)
+	if !p.ContinuesInBackground() {
+		t.Fatal("willStart did not mark the session as continuing in the background")
+	}
+	p.Command(driver.PictureInPictureStart)
+	if starts != 0 {
+		t.Fatalf("duplicate start during automatic transition called startPictureInPicture %d times", starts)
+	}
+	released := false
+	p.Close(func() { released = true })
+	if released || stops != 1 {
+		t.Fatalf("Close during willStart: released=%v, stops=%d", released, stops)
+	}
+	delegate.Send(sel("pictureInPictureControllerDidStopPictureInPicture:"), p.controller)
+	if !released || p.controller != 0 || p.delegate != 0 {
+		t.Fatal("stopped automatic session leaked source objects")
+	}
+}
+
+func TestPictureInPictureStartPreservesInitError(t *testing.T) {
+	const want = "Picture in Picture requires apple.info.UIBackgroundModes: [audio]"
+	var states []driver.PictureInPictureState
+	p := &PictureInPicture{state: driver.PictureInPictureState{Supported: true, Error: want}}
+	p.events.Store(&pipEvents{dispatch: func(e driver.Event) { states = append(states, e.Data.(*driver.PictureInPictureEvent).State) }})
+	p.Command(driver.PictureInPictureStart)
+	if len(states) != 1 || states[0].Error != want || !states[0].Supported {
+		t.Fatalf("reported states = %+v, want error %q", states, want)
+	}
+}

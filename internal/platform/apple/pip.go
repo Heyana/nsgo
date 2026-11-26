@@ -192,7 +192,11 @@ func (p *PictureInPicture) Command(command uint32) {
 			return
 		}
 		if p.controller == 0 {
-			p.fail("Picture in Picture has no content source")
+			if p.state.Error != "" {
+				p.report()
+			} else {
+				p.fail("Picture in Picture has no content source")
+			}
 			return
 		}
 		if p.state.Active || p.starting {
@@ -288,6 +292,14 @@ func registerPiPDelegate() {
 						p.update()
 					}
 				})
+			}
+		}},
+		{Cmd: sel("pictureInPictureControllerWillStartPictureInPicture:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
+			if p := pipFor(self); p != nil {
+				p.starting = true
+				if p.closing {
+					p.controller.Send(sel("stopPictureInPicture"))
+				}
 			}
 		}},
 		{Cmd: sel("pictureInPictureControllerDidStartPictureInPicture:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
