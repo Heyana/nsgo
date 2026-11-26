@@ -48,7 +48,10 @@ func (w *window) touchFinger(message uint32, wParam, lParam uintptr) {
 	p := w.point(at.X, at.Y)
 	switch {
 	case message == wmPointerDown:
-		// Touches on a video's controls or a page are theirs, as hostedMouse gives them the press Windows makes from the touch.
+		// Touches on the caption buttons, a video's controls or a page are theirs, as mouse messages handle the press Windows makes from the touch.
+		if w.captionAt(p) != 0 {
+			return
+		}
 		if vh := videos.Load(); vh != nil && vh.barAt(w, at.X, at.Y) {
 			return
 		}

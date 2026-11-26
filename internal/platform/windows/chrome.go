@@ -15,14 +15,19 @@ import (
 //
 //   - The hidden title bar: WM_NCCALCSIZE gives the client area the
 //     window's whole height (the side and bottom resize borders stay
-//     non-client), WM_NCHITTEST answers the top resize border, the caption
-//     buttons (HTMINBUTTON, HTMAXBUTTON, HTCLOSE, so Windows 11 shows snap
-//     layouts) and the views that drag the window (HTCAPTION: the system
-//     moves the window, maximizes it on a double click and opens its menu
-//     on a right click; with the system's title bar too). The caption
-//     buttons are drawn over the app in Windows 11's style, and their
-//     non-client clicks handled here, never by DefWindowProc, which would
-//     draw Windows 95's.
+//     non-client), WM_NCPAINT, WM_NCUAHDRAWCAPTION and WM_NCUAHDRAWFRAME
+//     return 0 so Windows never paints the system caption buttons (such as
+//     during maximize or title updates), and WM_NCHITTEST answers the top
+//     resize border, the maximize button (HTMAXBUTTON, so Windows 11 shows
+//     snap layouts) and the views that drag the window (HTCAPTION: the
+//     system moves the window, maximizes it on a double click and opens its
+//     menu on a right click; with the system's title bar too). Minimize and
+//     close answer HTCLIENT and take client mouse messages before views, so
+//     Windows neither shows classic Win32 tooltips nor draws native button
+//     hover highlights over the custom buttons. The caption buttons are
+//     drawn over the app in Windows 11's style, and their non-client hover
+//     and clicks handled here, never by DefWindowProc, which would draw
+//     Windows 95's.
 //   - Full screen: a borderless window the size of its monitor.
 //   - The menu bar: a Win32 menu (SetMenu), not shown while the title bar
 //     is hidden or in full screen; its shortcuts are matched on key downs
@@ -53,17 +58,21 @@ var (
 )
 
 const (
-	wmClose           = 0x0010
-	wmGetMinMaxInfo   = 0x0024
-	wmNCCalcSize      = 0x0083
-	wmNCHitTest       = 0x0084
-	wmNCActivate      = 0x0086
-	wmNCMouseMove     = 0x00A0
-	wmNCLButtonDown   = 0x00A1
-	wmNCLButtonUp     = 0x00A2
-	wmNCLButtonDblClk = 0x00A3
-	wmNCMouseLeave    = 0x02A2
-	wmEnterSizeMove   = 0x0231
+	wmClose            = 0x0010
+	wmGetMinMaxInfo    = 0x0024
+	wmNCCalcSize       = 0x0083
+	wmNCHitTest        = 0x0084
+	wmNCPaint          = 0x0085
+	wmNCActivate       = 0x0086
+	wmNCMouseMove      = 0x00A0
+	wmNCLButtonDown    = 0x00A1
+	wmNCLButtonUp      = 0x00A2
+	wmNCLButtonDblClk  = 0x00A3
+	wmNCUAHDrawCaption = 0x00AE
+	wmNCUAHDrawFrame   = 0x00AF
+	wmNCMouseHover     = 0x02A0
+	wmNCMouseLeave     = 0x02A2
+	wmEnterSizeMove    = 0x0231
 
 	htClient      = 1
 	htCaption     = 2
@@ -375,7 +384,7 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		if c.Controls.Hidden != w.chrome.noButtons || c.Controls.Style != w.chrome.controls {
 			w.chrome.noButtons = c.Controls.Hidden
 			w.chrome.controls = c.Controls.Style
-			w.chrome.hover, w.chrome.pressed = 0, 0
+			w.clearCaptionState()
 			w.chromeChanged()
 		}
 	case driver.WindowSetMaterial:
@@ -440,7 +449,7 @@ func constrainedStyle(style uintptr, c driver.WindowConstraints) uintptr {
 // full screen they wait for the style it goes back to.
 func (w *window) setConstraints(c driver.WindowConstraints) {
 	w.chrome.constraints = c
-	w.chrome.hover, w.chrome.pressed = 0, 0
+	w.clearCaptionState()
 	if w.chrome.fullScreen {
 		w.chrome.savedStyle = w.constrained(w.chrome.savedStyle)
 		return
@@ -674,7 +683,10 @@ func (w *window) ncHitTest(lParam uintptr) uintptr {
 			}
 		}
 		if code := w.captionAt(p); code != 0 {
-			return uintptr(code)
+			if code == htMaxButton {
+				return uintptr(code)
+			}
+			return htClient
 		}
 	}
 	if w.windowDragAt(p) {
@@ -703,11 +715,141 @@ func edgeHit(at point, client rect, border int32) uintptr {
 
 func isButton(code uint32) bool { return code == htMinButton || code == htMaxButton || code == htClose }
 
+// clientCaptionButton reports whether code is handled on client mouse messages
+// rather than returned as a non-client button from WM_NCHITTEST.
+func clientCaptionButton(code uint32) bool { return code == htMinButton || code == htClose }
+
 func (w *window) setHover(code uint32) {
 	if w.chrome.hover != code {
 		w.chrome.hover = code
 		w.redrawAll()
 	}
+}
+
+func (w *window) clearCaptionState() {
+	if clientCaptionButton(w.chrome.pressed) {
+		if cap, _, _ := getCapture.Call(); cap == w.hwnd {
+			releaseCapture.Call()
+		}
+	}
+	w.chrome.hover, w.chrome.pressed = 0, 0
+}
+
+func (w *window) invokeCaptionButton(code uint32) {
+	switch code {
+	case htMinButton:
+		w.setHover(0)
+		w.minimize()
+	case htMaxButton:
+		w.toggleMaximize()
+	case htClose:
+		postMessageW.Call(w.hwnd, wmClose, 0, 0)
+	}
+}
+
+// captionButtonUnderCursor reports whether the cursor is over a client-handled
+// caption button (or one is pressed), so WM_SETCURSOR keeps the arrow cursor.
+func (w *window) captionButtonUnderCursor() bool {
+	if w.embedded || !w.buttons() {
+		return false
+	}
+	if clientCaptionButton(w.chrome.pressed) {
+		return true
+	}
+	var at point
+	if ok, _, _ := getCursorPos.Call(uintptr(unsafe.Pointer(&at))); ok == 0 {
+		return false
+	}
+	if ok, _, _ := screenToClient.Call(w.hwnd, uintptr(unsafe.Pointer(&at))); ok == 0 {
+		return false
+	}
+	return clientCaptionButton(w.captionAt(w.point(at.X, at.Y)))
+}
+
+// captionMouse handles client mouse messages for the minimize and close caption
+// buttons before views or hosted content see them, reporting whether it took
+// the message.
+func (w *window) captionMouse(message uint32, lParam uintptr) bool {
+	if w.embedded || !w.buttons() {
+		return false
+	}
+	c := &w.chrome
+	held := clientCaptionButton(c.pressed)
+	if !held {
+		if w.rawWeb != nil || w.barVideo != nil || w.barDrag != nil || w.selecting != nil || w.pan != nil ||
+			(w.textSelection != nil && w.textSelection.Dragging) {
+			return false
+		}
+		if cap, _, _ := getCapture.Call(); cap == w.hwnd {
+			return false
+		}
+	}
+	x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
+	code := w.captionAt(w.point(int32(x), int32(y)))
+	if !clientCaptionButton(code) {
+		code = 0
+	}
+	switch message {
+	case wmMouseMove:
+		if !held && code == 0 {
+			return false
+		}
+		if !w.tracking {
+			w.tracking = true
+			t := trackMouse{Flags: tmeLeave, Track: w.hwnd}
+			t.Size = uint32(unsafe.Sizeof(t))
+			trackMouseEvent.Call(uintptr(unsafe.Pointer(&t)))
+		}
+		if w.pointerIn {
+			w.pointerIn = false
+			w.hoverViews()
+			if wh := webViews.Load(); wh != nil {
+				wh.mouseLeft(w)
+			}
+			if w.barDrag == nil {
+				w.hoverBars(driver.Point{X: -1, Y: -1})
+			}
+		}
+		if held {
+			if code == c.pressed {
+				w.setHover(code)
+			} else {
+				w.setHover(0)
+			}
+		} else {
+			w.setHover(code)
+		}
+		return true
+	case wmLButtonDown, wmLButtonDblClk:
+		if code == 0 {
+			return false
+		}
+		w.hideMenuBar()
+		c.pressed = code
+		w.setHover(code)
+		setCapture.Call(w.hwnd)
+		w.redrawAll()
+		return true
+	case wmLButtonUp:
+		if !held {
+			return code != 0
+		}
+		pressed := c.pressed
+		c.pressed = 0
+		if cap, _, _ := getCapture.Call(); cap == w.hwnd {
+			releaseCapture.Call()
+		}
+		if code == pressed {
+			w.invokeCaptionButton(pressed)
+		} else {
+			w.setHover(code)
+		}
+		w.redrawAll()
+		return true
+	case wmRButtonDown, wmRButtonUp, wmMButtonDown, wmMButtonUp, wmXButtonDown, wmXButtonUp:
+		return held || code != 0
+	}
+	return false
 }
 
 // ncMouse handles the non-client mouse messages over the caption
@@ -723,15 +865,26 @@ func (w *window) ncMouse(message uint32, wParam uintptr) bool {
 			t.Size = uint32(unsafe.Sizeof(t))
 			trackMouseEvent.Call(uintptr(unsafe.Pointer(&t)))
 		}
-		if isButton(code) {
+		if isButton(code) && w.hidden() {
 			w.setHover(code)
-		} else {
-			w.setHover(0)
+			return true
+		}
+		w.setHover(0)
+	case wmNCMouseHover:
+		if isButton(code) && w.hidden() {
+			return true
 		}
 	case wmNCMouseLeave:
 		c.tracking = false
-		c.pressed = 0
-		w.setHover(0)
+		if !clientCaptionButton(c.pressed) {
+			c.pressed = 0
+		}
+		if !clientCaptionButton(c.hover) {
+			w.setHover(0)
+		}
+		if w.hidden() {
+			return true
+		}
 	case wmNCLButtonDown, wmNCLButtonDblClk:
 		if isButton(code) && w.hidden() {
 			c.pressed = code
@@ -743,15 +896,7 @@ func (w *window) ncMouse(message uint32, wParam uintptr) bool {
 			pressed := c.pressed
 			c.pressed = 0
 			if pressed == code {
-				switch code {
-				case htMinButton:
-					w.setHover(0)
-					showWindow.Call(w.hwnd, swMinimize)
-				case htMaxButton:
-					w.toggleMaximize()
-				default:
-					postMessageW.Call(w.hwnd, wmClose, 0, 0)
-				}
+				w.invokeCaptionButton(code)
 			}
 			w.redrawAll()
 			return true

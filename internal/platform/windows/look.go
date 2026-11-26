@@ -78,7 +78,7 @@ func (w *window) setTransparent(on bool) {
 		return
 	}
 	w.transparent = on
-	w.chrome.hover, w.chrome.pressed = 0, 0
+	w.clearCaptionState()
 	w.applyBare()
 	if w.chrome.fullScreen {
 		w.chrome.savedStyle = w.frameStyle(w.chrome.savedStyle)

@@ -2661,6 +2661,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	if message == wmMouseActivate && w.kind == driver.SurfacePanel && w.noActivate {
 		return maNoActivate
 	}
+	switch message {
+	case wmMouseMove, wmLButtonDown, wmLButtonDblClk, wmLButtonUp, wmRButtonDown, wmRButtonUp,
+		wmMButtonDown, wmMButtonUp, wmXButtonDown, wmXButtonUp:
+		if w.captionMouse(message, lParam) {
+			return 0
+		}
+	}
 	// A code scanner or alert takes the pointer and the keys while it shows.
 	if w.scanner != nil {
 		switch message {
@@ -2725,10 +2732,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.touchFinger(message, wParam, lParam)
 	case wmMouseLeave:
 		w.testPanelPointerSet = false
+		if !clientCaptionButton(w.chrome.pressed) {
+			w.setHover(0)
+		}
 		w.mouseLeft()
 		return 0
 	case wmSetCursor:
-		if lParam&0xffff == htClientArea && (w.hostedCursor() || w.fieldCursor() || w.viewCursor()) {
+		if lParam&0xffff == htClientArea && !w.captionButtonUnderCursor() && (w.hostedCursor() || w.fieldCursor() || w.viewCursor()) {
 			return 1
 		}
 	case wmImeSetContext, wmImeStartComposition, wmImeComposition, wmImeEndComposition, wmImeChar, wmImeNotify, wmImeRequest:
@@ -2975,6 +2985,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmEnterSizeMove:
 		w.cancelPanelFrame()
 	case wmMouseMove:
+		if w.chrome.pressed == htMaxButton {
+			w.chrome.pressed = 0
+		}
 		w.setHover(0) // off the caption buttons
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
 		at := w.point(int32(x), int32(y))
@@ -3020,6 +3033,11 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmCaptureChanged:
+		if lParam != hwnd && clientCaptionButton(w.chrome.pressed) {
+			w.chrome.pressed = 0
+			w.setHover(0)
+			w.redrawAll()
+		}
 		if lParam != hwnd && w.selecting != nil {
 			if w.selecting.re != nil {
 				w.selecting.re.sendMessage(wmCaptureChanged, 0, lParam)
@@ -3057,11 +3075,15 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if !w.embedded {
 			return w.ncHitTest(lParam)
 		}
+	case wmNCPaint, wmNCUAHDrawCaption, wmNCUAHDrawFrame:
+		if !w.embedded && w.hidden() {
+			return 0
+		}
 	case wmNCActivate:
 		if !w.embedded {
 			return w.ncActivate(wParam, lParam)
 		}
-	case wmNCMouseMove, wmNCMouseLeave, wmNCLButtonDown, wmNCLButtonUp, wmNCLButtonDblClk:
+	case wmNCMouseMove, wmNCMouseHover, wmNCMouseLeave, wmNCLButtonDown, wmNCLButtonUp, wmNCLButtonDblClk:
 		if !w.embedded && w.ncMouse(message, wParam) {
 			return 0
 		}
