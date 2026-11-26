@@ -13,7 +13,7 @@ import (
 type appToolSurface interface {
 	devtools.Surface
 	AutomationTools() []automation.AppTool
-	CallAutomationTool(context.Context, string, json.RawMessage) (json.RawMessage, error)
+	CallAutomationToolAsync(context.Context, string, json.RawMessage, func(json.RawMessage, error))
 }
 
 func (g *agent) toolSurface() appToolSurface {
@@ -57,8 +57,11 @@ func (g *agent) appTool(req automation.Request) (any, *automation.Error) {
 			done <- reply{result: s.AutomationTools()}
 			return
 		}
-		result, err := s.CallAutomationTool(ctx, req.Method, req.Params)
-		done <- reply{result, err}
+		s.CallAutomationToolAsync(ctx, req.Method, req.Params, func(result json.RawMessage, err error) {
+			if ctx.Err() == nil {
+				done <- reply{result, err}
+			}
+		})
 	})
 	select {
 	case r := <-done:

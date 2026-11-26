@@ -253,9 +253,23 @@ func registerSceneTool(cx *core.Scope, sceneID *core.Signal[string]) error {
 }
 ```
 
-The name must be unique on the app's graph and distinct from the built-in names. `nsgo mcp` lists the tool until the scope is cleaned up. The handler runs on the engine goroutine, so it can read or set signals. It receives a JSON object, checks the arguments it needs and returns a JSON-encodable value or an error.
+The name must be unique on the app's graph and distinct from the built-in names. `nsgo mcp` lists the tool until the scope is cleaned up. Set exactly one of `Handler` and `Start`. Both run on the engine goroutine, so they can read or set signals. Both receive a JSON object and check the arguments they need. `Handler` returns a JSON-encodable value or an error directly; it must not block waiting for `Scope.Post`, `audio.LoadSound` or other work that calls back on the engine goroutine.
 
-In a test, capture the scope when the app starts, call `automation.Call(cx, ctx, name, args)` inside `app.Post`, then use `app.Settle()` before checking the result or the view. Registration is active in `dev -automation` and tests and is a no-op in release builds.
+For a deferred result, use `Start` instead. Start the work, return without waiting, and call `reply` once when the result is ready. For example, replace the `Handler` above with:
+
+```go
+Start: func(ctx context.Context, _ json.RawMessage, reply func(any, error)) {
+    cx.Post(func() {
+        if ctx.Err() == nil {
+            reply(map[string]string{"id": sceneID.Get()}, nil)
+        }
+    })
+},
+```
+
+You can reply from any goroutine. MCP waits up to one minute, including time queued on the engine. Scope cleanup ends a pending call with an error. Duplicate replies and replies after cancellation or cleanup are ignored.
+
+In headless or target tests, capture the scope when the app starts. Call `automation.Call(cx, ctx, name, args)` for a `Handler` inside `app.Post`, or `automation.CallAsync(cx, ctx, name, args, done)` for a `Start`. The `done` callback may run on any goroutine; send the result to a buffered channel without blocking. Use `app.Settle()` for work queued on the graph, or `app.WaitUntil` to drive the app while waiting for a result from another goroutine. Registration is active in `dev -automation` and tests and is a no-op in release builds.
 
 ## Flags of every build
 

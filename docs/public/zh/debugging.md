@@ -230,9 +230,11 @@ claude mcp add nsgo -- nsgo mcp
 
 ### 应用自定义的 MCP 工具
 
-Go 应用或库可以在引擎 goroutine 中调用 `automation.Register`，传入作用域以及包含名称、描述、JSON 对象输入模式和处理函数的 `automation.Tool`。名称在应用的响应式图内必须唯一，也不能与内置工具重名。作用域清理时，`nsgo mcp` 会移除该工具。处理函数在引擎 goroutine 中运行，可以读写信号。它接收 JSON 对象，自行检查所需的参数，并返回可编码为 JSON 的值或错误。参见[注册工具的示例](https://nsgo.dev/docs/debugging.md#app-defined-mcp-tools)。
+Go 应用或库可以在引擎 goroutine 中调用 `automation.Register`，传入作用域以及包含名称、描述和 JSON 对象输入模式的 `automation.Tool`。名称在应用的响应式图内必须唯一，也不能与内置工具重名。作用域清理时，`nsgo mcp` 会移除该工具。`Handler` 与 `Start` 必须且只能设置一个。它们都在引擎 goroutine 中运行，可以读写信号，并接收 JSON 对象、自行检查所需的参数。`Handler` 直接返回可编码为 JSON 的值或错误，不能阻塞等待 `Scope.Post`、`audio.LoadSound` 或其他需要回到引擎 goroutine 的工作。
 
-测试中，在应用启动时保存作用域，在 `app.Post` 内调用 `automation.Call(cx, ctx, name, args)`，再用 `app.Settle()` 等待结果和视图更新。注册在 `dev -automation` 和测试中生效，在发布构建中为空操作。
+如果结果稍后才就绪，就用 `Start`：启动工作后立即返回，等结果就绪后从任意 goroutine 调用一次 `reply`。MCP 最多等待一分钟，包括在引擎队列中的时间。清理注册工具的作用域会以错误结束尚未完成的调用；重复回复、取消后或清理后的回复会被忽略。参见[注册工具的示例](https://nsgo.dev/docs/debugging.md#app-defined-mcp-tools)。
+
+在无界面或目标平台测试中，先保存应用的作用域，再在 `app.Post` 内用 `automation.Call(cx, ctx, name, args)` 调用 `Handler`，或用 `automation.CallAsync(cx, ctx, name, args, done)` 调用 `Start`。`done` 可能在任意 goroutine 中运行，可把结果发送到有缓冲的 channel，不要阻塞。使用 `app.Settle()` 处理已排队的图任务，或用 `app.WaitUntil` 一边驱动应用一边等待其他 goroutine 返回结果。注册在 `dev -automation` 和测试中生效，在发布构建中为空操作。
 
 ## 所有构建都接受的参数
 
