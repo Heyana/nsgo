@@ -59,8 +59,9 @@ for (const group of groups) {
   index.groups.push({ id: group.id, title: group.title, gzip: app.gzip, gzipSize: app.gzipSize });
 }
 
-writeFileSync(path.join(galleryDir, 'index.json'), `${JSON.stringify(index, null, 2)}\n`);
-const frame = readFileSync(path.join(website, 'scripts', 'gallery-frame.html'), 'utf8').replaceAll('__ICON__', icon);
+const frame = readFileSync(path.join(website, 'scripts', 'gallery-frame.html'), 'utf8')
+  .replaceAll('__ICON__', icon)
+  .replaceAll('__GROUPS__', JSON.stringify(index.groups.map(({ id, title }) => ({ id, title }))));
 writeFileSync(path.join(galleryDir, 'index.html'), frame);
 // Old links to the full bundle open the shell, which loads a group.
 writeFileSync(

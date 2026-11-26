@@ -653,6 +653,8 @@
 
         // The platforms and the app URL's debugging flags are constants: the URL an iframe
         // loads is built from them, never from the page's own text.
+        var GROUPS = __GROUPS__;
+        var THEMES = ['light', 'dark'];
         var PLATFORMS = ['macos', 'windows', 'linux', 'ios', 'android', 'web'];
         var LANGS = ['en', 'zh-Hans', 'zh-Hant', 'ja', 'ko', 'es', 'fr', 'de', 'pt', 'ru', 'it', 'vi', 'id', 'tr', 'en-XA'];
         var APPEARANCES = ['light', 'dark', 'system'];
@@ -670,8 +672,10 @@
         }
         platform = platform || 'web';
 
+        var currentTheme = THEMES[Math.max(0, THEMES.indexOf(root.dataset.theme))];
+
         function theme() {
-          return root.dataset.theme === 'dark' ? 'dark' : 'light';
+          return currentTheme;
         }
 
         // preference is the theme the page follows: the URL's, otherwise the site's stored light or dark, the system's when there is none.
@@ -688,10 +692,12 @@
 
         // setTheme shows the theme and tells the running app, which follows without a reload.
         function setTheme(next) {
-          root.dataset.theme = next;
-          root.style.colorScheme = next;
+          var i = THEMES.indexOf(next);
+          currentTheme = i >= 0 ? THEMES[i] : THEMES[0];
+          root.dataset.theme = currentTheme;
+          root.style.colorScheme = currentTheme;
           showTheme();
-          if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'nsgo-gallery-theme', theme: next }, location.origin);
+          if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'nsgo-gallery-theme', theme: currentTheme }, location.origin);
         }
 
         // Every load passes on the URL's debugging flags, so a switch or a retry starts the app as the URL asks. Each group is its own web build (build-gallery.mjs), so the frame names its directory. Every part comes from a constant list, so the address the frame loads holds nothing the page did not put there.
@@ -817,36 +823,27 @@
           load();
         }
 
-        // start lists the groups from the build's index and loads the one the URL names, the first otherwise.
+        // start lists the groups the build wrote here and loads the one the URL names, the first otherwise.
         function start() {
-          fetch('index.json', { cache: 'no-cache' })
-            .then(function (response) {
-              return response.json();
-            })
-            .then(function (index) {
-              var ids = index.groups.map(function (g) {
-                return g.id;
-              });
-              var wanted = ids.indexOf(params.get('group'));
-              group = wanted >= 0 ? ids[wanted] : ids[0];
-              index.groups.forEach(function (g) {
-                var option = document.createElement('option');
-                option.value = g.id;
-                option.textContent = g.title;
-                groupsBox.appendChild(option);
-              });
-              groupsBox.value = group;
-              groupsBox.hidden = false;
-              if (params.get('group') !== group) {
-                var url = new URL(location.href);
-                url.searchParams.set('group', group);
-                history.replaceState(history.state, '', url);
-              }
-              load();
-            })
-            .catch(function () {
-              load();
-            });
+          var ids = GROUPS.map(function (g) {
+            return g.id;
+          });
+          var wanted = ids.indexOf(params.get('group'));
+          group = wanted >= 0 ? ids[wanted] : ids[0];
+          GROUPS.forEach(function (g) {
+            var option = document.createElement('option');
+            option.value = g.id;
+            option.textContent = g.title;
+            groupsBox.appendChild(option);
+          });
+          groupsBox.value = group;
+          groupsBox.hidden = false;
+          if (params.get('group') !== group) {
+            var url = new URL(location.href);
+            url.searchParams.set('group', group);
+            history.replaceState(history.state, '', url);
+          }
+          load();
         }
 
         function showTheme() {
