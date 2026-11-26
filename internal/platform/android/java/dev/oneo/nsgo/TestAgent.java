@@ -500,25 +500,20 @@ final class TestAgent {
             case "reattach-view":
                 view.attachToEngine((NsgoEngine) field(view, "engine"));
                 break;
-            case "background-video-playback":
-                view.setBackgroundVideoPlaybackEnabled(op.getBoolean("enabled"));
+            case "background-video-playback": {
+                boolean enabled = op.getBoolean("enabled");
+                if (op.optBoolean("hostOwned")) asHostOwned(() -> view.setBackgroundVideoPlaybackEnabled(enabled));
+                else view.setBackgroundVideoPlaybackEnabled(enabled);
                 break;
+            }
             case "view-visibility":
                 view.setVisibility(op.getBoolean("visible") ? View.VISIBLE : View.INVISIBLE);
                 break;
             case "remove-view-from-window": {
                 if (!view.isAttachedToWindow()) throw new IllegalStateException("view has no window");
-                viewParent = (ViewGroup) view.getParent();
-                // Exercise the embedding host's detach path without changing who stops the test engine.
-                java.lang.reflect.Field ownsEngine = NsgoView.class.getDeclaredField("ownsEngine");
-                ownsEngine.setAccessible(true);
-                boolean owned = ownsEngine.getBoolean(view);
-                ownsEngine.setBoolean(view, false);
-                try {
-                    viewParent.removeView(view);
-                } finally {
-                    ownsEngine.setBoolean(view, owned);
-                }
+                ViewGroup parent = (ViewGroup) view.getParent();
+                viewParent = parent;
+                asHostOwned(() -> parent.removeView(view));
                 if (view.isAttachedToWindow()) throw new IllegalStateException("view still has a window");
                 break;
             }
@@ -553,6 +548,19 @@ final class TestAgent {
             }
         }
         throw new NoSuchFieldException(name + " in " + owner.getClass().getName());
+    }
+
+    /** Runs action as an embedding host's view would, whose engine the host owns, without changing who stops the test engine. */
+    private void asHostOwned(Runnable action) throws Exception {
+        java.lang.reflect.Field ownsEngine = NsgoView.class.getDeclaredField("ownsEngine");
+        ownsEngine.setAccessible(true);
+        boolean owned = ownsEngine.getBoolean(view);
+        ownsEngine.setBoolean(view, false);
+        try {
+            action.run();
+        } finally {
+            ownsEngine.setBoolean(view, owned);
+        }
     }
 
     /** Reads the real native tree, including while its Go graph is detached. */
