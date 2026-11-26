@@ -787,7 +787,10 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m -run '^(TestFoldGeometry|TestSceneReconnectKeepsTheEngine|TestIOSVideoSeekWithSeparateAudio|TestTabBarRetitlesUIKitItemsInPlace|TestTabBarSizeFollowsAttachmentAndPlacement|TestTabBarNativeInsetsFollowPlacement|TestRichEditorNativeTouchEditMenu|TestRotationPublishesSizeAndSafeAreaTogether|TestImmersiveIOSSystemBars|TestOpenedDocumentIsAnIndependentCoordinatedCopy|TestOpenedDocumentsRefuseDirectoriesAndMissingFiles|TestSceneOpenedDocumentsStaySeparateFromLinks|TestSceneConnectionDocumentsWaitForTheFirstHandler|TestDirectionMirrorsUIKitControls)$' ./internal/platform/ios
           # An iPhone shows one scene at a time, so the tests of several run on an iPad: the newest iOS runtime's first.
           ipad=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | contains("iOS"))] | sort_by(.key | split("-") | .[1:] | map(tonumber)) | reverse | map(.value[] | select(.deviceTypeIdentifier | contains("iPad"))) | first | .udid')
-          go tool nsgo test -target ios_simulator -device "$ipad" -timeout 1m -run '^(TestScenesShowTreesOfTheirOwn|TestSceneDisconnectsWhileTheOtherRuns|TestSceneStatusBarAndOrientationsArePerScene|TestSceneKeyboardInsetFollowsFocus|TestTitledKeyCommandsUseUIKit)$' ./internal/platform/ios
+          # The release run timed out after launch in the first test to open a second scene on a freshly booted iPad (#2431).
+          # Budget that cold multi-scene test separately; the other iPad tests still get one minute.
+          go tool nsgo test -target ios_simulator -device "$ipad" -timeout 2m -run '^TestScenesShowTreesOfTheirOwn$' ./internal/platform/ios
+          go tool nsgo test -target ios_simulator -device "$ipad" -timeout 1m -run '^(TestSceneDisconnectsWhileTheOtherRuns|TestSceneStatusBarAndOrientationsArePerScene|TestSceneKeyboardInsetFollowsFocus|TestTitledKeyCommandsUseUIKit)$' ./internal/platform/ios
           # iPadOS 26's double-tap interaction on every window cancelled a double tap's second touch.
           go tool nsgo test -target ios_simulator -device "$ipad" -timeout 1m -run '^TestPressesCountConsecutiveClicks$' ./internal/testhost/testdata/press
           # Without -device, nsgo test takes a booted simulator, which would be the iPad rather than the iPhone the commands below are for.
