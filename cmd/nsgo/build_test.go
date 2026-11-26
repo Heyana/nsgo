@@ -31,6 +31,20 @@ func TestExpandAllTargets(t *testing.T) {
 	}
 }
 
+func TestRejectDesktopCgo(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/cgo\n\ngo 1.27.3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\n/* int answer(void) { return 42; } */\nimport \"C\"\n\nfunc main() { _ = C.answer() }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := rejectDesktopCgo(t.Context(), &project{Dir: dir}, []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}, nil, nil, "")
+	if err == nil || !strings.Contains(err.Error(), "desktop builds disable cgo") || !strings.Contains(err.Error(), "main.go") {
+		t.Fatalf("rejectDesktopCgo = %v, want a cgo policy error naming main.go", err)
+	}
+}
+
 func TestAndroidTargetNotice(t *testing.T) {
 	for _, c := range []struct {
 		name    string

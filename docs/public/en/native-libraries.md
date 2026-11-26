@@ -7,6 +7,8 @@ order: 23
 
 A Go package can ship the shared libraries it loads through purego by placing `nsgo-natives.yaml` in its package directory. When an app imports the package, NSGo selects its declarations for the target, verifies the files and includes them before signing and making installers. The app needs no extra configuration or packaging command.
 
+Desktop app builds and target tests disable cgo for app code. Native code must use purego and a declared `nsgo-natives.yaml` library. NSGo rejects app packages that contain cgo files before the build starts.
+
 ## Declare libraries
 
 ```yaml

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	buildtargets "github.com/nsgo-dev/nsgo/targets"
 	"html"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -793,6 +794,10 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 		done()
 		return nil, nil, err
 	}
+	if err := rejectDesktopCgo(ctx, p, env, tags, extra.flags, overlay); err != nil {
+		done()
+		return nil, nil, err
+	}
 	if overlay != "" {
 		args = append(args, "-overlay", overlay)
 	}
@@ -801,6 +806,92 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 	cmd.Dir = p.Dir
 	cmd.Env = append(os.Environ(), env...)
 	return cmd, done, nil
+}
+
+// rejectDesktopCgo keeps desktop builds from silently dropping an app's CgoFiles
+// when the tool deliberately builds with CGO_ENABLED=0.
+func rejectDesktopCgo(ctx context.Context, p *project, env, tags, flags []string, overlay string) error {
+	goos := ""
+	cgoDisabled := false
+	for _, value := range env {
+		key, value, ok := strings.Cut(value, "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "GOOS":
+			goos = value
+		case "CGO_ENABLED":
+			cgoDisabled = value == "0"
+		}
+	}
+	if !cgoDisabled || goos != "darwin" && goos != "linux" && goos != "windows" {
+		return nil
+	}
+	args := []string{"list"}
+	if p.testBinary {
+		args = append(args, "-test")
+	}
+	args = append(args, tagsArgs(tags)...)
+	if overlay != "" {
+		args = append(args, "-overlay", overlay)
+	}
+	args = append(args, flags...)
+	args = append(args, "-json", ".")
+	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.Dir = p.Dir
+	listEnv := make([]string, 0, len(env)+1)
+	for _, value := range env {
+		if strings.HasPrefix(value, "CGO_ENABLED=") {
+			continue
+		}
+		listEnv = append(listEnv, value)
+	}
+	listEnv = append(listEnv, "CGO_ENABLED=1")
+	cmd.Env = append(os.Environ(), listEnv...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("go list: %w\n%s", err, stderr.Bytes())
+	}
+	root, err := filepath.EvalSymlinks(p.Dir)
+	if err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(stdout))
+	for {
+		var pkg struct {
+			Dir        string
+			ImportPath string
+			CgoFiles   []string
+		}
+		err := dec.Decode(&pkg)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("go list: %w", err)
+		}
+		pkgDir, err := filepath.EvalSymlinks(pkg.Dir)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(root, pkgDir)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		files := pkg.CgoFiles
+		if len(files) == 0 {
+			continue
+		}
+		paths := make([]string, len(files))
+		for i, file := range files {
+			paths[i] = filepath.Join(pkg.Dir, file)
+		}
+		return fmt.Errorf("desktop builds disable cgo, but package %s contains cgo files %s; use purego and nsgo-natives.yaml for native code", pkg.ImportPath, strings.Join(paths, ", "))
+	}
+	return nil
 }
 
 func (p *project) buildOverlay(ctx context.Context, env, tags, flags []string, files map[string]string) (string, error) {
