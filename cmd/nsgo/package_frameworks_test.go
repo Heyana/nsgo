@@ -19,6 +19,11 @@ import (
 
 // frameworkMachO writes a thin arm64 Mach-O dynamic library as a framework's binary: its install name, an LC_BUILD_VERSION for platform and minos unless platform is 0, and an LC_LOAD_DYLIB for each of loads.
 func frameworkMachO(platform uint32, minos string, install string, loads ...string) []byte {
+	return frameworkMachORpaths(platform, minos, install, nil, loads...)
+}
+
+// frameworkMachORpaths is frameworkMachO with an LC_RPATH for each of rpaths.
+func frameworkMachORpaths(platform uint32, minos string, install string, rpaths []string, loads ...string) []byte {
 	order := binary.LittleEndian
 	var cmds bytes.Buffer
 	var ncmds uint32
@@ -47,6 +52,16 @@ func frameworkMachO(platform uint32, minos string, install string, loads ...stri
 	for _, load := range loads {
 		dylib(machoLoadDylib, load)
 	}
+	for _, rpath := range rpaths {
+		size := (12 + len(rpath) + 1 + 7) &^ 7
+		b := make([]byte, size)
+		order.PutUint32(b, machoRpath)
+		order.PutUint32(b[4:], uint32(size))
+		order.PutUint32(b[8:], 12)
+		copy(b[12:], rpath)
+		cmds.Write(b)
+		ncmds++
+	}
 	header := make([]byte, 32)
 	order.PutUint32(header, macho.Magic64)
 	order.PutUint32(header[4:], uint32(macho.CpuArm64))
@@ -54,6 +69,13 @@ func frameworkMachO(platform uint32, minos string, install string, loads ...stri
 	order.PutUint32(header[16:], ncmds)
 	order.PutUint32(header[20:], uint32(cmds.Len()))
 	return append(header, cmds.Bytes()...)
+}
+
+// arm64e makes a thin arm64 file arm64e, as its CPU subtype says.
+func arm64e(data []byte) []byte {
+	data = slices.Clone(data)
+	binary.LittleEndian.PutUint32(data[8:], 2)
+	return data
 }
 
 // fatMachO joins thin files into a universal one, as lipo does.
@@ -109,7 +131,7 @@ func readFrameworkPlist(t *testing.T, fw string) map[string]any {
 	return plist
 }
 
-// A framework the app could not load is refused with the reason: one for another platform, a simulator's for a device, one that needs a newer OS, one under another install name, one that loads a peer no package declares, and a file that is no arm64 dynamic library. Frameworks the app loads pass, a universal one by its arm64 slice.
+// A framework the app could not load is refused with the reason: one for another platform, a simulator's for a device, one that needs a newer OS, one under another install name, one that loads a peer no package declares or without a run path to Frameworks, one that loads through @rpath a library nothing provides, and a file that is no plain arm64 dynamic library. Frameworks the app loads pass, a universal one by its plain arm64 slice, which lipo -thin arm64 keeps.
 func TestPackageFrameworksRefuseMachO(t *testing.T) {
 	const install = "@rpath/Fixture.framework/Fixture"
 	declared := []string{"Fixture.framework", "Peer.framework"}
@@ -120,7 +142,9 @@ func TestPackageFrameworksRefuseMachO(t *testing.T) {
 		data      []byte
 		reason    string
 	}{
-		{"iOS device framework", iOS, false, frameworkMachO(2, "15.0", install, "/usr/lib/libSystem.B.dylib", "@rpath/Peer.framework/Peer"), ""},
+		{"iOS device framework", iOS, false, frameworkMachORpaths(2, "15.0", install, []string{"@loader_path/.."}, "/usr/lib/libSystem.B.dylib", "@rpath/Peer.framework/Peer"), ""},
+		{"peer through the executable's run path", iOS, true, frameworkMachORpaths(7, "15.0", install, []string{"/usr/lib/swift", "@executable_path/Frameworks/"}, "@rpath/Peer.framework/Peer"), ""},
+		{"Swift through the system's run path", iOS, true, frameworkMachORpaths(7, "12.0", install, []string{"/usr/lib/swift"}, "@rpath/libswiftCore.dylib"), ""},
 		{"iOS simulator framework", iOS, true, frameworkMachO(7, "12.0", install), ""},
 		{"tvOS simulator framework", tvOS, true, frameworkMachO(8, "17.0", install), ""},
 		{"universal framework", iOS, true, fatMachO(nativeMachO(false), frameworkMachO(7, "15.0", install)), ""},
@@ -132,6 +156,13 @@ func TestPackageFrameworksRefuseMachO(t *testing.T) {
 		{"another install name", iOS, true, frameworkMachO(7, "15.0", "@rpath/libfixture.dylib"), `its install name is "@rpath/libfixture.dylib", not @rpath/Fixture.framework/Fixture`},
 		{"missing peer", iOS, true, frameworkMachO(7, "15.0", install, "@rpath/libavutil.framework/libavutil"), "loads @rpath/libavutil.framework/libavutil, which no framework packaged for ios_simulator provides"},
 		{"peer in another layout", iOS, true, frameworkMachO(7, "15.0", install, "@rpath/Peer.framework/Versions/A/Peer"), "loads @rpath/Peer.framework/Versions/A/Peer, which no framework"},
+		{"peer without a run path", iOS, true, frameworkMachO(7, "15.0", install, "@rpath/Peer.framework/Peer"), "loads @rpath/Peer.framework/Peer with no run path to the app's Frameworks"},
+		{"peer through a run path inside the framework", iOS, true, frameworkMachORpaths(7, "15.0", install, []string{"@loader_path/Frameworks"}, "@rpath/Peer.framework/Peer"), "with no run path to the app's Frameworks"},
+		{"library no framework provides", iOS, true, frameworkMachORpaths(7, "15.0", install, []string{"@loader_path/.."}, "@rpath/libavutil.dylib"), "loads @rpath/libavutil.dylib, which nothing in the app provides"},
+		{"arm64e binary", iOS, true, arm64e(frameworkMachO(7, "15.0", install)), "arm64e is not arm64"},
+		{"universal binary without plain arm64", iOS, true, fatMachO(nativeMachO(false), arm64e(frameworkMachO(7, "15.0", install))), "arm64e is not arm64"},
+		{"universal framework by its arm64 slice", iOS, true, fatMachO(arm64e(frameworkMachO(2, "15.0", install)), frameworkMachO(7, "15.0", install)), ""},
+		{"universal framework whose arm64 slice is for devices", iOS, true, fatMachO(arm64e(frameworkMachO(7, "15.0", install)), frameworkMachO(2, "15.0", install)), "built for iOS devices, not the iOS simulator"},
 		{"no platform", iOS, true, frameworkMachO(0, "", install), "names no platform: it has no LC_BUILD_VERSION"},
 		{"Intel binary", iOS, true, nativeMachO(false), "not an arm64 Mach-O dynamic library"},
 		{"universal binary without arm64", iOS, true, fatMachO(nativeMachO(false)), "not an arm64 Mach-O dynamic library"},
@@ -283,7 +314,27 @@ func TestPackageFrameworksVersion1Unchanged(t *testing.T) {
 	}
 }
 
-// The terminal targets read their desktop's entries, and a terminal build puts the libraries beside its executable, signed on macOS.
+// setMacHost makes the test's nsgo run on a Mac, or not, as mac says.
+func setMacHost(t *testing.T, mac bool) {
+	previous := macHost
+	macHost = mac
+	t.Cleanup(func() { macHost = previous })
+}
+
+// signedMachO gives a thin Mach-O file an LC_CODE_SIGNATURE after its other load commands, as codesign does.
+func signedMachO(data []byte) []byte {
+	order := binary.LittleEndian
+	end := 32 + order.Uint32(data[20:])
+	signature := make([]byte, 16)
+	order.PutUint32(signature, machoCodeSignature)
+	order.PutUint32(signature[4:], 16)
+	signed := slices.Concat(data[:end], signature, data[end:])
+	order.PutUint32(signed[16:], order.Uint32(data[16:])+1)
+	order.PutUint32(signed[20:], order.Uint32(data[20:])+16)
+	return signed
+}
+
+// The terminal targets read their desktop's entries, and a terminal build puts the libraries beside its executable: on a Mac signed ad hoc, and elsewhere, with no codesign or lipo, as published, an arm64 one only when it is signed already.
 func TestPackageNativesTerminalTargets(t *testing.T) {
 	for target, want := range map[string]string{
 		"tui_macos_arm64": "macos_arm64", "tui_windows_x64": "windows_x64", "tui_linux_arm64": "linux_arm64",
@@ -294,31 +345,112 @@ func TestPackageNativesTerminalTargets(t *testing.T) {
 			t.Errorf("nativeTarget(%q) = %q, want %q", target, got, want)
 		}
 	}
-	data := nativeMachO(true)
-	p := nativeFixture(t, "macos_arm64", "libfixture.dylib", data)
-	dir := t.TempDir()
-	var signed []string
+	t.Run("Mac", func(t *testing.T) {
+		setMacHost(t, true)
+		data := nativeMachO(true)
+		p := nativeFixture(t, "macos_arm64", "libfixture.dylib", data)
+		dir := t.TempDir()
+		var signed []string
+		ctx := withProcessRunner(t, func(ctx context.Context, cmd processCommand) ([]byte, error) {
+			if cmd.name != "codesign" {
+				return passThrough(ctx, cmd)
+			}
+			signed = append(signed, strings.Join(cmd.args, " "))
+			return nil, nil
+		})
+		if err := buildTUI(ctx, p, dir, "tui_macos_arm64"); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := os.ReadFile(filepath.Join(dir, "libfixture.dylib")); err != nil || !bytes.Equal(got, data) {
+			t.Fatalf("the terminal build lacks its library: %v", err)
+		}
+		if notices, err := os.ReadFile(filepath.Join(dir, noticesName)); err != nil || !bytes.Contains(notices, []byte("native library libfixture.dylib")) {
+			t.Fatalf("the terminal build's notices: %v", err)
+		}
+		if want := []string{"--force --sign - " + filepath.Join(dir, "libfixture.dylib")}; !slices.Equal(signed, want) {
+			t.Fatalf("signed %q, want %q", signed, want)
+		}
+		if err := buildTUI(ctx, p, t.TempDir(), "tui_linux_x64"); err == nil || !strings.Contains(err.Error(), "no linux_x64 entry") {
+			t.Fatalf("a terminal build for another desktop: %v", err)
+		}
+	})
+	t.Run("elsewhere", func(t *testing.T) {
+		setMacHost(t, false)
+		ctx := withProcessRunner(t, func(ctx context.Context, cmd processCommand) ([]byte, error) {
+			if cmd.name == "codesign" || cmd.name == "lipo" {
+				t.Errorf("ran %s off a Mac", cmd.name)
+				return nil, nil
+			}
+			return passThrough(ctx, cmd)
+		})
+		for target, data := range map[string][]byte{
+			"tui_macos_arm64": fatMachO(nativeMachO(false), signedMachO(nativeMachO(true))),
+			"tui_macos_x64":   fatMachO(nativeMachO(false), signedMachO(nativeMachO(true))),
+		} {
+			p := nativeFixture(t, nativeTarget(target), "libfixture.dylib", data)
+			dir := t.TempDir()
+			if err := buildTUI(ctx, p, dir, target); err != nil {
+				t.Fatalf("%s: %v", target, err)
+			}
+			if got, err := os.ReadFile(filepath.Join(dir, "libfixture.dylib")); err != nil || !bytes.Equal(got, data) {
+				t.Fatalf("%s did not ship its universal library as published: %v", target, err)
+			}
+		}
+		p := nativeFixture(t, "macos_x64", "libfixture.dylib", nativeMachO(false))
+		if err := buildTUI(ctx, p, t.TempDir(), "tui_macos_x64"); err != nil {
+			t.Fatalf("an unsigned Intel library: %v", err)
+		}
+		for _, data := range [][]byte{nativeMachO(true), fatMachO(nativeMachO(false), nativeMachO(true))} {
+			p = nativeFixture(t, "macos_arm64", "libfixture.dylib", data)
+			if err := buildTUI(ctx, p, t.TempDir(), "tui_macos_arm64"); err == nil || !strings.Contains(err.Error(), "native library libfixture.dylib from example.com/native has no code signature, which Apple silicon requires: build tui_macos_arm64 on a Mac") {
+				t.Fatalf("an unsigned arm64 library: %v", err)
+			}
+		}
+	})
+}
+
+// nsgo dev -target tui builds into one directory each time, which starts empty: a library signed in place by the last build no longer matches its checksum.
+func TestTUIDevRebuildsLibraries(t *testing.T) {
+	target := nativeTarget(tuiTarget(runtime.GOOS, runtime.GOARCH))
+	arm := runtime.GOARCH == "arm64"
+	var name string
+	var data []byte
+	switch runtime.GOOS {
+	case "darwin":
+		name, data = "libfixture.dylib", signedMachO(nativeMachO(arm))
+	case "linux":
+		name, data = "libfixture.so", nativeELF(arm)
+	default:
+		t.Skipf("no fixture library for %s", runtime.GOOS)
+	}
+	p := nativeFixture(t, target, name, data)
 	ctx := withProcessRunner(t, func(ctx context.Context, cmd processCommand) ([]byte, error) {
 		if cmd.name != "codesign" {
 			return passThrough(ctx, cmd)
 		}
-		signed = append(signed, strings.Join(cmd.args, " "))
-		return nil, nil
+		// Signing writes a signature into the file.
+		f, err := os.OpenFile(cmd.args[len(cmd.args)-1], os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		_, err = f.Write([]byte("signature"))
+		return nil, err
 	})
-	if err := buildTUI(ctx, p, dir, "tui_macos_arm64"); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := os.ReadFile(filepath.Join(dir, "libfixture.dylib")); err != nil || !bytes.Equal(got, data) {
-		t.Fatalf("the terminal build lacks its library: %v", err)
-	}
-	if notices, err := os.ReadFile(filepath.Join(dir, noticesName)); err != nil || !bytes.Contains(notices, []byte("native library libfixture.dylib")) {
-		t.Fatalf("the terminal build's notices: %v", err)
-	}
-	if want := []string{"--force --sign - " + filepath.Join(dir, "libfixture.dylib")}; !slices.Equal(signed, want) {
-		t.Fatalf("signed %q, want %q", signed, want)
-	}
-	if err := buildTUI(ctx, p, t.TempDir(), "tui_linux_x64"); err == nil || !strings.Contains(err.Error(), "no linux_x64 entry") {
-		t.Fatalf("a terminal build for another desktop: %v", err)
+	s := tuiSession(devOptions{})
+	library := filepath.Join(p.cache("dev", "tui"), name)
+	for build := range 2 {
+		if err := s.build(ctx, p); err != nil {
+			t.Fatalf("build %d: %v", build+1, err)
+		}
+		got, err := os.ReadFile(library)
+		if err != nil || !bytes.HasPrefix(got, data) {
+			t.Fatalf("build %d's library: %v", build+1, err)
+		}
+		// What a Mac's signing does to the library, on any host.
+		if err := os.WriteFile(library, append(got, "signed"...), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -380,6 +512,54 @@ func TestPackageFrameworksConflict(t *testing.T) {
 	}
 }
 
+// A framework may not take the bundle ID of a bundle NSGo wrote into the app, whatever their names' case: StoreKit.framework's would be NSGoStoreKit.framework's, and Share.framework's the share extension's.
+func TestPackageFrameworksBundleIDs(t *testing.T) {
+	for _, c := range []struct{ name, bundle string }{
+		{"StoreKit", filepath.Join("Frameworks", "NSGoStoreKit.framework")},
+		{"Share", filepath.Join("PlugIns", "Share.appex")},
+		{"Fixture", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			data := frameworkMachO(7, "15.0", "@rpath/"+c.name+".framework/"+c.name)
+			p := nativeFixture(t, "linux_x64", "libfixture.so", nativeELF(false))
+			writeFiles(t, filepath.Join(filepath.Dir(p.Dir), "dep"), map[string]string{
+				"lib/Fixture":      string(data),
+				nativeManifestName: fmt.Sprintf("version: 2\nlibraries:\n  ios_simulator:\n    - name: %s.framework\n      path: lib/Fixture\n      sha256: %s\n      licenses: [legal/native.txt]\n", c.name, nativeDigest(data)),
+			})
+			if _, err := p.licenseNoticesFile(t.Context(), "ios_simulator", iosListEnv, nil, nil, ""); err != nil {
+				t.Fatal(err)
+			}
+			app := filepath.Join(t.TempDir(), "Fixture.app")
+			for bundle, id := range map[string]string{
+				filepath.Join("Frameworks", "NSGoStoreKit.framework"): p.ID + ".storekit",
+				filepath.Join("PlugIns", "Share.appex"):               p.ID + ".share",
+				filepath.Join("Extensions", "AssetDownloader.appex"):  p.ID + ".assetdownloader",
+			} {
+				if err := os.MkdirAll(filepath.Join(app, bundle), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(app, bundle, "Info.plist"), encodePlist(map[string]any{"CFBundleIdentifier": id}), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx := withProcessRunner(t, func(context.Context, processCommand) ([]byte, error) { return nil, nil })
+			err := addPackageFrameworks(ctx, p, iOS, app, true)
+			if c.bundle == "" {
+				if err != nil {
+					t.Fatalf("refused a framework of its own bundle ID: %v", err)
+				}
+				return
+			}
+			if want := "its bundle ID " + p.ID + "." + strings.ToLower(c.name) + " is " + c.bundle + "'s"; err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("got %v, want %q", err, want)
+			}
+			if _, err := os.Stat(filepath.Join(app, "Frameworks", c.name+".framework")); !os.IsNotExist(err) {
+				t.Fatalf("wrote the refused framework: %v", err)
+			}
+		})
+	}
+}
+
 func TestPackageFrameworksRejectInvalidManifests(t *testing.T) {
 	sum := strings.Repeat("a", 64)
 	good := "version: 2\nlibraries:\n  ios:\n    - name: Fixture.framework\n      path: lib/Fixture\n      sha256: " + sum + "\n      licenses: [LICENSE]\n"
@@ -398,6 +578,7 @@ func TestPackageFrameworksRejectInvalidManifests(t *testing.T) {
 	framework := "must be <Name>.framework"
 	for name, c := range map[string]struct{ manifest, reason string }{
 		"version 3":               {strings.ReplaceAll(good, "version: 2", "version: 3"), "this nsgo reads versions 1 and 2"},
+		"no version":              {strings.ReplaceAll(good, "version: 2\n", ""), "version: 1 or version: 2 is required"},
 		"ios in version 1":        {strings.ReplaceAll(good, "version: 2", "version: 1"), "ios needs version: 2"},
 		"watchOS":                 {strings.ReplaceAll(good, "  ios:", "  watchos:"), `unsupported native-library target "watchos"`},
 		"Android":                 {strings.ReplaceAll(good, "  ios:", "  android_arm64:"), `unsupported native-library target "android_arm64"`},

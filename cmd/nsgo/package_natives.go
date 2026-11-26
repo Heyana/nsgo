@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -28,6 +29,9 @@ const maxNativeLibrary = 1 << 30
 
 // nativeTransport carries the downloads of native libraries; tests replace it to reach TLS servers of their own.
 var nativeTransport = http.DefaultTransport
+
+// macHost reports whether nsgo runs on a Mac, which has the lipo and codesign that macOS libraries are thinned and signed with; tests replace it.
+var macHost = runtime.GOOS == "darwin"
 
 // desktopNativeTargets are version 1's targets, which version 2 keeps; appleNativeTargets are the ones version 2 adds, whose entries are frameworks. Another target means another version.
 var (
@@ -107,6 +111,8 @@ func readNativeManifest(dir string) (*nativeManifest, error) {
 	}
 	targets := nativeVersionTargets(manifest.Version)
 	switch {
+	case manifest.Version == 0:
+		return nil, fmt.Errorf("version: 1 or version: 2 is required")
 	case targets == nil:
 		return nil, fmt.Errorf("version is %d; this nsgo reads versions 1 and 2", manifest.Version)
 	case len(manifest.Libraries) == 0:
@@ -501,7 +507,8 @@ func (p *project) addNativeLibraries(ctx context.Context, target, dir string) er
 		if err := copyNativeLibrary(source, dst, library.SHA256); err != nil {
 			return err
 		}
-		if strings.HasPrefix(target, "macos_") {
+		// Off a Mac, where only terminal targets build for macOS, a universal file ships whole and the loader picks its slice.
+		if strings.HasPrefix(target, "macos_") && macHost {
 			if fat, err := macho.OpenFat(dst); err == nil {
 				multiple := len(fat.Arches) > 1
 				fat.Close()

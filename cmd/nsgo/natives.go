@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"debug/macho"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -178,7 +180,7 @@ func addDesktopLibraries(ctx context.Context, p *project, dir, system, arch stri
 	return p.addNativeLibraries(ctx, target, dir)
 }
 
-// addTUILibraries puts the libraries the packages of a terminal target's build declare for its desktop beside the executable, as a console program has no bundle, and signs macOS's ad hoc, as addMacLibraries does.
+// addTUILibraries puts the libraries the packages of a terminal target's build declare for its desktop beside the executable, as a console program has no bundle. On a Mac it signs macOS's ad hoc, as addMacLibraries does; elsewhere, with no codesign, they ship as published, and an arm64 one must be signed already, as Apple silicon loads no unsigned code.
 func addTUILibraries(ctx context.Context, p *project, dir, target string) error {
 	native := nativeTarget(target)
 	if err := p.addNativeLibraries(ctx, native, dir); err != nil {
@@ -193,11 +195,44 @@ func addTUILibraries(ctx context.Context, p *project, dir, target string) error 
 			continue
 		}
 		signed[library.Name] = true
-		if err := run(ctx, "codesign", "--force", "--sign", "-", filepath.Join(dir, library.Name)); err != nil {
-			return err
+		path := filepath.Join(dir, library.Name)
+		if macHost {
+			if err := run(ctx, "codesign", "--force", "--sign", "-", path); err != nil {
+				return err
+			}
+		} else if native == "macos_arm64" && !armSigned(path) {
+			return fmt.Errorf("native library %s from %s has no code signature, which Apple silicon requires: build %s on a Mac, which signs it ad hoc", library.Name, library.owner, target)
 		}
 	}
 	return nil
+}
+
+// armSigned reports whether every arm64 slice of the Mach-O file at path carries a code signature.
+func armSigned(path string) bool {
+	var files []*macho.File
+	if fat, err := macho.OpenFat(path); err == nil {
+		defer fat.Close()
+		for _, arch := range fat.Arches {
+			files = append(files, arch.File)
+		}
+	} else if thin, err := macho.Open(path); err == nil {
+		defer thin.Close()
+		files = append(files, thin)
+	}
+	arm := false
+	for _, f := range files {
+		if f.Cpu != macho.CpuArm64 {
+			continue
+		}
+		arm = true
+		if !slices.ContainsFunc(f.Loads, func(load macho.Load) bool {
+			raw := load.Raw()
+			return len(raw) >= 8 && f.ByteOrder.Uint32(raw) == machoCodeSignature
+		}) {
+			return false
+		}
+	}
+	return arm
 }
 
 // addIOSEmbeddedLibraries supplies the host with a companion XCFramework whenever its app links the terminal, for static and dynamic embedding alike.

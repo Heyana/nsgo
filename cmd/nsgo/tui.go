@@ -70,6 +70,8 @@ func tuiSession(opts devOptions) session {
 	return session{
 		build: func(ctx context.Context, p *project) error {
 			dir := p.cache("dev", "tui")
+			// Start empty, as the other desktop sessions do: the last build's libraries were thinned and signed in place, so they no longer match their checksums.
+			os.RemoveAll(dir)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
 			}
