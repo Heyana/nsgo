@@ -388,6 +388,12 @@ jobs:
   test-suite:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        packages:
+          - ". ./cmd/... ./examples/... ./ui/... ./tsx/... ./web/... ./automation/... ./microphone/..."
+          - "./internal/... ./base/... ./core/... ./gpu/... ./nsgotest/... ./tools/... ./cloud/... ./audio/... ./desktop/... ./gamepad/... ./i18n/... ./icons/... ./widget/... ./mobile/... ./targets/... ./updater/... ./gameservices/..."
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -432,7 +438,10 @@ jobs:
           NSGO_FILE_ASSOCIATIONS: '1'
           NSGO_REQUIRE_JDK: '1'
         # examples/gallery runs its tests in sequence for about nine minutes on a hosted runner, beside the other packages, so go test's default ten-minute limit cuts it off.
-        run: xvfb-run -a go tool nsgo test -- -timeout=20m
+        run: |
+          for package in ${{ matrix.packages }}; do
+            xvfb-run -a go tool nsgo test "$package" -- -timeout=20m
+          done
   web:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
