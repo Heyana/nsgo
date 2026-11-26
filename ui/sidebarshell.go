@@ -25,16 +25,19 @@ const (
 	// the sidebar and the card, and between them, while the sidebar
 	// shows, the gap between them its handle; the card's edge, outside
 	// it, and its shadow lift it off the chrome there, in place of the
-	// sidebar's line. The margin, the edge and the shadow go
-	// as the sidebar hides, the window controls and the toggle moving with
-	// it as it slides.
+	// sidebar's line. The margin goes as the sidebar hides, the window
+	// controls and the toggle moving with it as it slides, and the edge
+	// and the shadow fade as the last of the sidebar slides away.
 	SidebarShellInset
 )
 
-// The margin of SidebarShellInset and its card's corners.
+// The margin of SidebarShellInset, its card's corners, and how much of
+// the sidebar is left to show when its card's edge and shadow start to
+// fade as it hides.
 const (
 	shellInset       core.Points = 5
 	shellInsetRadius core.Points = 10
+	insetFade        core.Points = 0.25
 )
 
 // SidebarShell is a window of a sidebar beside the content, each under a
@@ -230,7 +233,7 @@ func (s SidebarShell) Render(cx *core.Scope) core.Node {
 		rightHandle,
 	}}
 	if inset {
-		content = insetCard(cx, content.(core.View), open, margin)
+		content = insetCard(cx, content.(core.View), reveal, margin)
 	}
 
 	// The handle's band, 3 points across, centers its line on the
@@ -310,22 +313,24 @@ func clearOfSides(style core.Style, edges func() core.EnvEdges, inner core.View)
 
 // insetCard is SidebarShellInset's card around the content, which clips
 // it: apart from the sidebar by margin, with an edge and a shadow while
-// the sidebar is open. The edge is an outline around the card, as a
-// dialog's rim is outside what it holds, so the content keeps the card's
-// whole frame; the shadow is the card's and the clip the content's, so
-// it falls outside.
-func insetCard(cx *core.Scope, content core.View, open func() bool, margin func() core.Points) core.Node {
+// the sidebar shows, which fade as the last of it, insetFade of reveal,
+// hides. The edge is an outline around the card, as a dialog's rim is
+// outside what it holds, so the content keeps the card's whole frame;
+// the shadow is the card's and the clip the content's, so it falls
+// outside.
+func insetCard(cx *core.Scope, content core.View, reveal func() core.Points, margin func() core.Points) core.Node {
 	colors := ColorsOf(cx)
 	content.TestID = ""
 	content.Style.CornerRadius = shellInsetRadius
 	content.StyleFunc = nil
 	return core.View{TestID: "content", Style: FillRest, Children: []core.Node{content}, StyleFunc: func() core.Style {
 		st := core.Style{Background: Alpha(colors.Background(), 0.9), CornerRadius: shellInsetRadius, Margin: core.Edges{Left: margin()}}
-		if open() {
-			st.OutlineWidth, st.OutlineColor = 1, colors.Line()
+		if k := float32(min(reveal()/insetFade, 1)); k > 0 {
+			line := colors.Line()
+			st.OutlineWidth, st.OutlineColor = 1, Mix(Alpha(line, 0), line, k)
 			st.Shadows = []core.BoxShadow{
-				{Offset: core.Point{Y: 1}, Blur: 2, Color: Black(0.05)},
-				{Offset: core.Point{Y: 4}, Blur: 16, Color: Black(0.07)},
+				{Offset: core.Point{Y: 1}, Blur: 2, Color: Black(0.05 * k)},
+				{Offset: core.Point{Y: 4}, Blur: 16, Color: Black(0.07 * k)},
 			}
 		}
 		return st

@@ -227,9 +227,9 @@ func TestSidebarShellFixed(t *testing.T) {
 	}
 }
 
-// TestSidebarShellInset floats the content as a card with a margin and
-// an edge that go as the sidebar hides, the window controls following it a frame at
-// a time.
+// TestSidebarShellInset floats the content as a card with a margin that
+// goes as the sidebar hides and an edge that fades as the last of it
+// does, the window controls following it a frame at a time.
 func TestSidebarShellInset(t *testing.T) {
 	var o *core.Signal[bool]
 	app, p := shell(t, windowEnv, func(cx *core.Scope) core.Node {
@@ -284,6 +284,16 @@ func TestSidebarShellInset(t *testing.T) {
 	}
 	if got := offset(); got.X <= 0 || got.X >= 5 {
 		t.Fatalf("window controls jumped to %v, want them on their way", got)
+	}
+	if card := app.Find("content"); card.Style.Outline.Width != 1 || card.Style.Outline.Color != p.Line {
+		t.Fatalf("card edge = %v in %x halfway, want it whole until the sidebar is nearly hidden", card.Style.Outline.Width, card.Style.Outline.Color)
+	}
+	app.Advance(sidebarSlide * 3 / 10)
+	_, _, _, full := p.Line.Components()
+	if card := app.Find("content"); card.Style.Outline.Width != 1 {
+		t.Fatalf("card edge = %v nearly hidden, want it fading", card.Style.Outline.Width)
+	} else if _, _, _, a := card.Style.Outline.Color.Components(); a <= 0 || a >= full {
+		t.Fatalf("card edge alpha = %v nearly hidden, want it between 0 and %v", a, full)
 	}
 	app.Advance(time.Second)
 	if got := x(app, "shell", app.Find("content")); got != 0 {
