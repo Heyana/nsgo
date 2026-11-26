@@ -415,6 +415,72 @@ func TestAfterFuncRemovesFinishedTimers(t *testing.T) {
 	}
 }
 
+// A cleanup taken off its owner never runs and leaves nothing on it, however many are registered and removed under a long-lived owner (#2339), and the rest still run last registered first.
+func TestRemovedCleanupsLeaveTheOwner(t *testing.T) {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node { return View{} })
+	owner := h.root.Child()
+	var ran []int
+	keep := func(i int) { owner.addCleanup(func() { ran = append(ran, i) }) }
+	keep(1)
+	for i := range 1000 {
+		a := owner.addCleanup(func() { t.Errorf("removed cleanup %d ran", i) })
+		b := owner.addCleanup(func() { t.Errorf("removed cleanup %d ran", i) })
+		a.remove()
+		if i%2 == 0 {
+			keep(100 + i)
+		}
+		b.remove()
+		b.remove()
+	}
+	keep(2)
+	if got := len(owner.cleanups); got > 1100 {
+		t.Fatalf("owner holds %d cleanups for 502 live ones", got)
+	}
+	// One cleanup removes another that has not run yet, as closing a resource does with what it holds.
+	var later *cleanup
+	owner.addCleanup(func() { later.remove() })
+	later = owner.addCleanup(func() { t.Error("cleanup removed during disposal ran") })
+	owner.addCleanup(func() { later.remove() })
+	owner.Dispose()
+	if len(ran) != 502 || ran[0] != 2 || ran[len(ran)-1] != 1 || ran[1] != 100+998 {
+		t.Fatalf("ran %d cleanups, first %v, last %d", len(ran), ran[:2], ran[len(ran)-1])
+	}
+	if owner.cleanups != nil || owner.removed != 0 {
+		t.Fatalf("disposed owner keeps %d cleanups, %d removed", len(owner.cleanups), owner.removed)
+	}
+}
+
+// The hook other packages use registers on the running owner, as Scope.Cleanup does, so a cleanup registered from an effect goes when the effect runs again.
+func TestScopeCleanupHookFollowsTheRunningOwner(t *testing.T) {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node { return View{} })
+	cx := h.root.Child()
+	n := NewSignal(cx, 0)
+	runs := 0
+	cx.Effect(func() {
+		n.Get()
+		driver.ScopeCleanup(cx, func() { runs++ })
+	})
+	h.drain()
+	n.Set(1)
+	h.drain()
+	if runs != 1 {
+		t.Fatalf("cleanup ran %d times after the effect ran again, want 1", runs)
+	}
+	if len(cx.cleanups) != 0 {
+		t.Fatalf("the scope holds %d cleanups the effect registered", len(cx.cleanups))
+	}
+	cx.Dispose()
+	if runs != 2 {
+		t.Fatalf("cleanup ran %d times after disposal, want 2", runs)
+	}
+	disposed := 0
+	remove := driver.ScopeCleanup(cx, func() { disposed++ })
+	remove()
+	if disposed != 1 {
+		t.Fatalf("a cleanup on a disposed scope ran %d times, want 1 at once", disposed)
+	}
+}
+
 func TestManualClockClearsStoppedTimerTail(t *testing.T) {
 	c := NewManualClock(time.Unix(0, 0))
 	stop := c.AfterFunc(time.Hour, func() {})

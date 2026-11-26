@@ -34,7 +34,8 @@ type Scope struct {
 	last     *Scope
 	prev     *Scope
 	next     *Scope
-	cleanups []func()
+	cleanups []*cleanup
+	removed  int // how many in cleanups cleanup.remove left as holes, so the rest keep their order
 	timerMu  sync.Mutex
 	timers   map[*afterTimer]struct{}
 	values   map[any]any
@@ -406,10 +407,19 @@ func (cx *Scope) disposeOwned() {
 		c = prev
 	}
 	cx.first, cx.last = nil, nil
-	for i := len(cx.cleanups) - 1; i >= 0; i-- {
-		cx.rt.guard(cx, cx.cleanups[i])
+	// Cleanups registered while these run join cx.cleanups past the end and are dropped with it, as they always were; a removal compacts into a new array, so this one stays as it is.
+	cs := cx.cleanups
+	for i := len(cs) - 1; i >= 0; i-- {
+		c := cs[i]
+		if c == nil || c.fn == nil {
+			continue
+		}
+		fn := c.fn
+		c.fn, c.owner = nil, nil
+		cx.rt.guard(cx, fn)
 	}
 	cx.cleanups = nil
+	cx.removed = 0
 	// After the cleanups, which may arm timers of their own.
 	cx.stopTimers()
 	cx.values = nil
@@ -433,12 +443,58 @@ func (cx *Scope) disposeDetached() {
 // Cleanup registers fn to run when the current owner is disposed or runs again, last registered first, as testing.T.Cleanup does. Readers of what fn writes run once the disposal, or the owner's new run, is over, never against a half-disposed tree.
 func (cx *Scope) Cleanup(fn func()) { cx.current().addCleanup(fn) }
 
-func (o *Scope) addCleanup(fn func()) {
+// addCleanup registers fn on o, or runs it at once if o is disposed, in which case it returns nil.
+func (o *Scope) addCleanup(fn func()) *cleanup {
 	if o.disposed {
 		o.rt.guard(o, fn)
+		return nil
+	}
+	c := &cleanup{owner: o, fn: fn}
+	o.cleanups = append(o.cleanups, c)
+	return c
+}
+
+// cleanup is one function registered on an owner, which runs it as the owner is disposed or runs again.
+type cleanup struct {
+	owner *Scope
+	fn    func()
+}
+
+// remove takes c off its owner, which then never runs it and, once enough are removed, keeps nothing of it, so code that registers and removes cleanups under a long-lived owner, as the gpu package's resources do as they close, does not grow it. Removing a cleanup that has run or been removed does nothing.
+func (c *cleanup) remove() {
+	if c == nil || c.fn == nil {
 		return
 	}
-	o.cleanups = append(o.cleanups, fn)
+	o := c.owner
+	c.fn, c.owner = nil, nil
+	if n := len(o.cleanups); n > 0 && o.cleanups[n-1] == c {
+		o.cleanups[n-1] = nil
+		o.cleanups = o.cleanups[:n-1]
+		return
+	}
+	o.removed++
+	if o.removed*2 <= len(o.cleanups) {
+		return
+	}
+	// A new array, as disposeOwned may be walking the old one.
+	live := make([]*cleanup, 0, len(o.cleanups)-o.removed)
+	for _, k := range o.cleanups {
+		if k != nil && k.fn != nil {
+			live = append(live, k)
+		}
+	}
+	o.cleanups = live
+	o.removed = 0
+}
+
+func init() {
+	driver.ScopeCleanup = func(scope any, fn func()) func() {
+		c := scope.(*Scope).current().addCleanup(fn)
+		if c == nil {
+			return func() {}
+		}
+		return c.remove
+	}
 }
 
 // Context returns a context cancelled when the current owner is disposed
