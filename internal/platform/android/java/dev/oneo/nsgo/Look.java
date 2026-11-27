@@ -67,42 +67,89 @@ final class Look {
 
     Look copy() {
         Look l = new Look();
-        l.background = background;
-        l.borderColor = borderColor;
-        l.shadowColor = shadowColor;
-        l.radius = radius;
-        l.border = border;
-        l.opacity = opacity;
-        l.shadowRadius = shadowRadius;
-        l.translateX = translateX;
-        l.translateY = translateY;
-        l.scaleX = scaleX;
-        l.scaleY = scaleY;
-        l.rotation = rotation;
-        l.rawScale = rawScale;
-        l.rawScaleX = rawScaleX;
-        l.rawScaleY = rawScaleY;
-        l.sides = sides;
-        l.borders = borders.clone();
-        l.borderColors = borderColors.clone();
-        l.corners = corners;
-        l.continuous = continuous;
-        l.borderStyle = borderStyle;
-        l.outline = outline;
-        l.shadows = shadows;
-        l.gradients = gradients;
-        l.rotationX = rotationX;
-        l.rotationY = rotationY;
-        l.cameraDistance = cameraDistance;
-        l.originX = originX;
-        l.originY = originY;
-        l.backfaceHidden = backfaceHidden;
-        l.childPerspective = childPerspective;
-        l.colorMatrix = colorMatrix;
-        l.blur = blur;
-        l.dropShadow = dropShadow;
-        l.blend = blend;
+        l.copyFrom(this);
         return l;
+    }
+
+    /** Copies every field of src into this look without allocating border arrays. */
+    void copyFrom(Look src) {
+        background = src.background;
+        borderColor = src.borderColor;
+        shadowColor = src.shadowColor;
+        radius = src.radius;
+        border = src.border;
+        opacity = src.opacity;
+        shadowRadius = src.shadowRadius;
+        translateX = src.translateX;
+        translateY = src.translateY;
+        scaleX = src.scaleX;
+        scaleY = src.scaleY;
+        rotation = src.rotation;
+        rawScale = src.rawScale;
+        rawScaleX = src.rawScaleX;
+        rawScaleY = src.rawScaleY;
+        sides = src.sides;
+        System.arraycopy(src.borders, 0, borders, 0, 4);
+        System.arraycopy(src.borderColors, 0, borderColors, 0, 4);
+        corners = src.corners;
+        continuous = src.continuous;
+        borderStyle = src.borderStyle;
+        outline = src.outline;
+        shadows = src.shadows;
+        gradients = src.gradients;
+        rotationX = src.rotationX;
+        rotationY = src.rotationY;
+        cameraDistance = src.cameraDistance;
+        originX = src.originX;
+        originY = src.originY;
+        backfaceHidden = src.backfaceHidden;
+        childPerspective = src.childPerspective;
+        colorMatrix = src.colorMatrix;
+        blur = src.blur;
+        dropShadow = src.dropShadow;
+        blend = src.blend;
+    }
+
+    /** Whether this look and o draw the same Box background, border, shadows, gradients and outline. */
+    boolean sameBox(Look o) {
+        if (o == this) return true;
+        if (o == null || background != o.background || borderColor != o.borderColor
+                || radius != o.radius || border != o.border || sides != o.sides
+                || continuous != o.continuous || borderStyle != o.borderStyle) {
+            return false;
+        }
+        if (sides) {
+            for (int i = 0; i < 4; i++) {
+                if (borders[i] != o.borders[i] || borderColors[i] != o.borderColors[i]) return false;
+            }
+        }
+        if (corners != o.corners && !java.util.Arrays.equals(corners, o.corners)) return false;
+        if (outline != o.outline) {
+            if (outline == null || o.outline == null
+                    || outline.width != o.outline.width || outline.offset != o.outline.offset
+                    || outline.color != o.outline.color || outline.style != o.outline.style) {
+                return false;
+            }
+        }
+        if (shadows != o.shadows && (shadows.length != 0 || o.shadows.length != 0)) return false;
+        if (gradients != o.gradients && (gradients.length != 0 || o.gradients.length != 0)) return false;
+        return true;
+    }
+
+    /** Whether this look and o apply the same RenderEffect / hardware-layer filter and blend mode. */
+    boolean sameEffects(Look o) {
+        if (o == this) return true;
+        if (o == null || blur != o.blur || blend != o.blend) return false;
+        if (colorMatrix != o.colorMatrix && !java.util.Arrays.equals(colorMatrix, o.colorMatrix)) return false;
+        if (dropShadow != o.dropShadow) {
+            if (dropShadow == null || o.dropShadow == null
+                    || dropShadow.dx != o.dropShadow.dx || dropShadow.dy != o.dropShadow.dy
+                    || dropShadow.blur != o.dropShadow.blur || dropShadow.spread != o.dropShadow.spread
+                    || dropShadow.color != o.dropShadow.color || dropShadow.inset != o.dropShadow.inset) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -141,33 +188,41 @@ final class Look {
     /**
      * Draws the look on view through its background. View transforms
      * scale, then rotate, then translate around the center, as core's do,
-     * and touches follow them.
+     * and touches follow them. Only properties that changed since the last
+     * apply on bg are written, so transform-only frames avoid invalidating
+     * the background drawable or resetting RenderEffects.
      */
     void apply(View view, Box bg) {
-        bg.decorate(this);
+        if (!bg.sameLook(this)) bg.decorate(this);
+        Look prev = bg.applied();
         boolean away = backfaceHidden && Math.cos(Math.toRadians(rotationX)) * Math.cos(Math.toRadians(rotationY)) < 0;
-        view.setAlpha(away ? 0 : opacity);
+        float alpha = away ? 0 : opacity;
+        if (prev == null || alpha != bg.appliedAlpha()) view.setAlpha(alpha);
         boolean shadowed = (shadowColor >>> 24) != 0 && shadowRadius > 0;
-        view.setElevation(shadowed ? shadowRadius : 0);
-        if (shadowed) {
+        float elevation = shadowed ? shadowRadius : 0;
+        if (prev == null || elevation != bg.appliedElevation()) view.setElevation(elevation);
+        if (shadowed && (prev == null || !bg.appliedShadowed() || shadowColor != prev.shadowColor)) {
             view.setOutlineAmbientShadowColor(shadowColor);
             view.setOutlineSpotShadowColor(shadowColor);
         }
-        view.setTranslationX(translateX);
-        view.setTranslationY(translateY);
-        view.setScaleX(scaleX);
-        view.setScaleY(scaleY);
-        view.setRotation(rotation);
-        view.setRotationX(rotationX);
-        view.setRotationY(rotationY);
-        if (cameraDistance > 0) view.setCameraDistance(cameraDistance);
+        if (prev == null || translateX != prev.translateX) view.setTranslationX(translateX);
+        if (prev == null || translateY != prev.translateY) view.setTranslationY(translateY);
+        if (prev == null || scaleX != prev.scaleX) view.setScaleX(scaleX);
+        if (prev == null || scaleY != prev.scaleY) view.setScaleY(scaleY);
+        if (prev == null || rotation != prev.rotation) view.setRotation(rotation);
+        if (prev == null || rotationX != prev.rotationX) view.setRotationX(rotationX);
+        if (prev == null || rotationY != prev.rotationY) view.setRotationY(rotationY);
+        if (cameraDistance > 0 && (prev == null || cameraDistance != prev.cameraDistance)) {
+            view.setCameraDistance(cameraDistance);
+        }
         if (originX != 0 || originY != 0) {
             view.setPivotX(view.getWidth() / 2f + originX);
             view.setPivotY(view.getHeight() / 2f + originY);
         } else if (view.isPivotSet()) {
             view.resetPivot();
         }
-        effects(view);
+        if (prev == null || !sameEffects(prev)) effects(view);
+        bg.recordApplied(this, alpha, elevation, shadowed);
     }
 
     /**
@@ -248,15 +303,28 @@ final class Look {
      * core.AnimatedValues.Apply: points become pixels at density.
      */
     Look animated(Animator.Values v, float density) {
-        Look l = copy();
+        Look l = new Look();
+        animatedInto(l, v, density);
+        return l;
+    }
+
+    /** Writes this look with v applied into l, reusing l without allocating. */
+    void animatedInto(Look l, Animator.Values v, float density) {
+        l.copyFrom(this);
         if (v.has(Animator.PROP_OPACITY)) l.opacity = v.opacity;
         if (v.has(Animator.PROP_TRANSLATE_X)) l.translateX = v.translateX * density;
         if (v.has(Animator.PROP_TRANSLATE_Y)) l.translateY = v.translateY * density;
         boolean s = v.has(Animator.PROP_SCALE), sx = v.has(Animator.PROP_SCALE_X), sy = v.has(Animator.PROP_SCALE_Y);
         if (s || sx || sy) {
-            float[] xy = scales(s ? v.scale : rawScale, sx ? v.scaleX : rawScaleX, sy ? v.scaleY : rawScaleY);
-            l.scaleX = xy[0];
-            l.scaleY = xy[1];
+            float sc = s ? v.scale : rawScale;
+            float scx = sx ? v.scaleX : rawScaleX;
+            float scy = sy ? v.scaleY : rawScaleY;
+            float x = 1, y = 1;
+            if (sc != 0) x = y = sc;
+            if (scx != 0) x = scx;
+            if (scy != 0) y = scy;
+            l.scaleX = x;
+            l.scaleY = y;
         }
         if (v.has(Animator.PROP_ROTATE)) l.rotation = v.rotate;
         if (v.has(Animator.PROP_BACKGROUND)) l.background = Text.argb(v.background);
@@ -272,7 +340,6 @@ final class Look {
         }
         if (v.has(Animator.PROP_ROTATE_X)) l.rotationX = v.rotateX;
         if (v.has(Animator.PROP_ROTATE_Y)) l.rotationY = v.rotateY;
-        return l;
     }
 
     /** Side i's border width and color, whether or not the sides differ. */

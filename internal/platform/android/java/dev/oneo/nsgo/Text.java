@@ -709,9 +709,16 @@ final class Text {
             return attached;
         }
 
+        private int cachedWidthPx = -1;
+        private StaticLayout cachedLayout;
+
         /** The size of the text wrapped at maxWidth, or unwrapped when it is NaN. */
         float[] measure(float maxWidth) {
-            StaticLayout layout = build(maxWidth, paint);
+            int px = widthPx(maxWidth);
+            StaticLayout layout = cachedLayout != null && cachedWidthPx == px
+                    ? cachedLayout : buildPx(px, new TextPaint(paint));
+            cachedWidthPx = px;
+            cachedLayout = layout;
             int lines = layout.getLineCount();
             if (maxLines > 0) lines = Math.min(lines, maxLines);
             float width = 0;
@@ -722,18 +729,29 @@ final class Text {
             return new float[] {(float) Math.ceil(width), layout.getLineTop(lines)};
         }
 
-        /** The final layout at width, with a paint of its own for the UI thread. */
+        /** The final layout at width, reusing measure's StaticLayout when the pixel width matches. */
         StaticLayout layout(float width) {
-            return build(width, new TextPaint(paint));
+            int px = widthPx(width);
+            if (cachedLayout != null && cachedWidthPx == px) {
+                StaticLayout reused = cachedLayout;
+                cachedLayout = null;
+                cachedWidthPx = -1;
+                return reused;
+            }
+            return buildPx(px, new TextPaint(paint));
         }
 
-        private StaticLayout build(float width, TextPaint paint) {
+        private int widthPx(float width) {
             // The width came back from points, so allow for rounding below
             // a measured width before wrapping at it.
             int px = Float.isNaN(width)
                     ? (int) Math.ceil(Layout.getDesiredWidth(text, paint))
                     : (int) Math.ceil(width - 0.01f);
-            StaticLayout.Builder b = StaticLayout.Builder.obtain(text, 0, text.length(), paint, Math.max(px, 1))
+            return Math.max(px, 1);
+        }
+
+        private StaticLayout buildPx(int px, TextPaint paint) {
+            StaticLayout.Builder b = StaticLayout.Builder.obtain(text, 0, text.length(), paint, px)
                     .setAlignment(align)
                     .setTextDirection(direction)
                     .setIncludePad(false);

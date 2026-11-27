@@ -5,6 +5,7 @@ import android.graphics.Rect;
 
 public class GradientDrawable extends Drawable {
     private Rect bounds = new Rect(0, 0, 0, 0);
+    public int invalidateCount;
 
     public Rect getBounds() { return bounds; }
     public void setBounds(int left, int top, int right, int bottom) {
@@ -13,6 +14,6 @@ public class GradientDrawable extends Drawable {
     public void setColor(int argb) {}
     public void setCornerRadius(float radius) {}
     public void setCornerRadii(float[] radii) {}
-    public void invalidateSelf() {}
+    public void invalidateSelf() { invalidateCount++; }
     public void draw(Canvas canvas) {}
 }

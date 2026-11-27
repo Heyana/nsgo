@@ -48,6 +48,17 @@ public class Canvas {
         return true;
     }
 
+    public boolean clipRect(float left, float top, float right, float bottom) {
+        draws.add(new Draw("clip", null, 0, 0, false, false, false, left, top, right, bottom));
+        return true;
+    }
+
+    public void drawRect(float left, float top, float right, float bottom, Paint paint) {
+        draws.add(new Draw("rect", paint.style, paint.color, paint.strokeWidth,
+                paint.shader != null, paint.maskFilter != null, paint.pathEffect != null,
+                left, top, right, bottom));
+    }
+
     public void drawPath(Path path, Paint paint) {
         draws.add(new Draw("path", paint.style, paint.color, paint.strokeWidth,
                 paint.shader != null, paint.maskFilter != null, paint.pathEffect != null,

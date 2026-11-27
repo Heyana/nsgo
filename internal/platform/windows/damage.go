@@ -40,9 +40,6 @@ import (
 // the way of a change, a new or resized swap chain, and the frame after
 // a whole one draw the whole window.
 
-// maxDamage is the most areas a frame draws in.
-const maxDamage = 24
-
 // damage is what the next frame draws again.
 type damage struct {
 	whole bool
@@ -189,6 +186,11 @@ func (m *measuring) visit(v *view, parent matrix, x, y driver.Points, clip rectF
 	inner := clip
 	if s.Clip || v.kind == driver.KindScroll {
 		inner = clip.intersect(mapBounds(pl.world, bounds))
+		if inner.empty() && !effects {
+			m.forget(v)
+			v.tree = v.area
+			return
+		}
 	}
 	perspective, of := m.perspective, m.of
 	m.perspective, m.of = s.ChildPerspective, size
@@ -224,14 +226,21 @@ func (m *measuring) visit(v *view, parent matrix, x, y driver.Points, clip rectF
 // forget clears what v's subtree recorded, which draws nothing now.
 func (m *measuring) forget(v *view) {
 	for _, c := range v.children {
+		if !c.queued && !c.below && c.area == noArea && c.tree == noArea {
+			continue
+		}
 		c.queued, c.below = false, false
 		c.area, c.tree = noArea, noArea
 		m.forget(c)
 	}
 	for _, l := range v.leaving {
-		l.v.queued, l.v.below = false, false
-		l.v.area, l.v.tree = noArea, noArea
-		m.forget(l.v)
+		lv := l.v
+		if !lv.queued && !lv.below && lv.area == noArea && lv.tree == noArea {
+			continue
+		}
+		lv.queued, lv.below = false, false
+		lv.area, lv.tree = noArea, noArea
+		m.forget(lv)
 	}
 }
 
@@ -334,59 +343,6 @@ func pixels(r rectF, scale float64) rect {
 		int32(math.Ceil(float64(r.right) * scale)), int32(math.Ceil(float64(r.bottom) * scale))}
 }
 
-func (r rect) intersect(o rect) rect {
-	return rect{max(r.Left, o.Left), max(r.Top, o.Top), min(r.Right, o.Right), min(r.Bottom, o.Bottom)}
-}
-
-func (r rect) union(o rect) rect {
-	return rect{min(r.Left, o.Left), min(r.Top, o.Top), max(r.Right, o.Right), max(r.Bottom, o.Bottom)}
-}
-
-func (r rect) area() int64 {
-	if r.empty() {
-		return 0
-	}
-	return int64(r.Right-r.Left) * int64(r.Bottom-r.Top)
-}
-
-func (r rect) touches(o rect) bool {
-	return r.Left <= o.Right && o.Left <= r.Right && r.Top <= o.Bottom && o.Top <= r.Bottom
-}
-
-// merged joins the rectangles of rs that touch, or whose union covers
-// little more than they do, then the pairs whose union adds least, until
-// at most maxDamage are left.
-func merged(rs []rect) []rect {
-	rs = slices.DeleteFunc(rs, rect.empty)
-	for joined := true; joined; {
-		joined = false
-		for i := 0; i < len(rs) && !joined; i++ {
-			for j := i + 1; j < len(rs); j++ {
-				u := rs[i].union(rs[j])
-				if rs[i].touches(rs[j]) || u.area() <= rs[i].area()+rs[j].area() {
-					rs[i] = u
-					rs = slices.Delete(rs, j, j+1)
-					joined = true
-					break
-				}
-			}
-		}
-	}
-	for len(rs) > maxDamage {
-		bi, bj, best := 0, 1, int64(math.MaxInt64)
-		for i := range rs {
-			for j := i + 1; j < len(rs); j++ {
-				if cost := rs[i].union(rs[j]).area() - rs[i].area() - rs[j].area(); cost < best {
-					bi, bj, best = i, j, cost
-				}
-			}
-		}
-		rs[bi] = rs[bi].union(rs[bj])
-		rs = slices.Delete(rs, bj, bj+1)
-	}
-	return rs
-}
-
 // skips reports whether the pass leaves v and its subtree out: they show
 // nowhere, or meet none of the areas a partial frame draws.
 func (p *painter) skips(v *view) bool {
@@ -458,16 +414,22 @@ func (p *painter) pushAreas(areas []rect, clear colorF) {
 		p.areaClip = 1
 		return
 	}
+	bounds := p.areas[0]
+	for _, r := range p.areas[1:] {
+		bounds = union(bounds, r)
+	}
 	g := p.pathGeometry(d2dFillWinding, func(sink *comObject) {
 		for _, r := range p.areas {
-			addSegments(sink, driver.RoundedRect(nil, float64(r.left), float64(r.top), float64(r.right-r.left),
-				float64(r.bottom-r.top), driver.Corners{}, false, false))
+			sink.callPoint(sinkBeginFigure, r.left, r.top, d2dFigureFilled)
+			pts := [3]pointF{{r.right, r.top}, {r.right, r.bottom}, {r.left, r.bottom}}
+			sink.call(sinkAddLines, uintptr(unsafe.Pointer(&pts[0])), 3)
+			sink.call(sinkEndFigure, d2dFigureClosed)
 		}
 	})
 	if g == nil {
 		return
 	}
-	p.pushLayerRaw(1, g, nil)
+	p.pushLayerRaw(1, g, nil, bounds)
 	g.release()
 	p.areaClip = 2
 }

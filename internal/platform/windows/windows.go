@@ -201,10 +201,6 @@ const (
 	defaultFontName = "Segoe UI"
 )
 
-type rect struct{ Left, Top, Right, Bottom int32 }
-
-func (r rect) empty() bool { return r.Right <= r.Left || r.Bottom <= r.Top }
-
 type point struct{ X, Y int32 }
 
 type msg struct {
@@ -1400,8 +1396,9 @@ func (w *window) apply(b *driver.MountBatch) {
 	defer func() { w.devGeometry.End(); w.reportGeometry() }()
 	w.batch++
 	var rescroll, loads, gpuConfigured, gpuResized []*view
-	structure := false // views came or went, for UI Automation
-	recursor := false  // a text's span cursors changed
+	structure := false  // views came or went, for UI Automation
+	recursor := false   // a text's span cursors changed
+	hoverDirty := false // geometry, visibility, events, or transforms changed
 	lb := w.layoutBatch(b)
 	type focusChange struct {
 		v     *view // nil dismisses the keyboard
@@ -1413,12 +1410,14 @@ func (w *window) apply(b *driver.MountBatch) {
 		switch it.Kind {
 		case driver.ItemCreate:
 			structure = true
+			hoverDirty = true
 			w.create(it.ID, it.View)
 			if lb != nil {
 				lb.created[w.views[it.ID]] = true
 			}
 			continue
 		case driver.ItemAnimation:
+			hoverDirty = true
 			w.applyAnimations(it.Animation)
 			continue
 		case driver.ItemAlert:
@@ -1698,6 +1697,14 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.redrawView(v)
 		}
 		switch it.Kind {
+		case driver.ItemText, driver.ItemInputValue, driver.ItemSelection, driver.ItemImage,
+			driver.ItemCanvas, driver.ItemShader, driver.ItemShaderInput, driver.ItemShaderTransition,
+			driver.ItemVideoSeek, driver.ItemOverflow, driver.ItemNativeCommand, driver.ItemWebCommand,
+			driver.ItemViewStyle:
+		default:
+			hoverDirty = true
+		}
+		switch it.Kind {
 		case driver.ItemInsert:
 			if p := w.view(it.Parent); p != nil {
 				v.detach()
@@ -1746,6 +1753,11 @@ func (w *window) apply(b *driver.MountBatch) {
 				gpuResized = append(gpuResized, v)
 			}
 		case driver.ItemViewStyle:
+			if v.style.Hidden != it.ViewStyle.Hidden || v.style.Clip != it.ViewStyle.Clip ||
+				v.style.Transform != it.ViewStyle.Transform || v.style.Origin != it.ViewStyle.Origin ||
+				v.style.ChildPerspective != it.ViewStyle.ChildPerspective || v.style.Opacity != it.ViewStyle.Opacity {
+				hoverDirty = true
+			}
 			if v.style.Cursor != it.ViewStyle.Cursor || !v.style.CursorImage.Equal(it.ViewStyle.CursorImage) || v.style.Hidden != it.ViewStyle.Hidden {
 				recursor = true
 			}
@@ -1909,6 +1921,7 @@ func (w *window) apply(b *driver.MountBatch) {
 		}
 	}
 	if w.root != b.Root {
+		hoverDirty = true
 		w.redrawAll()
 	}
 	w.root = b.Root
@@ -1957,7 +1970,7 @@ func (w *window) apply(b *driver.MountBatch) {
 		if w.panelHoverLayout {
 			w.panelHoverLayout = false
 			w.repickPanelHover()
-		} else {
+		} else if hoverDirty || len(rescroll) > 0 {
 			w.hoverViews()
 		}
 	}

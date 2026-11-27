@@ -331,6 +331,92 @@ func metricsOf(font driver.Font) faceMetrics {
 	return m
 }
 
+// textFormats caches immutable configured IDWriteTextFormat objects keyed by
+// their font, paragraph, wrapping, spacing, and trimming configuration.
+const maxTextFormats = 256
+
+var (
+	textFormatsMu sync.Mutex
+	textFormats   = map[formatKey]*comObject{}
+)
+
+func clearTextFormats() {
+	textFormatsMu.Lock()
+	for k, f := range textFormats {
+		f.release()
+		delete(textFormats, k)
+	}
+	textFormatsMu.Unlock()
+}
+
+// cachedTextFormat returns an AddRef'd configured IDWriteTextFormat for key, or nil.
+func cachedTextFormat(key formatKey) *comObject {
+	textFormatsMu.Lock()
+	if f := textFormats[key]; f != nil {
+		f.addRef()
+		textFormatsMu.Unlock()
+		return f
+	}
+	textFormatsMu.Unlock()
+
+	font := driver.Font{
+		Family:   key.family,
+		Language: key.language,
+		Weight:   key.weight,
+		Italic:   key.italic,
+		Size:     driver.Points(key.size),
+	}
+	format := textFormat(font)
+	if format == nil {
+		return nil
+	}
+	align := uintptr(dwAlignLeading)
+	switch key.align {
+	case driver.TextAlignCenter:
+		align = dwAlignCenter
+	case driver.TextAlignEnd:
+		align = dwAlignTrailing
+	case driver.TextAlignJustify:
+		align = dwAlignJustified
+	}
+	format.call(formatSetTextAlignment, align)
+	if key.rtl {
+		// Leading and trailing alignments follow it.
+		format.call(formatSetReadingDirection, dwReadingRTL)
+	}
+	if key.wrap != 0 {
+		format.call(formatSetWordWrapping, uintptr(key.wrap))
+	}
+	if key.step > 0 {
+		format.callF(formatSetLineSpacing, 0b110, dwLineSpacingUniform, f32(key.step), f32(key.baseline))
+	}
+	if key.trim {
+		var sign *comObject
+		dwriteFactory().call(dwCreateEllipsisTrimmingSign, format.ptr(), uintptr(unsafe.Pointer(&sign)))
+		trim := trimming{granularity: dwTrimmingCharacter}
+		format.call(formatSetTrimming, uintptr(unsafe.Pointer(&trim)), sign.ptr())
+		sign.release()
+	}
+
+	textFormatsMu.Lock()
+	if existing := textFormats[key]; existing != nil {
+		existing.addRef()
+		textFormatsMu.Unlock()
+		format.release()
+		return existing
+	}
+	if len(textFormats) >= maxTextFormats {
+		for k, f := range textFormats {
+			f.release()
+			delete(textFormats, k)
+		}
+	}
+	format.addRef()
+	textFormats[key] = format
+	textFormatsMu.Unlock()
+	return format
+}
+
 // textFormat returns a format of font, or nil.
 func textFormat(font driver.Font) *comObject {
 	f := dwriteFactory()
@@ -564,7 +650,6 @@ func (w *window) Prepare(t *driver.AttributedText) driver.PreparedText {
 		pt.inlines = append(pt.inlines, newInline(inlineMetrics{width: float32(a.size.Width),
 			height: a.above + a.below, baseline: a.above}))
 	}
-	pt.layout = pt.build()
 	return pt
 }
 
@@ -583,42 +668,32 @@ func (pt *preparedText) runAt(i uint32) *textRun {
 
 // build returns a layout of the text with no width limit, or nil.
 func (pt *preparedText) build() *comObject {
-	format := textFormat(pt.style.Font)
+	var wrap uint32
+	if pt.maxLines == 1 {
+		// A text limited to one line does not wrap: it is truncated.
+		wrap = dwNoWrap
+	} else if pt.keepAll {
+		// Keep Korean words whole between spaces while breaking a single word that overflows the line.
+		wrap = dwEmergencyBreak
+	}
+	key := formatKey{
+		family:   pt.style.Font.Family,
+		language: pt.style.Font.Language,
+		weight:   pt.style.Font.Weight,
+		italic:   pt.style.Font.Italic,
+		size:     max(float32(pt.style.Font.Size), 0.1),
+		align:    pt.style.Align,
+		rtl:      pt.style.RTL,
+		wrap:     wrap,
+		step:     pt.step,
+		baseline: pt.baseline,
+		trim:     pt.maxLines > 0 && pt.ellipsize != driver.EllipsizeClip,
+	}
+	format := cachedTextFormat(key)
 	if format == nil {
 		return nil
 	}
 	defer format.release()
-	align := uintptr(dwAlignLeading)
-	switch pt.style.Align {
-	case driver.TextAlignCenter:
-		align = dwAlignCenter
-	case driver.TextAlignEnd:
-		align = dwAlignTrailing
-	case driver.TextAlignJustify:
-		align = dwAlignJustified
-	}
-	format.call(formatSetTextAlignment, align)
-	if pt.style.RTL {
-		// Leading and trailing alignments follow it.
-		format.call(formatSetReadingDirection, dwReadingRTL)
-	}
-	if pt.maxLines == 1 {
-		// A text limited to one line does not wrap: it is truncated.
-		format.call(formatSetWordWrapping, dwNoWrap)
-	} else if pt.keepAll {
-		// Keep Korean words whole between spaces while breaking a single word that overflows the line.
-		format.call(formatSetWordWrapping, dwEmergencyBreak)
-	}
-	if pt.step > 0 {
-		format.callF(formatSetLineSpacing, 0b110, dwLineSpacingUniform, f32(pt.step), f32(pt.baseline))
-	}
-	if pt.maxLines > 0 && pt.ellipsize != driver.EllipsizeClip {
-		var sign *comObject
-		dwriteFactory().call(dwCreateEllipsisTrimmingSign, format.ptr(), uintptr(unsafe.Pointer(&sign)))
-		trim := trimming{granularity: dwTrimmingCharacter}
-		format.call(formatSetTrimming, uintptr(unsafe.Pointer(&trim)), sign.ptr())
-		sign.release()
-	}
 	units := pt.units
 	if len(units) == 0 {
 		units = []uint16{0}
@@ -628,22 +703,37 @@ func (pt *preparedText) build() *comObject {
 		format.ptr(), f32(unbounded), f32(unboundedHeight), uintptr(unsafe.Pointer(&layout)))) {
 		return nil
 	}
-	spacing := layout.query(&iidDWriteTextLayout1)
+	var spacing *comObject
+	base := pt.style.Font
+	baseSize := max(float32(base.Size), 0.1)
 	for _, r := range pt.runs {
 		n := r.end - r.start
 		f := r.style.Font
-		name := wide(fontName(f.Family))
-		layout.callRange(layoutSetFontFamilyName, 0, r.start, n, uintptr(unsafe.Pointer(name)))
-		layout.callRange(layoutSetFontWeight, 0, r.start, n, fontWeight(f.Weight))
-		layout.callRange(layoutSetFontStyle, 0, r.start, n, fontStyle(f.Italic))
-		layout.callRange(layoutSetFontSize, 1, r.start, n, f32(max(float32(f.Size), 0.1)))
-		if f.Language != pt.style.Font.Language {
+		if f.Family != base.Family {
+			name := wide(fontName(f.Family))
+			layout.callRange(layoutSetFontFamilyName, 0, r.start, n, uintptr(unsafe.Pointer(name)))
+		}
+		if f.Weight != base.Weight {
+			layout.callRange(layoutSetFontWeight, 0, r.start, n, fontWeight(f.Weight))
+		}
+		if f.Italic != base.Italic {
+			layout.callRange(layoutSetFontStyle, 0, r.start, n, fontStyle(f.Italic))
+		}
+		if sz := max(float32(f.Size), 0.1); sz != baseSize {
+			layout.callRange(layoutSetFontSize, 1, r.start, n, f32(sz))
+		}
+		if f.Language != base.Language {
 			// The format has the text's own; a span in another language picks its glyphs and fallback by its own.
 			locale := wide(f.Language)
 			layout.callRange(layoutSetLocaleName, 0, r.start, n, uintptr(unsafe.Pointer(locale)))
 		}
-		if ls := float32(r.style.LetterSpacing); ls != 0 && spacing != nil {
-			spacing.callRange(layoutSetCharacterSpacing, 0b111, r.start, n, f32(0), f32(ls), f32(0))
+		if ls := float32(r.style.LetterSpacing); ls != 0 {
+			if spacing == nil {
+				spacing = layout.query(&iidDWriteTextLayout1)
+			}
+			if spacing != nil {
+				spacing.callRange(layoutSetCharacterSpacing, 0b111, r.start, n, f32(0), f32(ls), f32(0))
+			}
 		}
 		if t := typography(f.Variant); t != nil {
 			layout.callRange(layoutSetTypography, 0, r.start, n, t.ptr())
@@ -749,7 +839,10 @@ func spanEdges(layout *comObject, start, end uint32) (left, right float32) {
 
 func (pt *preparedText) Measure(maxWidth driver.Points) driver.Size {
 	if pt.layout == nil {
-		return driver.Size{}
+		pt.layout = pt.build()
+		if pt.layout == nil {
+			return driver.Size{}
+		}
 	}
 	limit := float32(unbounded)
 	if !maxWidth.IsAuto() {
@@ -849,7 +942,13 @@ func (pt *preparedText) Layout(size driver.Size) driver.TextLayout {
 	}
 	l := &textLayout{color: pt.style.Color, offsets: pt.offsets, origUTF16: pt.origUTF16, attachments: make([]attachmentBox, len(pt.attachments)),
 		shadow: pt.shadow, hasHidden: pt.hasHidden, runs: pt.runs, style: pt.style}
-	layout := pt.build()
+	layout := pt.layout
+	if layout != nil {
+		pt.layout = nil
+		layout.callF(layoutSetMaxHeight, 1, f32(unboundedHeight))
+	} else {
+		layout = pt.build()
+	}
 	if layout == nil {
 		return l
 	}

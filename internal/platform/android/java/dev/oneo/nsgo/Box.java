@@ -27,12 +27,55 @@ final class Box extends GradientDrawable {
     private final Path path = new Path();
     private final Path ring = new Path();
     private final Path side = new Path();
-    private Look look = new Look();
+    private final Look look = new Look();
+    private final float[] cornerBuf = new float[4];
+    private final float[] widthBuf = new float[4];
+    private final int[] colorBuf = new int[4];
     private final Path clipPath = new Path();
     private final Path childClip = new Path();
+    private boolean decorated;
+    private boolean hasOuter, hasInset, hasBorder, hasBody, hasOutline;
+    private Look appliedLook;
+    private boolean hasApplied;
+    private float appliedAlpha;
+    private float appliedElevation;
+    private boolean appliedShadowed;
     private static final int OUTER = 1, BODY = 2, OUTLINE = 4;
     /** Whether the view clips its content, independently of its outer decoration. */
     boolean clip;
+
+    boolean sameLook(Look next) {
+        return decorated && look.sameBox(next);
+    }
+
+    Look applied() {
+        return hasApplied ? appliedLook : null;
+    }
+
+    float appliedAlpha() {
+        return appliedAlpha;
+    }
+
+    float appliedElevation() {
+        return appliedElevation;
+    }
+
+    boolean appliedShadowed() {
+        return appliedShadowed;
+    }
+
+    void recordApplied(Look l, float alpha, float elevation, boolean shadowed) {
+        if (appliedLook == null) appliedLook = new Look();
+        appliedLook.copyFrom(l);
+        hasApplied = true;
+        appliedAlpha = alpha;
+        appliedElevation = elevation;
+        appliedShadowed = shadowed;
+    }
+
+    void resetApplied() {
+        hasApplied = false;
+    }
 
     /** Finds the box even when an under-content ripple shares the background. */
     private static Box background(View view) {
@@ -57,10 +100,15 @@ final class Box extends GradientDrawable {
         Box box = background(view);
         if (box == null || !box.clip) return -1;
         // View.draw normally updates these bounds, after begin has run.
-        box.setBounds(0, 0, view.getWidth(), view.getHeight());
-        box.draw(canvas, OUTER);
+        int w = view.getWidth(), h = view.getHeight();
+        box.setBounds(0, 0, w, h);
+        if (box.hasOuter) box.draw(canvas, OUTER);
         int save = canvas.save();
-        canvas.clipPath(box.shape(box.getBounds(), box.clipPath));
+        if (!box.look.rounded()) {
+            canvas.clipRect(0, 0, w, h);
+        } else {
+            canvas.clipPath(box.shape(box.getBounds(), box.clipPath));
+        }
         return save;
     }
 
@@ -70,16 +118,20 @@ final class Box extends GradientDrawable {
      */
     static int children(Canvas canvas, View view) {
         Box box = background(view);
-        if (box == null || !box.clip) return -1;
+        if (box == null || !box.clip || !box.hasBorder) return -1;
         float[] widths = box.widths();
         if (widths[0] <= 0 && widths[1] <= 0 && widths[2] <= 0 && widths[3] <= 0) return -1;
         float w = view.getWidth(), h = view.getHeight();
         float x = widths[3], y = widths[0], iw = Math.max(w - widths[1] - x, 0), ih = Math.max(h - widths[2] - y, 0);
-        box.childClip.reset();
-        Shape.ellipticRect(box.childClip, x, y, iw, ih,
-                innerRadii(Shape.fit(box.corners(), w, h), widths), box.look.continuous);
         int save = canvas.save();
-        canvas.clipPath(box.childClip);
+        if (!box.look.rounded()) {
+            canvas.clipRect(x, y, x + iw, y + ih);
+        } else {
+            box.childClip.reset();
+            Shape.ellipticRect(box.childClip, x, y, iw, ih,
+                    innerRadii(Shape.fit(box.corners(), w, h), widths), box.look.continuous);
+            canvas.clipPath(box.childClip);
+        }
         return save;
     }
 
@@ -88,12 +140,33 @@ final class Box extends GradientDrawable {
         if (save < 0) return;
         canvas.restoreToCount(save);
         Box box = background(view);
-        if (box != null) box.draw(canvas, OUTLINE);
+        if (box != null && box.hasOutline) box.draw(canvas, OUTLINE);
     }
 
     /** Draws look: its background, corners, borders, shadows, gradients and outline, in pixels. */
-    void decorate(Look look) {
-        this.look = look;
+    void decorate(Look next) {
+        look.copyFrom(next);
+        decorated = true;
+        boolean outer = false, inset = false;
+        for (Look.Shadow s : look.shadows) {
+            if ((s.color >>> 24) == 0) continue;
+            if (s.inset) inset = true;
+            else outer = true;
+        }
+        hasOuter = outer;
+        hasInset = inset;
+        boolean bordered;
+        if (look.sides) {
+            bordered = (look.borders[0] > 0 && (look.borderColors[0] >>> 24) != 0)
+                    || (look.borders[1] > 0 && (look.borderColors[1] >>> 24) != 0)
+                    || (look.borders[2] > 0 && (look.borderColors[2] >>> 24) != 0)
+                    || (look.borders[3] > 0 && (look.borderColors[3] >>> 24) != 0);
+        } else {
+            bordered = look.border > 0 && (look.borderColor >>> 24) != 0;
+        }
+        hasBorder = bordered;
+        hasBody = (look.background >>> 24) != 0 || look.gradients.length > 0 || hasInset || hasBorder;
+        hasOutline = look.outline != null && look.outline.width > 0 && (look.outline.color >>> 24) != 0;
         setColor(look.background);
         float[] c = corners();
         // Equal corners give a round rect outline for native elevation shadows; other corners use a path outline where the platform supports it.
@@ -116,7 +189,11 @@ final class Box extends GradientDrawable {
     private float[] corners() {
         if (look.corners != null) return look.corners;
         float r = look.radius;
-        return new float[] {r, r, r, r};
+        cornerBuf[0] = r;
+        cornerBuf[1] = r;
+        cornerBuf[2] = r;
+        cornerBuf[3] = r;
+        return cornerBuf;
     }
 
     @Override
@@ -125,9 +202,17 @@ final class Box extends GradientDrawable {
     }
 
     private void draw(Canvas canvas, int parts) {
+        boolean drawOuter = (parts & OUTER) != 0 && hasOuter;
+        boolean drawBody = (parts & BODY) != 0 && hasBody;
+        boolean drawOutline = (parts & OUTLINE) != 0 && hasOutline;
+        if (!drawOuter && !drawBody && !drawOutline) return;
         Rect b = getBounds();
         float w = b.width(), h = b.height();
         if (w <= 0 || h <= 0) return;
+        // Fast path for square boxes with only solid fill and/or solid border (most table rows and cells).
+        if (!drawOuter && drawBody && !drawOutline && !look.rounded() && look.gradients.length == 0 && !hasInset) {
+            if (drawSquareBody(canvas, b.left, b.top, w, h)) return;
+        }
         float[] radii = Shape.fit(corners(), w, h);
         boolean continuous = look.continuous;
         int save = canvas.save();
@@ -135,7 +220,7 @@ final class Box extends GradientDrawable {
         box(path, 0, 0, w, h, radii, continuous);
         // The first shadow is on top.
         Look.Shadow[] shadows = look.shadows;
-        if ((parts & OUTER) != 0) for (int i = shadows.length - 1; i >= 0; i--) {
+        if (drawOuter) for (int i = shadows.length - 1; i >= 0; i--) {
             Look.Shadow s = shadows[i];
             if (s.inset || (s.color >>> 24) == 0) continue;
             int at = canvas.save();
@@ -147,7 +232,7 @@ final class Box extends GradientDrawable {
             paint.setMaskFilter(null);
             canvas.restoreToCount(at);
         }
-        if ((parts & BODY) != 0) {
+        if (drawBody) {
             paint.setStyle(Paint.Style.FILL);
             boolean rimmed = look.hasRim();
             if (rimmed) {
@@ -168,16 +253,89 @@ final class Box extends GradientDrawable {
                 canvas.drawPath(path, paint);
                 paint.setShader(null);
             }
-            float[] widths = widths();
-            insets(canvas, w, h, radii, widths);
-            border(canvas, w, h, radii, widths, rimmed ? look.rimColor() : look.borderColor);
+            if (hasInset || hasBorder) {
+                float[] widths = widths();
+                if (hasInset) insets(canvas, w, h, radii, widths);
+                if (hasBorder) border(canvas, w, h, radii, widths, rimmed ? look.rimColor() : look.borderColor);
+            }
         }
         Look.Outline o = look.outline;
-        if ((parts & OUTLINE) != 0 && o != null && o.width > 0 && (o.color >>> 24) != 0) {
+        if (drawOutline && o != null && o.width > 0 && (o.color >>> 24) != 0) {
             float out = o.offset + o.width / 2;
             stroke(canvas, -out, -out, w + 2 * out, h + 2 * out, Shape.inset(radii, -out), o.width, o.color, o.style);
         }
         canvas.restoreToCount(save);
+    }
+
+    /**
+     * Draws a square box with solid background and optional solid uniform or single-side border directly via drawRect,
+     * avoiding Path construction, canvas.save, and Shape.roundedRect allocations. Returns false for complex borders.
+     */
+    private boolean drawSquareBody(Canvas canvas, float left, float top, float w, float h) {
+        boolean dashed = look.borderStyle == Protocol.BORDER_DASHED || look.borderStyle == Protocol.BORDER_DOTTED;
+        if (hasBorder) {
+            if (dashed) return false;
+            if (look.sides) {
+                int active = 0;
+                for (int i = 0; i < 4; i++) {
+                    if (look.borders[i] > 0) active++;
+                }
+                boolean same = look.borders[0] == look.borders[1] && look.borders[1] == look.borders[2]
+                        && look.borders[2] == look.borders[3]
+                        && look.borderColors[0] == look.borderColors[1]
+                        && look.borderColors[1] == look.borderColors[2]
+                        && look.borderColors[2] == look.borderColors[3];
+                if (!same && active > 1) return false;
+            }
+        }
+        if ((look.background >>> 24) != 0) {
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(look.background);
+            canvas.drawRect(left, top, left + w, top + h, paint);
+        }
+        if (!hasBorder) return true;
+        if (!look.sides) {
+            if ((look.borderColor >>> 24) == 0 || look.border <= 0) return true;
+            float wd = Math.max(1, look.border);
+            float half = wd / 2;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(wd);
+            paint.setColor(look.borderColor);
+            paint.setStrokeCap(Paint.Cap.BUTT);
+            canvas.drawRect(left + half, top + half, left + w - half, top + h - half, paint);
+            paint.setStyle(Paint.Style.FILL);
+            return true;
+        }
+        float[] bw = look.borders;
+        int[] bc = look.borderColors;
+        if (bw[0] == bw[1] && bw[1] == bw[2] && bw[2] == bw[3]
+                && bc[0] == bc[1] && bc[1] == bc[2] && bc[2] == bc[3]) {
+            if ((bc[0] >>> 24) == 0 || bw[0] <= 0) return true;
+            float wd = Math.max(1, bw[0]);
+            float half = wd / 2;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(wd);
+            paint.setColor(bc[0]);
+            paint.setStrokeCap(Paint.Cap.BUTT);
+            canvas.drawRect(left + half, top + half, left + w - half, top + h - half, paint);
+            paint.setStyle(Paint.Style.FILL);
+            return true;
+        }
+        paint.setStyle(Paint.Style.FILL);
+        if (bw[0] > 0 && (bc[0] >>> 24) != 0) {
+            paint.setColor(bc[0]);
+            canvas.drawRect(left, top, left + w, top + Math.min(bw[0], h), paint);
+        } else if (bw[1] > 0 && (bc[1] >>> 24) != 0) {
+            paint.setColor(bc[1]);
+            canvas.drawRect(left + w - Math.min(bw[1], w), top, left + w, top + h, paint);
+        } else if (bw[2] > 0 && (bc[2] >>> 24) != 0) {
+            paint.setColor(bc[2]);
+            canvas.drawRect(left, top + h - Math.min(bw[2], h), left + w, top + h, paint);
+        } else if (bw[3] > 0 && (bc[3] >>> 24) != 0) {
+            paint.setColor(bc[3]);
+            canvas.drawRect(left, top, left + Math.min(bw[3], w), top + h, paint);
+        }
+        return true;
     }
 
     /** Sets path to a box. */
@@ -200,7 +358,11 @@ final class Box extends GradientDrawable {
     private float[] widths() {
         if (look.sides) return look.borders;
         float b = look.border;
-        return new float[] {b, b, b, b};
+        widthBuf[0] = b;
+        widthBuf[1] = b;
+        widthBuf[2] = b;
+        widthBuf[3] = b;
+        return widthBuf;
     }
 
     /** Draws the inset shadows inside the padding box. */
@@ -252,8 +414,16 @@ final class Box extends GradientDrawable {
      * each side filling its part, as CSS joins sides that differ.
      */
     private void border(Canvas canvas, float w, float h, float[] radii, float[] widths, int borderColor) {
-        int[] colors = look.sides ? look.borderColors
-                : new int[] {borderColor, borderColor, borderColor, borderColor};
+        int[] colors;
+        if (look.sides) {
+            colors = look.borderColors;
+        } else {
+            colorBuf[0] = borderColor;
+            colorBuf[1] = borderColor;
+            colorBuf[2] = borderColor;
+            colorBuf[3] = borderColor;
+            colors = colorBuf;
+        }
         float widest = Math.max(Math.max(widths[0], widths[1]), Math.max(widths[2], widths[3]));
         if (widest <= 0) return;
         boolean same = widths[0] == widths[1] && widths[1] == widths[2] && widths[2] == widths[3]

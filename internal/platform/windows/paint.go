@@ -106,7 +106,7 @@ var infinite = rectF{-1e7, -1e7, 1e7, 1e7}
 type pushed struct {
 	clip    bool // an axis-aligned clip, else a layer
 	m       matrix
-	rect    rectF      // the clip's
+	rect    rectF      // the clip's, or the layer's contentBounds
 	opacity float32    // the layer's
 	mask    *comObject // the layer's geometric mask, held
 	brush   *comObject // the layer's opacity brush, held
@@ -173,8 +173,12 @@ type split struct {
 
 func newPainter(w *window, g *gfx) *painter {
 	p := &painter{w: w, g: g, dc: g.dc, scale: float32(w.scale), m: identity, alpha: 1}
-	black := colorF{a: 1}
-	g.dc.call(rtCreateSolidColorBrush, uintptr(unsafe.Pointer(&black)), 0, uintptr(unsafe.Pointer(&p.brush)))
+	if g.brush == nil {
+		black := colorF{a: 1}
+		g.dc.call(rtCreateSolidColorBrush, uintptr(unsafe.Pointer(&black)), 0, uintptr(unsafe.Pointer(&g.brush)))
+		g.brushSet = false
+	}
+	p.brush = g.brush
 	return p
 }
 
@@ -183,13 +187,20 @@ func (p *painter) release() {
 		p.pop()
 	}
 	p.popAreas()
-	releaseAll(&p.brush)
+	p.brush = nil
 }
 
-// solid returns the pass's brush in color c.
+// solid returns the pass's brush in color c, skipping SetColor when unchanged.
 func (p *painter) solid(c driver.Color) *comObject {
+	if p.brush == p.g.brush && p.g.brushSet && p.g.brushColor == c {
+		return p.brush
+	}
 	col := colorOf(c)
 	p.brush.call(brushSetColor, uintptr(unsafe.Pointer(&col)))
+	if p.brush == p.g.brush {
+		p.g.brushColor = c
+		p.g.brushSet = true
+	}
 	return p.brush
 }
 
@@ -212,21 +223,26 @@ func (p *painter) send(m matrix) {
 // pushLayer draws what follows at opacity, inside mask (in the current
 // coordinates) unless it is nil.
 func (p *painter) pushLayer(opacity float32, mask *comObject) {
-	p.pushLayerRaw(opacity, mask, nil)
+	p.pushLayerBounds(opacity, mask, nil, infinite)
+}
+
+// pushLayerBounds draws what follows at opacity, bounded to bounds and inside
+// mask (in the current coordinates) unless it is nil.
+func (p *painter) pushLayerBounds(opacity float32, mask, brush *comObject, bounds rectF) {
+	p.pushLayerRaw(opacity, mask, brush, bounds)
 	mask.addRef()
-	p.pushed = append(p.pushed, pushed{m: p.m, opacity: opacity, mask: mask})
+	brush.addRef()
+	p.pushed = append(p.pushed, pushed{m: p.m, rect: bounds, opacity: opacity, mask: mask, brush: brush})
 }
 
 // pushLayerBrush draws what follows at opacity, as much as brush's alpha
 // says.
 func (p *painter) pushLayerBrush(opacity float32, brush *comObject) {
-	p.pushLayerRaw(opacity, nil, brush)
-	brush.addRef()
-	p.pushed = append(p.pushed, pushed{m: p.m, opacity: opacity, brush: brush})
+	p.pushLayerBounds(opacity, nil, brush, infinite)
 }
 
-func (p *painter) pushLayerRaw(opacity float32, mask, brush *comObject) {
-	params := layerParameters1{contentBounds: infinite, maskAntialias: d2dAntialiasPerPrimitive,
+func (p *painter) pushLayerRaw(opacity float32, mask, brush *comObject, bounds rectF) {
+	params := layerParameters1{contentBounds: bounds, maskAntialias: d2dAntialiasPerPrimitive,
 		maskTransform: identity.d2d(), opacity: opacity}
 	if mask != nil {
 		params.mask = mask.ptr()
@@ -248,7 +264,7 @@ func (p *painter) pushClipRect(r rectF) {
 		return
 	}
 	g := p.roundedGeometry(r, 0)
-	p.pushLayer(1, g)
+	p.pushLayerBounds(1, g, nil, r)
 	g.release()
 }
 
@@ -260,7 +276,7 @@ func (p *painter) pushClipRounded(r rectF, radius float32) {
 		return
 	}
 	g := p.roundedGeometry(r, radius)
-	p.pushLayer(1, g)
+	p.pushLayerBounds(1, g, nil, r)
 	g.release()
 }
 
@@ -300,7 +316,7 @@ func (p *painter) flatten(between func()) {
 			r := q.rect
 			p.dc.call(rtPushAxisAlignedClip, uintptr(unsafe.Pointer(&r)), d2dAntialiasAliased)
 		} else {
-			p.pushLayerRaw(q.opacity, q.mask, q.brush)
+			p.pushLayerRaw(q.opacity, q.mask, q.brush, q.rect)
 		}
 	}
 	p.setTransform(current)
@@ -752,18 +768,22 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 	}
 	alpha := p.alpha
 	p.alpha *= opacity
-	size := frameOf(v).Size
-	area := rectF{float32(v.overflow.Origin.X), float32(v.overflow.Origin.Y),
-		float32(v.overflow.Origin.X + v.overflow.Size.Width), float32(v.overflow.Origin.Y + v.overflow.Size.Height)}
-	if area.empty() {
-		area = rectF{0, 0, float32(size.Width), float32(size.Height)}
-	}
-	if !s.Clip && v.text != nil {
-		if ink := v.text.inkBounds(v.content); !ink.empty() {
-			area = union(area, rectF{ink.left - 1, ink.top - 1, ink.right + 1, ink.bottom + 1})
+	blended := false
+	if s.BlendMode != driver.BlendNormal {
+		size := frameOf(v).Size
+		area := rectF{float32(v.overflow.Origin.X), float32(v.overflow.Origin.Y),
+			float32(v.overflow.Origin.X + v.overflow.Size.Width), float32(v.overflow.Origin.Y + v.overflow.Size.Height)}
+		if area.empty() {
+			area = rectF{0, 0, float32(size.Width), float32(size.Height)}
 		}
+		if !s.Clip && v.text != nil {
+			if ink := v.text.inkBounds(v.content); !ink.empty() {
+				area = union(area, rectF{ink.left - 1, ink.top - 1, ink.right + 1, ink.bottom + 1})
+			}
+		}
+		blended = p.drawBlended(s.BlendMode, world, area, func() { p.drawContent(v, s, world) })
 	}
-	if s.BlendMode == driver.BlendNormal || !p.drawBlended(s.BlendMode, world, area, func() { p.drawContent(v, s, world) }) {
+	if !blended {
 		p.drawContent(v, s, world)
 	}
 	p.alpha = alpha
@@ -915,10 +935,46 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	if z != 1 {
 		childWorld = scaling(z, z).then(translation(-float64(v.offset.X), -float64(v.offset.Y))).then(world)
 	}
-	next := 0
-	drawLeaving := func(upTo int) {
-		for ; next < len(v.leaving) && v.leaving[next].at <= upTo; next++ {
-			c := v.leaving[next].v
+	if sh := shaders.Load(); sh == nil || !sh.drawEffect(p, v, world) {
+		if len(v.leaving) == 0 {
+			for _, c := range v.children {
+				f := frameOf(c)
+				if z != 1 {
+					p.draw(c, childWorld, f.Origin.X, f.Origin.Y)
+				} else {
+					p.draw(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y)
+				}
+			}
+		} else {
+			next := 0
+			for i, c := range v.children {
+				for ; next < len(v.leaving) && v.leaving[next].at <= i; next++ {
+					lv := v.leaving[next].v
+					if z != 1 {
+						p.draw(lv, childWorld, lv.frame.Origin.X, lv.frame.Origin.Y)
+					} else {
+						p.draw(lv, world, lv.frame.Origin.X-v.offset.X, lv.frame.Origin.Y-v.offset.Y)
+					}
+				}
+				f := frameOf(c)
+				if z != 1 {
+					p.draw(c, childWorld, f.Origin.X, f.Origin.Y)
+				} else {
+					p.draw(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y)
+				}
+			}
+			for ; next < len(v.leaving); next++ {
+				lv := v.leaving[next].v
+				if z != 1 {
+					p.draw(lv, childWorld, lv.frame.Origin.X, lv.frame.Origin.Y)
+				} else {
+					p.draw(lv, world, lv.frame.Origin.X-v.offset.X, lv.frame.Origin.Y-v.offset.Y)
+				}
+			}
+		}
+	} else if len(v.leaving) > 0 {
+		for _, lv := range v.leaving {
+			c := lv.v
 			if z != 1 {
 				p.draw(c, childWorld, c.frame.Origin.X, c.frame.Origin.Y)
 			} else {
@@ -926,25 +982,17 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 			}
 		}
 	}
-	if sh := shaders.Load(); sh == nil || !sh.drawEffect(p, v, world) {
-		for i, c := range v.children {
-			drawLeaving(i)
-			f := frameOf(c)
-			if z != 1 {
-				p.draw(c, childWorld, f.Origin.X, f.Origin.Y)
-			} else {
-				p.draw(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y)
-			}
-		}
-	}
-	drawLeaving(math.MaxInt)
 	p.perspective, p.perspectiveOf = perspective, of
 	indicator := v.kind == driver.KindScroll && p.w.showsBar(v)
-	if indicator || p.w.borderEdges(s) != ([4]float32{}) || s.Outline.Visible() {
+	hasBorder := p.w.borderEdges(s) != ([4]float32{})
+	hasOutline := s.Outline.Visible()
+	if indicator || hasBorder || hasOutline {
 		// A scroll indicator, a border over a web view.
 		p.realize()
 	}
-	p.setTransform(world)
+	if v.kind == driver.KindScroll || indicator || (own && (hasBorder || hasOutline)) {
+		p.setTransform(world)
+	}
 	if v.kind == driver.KindScroll {
 		p.drawEdges(v, world)
 		p.drawSpinner(v, world)
@@ -955,14 +1003,14 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	if clip {
 		p.pop()
 	}
-	if !own {
-		// Nothing of its own meets the frame's areas.
+	if !own || !hasBorder {
+		// Nothing of its own meets the frame's areas, or no border.
 	} else if dashed := s.BorderStyle == driver.BorderDashed || s.BorderStyle == driver.BorderDotted; dashed || !simple {
 		p.drawShapedBorder(s, &b)
 	} else {
 		p.drawBorder(s, width, height, radius)
 	}
-	if o := s.Outline; own && o.Visible() {
+	if o := s.Outline; own && hasOutline {
 		p.strokeBox(&b, -(float32(o.Offset) + float32(o.Width)/2), float32(o.Width), o.Color, o.Style)
 	}
 	if masked {

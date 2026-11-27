@@ -77,6 +77,7 @@ func addFonts(data ...[]byte) error {
 	facesMu.Lock()
 	clear(faces)
 	facesMu.Unlock()
+	clearTextFormats()
 	return err
 }
 

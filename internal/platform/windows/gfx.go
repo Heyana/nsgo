@@ -31,6 +31,11 @@ type gfx struct {
 	// frame: shadows' command lists. record is a third, for canvases'
 	// lists, whose shadows bake records.
 	bake, record *comObject
+	// brush is the reusable solid-color brush on dc, avoiding CreateSolidColorBrush
+	// every frame; brushColor/brushSet track its last color to skip redundant SetColor calls.
+	brush      *comObject
+	brushColor driver.Color
+	brushSet   bool
 }
 
 var (
@@ -57,7 +62,7 @@ func devices() (*gfx, error) {
 func deviceLost() {
 	if mainGfx != nil {
 		g := mainGfx
-		releaseAll(&g.record, &g.bake, &g.dc, &g.device, &g.factory, &g.d3d)
+		g.release()
 		mainGfx = nil
 	}
 	gfxGeneration++
@@ -111,7 +116,8 @@ func newGfx() (*gfx, error) {
 }
 
 func (g *gfx) release() {
-	releaseAll(&g.record, &g.bake, &g.dc, &g.device, &g.factory, &g.d3d)
+	releaseAll(&g.brush, &g.record, &g.bake, &g.dc, &g.device, &g.factory, &g.d3d)
+	g.brushSet = false
 }
 
 // createD3D makes a Direct3D 11 device of driver with BGRA support, for

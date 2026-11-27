@@ -433,6 +433,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         return true;
     };
     private final LinkedHashSet<Node> moving = new LinkedHashSet<>();
+    private final ArrayList<Node> stickyBoundNodes = new ArrayList<>();
+    private final ArrayList<Node> headerNodes = new ArrayList<>();
+    private final byte[] frameBuf8 = new byte[8];
+    private final byte[] frameBuf12 = new byte[12];
     private final ArrayList<Ghost> ghosts = new ArrayList<>();
     private final Set<View> ghostViews = new HashSet<>();
     // The layout animation of the batch being mounted: its phases, when it
@@ -1279,6 +1283,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         byView.clear();
         outside.clear();
         moving.clear();
+        stickyBoundNodes.clear();
+        headerNodes.clear();
     }
 
     /** The surface this view shows. */
@@ -2922,7 +2928,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         float w = backScreen.view.getWidth();
         if (getLayoutDirection() == LAYOUT_DIRECTION_RTL) w = -w;
         backScreen.view.setTranslationX(backBase + t * w);
-        if (backBelow != null) backBelow.view.setTranslationX(backBelowBase - (1 - t) * w * 0.25f);
+        if (backScreen.background != null) backScreen.background.resetApplied();
+        if (backBelow != null) {
+            backBelow.view.setTranslationX(backBelowBase - (1 - t) * w * 0.25f);
+            if (backBelow.background != null) backBelow.background.resetApplied();
+        }
     }
 
     /** Ends the gesture's motion: off, reporting the back, or back in place. */
@@ -2940,8 +2950,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 backMove = null;
                 backScreen = backBelow = null;
                 screen.view.setTranslationX(base);
+                if (screen.background != null) screen.background.resetApplied();
                 if (below != null) {
                     below.view.setTranslationX(belowBase);
+                    if (below.background != null) below.background.resetApplied();
                     if (!pop) below.view.setVisibility(belowVisibility);
                 }
                 if (pop) {
@@ -3676,6 +3688,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 engine.text.hide(surface, n.laid);
                 outside.remove(n);
                 moving.remove(n);
+                if (n.stickyBound) stickyBoundNodes.remove(n);
+                if (n.header != null) headerNodes.remove(n);
                 mouse.forget(n.id);
                 animator.forget(n.id);
                 if (n == focusedInput) focusedInput = null;
@@ -3852,6 +3866,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 // Each cell: its id, start and end, the animated node its
                 // inset follows (0: none) and the inset start counts.
                 float[] cells = new float[in.readInt() * 5];
+                boolean wasStickyBound = n.stickyBound;
                 n.stickyBound = false;
                 for (int i = 0; i < cells.length; i += 5) {
                     cells[i] = in.readInt();
@@ -3860,6 +3875,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     cells[i + 3] = in.readInt();
                     cells[i + 4] = in.readFloat();
                     n.stickyBound |= cells[i + 3] != 0;
+                }
+                if (n.stickyBound != wasStickyBound) {
+                    if (n.stickyBound) stickyBoundNodes.add(n);
+                    else stickyBoundNodes.remove(n);
                 }
                 if (n.sticky != null) {
                     for (int i = 0; i < n.sticky.length; i += 5) stick(nodes.get((int) n.sticky[i]), 0, false);
@@ -4346,18 +4365,21 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             n.background = new Box();
             n.view.setBackground(n.background);
         }
-        Look l = n.shown;
-        if (n.values != null) l = l.animated(n.values, density);
+        Look l = n.appliedLook;
+        if (l == null) l = n.appliedLook = new Look();
+        if (n.values != null) {
+            n.shown.animatedInto(l, n.values, density);
+        } else {
+            l.copyFrom(n.shown);
+        }
         if (n.keyframer != null) {
             l = n.keyframes.apply(l, (float) n.keyframer.getAnimatedValue(), n.view.getHeight());
         }
         if (l.cameraDistance == 0 && n.up != null && n.up.shown != null && n.up.shown.childPerspective > 0) {
             // Seen in its parent's perspective, about its own pivot.
-            if (l == n.shown) l = l.copy();
             l.cameraDistance = n.up.shown.childPerspective;
         }
         if (n.appear != null) {
-            if (l == n.shown) l = l.copy();
             float p = (float) n.appear.at(System.nanoTime() - n.appearStart);
             if (n.appear.property == LayoutTransition.SCALE) {
                 l.scaleX *= p;
@@ -4366,12 +4388,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 l.opacity *= p;
             }
         }
+        if (n.shift != 0) {
+            if (n.shiftAcross) l.translateX += n.shift * density;
+            else l.translateY += n.shift * density;
+        }
         l.apply(n.view, n.background);
         followScale(n, Math.max(Math.abs(l.scaleX), Math.abs(l.scaleY)));
-        if (n.shift != 0) {
-            if (n.shiftAcross) n.view.setTranslationX(n.view.getTranslationX() + n.shift * density);
-            else n.view.setTranslationY(n.view.getTranslationY() + n.shift * density);
-        }
         if (!backdropAncestors.isEmpty()) {
             // A container records what is behind its backdrop children as it draws, so a sibling that moves or changes redraws it.
             ViewParent p = n.view.getParent();
@@ -4516,9 +4538,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
             paint(n);
         });
-        for (int i = 0; i < nodes.size(); i++) {
-            Node s = nodes.valueAt(i);
-            if (s.stickyBound) pinSticky(s);
+        for (int i = 0, count = stickyBoundNodes.size(); i < count; i++) {
+            pinSticky(stickyBoundNodes.get(i));
         }
         animator.changedCanvases((id, c) -> {
             Node n = nodes.get(id);
@@ -4610,9 +4631,22 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             frameWanted = false;
             lastFrameSent = now;
             // The frame's vsync time, on System.nanoTime's clock, for RequestAnimationFrame's time.
-            java.nio.ByteBuffer frame = java.nio.ByteBuffer.allocate(surface == 0 ? 8 : 12).putLong(now);
-            if (surface != 0) frame.putInt(surface);
-            write(Protocol.FRAME, frame.array());
+            byte[] frame = surface == 0 ? frameBuf8 : frameBuf12;
+            frame[0] = (byte) (now >>> 56);
+            frame[1] = (byte) (now >>> 48);
+            frame[2] = (byte) (now >>> 40);
+            frame[3] = (byte) (now >>> 32);
+            frame[4] = (byte) (now >>> 24);
+            frame[5] = (byte) (now >>> 16);
+            frame[6] = (byte) (now >>> 8);
+            frame[7] = (byte) now;
+            if (surface != 0) {
+                frame[8] = (byte) (surface >>> 24);
+                frame[9] = (byte) (surface >>> 16);
+                frame[10] = (byte) (surface >>> 8);
+                frame[11] = (byte) surface;
+            }
+            write(Protocol.FRAME, frame);
         }
         long begin = measuring ? System.nanoTime() : 0;
         boolean animating = animator.running();
@@ -4620,21 +4654,23 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (animating) animator.step(now);
         applyAnimated();
         boolean more = animator.running();
-        for (Node n : new ArrayList<>(moving)) {
-            if (nodes.get(n.id) != n) {
-                moving.remove(n);
-                continue;
+        if (!moving.isEmpty()) {
+            for (Node n : new ArrayList<>(moving)) {
+                if (nodes.get(n.id) != n) {
+                    moving.remove(n);
+                    continue;
+                }
+                if (n.motion != null) {
+                    boolean finished = n.motion.step(now);
+                    place(n, n.motion.shown.clone());
+                    if (finished) n.motion = null;
+                }
+                if (n.appear != null) {
+                    if (n.appear.done(now - n.appearStart)) n.appear = null;
+                    paint(n);
+                }
+                if (n.motion == null && n.appear == null) moving.remove(n);
             }
-            if (n.motion != null) {
-                boolean finished = n.motion.step(now);
-                place(n, n.motion.shown.clone());
-                if (finished) n.motion = null;
-            }
-            if (n.appear != null) {
-                if (n.appear.done(now - n.appearStart)) n.appear = null;
-                paint(n);
-            }
-            if (n.motion == null && n.appear == null) moving.remove(n);
         }
         more |= !moving.isEmpty();
         for (int i = ghosts.size() - 1; i >= 0; i--) {
@@ -4741,6 +4777,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             n.header = new Header(getContext(), density, () -> event(Protocol.EVENT_BACK, n.id, 0, 0, 0, ""));
             n.header.colors(dark());
             n.children.addView(n.header.view);
+            headerNodes.add(n);
         }
         n.header.configure(in, id -> {
             Node item = nodes.get(id);
@@ -4778,9 +4815,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     /** Reports EventScreenInsets for every visible screen whose effective insets changed. */
     private void reportAllScreenInsets() {
-        for (int i = 0; i < nodes.size(); i++) {
-            Node n = nodes.valueAt(i);
-            if (n != null && n.header != null) reportScreenInsets(n);
+        for (int i = 0, count = headerNodes.size(); i < count; i++) {
+            reportScreenInsets(headerNodes.get(i));
         }
     }
 
@@ -4836,7 +4872,24 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             return;
         }
         int left = px(f[0]), top = px(f[1]);
-        LayoutParams lp = new LayoutParams(px(f[0] + f[2]) - left, px(f[1] + f[3]) - top, Gravity.LEFT | Gravity.TOP);
+        int width = px(f[0] + f[2]) - left, height = px(f[1] + f[3]) - top;
+        ViewGroup.LayoutParams existing = n.view.getLayoutParams();
+        if (existing instanceof LayoutParams) {
+            LayoutParams lp = (LayoutParams) existing;
+            if (lp.width == width && lp.height == height
+                    && lp.leftMargin == left && lp.topMargin == top
+                    && lp.gravity == (Gravity.LEFT | Gravity.TOP)) {
+                return;
+            }
+            lp.width = width;
+            lp.height = height;
+            lp.leftMargin = left;
+            lp.topMargin = top;
+            lp.gravity = Gravity.LEFT | Gravity.TOP;
+            n.view.setLayoutParams(lp);
+            return;
+        }
+        LayoutParams lp = new LayoutParams(width, height, Gravity.LEFT | Gravity.TOP);
         lp.leftMargin = left;
         lp.topMargin = top;
         n.view.setLayoutParams(lp);
@@ -6074,9 +6127,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 : kind == Protocol.KIND_MODAL ? new Layer(context) : new Group(context);
         Node n = new Node(id, view);
         if (view instanceof ScrollEdges) ((ScrollEdges) view).backdropHost = backdropHost;
-        // Styles can arrive before Android lays the view out. Its pivot is relative to the actual size, so refresh it after a first layout or resize rather than retaining a pivot computed against zero bounds.
+        // Styles can arrive before Android lays the view out. Its pivot and height-relative keyframes depend on actual size, so refresh only when they are active.
         view.addOnLayoutChangeListener((v, l, t, r, b, oldL, oldT, oldR, oldB) -> {
-            if (r - l != oldR - oldL || b - t != oldB - oldT) paint(n);
+            if ((r - l != oldR - oldL || b - t != oldB - oldT)
+                    && (n.keyframer != null || (n.shown != null && (n.shown.originX != 0 || n.shown.originY != 0)))) {
+                paint(n);
+            }
         });
         if (view instanceof CanvasNode) {
             ((CanvasNode) view).presser = this::pressAtScreen;
@@ -6839,7 +6895,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     /** Sets what assistive technology reads: the label, else a text node's text. */
     private static void describe(Node n) {
         String d = !n.label.isEmpty() ? n.label : n.text;
-        n.accessible().setContentDescription(d.isEmpty() ? null : d);
+        String next = d.isEmpty() ? null : d;
+        if (Objects.equals(n.described, next)) return;
+        n.described = next;
+        n.accessible().setContentDescription(next);
     }
 
     private void describe(Node n, AccessibilityNodeInfo info) {
@@ -7720,9 +7779,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         GpuView gpu;
         WebNode web;
         VideoNode video;
-        /** The view's background, the look it shows and the transition moving it. */
+        /** The view's background, the look it shows, its reusable applied scratch look, and the transition moving it. */
         Box background;
         Look shown;
+        Look appliedLook;
         /** Stepped raster scales for this node's transform, scroll zoom, and ancestor chain. */
         float rasterStep = 1f, zoomRasterStep = 1f, inheritedRasterStep = 1f;
         /** Whether it still shows the default style startDefault gave it, which the first style replaces. */
@@ -7748,6 +7808,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         int labelFor;
         int[] labelledBy = new int[0];
         String label = "", text = "", testID = "";
+        String described;
         /** Accessibility beyond the role, label and states, as core.ViewProps has it. */
         String hint = "", valueText = "";
         boolean expandable, expanded, hidden, range;

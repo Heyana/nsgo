@@ -349,6 +349,11 @@ class TextNode extends FrameLayout {
     /** Reports whether the laid-out ink extends past this view's bounds. */
     private boolean overflowsBox() {
         if (layout == null) return false;
+        if (shadow == null && !(layout.getText() instanceof Spanned)) {
+            boolean clipped = clipLines > 0 && layout.getLineCount() > clipLines;
+            float textH = clipped ? layout.getLineTop(clipLines) : layout.getHeight();
+            return x < 0 || y < 0 || x + layout.getWidth() > getWidth() || y + textH > getHeight();
+        }
         inkBounds(ink);
         return ink.left < 0 || ink.top < 0 || ink.right > getWidth() || ink.bottom > getHeight();
     }

@@ -1,11 +1,13 @@
 package android
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"image"
+	"io"
 	"math"
 	"net/url"
 	"strconv"
@@ -29,6 +31,27 @@ func checkMessage(kind byte, n int) error {
 		return fmt.Errorf("a message (kind %d) of %d bytes is over the %d MiB the Android runtime reads", kind, n, maxMessage>>20)
 	}
 	return nil
+}
+
+// readFramePayload reads a size-byte message payload from r, reusing *scratch when
+// scratch is non-nil, reuse is true, and size <= 4096.
+func readFramePayload(r *bufio.Reader, size uint32, scratch *[]byte, reuse bool) ([]byte, error) {
+	if size == 0 {
+		return nil, nil
+	}
+	var payload []byte
+	if scratch != nil && reuse && size <= 4096 {
+		if cap(*scratch) < int(size) {
+			*scratch = make([]byte, size)
+		}
+		payload = (*scratch)[:size]
+	} else {
+		payload = make([]byte, size)
+	}
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
 }
 
 // maxShaderPixels is the most bytes of shader pixels a batch carries, leaving room in its message for the rest of the batch (maxMessage). An image over it never goes.

@@ -10,6 +10,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,6 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /** The engine's text, split by surface. No entry retains a view or its context. */
 final class TextCache {
     private final ConcurrentHashMap<Integer, Surface> surfaces = new ConcurrentHashMap<>();
+    private ByteArrayOutputStream replyBytes = new ByteArrayOutputStream(256);
+    private DataOutputStream replyOut = new DataOutputStream(replyBytes);
     private boolean closed;
 
     TextCache(float density) {
@@ -46,8 +49,9 @@ final class TextCache {
     byte[] request(byte[] payload) {
         long request = 0;
         int kind = 0;
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        DataOutputStream out = new DataOutputStream(bytes);
+        ByteArrayOutputStream bytes = replyBytes;
+        bytes.reset();
+        DataOutputStream out = replyOut;
         try (DataInputStream in = input(payload)) {
             request = in.readLong();
             kind = in.readUnsignedByte();
@@ -66,7 +70,12 @@ final class TextCache {
                 throw new AssertionError(impossible);
             }
         }
-        return bytes.toByteArray();
+        byte[] result = bytes.toByteArray();
+        if (bytes.size() > 4096) {
+            replyBytes = new ByteArrayOutputStream(256);
+            replyOut = new DataOutputStream(replyBytes);
+        }
+        return result;
     }
 
     void release(byte[] payload) throws IOException {
@@ -153,24 +162,33 @@ final class TextCache {
 
     private void prepare(int id, DataInputStream in, byte[] payload) throws IOException {
         boolean scoped = hasPrepareSurface(in);
-        int surface = scoped ? ByteBuffer.wrap(payload, payload.length - Integer.BYTES, Integer.BYTES).getInt() : 0;
+        int surface = 0;
+        if (scoped) {
+            int off = payload.length - Integer.BYTES;
+            surface = ((payload[off] & 0xff) << 24)
+                    | ((payload[off + 1] & 0xff) << 16)
+                    | ((payload[off + 2] & 0xff) << 8)
+                    | (payload[off + 3] & 0xff);
+        }
         Surface owner = surface(surface);
         float density = owner.density;
         String text = Protocol.readString(in);
         Text.Style style = new Text.Style(in, density);
         int maxLines = in.readInt();
-        List<Text.Span> spans = new ArrayList<>();
-        for (int i = 0, n = in.readInt(); i < n; i++) spans.add(new Text.Span(in, density));
-        List<Text.Attachment> attachments = new ArrayList<>();
-        for (int i = 0, n = in.readInt(); i < n; i++) attachments.add(new Text.Attachment(in, density));
+        int spanCount = in.readInt();
+        List<Text.Span> spans = spanCount == 0 ? Collections.emptyList() : new ArrayList<>(spanCount);
+        for (int i = 0; i < spanCount; i++) spans.add(new Text.Span(in, density));
+        int attachCount = in.readInt();
+        List<Text.Attachment> attachments = attachCount == 0 ? Collections.emptyList() : new ArrayList<>(attachCount);
+        for (int i = 0; i < attachCount; i++) attachments.add(new Text.Attachment(in, density));
         int ellipsize = in.readUnsignedByte();
         Text.Shadow shadow = new Text.Shadow(in, density);
         style.readDecoration(in, density);
-        for (Text.Span span : spans) span.style.readDecoration(in, density);
+        for (int i = 0; i < spanCount; i++) spans.get(i).style.readDecoration(in, density);
         int suffix = scoped ? Integer.BYTES : 0;
         // Each span's hidden flag follows the decorations, so a runtime that predates it reads the rest unchanged; with none sent, every span is visible.
-        for (Text.Span span : spans) {
-            if (in.available() > suffix) span.hidden = Protocol.flag(in.readUnsignedByte(), 0);
+        for (int i = 0; i < spanCount; i++) {
+            if (in.available() > suffix) spans.get(i).hidden = Protocol.flag(in.readUnsignedByte(), 0);
         }
         if (in.available() != suffix) throw new IOException("invalid text prepare surface");
         owner.prepared.put(id, new Prepared(

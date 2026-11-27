@@ -119,7 +119,9 @@ final class Animator {
     /** The values scroll views' pulls past their tops set. */
     private final Map<Integer, Integer> pulls = new HashMap<>();
     private final Map<Integer, double[]> starts = new HashMap<>();
-    private final LinkedHashSet<Integer> changed = new LinkedHashSet<>();
+    private final LinkedHashSet<Integer> unbound = new LinkedHashSet<>();
+    private boolean viewsStale;
+    private final Values scratchValues = new Values();
     /** Canvas views' bound drawing arguments, and whether values changed since changedCanvases looked. */
     private final Map<Integer, ACanvas> canvases = new HashMap<>();
     private boolean canvasesStale;
@@ -204,6 +206,34 @@ final class Animator {
 
         boolean has(int prop) {
             return (set & (1 << prop)) != 0;
+        }
+
+        void reset() {
+            set = 0;
+            opacity = translateX = translateY = scale = scaleX = scaleY = rotate = shadowRadius = 0;
+            shadowOpacity = rotateX = rotateY = 0;
+            background = borderColor = shadowColor = textColor = 0;
+        }
+
+        Values copy() {
+            Values c = new Values();
+            c.set = set;
+            c.opacity = opacity;
+            c.translateX = translateX;
+            c.translateY = translateY;
+            c.scale = scale;
+            c.scaleX = scaleX;
+            c.scaleY = scaleY;
+            c.rotate = rotate;
+            c.shadowRadius = shadowRadius;
+            c.shadowOpacity = shadowOpacity;
+            c.rotateX = rotateX;
+            c.rotateY = rotateY;
+            c.background = background;
+            c.borderColor = borderColor;
+            c.shadowColor = shadowColor;
+            c.textColor = textColor;
+            return c;
         }
 
         @Override
@@ -650,8 +680,13 @@ final class Animator {
                     views.put(o.view, v);
                 }
                 v.nodes[o.prop] = o.node;
-                changed.add(o.view);
-                if (v.empty()) views.remove(o.view);
+                if (v.empty()) {
+                    views.remove(o.view);
+                    unbound.add(o.view);
+                } else {
+                    unbound.remove(o.view);
+                    viewsStale = true;
+                }
                 break;
             }
             case BIND_PAN:
@@ -687,7 +722,7 @@ final class Animator {
     /** Notes that values changed, so bound views are evaluated again. */
     private void touch() {
         gen++;
-        changed.addAll(views.keySet());
+        viewsStale = true;
         canvasesStale = true;
     }
 
@@ -753,28 +788,32 @@ final class Animator {
     /** Advances the running animations to now, monotonic nanoseconds. */
     void step(long nanos) {
         now = seconds(nanos);
-        for (Run r : new ArrayList<>(runs.values())) {
-            if (runs.get(r.id) != r) continue;
-            // A run with a frame rate moves only when its next frame is due.
-            if (r.rate > 0) {
-                if (r.moved && now - r.last < 1 / r.rate - FRAME_SLACK) continue;
-                r.last = now;
-                r.moved = true;
+        if (!runs.isEmpty()) {
+            for (Run r : new ArrayList<>(runs.values())) {
+                if (runs.get(r.id) != r) continue;
+                // A run with a frame rate moves only when its next frame is due.
+                if (r.rate > 0) {
+                    if (r.moved && now - r.last < 1 / r.rate - FRAME_SLACK) continue;
+                    r.last = now;
+                    r.moved = true;
+                }
+                if (r.root.step(this, now)) end(r, true);
             }
-            if (r.root.step(this, now)) end(r, true);
         }
-        for (ANode n : new ArrayList<>(settling)) {
-            // Settling starts with the first frame after the rest.
-            if (n.settleStarted < 0) n.settleStarted = now;
-            double p = (now - n.settleStarted) / SETTLE;
-            if (p >= 1) {
-                n.last = n.settleTo;
-                settling.remove(n);
-            } else {
-                double e = 1 - Math.pow(1 - Math.max(p, 0), 3);
-                n.last = n.settleFrom + (n.settleTo - n.settleFrom) * e;
+        if (!settling.isEmpty()) {
+            for (ANode n : new ArrayList<>(settling)) {
+                // Settling starts with the first frame after the rest.
+                if (n.settleStarted < 0) n.settleStarted = now;
+                double p = (now - n.settleStarted) / SETTLE;
+                if (p >= 1) {
+                    n.last = n.settleTo;
+                    settling.remove(n);
+                } else {
+                    double e = 1 - Math.pow(1 - Math.max(p, 0), 3);
+                    n.last = n.settleFrom + (n.settleTo - n.settleFrom) * e;
+                }
+                touch();
             }
-            touch();
         }
     }
 
@@ -825,28 +864,36 @@ final class Animator {
 
     /** Calls fn with each bound view whose values may have changed since the last call, and their values. */
     void changed(BiConsumer<Integer, Values> fn) {
-        List<Integer> ids = new ArrayList<>(changed);
-        changed.clear();
-        for (int id : ids) {
-            AView vw = views.get(id);
-            Values vals = new Values();
-            if (vw != null) {
-                vals = evalView(vw);
-                if (vals.equals(vw.sent)) continue;
-                vw.sent = vals;
+        if (!viewsStale && unbound.isEmpty()) return;
+        if (!unbound.isEmpty()) {
+            for (int id : unbound) {
+                if (!views.containsKey(id)) fn.accept(id, new Values());
             }
-            fn.accept(id, vals);
+            unbound.clear();
+        }
+        if (!viewsStale) return;
+        viewsStale = false;
+        for (Map.Entry<Integer, AView> e : views.entrySet()) {
+            AView vw = e.getValue();
+            evalViewInto(vw, scratchValues);
+            if (scratchValues.equals(vw.sent)) continue;
+            Values vals = scratchValues.copy();
+            vw.sent = vals;
+            fn.accept(e.getKey(), vals);
         }
     }
 
     /** View's bound values, or null when it has none. */
     Values values(int view) {
         AView vw = views.get(view);
-        return vw == null ? null : evalView(vw);
+        if (vw == null) return null;
+        Values v = new Values();
+        evalViewInto(vw, v);
+        return v;
     }
 
-    private Values evalView(AView vw) {
-        Values v = new Values();
+    private void evalViewInto(AView vw, Values v) {
+        v.reset();
         for (int p = 0; p < PROP_COUNT; p++) {
             int id = vw.nodes[p];
             if (id == 0) continue;
@@ -874,7 +921,6 @@ final class Animator {
                 default: break;
             }
         }
-        return v;
     }
 
     /**
@@ -935,16 +981,18 @@ final class Animator {
     private boolean drive(Map<Integer, int[]> m, int view, float x, float y) {
         int[] ids = m.get(view);
         if (ids == null) return false;
-        float[] p = {x, y};
-        for (int i = 0; i < 2; i++) {
-            ANode n = value(ids[i]);
-            if (n != null) {
-                interrupt(n);
-                n.value = p[i];
-            }
+        ANode nx = value(ids[0]);
+        if (nx != null) {
+            interrupt(nx);
+            nx.value = x;
+        }
+        ANode ny = value(ids[1]);
+        if (ny != null) {
+            interrupt(ny);
+            ny.value = y;
         }
         // Scrolling again ends the settling where it is.
-        settling.removeIf(n -> dependsOn(n.op.input, ids));
+        if (!settling.isEmpty()) settling.removeIf(n -> dependsOn(n.op.input, ids));
         touch();
         return true;
     }
@@ -975,7 +1023,7 @@ final class Animator {
         pinches.remove(view);
         rotations.remove(view);
         starts.remove(view);
-        changed.remove(view);
+        unbound.remove(view);
     }
 
     /** N's output in the current generation; a color's goes to n.color. */

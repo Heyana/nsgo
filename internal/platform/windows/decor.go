@@ -101,6 +101,11 @@ func (p *painter) fillBox(b *box, c driver.Color, brush *comObject) {
 	}
 	if r, ok := b.simple(); ok {
 		r = max(min(r, b.w/2, b.h/2), 0)
+		if r == 0 {
+			rect := rectF{0, 0, b.w, b.h}
+			p.dc.call(rtFillRectangle, uintptr(unsafe.Pointer(&rect)), brush.ptr())
+			return
+		}
 		rr := roundedRect{rect: rectF{0, 0, b.w, b.h}, radiusX: r, radiusY: r}
 		p.dc.call(rtFillRoundedRectangle, uintptr(unsafe.Pointer(&rr)), brush.ptr())
 		return
@@ -121,12 +126,13 @@ func (p *painter) fillRim(b *box, c driver.Color, d driver.Points) {
 
 // pushClipBox clips what follows to the box.
 func (p *painter) pushClipBox(b *box) {
-	if r, ok := b.simple(); ok {
-		p.pushClipRounded(rectF{0, 0, b.w, b.h}, r)
+	r := rectF{0, 0, b.w, b.h}
+	if rad, ok := b.simple(); ok {
+		p.pushClipRounded(r, rad)
 		return
 	}
 	g := p.geometry(b, 0)
-	p.pushLayer(1, g)
+	p.pushLayerBounds(1, g, nil, r)
 	g.release()
 }
 
@@ -137,9 +143,18 @@ func (p *painter) pushClipPadding(s *driver.ViewStyle, b *box) {
 		return
 	}
 	x, y, w, h, inner := s.ClipBox(driver.Size{Width: driver.Points(b.w), Height: driver.Points(b.h)})
+	r := rectF{float32(x), float32(y), float32(x + w), float32(y + h)}
+	switch rad, kind := classifyInnerClip(inner, b.continuous); kind {
+	case innerClipRect:
+		p.pushClipRect(r)
+		return
+	case innerClipUniformRounded:
+		p.pushClipRounded(r, rad)
+		return
+	}
 	segs := driver.EllipticRect(nil, x, y, w, h, inner, b.continuous, false)
 	g := p.pathGeometry(d2dFillWinding, func(sink *comObject) { addSegments(sink, segs) })
-	p.pushLayer(1, g)
+	p.pushLayerBounds(1, g, nil, r)
 	g.release()
 }
 
