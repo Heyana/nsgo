@@ -150,6 +150,7 @@
       }
       .groups {
         flex: none;
+        border: 1px solid var(--border);
         margin-right: 8px;
         padding: 4px 8px;
         border: 0;
@@ -160,6 +161,11 @@
         font-size: 13px;
         font-weight: 500;
         box-shadow: var(--shadow-sm);
+      }
+      @media (max-width: 600px) {
+        .groups {
+          max-width: 40vw;
+        }
       }
       .groups:focus-visible {
         outline: 2px solid var(--blue);
@@ -650,13 +656,14 @@
         var groupsBox = document.getElementById('groups');
         var group = 'apps';
         var frame = null;
+        var settle = function () {};
 
         // The platforms and the app URL's debugging flags are constants: the URL an iframe
         // loads is built from them, never from the page's own text.
         var GROUPS = __GROUPS__;
         var THEMES = ['light', 'dark'];
         var PLATFORMS = ['macos', 'windows', 'linux', 'ios', 'android', 'web'];
-        var LANGS = ['en', 'zh-Hans', 'zh-Hant', 'ja', 'ko', 'es', 'fr', 'de', 'pt', 'ru', 'it', 'vi', 'id', 'tr', 'en-XA'];
+        var LANGS = ['en', 'en-GB', 'en-XA', 'zh-Hans', 'zh-Hant', 'zh-CN', 'zh-TW', 'ja', 'ko', 'es', 'fr', 'de', 'pt', 'pt-BR', 'ru', 'it', 'vi', 'id', 'tr', 'ar', 'he'];
         var APPEARANCES = ['light', 'dark', 'system'];
 
         function known(value) {
@@ -778,11 +785,43 @@
           next.allow = 'autoplay; clipboard-read; clipboard-write; fullscreen; picture-in-picture';
           next.setAttribute('data-nsgo-history', '');
           next.src = appURL();
+          var answered = false;
+          settle = function (ok) {
+            answered = ok;
+            clearTimeout(watch);
+          };
+          var watch = setTimeout(function () {
+            if (!answered && frame === next) {
+              bootTitle.textContent = 'The gallery could not start';
+              meta.className = 'boot__meta boot__meta--error';
+              meta.textContent = 'The demo group did not load. Check the connection and try again.';
+              retry.hidden = false;
+            }
+          }, 45000);
+          next.addEventListener('error', function () {
+            settle(false);
+            bootTitle.textContent = 'The gallery could not start';
+            meta.className = 'boot__meta boot__meta--error';
+            meta.textContent = 'The demo group did not load. Check the connection and try again.';
+            retry.hidden = false;
+          });
           var depth = pushed(frame);
           if (frame) frame.remove();
           screen.appendChild(next);
           frame = next;
-          if (depth > 0) history.go(-depth);
+          if (depth > 0) {
+            // The removed app's entries are still on the history: stepping back
+            // over them replaces the address, so restore the chosen group and
+            // platform once the step is done.
+            window.addEventListener('popstate', function restore() {
+              window.removeEventListener('popstate', restore);
+              var url = new URL(location.href);
+              url.searchParams.set('group', group);
+              url.searchParams.set('platform', platform);
+              history.replaceState(history.state, '', url);
+            });
+            history.go(-depth);
+          }
         }
 
         // pushed is how many entries the app in f pushed (its history.state.nsgo, internal/platform/web/history.go). The browser keeps a removed frame's entries, and Back would stop at each without a visible change, so load goes back over them once the old app is gone and can no longer follow the back.
@@ -890,6 +929,7 @@
           if (event.origin !== location.origin || !frame || event.source !== frame.contentWindow) return;
           var data = event.data;
           if (!data || data.type !== 'nsgo-gallery') return;
+          if (data.event === 'ready' || data.event === 'error') settle(true);
           if (data.event === 'progress') {
             showProgress(data.percent, progressText(data));
           } else if (data.event === 'ready') {
@@ -897,7 +937,7 @@
             boot.hidden = true;
             // Keys go to the app unless the visitor is elsewhere on the page; arrow keys left on the platforms would switch again.
             var active = document.activeElement;
-            if (!active || active === document.body || active.name === 'platform') {
+            if (!active || active === document.body || active === groupsBox || active.name === 'platform') {
               frame.focus();
               frame.contentWindow.focus();
             }

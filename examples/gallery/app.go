@@ -242,7 +242,9 @@ func Root(cx *core.Scope) core.Node {
 	env := cx.Env()
 	var picked []string
 	for _, t := range tabs {
-		picked = append(picked, t.groups[0].demos[0].name)
+		if len(t.groups) > 0 && len(t.groups[0].demos) > 0 {
+			picked = append(picked, t.groups[0].demos[0].name)
+		}
 	}
 	g := &gallery{
 		root:             cx,
@@ -479,9 +481,14 @@ func (g *gallery) section(cx *core.Scope, i int) base.NavPage {
 // isApp is whether the demo named name is one of the apps built on
 // NSGo, which a hairline divides from the header above them.
 func isApp(name string) bool {
-	for _, d := range tabs[0].groups[0].demos {
-		if d.name == name {
-			return true
+	for _, g := range allGroups() {
+		if g.name != "Apps" {
+			continue
+		}
+		for _, d := range g.demos {
+			if d.name == name {
+				return true
+			}
 		}
 	}
 	return false

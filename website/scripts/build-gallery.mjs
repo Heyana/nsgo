@@ -60,7 +60,7 @@ for (const group of groups) {
 }
 
 const frame = readFileSync(path.join(website, 'scripts', 'gallery-frame.html'), 'utf8')
-  .replaceAll('__ICON__', icon)
+  .replaceAll('__ICON__', `${groups[0].id}/${icon}`)
   .replaceAll('__GROUPS__', JSON.stringify(index.groups.map(({ id, title }) => ({ id, title }))));
 writeFileSync(path.join(galleryDir, 'index.html'), frame);
 // Old links to the full bundle open the shell, which loads a group.

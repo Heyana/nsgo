@@ -59,6 +59,7 @@ export function buildWeb({ app, name, output, tags = [] }) {
   config.gzipSize = compressed.length;
   writeFileSync(path.join(output, config.gzip), compressed);
   rmSync(wasmPath);
+  for (const ext of ['.br', '.gz']) rmSync(`${wasmPath}${ext}`, { force: true });
   writeFileSync(path.join(output, 'nsgo.json'), `${JSON.stringify(config, null, 2)}\n`);
   console.log(`${name} ready: ${wasm} ${mb(size)} (${mb(compressed.length)} gzip)`);
   return config;

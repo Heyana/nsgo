@@ -45,11 +45,17 @@ rebuilds daily to keep them current.
 
 `scripts/web-build.mjs` builds an app with `go tool nsgo build -target web`
 from the repository root into a folder of `public/`, keeping its wasm only
-as a `.gzip` copy. `scripts/build-gallery.mjs` writes `public/gallery/`,
-served at `/gallery/`, behind `scripts/gallery-loader.html`, which reports
-its download, decompression, compilation and start progress and follows the
-site's appearance, `starlight-theme`; `loader.html`, its first address,
-redirects there. All of `public/`'s builds are generated and ignored.
+as a `.gzip` copy (and dropping the tool's `.br` and `.gz` siblings); its
+`tags` adds build tags. `scripts/build-gallery.mjs` builds the gallery once
+per demo group with `-tags gallery_group,gallery_<group>` — each group's
+demo list lives behind that tag in `examples/gallery` — and writes the
+groups to `public/gallery/<group>/`, each behind `scripts/gallery-loader.html`,
+which reports its download, decompression, compilation and start progress
+and follows the site's appearance, `starlight-theme`. It writes the group
+list into `scripts/gallery-frame.html`, which serves `/gallery/`: the shell
+loads one group's app on demand behind the platform frames, keeps
+`?group=` and `?platform=` in the address, and `app.html` and `loader.html`
+redirect to it. All of `public/`'s builds are generated and ignored.
 
 ## Home
 

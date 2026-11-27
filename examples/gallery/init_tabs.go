@@ -33,6 +33,23 @@ func init() {
 		{"components", m.TabComponents, lucide.Component, "puzzlepiece.extension", "android:ic_menu_agenda", groupsFor("components")},
 		{"basics", m.TabBasics, lucide.Shapes, "square.on.circle", "android:ic_menu_sort_by_size", groupsFor("basics")},
 	}
+	// A group build carries one group, and a tab that has none is left out: the
+	// index shows and selects what the build carries.
+	kept := tabs[:0]
+	for _, t := range tabs {
+		var groups []group
+		for _, g := range t.groups {
+			if len(g.demos) > 0 {
+				groups = append(groups, g)
+			}
+		}
+		if len(groups) == 0 {
+			continue
+		}
+		t.groups = groups
+		kept = append(kept, t)
+	}
+	tabs = kept
 	for _, t := range tabs {
 		for i := range t.groups {
 			t.groups[i].demos = slices.DeleteFunc(t.groups[i].demos, func(d demo) bool { return omitted[d.name] })
