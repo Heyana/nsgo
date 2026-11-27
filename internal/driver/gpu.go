@@ -290,6 +290,7 @@ const (
 	GPUDim2D GPUTextureDimension = iota
 	GPUDimCube
 	GPUDim2DArray
+	GPUDim3D
 )
 
 // Canonical cubemap face layer indices (ArrayLayer 0..5), matching WebGPU, Metal, Direct3D, and OpenGL.
@@ -327,6 +328,30 @@ func GPUMipSize(width, height, mipLevel uint32) (uint32, uint32) {
 		h = 1
 	}
 	return w, h
+}
+
+// GPUMipLevels3D returns the number of mipmap levels in a full chain from width x height x depth down to 1x1x1.
+func GPUMipLevels3D(width, height, depth uint32) uint32 {
+	m := max(width, max(height, depth))
+	if m == 0 {
+		return 0
+	}
+	var levels uint32 = 1
+	for m > 1 {
+		m >>= 1
+		levels++
+	}
+	return levels
+}
+
+// GPUMipSize3D returns the dimensions of mipLevel for a 3D base texture of width x height x depth (clamped to a minimum of 1x1x1).
+func GPUMipSize3D(width, height, depth, mipLevel uint32) (uint32, uint32, uint32) {
+	w, h := GPUMipSize(width, height, mipLevel)
+	d := depth >> mipLevel
+	if d < 1 {
+		d = 1
+	}
+	return w, h, d
 }
 
 // GPUTextureUsage is a bitmask of permitted uses for a GPU texture.
@@ -650,6 +675,7 @@ type GPUViewConfig struct {
 // GPULimits reports device capability limits.
 type GPULimits struct {
 	MaxTextureDimension2D         uint32
+	MaxTextureDimension3D         uint32
 	MaxBufferSize                 uint64
 	MaxUniformBufferSize          uint64
 	MaxStorageBufferBindingSize   uint64
@@ -671,6 +697,7 @@ type GPULimits struct {
 func DefaultGPULimits() GPULimits {
 	return GPULimits{
 		MaxTextureDimension2D:         4096,
+		MaxTextureDimension3D:         2048,
 		MaxBufferSize:                 256 << 20,
 		MaxUniformBufferSize:          64 << 10,
 		MaxStorageBufferBindingSize:   128 << 20,
@@ -711,6 +738,8 @@ type GPUFeatures struct {
 	// ImportD3D11Shared and ImportDMABuf report support for GPUOpImportTexture of each GPUExternalTextureKind.
 	ImportD3D11Shared bool
 	ImportDMABuf      bool
+	// Texture3D reports support for GPUDim3D (volume) textures.
+	Texture3D bool
 }
 
 // SupportsImport reports whether f supports GPUOpImportTexture of kind.
@@ -740,6 +769,7 @@ func DefaultSoftwareGPUFeatures() GPUFeatures {
 		ExtendedFormats:        true,
 		StencilTest:            true,
 		MipmapGeneration:       true,
+		Texture3D:              true,
 	}
 }
 
@@ -829,6 +859,7 @@ type GPUTextureDesc struct {
 	Dimension   GPUTextureDimension
 	Width       uint32
 	Height      uint32
+	Depth       uint32
 	Layers      uint32
 	MipLevels   uint32
 	SampleCount int
@@ -1063,6 +1094,7 @@ type GPUTextureCopy struct {
 	ArrayLayer uint32
 	OriginX    uint32
 	OriginY    uint32
+	OriginZ    uint32
 }
 
 // GPUDataLayout describes linear pixel data layout in a Go byte slice or buffer.
@@ -1076,7 +1108,7 @@ type GPUDataLayout struct {
 type GPUTextureRegion struct {
 	MipLevel   uint32
 	ArrayLayer uint32
-	X, Y       uint32
+	X, Y, Z    uint32
 	Width      uint32
 	Height     uint32
 }

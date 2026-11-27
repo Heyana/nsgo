@@ -212,6 +212,11 @@ func (b *webgl2Backend) readLimits() driver.GPULimits {
 	if v := b.gl.Call("getParameter", int(glMaxTextureSize)); v.Type() == js.TypeNumber && v.Int() > 0 {
 		l.MaxTextureDimension2D = uint32(v.Int())
 	}
+	if v := b.gl.Call("getParameter", int(glMax3DTextureSize)); v.Type() == js.TypeNumber && v.Int() > 0 {
+		l.MaxTextureDimension3D = uint32(v.Int())
+	} else {
+		l.MaxTextureDimension3D = 256
+	}
 	if v := b.gl.Call("getParameter", int(glMaxUniformBlockSize)); v.Type() == js.TypeNumber && v.Float() > 0 {
 		l.MaxUniformBufferSize = uint64(v.Float())
 	}
@@ -231,6 +236,7 @@ func (b *webgl2Backend) features() driver.GPUFeatures {
 		MSAA4x:         true,
 		Depth32Float:   true,
 		Anisotropy:     b.anisoExt.Truthy(),
+		Texture3D:      true,
 	}
 }
 
@@ -355,15 +361,21 @@ func (b *webgl2Backend) execOp(op driver.GPUResourceOp) {
 		target := glTextureTarget(desc.Dimension)
 		glTex := gl.Call("createTexture")
 		gl.Call("bindTexture", int(target), glTex)
-		if desc.Dimension == driver.GPUDim2DArray {
+		switch desc.Dimension {
+		case driver.GPUDim2DArray:
 			gl.Call("texStorage3D", int(target), int(mips), int(info.InternalFormat), int(desc.Width), int(desc.Height), int(layers))
-		} else {
+		case driver.GPUDim3D:
+			gl.Call("texStorage3D", int(target), int(mips), int(info.InternalFormat), int(desc.Width), int(desc.Height), int(max(desc.Depth, 1)))
+		default:
 			gl.Call("texStorage2D", int(target), int(mips), int(info.InternalFormat), int(desc.Width), int(desc.Height))
 		}
 		gl.Call("texParameteri", int(target), int(glTextureMinFilter), int(glNearest))
 		gl.Call("texParameteri", int(target), int(glTextureMagFilter), int(glNearest))
 		gl.Call("texParameteri", int(target), int(glTextureWrapS), int(glClampToEdge))
 		gl.Call("texParameteri", int(target), int(glTextureWrapT), int(glClampToEdge))
+		if desc.Dimension == driver.GPUDim3D || desc.Dimension == driver.GPUDimCube {
+			gl.Call("texParameteri", int(target), int(glTextureWrapR), int(glClampToEdge))
+		}
 		gl.Call("bindTexture", int(target), js.Null())
 		b.textures[op.ID] = &gl2Texture{glTex: glTex, target: target, info: info, desc: desc}
 
@@ -428,6 +440,29 @@ func (b *webgl2Backend) execOp(op driver.GPUResourceOp) {
 				int(op.TextureDst.OriginX), int(op.TextureDst.OriginY), int(op.TextureDst.ArrayLayer),
 				int(w), int(h), 1,
 				int(tex.info.Format), int(tex.info.Type), arr)
+		case driver.GPUDim3D:
+			mipD := mipDim(max(tex.desc.Depth, 1), op.TextureDst.MipLevel)
+			if op.TextureDst.OriginZ < mipD {
+				sliceRows := op.DataLayout.RowsPerImage
+				if sliceRows == 0 {
+					sliceRows = h
+				}
+				sliceBytes := uint64(bpr) * uint64(max(sliceRows, 1))
+				minSlice := uint64(h-1)*uint64(bpr) + uint64(w*bpp)
+				if sliceBytes > 0 && uint64(len(src)) >= minSlice {
+					d := min(mipD-op.TextureDst.OriginZ, uint32((uint64(len(src))-minSlice)/sliceBytes)+1)
+					if sliceRows > h {
+						gl.Call("pixelStorei", int(glUnpackImageHeight), int(sliceRows))
+					}
+					gl.Call("texSubImage3D", int(glTexture3D), int(op.TextureDst.MipLevel),
+						int(op.TextureDst.OriginX), int(op.TextureDst.OriginY), int(op.TextureDst.OriginZ),
+						int(w), int(h), int(d),
+						int(tex.info.Format), int(tex.info.Type), arr)
+					if sliceRows > h {
+						gl.Call("pixelStorei", int(glUnpackImageHeight), 0)
+					}
+				}
+			}
 		default:
 			gl.Call("texSubImage2D", int(glTexture2D), int(op.TextureDst.MipLevel),
 				int(op.TextureDst.OriginX), int(op.TextureDst.OriginY), int(w), int(h),
@@ -629,12 +664,24 @@ func (b *webgl2Backend) execCopy(cp driver.GPUCopyOp) {
 		if cp.SrcLayout.BytesPerRow > 0 {
 			gl.Call("pixelStorei", int(glUnpackRowLength), int(cp.SrcLayout.BytesPerRow/bpp))
 		}
-		if dst.desc.Dimension == driver.GPUDim2DArray {
+		switch dst.desc.Dimension {
+		case driver.GPUDim2DArray:
 			gl.Call("texSubImage3D", int(glTexture2DArray), int(cp.DstTex.MipLevel),
 				int(cp.DstTex.OriginX), int(cp.DstTex.OriginY), int(cp.DstTex.ArrayLayer),
 				int(cp.Width), int(cp.Height), int(max(cp.Layers, 1)),
 				int(dst.info.Format), int(dst.info.Type), int(cp.SrcLayout.Offset))
-		} else {
+		case driver.GPUDim3D:
+			if cp.SrcLayout.RowsPerImage > 0 {
+				gl.Call("pixelStorei", int(glUnpackImageHeight), int(cp.SrcLayout.RowsPerImage))
+			}
+			gl.Call("texSubImage3D", int(glTexture3D), int(cp.DstTex.MipLevel),
+				int(cp.DstTex.OriginX), int(cp.DstTex.OriginY), int(cp.DstTex.OriginZ),
+				int(cp.Width), int(cp.Height), int(max(cp.Layers, 1)),
+				int(dst.info.Format), int(dst.info.Type), int(cp.SrcLayout.Offset))
+			if cp.SrcLayout.RowsPerImage > 0 {
+				gl.Call("pixelStorei", int(glUnpackImageHeight), 0)
+			}
+		default:
 			faceTarget := dst.target
 			if dst.desc.Dimension == driver.GPUDimCube {
 				faceTarget = glTextureCubeMapPosX + cp.DstTex.ArrayLayer
@@ -656,13 +703,24 @@ func (b *webgl2Backend) execCopy(cp driver.GPUCopyOp) {
 		rfbo := b.ensureReadFBO()
 		dfbo := b.ensureDrawFBO()
 		gl.Call("bindFramebuffer", int(glReadFramebuffer), rfbo)
-		b.attachTextureToFBO(glReadFramebuffer, glColorAttachment0, src, cp.SrcTex.MipLevel, cp.SrcTex.ArrayLayer)
 		gl.Call("bindFramebuffer", int(glDrawFramebuffer), dfbo)
-		b.attachTextureToFBO(glDrawFramebuffer, glColorAttachment0, dst, cp.DstTex.MipLevel, cp.DstTex.ArrayLayer)
-		gl.Call("blitFramebuffer",
-			int(cp.SrcTex.OriginX), int(cp.SrcTex.OriginY), int(cp.SrcTex.OriginX+cp.Width), int(cp.SrcTex.OriginY+cp.Height),
-			int(cp.DstTex.OriginX), int(cp.DstTex.OriginY), int(cp.DstTex.OriginX+cp.Width), int(cp.DstTex.OriginY+cp.Height),
-			int(glColorBufferBit), int(glNearest))
+		layers := max(cp.Layers, 1)
+		for l := uint32(0); l < layers; l++ {
+			srcLayer := cp.SrcTex.ArrayLayer + l
+			if src.desc.Dimension == driver.GPUDim3D {
+				srcLayer = cp.SrcTex.OriginZ + l
+			}
+			dstLayer := cp.DstTex.ArrayLayer + l
+			if dst.desc.Dimension == driver.GPUDim3D {
+				dstLayer = cp.DstTex.OriginZ + l
+			}
+			b.attachTextureToFBO(glReadFramebuffer, glColorAttachment0, src, cp.SrcTex.MipLevel, srcLayer)
+			b.attachTextureToFBO(glDrawFramebuffer, glColorAttachment0, dst, cp.DstTex.MipLevel, dstLayer)
+			gl.Call("blitFramebuffer",
+				int(cp.SrcTex.OriginX), int(cp.SrcTex.OriginY), int(cp.SrcTex.OriginX+cp.Width), int(cp.SrcTex.OriginY+cp.Height),
+				int(cp.DstTex.OriginX), int(cp.DstTex.OriginY), int(cp.DstTex.OriginX+cp.Width), int(cp.DstTex.OriginY+cp.Height),
+				int(glColorBufferBit), int(glNearest))
+		}
 		gl.Call("bindFramebuffer", int(glReadFramebuffer), js.Null())
 		gl.Call("bindFramebuffer", int(glDrawFramebuffer), js.Null())
 	}
@@ -681,7 +739,7 @@ func (b *webgl2Backend) attachTextureToFBO(fboTarget, attachment uint32, tex *gl
 	switch tex.desc.Dimension {
 	case driver.GPUDimCube:
 		gl.Call("framebufferTexture2D", int(fboTarget), int(attachment), int(glTextureCubeMapPosX+layer), tex.glTex, int(mip))
-	case driver.GPUDim2DArray:
+	case driver.GPUDim2DArray, driver.GPUDim3D:
 		gl.Call("framebufferTextureLayer", int(fboTarget), int(attachment), tex.glTex, int(mip), int(layer))
 	default:
 		gl.Call("framebufferTexture2D", int(fboTarget), int(attachment), int(glTexture2D), tex.glTex, int(mip))
@@ -1136,7 +1194,11 @@ func (b *webgl2Backend) execReadTexture(op driver.GPUResourceOp) {
 
 	fbo := b.ensureReadFBO()
 	gl.Call("bindFramebuffer", int(glFramebuffer), fbo)
-	b.attachTextureToFBO(glFramebuffer, glColorAttachment0, tex, op.ReadbackRegion.MipLevel, op.ReadbackRegion.ArrayLayer)
+	layer := op.ReadbackRegion.ArrayLayer
+	if tex.desc.Dimension == driver.GPUDim3D {
+		layer = op.ReadbackRegion.Z
+	}
+	b.attachTextureToFBO(glFramebuffer, glColorAttachment0, tex, op.ReadbackRegion.MipLevel, layer)
 
 	isRenderTarget := tex.desc.Usage&driver.GPUTextureRenderAttachment != 0
 	glY := y

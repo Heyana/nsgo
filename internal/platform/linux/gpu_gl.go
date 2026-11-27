@@ -44,6 +44,7 @@ const (
 
 	// Textures and pixel storage.
 	gpuGLTexture2D            = 0x0DE1
+	gpuGLTexture3D            = 0x806F
 	gpuGLTextureCubeMap       = 0x8513
 	gpuGLTextureCubeMapPosX   = 0x8515
 	gpuGLTexture2DArray       = 0x8C1A
@@ -52,6 +53,7 @@ const (
 	gpuGLPackAlignment        = 0x0D05
 	gpuGLUnpackRowLength      = 0x0CF2
 	gpuGLUnpackAlignment      = 0x0CF5
+	gpuGLUnpackImageHeight    = 0x806E
 	gpuGLTextureBaseLevel     = 0x813C
 	gpuGLTextureMaxLevel      = 0x813D
 	gpuGLTextureMagFilter     = 0x2800
@@ -153,6 +155,7 @@ const (
 
 	// Queries.
 	gpuGLMaxTextureSize           = 0x0D33
+	gpuGLMax3DTextureSize         = 0x8073
 	gpuGLMaxVertexAttribs         = 0x8869
 	gpuGLMaxUniformBlockSize      = 0x8A30
 	gpuGLUniformBufferOffsetAlign = 0x8A34
@@ -281,6 +284,7 @@ type glGPUTexture struct {
 	format    driver.GPUTextureFormat
 	width     uint32
 	height    uint32
+	depth     uint32
 	layers    uint32
 	mipLevels uint32
 	// rendered records whether the texture's current contents came from an FBO render pass (OpenGL Y-up) rather than a top-row-first WriteTexture upload.
@@ -618,6 +622,8 @@ func glTextureTarget(dim driver.GPUTextureDimension) uint32 {
 		return gpuGLTextureCubeMap
 	case driver.GPUDim2DArray:
 		return gpuGLTexture2DArray
+	case driver.GPUDim3D:
+		return gpuGLTexture3D
 	default:
 		return gpuGLTexture2D
 	}
@@ -694,6 +700,7 @@ func (c *glGPUContext) createTexture(id driver.GPUID, desc *driver.GPUTextureDes
 			layers = 1
 		}
 	}
+	depth := max(desc.Depth, 1)
 	c.gl.BindTexture(target, glID)
 	c.gl.TexParameteri(target, gpuGLTextureBaseLevel, 0)
 	c.gl.TexParameteri(target, gpuGLTextureMaxLevel, int32(mipLevels-1))
@@ -701,7 +708,7 @@ func (c *glGPUContext) createTexture(id driver.GPUID, desc *driver.GPUTextureDes
 	c.gl.TexParameteri(target, gpuGLTextureMagFilter, gpuGLNearest)
 	c.gl.TexParameteri(target, gpuGLTextureWrapS, gpuGLClampToEdge)
 	c.gl.TexParameteri(target, gpuGLTextureWrapT, gpuGLClampToEdge)
-	if desc.Dimension == driver.GPUDimCube {
+	if desc.Dimension == driver.GPUDimCube || desc.Dimension == driver.GPUDim3D {
 		c.gl.TexParameteri(target, gpuGLTextureWrapR, gpuGLClampToEdge)
 	}
 	for level := uint32(0); level < mipLevels; level++ {
@@ -714,6 +721,9 @@ func (c *glGPUContext) createTexture(id driver.GPUID, desc *driver.GPUTextureDes
 			}
 		case driver.GPUDim2DArray:
 			c.gl.TexImage3D(gpuGLTexture2DArray, int32(level), internalFmt, int32(w), int32(h), int32(layers), 0, pixelFmt, pixelType, nil)
+		case driver.GPUDim3D:
+			d := max(depth>>level, 1)
+			c.gl.TexImage3D(gpuGLTexture3D, int32(level), internalFmt, int32(w), int32(h), int32(d), 0, pixelFmt, pixelType, nil)
 		default:
 			c.gl.TexImage2D(gpuGLTexture2D, int32(level), internalFmt, int32(w), int32(h), 0, pixelFmt, pixelType, nil)
 		}
@@ -726,6 +736,7 @@ func (c *glGPUContext) createTexture(id driver.GPUID, desc *driver.GPUTextureDes
 		format:    desc.Format,
 		width:     desc.Width,
 		height:    desc.Height,
+		depth:     depth,
 		layers:    layers,
 		mipLevels: mipLevels,
 	}
@@ -771,6 +782,47 @@ func prepareTextureUpload(data []byte, format driver.GPUTextureFormat, width, he
 	return src, 0
 }
 
+func prepareTextureUpload3D(src []byte, format driver.GPUTextureFormat, width, height, depth, rowStride, sliceRows uint32) ([]byte, int32, int32) {
+	bpp := format.BytesPerPixel()
+	if bpp == 0 || width == 0 || height == 0 || depth == 0 {
+		return src, 0, 0
+	}
+	tightRow := width * bpp
+	needsSwizzle := format == driver.GPUFormatBGRA8Unorm
+	if needsSwizzle || (rowStride != tightRow && rowStride%bpp != 0) {
+		sliceStride := int(rowStride * sliceRows)
+		tightSlice := int(tightRow * height)
+		out := make([]byte, tightSlice*int(depth))
+		for z := uint32(0); z < depth; z++ {
+			zSrc := int(z) * sliceStride
+			zDst := int(z) * tightSlice
+			for y := uint32(0); y < height; y++ {
+				sOff := zSrc + int(y*rowStride)
+				if sOff >= len(src) {
+					break
+				}
+				n := min(int(tightRow), len(src)-sOff)
+				dOff := zDst + int(y*tightRow)
+				copy(out[dOff:dOff+n], src[sOff:sOff+n])
+				if needsSwizzle {
+					for x := 0; x+3 < n; x += 4 {
+						out[dOff+x], out[dOff+x+2] = out[dOff+x+2], out[dOff+x]
+					}
+				}
+			}
+		}
+		return out, 0, 0
+	}
+	var rowLen, imgHeight int32
+	if rowStride != tightRow {
+		rowLen = int32(rowStride / bpp)
+	}
+	if sliceRows != height {
+		imgHeight = int32(sliceRows)
+	}
+	return src, rowLen, imgHeight
+}
+
 func (c *glGPUContext) writeTexture(id driver.GPUID, dst driver.GPUTextureCopy, data []byte, layout driver.GPUDataLayout) *glGPUError {
 	t, ok := c.textures[id]
 	if !ok {
@@ -790,8 +842,59 @@ func (c *glGPUContext) writeTexture(id driver.GPUID, dst driver.GPUTextureCopy, 
 	}
 	uploadW := mipW - dst.OriginX
 	uploadH := mipH - dst.OriginY
+	if bpp := t.format.BytesPerPixel(); bpp > 0 && layout.BytesPerRow >= bpp {
+		if w := layout.BytesPerRow / bpp; w < uploadW {
+			uploadW = w
+		}
+	}
 	if layout.RowsPerImage > 0 && layout.RowsPerImage < uploadH {
 		uploadH = layout.RowsPerImage
+	}
+	if t.dim == driver.GPUDim3D {
+		mipD := max(max(t.depth, 1)>>dst.MipLevel, 1)
+		if dst.OriginZ >= mipD || layout.Offset >= uint64(len(data)) {
+			return nil
+		}
+		bpp := t.format.BytesPerPixel()
+		if bpp == 0 {
+			return nil
+		}
+		src := data[layout.Offset:]
+		rowStride := layout.BytesPerRow
+		if rowStride == 0 {
+			rowStride = uploadW * bpp
+		}
+		sliceRows := uploadH
+		if layout.RowsPerImage > 0 {
+			sliceRows = layout.RowsPerImage
+		}
+		sliceStride := uint64(rowStride) * uint64(max(sliceRows, 1))
+		minSlice := uint64(uploadH-1)*uint64(rowStride) + uint64(uploadW*bpp)
+		if sliceStride == 0 || uint64(len(src)) < minSlice {
+			return nil
+		}
+		uploadD := min(mipD-dst.OriginZ, uint32((uint64(len(src))-minSlice)/sliceStride)+1)
+		if uploadD == 0 {
+			return nil
+		}
+		pixels, rowLen, imgHeight := prepareTextureUpload3D(src, t.format, uploadW, uploadH, uploadD, rowStride, sliceRows)
+		if len(pixels) == 0 {
+			return nil
+		}
+		c.gl.BindTexture(t.target, t.glID)
+		c.gl.PixelStorei(gpuGLUnpackAlignment, 1)
+		c.gl.PixelStorei(gpuGLUnpackRowLength, rowLen)
+		c.gl.PixelStorei(gpuGLUnpackImageHeight, imgHeight)
+		c.gl.TexSubImage3D(gpuGLTexture3D, int32(dst.MipLevel), int32(dst.OriginX), int32(dst.OriginY), int32(dst.OriginZ), int32(uploadW), int32(uploadH), int32(uploadD), pixelFmt, pixelType, pixels)
+		if rowLen != 0 {
+			c.gl.PixelStorei(gpuGLUnpackRowLength, 0)
+		}
+		if imgHeight != 0 {
+			c.gl.PixelStorei(gpuGLUnpackImageHeight, 0)
+		}
+		c.gl.BindTexture(t.target, 0)
+		t.rendered = false
+		return nil
 	}
 	pixels, rowLen := prepareTextureUpload(data, t.format, uploadW, uploadH, layout)
 	if len(pixels) == 0 {
@@ -1052,7 +1155,7 @@ func (c *glGPUContext) attachTextureToFBO(target, attachment uint32, t *glGPUTex
 	switch t.dim {
 	case driver.GPUDimCube:
 		c.gl.FramebufferTexture2D(target, attachment, gpuGLTextureCubeMapPosX+(arrayLayer%6), t.glID, int32(mipLevel))
-	case driver.GPUDim2DArray:
+	case driver.GPUDim2DArray, driver.GPUDim3D:
 		c.gl.FramebufferTextureLayer(target, attachment, t.glID, int32(mipLevel), int32(arrayLayer))
 	default:
 		c.gl.FramebufferTexture2D(target, attachment, gpuGLTexture2D, t.glID, int32(mipLevel))
@@ -1101,6 +1204,15 @@ func (c *glGPUContext) execCopy(op driver.GPUCopyOp, defaultFBO uint32) *glGPUEr
 			c.gl.TexSubImage2DOffset(gpuGLTextureCubeMapPosX+face, int32(op.DstTex.MipLevel), int32(op.DstTex.OriginX), int32(op.DstTex.OriginY), int32(op.Width), int32(op.Height), pixelFmt, pixelType, uintptr(op.SrcLayout.Offset))
 		case driver.GPUDim2DArray:
 			c.gl.TexSubImage3DOffset(gpuGLTexture2DArray, int32(op.DstTex.MipLevel), int32(op.DstTex.OriginX), int32(op.DstTex.OriginY), int32(op.DstTex.ArrayLayer), int32(op.Width), int32(op.Height), int32(max(op.Layers, 1)), pixelFmt, pixelType, uintptr(op.SrcLayout.Offset))
+		case driver.GPUDim3D:
+			imgH := int32(op.SrcLayout.RowsPerImage)
+			if imgH != 0 {
+				c.gl.PixelStorei(gpuGLUnpackImageHeight, imgH)
+			}
+			c.gl.TexSubImage3DOffset(gpuGLTexture3D, int32(op.DstTex.MipLevel), int32(op.DstTex.OriginX), int32(op.DstTex.OriginY), int32(op.DstTex.OriginZ), int32(op.Width), int32(op.Height), int32(max(op.Layers, 1)), pixelFmt, pixelType, uintptr(op.SrcLayout.Offset))
+			if imgH != 0 {
+				c.gl.PixelStorei(gpuGLUnpackImageHeight, 0)
+			}
 		default:
 			c.gl.TexSubImage2DOffset(gpuGLTexture2D, int32(op.DstTex.MipLevel), int32(op.DstTex.OriginX), int32(op.DstTex.OriginY), int32(op.Width), int32(op.Height), pixelFmt, pixelType, uintptr(op.SrcLayout.Offset))
 		}
@@ -1123,8 +1235,16 @@ func (c *glGPUContext) execCopy(op driver.GPUCopyOp, defaultFBO uint32) *glGPUEr
 		c.gl.BindFramebuffer(gpuGLDrawFramebuffer, dFBO)
 		layers := max(op.Layers, 1)
 		for l := uint32(0); l < layers; l++ {
-			c.attachTextureToFBO(gpuGLReadFramebuffer, gpuGLColorAttachment0, src, op.SrcTex.MipLevel, op.SrcTex.ArrayLayer+l)
-			c.attachTextureToFBO(gpuGLDrawFramebuffer, gpuGLColorAttachment0, dst, op.DstTex.MipLevel, op.DstTex.ArrayLayer+l)
+			srcLayer := op.SrcTex.ArrayLayer + l
+			if src.dim == driver.GPUDim3D {
+				srcLayer = op.SrcTex.OriginZ + l
+			}
+			dstLayer := op.DstTex.ArrayLayer + l
+			if dst.dim == driver.GPUDim3D {
+				dstLayer = op.DstTex.OriginZ + l
+			}
+			c.attachTextureToFBO(gpuGLReadFramebuffer, gpuGLColorAttachment0, src, op.SrcTex.MipLevel, srcLayer)
+			c.attachTextureToFBO(gpuGLDrawFramebuffer, gpuGLColorAttachment0, dst, op.DstTex.MipLevel, dstLayer)
 			c.gl.BlitFramebuffer(
 				int32(op.SrcTex.OriginX), int32(op.SrcTex.OriginY), int32(op.SrcTex.OriginX+op.Width), int32(op.SrcTex.OriginY+op.Height),
 				int32(op.DstTex.OriginX), int32(op.DstTex.OriginY), int32(op.DstTex.OriginX+op.Width), int32(op.DstTex.OriginY+op.Height),
@@ -1703,7 +1823,11 @@ func (c *glGPUContext) execReadback(op driver.GPUResourceOp, defaultFBO uint32, 
 		targetH = max(t.height>>reg.MipLevel, 1)
 		rFBO := c.ensureFBO(&c.readFBO)
 		c.gl.BindFramebuffer(gpuGLReadFramebuffer, rFBO)
-		c.attachTextureToFBO(gpuGLReadFramebuffer, gpuGLColorAttachment0, t, reg.MipLevel, reg.ArrayLayer)
+		layer := reg.ArrayLayer
+		if t.dim == driver.GPUDim3D {
+			layer = reg.Z
+		}
+		c.attachTextureToFBO(gpuGLReadFramebuffer, gpuGLColorAttachment0, t, reg.MipLevel, layer)
 		c.gl.ReadBuffer(gpuGLColorAttachment0)
 		flipY = t.rendered
 	}

@@ -189,7 +189,8 @@ func (l *GPULayer) Resize(w, h, scale float64) {
 		ev.SurfaceColorSpace = r.colorSpace
 		ev.Limits = driver.DefaultGPULimits()
 		ev.Limits.MaxTextureDimension2D = 8192
-		ev.Features = driver.GPUFeatures{StorageBuffers: true, MSAA4x: true, Depth32Float: true, Anisotropy: true}
+		ev.Limits.MaxTextureDimension3D = 2048
+		ev.Features = driver.GPUFeatures{StorageBuffers: true, MSAA4x: true, Depth32Float: true, Anisotropy: true, Texture3D: true}
 	}
 	r.emit(ev)
 }
@@ -311,6 +312,7 @@ const (
 	mtlTextureType2DArray       = 3
 	mtlTextureType2DMultisample = 4
 	mtlTextureTypeCube          = 5
+	mtlTextureType3D            = 7
 
 	mtlTextureUsageShaderRead   = 1
 	mtlTextureUsageRenderTarget = 4
@@ -375,6 +377,9 @@ func gpuNewTexture(desc driver.GPUTextureDesc) objc.ID {
 		kind = mtlTextureTypeCube
 	case desc.Dimension == driver.GPUDim2DArray:
 		kind, layers = mtlTextureType2DArray, uint(max(desc.Layers, 1))
+	case desc.Dimension == driver.GPUDim3D:
+		kind = mtlTextureType3D
+		d.Send(sel("setDepth:"), uint(max(desc.Depth, 1)))
 	}
 	d.Send(sel("setTextureType:"), kind)
 	d.Send(sel("setPixelFormat:"), gpuPixelFormat(desc.Format))
@@ -832,6 +837,38 @@ func (r *gpuRender) writeTexture(f *frameRun, op *driver.GPUResourceOp) {
 	if width == 0 || uint64(width*bpp) > uint64(len(data)) {
 		return
 	}
+	if t.desc.Dimension == driver.GPUDim3D {
+		_, _, md := driver.GPUMipSize3D(t.desc.Width, t.desc.Height, max(t.desc.Depth, 1), op.TextureDst.MipLevel)
+		oz := op.TextureDst.OriginZ
+		if oz >= md {
+			return
+		}
+		sliceRows := h - oy
+		if op.DataLayout.RowsPerImage > 0 {
+			sliceRows = op.DataLayout.RowsPerImage
+		}
+		rows := min(h-oy, sliceRows)
+		if rows == 0 {
+			return
+		}
+		minSlice := uint64(rows-1)*uint64(stride) + uint64(width*bpp)
+		if uint64(len(data)) < minSlice {
+			return
+		}
+		sliceBytes := uint64(stride) * uint64(max(sliceRows, 1))
+		depth := min(md-oz, uint32((uint64(len(data))-minSlice)/sliceBytes)+1)
+		if depth == 0 {
+			return
+		}
+		s := f.staging(data)
+		if s == 0 {
+			return
+		}
+		f.blitter().Send(sel("copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"),
+			s, uint(0), uint(stride), uint(sliceBytes), gpuOrigin{X: uint(width), Y: uint(rows), Z: uint(depth)},
+			t.object, uint(0), uint(op.TextureDst.MipLevel), gpuOrigin{X: uint(ox), Y: uint(oy), Z: uint(oz)})
+		return
+	}
 	// The rows the data holds whole, up to the texture's edge.
 	rows := min(uint32((uint64(len(data))-uint64(width*bpp))/uint64(stride))+1, h-oy)
 	if op.DataLayout.RowsPerImage > 0 {
@@ -880,6 +917,15 @@ func (r *gpuRender) readTexture(f *frameRun, op *driver.GPUResourceOp) {
 		rb.failure = "the readback region is out of bounds"
 		return
 	}
+	slice, oz := uint(reg.ArrayLayer), uint(0)
+	if t.desc.Dimension == driver.GPUDim3D {
+		_, _, md := driver.GPUMipSize3D(t.desc.Width, t.desc.Height, max(t.desc.Depth, 1), reg.MipLevel)
+		if reg.Z >= md {
+			rb.failure = "the readback region is out of bounds"
+			return
+		}
+		slice, oz = 0, uint(reg.Z)
+	}
 	rb.row, rb.rows = uint(reg.Width)*4, uint(reg.Height)
 	rb.stride = (rb.row + mtlReadbackAlignment - 1) &^ (mtlReadbackAlignment - 1)
 	rb.buffer = mtlDevice.Send(sel("newBufferWithLength:options:"), rb.stride*rb.rows, uint(0))
@@ -888,7 +934,7 @@ func (r *gpuRender) readTexture(f *frameRun, op *driver.GPUResourceOp) {
 		return
 	}
 	f.blitter().Send(sel("copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:destinationBytesPerRow:destinationBytesPerImage:"),
-		t.object, uint(reg.ArrayLayer), uint(reg.MipLevel), gpuOrigin{X: uint(reg.X), Y: uint(reg.Y)},
+		t.object, slice, uint(reg.MipLevel), gpuOrigin{X: uint(reg.X), Y: uint(reg.Y), Z: oz},
 		gpuOrigin{X: uint(reg.Width), Y: uint(reg.Height), Z: 1}, rb.buffer, uint(0), rb.stride, rb.stride*rb.rows)
 }
 
@@ -912,6 +958,12 @@ func (r *gpuRender) copyOp(f *frameRun, cp *driver.GPUCopyOp) {
 			stride = uint(cp.Width * dst.desc.Format.BytesPerPixel())
 		}
 		image := stride * uint(max(cp.SrcLayout.RowsPerImage, cp.Height))
+		if dst.desc.Dimension == driver.GPUDim3D {
+			f.blitter().Send(sel("copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"),
+				src, uint(cp.SrcLayout.Offset), stride, image, gpuOrigin{X: uint(cp.Width), Y: uint(cp.Height), Z: uint(max(cp.Layers, 1))},
+				dst.object, uint(0), uint(cp.DstTex.MipLevel), gpuOrigin{X: uint(cp.DstTex.OriginX), Y: uint(cp.DstTex.OriginY), Z: uint(cp.DstTex.OriginZ)})
+			return
+		}
 		for l := range uint(max(cp.Layers, 1)) {
 			f.blitter().Send(sel("copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"),
 				src, uint(cp.SrcLayout.Offset)+l*image, stride, image, gpuOrigin{X: uint(cp.Width), Y: uint(cp.Height), Z: 1},
@@ -923,11 +975,26 @@ func (r *gpuRender) copyOp(f *frameRun, cp *driver.GPUCopyOp) {
 			r.fail(driver.GPUErrorInvalidDescriptor, "a texture copy names a texture that does not exist")
 			return
 		}
-		for l := range uint(max(cp.Layers, 1)) {
+		if src.desc.Dimension == driver.GPUDim3D && dst.desc.Dimension == driver.GPUDim3D {
 			f.blitter().Send(sel("copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"),
-				src.object, uint(cp.SrcTex.ArrayLayer)+l, uint(cp.SrcTex.MipLevel), gpuOrigin{X: uint(cp.SrcTex.OriginX), Y: uint(cp.SrcTex.OriginY)},
+				src.object, uint(0), uint(cp.SrcTex.MipLevel), gpuOrigin{X: uint(cp.SrcTex.OriginX), Y: uint(cp.SrcTex.OriginY), Z: uint(cp.SrcTex.OriginZ)},
+				gpuOrigin{X: uint(cp.Width), Y: uint(cp.Height), Z: uint(max(cp.Layers, 1))},
+				dst.object, uint(0), uint(cp.DstTex.MipLevel), gpuOrigin{X: uint(cp.DstTex.OriginX), Y: uint(cp.DstTex.OriginY), Z: uint(cp.DstTex.OriginZ)})
+			return
+		}
+		for l := range uint(max(cp.Layers, 1)) {
+			srcSlice, srcZ := uint(cp.SrcTex.ArrayLayer)+l, uint(0)
+			if src.desc.Dimension == driver.GPUDim3D {
+				srcSlice, srcZ = 0, uint(cp.SrcTex.OriginZ)+l
+			}
+			dstSlice, dstZ := uint(cp.DstTex.ArrayLayer)+l, uint(0)
+			if dst.desc.Dimension == driver.GPUDim3D {
+				dstSlice, dstZ = 0, uint(cp.DstTex.OriginZ)+l
+			}
+			f.blitter().Send(sel("copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"),
+				src.object, srcSlice, uint(cp.SrcTex.MipLevel), gpuOrigin{X: uint(cp.SrcTex.OriginX), Y: uint(cp.SrcTex.OriginY), Z: srcZ},
 				gpuOrigin{X: uint(cp.Width), Y: uint(cp.Height), Z: 1},
-				dst.object, uint(cp.DstTex.ArrayLayer)+l, uint(cp.DstTex.MipLevel), gpuOrigin{X: uint(cp.DstTex.OriginX), Y: uint(cp.DstTex.OriginY)})
+				dst.object, dstSlice, uint(cp.DstTex.MipLevel), gpuOrigin{X: uint(cp.DstTex.OriginX), Y: uint(cp.DstTex.OriginY), Z: dstZ})
 		}
 	}
 }
@@ -996,7 +1063,11 @@ func (r *gpuRender) pass(f *frameRun, p *driver.GPUPass) {
 		}
 		a.Send(sel("setTexture:"), target.object)
 		a.Send(sel("setLevel:"), uint(ca.MipLevel))
-		a.Send(sel("setSlice:"), uint(ca.ArrayLayer))
+		if target.desc.Dimension == driver.GPUDim3D {
+			a.Send(sel("setDepthPlane:"), uint(ca.ArrayLayer))
+		} else {
+			a.Send(sel("setSlice:"), uint(ca.ArrayLayer))
+		}
 		a.Send(sel("setLoadAction:"), gpuLoad(ca.LoadOp, fresh))
 		a.Send(sel("setStoreAction:"), gpuStore(ca.StoreOp, resolve != nil))
 		if resolve != nil {

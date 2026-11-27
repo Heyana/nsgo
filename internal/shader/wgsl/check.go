@@ -618,6 +618,11 @@ func (c *checker) resolveType(t *typeExpr) ty {
 			fail(t.pos, "a shader takes no %s", t.name)
 		}
 		return ty{k: kTexture2D}
+	case "texture_3d":
+		if !c.pipeline {
+			fail(t.pos, "a shader takes no %s", t.name)
+		}
+		return ty{k: kTexture3D}
 	case "texture_cube":
 		if !c.pipeline {
 			fail(t.pos, "a shader takes no %s", t.name)

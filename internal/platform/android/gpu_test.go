@@ -672,21 +672,22 @@ func TestGPUEventDecoding(t *testing.T) {
 	// 1. DeviceReady
 	{
 		var w writer
-		w.u32(1)                                 // surface
-		w.u32(7)                                 // viewID
-		w.byte(byte(driver.GPUEventDeviceReady)) // kind
-		w.u32(2)                                 // generation
-		w.u32(1080)                              // width
-		w.u32(2400)                              // height
-		w.byte(byte(driver.GPUFormatRGBA8Unorm)) // surface format
-		w.u32(8192)                              // MaxTextureDimension2D
-		w.u64(256 << 20)                         // MaxBufferSize
-		w.u64(65536)                             // MaxUniformBufferSize
-		w.u32(4)                                 // MaxBindGroups
-		w.u32(8)                                 // MaxVertexBuffers
-		w.u32(16)                                // MaxVertexAttributes
-		w.u32(256)                               // MinUniformBufferAlignment
-		w.flags(false, false, true, true, true)  // MSAA4x, Depth32Float, Anisotropy
+		w.u32(1)                                      // surface
+		w.u32(7)                                      // viewID
+		w.byte(byte(driver.GPUEventDeviceReady))      // kind
+		w.u32(2)                                      // generation
+		w.u32(1080)                                   // width
+		w.u32(2400)                                   // height
+		w.byte(byte(driver.GPUFormatRGBA8Unorm))      // surface format
+		w.u32(8192)                                   // MaxTextureDimension2D
+		w.u64(256 << 20)                              // MaxBufferSize
+		w.u64(65536)                                  // MaxUniformBufferSize
+		w.u32(4)                                      // MaxBindGroups
+		w.u32(8)                                      // MaxVertexBuffers
+		w.u32(16)                                     // MaxVertexAttributes
+		w.u32(256)                                    // MinUniformBufferAlignment
+		w.flags(false, false, true, true, true, true) // MSAA4x, Depth32Float, Anisotropy, Texture3D
+		w.u32(2048)                                   // MaxTextureDimension3D
 		surf, ev := readGPUEvent(&reader{buf: w.buf})
 		ge, ok := ev.Data.(*driver.GPUEvent)
 		if !ok || surf != 1 || ev.Kind != driver.EventGPU || ev.ID != 7 {
@@ -694,8 +695,9 @@ func TestGPUEventDecoding(t *testing.T) {
 		}
 		if ge.Kind != driver.GPUEventDeviceReady || ge.Generation != 2 || ge.Width != 1080 || ge.Height != 2400 ||
 			ge.SurfaceFormat != driver.GPUFormatRGBA8Unorm || ge.Limits.MaxTextureDimension2D != 8192 ||
+			ge.Limits.MaxTextureDimension3D != 2048 ||
 			ge.Limits.MaxUniformBufferSize != 65536 || ge.Limits.MinUniformBufferAlignment != 256 ||
-			ge.Features.StorageBuffers || ge.Features.Compute || !ge.Features.MSAA4x || !ge.Features.Depth32Float || !ge.Features.Anisotropy {
+			ge.Features.StorageBuffers || ge.Features.Compute || !ge.Features.MSAA4x || !ge.Features.Depth32Float || !ge.Features.Anisotropy || !ge.Features.Texture3D {
 			t.Fatalf("DeviceReady payload mismatch: %+v", ge)
 		}
 	}
@@ -832,7 +834,7 @@ func TestJavaGPUConstantsMatchDriver(t *testing.T) {
 		"FORMAT_RG8_UNORM": int(driver.GPUFormatRG8Unorm), "FORMAT_R8_UNORM": int(driver.GPUFormatR8Unorm),
 		"FORMAT_RGBA16_FLOAT": int(driver.GPUFormatRGBA16Float), "FORMAT_DEPTH24_PLUS": int(driver.GPUFormatDepth24Plus),
 		"FORMAT_DEPTH24_PLUS_STENCIL8": int(driver.GPUFormatDepth24PlusStencil8), "FORMAT_DEPTH32_FLOAT": int(driver.GPUFormatDepth32Float),
-		"DIM_2D": int(driver.GPUDim2D), "DIM_CUBE": int(driver.GPUDimCube), "DIM_2D_ARRAY": int(driver.GPUDim2DArray),
+		"DIM_2D": int(driver.GPUDim2D), "DIM_CUBE": int(driver.GPUDimCube), "DIM_2D_ARRAY": int(driver.GPUDim2DArray), "DIM_3D": int(driver.GPUDim3D),
 		"BUF_VERTEX": int(driver.GPUBufferVertex), "BUF_INDEX": int(driver.GPUBufferIndex),
 		"BUF_UNIFORM": int(driver.GPUBufferUniform), "BUF_COPY_DST": int(driver.GPUBufferCopyDst),
 		"FILTER_NEAREST": int(driver.GPUFilterNearest), "FILTER_LINEAR": int(driver.GPUFilterLinear),

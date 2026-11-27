@@ -182,6 +182,15 @@ func TestWebGL2DescriptorMappingsAndPixelHelpers(t *testing.T) {
 	if got := glTextureTarget(driver.GPUDim2DArray); got != glTexture2DArray {
 		t.Errorf("glTextureTarget(2DArray) = 0x%x", got)
 	}
+	if got := glTextureTarget(driver.GPUDim3D); got != glTexture3D {
+		t.Errorf("glTextureTarget(3D) = 0x%x, want 0x%x", got, glTexture3D)
+	}
+	if got := webgpuTextureDimension(driver.GPUDim3D); got != "3d" {
+		t.Errorf("webgpuTextureDimension(3D) = %q, want 3d", got)
+	}
+	if got := webgpuTextureViewDimension(driver.GPUDim3D); got != "3d" {
+		t.Errorf("webgpuTextureViewDimension(3D) = %q, want 3d", got)
+	}
 	if got := glBufferTarget(driver.GPUBufferUniform); got != glUniformBuffer {
 		t.Errorf("glBufferTarget(Uniform) = 0x%x", got)
 	}

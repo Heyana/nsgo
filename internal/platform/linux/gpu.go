@@ -628,8 +628,12 @@ func (w *window) initGPUContext(v *view, g *glGPUView, context uintptr) bool {
 		api.GetIntegerv(gpuGLUniformBufferOffsetAlign),
 		api.GetIntegerv(gpuGLMaxVertexAttribs),
 	)
+	if max3D := api.GetIntegerv(gpuGLMax3DTextureSize); max3D > 0 {
+		lim.MaxTextureDimension3D = uint32(max3D)
+	}
 	feat := driver.GPUFeatures{
 		Depth32Float: true,
+		Texture3D:    true,
 	}
 	importer := newEGLImporter()
 	feat.ImportDMABuf = importer != nil

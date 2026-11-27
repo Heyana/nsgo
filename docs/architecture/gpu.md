@@ -151,6 +151,7 @@ const (
 	Dim2D TextureDimension = iota
 	DimCube
 	Dim2DArray
+	Dim3D
 )
 
 type TextureFormat uint8
@@ -182,7 +183,8 @@ type TextureDesc struct {
 	Dimension   TextureDimension
 	Width       uint32
 	Height      uint32
-	Layers      uint32 // 1 for 2D, 6 for Cube, N for 2DArray
+	Depth       uint32 // volume depth in texels for Dim3D
+	Layers      uint32 // 1 for 2D/3D, 6 for Cube, N for 2DArray
 	MipLevels   uint32 // 0 defaults to 1
 	SampleCount int    // 0 or 1; 4 for MSAA render attachments
 	Format      TextureFormat
@@ -303,6 +305,22 @@ return gpu.View{
   2. `core` bumps the surface's device generation, marks all handles from the lost `Device` invalid (subsequent writes/submits become no-ops rather than panicking), and calls `View.OnDeviceLost`.
   3. When the platform restores or recreates the device/context, it emits `EventGPUDeviceReady` with the new generation and `core` invokes `View.OnReady` with a fresh `*gpu.Device` so the app rebuilds its resources cleanly. `BufferDesc`, `TextureDesc`, `RenderTargetDesc`, `SamplerDesc`, `BindGroupLayoutDesc` and `PipelineDesc` each carry `Retained bool`, which recreates that resource in a restore on its own, as `ViewProps.RetainResources` does for all of them.
 
+### 3D (volume) textures
+
+`gpu.Dim3D` ([#2655](https://github.com/nsgo-dev/nsgo/issues/2655)) allocates uncompressed color volume textures of `Width × Height × Depth` texels (single array layer, non-MSAA, non-depth, non-storage) sampled from WGSL `texture_3d<f32>` with `vec3<f32>` coordinates (`textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureLoad`, and `textureDimensions` returning `vec3<u32>`). Uploads accept depth offsets (`TextureCopy.OriginZ`, `TextureWrite.OriginZ`) and depth sizes (`TextureWrite.Depth`, or slice count implied by `DataLayout.RowsPerImage` and byte length), and `TextureRegion.Z` selects a slice for `Device.ReadTexture`.
+
+`Device.SupportsTexture3D()` (`Features.Texture3D` and `Limits.MaxTextureDimension3D > 0`) gates creation so devices without 3D texture support fail cleanly with `gpu.ErrUnsupported`:
+
+| Backend | Native API | `Limits.MaxTextureDimension3D` |
+| --- | --- | --- |
+| macOS / iOS (`internal/platform/apple`) | Metal `MTLTextureType3D` | `2048` |
+| Windows (`internal/platform/windows`) | Direct3D 11 `ID3D11Texture3D` / `D3D11_SRV_DIMENSION_TEXTURE3D` | `2048` |
+| Linux (`internal/platform/linux`) | OpenGL 3.3 / ES 3.0 `GL_TEXTURE_3D` (`glTexImage3D` / `glTexSubImage3D`) | Queried `GL_MAX_3D_TEXTURE_SIZE` (default `2048`) |
+| Web WebGPU (`internal/platform/web`) | `GPUTexture` (`dimension: "3d"`, `viewDimension: "3d"`) | Queried `device.limits.maxTextureDimension3D` (default `2048`) |
+| Web WebGL 2 (`internal/platform/web`) | `TEXTURE_3D` (`texStorage3D` / `texSubImage3D`) | Queried `MAX_3D_TEXTURE_SIZE` (minimum `256`) |
+| Android (`internal/platform/android`) | OpenGL ES 3.0 `GL_TEXTURE_3D` (`glTexStorage3D` / `glTexSubImage3D`) | Queried `GL_MAX_3D_TEXTURE_SIZE` (minimum `256`) |
+| Headless software (`internal/driver`) | Pure-Go 3D volume texture with trilinear filtering and 2×2×2 mipmaps | `2048` |
+
 ### Imported textures
 
 `Device.ImportTexture` ([#2296](https://github.com/nsgo-dev/nsgo/issues/2296)) opens GPU memory another device owns, such as a hardware decoder's frame, as a sampled 2D texture without copying it; `Device.SupportsExternalTexture(kind)` (`Features.ImportD3D11Shared`, `Features.ImportDMABuf`) says whether a target can, and elsewhere it returns `ErrUnsupported`, so callers fall back to `WriteTexture`.
@@ -394,7 +412,7 @@ Extending `internal/shaderir` and `internal/shader/wgsl` for full 3D pipelines k
    - Add a `Bindings []Binding` table on `shaderir.Program` alongside the legacy flat `Uniforms`/`TextureCount` fields so GPU pipelines declare multiple bind groups (for example: group 0 per-frame camera/lights, group 1 per-material uniforms/textures, group 2 per-object transforms):
      - `BindingUniformBuffer`: typed block with WGSL uniform address-space rules (no 4096-byte single-block cap).
      - `BindingStorageBufferRead`: read-only typed array/struct buffer (`var<storage, read>`) for instancing, skinning palettes, and light arrays (enabled when `Features.StorageBuffers` is true).
-     - Typed textures extending `shaderir.BasicType`: `Texture2D`, `TextureCube`, `Texture2DArray`, `TextureDepth2D`, `TextureMultisampled2D`.
+     - Typed textures extending `shaderir.BasicType`: `Texture2D`, `Texture3D`, `TextureCube`, `Texture2DArray`, `TextureDepth2D`, `TextureMultisampled2D`.
      - Explicit samplers: `Sampler` (`sampler`) and `SamplerComparison` (`sampler_comparison`).
 5. **User structs, non-square matrices, and sampling built-ins**:
    - WGSL uniform and storage types have the same natural byte layout. Uniform array and struct members must start on 16-byte boundaries, array strides must be multiples of 16, and members after structs must allow for the preceding struct's size rounded up to 16. Use explicit padding members; member `@align` and `@size` are not supported.
@@ -407,10 +425,10 @@ Extending `internal/shaderir` and `internal/shader/wgsl` for full 3D pipelines k
 
 | Target writer | Used by | Entry points | Vertex inputs | Uniform & storage bindings | Textures & samplers | Clip-space Z |
 | --- | --- | --- | --- | --- | --- | --- |
-| `internal/shaderir/msl` | macOS, iOS, (tvOS) | `vertex` / `fragment` functions | `[[stage_in]]` struct with `[[attribute(N)]]` | `constant T& [[buffer(slot)]]` / `device const T* [[buffer(slot)]]` (slot table mapped from `(group, binding)`) | `texture2d`/`texturecube`/`texture2d_array`/`depth2d` `[[texture(N)]]`, `sampler [[sampler(N)]]` | Native `[0, 1]` |
-| `internal/shaderir/hlsl` | Windows (D3D11 SM 5.0) | `vs_5_0` / `ps_5_0` functions | `TEXCOORDn` input struct matching `D3D11_INPUT_ELEMENT_DESC` | `cbuffer : register(bN)` / `StructuredBuffer<T> : register(tN)` | `Texture2D`/`TextureCube`/`Texture2DArray` `: register(tN)`, `SamplerState`/`SamplerComparisonState : register(sN)` | Native `[0, 1]` |
-| `internal/shaderir/glsl` | Linux (3.30 / ES 3.00), WebGL 2 (ES 3.00), Android (ES 3.00) | `void main()` VS + FS | `layout(location = N) in` | `layout(std140) uniform` block bound per flattened slot (`glUniformBlockBinding`) | Synthesized combined `sampler2D`/`samplerCube`/`sampler2DArray`/`sampler2DShadow` per `(texture, sampler)` pair used in the shader, paired with `glBindSampler` | Remapped `[0, 1]` → `[-1, 1]` at VS exit |
-| `internal/shaderir/wgsl` | WebGPU | `@vertex fn` / `@fragment fn` | `@location(N)` struct/params | `@group(G) @binding(B) var<uniform>` / `var<storage, read>` | `texture_2d`/`texture_cube`/`texture_2d_array`/`texture_depth_2d` + `sampler`/`sampler_comparison` | Native `[0, 1]` |
+| `internal/shaderir/msl` | macOS, iOS, (tvOS) | `vertex` / `fragment` functions | `[[stage_in]]` struct with `[[attribute(N)]]` | `constant T& [[buffer(slot)]]` / `device const T* [[buffer(slot)]]` (slot table mapped from `(group, binding)`) | `texture2d`/`texture3d`/`texturecube`/`texture2d_array`/`depth2d` `[[texture(N)]]`, `sampler [[sampler(N)]]` | Native `[0, 1]` |
+| `internal/shaderir/hlsl` | Windows (D3D11 SM 5.0) | `vs_5_0` / `ps_5_0` functions | `TEXCOORDn` input struct matching `D3D11_INPUT_ELEMENT_DESC` | `cbuffer : register(bN)` / `StructuredBuffer<T> : register(tN)` | `Texture2D`/`Texture3D`/`TextureCube`/`Texture2DArray` `: register(tN)`, `SamplerState`/`SamplerComparisonState : register(sN)` | Native `[0, 1]` |
+| `internal/shaderir/glsl` | Linux (3.30 / ES 3.00), WebGL 2 (ES 3.00), Android (ES 3.00) | `void main()` VS + FS | `layout(location = N) in` | `layout(std140) uniform` block bound per flattened slot (`glUniformBlockBinding`) | Synthesized combined `sampler2D`/`sampler3D`/`samplerCube`/`sampler2DArray`/`sampler2DShadow` per `(texture, sampler)` pair used in the shader, paired with `glBindSampler` | Remapped `[0, 1]` → `[-1, 1]` at VS exit |
+| `internal/shaderir/wgsl` | WebGPU | `@vertex fn` / `@fragment fn` | `@location(N)` struct/params | `@group(G) @binding(B) var<uniform>` / `var<storage, read>` | `texture_2d`/`texture_3d`/`texture_cube`/`texture_2d_array`/`texture_depth_2d` + `sampler`/`sampler_comparison` | Native `[0, 1]` |
 
 For OpenGL's combined texture+sampler model, the GLSL writer emits one `uniform sampler*` per static `(textureBinding, samplerBinding)` pair referenced by sampling calls in the shader and returns the pair table alongside the GLSL source so the Linux, WebGL 2, and Android backends bind each texture unit and `glBindSampler` object deterministically.
 

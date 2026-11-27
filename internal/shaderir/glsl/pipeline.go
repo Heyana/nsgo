@@ -140,12 +140,16 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 		var lines []string
 		hasShadow := false
 		hasArray := false
+		has3D := false
 		for _, sp := range w.samplerPairs {
 			if sp.Comparison {
 				hasShadow = true
 			}
 			if sp.TextureType == shaderir.Texture2DArray {
 				hasArray = true
+			}
+			if sp.TextureType == shaderir.Texture3D {
+				has3D = true
 			}
 		}
 		switch version {
@@ -161,6 +165,9 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 			}
 			if hasArray {
 				lines = append(lines, "precision highp sampler2DArray;")
+			}
+			if has3D {
+				lines = append(lines, "precision highp sampler3D;")
 			}
 			lines = append(lines, "")
 		case GLSLVersion430:
@@ -205,6 +212,8 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 			switch {
 			case sp.Comparison:
 				glslType = "sampler2DShadow"
+			case sp.TextureType == shaderir.Texture3D:
+				glslType = "sampler3D"
 			case sp.TextureType == shaderir.TextureCube:
 				glslType = "samplerCube"
 			case sp.TextureType == shaderir.Texture2DArray:
@@ -670,6 +679,9 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			if w.texType(texIdx) == shaderir.Texture2DArray && len(e.Exprs) >= 5 {
 				return fmt.Sprintf("texelFetch(%s, ivec3(%s, int(%s)), int(%s))", comb, w.emitExpr(e.Exprs[2], stage), w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[4], stage))
 			}
+			if w.texType(texIdx) == shaderir.Texture3D {
+				return fmt.Sprintf("texelFetch(%s, ivec3(%s), int(%s))", comb, w.emitExpr(e.Exprs[2], stage), w.emitExpr(e.Exprs[3], stage))
+			}
 			if texIdx >= 0 && texIdx < len(w.p.Bindings) && w.p.Bindings[texIdx].Type.Main == shaderir.TextureDepth2D {
 				return fmt.Sprintf("texelFetch(%s, ivec2(%s), int(%s)).r", comb, w.emitExpr(e.Exprs[2], stage), w.emitExpr(e.Exprs[3], stage))
 			}
@@ -681,10 +693,14 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			if len(e.Exprs) >= 3 {
 				lod = fmt.Sprintf("int(%s)", w.emitExpr(e.Exprs[2], stage))
 			}
-			if w.texType(texIdx) == shaderir.Texture2DArray {
+			switch w.texType(texIdx) {
+			case shaderir.Texture3D:
+				return fmt.Sprintf("uvec3(textureSize(%s, %s))", comb, lod)
+			case shaderir.Texture2DArray:
 				return fmt.Sprintf("uvec2(textureSize(%s, %s).xy)", comb, lod)
+			default:
+				return fmt.Sprintf("uvec2(textureSize(%s, %s))", comb, lod)
 			}
-			return fmt.Sprintf("uvec2(textureSize(%s, %s))", comb, lod)
 		case shaderir.TextureStore:
 			return fmt.Sprintf("imageStore(%s, ivec2(%s), %s)", w.emitExpr(e.Exprs[1], stage), w.emitExpr(e.Exprs[2], stage), w.emitExpr(e.Exprs[3], stage))
 		case shaderir.ArrayLength:

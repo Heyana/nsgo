@@ -23,6 +23,7 @@ const (
 	kArray
 	kStruct
 	kTexture2D
+	kTexture3D
 	kTextureCube
 	kTexture2DArray
 	kTextureDepth2D
@@ -165,6 +166,8 @@ func (t ty) String() string {
 		return "struct"
 	case kTexture2D:
 		return "texture_2d<f32>"
+	case kTexture3D:
+		return "texture_3d<f32>"
 	case kTextureCube:
 		return "texture_cube<f32>"
 	case kTexture2DArray:
@@ -218,6 +221,8 @@ func (t ty) ir() shaderir.Type {
 		return shaderir.Type{Main: shaderir.Struct, Sub: sub, FieldNames: names}
 	case kTexture2D:
 		return shaderir.Type{Main: shaderir.Texture2D}
+	case kTexture3D:
+		return shaderir.Type{Main: shaderir.Texture3D}
 	case kTextureCube:
 		return shaderir.Type{Main: shaderir.TextureCube}
 	case kTexture2DArray:

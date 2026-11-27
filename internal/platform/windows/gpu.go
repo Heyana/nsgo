@@ -19,6 +19,7 @@ import (
 // Additional ID3D11Device and ID3D11DeviceContext vtable indexes beyond those already declared in shader.go and video.go (verified against d3d11.h).
 const (
 	// ID3D11Device
+	d3dCreateTexture3D         = 6
 	d3dCreateDepthStencilView  = 10
 	d3dCreateInputLayout       = 11
 	d3dCreateBlendState        = 20
@@ -500,6 +501,25 @@ func (n *d3d11NativeOps) CreateTexture(desc driver.GPUTextureDesc, td d3d11Textu
 		return nil, 0, err
 	}
 	h := &d3d11TextureHandle{}
+	if desc.Dimension == driver.GPUDim3D {
+		td3, srv3, rtv3 := d3dTexture3DDescriptor(desc)
+		if hr := g.d3d.call(d3dCreateTexture3D, uintptr(unsafe.Pointer(&td3)), 0, uintptr(unsafe.Pointer(&h.tex))); failed(hr) {
+			return nil, uint32(hr), hresultError("d3d11: CreateTexture3D", hr)
+		}
+		if srv3.format != dxgiFmtUnknown && td3.bindFlags&d3d11BindShaderResource != 0 {
+			if hr := g.d3d.call(d3dCreateShaderResourceView, h.tex.ptr(), uintptr(unsafe.Pointer(&srv3)), uintptr(unsafe.Pointer(&h.srv))); failed(hr) {
+				h.Release()
+				return nil, uint32(hr), hresultError("d3d11: CreateShaderResourceView 3D", hr)
+			}
+		}
+		if rtv3.format != dxgiFmtUnknown && td3.bindFlags&d3d11BindRenderTarget != 0 {
+			if hr := g.d3d.call(d3dCreateRenderTargetView, h.tex.ptr(), uintptr(unsafe.Pointer(&rtv3)), uintptr(unsafe.Pointer(&h.rtv))); failed(hr) {
+				h.Release()
+				return nil, uint32(hr), hresultError("d3d11: CreateRenderTargetView 3D", hr)
+			}
+		}
+		return h, 0, nil
+	}
 	if hr := g.d3d.call(d3dCreateTexture2D, uintptr(unsafe.Pointer(&td)), 0, uintptr(unsafe.Pointer(&h.tex))); failed(hr) {
 		return nil, uint32(hr), hresultError("d3d11: CreateTexture2D", hr)
 	}
@@ -578,6 +598,40 @@ func (n *d3d11NativeOps) WriteTexture(tex *d3dTrackedTexture, dst driver.GPUText
 		writeH--
 	}
 	if writeW == 0 || writeH == 0 {
+		return 0, nil
+	}
+	if tex.desc.Dimension == driver.GPUDim3D {
+		_, _, mipD := driver.GPUMipSize3D(tex.desc.Width, tex.desc.Height, max(tex.desc.Depth, 1), dst.MipLevel)
+		if dst.OriginZ >= mipD {
+			return 0, nil
+		}
+		sliceRows := layout.RowsPerImage
+		if sliceRows == 0 {
+			sliceRows = writeH
+		}
+		depthPitch := rowPitch * max(sliceRows, 1)
+		minSlice := uint64(writeH-1)*uint64(rowPitch) + rowBytes
+		if uint64(len(src)) < minSlice || depthPitch == 0 {
+			return 0, nil
+		}
+		writeD := min(mipD-dst.OriginZ, uint32((uint64(len(src))-minSlice)/uint64(depthPitch))+1)
+		if writeD == 0 {
+			return 0, nil
+		}
+		var boxPtr uintptr
+		var box d3d11Box
+		if dst.OriginX != 0 || dst.OriginY != 0 || dst.OriginZ != 0 || writeW != mipW || writeH != mipH || writeD != mipD {
+			box = d3d11Box{
+				left:   dst.OriginX,
+				top:    dst.OriginY,
+				front:  dst.OriginZ,
+				right:  dst.OriginX + writeW,
+				bottom: dst.OriginY + writeH,
+				back:   dst.OriginZ + writeD,
+			}
+			boxPtr = uintptr(unsafe.Pointer(&box))
+		}
+		ctx.call(ctxUpdateSubresource, h.tex.ptr(), uintptr(dst.MipLevel), boxPtr, uintptr(unsafe.Pointer(&src[0])), uintptr(rowPitch), uintptr(depthPitch))
 		return 0, nil
 	}
 	sub := d3dCalcSubresource(dst.MipLevel, dst.ArrayLayer, tex.texDesc.mipLevels)
@@ -747,6 +801,19 @@ func (n *d3d11NativeOps) ExecuteCopy(cp driver.GPUCopyOp, lookup *d3dPassLookup)
 			return 0, nil
 		}
 		layers := max(cp.Layers, 1)
+		if st.desc.Dimension == driver.GPUDim3D && dt.desc.Dimension == driver.GPUDim3D {
+			box := d3d11Box{
+				left:   cp.SrcTex.OriginX,
+				top:    cp.SrcTex.OriginY,
+				front:  cp.SrcTex.OriginZ,
+				right:  cp.SrcTex.OriginX + cp.Width,
+				bottom: cp.SrcTex.OriginY + cp.Height,
+				back:   cp.SrcTex.OriginZ + layers,
+			}
+			ctx.call(ctxCopySubresourceRegion, dh.tex.ptr(), uintptr(cp.DstTex.MipLevel), uintptr(cp.DstTex.OriginX), uintptr(cp.DstTex.OriginY), uintptr(cp.DstTex.OriginZ),
+				sh.tex.ptr(), uintptr(cp.SrcTex.MipLevel), uintptr(unsafe.Pointer(&box)))
+			return 0, nil
+		}
 		box := d3d11Box{
 			left:   cp.SrcTex.OriginX,
 			top:    cp.SrcTex.OriginY,
@@ -791,6 +858,7 @@ func (n *d3d11NativeOps) ExecuteCopy(cp driver.GPUCopyOp, lookup *d3dPassLookup)
 		if copyBytes == 0 {
 			return 0, nil
 		}
+		is3D := dt.desc.Dimension == driver.GPUDim3D
 		dbox := d3d11Box{
 			left:   cp.DstTex.OriginX,
 			top:    cp.DstTex.OriginY,
@@ -799,9 +867,18 @@ func (n *d3d11NativeOps) ExecuteCopy(cp driver.GPUCopyOp, lookup *d3dPassLookup)
 			bottom: cp.DstTex.OriginY + cp.Height,
 			back:   1,
 		}
+		if is3D {
+			dbox.front = cp.DstTex.OriginZ
+			dbox.back = cp.DstTex.OriginZ + layers
+		}
 		// Uniform-only buffers cannot use CopySubresourceRegion; upload directly from cbShadow.
 		if sh.buf == nil {
 			if cp.SrcLayout.Offset+uint64(copyBytes) > uint64(len(sb.cbShadow)) {
+				return 0, nil
+			}
+			if is3D {
+				ctx.call(ctxUpdateSubresource, dh.tex.ptr(), uintptr(cp.DstTex.MipLevel), uintptr(unsafe.Pointer(&dbox)),
+					uintptr(unsafe.Pointer(&sb.cbShadow[cp.SrcLayout.Offset])), uintptr(rowPitch), uintptr(sliceBytes))
 				return 0, nil
 			}
 			for l := uint32(0); l < layers; l++ {
@@ -839,11 +916,16 @@ func (n *d3d11NativeOps) ExecuteCopy(cp driver.GPUCopyOp, lookup *d3dPassLookup)
 			return uint32(hr), hresultError("d3d11: Map staging buffer", hr)
 		}
 		bytes := unsafe.Slice(mapped.pData, copyBytes)
-		for l := uint32(0); l < layers; l++ {
-			dstSub := d3dCalcSubresource(cp.DstTex.MipLevel, cp.DstTex.ArrayLayer+l, dt.texDesc.mipLevels)
-			off := l * sliceBytes
-			ctx.call(ctxUpdateSubresource, dh.tex.ptr(), uintptr(dstSub), uintptr(unsafe.Pointer(&dbox)),
-				uintptr(unsafe.Pointer(&bytes[off])), uintptr(rowPitch), 0)
+		if is3D {
+			ctx.call(ctxUpdateSubresource, dh.tex.ptr(), uintptr(cp.DstTex.MipLevel), uintptr(unsafe.Pointer(&dbox)),
+				uintptr(unsafe.Pointer(&bytes[0])), uintptr(rowPitch), uintptr(sliceBytes))
+		} else {
+			for l := uint32(0); l < layers; l++ {
+				dstSub := d3dCalcSubresource(cp.DstTex.MipLevel, cp.DstTex.ArrayLayer+l, dt.texDesc.mipLevels)
+				off := l * sliceBytes
+				ctx.call(ctxUpdateSubresource, dh.tex.ptr(), uintptr(dstSub), uintptr(unsafe.Pointer(&dbox)),
+					uintptr(unsafe.Pointer(&bytes[off])), uintptr(rowPitch), 0)
+			}
 		}
 		ctx.call(ctxUnmap, stage.ptr(), 0)
 	}
@@ -1288,24 +1370,46 @@ func (n *d3d11NativeOps) ReadTexture(swapHandle d3dReleaser, swapW, swapH uint32
 		h = mipH - y
 	}
 
-	stageDesc := d3d11Texture2DDesc{
-		width:       w,
-		height:      h,
-		mipLevels:   1,
-		arraySize:   1,
-		format:      srcDXGI,
-		sampleCount: 1,
-		usage:       d3d11UsageStaging,
-		cpuAccess:   d3d11CPUAccessRead,
-	}
 	var stage *comObject
-	if hr := g.d3d.call(d3dCreateTexture2D, uintptr(unsafe.Pointer(&stageDesc)), 0, uintptr(unsafe.Pointer(&stage))); failed(hr) {
-		return nil, uint32(hr), hresultError("d3d11: CreateTexture2D staging readback", hr)
+	var srcSub uint32
+	var box d3d11Box
+	if !surface && tex != nil && tex.desc.Dimension == driver.GPUDim3D {
+		_, _, mipD := driver.GPUMipSize3D(tex.desc.Width, tex.desc.Height, max(tex.desc.Depth, 1), region.MipLevel)
+		if region.Z >= mipD {
+			return nil, 0, errors.New("d3d11: ReadTexture region out of bounds")
+		}
+		stageDesc := d3d11Texture3DDesc{
+			width:     w,
+			height:    h,
+			depth:     1,
+			mipLevels: 1,
+			format:    srcDXGI,
+			usage:     d3d11UsageStaging,
+			cpuAccess: d3d11CPUAccessRead,
+		}
+		if hr := g.d3d.call(d3dCreateTexture3D, uintptr(unsafe.Pointer(&stageDesc)), 0, uintptr(unsafe.Pointer(&stage))); failed(hr) {
+			return nil, uint32(hr), hresultError("d3d11: CreateTexture3D staging readback", hr)
+		}
+		srcSub = region.MipLevel
+		box = d3d11Box{left: x, top: y, front: region.Z, right: x + w, bottom: y + h, back: region.Z + 1}
+	} else {
+		stageDesc := d3d11Texture2DDesc{
+			width:       w,
+			height:      h,
+			mipLevels:   1,
+			arraySize:   1,
+			format:      srcDXGI,
+			sampleCount: 1,
+			usage:       d3d11UsageStaging,
+			cpuAccess:   d3d11CPUAccessRead,
+		}
+		if hr := g.d3d.call(d3dCreateTexture2D, uintptr(unsafe.Pointer(&stageDesc)), 0, uintptr(unsafe.Pointer(&stage))); failed(hr) {
+			return nil, uint32(hr), hresultError("d3d11: CreateTexture2D staging readback", hr)
+		}
+		srcSub = d3dCalcSubresource(region.MipLevel, region.ArrayLayer, mipLevels)
+		box = d3d11Box{left: x, top: y, front: 0, right: x + w, bottom: y + h, back: 1}
 	}
 	defer stage.release()
-
-	srcSub := d3dCalcSubresource(region.MipLevel, region.ArrayLayer, mipLevels)
-	box := d3d11Box{left: x, top: y, front: 0, right: x + w, bottom: y + h, back: 1}
 	ctx.call(ctxCopySubresourceRegion, stage.ptr(), 0, 0, 0, 0, srcTex.ptr(), uintptr(srcSub), uintptr(unsafe.Pointer(&box)))
 
 	var mapped d3d11MappedSubresource

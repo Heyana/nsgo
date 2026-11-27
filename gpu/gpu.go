@@ -84,6 +84,12 @@ const (
 	Dim2D      TextureDimension = TextureDimension(driver.GPUDim2D)
 	DimCube    TextureDimension = TextureDimension(driver.GPUDimCube)
 	Dim2DArray TextureDimension = TextureDimension(driver.GPUDim2DArray)
+	// Dim3D is a 3D (volume) texture of Width x Height x Depth texels sampled
+	// from WGSL texture_3d<f32>. Check Device.SupportsTexture3D and
+	// Limits.MaxTextureDimension3D (2048 on Metal, Direct3D 11, WebGPU and
+	// software; queried GL_MAX_3D_TEXTURE_SIZE, at least 256, on OpenGL,
+	// WebGL 2 and Android GLES 3.0).
+	Dim3D TextureDimension = TextureDimension(driver.GPUDim3D)
 )
 
 // CubeFace identifies one face (ArrayLayer 0..5) of a DimCube Texture in canonical WebGPU / Metal / Direct3D / OpenGL order.
@@ -106,6 +112,16 @@ func MaxMipLevels(width, height uint32) uint32 {
 // MipSize returns the width and height of mipLevel for a base texture of width x height (clamped to a minimum of 1x1).
 func MipSize(width, height, mipLevel uint32) (uint32, uint32) {
 	return driver.GPUMipSize(width, height, mipLevel)
+}
+
+// MaxMipLevels3D returns the number of mipmap levels in a full chain from width x height x depth down to 1x1x1.
+func MaxMipLevels3D(width, height, depth uint32) uint32 {
+	return driver.GPUMipLevels3D(width, height, depth)
+}
+
+// MipSize3D returns the width, height, and depth of mipLevel for a 3D base texture of width x height x depth (clamped to a minimum of 1x1x1).
+func MipSize3D(width, height, depth, mipLevel uint32) (uint32, uint32, uint32) {
+	return driver.GPUMipSize3D(width, height, depth, mipLevel)
 }
 
 // DownsampleRGBA2x produces the next mipmap level from src using a 2x2 box filter.
@@ -306,7 +322,8 @@ type TextureDesc struct {
 	Dimension   TextureDimension
 	Width       uint32
 	Height      uint32
-	Layers      uint32 // 0 or 1 for 2D, 6 for Cube, N for 2DArray
+	Depth       uint32 // volume depth in texels for Dim3D; 0 for non-3D textures
+	Layers      uint32 // 0 or 1 for 2D/3D, 6 for Cube, N for 2DArray
 	MipLevels   uint32 // 0 defaults to 1
 	SampleCount int    // 0 or 1; 4 for MSAA render attachments
 	Format      TextureFormat
@@ -792,17 +809,20 @@ type TextureCopy struct {
 	ArrayLayer uint32
 	OriginX    uint32
 	OriginY    uint32
+	OriginZ    uint32 // depth slice offset for Dim3D textures
 }
 
-// TextureWrite identifies a texture subresource (mip level, array layer or cubemap face, and optional sub-rectangle) for Device.WriteTextureRegion.
+// TextureWrite identifies a texture subresource (mip level, array layer or cubemap face, and optional sub-rectangle or 3D sub-box) for Device.WriteTextureRegion.
 type TextureWrite struct {
 	Texture    *Texture
 	MipLevel   uint32
 	ArrayLayer uint32
 	OriginX    uint32
 	OriginY    uint32
+	OriginZ    uint32 // depth slice offset for Dim3D textures
 	Width      uint32 // 0 defaults to mipWidth - OriginX
 	Height     uint32 // 0 defaults to mipHeight - OriginY
+	Depth      uint32 // 0 defaults to mipDepth - OriginZ for Dim3D (1 for non-3D)
 }
 
 // DataLayout describes linear pixel data layout in a Go byte slice or Buffer.
@@ -816,7 +836,7 @@ type DataLayout struct {
 type TextureRegion struct {
 	MipLevel   uint32
 	ArrayLayer uint32
-	X, Y       uint32
+	X, Y, Z    uint32 // Z selects a depth slice of a Dim3D texture
 	Width      uint32
 	Height     uint32
 }
@@ -824,6 +844,7 @@ type TextureRegion struct {
 // Limits reports the active GPU device's capability limits.
 type Limits struct {
 	MaxTextureDimension2D         uint32
+	MaxTextureDimension3D         uint32
 	MaxBufferSize                 uint64
 	MaxUniformBufferSize          uint64
 	MaxStorageBufferBindingSize   uint64
@@ -872,6 +893,7 @@ func limitsFromDriver(l driver.GPULimits) Limits {
 	}
 	return Limits{
 		MaxTextureDimension2D:         l.MaxTextureDimension2D,
+		MaxTextureDimension3D:         l.MaxTextureDimension3D,
 		MaxBufferSize:                 l.MaxBufferSize,
 		MaxUniformBufferSize:          l.MaxUniformBufferSize,
 		MaxStorageBufferBindingSize:   l.MaxStorageBufferBindingSize,
@@ -910,6 +932,8 @@ type Features struct {
 	// ImportD3D11Shared and ImportDMABuf report support for Device.ImportTexture of ExternalD3D11Shared and ExternalDMABuf textures (Device.SupportsExternalTexture).
 	ImportD3D11Shared bool
 	ImportDMABuf      bool
+	// Texture3D reports support for Dim3D (volume) textures up to Limits.MaxTextureDimension3D per axis (Device.SupportsTexture3D).
+	Texture3D bool
 }
 
 // DeviceCapabilities summarizes the active GPU device's limits, optional features, timing query support, and supported compressed texture formats. Targets without native compute support (WebGL 2, OpenGL ES 3.0) report Features.Compute false; check Device.SupportsCompute and use a CPU or render-pass fallback there.
@@ -937,6 +961,7 @@ func featuresFromDriver(f driver.GPUFeatures) Features {
 		MipmapGeneration:       f.MipmapGeneration,
 		ImportD3D11Shared:      f.ImportD3D11Shared,
 		ImportDMABuf:           f.ImportDMABuf,
+		Texture3D:              f.Texture3D,
 	}
 }
 

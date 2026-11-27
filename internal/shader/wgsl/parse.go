@@ -459,7 +459,7 @@ func (p *parser) structDecl() *structDecl {
 var templateNames = map[string]bool{
 	"vec2": true, "vec3": true, "vec4": true, "array": true, "bitcast": true, "ptr": true, "atomic": true,
 	"mat2x2": true, "mat2x3": true, "mat2x4": true, "mat3x2": true, "mat3x3": true, "mat3x4": true,
-	"mat4x2": true, "mat4x3": true, "mat4x4": true, "texture_2d": true, "texture_cube": true,
+	"mat4x2": true, "mat4x3": true, "mat4x4": true, "texture_2d": true, "texture_3d": true, "texture_cube": true,
 	"texture_2d_array": true, "texture_multisampled_2d": true, "texture_storage_2d": true, "sampler": false,
 }
 

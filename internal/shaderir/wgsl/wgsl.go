@@ -150,6 +150,8 @@ func (w *writer) typeStr(t shaderir.Type) string {
 		return w.structName(t)
 	case shaderir.Texture2D, shaderir.Texture:
 		return "texture_2d<f32>"
+	case shaderir.Texture3D:
+		return "texture_3d<f32>"
 	case shaderir.TextureCube:
 		return "texture_cube<f32>"
 	case shaderir.Texture2DArray:

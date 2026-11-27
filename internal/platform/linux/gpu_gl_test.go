@@ -864,6 +864,8 @@ func TestGLGPUTextureUploadFormatsBGRAPaddingCubeAndArray(t *testing.T) {
 			{Kind: driver.GPUOpWriteTexture, ID: 3, Data: make([]byte, 4*4*4), TextureDst: driver.GPUTextureCopy{Texture: 3, ArrayLayer: 2}},
 			{Kind: driver.GPUOpCreateTexture, ID: 4, Texture: &driver.GPUTextureDesc{Dimension: driver.GPUDim2DArray, Width: 4, Height: 4, Layers: 3, Format: driver.GPUFormatRGBA8Unorm, Usage: driver.GPUTextureSampled}},
 			{Kind: driver.GPUOpWriteTexture, ID: 4, Data: make([]byte, 4*4*4), TextureDst: driver.GPUTextureCopy{Texture: 4, ArrayLayer: 1}},
+			{Kind: driver.GPUOpCreateTexture, ID: 5, Texture: &driver.GPUTextureDesc{Dimension: driver.GPUDim3D, Width: 2, Height: 2, Depth: 4, MipLevels: 2, Format: driver.GPUFormatRGBA8Unorm, Usage: driver.GPUTextureSampled}},
+			{Kind: driver.GPUOpWriteTexture, ID: 5, Data: make([]byte, 2*2*2*4), TextureDst: driver.GPUTextureCopy{Texture: 5, OriginZ: 1}, DataLayout: driver.GPUDataLayout{BytesPerRow: 8, RowsPerImage: 2}},
 		},
 	}
 
@@ -871,8 +873,8 @@ func TestGLGPUTextureUploadFormatsBGRAPaddingCubeAndArray(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %+v", errs)
 	}
-	if len(gl.texUploads) != 4 {
-		t.Fatalf("texUploads = %d, want 4", len(gl.texUploads))
+	if len(gl.texUploads) != 5 {
+		t.Fatalf("texUploads = %d, want 5", len(gl.texUploads))
 	}
 	// Upload 0: BGRA swizzled to RGBA and repacked tightly.
 	wantSwizzled := []byte{
@@ -893,6 +895,10 @@ func TestGLGPUTextureUploadFormatsBGRAPaddingCubeAndArray(t *testing.T) {
 	// Upload 3: 2D array layer 1.
 	if gl.texUploads[3].target != gpuGLTexture2DArray || gl.texUploads[3].z != 1 || gl.texUploads[3].d != 1 {
 		t.Errorf("2D array upload = %+v", gl.texUploads[3])
+	}
+	// Upload 4: 3D volume texture starting at OriginZ=1 with depth 2.
+	if gl.texUploads[4].target != gpuGLTexture3D || gl.texUploads[4].z != 1 || gl.texUploads[4].d != 2 {
+		t.Errorf("3D upload = %+v, want target=GL_TEXTURE_3D z=1 d=2", gl.texUploads[4])
 	}
 }
 

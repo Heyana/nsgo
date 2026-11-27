@@ -172,12 +172,21 @@ func driverFormatFromWebGPU(s string) driver.GPUTextureFormat {
 	}
 }
 
+func webgpuTextureDimension(d driver.GPUTextureDimension) string {
+	if d == driver.GPUDim3D {
+		return "3d"
+	}
+	return "2d"
+}
+
 func webgpuTextureViewDimension(d driver.GPUTextureDimension) string {
 	switch d {
 	case driver.GPUDimCube:
 		return "cube"
 	case driver.GPUDim2DArray:
 		return "2d-array"
+	case driver.GPUDim3D:
+		return "3d"
 	default:
 		return "2d"
 	}
@@ -404,6 +413,7 @@ func webgpuReadbackBytesPerRow(width, bytesPerPixel uint32) uint32 {
 const (
 	glNone                  uint32 = 0
 	glTexture2D             uint32 = 0x0DE1
+	glTexture3D             uint32 = 0x806F
 	glTextureCubeMap        uint32 = 0x8513
 	glTextureCubeMapPosX    uint32 = 0x8515
 	glTexture2DArray        uint32 = 0x8C1A
@@ -431,6 +441,7 @@ const (
 	glTexture0              uint32 = 0x84C0
 	glUnpackAlignment       uint32 = 0x0CF5
 	glUnpackRowLength       uint32 = 0x0CF2
+	glUnpackImageHeight     uint32 = 0x806E
 	glUnpackFlipYWebGL      uint32 = 0x9240
 	glUnpackPremultWebGL    uint32 = 0x9241
 	glTextureMinFilter      uint32 = 0x2801
@@ -513,6 +524,7 @@ const (
 	glCompileStatus         uint32 = 0x8B81
 	glLinkStatus            uint32 = 0x8B82
 	glMaxTextureSize        uint32 = 0x0D33
+	glMax3DTextureSize      uint32 = 0x8073
 	glMaxUniformBlockSize   uint32 = 0x8A30
 	glMaxVertexAttribs      uint32 = 0x8869
 	glUniformBufOffsetAlign uint32 = 0x8A34
@@ -555,6 +567,8 @@ func glTextureTarget(d driver.GPUTextureDimension) uint32 {
 		return glTextureCubeMap
 	case driver.GPUDim2DArray:
 		return glTexture2DArray
+	case driver.GPUDim3D:
+		return glTexture3D
 	default:
 		return glTexture2D
 	}
@@ -1232,6 +1246,9 @@ func clampGPULimits(l driver.GPULimits) driver.GPULimits {
 	def := driver.DefaultGPULimits()
 	if l.MaxTextureDimension2D == 0 {
 		l.MaxTextureDimension2D = def.MaxTextureDimension2D
+	}
+	if l.MaxTextureDimension3D == 0 {
+		l.MaxTextureDimension3D = def.MaxTextureDimension3D
 	}
 	if l.MaxBufferSize == 0 {
 		l.MaxBufferSize = def.MaxBufferSize

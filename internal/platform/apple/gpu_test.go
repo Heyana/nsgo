@@ -435,3 +435,208 @@ func TestMetalVec3PackedStructLayout(t *testing.T) {
 		t.Errorf("pixel from 36-byte uniform = %v, want [0 255 255 255]", scalar)
 	}
 }
+
+const gpuTest3DLUTWGSL = `
+@group(0) @binding(0) var lut: texture_3d<f32>;
+@group(0) @binding(1) var samp: sampler;
+
+struct VertexIn {
+	@location(0) pos: vec2<f32>,
+	@location(1) uvw: vec3<f32>,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) uvw: vec3<f32>,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	out.pos = vec4<f32>(in.pos, 0.0, 1.0);
+	out.uvw = in.uvw;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	let dims = textureDimensions(lut, 0);
+	let ok = select(0.0, 1.0, dims.x == 2u && dims.y == 2u && dims.z == 2u);
+	return textureSample(lut, samp, in.uvw) * ok;
+}
+`
+
+// TestMetalTexture3DColorLUT uploads a 2x2x2 3D color LUT texture on Metal, samples it with trilinear filtering across a render pass, and reads back the expected interpolated colors.
+func TestMetalTexture3DColorLUT(t *testing.T) {
+	prog, err := wgsl.CompilePipeline(gpuTest3DLUTWGSL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan *driver.GPUEvent, 32)
+	var layer *GPULayer
+	withPool(func() {
+		layer = NewGPULayer(driver.GPUViewConfig{SampleCount: 1}, func(ev *driver.GPUEvent) { events <- ev })
+		if layer != nil {
+			layer.Resize(16, 4, 1)
+		}
+	})
+	if layer == nil {
+		t.Skip("Metal unavailable")
+	}
+	t.Cleanup(func() {
+		withPool(layer.Release)
+		select {
+		case <-layer.render.done:
+		case <-time.After(10 * time.Second):
+			t.Error("the GPU render goroutine did not stop")
+		}
+	})
+	next := func() *driver.GPUEvent {
+		t.Helper()
+		select {
+		case ev := <-events:
+			if ev.Kind == driver.GPUEventError {
+				t.Fatalf("GPU error %d: %s", ev.ErrorCode, ev.Message)
+			}
+			return ev
+		case <-time.After(15 * time.Second):
+			t.Fatal("no GPU event")
+			return nil
+		}
+	}
+	ready := next()
+	if ready.Kind != driver.GPUEventDeviceReady || !ready.Features.Texture3D || ready.Limits.MaxTextureDimension3D < 2048 {
+		t.Fatalf("ready event = %+v, want Texture3D support and MaxTextureDimension3D >= 2048", ready)
+	}
+	gen := ready.Generation
+
+	const (
+		vb driver.GPUID = iota + 1
+		lutTex
+		samp
+		layout
+		group
+		pipe
+		target
+	)
+
+	// 4 vertical strips across 16x4 sampling corners and trilinear midpoints of a 2x2x2 identity RGB LUT.
+	coords := [4][3]float32{
+		{0.25, 0.25, 0.25}, // (0, 0, 0)
+		{0.75, 0.75, 0.75}, // (255, 255, 255)
+		{0.50, 0.50, 0.50}, // (128, 128, 128)
+		{0.50, 0.25, 0.75}, // (128, 0, 255)
+	}
+	var verts []byte
+	for i, c := range coords {
+		x0 := -1.0 + float32(i)*0.5
+		x1 := -1.0 + float32(i+1)*0.5
+		verts = append(verts, gpuFloats(
+			x0, -1, c[0], c[1], c[2],
+			x1, -1, c[0], c[1], c[2],
+			x1, 1, c[0], c[1], c[2],
+			x0, -1, c[0], c[1], c[2],
+			x1, 1, c[0], c[1], c[2],
+			x0, 1, c[0], c[1], c[2],
+		)...)
+	}
+	// Upload slice 0 with the full volume write, then overwrite slice 1 using OriginZ=1.
+	lutData := []byte{
+		// Z = 0
+		0, 0, 0, 255, 255, 0, 0, 255,
+		0, 255, 0, 255, 255, 255, 0, 255,
+		// Z = 1 (temporary zeroes, overwritten by OriginZ=1 write below)
+		0, 0, 0, 255, 0, 0, 0, 255,
+		0, 0, 0, 255, 0, 0, 0, 255,
+	}
+	slice1 := []byte{
+		0, 0, 255, 255, 255, 0, 255, 255,
+		0, 255, 255, 255, 255, 255, 255, 255,
+	}
+	rgba := driver.GPUFormatRGBA8Unorm
+	layer.Submit(driver.GPUFrame{Generation: gen, Ops: []driver.GPUResourceOp{
+		{Kind: driver.GPUOpCreateBuffer, ID: vb, Buffer: &driver.GPUBufferDesc{Usage: driver.GPUBufferVertex, Data: verts}},
+		{Kind: driver.GPUOpCreateTexture, ID: lutTex, Texture: &driver.GPUTextureDesc{
+			Dimension: driver.GPUDim3D, Width: 2, Height: 2, Depth: 2, Layers: 1, MipLevels: 1,
+			Format: rgba, Usage: driver.GPUTextureSampled | driver.GPUTextureCopyDst | driver.GPUTextureCopySrc,
+		}},
+		{Kind: driver.GPUOpWriteTexture, ID: lutTex, Data: lutData,
+			TextureDst: driver.GPUTextureCopy{Texture: lutTex},
+			DataLayout: driver.GPUDataLayout{BytesPerRow: 8, RowsPerImage: 2}},
+		{Kind: driver.GPUOpWriteTexture, ID: lutTex, Data: slice1,
+			TextureDst: driver.GPUTextureCopy{Texture: lutTex, OriginZ: 1},
+			DataLayout: driver.GPUDataLayout{BytesPerRow: 8, RowsPerImage: 2}},
+		{Kind: driver.GPUOpCreateSampler, ID: samp, Sampler: &driver.GPUSamplerDesc{
+			MinFilter: driver.GPUFilterLinear, MagFilter: driver.GPUFilterLinear, MipmapFilter: driver.GPUFilterLinear,
+			AddressU: driver.GPUAddressClampToEdge, AddressV: driver.GPUAddressClampToEdge, AddressW: driver.GPUAddressClampToEdge,
+		}},
+		{Kind: driver.GPUOpCreateBindGroupLayout, ID: layout, BindGroupLayout: &driver.GPUBindGroupLayoutDesc{Entries: []driver.GPUBindGroupLayoutEntry{
+			{Binding: 0, Visibility: driver.GPUStageFragment, Type: driver.GPUBindingTexture},
+			{Binding: 1, Visibility: driver.GPUStageFragment, Type: driver.GPUBindingSampler},
+		}}},
+		{Kind: driver.GPUOpCreateBindGroup, ID: group, BindGroup: &driver.GPUBindGroupDesc{Layout: layout, Entries: []driver.GPUBindGroupEntry{
+			{Binding: 0, Texture: lutTex}, {Binding: 1, Sampler: samp},
+		}}},
+		{Kind: driver.GPUOpCreatePipeline, ID: pipe, Pipeline: &driver.GPUPipelineDesc{
+			Label:    "lut-3d",
+			Vertex:   driver.GPUShaderStage{IR: prog.IR, EntryPoint: "vs_main"},
+			Fragment: driver.GPUShaderStage{IR: prog.IR, EntryPoint: "fs_main"},
+			Layouts:  []driver.GPUID{layout},
+			VertexBuffers: []driver.GPUVertexBufferLayout{{
+				Stride: 20,
+				Attributes: []driver.GPUVertexAttribute{
+					{Location: 0, Offset: 0, Format: driver.GPUVertexFloat32x2},
+					{Location: 1, Offset: 8, Format: driver.GPUVertexFloat32x3},
+				},
+			}},
+			Targets:     []driver.GPUColorTargetState{{Format: rgba, WriteMask: driver.GPUColorWriteAll}},
+			SampleCount: 1,
+		}},
+		{Kind: driver.GPUOpCreateTexture, ID: target, Texture: &driver.GPUTextureDesc{
+			Width: 16, Height: 4, Layers: 1, MipLevels: 1, Format: rgba,
+			Usage: driver.GPUTextureRenderAttachment | driver.GPUTextureCopySrc,
+		}},
+	}, Passes: []driver.GPUPass{{
+		ColorAttachments: []driver.GPUColorAttachment{{Texture: target, LoadOp: driver.GPULoadClear, StoreOp: driver.GPUStoreStore}},
+		Commands: []driver.GPUCommand{
+			{Kind: driver.GPUCmdSetBindGroup, Slot: 0, ID: group},
+			{Kind: driver.GPUCmdSetPipeline, ID: pipe},
+			{Kind: driver.GPUCmdSetVertexBuffer, Slot: 0, ID: vb},
+			{Kind: driver.GPUCmdSetViewport, F2: 16, F3: 4, F5: 1},
+			{Kind: driver.GPUCmdDraw, U0: 24},
+		},
+	}}})
+
+	// Read back rendered strip pixels and verify trilinear LUT interpolation.
+	layer.Submit(driver.GPUFrame{Generation: gen, Ops: []driver.GPUResourceOp{
+		{Kind: driver.GPUOpReadTexture, ReadbackID: 1, ID: target, ReadbackRegion: driver.GPUTextureRegion{Width: 16, Height: 4}},
+		{Kind: driver.GPUOpReadTexture, ReadbackID: 2, ID: lutTex, ReadbackRegion: driver.GPUTextureRegion{Z: 1, Width: 2, Height: 2}},
+	}})
+	ev1 := next()
+	if ev1.Kind != driver.GPUEventReadback || ev1.ReadbackID != 1 || ev1.Message != "" {
+		t.Fatalf("target readback = %+v", ev1)
+	}
+	want := [4][4]byte{
+		{0, 0, 0, 255},
+		{255, 255, 255, 255},
+		{128, 128, 128, 255},
+		{128, 0, 255, 255},
+	}
+	for i, w := range want {
+		x := i*4 + 2
+		off := (2*16 + x) * 4
+		for ch := 0; ch < 4; ch++ {
+			if d := int(ev1.Pixels[off+ch]) - int(w[ch]); d < -2 || d > 2 {
+				t.Errorf("Metal 3D LUT strip %d = %v, want ~%v", i, ev1.Pixels[off:off+4], w)
+				break
+			}
+		}
+	}
+	ev2 := next()
+	if ev2.Kind != driver.GPUEventReadback || ev2.ReadbackID != 2 || ev2.Message != "" {
+		t.Fatalf("3D slice readback = %+v", ev2)
+	}
+	if len(ev2.Pixels) != len(slice1) || ev2.Pixels[0] != 0 || ev2.Pixels[2] != 255 || ev2.Pixels[12] != 255 || ev2.Pixels[13] != 255 || ev2.Pixels[14] != 255 {
+		t.Errorf("Metal 3D slice Z=1 readback = %v, want %v", ev2.Pixels, slice1)
+	}
+}

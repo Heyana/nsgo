@@ -7,6 +7,7 @@ import (
 	"syscall/js"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/shaderir"
 )
 
 type webgpuBuffer struct {
@@ -230,6 +231,7 @@ func (g *gpuView) finishWebGPUInit(navGPU, device, ctx js.Value) {
 		MSAA4x:         true,
 		Depth32Float:   true,
 		Anisotropy:     true,
+		Texture3D:      true,
 	}
 	if ev := g.ctrl.markReady(gpuBackendWebGPU, surfFmt, limits, features); ev != nil {
 		g.emitEvent(ev)
@@ -242,6 +244,9 @@ func readWebGPULimits(device js.Value) driver.GPULimits {
 	if lim.Truthy() {
 		if v := lim.Get("maxTextureDimension2D"); v.Type() == js.TypeNumber {
 			l.MaxTextureDimension2D = uint32(v.Int())
+		}
+		if v := lim.Get("maxTextureDimension3D"); v.Type() == js.TypeNumber {
+			l.MaxTextureDimension3D = uint32(v.Int())
 		}
 		if v := lim.Get("maxBufferSize"); v.Type() == js.TypeNumber {
 			l.MaxBufferSize = uint64(v.Float())
@@ -454,14 +459,17 @@ func (b *webgpuBackend) execOp(op driver.GPUResourceOp) {
 			return
 		}
 		desc := *op.Texture
-		layers := max(desc.Layers, 1)
+		depthOrLayers := max(desc.Layers, 1)
+		if desc.Dimension == driver.GPUDim3D {
+			depthOrLayers = max(desc.Depth, 1)
+		}
 		mips := max(desc.MipLevels, 1)
 		samples := max(desc.SampleCount, 1)
 		texDesc := map[string]any{
-			"size":          []any{int(desc.Width), int(desc.Height), int(layers)},
+			"size":          []any{int(desc.Width), int(desc.Height), int(depthOrLayers)},
 			"mipLevelCount": int(mips),
 			"sampleCount":   samples,
-			"dimension":     "2d",
+			"dimension":     webgpuTextureDimension(desc.Dimension),
 			"format":        wgslTextureFormat(desc.Format),
 			"usage":         int(webgpuTextureUsage(desc.Usage, samples, desc.Format.IsDepth())),
 		}
@@ -512,19 +520,42 @@ func (b *webgpuBackend) execOp(op driver.GPUResourceOp) {
 		if w == 0 || h == 0 {
 			return
 		}
+		originZ := op.TextureDst.ArrayLayer
+		depth := uint32(1)
+		sliceRows := rows
+		if tex.desc.Dimension == driver.GPUDim3D {
+			mipD := mipDim(max(tex.desc.Depth, 1), op.TextureDst.MipLevel)
+			originZ = op.TextureDst.OriginZ
+			if originZ >= mipD {
+				return
+			}
+			sliceRows = op.DataLayout.RowsPerImage
+			if sliceRows == 0 {
+				sliceRows = h
+			}
+			sliceBytes := uint64(bpr) * uint64(max(sliceRows, 1))
+			minSlice := uint64(h-1)*uint64(bpr) + uint64(w*bpp)
+			if sliceBytes == 0 || uint64(len(src)) < minSlice {
+				return
+			}
+			depth = min(mipD-originZ, uint32((uint64(len(src))-minSlice)/sliceBytes)+1)
+			if depth == 0 {
+				return
+			}
+		}
 		arr := js.Global().Get("Uint8Array").New(len(src))
 		js.CopyBytesToJS(arr, src)
 		dstObj := map[string]any{
 			"texture":  tex.gpuTex,
 			"mipLevel": int(op.TextureDst.MipLevel),
-			"origin":   []any{int(op.TextureDst.OriginX), int(op.TextureDst.OriginY), int(op.TextureDst.ArrayLayer)},
+			"origin":   []any{int(op.TextureDst.OriginX), int(op.TextureDst.OriginY), int(originZ)},
 		}
 		layoutObj := map[string]any{
 			"offset":       0,
 			"bytesPerRow":  int(bpr),
-			"rowsPerImage": int(rows),
+			"rowsPerImage": int(sliceRows),
 		}
-		extentObj := []any{int(w), int(h), 1}
+		extentObj := []any{int(w), int(h), int(depth)}
 		b.queue.Call("writeTexture", dstObj, arr, layoutObj, extentObj)
 
 	case driver.GPUOpDestroyTexture:
@@ -610,8 +641,19 @@ func (b *webgpuBackend) execOp(op driver.GPUResourceOp) {
 		}
 		desc := *op.BindGroup
 		bg := &webgpuBindGroup{desc: desc}
-		if l, ok := b.layouts[desc.Layout]; ok {
-			bg.gpuBG = b.createBindGroupWithLayout(l.gpuLayout, desc)
+		deferToPipeline := false
+		for _, e := range desc.Entries {
+			if e.Texture != 0 {
+				if tex, ok := b.textures[e.Texture]; ok && (tex.desc.Dimension != driver.GPUDim2D || tex.desc.Format.IsDepth() || tex.desc.SampleCount > 1) {
+					deferToPipeline = true
+					break
+				}
+			}
+		}
+		if !deferToPipeline {
+			if l, ok := b.layouts[desc.Layout]; ok {
+				bg.gpuBG = b.createBindGroupWithLayout(l.gpuLayout, desc)
+			}
 		}
 		b.bindGroups[op.ID] = bg
 
@@ -685,7 +727,7 @@ func (b *webgpuBackend) createBindGroupWithLayout(gpuLayout js.Value, desc drive
 }
 
 func (b *webgpuBackend) resolveBindGroup(bg *webgpuBindGroup, pipe *webgpuPipeline, slot uint32) js.Value {
-	if pipe != nil && pipe.hasAutoLayout && bg.desc.Layout == 0 {
+	if pipe != nil && pipe.hasAutoLayout {
 		key := (uint64(pipe.id) << 16) | uint64(slot)
 		if cached, ok := bg.autoBGs[key]; ok && cached.Truthy() {
 			return cached
@@ -734,13 +776,80 @@ func (b *webgpuBackend) createPipeline(id driver.GPUID, desc driver.GPUPipelineD
 	var pipeLayout any = "auto"
 	hasAutoLayout := true
 	if len(desc.Layouts) > 0 {
-		hasAutoLayout = false
-		bgls := make([]any, 0, len(desc.Layouts))
-		for _, lid := range desc.Layouts {
-			if l, ok := b.layouts[lid]; ok {
-				bgls = append(bgls, l.gpuLayout)
+		texTypes := map[[2]uint32]shaderir.BasicType{}
+		for _, ir := range []*shaderir.Program{desc.Vertex.IR, desc.Fragment.IR} {
+			if ir == nil {
+				continue
+			}
+			for _, bd := range ir.Bindings {
+				if bd.Kind == shaderir.BindingTexture {
+					texTypes[[2]uint32{bd.Group, bd.Binding}] = bd.Type.Main
+				}
 			}
 		}
+		specialized := false
+		bgls := make([]any, 0, len(desc.Layouts))
+		for groupIdx, lid := range desc.Layouts {
+			l, ok := b.layouts[lid]
+			if !ok {
+				continue
+			}
+			needSpec := false
+			for _, e := range l.desc.Entries {
+				if e.Type == driver.GPUBindingTexture {
+					if bt, ok := texTypes[[2]uint32{uint32(groupIdx), e.Binding}]; ok && bt != shaderir.Texture2D && bt != shaderir.Texture {
+						needSpec = true
+						break
+					}
+				}
+			}
+			if !needSpec {
+				bgls = append(bgls, l.gpuLayout)
+				continue
+			}
+			specialized = true
+			entries := make([]any, 0, len(l.desc.Entries))
+			for _, e := range l.desc.Entries {
+				entry := map[string]any{
+					"binding":    int(e.Binding),
+					"visibility": int(webgpuVisibility(e.Visibility)),
+				}
+				switch e.Type {
+				case driver.GPUBindingUniform:
+					entry["buffer"] = map[string]any{"type": "uniform", "hasDynamicOffset": e.HasDynamicOffset}
+				case driver.GPUBindingStorageRead:
+					entry["buffer"] = map[string]any{"type": "read-only-storage", "hasDynamicOffset": e.HasDynamicOffset}
+				case driver.GPUBindingTexture:
+					viewDim, sampleType := "2d", "float"
+					multisampled := false
+					switch texTypes[[2]uint32{uint32(groupIdx), e.Binding}] {
+					case shaderir.Texture3D:
+						viewDim = "3d"
+					case shaderir.TextureCube:
+						viewDim = "cube"
+					case shaderir.Texture2DArray:
+						viewDim = "2d-array"
+					case shaderir.TextureDepth2D:
+						sampleType = "depth"
+					case shaderir.TextureMultisampled2D:
+						sampleType = "unfilterable-float"
+						multisampled = true
+					}
+					texEntry := map[string]any{"sampleType": sampleType, "viewDimension": viewDim}
+					if multisampled {
+						texEntry["multisampled"] = true
+					}
+					entry["texture"] = texEntry
+				case driver.GPUBindingSampler:
+					entry["sampler"] = map[string]any{"type": "filtering"}
+				case driver.GPUBindingComparisonSampler:
+					entry["sampler"] = map[string]any{"type": "comparison"}
+				}
+				entries = append(entries, entry)
+			}
+			bgls = append(bgls, b.device.Call("createBindGroupLayout", map[string]any{"entries": entries}))
+		}
+		hasAutoLayout = specialized
 		pipeLayout = b.device.Call("createPipelineLayout", map[string]any{
 			"bindGroupLayouts": bgls,
 		})
@@ -885,10 +994,14 @@ func (b *webgpuBackend) execCopy(enc js.Value, cp driver.GPUCopyOp) {
 			"bytesPerRow":  int(bpr),
 			"rowsPerImage": int(rows),
 		}
+		dstZ := cp.DstTex.ArrayLayer
+		if dst.desc.Dimension == driver.GPUDim3D {
+			dstZ = cp.DstTex.OriginZ
+		}
 		dstObj := map[string]any{
 			"texture":  dst.gpuTex,
 			"mipLevel": int(cp.DstTex.MipLevel),
-			"origin":   []any{int(cp.DstTex.OriginX), int(cp.DstTex.OriginY), int(cp.DstTex.ArrayLayer)},
+			"origin":   []any{int(cp.DstTex.OriginX), int(cp.DstTex.OriginY), int(dstZ)},
 		}
 		enc.Call("copyBufferToTexture", srcObj, dstObj, []any{int(cp.Width), int(cp.Height), int(max(cp.Layers, 1))})
 
@@ -898,15 +1011,23 @@ func (b *webgpuBackend) execCopy(enc js.Value, cp driver.GPUCopyOp) {
 		if !ok1 || !ok2 {
 			return
 		}
+		srcZ := cp.SrcTex.ArrayLayer
+		if src.desc.Dimension == driver.GPUDim3D {
+			srcZ = cp.SrcTex.OriginZ
+		}
+		dstZ := cp.DstTex.ArrayLayer
+		if dst.desc.Dimension == driver.GPUDim3D {
+			dstZ = cp.DstTex.OriginZ
+		}
 		srcObj := map[string]any{
 			"texture":  src.gpuTex,
 			"mipLevel": int(cp.SrcTex.MipLevel),
-			"origin":   []any{int(cp.SrcTex.OriginX), int(cp.SrcTex.OriginY), int(cp.SrcTex.ArrayLayer)},
+			"origin":   []any{int(cp.SrcTex.OriginX), int(cp.SrcTex.OriginY), int(srcZ)},
 		}
 		dstObj := map[string]any{
 			"texture":  dst.gpuTex,
 			"mipLevel": int(cp.DstTex.MipLevel),
-			"origin":   []any{int(cp.DstTex.OriginX), int(cp.DstTex.OriginY), int(cp.DstTex.ArrayLayer)},
+			"origin":   []any{int(cp.DstTex.OriginX), int(cp.DstTex.OriginY), int(dstZ)},
 		}
 		enc.Call("copyTextureToTexture", srcObj, dstObj, []any{int(cp.Width), int(cp.Height), int(max(cp.Layers, 1))})
 	}
@@ -1084,6 +1205,9 @@ func (b *webgpuBackend) execReadTexture(op driver.GPUResourceOp) {
 		fmtKind = tex.desc.Format
 		mipLevel = op.ReadbackRegion.MipLevel
 		arrayLay = op.ReadbackRegion.ArrayLayer
+		if tex.desc.Dimension == driver.GPUDim3D {
+			arrayLay = op.ReadbackRegion.Z
+		}
 		mipW := mipDim(tex.desc.Width, mipLevel)
 		mipH := mipDim(tex.desc.Height, mipLevel)
 		x, y = op.ReadbackRegion.X, op.ReadbackRegion.Y

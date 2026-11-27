@@ -90,6 +90,7 @@ const (
 	d3d11SRVDimTexture2D      uint32 = 4
 	d3d11SRVDimTexture2DArray uint32 = 5
 	d3d11SRVDimTexture2DMS    uint32 = 6
+	d3d11SRVDimTexture3D      uint32 = 8
 	d3d11SRVDimTextureCube    uint32 = 9
 	d3d11SRVDimBufferEx       uint32 = 11
 
@@ -100,6 +101,7 @@ const (
 	d3d11RTVDimTexture2D      uint32 = 4
 	d3d11RTVDimTexture2DArray uint32 = 5
 	d3d11RTVDimTexture2DMS    uint32 = 6
+	d3d11RTVDimTexture3D      uint32 = 8
 
 	// D3D11_DSV_DIMENSION (d3d11.h).
 	d3d11DSVDimTexture2D      uint32 = 3
@@ -197,6 +199,12 @@ type d3d11Texture2DDesc struct {
 	width, height, mipLevels, arraySize, format uint32
 	sampleCount, sampleQuality                  uint32
 	usage, bindFlags, cpuAccess, misc           uint32
+}
+
+// d3d11Texture3DDesc matches D3D11_TEXTURE3D_DESC (36 bytes).
+type d3d11Texture3DDesc struct {
+	width, height, depth, mipLevels, format uint32
+	usage, bindFlags, cpuAccess, misc       uint32
 }
 
 // d3d11SRVDesc matches D3D11_SHADER_RESOURCE_VIEW_DESC (24 bytes).
@@ -320,6 +328,7 @@ type d3dInputElementSpec struct {
 func d3d11Limits() driver.GPULimits {
 	return driver.GPULimits{
 		MaxTextureDimension2D:     16384,
+		MaxTextureDimension3D:     2048,
 		MaxBufferSize:             256 << 20,
 		MaxUniformBufferSize:      d3d11MaxConstantBufferSize,
 		MaxBindGroups:             4,
@@ -339,6 +348,7 @@ func d3d11Features() driver.GPUFeatures {
 		Anisotropy:     true,
 		// ID3D11Device1::OpenSharedResource1, which every Windows 10 device has.
 		ImportD3D11Shared: true,
+		Texture3D:         true,
 	}
 }
 
@@ -569,6 +579,10 @@ func d3dTexture2DDescriptor(desc driver.GPUTextureDesc) (d3d11Texture2DDesc, d3d
 		switch {
 		case samples > 1:
 			srv.viewDimension = d3d11SRVDimTexture2DMS
+		case desc.Dimension == driver.GPUDim3D:
+			srv.viewDimension = d3d11SRVDimTexture3D
+			srv.u0 = 0
+			srv.u1 = mipLevels
 		case desc.Dimension == driver.GPUDimCube:
 			srv.viewDimension = d3d11SRVDimTextureCube
 			srv.u0 = 0
@@ -588,7 +602,11 @@ func d3dTexture2DDescriptor(desc driver.GPUTextureDesc) (d3d11Texture2DDesc, d3d
 
 	var rtv d3d11RTVDesc
 	if desc.Usage&driver.GPUTextureRenderAttachment != 0 && !isDepth && rtvFmt != dxgiFmtUnknown {
-		rtv = d3dRTVDescriptorForSlice(rtvFmt, samples, arraySize, 0, 0)
+		if desc.Dimension == driver.GPUDim3D {
+			rtv = d3d11RTVDesc{format: rtvFmt, viewDimension: d3d11RTVDimTexture3D, u0: 0, u1: 0, u2: max(desc.Depth, 1)}
+		} else {
+			rtv = d3dRTVDescriptorForSlice(rtvFmt, samples, arraySize, 0, 0)
+		}
 	}
 
 	var dsv d3d11DSVDesc
@@ -609,6 +627,50 @@ func d3dTexture2DDescriptor(desc driver.GPUTextureDesc) (d3d11Texture2DDesc, d3d
 	}
 
 	return td, srv, rtv, dsv
+}
+
+// d3dTexture3DDescriptor builds D3D11_TEXTURE3D_DESC plus optional SRV and RTV view descriptors for a Dim3D texture.
+func d3dTexture3DDescriptor(desc driver.GPUTextureDesc) (d3d11Texture3DDesc, d3d11SRVDesc, d3d11RTVDesc) {
+	mipLevels := max(desc.MipLevels, 1)
+	depth := max(desc.Depth, 1)
+	sampled := desc.Usage&driver.GPUTextureSampled != 0
+	texFmt, srvFmt, rtvFmt, _ := d3dTextureFormats(desc.Format, sampled)
+	var bindFlags uint32
+	if sampled {
+		bindFlags |= d3d11BindShaderResource
+	}
+	if desc.Usage&driver.GPUTextureRenderAttachment != 0 {
+		bindFlags |= d3d11BindRenderTarget
+	}
+	td := d3d11Texture3DDesc{
+		width:     max(desc.Width, 1),
+		height:    max(desc.Height, 1),
+		depth:     depth,
+		mipLevels: mipLevels,
+		format:    texFmt,
+		usage:     d3d11UsageDefault,
+		bindFlags: bindFlags,
+	}
+	var srv d3d11SRVDesc
+	if sampled && srvFmt != dxgiFmtUnknown {
+		srv = d3d11SRVDesc{
+			format:        srvFmt,
+			viewDimension: d3d11SRVDimTexture3D,
+			u0:            0,
+			u1:            mipLevels,
+		}
+	}
+	var rtv d3d11RTVDesc
+	if desc.Usage&driver.GPUTextureRenderAttachment != 0 && rtvFmt != dxgiFmtUnknown {
+		rtv = d3d11RTVDesc{
+			format:        rtvFmt,
+			viewDimension: d3d11RTVDimTexture3D,
+			u0:            0,
+			u1:            0,
+			u2:            depth,
+		}
+	}
+	return td, srv, rtv
 }
 
 // d3dRTVDescriptorForSlice builds a D3D11_RENDER_TARGET_VIEW_DESC for a given mip level and array slice.

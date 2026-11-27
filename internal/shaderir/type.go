@@ -98,6 +98,8 @@ func (t Type) String() string {
 		return "texture"
 	case Texture2D:
 		return "texture2d"
+	case Texture3D:
+		return "texture3d"
 	case TextureCube:
 		return "texturecube"
 	case Texture2DArray:
@@ -367,7 +369,7 @@ func (t Type) MatrixSize() int {
 
 func (t Type) IsTexture() bool {
 	switch t.Main {
-	case Texture, Texture2D, TextureCube, Texture2DArray, TextureDepth2D, TextureMultisampled2D, TextureStorage2D:
+	case Texture, Texture2D, Texture3D, TextureCube, Texture2DArray, TextureDepth2D, TextureMultisampled2D, TextureStorage2D:
 		return true
 	}
 	return false
@@ -410,6 +412,7 @@ const (
 	Mat4x2
 	Mat4x3
 	Texture2D
+	Texture3D
 	TextureCube
 	Texture2DArray
 	TextureDepth2D

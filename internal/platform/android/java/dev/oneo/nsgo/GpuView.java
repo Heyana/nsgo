@@ -54,6 +54,7 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
     static final int DIM_2D = 0;
     static final int DIM_CUBE = 1;
     static final int DIM_2D_ARRAY = 2;
+    static final int DIM_3D = 3;
 
     // driver.GPUBufferUsage
     static final int BUF_VERTEX = 1 << 0;
@@ -515,6 +516,7 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
         ready = true;
 
         int maxTex = Math.max(glInt(GLES30.GL_MAX_TEXTURE_SIZE, 4096), 2048);
+        int max3D = Math.max(glInt(GLES30.GL_MAX_3D_TEXTURE_SIZE, 256), 256);
         long maxUbo = Math.max(glInt(GLES30.GL_MAX_UNIFORM_BLOCK_SIZE, 16384), 16384);
         int maxAttribs = Math.max(glInt(GLES30.GL_MAX_VERTEX_ATTRIBS, 16), 16);
         int uboAlign = Math.max(glInt(GLES30.GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, 256), 1);
@@ -528,8 +530,8 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
         }
         boolean msaa4x = maxSamples >= 4;
         emitDeviceReady(generation, width, height, FORMAT_RGBA8_UNORM,
-                maxTex, 256L << 20, maxUbo, 4, 8, maxAttribs, uboAlign,
-                false, false, msaa4x, true, anisotropySupported);
+                maxTex, max3D, 256L << 20, maxUbo, 4, 8, maxAttribs, uboAlign,
+                false, false, msaa4x, true, anisotropySupported, true);
     }
 
     @Override
@@ -801,12 +803,13 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
                             format, internalFmt, pixFmt, pixType, bpp, isDepth, true);
                 } else {
                     int target = dim == DIM_CUBE ? GLES30.GL_TEXTURE_CUBE_MAP
-                            : (dim == DIM_2D_ARRAY ? GLES30.GL_TEXTURE_2D_ARRAY : GLES30.GL_TEXTURE_2D);
+                            : (dim == DIM_2D_ARRAY ? GLES30.GL_TEXTURE_2D_ARRAY
+                            : (dim == DIM_3D ? GLES30.GL_TEXTURE_3D : GLES30.GL_TEXTURE_2D));
                     int[] ids = new int[1];
                     GLES30.glGenTextures(1, ids, 0);
                     int glId = ids[0];
                     GLES30.glBindTexture(target, glId);
-                    if (target == GLES30.GL_TEXTURE_2D_ARRAY) {
+                    if (target == GLES30.GL_TEXTURE_2D_ARRAY || target == GLES30.GL_TEXTURE_3D) {
                         GLES30.glTexStorage3D(target, mipLevels, internalFmt, w, h, layers);
                     } else {
                         GLES30.glTexStorage2D(target, mipLevels, internalFmt, w, h);
@@ -816,6 +819,9 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
                     GLES30.glTexParameteri(target, GLES30.GL_TEXTURE_MAG_FILTER, defaultFilter);
                     GLES30.glTexParameteri(target, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE);
                     GLES30.glTexParameteri(target, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE);
+                    if (target == GLES30.GL_TEXTURE_3D || target == GLES30.GL_TEXTURE_CUBE_MAP) {
+                        GLES30.glTexParameteri(target, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE);
+                    }
                     GLES30.glBindTexture(target, 0);
                     created = new TextureObj(glId, target, w, h, layers, mipLevels, 1,
                             format, internalFmt, pixFmt, pixType, bpp, isDepth, false);
@@ -866,6 +872,22 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
                         if (tex.target == GLES30.GL_TEXTURE_2D_ARRAY) {
                             GLES30.glTexSubImage3D(tex.target, mipLevel, originX, originY, arrayLayer,
                                     uploadW, uploadH, 1, tex.pixelFormat, tex.pixelType, buf);
+                        } else if (tex.target == GLES30.GL_TEXTURE_3D) {
+                            int mipD = Math.max(1, tex.layers >> mipLevel);
+                            int sliceRows = rowsPerImage > 0 ? rowsPerImage : uploadH;
+                            int sliceStride = rowStride * Math.max(sliceRows, 1);
+                            int minSlice = (uploadH - 1) * rowStride + uploadW * tex.bpp;
+                            if (arrayLayer < mipD && sliceStride > 0 && rem >= minSlice) {
+                                int uploadD = Math.min(mipD - arrayLayer, (rem - minSlice) / sliceStride + 1);
+                                if (sliceRows > uploadH) {
+                                    GLES30.glPixelStorei(GLES30.GL_UNPACK_IMAGE_HEIGHT, sliceRows);
+                                }
+                                GLES30.glTexSubImage3D(tex.target, mipLevel, originX, originY, arrayLayer,
+                                        uploadW, uploadH, uploadD, tex.pixelFormat, tex.pixelType, buf);
+                                if (sliceRows > uploadH) {
+                                    GLES30.glPixelStorei(GLES30.GL_UNPACK_IMAGE_HEIGHT, 0);
+                                }
+                            }
                         } else if (tex.target == GLES30.GL_TEXTURE_CUBE_MAP) {
                             GLES30.glTexSubImage2D(GLES30.GL_TEXTURE_CUBE_MAP_POSITIVE_X + Math.min(arrayLayer, 5),
                                     mipLevel, originX, originY, uploadW, uploadH, tex.pixelFormat, tex.pixelType, buf);
@@ -1241,7 +1263,7 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
                             int rowPixels = (bytesPerRow > 0 && bytesPerRow != w * dst.bpp) ? bytesPerRow / dst.bpp : 0;
                             GLES30.glPixelStorei(GLES30.GL_UNPACK_ROW_LENGTH, rowPixels);
                             GLES30.glPixelStorei(GLES30.GL_UNPACK_IMAGE_HEIGHT, rowsPerImage > 0 ? rowsPerImage : 0);
-                            if (dst.target == GLES30.GL_TEXTURE_2D_ARRAY) {
+                            if (dst.target == GLES30.GL_TEXTURE_2D_ARRAY || dst.target == GLES30.GL_TEXTURE_3D) {
                                 GLES30.glTexSubImage3D(dst.target, mip, ox, oy, layer, w, h, layers,
                                         dst.pixelFormat, dst.pixelType, upload);
                             } else if (dst.target == GLES30.GL_TEXTURE_CUBE_MAP) {
@@ -1797,8 +1819,8 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
     // --- Event emission back to Go (Protocol.GPU_EVENT) ---
 
     private void emitDeviceReady(int gen, int w, int h, int surfaceFmt,
-            int maxTex, long maxBuf, long maxUbo, int maxBindGroups, int maxVBs, int maxAttrs, int uboAlign,
-            boolean storageBuffers, boolean compute, boolean msaa4x, boolean depth32f, boolean aniso) {
+            int maxTex, int max3D, long maxBuf, long maxUbo, int maxBindGroups, int maxVBs, int maxAttrs, int uboAlign,
+            boolean storageBuffers, boolean compute, boolean msaa4x, boolean depth32f, boolean aniso, boolean texture3D) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(bytes);
         try {
@@ -1817,8 +1839,9 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
             d.writeInt(maxAttrs);
             d.writeInt(uboAlign);
             int feats = (storageBuffers ? 1 : 0) | (compute ? 2 : 0) | (msaa4x ? 4 : 0)
-                    | (depth32f ? 8 : 0) | (aniso ? 16 : 0);
+                    | (depth32f ? 8 : 0) | (aniso ? 16 : 0) | (texture3D ? 32 : 0);
             d.writeByte(feats);
+            d.writeInt(max3D);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -1926,7 +1949,7 @@ final class GpuView extends TextureView implements TextureView.SurfaceTextureLis
     private static void attachTextureToFbo(int fboTarget, int attachment, TextureObj tex, int mip, int layer) {
         if (tex.isRenderbuffer) {
             GLES30.glFramebufferRenderbuffer(fboTarget, attachment, GLES30.GL_RENDERBUFFER, tex.glId);
-        } else if (tex.target == GLES30.GL_TEXTURE_2D_ARRAY) {
+        } else if (tex.target == GLES30.GL_TEXTURE_2D_ARRAY || tex.target == GLES30.GL_TEXTURE_3D) {
             GLES30.glFramebufferTextureLayer(fboTarget, attachment, tex.glId, mip, layer);
         } else if (tex.target == GLES30.GL_TEXTURE_CUBE_MAP) {
             GLES30.glFramebufferTexture2D(fboTarget, attachment,

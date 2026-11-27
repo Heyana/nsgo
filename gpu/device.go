@@ -419,6 +419,11 @@ func (d *Device) SupportsCompute() bool {
 	return d != nil && d.features.Compute
 }
 
+// SupportsTexture3D reports whether the active device supports Dim3D (volume) textures.
+func (d *Device) SupportsTexture3D() bool {
+	return d != nil && d.features.Texture3D && d.limits.MaxTextureDimension3D > 0
+}
+
 // SurfaceFormat returns the swapchain's negotiated color texture format.
 func (d *Device) SurfaceFormat() TextureFormat { return d.surfaceFormat }
 
@@ -1112,8 +1117,35 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 	if desc.Usage&TextureStorageBinding != 0 && !d.features.StorageTextures {
 		return nil, Error{Code: ErrUnsupported, Message: "storage textures are not supported on this device"}
 	}
-	if d.limits.MaxTextureDimension2D > 0 && (desc.Width > d.limits.MaxTextureDimension2D || desc.Height > d.limits.MaxTextureDimension2D) {
-		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("texture %dx%d exceeds limit %d", desc.Width, desc.Height, d.limits.MaxTextureDimension2D)}
+	if desc.Dimension == Dim3D {
+		if !d.SupportsTexture3D() {
+			return nil, Error{Code: ErrUnsupported, Message: "3D textures are not supported on this device"}
+		}
+		if desc.Depth == 0 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "3D texture depth must be positive"}
+		}
+		if desc.Layers > 1 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("3D texture cannot have multiple array layers, got %d", desc.Layers)}
+		}
+		if desc.Format.IsDepthStencil() {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "3D textures do not support depth or stencil formats"}
+		}
+		if desc.Format.IsCompressed() {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "3D textures do not support compressed formats"}
+		}
+		if desc.Usage&TextureStorageBinding != 0 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "3D storage textures are not supported"}
+		}
+		if desc.Width > d.limits.MaxTextureDimension3D || desc.Height > d.limits.MaxTextureDimension3D || desc.Depth > d.limits.MaxTextureDimension3D {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("3D texture %dx%dx%d exceeds limit %d", desc.Width, desc.Height, desc.Depth, d.limits.MaxTextureDimension3D)}
+		}
+	} else {
+		if desc.Depth > 1 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("Depth %d is only valid for Dim3D textures", desc.Depth)}
+		}
+		if d.limits.MaxTextureDimension2D > 0 && (desc.Width > d.limits.MaxTextureDimension2D || desc.Height > d.limits.MaxTextureDimension2D) {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("texture %dx%d exceeds limit %d", desc.Width, desc.Height, d.limits.MaxTextureDimension2D)}
+		}
 	}
 	if desc.Format.IsCompressed() {
 		if !d.SupportsCompressedFormat(desc.Format) {
@@ -1153,13 +1185,18 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 		if d.limits.MaxTextureArrayLayers > 0 && desc.Layers > d.limits.MaxTextureArrayLayers {
 			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("texture array layers %d exceed limit %d", desc.Layers, d.limits.MaxTextureArrayLayers)}
 		}
+	case Dim3D:
 	default:
 		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("unsupported texture dimension %d", desc.Dimension)}
 	}
 	if desc.MipLevels == 0 {
 		desc.MipLevels = 1
 	}
-	if maxMips := MaxMipLevels(desc.Width, desc.Height); desc.MipLevels > maxMips {
+	if desc.Dimension == Dim3D {
+		if maxMips := MaxMipLevels3D(desc.Width, desc.Height, desc.Depth); desc.MipLevels > maxMips {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("3D texture mip levels %d exceed maximum %d for %dx%dx%d", desc.MipLevels, maxMips, desc.Width, desc.Height, desc.Depth)}
+		}
+	} else if maxMips := MaxMipLevels(desc.Width, desc.Height); desc.MipLevels > maxMips {
 		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("texture mip levels %d exceed maximum %d for %dx%d", desc.MipLevels, maxMips, desc.Width, desc.Height)}
 	}
 	if desc.SampleCount <= 0 {
@@ -1190,6 +1227,7 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 		Dimension:   driver.GPUTextureDimension(desc.Dimension),
 		Width:       desc.Width,
 		Height:      desc.Height,
+		Depth:       desc.Depth,
 		Layers:      desc.Layers,
 		MipLevels:   desc.MipLevels,
 		SampleCount: desc.SampleCount,
@@ -1946,6 +1984,7 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 			Dimension:   driver.GPUTextureDimension(t.desc.Dimension),
 			Width:       t.desc.Width,
 			Height:      t.desc.Height,
+			Depth:       t.desc.Depth,
 			Layers:      t.desc.Layers,
 			MipLevels:   t.desc.MipLevels,
 			SampleCount: t.desc.SampleCount,
@@ -1964,6 +2003,7 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 					ArrayLayer: w.dst.ArrayLayer,
 					OriginX:    w.dst.OriginX,
 					OriginY:    w.dst.OriginY,
+					OriginZ:    w.dst.OriginZ,
 				},
 				DataLayout: driver.GPUDataLayout{
 					Offset:       w.layout.Offset,
@@ -2228,7 +2268,7 @@ func (d *Device) WriteTexture(tex *Texture, dst TextureCopy, data []byte, layout
 		for i := range tex.shadowWrites {
 			w := &tex.shadowWrites[i]
 			if w.dst.MipLevel == dst.MipLevel && w.dst.ArrayLayer == dst.ArrayLayer &&
-				w.dst.OriginX == dst.OriginX && w.dst.OriginY == dst.OriginY &&
+				w.dst.OriginX == dst.OriginX && w.dst.OriginY == dst.OriginY && w.dst.OriginZ == dst.OriginZ &&
 				len(w.data) == len(cloned) {
 				w.layout = layout
 				w.data = slices.Clone(cloned)
@@ -2254,6 +2294,7 @@ func (d *Device) WriteTexture(tex *Texture, dst TextureCopy, data []byte, layout
 			ArrayLayer: dst.ArrayLayer,
 			OriginX:    dst.OriginX,
 			OriginY:    dst.OriginY,
+			OriginZ:    dst.OriginZ,
 		},
 		DataLayout: driver.GPUDataLayout{
 			Offset:       layout.Offset,
@@ -2263,7 +2304,7 @@ func (d *Device) WriteTexture(tex *Texture, dst TextureCopy, data []byte, layout
 	})
 }
 
-// WriteTextureRegion copies raw texel bytes into a specific mip level, array layer (or cubemap face), and optional sub-rectangle of dst.Texture. Width and Height default to the rest of the mip level from the origin. The source rows (layout.BytesPerRow apart, starting at layout.Offset) are repacked into tight rows of the sub-rectangle width, so only the sub-rectangle is written on every backend. Compressed formats are forwarded to WriteTexture unchanged.
+// WriteTextureRegion copies raw texel bytes into a specific mip level, array layer (or cubemap face), and optional sub-rectangle (or 3D sub-box for Dim3D) of dst.Texture. Width, Height, and Depth default to the rest of the mip level from the origin. The source rows (layout.BytesPerRow apart, slices layout.RowsPerImage rows apart, starting at layout.Offset) are repacked into tight rows of the sub-region width, so only the sub-region is written on every backend. Compressed formats are forwarded to WriteTexture unchanged.
 func (d *Device) WriteTextureRegion(dst TextureWrite, data []byte, layout DataLayout) {
 	tex := dst.Texture
 	if !d.alive() || tex == nil || !tex.Valid() || tex.dev != d || len(data) == 0 {
@@ -2272,14 +2313,18 @@ func (d *Device) WriteTextureRegion(dst TextureWrite, data []byte, layout DataLa
 	if dst.MipLevel >= tex.desc.MipLevels || dst.ArrayLayer >= tex.desc.Layers {
 		return
 	}
-	copyDst := TextureCopy{Texture: tex, MipLevel: dst.MipLevel, ArrayLayer: dst.ArrayLayer, OriginX: dst.OriginX, OriginY: dst.OriginY}
+	copyDst := TextureCopy{Texture: tex, MipLevel: dst.MipLevel, ArrayLayer: dst.ArrayLayer, OriginX: dst.OriginX, OriginY: dst.OriginY, OriginZ: dst.OriginZ}
 	bpp := driver.GPUTextureFormat(tex.desc.Format).BytesPerPixel()
 	if bpp == 0 {
 		d.WriteTexture(tex, copyDst, data, layout)
 		return
 	}
 	mw, mh := MipSize(tex.desc.Width, tex.desc.Height, dst.MipLevel)
-	if dst.OriginX >= mw || dst.OriginY >= mh {
+	md := uint32(1)
+	if tex.desc.Dimension == Dim3D {
+		mw, mh, md = MipSize3D(tex.desc.Width, tex.desc.Height, tex.desc.Depth, dst.MipLevel)
+	}
+	if dst.OriginX >= mw || dst.OriginY >= mh || dst.OriginZ >= md {
 		return
 	}
 	w := dst.Width
@@ -2290,6 +2335,13 @@ func (d *Device) WriteTextureRegion(dst TextureWrite, data []byte, layout DataLa
 	if h == 0 || dst.OriginY+h > mh {
 		h = mh - dst.OriginY
 	}
+	depth := uint32(1)
+	if tex.desc.Dimension == Dim3D {
+		depth = dst.Depth
+		if depth == 0 || dst.OriginZ+depth > md {
+			depth = md - dst.OriginZ
+		}
+	}
 	row := uint64(w) * uint64(bpp)
 	stride := uint64(layout.BytesPerRow)
 	if stride == 0 {
@@ -2299,17 +2351,47 @@ func (d *Device) WriteTextureRegion(dst TextureWrite, data []byte, layout DataLa
 		return
 	}
 	src := data[layout.Offset:]
-	rows := uint64(h)
-	if avail := (uint64(len(src)) - row) / stride; uint64(len(src)) < row {
+	if tex.desc.Dimension != Dim3D {
+		rows := uint64(h)
+		if uint64(len(src)) < row {
+			return
+		}
+		if avail := (uint64(len(src)) - row) / stride; avail+1 < rows {
+			rows = avail + 1
+		}
+		packed := make([]byte, 0, rows*row)
+		for y := uint64(0); y < rows; y++ {
+			packed = append(packed, src[y*stride:y*stride+row]...)
+		}
+		d.WriteTexture(tex, copyDst, packed, DataLayout{BytesPerRow: uint32(row), RowsPerImage: uint32(rows)})
 		return
-	} else if avail+1 < rows {
-		rows = avail + 1
 	}
-	packed := make([]byte, 0, rows*row)
-	for y := uint64(0); y < rows; y++ {
-		packed = append(packed, src[y*stride:y*stride+row]...)
+	sliceRows := uint64(layout.RowsPerImage)
+	if sliceRows == 0 {
+		sliceRows = uint64(h)
 	}
-	d.WriteTexture(tex, copyDst, packed, DataLayout{BytesPerRow: uint32(row), RowsPerImage: uint32(rows)})
+	if sliceRows < uint64(h) {
+		h = uint32(sliceRows)
+	}
+	sliceStride := stride * sliceRows
+	if sliceStride == 0 || uint64(len(src)) < row {
+		return
+	}
+	minSliceBytes := uint64(h-1)*stride + row
+	if uint64(len(src)) < minSliceBytes {
+		return
+	}
+	maxSlices := (uint64(len(src))-minSliceBytes)/sliceStride + 1
+	slicesToCopy := min(uint64(depth), maxSlices)
+	packed := make([]byte, 0, slicesToCopy*uint64(h)*row)
+	for z := uint64(0); z < slicesToCopy; z++ {
+		zOff := z * sliceStride
+		for y := uint64(0); y < uint64(h); y++ {
+			off := zOff + y*stride
+			packed = append(packed, src[off:off+row]...)
+		}
+	}
+	d.WriteTexture(tex, copyDst, packed, DataLayout{BytesPerRow: uint32(row), RowsPerImage: h})
 }
 
 // WriteTextureMip uploads packed texel bytes for an entire mip level and array layer (or cubemap face 0..5). If bytesPerRow is 0, rows are assumed tightly packed.
@@ -2699,6 +2781,7 @@ func (e *Encoder) CopyBufferToTexture(src BufferCopy, dst TextureCopy, width, he
 			ArrayLayer: dst.ArrayLayer,
 			OriginX:    dst.OriginX,
 			OriginY:    dst.OriginY,
+			OriginZ:    dst.OriginZ,
 		},
 	})
 }
@@ -2724,6 +2807,7 @@ func (e *Encoder) CopyTextureToTexture(src, dst TextureCopy, width, height, laye
 			ArrayLayer: src.ArrayLayer,
 			OriginX:    src.OriginX,
 			OriginY:    src.OriginY,
+			OriginZ:    src.OriginZ,
 		},
 		DstTex: driver.GPUTextureCopy{
 			Texture:    dst.Texture.id,
@@ -2731,6 +2815,7 @@ func (e *Encoder) CopyTextureToTexture(src, dst TextureCopy, width, height, laye
 			ArrayLayer: dst.ArrayLayer,
 			OriginX:    dst.OriginX,
 			OriginY:    dst.OriginY,
+			OriginZ:    dst.OriginZ,
 		},
 	})
 }
@@ -3181,6 +3266,7 @@ func (d *Device) ReadTexture(tex *Texture, region TextureRegion, fn func(rgba []
 			ArrayLayer: region.ArrayLayer,
 			X:          region.X,
 			Y:          region.Y,
+			Z:          region.Z,
 			Width:      region.Width,
 			Height:     region.Height,
 		},

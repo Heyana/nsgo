@@ -128,9 +128,36 @@ func splitGPUFrames(f driver.GPUFrame) []driver.GPUFrame {
 			if len(op.Data) > maxGPUChunk && op.DataLayout.BytesPerRow > 0 && op.DataLayout.Offset < uint64(len(op.Data)) {
 				data := op.Data[op.DataLayout.Offset:]
 				bpr := int(op.DataLayout.BytesPerRow)
+				sliceRows := int(op.DataLayout.RowsPerImage)
 				totalRows := len(data) / bpr
-				if op.DataLayout.RowsPerImage > 0 && int(op.DataLayout.RowsPerImage) < totalRows {
-					totalRows = int(op.DataLayout.RowsPerImage)
+				if sliceRows > 0 && sliceRows < totalRows && len(data) > sliceRows*bpr {
+					// Multi-slice 3D write: chunk along Z slices so rows per slice stay intact.
+					sliceBytes := sliceRows * bpr
+					totalSlices := len(data) / sliceBytes
+					slicesPerChunk := max(maxGPUChunk/sliceBytes, 1)
+					if totalSlices > slicesPerChunk {
+						for s := 0; s < totalSlices; s += slicesPerChunk {
+							nSlices := min(slicesPerChunk, totalSlices-s)
+							dst := op.TextureDst
+							dst.OriginZ += uint32(s)
+							expanded = append(expanded, driver.GPUResourceOp{
+								Kind:       driver.GPUOpWriteTexture,
+								ID:         op.ID,
+								TextureDst: dst,
+								DataLayout: driver.GPUDataLayout{
+									Offset:       0,
+									BytesPerRow:  op.DataLayout.BytesPerRow,
+									RowsPerImage: op.DataLayout.RowsPerImage,
+								},
+								Data: data[s*sliceBytes : (s+nSlices)*sliceBytes],
+							})
+						}
+						continue
+					}
+					break
+				}
+				if sliceRows > 0 && sliceRows < totalRows {
+					totalRows = sliceRows
 				}
 				rowsPerChunk := max(maxGPUChunk/bpr, 1)
 				if totalRows > rowsPerChunk {
@@ -250,17 +277,25 @@ func writeGPUResourceOp(w *writer, op *driver.GPUResourceOp) error {
 		if op.Texture != nil {
 			t = *op.Texture
 		}
+		depthOrLayers := max(t.Layers, 1)
+		if t.Dimension == driver.GPUDim3D {
+			depthOrLayers = max(t.Depth, 1)
+		}
 		w.byte(byte(t.Dimension))
 		w.u32(t.Width)
 		w.u32(t.Height)
-		w.u32(max(t.Layers, 1))
+		w.u32(depthOrLayers)
 		w.u32(max(t.MipLevels, 1))
 		w.u32(uint32(max(t.SampleCount, 1)))
 		w.byte(byte(t.Format))
 		w.u32(uint32(t.Usage))
 	case driver.GPUOpWriteTexture:
+		zOrLayer := op.TextureDst.ArrayLayer
+		if op.TextureDst.OriginZ > 0 && zOrLayer == 0 {
+			zOrLayer = op.TextureDst.OriginZ
+		}
 		w.u32(op.TextureDst.MipLevel)
-		w.u32(op.TextureDst.ArrayLayer)
+		w.u32(zOrLayer)
 		w.u32(op.TextureDst.OriginX)
 		w.u32(op.TextureDst.OriginY)
 		w.u64(op.DataLayout.Offset)
@@ -378,10 +413,14 @@ func writeGPUResourceOp(w *writer, op *driver.GPUResourceOp) error {
 		w.u32(uint32(max(p.SampleCount, 1)))
 	case driver.GPUOpDestroyPipeline:
 	case driver.GPUOpReadTexture:
+		zOrLayer := op.ReadbackRegion.ArrayLayer
+		if op.ReadbackRegion.Z > 0 && zOrLayer == 0 {
+			zOrLayer = op.ReadbackRegion.Z
+		}
 		w.u64(op.ReadbackID)
 		w.flags(op.ReadbackSurface)
 		w.u32(op.ReadbackRegion.MipLevel)
-		w.u32(op.ReadbackRegion.ArrayLayer)
+		w.u32(zOrLayer)
 		w.u32(op.ReadbackRegion.X)
 		w.u32(op.ReadbackRegion.Y)
 		w.u32(op.ReadbackRegion.Width)
@@ -402,23 +441,35 @@ func writeGPUCopyOp(w *writer, cp *driver.GPUCopyOp) {
 		w.u64(cp.DstOffset)
 		w.u64(cp.Size)
 	case driver.GPUCopyBufferToTexture:
+		dstZ := cp.DstTex.ArrayLayer
+		if cp.DstTex.OriginZ > 0 && dstZ == 0 {
+			dstZ = cp.DstTex.OriginZ
+		}
 		w.u64(cp.SrcLayout.Offset)
 		w.u32(cp.SrcLayout.BytesPerRow)
 		w.u32(cp.SrcLayout.RowsPerImage)
 		w.u32(cp.DstTex.MipLevel)
-		w.u32(cp.DstTex.ArrayLayer)
+		w.u32(dstZ)
 		w.u32(cp.DstTex.OriginX)
 		w.u32(cp.DstTex.OriginY)
 		w.u32(cp.Width)
 		w.u32(cp.Height)
 		w.u32(max(cp.Layers, 1))
 	case driver.GPUCopyTextureToTexture:
+		srcZ := cp.SrcTex.ArrayLayer
+		if cp.SrcTex.OriginZ > 0 && srcZ == 0 {
+			srcZ = cp.SrcTex.OriginZ
+		}
+		dstZ := cp.DstTex.ArrayLayer
+		if cp.DstTex.OriginZ > 0 && dstZ == 0 {
+			dstZ = cp.DstTex.OriginZ
+		}
 		w.u32(cp.SrcTex.MipLevel)
-		w.u32(cp.SrcTex.ArrayLayer)
+		w.u32(srcZ)
 		w.u32(cp.SrcTex.OriginX)
 		w.u32(cp.SrcTex.OriginY)
 		w.u32(cp.DstTex.MipLevel)
-		w.u32(cp.DstTex.ArrayLayer)
+		w.u32(dstZ)
 		w.u32(cp.DstTex.OriginX)
 		w.u32(cp.DstTex.OriginY)
 		w.u32(cp.Width)
@@ -532,6 +583,12 @@ func readGPUEvent(r *reader) (uint32, driver.Event) {
 			MSAA4x:         feats&4 != 0,
 			Depth32Float:   feats&8 != 0,
 			Anisotropy:     feats&16 != 0,
+			Texture3D:      feats&32 != 0,
+		}
+		if len(r.buf) >= 4 {
+			ge.Limits.MaxTextureDimension3D = r.u32()
+		} else if ge.Features.Texture3D {
+			ge.Limits.MaxTextureDimension3D = 256
 		}
 	case driver.GPUEventResize:
 		ge.Width = int(r.u32())

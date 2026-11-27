@@ -299,6 +299,8 @@ func (w *pipeWriter) typeStr(t shaderir.Type) string {
 		return fmt.Sprintf("array<%s, %d>", w.typeStr(t.Sub[0]), t.Length)
 	case shaderir.Texture2D, shaderir.Texture:
 		return "texture2d<float>"
+	case shaderir.Texture3D:
+		return "texture3d<float>"
 	case shaderir.TextureCube:
 		return "texturecube<float>"
 	case shaderir.Texture2DArray:
@@ -866,6 +868,12 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, env *blockEnv) string {
 			if texKind == shaderir.TextureCube && len(args) >= 5 {
 				return fmt.Sprintf("%s.sample(%s, %s, gradientcube(%s, %s))", args[0], args[1], args[2], args[3], args[4])
 			}
+			if texKind == shaderir.Texture3D && len(args) >= 5 {
+				if len(args) >= 6 {
+					return fmt.Sprintf("%s.sample(%s, %s, gradient3d(%s, %s), %s)", args[0], args[1], args[2], args[3], args[4], args[5])
+				}
+				return fmt.Sprintf("%s.sample(%s, %s, gradient3d(%s, %s))", args[0], args[1], args[2], args[3], args[4])
+			}
 			if len(args) >= 6 {
 				return fmt.Sprintf("%s.sample(%s, %s, gradient2d(%s, %s), %s)", args[0], args[1], args[2], args[3], args[4], args[5])
 			}
@@ -884,8 +892,17 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, env *blockEnv) string {
 			if texKind == shaderir.Texture2DArray && len(args) >= 4 {
 				return fmt.Sprintf("%s.read(uint2(%s), uint(%s), uint(%s))", args[0], args[1], args[2], args[3])
 			}
+			if texKind == shaderir.Texture3D {
+				return fmt.Sprintf("%s.read(uint3(%s), uint(%s))", args[0], args[1], args[2])
+			}
 			return fmt.Sprintf("%s.read(uint2(%s), uint(%s))", args[0], args[1], args[2])
 		case shaderir.TextureDimensions:
+			if texKind == shaderir.Texture3D {
+				if len(args) >= 2 {
+					return fmt.Sprintf("uint3(%s.get_width(uint(%s)), %s.get_height(uint(%s)), %s.get_depth(uint(%s)))", args[0], args[1], args[0], args[1], args[0], args[1])
+				}
+				return fmt.Sprintf("uint3(%s.get_width(), %s.get_height(), %s.get_depth())", args[0], args[0], args[0])
+			}
 			if len(args) >= 2 {
 				return fmt.Sprintf("uint2(%s.get_width(uint(%s)), %s.get_height(uint(%s)))", args[0], args[1], args[0], args[1])
 			}

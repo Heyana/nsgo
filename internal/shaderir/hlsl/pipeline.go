@@ -168,6 +168,9 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	if w.usesNumWorkgroups {
 		header = append(header, "cbuffer __NSGoComputeMeta : register(b15) {", "\tuint3 __num_workgroups;", "};")
 	}
+	if w.usesDim3Helper {
+		header = append(header, "uint3 __dim3(Texture3D t, uint lod) { uint __w = 0u, __h = 0u, __d = 0u, __n = 0u; t.GetDimensions(lod, __w, __h, __d, __n); return uint3(__w, __h, __d); }")
+	}
 	for i, b := range p.Bindings {
 		if !w.lenHelpers[i] {
 			continue
@@ -239,6 +242,7 @@ type pipeWriter struct {
 	bindingReg        []uint32
 	regs              []RegisterBinding
 	usesNumWorkgroups bool
+	usesDim3Helper    bool
 	lenHelpers        map[int]bool
 	rawStorage        bool
 	storageHelpers    map[storageHelperKey]string
@@ -290,6 +294,8 @@ func (w *pipeWriter) typeStr(t shaderir.Type) string {
 		return w.valueTypeName(t)
 	case shaderir.Texture2D, shaderir.Texture, shaderir.TextureDepth2D:
 		return "Texture2D"
+	case shaderir.Texture3D:
+		return "Texture3D"
 	case shaderir.TextureCube:
 		return "TextureCube"
 	case shaderir.Texture2DArray:
@@ -665,12 +671,23 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			if texKind == shaderir.Texture2DArray && len(args) >= 4 {
 				return fmt.Sprintf("%s.Load(int4(%s, int(%s), int(%s)))", args[0], args[1], args[2], args[3])
 			}
+			if texKind == shaderir.Texture3D && len(args) >= 3 {
+				return fmt.Sprintf("%s.Load(int4(%s, int(%s)))", args[0], args[1], args[2])
+			}
 			texIdx := e.Exprs[1].Index
 			if texIdx >= 0 && texIdx < len(w.p.Bindings) && w.p.Bindings[texIdx].Type.Main == shaderir.TextureDepth2D {
 				return fmt.Sprintf("%s.Load(int3(%s, %s)).x", args[0], args[1], args[2])
 			}
 			return fmt.Sprintf("%s.Load(int3(%s, %s))", args[0], args[1], args[2])
 		case shaderir.TextureDimensions:
+			if texKind == shaderir.Texture3D {
+				w.usesDim3Helper = true
+				lod := "0u"
+				if len(args) >= 2 {
+					lod = fmt.Sprintf("uint(%s)", args[1])
+				}
+				return fmt.Sprintf("__dim3(%s, %s)", args[0], lod)
+			}
 			return fmt.Sprintf("uint2(0u, 0u) /* %s */", args[0])
 		case shaderir.TextureStore:
 			return fmt.Sprintf("%s[%s] = %s", args[0], args[1], args[2])

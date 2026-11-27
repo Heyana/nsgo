@@ -3883,3 +3883,258 @@ func TestGenerateMipmapsUnsupportedWithoutFeature(t *testing.T) {
 		t.Fatalf("default software device should report MipmapGeneration")
 	}
 }
+
+const tex3DLUTWGSL = `
+struct Params {
+	mode: f32,
+	lod: f32,
+	pad0: f32,
+	pad1: f32,
+}
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var lut: texture_3d<f32>;
+@group(0) @binding(2) var samp: sampler;
+
+struct VertexIn {
+	@location(0) pos: vec3<f32>,
+	@location(1) uvw: vec3<f32>,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) uvw: vec3<f32>,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	out.pos = vec4<f32>(in.pos, 1.0);
+	out.uvw = in.uvw;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	if (params.mode > 1.5) {
+		let d = textureDimensions(lut, 0);
+		return vec4<f32>(f32(d.x) / 255.0, f32(d.y) / 255.0, f32(d.z) / 255.0, 1.0);
+	}
+	if (params.mode > 0.5) {
+		return textureSampleLevel(lut, samp, in.uvw, params.lod);
+	}
+	return textureSample(lut, samp, in.uvw);
+}
+`
+
+func TestTexture3DLUTTrilinearSampling(t *testing.T) {
+	mod := gpu.MustCompileWGSL(tex3DLUTWGSL)
+	sr := gpu.NewSoftwareRenderer(32, 8, gpu.FormatUndefined)
+	dev := sr.Device()
+	if !dev.SupportsTexture3D() || dev.Limits().MaxTextureDimension3D < 256 {
+		t.Fatalf("SupportsTexture3D=%v limit=%d", dev.SupportsTexture3D(), dev.Limits().MaxTextureDimension3D)
+	}
+
+	// 2x2x2 identity RGB LUT: texel (x, y, z) = (x*255, y*255, z*255, 255).
+	lut, err := dev.CreateTexture(nil, gpu.TextureDesc{
+		Label:     "color-lut",
+		Dimension: gpu.Dim3D,
+		Width:     2,
+		Height:    2,
+		Depth:     2,
+		MipLevels: 2,
+		Format:    gpu.FormatRGBA8Unorm,
+		Usage:     gpu.TextureSampled | gpu.TextureCopyDst | gpu.TextureCopySrc,
+	})
+	if err != nil {
+		t.Fatalf("CreateTexture Dim3D: %v", err)
+	}
+
+	// Upload slice 0 and slice 1 separately using OriginZ to exercise 3D sub-box writes.
+	slice0 := []byte{
+		0, 0, 0, 255, 255, 0, 0, 255,
+		0, 255, 0, 255, 255, 255, 0, 255,
+	}
+	slice1 := []byte{
+		0, 0, 255, 255, 255, 0, 255, 255,
+		0, 255, 255, 255, 255, 255, 255, 255,
+	}
+	dev.WriteTextureRegion(gpu.TextureWrite{Texture: lut, OriginZ: 0, Width: 2, Height: 2, Depth: 1}, slice0, gpu.DataLayout{})
+	dev.WriteTextureRegion(gpu.TextureWrite{Texture: lut, OriginZ: 1, Width: 2, Height: 2, Depth: 1}, slice1, gpu.DataLayout{})
+	if err := dev.GenerateMipmaps(lut); err != nil {
+		t.Fatalf("GenerateMipmaps 3D: %v", err)
+	}
+
+	// Direct readback of slice Z=1 should match slice1.
+	var sliceRead []byte
+	dev.ReadTexture(lut, gpu.TextureRegion{Z: 1, Width: 2, Height: 2}, func(rgba []byte, err error) {
+		if err != nil {
+			t.Errorf("ReadTexture Z=1: %v", err)
+		}
+		sliceRead = rgba
+	})
+	if len(sliceRead) != len(slice1) || sliceRead[12] != 255 || sliceRead[13] != 255 || sliceRead[14] != 255 {
+		t.Fatalf("ReadTexture Z=1 = %v, want %v", sliceRead, slice1)
+	}
+
+	samp, err := dev.CreateSampler(nil, gpu.SamplerDesc{
+		MinFilter:    gpu.FilterLinear,
+		MagFilter:    gpu.FilterLinear,
+		MipmapFilter: gpu.FilterLinear,
+		AddressU:     gpu.AddressClampToEdge,
+		AddressV:     gpu.AddressClampToEdge,
+		AddressW:     gpu.AddressClampToEdge,
+	})
+	if err != nil {
+		t.Fatalf("CreateSampler: %v", err)
+	}
+	uBuf, _ := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageUniform | gpu.UsageCopyDst, Data: packFloat32s(0, 0, 0, 0)})
+	bgl, _ := dev.CreateBindGroupLayout(nil, []gpu.BindGroupLayoutEntry{
+		{Binding: 0, Visibility: gpu.StageFragment, Type: gpu.BindingUniform},
+		{Binding: 1, Visibility: gpu.StageFragment, Type: gpu.BindingTexture},
+		{Binding: 2, Visibility: gpu.StageFragment, Type: gpu.BindingSampler},
+	})
+	bg, _ := dev.CreateBindGroup(nil, bgl, []gpu.BindGroupEntry{
+		{Binding: 0, Buffer: uBuf},
+		{Binding: 1, Texture: lut},
+		{Binding: 2, Sampler: samp},
+	})
+	pipe, err := dev.CreatePipeline(nil, gpu.PipelineDesc{
+		Vertex:   gpu.ShaderStage{Module: mod, EntryPoint: "vs_main"},
+		Fragment: gpu.ShaderStage{Module: mod, EntryPoint: "fs_main"},
+		Layouts:  []*gpu.BindGroupLayout{bgl},
+		VertexBuffers: []gpu.VertexBufferLayout{{
+			Stride: 6 * 4,
+			Attributes: []gpu.VertexAttribute{
+				{Location: 0, Offset: 0, Format: gpu.VertexFloat32x3},
+				{Location: 1, Offset: 3 * 4, Format: gpu.VertexFloat32x3},
+			},
+		}},
+		Targets: []gpu.ColorTargetState{{Format: gpu.FormatRGBA8Unorm}},
+	})
+	if err != nil {
+		t.Fatalf("CreatePipeline: %v", err)
+	}
+
+	// 4 vertical strips across 32x8:
+	// strip 0: (0.25, 0.25, 0.25) -> corner (0, 0, 0)
+	// strip 1: (0.75, 0.75, 0.75) -> corner (255, 255, 255)
+	// strip 2: (0.50, 0.50, 0.50) -> trilinear center (~128, 128, 128)
+	// strip 3: (0.50, 0.25, 0.75) -> trilinear (~128, 0, 255)
+	samples := [4][3]float32{
+		{0.25, 0.25, 0.25},
+		{0.75, 0.75, 0.75},
+		{0.50, 0.50, 0.50},
+		{0.50, 0.25, 0.75},
+	}
+	var vbytes []byte
+	for i, c := range samples {
+		x0 := -1.0 + float32(i)*0.5
+		x1 := -1.0 + float32(i+1)*0.5
+		vbytes = append(vbytes, packFloat32s(
+			x0, -1, 0.5, c[0], c[1], c[2],
+			x1, -1, 0.5, c[0], c[1], c[2],
+			x1, 1, 0.5, c[0], c[1], c[2],
+			x0, -1, 0.5, c[0], c[1], c[2],
+			x1, 1, 0.5, c[0], c[1], c[2],
+			x0, 1, 0.5, c[0], c[1], c[2],
+		)...)
+	}
+	vb, _ := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageVertex, Data: vbytes})
+
+	render := func(mode, lod float32) []byte {
+		dev.WriteBuffer(uBuf, 0, packFloat32s(mode, lod, 0, 0))
+		enc := dev.BeginEncoder()
+		p := enc.BeginRenderPass(gpu.RenderPassDesc{})
+		p.ClearColor(core.RGB(0x000000))
+		p.SetPipeline(pipe)
+		p.SetBindGroup(0, bg)
+		p.SetVertexBuffer(0, vb, 0)
+		p.Draw(24, 0)
+		p.End()
+		dev.Submit(enc.Finish())
+		var pix []byte
+		dev.ReadSurface(func(rgba []byte, err error) {
+			if err != nil {
+				t.Fatalf("ReadSurface: %v", err)
+			}
+			pix = rgba
+		})
+		return pix
+	}
+	nearByte := func(got, want byte) bool {
+		d := int(got) - int(want)
+		return d >= -2 && d <= 2
+	}
+
+	// Pass 1: trilinear textureSample on mip 0.
+	pix := render(0, 0)
+	wantStrips := [4][4]byte{
+		{0, 0, 0, 255},
+		{255, 255, 255, 255},
+		{128, 128, 128, 255},
+		{128, 0, 255, 255},
+	}
+	for i, w := range wantStrips {
+		x := i*8 + 4
+		off := (4*32 + x) * 4
+		for ch := 0; ch < 4; ch++ {
+			if !nearByte(pix[off+ch], w[ch]) {
+				t.Errorf("strip %d pixel = %v, want ~%v", i, pix[off:off+4], w)
+				break
+			}
+		}
+	}
+
+	// Pass 2: textureSampleLevel at mip 1 (1x1x1 average of all 8 corners = ~128, 128, 128, 255).
+	mipPix := render(1, 1.0)
+	off := (4*32 + 4) * 4
+	for ch := 0; ch < 3; ch++ {
+		if !nearByte(mipPix[off+ch], 128) {
+			t.Errorf("mip 1 pixel = %v, want ~[128 128 128 255]", mipPix[off:off+4])
+			break
+		}
+	}
+
+	// Pass 3: textureDimensions returns (2, 2, 2).
+	dimPix := render(2, 0)
+	if dimPix[off] != 2 || dimPix[off+1] != 2 || dimPix[off+2] != 2 {
+		t.Errorf("textureDimensions pixel = %v, want [2 2 2 255]", dimPix[off:off+4])
+	}
+}
+
+func TestTexture3DValidationAndCapability(t *testing.T) {
+	// Unsupported when Features.Texture3D is false.
+	no3D := gpu.NewSoftwareRendererWithFeatures(8, 8, gpu.FormatUndefined, gpu.Features{Depth32Float: true})
+	if no3D.Device().SupportsTexture3D() {
+		t.Fatal("expected SupportsTexture3D == false when feature disabled")
+	}
+	if _, err := no3D.Device().CreateTexture(nil, gpu.TextureDesc{
+		Dimension: gpu.Dim3D, Width: 4, Height: 4, Depth: 4,
+		Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled,
+	}); !errors.Is(err, gpu.ErrUnsupported) {
+		t.Fatalf("CreateTexture Dim3D without feature = %v, want ErrUnsupported", err)
+	}
+
+	dev := gpu.NewSoftwareRenderer(8, 8, gpu.FormatUndefined).Device()
+	badCases := []struct {
+		name string
+		desc gpu.TextureDesc
+	}{
+		{"zero_depth", gpu.TextureDesc{Dimension: gpu.Dim3D, Width: 4, Height: 4, Depth: 0, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled}},
+		{"multiple_layers", gpu.TextureDesc{Dimension: gpu.Dim3D, Width: 4, Height: 4, Depth: 4, Layers: 2, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled}},
+		{"exceeds_limit", gpu.TextureDesc{Dimension: gpu.Dim3D, Width: 4, Height: 4, Depth: dev.Limits().MaxTextureDimension3D + 1, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled}},
+		{"depth_format", gpu.TextureDesc{Dimension: gpu.Dim3D, Width: 4, Height: 4, Depth: 4, Format: gpu.FormatDepth24Plus, Usage: gpu.TextureSampled}},
+		{"compressed_format", gpu.TextureDesc{Dimension: gpu.Dim3D, Width: 4, Height: 4, Depth: 4, Format: gpu.FormatBC1RGBAUnorm, Usage: gpu.TextureSampled}},
+		{"storage_usage", gpu.TextureDesc{Dimension: gpu.Dim3D, Width: 4, Height: 4, Depth: 4, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureStorageBinding}},
+		{"depth_on_2d", gpu.TextureDesc{Dimension: gpu.Dim2D, Width: 4, Height: 4, Depth: 4, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled}},
+		{"excess_mips", gpu.TextureDesc{Dimension: gpu.Dim3D, Width: 2, Height: 2, Depth: 4, MipLevels: 4, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled}},
+	}
+	for _, tc := range badCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := dev.CreateTexture(nil, tc.desc); !errors.Is(err, gpu.ErrInvalidDescriptor) {
+				t.Fatalf("CreateTexture(%s) = %v, want ErrInvalidDescriptor", tc.name, err)
+			}
+		})
+	}
+}

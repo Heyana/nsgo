@@ -1215,6 +1215,140 @@ func TestCompileTexture2DArrayAndMipEmitters(t *testing.T) {
 	}
 }
 
+const tex3DWGSL = `
+struct Params {
+	lod: f32,
+	pad0: f32,
+	pad1: f32,
+	pad2: f32,
+}
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var volTex: texture_3d<f32>;
+@group(0) @binding(2) var volSamp: sampler;
+
+struct VertexIn {
+	@location(0) pos: vec3<f32>,
+	@location(1) uvw: vec3<f32>,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) uvw: vec3<f32>,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	out.pos = vec4<f32>(in.pos, 1.0);
+	out.uvw = in.uvw;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	let a = textureSample(volTex, volSamp, in.uvw);
+	let b = textureSampleLevel(volTex, volSamp, in.uvw, params.lod);
+	let g = textureSampleGrad(volTex, volSamp, in.uvw, vec3<f32>(0.1, 0.0, 0.0), vec3<f32>(0.0, 0.1, 0.0));
+	let c = textureLoad(volTex, vec3<i32>(0, 0, 0), 0);
+	let dims = textureDimensions(volTex, 0);
+	let scale = select(0.5, 1.0, dims.z > 0u);
+	return (a + b + g + c) * scale;
+}
+`
+
+func TestCompileTexture3DEmitters(t *testing.T) {
+	prog, err := wgsl.CompilePipeline(tex3DWGSL)
+	if err != nil {
+		t.Fatalf("CompilePipeline tex3d: %v", err)
+	}
+	ir := prog.IR
+	if len(ir.Bindings) != 3 || ir.Bindings[1].Type.Main != shaderir.Texture3D {
+		t.Fatalf("unexpected bindings: %+v", ir.Bindings)
+	}
+
+	mslOut, err := msl.CompilePipeline(ir)
+	if err != nil {
+		t.Fatalf("msl.CompilePipeline: %v", err)
+	}
+	for _, want := range []string{
+		"texture3d<float> B1 [[texture(0)]]",
+		"B1.sample(B2, (l2).M1)",
+		"B1.sample(B2, (l2).M1, level((B0).M0))",
+		"B1.sample(B2, (l2).M1, gradient3d(",
+		"B1.read(uint3(",
+		"uint3(B1.get_width(uint(0)), B1.get_height(uint(0)), B1.get_depth(uint(0)))",
+	} {
+		if !strings.Contains(mslOut.Source, want) {
+			t.Errorf("MSL missing %q:\n%s", want, mslOut.Source)
+		}
+	}
+
+	hlslOut, err := hlsl.CompilePipeline(ir)
+	if err != nil {
+		t.Fatalf("hlsl.CompilePipeline: %v", err)
+	}
+	for _, want := range []string{
+		"Texture3D B1 : register(t0);",
+		"uint3 __dim3(Texture3D t, uint lod)",
+		"B1.Sample(B2, (l2).M1)",
+		"B1.SampleLevel(B2, (l2).M1, (B0).M0)",
+		"B1.SampleGrad(B2, (l2).M1,",
+		"B1.Load(int4(",
+		"__dim3(B1, uint(0))",
+	} {
+		if !strings.Contains(hlslOut.PixelSource, want) {
+			t.Errorf("HLSL PS missing %q:\n%s", want, hlslOut.PixelSource)
+		}
+	}
+
+	for _, ver := range []glsl.GLSLVersion{glsl.GLSLVersionDefault, glsl.GLSLVersionES300} {
+		glslOut, err := glsl.CompilePipeline(ir, ver)
+		if err != nil {
+			t.Fatalf("glsl.CompilePipeline(%v): %v", ver, err)
+		}
+		wants := []string{
+			"uniform sampler3D S_t1_s2;",
+			"texture(S_t1_s2, (l2).M1)",
+			"textureLod(S_t1_s2, (l2).M1, (B0).M0)",
+			"textureGrad(S_t1_s2, (l2).M1,",
+			"texelFetch(S_t1_raw, ivec3(",
+			"uvec3(textureSize(S_t1_raw, int(0)))",
+		}
+		if ver == glsl.GLSLVersionES300 {
+			wants = append(wants, "precision highp sampler3D;")
+		}
+		for _, want := range wants {
+			if !strings.Contains(glslOut.FragmentSource, want) {
+				t.Errorf("GLSL(%v) FS missing %q:\n%s", ver, want, glslOut.FragmentSource)
+			}
+		}
+		if len(glslOut.SamplerPairs) < 1 || glslOut.SamplerPairs[0].TextureType != shaderir.Texture3D {
+			t.Errorf("GLSL(%v) SamplerPairs = %+v, want Texture3D", ver, glslOut.SamplerPairs)
+		}
+	}
+
+	wgslOut, err := irwgsl.CompilePipeline(ir)
+	if err != nil {
+		t.Fatalf("irwgsl.CompilePipeline: %v", err)
+	}
+	for _, want := range []string{
+		"texture_3d<f32>",
+		"textureSample(B1, B2,",
+		"textureSampleLevel(B1, B2,",
+		"textureSampleGrad(B1, B2,",
+		"textureLoad(B1,",
+		"textureDimensions(B1, 0i)",
+	} {
+		if !strings.Contains(wgslOut, want) {
+			t.Errorf("WGSL missing %q:\n%s", want, wgslOut)
+		}
+	}
+	if _, err := wgsl.CompilePipeline(wgslOut); err != nil {
+		t.Errorf("emitted 3D WGSL did not round-trip: %v\n%s", err, wgslOut)
+	}
+}
+
 func TestPipelineTextureOverloadErrors(t *testing.T) {
 	cases := []struct {
 		name string
@@ -1254,6 +1388,23 @@ func TestPipelineTextureOverloadErrors(t *testing.T) {
 @group(0) @binding(1) var s: sampler;
 @fragment fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 	return textureSampleLevel(a, s, uv, 1);
+}`,
+		},
+		{
+			name: "tex3d_with_vec2",
+			src: `
+@group(0) @binding(0) var v: texture_3d<f32>;
+@group(0) @binding(1) var s: sampler;
+@fragment fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+	return textureSample(v, s, uv);
+}`,
+		},
+		{
+			name: "tex3d_load_with_vec2",
+			src: `
+@group(0) @binding(0) var v: texture_3d<f32>;
+@fragment fn fs_main() -> @location(0) vec4<f32> {
+	return textureLoad(v, vec2<i32>(0, 0), 0);
 }`,
 		},
 	}

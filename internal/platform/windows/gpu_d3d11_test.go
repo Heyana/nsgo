@@ -693,6 +693,38 @@ func TestD3D11ExternalSRVDescriptor(t *testing.T) {
 	}
 }
 
+func TestD3D11Texture3DDescriptorAndLimits(t *testing.T) {
+	if lim := d3d11Limits(); lim.MaxTextureDimension3D != 2048 {
+		t.Fatalf("d3d11Limits().MaxTextureDimension3D = %d, want 2048", lim.MaxTextureDimension3D)
+	}
+	if feat := d3d11Features(); !feat.Texture3D {
+		t.Fatal("d3d11Features().Texture3D = false, want true")
+	}
+	desc := driver.GPUTextureDesc{
+		Dimension: driver.GPUDim3D,
+		Width:     16,
+		Height:    8,
+		Depth:     4,
+		MipLevels: 3,
+		Format:    driver.GPUFormatRGBA8Unorm,
+		Usage:     driver.GPUTextureSampled | driver.GPUTextureRenderAttachment,
+	}
+	td3, srv, rtv := d3dTexture3DDescriptor(desc)
+	if td3.width != 16 || td3.height != 8 || td3.depth != 4 || td3.mipLevels != 3 || td3.format != dxgiFmtR8G8B8A8Unorm {
+		t.Fatalf("d3dTexture3DDescriptor td3 = %+v", td3)
+	}
+	if srv.viewDimension != d3d11SRVDimTexture3D || srv.u0 != 0 || srv.u1 != 3 {
+		t.Fatalf("d3dTexture3DDescriptor srv = %+v", srv)
+	}
+	if rtv.viewDimension != d3d11RTVDimTexture3D || rtv.u2 != 4 {
+		t.Fatalf("d3dTexture3DDescriptor rtv = %+v", rtv)
+	}
+	_, srv2, _, _ := d3dTexture2DDescriptor(desc)
+	if srv2.viewDimension != d3d11SRVDimTexture3D {
+		t.Fatalf("d3dTexture2DDescriptor(Dim3D) srv = %+v, want d3d11SRVDimTexture3D", srv2)
+	}
+}
+
 func TestD3D11ControllerImportsTexturesAndHoldsKeyedMutexWhileDrawing(t *testing.T) {
 	ops := &fakeD3D11Ops{}
 	var errs []string

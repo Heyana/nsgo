@@ -139,7 +139,7 @@ func compilePipelineModule(m *module, src string) *PipelineProgram {
 			}
 		case "":
 			switch t.k {
-			case kTexture2D, kTextureCube, kTexture2DArray, kTextureDepth2D, kTextureMultisampled2D:
+			case kTexture2D, kTexture3D, kTextureCube, kTexture2DArray, kTextureDepth2D, kTextureMultisampled2D:
 				kind = shaderir.BindingTexture
 			case kTextureStorage2D:
 				kind = shaderir.BindingStorageTexture
@@ -734,7 +734,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 		switch texT.k {
 		case kTexture2D, kTexture2DArray, kTextureDepth2D:
 			want = vec(kF32, 2)
-		case kTextureCube:
+		case kTexture3D, kTextureCube:
 			want = vec(kF32, 3)
 		default:
 			fail(arg.at(), "%s does not support texture type %s", name, texT)
@@ -744,7 +744,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 	checkTexAndSampler := func(comp bool) (ty, shaderir.Expr, shaderir.Expr) {
 		tex := c.expr(x.args[0], out)
 		switch tex.t.k {
-		case kTexture2D, kTextureCube, kTexture2DArray, kTextureDepth2D:
+		case kTexture2D, kTexture3D, kTextureCube, kTexture2DArray, kTextureDepth2D:
 		default:
 			fail(x.args[0].at(), "%s first argument must be a sampled texture, not %s", name, tex.t)
 		}
@@ -759,8 +759,12 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 		return tex.t, c.ir(tex), c.ir(samp)
 	}
 
-	offsetArg := func(arg expr) shaderir.Expr {
-		return c.ir(c.convert(c.expr(arg, out), vec(kI32, 2), arg.at()))
+	offsetArg := func(texT ty, arg expr) shaderir.Expr {
+		n := 2
+		if texT.k == kTexture3D {
+			n = 3
+		}
+		return c.ir(c.convert(c.expr(arg, out), vec(kI32, n), arg.at()))
 	}
 	f32Arg := func(arg expr) shaderir.Expr {
 		return c.ir(c.convert(c.expr(arg, out), tF32, arg.at()))
@@ -790,7 +794,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 			if texT.k == kTextureCube {
 				fail(x.args[3].at(), "textureSample on texture_cube<f32> takes no offset")
 			}
-			args = append(args, offsetArg(x.args[3]))
+			args = append(args, offsetArg(texT, x.args[3]))
 		}
 		retT := sampledRet(texT)
 		return value{t: retT, e: builtinCall(shaderir.TextureSample, retT, args...)}, true
@@ -810,7 +814,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 			// texture_depth_2d takes an integer level, as on main.
 			args = append(args, c.ir(c.concrete(c.expr(x.args[3], out), x.args[3].at())))
 			if len(x.args) == 5 {
-				args = append(args, offsetArg(x.args[4]))
+				args = append(args, offsetArg(texT, x.args[4]))
 			}
 		default:
 			args = append(args, f32Arg(x.args[3]))
@@ -818,7 +822,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 				if texT.k == kTextureCube {
 					fail(x.args[4].at(), "textureSampleLevel on texture_cube<f32> takes no offset")
 				}
-				args = append(args, offsetArg(x.args[4]))
+				args = append(args, offsetArg(texT, x.args[4]))
 			}
 		}
 		retT := sampledRet(texT)
@@ -844,7 +848,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 				if texT.k == kTextureCube {
 					fail(x.args[4].at(), "textureSampleBias on texture_cube<f32> takes no offset")
 				}
-				args = append(args, offsetArg(x.args[4]))
+				args = append(args, offsetArg(texT, x.args[4]))
 			}
 		}
 		return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureSampleBias, vec(kF32, 4), args...)}, true
@@ -858,7 +862,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 		}
 		args := []shaderir.Expr{texIR, sampIR, checkCoord(texT, x.args[2])}
 		gradT := vec(kF32, 2)
-		if texT.k == kTextureCube {
+		if texT.k == kTextureCube || texT.k == kTexture3D {
 			gradT = vec(kF32, 3)
 		}
 		grad := func(arg expr) shaderir.Expr { return c.ir(c.convert(c.expr(arg, out), gradT, arg.at())) }
@@ -874,7 +878,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 				if texT.k == kTextureCube {
 					fail(x.args[5].at(), "textureSampleGrad on texture_cube<f32> takes no offset")
 				}
-				args = append(args, offsetArg(x.args[5]))
+				args = append(args, offsetArg(texT, x.args[5]))
 			}
 		}
 		return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureSampleGrad, vec(kF32, 4), args...)}, true
@@ -894,7 +898,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 		ref := c.convert(c.expr(x.args[3], out), tF32, x.args[3].at())
 		args := []shaderir.Expr{c.ir(tex), c.ir(samp), c.ir(coord), c.ir(ref)}
 		if len(x.args) == 5 {
-			args = append(args, offsetArg(x.args[4]))
+			args = append(args, offsetArg(tex.t, x.args[4]))
 		}
 		fn := shaderir.TextureSampleCompare
 		if name == "textureSampleCompareLevel" {
@@ -921,6 +925,17 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 			args = append(args, c.ir(coord), checkLayer(x.args[2]), checkLayer(x.args[3]))
 			return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureLoad, vec(kF32, 4), args...)}, true
 		}
+		if tex.t.k == kTexture3D {
+			if len(x.args) != 3 {
+				fail(x.at(), "textureLoad on texture_3d<f32> takes 3 arguments (texture, coords, level)")
+			}
+			coord := c.concrete(c.expr(x.args[1], out), x.args[1].at())
+			if coord.t.k != kVec || coord.t.n != 3 || !isInt(coord.t.elem) {
+				fail(x.args[1].at(), "textureLoad coordinates on texture_3d<f32> must be vec3<i32> or vec3<u32>, not %s", coord.t)
+			}
+			args = append(args, c.ir(coord), checkLayer(x.args[2]))
+			return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureLoad, vec(kF32, 4), args...)}, true
+		}
 		for i := 1; i < len(x.args); i++ {
 			a := x.args[i]
 			args = append(args, c.ir(c.concrete(c.expr(a, out), a.at())))
@@ -936,7 +951,11 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 		if len(x.args) == 2 {
 			args = append(args, checkLayer(x.args[1]))
 		}
-		return value{t: vec(kU32, 2), e: builtinCall(shaderir.TextureDimensions, vec(kU32, 2), args...)}, true
+		retT := vec(kU32, 2)
+		if tex.t.k == kTexture3D {
+			retT = vec(kU32, 3)
+		}
+		return value{t: retT, e: builtinCall(shaderir.TextureDimensions, retT, args...)}, true
 	case "textureStore":
 		if len(x.args) != 3 {
 			fail(x.at(), "textureStore takes 3 arguments (texture, coords, value)")
