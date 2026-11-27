@@ -42,78 +42,31 @@ type Options struct {
 
 // view is the Go side of one node of the host's tree.
 type view struct {
-	s         *surface
-	id        driver.NodeID
-	kind      driver.ViewKind
-	parent    *view
-	children  []*view
-	deleted   bool
-	presented bool
-
-	frame    driver.Bounds
-	style    driver.ViewStyle
-	styled   bool
-	born     uint64
-	props    driver.ViewProps
-	events   driver.EventMask
-	overflow driver.Bounds
-
-	// transformedKids is ItemOverflow's Transformed: a child may be drawn transformed, outside overflow.
-	transformedKids bool
-
-	animated *driver.AnimatedValues
-	moving   *motion     // its frame mid layout animation
-	trans    *transition // its style mid transition
+	*watchNode
+	s *surface
 
 	// A text's layout and where it goes; a canvas's drawing; an image's
 	// loads; a field's state, config, value and its own layout.
-	layout  *apple.Layout
-	plain   string
-	box     driver.Bounds
-	drawing *driver.Drawing
-	image   *apple.ImageView
-	field   *field.State
-	value   string
-	shown   *apple.Layout
-
-	// A scroll view's config, content size, offset, the app's scrolls
-	// applied and its phase (Host.swift's codes).
-	scroll  driver.ScrollConfig
-	content driver.Size
-	offset  driver.Point
-	applied uint32
-	phase   uint8
-
-	// What the host was last sent: the look, the ink, accessibility state
-	// and the ops the look draws over and under the content.
-	sentLook   look
-	sentInk    driver.Bounds
-	sentAccess watchAccess
-	draws      bool
-	culled     bool
-	back       []driver.DrawOp
-	front      []driver.DrawOp
-	boxFor     boxKey
+	layout    *apple.Layout
+	plain     string
+	box       driver.Bounds
+	drawing   *driver.Drawing
+	frozenOps []driver.DrawOp // canvas ops frozen while retired as a leaving ghost
+	image     *apple.ImageView
+	field     *field.State
+	value     string
+	shown     *apple.Layout
 }
 
-// look is what a node's SwiftUI modifiers show (Host.swift's look op).
-type look struct {
-	opacity float64
-	hidden  bool
-	clips   bool
-	// inset is how far the clip stands inside the box on each side, the border's widths (driver.ViewStyle.ClipBox), and radii are its corners there.
-	inset     driver.Edges
-	radii     driver.Corners
-	transform [6]float64
-}
-
-// boxKey is the style and size boxOps last drew.
-type boxKey struct {
-	style driver.ViewStyle
-	w, h  float32
+func viewOf(n *watchNode) *view {
+	if n == nil || n.owner == nil {
+		return nil
+	}
+	return n.owner.(*view)
 }
 
 type surface struct {
+	watchTree
 	sensors apple.Sensors
 	auths   authSessions
 	perms   watchPermissions
@@ -124,24 +77,11 @@ type surface struct {
 	app         engine.App
 	engine      *engine.Engine
 	batches     queue.Batches
-	batch       uint64
 	devGeometry driver.GeometryObserver
-	views       []*view
-	root        driver.NodeID
 	env         driver.Environment
 	envPin      func(driver.Environment) driver.Environment
 	started     bool
 	size        driver.Size
-	epoch       time.Time
-
-	w writer
-	// dirty are the views whose look, ink or drawing changed since the
-	// host last heard.
-	dirty  map[*view]bool
-	redraw map[*view]bool
-	// recull says the frames or offsets that decide which views are
-	// culled changed (cull.go).
-	recull bool
 
 	animator *driver.Animator
 	// frameWanted is set while the app waits for a display frame, by the
@@ -150,7 +90,6 @@ type surface struct {
 	frameWanted atomic.Bool
 	ticks       atomic.Bool
 	ticking     bool
-	motions     map[*view]bool
 	alerts      map[uint32][]driver.AlertAction
 	// focused is the field the system's text input edits.
 	focused *view
@@ -158,7 +97,6 @@ type surface struct {
 	touch   touchState
 	fingers responderTouches
 	blocked []*view // the scroll views a touch responder locked (ItemBlockNative)
-	sticky  stickyTracker
 }
 
 func init() {
@@ -203,8 +141,8 @@ func Run(root engine.App, opts Options) {
 }
 
 func newSurface(root engine.App, opts Options) *surface {
-	s := &surface{opts: opts, app: root, epoch: time.Now(), dirty: map[*view]bool{}, redraw: map[*view]bool{},
-		motions: map[*view]bool{}, alerts: map[uint32][]driver.AlertAction{}}
+	s := &surface{opts: opts, app: root, alerts: map[uint32][]driver.AlertAction{}}
+	s.initTree(time.Now())
 	s.animator = driver.NewAnimator(func(e driver.Event) { s.engine.Dispatch(e) })
 	return s
 }
@@ -439,15 +377,16 @@ func hostFrame(shown float64) {
 // host before the first frame, as a checked switch's initial position does.
 func (s *surface) applyAnimated() {
 	s.animator.Changed(func(id driver.NodeID, v driver.AnimatedValues) {
-		if vw := s.view(id); vw != nil {
+		if n := s.node(id); n != nil {
 			a := v
-			vw.animated = &a
-			s.touched(vw)
+			n.animated = &a
+			s.touchedNode(n)
 		}
 	})
 	s.animator.ChangedCanvases(func(id driver.NodeID) {
-		if vw := s.view(id); vw != nil {
-			s.redraw[vw] = true
+		if n := s.node(id); n != nil {
+			s.ensureMaps()
+			s.redraw[n] = true
 		}
 	})
 	if s.sticky.repinBound(func(id driver.NodeID) (driver.Point, bool, bool) {
@@ -461,36 +400,31 @@ func (s *surface) applyAnimated() {
 }
 
 func (s *surface) view(id driver.NodeID) *view {
-	if int(id) < len(s.views) {
-		return s.views[id]
-	}
-	return nil
+	return viewOf(s.node(id))
+}
+
+func (s *surface) hostView(hostID driver.NodeID) *view {
+	return viewOf(s.hostNode(hostID))
 }
 
 // touched marks v's look and ink to be sent again.
 func (s *surface) touched(v *view) {
-	s.dirty[v] = true
-	s.recull = true
+	s.touchedNode(v.watchNode)
 }
 
 func (s *surface) apply(b *driver.MountBatch) {
 	s.devGeometry.Begin(b.GeometryVersion)
 	defer func() { s.devGeometry.End(); s.reportGeometry() }()
 	s.batch++
-	var lb *layoutBatch
-	if b.LayoutAnimation != nil && !s.motionReduced() {
-		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[driver.NodeID]bool{}}
-	}
+	now := time.Now()
+	lb := s.newLayoutBatch(b.LayoutAnimation, now, s.motionReduced())
 	for i := range b.Items {
 		it := &b.Items[i]
 		switch it.Kind {
 		case driver.ItemCreate:
-			for len(s.views) <= int(it.ID) {
-				s.views = append(s.views, nil)
-			}
-			s.views[it.ID] = s.create(it.View, it.ID)
+			v := s.create(it.View, it.ID)
 			if lb != nil {
-				lb.created[it.ID] = true
+				lb.created[v.watchNode] = true
 			}
 			continue
 		case driver.ItemAnimation:
@@ -521,9 +455,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.openURL(it.Value, it.Count)
 			continue
 		case driver.ItemDismissKeyboard:
-			for _, v := range s.views {
-				if v != nil && v.field != nil {
-					s.w.op(opBlur, v.id)
+			for _, n := range s.views {
+				if v := viewOf(n); v != nil && v.field != nil {
+					s.w.op(opBlur, v.hostID)
 				}
 			}
 			continue
@@ -597,49 +531,34 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemDelete:
 			isModal := v.kind == driver.KindModal
 			id := v.id
-			s.delete(v)
+			s.deleteView(v, lb)
 			if isModal {
 				s.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: id})
 			}
 		case driver.ItemRemove:
-			s.detach(v)
-			s.w.op(opRemove, v.id)
+			s.removeNode(v.watchNode)
 		case driver.ItemInsert:
 			p := s.view(it.Parent)
 			if p == nil {
 				break
 			}
-			s.detach(v)
-			at := len(p.children)
-			if before := s.view(it.Before); before != nil && it.Before != 0 {
-				for i, c := range p.children {
-					if c == before {
-						at = i
-						break
-					}
-				}
+			var before *watchNode
+			if it.Before != 0 {
+				before = s.node(it.Before)
 			}
-			p.children = append(p.children, nil)
-			copy(p.children[at+1:], p.children[at:])
-			p.children[at] = v
-			v.parent = p
-			s.recull = true
-			s.w.op(opInsert, v.id, p.id, it.Before)
+			s.insertNode(v.watchNode, p.watchNode, before, lb)
 			if v.kind == driver.KindModal && !v.presented {
 				v.presented = true
 				s.engine.Dispatch(driver.Event{Kind: driver.EventModalShown, ID: v.id})
 			}
-			if lb != nil && lb.created[v.id] {
-				s.appear(v, lb)
-			}
 		case driver.ItemOverflow:
 			v.overflow, v.transformedKids = it.Frame, it.Transformed
 		case driver.ItemMatch:
-			s.match(v, s.view(it.Before), lb)
+			s.matchNode(v.watchNode, s.node(it.Before), lb)
 		case driver.ItemFrame:
-			s.setFrame(v, it.Frame, lb)
+			s.setFrame(v, it.Frame, lb, now)
 		case driver.ItemViewStyle:
-			s.setStyle(v, it.ViewStyle)
+			s.setNodeStyle(v.watchNode, it.ViewStyle, now, s.motionReduced())
 		case driver.ItemViewProps:
 			v.props = *it.ViewProps
 			s.sendAccess(v)
@@ -659,14 +578,14 @@ func (s *surface) apply(b *driver.MountBatch) {
 			v.box = it.Text.Content
 			s.sendAccess(v)
 			s.touched(v)
-			s.redraw[v] = true
+			s.redraw[v.watchNode] = true
 		case driver.ItemCanvas:
 			was := v.drawing
 			v.drawing = it.Drawing
 			was.Release()
 			s.animator.BindCanvas(v.id, it.Drawing.Slots)
 			s.touched(v)
-			s.redraw[v] = true
+			s.redraw[v.watchNode] = true
 		case driver.ItemImage:
 			v.image.Configure(it.Image)
 			s.touched(v)
@@ -680,11 +599,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemFocus:
 			if v.field != nil && fieldCanFocus(v.field.Config) {
-				s.w.op(opFocus, v.id)
+				s.w.op(opFocus, v.hostID)
 			}
 		case driver.ItemBlur:
 			if v.field != nil {
-				s.w.op(opBlur, v.id)
+				s.w.op(opBlur, v.hostID)
 			}
 		case driver.ItemScrollConfig:
 			axisChanged := v.scroll.Horizontal != it.Scroll.Horizontal
@@ -699,15 +618,15 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemScrollTo:
 			v.applied++
 			to := clampOffset(v, it.Point)
-			s.inputGate.expectScroll(uint32(v.id))
-			s.w.op(opScrollTo, v.id)
+			s.inputGate.expectScroll(uint32(v.hostID))
+			s.w.op(opScrollTo, v.hostID)
 			s.w.f64(float64(to.X), float64(to.Y))
 			s.w.flag(it.Animated && !s.motionReduced())
 		case driver.ItemScrollBy:
 			v.applied++
 			to := clampOffset(v, driver.Point{X: v.offset.X + it.Point.X, Y: v.offset.Y + it.Point.Y})
-			s.inputGate.expectScroll(uint32(v.id))
-			s.w.op(opScrollTo, v.id)
+			s.inputGate.expectScroll(uint32(v.hostID))
+			s.w.op(opScrollTo, v.hostID)
 			s.w.f64(float64(to.X), float64(to.Y))
 			s.w.flag(false)
 		case driver.ItemStickyCells:
@@ -716,12 +635,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		}
 	}
-	if b.Root != s.root {
-		s.root = b.Root
-		s.w.op(opRoot, b.Root)
-	}
-	for _, v := range s.views {
-		if v != nil && v.image != nil {
+	s.setRootNode(b.Root)
+	for _, n := range s.views {
+		if v := viewOf(n); v != nil && v.image != nil {
 			v.image.Start(float64(s.env.PixelRatio))
 		}
 	}
@@ -731,13 +647,17 @@ func (s *surface) apply(b *driver.MountBatch) {
 }
 
 func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
-	v := &view{s: s, id: id, kind: kind, style: driver.DefaultViewStyle, born: s.batch}
+	n := s.createNode(kind, id)
+	v := &view{watchNode: n, s: s}
+	n.owner = v
 	switch kind {
 	case driver.KindImage:
 		v.image = apple.NewDrawnImage(func() {
-			s.touched(v)
-			s.redraw[v] = true
-			s.flushSoon()
+			if !n.deleted || n.retired {
+				s.touchedNode(n)
+				s.redraw[n] = true
+				s.flushSoon()
+			}
 		})
 		v.image.Dispatch = func(e driver.Event) { v.report(e) }
 	case driver.KindInput:
@@ -746,58 +666,59 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 		// watchOS has no web views, players the app places, components or
 		// Metal: they show as empty boxes.
 	}
-	// The host's kinds are driver.ViewKind's up to canvases; the rest are
-	// plain nodes there.
-	k := kind
-	if k > driver.KindCanvas {
-		k = driver.KindView
-	}
-	s.w.op(opCreate, id)
-	s.w.byte(byte(k))
-	s.touched(v)
 	return v
 }
 
-func (s *surface) detach(v *view) {
-	if p := v.parent; p != nil {
-		for i, c := range p.children {
-			if c == v {
-				p.children = append(p.children[:i], p.children[i+1:]...)
-				break
-			}
+func (s *surface) retirePayload(n *watchNode) {
+	v := viewOf(n)
+	if v != nil && v.drawing != nil {
+		v.frozenOps = s.animator.CanvasOps(n.id, v.drawing)
+	}
+	s.animator.Forget(n.id)
+	if v != nil {
+		if s.touch.pressed == v {
+			s.touch.pressed = nil
 		}
-		v.parent = nil
+		s.touch.locked = dropView(s.touch.locked, v)
+		s.blocked = dropView(s.blocked, v)
+		if s.focused == v {
+			s.focused = nil
+			s.w.op(opBlur, v.hostID)
+		}
+	}
+	s.inputGate.forgetScroll(uint32(n.hostID))
+	if s.sticky.delete(n.id) {
+		s.recull = true
 	}
 }
 
-func (s *surface) delete(v *view) {
-	s.detach(v)
-	v.deleted = true
+func (s *surface) destroyPayload(n *watchNode) {
+	v := viewOf(n)
+	if v == nil {
+		return
+	}
 	v.layout.Release()
+	v.layout = nil
 	v.shown.Release()
+	v.shown = nil
 	v.drawing.Release()
 	v.drawing = nil
 	if v.image != nil {
 		v.image.Close()
+		v.image = nil
 	}
-	s.animator.Forget(v.id)
-	delete(s.dirty, v)
-	delete(s.redraw, v)
-	delete(s.motions, v)
-	s.views[v.id] = nil
-	if s.touch.pressed == v {
-		s.touch.pressed = nil
+	v.frozenOps = nil
+}
+
+func (s *surface) deleteView(v *view, lb *layoutBatch) {
+	if s.deleteNode(v.watchNode, lb, s.retirePayload, s.destroyPayload) {
+		s.tick(true)
 	}
-	s.touch.locked = dropView(s.touch.locked, v)
-	s.blocked = dropView(s.blocked, v)
-	if s.focused == v {
-		s.focused = nil
-	}
-	s.inputGate.forgetScroll(uint32(v.id))
-	if s.sticky.delete(v.id) {
-		s.recull = true
-	}
-	s.w.op(opDelete, v.id)
+}
+
+// close reaps any active leaving ghosts on surface teardown.
+func (s *surface) close() {
+	s.closeLeaving(s.destroyPayload)
 }
 
 // report sends e about v if v listens for its kind.
@@ -812,33 +733,6 @@ func (v *view) report(e driver.Event) {
 	}
 }
 
-// shownFrame is where v shows now: mid layout animation or its own.
-func (v *view) shownFrame() driver.Bounds {
-	if v.moving != nil && v.moving.move != nil {
-		return v.moving.move.Shown()
-	}
-	return v.frame
-}
-
-// placedFrame is v.shownFrame shifted by any sticky offset its scroll view
-// applies, where v shows and receives touches on the surface.
-func (v *view) placedFrame() driver.Bounds {
-	return placedBounds(v.shownFrame(), v.s.sticky.shift(v.id))
-}
-
-// shownStyle is the style v shows now: mid transition or its own, with
-// the values the animator binds over it.
-func (v *view) shownStyle() driver.ViewStyle {
-	st := v.style
-	if v.trans != nil {
-		st = v.trans.shown
-	}
-	if v.animated != nil {
-		st = v.animated.Apply(st)
-	}
-	return st
-}
-
 // flushSoon flushes on the next turn of the main thread, for what changes
 // outside a batch or a frame, such as an image that loaded.
 func (s *surface) flushSoon() { apple.OnMain(s.flush) }
@@ -850,17 +744,18 @@ func (s *surface) flush() {
 		s.recull = false
 		s.cull()
 	}
-	for v := range s.dirty {
-		if !v.deleted {
-			s.sendLook(v)
+	now := time.Now()
+	for n := range s.dirty {
+		if !n.deleted || n.retired {
+			s.sendLook(n, now)
 		}
-		delete(s.dirty, v)
+		delete(s.dirty, n)
 	}
-	for v := range s.redraw {
-		if !v.deleted {
-			s.w.op(opRedraw, v.id)
+	for n := range s.redraw {
+		if !n.deleted || n.retired {
+			s.w.op(opRedraw, n.hostID)
 		}
-		delete(s.redraw, v)
+		delete(s.redraw, n)
 	}
 	if len(s.w.buf) == 0 {
 		return
@@ -869,69 +764,31 @@ func (s *surface) flush() {
 	s.w.buf = s.w.buf[:0]
 }
 
-// sendLook sends v's frame, look and ink where they changed.
-func (s *surface) sendLook(v *view) {
-	f := v.shownFrame()
-	st := v.shownStyle()
+// sendLook sends n's frame, look and ink where they changed.
+func (s *surface) sendLook(n *watchNode, now time.Time) {
+	f, st := s.writeNodeLook(n, now)
 	w, h := float32(f.Size.Width), float32(f.Size.Height)
-	s.w.op(opFrame, v.id)
-	s.w.f64(float64(f.Origin.X), float64(f.Origin.Y), float64(f.Size.Width), float64(f.Size.Height))
-	k, _ := v.keyframe()
-	part, scale := v.layoutPart()
-	l := look{opacity: float64(st.Opacity) * float64(k.Opacity) * part, hidden: st.Hidden, transform: [6]float64{1, 0, 0, 1, 0, 0}}
-	l.clips = st.Clip || v.kind == driver.KindImage || v.kind == driver.KindInput || v.kind == driver.KindScroll
-	if l.clips {
-		l.radii = st.Radii(f.Size)
-		if st.Clip || v.kind == driver.KindScroll {
-			// Inside the border, as CSS clips overflow to the padding box; SwiftUI's corners are circular, so each takes the smaller of its elliptical radii.
-			_, _, _, _, inner := st.ClipBox(f.Size)
-			l.inset = st.BorderWidths()
-			r := func(c [2]float64) driver.Points { return driver.Points(min(c[0], c[1])) }
-			l.radii = driver.Corners{TopLeft: r(inner[0]), TopRight: r(inner[1]), BottomRight: r(inner[2]), BottomLeft: r(inner[3])}
-		}
-	}
-	m := k.Matrix(f.Size).Mul(st.Matrix(f.Size))
-	if scale != 1 {
-		center := driver.Point{X: f.Size.Width / 2, Y: f.Size.Height / 2}
-		m = driver.Transform{Scale: float32(scale)}.Matrix(center).Mul(m)
-	}
-	if a, b, c, d, e, ff, ok := m.Affine(); ok {
-		l.transform = [6]float64{a, b, c, d, e, ff}
-	}
-	if l != v.sentLook {
-		v.sentLook = l
-		s.w.op(opLook, v.id)
-		s.w.f64(l.opacity)
-		s.w.flag(l.hidden)
-		s.w.flag(l.clips)
-		r := l.radii
-		// SwiftUI's order: top leading, bottom leading, bottom trailing,
-		// top trailing.
-		s.w.f64(float64(r.TopLeft), float64(r.BottomLeft), float64(r.BottomRight), float64(r.TopRight))
-		in := l.inset
-		s.w.f64(float64(in.Top), float64(in.Left), float64(in.Bottom), float64(in.Right))
-		s.w.f64(l.transform[:]...)
-	}
+	v := viewOf(n)
 	key := boxKey{style: st, w: w, h: h}
-	if key != v.boxFor {
-		v.boxFor = key
-		v.back, v.front = boxOps(&st, w, h)
-		s.redraw[v] = true
+	if key != n.boxFor {
+		n.boxFor = key
+		n.back, n.front = boxOps(&st, w, h)
+		s.redraw[n] = true
 	}
-	draws := len(v.back) > 0 || len(v.front) > 0 || v.layout != nil || v.drawing != nil || v.image != nil || v.field != nil
+	draws := len(n.back) > 0 || len(n.front) > 0 || (v != nil && (v.layout != nil || v.drawing != nil || v.image != nil || v.field != nil))
 	ink := inkOf(&st, w, h)
-	if v.layout != nil {
+	if v != nil && v.layout != nil {
 		cf := v.layout.ContentFrame(float64(w), float64(h), apple.Rect(float64(v.box.Origin.X), float64(v.box.Origin.Y),
 			float64(v.box.Size.Width), float64(v.box.Size.Height)))
 		ink = union(ink, driver.Bounds{Origin: driver.Point{X: driver.Points(cf.Origin.X), Y: driver.Points(cf.Origin.Y)},
 			Size: driver.Size{Width: driver.Points(cf.Size.Width), Height: driver.Points(cf.Size.Height)}})
 	}
-	if draws != v.draws || ink != v.sentInk {
-		v.draws, v.sentInk = draws, ink
-		s.w.op(opInk, v.id)
+	if draws != n.draws || ink != n.sentInk {
+		n.draws, n.sentInk = draws, ink
+		s.w.op(opInk, n.hostID)
 		s.w.flag(draws)
 		s.w.f64(float64(ink.Origin.X), float64(ink.Origin.Y), float64(ink.Size.Width), float64(ink.Size.Height))
-		delete(s.redraw, v) // a new ink draws again
+		delete(s.redraw, n) // a new ink draws again
 	}
 }
 
@@ -942,21 +799,31 @@ func union(a, b driver.Bounds) driver.Bounds {
 	return driver.Bounds{Origin: driver.Point{X: x0, Y: y0}, Size: driver.Size{Width: x1 - x0, Height: y1 - y0}}
 }
 
-// hostDraw draws node id's look and content into ctx, the node's ink
-// rectangle w by h, its y axis down.
+// hostDraw draws host node id's look and content into ctx, the node's ink
+// rectangle w by h, its y axis down. Leaving ghosts stay registered in byHost
+// so SwiftUI can redraw them while they animate out.
 func hostDraw(id uint32, ctx uintptr, w, h float64) {
-	v := s.view(driver.NodeID(id))
-	if v == nil || ctx == 0 {
+	n := s.hostNode(driver.NodeID(id))
+	if n == nil || (n.deleted && !n.retired) || ctx == 0 {
 		return
 	}
-	f := v.shownFrame()
-	ink := v.sentInk
+	v := viewOf(n)
+	if v == nil {
+		return
+	}
+	f := n.shownFrame()
+	ink := n.sentInk
 	apple.DrawTopDown(ctx, h, false, func(baseUp bool) {
 		apple.TranslateCTM(ctx, -float64(ink.Origin.X), -float64(ink.Origin.Y))
 		host := apple.CanvasHost{Ratio: float64(s.env.PixelRatio), Owner: v, BaseUp: baseUp,
-			Redraw: func() { s.redraw[v] = true; s.flushSoon() }}
-		if len(v.back) > 0 {
-			apple.Play(ctx, nil, v.back, host)
+			Redraw: func() {
+				if !n.deleted || n.retired {
+					s.redraw[n] = true
+					s.flushSoon()
+				}
+			}}
+		if len(n.back) > 0 {
+			apple.Play(ctx, nil, n.back, host)
 		}
 		switch {
 		case v.layout != nil:
@@ -971,8 +838,8 @@ func hostDraw(id uint32, ctx uintptr, w, h float64) {
 		case v.field != nil:
 			s.drawField(v, ctx, baseUp)
 		}
-		if len(v.front) > 0 {
-			apple.Play(ctx, nil, v.front, host)
+		if len(n.front) > 0 {
+			apple.Play(ctx, nil, n.front, host)
 		}
 	})
 }
@@ -986,7 +853,7 @@ func clampOffset(v *view, p driver.Point) driver.Point {
 
 // sendScroll sends a scroll view's direction, indicator and content.
 func (s *surface) sendScroll(v *view) {
-	s.w.op(opScroll, v.id)
+	s.w.op(opScroll, v.hostID)
 	s.w.flag(v.scroll.Horizontal)
 	s.w.flag(!v.scroll.HideIndicator)
 	s.w.f64(float64(v.content.Width), float64(v.content.Height))
@@ -1000,15 +867,15 @@ func (s *surface) sendAccess(v *view) {
 		return
 	}
 	v.sentAccess = a
-	s.w.access(v.id, a)
+	s.w.access(v.hostID, a)
 }
 
 func hostScroll(id uint32, x, y float64, phase uint8) {
 	if s == nil || !s.inputGate.allowScroll(s.test != nil, id, phase) {
 		return
 	}
-	v := s.view(driver.NodeID(id))
-	if v == nil {
+	v := s.hostView(driver.NodeID(id))
+	if v == nil || v.deleted {
 		return
 	}
 	if phase == phaseOffset {

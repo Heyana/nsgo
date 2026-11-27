@@ -40,7 +40,10 @@ func loadStretch() {
 // nearest pixel (Drawing.Upscale). A drawing whose images are loading
 // plays at the pixel ratio until they load.
 func (s *surface) playCanvas(ctx uintptr, v *view, size driver.Size, host apple.CanvasHost) {
-	ops := s.animator.CanvasOps(v.id, v.drawing)
+	ops := v.frozenOps
+	if !v.retired {
+		ops = s.animator.CanvasOps(v.id, v.drawing)
+	}
 	scale := v.drawing.ResolutionScale()
 	w, h := float64(size.Width), float64(size.Height)
 	if scale < 1 && len(ops) > 0 && w > 0 && h > 0 {

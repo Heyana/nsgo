@@ -71,8 +71,8 @@ func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Mod
 			if act.blur != 0 {
 				if prev := s.view(act.blur); prev != nil {
 					s.blurField(prev)
+					s.w.op(opBlur, prev.hostID)
 				}
-				s.w.op(opBlur, act.blur)
 			}
 			if act.focus != 0 {
 				if next := s.view(act.focus); next != nil {
@@ -132,8 +132,8 @@ func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 			return
 		}
 		to := clampOffset(v, driver.Point{X: v.offset.X + delta.X, Y: v.offset.Y + delta.Y})
-		s.inputGate.expectScroll(uint32(v.id))
-		s.w.op(opScrollTo, v.id)
+		s.inputGate.expectScroll(uint32(v.hostID))
+		s.w.op(opScrollTo, v.hostID)
 		s.w.f64(float64(to.X), float64(to.Y))
 		s.w.flag(false)
 		s.flush()

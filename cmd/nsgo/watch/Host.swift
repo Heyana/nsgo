@@ -455,6 +455,9 @@ struct StickyCell: Equatable {
 	var frame = CGRect.zero
 	var opacity = 1.0
 	var hidden = false
+	/// leaving is set while a deleted view animates out on the host, so it
+	/// takes no touches, text input, scrolling or VoiceOver focus.
+	var leaving = false
 	/// clips says the children show only inside the box, rounded by radii
 	/// (top left, top right, bottom right, bottom left).
 	var clips = false
@@ -552,7 +555,7 @@ struct Alert: Identifiable {
 	/// The ops Go writes, as watchos.go's op constants number them.
 	enum Op: UInt8 {
 		case create = 1, insert, remove, delete, frame, look, ink, redraw, scroll, scrollTo, input, focus, blur,
-			alert, root, lock, dismiss, cull, access, authSession, permission, stickyCells
+			alert, root, lock, dismiss, cull, access, authSession, permission, stickyCells, retire
 	}
 
 	func apply(_ r: Reader) {
@@ -685,6 +688,12 @@ struct Alert: Identifiable {
 				}
 				guard let n = nodes[id] else { continue }
 				setSticky(n, cells: cells)
+			case .retire:
+				if let n = nodes[r.u32()] {
+					n.leaving = true
+					n.focused = false
+					n.locked = true
+				}
 			}
 		}
 	}
@@ -752,7 +761,7 @@ struct NodeView: View {
 		content
 			.modifier(NodeAccess(node: node))
 			.opacity(node.hidden ? 0 : node.opacity)
-			.allowsHitTesting(!node.hidden)
+			.allowsHitTesting(!node.hidden && !node.leaving)
 			.transformEffect(node.transform)
 			.offset(x: node.frame.minX + node.stickyShift.x, y: node.frame.minY + node.stickyShift.y)
 			.zIndex(node.sticky ? 1 : 0)
@@ -802,7 +811,7 @@ struct NodeAccess: ViewModifier {
 
 	@ViewBuilder func body(content: Content) -> some View {
 		if node.kind == .input {
-			content.accessibilityHidden(node.a11yHidden)
+			content.accessibilityHidden(node.a11yHidden || node.leaving)
 		} else if node.a11yElement {
 			content
 				.accessibilityElement(children: .ignore)
@@ -810,12 +819,12 @@ struct NodeAccess: ViewModifier {
 				.accessibilityHint(Text(verbatim: node.a11yHint))
 				.accessibilityValue(Text(verbatim: node.a11yValue))
 				.accessibilityAddTraits(node.swiftTraits)
-				.disabled(node.a11yDisabled)
-				.accessibilityHidden(node.a11yHidden)
+				.disabled(node.a11yDisabled || node.leaving)
+				.accessibilityHidden(node.a11yHidden || node.leaving)
 		} else {
 			content
 				.accessibilityAddTraits(node.swiftTraits)
-				.accessibilityHidden(node.a11yHidden)
+				.accessibilityHidden(node.a11yHidden || node.leaving)
 		}
 	}
 }
@@ -935,12 +944,12 @@ struct FieldNode: View {
 				}
 			}
 			.focused($focus)
-			.disabled(node.disabled || node.a11yDisabled)
+			.disabled(node.disabled || node.a11yDisabled || node.leaving)
 			.accessibilityLabel(Text(verbatim: node.a11yLabel.isEmpty ? node.placeholder : node.a11yLabel))
 			.accessibilityHint(Text(verbatim: node.a11yHint))
 			.accessibilityValue(Text(verbatim: fieldValue))
 			.accessibilityAddTraits(node.swiftTraits)
-			.accessibilityHidden(node.a11yHidden)
+			.accessibilityHidden(node.a11yHidden || node.leaving)
 			.opacity(0.02)
 			.frame(width: node.frame.width, height: node.frame.height)
 			.onChange(of: node.text) { _, text in sendText(node.id, 0, text) }

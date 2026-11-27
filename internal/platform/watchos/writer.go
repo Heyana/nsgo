@@ -31,6 +31,7 @@ const (
 	opAuthSession
 	opPermission
 	opStickyCells
+	opRetire
 )
 
 // writer writes ops as the host's Reader reads them: little-endian

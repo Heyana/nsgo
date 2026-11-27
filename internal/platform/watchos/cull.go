@@ -13,7 +13,7 @@ import "github.com/nsgo-dev/nsgo/internal/driver"
 // cull marks the views out of reach of their scroll views' viewports and
 // tells the host which changed.
 func (s *surface) cull() {
-	root := s.view(s.root)
+	root := s.node(s.root)
 	if root == nil {
 		return
 	}
@@ -22,8 +22,8 @@ func (s *surface) cull() {
 
 // cullIn walks v, its parent's content at origin on the surface; reach,
 // when bounded, is the surface rectangle its views must touch to be made.
-func (s *surface) cullIn(v *view, origin driver.Point, reach driver.Bounds, bounded bool) {
-	f := v.placedFrame()
+func (s *surface) cullIn(v *watchNode, origin driver.Point, reach driver.Bounds, bounded bool) {
+	f := s.placedFrame(v)
 	at := driver.Point{X: origin.X + f.Origin.X, Y: origin.Y + f.Origin.Y}
 	if bounded {
 		area := driver.Bounds{Origin: at, Size: f.Size}
@@ -39,7 +39,7 @@ func (s *surface) cullIn(v *view, origin driver.Point, reach driver.Bounds, boun
 		culled := !touches(area, reach)
 		if culled != v.culled {
 			v.culled = culled
-			s.w.op(opCull, v.id)
+			s.w.op(opCull, v.hostID)
 			s.w.flag(culled)
 		}
 		if culled {

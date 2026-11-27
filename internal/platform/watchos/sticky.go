@@ -95,10 +95,35 @@ type watchStickyPin struct {
 
 // stickyTracker keeps Go's view of sticky cells in sync with Host.swift for
 // hit-testing, culling, DevTools geometry and animated StickyInset updates.
+// hostID, when set, maps logical driver.NodeIDs to SwiftUI host node IDs so
+// opStickyCells addresses the live host nodes even after NodeID reuse.
 type stickyTracker struct {
 	scrolls map[driver.NodeID]*watchStickyScroll
 	cells   map[driver.NodeID]watchStickyPin
 	bound   scrollbar.StickyBindings[driver.NodeID]
+	hostID  func(driver.NodeID) driver.NodeID
+}
+
+func (t *stickyTracker) resolveHostID(id driver.NodeID) driver.NodeID {
+	if t.hostID != nil {
+		return t.hostID(id)
+	}
+	return id
+}
+
+func (t *stickyTracker) resolveForHost(cells []driver.StickyCell, anim *driver.Animator) []watchStickyCell {
+	resolved := resolveStickyCells(cells, anim)
+	if t.hostID == nil || len(resolved) == 0 {
+		return resolved
+	}
+	out := resolved[:0]
+	for _, c := range resolved {
+		if hid := t.hostID(c.cell); hid != 0 {
+			c.cell = hid
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // set replaces scrollID's sticky cells, updates Go shifts and sticky flags,
@@ -135,11 +160,13 @@ func (t *stickyTracker) set(scrollID driver.NodeID, cells []driver.StickyCell, o
 			changed = true
 		}
 	})
-	resolved := resolveStickyCells(st.cells, anim)
+	resolved := t.resolveForHost(st.cells, anim)
 	if !slices.Equal(resolved, st.sent) {
 		st.sent = resolved
 		if w != nil {
-			w.stickyCells(scrollID, resolved)
+			if scrollHost := t.resolveHostID(scrollID); scrollHost != 0 {
+				w.stickyCells(scrollHost, resolved)
+			}
 		}
 	}
 	if len(st.cells) == 0 {
@@ -204,11 +231,13 @@ func (t *stickyTracker) repinBound(lookup func(driver.NodeID) (offset driver.Poi
 		if t.pinEntry(id, st, offset, horizontal, anim) {
 			changed = true
 		}
-		resolved := resolveStickyCells(st.cells, anim)
+		resolved := t.resolveForHost(st.cells, anim)
 		if !slices.Equal(resolved, st.sent) {
 			st.sent = resolved
 			if w != nil {
-				w.stickyCells(id, resolved)
+				if scrollHost := t.resolveHostID(id); scrollHost != 0 {
+					w.stickyCells(scrollHost, resolved)
+				}
 			}
 		}
 	})

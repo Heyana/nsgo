@@ -262,28 +262,31 @@ func (s *surface) waitLongPress(v *view) {
 // pressOutside tells the views that listen for presses outside them and
 // do not hold at.
 func (s *surface) pressOutside(root *view, at driver.Point) {
-	var walk func(v *view)
-	walk = func(v *view) {
-		if v.events.Has(driver.EventPressOutside) {
-			if b, ok := s.surfaceBounds(v); ok && !b.Contains(at) {
-				v.report(driver.Event{Kind: driver.EventPressOutside, Page: at})
+	var walk func(n *watchNode)
+	walk = func(n *watchNode) {
+		if n.events.Has(driver.EventPressOutside) {
+			if b, ok := s.surfaceBounds(n); ok && !b.Contains(at) {
+				if v := viewOf(n); v != nil {
+					v.report(driver.Event{Kind: driver.EventPressOutside, Page: at})
+				}
 			}
 		}
-		for _, c := range v.children {
+		for _, c := range n.children {
 			walk(c)
 		}
 	}
-	walk(root)
+	walk(root.watchNode)
 }
 
 // lockScrolls holds the scroll views around v still while its pan runs.
 func (s *surface) lockScrolls(v *view) {
-	for p := v.parent; p != nil; p = p.parent {
-		if p.kind == driver.KindScroll && !slices.Contains(s.touch.locked, p) {
+	for pn := v.parent; pn != nil; pn = pn.parent {
+		p := viewOf(pn)
+		if p != nil && p.kind == driver.KindScroll && !slices.Contains(s.touch.locked, p) {
 			was := slices.Contains(s.blocked, p)
 			s.touch.locked = append(s.touch.locked, p)
 			if !was {
-				s.w.op(opLock, p.id)
+				s.w.op(opLock, p.hostID)
 				s.w.flag(true)
 			}
 		}
@@ -293,7 +296,7 @@ func (s *surface) lockScrolls(v *view) {
 func (s *surface) unlockScrolls() {
 	for _, p := range s.touch.locked {
 		if !p.deleted && !slices.Contains(s.blocked, p) {
-			s.w.op(opLock, p.id)
+			s.w.op(opLock, p.hostID)
 			s.w.flag(false)
 		}
 	}
@@ -305,11 +308,12 @@ func (s *surface) blockNative(v *view) {
 	prev := s.blocked
 	s.blocked = nil
 	if v != nil && !v.deleted {
-		for p := v.parent; p != nil; p = p.parent {
-			if p.kind == driver.KindScroll && !slices.Contains(s.blocked, p) {
+		for pn := v.parent; pn != nil; pn = pn.parent {
+			p := viewOf(pn)
+			if p != nil && p.kind == driver.KindScroll && !slices.Contains(s.blocked, p) {
 				s.blocked = append(s.blocked, p)
 				if !slices.Contains(prev, p) && !slices.Contains(s.touch.locked, p) {
-					s.w.op(opLock, p.id)
+					s.w.op(opLock, p.hostID)
 					s.w.flag(true)
 				}
 			}
@@ -317,7 +321,7 @@ func (s *surface) blockNative(v *view) {
 	}
 	for _, p := range prev {
 		if !p.deleted && !slices.Contains(s.blocked, p) && !slices.Contains(s.touch.locked, p) {
-			s.w.op(opLock, p.id)
+			s.w.op(opLock, p.hostID)
 			s.w.flag(false)
 		}
 	}
@@ -333,46 +337,21 @@ func dropView(list []*view, v *view) []*view {
 // hit returns the innermost view under p that match takes, p in the
 // coordinates of v's parent's content, the child drawn on top first.
 func hit(v *view, p driver.Point, match func(*view) bool) *view {
-	if v.style.Hidden || v.deleted {
+	if v == nil {
 		return nil
 	}
-	f := v.placedFrame()
-	local, mapped := driver.IntoView(f, v.pointerMatrix(), p)
-	if !mapped {
-		return nil
-	}
-	area, transformed := v.overflow, v.transformedKids
-	if v.shownStyle().Clip || v.kind == driver.KindScroll {
-		area, transformed = driver.Bounds{}, false
-	}
-	self, children := driver.ReachView(f.Size, &v.props, area, transformed, local)
-	if children {
-		local.X += v.offset.X
-		local.Y += v.offset.Y
-		var found *view
-		hitChildOrder(v.children, func(c *view) bool { return c.s.sticky.isSticky(c.id) }, func(c *view) bool {
-			if h := hit(c, local, match); h != nil {
-				found = h
-				return true
-			}
-			return false
-		})
-		if found != nil {
-			return found
-		}
-	}
-	if self && match(v) {
-		return v
-	}
-	return nil
+	return viewOf(v.s.hitNode(v.watchNode, p, time.Now(), func(n *watchNode) bool {
+		vw := viewOf(n)
+		return vw != nil && match(vw)
+	}))
 }
 
-// surfaceBounds is where v is on the surface, and whether it is in the
+// surfaceBounds is where n is on the surface, and whether it is in the
 // root's tree.
-func (s *surface) surfaceBounds(v *view) (driver.Bounds, bool) {
-	b, top := v.placedFrame(), v
-	for p := v.parent; p != nil; p = p.parent {
-		f := p.placedFrame()
+func (s *surface) surfaceBounds(n *watchNode) (driver.Bounds, bool) {
+	b, top := s.placedFrame(n), n
+	for p := n.parent; p != nil; p = p.parent {
+		f := s.placedFrame(p)
 		b.Origin.X += f.Origin.X - p.offset.X
 		b.Origin.Y += f.Origin.Y - p.offset.Y
 		top = p
@@ -382,20 +361,17 @@ func (s *surface) surfaceBounds(v *view) (driver.Bounds, bool) {
 
 // local is surface point at in v's coordinates.
 func (s *surface) local(v *view, at driver.Point) driver.Point {
-	if parent := v.parent; parent != nil {
-		at = s.local(parent, at)
+	return s.localNode(v.watchNode, at, time.Now())
+}
+
+func (s *surface) localNode(n *watchNode, at driver.Point, now time.Time) driver.Point {
+	if parent := n.parent; parent != nil {
+		at = s.localNode(parent, at, now)
 		at.X += parent.offset.X
 		at.Y += parent.offset.Y
 	}
-	local, _ := driver.IntoView(v.placedFrame(), v.pointerMatrix(), at)
+	local, _ := driver.IntoView(s.placedFrame(n), n.pointerMatrixAt(now), at)
 	return local
-}
-
-// within reports whether p, in v's coordinates, is on v or in its hit
-// slop, where a press ends as a press.
-func (v *view) within(p driver.Point) bool {
-	sl, f := v.props.HitSlop, v.shownFrame()
-	return p.X >= -sl.Left && p.Y >= -sl.Top && p.X < f.Size.Width+sl.Right && p.Y < f.Size.Height+sl.Bottom
 }
 
 // indexAt is the byte offset of the character at p in a text view, for
@@ -405,11 +381,4 @@ func (v *view) indexAt(p driver.Point) int {
 		return -1
 	}
 	return v.layout.IndexAt(cgPoint(p), cgRect(v.box))
-}
-
-// pointerMatrix uses exactly the affine transform sent to SwiftUI.
-func (v *view) pointerMatrix() driver.Matrix3D {
-	k, _ := v.keyframe()
-	_, scale := v.layoutPart()
-	return affinePointerMatrix(v.shownStyle(), v.shownFrame(), k, scale)
 }
