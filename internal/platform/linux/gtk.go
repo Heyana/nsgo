@@ -718,6 +718,7 @@ func bind() {
 
 	bindNative()
 	bindWidget()
+	bindRasterGTK()
 	bindDecor()
 	bindFileDrop()
 	bindPaste()
@@ -744,7 +745,7 @@ func bindCanvasLibs() {
 	}
 	bindSyscall(&pangoFontMapCreateContext, pangoLib, "pango_font_map_create_context")
 	bindSyscall(&pangoFontMapLoadFont, pangoLib, "pango_font_map_load_font")
-	bindSyscall(&pangoFontMapUnref, pangoLib, "g_object_unref") // PangoFontMap is a GObject
+	bindSyscall(&pangoFontMapUnref, gobjectLib, "g_object_unref") // PangoFontMap is a GObject
 	bindSyscall(&pangoFontDescribeWithAbsoluteSize, pangoLib, "pango_font_describe_with_absolute_size")
 	bindSyscall(&pangoFontDescriptionToString, pangoLib, "pango_font_description_to_string")
 	bindSyscall(&pangoGlyphStringNew, pangoLib, "pango_glyph_string_new")

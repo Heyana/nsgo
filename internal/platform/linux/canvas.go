@@ -101,7 +101,7 @@ func bindCanvas(cairoLib, pangocairoLib uintptr) {
 	reg(&cairoPopGroup, cairoLib, "cairo_pop_group")
 	reg(&cairoImageSurfaceCreateFor, cairoLib, "cairo_image_surface_create_for_data")
 	reg(&pangoCairoLayoutPath, pangocairoLib, "pango_cairo_layout_path")
-	bindRaster(cairoLib)
+	bindRasterCairo(cairoLib)
 }
 
 // Cairo's operators of each CompositeOp.

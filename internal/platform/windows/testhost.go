@@ -18,7 +18,10 @@ import (
 // thread's keyboard state holding the modifiers, as GetKeyState reads
 // them.
 
-func init() { testhost.Register(host{}) }
+// TestHost returns the Windows test host. internal/backend registers it so
+// packages that import windows through nsgotest for windowless rendering stay
+// headless unless they also link github.com/nsgo-dev/nsgo.
+func TestHost() testhost.Host { return host{} }
 
 type host struct{}
 

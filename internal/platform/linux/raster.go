@@ -47,10 +47,14 @@ const (
 	gskScalingFilterNearest = 1
 )
 
-func bindRaster(cairoLib uintptr) {
+func bindRasterCairo(cairoLib uintptr) {
 	reg := purego.RegisterLibFunc
 	reg(&cairoSurfaceSetDeviceScale, cairoLib, "cairo_surface_set_device_scale")
 	reg(&cairoSurfaceStatus, cairoLib, "cairo_surface_status")
+}
+
+func bindRasterGTK() {
+	reg := purego.RegisterLibFunc
 	reg(&gdkMemoryTextureNew, gtkLib, "gdk_memory_texture_new")
 	bindSyscall(&gtkSnapshotAppendTexture, gtkLib, "gtk_snapshot_append_texture")
 	bindSyscall(&gtkSnapshotAppendScaledTexture, gtkLib, "gtk_snapshot_append_scaled_texture")

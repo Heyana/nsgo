@@ -336,6 +336,9 @@ func layerImports(pkg, tags string) ([]string, bool) {
 			if matches(pkg, "internal/platform/") && hasTag(tags, "nsgotest", "nsgoautomation") {
 				allowed = append(slices.Clip(allowed), "core")
 			}
+			if pkg == "internal/backend" && hasTag(tags, "nsgotest") {
+				allowed = append(slices.Clip(allowed), "internal/testhost")
+			}
 			return allowed, true
 		}
 	}

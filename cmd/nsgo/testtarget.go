@@ -220,17 +220,18 @@ func linksPlatform(ctx context.Context, p *project, target string) (bool, error)
 	return false, nil
 }
 
-// hostBackends are the backends that register their platform's test host (internal/testhost.Register) when built with the nsgotest tag.
+// hostBackends are the backends that register their platform's test host
+// (internal/testhost.Register) in init when built with the nsgotest tag.
+// Linux and Windows register theirs from internal/backend instead because
+// nsgotest imports them for windowless rendering and text measurement.
 var hostBackends = []string{
 	"github.com/nsgo-dev/nsgo/internal/platform/android",
 	"github.com/nsgo-dev/nsgo/internal/platform/harmonyos",
 	"github.com/nsgo-dev/nsgo/internal/platform/ios",
-	"github.com/nsgo-dev/nsgo/internal/platform/linux",
 	"github.com/nsgo-dev/nsgo/internal/platform/macos",
 	"github.com/nsgo-dev/nsgo/internal/platform/tui",
 	"github.com/nsgo-dev/nsgo/internal/platform/watchos",
 	"github.com/nsgo-dev/nsgo/internal/platform/web",
-	"github.com/nsgo-dev/nsgo/internal/platform/windows",
 }
 
 // goListFor runs go list with args on the package as target's test build

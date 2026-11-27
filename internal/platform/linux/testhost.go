@@ -14,7 +14,10 @@ import (
 // entry points, where GTK's controllers hand it over, and text through
 // the focused field's own signals.
 
-func init() { testhost.Register(&host{opens: make(chan openRequest)}) }
+// TestHost returns the Linux test host. internal/backend registers it so
+// packages that import linux through nsgotest for windowless rendering stay
+// headless unless they also link github.com/nsgo-dev/nsgo.
+func TestHost() testhost.Host { return &host{opens: make(chan openRequest)} }
 
 type openRequest struct {
 	app   func(cx *core.Scope) core.Node

@@ -1039,6 +1039,24 @@ func TestBackendTestsLinkTheirHost(t *testing.T) {
 	if !slices.Equal(registering, hostBackends) {
 		t.Errorf("backends registering a test host: %v; hostBackends lists %v", registering, hostBackends)
 	}
+	baseProj, err := loadForTest("../../base", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"macos", "windows", "linux"} {
+		if hosted, err := linksPlatform(t.Context(), baseProj, target); err != nil || hosted {
+			t.Errorf("linksPlatform(base, %q) = %v, %v; want false, nil", target, hosted, err)
+		}
+	}
+	pressProj, err := loadForTest("../../internal/testhost/testdata/press", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"macos", "windows", "linux"} {
+		if hosted, err := linksPlatform(t.Context(), pressProj, target); err != nil || !hosted {
+			t.Errorf("linksPlatform(testdata/press, %q) = %v, %v; want true, nil", target, hosted, err)
+		}
+	}
 }
 
 func TestListTestSourcesLeavesOutTestMain(t *testing.T) {
