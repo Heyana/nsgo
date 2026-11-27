@@ -144,6 +144,9 @@ apple:
 macos:
   entitlements:
     com.apple.security.network.client: true
+sign:
+  profile: profiles/app.mobileprovision
+  watch_profile: profiles/watch.mobileprovision
 `)
 
 	cfg, err := project.Load(dir)
@@ -188,6 +191,12 @@ macos:
 	}
 	if !slices.Contains(cfg.LinuxCategories(), "Game") {
 		t.Errorf("LinuxCategories() = %v, want Game included", cfg.LinuxCategories())
+	}
+	if want := filepath.Join(dir, "profiles", "app.mobileprovision"); cfg.Sign.Profile != want {
+		t.Errorf("Sign.Profile = %q, want %q", cfg.Sign.Profile, want)
+	}
+	if want := filepath.Join(dir, "profiles", "watch.mobileprovision"); cfg.Sign.WatchProfile != want {
+		t.Errorf("Sign.WatchProfile = %q, want %q", cfg.Sign.WatchProfile, want)
 	}
 }
 

@@ -22,9 +22,8 @@ import (
 // GitHub release uploads, each with <file>.sha256 (the installers, IPAs,
 // APKs and the site's zip archive) and install.sh and install.ps1, which
 // install the app from the repository's releases; each mini program's
-// project in miniprogram/<platform>/. Simulators' and watchOS's bundles
-// install nowhere else, and stay in their packages. Machines building
-// different targets each add theirs, so a release may gather them from
+// project in miniprogram/<platform>/. Simulators' bundles install nowhere
+// else, and stay in their packages. Machines building different targets each add theirs, so a release may gather them from
 // several.
 
 // releaseDir is where nsgo build gathers what a release uploads.

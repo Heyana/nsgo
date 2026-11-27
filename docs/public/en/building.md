@@ -19,7 +19,7 @@ Everything to hand out lands in `dist/releases`, the only directory to look in:
 | --- | --- |
 | `*.dmg`, `*-setup.exe`, `*.deb`, `*.pkg.tar.gz`, `*.AppImage` | [Installers](#installers) for macOS, Windows and Linux |
 | `*.AppImage.zsync` | Delta update controls for AppImageUpdate and compatible launchers |
-| `*-ios.ipa`, `*-tvos.ipa`, `*.apk` | The iOS, tvOS and Android packages, for the stores or devices |
+| `*-ios.ipa`, `*-tvos.ipa`, `*-watchos.ipa`, `*.apk` | The iOS, tvOS, watchOS and Android packages, for the stores or devices |
 | `*.pkg`, `*.msix`, `*.aab`, `*.flatpak`, `*.tar.gz` and `flatpak/` | A `store` build's [store packages](#store-packages) |
 | `install.sh`, `install.ps1` | Scripts installing the app from [GitHub releases](#publish-on-github) |
 | `appcast-<target>.xml` | The feeds [updating](#updates) apps read |
@@ -27,7 +27,7 @@ Everything to hand out lands in `dist/releases`, the only directory to look in:
 | `*-web.zip` | The site, to unpack and serve as it is |
 | `miniprogram/<platform>/` | Each mini program's project, to upload from its developer tool |
 
-Each file is named `<name>-<version>-<system>-<arch>`, such as `hello-1.2.0-windows-x64-setup.exe`, so users find their system's on a release page, and has its `.sha256` beside it. A build of another version empties the directory first; builds of the same version, on other machines too, add to it. Simulators' and watchOS's packages stay in their `dist/<name>-<version>-<target>` directories.
+Each file is named `<name>-<version>-<system>-<arch>`, such as `hello-1.2.0-windows-x64-setup.exe`, so users find their system's on a release page, and has its `.sha256` beside it. A build of another version empties the directory first; builds of the same version, on other machines too, add to it. Simulators' packages stay in their `dist/<name>-<version>-<target>` directories.
 
 The web site includes `.wasm.br` and `.wasm.gz` when they are smaller than the original module. Enable precompressed files on hosts that support them. Serve them at the original `.wasm` URL with `Content-Type: application/wasm`, the matching `Content-Encoding`, and `Vary: Accept-Encoding`. The original module works on any static host. [Publishing on the web](web.md) covers semantic headings, browser links, per-page metadata and CDN loading.
 
@@ -737,15 +737,18 @@ Paths are relative to `nsgo.yaml`. Set `NSGO_HARMONY_KEYSTORE_PASSWORD` and `NSG
 ```yaml
 sign:
   identity: "Apple Development: you@example.com (ABCDE12345)"  # signs the macOS app, else ad hoc
-  profile: assets/AppStore.mobileprovision  # signs the IPA
+  profile: assets/AppStore.mobileprovision  # signs the iOS, tvOS or watchOS stub IPA
   keystore: assets/release.p12              # signs APKs, with key_alias
   certificate: assets/codesign.pfx          # signs the Windows app and its installer
+  # watch_profile: assets/Watch.mobileprovision      # signs <id>.watchkitapp inside a watch-only IPA (optional with a wildcard profile)
   # widgets_profile: assets/Widgets.mobileprovision  # the iOS extension's profile; use a macOS profile for a Mac App Store build
   # share_profile: assets/Share.mobileprovision      # signs the IPA's share extension
   # clip_profile: assets/Clip.mobileprovision        # signs the IPA's App Clip
 ```
 
-The keystore's passwords come from `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD`. `-team` signs the iPhone's package. `-profile`, `-widgets-profile`, `-share-profile`, `-clip-profile` and `-macos-profile` replace the app's, the widget extension's, the share extension's, the App Clip's and the Mac App Store's provisioning profiles from the command line. `-installer` replaces the Mac Installer Distribution identity.
+The keystore's passwords come from `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD`. `-team` signs the iPhone's package. `-profile`, `-watch-profile`, `-widgets-profile`, `-share-profile`, `-clip-profile` and `-macos-profile` replace the app's, the watch app's, the widget extension's, the share extension's, the App Clip's and the Mac App Store's provisioning profiles from the command line. `-installer` replaces the Mac Installer Distribution identity.
+
+For `-target watchos`, `nsgo build` keeps the standalone `<name>.app` for `-run` device installs and writes `<name>.ipa` (copied to `dist/releases` as `<slug>-<version>-watchos.ipa`) containing Xcode's watch-only iOS stub (`ITSWatchOnlyContainer`), the nested watchOS app (`<id>.watchkitapp`) and `WatchKitSupport2/WK`. For App Store Connect, set `sign.profile` for `<id>` and `sign.watch_profile` for `<id>.watchkitapp` from the same team (or a single wildcard `sign.profile` covering both); the build validates both profiles and signs inside-out.
 
 ### Sign Windows packages
 

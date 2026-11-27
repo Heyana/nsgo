@@ -19,7 +19,7 @@ nsgo build
 | --- | --- |
 | `*.dmg`、`*-setup.exe`、`*.deb`、`*.pkg.tar.gz`、`*.AppImage` | macOS、Windows 和 Linux 的[安装程序](#安装程序) |
 | `*.AppImage.zsync` | AppImageUpdate 和兼容启动器使用的差量更新控制文件 |
-| `*-ios.ipa`、`*-tvos.ipa`、`*.apk` | iOS、tvOS 和 Android 的包，用于商店或设备 |
+| `*-ios.ipa`、`*-tvos.ipa`、`*-watchos.ipa`、`*.apk` | iOS、tvOS、watchOS 和 Android 的包，用于商店或设备 |
 | `*.pkg`、`*.msix`、`*.aab`、`*.flatpak`、`*.tar.gz` 和 `flatpak/` | `store` 构建的[商店包](#商店包) |
 | `install.sh`、`install.ps1` | 从 [GitHub Releases](#发布到-github) 安装应用的脚本 |
 | `appcast-<目标>.xml` | [自动更新](#自动更新)的应用读取的更新源 |
@@ -27,7 +27,7 @@ nsgo build
 | `*-web.zip` | 网站，解压后原样部署即可 |
 | `miniprogram/<平台>/` | 各小程序的项目，用对应开发者工具上传 |
 
-每个文件都命名为 `<name>-<version>-<系统>-<架构>`，例如 `hello-1.2.0-windows-x64-setup.exe`，方便用户在 Release 页面找到自己系统的文件；每个文件旁都有 `.sha256`。构建其他版本时会先清空该目录；同一版本的构建（包括在其他机器上的）会往里追加。模拟器和 watchOS 的包留在各自的 `dist/<name>-<version>-<target>` 目录中。
+每个文件都命名为 `<name>-<version>-<系统>-<架构>`，例如 `hello-1.2.0-windows-x64-setup.exe`，方便用户在 Release 页面找到自己系统的文件；每个文件旁都有 `.sha256`。构建其他版本时会先清空该目录；同一版本的构建（包括在其他机器上的）会往里追加。模拟器的包留在各自的 `dist/<name>-<version>-<target>` 目录中。
 
 比原始模块更小时，网站会包含 `.wasm.br` 和 `.wasm.gz`。在支持预压缩的服务器上启用它，从原有的 `.wasm` URL 提供压缩模块，并设置 `Content-Type: application/wasm`、相应的 `Content-Encoding` 和 `Vary: Accept-Encoding`。原始模块可以部署到任何静态服务器。
 
@@ -648,15 +648,18 @@ harmonyos:
 ```yaml
 sign:
   identity: "Apple Development: you@example.com (ABCDE12345)"  # 为 macOS 应用签名，省略时为临时签名
-  profile: assets/AppStore.mobileprovision  # 为 IPA 签名
+  profile: assets/AppStore.mobileprovision  # 为 iOS、tvOS 或 watchOS 壳 IPA 签名
   keystore: assets/release.p12              # 与 key_alias 一起为 APK 签名
   certificate: assets/codesign.pfx          # 为 Windows 应用及其安装包签名
+  # watch_profile: assets/Watch.mobileprovision      # 为独立手表 IPA 中的 <id>.watchkitapp 签名（通配符描述文件时可省略）
   # widgets_profile: assets/Widgets.mobileprovision  # iOS 扩展的描述文件；Mac App Store 构建使用 macOS 描述文件
   # share_profile: assets/Share.mobileprovision      # 为 IPA 中的分享扩展签名
   # clip_profile: assets/Clip.mobileprovision        # 为 IPA 中的轻 App 签名
 ```
 
-密钥库的密码来自 `NSGO_KEYSTORE_PASSWORD` 和 `NSGO_KEY_PASSWORD`。`-team` 用于为 iPhone 包签名。命令行可用 `-profile`、`-widgets-profile`、`-share-profile`、`-clip-profile` 和 `-macos-profile` 替换应用、小组件扩展、分享扩展、轻 App 和 Mac App Store 的描述文件，`-installer` 替换 Mac Installer Distribution 身份。
+密钥库的密码来自 `NSGO_KEYSTORE_PASSWORD` 和 `NSGO_KEY_PASSWORD`。`-team` 用于为 iPhone 包签名。命令行可用 `-profile`、`-watch-profile`、`-widgets-profile`、`-share-profile`、`-clip-profile` 和 `-macos-profile` 替换应用、手表应用、小组件扩展、分享扩展、轻 App 和 Mac App Store 的描述文件，`-installer` 替换 Mac Installer Distribution 身份。
+
+对于 `-target watchos`，`nsgo build` 会保留用于 `-run` 真机安装的独立 `<name>.app`，同时写出 `<name>.ipa`（并复制到 `dist/releases/<slug>-<version>-watchos.ipa`），内含 Xcode 的 watch-only iOS 壳（`ITSWatchOnlyContainer`）、嵌套的手表应用（`<id>.watchkitapp`）和 `WatchKitSupport2/WK`。上传 App Store Connect 时，为 `<id>` 设置 `sign.profile` 并为 `<id>.watchkitapp` 设置同一团队的 `sign.watch_profile`（或使用同时覆盖两者的通配符 `sign.profile`），构建会校验两份描述文件并按由内向外的顺序签名。
 
 ### 为 Windows 包签名
 

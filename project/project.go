@@ -506,6 +506,7 @@ type AssetPack struct {
 type Signing struct {
 	Identity          string `yaml:"identity"`
 	Profile           string `yaml:"profile"`
+	WatchProfile      string `yaml:"watch_profile"`
 	WidgetsProfile    string `yaml:"widgets_profile"`
 	ShareProfile      string `yaml:"share_profile"`
 	AssetPacksProfile string `yaml:"asset_packs_profile"`
@@ -707,7 +708,7 @@ func (c *Config) Validate() error {
 		c.Linux.Share = c.Resolve(c.Linux.Share)
 	}
 	for _, path := range []*string{
-		&c.Sign.Profile, &c.Sign.WidgetsProfile, &c.Sign.ShareProfile,
+		&c.Sign.Profile, &c.Sign.WatchProfile, &c.Sign.WidgetsProfile, &c.Sign.ShareProfile,
 		&c.Sign.AssetPacksProfile, &c.Sign.ClipProfile, &c.Sign.MacOSProfile,
 		&c.Sign.Keystore, &c.Sign.Certificate,
 	} {

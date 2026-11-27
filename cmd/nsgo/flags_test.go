@@ -315,6 +315,7 @@ func TestBuildSigningProfileFlags(t *testing.T) {
 	f := bindBuildFlags(fs)
 	if err := fs.Parse([]string{
 		"-profile", "profiles/app.mobileprovision",
+		"-watch-profile", "profiles/watch.mobileprovision",
 		"-widgets-profile", "profiles/widgets.mobileprovision",
 		"-share-profile", "profiles/share.mobileprovision",
 		"-clip-profile", "profiles/clip.mobileprovision",
@@ -325,6 +326,7 @@ func TestBuildSigningProfileFlags(t *testing.T) {
 	}
 	p := &project{Config: projectcfg.Config{Dir: t.TempDir(), Sign: signing{
 		Profile:        "from-yaml.mobileprovision",
+		WatchProfile:   "from-yaml-watch.mobileprovision",
 		WidgetsProfile: "from-yaml-widgets.mobileprovision",
 		ShareProfile:   "from-yaml-share.mobileprovision",
 		ClipProfile:    "from-yaml-clip.mobileprovision",
@@ -336,6 +338,9 @@ func TestBuildSigningProfileFlags(t *testing.T) {
 
 	if got, want := p.Sign.Profile, filepath.Join(p.Dir, "profiles/app.mobileprovision"); got != want {
 		t.Errorf("sign.profile: got %q, want %q", got, want)
+	}
+	if got, want := p.Sign.WatchProfile, filepath.Join(p.Dir, "profiles/watch.mobileprovision"); got != want {
+		t.Errorf("sign.watch_profile: got %q, want %q", got, want)
 	}
 	if got, want := p.Sign.WidgetsProfile, filepath.Join(p.Dir, "profiles/widgets.mobileprovision"); got != want {
 		t.Errorf("sign.widgets_profile: got %q, want %q", got, want)

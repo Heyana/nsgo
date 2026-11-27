@@ -1,11 +1,18 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	_ "embed"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io/fs"
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"text/template"
 )
 
@@ -175,3 +182,502 @@ var watchosPlist = template.Must(template.New("watchos").Parse(plistHead + `	<ke
 </dict>
 </plist>
 `))
+
+const (
+	// watchAppBundleSuffix is the nested bundle ID suffix Apple's watch-only
+	// template uses under the iOS stub container's bundle ID.
+	watchAppBundleSuffix = ".watchkitapp"
+	// watchStubBinaryRelPath and watchStubAssetsRelPath are Xcode's official
+	// watchapp2-container stub executable and icon catalog under iPhoneOS.platform.
+	watchStubBinaryRelPath = "Library/Application Support/MessagesApplicationStub/MessagesApplicationStub"
+	watchStubAssetsRelPath = "Library/Application Support/MessagesApplicationStub/MessagesApplicationStub.xcassets"
+	// watchKitWKRelPath is Apple's WatchKitSupport2/WK binary inside WatchOS.sdk.
+	watchKitWKRelPath = "Library/Application Support/WatchKit/WK"
+)
+
+// watchAppBundleID returns the nested watchOS bundle identifier inside a
+// watch-only App Store IPA (<id>.watchkitapp).
+func watchAppBundleID(p *project) string {
+	return p.ID + watchAppBundleSuffix
+}
+
+// packageWatchStoreIPA wraps the built watchOS app bundle in Xcode's iOS
+// watch-only stub (com.apple.product-type.application.watchapp2-container),
+// signs both bundles inside-out when provisioning profiles are configured, and
+// packs <dir>/<name>.ipa with Payload/<name>.app and WatchKitSupport2/WK.
+// The standalone watchOS <dir>/<name>.app stays untouched for -run installs.
+func packageWatchStoreIPA(ctx context.Context, p *project, watchApp, dir string) (string, error) {
+	work, err := os.MkdirTemp("", "nsgo-watch-ipa-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(work)
+	stubApp, nestedWatchApp, err := buildWatchStubApp(ctx, p, watchApp, work)
+	if err != nil {
+		return "", err
+	}
+	if err := signWatchStore(ctx, p, stubApp, nestedWatchApp); err != nil {
+		return "", err
+	}
+	stage(ctx, "packaging the watchOS IPA")
+	wkPath, err := watchKitSupportWK(ctx)
+	if err != nil {
+		return "", err
+	}
+	ipa := filepath.Join(dir, p.Name+".ipa")
+	if err := writeWatchIPA(stubApp, wkPath, ipa); err != nil {
+		return "", err
+	}
+	return ipa, nil
+}
+
+// buildWatchStubApp builds the iOS watch-only stub wrapper bundle in dir and
+// nests watchApp under Watch/<name>.app with bundle ID <id>.watchkitapp.
+func buildWatchStubApp(ctx context.Context, p *project, watchApp, dir string) (stubApp, nestedWatchApp string, err error) {
+	stage(ctx, "bundling the watchOS App Store stub")
+	iphonePlatform, err := output(ctx, "xcrun", "--sdk", iOS.sdk, "--show-sdk-platform-path")
+	if err != nil {
+		return "", "", fmt.Errorf("the iOS platform stub needs Xcode: %w", err)
+	}
+	stubSrc := filepath.Join(iphonePlatform, filepath.FromSlash(watchStubBinaryRelPath))
+	if _, err := os.Stat(stubSrc); err != nil {
+		return "", "", fmt.Errorf("Xcode is missing the watch-only iOS stub at %s: %w", stubSrc, err)
+	}
+	stubApp = filepath.Join(dir, p.Name+".app")
+	if err := os.MkdirAll(stubApp, 0o755); err != nil {
+		return "", "", err
+	}
+	if err := copyWatchStubBinary(ctx, stubSrc, filepath.Join(stubApp, p.Name)); err != nil {
+		return "", "", err
+	}
+	var iconPlist string
+	stubAssets := filepath.Join(iphonePlatform, filepath.FromSlash(watchStubAssetsRelPath))
+	if info, statErr := os.Stat(stubAssets); statErr == nil && info.IsDir() {
+		iconPlist, err = compileAssets(ctx, []string{stubAssets}, "MessagesApplicationStub", stubApp, iOS.sdk, iOS.minimum, iOS.idioms)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	namesPlist, err := writeAppleNames(p, stubApp)
+	if err != nil {
+		return "", "", err
+	}
+	if err := writeWatchStubPlist(ctx, p, stubApp, iconPlist, namesPlist); err != nil {
+		return "", "", err
+	}
+	if err := p.writePrivacyManifest(stubApp); err != nil {
+		return "", "", err
+	}
+	nestedWatchApp = filepath.Join(stubApp, "Watch", filepath.Base(watchApp))
+	if err := copyBundleDir(watchApp, nestedWatchApp); err != nil {
+		return "", "", err
+	}
+	if err := rewriteNestedWatchPlist(nestedWatchApp, watchAppBundleID(p)); err != nil {
+		return "", "", err
+	}
+	return stubApp, nestedWatchApp, nil
+}
+
+// copyWatchStubBinary writes the arm64 slice of Xcode's universal stub binary
+// to dst, matching Xcode's THIN_PRODUCT_STUB_BINARY / EXCLUDED_ARCHS=arm64e.
+// A single-architecture binary is copied verbatim.
+func copyWatchStubBinary(ctx context.Context, src, dst string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	var magic [4]byte
+	n, readErr := f.Read(magic[:])
+	f.Close()
+	if readErr != nil && n == 0 {
+		return readErr
+	}
+	if n == 4 && isMachOFatMagic(magic) {
+		if err := run(ctx, "lipo", "-thin", "arm64", src, "-output", dst); err != nil {
+			return err
+		}
+		return os.Chmod(dst, 0o755)
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0o755)
+}
+
+func isMachOFatMagic(b [4]byte) bool {
+	v := binary.BigEndian.Uint32(b[:])
+	return v == 0xcafebabe || v == 0xbebafeca || v == 0xcafebabf || v == 0xbfbabeca
+}
+
+// writeWatchStubPlist writes the iOS watch-only container's Info.plist,
+// matching Xcode's com.apple.product-type.application.watchapp2-container.
+func writeWatchStubPlist(ctx context.Context, p *project, stubApp, iconPlist, namesPlist string) error {
+	info := map[string]any{
+		"CFBundleExecutable":            p.Name,
+		"CFBundleIdentifier":            p.ID,
+		"CFBundleInfoDictionaryVersion": "6.0",
+		"CFBundleName":                  p.Name,
+		"CFBundleDisplayName":           p.Name,
+		"CFBundlePackageType":           "APPL",
+		"CFBundleShortVersionString":    p.Version,
+		"CFBundleVersion":               p.BundleVersion(),
+		"CFBundleSupportedPlatforms":    []any{iOS.platformName(false)},
+		"ITSWatchOnlyContainer":         true,
+		"LSApplicationLaunchProhibited": true,
+		"LSRequiresIPhoneOS":            true,
+		"MinimumOSVersion":              iOS.minimum,
+		"UIDeviceFamily":                []any{int64(1), int64(2)},
+	}
+	buildInfo, err := appleBuildInfo(ctx, iOS, false)
+	if err != nil {
+		return err
+	}
+	maps.Copy(info, buildInfo)
+	for _, partial := range []string{iconPlist, namesPlist} {
+		entries, err := decodePartialPlist(partial)
+		if err != nil {
+			return err
+		}
+		maps.Copy(info, entries)
+	}
+	// App Store Connect reads export compliance keys from the top-level bundle.
+	for _, key := range []string{"ITSAppUsesNonExemptEncryption", "ITSEncryptionExportComplianceCode"} {
+		if v, ok := p.Apple.Info[key]; ok {
+			info[key] = plistValue(v)
+		}
+	}
+	return os.WriteFile(filepath.Join(stubApp, "Info.plist"), encodePlist(info), 0o644)
+}
+
+func decodePartialPlist(entries string) (map[string]any, error) {
+	entries = strings.TrimSpace(entries)
+	if entries == "" {
+		return nil, nil
+	}
+	doc := `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>` + entries + `</dict></plist>`
+	v, err := decodePlist([]byte(doc))
+	if err != nil {
+		return nil, err
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, errors.New("partial plist is not a dictionary")
+	}
+	return m, nil
+}
+
+// rewriteNestedWatchPlist updates the nested watchOS bundle's Info.plist for
+// the watch-only App Store container: <id>.watchkitapp with WKApplication and
+// WKWatchOnly set and no companion app bundle identifier.
+func rewriteNestedWatchPlist(watchApp, bundleID string) error {
+	plistPath := filepath.Join(watchApp, "Info.plist")
+	data, err := os.ReadFile(plistPath)
+	if err != nil {
+		return err
+	}
+	v, err := decodePlist(data)
+	if err != nil {
+		return fmt.Errorf("watch Info.plist: %w", err)
+	}
+	dict, ok := v.(map[string]any)
+	if !ok {
+		return errors.New("watch Info.plist is not a dictionary")
+	}
+	dict["CFBundleIdentifier"] = bundleID
+	dict["WKApplication"] = true
+	dict["WKWatchOnly"] = true
+	delete(dict, "WKCompanionAppBundleIdentifier")
+	return os.WriteFile(plistPath, encodePlist(dict), 0o644)
+}
+
+// signWatchStore validates provisioning profiles and signs a watch-only App
+// Store bundle inside-out: the nested watchOS app first, then the outer iOS
+// stub wrapper. Without profiles, both bundles stay unsigned.
+func signWatchStore(ctx context.Context, p *project, stubApp, watchApp string) error {
+	if p.Sign.Profile == "" && p.Sign.WatchProfile == "" {
+		detailIn(ctx, "unsigned: set sign.profile to upload it to App Store Connect")
+		return nil
+	}
+	if p.Sign.Profile == "" {
+		return fmt.Errorf("watchOS store signing needs sign.profile for the iOS stub %s alongside sign.watch_profile", p.ID)
+	}
+	stubData, err := os.ReadFile(p.Sign.Profile)
+	if err != nil {
+		return err
+	}
+	stubProfile, err := readProfile(ctx, stubData)
+	if err != nil {
+		return fmt.Errorf("%s: %w", rel(p.Sign.Profile), err)
+	}
+	stubEnts, ok := stubProfile["Entitlements"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s has no entitlements", rel(p.Sign.Profile))
+	}
+	stubAppID, _ := stubEnts["application-identifier"].(string)
+	if !profileAllows(stubAppID, p.ID) {
+		return fmt.Errorf("sign.profile is for %s, not %s", stubAppID, p.ID)
+	}
+	stubTeam := teamIDFromEntitlements(stubEnts)
+	if stubTeam == "" {
+		return fmt.Errorf("%s has no team identifier", rel(p.Sign.Profile))
+	}
+
+	watchID := watchAppBundleID(p)
+	var (
+		watchData    []byte
+		watchProfile map[string]any
+		watchEnts    map[string]any
+		watchAppID   string
+		watchTeam    string
+	)
+	if p.Sign.WatchProfile != "" {
+		watchData, err = os.ReadFile(p.Sign.WatchProfile)
+		if err != nil {
+			return err
+		}
+		watchProfile, err = readProfile(ctx, watchData)
+		if err != nil {
+			return fmt.Errorf("%s: %w", rel(p.Sign.WatchProfile), err)
+		}
+		watchEnts, ok = watchProfile["Entitlements"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s has no entitlements", rel(p.Sign.WatchProfile))
+		}
+		watchAppID, _ = watchEnts["application-identifier"].(string)
+		if !profileAllows(watchAppID, watchID) {
+			return fmt.Errorf("sign.watch_profile is for %s, not %s", watchAppID, watchID)
+		}
+		watchTeam = teamIDFromEntitlements(watchEnts)
+		if watchTeam == "" {
+			return fmt.Errorf("%s has no team identifier", rel(p.Sign.WatchProfile))
+		}
+		if watchTeam != stubTeam {
+			return fmt.Errorf("sign.watch_profile (team %s) must belong to sign.profile's team %s", watchTeam, stubTeam)
+		}
+	} else {
+		if !profileAllows(stubAppID, watchID) {
+			return fmt.Errorf("the watchOS app %s needs sign.watch_profile, its own provisioning profile (sign.profile only covers %s)", watchID, stubAppID)
+		}
+		watchData = stubData
+		watchProfile = stubProfile
+		watchEnts = maps.Clone(stubEnts)
+		watchAppID = stubAppID
+		watchTeam = stubTeam
+	}
+
+	watchEnts["application-identifier"] = signedAppID(watchAppID, watchID)
+	watchProject := *p
+	watchProject.ID = watchID
+	if err := watchProject.claimSignInWithApple(watchEnts, watchEnts); err != nil {
+		return err
+	}
+	if err := watchProject.claimAppLinks(watchEnts, watchEnts); err != nil {
+		return err
+	}
+	if err := watchProject.claimCloudEntitlements(watchEnts, watchEnts, watchTeam); err != nil {
+		return err
+	}
+
+	// The iOS watch-only stub (watchapp2-container) declares no capabilities of
+	// its own; strip capability entitlements that belong to the watch app.
+	stubEnts["application-identifier"] = signedAppID(stubAppID, p.ID)
+	for _, key := range []string{
+		signInWithAppleEntitlement,
+		associatedDomainsEntitlement,
+		kvStoreEntitlement,
+		icloudContainersEntitlement,
+		icloudServicesEntitlement,
+		"com.apple.security.application-groups",
+	} {
+		delete(stubEnts, key)
+	}
+
+	identity := p.Sign.Identity
+	if identity == "" {
+		if p.Sign.WatchProfile != "" {
+			identity, err = profileSharedIdentity(ctx, stubProfile, watchProfile)
+		} else {
+			identity, err = profileIdentity(ctx, stubProfile)
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(watchApp, "embedded.mobileprovision"), watchData, 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(stubApp, "embedded.mobileprovision"), stubData, 0o644); err != nil {
+		return err
+	}
+	watchEntsPath, err := writeEntitlements(watchEnts)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(watchEntsPath)
+	stubEntsPath, err := writeEntitlements(stubEnts)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(stubEntsPath)
+
+	detailIn(ctx, "sign with %s", identity)
+	stage(ctx, "signing")
+	// Sign inside-out: nested watch app frameworks and bundle before the outer iOS stub.
+	if err := signFrameworks(ctx, watchApp, identity); err != nil {
+		return err
+	}
+	if err := run(ctx, "codesign", "--force", "--sign", identity, "--entitlements", watchEntsPath, "--generate-entitlement-der", watchApp); err != nil {
+		return err
+	}
+	return run(ctx, "codesign", "--force", "--sign", identity, "--entitlements", stubEntsPath, "--generate-entitlement-der", stubApp)
+}
+
+// watchKitSupportWK returns Xcode's WatchKitSupport2/WK binary path when
+// present in the WatchOS SDK, or "" when absent.
+func watchKitSupportWK(ctx context.Context) (string, error) {
+	sdk, err := output(ctx, "xcrun", "--sdk", watchOS.sdk, "--show-sdk-path")
+	if err != nil {
+		return "", fmt.Errorf("the watchOS SDK needs Xcode: %w", err)
+	}
+	wk := filepath.Join(sdk, filepath.FromSlash(watchKitWKRelPath))
+	if info, err := os.Stat(wk); err == nil && !info.IsDir() {
+		return wk, nil
+	}
+	return "", nil
+}
+
+// writeWatchIPA packs stubApp under Payload/<name>.app and, when watchKitWK is
+// non-empty, copies it verbatim to WatchKitSupport2/WK at the IPA root.
+func writeWatchIPA(stubApp, watchKitWK, dst string) error {
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	prefix := "Payload/" + filepath.Base(stubApp)
+	if err := addZipDir(zw, stubApp, prefix); err != nil {
+		return err
+	}
+	if watchKitWK != "" {
+		info, err := os.Stat(watchKitWK)
+		if err != nil {
+			return err
+		}
+		dirHeader := &zip.FileHeader{Name: "WatchKitSupport2/", Method: zip.Store}
+		dirHeader.SetMode(os.ModeDir | 0o755)
+		if _, err := zw.CreateHeader(dirHeader); err != nil {
+			return err
+		}
+		h, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+		h.Name = "WatchKitSupport2/WK"
+		h.Method = zip.Deflate
+		h.SetMode(0o755)
+		w, err := zw.CreateHeader(h)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(watchKitWK)
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(data); err != nil {
+			return err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+func addZipDir(zw *zip.Writer, dir, prefix string) error {
+	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		name := path.Join(prefix, filepath.ToSlash(relPath))
+		if name == "." {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		h, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+		h.Name = name
+		if d.IsDir() {
+			h.Name += "/"
+			_, err = zw.CreateHeader(h)
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+			w, err := zw.CreateHeader(h)
+			if err != nil {
+				return err
+			}
+			_, err = w.Write([]byte(target))
+			return err
+		}
+		h.Method = zip.Deflate
+		w, err := zw.CreateHeader(h)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	})
+}
+
+// copyBundleDir copies a bundle tree preserving executable modes and symlinks.
+func copyBundleDir(src, dst string) error {
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, relPath)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			link, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(link, target)
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, info.Mode().Perm())
+	})
+}

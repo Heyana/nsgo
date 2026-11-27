@@ -432,8 +432,15 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		}
 		return p.releaseInstaller(target, setup)
 	case "watchos":
-		_, err := buildWatchApp(ctx, p, dir, false)
-		return err
+		app, err := buildWatchApp(ctx, p, dir, false)
+		if err != nil {
+			return err
+		}
+		ipa, err := packageWatchStoreIPA(ctx, p, app, dir)
+		if err != nil {
+			return err
+		}
+		return p.releaseCopy(ipa, p.releaseName(target, ".ipa"))
 	case "ios", "tvos":
 		sys, _, _ := appleOSOf(target)
 		app, err := buildIOSApp(ctx, p, sys, dir, false)

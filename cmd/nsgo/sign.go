@@ -24,15 +24,16 @@ import (
 
 // signFlags are nsgo build's flags that replace nsgo.yaml's sign values.
 type signFlags struct {
-	identity, profile, widgetsProfile, shareProfile, clipProfile, macOSProfile *override[string]
-	installer                                                                  *override[string]
-	keystore, alias, notarize                                                  *override[string]
-	certificate, signCommand, timestamp                                        *override[string]
+	identity, profile, watchProfile, widgetsProfile, shareProfile, clipProfile, macOSProfile *override[string]
+	installer                                                                                *override[string]
+	keystore, alias, notarize                                                                *override[string]
+	certificate, signCommand, timestamp                                                      *override[string]
 }
 
 func (f *signFlags) bind(fs *flag.FlagSet) {
 	f.identity = stringFlag(fs, "sign", "the macOS and iOS codesign `identity` (default: nsgo.yaml's sign.identity, else ad hoc on macOS and the profile's in the keychain on iOS)")
-	f.profile = stringFlag(fs, "profile", "the iOS provisioning `profile` (default: nsgo.yaml's sign.profile)")
+	f.profile = stringFlag(fs, "profile", "the iOS, tvOS or watchOS provisioning `profile` (default: nsgo.yaml's sign.profile)")
+	f.watchProfile = stringFlag(fs, "watch-profile", "the watchOS app's provisioning `profile` inside a watch-only IPA (default: nsgo.yaml's sign.watch_profile)")
 	f.widgetsProfile = stringFlag(fs, "widgets-profile", "the iOS or Mac App Store widget extension's provisioning `profile` (default: nsgo.yaml's sign.widgets_profile)")
 	f.shareProfile = stringFlag(fs, "share-profile", "the iOS share extension's provisioning `profile` (default: nsgo.yaml's sign.share_profile)")
 	f.clipProfile = stringFlag(fs, "clip-profile", "the iOS App Clip's provisioning `profile` (default: nsgo.yaml's sign.clip_profile)")
@@ -50,6 +51,9 @@ func (f *signFlags) apply(p *project) {
 	f.identity.replace(&p.Sign.Identity)
 	if f.profile.set {
 		p.Sign.Profile = p.resolve(f.profile.value)
+	}
+	if f.watchProfile.set {
+		p.Sign.WatchProfile = p.resolve(f.watchProfile.value)
 	}
 	if f.widgetsProfile.set {
 		p.Sign.WidgetsProfile = p.resolve(f.widgetsProfile.value)
@@ -354,13 +358,28 @@ func readProfile(ctx context.Context, data []byte) (map[string]any, error) {
 // profileIdentity finds the keychain's codesign identity for one of the
 // profile's certificates, by its SHA-1.
 func profileIdentity(ctx context.Context, profile map[string]any) (string, error) {
-	certs, _ := profile["DeveloperCertificates"].([]any)
-	var want []string
-	for _, c := range certs {
-		if der, ok := c.([]byte); ok {
-			sum := sha1.Sum(der)
-			want = append(want, strings.ToUpper(hex.EncodeToString(sum[:])))
+	return profileSharedIdentity(ctx, profile)
+}
+
+// profileSharedIdentity finds a keychain codesign identity whose certificate is
+// listed in every profile given, by its SHA-1.
+func profileSharedIdentity(ctx context.Context, profiles ...map[string]any) (string, error) {
+	if len(profiles) == 0 {
+		return "", errors.New("no provisioning profile to resolve a signing identity from")
+	}
+	want := profileCertSHA1s(profiles[0])
+	for _, profile := range profiles[1:] {
+		other := profileCertSHA1s(profile)
+		var common []string
+		for _, sha := range want {
+			if slices.Contains(other, sha) {
+				common = append(common, sha)
+			}
 		}
+		want = common
+	}
+	if len(profiles) > 1 && len(want) == 0 {
+		return "", errors.New("the provisioning profiles share no signing certificate: use profiles signed for the same certificate, or pass -sign")
 	}
 	out, err := output(ctx, "security", "find-identity", "-v", "-p", "codesigning")
 	if err != nil {
@@ -373,7 +392,25 @@ func profileIdentity(ctx context.Context, profile map[string]any) (string, error
 			}
 		}
 	}
+	if len(profiles) > 1 {
+		return "", errors.New("the keychain has no identity shared by the provisioning profiles' certificates: install the certificate, or pass -sign")
+	}
 	return "", errors.New("the keychain has no identity for the provisioning profile's certificates: install the certificate, or pass -sign")
+}
+
+func profileCertSHA1s(profile map[string]any) []string {
+	certs, _ := profile["DeveloperCertificates"].([]any)
+	var shas []string
+	for _, c := range certs {
+		if der, ok := c.([]byte); ok {
+			sum := sha1.Sum(der)
+			sha := strings.ToUpper(hex.EncodeToString(sum[:]))
+			if !slices.Contains(shas, sha) {
+				shas = append(shas, sha)
+			}
+		}
+	}
+	return shas
 }
 
 // profileAllows reports whether a profile's application-identifier
