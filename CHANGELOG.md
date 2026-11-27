@@ -2,6 +2,77 @@
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-11-27
+
+- Let Android `OpenFile` and `Share` hand on existing `content://` URIs without copying their files (#2479).
+- Wire `gameservices` on Android to Google Play Games Services v2 via a Java reflection hook (`GameServices.java`), reporting `CanUseGameServices` when the SDK is packaged (#2252).
+- Draw a canvas below the screen's density and stretch it to its box with `Canvas.ResolutionScale` or `ResolutionScaleFunc`, smoothly or to the nearest pixel with `Canvas.Sampling`, on Apple platforms, Android, Windows, Linux, the web, watchOS and mini programs, and read the pixels per point a canvas draws at in tests with `App.CanvasScale` (#2261 by @oneo-me).
+- Shade a canvas's rectangles and images with compiled programs through `ShaderProgram.Paint`, `Drawing.DrawShader` and `Drawing.SetShader`, such as a run of SDF glyphs from one `DrawAtlas`, on Apple platforms, Windows, Linux and the web (#2260 by @oneo-me).
+- Add a weekly and `registry.yaml` pull-request CI workflow (`.github/workflows/registry.yml`) and online/offline registry policy tests in `cmd/nsgo` verifying release tags, non-redirecting repository URLs, release-only NSGo resolution, manifest validity, and `linux_x64` checks (#2472).
+- Add `nsgodev` causal-chain diagnostics in DevTools linking signal writes to triggered computations and scope disposals to executed cleanups (#1262).
+- `base/editor`: a `Decoration`'s `Hidden` collapses its range's columns and its `Replace` draws a view in them, so a Markdown editor's live preview hides markers and shows checkboxes and link labels while the text keeps its offsets (#2409).
+- `editor.Ref.SetValueOutsideHistory` replaces the text without an undo step, moving the history and the selections through it, so a merge from a sync server stays when the user undoes (#2409 by @im-apratap).
+- Copy Presentation MathML (`application/mathml+xml`) and dialect source (`text/x-tex` or `text/x-typst`) alongside plain text when copying a formula selection or calling `formula.Copy`, with native format mapping on macOS, iOS, Windows, Linux and the web (#1449).
+- `nsgotest`: HarmonyOS target test hosts now drive copy, cut, paste, select-all and Backspace keys over the focused field's native selection after keymap matching (#1353).
+- `nsgotest`, `gpu`: add `nsgotest.TranslateShader`, `nsgotest.ShaderSources`, and `gpu.TranslateShaderModule` (`gpu.PipelineSources`) to translate fragment and 3D shaders headlessly across MSL, HLSL, GLSL, GLES, and WGSL while reporting per-backend errors and recovered panics (#2266).
+- Support reactive `DurationFunc` on `mobile.PictureInPicture` so custom Picture in Picture sessions can follow a loaded `core.Video`'s duration without remounting (#970).
+- Expose `Purchases.manageSubscriptions()` and `Purchases.requestRefund(transactionId)` in TSX and add `nsgotest.App.RefundError` to simulate refund failures in tests (#1368 by @houko).
+- Support app font loading (`loadFontFace`), `TintColor` tinted images, off-baseline inline attachment alignment, text selection areas and native `<video>` playback in mini programs (#1506).
+- Ship a package's iOS and tvOS frameworks through `nsgo-natives.yaml` version 2, which `nsgo build`, `nsgo dev` and `-run` check against the app, sign with it and credit in its notices, and `-embed` refuses for now (#2473 by @houko).
+- Put the libraries that a terminal target's packages declare for its desktop beside the executable (#2473 by @houko).
+- List the Linux packages that a linked Go package's `nsgo-natives.yaml` version 2 names for each architecture in the app's `.deb` and Arch package, after the app's own `linux.depends` and `linux.recommends` (#2474 by @houko).
+- Embed a built-in library and component index (`cmd/nsgo/registry.yaml`) in `nsgo` so `nsgo add <name>` resolves listed short names and `nsgo add -list [words...]` searches the index inside or outside a module (#2461).
+- `nsgo add module[@version]…`, a `go get` that prints its plan first, planned on copies of `go.mod` and `go.sum` with the module's own toolchain and module proxies only for public modules, and writes both only once confirmed in a terminal or with `-y`, refusing to move the app's NSGo off its releases (#2460).
+- Support `nsgotest` `Pinch` on Windows, Linux and physical iOS devices, count consecutive clicks on physical iOS devices, and add `Surface.DoublePress` (#1043).
+- Add an in-process HTTP transport for `nsgotest` web and headless tests (#2408 by @houko).
+- Support persistent picked directory grants (`PickDirectoriesOptions.Persist`, `Directory.Token`, `Scope.OpenDirectory`, `Scope.ReleaseDirectory`) across Android SAF, iOS/macOS bookmarks and desktop paths, plus in-place `Directory.MediaURI` playback URIs for `core.Video` (#2245).
+- Add live stereo-pan control to audio playbacks and TSX playback handles (#2257 by @houko).
+- Report pointer-lock loss through `OnPointerUnlock` and `Ref.PointerLocked` (#2249 by @houko).
+- Support `gpu.View` capture in `Scope.Capture` across macOS, iOS, Windows, Linux, Android and the web (preserving WebGPU swapchain frames for capture and shader effects), add Android overlay window capture, and add headless `nsgotest.App.CaptureSurface` (#1243).
+- Fade in the characters a streaming `TextView` gains with `FadeIn`, one after another and at most 160 ms behind their arrival, and fade a text span's characters with `Style.Opacity`, shown in the new `examples/stream` app (#2503).
+- Add the `nsgo/updater` TSX module exposing `checkForUpdate`, `checkInBackground`, `checkDaily`, `capability`, reactive `status`, `setAutomaticChecks`, and `setAutomaticDownloads` on the same platform updaters Go's `updater` package uses (#1525).
+- Scroll overflowing tvOS `Scroll` and `List` views that contain no focusable views with the Apple TV remote's touch surface by enabling `UITouchTypeIndirect` on `UIScrollView.panGestureRecognizer` and focusability while preserving focus-driven scrolling for focusable children (#1483 by @houko).
+- Build `libghostty-vt` for tvOS and the tvOS simulator in `tools/libghostty` and support `nsgo build -embed` for `tvos` and `tvos_simulator` with companion `GhosttyVT.xcframework` packaging (#1485).
+- watchOS SwiftUI host checks and requests microphone, calendar, reminder and Bluetooth permissions with Info.plist usage-description guards, and routes notification permission queries through `UNUserNotificationCenter` (#1497 by @houko).
+- Enforce `webview` navigation host and scheme grants for restricted web views on the web across initial sources, `HTML` (`srcdoc`) and `data:text/html` pages, CSP `form-action`/`base-uri`, static `NoJavaScript` sanitization and popup/download/top-navigation sandbox restrictions (#1523).
+- Redraw only the damaged area of animated canvases on Android and skip invisible source-over canvas paints (#1331).
+- Cache animated layer bounds, anchor point, backing layer, and `setTransform:` dispatch on macOS and iOS, and handle same-opacity animated background colors and unchanged clip holders on the fast path (#1327 by @houko).
+- Composite `Canvas.DrawAtlas` batches in pure Go on macOS and iOS—writing directly into compatible sRGB/DeviceRGB bitmap contexts and falling back to a single-blit scratch image for async display-list layers and clipped states—replacing per-sprite `CGContextDrawImage` calls (nsgo-dev/game#64).
+- Use a translucent foreground fill and softer shadow for `TabsSegmented`'s selected indicator in dark mode so it stays clear over the track.
+- Reuse the staged iOS simulator `.app` bundle on Go-only `nsgo dev` rebuilds and track launch screens, Android PNG icons and translation catalogs for mobile dev reinstalls (#661).
+- `editor.Editor.Value` replaces the text outside the undo history, as another app's change to the file does (#2409 by @im-apratap).
+- Link a backend's MSL, HLSL or GLSL writer only when an app mounts a `core.GPUView`, through `driver.GPUEnabler` and `driver.GPUSubmitter` tables that hold the item, resize, frame and release entry points (#2508 by @Laotree).
+- Make `SidebarShellInset`'s resize handle fill the gap between the sidebar and the content, draw the card's edge outside it as a dialog's rim and fade it with its shadow as the sidebar nearly hides, and let `base.ResizeHandle` take a `Thickness`.
+- `nsgo test` takes Go package patterns, so a directory names its own package and `/...` its tree, and each CI test shard runs its packages in one run instead of testing the whole module first (#2504 by @im-apratap).
+- Remove the built-in `nsgo game` command and `NSGO_GAME_VERSION`; `nsgo game` now runs through NSGo's standard extension mechanism (`go tool` for a module's `go.mod` tool named `game`, or `nsgo-game` on `PATH`).
+- Read Direct3D 11 render storage buffers at WGSL byte offsets through matching raw buffer views (#2422).
+- Let app-defined MCP tools reply after deferred graph work without blocking the app (#2342 by @J4ck1e2000).
+- Show a diagram item's tooltip when the pointer rests on it after entering the diagram elsewhere (#1435).
+- Rebuild in `nsgo dev` with hot reload when a new file matches a `//go:embed` pattern (#2486).
+- Retain iOS Picture in Picture controllers across automatic `willStart` transitions and preserve configuration errors on repeated start requests (#54 by @oneo-me).
+- Keep Snap `LaunchAtLogin` status accurate across revision refreshes and prevent closing a secondary Wayland window or a failed Flatpak Background portal resubscription from stranding login requests (#1389).
+- `gpu`: report shader translator panics and pipelines that produce no backend source as compilation errors instead of silently submitting empty artifacts.
+- Pad HLSL pipeline structs to WGSL storage and uniform member offsets (#2422 by @houko).
+- Report missing dependency translations by key and let apps acknowledge fallback with `i18n.coverage: off` (#2454 by @J4ck1e2000).
+- Fix iOS custom Picture in Picture render-size delegate ABI (`CMVideoDimensions`), clamp sample-buffer timebases to finite durations, move decoded PiP video layers across clipping holders, wake background frame rendering on session start, and disarm automatic background polling after PiP stops (#970).
+- Give the first multi-scene iPad test its own cold-start budget in release checks (#2431).
+- Play Linux `core.AudioPlayer` streams through classic GStreamer `playbin` (`decodebin2`) instead of `GtkMediaFile` (`playbin3`/`decodebin3`), avoiding the GStreamer 1.28 `decodebin3` process abort (#2489).
+- Resize and reposition Linux X11 fitted panels atomically with `XMoveResizeWindow` when their content grows or shrinks, and apply fitted sizes before pre-map placement so unmanaged panels keep their anchor (#1394).
+- Commit Windows DirectComposition visual trees for transparent and material surfaces even when neither WebView nor GPU views are enabled, and resize anchored fitted panels beside their anchor in one `SetWindowPos` call (#1394).
+- Allocate resized Linux GTK child views synchronously inside `size_allocate` instead of re-queueing `gtk_widget_queue_allocate` onto the next frame clock cycle (#1375 by @houko).
+- Retain the StoreKit presentation window or scene synchronously in `nsgo_storekit_call` before entering the async `Task`, and open macOS subscriptions URLs on the main actor (#1368 by @houko).
+- Record the absolute starting folder on `nsgotest.FileSave.Start` in `App.Saves` and `App.SaveFile` (#1086).
+- Download Linux GTK capture textures on the GTK main loop before background PNG encoding, fall back to WARP/PrintWindow on Windows when hardware WGC is unavailable, and answer `ItemCapture` with `CodeUnavailable` on the terminal backend (#1243).
+- `gpu`: decode all BC7 modes (0–7) and full ASTC 4x4 LDR blocks (partitions, dual-plane, weight infill, BISE trits/quints, and all LDR color endpoint modes) in the software GPU device (#2336).
+- Refuse unknown `nsgo.yaml` keys instead of silently ignoring misspellings (#2475).
+- Preserve transparent `Video` compositing across backends by making Android's `TextureView` non-opaque, clearing `GtkVideo`'s black default background on Linux when `Controls` is set, explicitly clearing `AVPlayerLayer` and iOS `AVPlayerViewController` view backgrounds on Apple, and setting `<video>` backgrounds transparent on the web (#1360).
+- Fail Linux `SetWebCookies` before writing any cookie when libsoup would reject a public-suffix domain, prepare batches before writing on Apple and Windows, and drop expired cookies in `nsgotest` (#1363).
+- Use natural WGSL uniform buffer sizes on Metal and in headless GPU tests (#2423).
+- Reject WGSL uniform buffer layouts that violate uniform struct and array alignment rules (#2423 by @houko).
+- Keep prior offscreen canvas pixels when compositing inside a clip on Windows (#2391 by @houko).
+- Refresh a Windows material backdrop when the app's appearance changes at runtime (#2487 by @houko).
+- Stop Windows from painting system caption buttons and classic tooltips over hidden title bars on maximize and hover (#2495 by @oneo-me).
+
 ## [0.3.4] - 2026-11-26
 
 - Let embedded Android hosts keep video playback and its callbacks running while their retained view is hidden or out of its window (#2302 by @henry-wm).
