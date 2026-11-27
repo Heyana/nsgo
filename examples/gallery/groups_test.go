@@ -1,3 +1,5 @@
+//go:build !js && !ios && !android
+
 package main
 
 import (
@@ -5,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
 // TestGroupBuildsCompile builds the gallery as the site does for one group of
@@ -12,6 +16,9 @@ import (
 // names no demo, or one its tab cannot show, fails here rather than in the
 // site's build.
 func TestGroupBuildsCompile(t *testing.T) {
+	if nsgotest.Target() != "" {
+		t.Skip("host-only build check")
+	}
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
