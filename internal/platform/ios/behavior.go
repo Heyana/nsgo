@@ -44,6 +44,10 @@ type scrollState struct {
 	// reported with each offset; sticky are its sticky cells.
 	applied uint32
 	sticky  scrollbar.StickyCells
+	// tvOS indirect remote-surface scrolling state (tvscroll.go).
+	defaultTouchTypes objc.ID
+	indirectPan       bool
+	tvFocusable       bool
 }
 
 // scrollBy moves the offset by d unclamped, which UIKit's drag and glide
@@ -126,6 +130,7 @@ func newScroll(v *view) {
 	v.native.Send(sel("addGestureRecognizer:"), tap)
 	tap.Send(selRelease)
 	v.sc.tap = tap
+	initTVScroll(v)
 }
 
 // children returns where v's children go: its zoom view while it zooms.
@@ -312,6 +317,7 @@ func scrollLimits(n objc.ID) (start, end apple.CGPoint) {
 
 // pullBackResizedScrolls runs once the batch's scroll commands and the current layout animation step have placed the viewport and its content.
 func (s *surface) pullBackResizedScrolls() {
+	resized := len(s.resizedScrolls) > 0
 	for _, v := range s.resizedScrolls {
 		if s.viewOf(v.id) != v {
 			continue
@@ -336,6 +342,9 @@ func (s *surface) pullBackResizedScrolls() {
 	}
 	clear(s.resizedScrolls)
 	s.resizedScrolls = s.resizedScrolls[:0]
+	if resized && onTV() && s.updateTVScrolls() {
+		s.refocus(true)
+	}
 }
 
 // setZoomable gives the view a zoom view, moving its children into it,

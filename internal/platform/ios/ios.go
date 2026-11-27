@@ -1740,7 +1740,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemFocus:
 			if v.input != nil {
 				v.input.field.Send(selBecomeFirst)
-			} else if v.focusable() {
+			} else if v.canTakeTVFocus() {
 				s.focusView(v)
 			}
 		case driver.ItemBlur:
@@ -1882,6 +1882,7 @@ func (s *surface) delete(v *view, kept bool) {
 	delete(s.ownTexts, v.id)
 	if v.sc != nil {
 		v.releaseHandle()
+		releaseTVScroll(v)
 		for i := range v.sc.edges {
 			if ev := &v.sc.edges[i]; ev.holder != 0 {
 				ev.paint.Release()

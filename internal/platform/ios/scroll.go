@@ -28,6 +28,8 @@ func scrollMethods() []objc.MethodDef {
 	return []objc.MethodDef{
 		{Cmd: sel("gestureRecognizerShouldBegin:"), Fn: scrollPanShouldBegin},
 		{Cmd: sel("gestureRecognizer:shouldRequireFailureOfGestureRecognizer:"), Fn: scrollPanWaits},
+		{Cmd: selCanBecomeFocused, Fn: scrollCanBecomeFocused},
+		{Cmd: sel("didUpdateFocusInContext:withAnimationCoordinator:"), Fn: scrollDidUpdateFocus},
 	}
 }
 

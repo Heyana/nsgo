@@ -291,6 +291,7 @@ func (s *surface) updateModals() {
 		}
 		return
 	}
+	needsRefocus := s.updateTVScrolls()
 	now := s.topFocusScope()
 	s.focusScope = now
 	switch {
@@ -298,6 +299,8 @@ func (s *surface) updateModals() {
 		if prev != nil && !slices.Contains(s.modals, prev) && !slices.Contains(s.topmostCaptures, prev) {
 			s.focusBack = prev.focusBefore
 		}
+		s.refocus(true)
+	case needsRefocus:
 		s.refocus(true)
 	case s.focused == nil || s.views[s.focused.id] != s.focused:
 		// Nothing may have the focus yet, or what had it went: UIKit
@@ -334,7 +337,7 @@ func (s *surface) preferredFocus() objc.ID {
 	if top := s.topFocusScope(); top != nil {
 		return top.native
 	}
-	if b := s.focusBack; b != nil && s.views[b.id] == b && b.focusable() {
+	if b := s.focusBack; b != nil && s.views[b.id] == b && b.canTakeTVFocus() {
 		return b.native
 	}
 	return 0
