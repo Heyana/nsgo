@@ -114,3 +114,63 @@ func TestSaveFilePreflightCancellationAndWriteFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestSaveFileRecordsStart(t *testing.T) {
+	start := t.TempDir()
+	out := filepath.Join(start, "report.txt")
+	var scope *core.Scope
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		scope = cx
+		return core.View{}
+	})
+	var seen []string
+	app.SaveFile = func(r nsgotest.FileSave) string {
+		seen = append(seen, r.Start)
+		return out
+	}
+	app.Post(func() {
+		scope.SaveFile(core.SaveOptions{Name: "report.txt", Start: start, Data: []byte("ok")}, nil)
+		scope.SaveFile(core.SaveOptions{Name: "relative.txt", Start: "relative/dir", Data: []byte("ok")}, nil)
+	})
+	app.Settle()
+	if len(seen) != 2 || seen[0] != start || seen[1] != "" {
+		t.Fatalf("SaveFile callback starts = %q, want [%q \"\"]", seen, start)
+	}
+	if len(app.Saves) != 2 || app.Saves[0].Start != start || app.Saves[1].Start != "" {
+		t.Fatalf("app.Saves starts = [%q %q], want [%q \"\"]", app.Saves[0].Start, app.Saves[1].Start, start)
+	}
+}
+
+func TestSaveFilePreflightWithoutAccept(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.txt")
+	var scope *core.Scope
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		scope = cx
+		return core.View{}
+	})
+	app.SaveFile = func(r nsgotest.FileSave) string {
+		if !r.Preflight {
+			t.Error("the save request did not ask for a preflight check")
+		}
+		return path
+	}
+	var saved bool
+	var gotPath string
+	var gotErr error
+	app.Post(func() {
+		scope.SaveFile(core.SaveOptions{
+			Name:      "report.txt",
+			Data:      []byte("approved"),
+			Preflight: true,
+		}, func(ok bool, chosen string, err error) {
+			saved, gotPath, gotErr = ok, chosen, err
+		})
+	})
+	app.Settle()
+	if !saved || gotPath != path || gotErr != nil {
+		t.Fatalf("save answered %v, %q, %v", saved, gotPath, gotErr)
+	}
+	if b, err := os.ReadFile(path); err != nil || string(b) != "approved" {
+		t.Fatalf("saved file holds %q, %v", b, err)
+	}
+}

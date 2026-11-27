@@ -1055,7 +1055,6 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 			a.post(ev)
 		case driver.ItemSaveFile:
-
 			a.chooseSaveDestination(it)
 		case driver.ItemSavePreflightAnswer:
 			a.answerSavePreflight(it)

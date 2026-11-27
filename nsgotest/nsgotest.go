@@ -337,7 +337,6 @@ type App struct {
 	PickDirectories func(r DirectoryPick) []core.Directory
 	// Saves are the saves the app asked for, oldest first. SaveFile
 	// answers each with the path the user saves to, where the file is
-
 	// written after any preflight check. An absent answer or "" cancels.
 	Saves            []FileSave
 	SaveFile         func(r FileSave) string
