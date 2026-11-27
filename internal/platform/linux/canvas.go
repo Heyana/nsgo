@@ -137,11 +137,11 @@ type canvasPlayer struct {
 	v       *view
 	drawing *driver.Drawing
 	cr      uintptr
-	base   cairoMatrix // the canvas's own coordinates
-	size   rect
-	st     canvasState
-	stack  []canvasState
-	waited bool
+	base    cairoMatrix // the canvas's own coordinates
+	size    rect
+	st      canvasState
+	stack   []canvasState
+	waited  bool
 }
 
 // changedNatives hands components the animated props that changed.

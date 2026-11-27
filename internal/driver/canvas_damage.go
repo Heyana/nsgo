@@ -85,7 +85,7 @@ type damageState struct {
 type damageScan struct {
 	drawing *Drawing
 	cur     [2]damageState
-	saved [][2]damageState
+	saved   [][2]damageState
 	// path is the current path's bounds in canvas points, per replay;
 	// pathMoved whether it differs between them.
 	path      [2]box

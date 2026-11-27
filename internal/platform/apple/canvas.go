@@ -295,7 +295,7 @@ type player struct {
 	ctx     uintptr
 	drawing *driver.Drawing
 	ops     []driver.DrawOp
-	split driver.CanvasSplit // what PlayOver leaves out
+	split   driver.CanvasSplit // what PlayOver leaves out
 	// waited is set when an image the ops draw had not loaded.
 	waited bool
 	base   affine // the canvas's own coordinates
