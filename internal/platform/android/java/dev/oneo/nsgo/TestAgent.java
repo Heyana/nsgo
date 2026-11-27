@@ -116,43 +116,71 @@ final class TestAgent {
     }
 
     /**
-     * Takes window focus away from the activity with a focusable dialog window so Android delivers
-     * onWindowFocusChanged(false) to NsgoView. If the activity has not yet received its initial
-     * window focus after launch, wait for it first so Android transitions from focused to unfocused.
+     * Waits until view.hasWindowFocus() equals want, then runs onMatch on the UI thread (after
+     * NsgoView.onWindowFocusChanged has run). Runs onTimeout if the state does not arrive in time.
      */
-    private void blurWindow(int id) {
-        Runnable show = () -> {
-            try {
-                if (blurDialog != null) blurDialog.dismiss();
-                AlertDialog dialog = new AlertDialog.Builder(activity()).setMessage("blur").create();
-                blurDialog = dialog;
-                dialog.show();
-                view.testReply(id, "", "");
-            } catch (Exception e) {
-                view.testReply(id, e.toString(), "");
-            }
-        };
-        if (view.hasWindowFocus()) {
-            show.run();
+    private void waitForWindowFocus(boolean want, long timeoutMs, Runnable onMatch, Runnable onTimeout) {
+        if (view.hasWindowFocus() == want) {
+            onMatch.run();
             return;
         }
         final boolean[] done = {false};
         ViewTreeObserver observer = view.getViewTreeObserver();
         ViewTreeObserver.OnWindowFocusChangeListener[] holder = new ViewTreeObserver.OnWindowFocusChangeListener[1];
-        Runnable runOnce = () -> {
-            if (done[0]) return;
-            done[0] = true;
+        Runnable[] timer = new Runnable[1];
+        Runnable cleanup = () -> {
             if (holder[0] != null) {
                 ViewTreeObserver current = view.getViewTreeObserver();
                 if (current.isAlive()) current.removeOnWindowFocusChangeListener(holder[0]);
+                holder[0] = null;
             }
-            show.run();
+            if (timer[0] != null) {
+                ui.removeCallbacks(timer[0]);
+                timer[0] = null;
+            }
+        };
+        Runnable finish = () -> {
+            if (done[0]) return;
+            done[0] = true;
+            cleanup.run();
+            onMatch.run();
         };
         holder[0] = hasFocus -> {
-            if (hasFocus) ui.post(runOnce);
+            if (hasFocus == want) ui.post(finish);
+        };
+        timer[0] = () -> {
+            if (done[0]) return;
+            done[0] = true;
+            cleanup.run();
+            if (view.hasWindowFocus() == want) onMatch.run();
+            else onTimeout.run();
         };
         if (observer.isAlive()) observer.addOnWindowFocusChangeListener(holder[0]);
-        ui.postDelayed(runOnce, 2000);
+        ui.postDelayed(timer[0], timeoutMs);
+    }
+
+    /**
+     * Takes window focus away from the activity with a focusable dialog window and waits until
+     * Android delivers onWindowFocusChanged(false) to NsgoView before replying. If the activity
+     * has not yet received its initial window focus after launch, wait for it first so Android
+     * transitions from focused to unfocused.
+     */
+    private void blurWindow(int id) {
+        waitForWindowFocus(true, 5000, () -> {
+            try {
+                if (blurDialog != null) blurDialog.dismiss();
+                AlertDialog dialog = new AlertDialog.Builder(activity()).setMessage("blur").create();
+                blurDialog = dialog;
+                dialog.show();
+                waitForWindowFocus(false, 5000,
+                        () -> view.whenKeysIdle(() -> view.testReply(id, "", "")),
+                        () -> view.testReply(id, "blur dialog did not take window focus (showing="
+                                + dialog.isShowing() + ", hasFocus=" + view.hasWindowFocus() + ")", ""));
+            } catch (Exception e) {
+                view.testReply(id, e.toString(), "");
+            }
+        }, () -> view.testReply(id, "window never gained focus before blur (attached="
+                + view.isAttachedToWindow() + ", hasFocus=" + view.hasWindowFocus() + ")", ""));
     }
 
     /** Reads native geometry and typography, including views placed outside core's layout roots. */
