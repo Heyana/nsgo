@@ -13,7 +13,9 @@ nsgo dev
 
 `dev` builds and opens the app for this machine, or for the target `nsgo.yaml`'s `dev.target` names. With hot reload enabled (the default), saving a Go file or an embedded file in a Go-only app rebuilds and restarts the app. When an import needs a module missing from `go.mod` or `go.sum`, `dev` runs `go mod tidy` first. Changes only to a TSX bundle's sources update the running app in place, keeping its state. The run ends with the app.
 
-On macOS and Windows, a native dev rebuild reopens the main view’s window at its last regular position and size within the current session. Windows also restores full screen. On Linux, GTK restores its regular size and requests its last full-screen mode. The window manager chooses the position.
+On macOS and Windows, a native dev rebuild reopens the main view’s window at its last regular position and size within the current session. Windows also restores full screen. On Linux, GTK restores its regular size and requests its last full-screen mode. The window manager chooses the position. On macOS, Go-only rebuilds update the `.app` executable in place and keep the previous window visible until the new process draws its first frame; editing `nsgo.yaml`, resources, icons, catalogs, companion commands or linked native libraries rebuilds the full bundle.
+
+Within a single `nsgo dev` session, `base.NewNav` automatically restores stacks of concrete JSON-serializable routes across Go restarts, and apps can preserve any JSON-serializable signal or state with `core.DevKeep(cx, key, sig)` or `core.DevKeepFunc(cx, key, read, restore)`. State lives only in the dev server for that run and is compiled out of release builds.
 
 `-target` runs it elsewhere, and `-device` picks the iPhone, Apple TV, Apple Watch, simulator or Android device by name, UDID or serial:
 

@@ -13,7 +13,9 @@ nsgo dev
 
 `dev` 为本机或 `nsgo.yaml` 中 `dev.target` 指定的目标构建并打开应用。热重载默认开启；保存 Go 文件，或保存纯 Go 应用中嵌入的文件时，应用会重新构建并重启。如果导入的包需要 `go.mod` 或 `go.sum` 中没有的模块，`dev` 会先执行 `go mod tidy`。仅修改 TSX bundle 的源文件时，应用会原地更新并保留状态。应用退出时运行结束。
 
-在 macOS 和 Windows 上，同一次 `dev` 会话中的原生开发构建会按主视图窗口上次的普通位置和大小重新打开该窗口。Windows 还会恢复全屏状态。在 Linux 上，GTK 会恢复窗口的普通大小，并请求恢复上次的全屏状态。窗口的位置由窗口管理器决定。
+在 macOS 和 Windows 上，同一次 `dev` 会话中的原生开发构建会按主视图窗口上次的普通位置和大小重新打开该窗口。Windows 还会恢复全屏状态。在 Linux 上，GTK 会恢复窗口的普通大小，并请求恢复上次的全屏状态。窗口的位置由窗口管理器决定。在 macOS 上，仅修改 Go 代码时会原地替换 `.app` 内的可执行文件，并保留旧窗口直到新进程绘制第一帧；修改 `nsgo.yaml`、资源、图标、翻译目录、附属命令或链接的原生库时会完整重建应用包。
+
+在同一次 `nsgo dev` 会话中，`base.NewNav` 会自动在 Go 重启间恢复具体可 JSON 序列化路由的导航栈；应用也可以用 `core.DevKeep(cx, key, sig)` 或 `core.DevKeepFunc(cx, key, read, restore)` 保留任意可 JSON 序列化的信号或状态。状态仅在本次开发会话中由开发服务器保存，发布构建不会包含任何相关代码。
 
 `-target` 在别处运行，`-device` 按名称、UDID 或序列号选择 iPhone、Apple TV、Apple Watch、模拟器或 Android 设备：
 

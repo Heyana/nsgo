@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,10 +27,11 @@ import (
 
 // session is how dev builds and shows one target. start runs after each successful build and returns the running app; close, when set, cleans up session-wide resources such as an automation browser when dev ends.
 type session struct {
-	build func(ctx context.Context, p *project) error
-	start func(ctx context.Context, p *project) (app, error)
-	watch func(*project) string // additional inputs the target packages
-	close func()                // releases a target that lives across rebuilds
+	build   func(ctx context.Context, p *project) error
+	start   func(ctx context.Context, p *project) (app, error)
+	watch   func(*project) string // additional inputs the target packages
+	close   func()                // releases a target that lives across rebuilds
+	overlap bool                  // start the next process and wait for first-frame readiness before stopping the old one
 }
 
 // app is one started dev app. stop ends it, and wait returns once it has
@@ -262,15 +264,34 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			detail("waiting for changes")
 		default:
 			progress.done(fmt.Sprintf("built %s", p.Dev.Target), "")
-			stop()
+			reloadNow := started
+			if reloadNow && p.Dev.Target != "web" && !opts.release {
+				// Ask the running app to flush any pending DevKeep / Nav state
+				// before restarting so the next process restores the latest state.
+				srv.prepareHandoff(ctx, 300*time.Millisecond)
+			}
+			oldStop := stop
+			overlap := reloadNow && s.overlap
+			if !overlap {
+				oldStop()
+				oldStop = func() {}
+			}
 			stop, exited = func() {}, nil
+			var readyCh <-chan struct{}
+			var endReady func()
+			if overlap {
+				_, readyCh, endReady = srv.beginReady()
+			}
 			// The web target only serves unless -automation starts its own browser; the others start an app, which may boot, install and launch on a device first.
 			var starting *Step
 			if p.Dev.Target != "web" || (opts.automation && !started) {
 				starting = begin("starting the app")
 			}
-			reloadNow := started
 			if next, err := s.start(ctx, p); err != nil {
+				if endReady != nil {
+					endReady()
+				}
+				oldStop()
 				if starting != nil {
 					starting.fail()
 				}
@@ -286,6 +307,11 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 				if next.wait != nil {
 					exited = make(chan error, 1)
 					go func(wait func(context.Context) error, done chan error) { done <- wait(ctx) }(next.wait, exited)
+				}
+				if overlap {
+					waitOverlapReady(ctx, readyCh, exited, 2*time.Second)
+					endReady()
+					oldStop()
 				}
 				started = true
 				if !hinted && p.hotReload() {
@@ -519,6 +545,13 @@ type devServer struct {
 	profile *devProfile
 	// hub relays nsgo dev -automation's requests over the app's DevTools stream, nil without -automation.
 	hub *automationHub
+	// state keeps dev-only serializable values (core.DevKeep and base.NewNav) across restarts of this dev session.
+	state map[string]json.RawMessage
+	// handoffs and readies synchronize restart state flushes and first-frame overlap readiness.
+	handoffs map[string]chan struct{}
+	readies  map[string]chan struct{}
+	nextID   uint64
+	readyID  string
 	// opened are the files open wrote, which close removes.
 	opened []string
 }
@@ -552,9 +585,13 @@ func startDevServer(host string, port int) (*devServer, error) {
 		return nil, fmt.Errorf("listen for the dev server at %s: %w", bind, err)
 	}
 	s := &devServer{addr: ln.Addr().(*net.TCPAddr), mux: http.NewServeMux(), reloads: make(chan struct{}, 1), token: token,
-		clients: map[chan string]bool{}, pages: map[chan string]bool{}}
+		clients: map[chan string]bool{}, pages: map[chan string]bool{},
+		state: map[string]json.RawMessage{}, handoffs: map[string]chan struct{}{}, readies: map[string]chan struct{}{}}
 	s.handle("/_nsgo/events", s.events)
 	s.handle("/_nsgo/profile", s.serveProfile)
+	s.handle("/_nsgo/state", s.serveState)
+	s.handle("/_nsgo/handoff", s.serveHandoff)
+	s.handle("/_nsgo/ready", s.serveReady)
 	s.serveDevTools()
 	s.handle("/_nsgo/bundle", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
@@ -761,7 +798,7 @@ func (s *devServer) send(kind, text string) {
 	switch kind {
 	case "error":
 		msg += " " + strconv.Quote(text)
-	case "bundle", "devtools":
+	case "bundle", "devtools", "handoff":
 		msg += " " + text
 	}
 	s.mu.Lock()
@@ -777,6 +814,148 @@ func (s *devServer) send(kind, text string) {
 		case ch <- msg:
 		default:
 		}
+	}
+}
+
+// serveState keeps dev-only serializable values (core.DevKeep and base.NewNav)
+// in memory for the life of this nsgo dev session.
+func (s *devServer) serveState(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.mu.Lock()
+		snap := make(map[string]json.RawMessage, len(s.state))
+		for k, v := range s.state {
+			snap[k] = append(json.RawMessage(nil), v...)
+		}
+		s.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(snap)
+	case http.MethodPost:
+		var incoming map[string]json.RawMessage
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4<<20)).Decode(&incoming); err != nil {
+			http.Error(w, "invalid state JSON", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		if s.state == nil {
+			s.state = map[string]json.RawMessage{}
+		}
+		for k, v := range incoming {
+			if k == "" || len(v) == 0 {
+				continue
+			}
+			s.state[k] = append(json.RawMessage(nil), v...)
+		}
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "GET or POST state", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *devServer) serveHandoff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST to acknowledge handoff", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	s.mu.Lock()
+	if ch, ok := s.handoffs[id]; ok {
+		delete(s.handoffs, id)
+		close(ch)
+	}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *devServer) serveReady(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST to signal readiness", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	s.mu.Lock()
+	if ch, ok := s.readies[id]; ok {
+		delete(s.readies, id)
+		close(ch)
+	}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// prepareHandoff asks a connected dev app over /_nsgo/events to flush any
+// pending dev state before restarting, waiting up to timeout for its reply.
+func (s *devServer) prepareHandoff(ctx context.Context, timeout time.Duration) {
+	s.mu.Lock()
+	if len(s.clients) == 0 {
+		s.mu.Unlock()
+		return
+	}
+	s.nextID++
+	id := fmt.Sprintf("h%d", s.nextID)
+	ch := make(chan struct{})
+	s.handoffs[id] = ch
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.handoffs, id)
+		s.mu.Unlock()
+	}()
+
+	s.send("handoff", id)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-ch:
+	case <-timer.C:
+	case <-ctx.Done():
+	}
+}
+
+// beginReady allocates a readiness token for the next launched process so
+// waitOverlapReady can wait for its first view batch before stopping the old
+// process.
+func (s *devServer) beginReady() (string, <-chan struct{}, func()) {
+	s.mu.Lock()
+	s.nextID++
+	id := fmt.Sprintf("r%d", s.nextID)
+	ch := make(chan struct{})
+	s.readies[id] = ch
+	s.readyID = id
+	s.mu.Unlock()
+	done := func() {
+		s.mu.Lock()
+		if s.readyID == id {
+			s.readyID = ""
+		}
+		delete(s.readies, id)
+		s.mu.Unlock()
+	}
+	return id, ch, done
+}
+
+func (s *devServer) currentReadyID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.readyID
+}
+
+// waitOverlapReady waits until the new process signals first-frame readiness,
+// exits early, or timeout/ctx expires. Any early exit error is put back on
+// exited so waitForChange observes it.
+func waitOverlapReady(ctx context.Context, ready <-chan struct{}, exited chan error, timeout time.Duration) {
+	if ready == nil {
+		return
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-ready:
+	case err := <-exited:
+		exited <- err
+	case <-timer.C:
+	case <-ctx.Done():
 	}
 }
 
@@ -981,6 +1160,11 @@ func devEnv(opts devOptions) []string {
 	if opts.nativeDir != "" && !opts.release {
 		env = append(env, "NSGO_DEV_WINDOW_FRAME_FILE="+filepath.Join(opts.nativeDir, "frame"))
 	}
+	if opts.server != nil && !opts.release {
+		if id := opts.server.currentReadyID(); id != "" {
+			env = append(env, "NSGO_DEV_READY_ID="+id)
+		}
+	}
 	return env
 }
 
@@ -994,25 +1178,24 @@ func simulatorEnv(opts devOptions) []string {
 }
 
 // macSession runs the app's bundle binary in the foreground, its output
-// in this terminal.
+// in this terminal. Go-only rebuilds update Contents/MacOS/<name> in place, and
+// ordinary dev restarts overlap the old and new processes until the new window
+// applies its first view batch.
 func macSession(opts devOptions) session {
+	var bundle macDevBundle
 	return session{
 		build: func(ctx context.Context, p *project) error {
 			dir := opts.desktopBuildDir(p, "macos")
-			os.RemoveAll(dir)
-			app, err := buildMacApp(ctx, p, dir, runtime.GOARCH)
-			if err != nil || len(p.Widgets) == 0 {
-				return err
-			}
-			// The app starts from its binary, which registers no extension
-			// with the system: register its widgets.
-			return run(ctx, "pluginkit", "-a", macWidgetsAppex(app))
+			_, err := bundle.build(ctx, p, dir, runtime.GOARCH)
+			return err
 		},
 		start: func(ctx context.Context, p *project) (app, error) {
 			dir := opts.desktopBuildDir(p, "macos")
 			bin := filepath.Join(dir, p.Name+".app", "Contents", "MacOS", p.Name)
 			return startDesktopDev(p, opts, dir, bin)
 		},
+		watch:   macBundleInputs,
+		overlap: !opts.release && opts.debugger == nil && !opts.automation,
 	}
 }
 

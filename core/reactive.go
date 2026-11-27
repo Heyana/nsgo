@@ -300,6 +300,8 @@ type runtime struct {
 	subtreeAppearance bool
 	// confined is set once a scope is confined (Scope.Confine), as apps without one skip finding its frames and its owners (confinement).
 	confined bool
+	// devKeep holds per-graph dev-restart state counters in nsgodev builds (empty in release builds).
+	devKeep devKeepState
 }
 
 // tree is the tree of the surface cx is in: its window's, or the

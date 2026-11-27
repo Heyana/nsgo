@@ -49,6 +49,7 @@ var start = sync.OnceFunc(func() {
 	if server == "" {
 		return
 	}
+	startDevState(server)
 	if devTrace == "1" {
 		traceTo(server)
 	}
@@ -62,6 +63,7 @@ var start = sync.OnceFunc(func() {
 		startDevOverlay(devHighlight == "1", parseDevLayout(devLayout))
 	}
 	startAutomation(server)
+	startDevReady(server)
 })
 
 // Wrap runs app under nsgo dev: build failures the server reports and the app's own render failures show in an overlay over it, in the language the app shows, and with -trace the server prints each commit. On the web the page is served from the server and shows build failures itself, in the words the app gives it in that language (showPageMessages).
@@ -104,6 +106,7 @@ func WrapApp(app func(*core.Scope)) func(*core.Scope) {
 		return app
 	}
 	Start()
+	go listenDev(server, nil)
 	return func(cx *core.Scope) {
 		cx.OnKeyWith("mod+r", core.KeyOptions{OverModals: true, YieldsToMenu: true, AllSurfaces: true}, reloadFunc(server))
 		app(cx)
@@ -149,11 +152,17 @@ func listenDev(server string, report func(devFailure)) {
 				}
 				switch kind, rest, _ := strings.Cut(data, " "); kind {
 				case "error":
-					if text, err := strconv.Unquote(rest); err == nil {
-						report(devFailure{kind: devBuildFailed, Text: text})
+					if report != nil {
+						if text, err := strconv.Unquote(rest); err == nil {
+							report(devFailure{kind: devBuildFailed, Text: text})
+						}
 					}
 				case "ok":
-					report(devFailure{})
+					if report != nil {
+						report(devFailure{})
+					}
+				case "handoff":
+					go ackHandoff(server, rest)
 				}
 			}
 			resp.Body.Close()

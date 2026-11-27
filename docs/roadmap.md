@@ -96,7 +96,7 @@ What 0.5.0 changed in how the keyboard's focus, popups and assistive technology 
 
 ## Native development restarts
 
-[#658](https://github.com/nsgo-dev/nsgo/issues/658) tracks keeping window and application state on Go rebuilds. macOS and Windows restore the main view's last regular frame within a dev session, and Windows also restores full screen. Linux restores its regular size and requests full screen from the window manager. Secondary windows, Linux X11 position, macOS full screen, a seamless handoff, window arrangements tied to native window identity and navigation state are open.
+[#658](https://github.com/nsgo-dev/nsgo/issues/658) tracks keeping window and application state on Go rebuilds. macOS and Windows restore the main view's last regular frame within a dev session, and Windows also restores full screen. Linux restores its regular size and requests full screen from the window manager. Within a dev session, `core.DevKeep`, `core.DevKeepFunc` and `base.NewNav` preserve serializable state and navigation stacks across restarts, and macOS Go-only rebuilds update the `.app` binary in place and overlap the old and new processes until the new window applies its first frame. Secondary windows, Linux X11 position, macOS full screen, Windows/Linux process overlap and window arrangements tied to native window identity (macOS Split View, Stage Manager, Windows Snap groups) remain open.
 
 ## From NSGo's issues
 

@@ -24,6 +24,11 @@ type navEntry[R any] struct {
 func NewNav[R any](cx *core.Scope, routes ...R) *Nav[R] {
 	n := &Nav[R]{}
 	n.entries = core.NewSignalFunc(cx, n.wrap(routes), nil)
+	core.DevKeepNav(cx, n.Routes, func(saved []R) {
+		if len(saved) > 0 {
+			n.SetRoutes(saved...)
+		}
+	})
 	return n
 }
 
