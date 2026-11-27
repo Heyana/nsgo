@@ -91,11 +91,11 @@ func (w *window) showDockedPanel() {
 		w.dockFailed(w.dockIssue)
 		return
 	}
+	w.applyFit()
 	if !w.placeDockedPanel() {
 		return
 	}
 	w.visible = true
-	w.applyFit()
 	gtkWidgetSetVisible(w.win, 1)
 	if !w.noActivate {
 		gtkWindowPresent(w.win)
@@ -117,8 +117,7 @@ func (w *window) placeDockedPanel() bool {
 		api.setMonitor(w.win, monitor)
 		var geometry gdkMonitorRectangle
 		gdkMonitorGetGeometry(monitor, &geometry)
-		var width, height int32
-		gtkWindowGetDefaultSize(w.win, &width, &height)
+		width, height := w.panelSize()
 		edge, limit := int32(2), geometry.Height-height
 		switch w.dock.Edge {
 		case driver.WindowPlaceBottom:
@@ -137,15 +136,20 @@ func (w *window) placeDockedPanel() bool {
 		w.dockFailed("the display cannot place an edge-docked panel")
 		return false
 	}
-	var width, height int32
-	gtkWindowGetDefaultSize(w.win, &width, &height)
+	width, height := w.panelSize()
 	frame, ok := driver.DockWindow(driver.Size{Width: driver.Points(width), Height: driver.Points(height)}, displays(), w.dock)
 	if !ok {
 		w.dockFailed("the docked panel's display is unavailable")
 		return false
 	}
-	scale := float64(max(gtkWidgetGetScaleFactor(w.win), 1))
-	x11MoveWindow(display, xid, int32(math.Round(float64(frame.X)*scale)), int32(math.Round(float64(frame.Y)*scale)))
+	scale := max(gtkWidgetGetScaleFactor(w.win), 1)
+	x := int32(math.Round(float64(frame.X) * float64(scale)))
+	y := int32(math.Round(float64(frame.Y) * float64(scale)))
+	if w.fitWidth > 0 && w.fitHeight > 0 {
+		x11MoveResizeWindow(display, xid, x, y, uint32(w.fitWidth*scale), uint32(w.fitHeight*scale))
+	} else {
+		x11MoveWindow(display, xid, x, y)
+	}
 	x11Flush(display)
 	return true
 }

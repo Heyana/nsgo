@@ -19,6 +19,7 @@ var (
 	gdkX11SurfaceGetXID       func(surface uintptr) uintptr
 	x11MoveWindow             func(display, window uintptr, x, y int32) int32
 	x11ResizeWindow           func(display, window uintptr, width, height uint32) int32
+	x11MoveResizeWindow       func(display, window uintptr, x, y int32, width, height uint32) int32
 	x11ChangeWindowAttributes func(display, window, mask uintptr, attributes *x11WindowAttributes) int32
 	x11Flush                  func(display uintptr) int32
 	x11PanelsReady            bool
@@ -41,6 +42,7 @@ var (
 		purego.RegisterLibFunc(&gdkX11SurfaceGetXID, gtkLib, "gdk_x11_surface_get_xid")
 		purego.RegisterLibFunc(&x11MoveWindow, lib, "XMoveWindow")
 		purego.RegisterLibFunc(&x11ResizeWindow, lib, "XResizeWindow")
+		purego.RegisterLibFunc(&x11MoveResizeWindow, lib, "XMoveResizeWindow")
 		purego.RegisterLibFunc(&x11ChangeWindowAttributes, lib, "XChangeWindowAttributes")
 		purego.RegisterLibFunc(&x11Flush, lib, "XFlush")
 		x11PanelsReady = true
@@ -95,6 +97,16 @@ func (w *window) leaveUnmanaged() bool {
 	return true
 }
 
+// panelSize returns the panel's logical size in GTK pixels: its last fitted size when set, else its window's default size.
+func (w *window) panelSize() (int32, int32) {
+	if w.fitWidth > 0 && w.fitHeight > 0 {
+		return w.fitWidth, w.fitHeight
+	}
+	var width, height int32
+	gtkWindowGetDefaultSize(w.win, &width, &height)
+	return width, height
+}
+
 // showPanel shows a panel beside at on side when side is set (core.Window.ShowAt), presenting it for the keyboard unless it never takes it. Where the panel cannot be placed it stays hidden and the app hears why. An unmanaged panel goes where it is placed before it maps, so it never shows elsewhere first, and to the upper middle of the primary display when unplaced, where no window manager places it.
 func (w *window) showPanel(at driver.Bounds, side driver.WindowPlacement) {
 	if w.dock.Edge != driver.WindowPlaceDefault {
@@ -102,12 +114,12 @@ func (w *window) showPanel(at driver.Bounds, side driver.WindowPlacement) {
 		return
 	}
 	w.anchorBounds, w.panelSide = at, side
+	w.applyFit()
 	if (w.unmanaged || side != driver.WindowPlaceDefault && w.noActivate) && !w.placePanel() {
 		w.placementFailed()
 		return
 	}
 	w.visible = true
-	w.applyFit()
 	gtkWidgetSetVisible(w.win, 1)
 	if w.noActivate {
 		return
@@ -129,8 +141,7 @@ func (w *window) placePanel() bool {
 	if len(all) == 0 {
 		return false
 	}
-	var width, height int32
-	gtkWindowGetDefaultSize(w.win, &width, &height)
+	width, height := w.panelSize()
 	size := driver.Size{Width: driver.Points(width), Height: driver.Points(height)}
 	var p driver.Point
 	if w.panelSide == driver.WindowPlaceDefault {
@@ -149,8 +160,15 @@ func (w *window) placePanel() bool {
 		p, _ = driver.PlaceWindow(at, size, area, w.panelSide)
 	}
 	// GDK's displays and sizes are in its logical pixels, X's in the device pixels of GDK's whole scale.
-	scale := float64(max(gtkWidgetGetScaleFactor(w.win), 1))
-	x11MoveWindow(display, xid, int32(math.Round(float64(p.X)*scale)), int32(math.Round(float64(p.Y)*scale)))
+	// A fitted panel moves and resizes in one XConfigureWindow request so a window manager cannot reply with a ConfigureNotify at the old size before GTK's frame clock applies gtk_window_set_default_size.
+	scale := max(gtkWidgetGetScaleFactor(w.win), 1)
+	x := int32(math.Round(float64(p.X) * float64(scale)))
+	y := int32(math.Round(float64(p.Y) * float64(scale)))
+	if w.fitWidth > 0 && w.fitHeight > 0 {
+		x11MoveResizeWindow(display, xid, x, y, uint32(w.fitWidth*scale), uint32(w.fitHeight*scale))
+	} else {
+		x11MoveWindow(display, xid, x, y)
+	}
 	x11Flush(display)
 	return true
 }
@@ -185,10 +203,15 @@ func (w *window) applyFit() {
 func (w *window) fitPanel(width, height driver.Points) {
 	w.fitWidth, w.fitHeight = int32(math.Ceil(float64(width))), int32(math.Ceil(float64(height)))
 	gtkWindowSetDefaultSize(w.win, w.fitWidth, w.fitHeight)
-	if w.visible && w.dock.Edge != driver.WindowPlaceDefault {
-		w.placeDockedPanel()
+	if !w.visible {
+		return
 	}
-	if w.visible && w.panelSide != driver.WindowPlaceDefault {
+	switch {
+	case w.dock.Edge != driver.WindowPlaceDefault:
+		w.placeDockedPanel()
+	case w.panelSide != driver.WindowPlaceDefault:
 		w.placePanel()
+	default:
+		w.applyFit()
 	}
 }

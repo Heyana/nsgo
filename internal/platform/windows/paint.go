@@ -567,6 +567,8 @@ func (w *window) frame() {
 		wh.composedPlaced(w, p.composed, layers)
 	} else if g := gpus.Load(); g != nil && w.composition != nil {
 		g.composedPlaced(w, p.composed, layers)
+	} else if w.composition != nil {
+		w.composition.arrange(nil, layers)
 	}
 	if nh := natives.Load(); nh != nil {
 		nh.placeComponents(w, p.components)
