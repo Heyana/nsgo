@@ -27,7 +27,7 @@ const (
 	gstMessageError     = 1 << 1
 	gstClockLost        = 1 << 10
 	gstLatency          = 1 << 19
-	gstMessageAsyncDone = 1 << 20
+	gstMessageAsyncDone = 1 << 21
 )
 
 var (
