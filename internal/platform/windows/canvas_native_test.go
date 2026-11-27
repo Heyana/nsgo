@@ -397,12 +397,13 @@ func TestCanvasCompositeInClip(t *testing.T) {
 		if c := at(25, 130); c.R > 60 || c.G < 110 || c.G > 140 || c.B > 65 {
 			t.Errorf("inside clip outside disc = %v, want preserved green background", c)
 		}
-		// Inside the clip and inside the disc: green + 0.6*red = high R (~200) and high G (~163).
-		if c := at(80, 80); c.R < 170 || c.G < 140 || c.B < 65 {
-			t.Errorf("inside clip inside disc = %v, want additive blend of green and red", c)
+		// Inside the clip and inside the disc: green (46,125,50) + 0.6*red (153,38,38) ≈ (199,163,88).
+		// Reject both transparent (255,255,255) and unblended red over white (255,140,140).
+		if c := at(80, 80); c.R < 170 || c.R > 230 || c.G < 140 || c.G > 190 || c.B < 65 || c.B > 115 {
+			t.Errorf("inside clip inside disc = %v, want additive blend of green and red (~{199 163 88 255})", c)
 		}
 	}
-	for _, scale := range []float32{1, 2} {
+	for _, scale := range []float32{1, 1.25, 2} {
 		t.Run("offscreen-lighter", func(t *testing.T) {
 			w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
 			defer w.closeOffscreen()

@@ -205,32 +205,30 @@ func (p *painter) canvasOffscreen(v *view, ops []driver.DrawOp, width, height, s
 		return false
 	}
 	defer off.release()
-	world := p.m
-	oldScale := p.scale
-	p.flatten(func() {
-		var target *comObject
-		p.dc.call(dcGetTarget, uintptr(unsafe.Pointer(&target)))
-		p.dc.call(dcSetTarget, off.ptr())
-		p.dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
-		pushed, split := p.pushed, p.split
-		p.pushed, p.split = nil, nil
-		p.scale = scale
-		p.setTransform(identity)
-		clear := colorF{}
-		p.dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
-		c := p.newCanvasPlayer(v, identity, width, height)
-		c.off, c.pixelScale = off, scale
-		c.playAll(ops)
-		for len(p.pushed) > 0 {
-			p.pop()
-		}
-		p.pushed, p.split = pushed, split
-		p.scale = oldScale
-		p.dc.call(dcSetTarget, target.ptr())
-		p.dc.callF(rtSetDpi, 0b11, f32(96*oldScale), f32(96*oldScale))
-		target.release()
-	})
-	p.setTransform(world)
+	var dc *comObject
+	if failed(p.g.device.call(d2dDeviceCreateDeviceContext, 0, uintptr(unsafe.Pointer(&dc)))) {
+		return false
+	}
+	defer dc.release()
+	dc.call(dcSetTarget, off.ptr())
+	dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
+	dc.call(rtBeginDraw)
+	op := &painter{w: p.w, g: p.g, dc: dc, scale: scale, m: identity, alpha: 1, brush: p.brush}
+	op.setTransform(identity)
+	clear := colorF{}
+	dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
+	c := op.newCanvasPlayer(v, identity, width, height)
+	c.off, c.pixelScale = off, scale
+	c.playAll(ops)
+	for len(op.pushed) > 0 {
+		op.pop()
+	}
+	hr := dc.call(rtEndDraw, 0, 0)
+	dc.call(dcSetTarget, 0)
+	if failed(hr) {
+		return false
+	}
+	p.setTransform(p.m)
 	dst := rectF{0, 0, width, height}
 	p.dc.callF(rtDrawBitmap, 0b100, off.ptr(), uintptr(unsafe.Pointer(&dst)), f32(1), d2dInterpolationLinear, 0)
 	return true
@@ -896,6 +894,7 @@ func (c *canvasPlayer) mix(list *comObject) {
 		objects = append(objects, mixed)
 		p.dc.call(dcSetTarget, mixed.ptr())
 		p.dc.call(dcDrawImage, out.ptr(), 0, uintptr(unsafe.Pointer(&area)), d2dInterpolationLinear, compositeCopy)
+		p.dc.call(rtFlush, 0, 0)
 		p.dc.call(dcSetTarget, c.off.ptr())
 		e1, in := c.effect(&clsidComposite, compositeIn, mask, mixed)
 		if in == nil {

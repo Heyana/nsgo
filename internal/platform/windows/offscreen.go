@@ -130,36 +130,35 @@ func (p *painter) offscreenBitmap(v *view, off *driver.OffscreenCanvas) *offscre
 	w.offscreenRendering[off.ID] = true
 	defer delete(w.offscreenRendering, off.ID)
 
-	world := p.m
-	oldScale := p.scale
 	waited := false
-	p.flatten(func() {
-		var target *comObject
-		p.dc.call(dcGetTarget, uintptr(unsafe.Pointer(&target)))
-		p.dc.call(dcSetTarget, bmp.ptr())
-		p.dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
-		pushed, split := p.pushed, p.split
-		p.pushed, p.split = nil, nil
-		p.scale = scale
-		p.setTransform(identity)
-		clearCol := colorF{}
-		p.dc.call(rtClear, uintptr(unsafe.Pointer(&clearCol)))
-		c := p.newCanvasPlayer(v, identity, float32(off.Size.Width), float32(off.Size.Height))
-		c.off = bmp
-		if off.Drawing != nil {
-			c.playAll(off.Drawing.Ops)
-		}
-		waited = c.waited
-		for len(p.pushed) > 0 {
-			p.pop()
-		}
-		p.pushed, p.split = pushed, split
-		p.scale = oldScale
-		p.dc.call(dcSetTarget, target.ptr())
-		p.dc.callF(rtSetDpi, 0b11, f32(96*oldScale), f32(96*oldScale))
-		target.release()
-	})
-	p.setTransform(world)
+	var dc *comObject
+	if failed(p.g.device.call(d2dDeviceCreateDeviceContext, 0, uintptr(unsafe.Pointer(&dc)))) {
+		bmp.release()
+		return nil
+	}
+	defer dc.release()
+	dc.call(dcSetTarget, bmp.ptr())
+	dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
+	dc.call(rtBeginDraw)
+	op := &painter{w: p.w, g: p.g, dc: dc, scale: scale, m: identity, alpha: 1, brush: p.brush}
+	op.setTransform(identity)
+	clearCol := colorF{}
+	dc.call(rtClear, uintptr(unsafe.Pointer(&clearCol)))
+	c := op.newCanvasPlayer(v, identity, float32(off.Size.Width), float32(off.Size.Height))
+	c.off = bmp
+	if off.Drawing != nil {
+		c.playAll(off.Drawing.Ops)
+	}
+	waited = c.waited
+	for len(op.pushed) > 0 {
+		op.pop()
+	}
+	hr := dc.call(rtEndDraw, 0, 0)
+	dc.call(dcSetTarget, 0)
+	if failed(hr) {
+		bmp.release()
+		return nil
+	}
 
 	if w.offscreen == nil {
 		w.offscreen = map[uint64]*offscreenEntry{}
