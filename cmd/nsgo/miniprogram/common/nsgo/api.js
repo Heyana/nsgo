@@ -45,6 +45,27 @@ function imageFiles(r) {
   return (r.tempFilePaths || r.apFilePaths || []).map((p) => ({ tempFilePath: p }))
 }
 
+const ALIPAY_SCOPES = {
+  'scope.record': 'audioRecord',
+  'scope.camera': 'camera',
+  'scope.bluetooth': 'bluetooth',
+}
+
+/** Alipay's authSetting keys translated to WeChat's scope names. */
+function alipayAuthSetting(raw) {
+  const out = Object.assign({}, raw)
+  for (const scope of Object.keys(ALIPAY_SCOPES)) {
+    const key = ALIPAY_SCOPES[scope]
+    if (typeof raw[key] === 'boolean') out[scope] = raw[key]
+  }
+  return out
+}
+
+function alipaySettingResult(r) {
+  if (!r || !r.authSetting || typeof r.authSetting !== 'object') return {}
+  return { authSetting: alipayAuthSetting(r.authSetting) }
+}
+
 /** Alipay's APIs under WeChat's names. */
 function alipay(api, my) {
   const call = (name, o) => (typeof my[name] === 'function' ? my[name](o) : o.fail && o.fail({ errMsg: name + ' is missing' }))
@@ -150,6 +171,33 @@ function alipay(api, my) {
       fail: o.fail,
     })
   }
+  api.getSetting =
+    typeof my.getSetting === 'function'
+      ? (o) =>
+          my.getSetting({
+            success: (r) => o && o.success && o.success(alipaySettingResult(r)),
+            fail: o && o.fail,
+          })
+      : undefined
+  api.openSetting =
+    typeof my.openSetting === 'function'
+      ? (o) =>
+          my.openSetting({
+            success: (r) => o && o.success && o.success(alipaySettingResult(r)),
+            fail: o && o.fail,
+          })
+      : undefined
+  // Alipay prompts for hardware permissions on demand rather than exposing a
+  // proactive authorize API; forward only when the host provides one.
+  api.authorize =
+    typeof my.authorize === 'function'
+      ? (o) =>
+          my.authorize({
+            scope: (o && ALIPAY_SCOPES[o.scope]) || (o && o.scope),
+            success: o && o.success,
+            fail: o && o.fail,
+          })
+      : undefined
 }
 
 module.exports = { globalOf, apiOf }

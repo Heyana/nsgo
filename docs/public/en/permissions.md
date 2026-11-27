@@ -80,7 +80,7 @@ Asking needs `NSLocalNetworkUsageDescription` in `apple.info`. With it, `nsgo bu
 
 ## Opening the settings
 
-`cx.OpenPermissionSettings` opens the page that gives a permission and answers whether one opened: Privacy & Security at the permission's pane (including Automation, Contacts, Photos, Location Services and, from macOS 15, Local Network) or Notifications on macOS, the app's page in Settings (or its Notifications page from iOS 16) on iOS, the app's page in Settings on Android, and the microphone's, camera's or notifications' page on Windows.
+`cx.OpenPermissionSettings` opens the page that gives a permission and answers whether one opened: Privacy & Security at the permission's pane (including Automation, Contacts, Photos, Location Services and, from macOS 15, Local Network) or Notifications on macOS, the app's page in Settings (or its Notifications page from iOS 16) on iOS, the app's page in Settings on Android, the microphone's, camera's or notifications' page on Windows, and the mini program's settings page (`openSetting`) for the microphone, camera and Bluetooth in mini programs.
 
 For `PermissionLocation` and `PermissionBackgroundLocation`, macOS opens Location Services; `PermissionMotion` opens Motion & Fitness, even though macOS does not supply motion samples. iOS and Android open the app's page for all three. Opening settings neither requests nor grants a permission.
 
@@ -107,7 +107,7 @@ The app held out is its bundle, else its executable; `GuideOptions.App` names an
 | Web | The microphone and the camera (unknown in Firefox), notifications, location (not background location), and motion on mobile browsers |
 | Android | The microphone, the camera, calendars, Bluetooth and the media library, where `android.permissions` declares them; the local network is not gated |
 | Apple Watch | The microphone, calendars, reminders, Bluetooth, notifications, location and motion; contacts and the local network are unknown; the camera, photos, media library and Mac-only permissions are unavailable |
-| Mini programs | Unknown for what the platform keeps, unavailable for the rest |
+| Mini programs | The microphone, the camera and Bluetooth through `getSetting`, `authorize` (where the host provides it) and `openSetting` on WeChat, QQ, Douyin and Alipay; the rest is unavailable |
 
 Location and motion permissions follow each [platform's sensors](services.md#location-and-motion), and `PermissionNotifications` follows [notifications](notifications.md). Fitness uses `PermissionActivityRecognition` (`ACTIVITY_RECOGNITION` on Android, `NSMotionUsageDescription` on Apple), including Apple pressure; raw Android motion remains separate. On mobile Safari, ask for `PermissionMotion` from a press handler.
 

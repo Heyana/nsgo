@@ -69,6 +69,8 @@ NSGo keeps this separate from `AuthSession`: these hosts neither open its author
 
 `nsgoMP.updates` retains the platform update manager's cold-start check, readiness and failure events before the Go module starts. `updater.Check` answers from that snapshot or waits for its terminal event; confirming a prepared update requests restart and calls the manager's `applyUpdate`. The runtime exposes no made-up version label. Managers missing the required methods answer unavailable. Published WeChat/QQ/Alipay/Douyin upgrades remain unverified; the runtime and Go bridge are covered by stand-ins.
 
+`PermissionStatus`, `RequestPermission` and `OpenPermissionSettings` map `PermissionMicrophone`, `PermissionCamera` and `PermissionBluetooth` to WeChat's, QQ's and Douyin's `scope.record`, `scope.camera` and `scope.bluetooth` through `getSetting`, `authorize` and `openSetting` (`permissions.go`, `permissions_js.go`), and normalize Alipay's `my.getSetting` and `my.openSetting` keys (`audioRecord`, `camera`, `bluetooth`) in `api.js`. Because Alipay has no proactive `my.authorize` prompt, `RequestPermission` there reports the current setting from `my.getSetting` unless a host supplies `my.authorize`. Other permissions answer `PermissionUnavailable` and open no settings. The Go bridge and all four platform adapters are covered by stand-in tests; live verification in the four vendor developer tools remains pending.
+
 ## The package
 
 `WXWebAssembly` and its likes load only files of the code package, `.wasm.br` among them, and every platform holds each package to 2 MB, so the module goes in a subpackage of its own, which the page loads before it, and its size decides which apps fit:

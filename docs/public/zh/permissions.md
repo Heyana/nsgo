@@ -80,7 +80,7 @@ cx.RequestPermission(core.PermissionLocalNetwork, func(s core.PermissionStatus) 
 
 ## 打开设置
 
-`cx.OpenPermissionSettings` 打开授予某项权限的页面，并回答是否打开：macOS 上是“隐私与安全性”中该权限的面板（包括自动化、通讯录、照片和定位服务，macOS 15 起还有本地网络）或“通知”，iOS 上是“设置”中本应用的页面（通知从 iOS 16 起直接打开通知设置页），Android 上是“设置”中本应用的页面，Windows 上是麦克风、相机或通知的页面。
+`cx.OpenPermissionSettings` 打开授予某项权限的页面，并回答是否打开：macOS 上是“隐私与安全性”中该权限的面板（包括自动化、通讯录、照片和定位服务，macOS 15 起还有本地网络）或“通知”，iOS 上是“设置”中本应用的页面（通知从 iOS 16 起直接打开通知设置页），Android 上是“设置”中本应用的页面，Windows 上是麦克风、相机或通知的页面，小程序中对麦克风、相机和蓝牙会打开小程序设置页（`openSetting`）。
 
 对于 `PermissionLocation` 和 `PermissionBackgroundLocation`，macOS 打开“定位服务”；`PermissionMotion` 打开“运动与健身”，但 macOS 尚不提供运动采样。iOS 和 Android 对这三项权限都打开本应用的设置页面。打开设置不会请求或授予权限。
 
@@ -107,7 +107,7 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 | Web | 麦克风和相机（在 Firefox 中为未知）、通知、位置（不含后台位置）以及移动浏览器上的运动 |
 | Android | 在 `android.permissions` 中声明了的麦克风、相机、日历、蓝牙和媒体资料库；本地网络不受限 |
 | Apple Watch | 麦克风、日历、提醒事项、蓝牙、通知、定位和运动；通讯录和本地网络为未知；相机、照片、媒体资料库及仅限 Mac 的权限为不可用 |
-| 小程序 | 平台保管的权限为未知，其余为不可用 |
+| 小程序 | 在微信、QQ、抖音和支付宝小程序中通过 `getSetting`、`authorize`（宿主提供时）与 `openSetting` 检查、请求麦克风、相机和蓝牙权限并打开设置页；其余权限为不可用 |
 
 定位和运动权限在有对应传感器的平台上都能读取和请求，`PermissionNotifications` 与[通知](notifications.md)一致。在移动 Safari 上，请在点按处理函数中请求 `PermissionMotion`。
 
