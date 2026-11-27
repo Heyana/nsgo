@@ -388,12 +388,15 @@ jobs:
           cache: true
       - name: Start a virtual audio output
         run: |
-          mkdir -p /tmp/nsgo-xdg
+          mkdir -p /tmp/nsgo-xdg/pulse
           chmod 700 /tmp/nsgo-xdg
           echo "XDG_RUNTIME_DIR=/tmp/nsgo-xdg" >> "$GITHUB_ENV"
+          echo "PULSE_SERVER=unix:/tmp/nsgo-xdg/pulse/native" >> "$GITHUB_ENV"
           export XDG_RUNTIME_DIR=/tmp/nsgo-xdg
-          pulseaudio --start --exit-idle-time=-1
-          pactl load-module module-null-sink sink_name=nsgo_test
+          export PULSE_SERVER=unix:/tmp/nsgo-xdg/pulse/native
+          pulseaudio -n -D --exit-idle-time=-1 --disable-shm \
+            --load="module-null-sink sink_name=nsgo_test" \
+            --load="module-native-protocol-unix auth-anonymous=1 socket=/tmp/nsgo-xdg/pulse/native"
           pactl set-default-sink nsgo_test
       - name: Test Linux audio on GStreamer 1.28
         env:
