@@ -61,7 +61,7 @@ For trusted events inside a native `WebView`, check `Env.CanSendInput` and call 
 
 A press can name a text field directly. Read `app.Find("id:field").Focused` after the step headless or on any target, including when a press handler focuses the field.
 
-`Select(selector, start, end)` uses UTF-16 offsets. On iOS, Android and HarmonyOS targets it moves the native field's range and reads it back; selection callbacks no longer skip those tests. HarmonyOS typing replaces the reported range, but its test host still lacks native clipboard keys. Desktop and web targets retain their select-all/arrow-key path.
+`Select(selector, start, end)` uses UTF-16 offsets. On iOS, Android and HarmonyOS targets it moves the native field's range and reads it back; selection callbacks no longer skip those tests. HarmonyOS typing and clipboard, select-all and Backspace keys act on the reported range after keymap matching. Desktop and web targets retain their select-all/arrow-key path.
 
 Use `app.SelectTab("id:tabs", 1)` to choose the second item of a mounted `mobile.TabBar`. It works headless with an iOS or Android `Environment` and drives the native tab bar on iOS and Android targets; use it for phone navigation instead of model-only `Emit`.
 

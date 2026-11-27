@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall/js"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -148,35 +149,72 @@ func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 
 func (t *testSurface) Hover(driver.Point) error { return nil }
 
+func (t *testSurface) focusedInput() (driver.NodeID, *view) {
+	id := t.s.m.nativeFocused
+	if id == 0 {
+		id = t.s.m.focused
+	}
+	v := t.s.m.views[id]
+	if v == nil || v.kind != driver.KindInput {
+		return 0, nil
+	}
+	return id, v
+}
+
+func inputSelection(v *view) (driver.TextRange, int, int) {
+	n := driver.UTF16Len(v.value)
+	sel := v.selection
+	if !v.selected {
+		sel = driver.TextRange{Start: n, End: n}
+	}
+	sel.Start = min(max(sel.Start, 0), n)
+	sel.End = min(max(sel.End, 0), n)
+	if sel.Start > sel.End {
+		sel.Start, sel.End = sel.End, sel.Start
+	}
+	return sel, driver.UTF16Offset(v.value, sel.Start), driver.UTF16Offset(v.value, sel.End)
+}
+
+func (t *testSurface) replaceInput(id driver.NodeID, v *view, left, right int, insert string) error {
+	value := v.value[:left] + insert + v.value[right:]
+	t.s.m.edited(id, value)
+	// Type and clipboard editing keys are test-host shortcuts for keyboard input. The engine receives the edit above, but ArkUI's TextInput has not emitted onChange, so update the native field through the page bridge as a real keyboard would show it.
+	t.s.bridge.Call("typeInput", int(id), value)
+	caret := driver.UTF16Len(value[:left+len(insert)])
+	_, err := t.SelectRange(driver.TextRange{Start: caret, End: caret})
+	return err
+}
+
+func (t *testSurface) setClipboard(text string) {
+	t.s.m.clipboard = text
+	if t.s.bridge.Type() == js.TypeObject && t.s.bridge.Get("clipset").Type() == js.TypeFunction {
+		t.s.bridge.Call("clipset", text)
+	}
+}
+
 // Type replaces the native field's last reported selection, or appends before
 // the first selection callback, and updates the rendered field through the page.
 func (t *testSurface) Type(text string) error {
-	id := t.s.m.focused
-	v := t.s.m.views[id]
-	if v == nil || v.kind != driver.KindInput {
+	id, v := t.focusedInput()
+	if v == nil {
 		return errors.New("no text field has the keyboard focus")
 	}
-	selection := v.selection
-	if !v.selected {
-		selection.Start = driver.UTF16Len(v.value)
-		selection.End = selection.Start
+	if v.disabled || v.readonly {
+		return nil
 	}
-	start, end := driver.UTF16Offset(v.value, selection.Start), driver.UTF16Offset(v.value, selection.End)
-	value := v.value[:start] + text + v.value[end:]
-	t.s.m.edited(id, value)
-	// Type is a test-host shortcut for keyboard input. The engine receives the edit above, but ArkUI's TextInput has not emitted onChange, so update the native field through the page bridge as a real keyboard would show it.
-	t.s.bridge.Call("typeInput", int(id), value)
-	caret := driver.UTF16Len(value[:start+len(text)])
-	_, err := t.SelectRange(driver.TextRange{Start: caret, End: caret})
-	return err
+	sel, left, right := inputSelection(v)
+	insert, ok := driver.LimitEdit(v.value, sel.End-sel.Start, text, v.maxLength)
+	if !ok {
+		return nil
+	}
+	return t.replaceInput(id, v, left, right, insert)
 }
 
 // SelectRange uses the renderer's existing TextInputController selection path
 // and waits for ArkUI's own onTextSelectionChange to report the resulting range.
 func (t *testSurface) SelectRange(selection driver.TextRange) (driver.TextRange, error) {
-	id := t.s.m.focused
-	v := t.s.m.views[id]
-	if v == nil || v.kind != driver.KindInput {
+	id, v := t.focusedInput()
+	if v == nil {
 		return driver.TextRange{}, errors.New("no text field has the keyboard focus")
 	}
 	t.s.m.mount(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemSelection, ID: id, Selection: selection}}})
@@ -225,36 +263,125 @@ func (t *testSurface) holdKey(key string, action int) error {
 	return nil
 }
 
-// Key presses a key the keymap names, as a keyboard does.
+// Key presses a key the keymap names, as a keyboard does, and drives the
+// focused native field's clipboard, select-all and Backspace edits when no
+// keymap binding takes them.
 func (t *testSurface) Key(key string) error {
+	norm := driver.NormalizeKey(key)
 	mods := 0
 	for {
 		switch {
-		case strings.HasPrefix(key, "mod+"):
+		case strings.HasPrefix(norm, "mod+"):
 			mods |= 1
-			key = strings.TrimPrefix(key, "mod+")
-		case strings.HasPrefix(key, "ctrl+"):
+			norm = strings.TrimPrefix(norm, "mod+")
+		case strings.HasPrefix(norm, "ctrl+"):
 			mods |= 1
-			key = strings.TrimPrefix(key, "ctrl+")
-		case strings.HasPrefix(key, "alt+"):
+			norm = strings.TrimPrefix(norm, "ctrl+")
+		case strings.HasPrefix(norm, "alt+"):
 			mods |= 2
-			key = strings.TrimPrefix(key, "alt+")
-		case strings.HasPrefix(key, "shift+"):
+			norm = strings.TrimPrefix(norm, "alt+")
+		case strings.HasPrefix(norm, "shift+"):
 			mods |= 4
-			key = strings.TrimPrefix(key, "shift+")
-		case strings.HasPrefix(key, "meta+"):
+			norm = strings.TrimPrefix(norm, "shift+")
+		case strings.HasPrefix(norm, "meta+"):
 			mods |= 8
-			key = strings.TrimPrefix(key, "meta+")
+			norm = strings.TrimPrefix(norm, "meta+")
 		default:
-			code, ok := keyCode[key]
-			if !ok {
-				code = driver.NodeID(key[0])
+			if handled, err := t.editFieldKey(norm, mods); handled {
+				return err
 			}
-			t.s.m.key(code, 0, mods, key)
+			code, ok := keyCode[norm]
+			if !ok && len(norm) > 0 {
+				code = driver.NodeID(norm[0])
+			}
+			t.s.m.key(code, 0, mods, norm)
 			t.s.m.key(code, 1, 0, "")
 			return nil
 		}
 	}
+}
+
+// editFieldKey handles clipboard, select-all and Backspace keys on the focused
+// native field after offering them to the surface's keymap.
+func (t *testSurface) editFieldKey(name string, mods int) (bool, error) {
+	id, v := t.focusedInput()
+	if v == nil {
+		return false, nil
+	}
+	for t.s.m.keyRunning {
+		time.Sleep(time.Millisecond)
+	}
+	effective := t.s.m.keyModifiers(mods)
+	isEdit := (effective == 1 && (name == "a" || name == "c" || name == "x" || name == "v")) ||
+		(effective == 0 && name == "backspace")
+	if !isEdit {
+		return false, nil
+	}
+	if t.s.m.matchKey(name, effective, false, true) {
+		return true, nil
+	}
+	if v.disabled {
+		return true, nil
+	}
+	switch name {
+	case "a":
+		_, err := t.SelectRange(driver.TextRange{Start: 0, End: driver.UTF16Len(v.value)})
+		return true, err
+	case "c":
+		if v.masked {
+			return true, nil
+		}
+		_, left, right := inputSelection(v)
+		if left < right {
+			t.setClipboard(v.value[left:right])
+		}
+		return true, nil
+	case "x":
+		if v.readonly || v.masked {
+			return true, nil
+		}
+		_, left, right := inputSelection(v)
+		if left == right {
+			return true, nil
+		}
+		t.setClipboard(v.value[left:right])
+		return true, t.replaceInput(id, v, left, right, "")
+	case "v":
+		if v.readonly {
+			return true, nil
+		}
+		text := t.s.m.clipboard
+		if text == "" {
+			return true, nil
+		}
+		t.s.dispatch(driver.Event{Kind: driver.EventPaste, ID: id, Data: &driver.PasteEvent{Text: text}})
+		if v.pasteBehavior != driver.PasteInsert {
+			return true, nil
+		}
+		if !v.multiline {
+			text = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(text)
+		}
+		sel, left, right := inputSelection(v)
+		insert, ok := driver.LimitEdit(v.value, sel.End-sel.Start, text, v.maxLength)
+		if !ok || insert == "" {
+			return true, nil
+		}
+		return true, t.replaceInput(id, v, left, right, insert)
+	case "backspace":
+		if v.readonly {
+			return true, nil
+		}
+		_, left, right := inputSelection(v)
+		if left == right {
+			if left == 0 {
+				return true, nil
+			}
+			_, size := utf8.DecodeLastRuneInString(v.value[:left])
+			left -= size
+		}
+		return true, t.replaceInput(id, v, left, right, "")
+	}
+	return false, nil
 }
 
 // keyCode names the Linux input codes a key goes by, as the emulator's

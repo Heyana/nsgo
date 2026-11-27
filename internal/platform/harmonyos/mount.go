@@ -54,6 +54,8 @@ type mounter struct {
 	pending []driver.Event
 	// packedAtlas says the host draws an atlas from one canvas op.
 	packedAtlas bool
+	// clipboard mirrors the text last written to the system pasteboard by the app or the test host, since ordinary HarmonyOS HAPs cannot read back pasteboard.getData() without ohos.permission.READ_PASTEBOARD.
+	clipboard string
 }
 
 // view is what the render layer keeps for a view.
@@ -63,17 +65,21 @@ type view struct {
 	// parent, frame, order and pressable are what a press at a point needs:
 	// the view's frame in its parent, the order it was inserted in, and
 	// whether it asks for a press.
-	parent    driver.NodeID
-	frame     driver.Bounds
-	order     uint32
-	pressable bool
-	disabled  bool
-	style     driver.ViewStyle
-	text      *driver.TextContent
-	value     string
-	selection driver.TextRange
-	selected  bool // a native selection callback has supplied selection
-	events    driver.EventMask
+	parent        driver.NodeID
+	frame         driver.Bounds
+	order         uint32
+	pressable     bool
+	disabled      bool
+	readonly      bool
+	masked        bool
+	maxLength     int
+	pasteBehavior driver.PasteBehavior
+	style         driver.ViewStyle
+	text          *driver.TextContent
+	value         string
+	selection     driver.TextRange
+	selected      bool // a native selection callback has supplied selection
+	events        driver.EventMask
 	// edits counts the user's edits, so a value the engine computed from an
 	// older edit is dropped instead of overwriting what was typed since.
 	edits   uint32
@@ -444,9 +450,11 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 	case driver.ItemReadClipboard:
 		m.s.bridge.Call("clipread", int(it.Clipboard), int(it.Count))
 	case driver.ItemSetClipboard:
+		m.clipboard = it.Value
 		m.s.bridge.Call("clipset", it.Value)
 	case driver.ItemSetClipboardImage:
 		if data, ok := it.Data.([]byte); ok && len(data) > 0 {
+			m.clipboard = ""
 			m.s.bridge.Call("clipimage", base64.StdEncoding.EncodeToString(data))
 		}
 	case driver.ItemOpenURL:
@@ -799,6 +807,11 @@ func (m *mounter) input(id driver.NodeID, c *driver.InputConfig) {
 	}
 	if v := m.views[id]; v != nil {
 		v.disabled = c.Disabled
+		v.multiline = c.Multiline
+		v.readonly = c.Readonly
+		v.masked = c.Masked
+		v.maxLength = c.MaxLength
+		v.pasteBehavior = c.PasteBehavior
 	}
 	f := c.Style.Font
 	if f.Size == 0 {
@@ -806,9 +819,6 @@ func (m *mounter) input(id driver.NodeID, c *driver.InputConfig) {
 	}
 	if f.Weight == 0 {
 		f.Weight = 400
-	}
-	if v := m.views[id]; v != nil {
-		v.multiline = c.Multiline
 	}
 	m.o.op("in", id).str(c.Placeholder).num(float64(f.Size)).num(float64(f.Weight)).
 		str(webstyle.Color(c.Style.Color)).str(webstyle.Fill(c.PlaceholderColor)).
@@ -1054,7 +1064,7 @@ func (m *mounter) key(code driver.NodeID, action, mods int, text string) {
 	}()
 }
 
-func (m *mounter) matchKey(name string, mods int, repeat, editing bool) {
+func (m *mounter) matchKey(name string, mods int, repeat, editing bool) bool {
 	rest := ""
 	if mods&2 != 0 {
 		rest += "alt+"
@@ -1075,9 +1085,11 @@ func (m *mounter) matchKey(name string, mods int, repeat, editing bool) {
 	if editing {
 		focus = driver.KeyUseText
 	}
-	if id, _ := driver.FindKey(m.keys, names, focus, repeat); id != 0 {
+	id, consumed := driver.FindKey(m.keys, names, focus, repeat)
+	if id != 0 {
 		m.s.dispatch(driver.Event{Kind: driver.EventKey, Count: id})
 	}
+	return consumed
 }
 
 // keyName returns the core's name for an OHOS KeyCode, or for the Linux

@@ -45,7 +45,7 @@ func TestNativeSelectUTF16SingleLine(t *testing.T) { checkNativeUTF16Selection(t
 func TestNativeSelectUTF16Multiline(t *testing.T)  { checkNativeUTF16Selection(t, true) }
 
 func TestNativeSelectThenCopyAndPaste(t *testing.T) {
-	if !slices.Contains([]string{"ios_simulator", "android"}, nsgotest.Target()) {
+	if !slices.Contains([]string{"ios_simulator", "android", "harmonyos"}, nsgotest.Target()) {
 		t.Skip("requires native clipboard editing keys")
 	}
 	app := nsgotest.Start(t, func(*core.Scope) core.Node {
