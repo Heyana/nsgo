@@ -48,9 +48,14 @@ func TestToggle(t *testing.T) {
 
 ## 发布
 
-组件库就是一个 Go module：应用 `go get` 它并导入其中的包。同时有无样式和带样式两种形式时，把它们放在不同的包里，这样有自己外观的应用不会导入用不到的样式。
+组件库就是一个 Go module：应用用 `nsgo add <模块>`（或 `go get`）添加它并导入其中的包。同时有无样式和带样式两种形式时，把它们放在不同的包里，这样有自己外观的应用不会导入用不到的样式。
 
-官网的[组件](https://nsgo.dev/components/)页列出可供他人使用的库；在 `docs/public/components/` 里加一个文档和一张截图，即可推荐你的库。
+收录在 NSGo 内置索引（[`cmd/nsgo/registry.yaml`](https://github.com/nsgo-dev/nsgo/blob/main/cmd/nsgo/registry.yaml)）中的库会出现在 `nsgo add -list` 中，并可用短名称添加（`nsgo add <名称>`）。要收录你的库，提交一个 Pull Request 按规范格式（按名称排序、字段按模式顺序、两空格缩进）向 `cmd/nsgo/registry.yaml` 添加条目。收录的库需要满足：
+
+- 至少有一个正式发布标签（不能只有未打标签的提交）；
+- 模块路径无需重定向即可直接解析；
+- 解析后的依赖图使应用停留在已发布的 NSGo 版本上；
+- 使用合法的 SPDX 许可证表达式。
 
 TSX 应用在 Go 组件注册后就能使用它们，注册写在 `init` 函数中：
 

@@ -31,49 +31,98 @@ import (
 type addOptions struct {
 	dryRun bool // print the plan and write nothing
 	yes    bool // apply the plan without asking
+	list   bool // list libraries and components in NSGo's index
 }
 
-// addRequest is a module named on nsgo add's command line: its path, and the version typed after @, else the query upgrade, which takes the newest release and never lowers a version.
+// addRequest is a module named on nsgo add's command line: its path, the version typed after @ (else the index entry's version or the query upgrade, which takes the newest release and never lowers a version), and the bare index name it was resolved from when named by one.
 type addRequest struct {
 	path, version string
 	typed         bool
+	fromName      string
 }
 
-// parseAddRequests reads nsgo add's arguments, a module[@version] each, as nsgo init reads a template's module, without #name.
+// parseAddRequests reads nsgo add's arguments, resolving bare names in NSGo's built-in index.
 func parseAddRequests(args []string) ([]addRequest, error) {
+	return parseAddRequestsWithIndex(args, builtinRegistry())
+}
+
+// parseAddRequestsWithIndex reads nsgo add's arguments, each a bare name in idx or a module[@version], without #name.
+func parseAddRequestsWithIndex(args []string, idx *registryIndex) ([]addRequest, error) {
 	if len(args) == 0 {
-		return nil, fmt.Errorf("add: name a module: %s add module[@version]", nsgoCommand())
+		return nil, fmt.Errorf("add: name a module or library: %s add name|module[@version]", nsgoCommand())
 	}
 	var reqs []addRequest
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "-") {
 			return nil, fmt.Errorf("add: flags go before the modules: %s add %s %s", nsgoCommand(), arg, args[0])
 		}
-		path, version, name, ok := parseModuleTemplate(arg)
-		if !ok || name != "" || strings.Contains(arg, "#") {
-			return nil, fmt.Errorf("add: %q is not a module path with an optional @version", arg)
+		if strings.Contains(arg, "#") {
+			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
 		}
-		if err := module.CheckPath(path); err != nil {
-			return nil, fmt.Errorf("add: %q: %w", arg, err)
+		spec, version, hasVersion := strings.Cut(arg, "@")
+		if hasVersion && version == "" {
+			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
 		}
-		typed := strings.Contains(arg, "@")
-		if !typed {
-			version = "upgrade"
+		domain, _, _ := strings.Cut(spec, "/")
+		var req addRequest
+		if strings.Contains(domain, ".") {
+			if err := module.CheckPath(spec); err != nil {
+				return nil, fmt.Errorf("add: %q: %w", arg, err)
+			}
+			if !hasVersion {
+				version = "upgrade"
+			}
+			if version == "none" {
+				return nil, fmt.Errorf("add: %s@none would remove %s; add never removes a module", spec, spec)
+			}
+			req = addRequest{path: spec, version: version, typed: hasVersion}
+		} else if isValidRegistryName(spec) {
+			item, ok := idx.lookup(spec)
+			if !ok {
+				return nil, fmt.Errorf("add: unknown name %q; run %s add -list to see listed libraries and components", spec, nsgoCommand())
+			}
+			if item.Component != "" {
+				return nil, fmt.Errorf("add: %s is a component; copying components is not supported yet", spec)
+			}
+			if hasVersion {
+				if version == "none" {
+					return nil, fmt.Errorf("add: %s@none would remove %s; add never removes a module", spec, item.Module)
+				}
+			} else if item.Version != "" {
+				version = item.Version
+			} else {
+				version = "upgrade"
+			}
+			req = addRequest{path: item.Module, version: version, typed: hasVersion, fromName: spec}
+		} else {
+			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
 		}
-		if version == "none" {
-			return nil, fmt.Errorf("add: %s@none would remove %s; add never removes a module", path, path)
+		if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == req.path }) {
+			return nil, fmt.Errorf("add: %s is named twice", req.path)
 		}
-		if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == path }) {
-			return nil, fmt.Errorf("add: %s is named twice", path)
-		}
-		reqs = append(reqs, addRequest{path: path, version: version, typed: typed})
+		reqs = append(reqs, req)
 	}
 	return reqs, nil
 }
 
-// addModules runs nsgo add in the module holding the working directory: it plans reqs, writes the plan to out, and applies it with -y, or once ask, which is nil when nobody can be asked, says yes.
+// addModules runs nsgo add using NSGo's built-in index: -list prints matching items without needing a module; otherwise it plans reqs in the module holding the working directory, writes the plan to out, and applies it with -y, or once ask, which is nil when nobody can be asked, says yes.
 func addModules(ctx context.Context, o addOptions, args []string, out io.Writer, ask func(context.Context) (bool, error)) error {
-	reqs, err := parseAddRequests(args)
+	return addModulesWithIndex(ctx, o, args, builtinRegistry(), out, ask)
+}
+
+func addModulesWithIndex(ctx context.Context, o addOptions, args []string, idx *registryIndex, out io.Writer, ask func(context.Context) (bool, error)) error {
+	if o.list {
+		if o.dryRun || o.yes {
+			return errors.New("add: -list takes no -dry-run or -y")
+		}
+		for _, arg := range args {
+			if strings.HasPrefix(arg, "-") {
+				return fmt.Errorf("add: flags go before filter words: %s add -list [words...]", nsgoCommand())
+			}
+		}
+		return listRegistryItems(idx, args, out)
+	}
+	reqs, err := parseAddRequestsWithIndex(args, idx)
 	if err != nil {
 		return err
 	}
@@ -468,6 +517,10 @@ func (p *addPlan) refusal() error {
 				reason = fmt.Sprintf("%s is a package of the module %s, not a module: %s add %s", item.path, owner, nsgoCommand(), owner)
 			}
 			reasons = append(reasons, reason)
+			continue
+		}
+		if item.fromName != "" && module.IsPseudoVersion(item.selected) {
+			reasons = append(reasons, fmt.Sprintf("%s has no release; add its module by path with a version: %s add %s@%s", item.fromName, nsgoCommand(), item.path, item.selected))
 			continue
 		}
 		if item.initial != "" && semver.Compare(item.selected, item.initial) < 0 && !(item.typed && item.version == item.selected) {

@@ -191,10 +191,15 @@ licenses:
 Add a library, a Go module, with `nsgo add`, which is `go get` with its plan shown first:
 
 ```sh
+nsgo add -list                           # list libraries and components in NSGo's built-in index
+nsgo add -list icons flags               # filter case-insensitively by words across name, description and tags
+nsgo add media                           # resolve a short name in NSGo's built-in index
 nsgo add github.com/acme/chart           # its newest release, unless go.mod has it already
 nsgo add github.com/acme/chart@v1.3.0    # this version, even one below go.mod's
 nsgo add -dry-run github.com/acme/chart  # print the plan and write nothing
 ```
+
+Bare names (without a dot in their first segment) resolve only in NSGo's built-in index (`cmd/nsgo/registry.yaml`, embedded in `nsgo` with nothing fetched or cached). A bare name plans the same way as its module path, using the entry's `version` when present else `@upgrade`, and refuses a module with no release tag (`<name> has no release; add its module by path with a version`). Unknown names suggest `nsgo add -list`. `nsgo add -list [words...]` prints each matching item's name, kind (`library` or `component`), module path and description, and works inside or outside a module. Items with kind `component` are listed in the index and refused by `nsgo add` until component copying lands.
 
 ```text
 github.com/acme/chart

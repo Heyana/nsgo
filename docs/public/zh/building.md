@@ -159,10 +159,15 @@ licenses:
 用 `nsgo add` 添加库，也就是一个 Go 模块。它是先展示计划的 `go get`：
 
 ```sh
+nsgo add -list                           # 列出 NSGo 内置索引中的库和组件
+nsgo add -list icons flags               # 不区分大小写地按词在名称、简介和标签中筛选
+nsgo add media                           # 从 NSGo 内置索引解析短名称
 nsgo add github.com/acme/chart           # 最新的正式版本，go.mod 已有它时保持不变
 nsgo add github.com/acme/chart@v1.3.0    # 这个版本，即使低于 go.mod 中的版本
 nsgo add -dry-run github.com/acme/chart  # 只打印计划，什么也不写
 ```
+
+短名称（首段不含 `.`）只从 NSGo 的内置索引（嵌入 `nsgo` 的 `cmd/nsgo/registry.yaml`，不请求网络也不缓存）解析。短名称按与模块路径相同的方式规划：条目指定了 `version` 时用该版本，否则用 `@upgrade`，并拒绝解析到未打标签提交的模块（提示改用带版本的模块路径）。未知名称会提示运行 `nsgo add -list`。`nsgo add -list [words...]` 打印每个匹配条目的名称、类型（`library` 或 `component`）、模块路径和简介，在模块内外均可运行。类型为 `component` 的条目会在列表中显示，但在组件复制支持落地前 `nsgo add` 会拒绝添加它们。
 
 ```text
 github.com/acme/chart

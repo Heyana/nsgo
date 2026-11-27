@@ -684,7 +684,11 @@ func TestAddRefusesAPackagePath(t *testing.T) {
 
 func TestParseAddRequests(t *testing.T) {
 	got, err := parseAddRequests([]string{"example.com/a", "example.com/b@v1.2.0", "example.com/c@latest"})
-	want := []addRequest{{"example.com/a", "upgrade", false}, {"example.com/b", "v1.2.0", true}, {"example.com/c", "latest", true}}
+	want := []addRequest{
+		{path: "example.com/a", version: "upgrade"},
+		{path: "example.com/b", version: "v1.2.0", typed: true},
+		{path: "example.com/c", version: "latest", typed: true},
+	}
 	if err != nil || fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("parseAddRequests = %v, %v; want %v", got, err, want)
 	}
