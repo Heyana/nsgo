@@ -2333,10 +2333,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.pickDirectories(*it.Directories, it.Count)
 			continue
 		case driver.ItemOpenDirectory:
-			s.openDirectory(it.Value, it.Count)
+			apple.HandleOpenDirectory(it.Value, it.Count, true, s.engine.Dispatch)
 			continue
 		case driver.ItemReleaseDirectory:
-			s.releaseDirectory(it.Value, it.Count)
+			apple.HandleReleaseDirectory(it.Value, it.Count, s.engine.Dispatch)
 			continue
 		case driver.ItemPickScreenColor:
 			s.pickScreenColor(it.Count)

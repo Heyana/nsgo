@@ -157,3 +157,23 @@ func ReleaseDirectoryBookmark(token string) {
 		entry.url.Send(sel("release"))
 	}
 }
+
+// HandleOpenDirectory resolves a persisted bookmark token and dispatches the
+// EventFiles reply to dispatch.
+func HandleOpenDirectory(token string, id uint32, macOS bool, dispatch func(driver.Event)) {
+	dir, err := OpenDirectoryBookmark(token, macOS)
+	ev := driver.Event{Kind: driver.EventFiles, Count: id}
+	if err != nil {
+		ev.Text = err.Error()
+	} else {
+		ev.Data = dir
+	}
+	dispatch(ev)
+}
+
+// HandleReleaseDirectory releases a tracked security-scoped bookmark and
+// dispatches the EventFiles acknowledgment to dispatch.
+func HandleReleaseDirectory(token string, id uint32, dispatch func(driver.Event)) {
+	ReleaseDirectoryBookmark(token)
+	dispatch(driver.Event{Kind: driver.EventFiles, Count: id})
+}

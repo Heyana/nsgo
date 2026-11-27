@@ -412,25 +412,6 @@ func pickedFolders(urls objc.ID, limit int, persist bool) []driver.Directory {
 	return dirs
 }
 
-// openDirectory resolves an iOS security-scoped bookmark token, activates its
-// security scope and dispatches the reopened Directory.
-func (s *surface) openDirectory(token string, id uint32) {
-	dir, err := apple.OpenDirectoryBookmark(token, false)
-	ev := driver.Event{Kind: driver.EventFiles, Count: id}
-	if err != nil {
-		ev.Text = err.Error()
-	} else {
-		ev.Data = dir
-	}
-	s.engine.Dispatch(ev)
-}
-
-// releaseDirectory stops accessing a security-scoped iOS directory bookmark.
-func (s *surface) releaseDirectory(token string, id uint32) {
-	apple.ReleaseDirectoryBookmark(token)
-	s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id})
-}
-
 // saveFile presents UIDocumentPickerViewController exporting a copy of
 // the file r saves, under its name.
 func (s *surface) saveFile(r driver.SaveRequest, id uint32) {

@@ -333,25 +333,6 @@ func (s *surface) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 	})
 }
 
-// openDirectory resolves a macOS directory bookmark token, starting its
-// security scope when sandboxed, and dispatches the reopened Directory.
-func (s *surface) openDirectory(token string, id uint32) {
-	dir, err := apple.OpenDirectoryBookmark(token, true)
-	ev := driver.Event{Kind: driver.EventFiles, Count: id}
-	if err != nil {
-		ev.Text = err.Error()
-	} else {
-		ev.Data = dir
-	}
-	s.engine.Dispatch(ev)
-}
-
-// releaseDirectory stops accessing a security-scoped macOS bookmark if held.
-func (s *surface) releaseDirectory(token string, id uint32) {
-	apple.ReleaseDirectoryBookmark(token)
-	s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id})
-}
-
 // configureFilePanel gives an open or save panel its message, prompt and starting folder, with AppKit's defaults for absent or unusable hints.
 func configureFilePanel(panel objc.ID, title, button, start string) {
 	if title != "" {
