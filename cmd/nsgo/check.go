@@ -43,6 +43,9 @@ func check(ctx context.Context, p *project, target string, jobs int) error {
 		return err
 	}
 	s.done("checked catalogs", "")
+	if err := checkCopies(p.Dir); err != nil {
+		return err
+	}
 	if !p.bare && !hasGo(p.Dir) {
 		return checkTSX(ctx, p)
 	}

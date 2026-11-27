@@ -73,7 +73,16 @@ func goTool(ctx context.Context, dir string, env []string, args ...string) error
 		name: "go", args: args, dir: dir, env: append(os.Environ(), env...), output: captureCombined,
 	}
 	if out, err := execute(ctx, c); err != nil {
-		return fmt.Errorf("go %s failed\n%s", args[0], strings.TrimSpace(string(out)))
+		msg := strings.TrimSpace(string(out))
+		if len(args) > 0 && (args[0] == "vet" || args[0] == "build") {
+			if extra := annotateCopyFailure(dir, msg); extra != "" {
+				if msg != "" {
+					msg += "\n"
+				}
+				msg += extra
+			}
+		}
+		return fmt.Errorf("go %s failed\n%s", args[0], msg)
 	}
 	return nil
 }

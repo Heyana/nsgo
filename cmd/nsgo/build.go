@@ -710,7 +710,14 @@ func goBuildWith(ctx context.Context, p *project, out string, env []string, extr
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("go %s failed\n%s", cmd.Args[1], strings.TrimSpace(output.String()))
+		msg := strings.TrimSpace(output.String())
+		if extra := annotateCopyFailure(p.Dir, msg); extra != "" {
+			if msg != "" {
+				msg += "\n"
+			}
+			msg += extra
+		}
+		return fmt.Errorf("go %s failed\n%s", cmd.Args[1], msg)
 	}
 	return nil
 }

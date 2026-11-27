@@ -149,3 +149,17 @@ nsgo add -dry-run chat@v0.5.0         # 预览逐文件变更计划而不写入�
 3. 将冲突文件临时恢复到记录版本（例如用 `git apply -R` 还原该文件在 `chat.patch` 中的改动），使 `nsgo add` 将其识别为未修改。
 4. 运行 `nsgo add chat@v0.5.0` 干净地升级副本并更新 `nsgo-copy.yaml`。
 5. 对照 `chat.patch` 将应用修改重新合入更新后的文件，再运行 `nsgo diff chat` 与 `nsgo check` 确认只保留预期修改且编译检查通过。
+
+## 在包含副本的应用中升级 NSGo
+
+NSGo 或组件模块在新版本中可能引入不兼容变更。副本在与复制时匹配的模块版本下能够正常编译，升级后则可能出现编译失败。`nsgo` 会在升级前后指出受影响的副本，同时避免在没有破坏编译的版本差异上令 CI 失败：
+
+1. **升级前（`nsgo add`）。** 当 `nsgo add` 的计划移动了已有副本所导入的模块（尤其是 NSGo）时，`nsgo add` 会在不改写模块文件的前提下，用规划后的 `go.mod` 与 `go.sum` 对这些副本执行宿主机 `go vet`。凡会停止编译的副本都会在计划的 `copies` 栏中列出，附带第一条编译或 vet 错误以及 `nsgo diff <名称>@<版本>`、`nsgo add <名称>@<版本>` 命令。在 `-y` 下，会破坏副本的计划会被拒绝，防止自动化流程静默破坏副本；在终端中交互审阅计划后仍可手动确认。
+2. **外部升级后（`nsgo check`）。** 当 `go.mod` 通过 `go get` 或 Dependabot 等方式在 `nsgo` 之外更新后，`nsgo check` 会在执行 vet 之前读取所有 `nsgo-copy.yaml`、校验路径与边界，并对来源模块在 `go.mod` 中已处于不同版本的副本输出警告：
+
+   ```text
+   warn components/chat is chat from github.com/nsgo-dev/nsgo v0.4.2; this module requires v0.5.0: nsgo diff chat@v0.5.0, nsgo add chat@v0.5.0
+   ```
+
+   已是最新版本的副本不会输出任何信息。如果版本变动未导致副本编译失败，`nsgo check` 仅输出该警告并正常退出（退出码 0）。
+3. **编译或 vet 失败时（`nsgo check`、`nsgo build`、`nsgo dev`）。** 每当 `go vet` 或 `go build` 在某个副本包内失败（依据 Go 输出的 `# <导入路径>` 行匹配），`nsgo` 会在 `go` 命令输出之后追加同一行诊断信息，直接标明失败包对应的副本目录、来源模块与版本以及查看和更新命令。如果模块中存在两个同名副本，命令提示会自动使用副本的相对目录路径以消除歧义。
