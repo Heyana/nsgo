@@ -2,9 +2,15 @@ package harmonyos
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"maps"
+	"net/http"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -172,4 +178,178 @@ func decodeWebDownload(raw string) (*driver.WebDownload, bool) {
 		Bytes:    in.Bytes,
 		Message:  in.Message,
 	}, true
+}
+
+// harmonyWebCookieEntry is one cookie to set, serialized for Bridge.webcookies.
+// Every key must match WebCookieSetItem in WebViewConfig.ets.
+type harmonyWebCookieEntry struct {
+	URL       string `json:"u"`
+	SetCookie string `json:"v"`
+	Name      string `json:"n"`
+}
+
+// harmonyWebCookiesRequest is the wire payload of Bridge.webcookies.
+// Every key must match WebCookiesReq in WebViewConfig.ets.
+type harmonyWebCookiesRequest struct {
+	Op      uint8                   `json:"op"`
+	URL     string                  `json:"url,omitempty"`
+	Domain  string                  `json:"domain,omitempty"`
+	Cookies []harmonyWebCookieEntry `json:"cookies,omitempty"`
+}
+
+// harmonyWebCookieWire is one cookie returned by ArkWeb's WebCookieManager.fetchAllCookies.
+// Every key must match WebCookieWire in WebViewConfig.ets.
+type harmonyWebCookieWire struct {
+	Name     string `json:"n"`
+	Value    string `json:"v"`
+	Domain   string `json:"d"`
+	Path     string `json:"p"`
+	Expires  string `json:"e,omitempty"`
+	Session  bool   `json:"s,omitempty"`
+	Secure   bool   `json:"sec,omitempty"`
+	HTTPOnly bool   `json:"http,omitempty"`
+	SameSite uint8  `json:"ss,omitempty"`
+}
+
+const (
+	harmonyWebCookiesModeStatus = 0
+	harmonyWebCookiesModeAll    = 1
+	harmonyWebCookiesModeHeader = 2
+)
+
+func encodeWebCookiesRequest(r *driver.WebCookiesRequest) (string, error) {
+	if r == nil {
+		return "", errors.New("harmonyos: nil web cookies request")
+	}
+	req := harmonyWebCookiesRequest{Op: uint8(r.Op)}
+	switch r.Op {
+	case driver.WebCookiesSet:
+		req.Cookies = make([]harmonyWebCookieEntry, 0, len(r.Cookies))
+		for _, c := range r.Cookies {
+			req.Cookies = append(req.Cookies, harmonyWebCookieEntry{
+				URL:       c.URL(),
+				SetCookie: c.SetCookie(),
+				Name:      c.Name,
+			})
+		}
+	case driver.WebCookiesList:
+		req.URL = r.Filter.URL
+		req.Domain = r.Filter.Domain
+	case driver.WebCookiesClear:
+	default:
+		return "", fmt.Errorf("harmonyos: unsupported web cookies op %d", r.Op)
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func decodeWebCookiesEvent(count uint32, mode int, payload, errText string, filter driver.WebCookieFilter, now time.Time) driver.Event {
+	if errText != "" {
+		return driver.Event{Kind: driver.EventWebCookies, Count: count, Text: errText}
+	}
+	switch mode {
+	case harmonyWebCookiesModeStatus:
+		return driver.Event{Kind: driver.EventWebCookies, Count: count}
+	case harmonyWebCookiesModeAll:
+		var wire []harmonyWebCookieWire
+		if payload != "" {
+			if err := json.Unmarshal([]byte(payload), &wire); err != nil {
+				return driver.Event{Kind: driver.EventWebCookies, Count: count, Text: fmt.Sprintf("harmonyos: invalid web cookies payload: %v", err)}
+			}
+		}
+		all := make([]driver.WebCookie, 0, len(wire))
+		for _, w := range wire {
+			ss := driver.WebSameSite(w.SameSite)
+			if ss > driver.WebSameSiteNone {
+				ss = driver.WebSameSiteDefault
+			}
+			c := driver.WebCookie{
+				Name:     w.Name,
+				Value:    w.Value,
+				Domain:   strings.ToLower(strings.TrimSpace(w.Domain)),
+				Path:     w.Path,
+				Secure:   w.Secure,
+				HTTPOnly: w.HTTPOnly,
+				SameSite: ss,
+			}
+			if c.Path == "" {
+				c.Path = "/"
+			}
+			if !w.Session && w.Expires != "" {
+				c.Expires = parseHarmonyCookieExpires(w.Expires)
+			}
+			all = append(all, c)
+		}
+		return driver.Event{
+			Kind:  driver.EventWebCookies,
+			Count: count,
+			Data:  driver.FilterWebCookies(all, filter, now),
+		}
+	case harmonyWebCookiesModeHeader:
+		host := ""
+		if u, err := url.Parse(filter.URL); err == nil {
+			host = strings.ToLower(u.Hostname())
+		}
+		parsed := make([]driver.WebCookie, 0)
+		for part := range strings.SplitSeq(payload, ";") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			name, value, hasEq := strings.Cut(part, "=")
+			if !hasEq {
+				name, value = "", part
+			}
+			parsed = append(parsed, driver.WebCookie{Name: name, Value: value, Domain: host})
+		}
+		return driver.Event{
+			Kind:  driver.EventWebCookies,
+			Count: count,
+			Data:  driver.FilterWebCookies(parsed, driver.WebCookieFilter{}, now),
+		}
+	default:
+		return driver.Event{Kind: driver.EventWebCookies, Count: count, Text: fmt.Sprintf("harmonyos: unknown web cookies reply mode %d", mode)}
+	}
+}
+
+var harmonyCookieTimeLayouts = []string{
+	http.TimeFormat,
+	time.RFC1123,
+	time.RFC1123Z,
+	"Mon, 02-Jan-2006 15:04:05 GMT",
+	"Mon, 02-Jan-06 15:04:05 GMT",
+	time.RFC850,
+	time.RFC822,
+	time.RFC822Z,
+	time.ANSIC,
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02 15:04:05",
+	"2006-01-02T15:04:05",
+}
+
+func parseHarmonyCookieExpires(raw string) time.Time {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range harmonyCookieTimeLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC()
+		}
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		switch {
+		case n >= 1e15 || n <= -1e15:
+			return time.UnixMicro(n).UTC()
+		case n >= 1e12 || n <= -1e12:
+			return time.UnixMilli(n).UTC()
+		default:
+			return time.Unix(n, 0).UTC()
+		}
+	}
+	return time.Time{}
 }

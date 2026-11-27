@@ -58,6 +58,8 @@ type mounter struct {
 	packedAtlas bool
 	// clipboard mirrors the text last written to the system pasteboard by the app or the test host, since ordinary HarmonyOS HAPs cannot read back pasteboard.getData() without ohos.permission.READ_PASTEBOARD.
 	clipboard string
+	// cookieFilters tracks the filter of each in-flight WebCookiesList request so the host's reply can be filtered and ordered in Go.
+	cookieFilters map[uint32]driver.WebCookieFilter
 }
 
 // view is what the render layer keeps for a view.
@@ -132,6 +134,7 @@ func newMounter(s *surface) *mounter {
 		scene:         newTouchScene(nil),
 		dropped:       map[driver.ItemKind]bool{},
 		droppedNative: map[string]bool{},
+		cookieFilters: map[uint32]driver.WebCookieFilter{},
 	}
 }
 
@@ -606,7 +609,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 			}
 		}
 	case driver.ItemWebCookies:
-		m.s.dispatch(driver.NoWebCookies(it))
+		m.webCookies(it)
 	case driver.ItemWebCommand:
 		switch it.WebCommand {
 		case driver.WebPostMessage:
@@ -1307,4 +1310,37 @@ var linuxKeys = map[driver.NodeID]string{
 	66: "f8", 67: "f9", 68: "f10", 87: "f11", 88: "f12",
 	102: "home", 103: "up", 104: "pageup", 105: "left", 106: "right",
 	107: "end", 108: "down", 109: "pagedown", 111: "delete",
+}
+
+// webCookies forwards ItemWebCookies to the host's ArkWeb WebCookieManager and
+// WebStorage bridge, always dispatching EventWebCookies on any error or missing
+// bridge so callers never hang.
+func (m *mounter) webCookies(it *driver.MountItem) {
+	if !m.s.canDispatch() {
+		return
+	}
+	if it.Cookies == nil {
+		m.s.dispatch(driver.Event{Kind: driver.EventWebCookies, Count: it.Count, Text: "harmonyos: empty web cookies request"})
+		return
+	}
+	if it.Cookies.Op == driver.WebCookiesSet && len(it.Cookies.Cookies) == 0 {
+		m.s.dispatch(driver.Event{Kind: driver.EventWebCookies, Count: it.Count})
+		return
+	}
+	if !m.s.hasBridge("webcookies") {
+		m.s.dispatch(driver.NoWebCookies(it))
+		return
+	}
+	raw, err := encodeWebCookiesRequest(it.Cookies)
+	if err != nil {
+		m.s.dispatch(driver.Event{Kind: driver.EventWebCookies, Count: it.Count, Text: err.Error()})
+		return
+	}
+	if it.Cookies.Op == driver.WebCookiesList {
+		if m.cookieFilters == nil {
+			m.cookieFilters = map[uint32]driver.WebCookieFilter{}
+		}
+		m.cookieFilters[it.Count] = it.Cookies.Filter
+	}
+	m.s.bridge.Call("webcookies", int(it.Count), raw)
 }

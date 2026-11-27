@@ -299,3 +299,97 @@ export function normalizeReportedWebURL(url: string, loadedHTMLNoBase: boolean):
 export function webShouldReportError(isMainFrame: boolean, errorCode: number): boolean {
   return isMainFrame && errorCode !== -3;
 }
+
+export const WEB_COOKIES_OP_SET: number = 0;
+export const WEB_COOKIES_OP_LIST: number = 1;
+export const WEB_COOKIES_OP_CLEAR: number = 2;
+
+export const NO_WEB_COOKIE_DOMAINS: string = 'nsgo: this platform lists web view cookies only by URL';
+
+// WebCookieSetItem mirrors harmonyWebCookieEntry in internal/platform/harmonyos/web.go.
+export interface WebCookieSetItem {
+  u: string;
+  v: string;
+  n: string;
+}
+
+// WebCookiesReq mirrors harmonyWebCookiesRequest in internal/platform/harmonyos/web.go.
+export interface WebCookiesReq {
+  op?: number;
+  url?: string;
+  domain?: string;
+  cookies?: WebCookieSetItem[];
+}
+
+// WebCookieWire mirrors harmonyWebCookieWire in internal/platform/harmonyos/web.go.
+export interface WebCookieWire {
+  n: string;
+  v: string;
+  d: string;
+  p: string;
+  e?: string;
+  s?: boolean;
+  sec?: boolean;
+  http?: boolean;
+  ss?: number;
+}
+
+export function parseWebCookiesReq(raw: string): WebCookiesReq | undefined {
+  if (raw === '') {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw) as WebCookiesReq;
+  } catch (_e) {
+    return undefined;
+  }
+}
+
+// isValidWebCookieURL reports whether rawURL is an http or https URL with a non-empty host.
+export function isValidWebCookieURL(rawURL: string): boolean {
+  const scheme = schemeOf(rawURL);
+  if (scheme !== 'http' && scheme !== 'https') {
+    return false;
+  }
+  return hostnameOf(rawURL, scheme.length) !== '';
+}
+
+// validateWebCookieSetItems checks every entry in a SetWebCookies batch before
+// mutating WebCookieManager. Returns '' when valid, or an error without cookie values.
+export function validateWebCookieSetItems(items: WebCookieSetItem[]): string {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const name = item.n !== '' ? item.n : ('#' + i);
+    if (!isValidWebCookieURL(item.u)) {
+      return 'HarmonyOS WebCookieManager refused the cookie ' + name + ': invalid URL';
+    }
+    if (item.v === '' || item.v.indexOf('=') <= 0) {
+      return 'HarmonyOS WebCookieManager refused the cookie ' + name + ': invalid Set-Cookie value';
+    }
+  }
+  return '';
+}
+
+// mapWebCookieSameSite converts ArkWeb's WebHttpCookieSameSitePolicy
+// (NONE=0, LAX=1, STRICT=2) to driver.WebSameSite (Default=0, Lax=1, Strict=2, None=3).
+export function mapWebCookieSameSite(policy: number, isSecure: boolean): number {
+  if (policy === 2) {
+    return 2;
+  }
+  if (policy === 1) {
+    return 1;
+  }
+  if (policy === 0 && isSecure) {
+    return 3;
+  }
+  return 0;
+}
+
+// formatWebCookieRefused formats a cookie write error without leaking the cookie value.
+export function formatWebCookieRefused(name: string, errText: string): string {
+  const label = name !== '' ? name : 'unnamed';
+  if (errText === '') {
+    return 'HarmonyOS WebCookieManager refused the cookie ' + label;
+  }
+  return 'HarmonyOS WebCookieManager refused the cookie ' + label + ': ' + errText;
+}

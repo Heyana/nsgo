@@ -91,6 +91,57 @@ func TestWebMountSendsFullConfig(t *testing.T) {
 	}
 }
 
+func TestWebMountSendsUpdatedInjectedScripts(t *testing.T) {
+	m := newMounter(nil)
+	m.item(&driver.MountBatch{}, &driver.MountItem{Kind: driver.ItemCreate, ID: 9, View: driver.KindWeb})
+	m.o.reset()
+
+	decodeOp := func() harmonyWebConfig {
+		t.Helper()
+		var ops [][]any
+		if err := json.Unmarshal(m.o.bytes(), &ops); err != nil {
+			t.Fatal(err)
+		}
+		if len(ops) != 1 || ops[0][0] != "web" || ops[0][1] != float64(9) {
+			t.Fatalf("ops = %v, want one web op for id 9", ops)
+		}
+		var cfg harmonyWebConfig
+		if err := json.Unmarshal([]byte(ops[0][2].(string)), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+
+	m.item(&driver.MountBatch{}, &driver.MountItem{
+		Kind: driver.ItemWeb,
+		ID:   9,
+		Web: &driver.WebConfig{
+			Source:                          driver.WebSource{Src: "https://example.test/"},
+			InjectedJavaScriptBeforeContent: "window.before = 'v1';",
+			InjectedJavaScript:              "window.after = 'v1';",
+		},
+	})
+	first := decodeOp()
+	if first.Before != "window.before = 'v1';" || first.After != "window.after = 'v1';" {
+		t.Fatalf("initial scripts = %+v", first)
+	}
+
+	m.o.reset()
+	m.item(&driver.MountBatch{}, &driver.MountItem{
+		Kind: driver.ItemWeb,
+		ID:   9,
+		Web: &driver.WebConfig{
+			Source:                          driver.WebSource{Src: "https://example.test/"},
+			InjectedJavaScriptBeforeContent: "window.before = 'v2';",
+			InjectedJavaScript:              "window.after = 'v2';",
+		},
+	})
+	second := decodeOp()
+	if second.Before != "window.before = 'v2';" || second.After != "window.after = 'v2';" {
+		t.Fatalf("updated scripts = %+v", second)
+	}
+}
+
 func TestWebCommandSerialization(t *testing.T) {
 	m := newMounter(nil)
 	loadSrc := driver.WebSource{HTML: "<b>loaded</b>", BaseURL: "https://example.test/"}
@@ -327,5 +378,201 @@ func TestWebCookieStoreAnswersUnavailable(t *testing.T) {
 		case <-deadline:
 			t.Fatal("web cookie callback had no backend event")
 		}
+	}
+}
+
+func TestWebCookiesBridgeRoundTrip(t *testing.T) {
+	bridge := js.Global().Get("Object").New()
+	noop := js.FuncOf(func(js.Value, []js.Value) any { return nil })
+	t.Cleanup(noop.Release)
+	bridge.Set("submit", noop)
+	bridge.Set("tick", noop)
+
+	s := &surface{bridge: bridge}
+	s.m = newMounter(s)
+
+	var (
+		stored       []harmonyWebCookieWire
+		failSet      bool
+		useHeader    bool
+		clears       int
+		failClear    bool
+		bridgeCalled int
+	)
+
+	fire := func(args ...any) {
+		jsArgs := make([]js.Value, len(args))
+		for i, a := range args {
+			jsArgs[i] = js.ValueOf(a)
+		}
+		s.event(jsArgs)
+	}
+
+	webcookiesFn := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		bridgeCalled++
+		id := args[0].Int()
+		var req harmonyWebCookiesRequest
+		if err := json.Unmarshal([]byte(args[1].String()), &req); err != nil {
+			fire("webcookies", id, 0, 0, "", err.Error())
+			return nil
+		}
+		switch driver.WebCookiesOp(req.Op) {
+		case driver.WebCookiesSet:
+			if failSet {
+				fire("webcookies", id, 0, 0, "", "HarmonyOS WebCookieManager refused the cookie SID: invalid")
+				return nil
+			}
+			for _, c := range req.Cookies {
+				stored = append(stored, harmonyWebCookieWire{
+					Name:     c.Name,
+					Value:    "val-" + c.Name,
+					Domain:   ".example.test",
+					Path:     "/",
+					Expires:  "Wed, 02 Jan 2030 03:04:05 GMT",
+					Secure:   true,
+					HTTPOnly: true,
+					SameSite: uint8(driver.WebSameSiteNone),
+				})
+			}
+			fire("webcookies", id, 0, 0, "", "")
+		case driver.WebCookiesList:
+			if useHeader {
+				if req.URL == "" {
+					fire("webcookies", id, 0, 0, "", driver.NoWebCookieDomains)
+					return nil
+				}
+				fire("webcookies", id, harmonyWebCookiesModeHeader, 0, "SID=val-SID; theme=dark", "")
+				return nil
+			}
+			raw, _ := json.Marshal(stored)
+			fire("webcookies", id, harmonyWebCookiesModeAll, 0, string(raw), "")
+		case driver.WebCookiesClear:
+			if failClear {
+				fire("webcookies", id, 0, 0, "", "clear failed")
+				return nil
+			}
+			clears++
+			stored = nil
+			fire("webcookies", id, 0, 0, "", "")
+		}
+		return nil
+	})
+	t.Cleanup(webcookiesFn.Release)
+	bridge.Set("webcookies", webcookiesFn)
+
+	scopeCh := make(chan *core.Scope, 1)
+	s.engine = engine.Start(s, func(cx *core.Scope) core.Node {
+		scopeCh <- cx
+		return core.View{}
+	}, engine.Options{
+		Environment: driver.Environment{HasWebView: true},
+	})
+	t.Cleanup(s.engine.Close)
+
+	var cx *core.Scope
+	select {
+	case cx = <-scopeCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine did not start")
+	}
+
+	run := func(fn func(*core.Scope)) {
+		t.Helper()
+		done := make(chan struct{})
+		cx.Post(func() {
+			fn(cx)
+			close(done)
+		})
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("post timed out")
+		}
+	}
+
+	// 1. SetWebCookies succeeds and writes via bridge.
+	setErr := make(chan error, 1)
+	run(func(cx *core.Scope) {
+		cx.SetWebCookies([]core.WebCookie{{
+			Name:     "SID",
+			Value:    "secret",
+			Domain:   ".example.test",
+			Expires:  time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC),
+			Secure:   true,
+			HTTPOnly: true,
+			SameSite: core.WebSameSiteNone,
+		}}, func(err error) { setErr <- err })
+	})
+	if err := <-setErr; err != nil {
+		t.Fatalf("SetWebCookies err = %v", err)
+	}
+
+	// 2. WebCookies (API 23+ mode 1) lists full metadata for Domain, URL, and zero filters.
+	type listRes struct {
+		cookies []core.WebCookie
+		err     error
+	}
+	listCh := make(chan listRes, 3)
+	run(func(cx *core.Scope) {
+		cx.WebCookies(core.WebCookieFilter{Domain: "example.test"}, func(c []core.WebCookie, err error) { listCh <- listRes{c, err} })
+		cx.WebCookies(core.WebCookieFilter{URL: "https://app.example.test/"}, func(c []core.WebCookie, err error) { listCh <- listRes{c, err} })
+		cx.WebCookies(core.WebCookieFilter{URL: "http://app.example.test/"}, func(c []core.WebCookie, err error) { listCh <- listRes{c, err} })
+	})
+	rDomain := <-listCh
+	rHTTPS := <-listCh
+	rHTTP := <-listCh
+	if rDomain.err != nil || len(rDomain.cookies) != 1 || rDomain.cookies[0].Name != "SID" || !rDomain.cookies[0].HTTPOnly || rDomain.cookies[0].SameSite != core.WebSameSiteNone {
+		t.Fatalf("Domain list = %+v", rDomain)
+	}
+	if rHTTPS.err != nil || len(rHTTPS.cookies) != 1 || rHTTPS.cookies[0].Name != "SID" {
+		t.Fatalf("HTTPS URL list = %+v", rHTTPS)
+	}
+	if rHTTP.err != nil || len(rHTTP.cookies) != 0 {
+		t.Fatalf("HTTP URL list should exclude Secure cookie, got %+v", rHTTP)
+	}
+
+	// 3. Fallback header mode (API < 23): URL lists names/values, Domain answers Unavailable.
+	useHeader = true
+	run(func(cx *core.Scope) {
+		cx.WebCookies(core.WebCookieFilter{URL: "https://app.example.test/"}, func(c []core.WebCookie, err error) { listCh <- listRes{c, err} })
+		cx.WebCookies(core.WebCookieFilter{Domain: "example.test"}, func(c []core.WebCookie, err error) { listCh <- listRes{c, err} })
+	})
+	rFallbackURL := <-listCh
+	rFallbackDomain := <-listCh
+	if rFallbackURL.err != nil || len(rFallbackURL.cookies) != 2 || rFallbackURL.cookies[0].Name != "SID" || rFallbackURL.cookies[0].Domain != "app.example.test" || rFallbackURL.cookies[1].Name != "theme" {
+		t.Fatalf("fallback URL list = %+v", rFallbackURL)
+	}
+	if core.ErrorCode(rFallbackDomain.err) != core.CodeUnavailable || rFallbackDomain.cookies != nil {
+		t.Fatalf("fallback Domain list = %+v, want Unavailable", rFallbackDomain)
+	}
+	useHeader = false
+
+	// 4. ClearWebsiteData clears store and answers nil.
+	clearErr := make(chan error, 1)
+	run(func(cx *core.Scope) {
+		cx.ClearWebsiteData(func(err error) { clearErr <- err })
+	})
+	if err := <-clearErr; err != nil || clears != 1 {
+		t.Fatalf("ClearWebsiteData err = %v, clears = %d", err, clears)
+	}
+
+	// 5. Error propagation on SetWebCookies and ClearWebsiteData (done always called).
+	failSet = true
+	failClear = true
+	run(func(cx *core.Scope) {
+		cx.SetWebCookies([]core.WebCookie{{Name: "SID", Value: "s", Domain: "example.test"}}, func(err error) { setErr <- err })
+		cx.ClearWebsiteData(func(err error) { clearErr <- err })
+	})
+	if err := <-setErr; err == nil {
+		t.Fatal("failed SetWebCookies should return error")
+	}
+	if err := <-clearErr; err == nil {
+		t.Fatal("failed ClearWebsiteData should return error")
+	}
+	if bridgeCalled < 8 {
+		t.Fatalf("expected bridge.webcookies calls, got %d", bridgeCalled)
+	}
+	if len(s.m.cookieFilters) != 0 {
+		t.Fatalf("leaked pending cookieFilters: %+v", s.m.cookieFilters)
 	}
 }

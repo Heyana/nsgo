@@ -210,6 +210,10 @@ func (s *surface) canDispatch() bool {
 	return s != nil && (s.dispatchFn != nil || s.engine != nil)
 }
 
+func (s *surface) hasBridge(name string) bool {
+	return s != nil && !s.bridge.IsUndefined() && !s.bridge.IsNull() && s.bridge.Get(name).Type() == js.TypeFunction
+}
+
 func (s *surface) device() deviceData {
 	var d deviceData
 	json.Unmarshal([]byte(s.bridge.Call("device").String()), &d)
@@ -464,6 +468,14 @@ func (s *surface) event(args []js.Value) {
 		}
 		ev.ID = id
 		s.dispatch(ev)
+	case "webcookies":
+		count := uint32(id)
+		var filter driver.WebCookieFilter
+		if s.m != nil && s.m.cookieFilters != nil {
+			filter = s.m.cookieFilters[count]
+			delete(s.m.cookieFilters, count)
+		}
+		s.dispatch(decodeWebCookiesEvent(count, int(num(2)), str(4), str(5), filter, time.Now()))
 	case "selection":
 		s.m.selectionChanged(id, driver.TextRange{Start: int(num(2)), End: int(num(3))})
 	case "alert":

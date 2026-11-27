@@ -33,7 +33,17 @@ import {
   webMediaWant,
   sanitizeDownloadName,
   normalizeReportedWebURL,
-  webShouldReportError
+  webShouldReportError,
+  WEB_COOKIES_OP_SET,
+  WEB_COOKIES_OP_LIST,
+  WEB_COOKIES_OP_CLEAR,
+  NO_WEB_COOKIE_DOMAINS,
+  WebCookieWire,
+  parseWebCookiesReq,
+  isValidWebCookieURL,
+  validateWebCookieSetItems,
+  mapWebCookieSameSite,
+  formatWebCookieRefused
 } from './WebViewConfig';
 
 // The host the harmonyos target builds: the app's engine runs in WebAssembly
@@ -1193,6 +1203,12 @@ class Bridge {
     }
   }
 
+  webcookies(id: number, req: string): void {
+    if (this.host !== undefined) {
+      this.host.webcookies(id, req);
+    }
+  }
+
   savefile(id: number, name: string, mime: string, data: string): void {
     if (this.host !== undefined) {
       this.host.savefile(id, name, mime, data);
@@ -1795,6 +1811,119 @@ struct Index {
       return;
     }
     this.send('perm', id, status(), 0, '');
+  }
+
+  // webcookies answers ItemWebCookies through ArkWeb's persistent WebCookieManager
+  // and WebStorage (incognito=false), leaving Incognito web views isolated.
+  webcookies(id: number, raw: string): void {
+    const req = parseWebCookiesReq(raw);
+    if (req === undefined || req.op === undefined) {
+      this.send('webcookies', id, 0, 0, '', 'HarmonyOS: invalid web cookies request');
+      return;
+    }
+    if (req.op === WEB_COOKIES_OP_SET) {
+      const items = req.cookies ?? [];
+      if (items.length === 0) {
+        this.send('webcookies', id, 0, 0, '', '');
+        return;
+      }
+      const invalid = validateWebCookieSetItems(items);
+      if (invalid !== '') {
+        this.send('webcookies', id, 0, 0, '', invalid);
+        return;
+      }
+      let failure = '';
+      let wrote = false;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        try {
+          webview.WebCookieManager.configCookieSync(item.u, item.v, false, true);
+          wrote = true;
+        } catch (e) {
+          failure = formatWebCookieRefused(item.n, '' + e);
+          break;
+        }
+      }
+      if (!wrote) {
+        this.send('webcookies', id, 0, 0, '', failure);
+        return;
+      }
+      try {
+        webview.WebCookieManager.saveCookieAsync().then(() => {
+          this.send('webcookies', id, 0, 0, '', failure);
+        }).catch((e: Error) => {
+          this.send('webcookies', id, 0, 0, '', failure !== '' ? failure : ('' + e));
+        });
+      } catch (e) {
+        this.send('webcookies', id, 0, 0, '', failure !== '' ? failure : ('' + e));
+      }
+      return;
+    }
+    if (req.op === WEB_COOKIES_OP_LIST) {
+      const reqURL = req.url ?? '';
+      if (reqURL !== '' && !isValidWebCookieURL(reqURL)) {
+        this.send('webcookies', id, 0, 0, '', 'HarmonyOS: invalid web cookie filter URL');
+        return;
+      }
+      try {
+        webview.WebCookieManager.fetchAllCookies(false).then((list: Array<webview.WebHttpCookie>) => {
+          const out: WebCookieWire[] = [];
+          for (let i = 0; i < list.length; i++) {
+            const c = list[i];
+            out.push({
+              n: c.name,
+              v: c.value,
+              d: c.domain,
+              p: c.path,
+              e: c.isSessionCookie ? '' : c.expiresDate,
+              s: c.isSessionCookie,
+              sec: c.isSecure,
+              http: c.isHttpOnly,
+              ss: mapWebCookieSameSite(Number(c.samesitePolicy), c.isSecure)
+            });
+          }
+          this.send('webcookies', id, 1, 0, JSON.stringify(out), '');
+        }).catch((_e: Error) => {
+          this.webcookiesFetchByURL(id, reqURL);
+        });
+      } catch (_e) {
+        this.webcookiesFetchByURL(id, reqURL);
+      }
+      return;
+    }
+    if (req.op === WEB_COOKIES_OP_CLEAR) {
+      try {
+        webview.WebCookieManager.clearAllCookiesSync(false);
+        webview.WebStorage.deleteAllData(false);
+        try {
+          webview.WebviewController.removeAllCache(true);
+        } catch (_e) {
+        }
+        webview.WebCookieManager.saveCookieAsync().then(() => {
+          this.send('webcookies', id, 0, 0, '', '');
+        }).catch((e: Error) => {
+          this.send('webcookies', id, 0, 0, '', '' + e);
+        });
+      } catch (e) {
+        this.send('webcookies', id, 0, 0, '', '' + e);
+      }
+      return;
+    }
+    this.send('webcookies', id, 0, 0, '', 'HarmonyOS: unsupported web cookies op ' + req.op);
+  }
+
+  // webcookiesFetchByURL falls back to API 11+ fetchCookieSync when fetchAllCookies (API 23+) is unavailable.
+  private webcookiesFetchByURL(id: number, reqURL: string): void {
+    if (reqURL === '') {
+      this.send('webcookies', id, 0, 0, '', NO_WEB_COOKIE_DOMAINS);
+      return;
+    }
+    try {
+      const header: string = webview.WebCookieManager.fetchCookieSync(reqURL, false);
+      this.send('webcookies', id, 2, 0, header, '');
+    } catch (e) {
+      this.send('webcookies', id, 0, 0, '', '' + e);
+    }
   }
 
   // hasWebPermissions checks whether the app holds all requested media capture
@@ -2400,7 +2529,7 @@ struct Index {
         .javaScriptProxy({
           object: this.bridge,
           name: 'nsgoHarmony',
-          methodList: ['ready', 'submit', 'tick', 'idle', 'device', 'measure', 'perf', 'snapshot', 'scrollBy', 'typeInput', 'launch', 'sandbox', 'alert', 'backunhandled', 'clipread', 'clipset', 'clipimage', 'dismisskeyboard', 'announce', 'title', 'updatewidget', 'listdir', 'readfile', 'pickdirectories', 'imageinfo', 'openurl', 'pickimages', 'pickfiles', 'savefile', 'saved', 'openfile', 'takephoto', 'keepawake', 'releaseawake', 'bioavail', 'bioauth', 'permission'],
+          methodList: ['ready', 'submit', 'tick', 'idle', 'device', 'measure', 'perf', 'snapshot', 'scrollBy', 'typeInput', 'launch', 'sandbox', 'alert', 'backunhandled', 'clipread', 'clipset', 'clipimage', 'dismisskeyboard', 'announce', 'title', 'updatewidget', 'listdir', 'readfile', 'pickdirectories', 'imageinfo', 'openurl', 'pickimages', 'pickfiles', 'savefile', 'saved', 'openfile', 'takephoto', 'keepawake', 'releaseawake', 'bioavail', 'bioauth', 'permission', 'webcookies'],
           controller: this.controller
         })
         .onInterceptRequest((event) => {

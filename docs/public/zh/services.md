@@ -547,7 +547,7 @@ cx.AuthSession(func(redirect string) string {
 
 授权 URL 函数应原样使用收到的重定向地址。Web 和桌面回环重定向会先编码 Unicode 路径并解析点路径段，再把地址交给该函数；回环 `Path` 是未编码文本，所以字面上的 `%` 也会被转义。
 
-应用的 web view 要以用户在别处（例如自己的浏览器里）已有的登录状态打开页面时，用 `cx.SetWebCookies` 写入这次登录的 Cookie，包括页面脚本写不了的 HttpOnly Cookie，再加载页面：存储收下它们后 done 才会运行。写入的是应用所有 web view 共用的持久存储，带 `Expires` 的 Cookie 在应用退出后仍然保留；无痕（Incognito）web view 看不到它们，但 Android 每个应用只有一个存储，那里也看得到。在 Linux 上，libsoup 会拒绝属于公共后缀列表（包括其私有部分）的域名，并在写入任何 Cookie 前使本次调用失败。HarmonyOS、Web、tvOS 和 watchOS 回答 `Unavailable`。
+应用的 web view 要以用户在别处（例如自己的浏览器里）已有的登录状态打开页面时，用 `cx.SetWebCookies` 写入这次登录的 Cookie，包括页面脚本写不了的 HttpOnly Cookie，再加载页面：存储收下它们后 done 才会运行。写入的是应用所有 web view 共用的持久存储，带 `Expires` 的 Cookie 在应用退出后仍然保留；无痕（Incognito）web view 看不到它们，但 Android 每个应用只有一个存储，那里也看得到。在 Linux 上，libsoup 会拒绝属于公共后缀列表（包括其私有部分）的域名，并在写入任何 Cookie 前使本次调用失败。Web、tvOS 和 watchOS 回答 `Unavailable`。
 
 ```go
 cx.SetWebCookies([]core.WebCookie{
@@ -561,7 +561,7 @@ cx.SetWebCookies([]core.WebCookie{
 
 要删除单个 Cookie，请使用相同的名称、域名和路径，将 `Expires` 设为过去的时间；零值过期时间表示会话 Cookie。等待回调后再加载页面，页面才能看到删除后的状态。
 
-反过来，`cx.WebCookies` 列出存储里的 Cookie，包括 `document.cookie` 读不到的 HttpOnly Cookie 及其域名、路径、过期时间和各项标志，不管这个站点的页面是否正在显示：`core.WebCookieFilter` 选出向某个 `URL` 发请求时会带上的 Cookie，或某个 `Domain` 及其下所有主机的 Cookie，零值过滤器选出全部。应用要用用户的登录状态从 Go 调用这个站点，或显示用户登录了哪些站点时，就这样读取。`cx.ClearWebsiteData` 让用户退出所有站点：它删除存储里的 Cookie、本地存储和会话存储、IndexedDB、Service Worker 和缓存，全部删除后 done 才会运行。Android 的 `CookieManager` 只回答某个 URL 会带上的名称和值，所以那里只有 `URL` 过滤器能列出，`Domain` 填为它的主机，其他字段留空，`Domain` 过滤器和零值过滤器回答 `Unavailable`；在那里清除不包括 HTTP 缓存。HarmonyOS、Web、tvOS 和 watchOS 对两者都回答 `Unavailable`。
+反过来，`cx.WebCookies` 列出存储里的 Cookie，包括 `document.cookie` 读不到的 HttpOnly Cookie 及其域名、路径、过期时间和各项标志，不管这个站点的页面是否正在显示：`core.WebCookieFilter` 选出向某个 `URL` 发请求时会带上的 Cookie，或某个 `Domain` 及其下所有主机的 Cookie，零值过滤器选出全部。应用要用用户的登录状态从 Go 调用这个站点，或显示用户登录了哪些站点时，就这样读取。`cx.ClearWebsiteData` 让用户退出所有站点：它删除存储里的 Cookie、本地存储和会话存储、IndexedDB、Service Worker 和缓存，全部删除后 done 才会运行。Android 的 `CookieManager`（以及 API 23 之前的 HarmonyOS）只回答某个 URL 会带上的名称和值，所以那里只有 `URL` 过滤器能列出，`Domain` 填为它的主机，其他字段留空，`Domain` 过滤器和零值过滤器回答 `Unavailable`；Android 上清除不包括 HTTP 缓存。Web、tvOS 和 watchOS 对两者都回答 `Unavailable`。
 
 ```go
 cx.WebCookies(core.WebCookieFilter{Domain: "example.com"}, func(cookies []core.WebCookie, err error) {
