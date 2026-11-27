@@ -107,10 +107,10 @@ func TestNativeFormulaClipboardMIME(t *testing.T) {
 			return
 		}
 		wantTypes := map[string]string{
-			pasteboardText:             plain,
-			"public.mathml":            mathML,
+			pasteboardText:               plain,
+			"public.mathml":              mathML,
 			"public.mathml.presentation": mathML,
-			"org.tug.tex":              tex,
+			"org.tug.tex":                tex,
 		}
 		for _, mime := range []struct{ mime, data string }{
 			{"application/mathml+xml", mathML},

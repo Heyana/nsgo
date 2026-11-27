@@ -226,24 +226,24 @@ var (
 	gtkWindowGetDefaultSize                func(uintptr, *int32, *int32)
 
 	// GDK, in libgtk-4.
-	gdkFrameClockGetFrameTime  func(clock uintptr) int64
-	gdkDisplayGetDefault       func() uintptr
-	gdkDisplayGetMonitors      func(uintptr) uintptr
-	gdkDisplayGetClipboard         func(uintptr) uintptr
-	gdkClipboardSetText            func(uintptr, *byte)
-	gdkClipboardSetContent         func(uintptr, uintptr) int32
-	gdkContentProviderNewForBytes  func(*byte, uintptr) uintptr
-	gdkContentProviderNewUnion     func(*uintptr, uintptr) uintptr
-	gdkClipboardReadTextAsync      func(uintptr, uintptr, uintptr, uintptr)
-	gdkClipboardReadTextFinish func(uintptr, uintptr, uintptr) uintptr
-	gdkSurfaceGetScale         func(uintptr) float64
-	gdkMonitorGetGeometry      func(uintptr, *gdkMonitorRectangle)
-	gdkMonitorGetScaleFactor   func(uintptr) int32
-	gdkMonitorGetConnector     func(uintptr) uintptr
-	gdkToplevelBeginMove       func(uintptr, uintptr, int32, float64, float64, uint32)
-	gdkToplevelLower           func(uintptr) int32
-	gdkToplevelShowWindowMenu  func(uintptr, uintptr) int32
-	gtkGestureGetDevice        func(uintptr) uintptr
+	gdkFrameClockGetFrameTime     func(clock uintptr) int64
+	gdkDisplayGetDefault          func() uintptr
+	gdkDisplayGetMonitors         func(uintptr) uintptr
+	gdkDisplayGetClipboard        func(uintptr) uintptr
+	gdkClipboardSetText           func(uintptr, *byte)
+	gdkClipboardSetContent        func(uintptr, uintptr) int32
+	gdkContentProviderNewForBytes func(*byte, uintptr) uintptr
+	gdkContentProviderNewUnion    func(*uintptr, uintptr) uintptr
+	gdkClipboardReadTextAsync     func(uintptr, uintptr, uintptr, uintptr)
+	gdkClipboardReadTextFinish    func(uintptr, uintptr, uintptr) uintptr
+	gdkSurfaceGetScale            func(uintptr) float64
+	gdkMonitorGetGeometry         func(uintptr, *gdkMonitorRectangle)
+	gdkMonitorGetScaleFactor      func(uintptr) int32
+	gdkMonitorGetConnector        func(uintptr) uintptr
+	gdkToplevelBeginMove          func(uintptr, uintptr, int32, float64, float64, uint32)
+	gdkToplevelLower              func(uintptr) int32
+	gdkToplevelShowWindowMenu     func(uintptr, uintptr) int32
+	gtkGestureGetDevice           func(uintptr) uintptr
 
 	gdkDisplayGetMonitorAtSurface func(uintptr, uintptr) uintptr
 	gdkMonitorGetRefreshRate      func(uintptr) int32
