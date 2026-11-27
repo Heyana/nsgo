@@ -4,7 +4,6 @@ package android
 
 import (
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -88,15 +87,41 @@ func (s *surface) pickedFolders(id uint64) bool {
 }
 
 // readFolders reads the folders an EventFiles answering a folder pick
-// carries, one per line: the name, the tree's URI and its root's ID.
+// carries, one per line: the name, the tree's URI, its root's ID and
+// optionally its persisted token.
 func (s *surface) readFolders(data string) []driver.Directory {
-	var dirs []driver.Directory
-	for line := range strings.SplitSeq(data, "\n") {
-		if f := strings.Split(line, "\t"); len(f) == 3 {
-			src := tree{bridge: s, uri: f[1]}
-			root := driver.FolderEntry{Handle: documentRef{id: f[2]}}
-			dirs = append(dirs, driver.Directory{Name: f[0], FS: driver.FolderFS(src, root)})
-		}
+	return parseFolders(s, data)
+}
+
+// openDirectory reopens a persisted SAF tree grant by token on a worker goroutine.
+func (s *surface) openDirectory(surfaceID, count uint32, token string) {
+	if !s.folderPersist.Load() {
+		s.dispatchTo(surfaceID, driver.Event{Kind: driver.EventFiles, Count: count, Text: driver.NoDirectoryPersistence})
+		return
 	}
-	return dirs
+	go func() {
+		dir, err := reopenFolder(s, token)
+		ev := driver.Event{Kind: driver.EventFiles, Count: count}
+		if err != nil {
+			ev.Text = err.Error()
+		} else {
+			ev.Data = dir
+		}
+		s.dispatchTo(surfaceID, ev)
+	}()
+}
+
+// releaseDirectory drops a persisted SAF tree grant by token on a worker goroutine.
+func (s *surface) releaseDirectory(surfaceID, count uint32, token string) {
+	if !s.folderPersist.Load() {
+		s.dispatchTo(surfaceID, driver.Event{Kind: driver.EventFiles, Count: count, Text: driver.NoDirectoryPersistence})
+		return
+	}
+	go func() {
+		ev := driver.Event{Kind: driver.EventFiles, Count: count}
+		if err := releaseFolder(s, token); err != nil {
+			ev.Text = err.Error()
+		}
+		s.dispatchTo(surfaceID, ev)
+	}()
 }

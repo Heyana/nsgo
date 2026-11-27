@@ -64,6 +64,8 @@ var gated = map[string]service{
 	"ScanCode":                      servicePicker,
 	"PickFiles":                     servicePicker,
 	"PickDirectories":               servicePicker,
+	"OpenDirectory":                 servicePicker,
+	"ReleaseDirectory":              servicePicker,
 	"PickScreenColor":               servicePicker,
 	"SaveFile":                      servicePicker,
 	"StartSpeech":                   serviceSpeech,

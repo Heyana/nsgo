@@ -1045,7 +1045,48 @@ func (a *App) apply(b *driver.MountBatch) {
 			if a.PickDirectories != nil {
 				dirs = a.PickDirectories(pick)
 			}
+			if pick.Persist {
+				for i := range dirs {
+					if dirs[i].Token == "" && dirs[i].Path != "" {
+						dirs[i].Token = dirs[i].Path
+					}
+					if dirs[i].Token != "" {
+						if a.PersistedDirectories == nil {
+							a.PersistedDirectories = map[string]driver.Directory{}
+						}
+						a.PersistedDirectories[dirs[i].Token] = dirs[i]
+					}
+				}
+			}
 			a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Data: dirs})
+		case driver.ItemOpenDirectory:
+			ev := driver.Event{Kind: driver.EventFiles, Count: it.Count}
+			if a.OpenDirectory != nil {
+				dir, err := a.OpenDirectory(it.Value)
+				if err != nil {
+					ev.Text = err.Error()
+				} else {
+					ev.Data = dir
+				}
+			} else if dir, ok := a.PersistedDirectories[it.Value]; ok {
+				if dir.Token == "" {
+					dir.Token = it.Value
+				}
+				ev.Data = dir
+			} else {
+				ev.Text = "directory grant is no longer held"
+			}
+			a.post(ev)
+		case driver.ItemReleaseDirectory:
+			a.ReleasedDirectories = append(a.ReleasedDirectories, it.Value)
+			delete(a.PersistedDirectories, it.Value)
+			ev := driver.Event{Kind: driver.EventFiles, Count: it.Count}
+			if a.ReleaseDirectory != nil {
+				if err := a.ReleaseDirectory(it.Value); err != nil {
+					ev.Text = err.Error()
+				}
+			}
+			a.post(ev)
 		case driver.ItemPickScreenColor:
 			ev := driver.Event{Kind: driver.EventFiles, Count: it.Count}
 			if a.PickScreenColor != nil {

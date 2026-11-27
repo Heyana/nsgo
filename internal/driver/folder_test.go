@@ -168,3 +168,78 @@ func TestFolderFSReaderAt(t *testing.T) {
 		t.Fatal("opened file without io.ReaderAt unexpectedly implements io.ReaderAt")
 	}
 }
+
+type mediaListing struct {
+	listing
+	uris map[string]string
+}
+
+func (m *mediaListing) MediaURI(_ string, e FolderEntry) (string, error) {
+	if u, ok := m.uris[e.Handle.(string)]; ok {
+		return u, nil
+	}
+	return "", ErrNoMediaURI
+}
+
+func TestDirectoryMediaURI(t *testing.T) {
+	// Disk-backed Directory returns a file:// URL for regular files and rejects dirs/missing/escapes.
+	dir := t.TempDir()
+	sub := path.Join(dir, "Album #1")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path.Join(sub, "01 Aria.flac"), []byte("flac"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	diskDir := Directory{Path: dir}
+	uri, err := diskDir.MediaURI("Album #1/01 Aria.flac")
+	if err != nil || uri != FilePathURL(path.Join(dir, "Album #1", "01 Aria.flac")) {
+		t.Fatalf("disk MediaURI = %q, %v", uri, err)
+	}
+	if _, err := diskDir.MediaURI("Album #1"); err == nil {
+		t.Error("MediaURI on directory succeeded")
+	}
+	if _, err := diskDir.MediaURI("missing.flac"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("MediaURI on missing file = %v, want ErrNotExist", err)
+	}
+	if _, err := diskDir.MediaURI("../escape.flac"); !errors.Is(err, fs.ErrInvalid) {
+		t.Errorf("MediaURI on invalid path = %v, want ErrInvalid", err)
+	}
+
+	// FolderFS with FolderMediaSource resolves URIs, listing uncached folders on demand.
+	src := &mediaListing{
+		listing: listing{dirs: map[string][]FolderEntry{
+			".": {{Name: "disc", Dir: true, Handle: "disc"}},
+			"disc": {
+				{Name: "song.flac", Size: 4, Handle: "doc-1"},
+			},
+		}},
+		uris: map[string]string{
+			"doc-1": "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fdisc%2Fsong.flac",
+		},
+	}
+	safDir := Directory{Name: "Music", FS: FolderFS(src, FolderEntry{Handle: "."})}
+	got, err := safDir.MediaURI("disc/song.flac")
+	if err != nil || got != src.uris["doc-1"] {
+		t.Fatalf("FolderFS MediaURI = %q, %v", got, err)
+	}
+	if _, err := safDir.MediaURI("disc"); err == nil {
+		t.Error("FolderFS MediaURI on directory succeeded")
+	}
+	if _, err := safDir.MediaURI("disc/nope.flac"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("FolderFS MediaURI on missing = %v, want ErrNotExist", err)
+	}
+
+	// FolderFS without FolderMediaSource and generic fs.FS report ErrNoMediaURI.
+	plainDir := Directory{FS: TreeFS([]TreeFile{{Path: "song.mp3", Size: 3, Open: openBytes("mp3")}})}
+	if _, err := plainDir.MediaURI("song.mp3"); !errors.Is(err, ErrNoMediaURI) {
+		t.Errorf("plain FolderFS MediaURI = %v, want ErrNoMediaURI", err)
+	}
+	mapDir := Directory{FS: fstest.MapFS{"song.mp3": {Data: []byte("mp3")}}}
+	if _, err := mapDir.MediaURI("song.mp3"); !errors.Is(err, ErrNoMediaURI) {
+		t.Errorf("MapFS MediaURI = %v, want ErrNoMediaURI", err)
+	}
+	if _, err := (Directory{}).MediaURI("song.mp3"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("empty Directory MediaURI = %v, want ErrNotExist", err)
+	}
+}

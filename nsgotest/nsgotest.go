@@ -335,6 +335,15 @@ type App struct {
 	// picks; with none the user cancels.
 	DirectoryPicks  []DirectoryPick
 	PickDirectories func(r DirectoryPick) []core.Directory
+	// PersistedDirectories holds persisted folders keyed by Directory.Token.
+	// PickDirectories with Persist stores returned directories that have a
+	// Token (or Path, using Path as Token), OpenDirectory looks them up when
+	// the OpenDirectory hook is nil, and ReleaseDirectory deletes them and
+	// records their tokens in ReleasedDirectories.
+	PersistedDirectories map[string]core.Directory
+	OpenDirectory        func(token string) (core.Directory, error)
+	ReleaseDirectory     func(token string) error
+	ReleasedDirectories  []string
 	// Saves are the saves the app asked for, oldest first. SaveFile
 	// answers each with the path the user saves to, where the file is
 	// written after any preflight check. An absent answer or "" cancels.

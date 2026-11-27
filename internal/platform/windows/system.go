@@ -547,11 +547,34 @@ func (w *window) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 		}
 		var dirs []driver.Directory
 		for _, p := range paths {
-			dirs = append(dirs, driver.Directory{Path: p})
+			d := driver.Directory{Path: p}
+			if r.Persist {
+				d.Token = p
+			}
+			dirs = append(dirs, d)
 		}
 		ev.Data = dirs
 		w.engine.Dispatch(ev)
 	})
+}
+
+// openDirectory reopens a persisted folder path on Windows.
+func (w *window) openDirectory(token string, id uint32) {
+	ev := driver.Event{Kind: driver.EventFiles, Count: id}
+	if !filepath.IsAbs(token) {
+		ev.Text = "windows: directory token is not an absolute path"
+		w.engine.Dispatch(ev)
+		return
+	}
+	info, err := os.Stat(token)
+	if err != nil {
+		ev.Text = err.Error()
+	} else if !info.IsDir() {
+		ev.Text = "windows: persisted path is not a directory"
+	} else {
+		ev.Data = driver.Directory{Name: filepath.Base(token), Path: token, Token: token}
+	}
+	w.engine.Dispatch(ev)
 }
 
 // saveFile queues a save: the save dialog suggests r's name, and the

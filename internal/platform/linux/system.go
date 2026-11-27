@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -429,11 +430,34 @@ func (w *window) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 		}
 		var dirs []driver.Directory
 		for _, p := range paths {
-			dirs = append(dirs, driver.Directory{Path: p})
+			d := driver.Directory{Path: p}
+			if r.Persist {
+				d.Token = p
+			}
+			dirs = append(dirs, d)
 		}
 		ev.Data = dirs
 		w.engine.Dispatch(ev)
 	})
+}
+
+// openDirectory reopens a persisted folder path on Linux.
+func (w *window) openDirectory(token string, id uint32) {
+	ev := driver.Event{Kind: driver.EventFiles, Count: id}
+	if !filepath.IsAbs(token) {
+		ev.Text = "linux: directory token is not an absolute path"
+		w.engine.Dispatch(ev)
+		return
+	}
+	info, err := os.Stat(token)
+	if err != nil {
+		ev.Text = err.Error()
+	} else if !info.IsDir() {
+		ev.Text = "linux: persisted path is not a directory"
+	} else {
+		ev.Data = driver.Directory{Name: filepath.Base(token), Path: token, Token: token}
+	}
+	w.engine.Dispatch(ev)
 }
 
 // configureFileDialog gives a GtkFileDialog the request's title, accept label and initial folder, leaving GTK's own where a hint is empty or the folder does not exist.

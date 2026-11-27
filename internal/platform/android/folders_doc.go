@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +19,8 @@ const (
 	folderOpen       = 2
 	folderReadHandle = 3
 	folderClose      = 4
+	folderReopen     = 5
+	folderRelease    = 6
 )
 
 // folderChunk is the most bytes one read asks for.
@@ -32,6 +36,65 @@ type folderBridge interface {
 type tree struct {
 	bridge folderBridge
 	uri    string
+	rootID string
+}
+
+var _ driver.FolderMediaSource = tree{}
+
+func (t tree) MediaURI(_ string, e driver.FolderEntry) (string, error) {
+	ref, ok := e.Handle.(documentRef)
+	if !ok || ref.id == "" {
+		return "", driver.ErrNoMediaURI
+	}
+	return androidDocumentURI(t.uri, t.rootID, ref.id)
+}
+
+// androidDocumentURI builds the exact SAF document URI that Android's
+// DocumentsContract.buildDocumentUriUsingTree(Uri.parse(treeURI), docID)
+// produces: content://<authority>/tree/<encodedRoot>/document/<encodedDocID>.
+// Preserves multi-user authorities such as 10@com.android.externalstorage.documents.
+func androidDocumentURI(treeURI, rootID, docID string) (string, error) {
+	u, err := url.Parse(treeURI)
+	if err != nil || u.Scheme != "content" || u.Host == "" {
+		return "", errors.New("android: invalid document tree URI")
+	}
+	authority := u.Host
+	if u.User != nil {
+		authority = u.User.String() + "@" + authority
+	}
+	var encodedRoot string
+	if rootID != "" {
+		encodedRoot = androidURIEncode(rootID)
+	} else {
+		p := strings.TrimPrefix(u.EscapedPath(), "/")
+		if rest, ok := strings.CutPrefix(p, "tree/"); ok {
+			encodedRoot, _, _ = strings.Cut(rest, "/")
+		}
+	}
+	if encodedRoot == "" || docID == "" {
+		return "", errors.New("android: document tree URI has no tree root")
+	}
+	return "content://" + authority + "/tree/" + encodedRoot + "/document/" + androidURIEncode(docID), nil
+}
+
+// androidURIEncode encodes s identically to Android's android.net.Uri.encode(s, null):
+// unencoded bytes are A-Z, a-z, 0-9 and _-!.~'()*, everything else is %XX (uppercase).
+func androidURIEncode(s string) string {
+	const hex = "0123456789ABCDEF"
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := range len(s) {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			strings.IndexByte("_-!.~'()*", c) >= 0 {
+			b.WriteByte(c)
+		} else {
+			b.WriteByte('%')
+			b.WriteByte(hex[c>>4])
+			b.WriteByte(hex[c&0x0f])
+		}
+	}
+	return b.String()
 }
 
 // documentRef is a document of a tree: its ID, and whether its provider said its size.
@@ -245,4 +308,52 @@ func (d *document) Close() error {
 		return err
 	}
 	return nil
+}
+
+// parseFolders decodes the tab-separated lines Java's Services.pickedTree writes:
+// name, tree URI, root document ID, and optionally the persisted grant token.
+func parseFolders(bridge folderBridge, data string) []driver.Directory {
+	var dirs []driver.Directory
+	for line := range strings.SplitSeq(data, "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) < 3 {
+			continue
+		}
+		var token string
+		if len(f) >= 4 {
+			token = f[3]
+		}
+		src := tree{bridge: bridge, uri: f[1], rootID: f[2]}
+		root := driver.FolderEntry{Handle: documentRef{id: f[2]}}
+		dirs = append(dirs, driver.Directory{Name: f[0], Token: token, FS: driver.FolderFS(src, root)})
+	}
+	return dirs
+}
+
+// reopenFolder asks Java's Services.reopenTree to verify and reopen a persisted
+// SAF tree grant, returning a live Directory backed by FolderFS.
+func reopenFolder(bridge folderBridge, token string) (driver.Directory, error) {
+	r, err := bridge.askFolder(folderReopen, func(w *writer) {
+		w.str(token)
+	})
+	if err != nil {
+		return driver.Directory{}, err
+	}
+	name := r.str()
+	treeURI := r.str()
+	rootID := r.str()
+	if treeURI == "" || rootID == "" {
+		return driver.Directory{}, errors.New("android: incomplete reopened directory reply")
+	}
+	src := tree{bridge: bridge, uri: treeURI, rootID: rootID}
+	root := driver.FolderEntry{Handle: documentRef{id: rootID}}
+	return driver.Directory{Name: name, Token: treeURI, FS: driver.FolderFS(src, root)}, nil
+}
+
+// releaseFolder asks Java's Services.releaseTree to drop a persisted SAF grant.
+func releaseFolder(bridge folderBridge, token string) error {
+	_, err := bridge.askFolder(folderRelease, func(w *writer) {
+		w.str(token)
+	})
+	return err
 }

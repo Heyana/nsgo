@@ -461,18 +461,29 @@ final class Services {
         final String from;
         /** Whether it picks a folder. */
         final boolean folder;
+        /** Whether a folder pick asks for a persistable read grant. */
+        final boolean persist;
         /** The proposed document name and MIME type for a preflight save. */
         final String saveName, saveMime;
 
         Documents(long count, int limit, String from, boolean folder) {
-            this(count, limit, from, folder, null, null);
+            this(count, limit, from, folder, false, null, null);
+        }
+
+        Documents(long count, int limit, String from, boolean folder, boolean persist) {
+            this(count, limit, from, folder, persist, null, null);
         }
 
         Documents(long count, int limit, String from, boolean folder, String saveName, String saveMime) {
+            this(count, limit, from, folder, false, saveName, saveMime);
+        }
+
+        Documents(long count, int limit, String from, boolean folder, boolean persist, String saveName, String saveMime) {
             this.count = count;
             this.limit = Math.max(limit, 1);
             this.from = from;
             this.folder = folder;
+            this.persist = persist;
             this.saveName = saveName;
             this.saveMime = saveMime;
         }
@@ -499,17 +510,113 @@ final class Services {
 
     /** Starts the documents UI to pick a folder, which grants its tree, not a path. */
     static boolean startFolder(Activity activity) {
-        return start(activity, new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), FOLDER_REQUEST);
+        return startFolder(activity, false);
+    }
+
+    /** Starts the documents UI to pick a folder, requesting a persistable read grant when persist is set. */
+    static boolean startFolder(Activity activity, boolean persist) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        if (persist) {
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        }
+        return start(activity, intent, FOLDER_REQUEST);
+    }
+
+    /**
+     * Takes a persistable read URI permission for a picked document tree and
+     * returns its serializable token (the tree URI), or "" if the provider did
+     * not grant a persistable permission.
+     */
+    static String persistTree(Context context, Uri tree, Intent data) {
+        int flags = (data != null ? data.getFlags() : 0) & Intent.FLAG_GRANT_READ_URI_PERMISSION;
+        if (flags == 0) flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+        try {
+            context.getContentResolver().takePersistableUriPermission(tree, flags);
+            return tree.toString();
+        } catch (SecurityException e) {
+            return "";
+        }
     }
 
     /**
      * The folder picked as Go's readFolders reads it: a line of its name,
-     * the tree's URI and its root document's ID.
+     * the tree's URI, its root document's ID and, when persisted, its token.
      */
     static String pickedTree(Context context, Uri tree) {
+        return pickedTree(context, tree, "");
+    }
+
+    static String pickedTree(Context context, Uri tree, String token) {
         String root = DocumentsContract.getTreeDocumentId(tree);
         String name = displayName(context.getContentResolver(), DocumentsContract.buildDocumentUriUsingTree(tree, root));
-        return name.replace('\t', ' ').replace('\n', ' ') + '\t' + tree + '\t' + root + '\n';
+        String line = name.replace('\t', ' ').replace('\n', ' ') + '\t' + tree + '\t' + root;
+        if (token != null && !token.isEmpty()) {
+            line += '\t' + token.replace('\t', ' ').replace('\n', ' ');
+        }
+        return line + '\n';
+    }
+
+    /**
+     * Verifies a persisted read grant for token and writes the folder's
+     * display name, tree URI and root document ID as Go's openDirectory reads
+     * them.
+     */
+    static void reopenTree(Context context, String token, DataOutputStream out) throws IOException {
+        Uri tree = parseTreeToken(token);
+        String root;
+        try {
+            root = DocumentsContract.getTreeDocumentId(tree);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("invalid directory token", e);
+        }
+        ContentResolver resolver = context.getContentResolver();
+        boolean held = false;
+        for (android.content.UriPermission perm : resolver.getPersistedUriPermissions()) {
+            if (tree.equals(perm.getUri()) && perm.isReadPermission()) {
+                held = true;
+                break;
+            }
+        }
+        if (!held) {
+            throw new IOException("directory grant is no longer held");
+        }
+        Uri doc = DocumentsContract.buildDocumentUriUsingTree(tree, root);
+        String name;
+        try (Cursor c = resolver.query(doc, new String[] {DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+            if (c == null || !c.moveToFirst()) {
+                throw new IOException("directory is no longer accessible");
+            }
+            name = c.isNull(0) ? null : c.getString(0);
+        } catch (RuntimeException e) {
+            throw new IOException(e.getMessage(), e);
+        }
+        if (name == null) name = doc.getLastPathSegment();
+        if (name != null) name = name.replace('/', '_').replace('\0', '_').trim();
+        if (name == null || name.isEmpty() || name.equals(".") || name.equals("..")) name = "file";
+        Protocol.writeString(out, name);
+        Protocol.writeString(out, tree.toString());
+        Protocol.writeString(out, root);
+    }
+
+    /** Releases a persisted read grant for token, ignoring already-released or absent grants. */
+    static void releaseTree(Context context, String token) throws IOException {
+        Uri tree = parseTreeToken(token);
+        try {
+            context.getContentResolver().releasePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+            // Already released or never persisted.
+        }
+    }
+
+    private static Uri parseTreeToken(String token) throws IOException {
+        if (token == null || token.isEmpty()) {
+            throw new IOException("directory token is empty");
+        }
+        Uri uri = Uri.parse(token);
+        if (!"content".equals(uri.getScheme()) || uri.getAuthority() == null) {
+            throw new IOException("directory token is not a content URI");
+        }
+        return uri;
     }
 
     /**

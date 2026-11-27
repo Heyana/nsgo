@@ -297,6 +297,8 @@ type documentRequest struct {
 	limit int
 	// folders says the pick is of folders.
 	folders bool
+	// persist says a folder pick creates a security-scoped bookmark token.
+	persist bool
 	// staged is the directory of the file a save exports, removed once
 	// the picker closed; "" for a pick.
 	staged string
@@ -322,7 +324,7 @@ func (s *surface) presentDocuments(picker objc.ID, req documentRequest) {
 				os.RemoveAll(req.staged)
 				ev.Finished = urls != 0 && objc.Send[int](urls, sel("count")) > 0
 			} else if urls != 0 && req.folders {
-				ev.Data = pickedFolders(urls, req.limit)
+				ev.Data = pickedFolders(urls, req.limit, req.persist)
 			} else if urls != 0 {
 				var files []driver.File
 				apple.ForEach(urls, func(u objc.ID) {
@@ -370,7 +372,7 @@ func (s *surface) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 		Send(sel("initForOpeningContentTypes:asCopy:"), types, false)
 	picker.Send(sel("setAllowsMultipleSelection:"), r.Limit > 1)
 	setDocumentStart(picker, r.Start)
-	s.presentDocuments(picker, documentRequest{id: id, limit: r.Limit, folders: true})
+	s.presentDocuments(picker, documentRequest{id: id, limit: r.Limit, folders: true, persist: r.Persist})
 }
 
 // setDocumentStart opens a document picker in start when it is a folder on disk, leaving UIKit's own folder otherwise.
@@ -389,16 +391,44 @@ func setDocumentStart(picker objc.ID, start string) {
 
 // pickedFolders are the folders a document picker opened, at most limit.
 // Each stays in its security scope while the app runs, so the app reads
-// it by its path, as on the desktops.
-func pickedFolders(urls objc.ID, limit int) []driver.Directory {
+// it by its path, as on the desktops. When persist is true, each folder
+// also carries a security-scoped bookmark token for OpenDirectory and is
+// tracked so ReleaseDirectory can end its security scope.
+func pickedFolders(urls objc.ID, limit int, persist bool) []driver.Directory {
 	var dirs []driver.Directory
 	apple.ForEach(urls, func(u objc.ID) {
 		if len(dirs) < max(limit, 1) {
-			u.Send(sel("startAccessingSecurityScopedResource"))
-			dirs = append(dirs, driver.Directory{Name: apple.GoString(u.Send(sel("lastPathComponent"))), Path: apple.GoString(u.Send(sel("path")))})
+			scoped := objc.Send[bool](u, sel("startAccessingSecurityScopedResource"))
+			d := driver.Directory{Name: apple.GoString(u.Send(sel("lastPathComponent"))), Path: apple.GoString(u.Send(sel("path")))}
+			if persist {
+				if token, ok := apple.CreateDirectoryBookmark(u, false); ok {
+					d.Token = token
+					apple.TrackScopedDirectory(token, u, scoped)
+				}
+			}
+			dirs = append(dirs, d)
 		}
 	})
 	return dirs
+}
+
+// openDirectory resolves an iOS security-scoped bookmark token, activates its
+// security scope and dispatches the reopened Directory.
+func (s *surface) openDirectory(token string, id uint32) {
+	dir, err := apple.OpenDirectoryBookmark(token, false)
+	ev := driver.Event{Kind: driver.EventFiles, Count: id}
+	if err != nil {
+		ev.Text = err.Error()
+	} else {
+		ev.Data = dir
+	}
+	s.engine.Dispatch(ev)
+}
+
+// releaseDirectory stops accessing a security-scoped iOS directory bookmark.
+func (s *surface) releaseDirectory(token string, id uint32) {
+	apple.ReleaseDirectoryBookmark(token)
+	s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id})
 }
 
 // saveFile presents UIDocumentPickerViewController exporting a copy of

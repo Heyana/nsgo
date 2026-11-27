@@ -469,6 +469,8 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 			limit = it.Directories.Limit
 		}
 		m.s.bridge.Call("pickdirectories", int(it.Count), limit)
+	case driver.ItemOpenDirectory, driver.ItemReleaseDirectory:
+		m.s.dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDirectoryPersistence})
 	case driver.ItemSaveFile:
 		m.saveFile(it.Save, it.Count)
 	case driver.ItemVideo:

@@ -320,11 +320,36 @@ func (s *surface) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 		var dirs []driver.Directory
 		if response == 1 { // NSModalResponseOK
 			apple.ForEach(panel.Send(sel("URLs")), func(u objc.ID) {
-				dirs = append(dirs, driver.Directory{Path: apple.GoString(u.Send(sel("path")))})
+				d := driver.Directory{Path: apple.GoString(u.Send(sel("path")))}
+				if r.Persist {
+					if token, ok := apple.CreateDirectoryBookmark(u, true); ok {
+						d.Token = token
+					}
+				}
+				dirs = append(dirs, d)
 			})
 		}
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id, Data: dirs})
 	})
+}
+
+// openDirectory resolves a macOS directory bookmark token, starting its
+// security scope when sandboxed, and dispatches the reopened Directory.
+func (s *surface) openDirectory(token string, id uint32) {
+	dir, err := apple.OpenDirectoryBookmark(token, true)
+	ev := driver.Event{Kind: driver.EventFiles, Count: id}
+	if err != nil {
+		ev.Text = err.Error()
+	} else {
+		ev.Data = dir
+	}
+	s.engine.Dispatch(ev)
+}
+
+// releaseDirectory stops accessing a security-scoped macOS bookmark if held.
+func (s *surface) releaseDirectory(token string, id uint32) {
+	apple.ReleaseDirectoryBookmark(token)
+	s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id})
 }
 
 // configureFilePanel gives an open or save panel its message, prompt and starting folder, with AppKit's defaults for absent or unusable hints.

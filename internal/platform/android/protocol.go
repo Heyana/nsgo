@@ -594,6 +594,12 @@ const capCapture = 8
 // capFolderHandles is the fourth capability byte's bit for a runtime that keeps opened document descriptors across folder reads (Protocol.CAP_FOLDER_HANDLES): an older runtime treats every folder op other than folderList as a stateless folderRead, so Go opens handles only when this bit is set.
 const capFolderHandles = 16
 
+// capFolderPersist is the fourth capability byte's bit for a runtime that supports persistent directory grants: pickDirPersist on ItemPickDirectories and folderReopen / folderRelease on msgFolder (Protocol.CAP_FOLDER_PERSIST).
+const capFolderPersist = 32
+
+// pickDirPersist is bit 31 of ItemPickDirectories's limit word requesting a persistable SAF read grant (Protocol.PICK_DIR_PERSIST); older runtimes ignore the limit word.
+const pickDirPersist = 1 << 31
+
 // readEnvironmentCapabilities reads the environment as readEnvironment does, with the third and fourth capability bytes, which say what the runtime itself can do (cap* bits) rather than the device, so they stay out of driver.Environment.
 func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	env := driver.Environment{

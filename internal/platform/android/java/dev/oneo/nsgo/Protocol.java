@@ -241,6 +241,8 @@ final class Protocol {
     static final int CAP_CAPTURE = 8;
     /** The fourth capability byte's bit for a runtime that keeps opened document descriptors across FOLDER_OPEN, FOLDER_READ_HANDLE and FOLDER_CLOSE (capFolderHandles in protocol.go); Go opens handles only on a runtime that sets it. */
     static final int CAP_FOLDER_HANDLES = 16;
+    /** The fourth capability byte's bit for a runtime that supports persistent directory grants: PICK_DIR_PERSIST on ITEM_PICK_DIRECTORIES and FOLDER_REOPEN / FOLDER_RELEASE on FOLDER (capFolderPersist in protocol.go). */
+    static final int CAP_FOLDER_PERSIST = 32;
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
     /** Answers a PHYSICAL_KEY down that asked: surface, request and whether the focused view consumed it (HardwareKeys). */
@@ -412,6 +414,10 @@ final class Protocol {
     static final int FOLDER_OPEN = 2;
     static final int FOLDER_READ_HANDLE = 3;
     static final int FOLDER_CLOSE = 4;
+    static final int FOLDER_REOPEN = 5;
+    static final int FOLDER_RELEASE = 6;
+    /** Flag bit on ITEM_PICK_DIRECTORIES's limit word requesting a persistable read grant. */
+    static final int PICK_DIR_PERSIST = 1 << 31;
 
     // What a FETCH message asks and the parts of a FETCHED, as fetch.go
     // has them.

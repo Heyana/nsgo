@@ -1250,8 +1250,68 @@ func TestPicksRecordTheirHints(t *testing.T) {
 	if f := app.FilePicks[0]; f.Title != "选择视频" || f.Button != "打开" || f.TypesName != "视频" || f.Start != "/videos" || !slices.Equal(f.Types, []string{".mp4"}) {
 		t.Errorf("file pick %+v lost its hints", f)
 	}
-	if d := app.DirectoryPicks[0]; d.Title != "导入资料库" || d.Button != "导入" || d.Start != "/library" || d.Limit != 1 {
+	if d := app.DirectoryPicks[0]; d.Title != "导入资料库" || d.Button != "导入" || d.Start != "/library" || d.Limit != 1 || d.Persist {
 		t.Errorf("folder pick %+v lost its hints", d)
+	}
+}
+
+func TestPersistentDirectoryLifecycle(t *testing.T) {
+	if Target() != "" {
+		t.Skip("checks the headless model")
+	}
+	musicDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(musicDir, "song.flac"), []byte("fLaC"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var token, mediaURI string
+	var openErr, relErr error
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{
+			Style: core.Style{Height: core.Pt(60)},
+			Children: []core.Node{
+				core.View{TestID: "pick", Style: core.Style{Height: core.Pt(20)}, OnPress: func(core.PressEvent) {
+					cx.PickDirectories(core.PickDirectoriesOptions{Persist: true}, func(dirs []core.Directory, err error) {
+						if err == nil && len(dirs) == 1 {
+							token = dirs[0].Token
+						}
+					})
+				}},
+				core.View{TestID: "open", Style: core.Style{Height: core.Pt(20)}, OnPress: func(core.PressEvent) {
+					cx.OpenDirectory(token, func(dir core.Directory, err error) {
+						openErr = err
+						if err == nil {
+							mediaURI, openErr = dir.MediaURI("song.flac")
+						}
+					})
+				}},
+				core.View{TestID: "release", Style: core.Style{Height: core.Pt(20)}, OnPress: func(core.PressEvent) {
+					cx.ReleaseDirectory(token, func(err error) { relErr = err })
+				}},
+			},
+		}
+	})
+	app.PickDirectories = func(r DirectoryPick) []core.Directory {
+		if !r.Persist {
+			t.Errorf("DirectoryPick.Persist = false, want true")
+		}
+		return []core.Directory{{Name: "Music", Path: musicDir}}
+	}
+	app.Press("id:pick")
+	if len(app.DirectoryPicks) != 1 || !app.DirectoryPicks[0].Persist || token == "" {
+		t.Fatalf("after pick: picks=%+v token=%q", app.DirectoryPicks, token)
+	}
+	app.Press("id:open")
+	if openErr != nil || !strings.HasPrefix(mediaURI, "file://") || !strings.HasSuffix(mediaURI, "song.flac") {
+		t.Fatalf("after open: uri=%q err=%v", mediaURI, openErr)
+	}
+	app.Press("id:release")
+	if relErr != nil || !slices.Equal(app.ReleasedDirectories, []string{token}) {
+		t.Fatalf("after release: err=%v released=%v", relErr, app.ReleasedDirectories)
+	}
+	// Reopening after release fails because the grant was removed.
+	app.Press("id:open")
+	if openErr == nil {
+		t.Fatal("OpenDirectory succeeded after ReleaseDirectory")
 	}
 }
 

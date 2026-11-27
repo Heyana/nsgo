@@ -1256,6 +1256,12 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemPickDirectories:
 			w.pickDirectories(*it.Directories, it.Count)
 			continue
+		case driver.ItemOpenDirectory:
+			w.openDirectory(it.Value, it.Count)
+			continue
+		case driver.ItemReleaseDirectory:
+			w.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count})
+			continue
 		case driver.ItemPickScreenColor:
 			w.pickScreenColor(it.Count)
 			continue

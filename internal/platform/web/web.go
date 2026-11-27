@@ -1589,6 +1589,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemPickDirectories:
 			s.pickDirectories(it.Count)
 			continue
+		case driver.ItemOpenDirectory, driver.ItemReleaseDirectory:
+			s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDirectoryPersistence})
+			continue
 		case driver.ItemPickScreenColor:
 			s.pickScreenColor(it.Count)
 			continue

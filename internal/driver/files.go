@@ -2,6 +2,7 @@ package driver
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"io/fs"
 	"mime"
@@ -80,6 +81,9 @@ type DirectoriesRequest struct {
 	Button string
 	// Start is the folder the dialog opens in when it exists.
 	Start string
+	// Persist asks the platform to persist read access across app restarts
+	// where supported, populating Directory.Token.
+	Persist bool
 }
 
 // Directory is a folder the user picked, which reads what it holds as
@@ -92,7 +96,19 @@ type Directory struct {
 	Path string
 	// FS reads a folder that has no Path.
 	FS fs.FS
+	// Token is an opaque, serializable handle for reopening this folder
+	// across app restarts with core.Scope.OpenDirectory and releasing the
+	// grant with core.Scope.ReleaseDirectory. It is populated when
+	// PickDirectories runs with Persist set on a platform that supports
+	// persistent directory grants, and by OpenDirectory; it is empty
+	// otherwise.
+	Token string
 }
+
+// ErrNoMediaURI is returned by Directory.MediaURI when the directory cannot
+// expose a direct read-only playback URI for core.Video (for example on the
+// web or for an in-memory test FS).
+var ErrNoMediaURI = errors.New("core: directory has no direct media URI")
 
 // Open opens the file or folder at name inside d.
 func (d Directory) Open(name string) (fs.File, error) { return d.fsys().Open(name) }
@@ -102,6 +118,48 @@ func (d Directory) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadD
 
 // Stat describes the file or folder at name inside d.
 func (d Directory) Stat(name string) (fs.FileInfo, error) { return fs.Stat(d.fsys(), name) }
+
+// MediaURI returns a read-only URI for the file at name inside d that
+// core.Video can stream directly without copying it: a content:// document
+// URI on Android, or a file:// URL on macOS, iOS, Windows and Linux.
+// Returns ErrNoMediaURI when d cannot expose a direct playback URI.
+//
+// Like Open and Stat, name is slash-separated inside d. For pathless
+// directories, call MediaURI off the engine's goroutine since resolving an
+// uncached path may list folders through the platform.
+func (d Directory) MediaURI(name string) (string, error) {
+	if !fs.ValidPath(name) {
+		return "", &fs.PathError{Op: "mediauri", Path: name, Err: fs.ErrInvalid}
+	}
+	if d.FS != nil {
+		if ms, ok := d.FS.(interface{ MediaURI(string) (string, error) }); ok {
+			return ms.MediaURI(name)
+		}
+		info, err := fs.Stat(d.FS, name)
+		if err != nil {
+			return "", err
+		}
+		if info.IsDir() {
+			return "", &fs.PathError{Op: "mediauri", Path: name, Err: errors.New("is a directory")}
+		}
+		return "", &fs.PathError{Op: "mediauri", Path: name, Err: ErrNoMediaURI}
+	}
+	if d.Path != "" {
+		info, err := fs.Stat(os.DirFS(d.Path), name)
+		if err != nil {
+			return "", err
+		}
+		if info.IsDir() {
+			return "", &fs.PathError{Op: "mediauri", Path: name, Err: errors.New("is a directory")}
+		}
+		abs, err := filepath.Abs(filepath.Join(d.Path, filepath.FromSlash(name)))
+		if err != nil {
+			return "", &fs.PathError{Op: "mediauri", Path: name, Err: err}
+		}
+		return FilePathURL(abs), nil
+	}
+	return "", &fs.PathError{Op: "mediauri", Path: name, Err: fs.ErrNotExist}
+}
 
 func (d Directory) fsys() fs.FS {
 	switch {
@@ -123,6 +181,10 @@ func (noFS) Open(name string) (fs.File, error) {
 // NoDirectoryPicker is what a platform without a folder picker answers
 // ItemPickDirectories with.
 const NoDirectoryPicker = "this platform has no folder picker"
+
+// NoDirectoryPersistence is what a platform without persistent folder grants
+// answers ItemOpenDirectory and ItemReleaseDirectory with.
+const NoDirectoryPersistence = "this platform does not persist directory access"
 
 // SaveRequest is a save as the platform carries it out: the file the
 // dialog suggests and what goes in it, the file at Path or else Data.
@@ -304,6 +366,14 @@ func FinishFiles(r FilesRequest, files []File) []File {
 	return files
 }
 
+// FinishDirectory fills a reopened Directory's Name from Path when empty.
+func FinishDirectory(d Directory) Directory {
+	if d.Name == "" && d.Path != "" {
+		d.Name = filepath.Base(d.Path)
+	}
+	return d
+}
+
 // FinishDirectories returns dirs as the app gets them: at most r.Limit,
 // each with a name.
 func FinishDirectories(r DirectoriesRequest, dirs []Directory) []Directory {
@@ -311,9 +381,7 @@ func FinishDirectories(r DirectoriesRequest, dirs []Directory) []Directory {
 		dirs = dirs[:n]
 	}
 	for i := range dirs {
-		if d := &dirs[i]; d.Name == "" && d.Path != "" {
-			d.Name = filepath.Base(d.Path)
-		}
+		dirs[i] = FinishDirectory(dirs[i])
 	}
 	return dirs
 }

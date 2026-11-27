@@ -563,6 +563,10 @@ func (cx *Scope) PickScreenColor(done func(c Color, ok bool)) {
 	})
 }
 
+// ErrNoMediaURI is returned by Directory.MediaURI when a directory cannot
+// expose a direct read-only playback URI for core.Video (such as on the web).
+var ErrNoMediaURI = driver.ErrNoMediaURI
+
 // PickDirectoriesOptions say how PickDirectories picks folders.
 type PickDirectoriesOptions struct {
 	// Multiple lets the user pick several folders, at most Limit (0: up
@@ -573,6 +577,12 @@ type PickDirectoriesOptions struct {
 	Title  string
 	Button string
 	Start  string
+	// Persist asks the platform to persist read access to the picked folder
+	// across app restarts where supported, populating Directory.Token.
+	// Reopen a saved token with Scope.OpenDirectory and release it with
+	// Scope.ReleaseDirectory. Platforms without persistent grants ignore
+	// Persist and leave Directory.Token empty.
+	Persist bool
 }
 
 // PickDirectories shows the system's folder picker and calls done with
@@ -583,14 +593,17 @@ type PickDirectoriesOptions struct {
 // UIDocumentPickerViewController on iOS give its path; Android's document
 // tree picker and the web's folder picker give none, so the Directory
 // reads through the platform and the app reads it off the engine's
-// goroutine. Android and the web pick one folder. The pickers need no
-// permission.
+// goroutine. Android and the web pick one folder. Set Persist to keep
+// access across restarts through Directory.Token, Scope.OpenDirectory and
+// Scope.ReleaseDirectory. Directory.MediaURI returns a read-only URI for a
+// file inside the folder that core.Video can stream in place. The pickers
+// need no permission.
 func (cx *Scope) PickDirectories(o PickDirectoriesOptions, done func(dirs []Directory, err error)) {
 	t := cx.tree()
 	if t == nil || cx.denied(servicePicker, "") {
 		return
 	}
-	r := driver.DirectoriesRequest{Limit: pickLimit(o.Multiple, o.Limit), Title: o.Title, Button: o.Button, Start: o.Start}
+	r := driver.DirectoriesRequest{Limit: pickLimit(o.Multiple, o.Limit), Title: o.Title, Button: o.Button, Start: o.Start, Persist: o.Persist}
 	t.request(cx, driver.MountItem{Kind: driver.ItemPickDirectories, Directories: &r}, func(ev driver.Event) {
 		if done == nil {
 			return
@@ -601,6 +614,77 @@ func (cx *Scope) PickDirectories(o PickDirectoriesOptions, done func(dirs []Dire
 		}
 		dirs, _ := ev.Data.([]driver.Directory)
 		done(driver.FinishDirectories(r, dirs), nil)
+	})
+}
+
+// OpenDirectory reopens a folder previously picked with
+// PickDirectoriesOptions.Persist using its saved Directory.Token and calls
+// done with the reopened Directory, or an error if the grant was revoked,
+// the folder is missing or the platform does not support persistent
+// directory grants. The reopened Directory may carry a refreshed Token
+// (for example when an Apple bookmark was stale); apps should save the new
+// Token when it differs from token.
+func (cx *Scope) OpenDirectory(token string, done func(dir Directory, err error)) {
+	t := cx.tree()
+	if t == nil || cx.denied(servicePicker, "") {
+		return
+	}
+	if token == "" {
+		if done != nil {
+			done(Directory{}, errors.New("core: a directory token is required"))
+		}
+		return
+	}
+	t.request(cx, driver.MountItem{Kind: driver.ItemOpenDirectory, Value: token}, func(ev driver.Event) {
+		if done == nil {
+			return
+		}
+		if ev.Text == driver.NoDirectoryPersistence {
+			done(Directory{}, Unavailable(ev.Text))
+			return
+		}
+		if ev.Text != "" {
+			done(Directory{}, errors.New(ev.Text))
+			return
+		}
+		dir, ok := ev.Data.(driver.Directory)
+		if !ok {
+			done(Directory{}, errors.New("core: directory could not be opened"))
+			return
+		}
+		done(driver.FinishDirectory(dir), nil)
+	})
+}
+
+// ReleaseDirectory drops a persisted directory grant previously obtained
+// from PickDirectoriesOptions.Persist and calls done with any error (nil
+// when released or already absent). Call it when the user removes a folder
+// from the app so the platform's persisted grant table and security scopes
+// stay clean.
+func (cx *Scope) ReleaseDirectory(token string, done func(err error)) {
+	t := cx.tree()
+	if t == nil || cx.denied(servicePicker, "") {
+		return
+	}
+	if token == "" {
+		if done != nil {
+			done(nil)
+		}
+		return
+	}
+	t.request(cx, driver.MountItem{Kind: driver.ItemReleaseDirectory, Value: token}, func(ev driver.Event) {
+		if done == nil {
+			return
+		}
+		if ev.Text == driver.NoDirectoryPersistence {
+			done(Unavailable(ev.Text))
+			return
+		}
+		if ev.Text != "" {
+			done(errors.New(ev.Text))
+			return
+		}
+		done(nil)
 	})
 }
 

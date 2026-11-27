@@ -137,6 +137,8 @@ var itemKindNames = map[ItemKind]string{
 	ItemSetClipboardItems:       "ItemSetClipboardItems",
 	ItemNowPlaying:              "ItemNowPlaying",
 	ItemCapture:                 "ItemCapture",
+	ItemOpenDirectory:           "ItemOpenDirectory",
+	ItemReleaseDirectory:        "ItemReleaseDirectory",
 }
 
 // String returns the kind's name, as a log or an event prints it.

@@ -180,7 +180,9 @@ const (
 	EventWheel
 	// EventFiles answers ItemPickFiles Count with the files picked (Data,
 	// a []File), ItemPickDirectories Count with the folders picked (a
-	// []Directory), none when the user cancelled, ItemSaveFile Count
+	// []Directory), none when the user cancelled, ItemOpenDirectory Count
+	// with the reopened folder (a Directory), ItemReleaseDirectory Count
+	// with Text empty on success, ItemSaveFile Count
 	// with whether the file was saved (Finished) and, on desktops, the
 	// path it was saved at (a string), ItemOpenFile Count with
 	// whether an app opened the file, ItemShare Count with whether the

@@ -420,6 +420,14 @@ const (
 	ItemNowPlaying
 	// ItemCapture requests a PNG of ID, or of the surface for zero. EventFiles answers Count with the bytes.
 	ItemCapture
+	// ItemOpenDirectory reopens a persisted directory grant named by Value
+	// (Directory.Token). EventFiles answers Count with Data (a Directory)
+	// or Text explaining why reopening failed.
+	ItemOpenDirectory
+	// ItemReleaseDirectory releases a persisted directory grant named by
+	// Value (Directory.Token). EventFiles answers Count with Text empty on
+	// success or the reason for failure.
+	ItemReleaseDirectory
 )
 
 // EditAction is an editing action of an input's touch edit menu (ItemEditMenu, EventEditAction).

@@ -81,6 +81,8 @@ func (s *surface) service(it *driver.MountItem) {
 		s.pickFiles(*it.Files, it.Count)
 	case driver.ItemPickDirectories:
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDirectoryPicker})
+	case driver.ItemOpenDirectory, driver.ItemReleaseDirectory:
+		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDirectoryPersistence})
 	case driver.ItemOpenFile:
 		s.openFile(it.Open, it.Count)
 	case driver.ItemRevealFile, driver.ItemTrashFile:

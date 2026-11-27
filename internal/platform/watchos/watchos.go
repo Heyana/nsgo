@@ -545,6 +545,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemCapture:
 			s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoCapture})
 			continue
+		case driver.ItemOpenDirectory, driver.ItemReleaseDirectory:
+			s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDirectoryPersistence})
+			continue
 		case driver.ItemReadClipboard, driver.ItemPickImages, driver.ItemTakePhoto, driver.ItemPickFiles,
 			driver.ItemPickDirectories, driver.ItemOpenFile, driver.ItemRevealFile, driver.ItemTrashFile, driver.ItemShare, driver.ItemSaveFile:
 			s.unsupported(it)

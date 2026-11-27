@@ -120,12 +120,15 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 `cx.PickFiles` 选择任意类型的文件，`cx.PickDirectories` 把文件夹选成 `fs.FS`，`cx.SaveFile` 通过系统保存对话框保存文件或字节。两种选择器都可以设置 `Title`（标题）、`Button`（按钮文字）和 `Start`（起始文件夹），`PickFilesOptions.TypesName` 还能命名类型菜单，便于用应用自己的语言显示；这些只是提示，macOS、Windows 和 Linux 会遵循，iOS 只支持 `Start`，Android 和 Web 都会忽略。`cx.PickScreenColor` 在 `cx.Env().CanPickScreenColor()` 为真时从屏幕任意位置取色：macOS、Windows、提供桌面 Screenshot portal 的 Linux，以及支持 `EyeDropper` 的浏览器。
 
+设置 `core.PickDirectoriesOptions.Persist` 可在支持持久化目录授权的平台上跨应用重启保留只读访问：返回的每个 `core.Directory` 会携带可序列化的不透明令牌 `Token`（Android 上为持久化 SAF 目录树权限，iOS 和 macOS 上为安全作用域书签，Windows 和 Linux 上为文件夹路径）。将该令牌保存（如存入 `cx.Storage()`），下次启动时用 `cx.OpenDirectory(token, done)` 重新打开目录——如果平台刷新了过期的书签，应保存返回的新 `dir.Token`——用户移除目录时调用 `cx.ReleaseDirectory(token, done)` 释放持久化授权与安全作用域。不支持持久化授权的平台（如 Web）会将 `Token` 留空，并对 `OpenDirectory` 和 `ReleaseDirectory` 返回 `core.CodeUnavailable`。
+
+调用 `dir.MediaURI(name)` 可获取 `core.Directory` 中某个文件的只读 URI，供 `core.Video` 就地流式播放而无需复制到应用存储：Android 上返回 `content://` 文档 URI，macOS、iOS、Windows 和 Linux 上返回 `file://` URL；无法提供直接播放 URI 的目录（如 Web）返回 `core.ErrNoMediaURI`。对无路径目录（Android），应与 `Open`、`ReadDir` 一样在引擎 goroutine 之外调用 `MediaURI`。
 
 在 macOS、Windows、Linux 和 iOS 上，将 `core.SaveOptions.Start` 设为现有文件夹的绝对路径，保存对话框就会从该文件夹打开。路径为空、不可用或在其他平台上时，由系统选择起始文件夹。
 
 设置 `core.SaveOptions.Accept` 可以在写入前校验用户选定的目标。回调在引擎的 goroutine 上运行。返回错误时，所选目标保持原样。macOS、Windows 和 Linux 上进程内的 GTK 对话框会显示拒绝原因，并允许用户选择其他路径。如果用户在拒绝后取消，保存回调会收到 `saved == false`、被拒绝的路径和原始错误。在 Android 和 Linux 桌面门户中，拒绝时保存回调直接收到上述结果。Android 让用户选择文件夹，传给校验回调的是树 URI，其中 `name` 查询参数为应用请求的文件名。校验通过后才创建文件，成功时返回新文档的 URI。校验超过五秒未答复，平台会放弃写入。iOS 和 HarmonyOS 对要求校验的保存返回错误。Web 没有目标路径，沿用其常规保存流程。
 
-在无头测试中，`App.PickFiles`、`App.PickDirectories` 和 `App.SaveFile` 分别接收 `nsgotest.FilePick`、`nsgotest.DirectoryPick` 和 `nsgotest.FileSave` 记录。`app.FilePicks`、`app.DirectoryPicks` 和 `app.Saves` 保存这些记录。
+在无头测试中，`App.PickFiles`、`App.PickDirectories` 和 `App.SaveFile` 分别接收 `nsgotest.FilePick`、`nsgotest.DirectoryPick` 和 `nsgotest.FileSave` 记录。`app.FilePicks`、`app.DirectoryPicks` 和 `app.Saves` 保存这些记录。持久化选择会自动保存在 `app.PersistedDirectories` 中，由 `app.OpenDirectory` 处理打开，由 `app.ReleaseDirectory` 清理并在 `app.ReleasedDirectories` 中记录已释放的令牌。
 
 ## 拉取式 PCM 音频
 

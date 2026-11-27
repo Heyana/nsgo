@@ -232,6 +232,8 @@ type surface struct {
 	videoPiP atomic.Bool
 	// folderHandles is set once the runtime's environment says it keeps opened document descriptors across folder reads (capFolderHandles).
 	folderHandles atomic.Bool
+	// folderPersist is set once the runtime's environment says it supports persistent directory grants (capFolderPersist).
+	folderPersist atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -545,6 +547,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.captures.Store(fourth&capCapture != 0)
 			s.videoPiP.Store(fourth&capVideoPiP != 0)
 			s.folderHandles.Store(fourth&capFolderHandles != 0)
+			s.folderPersist.Store(fourth&capFolderPersist != 0)
 			// The bulk hello waits for the first environment, which says whether the runtime reads extended messages: one that does not keeps both sides on complete messages (errNoExtendedMessages).
 			if s.extendedMessages.Load() && s.bulkHello.CompareAndSwap(false, true) {
 				_ = s.sendExtended(extBulk, func(*writer) {})
@@ -1181,6 +1184,7 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through, and keeps no local network from an app at the runtime's target SDK, so Go answers that permission. A test's observer may hold the batch, so filter these items from a copy.
 	outsideBatch := func(it driver.MountItem) bool {
 		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile ||
+			it.Kind == driver.ItemOpenDirectory || it.Kind == driver.ItemReleaseDirectory ||
 			it.Kind == driver.ItemDiskSpace || it.Kind == driver.ItemDiscovery ||
 			it.Kind == driver.ItemPermission && it.Permission.Name == driver.PermissionLocalNetwork
 	}
@@ -1189,6 +1193,10 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 			switch it.Kind {
 			case driver.ItemRevealFile, driver.ItemTrashFile:
 				s.dispatchTo(v.id, driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoFileRevealer})
+			case driver.ItemOpenDirectory:
+				s.openDirectory(v.id, it.Count, it.Value)
+			case driver.ItemReleaseDirectory:
+				s.releaseDirectory(v.id, it.Count, it.Value)
 			case driver.ItemDiskSpace:
 				s.diskSpace(v.id, it.Count, it.Value)
 			case driver.ItemDiscovery:
@@ -1910,7 +1918,11 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			}
 		case driver.ItemPickDirectories:
 			w.u32(it.Count)
-			w.u32(uint32(it.Directories.Limit))
+			flags := uint32(it.Directories.Limit)
+			if it.Directories.Persist {
+				flags |= pickDirPersist
+			}
+			w.u32(flags)
 		case driver.ItemSaveFile:
 			// The file Java copies to where the user chose, "" for a save
 			// that failed already, then the name and type suggested.

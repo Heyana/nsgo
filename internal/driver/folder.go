@@ -37,6 +37,13 @@ type FolderSource interface {
 	Open(name string, e FolderEntry) (io.ReadSeekCloser, error)
 }
 
+// FolderMediaSource is implemented by a FolderSource whose files have
+// read-only playback URIs (such as Android SAF content:// document URIs)
+// that core.Video can stream directly.
+type FolderMediaSource interface {
+	MediaURI(name string, e FolderEntry) (string, error)
+}
+
 // FolderFS reads the folder root through src. It remembers each listing
 // to find what a name opens, and lists a folder afresh whenever it is
 // read.
@@ -93,6 +100,25 @@ func (f *folderFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 	return folderInfo{e}, nil
+}
+
+func (f *folderFS) MediaURI(name string) (string, error) {
+	e, err := f.entry("mediauri", name)
+	if err != nil {
+		return "", err
+	}
+	if e.Dir {
+		return "", &fs.PathError{Op: "mediauri", Path: name, Err: errors.New("is a directory")}
+	}
+	ms, ok := f.src.(FolderMediaSource)
+	if !ok {
+		return "", &fs.PathError{Op: "mediauri", Path: name, Err: ErrNoMediaURI}
+	}
+	uri, err := ms.MediaURI(name, e)
+	if err != nil {
+		return "", &fs.PathError{Op: "mediauri", Path: name, Err: err}
+	}
+	return uri, nil
 }
 
 var errNotDir = errors.New("not a directory")

@@ -36,6 +36,10 @@ type fakeFolderBridge struct {
 	nextHandle uint32
 	open       map[uint32]string
 	opCounts   map[byte]int
+	persisted  map[string]struct {
+		name   string
+		rootID string
+	}
 }
 
 func newFakeFolderBridge(handles bool) *fakeFolderBridge {
@@ -46,6 +50,10 @@ func newFakeFolderBridge(handles bool) *fakeFolderBridge {
 		nextHandle: 1,
 		open:       map[uint32]string{},
 		opCounts:   map[byte]int{},
+		persisted: map[string]struct {
+			name   string
+			rootID string
+		}{},
 	}
 }
 
@@ -107,6 +115,18 @@ func (b *fakeFolderBridge) askFolder(op byte, write func(w *writer)) (*reader, e
 	case folderClose:
 		h := in.u32()
 		delete(b.open, h)
+	case folderReopen:
+		token := in.str()
+		entry, ok := b.persisted[token]
+		if !ok {
+			return nil, errors.New("directory grant is no longer held")
+		}
+		out.str(entry.name)
+		out.str(token)
+		out.str(entry.rootID)
+	case folderRelease:
+		token := in.str()
+		delete(b.persisted, token)
 	case folderRead:
 		_ = in.str() // tree URI
 		docID := in.str()
@@ -148,11 +168,14 @@ func TestFolderHandlesCapabilityBit(t *testing.T) {
 		want int
 	}{
 		{"CAP_FOLDER_HANDLES", capFolderHandles},
+		{"CAP_FOLDER_PERSIST", capFolderPersist},
 		{"FOLDER_LIST", folderList},
 		{"FOLDER_READ", folderRead},
 		{"FOLDER_OPEN", folderOpen},
 		{"FOLDER_READ_HANDLE", folderReadHandle},
 		{"FOLDER_CLOSE", folderClose},
+		{"FOLDER_REOPEN", folderReopen},
+		{"FOLDER_RELEASE", folderRelease},
 	}
 	for _, c := range checks {
 		re := regexp.MustCompile(`static final int ` + c.name + ` = (\d+);`)
@@ -160,12 +183,18 @@ func TestFolderHandlesCapabilityBit(t *testing.T) {
 			t.Fatalf("Protocol.java's %s is %q, Go has %d", c.name, m, c.want)
 		}
 	}
+	if !strings.Contains(string(protocol), "static final int PICK_DIR_PERSIST = 1 << 31;") {
+		t.Fatal("Protocol.java does not define PICK_DIR_PERSIST = 1 << 31")
+	}
 	view, err := os.ReadFile("java/dev/oneo/nsgo/NsgoView.java")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(view), "Protocol.CAP_FOLDER_HANDLES") {
 		t.Fatal("NsgoView.java does not advertise Protocol.CAP_FOLDER_HANDLES")
+	}
+	if !strings.Contains(string(view), "Protocol.CAP_FOLDER_PERSIST") {
+		t.Fatal("NsgoView.java does not advertise Protocol.CAP_FOLDER_PERSIST")
 	}
 
 	for _, c := range []struct {
@@ -359,5 +388,85 @@ func TestFolderHandlesJava(t *testing.T) {
 	}
 	if out, err := exec.CommandContext(t.Context(), java, "-cp", classes, "dev.oneo.nsgo.FolderHandlesCheck").CombinedOutput(); err != nil {
 		t.Fatalf("FolderHandlesCheck: %v\n%s", err, out)
+	}
+}
+
+func TestAndroidFolderPersistAndMediaURI(t *testing.T) {
+	if capFolderPersist == 0 || capFolderPersist&(capFolderPersist-1) != 0 ||
+		capFolderPersist&(capExtendedSensors|capAuthSession|capVideoPiP|capCapture|capFolderHandles) != 0 {
+		t.Fatalf("capFolderPersist %d is not a free single bit of the fourth byte", capFolderPersist)
+	}
+
+	const treeURI = "content://com.android.externalstorage.documents/tree/primary%3AMusic"
+	const rootID = "primary:Music"
+	const songID = "primary:Music/Bach/01 Aria #1 (Live).flac"
+	const wantURI = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FBach%2F01%20Aria%20%231%20(Live).flac"
+
+	b := newFakeFolderBridge(true)
+	b.children[rootID] = []fakeFolderDoc{
+		{name: "Bach", id: "primary:Music/Bach", dir: true},
+	}
+	b.children["primary:Music/Bach"] = []fakeFolderDoc{
+		{name: "01 Aria #1 (Live).flac", id: songID, data: []byte("fLaC-audio"), sized: true},
+	}
+	b.docs[songID] = []byte("fLaC-audio")
+	b.persisted[treeURI] = struct {
+		name   string
+		rootID string
+	}{name: "Music", rootID: rootID}
+
+	// Legacy 3-field line (without Persist) has empty Token; 4-field persisted line carries Token.
+	dirs := parseFolders(b, "Legacy\t"+treeURI+"\t"+rootID+"\nMusic\t"+treeURI+"\t"+rootID+"\t"+treeURI+"\n")
+	if len(dirs) != 2 || dirs[0].Name != "Legacy" || dirs[0].Token != "" || dirs[1].Name != "Music" || dirs[1].Token != treeURI {
+		t.Fatalf("parseFolders = %+v", dirs)
+	}
+
+	// MediaURI produces the exact DocumentsContract.buildDocumentUriUsingTree content:// URI.
+	gotURI, err := dirs[1].MediaURI("Bach/01 Aria #1 (Live).flac")
+	if err != nil || gotURI != wantURI {
+		t.Fatalf("MediaURI = %q, %v; want %q", gotURI, err, wantURI)
+	}
+	if _, err := dirs[1].MediaURI("Bach"); err == nil {
+		t.Fatal("MediaURI on subdirectory succeeded")
+	}
+
+	// Multi-user authority (10@...) and empty rootID fallback both preserve authority and tree root.
+	multi, err := androidDocumentURI("content://10@com.android.externalstorage.documents/tree/primary%3AMusic", "", "primary:Music/a b.mp3")
+	if err != nil || multi != "content://10@com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fa%20b.mp3" {
+		t.Fatalf("multi-user androidDocumentURI = %q, %v", multi, err)
+	}
+
+	// Reopen persisted directory via FOLDER_REOPEN, read via persistent handles + ReaderAt, and get MediaURI.
+	reopened, err := reopenFolder(b, treeURI)
+	if err != nil {
+		t.Fatalf("reopenFolder: %v", err)
+	}
+	if reopened.Name != "Music" || reopened.Token != treeURI {
+		t.Fatalf("reopened = %+v", reopened)
+	}
+	gotURI, err = reopened.MediaURI("Bach/01 Aria #1 (Live).flac")
+	if err != nil || gotURI != wantURI {
+		t.Fatalf("reopened MediaURI = %q, %v", gotURI, err)
+	}
+	f, err := reopened.Open("Bach/01 Aria #1 (Live).flac")
+	if err != nil {
+		t.Fatalf("reopened Open: %v", err)
+	}
+	buf := make([]byte, 5)
+	if n, err := f.(io.ReaderAt).ReadAt(buf, 5); err != nil || n != 5 || string(buf) != "audio" {
+		t.Fatalf("reopened ReadAt = %d, %q, %v", n, buf, err)
+	}
+	_ = f.Close()
+
+	// Release grant via FOLDER_RELEASE; subsequent reopen fails.
+	if err := releaseFolder(b, treeURI); err != nil {
+		t.Fatalf("releaseFolder: %v", err)
+	}
+	if _, err := reopenFolder(b, treeURI); err == nil {
+		t.Fatal("reopenFolder succeeded after releaseFolder")
+	}
+	// Release is idempotent.
+	if err := releaseFolder(b, treeURI); err != nil {
+		t.Fatalf("second releaseFolder: %v", err)
 	}
 }

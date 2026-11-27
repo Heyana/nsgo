@@ -1368,6 +1368,12 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemPickDirectories:
 			s.pickDirectories(*it.Directories, it.Count)
 			continue
+		case driver.ItemOpenDirectory:
+			s.openDirectory(it.Value, it.Count)
+			continue
+		case driver.ItemReleaseDirectory:
+			s.releaseDirectory(it.Value, it.Count)
+			continue
 		case driver.ItemOpenFile:
 			s.openFile(*it.Open, it.Count)
 			continue

@@ -53,14 +53,15 @@ func filePick(r driver.FilesRequest) FilePick {
 
 // DirectoryPick records the app's options for picking directories.
 type DirectoryPick struct {
-	Limit  int
-	Title  string
-	Button string
-	Start  string
+	Limit   int
+	Title   string
+	Button  string
+	Start   string
+	Persist bool
 }
 
 func directoryPick(r driver.DirectoriesRequest) DirectoryPick {
-	return DirectoryPick{Limit: r.Limit, Title: r.Title, Button: r.Button, Start: r.Start}
+	return DirectoryPick{Limit: r.Limit, Title: r.Title, Button: r.Button, Start: r.Start, Persist: r.Persist}
 }
 
 // FileSave records the app's suggested file name and what it wants to

@@ -40,7 +40,7 @@ func TestLegacyRuntimeCannotTurnFitnessIntoLocationPermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The bit lives in the fourth capability byte, which the runtime writes at the environment's end.
-	if !strings.Contains(string(protocol), "CAP_EXTENDED_SENSORS = 1;") || capExtendedSensors != 1 || !strings.Contains(string(view), "Protocol.writeString(d, first.openedURL);\n            // The third capability byte's bits are all taken: a fourth ends the environment") || !strings.Contains(string(view), "d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP | Protocol.CAP_CAPTURE | Protocol.CAP_FOLDER_HANDLES);") {
+	if !strings.Contains(string(protocol), "CAP_EXTENDED_SENSORS = 1;") || capExtendedSensors != 1 || !strings.Contains(string(view), "Protocol.writeString(d, first.openedURL);\n            // The third capability byte's bits are all taken: a fourth ends the environment") || !strings.Contains(string(view), "d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP | Protocol.CAP_CAPTURE | Protocol.CAP_FOLDER_HANDLES | Protocol.CAP_FOLDER_PERSIST);") {
 		t.Fatal("runtime capability advertisement differs from the Go gate")
 	}
 }

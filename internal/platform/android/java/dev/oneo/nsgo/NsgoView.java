@@ -1718,8 +1718,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             writeDisplay(d);
             // Optional environment tail, after the display, for mobile.OpenedURL.
             Protocol.writeString(d, first.openedURL);
-            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS, Protocol.CAP_AUTH_SESSION, Protocol.CAP_VIDEO_PIP, Protocol.CAP_CAPTURE and Protocol.CAP_FOLDER_HANDLES.
-            d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP | Protocol.CAP_CAPTURE | Protocol.CAP_FOLDER_HANDLES);
+            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS, Protocol.CAP_AUTH_SESSION, Protocol.CAP_VIDEO_PIP, Protocol.CAP_CAPTURE, Protocol.CAP_FOLDER_HANDLES and Protocol.CAP_FOLDER_PERSIST.
+            d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP | Protocol.CAP_CAPTURE | Protocol.CAP_FOLDER_HANDLES | Protocol.CAP_FOLDER_PERSIST);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -2016,7 +2016,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             return;
         }
         if (d.folder) {
-            answerDocuments(d, Services.pickedTree(context, created), "", false);
+            String token = d.persist ? Services.persistTree(context, created, data) : "";
+            answerDocuments(d, Services.pickedTree(context, created, token), "", false);
             return;
         }
         java.util.List<android.net.Uri> uris = Services.picked(data, d.limit);
@@ -2464,6 +2465,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     b.write(read);
                 } else if (op == Protocol.FOLDER_CLOSE) {
                     folderHandles.close(in.readInt());
+                } else if (op == Protocol.FOLDER_REOPEN) {
+                    Services.reopenTree(context, Protocol.readString(in), b);
+                } else if (op == Protocol.FOLDER_RELEASE) {
+                    Services.releaseTree(context, Protocol.readString(in));
                 } else {
                     String tree = Protocol.readString(in), document = Protocol.readString(in);
                     long off = in.readLong();
@@ -4077,9 +4082,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
             case Protocol.ITEM_PICK_DIRECTORIES: {
                 long count = in.readInt() & 0xffffffffL;
-                // The tree picker picks one folder, whatever the limit.
-                in.readInt();
-                startDocuments(new Services.Documents(count, 1, null, true), Services::startFolder);
+                // The tree picker picks one folder; bit 31 requests a persistable read grant.
+                boolean persist = (in.readInt() & Protocol.PICK_DIR_PERSIST) != 0;
+                startDocuments(new Services.Documents(count, 1, null, true, persist), a -> Services.startFolder(a, persist));
                 break;
             }
             case Protocol.ITEM_SAVE_FILE:

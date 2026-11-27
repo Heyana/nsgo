@@ -93,7 +93,7 @@ Use `app.AppleSignIn` or `app.PurchaseAnswer` when a test needs to answer Sign i
 
 Keep a test off the network and disk the user owns: inject the fetcher or the `http.Client` into the component, and serve its answers from `nsgotest.NewHTTPTransport`, whose routes answer in-process with no listener — `net/http/httptest` also serves one, but its listener keeps it off `-target web` — and give storage and secrets through `nsgotest.Storage` and `nsgotest.Secrets`, so no test reaches the machine's keychain. A resource's loading and error states are then tested by answering slowly or with an error.
 
-Set the app's picker, camera or save hook to answer a request in an app test. The hooks receive the `nsgotest` records `ImagePick`, `CodeScan`, `FilePick`, `DirectoryPick` and `FileSave`. [Photos and files](https://nsgo.dev/docs/services.md#photos-and-files)
+Set the app's picker, camera or save hook to answer a request in an app test. The hooks receive the `nsgotest` records `ImagePick`, `CodeScan`, `FilePick`, `DirectoryPick` and `FileSave`. Persistent directory picks are kept in `nsgotest.App.PersistedDirectories`, answered by `nsgotest.App.OpenDirectory` and released via `nsgotest.App.ReleaseDirectory` (recorded in `nsgotest.App.ReleasedDirectories`). [Photos and files](https://nsgo.dev/docs/services.md#photos-and-files)
 
 Use `nsgotest.Widgets(true)` and `nsgotest.LiveActivities(true)` to inspect publications with `App.Widgets` and `App.LiveActivities`. Run tests using these process-wide services sequentially. [Testing widgets and Live Activities](https://nsgo.dev/docs/testing.md#widgets-and-live-activities).
 

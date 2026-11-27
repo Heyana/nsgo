@@ -464,6 +464,90 @@ func TestPickDirectories(t *testing.T) {
 	if gotErr == nil || gotErr.Error() != driver.NoDirectoryPicker || got != nil {
 		t.Fatalf("a failed pick answers %+v, %v", got, gotErr)
 	}
+
+	// Persist option forwards to DirectoriesRequest and preserves returned tokens.
+	cx.PickDirectories(PickDirectoriesOptions{Persist: true}, pick)
+	it = command(h.commit(), driver.ItemPickDirectories)
+	if it == nil || !it.Directories.Persist {
+		t.Fatalf("persist pick = %+v", it)
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Data: []driver.Directory{
+		{Name: "Music", Token: "content://provider/tree/primary%3AMusic"}}})
+	if gotErr != nil || len(got) != 1 || got[0].Token != "content://provider/tree/primary%3AMusic" {
+		t.Fatalf("persisted dirs = %+v, %v", got, gotErr)
+	}
+}
+
+func TestOpenAndReleaseDirectory(t *testing.T) {
+	var cx *Scope
+	h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node { cx = c; return View{} })
+	h.commit()
+
+	// Empty token fails synchronously for OpenDirectory and succeeds for ReleaseDirectory.
+	var openDir Directory
+	var openErr error
+	cx.OpenDirectory("", func(d Directory, err error) { openDir, openErr = d, err })
+	if openErr == nil {
+		t.Fatal("OpenDirectory(\"\") succeeded, want error")
+	}
+	if command(h.commit(), driver.ItemOpenDirectory) != nil {
+		t.Fatal("OpenDirectory(\"\") emitted a mount item")
+	}
+
+	relCalled := false
+	var relErr error
+	cx.ReleaseDirectory("", func(err error) { relCalled, relErr = true, err })
+	if !relCalled || relErr != nil {
+		t.Fatalf("ReleaseDirectory(\"\") = called=%v err=%v", relCalled, relErr)
+	}
+	if command(h.commit(), driver.ItemReleaseDirectory) != nil {
+		t.Fatal("ReleaseDirectory(\"\") emitted a mount item")
+	}
+
+	// Successful reopen fills Name from Path when empty and preserves refreshed Token.
+	cx.OpenDirectory("tok-1", func(d Directory, err error) { openDir, openErr = d, err })
+	it := command(h.commit(), driver.ItemOpenDirectory)
+	if it == nil || it.Value != "tok-1" {
+		t.Fatalf("open item = %+v", it)
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Data: driver.Directory{Path: "/music/classical", Token: "tok-1-fresh"}})
+	if openErr != nil || openDir.Name != "classical" || openDir.Path != "/music/classical" || openDir.Token != "tok-1-fresh" {
+		t.Fatalf("reopened = %+v, %v", openDir, openErr)
+	}
+
+	// Unsupported platform maps driver.NoDirectoryPersistence to CodeUnavailable.
+	cx.OpenDirectory("tok-2", func(d Directory, err error) { openDir, openErr = d, err })
+	it = command(h.commit(), driver.ItemOpenDirectory)
+	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDirectoryPersistence})
+	if ErrorCode(openErr) != CodeUnavailable {
+		t.Fatalf("unsupported OpenDirectory error = %v (code %q), want CodeUnavailable", openErr, ErrorCode(openErr))
+	}
+
+	// Revoked/failed reopen surfaces the error.
+	cx.OpenDirectory("tok-revoked", func(d Directory, err error) { openDir, openErr = d, err })
+	it = command(h.commit(), driver.ItemOpenDirectory)
+	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: "directory grant is no longer held"})
+	if openErr == nil || openErr.Error() != "directory grant is no longer held" {
+		t.Fatalf("revoked OpenDirectory error = %v", openErr)
+	}
+
+	// ReleaseDirectory success and unsupported platform.
+	cx.ReleaseDirectory("tok-1", func(err error) { relErr = err })
+	it = command(h.commit(), driver.ItemReleaseDirectory)
+	if it == nil || it.Value != "tok-1" {
+		t.Fatalf("release item = %+v", it)
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count})
+	if relErr != nil {
+		t.Fatalf("ReleaseDirectory error = %v", relErr)
+	}
+
+	cx.ReleaseDirectory("tok-1", func(err error) { relErr = err })
+	it = command(h.commit(), driver.ItemReleaseDirectory)
+	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDirectoryPersistence})
+	if ErrorCode(relErr) != CodeUnavailable {
+		t.Fatalf("unsupported ReleaseDirectory error = %v (code %q), want CodeUnavailable", relErr, ErrorCode(relErr))
+	}
 }
 
 func TestSaveFile(t *testing.T) {

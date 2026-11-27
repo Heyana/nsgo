@@ -144,6 +144,8 @@ func (t *tree) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemPickFiles, driver.ItemPickDirectories, driver.ItemSaveFile, driver.ItemShare:
 			t.emit(driver.Event{Kind: driver.EventFiles, Count: it.Count})
+		case driver.ItemOpenDirectory, driver.ItemReleaseDirectory:
+			t.emit(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDirectoryPersistence})
 		case driver.ItemOpenURL:
 			t.emit(driver.Event{Kind: driver.EventOpenURL, Count: it.Count})
 		case driver.ItemImageInfo:
