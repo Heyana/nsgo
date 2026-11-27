@@ -347,15 +347,17 @@ type AppClip struct {
 
 // AndroidConfig is nsgo.yaml's android section.
 type AndroidConfig struct {
-	Permissions          []string `yaml:"permissions"`
-	TargetSDK            int      `yaml:"target_sdk"`
-	Recording            bool     `yaml:"recording"`
-	BackgroundMotion     bool     `yaml:"background_motion"`
-	Classes              []string `yaml:"classes"`
-	ShareTypes           []string `yaml:"share_types"`
-	BackgroundDownloads  bool     `yaml:"background_downloads"`
-	LoopbackCleartext    bool     `yaml:"loopback_cleartext"`
-	UsesCleartextTraffic bool     `yaml:"uses_cleartext_traffic"`
+	Permissions         []string `yaml:"permissions"`
+	TargetSDK           int      `yaml:"target_sdk"`
+	Recording           bool     `yaml:"recording"`
+	BackgroundMotion    bool     `yaml:"background_motion"`
+	Classes             []string `yaml:"classes"`
+	ShareTypes          []string `yaml:"share_types"`
+	BackgroundDownloads bool     `yaml:"background_downloads"`
+	// DataSync declares the runtime's generic dataSync foreground service (mobile.StartDataSync) and its permissions.
+	DataSync             bool `yaml:"data_sync"`
+	LoopbackCleartext    bool `yaml:"loopback_cleartext"`
+	UsesCleartextTraffic bool `yaml:"uses_cleartext_traffic"`
 }
 
 // StoreCompliance records whether the app's store questionnaires are complete.

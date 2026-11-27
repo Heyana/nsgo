@@ -45,6 +45,9 @@ public final class NsgoEngine {
 
         /** A recording's sender has sent its reports. */
         default void onRecordingEnded() {}
+
+        /** A dataSync foreground service session ended. */
+        default void onDataSyncEnded() {}
     }
 
     private final Context application;
@@ -147,6 +150,15 @@ public final class NsgoEngine {
             current = listener;
         }
         if (current != null) current.onRecordingEnded();
+    }
+
+    /** Tells the view to check whether an ended dataSync session was its last keeper. */
+    void dataSyncEnded() {
+        Listener current;
+        synchronized (this) {
+            current = listener;
+        }
+        if (current != null) current.onDataSyncEnded();
     }
 
     /** Says whether the engine has neither started a process nor been destroyed. */
@@ -252,6 +264,7 @@ public final class NsgoEngine {
         // Its recording's file is finished, for the next process to hear of.
         RecordingService.ownerEnded(this);
         BackgroundDownloadService.ownerEnded(this);
+        DataSyncService.ownerEnded(this);
         synchronized (this) {
             if (closed) return;
             closed = true;
@@ -290,6 +303,10 @@ public final class NsgoEngine {
                     BackgroundDownloadService.message(application, this, Arrays.copyOfRange(message.payload, 1, message.payload.length));
                     continue;
                 }
+                if (message.kind == Protocol.EXTENDED && (message.payload[0] & 0xff) == Protocol.EXT_DATA_SYNC) {
+                    DataSyncService.message(application, this, Arrays.copyOfRange(message.payload, 1, message.payload.length));
+                    continue;
+                }
                 Listener current;
                 synchronized (this) {
                     current = listener;
@@ -315,6 +332,7 @@ public final class NsgoEngine {
         text.close();
         RecordingService.ownerEnded(this);
         BackgroundDownloadService.ownerEnded(this);
+        DataSyncService.ownerEnded(this);
         Listener current;
         synchronized (this) {
             if (socket != null) AndroidHostDev.closeSocket(socket);

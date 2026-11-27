@@ -226,7 +226,7 @@ func TestAndroidOverlayDeclarations(t *testing.T) {
 	if p.androidOverlay() || slices.ContainsFunc(p.androidPermissions(), func(s string) bool { return strings.Contains(s, "FOREGROUND_SERVICE") }) {
 		t.Errorf("an app without overlays asks for %v", p.androidPermissions())
 	}
-	if m := aarManifest(false, nil, false); strings.Contains(m, "FOREGROUND_SERVICE") || strings.Contains(m, "OverlayService") || strings.Contains(m, "SYSTEM_ALERT_WINDOW") {
+	if m := aarManifest(false, nil, false, false); strings.Contains(m, "FOREGROUND_SERVICE") || strings.Contains(m, "OverlayService") || strings.Contains(m, "SYSTEM_ALERT_WINDOW") {
 		t.Errorf("a library without overlays declares them:\n%s", m)
 	}
 	p.Android.Permissions = append(p.Android.Permissions, "android.permission.SYSTEM_ALERT_WINDOW")
@@ -234,7 +234,7 @@ func TestAndroidOverlayDeclarations(t *testing.T) {
 	if got := p.androidPermissions(); !p.androidOverlay() || !slices.Equal(got, want) {
 		t.Errorf("an app with overlays asks for %v, want %v", got, want)
 	}
-	m := aarManifest(true, nil, false)
+	m := aarManifest(true, nil, false, false)
 	if err := xml.Unmarshal([]byte(m), new(struct{})); err != nil {
 		t.Fatalf("the library's manifest is no XML: %v\n%s", err, m)
 	}

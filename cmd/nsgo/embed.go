@@ -466,10 +466,12 @@ func writeIOSFrameworkHeaders(root, module, header string) error {
 	return nil
 }
 
-// aarManifest is the library's manifest, which a host's build merges into its own: the runtime starts the app from the native library directory, so native libraries must be extracted, the provider of the files the app hands other apps is named after the host's package, the receiver of scheduled notifications' alarms hears the boot to set them again, and the device's libraries the app uses (androidLibraries) are declared without being required. An app that shows overlays over other apps (androidOverlay) asks for SYSTEM_ALERT_WINDOW and declares the overlay's foreground service with its permissions, which no other library does.
-func aarManifest(overlay bool, libraries []string, backgroundMotion bool) string {
+// aarManifest is the library's manifest, which a host's build merges into its own: the runtime starts the app from the native library directory, so native libraries must be extracted, the provider of the files the app hands other apps is named after the host's package, the receiver of scheduled notifications' alarms hears the boot to set them again, and the device's libraries the app uses (androidLibraries) are declared without being required. An app that shows overlays over other apps (androidOverlay), background motion, or dataSync declares those foreground services with their permissions, which no other library does.
+func aarManifest(overlay bool, libraries []string, backgroundMotion, dataSync bool) string {
 	perms, services := "", ""
+	hasFGS := false
 	if overlay {
+		hasFGS = true
 		perms = `
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -482,12 +484,25 @@ func aarManifest(overlay bool, libraries []string, backgroundMotion bool) string
         </service>`
 	}
 	if backgroundMotion {
-		if !overlay {
+		if !hasFGS {
+			hasFGS = true
 			perms += `
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />`
 		}
 		services += `
         <service android:name="` + apk.MotionService + `" android:exported="false" android:foregroundServiceType="shortService" />`
+	}
+	if dataSync {
+		if !hasFGS {
+			hasFGS = true
+			perms += `
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />`
+		}
+		perms += `
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />`
+		services += `
+        <service android:name="` + apk.DataSyncService + `" android:exported="false" android:foregroundServiceType="dataSync" />`
 	}
 	var uses strings.Builder
 	for _, lib := range libraries {
@@ -570,7 +585,7 @@ func buildAndroidAAR(ctx context.Context, p *project, dir, goarch string) error 
 		name string
 		data []byte
 	}{
-		{"AndroidManifest.xml", []byte(aarManifest(p.androidOverlay(), libraries, p.Android.BackgroundMotion))},
+		{"AndroidManifest.xml", []byte(aarManifest(p.androidOverlay(), libraries, p.Android.BackgroundMotion, p.Android.DataSync))},
 		{"classes.jar", androidruntime.ClassesJar},
 		{"R.txt", nil},
 		{"jni/" + abi + "/libnsgo.so", app},

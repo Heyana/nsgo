@@ -383,6 +383,37 @@ iOS uses a system background URLSession that continues transfers while the app i
 
 Register `OnDownloadUpdate` again when the app starts to see active tasks and saved results. Use `p.Task.Forget()` after handling a final result. Android can stop the service, for example when its foreground transfer time expires. The app then receives `DownloadInterrupted`. On Windows, Linux, tvOS, watchOS and the web, `Download` returns `ErrDownloadUnavailable`.
 
+## Android dataSync keep-alive
+
+Apps that run their own Go transfer engine (such as resumable `net/http` downloads, chunked uploads or sync queues) can keep Android's Go process alive across backgrounding and Activity destruction with `mobile.StartDataSync`. Enable `android.data_sync: true` in `nsgo.yaml` to declare `DataSyncService` (`foregroundServiceType="dataSync"`) together with `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `POST_NOTIFICATIONS`.
+
+```go
+ds, err := mobile.StartDataSync(mobile.DataSyncOptions{
+	Notification: mobile.DataSyncNotification{
+		Title:         "Syncing files",
+		Body:          "Preparing transfer...",
+		Indeterminate: true,
+	},
+	OnTimeout: func() {
+		flushTransferCheckpoints()
+	},
+})
+if err != nil {
+	// mobile.ErrDataSyncNotAllowed when started outside an eligible foreground state;
+	// mobile.ErrDataSyncUnavailable when android.data_sync is not enabled.
+	return err
+}
+defer ds.Stop()
+ds.Update(mobile.DataSyncNotification{
+	Title:   "Syncing files",
+	Body:    "archive.zip",
+	Current: sentBytes,
+	Total:   totalBytes,
+})
+```
+
+Sessions are reference-counted: concurrent transfers can each call `mobile.StartDataSync` and share one foreground service and progress notification until the last handle calls `Stop()`. Set `Total > 0` for determinate progress, `Indeterminate: true` (or `Total < 0`) for an indeterminate progress bar, or `Total == 0` with `Indeterminate: false` for text only. On Android 15 (API 35+), `OnTimeout` runs when Android's `dataSync` foreground quota expires so the app can flush checkpoints before the service stops. To hold a `PARTIAL_WAKE_LOCK` during screen-off transfers, add `WAKE_LOCK` to `android.permissions` and set `WakeLock: true`. `mobile.DataSyncSupported()` checks whether the Android service is declared; on non-Android platforms `mobile.StartDataSync` returns a safe no-op handle with a nil error.
+
 ## Speech and the lifecycle
 
 `cx.StartSpeech` recognizes speech with the system's recognizer where `cx.Env().CanRecognizeSpeech()` says it exists (macOS, iOS, Android, Windows and browsers exposing `SpeechRecognition` or `webkitSpeechRecognition`), and answers with the transcript as it changes. On Apple platforms declare `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription` in `apple.info`; on Android add `RECORD_AUDIO` to `android.permissions`. In a headless test, `app.Speech` holds a `nsgotest.SpeechSession` while recognition is active. Use `app.HearSpeech` and `app.EndSpeech` to deliver results.

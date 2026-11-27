@@ -58,6 +58,8 @@ type Manifest struct {
 	Recording bool
 	// BackgroundDownloads declares the runtime's dataSync transfer service.
 	BackgroundDownloads bool
+	// DataSync declares the runtime's generic dataSync foreground service (mobile.StartDataSync) and its permissions.
+	DataSync bool
 	// Motion declares the finite shortService for explicit background motion.
 	Motion bool
 	// Location declares the runtime's LocationService, the location foreground service a background location stream runs in (core.LocationOptions.Background), for an app whose Permissions name FOREGROUND_SERVICE_LOCATION; an app without it declares no such service, which Google Play would ask it to justify.
@@ -77,6 +79,13 @@ var recordingPermissions = []string{
 	"android.permission.RECORD_AUDIO",
 	"android.permission.FOREGROUND_SERVICE",
 	"android.permission.FOREGROUND_SERVICE_MICROPHONE",
+	"android.permission.POST_NOTIFICATIONS",
+}
+
+// dataSyncPermissions are what the runtime's generic dataSync foreground service needs: a foreground service, from Android 14 one of the dataSync type, and from Android 13 POST_NOTIFICATIONS so the progress notification can show.
+var dataSyncPermissions = []string{
+	"android.permission.FOREGROUND_SERVICE",
+	"android.permission.FOREGROUND_SERVICE_DATA_SYNC",
 	"android.permission.POST_NOTIFICATIONS",
 }
 
@@ -184,9 +193,10 @@ var foregroundServiceTypes = map[string]uint32{
 	"specialUse":      0x40000000,
 }
 
-// The runtime's foreground services: RecordingService is the one microphone.RecordWAV records in (Manifest.Recording), of the microphone type, OverlayService the one overlays over other apps take (Manifest.Overlay), of the specialUse type, LocationService the one background location streams run in (Manifest.Location), of the location type, and OverlaySubtype the subtype of its specialUse type, which stores read.
+// The runtime's foreground services: RecordingService is the one microphone.RecordWAV records in (Manifest.Recording), of the microphone type, DataSyncService is the generic dataSync foreground service mobile.StartDataSync runs in (Manifest.DataSync), OverlayService the one overlays over other apps take (Manifest.Overlay), of the specialUse type, LocationService the one background location streams run in (Manifest.Location), of the location type, and OverlaySubtype the subtype of its specialUse type, which stores read.
 const (
 	RecordingService     = "dev.oneo.nsgo.RecordingService"
+	DataSyncService      = "dev.oneo.nsgo.DataSyncService"
 	OverlayService       = "dev.oneo.nsgo.OverlayService"
 	LocationService      = "dev.oneo.nsgo.LocationService"
 	MotionService        = "dev.oneo.nsgo.MotionService"
@@ -407,6 +417,9 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 		perms = append(slices.Clip(perms), "android.permission.FOREGROUND_SERVICE",
 			"android.permission.FOREGROUND_SERVICE_DATA_SYNC", "android.permission.POST_NOTIFICATIONS")
 	}
+	if m.DataSync {
+		perms = append(slices.Clip(perms), dataSyncPermissions...)
+	}
 	for _, perm := range perms {
 		if err := validPermission(perm); err != nil {
 			return nil, err
@@ -424,6 +437,9 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 	}
 	if m.BackgroundDownloads {
 		app.kids = append(app.kids, foregroundService("dev.oneo.nsgo.BackgroundDownloadService", "dataSync"))
+	}
+	if m.DataSync {
+		app.kids = append(app.kids, foregroundService(DataSyncService, "dataSync"))
 	}
 	if m.Location {
 		app.kids = append(app.kids, foregroundService(LocationService, "location"))

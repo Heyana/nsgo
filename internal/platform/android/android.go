@@ -150,6 +150,8 @@ const (
 	msgAudioOutputReport = 37
 	// msgCaptureReply is a capture result answering ItemCapture: surface, count, error and PNG (capture.go, SurfaceCapture.java).
 	msgCaptureReply = 39
+	// msgDataSyncReport is what the runtime's DataSyncService reports for mobile.StartDataSync, JSON (driver.ReportDataSync).
+	msgDataSyncReport = 43
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
@@ -174,6 +176,8 @@ const (
 	extPlayUpdate = 13
 	// extCloudStorage is a JSON command for package cloud to the runtime's Play Games Saved Games bridge (CloudStorage.java), from driver.SendCloudStorage, answered by msgCloudStorageReport.
 	extCloudStorage = 14
+	// extDataSync carries a process-wide dataSync foreground service command as JSON, which NsgoEngine hands to DataSyncService, answered by msgDataSyncReport.
+	extDataSync = 15
 	// extDownload carries a process-wide background download command as JSON, which NsgoEngine hands to BackgroundDownloadService.
 	extDownload = 5
 	// extGPUFrame submits an off-commit 3D GPU frame to GpuView.java, gpu.go's encoding.
@@ -236,6 +240,8 @@ type surface struct {
 	folderPersist atomic.Bool
 	// fetchNoRedirect is set once the runtime's environment says Downloads.java honors fetchNoRedirect (capFetchNoRedirect).
 	fetchNoRedirect atomic.Bool
+	// dataSync is set once the runtime's environment says it reads extDataSync and runs DataSyncService (capDataSync).
+	dataSync atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -386,6 +392,16 @@ func connect(opts Options) *surface {
 		if errors.Is(err, errNoExtendedMessages) {
 			driver.ReportCloudStorage(cloudStorageUnavailable(msg))
 		}
+	})
+	driver.ConnectDataSync(func(msg []byte) error {
+		if !s.dataSync.Load() {
+			return driver.ErrDataSyncUnavailable
+		}
+		err := s.sendExtended(extDataSync, func(w *writer) { w.buf = append(w.buf, msg...) })
+		if errors.Is(err, errNoExtendedMessages) {
+			return driver.ErrDataSyncUnavailable
+		}
+		return err
 	})
 	return s
 }
@@ -552,6 +568,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.folderHandles.Store(fourth&capFolderHandles != 0)
 			s.folderPersist.Store(fourth&capFolderPersist != 0)
 			s.fetchNoRedirect.Store(fourth&capFetchNoRedirect != 0)
+			s.dataSync.Store(fourth&capDataSync != 0)
 			// The bulk hello waits for the first environment, which says whether the runtime reads extended messages: one that does not keeps both sides on complete messages (errNoExtendedMessages).
 			if s.extendedMessages.Load() && s.bulkHello.CompareAndSwap(false, true) {
 				_ = s.sendExtended(extBulk, func(*writer) {})
@@ -627,6 +644,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.audioOutputReport(&r)
 		case msgCloudStorageReport:
 			driver.ReportCloudStorage(slices.Clone(payload))
+		case msgDataSyncReport:
+			driver.ReportDataSync(slices.Clone(payload))
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {

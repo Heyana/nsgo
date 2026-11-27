@@ -637,6 +637,83 @@ func TestEncodeManifestRecording(t *testing.T) {
 	}
 }
 
+func TestEncodeManifestDataSync(t *testing.T) {
+	declared := func(enabled bool) (map[string]int, *xmlNode) {
+		data, err := EncodeManifest(androidruntime.Manifest, Manifest{Package: "dev.oneo.nsgo.test", DataSync: enabled})
+		if err != nil {
+			t.Fatal(err)
+		}
+		root := decodeXML(t, data).root
+		asked := map[string]int{}
+		for _, kid := range root.kids {
+			if kid.name == "uses-permission" {
+				asked[kid.string(t, "name")]++
+			}
+		}
+		for _, kid := range root.child(t, "application").kids {
+			if kid.name == "service" && kid.string(t, "name") == DataSyncService {
+				return asked, kid
+			}
+		}
+		return asked, nil
+	}
+	asked, service := declared(false)
+	if service != nil {
+		t.Error("an app without android.data_sync declares DataSyncService")
+	}
+	for _, p := range dataSyncPermissions {
+		if asked[p] != 0 {
+			t.Errorf("an app without android.data_sync asks for %s", p)
+		}
+	}
+	asked, service = declared(true)
+	if service == nil {
+		t.Fatal("an app with android.data_sync declares no DataSyncService")
+	}
+	if service.value(t, "exported") != 0 {
+		t.Error("DataSyncService must not be exported")
+	}
+	if got := service.value(t, "foregroundServiceType"); got != 0x1 {
+		t.Errorf("DataSyncService foregroundServiceType = %#x, want dataSync (0x1)", got)
+	}
+	for _, p := range dataSyncPermissions {
+		if asked[p] != 1 {
+			t.Errorf("an app with android.data_sync asks for %s %d times, want 1", p, asked[p])
+		}
+	}
+
+	// Both BackgroundDownloads and DataSync share permissions without duplicates.
+	both, err := EncodeManifest(androidruntime.Manifest, Manifest{Package: "dev.oneo.nsgo.test", BackgroundDownloads: true, DataSync: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bothRoot := decodeXML(t, both).root
+	bothPerms := map[string]int{}
+	for _, kid := range bothRoot.kids {
+		if kid.name == "uses-permission" {
+			bothPerms[kid.string(t, "name")]++
+		}
+	}
+	for _, p := range dataSyncPermissions {
+		if bothPerms[p] != 1 {
+			t.Errorf("manifest with both BackgroundDownloads and DataSync asks for %s %d times, want 1", p, bothPerms[p])
+		}
+	}
+
+	// Bundle proto manifest also encodes DataSyncService and foregroundServiceType.
+	root, err := appManifest(androidruntime.Manifest, Manifest{Package: "dev.oneo.nsgo.test", DataSync: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proto, err := protoElement(root, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(proto, pbVarint(nil, 5, 0x01010599)) || !bytes.Contains(proto, []byte(DataSyncService)) {
+		t.Error("the bundle's manifest lacks DataSyncService or its foregroundServiceType")
+	}
+}
+
 func TestEncodeManifestBackgroundDownloads(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		m := Manifest{Package: "dev.oneo.nsgo.test", BackgroundDownloads: enabled}

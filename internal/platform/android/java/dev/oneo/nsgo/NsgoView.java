@@ -1091,6 +1091,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         livePressEarly = null;
         recordingState();
         RecordingService.connected(engine);
+        dataSyncState();
     }
 
     void setHostSocket(LocalSocket socket) {
@@ -1145,7 +1146,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     /** Whether an overlay or a foreground service keeps the app's process running without an activity. */
     private boolean keeps() {
         return (overlays != null && overlays.any()) || (sensors != null && sensors.hasBackground())
-                || RecordingService.active(engine);
+                || RecordingService.active(engine) || DataSyncService.active(engine);
     }
 
     /** Whether keepOffScreen kept the app's process, which still runs. */
@@ -1179,6 +1180,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     @Override
     public void onRecordingEnded() {
+        ui.post(this::keeperEnded);
+    }
+
+    @Override
+    public void onDataSyncEnded() {
         ui.post(this::keeperEnded);
     }
 
@@ -1724,8 +1730,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             writeDisplay(d);
             // Optional environment tail, after the display, for mobile.OpenedURL.
             Protocol.writeString(d, first.openedURL);
-            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS, Protocol.CAP_AUTH_SESSION, Protocol.CAP_VIDEO_PIP, Protocol.CAP_CAPTURE, Protocol.CAP_FOLDER_HANDLES, Protocol.CAP_FOLDER_PERSIST and Protocol.CAP_FETCH_NO_REDIRECT.
-            d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP | Protocol.CAP_CAPTURE | Protocol.CAP_FOLDER_HANDLES | Protocol.CAP_FOLDER_PERSIST | Protocol.CAP_FETCH_NO_REDIRECT);
+            // The third capability byte's bits are all taken: a fourth ends the environment, where readEnvironment reads it only if a runtime wrote it. Its bits: Protocol.CAP_EXTENDED_SENSORS, Protocol.CAP_AUTH_SESSION, Protocol.CAP_VIDEO_PIP, Protocol.CAP_CAPTURE, Protocol.CAP_FOLDER_HANDLES, Protocol.CAP_FOLDER_PERSIST, Protocol.CAP_FETCH_NO_REDIRECT and Protocol.CAP_DATA_SYNC.
+            d.writeByte(Protocol.CAP_EXTENDED_SENSORS | Protocol.CAP_AUTH_SESSION | Protocol.CAP_VIDEO_PIP | Protocol.CAP_CAPTURE | Protocol.CAP_FOLDER_HANDLES | Protocol.CAP_FOLDER_PERSIST | Protocol.CAP_FETCH_NO_REDIRECT | Protocol.CAP_DATA_SYNC);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -5646,6 +5652,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (sent.equals(recordingSent)) return;
         recordingSent = sent;
         write(Protocol.RECORDING_REPORT, state);
+    }
+
+    /** Tells the app whether its manifest declares DataSyncService. */
+    private void dataSyncState() {
+        if (engine == null || !engine.isAlive()) return;
+        write(Protocol.DATA_SYNC_REPORT, DataSyncService.state(getContext()));
     }
 
     /** A notification's press that came before the engine mounted its first batch. */

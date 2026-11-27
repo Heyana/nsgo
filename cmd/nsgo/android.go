@@ -241,6 +241,7 @@ func writeAndroidPackage(ctx context.Context, p *project, dir, ext string, files
 		Game:                p.Game,
 		Gamepad:             p.Gamepad,
 		BackgroundDownloads: p.Android.BackgroundDownloads,
+		DataSync:            p.Android.DataSync,
 	}, files, key)
 	if err != nil {
 		return "", err

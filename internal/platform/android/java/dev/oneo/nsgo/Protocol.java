@@ -161,6 +161,8 @@ final class Protocol {
                 return true;
             case EXT_CLOUD_STORAGE:
                 return true;
+            case EXT_DATA_SYNC:
+                return true;
             default:
                 return false;
         }
@@ -245,6 +247,8 @@ final class Protocol {
     static final int CAP_FOLDER_PERSIST = 32;
     /** The fourth capability byte's bit for a runtime that honors FETCH_NO_REDIRECT in Downloads.java without following redirects (capFetchNoRedirect in protocol.go). */
     static final int CAP_FETCH_NO_REDIRECT = 64;
+    /** The fourth capability byte's bit for a runtime that reads EXT_DATA_SYNC and runs DataSyncService (capDataSync in protocol.go); Go sends EXT_DATA_SYNC only to a runtime that sets it. */
+    static final int CAP_DATA_SYNC = 128;
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
     /** Answers a PHYSICAL_KEY down that asked: surface, request and whether the focused view consumed it (HardwareKeys). */
@@ -253,6 +257,8 @@ final class Protocol {
     static final int EXT_PLAY_UPDATE = 13;
     /** Carries out a cloud storage command for package cloud: JSON (CloudStorage), answered by CLOUD_STORAGE_REPORT. */
     static final int EXT_CLOUD_STORAGE = 14;
+    /** Process-wide dataSync foreground service command: JSON (DataSyncService), answered by DATA_SYNC_REPORT. */
+    static final int EXT_DATA_SYNC = 15;
     static final int CAP_PLAY_UPDATES = 128;
     /** The environment's third capability byte's bit for a device that plays timed vibration patterns (capHapticPatterns in protocol.go). */
     static final int CAP_HAPTIC_PATTERNS = 16;
@@ -354,6 +360,8 @@ final class Protocol {
     static final int CAPTURE_REPLY = 39;
     /** What CloudStorage reports for package cloud: JSON (CloudStorage). */
     static final int CLOUD_STORAGE_REPORT = 32;
+    /** What DataSyncService reports for mobile.StartDataSync: JSON (DataSyncService). */
+    static final int DATA_SYNC_REPORT = 43;
 
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;

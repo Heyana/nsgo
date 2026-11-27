@@ -103,6 +103,7 @@ build:
 # android: { recording: true }  # the microphone service microphone.RecordWAV records in, with RECORD_AUDIO, the foreground-service permissions and POST_NOTIFICATIONS, which RecordWAV asks for so its notification shows from Android 13; a refusal still records
 # android: { uses_cleartext_traffic: true }  # allow plain HTTP to any host in the APK and App Bundle
 # android: { background_downloads: true }  # dataSync foreground service for cx.Download
+# android: { data_sync: true }  # generic dataSync foreground service for mobile.StartDataSync
 # android: { background_motion: true }  # explicit finite motion shortService; streams also need a notification title
 # android: { loopback_cleartext: true }  # allow plain HTTP to loopback in the APK and App Bundle
 # commands: [{ name: hello-cli, package: ./cmd/hello-cli }]  # command-line programs the desktop packages ship beside the app: see Commands
