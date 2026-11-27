@@ -105,8 +105,11 @@ func bindAccess() {
 
 // accEnums caches GTK's frequently used accessibility enum values so
 // updateAccess never performs nested map lookups on hot text/prop updates.
+// enumsPtr tracks the backing map pointer of enums so unit tests that swap
+// enums invalidate the cache automatically.
 var accEnums struct {
 	ready           bool
+	enumsPtr        uintptr
 	propLabel       int32
 	propDescription int32
 	propValueText   int32
@@ -120,10 +123,10 @@ var accEnums struct {
 }
 
 func initAccessEnums() {
-	if accEnums.ready {
+	ptr := *(*uintptr)(unsafe.Pointer(&enums))
+	if accEnums.ready && accEnums.enumsPtr == ptr {
 		return
 	}
-	accEnums.ready = true
 	accEnums.propLabel = enumValue("property", "label")
 	accEnums.propDescription = enumValue("property", "description")
 	accEnums.propValueText = enumValue("property", "value-text")
@@ -138,6 +141,8 @@ func initAccessEnums() {
 	for i, nick := range [...]string{"false", "true", "mixed"} {
 		accEnums.tristate[i] = enumValue("tristate", nick)
 	}
+	accEnums.enumsPtr = *(*uintptr)(unsafe.Pointer(&enums))
+	accEnums.ready = accEnums.enumsPtr != 0
 }
 
 // defaultAccessStates matches a freshly constructed GtkWidget's initial
@@ -152,6 +157,45 @@ var enums map[string]map[string]int32
 // enumValue returns the value of nick in GTK's enum kind ("role",
 // "property", "state", "tristate"); -1 for one this GTK lacks.
 func enumValue(kind, nick string) int32 {
+	if m := enums[kind]; m != nil {
+		if v, ok := m[nick]; ok {
+			return v
+		}
+	}
+	if gTypeClassRef == nil || gEnumGetValueByNick == nil {
+		return -1
+	}
+	var t uintptr
+	switch kind {
+	case "role":
+		if gtkAccessibleRoleGetType == nil {
+			return -1
+		}
+		t = gtkAccessibleRoleGetType()
+	case "property":
+		if gtkAccessiblePropertyGetType == nil {
+			return -1
+		}
+		t = gtkAccessiblePropertyGetType()
+	case "state":
+		if gtkAccessibleStateGetType == nil {
+			return -1
+		}
+		t = gtkAccessibleStateGetType()
+	case "relation":
+		if gtkAccessibleRelationGetType == nil {
+			return -1
+		}
+		t = gtkAccessibleRelationGetType()
+	case "tristate":
+		if gtkAccessibleTristateGetType == nil {
+			return -1
+		}
+		t = gtkAccessibleTristateGetType()
+	}
+	if t == 0 {
+		return -1
+	}
 	if enums == nil {
 		enums = map[string]map[string]int32{}
 	}
@@ -159,22 +203,6 @@ func enumValue(kind, nick string) int32 {
 	if m == nil {
 		m = map[string]int32{}
 		enums[kind] = m
-	}
-	if v, ok := m[nick]; ok {
-		return v
-	}
-	var t uintptr
-	switch kind {
-	case "role":
-		t = gtkAccessibleRoleGetType()
-	case "property":
-		t = gtkAccessiblePropertyGetType()
-	case "state":
-		t = gtkAccessibleStateGetType()
-	case "relation":
-		t = gtkAccessibleRelationGetType()
-	case "tristate":
-		t = gtkAccessibleTristateGetType()
 	}
 	v := int32(-1)
 	if e := gEnumGetValueByNick(gTypeClassRef(t), cstr(nick)); e != nil {
@@ -377,21 +405,25 @@ func (w *window) updateAccess(v *view) bool {
 	}
 	if n.multiSelectable != old.multiSelectable {
 		// GTK_ACCESSIBLE_PROPERTY_MULTI_SELECTABLE, whose nick has a hyphen.
-		prop := accEnums.propMultiSel
-		if n.multiSelectable {
-			var val gValue
-			gValueInit(uintptr(unsafe.Pointer(&val)), gTypeBoolean)
-			gValueSetBoolean(&val, 1)
-			gtkAccessibleUpdatePropertyValue(acc, 1, &prop, &val)
-			gValueUnset(uintptr(unsafe.Pointer(&val)))
-		} else {
-			gtkAccessibleResetProperty(acc, prop)
+		if prop := accEnums.propMultiSel; prop >= 0 {
+			if n.multiSelectable {
+				var val gValue
+				gValueInit(uintptr(unsafe.Pointer(&val)), gTypeBoolean)
+				gValueSetBoolean(&val, 1)
+				gtkAccessibleUpdatePropertyValue(acc, 1, &prop, &val)
+				gValueUnset(uintptr(unsafe.Pointer(&val)))
+			} else {
+				gtkAccessibleResetProperty(acc, prop)
+			}
 		}
 	}
 	if n.ranged != old.ranged || n.min != old.min || n.max != old.max || n.now != old.now {
 		props := [3]int32{accEnums.propValueMin, accEnums.propValueMax, accEnums.propValueNow}
 		vals := [3]float32{n.min, n.max, n.now}
 		for i, prop := range props {
+			if prop < 0 {
+				continue
+			}
 			if !n.ranged {
 				gtkAccessibleResetProperty(acc, prop)
 				continue
