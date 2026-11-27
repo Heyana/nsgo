@@ -61,3 +61,24 @@ func TestBiometricsRefuseAnEmptyReason(t *testing.T) {
 		t.Fatalf("empty reason: result %v, reasons %q", result, app.AuthenticationReasons)
 	}
 }
+
+func TestBiometricsWindowsHelloKind(t *testing.T) {
+	var scope *core.Scope
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		scope = cx
+		return core.View{}
+	})
+	app.BiometricAvailability = core.BiometricWindowsHello
+	app.BiometricAnswer = core.BiometricCancelled
+	var kind core.BiometricKind
+	var result core.BiometricResult
+	scope.BiometricAvailability(func(v core.BiometricKind) { kind = v })
+	scope.AuthenticateBiometric("Unlock vault", func(v core.BiometricResult) { result = v })
+	app.Settle()
+	if kind != core.BiometricWindowsHello || result != core.BiometricCancelled {
+		t.Fatalf("windows hello: kind=%v result=%v", kind, result)
+	}
+	if !slices.Equal(app.AuthenticationReasons, []string{"Unlock vault"}) {
+		t.Fatalf("reasons %v", app.AuthenticationReasons)
+	}
+}

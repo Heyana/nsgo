@@ -380,16 +380,17 @@ type window struct {
 	powerNotification uintptr
 	// primary is the backend's own surface. Opened surfaces share its engine
 	// and message loop, but closing one must not end the process.
-	primary       bool
-	hostWindow    *window // root window for services shared by an opened surface
-	kind          driver.SurfaceKind
-	destroying    bool
-	sessionEnding bool
-	startup       *packagedStartup
-	hideOnBlur    bool
-	noActivate    bool
-	dock          driver.PanelDock
-	visible       bool
+	primary          bool
+	hostWindow       *window // root window for services shared by an opened surface
+	kind             driver.SurfaceKind
+	destroying       bool
+	biometricsClosed bool
+	sessionEnding    bool
+	startup          *packagedStartup
+	hideOnBlur       bool
+	noActivate       bool
+	dock             driver.PanelDock
+	visible          bool
 	// showFirst waits for the first mount batch before showing a newly opened window or panel, so no empty frame flashes before the app mounts.
 	showFirst firstShow
 	// pointerMode is where the window takes the pointer (windowpointer.go).
@@ -1464,8 +1465,11 @@ func (w *window) apply(b *driver.MountBatch) {
 				w.sensorLocation(it.Count, *it.Sensor)
 			}
 			continue
-		case driver.ItemBiometricAvailability, driver.ItemBiometricAuthenticate:
-			w.engine.Dispatch(driver.NoBiometric(it))
+		case driver.ItemBiometricAvailability:
+			w.biometricAvailability(it.Count)
+			continue
+		case driver.ItemBiometricAuthenticate:
+			w.biometricAuthenticate(it.Count, it.Value)
 			continue
 		case driver.ItemAuthSession:
 			w.authSession(it.Count, *it.Auth)
@@ -3290,6 +3294,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		endWindowGuide(w)
 		endWindowScanner(w)
 		endWindowLocation(w)
+		endWindowBiometrics(w)
 		w.releaseAllAwake()
 		w.loopback.Close()
 		// Clients let the window's providers go.

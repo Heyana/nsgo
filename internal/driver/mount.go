@@ -502,6 +502,7 @@ const (
 	BiometricNone = iota
 	BiometricFace
 	BiometricFingerprint
+	BiometricWindowsHello
 )
 
 // Biometric results, as reported by an authentication request.

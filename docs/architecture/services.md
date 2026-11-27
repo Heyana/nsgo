@@ -250,12 +250,13 @@ A Pixel 3 XL on Android 12 found a Mac's Bonjour advertisement, read its binary 
 
 ## Biometrics
 
-`BiometricAvailability` answers with the enrolled kind (`BiometricFace`, `BiometricFingerprint` or `BiometricNone`) without prompting. `AuthenticateBiometric` shows the system's biometric prompt with the app's reason, which must not be empty (an empty one answers `BiometricFailure` without a prompt, as `LocalAuthentication` throws on it), and answers `BiometricSuccess`, `BiometricFailure`, `BiometricCancelled` or `BiometricUnavailable`; it never falls back to a device passcode. Code whose `Access` does not grant `AccessBiometrics` gets unavailable.
+`BiometricAvailability` answers with the enrolled kind (`BiometricFace`, `BiometricFingerprint`, `BiometricWindowsHello` or `BiometricNone`) without prompting. `AuthenticateBiometric` shows the system's prompt with the app's reason, which must not be empty (an empty one answers `BiometricFailure` without a prompt, as `LocalAuthentication` throws on it), and answers `BiometricSuccess`, `BiometricFailure`, `BiometricCancelled` or `BiometricUnavailable`. On macOS, iOS, Android and HarmonyOS it never falls back to a device passcode; on Windows (`BiometricWindowsHello`), Windows Hello accepts whichever method the user configured (face, fingerprint, or Windows Hello PIN). Code whose `Access` does not grant `AccessBiometrics` gets unavailable.
 
 | Target | Availability and authentication | App configuration |
 | --- | --- | --- |
 | macOS, iOS | `LAContext` from `LocalAuthentication` (`apple/biometric.go`) | Face ID needs `NSFaceIDUsageDescription` in `nsgo.yaml`'s `apple.info` |
 | Android | `BiometricManager`/`BiometricPrompt` from API 28; as Android does not say which kind is enrolled, an enrolled fingerprint answers `BiometricFingerprint` and otherwise face hardware answers `BiometricFace` | The app lists `USE_BIOMETRIC` in `android.permissions` |
+| Windows | WinRT `Windows.Security.Credentials.UI.UserConsentVerifier` (`windows/biometric.go`): `IUserConsentVerifierStatics::CheckAvailabilityAsync` answers `BiometricWindowsHello` when available and `BiometricNone` otherwise without prompting; `IUserConsentVerifierInterop::RequestVerificationForWindowAsync` shows a prompt parented to the window's top-level HWND, cancels pending operations on `WM_DESTROY`, and answers unavailable cleanly when `combase.dll` or the interop API is absent | None |
 | Other targets | Unavailable | None |
 
 `nsgotest` exposes `BiometricAvailability`, `BiometricAnswer` and `AuthenticationReasons` so tests can fake enrollment and prompt results.

@@ -681,7 +681,7 @@ cx.Speak("おはようございます", core.Voice{Lang: "ja-JP", Rate: 0.8}, fu
 
 ## 生物识别
 
-`cx.BiometricAvailability` 回答设备是否录入了面容 ID、触控 ID 或指纹；Android 不说明录入的是哪一种，所以在 Android 上录入了指纹时回答指纹，否则在设备有面部识别硬件时回答面部。`cx.AuthenticateBiometric` 带着一个不能为空的原因请系统确认用户身份，回答成功、失败、取消或不可用。它不会替应用选择密码作为后备方式。
+`cx.BiometricAvailability` 在不弹出提示的情况下回答设备是否录入了面容 ID、触控 ID、指纹或 Windows Hello（`core.BiometricWindowsHello`）。Android 不说明录入的是哪一种，所以在 Android 上录入了指纹时回答指纹，否则在设备有面部识别硬件时回答面部；Windows 不区分用户配置的具体方式，Windows Hello 可用时回答 `core.BiometricWindowsHello`。`cx.AuthenticateBiometric` 带着一个不能为空的原因请系统确认用户身份，回答成功、失败、取消或不可用。在 macOS、iOS、Android 和 HarmonyOS 上不会回退到设备密码；在 Windows 上会弹出归属于当前窗口的 Windows Hello 提示，并接受用户配置的任意 Windows Hello 验证方式（面部、指纹或 Windows Hello PIN）。
 
 ```go
 cx.BiometricAvailability(func(kind core.BiometricKind) {

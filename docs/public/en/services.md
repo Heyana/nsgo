@@ -595,7 +595,7 @@ On macOS 14 and iOS 17 or later, a finite track uses the native queue to prepare
 
 ## Biometrics
 
-`cx.BiometricAvailability` reports whether Face ID, Touch ID or a device fingerprint is enrolled; Android does not say which kind is enrolled, so there it reports a fingerprint when one is enrolled and otherwise face when the device has face hardware. `cx.AuthenticateBiometric` asks the system to confirm the user with a reason, which must not be empty, and reports success, failure, cancellation or unavailability. It does not choose a passcode fallback for the app.
+`cx.BiometricAvailability` reports whether Face ID, Touch ID, a device fingerprint or Windows Hello (`core.BiometricWindowsHello`) is enrolled without showing a prompt. Android does not say which kind is enrolled, so there it reports a fingerprint when one is enrolled and otherwise face when the device has face hardware; Windows does not distinguish which factor is configured and reports `core.BiometricWindowsHello` when Windows Hello is ready. `cx.AuthenticateBiometric` asks the system to confirm the user with a reason, which must not be empty, and reports success, failure, cancellation or unavailability. On macOS, iOS, Android and HarmonyOS it never falls back to a device passcode; on Windows it shows a Windows Hello prompt parented to the requesting window and accepts whichever Windows Hello method the user configured (face, fingerprint, or Windows Hello PIN).
 
 ```go
 cx.BiometricAvailability(func(kind core.BiometricKind) {
