@@ -116,6 +116,9 @@ type Config struct {
 	LiveActivities LiveActivities `yaml:"live_activities"`
 	// AppClip is the app's App Clip, which nsgo build nests in its iOS package.
 	AppClip *AppClip `yaml:"app_clip"`
+	// QuickLook is the app's macOS QuickLook Preview Extension
+	// (com.apple.quicklook.preview), embedded in Contents/PlugIns.
+	QuickLook *QuickLook `yaml:"quicklook"`
 	// Android is the Android target's configuration.
 	Android    AndroidConfig   `yaml:"android"`
 	Compliance StoreCompliance `yaml:"compliance"`
@@ -366,6 +369,19 @@ type AppClip struct {
 	Location      bool     `yaml:"location"`
 }
 
+// QuickLook is nsgo.yaml's quicklook section: a macOS QuickLook Preview
+// Extension (com.apple.quicklook.preview) embedded in Contents/PlugIns.
+type QuickLook struct {
+	// Main is the Go main package path of the QuickLook preview extension,
+	// such as ./cmd/quicklook.
+	Main string `yaml:"main"`
+	// ID is the extension's bundle identifier: <app id>.quicklook by default.
+	ID string `yaml:"id"`
+	// Types are the UTIs the extension previews (QLSupportedContentTypes).
+	// When omitted, all UTIs declared in file_types are used.
+	Types []string `yaml:"types"`
+}
+
 // AndroidConfig is nsgo.yaml's android section.
 type AndroidConfig struct {
 	Permissions         []string `yaml:"permissions"`
@@ -519,6 +535,7 @@ type Signing struct {
 	ShareProfile      string `yaml:"share_profile"`
 	AssetPacksProfile string `yaml:"asset_packs_profile"`
 	ClipProfile       string `yaml:"clip_profile"`
+	QuickLookProfile  string `yaml:"quicklook_profile"`
 	MacOSProfile      string `yaml:"macos_profile"`
 	Installer         string `yaml:"installer"`
 	Keystore          string `yaml:"keystore"`
@@ -697,6 +714,9 @@ func (c *Config) Validate() error {
 	if err := c.validateAppClip(); err != nil {
 		return fmt.Errorf("nsgo.yaml: %w", err)
 	}
+	if err := c.validateQuickLook(); err != nil {
+		return fmt.Errorf("nsgo.yaml: %w", err)
+	}
 	if err := c.validatePrivacy(); err != nil {
 		return fmt.Errorf("nsgo.yaml: %w", err)
 	}
@@ -717,7 +737,7 @@ func (c *Config) Validate() error {
 	}
 	for _, path := range []*string{
 		&c.Sign.Profile, &c.Sign.WatchProfile, &c.Sign.WidgetsProfile, &c.Sign.ShareProfile,
-		&c.Sign.AssetPacksProfile, &c.Sign.ClipProfile, &c.Sign.MacOSProfile,
+		&c.Sign.AssetPacksProfile, &c.Sign.ClipProfile, &c.Sign.QuickLookProfile, &c.Sign.MacOSProfile,
 		&c.Sign.Keystore, &c.Sign.Certificate,
 	} {
 		if *path != "" {

@@ -553,6 +553,44 @@ func (c *Config) validateAppClip() error {
 	return nil
 }
 
+func (c *Config) validateQuickLook() error {
+	ql := c.QuickLook
+	if ql == nil {
+		return nil
+	}
+	if ql.Main == "" || strings.HasPrefix(ql.Main, "-") || strings.Contains(ql.Main, "...") || strings.ContainsAny(ql.Main, " \t\r\n") {
+		return fmt.Errorf("quicklook.main %q is not one Go package's path", ql.Main)
+	}
+	if ql.ID == "" {
+		ql.ID = c.ID + ".quicklook"
+	}
+	if !strings.HasPrefix(ql.ID, c.ID+".") || !utiPattern.MatchString(ql.ID) {
+		return fmt.Errorf("quicklook.id %q is not under the app's ID, as %s.quicklook", ql.ID, c.ID)
+	}
+	if len(c.Widgets) > 0 && ql.ID == c.ID+".widgets" {
+		return fmt.Errorf("quicklook.id %q collides with the widget extension's bundle ID", ql.ID)
+	}
+	if len(ql.Types) == 0 {
+		for _, f := range c.FileTypes {
+			ql.Types = append(ql.Types, f.ID)
+		}
+	}
+	if len(ql.Types) == 0 {
+		return fmt.Errorf("quicklook needs types or file_types")
+	}
+	seen := make(map[string]bool, len(ql.Types))
+	for i, uti := range ql.Types {
+		if !utiPattern.MatchString(uti) {
+			return fmt.Errorf("quicklook.types[%d]: %q is not a uniform type identifier, as %s.doc", i, uti, c.ID)
+		}
+		if seen[uti] {
+			return fmt.Errorf("quicklook.types[%d]: the type %q is listed twice", i, uti)
+		}
+		seen[uti] = true
+	}
+	return nil
+}
+
 func (c *Config) validatePrivacy() error {
 	for name, reasons := range c.Apple.Privacy.AccessedAPIs {
 		if !strings.HasPrefix(name, "NSPrivacyAccessedAPICategory") {

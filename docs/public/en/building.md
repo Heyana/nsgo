@@ -779,9 +779,10 @@ sign:
   # widgets_profile: assets/Widgets.mobileprovision  # the iOS extension's profile; use a macOS profile for a Mac App Store build
   # share_profile: assets/Share.mobileprovision      # signs the IPA's share extension
   # clip_profile: assets/Clip.mobileprovision        # signs the IPA's App Clip
+  # quicklook_profile: assets/QuickLook.provisionprofile  # signs the Mac App Store QuickLook preview extension
 ```
 
-The keystore's passwords come from `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD`. `-team` signs the iPhone's package. `-profile`, `-watch-profile`, `-widgets-profile`, `-share-profile`, `-clip-profile` and `-macos-profile` replace the app's, the watch app's, the widget extension's, the share extension's, the App Clip's and the Mac App Store's provisioning profiles from the command line. `-installer` replaces the Mac Installer Distribution identity.
+The keystore's passwords come from `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD`. `-team` signs the iPhone's package. `-profile`, `-watch-profile`, `-widgets-profile`, `-share-profile`, `-clip-profile`, `-quicklook-profile` and `-macos-profile` replace the app's, the watch app's, the widget extension's, the share extension's, the App Clip's, the Mac App Store QuickLook extension's and the Mac App Store's provisioning profiles from the command line. `-installer` replaces the Mac Installer Distribution identity.
 
 For `-target watchos`, `nsgo build` keeps the standalone `<name>.app` for `-run` device installs and writes `<name>.ipa` (copied to `dist/releases` as `<slug>-<version>-watchos.ipa`) containing Xcode's watch-only iOS stub (`ITSWatchOnlyContainer`), the nested watchOS app (`<id>.watchkitapp`) and `WatchKitSupport2/WK`. For App Store Connect, set `sign.profile` for `<id>` and `sign.watch_profile` for `<id>.watchkitapp` from the same team (or a single wildcard `sign.profile` covering both); the build validates both profiles and signs inside-out.
 
@@ -825,6 +826,19 @@ sign:
 ## Widgets and Live Activities
 
 `build` and `dev` compile the extension that draws the app's widgets and Live Activities into the macOS and iOS packages with Xcode's Swift compiler, with no separate step. On iOS the app and its widgets share an app group: `-run` on an iPhone has Xcode sign both and register the group; for an IPA, enable it for both `<id>` and `<id>.widgets`, and sign the extension with `sign.widgets_profile`. Android standalone APKs and AABs include App Widget providers and resources from `widgets`; the prebuilt Java runtime draws their timelines with no SDK or Java compiler needed by app builds. Android 16 shows Live Activities as Live Updates, which need no extension. [Widgets](widgets.md) and [Live Activities](live-activities.md) cover their configuration and API.
+
+## QuickLook previews
+
+On macOS, `quicklook` embeds a QuickLook Preview Extension (`Contents/PlugIns/QuickLookPreview.appex`) so Finder previews the app's documents with an NSGo view:
+
+```yaml
+quicklook:
+  main: ./cmd/quicklook      # Go main package calling nsgo.RunQuickLook
+  # id: dev.example.app.quicklook  # <id>.quicklook by default
+  # types: [dev.example.app.doc]   # defaults to all UTIs declared in file_types
+```
+
+The entry package calls `nsgo.RunQuickLook(Preview)` (accepting `nsgo.WindowSize` for the preview's preferred content size, `nsgo.Fonts`, `nsgo.Appearance`, `nsgo.Component`, `nsgo.DataDir` and `nsgo.OnError`). `Preview` receives the selected file's path directly, and `"path"` and `"url"` are also available in `cx.HostParams()`. macOS runs the extension inside App Sandbox with read access granted only to the selected file URL. `build` signs the `.appex` with `com.apple.security.app-sandbox` before signing the app — ad hoc for local builds and `dev` (which registers it with `pluginkit -a`), with `sign.identity` and hardened runtime/timestamp when notarizing, and with `sign.quicklook_profile` (`-quicklook-profile`) from the same team for provisioned Mac App Store builds — and `macos_universal` joins its binary with `lipo`.
 
 ## Android App Links
 

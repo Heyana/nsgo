@@ -27,7 +27,7 @@ type macDevBundle struct {
 func (b *macDevBundle) build(ctx context.Context, p *project, dir, arch string) (inPlace bool, err error) {
 	bundleInputs := macBundleInputs(p)
 	app := filepath.Join(dir, p.Name+".app")
-	if len(p.Commands) == 0 &&
+	if len(p.Commands) == 0 && p.QuickLook == nil &&
 		b.dir == dir && b.name == p.Name && b.id == p.ID && b.arch == arch &&
 		b.bundleInputs == bundleInputs &&
 		macAppBundleReady(app, p.Name) {
@@ -46,6 +46,12 @@ func (b *macDevBundle) build(ctx context.Context, p *project, dir, arch string) 
 		// The app starts from its binary, which registers no extension
 		// with the system: register its widgets.
 		if err := run(ctx, "pluginkit", "-a", macWidgetsAppex(builtApp)); err != nil {
+			*b = macDevBundle{}
+			return false, err
+		}
+	}
+	if p.QuickLook != nil {
+		if err := run(ctx, "pluginkit", "-a", macQuickLookAppex(builtApp)); err != nil {
 			*b = macDevBundle{}
 			return false, err
 		}

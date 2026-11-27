@@ -24,10 +24,10 @@ import (
 
 // signFlags are nsgo build's flags that replace nsgo.yaml's sign values.
 type signFlags struct {
-	identity, profile, watchProfile, widgetsProfile, shareProfile, clipProfile, macOSProfile *override[string]
-	installer                                                                                *override[string]
-	keystore, alias, notarize                                                                *override[string]
-	certificate, signCommand, timestamp                                                      *override[string]
+	identity, profile, watchProfile, widgetsProfile, shareProfile, clipProfile, quickLookProfile, macOSProfile *override[string]
+	installer                                                                                                  *override[string]
+	keystore, alias, notarize                                                                                  *override[string]
+	certificate, signCommand, timestamp                                                                        *override[string]
 }
 
 func (f *signFlags) bind(fs *flag.FlagSet) {
@@ -37,6 +37,7 @@ func (f *signFlags) bind(fs *flag.FlagSet) {
 	f.widgetsProfile = stringFlag(fs, "widgets-profile", "the iOS or Mac App Store widget extension's provisioning `profile` (default: nsgo.yaml's sign.widgets_profile)")
 	f.shareProfile = stringFlag(fs, "share-profile", "the iOS share extension's provisioning `profile` (default: nsgo.yaml's sign.share_profile)")
 	f.clipProfile = stringFlag(fs, "clip-profile", "the iOS App Clip's provisioning `profile` (default: nsgo.yaml's sign.clip_profile)")
+	f.quickLookProfile = stringFlag(fs, "quicklook-profile", "the Mac App Store QuickLook extension's provisioning `profile` (default: nsgo.yaml's sign.quicklook_profile)")
 	f.macOSProfile = stringFlag(fs, "macos-profile", "the Mac App Store provisioning `profile` (default: nsgo.yaml's sign.macos_profile)")
 	f.installer = stringFlag(fs, "installer", "the Mac Installer Distribution `identity` (default: nsgo.yaml's sign.installer)")
 	f.keystore = stringFlag(fs, "keystore", "the Android `keystore`, PKCS#12 or JKS; NSGO_KEYSTORE_PASSWORD and NSGO_KEY_PASSWORD give its passwords (default: nsgo.yaml's sign.keystore)")
@@ -63,6 +64,9 @@ func (f *signFlags) apply(p *project) {
 	}
 	if f.clipProfile.set {
 		p.Sign.ClipProfile = p.resolve(f.clipProfile.value)
+	}
+	if f.quickLookProfile.set {
+		p.Sign.QuickLookProfile = p.resolve(f.quickLookProfile.value)
 	}
 	if f.macOSProfile.set {
 		p.Sign.MacOSProfile = p.resolve(f.macOSProfile.value)
@@ -128,6 +132,11 @@ func signMacApp(ctx context.Context, p *project, app string) error {
 	}
 	if appex := macWidgetsAppex(app); len(p.Widgets) > 0 {
 		if err := signMacWidgets(ctx, p, appex, p.Sign.Identity); err != nil {
+			return err
+		}
+	}
+	if appex := macQuickLookAppex(app); p.QuickLook != nil {
+		if err := signMacQuickLook(ctx, p, appex, p.Sign.Identity); err != nil {
 			return err
 		}
 	}

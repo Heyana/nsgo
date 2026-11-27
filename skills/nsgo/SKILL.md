@@ -179,6 +179,8 @@ func main() { nsgo.Run(Root) }
 
 For sandboxed Mac App Store widgets, provide `sign.macos_profile` and a macOS `sign.widgets_profile` for the app and `<id>.widgets`, from the same team granting `apple.app_group` (default `group.<id>`). Both timelines and images use the shared container; `-installers=false` still signs the bundles. [Widgets](https://nsgo.dev/docs/widgets.md)
 
+For macOS QuickLook document previews, set `quicklook.main` in `nsgo.yaml` (defaulting `types` to `file_types` UTIs) and call `nsgo.RunQuickLook` in that main package; provisioned Mac App Store builds also take `sign.quicklook_profile`. [QuickLook previews](https://nsgo.dev/docs/building.md#quicklook-previews)
+
 ## App Clips
 
 An App Clip can request its full app's StoreKit recommendation from an explicit user action with `mobile.ShowAppClipOverlay(cx, mobile.AppClipOverlayBottom)` (or `AppClipOverlayBottomRaised`). Keep the returned dismissal function if needed; scope cleanup releases the request. It does nothing outside a native iOS App Clip and reports no offer/installation outcome. [App Clips](https://nsgo.dev/docs/building.md#app-clips)
