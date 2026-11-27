@@ -1567,7 +1567,7 @@ func TestVideoReportsWhatGStreamerCannotPlay(t *testing.T) {
 	}
 }
 
-// TestVideoShowsWhatIsBehindItsTransparentPixels plays a VP9 WebM with alpha, transparent around a blue square, over a red view: the red shows through around the square. Without GStreamer's codecalpha plug-in it reports an error with MediaErrorAlphaUnsupported instead, and the test skips.
+// TestVideoShowsWhatIsBehindItsTransparentPixels plays a VP9 WebM with alpha, transparent around a blue square, over a red view, both without and with Controls: the red shows through around the square. Without GStreamer's codecalpha plug-in it reports an error with MediaErrorAlphaUnsupported instead, and the test skips.
 func TestVideoShowsWhatIsBehindItsTransparentPixels(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")
@@ -1576,46 +1576,58 @@ func TestVideoShowsWhatIsBehindItsTransparentPixels(t *testing.T) {
 	if err := os.WriteFile(path, alphaclips.VP9Alpha, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	title := "nsgo-native-" + t.Name()
-	app := func(cx *core.Scope) core.Node {
-		state := core.NewSignal(cx, "")
-		cx.Effect(func() { cx.SetTitle(title + "|" + state.Get()) })
-		return core.View{Style: core.Style{Width: driver.Pt(100), Height: driver.Pt(100), Background: driver.RGB(0xff0000)},
-			Children: []core.Node{core.Video{Source: path, Repeat: true, Muted: true,
-				Style:  core.Style{Width: driver.Pt(100), Height: driver.Pt(100)},
-				OnLoad: func(core.VideoInfo) { state.Set("load") },
-				OnError: func(err error) {
-					var reason core.MediaErrorReason
-					if me, ok := err.(*core.MediaError); ok {
-						reason = me.Reason
-					}
-					state.Set("error " + reason.String() + " " + err.Error())
-				}}},
+	for _, controls := range []bool{false, true} {
+		name := "plain"
+		if controls {
+			name = "controls"
 		}
-	}
-	w := startTestWindow(t, app, Options{Title: title, Width: 360, Height: 240})
-	got := waitTitle(t, w, func(s string) bool { return strings.Contains(s, "|error ") || strings.HasSuffix(s, "|load") })
-	if strings.Contains(got, "|error ") {
-		if gstFeature("vp9alphadecodebin") {
-			t.Fatalf("title = %q, but GStreamer has vp9alphadecodebin", got)
-		}
-		if !strings.Contains(got, "|error alpha-unsupported ") || !strings.Contains(got, "codecalpha") {
-			t.Fatalf("title = %q, want the alpha refused and the missing plug-in named", got)
-		}
-		t.Skip(got)
-	}
-	// The clip's square covers its middle half: 25 to 75 points here.
-	red := func(p []byte) bool { return p[2] > 200 && p[1] < 60 && p[0] < 60 && p[3] == 255 }
-	blue := func(p []byte) bool { return p[0] > 200 && p[1] < 60 && p[2] < 60 && p[3] == 255 }
-	var last pixels
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		last = w.surfacePixels(t)
-		if red(last.at(8, 8)) && red(last.at(92, 92)) && blue(last.at(50, 50)) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("want red around a blue square, have %v and %v at its corners and %v in its middle (BGRA) in %dx%d", last.at(8, 8), last.at(92, 92), last.at(50, 50), last.width, last.height)
-		}
+		t.Run(name, func(t *testing.T) {
+			title := "nsgo-native-" + t.Name()
+			app := func(cx *core.Scope) core.Node {
+				state := core.NewSignal(cx, "")
+				cx.Effect(func() { cx.SetTitle(title + "|" + state.Get()) })
+				return core.View{Style: core.Style{Width: driver.Pt(100), Height: driver.Pt(100), Background: driver.RGB(0xff0000)},
+					Children: []core.Node{core.Video{Source: path, Repeat: true, Muted: true, Controls: controls,
+						Style:  core.Style{Width: driver.Pt(100), Height: driver.Pt(100)},
+						OnLoad: func(core.VideoInfo) { state.Set("load") },
+						OnError: func(err error) {
+							var reason core.MediaErrorReason
+							if me, ok := err.(*core.MediaError); ok {
+								reason = me.Reason
+							}
+							state.Set("error " + reason.String() + " " + err.Error())
+						}}},
+				}
+			}
+			w := startTestWindow(t, app, Options{Title: title, Width: 360, Height: 240})
+			got := waitTitle(t, w, func(s string) bool { return strings.Contains(s, "|error ") || strings.HasSuffix(s, "|load") })
+			if strings.Contains(got, "|error ") {
+				if gstFeature("vp9alphadecodebin") {
+					t.Fatalf("title = %q, but GStreamer has vp9alphadecodebin", got)
+				}
+				if !strings.Contains(got, "|error alpha-unsupported ") || !strings.Contains(got, "codecalpha") {
+					t.Fatalf("title = %q, want the alpha refused and the missing plug-in named", got)
+				}
+				t.Skip(got)
+			}
+			// The clip's square covers its middle half: 25 to 75 points here. With Controls, GTK's bar sits at the bottom, so sample the top corners.
+			red := func(p []byte) bool { return p[2] > 200 && p[1] < 60 && p[0] < 60 && p[3] == 255 }
+			blue := func(p []byte) bool { return p[0] > 200 && p[1] < 60 && p[2] < 60 && p[3] == 255 }
+			secondY := 92
+			if controls {
+				secondY = 8
+			}
+			var last pixels
+			for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+				last = w.surfacePixels(t)
+				if red(last.at(8, 8)) && red(last.at(92, secondY)) && blue(last.at(50, 50)) {
+					return
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("want red around a blue square, have %v and %v at its corners and %v in its middle (BGRA) in %dx%d", last.at(8, 8), last.at(92, secondY), last.at(50, 50), last.width, last.height)
+				}
+			}
+		})
 	}
 }
 

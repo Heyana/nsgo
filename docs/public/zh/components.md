@@ -38,7 +38,7 @@ core.View{
 
 `core.Video` 用平台的播放器播放文件或 URL。在 macOS、iOS 和 tvOS 上，`Video.AudioSource` 可以为有固定时长的视频指定单独的音频文件或 URL。视频使用该来源的音轨，画面和声音同时开始，`Ref.Seek` 在同一条时间轴上移动两者。播放时长由画面决定，较短的音轨播完后保持静音。
 
-带透明通道的视频会透出它后面的内容：macOS 上用 `.mov` 里带 alpha 的 HEVC（iOS 尚未验证），Linux 上用 WebM 里带 alpha 的 VP9，并需要 GStreamer 的 codecalpha 插件（`gstreamer1.0-plugins-bad`，Linux 安装包可以在 `nsgo.yaml` 里把它列为推荐依赖）。在 macOS、iOS、Windows 和 Linux 上，本地视频的透明通道无法保留时（Apple 平台上的 WebM、Linux 上的 HEVC，以及在 Windows 机器上验证 Media Foundation 的透明通道输出之前，Windows 上的任何格式），`OnError` 会说明原因，而不是把视频显示在不透明的方框里：这个错误是 `*core.MediaError`，其 `Reason` 为 `core.MediaErrorAlphaUnsupported`，应用可以据此改用自己的解码器播放这段视频。Android 和 Web 平台，以及各平台上的远程 URL，会按解码器的输出播放这类视频，可能是不透明的。
+带透明通道的视频会透出它后面的内容：macOS 上用 `.mov` 里带 alpha 的 HEVC（iOS 使用同样的非不透明播放器图层），Linux 上用 WebM 里带 alpha 的 VP9，并需要 GStreamer 的 codecalpha 插件（`gstreamer1.0-plugins-bad`，Linux 安装包可以在 `nsgo.yaml` 里把它列为推荐依赖，开启 `Controls` 时同样保留透明背景），Web 上则由支持 VP9 alpha WebM 或带 alpha HEVC 的浏览器透出底层视图。在 macOS、iOS、Windows 和 Linux 上，本地视频的透明通道无法保留时（Apple 平台上的 WebM、Linux 上的 HEVC，以及在 Windows 机器上验证 Media Foundation 的透明通道输出之前，Windows 上的任何格式），`OnError` 会说明原因，而不是把视频显示在不透明的方框里：这个错误是 `*core.MediaError`，其 `Reason` 为 `core.MediaErrorAlphaUnsupported`，应用可以据此改用自己的解码器播放这段视频。Android（使用非不透明的 `TextureView`）和 Web 平台，以及各平台上的远程 URL，会按解码器的输出播放这类视频，可能是不透明的。
 
 在 Apple、Android、Windows、Linux 和 Web 平台，`OnPause` 和 `OnPlay` 会跟随内置控件。控件暂停时，`OnPause` 给出 `VideoPauseControls`。`Paused` 仅在打开来源或值变化时应用。调整音量、速度和布局会保留原生暂停或播放状态，包括控件在 `Paused` 仍为 true 时开始播放的情况。如果应用显示自己的播放按钮，将状态绑定到 `PausedFunc`，并在这些回调中更新它。
 

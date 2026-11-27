@@ -96,6 +96,8 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         this.context = context.getApplicationContext();
         this.ui = ui;
         this.reporter = reporter;
+        // TextureView defaults to opaque, which ignores alpha from transparent decoders.
+        setOpaque(false);
         setSurfaceTextureListener(this);
     }
 

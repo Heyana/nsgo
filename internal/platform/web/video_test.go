@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	alphaclips "github.com/nsgo-dev/nsgo/internal/platform/videoalpha/clips"
 )
 
 // A real media element plays to its end, stays there through unrelated configuration, and replays only for a pause change or an explicit seek.
@@ -119,4 +120,71 @@ func TestFinishedVideoWaitsForReplay(t *testing.T) {
 	config.Source = other
 	s.setVideo(v, &config)
 	wait(7)
+}
+
+// TestVideoPreservesVP9Alpha plays VP9 with alpha in WebM in the browser's <video> element and verifies that the element keeps a transparent background and that its decoded pixels keep transparent corners around the opaque blue center, both without and with Controls.
+func TestVideoPreservesVP9Alpha(t *testing.T) {
+	doc := js.Global().Get("document")
+	if !doc.Truthy() {
+		t.Skip("needs a browser: run with nsgo test -target web")
+	}
+	probe := doc.Call("createElement", "video")
+	if probe.Call("canPlayType", `video/webm; codecs="vp9"`).String() == "" {
+		t.Skip("browser does not play VP9 WebM")
+	}
+	raw := js.Global().Get("Uint8Array").New(len(alphaclips.VP9Alpha))
+	js.CopyBytesToJS(raw, alphaclips.VP9Alpha)
+	blob := js.Global().Get("Blob").New([]any{raw}, map[string]any{"type": "video/webm"})
+	url := js.Global().Get("URL").Call("createObjectURL", blob).String()
+	defer js.Global().Get("URL").Call("revokeObjectURL", url)
+
+	canvas := doc.Call("createElement", "canvas")
+	canvas.Set("width", 16)
+	canvas.Set("height", 16)
+	ctx := canvas.Call("getContext", "2d")
+
+	for _, controls := range []bool{false, true} {
+		name := "plain"
+		if controls {
+			name = "controls"
+		}
+		t.Run(name, func(t *testing.T) {
+			s := &surface{doc: doc}
+			v := &view{el: doc.Call("createElement", "div")}
+			s.views = []*view{v}
+			doc.Get("body").Call("appendChild", v.el)
+			s.createVideo(v)
+			defer func() { v.video.release(); v.listeners.release(); v.el.Call("remove") }()
+
+			if bg := v.video.el.Get("style").Get("background").String(); bg != "transparent" {
+				t.Fatalf("video background style = %q, want transparent", bg)
+			}
+			config := driver.VideoConfig{
+				Source: url, Muted: true, Repeat: true, Controls: controls,
+				Volume: 1, Rate: 1, ProgressInterval: time.Second,
+			}
+			s.setVideo(v, &config)
+
+			var c1, c2, mid [4]int
+			readPixel := func(data js.Value, x, y int) [4]int {
+				i := (y*16 + x) * 4
+				return [4]int{data.Index(i).Int(), data.Index(i + 1).Int(), data.Index(i + 2).Int(), data.Index(i + 3).Int()}
+			}
+			for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(25 * time.Millisecond) {
+				if v.video.el.Get("readyState").Int() >= 2 && v.video.el.Get("videoWidth").Int() > 0 {
+					ctx.Call("clearRect", 0, 0, 16, 16)
+					ctx.Call("drawImage", v.video.el, 0, 0, 16, 16)
+					data := ctx.Call("getImageData", 0, 0, 16, 16).Get("data")
+					c1, c2, mid = readPixel(data, 1, 1), readPixel(data, 14, 14), readPixel(data, 8, 8)
+					if c1[3] <= 10 && c2[3] <= 10 && mid[3] >= 245 && mid[2] > 200 && mid[0] < 60 && mid[1] < 60 {
+						return
+					}
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("VP9 alpha frame corners=%v,%v center=%v (RGBA), readyState=%d, want transparent corners and opaque blue center",
+						c1, c2, mid, v.video.el.Get("readyState").Int())
+				}
+			}
+		})
+	}
 }

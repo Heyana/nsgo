@@ -15,6 +15,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/engine"
 	"github.com/nsgo-dev/nsgo/internal/platform/imagedecode"
 	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
+	"github.com/nsgo-dev/nsgo/internal/platform/videoalpha"
 )
 
 func closeTo(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
@@ -2267,6 +2268,15 @@ func TestPinnedMotionWinsOverTheMachines(t *testing.T) {
 		w.zoomTo(scroll, &driver.ZoomRequest{Scale: 3}, true)
 		if animated := scroll.zooming != nil; animated == pinned {
 			t.Errorf("pinned ReduceMotion %v: animated zoom %v", pinned, animated)
+		}
+	}
+}
+
+func TestVideoAlphaRefusedNamesCodec(t *testing.T) {
+	for _, codec := range []videoalpha.Codec{videoalpha.VP8, videoalpha.VP9, videoalpha.HEVC} {
+		msg := alphaRefused(codec)
+		if msg == "" {
+			t.Errorf("alphaRefused(%v) is empty", codec)
 		}
 	}
 }

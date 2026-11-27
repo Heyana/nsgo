@@ -536,6 +536,7 @@ func (v *Video) show() {
 		shown.Send(sel("setControlsStyle:"), inline)
 	} else if c := Class("AVPlayerLayer"); c != 0 {
 		v.layer = objc.ID(c).Send(sel("playerLayerWithPlayer:"), v.player).Send(sel("retain"))
+		clearPlayerLayer(v.layer)
 		shown = objc.ID(classVideoLayerView).Send(sel("alloc")).Send(sel("initWithFrame:"), CGRect{})
 		// Layer-hosting: the player layer is the view's own, so it
 		// follows the view's size.
@@ -546,6 +547,12 @@ func (v *Video) show() {
 	}
 	WithoutAnimation(func() { fill(v.holder, shown) })
 	v.shown = shown
+}
+
+// clearPlayerLayer keeps an AVPlayerLayer non-opaque with no background so HEVC with alpha composites over views behind it.
+func clearPlayerLayer(layer objc.ID) {
+	layer.Send(sel("setOpaque:"), false)
+	layer.Send(sel("setBackgroundColor:"), objc.ID(0))
 }
 
 // attach shows an iOS player in a layer, or in an
@@ -562,6 +569,8 @@ func (v *Video) attach() {
 		ctrl.Send(sel("setPlayer:"), v.player)
 		ctrl.Send(sel("setShowsPlaybackControls:"), true)
 		if view := ctrl.Send(sel("view")); view != 0 {
+			view.Send(sel("setOpaque:"), false)
+			view.Send(sel("setBackgroundColor:"), objc.ID(Class("UIColor")).Send(sel("clearColor")))
 			view.Send(sel("setFrame:"), bounds)
 			fill(v.holder, view)
 		}
@@ -572,6 +581,7 @@ func (v *Video) attach() {
 		v.controller = ctrl
 	} else if c := Class("AVPlayerLayer"); c != 0 {
 		v.layer = objc.ID(c).Send(sel("playerLayerWithPlayer:"), v.player).Send(sel("retain"))
+		clearPlayerLayer(v.layer)
 		WithoutAnimation(func() {
 			v.layer.Send(sel("setFrame:"), bounds)
 			v.holder.Send(sel("layer")).Send(sel("addSublayer:"), v.layer)
@@ -941,6 +951,7 @@ func (v *Video) configurePiP() {
 		layer := v.layer
 		if layer == 0 {
 			v.pipLayer = objc.ID(Class("AVPlayerLayer")).Send(sel("playerLayerWithPlayer:"), v.player).Send(sel("retain"))
+			clearPlayerLayer(v.pipLayer)
 			layer = v.pipLayer
 			controls := v.controller
 			if runtime.GOOS != "ios" {

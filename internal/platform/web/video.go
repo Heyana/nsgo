@@ -41,7 +41,7 @@ func (s *surface) createVideo(v *view) {
 			Data: &driver.PictureInPictureEvent{State: state}})
 	}
 	vd.el.Set("playsInline", true)
-	setStyle(vd.el, map[string]string{"width": "100%", "height": "100%", "border-radius": "inherit"})
+	setStyle(vd.el, map[string]string{"width": "100%", "height": "100%", "border-radius": "inherit", "background": "transparent"})
 	v.inner = vd.el
 	v.el.Call("appendChild", vd.el)
 	vd.progress = js.FuncOf(func(js.Value, []js.Value) any {

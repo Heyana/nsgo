@@ -200,6 +200,9 @@ func (w *window) showVideo(v *view) {
 	var child uintptr
 	if controls {
 		child = gtkVideoNew()
+		bindLook()
+		addLookCSS()
+		gtkWidgetAddCSSClass(child, cstr("nsgo-video"))
 		// The app drives playback (Paused), not the widget.
 		gtkVideoSetAutoplay(child, 0)
 	} else {
