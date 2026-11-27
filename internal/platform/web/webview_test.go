@@ -3,12 +3,17 @@
 package web
 
 import (
+	"errors"
+	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"syscall/js"
 	"testing"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 func TestEmptyWebSourceIsOpaque(t *testing.T) {
@@ -149,5 +154,289 @@ func TestWebViewDropsTheBridgeOfAPageThatLeft(t *testing.T) {
 	answered("an Evaluate on the HTML again", "4")
 	if len(messages) != 2 || messages[0] != "html" || messages[1] != "html" {
 		t.Errorf("OnMessage heard %q, want the HTML's page's own twice", messages)
+	}
+}
+
+type restrictedWebTestAccess struct {
+	hosts   []string
+	schemes []string
+}
+
+func (a restrictedWebTestAccess) Allows(req core.AccessRequest) bool {
+	if req.Permission != core.AccessWebView {
+		return false
+	}
+	u, err := url.Parse(req.Resource)
+	if err != nil {
+		return false
+	}
+	return driver.AllowsHost(a.hosts, u.Hostname())
+}
+
+func (a restrictedWebTestAccess) WebHosts() []string   { return a.hosts }
+func (a restrictedWebTestAccess) WebSchemes() []string { return a.schemes }
+
+// TestRestrictedWebViewNavigationGrants verifies in a real browser that a
+// sandboxed web view on the web refuses ungranted links, forms, meta
+// refreshes, popups, top-level escapes and script navigations, allows
+// navigations to granted hosts, enforces grants on data:text/html and
+// NoJavaScript sources, and refuses ungranted Ref.Load targets.
+func TestRestrictedWebViewNavigationGrants(t *testing.T) {
+	doc := js.Global().Get("document")
+	if !doc.Truthy() {
+		t.Skip("no document here: run with nsgo test -target web")
+	}
+	allowedBase := os.Getenv("NSGO_BASE")
+	if allowedBase == "" {
+		allowedBase = js.Global().Get("location").Get("href").String()
+	}
+	allowedParsed, err := url.Parse(allowedBase)
+	if err != nil || allowedParsed.Hostname() == "" {
+		t.Fatalf("invalid NSGO_BASE %q: %v", allowedBase, err)
+	}
+	allowedHost := allowedParsed.Hostname()
+	// Load a lightweight static file from the test runner's own server when verifying an allowed navigation.
+	allowedDest := allowedParsed.Scheme + "://" + allowedParsed.Host + "/wasm_exec.js"
+	topBefore := js.Global().Get("location").Get("href").String()
+
+	mount := doc.Call("createElement", "div")
+	mount.Set("id", "nsgo-webview-restricted-test")
+	setStyle(mount, map[string]string{"width": "200px", "height": "200px"})
+	doc.Get("body").Call("appendChild", mount)
+	defer mount.Call("remove")
+
+	var mu sync.Mutex
+	var loads int
+	var webErrors []*core.WebError
+	var openWindows []core.WebWindowRequest
+	var answers []string
+
+	ref := new(core.Ref)
+	scope := make(chan *core.Scope, 1)
+	var source *core.Signal[core.WebSource]
+	var noJS *core.Signal[bool]
+
+	initialHTML := `<!doctype html><html><head><title>Guarded</title>` +
+		`<meta http-equiv="refresh" content="0;url=https://evil.invalid/meta">` +
+		`</head><body data-stay="yes">` +
+		`<a id="bad-link" href="https://evil.invalid/link">bad</a>` +
+		`<a id="top-link" href="https://sub.allowed.invalid/escape" target="_top">top</a>` +
+		`<a id="bad-blank" href="https://evil.invalid/blank" target="_blank">badblank</a>` +
+		`<a id="ok-blank" href="https://sub.allowed.invalid/blank" target="_blank">okblank</a>` +
+		`<a id="ok-link" href="` + allowedDest + `">ok</a>` +
+		`<form id="bad-form" action="https://evil.invalid/form"><button id="bad-submit" type="submit">go</button></form>` +
+		`</body></html>`
+
+	s := open(func(cx *core.Scope) core.Node {
+		cx.ProvideAccess(restrictedWebTestAccess{
+			hosts:   []string{allowedHost, "*.allowed.invalid"},
+			schemes: []string{"about"},
+		})
+		source = core.NewSignal(cx, core.WebHTML(initialHTML, ""))
+		noJS = core.NewSignal(cx, false)
+		scope <- cx
+		return core.Dynamic(func(cx *core.Scope) core.Node {
+			return core.WebView{
+				Ref:          ref,
+				SourceFunc:   source.Get,
+				NoJavaScript: noJS.Get(),
+				Style:        core.Style{Width: core.Pt(100), Height: core.Pt(100)},
+				OnLoad: func(core.WebNavigation) {
+					mu.Lock()
+					loads++
+					mu.Unlock()
+				},
+				OnError: func(err error) {
+					var we *core.WebError
+					if errors.As(err, &we) {
+						mu.Lock()
+						webErrors = append(webErrors, we)
+						mu.Unlock()
+					}
+				},
+				OnOpenWindow: func(req core.WebWindowRequest) {
+					mu.Lock()
+					openWindows = append(openWindows, req)
+					mu.Unlock()
+				},
+			}
+		})
+	}, Options{Mount: "#nsgo-webview-restricted-test"}, nil)
+	defer s.engine.Close()
+	cx := <-scope
+
+	wait := func(what string, cond func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); !cond(); time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				mu.Lock()
+				defer mu.Unlock()
+				t.Fatalf("%s: timed out (loads=%d, errors=%+v, openWindows=%+v, answers=%q)", what, loads, webErrors, openWindows, answers)
+			}
+		}
+	}
+	hasError := func(wantURL string) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, we := range webErrors {
+			if we.URL == wantURL && strings.Contains(we.Message, wantURL) {
+				return true
+			}
+		}
+		return false
+	}
+	eval := func(script string) string {
+		t.Helper()
+		mu.Lock()
+		prev := len(answers)
+		mu.Unlock()
+		cx.Post(func() {
+			ref.Evaluate(script, func(json string, err error) {
+				if err != nil {
+					json = "error:" + err.Error()
+				}
+				mu.Lock()
+				answers = append(answers, json)
+				mu.Unlock()
+			})
+		})
+		wait("evaluate "+script, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(answers) > prev
+		})
+		mu.Lock()
+		defer mu.Unlock()
+		return answers[len(answers)-1]
+	}
+
+	// 1. Initial HTML loads and reports the stripped disallowed meta refresh via OnError.
+	wait("initial load", func() bool { mu.Lock(); defer mu.Unlock(); return loads >= 1 })
+	wait("refused meta refresh error", func() bool { return hasError("https://evil.invalid/meta") })
+
+	// Sandbox attribute must omit popups, downloads, top-navigation and same-origin.
+	frame := mount.Call("querySelector", "iframe")
+	sb := frame.Call("getAttribute", "sandbox").String()
+	for _, forbid := range []string{"allow-popups", "allow-popups-to-escape-sandbox", "allow-downloads", "allow-top-navigation", "allow-same-origin"} {
+		if strings.Contains(sb, forbid) {
+			t.Fatalf("restricted iframe sandbox %q unexpectedly grants %q", sb, forbid)
+		}
+	}
+	if got := eval(`document.body.dataset.stay`); got != `"yes"` {
+		t.Fatalf("initial document not active: %s", got)
+	}
+
+	// 2. Disallowed link click, target=_top escape, target=_blank popup, window.open and form submit
+	//    must be blocked with the exact refused URL without leaving the page.
+	blockedActions := []struct {
+		name    string
+		script  string
+		wantURL string
+	}{
+		{"disallowed link", `document.getElementById("bad-link").click()`, "https://evil.invalid/link"},
+		{"target=_top escape", `document.getElementById("top-link").click()`, "https://sub.allowed.invalid/escape"},
+		{"disallowed target=_blank", `document.getElementById("bad-blank").click()`, "https://evil.invalid/blank"},
+		{"disallowed window.open", `window.open("https://evil.invalid/open") === null`, "https://evil.invalid/open"},
+		{"disallowed form submit button", `document.getElementById("bad-submit").click()`, "https://evil.invalid/form"},
+		{"disallowed form.submit()", `document.getElementById("bad-form").submit()`, "https://evil.invalid/form"},
+	}
+	for _, tc := range blockedActions {
+		cx.Post(func() { ref.InjectJavaScript(tc.script) })
+		wait(tc.name+" error", func() bool { return hasError(tc.wantURL) })
+		if got := eval(`document.body.dataset.stay`); got != `"yes"` {
+			t.Fatalf("page left after %s: %s", tc.name, got)
+		}
+	}
+	// Unverified script navigations (location.href, assign, replace, data:) from opaque srcdoc
+	// are caught and aborted via beforeunload/pagehide, reporting OnError and restoring the page.
+	scriptNavs := []struct {
+		name   string
+		script string
+	}{
+		{"disallowed location.href", `location.href = "https://evil.invalid/loc"`},
+		{"disallowed location.assign", `location.assign("https://evil.invalid/assign")`},
+		{"disallowed location.replace", `location.replace("https://evil.invalid/replace")`},
+		{"disallowed data scheme", `location.href = "data:text/html,<p>nope</p>"`},
+	}
+	for _, tc := range scriptNavs {
+		mu.Lock()
+		prevErrs := len(webErrors)
+		mu.Unlock()
+		cx.Post(func() { ref.InjectJavaScript(tc.script) })
+		wait(tc.name+" error", func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(webErrors) > prevErrs
+		})
+		if got := eval(`document.body.dataset.stay`); got != `"yes"` {
+			t.Fatalf("page not restored after %s: %s", tc.name, got)
+		}
+	}
+	if loads != 1 {
+		t.Fatalf("blocked navigations triggered extra loads: loads=%d", loads)
+	}
+
+	// 3. Allowed target=_blank and window.open route to OnOpenWindow without leaving the page.
+	cx.Post(func() {
+		ref.InjectJavaScript(`document.getElementById("ok-blank").click(); window.open("https://sub.allowed.invalid/win2");`)
+	})
+	wait("allowed OnOpenWindow", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(openWindows) >= 2
+	})
+	if got := eval(`document.body.dataset.stay`); got != `"yes"` {
+		t.Fatalf("page left after allowed open-window requests: %s", got)
+	}
+
+	// 4. Programmatic Ref.Load to an ungranted host is refused and reports OnError without navigating.
+	cx.Post(func() { ref.Load(core.WebSrc("https://evil.invalid/direct")) })
+	wait("refused Ref.Load", func() bool { return hasError("https://evil.invalid/direct") })
+	if got := eval(`document.body.dataset.stay`); got != `"yes"` {
+		t.Fatalf("page left after refused Ref.Load: %s", got)
+	}
+
+	// 5. Navigating to a granted host via link succeeds cleanly and reports the destination URL.
+	cx.Post(func() { ref.InjectJavaScript(`document.getElementById("ok-link").click()`) })
+	wait("allowed navigation load", func() bool { mu.Lock(); defer mu.Unlock(); return loads >= 2 })
+	if hasError(allowedDest) {
+		t.Fatalf("allowed navigation to %q reported an error", allowedDest)
+	}
+
+	// 6. Restricted data:text/html source is decoded through the guarded srcdoc pipeline and blocks ungranted redirects without looping.
+	mu.Lock()
+	prevErrs := len(webErrors)
+	mu.Unlock()
+	cx.Post(func() {
+		ref.Load(core.WebSrc(`data:text/html,<script>location.href="https://evil.invalid/from-data"</script><p>data</p>`))
+	})
+	wait("refused navigation from data:text/html", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(webErrors) > prevErrs
+	})
+
+	// 7. Restricted NoJavaScript HTML strips disallowed links and meta refreshes and omits allow-scripts.
+	cx.Post(func() {
+		noJS.Set(true)
+		source.Set(core.WebHTML(`<meta http-equiv="refresh" content="0;url=https://evil.invalid/nojs-meta"><a href="https://evil.invalid/nojs-link">bad</a><a href="`+allowedDest+`">ok</a>`, ""))
+	})
+	wait("refused NoJavaScript meta refresh", func() bool { return hasError("https://evil.invalid/nojs-meta") })
+	frame = mount.Call("querySelector", "iframe")
+	sbNoJS := frame.Call("getAttribute", "sandbox").String()
+	if strings.Contains(sbNoJS, "allow-scripts") {
+		t.Fatalf("NoJavaScript iframe sandbox %q unexpectedly grants allow-scripts", sbNoJS)
+	}
+	srcdoc := frame.Get("srcdoc").String()
+	if strings.Contains(srcdoc, "https://evil.invalid/nojs-link") || strings.Contains(srcdoc, "https://evil.invalid/nojs-meta") {
+		t.Fatalf("NoJavaScript restricted srcdoc retained disallowed targets: %s", srcdoc)
+	}
+	if !strings.Contains(srcdoc, allowedDest) {
+		t.Fatalf("NoJavaScript restricted srcdoc dropped allowed link %q", allowedDest)
+	}
+
+	// Host page must never have been navigated.
+	if got := js.Global().Get("location").Get("href").String(); got != topBefore {
+		t.Fatalf("host top-level location changed from %q to %q", topBefore, got)
 	}
 }

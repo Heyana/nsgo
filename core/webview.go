@@ -118,7 +118,7 @@ type WebWindowRequest = driver.WebWindowRequest
 type WebError struct {
 	URL     string
 	Message string
-	// Domain and Code are the platform's: NSError's domain and code on Apple platforms, the GError domain's name and its code on Linux, COREWEBVIEW2_WEB_ERROR_STATUS and its value, or HRESULT and the HRESULT of a navigation WebView2 refused, on Windows, and android.webkit.WebViewClient and WebResourceError's error code on Android. Both are empty for a source or navigation Access refused (the web reports none).
+	// Domain and Code are the platform's: NSError's domain and code on Apple platforms, the GError domain's name and its code on Linux, COREWEBVIEW2_WEB_ERROR_STATUS and its value, or HRESULT and the HRESULT of a navigation WebView2 refused, on Windows, and android.webkit.WebViewClient and WebResourceError's error code on Android. Both are empty for a source or navigation Access refused.
 	Domain string
 	Code   int
 }

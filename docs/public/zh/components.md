@@ -32,7 +32,7 @@ core.View{
 
 设置 `Mobile`（TSX 中为 `mobile`）后，Windows、macOS 和 Linux 上的页面按手机所见的样子显示，适合 YouTube Shorts 这类只在手机上用上下滑动切换视频的网站：页面得到手机的 user agent（设置了 `UserAgent` 时以它为准）和没有悬停的触摸屏，鼠标拖动、以及在不可滚动处的滚轮或触控板滚动，都会作为手指滑动送达页面。Windows 像 Chrome 的设备模式那样模拟手机。macOS 和 Linux 用脚本实现，因此页面的样式表仍看到鼠标，触摸事件也不是可信事件，页面可能忽略它们。iOS、Android、HarmonyOS、Web 和小程序按原样显示页面。
 
-在 macOS、iOS、Windows 和 Linux 上，`OnOpenWindow` 接收网页的新窗口请求。WebView 不会弹出窗口。应用可根据请求的 `URL` 和 `UserInitiated` 决定通过 `Ref.Load` 在同一视图导航、在其他位置打开 URL，或者忽略请求。受限 WebView 会通过 `OnError` 报告被拒绝的请求。
+在 macOS、iOS、Windows 和 Linux 上，`OnOpenWindow` 接收网页的新窗口请求（在 Web 上也接收受限 HTML 页面的新窗口请求）。WebView 不会弹出窗口。应用可根据请求的 `URL` 和 `UserInitiated` 决定通过 `Ref.Load` 在同一视图导航、在其他位置打开 URL，或者忽略请求。受限 WebView 会通过 `OnError` 报告被拒绝的请求，并在 Web 上对初始来源、`Ref.Load`、`HTML` 和 `data:text/html` 页面强制执行 `webview` 主机与协议授权，同时通过 iframe sandbox 阻止弹窗、下载与顶层窗口跳转（跨域 `http(s)` 页面加载后的帧内导航受浏览器同源策略隐藏）。
 
 设置 `OnDownload` 后，macOS、iOS、Linux、Windows 和 Android 上的 WebView 会保存网页下载的文件。下载文件保存在应用数据目录的 `downloads/<id>/<file name>` 下，并报告开始、完成（附字节数）或失败；未设置 `OnDownload` 的视图以及受限视图会取消下载。
 

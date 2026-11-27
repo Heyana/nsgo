@@ -12,15 +12,20 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// webFrame is a web view's <iframe>, as NSH's web backend has it. HTML loads as srcdoc in a sandbox with an origin of its own, so it never reaches the app's page, with a bridge script first: it hands the app a MessagePort with token, which only the srcdoc's document knows, and window.nsgo.postMessage writes to the port, which also runs injected scripts and history steps. The app takes the port only from the frame's own window, so neither a frame within the page nor a page it went to has the bridge, and the page's messages report the source's origin. A URL loads as it is (without its origin when it is the app's own); the browser hides what such a page does, so it only gets PostMessage and load events with the URL it was given.
+// webFrame is a web view's <iframe>, as NSH's web backend has it. HTML loads as srcdoc in a sandbox with an origin of its own, so it never reaches the app's page, with a bridge script first: it hands the app a MessagePort with token, which only the srcdoc's document knows, and window.nsgo.postMessage writes to the port, which also runs injected scripts and history steps. The app takes the port only from the frame's own window, so neither a frame within the page nor a page it went to has the bridge, and the page's messages report the source's origin. Restricted views omit allow-popups, allow-popups-to-escape-sandbox and allow-downloads from the sandbox, decode data:text/html sources through the same guarded srcdoc path, add a CSP form-action policy, strip disallowed meta refreshes (and static links when JavaScript is disabled), and enforce WebConfig.Navigable in the bridge before page scripts run. A URL loads as it is (without its origin when it is the app's own); the browser hides what a cross-origin page does after it loads, so it only gets PostMessage, load events and the iframe sandbox's restrictions.
 type webFrame struct {
-	frame  js.Value
-	config driver.WebConfig
-	source driver.WebSource // what the frame loaded last: the config's, or Ref.Load's
-	loaded bool             // configured at least once
-	token  string
-	port   js.Value // the app's end of the bridge of the source's page, while that page shows
-	portFn js.Func
+	frame          js.Value
+	config         driver.WebConfig
+	source         driver.WebSource // what the frame loaded last: the config's, or Ref.Load's
+	loaded         bool             // configured at least once
+	token          string
+	exposeBridge   bool     // whether the page exposes window.nsgo and accepts eval/history commands
+	lastSrcdoc     string   // sanitized restricted srcdoc last installed, for restoring after an unverified navigation
+	loadedOnce     bool     // whether the current document finished its initial load
+	restoring      bool     // suppressing duplicate load events while restoring after an unverified navigation
+	uncheckedCount int      // consecutive unverified-navigation restores since the last clean load
+	port           js.Value // the app's end of the bridge of the source's page, while that page shows
+	portFn         js.Func
 	// bridging is set while the source's page loads, which hands its port; queued are the commands for it until then.
 	bridging bool
 	queued   []map[string]any
@@ -69,38 +74,89 @@ func (s *surface) webBridged(v *view, e js.Value) {
 	w.closePort()
 	w.port = port
 	// The page is the srcdoc, at its base URL when it has one.
-	origin, page := w.source.Origin(), cmp.Or(w.source.BaseURL, "about:srcdoc")
+	origin, page, expose := w.source.Origin(), cmp.Or(w.source.BaseURL, cmp.Or(w.source.Src, "about:srcdoc")), w.exposeBridge
 	w.portFn = js.FuncOf(func(_ js.Value, args []js.Value) any {
 		data := args[0].Get("data")
-		if data.Type() != js.TypeString {
+		switch data.Type() {
+		case js.TypeString:
+			if expose {
+				s.send(v, driver.Event{Kind: driver.EventMessage, Text: data.String(), Origin: origin, URL: page, MainFrame: true})
+			}
+		case js.TypeObject:
+			if !data.IsNull() {
+				if refused := data.Get("refused"); refused.Type() == js.TypeString {
+					url := refused.String()
+					s.send(v, driver.Event{Kind: driver.EventError, Text: driver.RefusedNavigation(url),
+						Navigation: &driver.WebNavigation{URL: url}})
+					return nil
+				}
+				if openURL := data.Get("openWindow"); openURL.Type() == js.TypeString {
+					req := driver.WebWindowRequest{
+						URL:           openURL.String(),
+						UserInitiated: data.Get("userInitiated").Bool(),
+					}
+					s.send(v, w.config.OpenWindowEvent(req))
+					return nil
+				}
+				if navURL := data.Get("navigate"); navURL.Type() == js.TypeString {
+					dest := navURL.String()
+					if !w.config.Navigable(dest) {
+						s.send(v, driver.Event{Kind: driver.EventError, Text: driver.RefusedNavigation(dest),
+							Navigation: &driver.WebNavigation{URL: dest}})
+						return nil
+					}
+					s.loadFrame(v, driver.WebSource{Src: dest})
+					return nil
+				}
+				if data.Get("uncheckedNav").Bool() {
+					s.send(v, driver.Event{Kind: driver.EventError,
+						Text:       "nsgo: the web view blocked an unverified navigation (the webview capability's hosts or schemes)",
+						Navigation: &driver.WebNavigation{}})
+					if w.loadedOnce && w.lastSrcdoc != "" && w.uncheckedCount < 4 {
+						w.uncheckedCount++
+						w.restoring = true
+						oldToken := w.token
+						w.token = strconv.FormatUint(rand.Uint64(), 36)
+						if oldToken != "" {
+							w.lastSrcdoc = strings.ReplaceAll(w.lastSrcdoc, strconv.Quote(oldToken), strconv.Quote(w.token))
+						}
+						w.awaitBridge()
+						w.frame.Call("removeAttribute", "srcdoc")
+						w.frame.Set("srcdoc", w.lastSrcdoc)
+					} else {
+						w.restoring = true
+						w.token = ""
+						w.exposeBridge = false
+						w.lastSrcdoc = ""
+						w.awaitBridge()
+						w.frame.Call("removeAttribute", "srcdoc")
+						w.frame.Set("src", "about:blank")
+					}
+					return nil
+				}
+			}
+			w.closePort()
+			s.webNavigation(v, driver.EventLoadStart, true)
+		default:
 			// The page left (webBridge): what the app sends it now would be lost.
 			w.closePort()
 			s.webNavigation(v, driver.EventLoadStart, true)
-			return nil
 		}
-		s.send(v, driver.Event{Kind: driver.EventMessage, Text: data.String(), Origin: origin, URL: page, MainFrame: true})
 		return nil
 	})
 	w.port.Set("onmessage", w.portFn)
 	w.bridging = false
-	for _, msg := range w.queued {
-		w.port.Call("postMessage", msg)
+	if expose {
+		for _, msg := range w.queued {
+			w.port.Call("postMessage", msg)
+		}
 	}
 	w.queued = nil
 }
 
-// sameFrame reports whether a and b load the same frame, comparing what
-// NSH's web backend does: the user agent and swipes cannot apply to a
-// frame.
-func sameFrame(a, b *driver.WebConfig) bool {
-	return a.Source == b.Source && a.InjectedJavaScript == b.InjectedJavaScript &&
-		a.InjectedJavaScriptBeforeContent == b.InjectedJavaScriptBeforeContent &&
-		a.NoScroll == b.NoScroll && a.NoJavaScript == b.NoJavaScript && a.Media == b.Media
-}
-
 func (s *surface) setWeb(v *view, c *driver.WebConfig) {
 	w := v.web
-	if w.loaded && sameFrame(c, &w.config) {
+	if w.loaded && sameWebFrame(c, &w.config) {
 		return
 	}
 	w.loaded, w.config = true, *c
@@ -111,28 +167,40 @@ func (s *surface) setWeb(v *view, c *driver.WebConfig) {
 func (s *surface) loadFrame(v *view, src driver.WebSource) {
 	w := v.web
 	c := &w.config
+	if c.Restricted && src.HTML == "" && src.Src != "" && !c.SourceNavigable(src.Src) {
+		refusedURL := src.Src
+		var report js.Func
+		report = js.FuncOf(func(js.Value, []js.Value) any {
+			report.Release()
+			if s.view(v.id) == v {
+				s.send(v, driver.Event{Kind: driver.EventError, Text: driver.RefusedNavigation(refusedURL),
+					Navigation: &driver.WebNavigation{URL: refusedURL}})
+			}
+			return nil
+		})
+		js.Global().Call("queueMicrotask", report)
+		return
+	}
 	w.source = src
+	srcdocHTML, isSrcdoc := src.HTML, src.HTML != ""
+	exposeBridge := src.HTML != "" && !c.NoJavaScript
+	if c.Restricted && !isSrcdoc && src.Src != "" {
+		if decoded, ok := decodeRestrictedDataHTML(src.Src); ok {
+			srcdocHTML, isSrcdoc, exposeBridge = decoded, true, false
+		}
+	}
+	w.exposeBridge = exposeBridge
+	w.loadedOnce = false
+	w.restoring = false
+	w.uncheckedCount = 0
+	w.lastSrcdoc = ""
 	w.token = ""
-	if src.HTML != "" && !c.NoJavaScript {
+	if isSrcdoc && !c.NoJavaScript && (exposeBridge || c.Restricted) {
 		w.token = strconv.FormatUint(rand.Uint64(), 36)
 	}
 	w.awaitBridge()
-	sandbox := []string{"allow-forms", "allow-popups", "allow-popups-to-escape-sandbox", "allow-modals", "allow-downloads"}
-	if !c.NoJavaScript {
-		sandbox = append(sandbox, "allow-scripts")
-	}
-	if src.HTML == "" && src.Src != "" {
-		// Pages of other sites keep their origin, so their storage works; one of the app's own must not reach the app, nor an about: page, such as an empty source's about:blank, which takes the app's origin unless the sandbox keeps it opaque, as it keeps a srcdoc page.
-		url := js.Global().Get("URL")
-		same := false
-		if u, ok := newURL(url, src.Src); ok {
-			same = u.Get("origin").String() == js.Global().Get("location").Get("origin").String() || u.Get("protocol").String() == "about:"
-		}
-		if !same {
-			sandbox = append(sandbox, "allow-same-origin")
-		}
-	}
-	w.frame.Call("setAttribute", "sandbox", strings.Join(sandbox, " "))
+	pageOrigin := js.Global().Get("location").Get("origin").String()
+	w.frame.Call("setAttribute", "sandbox", webFrameSandbox(c, src, pageOrigin, isSrcdoc))
 	// The browser asks the user for what the frame may capture and
 	// refuses the rest, from the frame's next page on.
 	var allow []string
@@ -146,40 +214,52 @@ func (s *surface) loadFrame(v *view, src driver.WebSource) {
 	script := func(js string) string {
 		return "<script>" + strings.ReplaceAll(js, "</script", `<\/script`) + "</script>"
 	}
-	if src.HTML != "" {
-		var head strings.Builder
-		if src.BaseURL != "" {
-			head.WriteString(`<base href="` + strings.ReplaceAll(src.BaseURL, `"`, "&quot;") + `">`)
-		}
-		if w.token != "" {
-			head.WriteString(script(webBridge(w.token)))
-		}
-		if c.NoScroll {
-			head.WriteString("<style>html,body{overflow:hidden!important}</style>")
-		}
-		if c.InjectedJavaScriptBeforeContent != "" {
-			head.WriteString(script(c.InjectedJavaScriptBeforeContent))
-		}
-		tail := ""
-		if c.InjectedJavaScript != "" {
-			tail = script(c.InjectedJavaScript)
-		}
-		// After a doctype, which must stay first.
-		html, doctype := src.HTML, ""
-		if trimmed := strings.TrimLeft(html, " \t\r\n"); len(trimmed) > 9 && strings.EqualFold(trimmed[:9], "<!doctype") {
-			if end := strings.IndexByte(trimmed, '>'); end >= 0 {
-				doctype, html = trimmed[:end+1], trimmed[end+1:]
+	var refusedMeta []string
+	if isSrcdoc {
+		if c.Restricted {
+			var doc string
+			doc, w.title, refusedMeta = buildRestrictedSrcdoc(srcdocHTML, src.BaseURL, w.token, exposeBridge, c)
+			w.lastSrcdoc = doc
+			if src.HTML != "" {
+				w.url = cmp.Or(src.BaseURL, "about:srcdoc")
+			} else {
+				w.url = src.Src
 			}
+			w.frame.Call("removeAttribute", "src")
+			w.frame.Call("removeAttribute", "scrolling")
+			w.frame.Set("srcdoc", doc)
+		} else {
+			var head strings.Builder
+			if src.BaseURL != "" {
+				head.WriteString(`<base href="` + strings.ReplaceAll(src.BaseURL, `"`, "&quot;") + `">`)
+			}
+			if w.token != "" {
+				head.WriteString(script(webBridge(w.token)))
+			}
+			if c.NoScroll {
+				head.WriteString("<style>html,body{overflow:hidden!important}</style>")
+			}
+			if c.InjectedJavaScriptBeforeContent != "" {
+				head.WriteString(script(c.InjectedJavaScriptBeforeContent))
+			}
+			tail := ""
+			if c.InjectedJavaScript != "" {
+				tail = script(c.InjectedJavaScript)
+			}
+			// After a doctype, which must stay first.
+			html, doctype := src.HTML, ""
+			if trimmed := strings.TrimLeft(html, " \t\r\n"); len(trimmed) > 9 && strings.EqualFold(trimmed[:9], "<!doctype") {
+				if end := strings.IndexByte(trimmed, '>'); end >= 0 {
+					doctype, html = trimmed[:end+1], trimmed[end+1:]
+				}
+			}
+			w.url = cmp.Or(src.BaseURL, "about:srcdoc")
+			doc := js.Global().Get("DOMParser").New().Call("parseFromString", src.HTML, "text/html")
+			w.title = doc.Get("title").String()
+			w.frame.Call("removeAttribute", "src")
+			w.frame.Call("removeAttribute", "scrolling")
+			w.frame.Set("srcdoc", doctype+head.String()+html+tail)
 		}
-		w.url = src.BaseURL
-		if w.url == "" {
-			w.url = "about:srcdoc"
-		}
-		doc := js.Global().Get("DOMParser").New().Call("parseFromString", src.HTML, "text/html")
-		w.title = doc.Get("title").String()
-		w.frame.Call("removeAttribute", "src")
-		w.frame.Call("removeAttribute", "scrolling")
-		w.frame.Set("srcdoc", doctype+head.String()+html+tail)
 	} else {
 		w.url, w.title = src.Src, ""
 		w.frame.Call("removeAttribute", "srcdoc")
@@ -194,28 +274,24 @@ func (s *surface) loadFrame(v *view, src driver.WebSource) {
 			w.frame.Call("removeAttribute", "src")
 		}
 	}
-	if src.HTML != "" || src.Src != "" {
+	if isSrcdoc || src.Src != "" {
 		// After the batch, which may carry the view's events after its
 		// configuration.
+		refused := refusedMeta
 		var start js.Func
 		start = js.FuncOf(func(js.Value, []js.Value) any {
 			start.Release()
 			if s.view(v.id) == v {
 				s.webNavigation(v, driver.EventLoadStart, true)
+				for _, u := range refused {
+					s.send(v, driver.Event{Kind: driver.EventError, Text: driver.RefusedNavigation(u),
+						Navigation: &driver.WebNavigation{URL: u}})
+				}
 			}
 			return nil
 		})
 		js.Global().Call("queueMicrotask", start)
 	}
-}
-
-func newURL(ctor js.Value, s string) (u js.Value, ok bool) {
-	defer func() {
-		if recover() != nil {
-			ok = false
-		}
-	}()
-	return ctor.New(s, js.Global().Get("location").Get("href")), true
 }
 
 // webNavigation reports the frame's state, as far as the browser shows
@@ -232,6 +308,12 @@ func (s *surface) webNavigation(v *view, kind driver.EventKind, loading bool) {
 func (s *surface) webLoaded(v *view) {
 	w := v.web
 	if !w.frame.Call("hasAttribute", "src").Bool() && !w.frame.Call("hasAttribute", "srcdoc").Bool() {
+		return
+	}
+	w.loadedOnce = true
+	w.uncheckedCount = 0
+	if w.restoring {
+		w.restoring = false
 		return
 	}
 	s.webNavigation(v, driver.EventLoad, false)
@@ -256,6 +338,9 @@ func (s *surface) webCommand(v *view, c driver.WebCommand, value string, data an
 	w := v.web
 	// viaPort hands msg to the source's page, once it handed its port, and reports false when no such page shows: the source is a URL, or its page went to another.
 	viaPort := func(msg map[string]any) bool {
+		if !w.exposeBridge {
+			return false
+		}
 		switch {
 		case w.port.Truthy():
 			w.port.Call("postMessage", msg)

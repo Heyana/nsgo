@@ -300,6 +300,32 @@ mount(() => <View>
 	}
 }
 
+func TestSandboxHoldsWebViewNavigationHosts(t *testing.T) {
+	p := verified(t, `import { mount, View, WebView } from "nsgo";
+mount(() => <View>
+	<WebView testID="ok" html="<a href='https://allowed.example/'>ok</a>" style={{ height: 50 }} />
+	<WebView testID="denied" src="https://denied.example/" style={{ height: 50 }} />
+</View>);`, pkg.Capabilities{WebView: &pkg.WebView{Hosts: []string{"allowed.example", "extra.example"}}})
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return tsx.View{Package: p, Sandbox: tsx.Sandbox{
+			Grant:         &pkg.Capabilities{WebView: &pkg.WebView{Hosts: []string{"allowed.example"}}},
+			WebUnisolated: true,
+		}}
+	})
+	app.WaitFor("id:ok", 10*time.Second)
+	okView := app.Find("id:ok").Web
+	if !okView.Restricted || okView.Hosts != "allowed.example" {
+		t.Fatalf("restricted web view config = restricted:%v hosts:%q, want restricted:true hosts:\"allowed.example\"", okView.Restricted, okView.Hosts)
+	}
+	if !okView.Navigable("https://allowed.example/page") || okView.Navigable("https://extra.example/") || okView.Navigable("https://denied.example/") {
+		t.Fatalf("unexpected Navigable decisions for hosts %q", okView.Hosts)
+	}
+	deniedView := app.Find("id:denied").Web
+	if deniedView.Source.Src != "about:blank" {
+		t.Fatalf("denied initial web view src = %q, want about:blank", deniedView.Source.Src)
+	}
+}
+
 // TestTheWebRefusesWhatItCannotIsolate runs a package with capabilities: the page's engine cannot isolate it, so on the web View and Load refuse it unless the host opts in.
 func TestTheWebRefusesWhatItCannotIsolate(t *testing.T) {
 	p := verified(t, `import { mount, Text } from "nsgo";
