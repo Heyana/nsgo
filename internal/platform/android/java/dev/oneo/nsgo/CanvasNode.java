@@ -97,6 +97,12 @@ class CanvasNode extends View {
     private boolean smooth = true;
     private Bitmap backing;
     private boolean backingDirty = true;
+    private boolean fullRedraw = true;
+    /** Snapshot of ops as currently painted into backing, for partial redraw damage scans. */
+    private byte[] drawnOps;
+    /** Cached pixel clip from patch() for the next onDraw() at (pendingClipW, pendingClipH), or null. */
+    private CanvasDamage.PixelRect pendingClip;
+    private int pendingClipW, pendingClipH;
     private final Rect backingDst = new Rect();
     private final Paint backingPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
@@ -108,12 +114,19 @@ class CanvasNode extends View {
         return rasterScale;
     }
 
+    private boolean usesBacking(int w, int h, float eff) {
+        if (eff != 1f) return true;
+        return offsets.length > 0
+                && w <= RasterScale.MAX_SIDE
+                && h <= RasterScale.MAX_SIDE
+                && (long) w * h <= RasterScale.MAX_PIXELS;
+    }
+
     void setRasterScale(float scale) {
         float next = scale > 1f ? scale : 1f;
         if (next == rasterScale) return;
         rasterScale = next;
-        backingDirty = true;
-        if (rasterScale <= 1f && resolution >= 1f) releaseBacking();
+        if (rasterScale <= 1f && resolution >= 1f && offsets.length == 0) releaseBacking();
         invalidate();
     }
 
@@ -124,7 +137,7 @@ class CanvasNode extends View {
         resolution = next;
         this.smooth = smooth;
         backingPaint.setFilterBitmap(smooth || next >= 1f);
-        if (rasterScale <= 1f && resolution >= 1f) releaseBacking();
+        if (rasterScale <= 1f && resolution >= 1f && offsets.length == 0) releaseBacking();
         invalidate();
     }
 
@@ -134,11 +147,27 @@ class CanvasNode extends View {
             backing = null;
         }
         backingDirty = true;
+        fullRedraw = true;
+        drawnOps = null;
+        pendingClip = null;
+    }
+
+    private void snapshotDrawnOps() {
+        if (ops == null) {
+            drawnOps = null;
+            return;
+        }
+        if (drawnOps == null || drawnOps.length != ops.length) {
+            drawnOps = new byte[ops.length];
+        }
+        System.arraycopy(ops, 0, drawnOps, 0, ops.length);
     }
 
     @Override
     public void invalidate() {
         backingDirty = true;
+        fullRedraw = true;
+        pendingClip = null;
         super.invalidate();
     }
 
@@ -146,6 +175,9 @@ class CanvasNode extends View {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         backingDirty = true;
+        fullRedraw = true;
+        drawnOps = null;
+        pendingClip = null;
     }
 
     @Override
@@ -185,6 +217,10 @@ class CanvasNode extends View {
         this.ops = ops;
         this.offsets = offsets;
         this.colors = colors;
+        drawnOps = null;
+        if (ops == null || ops.length == 0 || (rasterScale <= 1f && resolution >= 1f && offsets.length == 0)) {
+            releaseBacking();
+        }
         boolean changed = parts.length != this.parts.length;
         this.parts = parts;
         if (changed) {
@@ -195,19 +231,77 @@ class CanvasNode extends View {
         invalidate();
     }
 
-    /** Writes the values of the bound nodes into the ops and draws again. */
+    /** Writes the values of the bound nodes into the ops and redraws only the damaged area when safe. */
     void patch(double[] nums, int[] cols) {
         if (ops == null) return;
         ByteBuffer b = ByteBuffer.wrap(ops);
+        boolean mutated = false;
         for (int i = 0; i < offsets.length && i < nums.length; i++) {
-            if (offsets[i] < 0 || offsets[i] + 4 > ops.length) continue;
+            int at = offsets[i];
+            if (at < 0 || at + 4 > ops.length) continue;
             if (colors[i]) {
-                b.putInt(offsets[i], cols[i]);
+                int next = cols[i];
+                if (b.getInt(at) != next) {
+                    b.putInt(at, next);
+                    mutated = true;
+                }
             } else {
-                b.putFloat(offsets[i], (float) nums[i]);
+                float next = (float) nums[i];
+                if (Float.floatToRawIntBits(b.getFloat(at)) != Float.floatToRawIntBits(next)) {
+                    b.putFloat(at, next);
+                    mutated = true;
+                }
             }
         }
-        invalidate();
+        if (!mutated && !backingDirty) return;
+        if (fullRedraw || backing == null || drawnOps == null || drawnOps.length != ops.length) {
+            backingDirty = true;
+            pendingClip = null;
+            super.invalidate();
+            return;
+        }
+        if (backingDirty) {
+            // Another patch arrived before onDraw consumed the previous one:
+            // let onDraw scan once from drawnOps to the latest ops.
+            pendingClip = null;
+            return;
+        }
+        int w = getWidth(), h = getHeight();
+        if (w <= 0 || h <= 0) {
+            backingDirty = true;
+            fullRedraw = true;
+            pendingClip = null;
+            super.invalidate();
+            return;
+        }
+        CanvasDamage.Result dmg = CanvasDamage.scan(drawnOps, ops);
+        if (!dmg.bounded) {
+            backingDirty = true;
+            fullRedraw = true;
+            pendingClip = null;
+            super.invalidate();
+            return;
+        }
+        if (dmg.empty) {
+            snapshotDrawnOps();
+            return;
+        }
+        float density = getResources().getDisplayMetrics().density;
+        float eff = RasterScale.canvasScale(w, h, rasterScale, resolution);
+        int bw = eff != 1f ? RasterScale.scaledPixels(w, eff) : w;
+        int bh = eff != 1f ? RasterScale.scaledPixels(h, eff) : h;
+        float sx = density * ((float) bw / w);
+        float sy = density * ((float) bh / h);
+        CanvasDamage.PixelRect clip = CanvasDamage.pixelClip(dmg, sx, sy, bw, bh);
+        if (clip == null) {
+            snapshotDrawnOps();
+            return;
+        }
+        pendingClip = clip;
+        pendingClipW = bw;
+        pendingClipH = bh;
+        backingDirty = true;
+        super.invalidate();
     }
 
     @Override
@@ -217,28 +311,70 @@ class CanvasNode extends View {
         if (w <= 0 || h <= 0) return;
         float density = getResources().getDisplayMetrics().density;
         float eff = RasterScale.canvasScale(w, h, rasterScale, resolution);
-        if (eff != 1f) {
-            int bw = RasterScale.scaledPixels(w, eff);
-            int bh = RasterScale.scaledPixels(h, eff);
+        if (usesBacking(w, h, eff)) {
+            int bw = eff != 1f ? RasterScale.scaledPixels(w, eff) : w;
+            int bh = eff != 1f ? RasterScale.scaledPixels(h, eff) : h;
             if (backing == null || backing.getWidth() != bw || backing.getHeight() != bh) {
                 releaseBacking();
                 backing = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888);
             }
             if (backingDirty) {
-                backing.eraseColor(Color.TRANSPARENT);
-                Canvas bmCanvas = new Canvas(backing);
-                bmCanvas.scale(density * ((float) bw / w), density * ((float) bh / h));
-                new Player(bmCanvas, w / density, h / density, pictures, pixels).play(ByteBuffer.wrap(ops));
-                backingDirty = false;
+                updateBacking(w, h, bw, bh, density);
             }
             backingDst.set(0, 0, w, h);
             canvas.drawBitmap(backing, null, backingDst, backingPaint);
             return;
         }
+        releaseBacking();
         int layer = canvas.saveLayer(0, 0, w, h, null);
         canvas.scale(density, density);
         new Player(canvas, w / density, h / density, pictures, pixels).play(ByteBuffer.wrap(ops));
         canvas.restoreToCount(layer);
+    }
+
+    private void updateBacking(int w, int h, int bw, int bh, float density) {
+        float sx = density * ((float) bw / w);
+        float sy = density * ((float) bh / h);
+        CanvasDamage.PixelRect clip = null;
+        if (!fullRedraw && drawnOps != null && drawnOps.length == ops.length) {
+            if (pendingClip != null && pendingClipW == bw && pendingClipH == bh) {
+                clip = pendingClip;
+            } else {
+                CanvasDamage.Result dmg = CanvasDamage.scan(drawnOps, ops);
+                if (dmg.bounded) {
+                    if (dmg.empty) {
+                        snapshotDrawnOps();
+                        backingDirty = false;
+                        pendingClip = null;
+                        return;
+                    }
+                    clip = CanvasDamage.pixelClip(dmg, sx, sy, bw, bh);
+                    if (clip == null) {
+                        snapshotDrawnOps();
+                        backingDirty = false;
+                        pendingClip = null;
+                        return;
+                    }
+                }
+            }
+        }
+        Canvas bmCanvas = new Canvas(backing);
+        if (clip != null) {
+            int save = bmCanvas.save();
+            bmCanvas.clipRect(clip.left, clip.top, clip.right, clip.bottom);
+            bmCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+            bmCanvas.scale(sx, sy);
+            new Player(bmCanvas, w / density, h / density, pictures, pixels).play(ByteBuffer.wrap(ops));
+            bmCanvas.restoreToCount(save);
+        } else {
+            backing.eraseColor(Color.TRANSPARENT);
+            bmCanvas.scale(sx, sy);
+            new Player(bmCanvas, w / density, h / density, pictures, pixels).play(ByteBuffer.wrap(ops));
+        }
+        snapshotDrawnOps();
+        backingDirty = false;
+        fullRedraw = false;
+        pendingClip = null;
     }
 
     /** Replays a static drawing, also used by the tab bar's SVG icons. */
@@ -859,8 +995,29 @@ class CanvasNode extends View {
             }
         }
 
+        /** Whether source-over painting at zero alpha cannot change any pixel (its shadow included). */
+        private boolean transparent() {
+            return state.composite == SOURCE_OVER && state.alpha <= 0f;
+        }
+
+        /** Whether painting with color or gradient cannot change any pixel. */
+        private boolean unseen(int color, Gradient g) {
+            if (transparent()) return true;
+            if (state.composite != SOURCE_OVER) return false;
+            if (Color.alpha(state.shadowColor) != 0
+                    && (state.shadowX != 0 || state.shadowY != 0 || state.shadowBlur != 0)) {
+                return false;
+            }
+            if (g == null) return Color.alpha(color) == 0;
+            for (int c : g.colors) {
+                if (Color.alpha(c) != 0) return false;
+            }
+            return true;
+        }
+
         /** Fills the path, built in the canvas's points, in which the gradient is mapped by the transform. */
         private void fill() {
+            if (unseen(state.fill, state.fillGradient)) return;
             if (!paintWith(state.fill, state.fillGradient, state.ctm)) return;
             paint.setStyle(Paint.Style.FILL);
             draw(() -> canvas.drawPath(path, paint), false);
@@ -868,6 +1025,7 @@ class CanvasNode extends View {
 
         /** Strokes the path in the transform, as the web's canvas does: its width in the drawing's units. */
         private void stroke() {
+            if (unseen(state.stroke, state.strokeGradient)) return;
             Matrix inv = new Matrix();
             if (!state.ctm.invert(inv)) return;
             if (!paintWith(state.stroke, state.strokeGradient, new Matrix())) return;
@@ -897,6 +1055,9 @@ class CanvasNode extends View {
             int weight = b.getShort() & 0xffff;
             boolean italic = b.get() != 0;
             String features = Text.features(b.get() & 0xff);
+            if (unseen(stroke ? state.stroke : state.fill, stroke ? state.strokeGradient : state.fillGradient)) {
+                return;
+            }
             if (stroke) {
                 if (!paintWith(state.stroke, state.strokeGradient, new Matrix())) return;
                 strokeStyle();
@@ -922,6 +1083,7 @@ class CanvasNode extends View {
             byte flags = b.get();
             boolean nearest = (flags & 1) != 0, tinted = (flags & 2) != 0;
             int tint = tinted ? Text.argb(b.getInt()) : 0;
+            if (transparent()) return;
             if (pixels.containsKey(key)) {
                 Picture picture = pixels.get(key);
                 if (picture != null) image(picture, x, y, w, h, sx, sy, sw, sh, nearest, tinted, tint);
@@ -962,6 +1124,10 @@ class CanvasNode extends View {
             boolean nearest = b.get() != 0;
             int count = b.getInt();
             int end = b.position() + count * 20;
+            if (transparent()) {
+                b.position(end);
+                return;
+            }
             if (pixels.containsKey(key)) {
                 Picture picture = pixels.get(key);
                 if (picture != null) vertices(b, count, picture, nearest);
@@ -1001,7 +1167,7 @@ class CanvasNode extends View {
             int count = ops.getInt();
             ByteBuffer sprites = ops.slice();
             ops.position(ops.position() + count * AtlasMesh.SPRITE_BYTES);
-            if (count == 0) return;
+            if (count == 0 || transparent()) return;
             if (pixels.containsKey(key)) {
                 Picture picture = pixels.get(key);
                 if (picture != null) atlas(picture, sprites, count, nearest);
