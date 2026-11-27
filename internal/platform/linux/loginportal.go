@@ -32,6 +32,8 @@ type portalLogin struct {
 	sub            uint32
 	serial         uint64
 	watch          uint32
+	parentOwner    *window
+	parentFallback func()
 	closed         atomic.Bool
 }
 
@@ -86,7 +88,16 @@ func (c *portalLogin) next() {
 	bindPermissions()
 	bindSession()
 	appID := currentLinuxSandbox(c.root.opts.ID).appID
-	r.owner.withPortalParent(func(parent string) {
+	sent := false
+	send := func(parent string) {
+		if sent {
+			return
+		}
+		sent = true
+		c.parentOwner, c.parentFallback = nil, nil
+		if c.closed.Load() {
+			return
+		}
 		portalQueue() <- func() {
 			if c.closed.Load() {
 				return
@@ -137,7 +148,7 @@ func (c *portalLogin) next() {
 					actual := portalTupleText(reply, 0)
 					gVariantUnref(reply)
 					c.root.post(func() {
-						if c.closed.Load() || !c.busy || c.path != path || actual == path {
+						if c.closed.Load() || !c.busy || c.serial != serial || c.path != path || actual == path {
 							return
 						}
 						if actual == "" {
@@ -147,11 +158,21 @@ func (c *portalLogin) next() {
 						gDBusConnectionSignalUnsubscribe(c.bus, c.sub)
 						c.path = actual
 						c.subscribe()
+						if c.sub == 0 {
+							c.finish(serial, errors.New("could not subscribe to the Background portal"))
+						}
 					})
 				}
 			})
 		}
-	})
+	}
+	if r.owner == nil || r.owner.closing {
+		send("")
+		return
+	}
+	c.parentOwner = r.owner
+	c.parentFallback = func() { send("") }
+	r.owner.withPortalParent(send)
 }
 
 func (c *portalLogin) subscribe() {
@@ -209,11 +230,19 @@ func loginPortalResponse(conn, sender, path, iface, signal, params, data uintptr
 	c.finish(c.serial, err)
 }
 
+func (c *portalLogin) ownerClosed(w *window) {
+	if c == nil || c.closed.Load() || c.parentOwner != w || c.parentFallback == nil {
+		return
+	}
+	c.parentFallback()
+}
+
 func (c *portalLogin) close() {
 	if c == nil {
 		return
 	}
 	c.closed.Store(true)
+	c.parentOwner, c.parentFallback = nil, nil
 	if c.sub != 0 {
 		gDBusConnectionSignalUnsubscribe(c.bus, c.sub)
 	}

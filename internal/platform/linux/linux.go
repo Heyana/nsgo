@@ -1010,6 +1010,9 @@ func (w *window) shutdown(forced bool) {
 	}
 	w.unwatchSession()
 	w.login.close()
+	if w.opener != nil && w.opener.login != nil {
+		w.opener.login.ownerClosed(w)
+	}
 	if w.watchingTimeZone {
 		w.watchingTimeZone = false
 		releaseTimeZoneWatcher()

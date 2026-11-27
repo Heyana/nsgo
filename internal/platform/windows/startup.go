@@ -61,16 +61,28 @@ func (w *window) launchAtLoginItem(it *driver.MountItem) {
 		return
 	}
 	root := w.appWindow()
+	if root.destroying {
+		return
+	}
 	if root.startup == nil {
 		root.startup = &packagedStartup{root: root}
 	}
 	c := root.startup
+	if c.isClosed() {
+		return
+	}
 	c.requests = append(c.requests, startupRequest{owner: w, id: it.Count, set: it.Kind == driver.ItemSetLaunchAtLogin, on: it.On})
 	c.next()
 }
 
+func (c *packagedStartup) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
 func (c *packagedStartup) next() {
-	if c.busy || len(c.requests) == 0 {
+	if c.busy || len(c.requests) == 0 || c.isClosed() {
 		return
 	}
 	c.busy = true
@@ -183,7 +195,7 @@ func startupIsEnabled(state int32) bool {
 }
 
 func (c *packagedStartup) finish(enabled bool, err error) {
-	if len(c.requests) == 0 {
+	if c.isClosed() || len(c.requests) == 0 {
 		return
 	}
 	r := c.requests[0]

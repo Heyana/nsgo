@@ -208,3 +208,26 @@ func TestBackgroundLoginPortal(t *testing.T) {
 		t.Fatal("a vanished portal left an enabled state")
 	}
 }
+
+func TestBackgroundLoginPortalOwnerCloseUnblocksWaiter(t *testing.T) {
+	root := &window{}
+	child := &window{opener: root}
+	c := &portalLogin{root: root}
+	root.login = c
+	calls := 0
+	c.parentOwner = child
+	c.parentFallback = func() {
+		calls++
+		c.parentOwner, c.parentFallback = nil, nil
+	}
+	// Another window closing does not disturb child's waiter.
+	c.ownerClosed(&window{opener: root})
+	if calls != 0 {
+		t.Fatalf("unrelated window unblocked waiter: %d", calls)
+	}
+	c.ownerClosed(child)
+	c.ownerClosed(child)
+	if calls != 1 {
+		t.Fatalf("closing owner invoked fallback %d times, want 1", calls)
+	}
+}

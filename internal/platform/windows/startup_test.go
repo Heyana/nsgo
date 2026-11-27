@@ -106,3 +106,73 @@ func TestStartupTaskRejectsUnpackaged(t *testing.T) {
 		t.Fatalf("unpackaged startup replies %v, busy %v", events, c.busy)
 	}
 }
+
+func TestStartupIsEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		state int32
+		want  bool
+	}{
+		{0, false}, // Disabled
+		{1, false}, // DisabledByUser
+		{2, true},  // Enabled
+		{3, false}, // DisabledByPolicy
+		{4, true},  // EnabledByPolicy
+		{-1, false},
+		{5, false},
+	} {
+		if got := startupIsEnabled(tc.state); got != tc.want {
+			t.Errorf("startupIsEnabled(%d) = %v, want %v", tc.state, got, tc.want)
+		}
+	}
+}
+
+func TestPackagedStartupFinishAndClose(t *testing.T) {
+	var events []driver.Event
+	e := engine.Start(startupTestPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{Event: func(_ uint32, ev driver.Event) {
+		if ev.Kind == driver.EventLaunchAtLogin {
+			events = append(events, ev)
+		}
+	}})
+	defer e.Close()
+	live := &window{engine: e}
+	gone := &window{engine: e, destroying: true}
+	c := &packagedStartup{
+		root: live,
+		busy: true,
+		requests: []startupRequest{
+			{owner: live, id: 10},
+			{owner: live, id: 11, set: true, on: true},
+			{owner: gone, id: 12},
+		},
+	}
+	// Finishing a single read request dispatches EventLaunchAtLogin; keep remaining
+	// requests detached so next() does not invoke WinRT here.
+	rest := c.requests[1:]
+	c.requests = c.requests[:1]
+	c.finish(true, nil)
+	if len(events) != 1 || events[0].Count != 10 || !events[0].Finished {
+		t.Fatalf("read event = %+v", events)
+	}
+	// A write request dispatches no read event.
+	c.busy = true
+	c.requests = rest[:1]
+	c.finish(true, nil)
+	if len(events) != 1 {
+		t.Fatalf("write dispatched unexpected event: %+v", events)
+	}
+	// A destroying owner receives no read event.
+	c.busy = true
+	c.requests = rest[1:]
+	c.finish(true, nil)
+	if len(events) != 1 {
+		t.Fatalf("destroying owner received event: %+v", events)
+	}
+	// Closing clears queued work and prevents finish/next from running later.
+	c.requests = []startupRequest{{owner: live, id: 13}}
+	c.close()
+	c.finish(true, nil)
+	c.next()
+	if len(events) != 1 || c.busy || len(c.requests) != 0 {
+		t.Fatalf("closed startup controller ran work: events=%+v busy=%v requests=%d", events, c.busy, len(c.requests))
+	}
+}

@@ -66,11 +66,17 @@ func snapLoginEntry(id, name, executable, snapRoot, userData, instance, label st
 	if filepath.Base(app.Autostart) != app.Autostart || !strings.HasSuffix(app.Autostart, ".desktop") || strings.ContainsAny(app.Autostart, "\\\x00") {
 		return loginEntry{}, fmt.Errorf("invalid Snap autostart filename %q", app.Autostart)
 	}
+	if appName == "" || strings.ContainsRune(appName, '%') {
+		return loginEntry{}, fmt.Errorf("invalid Snap app name %q", appName)
+	}
 	if name == "" {
 		name = id
 	}
 	if name == "" {
 		name = appName
 	}
-	return loginEntry{path: filepath.Join(userData, ".config", "autostart", app.Autostart), name: name, executable: executable}, nil
+	// Use the revision-independent Snap app name in Exec: snap userd replaces
+	// argv[0] with the app's wrapper and preserves the login marker, so a Snap
+	// refresh copying SNAP_USER_DATA keeps LaunchAtLogin accurate.
+	return loginEntry{path: filepath.Join(userData, ".config", "autostart", app.Autostart), name: name, executable: appName}, nil
 }

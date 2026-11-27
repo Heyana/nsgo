@@ -33,7 +33,7 @@ func TestSnapLoginUsesDeclaredAutostartAndUserData(t *testing.T) {
 		t.Fatal("Snap registration did not persist")
 	}
 	b, err := os.ReadFile(e.path)
-	if err != nil || !strings.Contains(string(b), "--nsgo-launched-at-login") {
+	if err != nil || !strings.Contains(string(b), "Exec=editor --nsgo-launched-at-login\n") {
 		t.Fatalf("startup command %q, %v", b, err)
 	}
 	other := filepath.Join(filepath.Dir(e.path), "viewer.desktop")
@@ -64,6 +64,7 @@ func TestSnapLoginRejectsUnknownOrUnsafeMetadata(t *testing.T) {
 		{"shared executable", "apps:\n  first:\n    command: bin/app\n    autostart: first.desktop\n  second:\n    command: bin/app\n    autostart: second.desktop\n", "bin/app", "unconfined"},
 		{"inherited environment", "apps:\n  app:\n    autostart: app.desktop\n", "../outside/app", "snap.demo.app (enforce)"},
 		{"unknown app", "apps:\n  app:\n    autostart: app.desktop\n", "bin/app", "snap.demo.other (enforce)"},
+		{"percent in app name", "apps:\n  app%1:\n    command: bin/app\n    autostart: app.desktop\n", "bin/app", "snap.demo.app%1 (enforce)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -77,5 +78,48 @@ func TestSnapLoginRejectsUnknownOrUnsafeMetadata(t *testing.T) {
 				t.Fatalf("unsafe metadata accepted: %+v", e)
 			}
 		})
+	}
+}
+
+func TestSnapLoginSurvivesRevisionRefresh(t *testing.T) {
+	base := t.TempDir()
+	rev10Root, rev11Root := filepath.Join(base, "snap", "demo", "10"), filepath.Join(base, "snap", "demo", "11")
+	rev10Data, rev11Data := filepath.Join(base, "user", "demo", "10"), filepath.Join(base, "user", "demo", "11")
+	for _, tc := range []struct{ root, meta string }{
+		{rev10Root, "apps:\n  editor:\n    command: bin/editor\n    autostart: editor-login.desktop\n"},
+		{rev11Root, "apps:\n  editor:\n    command: usr/bin/editor\n    autostart: editor-login.desktop\n"},
+	} {
+		if err := os.MkdirAll(filepath.Join(tc.root, "meta"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tc.root, "meta", "snap.yaml"), []byte(tc.meta), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e10, err := snapLoginEntry("dev.nsgo.app", "NSGo test", filepath.Join(rev10Root, "bin", "editor"), rev10Root, rev10Data, "demo", "snap.demo.editor (enforce)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e10.set(true); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate snap refresh copying SNAP_USER_DATA from revision 10 to revision 11.
+	copied, err := os.ReadFile(e10.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev11EntryPath := filepath.Join(rev11Data, ".config", "autostart", "editor-login.desktop")
+	if err := os.MkdirAll(filepath.Dir(rev11EntryPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rev11EntryPath, copied, 0600); err != nil {
+		t.Fatal(err)
+	}
+	e11, err := snapLoginEntry("dev.nsgo.app", "NSGo test", filepath.Join(rev11Root, "usr", "bin", "editor"), rev11Root, rev11Data, "demo", "snap.demo.editor (enforce)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e11.enabled() {
+		t.Fatalf("Snap registration lost after revision refresh: file=%q want=%q", copied, e11.data())
 	}
 }
